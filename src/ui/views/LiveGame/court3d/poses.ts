@@ -2117,6 +2117,32 @@ const READY_SWAY: Pose[] = [
 	},
 ];
 
+// In a bro hug (see dapHug): leaned in and turned to him, his head off to
+// his own side of the other man's, the gripped right hand folded up against
+// his chest, his left arm reached across round the other man's back - and
+// patting it.
+const HUG = pose({
+	shN: -10,
+	elN: 150,
+	abN: 0,
+	shF: 75,
+	elF: 65,
+	abF: -45,
+	lean: 14,
+	twist: -18,
+	tilt: 4,
+	kneeN: 16,
+	kneeF: 18,
+});
+const HUG_PAT = { ...HUG, shF: 85, elF: 80, abF: -40 };
+// Two men in that hug stand this far apart (feet, middle to middle, the way
+// they face) and this far over to each one's right of the other - right
+// shoulder to right shoulder, the gripped hands between their chests, heads
+// past each other's; and it lasts this long (ms).
+export const HUG_APART = 1.0;
+export const HUG_SIDE = 1.15;
+export const HUG_MS = 1700;
+
 export const ANIMS = {
 	// Never still: he settles down into his knees and back up, his
 	// shoulders swaying over his hips, his hands drifting - slowly.
@@ -5135,17 +5161,31 @@ export const ANIMS = {
 			[1, P.hold],
 		],
 	},
-	// On the bench.
+	// Wiping the floor (see mopState): down low over it as for a ball
+	// there, a towel in both hands swept side to side.
+	wipe: {
+		kind: "loop",
+		n: 2,
+		fps: 1.5,
+		pose: (i) => ({
+			...PICKUP_LOW,
+			abN: i ? 10 : -14,
+			abF: i ? -14 : 10,
+			twist: i ? 9 : -9,
+		}),
+	},
+	// On the bench: down in a low chair, his thighs level out in front of
+	// him, his knees as high as his seat.
 	sit: {
 		kind: "loop",
 		n: 2,
 		fps: 0.4,
 		pose: (i) =>
 			pose({
-				hipN: 88,
-				kneeN: 94,
-				hipF: 84,
-				kneeF: 90,
+				hipN: 110,
+				kneeN: 110,
+				hipF: 106,
+				kneeF: 106,
 				shN: 30 + i * 4,
 				elN: 52,
 				shF: 26,
@@ -5853,6 +5893,88 @@ export const ANIMS = {
 					wide: 0.45,
 				}),
 			],
+		],
+	},
+	// THE DAP-UPS AFTER THE GAME (see gameOver), always the right hand,
+	// whichever he shoots with. A dap: the hand swung up and gripped with the
+	// other man's, chest high between them, a squeeze - and snapped off.
+	dap: {
+		kind: "act",
+		n: 6,
+		keys: [
+			[0, P.ready],
+			[0.3, pose({ shN: 40, elN: 110, abN: 0, lean: 8 })],
+			[0.5, pose({ shN: 40, elN: 125, abN: -10, lean: 8 })],
+			[0.65, pose({ shN: 45, elN: 130, abN: -10, lean: 6 })],
+			[0.8, pose({ shN: 10, elN: 150, abN: 5, wrN: -30, lean: 4 })],
+			[1, P.ready],
+		],
+	},
+	// The same with his other hand on the man's shoulder.
+	dapPat: {
+		kind: "act",
+		n: 6,
+		keys: [
+			[0, P.ready],
+			[0.3, pose({ shN: 40, elN: 110, abN: 0, shF: 40, elF: 50, lean: 8 })],
+			[
+				0.5,
+				pose({
+					shN: 40,
+					elN: 125,
+					abN: -10,
+					shF: 70,
+					elF: 60,
+					abF: -20,
+					lean: 8,
+				}),
+			],
+			[
+				0.65,
+				pose({
+					shN: 45,
+					elN: 130,
+					abN: -10,
+					shF: 66,
+					elF: 70,
+					abF: -20,
+					lean: 6,
+				}),
+			],
+			[0.8, pose({ shN: 10, elN: 150, abN: 5, wrN: -30, lean: 4 })],
+			[1, P.ready],
+		],
+	},
+	// A bro hug: the hands gripped, and pulled in by them - right shoulder to
+	// right shoulder, the gripped hands between their chests - his other arm
+	// round the man's back, a pat or two on it; and apart.
+	dapHug: {
+		kind: "act",
+		n: 10,
+		keys: [
+			[0, P.ready],
+			[
+				0.16,
+				pose({
+					shN: 25,
+					elN: 135,
+					abN: -5,
+					shF: 50,
+					elF: 40,
+					abF: 30,
+					lean: 10,
+				}),
+			],
+			[0.32, HUG],
+			[0.44, HUG_PAT],
+			[0.54, HUG],
+			[0.64, HUG_PAT],
+			[0.76, HUG],
+			[
+				0.88,
+				pose({ shN: 25, elN: 90, abN: 0, shF: 40, elF: 30, abF: 15, lean: 8 }),
+			],
+			[1, P.ready],
 		],
 	},
 	// Face to face down the handshake line, waiting on the man before to

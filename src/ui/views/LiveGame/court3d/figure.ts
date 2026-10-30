@@ -62,6 +62,10 @@ export type Outfit = {
 	plain?: boolean;
 	// Stripes down the shirt: a referee's.
 	stripes?: string;
+	// Sleeves of their own color, and a panel of it down each side of the
+	// shirt: an NBA official's, black on gray.
+	sleeveColor?: string;
+	sides?: string;
 	// The shirt and tie in the open neck of a jacket: a coach's suit.
 	shirt?: string;
 	tie?: string;
@@ -69,6 +73,8 @@ export type Outfit = {
 	camera?: boolean;
 	// A microphone in his right hand: a reporter's.
 	mic?: boolean;
+	// A towel in his hands: a mopper's.
+	towel?: boolean;
 };
 export const CAMERA_BODY = "#1c1d22";
 export const CAMERA_LENS = "#34363e";

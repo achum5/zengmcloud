@@ -1,5 +1,5 @@
 import { assert, describe, test } from "vitest";
-import { atTable, crewAt, crewFor, type CrewMember } from "./crew.ts";
+import { crewAt, crewFor, type CrewMember } from "./crew.ts";
 import { bodyPoint, cameraCuts, fastAt, poseOf, withBody } from "./evaluate.ts";
 import { benchX, COURT_H, COURT_W, HUDDLE_Y, type Pt3 } from "./geometry.ts";
 import { compileCourt, type CourtPlayer, type RawEvent } from "./director.ts";
@@ -95,6 +95,48 @@ describe("3D crew", () => {
 			assert.deepEqual(crewAt(tl, t, crew), crewAt(tl, t, crew));
 		}
 	}, 60_000);
+
+	// In the breaks, the moppers go out and wipe the floor - never out there
+	// with the clock running.
+	test("the moppers wipe the floor in the breaks, and only then", () => {
+		let wiped = 0;
+		for (const seed of ["a", "b", "c", "d"]) {
+			const { tl, crew, events } = working(seed);
+			const clocks = buildClocks(tl, events);
+			const mops = crew.filter((m) => m.role === "mop");
+			assert.strictEqual(mops.length, 2);
+			const breaks = tl.beats.filter(
+				(b) =>
+					b.type === "timeout" ||
+					b.type === "period" ||
+					b.type === "endOfPeriod",
+			);
+			for (let t = 0; t <= tl.end; t += 250) {
+				for (const s of crewAt(tl, t, crew).states) {
+					const m = mops.find((x) => x.pid === s.pid);
+					if (!m) {
+						continue;
+					}
+					if (Math.hypot(s.x - m.spot!.x, s.y - m.spot!.y) < 0.5) {
+						continue;
+					}
+					assert.isTrue(
+						breaks.some((b) => t >= b.preStart && t <= b.end),
+						`${seed} ${t}`,
+					);
+					assert.strictEqual(
+						gameClockAt(clocks, t),
+						gameClockAt(clocks, t - 250),
+						`${seed} ${t}`,
+					);
+					if (s.anim === "wipe") {
+						wiped += 1;
+					}
+				}
+			}
+		}
+		assert.isAbove(wiped, 0);
+	}, 120_000);
 
 	// Officials run with the play, so in the picture they never pop from
 	// one place to another - except where the picture cuts.
@@ -376,21 +418,32 @@ describe("3D crew", () => {
 
 	test("coaches keep to their boxes, photographers to the baselines", () => {
 		const { tl, crew } = working("b");
+		// (The game over, the two of them go to each other in front of the
+		// table: see coachAfter.)
+		const over = tl.beats.find((b) => b.type === "gameOver");
+		let met = Infinity;
 		for (let t = 0; t <= tl.end; t += 400) {
-			for (const s of crewAt(tl, t, crew).states) {
+			const states = crewAt(tl, t, crew).states;
+			for (const s of states) {
+				if ((s.pid === -11 || s.pid === -12) && over && t > over.actionStart) {
+					const o = states.find((q) => q.pid === (s.pid === -11 ? -12 : -11))!;
+					met = Math.min(met, Math.hypot(s.x - o.x, s.y - o.y));
+					continue;
+				}
 				if (s.pid === -11 || s.pid === -12) {
 					const team = s.pid === -11 ? 0 : 1;
 					assert.isBelow(Math.abs(s.x - benchX(team)), 7, `${t}`);
 					// (Out on the floor only in the middle of his huddle.)
 					const huddle = s.x === benchX(team) && s.y === HUDDLE_Y;
 					assert.isTrue(huddle || (s.y > -4 && s.y < 0.5), `${t}`);
-				} else if (s.pid <= -21 && !atTable(s.pid)) {
+				} else if (s.pid <= -21 && s.pid > -41) {
 					assert.isTrue(s.x < -2 || s.x > COURT_W + 2, `${t}`);
 					// Clear of the basket's stanchion and the lane under it.
 					assert.isTrue(s.y < 17 || s.y > 33, `${t}`);
 				}
 			}
 		}
+		assert.isBelow(met, 2);
 	}, 60_000);
 
 	// An official comes round to the play - the ball, the way he runs, a

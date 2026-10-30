@@ -1,5 +1,8 @@
 import { makeCourtRng } from "../courtRng.ts";
-import { project, type Camera } from "./camera.ts";
+import type { CrowdFace } from "./crowdFaces.ts";
+import { arenaSpecFor, type ArenaSpec } from "./arenaSpec.ts";
+import { depthOf, project, type Camera } from "./camera.ts";
+import { drawTexturedPlane } from "./planes.ts";
 import { BALL_R } from "./evaluate.ts";
 import { shade } from "./figure.ts";
 import {
@@ -193,16 +196,20 @@ export const TABLE_FRONT = plane(
 	TABLE_H,
 	12,
 );
-// Each team's bench: a row of chairs beside the table.
+// Each team's bench: a row of high-backed padded chairs beside the table,
+// the backs up to a sitting man's shoulders - just behind where each sits
+// (see seatSpot).
 const BENCH_LEN = BENCH_SEATS * SEAT_GAP + 0.6;
+const BENCH_H = 4;
+const BENCH_SEAT_Z = 1.45;
 export const benchPlane = (t: Side) =>
 	plane(
 		`bench${t}`,
-		{ x: benchStart(t), y: BENCH_Y, z: 3.1 },
+		{ x: benchStart(t), y: BENCH_Y + 0.3, z: BENCH_H },
 		{ x: 1, y: 0, z: 0 },
 		{ x: 0, y: 0, z: -1 },
 		BENCH_LEN,
-		3.1,
+		BENCH_H,
 		12,
 	);
 
@@ -234,10 +241,14 @@ export const standsPoint = (x: number, up: number): Pt3 => ({
 // board between the lower and upper deck.
 const ROW_FT = 2.75;
 const RIBBON_ROW = 13;
+// How tall a fan's head is drawn, hair and all (feet).
+const FACE_FT = 0.98;
+// Home fans in a jersey of their team's, of them; and what fans wear below.
+const JERSEY_SHARE = 0.22;
+const PANTS = ["#262b36", "#1d2330", "#3a3e47", "#4b3b2c", "#2f3a52"];
 // The home fans down low who hold a sign up (the D and the fence): in the
 // first so many rows, so many of them.
 const SIGN_ROWS = 9;
-const SIGN_SHARE = 0.03;
 // A tunnel in under the lower deck: how wide (feet), and the rows it takes
 // up, from the front.
 const TUNNEL_W = 7;
@@ -270,6 +281,192 @@ export const RAFTERS = plane(
 const LIGHT_FIRST = 6;
 const LIGHT_GAP = 11;
 
+// ONE FAN IN HIS SEAT (or up out of it), drawn into a picture of the stands
+// `px` px to the foot: the bottom of his seat at `yb`, his middle at `x`.
+// Square at the shoulders, in a little at the waist, a neck, his arms down
+// his sides and his hands in his lap (or up over his head) - in a jersey
+// of his team's now and then, arms bare.
+export type Fan = {
+	x: number;
+	yb: number;
+	bodyW: number;
+	color: string;
+	skin: string;
+	face?: CrowdFace;
+	pants: string;
+	// In a jersey, its number.
+	number?: number;
+	// On his feet (see paintStands' `up`): how high his hands go (feet), and
+	// a towel in one of them.
+	arms?: { up: 1 | 2; reach: number; towel?: string };
+	// A fist up in the air, sat where he is.
+	fist?: boolean;
+	// Sat with his phone up in front of him, or a drink in his hand - or
+	// his hands together at his chest, clapping.
+	holding?: "phone" | "drink" | "clap";
+};
+const fanHeadY = (f: Fan, px: number) =>
+	f.yb - (f.arms ? 2 : 1.45) * px - 0.75 * px - (f.arms ? 0.55 * px : 0);
+export const drawFan = (ctx: CanvasRenderingContext2D, f: Fan, px: number) => {
+	const { x, yb, bodyW, color, skin, pants } = f;
+	const standing = f.arms !== undefined;
+	const jersey = f.number !== undefined;
+	const bodyH = (standing ? 2 : 1.45) * px;
+	const lift = standing ? 0.55 * px : 0;
+	const top = yb - bodyH - 0.5 * px - lift;
+	const bottom = yb - 0.5 * px - lift;
+	const sw = bodyW / 2;
+	const ww = bodyW * 0.4;
+	ctx.fillStyle = skin;
+	ctx.fillRect(x - 0.13 * px, top - 0.2 * px, 0.26 * px, 0.28 * px);
+	ctx.fillStyle = pants;
+	ctx.fillRect(x - ww, bottom - 0.1 * px, 2 * ww, 0.38 * px);
+	ctx.fillStyle = color;
+	ctx.beginPath();
+	ctx.moveTo(x - sw, top + 0.32 * px);
+	ctx.quadraticCurveTo(x - sw, top, x - sw + 0.3 * px, top);
+	ctx.lineTo(x + sw - 0.3 * px, top);
+	ctx.quadraticCurveTo(x + sw, top, x + sw, top + 0.32 * px);
+	ctx.lineTo(x + ww, bottom);
+	ctx.lineTo(x - ww, bottom);
+	ctx.closePath();
+	ctx.fill();
+	if (jersey) {
+		// (The arm holes, and a number across his chest.)
+		ctx.fillStyle = skin;
+		for (const side of [-1, 1]) {
+			ctx.fillRect(
+				x + side * sw - (side > 0 ? 0.28 * px : 0),
+				top + 0.05 * px,
+				0.28 * px,
+				0.55 * px,
+			);
+		}
+		ctx.fillStyle = inkOn(color);
+		ctx.font = `800 ${Math.round(0.5 * px)}px sans-serif`;
+		ctx.textAlign = "center";
+		ctx.textBaseline = "middle";
+		ctx.fillText(String(f.number), x, top + bodyH * 0.42);
+		ctx.textAlign = "start";
+	}
+	const sleeve = jersey ? skin : shade(color, -0.14);
+	ctx.lineCap = "round";
+	if (!standing) {
+		for (const side of [-1, 1]) {
+			const ex = x + side * (sw + 0.02 * px);
+			const ey = top + 0.85 * px;
+			// (Up at his chest round his phone, both hands; his right hand up
+			// with a drink.)
+			const up =
+				f.holding === "phone" ||
+				f.holding === "clap" ||
+				(f.holding === "drink" && side > 0);
+			const out =
+				f.holding === "drink" ? 0.32 : f.holding === "clap" ? 0.05 : 0.1;
+			const hx = up ? x + side * out * px : x + side * 0.2 * px;
+			const hy = up
+				? top + (f.holding === "clap" ? 0.85 : 0.95) * px
+				: bottom - 0.12 * px;
+			ctx.strokeStyle = sleeve;
+			ctx.lineWidth = 0.28 * px;
+			ctx.beginPath();
+			ctx.moveTo(x + side * (sw - 0.14 * px), top + 0.22 * px);
+			ctx.lineTo(ex, ey);
+			ctx.stroke();
+			ctx.strokeStyle = skin;
+			ctx.lineWidth = 0.22 * px;
+			ctx.beginPath();
+			ctx.moveTo(ex, ey);
+			ctx.lineTo(hx, hy);
+			ctx.stroke();
+		}
+		if (f.holding === "phone") {
+			ctx.fillStyle = "#16181d";
+			ctx.fillRect(x - 0.17 * px, top + 0.45 * px, 0.34 * px, 0.56 * px);
+			ctx.fillStyle = "rgba(170, 205, 255, 0.85)";
+			ctx.fillRect(x - 0.12 * px, top + 0.5 * px, 0.24 * px, 0.44 * px);
+		} else if (f.holding === "drink") {
+			const cx = x + 0.32 * px;
+			ctx.fillStyle = "#c8202a";
+			ctx.fillRect(cx - 0.15 * px, top + 0.55 * px, 0.3 * px, 0.45 * px);
+			ctx.fillStyle = "#f2f2f0";
+			ctx.fillRect(cx - 0.16 * px, top + 0.52 * px, 0.32 * px, 0.07 * px);
+		}
+	}
+	const headY = fanHeadY(f, px);
+	if (f.arms) {
+		// Arms up in a V - some waving a towel.
+		const { up, reach, towel } = f.arms;
+		const spread = (up === 1 ? 0.3 : 0.95) * px;
+		const shoulderY = headY + 0.55 * px;
+		const hands: [number, number][] = [];
+		for (const side of [-1, 1]) {
+			const sx = x + (side * bodyW) / 2.4;
+			const hx = sx + side * spread;
+			const hy = shoulderY - reach * px + (up === 2 ? 0.3 * px : 0);
+			// A sleeve to the elbow, his forearm and his hand.
+			const ex = (sx + hx) / 2 + side * 0.12 * px;
+			const ey = (shoulderY + hy) / 2;
+			ctx.strokeStyle = sleeve;
+			ctx.lineWidth = 0.34 * px;
+			ctx.beginPath();
+			ctx.moveTo(sx, shoulderY);
+			ctx.lineTo(ex, ey);
+			ctx.stroke();
+			ctx.strokeStyle = skin;
+			ctx.lineWidth = 0.26 * px;
+			ctx.beginPath();
+			ctx.moveTo(ex, ey);
+			ctx.lineTo(hx, hy);
+			ctx.stroke();
+			ctx.fillStyle = skin;
+			ctx.beginPath();
+			ctx.arc(hx, hy, 0.19 * px, 0, Math.PI * 2);
+			ctx.fill();
+			hands.push([hx, hy]);
+		}
+		if (towel) {
+			const [hx, hy] = hands[up === 1 ? 1 : 0]!;
+			ctx.fillStyle = towel;
+			ctx.fillRect(hx - 0.45 * px, hy - 0.95 * px, 0.9 * px, 0.75 * px);
+		}
+	}
+	if (f.face) {
+		// (The middle of his face a little below the middle of the picture
+		// of his head: the hair above it.)
+		const fh = FACE_FT * px;
+		const fw = (fh * f.face.img.width) / f.face.img.height;
+		ctx.drawImage(f.face.img, x - fw / 2, headY - fh * 0.54, fw, fh);
+	} else {
+		ctx.fillStyle = skin;
+		ctx.beginPath();
+		ctx.arc(x, headY, 0.36 * px, 0, Math.PI * 2);
+		ctx.fill();
+	}
+	if (f.fist) {
+		// Somebody with a hand up - a fist in the air.
+		const sx = x + sw - 0.12 * px;
+		const ex = sx + 0.3 * px;
+		const ey = top - 0.4 * px;
+		ctx.strokeStyle = sleeve;
+		ctx.lineWidth = 0.3 * px;
+		ctx.beginPath();
+		ctx.moveTo(sx, top + 0.2 * px);
+		ctx.lineTo(ex, ey);
+		ctx.stroke();
+		ctx.strokeStyle = skin;
+		ctx.lineWidth = 0.24 * px;
+		ctx.beginPath();
+		ctx.moveTo(ex, ey);
+		ctx.lineTo(sx + 0.2 * px, top - 1.1 * px);
+		ctx.stroke();
+		ctx.fillStyle = skin;
+		ctx.beginPath();
+		ctx.arc(sx + 0.2 * px, top - 1.2 * px, 0.2 * px, 0, Math.PI * 2);
+		ctx.fill();
+	}
+};
+
 // The crowd, painted once - and twice more on its feet (`up` 1 and 2: arms
 // high, then waving wide), the same people in the same seats, for when the
 // building erupts.
@@ -282,6 +479,10 @@ export const paintStands = (
 	crowd?: { att?: number; capacity?: number },
 	// The stands behind a basket, not the long side.
 	end?: 0 | 1,
+	// Faces for the fans (see crowdFaces), once there are - till then a head
+	// of skin for each.
+	faces?: CrowdFace[],
+	spec: ArenaSpec = arenaSpecFor(home),
 ): HTMLCanvasElement => {
 	const P = end === undefined ? STANDS : END_STANDS[end];
 	const A0 = end === undefined ? X0 : END_Y0;
@@ -296,6 +497,8 @@ export const paintStands = (
 	// Who gets up is decided apart from who is there, so both pictures have
 	// the same crowd.
 	const rise = makeCourtRng(`stands-up|${seed}${end ?? ""}`);
+	// (Whose face each fan has is decided apart from all that, too.)
+	const faceRng = makeCourtRng(`stands-face|${seed}${end ?? ""}`);
 	const g = ctx.createLinearGradient(0, 0, 0, h);
 	g.addColorStop(0, "#07080b");
 	g.addColorStop(1, "#1a1c22");
@@ -351,8 +554,7 @@ export const paintStands = (
 	const wants = seats.map((st) => st.want).sort((a, b) => a - b);
 	const taken =
 		wants[Math.min(wants.length - 1, Math.floor(fill * wants.length))]!;
-	// Seats in the team's color, or plain gray ones.
-	const seatColor = seatRng() < 0.55 ? shade(homeC[0]!, -0.28) : "#4b505b";
+	const seatColor = spec.stands.seat;
 	let next = 0;
 	const signs: { x: number; top: number }[] = [];
 	for (let r = 0; r < rows; r++) {
@@ -386,67 +588,49 @@ export const paintStands = (
 			const x = (xf - A0) * px + (rng() - 0.5) * 2;
 			const bodyW = (1.25 + rng() * 0.35) * px;
 			const color = shirt();
-			const skin = skins[Math.floor(rng() * skins.length)]!;
+			const face =
+				faces && faces.length > 0
+					? faces[Math.floor(faceRng() * faces.length)]!
+					: undefined;
+			// (Drawn whether he has a face or not: the same crowd either way.)
+			const own = skins[Math.floor(rng() * skins.length)]!;
 			const homeFan = color === homeC[0] || color === homeC[1];
 			const standing = up > 0 && rise() < (homeFan ? 0.88 : 0.45);
-			// On his feet he is taller, and his arms are up.
-			const bodyH = (standing ? 2 : 1.45) * px;
-			const lift = standing ? 0.55 * px : 0;
-			ctx.fillStyle = color;
-			ctx.beginPath();
-			ctx.roundRect(
-				x - bodyW / 2,
-				yb - bodyH - 0.5 * px - lift,
-				bodyW,
-				bodyH,
-				0.35 * px,
-			);
-			ctx.fill();
-			const headY = yb - bodyH - 0.75 * px - lift;
+			const jersey = homeFan && faceRng() < JERSEY_SHARE;
+			const pants = PANTS[Math.floor(faceRng() * PANTS.length)]!;
+			const number = jersey ? Math.floor(faceRng() * 40) : 0;
+			const phone = faceRng() < 0.05;
+			let arms: Fan["arms"];
 			if (standing) {
-				// Arms up in a V - some waving a towel.
-				const reach = (1.25 + rise() * 0.45) * px;
-				const spread = (up === 1 ? 0.3 : 0.95) * px;
-				const shoulderY = headY + 0.55 * px;
-				const towel = homeFan && rise() < 0.35;
-				ctx.strokeStyle = skin;
-				ctx.lineWidth = 0.46 * px;
-				ctx.lineCap = "round";
-				ctx.beginPath();
-				const hands: [number, number][] = [];
-				for (const side of [-1, 1]) {
-					const sx = x + (side * bodyW) / 2.4;
-					const hx = sx + side * spread;
-					const hy = shoulderY - reach + (up === 2 ? 0.3 * px : 0);
-					ctx.moveTo(sx, shoulderY);
-					ctx.lineTo(hx, hy);
-					hands.push([hx, hy]);
-				}
-				ctx.stroke();
-				if (towel) {
-					const [hx, hy] = hands[up === 1 ? 1 : 0]!;
-					ctx.fillStyle = rise() < 0.5 ? "#f4f4f4" : homeC[0]!;
-					ctx.fillRect(hx - 0.45 * px, hy - 0.95 * px, 0.9 * px, 0.75 * px);
-				}
+				const reach = 1.25 + rise() * 0.45;
+				const towel =
+					homeFan && rise() < 0.35
+						? rise() < 0.5
+							? "#f4f4f4"
+							: homeC[0]!
+						: undefined;
+				arms = { up: up as 1 | 2, reach, ...(towel ? { towel } : {}) };
 			}
-			ctx.fillStyle = skin;
-			ctx.beginPath();
-			ctx.arc(x, headY, 0.36 * px, 0, Math.PI * 2);
-			ctx.fill();
+			const fan: Fan = {
+				x,
+				yb,
+				bodyW,
+				color,
+				skin: face?.skin ?? own,
+				...(face ? { face } : {}),
+				pants,
+				...(jersey ? { number } : {}),
+				...(arms ? { arms } : {}),
+				...(phone && !arms ? { holding: "phone" as const } : {}),
+			};
+			const headY = fanHeadY(fan, px);
 			// Now and then a home fan down low holds a sign up over his head
 			// (painted once the rows behind him are: see below).
-			if (homeFan && r < SIGN_ROWS && seatRng() < SIGN_SHARE) {
+			if (homeFan && r < SIGN_ROWS && seatRng() < spec.stands.signShare) {
 				signs.push({ x, top: headY - 0.55 * px - (standing ? 0.6 * px : 0) });
 			}
-			if (rng() < 0.05) {
-				// Somebody's on his feet.
-				ctx.fillRect(
-					x - bodyW / 2 - 0.15 * px,
-					yb - bodyH - 1.6 * px,
-					0.25 * px,
-					1.1 * px,
-				);
-			}
+			fan.fist = rng() < 0.05 && !standing && !fan.holding;
+			drawFan(ctx, fan, px);
 		}
 		// The aisles - a light on each step.
 		ctx.fillStyle = "#2b2e35";
@@ -485,10 +669,12 @@ export const paintStands = (
 		ctx.lineTo(sx + sw * 0.93, sy + sh * 0.45);
 		ctx.stroke();
 	}
-	// The tunnels in under the lower deck, at every other aisle: a dark
-	// mouth a few rows up from the front, a rail along its top.
+	// The tunnels in under the lower deck, at every other aisle (see
+	// ArenaSpec.stands): a dark mouth a few rows up from the front, a rail
+	// along its top.
+	const every = spec.stands.tunnelEvery;
 	for (let k = 1, xf = A0 + aisle; xf < A1 - 4; k++, xf += aisle) {
-		if (k % 2) {
+		if (every <= 0 || k % every) {
 			continue;
 		}
 		const x = (xf - A0 + 1.2 - TUNNEL_W / 2) * px;
@@ -506,9 +692,10 @@ export const paintStands = (
 	}
 	// The light falls on the court: the upper deck fades into the dark.
 	const dark = ctx.createLinearGradient(0, 0, 0, h);
-	dark.addColorStop(0, "rgba(3,3,6,0.88)");
-	dark.addColorStop(0.45, "rgba(3,3,6,0.5)");
-	dark.addColorStop(1, "rgba(3,3,6,0.12)");
+	const bowl = spec.lighting.bowl;
+	dark.addColorStop(0, `rgba(3,3,6,${Math.min(1, 0.88 * bowl)})`);
+	dark.addColorStop(0.45, `rgba(3,3,6,${Math.min(1, 0.5 * bowl)})`);
+	dark.addColorStop(1, `rgba(3,3,6,${Math.min(1, 0.12 * bowl)})`);
 	ctx.fillStyle = dark;
 	ctx.fillRect(0, 0, w, h);
 	return canvas;
@@ -519,6 +706,577 @@ export const paintStands = (
 // What the boards can show: the team, a chant for the crowd, DEFENSE while
 // the road team has it (blinking: two pictures), and a shout after a big
 // play by the home side.
+// THE SEATS ON THE FLOOR: rows of padded chairs behind each baseline, past
+// the photographers - the back row up a step - and in the far corners past
+// the ends of the benches; the best seats in the building, every one taken
+// (see ArenaSpec.courtside). Each of the people in them drawn once, sat in
+// his chair, into one picture (see courtsideFor), and stood up in the world
+// where he sits each frame, the size the camera has him there (see
+// drawCourtside) - seen from anywhere, a person in a chair.
+const CS_FRONT = 8;
+const CS_ROW = 2.6;
+const CS_STEP = 1.1;
+// Along the baseline, and the aisles through them (feet across the floor).
+const CS_Y0 = -3;
+const CS_Y1 = COURT_H + 3;
+const CS_AISLES = [8.5, COURT_H - 8.5];
+// In the far corners: from past the corner of the floor to the bench.
+const CS_CORNER_Y = BENCH_Y - 0.4;
+// Behind each bench, up a step: its staff - so many of them, this far back
+// of the bench (feet), the step this high.
+const STAFF_N = 7;
+const STAFF_Y = BENCH_Y - 2;
+const STAFF_Z = 0.6;
+const CS_CORNER_W = 9.5;
+// Waving his arms, each way this long (ms); clapping, hands together and
+// apart.
+const WAVE_MS = 260;
+const CLAP_MS = 140;
+// The nearest in front of the camera one is drawn (feet).
+const NEAREST = 2.5;
+// A chair is this wide, and a seat this high off the floor (feet); and each
+// one's picture this big (feet), drawn this many px to the foot.
+const CS_CHAIR = 2.05;
+const CS_SEAT = 1.5;
+const CS_CELL_W = 2.4;
+const CS_CELL_H = 7.2;
+const CS_PX = 12;
+// (Space between the pictures, px - scaled down, none bleeds into the next.)
+const CS_GAP = 3;
+export type Courtside = {
+	// Each in his chair - and on his feet, arms up, both ways he waves them.
+	atlas: HTMLCanvasElement;
+	atlasUp: HTMLCanvasElement;
+	atlasWave: HTMLCanvasElement;
+	// Sat, his hands together at his chest - clapping.
+	atlasClap: HTMLCanvasElement;
+	cols: number;
+	// Where each sits - his feet - and which picture is his; whether he is
+	// for the home team; the end he is at (if behind a basket); and how soon
+	// he is up when the building is (0 to 1, the first up first).
+	fans: { at: Pt3; cell: number; home: boolean; end?: Side; rise: number }[];
+	// The steps the back rows are up on: each a box along the floor.
+	steps: { x0: number; x1: number; y0: number; y1: number; z: number }[];
+	// At the far end of each bench, its cooler and its towels.
+	props: { at: Pt3; kind: "cooler" | "towels" }[];
+	cooler: string;
+	towels: string;
+};
+export const courtsideFor = (
+	home: ArenaTeam | undefined,
+	away: ArenaTeam | undefined,
+	spec: ArenaSpec,
+	faces?: CrowdFace[],
+): Courtside => {
+	const cs = spec.courtside;
+	const at: Pt3[] = [];
+	const endOf: (Side | undefined)[] = [];
+	const steps: Courtside["steps"] = [];
+	for (const side of [0, 1] as const) {
+		const s = side === 0 ? -1 : 1;
+		const line = side === 0 ? 0 : COURT_W;
+		for (let r = 0; r < cs.endRows; r++) {
+			const x = line + s * (CS_FRONT + r * CS_ROW);
+			if (r > 0) {
+				const a = line + s * (CS_FRONT + (r - 0.5) * CS_ROW);
+				const b = line + s * (CS_FRONT + (r + 0.5) * CS_ROW);
+				steps.push({
+					x0: Math.min(a, b),
+					x1: Math.max(a, b),
+					y0: CS_Y0,
+					y1: CS_Y1,
+					z: r * CS_STEP,
+				});
+			}
+			for (
+				let y = CS_Y0 + CS_CHAIR / 2 + (r % 2) * 0.5;
+				y < CS_Y1;
+				y += CS_CHAIR
+			) {
+				if (CS_AISLES.some((aisle) => Math.abs(y - aisle) < 1.4)) {
+					continue;
+				}
+				at.push({ x, y, z: r * CS_STEP });
+				endOf.push(side);
+			}
+		}
+		const x0 =
+			side === 0
+				? benchStart(0) - 0.8 - CS_CORNER_W
+				: benchStart(1) + BENCH_LEN + 0.8;
+		for (let r = 0; r < cs.cornerRows; r++) {
+			const y = CS_CORNER_Y - r * CS_ROW;
+			if (r > 0) {
+				steps.push({
+					x0,
+					x1: x0 + CS_CORNER_W,
+					y0: y - CS_ROW / 2,
+					y1: y + CS_ROW / 2,
+					z: r * CS_STEP,
+				});
+			}
+			for (let x = x0 + CS_CHAIR / 2; x < x0 + CS_CORNER_W; x += CS_CHAIR) {
+				at.push({ x, y, z: r * CS_STEP });
+				endOf.push(undefined);
+			}
+		}
+	}
+	// The assistants, the trainers, the video staff, behind their bench -
+	// in the team's polo or black, a tablet in hand now and then.
+	const staffOf: (Side | undefined)[] = at.map(() => undefined);
+	for (const t of [0, 1] as const) {
+		const x0 = benchStart(t) + 1.5;
+		const x1 = benchStart(t) + BENCH_LEN - 1.5;
+		steps.push({
+			x0: benchStart(t),
+			x1: benchStart(t) + BENCH_LEN,
+			y0: STAFF_Y - 1.1,
+			y1: STAFF_Y + 1.1,
+			z: STAFF_Z,
+		});
+		for (let k = 0; k < STAFF_N; k++) {
+			at.push({
+				x: x0 + ((x1 - x0) * k) / (STAFF_N - 1),
+				y: STAFF_Y,
+				z: STAFF_Z,
+			});
+			endOf.push(undefined);
+			staffOf.push(t);
+		}
+	}
+	// Each one's picture: his chair, his legs down to his shoes, him.
+	const cols = 16;
+	const cw = Math.round(CS_CELL_W * CS_PX);
+	const ch = Math.round(CS_CELL_H * CS_PX);
+	const atlas = document.createElement("canvas");
+	atlas.width = cols * (cw + CS_GAP);
+	atlas.height = Math.ceil(at.length / cols) * (ch + CS_GAP);
+	const ctx = atlas.getContext("2d")!;
+	const atlasUp = document.createElement("canvas");
+	atlasUp.width = atlas.width;
+	atlasUp.height = atlas.height;
+	const up = atlasUp.getContext("2d")!;
+	const atlasWave = document.createElement("canvas");
+	atlasWave.width = atlas.width;
+	atlasWave.height = atlas.height;
+	const wave = atlasWave.getContext("2d")!;
+	const atlasClap = document.createElement("canvas");
+	atlasClap.width = atlas.width;
+	atlasClap.height = atlas.height;
+	const clap = atlasClap.getContext("2d")!;
+	const homes: boolean[] = [];
+	const rng = makeCourtRng(
+		`courtside|${home?.abbrev ?? home?.name ?? ""}|${away?.abbrev ?? away?.name ?? ""}`,
+	);
+	const pick = <T>(a: readonly T[]): T => a[Math.floor(rng() * a.length)]!;
+	const homeC = [teamColor(home, 0, "#8c1d40"), teamColor(home, 1, "#f2c14e")];
+	const skins = ["#f1c7a5", "#d9a77f", "#b07a52", "#8a5a3b", "#5e3b26"];
+	const px = CS_PX;
+	at.forEach((_, i) => {
+		const ox = (i % cols) * (cw + CS_GAP);
+		const oy = Math.floor(i / cols) * (ch + CS_GAP);
+		const x = ox + cw / 2;
+		const floor = oy + ch;
+		const yb = floor - CS_SEAT * px + 0.5 * px;
+		const staff = staffOf[i];
+		const crew = staff === undefined ? undefined : staff === 0 ? away : home;
+		const chair =
+			staff === undefined
+				? cs.chair
+				: shade(teamColor(crew, 0, "#2d3a55"), -0.3);
+		const team = staff === undefined ? rng() < cs.homeShare : staff === 1;
+		const jersey = staff === undefined && team && rng() < cs.jerseyShare;
+		const color =
+			staff !== undefined
+				? rng() < 0.65
+					? teamColor(crew, 0, "#2d3a55")
+					: "#16171b"
+				: team
+					? pick(homeC)
+					: pick(COURTSIDE_DRESS);
+		const face = faces && faces.length > 0 ? pick(faces) : undefined;
+		const skin = face?.skin ?? pick(skins);
+		const pants = pick(PANTS);
+		const shoes = rng() < 0.5 ? "#f2f2f2" : "#1a1a1d";
+		const bodyW = (1.3 + rng() * 0.3) * px;
+		const number = jersey ? Math.floor(rng() * 40) : undefined;
+		const hold = rng();
+		const holding =
+			hold < (staff === undefined ? 0.16 : 0.3)
+				? ("phone" as const)
+				: hold < 0.28 && staff === undefined
+					? ("drink" as const)
+					: undefined;
+		homes.push(team);
+		// Sat in his chair - and clapping (see drawCourtside).
+		const seated = (g: CanvasRenderingContext2D, f: Fan) => {
+			g.fillStyle = chair;
+			g.beginPath();
+			g.roundRect(x - 0.85 * px, yb - 2.25 * px, 1.7 * px, 1.9 * px, 0.3 * px);
+			g.fill();
+			g.fillStyle = shade(cs.chair, -0.4);
+			g.fillRect(
+				x - 0.75 * px,
+				yb - 0.4 * px,
+				0.12 * px,
+				floor - yb + 0.4 * px,
+			);
+			g.fillRect(
+				x + 0.63 * px,
+				yb - 0.4 * px,
+				0.12 * px,
+				floor - yb + 0.4 * px,
+			);
+			for (const side of [-1, 1]) {
+				g.fillStyle = pants;
+				g.fillRect(
+					x + side * 0.08 * px - (side < 0 ? 0.42 * px : 0),
+					yb - 0.5 * px,
+					0.42 * px,
+					floor - yb + 0.3 * px,
+				);
+				g.fillStyle = shoes;
+				g.beginPath();
+				g.ellipse(
+					x + side * 0.3 * px,
+					floor - 0.14 * px,
+					0.28 * px,
+					0.14 * px,
+					0,
+					0,
+					Math.PI * 2,
+				);
+				g.fill();
+			}
+			drawFan(g, f, px);
+		};
+		const fan: Fan = {
+			x,
+			yb,
+			bodyW,
+			color,
+			skin,
+			...(face ? { face } : {}),
+			pants,
+			...(number === undefined ? {} : { number }),
+			...(holding ? { holding } : {}),
+		};
+		seated(ctx, fan);
+		seated(clap, { ...fan, holding: "clap" });
+		// On his feet: in front of his chair, legs straight, arms up - a
+		// towel going, some of the home fans - and waving them, the other
+		// way.
+		const arms = rng() < 0.5 ? 1 : 2;
+		const reach = 1.2 + rng() * 0.4;
+		const towel = team && rng() < 0.3;
+		for (const [g, a] of [
+			[up, arms],
+			[wave, 3 - arms],
+		] as const) {
+			g.fillStyle = chair;
+			g.beginPath();
+			g.roundRect(x - 0.85 * px, yb - 2.25 * px, 1.7 * px, 1.9 * px, 0.3 * px);
+			g.fill();
+			const hips = floor - 3.05 * px;
+			for (const side of [-1, 1]) {
+				g.fillStyle = pants;
+				g.fillRect(
+					x + side * 0.06 * px - (side < 0 ? 0.4 * px : 0),
+					hips - 0.1 * px,
+					0.4 * px,
+					floor - hips,
+				);
+				g.fillStyle = shoes;
+				g.beginPath();
+				g.ellipse(
+					x + side * 0.26 * px,
+					floor - 0.14 * px,
+					0.28 * px,
+					0.14 * px,
+					0,
+					0,
+					Math.PI * 2,
+				);
+				g.fill();
+			}
+			drawFan(
+				g,
+				{
+					...fan,
+					holding: undefined,
+					yb: floor - 2 * px,
+					arms: {
+						up: a as 1 | 2,
+						reach,
+						...(towel ? { towel: "#f4f4f2" } : {}),
+					},
+				},
+				px,
+			);
+		}
+	});
+	const props: Courtside["props"] = [];
+	for (const t of [0, 1] as const) {
+		// (Its end away from the table.)
+		const x = t === 0 ? benchStart(0) - 0.9 : benchStart(1) + BENCH_LEN + 0.9;
+		props.push(
+			{ at: { x, y: BENCH_Y + 0.4, z: 0 }, kind: "cooler" },
+			{
+				at: { x: x + (t === 0 ? 1.6 : -1.6), y: BENCH_Y + 0.9, z: 0 },
+				kind: "towels",
+			},
+		);
+	}
+	return {
+		atlas,
+		atlasUp,
+		atlasWave,
+		atlasClap,
+		cols,
+		fans: at.map((p, cell) => ({
+			at: p,
+			cell,
+			home: homes[cell]!,
+			...(endOf[cell] === undefined ? {} : { end: endOf[cell] }),
+			rise: rng(),
+		})),
+		steps,
+		props,
+		cooler: spec.bench.cooler,
+		towels: spec.bench.towels,
+	};
+};
+// A cooler on its stand (feet): a drum this wide and tall, its white lid,
+// a stack of cups on top; towels, a pile this wide and high.
+const COOLER_W = 1.25;
+const COOLER_H = 1.55;
+const STAND_H = 1.0;
+const TOWELS_W = 1.6;
+const TOWELS_H = 0.6;
+const drawProp = (
+	ctx: CanvasRenderingContext2D,
+	cam: Camera,
+	c: Courtside,
+	p: Courtside["props"][number],
+) => {
+	const q = project(cam, p.at);
+	const k = q.k;
+	if (
+		q.x < -4 * k ||
+		q.x > cam.viewW + 4 * k ||
+		q.y < 0 ||
+		q.y > cam.viewH + 6 * k
+	) {
+		return;
+	}
+	if (p.kind === "towels") {
+		ctx.fillStyle = shade(c.towels, -0.12);
+		ctx.beginPath();
+		ctx.roundRect(
+			q.x - (TOWELS_W / 2) * k,
+			q.y - TOWELS_H * k,
+			TOWELS_W * k,
+			TOWELS_H * k,
+			0.12 * k,
+		);
+		ctx.fill();
+		ctx.fillStyle = c.towels;
+		for (let i = 0; i < 3; i++) {
+			ctx.fillRect(
+				q.x - (TOWELS_W / 2 - 0.05) * k,
+				q.y - (TOWELS_H - 0.04 - i * 0.19) * k,
+				(TOWELS_W - 0.1) * k,
+				0.12 * k,
+			);
+		}
+		return;
+	}
+	// The stand: a dark frame.
+	ctx.fillStyle = "#1c1d22";
+	ctx.fillRect(q.x - 0.55 * k, q.y - STAND_H * k, 1.1 * k, STAND_H * k);
+	const top = q.y - (STAND_H + COOLER_H) * k;
+	const g = ctx.createLinearGradient(
+		q.x - (COOLER_W / 2) * k,
+		0,
+		q.x + (COOLER_W / 2) * k,
+		0,
+	);
+	g.addColorStop(0, shade(c.cooler, -0.25));
+	g.addColorStop(0.45, shade(c.cooler, 0.12));
+	g.addColorStop(1, shade(c.cooler, -0.3));
+	ctx.fillStyle = g;
+	ctx.beginPath();
+	ctx.roundRect(
+		q.x - (COOLER_W / 2) * k,
+		top,
+		COOLER_W * k,
+		COOLER_H * k,
+		0.12 * k,
+	);
+	ctx.fill();
+	// Its lid, its tap, the cups on top.
+	ctx.fillStyle = "#f2f2f0";
+	ctx.fillRect(
+		q.x - (COOLER_W / 2 + 0.03) * k,
+		top - 0.12 * k,
+		(COOLER_W + 0.06) * k,
+		0.2 * k,
+	);
+	ctx.fillStyle = "#e9e9e6";
+	ctx.fillRect(q.x - 0.13 * k, top - 0.7 * k, 0.26 * k, 0.58 * k);
+	ctx.fillStyle = "#1c1d22";
+	ctx.fillRect(q.x - 0.06 * k, top + (COOLER_H - 0.38) * k, 0.12 * k, 0.16 * k);
+};
+// Each frame: the steps, then the people - the furthest first.
+// (`up`: how far up the building is - this end of it, or the side - 0 to
+// 1: the home fans up first, most of them by the time it is all the way;
+// the rest, some.)
+export const drawCourtside = (
+	ctx: CanvasRenderingContext2D,
+	cam: Camera,
+	c: Courtside,
+	up: (end: Side | undefined) => number = () => 0,
+	// Waving them, the time (ms) to wave them by.
+	wave: (end: Side | undefined) => boolean = () => false,
+	now = 0,
+	// Sat clapping: the home fans, or the visitors' (a basket by their team).
+	clapping: (home: boolean) => boolean = () => false,
+) => {
+	const cw = Math.round(CS_CELL_W * CS_PX);
+	const ch = Math.round(CS_CELL_H * CS_PX);
+	// (The people and the things at the benches, the furthest first.)
+	const placed: {
+		d: number;
+		x: number;
+		y: number;
+		k: number;
+		cell: number;
+		stood?: boolean;
+		waving?: boolean;
+		clapped?: boolean;
+		prop?: Courtside["props"][number];
+	}[] = [];
+	// (Not one at the camera, or behind it - a replay's from among them.)
+	for (const f of c.fans) {
+		if (depthOf(cam, f.at) < NEAREST) {
+			continue;
+		}
+		const p = project(cam, f.at);
+		const w = CS_CELL_W * p.k;
+		const h = CS_CELL_H * p.k;
+		if (p.x + w < 0 || p.x - w > cam.viewW || p.y < 0 || p.y - h > cam.viewH) {
+			continue;
+		}
+		placed.push({
+			d: p.depth,
+			x: p.x,
+			y: p.y,
+			k: p.k,
+			cell: f.cell,
+			stood: f.rise < up(f.end) * (f.home ? 0.95 : 0.4),
+			waving: wave(f.end) && Math.floor(now / WAVE_MS + f.rise * 7) % 2 === 1,
+			clapped:
+				clapping(f.home) && Math.floor(now / CLAP_MS + f.rise * 5) % 2 === 1,
+		});
+	}
+	for (const p of c.props) {
+		if (depthOf(cam, p.at) < NEAREST) {
+			continue;
+		}
+		const q = project(cam, p.at);
+		placed.push({ d: q.depth, x: q.x, y: q.y, k: q.k, cell: -1, prop: p });
+	}
+	placed.sort((a, b) => b.d - a.d);
+	// (Each step a box: its top and its sides, dark.)
+	ctx.fillStyle = "#121317";
+	for (const s of c.steps) {
+		if (
+			[s.x0, s.x1].some((x) =>
+				[s.y0, s.y1].some((y) => depthOf(cam, { x, y, z: 0 }) < NEAREST),
+			)
+		) {
+			continue;
+		}
+		const corner = (x: number, y: number, z: number) =>
+			project(cam, { x, y, z });
+		const faces: [number, number][][] = [
+			[
+				[s.x0, s.y0],
+				[s.x1, s.y0],
+				[s.x1, s.y1],
+				[s.x0, s.y1],
+			],
+		];
+		for (const [a, b] of [
+			[faces[0]![0]!, faces[0]![1]!],
+			[faces[0]![1]!, faces[0]![2]!],
+			[faces[0]![2]!, faces[0]![3]!],
+			[faces[0]![3]!, faces[0]![0]!],
+		] as const) {
+			const q = [
+				corner(a[0], a[1], 0),
+				corner(b[0], b[1], 0),
+				corner(b[0], b[1], s.z),
+				corner(a[0], a[1], s.z),
+			];
+			ctx.beginPath();
+			q.forEach((v, i) => (i ? ctx.lineTo(v.x, v.y) : ctx.moveTo(v.x, v.y)));
+			ctx.fill();
+		}
+		ctx.beginPath();
+		faces[0]!.forEach(([x, y], i) => {
+			const v = corner(x, y, s.z);
+			if (i) {
+				ctx.lineTo(v.x, v.y);
+			} else {
+				ctx.moveTo(v.x, v.y);
+			}
+		});
+		ctx.fill();
+	}
+	const smoothing = ctx.imageSmoothingEnabled;
+	ctx.imageSmoothingEnabled = true;
+	for (const q of placed) {
+		if (q.prop) {
+			drawProp(ctx, cam, c, q.prop);
+			continue;
+		}
+		const w = CS_CELL_W * q.k;
+		const h = CS_CELL_H * q.k;
+		ctx.drawImage(
+			q.stood
+				? q.waving
+					? c.atlasWave
+					: c.atlasUp
+				: q.clapped
+					? c.atlasClap
+					: c.atlas,
+			(q.cell % c.cols) * (cw + CS_GAP),
+			Math.floor(q.cell / c.cols) * (ch + CS_GAP),
+			cw,
+			ch,
+			q.x - w / 2,
+			q.y - h,
+			w,
+			h,
+		);
+	}
+	ctx.imageSmoothingEnabled = smoothing;
+};
+// Courtside, dressed for a night out.
+const COURTSIDE_DRESS = [
+	"#16171b",
+	"#1c1f26",
+	"#2b2f38",
+	"#3b3f46",
+	"#f2f2f0",
+	"#e4e1da",
+	"#24365c",
+	"#5a4636",
+	"#6b1f2a",
+	"#c9b79c",
+];
+
 export const BOARD_SCREENS = [
 	"name",
 	"letsGo",
@@ -1237,18 +1995,30 @@ export const paintBench = (team: ArenaTeam | undefined): HTMLCanvasElement => {
 	const ctx = canvas.getContext("2d")!;
 	const px = p.w / BENCH_LEN;
 	const c = teamColor(team, 0, "#333a44");
+	const trim = teamColor(team, 1, "#d9d9d9");
+	const seat = BENCH_SEAT_Z * px;
 	for (let i = 0; i < BENCH_SEATS; i++) {
-		const x = (0.4 + i * SEAT_GAP) * px;
-		// Legs, seat, back.
+		const x = (0.15 + i * SEAT_GAP) * px;
+		const w = 1.8 * px;
+		// Legs, the seat's padded front, the high back - a stripe of the
+		// team's other color across its top.
 		ctx.fillStyle = "#111";
-		ctx.fillRect(x + 0.1 * px, p.h - 1.5 * px, 0.12 * px, 1.5 * px);
-		ctx.fillRect(x + 1.3 * px, p.h - 1.5 * px, 0.12 * px, 1.5 * px);
+		ctx.fillRect(x + 0.15 * px, p.h - seat, 0.12 * px, seat);
+		ctx.fillRect(x + w - 0.27 * px, p.h - seat, 0.12 * px, seat);
 		ctx.fillStyle = shade(c, -0.25);
-		ctx.fillRect(x, p.h - 1.75 * px, 1.55 * px, 0.35 * px);
-		ctx.fillStyle = c;
 		ctx.beginPath();
-		ctx.roundRect(x, 0, 1.55 * px, 1.6 * px, 0.25 * px);
+		ctx.roundRect(x, p.h - seat - 0.3 * px, w, 0.38 * px, 0.12 * px);
 		ctx.fill();
+		const g = ctx.createLinearGradient(x, 0, x + w, 0);
+		g.addColorStop(0, shade(c, -0.18));
+		g.addColorStop(0.5, shade(c, 0.08));
+		g.addColorStop(1, shade(c, -0.18));
+		ctx.fillStyle = g;
+		ctx.beginPath();
+		ctx.roundRect(x, 0, w, p.h - seat - 0.2 * px, 0.35 * px);
+		ctx.fill();
+		ctx.fillStyle = trim;
+		ctx.fillRect(x + 0.25 * px, 0.35 * px, w - 0.5 * px, 0.16 * px);
 	}
 	return canvas;
 };
@@ -1416,6 +2186,40 @@ const drawShotClock = (
 	}
 };
 
+// The lit panel on the faces of a basket's base: the home team's name in
+// white on its color, a glow along the edges - painted once.
+export const paintStanchionPanel = (
+	home: ArenaTeam | undefined,
+	padColor: string,
+	spec: ArenaSpec = arenaSpecFor(home),
+): HTMLCanvasElement => {
+	const canvas = document.createElement("canvas");
+	canvas.width = 160;
+	canvas.height = 52;
+	const ctx = canvas.getContext("2d")!;
+	const g = ctx.createLinearGradient(0, 0, 0, canvas.height);
+	g.addColorStop(0, shade(padColor, 0.18));
+	g.addColorStop(0.5, padColor);
+	g.addColorStop(1, shade(padColor, -0.2));
+	ctx.fillStyle = g;
+	ctx.fillRect(0, 0, canvas.width, canvas.height);
+	ctx.fillStyle = "rgba(255,255,255,0.35)";
+	ctx.fillRect(0, 0, canvas.width, 2);
+	ctx.fillRect(0, canvas.height - 2, canvas.width, 2);
+	const name = spec.stanchion.panel;
+	ctx.fillStyle = inkOn(padColor);
+	ctx.textAlign = "center";
+	ctx.textBaseline = "middle";
+	let size = 34;
+	ctx.font = `900 ${size}px sans-serif`;
+	while (size > 12 && ctx.measureText(name).width > canvas.width - 16) {
+		size -= 2;
+		ctx.font = `900 ${size}px sans-serif`;
+	}
+	ctx.fillText(name, canvas.width / 2, canvas.height / 2 + 1);
+	return canvas;
+};
+
 export type HoopFx = {
 	// 0..1, fading: the net snapping up after a make, the iron ringing after a
 	// miss, the rim bent by a dunk.
@@ -1440,6 +2244,8 @@ export const drawHoop = (
 	shotClock: string,
 	fx: HoopFx,
 	between?: () => void,
+	// The lit panel on the faces of its base (see paintStanchionPanel).
+	panel?: HTMLCanvasElement,
 ) => {
 	const sgn = side === 0 ? 1 : -1;
 	const base = side === 0 ? 0 : COURT_W;
@@ -1492,7 +2298,8 @@ export const drawHoop = (
 				ctx.fillStyle = fill;
 				ctx.fill();
 			}
-			// The boards on its faces: the team's color, a bright band across.
+			// The boards on its faces: the team's color, a bright band across
+			// - or the team's name, lit, read left to right from the floor.
 			const lit = (face: (u: number, v: number) => Pt3) => {
 				const quad = (v0: number, v1: number, fill: string) => {
 					ctx.fillStyle = fill;
@@ -1500,16 +2307,49 @@ export const drawHoop = (
 					ctx.fill();
 				};
 				quad(0.15, 0.85, padColor);
-				quad(0.44, 0.56, shade(padColor, 0.45));
+				if (!panel) {
+					quad(0.44, 0.56, shade(padColor, 0.45));
+					return;
+				}
+				const o = face(0, 0.85);
+				const a = face(1, 0.85);
+				const b = face(0, 0.15);
+				drawTexturedPlane(
+					ctx,
+					cam,
+					{
+						origin: o,
+						alongX: {
+							x: (a.x - o.x) / panel.width,
+							y: (a.y - o.y) / panel.width,
+							z: (a.z - o.z) / panel.width,
+						},
+						alongY: {
+							x: (b.x - o.x) / panel.height,
+							y: (b.y - o.y) / panel.height,
+							z: (b.z - o.z) / panel.height,
+						},
+						w: panel.width,
+						h: panel.height,
+					},
+					panel,
+					4,
+					1,
+				);
 			};
 			const lo = 0.5;
 			const hi = z1 - 0.45;
-			lit((u, v) =>
-				pts(b1, y0 + 0.35 + u * (y1 - y0 - 0.7), lo + v * (hi - lo)),
-			);
-			lit((u, v) =>
-				pts(b0 + (b1 - b0) * (0.06 + u * 0.88), y1, lo + v * (hi - lo)),
-			);
+			// (Left to right as seen from the floor: along the baseline the far
+			// way round at the left basket; across the end toward the court at
+			// the left basket, away from it at the right.)
+			lit((u, v) => {
+				const w = side === 0 ? 1 - u : u;
+				return pts(b1, y0 + 0.35 + w * (y1 - y0 - 0.7), lo + v * (hi - lo));
+			});
+			lit((u, v) => {
+				const w = side === 0 ? u : 1 - u;
+				return pts(b0 + (b1 - b0) * (0.06 + w * 0.88), y1, lo + v * (hi - lo));
+			});
 		};
 		box(22.4, 27.6, 3.4);
 		inkLine(

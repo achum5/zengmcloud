@@ -20,6 +20,8 @@ import { TeamLogoInline } from "../../../components/TeamLogoInline.tsx";
 import {
 	paintBench,
 	paintBoards,
+	courtsideFor,
+	paintStanchionPanel,
 	paintRafters,
 	paintStands,
 	paintTable,
@@ -56,8 +58,9 @@ import {
 	type Stakes,
 } from "./director.ts";
 import { crewAt, crewFor } from "./crew.ts";
-import { courtsideFor } from "./courtside.ts";
 import { headColors, loadHead, profileOf, type HeadSprite } from "./faces.ts";
+import { arenaSpecFor } from "./arenaSpec.ts";
+import { crowdFaces, type CrowdFace } from "./crowdFaces.ts";
 import { gearFor, kitsFor, shade, type Look } from "./figure.ts";
 import { dressKit, kitArtOf, loadKitPicture, type KitArt } from "./kitArt.ts";
 import { logoPicture } from "./logoPicture.ts";
@@ -557,6 +560,21 @@ const Court3D = ({
 	}, [awayLogo, homeLogo]);
 
 	// The building, painted once a game.
+	// Faces for the crowd, made in the background (see crowdFaces): the stands
+	// painted again once they are ready, the same fans with faces now.
+	const [fans, setFans] = useState<CrowdFace[]>();
+	useEffect(() => {
+		let alive = true;
+		void crowdFaces().then((f) => {
+			if (alive && f.length > 0) {
+				setFans(f);
+			}
+		});
+		return () => {
+			alive = false;
+		};
+	}, []);
+
 	const paint = useMemo(() => {
 		const a = {
 			abbrev: away?.abbrev,
@@ -585,14 +603,17 @@ const Court3D = ({
 			capacity: 1,
 		};
 		const seed = String(gid ?? 0);
+		const spec = arenaSpecFor(h);
 		return {
-			stands: paintStands(h, a, seed, 0, crowd),
-			standsUp: paintStands(h, a, seed, 1, crowd),
-			standsWave: paintStands(h, a, seed, 2, crowd),
-			standsSparse: paintStands(h, a, seed, 0, sparse),
-			endStandsSparse: paintStands(h, a, seed, 0, sparse, 0),
+			courtside: courtsideFor(h, a, spec, fans),
+			stanchion: paintStanchionPanel(h, h?.colors?.[0] ?? "#8c1d40"),
+			stands: paintStands(h, a, seed, 0, crowd, undefined, fans),
+			standsUp: paintStands(h, a, seed, 1, crowd, undefined, fans),
+			standsWave: paintStands(h, a, seed, 2, crowd, undefined, fans),
+			standsSparse: paintStands(h, a, seed, 0, sparse, undefined, fans),
+			endStandsSparse: paintStands(h, a, seed, 0, sparse, 0, fans),
 			endStands: [0, 1, 2].map((up) =>
-				paintStands(h, a, seed, up as 0 | 1 | 2, crowd, 0),
+				paintStands(h, a, seed, up as 0 | 1 | 2, crowd, 0, fans),
 			) as [HTMLCanvasElement, HTMLCanvasElement, HTMLCanvasElement],
 			boards: paintBoards(h, a),
 			tableTop: table.top,
@@ -601,7 +622,7 @@ const Court3D = ({
 			bench1: paintBench(h),
 		};
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [gid]);
+	}, [gid, fans]);
 
 	// A finals game on a floor picture keeps its own center court (see
 	// LiveCourt): the trophy goes on the front of the scorer's table instead,
@@ -870,14 +891,8 @@ const Court3D = ({
 		return out;
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [crew, crewVersion]);
-	// The people in the courtside seats.
-	const courtside = useMemo(
-		() => courtsideFor(gid ?? 0, away, home),
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-		[gid],
-	);
-	const crewRef = useRef({ crew, crewLooks, courtside });
-	crewRef.current = { crew, crewLooks, courtside };
+	const crewRef = useRef({ crew, crewLooks });
+	crewRef.current = { crew, crewLooks };
 
 	// Read by the animation loop, which outlives any one render.
 	const looks = useRef(appearance.looks);
@@ -1551,6 +1566,8 @@ const Court3D = ({
 					standsSparse: pt.standsSparse,
 					endStandsSparse: pt.endStandsSparse,
 					endStands: pt.endStands,
+					courtside: pt.courtside,
+					stanchion: pt.stanchion,
 					boards: pt.boards,
 					rafters: pt.rafters,
 					tableTop: pt.tableTop,
@@ -1569,7 +1586,6 @@ const Court3D = ({
 					return c ? [{ st, body: c.body, look: c.look }] : [];
 				}),
 				flashes: working.flashes,
-				courtside: cr.courtside,
 				teamColors: p.teamColors,
 				black: o >= 0.999 || flash >= 0.999 || s.wipe.hold === now,
 			});

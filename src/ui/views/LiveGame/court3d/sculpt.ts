@@ -86,6 +86,7 @@ const NECK = 8;
 const BALL = 9;
 const CAM_BODY = 10;
 const CAM_LENS = 11;
+const TOWEL = 12;
 
 // What melts into what: masses in one group melt together everywhere, two
 // groups only where a joint joins them.
@@ -1221,6 +1222,30 @@ const build = (
 		);
 	}
 
+	if (look.outfit?.towel) {
+		// His towel: spread under his hands as he wipes with it, down low;
+		// or hung from his right hand.
+		const r = sk.armR.end;
+		const l = sk.armL.end;
+		const low = Math.min(r.u, l.u) < 1.7;
+		if (low) {
+			const mid = v3(
+				(r.f + l.f) / 2 + 0.1,
+				(r.s + l.s) / 2,
+				Math.max(0.08, Math.min(r.u, l.u) - 0.12),
+			);
+			add(
+				addV(mid, v3(0, 1, 0), -0.38),
+				addV(mid, v3(0, 1, 0), 0.38),
+				[[0, 0.2]],
+				TOWEL,
+				G_CAMERA,
+			);
+		} else {
+			add(r, addV(r, v3(0, 0, 1), -0.75), [[0, 0.13]], TOWEL, G_CAMERA);
+		}
+	}
+
 	if (look.outfit?.mic) {
 		// His microphone, up in his right hand toward his mouth: the handle,
 		// and the grille on top of it.
@@ -1363,6 +1388,7 @@ type Palette = {
 	shirt?: RGB;
 	tie?: RGB;
 	stripes?: RGB;
+	sides?: RGB;
 	lapel?: RGB;
 };
 
@@ -1411,13 +1437,19 @@ const paletteOf = (look: Look): Palette => {
 		),
 		upper: both((w) =>
 			outfit?.sleeves
-				? jersey
+				? outfit.sleeveColor
+					? rgb(outfit.sleeveColor)
+					: jersey
 				: gear?.sleeve?.arms.includes(w) && !gear.sleeve.elbow
 					? sleeve(w)!
 					: skin,
 		),
 		fore: both((w) =>
-			outfit?.sleeves === "long" ? jersey : (sleeve(w) ?? skin),
+			outfit?.sleeves === "long"
+				? outfit.sleeveColor
+					? rgb(outfit.sleeveColor)
+					: jersey
+				: (sleeve(w) ?? skin),
 		),
 		wrist: both((w) =>
 			gear?.wrist?.arms.includes(w) ? rgb(gear.wrist.color) : undefined,
@@ -1430,6 +1462,7 @@ const paletteOf = (look: Look): Palette => {
 			: {}),
 		...(outfit?.tie ? { tie: rgb(outfit.tie) } : {}),
 		...(outfit?.stripes ? { stripes: rgb(outfit.stripes) } : {}),
+		...(outfit?.sides ? { sides: rgb(outfit.sides) } : {}),
 	};
 	palettes.set(look, p);
 	return p;
@@ -1451,6 +1484,7 @@ const heldSurface = (radius: number): BallSurface => {
 const heldPx = new Float64Array(3);
 const CAM_BODY_RGB = rgb(CAMERA_BODY);
 const CAM_LENS_RGB = rgb(CAMERA_LENS);
+const TOWEL_RGB: RGB = [238, 238, 232];
 
 // The light, from up and to the left and toward the camera (on the sprite:
 // right, down, out of the picture).
@@ -1641,6 +1675,10 @@ export const sculpt = (
 					const th = Math.atan2(S / (cut.side * 0.8), F / (cut.side * 0.4));
 					if (Math.floor((th * cut.side * 0.8) / 0.17 + 100) % 2 === 0) {
 						c = pal.stripes;
+					}
+					// (A panel down each side, under the arm.)
+					if (pal.sides && Math.abs(Math.abs(th) - Math.PI / 2) < 0.32) {
+						c = pal.sides;
 					}
 				}
 				if (pal.shirt && front) {
@@ -2133,8 +2171,14 @@ export const sculpt = (
 						break;
 					}
 					case CAM_BODY:
-					case CAM_LENS: {
-						const c = fc.kind === CAM_BODY ? CAM_BODY_RGB : CAM_LENS_RGB;
+					case CAM_LENS:
+					case TOWEL: {
+						const c =
+							fc.kind === CAM_BODY
+								? CAM_BODY_RGB
+								: fc.kind === TOWEL
+									? TOWEL_RGB
+									: CAM_LENS_RGB;
 						cr = c[0];
 						cg = c[1];
 						cb = c[2];

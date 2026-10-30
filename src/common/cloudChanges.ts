@@ -6,6 +6,11 @@ export type CloudChange = { n: number; date: string; text: string };
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 38,
+		date: "2026-10-30",
+		text: "3D game: the building looks a lot more like an NBA arena. Every fan has a real face and a body with arms and hands, the stick-figure people along the court are gone, and the courtside seats behind the baskets and in the corners are full of real-looking fans in padded chairs - on their phones, holding drinks, clapping when their team scores and up waving when the place erupts. The officials wear the NBA's gray, the benches have high-backed chairs with the staff in a row behind them, a cooler and towels, the stanchions show the home team's name, and there's a sideline reporter, security, TV cameras in the corners, and moppers who wipe the floor during breaks. After the game there's no more handshake line: players find a few of the other team around midcourt for daps and hugs before heading off, the head coaches meet at the scorer's table, and the officials leave the floor.",
+	},
+	{
 		n: 37,
 		date: "2026-10-30",
 		text: "3D game: a shot blocked by a man trailing the play is now a chase-down - he runs the shooter down and gets a hand on it from behind, instead of turning up in front of him out of nowhere. A travel now shows the player carrying the ball a stride or two too many before the whistle, and the arena has tunnels into the lower bowl. Fixed: a defender's arms reaching into the man he's guarding, a missed layup passing through the net, a defender sliding out of bounds along the baseline, a second crossover snapping the ball up off the floor, and a player's body snapping forward as he takes off.",

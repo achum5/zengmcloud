@@ -16,9 +16,11 @@ import {
 	END_STANDS,
 	FLOOR_EDGE,
 	END_WALL,
+	drawCourtside,
 	TABLE_FRONT,
 	TABLE_TOP,
 	type BoardScreen,
+	type Courtside,
 	type HoopFx,
 } from "./arena.ts";
 import {
@@ -37,7 +39,6 @@ import { drawCourtLines } from "./courtLines.ts";
 import { callAt, rowSpot } from "./intro.ts";
 import { drawLights } from "./lights.ts";
 import { atTable, TABLE_SEAT_Y } from "./crew.ts";
-import { drawFolk, type Folk } from "./courtside.ts";
 import {
 	STRIP_MS,
 	type Beat,
@@ -268,6 +269,11 @@ export type ArenaPaint = {
 	endStandsSparse?: HTMLCanvasElement;
 	// Behind each basket (the same pictures at both ends).
 	endStands?: [HTMLCanvasElement, HTMLCanvasElement, HTMLCanvasElement];
+	// The seats on the floor behind each basket and in the far corners (see
+	// paintCourtside).
+	courtside?: Courtside;
+	// The lit panel on the faces of the baskets' bases.
+	stanchion?: HTMLCanvasElement;
 	// Every screen the LED boards can show (see boardAt).
 	boards: Record<"wall" | "ribbon", Record<BoardScreen, HTMLCanvasElement>> &
 		Partial<
@@ -332,8 +338,6 @@ export type Frame = {
 	// The officials, the coaches and the photographers (see crew.ts), and
 	// any of their cameras going off.
 	crew?: { st: PlayerState; body: Body; look: Look }[];
-	// The people in the courtside seats (see courtside.ts).
-	courtside?: Folk[];
 	flashes?: Pt3[];
 	// Each side's colors [road, home] (main, trim), for the lights swept over
 	// the floor at the starting lineups.
@@ -1148,40 +1152,30 @@ export const drawFrame = (f: Frame) => {
 	const wall = shineOf(LED_WALL, arena.boards.wall[screen]);
 	drawTexturedPlane(ctx, cam, wall.plane, wall.img, 24, 1, BOARD_SHINE);
 	ctx.globalCompositeOperation = "source-over";
+	// The seats on the floor behind the baskets and in the far corners,
+	// stood on it in front of the boards.
+	if (arena.courtside) {
+		const standOf = (end: Side | undefined) => {
+			const own = end === undefined ? undefined : f.crowd.ends?.[end];
+			return own && own.up > f.crowd.up ? own : f.crowd;
+		};
+		drawCourtside(
+			ctx,
+			cam,
+			arena.courtside,
+			(end) => standOf(end).up,
+			(end) => standOf(end).wave,
+			f.now ?? t,
+			(home) => {
+				// (For a couple of seconds after a basket by their team.)
+				const c = recentFx(tl, t, ["cheer"], 2200);
+				return c?.team !== undefined && (c.team === 1) === home;
+			},
+		);
+	}
 	// The scorer's table, the people behind it hidden from the waist down,
 	// their monitors on it.
 	const crewAll = f.crew ?? [];
-	const folk = f.courtside ?? [];
-	// On their feet for a big play by their team, and some of them through
-	// a tight finish.
-	const roarNow = recentFx(tl, t, ["roar"], 2200);
-	const hornNow = finalHorn(tl, t);
-	const tenseNow = !hornNow && tensionAt(tl, t) >= 1;
-	// (Behind the basket a visitor shoots free throws at, the home fans up
-	// and waving their arms at him - see crowdAt.)
-	const endOf = (p: Folk) =>
-		p.facing === "north" ? undefined : f.crowd.ends?.[p.x < 0 ? 0 : 1];
-	const waving = (p: Folk): boolean =>
-		p.team === 1 &&
-		!p.media &&
-		(endOf(p)?.up ?? 0) >= 0.5 &&
-		unitHash(p.x * 11, p.y * 5) < 0.85;
-	const swayOf = (p: Folk): number =>
-		waving(p) ? Math.sin((f.now ?? t) / 95 + unitHash(p.y * 3, p.x) * 6.3) : 0;
-	const upOf = (p: Folk): number =>
-		waving(p) ||
-		(roarNow?.team === p.team && unitHash(p.x * 7, p.y * 13) < 0.8) ||
-		(hornNow?.winner === p.team && unitHash(p.x * 7, p.y * 13) < 0.85) ||
-		(tenseNow && unitHash(p.y * 5, p.x * 3) < 0.35)
-			? 1
-			: 0;
-	// The courtside row along the far side, and the people at the table,
-	// behind it and the benches - so drawn before them.
-	for (const p of folk) {
-		if (p.facing === "north") {
-			drawFolk(ctx, cam, p, upOf(p), f.padColor);
-		}
-	}
 	for (const c of crewAll) {
 		if (atTable(c.st.pid)) {
 			drawSprite(ctx, f.scratch, cam, c.st, c.body, c.look, 1, f.sprites);
@@ -1250,18 +1244,6 @@ export const drawFrame = (f: Frame) => {
 			},
 		});
 	}
-	// The courtside seats behind the baselines, among the photographers
-	// and in front of or behind the stanchion.
-	for (const p of folk) {
-		if (p.facing !== "north") {
-			items.push({
-				depth: depthOf(cam, { x: p.x, y: p.y, z: 3 }),
-				draw: () => {
-					drawFolk(ctx, cam, p, upOf(p), f.padColor, swayOf(p));
-				},
-			});
-		}
-	}
 	for (const c of crew) {
 		items.push({
 			depth: depthOf(cam, { x: c.st.x, y: c.st.y, z: 3 }),
@@ -1319,6 +1301,7 @@ export const drawFrame = (f: Frame) => {
 								});
 							}
 						: undefined,
+					f.arena.stanchion,
 				);
 			},
 		});

@@ -61,7 +61,8 @@ describe("3D camera", () => {
 	// At the final buzzer the ball is thrown up and left lying under a
 	// basket; the players go to center court to shake hands. The camera goes
 	// with them - not parked on the ball, the handshakes at the edge of the
-	// picture.
+	// picture. (Till the last look round the building, which is from its own
+	// camera, the players walking off.)
 	test("after the final buzzer, the players - not the ball left lying", () => {
 		const body = bodyOf();
 		const [w, h] = [1280, 720];
@@ -69,7 +70,8 @@ describe("3D camera", () => {
 		for (const seed of ["a", "b"]) {
 			const { tl, players } = game(seed);
 			const over = tl.beats.find((b) => b.type === "gameOver")!;
-			for (let t = over.actionStart + 4000; t < tl.end; t += 1000) {
+			const last = tl.shots.at(-1)!.t0;
+			for (let t = over.actionStart + 4000; t < last; t += 1000) {
 				const m = momentAt(tl, t, players, () => body);
 				const aim = aimFor(m, false, tl, fit);
 				const cam = makeCamera(aim, w, h, MAIN_RIG);

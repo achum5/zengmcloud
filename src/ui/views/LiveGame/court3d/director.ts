@@ -98,6 +98,9 @@ import {
 	standingReach,
 	type AnimName,
 	type DribbleMove,
+	HUG_APART,
+	HUG_MS,
+	HUG_SIDE,
 	type Hand,
 	type V3,
 } from "./poses.ts";
@@ -937,6 +940,32 @@ const LOW_FIVE_APART = (() => {
 	const sk = skeleton(bodyOf(), poseAt("lowFive", 0.5));
 	return 2 * sk.armR.end.f + 0.3;
 })();
+// After the game, dapping a man up (see gameOver): the two stand this far
+// apart (feet, middle to middle, the way they face) and this far over to
+// each one's right of the other - each one's right hand where the other's
+// is, gripped.
+const [DAP_APART, DAP_SIDE] = (() => {
+	const sk = skeleton(bodyOf(), poseAt("dap", 0.5));
+	return [2 * sk.armR.end.f, -2 * sk.armR.end.s];
+})();
+// (Pulled into a hug, nearer - see HUG_APART.)
+const DAP_MS = 800;
+// Crossing the floor, he goes this far (feet) round two in the middle of it.
+const DAP_BY = 3;
+// (Holding his line - see keepOff - from this long before he gets to where
+// they meet, ms.)
+const DAP_HOLD = 600;
+// How many of the other team each man daps up (the last of them, not
+// every man); and where two meet - spots round the middle of the floor,
+// rows of them staggered, eight feet or so apart, each kept for the two
+// there till they are through with each other.
+const DAP_ROUNDS = 3;
+const DAP_SPOTS: Pt[] = [-7.5, 0, 7.5].flatMap((dy) =>
+	[-16, -8, 0, 8, 16].map((dx) => ({
+		x: COURT_W / 2 + dx + (dy === 0 ? 0 : 4),
+		y: COURT_H / 2 + dy,
+	})),
+);
 // The ball held in front of him, both hands on it, at the line.
 const FT_HOLD = releaseAt("hold", 0);
 // His dribble's bounces a second (see dribbleRate): walking it up easy, his
@@ -1585,6 +1614,9 @@ const IN_PLACE = new Set<AnimName>([
 	"lowFive",
 	"chestBump",
 	"waitFive",
+	"dap",
+	"dapPat",
+	"dapHug",
 ]);
 // Of those, what he does reacting to something - having words, a flex,
 // hands on his hips - rather than set for a teammate.
@@ -1999,6 +2031,14 @@ class Director {
 	private ballHand: Hand = "R";
 	private ballHandOf: number | undefined;
 	private ballAt: Pt3 = { x: COURT_W / 2, y: COURT_H / 2, z: 4 };
+	// Two men going to each other to dap up after the game, from when they
+	// set off to when they are through (see gameOver) - not kept off each
+	// other on the way, nor in the middle of it (see keepOff).
+	private meets = new Map<string, [number, number][]>();
+	// And each man's own: his last steps in to where he meets his man,
+	// waiting there for him, and with him, he holds his line - anybody else in the way goes round him (before that,
+	// crossing the floor, he goes round anybody as anybody does).
+	private meeting = new Map<number, [number, number][]>();
 	private offense: Side = 1;
 	private phase: Phase = "start";
 	private inboundAt: Pt | undefined;
@@ -14737,69 +14777,181 @@ class Director {
 						this.react(pid, "hips", from, 1500);
 					}
 				});
-				// Then the handshake line at center court: each down the other
-				// team's line, a dap with one man and then the next.
+				// Then the dap-ups - no line, the NBA's way: out on the floor each
+				// man finds one of the other team after another and daps him up
+				// (see dap, dapPat, dapHug) - the man he had first, most often
+				// pulled into a hug - and then off the floor, each side to its
+				// own end of the benches.
 				const cx = COURT_W / 2;
-				const spot = (side: Side, k: number): Pt => ({
-					x: cx + (side === 0 ? -1 : 1) * (LOW_FIVE_APART / 2),
-					y: 14 + k * 4.4,
-				});
 				const W = this.slots(winner);
 				const L = this.slots(loser);
-				let t1 = done + 300;
-				for (const round of [0, 1]) {
-					let met = t1;
-					const fw = (winner === 0 ? 1 : -1) as 1 | -1;
-					const arrived = new Map<number, number>();
-					W.forEach((pid, j) => {
-						const k = (j + round) % W.length;
-						const S = spot(winner, k);
-						let off = t1 + j * 60;
-						if (k < j) {
-							// (Each on down the line a place - and the man at the end
-							// of it round the back of his own line to the head of it,
-							// not up through it.)
-							const back = (winner === 0 ? -1 : 1) * 3;
-							const P = this.posOf(pid);
-							off = this.go(pid, { x: S.x + back, y: P.y }, off, JOG, "run");
-							off = this.go(pid, { x: S.x + back, y: S.y }, off, JOG, "run");
-						}
-						const a = this.go(pid, S, off, WALK * 1.4, "walk");
-						this.turn(pid, a, fw);
-						arrived.set(pid, a);
-						met = Math.max(met, a);
-					});
-					L.forEach((pid, j) => {
-						const a = this.go(
-							pid,
-							spot(loser, j),
-							t1 + j * 60,
-							WALK * 1.4,
-							"walk",
-						);
-						this.turn(pid, a, -fw as 1 | -1);
-						arrived.set(pid, a);
-						met = Math.max(met, a);
-					});
-					// (Turned to each other before the hands come up.)
-					met += 250;
-					const n = Math.min(W.length, L.length);
-					for (let j = 0; j < n; j++) {
-						const w = W[(j - round + W.length) % W.length]!;
-						const l = L[j]!;
-						const anim = (j + round) % 2 ? "lowFive" : "highFive";
-						for (const [p, them] of [
-							[w, spot(loser, j)],
-							[l, spot(winner, j)],
-						] as const) {
-							const a = arrived.get(p) ?? met;
-							if (met + 40 - a > 120) {
-								this.act(p, "waitFive", a, met + 40, { look: them });
+				const ready = new Map<number, number>();
+				for (const pid of [...W, ...L]) {
+					ready.set(pid, Math.max(done + 300, this.free.get(pid) ?? 0));
+				}
+				const n = Math.min(W.length, L.length);
+				const busy: number[] = [];
+				// When each spot has two at it, and on his way across the floor
+				// any he would go through, he goes round.
+				const occ: [number, number][][] = DAP_SPOTS.map(() => []);
+				const walkTo = (
+					p: number,
+					t0: number,
+					to: Pt,
+					own: number,
+					pace: number,
+				): number => {
+					const P = this.posAt(p, t0);
+					const L = dist(P, to);
+					const t1 = t0 + (L / pace) * 1000;
+					let via: Pt | undefined;
+					if (L > 1) {
+						const ux = (to.x - P.x) / L;
+						const uy = (to.y - P.y) / L;
+						DAP_SPOTS.forEach((S, q) => {
+							if (
+								via ||
+								q === own ||
+								!occ[q]!.some(([a, b]) => a < t1 && b > t0)
+							) {
+								return;
 							}
-							this.act(p, anim, met + 40, met + 560, { look: them });
-						}
+							const along = (S.x - P.x) * ux + (S.y - P.y) * uy;
+							const side = (S.x - P.x) * -uy + (S.y - P.y) * ux;
+							if (along > 0 && along < L && Math.abs(side) < DAP_BY) {
+								const sg = side >= 0 ? -DAP_BY : DAP_BY;
+								via = { x: S.x - uy * sg, y: S.y + ux * sg };
+							}
+						});
 					}
-					t1 = met + 700;
+					const go = via ? this.go(p, via, t0, pace, "walk") : t0;
+					return this.go(p, to, go, pace, "walk");
+				};
+				const seed = (W[0] ?? 0) * 31 + (L[0] ?? 0);
+				const shift =
+					1 +
+					Math.floor(hash01(seed, this.score[0] * 7 + this.score[1]) * (n - 1));
+				for (let round = 0; round < DAP_ROUNDS && n > 0; round++) {
+					if (round > 0 && (round * shift) % n === 0) {
+						break;
+					}
+					for (let j = 0; j < n; j++) {
+						const w = W[j]!;
+						const l = L[(j + round * shift) % n]!;
+						const h = hash01(w * 13 + l, 7121 + round);
+						if (round === DAP_ROUNDS - 1 && h < 0.35) {
+							continue;
+						}
+						const style: AnimName =
+							round === 0
+								? h < 0.7
+									? "dapHug"
+									: "dapPat"
+								: h < 0.3
+									? "dapHug"
+									: h < 0.6
+										? "dapPat"
+										: "dap";
+						const hug = style === "dapHug";
+						const apart = hug ? HUG_APART : DAP_APART;
+						const aside = hug ? HUG_SIDE : DAP_SIDE;
+						const tw = ready.get(w)!;
+						const tl = ready.get(l)!;
+						const Pw = this.posAt(w, tw);
+						const Pl = this.posAt(l, tl);
+						// Where they meet: the spot free by then nearest between them
+						// (not where the ball has come to rest).
+						const half = { x: (Pw.x + Pl.x) / 2, y: (Pw.y + Pl.y) / 2 };
+						// (Free by the time the first of them sets off for it - or,
+						// none of them is, the first one to be, and neither sets off
+						// till it is.)
+						const first = Math.min(tw, tl);
+						let k = -1;
+						let late = -1;
+						DAP_SPOTS.forEach((S, q) => {
+							if (dist(S, this.ballAt) <= 4) {
+								return;
+							}
+							if ((busy[q] ?? 0) <= first) {
+								if (k < 0 || dist(S, half) < dist(DAP_SPOTS[k]!, half)) {
+									k = q;
+								}
+							} else if (late < 0 || busy[q]! < busy[late]!) {
+								late = q;
+							}
+						});
+						if (k < 0) {
+							k = Math.max(0, late);
+						}
+						const M = DAP_SPOTS[k]!;
+						const free = busy[k] ?? 0;
+						const d = dist(Pw, Pl);
+						const u =
+							d > 0.5
+								? { x: (Pl.x - Pw.x) / d, y: (Pl.y - Pw.y) / d }
+								: { x: winner === 0 ? 1 : -1, y: 0 };
+						// (His right, facing u - see bodyPoint.)
+						const r = { x: -u.y, y: u.x };
+						const A = {
+							x: M.x - (u.x * apart) / 2 - (r.x * aside) / 2,
+							y: M.y - (u.y * apart) / 2 - (r.y * aside) / 2,
+						};
+						const B = {
+							x: M.x + (u.x * apart) / 2 + (r.x * aside) / 2,
+							y: M.y + (u.y * apart) / 2 + (r.y * aside) / 2,
+						};
+						const aw = walkTo(w, Math.max(tw, free), A, k, WALK * 1.4);
+						const al = walkTo(l, Math.max(tl, free), B, k, WALK * 1.4);
+						const met = Math.max(aw, al) + 60;
+						const long = hug ? HUG_MS : DAP_MS;
+						const key = `${Math.min(w, l)}|${Math.max(w, l)}`;
+						this.meets.set(key, [
+							...(this.meets.get(key) ?? []),
+							[Math.min(tw, tl), met + long],
+						]);
+						for (const [p, there] of [
+							[w, aw],
+							[l, al],
+						] as const) {
+							this.meeting.set(p, [
+								...(this.meeting.get(p) ?? []),
+								[there - DAP_HOLD, met + long],
+							]);
+						}
+						for (const [p, a, me, them, way] of [
+							[w, aw, A, B, 1],
+							[l, al, B, A, -1],
+						] as const) {
+							if (met - a > 200) {
+								this.act(p, "waitFive", a, met, { look: them });
+							}
+							// (Facing the way they stand to each other - not at him: he
+							// is a little over to his right.)
+							this.act(p, style, met, met + long, {
+								look: { x: me.x + way * u.x * 8, y: me.y + way * u.y * 8 },
+							});
+							ready.set(p, met + long + 100 + hash01(p, met) * 400);
+						}
+						busy[k] = met + long + 300;
+						occ[k]!.push([Math.min(aw, al) - DAP_HOLD, met + long + 300]);
+					}
+				}
+				// Off the floor, once they are all through: each side to the far
+				// end of its own bench (not one man off while the rest are still
+				// at it).
+				let t1 = done + 300;
+				for (const pid of [...W, ...L]) {
+					t1 = Math.max(t1, ready.get(pid)!);
+				}
+				for (const [side, team] of [
+					[winner, W],
+					[loser, L],
+				] as const) {
+					team.forEach((pid, k) => {
+						const x =
+							benchX(side) < cx ? 2.5 + k * 1.6 : COURT_W - 2.5 - k * 1.6;
+						walkTo(pid, t1 + k * 150, { x, y: -2.4 - (k % 2) * 1.4 }, -1, WALK);
+					});
 				}
 				this.effect("cheer", T, { team: winner });
 				if (stakes) {
@@ -20820,6 +20972,9 @@ class Director {
 			"lowFive",
 			"chestBump",
 			"waitFive",
+			"dap",
+			"dapPat",
+			"dapHug",
 			"fall",
 			"takeCharge",
 			"helpUp",
@@ -21756,6 +21911,9 @@ class Director {
 			"lowFive",
 			"chestBump",
 			"waitFive",
+			"dap",
+			"dapPat",
+			"dapHug",
 			"reach",
 			"hack",
 			"poke",
@@ -21782,7 +21940,6 @@ class Director {
 			"highFive",
 			"lowFive",
 			"chestBump",
-			"waitFive",
 			"fall",
 			"takeCharge",
 			"helpUp",
@@ -22557,8 +22714,12 @@ class Director {
 		// The man who gets it to it, this long (ms) before it is his.
 		const GATHER_MS = 400;
 		// Where he is, he is: the ball in his hands or coming to them, up for
-		// it, at the rim, set in a screen or the post, down on the floor.
+		// it, at the rim, set in a screen or the post, down on the floor - or
+		// dapping a man up after the game.
 		const FIXED = new Set<AnimName>([
+			"dap",
+			"dapPat",
+			"dapHug",
 			"shoot",
 			"setShot",
 			"heave",
@@ -22634,7 +22795,6 @@ class Director {
 			"highFive",
 			"lowFive",
 			"chestBump",
-			"waitFive",
 			"fall",
 			"takeCharge",
 			"helpUp",
@@ -23326,6 +23486,13 @@ class Director {
 							const aa = actOf(i, s);
 							const ab = actOf(j, s);
 							if (
+								this.meets
+									.get(`${Math.min(A.pid, B.pid)}|${Math.max(A.pid, B.pid)}`)
+									?.some(([m0, m1]) => t >= m0 && t <= m1)
+							) {
+								continue;
+							}
+							if (
 								walls &&
 								(mates ||
 									(aa !== "screen" &&
@@ -23368,6 +23535,9 @@ class Director {
 							const give = (tr: Track, act: AnimName | undefined, k: number) =>
 								tr.pid === holder ||
 								(act !== undefined && FIXED.has(act)) ||
+								this.meeting
+									.get(tr.pid)
+									?.some(([m0, m1]) => t >= m0 && t <= m1) ||
 								(held[k]?.[s] ?? 1) < 1
 									? 0
 									: act !== undefined && REACTIONS.has(act)

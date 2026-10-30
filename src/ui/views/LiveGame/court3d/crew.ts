@@ -35,7 +35,8 @@ import {
 } from "./geometry.ts";
 import { playAt } from "./physics.ts";
 import { callAt, coachSpot } from "./intro.ts";
-import { ANIMS, type AnimName } from "./poses.ts";
+import { ANIMS, HUG_APART, HUG_MS, HUG_SIDE, type AnimName } from "./poses.ts";
+import { arenaSpecFor, type ArenaSpec } from "./arenaSpec.ts";
 
 // THE PEOPLE ON THE FLOOR WHO DON'T PLAY: three officials working the game,
 // each team's head coach in front of his bench, and the photographers down
@@ -47,7 +48,14 @@ import { ANIMS, type AnimName } from "./poses.ts";
 // to the plays, the photographers shoot what happens at their end. All of it
 // is read off the timeline at any moment, so a replay plays out the same.
 
-export type CrewRole = "ref" | "coach" | "photo" | "table" | "media";
+export type CrewRole =
+	| "ref"
+	| "coach"
+	| "photo"
+	| "table"
+	| "media"
+	| "mop"
+	| "staff";
 export type CrewMember = {
 	// Never a player's: crew are numbered below zero.
 	pid: number;
@@ -113,7 +121,16 @@ const dress = (
 	outfit,
 });
 
-const REF_DRESS = dress("#f2f2ef", "#16161a", {
+// An NBA official's: a gray shirt, faint stripes down it, black sleeves and
+// a black panel down each side; black trousers. (Or the old stripes: see
+// ArenaSpec.officials.)
+const REF_DRESS = dress("#a9adb4", "#16161a", {
+	sleeves: "short",
+	stripes: "#b6bac1",
+	sleeveColor: "#1b1c21",
+	sides: "#1b1c21",
+});
+const REF_STRIPES = dress("#f2f2ef", "#16161a", {
 	sleeves: "short",
 	stripes: "#16161a",
 });
@@ -138,6 +155,7 @@ export const crewFor = (
 	gid: number,
 	away: TeamLike | undefined,
 	home: TeamLike | undefined,
+	spec: ArenaSpec = arenaSpecFor(home),
 ): CrewMember[] => {
 	const out: CrewMember[] = [];
 	const rng = makeCourtRng(`crew|${gid}`);
@@ -157,7 +175,7 @@ export const crewFor = (
 			hgt: 71 + r() * 6,
 			weight: 185 + r() * 45,
 			face: faceFor(`ref|${n}`, r() < 0.12),
-			dress: REF_DRESS,
+			dress: spec.officials === "stripes" ? REF_STRIPES : REF_DRESS,
 		});
 	});
 	([away, home] as const).forEach((team, t) => {
@@ -277,7 +295,253 @@ export const crewFor = (
 						}),
 		});
 	});
+	// The moppers, one at each end, in the home team's colors (see
+	// mopState).
+	([0, 1] as const).forEach((end) => {
+		const seed = `mop|${teamKey(home)}|${end}`;
+		const r = makeCourtRng(seed);
+		out.push({
+			pid: -61 - end,
+			role: "mop",
+			team: end,
+			spot: MOP_HOME[end],
+			hgt: 64 + r() * 10,
+			weight: 130 + r() * 50,
+			face: faceFor(seed, r() < 0.4),
+			dress: dress(
+				home?.colors?.[0] ?? "#8c1d40",
+				"#1c1c20",
+				{ sleeves: "short", towel: true },
+				"#f2f2f2",
+			),
+		});
+	});
+	// Stood about the floor all game: the sideline reporter by the corner
+	// past the home bench (out of the way of the team going off at the
+	// end), microphone in hand; security at the two far corners, arms
+	// folded; and a camera at each near corner (see staffState).
+	STAFF.forEach((st, n) => {
+		const seed = `staff|${teamKey(home)}|${n}`;
+		const r = makeCourtRng(seed);
+		const suit = SUITS[Math.floor(r() * SUITS.length)]!;
+		out.push({
+			pid: -71 - n,
+			role: "staff",
+			team: 0,
+			spot: st.at,
+			hgt: st.anim === "mic" ? 64 + r() * 6 : 70 + r() * 6,
+			weight: st.anim === "mic" ? 125 + r() * 30 : 200 + r() * 50,
+			face: faceFor(seed, st.anim === "mic" ? r() < 0.75 : r() < 0.15),
+			dress:
+				st.anim === "mic"
+					? dress(suit, suit, {
+							sleeves: "long",
+							shirt: r() < 0.6 ? "#f2f2ee" : "#e7d6c9",
+							mic: true,
+						})
+					: st.anim === "shootStand"
+						? dress(
+								PHOTO_TOPS[Math.floor(r() * PHOTO_TOPS.length)]!,
+								PHOTO_PANTS[Math.floor(r() * PHOTO_PANTS.length)]!,
+								{ sleeves: "short", camera: true },
+							)
+						: dress("#141519", "#141519", { sleeves: "long", plain: true }),
+		});
+	});
 	return out;
+};
+
+// STAFF ABOUT THE FLOOR, stood where they stand all game, facing the play
+// side of the floor.
+const STAFF: { at: Pt; anim: AnimName }[] = [
+	{ at: { x: COURT_W + 0.8, y: -4.8 }, anim: "mic" },
+	{ at: { x: -6.8, y: -5.2 }, anim: "crossed" },
+	{ at: { x: COURT_W + 6.8, y: -5.2 }, anim: "crossed" },
+	// (The broadcast's own, a camera on his shoulder, at each near corner
+	// of the floor.)
+	{ at: { x: -3.6, y: COURT_H - 2.2 }, anim: "shootStand" },
+	{ at: { x: COURT_W + 3.6, y: COURT_H - 2.2 }, anim: "shootStand" },
+];
+const staffState = (t: number, m: CrewMember): PlayerState => {
+	const k = -71 - m.pid;
+	const at = m.spot!;
+	const anim = STAFF[k]!.anim;
+	return {
+		pid: m.pid,
+		team: m.team,
+		shown: true,
+		x: at.x,
+		y: at.y,
+		z: 0,
+		yaw: yawTo(at, { x: COURT_W / 2, y: COURT_H / 2 }),
+		anim,
+		phase: loopPhase(anim, t, m.pid * 0.37),
+		moving: false,
+	};
+};
+
+// THE MOPPERS: one at each end, down on a knee behind the photographers,
+// in front of the seats - outside the clear lane round the stanchion, back
+// from where the official works the baseline - in the home team's colors. At a timeout or a break - the floor
+// clear, everybody at the benches - each jogs out with his towel to the
+// paint at his end (beside where a man went down there, if one did since
+// the last), wipes the floor down low, and jogs back.
+const MOP_HOME: [Pt, Pt] = [
+	{ x: -5.6, y: 16.2 },
+	{ x: COURT_W + 5.6, y: 16.2 },
+];
+// Into the break (ms); wiping (ms); his pace there and back (feet a
+// second); how far short of where a man went down he stops (feet); and
+// back with this long (ms) to spare before the break is over.
+const MOP_AFTER = 1500;
+const MOP_MS = 2000;
+const MOP_PACE = 12;
+const MOP_SHORT = 1.3;
+const MOP_SPARE = 1000;
+const MOP_EASE = 250;
+const MOP_BREAKS = new Set(["timeout", "period", "endOfPeriod"]);
+const FELL = new Set<AnimName>([
+	"fall",
+	"takeCharge",
+	"hurt",
+	"hurtKnee",
+	"hurtAnkle",
+	"hurtHead",
+	"hurtHand",
+	"hurtArm",
+]);
+type Wipe = { t0: number; at: Pt; there: number; done: number; back: number };
+const wipeCache = new WeakMap<CourtTimeline, [Wipe[], Wipe[]]>();
+const wipesOf = (tl: CourtTimeline): [Wipe[], Wipe[]] => {
+	const had = wipeCache.get(tl);
+	if (had) {
+		return had;
+	}
+	const downs: { t: number; at: Pt }[] = [];
+	for (const tr of tl.tracks.values()) {
+		for (const a of tr.acts) {
+			if (FELL.has(a.anim)) {
+				const p = evalPlayer(tl, tr.pid, (a.t0 + a.t1) / 2);
+				if (p.x > 0 && p.x < COURT_W && p.y > 0 && p.y < COURT_H) {
+					downs.push({ t: a.t0, at: { x: p.x, y: p.y } });
+				}
+			}
+		}
+	}
+	const out: [Wipe[], Wipe[]] = [[], []];
+	let since = -Infinity;
+	for (const brk of tl.beats) {
+		if (!MOP_BREAKS.has(brk.type)) {
+			continue;
+		}
+		// (From the horn, or the whistle for the timeout - a period's break
+		// from its start - till play starts again.)
+		const t0 =
+			(brk.type === "period" ? brk.preStart : brk.actionStart) + MOP_AFTER;
+		const t1 = (brk.type === "period" ? brk.actionStart : brk.end) - MOP_SPARE;
+		for (const end of [0, 1] as const) {
+			const home = MOP_HOME[end];
+			const down = downs.findLast(
+				(d) =>
+					d.t > since &&
+					d.t < brk.preStart &&
+					(d.at.x < COURT_W / 2 ? 0 : 1) === end,
+			);
+			// (Otherwise the paint, somewhere about the rim.)
+			const h = unit(Math.round(brk.preStart), end * 7 + 3);
+			const spot = down?.at ?? {
+				x: end === 0 ? 4 + h * 9 : COURT_W - 4 - h * 9,
+				y: 25 + (unit(Math.round(brk.preStart), end * 11 + 5) - 0.5) * 9,
+			};
+			const L = Math.hypot(spot.x - home.x, spot.y - home.y);
+			const go = Math.max(0, L - (down ? MOP_SHORT : 0));
+			const run = (go / MOP_PACE) * 1000;
+			if (t0 + 2 * run + MOP_MS > t1) {
+				continue;
+			}
+			out[end].push({
+				t0,
+				at: {
+					x: home.x + ((spot.x - home.x) * go) / (L || 1),
+					y: home.y + ((spot.y - home.y) * go) / (L || 1),
+				},
+				there: t0 + run,
+				done: t0 + run + MOP_MS,
+				back: t0 + 2 * run + MOP_MS,
+			});
+		}
+		since = brk.preStart;
+	}
+	wipeCache.set(tl, out);
+	return out;
+};
+const mopState = (tl: CourtTimeline, t: number, m: CrewMember): PlayerState => {
+	const home = MOP_HOME[m.team];
+	const base = { pid: m.pid, team: m.team, shown: true, z: 0 };
+	const court = { x: m.team === 0 ? 10 : COURT_W - 10, y: COURT_H / 2 };
+	const w = wipesOf(tl)[m.team].findLast((x) => x.t0 <= t);
+	// (Into each thing he does over a moment, out of what he did before.)
+	const eased = (st: PlayerState, since: number, was: Blend): PlayerState => {
+		const k = 1 - smooth01(since / MOP_EASE);
+		return k > 0 ? { ...st, from: { ...was, w: k } } : st;
+	};
+	const jog = (A: Pt, B: Pt, a: number, b: number): PlayerState => {
+		const u = Math.min(1, (t - a) / Math.max(1, b - a));
+		return {
+			...base,
+			x: A.x + (B.x - A.x) * u,
+			y: A.y + (B.y - A.y) * u,
+			yaw: yawTo(A, B),
+			anim: "jog",
+			phase: (t / 1000) * 1.5,
+			moving: true,
+		};
+	};
+	const kneel: PlayerState = {
+		...base,
+		x: home.x,
+		y: home.y,
+		yaw: yawTo(home, court),
+		anim: "kneel",
+		phase: loopPhase("kneel", t, m.pid * 0.3),
+		moving: false,
+	};
+	if (!w || t >= w.back) {
+		return w
+			? eased(kneel, t - w.back, {
+					anim: "jog",
+					phase: (t / 1000) * 1.5,
+					w: 1,
+				})
+			: kneel;
+	}
+	if (t < w.there) {
+		return eased(jog(home, w.at, w.t0, w.there), t - w.t0, {
+			anim: "kneel",
+			phase: 0,
+			w: 1,
+		});
+	}
+	if (t < w.done) {
+		return eased(
+			{
+				...base,
+				x: w.at.x,
+				y: w.at.y,
+				yaw: yawTo(home, w.at),
+				anim: "wipe",
+				phase: loopPhase("wipe", t, m.pid * 0.3),
+				moving: false,
+			},
+			t - w.there,
+			{ anim: "jog", phase: (t / 1000) * 1.5, w: 1 },
+		);
+	}
+	return eased(jog(w.at, home, w.done, w.back), t - w.done, {
+		anim: "wipe",
+		phase: loopPhase("wipe", t, m.pid * 0.3),
+		w: 1,
+	});
 };
 
 // Where the pre-game show stands, and what each of them does.
@@ -574,6 +838,8 @@ const tossBallSent = (tl: CourtTimeline, t0: number): number | undefined => {
 // backs straight out to his place, not through the two of them.
 const tosserOf = (tl: CourtTimeline, toss: Fx): number =>
 	lastIndex(tl.poss, toss.t + 600, (p) => p[0]) % 2 === 0 ? 1 : 0;
+// (From the horn, ms.)
+const REFS_OFF = 1200;
 const refTargets = (tl: CourtTimeline, t: number): [Pt, Pt, Pt] => {
 	const beat = beatAt(tl, t);
 	const shot = arenaShotAt(tl, t);
@@ -583,6 +849,16 @@ const refTargets = (tl: CourtTimeline, t: number): [Pt, Pt, Pt] => {
 			{ x: COURT_W / 2 - 2.4, y: 3.2 },
 			{ x: COURT_W / 2 + 2.4, y: 3.2 },
 			{ x: COURT_W / 2, y: 4.5 },
+		];
+	}
+	if (beat?.type === "gameOver" && t >= beat.actionStart + REFS_OFF) {
+		// The game over, the three of them off the floor together, straight
+		// away - over by the near corner, out of the way of the handshakes
+		// (as far off it as an official goes: see refStates).
+		return [
+			{ x: COURT_W + 2.4, y: COURT_H + 1.5 },
+			{ x: COURT_W + 0.5, y: COURT_H + 1.7 },
+			{ x: COURT_W - 1.4, y: COURT_H + 1.5 },
 		];
 	}
 	if (beat?.type === "ft" || beat?.type === "missFt") {
@@ -1676,6 +1952,12 @@ const coachState = (
 			moving: false,
 		};
 	}
+	// The game over: across in front of the table to the other coach, and
+	// off to his own end of the floor (see coachAfter).
+	const last = tl.beats.at(-1);
+	if (last?.type === "gameOver" && t >= last.actionStart + COACH_OFF) {
+		return coachAfter(tl, t, m, ball, last.actionStart + COACH_OFF);
+	}
 	// (Not the last look round the building, the game over.)
 	if (shot && shot !== tl.shots[0] && beatAt(tl, t)?.type !== "gameOver") {
 		// In the huddle with his five, in the middle of them - not out on the
@@ -1796,6 +2078,124 @@ const coachState = (
 		...(eased && eased.w > 0 ? { from: eased } : {}),
 	};
 };
+// The game over, a moment after the horn, the two head coaches go to each
+// other in front of the table, at center court - a hand and a hug (see
+// dapHug), right shoulder to right shoulder - and off to his own end of
+// the floor, where his team goes off.
+const COACH_OFF = 1500;
+const COACH_MEET: Pt = { x: COURT_W / 2, y: 1.2 };
+const COACH_PACE = 4.2;
+const coachAfter = (
+	tl: CourtTimeline,
+	t: number,
+	m: CrewMember,
+	ball: Pt,
+	t0: number,
+): PlayerState => {
+	const team = m.team;
+	const u = team === 0 ? 1 : -1;
+	const where = (side: Side) => {
+		const st = coachState(tl, t0 - 1, { ...m, team: side }, ball);
+		return { x: st.x, y: st.y };
+	};
+	const P = where(team);
+	const Q = where(other(team));
+	// (Each over to his right of the other - see HUG_SIDE.)
+	const spotFor = (k: 1 | -1): Pt => ({
+		x: COACH_MEET.x - (k * HUG_APART) / 2,
+		y: COACH_MEET.y - (k * HUG_SIDE) / 2,
+	});
+	const at = spotFor(u);
+	const walk = (A: Pt, B: Pt) =>
+		(Math.hypot(B.x - A.x, B.y - A.y) / COACH_PACE) * 1000;
+	const there = t0 + walk(P, at);
+	const met = t0 + Math.max(walk(P, at), walk(Q, spotFor(-u as 1 | -1))) + 60;
+	const done = met + HUG_MS;
+	const off = {
+		x: benchX(team) < COURT_W / 2 ? 4 : COURT_W - 4,
+		y: COACH_Y - 1.4,
+	};
+	const gone = done + walk(at, off);
+	const base = { pid: m.pid, team, shown: true, z: 0 };
+	const facing = team === 0 ? 0 : Math.PI;
+	const walking = (A: Pt, B: Pt, a: number, b: number): PlayerState => {
+		const p = lerp(A, B, Math.min(1, (t - a) / Math.max(1, b - a)));
+		return {
+			...base,
+			x: p.x,
+			y: p.y,
+			yaw: Math.atan2(B.y - A.y, B.x - A.x),
+			anim: "walk",
+			phase: (t / 1000) * 0.85,
+			moving: true,
+		};
+	};
+	// (Out of how he stood, or what he did before, over a moment.)
+	const eased = (st: PlayerState, since: number, was: Blend): PlayerState => {
+		const w = 1 - smooth01(since / COACH_EASE);
+		return w > 0 ? { ...st, from: { ...was, w } } : st;
+	};
+	if (t < there) {
+		const was = coachState(tl, t0 - 1, m, ball);
+		return eased(walking(P, at, t0, there), t - t0, {
+			anim: was.anim,
+			phase: was.phase,
+			w: 1,
+		});
+	}
+	const walkBlend: Blend = { anim: "walk", phase: (t / 1000) * 0.85, w: 1 };
+	if (t < met) {
+		return eased(
+			{
+				...base,
+				x: at.x,
+				y: at.y,
+				yaw: facing,
+				anim: "ready",
+				phase: 0,
+				moving: false,
+			},
+			t - there,
+			walkBlend,
+		);
+	}
+	if (t < done) {
+		return eased(
+			{
+				...base,
+				x: at.x,
+				y: at.y,
+				yaw: facing,
+				anim: "dapHug",
+				phase: (t - met) / HUG_MS,
+				moving: false,
+			},
+			t - met,
+			{ anim: "ready", phase: 0, w: 1 },
+		);
+	}
+	if (t < gone) {
+		return eased(walking(at, off, done, gone), t - done, {
+			anim: "dapHug",
+			phase: 1,
+			w: 1,
+		});
+	}
+	return eased(
+		{
+			...base,
+			x: off.x,
+			y: off.y,
+			yaw: FACING_US,
+			anim: "crossed",
+			phase: loopPhase("crossed", t, team * 0.5),
+			moving: false,
+		},
+		t - gone,
+		walkBlend,
+	);
+};
+
 // (A coach turning to and from the way he walks, and easing in and out of
 // his walk - ms.)
 const COACH_TURN = 300;
@@ -1952,6 +2352,10 @@ export const crewAt = (
 			if (tl.warmup) {
 				states.push(mediaState(m, t));
 			}
+		} else if (m.role === "mop") {
+			states.push(mopState(tl, t, m));
+		} else if (m.role === "staff") {
+			states.push(staffState(t, m));
 		} else if (m.role === "photo") {
 			const st = photoState(tl, t, m, ball);
 			states.push(st);

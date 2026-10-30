@@ -4203,7 +4203,7 @@ const playerAt = (
 				}
 			: doing;
 	const yaw = spinYawAt(tl, tr, t) ?? yawAt(tl, tr, t);
-	const room = shown ? roomAt(tl, tr, t) : undefined;
+	const room = shown && !EMBRACES.has(now.anim) ? roomAt(tl, tr, t) : undefined;
 	const armsIn =
 		shown && !bare && TUCKS.has(now.anim) ? tuckAt(tl, tr, t) : undefined;
 	const legs = flippedLegs(
@@ -4343,10 +4343,13 @@ const roomAt = (
 	return room < ROOM_FAR ? room : undefined;
 };
 
+// (Not two men meant to be up against each other: dapping up after the
+// game, hugging - see dapHug.)
+const EMBRACES = new Set<AnimName>(["dap", "dapPat", "dapHug"]);
 // His head no further out in front of him than half that room, less a head
 // apart (in head radii) - his lean given up for it, down to upright at
 // most, no more than LEAN_GIVE (degrees).
-const HEADS_APART = 0.95;
+const HEADS_APART = 1.6;
 const LEAN_GIVE = 22;
 const leanRoom = (p: Pose, room: number | undefined): Pose => {
 	if (room === undefined || p.lean <= 0) {
@@ -5504,6 +5507,9 @@ const PIVOTS = new Set<AnimName>([
 	"highFive",
 	"lowFive",
 	"waitFive",
+	"dap",
+	"dapPat",
+	"dapHug",
 	"signalUp",
 	"signalSide",
 	"threeUp",

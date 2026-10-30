@@ -5,8 +5,9 @@ import {
 	type RawEvent,
 	type Stakes,
 } from "./director.ts";
-import { evalPlayer } from "./evaluate.ts";
+import { bodyPoint, evalPlayer, poseOf } from "./evaluate.ts";
 import { attackDir, benchX, COURT_W, HUDDLE_Y } from "./geometry.ts";
+import { bodyOf, skeleton } from "./poses.ts";
 
 // The last seconds of a game, the sim's way, won (or not) on the last shot.
 const ending = (
@@ -40,7 +41,7 @@ const ending = (
 };
 
 describe("3D end of game", () => {
-	test("a game-winner is mobbed, and everybody daps up down the line", () => {
+	test("a game-winner is mobbed, and everybody daps up the other team", () => {
 		const tl = ending([
 			{ type: "fgaTp", t: 0, pid: 2, clock: 1.4, desperation: false },
 			{ type: "tp", t: 0, pid: 2, clock: 0.6 },
@@ -58,16 +59,50 @@ describe("3D end of game", () => {
 			}
 			assert.isBelow(near, 4, `${mate}`);
 		}
-		// Everybody slaps hands with at least two of the other team.
-		for (const pid of [1, 2, 3, 4, 5, 11, 12, 13, 14, 15]) {
+		// Everybody daps up at least two of the other team - no line: each
+		// with a different man, the two of them face to face, gripping right
+		// hands; and pulled into a hug, their heads past each other's.
+		const body = bodyOf();
+		const DAPS = new Set(["dap", "dapPat", "dapHug"]);
+		const hugs = { n: 0 };
+		for (const pid of [1, 2, 3, 4, 5]) {
 			const daps = tl.tracks
 				.get(pid)!
-				.acts.filter(
-					(a) =>
-						(a.anim === "lowFive" || a.anim === "highFive") &&
-						a.t0 > over.actionStart,
-				).length;
-			assert.isAtLeast(daps, 2, `${pid}`);
+				.acts.filter((a) => DAPS.has(a.anim) && a.t0 > over.actionStart);
+			const withWhom = new Set<number>();
+			for (const a of daps) {
+				const them = [11, 12, 13, 14, 15].find((q) =>
+					tl.tracks
+						.get(q)!
+						.acts.some((b) => b.anim === a.anim && Math.abs(b.t0 - a.t0) < 1),
+				);
+				assert.isDefined(them, `${pid} ${a.anim} ${a.t0}`);
+				withWhom.add(them!);
+				const t = (a.t0 + a.t1) / 2;
+				const S = evalPlayer(tl, pid, t);
+				const O = evalPlayer(tl, them!, t);
+				const sk = skeleton(body, poseOf(S));
+				const ok = skeleton(body, poseOf(O));
+				const h = bodyPoint(S, sk.armR.end);
+				const g = bodyPoint(O, ok.armR.end);
+				assert.isBelow(Math.hypot(h.x - g.x, h.y - g.y, h.z - g.z), 0.35);
+				if (a.anim === "dapHug") {
+					hugs.n++;
+					const H = bodyPoint(S, sk.head);
+					const G = bodyPoint(O, ok.head);
+					assert.isAbove(Math.hypot(H.x - G.x, H.y - G.y), 1.1);
+				}
+			}
+			assert.isAtLeast(withWhom.size, 2, `${pid}`);
+			assert.strictEqual(withWhom.size, daps.length, `${pid}`);
+		}
+		assert.isAbove(hugs.n, 0);
+		// And then off the floor, each side to its own end of the benches
+		// (walking off as the picture holds on the building).
+		const last = tl.beats.at(-1)!.end + 20_000;
+		for (const pid of [1, 2, 3, 4, 5, 11, 12, 13, 14, 15]) {
+			const P = evalPlayer(tl, pid, last);
+			assert.isBelow(P.y, 0, `${pid}`);
 		}
 	});
 
