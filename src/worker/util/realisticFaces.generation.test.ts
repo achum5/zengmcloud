@@ -383,6 +383,10 @@ describe("catching a face up to its player's age", () => {
 		g.setWithoutSavingToDB("realisticFaces", true);
 		g.setWithoutSavingToDB("season", 2026);
 		const now = build("black", 16, 6, seeded(15));
+		// Well under the cap: the base face comes from facesjs's own
+		// unseeded draw, and an ear already near EAR_SIZE_MAX stops growing
+		// partway, which made this count the cap instead of the years.
+		now.ear.size = 1;
 		const atDraft = structuredClone(now);
 		const born = { year: 2026 - 16 };
 		catchUpFace({ face: now, born, pid: 6 }, 16);
