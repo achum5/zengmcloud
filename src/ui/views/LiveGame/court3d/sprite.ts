@@ -394,6 +394,8 @@ const CYCLE_FRAMES = 12;
 const DRIBBLE_FRAMES = 8;
 const ACT_FRAMES = 20;
 const TURNS = 24;
+// The ball's turn in his hands (see stepped).
+const FACE_STEP = (Math.PI * 2) / 48;
 // How many times finer, with time to spare.
 const FINE = 2;
 
@@ -653,6 +655,11 @@ const stepped = (st: PlayerState, k: Steps) => {
 		stride: st.stride ? stepStride(st.stride, k) : undefined,
 		target: targetFrame(st.target, k),
 		down: st.down ? Math.round(st.down * k.blend) / k.blend : undefined,
+		// The way the ball in his hands faces round from him, in steps.
+		face:
+			st.holding && st.ballFace !== undefined
+				? (Math.round(st.ballFace / FACE_STEP) * FACE_STEP) % (Math.PI * 2)
+				: undefined,
 		from:
 			f && (w > 0 || (f.arms ?? 0) > 0)
 				? {
@@ -745,7 +752,7 @@ const planOf = (
 		const f = pose.from;
 		const a = pose.arm;
 		plan.id = id;
-		plan.key = `${fine ? "f" : ""}${id}|${st.anim}${st.mirror ? "m" : ""}|${pose.phase}${pose.stepLen ? `l${pose.stepLen}` : ""}${pose.drive ? `v${pose.drive}` : ""}|${pose.turn}|${scale}|${px}|${st.holding ? 1 : 0}${pose.grip ?? ""}|${pose.legs ?? ""}${pose.way === undefined ? "" : `w${pose.way}`}${pose.pivot ? `p${pose.pivot}` : ""}${pose.lock ? `k${pose.lock}` : ""}${pose.slip ? `s${pose.slip}` : ""}${pose.look ? `h${pose.look}` : ""}${pose.down ? `d${pose.down}` : ""}|${pose.dribble ?? ""}${st.dribbleHand ?? ""}${st.dribbleFrom ?? ""}${pose.tight ? `t${pose.tight}` : ""}${pose.low ? `o${pose.low}` : ""}${pose.calm ? `e${pose.calm}` : ""}${pose.room === undefined ? "" : `r${pose.room}`}${pose.armsIn ? `i${pose.armsIn[0]},${pose.armsIn[1]}` : ""}${strideKey(pose.stride)}|${pose.target ?? ""}${st.ballBy ? `b${Math.round(st.ballBy.x * 10)},${Math.round(st.ballBy.y * 10)},${Math.round(st.ballBy.z * 10)}` : ""}${
+		plan.key = `${fine ? "f" : ""}${id}|${st.anim}${st.mirror ? "m" : ""}|${pose.phase}${pose.stepLen ? `l${pose.stepLen}` : ""}${pose.drive ? `v${pose.drive}` : ""}|${pose.turn}|${scale}|${px}|${st.holding ? 1 : 0}${pose.grip ?? ""}|${pose.legs ?? ""}${pose.way === undefined ? "" : `w${pose.way}`}${pose.pivot ? `p${pose.pivot}` : ""}${pose.lock ? `k${pose.lock}` : ""}${pose.slip ? `s${pose.slip}` : ""}${pose.look ? `h${pose.look}` : ""}${pose.down ? `d${pose.down}` : ""}|${pose.dribble ?? ""}${st.dribbleHand ?? ""}${st.dribbleFrom ?? ""}${pose.tight ? `t${pose.tight}` : ""}${pose.low ? `o${pose.low}` : ""}${pose.calm ? `e${pose.calm}` : ""}${pose.room === undefined ? "" : `r${pose.room}`}${pose.armsIn ? `i${pose.armsIn[0]},${pose.armsIn[1]}` : ""}${strideKey(pose.stride)}|${pose.target ?? ""}${pose.face === undefined ? "" : `q${Math.round(pose.face / FACE_STEP)}`}${st.ballBy ? `b${Math.round(st.ballBy.x * 10)},${Math.round(st.ballBy.y * 10)},${Math.round(st.ballBy.z * 10)}` : ""}${
 			f ? `|${blendKey(f)}` : ""
 		}${a ? `|${a.hand}${a.point ? "p" : ""}${a.tuck ? `t${a.tuck}` : ""}${a.sh},${a.el},${a.ab},${a.wr}~${a.w}` : ""}`;
 	}
@@ -803,6 +810,7 @@ const jobOf = (
 			armsIn: pose.armsIn,
 			stride: pose.stride,
 			target: pose.target,
+			ballFace: pose.face,
 			from: pose.from,
 			arm: pose.arm,
 			legs: pose.legs,

@@ -2633,18 +2633,21 @@ export const drawBall = (
 	ball: Pt3,
 	spin: number,
 	mirrored = false,
-	// The way it spins on (see ballTurn).
+	// The way it spins on, and the way it faces (see ballTurn).
 	way = 0,
+	face?: number,
 ) => {
 	const c = project(cam, ball);
 	const r = Math.max(1.6, BALL_R * c.k);
 	ctx.beginPath();
 	ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
 	ctx.strokeStyle = INK;
-	ctx.lineWidth = Math.max(1, 0.05 * c.k) * 2;
+	// (Half of it shows round the ball painted over it: no heavier, close
+	// up, than the line round the men - see sculpt.ts.)
+	ctx.lineWidth = Math.max(1, 0.03 * c.k) * 2;
 	ctx.stroke();
 	const frame = viewFrame(cam);
-	const turn = ballTurn(frame, spin, way);
+	const turn = ballTurn(frame, spin, way, face);
 	const mirror = mirrored ? floorMirror(frame) : undefined;
 	if (paintBall(ctx, c.x, c.y, r, turn, mirror)) {
 		return;

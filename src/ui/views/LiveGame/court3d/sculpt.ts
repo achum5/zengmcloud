@@ -20,7 +20,13 @@ import {
 	type PlayerState,
 } from "./evaluate.ts";
 import { CAMERA_BODY, CAMERA_LENS, type Look } from "./figure.ts";
-import { ballSurface, type BallSurface, HELD, surfaceFor } from "./gameBall.ts";
+import {
+	ballSurface,
+	type BallSurface,
+	facingCamera,
+	HELD,
+	surfaceFor,
+} from "./gameBall.ts";
 import {
 	gripOf,
 	skeleton,
@@ -1765,6 +1771,12 @@ export const sculpt = (
 ): Sculpted => {
 	const b = build(cam, st, body, look, px, ox, oy);
 	const pal = paletteOf(look);
+	// The ball in his hands faces round from him as it came to him (see
+	// facesTo in evaluate.ts): turned so from the way HELD has it, square
+	// on to the camera.
+	const heldTurn = st.yaw + (st.ballFace ?? 0) - facingCamera(cam.right);
+	const heldCos = Math.cos(heldTurn);
+	const heldSin = Math.sin(heldTurn);
 	const masses = b.masses;
 	const n = masses.length;
 	const img = new ImageData(w, h);
@@ -2382,15 +2394,17 @@ export const sculpt = (
 					case BALL: {
 						// The game ball, as it sits in his hands - its
 						// channels and its print (see gameBall.ts).
-						const nx = hx[f]!;
-						const ny = -hy[f]!;
+						// (Turned round with him, the way it faces.)
 						const nz = hn[f]!;
+						const nx = hx[f]! * heldCos - nz * heldSin;
+						const ny = -hy[f]!;
+						const nt = nz * heldCos + hx[f]! * heldSin;
 						const rad = hr[f]!;
 						ballSurface(
 							heldSurface(rad),
-							nx * HELD[0][0] + ny * HELD[0][1] + nz * HELD[0][2],
-							nx * HELD[1][0] + ny * HELD[1][1] + nz * HELD[1][2],
-							nx * HELD[2][0] + ny * HELD[2][1] + nz * HELD[2][2],
+							nx * HELD[0][0] + ny * HELD[0][1] + nt * HELD[0][2],
+							nx * HELD[1][0] + ny * HELD[1][1] + nt * HELD[1][2],
+							nx * HELD[2][0] + ny * HELD[2][1] + nt * HELD[2][2],
 							1 / (rad * Math.max(0.3, Math.sqrt(nz))),
 							heldPx,
 						);

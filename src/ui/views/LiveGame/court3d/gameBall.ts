@@ -494,14 +494,28 @@ export const viewFrame = (cam: Camera): [V3, V3, V3] => {
 	return [R, U, [T[0] / l, T[1] / l, T[2] / l]];
 };
 
+// The way across the floor (a yaw) a ball faces to show the camera its
+// printed side as HELD has it: back toward the camera, square to its right.
+export const facingCamera = (right: { x: number; y: number }) =>
+	Math.atan2(right.y, right.x) - Math.PI / 2;
+
 // Where its frame points in the picture with this much spin on it, going
-// `way` (radians, across the floor from toward the far basket).
+// `way` (radians, across the floor from toward the far basket) - and, with
+// `face`, its printed side turned to look that way across the floor (a yaw;
+// see BallState) before it spins.
 export const ballTurn = (
 	frame: [V3, V3, V3],
 	spin: number,
 	way = 0,
+	face?: number,
 ): [V3, V3, V3] => {
 	const [R, U, T] = frame;
+	const held =
+		face === undefined
+			? HELD
+			: HELD.map((c) =>
+					turnAbout(c, [0, 1, 0], face - facingCamera({ x: R[0], y: R[1] })),
+				);
 	// The level axis square to the way it goes, in the picture.
 	const wx = -Math.sin(way);
 	const wy = Math.cos(way);
@@ -512,7 +526,7 @@ export const ballTurn = (
 	];
 	const l = Math.hypot(a[0], a[1], a[2]) || 1;
 	const axis: V3 = [a[0] / l, a[1] / l, a[2] / l];
-	return HELD.map((c) => turnAbout(c, axis, -spin)) as [V3, V3, V3];
+	return held.map((c) => turnAbout(c, axis, -spin)) as [V3, V3, V3];
 };
 
 // The mirror of the picture's frame in the floor: what a point on the ball's

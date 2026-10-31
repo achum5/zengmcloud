@@ -49,6 +49,7 @@ import {
 import {
 	arenaShotAt,
 	benchLook,
+	ballFaceAt,
 	evalBall,
 	evalPlayer,
 	shownAt,
@@ -210,9 +211,12 @@ export const momentAt = (
 			);
 		}
 	}
-	const ball = evalBall(tl, t, bodyFor);
+	const ball = { ...evalBall(tl, t, bodyFor), face: ballFaceAt(tl, t) };
 	// (Whoever has his hands near it, not holding it, has them on it.)
 	for (const p of players) {
+		if (p.pid === ball.holder) {
+			p.ballFace = ball.face - p.yaw;
+		}
 		const dz = ball.z - p.z;
 		if (
 			p.pid !== ball.holder &&
@@ -1545,7 +1549,15 @@ export const drawFrame = (f: Frame) => {
 						? () => {
 								loose.forEach((b, i) => {
 									if (atRim[i] === side) {
-										drawBall(ctx, cam, b, b.roll ?? 0, false, b.rollWay);
+										drawBall(
+											ctx,
+											cam,
+											b,
+											b.roll ?? 0,
+											false,
+											b.rollWay,
+											b.face,
+										);
 									}
 								});
 							}
@@ -1565,10 +1577,18 @@ export const drawFrame = (f: Frame) => {
 					const shine = SHINE * (1 - b.z / BALL_SHINE_Z);
 					if (shine > 0.01) {
 						ctx.globalAlpha = shine;
-						drawBall(ctx, cam, { ...b, z: -b.z }, b.roll ?? 0, true, b.rollWay);
+						drawBall(
+							ctx,
+							cam,
+							{ ...b, z: -b.z },
+							b.roll ?? 0,
+							true,
+							b.rollWay,
+							b.face,
+						);
 						ctx.globalAlpha = 1;
 					}
-					drawBall(ctx, cam, b, b.roll ?? 0, false, b.rollWay);
+					drawBall(ctx, cam, b, b.roll ?? 0, false, b.rollWay, b.face);
 				},
 			});
 		}

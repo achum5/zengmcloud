@@ -152,6 +152,9 @@ export type PlayerState = {
 	// another man's - from where he stands (feet; up, from his feet as he
 	// is off the floor): his hands meet it (see sculpt.ts).
 	ballBy?: { x: number; y: number; z: number };
+	// The ball in his hands: how far round from the way he faces it faces
+	// (radians; see facesTo).
+	ballFace?: number;
 	// Up for a dunk: the jump a typical player makes to throw it down (feet),
 	// the rim, and how much his hands are on it (0 to 1). His own build
 	// decides how high he really goes - see withBody.
@@ -6452,6 +6455,9 @@ export type BallState = {
 	// The way it goes, turning so (radians across the floor, from toward the
 	// right rim - which it is if not given).
 	rollWay?: number;
+	// The way its printed side faces across the floor, before any roll (a
+	// yaw; see facesTo). For the picture only.
+	face?: number;
 };
 
 // Turns a second of backspin on a ball thrown or shot.
@@ -6568,6 +6574,62 @@ export const evalBall = (
 	tl.ball.length === 0
 		? { x: 47, y: 25, z: 0 }
 		: ballOn(tl, ballIndexAt(tl, t), t, bodyFor, 0);
+
+// The way the ball faces (see facesTo), for the picture.
+export const ballFaceAt = (tl: CourtTimeline, t: number): number => {
+	if (tl.ball.length === 0) {
+		return FIRST_FACE;
+	}
+	const i = ballIndexAt(tl, t);
+	const seg = tl.ball[i]!;
+	const f = facesTo(tl, i);
+	return seg.kind === "hold"
+		? f.off[i]! + evalPlayer(tl, seg.pid, t).yaw
+		: f.inn[i]!;
+};
+
+// WHICH WAY IT FACES. Its printed side, across the floor: as it came to him
+// - out of the last man's hands, through the air, off the floor - and on
+// round with him as he turns with it in his hands; let go, as it left them.
+// So it goes from hand to hand as it went, never all at once some new way
+// round. For each piece of its timeline, the way it faces as the piece
+// takes it, and - in a man's hands - how far round from the way he faces
+// it is; worked out as far as asked, and kept as long as the pieces stand.
+type Faces = { segs: BallSeg[]; inn: number[]; off: number[] };
+const facesMemo = new WeakMap<CourtTimeline, Faces>();
+// Before anybody has had it.
+const FIRST_FACE = 0.6;
+const facesTo = (tl: CourtTimeline, i: number): Faces => {
+	let f = facesMemo.get(tl);
+	if (!f) {
+		f = { segs: [], inn: [], off: [] };
+		facesMemo.set(tl, f);
+	}
+	let from = f.segs.length;
+	for (let j = 0; j < Math.min(from, i + 1); j++) {
+		if (f.segs[j] !== tl.ball[j]) {
+			from = j;
+			break;
+		}
+	}
+	f.segs.length = f.inn.length = f.off.length = from;
+	for (let j = from; j <= i; j++) {
+		const seg = tl.ball[j]!;
+		const prev = tl.ball[j - 1];
+		const inn = !prev
+			? FIRST_FACE
+			: prev.kind === "hold"
+				? f.off[j - 1]! + playerAt(tl, prev.pid, seg.t0).yaw
+				: f.inn[j - 1]!;
+		f.segs[j] = seg;
+		f.inn[j] = inn;
+		f.off[j] =
+			seg.kind === "hold"
+				? wrapAngle(inn - playerAt(tl, seg.pid, seg.t0).yaw)
+				: 0;
+	}
+	return f;
+};
 
 // A PASS GOES BY A MAN IN THE WAY, NOT THROUGH HIM. Thrown past a man
 // between the passer and his man - or out of bounds past one, or dropping
