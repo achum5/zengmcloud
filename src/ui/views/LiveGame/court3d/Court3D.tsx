@@ -1555,7 +1555,13 @@ const Court3D = ({
 				scratch,
 				sprites,
 				cam,
-				moment,
+				// (The ball in an official's hands at the height he has it.)
+				moment: working.ballLift
+					? {
+							...moment,
+							ball: { ...moment.ball, z: moment.ball.z + working.ballLift },
+						}
+					: moment,
 				tl,
 				roster: rosterRef.current,
 				bodyFor: bodyOfPid,

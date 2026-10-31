@@ -393,7 +393,9 @@ describe("3D crew", () => {
 			const near = Math.min(
 				...refs.map((r) => Math.hypot(r.x - from.x, r.y - from.y)),
 			);
-			assert.isBelow(near, 1.6, `at ${g.t0}`);
+			// (His feet his reach back from it: it is in his hands, held out
+			// in front of him.)
+			assert.isBelow(near, 2, `at ${g.t0}`);
 			// Under the basket: nearer the end line than the line.
 			assert.isTrue(from.x < 9 || from.x > COURT_W - 9, `at ${g.t0}`);
 			checked += 1;

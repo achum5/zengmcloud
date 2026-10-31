@@ -207,6 +207,30 @@ export const ftOfficialBall = (t: Side): Pt3 => ({
 	...spot(t, FT_OFFICIAL[0] + 0.85, FT_OFFICIAL[1]),
 	z: 3.6,
 });
+// Over a break the three of them stand together by the table, out of the
+// way of the huddles - and at a timeout the one in the middle holds the
+// ball, out in front of him toward where it goes back in from, till it is
+// given to the man who takes it out.
+export const BREAK_OFFICIALS: [Pt, Pt, Pt] = [
+	{ x: COURT_W / 2 - 2.4, y: 3.2 },
+	{ x: COURT_W / 2 + 2.4, y: 3.2 },
+	{ x: COURT_W / 2, y: 4.5 },
+];
+export const OFFICIAL_BALL_Z = 3.6;
+export const breakOfficialBall = (toward: Pt): Pt3 => {
+	const o = BREAK_OFFICIALS[2];
+	const d = Math.hypot(toward.x - o.x, toward.y - o.y) || 1;
+	return {
+		x: o.x + ((toward.x - o.x) / d) * 0.85,
+		y: o.y + ((toward.y - o.y) / d) * 0.85,
+		z: OFFICIAL_BALL_Z,
+	};
+};
+// Whether a point is the ball in his hands there.
+export const atBreakOfficial = (p: Pt | Pt3): boolean =>
+	"z" in p &&
+	Math.abs(p.z - OFFICIAL_BALL_Z) < 0.2 &&
+	Math.hypot(p.x - BREAK_OFFICIALS[2].x, p.y - BREAK_OFFICIALS[2].y) < 1.2;
 export const FT_BACK: [number, number][] = [
 	[27, 12],
 	[27, 38],

@@ -118,7 +118,9 @@ describe("the ball in his hands", () => {
 				bad.push(`${Math.round(s.t0)} ${s.from.pid} ${off.toFixed(2)}`);
 			}
 		}
-		assert.isAbove(passes, 100);
+		// (Not counting an official's: the ball in to the man who takes it
+		// out after a timeout.)
+		assert.isAbove(passes, 90);
 		assert.isAtMost(bad.length, 1, bad.join(", "));
 	}, 900_000);
 });

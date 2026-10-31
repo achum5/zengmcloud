@@ -4,6 +4,8 @@ import type { BallEnd, CourtTimeline, Fx, Huddle } from "./director.ts";
 import {
 	arenaShotAt,
 	ballBearing,
+	holdOf,
+	poseOf,
 	cameraCuts,
 	evalPlayer,
 	floorSpotOf,
@@ -16,8 +18,10 @@ import {
 } from "./evaluate.ts";
 import { lightness, shade, type Look } from "./figure.ts";
 import {
+	atBreakOfficial,
 	attackDir,
 	benchX,
+	BREAK_OFFICIALS,
 	COURT_H,
 	COURT_W,
 	FT_LINE_DEPTH,
@@ -1039,14 +1043,25 @@ const REFS_OFF = 1200;
 const refTargets = (tl: CourtTimeline, t: number): [Pt, Pt, Pt] => {
 	const beat = beatAt(tl, t);
 	const shot = arenaShotAt(tl, t);
-	// (Over a break; not the last look round the building, the game over.)
-	if (shot && shot !== tl.shots[0] && beat?.type !== "gameOver") {
-		return [
-			{ x: COURT_W / 2 - 2.4, y: 3.2 },
-			{ x: COURT_W / 2 + 2.4, y: 3.2 },
-			{ x: COURT_W / 2, y: 4.5 },
-		];
+	// (Over a break - a timeout, from the whistle - by the table; not the
+	// last look round the building, the game over. The one under the basket
+	// with the ball for a free throw stays there with it.)
+	if (
+		(shot && shot !== tl.shots[0] && beat?.type !== "gameOver") ||
+		(beat?.type === "timeout" && t >= beat.actionStart)
+	) {
+		const out: [Pt, Pt, Pt] = [...BREAK_OFFICIALS];
+		const team = offenseAt(tl, t);
+		if (withOfficial(tl, t, team)) {
+			const k = lastIndex(tl.poss, t, (p) => p[0]);
+			out[k % 2 === 0 ? 0 : 1] = ftAdminAt(team);
+		}
+		return out;
 	}
+	// (The one with the ball from a timeout stays there with it till he
+	// gives it up.)
+	const keep = (out: [Pt, Pt, Pt]): [Pt, Pt, Pt] =>
+		breakBallAt(tl, t) ? [out[0], out[1], BREAK_OFFICIALS[2]] : out;
 	if (beat?.type === "gameOver" && t >= beat.actionStart + REFS_OFF) {
 		// The game over, the three of them off the floor together, straight
 		// away - over by the near corner, out of the way of the handshakes
@@ -1075,7 +1090,7 @@ const refTargets = (tl: CourtTimeline, t: number): [Pt, Pt, Pt] => {
 		const trail = { x: X(29), y: 3.2 };
 		const slot = { x: X(FT_LINE_DEPTH), y: COURT_H + 1.2 };
 		const k = lastIndex(tl.poss, t, (p) => p[0]);
-		return k % 2 === 0 ? [lead, trail, slot] : [trail, lead, slot];
+		return keep(k % 2 === 0 ? [lead, trail, slot] : [trail, lead, slot]);
 	}
 	if (beat?.type === "jumpBall") {
 		// (The ball up out of his hands, he backs out of there.)
@@ -1103,10 +1118,12 @@ const refTargets = (tl: CourtTimeline, t: number): [Pt, Pt, Pt] => {
 	const trail = { x: X(clamp(bd + 12, 26, 54)), y: 0.9 };
 	const slot = { x: X(clamp(bd + 2, 17, 47)), y: COURT_H + 1.2 };
 	const k = lastIndex(tl.poss, t, (p) => p[0]);
-	return clearOfPlayers(
-		tl,
-		t,
-		k % 2 === 0 ? [lead, trail, slot] : [trail, lead, slot],
+	return keep(
+		clearOfPlayers(
+			tl,
+			t,
+			k % 2 === 0 ? [lead, trail, slot] : [trail, lead, slot],
+		),
 	);
 };
 
@@ -1632,8 +1649,91 @@ const handingIn = (
 		return undefined;
 	}
 	const ball = ftOfficialBall(offenseAt(tl, t));
-	const near = (p: BallEnd) =>
-		!("pid" in p) && Math.hypot(p.x - ball.x, p.y - ball.y) < 0.6;
+	return handing(
+		tl,
+		t,
+		(p) => !("pid" in p) && Math.hypot(p.x - ball.x, p.y - ball.y) < 0.6,
+	);
+};
+// The ball with an official, at a spot `near` picks out: on its way to him,
+// in his hands, or only just let go of. Where it is in his hands; how much
+// he stands right there to have it in them (0 to 1: all the while it is
+// coming and his, eased off over HOLD_EASE as he lets it go); and how much
+// it is really in his hands (eased in as it gets there, off as it goes).
+type OfficialBall = { at: Pt3; w: number; has: number };
+const HOLD_EASE = 400;
+const officialBallAt = (
+	tl: CourtTimeline,
+	t: number,
+	near: (p: Pt3) => boolean,
+): OfficialBall | undefined => {
+	const k = lastIndex(tl.ball, t, (b) => b.t0);
+	const seg = tl.ball[k];
+	if (seg?.kind === "rest") {
+		return near(seg.at) ? { at: seg.at, w: 1, has: 1 } : undefined;
+	}
+	if (seg?.kind !== "fly") {
+		return undefined;
+	}
+	if (!("pid" in seg.to) && near(seg.to)) {
+		return { at: seg.to, w: 1, has: smooth01((t - seg.t1) / 150) };
+	}
+	// (Let go of: the throw out of his hands, or the second half of a
+	// bounce pass.)
+	const prev = tl.ball[k - 1];
+	const off =
+		!("pid" in seg.from) && near(seg.from)
+			? seg
+			: prev?.kind === "fly" && !("pid" in prev.from) && near(prev.from)
+				? prev
+				: undefined;
+	if (!off || "pid" in off.from) {
+		return undefined;
+	}
+	const w = 1 - smooth01((t - off.t0) / HOLD_EASE);
+	return w > 0 ? { at: off.from, w, has: 0 } : undefined;
+};
+// The one by the table with the ball over a timeout.
+const breakBallAt = (tl: CourtTimeline, t: number): OfficialBall | undefined =>
+	officialBallAt(tl, t, atBreakOfficial);
+// Where an official stands to have the ball at `ball` in his hands, facing
+// `yaw` - and how high his hands have it there (feet): his own reach.
+const holdReach = new WeakMap<CrewMember, { f: number; u: number }>();
+const reachOf = (m: CrewMember): { f: number; u: number } => {
+	let r = holdReach.get(m);
+	if (!r) {
+		const st: PlayerState = {
+			pid: m.pid,
+			team: 0,
+			shown: true,
+			x: 0,
+			y: 0,
+			z: 0,
+			yaw: 0,
+			anim: "hold",
+			phase: 0,
+			moving: false,
+			holding: true,
+		};
+		const { ball } = holdOf(st, crewBody(m), poseOf(st));
+		r = { f: ball.f, u: ball.u };
+		holdReach.set(m, r);
+	}
+	return r;
+};
+const holdingAt = (m: CrewMember, ball: Pt, yaw: number): Pt => {
+	const { f } = reachOf(m);
+	return { x: ball.x - Math.cos(yaw) * f, y: ball.y - Math.sin(yaw) * f };
+};
+// An official with the ball where `near` says: catching it, holding it,
+// and giving it up - off a bounce, or thrown.
+const handing = (
+	tl: CourtTimeline,
+	t: number,
+	near: (p: BallEnd) => boolean,
+): { anim: AnimName; phase: number } | undefined => {
+	const throwOf = (s: { to: BallEnd }): AnimName =>
+		"pid" in s.to ? "pass" : "passBounce";
 	const k = lastIndex(tl.ball, t, (b) => b.t0);
 	const seg = tl.ball[k];
 	if (!seg) {
@@ -1641,7 +1741,7 @@ const handingIn = (
 	}
 	if (seg.kind === "fly" && near(seg.from)) {
 		return t < seg.t0 + PASS_OUT
-			? { anim: "passBounce", phase: (t - seg.t0 + PASS_WIND) / 300 }
+			? { anim: throwOf(seg), phase: (t - seg.t0 + PASS_WIND) / 300 }
 			: undefined;
 	}
 	// (Still in his hands, the bounce pass under way a moment before it
@@ -1656,7 +1756,7 @@ const handingIn = (
 		near(next.from) &&
 		next.t0 - t < PASS_WIND
 	) {
-		return { anim: "passBounce", phase: (t - next.t0 + PASS_WIND) / 300 };
+		return { anim: throwOf(next), phase: (t - next.t0 + PASS_WIND) / 300 };
 	}
 	if (seg.kind === "fly" && near(seg.to)) {
 		return t < seg.t1 + 150
@@ -1771,6 +1871,9 @@ const refStates = (
 	ball: Pt,
 	// (How far back through one signal after another this is looking.)
 	depth = 0,
+	// (Set to how far the ball is to be drawn up or down off where the play
+	// has it, to be in the hands of the one who has it - see crewAt.)
+	lift?: { dz: number },
 ): PlayerState[] => {
 	const { at } = refPlaces(tl, t);
 	// How quick each goes over a moment either side - not reaching across
@@ -1811,13 +1914,21 @@ const refStates = (
 	const beat = beatAt(tl, t);
 	const toss =
 		beat?.type === "jumpBall" ? nextFx(tl, beat.preStart, "toss") : undefined;
-	const handing = handingIn(tl, t);
+	const handed = handingIn(tl, t);
+	const breakBall = breakBallAt(tl, t);
+	const breakHand = breakBall
+		? handing(tl, t, (q) => !("pid" in q) && atBreakOfficial(q))
+		: undefined;
 	const ftTeam =
 		beat?.type === "ft" || beat?.type === "missFt"
 			? offenseAt(tl, t)
 			: undefined;
+	const ftAt = ftTeam === undefined ? undefined : ftOfficialBall(ftTeam);
+	const ftBall = ftAt
+		? officialBallAt(tl, t, (q) => Math.hypot(q.x - ftAt.x, q.y - ftAt.y) < 0.6)
+		: undefined;
 	// (The one who passed it in: the nearest of them to where he stood.)
-	const passed = handing || ftTeam === undefined ? 0 : passedIn(tl, t);
+	const passed = handed || ftTeam === undefined ? 0 : passedIn(tl, t);
 	const passer =
 		passed > 0
 			? at.reduce(
@@ -1866,6 +1977,22 @@ const refStates = (
 		let watching = true;
 		// (Doing something of his own the play has him do.)
 		let busy = false;
+		// The ball in his hands, if it is (0 to 1).
+		let holds = 0;
+		// (Right there to have it in his hands - not a step off it - as it
+		// comes to him and while it is his: `w` of the way from where he
+		// would be, as near as he is to there.)
+		const toHold = (b: OfficialBall, from: Pt) => {
+			const there = holdingAt(m, b.at, yaw);
+			const w = b.w * smooth01((2.5 - dist(from, there)) / 1.5);
+			p = lerp(p, there, w);
+			if (w > 0.5) {
+				holds = b.has;
+				if (lift) {
+					lift.dz = (reachOf(m).u - b.at.z) * b.has;
+				}
+			}
+		};
 		if (ftTeam !== undefined) {
 			// The one with the ball at the line: facing the shooter (come
 			// round to as he gets there).
@@ -1875,8 +2002,11 @@ const refStates = (
 				yawTo(p, spot(ftTeam, FT_SHOOTER_DEPTH, 25)),
 				smooth01((1.6 - d) / 0.8),
 			);
-			if (handing && d < 0.8) {
-				({ anim, phase } = handing);
+			if (ftBall && d < 2.5) {
+				toHold(ftBall, p);
+			}
+			if (handed && d < 0.8) {
+				({ anim, phase } = handed);
 				gaitFrom = undefined;
 				watching = false;
 				busy = true;
@@ -1887,6 +2017,24 @@ const refStates = (
 					phase: (PASS_OUT + PASS_WIND) / 300,
 					w: passed,
 				});
+				busy = true;
+			}
+		}
+		if (breakBall && i === 2) {
+			// By the table with the ball, facing the way it goes back in.
+			const o = BREAK_OFFICIALS[2];
+			const d = dist(p, o);
+			const B = breakBall.at;
+			yaw = turnToward(
+				yaw,
+				Math.atan2(B.y - o.y, B.x - o.x),
+				smooth01((2.5 - d) / 1.5),
+			);
+			toHold(breakBall, o);
+			if (breakHand && d < 0.8) {
+				({ anim, phase } = breakHand);
+				gaitFrom = undefined;
+				watching = false;
 				busy = true;
 			}
 		}
@@ -2097,6 +2245,7 @@ const refStates = (
 			anim,
 			phase,
 			moving: anim === "run" || anim === "walk",
+			...(holds > 0.5 ? { holding: true } : {}),
 			...(Math.abs(look) > 0.5 ? { look } : {}),
 			...(gaitFrom ? { from: gaitFrom } : {}),
 		};
@@ -2912,12 +3061,16 @@ export const crewAt = (
 	states: PlayerState[];
 	flashes: Pt3[];
 	shirts: { at: Pt3; turn: number; color: string }[];
+	// How far to draw the ball up or down off where the play has it: in an
+	// official's hands, at the height his own hands have it.
+	ballLift: number;
 } => {
 	const ball = ballSpot(tl, t);
 	const states: PlayerState[] = [];
 	const refs = crew.filter((m) => m.role === "ref");
+	const lift = { dz: 0 };
 	if (refs.length > 0) {
-		states.push(...refStates(tl, t, refs, ball));
+		states.push(...refStates(tl, t, refs, ball, 0, lift));
 	}
 	const flashes: Pt3[] = [];
 	const shirts: { at: Pt3; turn: number; color: string }[] = [];
@@ -2951,5 +3104,5 @@ export const crewAt = (
 			}
 		}
 	}
-	return { states, flashes, shirts };
+	return { states, flashes, shirts, ballLift: lift.dz };
 };

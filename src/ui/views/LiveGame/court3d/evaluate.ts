@@ -4239,20 +4239,19 @@ const playerAt = (
 	const doing = doingAt(tl, tr, t, here);
 	const from = shown ? blendInto(tl, tr, t, doing) : undefined;
 	// (The bob of his stride comes in as his legs do - not all of him up
-	// off the floor in a frame, setting off from where he stood.)
+	// off the floor in a frame, setting off from where he stood - and goes
+	// as they do, out of his stride into a move of his: not all of him
+	// down onto the floor in a frame, up into his layup off the run.)
+	const lifted =
+		from && from.w > 0 && isGait(from.anim)
+			? liftOf(from.anim, from.phase, from.stepLen)
+			: 0;
 	const now =
 		from && from.w > 0 && isGait(doing.anim)
-			? {
-					...doing,
-					z:
-						doing.z +
-						((isGait(from.anim)
-							? liftOf(from.anim, from.phase, from.stepLen)
-							: 0) -
-							doing.z) *
-							from.w,
-				}
-			: doing;
+			? { ...doing, z: doing.z + (lifted - doing.z) * from.w }
+			: lifted > 0
+				? { ...doing, z: doing.z + lifted * from!.w }
+				: doing;
 	const yaw = spinYawAt(tl, tr, t) ?? yawAt(tl, tr, t);
 	const room = shown && !EMBRACES.has(now.anim) ? roomAt(tl, tr, t) : undefined;
 	const armsIn =
@@ -6581,10 +6580,15 @@ const limbsOf = (st0: PlayerState, body: Body, whole: boolean) => {
 // across in front of them, round behind them: out from his thigh or his
 // shin, across the floor (its height as it was, so it still meets the
 // floor and his hand).
+// (Twice round: put out of one leg into the other, between them, it is put
+// out of that one again.)
 const offLegs = (p: Pt3, st0: PlayerState, body: Body): Pt3 => {
+	const limbs = limbsOf(st0, body, false);
 	let at = p;
-	for (const [a, b, thick] of limbsOf(st0, body, false)) {
-		at = { ...outOfLimb(at, a, b, thick), z: p.z };
+	for (let pass = 0; pass < 2; pass++) {
+		for (const [a, b, thick] of limbs) {
+			at = { ...outOfLimb(at, a, b, thick), z: p.z };
+		}
 	}
 	return at;
 };
