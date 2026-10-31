@@ -8,6 +8,7 @@ import { drawPools, type Pool } from "./pools.ts";
 import {
 	END_ZONE_PLANES,
 	MID_LOGO_PLANE,
+	MID_TROPHY_PLANE,
 	TURF_PLANE,
 	type FieldStyle,
 	type NumberMark,
@@ -55,6 +56,8 @@ export type FieldPaint = {
 	endZones: [HTMLCanvasElement, HTMLCanvasElement];
 	numbers: NumberMark[];
 	logo?: HTMLCanvasElement;
+	// (The championship game's, in its place: see paintMidTrophy.)
+	trophy?: HTMLCanvasElement;
 	stadium: StadiumPaint;
 };
 
@@ -271,7 +274,9 @@ export const drawFieldFrame = (f: FieldFrame) => {
 	drawTexturedPlane(ctx, cam, TURF_PLANE, paint.turf, 32, 16);
 	drawTexturedPlane(ctx, cam, END_ZONE_PLANES[0], paint.endZones[0], 4, 16);
 	drawTexturedPlane(ctx, cam, END_ZONE_PLANES[1], paint.endZones[1], 4, 16);
-	if (paint.logo) {
+	if (paint.trophy) {
+		drawTexturedPlane(ctx, cam, MID_TROPHY_PLANE, paint.trophy, 8, 12);
+	} else if (paint.logo) {
 		drawTexturedPlane(ctx, cam, MID_LOGO_PLANE, paint.logo, 8, 8);
 	}
 	for (const n of paint.numbers) {

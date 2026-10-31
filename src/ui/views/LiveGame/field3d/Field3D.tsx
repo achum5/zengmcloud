@@ -54,6 +54,7 @@ import {
 	fieldStyleFor,
 	paintEndZone,
 	paintMidLogo,
+	paintMidTrophy,
 	paintNumbers,
 	paintTurf,
 	type FieldTeam,
@@ -544,6 +545,7 @@ const Field3D = ({
 			endZones: [paintEndZone(style, 0), paintEndZone(style, 1)],
 			numbers: paintNumbers(style),
 			...(mid ? { logo: paintMidLogo(mid) } : {}),
+			...(boxScore?.finals === true ? { trophy: paintMidTrophy(mid) } : {}),
 			stadium: paintStadium(
 				h,
 				a,

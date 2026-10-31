@@ -297,6 +297,152 @@ export const paintMidLogo = (logo: HTMLCanvasElement | HTMLImageElement) => {
 	return c;
 };
 
+// THE CHAMPIONSHIP GAME'S MIDFIELD (the 3D court's finals: see LiveCourt's
+// trophy at center court): in place of the logo, a silver trophy painted big
+// - a football up on its point on a tapering stand - the home logo in front
+// of its base. Laid out in feet across the plane, its top the far side.
+const TROPHY_W = 34;
+const TROPHY_D = 56;
+export const MID_TROPHY_PLANE = groundPlane(
+	MID_X - TROPHY_W / 2,
+	MID_Y - TROPHY_D / 2,
+	TROPHY_W,
+	TROPHY_D,
+	LOGO_PPF,
+);
+// The ball: half as long and half as fat (ft), leaning over this far
+// (rad), its point down on the top of the stand; the stand from there down
+// to its base, this wide at either end; the base, this deep; the logo,
+// this big, its middle this far down.
+const BALL_A = 10.5;
+const BALL_B = 5.6;
+const BALL_LEAN = 0.22;
+const STAND_TOP = 22.5;
+const STAND_BOTTOM = 44.5;
+const STAND_W: [number, number] = [1.6, 9];
+const BASE_D = 3.5;
+const TROPHY_LOGO = 16;
+const TROPHY_LOGO_AT = 46;
+export const paintMidTrophy = (
+	logo: HTMLCanvasElement | HTMLImageElement | undefined,
+) => {
+	const P = MID_TROPHY_PLANE;
+	const c = canvasOf(P.w, P.h);
+	const g = c.getContext("2d")!;
+	const k = P.w / TROPHY_W;
+	g.scale(k, k);
+	g.globalAlpha = 0.92;
+	g.lineJoin = "round";
+	const cx = TROPHY_W / 2;
+	const silver = (x0: number, x1: number) => {
+		const grad = g.createLinearGradient(x0, 0, x1, 0);
+		grad.addColorStop(0, "#eef1f4");
+		grad.addColorStop(0.45, "#b9c1c8");
+		grad.addColorStop(1, "#77818a");
+		return grad;
+	};
+	const edge = "#4f5860";
+
+	// The base, and the stand up off it: its two faces this way narrowing,
+	// concave, up to the ball - the left lit, the right in shade.
+	const [wt, wb] = STAND_W;
+	g.beginPath();
+	g.roundRect(cx - wb / 2 - 0.9, STAND_BOTTOM, wb + 1.8, BASE_D, 0.6);
+	g.fillStyle = silver(cx - wb / 2, cx + wb / 2);
+	g.fill();
+	g.lineWidth = 0.3;
+	g.strokeStyle = edge;
+	g.stroke();
+	const midY = (STAND_TOP + STAND_BOTTOM) / 2;
+	const side = (s: -1 | 1) => {
+		g.moveTo(cx, STAND_TOP);
+		g.lineTo(cx + (s * wt) / 2, STAND_TOP);
+		g.quadraticCurveTo(
+			cx + (s * (wt + wb)) / 6,
+			midY + 4,
+			cx + (s * wb) / 2,
+			STAND_BOTTOM,
+		);
+		g.lineTo(cx, STAND_BOTTOM);
+		g.closePath();
+	};
+	for (const s of [-1, 1] as const) {
+		g.beginPath();
+		side(s);
+		g.fillStyle =
+			s < 0 ? silver(cx - wb / 2, cx + wb) : silver(cx - wb, cx + wb / 2);
+		g.fill();
+	}
+	g.beginPath();
+	side(-1);
+	side(1);
+	g.stroke();
+	g.beginPath();
+	g.moveTo(cx, STAND_TOP);
+	g.lineTo(cx, STAND_BOTTOM);
+	g.lineWidth = 0.18;
+	g.strokeStyle = "#ffffff";
+	g.stroke();
+
+	// The ball, its point down on the stand.
+	const down = { x: Math.sin(BALL_LEAN), y: Math.cos(BALL_LEAN) };
+	const bx = cx - down.x * BALL_A;
+	const by = STAND_TOP - down.y * BALL_A;
+	g.save();
+	g.translate(bx, by);
+	g.rotate(-BALL_LEAN);
+	// (A football's ends come to points, not round: two arcs, tip to tip.)
+	const r = (BALL_A * BALL_A + BALL_B * BALL_B) / (2 * BALL_B);
+	const half = Math.asin(BALL_A / r);
+	g.beginPath();
+	g.arc(r - BALL_B, 0, r, Math.PI - half, Math.PI + half);
+	g.arc(BALL_B - r, 0, r, -half, half);
+	g.closePath();
+	g.fillStyle = silver(-BALL_B, BALL_B);
+	g.fill();
+	g.lineWidth = 0.3;
+	g.strokeStyle = edge;
+	g.stroke();
+	// A shine down its lit side; the laces up the middle.
+	g.beginPath();
+	g.ellipse(
+		-BALL_B * 0.45,
+		-BALL_A * 0.1,
+		BALL_B * 0.18,
+		BALL_A * 0.55,
+		0,
+		0,
+		2 * Math.PI,
+	);
+	g.fillStyle = "rgba(255, 255, 255, 0.55)";
+	g.fill();
+	g.strokeStyle = "#6d767e";
+	g.lineWidth = 0.35;
+	g.beginPath();
+	g.moveTo(0, -BALL_A * 0.42);
+	g.lineTo(0, BALL_A * 0.3);
+	g.stroke();
+	g.lineWidth = 0.28;
+	for (let i = 0; i < 7; i++) {
+		const y = -BALL_A * 0.36 + (i * BALL_A * 0.6) / 6;
+		g.beginPath();
+		g.moveTo(-0.9, y);
+		g.lineTo(0.9, y);
+		g.stroke();
+	}
+	g.restore();
+
+	// The home logo, in front of the base.
+	if (logo && logo.width > 0 && logo.height > 0) {
+		const s = TROPHY_LOGO / Math.max(logo.width, logo.height);
+		const w = logo.width * s;
+		const h = logo.height * s;
+		g.globalAlpha = 0.9;
+		g.drawImage(logo, cx - w / 2, TROPHY_LOGO_AT - h / 2, w, h);
+	}
+	return c;
+};
+
 // THE NUMBERS: every ten yards, both sides, six feet tall with their bottoms
 // twelve yards in from the sideline - each set facing its own sideline, so
 // the far side's read upside down from the press box, as they do - with the
