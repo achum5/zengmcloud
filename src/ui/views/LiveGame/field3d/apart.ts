@@ -10,7 +10,8 @@ import type { Move } from "./poses.ts";
 // than through. Not men meant to be on each other: blocking, tackled, in a
 // pile, handing the ball off, shaking hands - nor a man the ball is coming
 // to or leaving. An official in a man's way gives him it: it is the
-// official who goes round.
+// official who goes round. And a man down on the turf is all of him, head
+// to feet, for nobody on his feet to stand on or walk over: they go round.
 // Worked out once a play, the first time it is looked at.
 
 // Every this long (ms) along the play, how far over each man is (feet).
@@ -36,6 +37,20 @@ const SLIGHT = 0.02;
 // (Off out of it: each well away from the rest, not all in each other there.)
 const GONE = -1e5;
 const goneAt = (i: number) => GONE - i * 10;
+// Down on the turf - on his front, his head the way he faces; on his back,
+// the other way: from his hips (where he is) this far back and on out to
+// his head this far, feet (his legs nobody's to mind) - and kept this far
+// off (feet) by a man on his feet, round the nearer end of him if he is on
+// his way across.
+const LIE_BACK = 0.6;
+const LIE_HEAD = 3;
+const LIE_APART = 1.3;
+const ON_FRONT = new Set<Move>(["prone", "hurtProne"]);
+const ON_BACK = new Set<Move>(["supine", "hurt"]);
+// (Or on his way down, from this far through it.)
+const FALLING_FRONT = new Set<Move>(["tackled", "dive"]);
+const FALLING_BACK = new Set<Move>(["tackledBack"]);
+const DOWN_FROM = 0.6;
 // The man the ball comes to, left where he is from this long (ms) before
 // it is his; the man it leaves, until this long after.
 const GATHER_MS = 400;
@@ -127,6 +142,25 @@ export const keepApart = (play: Play): Map<number, Sep[]> => {
 		}
 		return out;
 	});
+	// (Which way each lies from his hips to his head, where he is down: NaN,
+	// on his feet.)
+	const lie = men.map((m, i) => {
+		const k = tracks[i]!.k;
+		const out = new Float32Array(n).fill(Number.NaN);
+		for (let s = 0; s < n; s++) {
+			const l = m.legs[k[s]!]!;
+			if (l.yaw === undefined) {
+				continue;
+			}
+			const late = t0 + s * SEP_MS >= l.t0 + (l.t1 - l.t0) * DOWN_FROM;
+			if (ON_FRONT.has(l.move) || (late && FALLING_FRONT.has(l.move))) {
+				out[s] = l.yaw;
+			} else if (ON_BACK.has(l.move) || (late && FALLING_BACK.has(l.move))) {
+				out[s] = l.yaw + Math.PI;
+			}
+		}
+		return out;
+	});
 	// (The captains out for the coin toss gone once it is done.)
 	const toss = play.toss;
 	if (toss) {
@@ -195,7 +229,7 @@ export const keepApart = (play: Play): Map<number, Sep[]> => {
 			pass === 0 ? xs : xs.map((x, i) => x.map((v, s) => v + sx[i]![s]!));
 		const by =
 			pass === 0 ? ys : ys.map((y, i) => y.map((v, s) => v + sy[i]![s]!));
-		const { dx, dy, hit, moved } = pushed(bx, by, free, official, n, near);
+		const { dx, dy, hit, moved } = pushed(bx, by, free, official, lie, n, near);
 		if (!hit) {
 			break;
 		}
@@ -267,6 +301,7 @@ const pushed = (
 	ys: Float32Array[],
 	free: Uint8Array[],
 	official: boolean[],
+	lie: Float32Array[],
 	n: number,
 	near: Uint8Array | undefined,
 ) => {
@@ -284,19 +319,45 @@ const pushed = (
 	const px = new Float64Array(m);
 	const py = new Float64Array(m);
 	const fr = new Uint8Array(m);
+	// (Those down, and the way each lies.)
+	const downs: number[] = [];
+	const lx = new Float64Array(m);
+	const ly = new Float64Array(m);
 	for (let s = 0; s < n; s++) {
 		if (near && !near[s]) {
 			continue;
 		}
+		// (Who is down here, and which way he lies.)
+		downs.length = 0;
 		for (let i = 0; i < m; i++) {
 			px[i] = xs[i]![s]!;
 			py[i] = ys[i]![s]!;
 			fr[i] = free[i]![s]!;
+			const yaw = lie[i]![s]!;
+			if (!Number.isNaN(yaw)) {
+				downs.push(i);
+				lx[i] = Math.cos(yaw);
+				ly[i] = Math.sin(yaw);
+			}
 		}
 		for (let round = 0; round < ROUNDS; round++) {
 			let movedNow = false;
 			[was, now] = [now, was];
 			now.fill(0);
+			// (Off the men down first, then off each other: in a crowd round
+			// men down, each other the last word.)
+			for (const d of downs) {
+				for (let up = 0; up < m; up++) {
+					if (
+						fr[up] &&
+						Number.isNaN(lie[up]![s]!) &&
+						(round === 0 || was[up] || now[up]) &&
+						offBody(s, up, d)
+					) {
+						movedNow = true;
+					}
+				}
+			}
 			for (let i = 0; i < m; i++) {
 				const fi = fr[i]!;
 				for (let j = i + 1; j < m; j++) {
@@ -305,6 +366,12 @@ const pushed = (
 						continue;
 					}
 					if (round > 0 && !was[i] && !was[j] && !now[i] && !now[j]) {
+						continue;
+					}
+					if (
+						downs.length > 0 &&
+						Number.isNaN(lie[i]![s]!) !== Number.isNaN(lie[j]![s]!)
+					) {
 						continue;
 					}
 					const ex = px[i]! - px[j]!;
@@ -375,6 +442,65 @@ const pushed = (
 	}
 
 	return { dx, dy, hit, moved };
+
+	// The man on his feet `up` off the man `down` at sample s (see
+	// LIE_HEAD): out to the side of him where he is by him - or, on his way
+	// across him, round the nearer end - or off the end he is past. Whether
+	// he had to be.
+	function offBody(s: number, up: number, down: number): boolean {
+		const ux = lx[down]!;
+		const uy = ly[down]!;
+		const ex = px[up]! - px[down]!;
+		const ey = py[up]! - py[down]!;
+		const along = ex * ux + ey * uy;
+		const side = -ex * uy + ey * ux;
+		if (
+			along >= LIE_HEAD + LIE_APART ||
+			along <= -LIE_BACK - LIE_APART ||
+			side >= LIE_APART ||
+			side <= -LIE_APART
+		) {
+			return false;
+		}
+		const q = Math.max(-LIE_BACK, Math.min(LIE_HEAD, along));
+		const d = Math.hypot(along - q, side);
+		if (d >= LIE_APART) {
+			return false;
+		}
+		// (How far along and across him to go, his way and out to the side.)
+		let da = 0;
+		let ds = 0;
+		if (along !== q) {
+			const k = (LIE_APART - d) / Math.max(d, 1e-3);
+			da = (along - q) * k;
+			ds = side * k;
+		} else {
+			const vx = pace(xs[up]!, s, n);
+			const vy = pace(ys[up]!, s, n);
+			if (Math.abs(-vx * uy + vy * ux) > BY_FPS) {
+				const round = Math.sqrt(
+					Math.max(0, LIE_APART * LIE_APART - side * side),
+				);
+				da =
+					along >= (LIE_HEAD - LIE_BACK) / 2
+						? LIE_HEAD + round - along
+						: -LIE_BACK - round - along;
+			} else {
+				ds = (side >= 0 ? 1 : -1) * LIE_APART - side;
+			}
+		}
+		const ax = dx[up]!;
+		const ay = dy[up]!;
+		ax[s] = ax[s]! + da * ux - ds * uy;
+		ay[s] = ay[s]! + da * uy + ds * ux;
+		px[up] = xs[up]![s]! + ax[s]!;
+		py[up] = ys[up]![s]! + ay[s]!;
+		now[up] = 1;
+		moved[up] = 1;
+		hit ??= new Uint8Array(n);
+		hit[s] = 1;
+		return true;
+	}
 };
 
 // How quick a track goes at sample s, ft/s.

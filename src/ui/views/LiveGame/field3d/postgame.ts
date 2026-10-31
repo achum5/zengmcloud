@@ -96,6 +96,9 @@ const HUG_APART = 1.7;
 const HUG_IN = 0.22;
 const SECOND = 0.75;
 const SECOND_FROM = 30;
+// (Each two of them no nearer another two than this, feet, middle to
+// middle - not one pair in among another.)
+const MEET_ROOM = 5;
 // The head coaches: off their sidelines this long after the whistle (and
 // up to this much later), at a jog; a hug after the handshake this often;
 // the picture on them this long after it.
@@ -662,8 +665,26 @@ export const stagePostgame = (input: {
 		placeOf.set(m, p);
 	}
 	// Each to one of the other side's, by where they are making for - and
-	// on to the next.
+	// on to the next - each two where no other two are.
 	let done = go;
+	// (And the head coaches'.)
+	const spots: Pt[] = [at];
+	const roomy = (p: Pt): Pt => {
+		let q = p;
+		for (let k = 0; k < 4; k++) {
+			const near = spots.find((o) => dist(o, q) < MEET_ROOM);
+			if (!near) {
+				break;
+			}
+			const a = dist(near, q) > 0.1 ? toward(near, q) : r() * Math.PI * 2;
+			q = {
+				x: clamp(near.x + Math.cos(a) * MEET_ROOM, 3, FIELD_L - 3),
+				y: clamp(near.y + Math.sin(a) * MEET_ROOM, 3, FIELD_W - 3),
+			};
+		}
+		spots.push(q);
+		return q;
+	};
 	const metWith = new Map<Man, Man>();
 	const zero = men.filter((m) => m.team === 0);
 	const one = men.filter((m) => m.team === 1);
@@ -674,7 +695,7 @@ export const stagePostgame = (input: {
 		const pb = placeOf.get(b)!;
 		done = Math.max(
 			done,
-			meet(a, b, r, { x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2 }).end,
+			meet(a, b, r, roomy({ x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2 })).end,
 		);
 		metWith.set(a, b);
 		metWith.set(b, a);
@@ -691,7 +712,15 @@ export const stagePostgame = (input: {
 		(a, b) => (metWith.get(a) === b ? Infinity : dist(a.at, b.at)),
 		SECOND_FROM,
 	)) {
-		done = Math.max(done, meet(a, b, r).end);
+		done = Math.max(
+			done,
+			meet(
+				a,
+				b,
+				r,
+				roomy({ x: (a.at.x + b.at.x) / 2, y: (a.at.y + b.at.y) / 2 }),
+			).end,
+		);
 	}
 
 	// The head coaches: out from their sidelines to each other - the
