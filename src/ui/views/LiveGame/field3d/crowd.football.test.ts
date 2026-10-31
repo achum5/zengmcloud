@@ -146,6 +146,8 @@ test("the look round the stadium between quarters", () => {
 			assert.strictEqual(next.quarter, p.quarter + 1, `${p.i}`);
 			assert.include(tl.cuts, p.between!, `${p.i}`);
 			assert.isAbove(p.between!, p.whistle, `${p.i}`);
+			// (After the play shown again, if it is.)
+			assert.isAbove(p.between!, p.replay?.cue ?? 0, `${p.i}`);
 			const at = (t: number) => aimFor({ t, play: p, players: [] });
 			const a = at(p.between! + 1);
 			const b = at(p.t1 - 1);

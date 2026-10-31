@@ -1723,6 +1723,21 @@ class Director {
 						e?.type === "overtime",
 				);
 		const offAt = Math.max(whistle, acted?.until ?? 0);
+		// The play shown again, if it is, with the picture on it until t1.
+		const replayTill = (till: number) =>
+			replayFor({
+				kind,
+				dir,
+				events,
+				beats: this.beats.filter((b) => b.i >= i0 && b.i < i1),
+				t0,
+				snap,
+				whistle,
+				...(acted?.until ? { until: acted.until } : {}),
+				t1: till,
+				ball,
+				fouled: fouls.some((f) => f.accepted),
+			});
 		if (half) {
 			t1 = stageHalftime({
 				parts,
@@ -1749,19 +1764,7 @@ class Director {
 						const e = events[calledI]!;
 						const said =
 							this.beats.find((b) => b.i === calledI)?.actionStart ?? whistle;
-						const again = replayFor({
-							kind,
-							dir,
-							events,
-							beats: this.beats.filter((b) => b.i >= i0 && b.i < i1),
-							t0,
-							snap,
-							whistle,
-							...(acted?.until ? { until: acted.until } : {}),
-							t1: whistle + 60000,
-							ball,
-							fouled: fouls.some((f) => f.accepted),
-						});
+						const again = replayTill(whistle + 60000);
 						return stageTimeout({
 							parts,
 							ball,
@@ -1806,6 +1809,7 @@ class Director {
 			this.cuts.push(measureAt.cut);
 			cheer = { t: measureAt.call + 450, side: offense, big: false };
 		}
+		// (After any replay.)
 		const between =
 			!ended &&
 			!half &&
@@ -1813,7 +1817,10 @@ class Director {
 			!timeout &&
 			!measureAt &&
 			events.slice(i0, i1).some((e) => e?.type === "quarter")
-				? offAt + BETWEEN_AFTER
+				? Math.max(
+						offAt + BETWEEN_AFTER,
+						(replayTill(whistle + 60000)?.cue ?? 0) + TIMEOUT_AFTER_REPLAY,
+					)
 				: undefined;
 		if (between !== undefined) {
 			t1 = Math.max(t1, between + BETWEEN_MS);
@@ -1925,19 +1932,7 @@ class Director {
 						r: this.rng(i0, "measured"),
 					})
 				: undefined;
-		const shown = replayFor({
-			kind,
-			dir,
-			events,
-			beats: this.beats.filter((b) => b.i >= i0 && b.i < i1),
-			t0,
-			snap,
-			whistle,
-			...(acted?.until ? { until: acted.until } : {}),
-			t1,
-			ball,
-			fouled: fouls.some((f) => f.accepted),
-		});
+		const shown = replayTill(t1);
 		// (A man hurt: the play shown again while they see to him.)
 		const replay =
 			shown ??
