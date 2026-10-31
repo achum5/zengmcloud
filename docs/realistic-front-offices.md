@@ -277,6 +277,14 @@ every team, again whenever a signing changes the pool), memory cleanup 17%.
   CPU misreads by -0.12 ± 0.35 and is still ahead after it (2.5 ± 1.3
   hundredths of a title). Its deals are a rebuilding team's young player (on a
   rookie deal in 68% of them) for older players.
+  Run again after the vanilla-mechanics pivot (3 leagues x 2 seasons, 22
+  hunts of about 5,000 candidates each): 4 deals made, 0.7 a league-season.
+  The shark gains 2.7 ± 0.5 points a game a deal; the CPU loses 0.84 ± 0.45
+  this season against 1.23 its model expected (misread +0.39 ± 0.32, none
+  beyond the sim's noise), and is ahead after it (5.9 ± 0.8 hundredths of a
+  title, carried); no deal left it truly worse off. It gave older, better
+  players (27, 59 overall) for younger ones (25, 54) - its own choice of the
+  future over this season.
 - **What a no says** (owner's call): "They'd rather keep what they have",
   "They have a better offer elsewhere" (only when another CPU team would make
   that deal by its own read) or "They would rather wait for the deadline" -
