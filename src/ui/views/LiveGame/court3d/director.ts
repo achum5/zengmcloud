@@ -22,6 +22,7 @@ import {
 	FT_SHOOTER_DEPTH,
 	ftDefenseSpot,
 	ftOfficialBall,
+	BREAK_OFFICIALS,
 	breakOfficialBall,
 	ftOffenseSpot,
 	guardSpot,
@@ -2141,6 +2142,9 @@ class Director {
 	// The official by the table with the ball over a timeout (`at`, his
 	// since `since`), for `pid` to have back (see toOfficial).
 	private backFrom?: { pid: number; at: Pt3; since: number };
+	// Where he stands with it, and from when till when - gone round by
+	// everybody, not walked through (see bodies).
+	private officialStands: { at: Pt; t0: number; t1: number }[] = [];
 	// Two men going to each other to dap up after the game, from their last
 	// steps in to it to when they are through (see gameOver) - not kept off
 	// each other as they come together, nor in the middle of it (see
@@ -3627,6 +3631,13 @@ class Director {
 			const R = this.posAt(pid, seg.t0);
 			const flight = Math.max(450, passMs(dist(back.at, R)) * 1.15);
 			const t0 = Math.max(seg.t0 - flight, back.since + 300);
+			// (Stood back from it, the ball out in front of him.)
+			const B = BREAK_OFFICIALS[2];
+			this.officialStands.push({
+				at: { x: B.x - (back.at.x - B.x), y: B.y - (back.at.y - B.y) },
+				t0: back.since - 1500,
+				t1: t0 + 300,
+			});
 			if (t0 < seg.t0 - 100) {
 				this.pushBall({
 					kind: "fly",
@@ -21537,6 +21548,13 @@ class Director {
 						post: act.anim === "postUp",
 					});
 				}
+			}
+		}
+		// (And the official by the table with the ball over a timeout: gone
+		// round by all of them.)
+		if (withDown) {
+			for (const o of this.officialStands) {
+				out.push({ ...o, team: 0, post: false, down: { pid: -1 } });
 			}
 		}
 		return out;
