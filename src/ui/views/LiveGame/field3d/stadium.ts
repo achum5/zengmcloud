@@ -252,6 +252,21 @@ const PALETTE = [
 	"#5a4636",
 ];
 const SKINS = ["#f1c7a5", "#d9a77f", "#b07a52", "#8a5a3b", "#5e3b26"];
+// Over the top of a fan's head: his hair (every kind of it - now and then
+// none), or a cap, as often as not in the home team's colors.
+const HAIRS = [
+	"#14100c",
+	"#2a1a10",
+	"#3a2414",
+	"#5a3a22",
+	"#8a5a2e",
+	"#c9a05a",
+	"#e2c27c",
+	"#8d8a86",
+];
+const BALD = 0.07;
+const CAPS = 0.16;
+const CAP_COLORS = ["#1d2330", "#f2f2f0", "#5b5d62"];
 
 // A section of seats, its front row at the bottom of the picture: rows of
 // people in the home colors (and some in the visitors', and plain clothes),
@@ -298,6 +313,7 @@ const paintSeating = ({
 	const rng = makeCourtRng(`fans|${seed}`);
 	const rise = makeCourtRng(`fans-up|${seed}`);
 	const seatRng = makeCourtRng(`seats|${seed}`);
+	const headRng = makeCourtRng(`heads|${seed}`);
 	const homeC = [teamColor(home, 0, "#8c1d40"), teamColor(home, 1, "#f2c14e")];
 	const awayC = [teamColor(away, 0, "#1d3461"), teamColor(away, 1, "#f28c28")];
 	const shirt = () => {
@@ -395,6 +411,26 @@ const paintSeating = ({
 			g.beginPath();
 			g.arc(x, headY, 0.36 * px, 0, Math.PI * 2);
 			g.fill();
+			const top = headRng();
+			if (top >= BALD) {
+				const cap = top < BALD + CAPS;
+				g.fillStyle = cap
+					? headRng() < 0.5
+						? homeC[Math.floor(headRng() * 2)]!
+						: CAP_COLORS[Math.floor(headRng() * CAP_COLORS.length)]!
+					: HAIRS[Math.floor(headRng() * HAIRS.length)]!;
+				g.beginPath();
+				g.ellipse(
+					x,
+					headY - 0.08 * px,
+					(cap ? 0.4 : 0.38) * px,
+					(cap ? 0.3 : 0.32) * px,
+					0,
+					Math.PI,
+					0,
+				);
+				g.fill();
+			}
 		}
 		g.fillStyle = shade(style.structure, -0.3);
 		for (let xf = 0; xf < wFt; xf += aisle) {
