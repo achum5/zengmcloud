@@ -278,6 +278,7 @@ const CLEAR = 4.5;
 const WAY_MS = 100;
 const WAY_EASE = 4;
 const WAY_STEP = 1.5;
+const WAY_BLEND = 260;
 type Way = {
 	t0: number;
 	dx: Float32Array;
@@ -1075,13 +1076,44 @@ export const sidelineAt = (
 		let move = spot.move;
 		let phase = 0;
 		let from: FieldPlayerState["from"];
-		if (off && off.fps > WAY_STEP) {
-			// (Stepping it: back, across, or on - as he faces.)
-			const c = Math.cos(off.way - yaw);
-			move = c < -0.5 ? "back" : c > 0.5 ? "walk" : "slide";
-			phase = off.walked / strideOf(move);
-		} else if (boss) {
+		if (boss) {
 			({ move, phase, from } = boss);
+		}
+		if (way) {
+			// (Stepping it: back, across, or on - as he stands, not as he has
+			// turned to watch - into it and out of it, and from one to
+			// another, over a moment.)
+			const stance = { move, phase };
+			const stepAt = (t: number): { move: Move; phase: number } => {
+				const o = wayAt(way, t);
+				if (o.fps <= WAY_STEP) {
+					return stance;
+				}
+				const c = Math.cos(o.way - facing);
+				const step = c < -0.5 ? "back" : c > 0.5 ? "walk" : "slide";
+				return { move: step, phase: o.walked / strideOf(step) };
+			};
+			const now = stepAt(m.t);
+			if (now !== stance) {
+				({ move, phase } = now);
+				from = undefined;
+			}
+			let lo = m.t - WAY_BLEND;
+			if (stepAt(lo).move !== move) {
+				let hi = m.t;
+				for (let k = 0; k < 8; k++) {
+					const mid = (lo + hi) / 2;
+					if (stepAt(mid).move === move) {
+						hi = mid;
+					} else {
+						lo = mid;
+					}
+				}
+				from = {
+					...stepAt(lo),
+					w: 1 - smooth01((m.t - hi) / WAY_BLEND),
+				};
+			}
 		}
 		let arms: FieldPlayerState["arms"];
 		// Up for his side's big play, a moment after it gets going, and on

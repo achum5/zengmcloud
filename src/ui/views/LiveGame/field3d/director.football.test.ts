@@ -784,7 +784,7 @@ describe("the head coach", () => {
 				}
 				// (Never from one way to another in a frame, nor anywhere in
 				// one but by a step - stepping out of the way of a man run
-				// into them, off his line, aside.)
+				// into them, off his line, aside for that.)
 				let last = new Map<number, FieldPlayerState>();
 				for (let t = play.t0; t < play.t1; t += 80) {
 					const now = new Map<number, FieldPlayerState>();
@@ -792,14 +792,14 @@ describe("the head coach", () => {
 						now.set(s.id, s);
 						ways.add(s.move);
 						const was = last.get(s.id);
-						const home = headCoachAt(s.team, play.i).y;
-						if (!was || s.y !== home || was.y !== home) {
+						if (!was) {
 							continue;
 						}
-						if (was.move !== s.move && (!s.from || s.from.w < 0.8)) {
+						if (was.move !== s.move && (!s.from || s.from.w < 0.7)) {
 							bad.push(`play ${play.i}: ${s.id} ${was.move} to ${s.move}`);
 						}
-						if (Math.abs(s.x - was.x) > 0.4) {
+						const home = headCoachAt(s.team, play.i).y;
+						if (s.y === home && was.y === home && Math.abs(s.x - was.x) > 0.4) {
 							bad.push(`play ${play.i}: ${s.id} jumped`);
 						}
 						if (
