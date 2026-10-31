@@ -35,13 +35,14 @@ export const paintPreview = (
 	sky: "day" | "night" | undefined,
 	logo: HTMLCanvasElement | undefined,
 	// Its own pictures - for the end zones, midfield (the logo, left out),
-	// and the 25-yard lines - and the league's decals on it (see
-	// StadiumLook, paintDecals).
+	// the 25-yard lines, the whole field and the boards - and the league's
+	// decals on it (see StadiumLook, paintDecals).
 	pictures: {
 		end?: HTMLCanvasElement;
 		mid?: HTMLCanvasElement;
 		secondary?: HTMLCanvasElement;
 		field?: HTMLCanvasElement;
+		board?: HTMLCanvasElement;
 		decals?: DecalPicture[];
 	} = {},
 ): FieldPaint => {
@@ -78,7 +79,16 @@ export const paintPreview = (
 					ownLines: team.stadium?.fieldLines === "picture",
 				}
 			: {}),
-		stadium: paintStadium(team, undefined, "preview", undefined, logo, venue),
+		stadium: paintStadium(
+			team,
+			undefined,
+			"preview",
+			undefined,
+			logo,
+			venue,
+			undefined,
+			pictures.board,
+		),
 	};
 };
 

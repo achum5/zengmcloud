@@ -539,6 +539,7 @@ const Field3D = ({
 			HTMLCanvasElement?,
 			HTMLCanvasElement?,
 			HTMLCanvasElement?,
+			HTMLCanvasElement?,
 		]
 	>([]);
 	const awayLogo = away?.imgURL || away?.imgURLSmall;
@@ -549,6 +550,7 @@ const Field3D = ({
 	const homeEnd: string | undefined = home?.stadium?.endZoneURL;
 	const secondURL: string | undefined = home?.stadium?.secondaryLogoURL;
 	const fieldURL: string | undefined = home?.stadium?.fieldURL;
+	const boardURL: string | undefined = home?.stadium?.boardURL;
 	useEffect(() => {
 		let alive = true;
 		void Promise.all([
@@ -557,6 +559,7 @@ const Field3D = ({
 				logoPicture(url, END_ZONE_PX),
 			),
 			logoPicture(fieldURL, FIELD_PX),
+			logoPicture(boardURL, END_ZONE_PX),
 		]).then((made) => {
 			if (alive) {
 				setLogos([
@@ -568,6 +571,7 @@ const Field3D = ({
 					made[5],
 					made[6],
 					made[7],
+					made[8],
 				]);
 			}
 		});
@@ -583,6 +587,7 @@ const Field3D = ({
 		homeEnd,
 		secondURL,
 		fieldURL,
+		boardURL,
 	]);
 	// The league's decals for the game on the home field (see CourtDecal).
 	const decals: CourtDecalPlaced[] | undefined = home?.stadium?.decals;
@@ -669,6 +674,7 @@ const Field3D = ({
 				mid,
 				venue,
 				boxScore?.arena,
+				logos[8],
 			),
 		};
 		// eslint-disable-next-line react-hooks/exhaustive-deps

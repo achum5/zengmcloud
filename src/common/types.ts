@@ -3159,8 +3159,10 @@ export type StadiumLook = {
 	// The stands' seats; left out, from the team's colors.
 	seatColor?: string;
 	// Words of its own along the boards round the field, in turn with the
-	// team's name: the stadium's name, a sponsor's.
+	// team's name: the stadium's name, a sponsor's. And a picture of its own
+	// there in turn with them (the 3D court's rail picture).
 	boardText?: string;
+	boardURL?: string;
 	// The league's decals laid on its field for the game being shown (see
 	// CourtDecal) - put there by the game, never saved with a team.
 	decals?: CourtDecalPlaced[];

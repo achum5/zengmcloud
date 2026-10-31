@@ -558,6 +558,8 @@ const paintBoard = (
 	home: FieldTeam | undefined,
 	words: string[],
 	screen: BoardScreen = "name",
+	// A picture of the team's own, in turn with the words (see StadiumLook).
+	picture?: HTMLCanvasElement,
 ) => {
 	const c = canvasOf(w, h);
 	const g = c.getContext("2d")!;
@@ -570,9 +572,9 @@ const paintBoard = (
 	// Panel by panel along it: what each says, on what.
 	const name = words.at(-1) ?? "";
 	const chant = screen === "letsGo" || screen === "noise";
-	const say =
+	const say: (string | HTMLCanvasElement)[] =
 		screen === "name"
-			? words
+			? [...words, ...(picture ? [picture] : [])]
 			: screen === "letsGo"
 				? [`LET'S GO ${name}`]
 				: screen === "noise"
@@ -599,13 +601,28 @@ const paintBoard = (
 		const bg = bgOf(i);
 		g.fillStyle = bg;
 		g.fillRect(x, h * 0.12, spacing + 1, h * 0.76);
+		const it = say[i % say.length]!;
+		if (typeof it !== "string") {
+			if (it.width > 0 && it.height > 0) {
+				const k = Math.min((spacing * 0.86) / it.width, (h * 0.66) / it.height);
+				g.drawImage(
+					it,
+					x + (spacing - it.width * k) / 2,
+					h * 0.5 - (it.height * k) / 2,
+					it.width * k,
+					it.height * k,
+				);
+			}
+			i += 1;
+			continue;
+		}
 		g.fillStyle =
 			bg === dark
 				? c1
 				: screen === "noise" && luminance(c1) > 0.3
 					? c1
 					: inkOn(bg);
-		g.fillText(say[i % say.length]!, x + spacing / 2, h * 0.52, spacing * 0.86);
+		g.fillText(it, x + spacing / 2, h * 0.52, spacing * 0.86);
 		i += 1;
 	}
 	g.fillStyle = c1;
@@ -936,6 +953,8 @@ export const paintStadium = (
 	venue: Venue = venueFor(home),
 	// The home team's honors (see paintFascia).
 	arena?: ArenaLooks,
+	// Its picture for the boards (see paintBoard).
+	boardPicture?: HTMLCanvasElement,
 ): StadiumPaint => {
 	const style = stadiumStyleFor(home, venue);
 	const fill =
@@ -959,7 +978,7 @@ export const paintStadium = (
 		say = words,
 	) => {
 		const [w, h, ppf] = sizes[set];
-		return paintBoard(w, h, ppf, home, say, screen);
+		return paintBoard(w, h, ppf, home, say, screen, boardPicture);
 	};
 	const abbrev = (t: FieldTeam | undefined, or: string) =>
 		(t?.abbrev ?? or).toUpperCase();

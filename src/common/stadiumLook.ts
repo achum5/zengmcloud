@@ -22,6 +22,7 @@ export const STADIUM_PICTURE_KEYS = [
 	"endZoneURL",
 	"secondaryLogoURL",
 	"fieldURL",
+	"boardURL",
 ] as const satisfies readonly (keyof StadiumLook)[];
 
 export const cleanStadium = (raw: unknown): StadiumLook | undefined => {

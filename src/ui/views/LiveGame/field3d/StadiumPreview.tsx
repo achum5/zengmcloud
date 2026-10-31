@@ -61,11 +61,13 @@ const StadiumPreview = ({
 		mid?: HTMLCanvasElement;
 		secondary?: HTMLCanvasElement;
 		field?: HTMLCanvasElement;
+		board?: HTMLCanvasElement;
 	}>({});
 	const endURL = stadium.endZoneURL;
 	const midURL = stadium.midLogoURL;
 	const secondURL = stadium.secondaryLogoURL;
 	const fieldURL = stadium.fieldURL;
+	const boardURL = stadium.boardURL;
 	useEffect(() => {
 		let alive = true;
 		void Promise.all([
@@ -73,15 +75,16 @@ const StadiumPreview = ({
 			logoPicture(midURL),
 			logoPicture(secondURL, END_ZONE_PX),
 			logoPicture(fieldURL, FIELD_PX),
-		]).then(([end, mid, secondary, field]) => {
+			logoPicture(boardURL, END_ZONE_PX),
+		]).then(([end, mid, secondary, field, board]) => {
 			if (alive) {
-				setOwn({ end, mid, secondary, field });
+				setOwn({ end, mid, secondary, field, board });
 			}
 		});
 		return () => {
 			alive = false;
 		};
-	}, [endURL, midURL, secondURL, fieldURL]);
+	}, [endURL, midURL, secondURL, fieldURL, boardURL]);
 
 	// (The league's decals on it, if any: see CourtDecals.)
 	const [decals, setDecals] = useState<DecalPicture[]>([]);

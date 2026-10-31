@@ -468,6 +468,14 @@ const EditTeamStadium = ({
 						}
 					/>
 				</div>
+				<PictureField
+					label="Board picture"
+					url={stadium.boardURL}
+					pictures={pictures}
+					onChange={(v) => setField("boardURL", v)}
+					onUpload={upload}
+					clear="None"
+				/>
 				<Choice<"turf">
 					label="Field"
 					value={stadium.turf}
