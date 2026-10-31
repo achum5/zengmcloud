@@ -197,6 +197,67 @@ export type Figure = Placed & {
 export const BALL_LEN = 1.04;
 export const BALL_R = 0.31;
 
+// A finger on the ball (the court's wrapBend, for a ball that is long, not
+// round): the bend at a joint - at (x, y) in the finger's plane, heading phi,
+// `at` taking a point there into his frame - that first brings the end of
+// the next bone (l long, k from the knuckle) round onto the ball's surface
+// (its own thickness, r, off it), and no further. Already into it without
+// bending, bent back, a fingertip pressed flat on it, as far as keeps it on
+// it (PRESS_MOST at the most); out of its reach, as it rests.
+const BEND_LO = [-0.3, 0, -0.15];
+const BEND_HI = [1.6, 1.9, 1.3];
+const PRESS_MOST = 0.35;
+const BEND_STEP = 0.12;
+const bendOnto = (
+	at: (t: number, v: number) => V3,
+	ball: HeldBall,
+	r: number,
+	x: number,
+	y: number,
+	phi: number,
+	l: number,
+	k: number,
+	rest: number,
+): number => {
+	const A = BALL_LEN / 2 + r;
+	const B = BALL_R + r;
+	const inside = (a: number) => {
+		const p = subV(
+			at(x + l * Math.cos(phi + a), y + l * Math.sin(phi + a)),
+			ball.at,
+		);
+		const al = dotV(p, ball.axis);
+		const rr = dotV(p, p) - al * al;
+		return (al * al) / (A * A) + rr / (B * B) < 1;
+	};
+	const lo = BEND_LO[k]!;
+	const hi = BEND_HI[k]!;
+	// (Between a and b, one in and one out: where it touches.)
+	const edge = (a: number, b: number) => {
+		const inA = inside(a);
+		for (let n = 0; n < 5; n++) {
+			const m = (a + b) / 2;
+			if (inside(m) === inA) {
+				a = m;
+			} else {
+				b = m;
+			}
+		}
+		return (a + b) / 2;
+	};
+	if (inside(lo)) {
+		const back = lo - PRESS_MOST;
+		return inside(back) ? back : edge(lo, back);
+	}
+	for (let a = lo + BEND_STEP; a < hi + BEND_STEP; a += BEND_STEP) {
+		const b = Math.min(a, hi);
+		if (inside(b)) {
+			return edge(b - BEND_STEP, b);
+		}
+	}
+	return Math.min(hi, Math.max(lo, rest));
+};
+
 // ---- his uniform, on him ----------------------------------------------------
 
 // Up his spine from his hips (feet): where his jersey tucks into his pants,
@@ -995,27 +1056,91 @@ const build = (
 				side,
 			);
 		}
-		const curl =
-			grip === "fist"
-				? 1.95
-				: grip === "relaxed"
-					? 0.6
-					: grip === "ball"
-						? 0.5
-						: 0.15;
-		const fingerR = H * 0.0092;
+		// Each finger three bones, each joint bent the way the grip calls for
+		// (the court's: see court3d/sculpt.ts): nearly straight and fanned
+		// (open), curling more to the little finger (relaxed), folded into
+		// the palm (a fist) - or on the ball, each joint bent just as far as
+		// lays the next bone on it.
+		const onBall = ball && grip === "ball" ? ball : undefined;
+		const fingerR = H * 0.0086;
 		const lens = [0.4, 0.44, 0.41, 0.33];
-		const bendTo = (d: V3, cv: number) =>
-			unit(
-				addV(
-					v3(d.f * Math.cos(cv), d.s * Math.cos(cv), d.u * Math.cos(cv)),
-					palmN,
-					Math.sin(cv),
-				),
-			);
+		const restOf = (i: number): number[] =>
+			grip === "fist"
+				? [1.45, 1.75, 1.05]
+				: grip === "relaxed"
+					? [0.24 + 0.06 * i, 0.5 + 0.08 * i, 0.32 + 0.05 * i]
+					: grip === "ball"
+						? [0.2, 0.35, 0.25]
+						: [0.04 + 0.02 * i, 0.08, 0.05];
+		// The joints of a finger (or the thumb) from its base, set off along
+		// d, curling toward his palm: each bone's length, and its bend at rest
+		// - on the ball, as far as lays it on it instead (see bendOnto).
+		const lay = (
+			base: V3,
+			d: V3,
+			bones: number[],
+			rest: number[],
+			r: number,
+		) => {
+			const pts = [base];
+			let x = 0;
+			let y = 0;
+			let phi = 0;
+			bones.forEach((l, k) => {
+				const a = onBall
+					? bendOnto(
+							(t, v) => addV(addV(base, d, t), palmN, v),
+							onBall,
+							r,
+							x,
+							y,
+							phi,
+							l,
+							k,
+							rest[k]!,
+						)
+					: rest[k]!;
+				phi += a;
+				x += l * Math.cos(phi);
+				y += l * Math.sin(phi);
+				pts.push(addV(addV(base, d, x), palmN, y));
+			});
+			return pts;
+		};
+		// Bone by bone, each a little slimmer than the last, melted into one.
+		const bones = (pts: V3[], r: number, group: number) => {
+			for (let k = 1; k < pts.length; k++) {
+				const r0 = r * (1 - 0.07 * (k - 1));
+				add(
+					pts[k - 1]!,
+					pts[k]!,
+					[
+						[0, r0],
+						[1, r0 * (k === pts.length - 1 ? 0.84 : 0.95)],
+					],
+					HAND,
+					group,
+					side,
+				);
+			}
+		};
 		if (fingerR * kMid < 1.4) {
 			// Too small to tell apart: the four as one, flat like the palm.
-			const dir = bendTo(h, curl);
+			const curl =
+				grip === "fist"
+					? 1.95
+					: grip === "relaxed"
+						? 0.6
+						: grip === "ball"
+							? 0.5
+							: 0.15;
+			const dir = unit(
+				addV(
+					v3(h.f * Math.cos(curl), h.s * Math.cos(curl), h.u * Math.cos(curl)),
+					palmN,
+					Math.sin(curl),
+				),
+			);
 			const len = L * 0.4 * (curl > 1.2 ? 0.55 : 1);
 			for (const o of [-1, 1]) {
 				const base = addV(knuckles, ts, o * halfW * 0.85);
@@ -1032,52 +1157,60 @@ const build = (
 				);
 			}
 		} else {
+			const spread =
+				grip === "ball"
+					? 0.16
+					: grip === "open"
+						? 0.1
+						: grip === "relaxed"
+							? 0.05
+							: 0.02;
 			for (let i = 0; i < 4; i++) {
-				const a = (1.5 - i) / 1.5;
-				const base = addV(knuckles, ts, a * halfW * 1.25);
-				const spread = grip === "open" ? 0.08 : grip === "ball" ? 0.14 : 0.02;
-				const dir = bendTo(unit(addV(h, ts, a * spread)), curl);
-				const len = L * lens[i]! * (curl > 1.2 ? 0.6 : 1);
-				add(
-					base,
-					addV(base, dir, len),
-					[
-						[0, fingerR],
-						[0.7, fingerR * 0.96],
-						[1, fingerR * 0.84],
-					],
-					HAND,
-					G_FINGER + side * 5 + i,
-					side,
+				const across = (1.5 - i) / 1.5;
+				// (The knuckles in an arc: the middle one furthest out.)
+				const base = addV(
+					addV(knuckles, ts, across * halfW * 1.25),
+					h,
+					L * [0.0, 0.025, 0.005, -0.04][i]!,
 				);
+				const len = L * lens[i]!;
+				const pts = lay(
+					base,
+					unit(addV(h, ts, across * spread)),
+					[0.47, 0.3, 0.23].map((k) => k * len),
+					restOf(i),
+					fingerR,
+				);
+				bones(pts, fingerR, G_FINGER + side * 5 + i);
 			}
 		}
+		// The thumb: out from the heel of the palm on its side, two bones -
+		// across the fingers in a fist, round the side of the ball on it.
 		const tBase = addV(addV(wrist, h, L * 0.16), ts, halfW * 1.05);
 		knuckleAt[side] = knuckles;
 		thumbAt[side] = tBase;
-		const tTip =
+		const tLen = L * 0.36;
+		const thumb =
 			grip === "fist"
-				? addV(addV(knuckles, palmN, H * 0.016), ts, halfW * 0.1)
-				: addV(
-						addV(
-							addV(wrist, h, L * 0.5),
-							ts,
-							halfW * (grip === "ball" ? 2.2 : 1.9),
+				? (() => {
+						const tip = addV(addV(knuckles, palmN, H * 0.016), ts, halfW * 0.1);
+						const mid = addV(lerpV(tBase, tip, 0.5), palmN, H * 0.006);
+						return [tBase, mid, tip];
+					})()
+				: lay(
+						tBase,
+						unit(
+							addV(h, ts, grip === "ball" ? 1.1 : grip === "open" ? 0.85 : 0.6),
 						),
-						palmN,
-						H * 0.012,
+						[tLen * 0.55, tLen * 0.45],
+						grip === "relaxed"
+							? [0.3, 0.35]
+							: grip === "ball"
+								? [0.2, 0.2]
+								: [0.1, 0.12],
+						H * 0.0095,
 					);
-		add(
-			tBase,
-			tTip,
-			[
-				[0, H * 0.011],
-				[1, H * 0.009],
-			],
-			HAND,
-			G_FINGER + side * 5 + 4,
-			side,
-		);
+		bones(thumb, H * 0.0105, G_FINGER + side * 5 + 4);
 	};
 	arm(sk.armR, 0);
 	arm(sk.armL, 1);
