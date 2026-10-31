@@ -221,7 +221,7 @@ export const stageMeasure = (input: {
 			const look = toward(spotOf, at) + (r() - 0.5) * 0.3;
 			const u2 = r();
 			const stood: Move =
-				u2 < HIPS ? "onHips" : u2 < HIPS + BENT ? "hands" : "stand";
+				u2 < HIPS ? "blowing" : u2 < HIPS + BENT ? "winded" : "stand";
 			from(p.legs);
 			const said = call + 450 + r() * 500;
 			still(p.legs, cut, said, spotOf, stood, look);

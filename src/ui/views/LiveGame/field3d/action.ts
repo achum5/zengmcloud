@@ -88,6 +88,9 @@ export type ActInput = {
 	speeds?: Map<number, number>;
 	rated?: Map<number, FieldRatings>;
 	flair?: Map<number, Flair>;
+	// How worn the defense is, out there a long drive (0 to 1: see the
+	// director's WINDED_FROM).
+	winded?: number;
 	r: () => number;
 };
 
@@ -10675,7 +10678,7 @@ class Action {
 				t + 1800,
 				"walk",
 			);
-			m.hold(m.t + 2400, "onHips");
+			m.hold(m.t + 2400, "blowing");
 			this.mob.add(m.pid);
 		}
 	}
@@ -11104,7 +11107,7 @@ class Action {
 	// change of hands, off toward his sideline for the next unit to come on.
 	regroup() {
 		const r = this.r;
-		const { kind, offense, dir, events, i0, i1 } = this.input;
+		const { kind, offense, dir, events, i0, i1, winded = 0 } = this.input;
 		const t = this.whistle;
 		const spot = this.ballAt(t);
 		if (!spot) {
@@ -11227,7 +11230,13 @@ class Action {
 			if (this.mob.has(m.pid)) {
 				continue;
 			}
-			const start = free.get(m.pid)! + 250 + r() * 900;
+			// (Worn out there a long drive: bent over where he is getting his
+			// breath as soon as he pulls up, and back slower, hands on his
+			// hips as often as not - stood blowing once there.)
+			const worn = !off && m.team !== offense && winded > 0 && m !== holder;
+			const bent = worn && r() < winded * WINDED_BENT;
+			const start =
+				free.get(m.pid)! + (bent ? 100 + r() * 300 : 250 + r() * 900);
 			m.cut(start);
 			m.hold(start);
 			// (The ball let go of: tossed down by his feet.)
@@ -11247,6 +11256,9 @@ class Action {
 					{ kind: "fly", t0: start, t1: start + TOSS_MS, from, to, peak: 1.2 },
 					{ kind: "spot", t0: start + TOSS_MS, at: { ...to, z: 0 } },
 				);
+			}
+			if (bent) {
+				m.hold(m.t + WINDED_BENT_MS + r() * 800, "winded");
 			}
 			// (Off toward his own bench, back up the field if it is past it.)
 			const going = off
@@ -11277,15 +11289,19 @@ class Action {
 			if (dist(m.at, to) > 2) {
 				const from = m.t;
 				const way = this.mobAt ? skirt(m.at, to, this.mobAt) : [to];
+				const pace = worn ? fps * (1 - WINDED_SLOWER * winded) : fps;
 				way.forEach((p, k) => {
-					if (k === way.length - 1 && fps >= 7) {
-						m.runUp(p, fps);
+					if (k === way.length - 1 && pace >= 7) {
+						m.runUp(p, pace);
 					} else {
-						m.run(p, fps);
+						m.run(p, pace);
 					}
 				});
 				if (beaten && r() < RUE_HIPS) {
 					m.arms("onHips", from, m.t);
+				} else if (worn && r() < winded * WINDED_HIPS) {
+					m.arms("onHips", from, m.t);
+					m.hold(m.t + WINDED_BENT_MS, "blowing");
 				}
 			}
 		}
@@ -11530,6 +11546,14 @@ const RUE_HIPS = 0.45;
 const SKIRT = 11;
 // ...and the side that got it: this often a fist pumped, or a clap, first.
 const GLAD = 0.3;
+// A defense worn all the way (see ActInput.winded): how many of it bent
+// over getting their breath after the whistle (for this long, ms, and up
+// to most of a second more), how many back to the huddle hands on hips,
+// and how much slower.
+const WINDED_BENT = 0.4;
+const WINDED_BENT_MS = 1600;
+const WINDED_HIPS = 0.6;
+const WINDED_SLOWER = 0.2;
 // Stopped short: this often a moment for it, from this long after the
 // whistle at the soonest - his teammates no further off than this to him,
 // at no more than this pace, to this far off him, or (this often, the first

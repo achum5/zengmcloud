@@ -426,6 +426,11 @@ const WALK_UP_MAX = 26;
 const JOG_FPS = 9;
 const WALK_FPS = 4.6;
 const WALK_ONLY = 10;
+// Out there a long drive: from how many snaps in a row the defense has been
+// on the field (since the last break) it starts to tell, and over how many
+// more it tells all the way (see action.ts regroup).
+const WINDED_FROM = 5;
+const WINDED_SPAN = 6;
 // No huddle: the men out wide (these) back up from this far downfield
 // (feet, at the least, and as much as this more), the rest up from this far
 // behind their spots, the defense from about this far off theirs - each as
@@ -872,6 +877,7 @@ const acrossOf = (a: Align, dir: Dir, ballY: number, flip: boolean): number => {
 
 const facing = (dir: Dir): number => (dir === 1 ? 0 : Math.PI);
 
+const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
 const clampY = (y: number, lo = 4, hi = FIELD_W - 4) =>
 	Math.min(hi, Math.max(lo, y));
 
@@ -982,6 +988,9 @@ class Director {
 	// toss before overtime's.
 	runOutNext = true;
 	tossNext = false;
+	// The snaps in a row the defense has been out there for against this
+	// offense, since the last break - a timeout, a quarter over.
+	drive: { offense: Side; snaps: number } | undefined;
 	// Each man's speed against the others at his position, and his ratings,
 	// where the game has them (see ratings.ts).
 	readonly speeds: Map<number, number>;
@@ -1226,6 +1235,19 @@ class Director {
 		}
 		const quarter = this.quarter;
 		const dir = dirFor(offense, quarter);
+		// (Out there a long drive, worn: see WINDED_FROM.)
+		if (kind === "run" || kind === "pass" || kind === "kneel") {
+			this.drive = {
+				offense,
+				snaps: this.drive?.offense === offense ? this.drive.snaps + 1 : 1,
+			};
+		} else if (kind !== "none") {
+			this.drive = undefined;
+		}
+		const winded =
+			this.drive && kind !== "none"
+				? clamp01((this.drive.snaps - WINDED_FROM) / WINDED_SPAN)
+				: 0;
 		const scrimmage: number =
 			typeof clock.scrimmage === "number" ? clock.scrimmage : 25;
 		const losX = yardLineX(scrimmage, dir);
@@ -1463,6 +1485,7 @@ class Director {
 						speeds: this.speeds,
 						rated: this.rated,
 						flair: this.flair,
+						...(winded > 0 ? { winded } : {}),
 						r: this.rng(i0, "action"),
 					})
 				: undefined;
@@ -1511,6 +1534,7 @@ class Director {
 			if (e.type === "quarter") {
 				this.quarter =
 					typeof e.quarter === "number" ? e.quarter : this.quarter + 1;
+				this.drive = undefined;
 			} else if (e.type === "overtime") {
 				this.quarter =
 					this.numPeriods + (typeof e.overtimes === "number" ? e.overtimes : 1);
@@ -1790,6 +1814,7 @@ class Director {
 		if (timeout) {
 			t1 = Math.max(t1, timeout.t1);
 			this.cuts.push(timeout.cut);
+			this.drive = undefined;
 		}
 		const cheerShot = timeout
 			? cheerShotFor(timeout.cut, t1, timeout.at, this.rng(i0, "cheer"))

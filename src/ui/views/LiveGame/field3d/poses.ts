@@ -267,6 +267,17 @@ const HUDDLE = pose({
 	abF: 10,
 	wide: 0.6,
 });
+const ON_HIPS = pose({
+	shN: -14,
+	elN: 106,
+	abN: 48,
+	wrN: 10,
+	shF: -14,
+	elF: 106,
+	abF: 48,
+	wrF: 10,
+	lean: 8,
+});
 const UNDER_CENTER = pose({
 	hipN: 34,
 	kneeN: 52,
@@ -2713,19 +2724,53 @@ const FIELD_ANIMS = {
 		],
 	},
 	// Hands on his hips: the other side's score.
-	onHips: {
-		kind: "still",
-		pose: pose({
-			shN: -14,
-			elN: 106,
-			abN: 48,
-			wrN: 10,
-			shF: -14,
-			elF: 106,
-			abF: 48,
-			wrF: 10,
-			lean: 8,
-		}),
+	onHips: { kind: "still", pose: ON_HIPS },
+	// The same, getting his breath back (the court's hips): blowing, his
+	// chest heaving with it, and his weight over onto the one leg and then
+	// the other.
+	blowing: {
+		kind: "loop",
+		n: 8,
+		fps: 1.6,
+		pose: (i) => {
+			const inn = i % 2 === 0;
+			const side = i < 4 ? 1 : -1;
+			return {
+				...ON_HIPS,
+				shN: ON_HIPS.shN + (inn ? 3 : -2),
+				shF: ON_HIPS.shF + (inn ? 3 : -2),
+				lean: inn ? 4 : 12,
+				hipN: side > 0 ? -1 : 6,
+				kneeN: side > 0 ? 3 : 16,
+				hipF: side > 0 ? 6 : -1,
+				kneeF: side > 0 ? 16 : 3,
+				tilt: 2.5 * side,
+				twist: -3 * side,
+			};
+		},
+	},
+	// Bent over, hands on his knees, getting his breath (the court's
+	// crouch): his back rising and falling with it, his weight over onto
+	// the one leg and then the other.
+	winded: {
+		kind: "loop",
+		n: 8,
+		fps: 2,
+		pose: (i) => {
+			const inn = i % 2 === 0;
+			const side = i < 4 ? 1 : -1;
+			return {
+				...HUDDLE,
+				hipN: HUDDLE.hipN + (side > 0 ? -2 : 3),
+				kneeN: HUDDLE.kneeN + (side > 0 ? -3 : 5),
+				hipF: HUDDLE.hipF + (side > 0 ? 3 : -2),
+				kneeF: HUDDLE.kneeF + (side > 0 ? 5 : -3),
+				lean: HUDDLE.lean + (inn ? -3 : 3),
+				shN: HUDDLE.shN + (inn ? -4 : 3),
+				shF: HUDDLE.shF + (inn ? -4 : 3),
+				tilt: 2 * side,
+			};
+		},
 	},
 	// Arms folded across his chest: a coach watching.
 	armsFolded: {
@@ -3759,7 +3804,7 @@ const FISTS = new Set<Move>([
 	"coolerCarry",
 	"coolerDump",
 ]);
-const RELAXED = new Set<Move>(["stand", "walk", "jog", "hands"]);
+const RELAXED = new Set<Move>(["stand", "walk", "jog", "hands", "winded"]);
 export const gripsOf = (m: Move, hold?: BallHold): [Grip, Grip] => {
 	const g: Grip = FISTS.has(m) ? "fist" : RELAXED.has(m) ? "relaxed" : "open";
 	if (hold === "carry" || hold === "throw") {
@@ -3781,6 +3826,8 @@ const STANDS = new Set<Move>([
 	"armsFolded",
 	"onHips",
 	"hands",
+	"blowing",
+	"winded",
 	"pointSky",
 	"qbSet",
 	"shotgun",

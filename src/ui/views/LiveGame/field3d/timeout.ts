@@ -93,7 +93,7 @@ const clamp = (x: number, lo: number, hi: number) =>
 // A man's way of standing it.
 const stoodOf = (r: () => number): Move => {
 	const u = r();
-	return u < HIPS ? "onHips" : u < HIPS + BENT ? "hands" : "stand";
+	return u < HIPS ? "blowing" : u < HIPS + BENT ? "winded" : "stand";
 };
 
 export const stageTimeout = (input: {

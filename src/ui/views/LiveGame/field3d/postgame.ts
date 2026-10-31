@@ -608,7 +608,7 @@ export const stagePostgame = (input: {
 		// (Beaten on the last play: none of them stood about.)
 		const u = mob ? r() * 0.64 : r();
 		if (rout) {
-			m.hold(m.t + 1200, u < 0.5 ? "onHips" : "stand");
+			m.hold(m.t + 1200, u < 0.5 ? "blowing" : "stand");
 		} else if (u < 0.3) {
 			m.act("handsOnHelmet", 1500 + r() * 300);
 		} else if (u < 0.48) {
@@ -617,7 +617,7 @@ export const stagePostgame = (input: {
 		} else if (u < 0.64) {
 			m.hold(m.t + 1500, "backStance");
 		} else {
-			m.hold(m.t + 1500 + r() * 500, "onHips");
+			m.hold(m.t + 1500 + r() * 500, "blowing");
 		}
 	}
 	// (A tie: nobody's.)

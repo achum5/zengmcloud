@@ -455,6 +455,8 @@ const PIVOTS = new Set<Move>([
 	"armsFolded",
 	"onHips",
 	"hands",
+	"blowing",
+	"winded",
 	"pointSky",
 	"qbSet",
 	"pocket",

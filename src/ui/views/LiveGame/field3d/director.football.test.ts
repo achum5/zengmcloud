@@ -554,6 +554,55 @@ describe("the sidelines, packed", () => {
 	}, 80_000);
 });
 
+describe("a long drive", () => {
+	// Out there a dozen snaps in a row and more, no break between - no
+	// timeout, no quarter over - a defense gets its breath after the
+	// whistle: men bent over, hands on their knees. Fresh, none of it.
+	test("the defense worn, bent over getting its breath - and fresh, not", () => {
+		let worn = 0;
+		let fresh = 0;
+		for (const game of games) {
+			const tl = stage(game);
+			let drive: { offense: number; snaps: number } | undefined;
+			let quarter = 1;
+			for (const p of tl.plays) {
+				if (p.quarter !== quarter) {
+					quarter = p.quarter;
+					drive = undefined;
+				}
+				if (p.kind === "run" || p.kind === "pass" || p.kind === "kneel") {
+					drive = {
+						offense: p.offense,
+						snaps: drive?.offense === p.offense ? drive.snaps + 1 : 1,
+					};
+				} else if (p.kind !== "none") {
+					drive = undefined;
+				}
+				const bent = p.parts.filter(
+					(part) =>
+						part.team !== p.offense &&
+						part.legs.some(
+							(l) => l.move === "winded" && l.t0 >= p.whistle && l.t0 < p.t1,
+						),
+				).length;
+				if (!p.timeout && !p.measure && drive && p.kind !== "none") {
+					if (drive.snaps >= 11) {
+						worn += bent;
+					} else if (drive.snaps <= 5) {
+						fresh += 1;
+						assert.strictEqual(bent, 0, `${p.i}`);
+					}
+				}
+				if (p.timeout) {
+					drive = undefined;
+				}
+			}
+		}
+		assert.isAbove(fresh, 50);
+		assert.isAbove(worn, 3);
+	});
+});
+
 describe("a man hurt", () => {
 	test("down after the whistle, the trainers out to him from his sideline, and helped off toward it", () => {
 		let hurt = 0;
