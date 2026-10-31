@@ -575,12 +575,17 @@ const onField = (play: Play) => {
 const LEAP_MS = 900;
 const UP_LEVEL = 0.55;
 
-// The head coach (the 3D court's: see court3d/crew.ts coachState): stood
-// arms folded, bent over watching, calling out to the field - a new way
-// every few seconds, more of it bent over and calling out in a tight
-// finish. He claps a big play of his side's; a call against it, now and
-// then, has his arms out at it. Into each from the last over a moment.
+// The head coach (the 3D court's: see court3d/crew.ts coachState): pacing
+// his spot - a few steps along the sideline to a new one every few seconds
+// - and stood there arms folded, bent over watching, calling out to the
+// field, a new way each time, more of it bent over and calling out in a
+// tight finish. He claps a big play of his side's; a call against it, now
+// and then, has his arms out at it. Into each from the last over a moment.
 const PACE_MS = 6500;
+const PACE_ALONG = 8;
+const PACE_FPS = 3.4;
+const PACE_LEAST = 600;
+const PACE_TURN = 450;
 const IDLE: Move[] = [
 	"armsFolded",
 	"armsFolded",
@@ -603,12 +608,15 @@ const smooth01 = (u: number) => {
 	const v = Math.max(0, Math.min(1, u));
 	return v * v * (3 - 2 * v);
 };
-const bossDoing = (
+type Doing = { move: Move; phase: number };
+// What has him whatever else he was at: his side's big play, a call
+// against it.
+const reactionAt = (
 	s: SidelineMan,
 	play: Play,
 	tl: FieldTimeline,
 	t: number,
-): { move: Move; phase: number } => {
+): Doing | undefined => {
 	const cheer = cheerAt(tl, t);
 	if (cheer && cheer.side === s.team && cheer.level > UP_LEVEL) {
 		const e = cheer.since - s.delay;
@@ -626,6 +634,85 @@ const bossDoing = (
 			return { move: "protest", phase: (t - c.t) / PROTEST_MS };
 		}
 	}
+	return undefined;
+};
+// His walks over a play: from his spot for it, one as each stretch starts -
+// but for one that would have him still on his way when the play is over,
+// or when either of those has him.
+type Pace = { t0: number; t1: number; from: Pt; to: Pt };
+const pacing = new WeakMap<Play, Map<number, Pace[]>>();
+const pacesOf = (s: SidelineMan, play: Play, tl: FieldTimeline): Pace[] => {
+	let byMan = pacing.get(play);
+	if (!byMan) {
+		byMan = new Map();
+		pacing.set(play, byMan);
+	}
+	let out = byMan.get(s.id);
+	if (!out) {
+		out = [];
+		const home = headCoachAt(s.team, play.i);
+		let at = home;
+		for (let j = Math.ceil(play.t0 / PACE_MS); j * PACE_MS < play.t1; j++) {
+			const t0 = j * PACE_MS;
+			const r = makeCourtRng(`pace|${s.id}|${j}`);
+			const to = { x: home.x + (r() - 0.5) * PACE_ALONG, y: home.y };
+			const ms = (Math.abs(to.x - at.x) / PACE_FPS) * 1000;
+			if (ms < PACE_LEAST || t0 + ms + COACH_BLEND > play.t1) {
+				continue;
+			}
+			let clear = true;
+			for (let t = t0 - COACH_BLEND; t < t0 + ms + COACH_BLEND; t += 100) {
+				if (reactionAt(s, play, tl, t)) {
+					clear = false;
+					break;
+				}
+			}
+			if (clear) {
+				out.push({ t0, t1: t0 + ms, from: at, to });
+				at = to;
+			}
+		}
+		byMan.set(s.id, out);
+	}
+	return out;
+};
+// Where he is at t, and the walk he is on, if he is.
+const bossSpot = (
+	s: SidelineMan,
+	play: Play,
+	tl: FieldTimeline,
+	t: number,
+): { at: Pt; walk?: Pace } => {
+	const p = pacesOf(s, play, tl).findLast((p) => p.t0 <= t);
+	if (!p) {
+		return { at: headCoachAt(s.team, play.i) };
+	}
+	if (t >= p.t1) {
+		return { at: p.to };
+	}
+	const u = (t - p.t0) / (p.t1 - p.t0);
+	return {
+		at: { x: p.from.x + (p.to.x - p.from.x) * u, y: p.from.y },
+		walk: p,
+	};
+};
+const bossDoing = (
+	s: SidelineMan,
+	play: Play,
+	tl: FieldTimeline,
+	t: number,
+): Doing => {
+	const react = reactionAt(s, play, tl, t);
+	if (react) {
+		return react;
+	}
+	const { at, walk } = bossSpot(s, play, tl, t);
+	if (walk) {
+		return {
+			move: "walk",
+			phase: Math.abs(at.x - walk.from.x) / strideOf("walk"),
+		};
+	}
 	const j = Math.floor(t / PACE_MS);
 	const idle = (play.tense ?? 0) >= 1 ? IDLE_TENSE : IDLE;
 	const move =
@@ -635,14 +722,26 @@ const bossDoing = (
 		phase: move === "coachTalk" ? ((t - j * PACE_MS) / TALK_MS) % 1 : 0,
 	};
 };
-// (Out of what he was at, over the last moment, if he changed.)
+// Where he is and what he is at - out of what he was at, over the last
+// moment, if he changed - and, on a walk, turned from the field to the way
+// he goes, and back as he gets there.
 const bossAt = (
 	s: SidelineMan,
 	play: Play,
 	tl: FieldTimeline,
 	t: number,
-): Pick<FieldPlayerState, "move" | "phase" | "from"> => {
-	const now = bossDoing(s, play, tl, t);
+): Pick<FieldPlayerState, "move" | "phase" | "from"> & {
+	at: Pt;
+	turn?: { to: number; w: number };
+} => {
+	const { at, walk } = bossSpot(s, play, tl, t);
+	const turn = walk
+		? {
+				to: walk.to.x > walk.from.x ? 0 : Math.PI,
+				w: smooth01(Math.min(t - walk.t0, walk.t1 - t) / PACE_TURN),
+			}
+		: undefined;
+	const now = { ...bossDoing(s, play, tl, t), at, ...(turn ? { turn } : {}) };
 	let lo = t - COACH_BLEND;
 	if (bossDoing(s, play, tl, lo).move === now.move) {
 		return now;
@@ -953,7 +1052,12 @@ export const sidelineAt = (
 		// (Out of the way of a man run out of bounds into them.)
 		const way = making.get(s.id);
 		const off = way ? wayAt(way, m.t) : undefined;
-		const at = off ? { x: spot.at.x + off.x, y: spot.at.y + off.y } : spot.at;
+		const boss =
+			s.unit === "coach" && s.coach === 0
+				? bossAt(s, play, tl, m.t)
+				: undefined;
+		const stood = boss?.at ?? spot.at;
+		const at = off ? { x: stood.x + off.x, y: stood.y + off.y } : stood;
 		const line = at.y < 0 ? 0 : 1;
 		const facing = spot.facing ?? (line === 0 ? Math.PI / 2 : -Math.PI / 2);
 		let yaw = facing;
@@ -962,17 +1066,21 @@ export const sidelineAt = (
 			d = Math.atan2(Math.sin(d), Math.cos(d));
 			yaw = facing + Math.max(-s.turn, Math.min(s.turn, d));
 		}
+		if (boss?.turn) {
+			let d = boss.turn.to - yaw;
+			d = Math.atan2(Math.sin(d), Math.cos(d));
+			yaw += d * boss.turn.w;
+		}
 		let move = spot.move;
 		let phase = 0;
 		let from: FieldPlayerState["from"];
-		const boss = s.unit === "coach" && s.coach === 0;
 		if (off && off.fps > WAY_STEP) {
 			// (Stepping it: back, across, or on - as he faces.)
 			const c = Math.cos(off.way - yaw);
 			move = c < -0.5 ? "back" : c > 0.5 ? "walk" : "slide";
 			phase = off.walked / strideOf(move);
 		} else if (boss) {
-			({ move, phase, from } = bossAt(s, play, tl, m.t));
+			({ move, phase, from } = boss);
 		}
 		let arms: FieldPlayerState["arms"];
 		if (!boss && cheer && cheer.side === s.team && cheer.level > UP_LEVEL) {
