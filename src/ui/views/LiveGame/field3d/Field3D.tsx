@@ -35,7 +35,7 @@ import { drawFlag } from "./flag.ts";
 import { drawnBody, FIGURE_SCALE, footballBody, officialBody } from "./body.ts";
 import { makeFieldCamera, MAIN_RIG, REPLAY_RIG } from "./camera.ts";
 import type { FieldTimeline } from "./director.ts";
-import { stageField } from "./stageField.ts";
+import { stageField, stageOpening } from "./stageField.ts";
 import { momentAt, playAt, type HandsOf } from "./evaluate.ts";
 import { bodyPoint } from "./sculpt.ts";
 import {
@@ -340,9 +340,27 @@ const Field3D = ({
 		}
 		setMatched(true);
 	}, [events, roster]);
-	// Staged off the page (see stageField.ts): the field stays dark until it
-	// is.
+	// Staged off the page (see stageField.ts) - its first play shown in the
+	// meantime (see stageOpening), from the start.
 	const [timeline, setTimeline] = useState<FieldTimeline | undefined>();
+	const opening = useMemo(() => {
+		if (!matched || !events) {
+			return undefined;
+		}
+		try {
+			return stageOpening({
+				events,
+				players: roster,
+				gid,
+				numPeriods: boxScore?.numPeriods,
+			});
+		} catch {
+			return undefined;
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [matched, events, roster, gid]);
+	const shownTl =
+		timeline ?? (opening && cursor <= opening.upTo ? opening.tl : undefined);
 	useEffect(() => {
 		setTimeline(undefined);
 		if (!matched || !events) {
@@ -605,10 +623,14 @@ const Field3D = ({
 	);
 	const shown = useRef({ down: "", ball: -1 });
 	useEffect(() => {
-		if (timeline) {
-			onFieldCursor(clock.current, timeline, { cursor, paused, skips });
+		if (shownTl) {
+			onFieldCursor(clock.current, shownTl, { cursor, paused, skips });
 		}
-	}, [cursor, paused, skips, timeline]);
+	}, [cursor, paused, skips, shownTl]);
+	// (No line past the opening until the rest is staged.)
+	const eventsLength = timeline
+		? (events?.length ?? 0)
+		: Math.min(events?.length ?? 0, opening?.upTo ?? 0);
 
 	const live = useRef({
 		cursor,
@@ -618,10 +640,10 @@ const Field3D = ({
 		keyPlan,
 		onReady,
 		onJump,
-		timeline,
+		timeline: shownTl,
 		paint,
 		size,
-		eventsLength: events?.length ?? 0,
+		eventsLength,
 	});
 	live.current = {
 		cursor,
@@ -631,10 +653,10 @@ const Field3D = ({
 		keyPlan,
 		onReady,
 		onJump,
-		timeline,
+		timeline: shownTl,
 		paint,
 		size,
-		eventsLength: events?.length ?? 0,
+		eventsLength,
 	};
 
 	useEffect(() => {
@@ -1177,7 +1199,7 @@ const Field3D = ({
 			>
 				REPLAY
 			</div>
-			{!timeline && events && events.length > 0 ? (
+			{!shownTl && events && events.length > 0 ? (
 				<div
 					className="spinner-border text-light"
 					role="status"

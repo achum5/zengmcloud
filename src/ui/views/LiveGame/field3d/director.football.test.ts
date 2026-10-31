@@ -14,7 +14,7 @@ import { momentAt } from "./evaluate.ts";
 import { dirFor, FIELD_L, FIELD_W, TEAM_AREA, yardLineX } from "./geometry.ts";
 import { makeFieldClock, REPLAY_SPEED, stepField } from "./playback.ts";
 import { sidelineAt, sidelineFor } from "./sideline.ts";
-import { stageField } from "./stageField.ts";
+import { stageField, stageOpening } from "./stageField.ts";
 import { simGames, type SimGame } from "./testGames.ts";
 
 let games: SimGame[] = [];
@@ -35,6 +35,35 @@ const legAt = (part: { legs: Leg[] }, t: number): Leg =>
 	part.legs.findLast((l) => l.t0 <= t) ?? part.legs[0]!;
 
 describe("compileField", () => {
+	test("the opening, staged on its own, is the whole game's to the man - up to where the whole game takes over", () => {
+		for (const game of games) {
+			const input = { events: game.events, players: game.roster, gid: 1 };
+			const opening = stageOpening(input)!;
+			const full = compileField(input);
+			const { tl, upTo } = opening;
+			assert.isAbove(tl.end, 10_000);
+			assert.deepEqual(
+				tl.beats.map((b) => [b.i, b.actionStart]),
+				full.beats.filter((b) => b.i < upTo).map((b) => [b.i, b.actionStart]),
+			);
+			for (const b of full.beats) {
+				if (b.i >= upTo) {
+					assert.isAtLeast(b.actionStart, tl.end);
+				}
+			}
+			for (let t = 0; t <= tl.end; t += 100) {
+				const a = momentAt(tl, t);
+				const b = momentAt(full, t);
+				assert.deepEqual(
+					a.players.map((x) => [x.id, x.x, x.y]),
+					b.players.map((x) => [x.id, x.x, x.y]),
+					`t ${t}`,
+				);
+				assert.deepEqual(a.ball?.at, b.ball?.at, `t ${t}`);
+			}
+		}
+	}, 60_000);
+
 	test("staged with no worker to be had (as here): on the page, the same game", async () => {
 		const game = games[0]!;
 		const off = await stageField({
