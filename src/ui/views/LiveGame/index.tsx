@@ -1665,10 +1665,12 @@ export const LiveGame = (props: View<"liveGame">) => {
 	// Following in 3D a device that says where its court is: this one plays
 	// the game along with it (see court3d/follow.ts) - at its speed, through
 	// its key plays - asking for its own lines rather than being stepped.
-	// (The game being broadcast, not a previous one still on screen. The 3D
-	// field does not play along: it is stepped.)
+	// (The game being broadcast, not a previous one still on screen. A 3D
+	// field there on a build from before its field said where it was - and
+	// what it staged - sent nothing of it, so is stepped.)
 	const sync3d =
-		__SPORT === "basketball" &&
+		(__SPORT === "basketball" ||
+			(__SPORT === "football" && mpLiveBroadcast?.sync?.fp !== undefined)) &&
 		isFollower &&
 		court3d &&
 		mpLiveBroadcast?.gid === props.initialBoxScore?.gid
@@ -3171,13 +3173,22 @@ export const LiveGame = (props: View<"liveGame">) => {
 											caption={playByPlayEntries.current[0]?.text}
 											captionT={playByPlayEntries.current[0]?.t}
 											paused={paused}
-											rate={rate3d}
-											follower={isFollower}
+											rate={sync3d && sync3d.rate > 0 ? sync3d.rate : rate3d}
+											follower={isFollower && !along}
+											along={along}
+											report={court3dReport}
 											skips={skips3d}
-											keyPlays={isFollower ? undefined : keyPlays3d}
+											keyPlays={
+												sync3d
+													? alongKeyPlays
+													: isFollower
+														? undefined
+														: keyPlays3d
+											}
 											onReady={onCourt3DReady}
 											onJump={onCourt3DJump}
 											onFail={onCourt3DFail}
+											onLost={onCourt3DLost}
 										/>
 									) : (
 										<Court3D

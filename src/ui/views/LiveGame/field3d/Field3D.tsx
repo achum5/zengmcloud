@@ -65,6 +65,7 @@ import {
 } from "./kit.ts";
 import type { RosterMan } from "./personnel.ts";
 import {
+	fieldStagedAs,
 	makeFieldClock,
 	makeFieldWipe,
 	nextReplay,
@@ -73,6 +74,12 @@ import {
 	stepField,
 	wipeAt,
 } from "./playback.ts";
+import {
+	addReport,
+	makeFollow,
+	type FollowReport,
+	type Shown,
+} from "../court3d/follow.ts";
 import {
 	keyOutAt,
 	type KeyPlaySettings,
@@ -263,6 +270,12 @@ type Props = {
 	rate: number;
 	// Stepped by the device in charge of simming: never asks for a line.
 	follower: boolean;
+	// Watching a league-mate's live sim that says where its field is: this
+	// one plays the game along with it instead, a moment behind (see
+	// court3d/follow.ts) - the latest word of where it is.
+	along?: FollowReport;
+	// Where this field is, for anyone watching along.
+	report?: { current: Shown | undefined };
 	// How many times "next play" has been asked for.
 	skips?: number;
 	// Only the key plays (see keyPlays.ts), and the viewer's own team (box
@@ -273,6 +286,9 @@ type Props = {
 	onJump?: (cursor: number) => void;
 	// The field cannot play this game: the page goes on without it.
 	onFail?: () => void;
+	// Playing along, the other field is not showing the same game: the page
+	// has this one stepped line by line instead.
+	onLost?: () => void;
 };
 
 const Field3D = ({
@@ -284,11 +300,14 @@ const Field3D = ({
 	paused,
 	rate,
 	follower,
+	along,
+	report,
 	skips = 0,
 	keyPlays,
 	onReady,
 	onJump,
 	onFail,
+	onLost,
 }: Props) => {
 	const { lid } = useLocal(["lid"]);
 	const gid: number | undefined = boxScore?.gid;
@@ -624,9 +643,35 @@ const Field3D = ({
 	const shown = useRef({ down: "", ball: -1 });
 	useEffect(() => {
 		if (shownTl) {
-			onFieldCursor(clock.current, shownTl, { cursor, paused, skips });
+			onFieldCursor(clock.current, shownTl, {
+				cursor,
+				paused,
+				skips,
+				follower,
+			});
 		}
-	}, [cursor, paused, skips, shownTl]);
+	}, [cursor, follower, paused, skips, shownTl]);
+	// What this field staged, said along with where it is (see
+	// fieldStagedAs) - and, playing along, the other field's word.
+	const fp = useMemo(
+		() => (timeline ? fieldStagedAs(timeline) : undefined),
+		[timeline],
+	);
+	const alongWith = useRef(makeFollow());
+	useEffect(() => {
+		if (along) {
+			addReport(alongWith.current, along);
+		}
+	}, [along]);
+	// Playing along with a field that staged something else: stepped line
+	// by line instead, said once.
+	const lostSaid = useRef(false);
+	useEffect(() => {
+		if (along?.fp && fp && along.fp !== fp && !lostSaid.current) {
+			lostSaid.current = true;
+			onLost?.();
+		}
+	}, [along?.fp, fp, onLost]);
 	// (No line past the opening until the rest is staged.)
 	const eventsLength = timeline
 		? (events?.length ?? 0)
@@ -637,6 +682,11 @@ const Field3D = ({
 		paused,
 		rate,
 		follower,
+		// (The game's own staging there, not the opening: see stageOpening.)
+		along: !!along && !!timeline,
+		report: timeline ? report : undefined,
+		fp,
+		onLost,
 		keyPlan,
 		onReady,
 		onJump,
@@ -650,6 +700,11 @@ const Field3D = ({
 		paused,
 		rate,
 		follower,
+		// (The game's own staging there, not the opening: see stageOpening.)
+		along: !!along && !!timeline,
+		report: timeline ? report : undefined,
+		fp,
+		onLost,
 		keyPlan,
 		onReady,
 		onJump,
@@ -698,7 +753,18 @@ const Field3D = ({
 				return;
 			}
 			const s = clock.current;
-			const { dt, cut } = stepField(s, p, tl, now);
+			const { dt, cut } = stepField(
+				s,
+				p,
+				tl,
+				now,
+				alongWith.current,
+				Date.now(),
+			);
+			if (s.lost && p.along && !lostSaid.current) {
+				lostSaid.current = true;
+				p.onLost?.();
+			}
 			if (!draw) {
 				return;
 			}

@@ -286,7 +286,7 @@ describe("replays", () => {
 			cursor: 1e9,
 			paused: false,
 			rate: 1,
-			follower: true,
+			follower: false,
 			eventsLength: 1e9,
 			onReady: () => {},
 		};
