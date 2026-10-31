@@ -8028,6 +8028,10 @@ const easy = (
 const PROTECT_TWIST = 24;
 const PROTECT_TILT = 5;
 const PROTECT_WALKING = 0.4;
+// And his other arm up between the ball and him: bent, the forearm out
+// across toward him - an arm bar, held off him, not a push (degrees: up in
+// front, at the elbow, and out from his side). Not taking it across.
+const ARM_BAR = { sh: 34, el: 84, ab: 32 };
 const protect = (
 	q: Pose,
 	anim: AnimName,
@@ -8052,11 +8056,24 @@ const protect = (
 			: side(leaves) +
 				(side(leaves === "L" ? "R" : "L") - side(leaves)) *
 					(ph * ph * (3 - 2 * ph));
-	return {
+	const out = {
 		...q,
 		twist: q.twist + way * PROTECT_TWIST * k,
 		tilt: q.tilt - way * PROTECT_TILT * k,
 	};
+	if (leaves === undefined) {
+		const ease = (a: number, b: number) => a + (b - a) * k;
+		if (hand === "L") {
+			out.shN = ease(q.shN, ARM_BAR.sh);
+			out.elN = ease(q.elN, ARM_BAR.el);
+			out.abN = ease(q.abN, ARM_BAR.ab);
+		} else {
+			out.shF = ease(q.shF, ARM_BAR.sh);
+			out.elF = ease(q.elF, ARM_BAR.el);
+			out.abF = ease(q.abF, ARM_BAR.ab);
+		}
+	}
+	return out;
 };
 
 // His pose at a moment: the move's, with the dribbling hand on the bounce
