@@ -58,6 +58,7 @@ const toward = (c: RGB, to: RGB, f: number): RGB => [
 export const BALL_BROWN = "#7a3d1e";
 const BALL_RGB = rgb(BALL_BROWN);
 const LACE_RGB: RGB = [246, 243, 236];
+const EYE_BLACK_RGB: RGB = [22, 20, 20];
 const WHITE_RGB: RGB = [246, 245, 240];
 const HEADSET_RGB: RGB = [30, 30, 34];
 
@@ -1470,6 +1471,7 @@ type Palette = {
 	sleeve: [RGB | undefined, RGB | undefined];
 	wrist: [RGB | undefined, RGB | undefined];
 	visor?: RGB;
+	eyeBlack?: true;
 	// An official's: the black of his striped shirt, and his hair under
 	// his cap.
 	stripes?: RGB;
@@ -1530,6 +1532,7 @@ const paletteOf = (look: FieldLook): Palette => {
 					: undefined,
 		),
 		...(gear.visor === "dark" ? { visor: [24, 26, 32] as RGB } : {}),
+		...(gear.eyeBlack ? { eyeBlack: true as const } : {}),
 		...(kit.stripes ? { stripes: rgb(kit.stripes) } : {}),
 		...(kit.vest ? { vest: rgb(kit.vest) } : {}),
 		hair: look.hair ? rgb(look.hair) : scaled(skin, 0.38),
@@ -2134,12 +2137,21 @@ export const sculptFigure = (
 							const as = Math.abs(ls);
 							if (lf > 0.3 && lu < 0.42) {
 								const eye = lu > -0.02 && lu < 0.16 && as > 0.12 && as < 0.42;
+								const smear =
+									pal.eyeBlack &&
+									lf > 0.5 &&
+									lu > -0.12 &&
+									lu < -0.06 &&
+									as > 0.16 &&
+									as < 0.36;
 								const brow =
 									lf > 0.5 && lu > 0.21 && lu < 0.28 && as > 0.1 && as < 0.44;
 								const mouth = lf > 0.5 && lu > -0.47 && lu < -0.41 && as < 0.2;
 								c = brow
 									? pal.hair
-									: scaled(pal.skin, eye ? 0.34 : mouth ? 0.66 : 0.96);
+									: smear
+										? EYE_BLACK_RGB
+										: scaled(pal.skin, eye ? 0.34 : mouth ? 0.66 : 0.96);
 							} else {
 								c =
 									lu > 0.3 || lf < -0.25
@@ -2183,11 +2195,19 @@ export const sculptFigure = (
 							// he wears one.
 							gloss = 0;
 							const eyes = lu > -0.12 && lu < 0.12;
+							const smear =
+								pal.eyeBlack &&
+								lu > -0.26 &&
+								lu < -0.16 &&
+								Math.abs(ls) > 0.16 &&
+								Math.abs(ls) < 0.34;
 							if (eyes && pal.visor) {
 								c = pal.visor;
 								gloss = 1;
 							} else {
-								c = scaled(pal.skin, eyes ? 0.42 : 0.72);
+								c = smear
+									? EYE_BLACK_RGB
+									: scaled(pal.skin, eyes ? 0.42 : 0.72);
 							}
 						} else if (
 							pal.stripe &&

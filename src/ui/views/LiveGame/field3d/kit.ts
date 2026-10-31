@@ -47,6 +47,8 @@ export type FieldGear = {
 	mask: MaskStyle;
 	// A tinted shield across his eyes - or a clear one, all but unseen.
 	visor?: "dark" | "clear";
+	// Eye black, a smear under each eye.
+	eyeBlack?: true;
 	cleat: string;
 	cleatSole: string;
 	// The swoosh of color up their side.
@@ -197,6 +199,8 @@ const KICKERS = new Set(["K", "P"]);
 
 // A player's own gear, the same every game: decided by who he is and what
 // he plays, in his team's colors that day.
+// How many (not the kickers) wear eye black.
+const EYE_BLACK = 0.3;
 export const fieldGearFor = (
 	pid: number,
 	pos: string,
@@ -272,6 +276,9 @@ export const fieldGearFor = (
 	}
 	if (["QB", "RB", "WR", "CB", "S"].includes(pos) && rng() < 0.22) {
 		gear.towel = true;
+	}
+	if (!kicker && rng() < EYE_BLACK) {
+		gear.eyeBlack = true;
 	}
 	return gear;
 };
