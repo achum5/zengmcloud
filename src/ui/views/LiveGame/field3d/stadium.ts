@@ -161,7 +161,9 @@ export const ROOF = plane(
 );
 
 // Behind each end zone: a wall, the lower bowl rising from it, and the
-// video board over the top.
+// video board over the top - each running from the near side to the far one
+// at the left end, the other way at the right, to read as it should from
+// the field.
 const END_Y0 = WALL_Y;
 const END_Y1 = FIELD_W + SIDE_ROOM;
 const END_SLOPE = 80;
@@ -170,10 +172,10 @@ export const END_WALLS: [TexturedPlane, TexturedPlane] = [0, 1].map((side) =>
 	plane(
 		{
 			x: side === 0 ? -END_ROOM : FIELD_L + END_ROOM,
-			y: side === 0 ? END_Y0 : END_Y1,
+			y: side === 0 ? END_Y1 : END_Y0,
 			z: WALL_H,
 		},
-		{ x: 0, y: side === 0 ? 1 : -1, z: 0 },
+		{ x: 0, y: side === 0 ? -1 : 1, z: 0 },
 		{ x: 0, y: 0, z: -1 },
 		END_Y1 - END_Y0,
 		WALL_H,
@@ -186,10 +188,10 @@ export const END_STANDS: [TexturedPlane, TexturedPlane] = [0, 1].map((side) => {
 	return plane(
 		{
 			x: x + s * END_SLOPE * Math.cos(END_RAKE),
-			y: side === 0 ? END_Y0 : END_Y1,
+			y: side === 0 ? END_Y1 : END_Y0,
 			z: WALL_H + END_SLOPE * Math.sin(END_RAKE),
 		},
-		{ x: 0, y: side === 0 ? 1 : -1, z: 0 },
+		{ x: 0, y: side === 0 ? -1 : 1, z: 0 },
 		{ x: -s * Math.cos(END_RAKE), y: 0, z: -Math.sin(END_RAKE) },
 		END_Y1 - END_Y0,
 		END_SLOPE,
@@ -206,8 +208,8 @@ export const END_BOARDS: [TexturedPlane, TexturedPlane] = [0, 1].map((side) => {
 	const z = WALL_H + END_SLOPE * Math.sin(END_RAKE) + 6 + BOARD_H;
 	const yc = FIELD_W / 2;
 	return plane(
-		{ x, y: side === 0 ? yc - BOARD_W / 2 : yc + BOARD_W / 2, z },
-		{ x: 0, y: side === 0 ? 1 : -1, z: 0 },
+		{ x, y: side === 0 ? yc + BOARD_W / 2 : yc - BOARD_W / 2, z },
+		{ x: 0, y: side === 0 ? -1 : 1, z: 0 },
 		{ x: 0, y: 0, z: -1 },
 		BOARD_W,
 		BOARD_H,

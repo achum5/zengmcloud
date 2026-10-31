@@ -1,11 +1,13 @@
 import type { Shot } from "./camera.ts";
 import type { Beat, BallSeg, PlayKind, RawEvent } from "./director.ts";
 import type { FieldMoment } from "./evaluate.ts";
-import { dist, MID_Y, type Pt3 } from "./geometry.ts";
+import { dist, MID_Y, type Dir, type Pt3, type Side } from "./geometry.ts";
 
 // A BIG PLAY SHOWN AGAIN: a score, a takeaway, a long gain - slowed down,
 // from down on the sideline, once the play is over and before the next one
-// (the 3D court's dunk replay, for football: see court3d/playback.ts).
+// (the 3D court's dunk replay, for football: see court3d/playback.ts). A
+// score's, as the dunk's slam is, cut to from behind the end zone for the
+// last of it (see camera.ts makeEndZoneCamera) - through a flash of white.
 
 export type FieldReplay = {
 	// When the live picture cuts to it, and what it shows (timeline ms).
@@ -14,6 +16,9 @@ export type FieldReplay = {
 	to: number;
 	// Who it is of: the man with the ball at the moment it is shown for.
 	pid?: number;
+	// A score: from when it is seen from behind the end zone it was scored
+	// in (0 the left one, 1 the right).
+	endZone?: { from: number; end: Side };
 };
 
 // How long after the whistle it cuts to it - after the signals, a moment
@@ -25,6 +30,11 @@ const REPLAY_BEFORE = 3800;
 const REPLAY_TO = 900;
 // The most of a play it shows (timeline ms): the end of it, if it is long.
 const REPLAY_MOST = 6000;
+// A score's from behind the end zone from this long before it - the first
+// angle this long at least, the second this long.
+const END_ZONE_LEAD = 1700;
+const END_ZONE_FIRST = 1200;
+const END_ZONE_LEAST = 1000;
 // Long enough a gain, or a return, to be shown again (yards).
 const BIG_GAIN = 25;
 const BIG_RETURN = 35;
@@ -56,6 +66,8 @@ export const holderAt = (ball: BallSeg[], t: number): number | undefined => {
 
 export const replayFor = (input: {
 	kind: PlayKind;
+	// The way the play goes (the kick, for a kick).
+	dir: Dir;
 	events: RawEvent[];
 	beats: Beat[];
 	t0: number;
@@ -78,6 +90,8 @@ export const replayFor = (input: {
 	let key: number | undefined;
 	let to: number | undefined;
 	let scored = false;
+	// (The way the score went: the offense's, or back the other way.)
+	let way: Dir = input.dir;
 	let fumbleAt: number | undefined;
 	let lost = false;
 	for (const b of beats) {
@@ -87,6 +101,11 @@ export const replayFor = (input: {
 			key = Math.max(b.actionStart, whistle);
 			to = undefined;
 			scored = true;
+			const back =
+				e.type === "fumbleRecovery"
+					? e.lost === true
+					: e.type !== "run" && e.type !== "passComplete";
+			way = (back ? -input.dir : input.dir) as Dir;
 			break;
 		}
 		if (e.type === "fumble") {
@@ -131,7 +150,16 @@ export const replayFor = (input: {
 		return undefined;
 	}
 	const pid = holderAt(input.ball, key);
-	return { cue, from, to: end, ...(pid === undefined ? {} : { pid }) };
+	const ez = Math.max(from + END_ZONE_FIRST, key - END_ZONE_LEAD);
+	return {
+		cue,
+		from,
+		to: end,
+		...(pid === undefined ? {} : { pid }),
+		...(scored && end - ez >= END_ZONE_LEAST
+			? { endZone: { from: ez, end: way === 1 ? 1 : 0 } }
+			: {}),
+	};
 };
 
 // Where the replay's camera looks: the ball, and the man it is of while
@@ -142,7 +170,23 @@ const LOOSE = 140;
 const ROOM = 34;
 const NEAR = 70;
 
+// From behind the end zone: on him, or the ball, this wide where he is.
+const END_ZONE_WIDTH = 40;
+
+// Which of the replay's cameras it is seen from at t: the sideline's
+// (undefined), or the one behind the end zone at that end.
+export const replayEnd = (r: FieldReplay, t: number): Side | undefined =>
+	r.endZone && t >= r.endZone.from ? r.endZone.end : undefined;
+
 export const replayAim = (m: FieldMoment, r: FieldReplay): Shot => {
+	if (replayEnd(r, m.t) !== undefined) {
+		const him =
+			r.pid === undefined ? undefined : m.players.find((p) => p.id === r.pid);
+		const on = him ?? m.focus;
+		if (on) {
+			return { x: on.x, y: on.y, width: END_ZONE_WIDTH, z: 3.5 };
+		}
+	}
 	const pts: Pt3[] = [];
 	if (m.focus) {
 		pts.push(m.focus);

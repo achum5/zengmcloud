@@ -40,7 +40,12 @@ import {
 	footballBody,
 	officialBody,
 } from "./body.ts";
-import { makeFieldCamera, MAIN_RIG, REPLAY_RIG } from "./camera.ts";
+import {
+	makeEndZoneCamera,
+	makeFieldCamera,
+	MAIN_RIG,
+	REPLAY_RIG,
+} from "./camera.ts";
 import type { FieldTimeline } from "./director.ts";
 import { stageField, stageOpening } from "./stageField.ts";
 import { momentAt, playAt, type HandsOf } from "./evaluate.ts";
@@ -96,7 +101,7 @@ import {
 	type KeySegment,
 } from "../court3d/keyPlays.ts";
 import { planFieldKeyPlays } from "./keyPlays.ts";
-import { replayAim } from "./replays.ts";
+import { replayAim, replayEnd } from "./replays.ts";
 import { poolsOf } from "./pools.ts";
 import type { Stakes } from "./postgame.ts";
 import { drawFieldFrame, type FieldPaint } from "./scene.ts";
@@ -144,6 +149,9 @@ import { inShadow, venueFor } from "./venue.ts";
 
 // How long the picture dips to black either side of a cut (timeline ms).
 const DIP_MS = 150;
+// A replay cut from one of its cameras to the other (see replays.ts): a
+// flash of white, and the new angle up out of it over this long (ms).
+const FLASH_MS = 260;
 // THE WIPE into a replay and out of it (see playback's wipeAt): the 3D
 // court's band in the colors of the team whose play it is, its logo in the
 // middle, slanting, sweeping across the picture - this much wider than it
@@ -695,6 +703,7 @@ const Field3D = ({
 	const bugRef = useRef<HTMLDivElement | null>(null);
 	const covers = useRef({ at: -Infinity, boxes: [] as TagCover[] });
 	const dipRef = useRef<HTMLDivElement | null>(null);
+	const flashRef = useRef<HTMLDivElement | null>(null);
 	const stingRefs = useRef<[HTMLDivElement | null, HTMLDivElement | null]>([
 		null,
 		null,
@@ -837,6 +846,10 @@ const Field3D = ({
 		const wipe = makeFieldWipe();
 		let wipeSide: Side = 1;
 		let shownOver = false;
+		// The replay's camera, and the flash at a cut from one to the other.
+		let replayAngle: Side | undefined;
+		let replayWas: unknown;
+		let flashAt = -Infinity;
 
 		const tick = (now: number, draw: boolean) => {
 			const p = live.current;
@@ -890,6 +903,17 @@ const Field3D = ({
 			const replay = s.replay;
 			const moment = momentAt(tl, replay ? replay.at : s.t, handsOf);
 			const aim = replay ? replayAim(moment, replay) : aimFor(moment);
+			// (Which of the replay's cameras: cut straight to the other, through
+			// a flash.)
+			const angle = replay ? replayEnd(replay, replay.at) : undefined;
+			if (angle !== replayAngle) {
+				if (replay && replayWas === replay) {
+					s.snapCam = true;
+					flashAt = now;
+				}
+				replayAngle = angle;
+			}
+			replayWas = replay;
 			// (Squarer, the picture takes in a little more of the field.)
 			const width = aim.width * (fw / fh < 1.5 ? 0.8 : 1);
 			const c = cam.current;
@@ -918,12 +942,18 @@ const Field3D = ({
 				[c.y, c.vy] = follow(c.y, c.vy, gy!, CAM_ZOOM, secs);
 				[c.z, c.vz] = follow(c.z, c.vz, gz!, CAM_ZOOM, secs);
 			}
-			const view = makeFieldCamera(
-				{ x: c.x, width: c.w, y: c.y, z: c.z },
-				fw,
-				fh,
-				replay ? REPLAY_RIG : MAIN_RIG,
-			);
+			const shot = { x: c.x, width: c.w, y: c.y, z: c.z };
+			const view =
+				angle !== undefined
+					? makeEndZoneCamera(shot, angle, fw, fh)
+					: makeFieldCamera(shot, fw, fh, replay ? REPLAY_RIG : MAIN_RIG);
+			const white = flashRef.current;
+			if (white) {
+				const o = replay ? Math.max(0, 1 - (now - flashAt) / FLASH_MS) : 0;
+				if (white.style.opacity !== String(o)) {
+					white.style.opacity = String(o);
+				}
+			}
 			const look = (pid: number) => looks.current.get(pid);
 			const body = (pid: number) => bodies.current.get(pid) ?? DRAWN_DEFAULT;
 			const items: { depth: number; draw: () => void }[] = [];
@@ -1309,6 +1339,17 @@ const Field3D = ({
 					position: "absolute",
 					inset: 0,
 					background: "#000",
+					opacity: 0,
+					pointerEvents: "none",
+				}}
+			/>
+			<div
+				ref={flashRef}
+				aria-hidden
+				style={{
+					position: "absolute",
+					inset: 0,
+					background: "#fff",
 					opacity: 0,
 					pointerEvents: "none",
 				}}

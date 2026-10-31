@@ -1,5 +1,12 @@
 import type { Camera } from "../court3d/camera.ts";
-import { FIELD_W, MID_X, type Pt3 } from "./geometry.ts";
+import {
+	FIELD_L,
+	FIELD_W,
+	MID_X,
+	MID_Y,
+	type Pt3,
+	type Side,
+} from "./geometry.ts";
 
 // THE BROADCAST CAMERA: high in the press box on the near side, sliding along
 // with the ball the way the 3D court's camera does (see court3d/camera.ts,
@@ -54,14 +61,55 @@ export const makeFieldCamera = (
 	viewW: number,
 	viewH: number,
 	rig: FieldRig = MAIN_RIG,
+): Camera =>
+	cameraAt(
+		{
+			x: MID_X + (shot.x - MID_X) * rig.slide,
+			y: FIELD_W + rig.back,
+			z: rig.high,
+		},
+		shot,
+		viewW,
+		viewH,
+		rig.upright,
+	);
+
+// The replay's second angle, a score's (the 3D court's from behind the
+// baseline, for football: see court3d/camera.ts BASELINE_RIG): from behind
+// the end zone it is scored in, up over the wall at the foot of the stands
+// there, looking up the field at him coming in - in true perspective. This
+// far behind the end line, this high, and across the field with what it
+// looks at this share of the way.
+const END_BACK = 28;
+const END_HIGH = 30;
+const END_SLIDE = 0.4;
+export const makeEndZoneCamera = (
+	shot: Shot,
+	end: Side,
+	viewW: number,
+	viewH: number,
+): Camera =>
+	cameraAt(
+		{
+			x: end === 0 ? -END_BACK : FIELD_L + END_BACK,
+			y: MID_Y + (shot.y - MID_Y) * END_SLIDE,
+			z: END_HIGH,
+		},
+		shot,
+		viewW,
+		viewH,
+		false,
+	);
+
+const cameraAt = (
+	pos: Pt3,
+	shot: Shot,
+	viewW: number,
+	viewH: number,
+	upright: boolean,
 ): Camera => {
-	const pos = {
-		x: MID_X + (shot.x - MID_X) * rig.slide,
-		y: FIELD_W + rig.back,
-		z: rig.high,
-	};
 	const lift = shot.z ?? 2;
-	const target = { x: shot.x, y: shot.y, z: rig.upright ? 0 : lift };
+	const target = { x: shot.x, y: shot.y, z: upright ? 0 : lift };
 	const fwd = norm(sub(target, pos));
 	const right = norm({ x: -fwd.y, y: fwd.x, z: 0 });
 	let up = {
@@ -85,9 +133,9 @@ export const makeFieldCamera = (
 		// for the far side's heads and a strip of the stands.
 		cy:
 			viewH * (viewW / viewH < 1.5 ? 0.5 : 0.55) +
-			(rig.upright ? (lift * f) / depth : 0),
+			(upright ? (lift * f) / depth : 0),
 		viewW,
 		viewH,
-		upright: rig.upright,
+		upright,
 	};
 };

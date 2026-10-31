@@ -16,6 +16,8 @@ import {
 	dirFor,
 	FIELD_L,
 	FIELD_W,
+	GOAL_L,
+	GOAL_R,
 	MID_X,
 	TEAM_AREA,
 	yardLineX,
@@ -284,6 +286,36 @@ describe("replays", () => {
 			});
 		}
 		assert.isAbove(shown, 15);
+	}, 20_000);
+
+	test("a score's cut to from behind the end zone it was scored in, for the last of it - nothing else's", () => {
+		let behind = 0;
+		for (const game of games) {
+			const tl = stage(game);
+			tl.plays.forEach((play, k) => {
+				const r = play.replay;
+				const ez = r?.endZone;
+				const end = tl.plays[k + 1]?.i ?? game.events.length;
+				const td = game.events
+					.slice(play.i, end)
+					.some((e) => e.td === true && e.type !== "extraPoint");
+				if (!r || !ez) {
+					return;
+				}
+				behind += 1;
+				assert.isTrue(td, `play ${play.i}`);
+				assert.isAbove(ez.from, r.from + 1000, `play ${play.i}`);
+				assert.isBelow(ez.from, r.to - 900, `play ${play.i}`);
+				// (The ball in that end zone, or all but, by the end of it.)
+				const ball = momentAt(tl, r.to).focus!;
+				if (ez.end === 0) {
+					assert.isBelow(ball.x, GOAL_L + 3, `play ${play.i}`);
+				} else {
+					assert.isAbove(ball.x, GOAL_R - 3, `play ${play.i}`);
+				}
+			});
+		}
+		assert.isAbove(behind, 3);
 	}, 20_000);
 
 	test("the live picture held while one shows, slowed down - and not on fast", () => {

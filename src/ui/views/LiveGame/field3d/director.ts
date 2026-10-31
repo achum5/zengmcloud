@@ -1727,6 +1727,7 @@ class Director {
 							this.beats.find((b) => b.i === calledI)?.actionStart ?? whistle;
 						const again = replayFor({
 							kind,
+							dir,
 							events,
 							beats: this.beats.filter((b) => b.i >= i0 && b.i < i1),
 							t0,
@@ -1884,6 +1885,7 @@ class Director {
 				: undefined;
 		const shown = replayFor({
 			kind,
+			dir,
 			events,
 			beats: this.beats.filter((b) => b.i >= i0 && b.i < i1),
 			t0,
