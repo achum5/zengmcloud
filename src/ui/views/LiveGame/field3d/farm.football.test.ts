@@ -6,6 +6,7 @@ import {
 	startFrame,
 	type SpriteCache,
 } from "../court3d/sprite.ts";
+import { ART_H, ART_W, type KitArt } from "../court3d/kitArt.ts";
 import { footballBody } from "./body.ts";
 import { makeFieldCamera } from "./camera.ts";
 import { fieldFarmHand, makeFieldFarm, type ToFieldHand } from "./farm.ts";
@@ -13,6 +14,8 @@ import { fieldGearFor, fieldKit, type FieldLook } from "./kit.ts";
 import {
 	drawFieldPlayer,
 	prepareFieldSprites,
+	shapeField,
+	type FieldJob,
 	type FieldPlayerState,
 } from "./sprite.ts";
 
@@ -261,4 +264,55 @@ test("what comes back for a cache let go of is not kept; a hand gone, its men ar
 	const [later] = frame(next, [man(1, 2)], [look], farm);
 	assert.strictEqual(later!.behind, 0);
 	assert.strictEqual(hand.jobs, 2);
+});
+
+test("a uniform drawn from a picture is sent to a hand once, and he wears it there as on the page", async () => {
+	const farm = makeFieldFarm(spawn, 1);
+	const hand = fakes[0]!;
+	await hand.flush();
+	// A picture all one green.
+	const data = new Uint8ClampedArray(ART_W * ART_H * 4);
+	for (let i = 0; i < data.length; i += 4) {
+		data.set([40, 200, 90, 255], i);
+	}
+	const art: KitArt = { id: "green", data, scale: 1 };
+	const looks = [1, 2].map((pid) => ({ ...lookOf(pid), kitArt: art }));
+	const sent: ToFieldHand[] = [];
+	const post = hand.worker.postMessage.bind(hand.worker);
+	hand.worker.postMessage = (m: { farm: ToFieldHand }) => {
+		sent.push(m.farm);
+		post(m);
+	};
+	const back: Uint8ClampedArray[] = [];
+	const cache = makeSpriteCache();
+	frame(cache, [man(1, 0), man(2, 0)], looks, farm);
+	frame(cache, [man(1, 1), man(2, 1)], looks, farm);
+	const take = hand.worker.onmessage!;
+	hand.worker.onmessage = (event: MessageEvent) => {
+		const shaped = event.data.farm.shaped;
+		if (shaped) {
+			back.push(shaped.pixels[0]);
+		}
+		take.call(hand.worker, event);
+	};
+	await hand.flush();
+	assert.strictEqual(sent.filter((m) => "art" in m).length, 1);
+	const jobs = sent.filter(
+		(m): m is { work: FieldJob } & ToFieldHand => "work" in m,
+	);
+	assert.strictEqual(jobs.length, 2);
+	assert.strictEqual(back.length, 2);
+	// What the hand made of him is what the page would have.
+	const own = shapeField(jobs[0]!.work, looks[0]!)!;
+	assert.deepEqual([...back[0]!], [...own.pixels.data]);
+	// And it is the picture he wears: green, not his team's red.
+	let green = 0;
+	for (let i = 0; i < own.pixels.data.length; i += 4) {
+		const [r, g] = [own.pixels.data[i]!, own.pixels.data[i + 1]!];
+		if (g > r + 60) {
+			green++;
+		}
+	}
+	assert.isAbove(green, 50);
+	farm.stop();
 });

@@ -1,5 +1,6 @@
 import { assert, test } from "vitest";
-import { fieldKit } from "./kit.ts";
+import type { KitArt } from "../court3d/kitArt.ts";
+import { dressFieldKit, fieldKit } from "./kit.ts";
 
 const CHIEFS = ["#c8102e", "#ffb612", "#ffffff"] as [string, string, string];
 
@@ -60,4 +61,27 @@ test("a uniform as the team has set it - and what it has not, picked to go with 
 			fieldKit(CHIEFS, other),
 		);
 	}
+});
+
+test("a uniform drawn from a picture: its lettering and trim the picture's, no bands or stripes of the game's", () => {
+	const kit = fieldKit(CHIEFS, "home");
+	const art: KitArt = {
+		id: "pic",
+		data: new Uint8ClampedArray(4),
+		scale: 1,
+		number: "#101010",
+		trim: "#00ff00",
+	};
+	const dressed = dressFieldKit(kit, art);
+	assert.strictEqual(dressed.number, "#101010");
+	// (The name in the number's color, where the picture has none for it.)
+	assert.strictEqual(dressed.name, "#101010");
+	assert.strictEqual(dressed.collar, "#00ff00");
+	assert.strictEqual(dressed.numberEdge, kit.numberEdge);
+	assert.deepEqual(dressed.sleeveStripes, []);
+	assert.deepEqual(dressed.pantsStripes, []);
+	// The plain colors, where the picture is clear, as they were.
+	assert.strictEqual(dressed.jersey, kit.jersey);
+	assert.strictEqual(dressed.pants, kit.pants);
+	assert.strictEqual(dressFieldKit(kit, undefined), kit);
 });

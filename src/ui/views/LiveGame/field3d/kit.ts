@@ -1,5 +1,6 @@
 import type { HelmetLook } from "../../../../common/types.ts";
 import type { HairCut, HairStyle } from "../court3d/faces.ts";
+import type { KitArt } from "../court3d/kitArt.ts";
 import { makeCourtRng } from "../courtRng.ts";
 import { luminance, shade } from "./color.ts";
 
@@ -73,6 +74,9 @@ export type FieldLook = {
 	lastName: string;
 	// The team's logo, for the sides of his helmet.
 	logo?: HTMLCanvasElement;
+	// The team's uniform drawn from a picture (see court3d/kitArt.ts): its
+	// jersey band on his jersey and sleeves, its shorts band on his pants.
+	kitArt?: KitArt;
 	// One of the officials: a cap, not a helmet (in the kit's helmet color),
 	// no pads.
 	official?: true;
@@ -203,6 +207,25 @@ export const fieldKit = (
 		sockStripes: [],
 	};
 };
+
+// A team's kit with its picture's lettering and trim (as court3d's
+// dressKit), and none of the usual bands on the sleeves or stripes down the
+// pants - the picture has its own.
+export const dressFieldKit = (
+	kit: FieldKit,
+	art: KitArt | undefined,
+): FieldKit =>
+	art
+		? {
+				...kit,
+				collar: art.trim ?? kit.collar,
+				number: art.number ?? kit.number,
+				numberEdge: art.numberEdge ?? kit.numberEdge,
+				name: art.name ?? art.number ?? kit.name,
+				sleeveStripes: [],
+				pantsStripes: [],
+			}
+		: kit;
 
 // What the two teams wear, [away, home] as the court has them.
 export const fieldKitsFor = (

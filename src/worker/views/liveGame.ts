@@ -291,8 +291,9 @@ export const boxScoreToLiveSim = async ({
 				t.jerseySkins = worn.jerseySkins;
 			}
 		}
-		// Football: the team's home stadium and helmet for the 3D game, as it
-		// has set them - a real team's only, for the reason above.
+		// Football: the team's home stadium, helmet and uniforms drawn from
+		// pictures for the 3D game, as it has set them - a real team's only,
+		// for the reason above.
 		if (__SPORT === "football" && !teamSeasonOverrides?.[i] && t.tid >= 0) {
 			try {
 				const team = await idb.cache.teams.get(t.tid);
@@ -301,6 +302,9 @@ export const boxScoreToLiveSim = async ({
 				}
 				if (team?.helmet) {
 					t.helmet = team.helmet;
+				}
+				if (team?.jerseySkins !== undefined) {
+					t.jerseySkins = team.jerseySkins;
 				}
 			} catch {
 				// Cosmetic; the 3D game picks its own.

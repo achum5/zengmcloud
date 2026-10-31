@@ -8,6 +8,7 @@ import {
 	type ReactNode,
 } from "react";
 import { useLocal } from "../../../util/local.ts";
+import { toWorker } from "../../../util/toWorker.ts";
 import type { PlayerFace } from "../../../util/playerFaces.ts";
 import { TeamLogoInline } from "../../../components/TeamLogoInline.tsx";
 import { STARTING_NUM_TIMEOUTS } from "../../../../common/constants.ts";
@@ -16,6 +17,7 @@ import { depthOf } from "../court3d/camera.ts";
 import type { FaceConfig } from "facesjs";
 import { FaceLoader } from "../court3d/FaceLoader.tsx";
 import { headColors, profileOf } from "../court3d/faces.ts";
+import { kitArtOf, loadKitPicture, type KitArt } from "../court3d/kitArt.ts";
 import { logoPicture } from "../court3d/logoPicture.ts";
 import { drawn, due, FAST, makePace } from "../court3d/pace.ts";
 import { adjust, artFor, makeResolution } from "../court3d/resolution.ts";
@@ -87,6 +89,7 @@ import {
 	chainCrewLook,
 	coachLook,
 	trainerLook,
+	dressFieldKit,
 	fieldGearFor,
 	fieldKitsFor,
 	officialLook,
@@ -740,12 +743,59 @@ const Field3D = ({
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 		[gid],
 	);
+	// Each side's uniform drawn from a picture, if its team has one (see
+	// Court3D): the visitors' away one, the home team's home one - on a
+	// replay the ones worn that night, or the team's own now where one of
+	// those has since been replaced.
+	const [arts, setArts] = useState<[KitArt?, KitArt?]>([]);
+	useEffect(() => {
+		const now: any[] = Array.isArray(boxScore?.teams) ? boxScore.teams : [];
+		const choices = [
+			[away?.jerseySkins?.away, now[1]?.jerseySkins?.away],
+			[home?.jerseySkins?.home, now[0]?.jerseySkins?.home],
+		].map((ids) => ids.filter((id): id is string => typeof id === "string"));
+		const ids = [...new Set(choices.flat())];
+		if (ids.length === 0) {
+			setArts([]);
+			return;
+		}
+		let alive = true;
+		void (async () => {
+			const urls = await toWorker("main", "getJerseySkins", ids);
+			const made = await Promise.all(
+				choices.map(async (side) => {
+					const id = side.find((choice) => urls?.[choice] !== undefined);
+					if (id === undefined) {
+						return undefined;
+					}
+					try {
+						return kitArtOf(await loadKitPicture(urls[id]!), id);
+					} catch {
+						return undefined;
+					}
+				}),
+			);
+			if (alive) {
+				setArts([made[0], made[1]]);
+			}
+		})();
+		return () => {
+			alive = false;
+		};
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [gid]);
+	const dressed = useMemo(
+		() => [dressFieldKit(kits[0], arts[0]), dressFieldKit(kits[1], arts[1])],
+		[kits, arts],
+	);
+
 	const appearance = useMemo(() => {
 		const looks = new Map<number, FieldLook>();
 		const bodies = new Map<number, Body>();
 		for (const p of roster) {
 			const f = faces.current.get(p.pid) ?? undefined;
-			const kit = kits[p.team];
+			const kit = dressed[p.team]!;
+			const art = arts[p.team];
 			const head = headColors(f?.face);
 			looks.set(p.pid, {
 				kit,
@@ -758,6 +808,7 @@ const Field3D = ({
 				...(logos[p.team] && [away, home][p.team]?.helmet?.logo !== false
 					? { logo: logos[p.team] }
 					: {}),
+				...(art ? { kitArt: art } : {}),
 			});
 			bodies.set(p.pid, drawnFootballBody(f?.hgt, f?.weight));
 		}
@@ -822,7 +873,7 @@ const Field3D = ({
 		bodies.set(MASCOT_ID, drawnBody(mascotBody()));
 		return { looks, bodies };
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [roster, kits, logos, facesVersion]);
+	}, [roster, kits, dressed, arts, logos, facesVersion]);
 	// The men on each sideline, where each stands all game.
 	const sideline = useMemo(
 		() => sidelineFor(roster, gid ?? 0),

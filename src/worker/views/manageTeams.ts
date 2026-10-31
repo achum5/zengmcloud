@@ -19,6 +19,7 @@ export default defineView({
 					"colors",
 					"jersey",
 					"jerseySkins",
+					"helmet",
 					"did",
 					"pop",
 					"stadiumCapacity",
@@ -43,6 +44,8 @@ export default defineView({
 				stadiumCapacity: t.stadiumCapacity ?? t.seasonAttrs.stadiumCapacity,
 				jersey: t.jersey ?? DEFAULT_JERSEY,
 				...(t.jerseySkins ? { jerseySkins: t.jerseySkins } : {}),
+				// (Football's, for its 3D jerseys' preview.)
+				...(t.helmet ? { helmet: t.helmet } : {}),
 				did: t.did,
 				disabled: t.disabled,
 			};

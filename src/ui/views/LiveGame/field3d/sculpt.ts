@@ -7,6 +7,18 @@ import {
 	type Pose,
 	type V3,
 } from "../court3d/poses.ts";
+import {
+	ART_H,
+	ART_JERSEY,
+	ART_SHORTS,
+	ART_W,
+	artAt,
+	artColor,
+	artWrap,
+	DEFAULT_FIT,
+	type ArtWrap,
+	type KitArt,
+} from "../court3d/kitArt.ts";
 import type { Pt3 } from "./geometry.ts";
 import type { BareHead, FieldLook } from "./kit.ts";
 
@@ -272,6 +284,33 @@ const shouldersOf = (body: Body) => body.torso + body.depth * 0.55;
 // How far down his upper arm his sleeve comes, and his pants down his shin.
 const SLEEVE = 0.4;
 const PANTS_HEM = 0.16;
+// Round a sleeve (feet), about.
+const SLEEVE_R = 0.3;
+
+// How a uniform's picture wraps round him (see court3d/kitArt.ts): its
+// jersey from the tops of his pads down to where it tucks in, its shorts
+// as his pants, from there to their hems under his knees. A point of his
+// thigh is taken as it would be with him standing straight - THIGH_TOP to
+// THIGH_TOP + THIGH_DOWN thighs below his hips, hip to knee - and of his
+// shin, on down from there.
+const THIGH_TOP = 0.16;
+const THIGH_DOWN = 0.68;
+export const wrapsFor = (body: Body): { jersey: ArtWrap; pants: ArtWrap } => ({
+	jersey: artWrap(
+		body.shoulderW * 1.15,
+		body.depth * 0.55,
+		shouldersOf(body),
+		tuckOf(body),
+		ART_JERSEY,
+	),
+	pants: artWrap(
+		body.hipW + body.thighR * 1.15,
+		body.depth * 0.5,
+		tuckOf(body),
+		-(body.thigh * (THIGH_TOP + THIGH_DOWN) + body.shin * PANTS_HEM),
+		ART_SHORTS,
+	),
+});
 // A cheerleader's skirt, down her thigh this far; her socks up her shin to
 // this far down it.
 const SKIRT = 0.34;
@@ -312,6 +351,33 @@ const sheetCanvas = (w: number, h: number): HTMLCanvasElement | undefined => {
 		: (new OffscreenCanvas(w, h) as unknown as HTMLCanvasElement);
 };
 
+// A lettered picture's lettering (the part of it under the swatches), as a
+// picture to set characters from (as court3d's).
+const glyphPictures = new WeakMap<KitArt, HTMLCanvasElement | null>();
+const glyphPicture = (art: KitArt): HTMLCanvasElement | undefined => {
+	let cv = glyphPictures.get(art);
+	if (cv === undefined) {
+		cv = null;
+		const W = ART_W * art.scale;
+		const top = ART_H * art.scale;
+		const h = art.data.length / 4 / W - top;
+		const made =
+			h > 0 && typeof ImageData !== "undefined" ? sheetCanvas(W, h) : undefined;
+		const g = made?.getContext("2d");
+		if (made && g) {
+			g.putImageData(new ImageData(art.data.slice(top * W * 4), W, h), 0, 0);
+			cv = made;
+		}
+		glyphPictures.set(art, cv);
+	}
+	return cv ?? undefined;
+};
+
+// How tall a digit or a capital stands, in its type's size; and how far an
+// arched name rises in its middle at full arch, in its width (court3d's).
+const CAP = 0.72;
+const ARCH = 0.12;
+
 const jerseySheet = (
 	look: FieldLook,
 	body: Body,
@@ -344,6 +410,80 @@ const jerseySheet = (
 		return undefined;
 	}
 	const kit = look.kit;
+	// A uniform from a picture: its lettering where and as big as it says,
+	// and in its own type, if it has every character wanted.
+	const art = look.kitArt;
+	const fit = art?.fit ?? DEFAULT_FIT;
+	const glyphs = art?.glyphs;
+	const glyphPic = glyphs && art ? glyphPicture(art) : undefined;
+	g.imageSmoothingEnabled = true;
+	g.imageSmoothingQuality = "high";
+	// A line set in the team's own lettering: each character as wide as it
+	// was painted, the line squeezed into `maxW` and bent round the arch.
+	const setLine = (
+		str: string,
+		x: number,
+		cy: number,
+		size: number,
+		maxW: number,
+		arch: number,
+	) => {
+		if (!glyphs || !glyphPic) {
+			return false;
+		}
+		const top = ART_H * art!.scale;
+		const boxes: (readonly [number, number, number, number] | undefined)[] = [];
+		let rowH = 0;
+		for (const ch of str.normalize("NFD").replaceAll(/[\u0300-\u036F]/g, "")) {
+			if (ch === " ") {
+				boxes.push(undefined);
+				continue;
+			}
+			const box = glyphs[ch];
+			if (!box) {
+				return false;
+			}
+			boxes.push(box);
+			rowH = Math.max(rowH, box[3]);
+		}
+		if (rowH === 0) {
+			return false;
+		}
+		const k = (size * ppf * CAP) / rowH;
+		const gap = rowH * 0.06;
+		const space = rowH * 0.4;
+		let total = -gap;
+		for (const box of boxes) {
+			total += (box ? box[2] : space) + gap;
+		}
+		const kx = k * Math.min(1, (maxW * ppf) / (total * k));
+		const half = (total * kx) / 2;
+		const A = arch * total * kx * ARCH;
+		let at = x - half;
+		for (const box of boxes) {
+			const bw = (box ? box[2] : space) * kx;
+			if (box) {
+				const t = (at + bw / 2 - x) / half;
+				g.save();
+				g.translate(at + bw / 2, cy - A * (1 - t * t));
+				g.rotate(Math.atan((2 * A * t) / half));
+				g.drawImage(
+					glyphPic,
+					box[0],
+					box[1] - top,
+					box[2],
+					box[3],
+					-bw / 2,
+					(-box[3] * k) / 2,
+					bw,
+					box[3] * k,
+				);
+				g.restore();
+			}
+			at += bw + gap * kx;
+		}
+		return true;
+	};
 	// Block numbers, the football way: heavy, square, edged.
 	const text = (
 		str: string,
@@ -353,27 +493,58 @@ const jerseySheet = (
 		maxW: number,
 		block: boolean,
 		color: string,
+		arch = 0,
 	) => {
 		if (!str) {
 			return;
 		}
+		const cy = (u0 - u) * ppf;
+		if (setLine(str, x, cy, size, maxW, arch)) {
+			return;
+		}
 		const px = size * ppf;
+		const squeeze = block ? 0.86 : 0.92;
 		g.save();
-		g.translate(x, (u0 - u) * ppf);
-		g.scale(block ? 0.86 : 0.92, 1);
+		g.translate(x, cy);
 		g.font = block
 			? `900 ${px}px "Arial Black", "Helvetica Neue", Arial, sans-serif`
 			: `bold ${px}px "Arial Narrow", "Helvetica Neue", Arial, sans-serif`;
 		g.textAlign = "center";
 		g.textBaseline = "middle";
 		g.lineJoin = "round";
-		if (block) {
-			g.lineWidth = Math.max(1, px * 0.12);
-			g.strokeStyle = kit.numberEdge;
-			g.strokeText(str, 0, 0, maxW * ppf);
-		}
+		g.lineWidth = Math.max(1, px * 0.12);
+		g.strokeStyle = kit.numberEdge;
 		g.fillStyle = color;
-		g.fillText(str, 0, 0, maxW * ppf);
+		if (arch === 0) {
+			g.scale(squeeze, 1);
+			if (block) {
+				g.strokeText(str, 0, 0, maxW * ppf);
+			}
+			g.fillText(str, 0, 0, maxW * ppf);
+		} else {
+			// A letter at a time, round the arch.
+			const chars = [...str];
+			const widths = chars.map((ch) => g.measureText(ch).width * squeeze);
+			const sum = widths.reduce((all, cw) => all + cw, 0);
+			const fits = Math.min(1, (maxW * ppf) / sum);
+			const half = (sum * fits) / 2;
+			const A = arch * sum * fits * ARCH;
+			let at = -half;
+			for (const [i, ch] of chars.entries()) {
+				const cw = widths[i]! * fits;
+				const t = (at + cw / 2) / half;
+				g.save();
+				g.translate(at + cw / 2, -A * (1 - t * t));
+				g.rotate(Math.atan((2 * A * t) / half));
+				g.scale(squeeze * fits, 1);
+				if (block) {
+					g.strokeText(ch, 0, 0);
+				}
+				g.fillText(ch, 0, 0);
+				g.restore();
+				at += cw;
+			}
+		}
 		g.restore();
 	};
 	const L = FIELD_LETTERING;
@@ -381,9 +552,9 @@ const jerseySheet = (
 	text(
 		look.official ? "" : look.jerseyNumber,
 		w / 2,
-		T * L.number.u,
-		body.H * L.number.size,
-		aS * L.number.maxW,
+		T * (L.number.u + fit.numberUp),
+		body.H * L.number.size * fit.numberSize,
+		aS * L.number.maxW * Math.max(1, fit.numberSize),
 		true,
 		kit.number,
 	);
@@ -391,20 +562,21 @@ const jerseySheet = (
 		text(
 			look.jerseyNumber,
 			x,
-			T * L.backNumber.u,
-			body.H * L.backNumber.size,
-			aS * L.backNumber.maxW,
+			T * (L.backNumber.u + fit.backUp),
+			body.H * L.backNumber.size * fit.backSize,
+			aS * L.backNumber.maxW * Math.max(1, fit.backSize),
 			true,
 			kit.number,
 		);
 		text(
 			look.lastName.toUpperCase(),
 			x,
-			T * L.name.u,
-			body.H * L.name.size,
+			T * (L.name.u + fit.nameUp),
+			body.H * L.name.size * fit.nameSize,
 			aS * L.name.maxW,
 			false,
 			kit.name,
+			fit.nameArch,
 		);
 	}
 	const sheet = {
@@ -480,6 +652,8 @@ type Built = {
 	spine: V3;
 	fwd: V3;
 	sheet?: Sheet;
+	// A uniform drawn from a picture: how it wraps round him.
+	wraps?: { jersey: ArtWrap; pants: ArtWrap };
 	decal?: Decal;
 	// His helmet: its middle, which way it faces, its left, its up, and
 	// how big it is.
@@ -1532,6 +1706,9 @@ const build = (
 		spine,
 		fwd: fwdT,
 		sheet: jerseySheet(look, body, kMid * 1.2, cut.waist),
+		...(look.kitArt && !look.official && !cheer && !look.mascot
+			? { wraps: wrapsFor(body) }
+			: {}),
 		decal: decalOf(look.logo),
 		helm: { c, f: hF, s: hS, u: hU, R },
 		arms: [sk.armR, sk.armL],
@@ -1777,7 +1954,9 @@ export type Sculpted = {
 const RUN = 8;
 
 // His sprite, w x h of its pixels, each px screen pixels, its top left at
-// (ox, oy) on the screen.
+// (ox, oy) on the screen. (And, for the template a uniform's picture is
+// painted on, which of the picture's pixels showed on him (1) and which
+// the collar covered (2), marked in `seen`.)
 export const sculptFigure = (
 	cam: Camera,
 	fig: Figure,
@@ -1788,6 +1967,7 @@ export const sculptFigure = (
 	oy: number,
 	w: number,
 	h: number,
+	seen?: Uint8Array,
 ): Sculpted => {
 	const b = build(cam, fig, body, look, px, ox, oy);
 	const pal = paletteOf(look);
@@ -1821,6 +2001,90 @@ export const sculptFigure = (
 	const sheet = b.sheet;
 	const helm = b.helm;
 	const decal = b.decal;
+	const wraps = b.wraps;
+	const art = look.kitArt;
+	// (The collar the picture's own, not painted on.)
+	const trimFromArt = art?.fit?.trim === "picture" && wraps !== undefined;
+	const artXY = new Float64Array(2);
+	const artPx = new Float64Array(3);
+	const artRGB: RGB = [0, 0, 0];
+	const mark = (v: number) => {
+		const i = Math.round(artXY[1]!) * ART_W + Math.round(artXY[0]!);
+		if (seen && i >= 0 && i < ART_W * ART_H && seen[i]! < v) {
+			seen[i] = v;
+		}
+	};
+	// The team's picture at a point on his jersey or pants, over the plain
+	// color c where the picture is clear.
+	const artOver = (
+		wrap: ArtWrap,
+		U: number,
+		S: number,
+		F: number,
+		notSide: boolean,
+		c: RGB,
+	): RGB => {
+		artAt(wrap, U, S, F, notSide, artXY);
+		mark(1);
+		const a = artColor(art!, artXY[0]!, artXY[1]!, artPx);
+		if (a <= 0) {
+			return c;
+		}
+		artRGB[0] = c[0] + (artPx[0]! - c[0]) * a;
+		artRGB[1] = c[1] + (artPx[1]! - c[1]) * a;
+		artRGB[2] = c[2] + (artPx[2]! - c[2]) * a;
+		return artRGB;
+	};
+	// The picture on his pants at a point (Pf, Ps, Pu) of his leg, its axis
+	// from A to B, U up him as the point would be with him standing: how far
+	// across him it is (square to the leg) and how far ahead.
+	const pantsOver = (
+		A: V3,
+		B: V3,
+		Pf: number,
+		Ps: number,
+		Pu: number,
+		U: number,
+		side: number,
+		c: RGB,
+	): RGB => {
+		const lf = B.f - A.f;
+		const ls = B.s - A.s;
+		const lu = B.u - A.u;
+		const ll = len3(lf, ls, lu) || 1;
+		const ax = lf / ll;
+		const ay = ls / ll;
+		const az = lu / ll;
+		let of = Pf - A.f;
+		let os = Ps - A.s;
+		let ou = Pu - A.u;
+		const along = of * ax + os * ay + ou * az;
+		of -= ax * along;
+		os -= ay * along;
+		ou -= az * along;
+		let xf = -ax * ay;
+		let xs = 1 - ay * ay;
+		let xu = -az * ay;
+		const xl = len3(xf, xs, xu) || 1;
+		xf /= xl;
+		xs /= xl;
+		xu /= xl;
+		const across = of * xf + os * xs + ou * xu;
+		const ahead =
+			of * (ay * xu - az * xs) +
+			os * (az * xf - ax * xu) +
+			ou * (ax * xs - ay * xf);
+		const out = side === 0 ? -1 : 1;
+		return artOver(
+			wraps!.pants,
+			U,
+			out * body.hipW + across,
+			ahead,
+			// The inside of his leg faces the other one, not out to his side.
+			across * out < 0,
+			c,
+		);
+	};
 	let cr = 0;
 	let cg = 0;
 	let cb = 0;
@@ -1842,14 +2106,16 @@ export const sculptFigure = (
 		cloth = true;
 		if (U < cut.waist) {
 			let c = pal.pants;
-			if (Math.abs(S) > cut.hipStripe && Math.abs(F) < 0.11) {
+			if (wraps) {
+				c = artOver(wraps.pants, U, S, F, false, c);
+			} else if (Math.abs(S) > cut.hipStripe && Math.abs(F) < 0.11) {
 				c = pal.pantsStripes[0] ?? c;
 			}
 			set(c);
 			return;
 		}
 		if (U < cut.waist + cut.belt) {
-			set(pal.belt);
+			set(wraps ? artOver(wraps.pants, U, S, F, false, pal.belt) : pal.belt);
 			return;
 		}
 		if (cut.crop !== undefined && U < cut.crop) {
@@ -1876,7 +2142,11 @@ export const sculptFigure = (
 			set(pal.skin);
 			return;
 		}
-		if (dNeck < cut.trim) {
+		if (dNeck < cut.trim && !trimFromArt) {
+			if (seen && wraps) {
+				artAt(wraps.jersey, U, S, F, false, artXY);
+				mark(2);
+			}
 			set(pal.collar);
 			return;
 		}
@@ -1887,6 +2157,9 @@ export const sculptFigure = (
 			if ((Math.floor(arc / STRIPE_W) & 1) === 1) {
 				c = pal.stripes;
 			}
+		}
+		if (wraps && c === pal.jersey) {
+			c = artOver(wraps.jersey, U, S, F, false, c);
 		}
 		if (sheet) {
 			// His numbers and name: round his torso by how far across it the
@@ -2240,6 +2513,26 @@ export const sculptFigure = (
 							if (pal.stripes && roundArm(limb, Pf, Ps, Pu, a) === 1) {
 								c = pal.stripes;
 							}
+							if (wraps && c === pal.jersey) {
+								// The picture's side of the jersey, down from his
+								// shoulder - as if over his side, his arm down: its
+								// front edge on the front of the sleeve.
+								const j = wraps.jersey;
+								const lf = limb.mid.f - limb.root.f;
+								const ls = limb.mid.s - limb.root.s;
+								const lu = limb.mid.u - limb.root.u;
+								const ahead =
+									(Pf - limb.root.f - lf * a) * fw.f +
+									(Pu - limb.root.u - lu * a) * fw.u;
+								c = artOver(
+									j,
+									body.torso - a * len3(lf, ls, lu),
+									(side === 0 ? -1 : 1) * j.a,
+									Math.max(-1, Math.min(1, ahead / SLEEVE_R)) * j.sideF,
+									false,
+									c,
+								);
+							}
 							cloth = true;
 						} else {
 							c = pal.sleeve[side] ?? pal.skin;
@@ -2271,7 +2564,18 @@ export const sculptFigure = (
 							(os * (side === 0 ? -1 : 1)) / (len3(of, os, ou) || 1);
 						let c = pal.pants;
 						const st = pal.pantsStripes;
-						if (st.length > 0 && outward > 0.92) {
+						if (wraps) {
+							c = pantsOver(
+								limb.root,
+								limb.mid,
+								Pf,
+								Ps,
+								Pu,
+								-(THIGH_TOP + THIGH_DOWN * a) * body.thigh,
+								side,
+								c,
+							);
+						} else if (st.length > 0 && outward > 0.92) {
 							c = st.length > 1 && outward < 0.975 ? st[1]! : st[0]!;
 						}
 						set(c);
@@ -2287,7 +2591,27 @@ export const sculptFigure = (
 							set(cloth ? pal.sock : pal.skin);
 							break;
 						}
-						set(bl < PANTS_HEM ? pal.pants : pal.sock);
+						if (bl >= PANTS_HEM) {
+							set(pal.sock);
+						} else if (wraps) {
+							set(
+								pantsOver(
+									limb.mid,
+									limb.end,
+									Pf,
+									Ps,
+									Pu,
+									-(
+										(THIGH_TOP + THIGH_DOWN) * body.thigh +
+										Math.max(0, bl) * body.shin
+									),
+									side,
+									pal.pants,
+								),
+							);
+						} else {
+							set(pal.pants);
+						}
 						break;
 					}
 					case SHOE: {

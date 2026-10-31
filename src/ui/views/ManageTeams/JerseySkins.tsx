@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import type { JerseySkinIds } from "../../../common/types.ts";
+import type { HelmetLook, JerseySkinIds } from "../../../common/types.ts";
 import { Modal } from "../../components/Modal.tsx";
 import { downloadFile } from "../../util/downloadFile.ts";
 import { toWorker } from "../../util/toWorker.ts";
@@ -18,6 +18,9 @@ import {
 } from "../LiveGame/court3d/kitArt.ts";
 
 const KitPreview = lazy(() => import("../LiveGame/court3d/KitPreview.tsx"));
+const FieldKitPreview = lazy(
+	() => import("../LiveGame/field3d/FieldKitPreview.tsx"),
+);
 
 type Side = keyof JerseySkinIds;
 
@@ -27,6 +30,9 @@ export type JerseySkinsTeam = {
 	name: string;
 	colors: [string, string, string];
 	jersey?: string;
+	// (Football: on its helmet.)
+	imgURL?: string;
+	helmet?: HelmetLook;
 };
 
 // A picture kept is a PNG at most this long (see setJerseySkin).
@@ -305,9 +311,14 @@ const JerseySkins = ({
 	const downloadTemplate = async () => {
 		setBusy("template");
 		try {
-			const { kitTemplate } =
-				await import("../LiveGame/court3d/kitTemplate.ts");
-			const cv = await kitTemplate();
+			const cv =
+				__SPORT === "football"
+					? await (
+							await import("../LiveGame/field3d/kitTemplate.ts")
+						).fieldKitTemplate()
+					: await (
+							await import("../LiveGame/court3d/kitTemplate.ts")
+						).kitTemplate();
 			const blob = await new Promise<Blob | null>((resolve) => {
 				cv.toBlob(resolve, "image/png");
 			});
@@ -341,12 +352,22 @@ const JerseySkins = ({
 								<Suspense
 									fallback={<div style={{ width: 150, height: 240 }} />}
 								>
-									<KitPreview
-										dress={{ colors: t.colors, jersey: t.jersey }}
-										side={side}
-										url={id === undefined ? undefined : urls[id]}
-										wordmark={side === "home" ? t.name : t.region}
-									/>
+									{__SPORT === "football" ? (
+										<FieldKitPreview
+											colors={t.colors}
+											helmet={t.helmet}
+											imgURL={t.imgURL}
+											side={side}
+											url={id === undefined ? undefined : urls[id]}
+										/>
+									) : (
+										<KitPreview
+											dress={{ colors: t.colors, jersey: t.jersey }}
+											side={side}
+											url={id === undefined ? undefined : urls[id]}
+											wordmark={side === "home" ? t.name : t.region}
+										/>
+									)}
 								</Suspense>
 								<div className="mt-2">
 									<label

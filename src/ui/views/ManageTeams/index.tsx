@@ -402,6 +402,15 @@ const ManageTeams = (props: View<"manageTeams">) => {
 									>
 										Customize stadium & uniform
 									</a>
+									<button
+										type="button"
+										className="btn btn-sm btn-light-bordered ms-2"
+										onClick={() => {
+											setSkinsTid(t.tid);
+										}}
+									>
+										3D jerseys
+									</button>
 								</div>
 							) : null}
 							<div className="col-12 d-lg-none" style={{ marginTop: -12 }}>

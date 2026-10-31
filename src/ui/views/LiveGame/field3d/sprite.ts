@@ -804,6 +804,8 @@ export type FieldShaped = {
 export const shapeField = (
 	job: FieldJob,
 	look: FieldLook,
+	// (Which of his uniform picture's pixels show: see sculptFigure.)
+	seen?: Uint8Array,
 ): FieldShaped | undefined => {
 	const { cam, st, step, body, px, left, right, upper, lower, lift } = job;
 	const fig = figureOf(st, body, step);
@@ -811,7 +813,7 @@ export const shapeField = (
 	const h = Math.max(4, Math.ceil((lower - upper) / px) + 2);
 	const ox = left - px;
 	const oy = upper + lift - px;
-	const made = sculptFigure(cam, fig, body, look, px, ox, oy, w, h);
+	const made = sculptFigure(cam, fig, body, look, px, ox, oy, w, h, seen);
 	const box = made.box;
 	const d = made.img.data;
 	if (job.shaded) {
@@ -840,6 +842,22 @@ export const shapeField = (
 		dy: oy + ry0 * px - job.baseY,
 		anchor: anchorOf(body, fig.pose, fig.yaw),
 	};
+};
+
+// Which of the pixels of his uniform's picture show on him (1), and which
+// his collar covers (2), as the camera sees him: marked in `seen` (see
+// kitTemplate.ts).
+export const markSeen = (
+	cam: Camera,
+	st: FieldPlayerState,
+	body: Body,
+	look: FieldLook,
+	seen: Uint8Array,
+) => {
+	const plan = planOf(cam, st, body, look, 1, undefined, false);
+	if (plan) {
+		shapeField(jobOf(plan, cam, st, body, 1), look, seen);
+	}
 };
 
 // The middle of him in each picture kept (see anchorOf).

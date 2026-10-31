@@ -25,7 +25,7 @@ import {
 	type KitArt,
 	writeFit,
 } from "./kitArt.ts";
-import { bodyOf } from "./poses.ts";
+import { bodyOf, type Body } from "./poses.ts";
 import { LETTERING, sculpt, wrapsFor } from "./sculpt.ts";
 
 // THE TEMPLATE A TEAM'S UNIFORM IS PAINTED ON (see kitArt.ts): the jersey's
@@ -97,8 +97,12 @@ const seenOnHim = async (): Promise<Uint8Array> => {
 			await new Promise((resolve) => setTimeout(resolve, 0));
 		}
 	}
-	// Close the gaps between the pixels he showed: one mostly surrounded by
-	// pixels that showed, showed too.
+	return closeGaps(seen);
+};
+
+// Close the gaps between the pixels he showed: one mostly surrounded by
+// pixels that showed, showed too.
+export const closeGaps = (seen: Uint8Array): Uint8Array => {
 	let from = seen;
 	for (let pass = 0; pass < 3; pass++) {
 		const out = from.slice();
@@ -137,14 +141,14 @@ const seenOnHim = async (): Promise<Uint8Array> => {
 
 // A box on the picture round his lettering: `size` heights tall at `u`
 // torso lengths up him, `maxW` sheet half-widths across, on his front or
-// his back.
-const letteringBox = (
+// his back (aS the sheet's half-width).
+export const letteringBox = (
 	wrap: ArtWrap,
 	at: { u: number; size: number; maxW: number },
 	front: boolean,
+	body: Body = bodyOf(),
+	aS = body.shoulderW * 1.1,
 ) => {
-	const body = bodyOf();
-	const aS = body.shoulderW * 1.1;
 	const half = aS * Math.sin(at.maxW / 2);
 	const u = body.torso * at.u;
 	const tall = body.H * at.size * 0.38;
@@ -159,6 +163,28 @@ const letteringBox = (
 
 export const kitTemplate = async (): Promise<HTMLCanvasElement> => {
 	const seen = await seenOnHim();
+	// His number on his chest; his name and number on his back.
+	const { jersey } = wrapsFor(bodyOf());
+	return templateOf(
+		seen,
+		(
+			[
+				[LETTERING.number, true],
+				[LETTERING.name, false],
+				[LETTERING.backNumber, false],
+			] as const
+		).map(([at, front]) => letteringBox(jersey, at, front)),
+		"SHORTS",
+	);
+};
+
+// The template, from which of its pixels show (see seenOnHim) and the boxes
+// his lettering goes in - the lower band named for what it is.
+export const templateOf = (
+	seen: Uint8Array,
+	boxes: { x: number; y: number; w: number; h: number }[],
+	lower: string,
+): HTMLCanvasElement => {
 	const cv = document.createElement("canvas");
 	cv.width = ART_W;
 	cv.height = ART_H_LETTERED;
@@ -192,9 +218,9 @@ export const kitTemplate = async (): Promise<HTMLCanvasElement> => {
 	for (const band of [ART_JERSEY, ART_SHORTS]) {
 		for (const [label, p] of [
 			["R", ART_PANELS.right],
-			[band === ART_JERSEY ? "JERSEY FRONT" : "SHORTS FRONT", ART_PANELS.front],
+			[`${band === ART_JERSEY ? "JERSEY" : lower} FRONT`, ART_PANELS.front],
 			["L", ART_PANELS.left],
-			[band === ART_JERSEY ? "JERSEY BACK" : "SHORTS BACK", ART_PANELS.back],
+			[`${band === ART_JERSEY ? "JERSEY" : lower} BACK`, ART_PANELS.back],
 		] as const) {
 			if (p.x > 0) {
 				g.fillRect(p.x, band.y, 1, band.h + 8);
@@ -202,16 +228,10 @@ export const kitTemplate = async (): Promise<HTMLCanvasElement> => {
 			g.fillText(label, p.x + p.w / 2, band.y + band.h);
 		}
 	}
-	// His number on his chest; his name and number on his back.
-	const { jersey } = wrapsFor(bodyOf());
+	// The boxes his lettering goes in.
 	g.setLineDash([3, 2]);
 	g.lineWidth = 1;
-	for (const [at, front] of [
-		[LETTERING.number, true],
-		[LETTERING.name, false],
-		[LETTERING.backNumber, false],
-	] as const) {
-		const b = letteringBox(jersey, at, front);
+	for (const b of boxes) {
 		g.strokeRect(
 			Math.round(b.x) + 0.5,
 			Math.round(b.y) + 0.5,

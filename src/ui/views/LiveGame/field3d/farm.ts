@@ -1,3 +1,4 @@
+import type { KitArt } from "../court3d/kitArt.ts";
 import type { SpriteCache } from "../court3d/sprite.ts";
 import type { FieldLook } from "./kit.ts";
 import { shapeField, type FieldJob, type FieldShaped } from "./sprite.ts";
@@ -18,17 +19,22 @@ import { shapeField, type FieldJob, type FieldShaped } from "./sprite.ts";
 // it comes. Whoever has no picture to wait in is made on the page as
 // before, and so is everybody where there is no hand to be had.
 //
-// A hand is sent each look once - its team's logo as pixels - and then only
-// the job: the camera, his pose, his build and the box he is drawn in (see
+// A hand is sent each look once - its team's logo as pixels, and its
+// uniform's picture - and then only the job: the camera, his pose, his build and the box he is drawn in (see
 // FieldJob).
 
-// What a look is sent as: its logo by number, sent once.
-type SentLook = Omit<FieldLook, "logo"> & { logo?: number };
+// What a look is sent as: its logo and its uniform's picture by number,
+// each sent once.
+type SentLook = Omit<FieldLook, "logo" | "kitArt"> & {
+	logo?: number;
+	kitArt?: number;
+};
+type Asset = { pic: ImageData } | { art: KitArt };
 // The page to a hand: each job in its lane (one a man - see makeFieldFarm)...
 type JobMsg = { job: number; look: number; work: FieldJob; lane: string };
 export type ToFieldHand =
 	| { hello: true }
-	| { asset: number; pic: ImageData }
+	| ({ asset: number } & Asset)
 	| { look: number; value: SentLook }
 	| JobMsg;
 // ... and back: whether it can sculpt at all, and each man sculpted (his
@@ -123,19 +129,23 @@ export const makeFieldFarm = (
 		}
 		return n;
 	};
-	// Each look as it is sent, and its logo (null: it can't be - a picture
-	// on it that may not be read - and it is made on the page).
+	// Each look as it is sent, and its logo and picture (null: it can't be -
+	// a logo on it that may not be read - and it is made on the page).
 	const sent = new WeakMap<
 		FieldLook,
-		{ value: SentLook; assets: [number, ImageData][] } | null
+		{ value: SentLook; assets: [number, Asset][] } | null
 	>();
 	const sendable = (look: FieldLook) => {
 		let s = sent.get(look);
 		if (s === undefined) {
-			const assets: [number, ImageData][] = [];
-			const { logo, ...rest } = look;
+			const assets: [number, Asset][] = [];
+			const { logo, kitArt, ...rest } = look;
 			const value: SentLook = { ...rest };
 			s = { value, assets };
+			if (kitArt) {
+				value.kitArt = numberOf(kitArt);
+				assets.push([value.kitArt, { art: kitArt }]);
+			}
 			if (logo && logo.width > 0 && logo.height > 0) {
 				let pic: ImageData | undefined;
 				try {
@@ -147,7 +157,7 @@ export const makeFieldFarm = (
 				}
 				if (pic) {
 					value.logo = numberOf(logo);
-					assets.push([value.logo, pic]);
+					assets.push([value.logo, { pic }]);
 				} else {
 					s = null;
 				}
@@ -264,9 +274,11 @@ export const makeFieldFarm = (
 			// (Anything that can't be sent - it never should be - is made on
 			// the page.)
 			try {
-				for (const [an, pic] of s.assets) {
+				for (const [an, asset] of s.assets) {
 					if (!hand.assets.has(an)) {
-						w.postMessage({ farm: { asset: an, pic } satisfies ToFieldHand });
+						w.postMessage({
+							farm: { asset: an, ...asset } satisfies ToFieldHand,
+						});
 						hand.assets.add(an);
 					}
 				}
@@ -315,6 +327,7 @@ export const fieldFarmHand = (
 	post: (msg: { farm: FromFieldHand }, transfer?: ArrayBuffer[]) => void,
 ) => {
 	const pics = new Map<number, HTMLCanvasElement>();
+	const arts = new Map<number, KitArt>();
 	const looks = new Map<number, FieldLook>();
 	// A logo sent as pixels, on a canvas of its own to be read from (see
 	// sculpt.ts decalOf).
@@ -381,6 +394,8 @@ export const fieldFarmHand = (
 			post({ farm: { ready } });
 		} else if ("pic" in msg) {
 			pics.set(msg.asset, canvasOf(msg.pic));
+		} else if ("art" in msg) {
+			arts.set(msg.asset, msg.art);
 		} else if ("work" in msg) {
 			// Done in its turn - unless a newer pose of his comes first.
 			const was = waiting.get(msg.lane);
@@ -393,9 +408,14 @@ export const fieldFarmHand = (
 				tick.port2.postMessage(0);
 			}
 		} else {
-			const { logo, ...rest } = msg.value;
+			const { logo, kitArt, ...rest } = msg.value;
 			const pic = logo === undefined ? undefined : pics.get(logo);
-			looks.set(msg.look, { ...rest, ...(pic ? { logo: pic } : {}) });
+			const art = kitArt === undefined ? undefined : arts.get(kitArt);
+			looks.set(msg.look, {
+				...rest,
+				...(pic ? { logo: pic } : {}),
+				...(art ? { kitArt: art } : {}),
+			});
 		}
 	};
 };
