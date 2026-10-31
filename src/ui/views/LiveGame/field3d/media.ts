@@ -131,18 +131,24 @@ const shooting = (s: Photographer, m: FieldMoment) => {
 	);
 };
 
+// Which way he faces: his own way, turned after the ball as far as he
+// turns.
+const yawOf = (s: Photographer, ball: Pt | undefined): number => {
+	if (!ball) {
+		return s.facing;
+	}
+	let d = Math.atan2(ball.y - s.at.y, ball.x - s.at.x) - s.facing;
+	d = Math.atan2(Math.sin(d), Math.cos(d));
+	return s.facing + Math.max(-s.turn, Math.min(s.turn, d));
+};
+
 export const photographersAt = (
 	men: Photographer[],
 	m: FieldMoment,
 ): FieldPlayerState[] => {
 	const ball = m.focus;
 	return men.map((s) => {
-		let yaw = s.facing;
-		if (ball) {
-			let d = Math.atan2(ball.y - s.at.y, ball.x - s.at.x) - s.facing;
-			d = Math.atan2(Math.sin(d), Math.cos(d));
-			yaw = s.facing + Math.max(-s.turn, Math.min(s.turn, d));
-		}
+		const yaw = yawOf(s, ball);
 		return {
 			id: s.id,
 			team: 0,
@@ -155,6 +161,70 @@ export const photographersAt = (
 			...(shooting(s, m) ? { arms: { move: "shoot" as Move, phase: 0 } } : {}),
 		};
 	});
+};
+
+// A camera going off after a big play near him - a score, a stop, the ball
+// taken away (the 3D court's: see court3d/crew.ts flashOf): his camera up,
+// a few frames each, at moments of his own - for so long after it.
+const FLASH_NEAR = 90;
+const FLASH_FROM = 80;
+const FLASH_SPREAD = 1400;
+const FLASH_FRAME = 90;
+const FLASH_SHOTS = 3;
+// Where it goes off: this far out in front of him, this high (his eye),
+// stood or down on a knee.
+const FLASH_OUT = 1.3 * FIGURE_SCALE;
+const FLASH_UP = 5.6 * FIGURE_SCALE;
+const FLASH_UP_KNEEL = 3.5 * FIGURE_SCALE;
+
+const unit = (a: number, b: number): number => {
+	let h =
+		Math.imul((a | 0) ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(b + 1, 0xc2b2ae35);
+	h ^= h >>> 15;
+	h = Math.imul(h, 0x2c1b3c6d);
+	h ^= h >>> 12;
+	return (h >>> 0) / 2 ** 32;
+};
+
+export const flashesAt = (men: Photographer[], m: FieldMoment): Pt3[] => {
+	// (The moment the crowd is up for - where whoever made it is, or the
+	// ball.)
+	const big = m.play?.cheer?.big ? m.play.cheer : undefined;
+	const at = m.play?.party?.at ?? m.focus;
+	const since = big ? m.t - big.t : -1;
+	if (
+		!big ||
+		!at ||
+		since < 0 ||
+		since > FLASH_FROM + FLASH_SPREAD + FLASH_FRAME
+	) {
+		return [];
+	}
+	const out: Pt3[] = [];
+	for (const s of men) {
+		if (
+			!shooting(s, m) ||
+			Math.hypot(s.at.x - at.x, s.at.y - at.y) > FLASH_NEAR
+		) {
+			continue;
+		}
+		for (let k = 0; k < FLASH_SHOTS; k++) {
+			const age =
+				since -
+				FLASH_FROM -
+				unit(Math.round(big.t) + k * 7, -s.id) * FLASH_SPREAD;
+			if (age >= 0 && age < FLASH_FRAME) {
+				const yaw = yawOf(s, m.focus);
+				out.push({
+					x: s.at.x + Math.cos(yaw) * FLASH_OUT,
+					y: s.at.y + Math.sin(yaw) * FLASH_OUT,
+					z: s.move === "takeKnee" ? FLASH_UP_KNEEL : FLASH_UP,
+				});
+				break;
+			}
+		}
+	}
+	return out;
 };
 
 // ---- the cameras, drawn ------------------------------------------------------

@@ -2,7 +2,7 @@ import { assert, test } from "vitest";
 import type { Play } from "./director.ts";
 import type { FieldMoment } from "./evaluate.ts";
 import { FIELD_L, FIELD_W, LIMIT_LINE, MID_Y, TEAM_AREA } from "./geometry.ts";
-import { photographersAt, photographersFor } from "./media.ts";
+import { flashesAt, photographersAt, photographersFor } from "./media.ts";
 
 test("the photographers off the field, outside the team areas, clear of the posts and of each other", () => {
 	for (let gid = 0; gid < 30; gid++) {
@@ -51,4 +51,37 @@ test("the cameras up while the ball is live near enough, and down between plays"
 		}
 	}
 	assert.isAbove(up(at(12_000, 20)), 8);
+});
+
+test("cameras going off after a big play near them - a few frames each, not all at once - and for nothing else", () => {
+	const men = photographersFor(3);
+	const big = {
+		snap: 10_000,
+		whistle: 15_000,
+		cheer: { t: 15_000, side: 1, big: true },
+	} as Play;
+	const small = { ...big, cheer: { t: 15_000, side: 1, big: false } } as Play;
+	const at = (play: Play, t: number, x: number): FieldMoment => ({
+		t,
+		play,
+		players: [],
+		focus: { x, y: MID_Y, z: 0 },
+	});
+	let fired = 0;
+	let most = 0;
+	for (let t = 14_000; t < 18_000; t += 30) {
+		const near = flashesAt(men, at(big, t, 20)).length;
+		fired += near;
+		most = Math.max(most, near);
+		if (t < 15_000) {
+			assert.strictEqual(near, 0);
+		}
+		assert.lengthOf(flashesAt(men, at(small, t, 20)), 0);
+		// (Nobody down the far end of it.)
+		for (const f of flashesAt(men, at(big, t, 20))) {
+			assert.isBelow(f.x, 20 + 95);
+		}
+	}
+	assert.isAbove(fired, 0);
+	assert.isBelow(most, men.length / 2);
 });

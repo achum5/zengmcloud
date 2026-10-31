@@ -117,6 +117,7 @@ import {
 import { HURT_MOST, MEDICS, medicId } from "./hurt.ts";
 import {
 	cameraGear,
+	flashesAt,
 	photographersAt,
 	photographersFor,
 	tvCameraGear,
@@ -1055,6 +1056,7 @@ const Field3D = ({
 				pools: poolsOf(standing, moment.ball?.at),
 				crowd: crowdAt(tl, moment.t, now),
 				...(confetti ? { confetti: { of: confetti, t: moment.t } } : {}),
+				flashes: flashesAt(photographersRef.current, moment),
 				...(replay ? {} : { marks: marksAt(moment.play, moment.t) }),
 			});
 			if (now - covers.current.at > 500) {
@@ -1172,6 +1174,17 @@ const Field3D = ({
 					replay && (sting === undefined || sting > 0.75) ? "block" : "none";
 				if (tag.style.display !== show) {
 					tag.style.display = show;
+				}
+			}
+			// The line over the bug off the picture through a replay, the way a
+			// broadcast shows one clean but for its REPLAY tag (the 3D court's:
+			// see court3d/Court3D.tsx).
+			const capEl =
+				wrapRef.current?.querySelector<HTMLElement>(".court3d-caption");
+			if (capEl) {
+				const o = replay ? "0" : "";
+				if (capEl.style.opacity !== o) {
+					capEl.style.opacity = o;
 				}
 			}
 			// The down and distance, and which side has the ball.

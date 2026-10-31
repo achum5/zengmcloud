@@ -70,6 +70,8 @@ export type FieldFrame = {
 	items?: { depth: number; draw: () => void }[];
 	// The championship's confetti (see confetti.ts), and when it is.
 	confetti?: { of: Confetti; t: number };
+	// Photographers' cameras going off (see media.ts flashesAt).
+	flashes?: Pt3[];
 };
 
 const POST_YELLOW = "#f5d31c";
@@ -297,5 +299,18 @@ export const drawFieldFrame = (f: FieldFrame) => {
 	}
 	if (f.confetti) {
 		drawConfetti(ctx, cam, f.confetti.of, f.confetti.t, true);
+	}
+	// A photographer's flash (the 3D court's: see court3d/scene.ts).
+	for (const at of f.flashes ?? []) {
+		const p = project(cam, at);
+		const r = Math.max(3, p.k * 1.3);
+		const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+		g.addColorStop(0, "rgba(255,255,255,1)");
+		g.addColorStop(0.3, "rgba(240,244,255,0.7)");
+		g.addColorStop(1, "rgba(220,230,255,0)");
+		ctx.fillStyle = g;
+		ctx.beginPath();
+		ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+		ctx.fill();
 	}
 };
