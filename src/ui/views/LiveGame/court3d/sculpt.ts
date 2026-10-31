@@ -638,7 +638,7 @@ type Built = {
 };
 
 // How his hands are held.
-type Grip = "open" | "relaxed" | "fist" | "point" | "ball";
+type Grip = "open" | "relaxed" | "fist" | "point" | "ball" | "target";
 
 // Running, his hands are loose fists; with the ball, spread on it; pointing,
 // a finger out; strolling or standing about, relaxed, fingers a little
@@ -672,6 +672,10 @@ const gripFor = (st: PlayerState, which: "R" | "L", holding: boolean): Grip => {
 	}
 	if (holding) {
 		return "ball";
+	}
+	// Up for a pass on its way to him: spread wide and cupped for it.
+	if ((st.target ?? 0) > 0.4) {
+		return "target";
 	}
 	if (
 		st.anim === "run" ||
@@ -1191,9 +1195,11 @@ const build = (
 						? [0.24 + 0.06 * i, 0.5 + 0.08 * i, 0.32 + 0.05 * i]
 						: grip === "ball"
 							? [0.2, 0.35, 0.25]
-							: [0.04 + 0.02 * i, 0.08, 0.05];
+							: grip === "target"
+								? [0.14, 0.26, 0.16]
+								: [0.04 + 0.02 * i, 0.08, 0.05];
 		const spread =
-			grip === "ball"
+			grip === "ball" || grip === "target"
 				? 0.22
 				: grip === "open"
 					? 0.1
@@ -1249,7 +1255,15 @@ const build = (
 				: lay(
 						tBase,
 						unit(
-							addV(h, ts, grip === "ball" ? 1.1 : grip === "open" ? 0.85 : 0.6),
+							addV(
+								h,
+								ts,
+								grip === "ball" || grip === "target"
+									? 1.1
+									: grip === "open"
+										? 0.85
+										: 0.6,
+							),
 						),
 						[tLen * 0.55, tLen * 0.45],
 						grip === "relaxed"
