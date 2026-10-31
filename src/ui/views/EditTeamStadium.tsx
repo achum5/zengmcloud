@@ -5,7 +5,12 @@ import { realtimeUpdate } from "../util/realtimeUpdate.ts";
 import { helpers } from "../util/helpers.ts";
 import { showNotification } from "../util/showNotification.ts";
 import type { HelmetLook, StadiumLook, View } from "../../common/types.ts";
-import { BOARD_TEXT_MAX, END_ZONE_TEXT_MAX } from "../../common/stadiumLook.ts";
+import {
+	BOARD_TEXT_MAX,
+	cleanHelmet,
+	cleanStadium,
+	END_ZONE_TEXT_MAX,
+} from "../../common/stadiumLook.ts";
 import { toHex } from "./LiveGame/field3d/color.ts";
 import { fieldStyleFor } from "./LiveGame/field3d/fieldPaint.ts";
 import { fieldKit } from "./LiveGame/field3d/kit.ts";
@@ -14,6 +19,27 @@ import { stadiumStyleFor } from "./LiveGame/field3d/stadium.ts";
 const StadiumPreview = lazy(
 	() => import("./LiveGame/field3d/StadiumPreview.tsx"),
 );
+
+// A stadium and uniform as JSON (the page's own, or a file): each setting
+// kept to what it can be - or what is wrong with it.
+const parseLook = (
+	text: string,
+): { stadium: StadiumLook; helmet: HelmetLook } | string => {
+	let raw: unknown;
+	try {
+		raw = JSON.parse(text);
+	} catch {
+		return "Not valid JSON.";
+	}
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+		return "Expected a JSON object.";
+	}
+	const r = raw as Record<string, unknown>;
+	return {
+		stadium: cleanStadium(r.stadium) ?? {},
+		helmet: cleanHelmet(r.helmet) ?? {},
+	};
+};
 
 // A setting picked from a few, "" for the team's own pick.
 const Choice = <K extends "roof" | "turf" | "endZones" | "sky">({
@@ -116,6 +142,20 @@ const EditTeamStadium = ({
 	const [helmet, setHelmet] = useState<HelmetLook>(savedHelmet ?? {});
 	const [previewSky, setPreviewSky] = useState<"day" | "night">("day");
 	const [saving, setSaving] = useState(false);
+	const [json, setJSON] = useState<string | undefined>();
+	const [jsonError, setJSONError] = useState<string | undefined>();
+	const apply = (text: string) => {
+		const parsed = parseLook(text);
+		if (typeof parsed === "string") {
+			setJSON(text);
+			setJSONError(parsed);
+			return;
+		}
+		setJSON(undefined);
+		setJSONError(undefined);
+		setStadium(parsed.stadium);
+		setHelmet(parsed.helmet);
+	};
 
 	const setField = <K extends keyof StadiumLook>(
 		key: K,
@@ -431,6 +471,62 @@ const EditTeamStadium = ({
 						</div>
 					))}
 				</div>
+
+				<hr />
+				<button
+					type="button"
+					className="btn btn-sm btn-light-bordered"
+					onClick={() => {
+						setJSONError(undefined);
+						setJSON(
+							json === undefined
+								? JSON.stringify({ stadium, helmet }, null, 2)
+								: undefined,
+						);
+					}}
+				>
+					{json === undefined ? "Edit as JSON" : "Close JSON"}
+				</button>
+				<label className="btn btn-sm btn-light-bordered ms-2 mb-0">
+					Load file
+					<input
+						type="file"
+						accept=".json,application/json"
+						hidden
+						onChange={(e) => {
+							const file = e.target.files?.[0];
+							e.target.value = "";
+							if (!file) {
+								return;
+							}
+							file.text().then(apply, () => {
+								setJSON("");
+								setJSONError("Could not read that file.");
+							});
+						}}
+					/>
+				</label>
+				{json !== undefined ? (
+					<div className="mt-2">
+						<textarea
+							className="form-control font-monospace small"
+							rows={12}
+							spellCheck={false}
+							value={json}
+							onChange={(e) => setJSON(e.target.value)}
+						/>
+						{jsonError ? (
+							<div className="text-danger small mt-1">{jsonError}</div>
+						) : null}
+						<button
+							type="button"
+							className="btn btn-sm btn-secondary mt-2"
+							onClick={() => apply(json)}
+						>
+							Apply
+						</button>
+					</div>
+				) : null}
 
 				<div className="d-flex gap-2 mt-3">
 					<button
