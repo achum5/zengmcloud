@@ -398,6 +398,8 @@ export type Frame = {
 	// any of their cameras going off.
 	crew?: { st: PlayerState; body: Body; look: Look }[];
 	flashes?: Pt3[];
+	// The mascot's t-shirts in the air (see crew.ts).
+	shirts?: { at: Pt3; turn: number; color: string }[];
 	// Each side's colors [road, home] (main, trim), for the lights swept over
 	// the floor at the starting lineups.
 	teamColors?: [string, string][];
@@ -1671,6 +1673,28 @@ export const drawFrame = (f: Frame) => {
 		drawJumbo(ctx, cam, face, (plane, img) => {
 			drawTexturedPlane(ctx, cam, plane, img, 24, 1);
 		});
+	}
+	// A t-shirt thrown up into the stands, tumbling: rolled up, a band
+	// round its middle.
+	for (const sh of f.shirts ?? []) {
+		const p = project(cam, sh.at);
+		const rx = Math.max(2.2, 0.6 * p.k);
+		const ry = Math.max(1.2, 0.25 * p.k);
+		ctx.save();
+		ctx.translate(p.x, p.y);
+		ctx.rotate(sh.turn);
+		ctx.beginPath();
+		ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+		ctx.fillStyle = sh.color;
+		ctx.fill();
+		ctx.lineWidth = Math.max(1, 0.05 * p.k);
+		ctx.strokeStyle = "#17120f";
+		ctx.stroke();
+		ctx.beginPath();
+		ctx.moveTo(0, -ry);
+		ctx.lineTo(0, ry);
+		ctx.stroke();
+		ctx.restore();
 	}
 	// A photographer's flash.
 	for (const at of f.flashes ?? []) {

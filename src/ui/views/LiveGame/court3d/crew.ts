@@ -45,6 +45,7 @@ import {
 	type Body,
 } from "./poses.ts";
 import { arenaSpecFor, type ArenaSpec } from "./arenaSpec.ts";
+import { standsPoint } from "./arena.ts";
 
 // THE PEOPLE ON THE FLOOR WHO DON'T PLAY: three officials working the game,
 // each team's head coach in front of his bench, and the photographers down
@@ -2711,6 +2712,33 @@ const MASCOT_IDLE: [AnimName, number][] = [
 	["dance", 0.9],
 	["cheer", 1],
 ];
+// T-SHIRTS. Out dancing at a timeout, now and then he turns and throws one
+// - rolled up, in his fur's color of the team's - over his head, high across the floor
+// and up into the stands on the far side (see shirtsAt): this long into
+// his dance (ms), each throw this long, let go this far through it, and in
+// the air this long, as high as this (feet).
+const SHIRT_AT = [1600, 3700];
+const SHIRT_THROW = 900;
+const SHIRT_LET_GO = 0.55;
+const SHIRT_FLIGHT = 1700;
+const SHIRT_TOP = 25;
+type ShirtThrow = { t0: number; to: Pt3 };
+const shirtThrows = (d: Dance, run: number): ShirtThrow[] =>
+	SHIRT_AT.flatMap((at, k) => {
+		const t0 = d.t0 + run + at;
+		const r = unit(Math.round(d.t0) + k, 3131);
+		return t0 + SHIRT_THROW * SHIRT_LET_GO + SHIRT_FLIGHT < d.end
+			? [
+					{
+						t0,
+						to: standsPoint(
+							MASCOT_FLOOR.x + 6 + r * 30,
+							6 + unit(Math.round(d.t0) + k, 3137) * 12,
+						),
+					},
+				]
+			: [];
+	});
 const mascotOuts = new WeakMap<CourtTimeline, Dance[]>();
 const mascotOutsOf = (tl: CourtTimeline): Dance[] => {
 	let out = mascotOuts.get(tl);
@@ -2755,6 +2783,35 @@ const mascotState = (
 		}
 		if (t >= d.end) {
 			return running(MASCOT_FLOOR, MASCOT_SPOT, d.end);
+		}
+		// (Turned to throw one, and back.)
+		const toss = shirtThrows(d, run).find(
+			(x) => t >= x.t0 - MASCOT_EASE && t < x.t0 + SHIRT_THROW + MASCOT_EASE,
+		);
+		if (toss) {
+			const into = Math.min(
+				1,
+				(t - toss.t0 + MASCOT_EASE) / MASCOT_EASE,
+				(toss.t0 + SHIRT_THROW + MASCOT_EASE - t) / MASCOT_EASE,
+			);
+			const throwing: PlayerState = {
+				...base,
+				x: MASCOT_FLOOR.x,
+				y: MASCOT_FLOOR.y,
+				yaw: yawTo(MASCOT_FLOOR, toss.to),
+				anim: "passOverhead",
+				phase: Math.min(1, Math.max(0, (t - toss.t0) / SHIRT_THROW)),
+			};
+			return into < 1
+				? {
+						...throwing,
+						from: {
+							anim: "dance",
+							phase: loopPhase("dance", t, m.pid * 0.29),
+							w: 1 - smooth01(into),
+						},
+					}
+				: throwing;
 		}
 		const st: PlayerState = {
 			...base,
@@ -2812,13 +2869,50 @@ const mascotState = (
 		: st;
 };
 
+// The mascot's t-shirts in the air at t (see SHIRT_AT): where each is, how
+// far it has tumbled, and its color.
+const shirtsAt = (
+	tl: CourtTimeline,
+	t: number,
+	m: CrewMember,
+): { at: Pt3; turn: number; color: string }[] => {
+	const run = (dist(MASCOT_SPOT, MASCOT_FLOOR) / MASCOT_PACE) * 1000;
+	const d = mascotOutsOf(tl).findLast((x) => x.t0 <= t);
+	if (!d || t > d.end) {
+		return [];
+	}
+	const from = { x: MASCOT_FLOOR.x, y: MASCOT_FLOOR.y - 0.6, z: 8.6 };
+	return shirtThrows(d, run).flatMap((x) => {
+		const u = (t - x.t0 - SHIRT_THROW * SHIRT_LET_GO) / SHIRT_FLIGHT;
+		if (u < 0 || u >= 1) {
+			return [];
+		}
+		const lift = SHIRT_TOP - Math.max(from.z, x.to.z);
+		return [
+			{
+				at: {
+					x: from.x + (x.to.x - from.x) * u,
+					y: from.y + (x.to.y - from.y) * u,
+					z: from.z + (x.to.z - from.z) * u + 4 * lift * u * (1 - u),
+				},
+				turn: u * 9,
+				color: m.dress.kit.trim,
+			},
+		];
+	});
+};
+
 // Everyone working the game, at t: where they are and what they are doing,
 // and any camera flashing.
 export const crewAt = (
 	tl: CourtTimeline,
 	t: number,
 	crew: CrewMember[],
-): { states: PlayerState[]; flashes: Pt3[] } => {
+): {
+	states: PlayerState[];
+	flashes: Pt3[];
+	shirts: { at: Pt3; turn: number; color: string }[];
+} => {
 	const ball = ballSpot(tl, t);
 	const states: PlayerState[] = [];
 	const refs = crew.filter((m) => m.role === "ref");
@@ -2826,6 +2920,7 @@ export const crewAt = (
 		states.push(...refStates(tl, t, refs, ball));
 	}
 	const flashes: Pt3[] = [];
+	const shirts: { at: Pt3; turn: number; color: string }[] = [];
 	for (const m of crew) {
 		if (m.role === "coach") {
 			states.push(coachState(tl, t, m, ball));
@@ -2841,6 +2936,7 @@ export const crewAt = (
 			states.push(staffState(t, m));
 		} else if (m.role === "mascot") {
 			states.push(mascotState(tl, t, m));
+			shirts.push(...shirtsAt(tl, t, m));
 		} else if (m.role === "dance") {
 			const st = danceState(tl, t, m);
 			if (st) {
@@ -2855,5 +2951,5 @@ export const crewAt = (
 			}
 		}
 	}
-	return { states, flashes };
+	return { states, flashes, shirts };
 };

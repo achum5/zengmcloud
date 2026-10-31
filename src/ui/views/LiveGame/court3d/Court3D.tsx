@@ -1594,6 +1594,7 @@ const Court3D = ({
 					return c ? [{ st, body: c.body, look: c.look }] : [];
 				}),
 				flashes: working.flashes,
+				shirts: working.shirts,
 				teamColors: p.teamColors,
 				black: o >= 0.999 || flash >= 0.999 || s.wipe.hold === now,
 			});
