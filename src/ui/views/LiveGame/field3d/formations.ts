@@ -733,9 +733,10 @@ export const ONSIDE_RECEIVE: Align[] = [
 ];
 
 // The spread punt: the snapper, two guards and two tackles tight, the
-// gunners split wide on the line, a shield of three five yards back, the
-// punter fifteen yards deep. (The sim's: seven linemen, a back - the
-// personal protector in the middle of the shield - two corners, the punter.)
+// gunners split wide on the line, a shield of three five yards back - a step
+// off to the side, the snap going back through the gap in it - the punter
+// fifteen yards deep. (The sim's: seven linemen, a back - the personal
+// protector in the middle of the shield - two corners, the punter.)
 export const PUNT_TEAM: Align[] = [
 	{ role: "LS", pos: "OL", depth: C_DEPTH, across: 0, move: "center" },
 	{
@@ -749,9 +750,9 @@ export const PUNT_TEAM: Align[] = [
 	{ role: "RG", pos: "OL", depth: 2.2, across: 4, move: "threePoint" },
 	{ role: "LT", pos: "OL", depth: 2.6, across: -8.2, move: "backerStance" },
 	{ role: "RT", pos: "OL", depth: 2.6, across: 8.2, move: "backerStance" },
-	{ role: "UP", pos: "OL", depth: 16, across: -5.5, move: "backerStance" },
-	{ role: "UP", pos: "RB", depth: 16, across: 0, move: "backerStance" },
-	{ role: "UP", pos: "OL", depth: 16, across: 5.5, move: "backerStance" },
+	{ role: "UP", pos: "OL", depth: 16, across: -3.4, move: "backerStance" },
+	{ role: "UP", pos: "RB", depth: 16, across: 2.6, move: "backerStance" },
+	{ role: "UP", pos: "OL", depth: 16, across: 8.2, move: "backerStance" },
 	{
 		role: "GUNNER",
 		pos: "CB",

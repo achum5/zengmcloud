@@ -2251,6 +2251,24 @@ const SWAT_LEAST_MS = 450;
 // (A man breaking up a pass no nearer where it was to be caught than this,
 // feet, for it.)
 const SWAT_CLEAR = 2;
+// (And knocking it away, at the receiver's shoulder: this far out in front
+// of him and this far to the side, feet.)
+const BREAK_IN = 1.4;
+const BREAK_ASIDE = 1.6;
+// An incomplete pass: at the receiver's hands, this far out in front of
+// him (feet) - or out of his reach, over them this high - and off them or
+// knocked away, coming to rest this far off (feet), dropping to the ground
+// half way there over so long (ms) and bouncing the rest.
+const INC_HANDS_OUT = 1.3;
+const INC_OVER_Z = 6.8;
+const INC_OFF_FT = 4;
+const INC_KNOCKED_FT = 9;
+const INC_DROP_MS = 350;
+const INC_BOUNCE_MS = 420;
+// (Round from the way it would go, radians, to pass nobody - no nearer
+// the middle of any man than this, feet.)
+const DROP_TURNS = [0, 0.7, -0.7, 1.4, -1.4, 2.1, -2.1, 2.8, -2.8];
+const DROP_CLEAR = 1.6;
 // A gunner set in front of the returner by this long after he would have
 // got there at full tilt, ms.
 const GUNNER_SET_MS = 900;
@@ -3268,6 +3286,50 @@ class Action {
 			}
 		}
 		return { a: best, from: DROP_FROM, reach: DROP_OUT };
+	}
+	// Where a pass let go of at `from` at t (off a man's hands, or knocked
+	// away) comes to rest `far` feet off: the way `prefer` if it drops and
+	// bounces past nobody, else the nearest way round from it that does -
+	// or with none, the way it passes furthest from anybody.
+	private dropWay(from: Pt, t: number, far: number, prefer: number): Pt {
+		// (On its way: a share of the way out at so long after - half of
+		// it to the ground, the rest on the bounce.)
+		const on = [
+			[INC_DROP_MS / 3, 1 / 6],
+			[(INC_DROP_MS * 2) / 3, 1 / 3],
+			[INC_DROP_MS, 1 / 2],
+			[INC_DROP_MS + INC_BOUNCE_MS / 2, 3 / 4],
+			[INC_DROP_MS + INC_BOUNCE_MS, 1],
+		] as const;
+		const seen = on.map(([ms]) => this.men.map((m) => m.posAt(t + ms)));
+		let best = prefer;
+		let widest = -1;
+		for (const turn of DROP_TURNS) {
+			const a = prefer + turn;
+			const ux = Math.cos(a) * far;
+			const uy = Math.sin(a) * far;
+			let near = Infinity;
+			on.forEach(([, k], i) => {
+				for (const p of seen[i]!) {
+					near = Math.min(
+						near,
+						Math.hypot(p.x - from.x - ux * k, p.y - from.y - uy * k),
+					);
+				}
+			});
+			if (near >= DROP_CLEAR) {
+				best = a;
+				break;
+			}
+			if (near > widest) {
+				widest = near;
+				best = a;
+			}
+		}
+		return {
+			x: from.x + Math.cos(best) * far,
+			y: from.y + Math.sin(best) * far,
+		};
 	}
 	// A blocker turned to his man - no further than BLOCK_TURN off straight
 	// ahead.
@@ -6495,37 +6557,53 @@ class Action {
 	) {
 		const r = this.r;
 		const breakup = this.man(this.statPids("defPssDef")[0]);
-		const ground = catchAt + 350;
+		const ground = catchAt + INC_DROP_MS;
+		// (Where it gets to: out in front of him the way it came, at his
+		// hands - not on in to his chest.)
+		const thrown =
+			this.ball.at(-1)?.kind === "fly" ? this.ball.at(-1) : undefined;
+		const came = thrown?.kind === "fly" ? this.toward(catchPt, thrown.from) : 0;
+		const hands = {
+			x: catchPt.x + Math.cos(came) * INC_HANDS_OUT,
+			y: catchPt.y + Math.sin(came) * INC_HANDS_OUT,
+		};
 		let lands: Pt;
+		let from = hands;
 		if (breakup && coverage.includes(breakup)) {
-			// Got a hand on it: knocked away.
-			this.breakOn(breakup, catchPt, catchAt, 150);
+			// Got a hand on it: knocked away. (In at his shoulder, the side he
+			// came from - not stood in the way of it.)
+			this.breakOn(breakup, catchPt, catchAt, 150, true);
 			// (Carried on a step or so with it, off his last stride - by the
-			// ball, not through the man it was for.)
+			// ball, not through the man it was for, nor on through it as he
+			// gets a hand to it.)
 			const l = breakup.last;
 			const far = dist(l.from, l.to);
 			const ux = far > 0 ? (l.to.x - l.from.x) / far : 0;
 			const uy = far > 0 ? (l.to.y - l.from.y) / far : 0;
+			const swatEnd = catchAt + 250;
+			const atBall = clamp(
+				(catchAt - breakup.t) / Math.max(1, swatEnd - breakup.t),
+				0,
+				1,
+			);
+			const onTo = (k: number) => ({
+				x: l.to.x + ux * k,
+				y: l.to.y + uy * k,
+			});
 			let on = Math.min(SWAT_ON_MOST, legPace(l) * SWAT_ON);
 			while (
 				on > 0.25 &&
-				dist({ x: l.to.x + ux * on, y: l.to.y + uy * on }, catchPt) < SWAT_CLEAR
+				(dist(onTo(on), catchPt) < SWAT_CLEAR ||
+					dist(onTo(on * atBall), hands) < BREAK_ASIDE)
 			) {
 				on -= 0.25;
 			}
-			breakup.act("swat", catchAt + 250, this.toward(breakup.at, catchPt), {
-				x: l.to.x + ux * on,
-				y: l.to.y + uy * on,
-			});
+			breakup.act("swat", swatEnd, this.toward(breakup.at, catchPt), onTo(on));
 			this.done.add(breakup.pid);
-			const ang = r() * Math.PI * 2;
-			lands = {
-				x: catchPt.x + Math.cos(ang) * 9,
-				y: catchPt.y + Math.sin(ang) * 9,
-			};
 			if (this.reachFor(rec, catchAt, qb)) {
 				this.runOn(rec, 600);
 			}
+			lands = this.dropWay(hands, catchAt, INC_KNOCKED_FT, r() * Math.PI * 2);
 			if (r() < WAVE_OFF) {
 				this.slowUp(breakup);
 				breakup.act(
@@ -6543,11 +6621,7 @@ class Action {
 					rec.act("handsOnHelmet", rec.t + RUE_MS);
 				}
 			}
-			const ang = r() * Math.PI * 2;
-			lands = {
-				x: catchPt.x + Math.cos(ang) * 4,
-				y: catchPt.y + Math.sin(ang) * 4,
-			};
+			lands = this.dropWay(hands, catchAt, INC_OFF_FT, r() * Math.PI * 2);
 		} else {
 			// Out of his reach: on past him, and a dive for it.
 			const dx =
@@ -6569,14 +6643,18 @@ class Action {
 			});
 			rec.hold(catchAt + 450 + 500, "prone");
 			rec.act("getUp", catchAt + 450 + 500 + GET_UP_MS);
+			from = catchPt;
 		}
 		this.done.add(rec.pid);
-		// It drops, and bounces.
-		const last = this.ball.at(-1);
-		if (last?.kind === "fly") {
-			last.t1 = catchAt;
+		// It drops, and bounces. (Over his hands, out of his reach.)
+		const p0: Pt3 = {
+			...from,
+			z: from === catchPt ? INC_OVER_Z : CATCH_Z,
+		};
+		if (thrown?.kind === "fly") {
+			thrown.t1 = catchAt;
+			thrown.to = p0;
 		}
-		const p0: Pt3 = { ...catchPt, z: CATCH_Z };
 		const mid = { x: (p0.x + lands.x) / 2, y: (p0.y + lands.y) / 2 };
 		this.ball.push(
 			{
@@ -6590,12 +6668,12 @@ class Action {
 			{
 				kind: "fly",
 				t0: ground,
-				t1: ground + 420,
+				t1: ground + INC_BOUNCE_MS,
 				from: { ...mid, z: 0 },
 				to: { ...lands, z: 0 },
 				peak: 1.6,
 			},
-			{ kind: "spot", t0: ground + 420, at: { ...lands, z: 0 } },
+			{ kind: "spot", t0: ground + INC_BOUNCE_MS, at: { ...lands, z: 0 } },
 		);
 		this.at.set(i, ground);
 		this.whistle = ground;
@@ -6620,13 +6698,32 @@ class Action {
 
 	// A defender breaking on the ball: from his coverage for where it comes
 	// down, there `early` ms before it (after it, negative) - just to the
-	// quarterback's side of the receiver - or as near as he gets.
-	breakOn(m: Actor, catchPt: Pt, catchAt: number, early: number) {
+	// quarterback's side of the receiver (and to knock it away, at his
+	// shoulder, the side he came from) - or as near as he gets.
+	breakOn(
+		m: Actor,
+		catchPt: Pt,
+		catchAt: number,
+		early: number,
+		aside = false,
+	) {
 		const qb = this.role("QB");
 		const toQb = qb ? this.toward(catchPt, qb.at) : this.behind;
+		const off = aside
+			? Math.sign(
+					Math.cos(toQb) * (m.at.y - catchPt.y) -
+						Math.sin(toQb) * (m.at.x - catchPt.x),
+				) || 1
+			: 0;
 		const spot = {
-			x: catchPt.x + Math.cos(toQb) * 2.2,
-			y: catchPt.y + Math.sin(toQb) * 2.2,
+			x:
+				catchPt.x +
+				Math.cos(toQb) * (aside ? BREAK_IN : 2.2) -
+				Math.sin(toQb) * off * BREAK_ASIDE,
+			y:
+				catchPt.y +
+				Math.sin(toQb) * (aside ? BREAK_IN : 2.2) +
+				Math.cos(toQb) * off * BREAK_ASIDE,
 		};
 		const go = Math.max(this.seen, catchAt - 700);
 		m.cut(go);
