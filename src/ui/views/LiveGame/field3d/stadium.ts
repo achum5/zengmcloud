@@ -944,7 +944,10 @@ export const paintStadium = (
 			: 0.93;
 	const name = (home?.name ?? home?.abbrev ?? "").toUpperCase();
 	const region = (home?.region ?? "").toUpperCase();
-	const words = region ? [region, name] : [name];
+	// (The team's own words along the boards in turn with its name - the
+	// name last, for the chants.)
+	const own = home?.stadium?.boardText?.toUpperCase();
+	const words = [...(own ? [own] : []), ...(region ? [region, name] : [name])];
 	const sizes: Record<BoardSet, [number, number, number]> = {
 		wall: [WALL.w, WALL.h, WALL.w / (X1 - X0)],
 		club: [CLUB.w, CLUB.h, CLUB.w / (X1 - X0)],

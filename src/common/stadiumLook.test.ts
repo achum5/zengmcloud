@@ -32,8 +32,12 @@ test("a stadium's settings kept to the ones there are", () => {
 			midLogo: false,
 		},
 	);
-	assert.deepEqual(cleanStadium({ endZoneText: "", midLogo: true }), {
-		endZoneText: "",
+	assert.deepEqual(
+		cleanStadium({ endZoneText: "", boardText: " ", midLogo: true }),
+		{ endZoneText: "" },
+	);
+	assert.deepEqual(cleanStadium({ boardText: " Lambeau Field " }), {
+		boardText: "Lambeau Field",
 	});
 	assert.strictEqual(
 		cleanStadium({ endZoneText: "X".repeat(40) })?.endZoneText?.length,

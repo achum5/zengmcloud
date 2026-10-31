@@ -5,7 +5,7 @@ import { realtimeUpdate } from "../util/realtimeUpdate.ts";
 import { helpers } from "../util/helpers.ts";
 import { showNotification } from "../util/showNotification.ts";
 import type { HelmetLook, StadiumLook, View } from "../../common/types.ts";
-import { END_ZONE_TEXT_MAX } from "../../common/stadiumLook.ts";
+import { BOARD_TEXT_MAX, END_ZONE_TEXT_MAX } from "../../common/stadiumLook.ts";
 import { toHex } from "./LiveGame/field3d/color.ts";
 import { fieldStyleFor } from "./LiveGame/field3d/fieldPaint.ts";
 import { fieldKit } from "./LiveGame/field3d/kit.ts";
@@ -233,6 +233,24 @@ const EditTeamStadium = ({
 					fallback={toHex(stadiumStyleFor(teamWithout("seatColor")).seats)}
 					onChange={(v) => setField("seatColor", v)}
 				/>
+				<div className="mb-3">
+					<label className="form-label mb-1" htmlFor="board-text">
+						Board text
+					</label>
+					<input
+						id="board-text"
+						type="text"
+						className="form-control"
+						maxLength={BOARD_TEXT_MAX}
+						value={stadium.boardText ?? ""}
+						onChange={(e) =>
+							setField(
+								"boardText",
+								e.target.value === "" ? undefined : e.target.value,
+							)
+						}
+					/>
+				</div>
 				<Choice<"turf">
 					label="Field"
 					value={stadium.turf}

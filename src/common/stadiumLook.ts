@@ -11,6 +11,7 @@ const TURFS = new Set(["grass", "artificial"]);
 const END_ZONES = new Set(["solid", "green", "striped"]);
 const SKIES = new Set(["day", "night"]);
 export const END_ZONE_TEXT_MAX = 24;
+export const BOARD_TEXT_MAX = 24;
 
 export const cleanStadium = (raw: unknown): StadiumLook | undefined => {
 	if (!raw || typeof raw !== "object") {
@@ -43,6 +44,9 @@ export const cleanStadium = (raw: unknown): StadiumLook | undefined => {
 	}
 	if (typeof r.endZoneText === "string") {
 		out.endZoneText = r.endZoneText.trim().slice(0, END_ZONE_TEXT_MAX);
+	}
+	if (typeof r.boardText === "string" && r.boardText.trim() !== "") {
+		out.boardText = r.boardText.trim().slice(0, BOARD_TEXT_MAX);
 	}
 	if (r.midLogo === false) {
 		out.midLogo = false;

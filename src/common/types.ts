@@ -3132,6 +3132,9 @@ export type StadiumLook = {
 	midLogo?: false;
 	// The stands' seats; left out, from the team's colors.
 	seatColor?: string;
+	// Words of its own along the boards round the field, in turn with the
+	// team's name: the stadium's name, a sponsor's.
+	boardText?: string;
 };
 
 // A FOOTBALL TEAM'S HELMET in the 3D game, as the team has set it - and the
