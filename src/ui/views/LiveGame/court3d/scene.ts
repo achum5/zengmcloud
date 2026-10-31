@@ -51,6 +51,8 @@ import {
 	benchLook,
 	BALL_R,
 	ballFaceAt,
+	bodyPoint,
+	poseOf,
 	evalBall,
 	evalPlayer,
 	shownAt,
@@ -91,6 +93,7 @@ import {
 	bodyOf,
 	bounceAt,
 	isGait,
+	skeleton,
 	type AnimName,
 	type Body,
 } from "./poses.ts";
@@ -226,7 +229,8 @@ export const momentAt = (
 		if (
 			p.pid !== ball.holder &&
 			dz > BALL_BY_LOW &&
-			Math.hypot(ball.x - p.x, ball.y - p.y) < BALL_BY_REACH
+			Math.hypot(ball.x - p.x, ball.y - p.y) < BALL_BY_REACH &&
+			atHand(p, bodyFor(p.pid), ball)
 		) {
 			p.ballBy = {
 				x: ball.x - p.x,
@@ -239,9 +243,29 @@ export const momentAt = (
 	return { t, players, ball };
 };
 // How near him the ball is (feet, across the floor), and how far up off his
-// feet at the least, for his hands to meet it.
+// feet at the least, for his hands to meet it - and how near a hand of his
+// (feet, from its middle). (Only then: where it is goes into his picture,
+// and nearer than that it makes no difference to it - a new one every
+// frame for nothing.)
 const BALL_BY_REACH = 3.2;
 const BALL_BY_LOW = 1.2;
+const BALL_BY_HAND = 1.05;
+const atHand = (
+	p: PlayerState,
+	body: Body,
+	ball: { x: number; y: number; z: number },
+) => {
+	const sk = skeleton(body, poseOf(p));
+	return [sk.armR, sk.armL].some((arm) => {
+		const tip = arm.tip ?? arm.end;
+		const h = bodyPoint(p, {
+			f: (arm.end.f + tip.f) / 2,
+			s: (arm.end.s + tip.s) / 2,
+			u: (arm.end.u + tip.u) / 2,
+		});
+		return Math.hypot(h.x - ball.x, h.y - ball.y, h.z - ball.z) < BALL_BY_HAND;
+	});
+};
 
 // RUN THROUGH QUICK. Many times real speed, a frame of the picture is a good
 // part of a stride on from the last - each one a different moment of it, his
