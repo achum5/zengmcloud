@@ -599,6 +599,9 @@ export type ReplayLooks = {
 			jersey?: string;
 			court?: CourtStyle;
 			jerseySkins?: JerseySkinIds;
+			// (Football: its helmet and uniform, and its stadium.)
+			helmet?: HelmetLook;
+			stadium?: StadiumLook;
 		}
 	>;
 	// The home team's building that night. Missing on replays saved before

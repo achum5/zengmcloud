@@ -21,7 +21,7 @@ import { adjust, artFor, makeResolution } from "../court3d/resolution.ts";
 import { eventsMatchRoster } from "../court3d/rosterMatch.ts";
 import { ScoreBug, type BugRefs } from "../court3d/ScoreBug.tsx";
 import { CustomScoreBug } from "../court3d/CustomScoreBug.tsx";
-import type { ScoreBugStyle } from "../../../../common/types.ts";
+import type { ReplayLooks, ScoreBugStyle } from "../../../../common/types.ts";
 import {
 	makeScratch,
 	makeSpriteCache,
@@ -320,10 +320,16 @@ const Field3D = ({
 	const { lid } = useLocal(["lid"]);
 	const gid: number | undefined = boxScore?.gid;
 	const season: number | undefined = boxScore?.season;
+	// A saved replay remembers how everyone looked that night (see Court3D).
+	const looksThen: ReplayLooks | undefined = boxScore?.replayLooks;
 	const raw: any[] = useMemo(
-		() => (Array.isArray(boxScore?.teams) ? boxScore.teams : []),
+		() =>
+			(Array.isArray(boxScore?.teams) ? boxScore.teams : []).map((t: any) => {
+				const then = looksThen?.teams[t?.tid];
+				return then ? { ...t, ...then } : t;
+			}),
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-		[gid],
+		[gid, looksThen],
 	);
 	// Display order, as on the 2D field: [away, home].
 	const away = raw[1];
@@ -501,6 +507,19 @@ const Field3D = ({
 		faces.current.set(pid, face);
 		setFacesVersion((v) => v + 1);
 	}, []);
+
+	// A replay's faces are already here: no need to ask for today's.
+	useEffect(() => {
+		if (!looksThen) {
+			return;
+		}
+		for (const p of roster) {
+			const then = looksThen.players[p.pid];
+			if (then) {
+				onFace(p.pid, then);
+			}
+		}
+	}, [looksThen, roster, onFace]);
 
 	const kits = useMemo(
 		() =>
@@ -1173,15 +1192,17 @@ const Field3D = ({
 				isolation: "isolate",
 			}}
 		>
-			{roster.map((p) => (
-				<FaceLoader
-					key={p.pid}
-					pid={p.pid}
-					season={season}
-					lid={lid}
-					onFace={onFace}
-				/>
-			))}
+			{roster
+				.filter((p) => !looksThen?.players[p.pid])
+				.map((p) => (
+					<FaceLoader
+						key={p.pid}
+						pid={p.pid}
+						season={season}
+						lid={lid}
+						onFace={onFace}
+					/>
+				))}
 			<style>
 				{".court3d-caption .text-body-secondary { color: #c9c3d3 !important; }"}
 			</style>

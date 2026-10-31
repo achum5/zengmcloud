@@ -113,6 +113,9 @@ export const takeReplayLooks = async (
 			jersey: t.jersey,
 			court: t.court,
 			jerseySkins: t.jerseySkins,
+			...(__SPORT === "football"
+				? { helmet: t.helmet, stadium: t.stadium }
+				: {}),
 		};
 	}
 	// The first team is at home.
