@@ -261,6 +261,7 @@ const ManageTeams = (props: View<"manageTeams">) => {
 					>
 						Score bug
 					</a>
+					<ImportTeamLooks teams={props.teams} onSkins={() => {}} />
 				</div>
 			) : null}
 			{!godMode ? (

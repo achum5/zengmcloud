@@ -11,11 +11,15 @@ import { toSkinURL } from "./JerseySkins.tsx";
 // full name. A jersey is a picture
 // written into the file, or a link to one hosted elsewhere (see
 // setJerseySkin); a court is a court file's JSON, its pictures written in or
-// linked the same way.
+// linked the same way. (Football's: its stadium and its helmet and uniform,
+// as the stadium page has them - see StadiumLook, HelmetLook.)
 //
 //   { "teamLooks": 1, "teams": [{ "abbrev": "BOS", "name": "Boston Celtics",
 //     "home": "https://...", "away": "data:image/png;base64,...",
 //     "court": { "floorImageURL": "https://...", "floorLines": "picture" } }] }
+//
+//   { "teamLooks": 1, "teams": [{ "abbrev": "GB",
+//     "stadium": { "turfColor": "#0b3d91" }, "helmet": { "shell": "#203731" } }] }
 
 type Entry = {
 	abbrev?: unknown;
@@ -24,6 +28,8 @@ type Entry = {
 	home?: unknown;
 	away?: unknown;
 	court?: unknown;
+	stadium?: unknown;
+	helmet?: unknown;
 };
 
 export type TeamRef = {
@@ -111,6 +117,13 @@ const ImportTeamLooks = ({
 						tid: t.tid,
 						court: kept.court,
 						uploaded: kept.ids,
+					});
+				}
+				if (e.stadium !== undefined || e.helmet !== undefined) {
+					await toWorker("main", "updateTeamStadium", {
+						tid: t.tid,
+						...(e.stadium !== undefined ? { stadium: e.stadium } : {}),
+						...(e.helmet !== undefined ? { helmet: e.helmet } : {}),
 					});
 				}
 				done += 1;

@@ -6727,31 +6727,32 @@ const updateTeamCourt = async ({
 
 // Save (or clear) a football team's stadium and helmet for the 3D game (see
 // StadiumLook, HelmetLook), through the cache, so every device in a
-// multiplayer league draws them the same.
-const updateTeamStadium = async ({
-	tid,
-	stadium,
-	helmet,
-}: {
+// multiplayer league draws them the same. (One not passed at all is left as
+// it was.)
+const updateTeamStadium = async (args: {
 	tid: number;
-	stadium: unknown;
-	helmet: unknown;
+	stadium?: unknown;
+	helmet?: unknown;
 }) => {
-	const t = await idb.cache.teams.get(tid);
+	const t = await idb.cache.teams.get(args.tid);
 	if (!t) {
-		throw new Error(`Team not found for tid ${tid}`);
+		throw new Error(`Team not found for tid ${args.tid}`);
 	}
-	const s = cleanStadium(stadium);
-	const h = cleanHelmet(helmet);
-	if (s) {
-		t.stadium = s;
-	} else {
-		delete t.stadium;
+	if ("stadium" in args) {
+		const s = cleanStadium(args.stadium);
+		if (s) {
+			t.stadium = s;
+		} else {
+			delete t.stadium;
+		}
 	}
-	if (h) {
-		t.helmet = h;
-	} else {
-		delete t.helmet;
+	if ("helmet" in args) {
+		const h = cleanHelmet(args.helmet);
+		if (h) {
+			t.helmet = h;
+		} else {
+			delete t.helmet;
+		}
 	}
 	await idb.cache.teams.put(t);
 	return { ok: true };
