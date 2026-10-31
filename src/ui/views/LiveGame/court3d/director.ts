@@ -1670,7 +1670,26 @@ const alongTo = (Q: Pt, u: Pt, rim: Pt, r: number): number => {
 };
 // A man set where he stands, for nobody to run through: in a screen, or
 // sealing in the post.
-type Body2 = { team: Side; t0: number; t1: number; at: Pt; post: boolean };
+type Body2 = {
+	team: Side;
+	t0: number;
+	t1: number;
+	at: Pt;
+	post: boolean;
+	// A man down on the floor: gone round by everybody (his own side too) but
+	// himself - and the man coming to pull him up, on the last of his way to
+	// where he does it.
+	down?: { pid: number; helper?: number; spot?: Pt };
+};
+// Down on the floor, his legs out in front of him: where he sits, and his
+// feet this far out the way he faces.
+const ON_FLOOR = new Set<AnimName>([
+	"chargeDown",
+	"sitFloor",
+	"hurtKnee",
+	"hurtAnkle",
+]);
+const FLOOR_FEET = 2;
 // What a man does standing where he is - set in a screen or a post-up,
 // celebrating, having words - and stops doing once he moves.
 const IN_PLACE = new Set<AnimName>([
@@ -21222,11 +21241,85 @@ class Director {
 	}
 
 	// Bodies nobody runs through: a man set in a screen, or sealing in the
-	// post, where he stands while he does it.
-	private bodies(): Body2[] {
+	// post, where he stands while he does it - and a man down on the floor,
+	// where he sits and where his feet are, nobody at all walks over.
+	private bodies(withDown = false): Body2[] {
 		const out: Body2[] = [];
-		for (const o of this.tracks.values()) {
+		const tracks = [...this.tracks.values()];
+		for (const o of tracks) {
 			for (const act of o.acts) {
+				if (withDown && ON_FLOOR.has(act.anim)) {
+					// (Going down and sat there, one stretch of it - where he
+					// ends up sat: from the first of it to the last.)
+					if (
+						o.acts.some(
+							(x) =>
+								x !== act &&
+								ON_FLOOR.has(x.anim) &&
+								Math.abs(x.t1 - act.t0) < 50,
+						)
+					) {
+						continue;
+					}
+					let last = act;
+					for (;;) {
+						const nx = o.acts.find(
+							(x) =>
+								x !== last &&
+								ON_FLOOR.has(x.anim) &&
+								Math.abs(x.t0 - last.t1) < 50,
+						);
+						if (!nx) {
+							break;
+						}
+						last = nx;
+					}
+					const at = this.posAt(o.pid, last.t0);
+					// (The teammate pulling him up, once he is down: he comes to
+					// stand at his feet.)
+					const up = o.acts.find(
+						(x) => x.anim === "pulledUp" && Math.abs(x.t0 - last.t1) < 50,
+					);
+					const helper = up
+						? tracks.find((h) =>
+								h.acts.some(
+									(x) => x.anim === "helpUp" && Math.abs(x.t0 - up.t0) < 50,
+								),
+							)?.pid
+						: undefined;
+					const down = {
+						pid: o.pid,
+						helper,
+						spot:
+							helper !== undefined && up
+								? this.posAt(helper, up.t0)
+								: undefined,
+					};
+					out.push({
+						team: o.team,
+						t0: act.t0,
+						t1: last.t1,
+						at,
+						post: false,
+						down,
+					});
+					const look = last.look ?? act.look;
+					if (look && dist(look, at) > 0.1) {
+						const u = unitVec(at, look);
+						out.push({
+							team: o.team,
+							t0: act.t0,
+							t1: last.t1,
+							at: clampPt({
+								x: at.x + u.x * FLOOR_FEET,
+								y: at.y + u.y * FLOOR_FEET,
+							}),
+							post: false,
+							down,
+						});
+					}
+					continue;
+				}
 				if (act.anim === "screen" || act.anim === "postUp") {
 					const m = o.moves.findLast((x) => x.t0 <= act.t0);
 					out.push({
@@ -21248,10 +21341,17 @@ class Director {
 		// Out of one he has ended up inside, no quicker than this (feet a
 		// second).
 		const STEP_OUT = 10;
-		const walls = this.bodies();
+		const walls = this.bodies(true);
 		const tracks = [...this.tracks.values()];
 		for (const tr of tracks) {
-			const theirs = walls.filter((w) => w.team !== tr.team);
+			const theirs = walls.filter((w) =>
+				w.down ? w.down.pid !== tr.pid : w.team !== tr.team,
+			);
+			// (The last of his way to pull a man up: to his feet.)
+			const helping = (w: Body2, m: Move) =>
+				w.down?.helper === tr.pid &&
+				w.down.spot !== undefined &&
+				dist(m.to, w.down.spot) < 0.5;
 			// And with the ball, a man of theirs just standing there in his way:
 			// round him too, not through him.
 			for (const m of tr.moves) {
@@ -21295,7 +21395,7 @@ class Director {
 				let bend: { t: number; at: Pt; u: number } | undefined;
 				const dur = m.t1 - m.t0;
 				for (const w of L2 > 0.25 ? theirs : []) {
-					if (w.t1 <= m.t0 || w.t0 >= m.t1) {
+					if (w.t1 <= m.t0 || w.t0 >= m.t1 || helping(w, m)) {
 						continue;
 					}
 					// Where he comes closest to him while the man is there - how
@@ -21395,7 +21495,7 @@ class Director {
 					const d = dist(m.to, w.at);
 					const until = ends[i + 1]?.t0 ?? Infinity;
 					// (Getting there just as he steps out of it is too late too.)
-					if (until < w.t0 || m.t1 > w.t1 + 500 || d >= BODY) {
+					if (until < w.t0 || m.t1 > w.t1 + 500 || d >= BODY || helping(w, m)) {
 						continue;
 					}
 					const ref = d > 0.05 ? m.to : m.from;
