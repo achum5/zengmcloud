@@ -34,7 +34,8 @@ import { drawFlyingBall, drawLooseBall } from "./ball.ts";
 import { drawFlag } from "./flag.ts";
 import { drawnBody, FIGURE_SCALE, footballBody, officialBody } from "./body.ts";
 import { makeFieldCamera, MAIN_RIG, REPLAY_RIG } from "./camera.ts";
-import { compileField, type FieldTimeline } from "./director.ts";
+import type { FieldTimeline } from "./director.ts";
+import { stageField } from "./stageField.ts";
 import { momentAt, playAt, type HandsOf } from "./evaluate.ts";
 import { bodyPoint } from "./sculpt.ts";
 import {
@@ -323,7 +324,6 @@ const Field3D = ({
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [gid]);
 
-	// The game staged - in no time at all, so right here.
 	const onFailRef = useRef(onFail);
 	onFailRef.current = onFail;
 	const [matched, setMatched] = useState(false);
@@ -340,28 +340,40 @@ const Field3D = ({
 		}
 		setMatched(true);
 	}, [events, roster]);
-	const timeline = useMemo((): FieldTimeline | undefined => {
+	// Staged off the page (see stageField.ts): the field stays dark until it
+	// is.
+	const [timeline, setTimeline] = useState<FieldTimeline | undefined>();
+	useEffect(() => {
+		setTimeline(undefined);
 		if (!matched || !events) {
-			return undefined;
+			return;
 		}
-		try {
-			return compileField({
-				events,
-				players: roster,
-				gid,
-				numPeriods: boxScore?.numPeriods,
-			});
-		} catch (error) {
-			console.error("3D field failed to compile", error);
-			return undefined;
-		}
+		let alive = true;
+		stageField({
+			events,
+			players: roster,
+			gid,
+			numPeriods: boxScore?.numPeriods,
+		}).then(
+			(tl) => {
+				if (alive) {
+					setTimeline(tl);
+				}
+			},
+			(error: unknown) => {
+				// A broken staging must not take the whole page down with it, or
+				// leave it waiting on a field that will never play.
+				console.error("3D field failed to compile", error);
+				if (alive) {
+					onFailRef.current?.();
+				}
+			},
+		);
+		return () => {
+			alive = false;
+		};
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [matched, events, roster, gid]);
-	useEffect(() => {
-		if (matched && !timeline) {
-			onFailRef.current?.();
-		}
-	}, [matched, timeline]);
 	// Key plays only: the stretches of the game shown.
 	const numPeriods: number = boxScore?.numPeriods ?? 4;
 	const keyPlan = useMemo(

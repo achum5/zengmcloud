@@ -14,6 +14,7 @@ import { momentAt } from "./evaluate.ts";
 import { dirFor, FIELD_L, FIELD_W, TEAM_AREA, yardLineX } from "./geometry.ts";
 import { makeFieldClock, REPLAY_SPEED, stepField } from "./playback.ts";
 import { sidelineAt, sidelineFor } from "./sideline.ts";
+import { stageField } from "./stageField.ts";
 import { simGames, type SimGame } from "./testGames.ts";
 
 let games: SimGame[] = [];
@@ -34,6 +35,21 @@ const legAt = (part: { legs: Leg[] }, t: number): Leg =>
 	part.legs.findLast((l) => l.t0 <= t) ?? part.legs[0]!;
 
 describe("compileField", () => {
+	test("staged with no worker to be had (as here): on the page, the same game", async () => {
+		const game = games[0]!;
+		const off = await stageField({
+			events: game.events,
+			players: game.roster,
+			gid: 1,
+		});
+		const on = stage(game);
+		assert.strictEqual(off.end, on.end);
+		assert.deepEqual(
+			off.beats.map((b) => [b.i, b.actionStart]),
+			on.beats.map((b) => [b.i, b.actionStart]),
+		);
+	}, 60_000);
+
 	test("every line the page shows gets its moment, in order", () => {
 		for (const game of games) {
 			const tl = stage(game);
