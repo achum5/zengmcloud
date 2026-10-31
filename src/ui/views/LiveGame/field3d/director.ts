@@ -196,6 +196,9 @@ export type Play = {
 	// The officials (see crew.ts), and the flags they throw.
 	crew: CrewPart[];
 	flags: FlagFlight[];
+	// The referee's calls of the fouls on it that stand: when, and against
+	// which side.
+	calls?: { t: number; side: Side }[];
 	// The chain crew (see chains.ts), and the down on their boxes.
 	chains: CrewPart[];
 	down: number;
@@ -1967,6 +1970,13 @@ class Director {
 			parts,
 			crew: crew.parts,
 			flags: crew.flags,
+			...(calls.some((c) => c.foul.accepted)
+				? {
+						calls: calls
+							.filter((c) => c.foul.accepted)
+							.map((c) => ({ t: c.t, side: c.foul.side })),
+					}
+				: {}),
 			chains: chains.parts,
 			down: chains.spots.down,
 			tv: stageTv({

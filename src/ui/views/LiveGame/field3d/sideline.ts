@@ -575,6 +575,92 @@ const onField = (play: Play) => {
 const LEAP_MS = 900;
 const UP_LEVEL = 0.55;
 
+// The head coach (the 3D court's: see court3d/crew.ts coachState): stood
+// arms folded, bent over watching, calling out to the field - a new way
+// every few seconds, more of it bent over and calling out in a tight
+// finish. He claps a big play of his side's; a call against it, now and
+// then, has his arms out at it. Into each from the last over a moment.
+const PACE_MS = 6500;
+const IDLE: Move[] = [
+	"armsFolded",
+	"armsFolded",
+	"hands",
+	"onHips",
+	"coachTalk",
+];
+const IDLE_TENSE: Move[] = [
+	"hands",
+	"coachTalk",
+	"hands",
+	"coachTalk",
+	"onHips",
+];
+const TALK_MS = 2600;
+const PROTESTS = 0.45;
+const PROTEST_MS = 1800;
+const COACH_BLEND = 350;
+const smooth01 = (u: number) => {
+	const v = Math.max(0, Math.min(1, u));
+	return v * v * (3 - 2 * v);
+};
+const bossDoing = (
+	s: SidelineMan,
+	play: Play,
+	tl: FieldTimeline,
+	t: number,
+): { move: Move; phase: number } => {
+	const cheer = cheerAt(tl, t);
+	if (cheer && cheer.side === s.team && cheer.level > UP_LEVEL) {
+		const e = cheer.since - s.delay;
+		if (e > 0) {
+			return { move: "clap", phase: (e / CLAP_MS) % 1 };
+		}
+	}
+	for (const [k, c] of (play.calls ?? []).entries()) {
+		if (
+			c.side === s.team &&
+			t >= c.t &&
+			t < c.t + PROTEST_MS &&
+			makeCourtRng(`protest|${s.id}|${play.i}|${k}`)() < PROTESTS
+		) {
+			return { move: "protest", phase: (t - c.t) / PROTEST_MS };
+		}
+	}
+	const j = Math.floor(t / PACE_MS);
+	const idle = (play.tense ?? 0) >= 1 ? IDLE_TENSE : IDLE;
+	const move =
+		idle[Math.floor(makeCourtRng(`idle|${s.id}|${j}`)() * idle.length)]!;
+	return {
+		move,
+		phase: move === "coachTalk" ? ((t - j * PACE_MS) / TALK_MS) % 1 : 0,
+	};
+};
+// (Out of what he was at, over the last moment, if he changed.)
+const bossAt = (
+	s: SidelineMan,
+	play: Play,
+	tl: FieldTimeline,
+	t: number,
+): Pick<FieldPlayerState, "move" | "phase" | "from"> => {
+	const now = bossDoing(s, play, tl, t);
+	let lo = t - COACH_BLEND;
+	if (bossDoing(s, play, tl, lo).move === now.move) {
+		return now;
+	}
+	let hi = t;
+	for (let k = 0; k < 9; k++) {
+		const mid = (lo + hi) / 2;
+		if (bossDoing(s, play, tl, mid).move === now.move) {
+			hi = mid;
+		} else {
+			lo = mid;
+		}
+	}
+	const was = bossDoing(s, play, tl, lo);
+	const w = 1 - smooth01((t - hi) / COACH_BLEND);
+	return { ...now, from: { move: was.move, phase: was.phase, w } };
+};
+
 // The game over (see postgame.ts): most of each side's players out onto the
 // field after the men on it, from a while after - the men sat down and the
 // kickers the last of them - at a walk, to stand about round the middle on
@@ -878,14 +964,18 @@ export const sidelineAt = (
 		}
 		let move = spot.move;
 		let phase = 0;
+		let from: FieldPlayerState["from"];
+		const boss = s.unit === "coach" && s.coach === 0;
 		if (off && off.fps > WAY_STEP) {
 			// (Stepping it: back, across, or on - as he faces.)
 			const c = Math.cos(off.way - yaw);
 			move = c < -0.5 ? "back" : c > 0.5 ? "walk" : "slide";
 			phase = off.walked / strideOf(move);
+		} else if (boss) {
+			({ move, phase, from } = bossAt(s, play, tl, m.t));
 		}
 		let arms: FieldPlayerState["arms"];
-		if (cheer && cheer.side === s.team && cheer.level > UP_LEVEL) {
+		if (!boss && cheer && cheer.side === s.team && cheer.level > UP_LEVEL) {
 			const e = cheer.since - s.delay;
 			if (e > 0) {
 				if (spot.seated) {
@@ -908,6 +998,7 @@ export const sidelineAt = (
 			yaw,
 			move,
 			phase,
+			...(from ? { from } : {}),
 			...(arms ? { arms } : {}),
 			...(spot.bare && !kick ? { bare: true as const } : {}),
 		});

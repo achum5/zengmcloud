@@ -10,6 +10,7 @@ import {
 	targetForCursor,
 	type FieldTimeline,
 	type Leg,
+	type Play,
 } from "./director.ts";
 import { momentAt } from "./evaluate.ts";
 import {
@@ -23,7 +24,7 @@ import {
 	yardLineX,
 } from "./geometry.ts";
 import { makeFieldClock, REPLAY_SPEED, stepField } from "./playback.ts";
-import { sidelineAt, sidelineFor } from "./sideline.ts";
+import { coachId, sidelineAt, sidelineFor } from "./sideline.ts";
 import { stageField, stageOpening } from "./stageField.ts";
 import { simGames, type SimGame } from "./testGames.ts";
 
@@ -762,3 +763,82 @@ describe("the game over", () => {
 		assert.isAbove(showers, 0);
 	}, 120_000);
 });
+
+describe("the head coach", () => {
+	test("stood a new way every so often - on edge in a tight finish - clapping his side's big plays, arms out at a call against it now and then, into each over a moment", () => {
+		const bosses = new Set([coachId(0, 0), coachId(1, 0)]);
+		const ways = new Set<string>();
+		const bad: string[] = [];
+		let claps = 0;
+		let calls = 0;
+		let protests = 0;
+		for (const game of games) {
+			const tl = stage(game);
+			const men = sidelineFor(game.roster, 1);
+			const at = (t: number) =>
+				sidelineAt(men, tl, momentAt(tl, t)).filter((s) => bosses.has(s.id));
+			for (const play of tl.plays) {
+				if (play.postgame || play.timeout) {
+					continue;
+				}
+				// (Never from one way to another in a frame.)
+				let last = new Map<number, string>();
+				for (let t = play.t0; t < play.t1; t += 40) {
+					const now = new Map<number, string>();
+					for (const s of at(t)) {
+						now.set(s.id, s.move);
+						ways.add(s.move);
+						const was = last.get(s.id);
+						// (Stepping out of the way of a man run into them aside.)
+						if (
+							was !== undefined &&
+							was !== s.move &&
+							!STEPS.has(was) &&
+							!STEPS.has(s.move)
+						) {
+							if (!s.from || s.from.w < 0.8) {
+								bad.push(`play ${play.i}: ${s.id} ${was} to ${s.move}`);
+							}
+						}
+						if (
+							(play.tense ?? 0) >= 1 &&
+							(s.move === "armsFolded" || s.move === "stand")
+						) {
+							bad.push(`play ${play.i}: ${s.id} at ease, the game on the line`);
+						}
+					}
+					last = now;
+				}
+				const c = play.cheer;
+				if (c && c.t + 1000 < play.t1) {
+					const s = at(c.t + 1000).find((s) => s.team === c.side);
+					if (s) {
+						claps += 1;
+						assert.strictEqual(s.move, "clap", `play ${play.i}`);
+					}
+				}
+				for (const call of play.calls ?? []) {
+					const s = at(call.t + 600).find((s) => s.team === call.side);
+					if (s && cheerless(play, call.t)) {
+						calls += 1;
+						if (s.move === "protest") {
+							protests += 1;
+						}
+					}
+				}
+			}
+		}
+		assert.deepEqual(bad.slice(0, 8), []);
+		for (const way of ["armsFolded", "hands", "onHips", "coachTalk"]) {
+			assert.isTrue(ways.has(way), way);
+		}
+		assert.isAbove(claps, 10);
+		assert.isAbove(protests, 0);
+		assert.isBelow(protests, calls);
+	}, 60_000);
+});
+
+const STEPS = new Set(["walk", "slide", "back"]);
+// (Nobody's cheer up then.)
+const cheerless = (play: Play, t: number) =>
+	!play.cheer || t < play.cheer.t || t > play.cheer.t + 6000;

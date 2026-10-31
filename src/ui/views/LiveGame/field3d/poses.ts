@@ -3250,6 +3250,43 @@ const FIELD_ANIMS = {
 		{ shN: 132, elN: 96, abN: 24, shF: 10, elF: 70, abF: 16, lean: -2 },
 		{ shN: 172, elN: 16, abN: 16, shF: 6, elF: 96, abF: 16, lean: -6 },
 	),
+	// A call gone against his side (the 3D court's coach's): both arms out
+	// from his sides, palms up, leaning back from it.
+	protest: {
+		kind: "act",
+		keys: [
+			[0, BASE],
+			[
+				0.25,
+				pose({
+					shN: 44,
+					elN: 62,
+					abN: 42,
+					wrN: 46,
+					shF: 44,
+					elF: 62,
+					abF: 42,
+					wrF: 46,
+					lean: -6,
+				}),
+			],
+			[
+				0.8,
+				pose({
+					shN: 50,
+					elN: 56,
+					abN: 48,
+					wrN: 50,
+					shF: 50,
+					elF: 56,
+					abF: 48,
+					wrF: 50,
+					lean: -8,
+				}),
+			],
+			[1, BASE],
+		],
+	},
 	// Clapping, hands out in front of his chest.
 	clap: {
 		kind: "act",
