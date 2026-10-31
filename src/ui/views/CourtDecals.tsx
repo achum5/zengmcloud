@@ -18,6 +18,13 @@ import {
 
 // (The 3D court is big: fetched when the page is opened.)
 const CourtPreview = lazy(() => import("./LiveGame/court3d/CourtPreview.tsx"));
+// (Football's field, the same.)
+const StadiumPreview = lazy(
+	() => import("./LiveGame/field3d/StadiumPreview.tsx"),
+);
+// How far a decal moves from midfield, feet: to the back of either end zone,
+// and to either sideline.
+const FIELD_ROOM = { dx: 180, dy: 80 };
 
 const WHEN: [CourtDecal["when"], string][] = [
 	["always", "Every game"],
@@ -27,7 +34,7 @@ const WHEN: [CourtDecal["when"], string][] = [
 ];
 
 // THE LEAGUE'S COURT DECALS: pictures laid on every court on an occasion,
-// in the seasons given (see CourtDecal).
+// in the seasons given (see CourtDecal) - or, football, every field.
 const CourtDecals = ({
 	decals: saved,
 	pictures: picturesSaved,
@@ -35,7 +42,8 @@ const CourtDecals = ({
 	team,
 	preview: look,
 }: View<"courtDecals">) => {
-	useTitleBar({ title: "Court Decals" });
+	const football = __SPORT === "football";
+	useTitleBar({ title: football ? "Field Decals" : "Court Decals" });
 
 	const [decals, setDecals] = useState<CourtDecal[]>(saved);
 	const [pictures, setPictures] =
@@ -122,11 +130,25 @@ const CourtDecals = ({
 		() => ({ ...team?.court, decals: shown }),
 		[team?.court, shown],
 	);
+	const field = useMemo(
+		() => ({ ...team?.stadium, decals: shown }),
+		[team?.stadium, shown],
+	);
 
 	return (
 		<div className="row">
 			<div className="col-lg-7 mb-3">
-				{look ? (
+				{football && team ? (
+					<Suspense fallback={null}>
+						<StadiumPreview
+							team={team}
+							stadium={field}
+							helmet={{}}
+							sky={team.stadium?.sky ?? "day"}
+							field
+						/>
+					</Suspense>
+				) : look ? (
 					<Suspense fallback={null}>
 						<CourtPreview
 							home={look.home}
@@ -166,6 +188,7 @@ const CourtDecals = ({
 							}
 							pictures={pictures}
 							onUpload={upload}
+							{...(football ? { room: FIELD_ROOM } : {})}
 						/>
 						<div className="d-flex flex-wrap align-items-center gap-2">
 							<select

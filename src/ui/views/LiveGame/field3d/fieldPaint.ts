@@ -1,4 +1,7 @@
-import type { StadiumLook } from "../../../../common/types.ts";
+import type {
+	CourtImageAdjust,
+	StadiumLook,
+} from "../../../../common/types.ts";
 import { makeCourtRng } from "../courtRng.ts";
 import { luminance, mix, shade } from "./color.ts";
 import {
@@ -489,6 +492,74 @@ export const paintTrophyPicture = (
 		g.drawImage(picture, (P.w - w * k) / 2, (P.h - h * k) / 2, w * k, h * k);
 	}
 	return c;
+};
+
+// THE LEAGUE'S DECALS (see CourtDecal), as the 3D court lays them: each a
+// picture DECAL_FT square at midfield, moved (feet: along the field, and
+// toward the near sideline), sized, turned (degrees, clockwise from above)
+// and faded as its adjust says - and, a pair, one on each half, mirrored.
+export type DecalMark = { plane: TexturedPlane; img: HTMLCanvasElement };
+export type DecalPicture = {
+	picture: HTMLCanvasElement | HTMLImageElement;
+	adjust?: CourtImageAdjust;
+	pair?: boolean;
+};
+const DECAL_FT = 30;
+const DECAL_PPF = 8;
+// (No picture bigger than this across, px: a big decal painted coarser.)
+const DECAL_MAX_PX = 1024;
+export const paintDecals = (decals: DecalPicture[]): DecalMark[] => {
+	const out: DecalMark[] = [];
+	for (const { picture, adjust, pair } of decals) {
+		if (picture.width <= 0 || picture.height <= 0) {
+			continue;
+		}
+		out.push(paintDecal(picture, adjust));
+		if (pair) {
+			out.push(
+				paintDecal(picture, {
+					...adjust,
+					dx: -(adjust?.dx ?? 0),
+					rotate: -(adjust?.rotate ?? 0),
+				}),
+			);
+		}
+	}
+	return out;
+};
+const paintDecal = (
+	picture: HTMLCanvasElement | HTMLImageElement,
+	adjust: CourtImageAdjust | undefined,
+): DecalMark => {
+	const side = DECAL_FT * Math.min(Math.max(adjust?.scale ?? 1, 0.1), 6);
+	const turn = ((adjust?.rotate ?? 0) * Math.PI) / 180;
+	const cos = Math.abs(Math.cos(turn));
+	const sin = Math.abs(Math.sin(turn));
+	// (The ground it covers, turned: the square round it.)
+	const across = side * (cos + sin);
+	const ppf = Math.min(DECAL_PPF, DECAL_MAX_PX / across);
+	const plane = groundPlane(
+		MID_X + (adjust?.dx ?? 0) - across / 2,
+		MID_Y + (adjust?.dy ?? 0) - across / 2,
+		across,
+		across,
+		ppf,
+	);
+	const c = canvasOf(plane.w, plane.h);
+	const g = c.getContext("2d")!;
+	g.globalAlpha = Math.min(Math.max(adjust?.opacity ?? 0.92, 0), 1);
+	g.translate(plane.w / 2, plane.h / 2);
+	g.rotate(turn);
+	const box = side * ppf;
+	if (adjust?.fit === "fill") {
+		g.drawImage(picture, -box / 2, -box / 2, box, box);
+	} else {
+		const k = box / Math.max(picture.width, picture.height);
+		const w = picture.width * k;
+		const h = picture.height * k;
+		g.drawImage(picture, -w / 2, -h / 2, w, h);
+	}
+	return { plane, img: c };
 };
 
 // THE NUMBERS: every ten yards, both sides, six feet tall with their bottoms

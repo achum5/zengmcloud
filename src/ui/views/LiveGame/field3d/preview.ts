@@ -5,13 +5,15 @@ import { footballBody } from "./body.ts";
 import { makeFieldCamera, type FieldRig } from "./camera.ts";
 import {
 	fieldStyleFor,
+	paintDecals,
 	paintEndZone,
 	paintMidLogo,
 	paintNumbers,
 	paintTurf,
+	type DecalPicture,
 	type FieldTeam,
 } from "./fieldPaint.ts";
-import { FIELD_W, GOAL_R } from "./geometry.ts";
+import { FIELD_W, GOAL_R, MID_X, MID_Y } from "./geometry.ts";
 import { fieldGearFor, fieldKit, type FieldLook } from "./kit.ts";
 import { drawFieldFrame, type FieldPaint } from "./scene.ts";
 import { drawFieldPlayer, type FieldPlayerState } from "./sprite.ts";
@@ -32,6 +34,8 @@ export const paintPreview = (
 	logo: HTMLCanvasElement | undefined,
 	// Its own end zone picture (see StadiumLook).
 	endPicture?: HTMLCanvasElement,
+	// The league's decals on it (see paintDecals).
+	decals: DecalPicture[] = [],
 ): FieldPaint => {
 	const picked = venueFor(team, { gid: 0, primeTime: sky === "night" });
 	const venue = { ...picked, shadow: undefined };
@@ -47,6 +51,7 @@ export const paintPreview = (
 		...(logo && team.stadium?.midLogo !== false
 			? { logo: paintMidLogo(logo) }
 			: {}),
+		...(decals.length > 0 ? { decals: paintDecals(decals) } : {}),
 		stadium: paintStadium(team, undefined, "preview", undefined, logo, venue),
 	};
 };
@@ -63,6 +68,10 @@ const MEN = [
 	{ dx: 3.2, yaw: Math.PI / 2 + 0.75, edition: "away", num: "88" },
 ] as const;
 
+// Or the whole field from the broadcast's camera, nobody on it (for the
+// league's decals: see CourtDecals).
+const FIELD_SHOT = { x: MID_X, y: MID_Y, width: 330 };
+
 export const makePreviewScratch = (): Scratch => makeScratch();
 
 export const drawPreview = (
@@ -71,8 +80,14 @@ export const drawPreview = (
 	paint: FieldPaint,
 	team: PreviewTeam,
 	logo: HTMLCanvasElement | undefined,
+	field = false,
 ) => {
 	const { width: w, height: h } = ctx.canvas;
+	if (field) {
+		const cam = makeFieldCamera(FIELD_SHOT, w, h);
+		drawFieldFrame({ ctx, cam, paint, items: [] });
+		return;
+	}
 	const cam = makeFieldCamera(SHOT, w, h, RIG);
 	const colors = team.colors ?? ["#8c1d40", "#f2c14e", "#ffffff"];
 	const body = footballBody(74, 215);

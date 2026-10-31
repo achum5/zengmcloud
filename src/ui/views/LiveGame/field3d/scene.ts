@@ -11,6 +11,7 @@ import {
 	MID_TROPHY_PLANE,
 	TURF_PLANE,
 	type FieldStyle,
+	type DecalMark,
 	type NumberMark,
 } from "./fieldPaint.ts";
 import {
@@ -58,6 +59,8 @@ export type FieldPaint = {
 	logo?: HTMLCanvasElement;
 	// (The championship game's, in its place: see paintMidTrophy.)
 	trophy?: HTMLCanvasElement;
+	// The league's decals for the game (see paintDecals).
+	decals?: DecalMark[];
 	stadium: StadiumPaint;
 };
 
@@ -278,6 +281,10 @@ export const drawFieldFrame = (f: FieldFrame) => {
 		drawTexturedPlane(ctx, cam, MID_TROPHY_PLANE, paint.trophy, 8, 12);
 	} else if (paint.logo) {
 		drawTexturedPlane(ctx, cam, MID_LOGO_PLANE, paint.logo, 8, 8);
+	}
+	for (const d of paint.decals ?? []) {
+		const cells = Math.min(24, Math.max(4, Math.ceil(d.plane.w / 32)));
+		drawTexturedPlane(ctx, cam, d.plane, d.img, cells, cells);
 	}
 	for (const n of paint.numbers) {
 		drawTexturedPlane(ctx, cam, n.plane, n.img, 2, 1);

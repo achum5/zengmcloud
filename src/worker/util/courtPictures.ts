@@ -251,12 +251,12 @@ export const resolveScoreBug = async (
 	};
 };
 
-// A court with the game's decals laid on it.
-export const withDecals = (
-	court: CourtStyle | undefined,
+// A court - or a football stadium's field - with the game's decals laid on
+// it.
+export const withDecals = <T extends CourtStyle | StadiumLook>(
+	look: T | undefined,
 	decals: CourtDecalPlaced[],
-): CourtStyle | undefined =>
-	decals.length === 0 ? court : { ...court, decals };
+): T | undefined => (decals.length === 0 ? look : ({ ...look, decals } as T));
 
 // Of these pictures, remove any nothing uses any more - no team's uniform,
 // no team's court or stadium, no decal. (A replay that showed one goes

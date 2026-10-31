@@ -4,12 +4,14 @@ import {
 	decalPictureIds,
 	pictureById,
 	resolveCourt,
+	resolveStadium,
 } from "../util/courtPictures.ts";
 import { defineView } from "../util/defineView.ts";
 import { courtPreview } from "../util/courtPreview.ts";
 
 // Data for the league's court decals page: the decals, the pictures uploaded
-// for them (by id), and the user's team's court to preview them on.
+// for them (by id), and the user's team's court to preview them on - or,
+// football, its field.
 const courtDecals = async () => {
 	const decals = g.get("courtDecals") ?? [];
 	const pictures: Record<string, string> = {};
@@ -37,9 +39,12 @@ const courtDecals = async () => {
 					colors: t.colors,
 					imgURL: t.imgURL,
 					court: await resolveCourt(t.court),
+					...(__SPORT === "football" && t.stadium
+						? { stadium: await resolveStadium(t.stadium) }
+						: {}),
 				}
 			: undefined,
-		preview: t ? await courtPreview(t) : undefined,
+		preview: t && __SPORT !== "football" ? await courtPreview(t) : undefined,
 	};
 };
 

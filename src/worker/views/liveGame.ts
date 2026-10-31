@@ -306,6 +306,10 @@ export const boxScoreToLiveSim = async ({
 				// Cosmetic; the 3D game picks its own.
 			}
 		}
+		// (And at home, the league's decals for the game laid on its field.)
+		if (__SPORT === "football" && i === 0) {
+			t.stadium = withDecals(t.stadium, await decalsForGame(boxScore));
+		}
 		t.ptsQtrs = [];
 
 		for (const stat of resetStatsTeam) {
@@ -495,6 +499,17 @@ export default defineView({
 													: court,
 											...(t.stadium
 												? { stadium: await resolveStadium(t.stadium) }
+												: {}),
+											// (Football's field gets the decals.)
+											...(__SPORT === "football" && Number(tid) === homeTid
+												? {
+														stadium: withDecals(
+															t.stadium
+																? await resolveStadium(t.stadium)
+																: undefined,
+															decals,
+														),
+													}
 												: {}),
 										},
 									] as const;

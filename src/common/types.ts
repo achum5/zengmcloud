@@ -3147,6 +3147,9 @@ export type StadiumLook = {
 	// Words of its own along the boards round the field, in turn with the
 	// team's name: the stadium's name, a sponsor's.
 	boardText?: string;
+	// The league's decals laid on its field for the game being shown (see
+	// CourtDecal) - put there by the game, never saved with a team.
+	decals?: CourtDecalPlaced[];
 };
 
 // A FOOTBALL TEAM'S HELMET in the 3D game, as the team has set it - and the

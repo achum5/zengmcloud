@@ -7,6 +7,7 @@ import {
 	paintPreview,
 	type PreviewTeam,
 } from "./preview.ts";
+import type { DecalPicture } from "./fieldPaint.ts";
 
 // The stadium page's picture of a team's stadium and helmet (see preview.ts),
 // redrawn as they are changed - the stadium painted again only when it is
@@ -14,14 +15,16 @@ import {
 
 const W = 480;
 const H = 270;
-// (As the 3D field reads it: see Field3D.)
+// (As the 3D field reads them: see Field3D.)
 const END_ZONE_PX = 512;
+const DECAL_PX = 512;
 
 const StadiumPreview = ({
 	team,
 	stadium,
 	helmet,
 	sky,
+	field = false,
 }: {
 	team: {
 		abbrev?: string;
@@ -33,6 +36,8 @@ const StadiumPreview = ({
 	stadium: StadiumLook;
 	helmet: HelmetLook;
 	sky: "day" | "night";
+	// The whole field instead, nobody on it (see drawPreview).
+	field?: boolean;
 }) => {
 	const canvas = useRef<HTMLCanvasElement>(null);
 	const scratch = useMemo(() => makePreviewScratch(), []);
@@ -64,6 +69,27 @@ const StadiumPreview = ({
 		};
 	}, [endURL]);
 
+	// (The league's decals on it, if any: see CourtDecals.)
+	const [decals, setDecals] = useState<DecalPicture[]>([]);
+	const decalsKey = JSON.stringify(stadium.decals ?? null);
+	useEffect(() => {
+		let alive = true;
+		void Promise.all(
+			(stadium.decals ?? []).map(async (d) => {
+				const picture = await logoPicture(d.href, DECAL_PX);
+				return picture ? [{ picture, adjust: d.adjust, pair: d.pair }] : [];
+			}),
+		).then((made) => {
+			if (alive) {
+				setDecals(made.flat());
+			}
+		});
+		return () => {
+			alive = false;
+		};
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [decalsKey]);
+
 	const [c0, c1, c2] = team.colors ?? [];
 	const shown: PreviewTeam = useMemo(
 		() => ({
@@ -76,16 +102,16 @@ const StadiumPreview = ({
 		[team.abbrev, team.name, team.region, c0, c1, c2, stadium],
 	);
 	const paint = useMemo(
-		() => paintPreview(shown, sky, logo, endPicture),
-		[shown, sky, logo, endPicture],
+		() => paintPreview(shown, sky, logo, endPicture, decals),
+		[shown, sky, logo, endPicture, decals],
 	);
 
 	useEffect(() => {
 		const ctx = canvas.current?.getContext("2d");
 		if (ctx) {
-			drawPreview(ctx, scratch, paint, { ...shown, helmet }, logo);
+			drawPreview(ctx, scratch, paint, { ...shown, helmet }, logo, field);
 		}
-	}, [paint, shown, helmet, logo, scratch]);
+	}, [paint, shown, helmet, logo, scratch, field]);
 
 	return (
 		<canvas

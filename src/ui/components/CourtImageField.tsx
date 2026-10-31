@@ -42,6 +42,9 @@ export const pictureFromFile = async (
 	}
 };
 
+// (How far a picture moves on a court, feet: half its length and width.)
+const COURT_ROOM = { dx: 47, dy: 25 };
+
 // AN IMAGE SLOT, with the knobs that make it yours.
 //
 // A URL on its own is not customization - it drops the picture wherever the
@@ -59,6 +62,7 @@ export const ImageField = <Slot extends string>({
 	defaultFit = "contain",
 	pictures,
 	onUpload,
+	room = COURT_ROOM,
 }: {
 	label: string;
 	hint?: string;
@@ -70,6 +74,9 @@ export const ImageField = <Slot extends string>({
 	defaultFit?: "contain" | "fill";
 	pictures: Record<string, string>;
 	onUpload: (file: File) => Promise<string | undefined>;
+	// How far it can be moved from where it sits, feet (football's field is
+	// bigger).
+	room?: { dx: number; dy: number };
 }) => {
 	const uploaded = url.startsWith(PIC);
 	const shown = uploaded ? pictures[url.slice(PIC.length)] : url;
@@ -228,8 +235,16 @@ export const ImageField = <Slot extends string>({
 						1,
 						(v) => `${Math.round(v * 100)}%`,
 					)}
-					{slider("dx", "Left/right", -47, 47, 0.5, 0, (v) => `${v} ft`)}
-					{slider("dy", "Up/down", -25, 25, 0.5, 0, (v) => `${v} ft`)}
+					{slider(
+						"dx",
+						"Left/right",
+						-room.dx,
+						room.dx,
+						0.5,
+						0,
+						(v) => `${v} ft`,
+					)}
+					{slider("dy", "Up/down", -room.dy, room.dy, 0.5, 0, (v) => `${v} ft`)}
 					{slider("rotate", "Rotate", -180, 180, 5, 0, (v) => `${v}\u00b0`)}
 					<div className="d-flex align-items-center gap-3 mt-1">
 						<div className="form-check form-check-inline mb-0">

@@ -257,6 +257,12 @@ const ManageTeams = (props: View<"manageTeams">) => {
 				<div className="d-flex gap-2 mb-3">
 					<a
 						className="btn btn-light-bordered"
+						href={helpers.leagueUrl(["court_decals"])}
+					>
+						Field decals
+					</a>
+					<a
+						className="btn btn-light-bordered"
 						href={helpers.leagueUrl(["score_bug"])}
 					>
 						Score bug

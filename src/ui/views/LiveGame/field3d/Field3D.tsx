@@ -21,7 +21,11 @@ import { adjust, artFor, makeResolution } from "../court3d/resolution.ts";
 import { eventsMatchRoster } from "../court3d/rosterMatch.ts";
 import { ScoreBug, type BugRefs } from "../court3d/ScoreBug.tsx";
 import { CustomScoreBug } from "../court3d/CustomScoreBug.tsx";
-import type { ReplayLooks, ScoreBugStyle } from "../../../../common/types.ts";
+import type {
+	CourtDecalPlaced,
+	ReplayLooks,
+	ScoreBugStyle,
+} from "../../../../common/types.ts";
 import {
 	makeScratch,
 	makeSpriteCache,
@@ -56,8 +60,10 @@ import {
 	paintMidLogo,
 	paintTrophyPicture,
 	paintMidTrophy,
+	paintDecals,
 	paintNumbers,
 	paintTurf,
+	type DecalPicture,
 	type FieldTeam,
 } from "./fieldPaint.ts";
 import { FIELD_L, type Side } from "./geometry.ts";
@@ -169,6 +175,8 @@ const SUN_LEAN = 0.4;
 // A team's own picture across its end zones, read this big (px, its longer
 // side): a logo's size would blur painted that big.
 const END_ZONE_PX = 512;
+// And a decal (see paintDecals).
+const DECAL_PX = 512;
 // Screen ms the picture takes to come up out of black into the next of the
 // key plays (see keyPlays.ts).
 const KEY_DIP_MS = 320;
@@ -548,6 +556,27 @@ const Field3D = ({
 			alive = false;
 		};
 	}, [awayLogo, homeLogo, midURL, trophyURL, awayEnd, homeEnd]);
+	// The league's decals for the game on the home field (see CourtDecal).
+	const decals: CourtDecalPlaced[] | undefined = home?.stadium?.decals;
+	const decalsKey = JSON.stringify(decals ?? null);
+	const [decalPictures, setDecalPictures] = useState<DecalPicture[]>([]);
+	useEffect(() => {
+		let alive = true;
+		void Promise.all(
+			(decals ?? []).map(async (d) => {
+				const picture = await logoPicture(d.href, DECAL_PX);
+				return picture ? [{ picture, adjust: d.adjust, pair: d.pair }] : [];
+			}),
+		).then((made) => {
+			if (alive) {
+				setDecalPictures(made.flat());
+			}
+		});
+		return () => {
+			alive = false;
+		};
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [decalsKey]);
 	const paint = useMemo((): FieldPaint => {
 		const h = team(home);
 		const a = team(away);
@@ -581,6 +610,9 @@ const Field3D = ({
 							: paintMidTrophy(mid),
 					}
 				: {}),
+			...(decalPictures.length > 0
+				? { decals: paintDecals(decalPictures) }
+				: {}),
 			stadium: paintStadium(
 				h,
 				a,
@@ -596,7 +628,7 @@ const Field3D = ({
 			),
 		};
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [gid, logos]);
+	}, [gid, logos, decalPictures]);
 
 	// Faces arrive asynchronously; until then a player has a plain skin tone
 	// and an average build.

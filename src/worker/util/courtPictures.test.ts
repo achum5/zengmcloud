@@ -14,7 +14,9 @@ import {
 	resolveStadium,
 	stadiumPictureIds,
 	storePicture,
+	withDecals,
 } from "./courtPictures.ts";
+import type { StadiumLook } from "../../common/types.ts";
 
 // A picture uploaded for a court is kept once in the league and named from
 // the court by id; whatever draws the court gets it filled back in, and a
@@ -124,7 +126,7 @@ describe("court pictures", () => {
 		await setup();
 		const mid = await storePicture(PNG(5));
 		const cup = await storePicture(PNG(6));
-		const stadium = {
+		const stadium: StadiumLook = {
 			turfColor: "#0b3d91",
 			midLogoURL: `${PIC}${mid}`,
 			trophyURL: `${PIC}gone`,
@@ -140,6 +142,17 @@ describe("court pictures", () => {
 		await prunePictures([mid, cup]);
 		assert.ok(await idb.cache.jerseySkins.get(mid));
 		assert.strictEqual(await idb.cache.jerseySkins.get(cup), undefined);
+		// (And the league's decals for a game laid on the field, with or
+		// without a stadium of its own.)
+		const decals = [{ href: PNG(7), pair: true }];
+		assert.deepStrictEqual(withDecals(stadium, decals), {
+			...stadium,
+			decals,
+		});
+		assert.deepStrictEqual(withDecals<StadiumLook>(undefined, decals), {
+			decals,
+		});
+		assert.strictEqual(withDecals(stadium, []), stadium);
 	});
 
 	test("a jersey linked from elsewhere is left alone: nothing to keep, nothing to remove", async () => {
