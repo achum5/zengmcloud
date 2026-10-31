@@ -18,6 +18,7 @@ const H = 270;
 // (As the 3D field reads them: see Field3D.)
 const END_ZONE_PX = 512;
 const DECAL_PX = 512;
+const FIELD_PX = 2400;
 
 const StadiumPreview = ({
 	team,
@@ -59,25 +60,28 @@ const StadiumPreview = ({
 		end?: HTMLCanvasElement;
 		mid?: HTMLCanvasElement;
 		secondary?: HTMLCanvasElement;
+		field?: HTMLCanvasElement;
 	}>({});
 	const endURL = stadium.endZoneURL;
 	const midURL = stadium.midLogoURL;
 	const secondURL = stadium.secondaryLogoURL;
+	const fieldURL = stadium.fieldURL;
 	useEffect(() => {
 		let alive = true;
 		void Promise.all([
 			logoPicture(endURL, END_ZONE_PX),
 			logoPicture(midURL),
 			logoPicture(secondURL, END_ZONE_PX),
-		]).then(([end, mid, secondary]) => {
+			logoPicture(fieldURL, FIELD_PX),
+		]).then(([end, mid, secondary, field]) => {
 			if (alive) {
-				setOwn({ end, mid, secondary });
+				setOwn({ end, mid, secondary, field });
 			}
 		});
 		return () => {
 			alive = false;
 		};
-	}, [endURL, midURL, secondURL]);
+	}, [endURL, midURL, secondURL, fieldURL]);
 
 	// (The league's decals on it, if any: see CourtDecals.)
 	const [decals, setDecals] = useState<DecalPicture[]>([]);

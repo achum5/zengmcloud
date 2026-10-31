@@ -41,14 +41,19 @@ export const paintPreview = (
 		end?: HTMLCanvasElement;
 		mid?: HTMLCanvasElement;
 		secondary?: HTMLCanvasElement;
+		field?: HTMLCanvasElement;
 		decals?: DecalPicture[];
 	} = {},
 ): FieldPaint => {
 	const picked = venueFor(team, { gid: 0, primeTime: sky === "night" });
 	const venue = { ...picked, shadow: undefined };
 	const style = fieldStyleFor(team, undefined, false, venue);
+	// (A picture of the whole field: the logo on it only if asked for - see
+	// Field3D.)
 	const mid =
-		team.stadium?.midLogo !== false ? (pictures.mid ?? logo) : undefined;
+		team.stadium?.midLogo !== false
+			? (pictures.mid ?? (pictures.field ? undefined : logo))
+			: undefined;
 	const own = team.stadium?.adjust;
 	const decals = [
 		...(mid && own?.logo ? [midLogoDecal(mid, own.logo)] : []),
@@ -67,6 +72,12 @@ export const paintPreview = (
 		numbers: paintNumbers(style),
 		...(mid && !own?.logo ? { logo: paintMidLogo(mid) } : {}),
 		...(decals.length > 0 ? { decals: paintDecals(decals) } : {}),
+		...(pictures.field
+			? {
+					field: pictures.field,
+					ownLines: team.stadium?.fieldLines === "picture",
+				}
+			: {}),
 		stadium: paintStadium(team, undefined, "preview", undefined, logo, venue),
 	};
 };

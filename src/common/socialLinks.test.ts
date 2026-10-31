@@ -35,7 +35,10 @@ describe("inlineLinks", () => {
 		// starts halfway through the name.
 		const links = inlineLinks(post({ tids: [0] }), NAMES, TEAMS);
 		const lengths = links.map((l) => l.label.length);
-		assert.deepStrictEqual(lengths, [...lengths].sort((a, b) => b - a));
+		assert.deepStrictEqual(
+			lengths,
+			[...lengths].sort((a, b) => b - a),
+		);
 		assert.strictEqual(links[0]!.label, "Boston Celtics");
 	});
 

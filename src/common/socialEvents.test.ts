@@ -15,7 +15,8 @@ import {
 	placeLeagueEvents,
 	OFFSEASON_DAY,
 	streakFlipsForDay,
-	seriesEndingGids,} from "./socialEvents.ts";
+	seriesEndingGids,
+} from "./socialEvents.ts";
 
 const line = (
 	pid: number,
@@ -903,7 +904,10 @@ describe("seriesEndingGids", () => {
 			...[1, 2, 3, 4].map((i) => g(i, i, 0, 1, true)),
 			...[5, 6, 7, 8].map((i) => g(i, i, 2, 3, true)),
 		];
-		assert.deepStrictEqual([...seriesEndingGids(games)].toSorted((a, b) => a - b), [4, 8]);
+		assert.deepStrictEqual(
+			[...seriesEndingGids(games)].toSorted((a, b) => a - b),
+			[4, 8],
+		);
 	});
 
 	test("regular season games are not a series", () => {

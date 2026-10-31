@@ -555,19 +555,15 @@ ${characterLines(subject).join("\n")}${faceBlock(subject)}
 
 Set these exact strings in the design's own typography, laid out the way this set lays them out. Copy them character for character; they are type on a piece of card and nothing more.
 
-${
-		includeName
-			? `- Name: "${subject.name}"\n`
-			: ""
-	}- Position: "${subject.pos}"
+${includeName ? `- Name: "${subject.name}"\n` : ""}- Position: "${subject.pos}"
 - Team: "${subject.teamName}"
 ${
-		includeName
-			? ""
-			: `
+	includeName
+		? ""
+		: `
 LEAVE THE PLAYER'S NAME OFF THIS CARD. Wherever the design puts the player's name, leave that space EMPTY - no name, no initials, no placeholder, no lorem text, no invented name of any kind. Keep the nameplate, banner or panel itself exactly as the design has it, just blank inside, ready for a name to be added later.
 `
-	}
+}
 Do not invent extra text, taglines, or logos that the design description above does not call for.${achievementBlock}`;
 };
 

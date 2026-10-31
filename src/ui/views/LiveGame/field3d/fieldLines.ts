@@ -129,8 +129,13 @@ export const drawFieldLines = (
 	ctx: CanvasRenderingContext2D,
 	cam: Camera,
 	color: string,
+	// (Not the field's own, when a picture of the field has them: see
+	// StadiumLook's fieldLines.)
+	field = true,
 ) => {
-	drawBoxes(ctx, cam, BOXES, color);
+	if (field) {
+		drawBoxes(ctx, cam, BOXES, color);
+	}
 	drawBoxes(ctx, cam, SIDELINE_BOXES, YELLOW);
 };
 

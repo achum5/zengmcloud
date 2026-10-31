@@ -21,6 +21,7 @@ export const STADIUM_PICTURE_KEYS = [
 	"trophyURL",
 	"endZoneURL",
 	"secondaryLogoURL",
+	"fieldURL",
 ] as const satisfies readonly (keyof StadiumLook)[];
 
 export const cleanStadium = (raw: unknown): StadiumLook | undefined => {
@@ -68,6 +69,9 @@ export const cleanStadium = (raw: unknown): StadiumLook | undefined => {
 	}
 	if (r.midLogo === false) {
 		out.midLogo = false;
+	}
+	if (r.fieldLines === "picture") {
+		out.fieldLines = "picture";
 	}
 	if (r.adjust && typeof r.adjust === "object") {
 		const a = r.adjust as Record<string, unknown>;

@@ -5,6 +5,7 @@ import type {
 import { makeCourtRng } from "../courtRng.ts";
 import { luminance, mix, shade } from "./color.ts";
 import {
+	BORDER,
 	END_ROOM,
 	END_ZONE,
 	FIELD_L,
@@ -179,6 +180,15 @@ export const END_ZONE_PLANES: [TexturedPlane, TexturedPlane] = [
 	groundPlane(0, 0, END_ZONE, FIELD_W, END_PPF),
 	groundPlane(GOAL_R, 0, END_ZONE, FIELD_W, END_PPF),
 ];
+// A team's picture of its whole field (see StadiumLook's fieldURL): the
+// field and its white border, the picture stretched to it.
+export const FIELD_PICTURE_PLANE = groundPlane(
+	-BORDER,
+	-BORDER,
+	FIELD_L + 2 * BORDER,
+	FIELD_W + 2 * BORDER,
+	1,
+);
 const LOGO_FT = 30;
 const LOGO_PPF = 8;
 export const MID_LOGO_PLANE = groundPlane(

@@ -177,8 +177,9 @@ const SUN_LEAN = 0.4;
 // A team's own picture across its end zones (and its secondary logo), read
 // this big (px, its longer side): a logo's size would blur painted that big.
 const END_ZONE_PX = 512;
-// And a decal (see paintDecals).
+// And a decal (see paintDecals), and a picture of the whole field.
 const DECAL_PX = 512;
+const FIELD_PX = 2400;
 // Screen ms the picture takes to come up out of black into the next of the
 // key plays (see keyPlays.ts).
 const KEY_DIP_MS = 320;
@@ -537,6 +538,7 @@ const Field3D = ({
 			HTMLCanvasElement?,
 			HTMLCanvasElement?,
 			HTMLCanvasElement?,
+			HTMLCanvasElement?,
 		]
 	>([]);
 	const awayLogo = away?.imgURL || away?.imgURLSmall;
@@ -546,6 +548,7 @@ const Field3D = ({
 	const awayEnd: string | undefined = away?.stadium?.endZoneURL;
 	const homeEnd: string | undefined = home?.stadium?.endZoneURL;
 	const secondURL: string | undefined = home?.stadium?.secondaryLogoURL;
+	const fieldURL: string | undefined = home?.stadium?.fieldURL;
 	useEffect(() => {
 		let alive = true;
 		void Promise.all([
@@ -553,6 +556,7 @@ const Field3D = ({
 			...[awayEnd, homeEnd, secondURL].map((url) =>
 				logoPicture(url, END_ZONE_PX),
 			),
+			logoPicture(fieldURL, FIELD_PX),
 		]).then((made) => {
 			if (alive) {
 				setLogos([
@@ -563,13 +567,23 @@ const Field3D = ({
 					made[4],
 					made[5],
 					made[6],
+					made[7],
 				]);
 			}
 		});
 		return () => {
 			alive = false;
 		};
-	}, [awayLogo, homeLogo, midURL, trophyURL, awayEnd, homeEnd, secondURL]);
+	}, [
+		awayLogo,
+		homeLogo,
+		midURL,
+		trophyURL,
+		awayEnd,
+		homeEnd,
+		secondURL,
+		fieldURL,
+	]);
 	// The league's decals for the game on the home field (see CourtDecal).
 	const decals: CourtDecalPlaced[] | undefined = home?.stadium?.decals;
 	const decalsKey = JSON.stringify(decals ?? null);
@@ -601,7 +615,10 @@ const Field3D = ({
 		const style = fieldStyleFor(h, a, boxScore?.neutralSite === true, venue);
 		const seed = String(gid ?? 0);
 		const mid = logos[1];
-		const midPicture = logos[2] ?? mid;
+		// (A picture of the whole field has its own midfield: the team logo
+		// goes on it only if asked for - and no trophy, which would bury it.)
+		const fieldPicture = logos[7];
+		const midPicture = logos[2] ?? (fieldPicture ? undefined : mid);
 		const midLogo = midPicture && h.stadium?.midLogo !== false;
 		// (The team's own moves and sizes for its logos: see StadiumLook.)
 		const own = h.stadium?.adjust;
@@ -626,7 +643,13 @@ const Field3D = ({
 			],
 			numbers: paintNumbers(style),
 			...(midLogo && !own?.logo ? { logo: paintMidLogo(midPicture) } : {}),
-			...(finals
+			...(fieldPicture
+				? {
+						field: fieldPicture,
+						ownLines: h.stadium?.fieldLines === "picture",
+					}
+				: {}),
+			...(finals && !fieldPicture
 				? {
 						trophy: logos[3]
 							? paintTrophyPicture(logos[3])

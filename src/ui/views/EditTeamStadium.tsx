@@ -23,6 +23,11 @@ import {
 	STADIUM_PICTURE_KEYS,
 } from "../../common/stadiumLook.ts";
 import { toHex } from "./LiveGame/field3d/color.ts";
+import {
+	FIELD_TEMPLATE_H,
+	FIELD_TEMPLATE_W,
+	fieldTemplate,
+} from "./fieldTemplate.ts";
 import { fieldStyleFor } from "./LiveGame/field3d/fieldPaint.ts";
 import { fieldKit } from "./LiveGame/field3d/kit.ts";
 import { stadiumStyleFor } from "./LiveGame/field3d/stadium.ts";
@@ -184,6 +189,11 @@ const PictureField = ({
 // (How far a picture moves, feet: to the back of either end zone, and to
 // either sideline.)
 const FIELD_ROOM = { dx: 180, dy: 80 };
+// A whole-field picture: as big as the template, a JPEG to fit.
+const FIELD_UPLOAD = {
+	sides: [FIELD_TEMPLATE_W, 2400, 1920, 1536],
+	type: "image/jpeg",
+} as const;
 
 // A helmet color: the team's own pick until one is chosen - and, for a
 // stripe, none at all.
@@ -257,9 +267,12 @@ const EditTeamStadium = ({
 		picturesSaved ?? {},
 	);
 	const [uploaded, setUploaded] = useState<string[]>([]);
-	const upload = async (file: File) => {
+	const upload = async (
+		file: File,
+		options?: Parameters<typeof pictureFromFile>[1],
+	) => {
 		try {
-			const url = await pictureFromFile(file);
+			const url = await pictureFromFile(file, options);
 			const id = await toWorker("main", "storeCourtPicture", url);
 			setPictures((p) => ({ ...p, [id]: url }));
 			setUploaded((u) => [...u, id]);
@@ -464,91 +477,146 @@ const EditTeamStadium = ({
 					]}
 					onChange={(v) => setField("turf", v)}
 				/>
-				<HelmetColor
-					label="Field color"
-					value={stadium.turfColor}
-					fallback={fieldAuto("turfColor").turf}
-					onChange={(v) => setField("turfColor", v)}
+				<PictureField
+					label="Field picture"
+					url={stadium.fieldURL}
+					pictures={pictures}
+					onChange={(v) => {
+						setField("fieldURL", v);
+						if (v === undefined) {
+							setField("fieldLines", undefined);
+						}
+					}}
+					onUpload={(file) => upload(file, FIELD_UPLOAD)}
+					clear="None"
 				/>
-				<HelmetColor
-					label="Line color"
-					value={stadium.lineColor}
-					fallback={fieldAuto("lineColor").lines}
-					onChange={(v) => setField("lineColor", v)}
-				/>
+				<div className="d-flex align-items-center gap-3 mb-3">
+					{stadium.fieldURL ? (
+						<div className="form-check mb-0">
+							<input
+								type="checkbox"
+								className="form-check-input"
+								id="field-lines"
+								checked={stadium.fieldLines === "picture"}
+								onChange={(e) =>
+									setField(
+										"fieldLines",
+										e.target.checked ? "picture" : undefined,
+									)
+								}
+							/>
+							<label className="form-check-label" htmlFor="field-lines">
+								Lines from the picture
+							</label>
+						</div>
+					) : null}
+					<button
+						type="button"
+						className="btn btn-sm btn-light-bordered"
+						title={`${FIELD_TEMPLATE_W} \u00d7 ${FIELD_TEMPLATE_H}, 8 px per foot`}
+						onClick={() => {
+							const a = document.createElement("a");
+							a.download = "field-template.png";
+							a.href = fieldTemplate().toDataURL("image/png");
+							a.click();
+						}}
+					>
+						Download template
+					</button>
+				</div>
+				{stadium.fieldURL ? null : (
+					<HelmetColor
+						label="Field color"
+						value={stadium.turfColor}
+						fallback={fieldAuto("turfColor").turf}
+						onChange={(v) => setField("turfColor", v)}
+					/>
+				)}
+				{stadium.fieldLines === "picture" ? null : (
+					<HelmetColor
+						label="Line color"
+						value={stadium.lineColor}
+						fallback={fieldAuto("lineColor").lines}
+						onChange={(v) => setField("lineColor", v)}
+					/>
+				)}
 				<HelmetColor
 					label="Sideline color"
 					value={stadium.sidelineColor}
 					fallback={toHex(fieldAuto("sidelineColor").surround)}
 					onChange={(v) => setField("sidelineColor", v)}
 				/>
-				<Choice<"endZones">
-					label="End zones"
-					value={stadium.endZones}
-					options={[
-						["solid", "Team color"],
-						["green", "Green with name"],
-						["striped", "Striped"],
-					]}
-					onChange={(v) => setField("endZones", v)}
-				/>
-				<HelmetColor
-					label="End zone color"
-					value={stadium.endZoneColor}
-					fallback={colors[0]}
-					onChange={(v) => setField("endZoneColor", v)}
-				/>
-				<div className="mb-3">
-					<label className="form-label mb-1" htmlFor="end-zone-text">
-						End zone lettering
-					</label>
-					<div className="d-flex align-items-center gap-2">
-						<input
-							id="end-zone-text"
-							type="text"
-							className="form-control"
-							maxLength={END_ZONE_TEXT_MAX}
-							value={stadium.endZoneText ?? ""}
-							placeholder={fieldAuto("endZoneText").endZones[0].text}
-							disabled={stadium.endZoneText === ""}
-							onChange={(e) =>
-								setField(
-									"endZoneText",
-									e.target.value === "" ? undefined : e.target.value,
-								)
-							}
+				{stadium.fieldURL ? null : (
+					<>
+						<Choice<"endZones">
+							label="End zones"
+							value={stadium.endZones}
+							options={[
+								["solid", "Team color"],
+								["green", "Green with name"],
+								["striped", "Striped"],
+							]}
+							onChange={(v) => setField("endZones", v)}
 						/>
-						<button
-							type="button"
-							className="btn btn-sm btn-light-bordered"
-							onClick={() => setField("endZoneText", undefined)}
-							disabled={stadium.endZoneText === undefined}
-						>
-							Auto
-						</button>
-						<button
-							type="button"
-							className="btn btn-sm btn-light-bordered"
-							onClick={() => setField("endZoneText", "")}
-							disabled={stadium.endZoneText === ""}
-						>
-							None
-						</button>
-					</div>
-				</div>
-				<HelmetColor
-					label="Lettering color"
-					value={stadium.endZoneTextColor}
-					fallback={fieldAuto("endZoneTextColor").endZones[0].textColor}
-					onChange={(v) => setField("endZoneTextColor", v)}
-				/>
-				<PictureField
-					label="End zone picture"
-					url={stadium.endZoneURL}
-					pictures={pictures}
-					onChange={(v) => setField("endZoneURL", v)}
-					onUpload={upload}
-				/>
+						<HelmetColor
+							label="End zone color"
+							value={stadium.endZoneColor}
+							fallback={colors[0]}
+							onChange={(v) => setField("endZoneColor", v)}
+						/>
+						<div className="mb-3">
+							<label className="form-label mb-1" htmlFor="end-zone-text">
+								End zone lettering
+							</label>
+							<div className="d-flex align-items-center gap-2">
+								<input
+									id="end-zone-text"
+									type="text"
+									className="form-control"
+									maxLength={END_ZONE_TEXT_MAX}
+									value={stadium.endZoneText ?? ""}
+									placeholder={fieldAuto("endZoneText").endZones[0].text}
+									disabled={stadium.endZoneText === ""}
+									onChange={(e) =>
+										setField(
+											"endZoneText",
+											e.target.value === "" ? undefined : e.target.value,
+										)
+									}
+								/>
+								<button
+									type="button"
+									className="btn btn-sm btn-light-bordered"
+									onClick={() => setField("endZoneText", undefined)}
+									disabled={stadium.endZoneText === undefined}
+								>
+									Auto
+								</button>
+								<button
+									type="button"
+									className="btn btn-sm btn-light-bordered"
+									onClick={() => setField("endZoneText", "")}
+									disabled={stadium.endZoneText === ""}
+								>
+									None
+								</button>
+							</div>
+						</div>
+						<HelmetColor
+							label="Lettering color"
+							value={stadium.endZoneTextColor}
+							fallback={fieldAuto("endZoneTextColor").endZones[0].textColor}
+							onChange={(v) => setField("endZoneTextColor", v)}
+						/>
+						<PictureField
+							label="End zone picture"
+							url={stadium.endZoneURL}
+							pictures={pictures}
+							onChange={(v) => setField("endZoneURL", v)}
+							onUpload={upload}
+						/>
+					</>
+				)}
 				<div className="form-check mb-3">
 					<input
 						type="checkbox"

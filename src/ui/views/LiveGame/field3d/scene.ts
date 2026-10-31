@@ -7,6 +7,7 @@ import { drawMarks, type Mark } from "./marks.ts";
 import { drawPools, type Pool } from "./pools.ts";
 import {
 	END_ZONE_PLANES,
+	FIELD_PICTURE_PLANE,
 	MID_LOGO_PLANE,
 	MID_TROPHY_PLANE,
 	TURF_PLANE,
@@ -61,6 +62,10 @@ export type FieldPaint = {
 	trophy?: HTMLCanvasElement;
 	// The league's decals for the game (see paintDecals).
 	decals?: DecalMark[];
+	// The team's picture of its whole field, laid over the turf in place of
+	// the end zones' paint - and with its own lines, maybe (see StadiumLook).
+	field?: HTMLCanvasElement;
+	ownLines?: boolean;
 	stadium: StadiumPaint;
 };
 
@@ -275,8 +280,12 @@ export const drawFieldFrame = (f: FieldFrame) => {
 	drawTexturedPlane(ctx, cam, TUNNEL, st.tunnel, 4, 2);
 	// The ground: the turf, the end zones' paint, the logo, the numbers.
 	drawTexturedPlane(ctx, cam, TURF_PLANE, paint.turf, 32, 16);
-	drawTexturedPlane(ctx, cam, END_ZONE_PLANES[0], paint.endZones[0], 4, 16);
-	drawTexturedPlane(ctx, cam, END_ZONE_PLANES[1], paint.endZones[1], 4, 16);
+	if (paint.field) {
+		drawTexturedPlane(ctx, cam, FIELD_PICTURE_PLANE, paint.field, 32, 16);
+	} else {
+		drawTexturedPlane(ctx, cam, END_ZONE_PLANES[0], paint.endZones[0], 4, 16);
+		drawTexturedPlane(ctx, cam, END_ZONE_PLANES[1], paint.endZones[1], 4, 16);
+	}
 	if (paint.trophy) {
 		drawTexturedPlane(ctx, cam, MID_TROPHY_PLANE, paint.trophy, 8, 12);
 	} else if (paint.logo) {
@@ -286,10 +295,12 @@ export const drawFieldFrame = (f: FieldFrame) => {
 		const cells = Math.min(24, Math.max(4, Math.ceil(d.plane.w / 32)));
 		drawTexturedPlane(ctx, cam, d.plane, d.img, cells, cells);
 	}
-	for (const n of paint.numbers) {
-		drawTexturedPlane(ctx, cam, n.plane, n.img, 2, 1);
+	if (!paint.ownLines) {
+		for (const n of paint.numbers) {
+			drawTexturedPlane(ctx, cam, n.plane, n.img, 2, 1);
+		}
 	}
-	drawFieldLines(ctx, cam, paint.style.lines);
+	drawFieldLines(ctx, cam, paint.style.lines, !paint.ownLines);
 	if (st.style.shadow) {
 		drawShadow(ctx, cam, st.style.shadow);
 	}

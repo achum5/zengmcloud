@@ -3145,6 +3145,14 @@ export type StadiumLook = {
 	// A logo of its own on the field in each half, at the 25-yard lines (the
 	// 3D court's secondary logo).
 	secondaryLogoURL?: string;
+	// A picture of the whole field seen from above - end line to end line,
+	// sideline to sideline, and the white border round it (see the stadium
+	// page's template) - laid down in place of the field painted from the
+	// settings above: turf, end zones and logos all as pictured (the 3D
+	// court's floor picture).
+	fieldURL?: string;
+	// The field picture has its own lines: the game paints none on it.
+	fieldLines?: "picture";
 	// Those two moved, sized, turned and faded from where they sit (as a
 	// court's pictures are).
 	adjust?: Partial<Record<"logo" | "secondary", CourtImageAdjust>>;
