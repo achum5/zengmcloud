@@ -1005,6 +1005,10 @@ const Field3D = ({
 					return;
 				}
 				const shaded = inShadow(shadow, st);
+				// (Only the men out on the field cast theirs: the crowds along
+				// the sidelines would cost a frame more than they show.)
+				const casts =
+					i >= moment.players.length || (shaded && !lit) ? undefined : sun;
 				const up = drawnUp(steadied(st, turns.current, sprites.fine === true));
 				men.push({
 					st: up,
@@ -1026,7 +1030,7 @@ const Field3D = ({
 							1,
 							sprites,
 							shaded,
-							shaded && !lit ? undefined : sun,
+							casts,
 						);
 					},
 				});
