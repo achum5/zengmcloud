@@ -272,6 +272,12 @@ const EditTeamStadium = ({
 					fallback={fieldAuto("lineColor").lines}
 					onChange={(v) => setField("lineColor", v)}
 				/>
+				<HelmetColor
+					label="Sideline color"
+					value={stadium.sidelineColor}
+					fallback={toHex(fieldAuto("sidelineColor").surround)}
+					onChange={(v) => setField("sidelineColor", v)}
+				/>
 				<Choice<"endZones">
 					label="End zones"
 					value={stadium.endZones}

@@ -139,7 +139,9 @@ export const fieldStyleFor = (
 		stripe: grass ? 0.075 : 0.04,
 		grain: grass ? 14 : 7,
 		lines: paint,
-		surround: own ? shade(own, -0.12) : grass ? "#356b2d" : "#2b7f38",
+		surround:
+			home?.stadium?.sidelineColor ??
+			(own ? shade(own, -0.12) : grass ? "#356b2d" : "#2b7f38"),
 		endZones: [left, right],
 		numbers: paint,
 	};

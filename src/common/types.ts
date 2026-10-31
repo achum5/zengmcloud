@@ -3124,6 +3124,9 @@ export type StadiumLook = {
 	// numbers; left out, white (or, on a field too light for it, black).
 	turfColor?: string;
 	lineColor?: string;
+	// The ground round the field, past its white border; left out, the
+	// field's own, a shade darker.
+	sidelineColor?: string;
 	// The end zones' color (on green ones, the letters'), what is lettered
 	// across them ("" for nothing) and in what color - left out, the team's
 	// own colors and name.

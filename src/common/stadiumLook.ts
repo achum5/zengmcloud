@@ -34,6 +34,7 @@ export const cleanStadium = (raw: unknown): StadiumLook | undefined => {
 	for (const key of [
 		"turfColor",
 		"lineColor",
+		"sidelineColor",
 		"endZoneColor",
 		"endZoneTextColor",
 		"seatColor",
