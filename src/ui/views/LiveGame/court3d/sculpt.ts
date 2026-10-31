@@ -729,6 +729,9 @@ const BEND_LO = [-0.3, 0, -0.15];
 // The share of a bounce, at its top, the ball is in his hand on his dribble
 // - from as it comes up into it to as it leaves.
 const DRIBBLE_TOUCH = 0.12;
+// A ball not his, this near (of his height, past its own surface) the middle
+// of his hand: his hand on it.
+const MEET_REACH = 0.05;
 // Fingertips this wide (pixels, the radius) and more show their nails.
 const NAIL_PX = 2.2;
 const BEND_HI = [1.6, 1.9, 1.3];
@@ -1038,8 +1041,27 @@ const build = (
 		// to - and a shooter's, the ball gone off it, loose off his snapped
 		// wrist.)
 		const flick = which === "R" && gripOf(st.anim) === "shot" && q.free > 0.5;
+		const wrist = limb.end;
+		const tip = limb.tip ?? limb.end;
+		let h = lenV(subV(tip, wrist)) > 1e-3 ? unit(subV(tip, wrist)) : foreDir;
+		// A ball he isn't holding, at this hand - a rebound, a tip, a block,
+		// a pass come into his hands, another man's ball he has a hand on: his
+		// palm onto it, his fingers laid on it where they reach it.
+		const by = st.ballBy;
+		const loose =
+			!held && !dribbling && by
+				? v3(
+						by.x * Math.cos(st.yaw) + by.y * Math.sin(st.yaw),
+						by.x * Math.sin(st.yaw) - by.y * Math.cos(st.yaw),
+						by.z,
+					)
+				: undefined;
+		const meets =
+			loose !== undefined &&
+			lenV(subV(loose, addV(wrist, h, H * 0.062))) <
+				HELD_BALL_R + H * MEET_REACH;
 		const grip: Grip =
-			touch > 0.3
+			touch > 0.3 || meets
 				? "ball"
 				: dribbling
 					? "dribble"
@@ -1052,10 +1074,9 @@ const build = (
 				? held.ball
 				: touch > 0.3
 					? underPalm(limb)
-					: undefined;
-		const wrist = limb.end;
-		const tip = limb.tip ?? limb.end;
-		let h = lenV(subV(tip, wrist)) > 1e-3 ? unit(subV(tip, wrist)) : foreDir;
+					: meets
+						? loose
+						: undefined;
 		// Which way the palm faces: hanging, in toward his middle and a little
 		// back - the back of the hand turned out to the camera, the way a
 		// cartoon shows it; raised, toward what is in front of him; on the

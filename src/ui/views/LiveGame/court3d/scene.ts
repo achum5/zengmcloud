@@ -210,8 +210,24 @@ export const momentAt = (
 			);
 		}
 	}
-	return { t, players, ball: evalBall(tl, t, bodyFor) };
+	const ball = evalBall(tl, t, bodyFor);
+	// (Whoever has his hands near it, not holding it, has them on it.)
+	for (const p of players) {
+		const dz = ball.z - p.z;
+		if (
+			p.pid !== ball.holder &&
+			dz > BALL_BY_LOW &&
+			Math.hypot(ball.x - p.x, ball.y - p.y) < BALL_BY_REACH
+		) {
+			p.ballBy = { x: ball.x - p.x, y: ball.y - p.y, z: dz };
+		}
+	}
+	return { t, players, ball };
 };
+// How near him the ball is (feet, across the floor), and how far up off his
+// feet at the least, for his hands to meet it.
+const BALL_BY_REACH = 3.2;
+const BALL_BY_LOW = 1.2;
 
 // RUN THROUGH QUICK. Many times real speed, a frame of the picture is a good
 // part of a stride on from the last - each one a different moment of it, his

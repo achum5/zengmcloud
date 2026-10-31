@@ -148,6 +148,10 @@ export type PlayerState = {
 	stride?: Stride;
 	// His hands up as a target for a pass on its way to him (0 to 1).
 	target?: number;
+	// A ball not in his hands but near them - in the air, loose, or in
+	// another man's - from where he stands (feet; up, from his feet as he
+	// is off the floor): his hands meet it (see sculpt.ts).
+	ballBy?: { x: number; y: number; z: number };
 	// Up for a dunk: the jump a typical player makes to throw it down (feet),
 	// the rim, and how much his hands are on it (0 to 1). His own build
 	// decides how high he really goes - see withBody.
