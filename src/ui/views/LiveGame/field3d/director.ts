@@ -56,6 +56,7 @@ import { holderAt, replayFor, type FieldReplay } from "./replays.ts";
 import { crewClear, stageTimeout } from "./timeout.ts";
 import { cheerShotFor, type CheerShot } from "./cheerleaders.ts";
 import { crowdShotFor, type CrowdShot } from "./crowd.ts";
+import type { Shout } from "./stadium.ts";
 import { measureTimes, stageMeasure } from "./measure.ts";
 import { HURT_MOST, MEDICS, stageHurt } from "./hurt.ts";
 import {
@@ -259,8 +260,15 @@ export type Play = {
 	gainX?: number;
 };
 
-// (Held up this long, if not as long as a play's.)
-export type Cheer = { t: number; side: Side; big: boolean; hold?: number };
+// (Held up this long, if not as long as a play's - and what for, if the
+// boards make a shout of it: see crowd.ts boardAt.)
+export type Cheer = {
+	t: number;
+	side: Side;
+	big: boolean;
+	hold?: number;
+	what?: Shout;
+};
 
 export type Beat = {
 	i: number;
@@ -2161,19 +2169,37 @@ class Director {
 			const yds = typeof e.yds === "number" ? e.yds : 0;
 			if (e.td === true && RESULTS.has(e.type)) {
 				const at = Math.max(t, whistle);
-				return { t: at, side: sideAt(at) ?? offense, big: true };
+				return {
+					t: at,
+					side: sideAt(at) ?? offense,
+					big: true,
+					what: "touchdown",
+				};
 			}
 			if (e.safety === true && RESULTS.has(e.type)) {
-				return { t: Math.max(t, whistle), side: other, big: true };
+				return {
+					t: Math.max(t, whistle),
+					side: other,
+					big: true,
+					what: "safety",
+				};
 			}
 			if ((e.type === "fieldGoal" || e.type === "extraPoint") && e.made) {
-				cheer ??= { t, side: offense, big: e.type === "fieldGoal" };
+				cheer ??=
+					e.type === "fieldGoal"
+						? { t, side: offense, big: true, what: "fieldGoal" }
+						: { t, side: offense, big: false };
 			} else if (e.type === "interception") {
-				cheer ??= { t, side: other, big: true };
+				cheer ??= { t, side: other, big: true, what: "turnover" };
 			} else if (e.type === "fumbleRecovery" && e.lost === true) {
-				cheer ??= { t, side: sideAt(t + 1) ?? other, big: true };
+				cheer ??= {
+					t,
+					side: sideAt(t + 1) ?? other,
+					big: true,
+					what: "turnover",
+				};
 			} else if (e.type === "sack") {
-				cheer ??= { t: whistle, side: other, big: false };
+				cheer ??= { t: whistle, side: other, big: false, what: "sack" };
 			} else if ((e.type === "run" || e.type === "passComplete") && yds >= 20) {
 				cheer ??= { t: whistle, side: offense, big: false };
 			} else if (
@@ -2185,7 +2211,12 @@ class Director {
 		}
 		// (Stopped short: the defense's.)
 		if (stopped) {
-			cheer ??= { t: whistle, side: other, big: stopped === "fourth" };
+			cheer ??= {
+				t: whistle,
+				side: other,
+				big: stopped === "fourth",
+				what: "stop",
+			};
 		}
 		return cheer;
 	}

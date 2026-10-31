@@ -38,6 +38,7 @@ import {
 	ROOF,
 	TUNNEL,
 	WALL,
+	type BoardScreen,
 	type StadiumPaint,
 } from "./stadium.ts";
 
@@ -60,8 +61,10 @@ export type FieldFrame = {
 	ctx: CanvasRenderingContext2D;
 	cam: Camera;
 	paint: FieldPaint;
-	// The crowd on its feet, and how full the stands are (see crowd.ts).
+	// The crowd on its feet, and how full the stands are; what the boards
+	// show (see crowd.ts).
 	crowd?: Crowd;
+	board?: BoardScreen;
 	// The broadcast's lines on the turf (see marks.ts).
 	marks?: Mark[];
 	// The shadows under the men and the ball (see pools.ts).
@@ -220,7 +223,8 @@ export const drawFieldFrame = (f: FieldFrame) => {
 	// club level, the lower bowl, the wall.
 	drawTexturedPlane(ctx, cam, RIM, st.rim, 24, 1);
 	drawTexturedPlane(ctx, cam, UPPER, st.upper, 24, 6);
-	drawTexturedPlane(ctx, cam, CLUB, st.club, 24, 1);
+	const board = f.board ?? "name";
+	drawTexturedPlane(ctx, cam, CLUB, st.screen("club", board), 24, 1);
 	// (Fewer in their seats: the half-empty stands, the full ones over them
 	// as faint as the seats are empty - and as few of them up.)
 	const crowd = f.crowd ?? { up: 0, wave: false, full: 1 };
@@ -247,9 +251,16 @@ export const drawFieldFrame = (f: FieldFrame) => {
 			16,
 			8,
 		);
-		drawTexturedPlane(ctx, cam, END_WALLS[side], st.endWall, 16, 1);
+		drawTexturedPlane(
+			ctx,
+			cam,
+			END_WALLS[side],
+			st.screen("end", board),
+			16,
+			1,
+		);
 	}
-	drawTexturedPlane(ctx, cam, WALL, st.wall, 24, 1);
+	drawTexturedPlane(ctx, cam, WALL, st.screen("wall", board), 24, 1);
 	drawTexturedPlane(ctx, cam, TUNNEL, st.tunnel, 4, 2);
 	// The ground: the turf, the end zones' paint, the logo, the numbers.
 	drawTexturedPlane(ctx, cam, TURF_PLANE, paint.turf, 32, 16);

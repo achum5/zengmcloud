@@ -1,6 +1,6 @@
 import { assert, beforeAll, test } from "vitest";
 import { aimFor, onCrowd } from "./aim.ts";
-import { crowdAt } from "./crowd.ts";
+import { boardAt, crowdAt } from "./crowd.ts";
 import { compileField, type FieldTimeline } from "./director.ts";
 import { SIDE_ROOM } from "./geometry.ts";
 import { simGames } from "./testGames.ts";
@@ -152,4 +152,37 @@ test("the look round the stadium between quarters", () => {
 			assert.isAbove(b.x, a.x + 40, `${p.i}`);
 		}
 	}
+});
+
+// The boards: DEFENSE, blinking, while the visitors have the ball from
+// scrimmage; a shout for the home side's big play; the team's name once the
+// game is over.
+test("what the boards show", () => {
+	let defense = 0;
+	let shouts = 0;
+	for (const tl of tls) {
+		for (const p of tl.plays) {
+			if (p.offense === 0 && (p.kind === "pass" || p.kind === "run")) {
+				defense += 1;
+				const blink = new Set(
+					[0, 420, 840].map((ms) => boardAt(tl, p.snap - 1000 + ms)),
+				);
+				assert.sameMembers([...blink], ["defense", "defense2"], `${p.i}`);
+			}
+			const c = p.cheer;
+			if (c?.what && !p.postgame) {
+				const at = boardAt(tl, c.t + 500);
+				if (c.side === 1) {
+					shouts += 1;
+					assert.strictEqual(at, c.what, `${p.i}`);
+				} else {
+					assert.notStrictEqual(at, c.what, `${p.i}`);
+				}
+			}
+		}
+		const post = tl.plays.at(-1)!.postgame!;
+		assert.strictEqual(boardAt(tl, post.from + 4000), "name");
+	}
+	assert.isAbove(defense, 50);
+	assert.isAbove(shouts, 3);
 });

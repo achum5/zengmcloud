@@ -64,7 +64,7 @@ import { chainCrewFor } from "./chains.ts";
 import { cheerleadersAt, cheerleadersFor } from "./cheerleaders.ts";
 import { confettiFor } from "./confetti.ts";
 import { crewFor } from "./crew.ts";
-import { crowdAt } from "./crowd.ts";
+import { boardAt, crowdAt } from "./crowd.ts";
 import { marksAt } from "./marks.ts";
 import {
 	chainCrewLook,
@@ -1060,6 +1060,7 @@ const Field3D = ({
 				items,
 				pools: poolsOf(standing, moment.ball?.at),
 				crowd: crowdAt(tl, moment.t, now),
+				board: boardAt(tl, moment.t),
 				...(confetti ? { confetti: { of: confetti, t: moment.t } } : {}),
 				flashes: flashesAt(photographersRef.current, moment),
 				...(replay ? {} : { marks: marksAt(moment.play, moment.t) }),

@@ -1,5 +1,5 @@
 import { makeCourtRng } from "../courtRng.ts";
-import { shade } from "./color.ts";
+import { luminance, shade } from "./color.ts";
 import type { TexturedPlane } from "../court3d/planes.ts";
 import type { FieldTeam } from "./fieldPaint.ts";
 import {
@@ -452,34 +452,89 @@ const paintSeating = ({
 
 // A long LED board: the home team's name and colors repeated along it, a
 // strip of its second color top and bottom.
+// WHAT THE BOARDS SHOW (the 3D court's: see court3d/arena.ts paintScreen):
+// the team's name, the chants, DEFENSE (blinking, one screen and the
+// other), and a shout for a big play of the home side's (see crowd.ts
+// boardAt).
+export const SHOUTS = {
+	touchdown: "TOUCHDOWN!",
+	fieldGoal: "IT'S GOOD!",
+	turnover: "TURNOVER!",
+	sack: "SACK!",
+	safety: "SAFETY!",
+	stop: "STOPPED!",
+} as const;
+export type Shout = keyof typeof SHOUTS;
+export type BoardScreen =
+	| "name"
+	| "letsGo"
+	| "noise"
+	| "defense"
+	| "defense2"
+	| Shout;
+// (Lettering that reads on it: white, or near-black on a light one.)
+const inkOn = (bg: string) => (luminance(bg) > 0.62 ? "#111216" : "#f6f6f6");
+
 const paintBoard = (
 	w: number,
 	h: number,
 	ppf: number,
 	home: FieldTeam | undefined,
 	words: string[],
+	screen: BoardScreen = "name",
 ) => {
 	const c = canvasOf(w, h);
 	const g = c.getContext("2d")!;
 	const c0 = teamColor(home, 0, "#8c1d40");
 	const c1 = teamColor(home, 1, "#f2c14e");
+	const band = shade(c0, -0.1);
+	const dark = "#15161b";
 	g.fillStyle = "#0a0b0f";
 	g.fillRect(0, 0, w, h);
-	g.fillStyle = shade(c0, -0.1);
-	g.fillRect(0, h * 0.12, w, h * 0.76);
-	g.fillStyle = c1;
-	g.fillRect(0, h * 0.06, w, h * 0.06);
-	g.fillRect(0, h * 0.88, w, h * 0.06);
+	// Panel by panel along it: what each says, on what.
+	const name = words.at(-1) ?? "";
+	const chant = screen === "letsGo" || screen === "noise";
+	const say =
+		screen === "name"
+			? words
+			: screen === "letsGo"
+				? [`LET'S GO ${name}`]
+				: screen === "noise"
+					? ["MAKE SOME NOISE"]
+					: screen === "defense" || screen === "defense2"
+						? ["DEFENSE"]
+						: [SHOUTS[screen]];
+	const bgOf = (i: number) =>
+		screen === "defense" || screen === "defense2"
+			? (screen === "defense") === (i % 2 === 0)
+				? band
+				: dark
+			: screen in SHOUTS
+				? i % 2
+					? c1
+					: band
+				: band;
+	const spacing = (screen === "name" ? 70 : chant ? 90 : 56) * ppf;
 	g.font = `900 ${h * 0.5}px "Arial Black", "Helvetica Neue", Arial, sans-serif`;
 	g.textAlign = "center";
 	g.textBaseline = "middle";
-	g.fillStyle = "#f6f6f6";
-	const spacing = 70 * ppf;
 	let i = 0;
-	for (let x = spacing / 2; x < w; x += spacing) {
-		g.fillText(words[i % words.length]!, x, h * 0.52, spacing * 0.86);
+	for (let x = 0; x < w; x += spacing) {
+		const bg = bgOf(i);
+		g.fillStyle = bg;
+		g.fillRect(x, h * 0.12, spacing + 1, h * 0.76);
+		g.fillStyle =
+			bg === dark
+				? c1
+				: screen === "noise" && luminance(c1) > 0.3
+					? c1
+					: inkOn(bg);
+		g.fillText(say[i % say.length]!, x + spacing / 2, h * 0.52, spacing * 0.86);
 		i += 1;
 	}
+	g.fillStyle = c1;
+	g.fillRect(0, h * 0.06, w, h * 0.06);
+	g.fillRect(0, h * 0.88, w, h * 0.06);
 	return c;
 };
 
@@ -687,7 +742,11 @@ export type StadiumPaint = {
 	board: HTMLCanvasElement;
 	tunnel: HTMLCanvasElement;
 	roof?: HTMLCanvasElement;
+	// The wall's, the club level's and the end walls' boards on another
+	// screen than the name (painted the first time each is up).
+	screen: (set: BoardSet, screen: BoardScreen) => HTMLCanvasElement;
 };
+export type BoardSet = "wall" | "club" | "end";
 
 export const paintStadium = (
 	home: FieldTeam | undefined,
@@ -705,6 +764,16 @@ export const paintStadium = (
 	const name = (home?.name ?? home?.abbrev ?? "").toUpperCase();
 	const region = (home?.region ?? "").toUpperCase();
 	const words = region ? [region, name] : [name];
+	const sizes: Record<BoardSet, [number, number, number]> = {
+		wall: [WALL.w, WALL.h, WALL.w / (X1 - X0)],
+		club: [CLUB.w, CLUB.h, CLUB.w / (X1 - X0)],
+		end: [END_WALLS[0].w, END_WALLS[0].h, END_WALLS[0].w / (END_Y1 - END_Y0)],
+	};
+	const boardOf = (set: BoardSet, screen: BoardScreen = "name") => {
+		const [w, h, ppf] = sizes[set];
+		return paintBoard(w, h, ppf, home, words, screen);
+	};
+	const screens = new Map<string, HTMLCanvasElement>();
 	const seating = (
 		P: TexturedPlane,
 		key: string,
@@ -734,21 +803,18 @@ export const paintStadium = (
 	const endStands = ([0, 1, 2] as const).map((up) =>
 		seating(END_STANDS[0], "end", up, 0.45, false),
 	) as [HTMLCanvasElement, HTMLCanvasElement, HTMLCanvasElement];
+	const wall = boardOf("wall");
+	const club = boardOf("club");
+	const endWall = boardOf("end");
 	return {
 		style,
-		wall: paintBoard(WALL.w, WALL.h, WALL.w / (X1 - X0), home, words),
+		wall,
 		lower,
 		lowerSparse: seating(LOWER, "lower", 0, 0.35, true, fill * 0.5),
-		club: paintBoard(CLUB.w, CLUB.h, CLUB.w / (X1 - X0), home, words),
+		club,
 		upper: seating(UPPER, "upper", 0, 0.7, true),
 		rim: paintRim(RIM.w, RIM.h, RIM.w / (X1 - X0), style),
-		endWall: paintBoard(
-			END_WALLS[0].w,
-			END_WALLS[0].h,
-			END_WALLS[0].w / (END_Y1 - END_Y0),
-			home,
-			words,
-		),
+		endWall,
 		endStands,
 		endSparse: seating(END_STANDS[0], "end", 0, 0.45, false, fill * 0.5),
 		board: paintVideoBoard(END_BOARDS[0].w, END_BOARDS[0].h, home, logo),
@@ -763,6 +829,18 @@ export const paintStadium = (
 		...(style.roof === "dome"
 			? { roof: paintRoof(ROOF.w, ROOF.h, ROOF.w / (X1 - X0), seed) }
 			: {}),
+		screen: (set, screen) => {
+			if (screen === "name") {
+				return set === "wall" ? wall : set === "club" ? club : endWall;
+			}
+			const key = `${set}|${screen}`;
+			let got = screens.get(key);
+			if (!got) {
+				got = boardOf(set, screen);
+				screens.set(key, got);
+			}
+			return got;
+		},
 	};
 };
 

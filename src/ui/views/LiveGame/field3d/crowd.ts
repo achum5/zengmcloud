@@ -1,6 +1,7 @@
 import type { FieldTimeline, Play } from "./director.ts";
 import { playAt } from "./evaluate.ts";
 import type { Side } from "./geometry.ts";
+import type { BoardScreen, Shout } from "./stadium.ts";
 
 // THE CROWD ON ITS FEET: up for a big play of the home team's (and for the
 // team out of its tunnel before the game), arms going -
@@ -22,7 +23,9 @@ const ROAD = 0.3;
 export const cheerAt = (
 	tl: FieldTimeline,
 	t: number,
-): { side: Side; big: boolean; level: number; since: number } | undefined => {
+):
+	| { side: Side; big: boolean; level: number; since: number; what?: Shout }
+	| undefined => {
 	const play = playAt(tl, t);
 	const k = play ? tl.plays.indexOf(play) : -1;
 	let out: ReturnType<typeof cheerAt>;
@@ -40,7 +43,13 @@ export const cheerAt = (
 		const level =
 			e < RISE ? e / RISE : e < hold ? 1 : Math.max(0, 1 - (e - hold) / FALL);
 		if (level > 0 && (!out || level > out.level)) {
-			out = { side: c.side, big: c.big, level, since: e };
+			out = {
+				side: c.side,
+				big: c.big,
+				level,
+				since: e,
+				...(c.what ? { what: c.what } : {}),
+			};
 		}
 	}
 	return out;
@@ -159,4 +168,36 @@ export const crowdShotFor = (
 const shotUp = (play: Play | undefined, t: number): number => {
 	const shot = play?.timeout?.crowd;
 	return shot && t >= shot.cut ? Math.min(1, (t - shot.cut) / SHOT_UP) : 0;
+};
+
+// WHAT THE BOARDS SHOW (the 3D court's: see court3d/scene.ts boardAt): a
+// shout for the home side's big play, DEFENSE (blinking) while the visitors
+// have the ball from scrimmage, LET'S GO and MAKE SOME NOISE in turn with
+// the home team's ball in crunch time; otherwise the team and the chants in
+// turn - and once the game is over, the team alone.
+const SHOUT_MS = 3200;
+const BLINK_MS = 420;
+const CHANT_MS = 2600;
+const AMBIENT: BoardScreen[] = ["name", "letsGo", "name", "noise"];
+const AMBIENT_MS = 8000;
+const SCRIMMAGE = new Set(["pass", "run", "none", "kneel"]);
+
+export const boardAt = (tl: FieldTimeline, t: number): BoardScreen => {
+	const c = cheerAt(tl, t);
+	if (c?.side === 1 && c.what && c.since < SHOUT_MS) {
+		return c.what;
+	}
+	const play = playAt(tl, t);
+	if (play?.postgame && t >= play.postgame.from) {
+		return "name";
+	}
+	if (play && t < play.whistle && SCRIMMAGE.has(play.kind)) {
+		if (play.offense === 0) {
+			return Math.floor(t / BLINK_MS) % 2 ? "defense2" : "defense";
+		}
+		if ((play.tense ?? 0) >= 0.5) {
+			return Math.floor(t / CHANT_MS) % 2 ? "letsGo" : "noise";
+		}
+	}
+	return AMBIENT[Math.floor(t / AMBIENT_MS) % AMBIENT.length]!;
 };
