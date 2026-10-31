@@ -51,6 +51,16 @@ const ON_BACK = new Set<Move>(["supine", "hurt"]);
 const FALLING_FRONT = new Set<Move>(["tackled", "dive"]);
 const FALLING_BACK = new Set<Move>(["tackledBack"]);
 const DOWN_FROM = 0.6;
+// The ball after the whistle - held out in a man's hands, tossed down,
+// bouncing lower than this (feet) - kept this far off (feet) by anybody on
+// his feet, not walked through.
+const BALL_LOW = 6.5;
+const BALL_APART = 1.4;
+// (Held out in his hands, this far in front of him, feet - and kept this
+// far off; and as far, on the turf.)
+const HANDS_OUT = 2;
+const HANDS_APART = 1;
+const TURF_APART = 1;
 // The man the ball comes to, left where he is from this long (ms) before
 // it is his; the man it leaves, until this long after.
 const GATHER_MS = 400;
@@ -161,6 +171,97 @@ export const keepApart = (play: Play): Map<number, Sep[]> => {
 		}
 		return out;
 	});
+	// (Where the ball is after the whistle - held out in a man's hands in
+	// front of him (off where he is), tossed down low, bouncing: NaN,
+	// nowhere - and whose it is there or is coming to be, not kept off it.)
+	const ballX = new Float32Array(n).fill(Number.NaN);
+	const ballY = new Float32Array(n);
+	const ballR = new Float32Array(n);
+	const ballOn = new Int16Array(n).fill(-1);
+	const ballOf = new Int16Array(n).fill(-1);
+	const ballTo = new Int16Array(n).fill(-1);
+	// (Each man's place among them, by his pid.)
+	const index = new Map<number, number>();
+	men.forEach((m, i) => {
+		if (!index.has(m.pid)) {
+			index.set(m.pid, i);
+		}
+	});
+	const whose = (b: (typeof play.ball)[number] | undefined) =>
+		b?.kind === "held" ? (index.get(b.pid) ?? -1) : -1;
+	play.ball.forEach((b, k) => {
+		const end = play.ball[k + 1]?.t0 ?? play.t1;
+		if (b.kind === "held") {
+			const i = whose(b);
+			if (i < 0 || end <= play.whistle) {
+				return;
+			}
+			const lo = Math.max(
+				0,
+				Math.ceil((Math.max(b.t0, play.whistle) - t0) / SEP_MS),
+			);
+			const hi = Math.min(n - 1, Math.floor((end - t0) / SEP_MS));
+			const to = whose(play.ball[k + 1]);
+			const legs = men[i]!.legs;
+			const ks = tracks[i]!.k;
+			let yaw = Number.NaN;
+			for (let s = lo; s <= hi; s++) {
+				const l = legs[ks[s]!]!;
+				const goes = l.to.x !== l.from.x || l.to.y !== l.from.y;
+				yaw =
+					l.yaw ??
+					(goes ? Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x) : yaw);
+				if (
+					l.ball !== "hands" ||
+					Number.isNaN(yaw) ||
+					!Number.isNaN(lie[i]![s]!)
+				) {
+					continue;
+				}
+				ballX[s] = Math.cos(yaw) * HANDS_OUT;
+				ballY[s] = Math.sin(yaw) * HANDS_OUT;
+				ballR[s] = HANDS_APART;
+				ballOn[s] = i;
+				ballOf[s] = i;
+				ballTo[s] = to;
+			}
+			return;
+		}
+		if (b.kind === "spot") {
+			if (b.stood || end <= play.whistle) {
+				return;
+			}
+			const lo = Math.max(
+				0,
+				Math.ceil((Math.max(b.t0, play.whistle) - t0) / SEP_MS),
+			);
+			const hi = Math.min(n - 1, Math.floor((end - t0) / SEP_MS));
+			const to = whose(play.ball[k + 1]);
+			for (let s = lo; s <= hi; s++) {
+				ballX[s] = b.at.x;
+				ballY[s] = b.at.y;
+				ballR[s] = TURF_APART;
+				ballTo[s] = to;
+			}
+			return;
+		}
+		if (b.kind !== "fly" || b.t0 < play.whistle || b.t1 <= b.t0) {
+			return;
+		}
+		const lo = Math.max(0, Math.ceil((b.t0 - t0) / SEP_MS));
+		const hi = Math.min(n - 1, Math.floor((b.t1 - t0) / SEP_MS));
+		for (let s = lo; s <= hi; s++) {
+			const u = (t0 + s * SEP_MS - b.t0) / (b.t1 - b.t0);
+			const z = b.from.z + (b.to.z - b.from.z) * u + 4 * b.peak * u * (1 - u);
+			if (z < BALL_LOW) {
+				ballX[s] = b.from.x + (b.to.x - b.from.x) * u;
+				ballY[s] = b.from.y + (b.to.y - b.from.y) * u;
+				ballR[s] = BALL_APART;
+				ballOf[s] = whose(play.ball[k - 1]);
+				ballTo[s] = whose(play.ball[k + 1]);
+			}
+		}
+	});
 	// (The captains out for the coin toss gone once it is done.)
 	const toss = play.toss;
 	if (toss) {
@@ -189,12 +290,6 @@ export const keepApart = (play: Play): Map<number, Sep[]> => {
 	}
 	// (Nor the man with the ball coming to him, or just gone from him - the
 	// man for the kick, not him out of the tunnel before it.)
-	const index = new Map<number, number>();
-	men.forEach((m, i) => {
-		if (!index.has(m.pid)) {
-			index.set(m.pid, i);
-		}
-	});
 	const hold = (pid: number, from: number, to: number) => {
 		const i = index.get(pid);
 		if (i === undefined) {
@@ -229,7 +324,16 @@ export const keepApart = (play: Play): Map<number, Sep[]> => {
 			pass === 0 ? xs : xs.map((x, i) => x.map((v, s) => v + sx[i]![s]!));
 		const by =
 			pass === 0 ? ys : ys.map((y, i) => y.map((v, s) => v + sy[i]![s]!));
-		const { dx, dy, hit, moved } = pushed(bx, by, free, official, lie, n, near);
+		const { dx, dy, hit, moved } = pushed(
+			bx,
+			by,
+			free,
+			official,
+			lie,
+			{ x: ballX, y: ballY, r: ballR, on: ballOn, of: ballOf, to: ballTo },
+			n,
+			near,
+		);
 		if (!hit) {
 			break;
 		}
@@ -294,6 +398,18 @@ export const keepApart = (play: Play): Map<number, Sep[]> => {
 	return out;
 };
 
+// Where the ball is at each sample (see keepApart): off the man `on` it is
+// held by, or (-1) on the field; and the men it is with or comes to.
+type Ball = {
+	x: Float32Array;
+	y: Float32Array;
+	// (Kept this far off it, feet.)
+	r: Float32Array;
+	on: Int16Array;
+	of: Int16Array;
+	to: Int16Array;
+};
+
 // How far over each is pushed, at each time on their tracks, to be apart
 // there (see keepApart).
 const pushed = (
@@ -302,6 +418,7 @@ const pushed = (
 	free: Uint8Array[],
 	official: boolean[],
 	lie: Float32Array[],
+	ball: Ball,
 	n: number,
 	near: Uint8Array | undefined,
 ) => {
@@ -340,12 +457,25 @@ const pushed = (
 				ly[i] = Math.sin(yaw);
 			}
 		}
+		const loose = !Number.isNaN(ball.x[s]!);
 		for (let round = 0; round < ROUNDS; round++) {
 			let movedNow = false;
 			[was, now] = [now, was];
 			now.fill(0);
-			// (Off the men down first, then off each other: in a crowd round
-			// men down, each other the last word.)
+			// (Off the ball, off the men down, then off each other: in a crowd
+			// round them, each other the last word.)
+			for (let up = 0; loose && up < m; up++) {
+				if (
+					fr[up] &&
+					up !== ball.of[s] &&
+					up !== ball.to[s] &&
+					Number.isNaN(lie[up]![s]!) &&
+					(round === 0 || was[up] || now[up]) &&
+					offBall(s, up)
+				) {
+					movedNow = true;
+				}
+			}
 			for (const d of downs) {
 				for (let up = 0; up < m; up++) {
 					if (
@@ -442,6 +572,35 @@ const pushed = (
 	}
 
 	return { dx, dy, hit, moved };
+
+	// The man on his feet `up` off the ball at sample s, straight out from
+	// it. Whether he had to be.
+	function offBall(s: number, up: number): boolean {
+		const on = ball.on[s]!;
+		const ex = px[up]! - ball.x[s]! - (on < 0 ? 0 : px[on]!);
+		const ey = py[up]! - ball.y[s]! - (on < 0 ? 0 : py[on]!);
+		const r = ball.r[s]!;
+		if (ex >= r || ex <= -r) {
+			return false;
+		}
+		const d = Math.hypot(ex, ey);
+		if (d >= r) {
+			return false;
+		}
+		const ux = d > 1e-3 ? ex / d : 0;
+		const uy = d > 1e-3 ? ey / d : 1;
+		const ax = dx[up]!;
+		const ay = dy[up]!;
+		ax[s] = ax[s]! + ux * (r - d);
+		ay[s] = ay[s]! + uy * (r - d);
+		px[up] = xs[up]![s]! + ax[s]!;
+		py[up] = ys[up]![s]! + ay[s]!;
+		now[up] = 1;
+		moved[up] = 1;
+		hit ??= new Uint8Array(n);
+		hit[s] = 1;
+		return true;
+	}
 
 	// The man on his feet `up` off the man `down` at sample s (see
 	// LIE_HEAD): out to the side of him where he is by him - or, on his way
