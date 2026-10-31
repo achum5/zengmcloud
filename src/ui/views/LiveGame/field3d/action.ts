@@ -3224,6 +3224,51 @@ class Action {
 	toward(from: Pt, to: Pt) {
 		return Math.atan2(to.y - from.y, to.x - from.x);
 	}
+	// Which way the man with the ball at the whistle tosses it down by his
+	// feet at t, and how far out: the way he faces, or the nearest way round
+	// from it where it passes nobody by him - and with nowhere clear, let
+	// fall just in front of him the way that is clearest.
+	private tossWay(
+		m: Actor,
+		t: number,
+		yaw: number,
+	): { a: number; from: number; reach: number } {
+		const at = m.posAt(t);
+		const others = this.men
+			.filter((o) => o !== m)
+			.flatMap((o) => [0, 0.5, 1].map((k) => o.posAt(t + k * TOSS_MS)));
+		const nearest = (a: number, reach: number) => {
+			const ux = Math.cos(a);
+			const uy = Math.sin(a);
+			let near = Infinity;
+			for (const p of others) {
+				const along = clamp(
+					(p.x - at.x) * ux + (p.y - at.y) * uy,
+					TOSS_FROM,
+					reach,
+				);
+				near = Math.min(
+					near,
+					Math.hypot(p.x - at.x - ux * along, p.y - at.y - uy * along),
+				);
+			}
+			return near;
+		};
+		let best = yaw;
+		let widest = -1;
+		for (const turn of TOSS_TURNS) {
+			const a = yaw + turn;
+			if (nearest(a, TOSS_OUT) >= TOSS_CLEAR) {
+				return { a, from: TOSS_FROM, reach: TOSS_OUT };
+			}
+			const near = nearest(a, DROP_OUT);
+			if (near > widest) {
+				widest = near;
+				best = a;
+			}
+		}
+		return { a: best, from: DROP_FROM, reach: DROP_OUT };
+	}
 	// A blocker turned to his man - no further than BLOCK_TURN off straight
 	// ahead.
 	facing(from: Pt, him: Pt) {
@@ -11226,6 +11271,7 @@ class Action {
 		if (cheered !== undefined) {
 			this.fives(cheered, free, holder);
 		}
+		let toss: { t: number; yaw: number } | undefined;
 		for (const m of this.men) {
 			if (this.mob.has(m.pid)) {
 				continue;
@@ -11239,23 +11285,10 @@ class Action {
 				free.get(m.pid)! + (bent ? 100 + r() * 300 : 250 + r() * 900);
 			m.cut(start);
 			m.hold(start);
-			// (The ball let go of: tossed down by his feet.)
+			// (The ball let go of: tossed down by his feet - once everybody's
+			// way off is known.)
 			if (m === holder && last && last.t0 <= start) {
-				const a = m.yaw;
-				const from = {
-					x: m.at.x + Math.cos(a),
-					y: m.at.y + Math.sin(a),
-					z: 3.2,
-				};
-				const to = {
-					x: m.at.x + Math.cos(a) * 4,
-					y: m.at.y + Math.sin(a) * 4,
-					z: 0.3,
-				};
-				this.ball.push(
-					{ kind: "fly", t0: start, t1: start + TOSS_MS, from, to, peak: 1.2 },
-					{ kind: "spot", t0: start + TOSS_MS, at: { ...to, z: 0 } },
-				);
+				toss = { t: start, yaw: m.yaw };
 			}
 			if (bent) {
 				m.hold(m.t + WINDED_BENT_MS + r() * 800, "winded");
@@ -11304,6 +11337,27 @@ class Action {
 					m.hold(m.t + WINDED_BENT_MS, "blowing");
 				}
 			}
+		}
+		// (Tossed out the way he faces, or round from it as far as it takes
+		// to miss anybody by him then.)
+		if (holder && toss) {
+			const tossAt = toss.t;
+			const { a, from: out, reach } = this.tossWay(holder, tossAt, toss.yaw);
+			const at = holder.posAt(tossAt);
+			const from = {
+				x: at.x + Math.cos(a) * out,
+				y: at.y + Math.sin(a) * out,
+				z: 3.2,
+			};
+			const to = {
+				x: at.x + Math.cos(a) * reach,
+				y: at.y + Math.sin(a) * reach,
+				z: 0.3,
+			};
+			this.ball.push(
+				{ kind: "fly", t0: tossAt, t1: tossAt + TOSS_MS, from, to, peak: 1.2 },
+				{ kind: "spot", t0: tossAt + TOSS_MS, at: { ...to, z: 0 } },
+			);
 		}
 	}
 
@@ -11523,6 +11577,16 @@ const HELP_FPS = 6;
 // (No quicker over to him than this, ms.)
 const HELP_STEP_MS = 450;
 const TOSS_MS = 380;
+// (Round from the way he faces, radians, to toss it clear of anybody - no
+// nearer the ball's way than this, feet - from this far out in front of
+// him to this far; or with nowhere clear, let fall from closer in, to only
+// this far.)
+const TOSS_TURNS = [0, 0.6, -0.6, 1.2, -1.2, 1.9, -1.9, Math.PI];
+const TOSS_CLEAR = 1.5;
+const TOSS_FROM = 1;
+const TOSS_OUT = 4;
+const DROP_FROM = 0.5;
+const DROP_OUT = 1;
 // The side it went for (a long way gained: this many yards): this often
 // a man of it after a high five - with the nearest of them done with the
 // play no later than this after the whistle (ms), no further off than
