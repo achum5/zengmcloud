@@ -2,6 +2,7 @@ import { project, type Camera } from "../court3d/camera.ts";
 import { FIGURE_SCALE } from "./body.ts";
 import type { Pt3 } from "./geometry.ts";
 import { BALL_BROWN, BALL_LEN, BALL_R } from "./sculpt.ts";
+import type { Cast } from "./sprite.ts";
 
 // THE BALL ON ITS OWN: spotted on the turf, its points up and down the field,
 // or stood up on end - on its tee for a kickoff, under the holder's finger
@@ -9,6 +10,35 @@ import { BALL_BROWN, BALL_LEN, BALL_R } from "./sculpt.ts";
 
 const TEE_ORANGE = "#f26b1d";
 const TEE_H = 0.22;
+
+// Its shadows laid across the turf by the same lights (or sun) as the men's
+// (see Cast): its own shape in black, sheared down from where it is drawn
+// as theirs are - fading as it goes up, gone by CAST_FADE feet.
+const CAST_FADE = 14;
+const castBall = (
+	ctx: CanvasRenderingContext2D,
+	casts: Cast[] | undefined,
+	z: number,
+	floor: number,
+	path: () => void,
+) => {
+	const fade = 1 - z / FIGURE_SCALE / CAST_FADE;
+	if (!casts || fade <= 0) {
+		return;
+	}
+	const m = ctx.getTransform();
+	const alpha0 = ctx.globalAlpha;
+	ctx.fillStyle = "#000";
+	for (const { lean, run, alpha } of casts) {
+		ctx.globalAlpha = alpha0 * alpha * fade;
+		ctx.transform(1, 0, -lean, -run, lean * floor, floor * (1 + run));
+		ctx.beginPath();
+		path();
+		ctx.fill();
+		ctx.setTransform(m);
+	}
+	ctx.globalAlpha = alpha0;
+};
 
 // How high the middle of it is drawn, on the turf (true feet - drawn up
 // by FIGURE_SCALE): for a ball handed down onto it to end up just there.
@@ -21,6 +51,7 @@ export const drawLooseBall = (
 	cam: Camera,
 	at: Pt3,
 	stood: "tee" | "hold" | undefined,
+	casts?: Cast[],
 ) => {
 	const base = project(cam, { ...at, z: 0 });
 	const k = base.k;
@@ -40,6 +71,9 @@ export const drawLooseBall = (
 	const cx = base.x;
 	const cy = base.y - lift - ry;
 	ctx.save();
+	castBall(ctx, casts, at.z, base.y, () => {
+		ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+	});
 	if (tee) {
 		ctx.fillStyle = TEE_ORANGE;
 		ctx.beginPath();
@@ -116,6 +150,7 @@ export const drawFlyingBall = (
 	cam: Camera,
 	at: Pt3,
 	axis: Pt3,
+	casts?: Cast[],
 ) => {
 	const c = project(cam, at);
 	if (c.x < -20 || c.x > cam.viewW + 20 || c.y < -40 || c.y > cam.viewH + 20) {
@@ -147,8 +182,12 @@ export const drawFlyingBall = (
 		Math.PI * 2,
 	);
 	ctx.fill();
+	const turn = Math.atan2(dy, dx);
+	castBall(ctx, casts, at.z, ground.y, () => {
+		ctx.ellipse(c.x, c.y, rx, ry, turn, 0, Math.PI * 2);
+	});
 	ctx.translate(c.x, c.y);
-	ctx.rotate(Math.atan2(dy, dx));
+	ctx.rotate(turn);
 	ctx.fillStyle = BALL_BROWN;
 	ctx.strokeStyle = "rgba(20, 8, 2, 0.85)";
 	ctx.lineWidth = Math.max(0.6, k * 0.06);

@@ -1038,13 +1038,14 @@ const Field3D = ({
 			const ball = moment.ball;
 			if (ball) {
 				const axis = ball.axis;
+				const casts = inShadow(shadow, ball.at) && !lit ? undefined : sun;
 				items.push({
 					depth: depthOf(view, { ...ball.at, z: 0 }),
 					draw: () => {
 						if (axis) {
-							drawFlyingBall(ctx, view, drawnUp(ball.at), axis);
+							drawFlyingBall(ctx, view, drawnUp(ball.at), axis, casts);
 						} else {
-							drawLooseBall(ctx, view, drawnUp(ball.at), ball.stood);
+							drawLooseBall(ctx, view, drawnUp(ball.at), ball.stood, casts);
 						}
 					},
 				});
