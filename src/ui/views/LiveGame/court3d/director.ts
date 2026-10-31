@@ -19884,6 +19884,9 @@ class Director {
 		// (Of that, how much he counts on to pull up with, coming at a spot or
 		// at his man.)
 		const BRAKE = 0.8;
+		// Up on the ball, how far ahead (ticks) he reads his man coming at
+		// him.
+		const READ_TICKS = 3;
 		const GAIN = 3;
 		// Too short a stretch to follow anybody in (ms).
 		const SHORTEST = 250;
@@ -20795,9 +20798,19 @@ class Director {
 							if (md > 0.3) {
 								const ux = -mx / md;
 								const uy = -my / md;
-								const closing =
+								// (With the ball, coming at him a moment from now as
+								// much as now: he reads the drive, not just sees it.)
+								const j = Math.min(ticks.length - 1, i + READ_TICKS);
+								const M1 = ticks[j]!.man;
+								const span = ((j - i) * DT) / 1000;
+								const closing = Math.max(
 									(wx - (M.x - M0.x) / (DT / 1000)) * ux +
-									(wy - (M.y - M0.y) / (DT / 1000)) * uy;
+										(wy - (M.y - M0.y) / (DT / 1000)) * uy,
+									ticks[i]!.on && span > 0
+										? (wx - (M1.x - M.x) / span) * ux +
+												(wy - (M1.y - M.y) / span) * uy
+										: -Infinity,
+								);
 								const room = Math.sqrt(
 									2 * ACCEL * BRAKE * Math.max(0, md - GIVE),
 								);
