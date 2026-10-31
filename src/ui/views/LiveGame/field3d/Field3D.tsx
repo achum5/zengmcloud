@@ -29,7 +29,7 @@ import {
 	startFrame,
 } from "../court3d/sprite.ts";
 import type { Body } from "../court3d/poses.ts";
-import { aimFor, glideAim, onCrowd, type Glide } from "./aim.ts";
+import { aimFor, fromLow, glideAim, type Glide } from "./aim.ts";
 import { buildFieldClocks, fieldClockAt } from "./clock.ts";
 import { drawFlyingBall, drawLooseBall } from "./ball.ts";
 import { drawFlag } from "./flag.ts";
@@ -951,7 +951,7 @@ const Field3D = ({
 							shot,
 							fw,
 							fh,
-							replay || onCrowd(moment) ? REPLAY_RIG : MAIN_RIG,
+							replay || fromLow(moment) ? REPLAY_RIG : MAIN_RIG,
 						);
 			const white = flashRef.current;
 			if (white) {

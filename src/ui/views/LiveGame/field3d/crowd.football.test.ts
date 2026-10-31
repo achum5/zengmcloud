@@ -1,5 +1,5 @@
 import { assert, beforeAll, test } from "vitest";
-import { aimFor, onCrowd } from "./aim.ts";
+import { aimFor, fromLow } from "./aim.ts";
 import { boardAt, crowdAt } from "./crowd.ts";
 import { compileField, type FieldTimeline } from "./director.ts";
 import { SIDE_ROOM } from "./geometry.ts";
@@ -117,9 +117,10 @@ test("the picture on the crowd over a timeout", () => {
 			assert.isAbove(shot.cut, p.timeout!.cut, `${p.i}`);
 			const t = (shot.cut + p.t1) / 2;
 			const m = { t, play: p, players: [] };
-			assert.isTrue(onCrowd(m), `${p.i}`);
-			assert.isFalse(onCrowd({ ...m, t: shot.cut - 1 }), `${p.i}`);
+			assert.isTrue(fromLow(m), `${p.i}`);
 			assert.isBelow(aimFor(m).y, -SIDE_ROOM, `${p.i}`);
+			// (Before it, on the huddle.)
+			assert.strictEqual(aimFor({ ...m, t: shot.cut - 1 }).y, p.timeout!.at.y);
 			assert.strictEqual(crowdAt(tl, t, 0).up, 1, `${p.i}`);
 			const arms = new Set(
 				[0, 130, 260, 390].map((now) => crowdAt(tl, t, now).wave),
@@ -185,4 +186,33 @@ test("what the boards show", () => {
 	}
 	assert.isAbove(defense, 50);
 	assert.isAbove(shouts, 3);
+});
+
+// Over a timeout, in close on the huddle from down low, pushing slowly in -
+// the cheerleaders, if the picture goes to them, from up in the press box.
+test("the huddle over a timeout, from down low", () => {
+	let huddles = 0;
+	for (const tl of tls) {
+		for (const p of tl.plays) {
+			const to = p.timeout;
+			if (!to) {
+				continue;
+			}
+			huddles += 1;
+			const end = to.cheer?.cut ?? to.crowd?.cut ?? p.t1;
+			const at = (t: number) => ({ t, play: p, players: [] });
+			assert.isFalse(fromLow(at(to.cut - 1)), `${p.i}`);
+			assert.isTrue(fromLow(at(to.cut + 1)), `${p.i}`);
+			assert.isTrue(fromLow(at(end - 1)), `${p.i}`);
+			assert.isAbove(
+				aimFor(at(to.cut + 1)).width,
+				aimFor(at(end - 1)).width + 5,
+				`${p.i}`,
+			);
+			if (to.cheer) {
+				assert.isFalse(fromLow(at(to.cheer.cut + 1)), `${p.i}`);
+			}
+		}
+	}
+	assert.isAtLeast(huddles, 5);
 });

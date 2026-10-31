@@ -97,11 +97,12 @@ const PARTY_AFTER = 600;
 // this, by the time the coin goes up.
 const TOSS_WIDE = 84;
 const TOSS_TIGHT = 52;
-// A timeout: in on the side that called it, the picture's middle this far
-// toward the near side of them (on the far sideline, this far).
-const TIMEOUT_WIDTH = 60;
-const TIMEOUT_UP = 8;
-const TIMEOUT_UP_FAR = 2;
+// A timeout: in close on the side that called it, at its sideline (the 3D
+// court's huddle shot: see court3d/scene.ts arenaAim) - from down low on
+// the near side, pushing slowly in from this wide to this, this high.
+const TIMEOUT_WIDE = 56;
+const TIMEOUT_TIGHT = 44;
+const TIMEOUT_Z = 4;
 // Over a timeout, the crowd (see crowd.ts): from down low on the near side,
 // up into the stands across the field, panning this far along them.
 const CROWD_SHOT = { width: 150, y: -80, z: 22, pan: 30 };
@@ -156,10 +157,14 @@ export const aimFor = (m: FieldMoment): Shot => {
 		return { x: crowd.x + pan * u, width, y, z };
 	}
 	if (timeout && t >= timeout.cut) {
+		const end = timeout.cheer?.cut ?? crowd?.cut ?? play.t1;
+		const u = Math.min(1, (t - timeout.cut) / Math.max(1, end - timeout.cut));
+		const e = u * u * (3 - 2 * u);
 		return {
 			x: timeout.at.x,
-			width: TIMEOUT_WIDTH,
-			y: timeout.at.y + (timeout.at.y < MID_Y ? TIMEOUT_UP_FAR : TIMEOUT_UP),
+			width: TIMEOUT_WIDE + (TIMEOUT_TIGHT - TIMEOUT_WIDE) * e,
+			y: timeout.at.y,
+			z: TIMEOUT_Z,
 		};
 	}
 	if (play.between !== undefined && t >= play.between) {
@@ -372,9 +377,14 @@ export const glideAim = (g: Glide, to: number[], ms: number): number[] => {
 	return to.map((v, i) => v + (g.off[i] ?? 0) * l);
 };
 
-// Whether the picture is on the crowd, from down low (see makeFieldCamera's
-// REPLAY_RIG).
-export const onCrowd = (m: FieldMoment): boolean => {
-	const crowd = m.play?.timeout?.crowd;
-	return !!crowd && m.t >= crowd.cut;
+// Whether the picture is from down low on the near side (see camera.ts
+// REPLAY_RIG): over a timeout, on the huddle or the crowd - not on the
+// cheerleaders.
+export const fromLow = (m: FieldMoment): boolean => {
+	const timeout = m.play?.timeout;
+	return (
+		!!timeout &&
+		m.t >= timeout.cut &&
+		!(timeout.cheer && m.t >= timeout.cheer.cut)
+	);
 };
