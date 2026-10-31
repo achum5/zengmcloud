@@ -338,11 +338,11 @@ const SHINE_BANDS: [number, number][] = [
 // each way, so many lights as there are (lean across, and how much of his
 // height it runs out over the floor). Off the floor, they come away from
 // his feet and fade.
-const CASTS: [number, number][] = [
+export const CASTS: [number, number][] = [
 	[-0.55, 0.2],
 	[0.55, 0.2],
 ];
-const CAST_ALPHA = 0.13;
+export const CAST_ALPHA = 0.13;
 // His shape all in black, for his shadows - a third the size of his
 // picture (a ninth of the memory), and drawn back up soft-edged, as a
 // shadow is: made the first time it is wanted, let go with his picture.

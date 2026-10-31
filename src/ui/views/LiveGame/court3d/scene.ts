@@ -49,6 +49,7 @@ import {
 import {
 	arenaShotAt,
 	benchLook,
+	BALL_R,
 	ballFaceAt,
 	evalBall,
 	evalPlayer,
@@ -94,6 +95,8 @@ import {
 	type Body,
 } from "./poses.ts";
 import {
+	CAST_ALPHA,
+	CASTS,
 	drawSprite,
 	prepareSprites,
 	startFrame,
@@ -1456,7 +1459,30 @@ export const drawFrame = (f: Frame) => {
 	}
 	const balls = [ball, ...(f.moment.balls ?? [])];
 	for (const b of balls) {
-		drawShadow(ctx, cam, b.x, b.y, 0.45, Math.max(0, 1 - b.z / 14) * 0.9);
+		const fade = Math.max(0, 1 - b.z / 14);
+		drawShadow(ctx, cam, b.x, b.y, 0.45, fade * 0.9);
+		// And laid across the floor by the same lights as the men's (see
+		// CASTS): faint, coming away from it as it goes up.
+		const c = project(cam, b);
+		const under = project(cam, { x: b.x, y: b.y, z: 0 });
+		const r = BALL_R * c.k;
+		const up = under.y - c.y;
+		ctx.fillStyle = "#000";
+		for (const [lean, run] of CASTS) {
+			ctx.globalAlpha = CAST_ALPHA * fade;
+			ctx.beginPath();
+			ctx.ellipse(
+				c.x + lean * up,
+				under.y + run * up,
+				r,
+				Math.max(0.5, r * run * 1.5),
+				0,
+				0,
+				Math.PI * 2,
+			);
+			ctx.fill();
+		}
+		ctx.globalAlpha = 1;
 	}
 
 	type Item = { depth: number; draw: () => void };
