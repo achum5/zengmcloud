@@ -55,6 +55,34 @@ export const cheerAt = (
 	return out;
 };
 
+// The stretches the men on the sidelines are up for their side's big plays
+// round t (see sideline.ts): from when its cheer gets this far up to when it
+// falls back under it - the play's at t, and still the one before's.
+export const upSpansAt = (
+	tl: FieldTimeline,
+	t: number,
+	at: number,
+): { side: Side; from: number; to: number }[] => {
+	const play = playAt(tl, t);
+	const k = play ? tl.plays.indexOf(play) : -1;
+	const out: { side: Side; from: number; to: number }[] = [];
+	for (const c of [
+		tl.plays[k - 1]?.cheer,
+		tl.plays[k]?.cheer,
+		tl.plays[k]?.runOut?.cheer,
+	]) {
+		if (c) {
+			const hold = c.hold ?? (c.big ? HOLD_BIG : HOLD);
+			out.push({
+				side: c.side,
+				from: c.t + RISE * at,
+				to: c.t + hold + (1 - at) * FALL,
+			});
+		}
+	}
+	return out;
+};
+
 // The stands at t: how much of the crowd is on its feet (0 to 1), arms
 // waving rather than up, and how full they are (see director.ts seatsOf).
 export type Crowd = { up: number; wave: boolean; full: number };

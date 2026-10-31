@@ -843,3 +843,45 @@ describe("the head coach", () => {
 // (Nobody's cheer up then.)
 const cheerless = (play: Play, t: number) =>
 	!play.cheer || t < play.cheer.t || t > play.cheer.t + 6000;
+
+describe("the sidelines, up for a big play", () => {
+	test("up off the line for it - jumping, an arm up - and back down, into it and out of it over a moment, never in a frame", () => {
+		const bosses = new Set([coachId(0, 0), coachId(1, 0)]);
+		const bad: string[] = [];
+		let ups = 0;
+		const game = games[0]!;
+		const tl = stage(game);
+		const men = sidelineFor(game.roster, 1);
+		for (const play of tl.plays.filter((p) => p.cheer && !p.postgame)) {
+			const c = play.cheer!;
+			let last = new Map<number, FieldPlayerState>();
+			for (let t = c.t; t < Math.min(play.t1, c.t + 8000); t += 50) {
+				const now = new Map<number, FieldPlayerState>();
+				for (const s of sidelineAt(men, tl, momentAt(tl, t))) {
+					now.set(s.id, s);
+					const was = last.get(s.id);
+					if (!was || bosses.has(s.id) || s.team !== c.side) {
+						continue;
+					}
+					if (s.move === "leap" || s.arms?.move === "ballUp") {
+						ups += 1;
+					}
+					if (
+						(was.move !== s.move || was.arms?.move !== s.arms?.move) &&
+						(!s.from || s.from.w < 0.7)
+					) {
+						bad.push(
+							`play ${play.i}: ${s.id} ${was.move}/${was.arms?.move} to ${s.move}/${s.arms?.move}`,
+						);
+					}
+					if (was.move === "leap" && s.move !== "leap" && was.z > 0.6) {
+						bad.push(`play ${play.i}: ${s.id} down out of the air`);
+					}
+				}
+				last = now;
+			}
+		}
+		assert.deepEqual(bad.slice(0, 8), []);
+		assert.isAbove(ups, 100);
+	}, 120_000);
+});

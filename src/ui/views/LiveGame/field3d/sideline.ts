@@ -1,5 +1,5 @@
 import { makeCourtRng } from "../courtRng.ts";
-import { cheerAt } from "./crowd.ts";
+import { cheerAt, upSpansAt } from "./crowd.ts";
 import type { FieldTimeline, Play } from "./director.ts";
 import type { FieldMoment } from "./evaluate.ts";
 import {
@@ -574,6 +574,7 @@ const onField = (play: Play) => {
 // up for it.
 const LEAP_MS = 900;
 const UP_LEVEL = 0.55;
+const CHEER_BLEND = 220;
 
 // The head coach (the 3D court's: see court3d/crew.ts coachState): pacing
 // his spot - a few steps along the sideline to a new one every few seconds
@@ -1028,7 +1029,7 @@ export const sidelineAt = (
 	const out: FieldPlayerState[] = [];
 	const spots = layoutFor(men, play);
 	const making = waysFor(spots, play);
-	const cheer = cheerAt(tl, m.t);
+	const spans = upSpansAt(tl, m.t, UP_LEVEL);
 	const ball = m.focus;
 	const post = play.postgame;
 	const toss = play.toss && m.t < play.toss.cut ? play.toss.men : [];
@@ -1083,18 +1084,42 @@ export const sidelineAt = (
 			({ move, phase, from } = boss);
 		}
 		let arms: FieldPlayerState["arms"];
-		if (!boss && cheer && cheer.side === s.team && cheer.level > UP_LEVEL) {
-			const e = cheer.since - s.delay;
-			if (e > 0) {
-				if (spot.seated) {
-					arms = { move: "ballUp", phase: 0 };
-				} else {
-					move = s.cheer;
-					phase =
-						s.cheer === "leap" || s.cheer === "flex"
-							? (e / (s.cheer === "leap" ? LEAP_MS : 2 * LEAP_MS)) % 1
-							: 0;
+		// Up for his side's big play, a moment after it gets going, and on
+		// till as long after (the jump he is in seen through) - into it, and
+		// back out of it, over a moment.
+		const tt = m.t - s.delay;
+		const up = boss
+			? undefined
+			: spans
+					.filter((u) => u.side === s.team && u.from <= tt)
+					.sort((a, b) => b.from - a.from)[0];
+		if (up) {
+			const cycle =
+				s.cheer === "leap" ? LEAP_MS : s.cheer === "flex" ? 2 * LEAP_MS : 0;
+			const end =
+				cycle > 0
+					? up.from + Math.ceil((up.to - up.from) / cycle) * cycle
+					: up.to;
+			const doing = (e: number) =>
+				spot.seated
+					? { move, phase, arms: { move: "ballUp" as const, phase: 0 } }
+					: { move: s.cheer, phase: cycle > 0 ? (e / cycle) % 1 : 0 };
+			const was = { move, phase };
+			if (tt < end) {
+				const e = tt - up.from;
+				const now = doing(e);
+				({ move, phase } = now);
+				if ("arms" in now) {
+					arms = now.arms;
 				}
+				if (e < CHEER_BLEND) {
+					from = { ...was, w: 1 - smooth01(e / CHEER_BLEND) };
+				}
+			} else if (tt - end < CHEER_BLEND) {
+				from = {
+					...doing(end - up.from),
+					w: 1 - smooth01((tt - end) / CHEER_BLEND),
+				};
 			}
 		}
 		out.push({
