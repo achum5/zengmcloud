@@ -55,6 +55,7 @@ import { stageChains, type ChainSpots } from "./chains.ts";
 import { holderAt, replayFor, type FieldReplay } from "./replays.ts";
 import { crewClear, stageTimeout } from "./timeout.ts";
 import { cheerShotFor, type CheerShot } from "./cheerleaders.ts";
+import { crowdShotFor, type CrowdShot } from "./crowd.ts";
 import { measureTimes, stageMeasure } from "./measure.ts";
 import { HURT_MOST, MEDICS, stageHurt } from "./hurt.ts";
 import {
@@ -215,11 +216,15 @@ export type Play = {
 	coaches?: CrewPart[];
 	// A timeout (see timeout.ts): when the picture cuts to the side that
 	// called it, and where it looks - and, now and then, from when on to the
-	// cheerleaders at their routine (see cheerleaders.ts).
-	timeout?: { cut: number; at: Pt; cheer?: CheerShot };
+	// cheerleaders at their routine (see cheerleaders.ts), or the crowd (see
+	// crowd.ts).
+	timeout?: { cut: number; at: Pt; cheer?: CheerShot; crowd?: CrowdShot };
 	// A measurement (see measure.ts): when the picture cuts to the chain out
 	// on the field, and where it looks.
 	measure?: { cut: number; at: Pt };
+	// Between quarters: when the picture cuts to the whole stadium (see
+	// aim.ts).
+	between?: number;
 	postgame?: {
 		from: number;
 		shake: number;
@@ -367,6 +372,11 @@ const RESULTS = new Set([
 const TIMEOUT_AFTER = 1800;
 const TIMEOUT_SAID = 1700;
 const TIMEOUT_AFTER_REPLAY = 400;
+// Between quarters (the 3D court's look round the building over a break:
+// see court3d/director.ts shots), as the teams change ends: the picture on
+// the whole stadium this long after the play is over, for this long.
+const BETWEEN_AFTER = 1500;
+const BETWEEN_MS = 4200;
 // After the play: how long after the line before each is said.
 const AFTER_PLAY: Record<string, number> = {
 	penalty: 1600,
@@ -1770,9 +1780,13 @@ class Director {
 		const cheerShot = timeout
 			? cheerShotFor(timeout.cut, t1, timeout.at, this.rng(i0, "cheer"))
 			: undefined;
-		if (cheerShot) {
+		const crowdShot =
+			timeout && !cheerShot
+				? crowdShotFor(timeout.cut, t1, this.rng(i0, "crowdShot"))
+				: undefined;
+		if (cheerShot || crowdShot) {
 			// (And from them to the next play.)
-			this.cuts.push(cheerShot.cut, t1);
+			this.cuts.push((cheerShot ?? crowdShot)!.cut, t1);
 		}
 		// The measurement: the picture on it once the play is over.
 		const measureAt =
@@ -1783,6 +1797,20 @@ class Director {
 			t1 = Math.max(t1, measureAt.t1);
 			this.cuts.push(measureAt.cut);
 			cheer = { t: measureAt.call + 450, side: offense, big: false };
+		}
+		const between =
+			!ended &&
+			!half &&
+			!hurt &&
+			!timeout &&
+			!measureAt &&
+			events.slice(i0, i1).some((e) => e?.type === "quarter")
+				? offAt + BETWEEN_AFTER
+				: undefined;
+		if (between !== undefined) {
+			t1 = Math.max(t1, between + BETWEEN_MS);
+			// (And from it to the next play.)
+			this.cuts.push(between, t1);
 		}
 		// Each line of the play ends where its own action does; the last one,
 		// with the play.
@@ -1969,10 +1997,12 @@ class Director {
 							cut: timeout.cut,
 							at: timeout.at,
 							...(cheerShot ? { cheer: cheerShot } : {}),
+							...(crowdShot ? { crowd: crowdShot } : {}),
 						},
 					}
 				: {}),
 			...(measure ? { measure: { cut: measure.cut, at: measure.at } } : {}),
+			...(between !== undefined ? { between } : {}),
 			...(acted?.party && acted.until
 				? { party: { ...acted.party, until: acted.until } }
 				: {}),

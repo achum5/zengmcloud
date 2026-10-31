@@ -102,6 +102,12 @@ const TOSS_TIGHT = 52;
 const TIMEOUT_WIDTH = 60;
 const TIMEOUT_UP = 8;
 const TIMEOUT_UP_FAR = 2;
+// Over a timeout, the crowd (see crowd.ts): from down low on the near side,
+// up into the stands across the field, panning this far along them.
+const CROWD_SHOT = { width: 150, y: -80, z: 22, pan: 30 };
+// Between quarters: the whole stadium from the press box, panning slowly
+// along it from this far one side of the middle to as far the other.
+const BETWEEN = { width: 360, y: 44, z: 11, pan: 30 };
 // A measurement: in on the ball and the front rod, this wide.
 const MEASURE_WIDTH = 46;
 const MEASURE_UP = -8;
@@ -143,12 +149,26 @@ export const aimFor = (m: FieldMoment): Shot => {
 		const { x, width, y } = timeout.cheer;
 		return { x, width, y };
 	}
+	const crowd = timeout?.crowd;
+	if (crowd && t >= crowd.cut) {
+		const u = Math.min(1, (t - crowd.cut) / Math.max(1, play.t1 - crowd.cut));
+		const { width, y, z, pan } = CROWD_SHOT;
+		return { x: crowd.x + pan * u, width, y, z };
+	}
 	if (timeout && t >= timeout.cut) {
 		return {
 			x: timeout.at.x,
 			width: TIMEOUT_WIDTH,
 			y: timeout.at.y + (timeout.at.y < MID_Y ? TIMEOUT_UP_FAR : TIMEOUT_UP),
 		};
+	}
+	if (play.between !== undefined && t >= play.between) {
+		const u = Math.min(
+			1,
+			(t - play.between) / Math.max(1, play.t1 - play.between),
+		);
+		const { width, y, z, pan } = BETWEEN;
+		return { x: MID_X + pan * (2 * u - 1), width, y, z };
 	}
 	// A measurement: on the ball, the chain out beside it.
 	const measure = play.measure;
@@ -350,4 +370,11 @@ export const glideAim = (g: Glide, to: number[], ms: number): number[] => {
 	g.ms += ms;
 	const l = left();
 	return to.map((v, i) => v + (g.off[i] ?? 0) * l);
+};
+
+// Whether the picture is on the crowd, from down low (see makeFieldCamera's
+// REPLAY_RIG).
+export const onCrowd = (m: FieldMoment): boolean => {
+	const crowd = m.play?.timeout?.crowd;
+	return !!crowd && m.t >= crowd.cut;
 };

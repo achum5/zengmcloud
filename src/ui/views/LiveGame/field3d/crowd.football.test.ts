@@ -1,6 +1,8 @@
 import { assert, beforeAll, test } from "vitest";
+import { aimFor, onCrowd } from "./aim.ts";
 import { crowdAt } from "./crowd.ts";
 import { compileField, type FieldTimeline } from "./director.ts";
+import { SIDE_ROOM } from "./geometry.ts";
 import { simGames } from "./testGames.ts";
 
 let tls: FieldTimeline[] = [];
@@ -97,4 +99,57 @@ test("the home crowd up for the visitors' third downs", () => {
 	}
 	assert.isAtLeast(road, 10);
 	assert.isAtLeast(home, 10);
+});
+
+// Now and then over a timeout the cheerleaders are not on, the picture on
+// the crowd from down low - up and waving at it - till the next play.
+test("the picture on the crowd over a timeout", () => {
+	let shots = 0;
+	for (const tl of tls) {
+		for (const p of tl.plays) {
+			const shot = p.timeout?.crowd;
+			if (!shot) {
+				continue;
+			}
+			shots += 1;
+			assert.isUndefined(p.timeout!.cheer, `${p.i}`);
+			assert.include(tl.cuts, shot.cut, `${p.i}`);
+			assert.isAbove(shot.cut, p.timeout!.cut, `${p.i}`);
+			const t = (shot.cut + p.t1) / 2;
+			const m = { t, play: p, players: [] };
+			assert.isTrue(onCrowd(m), `${p.i}`);
+			assert.isFalse(onCrowd({ ...m, t: shot.cut - 1 }), `${p.i}`);
+			assert.isBelow(aimFor(m).y, -SIDE_ROOM, `${p.i}`);
+			assert.strictEqual(crowdAt(tl, t, 0).up, 1, `${p.i}`);
+			const arms = new Set(
+				[0, 130, 260, 390].map((now) => crowdAt(tl, t, now).wave),
+			);
+			assert.strictEqual(arms.size, 2, `${p.i}`);
+		}
+	}
+	assert.isAtLeast(shots, 2);
+});
+
+// Between quarters - not at the half, nor the end - the whole stadium,
+// panning along it, as the teams change ends; and from it to the next play.
+test("the look round the stadium between quarters", () => {
+	for (const [k, tl] of tls.entries()) {
+		const looks = tl.plays.filter((p) => p.between !== undefined);
+		assert.deepEqual(
+			looks.map((p) => p.quarter),
+			[1, 3],
+			`${k}`,
+		);
+		for (const p of looks) {
+			const next = tl.plays[tl.plays.indexOf(p) + 1]!;
+			assert.strictEqual(next.quarter, p.quarter + 1, `${p.i}`);
+			assert.include(tl.cuts, p.between!, `${p.i}`);
+			assert.isAbove(p.between!, p.whistle, `${p.i}`);
+			const at = (t: number) => aimFor({ t, play: p, players: [] });
+			const a = at(p.between! + 1);
+			const b = at(p.t1 - 1);
+			assert.isAbove(a.width, 300, `${p.i}`);
+			assert.isAbove(b.x, a.x + 40, `${p.i}`);
+		}
+	}
 });

@@ -93,7 +93,10 @@ export const crowdAt = (tl: FieldTimeline, t: number, now: number): Crowd => {
 	const fast = Math.sin(now / 130) > 0;
 	const slow = Math.sin(now / 520) > 0.55;
 	const c = cheerAt(tl, t);
-	const roar = c ? c.level * (c.side === 1 ? 1 : ROAD) * (c.big ? 1 : 0.75) : 0;
+	const roar = Math.max(
+		c ? c.level * (c.side === 1 ? 1 : ROAD) * (c.big ? 1 : 0.75) : 0,
+		shotUp(play, t),
+	);
 	const post = play?.postgame;
 	if (post && t >= post.from) {
 		if (post.winner !== 1) {
@@ -126,4 +129,34 @@ export const crowdAt = (tl: FieldTimeline, t: number, now: number): Crowd => {
 		wave: roar > 0.3 ? fast : tense >= 1 && slow,
 		full,
 	};
+};
+
+// THE PICTURE ON THE CROWD (the 3D court's look up at the crowd over a
+// break: see court3d/scene.ts crowdShotAt): now and then, for the end of a
+// timeout the cheerleaders are not on, cut away to the stands across the
+// field from down low on the near side - panning along them, the crowd up
+// and waving at it as it sees itself on the board - and from them to the
+// next play (see aim.ts). From when, and where along them it starts.
+export type CrowdShot = { cut: number; x: number };
+const SHOT_SHARE = 0.5;
+const SHOT_MS = 2800;
+const SHOT_INTO = 1500;
+const SHOT_UP = 350;
+
+export const crowdShotFor = (
+	cut: number,
+	t1: number,
+	r: () => number,
+): CrowdShot | undefined => {
+	const from = t1 - SHOT_MS;
+	if (r() >= SHOT_SHARE || from < cut + SHOT_INTO) {
+		return undefined;
+	}
+	return { cut: from, x: 70 + r() * 190 };
+};
+
+// How far up for the picture on it (0 to 1).
+const shotUp = (play: Play | undefined, t: number): number => {
+	const shot = play?.timeout?.crowd;
+	return shot && t >= shot.cut ? Math.min(1, (t - shot.cut) / SHOT_UP) : 0;
 };
