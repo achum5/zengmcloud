@@ -129,8 +129,10 @@ import {
 	drawFieldPlayer,
 	drawnBall,
 	drawnLift,
+	LIGHT_CASTS,
 	prepareFieldSprites,
 	steadied,
+	sunCasts,
 } from "./sprite.ts";
 import { drawTags, type TagCover } from "./tags.ts";
 import { showerGear } from "./shower.ts";
@@ -159,6 +161,9 @@ const FLASH_MS = 260;
 // (%), slanting this far (deg).
 const STING_W = 140;
 const STING_SLANT = 18;
+// In the sun, the players' shadows thrown off to the side this much (see
+// sprite.ts Cast).
+const SUN_LEAN = 0.4;
 // Screen ms the picture takes to come up out of black into the next of the
 // key plays (see keyPlays.ts).
 const KEY_DIP_MS = 320;
@@ -973,6 +978,14 @@ const Field3D = ({
 			const body = (pid: number) => bodies.current.get(pid) ?? DRAWN_DEFAULT;
 			const items: { depth: number; draw: () => void }[] = [];
 			const shadow = p.paint.stadium.style.shadow;
+			// (Under the lights, or a roof; or in the sun, the camera's back
+			// to it - from off to the side the stands' shadow slants from.)
+			const lit =
+				p.paint.stadium.style.sky === "night" ||
+				p.paint.stadium.style.roof === "dome";
+			const sun = lit
+				? LIGHT_CASTS
+				: sunCasts(SUN_LEAN * (shadow && shadow[1] > shadow[0] ? -1 : 1));
 			const snappers = photographersAt(photographersRef.current, moment);
 			const confetti = confettiFor(moment.play, teamColors.current);
 			const standing = [
@@ -1011,6 +1024,7 @@ const Field3D = ({
 							1,
 							sprites,
 							shaded,
+							shaded && !lit ? undefined : sun,
 						);
 					},
 				});

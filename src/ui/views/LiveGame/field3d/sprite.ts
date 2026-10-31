@@ -1031,6 +1031,85 @@ export const prepareFieldSprites = (
 	}
 };
 
+// HIS SHADOWS ON THE TURF (the 3D court's: see court3d/sprite.ts stamp): his
+// own shape laid down from his feet. Under the lights, faint, one each way,
+// toward the camera from the banks over the far stands; in the sun, behind
+// the camera, one darker, away from it and off to the side. (Each: lean
+// across, how much of his height it runs out over the turf - toward the
+// camera +, away -; how dark.) Off the turf, they come away from his feet
+// and fade.
+export type Cast = { lean: number; run: number; alpha: number };
+export const LIGHT_CASTS: Cast[] = [
+	{ lean: -0.55, run: 0.2, alpha: 0.13 },
+	{ lean: 0.55, run: 0.2, alpha: 0.13 },
+];
+export const sunCasts = (lean: number): Cast[] => [
+	{ lean, run: -0.5, alpha: 0.24 },
+];
+// His shape all in black, a third the size of his picture, drawn back up
+// soft-edged: made the first time it is wanted, let go with his picture.
+const DARK_SCALE = 3;
+const darks = new WeakMap<HTMLCanvasElement, HTMLCanvasElement>();
+const darkOf = (k: Kept): HTMLCanvasElement | undefined => {
+	let d = darks.get(k.canvas);
+	if (d) {
+		return d;
+	}
+	if (typeof document === "undefined") {
+		return undefined;
+	}
+	d = document.createElement("canvas");
+	d.width = Math.max(1, Math.ceil(k.canvas.width / DARK_SCALE));
+	d.height = Math.max(1, Math.ceil(k.canvas.height / DARK_SCALE));
+	const g = d.getContext("2d");
+	if (!g) {
+		return undefined;
+	}
+	g.drawImage(k.canvas, 0, 0, d.width, d.height);
+	g.globalCompositeOperation = "source-in";
+	g.fillStyle = "#000";
+	g.fillRect(0, 0, d.width, d.height);
+	darks.set(k.canvas, d);
+	return d;
+};
+const castShadows = (
+	ctx: CanvasRenderingContext2D,
+	k: Kept,
+	x: number,
+	y: number,
+	px: number,
+	floorY: number,
+	casts: Cast[],
+) => {
+	const dark = k.canvas.width > 0 ? darkOf(k) : undefined;
+	if (!dark) {
+		return;
+	}
+	const alpha = ctx.globalAlpha;
+	const smoothing = ctx.imageSmoothingEnabled;
+	const m = ctx.getTransform();
+	const floor = Math.round(floorY);
+	const X = Math.round(x + k.dx);
+	const Y = Math.round(y + k.dy);
+	// (Up off the turf, fading: gone by his own height up.)
+	const up = Math.max(0, floor - (Y + k.h * px));
+	const fade = Math.max(0, 1 - up / (k.h * px));
+	if (fade <= 0) {
+		return;
+	}
+	ctx.imageSmoothingEnabled = true;
+	for (const { lean, run, alpha: dark0 } of casts) {
+		ctx.globalAlpha = alpha * dark0 * fade;
+		// From where he is drawn, upright, to where it falls: as far out
+		// over the turf from his feet as he is up over them, by `run`.
+		ctx.transform(1, 0, -lean, -run, lean * floor, floor * (1 + run));
+		ctx.drawImage(dark, X, Y, k.w * px, k.h * px);
+		ctx.setTransform(m);
+	}
+	ctx.imageSmoothingEnabled = smoothing;
+	ctx.globalAlpha = alpha;
+};
+
 export const drawFieldPlayer = (
 	ctx: CanvasRenderingContext2D,
 	scratch: Scratch,
@@ -1042,6 +1121,8 @@ export const drawFieldPlayer = (
 	cache?: SpriteCache,
 	// Standing in the shadow of the stands (a day game's).
 	shaded = false,
+	// His shadows (see Cast).
+	casts?: Cast[],
 ) => {
 	const plan =
 		(cache && plansOf(cache).get(st)) ??
@@ -1054,6 +1135,17 @@ export const drawFieldPlayer = (
 		const was = pick(cache, plan, st.id);
 		if (was !== "make") {
 			const on = shiftedOn(cam, st, base, anchors.get(was));
+			if (casts && casts.length > 0) {
+				castShadows(
+					ctx,
+					was,
+					base.x + on.x,
+					base.y + on.y - lift,
+					px,
+					base.y + on.y,
+					casts,
+				);
+			}
 			stamp(ctx, was, base.x + on.x, base.y + on.y - lift, px);
 			return;
 		}
@@ -1071,6 +1163,17 @@ export const drawFieldPlayer = (
 			held: plan.held,
 		});
 		const on = shiftedOn(cam, st, base, anchors.get(made));
+		if (casts && casts.length > 0) {
+			castShadows(
+				ctx,
+				made,
+				base.x + on.x,
+				base.y + on.y - lift,
+				px,
+				base.y + on.y,
+				casts,
+			);
+		}
 		stamp(ctx, made, base.x + on.x, base.y + on.y - lift, px);
 		return;
 	}
