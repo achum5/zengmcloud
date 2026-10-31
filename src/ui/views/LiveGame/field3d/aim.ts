@@ -130,8 +130,13 @@ export const aimFor = (m: FieldMoment): Shot => {
 			y: across(toss.at.y),
 		};
 	}
-	// A timeout: on the side that called it, at its sideline.
+	// A timeout: on the side that called it, at its sideline - or on the
+	// cheerleaders.
 	const timeout = play.timeout;
+	if (timeout?.cheer && t >= timeout.cheer.cut) {
+		const { x, width, y } = timeout.cheer;
+		return { x, width, y };
+	}
 	if (timeout && t >= timeout.cut) {
 		return {
 			x: timeout.at.x,

@@ -543,6 +543,32 @@ const HUG: Partial<Pose> = {
 	lean: 8,
 };
 const HUG_SLAP: Partial<Pose> = { ...HUG, shF: 100, elF: 74 };
+// A cheerleader's arms (see poms): up in a V, out level, down in a V.
+const POMS_UP: Partial<Pose> = {
+	shN: 158,
+	elN: 6,
+	abN: 40,
+	shF: 158,
+	elF: 6,
+	abF: 40,
+	lean: -3,
+};
+const POMS_OUT: Partial<Pose> = {
+	shN: 12,
+	elN: 6,
+	abN: 86,
+	shF: 12,
+	elF: 6,
+	abF: 86,
+};
+const POMS_DOWN: Partial<Pose> = {
+	shN: 12,
+	elN: 4,
+	abN: 36,
+	shF: 12,
+	elF: 4,
+	abF: 36,
+};
 const CLAP_APART: Partial<Pose> = {
 	shN: 56,
 	elN: 66,
@@ -3239,6 +3265,22 @@ const FIELD_ANIMS = {
 			[1, BASE],
 		],
 	},
+	// A cheerleader's poms going between plays: up in a V over her head,
+	// out level, down in a V at her sides, out level again - a bounce at
+	// the knees on each.
+	poms: {
+		kind: "loop",
+		n: 4,
+		fps: 6,
+		pose: (i) =>
+			pose(
+				i % 2 === 1
+					? { ...POMS_OUT, kneeN: 20, kneeF: 20, hipN: 8, hipF: 8 }
+					: i === 0
+						? POMS_UP
+						: POMS_DOWN,
+			),
+	},
 	// A camera up to the eye: the right hand on the grip at his face, the
 	// left under the lens out in front of it.
 	shoot: {
@@ -3404,7 +3446,8 @@ const FIELD_ANIMS = {
 export type FieldAnimName = keyof typeof FIELD_ANIMS;
 
 // The court's moves a football player makes as they are: walking, jogging,
-// running, sprinting, backpedaling, sliding, shuffling across.
+// running, sprinting, backpedaling, sliding, shuffling across. (And the
+// dance team's routine, the cheerleaders' at a timeout.)
 const COURT_MOVES = [
 	"walk",
 	"jog",
@@ -3413,6 +3456,7 @@ const COURT_MOVES = [
 	"back",
 	"slide",
 	"shuffle",
+	"dance",
 ] as const;
 export type CourtMove = (typeof COURT_MOVES)[number];
 export type Move = FieldAnimName | CourtMove;
@@ -3428,7 +3472,9 @@ export const moveKind = (m: Move): "still" | "loop" | "cycle" | "act" =>
 
 // How many times round a loop goes a second.
 export const loopRate = (m: Move): number => {
-	const a = FIELD_ANIMS[m as FieldAnimName] as FieldAnim | undefined;
+	const a = isCourtMove(m)
+		? ANIMS[m as AnimName]
+		: (FIELD_ANIMS[m] as FieldAnim | undefined);
 	return a?.kind === "loop" ? a.fps / a.n : 0;
 };
 

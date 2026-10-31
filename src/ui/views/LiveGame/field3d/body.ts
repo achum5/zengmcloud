@@ -71,6 +71,20 @@ export const officialBody = (hgt = 72, weight = 205): Body => {
 	return { ...b, depth: b.depth / 1.18 };
 };
 
+// A cheerleader: slighter than an official, narrower across the shoulders,
+// lighter in the arms.
+export const cheerBody = (hgt = 66, weight = 125): Body => {
+	const b = officialBody(hgt, weight);
+	return {
+		...b,
+		shoulderW: b.shoulderW * 0.84,
+		depth: b.depth * 0.92,
+		upperR: b.upperR * 0.78,
+		foreR: b.foreR * 0.82,
+		calfR: b.calfR * 0.92,
+	};
+};
+
 // Bigger than life on the field, as a game draws them, so a man can be
 // picked out at the broadcast's distance: every length of him this much
 // over. (Only as drawn - where he is and how high anything goes stays

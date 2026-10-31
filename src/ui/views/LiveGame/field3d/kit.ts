@@ -78,6 +78,10 @@ export type FieldLook = {
 	// His hair, for when he has his helmet off - and off, in his hand.
 	hair?: string;
 	bare?: true;
+	// A cheerleader: no pads, no cap - her hair up in a ponytail - a crop
+	// top and a skirt, bare arms and legs, and a pom-pom in each hand in
+	// these colors.
+	cheer?: { poms: [string, string] };
 };
 
 export type FieldTeamColors = [string, string, string];
@@ -490,5 +494,50 @@ export const tvCrewLook = (seed: string): FieldLook => {
 		jerseyNumber: "",
 		lastName: "",
 		official: true,
+	};
+};
+
+// A CHEERLEADER: the home team's - a crop top in its jersey color, trimmed in
+// its collar's, a skirt to match; white sneakers and socks; pom-poms in the
+// two.
+const CHEER_HAIR = [
+	"#1b120c",
+	"#3a2414",
+	"#6b4a2b",
+	"#8a5a2e",
+	"#c9a05a",
+	"#e2c27c",
+];
+export const cheerLook = (kit: FieldKit, seed: string): FieldLook => {
+	const rng = makeCourtRng(`cheer|${seed}`);
+	const top = kit.jersey;
+	const trim =
+		kit.collar === top ? showing([kit.number, WHITE], top, INK) : kit.collar;
+	return {
+		kit: {
+			helmet: top,
+			facemask: INK,
+			jersey: top,
+			collar: trim,
+			number: INK,
+			numberEdge: WHITE,
+			name: INK,
+			sleeveStripes: [],
+			pants: top,
+			pantsStripes: [],
+			sock: WHITE,
+			sockStripes: [],
+		},
+		gear: {
+			mask: "open",
+			cleat: WHITE,
+			cleatSole: "#d4d2cc",
+			cleatAccent: trim,
+		},
+		skin: OFFICIAL_SKIN[Math.floor(rng() * OFFICIAL_SKIN.length)]!,
+		hair: CHEER_HAIR[Math.floor(rng() * CHEER_HAIR.length)]!,
+		jerseyNumber: "",
+		lastName: "",
+		cheer: { poms: [top, trim] },
 	};
 };

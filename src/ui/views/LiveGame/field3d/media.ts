@@ -2,6 +2,7 @@ import { depthOf, project, type Camera } from "../court3d/camera.ts";
 import { skeleton, type Body, type V3 } from "../court3d/poses.ts";
 import { makeCourtRng } from "../courtRng.ts";
 import { FIGURE_SCALE } from "./body.ts";
+import { ROWS_X } from "./cheerleaders.ts";
 import type { FieldMoment } from "./evaluate.ts";
 import {
 	FIELD_L,
@@ -19,7 +20,8 @@ import { bodyPoint } from "./sculpt.ts";
 import { drawnLift, type FieldPlayerState } from "./sprite.ts";
 
 // THE PHOTOGRAPHERS: along each sideline past the team areas, back behind
-// the limit line, and in a row behind each end line - down on a knee or on
+// the limit line (none right in front of the cheerleaders' rows - see
+// cheerleaders.ts), and in a row behind each end line - down on a knee or on
 // their feet, each in his place all game, a long white lens up to the eye
 // while the ball is live anywhere near him, lowered in his hand between
 // plays.
@@ -48,6 +50,7 @@ const OFF_AREA = 8;
 const SIDE_BACK: [number, number] = [LIMIT_LINE + 1, LIMIT_LINE + 6];
 const END_BACK: [number, number] = [7, 13];
 const POSTS_CLEAR = 9;
+const ROWS_CLEAR = 13;
 const APART = 4.5;
 // How many to a stretch of sideline, and behind an end line.
 const ON_SIDE: [number, number] = [3, 6];
@@ -63,7 +66,11 @@ export const photographersFor = (gid: number): Photographer[] => {
 	const count = ([a, b]: [number, number]) => a + Math.floor(r() * (b - a + 1));
 	const near = (a: Pt, b: Pt) => Math.hypot(a.x - b.x, a.y - b.y) < APART;
 	const add = (at: Pt, facing: number, turn: number) => {
-		if (out.length >= PHOTOGRAPHERS || out.some((o) => near(o.at, at))) {
+		if (
+			out.length >= PHOTOGRAPHERS ||
+			out.some((o) => near(o.at, at)) ||
+			(at.y < 0 && Math.abs(at.x - ROWS_X) < ROWS_CLEAR)
+		) {
 			return;
 		}
 		out.push({

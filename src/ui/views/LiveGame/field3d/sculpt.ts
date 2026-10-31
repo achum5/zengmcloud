@@ -79,6 +79,7 @@ const BALL = 11;
 const TOWEL = 12;
 const HELD = 13;
 const HEADSET = 14;
+const POM = 15;
 
 // What melts into what: masses in one group melt together everywhere, two
 // groups only where a joint joins them.
@@ -206,6 +207,10 @@ const shouldersOf = (body: Body) => body.torso + body.depth * 0.55;
 // How far down his upper arm his sleeve comes, and his pants down his shin.
 const SLEEVE = 0.4;
 const PANTS_HEM = 0.16;
+// A cheerleader's skirt, down her thigh this far; her socks up her shin to
+// this far down it.
+const SKIRT = 0.34;
+const SOCK_TOP = 0.84;
 
 // Where his lettering goes, up his torso (in torso lengths) and how big (in
 // heights), and how wide it may be (in sheet half-widths): a big number on
@@ -390,6 +395,8 @@ type Cut = {
 	backAt: number;
 	trim: number;
 	hipStripe: number;
+	// A crop top: bare from the waist up to here.
+	crop?: number;
 };
 
 // ---- what the camera sees of him ---------------------------------------------
@@ -465,6 +472,8 @@ const BAND_STEPS = 6;
 // A player's bare head, his helmet off - and the helmet in his hand, hung
 // from it (helmet radii).
 const BARE_HEAD = 0.86;
+// A cheerleader's pom-pom: how big round (of her height).
+const POM_R = 0.075;
 const HELD_DROP = 0.75;
 const HELD_R = 0.9;
 // An official's shirt: its stripes, how wide (feet).
@@ -664,7 +673,8 @@ const build = (
 		]);
 	}
 	const official = look.official === true;
-	if (official) {
+	const cheer = look.cheer !== undefined;
+	if (official || cheer) {
 		// (An official: no pads - just his shoulders under his shirt.)
 		torso(up(0.88, -sw * 0.72), up(0.88, sw * 0.72), [
 			[0, dp * 0.36],
@@ -705,6 +715,13 @@ const build = (
 			[1, body.thighR * 1.08],
 		],
 	);
+	if (cheer) {
+		// Her skirt, flared out from her hips.
+		torso(up(0.08, 0), up(-0.2, 0), [
+			[0, body.hipW * 1.12],
+			[1, body.hipW * 1.5],
+		]);
+	}
 
 	// His helmet: faced the way his shoulders are turned, but level - eyes
 	// up, however far he leans.
@@ -721,8 +738,8 @@ const build = (
 		up(0.9, 0, -dp * 0.02),
 		at(-0.1, 0, -0.55),
 		[
-			[0, sw * (official ? 0.3 : 0.42)],
-			[1, sw * (official ? 0.26 : 0.36)],
+			[0, sw * (cheer ? 0.26 : official ? 0.3 : 0.42)],
+			[1, sw * (cheer ? 0.22 : official ? 0.26 : 0.36)],
 		],
 		NECK,
 		G_NECK,
@@ -774,6 +791,26 @@ const build = (
 				0.42,
 			);
 		}
+	} else if (cheer) {
+		// Her head, and her ponytail down from the back of it.
+		add(
+			at(0, 0, -0.08),
+			at(0, 0, -0.08),
+			[[0, R * BARE_HEAD]],
+			SHELL,
+			G_HELMET,
+		);
+		add(
+			at(-0.7, 0, 0.42),
+			at(-1.08, 0, -0.62),
+			[
+				[0, R * 0.3],
+				[0.4, R * 0.27],
+				[1, R * 0.12],
+			],
+			SHELL,
+			G_HELMET,
+		);
 	} else if (look.bare) {
 		// His bare head; his helmet hung from his left hand (his right free
 		// to shake with).
@@ -927,6 +964,24 @@ const build = (
 		const halfW = H * 0.017;
 		const palmR = H * 0.019;
 		const knuckles = addV(wrist, h, L * 0.5);
+		if (cheer) {
+			// A pom-pom, all round her hand.
+			knuckleAt[side] = knuckles;
+			thumbAt[side] = knuckles;
+			add(
+				addV(wrist, h, L * 0.1),
+				addV(wrist, h, L * 0.9),
+				[
+					[0, H * POM_R * 0.8],
+					[0.5, H * POM_R],
+					[1, H * POM_R * 0.8],
+				],
+				POM,
+				G_BALL,
+				side,
+			);
+			return;
+		}
 		for (const o of [-1, 1]) {
 			add(
 				addV(addV(wrist, h, L * 0.1), ts, o * halfW * 0.8),
@@ -1045,27 +1100,29 @@ const build = (
 			gl,
 			side,
 		);
-		add(
-			addV(lerpV(limb.root, limb.mid, 0.38), thighFront, body.thighR * 0.32),
-			addV(lerpV(limb.root, limb.mid, 0.74), thighFront, body.thighR * 0.3),
-			[
-				[0, body.thighR * 0.78],
-				[1, body.thighR * 0.7],
-			],
-			THIGH,
-			gl,
-			side,
-		);
 		const shinDir = unit(subV(limb.end, limb.mid));
 		const front = unit(square(fwd, shinDir), v3(1, 0, 0));
-		add(
-			addV(limb.mid, front, body.kneeR * 0.45),
-			addV(limb.mid, front, body.kneeR * 0.45),
-			[[0, body.kneeR * 0.82]],
-			THIGH,
-			gl,
-			side,
-		);
+		if (!cheer) {
+			add(
+				addV(lerpV(limb.root, limb.mid, 0.38), thighFront, body.thighR * 0.32),
+				addV(lerpV(limb.root, limb.mid, 0.74), thighFront, body.thighR * 0.3),
+				[
+					[0, body.thighR * 0.78],
+					[1, body.thighR * 0.7],
+				],
+				THIGH,
+				gl,
+				side,
+			);
+			add(
+				addV(limb.mid, front, body.kneeR * 0.45),
+				addV(limb.mid, front, body.kneeR * 0.45),
+				[[0, body.kneeR * 0.82]],
+				THIGH,
+				gl,
+				side,
+			);
+		}
 		add(
 			limb.mid,
 			limb.end,
@@ -1205,6 +1262,9 @@ const build = (
 		backAt: H * 0.02,
 		trim: Math.max(H * 0.012, 1.2 / kMid),
 		hipStripe: body.hipW + body.thighR * 0.8,
+		...(cheer
+			? { crop: tuckOf(body) + (shouldersOf(body) - tuckOf(body)) * 0.36 }
+			: {}),
 	};
 	return {
 		masses,
@@ -1257,6 +1317,8 @@ type Palette = {
 	// The chain crew's vest over the shirt.
 	vest?: RGB;
 	hair: RGB;
+	// A cheerleader's pom-poms, their strands in two colors.
+	poms?: [RGB, RGB];
 };
 
 const palettes = new WeakMap<FieldLook, Palette>();
@@ -1280,7 +1342,8 @@ const paletteOf = (look: FieldLook): Palette => {
 		collar: rgb(kit.collar),
 		sleeveStripes: kit.sleeveStripes.map(rgb),
 		pants: rgb(kit.pants),
-		belt: scaled(rgb(kit.pants), 0.8),
+		// (A cheerleader's skirt: its waistband in her top's trim.)
+		belt: look.cheer ? rgb(kit.collar) : scaled(rgb(kit.pants), 0.8),
 		pantsStripes: kit.pantsStripes.map(rgb),
 		sock: rgb(kit.sock),
 		skin,
@@ -1311,6 +1374,9 @@ const paletteOf = (look: FieldLook): Palette => {
 		...(kit.stripes ? { stripes: rgb(kit.stripes) } : {}),
 		...(kit.vest ? { vest: rgb(kit.vest) } : {}),
 		hair: look.hair ? rgb(look.hair) : scaled(skin, 0.38),
+		...(look.cheer
+			? { poms: [rgb(look.cheer.poms[0]), rgb(look.cheer.poms[1])] }
+			: {}),
 	};
 	palettes.set(look, p);
 	return p;
@@ -1416,6 +1482,11 @@ export const sculptFigure = (
 		}
 		if (U < cut.waist + cut.belt) {
 			set(pal.belt);
+			return;
+		}
+		if (cut.crop !== undefined && U < cut.crop) {
+			cloth = false;
+			set(pal.skin);
 			return;
 		}
 		const aS = Math.abs(S);
@@ -1792,7 +1863,7 @@ export const sculptFigure = (
 						const limb = b.arms[side]!;
 						const a = fc.kind === UPPER ? alongOf(limb, Pf, Ps, Pu) : 1;
 						let c: RGB;
-						if (a < SLEEVE) {
+						if (a < SLEEVE && !pal.poms) {
 							// His jersey's sleeve, banded near its hem - or, an
 							// official's, striped down the arm.
 							c =
@@ -1819,6 +1890,12 @@ export const sculptFigure = (
 						const limb = b.legs[side]!;
 						// The stripes down the outside of the leg.
 						const a = alongOf(limb, Pf, Ps, Pu);
+						if (pal.poms) {
+							// (Under her skirt, bare.)
+							cloth = a < SKIRT;
+							set(cloth ? pal.pants : pal.skin);
+							break;
+						}
 						const of = Pf - limb.root.f - (limb.mid.f - limb.root.f) * a;
 						const os = Ps - limb.root.s - (limb.mid.s - limb.root.s) * a;
 						const ou = Pu - limb.root.u - (limb.mid.u - limb.root.u) * a;
@@ -1836,6 +1913,12 @@ export const sculptFigure = (
 						cloth = true;
 						const limb = b.legs[side]!;
 						const bl = belowOf(limb, Pf, Ps, Pu);
+						if (pal.poms) {
+							// (Bare down to her socks.)
+							cloth = bl > SOCK_TOP;
+							set(cloth ? pal.sock : pal.skin);
+							break;
+						}
 						set(bl < PANTS_HEM ? pal.pants : pal.sock);
 						break;
 					}
@@ -1884,7 +1967,7 @@ export const sculptFigure = (
 						const lu = (qf * helm.u.f + qs * helm.u.s + qu * helm.u.u) / R;
 						gloss = 1;
 						let c = pal.helmet;
-						if (look.bare) {
+						if (look.bare || pal.poms) {
 							// His face, his eyes; his hair over the top and round
 							// the back.
 							gloss = 0;
@@ -1974,6 +2057,19 @@ export const sculptFigure = (
 					case MASK: {
 						gloss = 0.7;
 						set(pal.mask);
+						break;
+					}
+					case POM: {
+						// Her pom-pom: its strands, in the two colors.
+						const [c0, c1] = pal.poms!;
+						const n =
+							Math.sin(Pf * 31 + Ps * 19) * Math.sin(Ps * 27 - Pu * 35) +
+							0.6 * Math.sin(Pu * 23 + Pf * 13);
+						cloth = true;
+						gloss = 0.5;
+						set(
+							scaled(n > 0 ? c0 : c1, 0.86 + 0.14 * Math.abs(Math.sin(n * 5))),
+						);
 						break;
 					}
 					case HEADSET: {

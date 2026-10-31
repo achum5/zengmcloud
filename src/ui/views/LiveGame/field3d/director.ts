@@ -54,6 +54,7 @@ import { foulsOf } from "./fouls.ts";
 import { stageChains, type ChainSpots } from "./chains.ts";
 import { holderAt, replayFor, type FieldReplay } from "./replays.ts";
 import { crewClear, stageTimeout } from "./timeout.ts";
+import { cheerShotFor, type CheerShot } from "./cheerleaders.ts";
 import { measureTimes, stageMeasure } from "./measure.ts";
 import { HURT_MOST, MEDICS, stageHurt } from "./hurt.ts";
 import { crewOff, stageHalftime, stagePostgame } from "./postgame.ts";
@@ -207,8 +208,9 @@ export type Play = {
 	// of the side that called it out at the sideline.)
 	coaches?: CrewPart[];
 	// A timeout (see timeout.ts): when the picture cuts to the side that
-	// called it, and where it looks.
-	timeout?: { cut: number; at: Pt };
+	// called it, and where it looks - and, now and then, from when on to the
+	// cheerleaders at their routine (see cheerleaders.ts).
+	timeout?: { cut: number; at: Pt; cheer?: CheerShot };
 	// A measurement (see measure.ts): when the picture cuts to the chain out
 	// on the field, and where it looks.
 	measure?: { cut: number; at: Pt };
@@ -1733,6 +1735,13 @@ class Director {
 			t1 = Math.max(t1, timeout.t1);
 			this.cuts.push(timeout.cut);
 		}
+		const cheerShot = timeout
+			? cheerShotFor(timeout.cut, t1, timeout.at, this.rng(i0, "cheer"))
+			: undefined;
+		if (cheerShot) {
+			// (And from them to the next play.)
+			this.cuts.push(cheerShot.cut, t1);
+		}
 		// The measurement: the picture on it once the play is over.
 		const measureAt =
 			measuring && !timeout && !hurt && !half && !ended
@@ -1918,7 +1927,11 @@ class Director {
 			...(timeout
 				? {
 						coaches: timeout.coaches,
-						timeout: { cut: timeout.cut, at: timeout.at },
+						timeout: {
+							cut: timeout.cut,
+							at: timeout.at,
+							...(cheerShot ? { cheer: cheerShot } : {}),
+						},
 					}
 				: {}),
 			...(measure ? { measure: { cut: measure.cut, at: measure.at } } : {}),

@@ -32,7 +32,13 @@ import type { Body } from "../court3d/poses.ts";
 import { aimFor, glideAim, type Glide } from "./aim.ts";
 import { drawFlyingBall, drawLooseBall } from "./ball.ts";
 import { drawFlag } from "./flag.ts";
-import { drawnBody, FIGURE_SCALE, footballBody, officialBody } from "./body.ts";
+import {
+	cheerBody,
+	drawnBody,
+	FIGURE_SCALE,
+	footballBody,
+	officialBody,
+} from "./body.ts";
 import { makeFieldCamera, MAIN_RIG, REPLAY_RIG } from "./camera.ts";
 import type { FieldTimeline } from "./director.ts";
 import { stageField, stageOpening } from "./stageField.ts";
@@ -49,6 +55,7 @@ import {
 import { FIELD_L, type Side } from "./geometry.ts";
 import { sidelineGear } from "./bench.ts";
 import { chainCrewFor } from "./chains.ts";
+import { cheerleadersAt, cheerleadersFor } from "./cheerleaders.ts";
 import { crewFor } from "./crew.ts";
 import { crowdAt } from "./crowd.ts";
 import { marksAt } from "./marks.ts";
@@ -59,6 +66,7 @@ import {
 	fieldGearFor,
 	fieldKitsFor,
 	officialLook,
+	cheerLook,
 	photographerLook,
 	tvCrewLook,
 	type FieldLook,
@@ -565,6 +573,10 @@ const Field3D = ({
 				drawnOfficialBody(67 + ((k * 7) % 8), 170 + ((k * 13) % 60)),
 			);
 		}
+		for (const c of cheerleadersFor(gid ?? 0)) {
+			looks.set(c.id, cheerLook(kits[1], `${gid}|${c.id}`));
+			bodies.set(c.id, drawnBody(cheerBody(c.hgt, c.weight)));
+		}
 		return { looks, bodies };
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [roster, kits, logos, facesVersion]);
@@ -579,6 +591,9 @@ const Field3D = ({
 	const photographers = useMemo(() => photographersFor(gid ?? 0), [gid]);
 	const photographersRef = useRef(photographers);
 	photographersRef.current = photographers;
+	const cheerleaders = useMemo(() => cheerleadersFor(gid ?? 0), [gid]);
+	const cheerleadersRef = useRef(cheerleaders);
+	cheerleadersRef.current = cheerleaders;
 	const sideColors = useRef<[string, string]>([kits[0].helmet, kits[1].helmet]);
 	sideColors.current = [kits[0].helmet, kits[1].helmet];
 	const looks = useRef(appearance.looks);
@@ -828,6 +843,7 @@ const Field3D = ({
 				...moment.players,
 				...sidelineAt(sidelineRef.current, tl, moment),
 				...snappers,
+				...cheerleadersAt(cheerleadersRef.current, tl, moment),
 			];
 			// (Their new pictures made before anything is drawn: see
 			// prepareFieldSprites.)
