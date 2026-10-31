@@ -6,8 +6,10 @@ import { helpers } from "../util/helpers.ts";
 import { showNotification } from "../util/showNotification.ts";
 import type { HelmetLook, StadiumLook, View } from "../../common/types.ts";
 import { END_ZONE_TEXT_MAX } from "../../common/stadiumLook.ts";
+import { toHex } from "./LiveGame/field3d/color.ts";
 import { fieldStyleFor } from "./LiveGame/field3d/fieldPaint.ts";
 import { fieldKit } from "./LiveGame/field3d/kit.ts";
+import { stadiumStyleFor } from "./LiveGame/field3d/stadium.ts";
 
 const StadiumPreview = lazy(
 	() => import("./LiveGame/field3d/StadiumPreview.tsx"),
@@ -153,15 +155,15 @@ const EditTeamStadium = ({
 		away: fieldKit(colors, "away", helmet),
 	};
 
-	// (What the field is with one setting left to the team's own.)
-	const fieldAuto = (key: keyof StadiumLook) => {
+	// (The team with one setting left to its own - and its field and stadium
+	// so.)
+	const teamWithout = (key: keyof StadiumLook) => {
 		const look = { ...stadium };
 		delete look[key];
-		return fieldStyleFor(
-			{ abbrev, name, region, colors, stadium: look },
-			undefined,
-		);
+		return { abbrev, name, region, colors, stadium: look };
 	};
+	const fieldAuto = (key: keyof StadiumLook) =>
+		fieldStyleFor(teamWithout(key), undefined);
 
 	const save = async () => {
 		setSaving(true);
@@ -224,6 +226,12 @@ const EditTeamStadium = ({
 						["dome", "Dome"],
 					]}
 					onChange={(v) => setField("roof", v)}
+				/>
+				<HelmetColor
+					label="Seats"
+					value={stadium.seatColor}
+					fallback={toHex(stadiumStyleFor(teamWithout("seatColor")).seats)}
+					onChange={(v) => setField("seatColor", v)}
 				/>
 				<Choice<"turf">
 					label="Field"

@@ -17,6 +17,8 @@ test("a stadium's settings kept to the ones there are", () => {
 	assert.deepEqual(
 		cleanStadium({
 			turfColor: "#0033a0",
+			seatColor: "#ffb612",
+			wallColor: "#ffffff",
 			endZoneColor: "#203731",
 			endZoneText: "  GREEN BAY  ",
 			endZoneTextColor: "gold",
@@ -25,6 +27,7 @@ test("a stadium's settings kept to the ones there are", () => {
 		{
 			turfColor: "#0033a0",
 			endZoneColor: "#203731",
+			seatColor: "#ffb612",
 			endZoneText: "GREEN BAY",
 			midLogo: false,
 		},

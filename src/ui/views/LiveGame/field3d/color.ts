@@ -25,6 +25,16 @@ export const parseColor = (c: string): RGB => {
 const css = ([r, g, b]: RGB): string =>
 	`rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`;
 
+// As #rrggbb, the way a color picker takes it.
+export const toHex = (c: string): string =>
+	`#${parseColor(c)
+		.map((v) =>
+			Math.round(Math.max(0, Math.min(255, v)))
+				.toString(16)
+				.padStart(2, "0"),
+		)
+		.join("")}`;
+
 // How light a color is, 0 (black) to 1 (white).
 export const luminance = (c: string): number => {
 	const [r, g, b] = parseColor(c);

@@ -3130,6 +3130,8 @@ export type StadiumLook = {
 	endZoneTextColor?: string;
 	// The team's logo at midfield; false for bare grass.
 	midLogo?: false;
+	// The stands' seats; left out, from the team's colors.
+	seatColor?: string;
 };
 
 // A FOOTBALL TEAM'S HELMET in the 3D game, as the team has set it - and the

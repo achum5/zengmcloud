@@ -34,6 +34,7 @@ export const cleanStadium = (raw: unknown): StadiumLook | undefined => {
 		"turfColor",
 		"endZoneColor",
 		"endZoneTextColor",
+		"seatColor",
 	] as const) {
 		const v = r[key];
 		if (typeof v === "string" && HEX.test(v)) {

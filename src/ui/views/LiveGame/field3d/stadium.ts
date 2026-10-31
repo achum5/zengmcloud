@@ -47,8 +47,11 @@ export const stadiumStyleFor = (
 		`stadium|${home?.region ?? ""}|${home?.name ?? ""}|${home?.abbrev ?? ""}`,
 	);
 	const c0 = home?.colors?.[0] ?? "#8c1d40";
+	const own = home?.stadium;
+	// (Rolled whatever the team has set, so what it has not stays as it was.)
+	const roll = rng();
 	return {
-		seats: rng() < 0.6 ? shade(c0, -0.3) : "#4b505b",
+		seats: own?.seatColor ?? (roll < 0.6 ? shade(c0, -0.3) : "#4b505b"),
 		wall: shade(c0, -0.42),
 		structure: "#5b5e66",
 		sky: venue.sky,
