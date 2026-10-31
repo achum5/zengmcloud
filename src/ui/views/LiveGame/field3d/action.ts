@@ -2441,6 +2441,9 @@ const COVER_COME = 4;
 const COVER_READ_MS = 600;
 const COVER_MIN = 2.5;
 const COVER_SOFT = 3;
+// (A cover man against the others at his position: sat this much tighter
+// on his man - or looser - at the most.)
+const COVER_TIGHT = 0.3;
 const COVER_FRONT = 1;
 // Back into his zone at this pace (ft/s), this far back at least (feet) -
 // settling into it over as much as this (feet), and turned and run there
@@ -2747,6 +2750,13 @@ const PUMP_MS = 520;
 const HAND_MS = 420;
 const HAND_FT = 0.9;
 const HAND_STEP_MS = 90;
+// (A rusher better at it than the blocker on him is at his job - each
+// against the others at their positions: working him this much wider and
+// quicker, and the blocker giving this much more ground, at the most. Or
+// less, the other way round.)
+const RUSH_WIDER = 0.45;
+const RUSH_QUICKER = 0.2;
+const RUSH_GIVE = 0.4;
 const EDGE_OUT = 1.7;
 const EDGE_ON = 1.6;
 const EDGE_PAST = 1.8;
@@ -7153,6 +7163,14 @@ class Action {
 
 	// ---- the pass rush and the coverage --------------------------------------------
 
+	// How far the rusher on blocker `b` has the better of him (-1 to 1): the
+	// one at rushing the passer against the others at his position, the
+	// other at blocking for him against his.
+	rushEdge(b: Actor, engaged: Map<Actor, Actor>): number {
+		const m = [...engaged].find(([, x]) => x === b)?.[0];
+		return m ? clamp((m.flair.rush ?? 0) - (b.flair.block ?? 0), -1, 1) : 0;
+	}
+
 	// Each rusher on a blocker (`pair`, the one the sim says got home on the
 	// one who gave it up): off the ball, into him, the two of them giving
 	// ground a step at a time back toward the quarterback - the pocket -
@@ -7254,7 +7272,10 @@ class Action {
 			// quarterback).
 			const give = inBack
 				? r() * 1.2
-				: Math.min(2 + r() * 4, Math.max(0, setPt.d - pocket.d - POCKET_ROOM));
+				: Math.min(
+						(2 + r() * 4) * (1 + RUSH_GIVE * this.rushEdge(b, engaged)),
+						Math.max(0, setPt.d - pocket.d - POCKET_ROOM),
+					);
 			b.go(
 				this.w({ d: setPt.d - give, a: setPt.a + (pocket.a - setPt.a) * 0.1 }),
 				end,
@@ -7331,8 +7352,9 @@ class Action {
 						GET_OFF_SQUARE_MS,
 					)
 				: m.getOff(hit, hitT, 0, GET_OFF_ACCEL, "run", GET_OFF_SQUARE_MS);
-			const per = HAND_MS * (0.8 + r() * 0.5);
-			const amp = edge ? 0 : HAND_FT * (0.5 + r());
+			const over = this.rushEdge(b, engaged);
+			const per = HAND_MS * (0.8 + r() * 0.5) * (1 - RUSH_QUICKER * over);
+			const amp = edge ? 0 : HAND_FT * (0.5 + r()) * (1 + RUSH_WIDER * over);
 			let way = r() < 0.5 ? 1 : -1;
 			const turns: { t: number; lat: number }[] = [];
 			for (let t = hitT + per; t < end - per / 2; t += per) {
@@ -7547,8 +7569,10 @@ class Action {
 						(1 - COVER_GIVE) * Math.max(0, p.d - rs.d) -
 						(COVER_COME * Math.max(0, t - snap - COVER_READ_MS)) / 1000;
 					const cushion =
-						COVER_MIN +
-						COVER_SOFT * Math.log1p(Math.exp((room - COVER_MIN) / COVER_SOFT));
+						(COVER_MIN +
+							COVER_SOFT *
+								Math.log1p(Math.exp((room - COVER_MIN) / COVER_SOFT))) *
+						(1 - COVER_TIGHT * (m.flair.cover ?? 0));
 					const to = this.w({ d: p.d + cushion, a: p.a + inside * 1.8 });
 					const front = this.of(m.at).d > p.d + COVER_FRONT;
 					// (His man broken off well round from the way he is going:

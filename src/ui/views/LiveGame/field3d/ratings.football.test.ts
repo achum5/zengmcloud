@@ -7,7 +7,7 @@ import {
 	speedsOf,
 	type FieldRatings,
 } from "./ratings.ts";
-import { dist } from "./geometry.ts";
+import { dist, type Pt } from "./geometry.ts";
 import { simGames, type SimGame } from "./testGames.ts";
 
 let games: SimGame[] = [];
@@ -28,6 +28,75 @@ const staged = (
 			: roster,
 		gid: 1,
 	});
+
+// Where a man is at t in a play.
+const posAt = (
+	part: FieldTimeline["plays"][number]["parts"][number],
+	t: number,
+): Pt => {
+	const l = part.legs.findLast((x) => x.t0 <= t) ?? part.legs[0]!;
+	const u =
+		l.t1 > l.t0 ? Math.min(1, Math.max(0, (t - l.t0) / (l.t1 - l.t0))) : 1;
+	return {
+		x: l.from.x + (l.to.x - l.from.x) * u,
+		y: l.from.y + (l.to.y - l.from.y) * u,
+	};
+};
+
+// On the passes `side` throws: how far its linemen have given ground two
+// seconds in, and how far the other side's corners are from the nearest
+// man going out, a second and a half in (feet, on average).
+const PROTECT_MS = 2500;
+const COVER_MS = 1500;
+const passPlays = (tl: FieldTimeline, roster: RosterMan[], side: 0 | 1) => {
+	const pos = new Map(roster.map((p) => [p.pid, p.pos]));
+	let given = 0;
+	let linemen = 0;
+	let worked = 0;
+	let rushers = 0;
+	let apart = 0;
+	let corners = 0;
+	for (const play of tl.plays) {
+		if (play.kind !== "pass" || play.offense !== side) {
+			continue;
+		}
+		const out = play.parts.filter(
+			(x) =>
+				x.team === side && ["WR", "TE", "RB"].includes(pos.get(x.pid) ?? ""),
+		);
+		for (const part of play.parts) {
+			const at = pos.get(part.pid);
+			if (part.team === side && at === "OL") {
+				given += dist(
+					posAt(part, play.snap),
+					posAt(part, play.snap + PROTECT_MS),
+				);
+				linemen += 1;
+			} else if (part.team !== side && at === "DL") {
+				// (Across the field, over and back, working the man on him.)
+				let lo = Infinity;
+				let hi = -Infinity;
+				for (let t = play.snap + 700; t <= play.snap + PROTECT_MS; t += 50) {
+					const y = posAt(part, t).y;
+					lo = Math.min(lo, y);
+					hi = Math.max(hi, y);
+				}
+				worked += hi - lo;
+				rushers += 1;
+			} else if (part.team !== side && at === "CB" && out.length > 0) {
+				const t = play.snap + COVER_MS;
+				const me = posAt(part, t);
+				apart += Math.min(...out.map((x) => dist(me, posAt(x, t))));
+				corners += 1;
+			}
+		}
+	}
+	return {
+		given: given / linemen,
+		worked: worked / rushers,
+		apart: apart / corners,
+	};
+};
 
 const MISSES = ["hurdle", "spin", "juke"] as const;
 const missesIn = (tl: FieldTimeline) => {
@@ -78,6 +147,14 @@ describe("3D field ratings", () => {
 		assert.isBelow(Math.abs(flair.get(3)!.hands!), 0.2);
 		assert.strictEqual(flair.get(3)!.power, 0);
 		assert.isUndefined(flair.get(5));
+		const line = flairOf([
+			{ pid: 1, pos: "DL", ratings: { prs: 90 } },
+			{ pid: 2, pos: "DL", ratings: { prs: 50 } },
+			{ pid: 3, pos: "CB", ratings: { pcv: 40 } },
+			{ pid: 4, pos: "CB", ratings: { pcv: 80 } },
+		]);
+		assert.isAbove(line.get(1)!.rush!, 0.3);
+		assert.isBelow(line.get(3)!.cover!, -0.3);
 	});
 
 	test("a big arm throws it harder, a weak one softer", () => {
@@ -107,6 +184,33 @@ describe("3D field ratings", () => {
 		};
 		assert.isAbove(pace(rated, 0), pace(plain, 0) * 1.01);
 		assert.isBelow(pace(rated, 1), pace(plain, 1) * 0.99);
+	}, 80_000);
+
+	test("a pass rusher who has the better of the man on him works him harder, and backs him up further - and a cover man who stands out sits tighter", () => {
+		const game = games[0]!;
+		const plain = staged(game);
+		// Side 0's rushers and corners all stars, side 1's not.
+		const rated = staged(game, (p) =>
+			p.pos === "DL"
+				? { prs: p.team === 0 ? 95 : 45 }
+				: p.pos === "CB"
+					? { pcv: p.team === 0 ? 95 : 45 }
+					: p.pos === "OL"
+						? { pbk: 60 }
+						: {},
+		);
+		// (Side 1 throwing into side 0's: the rush on, the corners tight.)
+		const a = passPlays(plain, game.roster, 1);
+		const b = passPlays(rated, game.roster, 1);
+		assert.isAbove(b.worked, a.worked * 1.05, JSON.stringify({ a, b }));
+		assert.isAbove(b.given, a.given, JSON.stringify({ a, b }));
+		assert.isBelow(b.apart, a.apart * 0.97, JSON.stringify({ a, b }));
+		// And the other way round.
+		const c = passPlays(plain, game.roster, 0);
+		const d = passPlays(rated, game.roster, 0);
+		assert.isBelow(d.worked, c.worked * 0.97, JSON.stringify({ c, d }));
+		assert.isBelow(d.given, c.given, JSON.stringify({ c, d }));
+		assert.isAbove(d.apart, c.apart * 1.01, JSON.stringify({ c, d }));
 	}, 80_000);
 
 	test("a game with ratings is staged line for line as one without", () => {

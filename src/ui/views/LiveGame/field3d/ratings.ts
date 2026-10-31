@@ -110,20 +110,35 @@ const standOut = (
 
 // Where the stars show it: a quarterback's arm (how hard he throws it), a
 // receiver's hands (up for it, or laid out for it), a back's strength (an
-// arm out into a man) - each against the others at his position.
-export type Flair = { arm?: number; hands?: number; power?: number };
+// arm out into a man), a pass rusher's hands and a blocker's feet against
+// each other (see passRush), a defensive back's coverage (how tight he
+// sits on his man) - each against the others at his position.
+export type Flair = {
+	arm?: number;
+	hands?: number;
+	power?: number;
+	rush?: number;
+	block?: number;
+	cover?: number;
+};
 export const flairOf = (
 	players: { pid: number; pos: string; ratings?: FieldRatings }[],
 ): Map<number, Flair> => {
 	const arm = standOut(players, "thp");
 	const hands = standOut(players, "hnd");
 	const power = standOut(players, "stre");
+	const rush = standOut(players, "prs");
+	const block = standOut(players, "pbk");
+	const cover = standOut(players, "pcv");
 	const out = new Map<number, Flair>();
 	for (const p of players) {
 		const f: Flair = {
 			...(arm.has(p.pid) ? { arm: arm.get(p.pid) } : {}),
 			...(hands.has(p.pid) ? { hands: hands.get(p.pid) } : {}),
 			...(power.has(p.pid) ? { power: power.get(p.pid) } : {}),
+			...(rush.has(p.pid) ? { rush: rush.get(p.pid) } : {}),
+			...(block.has(p.pid) ? { block: block.get(p.pid) } : {}),
+			...(cover.has(p.pid) ? { cover: cover.get(p.pid) } : {}),
 		};
 		if (Object.keys(f).length > 0) {
 			out.set(p.pid, f);
