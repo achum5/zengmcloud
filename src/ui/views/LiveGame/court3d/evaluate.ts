@@ -6838,7 +6838,7 @@ const facesTo = (tl: CourtTimeline, i: number): Faces => {
 // A PASS GOES BY A MAN IN THE WAY, NOT THROUGH HIM. Thrown past a man
 // between the passer and his man - or out of bounds past one, or dropping
 // out of the net past a man under it - it bows out to the side round his
-// head or his body, just enough to miss him: past his ear, past his
+// head, his body or a hand he has out, just enough to miss him: past his ear, past his
 // shoulder - most at the middle of its flight, and not at all leaving the
 // passer's hands or getting to the other man's. (Not a shot, on its way
 // into a play at the rim.) Worked out once a pass, as it was thrown (feet,
@@ -6850,9 +6850,16 @@ const BOW_MOST = 2.2;
 const passedBys = new WeakMap<object, Pt3 | null>();
 type FlySeg = Extract<CourtTimeline["ball"][number], { kind: "fly" }>;
 // Each man near it, each moment of its flight: where it is then, how far
-// out it bows there (for a bow of 1), and his head and the line up his
-// body. (Near enough that a bow out his way could bring it to him.)
-type Near = { k: number; p: Pt3; parts: [Pt3, Pt3, Pt3]; headR: number };
+// out it bows there (for a bow of 1), his head and the line up his body,
+// and his hands. (Near enough that a bow out his way could bring it to him.)
+type Near = {
+	k: number;
+	p: Pt3;
+	parts: [Pt3, Pt3, Pt3];
+	headR: number;
+	hands: [Pt3, Pt3];
+	handR: number;
+};
 // That worked out a moment at a time (see warmBall): the ends of its
 // flight, the men at them, the men near it so far, and the next moment.
 type PassWork = {
@@ -6944,6 +6951,14 @@ const passSteps = (
 			const body = bodyFor(tr.pid);
 			const me = withBody(st, body);
 			const sk = skeleton(body, poseOf(me));
+			const hand = (arm: Limb) => {
+				const tip = arm.tip ?? arm.end;
+				return bodyPoint(me, {
+					f: (arm.end.f + tip.f) / 2,
+					s: (arm.end.s + tip.s) / 2,
+					u: (arm.end.u + tip.u) / 2,
+				});
+			};
 			w.near.push({
 				k: 4 * u * (1 - u),
 				p,
@@ -6953,6 +6968,8 @@ const passSteps = (
 					bodyPoint(me, sk.chest),
 				],
 				headR: body.headR,
+				hands: [hand(sk.armR), hand(sk.armL)],
+				handR: body.handR,
 			});
 		}
 	}
@@ -7010,6 +7027,8 @@ const passedBy = (
 			[
 				[head, n.headR],
 				[spine, TORSO_R],
+				[n.hands[0], n.handR],
+				[n.hands[1], n.handR],
 			] as const
 		).map(([c, r]) => ({
 			r: { x: q.x - c.x, y: q.y - c.y, z: q.z - c.z },
