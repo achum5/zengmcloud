@@ -2030,7 +2030,7 @@ const refStates = (
 				Math.atan2(B.y - o.y, B.x - o.x),
 				smooth01((2.5 - d) / 1.5),
 			);
-			toHold(breakBall, o);
+			toHold(breakBall, p);
 			if (breakHand && d < 0.8) {
 				({ anim, phase } = breakHand);
 				gaitFrom = undefined;

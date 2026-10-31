@@ -2138,6 +2138,9 @@ class Director {
 	// The ball in an official's hands, there - at the line, the circle, by
 	// the table over a timeout - till it is given to someone.
 	private official?: Pt3;
+	// The official by the table with the ball over a timeout (`at`, his
+	// since `since`), for `pid` to have back (see toOfficial).
+	private backFrom?: { pid: number; at: Pt3; since: number };
 	// Two men going to each other to dap up after the game, from their last
 	// steps in to it to when they are through (see gameOver) - not kept off
 	// each other as they come together, nor in the middle of it (see
@@ -3608,6 +3611,35 @@ class Director {
 	// the same moment.
 	private pushBall(seg: BallSeg) {
 		this.official = undefined;
+		// (Tossed to the official by the table over a timeout: back to the
+		// man who tossed it to him, as it is next his - see toOfficial.)
+		const back = this.backFrom;
+		if (back) {
+			this.backFrom = undefined;
+			// (To whoever it is next with, as it turns out: him, or a man he
+			// was to give it to.)
+			const pid =
+				seg.kind === "hold"
+					? seg.pid
+					: seg.kind === "fly" && "pid" in seg.from
+						? seg.from.pid
+						: back.pid;
+			const R = this.posAt(pid, seg.t0);
+			const flight = Math.max(450, passMs(dist(back.at, R)) * 1.15);
+			const t0 = Math.max(seg.t0 - flight, back.since + 300);
+			if (t0 < seg.t0 - 100) {
+				this.pushBall({
+					kind: "fly",
+					t0,
+					t1: seg.t0,
+					from: back.at,
+					to: { pid },
+				});
+				this.act(pid, "catch", seg.t0 - 90, seg.t0 + 110, {
+					look: { x: back.at.x, y: back.at.y },
+				});
+			}
+		}
 		while (this.ball.length > 1 && this.ball.at(-1)!.t0 >= seg.t0) {
 			this.ball.pop();
 		}
@@ -4356,6 +4388,40 @@ class Director {
 		return near === pid
 			? got + 300
 			: this.passTo(near, pid, got + 400, "chest", true);
+	}
+
+	// A man with the ball on his way to the huddle at a timeout (the whistle
+	// at `at`) tosses it to the official by the table - once the official
+	// can be there, and before he sits down: else he keeps it. Nothing else
+	// changes: he is still the man with it, as far as anyone's plans go, and
+	// has it back from the official as it is next his (see pushBall).
+	private toOfficial(pid: number, spot: Pt3, at: number) {
+		const flight = Math.max(550, passMs(dist(this.posOf(pid), spot)) * 1.4);
+		// (And not before it is in his hands: handed to him, picked up.)
+		const last = this.ball.at(-1);
+		const has =
+			last?.kind === "fly" && "pid" in last.to ? last.t1 : (last?.t0 ?? at);
+		const start = Math.max(
+			at + 600,
+			has + 150,
+			at + OFFICIALS_SETTLE - flight - 120,
+		);
+		const sits = (this.free.get(pid) ?? at) + CHAIR_TURN_MS;
+		if (start + 300 > sits) {
+			return;
+		}
+		this.act(pid, "pass", start, start + 300, {
+			look: { x: spot.x, y: spot.y },
+		});
+		const thrown = start + 120;
+		this.pushBall({
+			kind: "fly",
+			t0: thrown,
+			t1: thrown + flight,
+			from: { pid },
+			to: spot,
+		});
+		this.backFrom = { pid, at: spot, since: thrown + flight };
 	}
 
 	// The ball out of an official's hands to a man: bounced to him, or - a
@@ -14902,14 +14968,24 @@ class Director {
 					type === "timeout" && e.advancesBall
 						? { x: COURT_W / 2 + attackDir(team) * 19, y: -1.4 }
 						: { x: Math.min(COURT_W - 4, Math.max(4, ballX)), y: -1.4 };
-				// At a timeout the ball goes to an official, to hold by the
-				// table till it goes back in; at the end of a period it goes
-				// off with whoever has it. Not left lying out on the floor
-				// through the break, either way.
+				// The ball goes to the huddle with a man of the side that has it
+				// after the timeout - handed to him there and then, or picked up
+				// - or, at the end of a period, with whoever has it: not left
+				// lying out on the floor through the break. (At a timeout he
+				// tosses it to an official by the table on his way, and has it
+				// back from him after: see toHuddles.)
+				const B = this.ballPoint();
+				const taker =
+					type === "timeout"
+						? [...this.slots(this.offense)].sort(
+								(a, b) => dist(this.posOf(a), B) - dist(this.posOf(b), B),
+							)[0]
+						: undefined;
 				const over = this.toHuddles(
 					i,
 					at,
 					type === "timeout",
+					taker,
 					type === "timeout" ? inAt : undefined,
 				);
 				this.beat(i, type, at, Math.max(over, played.still));
@@ -17565,9 +17641,12 @@ class Director {
 		i: number,
 		at: number,
 		long: boolean,
+		taker?: number,
 		official?: Pt,
 	): number {
-		if (this.holder !== undefined) {
+		if (taker !== undefined && taker !== this.holder) {
+			this.ballTo(taker, at + 200);
+		} else if (this.holder !== undefined) {
 			this.hold(this.holder, at, "hold");
 		} else {
 			this.pickUpLoose(at + 200);
@@ -17637,11 +17716,12 @@ class Director {
 				);
 			}
 		}
-		// (The ball to the official from in front of his chair, before he
-		// sits - and not before the official is there for it.)
+		// (The ball to the official on his way, or from in front of his
+		// chair before he sits - not before the official is there for it.
+		// If he would be sat down by then, he keeps it.)
 		const h = this.holder;
 		if (official && h !== undefined && !this.official) {
-			this.tossTo(breakOfficialBall(official), at + 600, at + OFFICIALS_SETTLE);
+			this.toOfficial(h, breakOfficialBall(official), at);
 		}
 		let sat = at + 800;
 		const down = new Map<number, number>();
