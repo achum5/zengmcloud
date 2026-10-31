@@ -806,9 +806,33 @@ const build = (
 		G_NECK,
 	);
 	let held: V3 | undefined;
+	// A bare head's ears, either side of it, and nose, out from the face -
+	// the head this big round (helmet radii), its middle this far up.
+	const features = (r: number, u0: number) => {
+		for (const sd of [-1, 1]) {
+			add(
+				at(-0.03, sd * r * 0.95, u0 + 0.03),
+				at(-0.06, sd * r * 0.95, u0 - 0.17),
+				[[0, R * 0.11]],
+				SHELL,
+				G_MASK,
+			);
+		}
+		add(
+			at(r * 0.88, 0, u0 + 0.02),
+			at(r * 1.03, 0, u0 - 0.15),
+			[
+				[0, R * 0.08],
+				[1, R * 0.11],
+			],
+			SHELL,
+			G_MASK,
+		);
+	};
 	if (official) {
 		// His bare head, a cap on it, and its brim out over his eyes.
 		add(at(0, 0, 0), at(0, 0, 0), [[0, R * OFFICIAL_HEAD]], SHELL, G_HELMET);
+		features(OFFICIAL_HEAD, 0);
 		for (const sd of [-1, 1]) {
 			add(
 				at(0.6, sd * 0.26, 0.27),
@@ -861,6 +885,7 @@ const build = (
 			SHELL,
 			G_HELMET,
 		);
+		features(BARE_HEAD, -0.08);
 		add(
 			at(-0.7, 0, 0.42),
 			at(-1.08, 0, -0.62),
@@ -882,6 +907,7 @@ const build = (
 			SHELL,
 			G_HELMET,
 		);
+		features(BARE_HEAD, -0.08);
 		const hand = sk.armL.tip ?? sk.armL.end;
 		held = addV(hand, v3(0, 0, -1), R * HELD_DROP);
 		add(held, held, [[0, R * HELD_R]], HELD, G_BALL);
@@ -2101,18 +2127,24 @@ export const sculptFigure = (
 						gloss = 1;
 						let c = pal.helmet;
 						if (look.bare || pal.poms) {
-							// His face, his eyes; his hair over the top and round
-							// the back.
+							// His face - his eyes, his brows over them, his
+							// mouth; his hair over the top and round the back,
+							// his ears either side a shade darker.
 							gloss = 0;
+							const as = Math.abs(ls);
 							if (lf > 0.3 && lu < 0.42) {
-								const eye =
-									lu > -0.02 &&
-									lu < 0.16 &&
-									Math.abs(ls) > 0.12 &&
-									Math.abs(ls) < 0.42;
-								c = scaled(pal.skin, eye ? 0.34 : 0.96);
+								const eye = lu > -0.02 && lu < 0.16 && as > 0.12 && as < 0.42;
+								const brow =
+									lf > 0.5 && lu > 0.21 && lu < 0.28 && as > 0.1 && as < 0.44;
+								const mouth = lf > 0.5 && lu > -0.47 && lu < -0.41 && as < 0.2;
+								c = brow
+									? pal.hair
+									: scaled(pal.skin, eye ? 0.34 : mouth ? 0.66 : 0.96);
 							} else {
-								c = lu > 0.3 || lf < -0.25 ? pal.hair : pal.skin;
+								c =
+									lu > 0.3 || lf < -0.25
+										? pal.hair
+										: scaled(pal.skin, as > 0.88 ? 0.86 : 1);
 							}
 							set(c);
 							break;
@@ -2122,7 +2154,7 @@ export const sculptFigure = (
 							// eyes in its shadow; his hair round the back.
 							gloss = 0;
 							cloth = true;
-							if (lu > 0.22 || lf > 0.96) {
+							if (lu > 0.22 || (lf > 0.96 && lu > 0.05)) {
 								set(c);
 								break;
 							}
@@ -2133,7 +2165,12 @@ export const sculptFigure = (
 									lu < 0.1 &&
 									Math.abs(ls) > 0.12 &&
 									Math.abs(ls) < 0.42;
-								c = scaled(pal.skin, eye ? 0.34 : lu > 0.06 ? 0.8 : 0.96);
+								const mouth =
+									lf > 0.5 && lu > -0.39 && lu < -0.33 && Math.abs(ls) < 0.2;
+								c = scaled(
+									pal.skin,
+									eye ? 0.34 : lu > 0.06 ? 0.8 : mouth ? 0.66 : 0.96,
+								);
 							} else {
 								c = lf < -0.2 || lu > 0.05 ? pal.hair : pal.skin;
 							}
