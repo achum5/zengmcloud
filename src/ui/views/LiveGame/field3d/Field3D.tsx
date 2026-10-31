@@ -536,7 +536,7 @@ const Field3D = ({
 			gid: gid ?? 0,
 			primeTime: boxScore?.primeTime === true,
 		});
-		const style = fieldStyleFor(h, a, false, venue);
+		const style = fieldStyleFor(h, a, boxScore?.neutralSite === true, venue);
 		const seed = String(gid ?? 0);
 		const mid = logos[1];
 		return {
@@ -552,7 +552,11 @@ const Field3D = ({
 				h,
 				a,
 				seed,
-				{ att: boxScore?.att, capacity: boxScore?.arena?.capacity },
+				{
+					att: boxScore?.att,
+					capacity: boxScore?.arena?.capacity,
+					neutral: boxScore?.neutralSite === true,
+				},
 				mid,
 				venue,
 				boxScore?.arena,

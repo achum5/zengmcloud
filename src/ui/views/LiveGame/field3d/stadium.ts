@@ -308,6 +308,7 @@ const paintSeating = ({
 	// is along the side.
 	midAt,
 	dim,
+	neutral = false,
 }: {
 	w: number;
 	h: number;
@@ -322,6 +323,7 @@ const paintSeating = ({
 	midAt?: number;
 	// How far the light falls off up the section (0 none, 1 dark at the top).
 	dim: number;
+	neutral?: boolean;
 }) => {
 	const c = canvasOf(w, h);
 	const g = c.getContext("2d")!;
@@ -336,16 +338,23 @@ const paintSeating = ({
 	const headRng = makeCourtRng(`heads|${seed}`);
 	const homeC = [teamColor(home, 0, "#8c1d40"), teamColor(home, 1, "#f2c14e")];
 	const awayC = [teamColor(away, 0, "#1d3461"), teamColor(away, 1, "#f28c28")];
+	// (At a neutral site, as many in the one team's colors as the other's.)
+	const [h0, h1, a0, a1] = neutral
+		? [0.18, 0.25, 0.43, 0.5]
+		: [0.36, 0.5, 0.57, 0.57];
 	const shirt = () => {
 		const r = rng();
-		if (r < 0.36) {
+		if (r < h0) {
 			return homeC[0]!;
 		}
-		if (r < 0.5) {
+		if (r < h1) {
 			return homeC[1]!;
 		}
-		if (r < 0.57) {
+		if (r < a0) {
 			return awayC[0]!;
+		}
+		if (r < a1) {
+			return awayC[1]!;
 		}
 		return PALETTE[Math.floor(rng() * PALETTE.length)]!;
 	};
@@ -919,7 +928,7 @@ export const paintStadium = (
 	home: FieldTeam | undefined,
 	away: FieldTeam | undefined,
 	seed: string,
-	crowd?: { att?: number; capacity?: number },
+	crowd?: { att?: number; capacity?: number; neutral?: boolean },
 	logo?: HTMLCanvasElement,
 	venue: Venue = venueFor(home),
 	// The home team's honors (see paintFascia).
@@ -972,6 +981,7 @@ export const paintStadium = (
 			...(mid ? { midAt: -X0 + FIELD_L / 2 } : {}),
 			// (In the sun, the backs of the stands hardly in the dark.)
 			dim: style.sky === "day" && style.roof === "open" ? dim * 0.4 : dim,
+			...(crowd?.neutral ? { neutral: true } : {}),
 		});
 	const lower = ([0, 1, 2] as const).map((up) =>
 		seating(LOWER, "lower", up, 0.35, true),
