@@ -56,6 +56,7 @@ import { FIELD_L, type Side } from "./geometry.ts";
 import { sidelineGear } from "./bench.ts";
 import { chainCrewFor } from "./chains.ts";
 import { cheerleadersAt, cheerleadersFor } from "./cheerleaders.ts";
+import { confettiFor } from "./confetti.ts";
 import { crewFor } from "./crew.ts";
 import { crowdAt } from "./crowd.ts";
 import { marksAt } from "./marks.ts";
@@ -615,6 +616,12 @@ const Field3D = ({
 	cheerleadersRef.current = cheerleaders;
 	const sideColors = useRef<[string, string]>([kits[0].helmet, kits[1].helmet]);
 	sideColors.current = [kits[0].helmet, kits[1].helmet];
+	// The championship game: confetti for the winners (see confetti.ts).
+	const title = useRef({ won: false, colors: [] as (string[] | undefined)[] });
+	title.current = {
+		won: boxScore?.finals === true,
+		colors: [away?.colors, home?.colors],
+	};
 	const looks = useRef(appearance.looks);
 	const bodies = useRef(appearance.bodies);
 	looks.current = appearance.looks;
@@ -858,6 +865,10 @@ const Field3D = ({
 			const items: { depth: number; draw: () => void }[] = [];
 			const shadow = p.paint.stadium.style.shadow;
 			const snappers = photographersAt(photographersRef.current, moment);
+			const confetti = confettiFor(moment.play, title.current.won, [
+				title.current.colors[0],
+				title.current.colors[1],
+			]);
 			const standing = [
 				...moment.players,
 				...sidelineAt(sidelineRef.current, tl, moment),
@@ -952,6 +963,7 @@ const Field3D = ({
 				items,
 				pools: poolsOf(standing, moment.ball?.at),
 				crowd: crowdAt(tl, moment.t, now),
+				...(confetti ? { confetti: { of: confetti, t: moment.t } } : {}),
 				...(replay ? {} : { marks: marksAt(moment.play, moment.t) }),
 			});
 			if (now - covers.current.at > 500) {

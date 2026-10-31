@@ -1,5 +1,6 @@
 import { depthOf, project, type Camera } from "../court3d/camera.ts";
 import { drawTexturedPlane } from "../court3d/planes.ts";
+import { drawConfetti, type Confetti } from "./confetti.ts";
 import { drawFieldLines } from "./fieldLines.ts";
 import { drawMarks, type Mark } from "./marks.ts";
 import { drawPools, type Pool } from "./pools.ts";
@@ -67,6 +68,8 @@ export type FieldFrame = {
 	// Drawn among the posts, back to front: each with how far it is from the
 	// camera.
 	items?: { depth: number; draw: () => void }[];
+	// The championship's confetti (see confetti.ts), and when it is.
+	confetti?: { of: Confetti; t: number };
 };
 
 const POST_YELLOW = "#f5d31c";
@@ -269,6 +272,9 @@ export const drawFieldFrame = (f: FieldFrame) => {
 	if (f.pools) {
 		drawPools(ctx, cam, f.pools);
 	}
+	if (f.confetti) {
+		drawConfetti(ctx, cam, f.confetti.of, f.confetti.t, false);
+	}
 	// Everything standing up, back to front.
 	const items = [
 		...(f.items ?? []),
@@ -288,5 +294,8 @@ export const drawFieldFrame = (f: FieldFrame) => {
 	items.sort((a, b) => b.depth - a.depth);
 	for (const it of items) {
 		it.draw();
+	}
+	if (f.confetti) {
+		drawConfetti(ctx, cam, f.confetti.of, f.confetti.t, true);
 	}
 };
