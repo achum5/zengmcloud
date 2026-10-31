@@ -1887,6 +1887,9 @@ const UP_IN_CLOSE = new Set<AnimName>([
 // (Worked out from where the schedule has them - which the picture, a
 // stride at a time, can have up to half a foot or so nearer: that much more.)
 const GIVE_WAY_SLACK = 0.5;
+// Out to one side of the way the shooter goes by this far (feet), he steps
+// aside that side - whatever side he stepped before.
+const GIVE_WAY_SIDE = 0.5;
 // How near him (feet, middle to middle) a man going up for that rebound gets
 // - round him from where he would have taken it, by no more than this (feet
 // for every second it is in the air to him).
@@ -22372,14 +22375,18 @@ class Director {
 			const was = (tr.nudges ?? [])
 				.filter((x) => x.t0 < n1 && x.t1 > n0)
 				.reduce((a, x) => a + x.dx * n.x + x.dy * n.y, 0);
+			// (But never over to the far side of him, clear of it this side:
+			// across his way as he goes by is through him.)
 			const s =
-				Math.abs(was) > 0.1
-					? Math.sign(was)
-					: Math.abs(off) > 0.1
-						? Math.sign(off)
-						: tr.pid % 2
-							? 1
-							: -1;
+				Math.abs(off) > GIVE_WAY_SIDE
+					? Math.sign(off)
+					: Math.abs(was) > 0.1
+						? Math.sign(was)
+						: Math.abs(off) > 0.1
+							? Math.sign(off)
+							: tr.pid % 2
+								? 1
+								: -1;
 			const k = s * (GIVE_WAY + GIVE_WAY_SLACK + 0.2) - off;
 			// (Back where he was by the time the ball is in the air to him -
 			// off the rim, say: where his hands are, it goes. Unless back
