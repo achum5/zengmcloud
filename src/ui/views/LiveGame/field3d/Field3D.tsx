@@ -30,6 +30,7 @@ import {
 } from "../court3d/sprite.ts";
 import type { Body } from "../court3d/poses.ts";
 import { aimFor, glideAim, type Glide } from "./aim.ts";
+import { buildFieldClocks, fieldClockAt } from "./clock.ts";
 import { drawFlyingBall, drawLooseBall } from "./ball.ts";
 import { drawFlag } from "./flag.ts";
 import {
@@ -462,6 +463,16 @@ const Field3D = ({
 	}, [matched, events, roster, gid]);
 	// Key plays only: the stretches of the game shown.
 	const numPeriods: number = boxScore?.numPeriods ?? 4;
+	// The game clock on the bug, running with the picture (see clock.ts).
+	const clocks = useMemo(
+		() =>
+			shownTl && events
+				? buildFieldClocks(shownTl, events, numPeriods)
+				: undefined,
+		[shownTl, events, numPeriods],
+	);
+	// (Between quarters and the game over: no quarter on the bug.)
+	const [ended, setEnded] = useState(false);
 	const keyPlan = useMemo(
 		(): KeySegment[] | undefined =>
 			timeline && events && keyPlays?.settings.on
@@ -770,6 +781,8 @@ const Field3D = ({
 		paint,
 		size,
 		eventsLength,
+		clocks,
+		pageTime: (boxScore?.time ?? "") as string,
 	});
 	live.current = {
 		cursor,
@@ -788,6 +801,8 @@ const Field3D = ({
 		paint,
 		size,
 		eventsLength,
+		clocks,
+		pageTime: (boxScore?.time ?? "") as string,
 	};
 
 	useEffect(() => {
@@ -821,6 +836,7 @@ const Field3D = ({
 		let judging = true;
 		const wipe = makeFieldWipe();
 		let wipeSide: Side = 1;
+		let shownOver = false;
 
 		const tick = (now: number, draw: boolean) => {
 			const p = live.current;
@@ -843,6 +859,19 @@ const Field3D = ({
 			}
 			if (!draw) {
 				return;
+			}
+			// The game clock on the bug, as the picture has it - the page's,
+			// where it has none.
+			const reading = p.clocks ? fieldClockAt(p.clocks, s.t) : undefined;
+			const clockEl = clockRef.current;
+			const clockText = reading?.text ?? p.pageTime;
+			if (clockEl && clockEl.textContent !== clockText) {
+				clockEl.textContent = clockText;
+			}
+			const over = reading?.ended ?? false;
+			if (over !== shownOver) {
+				shownOver = over;
+				setEnded(over);
 			}
 			const canvas = canvasRef.current;
 			const ctx = canvas?.getContext("2d");
@@ -1176,17 +1205,18 @@ const Field3D = ({
 		};
 	}, []);
 
-	// The game clock, as the page keeps it (it moves on with each line).
+	// The game clock, as the page keeps it (it moves on with each line),
+	// until the picture has its own.
 	const time: string = boxScore?.time ?? "";
 	useEffect(() => {
-		if (clockRef.current) {
+		if (!clocks && clockRef.current) {
 			clockRef.current.textContent = time;
 		}
-	}, [time]);
+	}, [time, clocks]);
 
 	const awayPts: number = boxScore?.teams?.[1]?.pts ?? 0;
 	const homePts: number = boxScore?.teams?.[0]?.pts ?? 0;
-	const quarter = boxScore?.quarterShort ?? "";
+	const quarter = ended ? "" : (boxScore?.quarterShort ?? "");
 	const captionTeam = captionT === undefined ? undefined : raw[captionT];
 	const recordOf = (t: any): string | undefined =>
 		typeof t?.won === "number" && typeof t?.lost === "number"
