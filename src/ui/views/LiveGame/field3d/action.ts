@@ -2200,6 +2200,32 @@ const FOLLOW_MS = 450;
 const WATCH_FT = 2.5;
 const WATCH_MS = 1100;
 const CATCH_Z = 4.3;
+// (A pass over a man in its way: over this high (ft) where it passes him,
+// no nearer him than this (ft) - looked at every so often (ms), not right
+// at either end (this share of the way) - and no more than this much
+// higher at the top (ft). Not over a man down, or going up for it.)
+const OVER_Z = 6.2;
+const OVER_NEAR = 1.3;
+const OVER_STEP_MS = 25;
+const OVER_FROM = 0.06;
+const OVER_MOST = 4;
+const OVER_NOT = new Set<Move>([
+	"dive",
+	"prone",
+	"supine",
+	"tackled",
+	"tackledBack",
+	"getUp",
+	"getUpBack",
+	"hurt",
+	"slid",
+	"qbSlide",
+	"kneelDown",
+	"swat",
+	"catch",
+	"leapCatch",
+	"diveCatch",
+]);
 const G = 32;
 // A pass: on a line at this pace (ft/s), lofted a little slower over this
 // much more for each foot it goes, down to no slower than this.
@@ -3505,6 +3531,7 @@ class Action {
 		this.regroup();
 		this.noAirBlocks();
 		this.noFlicks();
+		this.overHeads();
 		for (const x of this.reaches) {
 			x.m.arms(x.move, x.t0, x.t1);
 		}
@@ -3518,6 +3545,56 @@ class Action {
 			...(this.party && this.until > 0 ? { party: this.party } : {}),
 			...(this.outAt ? { out: this.outAt } : {}),
 		};
+	}
+
+	// A pass with a man on his feet in its way - on the line of it, below the
+	// top of his head - lofted over him instead: as much higher at the top as
+	// that takes (no more than OVER_MOST). Not the man it left or the man it
+	// comes to, nor a man going up for it.
+	overHeads() {
+		this.ball.forEach((b, k) => {
+			if (b.kind !== "fly" || !b.spiral || b.t0 >= this.whistle) {
+				return;
+			}
+			const prev = this.ball[k - 1];
+			const next = this.ball[k + 1];
+			const ends = [prev, next].flatMap((x) =>
+				x?.kind === "held" ? [x.pid] : [],
+			);
+			let peak = b.peak;
+			for (let t = b.t0; t < b.t1; t += OVER_STEP_MS) {
+				const u = (t - b.t0) / (b.t1 - b.t0);
+				if (u < OVER_FROM || u > 1 - OVER_FROM) {
+					continue;
+				}
+				const arc = 4 * u * (1 - u);
+				const lin = b.from.z + (b.to.z - b.from.z) * u;
+				if (lin + arc * peak >= OVER_Z) {
+					continue;
+				}
+				const at = {
+					x: b.from.x + (b.to.x - b.from.x) * u,
+					y: b.from.y + (b.to.y - b.from.y) * u,
+				};
+				for (const m of this.men) {
+					if (ends.includes(m.pid)) {
+						continue;
+					}
+					const l = m.legs.findLast((x) => x.t0 <= t);
+					if (
+						!l ||
+						OVER_NOT.has(l.move) ||
+						(l.arms !== undefined && OVER_NOT.has(l.arms)) ||
+						dist(m.posAt(t), at) >= OVER_NEAR
+					) {
+						continue;
+					}
+					peak = Math.max(peak, (OVER_Z - lin) / arc);
+					break;
+				}
+			}
+			b.peak = Math.min(peak, b.peak + OVER_MOST);
+		});
 	}
 
 	// No stride or two of another gait between one and the next (a run
