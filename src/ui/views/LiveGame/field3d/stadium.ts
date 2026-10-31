@@ -1,3 +1,4 @@
+import type { ArenaLooks } from "../../../../common/types.ts";
 import { makeCourtRng } from "../courtRng.ts";
 import { luminance, shade } from "./color.ts";
 import type { TexturedPlane } from "../court3d/planes.ts";
@@ -127,6 +128,17 @@ export const CLUB = plane(
 	X1 - X0,
 	CLUB_H,
 	6,
+);
+// The upper deck's front, a wall at the foot of its first row: the ring of
+// honor along it (see paintFascia).
+const FASCIA_H = 4.5;
+export const FASCIA = plane(
+	{ x: X0, y: UPPER_FRONT.y, z: UPPER_FRONT.z + FASCIA_H },
+	{ x: 1, y: 0, z: 0 },
+	{ x: 0, y: 0, z: -1 },
+	X1 - X0,
+	FASCIA_H,
+	8,
 );
 export const UPPER = plane(
 	{ x: X0, y: UPPER_TOP.y, z: UPPER_TOP.z },
@@ -538,6 +550,101 @@ const paintBoard = (
 	return c;
 };
 
+// THE RING OF HONOR, along the upper deck's front (the 3D court's banners in
+// its rafters: see court3d/arena.ts paintRafters): the championships won
+// before this season in the middle over midfield - each year on the colors
+// the team had that season - and the numbers retired out either side of
+// them, each on the colors of the jersey it is shown in. On the dark of
+// the team's first color, edged in its second; plain, with nothing to
+// honor.
+const HONOR_GAP = 3;
+const HONOR_PAD = 1.4;
+const paintFascia = (
+	w: number,
+	h: number,
+	ppf: number,
+	home: FieldTeam | undefined,
+	arena: ArenaLooks | undefined,
+) => {
+	const c = canvasOf(w, h);
+	const g = c.getContext("2d")!;
+	const c0 = teamColor(home, 0, "#8c1d40");
+	const c1 = teamColor(home, 1, "#f2c14e");
+	g.fillStyle = shade(c0, -0.45);
+	g.fillRect(0, 0, w, h);
+	g.fillStyle = c1;
+	g.fillRect(0, 0, w, h * 0.1);
+	g.fillRect(0, h * 0.9, w, h * 0.1);
+	type Panel = { say: string; bg: string; ink: string };
+	const panel = (say: string, colors?: [string, string, string]): Panel => {
+		const bg = colors?.[0] ?? c0;
+		const ink = colors?.[1] ?? c1;
+		return {
+			say,
+			bg,
+			ink: Math.abs(luminance(ink) - luminance(bg)) > 0.3 ? ink : inkOn(bg),
+		};
+	};
+	const titles = arena?.titles ?? [];
+	const middle: Panel[] =
+		titles.length > 0
+			? [
+					panel("CHAMPIONS", [c1, c0, c0]),
+					...titles.map((year, i) =>
+						panel(String(year), arena?.titleLooks?.[i]?.colors),
+					),
+				]
+			: [];
+	const retired = (arena?.retired ?? []).map((r) =>
+		panel(r.name ? `${r.number} ${r.name.toUpperCase()}` : r.number, r.colors),
+	);
+	if (middle.length === 0 && retired.length === 0) {
+		return c;
+	}
+	g.font = `900 ${h * 0.5}px "Arial Black", "Helvetica Neue", Arial, sans-serif`;
+	g.textAlign = "center";
+	g.textBaseline = "middle";
+	const widthOf = (p: Panel) =>
+		g.measureText(p.say).width + 2 * HONOR_PAD * ppf;
+	const gap = HONOR_GAP * ppf;
+	const draw = (p: Panel, x: number) => {
+		const pw = widthOf(p);
+		g.fillStyle = p.bg;
+		g.fillRect(x, h * 0.18, pw, h * 0.64);
+		g.fillStyle = p.ink;
+		g.fillText(p.say, x + pw / 2, h * 0.52);
+	};
+	// The titles together, round midfield; then the numbers, one to each
+	// side by turns, as far as there is room.
+	const mid = (-X0 + FIELD_L / 2) * ppf;
+	const run =
+		middle.reduce((a, p) => a + widthOf(p), 0) + gap * (middle.length - 1);
+	let left = mid - Math.max(0, run) / 2;
+	let right = left;
+	for (const p of middle) {
+		draw(p, right);
+		right += widthOf(p) + gap;
+	}
+	if (middle.length === 0) {
+		right = mid;
+		left = mid;
+	} else {
+		left -= gap;
+	}
+	retired.forEach((p, k) => {
+		const pw = widthOf(p);
+		if (k % 2 === 0 && right + pw < w) {
+			draw(p, right);
+			right += pw + gap;
+		} else if (left - pw > 0) {
+			left -= pw;
+			draw(p, left);
+			left -= gap;
+		}
+	});
+	return c;
+};
+
 // The tunnel's face: the wall's color, the team's name over the opening in
 // the header, a stripe of the second color under it; the opening dark, the
 // walls, floor and ceiling of it running back to the light at its far end.
@@ -734,6 +841,7 @@ export type StadiumPaint = {
 	// Half of them, for when the seats are emptier (see crowd.ts).
 	lowerSparse: HTMLCanvasElement;
 	club: HTMLCanvasElement;
+	fascia: HTMLCanvasElement;
 	upper: HTMLCanvasElement;
 	rim: HTMLCanvasElement;
 	endWall: HTMLCanvasElement;
@@ -762,6 +870,8 @@ export const paintStadium = (
 	crowd?: { att?: number; capacity?: number },
 	logo?: HTMLCanvasElement,
 	venue: Venue = venueFor(home),
+	// The home team's honors (see paintFascia).
+	arena?: ArenaLooks,
 ): StadiumPaint => {
 	const style = stadiumStyleFor(home, venue);
 	const fill =
@@ -826,6 +936,7 @@ export const paintStadium = (
 		lower,
 		lowerSparse: seating(LOWER, "lower", 0, 0.35, true, fill * 0.5),
 		club,
+		fascia: paintFascia(FASCIA.w, FASCIA.h, FASCIA.w / (X1 - X0), home, arena),
 		upper: seating(UPPER, "upper", 0, 0.7, true),
 		rim: paintRim(RIM.w, RIM.h, RIM.w / (X1 - X0), style),
 		endWall,

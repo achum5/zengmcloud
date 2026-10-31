@@ -546,6 +546,7 @@ const Field3D = ({
 				{ att: boxScore?.att, capacity: boxScore?.arena?.capacity },
 				mid,
 				venue,
+				boxScore?.arena,
 			),
 		};
 		// eslint-disable-next-line react-hooks/exhaustive-deps

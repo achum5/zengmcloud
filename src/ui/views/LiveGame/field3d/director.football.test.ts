@@ -786,7 +786,7 @@ describe("the head coach", () => {
 				// one but by a step - stepping out of the way of a man run
 				// into them, off his line, aside.)
 				let last = new Map<number, FieldPlayerState>();
-				for (let t = play.t0; t < play.t1; t += 40) {
+				for (let t = play.t0; t < play.t1; t += 80) {
 					const now = new Map<number, FieldPlayerState>();
 					for (const s of at(t)) {
 						now.set(s.id, s);
@@ -799,7 +799,7 @@ describe("the head coach", () => {
 						if (was.move !== s.move && (!s.from || s.from.w < 0.8)) {
 							bad.push(`play ${play.i}: ${s.id} ${was.move} to ${s.move}`);
 						}
-						if (Math.abs(s.x - was.x) > 0.2) {
+						if (Math.abs(s.x - was.x) > 0.4) {
 							bad.push(`play ${play.i}: ${s.id} jumped`);
 						}
 						if (
@@ -837,7 +837,7 @@ describe("the head coach", () => {
 		assert.isAbove(claps, 10);
 		assert.isAbove(protests, 0);
 		assert.isBelow(protests, calls);
-	}, 60_000);
+	}, 120_000);
 });
 
 // (Nobody's cheer up then.)

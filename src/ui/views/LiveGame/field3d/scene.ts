@@ -28,6 +28,7 @@ import {
 } from "./geometry.ts";
 import {
 	CLUB,
+	FASCIA,
 	drawSky,
 	END_BOARDS,
 	END_STANDS,
@@ -221,10 +222,12 @@ export const drawFieldFrame = (f: FieldFrame) => {
 	if (st.roof) {
 		drawTexturedPlane(ctx, cam, ROOF, st.roof, 24, 16);
 	}
-	// The far side, top down: the rim and its lights, the upper deck, the
-	// club level, the lower bowl, the wall.
+	// The far side, top down: the rim and its lights, the upper deck and the
+	// ring of honor along its front, the club level, the lower bowl, the
+	// wall.
 	drawTexturedPlane(ctx, cam, RIM, st.rim, 24, 1);
 	drawTexturedPlane(ctx, cam, UPPER, st.upper, 24, 6);
+	drawTexturedPlane(ctx, cam, FASCIA, st.fascia, 24, 1);
 	const board = f.board ?? "name";
 	drawTexturedPlane(ctx, cam, CLUB, st.screen("club", board, f.score), 24, 1);
 	// (Fewer in their seats: the half-empty stands, the full ones over them
