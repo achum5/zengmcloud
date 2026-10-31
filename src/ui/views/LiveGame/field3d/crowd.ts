@@ -1,4 +1,4 @@
-import type { FieldTimeline } from "./director.ts";
+import type { FieldTimeline, Play } from "./director.ts";
 import { playAt } from "./evaluate.ts";
 import type { Side } from "./geometry.ts";
 
@@ -46,12 +46,84 @@ export const cheerAt = (
 	return out;
 };
 
-export const crowdAt = (
-	tl: FieldTimeline,
-	t: number,
-	now: number,
-): { up: number; wave: boolean } => {
+// The stands at t: how much of the crowd is on its feet (0 to 1), arms
+// waving rather than up, and how full they are (see director.ts seatsOf).
+export type Crowd = { up: number; wave: boolean; full: number };
+
+// At the final whistle (the 3D court's final horn: see court3d/scene.ts
+// buildingAt), a home win brings the whole stadium up - arms going, then on
+// its feet applauding as the teams shake hands; a road win sits it down
+// (but for the road fans' few seconds, the way they take a big play).
+const HORN_UP = 260;
+const HORN_WAVE = 5000;
+const HORN_SETTLE = 4000;
+const HORN_STAY = 0.55;
+
+// Third down or fourth, the visitors with the ball: the home crowd up and
+// loud to put them off (the 3D court's fans behind the basket at the
+// visitors' free throws, for football: see court3d/scene.ts endsAt) - up as
+// the huddle breaks, down once the ball is dead.
+const LOUD_UP = 900;
+const LOUD_FROM = new Set(["pass", "run", "none"]);
+// (A try for two, as loud as a fourth down.)
+const loudOf = (situation: string): number =>
+	situation.startsWith("3rd")
+		? 0.7
+		: situation.startsWith("4th") || situation === "2-Pt Try"
+			? 0.85
+			: 0;
+
+const loudAt = (play: Play, t: number): number => {
+	const level = loudOf(play.situation);
+	if (play.offense !== 0 || level === 0 || !LOUD_FROM.has(play.kind)) {
+		return 0;
+	}
+	return (
+		level *
+		Math.max(
+			0,
+			Math.min(1, (t - play.t0) / LOUD_UP, 1 - (t - play.whistle) / FALL),
+		)
+	);
+};
+
+export const crowdAt = (tl: FieldTimeline, t: number, now: number): Crowd => {
+	const play = playAt(tl, t);
+	const full = play?.seats ?? 1;
+	const fast = Math.sin(now / 130) > 0;
+	const slow = Math.sin(now / 520) > 0.55;
 	const c = cheerAt(tl, t);
-	const up = c ? c.level * (c.side === 1 ? 1 : ROAD) * (c.big ? 1 : 0.75) : 0;
-	return { up, wave: up > 0.3 && Math.sin(now / 130) > 0 };
+	const roar = c ? c.level * (c.side === 1 ? 1 : ROAD) * (c.big ? 1 : 0.75) : 0;
+	const post = play?.postgame;
+	if (post && t >= post.from) {
+		if (post.winner !== 1) {
+			// (Whatever the finish had it doing.)
+			return { up: roar, wave: roar > 0.3 && fast, full };
+		}
+		const e = t - post.from;
+		const level =
+			e < HORN_UP
+				? e / HORN_UP
+				: e < HORN_WAVE
+					? 1
+					: Math.max(
+							HORN_STAY,
+							1 - ((1 - HORN_STAY) * (e - HORN_WAVE)) / HORN_SETTLE,
+						);
+		return {
+			up: Math.max(level, roar),
+			wave: e < HORN_WAVE || roar > 0.3 ? fast : slow,
+			full,
+		};
+	}
+	// In crunch time, on its feet the whole way, arms going up now and then
+	// - but for a moment after a big play of the visitors', stunned.
+	const tense = play?.tense ?? 0;
+	const loud = play ? loudAt(play, t) : 0;
+	const hush = c && c.side === 0 && c.big ? 1 - c.level : 1;
+	return {
+		up: Math.max(roar, hush * Math.max(tense >= 1 ? 0.9 : tense * 0.7, loud)),
+		wave: roar > 0.3 ? fast : tense >= 1 && slow,
+		full,
+	};
 };

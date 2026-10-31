@@ -433,12 +433,15 @@ const lay = (men: SidelineMan[], play: Play): Map<number, Spot> => {
 		const benchMid = (BENCHES[0][0] + BENCHES.at(-1)![1]) / 2;
 		seats.sort((a, b) => Math.abs(a.x - benchMid) - Math.abs(b.x - benchMid));
 		const byRank = (a: SidelineMan, b: SidelineMan) => a.rank - b.rank;
-		const sitting = kick
-			? []
-			: mine
-					.filter((s) => s.unit === resting && s.sits)
-					.sort(byRank)
-					.slice(0, seats.length);
+		// (Crunch time, all of them up - the 3D court's benches on their feet:
+		// see court3d/scene.ts benchMood.)
+		const sitting =
+			kick || (play.tense ?? 0) >= 1
+				? []
+				: mine
+						.filter((s) => s.unit === resting && s.sits)
+						.sort(byRank)
+						.slice(0, seats.length);
 		// (Spread along the benches, a gap here and there, in the order of
 		// the seats they would take all game.)
 		const taken = seats

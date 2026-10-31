@@ -244,6 +244,10 @@ export type Play = {
 	// The crowd's moment in it: when, for which side, and how big (see
 	// crowd.ts).
 	cheer?: Cheer;
+	// From this play on: the game in crunch time (half, or all of it), and
+	// how full the stands are (all of them, unset) - see crowd.ts.
+	tense?: number;
+	seats?: number;
 	// The ball dead; and, for a down from scrimmage, the line to gain (the
 	// broadcast's lines on the field: see marks.ts).
 	whistle: number;
@@ -963,6 +967,8 @@ class Director {
 	readonly flair: Map<number, Flair>;
 	readonly rated = new Map<number, FieldRatings>();
 	readonly stakes: Stakes | undefined;
+	// What the clock read as each quarter started.
+	readonly opens = new Map<number, number>();
 
 	constructor({ events, players, gid, numPeriods = 4, stakes }: FieldInput) {
 		this.events = events;
@@ -1907,6 +1913,11 @@ class Director {
 						pid: hurt.pid,
 					}
 				: undefined);
+		if (!this.opens.has(quarter)) {
+			this.opens.set(quarter, minutes);
+		}
+		const tense = this.tensionOf(quarter, minutes, i0);
+		const seats = this.seatsOf(quarter, minutes, i0);
 		this.plays.push({
 			i: i0,
 			kind,
@@ -1985,11 +1996,48 @@ class Director {
 			ball,
 			...(replay ? { replay } : {}),
 			...(cheer ? { cheer } : {}),
+			...(tense > 0 ? { tense } : {}),
+			...(seats < 1 ? { seats } : {}),
 			whistle,
 			...(gainX !== undefined ? { gainX } : {}),
 		});
 		this.T = t1;
 		this.ballY = this.nextSpot(kind, i0, i1, ballY, spotAt(whistle).y);
+	}
+
+	// Crunch time (the 3D court's: see court3d/director.ts tensionNow): a
+	// one-score game in the last minutes of the fourth quarter, or in
+	// overtime, has the stadium on its feet - more so in the last two.
+	tensionOf(quarter: number, left: number, i0: number): number {
+		if (quarter < this.numPeriods) {
+			return 0;
+		}
+		const pts = this.pointsTo(i0);
+		if (Math.abs(pts[0] - pts[1]) > 8) {
+			return 0;
+		}
+		return left <= 2 ? 1 : left <= 5 || quarter > this.numPeriods ? 0.5 : 0;
+	}
+
+	// The seats (the 3D court's: see court3d/director.ts seatsNow): half of
+	// them still empty as the second half starts, filling up over its first
+	// few minutes; and with the home team down by three scores in the
+	// fourth, emptying as the clock runs.
+	seatsOf(quarter: number, left: number, i0: number): number {
+		const len = this.opens.get(quarter) ?? 15;
+		const gone = Math.max(0, len - left);
+		let full = 1;
+		if (this.numPeriods >= 2 && quarter === this.numPeriods / 2 + 1) {
+			full = 0.55 + 0.45 * Math.min(1, gone / (len / 3));
+		}
+		const pts = this.pointsTo(i0);
+		const down = pts[0] - pts[1];
+		if (quarter === this.numPeriods && down >= 17) {
+			full =
+				1 -
+				0.45 * Math.min(1, gone / (len * 0.6)) * Math.min(1, (down - 14) / 14);
+		}
+		return Math.round(full * 20) / 20;
 	}
 
 	// The two men off the field with the cooler for the winners' head coach

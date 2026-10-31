@@ -676,11 +676,14 @@ export type StadiumPaint = {
 	style: StadiumStyle;
 	wall: HTMLCanvasElement;
 	lower: [HTMLCanvasElement, HTMLCanvasElement, HTMLCanvasElement];
+	// Half of them, for when the seats are emptier (see crowd.ts).
+	lowerSparse: HTMLCanvasElement;
 	club: HTMLCanvasElement;
 	upper: HTMLCanvasElement;
 	rim: HTMLCanvasElement;
 	endWall: HTMLCanvasElement;
 	endStands: [HTMLCanvasElement, HTMLCanvasElement, HTMLCanvasElement];
+	endSparse: HTMLCanvasElement;
 	board: HTMLCanvasElement;
 	tunnel: HTMLCanvasElement;
 	roof?: HTMLCanvasElement;
@@ -708,6 +711,7 @@ export const paintStadium = (
 		up: 0 | 1 | 2,
 		dim: number,
 		mid: boolean,
+		gate = fill,
 	) =>
 		paintSeating({
 			w: P.w,
@@ -718,7 +722,7 @@ export const paintStadium = (
 			away,
 			style,
 			seed: `${seed}|${key}`,
-			fill,
+			fill: gate,
 			up,
 			...(mid ? { midAt: -X0 + FIELD_L / 2 } : {}),
 			// (In the sun, the backs of the stands hardly in the dark.)
@@ -734,6 +738,7 @@ export const paintStadium = (
 		style,
 		wall: paintBoard(WALL.w, WALL.h, WALL.w / (X1 - X0), home, words),
 		lower,
+		lowerSparse: seating(LOWER, "lower", 0, 0.35, true, fill * 0.5),
 		club: paintBoard(CLUB.w, CLUB.h, CLUB.w / (X1 - X0), home, words),
 		upper: seating(UPPER, "upper", 0, 0.7, true),
 		rim: paintRim(RIM.w, RIM.h, RIM.w / (X1 - X0), style),
@@ -745,6 +750,7 @@ export const paintStadium = (
 			words,
 		),
 		endStands,
+		endSparse: seating(END_STANDS[0], "end", 0, 0.45, false, fill * 0.5),
 		board: paintVideoBoard(END_BOARDS[0].w, END_BOARDS[0].h, home, logo),
 		tunnel: paintTunnel(
 			TUNNEL.w,

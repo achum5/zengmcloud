@@ -1,6 +1,7 @@
 import { depthOf, project, type Camera } from "../court3d/camera.ts";
-import { drawTexturedPlane } from "../court3d/planes.ts";
+import { drawTexturedLayers, drawTexturedPlane } from "../court3d/planes.ts";
 import { drawConfetti, type Confetti } from "./confetti.ts";
+import type { Crowd } from "./crowd.ts";
 import { drawFieldLines } from "./fieldLines.ts";
 import { drawMarks, type Mark } from "./marks.ts";
 import { drawPools, type Pool } from "./pools.ts";
@@ -59,8 +60,8 @@ export type FieldFrame = {
 	ctx: CanvasRenderingContext2D;
 	cam: Camera;
 	paint: FieldPaint;
-	// The crowd on its feet (0 to 1), and waving rather than arms up.
-	crowd?: { up: number; wave: boolean };
+	// The crowd on its feet, and how full the stands are (see crowd.ts).
+	crowd?: Crowd;
 	// The broadcast's lines on the turf (see marks.ts).
 	marks?: Mark[];
 	// The shadows under the men and the ball (see pools.ts).
@@ -220,35 +221,32 @@ export const drawFieldFrame = (f: FieldFrame) => {
 	drawTexturedPlane(ctx, cam, RIM, st.rim, 24, 1);
 	drawTexturedPlane(ctx, cam, UPPER, st.upper, 24, 6);
 	drawTexturedPlane(ctx, cam, CLUB, st.club, 24, 1);
-	const up = f.crowd?.up ?? 0;
-	drawTexturedPlane(ctx, cam, LOWER, st.lower[0], 24, 6);
-	if (up > 0.01) {
-		drawTexturedPlane(
-			ctx,
-			cam,
-			LOWER,
-			st.lower[f.crowd!.wave ? 2 : 1],
-			24,
-			6,
-			up,
-		);
-	}
+	// (Fewer in their seats: the half-empty stands, the full ones over them
+	// as faint as the seats are empty - and as few of them up.)
+	const crowd = f.crowd ?? { up: 0, wave: false, full: 1 };
+	const thin = crowd.full < 0.999;
+	const fill = thin ? Math.max(0, (crowd.full - 0.55) / 0.45) : 1;
+	const stands = (
+		sparse: HTMLCanvasElement,
+		[sat, up, wave]: [HTMLCanvasElement, HTMLCanvasElement, HTMLCanvasElement],
+	) => [
+		...(thin ? [{ img: sparse, alpha: 1 }] : []),
+		{ img: sat, alpha: fill },
+		{ img: crowd.wave ? wave : up, alpha: crowd.up * fill },
+	];
+	drawTexturedLayers(ctx, cam, LOWER, stands(st.lowerSparse, st.lower), 24, 6);
 	// Behind each end zone: the board high over the stands, the stands, the
 	// wall.
 	for (const side of [0, 1] as const) {
 		drawTexturedPlane(ctx, cam, END_BOARDS[side], st.board, 8, 4);
-		drawTexturedPlane(ctx, cam, END_STANDS[side], st.endStands[0], 16, 8);
-		if (up > 0.01) {
-			drawTexturedPlane(
-				ctx,
-				cam,
-				END_STANDS[side],
-				st.endStands[f.crowd!.wave ? 2 : 1],
-				16,
-				8,
-				up,
-			);
-		}
+		drawTexturedLayers(
+			ctx,
+			cam,
+			END_STANDS[side],
+			stands(st.endSparse, st.endStands),
+			16,
+			8,
+		);
 		drawTexturedPlane(ctx, cam, END_WALLS[side], st.endWall, 16, 1);
 	}
 	drawTexturedPlane(ctx, cam, WALL, st.wall, 24, 1);
