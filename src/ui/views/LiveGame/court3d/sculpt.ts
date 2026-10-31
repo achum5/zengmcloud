@@ -638,7 +638,14 @@ type Built = {
 };
 
 // How his hands are held.
-type Grip = "open" | "relaxed" | "fist" | "point" | "ball" | "target";
+type Grip =
+	| "open"
+	| "relaxed"
+	| "fist"
+	| "point"
+	| "ball"
+	| "target"
+	| "dribble";
 
 // Running, his hands are loose fists; with the ball, spread on it; pointing,
 // a finger out; strolling or standing about, relaxed, fingers a little
@@ -1023,20 +1030,22 @@ const build = (
 		// Dribbling, the ball up in this hand at the top of its bounce: his
 		// palm down on it, his fingers spread over it.
 		const ph = st.dribble;
-		const touch =
-			!held && ph !== undefined && st.dribbleHand === which
-				? Math.max(0, 1 - Math.min(ph, 1 - ph) / DRIBBLE_TOUCH)
-				: 0;
-		// (Between, his hand loose over where it comes back up to.)
-		// (And a shooter's hand, the ball gone off it, hangs loose off his
-		// snapped wrist.)
+		const dribbling = !held && ph !== undefined && st.dribbleHand === which;
+		const touch = dribbling
+			? Math.max(0, 1 - Math.min(ph, 1 - ph) / DRIBBLE_TOUCH)
+			: 0;
+		// (Between, his hand loose and spread over where it comes back up
+		// to - and a shooter's, the ball gone off it, loose off his snapped
+		// wrist.)
 		const flick = which === "R" && gripOf(st.anim) === "shot" && q.free > 0.5;
 		const grip: Grip =
 			touch > 0.3
 				? "ball"
-				: (!held && ph !== undefined && st.dribbleHand === which) || flick
-					? "relaxed"
-					: gripFor(st, which, held !== undefined && !off);
+				: dribbling
+					? "dribble"
+					: flick
+						? "relaxed"
+						: gripFor(st, which, held !== undefined && !off);
 		// The ball his hand is on, if it is.
 		const cup =
 			held && grip === "ball"
@@ -1064,6 +1073,13 @@ const build = (
 			palmN = onto;
 			const shooting = which === "R" && gripOf(st.anim) === "shot";
 			h = unit(square(shooting || !held ? h : addV(h, upV, 1.4), onto), h);
+		} else if (dribbling) {
+			// Coming onto the ball or off it, turned onto it as far as it is
+			// in his hand - not flipped over the moment it is.
+			const onto = unit(subV(underPalm(limb), addV(wrist, h, H * 0.04)));
+			const w = Math.min(1, touch / 0.3);
+			const k = w * w * (3 - 2 * w);
+			palmN = unit(square(lerpV(palmN, onto, k), h), palmN);
 		}
 		// A pass let go: palms out, thumbs down.
 		if (
@@ -1197,15 +1213,19 @@ const build = (
 							? [0.2, 0.35, 0.25]
 							: grip === "target"
 								? [0.14, 0.26, 0.16]
-								: [0.04 + 0.02 * i, 0.08, 0.05];
+								: grip === "dribble"
+									? [0.18, 0.3, 0.2]
+									: [0.04 + 0.02 * i, 0.08, 0.05];
 		const spread =
 			grip === "ball" || grip === "target"
 				? 0.22
-				: grip === "open"
-					? 0.1
-					: grip === "relaxed"
-						? 0.05
-						: 0.02;
+				: grip === "dribble"
+					? 0.17
+					: grip === "open"
+						? 0.1
+						: grip === "relaxed"
+							? 0.05
+							: 0.02;
 		if (fingerR * kMid < 0.9 && grip !== "point" && !ball) {
 			// Too small to tell apart: the four as one, flat like the palm,
 			// bent as the middle two are.
