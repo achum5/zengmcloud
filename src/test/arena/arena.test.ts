@@ -732,6 +732,14 @@ test.runIf(env.ARENA_RUN === "1")(
 				const drafts: unknown[] = [];
 				for (const p of await idb.cache.players.getAll()) {
 					if (p.draft.year >= firstSeason && p.draft.round > 0) {
+						// What the model expected of him as he was drafted: his
+						// projected overall a year at a time, from his ratings then.
+						const then = p.ratings.find((r) => r.season === p.draft.year);
+						const proj = then
+							? projectPlayer({ ...p, ratings: [then] }, p.draft.year).ovr.map(
+									(x) => Math.round(x * 10) / 10,
+								)
+							: undefined;
 						drafts.push({
 							pid: p.pid,
 							season: p.draft.year,
@@ -739,6 +747,8 @@ test.runIf(env.ARENA_RUN === "1")(
 							pick: p.draft.pick,
 							tid: p.draft.tid,
 							ovr: p.ratings.map((r) => [r.season, r.ovr]),
+							pot: then?.pot,
+							proj,
 						});
 					}
 				}

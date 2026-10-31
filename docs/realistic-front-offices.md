@@ -95,7 +95,12 @@ with "the Pistons", not with a named person.
   as that season matters for a title: fully for a contender now, almost
   nothing for a rebuilding team now, and in a rebuilding team's projected
   window, by that window's odds.
-- **Projected forward** with the game's own progression model.
+- **Projected forward** with the game's own progression model. Checked on
+  1,570 draftees (3 leagues x 10 seasons; the arena's drafts log carries each
+  one's projection as he was drafted): a year to four years on, their overall
+  followed it 0.98, 0.99, 0.96 and 0.93 times as far as projected, and picks
+  outside the top five came in 1 to 2.5 points above it by years 3 to 5 - late
+  picks are not overrated.
 - **Learned ahead of time, never simmed live.** What a set of ratings is worth
   is learned from millions of simulated games and shipped as a model; CPU teams
   do not run sims of their own during play (owner's call: live sims would bog
