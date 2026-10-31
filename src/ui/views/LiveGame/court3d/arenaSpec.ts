@@ -48,10 +48,12 @@ export type ArenaSpec = {
 		towels: string;
 	};
 	// At a timeout: the dance team (how many of them - up to seven - and of
-	// the timeouts, how many they come out for).
+	// the timeouts, how many they come out for) - and whether the home team
+	// has a mascot.
 	entertainment: {
 		dancers: number;
 		danceShare: number;
+		mascot: boolean;
 	};
 };
 
@@ -88,6 +90,7 @@ export const arenaSpecFor = (home: ArenaTeam | undefined): ArenaSpec => {
 		entertainment: {
 			dancers: 7,
 			danceShare: 0.6,
+			mascot: true,
 		},
 	};
 };

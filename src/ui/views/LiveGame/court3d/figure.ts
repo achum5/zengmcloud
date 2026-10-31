@@ -96,6 +96,8 @@ export type Look = {
 	// A player whose face is a photo: solid black, head to toe, no face -
 	// only his uniform on him.
 	silhouette?: boolean;
+	// The mascot: his head a furry one, from every side (see mascotHead).
+	fur?: { fur: string; pale: string; dark: string };
 	jerseyNumber: string;
 	// His full name, shown under him while he has the ball.
 	name: string;
@@ -979,14 +981,22 @@ const drawHead = (
 			ctx.restore();
 		}
 	};
-	// Facing away: the back of his head. Side on: his head in profile - not
-	// his face turned to the camera over the back of his skull - and, as he
-	// comes round to the camera, his face over it.
-	if (front < PROFILE_FROM) {
+	// The mascot: his furry head from behind and side on, and his face over
+	// it as he comes round to the camera.
+	if (look.fur) {
+		if (!sprite || front < FACE_FROM + FACE_IN) {
+			furHead(ctx, c, r, turn, front, look.fur, ink);
+		}
+		if (!sprite || front < FACE_FROM) {
+			return;
+		}
+	} else if (front < PROFILE_FROM) {
+		// Facing away: the back of his head. Side on: his head in profile -
+		// not his face turned to the camera over the back of his skull - and,
+		// as he comes round to the camera, his face over it.
 		back();
 		return;
-	}
-	if (front < FACE_FROM + FACE_IN) {
+	} else if (front < FACE_FROM + FACE_IN) {
 		profileHead(ctx, c, r, turn as 1 | -1, look, ink);
 	}
 	const vis = sprite ? Math.min(1, (front - FACE_FROM) / FACE_IN) : 0;
@@ -1006,6 +1016,57 @@ const drawHead = (
 	ctx.translate(c.x + shift, c.y);
 	ctx.scale(scale * squash, scale);
 	ctx.drawImage(sprite.img, -sprite.cx, -sprite.cy);
+	ctx.restore();
+};
+
+// A MASCOT'S HEAD, from behind or side on, as his face has it (see
+// mascotHead): round, in his fur, its ears up on top - both, from behind;
+// side on, together, a little back - and side on, his muzzle out the way he
+// faces, its nose at the end, and an eye. `front` as for drawHead: how far
+// round to the camera he is.
+const furHead = (
+	ctx: CanvasRenderingContext2D,
+	c: P2,
+	r: number,
+	turn: number,
+	front: number,
+	fur: { fur: string; pale: string; dark: string },
+	ink: number,
+) => {
+	const side = 1 - Math.abs(front);
+	const ring = (
+		x: number,
+		y: number,
+		rx: number,
+		ry: number,
+		fill: string,
+		line = true,
+	) => {
+		ctx.beginPath();
+		ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+		ctx.fillStyle = fill;
+		ctx.fill();
+		if (line && ink > 0) {
+			ctx.lineWidth = ink;
+			ctx.strokeStyle = INK;
+			ctx.stroke();
+		}
+	};
+	ctx.save();
+	const spread = r * 0.66 * Math.max(0.18, Math.abs(front));
+	const ex = c.x - turn * r * 0.14 * side;
+	for (const s of [-1, 1]) {
+		ring(ex + s * spread, c.y - r * 0.81, r * 0.36, r * 0.36, fur.fur);
+		ring(ex + s * spread, c.y - r * 0.81, r * 0.18, r * 0.18, fur.pale, false);
+	}
+	ring(c.x, c.y + r * 0.11, r * 1.04, r * 1.0, fur.fur);
+	if (front > -0.45) {
+		const out = turn * side;
+		ring(c.x + out * r * 0.78, c.y + r * 0.46, r * 0.5, r * 0.34, fur.pale);
+		ring(c.x + out * r * 1.18, c.y + r * 0.34, r * 0.16, r * 0.12, "#2a1d17");
+		ring(c.x + out * r * 0.42, c.y - r * 0.14, r * 0.2, r * 0.25, "#ffffff");
+		ring(c.x + out * r * 0.48, c.y - r * 0.09, r * 0.09, r * 0.09, INK, false);
+	}
 	ctx.restore();
 };
 

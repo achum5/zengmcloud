@@ -14,7 +14,7 @@ import {
 	type Blend,
 	type PlayerState,
 } from "./evaluate.ts";
-import { shade, type Look } from "./figure.ts";
+import { lightness, shade, type Look } from "./figure.ts";
 import {
 	attackDir,
 	benchX,
@@ -35,7 +35,15 @@ import {
 } from "./geometry.ts";
 import { playAt } from "./physics.ts";
 import { callAt, coachSpot } from "./intro.ts";
-import { ANIMS, HUG_APART, HUG_MS, HUG_SIDE, type AnimName } from "./poses.ts";
+import {
+	ANIMS,
+	bodyOf,
+	HUG_APART,
+	HUG_MS,
+	HUG_SIDE,
+	type AnimName,
+	type Body,
+} from "./poses.ts";
 import { arenaSpecFor, type ArenaSpec } from "./arenaSpec.ts";
 
 // THE PEOPLE ON THE FLOOR WHO DON'T PLAY: three officials working the game,
@@ -56,7 +64,8 @@ export type CrewRole =
 	| "media"
 	| "mop"
 	| "staff"
-	| "dance";
+	| "dance"
+	| "mascot";
 export type CrewMember = {
 	// Never a player's: crew are numbered below zero.
 	pid: number;
@@ -73,6 +82,10 @@ export type CrewMember = {
 	face: FaceConfig;
 	// What he wears (the head comes from his face; see Court3D).
 	dress: Pick<Look, "kit" | "gear" | "outfit">;
+	// The mascot: his fur (its own head drawn in it - see mascotHead), and
+	// the number and the team's name on his jersey.
+	fur?: { fur: string; pale: string; dark: string };
+	shirt?: { number: string; wordmark: string };
 };
 
 type TeamLike = {
@@ -342,6 +355,63 @@ export const crewFor = (
 			),
 		});
 	});
+	// The home team's mascot: its fur in a color of the team's - or, the
+	// team's own all black or white, an animal's - under the home jersey,
+	// fur down its arms and legs (see mascotState).
+	if (spec.entertainment.mascot && home) {
+		const r = makeCourtRng(`mascot|${teamKey(home)}`);
+		const [c0, c1] = [
+			home.colors?.[0] ?? "#8c1d40",
+			home.colors?.[1] ?? "#f2c14e",
+		];
+		const plain = (c: string) => lightness(c) < 0.1 || lightness(c) > 0.85;
+		const fur = !plain(c1)
+			? c1
+			: !plain(c0)
+				? shade(c0, 0.15)
+				: MASCOT_FURS[Math.floor(r() * MASCOT_FURS.length)]!;
+		const jersey = fur === c1 ? c0 : c1;
+		const face = faceFor(`mascot|${teamKey(home)}`, false);
+		out.push({
+			pid: -91,
+			role: "mascot",
+			team: 1,
+			spot: MASCOT_SPOT,
+			hgt: 80,
+			weight: 300,
+			face: {
+				...face,
+				body: { ...face.body, color: fur },
+				hair: { id: "afro", color: shade(fur, -0.12), flip: false },
+				facialHair: { id: "none" },
+			},
+			fur: { fur, pale: shade(fur, 0.62), dark: shade(fur, -0.45) },
+			shirt: {
+				number: String(Math.floor(r() * 2)) === "0" ? "00" : "1",
+				wordmark: home.name ?? home.region ?? "",
+			},
+			dress: {
+				kit: {
+					jersey,
+					trim: fur,
+					number: lightness(jersey) > 0.6 ? "#16161a" : "#f4f4f2",
+					numberEdge: fur,
+					shorts: jersey,
+					stripe: fur,
+					sock: fur,
+					shoe: jersey,
+					sole: "#f4f4f2",
+				},
+				gear: {
+					sleeve: { arms: "RL", color: fur, elbow: false },
+					tights: { legs: "RL", color: fur },
+					shoe: jersey,
+					sole: "#f4f4f2",
+					sock: fur,
+				},
+			},
+		});
+	}
 	// Stood about the floor all game: the sideline reporter by the corner
 	// past the home bench (out of the way of the team going off at the
 	// end), microphone in hand; security at the two far corners, arms
@@ -2610,6 +2680,138 @@ const flashOf = (
 	return undefined;
 };
 
+// THE MASCOT. Through play he stands back off the baseline at one end,
+// behind the photographers - clapping, hands on his hips, now and then a
+// shimmy or a dance (one thing a few seconds, then another). Up for a big
+// play by the home side: three fingers up for a three, a flex for a dunk,
+// the rest a celebration. And at a timeout the picture takes in the whole
+// floor for, out onto it at the near corner to dance, and back.
+const MASCOT_SPOT: Pt = { x: -6.4, y: 32 };
+// (His head that much bigger than a man's.)
+const MASCOT_HEAD = 1.45;
+// The build each of them is drawn with - the mascot's head as big as his.
+export const crewBody = (m: CrewMember): Body => {
+	const b = bodyOf(m.hgt, m.weight);
+	return m.fur ? { ...b, headR: b.headR * MASCOT_HEAD } : b;
+};
+const MASCOT_FLOOR: Pt = { x: 8, y: 37 };
+const MASCOT_FURS = ["#7a5230", "#c89a4b", "#8a8f99", "#5b3a29"];
+const MASCOT_PACE = 12;
+const MASCOT_UP = 2200;
+// (Into a big play's arms up over this long, ms - held there, that far
+// through it, his arms still up.)
+const MASCOT_ACT = 900;
+const MASCOT_HOLD = 0.7;
+const MASCOT_EVERY = 5000;
+const MASCOT_EASE = 300;
+const MASCOT_IDLE: [AnimName, number][] = [
+	["clap", 0.35],
+	["hips", 0.6],
+	["shimmy", 0.8],
+	["dance", 0.9],
+	["cheer", 1],
+];
+const mascotOuts = new WeakMap<CourtTimeline, Dance[]>();
+const mascotOutsOf = (tl: CourtTimeline): Dance[] => {
+	let out = mascotOuts.get(tl);
+	if (!out) {
+		out = tl.beats.flatMap((b) =>
+			b.type === "timeout" &&
+			b.end - b.actionStart >= DANCE_LONGEST &&
+			tl.shots.some(
+				(x) => x.kind === "wide" && x.t0 < b.end && x.t1 > b.actionStart,
+			)
+				? [{ t0: b.actionStart + DANCE_AFTER, end: b.end + 150 }]
+				: [],
+		);
+		mascotOuts.set(tl, out);
+	}
+	return out;
+};
+const mascotState = (
+	tl: CourtTimeline,
+	t: number,
+	m: CrewMember,
+): PlayerState => {
+	const base = { pid: m.pid, team: m.team, shown: true, z: 0, moving: false };
+	const court = { x: COURT_W / 2, y: COURT_H / 2 };
+	const run = (dist(MASCOT_SPOT, MASCOT_FLOOR) / MASCOT_PACE) * 1000;
+	const running = (A: Pt, B: Pt, a: number): PlayerState => {
+		const u = Math.min(1, Math.max(0, (t - a) / run));
+		return {
+			...base,
+			x: A.x + (B.x - A.x) * u,
+			y: A.y + (B.y - A.y) * u,
+			yaw: yawTo(A, B),
+			anim: "run",
+			phase: (t / 1000) * 1.7,
+			moving: true,
+		};
+	};
+	const d = mascotOutsOf(tl).findLast((x) => x.t0 <= t);
+	if (d && t < d.end + run) {
+		if (t < d.t0 + run) {
+			return running(MASCOT_SPOT, MASCOT_FLOOR, d.t0);
+		}
+		if (t >= d.end) {
+			return running(MASCOT_FLOOR, MASCOT_SPOT, d.end);
+		}
+		const st: PlayerState = {
+			...base,
+			x: MASCOT_FLOOR.x,
+			y: MASCOT_FLOOR.y,
+			yaw: Math.PI / 2,
+			anim: "dance",
+			phase: loopPhase("dance", t, m.pid * 0.29),
+		};
+		const k = 1 - smooth01((t - d.t0 - run) / MASCOT_EASE);
+		return k > 0
+			? { ...st, from: { anim: "run", phase: (t / 1000) * 1.7, w: k } }
+			: st;
+	}
+	// What he is doing at a moment: up for a big play of theirs (arms up,
+	// and held), or one thing or another meanwhile.
+	const doing = (u: number): { anim: AnimName; phase: number } => {
+		const i = lastIndex(tl.fx, u, (f) => f.t);
+		for (let j = i; j >= 0 && tl.fx[j]!.t > u - MASCOT_UP; j--) {
+			const f = tl.fx[j]!;
+			if (f.kind === "roar" && f.team === 1) {
+				const anim: AnimName =
+					f.what === "three"
+						? "threeUp"
+						: f.what === "dunk"
+							? "flex"
+							: "celebrate";
+				return {
+					anim,
+					phase:
+						ANIMS[anim].kind === "loop"
+							? loopPhase(anim, u, m.pid * 0.29)
+							: MASCOT_HOLD * Math.min(1, (u - f.t) / MASCOT_ACT),
+				};
+			}
+		}
+		const k = Math.floor(u / MASCOT_EVERY);
+		const r = unit(k, 9091);
+		const anim = MASCOT_IDLE.find(([, p]) => r < p)![0];
+		return { anim, phase: loopPhase(anim, u, m.pid * 0.29) };
+	};
+	const now = doing(t);
+	const st: PlayerState = {
+		...base,
+		x: MASCOT_SPOT.x,
+		y: MASCOT_SPOT.y,
+		yaw: yawTo(MASCOT_SPOT, court),
+		anim: now.anim,
+		phase: now.phase,
+	};
+	// (Into it from the last thing, not in a frame.)
+	const was = doing(t - MASCOT_EASE);
+	return was.anim !== now.anim
+		? { ...st, from: { anim: was.anim, phase: was.phase, w: 0.5 } }
+		: st;
+};
+
 // Everyone working the game, at t: where they are and what they are doing,
 // and any camera flashing.
 export const crewAt = (
@@ -2637,6 +2839,8 @@ export const crewAt = (
 			states.push(mopState(tl, t, m));
 		} else if (m.role === "staff") {
 			states.push(staffState(t, m));
+		} else if (m.role === "mascot") {
+			states.push(mascotState(tl, t, m));
 		} else if (m.role === "dance") {
 			const st = danceState(tl, t, m);
 			if (st) {

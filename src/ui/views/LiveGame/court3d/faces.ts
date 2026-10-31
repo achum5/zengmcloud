@@ -78,6 +78,11 @@ const faceSprite = async (
 	if (!svg.includes("xmlns=")) {
 		svg = svg.replace("<svg", '<svg xmlns="http://www.w3.org/2000/svg"');
 	}
+	return svgSprite(svg);
+};
+
+// A head drawn in faces.js's box (see CROP), into a sprite.
+const svgSprite = async (svg: string): Promise<HeadSprite> => {
 	const url = URL.createObjectURL(
 		new Blob([svg], { type: "image/svg+xml;charset=utf-8" }),
 	);
@@ -114,6 +119,23 @@ const faceSprite = async (
 		};
 	} finally {
 		URL.revokeObjectURL(url);
+	}
+};
+
+// THE MASCOT'S HEAD: not a face but a big furry one, in faces.js's box (see
+// CROP) - round ears up on top, the inside of them and the muzzle a pale
+// shade of the fur, big round eyes, a black nose, and a grin.
+export const mascotHead = async (fur: {
+	fur: string;
+	pale: string;
+	dark: string;
+}): Promise<{ sprite?: HeadSprite }> => {
+	const ink = "#17120f";
+	const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="600" viewBox="0 0 400 600"><g stroke="${ink}" stroke-width="7" stroke-linejoin="round"><circle cx="92" cy="168" r="58" fill="${fur.fur}"/><circle cx="308" cy="168" r="58" fill="${fur.fur}"/><circle cx="92" cy="168" r="30" fill="${fur.pale}" stroke="none"/><circle cx="308" cy="168" r="30" fill="${fur.pale}" stroke="none"/><ellipse cx="200" cy="318" rx="170" ry="160" fill="${fur.fur}"/><ellipse cx="200" cy="394" rx="98" ry="72" fill="${fur.pale}"/><ellipse cx="140" cy="276" rx="36" ry="44" fill="#ffffff"/><ellipse cx="260" cy="276" rx="36" ry="44" fill="#ffffff"/><circle cx="148" cy="286" r="17" fill="${ink}" stroke="none"/><circle cx="252" cy="286" r="17" fill="${ink}" stroke="none"/><circle cx="154" cy="279" r="6" fill="#ffffff" stroke="none"/><circle cx="258" cy="279" r="6" fill="#ffffff" stroke="none"/><path d="M100 218 Q140 196 176 216" fill="none" stroke="${fur.dark}" stroke-width="14" stroke-linecap="round"/><path d="M224 216 Q260 196 300 218" fill="none" stroke="${fur.dark}" stroke-width="14" stroke-linecap="round"/><ellipse cx="200" cy="356" rx="34" ry="24" fill="#2a1d17"/><path d="M136 400 Q200 474 264 400 Q200 432 136 400 Z" fill="#8a1f24"/></g></svg>`;
+	try {
+		return { sprite: await inTurn(() => svgSprite(svg)) };
+	} catch {
+		return {};
 	}
 };
 
