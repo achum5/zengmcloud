@@ -99,6 +99,16 @@ test.runIf(env.ARENA_RUN === "1")(
 		Math.random = makeSeededRandom(seed);
 		try {
 			const started = Date.now();
+			// ARENA_PROFILE=<file>: a CPU profile of the run, for the speed work
+			// (vitest's worker never writes one of its own).
+			let profiler: any;
+			if (env.ARENA_PROFILE) {
+				const inspector = await importNode("node:inspector/promises");
+				profiler = new inspector.Session();
+				profiler.connect();
+				await profiler.post("Profiler.enable");
+				await profiler.post("Profiler.start");
+			}
 			await createArenaLeague(seed);
 			// ARENA_IMPORT: carry on the league another run exported
 			// (ARENA_EXPORT), so a long run can be played in parts.
@@ -784,6 +794,11 @@ test.runIf(env.ARENA_RUN === "1")(
 			// done.
 			if (env.ARENA_EXPORT) {
 				await exportArenaLeague(env.ARENA_EXPORT);
+			}
+			if (profiler) {
+				const { profile } = await profiler.post("Profiler.stop");
+				await fs.writeFile(env.ARENA_PROFILE!, JSON.stringify(profile));
+				profiler.disconnect();
 			}
 			await fs.writeFile(
 				`${out}/league-${tag}.json`,
