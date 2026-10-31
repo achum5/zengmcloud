@@ -333,14 +333,51 @@ const SHINE_BANDS: [number, number][] = [
 	[0.3, 1],
 	[0.35, 0.45],
 ];
+// HIS SHADOWS ON THE FLOOR, cast toward the camera by the banks of lights
+// over the far stands: his own shape laid down from his feet, faint - one
+// each way, so many lights as there are (lean across, and how much of his
+// height it runs out over the floor). Off the floor, they come away from
+// his feet and fade.
+const CASTS: [number, number][] = [
+	[-0.55, 0.2],
+	[0.55, 0.2],
+];
+const CAST_ALPHA = 0.13;
+// His shape all in black, for his shadows - a third the size of his
+// picture (a ninth of the memory), and drawn back up soft-edged, as a
+// shadow is: made the first time it is wanted, let go with his picture.
+const DARK_SCALE = 3;
+const darks = new WeakMap<HTMLCanvasElement, HTMLCanvasElement>();
+const darkOf = (k: Kept): HTMLCanvasElement | undefined => {
+	let d = darks.get(k.canvas);
+	if (d) {
+		return d;
+	}
+	if (typeof document === "undefined") {
+		return undefined;
+	}
+	d = document.createElement("canvas");
+	d.width = Math.max(1, Math.ceil(k.canvas.width / DARK_SCALE));
+	d.height = Math.max(1, Math.ceil(k.canvas.height / DARK_SCALE));
+	const g = d.getContext("2d");
+	if (!g) {
+		return undefined;
+	}
+	g.drawImage(k.canvas, 0, 0, d.width, d.height);
+	g.globalCompositeOperation = "source-in";
+	g.fillStyle = "#000";
+	g.fillRect(0, 0, d.width, d.height);
+	darks.set(k.canvas, d);
+	return d;
+};
 export const stamp = (
 	ctx: CanvasRenderingContext2D,
 	k: Kept,
 	x: number,
 	y: number,
 	px: number,
-	// His reflection in the floor first: how strong, and where the floor
-	// under him is on the picture.
+	// His shadows and his reflection in the floor first: how strong, and
+	// where the floor under him is on the picture.
 	shine?: { alpha: number; floorY: number },
 ) => {
 	if (k.canvas.width === 0) {
@@ -348,6 +385,28 @@ export const stamp = (
 	}
 	const smoothing = ctx.imageSmoothingEnabled;
 	ctx.imageSmoothingEnabled = false;
+	const dark = shine ? darkOf(k) : undefined;
+	if (shine && dark) {
+		const alpha = ctx.globalAlpha;
+		const m = ctx.getTransform();
+		const floor = Math.round(shine.floorY);
+		const X = Math.round(x + k.dx);
+		const Y = Math.round(y + k.dy);
+		// (Up off the floor, fading: gone by his own height up.)
+		const up = Math.max(0, floor - (Y + k.h * px));
+		const fade = Math.max(0, 1 - up / (k.h * px));
+		ctx.imageSmoothingEnabled = true;
+		for (const [lean, run] of CASTS) {
+			ctx.globalAlpha = alpha * CAST_ALPHA * fade;
+			// From where he is drawn, upright, to where it falls: as far out
+			// over the floor below his feet as he is up over them.
+			ctx.transform(1, 0, -lean, -run, lean * floor, floor * (1 + run));
+			ctx.drawImage(dark, X, Y, k.w * px, k.h * px);
+			ctx.setTransform(m);
+		}
+		ctx.imageSmoothingEnabled = false;
+		ctx.globalAlpha = alpha;
+	}
 	if (shine) {
 		// Upside down from the floor under him - as far under it as he is
 		// over it - and fading away from it in steps: his feet plain in it,
