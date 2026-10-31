@@ -30,6 +30,8 @@ export const paintPreview = (
 	team: PreviewTeam,
 	sky: "day" | "night" | undefined,
 	logo: HTMLCanvasElement | undefined,
+	// Its own end zone picture (see StadiumLook).
+	endPicture?: HTMLCanvasElement,
 ): FieldPaint => {
 	const picked = venueFor(team, { gid: 0, primeTime: sky === "night" });
 	const venue = { ...picked, shadow: undefined };
@@ -37,7 +39,10 @@ export const paintPreview = (
 	return {
 		style,
 		turf: paintTurf(style, "preview"),
-		endZones: [paintEndZone(style, 0), paintEndZone(style, 1)],
+		endZones: [
+			paintEndZone(style, 0, endPicture),
+			paintEndZone(style, 1, endPicture),
+		],
 		numbers: paintNumbers(style),
 		...(logo && team.stadium?.midLogo !== false
 			? { logo: paintMidLogo(logo) }

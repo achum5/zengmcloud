@@ -3139,6 +3139,9 @@ export type StadiumLook = {
 	midLogo?: false;
 	midLogoURL?: string;
 	trophyURL?: string;
+	// A picture across the end zones in place of the lettering (a wordmark,
+	// say), as the midfield one is.
+	endZoneURL?: string;
 	// The stands' seats; left out, from the team's colors.
 	seatColor?: string;
 	// Words of its own along the boards round the field, in turn with the

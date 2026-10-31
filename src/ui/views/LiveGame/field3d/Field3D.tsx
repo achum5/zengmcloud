@@ -166,6 +166,9 @@ const STING_SLANT = 18;
 // In the sun, the players' shadows thrown off to the side this much (see
 // sprite.ts Cast).
 const SUN_LEAN = 0.4;
+// A team's own picture across its end zones, read this big (px, its longer
+// side): a logo's size would blur painted that big.
+const END_ZONE_PX = 512;
 // Screen ms the picture takes to come up out of black into the next of the
 // key plays (see keyPlays.ts).
 const KEY_DIP_MS = 320;
@@ -513,9 +516,12 @@ const Field3D = ({
 		...(t?.stadium ? { stadium: t.stadium } : {}),
 	});
 	// The two teams' logos - and the home team's own pictures for midfield
-	// and the championship trophy, if it has them (see StadiumLook).
+	// and the championship trophy, and each team's for its end zones, if it
+	// has them (see StadiumLook).
 	const [logos, setLogos] = useState<
 		[
+			HTMLCanvasElement?,
+			HTMLCanvasElement?,
 			HTMLCanvasElement?,
 			HTMLCanvasElement?,
 			HTMLCanvasElement?,
@@ -526,19 +532,22 @@ const Field3D = ({
 	const homeLogo = home?.imgURL || home?.imgURLSmall;
 	const midURL: string | undefined = home?.stadium?.midLogoURL;
 	const trophyURL: string | undefined = home?.stadium?.trophyURL;
+	const awayEnd: string | undefined = away?.stadium?.endZoneURL;
+	const homeEnd: string | undefined = home?.stadium?.endZoneURL;
 	useEffect(() => {
 		let alive = true;
-		void Promise.all(
-			[awayLogo, homeLogo, midURL, trophyURL].map((url) => logoPicture(url)),
-		).then((made) => {
+		void Promise.all([
+			...[awayLogo, homeLogo, midURL, trophyURL].map((url) => logoPicture(url)),
+			...[awayEnd, homeEnd].map((url) => logoPicture(url, END_ZONE_PX)),
+		]).then((made) => {
 			if (alive) {
-				setLogos([made[0], made[1], made[2], made[3]]);
+				setLogos([made[0], made[1], made[2], made[3], made[4], made[5]]);
 			}
 		});
 		return () => {
 			alive = false;
 		};
-	}, [awayLogo, homeLogo, midURL, trophyURL]);
+	}, [awayLogo, homeLogo, midURL, trophyURL, awayEnd, homeEnd]);
 	const paint = useMemo((): FieldPaint => {
 		const h = team(home);
 		const a = team(away);
@@ -553,7 +562,14 @@ const Field3D = ({
 		return {
 			style,
 			turf: paintTurf(style, seed),
-			endZones: [paintEndZone(style, 0), paintEndZone(style, 1)],
+			endZones: [
+				paintEndZone(style, 0, logos[5]),
+				paintEndZone(
+					style,
+					1,
+					boxScore?.neutralSite === true ? logos[4] : logos[5],
+				),
+			],
 			numbers: paintNumbers(style),
 			...(midPicture && h.stadium?.midLogo !== false
 				? { logo: paintMidLogo(midPicture) }

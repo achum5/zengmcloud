@@ -231,8 +231,13 @@ export const paintTurf = (style: FieldStyle, seed: string) => {
 // The end zone at `side` (0 left, 1 right): its color, a darker band along
 // the end line, and the team's name in big block letters reading up the
 // field from each side, the way they are painted - the left one's bottom
-// toward the goal line.
-export const paintEndZone = (style: FieldStyle, side: 0 | 1) => {
+// toward the goal line. (Or the team's own picture there instead - see
+// StadiumLook.)
+export const paintEndZone = (
+	style: FieldStyle,
+	side: 0 | 1,
+	picture?: HTMLCanvasElement | HTMLImageElement,
+) => {
 	const z = style.endZones[side];
 	const P = END_ZONE_PLANES[side];
 	const c = canvasOf(P.w, P.h);
@@ -270,11 +275,24 @@ export const paintEndZone = (style: FieldStyle, side: 0 | 1) => {
 		g.fillRect(0, 0, P.w, P.h);
 		g.globalAlpha = 1;
 	}
-	if (z.text) {
-		// Letters 7 yards tall, run across the end zone between the hash
-		// marks and out toward the numbers.
-		const tall = 7 * YD * END_PPF;
-		const room = (FIELD_W - 16 * YD) * END_PPF;
+	// Letters 7 yards tall, run across the end zone between the hash marks
+	// and out toward the numbers - a picture as big as it fits there.
+	const tall = 7 * YD * END_PPF;
+	const room = (FIELD_W - 16 * YD) * END_PPF;
+	if (picture && picture.width > 0 && picture.height > 0) {
+		const k = Math.min(room / picture.width, (tall * 1.15) / picture.height);
+		g.save();
+		g.translate(P.w / 2, P.h / 2);
+		g.rotate(side === 0 ? -Math.PI / 2 : Math.PI / 2);
+		g.drawImage(
+			picture,
+			(-picture.width * k) / 2,
+			(-picture.height * k) / 2,
+			picture.width * k,
+			picture.height * k,
+		);
+		g.restore();
+	} else if (z.text) {
 		g.save();
 		g.translate(P.w / 2, P.h / 2);
 		g.rotate(side === 0 ? -Math.PI / 2 : Math.PI / 2);

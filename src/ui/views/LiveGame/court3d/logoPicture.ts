@@ -7,6 +7,8 @@
 const LOGO_PX = 128;
 export const logoPicture = async (
 	url: string | undefined,
+	// (Its longer side, drawn bigger than a logo.)
+	px = LOGO_PX,
 ): Promise<HTMLCanvasElement | undefined> => {
 	if (!url || typeof document === "undefined") {
 		return undefined;
@@ -19,9 +21,9 @@ export const logoPicture = async (
 	} catch {
 		return undefined;
 	}
-	const w0 = img.naturalWidth || LOGO_PX;
-	const h0 = img.naturalHeight || LOGO_PX;
-	const k = LOGO_PX / Math.max(w0, h0);
+	const w0 = img.naturalWidth || px;
+	const h0 = img.naturalHeight || px;
+	const k = px / Math.max(w0, h0);
 	const cv = document.createElement("canvas");
 	cv.width = Math.max(1, Math.round(w0 * k));
 	cv.height = Math.max(1, Math.round(h0 * k));

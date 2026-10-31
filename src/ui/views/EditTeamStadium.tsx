@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useMemo, useState } from "react";
 import useTitleBar from "../hooks/useTitleBar.tsx";
 import { toWorker } from "../util/toWorker.ts";
 import { realtimeUpdate } from "../util/realtimeUpdate.ts";
@@ -241,6 +241,22 @@ const EditTeamStadium = ({
 			return undefined;
 		}
 	};
+	// (The stadium as the preview draws it: its uploaded pictures filled in.)
+	const drawn = useMemo(() => {
+		const out = { ...stadium };
+		for (const key of ["midLogoURL", "trophyURL", "endZoneURL"] as const) {
+			const v = out[key];
+			if (v?.startsWith(PIC)) {
+				const url = pictures[v.slice(PIC.length)];
+				if (url === undefined) {
+					delete out[key];
+				} else {
+					out[key] = url;
+				}
+			}
+		}
+		return out;
+	}, [stadium, pictures]);
 	const [json, setJSON] = useState<string | undefined>();
 	const [jsonError, setJSONError] = useState<string | undefined>();
 	const apply = (text: string) => {
@@ -340,7 +356,7 @@ const EditTeamStadium = ({
 				>
 					<StadiumPreview
 						team={{ abbrev, name, region, colors, imgURL }}
-						stadium={stadium}
+						stadium={drawn}
 						helmet={helmet}
 						sky={sky}
 					/>
@@ -482,6 +498,13 @@ const EditTeamStadium = ({
 					value={stadium.endZoneTextColor}
 					fallback={fieldAuto("endZoneTextColor").endZones[0].textColor}
 					onChange={(v) => setField("endZoneTextColor", v)}
+				/>
+				<PictureField
+					label="End zone picture"
+					url={stadium.endZoneURL}
+					pictures={pictures}
+					onChange={(v) => setField("endZoneURL", v)}
+					onUpload={upload}
 				/>
 				<div className="form-check mb-3">
 					<input

@@ -120,6 +120,7 @@ export const resolveCourt = async (
 export const STADIUM_PICTURE_KEYS = [
 	"midLogoURL",
 	"trophyURL",
+	"endZoneURL",
 ] as const satisfies readonly (keyof StadiumLook)[];
 
 export const stadiumPictureIds = (

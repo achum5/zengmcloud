@@ -14,6 +14,8 @@ import {
 
 const W = 480;
 const H = 270;
+// (As the 3D field reads it: see Field3D.)
+const END_ZONE_PX = 512;
 
 const StadiumPreview = ({
 	team,
@@ -47,6 +49,21 @@ const StadiumPreview = ({
 		};
 	}, [team.imgURL]);
 
+	// (The team's own end zone picture, if it has one.)
+	const [endPicture, setEndPicture] = useState<HTMLCanvasElement>();
+	const endURL = stadium.endZoneURL;
+	useEffect(() => {
+		let alive = true;
+		void logoPicture(endURL, END_ZONE_PX).then((made) => {
+			if (alive) {
+				setEndPicture(made);
+			}
+		});
+		return () => {
+			alive = false;
+		};
+	}, [endURL]);
+
 	const [c0, c1, c2] = team.colors ?? [];
 	const shown: PreviewTeam = useMemo(
 		() => ({
@@ -59,8 +76,8 @@ const StadiumPreview = ({
 		[team.abbrev, team.name, team.region, c0, c1, c2, stadium],
 	);
 	const paint = useMemo(
-		() => paintPreview(shown, sky, logo),
-		[shown, sky, logo],
+		() => paintPreview(shown, sky, logo, endPicture),
+		[shown, sky, logo, endPicture],
 	);
 
 	useEffect(() => {

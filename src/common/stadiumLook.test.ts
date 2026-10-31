@@ -45,16 +45,19 @@ test("a stadium's settings kept to the ones there are", () => {
 		cleanStadium({
 			midLogoURL: "https://example.com/g.png",
 			trophyURL: "pic:0123456789abcdef0123",
+			endZoneURL: "https://example.com/word.png",
 		}),
 		{
 			midLogoURL: "https://example.com/g.png",
 			trophyURL: "pic:0123456789abcdef0123",
+			endZoneURL: "https://example.com/word.png",
 		},
 	);
 	assert.isUndefined(
 		cleanStadium({
 			midLogoURL: "javascript:alert(1)",
 			trophyURL: "data:image/png;base64,AAAA",
+			endZoneURL: "pic:short",
 		}),
 	);
 	assert.strictEqual(

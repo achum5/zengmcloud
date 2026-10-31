@@ -52,7 +52,7 @@ export const cleanStadium = (raw: unknown): StadiumLook | undefined => {
 	if (typeof r.boardText === "string" && r.boardText.trim() !== "") {
 		out.boardText = r.boardText.trim().slice(0, BOARD_TEXT_MAX);
 	}
-	for (const key of ["midLogoURL", "trophyURL"] as const) {
+	for (const key of ["midLogoURL", "trophyURL", "endZoneURL"] as const) {
 		const v = r[key];
 		if (typeof v === "string" && PICTURE.test(v)) {
 			out[key] = v;
