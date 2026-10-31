@@ -5,6 +5,8 @@ import { realtimeUpdate } from "../util/realtimeUpdate.ts";
 import { helpers } from "../util/helpers.ts";
 import { showNotification } from "../util/showNotification.ts";
 import type { HelmetLook, StadiumLook, View } from "../../common/types.ts";
+import { END_ZONE_TEXT_MAX } from "../../common/stadiumLook.ts";
+import { fieldStyleFor } from "./LiveGame/field3d/fieldPaint.ts";
 import { fieldKit } from "./LiveGame/field3d/kit.ts";
 
 const StadiumPreview = lazy(
@@ -12,7 +14,7 @@ const StadiumPreview = lazy(
 );
 
 // A setting picked from a few, "" for the team's own pick.
-const Choice = <K extends keyof StadiumLook>({
+const Choice = <K extends "roof" | "turf" | "endZones" | "sky">({
 	label,
 	value,
 	options,
@@ -151,6 +153,17 @@ const EditTeamStadium = ({
 		away: fieldKit(colors, "away", helmet),
 	};
 
+	// (What the end zones are with one setting left to the team's colors and
+	// name.)
+	const endZoneAuto = (key: keyof StadiumLook) => {
+		const look = { ...stadium };
+		delete look[key];
+		return fieldStyleFor(
+			{ abbrev, name, region, colors, stadium: look },
+			undefined,
+		).endZones[0];
+	};
+
 	const save = async () => {
 		setSaving(true);
 		try {
@@ -232,6 +245,70 @@ const EditTeamStadium = ({
 					]}
 					onChange={(v) => setField("endZones", v)}
 				/>
+				<HelmetColor
+					label="End zone color"
+					value={stadium.endZoneColor}
+					fallback={colors[0]}
+					onChange={(v) => setField("endZoneColor", v)}
+				/>
+				<div className="mb-3">
+					<label className="form-label mb-1" htmlFor="end-zone-text">
+						End zone lettering
+					</label>
+					<div className="d-flex align-items-center gap-2">
+						<input
+							id="end-zone-text"
+							type="text"
+							className="form-control"
+							maxLength={END_ZONE_TEXT_MAX}
+							value={stadium.endZoneText ?? ""}
+							placeholder={endZoneAuto("endZoneText").text}
+							disabled={stadium.endZoneText === ""}
+							onChange={(e) =>
+								setField(
+									"endZoneText",
+									e.target.value === "" ? undefined : e.target.value,
+								)
+							}
+						/>
+						<button
+							type="button"
+							className="btn btn-sm btn-light-bordered"
+							onClick={() => setField("endZoneText", undefined)}
+							disabled={stadium.endZoneText === undefined}
+						>
+							Auto
+						</button>
+						<button
+							type="button"
+							className="btn btn-sm btn-light-bordered"
+							onClick={() => setField("endZoneText", "")}
+							disabled={stadium.endZoneText === ""}
+						>
+							None
+						</button>
+					</div>
+				</div>
+				<HelmetColor
+					label="Lettering color"
+					value={stadium.endZoneTextColor}
+					fallback={endZoneAuto("endZoneTextColor").textColor}
+					onChange={(v) => setField("endZoneTextColor", v)}
+				/>
+				<div className="form-check mb-3">
+					<input
+						type="checkbox"
+						className="form-check-input"
+						id="mid-logo"
+						checked={stadium.midLogo !== false}
+						onChange={(e) =>
+							setField("midLogo", e.target.checked ? undefined : false)
+						}
+					/>
+					<label className="form-check-label" htmlFor="mid-logo">
+						Logo at midfield
+					</label>
+				</div>
 				<Choice<"sky">
 					label="Kickoff"
 					value={stadium.sky}

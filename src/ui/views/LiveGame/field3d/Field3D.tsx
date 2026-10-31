@@ -544,7 +544,9 @@ const Field3D = ({
 			turf: paintTurf(style, seed),
 			endZones: [paintEndZone(style, 0), paintEndZone(style, 1)],
 			numbers: paintNumbers(style),
-			...(mid ? { logo: paintMidLogo(mid) } : {}),
+			...(mid && h.stadium?.midLogo !== false
+				? { logo: paintMidLogo(mid) }
+				: {}),
 			...(boxScore?.finals === true ? { trophy: paintMidTrophy(mid) } : {}),
 			stadium: paintStadium(
 				h,

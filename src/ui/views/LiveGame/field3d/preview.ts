@@ -39,7 +39,9 @@ export const paintPreview = (
 		turf: paintTurf(style, "preview"),
 		endZones: [paintEndZone(style, 0), paintEndZone(style, 1)],
 		numbers: paintNumbers(style),
-		...(logo ? { logo: paintMidLogo(logo) } : {}),
+		...(logo && team.stadium?.midLogo !== false
+			? { logo: paintMidLogo(logo) }
+			: {}),
 		stadium: paintStadium(team, undefined, "preview", undefined, logo, venue),
 	};
 };

@@ -14,6 +14,22 @@ test("a stadium's settings kept to the ones there are", () => {
 	assert.deepEqual(cleanStadium({ roof: "retractable", sky: "day", x: 1 }), {
 		sky: "day",
 	});
+	assert.deepEqual(
+		cleanStadium({
+			endZoneColor: "#203731",
+			endZoneText: "  GREEN BAY  ",
+			endZoneTextColor: "gold",
+			midLogo: false,
+		}),
+		{ endZoneColor: "#203731", endZoneText: "GREEN BAY", midLogo: false },
+	);
+	assert.deepEqual(cleanStadium({ endZoneText: "", midLogo: true }), {
+		endZoneText: "",
+	});
+	assert.strictEqual(
+		cleanStadium({ endZoneText: "X".repeat(40) })?.endZoneText?.length,
+		24,
+	);
 	assert.isUndefined(cleanStadium({}));
 	assert.isUndefined(cleanStadium("dome"));
 	assert.isUndefined(cleanStadium(undefined));

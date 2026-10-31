@@ -10,6 +10,7 @@ const ROOFS = new Set(["open", "dome"]);
 const TURFS = new Set(["grass", "artificial"]);
 const END_ZONES = new Set(["solid", "green", "striped"]);
 const SKIES = new Set(["day", "night"]);
+export const END_ZONE_TEXT_MAX = 24;
 
 export const cleanStadium = (raw: unknown): StadiumLook | undefined => {
 	if (!raw || typeof raw !== "object") {
@@ -28,6 +29,18 @@ export const cleanStadium = (raw: unknown): StadiumLook | undefined => {
 	}
 	if (typeof r.sky === "string" && SKIES.has(r.sky)) {
 		out.sky = r.sky as StadiumLook["sky"];
+	}
+	for (const key of ["endZoneColor", "endZoneTextColor"] as const) {
+		const v = r[key];
+		if (typeof v === "string" && HEX.test(v)) {
+			out[key] = v;
+		}
+	}
+	if (typeof r.endZoneText === "string") {
+		out.endZoneText = r.endZoneText.trim().slice(0, END_ZONE_TEXT_MAX);
+	}
+	if (r.midLogo === false) {
+		out.midLogo = false;
 	}
 	return Object.keys(out).length > 0 ? out : undefined;
 };

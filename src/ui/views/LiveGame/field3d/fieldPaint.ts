@@ -73,15 +73,20 @@ const endZoneOf = (
 	pattern: Venue["endZones"],
 	turf: string,
 ): EndZoneStyle => {
-	const fill = team?.colors?.[0] ?? fallback;
+	// (What the team has set for them over what its colors and name make.)
+	const own = team?.stadium;
+	const fill = own?.endZoneColor ?? team?.colors?.[0] ?? fallback;
 	const second = team?.colors?.[1] ?? "#ffffff";
 	const third = team?.colors?.[2] ?? "#ffffff";
-	const text = (team?.name ?? team?.abbrev ?? "").toUpperCase();
+	const text =
+		own?.endZoneText ?? (team?.name ?? team?.abbrev ?? "").toUpperCase();
 	if (pattern === "green") {
 		// On the grass: lettered in the team's color, if it shows on green,
 		// edged in another.
 		const textColor =
-			[fill, second, third].find((c) => contrast(c, turf) > 0.18) ?? "#ffffff";
+			own?.endZoneTextColor ??
+			[fill, second, third].find((c) => contrast(c, turf) > 0.18) ??
+			"#ffffff";
 		const edge =
 			[second, third, fill, "#ffffff"].find(
 				(c) => c !== textColor && contrast(c, textColor) > 0.2,
@@ -92,11 +97,12 @@ const endZoneOf = (
 	// white (or black on a light end zone) otherwise.
 	const light = luminance(fill) > 0.55;
 	const textColor =
-		Math.abs(luminance(second) - luminance(fill)) > 0.25
+		own?.endZoneTextColor ??
+		(Math.abs(luminance(second) - luminance(fill)) > 0.25
 			? second
 			: light
 				? "#141414"
-				: "#ffffff";
+				: "#ffffff");
 	const edge =
 		Math.abs(luminance(third) - luminance(textColor)) > 0.2 && third !== fill
 			? third

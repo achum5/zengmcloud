@@ -3120,6 +3120,14 @@ export type StadiumLook = {
 	// Its home games all in the afternoon, or all under the lights; left out,
 	// each game's own.
 	sky?: "day" | "night";
+	// The end zones' color (on green ones, the letters'), what is lettered
+	// across them ("" for nothing) and in what color - left out, the team's
+	// own colors and name.
+	endZoneColor?: string;
+	endZoneText?: string;
+	endZoneTextColor?: string;
+	// The team's logo at midfield; false for bare grass.
+	midLogo?: false;
 };
 
 // A FOOTBALL TEAM'S HELMET in the 3D game, as the team has set it - and the
