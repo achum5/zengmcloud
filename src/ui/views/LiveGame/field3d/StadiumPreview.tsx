@@ -7,7 +7,7 @@ import {
 	paintPreview,
 	type PreviewTeam,
 } from "./preview.ts";
-import { secondaryDecal, type DecalPicture } from "./fieldPaint.ts";
+import type { DecalPicture } from "./fieldPaint.ts";
 
 // The stadium page's picture of a team's stadium and helmet (see preview.ts),
 // redrawn as they are changed - the stadium painted again only when it is
@@ -54,34 +54,30 @@ const StadiumPreview = ({
 		};
 	}, [team.imgURL]);
 
-	// (The team's own end zone picture, if it has one.)
-	const [endPicture, setEndPicture] = useState<HTMLCanvasElement>();
+	// (The team's own pictures, if it has them: see StadiumLook.)
+	const [own, setOwn] = useState<{
+		end?: HTMLCanvasElement;
+		mid?: HTMLCanvasElement;
+		secondary?: HTMLCanvasElement;
+	}>({});
 	const endURL = stadium.endZoneURL;
-	useEffect(() => {
-		let alive = true;
-		void logoPicture(endURL, END_ZONE_PX).then((made) => {
-			if (alive) {
-				setEndPicture(made);
-			}
-		});
-		return () => {
-			alive = false;
-		};
-	}, [endURL]);
-	// (And its secondary logo.)
-	const [second, setSecond] = useState<HTMLCanvasElement>();
+	const midURL = stadium.midLogoURL;
 	const secondURL = stadium.secondaryLogoURL;
 	useEffect(() => {
 		let alive = true;
-		void logoPicture(secondURL, END_ZONE_PX).then((made) => {
+		void Promise.all([
+			logoPicture(endURL, END_ZONE_PX),
+			logoPicture(midURL),
+			logoPicture(secondURL, END_ZONE_PX),
+		]).then(([end, mid, secondary]) => {
 			if (alive) {
-				setSecond(made);
+				setOwn({ end, mid, secondary });
 			}
 		});
 		return () => {
 			alive = false;
 		};
-	}, [secondURL]);
+	}, [endURL, midURL, secondURL]);
 
 	// (The league's decals on it, if any: see CourtDecals.)
 	const [decals, setDecals] = useState<DecalPicture[]>([]);
@@ -116,12 +112,8 @@ const StadiumPreview = ({
 		[team.abbrev, team.name, team.region, c0, c1, c2, stadium],
 	);
 	const paint = useMemo(
-		() =>
-			paintPreview(shown, sky, logo, endPicture, [
-				...(second ? [secondaryDecal(second)] : []),
-				...decals,
-			]),
-		[shown, sky, logo, endPicture, decals, second],
+		() => paintPreview(shown, sky, logo, { ...own, decals }),
+		[shown, sky, logo, own, decals],
 	);
 
 	useEffect(() => {

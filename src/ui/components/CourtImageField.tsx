@@ -102,50 +102,6 @@ export const ImageField = <Slot extends string>({
 		};
 	}, [shown]);
 
-	const set = <K extends keyof CourtImageAdjust>(
-		key: K,
-		value: CourtImageAdjust[K],
-	) => {
-		const next: CourtImageAdjust = { ...adjust };
-		if (value === undefined) {
-			delete next[key];
-		} else {
-			next[key] = value;
-		}
-		onAdjust(slot, Object.keys(next).length > 0 ? next : undefined);
-	};
-
-	const slider = (
-		key: "scale" | "opacity" | "dx" | "dy" | "rotate",
-		text: string,
-		min: number,
-		max: number,
-		step: number,
-		fallback: number,
-		format: (value: number) => string,
-	) => (
-		<label className="d-flex align-items-center gap-2 mb-1 small">
-			<span style={{ width: "4.5rem" }} className="text-body-secondary">
-				{text}
-			</span>
-			<input
-				type="range"
-				className="form-range flex-grow-1"
-				min={min}
-				max={max}
-				step={step}
-				value={adjust?.[key] ?? fallback}
-				onChange={(e) => set(key, Number.parseFloat(e.target.value))}
-			/>
-			<span
-				style={{ width: "3.25rem" }}
-				className="text-end font-monospace text-body-secondary"
-			>
-				{format(adjust?.[key] ?? fallback)}
-			</span>
-		</label>
-	);
-
 	return (
 		<div className="mb-3">
 			<label className="form-label mb-1">
@@ -216,65 +172,122 @@ export const ImageField = <Slot extends string>({
 				</div>
 			) : null}
 			{url ? (
-				<div className="mt-2 ps-2 border-start">
-					{slider(
-						"scale",
-						"Size",
-						0.1,
-						4,
-						0.05,
-						1,
-						(v) => `${Math.round(v * 100)}%`,
-					)}
-					{slider(
-						"opacity",
-						"Fade",
-						0,
-						1,
-						0.05,
-						1,
-						(v) => `${Math.round(v * 100)}%`,
-					)}
-					{slider(
-						"dx",
-						"Left/right",
-						-room.dx,
-						room.dx,
-						0.5,
-						0,
-						(v) => `${v} ft`,
-					)}
-					{slider("dy", "Up/down", -room.dy, room.dy, 0.5, 0, (v) => `${v} ft`)}
-					{slider("rotate", "Rotate", -180, 180, 5, 0, (v) => `${v}\u00b0`)}
-					<div className="d-flex align-items-center gap-3 mt-1">
-						<div className="form-check form-check-inline mb-0">
-							<input
-								className="form-check-input"
-								type="checkbox"
-								id={`${slot}-fill`}
-								checked={(adjust?.fit ?? defaultFit) === "fill"}
-								onChange={(e) =>
-									set("fit", e.target.checked ? "fill" : "contain")
-								}
-							/>
-							<label
-								className="form-check-label small"
-								htmlFor={`${slot}-fill`}
-							>
-								Stretch to fit
-							</label>
-						</div>
-						<button
-							type="button"
-							className="btn btn-sm btn-light-bordered"
-							onClick={() => onAdjust(slot, undefined)}
-							disabled={adjust === undefined}
-						>
-							Reset
-						</button>
-					</div>
-				</div>
+				<AdjustFields
+					slot={slot}
+					adjust={adjust}
+					onAdjust={(next) => onAdjust(slot, next)}
+					defaultFit={defaultFit}
+					room={room}
+				/>
 			) : null}
+		</div>
+	);
+};
+
+// The knobs on a picture placed somewhere (see CourtImageAdjust): its size,
+// fade, where it sits and its turn - and whether it is stretched to its box.
+export const AdjustFields = ({
+	slot,
+	adjust,
+	onAdjust,
+	defaultFit = "contain",
+	room = COURT_ROOM,
+}: {
+	slot: string;
+	adjust: CourtImageAdjust | undefined;
+	onAdjust: (next: CourtImageAdjust | undefined) => void;
+	defaultFit?: "contain" | "fill";
+	room?: { dx: number; dy: number };
+}) => {
+	const set = <K extends keyof CourtImageAdjust>(
+		key: K,
+		value: CourtImageAdjust[K],
+	) => {
+		const next: CourtImageAdjust = { ...adjust };
+		if (value === undefined) {
+			delete next[key];
+		} else {
+			next[key] = value;
+		}
+		onAdjust(Object.keys(next).length > 0 ? next : undefined);
+	};
+
+	const slider = (
+		key: "scale" | "opacity" | "dx" | "dy" | "rotate",
+		text: string,
+		min: number,
+		max: number,
+		step: number,
+		fallback: number,
+		format: (value: number) => string,
+	) => (
+		<label className="d-flex align-items-center gap-2 mb-1 small">
+			<span style={{ width: "4.5rem" }} className="text-body-secondary">
+				{text}
+			</span>
+			<input
+				type="range"
+				className="form-range flex-grow-1"
+				min={min}
+				max={max}
+				step={step}
+				value={adjust?.[key] ?? fallback}
+				onChange={(e) => set(key, Number.parseFloat(e.target.value))}
+			/>
+			<span
+				style={{ width: "3.25rem" }}
+				className="text-end font-monospace text-body-secondary"
+			>
+				{format(adjust?.[key] ?? fallback)}
+			</span>
+		</label>
+	);
+
+	return (
+		<div className="mt-2 ps-2 border-start">
+			{slider(
+				"scale",
+				"Size",
+				0.1,
+				4,
+				0.05,
+				1,
+				(v) => `${Math.round(v * 100)}%`,
+			)}
+			{slider(
+				"opacity",
+				"Fade",
+				0,
+				1,
+				0.05,
+				1,
+				(v) => `${Math.round(v * 100)}%`,
+			)}
+			{slider("dx", "Left/right", -room.dx, room.dx, 0.5, 0, (v) => `${v} ft`)}
+			{slider("dy", "Up/down", -room.dy, room.dy, 0.5, 0, (v) => `${v} ft`)}
+			{slider("rotate", "Rotate", -180, 180, 5, 0, (v) => `${v}\u00b0`)}
+			<div className="d-flex align-items-center gap-3 mt-1">
+				<div className="form-check form-check-inline mb-0">
+					<input
+						className="form-check-input"
+						type="checkbox"
+						id={`${slot}-fill`}
+						checked={(adjust?.fit ?? defaultFit) === "fill"}
+						onChange={(e) => set("fit", e.target.checked ? "fill" : "contain")}
+					/>
+					<label className="form-check-label small" htmlFor={`${slot}-fill`}>
+						Stretch to fit
+					</label>
+				</div>
+				<button
+					type="button"
+					className="btn btn-sm btn-light-bordered"
+					onClick={() => onAdjust(undefined)}
+					disabled={adjust === undefined}
+				>
+					Reset
+				</button>
+			</div>
 		</div>
 	);
 };

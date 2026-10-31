@@ -4,8 +4,17 @@ import { toWorker } from "../util/toWorker.ts";
 import { realtimeUpdate } from "../util/realtimeUpdate.ts";
 import { helpers } from "../util/helpers.ts";
 import { showNotification } from "../util/showNotification.ts";
-import type { HelmetLook, StadiumLook, View } from "../../common/types.ts";
-import { PIC, pictureFromFile } from "../components/CourtImageField.tsx";
+import type {
+	CourtImageAdjust,
+	HelmetLook,
+	StadiumLook,
+	View,
+} from "../../common/types.ts";
+import {
+	AdjustFields,
+	PIC,
+	pictureFromFile,
+} from "../components/CourtImageField.tsx";
 import {
 	BOARD_TEXT_MAX,
 	cleanHelmet,
@@ -87,6 +96,7 @@ const PictureField = ({
 	onChange,
 	onUpload,
 	clear = "Auto",
+	adjust,
 }: {
 	label: string;
 	url: string | undefined;
@@ -95,6 +105,12 @@ const PictureField = ({
 	onUpload: (file: File) => Promise<string | undefined>;
 	// (The button that goes back to none of its own.)
 	clear?: string;
+	// Its knobs, moving and sizing it where it sits (see StadiumLook.adjust).
+	adjust?: {
+		slot: string;
+		value: CourtImageAdjust | undefined;
+		onChange: (next: CourtImageAdjust | undefined) => void;
+	};
 }) => {
 	const uploaded = url?.startsWith(PIC) ?? false;
 	const shown = uploaded ? pictures[url!.slice(PIC.length)] : url;
@@ -154,9 +170,20 @@ const PictureField = ({
 					{clear}
 				</button>
 			</div>
+			{adjust ? (
+				<AdjustFields
+					slot={adjust.slot}
+					adjust={adjust.value}
+					onAdjust={adjust.onChange}
+					room={FIELD_ROOM}
+				/>
+			) : null}
 		</div>
 	);
 };
+// (How far a picture moves, feet: to the back of either end zone, and to
+// either sideline.)
+const FIELD_ROOM = { dx: 180, dy: 80 };
 
 // A helmet color: the team's own pick until one is chosen - and, for a
 // stripe, none at all.
@@ -289,6 +316,18 @@ const EditTeamStadium = ({
 			}
 			return next;
 		});
+	};
+	const setAdjust = (
+		slot: keyof NonNullable<StadiumLook["adjust"]>,
+		value: CourtImageAdjust | undefined,
+	) => {
+		const next = { ...stadium.adjust };
+		if (value === undefined) {
+			delete next[slot];
+		} else {
+			next[slot] = value;
+		}
+		setField("adjust", Object.keys(next).length > 0 ? next : undefined);
 	};
 	const setPart = <K extends keyof HelmetLook>(
 		key: K,
@@ -531,6 +570,11 @@ const EditTeamStadium = ({
 						pictures={pictures}
 						onChange={(v) => setField("midLogoURL", v)}
 						onUpload={upload}
+						adjust={{
+							slot: "logo",
+							value: stadium.adjust?.logo,
+							onChange: (v) => setAdjust("logo", v),
+						}}
 					/>
 				) : null}
 				<PictureField
@@ -540,6 +584,16 @@ const EditTeamStadium = ({
 					onChange={(v) => setField("secondaryLogoURL", v)}
 					onUpload={upload}
 					clear="None"
+					{...(stadium.secondaryLogoURL
+						? {
+								adjust: {
+									slot: "secondary",
+									value: stadium.adjust?.secondary,
+									onChange: (v: CourtImageAdjust | undefined) =>
+										setAdjust("secondary", v),
+								},
+							}
+						: {})}
 				/>
 				<PictureField
 					label="Championship trophy"

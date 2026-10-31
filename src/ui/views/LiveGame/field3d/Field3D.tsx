@@ -62,6 +62,7 @@ import {
 	paintMidTrophy,
 	paintDecals,
 	secondaryDecal,
+	midLogoDecal,
 	paintNumbers,
 	paintTurf,
 	type DecalPicture,
@@ -601,6 +602,17 @@ const Field3D = ({
 		const seed = String(gid ?? 0);
 		const mid = logos[1];
 		const midPicture = logos[2] ?? mid;
+		const midLogo = midPicture && h.stadium?.midLogo !== false;
+		// (The team's own moves and sizes for its logos: see StadiumLook.)
+		const own = h.stadium?.adjust;
+		const finals = boxScore?.finals === true;
+		const decals = [
+			...(midLogo && own?.logo && !finals
+				? [midLogoDecal(midPicture, own.logo)]
+				: []),
+			...(logos[6] ? [secondaryDecal(logos[6], own?.secondary)] : []),
+			...decalPictures,
+		];
 		return {
 			style,
 			turf: paintTurf(style, seed),
@@ -613,24 +625,15 @@ const Field3D = ({
 				),
 			],
 			numbers: paintNumbers(style),
-			...(midPicture && h.stadium?.midLogo !== false
-				? { logo: paintMidLogo(midPicture) }
-				: {}),
-			...(boxScore?.finals === true
+			...(midLogo && !own?.logo ? { logo: paintMidLogo(midPicture) } : {}),
+			...(finals
 				? {
 						trophy: logos[3]
 							? paintTrophyPicture(logos[3])
 							: paintMidTrophy(mid),
 					}
 				: {}),
-			...(logos[6] || decalPictures.length > 0
-				? {
-						decals: paintDecals([
-							...(logos[6] ? [secondaryDecal(logos[6])] : []),
-							...decalPictures,
-						]),
-					}
-				: {}),
+			...(decals.length > 0 ? { decals: paintDecals(decals) } : {}),
 			stadium: paintStadium(
 				h,
 				a,

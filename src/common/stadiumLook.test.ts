@@ -62,6 +62,17 @@ test("a stadium's settings kept to the ones there are", () => {
 			endZoneURL: "pic:short",
 		}),
 	);
+	assert.deepEqual(
+		cleanStadium({
+			adjust: {
+				logo: { scale: 1.4, rotate: 90, fit: "fill" },
+				secondary: { dx: "far" },
+				corner: { scale: 2 },
+			},
+		}),
+		{ adjust: { logo: { scale: 1.4, rotate: 90, fit: "fill" } } },
+	);
+	assert.isUndefined(cleanStadium({ adjust: { secondary: [] } }));
 	assert.strictEqual(
 		cleanStadium({ endZoneText: "X".repeat(40) })?.endZoneText?.length,
 		24,

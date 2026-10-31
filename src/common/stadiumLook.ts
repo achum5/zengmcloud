@@ -1,3 +1,4 @@
+import { adjustProblem } from "./courtDecals.ts";
 import type { HelmetLook, StadiumLook } from "./types.ts";
 
 // A FOOTBALL TEAM'S STADIUM AND HELMET SETTINGS, kept to what they can be:
@@ -67,6 +68,19 @@ export const cleanStadium = (raw: unknown): StadiumLook | undefined => {
 	}
 	if (r.midLogo === false) {
 		out.midLogo = false;
+	}
+	if (r.adjust && typeof r.adjust === "object") {
+		const a = r.adjust as Record<string, unknown>;
+		const adjust: NonNullable<StadiumLook["adjust"]> = {};
+		for (const key of ["logo", "secondary"] as const) {
+			const v = a[key];
+			if (v !== undefined && adjustProblem(v, key) === undefined) {
+				adjust[key] = v as NonNullable<StadiumLook["adjust"]>[typeof key];
+			}
+		}
+		if (Object.keys(adjust).length > 0) {
+			out.adjust = adjust;
+		}
 	}
 	return Object.keys(out).length > 0 ? out : undefined;
 };

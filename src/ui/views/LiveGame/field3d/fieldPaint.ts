@@ -508,19 +508,43 @@ const DECAL_FT = 30;
 const DECAL_PPF = 8;
 // (No picture bigger than this across, px: a big decal painted coarser.)
 const DECAL_MAX_PX = 1024;
+// A team's own picture where it sits, moved and sized by the team's adjust
+// on top (see StadiumLook.adjust): moved from there, its size times it.
+const adjusted = (
+	base: CourtImageAdjust,
+	own: CourtImageAdjust | undefined,
+): CourtImageAdjust => ({
+	...own,
+	dx: (base.dx ?? 0) + (own?.dx ?? 0),
+	scale: (base.scale ?? 1) * (own?.scale ?? 1),
+	opacity: own?.opacity ?? base.opacity,
+});
 // A team's secondary logo (see StadiumLook), laid as a decal is: one at
 // each 25-yard line, SECONDARY_FT across.
 const SECONDARY_FT = 18;
 export const secondaryDecal = (
 	picture: HTMLCanvasElement | HTMLImageElement,
+	own?: CourtImageAdjust,
 ): DecalPicture => ({
 	picture,
-	adjust: {
-		dx: GOAL_L + 25 * YD - MID_X,
-		scale: SECONDARY_FT / DECAL_FT,
-		opacity: 0.88,
-	},
+	adjust: adjusted(
+		{
+			dx: GOAL_L + 25 * YD - MID_X,
+			scale: SECONDARY_FT / DECAL_FT,
+			opacity: 0.88,
+		},
+		own,
+	),
 	pair: true,
+});
+// The midfield logo moved or sized (see StadiumLook.adjust): laid as a
+// decal is, from the size and fade paintMidLogo gives it.
+export const midLogoDecal = (
+	picture: HTMLCanvasElement | HTMLImageElement,
+	own: CourtImageAdjust,
+): DecalPicture => ({
+	picture,
+	adjust: adjusted({ scale: (0.94 * LOGO_FT) / DECAL_FT, opacity: 0.9 }, own),
 });
 export const paintDecals = (decals: DecalPicture[]): DecalMark[] => {
 	const out: DecalMark[] = [];

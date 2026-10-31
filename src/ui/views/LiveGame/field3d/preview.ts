@@ -5,7 +5,9 @@ import { footballBody } from "./body.ts";
 import { makeFieldCamera, type FieldRig } from "./camera.ts";
 import {
 	fieldStyleFor,
+	midLogoDecal,
 	paintDecals,
+	secondaryDecal,
 	paintEndZone,
 	paintMidLogo,
 	paintNumbers,
@@ -32,25 +34,38 @@ export const paintPreview = (
 	team: PreviewTeam,
 	sky: "day" | "night" | undefined,
 	logo: HTMLCanvasElement | undefined,
-	// Its own end zone picture (see StadiumLook).
-	endPicture?: HTMLCanvasElement,
-	// The league's decals on it (see paintDecals).
-	decals: DecalPicture[] = [],
+	// Its own pictures - for the end zones, midfield (the logo, left out),
+	// and the 25-yard lines - and the league's decals on it (see
+	// StadiumLook, paintDecals).
+	pictures: {
+		end?: HTMLCanvasElement;
+		mid?: HTMLCanvasElement;
+		secondary?: HTMLCanvasElement;
+		decals?: DecalPicture[];
+	} = {},
 ): FieldPaint => {
 	const picked = venueFor(team, { gid: 0, primeTime: sky === "night" });
 	const venue = { ...picked, shadow: undefined };
 	const style = fieldStyleFor(team, undefined, false, venue);
+	const mid =
+		team.stadium?.midLogo !== false ? (pictures.mid ?? logo) : undefined;
+	const own = team.stadium?.adjust;
+	const decals = [
+		...(mid && own?.logo ? [midLogoDecal(mid, own.logo)] : []),
+		...(pictures.secondary
+			? [secondaryDecal(pictures.secondary, own?.secondary)]
+			: []),
+		...(pictures.decals ?? []),
+	];
 	return {
 		style,
 		turf: paintTurf(style, "preview"),
 		endZones: [
-			paintEndZone(style, 0, endPicture),
-			paintEndZone(style, 1, endPicture),
+			paintEndZone(style, 0, pictures.end),
+			paintEndZone(style, 1, pictures.end),
 		],
 		numbers: paintNumbers(style),
-		...(logo && team.stadium?.midLogo !== false
-			? { logo: paintMidLogo(logo) }
-			: {}),
+		...(mid && !own?.logo ? { logo: paintMidLogo(mid) } : {}),
 		...(decals.length > 0 ? { decals: paintDecals(decals) } : {}),
 		stadium: paintStadium(team, undefined, "preview", undefined, logo, venue),
 	};

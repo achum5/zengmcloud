@@ -3145,6 +3145,9 @@ export type StadiumLook = {
 	// A logo of its own on the field in each half, at the 25-yard lines (the
 	// 3D court's secondary logo).
 	secondaryLogoURL?: string;
+	// Those two moved, sized, turned and faded from where they sit (as a
+	// court's pictures are).
+	adjust?: Partial<Record<"logo" | "secondary", CourtImageAdjust>>;
 	// The stands' seats; left out, from the team's colors.
 	seatColor?: string;
 	// Words of its own along the boards round the field, in turn with the
