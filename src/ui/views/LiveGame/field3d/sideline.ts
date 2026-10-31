@@ -598,7 +598,8 @@ const CLAP_MS = 1400;
 // Won on the last play: the winners' bench out onto the field at once, this
 // share of it, at a run (these paces), round the men all over the man who
 // won it - this far off him - jumping as they get there; the beaten side's
-// out after the rest of it, later still.
+// out after the rest of it, later still. (A playoff round won, the same at
+// once, at a run: see Postgame clinch.)
 const RUSH_SHARE = 0.85;
 const RUSH_AFTER = 250;
 const RUSH_SPREAD = 1400;
@@ -635,6 +636,10 @@ const outOf = (s: SidelineMan, spot: Spot, play: Play, at: Pt): Out | null => {
 		const post = play.postgame!;
 		const mob = post.mob;
 		const player = s.unit !== "coach" && s.unit !== "staff";
+		// (A playoff round won: the winners' men out to stand about the
+		// middle all the same - but at once, at a run, jumping as they get
+		// there.)
+		const rushing = !!post.clinch && s.team === post.winner;
 		if (mob && s.team === post.winner) {
 			if (player && r() < RUSH_SHARE) {
 				const leave =
@@ -662,18 +667,22 @@ const outOf = (s: SidelineMan, spot: Spot, play: Play, at: Pt): Out | null => {
 					face: mob.at,
 				};
 			}
-		} else if (player && r() < OUT_SHARE) {
+		} else if (player && r() < (rushing ? RUSH_SHARE : OUT_SHARE)) {
 			const near = spot.at.y > 0;
-			const leave =
-				post.from +
-				OUT_AFTER +
-				r() * OUT_SPREAD +
-				(spot.seated || s.unit === "kicker" ? OUT_LATE : 0) +
-				(mob ? BEATEN_LATE : 0) +
-				// (Watching the head coach under the cooler first.)
-				(post.shower && s.team === post.shower.team
-					? post.shower.until - post.from
-					: 0);
+			const leave = rushing
+				? post.from +
+					RUSH_AFTER +
+					r() * RUSH_SPREAD +
+					(spot.seated ? RISE_MS * 2 : 0)
+				: post.from +
+					OUT_AFTER +
+					r() * OUT_SPREAD +
+					(spot.seated || s.unit === "kicker" ? OUT_LATE : 0) +
+					(mob ? BEATEN_LATE : 0) +
+					// (Watching the head coach under the cooler first.)
+					(post.shower && s.team === post.shower.team
+						? post.shower.until - post.from
+						: 0);
 			let along = (spot.at.x - MID_X) * OUT_ALONG + (r() - 0.5) * 2 * OUT_WIDE;
 			if (near) {
 				along = (along < 0 ? -1 : 1) * (OUT_CLEAR + Math.abs(along));
@@ -682,18 +691,22 @@ const outOf = (s: SidelineMan, spot: Spot, play: Play, at: Pt): Out | null => {
 				OUT_DEEP[0] + r() * (OUT_DEEP[1] - OUT_DEEP[0]) + (near ? OUT_BACK : 0);
 			const to = { x: at.x + along, y: at.y + (near ? deep : -deep) };
 			const far = dist(spot.at, to);
-			const fps = Math.max(
-				r() < OUT_JOG ? JOG_FPS : OUT_FPS[0] + r() * (OUT_FPS[1] - OUT_FPS[0]),
-				far / (Math.max(1000, post.shake + OUT_BY - leave) / 1000),
-			);
+			const fps = rushing
+				? RUSH_FPS[0] + r() * (RUSH_FPS[1] - RUSH_FPS[0])
+				: Math.max(
+						r() < OUT_JOG
+							? JOG_FPS
+							: OUT_FPS[0] + r() * (OUT_FPS[1] - OUT_FPS[0]),
+						far / (Math.max(1000, post.shake + OUT_BY - leave) / 1000),
+					);
 			o = {
 				leave,
 				from: spot.at,
 				to,
 				arrive: leave + (far / fps) * 1000,
 				gait: fps < 6.5 ? "walk" : fps < 12.5 ? "jog" : "run",
-				leaps: 0,
-				claps: r() < OUT_CLAP,
+				leaps: rushing ? RUSH_LEAPS + (r() < 0.5 ? 1 : 0) : 0,
+				claps: !rushing && r() < OUT_CLAP,
 				face: at,
 			};
 		}

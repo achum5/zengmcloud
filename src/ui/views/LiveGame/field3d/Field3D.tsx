@@ -97,6 +97,7 @@ import {
 import { planFieldKeyPlays } from "./keyPlays.ts";
 import { replayAim } from "./replays.ts";
 import { poolsOf } from "./pools.ts";
+import type { Stakes } from "./postgame.ts";
 import { drawFieldFrame, type FieldPaint } from "./scene.ts";
 import {
 	coachId,
@@ -374,6 +375,37 @@ const Field3D = ({
 		}
 		setMatched(true);
 	}, [events, roster]);
+	// A playoff game's stakes, as they stood going into it (the 3D court's:
+	// see court3d/Court3D.tsx) - the box score's series records take this
+	// game in once it is over, so they are read once, and one won by now is
+	// taken back out.
+	const stakes = useMemo((): Stakes | undefined => {
+		const bs = boxScore as
+			| {
+					playoffs?: boolean;
+					finals?: boolean;
+					numGamesToWinSeries?: number;
+					gameOver?: boolean;
+					won?: { tid?: number };
+					teams?: { tid?: number; playoffs?: { won?: number } }[];
+			  }
+			| undefined;
+		if (!bs?.playoffs || typeof bs.numGamesToWinSeries !== "number") {
+			return undefined;
+		}
+		const won = (raw: 0 | 1) => {
+			const t = bs.teams?.[raw];
+			const w = Number(t?.playoffs?.won ?? 0);
+			return bs.gameOver && bs.won?.tid === t?.tid ? w - 1 : w;
+		};
+		// (Raw team 0 is home, side 1.)
+		return {
+			won: [won(1), won(0)],
+			toWin: bs.numGamesToWinSeries,
+			finals: !!bs.finals,
+		};
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [gid]);
 	// Staged off the page (see stageField.ts) - its first play shown in the
 	// meantime (see stageOpening), from the start.
 	const [timeline, setTimeline] = useState<FieldTimeline | undefined>();
@@ -387,6 +419,7 @@ const Field3D = ({
 				players: roster,
 				gid,
 				numPeriods: boxScore?.numPeriods,
+				...(stakes ? { stakes } : {}),
 			});
 		} catch {
 			return undefined;
@@ -406,6 +439,7 @@ const Field3D = ({
 			players: roster,
 			gid,
 			numPeriods: boxScore?.numPeriods,
+			...(stakes ? { stakes } : {}),
 		}).then(
 			(tl) => {
 				if (alive) {
@@ -616,12 +650,13 @@ const Field3D = ({
 	cheerleadersRef.current = cheerleaders;
 	const sideColors = useRef<[string, string]>([kits[0].helmet, kits[1].helmet]);
 	sideColors.current = [kits[0].helmet, kits[1].helmet];
-	// The championship game: confetti for the winners (see confetti.ts).
-	const title = useRef({ won: false, colors: [] as (string[] | undefined)[] });
-	title.current = {
-		won: boxScore?.finals === true,
-		colors: [away?.colors, home?.colors],
-	};
+	// The championship won: confetti in the winners' colors (see
+	// confetti.ts).
+	const teamColors = useRef<[string[] | undefined, string[] | undefined]>([
+		undefined,
+		undefined,
+	]);
+	teamColors.current = [away?.colors, home?.colors];
 	const looks = useRef(appearance.looks);
 	const bodies = useRef(appearance.bodies);
 	looks.current = appearance.looks;
@@ -865,10 +900,7 @@ const Field3D = ({
 			const items: { depth: number; draw: () => void }[] = [];
 			const shadow = p.paint.stadium.style.shadow;
 			const snappers = photographersAt(photographersRef.current, moment);
-			const confetti = confettiFor(moment.play, title.current.won, [
-				title.current.colors[0],
-				title.current.colors[1],
-			]);
+			const confetti = confettiFor(moment.play, teamColors.current);
 			const standing = [
 				...moment.players,
 				...sidelineAt(sidelineRef.current, tl, moment),

@@ -13,23 +13,22 @@ export type Confetti = { t: number; x: number; colors: string[] };
 
 const CONFETTI = 3200;
 // Let go this high (feet), this long after the game is over (ms), the last
-// of it this much later; over this far along the field either way of where
-// the head coaches meet, and all the way across it and a little past.
+// of it this much later; over as far as this along the field either way of
+// where the head coaches meet, and all the way across it and a little past.
 const FROM_Z = 50;
 const AFTER = 400;
 const SPREAD_MS = 12_000;
-const ALONG = 65;
+const ALONG = 80;
 const PAST = 8;
 // Each piece this big (feet).
 const PIECE = 0.6;
 
 export const confettiFor = (
 	play: Play | undefined,
-	title: boolean,
 	colors: [string[] | undefined, string[] | undefined],
 ): Confetti | undefined => {
 	const post = play?.postgame;
-	if (!title || !post || post.winner === undefined) {
+	if (!post?.clinch?.title || post.winner === undefined) {
 		return undefined;
 	}
 	const own = colors[post.winner]?.slice(0, 2) ?? [];
@@ -73,21 +72,28 @@ export const drawConfetti = (
 			continue;
 		}
 		const u = Math.min(dt, down);
+		// (Thicker in the middle of it, thinning out to its edges.)
 		const x =
-			c.x - ALONG + unitHash(k, 2) * ALONG * 2 + Math.sin(u * 2.3 + k) * 1.8;
+			c.x +
+			(unitHash(k, 2) + unitHash(k, 5) - 1) * ALONG +
+			Math.sin(u * 2.3 + k) * 1.8;
 		const y =
-			-PAST +
-			unitHash(k, 3) * (FIELD_W + PAST * 2) +
+			FIELD_W / 2 +
+			(unitHash(k, 3) + unitHash(k, 6) - 1) * (FIELD_W / 2 + PAST) +
 			Math.cos(u * 1.7 + k) * 1.2;
 		const z = Math.max(0, FROM_Z - v * u);
 		const p = project(cam, { x, y, z });
 		if (p.x < -4 || p.y < -4 || p.x > cam.viewW + 4 || p.y > cam.viewH + 4) {
 			continue;
 		}
-		const size = Math.max(1.2, p.k * PIECE);
+		// (Smaller than a pixel from far off: a pixel, fainter.)
+		const real = p.k * PIECE;
+		const size = Math.max(1.2, real);
+		ctx.globalAlpha = Math.min(1, 0.2 + real / 1.2);
 		// Turning over as it falls: edge on, then flat.
 		const w = air ? size * Math.max(0.2, Math.abs(Math.sin(dt * 7 + k))) : size;
 		ctx.fillStyle = c.colors[k % c.colors.length]!;
 		ctx.fillRect(p.x - w / 2, p.y - size / 2, w, air ? size : size * 0.6);
 	}
+	ctx.globalAlpha = 1;
 };

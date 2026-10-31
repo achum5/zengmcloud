@@ -659,6 +659,42 @@ describe("the game over", () => {
 		}
 	}, 20_000);
 
+	test("a playoff round won: the winners' sideline out onto the field at once, at a run, and the building up for it all the way - the championship's with confetti", () => {
+		let clinched = 0;
+		for (const game of games) {
+			const staged = (toWin?: number) =>
+				compileField({
+					events: game.events,
+					players: game.roster,
+					gid: 1,
+					...(toWin ? { stakes: { won: [0, 0], toWin, finals: true } } : {}),
+				});
+			const plain = staged();
+			const won = staged(1);
+			const play = won.plays.at(-1)!;
+			const post = play.postgame!;
+			assert.isUndefined(plain.plays.at(-1)!.postgame!.clinch);
+			// (A series not won yet.)
+			assert.isUndefined(staged(4).plays.at(-1)!.postgame!.clinch);
+			if (post.winner === undefined) {
+				assert.isUndefined(post.clinch);
+				continue;
+			}
+			clinched += 1;
+			assert.deepEqual(post.clinch, { title: true });
+			assert.equal(play.cheer?.side, post.winner);
+			assert.isAtLeast(post.from + play.cheer!.hold!, post.look);
+			const squad = sidelineFor(game.roster, 1);
+			const running = (tl: FieldTimeline) =>
+				sidelineAt(squad, tl, momentAt(tl, post.from + 2500)).filter(
+					(s) => s.team === post.winner && s.move === "run",
+				).length;
+			assert.isAbove(running(won), 15);
+			assert.isBelow(running(plain), running(won) / 3);
+		}
+		assert.isAbove(clinched, 0);
+	}, 60_000);
+
 	test("the winners' head coach under the cooler, the game won: two of his men off the field with it, after the whistle", () => {
 		let showers = 0;
 		for (const [k, game] of games.entries()) {

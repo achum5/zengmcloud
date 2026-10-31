@@ -57,7 +57,13 @@ import { crewClear, stageTimeout } from "./timeout.ts";
 import { cheerShotFor, type CheerShot } from "./cheerleaders.ts";
 import { measureTimes, stageMeasure } from "./measure.ts";
 import { HURT_MOST, MEDICS, stageHurt } from "./hurt.ts";
-import { crewOff, stageHalftime, stagePostgame } from "./postgame.ts";
+import {
+	crewOff,
+	stageHalftime,
+	stagePostgame,
+	type Clinch,
+	type Stakes,
+} from "./postgame.ts";
 import { SHOWER, SHOWER_MARGIN, type Shower } from "./shower.ts";
 import { stageTv } from "./tv.ts";
 import { stageToss, tossCrew } from "./toss.ts";
@@ -226,6 +232,8 @@ export type Play = {
 		// The last look, the hands all shaken: when the picture cuts to the
 		// whole stadium (see aim.ts).
 		look: number;
+		// A playoff round won by it - the championship, it may be.
+		clinch?: Clinch;
 	};
 	ball: BallSeg[];
 	// A big play's moment after it (see action.ts celebrate): from when, till
@@ -267,6 +275,10 @@ export type FieldInput = {
 	gid: number | undefined;
 	// Quarters in regulation, for which end each team defends in overtime.
 	numPeriods?: number;
+	// A playoff game's stakes, as they stood going into it (the 3D court's:
+	// see court3d/director.ts) - celebrated accordingly at the end (see
+	// postgame.ts).
+	stakes?: Stakes;
 };
 
 // ---- the lines -------------------------------------------------------------
@@ -950,11 +962,13 @@ class Director {
 	readonly speeds: Map<number, number>;
 	readonly flair: Map<number, Flair>;
 	readonly rated = new Map<number, FieldRatings>();
+	readonly stakes: Stakes | undefined;
 
-	constructor({ events, players, gid, numPeriods = 4 }: FieldInput) {
+	constructor({ events, players, gid, numPeriods = 4, stakes }: FieldInput) {
 		this.events = events;
 		this.gid = gid ?? 0;
 		this.numPeriods = numPeriods;
+		this.stakes = stakes;
 		const init = events.find((e) => e?.type === "init");
 		this.depth = depthCharts(init, players);
 		this.roster = [
@@ -1655,6 +1669,7 @@ class Director {
 					...(showerMen
 						? { shower: { men: showerMen, r: this.rng(i0, "showered") } }
 						: {}),
+					...(this.stakes ? { stakes: this.stakes } : {}),
 					r: this.rng(i0, "postgame"),
 				})
 			: undefined;
@@ -1662,7 +1677,13 @@ class Director {
 			t1 = postgame.t1;
 			this.cuts.push(postgame.look);
 			if (postgame.winner !== undefined) {
-				cheer = { t: postgame.from, side: postgame.winner, big: true };
+				cheer = {
+					t: postgame.from,
+					side: postgame.winner,
+					big: true,
+					// (The round won: the building up for it all the way.)
+					...(postgame.clinch ? { hold: t1 - postgame.from } : {}),
+				};
 			}
 		}
 		// The half over (or regulation, before overtime): everybody off for
@@ -1955,6 +1976,7 @@ class Director {
 							...(postgame.mob ? { mob: postgame.mob } : {}),
 							...(postgame.shower ? { shower: postgame.shower } : {}),
 							look: postgame.look,
+							...(postgame.clinch ? { clinch: postgame.clinch } : {}),
 						},
 					}
 				: {}),

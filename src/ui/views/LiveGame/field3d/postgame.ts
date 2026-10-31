@@ -12,6 +12,7 @@ import {
 	type Pt,
 	type Side,
 } from "./geometry.ts";
+import type { Stakes } from "../court3d/director.ts";
 import { HIGH_FIVE_AT, handsMeet, moveKind, type Move } from "./poses.ts";
 import { stageShower, type Shower } from "./shower.ts";
 import { coachId, headCoachAt, sidelineOf } from "./sideline.ts";
@@ -30,6 +31,8 @@ import { coachId, headCoachAt, sidelineOf } from "./sideline.ts";
 const GO_AFTER = 350;
 // A win by this many points or more is a rout.
 const ROUT = 17;
+// (A playoff game won, not the round with it: by this many.)
+const PLAYOFF_ROUT = 28;
 // The winners: this share of them chest to chest with a teammate (one no
 // further off than this) - or, half the time, a high five - the rest each
 // in a moment of his own.
@@ -163,6 +166,10 @@ const toward = (a: Pt, b: Pt) => Math.atan2(b.y - a.y, b.x - a.x);
 const clamp = (x: number, lo: number, hi: number) =>
 	Math.min(hi, Math.max(lo, x));
 
+export type { Stakes };
+// A playoff round won (see Postgame) - the championship, it may be.
+export type Clinch = { title: boolean };
+
 export type Postgame = {
 	coaches: CrewPart[];
 	// When it starts, when the head coaches shake hands, and where.
@@ -177,6 +184,12 @@ export type Postgame = {
 	shower?: Shower;
 	// When the picture cuts to the last look.
 	look: number;
+	// The round won by it (the 3D court's series won: see
+	// court3d/director.ts) - celebrated however big the win, the building up
+	// for it all the way, the winners' sideline out onto the field at a run
+	// (see sideline.ts) - and the championship, it may be, with confetti
+	// (see confetti.ts).
+	clinch?: Clinch;
 	t1: number;
 };
 
@@ -499,13 +512,20 @@ export const stagePostgame = (input: {
 	// The two of the winners' men off the field with the cooler, if they
 	// have it ready.
 	shower?: { men: [number, number]; r: () => number };
+	// A playoff game's, as they stood going into it.
+	stakes?: Stakes;
 	r: () => number;
 }): Postgame => {
 	const { parts, pts, ball, r } = input;
 	const winner: Side | undefined =
 		pts[0] > pts[1] ? 0 : pts[1] > pts[0] ? 1 : undefined;
 	const margin = Math.abs(pts[0] - pts[1]);
-	const rout = margin >= ROUT;
+	const stakes = input.stakes;
+	const clinch: Clinch | undefined =
+		stakes && winner !== undefined && stakes.won[winner] + 1 >= stakes.toWin
+			? { title: stakes.finals }
+			: undefined;
+	const rout = !clinch && margin >= (stakes ? PLAYOFF_ROUT : ROUT);
 	const go = input.whistle + GO_AFTER;
 
 	// Each man free of the play: up off the turf, done what he was doing -
@@ -737,6 +757,7 @@ export const stagePostgame = (input: {
 		...(mob ? { mob } : {}),
 		...(shower ? { shower } : {}),
 		look,
+		...(clinch ? { clinch } : {}),
 		t1,
 	};
 };
