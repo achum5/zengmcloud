@@ -150,8 +150,9 @@ export type PlayerState = {
 	target?: number;
 	// A ball not in his hands but near them - in the air, loose, or in
 	// another man's - from where he stands (feet; up, from his feet as he
-	// is off the floor): his hands meet it (see sculpt.ts).
-	ballBy?: { x: number; y: number; z: number };
+	// is off the floor): his hands meet it (see sculpt.ts) - flat on it,
+	// `held` in another man's hands or on his dribble.
+	ballBy?: { x: number; y: number; z: number; held?: boolean };
 	// The ball in his hands: how far round from the way he faces it faces
 	// (radians; see facesTo).
 	ballFace?: number;

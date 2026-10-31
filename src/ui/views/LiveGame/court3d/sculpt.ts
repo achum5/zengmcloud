@@ -1052,7 +1052,8 @@ const build = (
 		let h = lenV(subV(tip, wrist)) > 1e-3 ? unit(subV(tip, wrist)) : foreDir;
 		// A ball he isn't holding, at this hand - a rebound, a tip, a block,
 		// a pass come into his hands, another man's ball he has a hand on: his
-		// palm onto it, his fingers laid on it where they reach it.
+		// palm onto it, his fingers laid on it where they reach it (open and
+		// flat on it, another man's: a reach at it, not a hold of it).
 		const by = st.ballBy;
 		const loose =
 			!held && !dribbling && by
@@ -1067,13 +1068,15 @@ const build = (
 			lenV(subV(loose, addV(wrist, h, H * 0.062))) <
 				HELD_BALL_R + H * MEET_REACH;
 		const grip: Grip =
-			touch > 0.3 || meets
+			touch > 0.3 || (meets && !by?.held)
 				? "ball"
-				: dribbling
-					? "dribble"
-					: flick
-						? "relaxed"
-						: gripFor(st, which, held !== undefined && !off);
+				: meets
+					? "open"
+					: dribbling
+						? "dribble"
+						: flick
+							? "relaxed"
+							: gripFor(st, which, held !== undefined && !off);
 		// The ball his hand is on, if it is.
 		const cup =
 			held && grip === "ball"

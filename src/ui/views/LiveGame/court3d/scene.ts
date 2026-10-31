@@ -223,7 +223,12 @@ export const momentAt = (
 			dz > BALL_BY_LOW &&
 			Math.hypot(ball.x - p.x, ball.y - p.y) < BALL_BY_REACH
 		) {
-			p.ballBy = { x: ball.x - p.x, y: ball.y - p.y, z: dz };
+			p.ballBy = {
+				x: ball.x - p.x,
+				y: ball.y - p.y,
+				z: dz,
+				...(ball.holder !== undefined ? { held: true } : {}),
+			};
 		}
 	}
 	return { t, players, ball };
