@@ -3119,9 +3119,9 @@ export type StadiumLook = {
 	sky?: "day" | "night";
 };
 
-// A FOOTBALL TEAM'S HELMET in the 3D game, as the team has set it: colors
-// as hex. Anything left out comes from the team's colors (see
-// LiveGame/field3d/kit.ts).
+// A FOOTBALL TEAM'S HELMET in the 3D game, as the team has set it - and the
+// uniform under it: colors as hex. Anything left out comes from the team's
+// colors (see LiveGame/field3d/kit.ts).
 export type HelmetLook = {
 	shell?: string;
 	// Down the middle, front to back, and the thin edge either side of it;
@@ -3131,6 +3131,13 @@ export type HelmetLook = {
 	facemask?: string;
 	// The team's logo on the sides; false for a bare shell.
 	logo?: boolean;
+	// The jersey, the numbers on it and the pants, at home and on the road.
+	homeJersey?: string;
+	homeNumber?: string;
+	homePants?: string;
+	awayJersey?: string;
+	awayNumber?: string;
+	awayPants?: string;
 };
 
 // A picture the league lays on every court on an occasion - opening night,

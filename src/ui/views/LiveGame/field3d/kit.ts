@@ -96,8 +96,9 @@ const showing = (colors: string[], on: string, or: string, by = 0.2) =>
 // A team's uniform: at home its jersey in its main color - its darkest, if
 // the main one is too light to be a home jersey - in white pants; on the
 // road a white jersey over pants in its main color. Its helmet the same
-// either way: its main color with a stripe down the middle in the others -
-// or as the team has set it (see HelmetLook).
+// either way: its main color with a stripe down the middle in the others.
+// Or any of it as the team has set it (see HelmetLook) - what it has not
+// set picked to go with what it has.
 export const fieldKit = (
 	colors: FieldTeamColors,
 	edition: "home" | "away",
@@ -107,9 +108,18 @@ export const fieldKit = (
 	const darkest = [...colors].sort((x, y) => luminance(x) - luminance(y))[0]!;
 	const main = luminance(c0) < 0.72 ? c0 : darkest;
 	const home = edition === "home";
-	const jersey = home ? main : WHITE;
+	const ownJersey = home ? own.homeJersey : own.awayJersey;
+	const jersey = ownJersey || (home ? main : WHITE);
 	const others = [c1, c2, c0].filter((c) => c !== jersey);
-	const number = home ? showing(others, jersey, WHITE, 0.25) : main;
+	// (On a jersey of its own, what shows on it.)
+	const onIt = luminance(jersey) > 0.55 ? INK : WHITE;
+	const number =
+		(home ? own.homeNumber : own.awayNumber) ||
+		(home
+			? showing(others, jersey, WHITE, 0.25)
+			: ownJersey
+				? showing([main, ...others], jersey, onIt, 0.25)
+				: main);
 	const numberEdge = showing(
 		[c1, c2, c0, home ? WHITE : INK].filter(
 			(c) => c !== number && c !== jersey,
@@ -121,13 +131,15 @@ export const fieldKit = (
 	// Light pants under a dark jersey at home - the team's second color if it
 	// is a light one, a gold or a silver, else white; on the road, the
 	// team's own color, or white if that is too light to tell from white.
-	const pants = home
-		? luminance(c1) > 0.5 && contrast(c1, jersey) > 0.25
-			? c1
-			: WHITE
-		: luminance(main) < 0.6
-			? main
-			: WHITE;
+	const pants =
+		(home ? own.homePants : own.awayPants) ||
+		(home
+			? luminance(c1) > 0.5 && contrast(c1, jersey) > 0.25
+				? c1
+				: WHITE
+			: luminance(main) < 0.6
+				? main
+				: WHITE);
 	const stripeOn = (on: string) =>
 		[c0, c1, c2].filter((c) => contrast(c, on) > 0.18).slice(0, 2);
 	const helmet = own.shell || c0;
@@ -146,7 +158,14 @@ export const fieldKit = (
 		...(helmetStripe && stripeEdge ? { helmetStripeEdge: stripeEdge } : {}),
 		facemask: own.facemask || MASK_GRAY,
 		jersey,
-		collar: home ? showing([c1, c2, WHITE], jersey, WHITE) : main,
+		collar:
+			home || ownJersey
+				? showing(
+						[c1, c2, WHITE].filter((c) => c !== jersey),
+						jersey,
+						onIt,
+					)
+				: main,
 		number,
 		numberEdge,
 		name: number,

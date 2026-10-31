@@ -393,7 +393,7 @@ const ManageTeams = (props: View<"manageTeams">) => {
 										className="btn btn-sm btn-light-bordered"
 										href={helpers.leagueUrl(["edit_team_stadium", t.tid])}
 									>
-										Customize stadium
+										Customize stadium & uniform
 									</a>
 								</div>
 							) : null}

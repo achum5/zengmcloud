@@ -33,3 +33,31 @@ test("a helmet as the team has set it: its shell, stripe and mask - or no stripe
 	assert.strictEqual(shell.helmet, "#ffffff");
 	assert.notStrictEqual(shell.helmetStripe, "#ffffff");
 });
+
+test("a uniform as the team has set it - and what it has not, picked to go with it", () => {
+	for (const edition of ["home", "away"] as const) {
+		const plain = fieldKit(CHIEFS, edition);
+		const own = fieldKit(CHIEFS, edition, {
+			[`${edition}Jersey`]: "#101820",
+			[`${edition}Number`]: "#ffb612",
+			[`${edition}Pants`]: "#a5acaf",
+		});
+		assert.strictEqual(own.jersey, "#101820", edition);
+		assert.strictEqual(own.number, "#ffb612", edition);
+		assert.strictEqual(own.pants, "#a5acaf", edition);
+		// (The helmet as it was.)
+		assert.strictEqual(own.helmet, plain.helmet, edition);
+		// Just the jersey: numbers and a collar that show on it.
+		const jersey = fieldKit(CHIEFS, edition, {
+			[`${edition}Jersey`]: "#101820",
+		});
+		assert.notStrictEqual(jersey.number, "#101820", edition);
+		assert.notStrictEqual(jersey.collar, "#101820", edition);
+		// The other edition as it was.
+		const other = edition === "home" ? "away" : "home";
+		assert.deepEqual(
+			fieldKit(CHIEFS, other, { [`${edition}Jersey`]: "#101820" }),
+			fieldKit(CHIEFS, other),
+		);
+	}
+});

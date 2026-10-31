@@ -104,7 +104,7 @@ const EditTeamStadium = ({
 	helmet: savedHelmet,
 }: View<"editTeamStadium">) => {
 	useTitleBar({
-		title: "Customize Stadium",
+		title: "Customize Stadium & Uniform",
 		customMenu: undefined,
 	});
 
@@ -143,8 +143,13 @@ const EditTeamStadium = ({
 	};
 
 	const sky = stadium.sky ?? previewSky;
-	// (What each part of the helmet is, left to the team's colors.)
+	// (What each part of the helmet is, left to the team's colors - and of
+	// the uniform, to go with what is set.)
 	const auto = fieldKit(colors, "home", { shell: helmet.shell });
+	const worn = {
+		home: fieldKit(colors, "home", helmet),
+		away: fieldKit(colors, "away", helmet),
+	};
 
 	const save = async () => {
 		setSaving(true);
@@ -278,6 +283,33 @@ const EditTeamStadium = ({
 					<label className="form-check-label" htmlFor="helmet-logo">
 						Logo on helmet
 					</label>
+				</div>
+
+				<hr />
+				<h3 className="h6 text-body-secondary">Uniform</h3>
+				<div className="row">
+					{(["home", "away"] as const).map((edition) => (
+						<div key={edition} className="col-6">
+							<HelmetColor
+								label={edition === "home" ? "Home jersey" : "Road jersey"}
+								value={helmet[`${edition}Jersey`]}
+								fallback={worn[edition].jersey}
+								onChange={(v) => setPart(`${edition}Jersey`, v)}
+							/>
+							<HelmetColor
+								label="Numbers"
+								value={helmet[`${edition}Number`]}
+								fallback={worn[edition].number}
+								onChange={(v) => setPart(`${edition}Number`, v)}
+							/>
+							<HelmetColor
+								label="Pants"
+								value={helmet[`${edition}Pants`]}
+								fallback={worn[edition].pants}
+								onChange={(v) => setPart(`${edition}Pants`, v)}
+							/>
+						</div>
+					))}
 				</div>
 
 				<div className="d-flex gap-2 mt-3">

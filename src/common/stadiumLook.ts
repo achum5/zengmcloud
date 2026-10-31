@@ -38,7 +38,16 @@ export const cleanHelmet = (raw: unknown): HelmetLook | undefined => {
 	}
 	const r = raw as Record<string, unknown>;
 	const out: HelmetLook = {};
-	for (const key of ["shell", "facemask"] as const) {
+	for (const key of [
+		"shell",
+		"facemask",
+		"homeJersey",
+		"homeNumber",
+		"homePants",
+		"awayJersey",
+		"awayNumber",
+		"awayPants",
+	] as const) {
 		const v = r[key];
 		if (typeof v === "string" && HEX.test(v)) {
 			out[key] = v;

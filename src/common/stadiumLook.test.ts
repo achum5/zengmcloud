@@ -30,6 +30,15 @@ test("a helmet's colors kept to colors, a stripe to a color or none", () => {
 		}),
 		{ shell: "#B3995D", stripe: "", stripeEdge: "#ffffff", logo: false },
 	);
+	assert.deepEqual(
+		cleanHelmet({
+			homeJersey: "#002244",
+			homePants: "#ffffff",
+			awayNumber: "navy",
+			awayPants: "",
+		}),
+		{ homeJersey: "#002244", homePants: "#ffffff" },
+	);
 	assert.isUndefined(cleanHelmet({ shell: "", logo: true }));
 	assert.isUndefined(cleanHelmet(null));
 });
