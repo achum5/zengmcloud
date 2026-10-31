@@ -5,6 +5,7 @@ import { realtimeUpdate } from "../util/realtimeUpdate.ts";
 import { helpers } from "../util/helpers.ts";
 import { showNotification } from "../util/showNotification.ts";
 import type { HelmetLook, StadiumLook, View } from "../../common/types.ts";
+import { PIC, pictureFromFile } from "../components/CourtImageField.tsx";
 import {
 	BOARD_TEXT_MAX,
 	cleanHelmet,
@@ -76,6 +77,83 @@ const Choice = <K extends "roof" | "turf" | "endZones" | "sky">({
 	</div>
 );
 
+// A picture of the team's own - a link, or one uploaded - in place of what
+// the 3D game picks.
+const PictureField = ({
+	label,
+	url,
+	pictures,
+	onChange,
+	onUpload,
+}: {
+	label: string;
+	url: string | undefined;
+	pictures: Record<string, string>;
+	onChange: (value: string | undefined) => void;
+	onUpload: (file: File) => Promise<string | undefined>;
+}) => {
+	const uploaded = url?.startsWith(PIC) ?? false;
+	const shown = uploaded ? pictures[url!.slice(PIC.length)] : url;
+	const [busy, setBusy] = useState(false);
+	return (
+		<div className="mb-3">
+			<label className="form-label mb-1">{label}</label>
+			<div className="d-flex align-items-center gap-2">
+				{shown ? (
+					<img
+						src={shown}
+						alt=""
+						style={{ width: 31, height: 31, objectFit: "contain" }}
+					/>
+				) : null}
+				<input
+					type="text"
+					className="form-control"
+					placeholder="URL"
+					value={uploaded ? "Uploaded" : (url ?? "")}
+					disabled={uploaded}
+					onChange={(e) =>
+						onChange(e.target.value === "" ? undefined : e.target.value)
+					}
+				/>
+				<label
+					className={`btn btn-sm btn-light-bordered mb-0${busy ? " disabled" : ""}`}
+				>
+					Upload
+					<input
+						type="file"
+						accept="image/*"
+						hidden
+						disabled={busy}
+						onChange={(e) => {
+							const file = e.target.files?.[0];
+							e.target.value = "";
+							if (!file) {
+								return;
+							}
+							setBusy(true);
+							void onUpload(file).then((value) => {
+								setBusy(false);
+								if (value !== undefined) {
+									onChange(value);
+								}
+							});
+						}}
+					/>
+				</label>
+				<button
+					type="button"
+					className="btn btn-sm btn-light-bordered"
+					onClick={() => onChange(undefined)}
+					disabled={url === undefined}
+				>
+					Auto
+				</button>
+			</div>
+		</div>
+	);
+};
+
 // A helmet color: the team's own pick until one is chosen - and, for a
 // stripe, none at all.
 const HelmetColor = ({
@@ -132,6 +210,7 @@ const EditTeamStadium = ({
 	imgURL,
 	stadium: savedStadium,
 	helmet: savedHelmet,
+	pictures: picturesSaved,
 }: View<"editTeamStadium">) => {
 	useTitleBar({
 		title: "Customize Stadium & Uniform",
@@ -142,6 +221,26 @@ const EditTeamStadium = ({
 	const [helmet, setHelmet] = useState<HelmetLook>(savedHelmet ?? {});
 	const [previewSky, setPreviewSky] = useState<"day" | "night">("day");
 	const [saving, setSaving] = useState(false);
+	// Pictures by id: the stadium's own, and any uploaded since.
+	const [pictures, setPictures] = useState<Record<string, string>>(
+		picturesSaved ?? {},
+	);
+	const [uploaded, setUploaded] = useState<string[]>([]);
+	const upload = async (file: File) => {
+		try {
+			const url = await pictureFromFile(file);
+			const id = await toWorker("main", "storeCourtPicture", url);
+			setPictures((p) => ({ ...p, [id]: url }));
+			setUploaded((u) => [...u, id]);
+			return `${PIC}${id}`;
+		} catch (error) {
+			showNotification({
+				type: "error",
+				text: `Could not upload: ${(error as Error).message}`,
+			});
+			return undefined;
+		}
+	};
 	const [json, setJSON] = useState<string | undefined>();
 	const [jsonError, setJSONError] = useState<string | undefined>();
 	const apply = (text: string) => {
@@ -208,7 +307,13 @@ const EditTeamStadium = ({
 	const save = async () => {
 		setSaving(true);
 		try {
-			await toWorker("main", "updateTeamStadium", { tid, stadium, helmet });
+			await toWorker("main", "updateTeamStadium", {
+				tid,
+				stadium,
+				helmet,
+				uploaded,
+			});
+			setUploaded([]);
 			showNotification({ type: "success", text: "Stadium saved." });
 			realtimeUpdate([], helpers.leagueUrl(["manage_teams"]));
 		} catch (error) {
@@ -392,6 +497,22 @@ const EditTeamStadium = ({
 						Logo at midfield
 					</label>
 				</div>
+				{stadium.midLogo !== false ? (
+					<PictureField
+						label="Midfield logo"
+						url={stadium.midLogoURL}
+						pictures={pictures}
+						onChange={(v) => setField("midLogoURL", v)}
+						onUpload={upload}
+					/>
+				) : null}
+				<PictureField
+					label="Championship trophy"
+					url={stadium.trophyURL}
+					pictures={pictures}
+					onChange={(v) => setField("trophyURL", v)}
+					onUpload={upload}
+				/>
 				<Choice<"sky">
 					label="Kickoff"
 					value={stadium.sky}

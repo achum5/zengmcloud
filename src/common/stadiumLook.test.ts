@@ -41,6 +41,22 @@ test("a stadium's settings kept to the ones there are", () => {
 	assert.deepEqual(cleanStadium({ boardText: " Lambeau Field " }), {
 		boardText: "Lambeau Field",
 	});
+	assert.deepEqual(
+		cleanStadium({
+			midLogoURL: "https://example.com/g.png",
+			trophyURL: "pic:0123456789abcdef0123",
+		}),
+		{
+			midLogoURL: "https://example.com/g.png",
+			trophyURL: "pic:0123456789abcdef0123",
+		},
+	);
+	assert.isUndefined(
+		cleanStadium({
+			midLogoURL: "javascript:alert(1)",
+			trophyURL: "data:image/png;base64,AAAA",
+		}),
+	);
 	assert.strictEqual(
 		cleanStadium({ endZoneText: "X".repeat(40) })?.endZoneText?.length,
 		24,

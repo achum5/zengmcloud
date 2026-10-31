@@ -5,6 +5,7 @@ import type {
 	CourtDecalPlaced,
 	CourtStyle,
 	ScoreBugStyle,
+	StadiumLook,
 } from "../../common/types.ts";
 import { scoreBugPictureIds } from "../../common/scoreBug.ts";
 
@@ -114,6 +115,65 @@ export const resolveCourt = async (
 	return out;
 };
 
+// A FOOTBALL STADIUM'S PICTURES (see StadiumLook), kept and filled in the
+// same way as a court's.
+export const STADIUM_PICTURE_KEYS = [
+	"midLogoURL",
+	"trophyURL",
+] as const satisfies readonly (keyof StadiumLook)[];
+
+export const stadiumPictureIds = (
+	stadium: StadiumLook | undefined,
+): string[] => {
+	const ids: string[] = [];
+	for (const key of STADIUM_PICTURE_KEYS) {
+		const v = stadium?.[key];
+		if (typeof v === "string" && v.startsWith(PIC)) {
+			ids.push(v.slice(PIC.length));
+		}
+	}
+	return ids;
+};
+
+export const stadiumPictures = async (
+	stadium: StadiumLook | undefined,
+): Promise<Record<string, string>> => {
+	const out: Record<string, string> = {};
+	for (const id of stadiumPictureIds(stadium)) {
+		try {
+			const row = await pictureById(id);
+			if (row) {
+				out[id] = row.url;
+			}
+		} catch {
+			// Cosmetic: that slot goes without.
+		}
+	}
+	return out;
+};
+
+export const resolveStadium = async (
+	stadium: StadiumLook | undefined,
+): Promise<StadiumLook | undefined> => {
+	if (!stadium || stadiumPictureIds(stadium).length === 0) {
+		return stadium;
+	}
+	const pictures = await stadiumPictures(stadium);
+	const out: StadiumLook = { ...stadium };
+	for (const key of STADIUM_PICTURE_KEYS) {
+		const v = out[key];
+		if (typeof v === "string" && v.startsWith(PIC)) {
+			const url = pictures[v.slice(PIC.length)];
+			if (url === undefined) {
+				delete out[key];
+			} else {
+				out[key] = url;
+			}
+		}
+	}
+	return out;
+};
+
 // The pictures the league's decals name.
 export const decalPictureIds = (decals: readonly CourtDecal[]): string[] =>
 	decals
@@ -198,7 +258,8 @@ export const withDecals = (
 	decals.length === 0 ? court : { ...court, decals };
 
 // Of these pictures, remove any nothing uses any more - no team's uniform,
-// no team's court, no decal. (A replay that showed one goes without it.)
+// no team's court or stadium, no decal. (A replay that showed one goes
+// without it.)
 export const prunePictures = async (ids: Iterable<string>) => {
 	const teams = await idb.cache.teams.getAll();
 	const used = new Set<string>([
@@ -211,7 +272,10 @@ export const prunePictures = async (ids: Iterable<string>) => {
 				used.add(id);
 			}
 		}
-		for (const id of courtPictureIds(t.court)) {
+		for (const id of [
+			...courtPictureIds(t.court),
+			...stadiumPictureIds(t.stadium),
+		]) {
 			used.add(id);
 		}
 	}

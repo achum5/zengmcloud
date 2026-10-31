@@ -5,6 +5,7 @@ import {
 	decalPictureIds,
 	pictureById,
 	prunePictures,
+	stadiumPictureIds,
 	storePicture,
 } from "../util/courtPictures.ts";
 import { sanitizeRotation, type TeamRotation } from "../../common/rotation.ts";
@@ -6728,16 +6729,19 @@ const updateTeamCourt = async ({
 // Save (or clear) a football team's stadium and helmet for the 3D game (see
 // StadiumLook, HelmetLook), through the cache, so every device in a
 // multiplayer league draws them the same. (One not passed at all is left as
-// it was.)
+// it was.) Pictures uploaded on the page this time round that the stadium
+// saved does not use (`uploaded`) are let go, as are any it no longer does.
 const updateTeamStadium = async (args: {
 	tid: number;
 	stadium?: unknown;
 	helmet?: unknown;
+	uploaded?: string[];
 }) => {
 	const t = await idb.cache.teams.get(args.tid);
 	if (!t) {
 		throw new Error(`Team not found for tid ${args.tid}`);
 	}
+	const before = stadiumPictureIds(t.stadium);
 	if ("stadium" in args) {
 		const s = cleanStadium(args.stadium);
 		if (s) {
@@ -6755,6 +6759,7 @@ const updateTeamStadium = async (args: {
 		}
 	}
 	await idb.cache.teams.put(t);
+	await prunePictures([...before, ...(args.uploaded ?? [])]);
 	return { ok: true };
 };
 

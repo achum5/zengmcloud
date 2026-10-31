@@ -3133,8 +3133,12 @@ export type StadiumLook = {
 	endZoneColor?: string;
 	endZoneText?: string;
 	endZoneTextColor?: string;
-	// The team's logo at midfield; false for bare grass.
+	// The team's logo at midfield; false for bare grass. Or a picture of its
+	// own there - and, for the championship game, the trophy's - a URL, or
+	// one uploaded to the league ("pic:<id>").
 	midLogo?: false;
+	midLogoURL?: string;
+	trophyURL?: string;
 	// The stands' seats; left out, from the team's colors.
 	seatColor?: string;
 	// Words of its own along the boards round the field, in turn with the

@@ -2,6 +2,7 @@ import {
 	decalsForGame,
 	resolveCourt,
 	resolveScoreBug,
+	resolveStadium,
 	withDecals,
 } from "../util/courtPictures.ts";
 import { player, team } from "../core/index.ts";
@@ -296,7 +297,7 @@ export const boxScoreToLiveSim = async ({
 			try {
 				const team = await idb.cache.teams.get(t.tid);
 				if (team?.stadium) {
-					t.stadium = team.stadium;
+					t.stadium = await resolveStadium(team.stadium);
 				}
 				if (team?.helmet) {
 					t.helmet = team.helmet;
@@ -492,6 +493,9 @@ export default defineView({
 												Number(tid) === homeTid
 													? withDecals(court, decals)
 													: court,
+											...(t.stadium
+												? { stadium: await resolveStadium(t.stadium) }
+												: {}),
 										},
 									] as const;
 								}),

@@ -54,6 +54,7 @@ import {
 	fieldStyleFor,
 	paintEndZone,
 	paintMidLogo,
+	paintTrophyPicture,
 	paintMidTrophy,
 	paintNumbers,
 	paintTurf,
@@ -511,24 +512,33 @@ const Field3D = ({
 		colors: t?.colors,
 		...(t?.stadium ? { stadium: t.stadium } : {}),
 	});
-	const [logos, setLogos] = useState<[HTMLCanvasElement?, HTMLCanvasElement?]>(
-		[],
-	);
+	// The two teams' logos - and the home team's own pictures for midfield
+	// and the championship trophy, if it has them (see StadiumLook).
+	const [logos, setLogos] = useState<
+		[
+			HTMLCanvasElement?,
+			HTMLCanvasElement?,
+			HTMLCanvasElement?,
+			HTMLCanvasElement?,
+		]
+	>([]);
 	const awayLogo = away?.imgURL || away?.imgURLSmall;
 	const homeLogo = home?.imgURL || home?.imgURLSmall;
+	const midURL: string | undefined = home?.stadium?.midLogoURL;
+	const trophyURL: string | undefined = home?.stadium?.trophyURL;
 	useEffect(() => {
 		let alive = true;
-		void Promise.all([logoPicture(awayLogo), logoPicture(homeLogo)]).then(
-			(made) => {
-				if (alive) {
-					setLogos([made[0], made[1]]);
-				}
-			},
-		);
+		void Promise.all(
+			[awayLogo, homeLogo, midURL, trophyURL].map((url) => logoPicture(url)),
+		).then((made) => {
+			if (alive) {
+				setLogos([made[0], made[1], made[2], made[3]]);
+			}
+		});
 		return () => {
 			alive = false;
 		};
-	}, [awayLogo, homeLogo]);
+	}, [awayLogo, homeLogo, midURL, trophyURL]);
 	const paint = useMemo((): FieldPaint => {
 		const h = team(home);
 		const a = team(away);
@@ -539,15 +549,22 @@ const Field3D = ({
 		const style = fieldStyleFor(h, a, boxScore?.neutralSite === true, venue);
 		const seed = String(gid ?? 0);
 		const mid = logos[1];
+		const midPicture = logos[2] ?? mid;
 		return {
 			style,
 			turf: paintTurf(style, seed),
 			endZones: [paintEndZone(style, 0), paintEndZone(style, 1)],
 			numbers: paintNumbers(style),
-			...(mid && h.stadium?.midLogo !== false
-				? { logo: paintMidLogo(mid) }
+			...(midPicture && h.stadium?.midLogo !== false
+				? { logo: paintMidLogo(midPicture) }
 				: {}),
-			...(boxScore?.finals === true ? { trophy: paintMidTrophy(mid) } : {}),
+			...(boxScore?.finals === true
+				? {
+						trophy: logos[3]
+							? paintTrophyPicture(logos[3])
+							: paintMidTrophy(mid),
+					}
+				: {}),
 			stadium: paintStadium(
 				h,
 				a,

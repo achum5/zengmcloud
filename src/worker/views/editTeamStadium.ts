@@ -1,4 +1,5 @@
 import { idb } from "../db/index.ts";
+import { stadiumPictures } from "../util/courtPictures.ts";
 import { helpers } from "../util/index.ts";
 import { defineView, type ViewInput } from "../util/defineView.ts";
 import type { RouteParams } from "../../ui/router/types.ts";
@@ -33,6 +34,8 @@ const editTeamStadium = async (inputs: ViewInput<typeof processInputs>) => {
 		imgURL: t.imgURL,
 		stadium: t.stadium,
 		helmet: t.helmet,
+		// Its uploaded pictures, by id, to show.
+		pictures: await stadiumPictures(t.stadium),
 	};
 };
 

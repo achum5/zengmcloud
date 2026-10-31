@@ -456,6 +456,23 @@ export const paintMidTrophy = (
 	return c;
 };
 
+// Or the team's own picture of it (see StadiumLook), stood up the field as
+// the drawn one is - laid on the grass whole, as the logo is.
+export const paintTrophyPicture = (
+	picture: HTMLCanvasElement | HTMLImageElement,
+) => {
+	const P = MID_TROPHY_PLANE;
+	const c = canvasOf(P.w, P.h);
+	const g = c.getContext("2d")!;
+	const w = picture.width;
+	const h = picture.height;
+	if (w > 0 && h > 0) {
+		const k = Math.min(P.w / w, P.h / h) * 0.96;
+		g.drawImage(picture, (P.w - w * k) / 2, (P.h - h * k) / 2, w * k, h * k);
+	}
+	return c;
+};
+
 // THE NUMBERS: every ten yards, both sides, six feet tall with their bottoms
 // twelve yards in from the sideline - each set facing its own sideline, so
 // the far side's read upside down from the press box, as they do - with the

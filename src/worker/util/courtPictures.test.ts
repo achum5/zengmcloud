@@ -11,6 +11,8 @@ import {
 	prunePictures,
 	resolveCourt,
 	resolveScoreBug,
+	resolveStadium,
+	stadiumPictureIds,
 	storePicture,
 } from "./courtPictures.ts";
 
@@ -116,6 +118,28 @@ describe("court pictures", () => {
 		assert.ok(await idb.cache.jerseySkins.get(kept));
 		assert.ok(await idb.cache.jerseySkins.get(worn));
 		assert.strictEqual(await idb.cache.jerseySkins.get(loose), undefined);
+	});
+
+	test("a football stadium's pictures: filled back in to draw, kept while it uses them", async () => {
+		await setup();
+		const mid = await storePicture(PNG(5));
+		const cup = await storePicture(PNG(6));
+		const stadium = {
+			turfColor: "#0b3d91",
+			midLogoURL: `${PIC}${mid}`,
+			trophyURL: `${PIC}gone`,
+		};
+		assert.deepStrictEqual(stadiumPictureIds(stadium), [mid, "gone"]);
+		assert.deepStrictEqual(await resolveStadium(stadium), {
+			turfColor: "#0b3d91",
+			midLogoURL: PNG(5),
+		});
+		const t0 = (await idb.cache.teams.get(0))!;
+		t0.stadium = { midLogoURL: `${PIC}${mid}` };
+		await idb.cache.teams.put(t0);
+		await prunePictures([mid, cup]);
+		assert.ok(await idb.cache.jerseySkins.get(mid));
+		assert.strictEqual(await idb.cache.jerseySkins.get(cup), undefined);
 	});
 
 	test("a jersey linked from elsewhere is left alone: nothing to keep, nothing to remove", async () => {
