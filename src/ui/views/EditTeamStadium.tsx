@@ -11,6 +11,7 @@ import {
 	cleanHelmet,
 	cleanStadium,
 	END_ZONE_TEXT_MAX,
+	STADIUM_PICTURE_KEYS,
 } from "../../common/stadiumLook.ts";
 import { toHex } from "./LiveGame/field3d/color.ts";
 import { fieldStyleFor } from "./LiveGame/field3d/fieldPaint.ts";
@@ -85,12 +86,15 @@ const PictureField = ({
 	pictures,
 	onChange,
 	onUpload,
+	clear = "Auto",
 }: {
 	label: string;
 	url: string | undefined;
 	pictures: Record<string, string>;
 	onChange: (value: string | undefined) => void;
 	onUpload: (file: File) => Promise<string | undefined>;
+	// (The button that goes back to none of its own.)
+	clear?: string;
 }) => {
 	const uploaded = url?.startsWith(PIC) ?? false;
 	const shown = uploaded ? pictures[url!.slice(PIC.length)] : url;
@@ -147,7 +151,7 @@ const PictureField = ({
 					onClick={() => onChange(undefined)}
 					disabled={url === undefined}
 				>
-					Auto
+					{clear}
 				</button>
 			</div>
 		</div>
@@ -244,7 +248,7 @@ const EditTeamStadium = ({
 	// (The stadium as the preview draws it: its uploaded pictures filled in.)
 	const drawn = useMemo(() => {
 		const out = { ...stadium };
-		for (const key of ["midLogoURL", "trophyURL", "endZoneURL"] as const) {
+		for (const key of STADIUM_PICTURE_KEYS) {
 			const v = out[key];
 			if (v?.startsWith(PIC)) {
 				const url = pictures[v.slice(PIC.length)];
@@ -529,6 +533,14 @@ const EditTeamStadium = ({
 						onUpload={upload}
 					/>
 				) : null}
+				<PictureField
+					label="Secondary logo"
+					url={stadium.secondaryLogoURL}
+					pictures={pictures}
+					onChange={(v) => setField("secondaryLogoURL", v)}
+					onUpload={upload}
+					clear="None"
+				/>
 				<PictureField
 					label="Championship trophy"
 					url={stadium.trophyURL}

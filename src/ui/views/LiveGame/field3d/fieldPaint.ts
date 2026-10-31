@@ -508,6 +508,20 @@ const DECAL_FT = 30;
 const DECAL_PPF = 8;
 // (No picture bigger than this across, px: a big decal painted coarser.)
 const DECAL_MAX_PX = 1024;
+// A team's secondary logo (see StadiumLook), laid as a decal is: one at
+// each 25-yard line, SECONDARY_FT across.
+const SECONDARY_FT = 18;
+export const secondaryDecal = (
+	picture: HTMLCanvasElement | HTMLImageElement,
+): DecalPicture => ({
+	picture,
+	adjust: {
+		dx: GOAL_L + 25 * YD - MID_X,
+		scale: SECONDARY_FT / DECAL_FT,
+		opacity: 0.88,
+	},
+	pair: true,
+});
 export const paintDecals = (decals: DecalPicture[]): DecalMark[] => {
 	const out: DecalMark[] = [];
 	for (const { picture, adjust, pair } of decals) {

@@ -46,11 +46,13 @@ test("a stadium's settings kept to the ones there are", () => {
 			midLogoURL: "https://example.com/g.png",
 			trophyURL: "pic:0123456789abcdef0123",
 			endZoneURL: "https://example.com/word.png",
+			secondaryLogoURL: "pic:abcdefabcdefabcdefab",
 		}),
 		{
 			midLogoURL: "https://example.com/g.png",
 			trophyURL: "pic:0123456789abcdef0123",
 			endZoneURL: "https://example.com/word.png",
+			secondaryLogoURL: "pic:abcdefabcdefabcdefab",
 		},
 	);
 	assert.isUndefined(

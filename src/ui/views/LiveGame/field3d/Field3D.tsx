@@ -61,6 +61,7 @@ import {
 	paintTrophyPicture,
 	paintMidTrophy,
 	paintDecals,
+	secondaryDecal,
 	paintNumbers,
 	paintTurf,
 	type DecalPicture,
@@ -172,8 +173,8 @@ const STING_SLANT = 18;
 // In the sun, the players' shadows thrown off to the side this much (see
 // sprite.ts Cast).
 const SUN_LEAN = 0.4;
-// A team's own picture across its end zones, read this big (px, its longer
-// side): a logo's size would blur painted that big.
+// A team's own picture across its end zones (and its secondary logo), read
+// this big (px, its longer side): a logo's size would blur painted that big.
 const END_ZONE_PX = 512;
 // And a decal (see paintDecals).
 const DECAL_PX = 512;
@@ -534,6 +535,7 @@ const Field3D = ({
 			HTMLCanvasElement?,
 			HTMLCanvasElement?,
 			HTMLCanvasElement?,
+			HTMLCanvasElement?,
 		]
 	>([]);
 	const awayLogo = away?.imgURL || away?.imgURLSmall;
@@ -542,20 +544,31 @@ const Field3D = ({
 	const trophyURL: string | undefined = home?.stadium?.trophyURL;
 	const awayEnd: string | undefined = away?.stadium?.endZoneURL;
 	const homeEnd: string | undefined = home?.stadium?.endZoneURL;
+	const secondURL: string | undefined = home?.stadium?.secondaryLogoURL;
 	useEffect(() => {
 		let alive = true;
 		void Promise.all([
 			...[awayLogo, homeLogo, midURL, trophyURL].map((url) => logoPicture(url)),
-			...[awayEnd, homeEnd].map((url) => logoPicture(url, END_ZONE_PX)),
+			...[awayEnd, homeEnd, secondURL].map((url) =>
+				logoPicture(url, END_ZONE_PX),
+			),
 		]).then((made) => {
 			if (alive) {
-				setLogos([made[0], made[1], made[2], made[3], made[4], made[5]]);
+				setLogos([
+					made[0],
+					made[1],
+					made[2],
+					made[3],
+					made[4],
+					made[5],
+					made[6],
+				]);
 			}
 		});
 		return () => {
 			alive = false;
 		};
-	}, [awayLogo, homeLogo, midURL, trophyURL, awayEnd, homeEnd]);
+	}, [awayLogo, homeLogo, midURL, trophyURL, awayEnd, homeEnd, secondURL]);
 	// The league's decals for the game on the home field (see CourtDecal).
 	const decals: CourtDecalPlaced[] | undefined = home?.stadium?.decals;
 	const decalsKey = JSON.stringify(decals ?? null);
@@ -610,8 +623,13 @@ const Field3D = ({
 							: paintMidTrophy(mid),
 					}
 				: {}),
-			...(decalPictures.length > 0
-				? { decals: paintDecals(decalPictures) }
+			...(logos[6] || decalPictures.length > 0
+				? {
+						decals: paintDecals([
+							...(logos[6] ? [secondaryDecal(logos[6])] : []),
+							...decalPictures,
+						]),
+					}
 				: {}),
 			stadium: paintStadium(
 				h,

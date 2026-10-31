@@ -8,6 +8,7 @@ import type {
 	StadiumLook,
 } from "../../common/types.ts";
 import { scoreBugPictureIds } from "../../common/scoreBug.ts";
+import { STADIUM_PICTURE_KEYS } from "../../common/stadiumLook.ts";
 
 // THE PICTURES A COURT IS PAINTED WITH.
 //
@@ -117,12 +118,6 @@ export const resolveCourt = async (
 
 // A FOOTBALL STADIUM'S PICTURES (see StadiumLook), kept and filled in the
 // same way as a court's.
-export const STADIUM_PICTURE_KEYS = [
-	"midLogoURL",
-	"trophyURL",
-	"endZoneURL",
-] as const satisfies readonly (keyof StadiumLook)[];
-
 export const stadiumPictureIds = (
 	stadium: StadiumLook | undefined,
 ): string[] => {

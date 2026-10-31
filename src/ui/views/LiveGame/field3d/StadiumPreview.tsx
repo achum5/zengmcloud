@@ -7,7 +7,7 @@ import {
 	paintPreview,
 	type PreviewTeam,
 } from "./preview.ts";
-import type { DecalPicture } from "./fieldPaint.ts";
+import { secondaryDecal, type DecalPicture } from "./fieldPaint.ts";
 
 // The stadium page's picture of a team's stadium and helmet (see preview.ts),
 // redrawn as they are changed - the stadium painted again only when it is
@@ -68,6 +68,20 @@ const StadiumPreview = ({
 			alive = false;
 		};
 	}, [endURL]);
+	// (And its secondary logo.)
+	const [second, setSecond] = useState<HTMLCanvasElement>();
+	const secondURL = stadium.secondaryLogoURL;
+	useEffect(() => {
+		let alive = true;
+		void logoPicture(secondURL, END_ZONE_PX).then((made) => {
+			if (alive) {
+				setSecond(made);
+			}
+		});
+		return () => {
+			alive = false;
+		};
+	}, [secondURL]);
 
 	// (The league's decals on it, if any: see CourtDecals.)
 	const [decals, setDecals] = useState<DecalPicture[]>([]);
@@ -102,8 +116,12 @@ const StadiumPreview = ({
 		[team.abbrev, team.name, team.region, c0, c1, c2, stadium],
 	);
 	const paint = useMemo(
-		() => paintPreview(shown, sky, logo, endPicture, decals),
-		[shown, sky, logo, endPicture, decals],
+		() =>
+			paintPreview(shown, sky, logo, endPicture, [
+				...(second ? [secondaryDecal(second)] : []),
+				...decals,
+			]),
+		[shown, sky, logo, endPicture, decals, second],
 	);
 
 	useEffect(() => {

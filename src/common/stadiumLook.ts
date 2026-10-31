@@ -14,6 +14,13 @@ export const END_ZONE_TEXT_MAX = 24;
 export const BOARD_TEXT_MAX = 24;
 // A picture: a link to one, or one uploaded to the league.
 const PICTURE = /^(https?:\/\/\S{1,2000}|pic:[\da-f]{20})$/;
+// The settings that are pictures.
+export const STADIUM_PICTURE_KEYS = [
+	"midLogoURL",
+	"trophyURL",
+	"endZoneURL",
+	"secondaryLogoURL",
+] as const satisfies readonly (keyof StadiumLook)[];
 
 export const cleanStadium = (raw: unknown): StadiumLook | undefined => {
 	if (!raw || typeof raw !== "object") {
@@ -52,7 +59,7 @@ export const cleanStadium = (raw: unknown): StadiumLook | undefined => {
 	if (typeof r.boardText === "string" && r.boardText.trim() !== "") {
 		out.boardText = r.boardText.trim().slice(0, BOARD_TEXT_MAX);
 	}
-	for (const key of ["midLogoURL", "trophyURL", "endZoneURL"] as const) {
+	for (const key of STADIUM_PICTURE_KEYS) {
 		const v = r[key];
 		if (typeof v === "string" && PICTURE.test(v)) {
 			out[key] = v;
