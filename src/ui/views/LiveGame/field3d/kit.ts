@@ -1,4 +1,5 @@
 import type { HelmetLook } from "../../../../common/types.ts";
+import type { HairCut, HairStyle } from "../court3d/faces.ts";
 import { makeCourtRng } from "../courtRng.ts";
 import { luminance, shade } from "./color.ts";
 
@@ -80,10 +81,26 @@ export type FieldLook = {
 	// His hair, for when he has his helmet off - and off, in his hand.
 	hair?: string;
 	bare?: true;
+	// And the rest of his own head as his face has it, then: how his hair
+	// is cut and stands; his beard, and his brows (both in this color); how
+	// big his nose and ears are (1 about average).
+	head?: BareHead;
 	// A cheerleader: no pads, no cap - her hair up in a ponytail - a crop
 	// top and a skirt, bare arms and legs, and a pom-pom in each hand in
 	// these colors.
 	cheer?: { poms: [string, string] };
+};
+
+export type BareHead = {
+	cut: HairCut;
+	style: HairStyle;
+	whiskers: string;
+	jaw?: boolean;
+	chin?: boolean;
+	lip?: boolean;
+	burns?: boolean;
+	nose?: number;
+	ear?: number;
 };
 
 export type FieldTeamColors = [string, string, string];

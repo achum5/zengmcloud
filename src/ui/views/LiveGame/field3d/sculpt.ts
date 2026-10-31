@@ -8,7 +8,7 @@ import {
 	type V3,
 } from "../court3d/poses.ts";
 import type { Pt3 } from "./geometry.ts";
-import type { FieldLook } from "./kit.ts";
+import type { BareHead, FieldLook } from "./kit.ts";
 
 // ONE FOOTBALL PLAYER, SCULPTED - the body of his sprite (see sprite.ts).
 //
@@ -49,6 +49,8 @@ const rgb = (c: string): RGB => {
 	return out;
 };
 const scaled = (c: RGB, f: number): RGB => [c[0] * f, c[1] * f, c[2] * f];
+const clamp = (v: number, lo: number, hi: number) =>
+	Math.min(hi, Math.max(lo, v));
 const toward = (c: RGB, to: RGB, f: number): RGB => [
 	c[0] + (to[0] - c[0]) * f,
 	c[1] + (to[1] - c[1]) * f,
@@ -81,6 +83,7 @@ const TOWEL = 12;
 const HELD = 13;
 const HEADSET = 14;
 const POM = 15;
+const HAIR = 16;
 
 // What melts into what: masses in one group melt together everywhere, two
 // groups only where a joint joins them.
@@ -534,6 +537,11 @@ const BAND_STEPS = 6;
 // A player's bare head, his helmet off - and the helmet in his hand, hung
 // from it (helmet radii).
 const BARE_HEAD = 0.86;
+// (His nose as big as most; his hair standing up off his head from this
+// high (head radii) - full round it, this big round past it.)
+const NOSE_MID = 0.85;
+const HAIR_UP = 0.15;
+const HAIR_BIG = 0.5;
 // A cheerleader's pom-pom: how big round (of her height).
 const POM_R = 0.075;
 const HELD_DROP = 0.75;
@@ -808,27 +816,91 @@ const build = (
 	);
 	let held: V3 | undefined;
 	// A bare head's ears, either side of it, and nose, out from the face -
-	// the head this big round (helmet radii), its middle this far up.
-	const features = (r: number, u0: number) => {
+	// the head this big round (helmet radii), its middle this far up; the
+	// ears and nose bigger or smaller as his own are (see BareHead).
+	const features = (r: number, u0: number, head?: BareHead) => {
+		const ear = 0.8 + 0.2 * clamp(head?.ear ?? 1, 0.5, 1.5);
+		const nose =
+			0.8 + 0.2 * clamp((head?.nose ?? NOSE_MID) / NOSE_MID, 0.6, 1.7);
 		for (const sd of [-1, 1]) {
 			add(
 				at(-0.03, sd * r * 0.95, u0 + 0.03),
 				at(-0.06, sd * r * 0.95, u0 - 0.17),
-				[[0, R * 0.11]],
+				[[0, R * 0.11 * ear]],
 				SHELL,
 				G_MASK,
 			);
 		}
 		add(
 			at(r * 0.88, 0, u0 + 0.02),
-			at(r * 1.03, 0, u0 - 0.15),
+			at(r * (0.88 + 0.15 * nose), 0, u0 - 0.15),
 			[
-				[0, R * 0.08],
-				[1, R * 0.11],
+				[0, R * 0.08 * nose],
+				[1, R * 0.11 * nose],
 			],
 			SHELL,
 			G_MASK,
 		);
+	};
+	// And his hair where it stands off it (see BareHead): up off the top of
+	// it, full round it, down past his neck, tied up at the back of it.
+	const hairOn = (r: number, u0: number, head?: BareHead) => {
+		if (!head || head.cut === "bald") {
+			return;
+		}
+		const st = head.style;
+		const crown = u0 + r;
+		if (head.cut === "big") {
+			const big = HAIR_BIG + st.height;
+			add(
+				at(-0.3, 0, u0 + 0.36),
+				at(-0.3, 0, u0 + 0.36),
+				[[0, R * big]],
+				HAIR,
+				G_HELMET,
+			);
+		} else if (st.height >= HAIR_UP) {
+			const up = st.height * r;
+			if (st.strip) {
+				add(
+					at(0.3, 0, crown - 0.2 + up * 0.5),
+					at(-0.55, 0, crown - 0.3 + up * 0.5),
+					[[0, R * 0.2]],
+					HAIR,
+					G_HELMET,
+				);
+			} else {
+				const w = st.top === "flat" ? 0.6 : 0.52;
+				add(
+					at(-0.08, 0, crown - w + 0.05),
+					at(-0.08, 0, crown - w + 0.05 + up),
+					[[0, R * w]],
+					HAIR,
+					G_HELMET,
+				);
+			}
+		}
+		if (head.cut === "long") {
+			add(
+				at(-0.55, 0, u0 + 0.2),
+				at(-0.72, 0, u0 - 1.05),
+				[
+					[0, R * 0.62],
+					[1, R * 0.42],
+				],
+				HAIR,
+				G_HELMET,
+			);
+		}
+		if (st.bun) {
+			add(
+				at(-0.78, 0, u0 + 0.5),
+				at(-0.78, 0, u0 + 0.5),
+				[[0, R * 0.3]],
+				HAIR,
+				G_HELMET,
+			);
+		}
 	};
 	if (official) {
 		// His bare head, a cap on it, and its brim out over his eyes.
@@ -908,7 +980,8 @@ const build = (
 			SHELL,
 			G_HELMET,
 		);
-		features(BARE_HEAD, -0.08);
+		features(BARE_HEAD, -0.08, look.head);
+		hairOn(BARE_HEAD, -0.08, look.head);
 		const hand = sk.armL.tip ?? sk.armL.end;
 		held = addV(hand, v3(0, 0, -1), R * HELD_DROP);
 		add(held, held, [[0, R * HELD_R]], HELD, G_BALL);
@@ -1478,8 +1551,59 @@ type Palette = {
 	// The chain crew's vest over the shirt.
 	vest?: RGB;
 	hair: RGB;
+	// His beard and brows (his hair's, but for a bald head).
+	whiskers: RGB;
 	// A cheerleader's pom-poms, their strands in two colors.
 	poms?: [RGB, RGB];
+};
+
+// A bare head's beard, where his face has one (in the head's frame - see
+// SHELL - helmet radii, across it either way): over his lip, on his chin,
+// along his jaw, his sideburns.
+const beardAt = (h: BareHead, lf: number, as: number, lu: number): boolean =>
+	(h.lip === true && lf > 0.6 && lu > -0.41 && lu < -0.33 && as < 0.24) ||
+	(h.chin === true && lf > 0.35 && lu < -0.52 && as < 0.4) ||
+	(h.jaw === true && lf > 0.12 && lu < -0.36 && as > 0.28) ||
+	(h.burns === true &&
+		lf > 0.06 &&
+		lf < 0.3 &&
+		as > 0.62 &&
+		lu > -0.36 &&
+		lu < 0.12);
+
+// The top, sides and back of a bare head: his hair over them as it is cut
+// (see HairStyle) - none bald, or on top; faded at the sides; thin all over;
+// in rows; down over his ears, long - his skin under it, his ears a shade
+// darker.
+const scalpAt = (
+	pal: Palette,
+	h: BareHead | undefined,
+	lf: number,
+	ls: number,
+	lu: number,
+): RGB => {
+	const as = Math.abs(ls);
+	const skin = scaled(pal.skin, as > 0.88 ? 0.86 : 1);
+	const st = h?.style;
+	if (h?.cut === "bald" || (st?.crown && lu > 0.5)) {
+		return skin;
+	}
+	if (h?.cut === "long" && as > 0.7 && lu > -0.5) {
+		return pal.hair;
+	}
+	if (!(lu > 0.3 || lf < -0.25)) {
+		return skin;
+	}
+	if (st?.fade && !(lu > 0.42 || (lf < -0.25 && lu > 0.12))) {
+		return toward(pal.skin, pal.hair, 0.4);
+	}
+	if (st?.thin) {
+		return toward(pal.skin, pal.hair, 0.6);
+	}
+	if (st?.rows) {
+		return Math.floor((ls + 1) * 5) % 2 ? scaled(pal.hair, 0.72) : pal.hair;
+	}
+	return pal.hair;
 };
 
 const palettes = new WeakMap<FieldLook, Palette>();
@@ -1536,6 +1660,11 @@ const paletteOf = (look: FieldLook): Palette => {
 		...(kit.stripes ? { stripes: rgb(kit.stripes) } : {}),
 		...(kit.vest ? { vest: rgb(kit.vest) } : {}),
 		hair: look.hair ? rgb(look.hair) : scaled(skin, 0.38),
+		whiskers: look.head
+			? rgb(look.head.whiskers)
+			: look.hair
+				? rgb(look.hair)
+				: scaled(skin, 0.38),
 		...(look.cheer
 			? { poms: [rgb(look.cheer.poms[0]), rgb(look.cheer.poms[1])] }
 			: {}),
@@ -2135,7 +2264,10 @@ export const sculptFigure = (
 							// his ears either side a shade darker.
 							gloss = 0;
 							const as = Math.abs(ls);
-							if (lf > 0.3 && lu < 0.42) {
+							const hd = look.head;
+							if (hd && beardAt(hd, lf, as, lu)) {
+								c = pal.whiskers;
+							} else if (lf > 0.3 && lu < 0.42) {
 								const eye = lu > -0.02 && lu < 0.16 && as > 0.12 && as < 0.42;
 								const smear =
 									pal.eyeBlack &&
@@ -2148,15 +2280,12 @@ export const sculptFigure = (
 									lf > 0.5 && lu > 0.21 && lu < 0.28 && as > 0.1 && as < 0.44;
 								const mouth = lf > 0.5 && lu > -0.47 && lu < -0.41 && as < 0.2;
 								c = brow
-									? pal.hair
+									? pal.whiskers
 									: smear
 										? EYE_BLACK_RGB
 										: scaled(pal.skin, eye ? 0.34 : mouth ? 0.66 : 0.96);
 							} else {
-								c =
-									lu > 0.3 || lf < -0.25
-										? pal.hair
-										: scaled(pal.skin, as > 0.88 ? 0.86 : 1);
+								c = scalpAt(pal, hd, lf, ls, lu);
 							}
 							set(c);
 							break;
@@ -2265,6 +2394,10 @@ export const sculptFigure = (
 					case HEADSET: {
 						gloss = 0.4;
 						set(HEADSET_RGB);
+						break;
+					}
+					case HAIR: {
+						set(scaled(pal.hair, 0.94));
 						break;
 					}
 					case CHIN:

@@ -13,8 +13,9 @@ import { TeamLogoInline } from "../../../components/TeamLogoInline.tsx";
 import { STARTING_NUM_TIMEOUTS } from "../../../../common/constants.ts";
 import { helpers } from "../../../util/helpers.ts";
 import { depthOf } from "../court3d/camera.ts";
+import type { FaceConfig } from "facesjs";
 import { FaceLoader } from "../court3d/FaceLoader.tsx";
-import { headColors } from "../court3d/faces.ts";
+import { headColors, profileOf } from "../court3d/faces.ts";
 import { logoPicture } from "../court3d/logoPicture.ts";
 import { drawn, due, FAST, makePace } from "../court3d/pace.ts";
 import { adjust, artFor, makeResolution } from "../court3d/resolution.ts";
@@ -86,6 +87,7 @@ import {
 	cheerLook,
 	photographerLook,
 	tvCrewLook,
+	type BareHead,
 	type FieldLook,
 } from "./kit.ts";
 import type { RosterMan } from "./personnel.ts";
@@ -282,6 +284,26 @@ const coversOf = (wrap: HTMLElement | null, bug: HTMLElement | null) =>
 	].filter((b) => b !== undefined);
 const drawnUp = <T extends { z: number }>(p: T): T =>
 	p.z === 0 ? p : { ...p, z: p.z * FIGURE_SCALE };
+
+// His own head as his face has it, for when his helmet is off: his hair's
+// cut, his beard and his brows in his hair's own color (his scalp's, bald).
+const bareHead = (
+	face: FaceConfig,
+	colors: ReturnType<typeof headColors>,
+): BareHead => {
+	const { jaw, chin, lip, burns, nose, ear } = profileOf(face);
+	return {
+		cut: colors.cut,
+		style: colors.style,
+		whiskers: face.hair?.color || colors.hair,
+		...(jaw ? { jaw } : {}),
+		...(chin ? { chin } : {}),
+		...(lip ? { lip } : {}),
+		...(burns ? { burns } : {}),
+		...(nose !== undefined ? { nose } : {}),
+		...(ear !== undefined ? { ear } : {}),
+	};
+};
 
 // A man as he looks with his helmet off, the same each time.
 const bareLooks = new WeakMap<FieldLook, FieldLook>();
@@ -723,6 +745,7 @@ const Field3D = ({
 				gear: fieldGearFor(p.pid, p.pos, kit),
 				skin: head.skin,
 				hair: head.hair,
+				...(f?.face ? { head: bareHead(f.face, head) } : {}),
 				jerseyNumber: f?.jerseyNumber ?? p.jerseyNumber ?? "",
 				lastName: lastNameOf(p.name),
 				...(logos[p.team] && [away, home][p.team]?.helmet?.logo !== false
