@@ -14,8 +14,12 @@ const RISE = 300;
 const HOLD = 2200;
 const HOLD_BIG = 3800;
 const FALL = 1400;
-// How much of the stadium stands for the road team.
+// How much of the stadium stands for the road team - at a neutral site,
+// half of it for each.
 const ROAD = 0.3;
+// (There, the defense's half up and loud on a third or fourth down, this
+// much of what a home crowd would be.)
+const NEUTRAL_LOUD = 0.6;
 
 // The big play the crowd is up for at t, if any - its own play's, or still
 // up from the one before: for which side, how far up (0 to 1), and how long
@@ -110,9 +114,13 @@ const loudOf = (situation: string): number =>
 			? 0.85
 			: 0;
 
-const loudAt = (play: Play, t: number): number => {
-	const level = loudOf(play.situation);
-	if (play.offense !== 0 || level === 0 || !LOUD_FROM.has(play.kind)) {
+const loudAt = (play: Play, t: number, neutral: boolean): number => {
+	const level = loudOf(play.situation) * (neutral ? NEUTRAL_LOUD : 1);
+	if (
+		(play.offense !== 0 && !neutral) ||
+		level === 0 ||
+		!LOUD_FROM.has(play.kind)
+	) {
 		return 0;
 	}
 	return (
@@ -124,19 +132,25 @@ const loudAt = (play: Play, t: number): number => {
 	);
 };
 
-export const crowdAt = (tl: FieldTimeline, t: number, now: number): Crowd => {
+export const crowdAt = (
+	tl: FieldTimeline,
+	t: number,
+	now: number,
+	// At a neutral site: as many fans for the one team as the other.
+	neutral = false,
+): Crowd => {
 	const play = playAt(tl, t);
 	const full = play?.seats ?? 1;
 	const fast = Math.sin(now / 130) > 0;
 	const slow = Math.sin(now / 520) > 0.55;
 	const c = cheerAt(tl, t);
 	const roar = Math.max(
-		c ? c.level * (c.side === 1 ? 1 : ROAD) * (c.big ? 1 : 0.75) : 0,
+		c ? c.level * (c.side === 1 || neutral ? 1 : ROAD) * (c.big ? 1 : 0.75) : 0,
 		shotUp(play, t),
 	);
 	const post = play?.postgame;
 	if (post && t >= post.from) {
-		if (post.winner !== 1) {
+		if (post.winner !== 1 && !neutral) {
 			// (Whatever the finish had it doing.)
 			return { up: roar, wave: roar > 0.3 && fast, full };
 		}
@@ -159,8 +173,8 @@ export const crowdAt = (tl: FieldTimeline, t: number, now: number): Crowd => {
 	// In crunch time, on its feet the whole way, arms going up now and then
 	// - but for a moment after a big play of the visitors', stunned.
 	const tense = play?.tense ?? 0;
-	const loud = play ? loudAt(play, t) : 0;
-	const hush = c && c.side === 0 && c.big ? 1 - c.level : 1;
+	const loud = play ? loudAt(play, t, neutral) : 0;
+	const hush = c && c.side === 0 && c.big && !neutral ? 1 - c.level : 1;
 	return {
 		up: Math.max(roar, hush * Math.max(tense >= 1 ? 0.9 : tense * 0.7, loud)),
 		wave: roar > 0.3 ? fast : tense >= 1 && slow,
@@ -202,7 +216,8 @@ const shotUp = (play: Play | undefined, t: number): number => {
 // shout for the home side's big play, DEFENSE (blinking) while the visitors
 // have the ball from scrimmage, LET'S GO and MAKE SOME NOISE in turn with
 // the home team's ball in crunch time; otherwise the team and the chants in
-// turn - and once the game is over, the team alone.
+// turn - and once the game is over, the team alone. At a neutral site, a
+// shout for either side's, and nobody's chants.
 const SHOUT_MS = 3200;
 const BLINK_MS = 420;
 const CHANT_MS = 2600;
@@ -210,13 +225,17 @@ const AMBIENT: BoardScreen[] = ["name", "letsGo", "name", "noise"];
 const AMBIENT_MS = 8000;
 const SCRIMMAGE = new Set(["pass", "run", "none", "kneel"]);
 
-export const boardAt = (tl: FieldTimeline, t: number): BoardScreen => {
+export const boardAt = (
+	tl: FieldTimeline,
+	t: number,
+	neutral = false,
+): BoardScreen => {
 	const c = cheerAt(tl, t);
-	if (c?.side === 1 && c.what && c.since < SHOUT_MS) {
+	if ((c?.side === 1 || neutral) && c?.what && c.since < SHOUT_MS) {
 		return c.what;
 	}
 	const play = playAt(tl, t);
-	if (play?.postgame && t >= play.postgame.from) {
+	if (neutral || (play?.postgame && t >= play.postgame.from)) {
 		return "name";
 	}
 	if (play && t < play.whistle && SCRIMMAGE.has(play.kind)) {

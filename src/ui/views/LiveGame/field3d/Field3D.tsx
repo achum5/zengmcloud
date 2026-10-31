@@ -811,6 +811,7 @@ const Field3D = ({
 			number,
 			number,
 		],
+		neutral: boxScore?.neutralSite === true,
 	});
 	live.current = {
 		cursor,
@@ -835,6 +836,7 @@ const Field3D = ({
 			number,
 			number,
 		],
+		neutral: boxScore?.neutralSite === true,
 	};
 
 	useEffect(() => {
@@ -1095,8 +1097,8 @@ const Field3D = ({
 				paint: p.paint,
 				items,
 				pools: poolsOf(standing, moment.ball?.at),
-				crowd: crowdAt(tl, moment.t, now),
-				board: boardAt(tl, moment.t),
+				crowd: crowdAt(tl, moment.t, now, p.neutral),
+				board: boardAt(tl, moment.t, p.neutral),
 				score: p.score,
 				...(confetti ? { confetti: { of: confetti, t: moment.t } } : {}),
 				flashes: flashesAt(photographersRef.current, moment),

@@ -190,6 +190,47 @@ test("what the boards show", () => {
 	assert.isAbove(shouts, 3);
 });
 
+// At a neutral site (the championship game, by default): a road team's big
+// plays as loud as the other's, either defense's half up for a third down,
+// the whole stadium up at the final whistle whoever won - and the boards
+// shouting for either side, nobody's DEFENSE.
+test("a neutral site, for both teams alike", () => {
+	let roadUp = 0;
+	let third = 0;
+	for (const tl of tls) {
+		for (const p of tl.plays) {
+			const c = p.cheer;
+			if (c?.what && c.side === 0 && !p.postgame) {
+				const at = c.t + 1000;
+				const up = crowdAt(tl, at, 0, true).up;
+				const was = crowdAt(tl, at, 0).up;
+				assert.isAtLeast(up, was, `${p.i}`);
+				if (up > was) {
+					roadUp += 1;
+				}
+				assert.strictEqual(boardAt(tl, c.t + 500, true), c.what, `${p.i}`);
+			}
+			if (
+				p.situation.startsWith("3rd") &&
+				(p.kind === "pass" || p.kind === "run") &&
+				!p.cheer
+			) {
+				third += 1;
+				assert.isAtLeast(crowdAt(tl, p.snap, 0, true).up, 0.4, `${p.i}`);
+				assert.notInclude(
+					["defense", "defense2"],
+					boardAt(tl, p.snap - 1000, true),
+					`${p.i}`,
+				);
+			}
+		}
+		const post = tl.plays.at(-1)!.postgame!;
+		assert.isAbove(crowdAt(tl, post.from + 1000, 0, true).up, 0.95);
+	}
+	assert.isAtLeast(roadUp, 3);
+	assert.isAtLeast(third, 10);
+});
+
 // Over a timeout, in close on the huddle from down low, pushing slowly in -
 // the cheerleaders, if the picture goes to them, from up in the press box.
 test("the huddle over a timeout, from down low", () => {
