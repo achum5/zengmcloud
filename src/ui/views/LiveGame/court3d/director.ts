@@ -239,7 +239,7 @@ export type Act = {
 export type Gesture = {
 	t0: number;
 	t1: number;
-	kind: "point" | "hand" | "wave" | "slap" | "follow";
+	kind: "point" | "hand" | "wave" | "slap" | "follow" | "bar";
 	// What he points or waves at: a man, wherever he is, or a spot.
 	at?: number | Pt;
 	// A follow-through off his left hand.
@@ -25257,6 +25257,13 @@ class Director {
 					anim: "back",
 					face: -dir as 1 | -1,
 				});
+				// (A forearm in his back as he gives ground - his arm for
+				// nothing else meanwhile.)
+				if (m.t1 - there >= 300) {
+					gt.arms = gt.arms.filter((g) => g.t1 <= there || g.t0 >= m.t1);
+					this.gesture(gt.pid, "bar", there, m.t1, pid);
+					gt.arms.sort((a, b) => a.t0 - b.t0);
+				}
 			}
 			gt.moves.push(...after);
 			gt.moves.sort((a, b) => a.t0 - b.t0);

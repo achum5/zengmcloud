@@ -3604,6 +3604,10 @@ const armAt = (
 	if (g.kind === "point") {
 		return { hand, sh: 98, el: 4, ab: out, wr: 8, w, point: true };
 	}
+	if (g.kind === "bar") {
+		// A forearm in a man's back: out in front of him, bent, at his chest.
+		return { hand, sh: 64, el: 76, ab: Math.max(0, out), wr: 6, w };
+	}
 	if (g.kind === "slap") {
 		// Out to him, low, the palm open.
 		return { hand, sh: 72, el: 18, ab: Math.max(0, out), wr: 24, w };

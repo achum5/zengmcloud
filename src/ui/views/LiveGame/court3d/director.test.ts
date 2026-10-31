@@ -4327,7 +4327,7 @@ describe("3D director", () => {
 	// the one on the ball - and the rest of him goes on as it was.
 	test("players talk with a hand on the move", () => {
 		const { tl } = compile("a", 140);
-		const kinds = { point: 0, hand: 0, wave: 0, slap: 0, follow: 0 };
+		const kinds = { point: 0, hand: 0, wave: 0, slap: 0, follow: 0, bar: 0 };
 		let onTheMove = 0;
 		for (const tr of tl.tracks.values()) {
 			tr.arms.forEach((g, i) => {
