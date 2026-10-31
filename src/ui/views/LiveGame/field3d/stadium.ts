@@ -287,6 +287,12 @@ const CAP_COLORS = ["#1d2330", "#f2f2f0", "#5b5d62"];
 // as full as the gate - the best seats first, low and near midfield - with
 // aisles every so often. `up` puts most of the home crowd on its feet, arms
 // up (1), or waving (2).
+// The home fans up and waving a towel, this share of them; and down low, in
+// the first so many rows, this share holding up a sign (the 3D court's: see
+// court3d/arena.ts).
+const TOWELS = 0.35;
+const SIGN_ROWS = 9;
+const SIGNS = 0.03;
 const paintSeating = ({
 	w,
 	h,
@@ -367,6 +373,7 @@ const paintSeating = ({
 		wants[Math.min(wants.length - 1, Math.floor(fill * wants.length))]!;
 	const px = ppf;
 	let next = 0;
+	const signs: { x: number; top: number }[] = [];
 	for (let r = 0; r < rows; r++) {
 		const yb = h - r * rowFt * px;
 		g.fillStyle =
@@ -420,6 +427,25 @@ const paintSeating = ({
 					g.lineTo(sx + side * spread, shoulderY - reach);
 				}
 				g.stroke();
+				// (Some of the home fans waving a towel: in one hand, and the
+				// other, by turns - see crowdAt's wave.)
+				if (homeFan && rise() < TOWELS) {
+					const side = up === 1 ? 1 : -1;
+					g.fillStyle = rise() < 0.5 ? "#f4f4f4" : homeC[0]!;
+					g.fillRect(
+						x + (side * bodyW) / 2.4 + side * spread - 0.45 * px,
+						shoulderY - reach - 0.95 * px,
+						0.9 * px,
+						0.75 * px,
+					);
+				}
+			}
+			// Now and then a home fan down low holds a sign up over his head
+			// (painted once the rows behind him are: see below) - in the same
+			// place sat or stood, for the stands up over the stands sat (see
+			// scene.ts) not to show it twice.
+			if (homeFan && r < SIGN_ROWS && seatRng() < SIGNS) {
+				signs.push({ x, top: yb - 3.35 * px });
 			}
 			g.fillStyle = skin;
 			g.beginPath();
@@ -450,6 +476,32 @@ const paintSeating = ({
 		for (let xf = 0; xf < wFt; xf += aisle) {
 			g.fillRect(xf * px, yb - rowFt * px, 2.6 * px, rowFt * px);
 		}
+	}
+	// The signs held up: the D and the fence, in the home team's color.
+	for (const { x, top } of signs) {
+		const sw = 2.2 * px;
+		const sh = 1.3 * px;
+		const sx = x - sw / 2;
+		const sy = top - sh;
+		g.fillStyle = "#f4f4f2";
+		g.fillRect(sx, sy, sw, sh);
+		g.fillStyle = homeC[0]!;
+		g.font = `900 ${Math.round(sh * 0.9)}px sans-serif`;
+		g.textAlign = "left";
+		g.textBaseline = "middle";
+		g.fillText("D", sx + 0.12 * px, sy + sh / 2 + 0.05 * px);
+		g.strokeStyle = homeC[0]!;
+		g.lineWidth = Math.max(1, 0.12 * px);
+		g.lineCap = "butt";
+		g.beginPath();
+		for (let k = 0; k < 4; k++) {
+			const fx = sx + sw * (0.52 + k * 0.13);
+			g.moveTo(fx, sy + sh * 0.18);
+			g.lineTo(fx, sy + sh * 0.86);
+		}
+		g.moveTo(sx + sw * 0.47, sy + sh * 0.45);
+		g.lineTo(sx + sw * 0.93, sy + sh * 0.45);
+		g.stroke();
 	}
 	if (dim > 0) {
 		const dark = g.createLinearGradient(0, 0, 0, h);
