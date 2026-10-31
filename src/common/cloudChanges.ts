@@ -12,6 +12,26 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 77,
+		date: "2026-10-31",
+		text: "3D game: a defender stepping aside to let a driver go up no longer crosses behind him to the other side, brushing right past him.",
+	},
+	{
+		n: 76,
+		date: "2026-10-31",
+		text: "3D game: no more hitch in the picture as a pass or a shot leaves a player's hands - smoother play, most of all on phones.",
+	},
+	{
+		n: 75,
+		date: "2026-10-31",
+		text: "3D game: a loose ball bouncing or rolling around is knocked aside by a leg or a body in its way instead of going through it.",
+	},
+	{
+		n: 74,
+		date: "2026-10-31",
+		text: "3D game: the ball in a player's hands turns with him and keeps its print as it goes from hand to hand, instead of always showing the camera the same face. Hands right by a loose ball close their fingers on it.",
+	},
+	{
 		n: 73,
 		date: "2026-10-31",
 		text: "3D game: a defender picking up the ball handler reads the drive coming - he no longer runs out at a man who is about to attack him and gets blown by.",

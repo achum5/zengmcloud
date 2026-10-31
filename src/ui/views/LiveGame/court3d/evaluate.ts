@@ -6506,57 +6506,256 @@ export const moveBallAt = (
 	return mix(under(ph, to), floor, (1 - (ph - down) / (1 - down)) ** 1.8);
 };
 
+// The ball out of a limb of his (from a to b, so thick), across the floor:
+// its height as it was.
+const outOfLimb = (
+	p: Pt3,
+	a: Pt3,
+	b: Pt3,
+	thick: number,
+): { x: number; y: number } => {
+	const { x, y } = p;
+	const dx = b.x - a.x;
+	const dy = b.y - a.y;
+	const dz = b.z - a.z;
+	const L2 = dx * dx + dy * dy + dz * dz;
+	const u =
+		L2 > 1e-9
+			? Math.max(
+					0,
+					Math.min(
+						1,
+						((x - a.x) * dx + (y - a.y) * dy + (p.z - a.z) * dz) / L2,
+					),
+				)
+			: 0;
+	const cx = a.x + dx * u;
+	const cy = a.y + dy * u;
+	const cz = a.z + dz * u;
+	const need = BALL_R + thick;
+	const ox = x - cx;
+	const oy = y - cy;
+	const oz = p.z - cz;
+	if (ox * ox + oy * oy + oz * oz >= need * need || oz * oz >= need * need) {
+		return { x, y };
+	}
+	const across = Math.hypot(ox, oy);
+	if (across < 1e-6) {
+		return { x, y };
+	}
+	const want = Math.sqrt(need * need - oz * oz);
+	return { x: cx + (ox / across) * want, y: cy + (oy / across) * want };
+};
+
+// His limbs a ball goes round (from, to, how thick): his legs, thigh and
+// shin - and, for a loose ball, his body and his head.
+const limbsOf = (st0: PlayerState, body: Body, whole: boolean) => {
+	const st = withBody(st0, body);
+	const sk = skeleton(body, poseOf(st));
+	const out: [Pt3, Pt3, number][] = [];
+	for (const leg of [sk.legR, sk.legL]) {
+		const [hip, knee, ankle] = [leg.root, leg.mid, leg.end].map((v) =>
+			bodyPoint(st, v),
+		);
+		out.push(
+			[hip!, knee!, body.thighR * 0.9],
+			[knee!, ankle!, body.calfR * 0.9],
+		);
+	}
+	if (whole) {
+		const head = bodyPoint(st, sk.head);
+		out.push(
+			[bodyPoint(st, sk.pelvis), bodyPoint(st, sk.chest), body.depth * 0.45],
+			[head, head, body.headR * 0.85],
+		);
+	}
+	return out;
+};
+
 // The ball on his dribble never goes through his own legs - between them,
 // across in front of them, round behind them: out from his thigh or his
 // shin, across the floor (its height as it was, so it still meets the
 // floor and his hand).
 const offLegs = (p: Pt3, st0: PlayerState, body: Body): Pt3 => {
-	const st = withBody(st0, body);
-	const sk = skeleton(body, poseOf(st));
-	let { x, y } = p;
-	for (const leg of [sk.legR, sk.legL]) {
-		const pts = [leg.root, leg.mid, leg.end].map((v) => bodyPoint(st, v));
-		const radii = [body.thighR * 0.9, body.calfR * 0.9];
-		for (let k = 0; k < 2; k++) {
-			const a = pts[k]!;
-			const b = pts[k + 1]!;
-			const dx = b.x - a.x;
-			const dy = b.y - a.y;
-			const dz = b.z - a.z;
-			const L2 = dx * dx + dy * dy + dz * dz;
-			const u =
-				L2 > 1e-9
-					? Math.max(
-							0,
-							Math.min(
-								1,
-								((x - a.x) * dx + (y - a.y) * dy + (p.z - a.z) * dz) / L2,
-							),
-						)
-					: 0;
-			const cx = a.x + dx * u;
-			const cy = a.y + dy * u;
-			const cz = a.z + dz * u;
-			const need = BALL_R + radii[k]!;
-			const ox = x - cx;
-			const oy = y - cy;
-			const oz = p.z - cz;
-			if (
-				ox * ox + oy * oy + oz * oz >= need * need ||
-				oz * oz >= need * need
-			) {
-				continue;
-			}
-			const across = Math.hypot(ox, oy);
-			if (across < 1e-6) {
-				continue;
-			}
-			const want = Math.sqrt(need * need - oz * oz);
-			x = cx + (ox / across) * want;
-			y = cy + (oy / across) * want;
+	let at = p;
+	for (const [a, b, thick] of limbsOf(st0, body, false)) {
+		at = { ...outOfLimb(at, a, b, thick), z: p.z };
+	}
+	return at;
+};
+
+// The men on the floor at t within `reach` of p, across it - by where they
+// stand, before any of them is worked out (see playerAt: not into the
+// moments kept for the picture, which the frame's own men are in).
+const menNear = (
+	tl: CourtTimeline,
+	t: number,
+	p: { x: number; y: number },
+	reach: number,
+): Track[] => {
+	const out: Track[] = [];
+	for (const tr of tl.tracks.values()) {
+		const si = lastIndex(tr.shown, t, (v) => v[0]);
+		if (si < 0 || !tr.shown[si]![1]) {
+			continue;
+		}
+		const at = spotAt(tr, t, false);
+		if (Math.hypot(at.x - p.x, at.y - p.y) <= reach) {
+			out.push(tr);
 		}
 	}
-	return { x, y, z: p.z };
+	return out;
+};
+
+// A LOOSE BALL GOES ROUND A MAN, NOT THROUGH HIM. Off the rim, bouncing
+// or rolling along the floor, a leg, a body or a head that comes through
+// where it is knocks it aside across the floor, and it goes on from there -
+// eased back onto its own way as hands take it, or it goes off a man again
+// (see knockAt). Not off the man about to take it up, coming to it; not on
+// its way out of bounds (it went out off whoever the call says), nor in the
+// net (that is the rim's), nor lying there; and only so far. Worked out a step at a time from its start, as
+// far as it has been asked for (a few steps a frame, as it plays), and
+// kept.
+const KNOCK_STEP = 20;
+// How near a man has to be to be looked at, and how long its knocks are
+// worked out for - after that, as they were.
+const KNOCK_NEAR = 3.5;
+const KNOCK_MOST = 8000;
+const KNOCK_EASE = 300;
+const KNOCK_NET = 8.3;
+const KNOCK_FAR = 1.5;
+const KNOCK_TAKER = 600;
+const LOOSE: ReadonlySet<BallSeg["kind"]> = new Set(["path", "bounce", "rest"]);
+type Knocks = {
+	dx: number[];
+	dy: number[];
+	n: number;
+	end: number;
+	// Who takes it up (and when), and whether it goes out of bounds.
+	taker?: number;
+	taken: number;
+	out: boolean;
+};
+const knocksMemo = new WeakMap<CourtTimeline, Map<BallSeg, Knocks>>();
+const knocksTo = (
+	tl: CourtTimeline,
+	i: number,
+	upTo: number,
+	bodyFor: (pid: number) => Body,
+): Knocks => {
+	const seg = tl.ball[i]!;
+	let memo = knocksMemo.get(tl);
+	if (!memo) {
+		memo = new Map();
+		knocksMemo.set(tl, memo);
+	}
+	let k = memo.get(seg);
+	if (!k) {
+		const end =
+			tl.ball[i + 1]?.t0 ?? ("t1" in seg ? seg.t1 : seg.t0 + KNOCK_MOST);
+		let j = i + 1;
+		while (j < tl.ball.length && LOOSE.has(tl.ball[j]!.kind)) {
+			j++;
+		}
+		const up = tl.ball[j];
+		const taken = up?.t0 ?? Infinity;
+		const out = tl.fx.find(
+			(f) =>
+				f.kind === "whistle" &&
+				f.call === "out" &&
+				f.t >= seg.t0 &&
+				f.t <= Math.min(taken, seg.t0 + KNOCK_MOST),
+		);
+		k = {
+			dx: [],
+			dy: [],
+			n: Math.max(
+				1,
+				Math.ceil(Math.min(end - seg.t0, KNOCK_MOST) / KNOCK_STEP) + 1,
+			),
+			end,
+			taker:
+				up?.kind === "hold"
+					? up.pid
+					: up?.kind === "fly" && "pid" in up.from
+						? up.from.pid
+						: undefined,
+			taken,
+			out: out !== undefined,
+		};
+		memo.set(seg, k);
+	}
+	const last = Math.min(k.n - 1, upTo);
+	if (k.dx.length > last) {
+		return k;
+	}
+	// Knocked aside already, it goes on from there.
+	let ox = k.dx.at(-1);
+	let oy = k.dy.at(-1);
+	if (ox === undefined || oy === undefined) {
+		ox = 0;
+		oy = 0;
+		const prev = tl.ball[i - 1];
+		if (i > 0 && prev && LOOSE.has(prev.kind)) {
+			const p = knocksTo(tl, i - 1, Infinity, bodyFor);
+			ox = p.dx.at(-1)!;
+			oy = p.dy.at(-1)!;
+		}
+	}
+	for (let j = k.dx.length; j <= last; j++) {
+		const t = seg.t0 + j * KNOCK_STEP;
+		const raw = ballOn(tl, i, t, bodyFor, 0);
+		let q: Pt3 = { x: raw.x + ox, y: raw.y + oy, z: raw.z };
+		if (seg.kind !== "rest" && !k.out && q.z < KNOCK_NET) {
+			for (const tr of menNear(tl, t, q, KNOCK_NEAR)) {
+				if (tr.pid === k.taker && t > k.taken - KNOCK_TAKER) {
+					continue;
+				}
+				for (const [a, b, thick] of limbsOf(
+					playerAt(tl, tr.pid, t),
+					bodyFor(tr.pid),
+					true,
+				)) {
+					q = { ...outOfLimb(q, a, b, thick), z: q.z };
+				}
+			}
+		}
+		ox = q.x - raw.x;
+		oy = q.y - raw.y;
+		const far = Math.hypot(ox, oy);
+		if (far > KNOCK_FAR) {
+			ox *= KNOCK_FAR / far;
+			oy *= KNOCK_FAR / far;
+		}
+		k.dx.push(ox);
+		k.dy.push(oy);
+	}
+	return k;
+};
+// Where the knocks have it (see knocksTo), from where its own way has it.
+const knockAt = (
+	tl: CourtTimeline,
+	i: number,
+	t: number,
+	bodyFor: (pid: number) => Body,
+	ball: BallState,
+): BallState => {
+	const seg = tl.ball[i]!;
+	const at = Math.max(0, (t - seg.t0) / KNOCK_STEP);
+	const k = knocksTo(tl, i, Math.floor(at) + 1, bodyFor);
+	const f = Math.min(k.n - 1, at);
+	const j = Math.floor(f);
+	const w = f - j;
+	const j1 = Math.min(k.dx.length - 1, j + 1);
+	let x = k.dx[j]! + (k.dx[j1]! - k.dx[j]!) * w;
+	let y = k.dy[j]! + (k.dy[j1]! - k.dy[j]!) * w;
+	const next = tl.ball[i + 1];
+	if (!next || !LOOSE.has(next.kind)) {
+		const ease = Math.max(0, Math.min(1, (k.end - t) / KNOCK_EASE));
+		x *= ease;
+		y *= ease;
+	}
+	return x === 0 && y === 0 ? ball : { ...ball, x: ball.x + x, y: ball.y + y };
 };
 
 // The ball under a dribbling hand: just below the middle of his palm.
@@ -6570,10 +6769,14 @@ export const evalBall = (
 	tl: CourtTimeline,
 	t: number,
 	bodyFor: (pid: number) => Body,
-): BallState =>
-	tl.ball.length === 0
-		? { x: 47, y: 25, z: 0 }
-		: ballOn(tl, ballIndexAt(tl, t), t, bodyFor, 0);
+): BallState => {
+	if (tl.ball.length === 0) {
+		return { x: 47, y: 25, z: 0 };
+	}
+	const i = ballIndexAt(tl, t);
+	const ball = ballOn(tl, i, t, bodyFor, 0);
+	return LOOSE.has(tl.ball[i]!.kind) ? knockAt(tl, i, t, bodyFor, ball) : ball;
+};
 
 // The way the ball faces (see facesTo), for the picture.
 export const ballFaceAt = (tl: CourtTimeline, t: number): number => {
@@ -6672,11 +6875,8 @@ const passedBy = (
 		if (offRim && at === seg.t0) {
 			continue;
 		}
-		for (const tr of tl.tracks.values()) {
-			const st = evalPlayer(tl, tr.pid, at);
-			if (!st.shown || Math.hypot(st.x - e.x, st.y - e.y) > 4) {
-				continue;
-			}
+		for (const tr of menNear(tl, at, e, 4)) {
+			const st = playerAt(tl, tr.pid, at);
 			const body = bodyFor(tr.pid);
 			const me = withBody(st, body);
 			const sk = skeleton(body, poseOf(me));
@@ -6711,14 +6911,11 @@ const passedBy = (
 			y: a.y + (b.y - a.y) * u,
 			z: a.z + vz * tau - 0.5 * GRAVITY * tau * tau,
 		};
-		for (const tr of tl.tracks.values()) {
+		for (const tr of menNear(tl, t, p, 3 + BOW_MOST)) {
 			if (ends.has(tr.pid)) {
 				continue;
 			}
-			const st = evalPlayer(tl, tr.pid, t);
-			if (!st.shown || Math.hypot(st.x - p.x, st.y - p.y) > 3 + BOW_MOST) {
-				continue;
-			}
+			const st = playerAt(tl, tr.pid, t);
 			const body = bodyFor(tr.pid);
 			const me = withBody(st, body);
 			const sk = skeleton(body, poseOf(me));
