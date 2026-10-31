@@ -4,9 +4,10 @@ import type { ScoreBugPiece, ScoreBugStyle } from "../../../../common/types.ts";
 import type { BugRefs, BugTeam } from "./ScoreBug.tsx";
 
 // THE LEAGUE'S OWN SCORE BUG (see ScoreBugStyle): its pieces placed in the
-// bug's own units, which scale with the picture. The clocks, the fouls and
-// the ball are the same refs the default bug has, written by the court's
-// frame loop - or, previewed, written once from `sample`.
+// bug's own units, which scale with the picture. The clocks, the fouls, the
+// ball (and football's down and distance) are the same refs the default bug
+// has, written by the frame loop - or, previewed, written once from
+// `sample`.
 
 export type CustomBugTeam = BugTeam & { region?: string; name?: string };
 
@@ -35,6 +36,7 @@ export const CustomScoreBug = ({
 		shot: string;
 		fouls: [string, string];
 		ball: 0 | 1;
+		down?: string;
 	};
 }) => {
 	useLayoutEffect(() => {
@@ -58,6 +60,9 @@ export const CustomScoreBug = ({
 				r.current.style.visibility = i === sample.ball ? "visible" : "hidden";
 			}
 		});
+		if (sample.down !== undefined && refs.down?.current) {
+			refs.down.current.textContent = sample.down;
+		}
 	});
 
 	const W = style.width;
@@ -199,6 +204,9 @@ export const CustomScoreBug = ({
 				break;
 			case "shotClock":
 				inner = <span ref={refs.shot} style={{ display: "none" }} />;
+				break;
+			case "down":
+				inner = <span ref={refs.down} />;
 				break;
 			case "text":
 				inner = p.text ?? "";

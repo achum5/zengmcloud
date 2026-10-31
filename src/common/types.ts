@@ -3186,6 +3186,8 @@ export type ScoreBugShow =
 	| "period"
 	| "clock"
 	| "shotClock"
+	// Football's down and distance.
+	| "down"
 	| "box"
 	| "text"
 	| "image";

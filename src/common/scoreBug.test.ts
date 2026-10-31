@@ -1,5 +1,6 @@
 import { assert, describe, test } from "vitest";
 import {
+	FOOTBALL_SCORE_BUG_PRESETS,
 	parseScoreBug,
 	SCORE_BUG_PRESETS,
 	scoreBugPictureIds,
@@ -15,6 +16,25 @@ describe("parseScoreBug", () => {
 	test("takes every preset as it is", () => {
 		for (const { name, style } of SCORE_BUG_PRESETS) {
 			assert.deepStrictEqual(parseScoreBug(style), style, name);
+		}
+	});
+
+	test("football's: the down and distance for the shot clock, no fouls, all inside", () => {
+		assert.strictEqual(
+			FOOTBALL_SCORE_BUG_PRESETS.length,
+			SCORE_BUG_PRESETS.length,
+		);
+		for (const { name, style } of FOOTBALL_SCORE_BUG_PRESETS) {
+			assert.deepStrictEqual(parseScoreBug(style), style, name);
+			const shows = style.pieces.map((p) => p.show);
+			assert.include(shows, "down", name);
+			for (const gone of ["shotClock", "awayFouls", "homeFouls"] as const) {
+				assert.notInclude(shows, gone, name);
+			}
+			for (const p of style.pieces) {
+				assert.isAtMost(p.x + p.w, style.width, `${name} ${p.show}`);
+				assert.isAtMost(p.y + p.h, style.height, `${name} ${p.show}`);
+			}
 		}
 	});
 

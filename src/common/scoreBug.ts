@@ -25,6 +25,7 @@ const SHOWS = new Set<ScoreBugShow>([
 	"period",
 	"clock",
 	"shotClock",
+	"down",
 	"box",
 	"text",
 	"image",
@@ -460,6 +461,81 @@ export const SCORE_BUG_PRESETS: { name: string; style: ScoreBugStyle }[] = [
 		},
 	},
 ];
+
+// Football's, the same but for the down and distance where the shot clock
+// was (and the room for it), and no fouls.
+const FOOTBALL_DOWN: Record<
+	string,
+	{ width: number; span?: number; down: Omit<ScoreBugPiece, "show"> }
+> = {
+	Bar: {
+		width: 650,
+		span: 0.68,
+		down: {
+			x: 524,
+			y: 8,
+			w: 118,
+			h: 34,
+			color: "#ffb547",
+			background: "#1c1408",
+			size: 17,
+			weight: 800,
+			align: "center",
+			radius: 4,
+		},
+	},
+	"Corner box": {
+		width: 330,
+		down: {
+			x: 252,
+			y: 70,
+			w: 78,
+			h: 26,
+			color: "#ffd166",
+			size: 13,
+			weight: 800,
+			align: "center",
+		},
+	},
+	Minimal: {
+		width: 500,
+		span: 0.5,
+		down: {
+			x: 386,
+			y: 0,
+			w: 104,
+			h: 40,
+			color: "#ffb547",
+			size: 15,
+			weight: 700,
+			align: "center",
+		},
+	},
+};
+export const FOOTBALL_SCORE_BUG_PRESETS: {
+	name: string;
+	style: ScoreBugStyle;
+}[] = SCORE_BUG_PRESETS.map(({ name, style }) => {
+	const f = FOOTBALL_DOWN[name];
+	if (!f) {
+		return { name, style };
+	}
+	return {
+		name,
+		style: {
+			...style,
+			width: f.width,
+			...(f.span === undefined ? {} : { span: f.span }),
+			pieces: style.pieces.flatMap((p): ScoreBugPiece[] =>
+				p.show === "awayFouls" || p.show === "homeFouls"
+					? []
+					: p.show === "shotClock"
+						? [{ ...f.down, show: "down" }]
+						: [p],
+			),
+		},
+	};
+});
 
 // The pictures a score bug names, uploaded ("pic:<id>").
 export const scoreBugPictureIds = (bug: ScoreBugStyle | null | undefined) =>

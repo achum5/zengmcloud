@@ -4,17 +4,32 @@ import { toWorker } from "../util/toWorker.ts";
 import { helpers } from "../util/helpers.ts";
 import { showNotification } from "../util/showNotification.ts";
 import type { ScoreBugStyle, View } from "../../common/types.ts";
-import { parseScoreBug, SCORE_BUG_PRESETS } from "../../common/scoreBug.ts";
+import {
+	FOOTBALL_SCORE_BUG_PRESETS,
+	parseScoreBug,
+	SCORE_BUG_PRESETS,
+} from "../../common/scoreBug.ts";
 import { PIC, pictureFromFile } from "../components/CourtImageField.tsx";
 import { ScoreBug as DefaultBug } from "./LiveGame/court3d/ScoreBug.tsx";
 import { CustomScoreBug } from "./LiveGame/court3d/CustomScoreBug.tsx";
 
-const SAMPLE = {
-	clock: "2:41",
-	shot: "14",
-	fouls: ["FOULS 3", "BONUS"] as [string, string],
-	ball: 1 as const,
-};
+const FOOTBALL = __SPORT === "football";
+const SAMPLE = FOOTBALL
+	? {
+			clock: "2:41",
+			shot: "",
+			fouls: ["", ""] as [string, string],
+			ball: 1 as const,
+			down: "3rd & 7",
+		}
+	: {
+			clock: "2:41",
+			shot: "14",
+			fouls: ["FOULS 3", "BONUS"] as [string, string],
+			ball: 1 as const,
+		};
+const PRESETS = FOOTBALL ? FOOTBALL_SCORE_BUG_PRESETS : SCORE_BUG_PRESETS;
+const TIMEOUTS = FOOTBALL ? 3 : 7;
 
 // THE LEAGUE'S SCORE BUG for the 3D game: the default, or its own (see
 // ScoreBugStyle) - started from a preset, edited as JSON.
@@ -67,11 +82,17 @@ const ScoreBugPage = ({
 			useRef<HTMLSpanElement | null>(null),
 			useRef<HTMLSpanElement | null>(null),
 		] as [RefObject<HTMLSpanElement | null>, RefObject<HTMLSpanElement | null>],
+		down: useRef<HTMLSpanElement | null>(null),
 	};
-	const sides = {
-		away: away && { ...away, pts: 84, timeouts: 3, record: "38-21" },
-		home: home && { ...home, pts: 87, timeouts: 5, record: "44-15" },
-	};
+	const sides = FOOTBALL
+		? {
+				away: away && { ...away, pts: 21, timeouts: 1, record: "9-5" },
+				home: home && { ...home, pts: 24, timeouts: 2, record: "11-3" },
+			}
+		: {
+				away: away && { ...away, pts: 84, timeouts: 3, record: "38-21" },
+				home: home && { ...home, pts: 87, timeouts: 5, record: "44-15" },
+			};
 
 	const upload = async (file: File) => {
 		try {
@@ -126,7 +147,7 @@ const ScoreBugPage = ({
 						style={shown}
 						{...sides}
 						quarter="4th"
-						totalTimeouts={7}
+						totalTimeouts={TIMEOUTS}
 						refs={refs}
 						sample={SAMPLE}
 					/>
@@ -143,7 +164,7 @@ const ScoreBugPage = ({
 				>
 					Default
 				</button>
-				{SCORE_BUG_PRESETS.map(({ name, style }) => (
+				{PRESETS.map(({ name, style }) => (
 					<button
 						key={name}
 						type="button"
@@ -253,11 +274,12 @@ const DefaultBugPreview = ({
 	const f1 = useRef<HTMLSpanElement | null>(null);
 	const b0 = useRef<HTMLSpanElement | null>(null);
 	const b1 = useRef<HTMLSpanElement | null>(null);
+	const down = useRef<HTMLSpanElement | null>(null);
 	const set = () => {
 		if (clock.current) {
 			clock.current.textContent = SAMPLE.clock;
 		}
-		if (shot.current) {
+		if (shot.current && SAMPLE.shot) {
 			shot.current.textContent = SAMPLE.shot;
 			shot.current.style.display = "flex";
 		}
@@ -271,14 +293,23 @@ const DefaultBugPreview = ({
 				r.current.style.visibility = i === SAMPLE.ball ? "visible" : "hidden";
 			}
 		});
+		if (SAMPLE.down !== undefined && down.current) {
+			down.current.textContent = SAMPLE.down;
+		}
 	};
 	return (
 		<div ref={() => set()}>
 			<DefaultBug
 				{...sides}
 				quarter="4th"
-				totalTimeouts={7}
-				refs={{ clock, shot, fouls: [f0, f1], ball: [b0, b1] }}
+				totalTimeouts={TIMEOUTS}
+				refs={{
+					clock,
+					shot,
+					fouls: [f0, f1],
+					ball: [b0, b1],
+					...(FOOTBALL ? { down } : {}),
+				}}
 			/>
 		</div>
 	);

@@ -253,6 +253,15 @@ const ManageTeams = (props: View<"manageTeams">) => {
 						}}
 					/>
 				</div>
+			) : __SPORT === "football" ? (
+				<div className="d-flex gap-2 mb-3">
+					<a
+						className="btn btn-light-bordered"
+						href={helpers.leagueUrl(["score_bug"])}
+					>
+						Score bug
+					</a>
+				</div>
 			) : null}
 			{!godMode ? (
 				<div>

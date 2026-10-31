@@ -20,6 +20,8 @@ import { drawn, due, FAST, makePace } from "../court3d/pace.ts";
 import { adjust, artFor, makeResolution } from "../court3d/resolution.ts";
 import { eventsMatchRoster } from "../court3d/rosterMatch.ts";
 import { ScoreBug, type BugRefs } from "../court3d/ScoreBug.tsx";
+import { CustomScoreBug } from "../court3d/CustomScoreBug.tsx";
+import type { ScoreBugStyle } from "../../../../common/types.ts";
 import {
 	makeScratch,
 	makeSpriteCache,
@@ -1014,6 +1016,8 @@ const Field3D = ({
 	const bugTeam = (t: any, pts: number, i: 0 | 1) =>
 		t && {
 			abbrev: t.abbrev,
+			region: t.region,
+			name: t.name,
 			colors: t.colors,
 			imgURL: t.imgURL,
 			imgURLSmall: t.imgURLSmall,
@@ -1028,6 +1032,15 @@ const Field3D = ({
 		ball: [ballAwayRef, ballHomeRef],
 		down: downRef,
 	};
+	const bug = {
+		away: bugTeam(away, awayPts, 1),
+		home: bugTeam(home, homePts, 0),
+		quarter,
+		totalTimeouts: STARTING_NUM_TIMEOUTS,
+		refs,
+	};
+	// The league's own bug, if it has one (see ScoreBugStyle).
+	const own: ScoreBugStyle | null | undefined = boxScore?.scoreBug;
 
 	return (
 		<div
@@ -1169,13 +1182,7 @@ const Field3D = ({
 				/>
 			) : null}
 			<div ref={bugRef} style={{ display: "contents" }}>
-				<ScoreBug
-					away={bugTeam(away, awayPts, 1)}
-					home={bugTeam(home, homePts, 0)}
-					quarter={quarter}
-					totalTimeouts={STARTING_NUM_TIMEOUTS}
-					refs={refs}
-				/>
+				{own ? <CustomScoreBug style={own} {...bug} /> : <ScoreBug {...bug} />}
 			</div>
 			{caption ? (
 				<div
@@ -1184,7 +1191,9 @@ const Field3D = ({
 						position: "absolute",
 						left: "50%",
 						// Just over the score bug.
-						bottom: "calc(2.4cqw + clamp(10px, 1.75cqw, 16px) * 3.3)",
+						bottom: own
+							? `calc(2.4cqw + ${((own.span ?? 0.6) * 100 * own.height) / own.width}cqw)`
+							: "calc(2.4cqw + clamp(10px, 1.75cqw, 16px) * 3.3)",
 						transform: "translateX(-50%)",
 						width: "max-content",
 						maxWidth: "92%",
