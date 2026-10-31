@@ -88,6 +88,7 @@ const BALL = 9;
 const CAM_BODY = 10;
 const CAM_LENS = 11;
 const TOWEL = 12;
+const NAIL = 13;
 
 // What melts into what: masses in one group melt together everywhere, two
 // groups only where a joint joins them.
@@ -717,6 +718,8 @@ const BEND_LO = [-0.3, 0, -0.15];
 // The share of a bounce, at its top, the ball is in his hand on his dribble
 // - from as it comes up into it to as it leaves.
 const DRIBBLE_TOUCH = 0.12;
+// Fingertips this wide (pixels, the radius) and more show their nails.
+const NAIL_PX = 2.2;
 const BEND_HI = [1.6, 1.9, 1.3];
 
 // A finger on a ball: the bend at a joint - at (x, y) in the finger's plane,
@@ -1021,10 +1024,13 @@ const build = (
 				? Math.max(0, 1 - Math.min(ph, 1 - ph) / DRIBBLE_TOUCH)
 				: 0;
 		// (Between, his hand loose over where it comes back up to.)
+		// (And a shooter's hand, the ball gone off it, hangs loose off his
+		// snapped wrist.)
+		const flick = which === "R" && gripOf(st.anim) === "shot" && q.free > 0.5;
 		const grip: Grip =
 			touch > 0.3
 				? "ball"
-				: !held && ph !== undefined && st.dribbleHand === which
+				: (!held && ph !== undefined && st.dribbleHand === which) || flick
 					? "relaxed"
 					: gripFor(st, which, held !== undefined && !off);
 		// The ball his hand is on, if it is.
@@ -1156,6 +1162,24 @@ const build = (
 					group,
 					side,
 				);
+				// Big enough to see: the nail on the back of its tip.
+				if (k === pts.length - 1 && r0 * kMid >= NAIL_PX && !look.silhouette) {
+					const u = unit(subV(pts[k]!, pts[k - 1]!), h);
+					const back = unit(square(palmN, u), palmN);
+					const out = (t: number, o: number) =>
+						addV(lerpV(pts[k - 1]!, pts[k]!, t), back, -r0 * o);
+					add(
+						out(0.48, 0.42),
+						out(0.9, 0.36),
+						[
+							[0, r0 * 0.52],
+							[1, r0 * 0.5],
+						],
+						NAIL,
+						group,
+						side,
+					);
+				}
 			}
 		};
 		const restOf = (i: number): number[] =>
@@ -2334,6 +2358,14 @@ export const sculpt = (
 						cb = c[2];
 						break;
 					}
+					case NAIL: {
+						// Paler than his skin, a little pink.
+						const c = pal.skin;
+						cr = c[0] + (pal.palm[0] - c[0]) * 0.62 + 6;
+						cg = c[1] + (pal.palm[1] - c[1]) * 0.62;
+						cb = c[2] + (pal.palm[2] - c[2]) * 0.62;
+						break;
+					}
 					case HAND: {
 						// His palm, and the inside of his fingers, paler
 						// than the back of his hand.
@@ -2386,7 +2418,7 @@ export const sculpt = (
 				}
 				// A fine line where he passes in front of himself - and
 				// all round his hands, so they read.
-				if ((behind || fc.kind === HAND) && S > -lineW) {
+				if ((behind || fc.kind === HAND || fc.kind === NAIL) && S > -lineW) {
 					const e = Math.min(1, (S + lineW) / lineW);
 					r += (cr * 0.38 - r) * e;
 					g += (cg * 0.38 - g) * e;
