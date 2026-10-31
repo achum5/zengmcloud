@@ -1016,6 +1016,9 @@ const DAP_HOLD = 600;
 // rows of them staggered, eight feet or so apart, each kept for the two
 // there till they are through with each other.
 const DAP_ROUNDS = 3;
+// Neither of a pair walks nearer the other's spot than this (feet) on his
+// way to his own.
+const DAP_CLEAR = 1.4;
 const DAP_SPOTS: Pt[] = [-7.5, 0, 7.5].flatMap((dy) =>
 	[-16, -8, 0, 8, 16].map((dx) => ({
 		x: COURT_W / 2 + dx + (dy === 0 ? 0 : 4),
@@ -15164,20 +15167,69 @@ class Director {
 						const M = DAP_SPOTS[k]!;
 						const free = busy[k] ?? 0;
 						const d = dist(Pw, Pl);
-						const u =
+						const u0 =
 							d > 0.5
 								? { x: (Pl.x - Pw.x) / d, y: (Pl.y - Pw.y) / d }
 								: { x: winner === 0 ? 1 : -1, y: 0 };
-						// (His right, facing u - see bodyPoint.)
-						const r = { x: -u.y, y: u.x };
-						const A = {
-							x: M.x - (u.x * apart) / 2 - (r.x * aside) / 2,
-							y: M.y - (u.y * apart) / 2 - (r.y * aside) / 2,
+						// Which way round they stand to each other: as they are to
+						// each other - or, that having one of them walk through the
+						// other to his side of it (both coming at it the same way),
+						// across that, or the other way round - the shortest walks
+						// with neither through the other.
+						const pair = (v: Pt) => {
+							// (His right, facing v - see bodyPoint.)
+							const q = { x: -v.y, y: v.x };
+							return [
+								{
+									x: M.x - (v.x * apart) / 2 - (q.x * aside) / 2,
+									y: M.y - (v.y * apart) / 2 - (q.y * aside) / 2,
+								},
+								{
+									x: M.x + (v.x * apart) / 2 + (q.x * aside) / 2,
+									y: M.y + (v.y * apart) / 2 + (q.y * aside) / 2,
+								},
+							] as const;
 						};
-						const B = {
-							x: M.x + (u.x * apart) / 2 + (r.x * aside) / 2,
-							y: M.y + (u.y * apart) / 2 + (r.y * aside) / 2,
+						const through = (a: Pt, b: Pt, at: Pt) => {
+							const L2 = (b.x - a.x) ** 2 + (b.y - a.y) ** 2;
+							const f =
+								L2 > 1e-6
+									? Math.max(
+											0,
+											Math.min(
+												1,
+												((at.x - a.x) * (b.x - a.x) +
+													(at.y - a.y) * (b.y - a.y)) /
+													L2,
+											),
+										)
+									: 0;
+							return (
+								dist(at, {
+									x: a.x + (b.x - a.x) * f,
+									y: a.y + (b.y - a.y) * f,
+								}) < DAP_CLEAR
+							);
 						};
+						let u = u0;
+						let best = Infinity;
+						for (const v of [
+							u0,
+							{ x: -u0.y, y: u0.x },
+							{ x: u0.y, y: -u0.x },
+							{ x: -u0.x, y: -u0.y },
+						]) {
+							const [a, b] = pair(v);
+							const cost =
+								dist(Pw, a) +
+								dist(Pl, b) +
+								(through(Pw, a, b) || through(Pl, b, a) ? 100 : 0);
+							if (cost < best - 1e-6) {
+								best = cost;
+								u = v;
+							}
+						}
+						const [A, B] = pair(u);
 						const aw = walkTo(w, Math.max(tw, free), A, k, WALK * 1.4);
 						const al = walkTo(l, Math.max(tl, free), B, k, WALK * 1.4);
 						const met = Math.max(aw, al) + 60;
