@@ -6496,6 +6496,59 @@ export const moveBallAt = (
 	return mix(under(ph, to), floor, (1 - (ph - down) / (1 - down)) ** 1.8);
 };
 
+// The ball on his dribble never goes through his own legs - between them,
+// across in front of them, round behind them: out from his thigh or his
+// shin, across the floor (its height as it was, so it still meets the
+// floor and his hand).
+const offLegs = (p: Pt3, st0: PlayerState, body: Body): Pt3 => {
+	const st = withBody(st0, body);
+	const sk = skeleton(body, poseOf(st));
+	let { x, y } = p;
+	for (const leg of [sk.legR, sk.legL]) {
+		const pts = [leg.root, leg.mid, leg.end].map((v) => bodyPoint(st, v));
+		const radii = [body.thighR * 0.9, body.calfR * 0.9];
+		for (let k = 0; k < 2; k++) {
+			const a = pts[k]!;
+			const b = pts[k + 1]!;
+			const dx = b.x - a.x;
+			const dy = b.y - a.y;
+			const dz = b.z - a.z;
+			const L2 = dx * dx + dy * dy + dz * dz;
+			const u =
+				L2 > 1e-9
+					? Math.max(
+							0,
+							Math.min(
+								1,
+								((x - a.x) * dx + (y - a.y) * dy + (p.z - a.z) * dz) / L2,
+							),
+						)
+					: 0;
+			const cx = a.x + dx * u;
+			const cy = a.y + dy * u;
+			const cz = a.z + dz * u;
+			const need = BALL_R + radii[k]!;
+			const ox = x - cx;
+			const oy = y - cy;
+			const oz = p.z - cz;
+			if (
+				ox * ox + oy * oy + oz * oz >= need * need ||
+				oz * oz >= need * need
+			) {
+				continue;
+			}
+			const across = Math.hypot(ox, oy);
+			if (across < 1e-6) {
+				continue;
+			}
+			const want = Math.sqrt(need * need - oz * oz);
+			x = cx + (ox / across) * want;
+			y = cy + (oy / across) * want;
+		}
+	}
+	return { x, y, z: p.z };
+};
+
 // The ball under a dribbling hand: just below the middle of his palm.
 const underHand = (st0: PlayerState, body: Body, hand: Hand): Pt3 => {
 	const st = withBody(st0, body);
@@ -6789,7 +6842,7 @@ const ballOn = (
 					holder: seg.pid,
 				};
 			}
-			return { ...ball, holder: seg.pid };
+			return { ...offLegs(ball, st, body), holder: seg.pid };
 		}
 		if (seg.style === "dribble") {
 			const bounce = bounceOf(tl, i, t);
@@ -6869,10 +6922,17 @@ const ballOn = (
 				dribbleAhead(top.anim) === 1 && Math.abs(c) > 0.5
 					? Math.PI * 2 * ph * Math.sign(c)
 					: 0;
+			const at = offLegs(
+				{
+					x: h.x + (floor.x - h.x) * tri,
+					y: h.y + (floor.y - h.y) * tri,
+					z: h.z + (floor.z - h.z) * tri,
+				},
+				st,
+				body,
+			);
 			return {
-				x: h.x + (floor.x - h.x) * tri,
-				y: h.y + (floor.y - h.y) * tri,
-				z: h.z + (floor.z - h.z) * tri,
+				...at,
 				holder: seg.pid,
 				...(roll !== 0 ? { roll } : {}),
 			};

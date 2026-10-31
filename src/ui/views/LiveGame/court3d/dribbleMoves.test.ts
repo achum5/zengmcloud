@@ -1,9 +1,11 @@
 import { assert, describe, test } from "vitest";
 import {
+	BALL_R,
 	bodyPoint,
 	CROSS_RATE,
 	evalBall,
 	evalPlayer,
+	fastAt,
 	poseOf,
 	withBody,
 } from "./evaluate.ts";
@@ -94,4 +96,58 @@ describe("dribble moves", () => {
 		assert.isBelow(mean, 0.85);
 		assert.isBelow(gaps[Math.floor(gaps.length * 0.9)]!, 1.4);
 	}, 120_000);
+
+	// Between his legs, across in front of them, or just bouncing it beside
+	// him, the ball never goes through his own thigh or shin.
+	test("the ball on his dribble never goes through his legs", () => {
+		const { tl } = compile("a", 140);
+		let frames = 0;
+		const through: string[] = [];
+		for (let t = 0; t < tl.end; t += 40) {
+			if (fastAt(tl, t) > 1.001) {
+				continue;
+			}
+			const b = evalBall(tl, t, bodyFor);
+			const h = b.holder;
+			const st0 = h === undefined ? undefined : evalPlayer(tl, h, t);
+			if (!st0 || st0.dribble === undefined || st0.holding) {
+				continue;
+			}
+			frames += 1;
+			const st = withBody(st0, body);
+			const sk = skeleton(body, poseOf(st));
+			for (const leg of [sk.legR, sk.legL]) {
+				const pts = [leg.root, leg.mid, leg.end].map((v) => bodyPoint(st, v));
+				const radii = [body.thighR * 0.9, body.calfR * 0.9];
+				for (let k = 0; k < 2; k++) {
+					const a = pts[k]!;
+					const c = pts[k + 1]!;
+					const d = { x: c.x - a.x, y: c.y - a.y, z: c.z - a.z };
+					const L2 = d.x * d.x + d.y * d.y + d.z * d.z;
+					const u = Math.max(
+						0,
+						Math.min(
+							1,
+							((b.x - a.x) * d.x + (b.y - a.y) * d.y + (b.z - a.z) * d.z) / L2,
+						),
+					);
+					const gap =
+						Math.hypot(
+							b.x - a.x - d.x * u,
+							b.y - a.y - d.y * u,
+							b.z - a.z - d.z * u,
+						) -
+						BALL_R -
+						radii[k]!;
+					if (gap < -0.02) {
+						through.push(
+							`${t}: ${gap.toFixed(2)} ft into his ${k ? "shin" : "thigh"}`,
+						);
+					}
+				}
+			}
+		}
+		assert.isAbove(frames, 2000);
+		assert.deepEqual(through, []);
+	}, 300_000);
 });
