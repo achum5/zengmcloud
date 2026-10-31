@@ -30,7 +30,11 @@ export const cleanStadium = (raw: unknown): StadiumLook | undefined => {
 	if (typeof r.sky === "string" && SKIES.has(r.sky)) {
 		out.sky = r.sky as StadiumLook["sky"];
 	}
-	for (const key of ["endZoneColor", "endZoneTextColor"] as const) {
+	for (const key of [
+		"turfColor",
+		"endZoneColor",
+		"endZoneTextColor",
+	] as const) {
 		const v = r[key];
 		if (typeof v === "string" && HEX.test(v)) {
 			out[key] = v;

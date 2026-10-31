@@ -288,7 +288,7 @@ export const drawFieldFrame = (f: FieldFrame) => {
 	}
 	// (The broadcast's lines over it all, the shadow too.)
 	if (f.marks && f.marks.length > 0) {
-		drawMarks(ctx, cam, f.marks);
+		drawMarks(ctx, cam, f.marks, paint.style.turf);
 	}
 	if (f.pools) {
 		drawPools(ctx, cam, f.pools);

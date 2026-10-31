@@ -153,15 +153,14 @@ const EditTeamStadium = ({
 		away: fieldKit(colors, "away", helmet),
 	};
 
-	// (What the end zones are with one setting left to the team's colors and
-	// name.)
-	const endZoneAuto = (key: keyof StadiumLook) => {
+	// (What the field is with one setting left to the team's own.)
+	const fieldAuto = (key: keyof StadiumLook) => {
 		const look = { ...stadium };
 		delete look[key];
 		return fieldStyleFor(
 			{ abbrev, name, region, colors, stadium: look },
 			undefined,
-		).endZones[0];
+		);
 	};
 
 	const save = async () => {
@@ -235,6 +234,12 @@ const EditTeamStadium = ({
 					]}
 					onChange={(v) => setField("turf", v)}
 				/>
+				<HelmetColor
+					label="Field color"
+					value={stadium.turfColor}
+					fallback={fieldAuto("turfColor").turf}
+					onChange={(v) => setField("turfColor", v)}
+				/>
 				<Choice<"endZones">
 					label="End zones"
 					value={stadium.endZones}
@@ -262,7 +267,7 @@ const EditTeamStadium = ({
 							className="form-control"
 							maxLength={END_ZONE_TEXT_MAX}
 							value={stadium.endZoneText ?? ""}
-							placeholder={endZoneAuto("endZoneText").text}
+							placeholder={fieldAuto("endZoneText").endZones[0].text}
 							disabled={stadium.endZoneText === ""}
 							onChange={(e) =>
 								setField(
@@ -292,7 +297,7 @@ const EditTeamStadium = ({
 				<HelmetColor
 					label="Lettering color"
 					value={stadium.endZoneTextColor}
-					fallback={endZoneAuto("endZoneTextColor").textColor}
+					fallback={fieldAuto("endZoneTextColor").endZones[0].textColor}
 					onChange={(v) => setField("endZoneTextColor", v)}
 				/>
 				<div className="form-check mb-3">

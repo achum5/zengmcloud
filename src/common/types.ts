@@ -3120,6 +3120,8 @@ export type StadiumLook = {
 	// Its home games all in the afternoon, or all under the lights; left out,
 	// each game's own.
 	sky?: "day" | "night";
+	// The field's own color (blue, say); left out, green.
+	turfColor?: string;
 	// The end zones' color (on green ones, the letters'), what is lettered
 	// across them ("" for nothing) and in what color - left out, the team's
 	// own colors and name.

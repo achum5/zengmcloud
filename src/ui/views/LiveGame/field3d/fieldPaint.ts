@@ -124,7 +124,9 @@ export const fieldStyleFor = (
 	venue: Venue = venueFor(home),
 ): FieldStyle => {
 	const grass = venue.turf === "grass";
-	const turf = grass ? "#3f7d34" : "#2f8a3d";
+	// (A field of its own color, the ground round it a shade darker.)
+	const own = home?.stadium?.turfColor;
+	const turf = own ?? (grass ? "#3f7d34" : "#2f8a3d");
 	const left = endZoneOf(home, "#8c1d40", venue.endZones, turf);
 	const right = neutralSite
 		? endZoneOf(away, "#1d3461", venue.endZones, turf)
@@ -134,7 +136,7 @@ export const fieldStyleFor = (
 		stripe: grass ? 0.075 : 0.04,
 		grain: grass ? 14 : 7,
 		lines: "#f7f7f2",
-		surround: grass ? "#356b2d" : "#2b7f38",
+		surround: own ? shade(own, -0.12) : grass ? "#356b2d" : "#2b7f38",
 		endZones: [left, right],
 		numbers: "#f7f7f2",
 	};
