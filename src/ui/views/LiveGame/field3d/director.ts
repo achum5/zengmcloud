@@ -223,6 +223,9 @@ export type Play = {
 		mob?: { at: Pt; until: number };
 		// The winners' head coach under the cooler (see shower.ts).
 		shower?: Shower;
+		// The last look, the hands all shaken: when the picture cuts to the
+		// whole stadium (see aim.ts).
+		look: number;
 	};
 	ball: BallSeg[];
 	// A big play's moment after it (see action.ts celebrate): from when, till
@@ -1657,6 +1660,7 @@ class Director {
 			: undefined;
 		if (postgame) {
 			t1 = postgame.t1;
+			this.cuts.push(postgame.look);
 			if (postgame.winner !== undefined) {
 				cheer = { t: postgame.from, side: postgame.winner, big: true };
 			}
@@ -1950,6 +1954,7 @@ class Director {
 								: {}),
 							...(postgame.mob ? { mob: postgame.mob } : {}),
 							...(postgame.shower ? { shower: postgame.shower } : {}),
+							look: postgame.look,
 						},
 					}
 				: {}),

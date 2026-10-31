@@ -1,7 +1,7 @@
 import type { Shot } from "./camera.ts";
 import type { Play } from "./director.ts";
 import type { FieldMoment } from "./evaluate.ts";
-import { FIELD_L, GOAL_L, GOAL_R, MID_Y, type Pt } from "./geometry.ts";
+import { FIELD_L, GOAL_L, GOAL_R, MID_X, MID_Y, type Pt } from "./geometry.ts";
 import { runOutShot } from "./tunnel.ts";
 
 // WHERE THE CAMERA LOOKS: the way a game is shot from the press box - on the
@@ -75,6 +75,12 @@ const POST_WIDE = 124;
 const POST_TIGHT = 66;
 const POST_IN = 5500;
 const POST_IN_MS = 4000;
+// The last look, the hands all shaken (see postgame.ts): the whole stadium
+// from the press box - the field end to end, the stands across it and the
+// lights over them - pulled back out to it over this long, and held there.
+const LOOK_FROM = { width: 300, y: 66, z: 2 };
+const LOOK = { width: 440, y: 29, z: 21 };
+const LOOK_MS = 3000;
 // The winners' head coach under the cooler: in on him, this wide, the
 // picture's middle this far toward the near side of him (on the far
 // sideline, this far).
@@ -162,8 +168,18 @@ export const aimFor = (m: FieldMoment): Shot => {
 		}
 	}
 	// The game over: on them all as they make for the middle - and in on the
-	// head coaches as they come together to shake hands.
+	// head coaches as they come together to shake hands; then the last look.
 	const post = play.postgame;
+	if (post && t >= post.look) {
+		const u = Math.min(1, (t - post.look) / LOOK_MS);
+		const e = u * u * (3 - 2 * u);
+		return {
+			x: MID_X,
+			width: LOOK_FROM.width + (LOOK.width - LOOK_FROM.width) * e,
+			y: LOOK_FROM.y + (LOOK.y - LOOK_FROM.y) * e,
+			z: LOOK_FROM.z + (LOOK.z - LOOK_FROM.z) * e,
+		};
+	}
 	if (post?.mob && t >= post.from && t < post.mob.until) {
 		return {
 			x: inBounds(post.mob.at.x, MOB_WIDTH),

@@ -101,6 +101,12 @@ const COACH_LATE = 500;
 const COACH_FPS = 10.5;
 const COACH_HUG = 0.6;
 const COACH_AFTER = 2600;
+// The last look, the hands all shaken (the 3D court's: see
+// court3d/director.ts): the picture cut away this long after, to the whole
+// stadium - everybody about the field as the handshakes left them - and on
+// it this long, until the game is over, and held there (see aim.ts).
+const LOOK_AFTER = 400;
+const LAST_LOOK_MS = 3500;
 // Most of them with their helmets off for the handshakes - this share,
 // each a moment after his own moment - each pulling it off over this long,
 // off his head this far into it.
@@ -169,6 +175,8 @@ export type Postgame = {
 	mob?: { at: Pt; until: number };
 	// The winners' head coach under the cooler (see shower.ts).
 	shower?: Shower;
+	// When the picture cuts to the last look.
+	look: number;
 	t1: number;
 };
 
@@ -713,7 +721,8 @@ export const stagePostgame = (input: {
 	near.walk({ x: at.x + half + 1.5, y: at.y });
 	const { shake, end } = meet(far, near, r, at, COACH_HUG);
 
-	const t1 = Math.max(input.t1, end + COACH_AFTER, done + 800);
+	const look = Math.max(input.t1, end + COACH_AFTER, done + 800) + LOOK_AFTER;
+	const t1 = look + LAST_LOOK_MS;
 	const others = dumpers.map((p) => new Man(p.team, p.legs, PACE[0]));
 	for (const m of [...men, ...bosses, ...others]) {
 		const l = m.legs.at(-1)!;
@@ -727,6 +736,7 @@ export const stagePostgame = (input: {
 		winner,
 		...(mob ? { mob } : {}),
 		...(shower ? { shower } : {}),
+		look,
 		t1,
 	};
 };

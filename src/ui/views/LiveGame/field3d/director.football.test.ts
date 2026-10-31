@@ -3,6 +3,7 @@ import processLiveGameEvents, {
 	DEFAULT_SPORT_STATE,
 	type SportState,
 } from "../../../util/processLiveGameEvents.football.tsx";
+import { aimFor } from "./aim.ts";
 import {
 	compileField,
 	isLineItem,
@@ -11,7 +12,14 @@ import {
 	type Leg,
 } from "./director.ts";
 import { momentAt } from "./evaluate.ts";
-import { dirFor, FIELD_L, FIELD_W, TEAM_AREA, yardLineX } from "./geometry.ts";
+import {
+	dirFor,
+	FIELD_L,
+	FIELD_W,
+	MID_X,
+	TEAM_AREA,
+	yardLineX,
+} from "./geometry.ts";
 import { makeFieldClock, REPLAY_SPEED, stepField } from "./playback.ts";
 import { sidelineAt, sidelineFor } from "./sideline.ts";
 import { stageField, stageOpening } from "./stageField.ts";
@@ -632,6 +640,22 @@ describe("the game over", () => {
 			for (const c of play.coaches ?? []) {
 				assert.isUndefined(off.find((s) => s.id === c.pid));
 			}
+		}
+	}, 20_000);
+
+	test("the hands all shaken, the picture cut away to the whole stadium - and held on it, the game over", () => {
+		for (const game of games) {
+			const tl = stage(game);
+			const play = tl.plays.at(-1)!;
+			const post = play.postgame!;
+			assert.isAbove(post.look, post.shake);
+			assert.include(tl.cuts, post.look);
+			assert.isAtLeast(play.t1 - post.look, 3000);
+			assert.strictEqual(tl.beats.at(-1)!.end, play.t1);
+			assert.isBelow(aimFor(momentAt(tl, post.look - 50)).width, 150);
+			const last = aimFor(momentAt(tl, play.t1));
+			assert.strictEqual(last.x, MID_X);
+			assert.isAbove(last.width, FIELD_L);
 		}
 	}, 20_000);
 
