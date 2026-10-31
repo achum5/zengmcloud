@@ -793,6 +793,10 @@ const Field3D = ({
 		eventsLength,
 		clocks,
 		pageTime: (boxScore?.time ?? "") as string,
+		score: [boxScore?.teams?.[1]?.pts ?? 0, boxScore?.teams?.[0]?.pts ?? 0] as [
+			number,
+			number,
+		],
 	});
 	live.current = {
 		cursor,
@@ -813,6 +817,10 @@ const Field3D = ({
 		eventsLength,
 		clocks,
 		pageTime: (boxScore?.time ?? "") as string,
+		score: [boxScore?.teams?.[1]?.pts ?? 0, boxScore?.teams?.[0]?.pts ?? 0] as [
+			number,
+			number,
+		],
 	};
 
 	useEffect(() => {
@@ -1061,6 +1069,7 @@ const Field3D = ({
 				pools: poolsOf(standing, moment.ball?.at),
 				crowd: crowdAt(tl, moment.t, now),
 				board: boardAt(tl, moment.t),
+				score: p.score,
 				...(confetti ? { confetti: { of: confetti, t: moment.t } } : {}),
 				flashes: flashesAt(photographersRef.current, moment),
 				...(replay ? {} : { marks: marksAt(moment.play, moment.t) }),

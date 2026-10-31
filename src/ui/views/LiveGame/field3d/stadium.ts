@@ -743,8 +743,15 @@ export type StadiumPaint = {
 	tunnel: HTMLCanvasElement;
 	roof?: HTMLCanvasElement;
 	// The wall's, the club level's and the end walls' boards on another
-	// screen than the name (painted the first time each is up).
-	screen: (set: BoardSet, screen: BoardScreen) => HTMLCanvasElement;
+	// screen than the name (painted the first time each is up) - and the
+	// club level's ribbon on the name, with the score in among it (the 3D
+	// court's board over center court: see court3d/arena.ts jumboScored),
+	// the visitors' and the home team's, repainted as it changes.
+	screen: (
+		set: BoardSet,
+		screen: BoardScreen,
+		score?: [number, number],
+	) => HTMLCanvasElement;
 };
 export type BoardSet = "wall" | "club" | "end";
 
@@ -769,10 +776,17 @@ export const paintStadium = (
 		club: [CLUB.w, CLUB.h, CLUB.w / (X1 - X0)],
 		end: [END_WALLS[0].w, END_WALLS[0].h, END_WALLS[0].w / (END_Y1 - END_Y0)],
 	};
-	const boardOf = (set: BoardSet, screen: BoardScreen = "name") => {
+	const boardOf = (
+		set: BoardSet,
+		screen: BoardScreen = "name",
+		say = words,
+	) => {
 		const [w, h, ppf] = sizes[set];
-		return paintBoard(w, h, ppf, home, words, screen);
+		return paintBoard(w, h, ppf, home, say, screen);
 	};
+	const abbrev = (t: FieldTeam | undefined, or: string) =>
+		(t?.abbrev ?? or).toUpperCase();
+	let scored: { key: string; c: HTMLCanvasElement } | undefined;
 	const screens = new Map<string, HTMLCanvasElement>();
 	const seating = (
 		P: TexturedPlane,
@@ -829,7 +843,15 @@ export const paintStadium = (
 		...(style.roof === "dome"
 			? { roof: paintRoof(ROOF.w, ROOF.h, ROOF.w / (X1 - X0), seed) }
 			: {}),
-		screen: (set, screen) => {
+		screen: (set, screen, score) => {
+			if (screen === "name" && set === "club" && score) {
+				const key = score.join("-");
+				if (scored?.key !== key) {
+					const line = `${abbrev(away, "AWAY")} ${score[0]}  ${abbrev(home, "HOME")} ${score[1]}`;
+					scored = { key, c: boardOf("club", "name", [...words, line]) };
+				}
+				return scored.c;
+			}
 			if (screen === "name") {
 				return set === "wall" ? wall : set === "club" ? club : endWall;
 			}

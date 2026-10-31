@@ -62,9 +62,11 @@ export type FieldFrame = {
 	cam: Camera;
 	paint: FieldPaint;
 	// The crowd on its feet, and how full the stands are; what the boards
-	// show (see crowd.ts).
+	// show (see crowd.ts), and the score on the ribbon (the visitors', the
+	// home team's).
 	crowd?: Crowd;
 	board?: BoardScreen;
+	score?: [number, number];
 	// The broadcast's lines on the turf (see marks.ts).
 	marks?: Mark[];
 	// The shadows under the men and the ball (see pools.ts).
@@ -224,7 +226,7 @@ export const drawFieldFrame = (f: FieldFrame) => {
 	drawTexturedPlane(ctx, cam, RIM, st.rim, 24, 1);
 	drawTexturedPlane(ctx, cam, UPPER, st.upper, 24, 6);
 	const board = f.board ?? "name";
-	drawTexturedPlane(ctx, cam, CLUB, st.screen("club", board), 24, 1);
+	drawTexturedPlane(ctx, cam, CLUB, st.screen("club", board, f.score), 24, 1);
 	// (Fewer in their seats: the half-empty stands, the full ones over them
 	// as faint as the seats are empty - and as few of them up.)
 	const crowd = f.crowd ?? { up: 0, wave: false, full: 1 };
