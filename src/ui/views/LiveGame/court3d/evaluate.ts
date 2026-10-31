@@ -6848,19 +6848,40 @@ const PASS_MARGIN = 0.12;
 const TORSO_R = 0.55;
 const BOW_MOST = 2.2;
 const passedBys = new WeakMap<object, Pt3 | null>();
-const passedBy = (
+type FlySeg = Extract<CourtTimeline["ball"][number], { kind: "fly" }>;
+// Each man near it, each moment of its flight: where it is then, how far
+// out it bows there (for a bow of 1), and his head and the line up his
+// body. (Near enough that a bow out his way could bring it to him.)
+type Near = { k: number; p: Pt3; parts: [Pt3, Pt3, Pt3]; headR: number };
+// That worked out a moment at a time (see warmBall): the ends of its
+// flight, the men at them, the men near it so far, and the next moment.
+type PassWork = {
+	a: Pt3;
+	b: Pt3;
+	ends: Set<number>;
+	near: Near[];
+	u: number;
+};
+const passWorks = new WeakMap<object, PassWork>();
+const passWorkOf = (
 	tl: CourtTimeline,
-	seg: Extract<CourtTimeline["ball"][number], { kind: "fly" }>,
+	seg: FlySeg,
 	a: Pt3,
 	b: Pt3,
 	bodyFor: (pid: number) => Body,
-	// Coming off the rim: nobody's hand is on it as it starts, whoever's
-	// is still up there.
-	offRim = false,
-): Pt3 | undefined => {
-	const had = passedBys.get(seg);
-	if (had !== undefined) {
-		return had ?? undefined;
+	offRim: boolean,
+): PassWork => {
+	const had = passWorks.get(seg);
+	if (
+		had &&
+		had.a.x === a.x &&
+		had.a.y === a.y &&
+		had.a.z === a.z &&
+		had.b.x === b.x &&
+		had.b.y === b.y &&
+		had.b.z === b.z
+	) {
+		return had;
 	}
 	// (Not round the men throwing it and catching it - nor one whose hands
 	// or head meet it at either end: a steal, a tip, a ball off him.)
@@ -6891,20 +6912,23 @@ const passedBy = (
 			}
 		}
 	}
+	const w: PassWork = { a, b, ends, near: [], u: 0.1 };
+	passWorks.set(seg, w);
+	return w;
+};
+// Up to `n` more moments of its flight.
+const passSteps = (
+	tl: CourtTimeline,
+	seg: FlySeg,
+	w: PassWork,
+	bodyFor: (pid: number) => Body,
+	n: number,
+) => {
+	const { a, b } = w;
 	const T = Math.max(0, seg.t1 - seg.t0) / 1000;
 	const vz = T > 0 ? (b.z - a.z) / T + 0.5 * GRAVITY * T : 0;
-	const along = Math.hypot(b.x - a.x, b.y - a.y);
-	// (Out to his side, across the way it goes.)
-	const side =
-		along > 1e-6
-			? { x: -(b.y - a.y) / along, y: (b.x - a.x) / along }
-			: { x: 0, y: 1 };
-	// Each man near it, each moment of its flight: where it is then, how far
-	// out it bows there (for a bow of 1), and his head and the line up his
-	// body. (Near enough that a bow out his way could bring it to him.)
-	type Near = { k: number; p: Pt3; parts: [Pt3, Pt3, Pt3]; headR: number };
-	const near: Near[] = [];
-	for (let u = 0.1; u < 0.95; u += 0.05) {
+	for (; n > 0 && w.u < 0.95; n--, w.u += 0.05) {
+		const u = w.u;
 		const t = seg.t0 + (seg.t1 - seg.t0) * u;
 		const tau = u * T;
 		const p = {
@@ -6913,14 +6937,14 @@ const passedBy = (
 			z: a.z + vz * tau - 0.5 * GRAVITY * tau * tau,
 		};
 		for (const tr of menNear(tl, t, p, 3 + BOW_MOST)) {
-			if (ends.has(tr.pid)) {
+			if (w.ends.has(tr.pid)) {
 				continue;
 			}
 			const st = playerAt(tl, tr.pid, t);
 			const body = bodyFor(tr.pid);
 			const me = withBody(st, body);
 			const sk = skeleton(body, poseOf(me));
-			near.push({
+			w.near.push({
 				k: 4 * u * (1 - u),
 				p,
 				parts: [
@@ -6932,6 +6956,30 @@ const passedBy = (
 			});
 		}
 	}
+};
+const passedBy = (
+	tl: CourtTimeline,
+	seg: FlySeg,
+	a: Pt3,
+	b: Pt3,
+	bodyFor: (pid: number) => Body,
+	// Coming off the rim: nobody's hand is on it as it starts, whoever's
+	// is still up there.
+	offRim = false,
+): Pt3 | undefined => {
+	const had = passedBys.get(seg);
+	if (had !== undefined) {
+		return had ?? undefined;
+	}
+	const work = passWorkOf(tl, seg, a, b, bodyFor, offRim);
+	passSteps(tl, seg, work, bodyFor, Infinity);
+	const near = work.near;
+	const along = Math.hypot(b.x - a.x, b.y - a.y);
+	// (Out to his side, across the way it goes.)
+	const side =
+		along > 1e-6
+			? { x: -(b.y - a.y) / along, y: (b.x - a.x) / along }
+			: { x: 0, y: 1 };
 	// Where it is at one of those moments, bowed out `off` (feet): the
 	// nearest of him to it - his head, or the line up his body - how far
 	// it is, and how far it needs to be.
@@ -7018,7 +7066,76 @@ const passedBy = (
 		}
 	}
 	passedBys.set(seg, out ?? null);
+	passWorks.delete(seg);
 	return out;
+};
+
+// Where a flight starts and ends: where the last man had it, or the
+// thrower's hands - and the catcher's (see ballOn).
+const flyEnds = (
+	tl: CourtTimeline,
+	i: number,
+	bodyFor: (pid: number) => Body,
+): [Pt3, Pt3] => {
+	const seg = tl.ball[i] as FlySeg;
+	const prev = tl.ball[i - 1];
+	const end = (p: BallEnd, at: number): Pt3 =>
+		"pid" in p
+			? (p.hand ?? "both") === "both"
+				? heldBall(evalPlayer(tl, p.pid, at), bodyFor(p.pid))
+				: handWorld(
+						evalPlayer(tl, p.pid, at),
+						bodyFor(p.pid),
+						p.hand as "near" | "far",
+					)
+			: p;
+	return [
+		i > 0 &&
+		prev?.kind === "hold" &&
+		"pid" in seg.from &&
+		prev.pid === seg.from.pid
+			? ballOn(tl, i - 1, seg.t0 - BEFORE, bodyFor, 1)
+			: end(seg.from, seg.t0),
+		end(seg.to, seg.t1),
+	];
+};
+
+// A PASS ABOUT TO BE THROWN, WORKED OUT AHEAD. The way it goes by men in
+// its way (see passedBy) a few moments of its flight a frame, in the frames
+// before it is thrown - not all of it in the one frame it leaves his
+// hands. (For the picture, as it plays: see momentAt.)
+const WARM_MS = 600;
+const WARM_STEPS = 2;
+export const warmBall = (
+	tl: CourtTimeline,
+	t: number,
+	bodyFor: (pid: number) => Body,
+) => {
+	if (tl.ball.length === 0) {
+		return;
+	}
+	const i = ballIndexAt(tl, t);
+	for (let j = i + 1; j <= i + 2; j++) {
+		const seg = tl.ball[j];
+		if (!seg || seg.t0 - t > WARM_MS) {
+			return;
+		}
+		if (
+			seg.kind !== "fly" ||
+			tl.ball[j + 1]?.kind === "path" ||
+			passedBys.has(seg)
+		) {
+			continue;
+		}
+		const w = passWorks.get(seg);
+		if (w) {
+			passSteps(tl, seg, w, bodyFor, WARM_STEPS);
+		} else {
+			const [a, b] = flyEnds(tl, j, bodyFor);
+			passWorkOf(tl, seg, a, b, bodyFor, tl.ball[j - 1]?.kind === "path");
+		}
+		return;
+	}
 };
 
 // Where the ball is at t, by the i-th piece of its path.

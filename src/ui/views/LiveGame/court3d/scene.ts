@@ -54,6 +54,7 @@ import {
 	evalPlayer,
 	shownAt,
 	offenseAt,
+	warmBall,
 	recentFx,
 	seatsAt,
 	tensionAt,
@@ -212,6 +213,7 @@ export const momentAt = (
 		}
 	}
 	const ball = { ...evalBall(tl, t, bodyFor), face: ballFaceAt(tl, t) };
+	warmBall(tl, t, bodyFor);
 	// (Whoever has his hands near it, not holding it, has them on it.)
 	for (const p of players) {
 		if (p.pid === ball.holder) {
