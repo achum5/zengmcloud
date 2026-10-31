@@ -6838,7 +6838,7 @@ const facesTo = (tl: CourtTimeline, i: number): Faces => {
 // A PASS GOES BY A MAN IN THE WAY, NOT THROUGH HIM. Thrown past a man
 // between the passer and his man - or out of bounds past one, or dropping
 // out of the net past a man under it - it bows out to the side round his
-// head, his body or a hand he has out, just enough to miss him: past his ear, past his
+// head, his body, a hand he has out or a leg, just enough to miss him: past his ear, past his
 // shoulder - most at the middle of its flight, and not at all leaving the
 // passer's hands or getting to the other man's. (Not a shot, on its way
 // into a play at the rim.) Worked out once a pass, as it was thrown (feet,
@@ -6850,16 +6850,10 @@ const BOW_MOST = 2.2;
 const passedBys = new WeakMap<object, Pt3 | null>();
 type FlySeg = Extract<CourtTimeline["ball"][number], { kind: "fly" }>;
 // Each man near it, each moment of its flight: where it is then, how far
-// out it bows there (for a bow of 1), his head and the line up his body,
-// and his hands. (Near enough that a bow out his way could bring it to him.)
-type Near = {
-	k: number;
-	p: Pt3;
-	parts: [Pt3, Pt3, Pt3];
-	headR: number;
-	hands: [Pt3, Pt3];
-	handR: number;
-};
+// out it bows there (for a bow of 1), and the parts of him it goes by (from,
+// to, how thick): his head, the line up his body, his hands and his legs.
+// (Near enough that a bow out his way could bring it to him.)
+type Near = { k: number; p: Pt3; parts: [Pt3, Pt3, number][] };
 // That worked out a moment at a time (see warmBall): the ends of its
 // flight, the men at them, the men near it so far, and the next moment.
 type PassWork = {
@@ -6951,26 +6945,32 @@ const passSteps = (
 			const body = bodyFor(tr.pid);
 			const me = withBody(st, body);
 			const sk = skeleton(body, poseOf(me));
-			const hand = (arm: Limb) => {
+			const hand = (arm: Limb): [Pt3, Pt3, number] => {
 				const tip = arm.tip ?? arm.end;
-				return bodyPoint(me, {
+				const h = bodyPoint(me, {
 					f: (arm.end.f + tip.f) / 2,
 					s: (arm.end.s + tip.s) / 2,
 					u: (arm.end.u + tip.u) / 2,
 				});
+				return [h, h, body.handR];
 			};
-			w.near.push({
-				k: 4 * u * (1 - u),
-				p,
-				parts: [
-					bodyPoint(me, sk.head),
-					bodyPoint(me, sk.pelvis),
-					bodyPoint(me, sk.chest),
-				],
-				headR: body.headR,
-				hands: [hand(sk.armR), hand(sk.armL)],
-				handR: body.handR,
-			});
+			const head = bodyPoint(me, sk.head);
+			const parts: [Pt3, Pt3, number][] = [
+				[head, head, body.headR],
+				[bodyPoint(me, sk.pelvis), bodyPoint(me, sk.chest), TORSO_R],
+				hand(sk.armR),
+				hand(sk.armL),
+			];
+			for (const leg of [sk.legR, sk.legL]) {
+				const [hip, knee, ankle] = [leg.root, leg.mid, leg.end].map((v) =>
+					bodyPoint(me, v),
+				);
+				parts.push(
+					[hip!, knee!, body.thighR * 0.9],
+					[knee!, ankle!, body.calfR * 0.9],
+				);
+			}
+			w.near.push({ k: 4 * u * (1 - u), p, parts });
 		}
 	}
 };
@@ -7006,35 +7006,31 @@ const passedBy = (
 			y: n.p.y + off.y * n.k,
 			z: n.p.z + off.z * n.k,
 		};
-		const [head, hip, chest] = n.parts;
-		const k = clamp01(
-			((q.x - hip.x) * (chest.x - hip.x) +
-				(q.y - hip.y) * (chest.y - hip.y) +
-				(q.z - hip.z) * (chest.z - hip.z)) /
-				Math.max(
-					1e-6,
-					(chest.x - hip.x) ** 2 +
-						(chest.y - hip.y) ** 2 +
-						(chest.z - hip.z) ** 2,
-				),
-		);
-		const spine = {
-			x: hip.x + (chest.x - hip.x) * k,
-			y: hip.y + (chest.y - hip.y) * k,
-			z: hip.z + (chest.z - hip.z) * k,
-		};
-		return (
-			[
-				[head, n.headR],
-				[spine, TORSO_R],
-				[n.hands[0], n.handR],
-				[n.hands[1], n.handR],
-			] as const
-		).map(([c, r]) => ({
-			r: { x: q.x - c.x, y: q.y - c.y, z: q.z - c.z },
-			d: Math.hypot(q.x - c.x, q.y - c.y, q.z - c.z),
-			need: r + BALL_R + PASS_MARGIN,
-		}));
+		return n.parts
+			.map(([a, b, r]) => {
+				const k = clamp01(
+					((q.x - a.x) * (b.x - a.x) +
+						(q.y - a.y) * (b.y - a.y) +
+						(q.z - a.z) * (b.z - a.z)) /
+						Math.max(
+							1e-6,
+							(b.x - a.x) ** 2 + (b.y - a.y) ** 2 + (b.z - a.z) ** 2,
+						),
+				);
+				return {
+					c: {
+						x: a.x + (b.x - a.x) * k,
+						y: a.y + (b.y - a.y) * k,
+						z: a.z + (b.z - a.z) * k,
+					},
+					r,
+				};
+			})
+			.map(({ c, r }) => ({
+				r: { x: q.x - c.x, y: q.y - c.y, z: q.z - c.z },
+				d: Math.hypot(q.x - c.x, q.y - c.y, q.z - c.z),
+				need: r + BALL_R + PASS_MARGIN,
+			}));
 	};
 	// How far into anybody it goes, bowed out `off`.
 	const into = (off: Pt3) =>
