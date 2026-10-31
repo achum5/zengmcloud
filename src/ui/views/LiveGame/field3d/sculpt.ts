@@ -537,6 +537,9 @@ const BAND_STEPS = 6;
 // A player's bare head, his helmet off - and the helmet in his hand, hung
 // from it (helmet radii).
 const BARE_HEAD = 0.86;
+// The mascot's head (helmet radii - of a head that much bigger, see
+// mascotBody).
+const MASCOT_R = 0.9;
 // (His nose as big as most; his hair standing up off his head from this
 // high (head radii) - full round it, this big round past it.)
 const NOSE_MID = 0.85;
@@ -970,6 +973,27 @@ const build = (
 			SHELL,
 			G_HELMET,
 		);
+	} else if (look.mascot) {
+		// The mascot's head: big and round, a round ear up either side of
+		// the top of it, its muzzle out in front, a nose on the end of that.
+		add(at(0, 0, 0), at(0, 0, 0), [[0, R * MASCOT_R]], SHELL, G_HELMET);
+		for (const sd of [-1, 1]) {
+			add(
+				at(-0.08, sd * 0.6, 0.66),
+				at(-0.02, sd * 0.66, 0.74),
+				[[0, R * 0.24]],
+				SHELL,
+				G_MASK,
+			);
+		}
+		add(
+			at(0.5, 0, -0.34),
+			at(0.68, 0, -0.36),
+			[[0, R * 0.36]],
+			SHELL,
+			G_HELMET,
+		);
+		add(at(1.02, 0, -0.2), at(1.02, 0, -0.2), [[0, R * 0.12]], SHELL, G_MASK);
 	} else if (look.bare) {
 		// His bare head; his helmet hung from his left hand (his right free
 		// to shake with).
@@ -1555,6 +1579,8 @@ type Palette = {
 	whiskers: RGB;
 	// A cheerleader's pom-poms, their strands in two colors.
 	poms?: [RGB, RGB];
+	// The mascot's pale and dark shades of his fur.
+	mascot?: { pale: RGB; dark: RGB };
 };
 
 // A bare head's beard, where his face has one (in the head's frame - see
@@ -1604,6 +1630,49 @@ const scalpAt = (
 		return Math.floor((ls + 1) * 5) % 2 ? scaled(pal.hair, 0.72) : pal.hair;
 	}
 	return pal.hair;
+};
+
+// The mascot's face (in the head's frame - see SHELL - helmet radii): a
+// black nose, the inside of his ears pale, big white eyes with black ones
+// in them under dark brows, a grin across his pale muzzle - the rest fur.
+const NOSE_RGB: RGB = [42, 29, 23];
+const GRIN_RGB: RGB = [120, 30, 36];
+const mascotFace = (
+	pal: Palette,
+	m: { pale: RGB; dark: RGB },
+	lf: number,
+	ls: number,
+	lu: number,
+): RGB => {
+	const as = Math.abs(ls);
+	if (Math.hypot(lf - 1.02, as, lu + 0.2) < 0.15) {
+		return NOSE_RGB;
+	}
+	if (Math.hypot(lf + 0.05, as - 0.63, lu - 0.7) < 0.27) {
+		return lf > 0.04 ? m.pale : pal.skin;
+	}
+	if (lf > 0.5 && lu > -0.02 && lu < 0.36) {
+		const ex = (as - 0.26) / 0.15;
+		const ey = (lu - 0.17) / 0.18;
+		if (ex * ex + ey * ey < 1) {
+			const px = (as - 0.23) / 0.07;
+			const py = (lu - 0.13) / 0.09;
+			return px * px + py * py < 1 ? NOSE_RGB : WHITE_RGB;
+		}
+	}
+	if (lf > 0.5 && lu > 0.38 && lu < 0.46 && as > 0.1 && as < 0.42) {
+		return m.dark;
+	}
+	const muzzle = Math.hypot(
+		Math.max(0, Math.abs(lf - 0.59) - 0.09),
+		as,
+		lu + 0.35,
+	);
+	if (muzzle < 0.39) {
+		const grin = -0.5 + 0.9 * as * as;
+		return as < 0.3 && Math.abs(lu - grin) < 0.04 ? GRIN_RGB : m.pale;
+	}
+	return pal.skin;
 };
 
 const palettes = new WeakMap<FieldLook, Palette>();
@@ -1667,6 +1736,14 @@ const paletteOf = (look: FieldLook): Palette => {
 				: scaled(skin, 0.38),
 		...(look.cheer
 			? { poms: [rgb(look.cheer.poms[0]), rgb(look.cheer.poms[1])] }
+			: {}),
+		...(look.mascot
+			? {
+					mascot: {
+						pale: rgb(look.mascot.pale),
+						dark: rgb(look.mascot.dark),
+					},
+				}
 			: {}),
 	};
 	palettes.set(look, p);
@@ -2258,6 +2335,11 @@ export const sculptFigure = (
 						const lu = (qf * helm.u.f + qs * helm.u.s + qu * helm.u.u) / R;
 						gloss = 1;
 						let c = pal.helmet;
+						if (pal.mascot) {
+							gloss = 0;
+							set(mascotFace(pal, pal.mascot, lf, ls, lu));
+							break;
+						}
 						if (look.bare || pal.poms) {
 							// His face - his eyes, his brows over them, his
 							// mouth; his hair over the top and round the back,

@@ -89,6 +89,10 @@ export type FieldLook = {
 	// top and a skirt, bare arms and legs, and a pom-pom in each hand in
 	// these colors.
 	cheer?: { poms: [string, string] };
+	// The mascot: fur (his skin's color) for skin, and a furry head of his
+	// own - its muzzle and the inside of its ears in the pale shade, its
+	// brows and nose the dark one.
+	mascot?: { pale: string; dark: string };
 };
 
 export type BareHead = {
@@ -563,5 +567,46 @@ export const cheerLook = (kit: FieldKit, seed: string): FieldLook => {
 		jerseyNumber: "",
 		lastName: "",
 		cheer: { poms: [top, trim] },
+	};
+};
+
+// THE HOME TEAM'S MASCOT: fur in a color of the team's - or, the team's own
+// all black or white, an animal's - under the home jersey, the number and
+// the team's name on it, fur down his arms and legs, big shoes in the
+// jersey's color.
+const MASCOT_FURS = ["#7a5230", "#c89a4b", "#8a8f99", "#5b3a29"];
+export const mascotLook = (
+	kit: FieldKit,
+	colors: string[] | undefined,
+	name: string,
+	seed: string,
+): FieldLook => {
+	const rng = makeCourtRng(`mascot|${seed}`);
+	const plain = (c: string) => luminance(c) < 0.1 || luminance(c) > 0.85;
+	const [c0, c1] = [colors?.[0] ?? "#8c1d40", colors?.[1] ?? "#f2c14e"];
+	const fur = !plain(c1)
+		? c1
+		: !plain(c0)
+			? shade(c0, 0.15)
+			: MASCOT_FURS[Math.floor(rng() * MASCOT_FURS.length)]!;
+	return {
+		kit: {
+			...kit,
+			pants: fur,
+			pantsStripes: [],
+			sock: fur,
+			sockStripes: [],
+		},
+		gear: {
+			mask: "open",
+			cleat: kit.jersey,
+			cleatSole: WHITE,
+			cleatAccent: fur,
+		},
+		skin: fur,
+		hair: shade(fur, -0.12),
+		jerseyNumber: rng() < 0.5 ? "00" : "1",
+		lastName: name,
+		mascot: { pale: shade(fur, 0.62), dark: shade(fur, -0.45) },
 	};
 };

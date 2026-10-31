@@ -40,6 +40,7 @@ import { drawFlyingBall, drawLooseBall } from "./ball.ts";
 import { drawFlag } from "./flag.ts";
 import {
 	cheerBody,
+	mascotBody,
 	drawnBody,
 	FIGURE_SCALE,
 	footballBody,
@@ -72,7 +73,12 @@ import {
 import { FIELD_L, type Side } from "./geometry.ts";
 import { sidelineGear } from "./bench.ts";
 import { chainCrewFor } from "./chains.ts";
-import { cheerleadersAt, cheerleadersFor } from "./cheerleaders.ts";
+import {
+	cheerleadersAt,
+	cheerleadersFor,
+	MASCOT_ID,
+	mascotAt,
+} from "./cheerleaders.ts";
 import { confettiFor } from "./confetti.ts";
 import { crewFor } from "./crew.ts";
 import { boardAt, crowdAt } from "./crowd.ts";
@@ -85,6 +91,7 @@ import {
 	fieldKitsFor,
 	officialLook,
 	cheerLook,
+	mascotLook,
 	photographerLook,
 	tvCrewLook,
 	type BareHead,
@@ -803,6 +810,16 @@ const Field3D = ({
 			looks.set(c.id, cheerLook(kits[1], `${gid}|${c.id}`));
 			bodies.set(c.id, drawnBody(cheerBody(c.hgt, c.weight)));
 		}
+		looks.set(
+			MASCOT_ID,
+			mascotLook(
+				kits[1],
+				home?.colors,
+				home?.name ?? home?.region ?? "",
+				String(home?.abbrev ?? home?.tid ?? gid),
+			),
+		);
+		bodies.set(MASCOT_ID, drawnBody(mascotBody()));
 		return { looks, bodies };
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [roster, kits, logos, facesVersion]);
@@ -1141,6 +1158,7 @@ const Field3D = ({
 				...sidelineAt(sidelineRef.current, tl, moment),
 				...snappers,
 				...cheerleadersAt(cheerleadersRef.current, tl, moment),
+				mascotAt(tl, moment),
 			];
 			// (Their new pictures made before anything is drawn: see
 			// prepareFieldSprites.)

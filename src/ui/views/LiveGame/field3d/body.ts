@@ -85,6 +85,14 @@ export const cheerBody = (hgt = 66, weight = 125): Body => {
 	};
 };
 
+// The mascot: a big man in a fur suit, his head half again as big as a
+// man's.
+const MASCOT_HEAD = 1.45;
+export const mascotBody = (): Body => {
+	const b = footballBody(77, 290);
+	return { ...b, headR: b.headR * MASCOT_HEAD };
+};
+
 // Bigger than life on the field, as a game draws them, so a man can be
 // picked out at the broadcast's distance: every length of him this much
 // over. (Only as drawn - where he is and how high anything goes stays

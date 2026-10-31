@@ -270,3 +270,135 @@ export const cheerShotFor = (
 		width: SHOT_WIDTH[group]!,
 	};
 };
+
+// THE MASCOT: the home team's, on its sideline in front of the cheerleaders
+// at the far end from the tunnel. Clapping, hands on his hips, a dance or a
+// fist pumped - one thing a few seconds, then another; turned after the
+// ball while it is live; both arms straight up for a big play of the home
+// team's, and jumping for it after; and at a timeout, and the end of a
+// quarter, the routine with the cheerleaders.
+export const MASCOT_ID = -320;
+const MASCOT_AT: Pt = { x: ROWS_X - 15, y: -SIDE_ROOM + 17 };
+const MASCOT_EVERY = 5000;
+// (Each thing he does now and then, how often of them; an act done over
+// and over, once this long, ms.)
+const MASCOT_IDLE: [Move, number, number][] = [
+	["clap", 0.3, 760],
+	["onHips", 0.5, 0],
+	["griddy", 0.68, 1700],
+	["fistPump", 0.84, 1200],
+	["dance", 1, 0],
+];
+// (Arms up this long before he jumps; how far through the signal that
+// is.)
+const MASCOT_ARMS_UP = 1400;
+const MASCOT_ARMS = 0.5;
+
+const unit = (k: number) => {
+	const x = Math.sin(k * 12.9898 + 78.233) * 43758.5453;
+	return x - Math.floor(x);
+};
+
+const mascotDoing = (
+	tl: FieldTimeline,
+	t: number,
+	ball: Pt | undefined,
+): Doing => {
+	const play = playAt(tl, t);
+	const still = (move: Move, from: number, yaw = FACING_FIELD): Doing => ({
+		move,
+		phase: 0,
+		z: 0,
+		yaw,
+		from,
+	});
+	if (!play) {
+		return still("onHips", -Infinity);
+	}
+	const cheer = cheerAt(tl, t);
+	if (cheer && cheer.side === 1 && cheer.level > UP_LEVEL) {
+		const e = cheer.since;
+		if (e < MASCOT_ARMS_UP) {
+			return { ...still("sigTD", t - e), phase: MASCOT_ARMS };
+		}
+		const phase = ((e - MASCOT_ARMS_UP) / LEAP_MS) % 1;
+		return {
+			move: "leap",
+			phase,
+			z: liftOf("leap", phase),
+			yaw: FACING_FIELD,
+			from: t - e + MASCOT_ARMS_UP,
+		};
+	}
+	const dance = danceFrom(tl, play);
+	if (dance !== undefined && t >= dance && t < play.t1 - DANCE_DONE) {
+		return {
+			...still("dance", dance),
+			phase: ((t - dance) / 1000) * DANCE_RATE,
+		};
+	}
+	const live = play.snap - LIVE_BEFORE;
+	if (t >= live && t < play.whistle + LIVE_AFTER) {
+		let yaw = FACING_FIELD;
+		if (ball) {
+			let d = Math.atan2(ball.y - MASCOT_AT.y, ball.x - MASCOT_AT.x) - yaw;
+			d = Math.atan2(Math.sin(d), Math.cos(d));
+			yaw += Math.max(-WATCH_TURN, Math.min(WATCH_TURN, d));
+		}
+		return still("onHips", live, yaw);
+	}
+	// (One thing or another meanwhile, each its few seconds - from the end
+	// of the last live ball, if that is later.)
+	const k = Math.floor(t / MASCOT_EVERY);
+	const from = Math.max(
+		k * MASCOT_EVERY,
+		t < live ? play.t0 : play.whistle + LIVE_AFTER,
+	);
+	const r = unit(k);
+	const [move, , ms] = MASCOT_IDLE.find(([, p]) => r < p)!;
+	return {
+		...still(move, from),
+		phase:
+			move === "dance"
+				? ((t - from) / 1000) * DANCE_RATE
+				: ms > 0
+					? ((t - from) / ms) % 1
+					: 0,
+	};
+};
+
+export const mascotAt = (
+	tl: FieldTimeline,
+	m: FieldMoment,
+): FieldPlayerState => {
+	const ball = m.focus;
+	const now = mascotDoing(tl, m.t, ball);
+	const st: FieldPlayerState = {
+		id: MASCOT_ID,
+		team: 1,
+		x: MASCOT_AT.x,
+		y: MASCOT_AT.y,
+		z: now.z,
+		yaw: now.yaw,
+		move: now.move,
+		phase: now.phase,
+	};
+	// (Into it from what he was doing.)
+	const into = m.t - now.from;
+	if (into >= BLEND) {
+		return st;
+	}
+	const was = mascotDoing(tl, now.from - 1, ball);
+	if (was.move === now.move && was.yaw === now.yaw) {
+		return st;
+	}
+	const w = 1 - smooth01(into / BLEND);
+	let d = was.yaw - now.yaw;
+	d = Math.atan2(Math.sin(d), Math.cos(d));
+	return {
+		...st,
+		z: now.z * (1 - w) + was.z * w,
+		yaw: now.yaw + d * w,
+		from: { move: was.move, phase: was.phase, w },
+	};
+};

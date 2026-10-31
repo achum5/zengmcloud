@@ -1,6 +1,6 @@
 import { assert, beforeAll, test } from "vitest";
 import { aimFor } from "./aim.ts";
-import { cheerleadersAt, cheerleadersFor } from "./cheerleaders.ts";
+import { cheerleadersAt, cheerleadersFor, mascotAt } from "./cheerleaders.ts";
 import { cheerAt } from "./crowd.ts";
 import { compileField, type FieldTimeline } from "./director.ts";
 import { momentAt, playAt, type FieldMoment } from "./evaluate.ts";
@@ -128,4 +128,51 @@ test("the picture on them now and then for the end of a timeout, and from them t
 		}
 	}
 	assert.isAbove(shots, 0);
+});
+
+test("the mascot in his place in front of them, clear of them and the photographers: watching while the ball is live, the routine at a timeout, arms up and jumping for a big play of the home team's, never the visitors'", () => {
+	let danced = 0;
+	let up = 0;
+	for (const tl of tls) {
+		const first = mascotAt(tl, when(tl, tl.plays[0]!.t0));
+		assert.isBelow(first.y, -LIMIT_LINE - 6);
+		assert.isAbove(first.y, -SIDE_ROOM + 3);
+		for (let gid = 0; gid < 5; gid++) {
+			for (const c of [...cheerleadersFor(gid), ...photographersFor(gid)]) {
+				assert.isAtLeast(Math.hypot(c.at.x - first.x, c.at.y - first.y), 4);
+			}
+		}
+		for (const play of tl.plays) {
+			const at = (t: number) => mascotAt(tl, when(tl, t));
+			const mid = (play.snap + play.whistle) / 2;
+			const cheer = cheerAt(tl, mid);
+			if (!cheer || cheer.since > 4000) {
+				assert.strictEqual(at(mid).move, "onHips", `${play.i}`);
+			}
+			const timeout = play.timeout;
+			if (timeout) {
+				const t = (timeout.cut + play.t1) / 2 + 600;
+				if (!cheerAt(tl, t)) {
+					assert.strictEqual(at(t).move, "dance", `${play.i}`);
+					danced += 1;
+				}
+			}
+			const c = play.cheer;
+			if (c?.big) {
+				const st = at(c.t + 700);
+				const later = at(c.t + 2400);
+				if (c.side === 1) {
+					assert.strictEqual(st.move, "sigTD", `${play.i}`);
+					assert.strictEqual(later.move, "leap", `${play.i}`);
+					up += 1;
+				} else {
+					assert.notInclude(["sigTD", "leap"], st.move, `${play.i}`);
+				}
+			}
+			assert.strictEqual(at(play.snap).x, first.x);
+			assert.strictEqual(at(play.snap).y, first.y);
+		}
+	}
+	assert.isAbove(danced, 0);
+	assert.isAbove(up, 0);
 });
