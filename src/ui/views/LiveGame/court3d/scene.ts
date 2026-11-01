@@ -1649,11 +1649,21 @@ export const drawFrame = (f: Frame) => {
 						);
 						ctx.globalAlpha = 1;
 					}
-					// (Bounced off the floor on his dribble: squashed as it hits.)
+					// (Bounced off the floor - on his dribble, a bounce pass, loose
+					// - squashed as it hits: down there and going up again, not
+					// rolling along it or lying on it.)
+					const low = Math.max(0, 1 - (b.z - BALL_R) / BALL_HIT_Z);
 					const squash =
-						b.holder !== undefined
-							? Math.max(0, 1 - (b.z - BALL_R) / BALL_HIT_Z)
-							: 0;
+						low <= 0
+							? 0
+							: b.holder !== undefined
+								? low
+								: b === f.moment.ball &&
+									  !f.moment.warm &&
+									  evalBall(f.tl, f.moment.t - 15, f.bodyFor).z > b.z + 0.02 &&
+									  evalBall(f.tl, f.moment.t + 15, f.bodyFor).z > b.z + 0.02
+									? low
+									: 0;
 					drawBall(ctx, cam, b, b.roll ?? 0, false, b.rollWay, b.face, squash);
 				},
 			});

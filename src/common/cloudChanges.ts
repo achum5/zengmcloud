@@ -14,7 +14,7 @@ export const CLOUD_CHANGES: CloudChange[] = [
 	{
 		n: 93,
 		date: "2026-11-01",
-		text: "3D game: a dribbled ball squashes against the floor as it hits it.",
+		text: "3D game: the ball squashes against the floor as it bounces - dribbled, bounce-passed or loose.",
 	},
 	{
 		n: 92,
