@@ -762,10 +762,10 @@ const TIP_LEAP = (() => {
 })();
 const TIP_SHORT = 0.5;
 const TIP_TAP: [number, number][] = [
-	[0.2, 0],
-	[0.42, 1],
+	[0.3, 0],
+	[0.46, 1],
 	[0.58, 1],
-	[0.78, 0],
+	[0.74, 0],
 ];
 // The man of theirs who goes up with him for it: from this near where he goes
 // up (feet) he goes up where he is; from as far as RIVAL_IN, he gets in a step
