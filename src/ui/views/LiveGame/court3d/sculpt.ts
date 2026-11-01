@@ -700,15 +700,23 @@ const REACH = new Set<string>(["board", "rebound"]);
 const REACH_UP = 0.3;
 // Hung on the rim this far (see onRim): his hands hooked over it.
 const HOOK_ON = 0.5;
-// A dap: hands clasped, from when to when.
-const DAP = new Map<string, readonly [number, number]>([
-	["dap", [0.28, 0.78]],
-	["dapPat", [0.28, 0.78]],
-	["dapHug", [0.14, 0.86]],
+// Hands clasped with another man's, from when to when, and which: a dap's
+// right hand; both, pulling a man up off the floor or being pulled up.
+const CLASP = new Map<string, readonly [number, number, "R" | "RL"]>([
+	["dap", [0.28, 0.78, "R"]],
+	["dapPat", [0.28, 0.78, "R"]],
+	["dapHug", [0.14, 0.86, "R"]],
+	["helpUp", [0.2, 0.82, "RL"]],
+	["pulledUp", [0.18, 0.8, "RL"]],
 ]);
-const clasped = (st: PlayerState) => {
-	const at = DAP.get(st.anim);
-	return at !== undefined && st.phase > at[0] && st.phase < at[1];
+const clasped = (st: PlayerState, which: "R" | "L") => {
+	const at = CLASP.get(st.anim);
+	return (
+		at !== undefined &&
+		at[2].includes(which) &&
+		st.phase > at[0] &&
+		st.phase < at[1]
+	);
 };
 const gripFor = (st: PlayerState, which: "R" | "L", holding: boolean): Grip => {
 	if (
@@ -1119,7 +1127,7 @@ const build = (
 										? "hook"
 										: splayed(st, which, h)
 											? "splay"
-											: which === "R" && clasped(st)
+											: clasped(st, which)
 												? "clasp"
 												: REACH.has(st.anim) && h.u > REACH_UP
 													? "target"

@@ -29,7 +29,7 @@ export const CLOUD_CHANGES: CloudChange[] = [
 	{
 		n: 97,
 		date: "2026-11-01",
-		text: "3D game: dapping up after the game, the two right hands clasp - fingers wrapped round, thumbs up - not two flat palms.",
+		text: "3D game: dapping up after the game, or pulling a teammate up off the floor, hands clasp - fingers wrapped round, thumbs up - not two flat palms.",
 	},
 	{
 		n: 96,
