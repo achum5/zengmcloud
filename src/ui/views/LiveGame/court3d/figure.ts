@@ -207,6 +207,7 @@ export const drawHeadAt = (
 		OUTLINE * headC.k,
 		turned,
 		yellOf(st),
+		whistleOf(st),
 	);
 };
 // Where his head is on his body, in his pose.
@@ -394,6 +395,8 @@ const profileHead = (
 	// His mouth open (0 to 1): a yell, slamming it home, swatting it away,
 	// flexing after (see yellOf).
 	yell = 0,
+	// An official's whistle in his mouth, blowing it (see whistleOf).
+	whistle = false,
 ) => {
 	const P = (u: number, v: number): P2 => ({
 		x: c.x + turn * u * r,
@@ -778,8 +781,26 @@ const profileHead = (
 		);
 		ctx.stroke();
 	}
+	if (whistle) {
+		// Out past his lips, a lanyard down from it.
+		ctx.fillStyle = INK;
+		ctx.fill(softPoly([P(0.9, 0.41), P(1.2, 0.4), P(1.22, 0.52), P(0.9, 0.5)]));
+	}
 	ctx.lineCap = "butt";
 };
+// An official blowing his whistle: as his fist goes up to stop the clock,
+// and through the first of whatever call he makes.
+const WHISTLES = new Set([
+	"signalHit",
+	"signalHold",
+	"signalBlock",
+	"signalPush",
+	"signalCharge",
+	"signalSide",
+	"travel",
+]);
+export const whistleOf = (st: { anim: string; phase: number }): boolean =>
+	st.anim === "signalUp" || (WHISTLES.has(st.anim) && st.phase < 0.35);
 // How far his mouth is open (0 to 1), by what he is doing: through the
 // slam of a dunk, the swat of a block, a flex or a roar after - and, less
 // open, having words with an official over a call, a coach calling out to
@@ -831,6 +852,8 @@ const drawHead = (
 	turned = 0,
 	// His mouth open (see yellOf).
 	yell = 0,
+	// An official's whistle in his mouth (see whistleOf).
+	whistle = false,
 ) => {
 	const c = { x: middle.x, y: middle.y - r * FACE_LIFT };
 	// Which way his nose points on screen.
@@ -1054,7 +1077,7 @@ const drawHead = (
 		return;
 	}
 	if (front < FACE_FROM + FACE_IN) {
-		profileHead(ctx, c, r, turn as 1 | -1, look, ink, yell);
+		profileHead(ctx, c, r, turn as 1 | -1, look, ink, yell, whistle);
 	}
 	const vis = sprite ? Math.min(1, (front - FACE_FROM) / FACE_IN) : 0;
 	if (!sprite || vis <= 0) {
@@ -1073,7 +1096,15 @@ const drawHead = (
 	ctx.translate(c.x + shift, c.y);
 	ctx.scale(scale * squash, scale);
 	ctx.drawImage(sprite.img, -sprite.cx, -sprite.cy);
-	if (yell > 0.05) {
+	if (whistle) {
+		// His whistle in his mouth, over the one he has (where faces.js puts
+		// it).
+		const h = sprite.h;
+		ctx.fillStyle = INK;
+		ctx.beginPath();
+		ctx.ellipse(0, 0.355 * h, h * 0.045, h * 0.03, 0, 0, Math.PI * 2);
+		ctx.fill();
+	} else if (yell > 0.05) {
 		// Yelling: his mouth open over the one he has - where faces.js puts
 		// it, a third of the way down from the middle of his face - his top
 		// teeth showing, his jaw down a touch with it.
