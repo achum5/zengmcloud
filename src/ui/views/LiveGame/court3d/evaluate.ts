@@ -271,6 +271,9 @@ export type ArmPose = {
 	tuck?: number;
 	// A finger out: pointing.
 	point?: boolean;
+	// Saying something with it (a point, a call for the ball, a wave) - not
+	// an arm on a man.
+	say?: boolean;
 };
 
 // Bounces a second on a dribble, unless a piece of it says otherwise (see
@@ -3894,6 +3897,9 @@ const barArm = (
 	const d = Math.hypot(them.x - here.x, them.y - here.y);
 	return { hand: free, ...reachAt(q, free, d, deg, 0.85, 1.6, up), wr: 0, w };
 };
+// (On his dribble, his forearm across at the other man's chest, low in
+// his stance as the two of them are - not up in his face.)
+const DRIBBLE_BAR_UP = 0.95;
 const engageArm = (
 	tl: CourtTimeline,
 	tr: Track,
@@ -3930,6 +3936,7 @@ const engageArm = (
 			D.at,
 			smooth01((ENGAGE_NEAR - D.d) / 1.4),
 			q,
+			DRIBBLE_BAR_UP,
 		);
 	}
 	if (tr.team === offense) {
@@ -4040,7 +4047,7 @@ const armNow = (
 				)
 			: undefined;
 	return (
-		said ??
+		(said ? { ...said, say: true } : undefined) ??
 		denyArm(tl, tr, t, here, yaw, now.anim) ??
 		engageArm(tl, tr, t, here, yaw, now)
 	);
@@ -4136,6 +4143,7 @@ const easedArm = (
 		w: Math.min(1, w),
 		...(tucked ? { tuck: mean((a) => a.tuck ?? 0) } : {}),
 		...(last.point ? { point: true } : {}),
+		...(mine.some((x) => x.a.say) ? { say: true } : {}),
 	};
 };
 
@@ -4473,7 +4481,10 @@ const TUCK = { sh: 22, el: 105, ab: 14 };
 const ARM_CLEAR = 0.55;
 // And off another man's head, past its size (feet): a hand up in his face
 // is up in front of it, not on it - his fingers short of it too.
-const FACE_CLEAR = 0.4;
+const FACE_CLEAR = 0.7;
+// (His head as it is drawn: a cartoon's, bigger than headR - and his nose
+// out in front of it.)
+const FACE_HEAD = 1.35;
 // AS IT LOOKS. From the main camera - high over the near sideline, the
 // floor under it foreshortened, the men drawn upright on it - a hand a
 // little further off than another man's head is drawn up over his face,
@@ -4483,7 +4494,7 @@ const FACE_CLEAR = 0.4;
 // him.) His face as it is drawn, this many times headR.
 const SEEN_TILT = 0.55;
 const SEEN_DEPTH = 2.5;
-const SEEN_HEAD = 1.45;
+const SEEN_HEAD = 1.55;
 const seenOff = (h: Pt3, head: Pt3): number =>
 	Math.abs(h.y - head.y) > SEEN_DEPTH
 		? Infinity
@@ -4547,6 +4558,9 @@ const NO_TUCK: readonly [number, number] = [0, 0];
 // Up off the floor more than his stride lifts him (feet): in the air, his
 // arms his own.
 const TUCK_AIR = 0.3;
+// (The men near enough across the floor to be in the way of his hands -
+// a man leaning in at him from a step and a half off as well.)
+const TUCK_NEAR = 5;
 const SAYING = 0.2;
 const tuckNow = (
 	tl: CourtTimeline,
@@ -4575,7 +4589,7 @@ const tuckNow = (
 			continue;
 		}
 		const p = spotAt(o, t, false);
-		if (Math.hypot(p.x - st.x, p.y - st.y) < 4) {
+		if (Math.hypot(p.x - st.x, p.y - st.y) < TUCK_NEAR) {
 			near.push(bodyAtStep(tl, o, t));
 		}
 	}
@@ -4589,7 +4603,7 @@ const tuckNow = (
 	// (How far the hand is into the nearest man's body: its room off the
 	// line of his back past ARM_CLEAR, or off his head past its size - the
 	// less of the two.)
-	const headClear = TYPICAL.headR * 0.95 + FACE_CLEAR;
+	const headClear = TYPICAL.headR * FACE_HEAD + FACE_CLEAR;
 	const seenClear = TYPICAL.headR * SEEN_HEAD + FACE_CLEAR;
 	const clear = (arm: Limb): number => {
 		const tip = arm.tip ?? arm.end;
@@ -4619,7 +4633,7 @@ const tuckNow = (
 	};
 	// (Nor an arm saying something - pointing, calling for it, waving him
 	// through: he says it, and away from the man.)
-	const saying = st.arm && st.arm.w > SAYING ? st.arm.hand : undefined;
+	const saying = st.arm?.say && st.arm.w > SAYING ? st.arm.hand : undefined;
 	return [
 		st.dribbleHand === "R" || saying === "R" ? 0 : way(sk0.armR, sk1.armR),
 		st.dribbleHand === "L" || saying === "L" ? 0 : way(sk0.armL, sk1.armL),
