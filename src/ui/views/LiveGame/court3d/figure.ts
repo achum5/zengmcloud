@@ -781,8 +781,12 @@ const profileHead = (
 	ctx.lineCap = "butt";
 };
 // How far his mouth is open (0 to 1), by what he is doing: through the
-// slam of a dunk, the swat of a block, a flex or a roar after.
-const YELLS: Partial<Record<string, [number, number]>> = {
+// slam of a dunk, the swat of a block, a flex or a roar after - and, less
+// open, having words with an official over a call, or a coach calling out
+// to his players (his mouth going each time round).
+const YELLS: Partial<Record<string, [number, number, number?]>> = {
+	protest: [0.1, 0.9, 0.55],
+	talk: [0.1, 0.55, 0.45],
 	dunk: [0.35, 0.95],
 	dunk1: [0.35, 0.95],
 	block: [0.3, 0.85],
@@ -800,7 +804,7 @@ export const yellOf = (st: { anim: string; phase: number }): number => {
 	// (A loop's phase runs on: the yell each time round.)
 	const u = st.phase > 1 ? st.phase % 1 : st.phase;
 	const k = Math.min((u - w[0]) / 0.08, (w[1] - u) / 0.08, 1);
-	return k <= 0 ? 0 : k * k * (3 - 2 * k);
+	return k <= 0 ? 0 : k * k * (3 - 2 * k) * (w[2] ?? 1);
 };
 
 const drawHead = (
