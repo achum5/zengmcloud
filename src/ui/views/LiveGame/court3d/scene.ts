@@ -2221,10 +2221,12 @@ export const boardAt = (tl: CourtTimeline, t: number): BoardScreen => {
 	if (beat?.type === "gameOver") {
 		return "name";
 	}
+	// (Nobody on defense till the ball is tipped.)
 	const stopped =
 		arenaShotAt(tl, t) !== undefined ||
 		beat?.type === "endOfPeriod" ||
-		beat?.type === "timeout";
+		beat?.type === "timeout" ||
+		(beat?.type === "jumpBall" && t < beat.actionStart);
 	if (!stopped && offenseAt(tl, t) === 0) {
 		return Math.floor(t / 420) % 2 ? "defense2" : "defense";
 	}
