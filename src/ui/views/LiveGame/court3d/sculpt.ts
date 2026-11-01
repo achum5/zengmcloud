@@ -1076,7 +1076,9 @@ const build = (
 						? "dribble"
 						: flick
 							? "relaxed"
-							: gripFor(st, which, held !== undefined && !off);
+							: !held && st.palmOn?.[which]
+								? "open"
+								: gripFor(st, which, held !== undefined && !off);
 		// The ball his hand is on, if it is.
 		const cup =
 			held && grip === "ball"

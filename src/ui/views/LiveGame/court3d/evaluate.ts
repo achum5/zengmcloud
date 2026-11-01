@@ -153,6 +153,9 @@ export type PlayerState = {
 	// is off the floor): his hands meet it (see sculpt.ts) - flat on it,
 	// `held` in another man's hands or on his dribble.
 	ballBy?: { x: number; y: number; z: number; held?: boolean };
+	// A hand of his on another man's body - a hand check, an arm bar, boxing
+	// him out - flat on him, its fingers open (see scene.ts, sculpt.ts).
+	palmOn?: { R?: boolean; L?: boolean };
 	// The ball in his hands: how far round from the way he faces it faces
 	// (radians; see facesTo).
 	ballFace?: number;

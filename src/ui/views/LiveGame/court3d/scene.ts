@@ -240,7 +240,83 @@ export const momentAt = (
 			};
 		}
 	}
+	palmsOn(players, bodyFor);
 	return { t, players, ball };
+};
+// A hand of his on another man's body - a hand check, an arm bar, boxing
+// him out, a hand on a teammate's back - flat on him, its fingers open (see
+// sculpt.ts): its middle this near the other man's torso (feet, off its
+// surface), only for men this near each other across the floor, and not a
+// hand busy with the ball.
+const PALM_NEAR = 3.2;
+const PALM_ON = 0.3;
+const palmsOn = (players: PlayerState[], bodyFor: (pid: number) => Body) => {
+	const torsos = new Map<PlayerState, { a: Pt3; b: Pt3; r: number }>();
+	const torsoOf = (q: PlayerState) => {
+		let o = torsos.get(q);
+		if (!o) {
+			const body = bodyFor(q.pid);
+			const sk = skeleton(body, poseOf(q));
+			o = {
+				a: bodyPoint(q, sk.pelvis),
+				b: bodyPoint(q, sk.chest),
+				r: (body.shoulderW + body.depth) / 4,
+			};
+			torsos.set(q, o);
+		}
+		return o;
+	};
+	for (const p of players) {
+		// (Nor a hand swinging past a man as he runs by him.)
+		if (p.holding || p.dribble !== undefined || isGait(p.anim)) {
+			continue;
+		}
+		const near = players.filter(
+			(q) => q !== p && Math.hypot(q.x - p.x, q.y - p.y) < PALM_NEAR,
+		);
+		if (near.length === 0) {
+			continue;
+		}
+		const sk = skeleton(bodyFor(p.pid), poseOf(p));
+		const on: { R?: boolean; L?: boolean } = {};
+		for (const [k, arm] of [
+			["R", sk.armR],
+			["L", sk.armL],
+		] as const) {
+			const tip = arm.tip ?? arm.end;
+			const h = bodyPoint(p, {
+				f: (arm.end.f + tip.f) / 2,
+				s: (arm.end.s + tip.s) / 2,
+				u: (arm.end.u + tip.u) / 2,
+			});
+			for (const q of near) {
+				const T = torsoOf(q);
+				const dx = T.b.x - T.a.x;
+				const dy = T.b.y - T.a.y;
+				const dz = T.b.z - T.a.z;
+				const L2 = dx * dx + dy * dy + dz * dz || 1e-9;
+				const u = Math.max(
+					0,
+					Math.min(
+						1,
+						((h.x - T.a.x) * dx + (h.y - T.a.y) * dy + (h.z - T.a.z) * dz) / L2,
+					),
+				);
+				const d = Math.hypot(
+					h.x - T.a.x - dx * u,
+					h.y - T.a.y - dy * u,
+					h.z - T.a.z - dz * u,
+				);
+				if (d - T.r < PALM_ON) {
+					on[k] = true;
+					break;
+				}
+			}
+		}
+		if (on.R || on.L) {
+			p.palmOn = on;
+		}
+	}
 };
 // How near him the ball is (feet, across the floor), and how far up off his
 // feet at the least, for his hands to meet it - and how near a hand of his
