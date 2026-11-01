@@ -6480,6 +6480,86 @@ const onBall = (sk: Skeleton, st: PlayerState, body: Body): Skeleton => {
 		: { ...sk, armL: mixLimb(sk.armL, hand, t.w) };
 };
 
+// A HAND GOING AT SOMETHING - a hack, a reach in, a poke at his dribble -
+// steered onto it as it gets there (see onBall), not swung through the air
+// beside it: through each move, how far on its way to it the hand is.
+const SWIPES: Partial<Record<AnimName, [number, number][]>> = {
+	hack: [
+		[0.16, 0],
+		[0.38, 1],
+		[0.56, 1],
+		[0.78, 0],
+	],
+	reach: [
+		[0.2, 0],
+		[0.42, 1],
+		[0.58, 1],
+		[0.8, 0],
+	],
+	poke: [
+		[0.14, 0],
+		[0.34, 1],
+		[0.56, 1],
+		[0.76, 0],
+	],
+};
+// (Only what is in reach of his arm - this many times its length from his
+// shoulder - and his hand on the near side of it.)
+const SWIPE_REACH = 1.25;
+// (The men a swipe at a man can be at, across the floor.)
+const SWIPE_NEAR = 6;
+// The ball - another man's, or loose - if it is in reach of the hand he
+// goes at it with; or else the nearest hand of a man of theirs. In his own
+// frame, from his feet, with how far on its way there his hand is.
+export const swipeOnto = (
+	st: PlayerState,
+	body: Body,
+	ball: Pt3 & { holder?: number },
+	others: { st: PlayerState; body: Body }[],
+	teamOf: (pid: number) => number | undefined,
+): PlayerState["tap"] => {
+	const keys = SWIPES[st.anim];
+	if (!keys || st.holding) {
+		return undefined;
+	}
+	const w = keyAt(keys, st.phase);
+	if (w <= 0) {
+		return undefined;
+	}
+	const sk = skeleton(body, poseOf(st));
+	const arm = st.mirror ? sk.armL : sk.armR;
+	const sh = bodyPoint(st, arm.root);
+	const most =
+		(body.upper + body.fore + body.handR * 2.2) * SWIPE_REACH + TAP_SHORT;
+	const near = (p: Pt3) =>
+		Math.hypot(p.x - sh.x, p.y - sh.y, p.z - sh.z) <= most;
+	const theirs =
+		ball.holder === undefined ||
+		(teamOf(ball.holder) !== undefined && teamOf(ball.holder) !== st.team);
+	let at: Pt3 | undefined = theirs && near(ball) ? ball : undefined;
+	if (!at) {
+		let best = Infinity;
+		for (const o of others) {
+			if (
+				o.st === st ||
+				o.st.team === st.team ||
+				Math.hypot(o.st.x - st.x, o.st.y - st.y) > SWIPE_NEAR
+			) {
+				continue;
+			}
+			for (const which of ["near", "far"] as const) {
+				const h = handWorld(o.st, o.body, which);
+				const d = Math.hypot(h.x - sh.x, h.y - sh.y, h.z - sh.z);
+				if (d < best && d <= most) {
+					best = d;
+					at = h;
+				}
+			}
+		}
+	}
+	return at ? { at, w, rel: toBody(st, at) } : undefined;
+};
+
 // Hanging on the rim after a dunk: both hands on the front of it, a
 // shoulder's width apart. (Or up at the ball for the tip - see onBall.)
 export const onRim = (sk: Skeleton, st: PlayerState, body: Body): Skeleton => {

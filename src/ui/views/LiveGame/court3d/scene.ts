@@ -60,6 +60,7 @@ import {
 	warmBall,
 	recentFx,
 	seatsAt,
+	swipeOnto,
 	tensionAt,
 	withBody,
 	type BallState,
@@ -241,6 +242,15 @@ export const momentAt = (
 		}
 	}
 	palmsOn(players, bodyFor);
+	// (A hack, a reach, a poke: onto the ball, or the arm he goes for.)
+	const all = players.map((st) => ({ st, body: bodyFor(st.pid) }));
+	const teamOf = (pid: number) => players.find((q) => q.pid === pid)?.team;
+	for (const { st, body } of all) {
+		const tap = swipeOnto(st, body, ball, all, teamOf);
+		if (tap) {
+			st.tap = tap;
+		}
+	}
 	return { t, players, ball };
 };
 // A hand of his on another man's body - a hand check, an arm bar, boxing

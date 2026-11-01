@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 105,
+		date: "2026-11-01",
+		text: "3D game: a hack, a reach-in or a poke at the dribble lands on the ball or the arm it goes for - the defender's hand meets it, not a swipe at the air beside it.",
+	},
+	{
 		n: 104,
 		date: "2026-11-01",
 		text: "3D game: a real tip-off - the two jumpers crouch set at the circle, the official tosses it and backs out of the way, and the winner goes up with one arm and taps the ball with his hand at the top of his jump while the other man reaches for it. The camera comes in close on the circle for it, and the crowd is on its feet for the opening tip.",
