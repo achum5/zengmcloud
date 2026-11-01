@@ -1365,13 +1365,13 @@ export const drawFrame = (f: Frame) => {
 						alpha: c.up > 0.01 ? c.up : 0,
 					},
 				],
-				24,
-				6,
+				12,
+				4,
 			);
 		}
 		const end = arena.boards.end?.[screen];
 		if (end) {
-			drawTexturedPlane(ctx, cam, END_WALL[side], end, 24, 1);
+			drawTexturedPlane(ctx, cam, END_WALL[side], end, 12, 1);
 		}
 	}
 	// The apron: the court's own color carried out past the lines all the
