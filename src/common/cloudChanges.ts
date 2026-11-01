@@ -14,7 +14,7 @@ export const CLOUD_CHANGES: CloudChange[] = [
 	{
 		n: 104,
 		date: "2026-11-01",
-		text: "3D game: a real tip-off - the two jumpers crouch set at the circle, the official tosses it and backs out of the way, and the winner goes up with one arm and taps the ball with his hand at the top of his jump while the other man reaches for it.",
+		text: "3D game: a real tip-off - the two jumpers crouch set at the circle, the official tosses it and backs out of the way, and the winner goes up with one arm and taps the ball with his hand at the top of his jump while the other man reaches for it. The camera comes in close on the circle for it.",
 	},
 	{
 		n: 103,

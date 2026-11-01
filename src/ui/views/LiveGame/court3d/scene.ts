@@ -1933,6 +1933,17 @@ export const aimFor = (
 			y: fit ? fit.y(width) : 24,
 		};
 	}
+	// The tip: in close on the circle - the two of them going up for it and
+	// the men round it - till the ball has been tipped (and the picture eases
+	// back out with the play).
+	if (beat?.type === "jumpBall" && m.t < beat.actionStart + TIP_HOLD_MS) {
+		const width = fit
+			? Math.max(TIP_MIN_W, fit.min * TIP_SHARE)
+			: narrow
+				? TIP_WIDTH_NARROW
+				: TIP_WIDTH;
+		return { x: COURT_W / 2, width, y: fit ? fit.y(width) : 24 };
+	}
 	// On the ball - but once the game is over, on the players: the
 	// handshakes, the bench out onto the floor, not the ball thrown up and
 	// left lying under a basket.
@@ -2036,6 +2047,11 @@ const aheadX = (tl: CourtTimeline, t: number): number => {
 // line both well in it, and the baseline and the seats behind it in the
 // picture past the rim, the way the side camera has a man at the line.
 const FT_SHARE = 0.66;
+const TIP_SHARE = 0.78;
+const TIP_MIN_W = 34;
+const TIP_WIDTH = 46;
+const TIP_WIDTH_NARROW = 38;
+const TIP_HOLD_MS = 250;
 const FT_MIN_W = 30;
 const FT_WIDTH = 42;
 const FT_WIDTH_NARROW = 34;
