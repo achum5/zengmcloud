@@ -705,10 +705,12 @@ const profileHead = (
 		cut === "bald" || !hairy ? shade(look.skin, -0.5) : shade(look.hair, -0.1);
 	ctx.lineWidth = Math.max(0.8, r * 0.09);
 	ctx.beginPath();
+	// (Yelling, knit: down over his eye toward his nose.)
 	const brow0 = P(0.48, -0.24);
-	const brow1 = P(0.84, -0.22);
+	const brow1 = P(0.84, -0.22 + 0.07 * yell);
 	ctx.moveTo(brow0.x, brow0.y);
-	ctx.quadraticCurveTo(P(0.66, -0.3).x, P(0.66, -0.3).y, brow1.x, brow1.y);
+	const browMid = P(0.66, -0.3 + 0.05 * yell);
+	ctx.quadraticCurveTo(browMid.x, browMid.y, brow1.x, brow1.y);
 	ctx.stroke();
 	if (pro.eyeBlack) {
 		ctx.fillStyle = INK;
