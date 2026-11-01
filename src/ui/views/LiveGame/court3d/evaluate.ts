@@ -4530,6 +4530,9 @@ const tuckedArms = (p: Pose, w: readonly [number, number]): Pose => {
 	};
 };
 const NO_TUCK: readonly [number, number] = [0, 0];
+// Up off the floor more than his stride lifts him (feet): in the air, his
+// arms his own.
+const TUCK_AIR = 0.3;
 const tuckNow = (
 	tl: CourtTimeline,
 	tr: Track,
@@ -4542,7 +4545,7 @@ const tuckNow = (
 		!st.shown ||
 		st.holding ||
 		st.grip !== undefined ||
-		st.z > 0 ||
+		st.z > TUCK_AIR ||
 		(!TUCKS.has(st.anim) && !dribbling)
 	) {
 		return NO_TUCK;
