@@ -3629,7 +3629,11 @@ class Director {
 						? seg.from.pid
 						: back.pid;
 			const R = this.posAt(pid, seg.t0);
-			const flight = Math.max(450, passMs(dist(back.at, R)) * 1.15);
+			// (Off a bounce from near enough; a chest pass, flat, from further -
+			// not lobbed high across the floor.)
+			const d = dist(back.at, R);
+			const bounce = d < OFFICIAL_BOUNCE;
+			const flight = Math.max(450, passMs(d) * (bounce ? 1.2 : 0.85));
 			const t0 = Math.max(seg.t0 - flight, back.since + 300);
 			// (Stood back from it, the ball out in front of him.)
 			const B = BREAK_OFFICIALS[2];
@@ -3639,13 +3643,30 @@ class Director {
 				t1: t0 + 300,
 			});
 			if (t0 < seg.t0 - 100) {
-				this.pushBall({
-					kind: "fly",
-					t0,
-					t1: seg.t0,
-					from: back.at,
-					to: { pid },
-				});
+				if (bounce) {
+					const hit = {
+						x: back.at.x + (R.x - back.at.x) * 0.6,
+						y: back.at.y + (R.y - back.at.y) * 0.6,
+						z: BALL_R,
+					};
+					const tHit = t0 + (seg.t0 - t0) * 0.55;
+					this.pushBall({ kind: "fly", t0, t1: tHit, from: back.at, to: hit });
+					this.pushBall({
+						kind: "fly",
+						t0: tHit,
+						t1: seg.t0,
+						from: hit,
+						to: { pid },
+					});
+				} else {
+					this.pushBall({
+						kind: "fly",
+						t0,
+						t1: seg.t0,
+						from: back.at,
+						to: { pid },
+					});
+				}
 				this.act(pid, "catch", seg.t0 - 90, seg.t0 + 110, {
 					look: { x: back.at.x, y: back.at.y },
 				});
