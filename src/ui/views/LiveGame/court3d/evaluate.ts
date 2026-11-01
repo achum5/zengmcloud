@@ -4533,6 +4533,7 @@ const NO_TUCK: readonly [number, number] = [0, 0];
 // Up off the floor more than his stride lifts him (feet): in the air, his
 // arms his own.
 const TUCK_AIR = 0.3;
+const SAYING = 0.2;
 const tuckNow = (
 	tl: CourtTimeline,
 	tr: Track,
@@ -4602,9 +4603,12 @@ const tuckNow = (
 		const d1 = clear(a1);
 		return d1 > d0 + 0.02 ? clamp01(-d0 / (d1 - d0)) : 1;
 	};
+	// (Nor an arm saying something - pointing, calling for it, waving him
+	// through: he says it, and away from the man.)
+	const saying = st.arm && st.arm.w > SAYING ? st.arm.hand : undefined;
 	return [
-		st.dribbleHand === "R" ? 0 : way(sk0.armR, sk1.armR),
-		st.dribbleHand === "L" ? 0 : way(sk0.armL, sk1.armL),
+		st.dribbleHand === "R" || saying === "R" ? 0 : way(sk0.armR, sk1.armR),
+		st.dribbleHand === "L" || saying === "L" ? 0 : way(sk0.armL, sk1.armL),
 	];
 };
 const tuckSteps = new WeakMap<Track, Map<number, readonly [number, number]>>();
