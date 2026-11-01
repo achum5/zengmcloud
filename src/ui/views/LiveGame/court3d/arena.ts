@@ -2665,6 +2665,10 @@ export const ballAtRim = (ball: Pt3): Side | undefined => {
 
 // The ball (see gameBall.ts): painted a pixel at a time, its print and its
 // channels turning with its spin; where there is nothing to paint on, its
+// (How much wider, and how much flatter, it is at the most against the
+// floor.)
+const BALL_SQUASH_WIDE = 0.08;
+const BALL_SQUASH_FLAT = 0.14;
 // leather shaded and its channels drawn as lines. mirrored: its reflection
 // in the floor (drawn at its mirror image's place).
 export const drawBall = (
@@ -2676,9 +2680,24 @@ export const drawBall = (
 	// The way it spins on, and the way it faces (see ballTurn).
 	way = 0,
 	face?: number,
+	// Squashed against the floor as it hits it (0 to 1): wider, and
+	// flatter on its bottom.
+	squash = 0,
 ) => {
 	const c = project(cam, ball);
 	const r = Math.max(1.6, BALL_R * c.k);
+	if (squash > 0.01) {
+		ctx.save();
+		ctx.translate(c.x, c.y + r);
+		ctx.scale(1 + BALL_SQUASH_WIDE * squash, 1 - BALL_SQUASH_FLAT * squash);
+		ctx.translate(-c.x, -(c.y + r));
+		try {
+			drawBall(ctx, cam, ball, spin, mirrored, way, face);
+		} finally {
+			ctx.restore();
+		}
+		return;
+	}
 	ctx.beginPath();
 	ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
 	ctx.strokeStyle = INK;

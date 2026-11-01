@@ -273,6 +273,9 @@ const atHand = (
 // speed, a stride's legs go round on the picture's own clock instead - a
 // quick, even stride as he goes - eased over from his own between FF_FROM
 // and FF_ALL times real speed.
+// How near the floor (feet, its bottom off it) a dribbled ball is squashed
+// against it.
+const BALL_HIT_Z = 0.12;
 const FF_FROM = 3;
 const FF_ALL = 6;
 // One stride on the picture's clock (ms).
@@ -1646,7 +1649,12 @@ export const drawFrame = (f: Frame) => {
 						);
 						ctx.globalAlpha = 1;
 					}
-					drawBall(ctx, cam, b, b.roll ?? 0, false, b.rollWay, b.face);
+					// (Bounced off the floor on his dribble: squashed as it hits.)
+					const squash =
+						b.holder !== undefined
+							? Math.max(0, 1 - (b.z - BALL_R) / BALL_HIT_Z)
+							: 0;
+					drawBall(ctx, cam, b, b.roll ?? 0, false, b.rollWay, b.face, squash);
 				},
 			});
 		}
