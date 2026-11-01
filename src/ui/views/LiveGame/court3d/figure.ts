@@ -206,6 +206,7 @@ export const drawHeadAt = (
 		head,
 		OUTLINE * headC.k,
 		turned,
+		yellOf(st),
 	);
 };
 // Where his head is on his body, in his pose.
@@ -390,6 +391,9 @@ const profileHead = (
 	turn: 1 | -1,
 	look: Look,
 	ink: number,
+	// His mouth open (0 to 1): a yell, slamming it home, swatting it away,
+	// flexing after (see yellOf).
+	yell = 0,
 ) => {
 	const P = (u: number, v: number): P2 => ({
 		x: c.x + turn * u * r,
@@ -419,12 +423,12 @@ const profileHead = (
 		N(0.93, 0.31),
 		P(0.9, 0.34),
 		P(0.94, 0.4),
-		P(0.84, 0.47),
-		P(0.92, 0.54),
-		P(0.8, 0.64),
-		P(0.9 + full * 0.04, 0.78 + full * 0.06),
-		P(0.7, 0.92 + full * 0.1),
-		P(0.26, 0.86 + full * 0.16),
+		P(0.84 - 0.1 * yell, 0.47 + 0.05 * yell),
+		P(0.92 - 0.02 * yell, 0.54 + 0.16 * yell),
+		P(0.8, 0.64 + 0.14 * yell),
+		P(0.9 + full * 0.04, 0.78 + full * 0.06 + 0.13 * yell),
+		P(0.7, 0.92 + full * 0.1 + 0.11 * yell),
+		P(0.26, 0.86 + full * 0.16 + 0.06 * yell),
 		P(-0.08, 0.64 + full * 0.14),
 		P(-0.58, 0.5),
 		P(-1.0, 0.1),
@@ -738,17 +742,63 @@ const profileHead = (
 		ctx.restore();
 	}
 	ctx.strokeStyle = shade(look.skin, -0.6);
-	ctx.beginPath();
-	const m0 = P(0.9, 0.47);
-	ctx.moveTo(m0.x, m0.y);
-	ctx.quadraticCurveTo(
-		P(0.82, 0.48).x,
-		P(0.82, 0.48).y,
-		P(0.77, 0.46).x,
-		P(0.77, 0.46).y,
-	);
-	ctx.stroke();
+	if (yell > 0.05) {
+		// Open: dark inside, between his lips, back to the corner of it.
+		ctx.fillStyle = "#3a1416";
+		ctx.fill(
+			softPoly([
+				P(0.95, 0.42),
+				P(0.74 - 0.08 * yell, 0.46 + 0.07 * yell),
+				P(0.93 - 0.02 * yell, 0.5 + 0.17 * yell),
+			]),
+		);
+		// (His top teeth, along the top of it.)
+		if (yell > 0.3) {
+			ctx.fillStyle = "#f4efe6";
+			ctx.fill(
+				softPoly([
+					P(0.94, 0.425),
+					P(0.8, 0.46),
+					P(0.81, 0.49),
+					P(0.935, 0.465),
+				]),
+			);
+		}
+	} else {
+		ctx.beginPath();
+		const m0 = P(0.9, 0.47);
+		ctx.moveTo(m0.x, m0.y);
+		ctx.quadraticCurveTo(
+			P(0.82, 0.48).x,
+			P(0.82, 0.48).y,
+			P(0.77, 0.46).x,
+			P(0.77, 0.46).y,
+		);
+		ctx.stroke();
+	}
 	ctx.lineCap = "butt";
+};
+// How far his mouth is open (0 to 1), by what he is doing: through the
+// slam of a dunk, the swat of a block, a flex or a roar after.
+const YELLS: Partial<Record<string, [number, number]>> = {
+	dunk: [0.35, 0.95],
+	dunk1: [0.35, 0.95],
+	block: [0.3, 0.85],
+	flex: [0.05, 0.95],
+	roar: [0.05, 0.95],
+	chestPound: [0.1, 0.9],
+	chestBump: [0.2, 0.8],
+	celebrate: [0.15, 0.85],
+};
+export const yellOf = (st: { anim: string; phase: number }): number => {
+	const w = YELLS[st.anim];
+	if (!w) {
+		return 0;
+	}
+	// (A loop's phase runs on: the yell each time round.)
+	const u = st.phase > 1 ? st.phase % 1 : st.phase;
+	const k = Math.min((u - w[0]) / 0.08, (w[1] - u) / 0.08, 1);
+	return k <= 0 ? 0 : k * k * (3 - 2 * k);
 };
 
 const drawHead = (
@@ -764,6 +814,8 @@ const drawHead = (
 	// And how far it is turned from the way the rest of him faces (radians,
 	// the way his yaw turns: his left is his body's -s).
 	turned = 0,
+	// His mouth open (see yellOf).
+	yell = 0,
 ) => {
 	const c = { x: middle.x, y: middle.y - r * FACE_LIFT };
 	// Which way his nose points on screen.
@@ -987,7 +1039,7 @@ const drawHead = (
 		return;
 	}
 	if (front < FACE_FROM + FACE_IN) {
-		profileHead(ctx, c, r, turn as 1 | -1, look, ink);
+		profileHead(ctx, c, r, turn as 1 | -1, look, ink, yell);
 	}
 	const vis = sprite ? Math.min(1, (front - FACE_FROM) / FACE_IN) : 0;
 	if (!sprite || vis <= 0) {
