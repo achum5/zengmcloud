@@ -4258,7 +4258,12 @@ const playerAt = (
 	const yaw = spinYawAt(tl, tr, t) ?? yawAt(tl, tr, t);
 	const room = shown && !EMBRACES.has(now.anim) ? roomAt(tl, tr, t) : undefined;
 	const armsIn =
-		shown && !bare && TUCKS.has(now.anim) ? tuckAt(tl, tr, t) : undefined;
+		shown &&
+		!bare &&
+		(TUCKS.has(now.anim) ||
+			(now.dribbleHand !== undefined && now.holding !== true))
+			? tuckAt(tl, tr, t)
+			: undefined;
 	const legs = flippedLegs(
 		tl,
 		tr,
@@ -4452,6 +4457,23 @@ const TUCKS = new Set<AnimName>([
 // is (see roomAt): never in a frame.
 const TUCK = { sh: 22, el: 105, ab: 14 };
 const ARM_CLEAR = 0.55;
+// And off another man's head, past its size (feet): a hand up in his face
+// is up in front of it, not on it - his fingers short of it too.
+const FACE_CLEAR = 0.4;
+// AS IT LOOKS. From the main camera - high over the near sideline, the
+// floor under it foreshortened, the men drawn upright on it - a hand a
+// little further off than another man's head is drawn up over his face,
+// and looks to be in it. How far apart the two look (feet), then: across,
+// and up the picture, a foot further off the same as SEEN_TILT feet
+// higher. (Only a step or two apart in depth - further, plainly not near
+// him.) His face as it is drawn, this many times headR.
+const SEEN_TILT = 0.55;
+const SEEN_DEPTH = 2.5;
+const SEEN_HEAD = 1.45;
+const seenOff = (h: Pt3, head: Pt3): number =>
+	Math.abs(h.y - head.y) > SEEN_DEPTH
+		? Infinity
+		: Math.hypot(h.x - head.x, h.z - head.z - SEEN_TILT * (h.y - head.y));
 // Where a man's body is (his hips, chest and head), every ROOM_STEP, without
 // his arms drawn in (they make no odds to it).
 const bodySteps = new WeakMap<
@@ -4514,13 +4536,14 @@ const tuckNow = (
 	t: number,
 ): readonly [number, number] => {
 	const st = playerAt(tl, tr.pid, t, true);
+	// (Dribbling, only his other hand - the arm he keeps his man off with.)
+	const dribbling = st.dribbleHand !== undefined;
 	if (
 		!st.shown ||
 		st.holding ||
 		st.grip !== undefined ||
-		st.dribble !== undefined ||
 		st.z > 0 ||
-		!TUCKS.has(st.anim)
+		(!TUCKS.has(st.anim) && !dribbling)
 	) {
 		return NO_TUCK;
 	}
@@ -4548,7 +4571,8 @@ const tuckNow = (
 	// (How far the hand is into the nearest man's body: its room off the
 	// line of his back past ARM_CLEAR, or off his head past its size - the
 	// less of the two.)
-	const headClear = TYPICAL.headR * 0.95;
+	const headClear = TYPICAL.headR * 0.95 + FACE_CLEAR;
+	const seenClear = TYPICAL.headR * SEEN_HEAD + FACE_CLEAR;
 	const clear = (arm: Limb): number => {
 		const tip = arm.tip ?? arm.end;
 		const h = bodyPoint(st, {
@@ -4562,6 +4586,7 @@ const tuckNow = (
 					toSegment(h, q.hip, q.chest) - ARM_CLEAR,
 					Math.hypot(h.x - q.head.x, h.y - q.head.y, h.z - q.head.z) -
 						headClear,
+					seenOff(h, q.head) - seenClear,
 				),
 			),
 		);
@@ -4574,7 +4599,10 @@ const tuckNow = (
 		const d1 = clear(a1);
 		return d1 > d0 + 0.02 ? clamp01(-d0 / (d1 - d0)) : 1;
 	};
-	return [way(sk0.armR, sk1.armR), way(sk0.armL, sk1.armL)];
+	return [
+		st.dribbleHand === "R" ? 0 : way(sk0.armR, sk1.armR),
+		st.dribbleHand === "L" ? 0 : way(sk0.armL, sk1.armL),
+	];
 };
 const tuckSteps = new WeakMap<Track, Map<number, readonly [number, number]>>();
 const tuckAt = (
