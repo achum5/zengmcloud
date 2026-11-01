@@ -678,9 +678,20 @@ const RELAXED = new Set<string>([
 	"fall",
 	"follow",
 ]);
-// A hand up at a shot or a block: its fingers spread wide.
-const SPLAY = new Set<string>(["contest", "block"]);
+// A hand up at a shot or a block, or slapping a teammate's: its fingers
+// spread wide, palm to it. (A low five's swung down to it.)
+const SPLAY = new Set<string>(["contest", "block", "highFive"]);
 const SPLAY_UP = 0.5;
+const LOW_FIVE = [0.12, 0.62] as const;
+const splayed = (st: PlayerState, which: "R" | "L", h: V3) =>
+	(SPLAY.has(st.anim) && h.u > SPLAY_UP) ||
+	(st.anim === "lowFive" &&
+		which === "R" &&
+		st.phase > LOW_FIVE[0] &&
+		st.phase < LOW_FIVE[1]);
+// Up for a board: both hands spread and cupped for the ball.
+const REACH = new Set<string>(["board", "rebound"]);
+const REACH_UP = 0.3;
 // A dap: hands clasped, from when to when.
 const DAP = new Map<string, readonly [number, number]>([
 	["dap", [0.28, 0.78]],
@@ -1093,13 +1104,15 @@ const build = (
 							? "relaxed"
 							: !held && st.palmOn?.[which]
 								? "open"
-								: // Up at a shot, fingers wide and straight.
-									!held && SPLAY.has(st.anim) && h.u > SPLAY_UP
-									? "splay"
-									: // Dapping a man up: his right hand round the other's.
-										!held && which === "R" && clasped(st)
-										? "clasp"
-										: gripFor(st, which, held !== undefined && !off);
+								: held
+									? gripFor(st, which, !off)
+									: splayed(st, which, h)
+										? "splay"
+										: which === "R" && clasped(st)
+											? "clasp"
+											: REACH.has(st.anim) && h.u > REACH_UP
+												? "target"
+												: gripFor(st, which, false);
 		// The ball his hand is on, if it is.
 		const cup =
 			held && grip === "ball"
