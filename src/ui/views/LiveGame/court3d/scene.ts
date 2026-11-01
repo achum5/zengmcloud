@@ -1590,6 +1590,7 @@ export const drawFrame = (f: Frame) => {
 			dunk: fxLevel(tl, t, "dunk", 1100, side),
 			big: recentFx(tl, t, ["dunk"], 1100, side)?.big,
 			out,
+			...(atRim.includes(side) ? { ball: loose[atRim.indexOf(side)]! } : {}),
 			t,
 		};
 		items.push({

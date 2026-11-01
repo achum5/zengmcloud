@@ -2220,6 +2220,14 @@ export const paintStanchionPanel = (
 	return canvas;
 };
 
+// The net round a ball in it: how near the middle of the rim the ball has
+// to be (feet, across) for the net to have it, how far down it pulls the
+// bottom of the net (feet), and how far off the ball's middle the net goes
+// round it (its radius, and the cord).
+const NET_IN = 0.9;
+const NET_DRAG = 0.35;
+const NET_ROUND = 0.39 + 0.06;
+const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 export type HoopFx = {
 	// 0..1, fading: the net snapping up after a make, the iron ringing after a
 	// miss, the rim bent by a dunk.
@@ -2231,6 +2239,9 @@ export type HoopFx = {
 	// The period's clock run out: the lights round the edge of the glass on,
 	// red (see drawHoop).
 	out?: boolean;
+	// The ball at this rim, if it is: the net goes round it, and is pulled
+	// down by it going through.
+	ball?: Pt3;
 	t: number;
 };
 
@@ -2501,8 +2512,37 @@ export const drawHoop = (
 		// After a make the net whips up and sways; a dunk yanks it down first.
 		const lift = fx.swish * 0.75 - ringing * 0.5 * Math.cos(fx.t / 40);
 		const sway = (fx.swish * 0.12 + ringing * 0.1) * Math.sin(fx.t / 45);
-		const mid = ring(RIM_R * 0.78, rz - 0.75 + lift * 0.5, sway * 0.5);
-		const bottom = ring(RIM_R * 0.6, rz - 1.55 + lift, sway);
+		// The ball in it: in the net's way down through the iron, it pulls
+		// the net down with it - the bottom most, as it gets down there -
+		// and the net goes round it, not through it.
+		const B = fx.ball;
+		const across = B ? Math.hypot(B.x - rx, B.y - (25 + rock)) : Infinity;
+		const inNet = B
+			? clamp01((NET_IN - across) / 0.3) *
+				clamp01((rz + 0.1 - B.z) / 0.4) *
+				clamp01((B.z - (rz - 1.55 - 0.7)) / 0.4)
+			: 0;
+		const drag = B ? inNet * clamp01((rz - 0.5 - B.z) / 0.7) : 0;
+		const mid = ring(
+			RIM_R * 0.78,
+			rz - 0.75 + lift * 0.5 - NET_DRAG * 0.4 * drag,
+			sway * 0.5,
+		);
+		const bottom = ring(RIM_R * 0.6, rz - 1.55 + lift - NET_DRAG * drag, sway);
+		if (B && inNet > 0) {
+			for (const q of [...mid, ...bottom]) {
+				const vx = q.x - B.x;
+				const vy = q.y - B.y;
+				const d = Math.hypot(vx, vy);
+				const dz = q.z - B.z;
+				const need = Math.sqrt(Math.max(0, NET_ROUND ** 2 - dz * dz));
+				if (d < need && d > 1e-4) {
+					const k = 1 + ((need - d) / d) * inNet;
+					q.x = B.x + vx * k;
+					q.y = B.y + vy * k;
+				}
+			}
+		}
 		// Back half: the side of the ring away from the camera - the far
 		// side from the sideline, the court side from behind the baseline.
 		const near = Math.atan2(cam.pos.y - (25 + rock), cam.pos.x - rx);
