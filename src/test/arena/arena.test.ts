@@ -48,6 +48,7 @@ import {
 	strengthSettings,
 	type ValueRatings,
 	rosterParts,
+	valueOverReplacement,
 } from "../../worker/core/realisticFrontOffice/strength.ts";
 import { inGameOrder, play, toSimTeam } from "../impact/simTools.ts";
 import {
@@ -747,6 +748,17 @@ test.runIf(env.ARENA_RUN === "1")(
 							pick: p.draft.pick,
 							tid: p.draft.tid,
 							ovr: p.ratings.map((r) => [r.season, r.ovr]),
+							// What he added to winning each season by the strength model
+							// (points a game a full game on the floor, over a minimum
+							// player) - what the front offices draft for.
+							impact: p.ratings.map((r) => [
+								r.season,
+								Math.round(
+									valueOverReplacement(
+										playerLine(r as unknown as ValueRatings, r.pos),
+									) * 100,
+								) / 100,
+							]),
 							pot: then?.pot,
 							proj,
 						});

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 106,
+		date: "2026-11-01",
+		text: "Realistic Front Offices: CPU teams draft the most talented prospect more often instead of reaching for a position they're short at (point guards especially). Position fit now only decides between prospects who are about equally good.",
+	},
+	{
 		n: 105,
 		date: "2026-11-01",
 		text: "3D game: a hack, a reach-in or a poke at the dribble lands on the ball or the arm it goes for - the defender's hand meets it, not a swipe at the air beside it.",

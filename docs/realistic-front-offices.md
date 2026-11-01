@@ -730,6 +730,16 @@ can keep the mode's front offices with the free agency it knows:
   ratings through the same projections and title odds as everything else, on
   the rookie deal of the pick, so talent rules and fit and timeline break
   near-ties - a rebuilding team leans to upside.
+- **Talent first** (owner's call, as above): prospects are ranked with the
+  floor's positions left out - he plays for rosters years away, reshaped by
+  then - and positions choose only among those within 5% of the best. With
+  positions in full, a roster's guard shortage had teams take a point guard
+  over a better player (19% of first-rounders were point guards; stock 15%).
+  Draft lab (12 leagues, the whole class drafted each way, each pick's
+  expected impact in years 2-4 from the game's own development sims, slot by
+  slot): talent first takes 0.08 ± 0.05 points a game more than before in
+  the first round and 0.13 ± 0.06 more than stock's best-rated (before, 0.05
+  ± 0.06 more than stock); the second round alike.
 - **From the lottery on, the draft's picks are priced by the actual class**
   (owner's call): by who would go there off a board of the class by what each
   prospect is generally worth, kept up to date as players are taken - not by
