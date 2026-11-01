@@ -652,7 +652,8 @@ type Grip =
 	| "ball"
 	| "target"
 	| "dribble"
-	| "splay";
+	| "splay"
+	| "clasp";
 
 // Running, his hands are loose fists; with the ball, spread on it; pointing,
 // a finger out; strolling or standing about, relaxed, fingers a little
@@ -680,6 +681,16 @@ const RELAXED = new Set<string>([
 // A hand up at a shot or a block: its fingers spread wide.
 const SPLAY = new Set<string>(["contest", "block"]);
 const SPLAY_UP = 0.5;
+// A dap: hands clasped, from when to when.
+const DAP = new Map<string, readonly [number, number]>([
+	["dap", [0.28, 0.78]],
+	["dapPat", [0.28, 0.78]],
+	["dapHug", [0.14, 0.86]],
+]);
+const clasped = (st: PlayerState) => {
+	const at = DAP.get(st.anim);
+	return at !== undefined && st.phase > at[0] && st.phase < at[1];
+};
 const gripFor = (st: PlayerState, which: "R" | "L", holding: boolean): Grip => {
 	if (
 		(st.arm?.point && st.arm.hand === which && st.arm.w > 0.5) ||
@@ -1085,7 +1096,10 @@ const build = (
 								: // Up at a shot, fingers wide and straight.
 									!held && SPLAY.has(st.anim) && h.u > SPLAY_UP
 									? "splay"
-									: gripFor(st, which, held !== undefined && !off);
+									: // Dapping a man up: his right hand round the other's.
+										!held && which === "R" && clasped(st)
+										? "clasp"
+										: gripFor(st, which, held !== undefined && !off);
 		// The ball his hand is on, if it is.
 		const cup =
 			held && grip === "ball"
@@ -1120,9 +1134,12 @@ const build = (
 			const k = w * w * (3 - 2 * w);
 			palmN = unit(square(lerpV(palmN, onto, k), h), palmN);
 		}
-		// Up at a shot: palm to it.
+		// Up at a shot: palm to it. In a clasp, thumb up, palm to the
+		// other man's.
 		if (grip === "splay") {
 			palmN = unit(square(fwd, h), palmN);
+		} else if (grip === "clasp") {
+			palmN = unit(square(addV(inward, fwd, 0.3), h), palmN);
 		}
 		// A pass let go: palms out, thumbs down.
 		if (
@@ -1260,7 +1277,9 @@ const build = (
 									? [0.18, 0.3, 0.2]
 									: grip === "splay"
 										? [-0.08, 0.03, 0.02]
-										: [0.04 + 0.02 * i, 0.08, 0.05];
+										: grip === "clasp"
+											? [0.5 + 0.05 * i, 0.8, 0.55]
+											: [0.04 + 0.02 * i, 0.08, 0.05];
 		const spread =
 			grip === "ball" || grip === "target"
 				? 0.22
@@ -1313,7 +1332,7 @@ const build = (
 		thumbAt[side] = tBase;
 		const tLen = L * 0.36;
 		const thumb =
-			grip === "fist" || grip === "point"
+			grip === "fist" || grip === "point" || grip === "clasp"
 				? (() => {
 						const tip = addV(addV(knuckles, palmN, H * 0.016), ts, halfW * 0.1);
 						const mid = addV(lerpV(tBase, tip, 0.5), palmN, H * 0.006);
