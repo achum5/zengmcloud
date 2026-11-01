@@ -12,6 +12,16 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 109,
+		date: "2026-11-01",
+		text: "3D game: a heave from way out - farther than any jumper - goes up two-handed like a floater: the ball brought up from his waist and pushed up and out at the rim off both hands, lofted, not thrown.",
+	},
+	{
+		n: 108,
+		date: "2026-11-01",
+		text: "3D game: scoring off an assist, the scorer turns and points at the man who found him - easy about it, the arm loose and the elbow bent, not stuck out straight - or points back at him on his way down the floor.",
+	},
+	{
 		n: 107,
 		date: "2026-11-01",
 		text: "3D game: a dribbler's free arm is a forearm across at his man's chest, and it comes in off the man's face when they are right up on each other - no more hand on the defender's nose.",

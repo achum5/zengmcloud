@@ -249,6 +249,8 @@ export type Gesture = {
 	at?: number | Pt;
 	// A follow-through off his left hand.
 	mirror?: true;
+	// Easy about it: a point with the arm loose, the elbow bent.
+	easy?: true;
 };
 export type Track = {
 	pid: number;
@@ -802,6 +804,9 @@ const BACK_FACING = 0.6;
 // stopped at half court where the ball comes up: as far as this from it -
 // to no nearer than this.
 const BACK_REACT = 250;
+// Off an assist, how long he points back at the man who found him on his
+// way down the floor (ms).
+const THANKS_MS = 1200;
 // A man off the mark late among others (see stagger) still gets there in
 // time, so long as that is no quicker than this many times the quickest he
 // could - a run back after a steal, flat out already, too.
@@ -1733,6 +1738,7 @@ const IN_PLACE = new Set<AnimName>([
 	"protest",
 	"hips",
 	"point",
+	"thanks",
 	"flex",
 	"roar",
 	"chestPound",
@@ -3614,6 +3620,7 @@ class Director {
 		at?: number | Pt,
 		p = 1,
 		mirror = false,
+		easy = false,
 	) {
 		const tr = this.track(pid);
 		if (!tr || t1 - t0 < 300 || hash01(pid, t0) >= p) {
@@ -3627,6 +3634,7 @@ class Director {
 				? {}
 				: { at: typeof at === "number" ? at : { x: at.x, y: at.y } }),
 			...(mirror ? { mirror: true as const } : {}),
+			...(easy ? { easy: true as const } : {}),
 		});
 	}
 
@@ -15814,9 +15822,11 @@ class Director {
 				typeof e.pidAst === "number" && e.pidAst !== shot.pid
 					? e.pidAst
 					: undefined;
+			let thanked = false;
 			if (!shot.dunk && !andOne && assist !== undefined && this.rng() < 0.55) {
-				// A finger at the man who found him.
-				this.react(shot.pid, "point", free + 100, 800, this.posOf(assist));
+				// A finger at the man who found him - turned to him, easy about it.
+				this.react(shot.pid, "thanks", free + 100, 800, this.posOf(assist));
+				thanked = true;
 			} else if (big || this.rng() < 0.3) {
 				// (A three: his own way of it, every time - a finger at the
 				// bench, or both arms up. A dunk or an and-one: a roar or a
@@ -15831,7 +15841,10 @@ class Director {
 						? (own ?? "flex")
 						: shot.zone === "three"
 							? this.threeCelebration(shot.pid)
-							: "point";
+							: assist !== undefined
+								? "thanks"
+								: "point";
+				thanked = cel === "thanks";
 				// Or, after a dunk or an and-one, the nearest man on his team
 				// comes over and they meet in the air, chest to chest.
 				const S = this.posOf(shot.pid);
@@ -15847,8 +15860,26 @@ class Director {
 				} else {
 					this.act(shot.pid, cel, free + 100, free + 900, {
 						face: -dir as 1 | -1,
+						...(cel === "thanks" && assist !== undefined
+							? { look: this.posOf(assist) }
+							: {}),
 					});
 				}
+			}
+			// Off an assist, whatever else: a finger at the man who found him on
+			// his way back down the floor - easy about it, the arm loose.
+			if (assist !== undefined && !thanked) {
+				const from = Math.max(free, this.free.get(shot.pid) ?? 0) + 100;
+				this.gesture(
+					shot.pid,
+					"point",
+					from,
+					from + THANKS_MS,
+					assist,
+					1,
+					false,
+					true,
+				);
 			}
 			// The man who fouled him wants to know what for; the man he dunked
 			// on stands there, hands on his hips.

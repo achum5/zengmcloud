@@ -4252,6 +4252,29 @@ export const ANIMS = {
 			[1, P.stance],
 		],
 	},
+	// A finger at the man who found him: turned to him, the arm out at him
+	// easy - the elbow bent, not stuck out straight - a little flick of it,
+	// and down.
+	thanks: {
+		kind: "act",
+		n: 6,
+		keys: [
+			[0, P.ready],
+			[
+				0.28,
+				pose({ shN: 76, elN: 36, abN: 8, wrN: 8, shF: 10, elF: 24, lean: 1 }),
+			],
+			[
+				0.46,
+				pose({ shN: 84, elN: 26, abN: 8, wrN: -6, shF: 10, elF: 24, lean: 1 }),
+			],
+			[
+				0.74,
+				pose({ shN: 78, elN: 34, abN: 8, wrN: 4, shF: 10, elF: 24, lean: 1 }),
+			],
+			[1, P.ready],
+		],
+	},
 	// One arm up, pointing at the crowd.
 	point: {
 		kind: "act",
@@ -5324,11 +5347,13 @@ export const ANIMS = {
 			[1, P.ready],
 		],
 	},
-	// A HEAVE from way out as time runs out - no jumper: on the last stride
-	// the ball taken back over his head in both hands, and thrown, the whole
-	// of him in it, up and out at the rim; on through after it, a hop off
-	// the front foot, his back leg up behind him, and down a step on (see
-	// HEAVE in director.ts).
+	// A HEAVE from way out - farther than any jumper - as time runs out: a
+	// two-handed floater from deep. On the last stride the ball brought up
+	// in both hands from down at his waist, his legs under him, and pushed
+	// up and out at the rim off both hands together - lofted, not thrown -
+	// the arms going on up after it and the wrists snapped over; a hop off
+	// the front foot as it goes, and down a step on (see HEAVE in
+	// director.ts).
 	heave: {
 		kind: "act",
 		n: 10,
@@ -5342,66 +5367,78 @@ export const ANIMS = {
 					kneeF: 40,
 					shN: 40,
 					elN: 95,
-					shF: 34,
-					elF: 100,
-					lean: 14,
+					shF: 40,
+					elF: 95,
+					lean: 12,
 				}),
 			],
 			[
-				0.24,
+				0.22,
+				pose({
+					hipN: -6,
+					kneeN: 52,
+					hipF: 22,
+					kneeF: 54,
+					shN: 22,
+					elN: 84,
+					shF: 22,
+					elF: 84,
+					abN: 6,
+					abF: 6,
+					lean: 16,
+				}),
+			],
+			[
+				0.36,
 				pose({
 					hipN: -14,
 					kneeN: 30,
-					hipF: 30,
-					kneeF: 28,
-					shN: 170,
+					hipF: 26,
+					kneeF: 30,
+					shN: 96,
 					elN: 80,
-					shF: 164,
-					elF: 84,
-					lean: -8,
-				}),
-			],
-			[
-				0.38,
-				pose({
-					hipN: -20,
-					kneeN: 22,
-					hipF: 34,
-					kneeF: 34,
-					shN: 162,
-					elN: 40,
-					shF: 156,
-					elF: 44,
-					lean: 4,
+					shF: 96,
+					elF: 80,
+					abN: 8,
+					abF: 8,
+					lean: 6,
 				}),
 			],
 			[
 				0.48,
 				pose({
-					hipN: -26,
+					hipN: -22,
 					kneeN: 14,
-					hipF: 30,
-					kneeF: 22,
-					shN: 136,
-					elN: 4,
-					shF: 130,
-					elF: 8,
-					lean: 16,
-					toe: 0.5,
+					hipF: 28,
+					kneeF: 20,
+					shN: 140,
+					elN: 26,
+					wrN: -14,
+					shF: 140,
+					elF: 26,
+					wrF: -14,
+					abN: 8,
+					abF: 8,
+					lean: 4,
+					toe: 0.6,
 				}),
 			],
 			[
 				0.62,
 				pose({
-					hipN: -36,
-					kneeN: 54,
-					hipF: 18,
-					kneeF: 14,
-					shN: 114,
-					elN: 6,
-					shF: 106,
-					elF: 10,
-					lean: 22,
+					hipN: -30,
+					kneeN: 34,
+					hipF: 22,
+					kneeF: 16,
+					shN: 150,
+					elN: 12,
+					wrN: -62,
+					shF: 150,
+					elF: 12,
+					wrF: -62,
+					abN: 10,
+					abF: 10,
+					lean: 8,
 					toe: 1,
 				}),
 			],
@@ -5412,11 +5449,13 @@ export const ANIMS = {
 					kneeN: 34,
 					hipF: 14,
 					kneeF: 36,
-					shN: 70,
+					shN: 96,
 					elN: 22,
-					shF: 60,
-					elF: 26,
-					lean: 14,
+					shF: 92,
+					elF: 24,
+					abN: 12,
+					abF: 12,
+					lean: 10,
 				}),
 			],
 			[

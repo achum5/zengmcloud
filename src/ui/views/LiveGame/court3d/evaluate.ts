@@ -2457,6 +2457,7 @@ const STANDING = new Set<AnimName>([
 	"celebrate",
 	"protest",
 	"point",
+	"thanks",
 	"clap",
 	"talk",
 ]);
@@ -3622,7 +3623,19 @@ const armAt = (
 		Math.min(95, ((hand === "R" ? bearing : -bearing) * 180) / Math.PI),
 	);
 	if (g.kind === "point") {
-		return { hand, sh: 98, el: 4, ab: out, wr: 8, w, point: true };
+		// (Easy about it: the arm loose, the elbow bent, out at him at his
+		// chest - a little flick of it.)
+		return g.easy
+			? {
+					hand,
+					sh: 80 + 5 * Math.sin(u * Math.PI * 3),
+					el: 32,
+					ab: out * 0.9,
+					wr: 8,
+					w,
+					point: true,
+				}
+			: { hand, sh: 98, el: 4, ab: out, wr: 8, w, point: true };
 	}
 	if (g.kind === "bar") {
 		// A forearm in a man's back: out in front of him, bent, at his chest.
@@ -5605,6 +5618,7 @@ const PIVOTS = new Set<AnimName>([
 	"stanceHands",
 	"stancePoint",
 	"point",
+	"thanks",
 	"crossed",
 	"clap",
 	"hips",

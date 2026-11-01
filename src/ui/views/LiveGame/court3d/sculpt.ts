@@ -748,7 +748,10 @@ const clasped = (st: PlayerState, which: "R" | "L") => {
 const gripFor = (st: PlayerState, which: "R" | "L", holding: boolean): Grip => {
 	if (
 		(st.arm?.point && st.arm.hand === which && st.arm.w > 0.5) ||
-		(which === "R" && (st.anim === "point" || st.anim === "stancePoint"))
+		(which === "R" &&
+			(st.anim === "point" ||
+				st.anim === "stancePoint" ||
+				(st.anim === "thanks" && st.phase > 0.15 && st.phase < 0.85)))
 	) {
 		return "point";
 	}
