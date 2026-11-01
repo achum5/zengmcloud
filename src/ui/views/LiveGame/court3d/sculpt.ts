@@ -654,7 +654,8 @@ type Grip =
 	| "dribble"
 	| "splay"
 	| "clasp"
-	| "hook";
+	| "hook"
+	| "three";
 
 // Running, his hands are loose fists; with the ball, spread on it; pointing,
 // a finger out; strolling or standing about, relaxed, fingers a little
@@ -698,6 +699,20 @@ const splayed = (st: PlayerState, which: "R" | "L", h: V3) =>
 // Up for a board: both hands spread and cupped for the ball.
 const REACH = new Set<string>(["board", "rebound"]);
 const REACH_UP = 0.3;
+// AN OFFICIAL'S HANDS, as the signal has them: the whistle a fist straight
+// up; a charge a fist punched out; a travel the fists rolled; a three
+// three fingers up; a push both palms out.
+const SIGNAL_UP = 0.5;
+const signalOf = (anim: string, up: number): Grip | undefined =>
+	anim === "signalCharge" || anim === "travel"
+		? "fist"
+		: anim === "signalUp" && up > SIGNAL_UP
+			? "fist"
+			: anim === "threeUp" && up > SIGNAL_UP
+				? "three"
+				: anim === "signalPush"
+					? "splay"
+					: undefined;
 // Hung on the rim this far (see onRim): his hands hooked over it.
 const HOOK_ON = 0.5;
 // Hands clasped with another man's, from when to when, and which: a dap's
@@ -1131,7 +1146,8 @@ const build = (
 												? "clasp"
 												: REACH.has(st.anim) && h.u > REACH_UP
 													? "target"
-													: gripFor(st, which, false);
+													: (signalOf(st.anim, h.u) ??
+														gripFor(st, which, false));
 		// The ball his hand is on, if it is.
 		const cup =
 			held && grip === "ball"
@@ -1297,9 +1313,11 @@ const build = (
 			}
 		};
 		const restOf = (i: number): number[] =>
-			grip === "fist" || (grip === "point" && i > 0)
+			grip === "fist" ||
+			(grip === "point" && i > 0) ||
+			(grip === "three" && i > 2)
 				? [1.45, 1.75, 1.05]
-				: grip === "point"
+				: grip === "point" || grip === "three"
 					? [0.02, 0.04, 0.02]
 					: grip === "relaxed"
 						? [0.24 + 0.06 * i, 0.5 + 0.08 * i, 0.32 + 0.05 * i]
@@ -1328,7 +1346,7 @@ const build = (
 							: grip === "relaxed"
 								? 0.05
 								: 0.02;
-		if (fingerR * kMid < 0.9 && grip !== "point" && !ball) {
+		if (fingerR * kMid < 0.9 && grip !== "point" && grip !== "three" && !ball) {
 			// Too small to tell apart: the four as one, flat like the palm,
 			// bent as the middle two are.
 			for (const o of [-1, 1]) {
@@ -1368,7 +1386,11 @@ const build = (
 		thumbAt[side] = tBase;
 		const tLen = L * 0.36;
 		const thumb =
-			grip === "fist" || grip === "point" || grip === "clasp" || grip === "hook"
+			grip === "fist" ||
+			grip === "point" ||
+			grip === "three" ||
+			grip === "clasp" ||
+			grip === "hook"
 				? (() => {
 						const tip = addV(addV(knuckles, palmN, H * 0.016), ts, halfW * 0.1);
 						const mid = addV(lerpV(tBase, tip, 0.5), palmN, H * 0.006);
