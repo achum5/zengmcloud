@@ -57,14 +57,8 @@ import {
 	type CourtTimeline,
 	type Stakes,
 } from "./director.ts";
-import { crewAt, crewBody, crewFor } from "./crew.ts";
-import {
-	headColors,
-	loadHead,
-	mascotHead,
-	profileOf,
-	type HeadSprite,
-} from "./faces.ts";
+import { crewAt, crewFor } from "./crew.ts";
+import { headColors, loadHead, profileOf, type HeadSprite } from "./faces.ts";
 import { arenaSpecFor } from "./arenaSpec.ts";
 import { crowdFaces, type CrowdFace } from "./crowdFaces.ts";
 import { gearFor, kitsFor, shade, type Look } from "./figure.ts";
@@ -855,12 +849,7 @@ const Court3D = ({
 				}
 				const team =
 					m.role === "coach" ? (m.team === 0 ? away : home) : undefined;
-				crewHeads.current.set(
-					m.pid,
-					m.fur
-						? await mascotHead(m.fur)
-						: await loadHead(m.face, team?.colors),
-				);
+				crewHeads.current.set(m.pid, await loadHead(m.face, team?.colors));
 				await new Promise((resolve) => setTimeout(resolve, 0));
 			}
 			if (alive) {
@@ -890,14 +879,13 @@ const Court3D = ({
 							? (m.team === 0 ? away : home)?.colors
 							: undefined,
 					),
-					...(m.fur ? { fur: m.fur } : {}),
-					jerseyNumber: m.shirt?.number ?? "",
+					jerseyNumber: "",
 					name: "",
 					lastName: "",
-					wordmark: m.shirt?.wordmark ?? "",
+					wordmark: "",
 					head: head?.sprite,
 				},
-				body: crewBody(m),
+				body: bodyOf(m.hgt, m.weight),
 			});
 		}
 		return out;
@@ -1600,7 +1588,6 @@ const Court3D = ({
 					return c ? [{ st, body: c.body, look: c.look }] : [];
 				}),
 				flashes: working.flashes,
-				shirts: working.shirts,
 				teamColors: p.teamColors,
 				black: o >= 0.999 || flash >= 0.999 || s.wipe.hold === now,
 			});

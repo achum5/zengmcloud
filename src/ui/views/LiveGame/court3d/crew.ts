@@ -16,7 +16,7 @@ import {
 	type Blend,
 	type PlayerState,
 } from "./evaluate.ts";
-import { lightness, shade, type Look } from "./figure.ts";
+import { shade, type Look } from "./figure.ts";
 import {
 	atBreakOfficial,
 	attackDir,
@@ -49,7 +49,6 @@ import {
 	type Body,
 } from "./poses.ts";
 import { arenaSpecFor, type ArenaSpec } from "./arenaSpec.ts";
-import { standsPoint } from "./arena.ts";
 
 // THE PEOPLE ON THE FLOOR WHO DON'T PLAY: three officials working the game,
 // each team's head coach in front of his bench, and the photographers down
@@ -69,8 +68,7 @@ export type CrewRole =
 	| "media"
 	| "mop"
 	| "staff"
-	| "dance"
-	| "mascot";
+	| "dance";
 export type CrewMember = {
 	// Never a player's: crew are numbered below zero.
 	pid: number;
@@ -87,10 +85,6 @@ export type CrewMember = {
 	face: FaceConfig;
 	// What he wears (the head comes from his face; see Court3D).
 	dress: Pick<Look, "kit" | "gear" | "outfit">;
-	// The mascot: his fur (its own head drawn in it - see mascotHead), and
-	// the number and the team's name on his jersey.
-	fur?: { fur: string; pale: string; dark: string };
-	shirt?: { number: string; wordmark: string };
 };
 
 type TeamLike = {
@@ -360,63 +354,6 @@ export const crewFor = (
 			),
 		});
 	});
-	// The home team's mascot: its fur in a color of the team's - or, the
-	// team's own all black or white, an animal's - under the home jersey,
-	// fur down its arms and legs (see mascotState).
-	if (spec.entertainment.mascot && home) {
-		const r = makeCourtRng(`mascot|${teamKey(home)}`);
-		const [c0, c1] = [
-			home.colors?.[0] ?? "#8c1d40",
-			home.colors?.[1] ?? "#f2c14e",
-		];
-		const plain = (c: string) => lightness(c) < 0.1 || lightness(c) > 0.85;
-		const fur = !plain(c1)
-			? c1
-			: !plain(c0)
-				? shade(c0, 0.15)
-				: MASCOT_FURS[Math.floor(r() * MASCOT_FURS.length)]!;
-		const jersey = fur === c1 ? c0 : c1;
-		const face = faceFor(`mascot|${teamKey(home)}`, false);
-		out.push({
-			pid: -91,
-			role: "mascot",
-			team: 1,
-			spot: MASCOT_SPOT,
-			hgt: 80,
-			weight: 300,
-			face: {
-				...face,
-				body: { ...face.body, color: fur },
-				hair: { id: "afro", color: shade(fur, -0.12), flip: false },
-				facialHair: { id: "none" },
-			},
-			fur: { fur, pale: shade(fur, 0.62), dark: shade(fur, -0.45) },
-			shirt: {
-				number: String(Math.floor(r() * 2)) === "0" ? "00" : "1",
-				wordmark: home.name ?? home.region ?? "",
-			},
-			dress: {
-				kit: {
-					jersey,
-					trim: fur,
-					number: lightness(jersey) > 0.6 ? "#16161a" : "#f4f4f2",
-					numberEdge: fur,
-					shorts: jersey,
-					stripe: fur,
-					sock: fur,
-					shoe: jersey,
-					sole: "#f4f4f2",
-				},
-				gear: {
-					sleeve: { arms: "RL", color: fur, elbow: false },
-					tights: { legs: "RL", color: fur },
-					shoe: jersey,
-					sole: "#f4f4f2",
-					sock: fur,
-				},
-			},
-		});
-	}
 	// Stood about the floor all game: the sideline reporter by the corner
 	// past the home bench (out of the way of the team going off at the
 	// end), microphone in hand; security at the two far corners, arms
@@ -2830,226 +2767,8 @@ const flashOf = (
 	return undefined;
 };
 
-// THE MASCOT. Through play he stands back off the baseline at one end,
-// behind the photographers - clapping, hands on his hips, now and then a
-// shimmy or a dance (one thing a few seconds, then another). Up for a big
-// play by the home side: three fingers up for a three, a flex for a dunk,
-// the rest a celebration. And at a timeout the picture takes in the whole
-// floor for, out onto it at the near corner to dance, and back.
-const MASCOT_SPOT: Pt = { x: -6.4, y: 32 };
-// (His head that much bigger than a man's.)
-const MASCOT_HEAD = 1.45;
-// The build each of them is drawn with - the mascot's head as big as his.
-export const crewBody = (m: CrewMember): Body => {
-	const b = bodyOf(m.hgt, m.weight);
-	return m.fur ? { ...b, headR: b.headR * MASCOT_HEAD } : b;
-};
-const MASCOT_FLOOR: Pt = { x: 8, y: 37 };
-const MASCOT_FURS = ["#7a5230", "#c89a4b", "#8a8f99", "#5b3a29"];
-const MASCOT_PACE = 12;
-const MASCOT_UP = 2200;
-// (Into a big play's arms up over this long, ms - held there, that far
-// through it, his arms still up.)
-const MASCOT_ACT = 900;
-const MASCOT_HOLD = 0.7;
-const MASCOT_EVERY = 5000;
-const MASCOT_EASE = 300;
-const MASCOT_IDLE: [AnimName, number][] = [
-	["clap", 0.35],
-	["hips", 0.6],
-	["shimmy", 0.8],
-	["dance", 0.9],
-	["cheer", 1],
-];
-// T-SHIRTS. Out dancing at a timeout, now and then he turns and throws one
-// - rolled up, in his fur's color of the team's - over his head, high across the floor
-// and up into the stands on the far side (see shirtsAt): this long into
-// his dance (ms), each throw this long, let go this far through it, and in
-// the air this long, as high as this (feet).
-const SHIRT_AT = [1600, 3700];
-const SHIRT_THROW = 900;
-const SHIRT_LET_GO = 0.55;
-const SHIRT_FLIGHT = 1700;
-const SHIRT_TOP = 25;
-type ShirtThrow = { t0: number; to: Pt3 };
-const shirtThrows = (d: Dance, run: number): ShirtThrow[] =>
-	SHIRT_AT.flatMap((at, k) => {
-		const t0 = d.t0 + run + at;
-		const r = unit(Math.round(d.t0) + k, 3131);
-		return t0 + SHIRT_THROW * SHIRT_LET_GO + SHIRT_FLIGHT < d.end
-			? [
-					{
-						t0,
-						to: standsPoint(
-							MASCOT_FLOOR.x + 6 + r * 30,
-							6 + unit(Math.round(d.t0) + k, 3137) * 12,
-						),
-					},
-				]
-			: [];
-	});
-const mascotOuts = new WeakMap<CourtTimeline, Dance[]>();
-const mascotOutsOf = (tl: CourtTimeline): Dance[] => {
-	let out = mascotOuts.get(tl);
-	if (!out) {
-		out = tl.beats.flatMap((b) =>
-			b.type === "timeout" &&
-			b.end - b.actionStart >= DANCE_LONGEST &&
-			tl.shots.some(
-				(x) => x.kind === "wide" && x.t0 < b.end && x.t1 > b.actionStart,
-			)
-				? [{ t0: b.actionStart + DANCE_AFTER, end: b.end + 150 }]
-				: [],
-		);
-		mascotOuts.set(tl, out);
-	}
-	return out;
-};
-const mascotState = (
-	tl: CourtTimeline,
-	t: number,
-	m: CrewMember,
-): PlayerState => {
-	const base = { pid: m.pid, team: m.team, shown: true, z: 0, moving: false };
-	const court = { x: COURT_W / 2, y: COURT_H / 2 };
-	const run = (dist(MASCOT_SPOT, MASCOT_FLOOR) / MASCOT_PACE) * 1000;
-	const running = (A: Pt, B: Pt, a: number): PlayerState => {
-		const u = Math.min(1, Math.max(0, (t - a) / run));
-		return {
-			...base,
-			x: A.x + (B.x - A.x) * u,
-			y: A.y + (B.y - A.y) * u,
-			yaw: yawTo(A, B),
-			anim: "run",
-			phase: (t / 1000) * 1.7,
-			moving: true,
-		};
-	};
-	const d = mascotOutsOf(tl).findLast((x) => x.t0 <= t);
-	if (d && t < d.end + run) {
-		if (t < d.t0 + run) {
-			return running(MASCOT_SPOT, MASCOT_FLOOR, d.t0);
-		}
-		if (t >= d.end) {
-			return running(MASCOT_FLOOR, MASCOT_SPOT, d.end);
-		}
-		// (Turned to throw one, and back.)
-		const toss = shirtThrows(d, run).find(
-			(x) => t >= x.t0 - MASCOT_EASE && t < x.t0 + SHIRT_THROW + MASCOT_EASE,
-		);
-		if (toss) {
-			const into = Math.min(
-				1,
-				(t - toss.t0 + MASCOT_EASE) / MASCOT_EASE,
-				(toss.t0 + SHIRT_THROW + MASCOT_EASE - t) / MASCOT_EASE,
-			);
-			const throwing: PlayerState = {
-				...base,
-				x: MASCOT_FLOOR.x,
-				y: MASCOT_FLOOR.y,
-				yaw: yawTo(MASCOT_FLOOR, toss.to),
-				anim: "passOverhead",
-				phase: Math.min(1, Math.max(0, (t - toss.t0) / SHIRT_THROW)),
-			};
-			return into < 1
-				? {
-						...throwing,
-						from: {
-							anim: "dance",
-							phase: loopPhase("dance", t, m.pid * 0.29),
-							w: 1 - smooth01(into),
-						},
-					}
-				: throwing;
-		}
-		const st: PlayerState = {
-			...base,
-			x: MASCOT_FLOOR.x,
-			y: MASCOT_FLOOR.y,
-			yaw: Math.PI / 2,
-			anim: "dance",
-			phase: loopPhase("dance", t, m.pid * 0.29),
-		};
-		const k = 1 - smooth01((t - d.t0 - run) / MASCOT_EASE);
-		return k > 0
-			? { ...st, from: { anim: "run", phase: (t / 1000) * 1.7, w: k } }
-			: st;
-	}
-	// What he is doing at a moment: up for a big play of theirs (arms up,
-	// and held), or one thing or another meanwhile.
-	const doing = (u: number): { anim: AnimName; phase: number } => {
-		const i = lastIndex(tl.fx, u, (f) => f.t);
-		for (let j = i; j >= 0 && tl.fx[j]!.t > u - MASCOT_UP; j--) {
-			const f = tl.fx[j]!;
-			if (f.kind === "roar" && f.team === 1) {
-				const anim: AnimName =
-					f.what === "three"
-						? "threeUp"
-						: f.what === "dunk"
-							? "flex"
-							: "celebrate";
-				return {
-					anim,
-					phase:
-						ANIMS[anim].kind === "loop"
-							? loopPhase(anim, u, m.pid * 0.29)
-							: MASCOT_HOLD * Math.min(1, (u - f.t) / MASCOT_ACT),
-				};
-			}
-		}
-		const k = Math.floor(u / MASCOT_EVERY);
-		const r = unit(k, 9091);
-		const anim = MASCOT_IDLE.find(([, p]) => r < p)![0];
-		return { anim, phase: loopPhase(anim, u, m.pid * 0.29) };
-	};
-	const now = doing(t);
-	const st: PlayerState = {
-		...base,
-		x: MASCOT_SPOT.x,
-		y: MASCOT_SPOT.y,
-		yaw: yawTo(MASCOT_SPOT, court),
-		anim: now.anim,
-		phase: now.phase,
-	};
-	// (Into it from the last thing, not in a frame.)
-	const was = doing(t - MASCOT_EASE);
-	return was.anim !== now.anim
-		? { ...st, from: { anim: was.anim, phase: was.phase, w: 0.5 } }
-		: st;
-};
-
-// The mascot's t-shirts in the air at t (see SHIRT_AT): where each is, how
-// far it has tumbled, and its color.
-const shirtsAt = (
-	tl: CourtTimeline,
-	t: number,
-	m: CrewMember,
-): { at: Pt3; turn: number; color: string }[] => {
-	const run = (dist(MASCOT_SPOT, MASCOT_FLOOR) / MASCOT_PACE) * 1000;
-	const d = mascotOutsOf(tl).findLast((x) => x.t0 <= t);
-	if (!d || t > d.end) {
-		return [];
-	}
-	const from = { x: MASCOT_FLOOR.x, y: MASCOT_FLOOR.y - 0.6, z: 8.6 };
-	return shirtThrows(d, run).flatMap((x) => {
-		const u = (t - x.t0 - SHIRT_THROW * SHIRT_LET_GO) / SHIRT_FLIGHT;
-		if (u < 0 || u >= 1) {
-			return [];
-		}
-		const lift = SHIRT_TOP - Math.max(from.z, x.to.z);
-		return [
-			{
-				at: {
-					x: from.x + (x.to.x - from.x) * u,
-					y: from.y + (x.to.y - from.y) * u,
-					z: from.z + (x.to.z - from.z) * u + 4 * lift * u * (1 - u),
-				},
-				turn: u * 9,
-				color: m.dress.kit.trim,
-			},
-		];
-	});
-};
+// The build each of them is drawn with.
+export const crewBody = (m: CrewMember): Body => bodyOf(m.hgt, m.weight);
 
 // Everyone working the game, at t: where they are and what they are doing,
 // and any camera flashing.
@@ -3060,7 +2779,6 @@ export const crewAt = (
 ): {
 	states: PlayerState[];
 	flashes: Pt3[];
-	shirts: { at: Pt3; turn: number; color: string }[];
 	// How far to draw the ball up or down off where the play has it: in an
 	// official's hands, at the height his own hands have it.
 	ballLift: number;
@@ -3073,7 +2791,6 @@ export const crewAt = (
 		states.push(...refStates(tl, t, refs, ball, 0, lift));
 	}
 	const flashes: Pt3[] = [];
-	const shirts: { at: Pt3; turn: number; color: string }[] = [];
 	for (const m of crew) {
 		if (m.role === "coach") {
 			states.push(coachState(tl, t, m, ball));
@@ -3087,9 +2804,6 @@ export const crewAt = (
 			states.push(mopState(tl, t, m));
 		} else if (m.role === "staff") {
 			states.push(staffState(t, m));
-		} else if (m.role === "mascot") {
-			states.push(mascotState(tl, t, m));
-			shirts.push(...shirtsAt(tl, t, m));
 		} else if (m.role === "dance") {
 			const st = danceState(tl, t, m);
 			if (st) {
@@ -3104,5 +2818,5 @@ export const crewAt = (
 			}
 		}
 	}
-	return { states, flashes, shirts, ballLift: lift.dz };
+	return { states, flashes, ballLift: lift.dz };
 };
