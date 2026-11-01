@@ -791,6 +791,11 @@ const YELLS: Partial<Record<string, [number, number, number?]>> = {
 	// calling out to his teammates.)
 	cheer: [0.05, 0.7, 0.8],
 	clapCall: [0.1, 0.5, 0.5],
+	// (And gritted, part open: up for a board, fighting for position,
+	// boxing out.)
+	board: [0.2, 0.8, 0.6],
+	fight: [0.05, 0.95, 0.4],
+	boxOut: [0, 1, 0.3],
 	dunk: [0.35, 0.95],
 	dunk1: [0.35, 0.95],
 	block: [0.3, 0.85],
