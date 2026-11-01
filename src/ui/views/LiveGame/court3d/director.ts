@@ -779,6 +779,10 @@ const BACK_FACING = 0.6;
 // stopped at half court where the ball comes up: as far as this from it -
 // to no nearer than this.
 const BACK_REACT = 250;
+// A man off the mark late among others (see stagger) still gets there in
+// time, so long as that is no quicker than this many times the quickest he
+// could - a run back after a steal, flat out already, too.
+const STAGGER_PACE = 1.15;
 // How long a pause (ms) a man's last stride up at the rim can follow on
 // from the end of his drive without his pulling up for it (see carry).
 const ON_FROM_MS = 700;
@@ -25074,7 +25078,7 @@ class Director {
 						Math.min(
 							late - shift,
 							(m.t1 - m.t0) * 0.2,
-							m.t1 - m.t0 - quickest * 1.4,
+							m.t1 - m.t0 - quickest * STAGGER_PACE,
 						),
 					);
 				}
