@@ -782,11 +782,15 @@ const profileHead = (
 };
 // How far his mouth is open (0 to 1), by what he is doing: through the
 // slam of a dunk, the swat of a block, a flex or a roar after - and, less
-// open, having words with an official over a call, or a coach calling out
-// to his players (his mouth going each time round).
+// open, having words with an official over a call, a coach calling out to
+// his players, the bench up cheering (each time round, a loop).
 const YELLS: Partial<Record<string, [number, number, number?]>> = {
 	protest: [0.1, 0.9, 0.55],
 	talk: [0.1, 0.55, 0.45],
+	// (The bench up on its feet for a big play, and a man clapping and
+	// calling out to his teammates.)
+	cheer: [0.05, 0.7, 0.8],
+	clapCall: [0.1, 0.5, 0.5],
 	dunk: [0.35, 0.95],
 	dunk1: [0.35, 0.95],
 	block: [0.3, 0.85],
