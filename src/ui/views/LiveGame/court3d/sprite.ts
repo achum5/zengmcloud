@@ -111,6 +111,9 @@ export type Kept = {
 	// From where he stands, on the picture.
 	dx: number;
 	dy: number;
+	// His shadow's shape, in the canvas under his picture (see keepPixels):
+	// how big.
+	dark?: { w: number; h: number };
 };
 export type SpriteCache = {
 	kept: Map<string, Kept>;
@@ -301,16 +304,44 @@ export const keepPixels = (
 	dx: number,
 	dy: number,
 ): Kept => {
+	// (And under it his shadow's shape, a third the size - black, as solid
+	// as he is over each patch of him - in the same canvas: one canvas made
+	// a new picture, not two - see darkOf.)
+	const w = pixels.width;
+	const h = pixels.height;
+	const dw = Math.max(1, Math.ceil(w / DARK_SCALE));
+	const dh = Math.max(1, Math.ceil(h / DARK_SCALE));
 	const canvas = document.createElement("canvas");
-	canvas.width = pixels.width;
-	canvas.height = pixels.height;
-	canvas.getContext("2d")!.putImageData(pixels, 0, 0);
+	canvas.width = w;
+	canvas.height = h + dh;
+	const g = canvas.getContext("2d")!;
+	g.putImageData(pixels, 0, 0);
+	const dark = g.createImageData(dw, dh);
+	const src = pixels.data;
+	const dst = dark.data;
+	for (let j = 0; j < dh; j++) {
+		const y1 = Math.min(h, (j + 1) * DARK_SCALE);
+		for (let i = 0; i < dw; i++) {
+			const x1 = Math.min(w, (i + 1) * DARK_SCALE);
+			let a = 0;
+			let n = 0;
+			for (let y = j * DARK_SCALE; y < y1; y++) {
+				for (let x = i * DARK_SCALE; x < x1; x++) {
+					a += src[(y * w + x) * 4 + 3]!;
+					n++;
+				}
+			}
+			dst[(j * dw + i) * 4 + 3] = n ? a / n : 0;
+		}
+	}
+	g.putImageData(dark, 0, h);
 	return remember(cache, key, {
 		canvas,
-		w: pixels.width,
-		h: pixels.height,
+		w,
+		h,
 		dx,
 		dy,
+		dark: { w: dw, h: dh },
 	});
 };
 const remember = (cache: SpriteCache, key: string, k: Kept): Kept => {
@@ -348,7 +379,20 @@ export const CAST_ALPHA = 0.13;
 // shadow is: made the first time it is wanted, let go with his picture.
 const DARK_SCALE = 3;
 const darks = new WeakMap<HTMLCanvasElement, HTMLCanvasElement>();
-const darkOf = (k: Kept): HTMLCanvasElement | undefined => {
+const darkOf = (
+	k: Kept,
+):
+	| { img: HTMLCanvasElement; sx: number; sy: number; sw: number; sh: number }
+	| undefined => {
+	if (k.dark) {
+		return { img: k.canvas, sx: 0, sy: k.h, sw: k.dark.w, sh: k.dark.h };
+	}
+	const old = darkCanvasOf(k);
+	return old
+		? { img: old, sx: 0, sy: 0, sw: old.width, sh: old.height }
+		: undefined;
+};
+const darkCanvasOf = (k: Kept): HTMLCanvasElement | undefined => {
 	let d = darks.get(k.canvas);
 	if (d) {
 		return d;
@@ -401,7 +445,17 @@ export const stamp = (
 			// From where he is drawn, upright, to where it falls: as far out
 			// over the floor below his feet as he is up over them.
 			ctx.transform(1, 0, -lean, -run, lean * floor, floor * (1 + run));
-			ctx.drawImage(dark, X, Y, k.w * px, k.h * px);
+			ctx.drawImage(
+				dark.img,
+				dark.sx,
+				dark.sy,
+				dark.sw,
+				dark.sh,
+				X,
+				Y,
+				k.w * px,
+				k.h * px,
+			);
 			ctx.setTransform(m);
 		}
 		ctx.imageSmoothingEnabled = false;
@@ -441,6 +495,10 @@ export const stamp = (
 	}
 	ctx.drawImage(
 		k.canvas,
+		0,
+		0,
+		k.w,
+		k.h,
 		Math.round(x + k.dx),
 		Math.round(y + k.dy),
 		k.w * px,

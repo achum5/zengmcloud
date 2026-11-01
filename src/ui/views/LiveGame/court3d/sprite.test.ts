@@ -46,31 +46,37 @@ const stubCanvas = () => {
 								height: h,
 							};
 						}
-					: prop === "putImageData"
-						? (
-								img: ImageData,
-								_x: number,
-								_y: number,
-								_dx?: number,
-								_dy?: number,
-								dw?: number,
-								dh?: number,
-							) => {
-								put.set(
-									canvas,
-									(put.get(canvas) ?? 0) +
-										(dw ?? img.width) * (dh ?? img.height),
-								);
-							}
-						: prop === "drawImage"
-							? (from: unknown) => {
-									drawnFrom.push(from);
+					: prop === "createImageData"
+						? (w: number, h: number) => ({
+								data: new Uint8ClampedArray(w * h * 4),
+								width: w,
+								height: h,
+							})
+						: prop === "putImageData"
+							? (
+									img: ImageData,
+									_x: number,
+									_y: number,
+									_dx?: number,
+									_dy?: number,
+									dw?: number,
+									dh?: number,
+								) => {
+									put.set(
+										canvas,
+										(put.get(canvas) ?? 0) +
+											(dw ?? img.width) * (dh ?? img.height),
+									);
 								}
-							: prop === "fillText"
-								? () => {
-										lettered += 1;
+							: prop === "drawImage"
+								? (from: unknown) => {
+										drawnFrom.push(from);
 									}
-								: () => proxy,
+								: prop === "fillText"
+									? () => {
+											lettered += 1;
+										}
+									: () => proxy,
 		set: (target, prop, v) => {
 			target[prop] = v;
 			return true;
@@ -216,11 +222,15 @@ test("a kept picture is given its pixels once - the sheet is never drawn from, a
 	assert.isFalse(drawnFrom.includes(scratch.canvas));
 	// (What is drawn into the picture is each kept one.)
 	assert.strictEqual(drawnFrom.length, 4);
-	// Each kept picture is given all its pixels, once; off the sheet, a
+	// Each kept picture is given all its pixels, once - and under it its
+	// shadow's shape, a third the size (see keepPixels); off the sheet, a
 	// small part of that is read - round his head.
 	let keptArea = 0;
 	for (const k of cache.kept.values()) {
-		assert.strictEqual(put.get(k.canvas), k.w * k.h);
+		assert.strictEqual(
+			put.get(k.canvas),
+			k.w * k.h + (k.dark ? k.dark.w * k.dark.h : 0),
+		);
 		assert.isUndefined(read.get(k.canvas));
 		keptArea += k.w * k.h;
 	}
