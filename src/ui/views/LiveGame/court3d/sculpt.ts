@@ -678,6 +678,11 @@ const RELAXED = new Set<string>([
 	"fall",
 	"follow",
 ]);
+// How far a thigh is from upright (0, upright, to 1, level) before the leg
+// of his shorts starts to hang off it, and how far (thigh widths) it hangs
+// with the thigh level.
+const SAG_FROM = 0.35;
+const SAG = 0.9;
 // A hand up at a shot or a block, or slapping a teammate's: its fingers
 // spread wide, palm to it. (A low five's swung down to it.)
 const SPLAY = new Set<string>(["contest", "block", "highFive"]);
@@ -1443,6 +1448,25 @@ const build = (
 			side,
 			true,
 		);
+		// The thigh up (a knee driven up, sat down): the loose leg of his
+		// shorts hangs down off it, not wrapped round it.
+		const thighDir = unit(subV(limb.mid, limb.root));
+		const level = 1 - Math.abs(thighDir.u);
+		if (level > SAG_FROM) {
+			const sag = v3(0, 0, -body.thighR * SAG * (level - SAG_FROM));
+			add(
+				addV(lerpV(limb.root, limb.mid, 0.4), sag, 0.5),
+				addV(lerpV(limb.root, limb.mid, 0.82), sag, 1),
+				[
+					[0, body.thighR * 1.05],
+					[1, body.thighR * 1.15],
+				],
+				SHORTS,
+				G_SHORTS + side,
+				side,
+				true,
+			);
+		}
 		// The sneaker: heel to toe along the floor, a collar round the ankle.
 		const tip = limb.tip ?? limb.end;
 		const heel = lerpV(limb.end, tip, -0.32);
