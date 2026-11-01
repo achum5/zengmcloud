@@ -651,6 +651,29 @@ const endsAt = (tl: CourtTimeline, t: number, now: number): Crowd["ends"] => {
 	return [end, undefined];
 };
 
+// THE OPENING TIP: the building on its feet for it, from a moment before
+// the toss till the game is under way - and back down in its seats.
+const TIP_STAND_FROM = 2200;
+const TIP_STAND_UP_MS = 700;
+const TIP_STAND_FOR = 3500;
+const TIP_SIT_MS = 2200;
+const TIP_STAND = 0.85;
+const openingTip = (tl: CourtTimeline, t: number): number => {
+	const b = tl.beats[0];
+	if (b?.type !== "jumpBall") {
+		return 0;
+	}
+	const from = b.actionStart - TIP_STAND_FROM;
+	const sit = b.actionStart + TIP_STAND_FOR;
+	if (t < from || t > sit + TIP_SIT_MS) {
+		return 0;
+	}
+	return (
+		TIP_STAND *
+		Math.min(1, (t - from) / TIP_STAND_UP_MS, 1 - (t - sit) / TIP_SIT_MS)
+	);
+};
+
 // The crowd at t: on its feet for a big play, arms going - and in a tight
 // finish on its feet the whole way, arms going up now and then (`now` is
 // the wall clock, for the arms).
@@ -691,7 +714,7 @@ const buildingAt = (tl: CourtTimeline, t: number, now: number): Stand => {
 	);
 	const tense = tensionAt(tl, t);
 	return {
-		up: Math.max(roar, tense >= 1 ? 0.9 : tense * 0.7),
+		up: Math.max(roar, tense >= 1 ? 0.9 : tense * 0.7, openingTip(tl, t)),
 		wave:
 			roar > 0.3
 				? Math.sin(now / 130) > 0
