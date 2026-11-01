@@ -703,16 +703,28 @@ const REACH_UP = 0.3;
 // up; a charge a fist punched out; a travel the fists rolled; a three
 // three fingers up; a push both palms out.
 const SIGNAL_UP = 0.5;
-const signalOf = (anim: string, up: number): Grip | undefined =>
-	anim === "signalCharge" || anim === "travel"
+const signalOf = (
+	anim: string,
+	up: number,
+	which: "R" | "L",
+): Grip | undefined =>
+	// (And a microphone, a camera, in his hand: his fingers round it - the
+	// lens cupped in the other.)
+	anim === "mic" && which === "R"
 		? "fist"
-		: anim === "signalUp" && up > SIGNAL_UP
+		: (anim === "kneelShoot" || anim === "shootStand") && which === "R"
 			? "fist"
-			: anim === "threeUp" && up > SIGNAL_UP
-				? "three"
-				: anim === "signalPush"
-					? "splay"
-					: undefined;
+			: anim === "kneelShoot" || anim === "shootStand"
+				? "target"
+				: anim === "signalCharge" || anim === "travel"
+					? "fist"
+					: anim === "signalUp" && up > SIGNAL_UP
+						? "fist"
+						: anim === "threeUp" && up > SIGNAL_UP
+							? "three"
+							: anim === "signalPush"
+								? "splay"
+								: undefined;
 // Hung on the rim this far (see onRim): his hands hooked over it.
 const HOOK_ON = 0.5;
 // Hands clasped with another man's, from when to when, and which: a dap's
@@ -1146,7 +1158,7 @@ const build = (
 												? "clasp"
 												: REACH.has(st.anim) && h.u > REACH_UP
 													? "target"
-													: (signalOf(st.anim, h.u) ??
+													: (signalOf(st.anim, h.u, which) ??
 														gripFor(st, which, false));
 		// The ball his hand is on, if it is.
 		const cup =
