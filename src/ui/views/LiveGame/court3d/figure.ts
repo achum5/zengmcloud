@@ -1058,6 +1058,27 @@ const drawHead = (
 	ctx.translate(c.x + shift, c.y);
 	ctx.scale(scale * squash, scale);
 	ctx.drawImage(sprite.img, -sprite.cx, -sprite.cy);
+	if (yell > 0.05) {
+		// Yelling: his mouth open over the one he has - where faces.js puts
+		// it, a third of the way down from the middle of his face - his top
+		// teeth showing, his jaw down a touch with it.
+		const h = sprite.h;
+		const y = (0.35 + 0.02 * yell) * h;
+		const ry = (0.014 + 0.05 * yell) * h;
+		ctx.fillStyle = "#3a1416";
+		ctx.strokeStyle = INK;
+		ctx.lineWidth = Math.max(1, h * 0.012);
+		ctx.beginPath();
+		ctx.ellipse(0, y, h * 0.075, ry, 0, 0, Math.PI * 2);
+		ctx.fill();
+		ctx.stroke();
+		if (yell > 0.3) {
+			ctx.fillStyle = "#f4efe6";
+			ctx.beginPath();
+			ctx.ellipse(0, y - ry * 0.55, h * 0.06, ry * 0.32, 0, 0, Math.PI * 2);
+			ctx.fill();
+		}
+	}
 	ctx.restore();
 };
 
