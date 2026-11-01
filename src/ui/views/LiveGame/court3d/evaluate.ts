@@ -163,6 +163,10 @@ export type PlayerState = {
 	// the rim, and how much his hands are on it (0 to 1). His own build
 	// decides how high he really goes - see withBody.
 	dunk?: { leap: number; rim: Pt3; grip: number };
+	// Up for the tip: the ball his hand goes to meet, how far on its way to
+	// it his hand is (0 to 1) - and, once his own jump is known (see
+	// withBody), where it is from his feet.
+	tap?: { at: Pt3; w: number; rel?: V3 };
 	// Up for the ball where it will be: the jump a typical player makes to
 	// get his hands there (feet) - his own reach decides how high he really
 	// goes (see withBody).
@@ -2374,6 +2378,7 @@ type Doing = {
 	z: number;
 	mirror?: boolean;
 	dunk?: PlayerState["dunk"];
+	tap?: PlayerState["tap"];
 	reach?: number;
 	holding: boolean;
 	grip?: number;
@@ -2880,6 +2885,7 @@ const doingNow = (
 	let phase: number;
 	let z = 0;
 	let dunk: PlayerState["dunk"];
+	let tap: PlayerState["tap"];
 	let reach: number | undefined;
 	let mirrored = false;
 	let aside = false;
@@ -2917,6 +2923,12 @@ const doingNow = (
 		z = Math.max(jumpZ(act, u), stillUp(tr, act, t));
 		if (act.reach && act.jump) {
 			reach = act.jump[2];
+		}
+		if (act.tap) {
+			const w = keyAt(act.tap.w, clamp01(u));
+			if (w > 0) {
+				tap = { at: act.tap.at, w };
+			}
 		}
 		if (act.rim && act.zKeys) {
 			dunk = {
@@ -3079,6 +3091,7 @@ const doingNow = (
 		...(mirrored ? { mirror: true } : {}),
 		...(aside ? { aside: true } : {}),
 		...(dunk ? { dunk } : {}),
+		...(tap ? { tap } : {}),
 		...(reach ? { reach } : {}),
 		holding:
 			has?.style === "hold" && !(t < (takenOver(tl, bi)?.until ?? -Infinity)),
@@ -3176,6 +3189,7 @@ const ARMS_UP = new Set<AnimName>([
 	"fight",
 	"contest",
 	"block",
+	"tip",
 	"rebound",
 	"reach",
 	"hack",
@@ -6317,7 +6331,8 @@ const keyAt = (keys: [number, number][], u: number): number => {
 // asks this first; asking twice changes nothing.
 const TYPICAL = bodyOf();
 const TYPICAL_REACH = standingReach(TYPICAL);
-export const withBody = (st: PlayerState, body: Body): PlayerState => {
+export const withBody = (st0: PlayerState, body: Body): PlayerState => {
+	const st = st0.tap && !st0.tap.rel ? tapFor(st0, body) : st0;
 	const r = st.reach;
 	if (r !== undefined && r > 0 && st.z > 0) {
 		// Up for a rebound: his hands where a typical player's would get to.
@@ -6423,12 +6438,54 @@ export const holdOf = (
 	};
 };
 
+// Up for the tip, as high as his own reach needs to get his hand to the
+// ball - a typical player's jump less for a seven-footer, more for a
+// shorter man - and the ball, from his feet up there.
+const tapFor = (st: PlayerState, body: Body): PlayerState => {
+	const t = st.tap!;
+	const short = TYPICAL_REACH - standingReach(body);
+	const z = st.z > 0 ? Math.max(st.z * 0.4, st.z + short * t.w) : st.z;
+	const up = { ...st, z };
+	return { ...up, tap: { ...t, rel: toBody(up, t.at) } };
+};
+// His tipping hand up to the ball: the palm under it and on its near side,
+// a ball's width short of its middle.
+const TAP_SHORT = 0.42;
+const onBall = (sk: Skeleton, st: PlayerState, body: Body): Skeleton => {
+	const t = st.tap;
+	if (!t || t.w <= 0) {
+		return sk;
+	}
+	const at = t.rel ?? toBody(st, t.at);
+	const right = !st.mirror;
+	const arm = right ? sk.armR : sk.armL;
+	const side = right ? -1 : 1;
+	const sh = arm.root;
+	const d = {
+		f: at.f - sh.f,
+		s: at.s - sh.s,
+		u: at.u - sh.u,
+	};
+	const L = Math.hypot(d.f, d.s, d.u) || 1;
+	const k = Math.max(0, L - TAP_SHORT) / L;
+	const hand = armTo(
+		body,
+		sk.chest,
+		{ f: sh.f + d.f * k, s: sh.s + d.s * k, u: sh.u + d.u * k },
+		20,
+		side,
+	);
+	return right
+		? { ...sk, armR: mixLimb(sk.armR, hand, t.w) }
+		: { ...sk, armL: mixLimb(sk.armL, hand, t.w) };
+};
+
 // Hanging on the rim after a dunk: both hands on the front of it, a
-// shoulder's width apart.
+// shoulder's width apart. (Or up at the ball for the tip - see onBall.)
 export const onRim = (sk: Skeleton, st: PlayerState, body: Body): Skeleton => {
 	const d = st.dunk;
 	if (!d || d.grip <= 0) {
-		return sk;
+		return st.tap ? onBall(sk, st, body) : sk;
 	}
 	const at = toBody(st, d.rim);
 	const hand = (side: 1 | -1) =>

@@ -212,6 +212,9 @@ export type Act = {
 	// 1). Its heights are a typical player's - a longer reach jumps less to
 	// get there, a shorter one more.
 	rim?: { at: Pt3; grip: [number, number][] };
+	// A tip: the ball his hand goes up to meet, and over the act how far
+	// his hand is on its way to it (0 to 1).
+	tap?: { at: Pt3; w: [number, number][] };
 	// Up for the ball where it will be: the jump is a typical player's, to
 	// get his hands there - his own reach decides how high he really goes.
 	reach?: true;
@@ -744,6 +747,26 @@ const TIP_SLOTS: Record<Side, readonly number[]> = {
 	1: [25, 110, -140],
 };
 const TIP_BACK = 13;
+// THE TOSS: as high as the ball goes (its middle, feet) - where the man
+// who wins it meets it, his hand on it just under its middle (TIP_UNDER)
+// and this far round it from its middle (TIP_HAND), away from where he
+// sends it; how high a typical player jumps to get his hand there, and how
+// much less the man who loses it gets up. Over the tip, how far his hand
+// is on its way to it.
+const TIP_TOP = 10.4;
+const TIP_UNDER = 0.6;
+const TIP_HAND = 0.55;
+const TIP_LEAP = (() => {
+	const b = bodyOf();
+	return TIP_TOP - TIP_UNDER - (standingReach(b) - b.handR * 2.2) + 0.15;
+})();
+const TIP_SHORT = 0.5;
+const TIP_TAP: [number, number][] = [
+	[0.2, 0],
+	[0.42, 1],
+	[0.58, 1],
+	[0.78, 0],
+];
 // The man of theirs who goes up with him for it: from this near where he goes
 // up (feet) he goes up where he is; from as far as RIVAL_IN, he gets in a step
 // or two first - seeing it coming this long before (ms).
@@ -1869,6 +1892,7 @@ const WIDE_OPEN = 8;
 // as often as not on his left (see shootsLeft).
 const LEFTIES = 0.1;
 const OWN_HAND = new Set<AnimName>([
+	"tip",
 	"shoot",
 	"setShot",
 	"follow",
@@ -17919,6 +17943,7 @@ class Director {
 		const carrier = opening ? undefined : this.holder;
 		let out = T;
 		let ready = T;
+		const there = new Map<number, number>();
 		for (const t of [0, 1] as const) {
 			const j0 = t === winnerTeam ? jumper : loser;
 			const atCircle = this.go(
@@ -17930,6 +17955,7 @@ class Director {
 				attackDir(t),
 			);
 			this.lookAt(j0, atCircle, c);
+			there.set(j0, atCircle);
 			ready = Math.max(ready, atCircle);
 			if (j0 === carrier) {
 				out = atCircle;
@@ -17987,26 +18013,62 @@ class Director {
 		if (opening && !this.intro) {
 			this.shots.push({ t0: T, t1: toss - 600, kind: "wide", stretch: false });
 		}
-		const apex = { x: c.x, y: c.y, z: 12.3 };
+		const apex = { x: c.x, y: c.y, z: TIP_TOP };
 		this.effect("toss", toss);
 		this.fly(toss, toss + 520, held, apex);
 		// Each up as long as gravity has a man in the air for that height,
-		// at the top of it as the ball is (the winner a touch before).
+		// at the top of it as the ball is (the winner a touch before) - down
+		// in his legs for it, set, from when he gets to the circle.
 		const upFor = (h: number, top: number): [number, number] => {
 			const d = (2 * Math.sqrt((2 * h) / GRAVITY) * 1000) / 0.8;
 			return [top - d / 2, top + d / 2];
 		};
-		const [w0, w1] = upFor(2.8, toss + 510);
-		this.act(jumper, "block", w0, w1, {
-			face: attackDir(winnerTeam),
-			jump: [0.1, 0.9, 2.8],
-		});
-		const [l0, l1] = upFor(2.5, toss + 550);
-		this.act(loser, "block", l0, l1, {
-			face: attackDir(other(winnerTeam)),
-			jump: [0.1, 0.9, 2.5],
-		});
 		const receiver = this.slots(winnerTeam).find((p) => p !== jumper) ?? jumper;
+		// The winner's hand on the ball on the side away from where he sends
+		// it, just under its middle; the loser's up at it from his side - a
+		// jump short of it.
+		const R = this.posAt(receiver, toss + 520);
+		const away = unitVec(R, apex);
+		const [w0, w1] = upFor(TIP_LEAP, toss + 510);
+		const [l0, l1] = upFor(TIP_LEAP - TIP_SHORT, toss + 550);
+		for (const [pid, t0, t1, leap, at] of [
+			[
+				jumper,
+				w0,
+				w1,
+				TIP_LEAP,
+				{
+					x: apex.x + away.x * TIP_HAND,
+					y: apex.y + away.y * TIP_HAND,
+					z: apex.z - TIP_UNDER,
+				},
+			],
+			[
+				loser,
+				l0,
+				l1,
+				TIP_LEAP - TIP_SHORT,
+				(() => {
+					const u = unitVec(apex, this.posOf(loser));
+					return {
+						x: apex.x + u.x * TIP_HAND,
+						y: apex.y + u.y * TIP_HAND,
+						z: apex.z - TIP_UNDER,
+					};
+				})(),
+			],
+		] as const) {
+			const set =
+				Math.max(this.free.get(pid) ?? 0, there.get(pid) ?? ready) + 100;
+			if (t0 - set > 150) {
+				this.act(pid, "tipSet", set, t0, { look: c });
+			}
+			this.act(pid, "tip", t0, t1, {
+				face: attackDir(this.teamOf(pid)),
+				jump: [0.1, 0.9, leap],
+				tap: { at, w: TIP_TAP },
+			});
+		}
 		this.jumps.push([Math.min(T, this.lineupsFrom ?? T), toss + 520]);
 		this.lineupsFrom = undefined;
 		this.fly(toss + 520, toss + 1000, apex, { pid: receiver });
@@ -18471,6 +18533,7 @@ class Director {
 			"windmill",
 			"contest",
 			"block",
+			"tip",
 		]);
 		type Still = {
 			from: number;
@@ -21873,6 +21936,7 @@ class Director {
 			"pickup",
 			"poke",
 			"block",
+			"tip",
 			"highFive",
 			"lowFive",
 			"chestBump",
@@ -22165,6 +22229,7 @@ class Director {
 			"reach",
 			"hack",
 			"block",
+			"tip",
 			"contest",
 			"fall",
 			"takeCharge",
@@ -22346,6 +22411,7 @@ class Director {
 			"reach",
 			"hack",
 			"block",
+			"tip",
 			"contest",
 			"dunk",
 		]);
@@ -22849,6 +22915,7 @@ class Director {
 			"hack",
 			"poke",
 			"block",
+			"tip",
 			"dunk",
 			"dunk1",
 			"tomahawk",
@@ -23699,6 +23766,7 @@ class Director {
 			"poke",
 			"strip",
 			"block",
+			"tip",
 			"screen",
 			"postUp",
 			"fall",
@@ -23731,6 +23799,7 @@ class Director {
 			"poke",
 			"strip",
 			"block",
+			"tip",
 			"contest",
 			"rebound",
 			"board",

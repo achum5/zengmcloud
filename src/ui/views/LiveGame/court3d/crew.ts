@@ -947,6 +947,10 @@ const clearOfPlayers = (
 const TOSS = { x: COURT_W / 2, y: COURT_H / 2 - 1.65 };
 // (Out of the way at the top of the circle while they come out to it.)
 const TOSS_WAIT = { x: COURT_W / 2, y: COURT_H / 2 - 8.5 };
+// Backed straight out after the toss, for so long (ms).
+const TOSS_OUT = { x: COURT_W / 2, y: COURT_H / 2 - 5 };
+const TOSS_ASIDE = 4.5;
+const TOSS_BACK_MS = 900;
 const atCenter = (p: BallEnd) =>
 	!("pid" in p) && Math.hypot(p.x - COURT_W / 2, p.y - COURT_H / 2) < 0.6;
 // Whether the ball is in his hands there yet - not still on its way out
@@ -1046,6 +1050,14 @@ const refTargets = (tl: CourtTimeline, t: number): [Pt, Pt, Pt] => {
 			return out;
 		}
 	}
+	// The ball up, the man who threw it straight back out from between them -
+	// out of the way of their arms going up - before he goes on to his place.
+	const tossed =
+		beat?.type === "jumpBall" ? nextFx(tl, beat.preStart, "toss") : undefined;
+	const backing =
+		tossed && t >= tossed.t && t < tossed.t + TOSS_BACK_MS
+			? tosserOf(tl, tossed)
+			: undefined;
 	const team = offenseAt(tl, t);
 	const d = attackDir(team);
 	const X = (depth: number) => (d > 0 ? COURT_W - depth : depth);
@@ -1055,13 +1067,20 @@ const refTargets = (tl: CourtTimeline, t: number): [Pt, Pt, Pt] => {
 	const trail = { x: X(clamp(bd + 12, 26, 54)), y: 0.9 };
 	const slot = { x: X(clamp(bd + 2, 17, 47)), y: COURT_H + 1.2 };
 	const k = lastIndex(tl.poss, t, (p) => p[0]);
-	return keep(
+	const out = keep(
 		clearOfPlayers(
 			tl,
 			t,
 			k % 2 === 0 ? [lead, trail, slot] : [trail, lead, slot],
 		),
 	);
+	if (backing !== undefined && tossed) {
+		// (Off to the side the ball isn't tipped to.)
+		const to = ballSpot(tl, tossed.t + 1000);
+		const away = to.x < COURT_W / 2 ? 1 : -1;
+		out[backing] = { x: TOSS_OUT.x + away * TOSS_ASIDE, y: TOSS_OUT.y };
+	}
+	return out;
 };
 
 // Where each official is: running after the places the game calls for, as
