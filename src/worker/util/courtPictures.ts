@@ -4,11 +4,18 @@ import type {
 	CourtDecal,
 	CourtDecalPlaced,
 	CourtStyle,
+	CourtVersionName,
 	ScoreBugStyle,
 	StadiumLook,
 } from "../../common/types.ts";
 import { scoreBugPictureIds } from "../../common/scoreBug.ts";
 import { STADIUM_PICTURE_KEYS } from "../../common/stadiumLook.ts";
+import {
+	allVersionPictures,
+	versionOfGame,
+	versionPictures,
+	withVersionPictures,
+} from "../../common/courtVersions.ts";
 
 // THE PICTURES A COURT IS PAINTED WITH.
 //
@@ -62,13 +69,18 @@ export const storePicture = async (
 	return id;
 };
 
-// The pictures a court names.
+// The pictures a court names - its versions' too.
 export const courtPictureIds = (court: CourtStyle | undefined): string[] => {
 	const ids: string[] = [];
 	for (const key of COURT_PICTURE_KEYS) {
 		const v = court?.[key];
 		if (typeof v === "string" && v.startsWith(PIC)) {
 			ids.push(v.slice(PIC.length));
+		}
+	}
+	for (const p of allVersionPictures(court)) {
+		if (p.image.startsWith(PIC)) {
+			ids.push(p.image.slice(PIC.length));
 		}
 	}
 	return ids;
@@ -113,7 +125,52 @@ export const resolveCourt = async (
 			}
 		}
 	}
+	if (out.versions) {
+		out.versions = withVersionPictures(out.versions, pictures);
+	}
 	return out;
+};
+
+// THE COURT'S OWN PICTURES FOR A GAME - those of the version it is played
+// on (see CourtVersion), its pictures filled in - laid on as decals are.
+export const versionDecals = (
+	court: CourtStyle | undefined,
+	version: CourtVersionName | undefined,
+): CourtDecalPlaced[] =>
+	versionPictures(court, version)
+		.filter((p) => !p.image.startsWith(PIC))
+		.map((p) => ({
+			href: p.image,
+			...(p.adjust ? { adjust: p.adjust } : {}),
+			...(p.pair ? { pair: p.pair } : {}),
+		}));
+
+// Whether a regular-season game is its home team's first at home that
+// season - its home opener (see CourtVersion). Asked only of a court that
+// has one.
+export const isHomeOpener = async (game: {
+	gid: number;
+	season: number;
+	day?: number;
+	playoffs?: boolean;
+	teams: { tid: number }[];
+}): Promise<boolean> => {
+	if (game.playoffs || game.day === undefined) {
+		return false;
+	}
+	const tid = game.teams[0]?.tid;
+	if (tid === undefined) {
+		return false;
+	}
+	const games = await idb.merged.games.getAll({ season: game.season });
+	return !games.some(
+		(x) =>
+			x.gid !== game.gid &&
+			!x.playoffs &&
+			x.teams[0].tid === tid &&
+			x.day !== undefined &&
+			(x.day < game.day! || (x.day === game.day && x.gid < game.gid)),
+	);
 };
 
 // A FOOTBALL STADIUM'S PICTURES (see StadiumLook), kept and filled in the
@@ -210,7 +267,7 @@ export const decalsForGame = async (game: {
 			out.push({
 				href,
 				...(d.adjust ? { adjust: d.adjust } : {}),
-				...(d.pair ? { pair: true } : {}),
+				...(d.pair ? { pair: d.pair } : {}),
 			});
 		}
 	}
@@ -252,6 +309,34 @@ export const withDecals = <T extends CourtStyle | StadiumLook>(
 	look: T | undefined,
 	decals: CourtDecalPlaced[],
 ): T | undefined => (decals.length === 0 ? look : ({ ...look, decals } as T));
+
+// THE HOME COURT FOR A GAME (its pictures filled in): the pictures of the
+// version it is played on, and the league's decals for the game, laid on it.
+export const homeCourtForGame = async (
+	court: CourtStyle | undefined,
+	game: {
+		gid: number;
+		season: number;
+		day?: number;
+		playoffs?: boolean;
+		finals?: boolean;
+		teams: { tid: number }[];
+	},
+): Promise<CourtStyle | undefined> => {
+	const homeOpener =
+		!game.playoffs &&
+		(court?.versions?.homeOpener?.pictures?.length ?? 0) > 0 &&
+		(await isHomeOpener(game));
+	const version = versionOfGame({
+		playoffs: game.playoffs,
+		finals: game.finals,
+		homeOpener,
+	});
+	return withDecals(court, [
+		...versionDecals(court, version),
+		...(await decalsForGame(game)),
+	]);
+};
 
 // Of these pictures, remove any nothing uses any more - no team's uniform,
 // no team's court or stadium, no decal. (A replay that showed one goes

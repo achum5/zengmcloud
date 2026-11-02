@@ -34,6 +34,7 @@ const CourtPreview = ({
 	season,
 	arena,
 	finals,
+	playoffs = finals,
 }: {
 	home: PreviewTeam;
 	away: PreviewTeam | undefined;
@@ -42,6 +43,8 @@ const CourtPreview = ({
 	season: number;
 	arena: ArenaLooks | undefined;
 	finals: boolean;
+	// (A playoff game's crowd - and, with no say, the finals'.)
+	playoffs?: boolean;
 }) => {
 	const boxScore = useMemo(
 		() => ({
@@ -50,10 +53,11 @@ const CourtPreview = ({
 			season,
 			numPeriods: 4,
 			finals,
+			playoffs,
 			arena,
 			teams: [{ ...home, court }, away],
 		}),
-		[home, away, court, season, arena, finals],
+		[home, away, court, season, arena, finals, playoffs],
 	);
 	return (
 		<Court3D

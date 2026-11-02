@@ -222,23 +222,21 @@ const CourtDecals = ({
 									}
 								/>
 							))}
-							<div className="form-check mb-0">
-								<input
-									className="form-check-input"
-									type="checkbox"
-									id={`decal${i}-pair`}
-									checked={d.pair ?? false}
-									onChange={(e) =>
-										change(i, { pair: e.target.checked ? true : undefined })
-									}
-								/>
-								<label
-									className="form-check-label small"
-									htmlFor={`decal${i}-pair`}
-								>
-									One on each half
-								</label>
-							</div>
+							<select
+								className="form-select form-select-sm w-auto"
+								value={d.pair === "diagonal" ? 2 : d.pair ? 1 : 0}
+								onChange={(e) =>
+									change(i, {
+										pair: ([undefined, true, "diagonal"] as const)[
+											Number.parseInt(e.target.value)
+										],
+									})
+								}
+							>
+								<option value={0}>One</option>
+								<option value={1}>Two, mirrored</option>
+								<option value={2}>Two, diagonal</option>
+							</select>
 							<button
 								type="button"
 								className="btn btn-sm btn-light-bordered ms-auto"

@@ -1,4 +1,5 @@
 import type { CourtStyle } from "../../common/types.ts";
+import { COURT_VERSIONS, parseVersions } from "../../common/courtVersions.ts";
 import { PIC } from "../components/CourtImageField.tsx";
 import { toWorker } from "../util/toWorker.ts";
 
@@ -76,6 +77,11 @@ export const parseCourt = (text: string): CourtStyle | string => {
 			if (typeof value !== "boolean") {
 				return `"hideRailText" should be true or false.`;
 			}
+		} else if (key === "versions") {
+			const versions = parseVersions(value);
+			if (typeof versions === "string") {
+				return versions;
+			}
 		} else if (key === "adjust") {
 			if (typeof value !== "object" || value === null) {
 				return `"adjust" should be an object.`;
@@ -105,7 +111,13 @@ export const parseCourt = (text: string): CourtStyle | string => {
 			return `Unknown field "${key}".`;
 		}
 	}
-	return raw as CourtStyle;
+	const out = { ...(raw as CourtStyle) };
+	if ("versions" in raw) {
+		out.versions = parseVersions(
+			(raw as { versions: unknown }).versions,
+		) as CourtStyle["versions"];
+	}
+	return out;
 };
 
 // A court's pictures that are written into it (data URLs) kept in the
@@ -121,16 +133,44 @@ export const keepCourtPictures = async (
 	const out = { ...court };
 	const ids: string[] = [];
 	const pictures: Record<string, string> = {};
+	const keep = async (url: string): Promise<string> => {
+		if (!url.startsWith("data:image/")) {
+			return url;
+		}
+		try {
+			const id = await toWorker("main", "storeCourtPicture", url);
+			ids.push(id);
+			pictures[id] = url;
+			return `${PIC}${id}`;
+		} catch {
+			return url;
+		}
+	};
 	for (const key of PICTURE_KEYS) {
 		const url = out[key];
-		if (typeof url === "string" && url.startsWith("data:image/")) {
-			try {
-				const id = await toWorker("main", "storeCourtPicture", url);
-				ids.push(id);
-				pictures[id] = url;
-				out[key] = `${PIC}${id}`;
-			} catch {}
+		if (typeof url === "string") {
+			out[key] = await keep(url);
 		}
+	}
+	if (out.versions) {
+		const versions: NonNullable<CourtStyle["versions"]> = {};
+		for (const name of COURT_VERSIONS) {
+			const v = out.versions[name];
+			if (v === undefined) {
+				continue;
+			}
+			versions[name] = v.pictures
+				? {
+						pictures: await Promise.all(
+							v.pictures.map(async (p) => ({
+								...p,
+								image: await keep(p.image),
+							})),
+						),
+					}
+				: {};
+		}
+		out.versions = versions;
 	}
 	return { court: out, ids, pictures };
 };

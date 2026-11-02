@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo, useState } from "react";
+import { lazy, Suspense, useMemo, useState, type ReactNode } from "react";
 import useTitleBar from "../hooks/useTitleBar.tsx";
 import { toWorker } from "../util/toWorker.ts";
 import { realtimeUpdate } from "../util/realtimeUpdate.ts";
@@ -9,7 +9,14 @@ import type {
 	CourtStyle,
 	CourtImageAdjust,
 	CourtImageSlot,
+	CourtPair,
+	CourtVersionName,
+	CourtVersionPicture,
 } from "../../common/types.ts";
+import {
+	versionPictures,
+	withVersionPictures,
+} from "../../common/courtVersions.ts";
 import {
 	ImageField,
 	PIC,
@@ -51,8 +58,33 @@ const withPictures = (
 			}
 		}
 	}
+	if (out.versions) {
+		out.versions = withVersionPictures(out.versions, pictures);
+	}
 	return out;
 };
+
+// The court's versions, as the editor shows them (see CourtVersion).
+type Version = "regular" | CourtVersionName;
+const VERSIONS: [Version, string][] = [
+	["regular", "Regular season"],
+	["homeOpener", "Home opener"],
+	["playoffs", "Playoffs"],
+	["finals", "Finals"],
+];
+// A picture added to a version: where the league's own logos sit on an NBA
+// floor - inside each three-point line toward the corner, one near each
+// sideline.
+const NEW_PICTURE: CourtVersionPicture = {
+	image: "",
+	adjust: { scale: 0.55, dx: -38, dy: 15 },
+	pair: "diagonal",
+};
+const PAIRS: [string, CourtPair | undefined][] = [
+	["One", undefined],
+	["Two, mirrored", true],
+	["Two, diagonal", "diagonal"],
+];
 
 // A row of a color picker + optional "use default" reset, bound to one
 // CourtStyle field. Passing an empty value clears the field (fall back to
@@ -142,6 +174,102 @@ const TextField = ({
 	</div>
 );
 
+// A version's own pictures: each with where it sits, one or a pair, and
+// another added. (The finals, with none of their own, show the playoffs' -
+// till given their own.)
+const VersionPictures = ({
+	name,
+	style,
+	pictures,
+	onUpload,
+	onChange,
+	onSet,
+	trophy,
+}: {
+	name: CourtVersionName;
+	style: CourtStyle;
+	pictures: Record<string, string>;
+	onUpload: (file: File) => Promise<string | undefined>;
+	onChange: (i: number, next: Partial<CourtVersionPicture>) => void;
+	onSet: (next: CourtVersionPicture[] | undefined) => void;
+	trophy: ReactNode;
+}) => {
+	const own = style.versions?.[name];
+	const borrowed = name === "finals" && own === undefined;
+	const list = borrowed
+		? (style.versions?.playoffs?.pictures ?? [])
+		: (own?.pictures ?? []);
+	return (
+		<div className="border rounded p-2 mb-3">
+			{trophy}
+			{borrowed && list.length > 0 ? (
+				<div className="d-flex align-items-center gap-2 mb-3">
+					<span className="text-body-secondary small flex-grow-1">
+						Same as playoffs
+					</span>
+					<button
+						type="button"
+						className="btn btn-sm btn-light-bordered"
+						onClick={() => onSet(list.map((p) => ({ ...p })))}
+					>
+						Own pictures
+					</button>
+				</div>
+			) : (
+				list.map((p, i) => (
+					<div key={i} className="mb-3">
+						<ImageField
+							label={`Picture ${i + 1}`}
+							slot={`${name}${i}`}
+							url={p.image}
+							onURL={(v) => onChange(i, { image: v })}
+							adjust={p.adjust}
+							onAdjust={(_, next: CourtImageAdjust | undefined) =>
+								onChange(i, { adjust: next })
+							}
+							pictures={pictures}
+							onUpload={onUpload}
+						/>
+						<div className="d-flex align-items-center gap-2">
+							<select
+								className="form-select form-select-sm w-auto"
+								value={PAIRS.findIndex(([, pair]) => pair === p.pair)}
+								onChange={(e) =>
+									onChange(i, {
+										pair: PAIRS[Number.parseInt(e.target.value)]![1],
+									})
+								}
+							>
+								{PAIRS.map(([label], k) => (
+									<option key={label} value={k}>
+										{label}
+									</option>
+								))}
+							</select>
+							<button
+								type="button"
+								className="btn btn-sm btn-light-bordered ms-auto"
+								onClick={() => onSet(list.filter((_, j) => j !== i))}
+							>
+								Delete
+							</button>
+						</div>
+					</div>
+				))
+			)}
+			{borrowed && list.length > 0 ? null : (
+				<button
+					type="button"
+					className="btn btn-sm btn-light-bordered"
+					onClick={() => onSet([...list, { ...NEW_PICTURE }])}
+				>
+					Add picture
+				</button>
+			)}
+		</div>
+	);
+};
+
 const EditTeamCourt = ({
 	tid,
 	region,
@@ -157,14 +285,18 @@ const EditTeamCourt = ({
 	});
 
 	const [style, setStyle] = useState<CourtStyle>(court ?? {});
-	const [previewFinals, setPreviewFinals] = useState(false);
+	const [version, setVersion] = useState<Version>("regular");
 	const [saving, setSaving] = useState(false);
 	// Pictures by id: the court's own, and any uploaded since.
 	const [pictures, setPictures] =
 		useState<Record<string, string>>(picturesSaved);
 	const [uploaded, setUploaded] = useState<string[]>([]);
-	const [json, setJSON] = useState<string | undefined>();
+	// The JSON open beside it: the court as it is, as it changes - or, once
+	// typed in, the text typed, till it is applied.
+	const [jsonOpen, setJSONOpen] = useState(false);
+	const [typed, setTyped] = useState<string | undefined>();
 	const [jsonError, setJSONError] = useState<string | undefined>();
+	const json = typed ?? JSON.stringify(style, null, 2);
 
 	const upload = async (
 		file: File,
@@ -193,6 +325,52 @@ const EditTeamCourt = ({
 		setPictures((p) => ({ ...p, ...kept.pictures }));
 		setUploaded((u) => [...u, ...kept.ids]);
 		setStyle(kept.court);
+		setTyped(undefined);
+	};
+
+	// A version's own pictures (the finals with none of their own have the
+	// playoffs' - see versionPictures), changed.
+	const setVersionPictures = (
+		name: CourtVersionName,
+		next: CourtVersionPicture[] | undefined,
+	) => {
+		setStyle((s) => {
+			const versions = { ...s.versions };
+			if (next === undefined) {
+				delete versions[name];
+			} else {
+				versions[name] = { pictures: next };
+			}
+			const out = { ...s };
+			if (Object.keys(versions).length > 0) {
+				out.versions = versions;
+			} else {
+				delete out.versions;
+			}
+			return out;
+		});
+	};
+	const changePicture = (
+		name: CourtVersionName,
+		i: number,
+		next: Partial<CourtVersionPicture>,
+	) => {
+		const list = style.versions?.[name]?.pictures ?? [];
+		setVersionPictures(
+			name,
+			list.map((p, j) => {
+				if (j !== i) {
+					return p;
+				}
+				const out: CourtVersionPicture = { ...p, ...next };
+				for (const key of Object.keys(next) as (keyof CourtVersionPicture)[]) {
+					if (next[key] === undefined) {
+						delete out[key];
+					}
+				}
+				return out;
+			}),
+		);
 	};
 
 	// One image slot's size/position knobs.
@@ -229,10 +407,16 @@ const EditTeamCourt = ({
 		});
 	};
 
-	const shownStyle = useMemo(
-		() => withPictures(style, pictures),
-		[style, pictures],
-	);
+	const shownStyle = useMemo((): CourtStyle => {
+		const court = withPictures(style, pictures);
+		const decals = versionPictures(
+			court,
+			version === "regular" ? undefined : version,
+		)
+			.filter((p) => p.image !== "" && !p.image.startsWith(PIC))
+			.map((p) => ({ href: p.image, adjust: p.adjust, pair: p.pair }));
+		return decals.length > 0 ? { ...court, decals } : court;
+	}, [style, pictures, version]);
 
 	const save = async () => {
 		setSaving(true);
@@ -276,24 +460,50 @@ const EditTeamCourt = ({
 							court={shownStyle}
 							season={preview.season}
 							arena={preview.arena}
-							finals={previewFinals}
+							finals={version === "finals"}
+							playoffs={version === "playoffs" || version === "finals"}
 						/>
 					</Suspense>
-					<div className="form-check">
-						<input
-							type="checkbox"
-							className="form-check-input"
-							id="preview-finals"
-							checked={previewFinals}
-							onChange={(e) => setPreviewFinals(e.target.checked)}
-						/>
-						<label className="form-check-label" htmlFor="preview-finals">
-							Preview championship (finals) look
-						</label>
+					<div className="btn-group btn-group-sm flex-wrap">
+						{VERSIONS.map(([v, label]) => (
+							<button
+								key={v}
+								type="button"
+								className={`btn ${version === v ? "btn-secondary" : "btn-light-bordered"}`}
+								onClick={() => setVersion(v)}
+							>
+								{label}
+							</button>
+						))}
 					</div>
 				</div>
 
 				<div className="col-lg-5">
+					{version === "regular" ? null : (
+						<VersionPictures
+							name={version}
+							style={style}
+							pictures={pictures}
+							onUpload={(file) => upload(file)}
+							onChange={(i, next) => changePicture(version, i, next)}
+							onSet={(next) => setVersionPictures(version, next)}
+							trophy={
+								version === "finals" ? (
+									<ImageField
+										label="Championship trophy"
+										hint="(center court)"
+										slot="trophy"
+										url={style.trophyURL ?? ""}
+										onURL={(v) => set("trophyURL", v)}
+										adjust={style.adjust?.trophy}
+										onAdjust={setAdjust}
+										{...picture}
+									/>
+								) : null
+							}
+						/>
+					)}
+
 					<ImageField
 						label="Floor picture"
 						hint="(the whole floor from above)"
@@ -442,17 +652,6 @@ const EditTeamCourt = ({
 					/>
 
 					<ImageField
-						label="Championship trophy"
-						hint="(center court, finals look)"
-						slot="trophy"
-						url={style.trophyURL ?? ""}
-						onURL={(v) => set("trophyURL", v)}
-						adjust={style.adjust?.trophy}
-						onAdjust={setAdjust}
-						{...picture}
-					/>
-
-					<ImageField
 						label="Secondary logo"
 						hint="(one in each half)"
 						slot="secondary"
@@ -571,12 +770,11 @@ const EditTeamCourt = ({
 						className="btn btn-sm btn-light-bordered"
 						onClick={() => {
 							setJSONError(undefined);
-							setJSON(
-								json === undefined ? JSON.stringify(style, null, 2) : undefined,
-							);
+							setTyped(undefined);
+							setJSONOpen(!jsonOpen);
 						}}
 					>
-						{json === undefined ? "Edit as JSON" : "Close JSON"}
+						{jsonOpen ? "Close JSON" : "Edit as JSON"}
 					</button>
 					<label className="btn btn-sm btn-light-bordered ms-2 mb-0">
 						Load file
@@ -595,48 +793,63 @@ const EditTeamCourt = ({
 									.then((text) => {
 										const parsed = parseCourt(text);
 										if (typeof parsed === "string") {
-											setJSON(text);
+											setJSONOpen(true);
+											setTyped(text);
 											setJSONError(parsed);
 										} else {
-											setJSON(undefined);
 											setJSONError(undefined);
 											return keepPictures(parsed);
 										}
 									})
 									.catch(() => {
-										setJSON("");
+										setJSONOpen(true);
+										setTyped("");
 										setJSONError("Could not read that file.");
 									});
 							}}
 						/>
 					</label>
-					{json !== undefined ? (
+					{jsonOpen ? (
 						<div className="mt-2">
 							<textarea
 								className="form-control font-monospace small"
 								rows={12}
 								spellCheck={false}
 								value={json}
-								onChange={(e) => setJSON(e.target.value)}
+								onChange={(e) => setTyped(e.target.value)}
 							/>
 							{jsonError ? (
 								<div className="text-danger small mt-1">{jsonError}</div>
 							) : null}
-							<button
-								type="button"
-								className="btn btn-sm btn-secondary mt-2"
-								onClick={() => {
-									const parsed = parseCourt(json);
-									if (typeof parsed === "string") {
-										setJSONError(parsed);
-									} else {
-										setJSONError(undefined);
-										void keepPictures(parsed);
-									}
-								}}
-							>
-								Apply
-							</button>
+							{typed !== undefined ? (
+								<div className="d-flex gap-2 mt-2">
+									<button
+										type="button"
+										className="btn btn-sm btn-secondary"
+										onClick={() => {
+											const parsed = parseCourt(typed);
+											if (typeof parsed === "string") {
+												setJSONError(parsed);
+											} else {
+												setJSONError(undefined);
+												void keepPictures(parsed);
+											}
+										}}
+									>
+										Apply
+									</button>
+									<button
+										type="button"
+										className="btn btn-sm btn-light-bordered"
+										onClick={() => {
+											setJSONError(undefined);
+											setTyped(undefined);
+										}}
+									>
+										Discard
+									</button>
+								</div>
+							) : null}
 						</div>
 					) : null}
 

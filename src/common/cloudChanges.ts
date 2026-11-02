@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 135,
+		date: "2026-11-02",
+		text: "Courts: each team's court can now have its own Home opener, Playoffs and Finals versions - pictures laid on the floor for those games, like the Playoffs logo in two spots, swapped for the Finals logo in the Finals. Pick the version under the court editor's preview and place them right there; they're saved in the court's file too. League court decals can also pair diagonally now.",
+	},
+	{
 		n: 134,
 		date: "2026-11-02",
 		text: "Realistic Front Offices: CPU teams may trade first-round picks in back-to-back years again - they just value them more the fewer they have, and contenders within reach of a title spend them freely. They can also flip a player they just traded for when it clearly pays, like a rebuilding team moving a veteran it took on as salary filler.",

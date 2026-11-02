@@ -1,5 +1,6 @@
 import {
 	decalsForGame,
+	homeCourtForGame,
 	resolveCourt,
 	resolveScoreBug,
 	resolveStadium,
@@ -274,11 +275,12 @@ export const boxScoreToLiveSim = async ({
 					// Court styling is cosmetic; fall back to defaults.
 				}
 			}
-			// (Its uploaded pictures filled in, to draw - and at home, the
-			// league's decals for the game laid on it.)
+			// (Its uploaded pictures filled in, to draw - and at home, its own
+			// version's pictures and the league's decals for the game laid on
+			// it.)
 			t.court = await resolveCourt(liveSimCourt({ override, teamCourt }));
 			if (i === 0) {
-				t.court = withDecals(t.court, await decalsForGame(boxScore));
+				t.court = await homeCourtForGame(t.court, boxScore);
 			}
 			// What the team wears in the 3D game: the jersey it wore that
 			// season, or the one it has made its own now, and its uniforms
@@ -499,7 +501,7 @@ export default defineView({
 											...t,
 											court:
 												Number(tid) === homeTid
-													? withDecals(court, decals)
+													? await homeCourtForGame(court, boxScore)
 													: court,
 											...(t.stadium
 												? { stadium: await resolveStadium(t.stadium) }

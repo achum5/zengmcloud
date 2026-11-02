@@ -58,8 +58,12 @@ export const parseCourtDecals = (raw: unknown): CourtDecal[] | string => {
 				return `${at}: "${key}" should be a season.`;
 			}
 		}
-		if (decal.pair !== undefined && typeof decal.pair !== "boolean") {
-			return `${at}: "pair" should be true or false.`;
+		if (
+			decal.pair !== undefined &&
+			typeof decal.pair !== "boolean" &&
+			decal.pair !== "diagonal"
+		) {
+			return `${at}: "pair" should be true, false or "diagonal".`;
 		}
 		if (decal.adjust !== undefined) {
 			const problem = adjustProblem(decal.adjust, `${at}.adjust`);
@@ -75,7 +79,13 @@ export const parseCourtDecals = (raw: unknown): CourtDecal[] | string => {
 			...(decal.adjust !== undefined
 				? { adjust: decal.adjust as CourtImageAdjust }
 				: {}),
-			...(decal.pair ? { pair: true } : {}),
+			...(decal.pair
+				? {
+						pair: (decal.pair === "diagonal"
+							? "diagonal"
+							: true) as CourtDecal["pair"],
+					}
+				: {}),
 		});
 	}
 	return out;

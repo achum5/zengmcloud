@@ -3096,10 +3096,35 @@ export type CourtStyle = {
 	// Per-slot size/opacity/position, keyed by CourtImageSlot. Absent means
 	// every image sits where it was designed to.
 	adjust?: Partial<Record<CourtImageSlot, CourtImageAdjust>>;
+	// Its own pictures on top for its home opener, the playoffs and the
+	// finals (see CourtVersion). The finals, having none of their own, have
+	// the playoffs'.
+	versions?: Partial<Record<CourtVersionName, CourtVersion>>;
 	// The league's decals laid on it for the game being shown (see
-	// CourtDecal) - put there by the game, never saved with a team.
+	// CourtDecal) - and its own version's pictures - put there by the game,
+	// never saved with a team.
 	decals?: CourtDecalPlaced[];
 };
+
+// A COURT FOR AN OCCASION: the team's home opener (its first home game of
+// the regular season), a playoff game, a finals game - the court as ever,
+// with pictures of its own laid on it, each where it is put: at center
+// court, moved, sized and turned as the court's own pictures are - and, a
+// pair, one on each half (see CourtPair).
+export type CourtVersionName = "homeOpener" | "playoffs" | "finals";
+export type CourtVersion = {
+	pictures?: CourtVersionPicture[];
+};
+export type CourtVersionPicture = {
+	// A URL, or a picture uploaded to the league ("pic:<id>").
+	image: string;
+	adjust?: CourtImageAdjust;
+	pair?: CourtPair;
+};
+// One on each half: mirrored across center court (true), or turned round
+// it ("diagonal") - one near each sideline, as the league's own logos are
+// laid on an NBA floor.
+export type CourtPair = true | "diagonal";
 
 // A FOOTBALL TEAM'S HOME STADIUM in the 3D game, as the team has set it.
 // Anything left out is picked for it from who it is, the same every game
@@ -3192,9 +3217,9 @@ export type CourtDecal = {
 	from?: number;
 	to?: number;
 	// Where it sits: at center court, moved, sized and turned as a court's
-	// own pictures are - and, with `pair`, one on each half, mirrored.
+	// own pictures are - and, with `pair`, one on each half (see CourtPair).
 	adjust?: CourtImageAdjust;
-	pair?: boolean;
+	pair?: CourtPair;
 };
 // THE LEAGUE'S OWN SCORE BUG for the 3D game, in place of the default: a
 // box `width` x `height` units, laid along the bottom of the picture
@@ -3263,7 +3288,7 @@ export type ScoreBugPiece = {
 export type CourtDecalPlaced = {
 	href: string;
 	adjust?: CourtImageAdjust;
-	pair?: boolean;
+	pair?: CourtPair;
 };
 
 export type TeamAttr = keyof Team;

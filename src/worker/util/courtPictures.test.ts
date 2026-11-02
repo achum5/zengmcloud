@@ -8,6 +8,8 @@ import {
 	PIC,
 	courtPictureIds,
 	decalsForGame,
+	homeCourtForGame,
+	isHomeOpener,
 	prunePictures,
 	resolveCourt,
 	resolveScoreBug,
@@ -16,7 +18,12 @@ import {
 	storePicture,
 	withDecals,
 } from "./courtPictures.ts";
-import type { StadiumLook } from "../../common/types.ts";
+import type {
+	CourtDecalPlaced,
+	CourtStyle,
+	Game,
+	StadiumLook,
+} from "../../common/types.ts";
 
 // A picture uploaded for a court is kept once in the league and named from
 // the court by id; whatever draws the court gets it filled back in, and a
@@ -144,7 +151,7 @@ describe("court pictures", () => {
 		assert.strictEqual(await idb.cache.jerseySkins.get(cup), undefined);
 		// (And the league's decals for a game laid on the field, with or
 		// without a stadium of its own.)
-		const decals = [{ href: PNG(7), pair: true }];
+		const decals: CourtDecalPlaced[] = [{ href: PNG(7), pair: true }];
 		assert.deepStrictEqual(withDecals(stadium, decals), {
 			...stadium,
 			decals,
@@ -206,6 +213,77 @@ describe("court pictures", () => {
 			],
 		);
 		// And a picture a decal uses is kept.
+		await prunePictures([id]);
+		assert.ok(await idb.cache.jerseySkins.get(id));
+	});
+
+	test("a court's versions: their pictures kept and filled in, the game's laid on it", async () => {
+		await setup();
+		const id = await storePicture(PNG(8));
+		const court: CourtStyle = {
+			floor: "#335577",
+			versions: {
+				playoffs: {
+					pictures: [
+						{ image: `${PIC}${id}`, adjust: { dx: -38 }, pair: "diagonal" },
+					],
+				},
+				homeOpener: {
+					pictures: [{ image: "https://example.com/opener.png" }],
+				},
+			},
+		};
+		assert.deepStrictEqual(courtPictureIds(court), [id]);
+		const shown = await resolveCourt(court);
+		assert.strictEqual(shown?.versions?.playoffs?.pictures?.[0]?.image, PNG(8));
+		g.setWithoutSavingToDB("courtDecals", [
+			{ image: "https://example.com/league.png", when: "playoffs" },
+		]);
+		const season = g.get("season");
+		const laid = async (game: Partial<Game>) =>
+			(
+				(
+					await homeCourtForGame(shown, {
+						gid: 10,
+						season,
+						day: 50,
+						teams: [{ tid: 0 }, { tid: 1 }],
+						...game,
+					} as Game)
+				)?.decals ?? []
+			).map((d) => [d.href, d.pair]);
+		const playoffs = [
+			[PNG(8), "diagonal"],
+			["https://example.com/league.png", undefined],
+		];
+		assert.deepStrictEqual(await laid({ playoffs: true }), playoffs);
+		// (The finals, with none of their own, the playoffs'.)
+		assert.deepStrictEqual(
+			await laid({ playoffs: true, finals: true }),
+			playoffs,
+		);
+		// Its first home game of the season - and not its second.
+		const game = (gid: number, day: number, home: number) =>
+			({
+				gid,
+				season,
+				day,
+				playoffs: false,
+				teams: [{ tid: home }, { tid: 1 - home }],
+			}) as Game;
+		await idb.cache.games.put(game(1, 3, 1));
+		await idb.cache.games.put(game(2, 5, 0));
+		await idb.cache.games.put(game(3, 9, 0));
+		assert.deepStrictEqual(await laid({ gid: 2, day: 5 }), [
+			["https://example.com/opener.png", undefined],
+		]);
+		assert.deepStrictEqual(await laid({ gid: 3, day: 9 }), []);
+		assert.isTrue(await isHomeOpener(game(1, 3, 1)));
+		assert.isFalse(await isHomeOpener({ ...game(2, 5, 0), playoffs: true }));
+		// And a picture a version uses is kept.
+		const t0 = (await idb.cache.teams.get(0))!;
+		t0.court = court;
+		await idb.cache.teams.put(t0);
 		await prunePictures([id]);
 		assert.ok(await idb.cache.jerseySkins.get(id));
 	});

@@ -1,7 +1,9 @@
 import type {
 	CourtImageAdjust,
+	CourtPair,
 	StadiumLook,
 } from "../../../../common/types.ts";
+import { pairedAdjust } from "../../../../common/courtVersions.ts";
 import { makeCourtRng } from "../courtRng.ts";
 import { luminance, mix, shade } from "./color.ts";
 import {
@@ -524,7 +526,7 @@ export type DecalMark = { plane: TexturedPlane; img: HTMLCanvasElement };
 export type DecalPicture = {
 	picture: HTMLCanvasElement | HTMLImageElement;
 	adjust?: CourtImageAdjust;
-	pair?: boolean;
+	pair?: CourtPair;
 };
 const DECAL_FT = 30;
 const DECAL_PPF = 8;
@@ -576,13 +578,7 @@ export const paintDecals = (decals: DecalPicture[]): DecalMark[] => {
 		}
 		out.push(paintDecal(picture, adjust));
 		if (pair) {
-			out.push(
-				paintDecal(picture, {
-					...adjust,
-					dx: -(adjust?.dx ?? 0),
-					rotate: -(adjust?.rotate ?? 0),
-				}),
-			);
+			out.push(paintDecal(picture, pairedAdjust(adjust, pair)));
 		}
 	}
 	return out;

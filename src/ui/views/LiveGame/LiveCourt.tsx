@@ -26,6 +26,7 @@ import type {
 	CourtImageAdjust,
 	CourtImageSlot,
 } from "../../../common/types.ts";
+import { pairedAdjust } from "../../../common/courtVersions.ts";
 import { nextSpinDeg, rimReaction } from "./courtAnimation.ts";
 import { bodyRenderOrder } from "./bodyOrder.ts";
 import { usePlayerFace } from "../../util/playerFaces.ts";
@@ -1760,8 +1761,9 @@ const LiveCourt = ({
 	// repaint the floor constantly, and depending on nothing would leave a
 	// slider doing nothing at all. It is a handful of numbers.
 	const adjustKey = JSON.stringify(court?.adjust ?? null);
-	// The league's decals for this game (see CourtDecal), laid on at center
-	// court and moved from there - one on each half, mirrored, for a pair.
+	// The league's decals for this game (see CourtDecal) and the court's own
+	// version's pictures, laid on at center court and moved from there - one
+	// on each half for a pair (see CourtPair).
 	const decals = court?.decals;
 
 	// WHERE AN IMAGE ACTUALLY LANDS, once the team has had its say.
@@ -2445,14 +2447,13 @@ const LiveCourt = ({
 					if (!d.pair) {
 						return [one];
 					}
-					const mirrored: CourtImageAdjust = {
-						...d.adjust,
-						dx: -(d.adjust?.dx ?? 0),
-						rotate: -(d.adjust?.rotate ?? 0),
-					};
 					return [
 						one,
-						<image key={`${k}m`} href={d.href} {...placedBy(mirrored, box)} />,
+						<image
+							key={`${k}m`}
+							href={d.href}
+							{...placedBy(pairedAdjust(d.adjust, d.pair), box)}
+						/>,
 					];
 				})}
 
