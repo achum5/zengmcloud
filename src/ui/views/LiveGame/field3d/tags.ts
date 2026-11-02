@@ -15,8 +15,9 @@ const SNAPPED_TO = new Set<Role>(["C", "LS", "H"]);
 // Faded in and out over (ms).
 const IN_MS = 150;
 const OUT_MS = 300;
-// Over his head, as drawn (feet).
-const TAG_OVER = 8.2 * FIGURE_SCALE;
+// Over his head, as drawn: higher than the tallest man's, helmet and all
+// (feet) - not well up off him, close in, as basketball's isn't.
+const TAG_OVER = 6.9 * FIGURE_SCALE;
 
 // Where a box over the picture is (fractions of it across, and its top
 // down): the score bug, the line over it.
