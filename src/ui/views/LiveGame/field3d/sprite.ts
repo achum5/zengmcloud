@@ -1095,10 +1095,25 @@ export const sunCasts = (lean: number): Cast[] => [
 	{ lean, run: -0.5, alpha: 0.24 },
 ];
 // His shape all in black, a third the size of his picture, drawn back up
-// soft-edged: made the first time it is wanted, let go with his picture.
+// soft-edged: kept in his picture's own canvas, under it (see court3d's
+// keepPixels) - or, for a picture kept without it, made the first time it
+// is wanted and let go with his picture.
 const DARK_SCALE = 3;
 const darks = new WeakMap<HTMLCanvasElement, HTMLCanvasElement>();
-const darkOf = (k: Kept): HTMLCanvasElement | undefined => {
+const darkOf = (
+	k: Kept,
+):
+	| { img: HTMLCanvasElement; sx: number; sy: number; sw: number; sh: number }
+	| undefined => {
+	if (k.dark) {
+		return { img: k.canvas, sx: 0, sy: k.h, sw: k.dark.w, sh: k.dark.h };
+	}
+	const own = darkCanvasOf(k);
+	return own
+		? { img: own, sx: 0, sy: 0, sw: own.width, sh: own.height }
+		: undefined;
+};
+const darkCanvasOf = (k: Kept): HTMLCanvasElement | undefined => {
 	let d = darks.get(k.canvas);
 	if (d) {
 		return d;
@@ -1151,7 +1166,17 @@ const castShadows = (
 		// From where he is drawn, upright, to where it falls: as far out
 		// over the turf from his feet as he is up over them, by `run`.
 		ctx.transform(1, 0, -lean, -run, lean * floor, floor * (1 + run));
-		ctx.drawImage(dark, X, Y, k.w * px, k.h * px);
+		ctx.drawImage(
+			dark.img,
+			dark.sx,
+			dark.sy,
+			dark.sw,
+			dark.sh,
+			X,
+			Y,
+			k.w * px,
+			k.h * px,
+		);
 		ctx.setTransform(m);
 	}
 	ctx.imageSmoothingEnabled = smoothing;
