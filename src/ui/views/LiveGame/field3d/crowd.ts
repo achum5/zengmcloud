@@ -132,6 +132,45 @@ const loudAt = (play: Play, t: number, neutral: boolean): number => {
 	);
 };
 
+// THE KICKOFF OF A HALF (and of overtime): the stands on their feet for
+// it, from a moment before the kick till the return is over - and back
+// down in their seats.
+const KICK_QUARTERS = [1, 3, 5];
+const KICK_STAND_FROM = 4500;
+const KICK_STAND_UP_MS = 700;
+const KICK_STAND_AFTER = 600;
+const KICK_SIT_MS = 2200;
+const KICK_STAND = 0.85;
+const halfKicks = new WeakMap<FieldTimeline, { n: number; plays: Play[] }>();
+const halfKickoff = (tl: FieldTimeline, t: number): number => {
+	let had = halfKicks.get(tl);
+	if (!had || had.n !== tl.plays.length) {
+		const plays = KICK_QUARTERS.flatMap((q) => {
+			const first = tl.plays.find((p) => p.quarter === q && p.kind !== "none");
+			return first?.kind === "kickoff" ? [first] : [];
+		});
+		had = { n: tl.plays.length, plays };
+		halfKicks.set(tl, had);
+	}
+	let up = 0;
+	for (const p of had.plays) {
+		const from = p.snap - KICK_STAND_FROM;
+		const sit = p.whistle + KICK_STAND_AFTER;
+		if (t >= from && t <= sit + KICK_SIT_MS) {
+			up = Math.max(
+				up,
+				KICK_STAND *
+					Math.min(
+						1,
+						(t - from) / KICK_STAND_UP_MS,
+						1 - (t - sit) / KICK_SIT_MS,
+					),
+			);
+		}
+	}
+	return up;
+};
+
 export const crowdAt = (
 	tl: FieldTimeline,
 	t: number,
@@ -176,7 +215,11 @@ export const crowdAt = (
 	const loud = play ? loudAt(play, t, neutral) : 0;
 	const hush = c && c.side === 0 && c.big && !neutral ? 1 - c.level : 1;
 	return {
-		up: Math.max(roar, hush * Math.max(tense >= 1 ? 0.9 : tense * 0.7, loud)),
+		up: Math.max(
+			roar,
+			hush * Math.max(tense >= 1 ? 0.9 : tense * 0.7, loud),
+			halfKickoff(tl, t),
+		),
 		wave: roar > 0.3 ? fast : tense >= 1 && slow,
 		full,
 	};
