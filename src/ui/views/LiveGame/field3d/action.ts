@@ -2441,6 +2441,10 @@ const ROUTE_AFTER_FPS = [8, 10.5] as const;
 const ROUTE_AFTER_KEEP_FT = [14, 8] as const;
 const ROUTE_AFTER_LEAST_MS = 700;
 const ROUTE_AFTER_LEAST_FT = 6;
+// (And the quarterback, his throw caught: kept further off it (and up to
+// this much more), ft, at an easier jog, ft/s.)
+const QB_AFTER_KEEP_FT = [30, 15] as const;
+const QB_AFTER_FPS = [6.5, 9] as const;
 // (The line once a pass is caught - see downfield: off after the play
 // so long after it let up (soonest, latest), ms, at a jog (ft/s, slowest,
 // quickest) - no nearer where it ends than this, nor going less than this
@@ -2560,6 +2564,9 @@ const BREAK_NEAR_MOST = 10;
 const BREAK_NEAR_MS = 350;
 const BREAK_NEAR_FT = 3;
 const BREAK_NEAR_FPS = 6;
+// (Going quicker than that on to it, with this long (ms) at least before he
+// goes in: pulled up on the way he was going first - see closeOn.)
+const BREAK_PULL_LEAST_MS = 900;
 // (Off out of it into the hit up to speed (see GET_OFF_ACCEL) - this long
 // before it at least, ms.)
 const BREAK_FIRE_MS = 300;
@@ -2840,6 +2847,12 @@ const READY_LEAST_MS = 400;
 const READY_FROM_MS = 300;
 const READY_BEFORE_MS = 150;
 const FREED_REACT = 200;
+// (And then after the ball at a jog (ft/s, slowest, quickest), kept this
+// far off it (and up to this much more), ft - with this long (ms) at least
+// to go.)
+const FREED_FPS = [7, 10] as const;
+const FREED_KEEP_FT = [9, 6] as const;
+const FREED_AFTER_LEAST_MS = 700;
 // The men who bring him down down no nearer one another than this.
 const LANDED_APART = 2.4;
 // Met head on, another man in on it by then (as late as this after, ms):
@@ -4204,14 +4217,14 @@ class Action {
 					!l.arms &&
 					!l.ball &&
 					next.t0 === l.t1 &&
-					!GAITS.has(next.move) &&
 					l.from.x === l.to.x &&
 					l.from.y === l.to.y &&
 					next.from.x === l.to.x &&
 					next.from.y === l.to.y
 				) {
 					// (Stood a moment where he is between one thing and the
-					// next: on into the next - not flicked through standing.)
+					// next - off on his way again: on into the next, not
+					// flicked through standing.)
 					next.t0 = l.t0;
 					legs.splice(i, 1);
 					i--;
@@ -5826,6 +5839,7 @@ class Action {
 					catchAt,
 				);
 			}
+			this.withIt([qb], catchAt, QB_AFTER_KEEP_FT, QB_AFTER_FPS, false);
 		} else if (first === incI && thrown && target && catchPt) {
 			this.incomplete(incI, qb, target, catchPt, catchAt, coverage);
 		} else if (first === intI && thrown && target && catchPt) {
@@ -5834,6 +5848,7 @@ class Action {
 			this.sacked(sackI, qb, outT, sackD, sacker, runners);
 		} else if (scrambled) {
 			this.scramble(scrI, qb, outT, runners);
+			this.withIt(runners, outT);
 		} else if (stripped) {
 			this.strip(fumI, qb, outT, runners);
 		} else {
@@ -8019,6 +8034,18 @@ class Action {
 			);
 		}
 		m.plantFor(hit);
+		// (Right on it already, at full tilt, and a long while before it
+		// comes: pulled up hard on the way he was going, and set from there -
+		// not stopped dead on it and stood there.)
+		const pace = legPace(m.last);
+		if (
+			dist(m.at, hit) <= 8 &&
+			RAMPS.has(m.last.move) &&
+			pace >= BREAK_NEAR_MOST &&
+			lead - m.t >= BREAK_PULL_LEAST_MS
+		) {
+			m.easeOff((pace * pace) / (2 * STOP_ACCEL * STOP_HARD));
+		}
 		const far = dist(m.at, hit);
 		const secs = (lead - m.t) / 1000;
 		// (When he goes in on it from this far off, set: as long before it as
@@ -8617,6 +8644,16 @@ class Action {
 						Math.max(m.t + WITH_IT_LEAST_MS, t),
 						m.top * WITH_IT_PACE,
 					);
+				} else if (t - 300 - m.t >= ROUTE_AFTER_LEAST_MS) {
+					// (Where it ends up already: out to meet it, and back with
+					// it as it comes - kept off it - not stood waiting for it.)
+					m.hold(
+						m.t +
+							TRAIL_LOOK_MS[0] +
+							(TRAIL_LOOK_MS[1] - TRAIL_LOOK_MS[0]) *
+								countOf(m, this.input.snap, 29),
+					);
+					this.alongWith(m, m.top * WITH_IT_PACE, ring, t - 300);
 				}
 			}
 		}
@@ -10602,9 +10639,12 @@ class Action {
 				freed = Math.max(freed, end);
 			}
 			this.jostle([b, ...men], snap + JOSTLE_FROM, locked);
-			// (Nobody left on him well before it is over: up out of it.)
+			// (Nobody left on him well before it is over: up out of it, and
+			// after the ball at a jog, kept off it, on his own count - not
+			// stood where he lost him till the whistle.)
 			if (freed < till - FREED_MS) {
 				b.cut(freed + FREED_REACT);
+				this.offBlock(b, until, 0);
 			}
 		}
 
@@ -10855,6 +10895,7 @@ class Action {
 			// (Up to the next level, and nobody there.)
 			const s = this.of(b.at);
 			b.chase(this.w({ d: s.d + 9, a: s.a }), b.t + 900, b.top * 0.6, "run");
+			this.offBlock(b, until);
 			b.hold(until, "stand", this.ahead);
 			return;
 		}
@@ -10915,7 +10956,27 @@ class Action {
 			"drive",
 			this.ahead,
 		);
-		b.hold(Math.max(end, till), "stand", this.ahead);
+		this.offBlock(b, until);
+		b.hold(Math.max(b.t, till), "stand", this.ahead);
+	}
+
+	// Done with his block (or with nobody to block) well before the
+	// blocking is over (`until`, a beat after the man with the ball is
+	// down): a look, and after the ball at a jog, kept off it, on his own
+	// count - not stood where it left him.
+	offBlock(b: Actor, until: number, react = FREED_REACT) {
+		const { snap } = this.input;
+		const by = until - 600;
+		if (by - b.t - react < FREED_AFTER_LEAST_MS) {
+			return;
+		}
+		b.hold(b.t + react);
+		this.alongWith(
+			b,
+			FREED_FPS[0] + (FREED_FPS[1] - FREED_FPS[0]) * countOf(b, snap, 34),
+			FREED_KEEP_FT[0] + FREED_KEEP_FT[1] * countOf(b, snap, 35),
+			by,
+		);
 	}
 
 	// A blocker locked up with the man in front of him (BLOCK_GAP on) from
@@ -11449,11 +11510,19 @@ class Action {
 		}
 	}
 
-	// THE OTHERS OUT ON ROUTES ONCE IT IS CAUGHT: their routes run out (not
-	// cut short under the man on them, who has been set going off them), a
-	// look at it, and after it at a jog, each on his own count - kept well
-	// off it - not stood where his route left him till the whistle.
-	withIt(men: Actor[], catchAt: number) {
+	// THE OTHERS OUT ON ROUTES ONCE IT IS CAUGHT (or the quarterback takes
+	// off with it): their routes run out (not cut short under the man on
+	// them, who has been set going off them), a look at it, and after it at
+	// a jog, each on his own count - kept well off it, and with it as it
+	// comes his way - not stood where his route left him till the whistle.
+	// (Not `near`: left be if it is near enough him already.)
+	withIt(
+		men: Actor[],
+		catchAt: number,
+		keepFt: readonly [number, number] = ROUTE_AFTER_KEEP_FT,
+		fpsOf: readonly [number, number] = ROUTE_AFTER_FPS,
+		near = true,
+	) {
 		const { snap } = this.input;
 		const caught = catchAt + BREAK_MS;
 		for (const m of men) {
@@ -11464,21 +11533,19 @@ class Action {
 				Math.max(m.t, caught) +
 				ROUTE_AFTER_MS[0] +
 				(ROUTE_AFTER_MS[1] - ROUTE_AFTER_MS[0]) * countOf(m, snap, 31);
-			const keep =
-				ROUTE_AFTER_KEEP_FT[0] + ROUTE_AFTER_KEEP_FT[1] * countOf(m, snap, 33);
+			const keep = keepFt[0] + keepFt[1] * countOf(m, snap, 33);
 			const ball = this.ballAt(from);
 			if (
 				!ball ||
 				this.whistle - 300 - from < ROUTE_AFTER_LEAST_MS ||
-				dist(m.at, ball) < keep + ROUTE_AFTER_LEAST_FT
+				(!near && dist(m.at, ball) < keep + ROUTE_AFTER_LEAST_FT)
 			) {
 				continue;
 			}
 			m.hold(from);
 			this.alongWith(
 				m,
-				ROUTE_AFTER_FPS[0] +
-					(ROUTE_AFTER_FPS[1] - ROUTE_AFTER_FPS[0]) * countOf(m, snap, 32),
+				fpsOf[0] + (fpsOf[1] - fpsOf[0]) * countOf(m, snap, 32),
 				keep,
 				this.whistle - 300,
 			);
