@@ -1504,6 +1504,8 @@ const FINAL_DRIBBLE = 3600;
 // A star gets it going one-on-one more than most (see isoFor).
 const ISO_FROM = 0.6;
 const ISO_STAR = 2;
+// At crunch time (see crunchAt), how much more again.
+const ISO_CLUTCH = 1.5;
 // How high the man with it at the horn, winning, throws it (feet).
 const GAME_BALL_UP = 27;
 // Nearer anybody than this (feet) at the horn, a loser steps off him.
@@ -3056,11 +3058,27 @@ class Director {
 	// better he creates for himself - reading it, and his handle - from
 	// ISO_FROM of the way up, up to 1 + ISO_STAR times for the very best.
 	// (Nothing to go by, as often as anybody.)
-	private isoFor(pid: number): number | undefined {
+	// (And at crunch time, the ball in his hands and the floor cleared for
+	// him more again: see crunchAt.)
+	private isoFor(pid: number, clock?: number): number | undefined {
 		const s = this.level(pid, "oiq", "drb");
 		return s === undefined || s <= ISO_FROM
 			? undefined
-			: 1 + (ISO_STAR * (s - ISO_FROM)) / (1 - ISO_FROM);
+			: (1 + (ISO_STAR * (s - ISO_FROM)) / (1 - ISO_FROM)) *
+					(1 + ISO_CLUTCH * this.crunchAt(clock));
+	}
+
+	// How much it is crunch time with this on the clock: the last two
+	// minutes of a close fourth quarter or overtime all of it, the last five
+	// of one still in reach half of it (as the building feels it - see
+	// tensionNow).
+	private crunchAt(clock: number | undefined): number {
+		if (!this.overtime && this.periodNo < 4) {
+			return 0;
+		}
+		const c = clock ?? this.lastClock ?? 720;
+		const margin = Math.abs(this.score[0] - this.score[1]);
+		return c <= 120 && margin <= 6 ? 1 : c <= 300 && margin <= 8 ? 0.5 : 0;
 	}
 
 	// How he celebrates a three, his own way every time: both arms up, the
@@ -6409,7 +6427,7 @@ class Director {
 					unassisted: plan.kind === "make" && assist === undefined,
 					holder,
 					five,
-					iso: this.isoFor(shooter),
+					iso: this.isoFor(shooter, clock),
 					make: this.level(shooter, "drb", "oiq", "pss"),
 				},
 				sets,
