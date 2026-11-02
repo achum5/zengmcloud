@@ -3107,6 +3107,13 @@ const JUMP: Record<string, number> = {
 	"Neutral zone infraction": 3,
 	Encroachment: 3.5,
 };
+// Picked off: the rest of his side after it with him, off once they are
+// through with what they were doing (with this long to go at least, ms),
+// at this much of their top speed - to round where it ends up, this far
+// off (feet, and up to this much more: see countOf).
+const WITH_IT_LEAST_MS = 400;
+const WITH_IT_PACE = 0.7;
+const WITH_IT_FT = [9, 8] as const;
 // The ball out of his hands this long after the hit that knocks it loose;
 // and what a man is doing on the turf, down.
 const POP_MS = 120;
@@ -8258,6 +8265,32 @@ class Action {
 		}
 		// The offense sees it picked off, and comes after him.
 		this.seen = catchAt + BREAK_MS;
+		// (And his own side, through with what they were doing, after it
+		// with him at an easy run - not stood where the pass left them.)
+		for (const m of this.men) {
+			if (
+				m.team === picker.team &&
+				m !== picker &&
+				!this.done.has(m.pid) &&
+				m.t < t - WITH_IT_LEAST_MS
+			) {
+				const ring =
+					WITH_IT_FT[0] + WITH_IT_FT[1] * countOf(m, this.input.snap, 21);
+				const far = dist(m.at, pt);
+				if (far > ring + 2) {
+					const to = {
+						x: pt.x + ((m.at.x - pt.x) / far) * ring,
+						y: pt.y + ((m.at.y - pt.y) / far) * ring,
+					};
+					m.plantFor(to);
+					m.chase(
+						to,
+						Math.max(m.t + WITH_IT_LEAST_MS, t),
+						m.top * WITH_IT_PACE,
+					);
+				}
+			}
+		}
 		const others = this.o.filter((m) => m !== rec && !this.done.has(m.pid));
 		if (retI < 0) {
 			this.whistle = t;
