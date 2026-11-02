@@ -38,6 +38,11 @@ const WIDEST = 190;
 // gets, the men round him and not the whole field.
 const CARRY_WIDTH = 84;
 const NARROW = 0.5;
+// And whatever that makes of it, the ball itself no nearer the edge of the
+// picture than this (feet): loose a long way back of the line - a fumble
+// batted about behind it - not left out of the picture, the camera held on
+// the line.
+const KEEP_IN = 18;
 // However it goes, no further toward an end line than to take in the end
 // zone and a strip past it (feet), not the stands behind.
 const PAST_END = 12;
@@ -287,8 +292,13 @@ export const aimFor = (m: FieldMoment): Shot => {
 		: carried
 			? Math.max(CARRY_WIDTH, f.width - Math.max(0, down) * NARROW)
 			: Math.min(WIDEST, f.width + Math.max(0, down) * OPEN_UP);
+	const keep = width / 2 - KEEP_IN;
+	const x = Math.min(
+		focus.x + keep,
+		Math.max(focus.x - keep, play.losX + play.dir * lead),
+	);
 	return {
-		x: inBounds(play.losX + play.dir * lead, width),
+		x: inBounds(x, width),
 		width,
 		y: across(focus.y),
 	};
