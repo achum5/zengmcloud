@@ -3166,7 +3166,13 @@ export type StadiumLook = {
 	// own colors and name.
 	endZoneColor?: string;
 	endZoneText?: string;
+	// The other end zone's (the city at one end, say, the name at the
+	// other); left out, the same as the first.
+	endZoneText2?: string;
 	endZoneTextColor?: string;
+	// The end zones' lettering: bold block capitals, a serif, or a slanted
+	// italic; left out, picked for the team.
+	lettering?: "block" | "serif" | "italic";
 	// The team's logo at midfield; false for bare grass. Or a picture of its
 	// own there - and, for the championship game, the trophy's - a URL, or
 	// one uploaded to the league ("pic:<id>").

@@ -119,3 +119,36 @@ test("some fields the city at one end, the name at the other - not one with its 
 	assert.strictEqual(both.endZones[0].text, whole.name.toUpperCase());
 	assert.strictEqual(both.endZones[1].text, whole.name.toUpperCase());
 });
+
+test("each end zone's own lettering, and the lettering's style", () => {
+	const whole = teams.find((x) => !venueFor(x).split)!;
+	const own = (stadium: Record<string, string>) =>
+		fieldStyleFor({ ...whole, stadium }, undefined).endZones.map((z) => z.text);
+	assert.deepEqual(own({ endZoneText: "HOME" }), ["HOME", "HOME"]);
+	assert.deepEqual(own({ endZoneText: "HOME", endZoneText2: "AWAY" }), [
+		"HOME",
+		"AWAY",
+	]);
+	assert.deepEqual(own({ endZoneText2: "AWAY" }), [
+		whole.name.toUpperCase(),
+		"AWAY",
+	]);
+	assert.deepEqual(own({ endZoneText: "" }), ["", ""]);
+	// (Mostly block capitals; a serif or an italic now and then - or as the
+	// team has it.)
+	const styles = teams.map((t) => venueFor(t).lettering ?? "block");
+	const share = (s: string) =>
+		styles.filter((x) => x === s).length / styles.length;
+	assert.isAbove(share("block"), 0.45);
+	assert.isAbove(share("serif"), 0.1);
+	assert.isAbove(share("italic"), 0.1);
+	const serif = fieldStyleFor(
+		{ ...whole, stadium: { lettering: "serif" } },
+		undefined,
+	);
+	assert.strictEqual(serif.endZones[0].lettering, "serif");
+	assert.strictEqual(serif.endZones[1].lettering, "serif");
+	assert.isUndefined(
+		venueFor({ ...whole, stadium: { lettering: "block" } }).lettering,
+	);
+});

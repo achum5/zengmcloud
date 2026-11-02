@@ -16,6 +16,15 @@ test("a stadium's settings kept to the ones there are", () => {
 	});
 	assert.deepEqual(
 		cleanStadium({
+			endZoneText: " KANSAS CITY ",
+			endZoneText2: "CHIEFS",
+			lettering: "serif",
+		}),
+		{ endZoneText: "KANSAS CITY", endZoneText2: "CHIEFS", lettering: "serif" },
+	);
+	assert.isUndefined(cleanStadium({ lettering: "gothic" }));
+	assert.deepEqual(
+		cleanStadium({
 			turfColor: "#0033a0",
 			lineColor: "#FFFFFF",
 			seatColor: "#ffb612",

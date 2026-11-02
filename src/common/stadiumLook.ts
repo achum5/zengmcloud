@@ -18,6 +18,7 @@ const ROOFS = new Set(["open", "dome"]);
 const TURFS = new Set(["grass", "artificial"]);
 const END_ZONES = new Set(["solid", "green", "striped"]);
 const SKIES = new Set(["day", "night"]);
+const LETTERINGS = new Set(["block", "serif", "italic"]);
 export const END_ZONE_TEXT_MAX = 24;
 export const BOARD_TEXT_MAX = 24;
 // A picture: a link to one, or one uploaded to the league.
@@ -50,6 +51,9 @@ export const cleanStadium = (raw: unknown): StadiumLook | undefined => {
 	if (typeof r.sky === "string" && SKIES.has(r.sky)) {
 		out.sky = r.sky as StadiumLook["sky"];
 	}
+	if (typeof r.lettering === "string" && LETTERINGS.has(r.lettering)) {
+		out.lettering = r.lettering as StadiumLook["lettering"];
+	}
 	for (const key of [
 		"turfColor",
 		"lineColor",
@@ -63,8 +67,11 @@ export const cleanStadium = (raw: unknown): StadiumLook | undefined => {
 			out[key] = v;
 		}
 	}
-	if (typeof r.endZoneText === "string") {
-		out.endZoneText = r.endZoneText.trim().slice(0, END_ZONE_TEXT_MAX);
+	for (const key of ["endZoneText", "endZoneText2"] as const) {
+		const v = r[key];
+		if (typeof v === "string") {
+			out[key] = v.trim().slice(0, END_ZONE_TEXT_MAX);
+		}
 	}
 	if (typeof r.boardText === "string" && r.boardText.trim() !== "") {
 		out.boardText = r.boardText.trim().slice(0, BOARD_TEXT_MAX);

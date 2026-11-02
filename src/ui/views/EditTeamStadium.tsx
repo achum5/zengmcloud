@@ -62,7 +62,7 @@ const parseLook = (
 };
 
 // A setting picked from a few, "" for the team's own pick.
-const Choice = <K extends "roof" | "turf" | "endZones" | "sky">({
+const Choice = <K extends "roof" | "turf" | "endZones" | "sky" | "lettering">({
 	label,
 	value,
 	options,
@@ -811,48 +811,56 @@ const EditTeamStadium = ({
 							fallback={colors[0]}
 							onChange={(v) => setField("endZoneColor", v)}
 						/>
-						<div className="mb-3">
-							<label className="form-label mb-1" htmlFor="end-zone-text">
-								End zone lettering
-							</label>
-							<div className="d-flex align-items-center gap-2">
-								<input
-									id="end-zone-text"
-									type="text"
-									className="form-control"
-									maxLength={END_ZONE_TEXT_MAX}
-									value={stadium.endZoneText ?? ""}
-									placeholder={[
-										...new Set(
-											fieldAuto("endZoneText").endZones.map((z) => z.text),
-										),
-									].join(" / ")}
-									disabled={stadium.endZoneText === ""}
-									onChange={(e) =>
-										setField(
-											"endZoneText",
-											e.target.value === "" ? undefined : e.target.value,
-										)
-									}
-								/>
-								<button
-									type="button"
-									className="btn btn-sm btn-light-bordered"
-									onClick={() => setField("endZoneText", undefined)}
-									disabled={stadium.endZoneText === undefined}
-								>
-									Auto
-								</button>
-								<button
-									type="button"
-									className="btn btn-sm btn-light-bordered"
-									onClick={() => setField("endZoneText", "")}
-									disabled={stadium.endZoneText === ""}
-								>
-									None
-								</button>
+						{(["endZoneText", "endZoneText2"] as const).map((key, end) => (
+							<div className="mb-3" key={key}>
+								<label className="form-label mb-1" htmlFor={key}>
+									{end === 0 ? "End zone lettering" : "Other end zone"}
+								</label>
+								<div className="d-flex align-items-center gap-2">
+									<input
+										id={key}
+										type="text"
+										className="form-control"
+										maxLength={END_ZONE_TEXT_MAX}
+										value={stadium[key] ?? ""}
+										placeholder={fieldAuto(key).endZones[end]!.text}
+										disabled={stadium[key] === ""}
+										onChange={(e) =>
+											setField(
+												key,
+												e.target.value === "" ? undefined : e.target.value,
+											)
+										}
+									/>
+									<button
+										type="button"
+										className="btn btn-sm btn-light-bordered"
+										onClick={() => setField(key, undefined)}
+										disabled={stadium[key] === undefined}
+									>
+										Auto
+									</button>
+									<button
+										type="button"
+										className="btn btn-sm btn-light-bordered"
+										onClick={() => setField(key, "")}
+										disabled={stadium[key] === ""}
+									>
+										None
+									</button>
+								</div>
 							</div>
-						</div>
+						))}
+						<Choice<"lettering">
+							label="Lettering style"
+							value={stadium.lettering}
+							options={[
+								["block", "Block"],
+								["serif", "Serif"],
+								["italic", "Italic"],
+							]}
+							onChange={(v) => setField("lettering", v)}
+						/>
 						<HelmetColor
 							label="Lettering color"
 							value={stadium.endZoneTextColor}

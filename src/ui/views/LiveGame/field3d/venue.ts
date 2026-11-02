@@ -22,6 +22,9 @@ export type Venue = {
 	// The city lettered in the left end zone and the name in the right, not
 	// the name in both.
 	split?: boolean;
+	// The end zones lettered in block capitals (left out), a serif or an
+	// italic.
+	lettering?: "serif" | "italic";
 	sky: "day" | "night";
 	// How far across the field (feet from the far sideline) that shadow
 	// reaches, at each end line; none, all in the sun.
@@ -30,6 +33,10 @@ export type Venue = {
 
 const DOMES = 0.3;
 const SPLIT = 0.45;
+// The stock fields lettered in a serif this often, and in an italic this
+// often (block capitals otherwise).
+const SERIF = 0.2;
+const ITALIC = 0.2;
 // The game's own cities (see common/teamInfos), each under a roof or open
 // to the sky as a stadium there would be: a roof where the winters are
 // hard or the summers hot (or the city has a dome famous enough), open
@@ -156,7 +163,7 @@ export const venueFor = (
 	);
 	// (All drawn whatever the team has set, so what it has not stays as it
 	// was.)
-	const rolls = [rng(), rng(), rng(), rng()] as const;
+	const rolls = [rng(), rng(), rng(), rng(), rng()] as const;
 	const city = home?.region ?? "";
 	const roof =
 		own.roof ??
@@ -180,6 +187,13 @@ export const venueFor = (
 		city !== "" &&
 		city.toUpperCase() !== (home?.name ?? "").toUpperCase() &&
 		rolls[3] < SPLIT;
+	const lettering =
+		own.lettering ??
+		(rolls[4] < SERIF
+			? "serif"
+			: rolls[4] < SERIF + ITALIC
+				? "italic"
+				: "block");
 	const sky =
 		own.sky ?? (game === undefined || game.primeTime ? "night" : "day");
 	let shadow: [number, number] | undefined;
@@ -196,6 +210,7 @@ export const venueFor = (
 		turf,
 		endZones,
 		...(split ? { split } : {}),
+		...(lettering !== "block" ? { lettering } : {}),
 		sky,
 		...(shadow ? { shadow } : {}),
 	};

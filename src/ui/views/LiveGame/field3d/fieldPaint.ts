@@ -48,6 +48,8 @@ export type EndZoneStyle = {
 	text: string;
 	textColor: string;
 	edge: string;
+	// Block capitals (left out), a serif or an italic.
+	lettering?: Venue["lettering"];
 };
 
 export type FieldStyle = {
@@ -78,7 +80,11 @@ const endZoneOf = (
 	fallback: string,
 	pattern: Venue["endZones"],
 	turf: string,
-	// (Its city lettered in it, not its name.)
+	lettering: Venue["lettering"],
+	// Which of its end zones: the first lettered with what the team has set
+	// (or its city, a split field's), the other with what it has set for it
+	// (or the first's, or its name).
+	end: 0 | 1 = 0,
 	city = false,
 ): EndZoneStyle => {
 	// (What the team has set for them over what its colors and name make.)
@@ -87,13 +93,14 @@ const endZoneOf = (
 	const second = team?.colors?.[1] ?? "#ffffff";
 	const third = team?.colors?.[2] ?? "#ffffff";
 	const text =
-		own?.endZoneText ??
+		(end === 1 ? (own?.endZoneText2 ?? own?.endZoneText) : own?.endZoneText) ??
 		(
 			(city ? team?.region : undefined) ??
 			team?.name ??
 			team?.abbrev ??
 			""
 		).toUpperCase();
+	const font = lettering ? { lettering } : {};
 	if (pattern === "green") {
 		// On the grass: lettered in the team's color, if it shows on green,
 		// edged in another.
@@ -105,7 +112,7 @@ const endZoneOf = (
 			[second, third, fill, "#ffffff"].find(
 				(c) => c !== textColor && contrast(c, textColor) > 0.2,
 			) ?? shade(textColor, -0.4);
-		return { pattern, fill: turf, text, textColor, edge };
+		return { pattern, fill: turf, text, textColor, edge, ...font };
 	}
 	// Lettered in the team's second color where it shows, edged in its third;
 	// white (or black on a light end zone) otherwise.
@@ -121,7 +128,7 @@ const endZoneOf = (
 		Math.abs(luminance(third) - luminance(textColor)) > 0.2 && third !== fill
 			? third
 			: shade(fill, -0.35);
-	return { pattern, fill, text, textColor, edge };
+	return { pattern, fill, text, textColor, edge, ...font };
 };
 
 const contrast = (a: string, b: string) =>
@@ -146,12 +153,11 @@ export const fieldStyleFor = (
 		home?.stadium?.lineColor ?? (luminance(turf) > 0.6 ? "#1b1b1d" : "#f7f7f2");
 	// (The city at the left end, the name at the right - a split field's.)
 	const split = venue.split === true && !neutralSite;
-	const left = endZoneOf(home, "#8c1d40", venue.endZones, turf, split);
+	const { endZones: pattern, lettering } = venue;
+	const left = endZoneOf(home, "#8c1d40", pattern, turf, lettering, 0, split);
 	const right = neutralSite
-		? endZoneOf(away, "#1d3461", venue.endZones, turf)
-		: split
-			? endZoneOf(home, "#8c1d40", venue.endZones, turf)
-			: left;
+		? endZoneOf(away, "#1d3461", pattern, turf, lettering)
+		: endZoneOf(home, "#8c1d40", pattern, turf, lettering, 1);
 	return {
 		turf,
 		stripe: grass ? 0.075 : 0.04,
@@ -255,6 +261,15 @@ export const paintTurf = (style: FieldStyle, seed: string) => {
 	return c;
 };
 
+// The end zones' lettering (see StadiumLook.lettering), its fonts named
+// outright.
+const SANS = '"Arial Black", "Helvetica Neue", Arial, sans-serif';
+const LETTERING = {
+	block: (px: number) => `900 ${px}px ${SANS}`,
+	serif: (px: number) => `700 ${px}px Georgia, "Times New Roman", Times, serif`,
+	italic: (px: number) => `italic 900 ${px}px ${SANS}`,
+};
+
 // The end zone at `side` (0 left, 1 right): its color, a darker band along
 // the end line, and the team's name in big block letters reading up the
 // field from each side, the way they are painted - the left one's bottom
@@ -323,7 +338,7 @@ export const paintEndZone = (
 		g.save();
 		g.translate(P.w / 2, P.h / 2);
 		g.rotate(side === 0 ? -Math.PI / 2 : Math.PI / 2);
-		g.font = `900 ${tall}px "Arial Black", "Helvetica Neue", Arial, sans-serif`;
+		g.font = LETTERING[z.lettering ?? "block"](tall);
 		g.textAlign = "center";
 		g.textBaseline = "middle";
 		g.lineJoin = "round";
