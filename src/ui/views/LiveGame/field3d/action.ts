@@ -3229,6 +3229,9 @@ const TWIN_JOIN_MS = 300;
 // (Of two of different sides, one facing the other - more than this, the
 // cosine of the angle off his facing - as good as in a block with him.)
 const TWIN_FACING = 0.7;
+// (Two in a block with each other, nearer than this, feet: in each other -
+// eased back off each other, no more than TWIN_MOST each.)
+const CLASH_APART = 1.6;
 const LINE_PLAY = new Set<Move>(["engage", "drive"]);
 // (Up against a man, driving him, feet.)
 const DRIVE_ON = 3.5;
@@ -4148,6 +4151,35 @@ class Action {
 				// (Spells of it: when, how q is off p each time, and the way
 				// square to p's facing, all told.)
 				let spell: { a: number; b: number; seps: Pt[]; side: Pt } | undefined;
+				// (Of two sides in a block with each other, in each other: when,
+				// and how q is off p each time.)
+				let clash: { a: number; b: number; seps: Pt[] } | undefined;
+				const clashed = () => {
+					if (!clash) {
+						return;
+					}
+					const { a, b, seps } = clash;
+					clash = undefined;
+					const mx = seps.reduce((sum, d) => sum + d.x, 0);
+					const my = seps.reduce((sum, d) => sum + d.y, 0);
+					const len = Math.hypot(mx, my);
+					if (b <= a || len === 0) {
+						return;
+					}
+					// (Back off each other along the way between them, as far
+					// as it takes.)
+					const ux = mx / len;
+					const uy = my / len;
+					const need = Math.max(
+						...seps.map((d) => CLASH_APART - (d.x * ux + d.y * uy)),
+					);
+					const half = Math.min(TWIN_MOST, need / 2);
+					if (half <= 0) {
+						return;
+					}
+					ease(p, a, b, { x: -ux * half, y: -uy * half });
+					ease(q, a, b, { x: ux * half, y: uy * half });
+				};
 				const done = () => {
 					if (!spell) {
 						return;
@@ -4198,6 +4230,18 @@ class Action {
 							Math.cos(gpk.yaw) * ux + Math.sin(gpk.yaw) * uy > TWIN_FACING ||
 							-(Math.cos(gqk.yaw) * ux + Math.sin(gqk.yaw) * uy) > TWIN_FACING
 						) {
+							if (d < CLASH_APART) {
+								if (clash && t - clash.b > TWIN_JOIN_MS) {
+									clashed();
+								}
+								const sep = { x: d * ux, y: d * uy };
+								if (clash) {
+									clash.b = t;
+									clash.seps.push(sep);
+								} else {
+									clash = { a: t, b: t, seps: [sep] };
+								}
+							}
 							return;
 						}
 					}
@@ -4217,6 +4261,7 @@ class Action {
 					}
 				});
 				done();
+				clashed();
 			}
 		}
 		for (const [m, es] of eases) {
@@ -12117,33 +12162,36 @@ class Action {
 		);
 		// (Round him clear of any man down there - in a pile, say - and of
 		// the others round him.)
-		const lying: Pt[] = [];
-		for (const m of this.men) {
-			if (m === hero || mates.includes(m)) {
-				continue;
-			}
-			for (const t of MOB_LIE_AT) {
-				if (DOWN.has(legAt(m, start + t).move)) {
-					lying.push(m.posAt(start + t));
-				}
-			}
-		}
+		const others = this.men.filter((m) => m !== hero && !mates.includes(m));
+		const lyingFrom = (t0: number): Pt[] =>
+			MOB_LIE_AT.flatMap((d) =>
+				others
+					.filter((m) => DOWN.has(legAt(m, t0 + d).move))
+					.map((m) => m.posAt(t0 + d)),
+			);
+		const late = lyingFrom(start);
+		let lying = late;
 		const taken: Pt[] = [];
 		const ringAt = (ang: number): Pt => ({
 			x: at.x + Math.cos(ang) * MOB_RING,
 			y: at.y + Math.sin(ang) * MOB_RING,
 		});
-		const clear = (p: Pt) =>
-			lying.every((q) => dist(q, p) >= MOB_ROOM) &&
-			taken.every((q) => dist(q, p) >= MOB_ROOM);
+		// (Nowhere that clear: the clearest.)
+		const room = (p: Pt) =>
+			Math.min(
+				...lying.map((q) => dist(q, p)),
+				...taken.map((q) => dist(q, p)),
+			);
 		mates.forEach((m, k) => {
 			const near = dist(m.posAt(c0), at) < MOB_FROM;
 			m.cut(start);
+			// (Off as soon as he is free - round any man down there then, too.)
+			lying = m.t < start ? [...late, ...lyingFrom(m.t)] : late;
 			const ang = rings[k]!;
+			const ways = PILE_TURNS.slice(0, -1).map((d) => ringAt(ang + d));
 			const to =
-				PILE_TURNS.map((d) => ringAt(ang + d))
-					.slice(0, -1)
-					.find(clear) ?? ringAt(ang);
+				ways.find((p) => room(p) >= MOB_ROOM) ??
+				ways.reduce((a, b) => (room(b) > room(a) + 0.01 ? b : a));
 			taken.push(to);
 			// (Pulled up as he gets there, hard - not leapt in off a sprint.)
 			const v = m.top * (0.7 + r() * 0.15);
@@ -13025,8 +13073,8 @@ const MOB_FROM = 75;
 // down into the turf this long after he starts, and up off it.
 const MOB_RING = 3.2;
 const MOB_GAP = 0.85;
-// (Clear of a man down there - looked for this long after they are off -
-// by this much, feet.)
+// (Clear of a man down there - looked for this long after they are off,
+// and after he is - by this much, feet.)
 const MOB_LIE_AT = [400, 1200, 2000];
 const MOB_ROOM = 1.8;
 // (Down this near him: in on it once up.)
