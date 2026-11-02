@@ -6,7 +6,12 @@ import { g } from "../../util/index.ts";
 import { tradeDifficulty } from "../../util/difficulty.ts";
 import { createArenaLeague } from "../../../test/arena/runLeague.ts";
 import { judgeHumanOffer } from "./humanTrades.ts";
-import { currentOutlook } from "./market.ts";
+import {
+	currentOutlook,
+	loadTeam,
+	marketSettings,
+	releaseAlternative,
+} from "./market.ts";
 import { retentionKey } from "./outlook.ts";
 
 const importNode = (name: string) => import(/* @vite-ignore */ name);
@@ -141,6 +146,40 @@ test(
 				[ts.won, ts.lost] = was[i]!;
 				await idb.cache.teamSeasons.put(ts);
 			}
+		}
+	},
+);
+
+test(
+	"a pick is never given for nothing, and a scrub is worth no more than releasing him",
+	{ timeout: 120_000 },
+	async () => {
+		const was = marketSettings.freeDisposal;
+		marketSettings.freeDisposal = true;
+		try {
+			const outlook = await currentOutlook();
+			const t = await loadTeam(outlook, cpuTid);
+			const pick = t.picks.find((dp) => dp.round === 2) ?? t.picks[0]!;
+			assert.isUndefined(
+				releaseAlternative(outlook, t, [{ kind: "pick", dp: pick }], []),
+			);
+			const verdict = await judgeHumanOffer(
+				{ tid: cpuTid, pids: [], dpids: [pick.dpid] },
+				{ tid: userTid, pids: [], dpids: [] },
+			);
+			assert.strictEqual(verdict.kind, "no");
+			// Releasing anyone is never priced as a loss: a team need not do it.
+			for (const p of t.players) {
+				const floor = releaseAlternative(
+					outlook,
+					t,
+					[{ kind: "player", p }],
+					[],
+				);
+				assert.isAtLeast(floor!, 0);
+			}
+		} finally {
+			marketSettings.freeDisposal = was;
 		}
 	},
 );

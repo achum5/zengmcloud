@@ -838,6 +838,7 @@ test.runIf(env.ARENA_RUN === "1")(
 					expiring: snapshots.map((s) => ({
 						season: s.season,
 						rows: s.expiring,
+						deadline: s.deadlineExpiring,
 					})),
 					retirements: snapshots.map((s) => ({
 						season: s.season,

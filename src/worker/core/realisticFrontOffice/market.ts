@@ -152,6 +152,15 @@ export const marketSettings = {
 	// In the season, a CPU team with a full roster may sign a free agent and
 	// release whoever it can best do without (freeAgency.ts).
 	fullRosterSignings: true,
+	// Nobody gives picks for nothing: a pick is never worth less than nothing,
+	// its player let go for free when he is drafted (releaseAlternative).
+	noPickGifts: true,
+	// A deal counts for a team only past what releasing the players it gives
+	// would do (releaseGain). Off: CPU teams do not release players to open a
+	// place, so a deal that rids a team of a scrub is the only way it gets the
+	// place - and pricing deals against releases nobody makes cut trades by a
+	// third in an arena league.
+	freeDisposal: false,
 };
 
 // For the arena's version-against-version leagues: settings for some teams'
@@ -472,6 +481,123 @@ const valueAsKept = (outlook: LeagueOutlook, t: TeamState) => {
 		keptValues.set(t, value);
 	}
 	return value;
+};
+
+// FREE DISPOSAL. A team giving away a player it is better off without could
+// instead release him: off its roster, still owing his salary (release.ts) -
+// little for a scrub on a minimum deal - and a deal would only be worth what
+// it does beyond that. A contender gave a first-round pick to be rid of a
+// 22-year-old rated 30 on a minimum deal, three years of which would have
+// cost it a few hundredths of a cap to release. Off for now (freeDisposal).
+const releaseValues = new WeakMap<LeagueOutlook, Map<string, number>>();
+const releaseGain = (
+	outlook: LeagueOutlook,
+	t: TeamState,
+	outgoing: readonly Asset[],
+	single: Map<string, number> = screensOf(outlook),
+) => {
+	// Only those whose going is itself a gain (the screens): a player the team
+	// values is no cheaper to lose by releasing him.
+	const gone = outgoing.flatMap((x) =>
+		x.kind === "player" && singlePrice(outlook, t, "-", x, single) > 0
+			? [x.p]
+			: [],
+	);
+	if (gone.length === 0) {
+		return 0;
+	}
+	let byKey = releaseValues.get(outlook);
+	if (!byKey) {
+		byKey = new Map();
+		releaseValues.set(outlook, byKey);
+	}
+	const key = `${t.tid}:${t.rosterKey}:${gone.map((p) => p.pid).join(",")}`;
+	let gain = byKey.get(key);
+	if (gain === undefined) {
+		const phase = g.get("phase");
+		const season = g.get("season");
+		const out = new Set(gone);
+		const kept = afterCuts(
+			outlook,
+			t.tid,
+			t.players.filter((p) => !out.has(p)),
+		);
+		const owed = gone
+			.filter(
+				(p) =>
+					!helpers.justDrafted(p, phase, season) &&
+					(p.contract.exp > season ||
+						(p.contract.exp === season && phase < PHASE.PLAYOFFS)),
+			)
+			.map((p) => ({ amount: p.contract.amount, exp: p.contract.exp }));
+		const deadMoney =
+			owed.length > 0
+				? new Map(kept.deadMoney).set(t.tid, [
+						...(kept.deadMoney.get(t.tid) ?? []),
+						...owed,
+					])
+				: kept.deadMoney;
+		gain =
+			valueOf(
+				{ ...outlook, deadMoney },
+				t.tid,
+				kept.players,
+				t.picks,
+				undefined,
+				t.letGo,
+			) - valueAsKept(outlook, t);
+		byKey.set(key, gain);
+	}
+	return Math.max(0, gain);
+};
+
+// What a deal must beat for a team besides keeping what it has: releasing
+// the players it gives (releaseGain) - or undefined for no deal at all, where
+// it gives only picks for nothing: a pick is never worth less than nothing,
+// its player let go for free when he is drafted.
+export const releaseAlternative = (
+	outlook: LeagueOutlook,
+	t: TeamState,
+	give: readonly Asset[],
+	get: readonly Asset[],
+	single?: Map<string, number>,
+) => {
+	if (
+		settingFor(t.tid, "noPickGifts") &&
+		get.length === 0 &&
+		give.length > 0 &&
+		give.every((x) => x.kind === "pick")
+	) {
+		return;
+	}
+	return settingFor(t.tid, "freeDisposal")
+		? releaseGain(outlook, t, give, single)
+		: 0;
+};
+
+// Both teams' gains from a deal past their release alternatives.
+const overRelease = (
+	outlook: LeagueOutlook,
+	teams: readonly [TeamState, TeamState],
+	gives: readonly [readonly Asset[], readonly Asset[]],
+	gains: [number, number],
+	single?: Map<string, number>,
+): [number, number] | undefined => {
+	const out: [number, number] = [gains[0], gains[1]];
+	for (const k of [0, 1] as const) {
+		const floor = releaseAlternative(
+			outlook,
+			teams[k],
+			gives[k],
+			gives[1 - k]!,
+			single,
+		);
+		if (floor === undefined) {
+			return;
+		}
+		out[k] -= floor;
+	}
+	return out;
 };
 
 // The last deal's places, for pricing it from the other side next: they are
@@ -806,11 +932,15 @@ export const bestDealWith = (
 		if (gainA < MIN_GAIN) {
 			continue;
 		}
-		const gains: [number, number] = [
+		const priced: [number, number] = [
 			gainA,
 			priceFor(outlook, b, giveB, giveA, a),
 		];
-		if (gains[1] < MIN_GAIN) {
+		if (priced[1] < MIN_GAIN) {
+			continue;
+		}
+		const gains = overRelease(outlook, [a, b], [giveA, giveB], priced, single);
+		if (!gains) {
 			continue;
 		}
 		const margins: [number, number] = [
@@ -1045,11 +1175,15 @@ const haggle = (
 			if (gainA < MIN_GAIN) {
 				continue;
 			}
-			const gains: [number, number] = [
+			const priced: [number, number] = [
 				gainA,
 				priceFor(outlook, b, giveB, giveA, a),
 			];
-			if (gains[1] < MIN_GAIN) {
+			if (priced[1] < MIN_GAIN) {
+				continue;
+			}
+			const gains = overRelease(outlook, [a, b], [giveA, giveB], priced);
+			if (!gains) {
 				continue;
 			}
 			const margins: [number, number] = [

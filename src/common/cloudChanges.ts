@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 110,
+		date: "2026-11-02",
+		text: "Realistic Front Offices: CPU teams never give away a draft pick for nothing - not to each other, and not to you.",
+	},
+	{
 		n: 109,
 		date: "2026-11-01",
 		text: "3D game: a heave from way out - farther than any jumper - goes up two-handed like a floater: the ball brought up from his waist and pushed up and out at the rim off both hands, lofted, not thrown.",

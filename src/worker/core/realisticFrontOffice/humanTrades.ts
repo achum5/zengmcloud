@@ -8,6 +8,7 @@ import {
 	MIN_GAIN,
 	packages,
 	priceFor,
+	releaseAlternative,
 	salariesWork,
 	singlePrice,
 	tableAssets,
@@ -209,10 +210,15 @@ export const judgeHumanOffer = async (
 	await ensureRetention(outlook, playersIn(getting), a.tid);
 	await ensureRetention(outlook, playersIn(giving), h.tid);
 
-	// Better than keeping what it has, by more than its margin of error counts
-	// for in a deal with a human.
+	// Better than keeping what it has, or releasing the players it gives, by
+	// more than its margin of error counts for in a deal with a human.
+	const floor = releaseAlternative(outlook, a, giving, getting);
+	if (floor === undefined) {
+		return { kind: "no" };
+	}
 	const net =
 		priceFor(outlook, a, giving, getting, h) -
+		floor -
 		humanMarginFactor() * marginOf(outlook, a, giving, getting);
 	if (net < MIN_GAIN) {
 		return { kind: "no" };

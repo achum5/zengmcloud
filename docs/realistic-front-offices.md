@@ -494,8 +494,10 @@ every team, again whenever a signing changes the pool), memory cleanup 17%.
   team's cap room, a salary dump), picks may go for picks, and every tradable
   player is on the table, not just a team's best. A pick is never worth less
   than nothing: a drafted player not worth a roster place is cut, which costs
-  nothing straight after the draft. Rosters only have to fit once games are
-  played. A side gives up to three assets - three of its six most valuable
+  nothing straight after the draft - so no team gives picks for nothing, even
+  where its outlook prices one a hair below nothing (2 of 430 arena trades had
+  a team hand a second-rounder over for nothing at all). Rosters only have to
+  fit once games are played. A side gives up to three assets - three of its six most valuable
   for a star is a deal humans make all the time.
 - **Offseason trading windows** (owner's call): every team shops once the
   draft order is set, right after the draft, and once teams have re-signed
@@ -597,6 +599,21 @@ can keep the mode's front offices with the free agency it knows:
   way (4 leagues x 2 seasons): those pricing it won 0.543 of their games to
   0.457 the second season (0.513 to 0.487 the first, before it counted), and
   their trades did better in hindsight (+49 to -35).
+- **Refit since, and left as it was.** Logged as each deadline's final week
+  opened against where players were the next season (6 arena leagues, 2,549
+  veterans), the table and value overrate staying for good players: a
+  veteran's team keeps him more often the better he is up to a value of about
+  55, then hardly more - of those of 60 and up given under 10% to take its
+  offer, 21% stayed where they were priced at 65%; by stock's rules (Realistic
+  Free Agency off) role players of 50-55 stayed 40% of the time where priced at
+  71%. A refit forecast what happened far better (log-likelihood per player
+  -0.58 to -0.55 with the offer market, -0.70 to -0.43 by stock's rules) - and
+  its teams did worse: half the teams on it, two leagues each way round over
+  six seasons, they sold veterans for picks (net +33 first-rounders) and won
+  2-5% fewer games from the fourth season on, 7 titles to 17. Many who leave
+  were let go because they asked for more than they were worth to the team;
+  priced as a loss, that undervalues the choice of keeping them only when it
+  pays. The refit stays in the code for the arena (retentionFit).
 - **A pick's player is kept past his rookie deal only if he is worth his
   second contract** - if the team is better with him than with what his
   salary buys as room over every season ahead, decided the season his rookie

@@ -25,6 +25,7 @@ import getDaysLeftSchedule from "../season/getDaysLeftSchedule.ts";
 import { normalCdf, simulateSeason, winProbability } from "./seasonSim.ts";
 import { fitLogistic } from "./logistic.ts";
 import { clearMarketView, stayChance } from "./offers.ts";
+import { realisticFreeAgencyOn } from "./isOn.ts";
 import { buildDeadlineView, type DeadlineView } from "./timing.ts";
 import {
 	expectedRosterPoints,
@@ -507,6 +508,10 @@ export const outlookSettings = {
 	roomByRecord: true,
 	// A veteran's chance of staying counts how good he is (keptByValue).
 	retentionByValue: true,
+	// Which measurement turns a veteran's chance of taking his team's offer
+	// into his chance of staying: 1, KEPT then keptByValue; 2, KEPT_FIT - the
+	// better forecast, and the worse one to decide by (see KEPT_FIT).
+	retentionFit: 1 as 1 | 2,
 	// A pick's player past his rookie deal is let go when his salary buys more
 	// as room (letGo). Other players' chance of staying already counts the
 	// times their teams let them go (KEPT).
@@ -530,6 +535,7 @@ export const teamOutlookSettings = new Map<
 			| "pickUpside"
 			| "keptCalibration"
 			| "retentionByValue"
+			| "retentionFit"
 			| "roomByRecord"
 			| "letGo"
 			| "moneyPerCap"
@@ -544,6 +550,7 @@ const outlookSettingFor = <
 		| "keptCalibration"
 		| "roomByRecord"
 		| "retentionByValue"
+		| "retentionFit"
 		| "letGo"
 		| "moneyPerCap"
 		| "moneyUnderCap",
@@ -584,6 +591,47 @@ const keptByValue = (kept: number, value: number) => {
 	return 1 / (1 + Math.exp(-x));
 };
 
+// KEPT_FIT: a veteran's chance of still being with his team the season after
+// his contract runs out, by his chance of taking its offer (stay) and his
+// value - refit on arena leagues logging what front offices expected as each
+// deadline's final week opened against where players were the next season.
+// Under the offer market (4 leagues, 1,810 veterans): his team keeps him more
+// often the better he is up to a value of about 55, then hardly more - of
+// those of 60 and up, those given under 10% to take its offer stayed 21% of
+// the time and those given 10-50% 50%, where KEPT and keptByValue had said
+// 65-89%. Per player, the log-likelihood of what happened went from -0.581 to
+// -0.554. By stock's rules (2 leagues, 739 veterans) his chance of taking
+// the offer is his mood's chance of being willing - nearly always high - and
+// whether he stays is mostly his team's call at the market's ask: those of
+// 50-55 stayed 40% of the time, those of 55-60 63%, where keptByValue had
+// said 71% and 85%; the log-likelihood went from -0.70 to -0.43.
+// logit = a + b stay' + c min(v, 0) + d max(v, 0) + e stay' max(v, 0), with
+// stay' the logit of his chance and v = (value - 55) / 5.
+// Not used (retentionFit 1): priced by it, half the teams each way, 2
+// leagues each way round over 6 seasons, its teams won 2-5% fewer games from
+// the fourth season on, 7 titles to 17 and 160 playoff rounds to 200 - they
+// sold veterans for picks. Many who leave were let go because they asked for
+// more than they were worth to the team; priced as a loss, that undervalues
+// the choice of keeping them only when it pays.
+const KEPT_FIT = {
+	offerMarket: [0.591, 0.256, 0.721, -0.163, 0.128],
+	stock: [-1.928, 0.419, 1.753, 0.753, 0.026],
+} as const;
+
+const keptFit = (stay: number, value: number) => {
+	const [a, b, c, d, e] = realisticFreeAgencyOn()
+		? KEPT_FIT.offerMarket
+		: KEPT_FIT.stock;
+	const s = Math.min(0.999, Math.max(0.001, stay));
+	const l = Math.log(s / (1 - s));
+	const v = (value - 55) / 5;
+	const over = Math.max(0, v);
+	return (
+		1 /
+		(1 + Math.exp(-(a + b * l + c * Math.min(0, v) + d * over + e * l * over)))
+	);
+};
+
 export const ensureRetention = async (
 	outlook: Pick<LeagueOutlook, "retention">,
 	players: readonly Player[],
@@ -597,6 +645,13 @@ export const ensureRetention = async (
 			// testing the market - as he chooses in the offer market - turned
 			// into his chance of still being there after (KEPT).
 			const stay = await stayChance(p, asked);
+			if (outlookSettingFor(tid, "retentionFit") === 2 && !p.contract.rookie) {
+				outlook.retention.set(
+					key,
+					Math.round(keptFit(stay, p.value) * 1000) / 1000,
+				);
+				continue;
+			}
 			let kept = outlookSettingFor(tid, "keptCalibration")
 				? keptChance(stay)
 				: stay;

@@ -21,6 +21,9 @@ import {
 	type ValueRatings,
 } from "../../worker/core/realisticFrontOffice/strength.ts";
 import { ARENA_SETTINGS } from "./settings.ts";
+import { ensureRetention } from "../../worker/core/realisticFrontOffice/outlook.ts";
+import { stayChance } from "../../worker/core/realisticFrontOffice/offers.ts";
+import { realisticFrontOfficesOn } from "../../worker/core/realisticFrontOffice/isOn.ts";
 
 const conditions = {} as Conditions;
 
@@ -40,6 +43,20 @@ export type SeasonSnapshot = {
 	tradesAtDeadline: number;
 	// Start of free agency.
 	capSpace: number[];
+	// Every player whose contract runs out this season as the deadline's final
+	// week opens, and what the front offices made of his chance of staying:
+	// his chance of taking his team's offer (stay) and of still being with it
+	// next season (kept). Front-office leagues only.
+	deadlineExpiring?: {
+		pid: number;
+		tid: number;
+		value: number;
+		stay: number;
+		kept: number;
+		probWilling: number;
+		// Finishing a rookie deal.
+		rookie: boolean;
+	}[];
 	// Every player whose contract ran out this season, as the re-signing phase
 	// opened, and where he was once free agency had run its course.
 	expiring: {
@@ -229,6 +246,28 @@ export const advanceSeasons = async (
 				left = stop;
 				if (stop === 7) {
 					snapshot!.tradesBeforeDeadlineWeek = await countTrades();
+					if (realisticFrontOfficesOn()) {
+						snapshot!.deadlineExpiring = [];
+						const view = { retention: new Map<string, number>() };
+						for (const p of await idb.cache.players.indexGetAll(
+							"playersByTid",
+							[0, Infinity],
+						)) {
+							if (p.contract.exp !== g.get("season")) {
+								continue;
+							}
+							await ensureRetention(view, [p], p.tid);
+							snapshot!.deadlineExpiring.push({
+								pid: p.pid,
+								tid: p.tid,
+								value: p.value,
+								stay: await stayChance(p, p.tid),
+								kept: view.retention.get(`${p.pid}:${p.tid}`)!,
+								probWilling: (await player.moodInfo(p, p.tid)).probWilling,
+								rookie: !!p.contract.rookie,
+							});
+						}
+					}
 				}
 				if (surveyAt?.includes(stop)) {
 					await options.onSurvey?.(stop);

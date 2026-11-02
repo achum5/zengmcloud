@@ -25,6 +25,7 @@ import {
 	MIN_GAIN,
 	packages,
 	priceFor,
+	releaseAlternative,
 	salariesWork,
 	tableAssets,
 	type Asset,
@@ -264,8 +265,13 @@ export const bestProposal = async (
 			continue;
 		}
 		checked += 1;
+		const floor = releaseAlternative(outlook, cpu, give, get);
+		if (floor === undefined) {
+			continue;
+		}
 		const net =
 			priceFor(outlook, cpu, give, get, human) -
+			floor -
 			factor * marginOf(outlook, cpu, give, get);
 		if (net >= MIN_GAIN && (!best || net < best.net)) {
 			best = { give, get, net };
@@ -447,8 +453,13 @@ const bestBid = async (
 	sized.sort((x, y) => x.dv - y.dv);
 	const factor = humanMarginFactor();
 	for (const { give } of sized.slice(0, BID_CANDIDATES)) {
+		const floor = releaseAlternative(outlook, cpu, give, get);
+		if (floor === undefined) {
+			continue;
+		}
 		const net =
 			priceFor(outlook, cpu, give, get, human) -
+			floor -
 			factor * marginOf(outlook, cpu, give, get);
 		if (net >= MIN_GAIN) {
 			return { give, get, net };
