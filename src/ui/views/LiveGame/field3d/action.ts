@@ -2848,8 +2848,9 @@ const PILE_SMALL = 3;
 // Who is in it: the big men in the scrum this near where he goes down -
 // each this likely, nearest first - in this long after he is hit (and each
 // next one this much later), going down over this long; on their knees
-// this far off the middle of it (and up to this much more), no two in from
-// nearer the same way than this (radians).
+// this far off the middle of it (and up to this much more), each with
+// this much room (feet) - in from where he comes, or the nearest way round
+// from it (radians) that has it.
 const PILERS = new Set<Role>([
 	"C",
 	"LG",
@@ -2874,10 +2875,28 @@ const PILE_GO = 130;
 const PILE_FALL_MS = 550;
 const PILE_OFF = 2.5;
 const PILE_OFF_MORE = 1.1;
-const PILE_APART = 0.6;
+const PILE_ROOM = 1.8;
+const PILE_TURNS = [
+	0,
+	0.3,
+	-0.3,
+	0.6,
+	-0.6,
+	0.9,
+	-0.9,
+	1.2,
+	-1.2,
+	1.6,
+	-1.6,
+	2,
+	-2,
+	2.5,
+	-2.5,
+	Math.PI,
+];
 // (From further off than this, a run in first.) Over the top of it, the
 // most of them, from the third man in on, each this likely - his middle
-// this far off the middle of it.
+// this far off the middle of it, and PILE_ROOM off the other man over it.
 const PILE_REACH = 6;
 const PILE_TOPS = 2;
 const PILE_OVER = 0.6;
@@ -6803,29 +6822,26 @@ class Action {
 			.sort((a, b) => dist(a.from, at) - dist(b.from, at))
 			.slice(0, most);
 		const on: { m: Actor; at: Pt; way: number; go: number }[] = [];
-		const ways: number[] = [];
+		// (Each in where he comes from, or the nearest way round from it
+		// with room for him - PILE_ROOM off the rest.)
+		const roomy = (p: Pt) => on.every((x) => dist(x.at, p) >= PILE_ROOM);
 		near.forEach(({ m, from }, k) => {
 			if (r() > PILE_IN[k]!) {
 				return;
 			}
-			let way = Math.atan2(from.y - at.y, from.x - at.x) + (r() - 0.5) * 0.5;
-			for (
-				let n = 0;
-				n < 6 &&
-				ways.some(
-					(b) =>
-						Math.abs(Math.atan2(Math.sin(way - b), Math.cos(way - b))) <
-						PILE_APART,
-				);
-				n++
-			) {
-				way += PILE_APART * (k % 2 === 0 ? 1 : -1);
-			}
-			ways.push(way);
+			const was = Math.atan2(from.y - at.y, from.x - at.x) + (r() - 0.5) * 0.5;
 			const far = PILE_OFF + r() * PILE_OFF_MORE;
+			const spot = (way: number) => ({
+				x: at.x + Math.cos(way) * far,
+				y: at.y + Math.sin(way) * far,
+			});
+			const side = k % 2 === 0 ? 1 : -1;
+			const way =
+				PILE_TURNS.map((d) => was + d * side).find((w) => roomy(spot(w))) ??
+				was;
 			on.push({
 				m,
-				at: { x: at.x + Math.cos(way) * far, y: at.y + Math.sin(way) * far },
+				at: spot(way),
 				way,
 				go: t + PILE_FIRST + on.length * PILE_GO + r() * 100,
 			});
@@ -6835,17 +6851,24 @@ class Action {
 		}
 		const n = on.length;
 		let tops = 0;
+		const overs: Pt[] = [];
 		on.forEach((x, k) => {
 			// (One of the last in, now and then, over the top of it - laid out
 			// across it.)
-			const top = k >= 2 && tops < PILE_TOPS && r() < PILE_OVER;
+			// (Not onto the man over it already.)
+			let top = k >= 2 && tops < PILE_TOPS && r() < PILE_OVER;
 			if (top) {
-				tops++;
 				const far = PILE_TOP_OFF + r() * 0.5;
-				x.at = {
+				const over = {
 					x: at.x + Math.cos(x.way) * far,
 					y: at.y + Math.sin(x.way) * far,
 				};
+				top = overs.every((p) => dist(p, over) >= PILE_ROOM);
+				if (top) {
+					tops++;
+					overs.push(over);
+					x.at = over;
+				}
 			}
 			const face = this.toward(x.at, at);
 			x.m.cut(x.go);
