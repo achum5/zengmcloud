@@ -2344,8 +2344,16 @@ const COVER_BREAK_SPREAD_MS = 220;
 const LOCK_PACE = 0.85;
 const LOCK_PACE_SPREAD = 0.1;
 const LOCK_REACT_SPREAD_MS = 250;
+// (A man coming down on a kick off his mark once it is down, and a block on
+// him let go of once it is over, each up to this much later, ms.)
+const LOCK_GO_SPREAD_MS = 200;
+const LOCK_END_SPREAD_MS = 400;
 // (Up by the end of it after the whistle, each up to this much later, ms.)
 const TRAIL_SPREAD_MS = 500;
+// (On after the man with the ball, pulled up as he sees it is over - each
+// up to this much before the whistle, and on for at least this much of it.)
+const FOLLOW_UP_SPREAD_MS = 350;
+const FOLLOW_ON_LEAST = 0.6;
 // (A kick wall let up once the kick is away, up to this much later, ms.)
 const KICK_WALL_SPREAD_MS = 350;
 const RUN_END_SPREAD_MS = 400;
@@ -9634,7 +9642,20 @@ class Action {
 							? offAt(this.of(m.at).d, till)
 							: till
 						: shed;
-				this.offSnap(m, READ_OFF_MS, READ_OFF_SPREAD_MS);
+				// (Off in time to be on him while he is - see fireInto.)
+				this.offSnap(
+					m,
+					READ_OFF_MS,
+					READ_OFF_SPREAD_MS,
+					end -
+						FIRE_HELD_MS -
+						rampedMs(
+							dist(m.at, at(snap + 450, 0)),
+							m.top * RUSH_HIT_PACE,
+							0,
+							GET_OFF_ACCEL,
+						),
+				);
 				const lat = (r() - 0.5) * 0.6;
 				this.fireInto(m, (time) => at(time, lat), snap + 450, end);
 				// (Over with him, by when they are out of the way.)
@@ -9822,13 +9843,16 @@ class Action {
 	}
 
 	// (Off the snap on his own count, `ms` after it and up to `spread`
-	// later - see countOf; the snapper as the ball leaves his hands.)
-	private offSnap(m: Actor, ms: number, spread: number) {
+	// later - see countOf; the snapper as the ball leaves his hands. Not
+	// after `latest`, if he has somewhere to be.)
+	private offSnap(m: Actor, ms: number, spread: number, latest = Infinity) {
 		const { snap } = this.input;
-		const t =
+		const t = Math.min(
+			latest,
 			m.role === "C"
 				? snap + SNAPPER_OFF_MS
-				: snap + ms + spread * countOf(m, snap);
+				: snap + ms + spread * countOf(m, snap),
+		);
 		if (t - m.t >= OFF_LEAST_MS) {
 			m.hold(t);
 		}
@@ -10311,7 +10335,7 @@ class Action {
 		const { snap } = this.input;
 		const vc =
 			c.top * (LOCK_PACE + LOCK_PACE_SPREAD * (countOf(c, snap, 7) - 0.5));
-		c.hold(go);
+		c.hold(go + LOCK_GO_SPREAD_MS * countOf(c, snap, 10));
 		const cGo = c.t;
 		const cAt = c.at;
 		// (Up to speed off what he was doing - out of his stance, from
@@ -10368,7 +10392,10 @@ class Action {
 			const o = this.of(p);
 			return this.w({ d: o.d + dd, a: o.a + da });
 		};
-		const t1 = Math.max(until, tm + 300);
+		const t1 = Math.max(
+			until + LOCK_END_SPREAD_MS * countOf(b, snap, 11),
+			tm + 300,
+		);
 		c.go(shift(cHit), t1, "engage", ang + Math.PI);
 		const lock = c.last;
 		b.go(shift(bHit), t1, "drive", ang);
@@ -10489,8 +10516,9 @@ class Action {
 	// rest up out of their stances.
 	coverDown(cover: Actor[], others: Actor[]) {
 		const r = this.r;
+		const { snap } = this.input;
 		for (const m of cover) {
-			m.hold(this.seen);
+			m.hold(this.seen + LOCK_GO_SPREAD_MS * countOf(m, snap, 10));
 			const s = this.of(m.at);
 			m.chase(
 				this.w({ d: s.d + 25 + r() * 25, a: s.a * 0.85 }),
@@ -12293,8 +12321,14 @@ class Action {
 					}
 					ends.push(end);
 					const fps = Math.min(most, (dist(m.at, to) / (t - go)) * 1000);
+					// (The same way at the same pace, each pulled up on his
+					// own count - see countOf - not all on the whistle.)
+					const by = Math.max(
+						go + (t - go) * FOLLOW_ON_LEAST,
+						t - FOLLOW_UP_SPREAD_MS * countOf(m, this.input.snap, 9),
+					);
 					m.hold(go);
-					m.chase(to, t, fps, gait(fps));
+					m.chase(to, by, fps, gait(fps));
 				}
 			}
 			if (m.t > t + 400) {
