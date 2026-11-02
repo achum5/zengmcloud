@@ -870,10 +870,66 @@ const ballAt = (
 				z: f.at.z + off.z * (1 - u) + on.z * u,
 			};
 		}
-		return { ball: f, focus: f.at };
+		// (Off a man's hands: the eye from him onto it - not to where it
+		// was, out in front of him, from where he stood, in a frame.)
+		const was = segs[k - 1];
+		const from =
+			was?.kind === "held" && t - s.t0 < FOCUS_EASE_MS
+				? players.find((x) => x.id === was.pid)
+				: undefined;
+		return {
+			ball: f,
+			focus: from
+				? eased(
+						{ x: from.x, y: from.y, z: HELD_Z },
+						f.at,
+						(t - s.t0) / FOCUS_EASE_MS,
+					)
+				: f.at,
+		};
 	}
 	const p = players.find((x) => x.id === s.pid);
-	return p ? { focus: { x: p.x, y: p.y, z: 3.5 }, carrier: p.team } : {};
+	if (p?.ball === "snap") {
+		// (The center over it: where it sits on the line, not where he is -
+		// a step behind it - for the frame or two it is still there after
+		// the snap.)
+		return {
+			focus: { x: play.losX, y: play.ballY, z: SNAP_FOCUS_Z },
+			carrier: p.team,
+		};
+	}
+	if (!p) {
+		return {};
+	}
+	const him = { x: p.x, y: p.y, z: HELD_Z };
+	// (Into his hands - caught, or handed to him: the eye from the ball
+	// there, out in front of him, onto him - not from the one to the other
+	// in a frame.)
+	const into = s.t0 + (segs[k - 1]?.kind === "fly" ? 0 : PASS_MS / 2);
+	if (handsOf && p.ball && k > 0 && t - into < FOCUS_EASE_MS) {
+		const drawn = handsOf(p);
+		if (drawn) {
+			return {
+				focus: eased(drawn, him, (t - into) / FOCUS_EASE_MS),
+				carrier: p.team,
+			};
+		}
+	}
+	return { focus: him, carrier: p.team };
+};
+const SNAP_FOCUS_Z = 0.6;
+const HELD_Z = 3.5;
+// The eye from a man onto the ball as it leaves his hands, and from the
+// ball onto him as it comes into them, over this long (ms).
+const FOCUS_EASE_MS = 250;
+const eased = (a: Pt3, b: Pt3, u: number): Pt3 => {
+	const v = clamp01(u);
+	const e = v * v * (3 - 2 * v);
+	return {
+		x: a.x + (b.x - a.x) * e,
+		y: a.y + (b.y - a.y) * e,
+		z: a.z + (b.z - a.z) * e,
+	};
 };
 
 // HANDED OVER, NOT THROWN: the ball from one man's hands into another's (a
@@ -916,7 +972,16 @@ const passing = (
 	players: FieldPlayerState[],
 	handsOf: HandsOf,
 	cuts: readonly number[],
-): { at: Pt3; axis: Pt3; unseen: number[] } | undefined => {
+):
+	| {
+			at: Pt3;
+			axis: Pt3;
+			unseen: number[];
+			// How long it has been on its way (ms), and from whose hands.
+			since: number;
+			giver?: number;
+	  }
+	| undefined => {
 	const segs = play.ball;
 	const k = lastStarted(segs, t, (b) => b.t0);
 	for (const j of [k, k + 1]) {
@@ -987,6 +1052,11 @@ const passing = (
 				z: ax.z + (1 - ax.z) * up,
 			},
 			unseen: [a, b].flatMap((x) => (x.kind === "held" ? [x.pid] : [])),
+			since: t - (t0 - half),
+			// (Not off the center: it was where it sits on the line already.)
+			...(a.kind === "held" && holdNear(play, a.pid, t0, true) !== "snap"
+				? { giver: a.pid }
+				: {}),
 		};
 	}
 	return undefined;
@@ -1430,7 +1500,18 @@ export const momentAt = (
 			}
 		}
 		ball = { at: over.at, axis: over.axis };
-		focus = over.at;
+		// (The eye off the man giving it onto it as it goes.)
+		const giver =
+			over.since < FOCUS_EASE_MS
+				? players.find((st) => st.id === over.giver)
+				: undefined;
+		focus = giver
+			? eased(
+					{ x: giver.x, y: giver.y, z: HELD_Z },
+					over.at,
+					over.since / FOCUS_EASE_MS,
+				)
+			: over.at;
 	}
 	const flags = play.flags
 		.filter((f) => t >= f.t0)

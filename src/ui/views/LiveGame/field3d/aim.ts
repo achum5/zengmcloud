@@ -31,6 +31,10 @@ const FRAMING: Record<Play["kind"], { width: number; ahead: number }> = {
 // the man with it.
 const FOLLOWS = new Set<Play["kind"]>(["pass", "run", "kneel"]);
 const FOLLOW_AHEAD = 12;
+// (Eased onto it from the shot on the line over this long, ms.)
+const FOLLOW_EASE_MS = 400;
+// (And in on the man with it over this long, ms.)
+const CARRY_EASE_MS = 500;
 const OPEN_UP = 0.3;
 const WIDEST = 190;
 // Once a man of the offense has it past the line - a catch, a back through
@@ -287,21 +291,59 @@ export const aimFor = (m: FieldMoment): Shot => {
 		? down - FOLLOW_AHEAD
 		: Math.max(down + FOLLOW_AHEAD, f.ahead * 0.6);
 	const carried = m.carrier === play.offense || t >= play.whistle;
+	const open = Math.min(WIDEST, f.width + Math.max(0, down) * OPEN_UP);
+	const tight = Math.max(CARRY_WIDTH, f.width - Math.max(0, down) * NARROW);
+	// (In on him from the open shot over a moment once he has it - a catch,
+	// the whistle - not in a frame.)
+	const had = carried ? t - carriedFrom(play, t, m.carrier) : 0;
+	const u = Math.min(1, Math.max(0, had / CARRY_EASE_MS));
 	const width = back
 		? f.width
 		: carried
-			? Math.max(CARRY_WIDTH, f.width - Math.max(0, down) * NARROW)
-			: Math.min(WIDEST, f.width + Math.max(0, down) * OPEN_UP);
+			? open + (tight - open) * u * u * (3 - 2 * u)
+			: open;
 	const keep = width / 2 - KEEP_IN;
 	const x = Math.min(
 		focus.x + keep,
 		Math.max(focus.x - keep, play.losX + play.dir * lead),
 	);
-	return {
-		x: inBounds(x, width),
-		width,
-		y: across(focus.y),
-	};
+	const shot = { x: inBounds(x, width), width, y: across(focus.y) };
+	// (Off the line onto the ball as it goes, not a jump to it at the snap.)
+	const since = t - play.follow;
+	if (since < FOLLOW_EASE_MS) {
+		const u = Math.max(0, since / FOLLOW_EASE_MS);
+		const e = u * u * (3 - 2 * u);
+		const from = inBounds(set.x, set.width);
+		return {
+			x: from + (shot.x - from) * e,
+			width: set.width + (shot.width - set.width) * e,
+			y: set.y + (shot.y - set.y) * e,
+		};
+	}
+	return shot;
+};
+
+// Since when the offense has had it in hands, from one of its men to the
+// next (a catch, not a handoff) - or, not, since the whistle.
+const carriedFrom = (
+	play: Play,
+	t: number,
+	carrier: FieldMoment["carrier"],
+): number => {
+	if (carrier !== play.offense) {
+		return play.whistle;
+	}
+	let from: number | undefined;
+	for (const b of play.ball) {
+		if (b.t0 > t) {
+			break;
+		}
+		const ours =
+			b.kind === "held" &&
+			play.parts.find((p) => p.pid === b.pid)?.team === play.offense;
+		from = ours ? (from ?? b.t0) : undefined;
+	}
+	return from ?? t;
 };
 
 const setYs = new WeakMap<Play, number>();
