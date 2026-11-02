@@ -2,6 +2,7 @@ import { assert, beforeAll, test } from "vitest";
 import { formatClock } from "../../../../common/formatClock.ts";
 import { buildFieldClocks, fieldClockAt, type FieldClocks } from "./clock.ts";
 import { compileField, type FieldTimeline } from "./director.ts";
+import { buildPlayClocks, playClockAt } from "./playClock.ts";
 import { simGames, type SimGame } from "./testGames.ts";
 
 let games: { game: SimGame; tl: FieldTimeline; clocks: FieldClocks }[] = [];
@@ -80,4 +81,64 @@ test("between quarters the bug says so - END Q1, HALF, END Q3 - and FINAL once i
 		assert.includeMembers([...said], ["END Q1", "HALF", "END Q3", "FINAL"]);
 		assert.strictEqual(fieldClockAt(clocks, tl.end + 60_000)!.text, "FINAL");
 	}
+});
+
+test("the play clock: up before each down from scrimmage, counting down at real speed, gone at the snap", () => {
+	for (const { game, tl } of games) {
+		const spans = buildPlayClocks(tl, game.events);
+		let shown = 0;
+		for (const play of tl.plays) {
+			const at = playClockAt(spans, play.snap - 1);
+			if (play.kind === "kickoff" || play.kind === "onside") {
+				assert.isUndefined(at, `${play.i}`);
+				continue;
+			}
+			if (play.kind === "none" || play.snap <= play.t0) {
+				continue;
+			}
+			shown++;
+			assert.isDefined(at, `${play.i}`);
+			// (Never more than 40 on it, never run out on a play run.)
+			const first = playClockAt(spans, play.t0)!;
+			assert.isAtMost(first, 40, `${play.i}`);
+			assert.isAtLeast(at!, 1, `${play.i}`);
+			assert.closeTo(first - at!, (play.snap - 1 - play.t0) / 1000, 1e-6);
+			assert.isUndefined(playClockAt(spans, play.snap), `${play.i}`);
+			assert.isUndefined(playClockAt(spans, play.whistle), `${play.i}`);
+		}
+		assert.isAbove(shown, 100);
+	}
+});
+
+test("a delay of game runs the play clock out", () => {
+	const events = [
+		{ type: "clock", clock: 2.5, down: 1, scrimmage: 70, t: 0, toGo: 10 },
+		{ type: "flag", clock: 2.5 },
+		{
+			type: "penalty",
+			clock: 2.5,
+			decision: "accept",
+			penaltyName: "Delay of game",
+			names: [],
+			t: 0,
+			yds: 5,
+		},
+	];
+	const play = {
+		i: 0,
+		kind: "none",
+		quarter: 4,
+		t0: 0,
+		snap: 6000,
+		whistle: 6800,
+		flags: [{}],
+	};
+	const spans = buildPlayClocks(
+		{ plays: [play] } as unknown as FieldTimeline,
+		events,
+	);
+	assert.strictEqual(playClockAt(spans, 6000), 0);
+	assert.strictEqual(playClockAt(spans, 7000), 0);
+	assert.isAbove(playClockAt(spans, 5000)!, 0);
+	assert.isUndefined(playClockAt(spans, 8000));
 });

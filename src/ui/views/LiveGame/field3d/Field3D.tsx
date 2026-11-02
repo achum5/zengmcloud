@@ -23,6 +23,7 @@ import { drawn, due, FAST, makePace } from "../court3d/pace.ts";
 import { adjust, artFor, makeResolution } from "../court3d/resolution.ts";
 import { eventsMatchRoster } from "../court3d/rosterMatch.ts";
 import { ScoreBug, type BugRefs } from "../court3d/ScoreBug.tsx";
+import { SHOT_LOW, SHOT_LOW_INK } from "../court3d/scoreBug.ts";
 import { CustomScoreBug } from "../court3d/CustomScoreBug.tsx";
 import type {
 	CourtDecalPlaced,
@@ -38,6 +39,7 @@ import {
 import type { Body } from "../court3d/poses.ts";
 import { aimFor, fromLow, glideAim, type Glide } from "./aim.ts";
 import { buildFieldClocks, fieldClockAt } from "./clock.ts";
+import { buildPlayClocks, playClockAt } from "./playClock.ts";
 import { drawFlyingBall, drawLooseBall } from "./ball.ts";
 import { drawFlag } from "./flag.ts";
 import {
@@ -537,6 +539,11 @@ const Field3D = ({
 				: undefined,
 		[shownTl, events, numPeriods],
 	);
+	// And the play clock, before each snap (see playClock.ts).
+	const playClocks = useMemo(
+		() => (shownTl && events ? buildPlayClocks(shownTl, events) : undefined),
+		[shownTl, events],
+	);
 	// (Between quarters and the game over: no quarter on the bug.)
 	const [ended, setEnded] = useState(false);
 	const keyPlan = useMemo(
@@ -1028,6 +1035,7 @@ const Field3D = ({
 		size,
 		eventsLength,
 		clocks,
+		playClocks,
 		pageTime: (boxScore?.time ?? "") as string,
 		score: [boxScore?.teams?.[1]?.pts ?? 0, boxScore?.teams?.[0]?.pts ?? 0] as [
 			number,
@@ -1053,6 +1061,7 @@ const Field3D = ({
 		size,
 		eventsLength,
 		clocks,
+		playClocks,
 		pageTime: (boxScore?.time ?? "") as string,
 		score: [boxScore?.teams?.[1]?.pts ?? 0, boxScore?.teams?.[0]?.pts ?? 0] as [
 			number,
@@ -1093,6 +1102,8 @@ const Field3D = ({
 		const wipe = makeFieldWipe();
 		let wipeSide: Side = 1;
 		let shownOver = false;
+		// (The play clock's own color on the bug, kept while it shows red.)
+		let shownInk: string | undefined;
 		// The replay's camera, and the flash at a cut from one to the other.
 		let replayAngle: Side | undefined;
 		let replayWas: unknown;
@@ -1127,6 +1138,22 @@ const Field3D = ({
 			const clockText = reading?.text ?? p.pageTime;
 			if (clockEl && clockEl.textContent !== clockText) {
 				clockEl.textContent = clockText;
+			}
+			const left =
+				p.playClocks && !reading?.ended && !s.replay
+					? playClockAt(p.playClocks, s.t)
+					: undefined;
+			const leftText = left === undefined ? "" : String(Math.ceil(left - 1e-6));
+			const shotEl = shotRef.current;
+			if (shotEl && shotEl.textContent !== leftText) {
+				shotEl.textContent = leftText;
+				shotEl.style.display = leftText ? "flex" : "none";
+				// (Red in its last seconds - and back to its own color after.)
+				shownInk ??= shotEl.style.color;
+				shotEl.style.color =
+					leftText !== "" && Number(leftText) <= SHOT_LOW
+						? SHOT_LOW_INK
+						: shownInk;
 			}
 			const over = reading?.ended ?? false;
 			if (over !== shownOver) {
@@ -1721,7 +1748,11 @@ const Field3D = ({
 				/>
 			) : null}
 			<div ref={bugRef} style={{ display: "contents" }}>
-				{own ? <CustomScoreBug style={own} {...bug} /> : <ScoreBug {...bug} />}
+				{own ? (
+					<CustomScoreBug style={own} {...bug} />
+				) : (
+					<ScoreBug {...bug} shotTitle="Play clock" />
+				)}
 			</div>
 			{caption ? (
 				<div

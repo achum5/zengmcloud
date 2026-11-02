@@ -200,6 +200,8 @@ export type Play = {
 	follow: number;
 	// The formation the offense is in, for a play from scrimmage.
 	formation?: OffenseSetName;
+	// The two-minute drill: no huddle.
+	hurry?: boolean;
 	parts: Part[];
 	// The officials (see crew.ts), and the flags they throw.
 	crew: CrewPart[];
@@ -1356,6 +1358,7 @@ class Director {
 		// Up to the line, set, and the snap.
 		const parts: Part[] = [];
 		let set = base + KICK_AT;
+		let hurried = false;
 		if (kick) {
 			const waiting = [0, 0];
 			for (const p of placed) {
@@ -1404,6 +1407,7 @@ class Director {
 				(((quarter * 2 === this.numPeriods || quarter >= this.numPeriods) &&
 					scrimmage >= 50) ||
 					(quarter === this.numPeriods && pts[offense] <= pts[1 - offense]!));
+			hurried = hurry;
 			set = hurry
 				? this.hurryUp(placed, parts, offense, dir, t0, r)
 				: this.walkUp(placed, parts, offense, dir, losX, ballY, t0, r);
@@ -2034,6 +2038,7 @@ class Director {
 			t1,
 			follow: acted?.follow ?? snap,
 			...(formation ? { formation } : {}),
+			...(hurried ? { hurry: true } : {}),
 			parts,
 			crew: crew.parts,
 			flags: crew.flags,

@@ -199,6 +199,7 @@ export const ScoreBug = ({
 	totalTimeouts,
 	refs,
 	hidden,
+	shotTitle = "Shot clock",
 }: {
 	away: BugTeam | undefined;
 	home: BugTeam | undefined;
@@ -209,6 +210,8 @@ export const ScoreBug = ({
 	refs: BugRefs;
 	// Off the screen for now (the starting lineups), but kept up to date.
 	hidden?: boolean;
+	// What the clock after the game clock is (football's: the play clock).
+	shotTitle?: string;
 }) => (
 	<div
 		style={{
@@ -257,7 +260,7 @@ export const ScoreBug = ({
 		</div>
 		<span
 			ref={refs.shot}
-			title="Shot clock"
+			title={shotTitle}
 			style={{
 				// Shown by the frame loop while the shot clock runs.
 				display: "none",
