@@ -99,6 +99,9 @@ const SECOND_FROM = 30;
 // (Each two of them no nearer another two than this, feet, middle to
 // middle - not one pair in among another.)
 const MEET_ROOM = 5;
+// (Looked for this far round, in MEET_ROOMs; and these ways off.)
+const MEET_RINGS = [0.5, 1, 1.5, 2, 2.5, 3, 4];
+const MEET_TURNS = [0, 0.5, -0.5, 1, -1, 1.6, -1.6, 2.2, -2.2, Math.PI];
 // The head coaches: off their sidelines this long after the whistle (and
 // up to this much later), at a jog; a hug after the handshake this often;
 // the picture on them this long after it.
@@ -669,18 +672,27 @@ export const stagePostgame = (input: {
 	let done = go;
 	// (And the head coaches'.)
 	const spots: Pt[] = [at];
+	// (The nearest place to it clear of every other two - round it a step
+	// further out at a time, the way off the nearest other first.)
 	const roomy = (p: Pt): Pt => {
-		let q = p;
-		for (let k = 0; k < 4; k++) {
-			const near = spots.find((o) => dist(o, q) < MEET_ROOM);
-			if (!near) {
-				break;
-			}
-			const a = dist(near, q) > 0.1 ? toward(near, q) : r() * Math.PI * 2;
-			q = {
-				x: clamp(near.x + Math.cos(a) * MEET_ROOM, 3, FIELD_L - 3),
-				y: clamp(near.y + Math.sin(a) * MEET_ROOM, 3, FIELD_W - 3),
-			};
+		const clear = (q: Pt) => spots.every((o) => dist(o, q) >= MEET_ROOM);
+		const onIt = (x: number, y: number): Pt => ({
+			x: clamp(x, 3, FIELD_L - 3),
+			y: clamp(y, 3, FIELD_W - 3),
+		});
+		let q = onIt(p.x, p.y);
+		if (!clear(q)) {
+			const near = spots.reduce((a, b) => (dist(a, q) <= dist(b, q) ? a : b));
+			const off = dist(near, q) > 0.1 ? toward(near, q) : 0;
+			q =
+				MEET_RINGS.flatMap((far) =>
+					MEET_TURNS.map((d) =>
+						onIt(
+							p.x + Math.cos(off + d) * far * MEET_ROOM,
+							p.y + Math.sin(off + d) * far * MEET_ROOM,
+						),
+					),
+				).find(clear) ?? q;
 		}
 		spots.push(q);
 		return q;
