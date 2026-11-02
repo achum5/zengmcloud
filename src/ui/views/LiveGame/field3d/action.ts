@@ -12929,6 +12929,24 @@ class Action {
 		if (u < BOWL && this.bowl(scorer, c0)) {
 			return;
 		}
+		// (Caught it for the score, now and then first a finger back up the
+		// field at the man who threw it - as the 3D court's scorer off an
+		// assist. His own count: no draw of the play's.)
+		const mobFrom = c0;
+		const k = held ? this.ball.indexOf(held) : -1;
+		const pass = this.ball[k - 1];
+		const qb = this.role("QB");
+		if (
+			pass?.kind === "fly" &&
+			pass.spiral &&
+			qb &&
+			qb !== scorer &&
+			scorer.team === this.input.offense &&
+			countOf(scorer, this.input.snap, 36) < THANKS
+		) {
+			scorer.act("thanks", c0 + THANKS_MS, this.toward(at, qb.posAt(c0)));
+			c0 = scorer.t;
+		}
 		if (u < 0.32) {
 			scorer.act("spike", c0 + SPIKE_MS);
 			const out = c0 + SPIKE_MS * SPIKE_AT;
@@ -12981,7 +12999,7 @@ class Action {
 		this.until = scorer.t;
 		scorer.hold(scorer.t + 2600, "stand");
 		this.mob.add(scorer.pid);
-		this.mobRound(scorer, c0);
+		this.mobRound(scorer, mobFrom);
 	}
 
 	// A touchdown seen from up the field: the quarterback who threw it, and
@@ -14210,6 +14228,10 @@ const GRIDDY_MS = 2400;
 // go this far through it, along the turf at this pace; the pins behind the
 // head pin down this long after him.
 const BOWL = 0.2;
+// A finger back at the man who threw it (see celebrate), this often, this
+// long (ms).
+const THANKS = 0.35;
+const THANKS_MS = 1000;
 const PIN_FROM = 40;
 const PIN_SPOTS = [
 	{ f: 13, s: 0 },

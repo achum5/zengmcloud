@@ -2731,6 +2731,20 @@ const FIELD_ANIMS = {
 			[1, BASE],
 		],
 	},
+	// A score off a throw: a finger back up the field at the man who threw
+	// it - his free arm out at him easy, the elbow bent, not stuck out
+	// straight - a little flick of it, and down (the 3D court's thanks for
+	// an assist).
+	thanks: {
+		kind: "act",
+		keys: [
+			[0, BASE],
+			[0.28, pose({ shF: 76, elF: 36, abF: 8, wrF: 8, lean: 1 })],
+			[0.46, pose({ shF: 84, elF: 26, abF: 8, wrF: -6, lean: 1 })],
+			[0.74, pose({ shF: 78, elF: 34, abF: 8, wrF: 4, lean: 1 })],
+			[1, BASE],
+		],
+	},
 	// Caught at the sideline: his hands up to it as it comes, then both
 	// toes dragged in along the turf as he goes over, tipped toward it, the
 	// ball pulled into his chest; and a step out.
