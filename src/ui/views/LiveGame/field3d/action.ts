@@ -11112,14 +11112,15 @@ class Action {
 			y: meet.y - Math.sin(ang) * 1.3,
 		};
 		if (bv <= 0) {
-			// (A long wait: stood up watching it first, and down into his
-			// stance as the man comes - not crouched there the whole time.)
+			// (A long wait: up watching it first, and down into his stance
+			// as the man comes - not crouched there the whole time; alive in
+			// it either way, not stood like a statue.)
 			const set =
 				tm - 200 - LOCK_SET_MS[0] - LOCK_SET_MS[1] * countOf(b, snap, 20);
 			if (set - b.t >= LOCK_WATCH_MS) {
-				b.hold(set, "stand", ang);
+				b.hold(set, "safetyReady", ang);
 			}
-			b.hold(tm - 200, "backerStance", ang);
+			b.hold(tm - 200, "backerReady", ang);
 		}
 		b.go(bHit, tm, undefined, ang);
 		c.go(
@@ -12010,7 +12011,7 @@ class Action {
 				"sprint",
 			);
 			// (Broken down there, slowing into it over his last strides.)
-			g.hold(g.t + GUNNER_SET_MS, "backerStance", this.toward(g.at, landPt));
+			g.hold(g.t + GUNNER_SET_MS, "backerReady", this.toward(g.at, landPt));
 			if (j) {
 				jammers.splice(jammers.indexOf(j), 1);
 				this.offSnap(j, READ_OFF_MS, READ_OFF_SPREAD_MS);
