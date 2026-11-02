@@ -23,6 +23,9 @@ const unwrap = (x: unknown) =>
 		: x;
 
 export const loadOwnerLeague = async (file: string) => {
+	// The same playoffs and lottery every run (OWNER_SEED).
+	const { makeSeededRandom } = await import("../../common/random.ts");
+	Math.random = makeSeededRandom(Number(env.OWNER_SEED ?? 1));
 	const fs = await importNode("node:fs/promises");
 	const data = JSON.parse(await fs.readFile(file, "utf8"));
 	const ga = data.gameAttributes;
@@ -449,11 +452,11 @@ test.skipIf(!env.OWNER_LEAGUE || !env.OWNER_SEASONS)(
 		const { PHASE } = await import("../../common/constants.ts");
 		await loadOwnerLeague(env.OWNER_LEAGUE!);
 		await league.setGameAttributes({ realisticFrontOffices: true });
-		// Nobody at the controls: the human teams are run by the AI too, which
-		// keeps the run going (they make no trades - only CPU teams do).
+		// Nobody at the controls: every team run by the CPU, the human teams
+		// too (as the arena's spectator leagues). Auto play is not used: it
+		// runs on through the phases by itself.
 		const humans: number[] = g.get("userTids");
-		const { local } = await import("../../worker/util/index.ts");
-		local.autoPlayUntil = { season: 9999, phase: 0, start: Date.now() } as any;
+		await league.setGameAttributes({ spectator: true });
 		const conditions = {} as any;
 		const abbrev = new Map(
 			(await idb.cache.teams.getAll()).map((t) => [t.tid, t.abbrev]),
@@ -472,11 +475,58 @@ test.skipIf(!env.OWNER_LEAGUE || !env.OWNER_SEASONS)(
 			const r = p.ratings.at(-1);
 			return `${p.firstName[0]}.${p.lastName} ${r.ovr}/${r.pot} ${g.get("season") - p.born.year}y $${(p.contract.amount / 1000).toFixed(1)}M->${p.contract.exp}`;
 		};
+		// Each phase's moves as it ends, so a run cut short keeps what it did.
+		const fs = await importNode("node:fs/promises");
+		if (env.OWNER_OUT) {
+			await fs.writeFile(env.OWNER_OUT, "");
+		}
+		let seenEid = startEid;
+		const flush = async () => {
+			const events: any[] = [];
+			for (let s = season0; s <= g.get("season"); s++) {
+				events.push(
+					...(await idb.merged.events.getAll({ season: s })).filter(
+						(e: any) => e.eid > seenEid,
+					),
+				);
+			}
+			events.sort((a, b) => a.eid - b.eid);
+			const lines: string[] = [];
+			for (const e of events) {
+				seenEid = Math.max(seenEid, e.eid);
+				if (e.type === "trade") {
+					const sides = await Promise.all(
+						e.teams.map(
+							async (t: any, k: number) =>
+								`${abbrev.get(e.tids[k])} get ${(await Promise.all(t.assets.map(async (a: any) => ("pid" in a ? await label(a.pid) : `${a.season} R${a.round} ${abbrev.get(a.originalTid) ?? ""}`)))).join(", ") || "nothing"}`,
+						),
+					);
+					lines.push(`${e.season} ph${e.phase} TRADE ${sides.join(" | ")}`);
+				} else if (
+					(e.type === "freeAgent" || e.type === "reSigned") &&
+					e.contract &&
+					e.contract.amount >= 0.12 * g.get("salaryCap")
+				) {
+					lines.push(
+						`${e.season} ph${e.phase ?? g.get("phase")} ${e.type} ${abbrev.get(e.tids[0])} ${await label(e.pids[0])}`,
+					);
+				} else if (e.type === "release" && !humans.includes(e.tids[0])) {
+					lines.push(
+						`${e.season} ph${g.get("phase")} release ${abbrev.get(e.tids[0])} ${await label(e.pids[0])}`,
+					);
+				}
+			}
+			lines.push(`-- ${g.get("season")} phase ${g.get("phase")}`);
+			console.log(lines.join("\n"));
+			if (env.OWNER_OUT) {
+				await fs.appendFile(env.OWNER_OUT, `${lines.join("\n")}\n`);
+			}
+		};
 		const target = g.get("season") + Number(env.OWNER_SEASONS);
 		let guard = 0;
 		while (
 			!(g.get("season") === target && g.get("phase") === PHASE.PLAYOFFS) &&
-			guard++ < 200
+			guard++ < 400
 		) {
 			const ph = g.get("phase");
 			if (
@@ -484,7 +534,7 @@ test.skipIf(!env.OWNER_LEAGUE || !env.OWNER_SEASONS)(
 				ph === PHASE.REGULAR_SEASON ||
 				ph === PHASE.AFTER_TRADE_DEADLINE
 			) {
-				await game.play(ph === PHASE.PLAYOFFS ? 100 : 7, conditions);
+				await game.play(ph === PHASE.PLAYOFFS ? 100 : 14, conditions);
 			} else if (ph === PHASE.DRAFT) {
 				await draft.runPicks({ type: "untilEnd" }, conditions);
 				if (g.get("phase") === PHASE.DRAFT) {
@@ -499,44 +549,7 @@ test.skipIf(!env.OWNER_LEAGUE || !env.OWNER_SEASONS)(
 			} else {
 				await phase.newPhase((ph + 1) as any, conditions);
 			}
-		}
-		const events: any[] = [];
-		for (let s = season0; s <= g.get("season"); s++) {
-			events.push(
-				...(await idb.merged.events.getAll({ season: s })).filter(
-					(e: any) => e.eid > startEid,
-				),
-			);
-		}
-		events.sort((a, b) => a.eid - b.eid);
-		const lines: string[] = [];
-		for (const e of events as any[]) {
-			if (e.type === "trade") {
-				const sides = await Promise.all(
-					e.teams.map(
-						async (t: any, k: number) =>
-							`${abbrev.get(e.tids[k])} get ${(await Promise.all(t.assets.map(async (a: any) => ("pid" in a ? await label(a.pid) : `${a.season} R${a.round} ${abbrev.get(a.originalTid) ?? ""}`)))).join(", ") || "nothing"}`,
-					),
-				);
-				lines.push(`${e.season} ph${e.phase} TRADE ${sides.join(" | ")}`);
-			} else if (
-				(e.type === "freeAgent" || e.type === "reSigned") &&
-				e.contract &&
-				e.contract.amount >= 0.12 * g.get("salaryCap")
-			) {
-				lines.push(
-					`${e.season} ${e.type} ${abbrev.get(e.tids[0])} ${await label(e.pids[0])}`,
-				);
-			} else if (e.type === "release" && !humans.includes(e.tids[0])) {
-				lines.push(
-					`${e.season} release ${abbrev.get(e.tids[0])} ${await label(e.pids[0])}`,
-				);
-			}
-		}
-		console.log(lines.join("\n"));
-		if (env.OWNER_OUT) {
-			const fs = await importNode("node:fs/promises");
-			await fs.writeFile(env.OWNER_OUT, lines.join("\n"));
+			await flush();
 		}
 	},
 );
@@ -556,6 +569,11 @@ test.skipIf(!env.OWNER_LEAGUE || !env.OWNER_PICKS)(
 		const { ValueChangeCalculator } =
 			await import("../../worker/core/team/ValueChangeCalculator.ts");
 		await loadOwnerLeague(env.OWNER_LEAGUE!);
+		if (env.OWNER_KNOWN !== undefined) {
+			const { outlookSettings } =
+				await import("../../worker/core/realisticFrontOffice/outlook.ts");
+			outlookSettings.knownClasses = env.OWNER_KNOWN === "1";
+		}
 		const conditions = {} as any;
 		let guard = 0;
 		while (g.get("phase") !== Number(env.OWNER_PICKS) && guard++ < 20) {
@@ -770,6 +788,135 @@ test.skipIf(!env.OWNER_LEAGUE || !env.OWNER_CLASSES)(
 		if (env.OWNER_OUT) {
 			const fs = await importNode("node:fs/promises");
 			await fs.writeFile(env.OWNER_OUT, JSON.stringify(out));
+		}
+	},
+);
+
+// One deal explained, both sides, at the draft (OWNER_DEAL, JSON):
+// {"a":"NYK","b":"POR","aGives":["2022:1:NYK","2024:1:NYK"],"bGives":["Quickley"]}
+// - players by last name, picks as season:round:team they came from.
+test.skipIf(!env.OWNER_LEAGUE || !env.OWNER_DEAL)(
+	"owner's league: explain a deal",
+	{ timeout: 1_800_000 },
+	async () => {
+		await importNode("fake-indexeddb/auto");
+		const { game, phase } = await import("../../worker/core/index.ts");
+		const { PHASE } = await import("../../common/constants.ts");
+		const { load } =
+			await import("../../worker/core/realisticFrontOffice/humanTrades.ts");
+		const { explainDeal } =
+			await import("../../worker/core/realisticFrontOffice/explain.ts");
+		const { priceFor } =
+			await import("../../worker/core/realisticFrontOffice/market.ts");
+		await loadOwnerLeague(env.OWNER_LEAGUE!);
+		await league.setGameAttributes({
+			realisticFrontOffices: true,
+			spectator: true,
+		});
+		const conditions = {} as any;
+		let guard = 0;
+		while (
+			g.get("phase") !== Number(env.OWNER_PHASE ?? PHASE.DRAFT) &&
+			guard++ < 20
+		) {
+			if (g.get("phase") === PHASE.PLAYOFFS) {
+				await game.play(100, conditions);
+			} else {
+				await phase.newPhase((g.get("phase") + 1) as any, conditions);
+			}
+		}
+		const deal = JSON.parse(env.OWNER_DEAL!);
+		const outlook = await currentOutlook();
+		const byAbbrev = new Map(
+			(await idb.cache.teams.getAll()).map((t) => [t.abbrev, t.tid]),
+		);
+		const a = await load(outlook, byAbbrev.get(deal.a)!);
+		const b = await load(outlook, byAbbrev.get(deal.b)!);
+		const pick = (t: any, key: string) => {
+			const [season, round, ab] = key.split(":");
+			return t.picks.find(
+				(dp: any) =>
+					dp.season === Number(season) &&
+					dp.round === Number(round) &&
+					dp.originalTid === byAbbrev.get(ab!),
+			);
+		};
+		const gives = (t: any, keys: string[]) => ({
+			players: keys
+				.filter((k) => !k.includes(":"))
+				.map((k) => t.players.find((p: any) => p.lastName === k)),
+			picks: keys.filter((k) => k.includes(":")).map((k) => pick(t, k)),
+		});
+		const ga = gives(a, deal.aGives);
+		const gb = gives(b, deal.bGives);
+		console.log(
+			"found",
+			JSON.stringify(
+				[ga, gb].map((x) => [
+					x.players.map((p: any) => p?.pid),
+					x.picks.map((dp: any) => dp?.dpid),
+				]),
+			),
+			"a picks",
+			a.picks
+				.filter((dp: any) => dp.round === 1)
+				.map((dp: any) => `${dp.season}:${dp.originalTid}`)
+				.join(" "),
+		);
+		const assets = (x: any) => [
+			...x.players.map((p: any) => ({ kind: "player", p })),
+			...x.picks.map((dp: any) => ({ kind: "pick", dp })),
+		];
+		const gainA = priceFor(outlook, a, assets(ga), assets(gb), b);
+		const gainB = priceFor(outlook, b, assets(gb), assets(ga), a);
+		console.log("gains (titles)", gainA.toFixed(4), gainB.toFixed(4));
+		const e = explainDeal(outlook, [
+			{
+				tid: a.tid,
+				players: a.players,
+				picks: a.picks,
+				tradedAway: a.tradedAway,
+				gain: gainA,
+				margin: 0,
+				gives: ga,
+				gets: gb,
+			},
+			{
+				tid: b.tid,
+				players: b.players,
+				picks: b.picks,
+				tradedAway: b.tradedAway,
+				gain: gainB,
+				margin: 0,
+				gives: gb,
+				gets: ga,
+			},
+		]);
+		for (const s of e.sides) {
+			console.log(
+				JSON.stringify({
+					tid: s.tid,
+					reason: s.reason,
+					before: s.before,
+					after: s.after,
+					titleBefore: s.titleBefore,
+					value: s.value,
+					gives: s.gives.map((x: any) => ({
+						name: x.name ?? `${x.season}R${x.round}`,
+						place: x.place,
+						ovr: x.ovrBySeason,
+						here: x.hereBySeason,
+						effect: x.effect,
+					})),
+					gets: s.gets.map((x: any) => ({
+						name: x.name ?? `${x.season}R${x.round}`,
+						place: x.place,
+						ovr: x.ovrBySeason,
+						here: x.hereBySeason,
+						effect: x.effect,
+					})),
+				}),
+			);
 		}
 	},
 );

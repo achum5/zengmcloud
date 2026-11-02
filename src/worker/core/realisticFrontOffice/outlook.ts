@@ -207,6 +207,9 @@ export type LeagueOutlook = {
 	// From the draft lottery to the end of the draft: the class, so the
 	// draft's picks are priced by who would go there (classPickAt).
 	classBoard?: ClassBoard;
+	// The classes of the drafts still to come that are already in the league,
+	// by draft (knownClassFor).
+	knownClasses?: Map<number, KnownClass>;
 	// Before the trade deadline: how much this season's title chances follow
 	// playoff strength rather than regular-season strength, 0 to 1 (from the
 	// deadline view's fit), and the playoff games a team plays (teamPoints).
@@ -314,6 +317,15 @@ const computeSeasonLine = (
 	if (p.contract.exp < season + index) {
 		availability *= retention;
 	}
+	return lineFromProjection(projection, index, availability);
+};
+
+// A projected player's line `index` seasons on, here this share of it.
+const lineFromProjection = (
+	projection: RatingsProjection,
+	index: number,
+	availability: number,
+): SeasonLine => {
 	const [roleFree, offense, usage, guard, forward] =
 		projection.measures[index]!;
 	// One synergy per projected season, shared by all his lines for it, so a
@@ -536,6 +548,10 @@ export const outlookSettings = {
 	// And payroll under the cap, past the league's minimum, with what the
 	// room is expected to buy; off, money costs only past the cap.
 	moneyUnderCap: true,
+	// A pick in a draft whose class is already in the league (Draft Scouting)
+	// is priced by who would go where it lands (knownClassFor), not by what
+	// the place usually yields. Off while it is measured.
+	knownClasses: false,
 };
 
 // For the arena's version-against-version leagues: settings for some teams'
@@ -555,6 +571,7 @@ export const teamOutlookSettings = new Map<
 			| "letGo"
 			| "moneyPerCap"
 			| "moneyUnderCap"
+			| "knownClasses"
 		>
 	>
 >();
@@ -569,7 +586,8 @@ const outlookSettingFor = <
 		| "costsOfLosing"
 		| "letGo"
 		| "moneyPerCap"
-		| "moneyUnderCap",
+		| "moneyUnderCap"
+		| "knownClasses",
 >(
 	tid: number,
 	key: K,
@@ -700,6 +718,8 @@ type PickYears = {
 	board: number;
 	// Whether the team holding it is the one it came from (COLA's draw).
 	own: boolean;
+	// Whether it is priced by its draft's class (knownClassFor).
+	known: boolean;
 	byYear: (PickAt | null | undefined)[];
 };
 
@@ -710,6 +730,7 @@ const pickYearsOf = (
 ) => {
 	let entry = outlook.pickYears.get(dp);
 	const own = holder === dp.originalTid;
+	const known = knownClassFor(outlook, dp, holder) !== undefined;
 	if (
 		!entry ||
 		entry.originalTid !== dp.originalTid ||
@@ -717,7 +738,8 @@ const pickYearsOf = (
 		entry.round !== dp.round ||
 		entry.pick !== dp.pick ||
 		entry.board !== (outlook.classBoard?.version ?? 0) ||
-		entry.own !== own
+		entry.own !== own ||
+		entry.known !== known
 	) {
 		entry = {
 			originalTid: dp.originalTid,
@@ -726,6 +748,7 @@ const pickYearsOf = (
 			pick: dp.pick,
 			board: outlook.classBoard?.version ?? 0,
 			own,
+			known,
 			byYear: [],
 		};
 		outlook.pickYears.set(dp, entry);
@@ -936,6 +959,8 @@ export const pickLineAt = (
 	if (fromClass !== undefined) {
 		return fromClass ?? undefined;
 	}
+	const known = knownClassFor(outlook, dp, holder);
+	const knownKey = known ? `:K${known.season}` : "";
 	const n = outlook.numTeams;
 	const center = Math.min(
 		n - 1,
@@ -968,7 +993,7 @@ export const pickLineAt = (
 			bySums = new Map();
 			gridSums.set(outlook.pickLines, bySums);
 		}
-		const key = `${dp.round}:${at}:${spread}:${years}${lotteryKey}`;
+		const key = `${dp.round}:${at}:${spread}:${years}${lotteryKey}${knownKey}`;
 		let sums = bySums.get(key);
 		if (!sums) {
 			// Where it lands is the same every season it is priced for.
@@ -983,13 +1008,13 @@ export const pickLineAt = (
 				weights = landing(n, at / PLACE_GRID, spread, lottery);
 				byPlace.set(landingKey, weights);
 			}
-			sums = pickSums(outlook, dp.round, weights, years);
+			sums = pickSums(outlook, dp.round, weights, years, known);
 			bySums.set(key, sums);
 		}
 		return sums;
 	};
 	// Remembered by the place itself too, as many as PICK_LINES_KEPT.
-	const key = `${dp.round}:${center}:${spread}:${years}${lotteryKey}`;
+	const key = `${dp.round}:${center}:${spread}:${years}${lotteryKey}${knownKey}`;
 	let at = outlook.pickLines.get(key);
 	if (at === undefined) {
 		const lo = sumsAt(k);
@@ -1161,6 +1186,175 @@ const classPickAt = (
 	return at;
 };
 
+// A draft still to come whose class is already in the league - its prospects
+// as Draft Scouting shows them, best first by what each is generally worth,
+// as the class board ranks them. A pick in it is priced by who would go where
+// it lands, like this draft's from the lottery on (classPickAt): a strong
+// class's picks are not to be had at the average, nor a weak one's sold at it.
+export type KnownClass = {
+	season: number;
+	prospects: { p: Player; projection: RatingsProjection }[];
+	// Per round and seasons after the draft, as slotsFor.
+	slots: Map<string, (number[] | undefined)[][]>;
+};
+
+// The class a pick is priced by, if any: a draft beyond the one whose order is
+// set, with a class in the league, for a team that prices picks so.
+const knownClassFor = (
+	outlook: Pick<LeagueOutlook, "knownClasses">,
+	dp: PickLike,
+	holder?: number,
+) =>
+	typeof dp.season === "number" &&
+	outlookSettingFor(holder ?? dp.originalTid, "knownClasses")
+		? outlook.knownClasses?.get(dp.season)
+		: undefined;
+
+// Prospects in the pool keep their draft-day ratings until they are drafted
+// (newPhasePreseason), so each is projected from his draft on - once per
+// league, by what he is.
+const prospectProjections = new Map<string, RatingsProjection>();
+let prospectProjectionsLid: number | undefined;
+const projectProspect = (p: Player) => {
+	const lid = g.get("lid");
+	if (lid !== prospectProjectionsLid || prospectProjections.size > 10_000) {
+		prospectProjections.clear();
+		prospectProjectionsLid = lid;
+	}
+	const r = last(p.ratings);
+	const draft = p.draft.year;
+	const key = `${p.pid}:${draft}:${r.season}:${r.ovr}:${r.pot}:${r.fuzz}`;
+	let projection = prospectProjections.get(key);
+	if (!projection) {
+		projection = projectRatings({
+			ratings: r,
+			age: draft - p.born.year,
+			years: OUTLOOK_YEARS + 1,
+			samples: PROJECTION_SAMPLES,
+			seed: seedFor(p.pid, draft),
+			measure: lineMeasure,
+		});
+		prospectProjections.set(key, projection);
+	}
+	return projection;
+};
+
+// A prospect's line `years` seasons after his draft (1 his rookie season),
+// drafted in this round: there for his rookie deal, then as likely to stay as
+// a drafted player is.
+const prospectLine = (
+	projection: RatingsProjection,
+	years: number,
+	round: number,
+) =>
+	lineFromProjection(
+		projection,
+		Math.min(projection.ovr.length - 1, years),
+		years > getRookieContractLength(round) ? ROOKIE_RETENTION : 1,
+	);
+
+// The classes of the drafts still to come that are already in the league: from
+// the next one whose order is not set to the last with picks.
+const buildKnownClasses = async ({
+	season,
+	numTeams,
+	numRounds,
+	lastPickSeason,
+}: {
+	season: number;
+	numTeams: number;
+	numRounds: number;
+	lastPickSeason: number;
+}) => {
+	const classes = new Map<number, KnownClass>();
+	const phase = g.get("phase");
+	const first = phase >= PHASE.DRAFT_LOTTERY ? season + 1 : season;
+	const prospects = (
+		await idb.cache.players.indexGetAll("playersByTid", PLAYER.UNDRAFTED)
+	).filter((p) => p.draft.year >= first && p.draft.year <= lastPickSeason);
+	const numPicks = numTeams * numRounds;
+	for (let draft = first; draft <= lastPickSeason; draft++) {
+		// The best by the game's own value are the ones worth projecting.
+		const pool = prospects
+			.filter((p) => p.draft.year === draft)
+			.sort((a, b) => b.value - a.value || a.pid - b.pid)
+			.slice(0, 2 * numPicks);
+		if (pool.length === 0) {
+			continue;
+		}
+		const ranked = pool
+			.map((p) => {
+				const projection = projectProspect(p);
+				// What he is generally worth, as buildClassBoard: his value over
+				// a replacement each season after the draft, each half of his
+				// careers as far as it is above one.
+				let worth = 0;
+				for (let y = 1; y <= OUTLOOK_YEARS + 1; y++) {
+					const line = prospectLine(projection, y, 1);
+					for (const half of line.halves ?? [line]) {
+						worth +=
+							0.9 ** (y - 1) *
+							half.availability *
+							Math.max(0, valueOverReplacement(half));
+					}
+				}
+				return { p, projection, worth };
+			})
+			.sort((a, b) => b.worth - a.worth || a.p.pid - b.p.pid);
+		classes.set(draft, {
+			season: draft,
+			prospects: ranked.map(({ p, projection }) => ({ p, projection })),
+			slots: new Map(),
+		});
+	}
+	return classes;
+};
+
+// What the player each place in a round of a known class becomes, `years`
+// after its draft, as slotsFor: the prospect who would go there.
+const knownSlots = (
+	known: KnownClass,
+	n: number,
+	round: number,
+	years: number,
+) => {
+	const key = `${n}:${round}:${years}:${g.get("salaryCap")}:${g.get("minContract")}:${g.get("maxContract")}`;
+	let slots = known.slots.get(key);
+	if (!slots) {
+		const pickSalary = pickSalaries();
+		slots = [];
+		for (let k = 0; k < n; k++) {
+			const slot = (round - 1) * n + k;
+			const prospect = known.prospects[slot];
+			if (!prospect) {
+				slots.push([undefined, undefined, undefined]);
+				continue;
+			}
+			const line = prospectLine(prospect.projection, years, round);
+			const rowOf = (x: StrengthPlayer & { availability: number }) => {
+				const a = x.availability;
+				return a > 0
+					? [
+							a,
+							a * x.roleFree,
+							a * x.offense,
+							a * x.usage,
+							a * x.valueNoPot,
+							a * pickSalary({ slot, round, years, ovr: x.valueNoPot }),
+						]
+					: undefined;
+			};
+			slots.push([
+				rowOf(line),
+				line.halves ? rowOf(line.halves[0]!) : undefined,
+				line.halves ? rowOf(line.halves[1]!) : undefined,
+			]);
+		}
+		known.slots.set(key, slots);
+	}
+	return slots;
+};
+
 // The draft class, best first by what each prospect is generally worth - his
 // value over a replacement each season, for as long as he is expected to be
 // around, five seasons out counting about 60% of the next - and the picks
@@ -1321,11 +1515,15 @@ const pickSums = (
 	// The chance of each pick in the round (landing).
 	weights: readonly number[],
 	years: number,
+	// Its draft's class, when it is priced by it.
+	known?: KnownClass,
 ) => {
 	const n = outlook.numTeams;
 	const numPicks = outlook.numRounds * n;
 	const sums = new Float64Array(SUMS);
-	const slots = slotsFor(n, numPicks, round, years);
+	const slots = known
+		? knownSlots(known, n, round, years)
+		: slotsFor(n, numPicks, round, years);
 	for (const [k, w] of weights.entries()) {
 		if (w < 1e-4) {
 			continue;
@@ -2399,6 +2597,15 @@ export const buildOutlook = async ({
 		cola:
 			outlookSettings.lottery && g.get("draftType") === "cola"
 				? await colaState(teams)
+				: undefined,
+		knownClasses:
+			outlookSettings.knownClasses || teamOutlookSettings.size > 0
+				? await buildKnownClasses({
+						season,
+						numTeams: teams.length,
+						numRounds: g.get("numDraftRounds"),
+						lastPickSeason,
+					})
 				: undefined,
 	};
 	for (const t of teams) {
