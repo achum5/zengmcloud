@@ -996,6 +996,18 @@ const ACT_BLEND = 0.5;
 const SETTLE_MS = 380;
 const GET_DOWN_MS = 480;
 const DOWN = new Set<Move>(["threePoint", "dlThree", "center"]);
+// (Down on a knee the same: into it and up out of it no quicker.)
+const LOW = new Set<Move>([
+	...DOWN,
+	"holdKneel",
+	"holdPlace",
+	"holdDown",
+	"kneelDown",
+	"takeKnee",
+	"tend",
+	"kneelPoint",
+	"hurtKnee",
+]);
 const BLEND_MOST_MS = Math.max(SETTLE_MS, GET_DOWN_MS);
 // (Down to a loose ball on the run: quickly into the scoop, the bend down
 // its own - not drawn out under his strides and all at the last.)
@@ -1013,8 +1025,8 @@ const offTheSnap = (l: Leg, prev: Leg | undefined) =>
 // got down into it.)
 const upSlowly = (l: Leg, prev: Leg | undefined) =>
 	prev !== undefined &&
-	DOWN.has(prev.move as Move) &&
-	!DOWN.has(l.move as Move) &&
+	LOW.has(prev.move as Move) &&
+	!LOW.has(l.move as Move) &&
 	moveKind(l.move) !== "act" &&
 	!offTheSnap(l, prev);
 // How far he is into a leg, so far through his blend into it (and how
@@ -1025,7 +1037,7 @@ const upSlowly = (l: Leg, prev: Leg | undefined) =>
 // there. (The play is only getting going for him then anyway - see
 // lagged.)
 const eases = (l: Leg, prev: Leg | undefined) =>
-	DOWN.has(l.move as Move) || upSlowly(l, prev);
+	LOW.has(l.move as Move) || upSlowly(l, prev);
 const intoOf = (l: Leg, prev: Leg | undefined, u: number): number => {
 	const v = clamp01(u);
 	return eases(l, prev)
@@ -1054,8 +1066,8 @@ const blendOf = (l: Leg, prev?: Leg): number => {
 				? UP_MS
 				: upSlowly(l, prev)
 					? GET_DOWN_MS
-					: DOWN.has(l.move as Move) &&
-						  !DOWN.has(prev.move as Move) &&
+					: LOW.has(l.move as Move) &&
+						  !LOW.has(prev.move as Move) &&
 						  moveKind(prev.move) !== "act"
 						? GET_DOWN_MS
 						: stepsOver(prev.move as Move, l.move as Move)
