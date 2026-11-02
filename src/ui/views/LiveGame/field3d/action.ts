@@ -284,8 +284,9 @@ const CUT_MERGE_MS = 60;
 const GAITS = new Set<Move>(["walk", "jog", "run", "sprint"]);
 const STEPS = new Set<Move>([...GAITS, "back", "slide", "shuffle"]);
 // (Stood in it, or sat in it on the spot, alive under him - a receiver
-// sat down for the ball.)
-const sits = (m: Move) => moveKind(m) === "still" || m === "settle";
+// sat down for the ball, a man lined up for a kickoff.)
+const ALIVE = new Set<Move>(["settle", "receiverReady", "backerReady"]);
+const sits = (m: Move) => moveKind(m) === "still" || ALIVE.has(m);
 // (Slower than this, ft/s, he is not going anywhere.)
 const CRAWL_FPS = 1;
 // Going well off the way he faces (more than CRAB_OFF radians), in a gait

@@ -685,7 +685,7 @@ export const KICKOFF_COVER = (lineAt: number): Align[] => [
 		pos: KICK_LINE_POS[i]!,
 		depth: -lineAt,
 		across,
-		move: "receiverStance",
+		move: "receiverReady",
 		...(across < 0 ? { mirrored: true } : {}),
 	})),
 ];
@@ -701,7 +701,7 @@ export const KICKOFF_RECEIVE = (zone: number, back: number): Align[] => [
 		pos: SETUP_POS[i]!,
 		depth: zone + (i % 2) * 6,
 		across,
-		move: "backerStance",
+		move: "backerReady",
 	})),
 	{ role: "KR", pos: "KR", depth: back, across: -12, move: "safetyStance" },
 	{ role: "KR", pos: "KR", depth: back + 9, across: 10, move: "safetyStance" },

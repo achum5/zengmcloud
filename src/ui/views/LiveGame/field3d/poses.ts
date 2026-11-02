@@ -337,6 +337,41 @@ const BACKER = pose({
 	abF: 14,
 	wide: 0.9,
 });
+// A receiver's two-point stance: up on the line, his outside foot back.
+const RECEIVER_STANCE = pose({
+	hipN: 34,
+	kneeN: 42,
+	hipF: -14,
+	kneeF: 30,
+	lean: 28,
+	shN: 34,
+	elN: 64,
+	abN: 10,
+	shF: -10,
+	elF: 50,
+	abF: 12,
+	wide: 0.35,
+});
+// Alive in a stance (the i'th of four, round): down into his knees, onto
+// one foot, back up, onto the other - his shoulders and hands going with
+// it - by as much as `by` of it.
+const alive = (q: Pose, i: number, by: number): Pose => {
+	const a = Math.sin((Math.PI * i) / 2) * by;
+	const b = Math.cos((Math.PI * i) / 2) * by;
+	return {
+		...q,
+		hipN: q.hipN + 5 * b + 3 * a,
+		kneeN: q.kneeN + 9 * b + 6 * a,
+		hipF: q.hipF + 5 * b - 3 * a,
+		kneeF: q.kneeF + 9 * b - 6 * a,
+		lean: q.lean + 2 * b,
+		twist: q.twist + 4 * a,
+		shN: q.shN + 5 * a,
+		elN: q.elN - 4 * b,
+		shF: q.shF - 5 * a,
+		elF: q.elF - 4 * b,
+	};
+};
 const BACKER_UP = {
 	...BACKER,
 	hipN: 18,
@@ -973,22 +1008,22 @@ const FIELD_ANIMS = {
 	},
 	// A receiver split out: his inside foot up, weight on it, leaning out
 	// over it, arms ready.
-	receiverStance: {
-		kind: "still",
-		pose: pose({
-			hipN: 34,
-			kneeN: 42,
-			hipF: -14,
-			kneeF: 30,
-			lean: 28,
-			shN: 34,
-			elN: 64,
-			abN: 10,
-			shF: -10,
-			elF: 50,
-			abF: 12,
-			wide: 0.35,
-		}),
+	receiverStance: { kind: "still", pose: RECEIVER_STANCE },
+	// Lined up for a kickoff, waiting on it - the ball to be kicked, and to
+	// come down: never stock still, his weight settling into his knees and
+	// back up, from one foot onto the other, his hands working - slowly
+	// (see the 3D court's ready).
+	receiverReady: {
+		kind: "loop",
+		n: 4,
+		fps: 1.8,
+		pose: (i) => alive(RECEIVER_STANCE, i, 0.7),
+	},
+	backerReady: {
+		kind: "loop",
+		n: 4,
+		fps: 1.5,
+		pose: (i) => alive(BACKER, i, 1),
 	},
 	// A linebacker: square, knees bent, hands out in front, reading the
 	// backfield.
@@ -3946,9 +3981,11 @@ const STANDS = new Set<Move>([
 	"overShoulders",
 	"kickReady",
 	"receiverStance",
+	"receiverReady",
 	"cornerStance",
 	"safetyStance",
 	"backerStance",
+	"backerReady",
 ]);
 export const stepsOver = (from: Move, to: Move) =>
 	from !== to && STANDS.has(from) && STANDS.has(to);

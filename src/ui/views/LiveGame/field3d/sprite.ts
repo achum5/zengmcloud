@@ -148,8 +148,13 @@ const FINE: Steps = {
 	drive: 12,
 };
 
-// (A stride slow to go round - a walk - in this many times more.)
-const SLOW_STRIDES = new Map<Move, number>([["walk", 2]]);
+// (A stride slow to go round - a walk - in this many times more; a man
+// barely alive in his stance, waiting, in fewer.)
+const SLOW_STRIDES = new Map<Move, number>([
+	["walk", 2],
+	["backerReady", 0.5],
+	["receiverReady", 0.5],
+]);
 
 // The frame of an act he is on, and where it starts (each the nearest to
 // the phases about it).
@@ -214,8 +219,10 @@ const STANCES = new Set<Move>([
 	"dlThree",
 	"center",
 	"backerStance",
+	"backerReady",
 	"backStance",
 	"receiverStance",
+	"receiverReady",
 	"cornerStance",
 	"holdKneel",
 	"holdPlace",
