@@ -7,12 +7,17 @@ import { simGames } from "./testGames.ts";
 
 let tls: FieldTimeline[] = [];
 
+// (Enough games to have them won both ways - home and road - for the final
+// whistle. They are played one after another off one seed, so which way
+// each goes depends on all the games before it.)
+const SEEDS = [31, 32, 33, 34, 35];
+
 beforeAll(async () => {
-	const games = await simGames([31, 32, 33]);
+	const games = await simGames(SEEDS);
 	tls = games.map(({ events, roster }, k) =>
-		compileField({ events, players: roster, gid: 31 + k }),
+		compileField({ events, players: roster, gid: SEEDS[k]! }),
 	);
-}, 180_000);
+}, 300_000);
 
 // The stands fill and empty: full through the first half, half of them
 // empty as the third quarter starts and filled again a few minutes in.

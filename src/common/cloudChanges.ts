@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 131,
+		date: "2026-11-02",
+		text: "Latest BBGM updates: a Sign all rookies button on the re-signing page, Team History marks the seasons you were the GM (with an All seasons / With you as GM toggle), award settings let you pick which awards to import, signing errors are handled more gracefully, and football overtime fixes.",
+	},
+	{
 		n: 130,
 		date: "2026-11-02",
 		text: "3D game: playoff crowds do a color-out - every section in one of the home team's colors, the next section in the other, all the way round (green, white, green in Boston; wine, gold, wine in Cleveland), and no visiting fans' colors in the stands.",
