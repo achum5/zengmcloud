@@ -119,7 +119,6 @@ const gameAttributesKeysSportSpecific = {
 		"easterEggPlayers",
 		"realisticFrontOffices",
 		"realisticFrontOfficesDifficulty",
-		"realisticFreeAgency",
 	]),
 	football: new Set<GameAttributeKey>([
 		"fantasyPoints",
@@ -551,7 +550,6 @@ export const defaultGameAttributes: GameAttributesLeagueWithHistory = {
 	aiTradesFactor: 1,
 	realisticFrontOffices: false,
 	realisticFrontOfficesDifficulty: "realistic",
-	realisticFreeAgency: true,
 	courtDecals: [],
 	scoreBug: null,
 	stopOnInjury: false,

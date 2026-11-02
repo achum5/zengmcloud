@@ -25,7 +25,6 @@ import getDaysLeftSchedule from "../season/getDaysLeftSchedule.ts";
 import { normalCdf, simulateSeason, winProbability } from "./seasonSim.ts";
 import { fitLogistic } from "./logistic.ts";
 import { clearMarketView, offerSettings, stayChance } from "./offers.ts";
-import { realisticFreeAgencyOn } from "./isOn.ts";
 import { buildDeadlineView, type DeadlineView } from "./timing.ts";
 import {
 	expectedRosterPoints,
@@ -517,10 +516,6 @@ export const outlookSettings = {
 	roomByRecord: true,
 	// A veteran's chance of staying counts how good he is (keptByValue).
 	retentionByValue: true,
-	// By stock's rules, cap room buys what free agents willing to sign with
-	// the team take (HAUL_BY_RECORD_STOCK), not what the offer market's do.
-	// Measured no better (see there).
-	stockHaul: false,
 	// A move's change in the team's record changes its players' mood and what
 	// its room buys (losingShifts).
 	costsOfLosing: false,
@@ -552,7 +547,6 @@ export const teamOutlookSettings = new Map<
 			| "keptCalibration"
 			| "retentionByValue"
 			| "retentionFit"
-			| "stockHaul"
 			| "costsOfLosing"
 			| "roomByRecord"
 			| "letGo"
@@ -569,7 +563,6 @@ const outlookSettingFor = <
 		| "roomByRecord"
 		| "retentionByValue"
 		| "retentionFit"
-		| "stockHaul"
 		| "costsOfLosing"
 		| "letGo"
 		| "moneyPerCap"
@@ -620,11 +613,7 @@ const keptByValue = (kept: number, value: number) => {
 // those of 60 and up, those given under 10% to take its offer stayed 21% of
 // the time and those given 10-50% 50%, where KEPT and keptByValue had said
 // 65-89%. Per player, the log-likelihood of what happened went from -0.581 to
-// -0.554. By stock's rules (2 leagues, 739 veterans) his chance of taking
-// the offer is his mood's chance of being willing - nearly always high - and
-// whether he stays is mostly his team's call at the market's ask: those of
-// 50-55 stayed 40% of the time, those of 55-60 63%, where keptByValue had
-// said 71% and 85%; the log-likelihood went from -0.70 to -0.43.
+// -0.554.
 // logit = a + b stay' + c min(v, 0) + d max(v, 0) + e stay' max(v, 0), with
 // stay' the logit of his chance and v = (value - 55) / 5.
 // Not used (retentionFit 1): priced by it, half the teams each way, 2
@@ -633,15 +622,10 @@ const keptByValue = (kept: number, value: number) => {
 // sold veterans for picks. Many who leave were let go because they asked for
 // more than they were worth to the team; priced as a loss, that undervalues
 // the choice of keeping them only when it pays.
-const KEPT_FIT = {
-	offerMarket: [0.591, 0.256, 0.721, -0.163, 0.128],
-	stock: [-1.928, 0.419, 1.753, 0.753, 0.026],
-} as const;
+const KEPT_FIT = [0.591, 0.256, 0.721, -0.163, 0.128] as const;
 
 const keptFit = (stay: number, value: number) => {
-	const [a, b, c, d, e] = realisticFreeAgencyOn()
-		? KEPT_FIT.offerMarket
-		: KEPT_FIT.stock;
+	const [a, b, c, d, e] = KEPT_FIT;
 	const s = Math.min(0.999, Math.max(0.001, stay));
 	const l = Math.log(s / (1 - s));
 	const v = (value - 55) / 5;
@@ -1612,10 +1596,7 @@ export const teamPoints = (
 				winp = Math.min(1, Math.max(0, winp + (losing.winp[y] ?? 0)));
 			}
 			state.room = salaryCap - committed;
-			const stock =
-				!realisticFreeAgencyOn() && outlookSettingFor(tid, "stockHaul");
-			state.signingsAt = (room) =>
-				signingsWith(room, duringFreeAgency, winp, stock);
+			state.signingsAt = (room) => signingsWith(room, duringFreeAgency, winp);
 		}
 	}
 	if (known !== false && outlookSettingFor(tid, "letGo")) {
@@ -2015,7 +1996,7 @@ export type LosingShifts = {
 	// Change in the share of games won its room is priced at, by season.
 	winp: number[];
 	// What a point of mood does to his chance of taking an offer, in log odds:
-	// the offer market's moodWeight / temperature, or stock's 0.7.
+	// the offer market's moodWeight / temperature.
 	slope: number;
 };
 
@@ -2091,9 +2072,7 @@ export const losingShifts = (
 	return {
 		mood,
 		winp,
-		slope: realisticFreeAgencyOn()
-			? offerSettings.moodWeight / offerSettings.temperature
-			: 0.7,
+		slope: offerSettings.moodWeight / offerSettings.temperature,
 	};
 };
 

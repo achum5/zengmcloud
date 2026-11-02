@@ -9,7 +9,6 @@ import { uniformSeed } from "../../../common/random.ts";
 import {
 	MARKET_TESTING,
 	realisticFreeAgencyOn,
-	realisticFrontOfficesOn,
 } from "../realisticFrontOffice/isOn.ts";
 
 const hasActiveNegotiation = async (tid: number, pid: number) => {
@@ -98,8 +97,7 @@ const moodInfo = async (
 	// where players judge every team on the same terms - in the offer market,
 	// every team's players test the market the same amount when their
 	// contracts run out, except those finishing rookie deals, who mostly stay
-	// (as with the NBA's restricted free agency); by stock's rules, none test
-	// it more than a human team's would in stock.
+	// (as with the NBA's restricted free agency).
 	if (realisticFreeAgencyOn()) {
 		if (
 			components.rookieContract <= 0 &&
@@ -110,7 +108,7 @@ const moodInfo = async (
 		) {
 			sumAndStuff -= MARKET_TESTING;
 		}
-	} else if (!thisIsAUserTeam && !realisticFrontOfficesOn()) {
+	} else if (!thisIsAUserTeam) {
 		sumAndStuff -= 3;
 	}
 

@@ -200,7 +200,6 @@ export type Key =
 	| "easterEggPlayers"
 	| "realisticFrontOffices"
 	| "realisticFrontOfficesDifficulty"
-	| "realisticFreeAgency"
 	| "fakeAgeProb";
 
 export type Category =

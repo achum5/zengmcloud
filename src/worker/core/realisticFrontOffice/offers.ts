@@ -4,8 +4,6 @@ import { last } from "../../../common/utils.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers } from "../../util/index.ts";
 import moodComponents from "../player/moodComponents.ts";
-import moodInfo from "../player/moodInfo.ts";
-import { realisticFreeAgencyOn } from "./isOn.ts";
 import { SLOT_MINUTES } from "./strength.ts";
 
 // HOW A PLAYER CHOOSES BETWEEN OFFERS (owner's call: an offer market, every
@@ -309,13 +307,9 @@ export const marketUtility = async (p: Player, ownTid: number) => {
 };
 
 // His chance of re-signing with a team that offers his asking price for the
-// length he wants, against testing the market - by stock's rules, his chance
-// of being willing to.
+// length he wants, against testing the market.
 export const stayChance = async (p: Player, tid: number) => {
 	const own = p.tid === tid ? p : { ...p, tid };
-	if (!realisticFreeAgencyOn()) {
-		return (await moodInfo(own, tid)).probWilling;
-	}
 	const appeal = sumMood(await moodComponents(own, tid));
 	const [stay] = choiceOdds(
 		[offerSettings.moodWeight * appeal],

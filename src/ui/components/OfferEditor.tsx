@@ -12,15 +12,8 @@ import { toWorker } from "../util/toWorker.ts";
 // re-signing) with odds.
 
 export const useRealisticFreeAgency = () => {
-	const { realisticFrontOffices, realisticFreeAgency } = useLocal([
-		"realisticFrontOffices",
-		"realisticFreeAgency",
-	]);
-	return (
-		__SPORT === "basketball" &&
-		!!realisticFrontOffices &&
-		realisticFreeAgency !== false
-	);
+	const { realisticFrontOffices } = useLocal(["realisticFrontOffices"]);
+	return __SPORT === "basketball" && !!realisticFrontOffices;
 };
 
 export type OfferProps = NonNullable<

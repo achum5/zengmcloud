@@ -508,68 +508,21 @@ every team, again whenever a signing changes the pool), memory cleanup 17%.
   unchanged. CPU teams are subject to it and account for it. The hope is that the
   league can drop it once CPU teams are hard to fleece.
 
-## Realistic Free Agency (sub-setting)
+## Free agency: always the offer market
 
-On by default with the mode (owner's call): re-signing and free agency as
-below, the offer market. Off, they are stock's (owner's call), so a league
-can keep the mode's front offices with the free agency it knows:
-
-- **Humans** negotiate and re-sign exactly as in stock - the negotiation
-  screen, asking prices by length, instant signing when a player is willing.
-- **Every team on the same terms** (owner's call): a player's mood and
-  willingness are stock's, but no team is helped or hurt - stock's
-  difficulty does nothing, and CPU teams' players test free agency no more
-  than a human team's do in stock (the offer market's extra testing, tuned
-  for its odds, would leave almost nobody willing to re-sign under stock's).
-- **CPU teams choose by the mode's valuation** (owner's call): every day
-  (owner's call - at stock's pace, a team sitting out three days in four,
-  good players were still unsigned as free agency ended), a CPU team signs
-  the free agent willing to sign with it who is worth the most to it, taking whichever of his asks by length it values
-  most, if any is worth more than its margin of error and the cap rules allow
-  it - so it pays what he would ask a human team. It screens the thirty best
-  free agents by the offer market's price lines (remembered while its roster
-  stands, so a day costs about what the offer market's does) and prices its
-  pick in full before signing. Once games are played, a
-  full roster signs only by releasing whoever it can best do without. While
-  re-signing, it keeps a player who is willing if one of his asks is worth
-  it; draft picks sign as in stock. It forecasts its players' staying by
-  their chance of being willing.
-- **What he asks is the market's** (owner's call). Stock prices players as
-  if CPU teams spent all their room on whoever is best, and lowers an ask
-  only about $2M over all of free agency; smart CPU teams would not pay
-  that - in two arena seasons half the top-10 free agents went unsigned all
-  summer, good young players willing to re-sign among them. So his ask (for
-  a team he feels nothing about; stock's mood adds to it for others) is the
-  offer market's price, on stock's terms: about the second-highest that any
-  CPU team after him - one he is willing to sign with, that the cap rules
-  let pay it - would pay, with his mood toward it added, and no more than it
-  would gain enough to sign him for (bids a team would never sign at held
-  prices up). It moves halfway
-  there each day of free agency (for the twenty best), and all the way at
-  once for the sixty best players whose contracts are up as re-signing
-  opens, priced as free agents (his own team may go over the cap for him);
-  pricing every one took most of a minute.
-- **Measured** (arena, 2 seasons, seed 3; stock / offer market / these
-  rules): top-10 free agents unsigned all summer 0 / 0 / 0 (10 before asks
-  were the market's); players worth 60+ whose contracts were up left
-  unsigned 0 / 0 / 0 (16 before); free agents signed a summer 46 and 35 /
-  88 and 69 / 63 and 35. Mid-level ones (50-60) are left unsigned a little
-  more as free agency ends (none / 3 / 10 and 13 a summer - 30 and 25 at
-  stock's pace): rebuilding teams with room pass on veterans (a win now
-  costs them lottery odds), and teams over the cap sign them only once
-  their asks fall to the minimum. Rosters short of the minimum are filled as
-  the season opens (cuts.ts), as in the mode.
-- **Bad teams sign nobody.** On the same terms, a free agent signs only
-  with a team he is willing to, and few are with a bad one: a team that won
-  under 30% of its games signed no free agent of 50 or better in 43 summers
-  of 2 arena leagues, with 58% of the cap to spend on average (stock's CPU
-  teams sign whoever is best, willing or not: about one a summer). Leagues
-  split far more than stock's - 16% of team-seasons under 20 wins, stock 2%.
-  Pricing room by what it buys under these rules (HAUL_BY_RECORD_STOCK)
-  changed nothing: half the teams each way over 6 seasons, 11 titles to 13,
-  bad teams' room unused 75 summers of 84. Left off (stockHaul).
-- Code: realisticFrontOffice/stockRules.ts; isOn.ts (realisticFreeAgencyOn)
-  switches every offer-market path.
+With the mode on, re-signing and free agency are the offer market's, below
+(owner's call, 2026-11-02). There was a switch for stock's free agency with
+the mode's front offices (players judging every team on the same terms, CPU
+teams choosing by the mode's valuation at the market's asks). It was taken
+out: on the same terms, a free agent signs only with a team he is willing to,
+and few are with a bad one - a team that won under 30% of its games signed no
+free agent of 50 or better in 43 summers of 2 arena leagues, with 58% of the
+cap to spend on average (stock's CPU teams sign whoever is best, willing or
+not: about one a summer), and leagues split far more than stock's (16% of
+team-seasons under 20 wins, stock 2). In the offer market money can make up
+for losing. Pricing room by what it bought under stock's rules changed
+nothing (half the teams each way over 6 seasons: 11 titles to 13, bad teams'
+room unused 75 summers of 84).
 
 ## Re-signing
 
@@ -609,14 +562,12 @@ can keep the mode's front offices with the free agency it knows:
   0.457 the second season (0.513 to 0.487 the first, before it counted), and
   their trades did better in hindsight (+49 to -35).
 - **Refit since, and left as it was.** Logged as each deadline's final week
-  opened against where players were the next season (6 arena leagues, 2,549
+  opened against where players were the next season (4 arena leagues, 1,810
   veterans), the table and value overrate staying for good players: a
   veteran's team keeps him more often the better he is up to a value of about
   55, then hardly more - of those of 60 and up given under 10% to take its
-  offer, 21% stayed where they were priced at 65%; by stock's rules (Realistic
-  Free Agency off) role players of 50-55 stayed 40% of the time where priced at
-  71%. A refit forecast what happened far better (log-likelihood per player
-  -0.58 to -0.55 with the offer market, -0.70 to -0.43 by stock's rules) - and
+  offer, 21% stayed where they were priced at 65%. A refit forecast what
+  happened better (log-likelihood per player -0.58 to -0.55) - and
   its teams did worse: half the teams on it, two leagues each way round over
   six seasons, they sold veterans for picks (net +33 first-rounders) and won
   2-5% fewer games from the fourth season on, 7 titles to 17. Many who leave
