@@ -1302,7 +1302,9 @@ describe("3D director", () => {
 				(n, tr) => n + tr.acts.filter((a) => a.anim === anim).length,
 				0,
 			);
-		assert.isAtLeast(count("point"), 10);
+		// (A finger at the man who found him - or, a basket of his own, at
+		// the bench.)
+		assert.isAtLeast(count("point") + count("thanks"), 15);
 		assert.isAtLeast(count("protest"), 4);
 		const over = tl.beats.at(-1)!;
 		const at = (anim: string) =>

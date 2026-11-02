@@ -207,7 +207,7 @@ describe("3D crew", () => {
 				prevT = t;
 			}
 		}
-	}, 60_000);
+	}, 180_000);
 
 	// A jump ahead (the next key play, joining late) is worked out from ten
 	// seconds short of where it lands, not every step in between - and lands

@@ -4312,8 +4312,11 @@ const playerAt = (
 	const lock =
 		shown && !pivot ? footLock(tl, tr, t, now, legs, way) : undefined;
 	const slip = from && from.w > 0 ? slipOf(here, yaw, from) : undefined;
+	const pl = shown ? passLook(tl, tr.pid, t, here, yaw) : NO_PASS_LOOK;
 	const look = shown
-		? lookAt(tl, t, here, yaw, now, from) + passLook(tl, tr.pid, t, here, yaw)
+		? lookAt(tl, t, here, yaw, now, from) +
+			pl.deg +
+			scanLook(tl, tr, t, here, yaw, now) * (1 - pl.w)
 		: 0;
 	// (An arm a beat behind its reason never takes the hand his dribble has
 	// just come over into.)
@@ -4765,18 +4768,19 @@ const STARE_MORE = 0.9;
 const SEE_LATE = 0.45;
 const NO_LOOK_FROM = 0.3;
 const NO_LOOK_MOST = 0.3;
+const NO_PASS_LOOK = { deg: 0, w: 0 } as const;
 const passLook = (
 	tl: CourtTimeline,
 	pid: number,
 	t: number,
 	here: Pt,
 	yaw: number,
-): number => {
+): { deg: number; w: number } => {
 	const i = ballIndexAt(tl, t);
 	const now = tl.ball[i];
 	const fast = clamp01((ARM_FAST - fastAt(tl, t)) / (ARM_FAST - 1));
 	if (!now || fast <= 0) {
-		return 0;
+		return NO_PASS_LOOK;
 	}
 	// The pass he is about to make - or has just made, on its way or already
 	// there. (Caught and passed straight on: his head comes round from the
@@ -4824,11 +4828,11 @@ const passLook = (
 		!("pid" in pass.to) ||
 		pass.to.pid === pid
 	) {
-		return 0;
+		return NO_PASS_LOOK;
 	}
 	const to = tl.tracks.get(pass.to.pid);
 	if (!to) {
-		return 0;
+		return NO_PASS_LOOK;
 	}
 	// His own eyes for it (see passEyes): a poor passer stares it down long
 	// before it goes; a fine one sees it late - and now and then throws it
@@ -4840,7 +4844,7 @@ const passLook = (
 			x - Math.floor(x) <
 			NO_LOOK_MOST * ((eyes - NO_LOOK_FROM) / (1 - NO_LOOK_FROM))
 		) {
-			return 0;
+			return NO_PASS_LOOK;
 		}
 	}
 	const lookFor =
@@ -4858,7 +4862,111 @@ const passLook = (
 		(wrapAngle(Math.atan2(at.y - here.y, at.x - here.x) - yaw) * 180) / Math.PI;
 	const a = Math.abs(rel);
 	const reach = a <= LOOK_BACK ? 1 : Math.max(0, (180 - a) / (180 - LOOK_BACK));
-	return Math.sign(rel) * Math.min(a, LOOK_MOST) * reach * w * fast;
+	return {
+		deg: Math.sign(rel) * Math.min(a, LOOK_MOST) * reach * w * fast,
+		w: w * fast,
+	};
+};
+// READING THE FLOOR. On his dribble with nothing yet to do with it, a fine
+// passer has his head up and round the floor - to one man of his and on to
+// the next, a look back at his man between - where a poorer one keeps his
+// eyes on what is in front of him. (By his own eyes for it: see passEyes.)
+// From how fine a passer (eyes), how long on each look (ms) and how long
+// his head takes to come round to the next, and how often the next is his
+// man in front of him.
+const SCAN_FROM = 0.15;
+const SCAN_EVERY = 900;
+const SCAN_TURN = 300;
+const SCAN_AHEAD = 0.35;
+// (How long after he puts it down, and before he picks it up, his head is
+// still down - and how long it takes to come up and go back down.)
+const SCAN_IN = 150;
+const SCAN_EASE = 300;
+// (Up to how fast he is going (feet a second) he looks round all he does,
+// and from how fast not at all.)
+const SCAN_PACE = [6, 15] as const;
+const scanLook = (
+	tl: CourtTimeline,
+	tr: Track,
+	t: number,
+	here: Pt,
+	yaw: number,
+	now: Doing,
+): number => {
+	const eyes = tl.passEyes?.get(tr.pid) ?? 0;
+	const fast =
+		eyes > SCAN_FROM ? clamp01((ARM_FAST - fastAt(tl, t)) / (ARM_FAST - 1)) : 0;
+	if (fast <= 0 || now.holding) {
+		return 0;
+	}
+	// On his dribble: from a beat after he puts it down to a beat before he
+	// picks it up - and not in a move of his, a crossover or a jab, his eyes
+	// on his man for it - his head coming up and going back down, not
+	// snapped there.
+	const dribbling = (s: BallSeg | undefined) =>
+		s?.kind === "hold" && s.pid === tr.pid && s.style === "dribble";
+	const i = ballIndexAt(tl, t);
+	if (!dribbling(tl.ball[i])) {
+		return 0;
+	}
+	let a = i;
+	while (a > 0 && dribbling(tl.ball[a - 1])) {
+		a -= 1;
+	}
+	let b = i + 1;
+	while (b < tl.ball.length && dribbling(tl.ball[b])) {
+		b += 1;
+	}
+	let edge =
+		smooth01((t - tl.ball[a]!.t0 - SCAN_IN) / SCAN_EASE) *
+		smooth01(((tl.ball[b]?.t0 ?? Infinity) - t - SCAN_IN) / SCAN_EASE);
+	const ai = lastIndex(tr.acts, t, (x) => x.t0);
+	const before = ai >= 0 ? tr.acts[ai] : undefined;
+	if (before && t < before.t1) {
+		return 0;
+	}
+	edge *=
+		smooth01((t - (before?.t1 ?? -Infinity)) / SCAN_EASE) *
+		smooth01(((tr.acts[ai + 1]?.t0 ?? Infinity) - t) / SCAN_EASE);
+	// (Stood, or walking it up - not on his way at the rim, his eyes on it
+	// and on whoever is in his way.)
+	edge *=
+		1 -
+		smooth01((paceAt(tr, t) - SCAN_PACE[0]) / (SCAN_PACE[1] - SCAN_PACE[0]));
+	if (edge <= 0) {
+		return 0;
+	}
+	const mates: Track[] = [];
+	for (const o of tl.tracks.values()) {
+		if (o.team === tr.team && o.pid !== tr.pid && shownAt(tl, o.pid, t)) {
+			mates.push(o);
+		}
+	}
+	if (mates.length === 0) {
+		return 0;
+	}
+	// Where his eyes are on the n-th look: at his man (none), or a teammate.
+	const k = (t + tr.pid * 211) / SCAN_EVERY;
+	const n = Math.floor(k);
+	const at = (m: number): number => {
+		const x = Math.sin(tr.pid * 78.233 + m * 12.9898) * 43758.5453;
+		const r = x - Math.floor(x);
+		if (r < SCAN_AHEAD) {
+			return 0;
+		}
+		const o =
+			mates[Math.floor(((r - SCAN_AHEAD) / (1 - SCAN_AHEAD)) * mates.length)]!;
+		const P = spotAt(o, t);
+		const rel =
+			(wrapAngle(Math.atan2(P.y - here.y, P.x - here.x) - yaw) * 180) / Math.PI;
+		const a = Math.abs(rel);
+		const reach =
+			a <= LOOK_BACK ? 1 : Math.max(0, (180 - a) / (180 - LOOK_BACK));
+		return Math.sign(rel) * Math.min(a, LOOK_MOST) * reach;
+	};
+	const u = smooth01(((k - n) * SCAN_EVERY) / SCAN_TURN);
+	const amt = clamp01((eyes - SCAN_FROM) / (1 - SCAN_FROM)) * 0.5 + 0.5;
+	return (at(n - 1) * (1 - u) + at(n) * u) * amt * fast * edge;
 };
 // Off the floor - sat on the bench, stood at it - the same: his head turned
 // to follow the play, in front of him.

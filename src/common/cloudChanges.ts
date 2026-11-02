@@ -12,6 +12,16 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 116,
+		date: "2026-11-02",
+		text: "3D game: a good ball handler sets up his screen - as the big comes up to screen for him, he takes his man a hard dribble the other way, then comes back off it shoulder to shoulder with the screener - and the better the handler, the more often he waves the screener up. A fine passer, on his dribble, has his head up reading the floor, looking round to his teammates one after another; a lesser one keeps his eyes on what's in front of him.",
+	},
+	{
+		n: 115,
+		date: "2026-11-02",
+		text: "3D game: charges and and-ones look right - the man who takes the charge is the one the driver runs into, the driver backs straight off him, and the teammate who pulls him up turns to face him before taking his hands; fouled on a jumper by his own man, that man is out on the shooter as it goes up, not still back in the help.",
+	},
+	{
 		n: 114,
 		date: "2026-11-02",
 		text: "3D game: a team's best creator runs the offense - the star with the handle has the ball in his hands and gets his own shot off the pick-and-roll or one-on-one, setting up his pull-up with a hesitation - while bigs and role players keep it simple and move the ball on, no crossover show where they stand.",

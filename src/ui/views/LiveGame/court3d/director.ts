@@ -636,6 +636,9 @@ const CHARGE_ASIDE = 3;
 // this far out (feet).
 const HELP_UP_FRONT = 3.6;
 const HELP_UP_MS = 1300;
+// How long a man come to help another up takes to turn right round to him
+// before he reaches down (ms).
+const HELP_UP_TURN = 450;
 const HELP_UP_WIDE = 3;
 // A dribble picked up this long ago (ms) or less, and going again: never
 // picked up (see hold).
@@ -1804,6 +1807,19 @@ const BREAK_MATCH_RANK = 2;
 // how badly he fits it (see castPlay): thirty feet, about a guard's part
 // played by a forward.
 const TRAVEL_COST = 0.035;
+// Setting up a screen for him (see setUpScreen): how far (feet) he takes his
+// man the other way first - at most, and at least - how much before the
+// screener sets off he may start (ms), how fast out (feet a second) and
+// back, the beat he plants at the end of it (ms), and how often - the least
+// of handlers and, on top of that, the best.
+const SETUP_FT = 3;
+const SETUP_LEAST = 1.75;
+const SETUP_EARLY = 400;
+const SETUP_OUT = 13;
+const SETUP_BACK = 11;
+const SETUP_PLANT = 120;
+const SETUP_FROM = 0.1;
+const SETUP_MORE = 0.8;
 // A handle (0 to 1, see levelOf) below which a man keeps it simple with the
 // ball - no show of moves where he stands - and one past which he works his
 // man with them, one into the next.
@@ -3600,7 +3616,20 @@ class Director {
 					"run",
 				)
 			: this.goBy(p, spot, from, from + need + 120, "run");
-		const t0 = Math.max(there, hit + HELP_UP_AT);
+		// (Turned to him before he reaches for his hands: as long again as
+		// he has to turn round from the way he came.)
+		const came = unitVec(round ?? P, spot);
+		const to = unitVec(spot, F);
+		const turn = Math.acos(
+			Math.max(-1, Math.min(1, came.x * to.x + came.y * to.y)),
+		);
+		const t0 = Math.max(
+			there + (HELP_UP_TURN * turn) / Math.PI,
+			hit + HELP_UP_AT,
+		);
+		if (t0 > there) {
+			this.lookAt(p, there, F);
+		}
 		this.act(p, "helpUp", t0, t0 + HELP_UP_MS, { look: { ...F } });
 		this.free.set(p, Math.max(this.free.get(p) ?? 0, t0 + HELP_UP_MS));
 		return t0;
@@ -6465,6 +6494,52 @@ class Director {
 		};
 	}
 
+	// SETTING UP THE SCREEN. A good handler doesn't stand and wait on the
+	// man coming to screen for him: as he comes, he takes his own man a hard
+	// dribble the other way - to set him up for it - and comes back off it
+	// as it is set, shoulder to shoulder with the screener; a poor one waits
+	// on it. (Only for a man the game has ratings for.)
+	private setUpScreen(
+		pid: number,
+		U: Pt,
+		way: Pt,
+		from: number,
+		set: number,
+		face: 1 | -1,
+	) {
+		const make = this.level(pid, "drb", "oiq");
+		const seg = this.ball.at(-1);
+		if (
+			make === undefined ||
+			this.holder !== pid ||
+			!seg ||
+			seg.kind !== "hold" ||
+			seg.pid !== pid ||
+			seg.style === "hold" ||
+			hash01(pid, from + 31) >= SETUP_FROM + SETUP_MORE * make
+		) {
+			return;
+		}
+		// (From as the screener sets off for him - or a beat before, as he
+		// sees him coming - as far as there is time for.)
+		const L = Math.hypot(way.x, way.y) || 1;
+		const soonest = Math.max(from - SETUP_EARLY, this.free.get(pid) ?? 0) + 50;
+		for (let ft = SETUP_FT; ft >= SETUP_LEAST; ft -= 0.25) {
+			const A = clampPt({
+				x: U.x + (way.x / L) * ft,
+				y: U.y + (way.y / L) * ft,
+			});
+			const d = dist(U, A);
+			const t1 = set - runMs(d, SETUP_BACK) - 60;
+			const t0 = t1 - SETUP_PLANT - runMs(d, SETUP_OUT);
+			if (d >= SETUP_LEAST && t0 >= soonest) {
+				this.go(pid, A, t0, SETUP_OUT, "dribble", face);
+				this.go(pid, U, t1, SETUP_BACK, "dribble", face);
+				return;
+			}
+		}
+	}
+
 	// SIZING HIM UP.
 	//
 	// Brought up the floor with time on the clock, the man with the ball does
@@ -7079,9 +7154,33 @@ class Director {
 							0.65,
 						);
 					}
-					// The man with the ball waves him up.
-					if (onBall && far > 10) {
-						this.gesture(user, "wave", off, off + 900, s, 0.5);
+					// The man with the ball waves him up - a creator calls for it,
+					// most times.
+					const make = this.level(user, "drb", "oiq", "pss");
+					if (onBall && far > (make === undefined ? 10 : 7)) {
+						this.gesture(
+							user,
+							"wave",
+							off,
+							off + 900,
+							s,
+							make === undefined ? 0.5 : 0.25 + 0.65 * make,
+						);
+					}
+					// (And a good handler sets it up: his man taken the other way
+					// first.)
+					if (onBall && j === 0) {
+						const ur = unitVec(U, rim);
+						const side = (S.x - U.x) * -ur.y + (S.y - U.y) * ur.x;
+						const k = side >= 0 ? -1 : 1;
+						this.setUpScreen(
+							user,
+							U,
+							{ x: -ur.y * k + ur.x * 0.35, y: ur.x * k + ur.y * 0.35 },
+							off,
+							there,
+							attackDir(run.team),
+						);
 					}
 					planted.push({ pid: s, t: there, anim: "screen", look: U });
 					set = Math.min(set, there);
@@ -11438,13 +11537,12 @@ class Director {
 		// Fouled on it and in anyway: the man who fouled him is the one on him
 		// as he goes up - up into him, a hand on him - not off somewhere, the
 		// whistle for somebody nowhere near him.
-		const onHim =
+		// (His own man, as often as not.)
+		const andOne =
 			plan.kind === "make" &&
 			plan.fouler !== undefined &&
-			this.teamOf(plan.fouler) !== team
-				? plan.fouler
-				: guard;
-		const andOne = onHim !== guard;
+			this.teamOf(plan.fouler) !== team;
+		const onHim = andOne ? plan.fouler : guard;
 		const P1 = this.posOf(shooter);
 		const toRim = { x: rim.x - P1.x, y: rim.y - P1.y };
 		const len = Math.hypot(toRim.x, toRim.y) || 1;
@@ -20829,13 +20927,16 @@ class Director {
 			// Or one set off from past where it was taking him - following his
 			// man has got him farther along than the schedule had him going:
 			// he stays where he is (the run dropped), not run back the way he
-			// came to it.
+			// came to it. (Past it, and near it: off well to the side of it,
+			// he still has to get there.)
 			const overran = (m: Move, was: Pt): boolean => {
 				const ux = m.to.x - was.x;
 				const uy = m.to.y - was.y;
+				const d = dist(m.from, m.to);
 				return (
 					Math.hypot(ux, uy) >= 1.5 &&
-					dist(m.from, m.to) >= 1.5 &&
+					d >= 1.5 &&
+					d < Math.max(3, 0.5 * Math.hypot(ux, uy)) &&
 					(m.to.x - m.from.x) * ux + (m.to.y - m.from.y) * uy < 0
 				);
 			};
@@ -21786,6 +21887,16 @@ class Director {
 				const dur = m.t1 - m.t0;
 				for (const w of L2 > 0.25 ? theirs : []) {
 					if (w.t1 <= m.t0 || w.t0 >= m.t1 || helping(w, m)) {
+						continue;
+					}
+					// (Stood over a man down on the floor - the man who ran him
+					// over - and on his way off him: straight off, not round
+					// him.)
+					if (
+						w.down &&
+						dist(m.from, w.at) < BODY &&
+						(m.from.x - w.at.x) * dx + (m.from.y - w.at.y) * dy > 0
+					) {
 						continue;
 					}
 					// Where he comes closest to him while the man is there - how
