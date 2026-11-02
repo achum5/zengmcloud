@@ -12854,13 +12854,45 @@ class Action {
 				m.act("swat", kickT + 350, this.behind);
 			}
 		}
-		// Everybody turned to watch it go.
+		// Everybody turned to watch it go - and as it goes over or by, this
+		// often a man of the side it went for glad of it (a clap, a fist), and
+		// of the other side, missed, rueing it: hands on his helmet.
 		const posts = this.w({ d: lineD, a: postA });
+		const fg = this.input.kind === "fieldGoal";
 		for (const m of this.men) {
 			if (m !== k) {
 				m.hold(Math.max(m.t, kickT + 350) + r() * 200);
-				m.hold(crossT + 300, "stand", this.toward(m.at, posts));
+				const look = this.toward(m.at, posts);
+				const ours = m.team === this.input.offense;
+				const u = r();
+				const glad =
+					m !== h &&
+					ours === made &&
+					u < (made ? (fg ? KICK_GLAD : TRY_GLAD) : MISS_GLAD);
+				const rue = !made && ours && m !== h && u < KICK_RUE;
+				if (glad || rue) {
+					const seen = Math.max(m.t, crossT + KICK_SEEN_MS * (0.4 + r()));
+					m.hold(seen, "stand", look);
+					if (rue) {
+						m.act("handsOnHelmet", seen + RUE_HELMET_MS + r() * 400, look);
+					} else {
+						m.act(
+							r() < 0.6 ? "clap" : "fistPump",
+							seen + 1000 + r() * 300,
+							look,
+						);
+					}
+				} else {
+					m.hold(crossT + 300, "stand", look);
+				}
 			}
+		}
+		// (The kicker, wide or short: hands on his helmet now and then.)
+		if (!made && fg && r() < KICKER_RUE) {
+			const seen = Math.max(k.t, crossT + KICK_SEEN_MS);
+			k.cut(seen);
+			k.hold(seen, "stand", this.toward(k.at, posts));
+			k.act("handsOnHelmet", seen + RUE_HELMET_MS + r() * 400);
 		}
 		// Good: this often the holder over to the kicker, a high five - the
 		// kicker's fist pumped first, now and then.
@@ -13962,13 +13994,20 @@ class Action {
 				.find((e) => e?.type === "run" || e?.type === "passComplete")?.yds,
 			0,
 		);
+		// (A kick through the posts: its side; wide, the other.)
+		const goal =
+			kind === "fieldGoal" || kind === "extraPoint" ? this.find(kind) : -1;
 		const cheered =
 			won ??
-			(gain >= FIVE_GAIN
-				? offense
-				: this.find("sack") >= 0
-					? ((1 - offense) as Side)
-					: undefined);
+			(goal >= 0
+				? this.ev(goal).made === true
+					? offense
+					: ((1 - offense) as Side)
+				: gain >= FIVE_GAIN
+					? offense
+					: this.find("sack") >= 0
+						? ((1 - offense) as Side)
+						: undefined);
 		if (cheered !== undefined) {
 			this.fives(cheered, free, holder);
 		}
@@ -14410,6 +14449,16 @@ const FAIR_TO = 700;
 const KICK_FIVE = 0.75;
 const TRY_FIVE = 0.4;
 const KICK_PUMP = 0.35;
+// The rest of them as it goes over or by (see fieldGoal): this often glad
+// of it - a field goal good, a try good, a kick missed - or rueing a miss;
+// the kicker, this often; seeing it this long after it crosses (from 0.4
+// to 1.4 of it).
+const KICK_GLAD = 0.35;
+const TRY_GLAD = 0.15;
+const MISS_GLAD = 0.4;
+const KICK_RUE = 0.2;
+const KICKER_RUE = 0.5;
+const KICK_SEEN_MS = 300;
 const FIVE_MS = 800;
 // (Squared up to each other this long first, the later there of the two -
 // not into it off his last step.)
