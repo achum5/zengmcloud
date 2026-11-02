@@ -34,6 +34,7 @@ import { formatClock } from "../../common/formatClock.ts";
 import { getPeriodName } from "../../common/getPeriodName.ts";
 import { bySport } from "../../common/sportFunctions.ts";
 import type { RouteParams } from "../../ui/router/types.ts";
+import { courtOf } from "../../common/stockCourts.ts";
 
 const processInputs = (params: RouteParams<"liveGame">, ctxBBGM: any) => {
 	const obj: {
@@ -267,7 +268,8 @@ export const boxScoreToLiveSim = async ({
 			if (!override && t.tid >= 0) {
 				try {
 					const team = await idb.cache.teams.get(t.tid);
-					teamCourt = team?.court;
+					// (Its own court, or its stock floor - see stockCourts.)
+					teamCourt = team ? courtOf(team) : undefined;
 					worn = team;
 				} catch {
 					// Court styling is cosmetic; fall back to defaults.

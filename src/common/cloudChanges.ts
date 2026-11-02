@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 140,
+		date: "2026-11-02",
+		text: "Every team the game comes with now has its own home floor, laid out like an NBA floor: its wood, its lane painted in its colors with a trim, a colored border with the city and name on the baselines, its logo at center court and its second logo out on the wings. Customize Court opens on it and can change any of it - and courts can now have a two-tone floor, a lane trim, a filled center circle, your own baseline text and a choice of lettering.",
+	},
+	{
 		n: 139,
 		date: "2026-11-02",
 		text: "3D game: more lifelike players. Hands are sized like real hands - slimmer palms and fingers, with a thumb muscle at the base - the back of the head is shaded round instead of flat, faces turn properly at three-quarter angles, and the biceps bunch up as the elbow bends.",

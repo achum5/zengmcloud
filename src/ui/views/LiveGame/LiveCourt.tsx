@@ -87,6 +87,31 @@ const FINALS_LOGO_FT = 12;
 // courtTexture. The court's "cover" sliders size and move it.)
 const FINALS_COVER = { rx: 15, ry: 13.5 };
 
+// THE FLOOR'S LETTERING (see CourtStyle.lettering), named outright - the 3D
+// court draws the floor as a picture, where nothing is inherited from the
+// page and an unnamed font comes out a book serif.
+const SANS = "'Helvetica Neue', Helvetica, Arial, sans-serif";
+const LETTERING = {
+	block: { fontFamily: SANS, fontWeight: 800 },
+	serif: {
+		fontFamily: "Georgia, 'Times New Roman', Times, serif",
+		fontWeight: 700,
+	},
+	italic: { fontFamily: SANS, fontWeight: 800, fontStyle: "italic" },
+} as const;
+// Text too long for its place squeezed to fit it, rather than cut off or run
+// off the floor (a guess at its width: bold capitals are about two-thirds
+// as wide as they are tall).
+const squeezed = (
+	text: string,
+	fontSize: number,
+	spacing: number,
+	max: number,
+): { textLength?: number; lengthAdjust?: "spacingAndGlyphs" } =>
+	text.length * fontSize * 0.66 + Math.max(0, text.length - 1) * spacing > max
+		? { textLength: max, lengthAdjust: "spacingAndGlyphs" }
+		: {};
+
 export type CourtSceneKind =
 	| "attempt"
 	| "make"
@@ -1748,6 +1773,10 @@ const LiveCourt = ({
 	const woodLine = shade(woodFill, -0.14);
 	const floorPattern = court?.floorPattern ?? "hardwood";
 	const paintColor = court?.paint || undefined; // undefined = no painted key
+	const paintTrim = court?.paintTrim || undefined;
+	const insideFloor = court?.insideFloor || undefined;
+	const centerCircle = court?.centerCircle || undefined;
+	const letters = LETTERING[court?.lettering ?? "block"] ?? LETTERING.block;
 	const trophyURL = court?.trophyURL || DEFAULT_TROPHY_URL;
 	// The finals: the championship trophy at center court, the home logo in
 	// front of its base - on a floor picture too, laid over the picture's own
@@ -1792,8 +1821,30 @@ const LiveCourt = ({
 		opacity: number;
 		fit?: "contain" | "fill";
 	};
-	const placed = (slot: CourtImageSlot, box: Box) =>
-		placedBy(court?.adjust?.[slot], box);
+	// (A slot with a copy in each half, or each corner: the copy across
+	// center court moved the other way - "toward half court" for both - and
+	// turned the other way, as the floor is laid out.)
+	const placed = (
+		slot: CourtImageSlot,
+		box: Box,
+		mirror?: { x?: boolean; y?: boolean },
+	) => {
+		const adjust = court?.adjust?.[slot];
+		if (!adjust || !mirror) {
+			return placedBy(adjust, box);
+		}
+		return placedBy(
+			{
+				...adjust,
+				...(mirror.x && adjust.dx !== undefined ? { dx: -adjust.dx } : {}),
+				...(mirror.y && adjust.dy !== undefined ? { dy: -adjust.dy } : {}),
+				...(!mirror.x !== !mirror.y && adjust.rotate !== undefined
+					? { rotate: -adjust.rotate }
+					: {}),
+			},
+			box,
+		);
+	};
 	const placedBy = (adjust: CourtImageAdjust | undefined, box: Box) => {
 		const scale = Math.min(Math.max(adjust?.scale ?? 1, 0.1), 6);
 		const cx = box.x + box.width / 2 + (adjust?.dx ?? 0);
@@ -1824,7 +1875,8 @@ const LiveCourt = ({
 	// An oversized field of long maple planks running along the court length,
 	// with procedural grain. Drawn directly for "hardwood" and, rotated + clipped
 	// to the court, for "diagonal" / "chevron".
-	const plankField = (tag: string): ReactNode => {
+	const plankField = (tag: string, fill = woodFill): ReactNode => {
+		const seam = shade(fill, -0.14);
 		const PH = 2.3; // plank height (across the court)
 		const x0 = -60;
 		const x1 = COURT_W + 60;
@@ -1841,7 +1893,7 @@ const LiveCourt = ({
 					y={y}
 					width={w}
 					height={PH}
-					fill={shade(woodFill, idx % 2 === 0 ? 0.045 : -0.045)}
+					fill={shade(fill, idx % 2 === 0 ? 0.045 : -0.045)}
 				/>,
 			);
 			bands.push(
@@ -1851,7 +1903,7 @@ const LiveCourt = ({
 					y1={y}
 					x2={x1}
 					y2={y}
-					stroke={woodLine}
+					stroke={seam}
 					strokeWidth={0.09}
 					opacity={0.55}
 				/>,
@@ -1859,7 +1911,7 @@ const LiveCourt = ({
 		}
 		return (
 			<>
-				<rect x={x0} y={y0} width={w} height={y1 - y0} fill={woodFill} />
+				<rect x={x0} y={y0} width={w} height={y1 - y0} fill={fill} />
 				{bands}
 				<rect
 					x={x0}
@@ -1876,7 +1928,8 @@ const LiveCourt = ({
 
 	// A basketweave parquet: a checkerboard of blocks whose wood grain alternates
 	// direction block to block, like the classic Boston Garden floor.
-	const parquetField = (): ReactNode => {
+	const parquetField = (fill = woodFill): ReactNode => {
+		const seam = shade(fill, -0.14);
 		const B = 5.6; // block size
 		const strips = 5;
 		const sw = B / strips;
@@ -1896,7 +1949,7 @@ const LiveCourt = ({
 						y={y}
 						width={B}
 						height={B}
-						fill={shade(woodFill, horiz ? 0.05 : -0.05)}
+						fill={shade(fill, horiz ? 0.028 : -0.028)}
 					/>,
 				);
 				for (let s = 1; s < strips; s++) {
@@ -1908,7 +1961,7 @@ const LiveCourt = ({
 								y1={y + s * sw}
 								x2={x + B}
 								y2={y + s * sw}
-								stroke={woodLine}
+								stroke={seam}
 								strokeWidth={0.06}
 								opacity={0.5}
 							/>
@@ -1919,7 +1972,7 @@ const LiveCourt = ({
 								y1={y}
 								x2={x + s * sw}
 								y2={y + B}
-								stroke={woodLine}
+								stroke={seam}
 								strokeWidth={0.06}
 								opacity={0.5}
 							/>
@@ -1934,7 +1987,7 @@ const LiveCourt = ({
 						width={B}
 						height={B}
 						fill="none"
-						stroke={woodLine}
+						stroke={seam}
 						strokeWidth={0.1}
 						opacity={0.6}
 					/>,
@@ -1948,17 +2001,17 @@ const LiveCourt = ({
 	// The floor detail (grain/planks) for the chosen pattern, always clipped to
 	// the court rectangle so it never paints over the rails/aprons.
 	const cx = COURT_W / 2;
-	const floorDetail = (): ReactNode => {
+	const floorDetail = (fill = woodFill): ReactNode => {
 		if (floorPattern === "solid") {
 			return null;
 		}
 		if (floorPattern === "parquet") {
-			return <g clipPath={`url(#${clipId})`}>{parquetField()}</g>;
+			return <g clipPath={`url(#${clipId})`}>{parquetField(fill)}</g>;
 		}
 		if (floorPattern === "diagonal") {
 			return (
 				<g clipPath={`url(#${clipId})`}>
-					<g transform={`rotate(38 ${cx} 25)`}>{plankField("dg")}</g>
+					<g transform={`rotate(38 ${cx} 25)`}>{plankField("dg", fill)}</g>
 				</g>
 			);
 		}
@@ -1967,32 +2020,47 @@ const LiveCourt = ({
 			return (
 				<>
 					<g clipPath={`url(#${clipId}-l)`}>
-						<g transform={`rotate(34 ${cx} 25)`}>{plankField("cl")}</g>
+						<g transform={`rotate(34 ${cx} 25)`}>{plankField("cl", fill)}</g>
 					</g>
 					<g clipPath={`url(#${clipId}-r)`}>
-						<g transform={`rotate(-34 ${cx} 25)`}>{plankField("cr")}</g>
+						<g transform={`rotate(-34 ${cx} 25)`}>{plankField("cr", fill)}</g>
 					</g>
 				</>
 			);
 		}
-		return <g clipPath={`url(#${clipId})`}>{plankField("hw")}</g>;
+		return <g clipPath={`url(#${clipId})`}>{plankField("hw", fill)}</g>;
 	};
+	// Inside a three-point line, one end or the other.
+	const insideThree = (mirror: boolean) => (
+		<path
+			transform={mirror ? `translate(${COURT_W} 0) scale(-1 1)` : undefined}
+			d={`M 0 3 L ${CORNER_LEN} 3 A ${THREE_R} ${THREE_R} 0 0 1 ${CORNER_LEN} 47 L 0 47 Z`}
+		/>
+	);
 
 	// The painted key (NBA-style colored lane), drawn under the lines.
 	const paintFor = (mirror: boolean) => {
-		if (!paintColor) {
+		if (!paintColor && !paintTrim) {
 			return null;
 		}
 		const tx = mirror ? `translate(${COURT_W} 0) scale(-1 1)` : undefined;
 		return (
-			<rect
-				transform={tx}
-				x={0}
-				y={17}
-				width={19}
-				height={16}
-				fill={paintColor}
-			/>
+			<g transform={tx}>
+				{paintColor ? (
+					<rect x={0} y={17} width={19} height={16} fill={paintColor} />
+				) : null}
+				{paintTrim ? (
+					<rect
+						x={0.5}
+						y={17.5}
+						width={18}
+						height={15}
+						fill="none"
+						stroke={paintTrim}
+						strokeWidth={1}
+					/>
+				) : null}
+			</g>
 		);
 	};
 
@@ -2032,9 +2100,15 @@ const LiveCourt = ({
 	const homeText = court?.apronText || teamColor(home, 1, "#ffffff");
 	const centerTextColor = court?.centerTextColor || homeRail;
 	const benchTextColor = court?.benchTextColor || homeText;
-	const railLabel = (home?.name || home?.region || home?.abbrev || "")
+	const railName = (home?.name || home?.region || home?.abbrev || "")
 		.toUpperCase()
-		.slice(0, 14);
+		.slice(0, 24);
+	// [the left rail's, the right's]
+	const railLabels = [
+		(court?.railText ?? railName).slice(0, 24),
+		(court?.railText2 ?? court?.railText ?? railName).slice(0, 24),
+	] as const;
+	const railLabel = railLabels.join("|");
 	// THE STRIP BEHIND EACH BASELINE - the band with the team name on it, and
 	// the first place anyone looks to put an image. Drawn along the rail and
 	// rotated to run with it, so a wordmark reads the way the team name does.
@@ -2061,8 +2135,9 @@ const LiveCourt = ({
 	};
 
 	const railText = (left: boolean) => {
+		const label = railLabels[left ? 0 : 1];
 		// An image on the rail takes it over; the name would print on top of it.
-		if (!railLabel || railImageURL || floorImageURL || court?.hideRailText) {
+		if (!label || railImageURL || floorImageURL || court?.hideRailText) {
 			return null;
 		}
 		const x = left ? -RAIL_W / 2 : COURT_W + RAIL_W / 2;
@@ -2074,11 +2149,12 @@ const LiveCourt = ({
 				textAnchor="middle"
 				dominantBaseline="central"
 				fontSize={3.2}
-				fontWeight={700}
 				letterSpacing={0.5}
+				{...letters}
+				{...squeezed(label, 3.2, 0.5, COURT_H - 6)}
 				fill={homeText}
 			>
-				{railLabel}
+				{label}
 			</text>
 		);
 	};
@@ -2223,6 +2299,10 @@ const LiveCourt = ({
 					<clipPath id={`${clipId}-r`}>
 						<rect x={cx} y={0} width={COURT_W - cx} height={COURT_H} />
 					</clipPath>
+					<clipPath id={`${clipId}-in`}>
+						{insideThree(false)}
+						{insideThree(true)}
+					</clipPath>
 					{/* Broadcast lighting: a soft overhead sheen down the middle of the
 					    floor (the reflection of the light banks) and a gentle vignette
 					    darkening the edges, so the hardwood reads as LIT and glossy
@@ -2285,6 +2365,20 @@ const LiveCourt = ({
 						/>
 						{/* Floor grain/planks for the chosen wood pattern */}
 						{floorDetail()}
+						{/* A two-tone floor: inside the three-point lines its own
+						    stain. */}
+						{insideFloor ? (
+							<g clipPath={`url(#${clipId}-in)`}>
+								<rect
+									x={0}
+									y={0}
+									width={COURT_W}
+									height={COURT_H}
+									fill={insideFloor}
+								/>
+								{floorDetail(insideFloor)}
+							</g>
+						) : null}
 						{/* Overhead light sheen on the wood (under the court lines, so
 						    they stay crisp). */}
 						<rect
@@ -2357,13 +2451,17 @@ const LiveCourt = ({
 						/>
 						<image
 							href={baselineImageURL}
-							{...placed("baseline", {
-								x: COURT_W * 0.89 - 9,
-								y: 25 - 6,
-								width: 18,
-								height: 12,
-								opacity: 0.9,
-							})}
+							{...placed(
+								"baseline",
+								{
+									x: COURT_W * 0.89 - 9,
+									y: 25 - 6,
+									width: 18,
+									height: 12,
+									opacity: 0.9,
+								},
+								{ x: true },
+							)}
 						/>
 					</>
 				) : null}
@@ -2381,13 +2479,17 @@ const LiveCourt = ({
 							<image
 								key={`corner${i}`}
 								href={cornerLogoURL}
-								{...placed("corner", {
-									x: qx - 4.5,
-									y: qy - 4.5,
-									width: 9,
-									height: 9,
-									opacity: 0.8,
-								})}
+								{...placed(
+									"corner",
+									{
+										x: qx - 4.5,
+										y: qy - 4.5,
+										width: 9,
+										height: 9,
+										opacity: 0.8,
+									},
+									{ x: qx > COURT_W / 2, y: qy > COURT_H / 2 },
+								)}
 							/>
 						))
 					: null}
@@ -2395,6 +2497,9 @@ const LiveCourt = ({
 				{/* Painted key (drawn under the lines) */}
 				{paintFor(false)}
 				{paintFor(true)}
+				{centerCircle ? (
+					<circle cx={COURT_W / 2} cy={25} r={6} fill={centerCircle} />
+				) : null}
 
 				{railImage(true)}
 				{railImage(false)}
@@ -2432,13 +2537,27 @@ const LiveCourt = ({
 				{centerLogoURL ? (
 					<image
 						href={centerLogoURL}
-						{...placed("logo", {
-							x: COURT_W / 2 - (floorTrophy ? FINALS_LOGO_FT / 2 : 15),
-							y: 25 - (floorTrophy ? FINALS_LOGO_FT / 2 : 15),
-							width: floorTrophy ? FINALS_LOGO_FT : 30,
-							height: floorTrophy ? FINALS_LOGO_FT : 30,
-							opacity: 0.97,
-						})}
+						{...(floorTrophy && !floorImageURL
+							? // (In front of the trophy the logo is the trophy's size, not
+								// whatever size it has at center court the rest of the year
+								// - on a floor picture, sized to the picture's own.)
+								placedBy(
+									{ ...court?.adjust?.logo, scale: undefined },
+									{
+										x: COURT_W / 2 - FINALS_LOGO_FT / 2,
+										y: 25 - FINALS_LOGO_FT / 2,
+										width: FINALS_LOGO_FT,
+										height: FINALS_LOGO_FT,
+										opacity: 0.97,
+									},
+								)
+							: placed("logo", {
+									x: COURT_W / 2 - (floorTrophy ? FINALS_LOGO_FT / 2 : 15),
+									y: 25 - (floorTrophy ? FINALS_LOGO_FT / 2 : 15),
+									width: floorTrophy ? FINALS_LOGO_FT : 30,
+									height: floorTrophy ? FINALS_LOGO_FT : 30,
+									opacity: 0.97,
+								}))}
 					/>
 				) : !finals && !floorImageURL ? (
 					<text
@@ -2487,9 +2606,10 @@ const LiveCourt = ({
 						textAnchor="middle"
 						dominantBaseline="central"
 						fontSize={3.4}
-						fontWeight={800}
-						fontStyle="italic"
 						letterSpacing={0.4}
+						{...letters}
+						fontStyle="italic"
+						{...squeezed(centerText.slice(0, 24), 3.4, 0.4, 40)}
 						fill={centerTextColor}
 						opacity={0.95}
 					>
@@ -2506,8 +2626,9 @@ const LiveCourt = ({
 						textAnchor="middle"
 						dominantBaseline="central"
 						fontSize={2.4}
-						fontWeight={700}
 						letterSpacing={0.8}
+						{...letters}
+						{...squeezed(benchText.slice(0, 30), 2.4, 0.8, 60)}
 						fill={benchTextColor}
 						opacity={0.95}
 					>
@@ -2530,13 +2651,17 @@ const LiveCourt = ({
 						/>
 						<image
 							href={secondaryLogoURL}
-							{...placed("secondary", {
-								x: COURT_W * 0.73 - 6.5,
-								y: 25 - 6.5,
-								width: 13,
-								height: 13,
-								opacity: 0.82,
-							})}
+							{...placed(
+								"secondary",
+								{
+									x: COURT_W * 0.73 - 6.5,
+									y: 25 - 6.5,
+									width: 13,
+									height: 13,
+									opacity: 0.82,
+								},
+								{ x: true },
+							)}
 						/>
 					</>
 				) : null}
@@ -2583,6 +2708,10 @@ const LiveCourt = ({
 			adjustKey,
 			decals,
 			court?.hideRailText,
+			paintTrim,
+			insideFloor,
+			centerCircle,
+			letters,
 			centerText,
 			centerTextColor,
 			benchText,

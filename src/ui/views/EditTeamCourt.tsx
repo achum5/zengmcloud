@@ -128,6 +128,57 @@ const ColorField = ({
 	</div>
 );
 
+// A color a court can have or go without: a checkbox, and the color once
+// it has it.
+const OptionalColor = ({
+	id,
+	label,
+	value,
+	fallback,
+	onChange,
+}: {
+	id: string;
+	label: string;
+	value: string | undefined;
+	fallback: string;
+	onChange: (value: string | undefined) => void;
+}) => (
+	<div className="mb-3">
+		<div className="form-check mb-1">
+			<input
+				type="checkbox"
+				className="form-check-input"
+				id={id}
+				checked={value !== undefined}
+				onChange={(e) => onChange(e.target.checked ? fallback : undefined)}
+			/>
+			<label className="form-check-label" htmlFor={id}>
+				{label}
+			</label>
+		</div>
+		{value !== undefined ? (
+			<input
+				type="color"
+				className="form-control form-control-color"
+				value={value}
+				onChange={(e) => onChange(e.target.value)}
+			/>
+		) : null}
+	</div>
+);
+
+// The same court, written either way round.
+const sameCourt = (a: CourtStyle, b: CourtStyle) => {
+	const key = (v: unknown): string =>
+		v && typeof v === "object" && !Array.isArray(v)
+			? `{${Object.keys(v)
+					.sort()
+					.map((k) => `${k}:${key((v as Record<string, unknown>)[k])}`)
+					.join(",")}}`
+			: JSON.stringify(v);
+	return key(a) === key(b);
+};
+
 // A text input bound to one CourtStyle field, with an optional companion color
 // picker (for text-color fields shown only when the text is non-empty).
 const TextField = ({
@@ -277,6 +328,7 @@ const EditTeamCourt = ({
 	name,
 	colors,
 	court,
+	stock,
 	pictures: picturesSaved,
 	preview,
 }: View<"editTeamCourt">) => {
@@ -285,7 +337,8 @@ const EditTeamCourt = ({
 		customMenu: undefined,
 	});
 
-	const [style, setStyle] = useState<CourtStyle>(court ?? {});
+	// (A team with no court of its own opens on its stock floor.)
+	const [style, setStyle] = useState<CourtStyle>(court ?? stock ?? {});
 	const [version, setVersion] = useState<Version>("regular");
 	const [saving, setSaving] = useState(false);
 	// Pictures by id: the court's own, and any uploaded since.
@@ -424,7 +477,12 @@ const EditTeamCourt = ({
 		try {
 			await toWorker("main", "updateTeamCourt", {
 				tid,
-				court: Object.keys(style).length > 0 ? style : undefined,
+				// (Its stock floor, as it was, is no court of its own: it stays
+				// the stock floor, following the team's colors.)
+				court:
+					Object.keys(style).length > 0 && !(stock && sameCourt(style, stock))
+						? style
+						: undefined,
 				uploaded,
 			});
 			setUploaded([]);
@@ -599,6 +657,14 @@ const EditTeamCourt = ({
 									<option value="solid">Solid</option>
 								</select>
 							</div>
+
+							<OptionalColor
+								id="inside-floor"
+								label="Inside the three-point lines"
+								value={style.insideFloor}
+								fallback="#b37a43"
+								onChange={(v) => set("insideFloor", v)}
+							/>
 						</>
 					)}
 
@@ -637,6 +703,22 @@ const EditTeamCourt = ({
 							/>
 						) : null}
 					</div>
+
+					<OptionalColor
+						id="paint-trim"
+						label="Lane trim"
+						value={style.paintTrim}
+						fallback={colors[1]}
+						onChange={(v) => set("paintTrim", v)}
+					/>
+
+					<OptionalColor
+						id="center-circle"
+						label="Center circle"
+						value={style.centerCircle}
+						fallback={colors[0]}
+						onChange={(v) => set("centerCircle", v)}
+					/>
 
 					<ColorField
 						label="Rail / sideline color"
@@ -705,6 +787,41 @@ const EditTeamCourt = ({
 						defaultFit="fill"
 					/>
 
+					<TextField
+						label="Rail text"
+						value={style.railText ?? ""}
+						placeholder={name.toUpperCase()}
+						onChange={(v) => set("railText", v)}
+					/>
+					<TextField
+						label="Other rail"
+						value={style.railText2 ?? ""}
+						placeholder={style.railText || name.toUpperCase()}
+						onChange={(v) => set("railText2", v)}
+					/>
+					<div className="mb-3">
+						<label className="form-label mb-1" htmlFor="lettering">
+							Lettering
+						</label>
+						<select
+							id="lettering"
+							className="form-select"
+							value={style.lettering ?? "block"}
+							onChange={(e) =>
+								set(
+									"lettering",
+									e.target.value === "block"
+										? undefined
+										: (e.target.value as CourtStyle["lettering"]),
+								)
+							}
+						>
+							<option value="block">Block</option>
+							<option value="serif">Serif</option>
+							<option value="italic">Italic</option>
+						</select>
+					</div>
+
 					<div className="form-check mb-3">
 						<input
 							className="form-check-input"
@@ -737,7 +854,7 @@ const EditTeamCourt = ({
 
 					<TextField
 						label="Center-court script text"
-						hint="(above the logo, e.g. \u201cThe Finals\u201d)"
+						hint="(above the logo, e.g. “The Finals”)"
 						value={style.centerText ?? ""}
 						placeholder="The Finals"
 						onChange={(v) => set("centerText", v)}
@@ -881,7 +998,7 @@ const EditTeamCourt = ({
 						<button
 							type="button"
 							className="btn btn-light-bordered"
-							onClick={() => setStyle({})}
+							onClick={() => setStyle(stock ?? {})}
 							disabled={saving}
 						>
 							Reset to default

@@ -13,6 +13,7 @@ import { g, helpers, toUI } from "../util/index.ts";
 import { boxScoreToLiveSim } from "../views/liveGame.ts";
 import type { TeamSeasonOverride } from "../views/gameLog.ts";
 import { randInt } from "../../common/random.ts";
+import { courtOf } from "../../common/stockCourts.ts";
 
 // An intrasquad scrimmage: one team split into two squads (Primary vs
 // Secondary) plays a one-off game, exactly like an exhibition game but sourced
@@ -153,7 +154,7 @@ export const simIntrasquadGame = async (
 			imgURL: t.imgURL,
 			imgURLSmall: t.imgURLSmall,
 			colors: squadInfo[i]!.colors,
-			court: t.court,
+			court: courtOf(t),
 		})) as [TeamSeasonOverride, TeamSeasonOverride];
 
 		const liveSim = await boxScoreToLiveSim({

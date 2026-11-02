@@ -4,6 +4,7 @@ import { courtPictures } from "../util/courtPictures.ts";
 import { courtPreview } from "../util/courtPreview.ts";
 import { defineView, type ViewInput } from "../util/defineView.ts";
 import type { RouteParams } from "../../ui/router/types.ts";
+import { stockCourt } from "../../common/stockCourts.ts";
 
 const processInputs = (params: RouteParams<"editTeamCourt">) => {
 	const tid =
@@ -34,6 +35,8 @@ const editTeamCourt = async (inputs: ViewInput<typeof processInputs>) => {
 		colors: t.colors,
 		imgURL: t.imgURL,
 		court: t.court,
+		// What it plays on till it has a court of its own (see stockCourts).
+		stock: stockCourt(t),
 		// The pictures uploaded for it, by id (see courtPictures.ts).
 		pictures: await courtPictures(t.court),
 		preview: await courtPreview(t),

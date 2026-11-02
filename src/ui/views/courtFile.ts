@@ -24,6 +24,11 @@ const STYLE_STRINGS = new Set<string>([
 	"paint",
 	"apron",
 	"apronText",
+	"paintTrim",
+	"insideFloor",
+	"centerCircle",
+	"railText",
+	"railText2",
 	"centerText",
 	"centerTextColor",
 	"benchText",
@@ -37,6 +42,7 @@ const PATTERNS = new Set([
 	"chevron",
 	"solid",
 ]);
+const LETTERING = new Set(["block", "serif", "italic"]);
 const SLOTS = new Set<string>([
 	"floor",
 	"logo",
@@ -69,6 +75,10 @@ export const parseCourt = (text: string): CourtStyle | string => {
 		} else if (key === "floorPattern") {
 			if (typeof value !== "string" || !PATTERNS.has(value)) {
 				return `"floorPattern" should be one of ${[...PATTERNS].join(", ")}.`;
+			}
+		} else if (key === "lettering") {
+			if (typeof value !== "string" || !LETTERING.has(value)) {
+				return `"lettering" should be one of ${[...LETTERING].join(", ")}.`;
 			}
 		} else if (key === "floorLines") {
 			if (value !== "picture") {

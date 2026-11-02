@@ -3073,8 +3073,24 @@ export type CourtStyle = {
 	floorPattern?: "hardwood" | "parquet" | "diagonal" | "chevron" | "solid";
 	lines?: string; // court line color (hex)
 	paint?: string; // painted key fill (hex); "" / undefined = no paint fill
+	// A band of color just inside the lane lines (hex), on the paint or the
+	// wood.
+	paintTrim?: string;
+	// A two-tone floor: the wood inside each three-point line stained this
+	// tone (hex) - the floor color the rest of it.
+	insideFloor?: string;
+	// The center circle filled in (hex), under the center logo.
+	centerCircle?: string;
 	apron?: string; // sideline/baseline rail color (hex); default team color 0
 	apronText?: string; // rail team-name text color (hex); default team color 1
+	// What the rails say - both of them, or the first, and the other the
+	// second (the city at one end, say, the name at the other). Default the
+	// team name.
+	railText?: string;
+	railText2?: string;
+	// The floor's lettering - the rails, the center-court and bench text:
+	// bold block capitals (the default), a serif, or a slanted italic.
+	lettering?: "block" | "serif" | "italic";
 	logoURL?: string; // center-court logo; default the team's imgURL
 	trophyURL?: string; // finals center-court trophy; default the league default
 	secondaryLogoURL?: string; // secondary logo shown in each half-court

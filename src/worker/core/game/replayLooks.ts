@@ -2,6 +2,7 @@ import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
 import { DEFAULT_TEAM_COLORS } from "../../../common/constants.ts";
 import type { ArenaLooks, ReplayLooks } from "../../../common/types.ts";
+import { courtOf } from "../../../common/stockCourts.ts";
 
 // The home team's building for a game in `season` (see ArenaLooks): its
 // capacity that season, the titles it won before it, and the numbers it had
@@ -111,7 +112,7 @@ export const takeReplayLooks = async (
 			imgURL: t.imgURL,
 			colors: t.colors,
 			jersey: t.jersey,
-			court: t.court,
+			court: __SPORT === "basketball" ? courtOf(t) : t.court,
 			jerseySkins: t.jerseySkins,
 			...(__SPORT === "football"
 				? { helmet: t.helmet, stadium: t.stadium }
