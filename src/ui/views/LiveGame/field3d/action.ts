@@ -540,6 +540,20 @@ const paceOn = (l: Leg, from: Pt, to: Pt): number => {
 	return ((was / (ms / 1000)) * (1 + cos)) / 2;
 };
 
+// The way from `a` to `b` no nearer `p` than PILE_PAST - or from right by
+// it, away from it.
+const wide = (p: Pt, a: Pt, b: Pt): boolean => {
+	const vx = b.x - a.x;
+	const vy = b.y - a.y;
+	const l = vx * vx + vy * vy;
+	const along = (p.x - a.x) * vx + (p.y - a.y) * vy;
+	const u = l > 0 ? clamp(along / l, 0, 1) : 0;
+	return (
+		along <= 0 ||
+		Math.hypot(p.x - a.x - vx * u, p.y - a.y - vy * u) >= PILE_PAST
+	);
+};
+
 // Ways out from a man spread round him, no two nearer than `gap` (each as
 // near as it can be to the way it was).
 const spreadRound = (angles: number[], gap: number): number[] => {
@@ -2947,11 +2961,14 @@ const PILE_TURNS = [
 ];
 // (From further off than this, a run in first.) Over the top of it, the
 // most of them, from the third man in on, each this likely - his middle
-// this far off the middle of it, and PILE_ROOM off the other man over it.
+// this far off the middle of it, and PILE_ROOM off the other man over it,
+// his way in no nearer than PILE_PAST to the spot of any other in on it.
 const PILE_REACH = 6;
 const PILE_TOPS = 2;
 const PILE_OVER = 0.6;
 const PILE_TOP_OFF = 0.7;
+const PILE_PAST = 1.4;
+const PILE_TOP_WAIT = 500;
 // In from right there: over the top this often - off his feet this far
 // short of the goal line (once he has had it this long), laid out this far
 // over it (and up to this much more), at this pace, over this long; on top
@@ -7155,10 +7172,22 @@ class Action {
 			.filter((x) => dist(x.from, at) < PILE_NEAR)
 			.sort((a, b) => dist(a.from, at) - dist(b.from, at))
 			.slice(0, most);
-		const on: { m: Actor; at: Pt; way: number; go: number }[] = [];
+		const on: { m: Actor; at: Pt; from: Pt; way: number; go: number }[] = [];
 		// (Each in where he comes from, or the nearest way round from it
-		// with room for him - PILE_ROOM off the rest.)
-		const roomy = (p: Pt) => on.every((x) => dist(x.at, p) >= PILE_ROOM);
+		// with room for him - PILE_ROOM off the rest, and off him under it,
+		// laid out over the top of it past the middle of it, say - not on
+		// his way there through another of them, or across another's way in.
+		// None: not in on it.)
+		const lies = carrier.posAt(t + PILE_FIRST + PILE_FALL_MS);
+		const roomy = (from: Pt, p: Pt) =>
+			dist(lies, p) >= PILE_ROOM &&
+			wide(lies, from, p) &&
+			on.every(
+				(x) =>
+					dist(x.at, p) >= PILE_ROOM &&
+					wide(x.at, from, p) &&
+					wide(p, x.from, x.at),
+			);
 		near.forEach(({ m, from }, k) => {
 			if (r() > PILE_IN[k]!) {
 				return;
@@ -7170,14 +7199,19 @@ class Action {
 				y: at.y + Math.sin(way) * far,
 			});
 			const side = k % 2 === 0 ? 1 : -1;
-			const way =
-				PILE_TURNS.map((d) => was + d * side).find((w) => roomy(spot(w))) ??
-				was;
+			const way = PILE_TURNS.map((d) => was + d * side).find((w) =>
+				roomy(from, spot(w)),
+			);
+			const late = r() * 100;
+			if (way === undefined) {
+				return;
+			}
 			on.push({
 				m,
 				at: spot(way),
+				from,
 				way,
-				go: t + PILE_FIRST + on.length * PILE_GO + r() * 100,
+				go: t + PILE_FIRST + on.length * PILE_GO + late,
 			});
 		});
 		if (on.length === 0) {
@@ -7190,14 +7224,33 @@ class Action {
 			// (One of the last in, now and then, over the top of it - laid out
 			// across it.)
 			// (Not onto the man over it already.)
+			// (Straight in from where he is - not over one of the others in on
+			// it on the way as he goes in himself: after him, if not long.)
 			let top = k >= 2 && tops < PILE_TOPS && r() < PILE_OVER;
+			let dive = x.go;
 			if (top) {
 				const far = PILE_TOP_OFF + r() * 0.5;
+				const from = x.m.posAt(x.go);
+				const way =
+					dist(from, at) > 0.1
+						? Math.atan2(from.y - at.y, from.x - at.x)
+						: x.way;
 				const over = {
-					x: at.x + Math.cos(x.way) * far,
-					y: at.y + Math.sin(x.way) * far,
+					x: at.x + Math.cos(way) * far,
+					y: at.y + Math.sin(way) * far,
 				};
-				top = overs.every((p) => dist(p, over) >= PILE_ROOM);
+				dive = Math.max(
+					x.go,
+					...on
+						.filter((o) => o !== x && !wide(o.at, from, over))
+						.map((o) =>
+							dist(o.from, o.at) > PILE_REACH ? Infinity : o.go + PILE_FALL_MS,
+						),
+				);
+				top =
+					(dist(lies, at) < PILE_ROOM || dist(lies, over) >= PILE_ROOM) &&
+					overs.every((p) => dist(p, over) >= PILE_ROOM) &&
+					dive - x.go <= PILE_TOP_WAIT;
 				if (top) {
 					tops++;
 					overs.push(over);
@@ -7206,7 +7259,7 @@ class Action {
 			}
 			const face = this.toward(x.at, at);
 			x.m.cut(x.go);
-			x.m.hold(x.go);
+			x.m.hold(top ? dive : x.go);
 			// (From further off, in at a run first.)
 			const far = dist(x.m.at, x.at);
 			if (far > PILE_REACH) {
@@ -12021,14 +12074,36 @@ class Action {
 			}),
 			MOB_GAP,
 		);
+		// (Round him clear of any man down there - in a pile, say - and of
+		// the others round him.)
+		const lying: Pt[] = [];
+		for (const m of this.men) {
+			if (m === hero || mates.includes(m)) {
+				continue;
+			}
+			for (const t of MOB_LIE_AT) {
+				if (DOWN.has(legAt(m, start + t).move)) {
+					lying.push(m.posAt(start + t));
+				}
+			}
+		}
+		const taken: Pt[] = [];
+		const ringAt = (ang: number): Pt => ({
+			x: at.x + Math.cos(ang) * MOB_RING,
+			y: at.y + Math.sin(ang) * MOB_RING,
+		});
+		const clear = (p: Pt) =>
+			lying.every((q) => dist(q, p) >= MOB_ROOM) &&
+			taken.every((q) => dist(q, p) >= MOB_ROOM);
 		mates.forEach((m, k) => {
 			const near = dist(m.posAt(c0), at) < MOB_FROM;
 			m.cut(start);
 			const ang = rings[k]!;
-			const to = {
-				x: at.x + Math.cos(ang) * MOB_RING,
-				y: at.y + Math.sin(ang) * MOB_RING,
-			};
+			const to =
+				PILE_TURNS.map((d) => ringAt(ang + d))
+					.slice(0, -1)
+					.find(clear) ?? ringAt(ang);
+			taken.push(to);
 			// (Pulled up as he gets there, hard - not leapt in off a sprint.)
 			const v = m.top * (0.7 + r() * 0.15);
 			const far = dist(m.at, to);
@@ -12900,6 +12975,10 @@ const MOB_FROM = 75;
 // down into the turf this long after he starts, and up off it.
 const MOB_RING = 3.2;
 const MOB_GAP = 0.85;
+// (Clear of a man down there - looked for this long after they are off -
+// by this much, feet.)
+const MOB_LIE_AT = [400, 1200, 2000];
+const MOB_ROOM = 1.8;
 // (Down this near him: in on it once up.)
 const MOB_UP_NEAR = 12;
 const SPIKE_MS = 720;
