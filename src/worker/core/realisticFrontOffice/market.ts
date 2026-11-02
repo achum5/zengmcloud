@@ -161,13 +161,15 @@ export const marketSettings = {
 	// to win more.
 	smartCuts: false,
 	// FRICTION (owner's call: deals between CPU teams went too easily). Firsts
-	// are scarce: a team never leaves itself without a first-round pick in
-	// two drafts running (the NBA's Stepien rule), and each first it gives
-	// costs it more the fewer it would have left (firstsFriction).
+	// are scarce: each first a team gives costs it more the fewer it would
+	// have left - unless it is within shooting distance of a title, when
+	// winning now is worth them (firstsFriction).
 	scarceFirsts: true,
-	// A player a team traded for is not traded on again until the next stretch
-	// of trading - the season, or the offseason, after (quickFlip).
-	noQuickFlips: true,
+	// Trading on a player traded for in this stretch of trading - the season,
+	// or the offseason - must gain this much more, in titles, for each such
+	// player: flipping is for when it clearly pays, like a seller passing on
+	// a veteran it took as salary filler (quickFlip).
+	flipCost: 0.002,
 	// Each trade a team has made this season raises what its next one must
 	// gain by this much, in titles: a front office does a few deals a year,
 	// not one a week (CPU teams with each other only).
@@ -376,11 +378,7 @@ export const loadTeam = async (
 		players,
 		picks,
 		letGo,
-		tradablePlayers: players.filter(
-			(p) =>
-				!isUntradable(p).untradable &&
-				!(settingFor(tid, "noQuickFlips") && quickFlip(p)),
-		),
+		tradablePlayers: players.filter((p) => !isUntradable(p).untradable),
 		payroll: await getPayroll(tid),
 		trades: await tradesThisSeason(tid),
 		tradedAway: await tradedAwayOf(tid),
@@ -738,12 +736,12 @@ export const releaseAlternative = (
 	) {
 		return;
 	}
-	const firsts = firstsFriction(outlook, t, give, get, single);
-	if (firsts === undefined) {
-		return;
-	}
+	const flips = give.filter(
+		(x) => x.kind === "player" && quickFlip(x.p),
+	).length;
 	return (
-		firsts +
+		firstsFriction(outlook, t, give, get, single) +
+		settingFor(t.tid, "flipCost") * flips +
 		(settingFor(t.tid, "freeDisposal")
 			? releaseGain(outlook, t, give, single)
 			: 0)
@@ -753,13 +751,15 @@ export const releaseAlternative = (
 // SCARCE FIRSTS. Late firsts are worth little to a team's own title chances,
 // so CPU teams spent them on role players: half of all CPU trades had a
 // first in them, 38 went for players rated under 58 in 5 arena seasons, and
-// one team gave 4 in a season. Real teams guard them: never without one in
-// two drafts running (the Stepien rule), and the fewer they have left, the
-// dearer each. So a deal that would leave a team with two drafts running
-// without a first that it had not before is no deal, and each first it
-// gives costs it FIRST_PREMIUM of what it is worth to it more for each
-// share of the coming drafts it would have no first in.
+// one team gave 4 in a season. Real teams guard them the more the fewer they
+// have: each first a team gives costs it FIRST_PREMIUM of what it is worth
+// to it more for each share of the coming drafts it would have no first in.
+// A team within shooting distance of a title pays less of it, none from
+// CONTENDING title odds this season on (owner's call: winning now is worth
+// firsts and future firsts). No hard rule against two drafts running
+// without one (owner's call).
 const FIRST_PREMIUM = 1;
+const CONTENDING = 0.1;
 const firstsFriction = (
 	outlook: LeagueOutlook,
 	t: TeamState,
@@ -776,35 +776,31 @@ const firstsFriction = (
 	if (firstsGiven.length === 0) {
 		return 0;
 	}
-	const season = g.get("season");
-	const next = season + (g.get("phase") > PHASE.DRAFT ? 1 : 0);
+	const titleNow = outlook.teams.get(t.tid)?.title[0] ?? 0;
+	const scale = Math.max(0, 1 - titleNow / CONTENDING);
+	if (scale === 0) {
+		return 0;
+	}
+	const next = g.get("season") + (g.get("phase") > PHASE.DRAFT ? 1 : 0);
 	const drafts = Array.from(
 		{ length: g.get("numSeasonsFutureDraftPicks") },
 		(_, i) => next + i,
 	);
-	const held = (picks: readonly DraftPick[]) =>
-		new Set(
-			picks.flatMap((dp) =>
-				dp.round === 1 && typeof dp.season === "number" ? [dp.season] : [],
-			),
-		);
-	const gaps = (have: Set<number>) =>
-		drafts.filter((d, i) => i > 0 && !have.has(d) && !have.has(drafts[i - 1]!))
-			.length;
 	const givenIds = new Set(firstsGiven.map((x) => x.dp.dpid));
-	const before = held(t.picks);
-	const after = held([
-		...t.picks.filter((dp) => !givenIds.has(dp.dpid)),
-		...get.flatMap((x) => (x.kind === "pick" ? [x.dp] : [])),
-	]);
-	if (gaps(after) > gaps(before)) {
-		return;
-	}
+	const after = new Set(
+		[
+			...t.picks.filter((dp) => !givenIds.has(dp.dpid)),
+			...get.flatMap((x) => (x.kind === "pick" ? [x.dp] : [])),
+		].flatMap((dp) =>
+			dp.round === 1 && typeof dp.season === "number" ? [dp.season] : [],
+		),
+	);
 	const missing = drafts.filter((d) => !after.has(d)).length / drafts.length;
 	let premium = 0;
 	for (const x of firstsGiven) {
 		premium +=
 			FIRST_PREMIUM *
+			scale *
 			missing *
 			Math.max(0, -singlePrice(outlook, t, "-", x, single));
 	}

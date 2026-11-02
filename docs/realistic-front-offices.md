@@ -262,23 +262,31 @@ every team, again whenever a signing changes the pool), memory cleanup 17%.
   went for players rated under 58, one team gave 4 in a season - 6 players
   were traded twice in a season, and some teams made 4-6 trades a year.
   Three frictions real front offices have:
-  - **Firsts are scarce.** A team never leaves itself without a first in two
-    drafts running (the NBA's Stepien rule), and each first it gives costs
-    it more, by its own value of the pick, the larger the share of the
-    coming drafts it would have none in. Late firsts are worth little to a
+  - **Firsts are scarce.** Each first a team gives costs it more, by its own
+    value of the pick, the larger the share of the coming drafts it would
+    have none in - less for a team within shooting distance of a title, and
+    nothing from 10% title odds this season on: winning now is worth firsts
+    and future firsts (owner's call). Late firsts are worth little to a
     contender's own title chances - more to it than to the rebuilding teams
     that would buy them, so pricing them at what others would pay changed
-    nothing; it is running low that makes them dear.
-  - **No quick flips.** A player a team traded for is not traded on in the
-    same stretch of trading (a season's games, or the offseason with the
-    preseason after it) - including to a human.
+    nothing; it is running low that makes them dear. At first a team also
+    never left itself without a first in two drafts running (the Stepien
+    rule); taken out (owner's call: valued, not forbidden).
+  - **Flipping costs.** Trading on a player traded for in the same stretch of
+    trading (a season's games, or the offseason with the preseason after it)
+    must gain 0.002 of a title more for each - so a seller still passes on a
+    veteran it took as salary filler, but nobody churns. At first it was not
+    allowed at all (owner's call: a cost, not a rule).
   - **Deal fatigue.** Between CPU teams, each trade a team has made this
     season raises what its next must gain by 0.002 of a title.
-    Half the teams each way, 2 leagues each way round over 5 seasons: those
-    with friction made 18% fewer trades, gave 112 firsts to 203 (70 to 136 for
-    players under 58), flipped 11 players to 50, had 2 team-seasons of 4 or
-    more trades to 17 - and won 23 titles to 17, as many playoff rounds (302 to
-    298), with 39 seasons under 20 wins to 52. No slower.
+
+  Half the teams each way, 2 leagues each way round over 5 seasons, with the
+  first versions (the Stepien rule, no flips): those with friction made 18%
+  fewer trades, gave 112 firsts to 203 (70 to 136 for players under 58),
+  flipped 11 players to 50, had 2 team-seasons of 4 or more trades to 17 - and
+  won 23 titles to 17, as many playoff rounds (302 to 298), with 39 seasons
+  under 20 wins to 52. No slower.
+
 - **The side a deal does least for asks for more.** The search prices a few
   packages and takes the deal that does most for the side it does least
   for; that side then haggles - one asset at a time from what the other team
