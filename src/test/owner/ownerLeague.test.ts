@@ -26,6 +26,12 @@ export const loadOwnerLeague = async (file: string) => {
 	// The same playoffs and lottery every run (OWNER_SEED).
 	const { makeSeededRandom } = await import("../../common/random.ts");
 	Math.random = makeSeededRandom(Number(env.OWNER_SEED ?? 1));
+	// OWNER_KNOWN=0|1: picks priced by the classes in the league or not.
+	if (env.OWNER_KNOWN !== undefined) {
+		const { outlookSettings } =
+			await import("../../worker/core/realisticFrontOffice/outlook.ts");
+		outlookSettings.knownClasses = env.OWNER_KNOWN === "1";
+	}
 	const fs = await importNode("node:fs/promises");
 	const data = JSON.parse(await fs.readFile(file, "utf8"));
 	const ga = data.gameAttributes;
@@ -502,6 +508,14 @@ test.skipIf(!env.OWNER_LEAGUE || !env.OWNER_SEASONS)(
 						),
 					);
 					lines.push(`${e.season} ph${e.phase} TRADE ${sides.join(" | ")}`);
+					const fo = e.aiTrade?.frontOffice;
+					if (fo) {
+						for (const [k, side] of fo.sides.entries()) {
+							lines.push(
+								`    ${abbrev.get(side.tid)} (${e.aiTrade.tiers[k]}) ${side.reason}`,
+							);
+						}
+					}
 				} else if (
 					(e.type === "freeAgent" || e.type === "reSigned") &&
 					e.contract &&
@@ -844,9 +858,30 @@ test.skipIf(!env.OWNER_LEAGUE || !env.OWNER_DEAL)(
 		const gives = (t: any, keys: string[]) => ({
 			players: keys
 				.filter((k) => !k.includes(":"))
-				.map((k) => t.players.find((p: any) => p.lastName === k)),
+				.map((k) =>
+					t.players.find((p: any) =>
+						k.includes(" ")
+							? `${p.firstName} ${p.lastName}` === k
+							: p.lastName === k,
+					),
+				),
 			picks: keys.filter((k) => k.includes(":")).map((k) => pick(t, k)),
 		});
+		for (const k of [...deal.aGives, ...deal.bGives]) {
+			if (!k.includes(":")) {
+				const [first, ...rest] = k.split(" ");
+				const ps = (await idb.cache.players.getAll()).filter((p) =>
+					rest.length > 0
+						? p.firstName === first && p.lastName === rest.join(" ")
+						: p.lastName === k,
+				);
+				console.log(
+					"where",
+					k,
+					ps.map((p) => `${p.firstName} ${p.lastName} tid ${p.tid}`).join("; "),
+				);
+			}
+		}
 		const ga = gives(a, deal.aGives);
 		const gb = gives(b, deal.bGives);
 		console.log(
