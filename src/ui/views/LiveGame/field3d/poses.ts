@@ -488,6 +488,27 @@ const chop = (i: number, n: number, lo: number, hi: number, knee: number) => {
 		kneeF: knee + 26 * Math.max(0, -a),
 	};
 };
+// Hands in a block, in time with chop's steps: the arm on the side of the
+// foot coming through pulled in a little (its elbow FIGHT_BEND degrees
+// more, its shoulder FIGHT_DROP lower) to fit it again, the other out.
+const FIGHT_BEND = 24;
+const FIGHT_DROP = 8;
+const fight = (
+	i: number,
+	n: number,
+	shN: number,
+	elN: number,
+	shF: number,
+	elF: number,
+) => {
+	const a = Math.sin((2 * Math.PI * i) / n);
+	return {
+		shN: shN - FIGHT_DROP * Math.max(0, a),
+		elN: elN + FIGHT_BEND * Math.max(0, a),
+		shF: shF - FIGHT_DROP * Math.max(0, -a),
+		elF: elF + FIGHT_BEND * Math.max(0, -a),
+	};
+};
 
 // The officials' signals (the NFL's): a signal held a moment - up into it,
 // held, and back down - or one made over and over, from the one pose to the
@@ -1174,7 +1195,8 @@ const FIELD_ANIMS = {
 			}),
 	},
 	// Run blocking: into the man in front of him, low, hands inside on his
-	// chest, driving his legs.
+	// chest, driving his legs - fighting for his hands as he goes, one in
+	// and out again as the other foot comes through (see fight).
 	drive: {
 		kind: "cycle",
 		n: 4,
@@ -1182,18 +1204,15 @@ const FIELD_ANIMS = {
 		pose: (i) =>
 			pose({
 				...chop(i, 4, 18, 62, 58),
+				...fight(i, 4, 84, 18, 84, 18),
 				lean: 44,
-				shN: 84,
-				elN: 18,
 				abN: 8,
-				shF: 84,
-				elF: 18,
 				abF: 8,
 				wide: 0.95,
 			}),
 	},
 	// A rusher (or a man being blocked) locked up with his blocker, arms
-	// out into him, working his feet.
+	// out into him, working his feet - and his hands.
 	engage: {
 		kind: "cycle",
 		n: 4,
@@ -1201,12 +1220,9 @@ const FIELD_ANIMS = {
 		pose: (i) =>
 			pose({
 				...chop(i, 4, 20, 58, 56),
+				...fight(i, 4, 80, 24, 76, 30),
 				lean: 40,
-				shN: 80,
-				elN: 24,
 				abN: 14,
-				shF: 76,
-				elF: 30,
 				abF: 14,
 				wide: 0.95,
 			}),
