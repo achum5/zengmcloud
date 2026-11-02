@@ -2432,6 +2432,15 @@ const TRAIL_JOG_FPS = [8, 10] as const;
 const TRAIL_LOOK_MS = [150, 450] as const;
 const TRAIL_JOG_LEAST_FT = 5;
 const TRAIL_KEEP_FT = 12;
+// (The others out on routes once it is caught - see withIt: off after it
+// so long after they see it (soonest, latest), ms, at a jog (ft/s), kept
+// this far off it (and up to this much more), ft - not for less than this
+// long (ms), nor from nearer it than that and this far, ft.)
+const ROUTE_AFTER_MS = [250, 700] as const;
+const ROUTE_AFTER_FPS = [8, 10.5] as const;
+const ROUTE_AFTER_KEEP_FT = [14, 8] as const;
+const ROUTE_AFTER_LEAST_MS = 700;
+const ROUTE_AFTER_LEAST_FT = 6;
 // (The line once a pass is caught - see downfield: off after the play
 // so long after it let up (soonest, latest), ms, at a jog (ft/s, slowest,
 // quickest) - no nearer where it ends than this, nor going less than this
@@ -5796,6 +5805,10 @@ class Action {
 			this.complete(cmpI, qb, target, catchPt, catchAt, gain);
 			if (tr?.name !== "screen" && !slip) {
 				this.downfield(blockers);
+				this.withIt(
+					runners.filter((m) => m !== target),
+					catchAt,
+				);
 			}
 		} else if (first === incI && thrown && target && catchPt) {
 			this.incomplete(incI, qb, target, catchPt, catchAt, coverage);
@@ -11383,36 +11396,77 @@ class Action {
 			const fps =
 				TRAIL_JOG_FPS[0] +
 				(TRAIL_JOG_FPS[1] - TRAIL_JOG_FPS[0]) * countOf(m, snap, 30);
-			const keep = Math.max(ring, TRAIL_KEEP_FT);
 			m.hold(look);
-			while (m.t + PURSUIT_STEP < this.whistle - 300) {
-				const c = m.t + PURSUIT_STEP;
-				const ball = this.ballAt(c + PURSUIT_LEAD);
-				const now = this.ballAt(m.t + PURSUIT_LEAD);
-				if (!ball || !now) {
-					break;
-				}
-				if (dist(m.at, ball) < keep) {
-					m.chaseUp(
-						{ x: m.at.x + ball.x - now.x, y: m.at.y + ball.y - now.y },
-						c,
-						fps,
-					);
-					continue;
-				}
-				const a = Math.atan2(m.at.y - ball.y, m.at.x - ball.x);
-				m.chaseUp(
-					{ x: ball.x + Math.cos(a) * keep, y: ball.y + Math.sin(a) * keep },
-					c,
-					fps,
-				);
-			}
+			this.alongWith(m, fps, Math.max(ring, TRAIL_KEEP_FT), this.whistle - 300);
 			if (dist(m.at, to) > 1) {
 				m.runUp(to, fps);
 			}
 			return;
 		}
 		m.chase(to, by, m.top * 0.7);
+	}
+
+	// After the ball at `fps` till `until`, a leg at a time (as pursue) -
+	// kept `keep` off it, and with it as it comes his way, not in on it.
+	alongWith(m: Actor, fps: number, keep: number, until: number) {
+		while (m.t + PURSUIT_STEP < until) {
+			const c = m.t + PURSUIT_STEP;
+			const ball = this.ballAt(c + PURSUIT_LEAD);
+			const now = this.ballAt(m.t + PURSUIT_LEAD);
+			if (!ball || !now) {
+				break;
+			}
+			if (dist(m.at, ball) < keep) {
+				m.chaseUp(
+					{ x: m.at.x + ball.x - now.x, y: m.at.y + ball.y - now.y },
+					c,
+					fps,
+				);
+				continue;
+			}
+			const a = Math.atan2(m.at.y - ball.y, m.at.x - ball.x);
+			m.chaseUp(
+				{ x: ball.x + Math.cos(a) * keep, y: ball.y + Math.sin(a) * keep },
+				c,
+				fps,
+			);
+		}
+	}
+
+	// THE OTHERS OUT ON ROUTES ONCE IT IS CAUGHT: their routes run out (not
+	// cut short under the man on them, who has been set going off them), a
+	// look at it, and after it at a jog, each on his own count - kept well
+	// off it - not stood where his route left him till the whistle.
+	withIt(men: Actor[], catchAt: number) {
+		const { snap } = this.input;
+		const caught = catchAt + BREAK_MS;
+		for (const m of men) {
+			if (this.done.has(m.pid)) {
+				continue;
+			}
+			const from =
+				Math.max(m.t, caught) +
+				ROUTE_AFTER_MS[0] +
+				(ROUTE_AFTER_MS[1] - ROUTE_AFTER_MS[0]) * countOf(m, snap, 31);
+			const keep =
+				ROUTE_AFTER_KEEP_FT[0] + ROUTE_AFTER_KEEP_FT[1] * countOf(m, snap, 33);
+			const ball = this.ballAt(from);
+			if (
+				!ball ||
+				this.whistle - 300 - from < ROUTE_AFTER_LEAST_MS ||
+				dist(m.at, ball) < keep + ROUTE_AFTER_LEAST_FT
+			) {
+				continue;
+			}
+			m.hold(from);
+			this.alongWith(
+				m,
+				ROUTE_AFTER_FPS[0] +
+					(ROUTE_AFTER_FPS[1] - ROUTE_AFTER_FPS[0]) * countOf(m, snap, 32),
+				keep,
+				this.whistle - 300,
+			);
+		}
 	}
 
 	// Blockers whose men got off them - to make the tackle, or away from
