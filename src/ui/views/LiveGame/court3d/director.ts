@@ -256,7 +256,19 @@ export type Act = {
 export type Gesture = {
 	t0: number;
 	t1: number;
-	kind: "point" | "hand" | "wave" | "slap" | "follow" | "bar";
+	kind:
+		| "point"
+		| "hand"
+		| "wave"
+		| "slap"
+		| "follow"
+		| "bar"
+		// Celebrating on his way back up the floor: three fingers up, a
+		// fist pumped, his arm flexed, his chest pounded (see armAt).
+		| "three"
+		| "fist"
+		| "flex"
+		| "pound";
 	// What he points or waves at: a man, wherever he is, or a spot.
 	at?: number | Pt;
 	// A follow-through off his left hand.
@@ -822,6 +834,8 @@ const BACK_REACT = 250;
 // Off an assist, how long he points back at the man who found him on his
 // way down the floor (ms).
 const THANKS_MS = 1200;
+// (And as long letting it out with an arm, on his way back after a basket.)
+const CHEER_MS = 1000;
 // A man off the mark late among others (see stagger) still gets there in
 // time, so long as that is no quicker than this many times the quickest he
 // could - a run back after a steal, flat out already, too.
@@ -3794,6 +3808,31 @@ class Director {
 			...(mirror ? { mirror: true as const } : {}),
 			...(easy ? { easy: true as const } : {}),
 		});
+	}
+
+	// Letting it out after a basket, on his way back down the floor: his
+	// arm as the celebration he would have had - three fingers up for a
+	// three, a finger at the bench, a flex, a fist, his chest pounded. When
+	// his arm is free again.
+	private cheer(pid: number, cel: AnimName, t0: number, team: Side): number {
+		const kind: Gesture["kind"] =
+			cel === "point"
+				? "point"
+				: cel === "threeUp" || cel === "goggles" || cel === "shimmy"
+					? "three"
+					: cel === "flex"
+						? "flex"
+						: cel === "chestPound"
+							? "pound"
+							: "fist";
+		this.gesture(
+			pid,
+			kind,
+			t0,
+			t0 + CHEER_MS,
+			kind === "point" ? { x: benchX(team), y: -4 } : undefined,
+		);
+		return t0 + CHEER_MS + 60;
 	}
 
 	private lookAt(pid: number, t: number, at: Pt) {
@@ -16158,11 +16197,29 @@ class Director {
 				typeof e.pidAst === "number" && e.pidAst !== shot.pid
 					? e.pidAst
 					: undefined;
+			// (Whatever he does about it, he does on his way back down the
+			// floor: an arm, not all of him stood there doing it - nor pulled
+			// up to do it, on his way back before it was through. When that
+			// arm is free again, for a finger at the man who found him. Play
+			// stopped after it - his free throw to come, a timeout, a change,
+			// the end of the period - there is no way back to do it on: all of
+			// him, where he stands.)
+			const after = this.peek(i, 1)[0]?.e.type;
+			const dead =
+				andOne ||
+				after === "timeout" ||
+				after === "sub" ||
+				after === "endOfPeriod" ||
+				after === "gameOver";
+			let cheered = 0;
 			let thanked = false;
 			if (!shot.dunk && !andOne && assist !== undefined && this.rng() < 0.55) {
-				// A finger at the man who found him - turned to him, easy about it.
-				this.react(shot.pid, "thanks", free + 100, 800, this.posOf(assist));
-				thanked = true;
+				// A finger at the man who found him - turned to him, easy about
+				// it (or on his way, below).
+				if (dead) {
+					this.react(shot.pid, "thanks", free + 100, 800, this.posOf(assist));
+					thanked = true;
+				}
 			} else if (big || this.rng() < 0.3) {
 				// (A three: his own way of it, every time - a finger at the
 				// bench, or both arms up. A dunk or an and-one: a roar or a
@@ -16180,7 +16237,6 @@ class Director {
 							: assist !== undefined
 								? "thanks"
 								: "point";
-				thanked = cel === "thanks";
 				// Or, after a dunk or an and-one, the nearest man on his team
 				// comes over and they meet in the air, chest to chest.
 				const S = this.posOf(shot.pid);
@@ -16193,13 +16249,16 @@ class Director {
 						: undefined;
 				if (mate && mate.d < 16) {
 					this.chestBump(shot.pid, mate.p, free + 80);
-				} else {
+				} else if (dead) {
 					this.act(shot.pid, cel, free + 100, free + 900, {
 						face: -dir as 1 | -1,
 						...(cel === "thanks" && assist !== undefined
 							? { look: this.posOf(assist) }
 							: {}),
 					});
+					thanked = cel === "thanks";
+				} else if (cel !== "thanks") {
+					cheered = this.cheer(shot.pid, cel, free + 100, team);
 				}
 			} else if (
 				this.isoFor(shot.pid) !== undefined &&
@@ -16208,18 +16267,23 @@ class Director {
 			) {
 				// Crunch time, and the star has just made one of his own: he
 				// lets it out - his own way of it, or a flex.
-				this.act(
-					shot.pid,
-					this.bigFinish(shot.pid, at) ?? "flex",
-					free + 100,
-					free + 900,
-					{ face: -dir as 1 | -1 },
-				);
+				const own = this.bigFinish(shot.pid, at) ?? "flex";
+				if (dead) {
+					this.act(shot.pid, own, free + 100, free + 900, {
+						face: -dir as 1 | -1,
+					});
+				} else {
+					cheered = this.cheer(shot.pid, own, free + 100, team);
+				}
 			}
 			// Off an assist, whatever else: a finger at the man who found him on
 			// his way back down the floor - easy about it, the arm loose.
 			if (assist !== undefined && !thanked) {
-				const from = Math.max(free, this.free.get(shot.pid) ?? 0) + 100;
+				const from = Math.max(
+					free + 100,
+					cheered,
+					(this.free.get(shot.pid) ?? 0) + 100,
+				);
 				this.gesture(
 					shot.pid,
 					"point",

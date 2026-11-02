@@ -758,6 +758,10 @@ const gripFor = (st: PlayerState, which: "R" | "L", holding: boolean): Grip => {
 	if (holding) {
 		return "ball";
 	}
+	// (Celebrating on the run: a fist, three fingers.)
+	if (st.arm?.grip && st.arm.hand === which && st.arm.w > 0.5) {
+		return st.arm.grip;
+	}
 	// Up for a pass on its way to him: spread wide and cupped for it.
 	if ((st.target ?? 0) > 0.4) {
 		return "target";

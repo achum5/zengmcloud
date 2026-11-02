@@ -1303,8 +1303,17 @@ describe("3D director", () => {
 				0,
 			);
 		// (A finger at the man who found him - or, a basket of his own, at
-		// the bench.)
-		assert.isAtLeast(count("point") + count("thanks"), 15);
+		// the bench - on his way back down the floor.)
+		const points = [...tl.tracks.values()].reduce(
+			(n, tr) =>
+				n +
+				tr.arms.filter(
+					(g) =>
+						g.kind === "point" && (g.easy === true || typeof g.at !== "number"),
+				).length,
+			0,
+		);
+		assert.isAtLeast(count("point") + points, 15);
 		assert.isAtLeast(count("protest"), 4);
 		const over = tl.beats.at(-1)!;
 		const at = (anim: string) =>
@@ -1317,6 +1326,58 @@ describe("3D director", () => {
 		assert.isAtLeast(losers.length, 1);
 		assert.isTrue(losers.every((tr) => tr.team !== winners[0]!.team));
 	}, 240_000);
+
+	// After a basket he lets it out - three fingers up, a fist, a flex, a
+	// finger at the man who found him - on his way back down the floor: not
+	// stood there doing it, nor pulled up to do it when he was already on
+	// his way. (Play stopped after it - a timeout, a change, the end of the
+	// period, his free throw to come - all of him, where he stands.)
+	test("a scorer lets it out on his way back, never stood still for it", () => {
+		const STOOD = new Set([
+			"thanks",
+			"threeUp",
+			"goggles",
+			"shimmy",
+			"roar",
+			"chestPound",
+		]);
+		const CHEERS = new Set(["three", "fist", "flex", "pound"]);
+		let cheers = 0;
+		let stood = 0;
+		const still: string[] = [];
+		for (const seed of ["a", "b", "c"]) {
+			const { tl } = compile(seed, 140);
+			// (The beat after the basket: play on, or stopped.)
+			const live = (t: number) => {
+				const k = tl.beats.findIndex((b) => b.actionStart <= t && b.end > t);
+				const next = k >= 0 ? tl.beats[k + 1] : undefined;
+				return (
+					next !== undefined &&
+					!["timeout", "sub", "endOfPeriod", "gameOver"].includes(next.type) &&
+					!/AndOne$/.test(tl.beats[k]!.type)
+				);
+			};
+			for (const tr of tl.tracks.values()) {
+				stood += tr.acts.filter(
+					(a) => STOOD.has(a.anim) && live(a.t0 - 400),
+				).length;
+				for (const g of tr.arms) {
+					if (!CHEERS.has(g.kind) || fastAt(tl, g.t0) > 1.01) {
+						continue;
+					}
+					cheers += 1;
+					const a = evalPlayer(tl, tr.pid, g.t0);
+					const b = evalPlayer(tl, tr.pid, g.t1);
+					if (Math.hypot(b.x - a.x, b.y - a.y) < 3) {
+						still.push(`${seed}: ${tr.pid} ${g.kind} at ${Math.round(g.t0)}`);
+					}
+				}
+			}
+		}
+		assert.strictEqual(stood, 0);
+		assert.isAbove(cheers, 10);
+		assert.isAtMost(still.length, cheers * 0.15, still.join("; "));
+	}, 480_000);
 
 	// From one move into the next - pulling up from a run, down into his
 	// stance, up for a catch - his body eases over rather than snapping
@@ -4329,7 +4390,18 @@ describe("3D director", () => {
 	// the one on the ball - and the rest of him goes on as it was.
 	test("players talk with a hand on the move", () => {
 		const { tl } = compile("a", 140);
-		const kinds = { point: 0, hand: 0, wave: 0, slap: 0, follow: 0, bar: 0 };
+		const kinds = {
+			point: 0,
+			hand: 0,
+			wave: 0,
+			slap: 0,
+			follow: 0,
+			bar: 0,
+			three: 0,
+			fist: 0,
+			flex: 0,
+			pound: 0,
+		};
 		let onTheMove = 0;
 		for (const tr of tl.tracks.values()) {
 			tr.arms.forEach((g, i) => {

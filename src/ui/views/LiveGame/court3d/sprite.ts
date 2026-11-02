@@ -596,6 +596,8 @@ const armSteps = (a: PlayerState["arm"], k: Steps): PlayerState["arm"] => {
 				w,
 				...(a.point ? { point: true } : {}),
 				...(a.tuck ? { tuck: Math.round(a.tuck * 4) / 4 } : {}),
+				...(a.grip ? { grip: a.grip } : {}),
+				...(a.yell ? { yell: Math.round(a.yell * 4) / 4 } : {}),
 			}
 		: undefined;
 };
@@ -871,7 +873,7 @@ const planOf = (
 		plan.id = id;
 		plan.key = `${fine ? "f" : ""}${id}|${st.anim}${st.mirror ? "m" : ""}|${pose.phase}${pose.stepLen ? `l${pose.stepLen}` : ""}${pose.drive ? `v${pose.drive}` : ""}|${pose.turn}|${scale}|${px}|${st.holding ? 1 : 0}${pose.grip ?? ""}|${pose.legs ?? ""}${pose.way === undefined ? "" : `w${pose.way}`}${pose.pivot ? `p${pose.pivot}` : ""}${pose.lock ? `k${pose.lock}` : ""}${pose.slip ? `s${pose.slip}` : ""}${pose.look ? `h${pose.look}` : ""}${pose.down ? `d${pose.down}` : ""}|${pose.dribble ?? ""}${st.dribbleHand ?? ""}${st.dribbleFrom ?? ""}${pose.tight ? `t${pose.tight}` : ""}${pose.low ? `o${pose.low}` : ""}${pose.calm ? `e${pose.calm}` : ""}${pose.room === undefined ? "" : `r${pose.room}`}${pose.armsIn ? `i${pose.armsIn[0]},${pose.armsIn[1]}` : ""}${strideKey(pose.stride)}|${pose.target ?? ""}${pose.face === undefined ? "" : `q${Math.round(pose.face / FACE_STEP)}`}${st.ballBy ? `b${Math.round(st.ballBy.x * 10)},${Math.round(st.ballBy.y * 10)},${Math.round(st.ballBy.z * 10)}${st.ballBy.held ? "h" : ""}` : ""}${st.palmOn ? `n${st.palmOn.R ? "R" : ""}${st.palmOn.L ? "L" : ""}` : ""}${st.tap?.rel ? `a${Math.round(st.tap.rel.f * 5)},${Math.round(st.tap.rel.s * 5)},${Math.round(st.tap.rel.u * 5)},${Math.round(st.tap.w * 8)}` : ""}${
 			f ? `|${blendKey(f)}` : ""
-		}${a ? `|${a.hand}${a.point ? "p" : ""}${a.tuck ? `t${a.tuck}` : ""}${a.sh},${a.el},${a.ab},${a.wr}~${a.w}` : ""}`;
+		}${a ? `|${a.hand}${a.point ? "p" : ""}${a.tuck ? `t${a.tuck}` : ""}${a.grip ?? ""}${a.yell ? `y${a.yell}` : ""}${a.sh},${a.el},${a.ab},${a.wr}~${a.w}` : ""}`;
 	}
 	return plan;
 };

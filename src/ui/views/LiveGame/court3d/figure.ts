@@ -828,15 +828,21 @@ const YELLS: Partial<Record<string, [number, number, number?]>> = {
 	chestBump: [0.2, 0.8],
 	celebrate: [0.15, 0.85],
 };
-export const yellOf = (st: { anim: string; phase: number }): number => {
+export const yellOf = (st: {
+	anim: string;
+	phase: number;
+	// (Or letting it out with an arm on the run - see ArmPose.)
+	arm?: { w: number; yell?: number };
+}): number => {
+	const arm = st.arm?.yell ? st.arm.yell * Math.min(1, st.arm.w) : 0;
 	const w = YELLS[st.anim];
 	if (!w) {
-		return 0;
+		return arm;
 	}
 	// (A loop's phase runs on: the yell each time round.)
 	const u = st.phase > 1 ? st.phase % 1 : st.phase;
 	const k = Math.min((u - w[0]) / 0.08, (w[1] - u) / 0.08, 1);
-	return k <= 0 ? 0 : k * k * (3 - 2 * k) * (w[2] ?? 1);
+	return Math.max(arm, k <= 0 ? 0 : k * k * (3 - 2 * k) * (w[2] ?? 1));
 };
 
 const drawHead = (

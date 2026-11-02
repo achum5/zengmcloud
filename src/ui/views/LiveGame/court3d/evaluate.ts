@@ -274,6 +274,10 @@ export type ArmPose = {
 	// Saying something with it (a point, a call for the ball, a wave) - not
 	// an arm on a man.
 	say?: boolean;
+	// Its hand balled into a fist, or three fingers up - and, letting it out,
+	// how far his mouth is open with it (0 to 1, at all of the arm).
+	grip?: "fist" | "three";
+	yell?: number;
 };
 
 // Bounces a second on a dribble, unless a piece of it says otherwise (see
@@ -3650,6 +3654,53 @@ const armAt = (
 		const pump = Math.sin(u * Math.PI * 4) * 7;
 		return { hand, sh: 160 + pump, el: 16, ab: 16, wr: 18, w };
 	}
+	// CELEBRATING ON THE WAY BACK. Three fingers held up high, shaken a
+	// little; a fist pumped; his arm out and bent up in a flex; a fist
+	// knocked on his chest - shouting, the loud ones.
+	if (g.kind === "three") {
+		const shake = Math.sin(u * Math.PI * 6) * 5;
+		return { hand, sh: 166 + shake, el: 8, ab: 26, wr: 0, w, grip: "three" };
+	}
+	if (g.kind === "fist") {
+		const pump = Math.sin(u * Math.PI * 5);
+		return {
+			hand,
+			sh: 128 + 22 * pump,
+			el: 62 - 26 * pump,
+			ab: 22,
+			wr: 0,
+			w,
+			grip: "fist",
+			yell: 0.9,
+		};
+	}
+	if (g.kind === "flex") {
+		const squeeze = Math.sin(u * Math.PI * 4) * 6;
+		return {
+			hand,
+			sh: 88,
+			el: 112 + squeeze,
+			ab: 74,
+			wr: 0,
+			w,
+			grip: "fist",
+			yell: 1,
+		};
+	}
+	if (g.kind === "pound") {
+		// (Twice, on the far side of his chest from the arm.)
+		const knock = Math.abs(Math.sin(u * Math.PI * 2));
+		return {
+			hand,
+			sh: 58 + 14 * knock,
+			el: 128 - 10 * knock,
+			ab: -18,
+			wr: 0,
+			w,
+			grip: "fist",
+			yell: 0.8,
+		};
+	}
 	// Come on: the forearm swept in at him and out again.
 	const s = Math.sin(u * Math.PI * 6);
 	return {
@@ -4157,6 +4208,8 @@ const easedArm = (
 		...(tucked ? { tuck: mean((a) => a.tuck ?? 0) } : {}),
 		...(last.point ? { point: true } : {}),
 		...(mine.some((x) => x.a.say) ? { say: true } : {}),
+		...(last.grip ? { grip: last.grip } : {}),
+		...(mine.some((x) => x.a.yell) ? { yell: mean((a) => a.yell ?? 0) } : {}),
 	};
 };
 

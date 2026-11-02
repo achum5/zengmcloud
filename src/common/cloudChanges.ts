@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 138,
+		date: "2026-11-02",
+		text: "3D game: a scorer celebrates on his way back down the floor - a fist pump, a three up, a flex - and points at the man who set him up as he runs, instead of standing still for it. He only stops to celebrate on a dead ball, like an and-one or a timeout.",
+	},
+	{
 		n: 137,
 		date: "2026-11-02",
 		text: "Live game: a settings button next to the Key plays picker sets what the key plays show - a close game shown in full (within how many points, how many minutes left, and whether that comes on top of the length you picked) and what makes the reel (dunks, threes, blocks, steals, and-ones, buzzer beaters, lead changes, big swings, your team first). The close game settings moved here from Global Settings.",
