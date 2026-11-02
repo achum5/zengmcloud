@@ -187,8 +187,10 @@ export const PLAYS: Play[] = PLAYBOOK.map(parsePlay);
 // ---- casting ---------------------------------------------------------------
 
 // One of the five on the floor: who, and his position as a rank from 0 (a
-// point guard) to 8 (a center).
-export type Cast = { pid: number; rank: number };
+// point guard) to 8 (a center) - and, where the game rates him, how much of
+// a creator he is (his handle, his feel for the game, his passing) and how
+// well he shoots it from out there (0 to 1).
+export type Cast = { pid: number; rank: number; make?: number; shoot?: number };
 
 // The position each role is drawn for: 1 the point, 5 the center.
 const ROLE_RANK = [0, 2, 4, 6, 8];
@@ -204,9 +206,23 @@ const BIG_NEEDS = new Set([
 	"rebounder",
 ]);
 
+// The roles that run the set with the ball in their hands, and those that
+// space the floor for it.
+const MAKE_NEEDS = new Set(["ballHandler", "isoScorer", "passer"]);
+const SHOOT_NEEDS = new Set(["shooter", "spacer", "offBallShooter"]);
+// What being a creator is worth in a role that runs the set - the man the
+// offense goes through has the ball in his hands - and a shooter's touch in
+// a role that spaces the floor (cost, from a middling one).
+const MAKE_K = 1.6;
+const MAKE_MID = 0.55;
+const SHOOT_K = 0.7;
+const SHOOT_MID = 0.5;
+
 // How badly a player of this rank fits a role: a center bringing it up, a
-// point guard rolling to the rim.
-const roleCost = (play: Play, r: Role, rank: number): number => {
+// point guard rolling to the rim - and, rated, the man who makes the team go
+// with the ball anywhere but in his hands.
+const roleCost = (play: Play, r: Role, c: Cast): number => {
+	const { rank } = c;
 	const needs = play.needs[r] ?? [];
 	let cost = Math.abs(rank - ROLE_RANK[r]!) * 0.3;
 	if (needs.includes("ballHandler")) {
@@ -214,6 +230,15 @@ const roleCost = (play: Play, r: Role, rank: number): number => {
 	}
 	if (needs.some((n) => BIG_NEEDS.has(n))) {
 		cost += Math.max(0, 5 - rank) * 0.5;
+	}
+	if (
+		c.make !== undefined &&
+		(r === play.ball || needs.some((n) => MAKE_NEEDS.has(n)))
+	) {
+		cost += (MAKE_MID - c.make) * MAKE_K;
+	}
+	if (c.shoot !== undefined && needs.some((n) => SHOOT_NEEDS.has(n))) {
+		cost += (SHOOT_MID - c.shoot) * SHOOT_K;
 	}
 	return cost;
 };
@@ -260,7 +285,7 @@ export const castPlay = (
 				ok = false;
 				break;
 			}
-			cost += roleCost(play, r, p.rank) + (extra?.(p.pid, r) ?? 0);
+			cost += roleCost(play, r, p) + (extra?.(p.pid, r) ?? 0);
 		}
 		if (ok && (!best || cost < best.cost)) {
 			const roles: number[] = [];
@@ -323,6 +348,30 @@ export type ShotCall = {
 	// teammates cleared out of his way: a star, more (see isoFor in
 	// director.ts).
 	iso?: number;
+	// How much of a creator the shooter is (0 to 1, where the game rates him):
+	// the man the offense runs through gets his shots off his own handle -
+	// the pick-and-roll, one-on-one - far more than off a catch.
+	make?: number;
+};
+
+// A shooter's play types, for how much of a creator he is: off the ball
+// screen with it in his hands, rather than spotting up or coming off screens
+// for a catch (times this, from none of it to all of it).
+const creatorTilt = (type: string, make: number | undefined): number => {
+	if (make === undefined) {
+		return 1;
+	}
+	switch (type) {
+		case "PRBallHandler":
+			return 0.45 + 2.1 * make;
+		case "Spotup":
+			return 1.6 - 1.25 * make;
+		case "OffScreen":
+		case "Handoff":
+			return 1.3 - 0.8 * make;
+		default:
+			return 1;
+	}
 };
 
 export const callShot = (
@@ -405,7 +454,8 @@ export const callShot = (
 				(k === "Transition" && call.cats.early === undefined) || k === "Putback"
 					? 0
 					: playTypeOdds(k, call.zone, assisted, rank) *
-						(k === "Isolation" ? (call.iso ?? 1) : 1),
+						(k === "Isolation" ? (call.iso ?? 1) : 1) *
+						creatorTilt(k, call.make),
 		})),
 	)?.pick;
 	return choose(

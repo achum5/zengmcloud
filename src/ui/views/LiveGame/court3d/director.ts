@@ -1804,6 +1804,18 @@ const BREAK_MATCH_RANK = 2;
 // how badly he fits it (see castPlay): thirty feet, about a guard's part
 // played by a forward.
 const TRAVEL_COST = 0.035;
+// A handle (0 to 1, see levelOf) below which a man keeps it simple with the
+// ball - no show of moves where he stands - and one past which he works his
+// man with them, one into the next.
+const PLAIN_HANDLE = 0.32;
+// Gone by a man flying out at him off a shot fake: not that way if it is this
+// far (cosine) back along the line he comes out on.
+const FAKE_INTO = 0.6;
+// A jumper of his this soon after the stretch he stands working his man
+// (ms): the move he sets it up with.
+const PULL_UP_AFTER = 2600;
+const FAKE_WIDE = 0.9;
+const SLICK_HANDLE = 0.78;
 // What it costs to have a man who is no ball handler bring it up himself as
 // the set's man with the ball, when it is in his hands back down the floor -
 // more than any other fit or any run to his spot (see castNearest).
@@ -3051,6 +3063,13 @@ class Director {
 	// The odds of something a man does more the better his handle: `base`
 	// for everybody, the game knowing nothing of him - from `lo` for the
 	// poorest handler to `hi` for the best.
+	// No ball handler - a big, a man whose job is to move it on: rated, and
+	// his handle (and his feel for it) well short of a guard's.
+	private plainHandle(pid: number, t: number): boolean {
+		const h = this.level(pid, "drb");
+		return h !== undefined && h < PLAIN_HANDLE && hash01(pid, t + 9) < 0.92;
+	}
+
 	private byHandle(pid: number, base: number, lo: number, hi: number): number {
 		const h = this.level(pid, "drb");
 		return h === undefined ? base : lo + (hi - lo) * h;
@@ -3099,14 +3118,14 @@ class Director {
 						["stepBack", (0.12 + 0.25 * s) * go(0)],
 						["sidestep", (0.08 + 0.2 * s) * go(1)],
 						["crossover", (0.08 + 0.2 * h) * go(2)],
-						["hesi", (0.05 + 0.18 * h) * go(6)],
+						["hesi", (0.05 + 0.26 * h) * go(6)],
 						["plain", Math.max(0.15, 0.5 - 0.25 * h) * go(3)],
 					]
 				: [
 						["stepBack", (0.14 + 0.2 * s) * go(0)],
 						["sidestep", (0.06 + 0.12 * s) * go(1)],
 						["crossover", (0.1 + 0.2 * h) * go(2)],
-						["hesi", (0.07 + 0.2 * h) * go(6)],
+						["hesi", (0.07 + 0.28 * h) * go(6)],
 						["fade", (0.12 + 0.1 * (this.level(pid, "fg") ?? 0.5)) * go(4)],
 						// (Backed in a dribble or two from the elbow, and the
 						// turnaround over him: a man with a game inside.)
@@ -6053,10 +6072,16 @@ class Director {
 	// ---- sets -----------------------------------------------------------------
 
 	private five(team: Side): Cast[] {
-		return this.slots(team).map((pid) => ({
-			pid,
-			rank: this.rank.get(pid) ?? 4,
-		}));
+		return this.slots(team).map((pid) => {
+			const make = this.level(pid, "drb", "oiq", "pss");
+			const shoot = this.level(pid, "tp");
+			return {
+				pid,
+				rank: this.rank.get(pid) ?? 4,
+				...(make === undefined ? {} : { make }),
+				...(shoot === undefined ? {} : { shoot }),
+			};
+		});
 	}
 
 	// A spot from the playbook on this floor: measured from the rim the team
@@ -6305,6 +6330,7 @@ class Director {
 					holder,
 					five,
 					iso: this.isoFor(shooter),
+					make: this.level(shooter, "drb", "oiq", "pss"),
 				},
 				sets,
 			);
@@ -9178,6 +9204,16 @@ class Director {
 		if (dist(spot(s), S) < 2) {
 			s = -s;
 		}
+		// (Not back the way his man flies out at him from - by him, away from
+		// his line - when the other way is open.)
+		const into = (sg: number) => {
+			const q = spot(sg);
+			const l = dist(q, S) || 1;
+			return -((q.x - S.x) * u.x + (q.y - S.y) * u.y) / l;
+		};
+		if (into(s) > FAKE_INTO && into(-s) < into(s) && dist(spot(-s), S) >= 2) {
+			s = -s;
+		}
 		const Q = spot(s);
 		// He flies out at him, to a stride off him - up off his feet at the
 		// fake, and carried on by him past his shoulder, the other side from
@@ -9187,10 +9223,13 @@ class Director {
 			y: S.y - Q.y - u.y * ((S.x - Q.x) * u.x + (S.y - Q.y) * u.y),
 		};
 		const wl = Math.hypot(w.x, w.y) || 1;
+		// (And wider by him, the more his way past is back along the line his
+		// man comes out on.)
+		const wide = 1 + Math.max(0, into(s) - 0.3) * FAKE_WIDE;
 		const by = (a: number, b: number): Pt =>
 			clampPt({
-				x: S.x + u.x * a + (w.x / wl) * b,
-				y: S.y + u.y * a + (w.y / wl) * b,
+				x: S.x + u.x * a + (w.x / wl) * b * wide,
+				y: S.y + u.y * a + (w.y / wl) * b * wide,
 			});
 		this.cutShort(guard, t);
 		const at = this.go(guard, by(-2.4, 1.6), t, CLOSE_RUN, "run", undefined, {
@@ -15043,9 +15082,12 @@ class Director {
 				// tosses it to an official by the table on his way, and has it
 				// back from him after: see toHuddles.)
 				const B = this.ballPoint();
+				// (Off a basket, that is the other side: the one taking it out.)
+				const gets =
+					this.phase === "inboundBase" ? other(this.offense) : this.offense;
 				const taker =
 					type === "timeout"
-						? [...this.slots(this.offense)].sort(
+						? [...this.slots(gets)].sort(
 								(a, b) => dist(this.posOf(a), B) - dist(this.posOf(b), B),
 							)[0]
 						: undefined;
@@ -19867,16 +19909,20 @@ class Director {
 						inHand,
 						ms,
 					);
-					this.giveWith(tr, here, tc, n3, inHand, ms);
-					segs.push(...made.segs, {
-						kind: "hold",
-						t0: tc + n3 * ms,
-						pid: s.pid,
-						style: "dribble",
-						hand: made.hand,
-						// (Back on at the beat he was at.)
-						...(rate !== DRIBBLE_RATE ? { rate } : {}),
-					});
+					// (No handler - a big, a man who just moves it on - keeps it
+					// simple: his dribble, no show of moves where he stands.)
+					if (!this.plainHandle(s.pid, tc)) {
+						this.giveWith(tr, here, tc, n3, inHand, ms);
+						segs.push(...made.segs, {
+							kind: "hold",
+							t0: tc + n3 * ms,
+							pid: s.pid,
+							style: "dribble",
+							hand: made.hand,
+							// (Back on at the beat he was at.)
+							...(rate !== DRIBBLE_RATE ? { rate } : {}),
+						});
+					}
 					t = tc + n3 * ms;
 					wait(this.rand(500, 1000));
 					return true;
@@ -25565,6 +25611,29 @@ class Director {
 			}
 			gt.moves.push(...after);
 			gt.moves.sort((a, b) => a.t0 - b.t0);
+			// (What is left of a run cut down to a sliver would jump him from
+			// where he is to where it went: on through what comes after it
+			// till he has the time to get there, or for as long as it takes.)
+			for (const a of after) {
+				for (;;) {
+					const need = (dist(a.from, a.to) / JOG) * 1000;
+					if (a.t1 - a.t0 >= need) {
+						break;
+					}
+					const k = gt.moves.indexOf(a);
+					const n = gt.moves[k + 1];
+					if (!n || n.t0 - a.t0 >= need) {
+						a.t1 = a.t0 + need;
+						break;
+					}
+					a.to = { ...n.to };
+					a.t1 = n.t1;
+					a.anim = n.anim;
+					a.face = n.face;
+					a.v1 = n.v1;
+					gt.moves.splice(k + 1, 1);
+				}
+			}
 			// (On from where he ends up.)
 			const next = gt.moves.find((x) => x.t0 >= end - 0.5);
 			if (next && !after.includes(next) && dist(next.from, Bend) > 0.05) {
@@ -25631,9 +25700,45 @@ class Director {
 				gaps.push([at, end - 200]);
 			}
 			const face = attackDir(tr.team);
+			// How much he works his man where he stands: a fine handler keeps at
+			// him - quicker, one move into the next - a poor one hardly at all.
+			const handle = this.level(s.pid, "drb");
+			const most =
+				handle === undefined
+					? 4
+					: handle < PLAIN_HANDLE
+						? 0
+						: handle < 0.55
+							? 1
+							: handle < SLICK_HANDLE
+								? 3
+								: 4;
+			const slick =
+				handle === undefined
+					? 0
+					: Math.max(0, Math.min(1, (handle - 0.55) / 0.4));
 			for (const [g0, g1] of gaps) {
-				let t = g0 + 250 + 350 * hash01(s.pid, g0);
-				for (let n = 0; n < 4; n++) {
+				// His own jumper right after: a fine handler sets it up with a
+				// hesitation, the last thing before he rises.
+				// (Past his picking it up to go up with it.)
+				let k = j;
+				while (
+					k < ball.length &&
+					ball[k]!.kind === "hold" &&
+					(ball[k] as { pid: number }).pid === s.pid
+				) {
+					k++;
+				}
+				const next = ball[k];
+				const pullUp =
+					slick > 0 &&
+					next?.kind === "fly" &&
+					"pid" in next.from &&
+					next.from.pid === s.pid &&
+					!("pid" in next.to) &&
+					next.t0 - g1 < PULL_UP_AFTER;
+				let t = g0 + 250 + 350 * hash01(s.pid, g0) * (1 - 0.5 * slick);
+				for (let n = 0; n < most; n++) {
 					const ms = 560 + 160 * hash01(s.pid, t + 1);
 					if (t + ms + 200 > g1) {
 						break;
@@ -25661,9 +25766,12 @@ class Director {
 					if (!guard || !G) {
 						break;
 					}
+					// (A fine handler sells it more: the hesitation and the in-and-
+					// out, more than the jab.)
 					const pick = hash01(s.pid, t + 2);
-					const hesi = pick < 0.35;
-					const inOut = !hesi && pick < 0.6;
+					const lastOne = pullUp && t + ms + 350 + 760 > g1;
+					const hesi = lastOne || pick < 0.35 + 0.05 * slick;
+					const inOut = !hesi && pick < 0.6 + 0.2 * slick;
 					// (The hand it is in then.)
 					const hand =
 						(own.findLast((x) => x.t0 <= t) as { hand?: Hand } | undefined)
@@ -25693,7 +25801,7 @@ class Director {
 						dy: u.y * k - u.x * side,
 					});
 					added.push(guard, tr);
-					t += ms + 350 + 550 * hash01(s.pid, t + 3);
+					t += ms + (350 + 550 * hash01(s.pid, t + 3)) * (1 - 0.45 * slick);
 				}
 			}
 		}

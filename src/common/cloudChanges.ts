@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 114,
+		date: "2026-11-02",
+		text: "3D game: a team's best creator runs the offense - the star with the handle has the ball in his hands and gets his own shot off the pick-and-roll or one-on-one, setting up his pull-up with a hesitation - while bigs and role players keep it simple and move the ball on, no crossover show where they stand.",
+	},
+	{
 		n: 113,
 		date: "2026-11-02",
 		text: "Realistic Draft Prospects: fixed lopsided ratings - no more top prospects all at 98 mid-range, free throws are no longer capped around 51 for the whole class, and skills no longer pile dozens of prospects onto one exact number. Only classes generated from now on change.",
