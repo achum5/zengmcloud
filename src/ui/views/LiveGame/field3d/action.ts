@@ -7919,7 +7919,7 @@ class Action {
 						m.go(to, m.t + KEEP_STEP_MS, "slide", yaw);
 						continue;
 					}
-					m.hold(m.t + KEEP_STEP_MS, "backerStance", yaw);
+					m.hold(m.t + KEEP_STEP_MS, "backerReady", yaw);
 					const next = watch.posAt(m.t + KEEP_STEP_MS / 2);
 					const to = this.toward(m.at, next);
 					if (
@@ -7930,7 +7930,7 @@ class Action {
 					}
 				}
 			}
-			m.hold(t1, "backerStance", yaw);
+			m.hold(t1, "backerReady", yaw);
 		};
 		const downBy =
 			m.t +
@@ -9788,7 +9788,9 @@ class Action {
 							return;
 						}
 					}
-					m.hold(t, "backerStance", this.behind);
+					// (Alive in it, his weight going foot to foot - not stood
+					// stock still in the middle of the play.)
+					m.hold(t, "backerReady", this.behind);
 				};
 				for (
 					let t = m.t + ZONE_STEP_MS;
