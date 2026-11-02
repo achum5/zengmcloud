@@ -632,8 +632,16 @@ const figureOf = (st: FieldPlayerState, body: Body, s: Stepped): Figure => {
 		pose,
 		grips: gripsOf(st.move, st.ball),
 		...(st.ball ? { ball: ballFor(st, body, pose, s, st.ball) } : {}),
+		...(s.arms?.move === "blowWhistle" &&
+		s.arms.phase > WHISTLE_FROM &&
+		s.arms.phase < 1 - WHISTLE_FROM
+			? { whistle: true as const }
+			: {}),
 	};
 };
+// (His whistle in his mouth from this far into blowing it to as far from
+// the end.)
+const WHISTLE_FROM = 0.12;
 
 // How much of the light is left in the shade (a touch more of the blue).
 const SHADED = 0.66;

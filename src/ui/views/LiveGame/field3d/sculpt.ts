@@ -206,6 +206,8 @@ export type Figure = Placed & {
 	// His right hand, his left.
 	grips: [Grip, Grip];
 	ball?: HeldBall;
+	// An official's whistle in his mouth, blowing it.
+	whistle?: true;
 };
 
 // The football: eleven inches point to point, a little bigger than life so
@@ -1090,6 +1092,16 @@ const build = (
 				[[0, R * 0.15]],
 				SHELL,
 				G_HELMET,
+			);
+		}
+		if (fig.whistle) {
+			// His whistle, out from between his lips.
+			add(
+				at(0.76, 0, -0.33),
+				at(1.06, 0.03, -0.37),
+				[[0, R * 0.075]],
+				HEADSET,
+				G_MASK,
 			);
 		}
 		if (look.headset) {

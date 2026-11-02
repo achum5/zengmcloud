@@ -138,6 +138,12 @@ const REACT_MS = 250;
 // most this far from him it comes down.
 const FLAG_Z = 7.2;
 const FLAG_REACH = 40;
+// The whistle at the end of the play: blown by the man nearest the ball
+// then (no further off than this, feet) not busy with his arms, this long
+// after it and for this long (ms).
+const WHISTLE_NEAR = 45;
+const WHISTLE_AFTER_MS = 80;
+const WHISTLE_MS = 900;
 // The referee on the microphone: the signal, then the side that fouled (or
 // the wave of a call declined); stopped and faced to the press box a moment
 // before it.
@@ -746,6 +752,27 @@ export const stageCrew = (
 			t1: t0 + Math.min(1300, 650 + dist(from, to) * 14),
 			from: { ...from, z: FLAG_Z },
 			to,
+		});
+	}
+	// The whistle, the play over: his hand up to it at his mouth.
+	const blowT = whistle + WHISTLE_AFTER_MS;
+	const blower = [...CREW]
+		.filter((o) => dist(where(o, whistle), dead) <= WHISTLE_NEAR)
+		.sort(
+			(a, b) => dist(where(a, whistle), dead) - dist(where(b, whistle), dead),
+		)
+		.find(
+			(o) =>
+				!arms.some(
+					(a) => a.o === o && a.t1 > blowT && a.t0 < blowT + WHISTLE_MS,
+				),
+		);
+	if (blower) {
+		arms.push({
+			o: blower,
+			move: "blowWhistle",
+			t0: blowT,
+			t1: blowT + WHISTLE_MS,
 		});
 	}
 	for (const a of arms) {

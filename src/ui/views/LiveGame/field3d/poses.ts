@@ -3439,6 +3439,16 @@ const FIELD_ANIMS = {
 			[1, pose({ shN: 60, elN: 20, abN: 10 })],
 		],
 	},
+	// The whistle: his right hand up to it at his mouth, blown, and down.
+	blowWhistle: {
+		kind: "act",
+		keys: [
+			[0, BASE],
+			[0.22, pose({ shN: 58, elN: 142, abN: -14 })],
+			[0.78, pose({ shN: 58, elN: 142, abN: -14 })],
+			[1, BASE],
+		],
+	},
 	// A score, a kick good: both arms straight up.
 	sigTD: held({ shN: 178, elN: 2, abN: 6, shF: 178, elF: 2, abF: 6 }),
 	// A safety: the palms together over his head.
