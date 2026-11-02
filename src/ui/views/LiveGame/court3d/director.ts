@@ -1518,6 +1518,9 @@ const ISO_FROM = 0.6;
 const ISO_STAR = 2;
 // At crunch time (see crunchAt), how much more again.
 const ISO_CLUTCH = 1.5;
+// And at crunch time, how often a star lets it out after a basket of his
+// that would otherwise have had nothing.
+const CLUTCH_LET_OUT = 0.7;
 // How high the man with it at the horn, winning, throws it (feet).
 const GAME_BALL_UP = 27;
 // Nearer anybody than this (feet) at the horn, a loser steps off him.
@@ -16198,6 +16201,20 @@ class Director {
 							: {}),
 					});
 				}
+			} else if (
+				this.isoFor(shot.pid) !== undefined &&
+				this.crunchAt(typeof e.clock === "number" ? e.clock : undefined) >= 1 &&
+				hash01(shot.pid, Math.round(at) + 41) < CLUTCH_LET_OUT
+			) {
+				// Crunch time, and the star has just made one of his own: he
+				// lets it out - his own way of it, or a flex.
+				this.act(
+					shot.pid,
+					this.bigFinish(shot.pid, at) ?? "flex",
+					free + 100,
+					free + 900,
+					{ face: -dir as 1 | -1 },
+				);
 			}
 			// Off an assist, whatever else: a finger at the man who found him on
 			// his way back down the floor - easy about it, the arm loose.
