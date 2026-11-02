@@ -2332,6 +2332,15 @@ const WAY_LEAST_MS = 300;
 const WAY_EASE_FT = 1;
 // (Driven back, the block won, no quicker than this - ft/s.)
 const BLOCK_DRIVE_FPS = 6;
+// Let up after a pass is away on his own count too, up to this much later
+// (ms) - and a block on a run once the man with the ball is down.
+const PASS_END_SPREAD_MS = 450;
+// (Off his man or his zone for the ball, once it is thrown, up to this much
+// later than the first of them, ms.)
+const COVER_BREAK_SPREAD_MS = 220;
+// (A kick wall let up once the kick is away, up to this much later, ms.)
+const KICK_WALL_SPREAD_MS = 350;
+const RUN_END_SPREAD_MS = 400;
 // Off the snap, each on his own count: a blocker this long after it (ms),
 // up to this much later; his first step this much longer or shorter (a
 // share of it) - and a lineman across from him reading it, this long
@@ -2341,6 +2350,19 @@ const GET_OFF_SPREAD_MS = 80;
 const GET_OFF_STEP = 0.3;
 const READ_OFF_MS = 60;
 const READ_OFF_SPREAD_MS = 110;
+// The rest off the snap on their own counts the same way: a man on a man
+// in coverage, a man dropping into a zone, a linebacker's read step on a
+// run, a receiver out to block, the defensive back he blocks reading it.
+const MAN_OFF_MS = 40;
+const MAN_OFF_SPREAD_MS = 100;
+const ZONE_OFF_MS = 100;
+const ZONE_OFF_SPREAD_MS = 120;
+const READ_STEP_MS = 60;
+const READ_STEP_SPREAD_MS = 120;
+const STALK_OFF_MS = 50;
+const STALK_OFF_SPREAD_MS = 80;
+const STALK_READ_MS = 70;
+const STALK_READ_SPREAD_MS = 120;
 // (Not so soon after what he is doing ends as to make a sliver of it, ms.)
 const OFF_LEAST_MS = 40;
 const SNAPPER_OFF_MS = 40;
@@ -8425,6 +8447,13 @@ class Action {
 		if (pair && rushers.includes(pair[0]) && blockers.includes(pair[1])) {
 			engaged.set(pair[0], pair[1]);
 		}
+		// (Each blocker, and the man on him, let up on his own count after
+		// `end` - see countOf - up to PASS_END_SPREAD later; the pair the
+		// sim says gave up the sack at it.)
+		const endFor = (b: Actor) =>
+			pair && b === pair[1]
+				? end
+				: end + PASS_END_SPREAD_MS * countOf(b, snap, 3);
 		for (const m of rushers) {
 			if (this.done.has(m.pid) || engaged.has(m)) {
 				continue;
@@ -8514,7 +8543,7 @@ class Action {
 					);
 			b.go(
 				this.w({ d: setPt.d - give, a: setPt.a + (pocket.a - setPt.a) * 0.1 }),
-				end,
+				endFor(b),
 				"passSet",
 				this.ahead,
 			);
@@ -8540,6 +8569,7 @@ class Action {
 			// shoulder one way and then the other, the blocker with him.
 			const edge =
 				b === edgeOf(side) && Math.abs(s.a) > Math.abs(this.of(b.at).a) + 0.5;
+			const end = endFor(b);
 			m.hold(snap + 40 + r() * 60);
 			// Into him as soon as he can get there out of his stance (see
 			// GET_OFF_ACCEL).
@@ -8725,7 +8755,7 @@ class Action {
 	cover(
 		coverage: Actor[],
 		runners: Actor[],
-		until: number,
+		upTo: number,
 		catchPt: Pt | undefined,
 		catchAt: number,
 		marked?: [Actor, Actor],
@@ -8772,10 +8802,17 @@ class Action {
 		for (const m of free) {
 			const rec = pairs.get(m);
 			const start = set(m);
+			// (Each sees it on his own count - see countOf; the man the sim
+			// says got to the ball, at once.)
+			const until =
+				marked && m === marked[0]
+					? upTo
+					: upTo + COVER_BREAK_SPREAD_MS * countOf(m, snap, 5);
 			if (rec) {
 				// On his man: a step behind him and to the inside, until the
 				// ball is in the air - backpedaling out of his stance, then
 				// turned and running with him.
+				this.offSnap(m, MAN_OFF_MS, MAN_OFF_SPREAD_MS);
 				const rs = set(rec);
 				const inside = -Math.sign(rs.a || 1);
 				// (A step at a time, the last of them on to the break - not
@@ -8842,7 +8879,7 @@ class Action {
 						: m.role === "SS" || m.role === "CB"
 							? { d: Math.max(start.d, 36 + r() * 10), a: start.a * 0.9 }
 							: { d: 18 + r() * 10, a: start.a * 0.8 };
-				m.hold(snap + 150);
+				this.offSnap(m, ZONE_OFF_MS, ZONE_OFF_SPREAD_MS);
 				// (Up a step or two to the fake first, a linebacker, and stood
 				// reading it.)
 				let drop = snap + 1500;
@@ -9449,11 +9486,12 @@ class Action {
 		const atHole = Math.min(this.reachesAt(carrier, 0), t);
 		// (Off a block to go after him as he goes by a man `d` deep, well
 		// before he is down.)
-		const offAt = (d: number) => {
+		// (No such time: `late`, when it is over for him.)
+		const offAt = (d: number, late = until) => {
 			const by = this.reachesAt(carrier, d - 3);
 			return by < t - 400
 				? Math.min(t - 250, by + 150 + r() * OFF_SPREAD)
-				: until;
+				: late;
 		};
 
 		// The first step, all as one: across to the hole on zone, flat down
@@ -9506,11 +9544,13 @@ class Action {
 		for (const [b, men] of on) {
 			const s = { ...this.of(b.at), t: b.t };
 			const wins = beat(b);
+			// (Let up on his own count once it is over - see countOf.)
+			const till = until + RUN_END_SPREAD_MS * countOf(b, snap, 4);
 			const path = wins
-				? [{ d: s.d + drive + 1, a: s.a + step.a * 0.4, t: until }]
+				? [{ d: s.d + drive + 1, a: s.a + step.a * 0.4, t: till }]
 				: [
 						{ d: s.d - 1.6, a: s.a, t: snap + 1150 },
-						{ d: s.d - 2.4, a: s.a, t: until },
+						{ d: s.d - 2.4, a: s.a, t: till },
 					];
 			// (Turned off the way the man with the ball comes through - over
 			// to the side of it they are on by the time he is by, not stood in
@@ -9549,7 +9589,7 @@ class Action {
 				b.cut(s.t);
 				lay(way.over, way.by);
 			}
-			let locked = until;
+			let locked = till;
 			let freed = snap;
 			for (const m of men) {
 				const at = (time: number, lat: number) => {
@@ -9562,8 +9602,8 @@ class Action {
 				const end =
 					wins || !free(m) || shed > t - 300
 						? wins && free(m)
-							? offAt(this.of(m.at).d)
-							: until
+							? offAt(this.of(m.at).d, till)
+							: till
 						: shed;
 				this.offSnap(m, READ_OFF_MS, READ_OFF_SPREAD_MS);
 				const lat = (r() - 0.5) * 0.6;
@@ -9578,7 +9618,7 @@ class Action {
 			}
 			this.jostle([b, ...men], snap + JOSTLE_FROM, locked);
 			// (Nobody left on him well before it is over: up out of it.)
-			if (freed < until - FREED_MS) {
+			if (freed < till - FREED_MS) {
 				b.cut(freed + FREED_REACT);
 			}
 		}
@@ -9589,7 +9629,7 @@ class Action {
 		const filled = snap + FILL_MS;
 		for (const m of backers) {
 			const s = this.of(m.at);
-			m.hold(snap + 80);
+			this.offSnap(m, READ_STEP_MS, READ_STEP_SPREAD_MS);
 			m.go(
 				this.w({ d: s.d - 1.5, a: s.a + side }),
 				snap + 450,
@@ -9711,7 +9751,7 @@ class Action {
 				continue;
 			}
 			const s = this.of(m.at);
-			m.hold(snap + 80);
+			this.offSnap(m, STALK_OFF_MS, STALK_OFF_SPREAD_MS);
 			const db = closest(dbs, m.at);
 			if (!db || dist(db.at, m.at) > STALK_FAR) {
 				m.go(
@@ -9727,7 +9767,7 @@ class Action {
 			dbs.splice(dbs.indexOf(db), 1);
 			// (He backs off at the snap, reading it, then up.)
 			const c = this.of(db.at);
-			db.hold(snap + 80);
+			this.offSnap(db, STALK_READ_MS, STALK_READ_SPREAD_MS);
 			db.go(this.w({ d: c.d + 4, a: c.a }), snap + 750, "back", this.behind);
 			// (Up in his low steps, as slow as that is - not walked up.)
 			const up = this.w({ d: c.d + 1, a: c.a + (holeA - c.a) * 0.2 });
@@ -9773,7 +9813,7 @@ class Action {
 		b: Actor,
 		m: Actor | undefined,
 		won: boolean,
-		offAt: (d: number) => number,
+		offAt: (d: number, late?: number) => number,
 		until: number,
 		clear?: Actor,
 		through = false,
@@ -9820,7 +9860,9 @@ class Action {
 		m.cut(meet.t);
 		m.hold(meet.t);
 		const p = this.of(m.at);
-		const off = Math.max(meet.t + 200, offAt(p.d));
+		// (Let up on his own count once it is over - see countOf.)
+		const till = until + RUN_END_SPREAD_MS * countOf(b, this.input.snap, 4);
+		const off = Math.max(meet.t + 200, offAt(p.d, till));
 		const end = won ? off : Math.min(off, meet.t + SHED_MS + r() * SHED_SPREAD);
 		const give = won
 			? Math.min(2.5 + r() * 2, (BLOCK_DRIVE_FPS * (end - meet.t)) / 1000)
@@ -9861,7 +9903,7 @@ class Action {
 			"drive",
 			this.ahead,
 		);
-		b.hold(Math.max(end, until), "stand", this.ahead);
+		b.hold(Math.max(end, till), "stand", this.ahead);
 	}
 
 	// A blocker locked up with the man in front of him (BLOCK_GAP on) from
@@ -11093,15 +11135,19 @@ class Action {
 		// The protection, until the ball is away: the line and the shield in
 		// their sets, the middle of the rush into them.
 		const line = this.o.filter((m) => m !== p && m.role !== "GUNNER");
+		// (Each in his set until the kick is seen, and on his own count after
+		// it - see countOf.)
 		const free = this.seen;
+		const freeOf = (m: Actor) =>
+			free + KICK_WALL_SPREAD_MS * countOf(m, snap, 6);
 		for (const m of line) {
 			const s = this.of(m.at);
 			if (m.role !== "LS") {
-				m.hold(snap + 60);
+				this.offSnap(m, GET_OFF_MS, GET_OFF_SPREAD_MS);
 			}
 			m.go(
 				this.w({ d: s.d + (m.role === "UP" ? 1 : -1.5), a: s.a }),
-				free,
+				freeOf(m),
 				"passSet",
 				this.ahead,
 			);
@@ -11111,7 +11157,7 @@ class Action {
 		const up = line.filter((m) => m.role !== "UP");
 		for (const m of inside) {
 			const b = this.acrossFrom(up, this.of(m.at).a);
-			m.hold(snap + 50);
+			this.offSnap(m, READ_OFF_MS, READ_OFF_SPREAD_MS);
 			if (!b) {
 				continue;
 			}
@@ -11119,8 +11165,9 @@ class Action {
 				const q = this.of(b.posAt(time));
 				return this.w({ d: q.d + 2.6, a: q.a });
 			};
-			this.fireInto(m, at, snap + 450, free);
-			m.go(at(free), free, "engage", this.behind);
+			const till = freeOf(b);
+			this.fireInto(m, at, snap + 450, till);
+			m.go(at(till), till, "engage", this.behind);
 		}
 
 		// The gunners off the line through the men on them and flat out for
@@ -11132,7 +11179,7 @@ class Action {
 			const s = this.of(g.at);
 			const side = Math.sign(s.a) || 1;
 			const j = this.acrossFrom(jammers, s.a);
-			g.hold(snap + 60);
+			this.offSnap(g, GET_OFF_MS, GET_OFF_SPREAD_MS);
 			g.go(
 				this.w({ d: s.d + 9, a: s.a - side * 2 }),
 				snap + 900,
@@ -11151,7 +11198,7 @@ class Action {
 			g.hold(g.t + GUNNER_SET_MS, "backerStance", this.toward(g.at, landPt));
 			if (j) {
 				jammers.splice(jammers.indexOf(j), 1);
-				j.hold(snap + 60);
+				this.offSnap(j, READ_OFF_MS, READ_OFF_SPREAD_MS);
 				j.go(
 					this.w({ d: s.d + 11.6, a: s.a - side * 2 }),
 					snap + 900,
@@ -11450,15 +11497,18 @@ class Action {
 		// The wall holding its ground, the rush into it - off the edges and
 		// up at the kick as it goes.
 		const wall = this.o.filter((m) => m !== h && m !== k);
-		const held = kickT + 250;
+		// (Each holding it until the kick is away, and on his own count
+		// after it - see countOf.)
+		const heldOf = (m: Actor) =>
+			kickT + 250 + KICK_WALL_SPREAD_MS * countOf(m, snap, 6);
 		for (const m of wall) {
 			const s = this.of(m.at);
 			if (m.role !== "LS") {
-				m.hold(snap + 40);
+				this.offSnap(m, GET_OFF_MS, GET_OFF_SPREAD_MS);
 			}
 			m.go(
 				this.w({ d: s.d - 0.8, a: s.a * 0.96 }),
-				held,
+				heldOf(m),
 				"passSet",
 				this.ahead,
 			);
@@ -11483,8 +11533,9 @@ class Action {
 					const q = this.of(b.posAt(time));
 					return this.w({ d: q.d + 2.6, a: q.a + (s.a > q.a ? 0.8 : -0.8) });
 				};
-				this.fireInto(m, at, snap + 400, held);
-				m.go(at(held), held, "engage", this.behind);
+				const till = heldOf(b);
+				this.fireInto(m, at, snap + 400, till);
+				m.go(at(till), till, "engage", this.behind);
 			} else if (m.role === "RUSH" || m.role === "CB") {
 				// Round the end of the wall and in at the kick: the man outside
 				// another wider round him, and in further back.
