@@ -691,9 +691,11 @@ const armsPhaseOf = (l: Leg, t: number): number => {
 };
 
 // The ball in the air: along the straight line, up over it in a parabola.
+// (End over end, turned so far over through it - see tumble.)
 const flying = (
 	s: Extract<BallSeg, { kind: "fly" }>,
 	t: number,
+	spin?: Spin,
 ): { at: Pt3; axis: Pt3 } => {
 	const u = s.t1 > s.t0 ? clamp01((t - s.t0) / (s.t1 - s.t0)) : 1;
 	const at = {
@@ -709,7 +711,9 @@ const flying = (
 		z: (s.to.z - s.from.z) / secs + (4 * s.peak * (1 - 2 * u)) / secs,
 	};
 	if (!s.spiral) {
-		const turn = ((t - s.t0) / 1000) * 9;
+		const turn = spin
+			? spin.from + (spin.to - spin.from) * u
+			: ((t - s.t0) / 1000) * TUMBLE;
 		const flat = Math.hypot(axis.x, axis.y) || 1;
 		axis = {
 			x: (axis.x / flat) * Math.cos(turn),
@@ -718,6 +722,36 @@ const flying = (
 		};
 	}
 	return { at, axis };
+};
+
+// END OVER END, off the turf: how far over it has turned (radians) as a
+// flight starts and as it ends - going on turning from the way the last
+// one left it, one bounce into the next, not set back flat at each; and,
+// coming to rest, down on its side (a half turn) as it does - lying the
+// way it went (see ballAt). So many radians a second.
+const TUMBLE = 9;
+type Spin = { from: number; to: number };
+const spins = new WeakMap<Fly, Spin>();
+const tumble = (play: Play, k: number): Spin => {
+	const s = play.ball[k] as Fly;
+	let had = spins.get(s);
+	if (had) {
+		return had;
+	}
+	const prev = play.ball[k - 1];
+	const from =
+		prev?.kind === "fly" && !prev.spiral && Math.abs(prev.t1 - s.t0) < 2
+			? tumble(play, k - 1).to
+			: 0;
+	let to = from + ((s.t1 - s.t0) / 1000) * TUMBLE;
+	const next = play.ball[k + 1];
+	if (next?.kind === "spot" && !next.stood && Math.abs(next.t0 - s.t1) < 2) {
+		to =
+			Math.max(Math.round(to / Math.PI), Math.ceil(from / Math.PI)) * Math.PI;
+	}
+	had = { from, to };
+	spins.set(s, had);
+	return had;
 };
 
 // Where the ball he has is drawn, his hands on it (the field's own
@@ -769,6 +803,27 @@ const handsMet = (
 	return met;
 };
 
+// The way a ball come to rest at segs[k] went, the last of its way there
+// (back over its last bounces as far as it takes to have gone this far,
+// feet) - or, put down where it was, none: lying across the picture.
+const REST_WAY_LEAST = 0.3;
+const restWay = (segs: BallSeg[], k: number): Pt3 | undefined => {
+	const at = (segs[k] as Extract<BallSeg, { kind: "spot" }>).at;
+	let t = segs[k]!.t0;
+	for (let j = k - 1; j >= 0; j--) {
+		const f = segs[j]!;
+		if (f.kind !== "fly" || Math.abs(f.t1 - t) >= 2) {
+			return undefined;
+		}
+		const x = at.x - f.from.x;
+		const y = at.y - f.from.y;
+		if (Math.hypot(x, y) > REST_WAY_LEAST) {
+			return { x, y, z: 0 };
+		}
+		t = f.t0;
+	}
+	return undefined;
+};
 const ballAt = (
 	play: Play,
 	t: number,
@@ -783,13 +838,22 @@ const ballAt = (
 		return {};
 	}
 	if (s.kind === "spot") {
+		// (Come to rest off the turf, or tossed down onto it: on its side,
+		// the way it was going.)
+		const way = s.stood ? undefined : restWay(segs, k);
+		if (way) {
+			return {
+				ball: { at: { ...s.at, z: restingZ(undefined) }, axis: way },
+				focus: s.at,
+			};
+		}
 		return {
 			ball: { at: s.at, ...(s.stood ? { stood: s.stood } : {}) },
 			focus: s.at,
 		};
 	}
 	if (s.kind === "fly") {
-		const f = flying(s, t);
+		const f = flying(s, t, s.spiral ? undefined : tumble(play, k));
 		if (handsOf) {
 			// (Out of his hands and into the other man's, the whole way
 			// eased from the one to the other.)
