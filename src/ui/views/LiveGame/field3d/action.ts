@@ -3979,25 +3979,47 @@ class Action {
 				moveKind(l.move) === "act" ||
 				l.from.x !== l.to.x ||
 				l.from.y !== l.to.y);
+		// (Stood there a while - his stand split in pieces or not - come
+		// there on his feet, or pulled up there: see easeOff.)
+		const stood = (l: Leg) =>
+			l.move === "stand" &&
+			l.ball === undefined &&
+			l.arms === undefined &&
+			l.from.x === l.to.x &&
+			l.from.y === l.to.y;
 		for (const m of this.d) {
-			m.legs.forEach((l, k) => {
-				const prev = m.legs[k - 1];
-				if (
-					l.move === "stand" &&
-					l.ball === undefined &&
-					l.arms === undefined &&
-					l.from.x === l.to.x &&
-					l.from.y === l.to.y &&
-					l.t0 >= snap + READY_FROM_MS &&
-					l.t1 <= this.whistle - READY_BEFORE_MS &&
-					l.t1 - l.t0 >= READY_LEAST_MS &&
-					prev &&
-					(STEPS.has(prev.move) || LINE_PLAY.has(prev.move)) &&
-					goes(m.legs[k + 1])
-				) {
-					l.move = "backerReady";
+			const legs = m.legs;
+			for (let k = 0; k < legs.length; k++) {
+				if (!stood(legs[k]!)) {
+					continue;
 				}
-			});
+				let j = k;
+				while (
+					j + 1 < legs.length &&
+					stood(legs[j + 1]!) &&
+					legs[j + 1]!.from.x === legs[k]!.from.x &&
+					legs[j + 1]!.from.y === legs[k]!.from.y
+				) {
+					j += 1;
+				}
+				const prev = legs[k - 1];
+				if (
+					legs[k]!.t0 >= snap + READY_FROM_MS &&
+					legs[j]!.t1 <= this.whistle - READY_BEFORE_MS &&
+					legs[j]!.t1 - legs[k]!.t0 >= READY_LEAST_MS &&
+					prev &&
+					(STEPS.has(prev.move) ||
+						LINE_PLAY.has(prev.move) ||
+						(prev.move === "stand" &&
+							(prev.from.x !== prev.to.x || prev.from.y !== prev.to.y))) &&
+					goes(legs[j + 1])
+				) {
+					for (let i = k; i <= j; i++) {
+						legs[i]!.move = "backerReady";
+					}
+				}
+				k = j;
+			}
 		}
 	}
 
