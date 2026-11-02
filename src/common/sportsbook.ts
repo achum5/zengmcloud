@@ -40,7 +40,10 @@ export const SPORTSBOOK_MAX_AMERICAN = 30000;
 // Clamp a probability away from 0/1 so odds stay finite. The floor is deep
 // (0.2%) so genuine long shots differentiate (+2000 vs +20000) instead of
 // every non-favorite pancaking into one max price.
-const clampProb = (p: number): number => Math.min(0.99, Math.max(0.002, p));
+// The ceiling is deep too, for the same reason at the other end: at 0.99 a
+// favourite past about 95% priced at the clamp with its hold shrinking to
+// nothing, and past 99% the -9900 it was offered was a winning bet.
+const clampProb = (p: number): number => Math.min(0.999, Math.max(0.002, p));
 
 // Convert a true win probability to American odds, with the house vig applied.
 // Favorites come out negative (e.g. -150), underdogs positive (e.g. +130).
@@ -71,7 +74,7 @@ export const probToAmerican = (
 ): number => {
 	const vig = opts?.vig ?? SPORTSBOOK_VIG;
 	const p = clampProb(probTrue * (1 + vig));
-	const pClamped = Math.min(0.99, p);
+	const pClamped = Math.min(0.999, p);
 	const american =
 		pClamped >= 0.5
 			? -(pClamped / (1 - pClamped)) * 100
@@ -159,11 +162,15 @@ const marketGamePickTid = (market: SportsbookMarket): number | undefined =>
 		: undefined;
 
 // Reject parlays whose legs contradict each other (you'd be guaranteed to lose
-// at least one leg no matter what happens, so it's never a real parlay). Returns
-// a user-facing reason for the first conflict found, or undefined if the legs
-// can all win together. Correlated same-game legs that CAN all hit (a player
-// over + his team's total over, say) are allowed - only genuine contradictions
-// are blocked.
+// at least one leg no matter what happens, so it's never a real parlay) - or
+// lean on each other. A parlay is paid at the product of its legs' prices,
+// which is only fair for legs that have nothing to do with each other, so as
+// at a real book a ticket takes one leg per game, one futures leg per team
+// and one award leg per player. (Same-game legs were allowed: an underdog's
+// moneyline and its spread is one bet paid twice - the moneyline winning
+// wins the spread - and a player's points over with his points + rebounds +
+// assists over paid about 1.5 for 1.) Returns a user-facing reason for the
+// first conflict found, or undefined if the legs are a fair parlay.
 export const parlayConflict = (
 	markets: SportsbookMarket[],
 	opts?: {
@@ -296,6 +303,39 @@ export const parlayConflict = (
 		}
 	}
 
+	// Legs that lean on each other (see above).
+	const teamFutures = countByKey((m) =>
+		m.type === "champion" ||
+		m.type === "conf" ||
+		m.type === "div" ||
+		m.type === "winTotal"
+			? `${m.season}:${m.pickTid}`
+			: undefined,
+	);
+	if (
+		anyOver(teamFutures, 1, "A parlay can only have one futures pick per team.")
+	) {
+		return "A parlay can only have one futures pick per team.";
+	}
+	const playerAwards = countByKey((m) =>
+		m.type === "award" ||
+		m.type === "allLeagueTeam" ||
+		m.type === "allDefensiveTeam" ||
+		m.type === "allRookieTeam" ||
+		m.type === "allStarTeam"
+			? `${m.season}:${m.pid}`
+			: undefined,
+	);
+	if (
+		anyOver(
+			playerAwards,
+			1,
+			"A parlay can only have one award pick per player.",
+		)
+	) {
+		return "A parlay can only have one award pick per player.";
+	}
+
 	// Everything else only conflicts within a single game.
 	const byGid = new Map<number, SportsbookMarket[]>();
 	for (const m of markets) {
@@ -365,6 +405,10 @@ export const parlayConflict = (
 			if (set.size > 1) {
 				return "A parlay can't take both over and under on the same team prop.";
 			}
+		}
+
+		if (legs.length > 1) {
+			return "A parlay can only have one pick per game.";
 		}
 	}
 

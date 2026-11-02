@@ -21,6 +21,7 @@ import type {
 	SportsbookMarket,
 } from "../../../common/types.ts";
 import { team } from "../index.ts";
+import { orderTeams } from "../../util/orderTeams.ts";
 
 const HISTORY_LIMIT = 60;
 
@@ -81,15 +82,15 @@ const nextBetID = (sb: { bets: SportsbookBet[]; history: SportsbookBet[] }) => {
 	return max + 1;
 };
 
-// The house never gives a better price than its current board, plus a tiny
-// tolerance for rounding. Any client-claimed odds materially better than the
-// live line are rejected - this closes the stale-line hole where a bet placed
-// after a game simmed (but before the page refreshed) would be free money.
-const ODDS_TOLERANCE = 1.02;
-
+// The house never gives a better price than its current board. An honest
+// client sends the board's own price, to the dollar - there is nothing to
+// round - so anything better is refused outright. (This was a 2% allowance,
+// which only ever helped an edited request: the bet was stored at the claimed
+// price, and the 2% compounded on every leg of a parlay.) This closes the
+// stale-line hole too, where a bet placed after a game simmed (but before the
+// page refreshed) would be free money.
 const oddsOk = (claimed: number, board: number) =>
-	americanToDecimal(claimed) <=
-	americanToDecimal(board) * ODDS_TOLERANCE + 1e-9;
+	americanToDecimal(claimed) <= americanToDecimal(board) + 1e-9;
 
 const LINE_MOVED = "That line has moved — refresh the board and try again.";
 const LINE_GONE = "That market is no longer available.";
@@ -178,6 +179,13 @@ const validateAgainstBoard = async (
 		market.type === "gameProp"
 	) {
 		return validatePropAgainstBoard(market, americanOdds);
+	}
+
+	// Every market off the season board is THIS season's - whatever the request
+	// says. Taken on trust, a bet on last season's champion at this season's
+	// price went through and settled at once against a result already known.
+	if ("season" in market) {
+		market.season = g.get("season");
 	}
 
 	const board = await getLines();
@@ -362,7 +370,9 @@ export const placeBetSlip = async ({
 	stake?: number;
 }) =>
 	withSportsbookLock(async () => {
-		if (!g.get("userTids").includes(tid)) {
+		// This device's own team. (In a room every friend's team is a user team
+		// too, so "a user team" would let one device bet another's money.)
+		if (tid !== g.get("userTid")) {
 			throw new Error("You can only bet from your own team.");
 		}
 		if (picks.length === 0) {
@@ -461,36 +471,6 @@ export const placeBetSlip = async ({
 // Place a single bet. Thin wrapper around placeBetSlip for a one-pick slip.
 export const placeBet = async (pick: { tid: number } & BetPick) =>
 	placeBetSlip({ tid: pick.tid, picks: [pick] });
-
-// Cancel an open bet, refunding the stake. Only the placing user team may.
-export const cancelBet = async ({
-	tid,
-	betID,
-}: {
-	tid: number;
-	betID: number;
-}) =>
-	withSportsbookLock(async () => {
-		if (!g.get("userTids").includes(tid)) {
-			throw new Error("Not your team.");
-		}
-		const t = await idb.cache.teams.get(tid);
-		if (!t?.sportsbook) {
-			return;
-		}
-		const sb = t.sportsbook;
-		const bet = (sb.bets ?? []).find((b) => b.betID === betID);
-		if (!bet) {
-			return;
-		}
-		sb.bets = (sb.bets ?? []).filter((b) => b.betID !== betID);
-		sb.balance += bet.stake;
-		await idb.cache.teams.put(t);
-		try {
-			await idb.cache.flush();
-		} catch {}
-		return { balance: sb.balance, bets: sb.bets };
-	});
 
 // The number of playoff rounds this league runs, so a champion = a team that
 // won them all.
@@ -619,6 +599,16 @@ const resolveMarket = async (
 		const home = game.teams[0];
 		const away = game.teams[1];
 		if (m.type === "gameMoneyline") {
+			// A tie (no shootout, overtimes run out) is a push either way - the
+			// game records its "winner" as the away side then, which paid one
+			// moneyline and lost the other.
+			if (
+				typeof game.won.pts === "number" &&
+				game.won.pts === game.lost.pts &&
+				(game.won.sPts ?? 0) === (game.lost.sPts ?? 0)
+			) {
+				return "push";
+			}
 			return game.won.tid === m.pickTid ? "won" : "lost";
 		}
 		if (m.type === "gameTotal") {
@@ -669,21 +659,41 @@ const resolveMarket = async (
 		if (!regularSeasonDone(m.season)) {
 			return undefined;
 		}
-		const teamSeasons = await team.getFormattedAll({
-			attrs: ["tid", "did"],
-			seasonAttrs: ["won", "winp"],
+		const teamSeasons = (await team.getFormattedAll({
+			attrs: ["tid"],
+			seasonAttrs: [
+				"won",
+				"lost",
+				"tied",
+				"otl",
+				"winp",
+				"pts",
+				"cid",
+				"did",
+				"wonDiv",
+				"lostDiv",
+				"tiedDiv",
+				"otlDiv",
+				"wonConf",
+				"lostConf",
+				"tiedConf",
+				"otlConf",
+			],
 			season: m.season,
-		});
-		const inDiv = teamSeasons.filter((t) => t.did === m.did);
+			showNoStats: true,
+		})) as any[];
+		const inDiv = teamSeasons.filter((t) => t.seasonAttrs.did === m.did);
 		if (inDiv.length === 0) {
 			// The division has no teams left in it (e.g. all contracted, or
 			// realigned away) - there's no winner to compare against.
 			return "void";
 		}
-		const winner = inDiv.reduce((best, t) =>
-			t.seasonAttrs.winp > best.seasonAttrs.winp ? t : best,
-		);
-		return winner.tid === m.pickTid ? "won" : "lost";
+		// The division's champion as the standings have it - tiebreakers and
+		// all - not whichever of two co-leaders came first in the list.
+		const [winner] = await orderTeams(inDiv, teamSeasons, {
+			season: m.season,
+		});
+		return winner?.tid === m.pickTid ? "won" : "lost";
 	}
 
 	if (m.type === "champion" || m.type === "conf") {
@@ -707,15 +717,20 @@ const resolveMarket = async (
 			}
 			return champ.tid === m.pickTid ? "won" : "lost";
 		}
-		// Conference winner = the team from that conference that reached the
-		// finals (won every round but possibly the last).
-		const confFinalist = teamSeasons.find(
-			(t) => t.cid === m.cid && t.seasonAttrs.playoffRoundsWon >= rounds - 1,
+		// Conference winner = a team from that conference that reached the
+		// finals (won every round but possibly the last). With the playoffs
+		// not split by conference both finalists can come from one, or none
+		// from another: a pick wins if it got there, and loses if it did not -
+		// never voided while the finals were played.
+		const finalists = teamSeasons.filter(
+			(t) => t.seasonAttrs.playoffRoundsWon >= rounds - 1,
 		);
-		if (!confFinalist) {
+		if (finalists.length === 0) {
 			return "void";
 		}
-		return confFinalist.tid === m.pickTid ? "won" : "lost";
+		return finalists.some((t) => t.tid === m.pickTid && t.cid === m.cid)
+			? "won"
+			: "lost";
 	}
 
 	if (m.type === "award") {
@@ -735,7 +750,9 @@ const resolveMarket = async (
 	if (m.type === "allStarTeam") {
 		const allStars = await idb.merged.allStars.get(m.season);
 		if (!allStars) {
-			return undefined; // roster not selected yet
+			// Not selected yet - or never will be: a season over with no All-Star
+			// game picked no roster, and a bet on it is refunded.
+			return regularSeasonDone(m.season) ? "void" : undefined;
 		}
 		const madeIt = [
 			...allStars.teams[0],
@@ -767,6 +784,11 @@ const resolveMarket = async (
 			return undefined; // not decided yet
 		}
 		const players = legacyAwardPids(awards).allRookie;
+		// No All-Rookie team in this league - refunded, as All-League and
+		// All-Defensive are.
+		if (players.length === 0) {
+			return "void";
+		}
 		return players.some((p) => p.pid === m.pid) ? "won" : "lost";
 	}
 
@@ -867,11 +889,19 @@ const resolveBet = async (
 		return { result: await resolveMarket(bet.market, context) };
 	}
 
-	const legResults = [];
+	const legResults: Awaited<ReturnType<typeof resolveMarket>>[] = [];
 	for (const leg of bet.legs) {
 		legResults.push(
 			await resolveMarket(leg.market, { ...context, label: leg.label }),
 		);
+	}
+	// A leg lost is the ticket lost, there and then - not left open till the
+	// rest are decided (where it could still be cancelled).
+	if (legResults.some((r) => r === "lost")) {
+		return {
+			result: "lost",
+			legs: bet.legs.map((leg, i) => ({ ...leg, result: legResults[i] })),
+		};
 	}
 	if (legResults.some((r) => r === undefined)) {
 		return { result: undefined };
@@ -881,10 +911,6 @@ const resolveBet = async (
 		...leg,
 		result: legResults[i] as "won" | "lost" | "push" | "void",
 	}));
-
-	if (legs.some((leg) => leg.result === "lost")) {
-		return { result: "lost", legs };
-	}
 	const survivors = legs.filter((leg) => leg.result === "won");
 	if (survivors.length === 0) {
 		return { result: "push", payoutDecimal: 1, legs };

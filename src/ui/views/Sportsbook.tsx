@@ -3,7 +3,6 @@ import useTitleBar from "../hooks/useTitleBar.tsx";
 import { helpers } from "../util/helpers.ts";
 import { toWorker } from "../util/toWorker.ts";
 import { realtimeUpdate } from "../util/realtimeUpdate.ts";
-import { showNotification } from "../util/showNotification.ts";
 import type { View } from "../../common/types.ts";
 import type { SportsbookTab } from "../../common/sportsbook.ts";
 import type { SportsbookMarket } from "../../common/types.ts";
@@ -135,22 +134,21 @@ const Sportsbook = ({
 		slip.togglePick(pick);
 		setSlipOpenMobile(true);
 	};
+	// Every pick the board offers right now, by key, filled in as the board is
+	// drawn below - so the slip can tell a pick made before the board moved
+	// (a price change, a game gone in) from one still on it as picked.
+	const live = new Map<string, Pick>();
+	const offer = (pick: Pick) => {
+		live.set(pick.key, pick);
+		return selectedKeys.has(pick.key);
+	};
 
 	const signed = (n: number) => (n > 0 ? `+${n}` : `${n}`);
 
-	const cancelBet = async (betID: number) => {
-		try {
-			await toWorker("main", "sportsbookCancelBet", { tid: wallet.tid, betID });
-			await realtimeUpdate(["watchList"]);
-		} catch (error) {
-			showNotification({
-				type: "error",
-				text: error instanceof Error ? error.message : "Could not cancel.",
-			});
-		}
-	};
-
-	const betslip = <BetSlipCard slip={slip} balance={wallet.balance} />;
+	// (Drawn last, once every tab has filled in `live` - see below.)
+	const betslip = () => (
+		<BetSlipCard slip={slip} balance={wallet.balance} live={live} />
+	);
 
 	const emptyState = (text: string) => (
 		<div className="sb-panel p-4 text-center text-body-secondary">{text}</div>
@@ -172,188 +170,203 @@ const Sportsbook = ({
 		label: ReactNode,
 		odds: number,
 		pick: () => Pick,
-	) => (
-		<div
-			key={key}
-			className="d-flex align-items-center gap-2 px-1 py-1"
-			style={{ minWidth: 0 }}
-		>
-			<div className="flex-grow-1 text-truncate" style={{ minWidth: 0 }}>
-				{label}
+	) => {
+		const pk = pick();
+		return (
+			<div
+				key={key}
+				className="d-flex align-items-center gap-2 px-1 py-1"
+				style={{ minWidth: 0 }}
+			>
+				<div className="flex-grow-1 text-truncate" style={{ minWidth: 0 }}>
+					{label}
+				</div>
+				<div className="flex-shrink-0" style={{ width: 78 }}>
+					<OddsCell
+						odds={odds}
+						selected={offer(pk)}
+						onClick={() => togglePick(pk)}
+					/>
+				</div>
 			</div>
-			<div className="flex-shrink-0" style={{ width: 78 }}>
-				<OddsCell
-					odds={odds}
-					selected={selectedKeys.has(key)}
-					onClick={() => togglePick(pick())}
-				/>
-			</div>
-		</div>
-	);
+		);
+	};
 
 	// ---- Games -----------------------------------------------------------
 	// Each game is its own panel with a three-column odds grid, so a full board
 	// reads top-to-bottom on a phone instead of scrolling sideways off a table.
+	const firstDay = board.games[0]?.day;
+	const dayLabel = (day: number) =>
+		day === firstDay
+			? "Today"
+			: day === firstDay! + 1
+				? "Tomorrow"
+				: `Day ${day}`;
+	const gameCard = (game: (typeof board.games)[number]) => {
+		const sub = `${teamAbbrev(game.away.tid)} @ ${teamAbbrev(game.home.tid)}`;
+		const rows = [
+			{
+				t: game.away,
+				spreadLine: -game.spread.line,
+				spreadOdds: game.spread.away,
+				ml: game.moneyline.away,
+				totKind: "over" as const,
+				totOdds: game.total.over,
+			},
+			{
+				t: game.home,
+				spreadLine: game.spread.line,
+				spreadOdds: game.spread.home,
+				ml: game.moneyline.home,
+				totKind: "under" as const,
+				totOdds: game.total.under,
+			},
+		];
+		return (
+			<div key={game.gid} className="sb-panel mb-2">
+				<div className="sb-panel-head d-flex align-items-center gap-2">
+					<span className="small text-body-secondary text-truncate">{sub}</span>
+					<a
+						className="ms-auto small text-nowrap"
+						href={helpers.leagueUrl(["sportsbook", "game", game.gid])}
+					>
+						Props
+					</a>
+				</div>
+				<div className="p-2">
+					<div
+						style={{
+							display: "grid",
+							// Fixed odds columns, so a narrow screen shrinks the team
+							// name (which truncates) and never the buttons.
+							gridTemplateColumns: "minmax(0, 1fr) repeat(3, 74px)",
+							gap: "4px",
+							alignItems: "center",
+						}}
+					>
+						<div />
+						{["Spread", "Total", "Moneyline"].map((label) => (
+							<div
+								key={label}
+								className="text-center text-body-secondary text-uppercase"
+								style={{ fontSize: "0.68rem", letterSpacing: "0.03em" }}
+							>
+								{label}
+							</div>
+						))}
+
+						{rows.map((r) => {
+							const spreadPick: Pick = {
+								key: `sp-${game.gid}-${r.t.tid}`,
+								market: {
+									type: "gameSpread",
+									gid: game.gid,
+									pickTid: r.t.tid,
+									line: r.spreadLine,
+								},
+								odds: r.spreadOdds,
+								title: `${teamAbbrev(r.t.tid)} ${signed(r.spreadLine)}`,
+								sub,
+							};
+							const totPick: Pick = {
+								key: `tot-${game.gid}-${r.totKind}`,
+								market: {
+									type: "gameTotal",
+									gid: game.gid,
+									side: r.totKind,
+									line: game.total.line,
+								},
+								odds: r.totOdds,
+								title: `${r.totKind === "over" ? "Over" : "Under"} ${game.total.line}`,
+								sub,
+							};
+							const mlPick: Pick = {
+								key: `ml-${game.gid}-${r.t.tid}`,
+								market: {
+									type: "gameMoneyline",
+									gid: game.gid,
+									pickTid: r.t.tid,
+								},
+								odds: r.ml,
+								title: `${teamAbbrev(r.t.tid)} ML`,
+								sub,
+							};
+							return (
+								<Fragment key={r.t.tid}>
+									<div
+										className="d-flex align-items-center gap-2"
+										style={{ minWidth: 0 }}
+									>
+										<Logo tid={r.t.tid} />
+										<div className="lh-sm" style={{ minWidth: 0 }}>
+											<div className="text-truncate">
+												{teamLink(
+													r.t.tid,
+													<>
+														{/* Full name where there's room; just the
+														    nickname on a phone, where the header
+														    strip already names the matchup - a
+														    truncated "Denver Nug…" reads worse. */}
+														<span className="d-none d-sm-inline">
+															{r.t.region} {r.t.name}
+														</span>
+														<span className="d-sm-none">{r.t.name}</span>
+													</>,
+												)}
+											</div>
+											<div
+												className="text-body-secondary text-truncate"
+												style={{ fontSize: "0.75rem" }}
+											>
+												{r.t.won}-{r.t.lost}
+												{r.t.ats ? ` · ${r.t.ats} ATS` : ""}
+											</div>
+										</div>
+									</div>
+									<OddsCell
+										line={signed(r.spreadLine)}
+										odds={r.spreadOdds}
+										selected={offer(spreadPick)}
+										onClick={() => togglePick(spreadPick)}
+									/>
+									<OddsCell
+										line={`${r.totKind === "over" ? "O" : "U"} ${game.total.line}`}
+										odds={r.totOdds}
+										selected={offer(totPick)}
+										onClick={() => togglePick(totPick)}
+									/>
+									<OddsCell
+										odds={r.ml}
+										selected={offer(mlPick)}
+										onClick={() => togglePick(mlPick)}
+									/>
+								</Fragment>
+							);
+						})}
+					</div>
+				</div>
+			</div>
+		);
+	};
+	// Each game is its own panel with a three-column odds grid, so a full board
+	// reads top-to-bottom on a phone instead of scrolling sideways off a table -
+	// grouped under the day it's played.
 	const gamesTab =
 		board.games.length === 0 ? (
 			emptyState("No upcoming games to bet on right now.")
 		) : (
-			<div style={{ maxWidth: 680 }}>
-				{board.games.map((game) => {
-					const sub = `${teamAbbrev(game.away.tid)} @ ${teamAbbrev(game.home.tid)}`;
-					const rows = [
-						{
-							t: game.away,
-							spreadLine: -game.spread.line,
-							spreadOdds: game.spread.away,
-							ml: game.moneyline.away,
-							totKind: "over" as const,
-							totOdds: game.total.over,
-						},
-						{
-							t: game.home,
-							spreadLine: game.spread.line,
-							spreadOdds: game.spread.home,
-							ml: game.moneyline.home,
-							totKind: "under" as const,
-							totOdds: game.total.under,
-						},
-					];
-
-					return (
-						<div key={game.gid} className="sb-panel mb-2">
-							<div className="sb-panel-head d-flex align-items-center gap-2">
-								<span className="small text-body-secondary text-truncate">
-									{sub}
-								</span>
-								<a
-									className="ms-auto small text-nowrap"
-									href={helpers.leagueUrl(["sportsbook", "game", game.gid])}
-								>
-									Props →
-								</a>
-							</div>
-							<div className="p-2">
-								<div
-									style={{
-										display: "grid",
-										// Fixed odds columns, so a narrow screen shrinks the team
-										// name (which truncates) and never the buttons.
-										gridTemplateColumns: "minmax(0, 1fr) repeat(3, 74px)",
-										gap: "4px",
-										alignItems: "center",
-									}}
-								>
-									<div />
-									{["Spread", "Money", "Total"].map((label) => (
-										<div
-											key={label}
-											className="text-center text-body-secondary text-uppercase"
-											style={{ fontSize: "0.68rem", letterSpacing: "0.03em" }}
-										>
-											{label}
-										</div>
-									))}
-
-									{rows.map((r) => {
-										const spreadKey = `sp-${game.gid}-${r.t.tid}`;
-										const mlKey = `ml-${game.gid}-${r.t.tid}`;
-										const totKey = `tot-${game.gid}-${r.totKind}`;
-										return (
-											<Fragment key={r.t.tid}>
-												<div
-													className="d-flex align-items-center gap-2"
-													style={{ minWidth: 0 }}
-												>
-													<Logo tid={r.t.tid} />
-													<div className="lh-sm" style={{ minWidth: 0 }}>
-														<div className="text-truncate">
-															{teamLink(
-																r.t.tid,
-																<>
-																	{/* Full name where there's room; just the
-																	    nickname on a phone, where the header
-																	    strip already names the matchup - a
-																	    truncated "Denver Nug…" reads worse. */}
-																	<span className="d-none d-sm-inline">
-																		{r.t.region} {r.t.name}
-																	</span>
-																	<span className="d-sm-none">{r.t.name}</span>
-																</>,
-															)}
-														</div>
-														<div
-															className="text-body-secondary text-truncate"
-															style={{ fontSize: "0.75rem" }}
-														>
-															{r.t.won}-{r.t.lost}
-															{r.t.ats ? ` · ${r.t.ats} ATS` : ""}
-														</div>
-													</div>
-												</div>
-												<OddsCell
-													line={signed(r.spreadLine)}
-													odds={r.spreadOdds}
-													selected={selectedKeys.has(spreadKey)}
-													onClick={() =>
-														togglePick({
-															key: spreadKey,
-															market: {
-																type: "gameSpread",
-																gid: game.gid,
-																pickTid: r.t.tid,
-																line: r.spreadLine,
-															},
-															odds: r.spreadOdds,
-															title: `${teamAbbrev(r.t.tid)} ${signed(r.spreadLine)}`,
-															sub,
-														})
-													}
-												/>
-												<OddsCell
-													odds={r.ml}
-													selected={selectedKeys.has(mlKey)}
-													onClick={() =>
-														togglePick({
-															key: mlKey,
-															market: {
-																type: "gameMoneyline",
-																gid: game.gid,
-																pickTid: r.t.tid,
-															},
-															odds: r.ml,
-															title: `${teamAbbrev(r.t.tid)} ML`,
-															sub,
-														})
-													}
-												/>
-												<OddsCell
-													line={`${r.totKind === "over" ? "O" : "U"} ${game.total.line}`}
-													odds={r.totOdds}
-													selected={selectedKeys.has(totKey)}
-													onClick={() =>
-														togglePick({
-															key: totKey,
-															market: {
-																type: "gameTotal",
-																gid: game.gid,
-																side: r.totKind,
-																line: game.total.line,
-															},
-															odds: r.totOdds,
-															title: `${r.totKind === "over" ? "Over" : "Under"} ${game.total.line}`,
-															sub,
-														})
-													}
-												/>
-											</Fragment>
-										);
-									})}
-								</div>
-							</div>
-						</div>
-					);
-				})}
+			<div>
+				{[
+					...board.games.reduce((byDay, game) => {
+						byDay.set(game.day, [...(byDay.get(game.day) ?? []), game]);
+						return byDay;
+					}, new Map<number, typeof board.games>()),
+				].map(([day, games]) => (
+					<Fragment key={day}>
+						<h2 className="sb-section-title">{dayLabel(day)}</h2>
+						{games.map(gameCard)}
+					</Fragment>
+				))}
 			</div>
 		);
 
@@ -451,6 +464,19 @@ const Sportsbook = ({
 											const key =
 												side === "over" ? `wto-${t.tid}` : `wtu-${t.tid}`;
 											const odds = side === "over" ? t.over : t.under;
+											const pk: Pick = {
+												key,
+												market: {
+													type: "winTotal",
+													pickTid: t.tid,
+													side,
+													line: t.line,
+													season,
+												},
+												odds,
+												title: `${teamAbbrev(t.tid)} ${side === "over" ? "Over" : "Under"} ${t.line}`,
+												sub: "Season wins",
+											};
 											return (
 												<div
 													key={side}
@@ -460,22 +486,8 @@ const Sportsbook = ({
 													<OddsCell
 														line={side === "over" ? "O" : "U"}
 														odds={odds}
-														selected={selectedKeys.has(key)}
-														onClick={() =>
-															togglePick({
-																key,
-																market: {
-																	type: "winTotal",
-																	pickTid: t.tid,
-																	side,
-																	line: t.line,
-																	season,
-																},
-																odds,
-																title: `${teamAbbrev(t.tid)} ${side === "over" ? "Over" : "Under"} ${t.line}`,
-																sub: "Season wins",
-															})
-														}
+														selected={offer(pk)}
+														onClick={() => togglePick(pk)}
 													/>
 												</div>
 											);
@@ -688,13 +700,7 @@ const Sportsbook = ({
 	// ledger entry: label, price, outcome. Rows separated by a hairline (the
 	// same treatment the app's tables use) scan far better down a long history
 	// than a stack of rounded panels with their own drop shadows.
-	const BetRow = ({
-		bet,
-		canCancel,
-	}: {
-		bet: (typeof wallet.bets)[number];
-		canCancel: boolean;
-	}) => {
+	const BetRow = ({ bet }: { bet: (typeof wallet.bets)[number] }) => {
 		const result = (bet.result ?? "open") as keyof typeof RESULT_LABEL;
 		const legs = bet.legs ?? [];
 		const href = boxScoreHref(marketGid(bet.market));
@@ -713,13 +719,11 @@ const Sportsbook = ({
 		} else if (result === "won") {
 			money = (
 				<span className="text-success">
-					+{formatSportsbookMoney(bet.stake * (bet.decimalOdds - 1))}
+					Won · paid {formatSportsbookMoney(bet.stake * bet.decimalOdds)}
 				</span>
 			);
 		} else if (result === "lost") {
-			money = (
-				<span className="text-danger">−{formatSportsbookMoney(bet.stake)}</span>
-			);
+			money = <span className="text-danger">Lost</span>;
 		} else {
 			money = (
 				<span className="text-body-secondary">
@@ -777,37 +781,21 @@ const Sportsbook = ({
 				<div className="d-flex align-items-baseline gap-2 small mt-1">
 					<span className="text-body-secondary">
 						{formatSportsbookMoney(bet.stake)} at{" "}
-						{formatAmerican(bet.americanOdds)}
+						{formatAmerican(bet.americanOdds)} · #{bet.betID}
 					</span>
 					<span className="ms-auto fw-medium text-nowrap">{money}</span>
-					{canCancel && result === "open" ? (
-						<button
-							className="btn btn-link btn-sm text-body-secondary text-decoration-none p-0 ms-2"
-							onClick={() => cancelBet(bet.betID)}
-						>
-							Cancel
-						</button>
-					) : null}
 				</div>
 			</div>
 		);
 	};
 
-	const betList = (
-		bets: typeof wallet.bets,
-		canCancel: boolean,
-		empty: string,
-	) =>
+	const betList = (bets: typeof wallet.bets, empty: string) =>
 		bets.length === 0 ? (
 			<p className="text-body-secondary">{empty}</p>
 		) : (
 			<div className="sb-list" style={{ maxWidth: 680 }}>
 				{bets.map((bet) => (
-					<BetRow
-						key={`${bet.betID}-${bet.result ?? "open"}`}
-						bet={bet}
-						canCancel={canCancel}
-					/>
+					<BetRow key={`${bet.betID}-${bet.result ?? "open"}`} bet={bet} />
 				))}
 			</div>
 		);
@@ -823,10 +811,10 @@ const Sportsbook = ({
 					</span>
 				) : null}
 			</h2>
-			{betList(wallet.bets, true, "No open bets.")}
+			{betList(wallet.bets, "No open bets.")}
 
 			<h2 className="sb-section-title mt-4">Settled</h2>
-			{betList(wallet.history, false, "Nothing settled yet.")}
+			{betList(wallet.history, "Nothing settled yet.")}
 		</>
 	);
 
@@ -851,11 +839,7 @@ const Sportsbook = ({
 						</p>
 					) : (
 						[...team.open, ...team.settled].map((bet) => (
-							<BetRow
-								key={`${bet.betID}-${bet.result ?? "open"}`}
-								bet={bet}
-								canCancel={false}
-							/>
+							<BetRow key={`${bet.betID}-${bet.result ?? "open"}`} bet={bet} />
 						))
 					)}
 				</div>
@@ -980,7 +964,7 @@ const Sportsbook = ({
 				</div>
 				<div className="col-lg-4 col-xl-3 d-none d-lg-block">
 					<div className="position-sticky" style={{ top: "1rem" }}>
-						{betslip}
+						{betslip()}
 					</div>
 				</div>
 			</div>
@@ -992,7 +976,7 @@ const Sportsbook = ({
 				>
 					{slipOpenMobile ? (
 						<div className="mx-auto" style={{ maxWidth: 520 }}>
-							{betslip}
+							{betslip()}
 							<button
 								className="btn btn-sm btn-secondary w-100 mt-1"
 								onClick={() => setSlipOpenMobile(false)}

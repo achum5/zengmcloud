@@ -85,6 +85,8 @@ export type GameLine = {
 	moneyline: { home: number; away: number };
 	spread: { line: number; home: number; away: number };
 	total: { line: number; over: number; under: number };
+	// The game total the line is set from (points, both teams).
+	expectedTotal: number;
 };
 
 type PricerTeam = {
@@ -327,6 +329,7 @@ export const buildGameLinePricer = async ({
 					over: priceOdds(pOver),
 					under: priceOdds(1 - pOver),
 				},
+				expectedTotal,
 			};
 		},
 	};

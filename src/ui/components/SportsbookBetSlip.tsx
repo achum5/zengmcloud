@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { toWorker } from "../util/toWorker.ts";
 import { realtimeUpdate } from "../util/realtimeUpdate.ts";
 import { showNotification } from "../util/showNotification.ts";
@@ -69,10 +69,16 @@ export const useBetSlip = (
 	const [parlay, setParlay] = useState(false);
 	const [parlayStake, setParlayStake] = useState("");
 	const [placing, setPlacing] = useState(false);
+	// What was just placed, shown in the slip until it's dismissed or a new
+	// pick goes in - a ticket, the way a book confirms one.
+	const [receipt, setReceipt] = useState<
+		{ title: string; sub: string; stake: number; toWin: number }[] | undefined
+	>();
 
 	const selectedKeys = new Set(picks.map((p) => p.key));
 
 	const togglePick = (pick: Pick) => {
+		setReceipt(undefined);
 		setPicks((prev) =>
 			prev.some((p) => p.key === pick.key)
 				? prev.filter((p) => p.key !== pick.key)
@@ -81,6 +87,11 @@ export const useBetSlip = (
 	};
 	const removePick = (key: string) =>
 		setPicks((prev) => prev.filter((p) => p.key !== key));
+	// The board moved under the slip (a game simmed, a price changed): take
+	// the board's current line and price for every pick still on it. Picks
+	// whose market is gone stay, marked, until removed.
+	const acceptChanges = (live: Map<string, Pick>) =>
+		setPicks((prev) => prev.map((p) => live.get(p.key) ?? p));
 	const clearSlip = () => {
 		setPicks([]);
 		setStakes({});
@@ -136,7 +147,14 @@ export const useBetSlip = (
 					label: `${p.title} — ${p.sub}`,
 				})),
 			});
-			showNotification({ type: "success", text: "Parlay placed." });
+			setReceipt([
+				{
+					title: `${picks.length}-leg parlay`,
+					sub: picks.map((p) => p.title).join(", "),
+					stake: parlayStakeNum,
+					toWin: parlayPayout - parlayStakeNum,
+				},
+			]);
 			clearSlip();
 			await realtimeUpdate(["watchList"]);
 		} catch (error) {
@@ -170,10 +188,17 @@ export const useBetSlip = (
 					label: `${p.title} — ${p.sub}`,
 				})),
 			});
-			showNotification({
-				type: "success",
-				text: `Placed ${toPlace.length} bet${toPlace.length === 1 ? "" : "s"}.`,
-			});
+			setReceipt(
+				toPlace.map((p) => {
+					const stake = Number.parseFloat(stakes[p.key]!);
+					return {
+						title: p.title,
+						sub: p.sub,
+						stake,
+						toWin: stake * (americanToDecimal(p.odds) - 1),
+					};
+				}),
+			);
 			clearSlip();
 			await realtimeUpdate(["watchList"]);
 		} catch (error) {
@@ -215,6 +240,9 @@ export const useBetSlip = (
 		selectedKeys,
 		togglePick,
 		removePick,
+		acceptChanges,
+		receipt,
+		dismissReceipt: () => setReceipt(undefined),
 		clearSlip,
 		totalStake,
 		totalPayout,
@@ -222,174 +250,268 @@ export const useBetSlip = (
 	};
 };
 
+// How a pick in the slip stands against the board as it is now: on it as
+// picked, on it at another line or price, or off it altogether (its game has
+// gone in, its market has closed).
+const pickStatus = (p: Pick, live: Map<string, Pick> | undefined) => {
+	if (!live) {
+		return { kind: "ok" as const };
+	}
+	const now = live.get(p.key);
+	if (!now) {
+		return { kind: "closed" as const };
+	}
+	if (now.odds !== p.odds || now.title !== p.title) {
+		return { kind: "changed" as const, now };
+	}
+	return { kind: "ok" as const };
+};
+
 export const BetSlipCard = ({
 	slip,
 	balance,
+	live,
 }: {
 	slip: ReturnType<typeof useBetSlip>;
 	balance: number;
-}) => (
-	<div className="card">
-		<div className="card-header d-flex justify-content-between align-items-center py-2">
-			<span className="fw-bold">
-				Bet Slip{" "}
-				{slip.picks.length > 0 ? (
-					<span className="badge text-bg-primary ms-1">
-						{slip.picks.length}
-					</span>
-				) : null}
-			</span>
-			{slip.picks.length > 0 ? (
-				<button
-					className="btn btn-sm btn-link text-decoration-none p-0"
-					onClick={slip.clearSlip}
-				>
-					Clear
-				</button>
-			) : null}
-		</div>
-		<div className="card-body py-2">
-			{slip.picks.length === 0 ? (
-				<div className="text-body-secondary text-center py-4">
-					Tap any odds to start a bet slip.
-				</div>
-			) : (
-				<>
-					{slip.canParlay ? (
-						<div className="btn-group btn-group-sm w-100 mb-2">
-							<button
-								className={`btn ${slip.parlay ? "btn-outline-primary" : "btn-primary"}`}
-								onClick={() => slip.setParlay(false)}
-							>
-								Singles
-							</button>
-							<button
-								className={`btn ${slip.parlay ? "btn-primary" : "btn-outline-primary"}`}
-								onClick={() => slip.setParlay(true)}
-							>
-								Parlay
-							</button>
-						</div>
-					) : null}
+	// Every pick the page currently offers, by key - so a pick made before the
+	// board moved shows its new line or price, or that it's off the board.
+	live?: Map<string, Pick>;
+}) => {
+	const statuses = slip.picks.map((p) => pickStatus(p, live));
+	const anyClosed = statuses.some((st) => st.kind === "closed");
+	const anyChanged = statuses.some((st) => st.kind === "changed");
+	const risk = slip.parlayActive
+		? Number.parseFloat(slip.parlayStake) || 0
+		: slip.totalStake;
+	const toWin = slip.parlayActive
+		? slip.parlayPayout - risk
+		: slip.totalPayout - slip.totalStake;
+	const tooMuch = risk > balance;
 
-					{slip.picks.map((p) => {
-						const stake = Number.parseFloat(slip.stakes[p.key] ?? "") || 0;
-						const toWin = stake * (americanToDecimal(p.odds) - 1);
-						return (
-							<div key={p.key} className="border-bottom pb-2 mb-2">
-								<div className="d-flex justify-content-between">
-									<div className="fw-medium">{p.title}</div>
-									<button
-										className="btn-close btn-close-sm"
-										style={{ fontSize: "0.6rem" }}
-										onClick={() => slip.removePick(p.key)}
-										title="Remove"
-									/>
+	let action: ReactNode;
+	if (anyClosed) {
+		action = (
+			<button
+				className="btn btn-secondary w-100"
+				onClick={() => {
+					slip.picks.forEach((p, i) => {
+						if (statuses[i]!.kind === "closed") {
+							slip.removePick(p.key);
+						}
+					});
+				}}
+			>
+				Remove closed picks
+			</button>
+		);
+	} else if (anyChanged && live) {
+		action = (
+			<button
+				className="btn btn-warning w-100"
+				onClick={() => slip.acceptChanges(live)}
+			>
+				Accept changes
+			</button>
+		);
+	} else {
+		const disabled =
+			slip.placing ||
+			risk <= 0 ||
+			tooMuch ||
+			(slip.parlayActive && slip.conflict !== undefined);
+		const staked = slip.picks.filter(
+			(p) => (Number.parseFloat(slip.stakes[p.key] ?? "") || 0) > 0,
+		).length;
+		const what = slip.parlayActive
+			? "parlay"
+			: staked === 1
+				? "bet"
+				: `${staked} bets`;
+		action = (
+			<button
+				className="btn btn-primary w-100"
+				disabled={disabled}
+				onClick={slip.placeBets}
+			>
+				{tooMuch
+					? "Not enough $"
+					: slip.placing
+						? "Placing…"
+						: risk > 0
+							? `Place ${what} · ${formatSportsbookMoney(risk)}`
+							: "Enter a stake"}
+			</button>
+		);
+	}
+
+	const stakeInput = (
+		value: string,
+		onChange: (value: string) => void,
+		win: number,
+	) => (
+		<div className="input-group input-group-sm">
+			<span className="input-group-text">$</span>
+			<input
+				type="number"
+				min={0}
+				className="form-control"
+				placeholder="Risk"
+				value={value}
+				onChange={(e) => onChange(e.target.value)}
+			/>
+			<span className="input-group-text text-body-secondary">
+				{win > 0 ? `To win ${formatSportsbookMoney(win)}` : "To win —"}
+			</span>
+		</div>
+	);
+
+	return (
+		<div className="card">
+			<div className="card-header d-flex justify-content-between align-items-center py-2">
+				<span className="fw-bold">
+					Bet Slip{" "}
+					{slip.picks.length > 0 ? (
+						<span className="badge text-bg-primary ms-1">
+							{slip.picks.length}
+						</span>
+					) : null}
+				</span>
+				{slip.picks.length > 0 ? (
+					<button
+						className="btn btn-sm btn-link text-decoration-none p-0"
+						onClick={slip.clearSlip}
+					>
+						Clear
+					</button>
+				) : null}
+			</div>
+			<div className="card-body py-2">
+				{slip.receipt && slip.picks.length === 0 ? (
+					<>
+						<div className="fw-bold mb-2">
+							{slip.receipt.length === 1
+								? "Bet placed"
+								: `${slip.receipt.length} bets placed`}
+						</div>
+						{slip.receipt.map((r, i) => (
+							<div key={i} className="border-bottom pb-2 mb-2 small">
+								<div className="fw-medium">{r.title}</div>
+								<div className="text-body-secondary text-truncate">{r.sub}</div>
+								<div>
+									{formatSportsbookMoney(r.stake)} to win{" "}
+									{formatSportsbookMoney(r.toWin)}
 								</div>
-								<div className="text-body-secondary small mb-1">
-									{p.sub} · {formatAmerican(p.odds)}
+							</div>
+						))}
+						<button
+							className="btn btn-sm btn-secondary w-100"
+							onClick={slip.dismissReceipt}
+						>
+							Done
+						</button>
+					</>
+				) : slip.picks.length === 0 ? (
+					<div className="text-body-secondary text-center py-4">
+						Tap any odds to start a bet slip.
+					</div>
+				) : (
+					<>
+						{slip.canParlay ? (
+							<div className="btn-group btn-group-sm w-100 mb-2">
+								<button
+									className={`btn ${slip.parlay ? "btn-outline-primary" : "btn-primary"}`}
+									onClick={() => slip.setParlay(false)}
+								>
+									Straight
+								</button>
+								<button
+									className={`btn ${slip.parlay ? "btn-primary" : "btn-outline-primary"}`}
+									onClick={() => slip.setParlay(true)}
+								>
+									Parlay
+								</button>
+							</div>
+						) : null}
+
+						{slip.picks.map((p, i) => {
+							const st = statuses[i]!;
+							const stake = Number.parseFloat(slip.stakes[p.key] ?? "") || 0;
+							return (
+								<div key={p.key} className="border-bottom pb-2 mb-2">
+									<div className="d-flex justify-content-between gap-2">
+										<div
+											className={`fw-medium ${st.kind === "closed" ? "text-decoration-line-through text-body-secondary" : ""}`}
+										>
+											{p.title}
+										</div>
+										<span className="text-nowrap">
+											<span className="fw-bold me-2">
+												{formatAmerican(p.odds)}
+											</span>
+											<button
+												className="btn-close btn-close-sm"
+												style={{ fontSize: "0.6rem" }}
+												onClick={() => slip.removePick(p.key)}
+												title="Remove"
+											/>
+										</span>
+									</div>
+									<div className="text-body-secondary small mb-1">{p.sub}</div>
+									{st.kind === "closed" ? (
+										<div className="small text-danger">No longer available</div>
+									) : st.kind === "changed" ? (
+										<div className="small text-warning-emphasis mb-1">
+											Now {st.now.title} {formatAmerican(st.now.odds)}
+										</div>
+									) : null}
+									{slip.parlayActive || st.kind === "closed"
+										? null
+										: stakeInput(
+												slip.stakes[p.key] ?? "",
+												(value) =>
+													slip.setStakes((s) => ({ ...s, [p.key]: value })),
+												stake * (americanToDecimal(p.odds) - 1),
+											)}
 								</div>
-								{slip.parlayActive ? null : (
-									<div className="input-group input-group-sm">
-										<span className="input-group-text">$</span>
-										<input
-											type="number"
-											min={0}
-											className="form-control"
-											placeholder="Stake"
-											value={slip.stakes[p.key] ?? ""}
-											onChange={(e) =>
-												slip.setStakes((s) => ({
-													...s,
-													[p.key]: e.target.value,
-												}))
-											}
-										/>
-										<span className="input-group-text">
-											{toWin > 0 ? `+${formatSportsbookMoney(toWin)}` : "—"}
+							);
+						})}
+
+						{slip.parlayActive ? (
+							<div className="mb-2">
+								{slip.conflict ? (
+									<div className="text-danger small mb-2">{slip.conflict}</div>
+								) : (
+									<div className="d-flex justify-content-between small mb-1">
+										<span className="text-body-secondary">
+											{slip.picks.length}-leg parlay
+										</span>
+										<span className="fw-bold">
+											{formatAmerican(slip.parlayAmerican)}
 										</span>
 									</div>
 								)}
+								{stakeInput(
+									slip.parlayStake,
+									slip.setParlayStake,
+									slip.parlayPayout -
+										(Number.parseFloat(slip.parlayStake) || 0),
+								)}
 							</div>
-						);
-					})}
+						) : null}
 
-					{slip.parlayActive ? (
-						<>
-							{slip.conflict ? (
-								<div className="text-danger small mb-2">{slip.conflict}</div>
-							) : (
-								<div className="d-flex justify-content-between small mb-1">
-									<span className="text-body-secondary">
-										{slip.picks.length}-leg parlay odds
-									</span>
-									<span className="fw-bold">
-										{formatAmerican(slip.parlayAmerican)}
-									</span>
-								</div>
-							)}
-							<div className="input-group input-group-sm mb-2">
-								<span className="input-group-text">$</span>
-								<input
-									type="number"
-									min={0}
-									className="form-control"
-									placeholder="Stake"
-									value={slip.parlayStake}
-									onChange={(e) => slip.setParlayStake(e.target.value)}
-								/>
-								<span className="input-group-text">
-									{slip.parlayPayout > 0
-										? formatSportsbookMoney(slip.parlayPayout)
-										: "—"}
-								</span>
-							</div>
-							<button
-								className="btn btn-primary w-100"
-								disabled={
-									slip.placing ||
-									slip.conflict !== undefined ||
-									slip.parlayPayout <= 0 ||
-									Number.parseFloat(slip.parlayStake) > balance
-								}
-								onClick={slip.placeBets}
-							>
-								{Number.parseFloat(slip.parlayStake) > balance
-									? "Not enough $"
-									: slip.placing
-										? "Placing…"
-										: "Place parlay"}
-							</button>
-						</>
-					) : (
-						<>
-							<div className="d-flex justify-content-between small mb-1">
-								<span className="text-body-secondary">Total stake</span>
-								<span>{formatSportsbookMoney(slip.totalStake)}</span>
-							</div>
-							<div className="d-flex justify-content-between fw-bold mb-2">
-								<span>Potential payout</span>
-								<span>{formatSportsbookMoney(slip.totalPayout)}</span>
-							</div>
-							<button
-								className="btn btn-primary w-100"
-								disabled={
-									slip.placing ||
-									slip.totalStake <= 0 ||
-									slip.totalStake > balance
-								}
-								onClick={slip.placeBets}
-							>
-								{slip.totalStake > balance
-									? "Not enough $"
-									: slip.placing
-										? "Placing…"
-										: `Place ${slip.picks.length} bet${slip.picks.length === 1 ? "" : "s"}`}
-							</button>
-						</>
-					)}
-				</>
-			)}
+						<div className="d-flex justify-content-between small mb-1">
+							<span className="text-body-secondary">Total risk</span>
+							<span>{formatSportsbookMoney(risk)}</span>
+						</div>
+						<div className="d-flex justify-content-between fw-bold mb-2">
+							<span>Total payout</span>
+							<span>{formatSportsbookMoney(risk + Math.max(0, toWin))}</span>
+						</div>
+						{action}
+					</>
+				)}
+			</div>
 		</div>
-	</div>
-);
+	);
+};

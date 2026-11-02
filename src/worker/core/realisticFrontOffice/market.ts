@@ -152,6 +152,12 @@ export const marketSettings = {
 	// In the season, a CPU team with a full roster may sign a free agent and
 	// release whoever it can best do without (freeAgency.ts).
 	fullRosterSignings: true,
+	// A team over the roster limit is priced as cutting whom it would really
+	// cut (cuts.ts): whoever it loses least by releasing, his salary owed
+	// unless just drafted - not simply the lowest value (cutLoss). Off: with
+	// half the teams on it an arena league ran 46% slower; not yet measured
+	// to win more.
+	smartCuts: false,
 	// Nobody gives picks for nothing: a pick is never worth less than nothing,
 	// its player let go for free when he is drafted (releaseAlternative).
 	noPickGifts: true,
@@ -300,6 +306,7 @@ export const loadTeam = async (
 		letGo,
 	);
 	letGo.record = false;
+	registerCutRef(outlook, tid, players, picks);
 	return {
 		tid,
 		players,
@@ -420,6 +427,88 @@ export const assetKey = (x: Asset) =>
 // for nothing - and cut them all before the season; and an offseason trade
 // bringing in more players than it sent out was priced as if it kept them
 // all.
+// WHOM A TEAM WOULD CUT. Priced as cutting its lowest values, a team over
+// the limit was taken to release players it would keep - of the teams over
+// it in the preseason in an arena league, the cuts it then made matched
+// those in 4 cases of 20, and pricing them so was off by up to a hundredth
+// of a title. A deal that only changed whom it would cut looked like a gain:
+// a contender gave four second-round picks and a player rated 38 for one
+// rated 23. So each team's cuts are priced as cuts.ts makes them: of its
+// lowest values, whoever it loses least by releasing - what it is worth
+// without him, his salary owed unless just drafted, against what it is
+// worth with him - on the roster it has (loadTeam), each worked out once.
+// A player coming in is measured the same way, added to that roster.
+const CUT_CANDIDATES = 8;
+const cutRefs = new WeakMap<
+	LeagueOutlook,
+	Map<
+		number,
+		{
+			players: readonly Player[];
+			picks: readonly DraftPick[];
+			value?: number;
+			losses: Map<number, number>;
+		}
+	>
+>();
+
+export const registerCutRef = (
+	outlook: LeagueOutlook,
+	tid: number,
+	players: readonly Player[],
+	picks: readonly DraftPick[],
+) => {
+	let byTid = cutRefs.get(outlook);
+	if (!byTid) {
+		byTid = new Map();
+		cutRefs.set(outlook, byTid);
+	}
+	const was = byTid.get(tid);
+	if (
+		was &&
+		was.players.length === players.length &&
+		was.players.every((p, i) => p.pid === players[i]!.pid)
+	) {
+		return;
+	}
+	byTid.set(tid, { players, picks, losses: new Map() });
+};
+
+const cutLoss = (outlook: LeagueOutlook, tid: number, p: Player) => {
+	const ref = cutRefs.get(outlook)?.get(tid);
+	if (!ref) {
+		return;
+	}
+	let loss = ref.losses.get(p.pid);
+	if (loss === undefined) {
+		const worth = (view: LeagueOutlook, players: readonly Player[]) =>
+			franchiseValue(view, teamStrengths(view, tid, players, ref.picks));
+		const free = helpers.justDrafted(p, g.get("phase"), g.get("season"));
+		const released = free
+			? outlook
+			: {
+					...outlook,
+					deadMoney: new Map(outlook.deadMoney).set(tid, [
+						...(outlook.deadMoney.get(tid) ?? []),
+						{ amount: p.contract.amount, exp: p.contract.exp },
+					]),
+				};
+		if (ref.players.some((x) => x.pid === p.pid)) {
+			ref.value ??= worth(outlook, ref.players);
+			loss =
+				ref.value -
+				worth(
+					released,
+					ref.players.filter((x) => x.pid !== p.pid),
+				);
+		} else {
+			loss = worth(outlook, [...ref.players, p]) - worth(released, ref.players);
+		}
+		ref.losses.set(p.pid, loss);
+	}
+	return loss;
+};
+
 export const afterCuts = (
 	outlook: LeagueOutlook,
 	tid: number,
@@ -435,9 +524,19 @@ export const afterCuts = (
 	if (over <= 0) {
 		return { players, deadMoney: outlook.deadMoney };
 	}
-	const cut = new Set(
-		signed.sort((a, b) => a.value - b.value || a.pid - b.pid).slice(0, over),
-	);
+	signed.sort((a, b) => a.value - b.value || a.pid - b.pid);
+	let chosen = signed.slice(0, over);
+	if (settingFor(tid, "smartCuts") && cutRefs.get(outlook)?.has(tid)) {
+		const losses = new Map(
+			signed
+				.slice(0, Math.max(over, CUT_CANDIDATES))
+				.map((p) => [p, cutLoss(outlook, tid, p)!] as const),
+		);
+		chosen = [...losses.keys()]
+			.sort((a, b) => losses.get(a)! - losses.get(b)! || a.pid - b.pid)
+			.slice(0, over);
+	}
+	const cut = new Set(chosen);
 	const owed = [...cut]
 		.filter((p) => !helpers.justDrafted(p, phase, season))
 		.map((p) => ({ amount: p.contract.amount, exp: p.contract.exp }));

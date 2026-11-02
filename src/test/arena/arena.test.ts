@@ -837,6 +837,8 @@ test.runIf(env.ARENA_RUN === "1")(
 						season: s.season,
 						rows: s.expiring,
 						deadline: s.deadlineExpiring,
+						rosterSizes: s.rosterSizes,
+						cutCheck: s.cutCheck,
 					})),
 					retirements: snapshots.map((s) => ({
 						season: s.season,

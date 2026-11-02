@@ -7,6 +7,7 @@ import { TeamLogoInline } from "../components/TeamLogoInline.tsx";
 import {
 	BetSlipCard,
 	OddsCell,
+	type Pick,
 	useBetSlip,
 } from "../components/SportsbookBetSlip.tsx";
 import {
@@ -48,6 +49,21 @@ const TEAM_PROP_LABELS: Record<string, string> = {
 
 const signed = (n: number) => (n > 0 ? `+${n}` : `${n}`);
 
+// A team's logo by tid - module level, so it isn't re-created (and its image
+// reset) on every render.
+const Logo = ({ tid, size = 24 }: { tid: number; size?: number }) => {
+	const { teamInfoCache } = useLocal(["teamInfoCache"]);
+	const t = teamInfoCache[tid];
+	return (
+		<TeamLogoInline
+			imgURL={t?.imgURL}
+			imgURLSmall={t?.imgURLSmall}
+			size={size}
+			includePlaceholderIfNoLogo
+		/>
+	);
+};
+
 const SportsbookGame = ({
 	gid,
 	board,
@@ -56,22 +72,9 @@ const SportsbookGame = ({
 }: View<"sportsbookGame">) => {
 	useTitleBar({ title: "Game Props" });
 
-	const { teamInfoCache } = useLocal(["teamInfoCache"]);
 	const slip = useBetSlip(wallet.tid);
 	const [tab, setTab] = useState<string>("game");
 	const [slipOpenMobile, setSlipOpenMobile] = useState(false);
-
-	const Logo = ({ tid, size = 24 }: { tid: number; size?: number }) => {
-		const t = teamInfoCache[tid];
-		return (
-			<TeamLogoInline
-				imgURL={t?.imgURL}
-				imgURLSmall={t?.imgURLSmall}
-				size={size}
-				includePlaceholderIfNoLogo
-			/>
-		);
-	};
 
 	if (!board) {
 		return (
@@ -95,6 +98,17 @@ const SportsbookGame = ({
 		slip.togglePick(pick);
 		setSlipOpenMobile(true);
 	};
+	// Every pick this board offers right now, by key, filled in as it's drawn
+	// - so the slip can tell a pick made before the board moved from one still
+	// on it as picked (see BetSlipCard).
+	const live = new Map<string, Pick>();
+	const pickProps = (pick: Pick) => {
+		live.set(pick.key, pick);
+		return {
+			selected: selectedKeys.has(pick.key),
+			onClick: () => togglePick(pick),
+		};
+	};
 
 	// ---- Main lines card (always visible) ---------------------------------
 	const mainLines = board.main ? (
@@ -112,7 +126,7 @@ const SportsbookGame = ({
 									Total
 								</th>
 								<th className="text-center" style={{ width: 90 }}>
-									Money
+									Moneyline
 								</th>
 							</tr>
 						</thead>
@@ -148,61 +162,52 @@ const SportsbookGame = ({
 										<OddsCell
 											line={signed(r.spreadLine)}
 											odds={r.spreadOdds}
-											selected={selectedKeys.has(`sp-${gid}-${r.side.tid}`)}
-											onClick={() =>
-												togglePick({
-													key: `sp-${gid}-${r.side.tid}`,
-													market: {
-														type: "gameSpread",
-														gid,
-														pickTid: r.side.tid,
-														line: r.spreadLine,
-													},
-													odds: r.spreadOdds,
-													title: `${r.side.abbrev} ${signed(r.spreadLine)}`,
-													sub,
-												})
-											}
+											{...pickProps({
+												key: `sp-${gid}-${r.side.tid}`,
+												market: {
+													type: "gameSpread",
+													gid,
+													pickTid: r.side.tid,
+													line: r.spreadLine,
+												},
+												odds: r.spreadOdds,
+												title: `${r.side.abbrev} ${signed(r.spreadLine)}`,
+												sub,
+											})}
 										/>
 									</td>
 									<td>
 										<OddsCell
 											line={`${r.totKind === "over" ? "O" : "U"} ${board.main!.total.line}`}
 											odds={r.totOdds}
-											selected={selectedKeys.has(`tot-${gid}-${r.totKind}`)}
-											onClick={() =>
-												togglePick({
-													key: `tot-${gid}-${r.totKind}`,
-													market: {
-														type: "gameTotal",
-														gid,
-														side: r.totKind,
-														line: board.main!.total.line,
-													},
-													odds: r.totOdds,
-													title: `${r.totKind === "over" ? "Over" : "Under"} ${board.main!.total.line}`,
-													sub,
-												})
-											}
+											{...pickProps({
+												key: `tot-${gid}-${r.totKind}`,
+												market: {
+													type: "gameTotal",
+													gid,
+													side: r.totKind,
+													line: board.main!.total.line,
+												},
+												odds: r.totOdds,
+												title: `${r.totKind === "over" ? "Over" : "Under"} ${board.main!.total.line}`,
+												sub,
+											})}
 										/>
 									</td>
 									<td>
 										<OddsCell
 											odds={r.ml}
-											selected={selectedKeys.has(`ml-${gid}-${r.side.tid}`)}
-											onClick={() =>
-												togglePick({
-													key: `ml-${gid}-${r.side.tid}`,
-													market: {
-														type: "gameMoneyline",
-														gid,
-														pickTid: r.side.tid,
-													},
-													odds: r.ml,
-													title: `${r.side.abbrev} ML`,
-													sub,
-												})
-											}
+											{...pickProps({
+												key: `ml-${gid}-${r.side.tid}`,
+												market: {
+													type: "gameMoneyline",
+													gid,
+													pickTid: r.side.tid,
+												},
+												odds: r.ml,
+												title: `${r.side.abbrev} ML`,
+												sub,
+											})}
 										/>
 									</td>
 								</tr>
@@ -249,25 +254,20 @@ const SportsbookGame = ({
 										<td key={side}>
 											<OddsCell
 												odds={side === "over" ? row.over : row.under}
-												selected={selectedKeys.has(
-													side === "over" ? overKey : underKey,
-												)}
-												onClick={() =>
-													togglePick({
-														key: side === "over" ? overKey : underKey,
-														market: {
-															type: "teamGameProp",
-															gid,
-															tid: team.tid,
-															stat: row.stat as any,
-															side,
-															line: row.line,
-														},
-														odds: side === "over" ? row.over : row.under,
-														title: `${team.abbrev} ${side === "over" ? "Over" : "Under"} ${row.line} Team ${label}`,
-														sub,
-													})
-												}
+												{...pickProps({
+													key: side === "over" ? overKey : underKey,
+													market: {
+														type: "teamGameProp",
+														gid,
+														tid: team.tid,
+														stat: row.stat as any,
+														side,
+														line: row.line,
+													},
+													odds: side === "over" ? row.over : row.under,
+													title: `${team.abbrev} ${side === "over" ? "Over" : "Under"} ${row.line} Team ${label}`,
+													sub,
+												})}
 											/>
 										</td>
 									))}
@@ -293,16 +293,13 @@ const SportsbookGame = ({
 						<div style={{ width: 90 }}>
 							<OddsCell
 								odds={board.overtime}
-								selected={selectedKeys.has(`gp-${gid}-overtime`)}
-								onClick={() =>
-									togglePick({
-										key: `gp-${gid}-overtime`,
-										market: { type: "gameProp", gid, prop: "overtime" },
-										odds: board.overtime!,
-										title: "Overtime",
-										sub,
-									})
-								}
+								{...pickProps({
+									key: `gp-${gid}-overtime`,
+									market: { type: "gameProp", gid, prop: "overtime" },
+									odds: board.overtime!,
+									title: "Overtime",
+									sub,
+								})}
 							/>
 						</div>
 					</div>
@@ -369,26 +366,20 @@ const SportsbookGame = ({
 												<td key={side}>
 													<OddsCell
 														odds={side === "over" ? prop!.over : prop!.under}
-														selected={selectedKeys.has(
-															side === "over" ? overKey : underKey,
-														)}
-														onClick={() =>
-															togglePick({
-																key: side === "over" ? overKey : underKey,
-																market: {
-																	type: "playerProp",
-																	gid,
-																	pid: p.pid,
-																	stat: statKey as any,
-																	side,
-																	line: prop!.line,
-																},
-																odds:
-																	side === "over" ? prop!.over : prop!.under,
-																title: `${p.name} ${side === "over" ? "Over" : "Under"} ${prop!.line} ${long}`,
-																sub,
-															})
-														}
+														{...pickProps({
+															key: side === "over" ? overKey : underKey,
+															market: {
+																type: "playerProp",
+																gid,
+																pid: p.pid,
+																stat: statKey as any,
+																side,
+																line: prop!.line,
+															},
+															odds: side === "over" ? prop!.over : prop!.under,
+															title: `${p.name} ${side === "over" ? "Over" : "Under"} ${prop!.line} ${long}`,
+															sub,
+														})}
 													/>
 												</td>
 											))}
@@ -439,26 +430,21 @@ const SportsbookGame = ({
 													odds={
 														milestone === "dd" ? p.doubleDouble : p.tripleDouble
 													}
-													selected={selectedKeys.has(
-														milestone === "dd" ? ddKey : tdKey,
-													)}
-													onClick={() =>
-														togglePick({
-															key: milestone === "dd" ? ddKey : tdKey,
-															market: {
-																type: "playerMilestone",
-																gid,
-																pid: p.pid,
-																milestone,
-															},
-															odds:
-																milestone === "dd"
-																	? p.doubleDouble
-																	: p.tripleDouble,
-															title: `${p.name} ${milestone === "dd" ? "Double-Double" : "Triple-Double"}`,
-															sub,
-														})
-													}
+													{...pickProps({
+														key: milestone === "dd" ? ddKey : tdKey,
+														market: {
+															type: "playerMilestone",
+															gid,
+															pid: p.pid,
+															milestone,
+														},
+														odds:
+															milestone === "dd"
+																? p.doubleDouble
+																: p.tripleDouble,
+														title: `${p.name} ${milestone === "dd" ? "Double-Double" : "Triple-Double"}`,
+														sub,
+													})}
 												/>
 											</td>
 										))}
@@ -472,7 +458,10 @@ const SportsbookGame = ({
 		</div>
 	);
 
-	const betslip = <BetSlipCard slip={slip} balance={wallet.balance} />;
+	// (Drawn last, once the board above has filled in `live`.)
+	const betslip = () => (
+		<BetSlipCard slip={slip} balance={wallet.balance} live={live} />
+	);
 
 	return (
 		<>
@@ -528,7 +517,7 @@ const SportsbookGame = ({
 				</div>
 				<div className="col-lg-4 col-xl-3 d-none d-lg-block">
 					<div className="position-sticky" style={{ top: "1rem" }}>
-						{betslip}
+						{betslip()}
 					</div>
 				</div>
 			</div>
@@ -540,7 +529,7 @@ const SportsbookGame = ({
 				>
 					{slipOpenMobile ? (
 						<div className="mx-auto" style={{ maxWidth: 520 }}>
-							{betslip}
+							{betslip()}
 							<button
 								className="btn btn-sm btn-secondary w-100 mt-1"
 								onClick={() => setSlipOpenMobile(false)}
