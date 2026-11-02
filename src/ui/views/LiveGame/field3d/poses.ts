@@ -3815,15 +3815,61 @@ const FISTS = new Set<Move>([
 	"coolerDump",
 ]);
 const RELAXED = new Set<Move>(["stand", "walk", "jog", "hands", "winded"]);
-export const gripsOf = (m: Move, hold?: BallHold): [Grip, Grip] => {
+// (An official's hands as his signal has them - over whatever his legs are
+// doing: palms open, the arms up for a score, out for a first down; fists,
+// a wrist gripped for holding, the forearms rolled; his flag in his fist.)
+const SIGNAL_GRIPS: Partial<Record<Move, Grip>> = {
+	sigTD: "open",
+	sigSafety: "open",
+	sigWave: "open",
+	sigTime: "open",
+	sigSide: "open",
+	sigPush: "open",
+	sigT: "open",
+	sigChop: "open",
+	sigContact: "open",
+	fairCatch: "open",
+	sigHold: "fist",
+	sigRoll: "fist",
+	sigMask: "fist",
+	flagToss: "fist",
+	sigHips: "relaxed",
+	sigFold: "relaxed",
+	sigHead: "relaxed",
+	blowWhistle: "relaxed",
+};
+// (One arm only: the other hand as the rest of him has it.)
+const ONE_ARM = new Set<Move>([
+	"sigSide",
+	"sigContact",
+	"fairCatch",
+	"sigMask",
+	"flagToss",
+	"blowWhistle",
+]);
+export const gripsOf = (
+	m: Move,
+	hold?: BallHold,
+	arms?: Move,
+	mirrored?: boolean,
+): [Grip, Grip] => {
 	const g: Grip = FISTS.has(m) ? "fist" : RELAXED.has(m) ? "relaxed" : "open";
+	const sig = arms === undefined ? undefined : SIGNAL_GRIPS[arms];
+	const one = arms !== undefined && ONE_ARM.has(arms);
+	const [right, left]: [Grip, Grip] = !sig
+		? [g, g]
+		: !one
+			? [sig, sig]
+			: mirrored
+				? [g, sig]
+				: [sig, g];
 	if (hold === "carry" || hold === "throw") {
-		return ["ball", g];
+		return ["ball", left];
 	}
 	if (hold === "hands") {
 		return ["ball", "ball"];
 	}
-	return [g, g];
+	return [right, left];
 };
 
 // FROM ONE WAY OF STANDING INTO ANOTHER (the way the court has it - see

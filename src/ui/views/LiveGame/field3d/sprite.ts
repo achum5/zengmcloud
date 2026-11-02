@@ -630,7 +630,7 @@ const figureOf = (st: FieldPlayerState, body: Body, s: Stepped): Figure => {
 		z: 0,
 		yaw: s.yaw,
 		pose,
-		grips: gripsOf(st.move, st.ball),
+		grips: gripsOf(st.move, st.ball, s.arms?.move, st.mirrored),
 		...(st.ball ? { ball: ballFor(st, body, pose, s, st.ball) } : {}),
 		...(s.arms?.move === "blowWhistle" &&
 		s.arms.phase > WHISTLE_FROM &&
