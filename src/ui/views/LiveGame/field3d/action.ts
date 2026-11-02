@@ -11664,8 +11664,13 @@ class Action {
 			m.hold(start);
 			// (The ball let go of: tossed down by his feet - once everybody's
 			// way off is known.)
+			// (Before he is off - still facing the way he was, not coming
+			// round for where he goes: see TOSS_BEFORE_MS.)
 			if (m === holder && last && last.t0 <= start) {
-				toss = { t: start, yaw: m.yaw };
+				toss = {
+					t: Math.max(last.t0, free.get(m.pid)!, start - TOSS_BEFORE_MS),
+					yaw: m.yaw,
+				};
 			}
 			if (bent) {
 				m.hold(m.t + WINDED_BENT_MS + r() * 800, "winded");
@@ -11955,6 +11960,9 @@ const TOSS_PAST = 0.3;
 const TOSS_LATER = [300, 700, 1100, 1500];
 const TOSS_HANDS = 2;
 const TOSS_OUT = 4;
+// (So long before he is off after it, ms - he is round for it a little
+// before he goes: see pace.ts GO_MS.)
+const TOSS_BEFORE_MS = 250;
 // The side it went for (a long way gained: this many yards): this often
 // a man of it after a high five - with the nearest of them done with the
 // play no later than this after the whistle (ms), no further off than

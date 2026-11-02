@@ -63,6 +63,8 @@ const STOOD_FIRST_MS = 700;
 // at this pace, ft/s.)
 const KNEEL_APART = 2.6;
 const KNEEL_OFF_HIM = 5;
+// (Nor on the ball lying on the turf: this far off it, feet.)
+const KNEEL_OFF_BALL = 2;
 const KNEEL_WALK_FPS = 4;
 // (Hardly a step off where he is, feet: down there.)
 const KNEEL_STEP_FT = 0.75;
@@ -74,12 +76,14 @@ const BEHIND = 4;
 const toward = (a: Pt, b: Pt) => Math.atan2(b.y - a.y, b.x - a.x);
 
 // Where a man at `from` goes down on a knee round a man hurt at `at`, the
-// others down at `knelt`: where he is, or round him at that much off him
-// (or out a little further), the nearest clear of them all.
-const kneelSpot = (from: Pt, at: Pt, knelt: Pt[]): Pt => {
+// others down at `knelt` (and the ball on the turf at `ball`): where he
+// is, or round him at that much off him (or out a little further), the
+// nearest clear of them all.
+const kneelSpot = (from: Pt, at: Pt, knelt: Pt[], ball?: Pt): Pt => {
 	const clear = (p: Pt) =>
 		dist(p, at) >= KNEEL_OFF_HIM - 0.01 &&
-		knelt.every((q) => dist(p, q) >= KNEEL_APART);
+		knelt.every((q) => dist(p, q) >= KNEEL_APART) &&
+		(!ball || dist(p, ball) >= KNEEL_OFF_BALL);
 	if (clear(from)) {
 		return from;
 	}
@@ -432,8 +436,10 @@ export const stageHurt = (input: {
 	});
 
 	// The men round him, down on a knee while he is - each in a place of his
-	// own (see KNEEL_APART).
+	// own (see KNEEL_APART), off the ball where it lies.
 	const knelt: Pt[] = [];
+	const lastBall = input.ball.at(-1);
+	const lies = lastBall?.kind === "spot" ? lastBall.at : undefined;
 	for (const p of parts) {
 		// (Not the man with the ball.)
 		if (
@@ -468,7 +474,7 @@ export const stageHurt = (input: {
 			.filter((o) => o !== p && o.pid >= 0 && o.legs.length > 0)
 			.map((o) => posOf(o.legs, off))
 			.filter((q) => dist(q, from) < KNEEL_APART * 2);
-		const spot = kneelSpot(from, at, [...knelt, ...by]);
+		const spot = kneelSpot(from, at, [...knelt, ...by], lies);
 		const where = dist(from, spot) < KNEEL_STEP_FT ? from : spot;
 		const there = off + (dist(from, where) / KNEEL_WALK_FPS) * 1000;
 		if (there < rise - 500) {
