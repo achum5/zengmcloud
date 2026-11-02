@@ -58,6 +58,9 @@ const KNEELS = 0.75;
 // (Getting up off the turf to, on his feet a moment first - turned to him -
 // before he goes down on the knee.)
 const STOOD_FIRST_MS = 700;
+// (Getting up, and lying there.)
+const RISING = new Set<Move>(["getUp", "getUpBack", "sitUp"]);
+const LYING = new Set<Move>(["prone", "supine", "slid"]);
 // (No nearer each other than this (feet), nor him and the trainers by
 // him than KNEEL_OFF_HIM: a step or two round him to a place of his own,
 // at this pace, ft/s.)
@@ -531,21 +534,38 @@ export const stageHurt = (input: {
 			continue;
 		}
 		input.busy.add(p.pid);
-		// (Up off the turf first, one getting up then.)
+		// (Up off the turf first, one getting up then - or lying there
+		// still, once he is up.)
 		let kneel = go + 500 + r() * 1400;
+		const lying = LYING.has(
+			p.legs.findLast((l) => l.t0 <= kneel)?.move ?? "stand",
+		);
 		const rising = p.legs.find(
-			(l) =>
-				(l.move === "getUp" || l.move === "getUpBack" || l.move === "sitUp") &&
-				l.t0 <= kneel &&
-				l.t1 > kneel,
+			(l) => RISING.has(l.move) && l.t1 > kneel && (l.t0 <= kneel || lying),
 		);
 		if (rising) {
 			kneel = rising.t1 + STOOD_FIRST_MS;
 		}
 		const rise = up + 300 + r() * 700;
 		const c = cut(p.legs, kneel);
-		const off = c.down ? c.at : pullUp(p.legs, c.at);
+		let off = c.down ? c.at : pullUp(p.legs, c.at);
 		const from = p.legs.at(-1)!.to;
+		// (Down there with nothing to get him up: up, then over.)
+		if (c.down) {
+			const last = p.legs.at(-1)!;
+			p.legs.push({
+				t0: off,
+				t1: off + UP_MS,
+				from,
+				to: from,
+				move:
+					last.move === "supine" || last.move === "tackledBack"
+						? "getUpBack"
+						: "getUp",
+				...(last.yaw !== undefined ? { yaw: last.yaw } : {}),
+			});
+			off += UP_MS;
+		}
 		// (Off the men stood round as well.)
 		const by = parts
 			.filter((o) => o !== p && o.pid >= 0 && o.legs.length > 0)
