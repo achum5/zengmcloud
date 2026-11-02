@@ -656,7 +656,9 @@ const Field3D = ({
 		const seed = String(gid ?? 0);
 		const mid = logos[1];
 		// (A picture of the whole field has its own midfield: the team logo
-		// goes on it only if asked for - and no trophy, which would bury it.)
+		// goes on it only if asked for - but the championship game's trophy,
+		// the logo in front of it, goes down over it all the same, as on the
+		// 3D court's floor pictures.)
 		const fieldPicture = logos[7];
 		const midPicture = logos[2] ?? (fieldPicture ? undefined : mid);
 		const midLogo = midPicture && h.stadium?.midLogo !== false;
@@ -689,11 +691,11 @@ const Field3D = ({
 						ownLines: h.stadium?.fieldLines === "picture",
 					}
 				: {}),
-			...(finals && !fieldPicture
+			...(finals
 				? {
 						trophy: logos[3]
-							? paintTrophyPicture(logos[3])
-							: paintMidTrophy(mid),
+							? paintTrophyPicture(logos[3], logos[2] ?? mid)
+							: paintMidTrophy(logos[2] ?? mid),
 					}
 				: {}),
 			...(decals.length > 0 ? { decals: paintDecals(decals) } : {}),

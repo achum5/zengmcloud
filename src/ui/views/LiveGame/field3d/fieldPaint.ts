@@ -476,21 +476,30 @@ export const paintMidTrophy = (
 	}
 	g.restore();
 
-	// The home logo, in front of the base.
+	trophyLogo(g, logo);
+	return c;
+};
+
+// The home logo, in front of the trophy's base (g scaled to feet).
+const trophyLogo = (
+	g: CanvasRenderingContext2D,
+	logo: HTMLCanvasElement | HTMLImageElement | undefined,
+) => {
 	if (logo && logo.width > 0 && logo.height > 0) {
 		const s = TROPHY_LOGO / Math.max(logo.width, logo.height);
 		const w = logo.width * s;
 		const h = logo.height * s;
 		g.globalAlpha = 0.9;
-		g.drawImage(logo, cx - w / 2, TROPHY_LOGO_AT - h / 2, w, h);
+		g.drawImage(logo, TROPHY_W / 2 - w / 2, TROPHY_LOGO_AT - h / 2, w, h);
 	}
-	return c;
 };
 
 // Or the team's own picture of it (see StadiumLook), stood up the field as
-// the drawn one is - laid on the grass whole, as the logo is.
+// the drawn one is - laid on the grass whole, as the logo is - the home
+// logo in front of it all the same (as the 3D court's: see LiveCourt).
 export const paintTrophyPicture = (
 	picture: HTMLCanvasElement | HTMLImageElement,
+	logo?: HTMLCanvasElement | HTMLImageElement,
 ) => {
 	const P = MID_TROPHY_PLANE;
 	const c = canvasOf(P.w, P.h);
@@ -501,6 +510,9 @@ export const paintTrophyPicture = (
 		const k = Math.min(P.w / w, P.h / h) * 0.96;
 		g.drawImage(picture, (P.w - w * k) / 2, (P.h - h * k) / 2, w * k, h * k);
 	}
+	const k = P.w / TROPHY_W;
+	g.scale(k, k);
+	trophyLogo(g, logo);
 	return c;
 };
 
