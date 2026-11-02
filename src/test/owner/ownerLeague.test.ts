@@ -509,6 +509,12 @@ test.skipIf(!env.OWNER_LEAGUE || !env.OWNER_SEASONS)(
 					);
 					lines.push(`${e.season} ph${e.phase} TRADE ${sides.join(" | ")}`);
 					const fo = e.aiTrade?.frontOffice;
+					if (fo && env.OWNER_OUT) {
+						await fs.appendFile(
+							`${env.OWNER_OUT}.trades.jsonl`,
+							`${JSON.stringify({ season: e.season, phase: e.phase, tids: e.tids, tiers: e.aiTrade.tiers, breakdown: fo })}\n`,
+						);
+					}
 					if (fo) {
 						for (const [k, side] of fo.sides.entries()) {
 							lines.push(
