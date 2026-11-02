@@ -2977,6 +2977,10 @@ const GATHER_SPREAD = 10;
 const GATHER_TURN = 0.7;
 const GATHER_IN = 0.6;
 const GATHER_NEAREST = 3.5;
+// (No nearer another's place than this, feet: round the ring from his own
+// way in to it this far, feet, as far as it takes.)
+const GATHER_APART = 3;
+const GATHER_ROUND = [0, 2, -2, 4, -4, 6, -6, 8, -8];
 const GATHER_LEAST_MS = 400;
 const GATHER_FALLEN_MS = 1400;
 // A loose ball batted about: no nearer than this to the spot he dives from
@@ -7556,6 +7560,9 @@ class Action {
 	// were while it is loose about them.
 	gather(men: Actor[], at: Pt, t: number, until: number) {
 		const r = this.r;
+		// (Each to a place of his own round it, not where another is or is
+		// going - the men coming in from the same side of it.)
+		const taken: Pt[] = [];
 		for (const m of men) {
 			if (this.done.has(m.pid) || m.t >= until - GATHER_LEAST_MS) {
 				continue;
@@ -7571,12 +7578,18 @@ class Action {
 			const pace = m.top * (GATHER_PACE + r() * GATHER_PACE_SPREAD);
 			m.carryOn(Math.max(m.t, t + GATHER_REACT_MS + r() * GATHER_REACT_SPREAD));
 			if (far <= ring + 1) {
+				taken.push(m.at);
 				continue;
 			}
-			const to = {
-				x: at.x + Math.cos(ang) * ring,
-				y: at.y + Math.sin(ang) * ring,
-			};
+			const round = (turn: number) => ({
+				x: at.x + Math.cos(ang + turn / ring) * ring,
+				y: at.y + Math.sin(ang + turn / ring) * ring,
+			});
+			const to =
+				GATHER_ROUND.map(round).find((q) =>
+					taken.every((p) => dist(p, q) >= GATHER_APART),
+				) ?? round(0);
+			taken.push(to);
 			m.plantFor(to);
 			if (m.t + (dist(m.at, to) / pace) * 1000 <= until) {
 				m.run(to, pace);
