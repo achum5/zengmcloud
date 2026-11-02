@@ -29,6 +29,7 @@ import {
 } from "./geometry.ts";
 import { drawnBody, footballBody } from "./body.ts";
 import { touching } from "./apart.ts";
+import { fallHurt, HURT_MOST } from "./hurt.ts";
 import {
 	HIGH_FIVE_AT,
 	handsMeet,
@@ -2338,6 +2339,13 @@ const PASS_END_SPREAD_MS = 450;
 // (Off his man or his zone for the ball, once it is thrown, up to this much
 // later than the first of them, ms.)
 const COVER_BREAK_SPREAD_MS = 220;
+// (Down at a blocker on a return at this much of his speed, give or take
+// half of this; the blocker off at him up to this much later, ms.)
+const LOCK_PACE = 0.85;
+const LOCK_PACE_SPREAD = 0.1;
+const LOCK_REACT_SPREAD_MS = 250;
+// (Up by the end of it after the whistle, each up to this much later, ms.)
+const TRAIL_SPREAD_MS = 500;
 // (A kick wall let up once the kick is away, up to this much later, ms.)
 const KICK_WALL_SPREAD_MS = 350;
 const RUN_END_SPREAD_MS = 400;
@@ -3769,6 +3777,7 @@ class Action {
 		this.watch();
 		this.celebrate();
 		this.regroup();
+		this.hurtDown();
 		this.noAirBlocks();
 		this.noTwins();
 		this.offMenDown();
@@ -3787,6 +3796,26 @@ class Action {
 			...(this.party && this.until > 0 ? { party: this.party } : {}),
 			...(this.outAt ? { out: this.outAt } : {}),
 		};
+	}
+
+	// A man the sim says was hurt on it down on the turf after the whistle
+	// as hurt.ts will have him (see fallHurt) - and there for good, as far
+	// as anybody going about him knows (see offMenDown): the trainers out
+	// to him and the rest of it are hurt.ts's.
+	hurtDown() {
+		const { events, i0, i1 } = this.input;
+		let n = 0;
+		for (let i = i0; i < i1 && n < HURT_MOST; i++) {
+			const e = events[i];
+			if (e?.type !== "injury" || typeof e.injuredPID !== "number") {
+				continue;
+			}
+			const m = this.man(e.injuredPID);
+			if (m && m.legs.length > 0) {
+				fallHurt(m.legs, this.whistle);
+				n++;
+			}
+		}
 	}
 
 	// A pass with a man on his feet in its way - on the line of it, below the
@@ -10277,7 +10306,11 @@ class Action {
 		endPt: Pt,
 		until: number,
 	): Lock {
-		const vc = c.top * 0.85;
+		// (Each at his own pace, and off on his own count - see countOf -
+		// not two blocks met on the same step.)
+		const { snap } = this.input;
+		const vc =
+			c.top * (LOCK_PACE + LOCK_PACE_SPREAD * (countOf(c, snap, 7) - 0.5));
 		c.hold(go);
 		const cGo = c.t;
 		const cAt = c.at;
@@ -10292,7 +10325,7 @@ class Action {
 			meet = b.at;
 			tm = Math.max(b.t, cGo + rampedMs(dist(cAt, meet), vc, cV0, cA));
 		} else {
-			b.hold(go);
+			b.hold(go + LOCK_REACT_SPREAD_MS * countOf(b, snap, 7));
 			const bAt = b.at;
 			const u = vc / (vc + bv);
 			meet = {
@@ -10355,7 +10388,14 @@ class Action {
 		// (Well round from the way he was going: planted first - see
 		// plantFor - not turned at full speed.)
 		m.plantFor(to);
-		m.chase(to, Math.max(m.t + 400, this.whistle + 300), m.top * 0.7);
+		m.chase(
+			to,
+			Math.max(
+				m.t + 400,
+				this.whistle + 300 + TRAIL_SPREAD_MS * countOf(m, this.input.snap, 8),
+			),
+			m.top * 0.7,
+		);
 	}
 
 	// Blockers whose men got off them - to make the tackle, or away from

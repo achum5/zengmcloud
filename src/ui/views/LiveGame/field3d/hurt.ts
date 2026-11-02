@@ -66,8 +66,66 @@ const KNEEL_OFF_HIM = 5;
 // (Nor on the ball lying on the turf: this far off it, feet.)
 const KNEEL_OFF_BALL = 2;
 const KNEEL_WALK_FPS = 4;
+// (Round him on the way there, not over him: no nearer the length of him
+// - hips to head, HIPS back of where he lies and HEAD on - than
+// KNEEL_CLEAR (feet), by a point KNEEL_ROUND off the middle of him.)
+const KNEEL_CLEAR = 1.5;
+const KNEEL_ROUND = 3.5;
+const HIPS = 0.6;
+const HEAD = 3;
 // (Hardly a step off where he is, feet: down there.)
 const KNEEL_STEP_FT = 0.75;
+// (How near the way from a to b comes to the length of him, p0 to p1.)
+const nearOn = (a: Pt, b: Pt, p0: Pt, p1: Pt): number => {
+	const vx = p1.x - p0.x;
+	const vy = p1.y - p0.y;
+	const len2 = vx * vx + vy * vy;
+	let near = Infinity;
+	for (let k = 0; k <= 12; k++) {
+		const q = {
+			x: a.x + ((b.x - a.x) * k) / 12,
+			y: a.y + ((b.y - a.y) * k) / 12,
+		};
+		const u =
+			len2 > 0
+				? Math.min(
+						1,
+						Math.max(0, ((q.x - p0.x) * vx + (q.y - p0.y) * vy) / len2),
+					)
+				: 0;
+		near = Math.min(near, dist(q, { x: p0.x + vx * u, y: p0.y + vy * u }));
+	}
+	return near;
+};
+// (The way from a to b round the length of him: by the shortest of the
+// points round the middle of him that keeps clear - or straight there.)
+const roundHim = (a: Pt, b: Pt, p0: Pt, p1: Pt): Pt[] => {
+	// (No nearer, from a man stood nearer him than that to begin with.)
+	const clear = Math.min(KNEEL_CLEAR, nearOn(a, a, p0, p1) - 0.05);
+	if (nearOn(a, b, p0, p1) >= clear) {
+		return [b];
+	}
+	const mid = { x: (p0.x + p1.x) / 2, y: (p0.y + p1.y) / 2 };
+	let best: Pt | undefined;
+	let len = Infinity;
+	for (let k = 0; k < 12; k++) {
+		const w = {
+			x: mid.x + Math.cos((k * Math.PI) / 6) * KNEEL_ROUND,
+			y: mid.y + Math.sin((k * Math.PI) / 6) * KNEEL_ROUND,
+		};
+		const l = dist(a, w) + dist(w, b);
+		if (
+			l < len &&
+			nearOn(a, w, p0, p1) >= clear &&
+			nearOn(w, b, p0, p1) >= clear
+		) {
+			best = w;
+			len = l;
+		}
+	}
+	return best ? [best, b] : [b];
+};
+
 // Where the trainers kneel by him, and walk with him (feet off him).
 const BESIDE = 2.6;
 const ALONGSIDE = 2.3;
@@ -266,6 +324,48 @@ const still = (
 	}
 };
 
+// A man hurt on a play down on the turf after the whistle (DOWN_AFTER on):
+// his legs cut there (see cut), and the fall added if he was on his feet -
+// where he lies, which way, from when, and whether on his face. (See also
+// action.ts hurtDown: the others kept off him as they go about.)
+export const fallHurt = (
+	legs: Leg[],
+	whistle: number,
+): { at: Pt; yaw: number; downAt: number; faceDown: boolean } => {
+	const fell = cut(legs, whistle + DOWN_AFTER);
+	const last = legs.at(-1)!;
+	let at = last.to;
+	const goes = last.from.x !== last.to.x || last.from.y !== last.to.y;
+	const yaw =
+		last.yaw ??
+		(goes ? Math.atan2(last.to.y - last.from.y, last.to.x - last.from.x) : 0);
+	let t = fell.at;
+	if (!fell.down) {
+		const v =
+			last.t1 > last.t0
+				? dist(last.from, last.to) / ((last.t1 - last.t0) / 1000)
+				: 0;
+		const on = goes && v >= FALL_ON_FPS;
+		const way = Math.atan2(last.to.y - last.from.y, last.to.x - last.from.x);
+		const far = Math.min(FALL_ON_MOST, (v * FALL_MS) / 2000);
+		const to = on
+			? { x: at.x + Math.cos(way) * far, y: at.y + Math.sin(way) * far }
+			: at;
+		legs.push({
+			t0: t,
+			t1: t + FALL_MS,
+			from: at,
+			to,
+			// (Going the way he faces: down on his face.)
+			move: on && Math.cos(way - yaw) > 0 ? "tackled" : "tackledBack",
+			yaw,
+		});
+		at = to;
+		t += FALL_MS;
+	}
+	return { at, yaw, downAt: t, faceDown: FACE_DOWN.has(legs.at(-1)!.move) };
+};
+
 export type Hurt = {
 	medics: CrewPart[];
 	// When he is down, when the trainers are down beside him (for a replay
@@ -294,39 +394,7 @@ export const stageHurt = (input: {
 	}
 	const team = him.team;
 	// Down.
-	const fell = cut(him.legs, input.whistle + DOWN_AFTER);
-	const last = him.legs.at(-1)!;
-	let at = last.to;
-	const goes = last.from.x !== last.to.x || last.from.y !== last.to.y;
-	const yaw =
-		last.yaw ??
-		(goes ? Math.atan2(last.to.y - last.from.y, last.to.x - last.from.x) : 0);
-	let t = fell.at;
-	if (!fell.down) {
-		const v =
-			last.t1 > last.t0
-				? dist(last.from, last.to) / ((last.t1 - last.t0) / 1000)
-				: 0;
-		const on = goes && v >= FALL_ON_FPS;
-		const way = Math.atan2(last.to.y - last.from.y, last.to.x - last.from.x);
-		const far = Math.min(FALL_ON_MOST, (v * FALL_MS) / 2000);
-		const to = on
-			? { x: at.x + Math.cos(way) * far, y: at.y + Math.sin(way) * far }
-			: at;
-		him.legs.push({
-			t0: t,
-			t1: t + FALL_MS,
-			from: at,
-			to,
-			// (Going the way he faces: down on his face.)
-			move: on && Math.cos(way - yaw) > 0 ? "tackled" : "tackledBack",
-			yaw,
-		});
-		at = to;
-		t += FALL_MS;
-	}
-	const downAt = t;
-	const faceDown = FACE_DOWN.has(him.legs.at(-1)!.move);
+	const { at, yaw, downAt, faceDown } = fallHurt(him.legs, input.whistle);
 	input.busy.add(him.pid);
 	// (The ball, if he had it, on the turf by him - not tossed down once he
 	// was up.)
@@ -438,6 +506,15 @@ export const stageHurt = (input: {
 	// The men round him, down on a knee while he is - each in a place of his
 	// own (see KNEEL_APART), off the ball where it lies.
 	const knelt: Pt[] = [];
+	const toHead = faceDown ? yaw : yaw + Math.PI;
+	const hips = {
+		x: at.x - Math.cos(toHead) * HIPS,
+		y: at.y - Math.sin(toHead) * HIPS,
+	};
+	const head = {
+		x: at.x + Math.cos(toHead) * HEAD,
+		y: at.y + Math.sin(toHead) * HEAD,
+	};
 	const lastBall = input.ball.at(-1);
 	const lies = lastBall?.kind === "spot" ? lastBall.at : undefined;
 	for (const p of parts) {
@@ -476,10 +553,22 @@ export const stageHurt = (input: {
 			.filter((q) => dist(q, from) < KNEEL_APART * 2);
 		const spot = kneelSpot(from, at, [...knelt, ...by], lies);
 		const where = dist(from, spot) < KNEEL_STEP_FT ? from : spot;
-		const there = off + (dist(from, where) / KNEEL_WALK_FPS) * 1000;
+		const way = roundHim(from, where, hips, head);
+		let far = 0;
+		for (let k = 0; k < way.length; k++) {
+			far += dist(way[k - 1] ?? from, way[k]!);
+		}
+		const there = off + (far / KNEEL_WALK_FPS) * 1000;
 		if (there < rise - 500) {
 			if (there > off) {
-				p.legs.push({ t0: off, t1: there, from, to: where, move: "walk" });
+				let q = from;
+				let t = off;
+				for (const w of way) {
+					const t1 = t + (dist(q, w) / KNEEL_WALK_FPS) * 1000;
+					p.legs.push({ t0: t, t1, from: q, to: w, move: "walk" });
+					q = w;
+					t = t1;
+				}
 			}
 			knelt.push(where);
 			still(p.legs, there, rise, where, "takeKnee", toward(where, at));
