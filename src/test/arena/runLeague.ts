@@ -15,7 +15,7 @@ import { PHASE, PLAYER } from "../../common/constants.ts";
 import { getDefaultSettings } from "../../worker/views/newLeague.ts";
 import { last } from "../../common/utils.ts";
 import { defaultGameAttributes } from "../../common/defaultGameAttributes.ts";
-import type { Conditions } from "../../common/types.ts";
+import type { Conditions, Player } from "../../common/types.ts";
 import {
 	playerLine,
 	type ValueRatings,
@@ -24,8 +24,96 @@ import { ARENA_SETTINGS } from "./settings.ts";
 import { ensureRetention } from "../../worker/core/realisticFrontOffice/outlook.ts";
 import { stayChance } from "../../worker/core/realisticFrontOffice/offers.ts";
 import { realisticFrontOfficesOn } from "../../worker/core/realisticFrontOffice/isOn.ts";
+import {
+	afterCuts,
+	currentOutlook,
+	loadTeam,
+} from "../../worker/core/realisticFrontOffice/market.ts";
+import {
+	franchiseValue,
+	teamStrengths,
+} from "../../worker/core/realisticFrontOffice/outlook.ts";
 
 const conditions = {} as Conditions;
+
+const cutCheck = async () => {
+	const outlook = await currentOutlook();
+	const phase = g.get("phase");
+	const season = g.get("season");
+	const rows: NonNullable<SeasonSnapshot["cutCheck"]> = [];
+	for (let tid = 0; tid < g.get("numTeams"); tid++) {
+		const t = await loadTeam(outlook, tid);
+		const model = afterCuts(outlook, tid, t.players);
+		if (model.players === t.players) {
+			continue;
+		}
+		const modelValue = franchiseValue(
+			outlook,
+			teamStrengths(
+				{ ...outlook, deadMoney: model.deadMoney },
+				tid,
+				model.players,
+				t.picks,
+			),
+		);
+		const over = t.players.length - model.players.length;
+		let players = [...t.players];
+		let dead = outlook.deadMoney;
+		let realValue = 0;
+		const realCut: number[] = [];
+		for (let k = 0; k < over; k++) {
+			let best: { p: Player; value: number; dead: typeof dead } | undefined;
+			const tried = [...players]
+				.sort((a, b) => a.value - b.value || a.pid - b.pid)
+				.slice(0, 8);
+			for (const p of tried) {
+				const free = helpers.justDrafted(p, phase, season);
+				const view = free
+					? dead
+					: new Map(dead).set(tid, [
+							...(dead.get(tid) ?? []),
+							{ amount: p.contract.amount, exp: p.contract.exp },
+						]);
+				const value = franchiseValue(
+					outlook,
+					teamStrengths(
+						{ ...outlook, deadMoney: view },
+						tid,
+						players.filter((x) => x !== p),
+						t.picks,
+					),
+				);
+				if (!best || value > best.value) {
+					best = { p, value, dead: view };
+				}
+			}
+			players = players.filter((x) => x !== best!.p);
+			dead = best!.dead;
+			realValue = best!.value;
+			realCut.push(best!.p.pid);
+		}
+		rows.push({
+			tid,
+			over,
+			modelCut: t.players
+				.filter((p) => !model.players.includes(p))
+				.map((p) => p.pid),
+			realCut,
+			diff: realValue - modelValue,
+		});
+	}
+	return rows;
+};
+
+const rosterSizesNow = async () => {
+	const sizes: number[] = [];
+	for (let tid = 0; tid < g.get("numTeams"); tid++) {
+		sizes.push(
+			(await idb.cache.players.indexGetAll("playersByTid", tid)).length,
+		);
+	}
+	return sizes;
+};
 
 // What the end-of-run tables cannot reconstruct: things that only exist at a
 // moment in the season (payrolls, cap space, who was a free agent).
@@ -57,6 +145,19 @@ export type SeasonSnapshot = {
 		// Finishing a rookie deal.
 		rookie: boolean;
 	}[];
+	// ARENA_CUT_CHECK=1: in the preseason, each team over the roster limit -
+	// what the trade pricing expects it to be worth once it cuts (afterCuts)
+	// against what it is worth after the cuts it would make (cuts.ts).
+	cutCheck?: {
+		tid: number;
+		over: number;
+		modelCut: number[];
+		realCut: number[];
+		diff: number;
+	}[];
+	// Each team's roster size as the deadline's final week opens and as the
+	// regular season ends, by tid.
+	rosterSizes?: { deadline: number[]; end: number[] };
 	// Every player whose contract ran out this season, as the re-signing phase
 	// opened, and where he was once free agency had run its course.
 	expiring: {
@@ -227,6 +328,12 @@ export const advanceSeasons = async (
 				retirements: [],
 			};
 			snapshots.push(snapshot);
+			if (
+				(globalThis as any).process?.env?.ARENA_CUT_CHECK === "1" &&
+				realisticFrontOfficesOn()
+			) {
+				snapshot.cutCheck = await cutCheck();
+			}
 			await options.onPreseason?.();
 			await phase.newPhase(PHASE.REGULAR_SEASON, conditions);
 		} else if (currentPhase === PHASE.REGULAR_SEASON) {
@@ -246,6 +353,10 @@ export const advanceSeasons = async (
 				left = stop;
 				if (stop === 7) {
 					snapshot!.tradesBeforeDeadlineWeek = await countTrades();
+					snapshot!.rosterSizes = {
+						deadline: await rosterSizesNow(),
+						end: [],
+					};
 					if (realisticFrontOfficesOn()) {
 						snapshot!.deadlineExpiring = [];
 						const view = { retention: new Map<string, number>() };
@@ -278,6 +389,9 @@ export const advanceSeasons = async (
 		} else if (currentPhase === PHASE.AFTER_TRADE_DEADLINE) {
 			await game.play(await season.getDaysLeftSchedule(), conditions);
 		} else if (currentPhase === PHASE.PLAYOFFS) {
+			if (snapshot!.rosterSizes) {
+				snapshot!.rosterSizes.end = await rosterSizesNow();
+			}
 			Object.assign(snapshot!, await payrollsAndDeadMoney(), {
 				salaryCap: g.get("salaryCap"),
 				luxuryPayroll: g.get("luxuryPayroll"),

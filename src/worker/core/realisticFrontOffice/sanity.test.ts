@@ -5,6 +5,7 @@ import { idb } from "../../db/index.ts";
 import { g, helpers } from "../../util/index.ts";
 import { createArenaLeague } from "../../../test/arena/runLeague.ts";
 import {
+	afterCuts,
 	currentOutlook,
 	loadTeam,
 	marginOf,
@@ -449,13 +450,25 @@ test(
 			if (checked === 5) {
 				break;
 			}
-			const partner = await loadTeam(outlook, p.tid);
 			checked += 1;
-			// Not for nothing, though taking him leaves his team a little weaker.
-			assert.isFalse(
-				await wouldMake(t, [], [{ kind: "player", p }], partner),
-				`player ${p.pid}, value ${p.value}`,
+			// One player has to go, and his salary stays owed - whoever it is:
+			// the one it can best do without (cuts.ts), not always the newest.
+			const kept = afterCuts(outlook, tid, [...t.players, p]);
+			const cut = [...t.players, p].filter((x) => !kept.players.includes(x));
+			assert.strictEqual(cut.length, 1);
+			assert.strictEqual(
+				(kept.deadMoney.get(tid) ?? []).length,
+				(outlook.deadMoney.get(tid) ?? []).length + 1,
 			);
+			// Never taken for nothing only to be cut, though taking him leaves
+			// his team a little weaker.
+			if (cut[0] === p) {
+				const partner = await loadTeam(outlook, p.tid);
+				assert.isFalse(
+					await wouldMake(t, [], [{ kind: "player", p }], partner),
+					`player ${p.pid}, value ${p.value}`,
+				);
+			}
 		}
 		assert.isAbove(checked, 0);
 		g.setWithoutSavingToDB("phase", PHASE.REGULAR_SEASON);
