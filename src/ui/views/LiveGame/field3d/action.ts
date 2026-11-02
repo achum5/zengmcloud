@@ -4069,7 +4069,7 @@ class Action {
 					next.t0 === l.t1 &&
 					[was, next].every(
 						(n) =>
-							moveKind(n.move) === "still" &&
+							(moveKind(n.move) === "still" || ALIVE.has(n.move)) &&
 							n.from.x === n.to.x &&
 							n.from.y === n.to.y,
 					)

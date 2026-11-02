@@ -497,8 +497,8 @@ export const alignDefense = (
 				a < 0,
 			);
 		}
-		at("MIKE", "LB", -4, 10, "backerStance");
-		at("WILL", "LB", 4, 10, "backerStance");
+		at("MIKE", "LB", -4, 10, "backerReady");
+		at("WILL", "LB", 4, 10, "backerReady");
 	} else if (call.front === "threeFour") {
 		// Three down: the nose head up on the center, the ends in the
 		// tackles' inside shoulders; the outside linebackers up on the edge,
@@ -506,16 +506,16 @@ export const alignDefense = (
 		at("DE", "DL", -(T_ACROSS - 1.3), DL_DEPTH, "dlThree", true);
 		at("NT", "DL", 0, DL_DEPTH - 0.2, "dlThree");
 		at("DE", "DL", T_ACROSS - 1.3, DL_DEPTH, "dlThree");
-		at("SAM", "LB", strong * (tackle(strong) + 4.5), 4.5, "backerStance");
+		at("SAM", "LB", strong * (tackle(strong) + 4.5), 4.5, "backerReady");
 		at(
 			"WILL",
 			"LB",
 			-strong * (tackle(-strong as -1 | 1) + 4.5),
 			4.5,
-			"backerStance",
+			"backerReady",
 		);
-		at("MIKE", "LB", strong * G_ACROSS, LB_DEPTH, "backerStance");
-		at("BUCK", "LB", -strong * G_ACROSS, LB_DEPTH, "backerStance");
+		at("MIKE", "LB", strong * G_ACROSS, LB_DEPTH, "backerReady");
+		at("BUCK", "LB", -strong * G_ACROSS, LB_DEPTH, "backerReady");
 	} else {
 		// Four down: the ends outside the tackles (or the tight end), a
 		// three-technique on the strong guard's outside shoulder, a
@@ -526,20 +526,20 @@ export const alignDefense = (
 		at("DT", "DL", strong * (G_ACROSS + 1.9), DL_DEPTH, "dlThree", strong < 0);
 		at("DE", "DL", endAt(1), DL_DEPTH, "dlThree");
 		if (call.front === "base") {
-			at("MIKE", "LB", strong * 1.5, LB_DEPTH, "backerStance");
-			at("WILL", "LB", -strong * 10.5, LB_DEPTH - 1, "backerStance");
+			at("MIKE", "LB", strong * 1.5, LB_DEPTH, "backerReady");
+			at("WILL", "LB", -strong * 10.5, LB_DEPTH - 1, "backerReady");
 			at(
 				"SAM",
 				"LB",
 				strong * (tackle(strong) + 2),
 				LB_DEPTH - 3,
-				"backerStance",
+				"backerReady",
 			);
 		} else if (call.front === "nickel") {
-			at("MIKE", "LB", strong * 4.5, LB_DEPTH, "backerStance");
-			at("WILL", "LB", -strong * 5.5, LB_DEPTH, "backerStance");
+			at("MIKE", "LB", strong * 4.5, LB_DEPTH, "backerReady");
+			at("WILL", "LB", -strong * 5.5, LB_DEPTH, "backerReady");
 		} else {
-			at("MIKE", "LB", 0, LB_DEPTH + 1, "backerStance");
+			at("MIKE", "LB", 0, LB_DEPTH + 1, "backerReady");
 		}
 	}
 	// The receivers, outside in each side: a corner on the widest, the
@@ -604,18 +604,18 @@ export const alignDefense = (
 		nbLeft -= 1;
 	}
 	for (; nbLeft > 0; nbLeft--) {
-		at("NB", "CB", (nbLeft % 2 === 0 ? -1 : 1) * 22, NB_DEPTH, "backerStance");
+		at("NB", "CB", (nbLeft % 2 === 0 ? -1 : 1) * 22, NB_DEPTH, "backerReady");
 	}
 	if (call.front !== "goalLine") {
 		if (call.shell === "two") {
-			at("FS", "S", hashes[0] - 2, S_DEEP, "safetyStance");
-			at("SS", "S", hashes[1] + 2, S_DEEP + 2, "safetyStance");
+			at("FS", "S", hashes[0] - 2, S_DEEP, "safetyReady");
+			at("SS", "S", hashes[1] + 2, S_DEEP + 2, "safetyReady");
 		} else {
-			at("FS", "S", 0, S_MIDDLE, "safetyStance");
-			at("SS", "S", strong * 15, S_BOX, "backerStance");
+			at("FS", "S", 0, S_MIDDLE, "safetyReady");
+			at("SS", "S", strong * 15, S_BOX, "backerReady");
 		}
 	} else {
-		at("SS", "S", -strong * 9, 13, "backerStance");
+		at("SS", "S", -strong * 9, 13, "backerReady");
 	}
 	return out;
 };
@@ -779,7 +779,7 @@ export const PUNT_RETURN = (back: number): Align[] => [
 		pos: "DL",
 		depth: DL_DEPTH,
 		across,
-		move: Math.abs(across) < 5 ? "dlThree" : "backerStance",
+		move: Math.abs(across) < 5 ? "dlThree" : "backerReady",
 		...(across < 0 ? { mirrored: true } : {}),
 	})),
 	{
@@ -796,8 +796,8 @@ export const PUNT_RETURN = (back: number): Align[] => [
 		wide: { side: 1, ft: 21 },
 		move: "cornerStance",
 	},
-	{ role: "WALL", pos: "S", depth: 21, across: -9, move: "backerStance" },
-	{ role: "WALL", pos: "S", depth: 24, across: 9, move: "backerStance" },
+	{ role: "WALL", pos: "S", depth: 21, across: -9, move: "backerReady" },
+	{ role: "WALL", pos: "S", depth: 24, across: 9, move: "backerReady" },
 	{ role: "PR", pos: "PR", depth: back, across: 0, move: "safetyReady" },
 ];
 
@@ -834,5 +834,5 @@ export const KICK_BLOCK: Align[] = [
 	})),
 	{ role: "CB", pos: "S", depth: 3.4, across: -20, move: "cornerStance" },
 	{ role: "CB", pos: "S", depth: 3.4, across: 20, move: "cornerStance" },
-	{ role: "MIKE", pos: "LB", depth: 10, across: 0, move: "backerStance" },
+	{ role: "MIKE", pos: "LB", depth: 10, across: 0, move: "backerReady" },
 ];

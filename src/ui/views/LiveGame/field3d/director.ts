@@ -2965,7 +2965,10 @@ class Director {
 			const st = mike.legs.at(-1)!;
 			const t1 = snap - DEF_CALL_BEFORE;
 			const t0 = Math.max(st.t0 + 150, t1 - DEF_CALL_MS);
-			if (t1 - t0 >= DEF_CALL_MIN && st.move === "backerStance") {
+			if (
+				t1 - t0 >= DEF_CALL_MIN &&
+				(st.move === "backerStance" || st.move === "backerReady")
+			) {
 				st.t1 = t0;
 				mike.legs.push(
 					{ ...st, t0, t1, move: "backerCall", mirrored: r() < 0.5 },
