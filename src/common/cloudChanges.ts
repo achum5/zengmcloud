@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 129,
+		date: "2026-11-02",
+		text: "Finals: an imported court picture now gets the championship trophy at center court too, with the home logo in front of it - the same finals look as every other court - instead of the trophy going on the scorer's table.",
+	},
+	{
 		n: 128,
 		date: "2026-11-02",
 		text: "Sportsbook: futures are priced for real now - they count injuries (a star out for the year no longer counts in full), and the title favorite is priced to what actually happens instead of as a long shot that wins twice as often. Win totals are -110 a side, not -135. Bets can't be cancelled once placed. A parlay can't stack picks that depend on each other (moneyline and spread on the same game, a team to win the title and its conference). Ties push, divisions go by the real tiebreakers, props agree with the game's total and spread, and the bet slip tells you when a line has moved or a game has started.",

@@ -15,7 +15,7 @@ import type {
 	ReplayLooks,
 	ScoreBugStyle,
 } from "../../../../common/types.ts";
-import LiveCourt, { DEFAULT_TROPHY_URL } from "../LiveCourt.tsx";
+import LiveCourt from "../LiveCourt.tsx";
 import { TeamLogoInline } from "../../../components/TeamLogoInline.tsx";
 import {
 	paintBench,
@@ -25,7 +25,6 @@ import {
 	paintRafters,
 	paintStands,
 	paintTable,
-	withTrophy,
 } from "./arena.ts";
 import {
 	CAM_PAN,
@@ -624,27 +623,6 @@ const Court3D = ({
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [gid, fans]);
 
-	// A finals game on a floor picture keeps its own center court (see
-	// LiveCourt): the trophy goes on the front of the scorer's table instead,
-	// behind the play.
-	const floorPictureFinals = !!boxScore?.finals && !!home?.court?.floorImageURL;
-	const trophyURL = home?.court?.trophyURL || DEFAULT_TROPHY_URL;
-	const [trophyPic, setTrophyPic] = useState<HTMLCanvasElement>();
-	useEffect(() => {
-		if (!floorPictureFinals) {
-			return;
-		}
-		let alive = true;
-		void logoPicture(trophyURL).then((pic) => {
-			if (alive && pic) {
-				setTrophyPic(pic);
-			}
-		});
-		return () => {
-			alive = false;
-		};
-	}, [floorPictureFinals, trophyURL]);
-
 	// The banners in the rafters - each title's in the team's colors and logo
 	// that season - painted again once the logos are in.
 	const [bannerLogos, setBannerLogos] = useState<
@@ -695,21 +673,9 @@ const Court3D = ({
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 		[gid, bannerLogos],
 	);
-	const painted = useMemo(() => {
-		if (!floorPictureFinals || !trophyPic) {
-			return { ...paint, rafters };
-		}
-		const table = { ...paint.boards.table };
-		for (const screen of Object.keys(table) as (keyof typeof table)[]) {
-			table[screen] = withTrophy(table[screen], trophyPic);
-		}
-		return {
-			...paint,
-			rafters,
-			boards: { ...paint.boards, table },
-			tableFront: withTrophy(paint.tableFront, trophyPic),
-		};
-	}, [paint, rafters, floorPictureFinals, trophyPic]);
+	// (The finals trophy is on the floor, at center court, on every court -
+	// see LiveCourt.)
+	const painted = useMemo(() => ({ ...paint, rafters }), [paint, rafters]);
 	const paintRef = useRef(painted);
 	paintRef.current = painted;
 
