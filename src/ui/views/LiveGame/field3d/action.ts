@@ -2982,6 +2982,59 @@ const GATHER_FALLEN_MS = 1400;
 // A loose ball batted about: no nearer than this to the spot he dives from
 // (feet), he is laid out for it from where he is, not stepping in first.
 const BAT_RUN_LEAST_FT = 1.5;
+// Batted on by the first of this many men nearest it to get there (see
+// BAT_IN) - his hands onto it at the end of his dive (his frame, feet); no
+// nearer it than his hands are out ahead of him and a step; at it no later
+// than this after it came loose, and this long before it stops (ms).
+const BAT_FROM = 4;
+const BAT_HANDS = heldBall(footballBody(), poseOfMove("dive", 1), "hands").at;
+const BAT_ROOM = BAT_HANDS.f + 1;
+const BAT_LATEST_MS = 1500;
+const BAT_ON_MS = 400;
+// And down after it this long before he is getting up again (ms) - where
+// nobody else comes this near him (feet) till he is half up.
+const BAT_DOWN_MS = 450;
+const BAT_LIE_CLEAR = 1.4;
+// Where it is batted: out from where it came loose a third of the way to
+// where it ends up, or turned off that this far (radians) - or, none of
+// those, so far out (feet) from where it came loose, round from the way to
+// where it ends up so far - the first way to it and on from it that keeps
+// this far (feet) from everybody it goes by (the length of a man down on
+// the turf, LIE_BACK behind his hips to LIE_HEAD ahead - see apart.ts),
+// every BAT_EVERY_MS of the way; or the clearest. And the men coming at it
+// to bat it: not from behind it, through them to their hands, nor it
+// knocked on back into them (cosines).
+const BAT_TURNS = [0, 0.4, -0.4, 0.8, -0.8, 1.2, -1.2];
+const BAT_RING = [3, 5];
+const BAT_RING_TURNS = [
+	0,
+	0.5,
+	-0.5,
+	1,
+	-1,
+	1.5,
+	-1.5,
+	2,
+	-2,
+	2.5,
+	-2.5,
+	Math.PI,
+];
+const BAT_CLEAR = 1.6;
+const BAT_EVERY_MS = 60;
+const LIE_BACK = 0.6;
+const LIE_HEAD = 3;
+const BAT_IN = 0.5;
+const BAT_BACK = -0.5;
+// Down on the turf, the length of him along the way he faces - or, on his
+// back, the other way.
+const LIE_FACING = new Set<Move>(["prone", "dive", "tackled", "hurtProne"]);
+const LIE_BACKWARD = new Set<Move>([
+	"supine",
+	"tackledBack",
+	"hurt",
+	"getUpBack",
+]);
 // Getting up off the turf.
 const RISING = new Set<Move>(["getUp", "getUpBack", "sitUp"]);
 const DOWN = new Set<Move>([
@@ -3268,6 +3321,34 @@ class Action {
 	toward(from: Pt, to: Pt) {
 		return Math.atan2(to.y - from.y, to.x - from.x);
 	}
+	// How near a man comes to `q` at t: to where he stands, or, down on the
+	// turf, to the length of him (see LIE_BACK).
+	private nearOf(m: Actor, t: number, q: Pt): number {
+		const at = m.posAt(t);
+		let yaw = m.yaw;
+		let move: Move | undefined;
+		for (const l of m.legs) {
+			if (l.t0 > t) {
+				break;
+			}
+			yaw = yawOf(l, yaw);
+			move = l.move;
+		}
+		const back = move !== undefined && LIE_BACKWARD.has(move);
+		if (move === undefined || (!back && !LIE_FACING.has(move))) {
+			return dist(at, q);
+		}
+		const a = back ? yaw + Math.PI : yaw;
+		const ux = Math.cos(a);
+		const uy = Math.sin(a);
+		const along = clamp(
+			(q.x - at.x) * ux + (q.y - at.y) * uy,
+			-LIE_BACK,
+			LIE_HEAD,
+		);
+		return Math.hypot(q.x - at.x - ux * along, q.y - at.y - uy * along);
+	}
+
 	// Where the man with the ball at the whistle tosses it down by his feet
 	// at t, from his hands held out in front of him the way he faces: out
 	// that way, or the nearest way round from it where it passes nobody by
@@ -7177,92 +7258,195 @@ class Action {
 		const batted = upTo - restT > 700;
 		const stopT = batted ? upTo : restT;
 		const stopZ = scoop && takeT - stopT < 50 ? 1.2 : 0;
-		if (batted) {
-			const bat = this.w({
-				d: spot.d + (restD - spot.d) * 0.35 + (r() - 0.5) * 4,
-				a: spot.a + (a - spot.a) * 0.35 + (r() - 0.5) * 6,
-			});
-			const batT = t + clamp((dist(pt, bat) / 15) * 1000, 350, 900);
-			this.hops({ ...pt, z: 3 }, { ...bat, z: 0.5 }, t, batT);
-			this.hops({ ...bat, z: 0.5 }, { ...restPt, z: stopZ }, batT, stopT);
-			const near = this.nearest(
-				others.filter((m) => m !== from),
-				bat,
-				2,
-			);
-			near.forEach((m, k) => {
-				// (Going the other way: planted for it first - see plantFor -
-				// and off for it from there.)
-				const was = m.posAt(this.seen);
-				const l = m.legs.findLast((x) => x.t0 < this.seen && x.t1 > x.t0);
-				const plant = l ? plantOn(l, was, bat) : { T: 0, on: 0, ve: 0 };
-				const along = l ? dist(l.from, l.to) : 0;
-				const from =
-					l && along > 0
-						? {
-								x: was.x + ((l.to.x - l.from.x) / along) * plant.on,
-								y: was.y + ((l.to.y - l.from.y) / along) * plant.on,
-							}
-						: was;
-				const yaw = this.toward(from, bat);
-				const off = Math.min(3.5, dist(from, bat));
-				const short = {
-					x: bat.x - Math.cos(yaw) * off,
-					y: bat.y - Math.sin(yaw) * off,
-				};
-				// (Up to speed from what he was doing, a few strides of it -
-				// or, hardly any way to go, laid out from where he is.)
-				const run = dist(from, short);
-				const v = l ? legPace(l) : 0;
-				const v0 =
-					l && RAMPS.has(l.move) && v > 0
-						? (paceOn(l, from, short) * plant.ve) / v
-						: 0;
-				const A = v0 > 0 ? RAMP_ACCEL : RELEASE_ACCEL;
-				const at = Math.max(
-					batT + k * 160,
-					this.seen +
-						plant.T * 1000 +
-						(run > BAT_RUN_LEAST_FT
-							? rampedMs(run, m.top * FLAT_OUT, v0, A)
-							: 0) +
-						300,
-				);
-				if (at > stopT - 200) {
-					return;
-				}
-				m.cut(this.seen);
-				m.hold(this.seen);
-				m.plantFor(bat);
-				if (run > BAT_RUN_LEAST_FT && at - 300 > m.t) {
-					const p = m.last;
-					m.getOff(
-						short,
-						at - 300,
-						RAMPS.has(p.move) ? paceOn(p, m.at, short) : 0,
-						A,
-						"sprint",
-					);
-				} else if (off > TURN_IN_FT) {
-					m.hold(at - 300);
-				} else {
-					m.hold(at - 300, undefined, yaw);
-				}
-				m.lunge("dive", at, yaw, {
-					x: bat.x + Math.cos(yaw) * 1.5,
-					y: bat.y + Math.sin(yaw) * 1.5,
+		// (Once everybody else going for it is set off: see batIt.)
+		const batIt = () => {
+			if (batted) {
+				const third = this.w({
+					d: spot.d + (restD - spot.d) * 0.35 + (r() - 0.5) * 4,
+					a: spot.a + (a - spot.a) * 0.35 + (r() - 0.5) * 6,
 				});
-				m.hold(at + 900, "prone");
-				m.act("getUp", at + 900 + GET_UP_MS);
-				this.done.add(m.pid);
-			});
-		} else {
-			this.hops({ ...pt, z: 3 }, { ...restPt, z: stopZ }, t, stopT);
-		}
-		if (takeT > stopT + 1) {
-			this.ball.push({ kind: "spot", t0: stopT, at: { ...restPt, z: 0 } });
-		}
-		this.ball.push({ kind: "held", t0: takeT, pid: rec.pid });
+				const timeTo = (q: Pt) =>
+					t + clamp((dist(pt, q) / 15) * 1000, 350, 900);
+				// (How near it comes to anybody, there and on - not the man it
+				// came loose from, on its way out of his hands, nor the man it
+				// goes to.)
+				const nearest = (q: Pt) => {
+					const tq = timeTo(q);
+					let near = Infinity;
+					for (let at = t; at <= stopT; at += BAT_EVERY_MS) {
+						const first = at < tq;
+						const u = first
+							? (at - t) / (tq - t)
+							: (at - tq) / Math.max(1, stopT - tq);
+						const [p0, p1] = first ? [pt, q] : [q, restPt];
+						const ball = {
+							x: p0.x + (p1.x - p0.x) * u,
+							y: p0.y + (p1.y - p0.y) * u,
+						};
+						for (const m of this.men) {
+							if (m !== rec && !(first && m === from)) {
+								near = Math.min(near, this.nearOf(m, at, ball));
+							}
+						}
+					}
+					return near;
+				};
+				const toRest = this.toward(pt, restPt);
+				const tries = [
+					...BAT_TURNS.map((turn) => {
+						const c = Math.cos(turn);
+						const sn = Math.sin(turn);
+						const dx = third.x - pt.x;
+						const dy = third.y - pt.y;
+						return { x: pt.x + dx * c - dy * sn, y: pt.y + dx * sn + dy * c };
+					}),
+					...BAT_RING.flatMap((far) =>
+						BAT_RING_TURNS.map((turn) => ({
+							x: pt.x + Math.cos(toRest + turn) * far,
+							y: pt.y + Math.sin(toRest + turn) * far,
+						})),
+					),
+				];
+				let bat = third;
+				let widest = -1;
+				for (const p of tries) {
+					const q = { x: p.x, y: clamp(p.y, 2, FIELD_W - 2) };
+					const near = nearest(q);
+					if (near > widest) {
+						widest = near;
+						bat = q;
+					}
+					if (near >= BAT_CLEAR) {
+						break;
+					}
+				}
+				let batT = timeTo(bat);
+				const on = Math.atan2(restPt.y - bat.y, restPt.x - bat.x);
+				const inWay = Math.atan2(bat.y - pt.y, bat.x - pt.x);
+				// How each of the men nearest it would go for it: off his feet at
+				// it from where he is, his hands onto it as he comes down.
+				const plans = this.nearest(
+					others.filter((m) => m !== from),
+					bat,
+					BAT_FROM,
+				).flatMap((m) => {
+					// (Going the other way: planted for it first - see plantFor -
+					// and off for it from there.)
+					const was = m.posAt(this.seen);
+					const l = m.legs.findLast((x) => x.t0 < this.seen && x.t1 > x.t0);
+					const plant = l ? plantOn(l, was, bat) : { T: 0, on: 0, ve: 0 };
+					const along = l ? dist(l.from, l.to) : 0;
+					const from =
+						l && along > 0
+							? {
+									x: was.x + ((l.to.x - l.from.x) / along) * plant.on,
+									y: was.y + ((l.to.y - l.from.y) / along) * plant.on,
+								}
+							: was;
+					const yaw = this.toward(from, bat);
+					if (
+						dist(from, bat) < BAT_ROOM ||
+						Math.cos(yaw - inWay) > BAT_IN ||
+						Math.cos(yaw - on) < BAT_BACK
+					) {
+						return [];
+					}
+					const lands = {
+						x: bat.x - Math.cos(yaw) * BAT_HANDS.f,
+						y: bat.y - Math.sin(yaw) * BAT_HANDS.f,
+					};
+					const off = Math.min(3.5, dist(from, lands));
+					const short = {
+						x: lands.x - Math.cos(yaw) * off,
+						y: lands.y - Math.sin(yaw) * off,
+					};
+					// (Up to speed from what he was doing, a few strides of it -
+					// or, hardly any way to go, laid out from where he is.)
+					const run = dist(from, short);
+					const v = l ? legPace(l) : 0;
+					const v0 =
+						l && RAMPS.has(l.move) && v > 0
+							? (paceOn(l, from, short) * plant.ve) / v
+							: 0;
+					const A = v0 > 0 ? RAMP_ACCEL : RELEASE_ACCEL;
+					const at = Math.max(
+						batT,
+						this.seen +
+							plant.T * 1000 +
+							(run > BAT_RUN_LEAST_FT
+								? rampedMs(run, m.top * FLAT_OUT, v0, A)
+								: 0) +
+							300,
+					);
+					if (at - t > BAT_LATEST_MS || at > stopT - BAT_ON_MS) {
+						return [];
+					}
+					// (Down where nobody else is about to be, the length of him.)
+					const ux = Math.cos(yaw);
+					const uy = Math.sin(yaw);
+					const up = at + BAT_DOWN_MS + GET_UP_MS / 2;
+					for (let tt = at - 200; tt <= up; tt += BAT_EVERY_MS) {
+						for (const o of this.men) {
+							if (o === m || o === rec) {
+								continue;
+							}
+							const q = o.posAt(tt);
+							const along = clamp(
+								(q.x - lands.x) * ux + (q.y - lands.y) * uy,
+								-LIE_BACK,
+								LIE_HEAD,
+							);
+							if (
+								Math.hypot(
+									q.x - lands.x - ux * along,
+									q.y - lands.y - uy * along,
+								) < BAT_LIE_CLEAR
+							) {
+								return [];
+							}
+						}
+					}
+					return [{ m, at, yaw, off, run, short, lands, A }];
+				});
+				const first = plans.reduce<(typeof plans)[number] | undefined>(
+					(best, x) => (!best || x.at < best.at ? x : best),
+					undefined,
+				);
+				if (first) {
+					const { m, at, yaw, off, run, short, lands, A } = first;
+					batT = at;
+					m.cut(this.seen);
+					m.hold(this.seen);
+					m.plantFor(bat);
+					if (run > BAT_RUN_LEAST_FT && at - 300 > m.t) {
+						const p = m.last;
+						m.getOff(
+							short,
+							at - 300,
+							RAMPS.has(p.move) ? paceOn(p, m.at, short) : 0,
+							A,
+							"sprint",
+						);
+					} else if (off > TURN_IN_FT) {
+						m.hold(at - 300);
+					} else {
+						m.hold(at - 300, undefined, yaw);
+					}
+					m.lunge("dive", at, yaw, lands);
+					m.hold(at + BAT_DOWN_MS, "prone");
+					m.act("getUp", at + BAT_DOWN_MS + GET_UP_MS);
+					this.done.add(m.pid);
+				}
+				this.hops({ ...pt, z: 3 }, { ...bat, z: 0.5 }, t, batT);
+				this.hops({ ...bat, z: 0.5 }, { ...restPt, z: stopZ }, batT, stopT);
+			} else {
+				this.hops({ ...pt, z: 3 }, { ...restPt, z: stopZ }, t, stopT);
+			}
+			if (takeT > stopT + 1) {
+				this.ball.push({ kind: "spot", t0: stopT, at: { ...restPt, z: 0 } });
+			}
+			this.ball.push({ kind: "held", t0: takeT, pid: rec.pid });
+		};
 		const yaw = this.toward(rec.at, restPt);
 
 		if (!scoop) {
@@ -7298,6 +7482,7 @@ class Action {
 				m.hold(this.seen);
 			}
 			this.pileOn(pile, restPt, takeT);
+			batIt();
 			return;
 		}
 
@@ -7343,6 +7528,7 @@ class Action {
 			dist(rec.at, endPt) > 2
 				? rec.run(endPt, rec.top * 0.88, "sprint")
 				: rec.t;
+		batIt();
 		// (Who brings him down: whoever the sim says did, for this carry.)
 		this.lo = fumI;
 		this.hi = recI;
