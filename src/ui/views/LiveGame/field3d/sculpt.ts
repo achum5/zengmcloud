@@ -1267,13 +1267,27 @@ const build = (
 			g,
 			side,
 		);
+		// (As the elbow bends, the biceps bunch up: thicker, shorter, gathered
+		// toward the middle of the upper arm - straight, long and flat to it.
+		// The court's: see court3d/sculpt.ts.)
+		const flexed = Math.acos(Math.max(-1, Math.min(1, dotV(a, cc))));
+		const bunch = Math.max(0, Math.min(1, (flexed - 0.5) / 1.4));
+		const bulge = bunch * bunch * (3 - 2 * bunch);
 		add(
-			addV(lerpV(limb.root, limb.mid, 0.36), inside, body.upperR * 0.32),
-			addV(lerpV(limb.root, limb.mid, 0.78), inside, body.upperR * 0.28),
+			addV(
+				lerpV(limb.root, limb.mid, 0.36 + 0.06 * bulge),
+				inside,
+				body.upperR * (0.32 + 0.1 * bulge),
+			),
+			addV(
+				lerpV(limb.root, limb.mid, 0.78 - 0.1 * bulge),
+				inside,
+				body.upperR * (0.28 + 0.08 * bulge),
+			),
 			[
-				[0, body.upperR * 0.64],
-				[0.5, body.upperR * 0.76],
-				[1, body.upperR * 0.58],
+				[0, body.upperR * (0.64 + 0.06 * bulge)],
+				[0.5, body.upperR * (0.76 + 0.22 * bulge)],
+				[1, body.upperR * (0.58 + 0.04 * bulge)],
 			],
 			UPPER,
 			g,
@@ -1331,9 +1345,12 @@ const build = (
 		const ts = v3(thumbSide.f * sgn, thumbSide.s * sgn, thumbSide.u * sgn);
 		const g = G_HAND + side;
 		pn[side] = palmN;
-		const L = H * 0.124;
-		const halfW = H * 0.017;
-		const palmR = H * 0.019;
+		// (As a real hand is - a glove on it, a touch over life so it reads:
+		// as long as a ninth of him, the fingers slim enough to stand apart.
+		// The court's: see court3d/sculpt.ts.)
+		const L = H * 0.118;
+		const halfW = H * 0.0136;
+		const palmR = H * 0.0157;
 		const knuckles = addV(wrist, h, L * 0.5);
 		if (cheer) {
 			// A pom-pom, all round her hand.
@@ -1372,7 +1389,7 @@ const build = (
 		// the palm (a fist) - or on the ball, each joint bent just as far as
 		// lays the next bone on it.
 		const onBall = ball && grip === "ball" ? ball : undefined;
-		const fingerR = H * 0.0086;
+		const fingerR = H * 0.0067;
 		const lens = [0.4, 0.44, 0.41, 0.33];
 		const restOf = (i: number): number[] =>
 			grip === "fist"
@@ -1518,9 +1535,22 @@ const build = (
 							: grip === "ball"
 								? [0.2, 0.2]
 								: [0.1, 0.12],
-						H * 0.0095,
+						H * 0.0078,
 					);
-		bones(thumb, H * 0.0105, G_FINGER + side * 5 + 4);
+		bones(thumb, H * 0.0086, G_FINGER + side * 5 + 4);
+		// The ball of his thumb: the muscle of the palm on its side, swelling
+		// out to where the thumb leaves it.
+		add(
+			addV(addV(wrist, h, L * 0.1), ts, halfW * 0.55),
+			addV(addV(wrist, h, L * 0.3), ts, halfW * 0.95),
+			[
+				[0, palmR * 0.72],
+				[1, palmR * 0.66],
+			],
+			HAND,
+			g,
+			side,
+		);
 	};
 	arm(sk.armR, 0);
 	arm(sk.armL, 1);
