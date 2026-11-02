@@ -115,8 +115,9 @@ const standOut = (
 // rusher's hands and a blocker's feet against each other (see passRush),
 // a defensive back's coverage (how tight he sits on his man), a tackler's
 // form (how often he drives the man back, or stands him up, or is on his
-// feet still after it - see tackle) - each against the others at his
-// position.
+// feet still after it - see tackle), a ball carrier's care with it (his
+// free hand over it as he is hit - see carryArm) - each against the others
+// at his position.
 export type Flair = {
 	arm?: number;
 	vision?: number;
@@ -126,6 +127,7 @@ export type Flair = {
 	block?: number;
 	cover?: number;
 	tackle?: number;
+	secure?: number;
 };
 export const flairOf = (
 	players: { pid: number; pos: string; ratings?: FieldRatings }[],
@@ -138,6 +140,7 @@ export const flairOf = (
 	const block = standOut(players, "pbk");
 	const cover = standOut(players, "pcv");
 	const tackle = standOut(players, "tck");
+	const secure = standOut(players, "bsc");
 	const out = new Map<number, Flair>();
 	for (const p of players) {
 		const f: Flair = {
@@ -149,6 +152,7 @@ export const flairOf = (
 			...(block.has(p.pid) ? { block: block.get(p.pid) } : {}),
 			...(cover.has(p.pid) ? { cover: cover.get(p.pid) } : {}),
 			...(tackle.has(p.pid) ? { tackle: tackle.get(p.pid) } : {}),
+			...(secure.has(p.pid) ? { secure: secure.get(p.pid) } : {}),
 		};
 		if (Object.keys(f).length > 0) {
 			out.set(p.pid, f);

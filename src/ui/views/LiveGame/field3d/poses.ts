@@ -3915,6 +3915,12 @@ export const gripsOf = (
 	if (hold === "carryL") {
 		return [right, "ball"];
 	}
+	if (hold === "cover") {
+		return ["ball", "open"];
+	}
+	if (hold === "coverL") {
+		return ["open", "ball"];
+	}
 	if (hold === "hands") {
 		return ["ball", "ball"];
 	}
@@ -4011,16 +4017,45 @@ export const settleStep = (p: Pose, to: Pose, was: Pose, u: number): Pose => {
 
 // (Tucked away under one arm or the other.)
 export const tucked = (h: BallHold | undefined): boolean =>
-	h === "carry" || h === "carryL";
+	h === "carry" || h === "carryL" || h === "cover" || h === "coverL";
+const LEFT_HOLDS = new Set<BallHold>(["carryL", "coverL"]);
 
 // His pose with the ball: carried, his right arm (or his left) folded up
 // across him, high and tight, whatever the rest of him is doing.
-export const holding = (q: Pose, hold: BallHold | undefined): Pose =>
-	hold === "carry"
-		? { ...q, shN: 24, elN: 104, abN: 8, wrN: 4, flexN: 0 }
-		: hold === "carryL"
-			? { ...q, shF: 24, elF: 104, abF: 8, wrF: 4, flexF: 0 }
-			: q;
+// (Covered up: the other hand across over the front of it.)
+const TUCK = { sh: 24, el: 104, ab: 8, wr: 4, flex: 0 };
+const OVER = { sh: 10, el: 100, ab: -30, wr: 10, flex: 0 };
+export const holding = (q: Pose, hold: BallHold | undefined): Pose => {
+	if (!tucked(hold)) {
+		return q;
+	}
+	const left = LEFT_HOLDS.has(hold!);
+	const out = { ...q };
+	const set = (n: boolean, a: typeof TUCK) => {
+		if (n) {
+			Object.assign(out, {
+				shN: a.sh,
+				elN: a.el,
+				abN: a.ab,
+				wrN: a.wr,
+				flexN: a.flex,
+			});
+		} else {
+			Object.assign(out, {
+				shF: a.sh,
+				elF: a.el,
+				abF: a.ab,
+				wrF: a.wr,
+				flexF: a.flex,
+			});
+		}
+	};
+	set(!left, TUCK);
+	if (hold === "cover" || hold === "coverL") {
+		set(left, OVER);
+	}
+	return out;
+};
 
 // His arms out of one pose over the rest of him in another: reaching up for
 // a ball he catches in stride.
@@ -4081,9 +4116,9 @@ export const heldBall = (b: Body, q: Pose, hold: BallHold): HeldBall => {
 			laces: { f: 0, s: 0, u: -1 },
 		};
 	}
-	if (hold === "carry" || hold === "carryL") {
+	if (tucked(hold)) {
 		// (In his left arm, the same the other way round.)
-		const left = hold === "carryL" ? -1 : 1;
+		const left = LEFT_HOLDS.has(hold) ? -1 : 1;
 		const arm = left === 1 ? hand : sk.armL;
 		const along = unitV({
 			f: arm.end.f - arm.mid.f,

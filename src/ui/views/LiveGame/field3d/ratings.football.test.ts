@@ -249,6 +249,43 @@ describe("3D field ratings", () => {
 		assert.isAbove(share(1), share(0) + 0.08);
 	}, 80_000);
 
+	test("a back careful with the ball covers it up as he is hit more often", () => {
+		const game = games[0]!;
+		const careful = staged(game, (p) => ({ bsc: p.team === 0 ? 95 : 45 }));
+		// Of the men with the ball hit when `side` has it, the share with
+		// their other hand over it.
+		const share = (side: 0 | 1) => {
+			let covered = 0;
+			let hit = 0;
+			for (const play of careful.plays) {
+				if (play.offense !== side) {
+					continue;
+				}
+				for (const part of play.parts) {
+					if (part.team !== side) {
+						continue;
+					}
+					for (const l of part.legs) {
+						if (
+							["tackled", "tackledBack", "drive"].includes(l.move) &&
+							l.ball !== undefined &&
+							l.ball !== "hands" &&
+							l.ball !== "throw"
+						) {
+							hit += 1;
+							if (l.ball === "cover" || l.ball === "coverL") {
+								covered += 1;
+							}
+						}
+					}
+				}
+			}
+			assert.isAbove(hit, 20);
+			return covered / hit;
+		};
+		assert.isAbove(share(0), share(1) + 0.08);
+	}, 80_000);
+
 	test("a pass rusher who has the better of the man on him works him harder, and backs him up further - and a cover man who stands out sits tighter", () => {
 		const game = games[0]!;
 		const plain = staged(game);

@@ -2200,6 +2200,12 @@ const ARM_LOOK_FT = 30;
 const ARM_LEAST_FT = 3;
 const ARM_SURE = 0.35;
 const ARM_KEEP_MS = 1500;
+// Covered up for a hit (see coverFor): from this long (ms) before it, with
+// these odds (the first, and as much again as the second by how careful
+// with it he is against the others at his position).
+const COVER_MS = 350;
+const COVER_HITS = new Set<Move>(["tackled", "tackledBack", "drive"]);
+const COVER_ODDS = [0.55, 0.3] as const;
 const holdFor = (m: Move): BallHold =>
 	m === "center"
 		? "snap"
@@ -5012,6 +5018,10 @@ class Action {
 	carryArm(m: Actor, t0: number, t1: number) {
 		const { dir, offense } = this.input;
 		const up = m.team === offense ? dir : -dir;
+		const cover = this.coverFor(m, t0, t1);
+		if (cover) {
+			m.split(cover[0]);
+		}
 		const legs = m.legs.filter(
 			(l) => l.t0 >= t0 && l.t0 < t1 && tucked(l.ball),
 		);
@@ -5051,8 +5061,60 @@ class Action {
 				left = w.left;
 				since = l.t0;
 			}
-			l.ball = left && k > down ? "carryL" : "carry";
+			const over = cover && l.t0 >= cover[0] && l.t0 < cover[1];
+			l.ball =
+				left && k > down
+					? over
+						? "coverL"
+						: "carryL"
+					: over
+						? "cover"
+						: "carry";
 		}
+	}
+
+	// Braced for the hit, his hand over it: from just before he is hit -
+	// brought down, or stood up and driven back - till he is up again (or
+	// done being driven). As a rule; a back careful with it (see Flair)
+	// all but always, a careless one less often. (Not if it comes out.)
+	coverFor(m: Actor, t0: number, t1: number): [number, number] | undefined {
+		const legs = m.legs;
+		const k = legs.findIndex(
+			(l) =>
+				l.t0 >= t0 && l.t0 < t1 && tucked(l.ball) && COVER_HITS.has(l.move),
+		);
+		const hit = legs[k];
+		if (
+			!hit ||
+			hit.t1 > t1 ||
+			countOf(m, this.input.snap, 22) >=
+				COVER_ODDS[0] + COVER_ODDS[1] * (m.flair.secure ?? 0)
+		) {
+			return undefined;
+		}
+		const c0 = hit.t0 - COVER_MS;
+		// (On his feet with it tucked away into it.)
+		if (
+			c0 < t0 ||
+			!legs.every(
+				(l) =>
+					l.t1 <= c0 ||
+					l.t0 >= hit.t0 ||
+					(tucked(l.ball) && moveKind(l.move) !== "still"),
+			)
+		) {
+			return undefined;
+		}
+		let j = k + 1;
+		while (
+			hit.move !== "drive" &&
+			legs[j] &&
+			DOWN.has(legs[j]!.move) &&
+			!RISING.has(legs[j]!.move)
+		) {
+			j++;
+		}
+		return [c0, Math.min(t1, legs[j]?.t0 ?? hit.t1)];
 	}
 
 	// ---- the snap -------------------------------------------------------------

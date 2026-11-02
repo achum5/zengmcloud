@@ -138,9 +138,17 @@ export type Leg = {
 };
 
 // How a man has the ball: under his hand on the turf over it (a center or
-// a long snapper), tucked away under his right arm (or his left), in both
-// hands, cocked back in his throwing hand.
-export type BallHold = "snap" | "carry" | "carryL" | "hands" | "throw";
+// a long snapper), tucked away under his right arm (or his left) - his
+// other hand over it, too, braced for a hit - in both hands, cocked back in
+// his throwing hand.
+export type BallHold =
+	| "snap"
+	| "carry"
+	| "carryL"
+	| "cover"
+	| "coverL"
+	| "hands"
+	| "throw";
 
 // One man in one play: his slot in it and what he does.
 export type Part = {
