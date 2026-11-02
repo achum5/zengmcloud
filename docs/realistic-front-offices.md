@@ -559,6 +559,15 @@ can keep the mode's front offices with the free agency it knows:
   costs them lottery odds), and teams over the cap sign them only once
   their asks fall to the minimum. Rosters short of the minimum are filled as
   the season opens (cuts.ts), as in the mode.
+- **Bad teams sign nobody.** On the same terms, a free agent signs only
+  with a team he is willing to, and few are with a bad one: a team that won
+  under 30% of its games signed no free agent of 50 or better in 43 summers
+  of 2 arena leagues, with 58% of the cap to spend on average (stock's CPU
+  teams sign whoever is best, willing or not: about one a summer). Leagues
+  split far more than stock's - 16% of team-seasons under 20 wins, stock 2%.
+  Pricing room by what it buys under these rules (HAUL_BY_RECORD_STOCK)
+  changed nothing: half the teams each way over 6 seasons, 11 titles to 13,
+  bad teams' room unused 75 summers of 84. Left off (stockHaul).
 - Code: realisticFrontOffice/stockRules.ts; isOn.ts (realisticFreeAgencyOn)
   switches every offer-market path.
 

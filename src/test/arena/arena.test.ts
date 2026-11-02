@@ -29,6 +29,7 @@ import {
 	ensureRetention,
 	OUTLOOK_YEARS,
 	outlookSeason,
+	losingClock,
 	outlookSettings,
 	projectPlayer,
 	retentionOf,
@@ -828,6 +829,7 @@ test.runIf(env.ARENA_RUN === "1")(
 					seed,
 					seconds: (Date.now() - started) / 1000,
 					market: env.ARENA_FO === "1" ? marketClock : undefined,
+					losing: env.ARENA_FO === "1" ? losingClock : undefined,
 					metrics,
 					freeAgents: snapshots.map((s) => ({
 						season: s.season,

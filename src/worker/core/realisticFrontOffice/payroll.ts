@@ -132,6 +132,49 @@ const HAUL_BY_RECORD: readonly {
 	},
 ];
 
+// By stock's rules (Realistic Free Agency off) a free agent signs only with a
+// team he is willing to - and few are, with a bad one: in 108 summers in 4
+// arena leagues of a team that had won a quarter of its games (85 of them
+// with 37% of the cap or more to spend), it signed anyone better than 43 in
+// 10, where HAUL_BY_RECORD - measured with the offer market, where money can
+// make up for losing - has it signing one 96% of the time with that room. Its chances of each
+// signing, row for row: a bad team's as measured, since its room buys what
+// players are willing to take whatever it is priced at; the others a half
+// step toward what was measured (average teams 77% with 30% of the cap, good
+// ones 96%), as the tables are. Not used (stockHaul off): half the teams each
+// way, 2 leagues each way round over 6 seasons, it won no more (11 titles to
+// 13) and its bad teams sat on their room as often (75 summers of 84) -
+// players refuse them, whatever the table says the room is worth.
+const STOCK_CHANCES: readonly (readonly (readonly [number, number])[])[] = [
+	[
+		[0, 0],
+		[0.08, 0.03],
+		[0.08, 0.03],
+		[0.08, 0.03],
+		[0.08, 0.03],
+	],
+	[
+		[0.45, 0.22],
+		[0.82, 0.58],
+		[0.82, 0.58],
+		[0.89, 0.65],
+		[0.89, 0.73],
+	],
+	[
+		[0.65, 0.4],
+		[0.97, 0.78],
+		[0.98, 0.84],
+		[0.98, 0.89],
+	],
+];
+const HAUL_BY_RECORD_STOCK = HAUL_BY_RECORD.map((table, i) => ({
+	winp: table.winp,
+	rows: table.rows.map((row, j) => {
+		const [first, second] = STOCK_CHANCES[i]![j]!;
+		return row.map((x, k) => (k === 1 ? first : k === 6 ? second : x));
+	}),
+}));
+
 const rowAt = (table: readonly (readonly number[])[], share: number) => {
 	const s = Math.min(table.at(-1)![0]!, Math.max(table[0]![0]!, share));
 	let i = 0;
@@ -144,11 +187,11 @@ const rowAt = (table: readonly (readonly number[])[], share: number) => {
 	return lo.map((x, k) => x + t * (hi[k]! - x));
 };
 
-const haulAt = (share: number, winp: number | undefined) => {
+const haulAt = (share: number, winp: number | undefined, stock?: boolean) => {
 	if (winp === undefined) {
 		return rowAt(HAUL, share);
 	}
-	const tables = HAUL_BY_RECORD;
+	const tables = stock ? HAUL_BY_RECORD_STOCK : HAUL_BY_RECORD;
 	const w = Math.min(tables.at(-1)!.winp, Math.max(tables[0]!.winp, winp));
 	let i = 0;
 	while (i < tables.length - 2 && tables[i + 1]!.winp < w) {
@@ -182,8 +225,11 @@ export const signingsWith = (
 	// The share of its games the team is expected to win that season: room
 	// priced by it (HAUL_BY_RECORD), or the same for every team (HAUL).
 	winp?: number,
+	// By stock's rules, where free agents sign only where they are willing
+	// (HAUL_BY_RECORD_STOCK).
+	stock?: boolean,
 ): (StrengthPlayer & { availability: number })[] => {
-	const h = haulAt(room / g.get("salaryCap"), winp);
+	const h = haulAt(room / g.get("salaryCap"), winp, stock);
 	const left =
 		duringFreeAgency && poolLeft?.key === poolKey() ? poolLeft.share : 1;
 	return [h.slice(1, 6), h.slice(6, 11)].map(
