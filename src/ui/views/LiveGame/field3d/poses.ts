@@ -3637,15 +3637,16 @@ const FIELD_ANIMS = {
 		{ shN: 172, elN: 4, abN: -6, tuck: 1 },
 	),
 	// Open, calling for it: his right hand up high, open - pumped once or
-	// twice (the 3D court's: see its evaluate.ts gestureArm).
+	// twice (the 3D court's: see its evaluate.ts gestureArm) - and let down
+	// over the last of it, not dropped.
 	callFor: {
 		kind: "act",
 		keys: [
 			[0, BASE],
-			[0.22, pose({ shN: 160, elN: 16, abN: 16, wrN: 18 })],
-			[0.42, pose({ shN: 168, elN: 12, abN: 16, wrN: 18 })],
-			[0.6, pose({ shN: 154, elN: 20, abN: 16, wrN: 18 })],
-			[0.8, pose({ shN: 162, elN: 16, abN: 16, wrN: 18 })],
+			[0.2, pose({ shN: 160, elN: 16, abN: 16, wrN: 18 })],
+			[0.38, pose({ shN: 168, elN: 12, abN: 16, wrN: 18 })],
+			[0.54, pose({ shN: 154, elN: 20, abN: 16, wrN: 18 })],
+			[0.7, pose({ shN: 162, elN: 16, abN: 16, wrN: 18 })],
 			[1, BASE],
 		],
 	},

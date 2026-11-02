@@ -2645,13 +2645,17 @@ const CATCH_REACH_MS = 300;
 // is thrown (and no sooner than this after the snap) to this long before,
 // or not at all if that leaves less than this; this likely, where the
 // game does not rate his hands - and where it does, from this likely with
-// the worst hands in the game at his position on up by this much.
+// the worst hands in the game at his position on up by this much. (Let
+// down as it is thrown, over this long after, ms - no later than this
+// before he reaches for it.)
 const CALL_FAR = 36;
 const CALL_OPEN = 5;
 const CALL_FROM_MS = 900;
 const CALL_LEAST_MS = 1200;
 const CALL_TO_MS = 120;
 const CALL_SHORTEST_MS = 300;
+const CALL_DOWN_MS = 250;
+const CALL_CLEAR_MS = 50;
 const CALL_ODDS = 0.45;
 const CALL_LOW = 0.2;
 const CALL_SPAN = 0.7;
@@ -5848,7 +5852,7 @@ class Action {
 		}
 
 		if (thrown && target && catchPt && tr?.name !== "screen" && !slip) {
-			this.callFor(target, qb, coverage, catchPt, throwAt);
+			this.callFor(target, qb, coverage, catchPt, throwAt, catchAt);
 		}
 
 		// And what came of it.
@@ -6736,16 +6740,24 @@ class Action {
 		coverage: Actor[],
 		catchPt: Pt,
 		throwAt: number,
+		catchAt: number,
 	) {
 		const { snap } = this.input;
 		if (dist(qb.posAt(throwAt), catchPt) < CALL_FAR) {
 			return;
 		}
 		const t0 = Math.max(throwAt - CALL_FROM_MS, snap + CALL_LEAST_MS);
-		const t1 = throwAt - CALL_TO_MS;
-		if (t1 - t0 < CALL_SHORTEST_MS) {
+		const up = throwAt - CALL_TO_MS;
+		if (up - t0 < CALL_SHORTEST_MS) {
 			return;
 		}
+		const t1 = Math.max(
+			up,
+			Math.min(
+				throwAt + CALL_DOWN_MS,
+				catchAt - CATCH_REACH_MS - CALL_CLEAR_MS,
+			),
+		);
 		const open = (t: number) =>
 			coverage.every((m) => dist(m.posAt(t), rec.posAt(t)) >= CALL_OPEN);
 		const hands = rec.flair.hands;
@@ -6753,7 +6765,7 @@ class Action {
 			hands === undefined
 				? CALL_ODDS
 				: CALL_LOW + CALL_SPAN * ((hands + 1) / 2);
-		if (!open(t0) || !open(t1) || countOf(rec, snap, 12) >= odds) {
+		if (!open(t0) || !open(up) || countOf(rec, snap, 12) >= odds) {
 			return;
 		}
 		this.reaches.push({ m: rec, move: "callFor", t0, t1 });
