@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 136,
+		date: "2026-11-02",
+		text: "Finals: center court now looks like a real finals floor - the championship trophy 27 feet tall with the team logo in front of it, a dozen feet across. On an imported floor picture, the picture's own center logo is painted out for the finals (wood carried in over it, the half-court line drawn on through). The trophy now comes with the game instead of loading from imgur, so it always shows.",
+	},
+	{
 		n: 135,
 		date: "2026-11-02",
 		text: "Courts: each team's court can now have its own Home opener, Playoffs and Finals versions - pictures laid on the floor for those games, like the Playoffs logo in two spots, swapped for the Finals logo in the Finals. Pick the version under the court editor's preview and place them right there; they're saved in the court's file too. League court decals can also pair diagonally now.",

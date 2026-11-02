@@ -10,6 +10,8 @@
 // allowed to fetch anything, so each logo is drawn onto the picture
 // separately, exactly where the SVG puts it.
 
+import { coverCenter } from "./coverCenter.ts";
+
 // (A picture hosted elsewhere asked for as one we may read back, where its
 // host allows that - so the floor picture stays readable; if not, as it is.)
 const load = (
@@ -46,6 +48,9 @@ type Pic = {
 	fill: boolean;
 	// The whole floor (see LiveCourt's floor picture): laid down first.
 	floor: boolean;
+	// And, the finals, its own center logo painted out (see coverCenter):
+	// where, court units - across, up, and how far each way.
+	cover?: [number, number, number, number];
 };
 
 export const courtTexture = async (
@@ -82,6 +87,14 @@ export const courtTexture = async (
 				opacity: Number(img.getAttribute("opacity") ?? 1),
 				fill: img.getAttribute("preserveAspectRatio") === "none",
 				floor: img.getAttribute("data-floor") === "1",
+				...(img.getAttribute("data-cover")
+					? {
+							cover: img
+								.getAttribute("data-cover")!
+								.split(" ")
+								.map(Number) as Pic["cover"],
+						}
+					: {}),
 			});
 		}
 	}
@@ -136,6 +149,14 @@ export const courtTexture = async (
 	for (const pic of pics) {
 		if (pic.floor) {
 			await drawPic(pic);
+			if (pic.cover) {
+				coverCenter(ctx, pic.cover, {
+					x: (u) => (u - vb.x) * pxPerUnit,
+					y: (v) => (v - vb.y) * pxPerUnit,
+					v: (y) => y / pxPerUnit + vb.y,
+					ppf: pxPerUnit,
+				});
+			}
 		}
 	}
 	try {

@@ -74,7 +74,18 @@ export type CourtActor = {
 
 // Default championship trophy shown at center court during a finals game (Larry
 // O'Brien style). Rendered behind the home logo. Overridable per team later.
-export const DEFAULT_TROPHY_URL = "https://i.imgur.com/c8cwwka.png";
+// (Shipped with the game - not fetched from a picture host that may turn
+// the request away.)
+export const DEFAULT_TROPHY_URL = "/img/finals-trophy.webp";
+// THE FINALS AT CENTER COURT, as a finals floor has it: the trophy, 27 ft
+// tall, and the home logo in front of it, a dozen feet across - on a floor
+// picture, over the picture's own logo painted out (see FINALS_COVER).
+const TROPHY_FT = 27;
+const FINALS_LOGO_FT = 12;
+// (How far round center court a floor picture's own logo is painted out -
+// feet, across and up - for a finals game: see coverCenter in
+// courtTexture. The court's "cover" sliders size and move it.)
+const FINALS_COVER = { rx: 15, ry: 13.5 };
 
 export type CourtSceneKind =
 	| "attempt"
@@ -2233,6 +2244,16 @@ const LiveCourt = ({
 					// courtTexture.)
 					<image
 						data-floor="1"
+						{...(finals
+							? {
+									"data-cover": [
+										COURT_W / 2 + (court?.adjust?.cover?.dx ?? 0),
+										25 + (court?.adjust?.cover?.dy ?? 0),
+										FINALS_COVER.rx * (court?.adjust?.cover?.scale ?? 1),
+										FINALS_COVER.ry * (court?.adjust?.cover?.scale ?? 1),
+									].join(" "),
+								}
+							: {})}
 						href={floorImageURL}
 						{...placed("floor", {
 							x: -RAIL_W,
@@ -2400,10 +2421,10 @@ const LiveCourt = ({
 					<image
 						href={trophyURL}
 						{...placed("trophy", {
-							x: COURT_W / 2 - 17,
-							y: 25 - 21,
-							width: 34,
-							height: 42,
+							x: COURT_W / 2 - TROPHY_FT / 4,
+							y: 25 - TROPHY_FT / 2,
+							width: TROPHY_FT / 2,
+							height: TROPHY_FT,
 							opacity: 0.97,
 						})}
 					/>
@@ -2412,10 +2433,10 @@ const LiveCourt = ({
 					<image
 						href={centerLogoURL}
 						{...placed("logo", {
-							x: COURT_W / 2 - (floorTrophy ? 13 : 15),
-							y: 25 - (floorTrophy ? 13 : 15),
-							width: floorTrophy ? 26 : 30,
-							height: floorTrophy ? 26 : 30,
+							x: COURT_W / 2 - (floorTrophy ? FINALS_LOGO_FT / 2 : 15),
+							y: 25 - (floorTrophy ? FINALS_LOGO_FT / 2 : 15),
+							width: floorTrophy ? FINALS_LOGO_FT : 30,
+							height: floorTrophy ? FINALS_LOGO_FT : 30,
 							opacity: 0.97,
 						})}
 					/>

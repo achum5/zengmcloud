@@ -18,6 +18,7 @@ import {
 	withVersionPictures,
 } from "../../common/courtVersions.ts";
 import {
+	AdjustFields,
 	ImageField,
 	PIC,
 	pictureFromFile,
@@ -489,16 +490,31 @@ const EditTeamCourt = ({
 							onSet={(next) => setVersionPictures(version, next)}
 							trophy={
 								version === "finals" ? (
-									<ImageField
-										label="Championship trophy"
-										hint="(center court)"
-										slot="trophy"
-										url={style.trophyURL ?? ""}
-										onURL={(v) => set("trophyURL", v)}
-										adjust={style.adjust?.trophy}
-										onAdjust={setAdjust}
-										{...picture}
-									/>
+									<>
+										<ImageField
+											label="Championship trophy"
+											hint="(center court)"
+											slot="trophy"
+											url={style.trophyURL ?? ""}
+											onURL={(v) => set("trophyURL", v)}
+											adjust={style.adjust?.trophy}
+											onAdjust={setAdjust}
+											{...picture}
+										/>
+										{style.floorImageURL ? (
+											<div className="mb-3">
+												<label className="form-label mb-1">
+													Floor logo painted out
+												</label>
+												<AdjustFields
+													slot="cover"
+													adjust={style.adjust?.cover}
+													onAdjust={(next) => setAdjust("cover", next)}
+													placeOnly
+												/>
+											</div>
+										) : null}
+									</>
 								) : null
 							}
 						/>

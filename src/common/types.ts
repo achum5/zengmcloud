@@ -3058,7 +3058,8 @@ export type CourtImageSlot =
 	| "baseline" // on the floor in each backcourt
 	| "corner" // the four quarter-court corners
 	| "rail" // the raised strip behind each baseline
-	| "floor"; // the whole floor, apron and all (floorImageURL)
+	| "floor" // the whole floor, apron and all (floorImageURL)
+	| "cover"; // a floor picture's own center logo, painted out for the finals
 
 export type CourtStyle = {
 	// A picture of the whole floor seen from above - the court and the apron

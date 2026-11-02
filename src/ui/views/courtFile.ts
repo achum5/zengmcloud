@@ -47,6 +47,7 @@ const SLOTS = new Set<string>([
 	"baseline",
 	"corner",
 	"rail",
+	"cover",
 ]);
 
 // A court typed or pasted in as JSON, checked field by field - or why not.

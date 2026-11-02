@@ -192,12 +192,15 @@ export const AdjustFields = ({
 	onAdjust,
 	defaultFit = "contain",
 	room = COURT_ROOM,
+	// (Only where it sits and its size - nothing to fade, turn or stretch.)
+	placeOnly = false,
 }: {
 	slot: string;
 	adjust: CourtImageAdjust | undefined;
 	onAdjust: (next: CourtImageAdjust | undefined) => void;
 	defaultFit?: "contain" | "fill";
 	room?: { dx: number; dy: number };
+	placeOnly?: boolean;
 }) => {
 	const set = <K extends keyof CourtImageAdjust>(
 		key: K,
@@ -254,20 +257,26 @@ export const AdjustFields = ({
 				1,
 				(v) => `${Math.round(v * 100)}%`,
 			)}
-			{slider(
-				"opacity",
-				"Fade",
-				0,
-				1,
-				0.05,
-				1,
-				(v) => `${Math.round(v * 100)}%`,
-			)}
+			{placeOnly
+				? null
+				: slider(
+						"opacity",
+						"Fade",
+						0,
+						1,
+						0.05,
+						1,
+						(v) => `${Math.round(v * 100)}%`,
+					)}
 			{slider("dx", "Left/right", -room.dx, room.dx, 0.5, 0, (v) => `${v} ft`)}
 			{slider("dy", "Up/down", -room.dy, room.dy, 0.5, 0, (v) => `${v} ft`)}
-			{slider("rotate", "Rotate", -180, 180, 5, 0, (v) => `${v}\u00b0`)}
+			{placeOnly
+				? null
+				: slider("rotate", "Rotate", -180, 180, 5, 0, (v) => `${v}\u00b0`)}
 			<div className="d-flex align-items-center gap-3 mt-1">
-				<div className="form-check form-check-inline mb-0">
+				<div
+					className={`form-check form-check-inline mb-0${placeOnly ? " d-none" : ""}`}
+				>
 					<input
 						className="form-check-input"
 						type="checkbox"

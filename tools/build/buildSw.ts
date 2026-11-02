@@ -13,6 +13,7 @@ export const buildSw = async () => {
 			"gen/*.json",
 			"img/logos-primary/*.svg",
 			"img/logos-secondary/*.svg",
+			"img/finals-trophy.webp",
 			"ico/icon.svg",
 			"ico/spinner.svg",
 		],
