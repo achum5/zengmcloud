@@ -3193,6 +3193,9 @@ const TWIN_EASE_MS = 250;
 const TWIN_EASE_LEAST = 150;
 const TWIN_EVERY_MS = 50;
 const TWIN_JOIN_MS = 300;
+// (Of two of different sides, one facing the other - more than this, the
+// cosine of the angle off his facing - as good as in a block with him.)
+const TWIN_FACING = 0.7;
 const LINE_PLAY = new Set<Move>(["engage", "drive"]);
 // (Up against a man, driving him, feet.)
 const DRIVE_ON = 3.5;
@@ -3996,7 +3999,10 @@ class Action {
 	// two blockers on one man, or two blocks run into one another - spread
 	// shoulder to shoulder: each eased half the way out (TWIN_APART) to his
 	// side, square to the way they face (not on into the man in front of
-	// them), while they are at it.
+	// them), while they are at it. Two of different sides the same, in two
+	// blocks run into one another - a man up onto a linebacker through
+	// another block, say - neither facing the other (see TWIN_FACING): not
+	// two men in a block with one another.
 	noTwins() {
 		const { snap } = this.input;
 		const men = this.men.filter((m) => m.legs.length > 0);
@@ -4079,9 +4085,7 @@ class Action {
 			for (let j = i + 1; j < men.length; j++) {
 				const p = men[i]!;
 				const q = men[j]!;
-				if (p.team !== q.team) {
-					continue;
-				}
+				const cross = p.team !== q.team;
 				const gp = grids[i]!;
 				const gq = grids[j]!;
 				// (Spells of it: when, how q is off p each time, and the way
@@ -4129,6 +4133,16 @@ class Action {
 					const d = dist(gpk.at, gqk.at);
 					if (d >= TWIN_APART) {
 						return;
+					}
+					if (cross && d > 0) {
+						const ux = (gqk.at.x - gpk.at.x) / d;
+						const uy = (gqk.at.y - gpk.at.y) / d;
+						if (
+							Math.cos(gpk.yaw) * ux + Math.sin(gpk.yaw) * uy > TWIN_FACING ||
+							-(Math.cos(gqk.yaw) * ux + Math.sin(gqk.yaw) * uy) > TWIN_FACING
+						) {
+							return;
+						}
 					}
 					if (spell && t - spell.b > TWIN_JOIN_MS) {
 						done();

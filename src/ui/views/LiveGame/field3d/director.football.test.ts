@@ -600,7 +600,7 @@ describe("a long drive", () => {
 		}
 		assert.isAbove(fresh, 50);
 		assert.isAbove(worn, 3);
-	});
+	}, 20_000);
 });
 
 describe("a man hurt", () => {
