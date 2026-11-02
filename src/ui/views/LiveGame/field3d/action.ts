@@ -2418,6 +2418,14 @@ const READ_BACK_MS = 450;
 const LOCK_WATCH_MS = 500;
 // (Up by the end of it after the whistle, each up to this much later, ms.)
 const TRAIL_SPREAD_MS = 500;
+// (The line once a pass is caught - see downfield: off after the play
+// so long after it let up (soonest, latest), ms, at a jog (ft/s, slowest,
+// quickest) - no nearer where it ends than this, nor going less than this
+// far, ft.)
+const DOWNFIELD_REACT_MS = [400, 1000] as const;
+const DOWNFIELD_FPS = [6.5, 10] as const;
+const DOWNFIELD_SHORT_FT = 15;
+const DOWNFIELD_LEAST_FT = 4;
 // (On after the man with the ball, pulled up as he sees it is over - each
 // up to this much before the whistle, and on for at least this much of it.)
 const FOLLOW_UP_SPREAD_MS = 350;
@@ -5756,6 +5764,9 @@ class Action {
 		// And what came of it.
 		if (first === cmpI && thrown && target && catchPt) {
 			this.complete(cmpI, qb, target, catchPt, catchAt, gain);
+			if (tr?.name !== "screen" && !slip) {
+				this.downfield(blockers);
+			}
 		} else if (first === incI && thrown && target && catchPt) {
 			this.incomplete(incI, qb, target, catchPt, catchAt, coverage);
 		} else if (first === intI && thrown && target && catchPt) {
@@ -5771,6 +5782,48 @@ class Action {
 		}
 		for (const m of [qb, ...runners]) {
 			this.done.add(m.pid);
+		}
+	}
+
+	// THE LINE ONCE IT IS CAUGHT: off up the field after the play at a jog,
+	// each on his own count and at his own pace - not stood where he set
+	// till the whistle.
+	downfield(blockers: Actor[]) {
+		const { snap } = this.input;
+		const end = this.ballAt(this.whistle);
+		const men = blockers.filter((b) => !this.done.has(b.pid));
+		if (!end || men.length === 0) {
+			return;
+		}
+		// (All of them the same way, keeping their places - not crowding in
+		// on the one spot.)
+		const mid = {
+			x: men.reduce((a, b) => a + b.at.x, 0) / men.length,
+			y: men.reduce((a, b) => a + b.at.y, 0) / men.length,
+		};
+		const far = dist(mid, end);
+		if (far <= DOWNFIELD_SHORT_FT) {
+			return;
+		}
+		const ux = (end.x - mid.x) / far;
+		const uy = (end.y - mid.y) / far;
+		for (const b of men) {
+			const from =
+				b.t +
+				DOWNFIELD_REACT_MS[0] +
+				(DOWNFIELD_REACT_MS[1] - DOWNFIELD_REACT_MS[0]) * countOf(b, snap, 23);
+			const fps =
+				DOWNFIELD_FPS[0] +
+				(DOWNFIELD_FPS[1] - DOWNFIELD_FPS[0]) * countOf(b, snap, 24);
+			const go = Math.min(
+				far - DOWNFIELD_SHORT_FT,
+				(fps * (this.whistle - from)) / 1000,
+			);
+			if (go < DOWNFIELD_LEAST_FT) {
+				continue;
+			}
+			b.hold(from);
+			b.runUp({ x: b.at.x + ux * go, y: b.at.y + uy * go }, fps);
 		}
 	}
 
