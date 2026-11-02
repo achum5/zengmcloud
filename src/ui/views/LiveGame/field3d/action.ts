@@ -2168,6 +2168,8 @@ const IN_HAND = new Set<Move>([
 	"bowl",
 ]);
 const HELD_UP = new Set<Move>(["back", "slide", "shuffle", "walk", "stand"]);
+// (Kept tucked away, stood between strides with it no longer than this, ms.)
+const TUCKED_MS = 250;
 const holdFor = (m: Move): BallHold =>
 	m === "center"
 		? "snap"
@@ -4744,6 +4746,8 @@ class Action {
 				}
 			}
 		}
+		const up = new Set<Leg>();
+		const held = new Set<Actor>();
 		for (const [k, s] of segs.entries()) {
 			if (s.kind !== "held") {
 				continue;
@@ -4752,6 +4756,7 @@ class Action {
 			if (!m) {
 				continue;
 			}
+			held.add(m);
 			const until = segs[k + 1]?.t0 ?? Infinity;
 			m.split(s.t0);
 			if (until < Infinity) {
@@ -4768,7 +4773,29 @@ class Action {
 					// not swinging.)
 					if (!l.arms && l.ball === "hands" && HELD_UP.has(l.move)) {
 						l.arms = "qbSet";
+						up.add(l);
 					}
+				}
+			}
+		}
+		// (Stood a moment between strides with it tucked away - pulled up
+		// to point, say: kept tucked, not out in both hands for it and back.)
+		for (const m of held) {
+			const legs = m.legs;
+			for (let k = 1; k + 1 < legs.length; k++) {
+				const l = legs[k]!;
+				const before = legs[k - 1]!;
+				const after = legs[k + 1]!;
+				if (
+					up.has(l) &&
+					l.t1 - l.t0 < TUCKED_MS &&
+					before.ball === "carry" &&
+					after.ball === "carry" &&
+					before.t1 === l.t0 &&
+					after.t0 === l.t1
+				) {
+					l.ball = "carry";
+					delete l.arms;
 				}
 			}
 		}
