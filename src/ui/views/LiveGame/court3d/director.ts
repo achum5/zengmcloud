@@ -5496,7 +5496,17 @@ class Director {
 			}
 		}
 		if (d >= 12) {
-			this.gesture(to, "hand", callAt, callTo, undefined, 0.45);
+			// (A shooter wants it: the better he shoots it, the surer his hand
+			// is up for it.)
+			const shoots = this.level(to, "tp");
+			this.gesture(
+				to,
+				"hand",
+				callAt,
+				callTo,
+				undefined,
+				shoots === undefined ? 0.45 : 0.2 + 0.7 * shoots,
+			);
 		}
 		this.act(
 			from,
