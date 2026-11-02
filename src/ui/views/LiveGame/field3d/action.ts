@@ -2373,6 +2373,11 @@ const CLEAR_DOWN_MS = 500;
 // no more than this far over (feet), and in no less than this (ms) - and
 // pulled up in no more than this far on (feet).)
 const WAY_CLEAR_FT = 2.6;
+// (A run into a pile: a man winning his block this near across the field
+// to where the carrier goes down drives his man no further than this short
+// of it, feet - the carrier stopped in front of him, not in his back.)
+const PILE_FACE_A = 3;
+const PILE_FACE_FT = 2.6;
 const WAY_FPS = 6;
 const WAY_MOST_FT = 4;
 const WAY_LEAST_MS = 300;
@@ -8579,8 +8584,8 @@ class Action {
 		if (this.reachFor(rec, catchAt, qb)) {
 			this.runOn(rec, 500);
 		}
-		this.done.add(rec.pid);
 		if (!picker) {
+			this.done.add(rec.pid);
 			this.whistle = catchAt + 600;
 			return;
 		}
@@ -8674,7 +8679,8 @@ class Action {
 				}
 			}
 		}
-		const others = this.o.filter((m) => m !== rec && !this.done.has(m.pid));
+		// (The man it was meant for, as often as not right there, among them.)
+		const others = this.o.filter((m) => !this.done.has(m.pid));
 		if (retI < 0) {
 			this.whistle = t;
 		} else {
@@ -10572,8 +10578,19 @@ class Action {
 			const wins = beat(b);
 			// (Let up on his own count once it is over - see countOf.)
 			const till = until + RUN_END_SPREAD_MS * countOf(b, snap, 4);
+			const endO = this.of(endPt);
+			const face =
+				!through && Math.abs(s.a + step.a * 0.4 - endO.a) < PILE_FACE_A
+					? Math.max(s.d, endO.d - PILE_FACE_FT)
+					: Infinity;
 			const path = wins
-				? [{ d: s.d + drive + 1, a: s.a + step.a * 0.4, t: till }]
+				? [
+						{
+							d: Math.min(s.d + drive + 1, face),
+							a: s.a + step.a * 0.4,
+							t: till,
+						},
+					]
 				: [
 						{ d: s.d - 1.6, a: s.a, t: snap + 1150 },
 						{ d: s.d - 2.4, a: s.a, t: till },
