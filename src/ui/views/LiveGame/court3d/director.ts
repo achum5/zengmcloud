@@ -1807,6 +1807,15 @@ const BREAK_MATCH_RANK = 2;
 // how badly he fits it (see castPlay): thirty feet, about a guard's part
 // played by a forward.
 const TRAVEL_COST = 0.035;
+// Sending a teammate to his spot (see direct): from how smart a man with the
+// ball (0 to 1, see levelOf), and how much more often the smarter; only a
+// man with this far (feet) to go; the point from this long (ms) before he
+// sets off, for so long.
+const DIRECT_FROM = 0.45;
+const DIRECT_MORE = 1.4;
+const DIRECT_FAR = 10;
+const DIRECT_LEAD = 450;
+const DIRECT_MS = 950;
 // Setting up a screen for him (see setUpScreen): how far (feet) he takes his
 // man the other way first - at most, and at least - how much before the
 // screener sets off he may start (ms), how fast out (feet a second) and
@@ -1820,6 +1829,36 @@ const SETUP_BACK = 11;
 const SETUP_PLANT = 120;
 const SETUP_FROM = 0.1;
 const SETUP_MORE = 0.8;
+// His own jumper off a ball screen, by how they played it (see
+// jumperMoveFor): switched, a big on him, he sizes him up and steps back or
+// crosses him over.
+// Each move's odds times this; the moves in jumperMoveFor's order of go().
+const JUMPER_MOVES = [
+	"stepBack",
+	"sidestep",
+	"crossover",
+	"plain",
+	"fade",
+	"turnaround",
+	"hesi",
+] as const;
+// The shot clock all but gone - this much of it used (seconds) - a man
+// making his own shot has to make something: the step-back, the fade, the
+// side-step more, a plain rise-up less.
+const LATE_GAP = 20;
+const LATE: Partial<Record<(typeof JUMPER_MOVES)[number], number>> = {
+	stepBack: 1.7,
+	fade: 1.8,
+	sidestep: 1.3,
+	plain: 0.55,
+};
+// (So long after the screen is set (ms) he is still coming off it.)
+const READ_FRESH = 3500;
+const READS: Partial<
+	Record<Coverage, Partial<Record<(typeof JUMPER_MOVES)[number], number>>>
+> = {
+	switch: { stepBack: 2.2, crossover: 1.6, hesi: 1.3, plain: 0.45 },
+};
 // A handle (0 to 1, see levelOf) below which a man keeps it simple with the
 // ball - no show of moves where he stands - and one past which he works his
 // man with them, one into the next.
@@ -2253,6 +2292,9 @@ class Director {
 	private readonly marking = new Map<Move, number>();
 	// Each back-down in the post, whose it is, and the man he backs down -
 	// as the plan had it (see onHisBack).
+	// The sets in which the man with it has sent somebody to his spot (see
+	// direct): once a set is enough.
+	private readonly directed = new WeakSet<Running>();
 	private readonly backingDown = new Map<
 		Move,
 		{ pid: number; guard: number | undefined }
@@ -3124,10 +3166,19 @@ class Director {
 		pid: number,
 		zone: "midRange" | "three",
 		r: number,
+		// Coming off a ball screen, how they played it: he takes what it
+		// gives him (see READS).
+		read?: Coverage,
+		// The shot clock all but gone: he has to make something (LATE).
+		late = false,
 	): ShotStyle | "turnaround" {
 		const h = this.level(pid, "drb") ?? 0.5;
 		const s = this.level(pid, "drb", zone === "three" ? "tp" : "fg") ?? 0.5;
-		const go = (k: number) => 0.4 + 1.4 * hash01(pid, 7300 + k);
+		const tilt = read === undefined ? undefined : READS[read];
+		const go = (k: number) =>
+			(0.4 + 1.4 * hash01(pid, 7300 + k)) *
+			(tilt?.[JUMPER_MOVES[k]!] ?? 1) *
+			(late ? (LATE[JUMPER_MOVES[k]!] ?? 1) : 1);
 		const odds: [ShotStyle | "turnaround", number][] =
 			zone === "three"
 				? [
@@ -6494,6 +6545,37 @@ class Director {
 		};
 	}
 
+	// DIRECTING TRAFFIC. A point guard who sees the floor tells his men
+	// where to go: a teammate with a long way to his spot is sent there, a
+	// finger out at it just before he sets off - a smart one most times, an
+	// ordinary one now and then, a poor one never. (Only for a man the game
+	// has ratings for.) Whether he does.
+	private direct(
+		h: number | undefined,
+		pid: number,
+		to: Pt,
+		at: number,
+	): boolean {
+		const iq = h === undefined ? undefined : this.level(h, "oiq", "pss");
+		if (
+			h === undefined ||
+			iq === undefined ||
+			iq <= DIRECT_FROM ||
+			dist(this.posOf(pid), to) < DIRECT_FAR ||
+			hash01(h * 31 + pid, at) >= (iq - DIRECT_FROM) * DIRECT_MORE
+		) {
+			return false;
+		}
+		this.gesture(
+			h,
+			"point",
+			at - DIRECT_LEAD,
+			at - DIRECT_LEAD + DIRECT_MS,
+			to,
+		);
+		return true;
+	}
+
 	// SETTING UP THE SCREEN. A good handler doesn't stand and wait on the
 	// man coming to screen for him: as he comes, he takes his own man a hard
 	// dribble the other way - to set him up for it - and comes back off it
@@ -7262,6 +7344,16 @@ class Director {
 								runMs(dist(this.posOf(pid), off.at), MOVE_SPEED[a.style] ?? 13),
 						)
 					: since;
+				// A floor general sends him there: a finger at the spot as he
+				// goes.
+				if (
+					!this.directed.has(run) &&
+					this.holder !== pid &&
+					run.play.cat !== "break" &&
+					this.direct(this.holder, pid, this.at(run, a.to), by)
+				) {
+					this.directed.add(run);
+				}
 				const handed = this.handedOn(run, pid);
 				const done =
 					this.holder === pid
@@ -10222,6 +10314,7 @@ class Director {
 			t = this.runStep(run, o.branch, t, undefined, last + 1);
 		}
 		const shooter = run.roles[o.shooter]!;
+		const sc = run.screen;
 		const passer = o.assist === undefined ? undefined : run.roles[o.assist];
 		const rim = { x: rimX(team), y: COURT_H / 2 };
 		// With it in his own hands at the end of it - pulling up off the
@@ -10618,10 +10711,15 @@ class Director {
 			this.holder === shooter &&
 			(caught === undefined || caught.t1 < t - OWN_MOVE_AFTER)
 		) {
+			// (Off a ball screen just set for him: what the defense gave him.)
 			const own = this.jumperMoveFor(
 				shooter,
 				o.zone === "three" ? "three" : "midRange",
 				hash01(shooter, Math.round(t / 11)),
+				sc?.ball && sc.user === shooter && t - sc.set < READ_FRESH
+					? sc.coverage
+					: undefined,
+				run.gap !== undefined && run.gap >= LATE_GAP,
 			);
 			if (own === "fade") {
 				return { t, style: "fade" };
@@ -11362,7 +11460,13 @@ class Director {
 						this.rated.has(shooter) &&
 						(zone === "midRange" ||
 							(zone === "three" && heaveSecs === undefined))
-							? this.jumperMoveFor(shooter, zone, r)
+							? this.jumperMoveFor(
+									shooter,
+									zone,
+									r,
+									undefined,
+									gap !== undefined && gap >= LATE_GAP,
+								)
 							: undefined;
 					// (A move to get by him at the rim: the better his handle,
 					// the more often - see byHandle.)

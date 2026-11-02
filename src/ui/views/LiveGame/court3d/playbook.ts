@@ -23,8 +23,9 @@
 //              4 post L_block seal
 //   options  how the set scores: shooter, zone, shot, spot, the beat after
 //            which it is open, who passes it (- for nobody) and how, the
-//            Synergy play type and a weight; after a |, the extra moves of
-//            that read
+//            Synergy play type and a weight - and "rated" for a read only a
+//            team the game has ratings for makes; after a |, the extra
+//            moves of that read
 //   risks    where it goes wrong: beat, who, and how
 
 export const SPOTS: Record<string, readonly [number, number]> = {
@@ -98,6 +99,8 @@ export const PLAYBOOK: PlaySource[] = [
 			"1 post floater R_lane 1 - - PRBallHandler 2 | 1 dribble R_lane attack",
 			"2 three catch_and_shoot R_corner 1 1 kickout Spotup 2",
 			"3 three catch_and_shoot L_corner 1 1 skip Spotup 2",
+			"3 three catch_and_shoot L_corner 1 4 swing Spotup 3 rated | 1 pass 4 kickout",
+			"2 three catch_and_shoot R_corner 1 5 kickout Spotup 2 rated | 1 pass 5 pocket; 5 move R_lane roll",
 			"4 three catch_and_shoot L_slot 1 1 skip Spotup 1",
 			"5 post hook R_lane 0 1 bounce PRRollMan 1 | 1 dribble R_slot attack; 5 move R_lane roll",
 			"5 post hook R_block 1 1 entry Postup 1 | 5 post R_block seal",
@@ -226,6 +229,7 @@ export const PLAYBOOK: PlaySource[] = [
 			"3 three catch_and_shoot L_corner 1 1 kickout Spotup 2",
 			"2 three catch_and_shoot R_corner 1 1 skip Spotup 1",
 			"4 three catch_and_shoot L_slot 1 1 kickout Spotup 1",
+			"3 three catch_and_shoot L_corner 1 4 swing Spotup 3 rated | 1 pass 4 kickout",
 			"5 post floater R_lane 0 1 bounce PRRollMan 1 | 1 dribble high_post drive_middle; 5 move R_lane roll",
 		],
 		risks: ["0 5 screen", "1 1 lost", "1 1 charge"],
@@ -548,6 +552,7 @@ export const PLAYBOOK: PlaySource[] = [
 			"1 three pull_up top 0 - - PRBallHandler 1",
 			"2 three catch_and_shoot R_corner 1 1 kickout Spotup 1",
 			"3 three catch_and_shoot L_corner 1 1 skip Spotup 1",
+			"3 three catch_and_shoot L_corner 1 4 swing Spotup 3 rated | 1 pass 4 skip",
 			"5 post hook R_lane 0 1 bounce PRRollMan 1 | 1 dribble R_elbow attack; 5 move R_lane roll",
 			"1 post floater R_lane 1 - - PRBallHandler 2 | 1 dribble R_lane attack",
 		],

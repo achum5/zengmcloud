@@ -54,6 +54,9 @@ export type PlayOption = {
 	weight: number;
 	// The read's own moves, after that step and before the shot.
 	branch: PlayAction[];
+	// Only for a team the game has ratings for (the reads a good team makes
+	// - the extra pass).
+	rated?: true;
 };
 
 export type PlayRisk = { step: number; who: Role; kind: TurnoverKind };
@@ -133,9 +136,8 @@ const ZONES = new Set<string>(["rim", "post", "mid", "three"]);
 
 const parseOption = (text: string): PlayOption => {
 	const [head, branch] = text.split("|");
-	const [shooter, zone, kind, at, after, assist, pass, playType, weight] = head!
-		.trim()
-		.split(/\s+/);
+	const [shooter, zone, kind, at, after, assist, pass, playType, weight, only] =
+		head!.trim().split(/\s+/);
 	if (!ZONES.has(zone!)) {
 		throw new Error(`Not a zone: ${text}`);
 	}
@@ -150,6 +152,7 @@ const parseOption = (text: string): PlayOption => {
 		playType: playType!,
 		weight: Number(weight),
 		branch: branch ? parseActions(branch) : [],
+		...(only === "rated" ? { rated: true as const } : {}),
 	};
 };
 
@@ -392,7 +395,7 @@ export const callShot = (
 		}
 		const cache = new Map<string, ReturnType<typeof castPlay>>();
 		for (const o of play.options) {
-			if (o.zone !== call.zone) {
+			if (o.zone !== call.zone || (o.rated && call.make === undefined)) {
 				continue;
 			}
 			if (call.assist !== undefined && o.assist === undefined) {

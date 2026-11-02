@@ -105,9 +105,13 @@ describe("keeping bodies apart", () => {
 				continue;
 			}
 			loose += 1;
+			// (Not the man picking it up: it comes to his feet.)
+			const next = tl.ball.find((b) => b.t0 > t);
+			const getting =
+				next?.kind === "hold" && next.t0 - t < 700 ? next.pid : undefined;
 			for (const tr of tracks) {
 				const p = floorSpotOf(tr, t);
-				if (p && Math.hypot(p.x - B.x, p.y - B.y) < 0.6) {
+				if (tr.pid !== getting && p && Math.hypot(p.x - B.x, p.y - B.y) < 0.6) {
 					inside += 1;
 				}
 			}
