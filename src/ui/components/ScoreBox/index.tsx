@@ -91,12 +91,12 @@ export const ScoreBox = memo(
 			gid: number;
 			neutralSite?: boolean;
 			season?: number;
-			// The displayed spread for an upcoming game, worked out in the worker
-			// off fresh team overalls and corrected by the engine where it has
-			// already played this matchup. Preferred over recomputing it here: the
-			// team overalls a given page happens to be holding are not always the
-			// ones the schedule was built from, which is how the top bar and the
-			// Daily Schedule ended up quoting the same game differently.
+			// The displayed spread: for an upcoming game, worked out in the worker
+			// (see getUpcoming); for a finished one, the line it was quoted at,
+			// saved when it was played (Game.spread). Preferred over recomputing
+			// it here: the team overalls a given page happens to be holding are not
+			// always the ones the schedule was built from, which is how the top bar
+			// and the Daily Schedule ended up quoting the same game differently.
 			spread?: number;
 			teams: [Team, Team];
 			numPeriods?: number;
@@ -160,12 +160,16 @@ export const ScoreBox = memo(
 				(neutralSite === "playoffs" && phase === PHASE.PLAYOFFS);
 
 			// The worker decides an upcoming game's spread (see getUpcoming) so that
-			// every page showing this game shows the same number. Falling back to
-			// computing it here covers completed games, whose spread has to stay
-			// exactly what the formula says - getTeamAtsRecords re-derives every
-			// historical line that way.
+			// every page showing this game shows the same number - and a finished
+			// game carries the one it was quoted at before tipoff, saved as it was
+			// played (Game.spread), which is what ATS records grade it against.
+			// Re-deriving it here from the stored team overalls alone - no lineup
+			// synergy, no form correction, the regular-season model in the
+			// playoffs - changed the line the moment the game ended (-9.5 before,
+			// -18.5 after). Only games from before spreads were saved fall back to
+			// that.
 			const spread =
-				!final && game.spread !== undefined
+				game.spread !== undefined
 					? game.spread
 					: getGameSpread({
 							ovr0: game.teams[0].ovr,

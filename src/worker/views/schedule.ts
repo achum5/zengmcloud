@@ -17,6 +17,7 @@ import { getStartingAndBackupGoalies } from "../core/GameSim.hockey/getStartingA
 import { bySport } from "../../common/sportFunctions.ts";
 import { getProcessedGames } from "../util/getProcessedGames.ts";
 import { getGameSpread, roundHalf } from "../../common/getGameSpread.ts";
+import { rosterAtTipoff } from "../core/team/rosterAtTipoff.ts";
 import {
 	getTeamSpreadBias,
 	spreadBiasAdjustment,
@@ -115,8 +116,13 @@ export const getUpcoming = async ({
 	}
 	const playersRaw = [];
 	for (const tid of tidsNeeded) {
+		// (In the order the game will be played in - see rosterAtTipoff - so the
+		// lineup the spread reads is the one the sim will read.)
 		playersRaw.push(
-			...(await idb.cache.players.indexGetAll("playersByTid", tid)),
+			...(await rosterAtTipoff(
+				tid,
+				await idb.cache.players.indexGetAll("playersByTid", tid),
+			)),
 		);
 	}
 	const players = await player.formatAll(playersRaw, {

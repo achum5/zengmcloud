@@ -27,6 +27,7 @@ import {
 	type SpreadBiasEntry,
 } from "../../util/getTeamSpreadBias.ts";
 import { player } from "../index.ts";
+import { rosterAtTipoff } from "../team/rosterAtTipoff.ts";
 
 // The moneyline / spread / total for a single upcoming game.
 //
@@ -160,7 +161,12 @@ export const buildGameLinePricer = async ({
 	const playersByTid = Map.groupBy(players, (p) => p.tid);
 	// The raw rows as well: the trimmed player.formatAll rows above are all team.ovr
 	// needs, but the synergy composites read the full ratings row.
-	const playersRawByTid = Map.groupBy(playersRaw, (p) => p.tid);
+	// (In the order each game will be played in - see rosterAtTipoff - so the
+	// lineup the spread reads is the one the sim will read.)
+	const playersRawByTid = new Map<number, typeof playersRaw>();
+	for (const [tid, raw] of Map.groupBy(playersRaw, (p) => p.tid)) {
+		playersRawByTid.set(tid, await rosterAtTipoff(tid, raw));
+	}
 
 	const playoffSeries = await idb.cache.playoffSeries.get(season);
 	const roundSeries = playoffSeries

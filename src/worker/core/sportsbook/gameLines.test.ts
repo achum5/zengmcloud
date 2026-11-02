@@ -15,6 +15,7 @@ import {
 	PHASE,
 } from "../../../common/constants.ts";
 import teamOvr from "../team/ovr.ts";
+import { rosterAtTipoff } from "../team/rosterAtTipoff.ts";
 
 const NUM_TEAMS = 4;
 const ROSTER = 10;
@@ -127,10 +128,14 @@ describe("the spread", () => {
 		const line = pricer.priceGame(matchup)!;
 		const ovrs = await teamOvrsForMatchup();
 		// The formula's second input, built the same way the pricer builds it -
-		// still a closed form, not a simulation.
+		// the roster in the order the game will be played in - still a closed
+		// form, not a simulation.
 		const synergyOf = async (tid: number) =>
 			pregameLineupSynergyFromPlayers(
-				await idb.cache.players.indexGetAll("playersByTid", tid),
+				await rosterAtTipoff(
+					tid,
+					await idb.cache.players.indexGetAll("playersByTid", tid),
+				),
 				{
 					numDaysInFuture: 0,
 					playThroughInjuries: DEFAULT_PLAY_THROUGH_INJURIES,

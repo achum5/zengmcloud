@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 127,
+		date: "2026-11-02",
+		text: "Spreads: a finished game now keeps the spread it had before tipoff, instead of switching to a different number once it's over. And the spread shown before a game is now exactly the one the game is played and graded against - it had been reading the wrong starting five, so it was often a point or two off (more in the playoffs).",
+	},
+	{
 		n: 126,
 		date: "2026-11-02",
 		text: "3D game: in crunch time a star who scores lets it out - his own roar or chest pound, or a flex - where earlier in the game he'd just get back.",

@@ -325,13 +325,20 @@ export const pregameLineupSynergy = (
 // From RAW player rows (schedule view, sportsbook), where the game is still in
 // the future. Availability mirrors team.ovr's accountForInjuredPlayers rule -
 // back in time for the game, or playing through - and a man playing through has
-// his composites damped by the same factor loadTeams would apply. Ordered by
-// value, the same ordering the game's own roster sort produces for AI teams.
+// his composites damped by the same factor loadTeams would apply. Ordered as
+// the team's roster is (rosterOrder) - the order loadTeams hands the game its
+// players in, so the lineup read here is the one the stored pregame spread
+// reads at tipoff (see play.ts). Ordering by value instead picked a different
+// five - value counts potential, and the roster sort also fits positions -
+// and the spread quoted before a game came out a point or more off the one
+// saved on it. Rows with no rosterOrder (plain rosters in the calibration
+// harnesses) fall back to value.
 export const pregameLineupSynergyFromPlayers = (
 	players: readonly {
 		injury: { gamesRemaining: number };
 		ratings: MinimalPlayerRatings[] | readonly MinimalPlayerRatings[];
 		value: number;
+		rosterOrder?: number;
 	}[],
 	{
 		numDaysInFuture,
@@ -349,6 +356,7 @@ export const pregameLineupSynergyFromPlayers = (
 	const currentPlayThroughInjuries = playThroughInjuries[playoffs ? 1 : 0]!;
 	const available: {
 		value: number;
+		rosterOrder: number | undefined;
 		compositeRating: SynergyCompositeRating;
 	}[] = [];
 	for (const p of players) {
@@ -373,8 +381,16 @@ export const pregameLineupSynergyFromPlayers = (
 				composite[key] *= factor;
 			}
 		}
-		available.push({ value: p.value, compositeRating: composite });
+		available.push({
+			value: p.value,
+			rosterOrder: p.rosterOrder,
+			compositeRating: composite,
+		});
 	}
-	available.sort((x, y) => y.value - x.value);
+	if (available.every((x) => x.rosterOrder !== undefined)) {
+		available.sort((x, y) => x.rosterOrder! - y.rosterOrder!);
+	} else {
+		available.sort((x, y) => y.value - x.value);
+	}
 	return pregameLineupSynergy(available);
 };
