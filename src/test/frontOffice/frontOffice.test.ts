@@ -99,6 +99,10 @@ test.runIf(env.FO_PICKS !== undefined)(
 		Math.random = makeSeededRandom(Number(env.FO_SEED ?? 1));
 		try {
 			await createArenaLeague(1);
+			// FO_REALISTIC=1: classes from Realistic Draft Prospects.
+			if (env.FO_REALISTIC) {
+				g.setWithoutSavingToDB("realisticDraftProspects", true);
+			}
 			const season = g.get("season");
 			const numClasses = Number(env.FO_CLASSES ?? 50);
 			const numPicks = g.get("numDraftRounds") * g.get("numActiveTeams");
