@@ -94,6 +94,18 @@ if (__SPORT === "hockey") {
 	defaultRaces.Spain = defaultRaces.USA;
 }
 
+// Basketball, fitted to today's NBA: with realistic faces' skin ranges, these
+// draw the same share of light-skinned USA-born players as the real league's
+// current rosters (about one in five) - see SKIN_TONES in realisticFaces.ts.
+if (__SPORT === "basketball") {
+	defaultRaces.USA = {
+		asian: 1,
+		black: 50,
+		brown: 30,
+		white: 19,
+	};
+}
+
 defaultRaces["Albania"] = defaultRaces["Lithuania"]!;
 defaultRaces["Algeria"] = defaultRaces["India"]!;
 defaultRaces["American Samoa"] = defaultRaces["India"]!;
@@ -205,5 +217,17 @@ defaultRaces["Venezuela"] = defaultRaces["Argentina"]!;
 defaultRaces["Vietnam"] = defaultRaces["China"]!;
 defaultRaces["Virgin Islands"] = defaultRaces["South Africa"]!;
 defaultRaces["Wales"] = defaultRaces["Germany"]!;
+
+// France borrows the USA's odds above, but the French players in today's NBA
+// are nearly all Black or mixed - one of seventeen on current rosters is
+// light-skinned.
+if (__SPORT === "basketball") {
+	defaultRaces.France = {
+		asian: 1,
+		black: 60,
+		brown: 30,
+		white: 9,
+	};
+}
 
 export default defaultRaces;

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 117,
+		date: "2026-11-02",
+		text: "New players' faces match today's NBA: about one in five American-born players is white, as on real rosters, white players no longer come out with skin dark enough to pass for someone else, and skin tones overall are drawn from the real league's. A player born in France now usually looks it, and one born in Czechia, the UK, the U.S. Virgin Islands, the Republic of the Congo or Cabo Verde gets a face from his own country rather than a random one.",
+	},
+	{
 		n: 116,
 		date: "2026-11-02",
 		text: "3D game: a good ball handler sets up his screen - as the big comes up to screen for him, he takes his man a hard dribble the other way, then comes back off it shoulder to shoulder with the screener - and the better the handler, the more often he waves the screener up. A fine passer, on his dribble, has his head up reading the floor, looking round to his teammates one after another; a lesser one keeps his eyes on what's in front of him.",

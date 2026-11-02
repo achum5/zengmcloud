@@ -162,6 +162,14 @@ export const withState = (country: string) => {
 	return country;
 };
 
+const COUNTRY_ALIASES: Record<string, string> = {
+	"United Kingdom": "England",
+	Czechia: "Czech Republic",
+	"U.S. Virgin Islands": "Virgin Islands",
+	"Republic of the Congo": "Congo",
+	"Cabo Verde": "Cape Verde",
+};
+
 const name = async (
 	countryOverride?: string,
 ): Promise<{
@@ -185,9 +193,18 @@ const name = async (
 		throw new Error("No countries in playerBioInfo");
 	}
 
+	// Real players' birthplaces use a few names the country list spells another
+	// way. Without this, a man born in Czechia - asked for by name, as the face
+	// randomizer does - was given a random country instead, and that country's
+	// race.
+	const override =
+		countryOverride !== undefined && !playerBioInfo.countries[countryOverride]
+			? (COUNTRY_ALIASES[countryOverride] ?? countryOverride)
+			: countryOverride;
+
 	let country;
-	if (countryOverride && playerBioInfo.countries[countryOverride]) {
-		country = countryOverride;
+	if (override && playerBioInfo.countries[override]) {
+		country = override;
 	} else {
 		country = getFromCumSumArray(frequencies);
 	}

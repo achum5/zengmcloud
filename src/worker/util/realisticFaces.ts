@@ -664,22 +664,26 @@ export const fatnessForAthlete = (rand: () => number): number =>
 // list, so no two players need share one. They are also what a face's race
 // is read back from (see inferRaceFromFace), so the two stay in step.
 //
-// Wider than the first cut of this, at both ends and in the middle: the
-// lightest Black skin is a caramel, the darkest is close to ebony, and a
-// white player can be anywhere from very pale to an olive tan. Each list is
-// ordered light to dark, which skinTone relies on.
+// Fitted to the real league: the skin tones hand-picked from the photos of
+// the 525 players on current NBA rosters, against a generated league's worth of
+// draws (see the USA odds in defaultRaces.ts). The first cut ran the white list
+// down to an olive tan the colour of the lightest Black anchor, so a third of
+// generated white players read as brown or Black, and spread Black skin evenly
+// from caramel to near-black where the real league is mostly medium-dark
+// brown. Each list is ordered light to dark, which skinTone relies on, and no
+// two share an anchor, so inferRaceFromFace has one answer for each.
 export const SKIN_TONES: Record<Race, readonly string[]> = {
-	white: ["#fbe9de", "#f5dccd", "#eccbb5", "#e0b99e", "#d3a583", "#c4936f"],
+	white: ["#fbe9de", "#f5dccd", "#eccbb5", "#e3bda5", "#dbae8f"],
 	asian: ["#ffe2cf", "#f8d2b6", "#f0c39f", "#e8b587", "#dca471", "#cf945f"],
-	brown: ["#d8ab8e", "#c99a80", "#b98a70", "#a97a5f", "#966a4e", "#7f5840"],
+	brown: ["#d4a283", "#cc9a78", "#c49070", "#b07a5f", "#a67358", "#9b6a50"],
 	black: [
-		"#c4866b",
-		"#b07058",
-		"#9a5f4b",
-		"#845041",
-		"#6c4237",
-		"#56352e",
-		"#412826",
+		"#a06e55",
+		"#8d5d45",
+		"#80523e",
+		"#7a4a36",
+		"#74453d",
+		"#6e4030",
+		"#673a2a",
 	],
 };
 
