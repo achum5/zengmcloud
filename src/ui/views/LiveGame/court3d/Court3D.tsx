@@ -15,7 +15,7 @@ import type {
 	ReplayLooks,
 	ScoreBugStyle,
 } from "../../../../common/types.ts";
-import LiveCourt, { DEFAULT_TROPHY_URL } from "../LiveCourt.tsx";
+import LiveCourt from "../LiveCourt.tsx";
 import { TeamLogoInline } from "../../../components/TeamLogoInline.tsx";
 import {
 	paintBench,
@@ -25,7 +25,6 @@ import {
 	paintRafters,
 	paintStands,
 	paintTable,
-	withTrophy,
 } from "./arena.ts";
 import {
 	CAM_PAN,
@@ -604,17 +603,23 @@ const Court3D = ({
 		};
 		const seed = String(gid ?? 0);
 		const spec = arenaSpecFor(h);
+		// A playoff game: the home crowd's color-out (see paintStands).
+		const playoffs = !!boxScore?.playoffs;
+		const stands = (up: 0 | 1 | 2, seats: typeof crowd, end: 0 | undefined) =>
+			paintStands(h, a, seed, up, seats, end, fans, spec, playoffs);
 		return {
 			courtside: courtsideFor(h, a, spec, fans),
 			stanchion: paintStanchionPanel(h, h?.colors?.[0] ?? "#8c1d40"),
-			stands: paintStands(h, a, seed, 0, crowd, undefined, fans),
-			standsUp: paintStands(h, a, seed, 1, crowd, undefined, fans),
-			standsWave: paintStands(h, a, seed, 2, crowd, undefined, fans),
-			standsSparse: paintStands(h, a, seed, 0, sparse, undefined, fans),
-			endStandsSparse: paintStands(h, a, seed, 0, sparse, 0, fans),
-			endStands: [0, 1, 2].map((up) =>
-				paintStands(h, a, seed, up as 0 | 1 | 2, crowd, 0, fans),
-			) as [HTMLCanvasElement, HTMLCanvasElement, HTMLCanvasElement],
+			stands: stands(0, crowd, undefined),
+			standsUp: stands(1, crowd, undefined),
+			standsWave: stands(2, crowd, undefined),
+			standsSparse: stands(0, sparse, undefined),
+			endStandsSparse: stands(0, sparse, 0),
+			endStands: [0, 1, 2].map((up) => stands(up as 0 | 1 | 2, crowd, 0)) as [
+				HTMLCanvasElement,
+				HTMLCanvasElement,
+				HTMLCanvasElement,
+			],
 			boards: paintBoards(h, a),
 			tableTop: table.top,
 			tableFront: table.front,
@@ -623,27 +628,6 @@ const Court3D = ({
 		};
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [gid, fans]);
-
-	// A finals game on a floor picture keeps its own center court (see
-	// LiveCourt): the trophy goes on the front of the scorer's table instead,
-	// behind the play.
-	const floorPictureFinals = !!boxScore?.finals && !!home?.court?.floorImageURL;
-	const trophyURL = home?.court?.trophyURL || DEFAULT_TROPHY_URL;
-	const [trophyPic, setTrophyPic] = useState<HTMLCanvasElement>();
-	useEffect(() => {
-		if (!floorPictureFinals) {
-			return;
-		}
-		let alive = true;
-		void logoPicture(trophyURL).then((pic) => {
-			if (alive && pic) {
-				setTrophyPic(pic);
-			}
-		});
-		return () => {
-			alive = false;
-		};
-	}, [floorPictureFinals, trophyURL]);
 
 	// The banners in the rafters - each title's in the team's colors and logo
 	// that season - painted again once the logos are in.
@@ -695,21 +679,9 @@ const Court3D = ({
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 		[gid, bannerLogos],
 	);
-	const painted = useMemo(() => {
-		if (!floorPictureFinals || !trophyPic) {
-			return { ...paint, rafters };
-		}
-		const table = { ...paint.boards.table };
-		for (const screen of Object.keys(table) as (keyof typeof table)[]) {
-			table[screen] = withTrophy(table[screen], trophyPic);
-		}
-		return {
-			...paint,
-			rafters,
-			boards: { ...paint.boards, table },
-			tableFront: withTrophy(paint.tableFront, trophyPic),
-		};
-	}, [paint, rafters, floorPictureFinals, trophyPic]);
+	// (The finals trophy is on the floor, at center court, on every court -
+	// see LiveCourt.)
+	const painted = useMemo(() => ({ ...paint, rafters }), [paint, rafters]);
 	const paintRef = useRef(painted);
 	paintRef.current = painted;
 

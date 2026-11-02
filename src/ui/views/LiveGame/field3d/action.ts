@@ -2343,6 +2343,8 @@ const DROP_CLEAR = 1.6;
 // A gunner set in front of the returner by this long after he would have
 // got there at full tilt, ms.
 const GUNNER_SET_MS = 900;
+// (Waiting on a kick nobody returns at least this long, ms: set for it.)
+const FAIR_SET_LEAST_MS = 400;
 
 // ---- the play ----------------------------------------------------------------
 
@@ -2396,6 +2398,11 @@ const LOCK_END_SPREAD_MS = 400;
 // this long (and up to this much more), ms - stood up watching it before
 // that, if that is LOCK_WATCH_MS at least.)
 const LOCK_SET_MS = [900, 400] as const;
+// (One going up to meet him slower than a walk: set where he is, alive in
+// it, and up into him over his last few steps at this pace (ft/s) - not
+// walked up over all the time there is, if it leaves this long (ms) set.)
+const LOCK_STEP_FPS = 7.5;
+const LOCK_STEP_SET_MS = 300;
 // (A tackler set waiting on the man with the ball: turned with him every
 // this long, ms, if he has come round this far, radians.)
 const KEEP_STEP_MS = 300;
@@ -2418,6 +2425,22 @@ const READ_BACK_MS = 450;
 const LOCK_WATCH_MS = 500;
 // (Up by the end of it after the whistle, each up to this much later, ms.)
 const TRAIL_SPREAD_MS = 500;
+// (Not walked there while it is still on: after the ball at a jog (ft/s,
+// slowest, quickest) after a look at it (ms, soonest, latest), kept this
+// far off it at least (feet) - if it is any further than this (feet).)
+const TRAIL_JOG_FPS = [8, 10] as const;
+const TRAIL_LOOK_MS = [150, 450] as const;
+const TRAIL_JOG_LEAST_FT = 5;
+const TRAIL_KEEP_FT = 12;
+// (The others out on routes once it is caught - see withIt: off after it
+// so long after they see it (soonest, latest), ms, at a jog (ft/s), kept
+// this far off it (and up to this much more), ft - not for less than this
+// long (ms), nor from nearer it than that and this far, ft.)
+const ROUTE_AFTER_MS = [250, 700] as const;
+const ROUTE_AFTER_FPS = [8, 10.5] as const;
+const ROUTE_AFTER_KEEP_FT = [14, 8] as const;
+const ROUTE_AFTER_LEAST_MS = 700;
+const ROUTE_AFTER_LEAST_FT = 6;
 // (The line once a pass is caught - see downfield: off after the play
 // so long after it let up (soonest, latest), ms, at a jog (ft/s, slowest,
 // quickest) - no nearer where it ends than this, nor going less than this
@@ -2482,6 +2505,13 @@ const SHED_SPREAD = 350;
 const OFF_SPREAD = 350;
 const STALK_FAR = 36;
 const STALK_WON = 0.6;
+// (Nobody to block out there: in toward where the run goes once he has
+// let up, so long after (soonest, latest), ms, at a jog (ft/s, slowest,
+// quickest) - no nearer where it ends than this, ft; not for less than
+// DOWNFIELD_LEAST_FT.)
+const WIDE_IN_MS = [250, 750] as const;
+const WIDE_IN_FPS = [7, 10.5] as const;
+const WIDE_IN_SHORT_FT = 18;
 // (The man he goes out onto - or a linebacker over to fill - pulled up
 // there no more than this far on, feet.)
 const STALK_EASE_FT = 5;
@@ -4169,6 +4199,22 @@ class Action {
 					l.t1 += on;
 					next.t0 = l.t1;
 					l.move = "walk";
+				} else if (
+					l.move === "stand" &&
+					!l.arms &&
+					!l.ball &&
+					next.t0 === l.t1 &&
+					!GAITS.has(next.move) &&
+					l.from.x === l.to.x &&
+					l.from.y === l.to.y &&
+					next.from.x === l.to.x &&
+					next.from.y === l.to.y
+				) {
+					// (Stood a moment where he is between one thing and the
+					// next: on into the next - not flicked through standing.)
+					next.t0 = l.t0;
+					legs.splice(i, 1);
+					i--;
 				}
 			}
 		}
@@ -5775,6 +5821,10 @@ class Action {
 			this.complete(cmpI, qb, target, catchPt, catchAt, gain);
 			if (tr?.name !== "screen" && !slip) {
 				this.downfield(blockers);
+				this.withIt(
+					runners.filter((m) => m !== target),
+					catchAt,
+				);
 			}
 		} else if (first === incI && thrown && target && catchPt) {
 			this.incomplete(incI, qb, target, catchPt, catchAt, coverage);
@@ -5796,7 +5846,8 @@ class Action {
 
 	// THE LINE ONCE IT IS CAUGHT: off up the field after the play at a jog,
 	// each on his own count and at his own pace - not stood where he set
-	// till the whistle.
+	// till the whistle. (The punt rush the same, once it is kicked and
+	// nobody is bringing it back.)
 	downfield(blockers: Actor[]) {
 		const { snap } = this.input;
 		const end = this.ballAt(this.whistle);
@@ -10693,8 +10744,32 @@ class Action {
 					snap + 1300,
 					"run",
 				);
-				// (Pulled up there, a step or two on.)
+				// (Pulled up there, a step or two on - and in toward it at a
+				// jog, not stood out there till the whistle.)
 				m.easeOff(STALK_EASE_FT);
+				const far = dist(m.at, endPt);
+				const from =
+					m.t +
+					WIDE_IN_MS[0] +
+					(WIDE_IN_MS[1] - WIDE_IN_MS[0]) * countOf(m, snap, 27);
+				const fps =
+					WIDE_IN_FPS[0] +
+					(WIDE_IN_FPS[1] - WIDE_IN_FPS[0]) * countOf(m, snap, 28);
+				const go = Math.min(
+					far - WIDE_IN_SHORT_FT,
+					(fps * (until - from)) / 1000,
+				);
+				if (go >= DOWNFIELD_LEAST_FT) {
+					m.hold(from);
+					m.runUp(
+						{
+							x: m.at.x + ((endPt.x - m.at.x) * go) / far,
+							y: m.at.y + ((endPt.y - m.at.y) * go) / far,
+						},
+						fps,
+					);
+					m.hold(until);
+				}
 				m.hold(until, "drive", this.ahead);
 				continue;
 			}
@@ -11265,6 +11340,15 @@ class Action {
 				b.hold(set, "safetyReady", ang);
 			}
 			b.hold(tm - 200, "backerReady", ang);
+		} else {
+			const far = dist(b.at, bHit);
+			const step = (far / LOCK_STEP_FPS) * 1000;
+			if (
+				(far / Math.max(0.001, tm - b.t)) * 1000 < WALK_MOST_FPS &&
+				tm - step - b.t >= LOCK_STEP_SET_MS
+			) {
+				b.hold(tm - step, "backerReady", ang);
+			}
 		}
 		b.go(bHit, tm, undefined, ang);
 		c.go(
@@ -11307,14 +11391,98 @@ class Action {
 		// (Well round from the way he was going: planted first - see
 		// plantFor - not turned at full speed.)
 		m.plantFor(to);
-		m.chase(
-			to,
-			Math.max(
-				m.t + 400,
-				this.whistle + 300 + TRAIL_SPREAD_MS * countOf(m, this.input.snap, 8),
-			),
-			m.top * 0.7,
+		const { snap } = this.input;
+		const by = Math.max(
+			m.t + 400,
+			this.whistle + 300 + TRAIL_SPREAD_MS * countOf(m, snap, 8),
 		);
+		const far = dist(m.at, to);
+		if (
+			far > TRAIL_JOG_LEAST_FT &&
+			(far / Math.max(0.001, this.whistle - m.t)) * 1000 < WALK_MOST_FPS
+		) {
+			// (Slower than a walk gets him there by the whistle: a look at it,
+			// and along after the ball at a jog, kept off it - with it as it
+			// comes back his way - and in to where it ends, not walked in
+			// while it is still going on.)
+			const look =
+				m.t +
+				TRAIL_LOOK_MS[0] +
+				(TRAIL_LOOK_MS[1] - TRAIL_LOOK_MS[0]) * countOf(m, snap, 29);
+			const fps =
+				TRAIL_JOG_FPS[0] +
+				(TRAIL_JOG_FPS[1] - TRAIL_JOG_FPS[0]) * countOf(m, snap, 30);
+			m.hold(look);
+			this.alongWith(m, fps, Math.max(ring, TRAIL_KEEP_FT), this.whistle - 300);
+			if (dist(m.at, to) > 1) {
+				m.runUp(to, fps);
+			}
+			return;
+		}
+		m.chase(to, by, m.top * 0.7);
+	}
+
+	// After the ball at `fps` till `until`, a leg at a time (as pursue) -
+	// kept `keep` off it, and with it as it comes his way, not in on it.
+	alongWith(m: Actor, fps: number, keep: number, until: number) {
+		while (m.t + PURSUIT_STEP < until) {
+			const c = m.t + PURSUIT_STEP;
+			const ball = this.ballAt(c + PURSUIT_LEAD);
+			const now = this.ballAt(m.t + PURSUIT_LEAD);
+			if (!ball || !now) {
+				break;
+			}
+			if (dist(m.at, ball) < keep) {
+				m.chaseUp(
+					{ x: m.at.x + ball.x - now.x, y: m.at.y + ball.y - now.y },
+					c,
+					fps,
+				);
+				continue;
+			}
+			const a = Math.atan2(m.at.y - ball.y, m.at.x - ball.x);
+			m.chaseUp(
+				{ x: ball.x + Math.cos(a) * keep, y: ball.y + Math.sin(a) * keep },
+				c,
+				fps,
+			);
+		}
+	}
+
+	// THE OTHERS OUT ON ROUTES ONCE IT IS CAUGHT: their routes run out (not
+	// cut short under the man on them, who has been set going off them), a
+	// look at it, and after it at a jog, each on his own count - kept well
+	// off it - not stood where his route left him till the whistle.
+	withIt(men: Actor[], catchAt: number) {
+		const { snap } = this.input;
+		const caught = catchAt + BREAK_MS;
+		for (const m of men) {
+			if (this.done.has(m.pid)) {
+				continue;
+			}
+			const from =
+				Math.max(m.t, caught) +
+				ROUTE_AFTER_MS[0] +
+				(ROUTE_AFTER_MS[1] - ROUTE_AFTER_MS[0]) * countOf(m, snap, 31);
+			const keep =
+				ROUTE_AFTER_KEEP_FT[0] + ROUTE_AFTER_KEEP_FT[1] * countOf(m, snap, 33);
+			const ball = this.ballAt(from);
+			if (
+				!ball ||
+				this.whistle - 300 - from < ROUTE_AFTER_LEAST_MS ||
+				dist(m.at, ball) < keep + ROUTE_AFTER_LEAST_FT
+			) {
+				continue;
+			}
+			m.hold(from);
+			this.alongWith(
+				m,
+				ROUTE_AFTER_FPS[0] +
+					(ROUTE_AFTER_FPS[1] - ROUTE_AFTER_FPS[0]) * countOf(m, snap, 32),
+				keep,
+				this.whistle - 300,
+			);
+		}
 	}
 
 	// Blockers whose men got off them - to make the tackle, or away from
@@ -12199,6 +12367,23 @@ class Action {
 			m.run(to, m.top * 0.85, "sprint");
 		});
 
+		// (No return coming - a fair catch, or into the end zone: the wall
+		// set up for it, the jammers down with the gunners, the gunners
+		// broken down in front of him, watching it come down, set - not
+		// stood there like statues till the whistle.)
+		const setFor = () => {
+			const jams = this.d.filter((m) => m.role === "JAMMER");
+			for (const m of [...peel, ...jams, ...gunners]) {
+				if (!this.done.has(m.pid) && this.whistle - m.t >= FAIR_SET_LEAST_MS) {
+					m.hold(
+						this.whistle,
+						m.role === "GUNNER" ? "backerReady" : "safetyReady",
+						this.toward(m.at, landPt),
+					);
+				}
+			}
+		};
+
 		// The rest of the cover in their lanes, spread across the field.
 		const lanes = [...line].sort((x, y) => this.of(x.at).a - this.of(y.at).a);
 		// (Funneling in on him, the men outside staying wider and a little
@@ -12269,6 +12454,8 @@ class Action {
 					m.top * 0.85,
 				);
 			});
+			this.downfield(inside);
+			setFor();
 			for (const m of this.d) {
 				if (!this.done.has(m.pid)) {
 					m.hold(Math.max(m.t, free) + 300);
@@ -12311,6 +12498,10 @@ class Action {
 			lanes.forEach((m, k) => {
 				m.chase(this.w(laneEnd(k)), this.whistle + 900, m.top * 0.85);
 			});
+			// (The rush held up at the line off down the field after it at a
+			// jog - not stood where it was kicked from.)
+			this.downfield(inside);
+			setFor();
 			return;
 		}
 
