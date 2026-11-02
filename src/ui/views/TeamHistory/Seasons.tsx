@@ -1,7 +1,12 @@
 import { RecordAndPlayoffs } from "../../components/RecordAndPlayoffs.tsx";
 import type { View } from "../../../common/types.ts";
 
-const Seasons = ({ history }: Pick<View<"teamHistory">, "history">) => {
+const Seasons = ({
+	history,
+	userSeasons,
+}: Pick<View<"teamHistory">, "history" | "userSeasons">) => {
+	const userSeasonsSet = new Set(userSeasons);
+
 	const numTeamNames = new Set(
 		history.map((h) => h.name).filter((name) => name !== undefined),
 	).size;
@@ -39,12 +44,32 @@ const Seasons = ({ history }: Pick<View<"teamHistory">, "history">) => {
 				{newName ? (
 					<h4 className={i > 0 ? "mt-2" : undefined}>{newName}</h4>
 				) : null}
-				{recordAndPlayoffs}
+				<div>
+					{userSeasonsSet.has(h.season) ? (
+						<span
+							className="table-info legend-square me-1"
+							title="You were the GM"
+						/>
+					) : null}
+					{recordAndPlayoffs}
+				</div>
 			</div>
 		);
 	});
 
-	return <>{historySeasons}</>;
+	return (
+		<>
+			{historySeasons}
+			{userSeasons.length > 0 ? (
+				<p className="mt-2 text-body-secondary">
+					Seasons when you were the GM are prefixed{" "}
+					<span className="text-nowrap">
+						with <span className="table-info legend-square" />
+					</span>
+				</p>
+			) : null}
+		</>
+	);
 };
 
 export default Seasons;

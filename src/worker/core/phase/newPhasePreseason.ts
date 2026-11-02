@@ -16,7 +16,6 @@ import { g, helpers, local, logEvent, toUI } from "../../util/index.ts";
 import type {
 	Conditions,
 	PhaseReturn,
-	RealTeamInfo,
 	TeamSeason,
 } from "../../../common/types.ts";
 import { groupByUnique, maxBy } from "../../../common/utils.ts";
@@ -33,6 +32,7 @@ import { collegePreseasonFill } from "../college/portal.ts";
 import { collegeSigningDay } from "../college/recruiting.ts";
 import { genCollegeRecruits } from "../college/offseason.ts";
 import { getTeamInfoCache } from "../team/getTeamInfoCache.ts";
+import { getMetaAttribute } from "../../db/metaAttributes.ts";
 
 const newPhasePreseason = async (
 	conditions: Conditions,
@@ -79,9 +79,7 @@ const newPhasePreseason = async (
 		await idb.cache.teams.put(t);
 	}
 
-	const realTeamInfo = (await idb.meta.get("attributes", "realTeamInfo")) as
-		| RealTeamInfo
-		| undefined;
+	const realTeamInfo = await getMetaAttribute("realTeamInfo");
 
 	const popInfo: Record<
 		string,

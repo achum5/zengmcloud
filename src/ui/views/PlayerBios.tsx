@@ -17,13 +17,27 @@ import { CountryFlag } from "../components/CountryFlag.tsx";
 import { useLocal } from "../util/local.ts";
 import { exemptFromCoarseRatings } from "../../common/coarsenRating.ts";
 
-const PlayerBios = ({ abbrev, players, season, stats }: View<"playerBios">) => {
+const PlayerBios = ({ players, season, stats, team }: View<"playerBios">) => {
 	useTitleBar({
 		title: "Player Bios",
 		jumpTo: true,
 		jumpToSeason: season,
-		dropdownView: "player_bios",
-		dropdownFields: { teamsAndAllWatchPlayoffs: abbrev, seasons: season },
+		dropdown: {
+			fields: [
+				{
+					key: "team",
+					options: {
+						type: "teams",
+						all: true,
+						remainingPlayoffTeams: true,
+						watch: true,
+					},
+					value: team,
+				},
+				{ key: "season", options: { type: "seasons" }, value: season },
+			],
+			view: "playerBios",
+		},
 	});
 
 	const {

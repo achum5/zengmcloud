@@ -379,6 +379,7 @@ import {
 import { legacyAwardsWithNames } from "../util/legacyAwards.ts";
 import { registerGlobal } from "../../common/registerGlobal.ts";
 import { getTeamInfoCache } from "../core/team/getTeamInfoCache.ts";
+import { getMetaAttribute, putMetaAttribute } from "../db/metaAttributes.ts";
 
 const acceptContractNegotiation = async ({
 	pid,
@@ -2408,10 +2409,7 @@ const getDefaultInjuries = () => {
 };
 
 const getDefaultNewLeagueSettings = async () => {
-	const overrides = (await idb.meta.get(
-		"attributes",
-		"defaultSettingsOverrides",
-	)) as Partial<Settings> | undefined;
+	const overrides = await getMetaAttribute("defaultSettingsOverrides");
 
 	return overrides ?? {};
 };
@@ -4219,11 +4217,8 @@ const init = async (inputEnv: Env, conditions: Conditions) => {
 	}
 
 	// Send options and current state to all new tabs
-	const attributesStore = (await idb.meta.transaction("attributes")).store;
-	const options = ((await attributesStore.get("options")) ?? {}) as Options;
-	const keyboardShortcuts = (await attributesStore.get(
-		"keyboardShortcuts",
-	)) as KeyboardShortcutsLocal;
+	const options = (await getMetaAttribute("options")) ?? {};
+	const keyboardShortcuts = await getMetaAttribute("keyboardShortcuts");
 	await toUI(
 		"updateLocal",
 		[
@@ -5383,6 +5378,10 @@ const reSignAll = async (players: any[]) => {
 				});
 
 				if (typeof response === "string") {
+					// Undo any signings that already happened, so a partial failure doesn't leave some players signed with no way to undo it
+					for (const undo of undoFunctions.toReversed()) {
+						await undo();
+					}
 					return response;
 				} else {
 					undoFunctions.push(response);
@@ -5789,10 +5788,9 @@ const updateDefaultSettingsOverrides = async (
 	if (Object.keys(defaultSettingsOverrides).length === 0) {
 		await idb.meta.delete("attributes", "defaultSettingsOverrides");
 	} else {
-		await idb.meta.put(
-			"attributes",
-			defaultSettingsOverrides,
+		await putMetaAttribute(
 			"defaultSettingsOverrides",
+			defaultSettingsOverrides,
 		);
 	}
 };
@@ -5955,10 +5953,7 @@ const updateKeepRosterSorted = async ({
 const updateKeyboardShortcuts = async (
 	keyboardShortcuts: NonNullable<KeyboardShortcutsLocal>,
 ) => {
-	const attributesStore = (
-		await idb.meta.transaction("attributes", "readwrite")
-	).store;
-	await attributesStore.put(keyboardShortcuts, "keyboardShortcuts");
+	await putMetaAttribute("keyboardShortcuts", keyboardShortcuts);
 	await toUI("updateLocal", [{ keyboardShortcuts }]);
 };
 

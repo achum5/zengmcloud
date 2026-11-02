@@ -15,6 +15,27 @@ import connectIndexedDB from "./connectIndexedDB.ts";
 import type { KeyboardShortcutsLocal } from "../../ui/util/keyboardShortcuts.ts";
 import { env } from "../util/env.ts";
 
+// Value type for each key in the attributes store
+export type MetaAttributes = {
+	defaultSettingsOverrides: Partial<Settings>;
+	keyboardShortcuts: KeyboardShortcutsLocal;
+	lastChangesVersion: string;
+	nagged: number;
+	naggedMailingList: number;
+	options: Partial<Options>;
+	realPlayerPhotos: RealPlayerPhotos;
+	realTeamInfo: RealTeamInfo;
+	// The newest "what's changed" entry this device has shown (see
+	// checkCloudChanges), and its name in a synced room.
+	lastCloudChange: number;
+	syncDeviceName: string;
+	// Durable per-device forensic rings; see phaseForensics.ts and
+	// injuryForensics.ts. Typed loosely here so the db layer doesn't import
+	// worker core modules.
+	phaseForensics: unknown[];
+	injuryForensics: unknown[];
+};
+
 // export is needed just for https://github.com/microsoft/TypeScript/issues/59951
 export interface MetaDB extends DBSchema {
 	achievements: {
@@ -25,31 +46,8 @@ export interface MetaDB extends DBSchema {
 		};
 	};
 	attributes: {
-		value:
-			| number
-			| string
-			| Options
-			| RealPlayerPhotos
-			| RealTeamInfo
-			| Partial<Settings>
-			| KeyboardShortcutsLocal
-			// Durable per-device forensic rings; see phaseForensics.ts and
-			// injuryForensics.ts. Typed loosely here so the db layer doesn't
-			// import worker core modules.
-			| unknown[];
-		key:
-			| "lastChangesVersion"
-			| "lastCloudChange"
-			| "nagged"
-			| "naggedMailingList"
-			| "options"
-			| "realPlayerPhotos"
-			| "realTeamInfo"
-			| "defaultSettingsOverrides"
-			| "keyboardShortcuts"
-			| "syncDeviceName"
-			| "phaseForensics"
-			| "injuryForensics";
+		key: keyof MetaAttributes;
+		value: MetaAttributes[keyof MetaAttributes];
 	};
 	leagues: {
 		value: League;

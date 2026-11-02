@@ -1,6 +1,7 @@
 import { ConfLogoAndName } from "../components/ConfLogoAndName.tsx";
 import type { ConfIdentity } from "../../common/confs.ts";
 import clsx from "clsx";
+import { dropdownOptions } from "../hooks/useDropdownOptions.tsx";
 import { type CSSProperties, Fragment } from "react";
 import { TeamLogoInline } from "../components/TeamLogoInline.tsx";
 import useTitleBar from "../hooks/useTitleBar.tsx";
@@ -446,10 +447,12 @@ const Standings = ({
 		title: "Standings",
 		jumpTo: true,
 		jumpToSeason: season,
-		dropdownView: "standings",
-		dropdownFields: {
-			seasons: season,
-			standingsType: type,
+		dropdown: {
+			fields: [
+				{ key: "season", options: { type: "seasons" }, value: season },
+				{ key: "type", options: dropdownOptions.standingsType, value: type },
+			],
+			view: "standings",
 		},
 	});
 	const { userTid } = useLocal(["userTid"]);

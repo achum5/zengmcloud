@@ -17,7 +17,7 @@ import {
 import { getTeamOvrOverride } from "../util/delayedTeamOvrs.ts";
 import { PHASE } from "../../common/constants.ts";
 import type { RouteParams } from "../../ui/router/types.ts";
-import { validateSeason } from "../util/processInputs.ts";
+import { validatePlayoffs, validateSeason } from "../util/processInputs.ts";
 
 // How the ranking splits between what a team has DONE and what its roster
 // looks like. Performance reaches its full share after this many games, and
@@ -33,16 +33,11 @@ const MAX_PERF_WEIGHT = 0.92;
 const PERF_RAMP_GAMES = 12;
 
 const processInputs = (params: RouteParams<"powerRankings">) => {
-	let playoffs: "playoffs" | "regularSeason" =
-		g.get("phase") === PHASE.PLAYOFFS ? "playoffs" : "regularSeason";
-	if (params.playoffs === "playoffs") {
-		playoffs = "playoffs";
-	} else if (params.playoffs === "regularSeason") {
-		playoffs = "regularSeason";
-	}
-
 	return {
-		playoffs,
+		playoffs: validatePlayoffs(
+			params.playoffs,
+			g.get("phase") === PHASE.PLAYOFFS ? "playoffs" : "regularSeason",
+		),
 		season: validateSeason(params.season),
 	};
 };

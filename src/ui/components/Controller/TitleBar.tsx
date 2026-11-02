@@ -1,4 +1,4 @@
-import Dropdown from "../Dropdown.tsx";
+import { Dropdown } from "../Dropdown.tsx";
 import DropdownLinks from "../DropdownLinks.tsx";
 import { helpers } from "../../util/helpers.ts";
 import { useLocal } from "../../util/local.ts";
@@ -52,11 +52,7 @@ export const TitleBar = () => {
 		hideNewWindow,
 		jumpTo,
 		jumpToSeason,
-		dropdownCustomOptions,
-		dropdownCustomURL,
-		dropdownView,
-		dropdownFields,
-		moreInfoAbbrev,
+		dropdown,
 		moreInfoSeason,
 		moreInfoTid,
 		lid,
@@ -66,11 +62,7 @@ export const TitleBar = () => {
 		"hideNewWindow",
 		"jumpTo",
 		"jumpToSeason",
-		"dropdownCustomOptions",
-		"dropdownCustomURL",
-		"dropdownView",
-		"dropdownFields",
-		"moreInfoAbbrev",
+		"dropdown",
 		"moreInfoSeason",
 		"moreInfoTid",
 		"lid",
@@ -163,11 +155,8 @@ export const TitleBar = () => {
 		});
 	}
 
-	if (
-		moreInfoAbbrev &&
-		moreInfoSeason !== undefined &&
-		moreInfoTid !== undefined
-	) {
+	if (moreInfoSeason !== undefined && moreInfoTid !== undefined) {
+		const team = helpers.getTeamUrlPart(moreInfoTid);
 		menuItems.push({
 			type: "header",
 			long: "More Info",
@@ -177,31 +166,19 @@ export const TitleBar = () => {
 				{
 					type: "link",
 					league: true,
-					path: [
-						"player_ratings",
-						`${moreInfoAbbrev}_${moreInfoTid}`,
-						moreInfoSeason,
-					],
+					path: ["player_ratings", team, moreInfoSeason],
 					text: "Player Ratings",
 				},
 				{
 					type: "link",
 					league: true,
-					path: [
-						"player_stats",
-						`${moreInfoAbbrev}_${moreInfoTid}`,
-						moreInfoSeason,
-					],
+					path: ["player_stats", team, moreInfoSeason],
 					text: "Player Stats",
 				},
 				{
 					type: "link",
 					league: true,
-					path: [
-						"player_bios",
-						`${moreInfoAbbrev}_${moreInfoTid}`,
-						moreInfoSeason,
-					],
+					path: ["player_bios", team, moreInfoSeason],
 					text: "Player Bios",
 				},
 			],
@@ -213,28 +190,19 @@ export const TitleBar = () => {
 	}
 
 	return (
-		<>
-			<aside className="navbar navbar-border navbar-light justify-content-start title-bar flex-shrink-0  py-0">
-				<h1>
-					{title}
-					{!hideNewWindow ? <NewWindowLink /> : null}
-				</h1>
-				{dropdownView && dropdownFields ? (
-					<Dropdown
-						customURL={dropdownCustomURL}
-						customOptions={dropdownCustomOptions}
-						view={dropdownView}
-						fields={dropdownFields}
-					/>
-				) : null}
-				<DropdownLinks
-					className="title-bar-right-links ms-auto"
-					hideTitle
-					inLeague
-					lid={lid}
-					menuItems={menuItems}
-				/>
-			</aside>
-		</>
+		<aside className="navbar navbar-border navbar-light justify-content-start title-bar flex-shrink-0  py-0">
+			<h1>
+				{title}
+				{!hideNewWindow ? <NewWindowLink /> : null}
+			</h1>
+			{dropdown ? <Dropdown dropdown={dropdown} /> : null}
+			<DropdownLinks
+				className="ms-auto title-bar-right-links"
+				hideTitle
+				inLeague
+				lid={lid}
+				menuItems={menuItems}
+			/>
+		</aside>
 	);
 };

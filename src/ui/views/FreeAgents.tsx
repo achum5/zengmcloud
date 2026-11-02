@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { dropdownOptions } from "../hooks/useDropdownOptions.tsx";
 import { PHASE, PHASE_TEXT } from "../../common/constants.ts";
 import { DataTable } from "../components/DataTable/index.tsx";
 import { MoreLinks } from "../components/MoreLinks.tsx";
@@ -52,22 +53,22 @@ const useSeasonsFreeAgents = () => {
 		minFreeAgencySeason,
 		maxFreeAgencySeason + 1,
 	).map((freeAgencySeason) => {
-		let value;
+		let label;
 		if (freeAgencySeason >= -10 && freeAgencySeason < 10) {
-			value = `${freeAgencySeason}-${freeAgencySeason + 1}`;
+			label = `${freeAgencySeason}-${freeAgencySeason + 1}`;
 		} else {
-			value = `${freeAgencySeason}-${String((freeAgencySeason + 1) % 100).padStart(2)}`;
+			label = `${freeAgencySeason}-${String((freeAgencySeason + 1) % 100).padStart(2)}`;
 		}
 
 		return {
 			key: freeAgencySeason,
-			value,
+			label,
 		};
 	});
 
 	options.push({
 		key: "current",
-		value: "Current",
+		label: "Current",
 	});
 
 	options.reverse();
@@ -491,10 +492,17 @@ const FreeAgents = ({
 
 	useTitleBar({
 		title: "Free Agents",
-		dropdownView: "free_agents",
-		dropdownFields: { typeFreeAgents: type, seasonsFreeAgents: season },
-		dropdownCustomOptions: {
-			seasonsFreeAgents,
+		dropdown: {
+			fields: [
+				{ key: "type", options: dropdownOptions.typeFreeAgents, value: type },
+				{
+					key: "season",
+					options: seasonsFreeAgents,
+					value: season,
+					buttons: "reverse",
+				},
+			],
+			view: "freeAgents",
 		},
 	});
 

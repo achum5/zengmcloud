@@ -143,7 +143,6 @@ const PayrollAndPenalties = ({
 };
 
 const TopStuff = ({
-	abbrev,
 	collegeInfo,
 	conf,
 	currentSeason,
@@ -165,7 +164,6 @@ const TopStuff = ({
 	usePts,
 }: Pick<
 	View<"roster">,
-	| "abbrev"
 	| "collegeInfo"
 	| "conf"
 	| "editable"
@@ -235,7 +233,6 @@ const TopStuff = ({
 			<>
 				Record:{" "}
 				<RecordAndPlayoffs
-					abbrev={abbrev}
 					season={season}
 					won={t.seasonAttrs.won}
 					lost={t.seasonAttrs.lost}
@@ -243,7 +240,6 @@ const TopStuff = ({
 					tied={t.seasonAttrs.tied}
 					roundsWonText={t.roundsWonText}
 					option="noSeason"
-					tid={tid}
 				/>
 			</>
 		) : (

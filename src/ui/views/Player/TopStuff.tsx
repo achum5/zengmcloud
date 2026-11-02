@@ -215,7 +215,7 @@ const StatsSummary = ({
 											"table-separator-left": separatorAfter.includes(i),
 										})}
 									>
-										{helpers.roundStat((ps as any)[stat], stat)}
+										{helpers.roundStat(ps[stat], stat)}
 									</td>
 								);
 							})}
@@ -235,7 +235,7 @@ const StatsSummary = ({
 										"table-separator-left": separatorAfter.includes(i),
 									})}
 								>
-									{helpers.roundStat(p.careerStats[stat]!, stat)}
+									{helpers.roundStat(p.careerStats[stat], stat)}
 								</td>
 							);
 						})}

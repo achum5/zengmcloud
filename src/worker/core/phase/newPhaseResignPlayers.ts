@@ -24,6 +24,7 @@ import {
 	defaultReSignOffer as realisticFrontOfficeDefaultReSignOffer,
 	reSignDecision as realisticFrontOfficeReSignDecision,
 } from "../realisticFrontOffice/freeAgency.ts";
+import { autoPlayStopsAt } from "../league/autoPlay.ts";
 
 export const FREE_AGENCY_DAYS = 30;
 // College: four weeks of offseason recruiting, then signing day.
@@ -205,7 +206,12 @@ const newPhaseResignPlayers = async (
 
 		if (
 			g.get("userTids").includes(p.tid) &&
-			!local.autoPlayUntil &&
+			(!local.autoPlayUntil ||
+				autoPlayStopsAt(
+					local.autoPlayUntil,
+					g.get("season"),
+					PHASE.RESIGN_PLAYERS,
+				)) &&
 			!g.get("spectator")
 		) {
 			const tid = p.tid;

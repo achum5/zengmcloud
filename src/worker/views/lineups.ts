@@ -3,9 +3,9 @@ import { g } from "../util/index.ts";
 import { defineView } from "../util/defineView.ts";
 import type { RouteParams } from "../../ui/router/types.ts";
 import {
-	validateAbbrev,
 	validateSeason,
 	validateSeasonType,
+	validateTeam,
 } from "../util/processInputs.ts";
 import { seasonLineups } from "../util/gameTimeline.ts";
 import { lineupPictures } from "../util/lineupPictures.ts";
@@ -15,9 +15,9 @@ import { lineupPictures } from "../util/lineupPictures.ts";
 // minutes; games whose box scores are gone take their lineups with them.
 
 const processInputs = (params: RouteParams<"lineups">) => {
-	const [tid, abbrev] = validateAbbrev(params.abbrev);
+	const tid = validateTeam(params.team);
 	return {
-		abbrev,
+		abbrev: g.get("teamInfoCache")[tid]?.abbrev ?? "???",
 		tid,
 		season: validateSeason(params.season),
 		playoffs: validateSeasonType(params.playoffs),

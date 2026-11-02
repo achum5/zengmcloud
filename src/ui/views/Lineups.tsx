@@ -1,5 +1,6 @@
 import { useState } from "react";
 import useTitleBar from "../hooks/useTitleBar.tsx";
+import { dropdownOptions } from "../hooks/useDropdownOptions.tsx";
 import { DataTable } from "../components/DataTable/index.tsx";
 import { MoreLinks } from "../components/MoreLinks.tsx";
 import { PlusMinus } from "../components/PlusMinus.tsx";
@@ -29,7 +30,6 @@ const shortName = (name: string | undefined) => {
 };
 
 const Lineups = ({
-	abbrev,
 	colors,
 	jersey,
 	lineups,
@@ -42,11 +42,17 @@ const Lineups = ({
 }: View<"lineups">) => {
 	useTitleBar({
 		title: "Lineups",
-		dropdownView: "lineups",
-		dropdownFields: {
-			teams: abbrev,
-			seasons: season,
-			playoffs,
+		dropdown: {
+			fields: [
+				{ key: "team", options: { type: "teams" }, value: tid },
+				{ key: "season", options: { type: "seasons" }, value: season },
+				{
+					key: "playoffs",
+					options: dropdownOptions.playoffs,
+					value: playoffs,
+				},
+			],
+			view: "lineups",
 		},
 	});
 	const [minMinutes, setMinMinutes] = useState(10);
@@ -102,13 +108,7 @@ const Lineups = ({
 
 	return (
 		<>
-			<MoreLinks
-				type="team"
-				page="lineups"
-				abbrev={abbrev}
-				tid={tid}
-				season={season}
-			/>
+			<MoreLinks type="team" page="lineups" tid={tid} season={season} />
 			<div className="d-flex align-items-center gap-2 mb-2">
 				<label htmlFor="lineups-min" className="mb-0">
 					Min. minutes

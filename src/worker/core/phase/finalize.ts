@@ -15,7 +15,7 @@ import type { Conditions, Phase, PhaseReturn } from "../../../common/types.ts";
 import { getGlobalSettings } from "../../util/getGlobalSettings.ts";
 import { processScheduledEvents } from "./processScheduledEvents.ts";
 import { settleBets } from "../sportsbook/bets.ts";
-import { cleanupAutoPlay } from "../league/autoPlay.ts";
+import { autoPlayStopsAt, cleanupAutoPlay } from "../league/autoPlay.ts";
 import { realisticFrontOfficesOn } from "../realisticFrontOffice/isOn.ts";
 import { tradeWindow as realisticFrontOfficeTradeWindow } from "../realisticFrontOffice/market.ts";
 
@@ -119,20 +119,16 @@ const finalize = async (
 		}
 	}
 
-	if (local.autoPlayUntil) {
-		if (
-			local.autoPlayUntil.season < g.get("season") ||
-			(local.autoPlayUntil.season === g.get("season") &&
-				local.autoPlayUntil.phase <= phase)
-		) {
+	// Save a reference, since local.autoPlayUntil might be cleared during an await below, if the user stops auto play
+	const autoPlayUntil = local.autoPlayUntil;
+	if (autoPlayUntil) {
+		if (autoPlayStopsAt(autoPlayUntil, g.get("season"), phase)) {
 			if (!saved) {
 				await save();
 				await updateStatus();
 			}
 			console.log(
-				`Auto play done in ${
-					(Date.now() - local.autoPlayUntil.start) / 1000
-				} seconds`,
+				`Auto play done in ${(Date.now() - autoPlayUntil.start) / 1000} seconds`,
 			);
 			cleanupAutoPlay();
 			await updatePlayMenu();

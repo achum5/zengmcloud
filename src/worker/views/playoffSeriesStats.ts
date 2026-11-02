@@ -93,7 +93,7 @@ export const seriesDropdownOptions = async (
 		const opp = teamInfoCache[oppTid]?.abbrev ?? "?";
 		return {
 			key,
-			value: makeResponsiveDropdownOption(
+			label: makeResponsiveDropdownOption(
 				`R${round + 1} vs ${opp}`,
 				`${helpers.upperCaseFirstLetter(
 					helpers.playoffRoundName(round, numRounds, byConf),

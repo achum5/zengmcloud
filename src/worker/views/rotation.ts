@@ -2,7 +2,7 @@ import { idb } from "../db/index.ts";
 import { g } from "../util/index.ts";
 import { defineView, type ViewArgs } from "../util/defineView.ts";
 import type { RouteParams } from "../../ui/router/types.ts";
-import { validateAbbrev } from "../util/processInputs.ts";
+import { validateTeam } from "../util/processInputs.ts";
 import { sanitizeRotation } from "../../common/rotation.ts";
 import {
 	generateRotation,
@@ -20,8 +20,8 @@ import { player } from "../core/index.ts";
 // what was drawn.
 
 const processInputs = (params: RouteParams<"rotation">) => {
-	const [tid, abbrev] = validateAbbrev(params.abbrev);
-	return { abbrev, tid };
+	const tid = validateTeam(params.team);
+	return { abbrev: g.get("teamInfoCache")[tid]?.abbrev ?? "???", tid };
 };
 
 const updateRotation = async ({

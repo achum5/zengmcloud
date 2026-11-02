@@ -282,7 +282,9 @@ class GameSim extends GameSimBase {
 
 		let numOvertimes = 0;
 		while (
-			this.team[0].stat.pts === this.team[1].stat.pts &&
+			(this.team[0].stat.pts === this.team[1].stat.pts ||
+				// Score is not tied, but the trailing team still gets a possession, like if the first team kicks a field goal and the second team's possession continues past the end of the period
+				(this.overtimeState !== undefined && this.overtimeState !== "over")) &&
 			numOvertimes < this.maxOvertimes
 		) {
 			this.simOvertime();
@@ -436,9 +438,25 @@ class GameSim extends GameSimBase {
 		return this.numPeriods % 2 === 0 && quarter === this.numPeriods / 2 + 1;
 	}
 
+	// Overtime is structured like repeated games of numPeriods periods each, so the 1st period and the period after halftime start with a kickoff, and other periods continue the previous possession
+	overtimePeriodWithinGame(overtimes: number) {
+		return ((overtimes - 1) % this.numPeriods) + 1;
+	}
+
+	overtimeStartsWithKickoff(overtimes: number) {
+		const period = this.overtimePeriodWithinGame(overtimes);
+		return period === 1 || this.isFirstPeriodAfterHalftime(period);
+	}
+
 	kickoffAfterEndOfPeriod(quarter: number) {
+		if (quarter < this.numPeriods) {
+			return this.isFirstPeriodAfterHalftime(quarter + 1);
+		}
+
+		const nextOvertimes = quarter - this.numPeriods + 1;
 		return (
-			this.isFirstPeriodAfterHalftime(quarter + 1) || quarter >= this.numPeriods
+			nextOvertimes > this.maxOvertimes ||
+			this.overtimeStartsWithKickoff(nextOvertimes)
 		);
 	}
 
@@ -498,34 +516,41 @@ class GameSim extends GameSimBase {
 		if (this.overtimeState === undefined) {
 			// Only set this in first overtime
 			this.overtimeState = "initialKickoff";
-
-			// Coin flip in initial overtime
-			this.awaitingKickoff = Math.random() < 0.5 ? 0 : 1;
-			this.lastHalfAwaitingKickoff = this.awaitingKickoff;
-			this.scrimmage = SCRIMMAGE_KICKOFF;
 		}
 		this.team[0].stat.ptsQtrs.push(0);
 		this.team[1].stat.ptsQtrs.push(0);
-		this.timeouts = [2, 2];
-		this.logTimeouts();
-		this.twoMinuteWarningHappened = false;
+
+		const startsWithKickoff = this.overtimeStartsWithKickoff(this.overtimes);
+		if (startsWithKickoff) {
+			this.timeouts = [2, 2];
+			this.logTimeouts();
+			this.twoMinuteWarningHappened = false;
+		}
+
 		this.playByPlay.logEvent({
 			type: "overtime",
 			clock: this.clock,
 			overtimes: this.overtimes,
-			startsWithKickoff: this.kickoffAfterEndOfPeriod(
-				this.numPeriods + this.overtimes - 1,
-			),
+			startsWithKickoff,
 		});
 
-		this.d = this.lastHalfAwaitingKickoff === 0 ? 1 : 0;
-		this.o = this.lastHalfAwaitingKickoff;
-		this.awaitingKickoff = this.d;
-		this.lastHalfAwaitingKickoff = this.d;
-		this.scrimmage = SCRIMMAGE_KICKOFF;
+		if (startsWithKickoff) {
+			if (this.overtimes === 1) {
+				// Coin flip in initial overtime, after that alternate like halftime
+				this.lastHalfAwaitingKickoff = Math.random() < 0.5 ? 0 : 1;
+			}
+
+			this.d = this.lastHalfAwaitingKickoff === 0 ? 1 : 0;
+			this.o = this.lastHalfAwaitingKickoff;
+			this.awaitingKickoff = this.d;
+			this.lastHalfAwaitingKickoff = this.d;
+			this.scrimmage = SCRIMMAGE_KICKOFF;
+		}
 
 		while (
-			(this.clock > 0 || this.playUntimedPossession) &&
+			(this.clock > 0 ||
+				this.awaitingAfterTouchdown ||
+				this.playUntimedPossession) &&
 			this.overtimeState !== "over"
 		) {
 			this.simPlay();
@@ -996,8 +1021,8 @@ class GameSim extends GameSimBase {
 					(() => {
 						// In overtime, if tied and a field goal would win, try it
 						if (
-							((quarter > this.numPeriods &&
-								this.overtimeType === "suddenDeath") ||
+							quarter > this.numPeriods &&
+							(this.overtimeType === "suddenDeath" ||
 								this.overtimeState !== "firstPossession") &&
 							ptsDown === 0 &&
 							probMadeFieldGoal >= 0.7
@@ -1153,32 +1178,35 @@ class GameSim extends GameSimBase {
 		dt /= 60;
 		const quarter = this.team[0].stat.ptsQtrs.length;
 
-		const clockAtEndOfPlay = this.clock - dt;
+		// Run the clock for the play before committing it, so anything that happens after the play (penalties, timeouts, etc.) is logged at the time the play ended
+		dt = Math.min(dt, this.clock);
+		this.clock -= dt;
 
 		const timeExpiredAtEndOfHalf =
-			clockAtEndOfPlay <= 0 && this.kickoffAfterEndOfPeriod(quarter);
+			this.clock <= 0 && this.kickoffAfterEndOfPeriod(quarter);
 
 		this.currentPlay.commit(timeExpiredAtEndOfHalf);
+		this.playByPlay.setClockForScores(this.clock);
 
 		// Two minute warning
 		let twoMinuteWarningHappening = false;
 		if (
 			this.kickoffAfterEndOfPeriod(quarter) &&
-			clockAtEndOfPlay <= 2 &&
+			this.clock <= 2 &&
 			!this.twoMinuteWarningHappened
 		) {
 			this.twoMinuteWarningHappened = true;
 			this.isClockRunning = false;
 			this.playByPlay.logEvent({
 				type: "twoMinuteWarning",
-				clock: clockAtEndOfPlay,
+				clock: this.clock,
 			});
 
 			// So we know it happened this possession, and no random timeout should be used
 			twoMinuteWarningHappening = true;
 		}
 
-		if (clockAtEndOfPlay > 0 && !twoMinuteWarningHappening) {
+		if (this.clock > 0 && !twoMinuteWarningHappening) {
 			// Timeouts - small chance at any time
 			if (Math.random() < 0.01) {
 				this.doTimeout(this.o, false);
@@ -1223,7 +1251,7 @@ class GameSim extends GameSimBase {
 				dtClockRunning = randInt(5, 13) / 60;
 
 				// Leave some time for a FG attempt!
-				if (this.clock - dt - dtClockRunning < 0) {
+				if (this.clock - dtClockRunning < 0) {
 					dtClockRunning = randInt(0, 4) / 60;
 				}
 			} else {
@@ -1236,7 +1264,7 @@ class GameSim extends GameSimBase {
 		// Check two minute warning again
 		if (
 			this.kickoffAfterEndOfPeriod(quarter) &&
-			clockAtEndOfPlay - dtClockRunning <= 2 &&
+			this.clock - dtClockRunning <= 2 &&
 			!this.twoMinuteWarningHappened
 		) {
 			this.twoMinuteWarningHappened = true;
@@ -1247,19 +1275,13 @@ class GameSim extends GameSimBase {
 			});
 
 			// Clock only runs until it hits 2 minutes exactly
-			dtClockRunning = helpers.bound(clockAtEndOfPlay - 2, 0, Infinity);
+			dtClockRunning = helpers.bound(this.clock - 2, 0, Infinity);
 		}
 
-		// Clock
-		dt += dtClockRunning;
-		this.clock -= dt;
+		dtClockRunning = Math.min(dtClockRunning, this.clock);
+		this.clock -= dtClockRunning;
 
-		if (this.clock < 0) {
-			dt += this.clock;
-			this.clock = 0;
-		}
-
-		this.updatePlayingTime(dt);
+		this.updatePlayingTime(dt + dtClockRunning);
 		if (playType !== "kneel") {
 			this.injuries();
 		}

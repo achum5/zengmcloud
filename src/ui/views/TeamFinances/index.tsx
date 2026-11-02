@@ -9,6 +9,7 @@ import {
 import { DataTable } from "../../components/DataTable/index.tsx";
 import { MoreLinks } from "../../components/MoreLinks.tsx";
 import useTitleBar from "../../hooks/useTitleBar.tsx";
+import { dropdownOptions } from "../../hooks/useDropdownOptions.tsx";
 import { helpers } from "../../util/helpers.ts";
 import { showNotification } from "../../util/showNotification.ts";
 import { toWorker } from "../../util/toWorker.ts";
@@ -743,7 +744,6 @@ const highlightZeroNegative = (amount: number) => {
 };
 
 const TeamFinances = ({
-	abbrev,
 	autoTicketPrice,
 	barData,
 	contractTotals,
@@ -763,8 +763,13 @@ const TeamFinances = ({
 }: View<"teamFinances">) => {
 	useTitleBar({
 		title: "Team Finances",
-		dropdownView: "team_finances",
-		dropdownFields: { teams: abbrev, shows: show },
+		dropdown: {
+			fields: [
+				{ key: "team", options: { type: "teams" }, value: tid },
+				{ key: "show", options: dropdownOptions.shows, value: show },
+			],
+			view: "teamFinances",
+		},
 	});
 
 	const {
@@ -998,13 +1003,11 @@ const TeamFinances = ({
 			),
 		},
 		...getCols(["Pos", "Name", "Cap%", "Contract Value"]),
-		...salariesSeasons.map(
-			(season): Col => ({
-				title: String(season),
-				sortSequence: ["desc", "asc"],
-				sortType: "number",
-			}),
-		),
+		...salariesSeasons.map((season): Col => ({
+			title: String(season),
+			sortSequence: ["desc", "asc"],
+			sortType: "number",
+		})),
 	]);
 
 	const playerRows = contracts.map((p, i) => {
@@ -1157,7 +1160,12 @@ const TeamFinances = ({
 			},
 			{
 				value: (
-					<a href={helpers.leagueUrl(["draft_picks", `${abbrev}_${tid}`])}>
+					<a
+						href={helpers.leagueUrl([
+							"draft_picks",
+							helpers.getTeamUrlPart(tid),
+						])}
+					>
 						{label}
 					</a>
 				),
@@ -1313,7 +1321,7 @@ const TeamFinances = ({
 
 	return (
 		<>
-			<MoreLinks type="team" page="team_finances" abbrev={abbrev} tid={tid} />
+			<MoreLinks type="team" page="team_finances" tid={tid} />
 
 			<PayrollInfo
 				luxuryTaxAmount={luxuryTaxAmount}

@@ -1,4 +1,5 @@
 import { DataTable } from "../../components/DataTable/index.tsx";
+import { dropdownOptions } from "../../hooks/useDropdownOptions.tsx";
 import Injuries from "./Injuries.tsx";
 import { SocialEmbed } from "../../components/SocialEmbed.tsx";
 import useTitleBar from "../../hooks/useTitleBar.tsx";
@@ -27,7 +28,6 @@ import { TradingCardGallery } from "../../components/TradingCardGallery.tsx";
 import { wrappedSeasonAwards } from "./SeasonAwards.tsx";
 import Impact from "./Impact.tsx";
 import { last, orderBy } from "../../../common/utils.ts";
-import type { LeagueUrlParts } from "../../router/types.ts";
 
 const Player2 = ({
 	amateurUniform,
@@ -106,30 +106,34 @@ const Player2 = ({
 	useTitleBar({
 		title: player.name,
 		customMenu,
-		dropdownView: "player",
-		dropdownFields:
+		dropdown:
 			player.tid !== PLAYER.UNDRAFTED
 				? {
-						playerProfile: "overview",
+						fields: [
+							{
+								key: "profile",
+								options: dropdownOptions.playerProfile,
+								value: "overview",
+							},
+						],
+						urlOverride: ({ profile }) => {
+							if (profile !== "gameLog") {
+								return ["player", player.pid];
+							}
+
+							let gameLogSeason;
+							if (player.stats.length > 0) {
+								gameLogSeason = player.stats.at(-1)!.season;
+							} else if (player.ratings.length > 0) {
+								gameLogSeason = last(player.ratings).season;
+							} else {
+								gameLogSeason = currentSeason;
+							}
+
+							return ["player_game_log", player.pid, gameLogSeason];
+						},
 					}
 				: undefined,
-		dropdownCustomURL: (fields) => {
-			let gameLogSeason;
-			if (player.stats.length > 0) {
-				gameLogSeason = player.stats.at(-1)!.season;
-			} else if (player.ratings.length > 0) {
-				gameLogSeason = last(player.ratings).season;
-			} else {
-				gameLogSeason = currentSeason;
-			}
-
-			const parts: LeagueUrlParts =
-				fields.playerProfile === "gameLog"
-					? ["player_game_log", player.pid, gameLogSeason]
-					: ["player", player.pid];
-
-			return helpers.leagueUrl(parts);
-		},
 	});
 
 	const awardsGrouped = groupAwards(player.awards);
@@ -288,7 +292,7 @@ const Player2 = ({
 								...ratings.map((rating) =>
 									showRatings ? (
 										<MaybeBold bold={leaders[r.season]?.ratings.has(rating)}>
-											{(r as any)[rating]}
+											{r[rating]}
 										</MaybeBold>
 									) : null,
 								),

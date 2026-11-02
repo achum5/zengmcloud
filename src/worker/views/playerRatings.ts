@@ -25,31 +25,12 @@ import { actualPhase } from "../util/actualPhase.ts";
 import { player, season } from "../core/index.ts";
 import { bySport } from "../../common/sportFunctions.ts";
 import type { RouteParams } from "../../ui/router/types.ts";
-import { validateAbbrev } from "../util/processInputs.ts";
+import { validateTeam } from "../util/processInputs.ts";
 import { validateSeason } from "../util/processInputs.ts";
 
 export const processInputs = (
 	params: RouteParams<"playerBios"> | RouteParams<"playerRatings">,
 ) => {
-	let abbrev;
-	let tid: number | undefined;
-
-	const [validatedTid, validatedAbbrev] = validateAbbrev(params.abbrev, true);
-
-	if (params.abbrev !== undefined && validatedAbbrev !== "???") {
-		abbrev = validatedAbbrev;
-		tid = validatedTid;
-	} else if (params.abbrev === "watch") {
-		abbrev = "watch";
-	} else if (
-		params.abbrev === "playoffs" &&
-		REMAINING_PLAYOFF_TEAMS_PHASES.has(actualPhase())
-	) {
-		abbrev = "playoffs";
-	} else {
-		abbrev = "all";
-	}
-
 	// The table's page lives in the URL so it can be linked to. Anything that
 	// isn't a positive integer means page 1 - the table clamps to the last real
 	// page itself, since how many there are depends on the per-page setting and
@@ -61,10 +42,9 @@ export const processInputs = (
 	const page = Number.isNaN(parsedPage) || parsedPage < 1 ? 1 : parsedPage;
 
 	return {
-		abbrev,
 		page,
 		season: validateSeason(params.season),
-		tid,
+		team: validateTeam(params.team, ["all", "playoffs", "watch"]),
 	};
 };
 
@@ -174,21 +154,20 @@ export const getActivePlayoffTids = async () => {
 
 export const getPlayers = async (
 	season: number,
-	abbrev: string,
+	team: number | "all" | "playoffs" | "watch",
 	attrs: Readonly<PlayerAttr[]>,
 	ratings: Readonly<PlayerRatingAttr[]>,
 	stats: Readonly<PlayerStatAttr[]>,
-	tid: number | undefined,
 ) => {
 	let filter: ((p: Player) => boolean) | undefined;
-	if (tid === undefined) {
-		if (abbrev === "watch") {
-			filter = (p) => p.watch !== undefined;
-		} else if (abbrev === "playoffs") {
-			const playoffTids = await getActivePlayoffTids();
-			filter = (p) => playoffTids.has(p.tid);
-		}
+	if (team === "watch") {
+		filter = (p) => p.watch !== undefined;
+	} else if (team === "playoffs") {
+		const playoffTids = await getActivePlayoffTids();
+		filter = (p) => playoffTids.has(p.tid);
 	}
+
+	const tid = typeof team === "number" ? team : undefined;
 
 	const playersAll = await idb.merged.players.getAll(
 		g.get("season") === season
@@ -264,9 +243,9 @@ const updatePlayers = async ({
 		updateEvents.has("firstRun") ||
 		(inputs.season === g.get("season") && updateEvents.has("playerMovement")) ||
 		(updateEvents.has("newPhase") && g.get("phase") === PHASE.PRESEASON) ||
-		(inputs.abbrev === "playoffs" && updateEvents.has("gameSim")) ||
+		(inputs.team === "playoffs" && updateEvents.has("gameSim")) ||
 		inputs.season !== prevInputs?.season ||
-		inputs.abbrev !== prevInputs?.abbrev
+		inputs.team !== prevInputs?.team
 	) {
 		const ratings = bySport({
 			baseball: RATINGS,
@@ -331,11 +310,10 @@ const updatePlayers = async ({
 		const playersRaw = addFirstNameShort(
 			await getPlayers(
 				inputs.season,
-				inputs.abbrev,
+				inputs.team,
 				["salary"],
 				[...ratings, ...extraRatings],
 				["vorp", "gp"],
-				inputs.tid,
 			),
 		);
 
@@ -350,7 +328,7 @@ const updatePlayers = async ({
 		}));
 
 		return {
-			abbrev: inputs.abbrev,
+			team: inputs.team,
 			season: inputs.season,
 			players,
 			ratings,

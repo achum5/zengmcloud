@@ -50,7 +50,6 @@ const cloneGrid = (grid: RotationGrid): RotationGrid =>
 	);
 
 const Rotation = ({
-	abbrev,
 	auto,
 	editable,
 	enabled,
@@ -64,9 +63,10 @@ const Rotation = ({
 }: View<"rotation">) => {
 	useTitleBar({
 		title: "Rotation",
-		dropdownView: "rotation",
-		dropdownFields: { teams: abbrev },
-		moreInfoAbbrev: abbrev,
+		dropdown: {
+			fields: [{ key: "team", options: { type: "teams" }, value: tid }],
+			view: "rotation",
+		},
 		moreInfoTid: tid,
 	});
 
@@ -151,7 +151,7 @@ const Rotation = ({
 	if (!enabled) {
 		return (
 			<>
-				<MoreLinks type="team" page="rotation" abbrev={abbrev} tid={tid} />
+				<MoreLinks type="team" page="rotation" tid={tid} />
 				<p>
 					Rotation plans are off for this league. Turn them on in{" "}
 					<a href={helpers.leagueUrl(["settings"])}>League Settings</a>.
@@ -166,7 +166,7 @@ const Rotation = ({
 
 	return (
 		<>
-			<MoreLinks type="team" page="rotation" abbrev={abbrev} tid={tid} />
+			<MoreLinks type="team" page="rotation" tid={tid} />
 
 			{editable ? (
 				<div className="d-flex flex-wrap align-items-center gap-3 mb-3">

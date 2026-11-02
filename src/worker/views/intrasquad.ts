@@ -3,7 +3,7 @@ import { g, helpers } from "../util/index.ts";
 import { DEFAULT_TEAM_COLORS } from "../../common/constants.ts";
 import { defineView, type ViewArgs } from "../util/defineView.ts";
 import type { RouteParams } from "../../ui/router/types.ts";
-import { validateAbbrev } from "../util/processInputs.ts";
+import { validateTeam } from "../util/processInputs.ts";
 import { player, team } from "../core/index.ts";
 
 // The team's current roster, plus the color info needed to label the two
@@ -11,8 +11,8 @@ import { player, team } from "../core/index.ts";
 // squad and run an intrasquad scrimmage (an exhibition game between two halves
 // of one team). Mirrors how the Roster page loads the active roster.
 const processInputs = (params: RouteParams<"intrasquad">) => {
-	const [tid, abbrev] = validateAbbrev(params.abbrev);
-	return { tid, abbrev };
+	const tid = validateTeam(params.team);
+	return { tid, abbrev: g.get("teamInfoCache")[tid]?.abbrev ?? "???" };
 };
 
 const updateIntrasquad = async ({

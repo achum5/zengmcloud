@@ -3306,9 +3306,7 @@ export const settings: Setting[] = (
 						myHandleChange({
 							...saveOldBoxScores,
 							[key]:
-								event.target.value === "none"
-									? undefined
-									: (event.target.value as any),
+								event.target.value === "none" ? undefined : event.target.value,
 						});
 					};
 

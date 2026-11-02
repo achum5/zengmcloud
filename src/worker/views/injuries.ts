@@ -9,9 +9,8 @@ import { actualPhase } from "../util/actualPhase.ts";
 import { bySport } from "../../common/sportFunctions.ts";
 import { exemptFromCoarseRatings } from "../../common/coarsenRating.ts";
 import coarsenInjuryDrops from "../core/player/coarsenInjuryDrops.ts";
-import { REMAINING_PLAYOFF_TEAMS_PHASES } from "../../common/constants.ts";
 import type { RouteParams } from "../../ui/router/types.ts";
-import { validateAbbrev } from "../util/processInputs.ts";
+import { validateTeam } from "../util/processInputs.ts";
 import { validateSeason } from "../util/processInputs.ts";
 
 const processInputs = (params: RouteParams<"injuries">) => {
@@ -23,29 +22,9 @@ const processInputs = (params: RouteParams<"injuries">) => {
 		season = "current";
 	}
 
-	let abbrev;
-	let tid: number | undefined;
-
-	const [validatedTid, validatedAbbrev] = validateAbbrev(params.abbrev, true);
-
-	if (params.abbrev !== undefined && validatedAbbrev !== "???") {
-		abbrev = validatedAbbrev;
-		tid = validatedTid;
-	} else if (params.abbrev === "watch") {
-		abbrev = "watch";
-	} else if (
-		params.abbrev === "playoffs" &&
-		REMAINING_PLAYOFF_TEAMS_PHASES.has(actualPhase())
-	) {
-		abbrev = "playoffs";
-	} else {
-		abbrev = "all";
-	}
-
 	return {
-		abbrev,
 		season,
-		tid,
+		team: validateTeam(params.team, ["all", "playoffs", "watch"]),
 	};
 };
 
@@ -59,7 +38,7 @@ export default defineView({
 				(updateEvents.has("gameSim") || updateEvents.has("playerMovement"))) ||
 			(updateEvents.has("newPhase") && g.get("phase") === PHASE.PRESEASON) ||
 			inputs.season !== prevInputs?.season ||
-			inputs.abbrev !== prevInputs?.abbrev
+			inputs.team !== prevInputs?.team
 		) {
 			const stats = bySport({
 				baseball: ["gp", "keyStats"],
@@ -70,11 +49,10 @@ export default defineView({
 
 			const players = await getPlayers(
 				inputs.season === "current" ? g.get("season") : inputs.season,
-				inputs.abbrev,
+				inputs.team,
 				["injury", "injuries"],
 				["ovr", "pot"],
 				[...stats, "jerseyNumber"],
-				inputs.tid,
 			);
 
 			// With the ones digit hidden, a drop shows how far the tens digit fell,
@@ -148,7 +126,7 @@ export default defineView({
 			}
 
 			return {
-				abbrev: inputs.abbrev,
+				team: inputs.team,
 				injuries: addFirstNameShort(injuries),
 				season: inputs.season,
 				stats,

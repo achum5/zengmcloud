@@ -1,5 +1,3 @@
-import { idb } from "../db/index.ts";
-import type { Options } from "../../common/types.ts";
 import {
 	DEFAULT_PHASE_CHANGE_REDIRECTS,
 	DEFAULT_RECAP_MAX_GAMES,
@@ -8,18 +6,24 @@ import {
 } from "../../common/constants.ts";
 import { DEFAULT_OWN_GAME_SIM_CUTOFF_SECONDS } from "../../common/ownGameSim.ts";
 import { DEFAULT_ACHIEVEMENT_DRAFT_PICKS } from "../../common/achievementCards.ts";
+import { getMetaAttribute } from "../db/metaAttributes.ts";
 
 export const getGlobalSettings = async () => {
-	const globalSettings = ((await idb.meta.get("attributes", "options")) ??
-		{}) as Options;
+	const globalSettings = (await getMetaAttribute("options")) ?? {};
 
-	globalSettings.phaseChangeRedirects ??= DEFAULT_PHASE_CHANGE_REDIRECTS;
-	globalSettings.recapMaxGames ??= DEFAULT_RECAP_MAX_GAMES;
-	globalSettings.recapMaxDays ??= DEFAULT_RECAP_MAX_DAYS;
-	globalSettings.recapMaxPlayers ??= DEFAULT_RECAP_MAX_PLAYERS;
-	globalSettings.ownGameSimCutoffSeconds ??=
-		DEFAULT_OWN_GAME_SIM_CUTOFF_SECONDS;
-	globalSettings.achievementCardsDraftPicks ??= DEFAULT_ACHIEVEMENT_DRAFT_PICKS;
-
-	return globalSettings;
+	return {
+		...globalSettings,
+		phaseChangeRedirects:
+			globalSettings.phaseChangeRedirects ?? DEFAULT_PHASE_CHANGE_REDIRECTS,
+		recapMaxGames: globalSettings.recapMaxGames ?? DEFAULT_RECAP_MAX_GAMES,
+		recapMaxDays: globalSettings.recapMaxDays ?? DEFAULT_RECAP_MAX_DAYS,
+		recapMaxPlayers:
+			globalSettings.recapMaxPlayers ?? DEFAULT_RECAP_MAX_PLAYERS,
+		ownGameSimCutoffSeconds:
+			globalSettings.ownGameSimCutoffSeconds ??
+			DEFAULT_OWN_GAME_SIM_CUTOFF_SECONDS,
+		achievementCardsDraftPicks:
+			globalSettings.achievementCardsDraftPicks ??
+			DEFAULT_ACHIEVEMENT_DRAFT_PICKS,
+	};
 };

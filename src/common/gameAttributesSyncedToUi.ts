@@ -28,6 +28,7 @@ export const gameAttributesSyncedToUi = [
 	"minContract",
 	"minPayroll",
 	"neutralSite",
+	"nextPhase",
 	"numGames",
 	"numPeriods",
 	"numWatchColors",

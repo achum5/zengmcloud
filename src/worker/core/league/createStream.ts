@@ -1814,7 +1814,6 @@ const afterDBStream = async ({
 	for (const [i, t] of teams.entries()) {
 		if (teamInfos[i].strategy === undefined) {
 			const teamPlayers = (activePlayersByTid[i] ?? []).map((p) => ({
-				pid: p.pid,
 				injury: p.injury,
 				value: p.value,
 				ratings: last(p.ratings),

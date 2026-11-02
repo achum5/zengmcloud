@@ -112,6 +112,7 @@ const useLocalRaw = createWithEqualityFn<LocalStateWithActions>(
 		minContract: defaultGameAttributes.minContract,
 		minPayroll: defaultGameAttributes.minPayroll,
 		neutralSite: defaultGameAttributes.neutralSite,
+		nextPhase: undefined,
 		numGames: defaultGameAttributes.numGames[0].value,
 		numPeriods: defaultGameAttributes.numPeriods,
 		numWatchColors: defaultGameAttributes.numWatchColors,
@@ -145,11 +146,7 @@ const useLocalRaw = createWithEqualityFn<LocalStateWithActions>(
 		hideNewWindow: false,
 		jumpTo: false,
 		jumpToSeason: undefined,
-		dropdownCustomOptions: undefined,
-		dropdownCustomURL: undefined,
-		dropdownView: undefined,
-		dropdownFields: {},
-		moreInfoAbbrev: undefined,
+		dropdown: undefined,
 		moreInfoSeason: undefined,
 		moreInfoTid: undefined,
 		stickyFooterAd: false,
@@ -231,6 +228,7 @@ const useLocalRaw = createWithEqualityFn<LocalStateWithActions>(
 					mpPhaseReady: undefined,
 					mpLotteryReveal: undefined,
 					numPeriods: defaultGameAttributes.numPeriods,
+					nextPhase: undefined,
 					numWatchColors: defaultGameAttributes.numWatchColors,
 					phase: 0,
 					playMenuOptions: [],
@@ -387,10 +385,9 @@ const useLocal = <Key extends keyof LocalStateUI>(keys: Key[]) => {
 	return useLocalRaw(selector);
 };
 
-// This assumes the actions object never changes!
-const useLocalActions = () => useLocalRaw((state) => state.actions);
-
 const local = useLocalRaw;
+
+// This assumes the actions object never changes!
 const localActions = local.getState().actions;
 
-export { local, localActions, useLocalActions, useLocal };
+export { local, localActions, useLocal };

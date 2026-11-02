@@ -14,14 +14,14 @@ import { coarsenPlayerForDisplay } from "../../common/coarsenRating.ts";
 import { getTeamOvrOverride } from "../util/delayedTeamOvrs.ts";
 import { feedAbout } from "../util/socialFeed.ts";
 import type { RouteParams } from "../../ui/router/types.ts";
-import { validateAbbrev } from "../util/processInputs.ts";
+import { validateTeam } from "../util/processInputs.ts";
 import { validateSeason } from "../util/processInputs.ts";
 import { validateSeasonType } from "../util/processInputs.ts";
 import { posValue } from "../core/player/pos.basketball.ts";
 
 const processInputs = (params: RouteParams<"roster">) => {
 	// Fix broken links
-	if (params.abbrev === "FA" || params.abbrev === "FA_-1") {
+	if (params.team === "FA" || params.team === "FA_-1") {
 		// https://stackoverflow.com/a/59923262/786644
 		const returnValue = {
 			redirectUrl: helpers.leagueUrl(["free_agents"]),
@@ -31,7 +31,7 @@ const processInputs = (params: RouteParams<"roster">) => {
 
 	const season = validateSeason(params.season);
 
-	if (params.abbrev === "DP" || params.abbrev === "DP_-2") {
+	if (params.team === "DP" || params.team === "DP_-2") {
 		let redirectUrl;
 		const draftAlreadyHappened =
 			season < g.get("season") ||
@@ -49,9 +49,8 @@ const processInputs = (params: RouteParams<"roster">) => {
 		return returnValue;
 	}
 
-	const [tid, abbrev] = validateAbbrev(params.abbrev);
-
-	return { abbrev, playoffs: validateSeasonType(params.playoffs), season, tid };
+	const tid = validateTeam(params.team);
+	return { playoffs: validateSeasonType(params.playoffs), season, tid };
 };
 
 const sortByPos = (p: {
@@ -171,7 +170,7 @@ export default defineView({
 			(inputs.season === g.get("season") &&
 				(updateEvents.has("gameSim") || updateEvents.has("newPhase"))) ||
 			(updateEvents.has("newPhase") && g.get("phase") === PHASE.PRESEASON) ||
-			inputs.abbrev !== prevInputs?.abbrev ||
+			inputs.tid !== prevInputs?.tid ||
 			inputs.playoffs !== prevInputs?.playoffs ||
 			inputs.season !== prevInputs?.season
 		) {
@@ -470,7 +469,6 @@ export default defineView({
 			}
 
 			return {
-				abbrev: inputs.abbrev,
 				collegeInfo,
 				conf,
 				editable,

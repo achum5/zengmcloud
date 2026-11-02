@@ -14,15 +14,13 @@ import {
 	type PerformanceScore,
 } from "./draftPickProjection.ts";
 import type { RouteParams } from "../../ui/router/types.ts";
-import { validateAbbrev } from "../util/processInputs.ts";
+import { validateTeam } from "../util/processInputs.ts";
 import { team } from "../core/index.ts";
 
 const processInputs = (params: RouteParams<"draftPicks">) => {
-	const [tid, abbrev] = validateAbbrev(params.abbrev);
-
+	const tid = validateTeam(params.team);
 	return {
 		tid,
-		abbrev,
 	};
 };
 
@@ -239,7 +237,7 @@ export const processDraftPicks = async (draftPicksRaw: DraftPick[]) => {
 export default defineView({
 	id: "draftPicks",
 	processInputs,
-	load: async ({ inputs: { abbrev, tid }, updateEvents, prevInputs }) => {
+	load: async ({ inputs: { tid }, updateEvents, prevInputs }) => {
 		if (
 			updateEvents.has("firstRun") ||
 			updateEvents.has("gameSim") ||
@@ -248,7 +246,7 @@ export default defineView({
 			// Which columns exist depends on the team-ratings settings, so a change to
 			// them has to redraw the table rather than leave a stale one up.
 			updateEvents.has("gameAttributes") ||
-			abbrev !== prevInputs?.abbrev
+			tid !== prevInputs?.tid
 		) {
 			const draftPicksRaw = (await idb.cache.draftPicks.getAll()).filter(
 				(dp) => dp.tid === tid || dp.originalTid === tid,
@@ -272,7 +270,6 @@ export default defineView({
 			}
 
 			return {
-				abbrev,
 				draftPicks,
 				draftPicksOutgoing,
 				noGamesYet,

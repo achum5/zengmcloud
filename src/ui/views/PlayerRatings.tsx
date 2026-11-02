@@ -17,19 +17,37 @@ import { useLocal } from "../util/local.ts";
 import { exemptFromCoarseRatings } from "../../common/coarsenRating.ts";
 
 const PlayerRatings = ({
-	abbrev,
 	page,
 	players,
 	ratings,
 	season,
+	team,
 }: View<"playerRatings">) => {
 	useTitleBar({
 		title: "Player Ratings",
 		jumpTo: true,
 		jumpToSeason: season,
-		dropdownView: "player_ratings",
-		dropdownFields: { teamsAndAllWatchPlayoffs: abbrev, seasons: season },
+		dropdown: {
+			fields: [
+				{
+					key: "team",
+					options: {
+						type: "teams",
+						all: true,
+						remainingPlayoffTeams: true,
+						watch: true,
+					},
+					value: team,
+				},
+				{ key: "season", options: { type: "seasons" }, value: season },
+			],
+			view: "playerRatings",
+		},
 	});
+
+	// The team's part of the URL, for linking to another page of the table.
+	const teamPart =
+		typeof team === "number" ? helpers.getTeamUrlPart(team) : team;
 
 	const {
 		challengeNoRatings,
@@ -182,8 +200,8 @@ const PlayerRatings = ({
 				// button walks through them.
 				pageUrl={(newPage) =>
 					newPage > 1
-						? helpers.leagueUrl(["player_ratings", abbrev, season, newPage])
-						: helpers.leagueUrl(["player_ratings", abbrev, season])
+						? helpers.leagueUrl(["player_ratings", teamPart, season, newPage])
+						: helpers.leagueUrl(["player_ratings", teamPart, season])
 				}
 				rows={rows}
 			/>

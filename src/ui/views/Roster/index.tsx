@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { collegeClassLabel, collegeYear } from "../../../common/college.ts";
 import { Dropdown } from "react-bootstrap";
+import { dropdownOptions } from "../../hooks/useDropdownOptions.tsx";
 import { arrayMove } from "@dnd-kit/sortable";
 import { PLAYER, WEBSITE_ROOT } from "../../../common/constants.ts";
 import { DataTable } from "../../components/DataTable/index.tsx";
@@ -98,7 +99,6 @@ const handleRelease = async (
 const Roster = ({
 	collegeInfo,
 	conf,
-	abbrev,
 	editable,
 	luxuryTaxAmount,
 	maxRosterSize,
@@ -146,13 +146,18 @@ const Roster = ({
 
 	useTitleBar({
 		title: "Roster",
-		dropdownView: "roster",
-		dropdownFields: {
-			teams: abbrev,
-			seasons: season,
-			playoffsCombined: playoffs,
+		dropdown: {
+			fields: [
+				{ key: "team", options: { type: "teams" }, value: tid },
+				{ key: "season", options: { type: "seasons" }, value: season },
+				{
+					key: "playoffs",
+					options: dropdownOptions.playoffsCombined,
+					value: playoffs,
+				},
+			],
+			view: "roster",
 		},
-		moreInfoAbbrev: abbrev,
 		moreInfoSeason: season,
 		moreInfoTid: tid,
 	});
@@ -496,16 +501,9 @@ const Roster = ({
 
 	return (
 		<>
-			<MoreLinks
-				type="team"
-				page="roster"
-				abbrev={abbrev}
-				tid={tid}
-				season={season}
-			/>
+			<MoreLinks type="team" page="roster" tid={tid} season={season} />
 
 			<TopStuff
-				abbrev={abbrev}
 				collegeInfo={collegeInfo}
 				conf={conf}
 				currentSeason={currentSeason}
