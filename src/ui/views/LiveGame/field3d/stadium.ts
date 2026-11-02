@@ -493,8 +493,9 @@ const paintSeating = ({
 			g.beginPath();
 			g.roundRect(x - bodyW / 2, bodyTop, bodyW, bodyH, 0.35 * fpx);
 			g.fill();
-			// The shirt down the middle of an open jacket; the light on his
-			// shoulders, from above.
+			// The shirt down the middle of an open jacket. (No light on the
+			// shoulders, as the 3D court has: under a pixel at this size, and
+			// a sixth of the stands' paint.)
 			if (coat !== color) {
 				g.fillStyle = color;
 				g.fillRect(
@@ -504,13 +505,6 @@ const paintSeating = ({
 					bodyH - 0.04 * fpx,
 				);
 			}
-			g.fillStyle = shade(coat, 0.16);
-			g.fillRect(
-				x - bodyW / 2 + 0.3 * fpx,
-				bodyTop,
-				bodyW - 0.6 * fpx,
-				0.14 * fpx,
-			);
 			const headY = bodyTop - 0.25 * fpx;
 			if (standing) {
 				const reach = (1.25 + rise() * 0.45) * fpx;
