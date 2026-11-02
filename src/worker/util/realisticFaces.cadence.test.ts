@@ -310,9 +310,11 @@ describe("aging is paced, not staged", () => {
 
 	test("spreading the steps did not remove them", () => {
 		// The point is to pace the same career, not to age players less. Before
-		// the change this was 4.0 steps per career.
+		// the change this was 4.0 steps per career. A little under 3 since hair
+		// and beards change less often (the owner, 2026-11) - the lines still
+		// come in for nearly everyone, which is most of what is left.
 		const { stepsPerCareer } = replay(400);
-		assert.isAbove(stepsPerCareer, 3, `only ${stepsPerCareer} steps/career`);
+		assert.isAbove(stepsPerCareer, 2.5, `only ${stepsPerCareer} steps/career`);
 		assert.isBelow(stepsPerCareer, 5.5, `${stepsPerCareer} steps/career`);
 	});
 });

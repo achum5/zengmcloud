@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 111,
+		date: "2026-11-02",
+		text: "Face aging is easier on hair and beards: most players keep their hairstyle their whole career, balding is rare and comes late, big full beards are uncommon, and plenty of players stay clean-shaven. Faces age instead through lines and filling out, slowly, each player at his own pace.",
+	},
+	{
 		n: 110,
 		date: "2026-11-02",
 		text: "Realistic Front Offices: CPU teams never give away a draft pick for nothing - not to each other, and not to you.",

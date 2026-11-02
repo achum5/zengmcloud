@@ -86,38 +86,41 @@ const replayLeague = (n: number, ages: readonly number[]) => {
 describe("facial hair, against the real league", () => {
 	const league = replayLeague(2000, [22, 26, 30, 36]);
 
-	// The old bands left two thirds of 24-year-olds clean-shaven and put the
-	// first full beard in the league at 28. The real floor is half bearded by
-	// 22 and four in five by 26.
+	// Most of a draft class is clean-shaven, and it fills in through the mid
+	// twenties - but a lot of players stay clean or nearly so for good, so the
+	// floor is well short of the hand-picked faces' four in five by 26 (the
+	// owner, 2026-11: big beards are a few men's look, not most).
 	test("it arrives in the early twenties", () => {
 		const at22 = league(22);
 		const at26 = league(26);
-		assert.isAbove(at22.none, 0.35, `${at22.none} clean-shaven at 22`);
-		assert.isBelow(at22.none, 0.55, `${at22.none} clean-shaven at 22`);
-		assert.isBelow(at26.none, 0.3, `${at26.none} clean-shaven at 26`);
+		assert.isAbove(at22.none, 0.5, `${at22.none} clean-shaven at 22`);
+		assert.isBelow(at22.none, 0.72, `${at22.none} clean-shaven at 22`);
+		assert.isBelow(at26.none, 0.5, `${at26.none} clean-shaven at 26`);
+		assert.isBelow(at26.none, at22.none - 0.1, "fills in from 22 to 26");
 	});
 
-	test("a few already wear a full beard at 22; most come in the mid-twenties", () => {
-		// Not every draft class is baby-faced - real 19-to-23-year-olds include
-		// one in ten - but it is still a minority look that young.
+	test("a few already wear a full beard at 22; more come in the mid-twenties", () => {
+		// Not every draft class is baby-faced, but a full beard that young is
+		// rare, and it stays a minority look at any age.
 		const at22 = league(22).heavy;
-		assert.isAbove(at22, 0.03, `${at22} bearded at 22`);
-		assert.isBelow(at22, 0.16, `${at22} bearded at 22`);
+		assert.isAbove(at22, 0.003, `${at22} bearded at 22`);
+		assert.isBelow(at22, 0.05, `${at22} bearded at 22`);
 		const at26 = league(26).heavy;
-		assert.isAbove(at26, 0.15, `${at26} bearded at 26`);
-		assert.isBelow(at26, 0.4, `${at26} bearded at 26`);
+		assert.isAbove(at26, at22, `${at26} bearded at 26`);
+		assert.isBelow(at26, 0.15, `${at26} bearded at 26`);
 	});
 
 	// And it settles. Thickening used to run to the top tier for everyone, so
 	// beards were past half of every 34-year-old's face and the goatee had all
-	// but gone from the veterans.
+	// but gone from the veterans. Now most veterans wear something, a good
+	// third nothing, and a full beard is one face in eight or so.
 	test("a veteran floor is mostly bearded, not all bearded", () => {
 		for (const age of [30, 36]) {
 			const { none, heavy } = league(age);
-			assert.isAbove(none, 0.08, `${none} clean-shaven at ${age}`);
-			assert.isBelow(none, 0.25, `${none} clean-shaven at ${age}`);
-			assert.isAbove(heavy, 0.25, `${heavy} bearded at ${age}`);
-			assert.isBelow(heavy, 0.5, `${heavy} bearded at ${age}`);
+			assert.isAbove(none, 0.25, `${none} clean-shaven at ${age}`);
+			assert.isBelow(none, 0.45, `${none} clean-shaven at ${age}`);
+			assert.isAbove(heavy, 0.06, `${heavy} bearded at ${age}`);
+			assert.isBelow(heavy, 0.2, `${heavy} bearded at ${age}`);
 		}
 	});
 
@@ -450,7 +453,7 @@ describe("not everyone wears it the same way", () => {
 	test("at thirty, a league has every look in it", () => {
 		const league30 = replayLeague(2000, [30])(30);
 		assert.isAbove(league30.none, 0.12, "clean-shaven");
-		assert.isAbove(league30.heavy, 0.3, "full beards");
+		assert.isAbove(league30.heavy, 0.06, "full beards");
 		assert.isAbove(
 			1 - league30.none - league30.heavy,
 			0.25,

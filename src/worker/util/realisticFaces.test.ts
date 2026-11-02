@@ -14,6 +14,7 @@ import {
 	smileSizeForAge,
 	baldingOnsetAge,
 	baldingProne,
+	cutsHair,
 	BALDING_ONSET_MIN_AGE,
 	growsFacialHair,
 	cleansUpAtAge,
@@ -344,7 +345,7 @@ describe("facialHairForAge", () => {
 			return n / 2000;
 		};
 		assert.isAbove(share(33), share(19));
-		assert.isAbove(bandForAge(28).balding, bandForAge(19).balding);
+		assert.isAbove(bandForAge(33).balding, bandForAge(19).balding);
 	});
 });
 
@@ -594,9 +595,9 @@ describe("per-player traits", () => {
 				beard += 1;
 			}
 		}
-		assert.isAbove(bald / N, 0.3);
-		assert.isBelow(bald / N, 0.5);
-		assert.isAbove(beard / N, 0.7);
+		assert.isAbove(bald / N, 0.18);
+		assert.isBelow(bald / N, 0.32);
+		assert.isAbove(beard / N, 0.65);
 	});
 
 	test("the two traits are independent of each other", () => {
@@ -609,9 +610,9 @@ describe("per-player traits", () => {
 				both += 1;
 			}
 		}
-		// 0.4 * 0.8 = 0.32 if independent.
-		assert.isAbove(both / N, 0.27);
-		assert.isBelow(both / N, 0.37);
+		// 0.25 * 0.75 = 0.19 if independent.
+		assert.isAbove(both / N, 0.15);
+		assert.isBelow(both / N, 0.23);
 	});
 
 	test("an unknown player still ages, but never balds", () => {
@@ -1095,7 +1096,12 @@ describe("a shaved head", () => {
 describe("the balding ladder", () => {
 	const proneNoShave = (() => {
 		for (let pid = 0; pid < 500; pid++) {
-			if (baldingProne(pid) && !shavesHead(pid)) {
+			if (
+				baldingProne(pid) &&
+				!shavesHead(pid) &&
+				!cutsHair(pid) &&
+				baldingOnsetAge(pid) <= 34
+			) {
 				return pid;
 			}
 		}
@@ -1108,20 +1114,24 @@ describe("the balding ladder", () => {
 		}
 	});
 
-	// Volume goes before the hairline does. Dreads to a bare scalp in one
-	// preseason reads as a glitch, not as aging.
-	test("big hair is cut back before the hairline shows", () => {
+	// Big hair is left alone. Dreads to a bare scalp in one preseason reads as
+	// a glitch, and cutting them back one season and shaving the next was two
+	// changes of hair that read as a different man.
+	test("big hair is never taken by the hairline", () => {
 		for (const id of ["afro", "dreads", "longHair", "high"]) {
 			const f = face({ hair: { id, color: "#272421", flip: false } });
-			ageFace(f, 34, proneNoShave, fixed(0.001));
-			assert.notStrictEqual(f.hair.id, HAIR_THINNING, id);
-			assert.notStrictEqual(f.hair.id, HAIR_BALD, id);
-			assert.notStrictEqual(f.hair.id, id, id);
-
-			// And from there, the razor.
-			ageFace(f, 35, proneNoShave, fixed(0.001));
-			assert.strictEqual(f.hair.id, HAIR_BALD, id);
+			for (let age = 34; age <= 40; age++) {
+				ageFace(f, age, proneNoShave, fixed(0.001));
+			}
+			assert.strictEqual(f.hair.id, id, id);
 		}
+	});
+
+	// Short hair goes in one step, straight to the razor.
+	test("short hair goes to a shaved head in one step", () => {
+		const f = face();
+		ageFace(f, 34, proneNoShave, fixed(0.001));
+		assert.strictEqual(f.hair.id, HAIR_BALD);
 	});
 
 	test("losing it clears the hair behind it too", () => {
@@ -1337,9 +1347,11 @@ describe("how much of a league goes bald", () => {
 	};
 
 	test("a 34-year-old league has a few balding men, not a room full", () => {
+		// Rare and late (the owner, 2026-11): most players finish with the hair
+		// they came in with.
 		const share = shareWhoLostHair(34, 3000);
-		assert.isAbove(share, 0.02, `only ${(100 * share).toFixed(1)}% by 34`);
-		assert.isBelow(share, 0.07, `${(100 * share).toFixed(1)}% balding by 34`);
+		assert.isAbove(share, 0.003, `only ${(100 * share).toFixed(1)}% by 34`);
+		assert.isBelow(share, 0.04, `${(100 * share).toFixed(1)}% balding by 34`);
 	});
 
 	test("and it keeps climbing to the end of a career", () => {

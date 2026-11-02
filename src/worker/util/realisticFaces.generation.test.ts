@@ -70,9 +70,10 @@ describe("lines at generation", () => {
 		// Same process, so the same mean to within noise.
 		assert.closeTo(generated / N, aged / N, 0.25, "mean level");
 		// And almost nobody reaches 36 with the face he had at 20 - this was
-		// 60%. A player who weathers less cannot take a line before 27, which
-		// leaves him ten rolls at 0.3, so a couple of percent is the real rate.
-		assert.isBelow(unlined / N, 0.05, "unlined at 36");
+		// 60%. The latest anyone's first line is allowed is 30 (25, plus the
+		// longest delay), which leaves seven rolls at 0.3, so a few percent is
+		// the real rate.
+		assert.isBelow(unlined / N, 0.08, "unlined at 36");
 	});
 
 	test("nothing before the first age lines are allowed", () => {
@@ -140,11 +141,9 @@ describe("the cut", () => {
 		const rand = seeded(7);
 		let cutters = 0;
 		let cut = 0;
-		for (let pid = 1; pid <= 300; pid++) {
+		for (let pid = 1; pid <= 1200; pid++) {
 			const face = afro();
-			// Under the onset of hair loss for everyone, so only the cut can
-			// touch it: onset is 28 at the earliest and the balding ladder
-			// takes the same short rung, which would count as a cut.
+			// Only the cut can touch an afro: the hairline leaves big hair alone.
 			for (let age = CUTS_HAIR_FROM_AGE; age <= 40; age++) {
 				ageFace(face, age, pid, rand);
 			}
@@ -161,15 +160,21 @@ describe("the cut", () => {
 			}
 		}
 		assert.isAbove(cutters, 100, "cutters in the sample");
-		assert.isAbove(cut / cutters, 0.6, "cutters short by 40");
+		// From 31 to 36 at 0.12 a season, a cutter has had five to ten years
+		// of chances by 40 - about three in five on average.
+		assert.isAbove(cut / cutters, 0.45, "cutters short by 40");
 	});
 
 	test("generation replays it, so a built veteran wears what an aged one would", () => {
 		const rand = seeded(8);
 		let young = 0;
 		let old = 0;
-		const N = 800;
-		for (let pid = 1; pid <= N; pid++) {
+		// Among the men who cut, since they are the only ones whose hair this
+		// age changes.
+		for (let pid = 1; pid <= 6000; pid++) {
+			if (!cutsHair(pid)) {
+				continue;
+			}
 			if (HAIR_VOLUMINOUS.includes(build("black", 22, pid, rand).hair.id)) {
 				young += 1;
 			}
@@ -369,8 +374,10 @@ describe("catching a face up to its player's age", () => {
 				bearded += 1;
 			}
 		}
-		// Nineteen-year-olds: no lines, one in ten with facial hair.
-		assert.isAbove(lined / N, 0.9, "lined at 34");
+		// Nineteen-year-olds: no lines, one in ten with facial hair. By 34 the
+		// first line has had five to ten rolls at 0.3 (it is allowed from 25
+		// plus a delay of up to five), so about nine in ten carry one.
+		assert.isAbove(lined / N, 0.85, "lined at 34");
 		assert.isAbove(bearded / N, 0.45, "facial hair at 34");
 	});
 

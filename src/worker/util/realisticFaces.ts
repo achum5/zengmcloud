@@ -227,6 +227,46 @@ export const GENERATED_FACIAL_HAIR = Object.fromEntries(
 		.filter(([, ids]) => (ids as string[]).length > 0),
 ) as Partial<Record<FacialHairTier, string[]>>;
 
+// WHAT MEN ACTUALLY WEAR, within a tier. Picking evenly made the big beards as
+// common as the trimmed ones, where the hand-picked faces of the real league's
+// players are mostly trimmed beards (beard2, then beard1) and, of the goatees
+// generation allows, a light goatee and mustache most of all. These weights
+// lean that way without crowding out the rest of a tier.
+const FACIAL_HAIR_WEIGHTS: Record<string, number> = {
+	"goatee1-stache": 5,
+	"goatee4-stache": 2.5,
+	goatee2: 2,
+	goatee19: 2,
+	goatee3: 1.5,
+	goatee7: 1.5,
+	fullgoatee: 3,
+	mustache1: 2,
+	beard2: 8,
+	beard1: 4,
+	beard4: 3,
+	beard3: 1.5,
+	"beard-point": 0.5,
+};
+const UNLISTED_FACIAL_HAIR_WEIGHT = 1;
+
+const facialHairWeight = (id: string): number =>
+	FACIAL_HAIR_WEIGHTS[id] ?? UNLISTED_FACIAL_HAIR_WEIGHT;
+
+// One draw, the same as pickFrom, so the number of rolls a face makes does not
+// depend on which style came up.
+const pickFacialHair = (tier: FacialHairTier, roll: number): string => {
+	const ids = GENERATED_FACIAL_HAIR[tier]!;
+	const total = ids.reduce((sum, id) => sum + facialHairWeight(id), 0);
+	let left = roll * total;
+	for (const id of ids) {
+		left -= facialHairWeight(id);
+		if (left < 0) {
+			return id;
+		}
+	}
+	return ids.at(-1)!;
+};
+
 // The age a generated face first draws its facial hair at. Anything a face
 // has past it was grown into, one season at a time, by the same rules aging
 // uses - see facialHairForAge.
@@ -800,8 +840,8 @@ export const FACE_AGE_BANDS: AgeBand[] = [
 	},
 	{
 		minAge: 20,
-		growPerYear: 0.2,
-		thickenPerYear: 0.3,
+		growPerYear: 0.15,
+		thickenPerYear: 0.2,
 		tiers: ["light", "medium"],
 		balding: 0,
 		baldingPerYear: 0,
@@ -809,8 +849,8 @@ export const FACE_AGE_BANDS: AgeBand[] = [
 	},
 	{
 		minAge: 22,
-		growPerYear: 0.25,
-		thickenPerYear: 0.35,
+		growPerYear: 0.18,
+		thickenPerYear: 0.22,
 		tiers: ["light", "medium"],
 		balding: 0,
 		baldingPerYear: 0,
@@ -820,8 +860,8 @@ export const FACE_AGE_BANDS: AgeBand[] = [
 		// The first full beards. Most of the league's filling out happens
 		// across the next four seasons.
 		minAge: 23,
-		growPerYear: 0.25,
-		thickenPerYear: 0.45,
+		growPerYear: 0.22,
+		thickenPerYear: 0.35,
 		tiers: ["light", "medium", "heavy"],
 		balding: 0.02,
 		// Zero, and it stays zero: no player's onset age is below 28, so this
@@ -833,10 +873,12 @@ export const FACE_AGE_BANDS: AgeBand[] = [
 	{
 		minAge: 27,
 		growPerYear: 0.12,
-		thickenPerYear: 0.22,
+		thickenPerYear: 0.25,
 		tiers: ["light", "medium", "heavy"],
-		balding: 0.06,
-		baldingPerYear: 0.04,
+		// Zero for the same reason as the band above: nobody's onset is before
+		// 31 (see baldingOnsetAge).
+		balding: 0,
+		baldingPerYear: 0,
 		glasses: 0.03,
 	},
 	{
@@ -844,11 +886,11 @@ export const FACE_AGE_BANDS: AgeBand[] = [
 		// most to a league of hand-picked faces, where every change a season
 		// makes is a change to someone's real photo.
 		minAge: 31,
-		growPerYear: 0.06,
+		growPerYear: 0.05,
 		thickenPerYear: 0.12,
 		tiers: ["light", "medium", "heavy"],
-		balding: 0.12,
-		baldingPerYear: 0.065,
+		balding: 0.03,
+		baldingPerYear: 0.08,
 		glasses: 0.04,
 	},
 ];
@@ -871,8 +913,11 @@ const hashPid = (pid: number, salt: number): number => {
 	return ((x ^ (x >>> 16)) >>> 0) / 4294967296;
 };
 
-// Roughly the share of men who show real hairline loss over a playing career.
-export const BALDING_PRONE_SHARE = 0.4;
+// The share who lose their hair over a playing career. Lower than the share of
+// men who show some hairline loss, because what this draws is the whole
+// thing going - a shaved head - and on screen a change that big is a
+// different man. Most players finish with the hair they came in with.
+export const BALDING_PRONE_SHARE = 0.25;
 
 // BALDNESS RUNS IN FAMILIES, which is the one thing everybody knows about it
 // and the one thing a per-player hash cannot express. A son whose father lost
@@ -884,14 +929,15 @@ export const BALDING_PRONE_SHARE = 0.4;
 // player's threshold rather than deciding for him - heritable, not
 // deterministic, because plenty of sons of bald men keep their hair. The two
 // shares are chosen so the LEAGUE-WIDE rate is unchanged:
-//   0.4 x 0.75 + 0.6 x 0.15 = 0.39
-export const BALDING_PRONE_SHARE_IN_FAMILY = 0.75;
-export const BALDING_PRONE_SHARE_OUT_OF_FAMILY = 0.15;
+//   0.25 x 0.6 + 0.75 x 0.13 = 0.25
+export const BALDING_PRONE_SHARE_IN_FAMILY = 0.6;
+export const BALDING_PRONE_SHARE_OUT_OF_FAMILY = 0.13;
 
-// And the share who stay clean-shaven whatever their age. Roughly one real
-// veteran in six is - see FACE_AGE_BANDS - and some of those simply have not
-// yet, so the trait is a little under that.
-export const NEVER_GROWS_FACIAL_HAIR_SHARE = 0.1;
+// And the share who stay clean-shaven whatever their age. A quarter: plenty
+// of players go a whole career with no more than they had at the draft, and a
+// league where nearly everyone eventually grows something has no clean-cut
+// veterans in it.
+export const NEVER_GROWS_FACIAL_HAIR_SHARE = 0.25;
 
 // WHEN IT STARTS, WHICH IS NOT AT TWENTY-THREE.
 //
@@ -909,11 +955,11 @@ export const NEVER_GROWS_FACIAL_HAIR_SHARE = 0.1;
 // is not surprising.
 //
 // So each player gets his own onset, deterministic from his id and stored
-// nowhere, and nothing at all happens before it. Late twenties at the very
-// earliest, with the spread running well past the end of most careers - which
-// is also why plenty of prone players still finish with their hair.
-export const BALDING_ONSET_MIN_AGE = 28;
-export const BALDING_ONSET_SPREAD = 12;
+// nowhere, and nothing at all happens before it. Thirty-one at the very
+// earliest, with the spread running past the end of most careers - which is
+// also why plenty of prone players still finish with their hair.
+export const BALDING_ONSET_MIN_AGE = 31;
+export const BALDING_ONSET_SPREAD = 9;
 
 export const baldingOnsetAge = (pid: number | undefined): number =>
 	BALDING_ONSET_MIN_AGE +
@@ -982,11 +1028,12 @@ export const growsFacialHair = (pid: number | undefined): boolean =>
 // eight and beards were past half the floor, where the real league still has
 // four veterans in ten in a goatee. A real veteran with one has usually had
 // it for a decade and is keeping it. So each man has a ceiling, fixed from his
-// id like the rest - a full beard for most, a connected goatee or mustache
-// for some, and for a fifth whatever light style he first grew. It caps
-// aging only: nothing already on a face is taken off it.
-export const FULL_BEARD_SHARE = 0.66;
-export const LIGHT_ONLY_SHARE = 0.16;
+// id like the rest - for half, whatever light style he first grew; a connected
+// goatee or mustache for some; and a full beard for one in four. Big beards
+// are a few men's look, not where everyone ends up. It caps aging only:
+// nothing already on a face is taken off it.
+export const FULL_BEARD_SHARE = 0.25;
+export const LIGHT_ONLY_SHARE = 0.45;
 
 export const facialHairCeiling = (pid: number | undefined): FacialHairTier => {
 	if (pid === undefined) {
@@ -1016,8 +1063,9 @@ export const facialHairCeiling = (pid: number | undefined): FacialHairTier => {
 // players have one in fifty under 30 - the clean shave is a veteran's look
 // far more than a young man's now. facesjs already draws `bald` for about one
 // face in forty at any age, which covers the young ones; this adds a few more,
-// spread from the early twenties into the thirties.
-export const SHAVES_HEAD_SHARE = 0.03;
+// spread from the early twenties into the thirties. Only from hair that is
+// already short: a man with an afro or dreads keeps them (see ageFace).
+export const SHAVES_HEAD_SHARE = 0.02;
 export const SHAVES_HEAD_FROM_AGE = 22;
 export const SHAVES_HEAD_SPREAD = 11;
 
@@ -1033,14 +1081,15 @@ export const shavesHeadAtAge = (pid: number | undefined): number =>
 // Volume is a young man's hair. Measured over a generated league, the share
 // of 38-year-olds wearing an afro, dreads, a hi-top or a mop was the same as
 // the share of 22-year-olds - hair carried no age signal at all - and no floor
-// looks like that. Half of players cut it back to something short at some
-// point after their late twenties and keep it short; the other half wear what
-// they always wore, which is also true to life. Who cuts is a fixed trait
+// looks like that. But a change of hair is the biggest change a face can make -
+// at half the league it read as players turning into other people - so it is
+// a few men, in their thirties, who cut it back to something short and keep
+// it short. Everyone else wears what he always wore. Who cuts is a fixed trait
 // from the id, like the rest, and the cut itself is one of the ordinary short
-// styles - the same rung the balding ladder takes first, for its own reasons -
-// in the texture he already has (see shortCutsFor).
-export const CUTS_HAIR_SHARE = 0.5;
-export const CUTS_HAIR_FROM_AGE = 29;
+// styles in the texture he already has (see shortCutsFor). A man who cuts is
+// never also taken bald: one change of hair in a career, not two.
+export const CUTS_HAIR_SHARE = 0.12;
+export const CUTS_HAIR_FROM_AGE = 31;
 
 // And the same for the haircut: the earliest age anyone cuts it back, plus a
 // few years of his own, so the league does not visit the barber together.
@@ -1118,7 +1167,7 @@ const generatable = (tier: string): tier is FacialHairTier =>
 // olds include a full beard about one time in eleven, and real veterans
 // include a steady share who are clean-shaven by choice.
 export type FacialHairStart = "early" | "typical" | "late";
-export const EARLY_FACIAL_HAIR_SHARE = 0.2;
+export const EARLY_FACIAL_HAIR_SHARE = 0.12;
 export const LATE_FACIAL_HAIR_SHARE = 0.15;
 export const LATE_FACIAL_HAIR_FROM_AGE = 25;
 
@@ -1137,9 +1186,9 @@ export const facialHairStart = (pid: number | undefined): FacialHairStart => {
 
 // How fast an early starter grows and fills out, at any age, and how fast a
 // late starter grows in once his time comes - at least.
-const EARLY_GROW_PER_YEAR = 0.35;
-const EARLY_THICKEN_PER_YEAR = 0.3;
-const LATE_GROW_PER_YEAR = 0.3;
+const EARLY_GROW_PER_YEAR = 0.3;
+const EARLY_THICKEN_PER_YEAR = 0.2;
+const LATE_GROW_PER_YEAR = 0.2;
 // Where the schedules meet: from here an early starter grows at everyone's
 // rates, and a late one three seasons after.
 const SCHEDULES_MEET_AGE = 27;
@@ -1147,18 +1196,18 @@ const SCHEDULES_MEET_AGE = 27;
 // How an early starter arrives at the draft: weights for light, medium and
 // heavy, over the tiers his ceiling allows.
 const EARLY_LOOK_WEIGHTS: Record<FacialHairTier, number> = {
-	light: 0.3,
+	light: 0.5,
 	medium: 0.3,
-	heavy: 0.4,
+	heavy: 0.3,
 	period: 0,
 };
 
 // Of the men who grow any, the share who clean up once, and when.
-export const CLEANS_UP_SHARE = 0.12;
+export const CLEANS_UP_SHARE = 0.05;
 export const CLEANS_UP_FROM_AGE = 26;
 export const CLEANS_UP_SPREAD = 8;
 // Of those, the share who shave clean; the rest trim back to something light.
-export const CLEANS_UP_TO_NONE = 0.5;
+export const CLEANS_UP_TO_NONE = 0.3;
 
 export const cleansUpAtAge = (pid: number | undefined): number | undefined =>
 	pid !== undefined &&
@@ -1176,7 +1225,7 @@ const cleanedUpLook = (current: string, pid: number): string => {
 	) {
 		return "none";
 	}
-	return pickStable(GENERATED_FACIAL_HAIR.light!, pid, 20);
+	return pickFacialHair("light", hashPid(pid, 20));
 };
 
 // The share of typical starters already wearing some at
@@ -1223,9 +1272,7 @@ export const growFacialHair = (
 				: start === "late" && age < SCHEDULES_MEET_AGE + 3
 					? Math.max(band.growPerYear, LATE_GROW_PER_YEAR)
 					: band.growPerYear;
-		return rand() < rate
-			? pickFrom(GENERATED_FACIAL_HAIR.light!, rand)
-			: current;
+		return rand() < rate ? pickFacialHair("light", rand()) : current;
 	}
 	const tier = tierOf(current);
 	const next =
@@ -1240,7 +1287,7 @@ export const growFacialHair = (
 			(youngEarly
 				? Math.max(band.thickenPerYear, EARLY_THICKEN_PER_YEAR)
 				: band.thickenPerYear)
-		? pickFrom(GENERATED_FACIAL_HAIR[next]!, rand)
+		? pickFacialHair(next, rand())
 		: current;
 };
 
@@ -1267,10 +1314,10 @@ const earlyLook = (
 	for (const tier of tiers) {
 		roll -= EARLY_LOOK_WEIGHTS[tier];
 		if (roll < 0) {
-			return pickFrom(GENERATED_FACIAL_HAIR[tier]!, rand);
+			return pickFacialHair(tier, rand());
 		}
 	}
-	return pickFrom(GENERATED_FACIAL_HAIR[tiers.at(-1)!]!, rand);
+	return pickFacialHair(tiers.at(-1)!, rand());
 };
 
 // A facial hair style suitable for this age, or "none": what a man drawn at
@@ -1291,7 +1338,7 @@ export const facialHairForAge = (
 		if (start === "early") {
 			id = earlyLook(first, pid, rand);
 		} else if (start === "typical" && rand() < FIRST_FACIAL_HAIR_SHARE) {
-			id = pickFrom(GENERATED_FACIAL_HAIR.light!, rand);
+			id = pickFacialHair("light", rand());
 		}
 	}
 	for (let year = first + 1; year <= age; year++) {
@@ -1475,6 +1522,23 @@ const inRange = (
 // rewrite faces behind the user's back), and the way to put one back is the
 // revert control in the appearance gallery.
 
+// EVERY MAN AGES AT HIS OWN PACE. Two men the same age never look the same
+// age - one fills out and droops through his thirties, another looks much as
+// he did at the draft. So each player has a pace, fixed from his id and
+// stored nowhere, that scales the continuous changes below: from a bit over
+// half the league rate to half again as fast.
+export const AGING_PACE_MIN = 0.6;
+export const AGING_PACE_SPREAD = 0.9;
+
+export const agingPace = (pid: number | undefined): number =>
+	pid === undefined ? 1 : AGING_PACE_MIN + hashPid(pid, 21) * AGING_PACE_SPREAD;
+
+// A per-year rate at this player's pace, as an exact number of thousandths,
+// so a face aged a season at a time and one built at an age add up to the
+// same thing - see the note on GROWTH_START_AGE.
+const atPace = (rate: number, pid: number | undefined): number =>
+	Math.round(rate * agingPace(pid) * 1000) / 1000;
+
 // FILLING OUT. Nobody finishes a career at the weight he started it, and
 // facesjs draws fatness into the jaw and neck. Small and one-way: over the
 // back half of a career it is the difference between a lean twenty-two and a
@@ -1482,6 +1546,9 @@ const inRange = (
 const FATNESS_START_AGE = 27;
 const FATNESS_PER_YEAR = 0.012;
 const FATNESS_MAX = 1;
+
+export const fatnessPerYear = (pid: number | undefined): number =>
+	atPace(FATNESS_PER_YEAR, pid);
 
 // THE PARTS THAT KEEP LENGTHENING. Ears and noses really do get bigger with
 // age, but not because anything grows: skin and cartilage lose their
@@ -1524,8 +1591,10 @@ export const earGrowthByAge = (age: number): number =>
 export const noseGrowthByAge = (age: number): number =>
 	growthYears(age) * NOSE_GROWTH_PER_YEAR;
 
-export const fatnessGainByAge = (age: number): number =>
-	Math.max(0, Math.floor(age) - FATNESS_START_AGE) * FATNESS_PER_YEAR;
+export const fatnessGainByAge = (age: number, pid?: number): number =>
+	roundGrowth(
+		Math.max(0, Math.floor(age) - FATNESS_START_AGE) * fatnessPerYear(pid),
+	);
 
 // THE EYES COME DOWN AT THE OUTSIDE. The outer corner of the eye sits on a
 // tendon that slackens over a lifetime, so it descends while the inner corner
@@ -1558,7 +1627,10 @@ export const EYE_ANGLE_AGED_MIN = -10;
 const EYE_DROOP_WEATHERS_LESS = 0.6;
 
 export const eyeDroopPerYear = (pid: number | undefined): number =>
-	EYE_DROOP_PER_YEAR * (weathersLess(pid) ? EYE_DROOP_WEATHERS_LESS : 1);
+	atPace(
+		EYE_DROOP_PER_YEAR * (weathersLess(pid) ? EYE_DROOP_WEATHERS_LESS : 1),
+		pid,
+	);
 
 export const eyeDroopByAge = (age: number, pid: number | undefined): number =>
 	growthYears(age) * eyeDroopPerYear(pid);
@@ -1623,14 +1695,18 @@ export const lineStylesFor = (pid: number | undefined) => ({
 	forehead: pickStable(FOREHEAD_LINES, pid, 7),
 });
 
+// Slow: the first fold beside the mouth in the mid twenties at the earliest,
+// the eyes around thirty, the brow in the mid thirties - and that is the
+// earliest anyone gets them. Most players run years behind this (see
+// wrinkleDelay and weathersLess).
 export const wrinkleLevelForAge = (age: number): number => {
-	if (age < 23) {
+	if (age < 25) {
 		return 0;
 	}
-	if (age < 27) {
+	if (age < 30) {
 		return 1;
 	}
-	if (age < 31) {
+	if (age < 34) {
 		return 2;
 	}
 	return MAX_WRINKLE_LEVEL;
@@ -1661,18 +1737,23 @@ export const weathersLess = (pid: number | undefined): boolean =>
 // Its own salt. It used to share one with baldingOnsetAge, which tied the two
 // together exactly: the man whose hair went at 28 was always the man whose
 // lines came early, and a late balder always had a smooth face.
-export const WRINKLE_DELAY_MAX = 4;
+export const WRINKLE_DELAY_MAX = 5;
 
 export const wrinkleDelay = (pid: number | undefined): number =>
 	pid === undefined
 		? 0
 		: Math.floor(hashPid(pid, 13) * (WRINKLE_DELAY_MAX + 1));
 
-export const wrinkleCeiling = (age: number, pid: number | undefined): number =>
-	Math.max(
-		0,
-		wrinkleLevelForAge(age - wrinkleDelay(pid)) - (weathersLess(pid) ? 1 : 0),
-	);
+// A man who weathers less still gets the folds beside his mouth when his
+// schedule says so - nobody reaches his late thirties without them - and is
+// held a step back from there: his eyes come later and his brow never lines.
+export const wrinkleCeiling = (
+	age: number,
+	pid: number | undefined,
+): number => {
+	const level = wrinkleLevelForAge(age - wrinkleDelay(pid));
+	return weathersLess(pid) ? Math.max(Math.min(level, 1), level - 1) : level;
+};
 
 // Read the level back off a face. Highest feature present wins, so a face that
 // somehow has brow lines but no smile lines reads as 3 - and applying level 3
@@ -1694,8 +1775,8 @@ export const wrinkleLevelOf = (face: FaceConfig): number => {
 // How deep the folds are at a given age, which is the continuous part.
 const SMILE_SIZE_MIN = 0.6;
 const SMILE_SIZE_MAX = 2;
-const SMILE_SIZE_START_AGE = 22;
-const SMILE_SIZE_FULL_AGE = 38;
+const SMILE_SIZE_START_AGE = 25;
+const SMILE_SIZE_FULL_AGE = 40;
 
 export const smileSizeForAge = (age: number): number => {
 	const t = Math.max(
@@ -1753,7 +1834,7 @@ export const applyWrinkles = (
 const WRINKLE_PER_YEAR = 0.3;
 
 // The first age a line is allowed at all - see wrinkleLevelForAge.
-const WRINKLE_START_AGE = 23;
+const WRINKLE_START_AGE = 25;
 
 // The level a face AGED INTO this age would have: the yearly roll, replayed.
 //
@@ -1786,13 +1867,16 @@ export const wrinkleLevelAgedTo = (
 // asked for the full 2, and worse, a veteran GENERATED at 38 got 2 while one
 // AGED to 38 got 1.4. The two paths to the same age are supposed to agree -
 // that is the contract the whole module is built on - so this is derived from
-// the curve rather than guessed at, and a test pins the two together.
+// the curve rather than guessed at, and a test pins the two together. Rounded
+// up to whole hundredths, the precision the size is stored at: a creep only a
+// thousandth over the curve's slope lost more than that to rounding every
+// season and fell behind anyway.
 const SMILE_CREEP_PER_YEAR =
 	Math.ceil(
 		((SMILE_SIZE_MAX - SMILE_SIZE_MIN) /
 			(SMILE_SIZE_FULL_AGE - SMILE_SIZE_START_AGE)) *
-			1000,
-	) / 1000;
+			100,
+	) / 100;
 
 // WHAT ANCESTRY A FACE WAS DRAWN FOR, read back off the face itself.
 //
@@ -2001,7 +2085,14 @@ export const applyRealisticFace = (
 	// doing the selecting; asking baldingProne as well would select twice and
 	// quietly thin the veterans out. ageFace is the opposite case and does ask,
 	// because there it is one named player rolling year after year.
-	const couldBeBalding = Number.isFinite(age) && age >= baldingOnsetAge(pid);
+	//
+	// And the same heads ageFace leaves alone: a lot of hair, or a man who has
+	// had his one cut.
+	const couldBeBalding =
+		Number.isFinite(age) &&
+		age >= baldingOnsetAge(pid) &&
+		!VOLUMINOUS_HAIR.has(face.hair.id) &&
+		!cutsHair(pid);
 	if (couldBeBalding && !shaved && rand() < band.balding) {
 		face.hair.id = HAIR_BALD;
 	}
@@ -2052,7 +2143,7 @@ export const applyRealisticFace = (
 	if (typeof face.fatness === "number") {
 		face.fatness = Math.min(
 			FATNESS_MAX,
-			Math.round((face.fatness + fatnessGainByAge(age)) * 100) / 100,
+			roundGrowth(face.fatness + fatnessGainByAge(age, pid)),
 		);
 	}
 
@@ -2093,8 +2184,7 @@ export const applyRealisticFace = (
 		if (typeof face.fatness === "number") {
 			face.fatness = Math.min(
 				FATNESS_MAX,
-				Math.round((fatnessForAthlete(rand) + fatnessGainByAge(age)) * 100) /
-					100,
+				roundGrowth(fatnessForAthlete(rand) + fatnessGainByAge(age, pid)),
 			);
 		}
 	}
@@ -2175,24 +2265,19 @@ export const ageFace = (
 	// THE HAIR HE CHOSE. A player who shaves his head does it once, at his own
 	// age, and that is that - it is a haircut, not a symptom, so it does not
 	// wait for a balding roll and does not need him to be prone to anything.
+	//
+	// From short hair only. Straight from dreads or an afro to a bare scalp in
+	// one preseason reads as a glitch, and going through the clippers first
+	// made it two changes of hair in two seasons - the jump that most made a
+	// player look like somebody else. A man with that much hair keeps it.
 	if (
 		shavesHead(pid) &&
 		age >= shavesHeadAtAge(pid) &&
-		face.hair.id !== HAIR_BALD
+		face.hair.id !== HAIR_BALD &&
+		!VOLUMINOUS_HAIR.has(face.hair.id)
 	) {
-		// Through the clippers first. This is the same objection the balding
-		// ladder below answers - "straight from dreads to a bare scalp in a
-		// single preseason is the jump that reads as a glitch" - and it applies
-		// just as much to a man who decides to shave: he takes an afro down to
-		// something short, and the razor comes out the season after. Going from
-		// a full head of hair to a bare scalp between two roster pages was the
-		// largest single jump left in a career.
-		if (VOLUMINOUS_HAIR.has(face.hair.id)) {
-			face.hair.id = pickFrom(shortCutsFor(face.hair.id), rand);
-		} else {
-			face.hair.id = HAIR_BALD;
-			shaveScalp(face);
-		}
+		face.hair.id = HAIR_BALD;
+		shaveScalp(face);
 		changed = true;
 	}
 
@@ -2213,32 +2298,28 @@ export const ageFace = (
 	// to lose it. Everyone else keeps what they were drafted with, at 25 and at
 	// 38 alike.
 	//
-	// Two rungs, not one. Volume goes before the hairline does - a man cuts
-	// an afro or a mop back to something short well before anyone can see the
-	// hairline behind it - and from short, the razor. Straight from dreads to
-	// a bare scalp in a single preseason is the jump that reads as a glitch
-	// rather than as aging. There is no horseshoe rung between (see
-	// AgeBand.baldingPerYear); a face that already wears one goes the rest of
-	// the way from it.
+	// One rung, from short hair to the razor. There is no horseshoe between
+	// (see AgeBand.baldingPerYear). Volume is left alone: cutting an afro or
+	// dreads back first and shaving the season after was two changes of hair,
+	// and a man carrying that much hair can carry a receding line under it for
+	// the rest of a career. So is a man who has already had his one cut.
 	if (
 		baldingStarted(age, pid, familyPid) &&
 		face.hair.id !== HAIR_BALD &&
+		!VOLUMINOUS_HAIR.has(face.hair.id) &&
+		!cutsHair(pid) &&
 		rand() < band.baldingPerYear
 	) {
-		if (VOLUMINOUS_HAIR.has(face.hair.id)) {
-			face.hair.id = pickFrom(shortCutsFor(face.hair.id), rand);
-		} else {
-			face.hair.id = HAIR_BALD;
-			shaveScalp(face);
-		}
+		face.hair.id = HAIR_BALD;
+		shaveScalp(face);
 		changed = true;
 	}
 
 	// Filling out, also continuous, also never recorded on its own.
 	if (typeof face.fatness === "number" && age > FATNESS_START_AGE) {
-		face.fatness =
-			Math.round(Math.min(FATNESS_MAX, face.fatness + FATNESS_PER_YEAR) * 100) /
-			100;
+		face.fatness = roundGrowth(
+			Math.min(FATNESS_MAX, face.fatness + fatnessPerYear(pid)),
+		);
 	}
 
 	// And the two that never stop - see the note above them.
