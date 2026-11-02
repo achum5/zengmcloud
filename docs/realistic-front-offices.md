@@ -257,6 +257,28 @@ every team, again whenever a signing changes the pool), memory cleanup 17%.
   fewer trades (140 sides to 186), better in hindsight (+22 to -12). The
   rival is priced only into deals that could clear the bar, so the search is
   hardly slower.
+- **Friction** (owner's call: deals between CPU teams went too easily). In 5
+  arena seasons half of all CPU trades had a first-round pick in them - 38
+  went for players rated under 58, one team gave 4 in a season - 6 players
+  were traded twice in a season, and some teams made 4-6 trades a year.
+  Three frictions real front offices have:
+  - **Firsts are scarce.** A team never leaves itself without a first in two
+    drafts running (the NBA's Stepien rule), and each first it gives costs
+    it more, by its own value of the pick, the larger the share of the
+    coming drafts it would have none in. Late firsts are worth little to a
+    contender's own title chances - more to it than to the rebuilding teams
+    that would buy them, so pricing them at what others would pay changed
+    nothing; it is running low that makes them dear.
+  - **No quick flips.** A player a team traded for is not traded on in the
+    same stretch of trading (a season's games, or the offseason with the
+    preseason after it) - including to a human.
+  - **Deal fatigue.** Between CPU teams, each trade a team has made this
+    season raises what its next must gain by 0.002 of a title.
+    Half the teams each way, 2 leagues each way round over 5 seasons: those
+    with friction made 18% fewer trades, gave 112 firsts to 203 (70 to 136 for
+    players under 58), flipped 11 players to 50, had 2 team-seasons of 4 or
+    more trades to 17 - and won 23 titles to 17, as many playoff rounds (302 to
+    298), with 39 seasons under 20 wins to 52. No slower.
 - **The side a deal does least for asks for more.** The search prices a few
   packages and takes the deal that does most for the side it does least
   for; that side then haggles - one asset at a time from what the other team

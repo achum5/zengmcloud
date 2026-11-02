@@ -87,6 +87,8 @@ export type TeamState = {
 	// Its players and their injuries, for remembering what its assets are
 	// worth while the roster stands.
 	rosterKey: string;
+	// Trades it has made this season.
+	trades: number;
 };
 
 export type Deal = {
@@ -158,6 +160,18 @@ export const marketSettings = {
 	// half the teams on it an arena league ran 46% slower; not yet measured
 	// to win more.
 	smartCuts: false,
+	// FRICTION (owner's call: deals between CPU teams went too easily). Firsts
+	// are scarce: a team never leaves itself without a first-round pick in
+	// two drafts running (the NBA's Stepien rule), and each first it gives
+	// costs it more the fewer it would have left (firstsFriction).
+	scarceFirsts: true,
+	// A player a team traded for is not traded on again until the next stretch
+	// of trading - the season, or the offseason, after (quickFlip).
+	noQuickFlips: true,
+	// Each trade a team has made this season raises what its next one must
+	// gain by this much, in titles: a front office does a few deals a year,
+	// not one a week (CPU teams with each other only).
+	tradeFatigue: 0.002,
 	// Nobody gives picks for nothing: a pick is never worth less than nothing,
 	// its player let go for free when he is drafted (releaseAlternative).
 	noPickGifts: true,
@@ -285,6 +299,56 @@ const tradedAwayOf = async (tid: number): Promise<TradedAway> => {
 	];
 };
 
+// The stretch of trading a moment is in: a season's games, or the offseason
+// after it with the preseason before the next.
+const stretchOf = (season: number, phase: number) =>
+	phase >= PHASE.DRAFT
+		? `${season}:off`
+		: phase <= PHASE.PRESEASON
+			? `${season - 1}:off`
+			: `${season}:in`;
+
+// Whether he came by trade in this stretch of trading.
+const quickFlip = (p: Player) => {
+	const last = p.transactions?.at(-1);
+	return (
+		last?.type === "trade" &&
+		last.tid === p.tid &&
+		stretchOf(last.season, last.phase) ===
+			stretchOf(g.get("season"), g.get("phase"))
+	);
+};
+
+// Trades each team has made this season, counted once a day and kept up as
+// the market makes more.
+let tradeCounts: { key: string; byTid: Map<number, number> } | undefined;
+const tradeCountsKey = () =>
+	`${g.get("lid")}:${g.get("season")}:${g.get("phase")}:${g.get("daysLeft")}`;
+const tradesThisSeason = async (tid: number) => {
+	const key = tradeCountsKey();
+	if (tradeCounts?.key !== key) {
+		const byTid = new Map<number, number>();
+		for (const e of await idb.merged.events.getAll({
+			season: g.get("season"),
+		})) {
+			if (e.type === "trade") {
+				for (const t of e.tids ?? []) {
+					byTid.set(t, (byTid.get(t) ?? 0) + 1);
+				}
+			}
+		}
+		tradeCounts = { key, byTid };
+	}
+	return tradeCounts.byTid.get(tid) ?? 0;
+};
+const countTrade = (tids: readonly number[]) => {
+	if (tradeCounts?.key === tradeCountsKey()) {
+		for (const tid of tids) {
+			tradeCounts.byTid.set(tid, (tradeCounts.byTid.get(tid) ?? 0) + 1);
+		}
+	}
+};
+
 export const loadTeam = async (
 	outlook: LeagueOutlook,
 	tid: number,
@@ -312,8 +376,13 @@ export const loadTeam = async (
 		players,
 		picks,
 		letGo,
-		tradablePlayers: players.filter((p) => !isUntradable(p).untradable),
+		tradablePlayers: players.filter(
+			(p) =>
+				!isUntradable(p).untradable &&
+				!(settingFor(tid, "noQuickFlips") && quickFlip(p)),
+		),
 		payroll: await getPayroll(tid),
+		trades: await tradesThisSeason(tid),
 		tradedAway: await tradedAwayOf(tid),
 		path,
 		value: franchiseValue(outlook, path),
@@ -669,9 +738,77 @@ export const releaseAlternative = (
 	) {
 		return;
 	}
-	return settingFor(t.tid, "freeDisposal")
-		? releaseGain(outlook, t, give, single)
-		: 0;
+	const firsts = firstsFriction(outlook, t, give, get, single);
+	if (firsts === undefined) {
+		return;
+	}
+	return (
+		firsts +
+		(settingFor(t.tid, "freeDisposal")
+			? releaseGain(outlook, t, give, single)
+			: 0)
+	);
+};
+
+// SCARCE FIRSTS. Late firsts are worth little to a team's own title chances,
+// so CPU teams spent them on role players: half of all CPU trades had a
+// first in them, 38 went for players rated under 58 in 5 arena seasons, and
+// one team gave 4 in a season. Real teams guard them: never without one in
+// two drafts running (the Stepien rule), and the fewer they have left, the
+// dearer each. So a deal that would leave a team with two drafts running
+// without a first that it had not before is no deal, and each first it
+// gives costs it FIRST_PREMIUM of what it is worth to it more for each
+// share of the coming drafts it would have no first in.
+const FIRST_PREMIUM = 1;
+const firstsFriction = (
+	outlook: LeagueOutlook,
+	t: TeamState,
+	give: readonly Asset[],
+	get: readonly Asset[],
+	single?: Map<string, number>,
+) => {
+	if (!settingFor(t.tid, "scarceFirsts")) {
+		return 0;
+	}
+	const firstsGiven = give.flatMap((x) =>
+		x.kind === "pick" && x.dp.round === 1 ? [x] : [],
+	);
+	if (firstsGiven.length === 0) {
+		return 0;
+	}
+	const season = g.get("season");
+	const next = season + (g.get("phase") > PHASE.DRAFT ? 1 : 0);
+	const drafts = Array.from(
+		{ length: g.get("numSeasonsFutureDraftPicks") },
+		(_, i) => next + i,
+	);
+	const held = (picks: readonly DraftPick[]) =>
+		new Set(
+			picks.flatMap((dp) =>
+				dp.round === 1 && typeof dp.season === "number" ? [dp.season] : [],
+			),
+		);
+	const gaps = (have: Set<number>) =>
+		drafts.filter((d, i) => i > 0 && !have.has(d) && !have.has(drafts[i - 1]!))
+			.length;
+	const givenIds = new Set(firstsGiven.map((x) => x.dp.dpid));
+	const before = held(t.picks);
+	const after = held([
+		...t.picks.filter((dp) => !givenIds.has(dp.dpid)),
+		...get.flatMap((x) => (x.kind === "pick" ? [x.dp] : [])),
+	]);
+	if (gaps(after) > gaps(before)) {
+		return;
+	}
+	const missing = drafts.filter((d) => !after.has(d)).length / drafts.length;
+	let premium = 0;
+	for (const x of firstsGiven) {
+		premium +=
+			FIRST_PREMIUM *
+			missing *
+			Math.max(0, -singlePrice(outlook, t, "-", x, single));
+	}
+	return premium;
 };
 
 // Both teams' gains from a deal past their release alternatives.
@@ -694,7 +831,9 @@ const overRelease = (
 		if (floor === undefined) {
 			return;
 		}
-		out[k] -= floor;
+		// Deal fatigue: each trade it has made this season raises the bar.
+		out[k] -=
+			floor + settingFor(teams[k].tid, "tradeFatigue") * teams[k].trades;
 	}
 	return out;
 };
@@ -1563,6 +1702,7 @@ export const makeDeal = async (
 		frontOffice: breakdown,
 	});
 	marketClock.trades += 1;
+	countTrade(best.tids);
 	return true;
 };
 

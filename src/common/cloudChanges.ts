@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 132,
+		date: "2026-11-02",
+		text: "Realistic Front Offices: CPU teams deal less freely. They guard their first-round picks (never two drafts in a row without one), don't flip a player they just traded for, and every trade they make in a season raises the bar for the next.",
+	},
+	{
 		n: 131,
 		date: "2026-11-02",
 		text: "Latest BBGM updates: a Sign all rookies button on the re-signing page, Team History marks the seasons you were the GM (with an All seasons / With you as GM toggle), award settings let you pick which awards to import, signing errors are handled more gracefully, and football overtime fixes.",
