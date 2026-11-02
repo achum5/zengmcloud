@@ -126,7 +126,7 @@ const TOUCH = new Set<Move>([
 	"doused",
 ]);
 
-const touching = (l: Leg) =>
+export const touching = (l: Leg) =>
 	TOUCH.has(l.move) || (l.arms !== undefined && TOUCH.has(l.arms));
 
 export const keepApart = (play: Play): Map<number, Sep[]> => {

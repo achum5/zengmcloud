@@ -28,6 +28,7 @@ import {
 	type Side,
 } from "./geometry.ts";
 import { drawnBody, footballBody } from "./body.ts";
+import { touching } from "./apart.ts";
 import {
 	HIGH_FIVE_AT,
 	handsMeet,
@@ -3072,6 +3073,80 @@ const CATCH_BEAT_LEFT_MS = 500;
 const CLOSE_SLIVER_MS = 120;
 // (A gait no longer than this between two others, ms: see noFlicks.)
 const FLICK_MS = 150;
+// A man on his feet on his way over a man down - nearer the length of him
+// than DOWN_CLEAR (feet; see LIE_BACK) - bent out round him (see
+// offMenDown): off to the side by the least of DOWN_OFFS (feet) that
+// clears him, eased out over DOWN_TAPER_FT of his way (and no less than
+// DOWN_RAMP_MS), across no quicker than DOWN_ACROSS of his pace or
+// DOWN_ACROSS_FPS - at a pinch, half as quick again. Down: on the turf, or
+// on his way down from DOWN_FROM through it.
+const DOWN_CLEAR = 1.6;
+const DOWN_OFFS = [1, 1.5, 2, 2.5, 3, 3.5, 4.5, 5.5];
+const DOWN_TAPER_FT = 5;
+const DOWN_RAMP_MS = 300;
+const DOWN_ACROSS = 0.8;
+const DOWN_ACROSS_FPS = 10;
+const DOWN_PINCH = 1.5;
+const DOWN_ON = new Set<Move>(["prone", "hurtProne", "supine", "hurt"]);
+const DOWN_GOING = new Set<Move>(["tackled", "dive", "tackledBack"]);
+const DOWN_FROM = 0.6;
+// (Or getting up off it, until this far through.)
+const DOWN_RISING = new Set<Move>(["getUp", "getUpBack"]);
+const DOWN_RISING_TILL = 0.5;
+// (Looked at this often, ms; bent in steps this long; two spells of it
+// this near each other gone round as one. Slower than DOWN_PACE_LEAST
+// ft/s, he is hardly going anywhere - and nowhere clear, round him only
+// if it is this much (feet) the clearer.)
+const DOWN_EVERY_MS = 50;
+const DOWN_STEP_MS = 100;
+const DOWN_JOIN_MS = 500;
+const DOWN_PACE_LEAST = 1.5;
+const DOWN_GAIN = 0.5;
+// (Clear enough, feet - if clear of him takes more than this much further
+// out, feet. Nowhere that clear, no nearer than DOWN_SOME.)
+const DOWN_FAIR = 1.2;
+const DOWN_FAIR_MORE = 0.5;
+const DOWN_SOME = 1;
+// (The way he is going there: from where he is this long before it (ms, on
+// the move) to this long after - so far at least, feet.)
+const DOWN_WAY_MS = 150;
+const DOWN_WAY_LEAST = 0.5;
+const ROUNDS = new Set<Move>([...GAITS, "shuffle", "back"]);
+// (Up against a man, driving him, feet.)
+const DRIVE_ON = 3.5;
+// (Nor bent round him into a man on his feet: nearer than this, feet, and
+// this much nearer than he was to come.)
+const PASS_APART = 1.8;
+const PASS_SLACK = 0.1;
+// Stood on a man down to begin with: off him over this long (ms) of it, if
+// there is this much more of it (ms) left after - or all of it, this long
+// at least - no quicker than this (ft/s), away from the middle of him or
+// round from that.
+const STEP_OFF_MS = 500;
+const STEP_OFF_LEFT_MS = 400;
+const STEP_OFF_LEAST_MS = 300;
+const STEP_OFF_FPS = 5;
+const STEP_OFF_TURNS = [
+	0,
+	Math.PI / 4,
+	-Math.PI / 4,
+	Math.PI / 2,
+	-Math.PI / 2,
+];
+// (How far out of his way he is at t, 0 to 1: out by ta from wa, round
+// till tb, back in by wb.)
+const bumpOf = (t: number, wa: number, ta: number, tb: number, wb: number) => {
+	const u = clamp(
+		t < ta
+			? (t - wa) / Math.max(1, ta - wa)
+			: t > tb && wb !== Infinity
+				? (wb - t) / Math.max(1, wb - tb)
+				: 1,
+		0,
+		1,
+	);
+	return u * u * (3 - 2 * u);
+};
 const FLAT_OUT = 0.97;
 // A receiver down his route, at this much of his top speed - sat down at
 // the end of it for the ball, up for it this long before it comes.
@@ -3632,6 +3707,7 @@ class Action {
 		this.celebrate();
 		this.regroup();
 		this.noAirBlocks();
+		this.offMenDown();
 		this.noFlicks();
 		this.overHeads();
 		for (const x of this.reaches) {
@@ -3745,8 +3821,8 @@ class Action {
 
 	// Nobody there to block, or to fight off, all the while: a man still
 	// driving into a man who has gone - the one he was on away after the
-	// carrier, the man he went out to never there - eases up instead, on at
-	// a walk or stood watching it.
+	// carrier, or gone down to the turf; the man he went out to never there
+	// - eases up instead, on at a walk or stood watching it.
 	noAirBlocks() {
 		for (const m of this.men) {
 			const them = m.team === this.input.offense ? this.d : this.o;
@@ -3763,7 +3839,12 @@ class Action {
 				for (let k = 0; k <= steps; k++) {
 					const t = l.t0 + ((l.t1 - l.t0) * k) / steps;
 					const at = m.posAt(t);
-					if (them.some((o) => dist(o.posAt(t), at) < AIR_BLOCK)) {
+					if (
+						them.some(
+							(o) =>
+								dist(o.posAt(t), at) < AIR_BLOCK && !DOWN.has(legAt(o, t).move),
+						)
+					) {
 						return false;
 					}
 				}
@@ -3782,7 +3863,12 @@ class Action {
 				) {
 					j++;
 				}
-				if (air[i]) {
+				// (Not on into a pile, low as he is: down into it from there.)
+				const next = m.legs[j];
+				if (
+					air[i] &&
+					!(next && next.t0 === m.legs[j - 1]!.t1 && DOWN.has(next.move))
+				) {
 					const run = m.legs.slice(i, j);
 					const a = run[0]!.from;
 					const b = run.at(-1)!.to;
@@ -3801,6 +3887,454 @@ class Action {
 					}
 				}
 				i = j;
+			}
+		}
+	}
+
+	// A man on his feet with his way over a man down on the turf - across
+	// him, or close by the length of him - bent out round him instead (see
+	// DOWN_CLEAR): off to the side, round the nearer end of him first, or
+	// pulled up short of him, by as little as clears him and anybody else
+	// down there, eased out to it and back in over a few strides, his way
+	// either side of it as it was - or, stood there for the rest of it,
+	// stood that much off him. Stood on him to begin with, a step off him.
+	// Not with the ball, nor at the moment it comes to him or leaves him;
+	// nor where he has to be by him (going down on him, up against
+	// somebody).
+	offMenDown() {
+		const { snap } = this.input;
+		const spells: { m: Actor; t0: number; t1: number; yaw: number }[] = [];
+		for (const m of this.men) {
+			let yaw = m.legs[0]?.yaw ?? 0;
+			m.legs.forEach((l, k) => {
+				const t0 = DOWN_ON.has(l.move)
+					? l.t0
+					: DOWN_GOING.has(l.move)
+						? l.t0 + (l.t1 - l.t0) * DOWN_FROM
+						: DOWN_RISING.has(l.move)
+							? l.t0
+							: undefined;
+				if (t0 !== undefined && l.t1 > snap) {
+					const a = l.yaw ?? yaw;
+					spells.push({
+						m,
+						t0,
+						t1: DOWN_RISING.has(l.move)
+							? l.t0 + (l.t1 - l.t0) * DOWN_RISING_TILL
+							: k === m.legs.length - 1
+								? Infinity
+								: l.t1,
+						yaw: LIE_BACKWARD.has(l.move) ? a + Math.PI : a,
+					});
+				}
+				yaw = yawOf(l, yaw);
+			});
+		}
+		if (spells.length === 0) {
+			return;
+		}
+		// (How near `q` comes at t to anybody but m down then - and the
+		// middle of the nearest of them.)
+		const nearDown = (m: Actor, t: number, q: Pt) => {
+			let near = Infinity;
+			let mid: Pt | undefined;
+			for (const s of spells) {
+				if (s.m === m || t < s.t0 || t > s.t1) {
+					continue;
+				}
+				const at = s.m.posAt(t);
+				const ux = Math.cos(s.yaw);
+				const uy = Math.sin(s.yaw);
+				const along = clamp(
+					(q.x - at.x) * ux + (q.y - at.y) * uy,
+					-LIE_BACK,
+					LIE_HEAD,
+				);
+				const d = Math.hypot(q.x - at.x - ux * along, q.y - at.y - uy * along);
+				if (d < near) {
+					near = d;
+					const half = (LIE_HEAD - LIE_BACK) / 2;
+					mid = { x: at.x + ux * half, y: at.y + uy * half };
+				}
+			}
+			return { near, mid };
+		};
+		// (Whether `q` at t takes m nearer anybody on his feet than
+		// PASS_APART, and nearer him than `p` - where he was to be - did.)
+		const crowds = (m: Actor, t: number, q: Pt, p: Pt) =>
+			this.men.some((o) => {
+				if (
+					o === m ||
+					spells.some((s) => s.m === o && t >= s.t0 && t <= s.t1)
+				) {
+					return false;
+				}
+				const at = o.posAt(t);
+				const d = dist(q, at);
+				return d < PASS_APART && d < dist(p, at) - PASS_SLACK;
+			});
+		// (Free to go another way, or to stand somewhere else: on his way,
+		// or stood about, nobody's to mind - not with the ball, not on
+		// anybody; or driving on at nobody on his feet there, into a man
+		// gone down.)
+		const free = (m: Actor, l: Leg) =>
+			l.t0 >= snap &&
+			!l.ball &&
+			!l.turn &&
+			(l.move === "drive" && !l.arms
+				? l.t1 > l.t0 && !this.onSomebody(m, l)
+				: !touching(l) &&
+					(l.from.x === l.to.x && l.from.y === l.to.y
+						? moveKind(l.move) === "still" || moveKind(l.move) === "loop"
+						: ROUNDS.has(l.move) && l.t1 > l.t0));
+		for (const m of this.men) {
+			// (Where he is when the ball comes to him or leaves him, left be.)
+			const fixed: number[] = [];
+			this.ball.forEach((b, k) => {
+				if (b.kind === "held" && b.pid === m.pid) {
+					fixed.push(b.t0, this.ball[k + 1]?.t0 ?? Infinity);
+				}
+			});
+			for (let i = 0; i < m.legs.length;) {
+				if (!free(m, m.legs[i]!)) {
+					i++;
+					continue;
+				}
+				let j = i + 1;
+				while (
+					j < m.legs.length &&
+					free(m, m.legs[j]!) &&
+					m.legs[j]!.t0 === m.legs[j - 1]!.t1
+				) {
+					j++;
+				}
+				const c0 = m.legs[i]!.t0;
+				const c1 = m.legs[j - 1]!.t1;
+				const open = j === m.legs.length;
+				const cuts = [
+					c0,
+					...fixed.filter((t) => t > c0 && t < c1).sort((a, b) => a - b),
+					c1,
+				];
+				for (let k = 0; k + 1 < cuts.length; k++) {
+					this.roundDown(
+						m,
+						cuts[k]!,
+						cuts[k + 1]!,
+						open && k + 2 === cuts.length,
+						nearDown,
+						crowds,
+					);
+				}
+				const next = m.legs.findIndex((l) => l.t0 >= c1);
+				if (next < 0) {
+					break;
+				}
+				i = next;
+			}
+		}
+	}
+
+	// (A man on his way in `l` up against one of them on his feet: within
+	// DRIVE_ON of him at some time in it.)
+	private onSomebody(m: Actor, l: Leg): boolean {
+		const them = m.team === this.input.offense ? this.d : this.o;
+		const steps = Math.max(1, Math.ceil((l.t1 - l.t0) / DOWN_STEP_MS));
+		for (let k = 0; k <= steps; k++) {
+			const t = l.t0 + ((l.t1 - l.t0) * k) / steps;
+			const at = m.posAt(t);
+			if (
+				them.some(
+					(o) => dist(o.posAt(t), at) < DRIVE_ON && !DOWN.has(legAt(o, t).move),
+				)
+			) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// (See offMenDown: where he goes and stands from c0 to c1, out of the
+	// way of anybody down by it - and left out of it at the end, `open`,
+	// there for the rest of it.) Out to the side and back while he is on
+	// his way, not while he stands: by his clock on the move. Or, stood on
+	// a man to begin with (up against him as he went down), a step or two
+	// off him first.
+	private roundDown(
+		m: Actor,
+		c0: number,
+		c1: number,
+		open: boolean,
+		nearDown: (m: Actor, t: number, q: Pt) => { near: number; mid?: Pt },
+		crowds: (m: Actor, t: number, q: Pt, p: Pt) => boolean,
+	) {
+		const lead = m.legs.find((l) => l.t0 === c0);
+		const stood = lead ? Math.min(lead.t1, c1) - c0 : 0;
+		const stepTo =
+			lead &&
+			lead.from.x === lead.to.x &&
+			lead.from.y === lead.to.y &&
+			stood >= STEP_OFF_LEAST_MS &&
+			nearDown(m, c0, lead.from).near < DOWN_CLEAR
+				? c0 + (stood >= STEP_OFF_MS + STEP_OFF_LEFT_MS ? STEP_OFF_MS : stood)
+				: undefined;
+		const stepMs = stepTo === undefined ? 0 : stepTo - c0;
+		const runs: { t0: number; t1: number; at: number }[] = [];
+		let T = 0;
+		if (stepTo !== undefined) {
+			runs.push({ t0: c0, t1: stepTo, at: 0 });
+			T = stepMs;
+		}
+		for (const l of m.legs) {
+			if (l.t1 <= c0 || l.t0 >= c1) {
+				continue;
+			}
+			if (l.from.x !== l.to.x || l.from.y !== l.to.y) {
+				const t0 = Math.max(l.t0, c0);
+				const t1 = Math.min(l.t1, c1);
+				runs.push({ t0, t1, at: T });
+				T += t1 - t0;
+			}
+		}
+		if (T <= 0) {
+			return;
+		}
+		const clock = (t: number) => {
+			for (let k = runs.length - 1; k >= 0; k--) {
+				const r = runs[k]!;
+				if (t >= r.t0) {
+					return r.at + Math.min(t, r.t1) - r.t0;
+				}
+			}
+			return 0;
+		};
+		const timeAt = (u: number) => {
+			for (const r of runs) {
+				if (u <= r.at + (r.t1 - r.t0)) {
+					return r.t0 + Math.max(0, u - r.at);
+				}
+			}
+			return c1;
+		};
+		const spans: [number, number][] = [];
+		for (let t = c0; t <= c1; t += DOWN_EVERY_MS) {
+			if (nearDown(m, t, m.posAt(t)).near < DOWN_CLEAR) {
+				const last = spans.at(-1);
+				if (last && t - last[1] <= DOWN_JOIN_MS) {
+					last[1] = t;
+				} else {
+					spans.push([t, t]);
+				}
+			}
+		}
+		for (const [first, last] of spans) {
+			const stepping = stepTo !== undefined && first === c0;
+			const ta = stepping ? stepTo : Math.max(c0, first - DOWN_EVERY_MS);
+			const tb = Math.max(ta, Math.min(c1, last + DOWN_EVERY_MS));
+			const ua = clock(ta);
+			const ub = clock(tb);
+			const u0 = stepping ? ua : Math.max(0, ua - DOWN_RAMP_MS);
+			const u1 = Math.min(T, ub + DOWN_RAMP_MS);
+			const pace =
+				u1 > u0
+					? dist(m.posAt(timeAt(u0)), m.posAt(timeAt(u1))) / ((u1 - u0) / 1000)
+					: 0;
+			if (pace < DOWN_PACE_LEAST && !(stepping && open)) {
+				continue;
+			}
+			const across = Math.max(
+				DOWN_PACE_LEAST,
+				Math.min(DOWN_ACROSS_FPS, pace * DOWN_ACROSS),
+			);
+			let was = Infinity;
+			for (let t = ta; t <= tb; t += DOWN_EVERY_MS) {
+				was = Math.min(was, nearDown(m, t, m.posAt(t)).near);
+			}
+			// (Which way he is going there - and out to the side of it away
+			// from the middle of the man there first, the other side, or
+			// back short of him, square or slant. Stepping off a man, away
+			// from the middle of him, or slant, or square.)
+			const tm = (ta + tb) / 2;
+			const pm = m.posAt(tm);
+			const mid = nearDown(m, tm, pm).mid;
+			let ways: Pt[];
+			if (stepping) {
+				const p = m.posAt(c0);
+				const len = mid ? dist(p, mid) : 0;
+				const a = len > 0.01 ? Math.atan2(p.y - mid!.y, p.x - mid!.x) : m.yaw;
+				ways = STEP_OFF_TURNS.map((r) => ({
+					x: Math.cos(a + r),
+					y: Math.sin(a + r),
+				}));
+			} else {
+				const pa = m.posAt(timeAt(Math.max(0, ua - DOWN_WAY_MS)));
+				const pb = m.posAt(timeAt(Math.min(T, ub + DOWN_WAY_MS)));
+				const len = dist(pa, pb);
+				if (len < DOWN_WAY_LEAST) {
+					continue;
+				}
+				const fx = (pb.x - pa.x) / len;
+				const fy = (pb.y - pa.y) / len;
+				const away =
+					mid && (pm.x - mid.x) * -fy + (pm.y - mid.y) * fx < 0 ? -1 : 1;
+				ways = [
+					[0, away],
+					[0, -away],
+					[-1, 0],
+					[-Math.SQRT1_2, away * Math.SQRT1_2],
+					[-Math.SQRT1_2, -away * Math.SQRT1_2],
+				].map(([f, n]) => ({ x: f! * fx - n! * fy, y: f! * fy + n! * fx }));
+			}
+			type Pick = {
+				near: number;
+				wa: number;
+				wb: number;
+				ui: number;
+				a1: number;
+				b1: number;
+				uo: number;
+				off: Pt;
+			};
+			// (Clear of anybody on his feet as he goes, if there is a way
+			// - and if not, on his way, any way: off a man he stands on,
+			// only into the clear.)
+			const search = (careful: boolean): Pick | undefined => {
+				let best: Pick | undefined;
+				let fair: { h: number; pick: Pick } | undefined;
+				for (const h of DOWN_OFFS) {
+					if (
+						(fair && h > fair.h + DOWN_FAIR_MORE) ||
+						(stepping && h > (STEP_OFF_FPS * stepMs) / 1000)
+					) {
+						break;
+					}
+					// (Out to it no quicker across than he can go, over as much of
+					// his way as there is - or, no way left after it to come back
+					// in over, and nowhere he has to be, out there for good.)
+					const need = Math.max(
+						DOWN_RAMP_MS,
+						(1500 * h) / across,
+						(1000 * DOWN_TAPER_FT) / Math.max(pace, DOWN_PACE_LEAST),
+					);
+					const least = Math.max(
+						DOWN_RAMP_MS * 0.6,
+						(1500 * h) / (across * DOWN_PINCH),
+					);
+					// (On him from the first of it, or to the last, with no way
+					// to ease out over before: out from the first, round him
+					// part of the way only - into it at the last.)
+					let a1 = ua;
+					let b1 = ub;
+					let rin = stepping ? ua : Math.min(need, ua);
+					if (!stepping && rin < least) {
+						a1 = Math.min(ub, least);
+						rin = a1;
+					}
+					let rout = pace < DOWN_PACE_LEAST ? 0 : Math.min(need, T - ub);
+					const stays = rout < least && open;
+					if (rout < least && !open) {
+						b1 = Math.max(a1, T - least);
+						rout = T - b1;
+					}
+					if ((!stepping && rin < least) || (!stays && rout < least)) {
+						continue;
+					}
+					const ui = a1 - rin;
+					const uo = stays ? Infinity : b1 + rout;
+					const wa = timeAt(ui);
+					const wb = stays ? c1 : timeAt(uo);
+					for (const way of ways) {
+						const off = { x: way.x * h, y: way.y * h };
+						let near = Infinity;
+						for (
+							let t = stepping ? ta : wa;
+							t <= wb && near >= (best?.near ?? 0);
+							t += DOWN_EVERY_MS
+						) {
+							const w = bumpOf(clock(t), ui, a1, b1, uo);
+							const p = m.posAt(t);
+							const q = { x: p.x + off.x * w, y: p.y + off.y * w };
+							// (Not into somebody else instead.)
+							near =
+								careful && w > 0 && crowds(m, t, q, p)
+									? -1
+									: Math.min(near, nearDown(m, t, q).near);
+						}
+						if (!best || near > best.near) {
+							best = { near, wa, wb, ui, a1, b1, uo, off };
+						}
+						if (near >= DOWN_CLEAR) {
+							break;
+						}
+						if (!fair && near >= DOWN_FAIR) {
+							fair = { h, pick: { near, wa, wb, ui, a1, b1, uo, off } };
+						}
+					}
+					if (best && best.near >= DOWN_CLEAR) {
+						break;
+					}
+				}
+				if (fair && (!best || best.near < DOWN_CLEAR)) {
+					best = fair.pick;
+				}
+				return best;
+			};
+			const ok = (p: Pick | undefined): p is Pick =>
+				p !== undefined &&
+				(p.near >= DOWN_CLEAR ||
+					(p.near >= was + DOWN_GAIN && p.near >= DOWN_SOME));
+			const careful = search(true);
+			const best = ok(careful) || stepping ? careful : search(false);
+			if (!ok(best)) {
+				continue;
+			}
+			const { wa, wb, ui, a1, b1, uo, off } = best;
+			const at = [wa, wb, ta, tb];
+			for (const r of runs) {
+				for (
+					let t = Math.max(r.t0, wa);
+					t < Math.min(r.t1, wb);
+					t += DOWN_STEP_MS
+				) {
+					at.push(t);
+				}
+			}
+			at.push(timeAt(a1), timeAt(b1));
+			for (const t of at) {
+				m.split(t);
+			}
+			const legs = m.legs.filter((l) => l.t0 >= wa && l.t1 <= wb);
+			const moved = legs.map((l) => {
+				const w0 = bumpOf(clock(l.t0), ui, a1, b1, uo);
+				const w1 = bumpOf(clock(l.t1), ui, a1, b1, uo);
+				return {
+					from: { x: l.from.x + off.x * w0, y: l.from.y + off.y * w0 },
+					to: { x: l.to.x + off.x * w1, y: l.to.y + off.y * w1 },
+				};
+			});
+			legs.forEach((l, k) => {
+				l.from = moved[k]!.from;
+				l.to = moved[k]!.to;
+			});
+			// (Off him in steps, facing the way he stood.)
+			const steps = stepping
+				? m.legs.filter((l) => l.t0 >= c0 && l.t1 <= stepTo)
+				: [];
+			if (steps.length > 0) {
+				const a = steps[0]!;
+				const b = steps.at(-1)!;
+				const was = m.legs[m.legs.indexOf(a) - 1];
+				const fps = dist(a.from, b.to) / (stepMs / 1000);
+				const yaw = a.yaw ?? (was ? yawOf(was, m.yaw) : m.yaw);
+				const way = faced(gait(fps), yaw, a.from, b.to, fps, was);
+				for (const l of steps) {
+					l.move = way.move;
+					if (way.yaw === undefined) {
+						delete l.yaw;
+					} else {
+						l.yaw = way.yaw;
+					}
+				}
 			}
 		}
 	}
