@@ -78,6 +78,8 @@ const endZoneOf = (
 	fallback: string,
 	pattern: Venue["endZones"],
 	turf: string,
+	// (Its city lettered in it, not its name.)
+	city = false,
 ): EndZoneStyle => {
 	// (What the team has set for them over what its colors and name make.)
 	const own = team?.stadium;
@@ -85,7 +87,13 @@ const endZoneOf = (
 	const second = team?.colors?.[1] ?? "#ffffff";
 	const third = team?.colors?.[2] ?? "#ffffff";
 	const text =
-		own?.endZoneText ?? (team?.name ?? team?.abbrev ?? "").toUpperCase();
+		own?.endZoneText ??
+		(
+			(city ? team?.region : undefined) ??
+			team?.name ??
+			team?.abbrev ??
+			""
+		).toUpperCase();
 	if (pattern === "green") {
 		// On the grass: lettered in the team's color, if it shows on green,
 		// edged in another.
@@ -136,10 +144,14 @@ export const fieldStyleFor = (
 	const turf = own ?? (grass ? "#3f7d34" : "#2f8a3d");
 	const paint =
 		home?.stadium?.lineColor ?? (luminance(turf) > 0.6 ? "#1b1b1d" : "#f7f7f2");
-	const left = endZoneOf(home, "#8c1d40", venue.endZones, turf);
+	// (The city at the left end, the name at the right - a split field's.)
+	const split = venue.split === true && !neutralSite;
+	const left = endZoneOf(home, "#8c1d40", venue.endZones, turf, split);
 	const right = neutralSite
 		? endZoneOf(away, "#1d3461", venue.endZones, turf)
-		: left;
+		: split
+			? endZoneOf(home, "#8c1d40", venue.endZones, turf)
+			: left;
 	return {
 		turf,
 		stripe: grass ? 0.075 : 0.04,

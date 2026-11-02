@@ -1,4 +1,5 @@
 import { assert, test } from "vitest";
+import { fieldStyleFor } from "./fieldPaint.ts";
 import { inShadow, venueFor } from "./venue.ts";
 
 const teams = Array.from({ length: 400 }, (_, i) => ({
@@ -76,4 +77,45 @@ test("prime time under the lights, the rest in the afternoon - or all one way, i
 			);
 		}
 	}
+});
+
+test("the game's own cities: a roof where the weather calls for one, open air elsewhere - whatever the rolls", () => {
+	for (const name of ["Wolves", "Kings", "Stars", "Bears", "Hawks"]) {
+		for (const region of ["Minneapolis", "Detroit", "Phoenix", "Tokyo"]) {
+			const v = venueFor({ region, name });
+			assert.strictEqual(v.roof, "dome", region);
+			assert.strictEqual(v.turf, "artificial", region);
+		}
+		for (const region of ["Miami", "Green Bay", "Kansas City", "Buffalo"]) {
+			const v = venueFor({ region, name });
+			if (region !== "Green Bay") {
+				assert.strictEqual(v.roof, "open", region);
+			}
+		}
+	}
+	assert.strictEqual(
+		venueFor({ region: "Detroit", name: "Lions", stadium: { roof: "open" } })
+			.roof,
+		"open",
+	);
+});
+
+test("some fields the city at one end, the name at the other - not one with its own end zone text", () => {
+	const split = teams.filter((t) => venueFor(t).split);
+	assert.isAbove(split.length / teams.length, 0.3);
+	assert.isBelow(split.length / teams.length, 0.6);
+	const t = split[0]!;
+	const style = fieldStyleFor(t, undefined);
+	assert.strictEqual(style.endZones[0].text, t.region.toUpperCase());
+	assert.strictEqual(style.endZones[1].text, t.name.toUpperCase());
+	assert.isUndefined(
+		venueFor({ ...t, stadium: { endZoneText: "HOME" } }).split,
+	);
+	// (Both ends the visitors' and the home team's at a neutral site.)
+	const neutral = fieldStyleFor(t, { name: "Visitors" }, true);
+	assert.strictEqual(neutral.endZones[1].text, "VISITORS");
+	const whole = teams.find((x) => !venueFor(x).split)!;
+	const both = fieldStyleFor(whole, undefined);
+	assert.strictEqual(both.endZones[0].text, whole.name.toUpperCase());
+	assert.strictEqual(both.endZones[1].text, whole.name.toUpperCase());
 });

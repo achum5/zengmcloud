@@ -822,7 +822,11 @@ const EditTeamStadium = ({
 									className="form-control"
 									maxLength={END_ZONE_TEXT_MAX}
 									value={stadium.endZoneText ?? ""}
-									placeholder={fieldAuto("endZoneText").endZones[0].text}
+									placeholder={[
+										...new Set(
+											fieldAuto("endZoneText").endZones.map((z) => z.text),
+										),
+									].join(" / ")}
 									disabled={stadium.endZoneText === ""}
 									onChange={(e) =>
 										setField(
