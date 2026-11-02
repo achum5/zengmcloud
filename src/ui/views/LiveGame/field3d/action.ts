@@ -2332,6 +2332,18 @@ const WAY_LEAST_MS = 300;
 const WAY_EASE_FT = 1;
 // (Driven back, the block won, no quicker than this - ft/s.)
 const BLOCK_DRIVE_FPS = 6;
+// Off the snap, each on his own count: a blocker this long after it (ms),
+// up to this much later; his first step this much longer or shorter (a
+// share of it) - and a lineman across from him reading it, this long
+// after it, up to this much later.
+const GET_OFF_MS = 30;
+const GET_OFF_SPREAD_MS = 80;
+const GET_OFF_STEP = 0.3;
+const READ_OFF_MS = 60;
+const READ_OFF_SPREAD_MS = 110;
+// (Not so soon after what he is doing ends as to make a sliver of it, ms.)
+const OFF_LEAST_MS = 40;
+const SNAPPER_OFF_MS = 40;
 // A lineman off the ball into the man on him: no nearer than this (feet),
 // a step or two up into him, his arms out into him - not a run on the spot.
 const FIRE_FT = 4;
@@ -8449,7 +8461,7 @@ class Action {
 				side = backSides.has(side) ? -side : side;
 				backSides.add(side);
 			}
-			b.hold(snap + 60);
+			this.offSnap(b, GET_OFF_MS, GET_OFF_SPREAD_MS);
 			// (A back through a fake already: set where it left him.)
 			const setPt =
 				b.t > snap + 300
@@ -9467,11 +9479,12 @@ class Action {
 		const front = blockers.filter((b) => b !== pull && !backs.includes(b));
 		for (const b of front) {
 			const s = this.of(b.at);
-			b.hold(snap + 40);
+			const own = 1 + GET_OFF_STEP * (countOf(b, snap, 1) - 0.5);
+			this.offSnap(b, GET_OFF_MS, GET_OFF_SPREAD_MS);
 			b.go(
 				this.w({
-					d: s.d + step.d * (drive > 1 ? 1 : 0.5) + drive * 0.3,
-					a: s.a + step.a,
+					d: s.d + (step.d * (drive > 1 ? 1 : 0.5) + drive * 0.3) * own,
+					a: s.a + step.a * own,
 				}),
 				snap + 550,
 				"drive",
@@ -9552,7 +9565,7 @@ class Action {
 							? offAt(this.of(m.at).d)
 							: until
 						: shed;
-				m.hold(snap + 50);
+				this.offSnap(m, READ_OFF_MS, READ_OFF_SPREAD_MS);
 				const lat = (r() - 0.5) * 0.6;
 				this.fireInto(m, (time) => at(time, lat), snap + 450, end);
 				// (Over with him, by when they are out of the way.)
@@ -9736,6 +9749,19 @@ class Action {
 				"run",
 			);
 			this.blockOn(m, db, r() < STALK_WON, offAt, until, carrier, through);
+		}
+	}
+
+	// (Off the snap on his own count, `ms` after it and up to `spread`
+	// later - see countOf; the snapper as the ball leaves his hands.)
+	private offSnap(m: Actor, ms: number, spread: number) {
+		const { snap } = this.input;
+		const t =
+			m.role === "C"
+				? snap + SNAPPER_OFF_MS
+				: snap + ms + spread * countOf(m, snap);
+		if (t - m.t >= OFF_LEAST_MS) {
+			m.hold(t);
 		}
 	}
 
@@ -12637,6 +12663,21 @@ const skirt = (a: Pt, b: Pt, c: Pt): Pt[] => {
 		ny = -ny;
 	}
 	return [{ x: c.x + nx * SKIRT, y: c.y + ny * SKIRT }, b];
+};
+
+// A man's own count off the snap, 0 to 1 - the same each time it is asked
+// for (not off the play's dice, so nothing else in the play changes with
+// it); `salt` for another of his.
+const countOf = (m: Actor, snap: number, salt = 0): number => {
+	let h =
+		Math.imul(m.pid + 0x9e37, 0x85ebca6b) ^
+		Math.imul(Math.round(snap) + salt * 7919, 0xc2b2ae35);
+	h ^= h >>> 16;
+	h = Math.imul(h, 0x7feb352d);
+	h ^= h >>> 15;
+	h = Math.imul(h, 0x846ca68b);
+	h ^= h >>> 16;
+	return (h >>> 0) / 4294967296;
 };
 
 // The leg he is in at t (or the last).
