@@ -2367,6 +2367,21 @@ const LOCK_REACT_SPREAD_MS = 250;
 // him let go of once it is over, each up to this much later, ms.)
 const LOCK_GO_SPREAD_MS = 200;
 const LOCK_END_SPREAD_MS = 400;
+// (A blocker waiting on him where he is: down in his stance for the last
+// this long (and up to this much more), ms - stood up watching it before
+// that, if that is LOCK_WATCH_MS at least.)
+const LOCK_SET_MS = [900, 400] as const;
+// (A tackler set waiting on the man with the ball: turned with him every
+// this long, ms, if he has come round this far, radians.)
+const KEEP_STEP_MS = 300;
+const KEEP_TURN = 0.15;
+// (And one this deep, feet, set with this long to spare at least (ms):
+// read steps back first, this far (feet), over this long.)
+const READ_DEEP_FT = 18;
+const READ_BACK_LEAST_MS = 1500;
+const READ_BACK_FT = 2.5;
+const READ_BACK_MS = 450;
+const LOCK_WATCH_MS = 500;
 // (Up by the end of it after the whistle, each up to this much later, ms.)
 const TRAIL_SPREAD_MS = 500;
 // (On after the man with the ball, pulled up as he sees it is over - each
@@ -7616,6 +7631,30 @@ class Action {
 		}
 		m.cut(c);
 		m.hold(c);
+		// (Deep, set, and a long while before it gets to him: a read step or
+		// two back first, his depth kept till he knows - not stood stock
+		// still where he lined up till it comes.)
+		const at = this.of(m.at);
+		if (
+			at.d >= READ_DEEP_FT &&
+			sits(m.last.move) &&
+			lead -
+				m.t -
+				rampedMs(
+					dist(m.at, hit) + READ_BACK_FT,
+					m.top * FLAT_OUT,
+					0,
+					GET_OFF_ACCEL,
+				) >=
+				READ_BACK_LEAST_MS
+		) {
+			m.go(
+				this.w({ d: at.d + READ_BACK_FT, a: at.a }),
+				m.t + READ_BACK_MS,
+				"back",
+				this.behind,
+			);
+		}
 		m.plantFor(hit);
 		const far = dist(m.at, hit);
 		const secs = (lead - m.t) / 1000;
@@ -7649,6 +7688,30 @@ class Action {
 		const look = () => {
 			const him = watch?.posAt((m.t + fire) / 2);
 			return him && dist(him, m.at) > 2 ? this.toward(m.at, him) : face;
+		};
+		// (Set there a while: turned with him as he comes - square to where
+		// he is, a turn at a time - not set one way all of it.)
+		const setTill = (t1: number) => {
+			let yaw = look();
+			if (watch && t1 - m.t >= 2 * KEEP_STEP_MS) {
+				const ahead = watch.posAt(m.t + KEEP_STEP_MS / 2);
+				if (dist(ahead, m.at) > 2) {
+					yaw = this.toward(m.at, ahead);
+				}
+				while (t1 - m.t >= 1.5 * KEEP_STEP_MS) {
+					m.hold(m.t + KEEP_STEP_MS, "backerStance", yaw);
+					const him = watch.posAt(m.t + KEEP_STEP_MS / 2);
+					const to = this.toward(m.at, him);
+					if (
+						dist(him, m.at) > 2 &&
+						Math.abs(Math.atan2(Math.sin(to - yaw), Math.cos(to - yaw))) >
+							KEEP_TURN
+					) {
+						yaw = to;
+					}
+				}
+			}
+			m.hold(t1, "backerStance", yaw);
 		};
 		const downBy =
 			m.t +
@@ -7704,7 +7767,7 @@ class Action {
 				face,
 			);
 			m.easeOff(pull);
-			m.hold(lead - upMs, "backerStance", look());
+			setTill(lead - upMs);
 			m.getOff(hit, lead, 0, GET_OFF_ACCEL, "run", 0, face);
 		} else if (
 			far > 8 &&
@@ -7717,7 +7780,7 @@ class Action {
 				v,
 			);
 			m.easeOff(ease);
-			m.hold(fire, "backerStance", look());
+			setTill(fire);
 			m.getOff(hit, lead, 0, GET_OFF_ACCEL, "run", 0, face);
 		} else if (
 			far <= 8 &&
@@ -7734,7 +7797,7 @@ class Action {
 				};
 				m.go(at, m.t + nearMs, "slide", look());
 			}
-			m.hold(fireNear, "backerStance", look());
+			setTill(fireNear);
 			m.getOff(hit, lead, 0, GET_OFF_ACCEL, "run", 0, face);
 		} else {
 			// (A step or two off him, time over to walk it: set where he is,
@@ -7749,7 +7812,7 @@ class Action {
 				(sits(m.last.move) || (set && legPace(m.last) < STOP_LEAST))
 			) {
 				if (set) {
-					m.hold(lead - fireMs, "backerStance", look());
+					setTill(lead - fireMs);
 				}
 				m.getOff(hit, lead, 0, GET_OFF_ACCEL, "run", 0, face);
 			} else {
@@ -10666,6 +10729,13 @@ class Action {
 			y: meet.y - Math.sin(ang) * 1.3,
 		};
 		if (bv <= 0) {
+			// (A long wait: stood up watching it first, and down into his
+			// stance as the man comes - not crouched there the whole time.)
+			const set =
+				tm - 200 - LOCK_SET_MS[0] - LOCK_SET_MS[1] * countOf(b, snap, 20);
+			if (set - b.t >= LOCK_WATCH_MS) {
+				b.hold(set, "stand", ang);
+			}
 			b.hold(tm - 200, "backerStance", ang);
 		}
 		b.go(bHit, tm, undefined, ang);
