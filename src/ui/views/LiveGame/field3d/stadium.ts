@@ -312,6 +312,7 @@ const paintSeating = ({
 	midAt,
 	dim,
 	neutral = false,
+	playoffs = false,
 }: {
 	w: number;
 	h: number;
@@ -327,6 +328,9 @@ const paintSeating = ({
 	// How far the light falls off up the section (0 none, 1 dark at the top).
 	dim: number;
 	neutral?: boolean;
+	// A playoff game at home: the home crowd's color-out - each section of
+	// seats in one of the home colors, the next in the other.
+	playoffs?: boolean;
 }) => {
 	const c = canvasOf(w, h);
 	const g = c.getContext("2d")!;
@@ -408,7 +412,14 @@ const paintSeating = ({
 			}
 			const x = xf * px + (rng() - 0.5) * 1.5;
 			const bodyW = (1.3 + rng() * 0.35) * px;
-			const color = shirt();
+			// (Picked either way, so the rest of the crowd is the same people.)
+			const picked = shirt();
+			// PLAYOFF COLOR-OUT: every seat in a section in one of the home
+			// colors, the next section over in the other - all the way round,
+			// no visitors' colors anywhere (as the 3D court's: see
+			// court3d/arena.ts paintStands).
+			const color =
+				playoffs && !neutral ? homeC[Math.floor(xf / aisle) % 2]! : picked;
 			const skin = SKINS[Math.floor(rng() * SKINS.length)]!;
 			const homeFan = color === homeC[0] || color === homeC[1];
 			const standing = up > 0 && rise() < (homeFan ? 0.88 : 0.45);
@@ -948,7 +959,12 @@ export const paintStadium = (
 	home: FieldTeam | undefined,
 	away: FieldTeam | undefined,
 	seed: string,
-	crowd?: { att?: number; capacity?: number; neutral?: boolean },
+	crowd?: {
+		att?: number;
+		capacity?: number;
+		neutral?: boolean;
+		playoffs?: boolean;
+	},
 	logo?: HTMLCanvasElement,
 	venue: Venue = venueFor(home),
 	// The home team's honors (see paintFascia).
@@ -1007,6 +1023,7 @@ export const paintStadium = (
 			// (In the sun, the backs of the stands hardly in the dark.)
 			dim: style.sky === "day" && style.roof === "open" ? dim * 0.4 : dim,
 			...(crowd?.neutral ? { neutral: true } : {}),
+			...(crowd?.playoffs ? { playoffs: true } : {}),
 		});
 	const lower = ([0, 1, 2] as const).map((up) =>
 		seating(LOWER, "lower", up, 0.35, true),

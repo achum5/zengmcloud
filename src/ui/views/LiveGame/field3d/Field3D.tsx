@@ -705,6 +705,7 @@ const Field3D = ({
 					att: boxScore?.att,
 					capacity: boxScore?.arena?.capacity,
 					neutral: boxScore?.neutralSite === true,
+					playoffs: !!boxScore?.playoffs,
 				},
 				mid,
 				venue,
