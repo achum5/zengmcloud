@@ -4228,6 +4228,23 @@ class Action {
 					next.t0 = l.t0;
 					legs.splice(i, 1);
 					i--;
+				} else if (
+					l.move === "settle" &&
+					!l.arms &&
+					!l.ball &&
+					!GAITS.has(next.move) &&
+					STEPS.has(was.move) &&
+					was.to.x === l.from.x &&
+					was.to.y === l.from.y &&
+					l.from.x === l.to.x &&
+					l.from.y === l.to.y
+				) {
+					// (Sat down for a catch a moment before it: the last of
+					// his way there slowed into it instead - the reach for it
+					// timed to the ball as it was.)
+					was.t1 = l.t1;
+					legs.splice(i, 1);
+					i--;
 				}
 			}
 		}
