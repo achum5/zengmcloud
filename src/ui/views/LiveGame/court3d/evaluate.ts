@@ -4292,13 +4292,29 @@ const playerAt = (
 				: doing;
 	const yaw = spinYawAt(tl, tr, t) ?? yawAt(tl, tr, t);
 	const room = shown && !EMBRACES.has(now.anim) ? roomAt(tl, tr, t) : undefined;
+	// (Easing between a move whose arms draw in off a man and one whose arms
+	// do not - out of a fight for the ball into his stance, say - drawn in as
+	// much as his arms are of the one that does: not all at once, nor let go
+	// in a frame, on top of arms still mostly the other move's.)
+	const tucks = (x: {
+		anim: AnimName;
+		dribbleHand?: Hand;
+		holding?: boolean;
+	}) =>
+		TUCKS.has(x.anim) || (x.dribbleHand !== undefined && x.holding !== true)
+			? 1
+			: 0;
+	const fArms = from ? (from.arms ?? from.w) : 0;
+	const tuckW =
+		fArms > 0
+			? tucks(now) +
+				(tucks({ ...from!, holding: from!.held === true }) - tucks(now)) * fArms
+			: tucks(now);
+	const tucked = shown && !bare && tuckW > 0 ? tuckAt(tl, tr, t) : undefined;
 	const armsIn =
-		shown &&
-		!bare &&
-		(TUCKS.has(now.anim) ||
-			(now.dribbleHand !== undefined && now.holding !== true))
-			? tuckAt(tl, tr, t)
-			: undefined;
+		tucked && tuckW < 1
+			? ([tucked[0] * tuckW, tucked[1] * tuckW] as [number, number])
+			: tucked;
 	const legs = flippedLegs(
 		tl,
 		tr,
@@ -5801,7 +5817,11 @@ const pivotOf = (
 	now: Doing,
 	t: number,
 ): [number, number, number, number] | undefined => {
-	if (now.z > 0 || !PIVOTS.has(now.anim)) {
+	// (Off the floor, his legs go round with him - eased in and out of it as
+	// he comes up off it and down onto it, not switched on in full the frame
+	// the last of a stride's lift is gone.)
+	const ground = groundedAt(now.z);
+	if (ground <= 0 || !PIVOTS.has(now.anim)) {
 		return undefined;
 	}
 	const k = Math.floor(t / PIVOT_MS);
@@ -5832,11 +5852,11 @@ const pivotOf = (
 			(a <= LEGS_TURN ? a : (LEGS_TURN * (180 - a)) / (180 - LEGS_TURN))
 		);
 	};
-	const r = spin(rf);
-	const l = spin(lf);
+	const r = spin(rf) * ground;
+	const l = spin(lf) * ground;
 	return Math.abs(r) < 0.5 && Math.abs(l) < 0.5 && rl < 0.01 && ll < 0.01
 		? undefined
-		: [r, l, rl, ll];
+		: [r, l, rl * ground, ll * ground];
 };
 
 // The arms and the turn of his shoulders, which can ease into a move on
@@ -6647,6 +6667,31 @@ const SWIPE_NEAR = 6;
 // The ball - another man's, or loose - if it is in reach of the hand he
 // goes at it with; or else the nearest hand of a man of theirs. In his own
 // frame, from his feet, with how far on its way there his hand is.
+// (How much of the way there his hand is, as his pose shows it: easing out of
+// one swipe into another - or out of a swipe into anything else - as much of
+// each as his arms are of each, not the new one's all at once.)
+const swipeWeight = (st: PlayerState): number => {
+	const keys = SWIPES[st.anim];
+	const own = keys ? keyAt(keys, st.phase) : 0;
+	const f = st.from;
+	const fa = f ? (f.arms ?? f.w) : 0;
+	if (!f || fa <= 0) {
+		return own;
+	}
+	const fk = SWIPES[f.anim];
+	const was =
+		fk && (f.mirror === true) === (st.mirror === true) ? keyAt(fk, f.phase) : 0;
+	return own + (was - own) * fa;
+};
+// (Steered on as it comes into reach, from SWIPE_EASE of his reach in - not
+// snapped onto it the frame it is in - and only onto what is in front of his
+// shoulder, from SWIPE_BACK behind it on: never wrenched round behind him.)
+const SWIPE_EASE = 0.2;
+const SWIPE_BACK = 0.25;
+// (Two things in reach - the ball, a man's two hands - his hand goes at the
+// surest, the others' pull on it falling away steeply; the ball first.)
+const SWIPE_SHARP = 4;
+const SWIPE_BALL = 4;
 export const swipeOnto = (
 	st: PlayerState,
 	body: Body,
@@ -6654,11 +6699,10 @@ export const swipeOnto = (
 	others: { st: PlayerState; body: Body }[],
 	teamOf: (pid: number) => number | undefined,
 ): PlayerState["tap"] => {
-	const keys = SWIPES[st.anim];
-	if (!keys || st.holding) {
+	if (st.holding || (!SWIPES[st.anim] && !(st.from && SWIPES[st.from.anim]))) {
 		return undefined;
 	}
-	const w = keyAt(keys, st.phase);
+	const w = swipeWeight(st);
 	if (w <= 0) {
 		return undefined;
 	}
@@ -6667,33 +6711,61 @@ export const swipeOnto = (
 	const sh = bodyPoint(st, arm.root);
 	const most =
 		(body.upper + body.fore + body.handR * 2.2) * SWIPE_REACH + TAP_SHORT;
-	const near = (p: Pt3) =>
-		Math.hypot(p.x - sh.x, p.y - sh.y, p.z - sh.z) <= most;
+	// How surely it is his to go at (0 to 1): in reach, and in front of him.
+	const sure = (p: Pt3) => {
+		const d = Math.hypot(p.x - sh.x, p.y - sh.y, p.z - sh.z);
+		const inReach =
+			1 - smooth01((d - most * (1 - SWIPE_EASE)) / (most * SWIPE_EASE));
+		if (inReach <= 0) {
+			return 0;
+		}
+		const ahead = toBody(st, p).f - arm.root.f;
+		return inReach * smooth01((ahead + SWIPE_BACK) / (2 * SWIPE_BACK));
+	};
 	const theirs =
 		ball.holder === undefined ||
 		(teamOf(ball.holder) !== undefined && teamOf(ball.holder) !== st.team);
-	let at: Pt3 | undefined = theirs && near(ball) ? ball : undefined;
-	if (!at) {
-		let best = Infinity;
-		for (const o of others) {
-			if (
-				o.st === st ||
-				o.st.team === st.team ||
-				Math.hypot(o.st.x - st.x, o.st.y - st.y) > SWIPE_NEAR
-			) {
-				continue;
-			}
-			for (const which of ["near", "far"] as const) {
-				const h = handWorld(o.st, o.body, which);
-				const d = Math.hypot(h.x - sh.x, h.y - sh.y, h.z - sh.z);
-				if (d < best && d <= most) {
-					best = d;
-					at = h;
-				}
+	const marks: { p: Pt3; c: number; k: number }[] = [];
+	if (theirs) {
+		const c = sure(ball);
+		if (c > 0) {
+			marks.push({ p: ball, c, k: SWIPE_BALL });
+		}
+	}
+	for (const o of others) {
+		if (
+			o.st === st ||
+			o.st.team === st.team ||
+			Math.hypot(o.st.x - st.x, o.st.y - st.y) > SWIPE_NEAR
+		) {
+			continue;
+		}
+		for (const which of ["near", "far"] as const) {
+			const h = handWorld(o.st, o.body, which);
+			const c = sure(h);
+			if (c > 0) {
+				marks.push({ p: h, c, k: 1 });
 			}
 		}
 	}
-	return at ? { at, w, rel: toBody(st, at) } : undefined;
+	if (marks.length === 0) {
+		return undefined;
+	}
+	let sum = 0;
+	let x = 0;
+	let y = 0;
+	let z = 0;
+	let c = 0;
+	for (const m of marks) {
+		const k = m.k * m.c ** SWIPE_SHARP;
+		sum += k;
+		x += m.p.x * k;
+		y += m.p.y * k;
+		z += m.p.z * k;
+		c = Math.max(c, m.c);
+	}
+	const at = { x: x / sum, y: y / sum, z: z / sum };
+	return { at, w: w * c, rel: toBody(st, at) };
 };
 
 // Hanging on the rim after a dunk: both hands on the front of it, a
