@@ -685,6 +685,17 @@ const LINE_DOWN_MS = [950, 1300] as const;
 const LINE_EACH_MS = 160;
 const LINE_DL_MS = [80, 380] as const;
 const LINE_UP_LEAST = 350;
+// (The backs and the men split out down into theirs with it, up to this
+// much after - stood up, or hands on hips, till then; the corners after
+// it, as the line across from them is, up on their toes till then.)
+const LINE_SKILL_MS = 300;
+const UP_FIRST = new Map<Move, Move[]>([
+	["threePoint", ["lineReady"]],
+	["dlThree", ["lineReady"]],
+	["backStance", ["stand", "onHips"]],
+	["receiverStance", ["stand", "onHips"]],
+	["cornerStance", ["safetyReady"]],
+]);
 // The defense waiting on the snap (see defenseSet): the call, this often,
 // over this long (at least DEF_CALL_MIN) and done this long before the
 // snap; a linebacker over a step this often, this far (feet); one up into
@@ -2916,29 +2927,29 @@ class Director {
 	// thighs, as the quarterback looks the defense over - and down into his
 	// stance with the rest of them a beat before the snap, the men across
 	// from them down after them; not down in it from the moment he gets
-	// there, stock still for two seconds and more.
+	// there, stock still for two seconds and more. The backs and the men
+	// split out the same, stood up till then; the corners up on their toes.
 	lineDown(parts: Part[], offense: Side, snap: number, i0: number) {
 		const r = this.rng(i0, "line");
 		const down =
 			snap - LINE_DOWN_MS[0] - r() * (LINE_DOWN_MS[1] - LINE_DOWN_MS[0]);
 		for (const p of parts) {
 			const st = p.legs.at(-1);
-			if (
-				!st ||
-				!walkedUp(p) ||
-				(st.move !== "threePoint" && st.move !== "dlThree")
-			) {
+			const first = st && UP_FIRST.get(st.move);
+			if (!st || !first || !walkedUp(p)) {
 				continue;
 			}
+			const line = st.move === "threePoint" || st.move === "dlThree";
 			const t =
 				p.team === offense
-					? down + r() * LINE_EACH_MS
+					? down + r() * (line ? LINE_EACH_MS : LINE_SKILL_MS)
 					: down + LINE_DL_MS[0] + r() * (LINE_DL_MS[1] - LINE_DL_MS[0]);
+			const move = first[Math.floor(r() * first.length)]!;
 			if (t - st.t0 < LINE_UP_LEAST || t >= snap) {
 				continue;
 			}
 			// (Square over it either way: one picture of it, not two.)
-			const up: Leg = { ...st, t1: t, move: "lineReady" };
+			const up: Leg = { ...st, t1: t, move };
 			delete up.mirrored;
 			p.legs.splice(-1, 0, up);
 			st.t0 = t;

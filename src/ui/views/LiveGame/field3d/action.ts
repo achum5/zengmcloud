@@ -10049,8 +10049,20 @@ class Action {
 			// on the run just as the quarterback has it - going as soon as he
 			// has been set a moment, if it is a long way.
 			const set = carrier.legs.findLast((l) => l.t0 < snap) ?? carrier.last;
+			// (Set from when he got there - stood up first, if he was, and
+			// down in his stance after: see director.ts lineDown.)
+			let k = carrier.legs.indexOf(set);
+			while (
+				k > 0 &&
+				moveKind(carrier.legs[k - 1]!.move) === "still" &&
+				carrier.legs[k - 1]!.to.x === set.from.x &&
+				carrier.legs[k - 1]!.to.y === set.from.y
+			) {
+				k -= 1;
+			}
+			const since = carrier.legs[k]?.t0 ?? set.t0;
 			const far = dist(set.from, meshPt);
-			const go = Math.max(set.t0 + 300, mesh - (far / 19) * 1000);
+			const go = Math.max(since + 300, mesh - (far / 19) * 1000);
 			mesh = Math.max(mesh, go + (far / (carrier.top * 0.85)) * 1000);
 			carrier.cut(go);
 			carrier.go(meshPt, mesh, undefined, this.toward(carrier.at, meshPt));
