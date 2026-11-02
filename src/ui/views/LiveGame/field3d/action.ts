@@ -4199,6 +4199,22 @@ class Action {
 					l.t1 += on;
 					next.t0 = l.t1;
 					l.move = "walk";
+				} else if (
+					l.move === "stand" &&
+					!l.arms &&
+					!l.ball &&
+					next.t0 === l.t1 &&
+					!GAITS.has(next.move) &&
+					l.from.x === l.to.x &&
+					l.from.y === l.to.y &&
+					next.from.x === l.to.x &&
+					next.from.y === l.to.y
+				) {
+					// (Stood a moment where he is between one thing and the
+					// next: on into the next - not flicked through standing.)
+					next.t0 = l.t0;
+					legs.splice(i, 1);
+					i--;
 				}
 			}
 		}
