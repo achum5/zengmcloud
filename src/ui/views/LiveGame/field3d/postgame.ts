@@ -126,8 +126,10 @@ const HELMET_UP = 0.5;
 // The ball, if a man still has it: tossed down by his feet.
 const TOSS_MS = 380;
 // Still pulling up off a run when he would be free: let come to his stop
-// first, if it is no further off than this.
+// first, if it is no further off than this. Just off on his way when he
+// would be free, no longer than this: free from before.
 const STOPPING_MS = 1500;
+const JUST_OFF_MS = 200;
 // The officials: off this long after it is over (and up to this much
 // later), at a jog, to just off the near sideline past the end of the team
 // area nearer them - this far past it.
@@ -215,6 +217,18 @@ const freeAt = (legs: Leg[], t: number): number => {
 			break;
 		}
 		at = l.t1;
+	}
+	// (Only just off on his way somewhere: free from before he was - not a
+	// step and stopped again.)
+	const on = legs[k];
+	if (
+		on &&
+		on.t0 < at &&
+		at - on.t0 < JUST_OFF_MS &&
+		moveKind(on.move) === "cycle" &&
+		(on.from.x !== on.to.x || on.from.y !== on.to.y)
+	) {
+		return on.t0;
 	}
 	// (Slowing to a stop still: there first - not stood still in a frame,
 	// at speed.)

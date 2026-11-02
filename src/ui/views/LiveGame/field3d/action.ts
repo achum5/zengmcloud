@@ -3170,6 +3170,10 @@ const CATCH_BEAT_LEFT_MS = 500;
 const CLOSE_SLIVER_MS = 120;
 // (A gait no longer than this between two others, ms: see noFlicks.)
 const FLICK_MS = 150;
+// (One that size from stood to stood: a step, this long - his stand either
+// side of it left no shorter than this.)
+const STEP_MS = 320;
+const STEP_LEFT_MS = 60;
 // A man on his feet on his way over a man down - nearer the length of him
 // than DOWN_CLEAR (feet; see LIE_BACK) - bent out round him (see
 // offMenDown): off to the side by the least of DOWN_OFFS (feet) that
@@ -3951,6 +3955,26 @@ class Action {
 					} else {
 						l.yaw = was.yaw;
 					}
+				} else if (
+					GAITS.has(l.move) &&
+					next.t0 === l.t1 &&
+					[was, next].every(
+						(n) =>
+							moveKind(n.move) === "still" &&
+							n.from.x === n.to.x &&
+							n.from.y === n.to.y,
+					)
+				) {
+					// (A step from stood to stood: a step, taken - not his legs
+					// flicked through a stride.)
+					const grow = STEP_MS - (l.t1 - l.t0);
+					const back = clamp(grow / 2, 0, was.t1 - was.t0 - STEP_LEFT_MS);
+					const on = clamp(grow - back, 0, next.t1 - next.t0 - STEP_LEFT_MS);
+					l.t0 -= back;
+					was.t1 = l.t0;
+					l.t1 += on;
+					next.t0 = l.t1;
+					l.move = "walk";
 				}
 			}
 		}
