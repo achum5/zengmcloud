@@ -8,6 +8,7 @@ import {
 	type PreviewTeam,
 } from "./preview.ts";
 import type { DecalPicture } from "./fieldPaint.ts";
+import { forgetSeats } from "./stadium.ts";
 
 // The stadium page's picture of a team's stadium and helmet (see preview.ts),
 // redrawn as they are changed - the stadium painted again only when it is
@@ -131,6 +132,13 @@ const StadiumPreview = ({
 		() =>
 			paintPreview(shown, sky, logo, { ...own, decals }, { playoffs, finals }),
 		[shown, sky, logo, own, decals, playoffs, finals],
+	);
+	// (Its seats kept between edits - let go of with the page.)
+	useEffect(
+		() => () => {
+			forgetSeats();
+		},
+		[],
 	);
 
 	useEffect(() => {

@@ -163,7 +163,7 @@ import { drawTags, type TagCover } from "./tags.ts";
 import { showerGear } from "./shower.ts";
 import { chainGear } from "./sticks.ts";
 import { waterGear } from "./water.ts";
-import { paintStadium } from "./stadium.ts";
+import { forgetSeats, paintStadium } from "./stadium.ts";
 import { inShadow, venueFor } from "./venue.ts";
 
 // THE 3D FIELD: the football game as a broadcast - the home team's stadium,
@@ -734,6 +734,14 @@ const Field3D = ({
 		};
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [gid, logos, decalPictures]);
+	// (The seats kept as the stadium is painted again - see paintStadium -
+	// let go of with the game.)
+	useEffect(
+		() => () => {
+			forgetSeats();
+		},
+		[],
+	);
 
 	// Faces arrive asynchronously; until then a player has a plain skin tone
 	// and an average build.

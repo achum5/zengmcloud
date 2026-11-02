@@ -1035,6 +1035,17 @@ export type StadiumPaint = {
 };
 export type BoardSet = "wall" | "club" | "end";
 
+// The seats painted for the game being shown (see paintSeating), kept: the
+// stadium is painted again as the teams' pictures come in (see Field3D), and
+// as a stadium page's settings change, and the seats - most of the paint -
+// change with none of that. The most of them a stadium has, and what a
+// game's end lets go of.
+const SEATS_KEPT = 9;
+const seatsKept = new Map<string, HTMLCanvasElement>();
+export const forgetSeats = () => {
+	seatsKept.clear();
+};
+
 export const paintStadium = (
 	home: FieldTeam | undefined,
 	away: FieldTeam | undefined,
@@ -1087,15 +1098,12 @@ export const paintStadium = (
 		dim: number,
 		mid: boolean,
 		gate = fill,
-	) =>
-		paintSeating({
+	) => {
+		const how = {
 			w: P.w,
 			h: P.h,
 			ppf: P.w / (mid ? X1 - X0 : END_Y1 - END_Y0),
 			rowFt: ROW_FT,
-			home,
-			away,
-			style,
 			seed: `${seed}|${key}`,
 			fill: gate,
 			up,
@@ -1104,7 +1112,28 @@ export const paintStadium = (
 			dim: style.sky === "day" && style.roof === "open" ? dim * 0.4 : dim,
 			...(crowd?.neutral ? { neutral: true } : {}),
 			...(crowd?.playoffs ? { playoffs: true } : {}),
-		});
+		};
+		const k = JSON.stringify([
+			how,
+			[0, 1].map((i) => teamColor(home, i, "")),
+			[0, 1].map((i) => teamColor(away, i, "")),
+			style.structure,
+			style.seats,
+		]);
+		const kept = seatsKept.get(k);
+		if (kept) {
+			return kept;
+		}
+		const c = paintSeating({ ...how, home, away, style });
+		seatsKept.set(k, c);
+		for (const old of seatsKept.keys()) {
+			if (seatsKept.size <= SEATS_KEPT) {
+				break;
+			}
+			seatsKept.delete(old);
+		}
+		return c;
+	};
 	const lower = ([0, 1, 2] as const).map((up) =>
 		seating(LOWER, "lower", up, 0.35, true),
 	) as [HTMLCanvasElement, HTMLCanvasElement, HTMLCanvasElement];
