@@ -2795,6 +2795,12 @@ const FIRST_STEP = 150;
 // A man on the line with the man he had off him this long before the end
 // of the blocking: up out of his block this long after.
 const FREED_MS = 600;
+// (A man of the defense stood waiting this long at least, from this long
+// after the snap and done this long before the whistle, ms: in his stance
+// for it - see readyUp.)
+const READY_LEAST_MS = 400;
+const READY_FROM_MS = 300;
+const READY_BEFORE_MS = 150;
 const FREED_REACT = 200;
 // The men who bring him down down no nearer one another than this.
 const LANDED_APART = 2.4;
@@ -3937,6 +3943,7 @@ class Action {
 		this.noAirBlocks();
 		this.noTwins();
 		this.offMenDown();
+		this.readyUp();
 		this.noFlicks();
 		this.overHeads();
 		this.tdArms();
@@ -3953,6 +3960,45 @@ class Action {
 			...(this.party && this.until > 0 ? { party: this.party } : {}),
 			...(this.outAt ? { out: this.outAt } : {}),
 		};
+	}
+
+	// A man of the defense stood waiting in the middle of the play - on a
+	// block coming at him, on the ball carrier coming his way: down in his
+	// stance and alive in it, not stood up straight like a man watching it
+	// from the sideline.
+	readyUp() {
+		const { kind, snap } = this.input;
+		if (kind !== "pass" && kind !== "run") {
+			return;
+		}
+		// (Off at something after it - not walking off, done with it.)
+		const goes = (l: Leg | undefined) =>
+			l !== undefined &&
+			l.move !== "walk" &&
+			(LINE_PLAY.has(l.move) ||
+				moveKind(l.move) === "act" ||
+				l.from.x !== l.to.x ||
+				l.from.y !== l.to.y);
+		for (const m of this.d) {
+			m.legs.forEach((l, k) => {
+				const prev = m.legs[k - 1];
+				if (
+					l.move === "stand" &&
+					l.ball === undefined &&
+					l.arms === undefined &&
+					l.from.x === l.to.x &&
+					l.from.y === l.to.y &&
+					l.t0 >= snap + READY_FROM_MS &&
+					l.t1 <= this.whistle - READY_BEFORE_MS &&
+					l.t1 - l.t0 >= READY_LEAST_MS &&
+					prev &&
+					(STEPS.has(prev.move) || LINE_PLAY.has(prev.move)) &&
+					goes(m.legs[k + 1])
+				) {
+					l.move = "backerReady";
+				}
+			});
+		}
 	}
 
 	// A man the sim says was hurt on it down on the turf after the whistle
