@@ -1902,6 +1902,10 @@ const crossing = (a: Pt, b: Pt, c: Pt, d: Pt): boolean => {
 		Math.sign((q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x));
 	return o(a, b, c) !== o(a, b, d) && o(c, d, a) !== o(c, d, b);
 };
+// A shooter from this good (0 to 1, see levelOf) relocates round the arc
+// after he gives it up out there (see respace) - now and then, the better
+// he shoots it the more often.
+const RELOCATE_FROM = 0.5;
 const RESPACE_SPOTS = [
 	"L_corner",
 	"R_corner",
@@ -9485,10 +9489,16 @@ class Director {
 				y: S.y + u.y * a + (w.y / wl) * b * wide,
 			});
 		this.cutShort(guard, t);
-		const at = this.go(guard, by(-2.4, 1.6), t, CLOSE_RUN, "run", undefined, {
+		const at = this.go(guard, by(-2.4, 2), t, CLOSE_RUN, "run", undefined, {
 			effort: BURST,
 			onto: CLOSE_CHOP,
 		});
+		// (Out to one side of him on purpose: not a corner to cut - see
+		// mark's straighten.)
+		const leg = this.track(guard)?.moves.at(-1);
+		if (leg) {
+			this.detours.add(leg);
+		}
 		const fake = Math.max(t + 60, at - 260);
 		this.act(pid, "shotFake", fake, fake + 640, { face: dir, look: rim });
 		const up = Math.max(at, fake + 150);
@@ -10541,7 +10551,12 @@ class Director {
 				}
 				t = this.passTo(from, shooter, led ?? t, style);
 				held?.(t - 110);
-				if (o.pass === "kickout" || o.pass === "skip") {
+				// (Off a swing too, a shooter the game rates: see respace.)
+				if (
+					o.pass === "kickout" ||
+					o.pass === "skip" ||
+					(o.pass === "swing" && this.level(from, "tp") !== undefined)
+				) {
 					this.respace(team, from, shooter);
 				}
 			}
@@ -11254,11 +11269,22 @@ class Director {
 	// Kicked out of the lane, the ball gone, the passer does not stand there
 	// watching it: he gets back out to the arc, to the open spot nearest him
 	// - and his man goes with him.
+	// And a good shooter who gives it up out on the arc doesn't stand there
+	// either: he moves on round it to the next open spot, ready for it to
+	// come back to him. (Only for a man the game has ratings for.)
 	private respace(team: Side, pid: number, shooter: number) {
 		const rim = { x: rimX(team), y: COURT_H / 2 };
 		const P = this.posOf(pid);
+		const out = dist(P, rim) > 17;
+		const shoots = this.level(pid, "tp");
+		const relocates =
+			out &&
+			shoots !== undefined &&
+			shoots >= RELOCATE_FROM &&
+			hash01(pid, Math.round(this.free.get(pid) ?? 0)) <
+				(shoots - RELOCATE_FROM) / (1 - RELOCATE_FROM) + 0.35;
 		// (A big stays in there, for the rebound.)
-		if (dist(P, rim) > 17 || (this.rank.get(pid) ?? 4) >= 6) {
+		if ((out && !relocates) || (this.rank.get(pid) ?? 4) >= 6) {
 			return;
 		}
 		const mates = this.slots(team)
@@ -11270,7 +11296,8 @@ class Director {
 			const S = this.spotFor(team, 1, name);
 			const room = Math.min(...mates.map((m) => dist(m, S)));
 			const sc = Math.min(room, 16) - dist(P, S) * 0.8;
-			if (room >= 10 && sc > score) {
+			// (Relocating, somewhere new: not a step from where he is.)
+			if (room >= 10 && sc > score && (!relocates || dist(P, S) >= 6)) {
 				score = sc;
 				best = S;
 			}
