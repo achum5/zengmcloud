@@ -12622,15 +12622,21 @@ class Action {
 			// hips as often as not - stood blowing once there.)
 			const worn = !off && m.team !== offense && winded > 0 && m !== holder;
 			const bent = worn && r() < winded * WINDED_BENT;
-			const start =
-				free.get(m.pid)! + (bent ? 100 + r() * 300 : 250 + r() * 900);
+			let start = free.get(m.pid)! + (bent ? 100 + r() * 300 : 250 + r() * 900);
+			const tosses = m === holder && last !== undefined && last.t0 <= start;
+			if (tosses) {
+				start = Math.max(
+					start,
+					free.get(m.pid)! + TOSS_HANDS_MS + TOSS_BEFORE_MS,
+				);
+			}
 			m.cut(start);
 			m.hold(start);
 			// (The ball let go of: tossed down by his feet - once everybody's
 			// way off is known.)
 			// (Before he is off - still facing the way he was, not coming
 			// round for where he goes: see TOSS_BEFORE_MS.)
-			if (m === holder && last && last.t0 <= start) {
+			if (tosses) {
 				toss = {
 					t: Math.max(last.t0, free.get(m.pid)!, start - TOSS_BEFORE_MS),
 					yaw: m.yaw,
@@ -12958,6 +12964,9 @@ const TOSS_OUT = 4;
 // (So long before he is off after it, ms - he is round for it a little
 // before he goes: see pace.ts GO_MS.)
 const TOSS_BEFORE_MS = 250;
+// (Out in his hands this long first, at least, ms - not flicked out from
+// under his arm and gone in a frame.)
+const TOSS_HANDS_MS = 220;
 // The side it went for (a long way gained: this many yards): this often
 // a man of it after a high five - with the nearest of them done with the
 // play no later than this after the whistle (ms), no further off than
