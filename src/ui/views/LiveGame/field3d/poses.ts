@@ -3912,6 +3912,9 @@ export const gripsOf = (
 	if (hold === "carry" || hold === "throw") {
 		return ["ball", left];
 	}
+	if (hold === "carryL") {
+		return [right, "ball"];
+	}
 	if (hold === "hands") {
 		return ["ball", "ball"];
 	}
@@ -4006,10 +4009,18 @@ export const settleStep = (p: Pose, to: Pose, was: Pose, u: number): Pose => {
 	};
 };
 
-// His pose with the ball: carried, his right arm folded up across him,
-// high and tight, whatever the rest of him is doing.
+// (Tucked away under one arm or the other.)
+export const tucked = (h: BallHold | undefined): boolean =>
+	h === "carry" || h === "carryL";
+
+// His pose with the ball: carried, his right arm (or his left) folded up
+// across him, high and tight, whatever the rest of him is doing.
 export const holding = (q: Pose, hold: BallHold | undefined): Pose =>
-	hold === "carry" ? { ...q, shN: 24, elN: 104, abN: 8, wrN: 4, flexN: 0 } : q;
+	hold === "carry"
+		? { ...q, shN: 24, elN: 104, abN: 8, wrN: 4, flexN: 0 }
+		: hold === "carryL"
+			? { ...q, shF: 24, elF: 104, abF: 8, wrF: 4, flexF: 0 }
+			: q;
 
 // His arms out of one pose over the rest of him in another: reaching up for
 // a ball he catches in stride.
@@ -4070,20 +4081,23 @@ export const heldBall = (b: Body, q: Pose, hold: BallHold): HeldBall => {
 			laces: { f: 0, s: 0, u: -1 },
 		};
 	}
-	if (hold === "carry") {
+	if (hold === "carry" || hold === "carryL") {
+		// (In his left arm, the same the other way round.)
+		const left = hold === "carryL" ? -1 : 1;
+		const arm = left === 1 ? hand : sk.armL;
 		const along = unitV({
-			f: hand.end.f - hand.mid.f,
-			s: hand.end.s - hand.mid.s,
-			u: hand.end.u - hand.mid.u,
+			f: arm.end.f - arm.mid.f,
+			s: arm.end.s - arm.mid.s,
+			u: arm.end.u - arm.mid.u,
 		});
 		return {
 			at: {
-				f: hand.end.f - along.f * BALL_LEN * 0.18,
-				s: hand.end.s - along.s * BALL_LEN * 0.18 + BALL_R * 0.4,
-				u: hand.end.u - along.u * BALL_LEN * 0.18,
+				f: arm.end.f - along.f * BALL_LEN * 0.18,
+				s: arm.end.s - along.s * BALL_LEN * 0.18 + left * BALL_R * 0.4,
+				u: arm.end.u - along.u * BALL_LEN * 0.18,
 			},
 			axis: along,
-			laces: { f: 0, s: -1, u: 0 },
+			laces: { f: 0, s: -left, u: 0 },
 		};
 	}
 	if (hold === "hands") {

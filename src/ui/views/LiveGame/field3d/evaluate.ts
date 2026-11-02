@@ -31,6 +31,7 @@ import {
 	moveKind,
 	stepsOver,
 	strideOf,
+	tucked,
 	type Move,
 } from "./poses.ts";
 import type { FieldPlayerState } from "./sprite.ts";
@@ -1094,7 +1095,7 @@ const changed = (a: Leg, b: Leg) =>
 	(moveKind(a.move) === "act" &&
 		(b.span?.[0] ?? 0) < (a.span?.[1] ?? 1) - 1e-6) ||
 	a.arms !== b.arms ||
-	(a.ball !== b.ball && (a.ball === "carry" || b.ball === "carry")) ||
+	(a.ball !== b.ball && (tucked(a.ball) || tucked(b.ball))) ||
 	!a.mirrored !== !b.mirrored;
 
 // HOW HARD HE IS GOING AT IT on his strides, getting going or pulling up

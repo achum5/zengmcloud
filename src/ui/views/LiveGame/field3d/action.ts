@@ -37,6 +37,7 @@ import {
 	liftOf,
 	moveKind,
 	poseOfMove,
+	tucked,
 	type Move,
 } from "./poses.ts";
 import { SET } from "./pace.ts";
@@ -2189,6 +2190,16 @@ const IN_HAND = new Set<Move>([
 const HELD_UP = new Set<Move>(["back", "slide", "shuffle", "walk", "stand"]);
 // (Kept tucked away, stood between strides with it no longer than this, ms.)
 const TUCKED_MS = 250;
+// (His free arm out at a man: the ball still tucked away under the other.)
+const ARMS_TUCKED = new Set<Move>(["stiffArm"]);
+// Which arm (see carryArm): from the middle of the field this far up it
+// ahead of him (feet); over to the other arm only off a stretch of at
+// least this long (feet) with them that plainly on the other side (the
+// sine of the angle off his line), and not again for this long (ms).
+const ARM_LOOK_FT = 30;
+const ARM_LEAST_FT = 3;
+const ARM_SURE = 0.35;
+const ARM_KEEP_MS = 1500;
 const holdFor = (m: Move): BallHold =>
 	m === "center"
 		? "snap"
@@ -4950,7 +4961,9 @@ class Action {
 					l.ball = l.arms
 						? IN_HAND.has(l.arms)
 							? "throw"
-							: "hands"
+							: ARMS_TUCKED.has(l.arms)
+								? "carry"
+								: "hands"
 						: holdFor(l.move);
 					// (On his feet with it in both hands: up at his chest,
 					// not swinging.)
@@ -4981,6 +4994,64 @@ class Action {
 					delete l.arms;
 				}
 			}
+		}
+		for (const [k, s] of segs.entries()) {
+			const m = s.kind === "held" ? this.man(s.pid) : undefined;
+			if (m) {
+				this.carryArm(m, s.t0, segs[k + 1]?.t0 ?? Infinity);
+			}
+		}
+	}
+
+	// Which arm he has it tucked under, from t0 till t1: the one away from
+	// where they come at him from - in off the middle of the field, and up
+	// it the way he is going - switched over to the other as he cuts across
+	// only when that is plain, and not again for a while. (Under the other
+	// one from his free arm, as he puts it out at a man; and, the play
+	// over, kept where it is.)
+	carryArm(m: Actor, t0: number, t1: number) {
+		const { dir, offense } = this.input;
+		const up = m.team === offense ? dir : -dir;
+		const legs = m.legs.filter(
+			(l) => l.t0 >= t0 && l.t0 < t1 && tucked(l.ball),
+		);
+		const stiff = legs.filter((l) => l.arms === "stiffArm").map((l) => l.t0);
+		// (Each stretch he runs with it: the arm he would have it under.)
+		const wants = legs.map((l) => {
+			const far = dist(l.from, l.to);
+			if (l.t0 >= this.whistle || !GAITS.has(l.move) || far < ARM_LEAST_FT) {
+				return undefined;
+			}
+			if (stiff.some((t) => t >= l.t0 && t - l.t0 < ARM_KEEP_MS)) {
+				return { left: false, sure: true, now: true };
+			}
+			const hx = (l.to.x - l.from.x) / far;
+			const hy = (l.to.y - l.from.y) / far;
+			const vx = up * ARM_LOOK_FT;
+			const vy = FIELD_W / 2 - (l.from.y + l.to.y) / 2;
+			// (Where they come from on his right, or his left - see sculpt.ts
+			// bodyPoint - and how plainly.)
+			const side = (hx * vy - hy * vx) / Math.hypot(vx, vy);
+			return { left: side > 0, sure: Math.abs(side) >= ARM_SURE, now: false };
+		});
+		// (Under the one he first runs with it under from the first - down
+		// on it before that, under his right.)
+		const first = wants.findIndex((w) => w !== undefined);
+		const down = legs.findLastIndex((l, k) => k < first && DOWN.has(l.move));
+		let left = first >= 0 && wants[first]!.left;
+		let since = -Infinity;
+		for (const [k, l] of legs.entries()) {
+			const w = wants[k];
+			if (
+				w &&
+				w.left !== left &&
+				w.sure &&
+				(l.t0 - since >= ARM_KEEP_MS || w.now)
+			) {
+				left = w.left;
+				since = l.t0;
+			}
+			l.ball = left && k > down ? "carryL" : "carry";
 		}
 	}
 
