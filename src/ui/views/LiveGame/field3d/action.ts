@@ -93,6 +93,9 @@ export type ActInput = {
 	// How worn the defense is, out there a long drive (0 to 1: see the
 	// director's WINDED_FROM).
 	winded?: number;
+	// The game in crunch time (1 the last two minutes of a close one, see
+	// the director's tensionOf): the big moments let out more.
+	tense?: number;
 	r: () => number;
 };
 
@@ -2496,6 +2499,13 @@ const POINT_MS = 1000;
 
 // A turnover: the man who came up with it mobbed this often.
 const TAKEAWAY = 0.75;
+// A sack: the man who made it up and into it this often.
+const SACK_PARTY = 0.7;
+// In crunch time: a sack, a stop, a turnover let out this often; a new set
+// of downs pointed this often; and this many round a man who scores.
+const CRUNCH_PARTY = 0.95;
+const CRUNCH_POINT = 0.85;
+const CRUNCH_MOB = 6;
 
 // Out of bounds: the whistle as he gets this far over the sideline (feet),
 // on another stride or two - no further over than OUT_MOST - and pulled up;
@@ -3500,6 +3510,10 @@ class Action {
 	}
 	get behind() {
 		return this.input.dir === 1 ? Math.PI : 0;
+	}
+	// The last two minutes of a close game.
+	get crunch() {
+		return (this.input.tense ?? 0) >= 1;
 	}
 	toward(from: Pt, to: Pt) {
 		return Math.atan2(to.y - from.y, to.x - from.x);
@@ -11798,7 +11812,7 @@ class Action {
 				this.find("sack") >= 0
 					? this.man(this.statPids("defSk")[0])
 					: undefined;
-			if (sacker && r() < 0.7) {
+			if (sacker && r() < (this.crunch ? CRUNCH_PARTY : SACK_PARTY)) {
 				// (Up off the quarterback, and straight into it.)
 				const up = sacker.legs.findLast((l) => DOWN.has(l.move));
 				if (up) {
@@ -11814,7 +11828,10 @@ class Action {
 			if (this.input.firstDown) {
 				this.pointFirst();
 			}
-			if (this.input.stopped && r() < STOP_PARTY) {
+			if (
+				this.input.stopped &&
+				r() < (this.crunch ? CRUNCH_PARTY : STOP_PARTY)
+			) {
 				this.stopParty();
 			}
 			this.takeaway();
@@ -12066,7 +12083,7 @@ class Action {
 			)
 			.sort((a, b) => dist(a.posAt(c0), at) - dist(b.posAt(c0), at))
 			.filter((m, k) => k < 2 || dist(m.posAt(c0), at) < MOB_FROM)
-			.slice(0, alone ? 0 : MOB);
+			.slice(0, alone ? 0 : this.crunch ? CRUNCH_MOB : MOB);
 		const rings = spreadRound(
 			mates.map((m, k) => {
 				const from = m.posAt(start);
@@ -12182,7 +12199,12 @@ class Action {
 		}
 		const held = this.ball.findLast((b) => b.kind === "held");
 		const hero = held?.kind === "held" ? this.man(held.pid) : undefined;
-		if (!turned || !hero || hero.team === offense || r() > TAKEAWAY) {
+		if (
+			!turned ||
+			!hero ||
+			hero.team === offense ||
+			r() > (this.crunch ? CRUNCH_PARTY : TAKEAWAY)
+		) {
 			return;
 		}
 		const legs = hero.legs;
@@ -12262,7 +12284,7 @@ class Action {
 					dist(m.posAt(start), at) < STOP_NEAR,
 			)
 			.sort((a, b) => dist(a.posAt(start), at) - dist(b.posAt(start), at))
-			.slice(0, r() < 0.5 ? 2 : 1);
+			.slice(0, (r() < 0.5 ? 2 : 1) + (this.crunch ? 1 : 0));
 		let end = hero.t;
 		mates.forEach((m, j) => {
 			const from = m.posAt(start);
@@ -12313,7 +12335,11 @@ class Action {
 		const r = this.r;
 		const held = this.ball.findLast((b) => b.kind === "held");
 		const m = held?.kind === "held" ? this.man(held.pid) : undefined;
-		if (!m || m.team !== this.input.offense || r() > POINT_FIRST) {
+		if (
+			!m ||
+			m.team !== this.input.offense ||
+			r() > (this.crunch ? CRUNCH_POINT : POINT_FIRST)
+		) {
 			return;
 		}
 		// (Past whatever he was stood doing after.)

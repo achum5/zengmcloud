@@ -1248,6 +1248,12 @@ class Director {
 			this.drive && kind !== "none"
 				? clamp01((this.drive.snaps - WINDED_FROM) / WINDED_SPAN)
 				: 0;
+		// (Crunch time: the big moments in it let out more - see action.ts.)
+		const tensed = this.tensionOf(
+			quarter,
+			typeof clock.clock === "number" ? clock.clock : 15,
+			i0,
+		);
 		const scrimmage: number =
 			typeof clock.scrimmage === "number" ? clock.scrimmage : 25;
 		const losX = yardLineX(scrimmage, dir);
@@ -1486,6 +1492,7 @@ class Director {
 						rated: this.rated,
 						flair: this.flair,
 						...(winded > 0 ? { winded } : {}),
+						...(tensed > 0 ? { tense: tensed } : {}),
 						r: this.rng(i0, "action"),
 					})
 				: undefined;
