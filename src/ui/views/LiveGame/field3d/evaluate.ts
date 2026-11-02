@@ -480,6 +480,7 @@ const PIVOTS = new Set<Move>([
 	"safetyReady",
 	"backerStance",
 	"backerReady",
+	"lineReady",
 ]);
 type Feet = [number, number, number, number];
 // Thrown off his front foot: from the stride down at the target (this far

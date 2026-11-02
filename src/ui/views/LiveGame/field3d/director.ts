@@ -676,6 +676,15 @@ const FOLLOW_SLIDE_FPS = 8;
 // Still this far (ms) from his spot when the ball is snapped - on his way
 // out into his route without a stop.
 const IN_MOTION = 200;
+// The line (see lineDown): up over it, hands on his thighs, till it goes
+// down together this long before the snap (soonest, latest) - each man
+// within LINE_EACH_MS of the rest, the men across from them down after
+// them by so much (least, most). A man up there less than LINE_UP_LEAST:
+// down in it as he gets there.
+const LINE_DOWN_MS = [950, 1300] as const;
+const LINE_EACH_MS = 160;
+const LINE_DL_MS = [80, 380] as const;
+const LINE_UP_LEAST = 350;
 // The defense waiting on the snap (see defenseSet): the call, this often,
 // over this long (at least DEF_CALL_MIN) and done this long before the
 // snap; a linebacker over a step this often, this far (feet); one up into
@@ -1400,6 +1409,9 @@ class Director {
 		this.cadence(parts, offense, snap, i0);
 		if (kind === "pass" || kind === "run") {
 			this.defenseSet(parts, offense, dir, losX, ballY, snap, i0);
+		}
+		if (!kick && kind !== "none") {
+			this.lineDown(parts, offense, snap, i0);
 		}
 		paceWalkUps(parts);
 
@@ -2898,6 +2910,40 @@ class Director {
 			}
 		}
 		return Math.max(snap, end - IN_MOTION);
+	}
+
+	// THE LINE DOWN TOGETHER: up to the line and over it, hands on his
+	// thighs, as the quarterback looks the defense over - and down into his
+	// stance with the rest of them a beat before the snap, the men across
+	// from them down after them; not down in it from the moment he gets
+	// there, stock still for two seconds and more.
+	lineDown(parts: Part[], offense: Side, snap: number, i0: number) {
+		const r = this.rng(i0, "line");
+		const down =
+			snap - LINE_DOWN_MS[0] - r() * (LINE_DOWN_MS[1] - LINE_DOWN_MS[0]);
+		for (const p of parts) {
+			const st = p.legs.at(-1);
+			if (
+				!st ||
+				!walkedUp(p) ||
+				(st.move !== "threePoint" && st.move !== "dlThree")
+			) {
+				continue;
+			}
+			const t =
+				p.team === offense
+					? down + r() * LINE_EACH_MS
+					: down + LINE_DL_MS[0] + r() * (LINE_DL_MS[1] - LINE_DL_MS[0]);
+			if (t - st.t0 < LINE_UP_LEAST || t >= snap) {
+				continue;
+			}
+			// (Square over it either way: one picture of it, not two.)
+			const up: Leg = { ...st, t1: t, move: "lineReady" };
+			delete up.mirrored;
+			p.legs.splice(-1, 0, up);
+			st.t0 = t;
+			st.t1 = t;
+		}
 	}
 
 	// THE DEFENSE WAITING ON THE SNAP: not stood stock still - the middle

@@ -167,6 +167,21 @@ const THREE_POINT = pose({
 	wide: 0.95,
 });
 
+const LINE_READY = pose({
+	hipN: 50,
+	kneeN: 58,
+	hipF: 54,
+	kneeF: 60,
+	lean: 44,
+	shN: 22,
+	elN: 24,
+	abN: 10,
+	shF: 22,
+	elF: 24,
+	abF: 10,
+	wide: 0.95,
+});
+
 // The center over the ball: square, both feet even, a little wider; his
 // right hand in on the ball out in front of him, the left on his knee.
 const CENTER = pose({
@@ -882,6 +897,9 @@ const FIELD_ANIMS = {
 	// Bent over, hands on his knees: catching his breath, in the huddle.
 	hands: { kind: "still", pose: HUDDLE },
 	threePoint: { kind: "still", pose: THREE_POINT },
+	// Up at the line before he gets down in it: feet set, bent over, his
+	// hands on his thighs.
+	lineReady: { kind: "still", pose: LINE_READY },
 	// A defensive lineman's: more of his weight on his hand, hips up -
 	// ready to fire off the ball.
 	dlThree: {
@@ -3992,6 +4010,7 @@ const STANDS = new Set<Move>([
 	"safetyReady",
 	"backerStance",
 	"backerReady",
+	"lineReady",
 ]);
 export const stepsOver = (from: Move, to: Move) =>
 	from !== to && STANDS.has(from) && STANDS.has(to);
