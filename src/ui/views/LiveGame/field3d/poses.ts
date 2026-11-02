@@ -3549,6 +3549,19 @@ const FIELD_ANIMS = {
 		{ shN: 172, elN: 4, abN: 32, tuck: 1 },
 		{ shN: 172, elN: 4, abN: -6, tuck: 1 },
 	),
+	// Open, calling for it: his right hand up high, open - pumped once or
+	// twice (the 3D court's: see its evaluate.ts gestureArm).
+	callFor: {
+		kind: "act",
+		keys: [
+			[0, BASE],
+			[0.22, pose({ shN: 160, elN: 16, abN: 16, wrN: 18 })],
+			[0.42, pose({ shN: 168, elN: 12, abN: 16, wrN: 18 })],
+			[0.6, pose({ shN: 154, elN: 20, abN: 16, wrN: 18 })],
+			[0.8, pose({ shN: 162, elN: 16, abN: 16, wrN: 18 })],
+			[1, BASE],
+		],
+	},
 } satisfies Record<string, FieldAnim>;
 
 export type FieldAnimName = keyof typeof FIELD_ANIMS;
@@ -3845,6 +3858,7 @@ const SIGNAL_GRIPS: Partial<Record<Move, Grip>> = {
 	sigChop: "open",
 	sigContact: "open",
 	fairCatch: "open",
+	callFor: "open",
 	sigHold: "fist",
 	sigRoll: "fist",
 	sigMask: "fist",
@@ -3859,6 +3873,7 @@ const ONE_ARM = new Set<Move>([
 	"sigSide",
 	"sigContact",
 	"fairCatch",
+	"callFor",
 	"sigMask",
 	"flagToss",
 	"blowWhistle",
@@ -3998,9 +4013,20 @@ const ARMS = [
 	"flexN",
 	"flexF",
 ] as const;
-export const withArms = (q: Pose, arms: Pose): Pose => {
+// (One arm's own - his right, or mirrored his left: that arm only, the
+// other as the rest of him has it.)
+const ARM_N = ["shN", "elN", "abN", "wrN", "flexN", "tuck"] as const;
+const ARM_F = ["shF", "elF", "abF", "wrF", "flexF", "tuck"] as const;
+export const withArms = (
+	q: Pose,
+	arms: Pose,
+	move?: Move,
+	mirrored = false,
+): Pose => {
 	const out = { ...q };
-	for (const k of ARMS) {
+	const keys =
+		move !== undefined && ONE_ARM.has(move) ? (mirrored ? ARM_F : ARM_N) : ARMS;
+	for (const k of keys) {
 		out[k] = arms[k];
 	}
 	return out;

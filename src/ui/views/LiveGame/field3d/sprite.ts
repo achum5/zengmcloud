@@ -370,7 +370,12 @@ const wholePose = (
 ): Pose => {
 	let pose = poseOfMove(move, phase, mirrored, len);
 	if (arms) {
-		pose = withArms(pose, poseOfMove(arms.move, arms.phase, mirrored));
+		pose = withArms(
+			pose,
+			poseOfMove(arms.move, arms.phase, mirrored),
+			arms.move,
+			mirrored,
+		);
 	}
 	return holding(pose, ball);
 };

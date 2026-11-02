@@ -2541,6 +2541,21 @@ const CATCH_ON_FT = 3;
 // The catch (see poses.ts): reached out to it this long before his hands
 // are on it, and in to his chest this long after.
 const CATCH_REACH_MS = 300;
+// Open for it, his hand up (see callFor): a pass going this far (feet), no
+// man in coverage nearer him than this (feet) - from this long before it
+// is thrown (and no sooner than this after the snap) to this long before,
+// or not at all if that leaves less than this; this likely, where the
+// game does not rate his hands - and where it does, from this likely with
+// the worst hands in the game at his position on up by this much.
+const CALL_FAR = 36;
+const CALL_OPEN = 5;
+const CALL_FROM_MS = 900;
+const CALL_LEAST_MS = 1200;
+const CALL_TO_MS = 120;
+const CALL_SHORTEST_MS = 300;
+const CALL_ODDS = 0.45;
+const CALL_LOW = 0.2;
+const CALL_SPAN = 0.7;
 const CATCH_IN_MS = 220;
 // Picking it off going at least this fast: caught on the run, his arms
 // up for it as he goes - not stopped dead to catch it.
@@ -5459,6 +5474,10 @@ class Action {
 			);
 		}
 
+		if (thrown && target && catchPt && tr?.name !== "screen" && !slip) {
+			this.callFor(target, qb, coverage, catchPt, throwAt);
+		}
+
 		// And what came of it.
 		if (first === cmpI && thrown && target && catchPt) {
 			this.complete(cmpI, qb, target, catchPt, catchAt, gain);
@@ -6233,6 +6252,39 @@ class Action {
 		if (fly?.kind === "fly" && Math.abs(fly.t1 - catchAt) < 1) {
 			fly.to = { ...fly.to, z: LEAP_Z };
 		}
+	}
+
+	// The man it goes to, open for it a long way off: his hand up for it as
+	// the quarterback gets set to throw it - the surer the better his hands
+	// are, where the game rates them (the 3D court's shooter calling for it:
+	// see its director.ts). No draw of the play's: his own count.
+	callFor(
+		rec: Actor,
+		qb: Actor,
+		coverage: Actor[],
+		catchPt: Pt,
+		throwAt: number,
+	) {
+		const { snap } = this.input;
+		if (dist(qb.posAt(throwAt), catchPt) < CALL_FAR) {
+			return;
+		}
+		const t0 = Math.max(throwAt - CALL_FROM_MS, snap + CALL_LEAST_MS);
+		const t1 = throwAt - CALL_TO_MS;
+		if (t1 - t0 < CALL_SHORTEST_MS) {
+			return;
+		}
+		const open = (t: number) =>
+			coverage.every((m) => dist(m.posAt(t), rec.posAt(t)) >= CALL_OPEN);
+		const hands = rec.flair.hands;
+		const odds =
+			hands === undefined
+				? CALL_ODDS
+				: CALL_LOW + CALL_SPAN * ((hands + 1) / 2);
+		if (!open(t0) || !open(t1) || countOf(rec, snap, 12) >= odds) {
+			return;
+		}
+		this.reaches.push({ m: rec, move: "callFor", t0, t1 });
 	}
 
 	// Reaching for it as it comes - in stride, his arms up for it as he
