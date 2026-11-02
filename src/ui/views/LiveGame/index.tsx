@@ -16,6 +16,7 @@ import {
 	Suspense,
 } from "react";
 import { TeamLogoInline } from "../../components/TeamLogoInline.tsx";
+import KeyPlaysSettings from "./KeyPlaysSettings.tsx";
 import useTitleBar from "../../hooks/useTitleBar.tsx";
 import { helpers } from "../../util/helpers.ts";
 import { realtimeUpdate } from "../../util/realtimeUpdate.ts";
@@ -3076,10 +3077,16 @@ export const LiveGame = (props: View<"liveGame">) => {
 													}}
 												/>
 												{__SPORT === "basketball" || __SPORT === "football" ? (
-													<KeyPlaysPicker
-														value={keyPlays}
-														onChange={setKeyPlaysState}
-													/>
+													<>
+														<KeyPlaysPicker
+															value={keyPlays}
+															onChange={setKeyPlaysState}
+														/>
+														<KeyPlaysSettings
+															value={keyPlays}
+															onChange={setKeyPlaysState}
+														/>
+													</>
 												) : null}
 											</>
 										) : (
@@ -3277,10 +3284,16 @@ export const LiveGame = (props: View<"liveGame">) => {
 											}}
 										/>
 										{__SPORT === "basketball" || __SPORT === "football" ? (
-											<KeyPlaysPicker
-												value={keyPlays}
-												onChange={setKeyPlaysState}
-											/>
+											<>
+												<KeyPlaysPicker
+													value={keyPlays}
+													onChange={setKeyPlaysState}
+												/>
+												<KeyPlaysSettings
+													value={keyPlays}
+													onChange={setKeyPlaysState}
+												/>
+											</>
 										) : null}
 									</>
 								) : (

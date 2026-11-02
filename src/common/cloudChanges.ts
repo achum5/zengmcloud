@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 137,
+		date: "2026-11-02",
+		text: "Live game: a settings button next to the Key plays picker sets what the key plays show - a close game shown in full (within how many points, how many minutes left, and whether that comes on top of the length you picked) and what makes the reel (dunks, threes, blocks, steals, and-ones, buzzer beaters, lead changes, big swings, your team first). The close game settings moved here from Global Settings.",
+	},
+	{
 		n: 136,
 		date: "2026-11-02",
 		text: "Finals: center court now looks like a real finals floor - the championship trophy 27 feet tall with the team logo in front of it, a dozen feet across. On an imported floor picture, the picture's own center logo is painted out for the finals (wood carried in over it, the half-court line drawn on through). The trophy now comes with the game instead of loading from imgur, so it always shows.",

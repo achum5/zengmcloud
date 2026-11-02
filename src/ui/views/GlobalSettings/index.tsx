@@ -16,12 +16,6 @@ import { useBlocker } from "../../hooks/useBlocker.ts";
 import { HelpPopover } from "../../components/HelpPopover.tsx";
 import { safeLocalStorage } from "../../util/safeLocalStorage.ts";
 import { local, localActions } from "../../util/local.ts";
-import {
-	getKeyPlays,
-	KEY_PLAY_LIMITS,
-	parseKeyPlays,
-	setKeyPlays,
-} from "../LiveGame/court3d/keyPlays.ts";
 
 const GlobalSettings = (props: View<"globalSettings">) => {
 	const [state, setState] = useState(() => {
@@ -45,14 +39,11 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 		}
 
 		const fullNames = props.fullNames ? "always" : ("abbrev-small" as const);
-		const keyPlays = getKeyPlays();
 
 		return {
 			fullNames,
 			scoresBar: local.getState().showLeagueTopBar ? "show" : ("hide" as const),
 			depthChart: local.getState().showDepthChart ? "show" : ("hide" as const),
-			closePoints: String(keyPlays.closePoints),
-			closeMinutes: String(keyPlays.closeMinutes),
 			phaseChangeRedirects: props.phaseChangeRedirects,
 			realPlayerPhotos: props.realPlayerPhotos,
 			realTeamInfo: props.realTeamInfo,
@@ -107,17 +98,11 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 		}
 
 		// Device-local, like the color scheme above: saved straight to this browser
-		// rather than sent to the worker with the options below. (Key plays on or
-		// off, and their length, are picked by the 3D court.)
+		// rather than sent to the worker with the options below. (Key plays -
+		// on or off, their length, a close finish - are picked by the live
+		// game.)
 		localActions.setShowLeagueTopBar(state.scoresBar === "show");
 		localActions.setShowDepthChart(state.depthChart === "show");
-		setKeyPlays(
-			parseKeyPlays({
-				...getKeyPlays(),
-				closePoints: Number(state.closePoints),
-				closeMinutes: Number(state.closeMinutes),
-			}),
-		);
 
 		const units = state.units === "default" ? undefined : state.units;
 		try {
@@ -187,8 +172,6 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 
 	const numberField = (
 		name:
-			| "closePoints"
-			| "closeMinutes"
 			| "recapMaxGames"
 			| "recapMaxDays"
 			| "recapMaxPlayers"
@@ -283,22 +266,6 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 
 				<h2>Games</h2>
 				<div className="row">
-					{__SPORT === "basketball" || __SPORT === "football" ? (
-						<>
-							{numberField("closePoints", "Close Game (pts)", {
-								min: KEY_PLAY_LIMITS.closePoints[0],
-								max: KEY_PLAY_LIMITS.closePoints[1],
-								title:
-									"Key plays show every play once it is within this many points (0: never)",
-							})}
-							{numberField("closeMinutes", "Close Game (min left)", {
-								min: KEY_PLAY_LIMITS.closeMinutes[0],
-								max: KEY_PLAY_LIMITS.closeMinutes[1],
-								step: 0.5,
-								title: "Minutes left in the fourth or in overtime",
-							})}
-						</>
-					) : null}
 					{numberField("ownGameSimCutoffSeconds", "Own Game Sim Cutoff (s)", {
 						min: 0,
 						title:
