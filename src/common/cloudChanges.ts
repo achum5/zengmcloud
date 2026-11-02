@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 130,
+		date: "2026-11-02",
+		text: "3D game: playoff crowds do a color-out - every section in one of the home team's colors, the next section in the other, all the way round (green, white, green in Boston; wine, gold, wine in Cleveland), and no visiting fans' colors in the stands.",
+	},
+	{
 		n: 129,
 		date: "2026-11-02",
 		text: "Finals: an imported court picture now gets the championship trophy at center court too, with the home logo in front of it - the same finals look as every other court - instead of the trophy going on the scorer's table.",

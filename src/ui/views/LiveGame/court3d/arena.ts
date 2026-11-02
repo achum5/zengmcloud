@@ -483,6 +483,9 @@ export const paintStands = (
 	// of skin for each.
 	faces?: CrowdFace[],
 	spec: ArenaSpec = arenaSpecFor(home),
+	// A playoff game: the home crowd's color-out - each section of seats in
+	// one of the home colors, the next in the other.
+	playoffs = false,
 ): HTMLCanvasElement => {
 	const P = end === undefined ? STANDS : END_STANDS[end];
 	const A0 = end === undefined ? X0 : END_Y0;
@@ -587,7 +590,14 @@ export const paintStands = (
 			}
 			const x = (xf - A0) * px + (rng() - 0.5) * 2;
 			const bodyW = (1.25 + rng() * 0.35) * px;
-			const color = shirt();
+			// (Picked either way, so the rest of the crowd is the same people.)
+			const picked = shirt();
+			// PLAYOFF COLOR-OUT: every seat in a section in one of the home
+			// colors, the next section over in the other - all the way round,
+			// no visitors' colors anywhere.
+			const color = playoffs
+				? homeC[Math.floor((xf - A0) / aisle) % 2]!
+				: picked;
 			const face =
 				faces && faces.length > 0
 					? faces[Math.floor(faceRng() * faces.length)]!
