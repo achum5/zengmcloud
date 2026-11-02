@@ -516,9 +516,12 @@ export const outlookSettings = {
 	roomByRecord: true,
 	// A veteran's chance of staying counts how good he is (keptByValue).
 	retentionByValue: true,
-	// A move's change in the team's record changes its players' mood and what
-	// its room buys (losingShifts).
-	costsOfLosing: false,
+	// A move's change in the team's record changes its players' mood
+	// (losingShifts).
+	costsOfLosing: true,
+	// Which of the costs of losing count: the record's own part of mood -
+	// and, measured and left off, hype's and what the next summer's room buys.
+	losingParts: { record: true, hype: false, room: false },
 	// Which measurement turns a veteran's chance of taking his team's offer
 	// into his chance of staying: 1, KEPT then keptByValue; 2, KEPT_FIT - the
 	// better forecast, and the worse one to decide by (see KEPT_FIT).
@@ -1989,7 +1992,13 @@ export const placesAfter = (
 // it kept, and on landing free agents with its room. So a move's change in
 // the team's record each season, as a share of games won, is turned into
 // what it does to the mood of everyone whose contract runs out after that
-// season and to what the next summer's room buys.
+// season - priced again only when that comes to a quarter point of mood (29%
+// of rosters priced in an arena league). Half the teams each way, 4 leagues
+// each way round over 6 seasons: its teams won 29 titles to 19, about as many
+// games and playoff rounds (352 to 368), with 56 seasons under 20 wins to 81
+// and 8 under 12 to 19. Counting hype too, and what the next summer's room
+// buys (losingParts), they shied from losing so much more - 5 seasons under
+// 20 wins to 41, in 2 leagues each way - that they won 8 titles to 16.
 export type LosingShifts = {
 	// Points of mood, by the season a contract runs out after.
 	mood: number[];
@@ -2053,15 +2062,17 @@ export const losingShifts = (
 		const hype =
 			Math.min(1, Math.max(0, hypeNow + gained + 0.015 * 82 * change)) -
 			hypeNow;
+		const parts = outlookSettings.losingParts;
 		mood[y] =
-			teamPerformanceMood(Math.min(1, Math.max(0, was + change))) -
-			teamPerformanceMood(was) +
-			4 * hype;
+			(parts.record
+				? teamPerformanceMood(Math.min(1, Math.max(0, was + change))) -
+					teamPerformanceMood(was)
+				: 0) + (parts.hype ? 4 * hype : 0);
 		// What free agents see the summer after.
-		winp[y + 1] = change;
+		winp[y + 1] = parts.room ? change : 0;
 		if (
 			Math.abs(mood[y]!) >= LOSING_MOOD_MIN ||
-			Math.abs(change) >= LOSING_WINP_MIN
+			Math.abs(winp[y + 1]!) >= LOSING_WINP_MIN
 		) {
 			material = true;
 		}

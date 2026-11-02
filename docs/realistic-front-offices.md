@@ -79,6 +79,24 @@ with "the Pistons", not with a named person.
   wins, as many players finishing rookie deals kept (77% against 79% of 58
   or better), long overpays 0 against 2. A team going nowhere may now shed
   a veteran it pays more than he is worth to it.
+- **Losing costs what the game charges for it** (owner's call: only the
+  game's real costs, whatever is best for the franchise). A player's mood
+  toward his team counts its record, twice as hard when it is losing, and his
+  mood decides whether he re-signs. Priced from the team as it stands, a move
+  that left it far worse was priced as if its players would feel about it as
+  they do now - so a team could tear itself down to 3 wins still counting on
+  keeping whom it kept. Now a move's change in the team's record each season
+  moves the mood of everyone whose contract runs out after that season (the
+  game's own formula, regressed as finishes drift back toward the middle),
+  and the roster is priced again with it when that comes to a quarter point
+  of mood. Half the teams each way, 4 leagues each way round over 6 seasons:
+  29 titles to 19, about as many games and playoff rounds (352 to 368), 56
+  seasons under 20 wins to 81 and 8 under 12 to 19, with 29% of rosters
+  priced twice; bad teams signed more free agents (148 of 50 or better to 117) and left big room unspent half as often. Counting hype as well, and
+  what the next summer's room buys, teams shied from losing far more - 5
+  seasons under 20 wins to 41, in 2 leagues each way - and won 8 titles to
+  16: in this game a deep rebuild still wins titles, and those costs were
+  overweighted. Left off (losingParts).
 - **No tanking through lineups.** A rebuilding team sells for the future through
   trades, but on the floor every team plays to win.
 

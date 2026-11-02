@@ -1,6 +1,6 @@
 import { assert, beforeAll, test } from "vitest";
 import { resetG } from "../../../test/helpers.ts";
-import { losingShifts, retireChance } from "./outlook.ts";
+import { losingShifts, outlookSettings, retireChance } from "./outlook.ts";
 
 beforeAll(() => {
 	resetG();
@@ -26,7 +26,7 @@ test("a star far past his best may hang it up", () => {
 	assert.isBelow(retireChance(35, 58, 58, 72), 0.02);
 });
 
-test("tearing a team down costs it its players' mood, and its room", () => {
+test("tearing a team down costs it its players' mood", () => {
 	const flat = Array.from({ length: 11 }, () => 0);
 	const outlook = {
 		basePoints: new Map([[0, flat]]),
@@ -38,15 +38,14 @@ test("tearing a team down costs it its players' mood, and its room", () => {
 	};
 	// Nothing changed: nothing to price again.
 	assert.isUndefined(losingShifts(outlook, 0, flat));
-	// Five points worse every season: worse moods, worse free agents - most
-	// this season and next, less seasons out as the finish drifts back.
+	// Five points worse every season: worse moods - most this season and
+	// next, less seasons out as the finish drifts back.
 	const worse = losingShifts(
 		outlook,
 		0,
 		flat.map(() => -5),
 	)!;
 	assert.isBelow(worse.mood[0]!, -2);
-	assert.isBelow(worse.winp[1]!, -0.1);
 	assert.isAbove(worse.mood[6]!, worse.mood[0]!);
 	// Better is worth less than worse costs: losing counts twice.
 	const better = losingShifts(
@@ -55,4 +54,20 @@ test("tearing a team down costs it its players' mood, and its room", () => {
 		flat.map(() => 5),
 	)!;
 	assert.isBelow(better.mood[0]!, -worse.mood[0]!);
+	// Hype and room count only when asked to (losingParts): measured, they
+	// made teams worse.
+	assert.strictEqual(worse.winp[1] ?? 0, 0);
+	const was = outlookSettings.losingParts;
+	outlookSettings.losingParts = { record: true, hype: true, room: true };
+	try {
+		const all = losingShifts(
+			outlook,
+			0,
+			flat.map(() => -5),
+		)!;
+		assert.isBelow(all.winp[1]!, -0.1);
+		assert.isBelow(all.mood[0]!, worse.mood[0]!);
+	} finally {
+		outlookSettings.losingParts = was;
+	}
 });

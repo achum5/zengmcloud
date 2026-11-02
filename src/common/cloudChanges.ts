@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 122,
+		date: "2026-11-02",
+		text: "Realistic Front Offices: CPU teams now count what losing does to their own players - the worse a team gets, the less its players want to re-sign - so fewer teams gut themselves into 5-win seasons.",
+	},
+	{
 		n: 121,
 		date: "2026-11-02",
 		text: "3D game: crunch time looks like it - in the last minutes of a close game, the star gets the ball and his teammates clear out so he can go one-on-one.",
