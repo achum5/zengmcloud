@@ -405,6 +405,8 @@ const paced = (move: Move | undefined, fps: number, ms: number): Move => {
 
 const clamp = (x: number, lo: number, hi: number) =>
 	Math.min(hi, Math.max(lo, x));
+// An angle (radians) the short way round: -PI to PI.
+const angleOff = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 // How far round (radians) going a to b and on to c turns him at b.
 const angleAt = (a: Pt, b: Pt, c: Pt): number => {
 	const t = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(b.y - a.y, b.x - a.x);
@@ -2375,6 +2377,15 @@ const LOCK_SET_MS = [900, 400] as const;
 // this long, ms, if he has come round this far, radians.)
 const KEEP_STEP_MS = 300;
 const KEEP_TURN = 0.15;
+// (And, this far (feet) from where he meets him at least, and the man with
+// the ball further off it than this, round it as the man comes round to
+// it - up to this far round from where he set (radians), this far a step
+// at most and no less (feet).)
+const MIRROR_LEAST_FT = 2.5;
+const MIRROR_NEAR_FT = 4;
+const MIRROR_MOST = 0.5;
+const MIRROR_STEP_FT = 1.2;
+const MIRROR_STEP_LEAST_FT = 0.5;
 // (And one this deep, feet, set with this long to spare at least (ms):
 // read steps back first, this far (feet), over this long.)
 const READ_DEEP_FT = 18;
@@ -6572,7 +6583,7 @@ class Action {
 			return;
 		}
 		const pile = this.tackle(carrier, down.by, end.pt, down.t);
-		this.gangUp(chasers, pile, down.t, down.by);
+		this.gangUp(chasers, pile, down.t, down.by, carrier);
 		this.pursue(chasers, end.pt, down.t, down.by, carrier);
 		if (this.heap > 0) {
 			this.pileUp(carrier, pile, down.t, this.heap);
@@ -7311,8 +7322,8 @@ class Action {
 
 	// More of them in on it - the first one or two of `men` there as he
 	// goes down, off their feet onto the pile at `pile`, each in from the
-	// way he comes.
-	gangUp(men: Actor[], pile: Pt, t: number, by: Actor[]) {
+	// way he comes (eyes on the man with the ball till then).
+	gangUp(men: Actor[], pile: Pt, t: number, by: Actor[], carrier: Actor) {
 		const r = this.r;
 		const near = men
 			.filter((m) => !this.done.has(m.pid) && !by.includes(m) && m.t < t)
@@ -7337,7 +7348,7 @@ class Action {
 				return;
 			}
 			const face = this.toward(hit, pile);
-			this.closeOn(m, hit, go, face);
+			this.closeOn(m, hit, go, face, carrier);
 			m.lunge("dive", go + 450, face, {
 				x: pile.x + Math.cos(ang) * 1.6,
 				y: pile.y + Math.sin(ang) * 1.6,
@@ -7706,7 +7717,10 @@ class Action {
 			return him && dist(him, m.at) > 2 ? this.toward(m.at, him) : face;
 		};
 		// (Set there a while: turned with him as he comes - square to where
-		// he is, a turn at a time - not set one way all of it.)
+		// he is, a turn at a time - not set one way all of it; and, a way
+		// off where he meets him, round it a shuffle at a time as he comes
+		// round to it, to keep in front of him as he was - see MIRROR_MOST -
+		// not stood still as he cuts.)
 		const setTill = (t1: number) => {
 			let yaw = look();
 			if (watch && t1 - m.t >= 2 * KEEP_STEP_MS) {
@@ -7714,14 +7728,48 @@ class Action {
 				if (dist(ahead, m.at) > 2) {
 					yaw = this.toward(m.at, ahead);
 				}
+				const r0 = dist(m.at, hit);
+				const a0 = this.toward(hit, m.at);
+				const him0 = watch.posAt(m.t);
+				const rel =
+					r0 >= MIRROR_LEAST_FT && dist(him0, hit) > MIRROR_NEAR_FT
+						? a0 - this.toward(him0, hit)
+						: undefined;
+				let a = a0;
 				while (t1 - m.t >= 1.5 * KEEP_STEP_MS) {
-					m.hold(m.t + KEEP_STEP_MS, "backerStance", yaw);
 					const him = watch.posAt(m.t + KEEP_STEP_MS / 2);
-					const to = this.toward(m.at, him);
+					const off =
+						rel === undefined ||
+						t1 - m.t < 2.5 * KEEP_STEP_MS ||
+						dist(him, hit) <= MIRROR_NEAR_FT
+							? 0
+							: angleOff(
+									a0 +
+										clamp(
+											angleOff(this.toward(him, hit) + rel - a0),
+											-MIRROR_MOST,
+											MIRROR_MOST,
+										) -
+										a,
+								);
+					if (Math.abs(off) * r0 >= MIRROR_STEP_LEAST_FT) {
+						a += clamp(off, -MIRROR_STEP_FT / r0, MIRROR_STEP_FT / r0);
+						const to = {
+							x: hit.x + Math.cos(a) * r0,
+							y: hit.y + Math.sin(a) * r0,
+						};
+						if (dist(him, to) > 2) {
+							yaw = this.toward(to, him);
+						}
+						m.go(to, m.t + KEEP_STEP_MS, "slide", yaw);
+						continue;
+					}
+					m.hold(m.t + KEEP_STEP_MS, "backerStance", yaw);
+					const next = watch.posAt(m.t + KEEP_STEP_MS / 2);
+					const to = this.toward(m.at, next);
 					if (
-						dist(him, m.at) > 2 &&
-						Math.abs(Math.atan2(Math.sin(to - yaw), Math.cos(to - yaw))) >
-							KEEP_TURN
+						dist(next, m.at) > 2 &&
+						Math.abs(angleOff(to - yaw)) > KEEP_TURN
 					) {
 						yaw = to;
 					}
