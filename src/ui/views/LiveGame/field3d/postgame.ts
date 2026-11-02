@@ -117,10 +117,12 @@ const COACH_AFTER = 2600;
 const LOOK_AFTER = 400;
 const LAST_LOOK_MS = 3500;
 // Most of them with their helmets off for the handshakes - this share,
-// each a moment after his own moment - each pulling it off over this long,
-// off his head this far into it.
+// each a moment after his own moment (up to this long - none, if less than
+// this) - each pulling it off over this long, off his head this far into
+// it.
 const HELMET_OFF = 0.8;
 const HELMET_LATE = 500;
+const HELMET_LATE_LEAST = 150;
 const HELMET_MS = 1100;
 const HELMET_UP = 0.5;
 // The ball, if a man still has it: tossed down by his feet.
@@ -650,7 +652,12 @@ export const stagePostgame = (input: {
 	// Helmets off.
 	for (const m of men) {
 		if (r() < HELMET_OFF) {
-			m.hold(m.t + r() * HELMET_LATE);
+			// (Not stood a moment first, a flash between what he was at and
+			// this: straight on into it.)
+			const late = r() * HELMET_LATE;
+			if (late >= HELMET_LATE_LEAST) {
+				m.hold(m.t + late);
+			}
 			m.helmetOff();
 		}
 	}
