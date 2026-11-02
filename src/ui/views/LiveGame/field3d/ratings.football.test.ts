@@ -213,6 +213,42 @@ describe("3D field ratings", () => {
 		assert.isAbove(share(0), share(1) + 0.15);
 	}, 80_000);
 
+	test("a sure tackler drives the man he hits back more often", () => {
+		const game = games[0]!;
+		const rated = staged(game, (p) =>
+			["LB", "S", "CB", "DL"].includes(p.pos)
+				? { tck: p.team === 0 ? 95 : 45 }
+				: {},
+		);
+		// Of the men with the ball brought down when `side` has it, the share
+		// put down on their backs.
+		const share = (side: 0 | 1) => {
+			let back = 0;
+			let down = 0;
+			for (const play of rated.plays) {
+				if (play.offense !== side) {
+					continue;
+				}
+				for (const part of play.parts) {
+					if (part.team !== side) {
+						continue;
+					}
+					for (const l of part.legs) {
+						if (l.move === "tackledBack") {
+							back += 1;
+						}
+						if (l.move === "tackled" || l.move === "tackledBack") {
+							down += 1;
+						}
+					}
+				}
+			}
+			assert.isAbove(down, 20);
+			return back / down;
+		};
+		assert.isAbove(share(1), share(0) + 0.08);
+	}, 80_000);
+
 	test("a pass rusher who has the better of the man on him works him harder, and backs him up further - and a cover man who stands out sits tighter", () => {
 		const game = games[0]!;
 		const plain = staged(game);

@@ -2779,6 +2779,12 @@ const LANDED_APART = 2.4;
 // this often stood up instead - held there and driven back this far (feet)
 // over this long, the whistle on forward progress, him still on his feet.
 const STOOD = 0.22;
+// A sure tackler against the man he hits (his form, less the man's
+// strength - see Flair; -1 to 1): this much likelier to drive him back,
+// to stand him up, or - a man in the secondary - to stay on his feet.
+const SURE_BY = { back: 0.25, stood: 0.12, upright: 0.15 };
+const hitEdge = (tackler: Actor, carrier: Actor) =>
+	clamp((tackler.flair.tackle ?? 0) - (carrier.flair.power ?? 0), -1, 1);
 const STOOD_LATE = 350;
 const STOOD_BACK = 2.6;
 const STOOD_MS = 1100;
@@ -7078,7 +7084,7 @@ class Action {
 			!lying &&
 			first !== undefined &&
 			Math.cos(toFirst) > HEAD_ON &&
-			r() < DRIVEN_BACK;
+			r() < DRIVEN_BACK + SURE_BY.back * hitEdge(by[0]!, carrier);
 		// (The side the first comes at him from: +1 his left.)
 		const from1 = Math.sin(toFirst) > 0 ? 1 : -1;
 		const swing =
@@ -7095,7 +7101,7 @@ class Action {
 			by.length === 1 &&
 			DB.has(by[0]!.role) &&
 			Math.cos(toFirst) < HEAD_ON &&
-			r() < UPRIGHT;
+			r() < UPRIGHT + SURE_BY.upright * (by[0]!.flair.tackle ?? 0);
 		const along = (p: Pt, f: number, s: number) => ({
 			x: p.x + Math.cos(fall) * f - Math.sin(fall) * s,
 			y: p.y + Math.sin(fall) * f + Math.cos(fall) * s,
@@ -7234,7 +7240,10 @@ class Action {
 			.map((m) => ({ m, at: this.canReach(m, pt) }))
 			.filter((x) => x.at < t + STOOD_LATE)
 			.slice(0, 2);
-		if (more.length === 0 || r() > STOOD) {
+		if (
+			more.length === 0 ||
+			r() > STOOD + SURE_BY.stood * hitEdge(by[0]!, carrier)
+		) {
 			return false;
 		}
 		const end = t + STOOD_MS;
