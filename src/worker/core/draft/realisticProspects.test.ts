@@ -18,6 +18,9 @@ import { REALISTIC_PROSPECTS } from "./realisticProspectsData.ts";
 import type { PlayerWithoutKey } from "../../../common/types.ts";
 
 const UNTOUCHED = [...BODY_KEYS, "endu", "oiq", "diq"];
+// The steepest a target table may climb in its top half (rating points per
+// unit of normal score) - real ratings spread out, but not in one jump.
+const MAX_RISE = 55;
 
 const makeRng = (seed: number) => {
 	let s = seed >>> 0;
@@ -60,6 +63,29 @@ describe("realisticProspect", () => {
 		}
 		for (const spread of REALISTIC_PROSPECTS.spread) {
 			assert.isAbove(spread, 0);
+		}
+	});
+
+	test("no target table has a flat run or a cliff", () => {
+		// A flat run piles every prospect in it onto one rating, and a flat
+		// stretch ending in a jump at the top quantile made a class whose best
+		// mid-range shooters all came out at 98. (Except at the floor: the
+		// non-shooters and non-dunkers pile up at 0 on purpose.)
+		const z = QUANTILES.map((q) => normInv(q));
+		for (const [key, table] of Object.entries(REALISTIC_PROSPECTS.target)) {
+			for (let i = 1; i < table.length; i++) {
+				// (Nor the step up off it.)
+				if (table[i - 1]! <= 1) {
+					continue;
+				}
+				const rise = (table[i]! - table[i - 1]!) / (z[i]! - z[i - 1]!);
+				assert.isAtLeast(rise, 1.5, `${key} flat at ${QUANTILES[i]}`);
+				// (Up from the non-shooters to the shooters it climbs fast: the
+				// cliffs that matter are at the top.)
+				if (QUANTILES[i]! >= 0.5) {
+					assert.isAtMost(rise, MAX_RISE, `${key} cliff at ${QUANTILES[i]}`);
+				}
+			}
 		}
 	});
 
@@ -221,6 +247,33 @@ describe("realisticDraftProspects", () => {
 			tpFg(normal) - 0.25,
 			`realistic ${tpFg(realistic).toFixed(2)} vs normal ${tpFg(normal).toFixed(2)}`,
 		);
+	});
+
+	test("a class doesn't pile up on one rating, or top out at one", async () => {
+		// Lumpy tables made a fifth of a class share one passing rating, every
+		// good free-throw shooter stop at 51, and the best mid-range shooters
+		// all come out at 98. (Zero aside: the non-shooters and non-dunkers.)
+		const players = await generateClass({
+			realistic: true,
+			specialized: false,
+		});
+		for (const key of SKILL_KEYS) {
+			const values = players.map((p) => lastRatings(p)[key] as number);
+			const counts = new Map<number, number>();
+			for (const v of values) {
+				if (v > 0) {
+					counts.set(v, (counts.get(v) ?? 0) + 1);
+				}
+			}
+			const most = Math.max(...counts.values());
+			assert.isAtMost(most / values.length, 0.2, `${key} piled up`);
+			const top = Math.max(...values);
+			assert.isAtMost(
+				values.filter((v) => v === top).length,
+				3,
+				`${key} topped out at ${top}`,
+			);
+		}
 	});
 
 	test("with both reshapings on, realistic replaces specialized rather than stacking", async () => {

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 113,
+		date: "2026-11-02",
+		text: "Realistic Draft Prospects: fixed lopsided ratings - no more top prospects all at 98 mid-range, free throws are no longer capped around 51 for the whole class, and skills no longer pile dozens of prospects onto one exact number. Only classes generated from now on change.",
+	},
+	{
 		n: 112,
 		date: "2026-11-02",
 		text: "Realistic Front Offices: free agency always works the realistic way when the mode is on - the separate Realistic Free Agency setting is gone.",

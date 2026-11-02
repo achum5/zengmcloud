@@ -112,6 +112,26 @@ export const valueAt = (table: readonly number[], q: number) => {
 	return table.at(-1)!;
 };
 
+// The value at normal score z: within the table, as valueAt; out past either
+// end of it, on along the slope of its last stretch (in normal scores) - not
+// all at its end value, which piled the top of a class onto one rating (a
+// class's best mid-range shooters all at the same number).
+export const valueAtZ = (table: readonly number[], z: number) => {
+	const n = QUANTILES.length;
+	const zLo = normInv(QUANTILES[0]!);
+	const zHi = normInv(QUANTILES[n - 1]!);
+	if (z > zHi) {
+		const slope =
+			(table[n - 1]! - table[n - 2]!) / (zHi - normInv(QUANTILES[n - 2]!));
+		return table[n - 1]! + slope * (z - zHi);
+	}
+	if (z < zLo) {
+		const slope = (table[1]! - table[0]!) / (normInv(QUANTILES[1]!) - zLo);
+		return table[0]! + slope * (z - zLo);
+	}
+	return valueAt(table, normCdf(z));
+};
+
 // Inverse standard normal CDF (Acklam's approximation, ~1e-9).
 export const normInv = (p: number) => {
 	const a = [
@@ -193,9 +213,7 @@ export const reshapeProspect = (
 
 	SKILL_KEYS.forEach((key, i) => {
 		const z = (fromBody[i]! + reshaped[i]!) / tables.spread[i]!;
-		ratings[key] = limitRating(
-			Math.round(valueAt(tables.target[key], normCdf(z))),
-		);
+		ratings[key] = limitRating(Math.round(valueAtZ(tables.target[key], z)));
 	});
 };
 

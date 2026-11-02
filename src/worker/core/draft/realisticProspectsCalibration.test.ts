@@ -232,13 +232,70 @@ const quantiles = (values: number[]) => {
 		return sorted[lo]! + (position - lo) * (sorted[hi]! - sorted[lo]!);
 	});
 };
-// Strictly increasing and within 0-100, so a table always inverts.
+// The normal score at each of QUANTILES.
+const Z = QUANTILES.map((q) => normInv(q));
+// The least a target table rises (rating points per unit of normal score):
+// a run of one value piles every prospect in it onto the same rating, and a
+// flat stretch before the top quantile makes a cliff there (a class whose
+// best mid-range shooters all came out at 98).
+const MIN_RISE = 2.5;
+const FLOOR = 1;
+// Increasing (by at least MIN_RISE) and within 0-100, so a table always
+// inverts: the nearest non-decreasing table (pooling adjacent violators -
+// not a running maximum, which leaves a flat run after every dip), then
+// lifted to rise at least that much.
 const monotone = (table: number[]) => {
+	const blocks: { sum: number; n: number }[] = [];
+	for (const x of table) {
+		blocks.push({ sum: helpers.bound(x, 0, 100), n: 1 });
+		while (
+			blocks.length > 1 &&
+			blocks.at(-2)!.sum / blocks.at(-2)!.n >
+				blocks.at(-1)!.sum / blocks.at(-1)!.n
+		) {
+			const b = blocks.pop()!;
+			blocks.at(-1)!.sum += b.sum;
+			blocks.at(-1)!.n += b.n;
+		}
+	}
+	const pooled = blocks.flatMap((b) => Array<number>(b.n).fill(b.sum / b.n));
+	// (Not at the floor: the real non-shooters pile up against 0 for 3-point
+	// shooting, and that pile is kept.)
 	let prev = -Infinity;
-	return table.map((x) => {
-		prev = Math.max(prev + 1e-3, helpers.bound(x, 0, 100));
-		return prev;
+	return pooled.map((x, j) => {
+		prev =
+			j === 0
+				? x
+				: Math.max(
+						x,
+						x <= FLOOR ? prev : prev + MIN_RISE * (Z[j]! - Z[j - 1]!),
+					);
+		return Math.min(100, prev);
 	});
+};
+// Out past these quantiles in each tail, a simmed league's rotation players
+// are too few to read a table from (the top 0.25% of a thousand men is two
+// of them): a round's correction there is the one at this quantile, carried
+// on out. Within them, each correction is averaged with its neighbours over
+// about this much normal score, so one noisy quantile doesn't put a step in
+// the table.
+const TAIL_Q = 0.025;
+const SMOOTH_Z = 0.3;
+const smoothed = (delta: number[]) => {
+	const lo = QUANTILES.findIndex((q) => q >= TAIL_Q);
+	const hi = QUANTILES.findLastIndex((q) => q <= 1 - TAIL_Q);
+	const at = (j: number) => {
+		let w = 0;
+		let sum = 0;
+		for (let k = lo; k <= hi; k++) {
+			const u = (Z[k]! - Z[j]!) / SMOOTH_Z;
+			const wk = Math.exp(-0.5 * u * u);
+			w += wk;
+			sum += wk * delta[k]!;
+		}
+		return sum / w;
+	};
+	return delta.map((_, j) => at(Math.min(hi, Math.max(lo, j))));
 };
 
 // SIMULATION
@@ -526,14 +583,12 @@ test.skipIf(!RUN || __SPORT !== "basketball")(
 		for (let iteration = 1; iteration <= ROUNDS; iteration++) {
 			rest = symPow(add(rest, add(realFit.rest, simmed.rest, -1)), 1, 1e-3);
 			target = Object.fromEntries(
-				SKILL_KEYS.map((key) => [
-					key,
-					monotone(
-						target[key].map(
-							(x, j) => x + goal[key]![j]! - simmed.tables[key]![j]!,
-						),
-					),
-				]),
+				SKILL_KEYS.map((key) => {
+					const delta = smoothed(
+						goal[key]!.map((x, j) => x - simmed.tables[key]![j]!),
+					);
+					return [key, monotone(target[key].map((x, j) => x + delta[j]!))];
+				}),
 			) as Record<SkillKey, number[]>;
 			const total = add(
 				mul(mul(source.slopes, source.bodyCov), transpose(source.slopes)),
