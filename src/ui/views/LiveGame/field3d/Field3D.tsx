@@ -56,6 +56,7 @@ import {
 } from "./camera.ts";
 import type { FieldTimeline } from "./director.ts";
 import { stageField, stageOpening } from "./stageField.ts";
+import { coverMidfield, midCover } from "./coverMid.ts";
 import { momentAt, playAt, type HandsOf } from "./evaluate.ts";
 import { bodyPoint } from "./sculpt.ts";
 import {
@@ -687,7 +688,16 @@ const Field3D = ({
 			...(midLogo && !own?.logo ? { logo: paintMidLogo(midPicture) } : {}),
 			...(fieldPicture
 				? {
-						field: fieldPicture,
+						// (The championship game's: its own logo painted out
+						// for the trophy - see coverMidfield.)
+						field:
+							(finals
+								? coverMidfield(
+										fieldPicture,
+										midCover(own?.cover),
+										h.stadium?.fieldLines === "picture",
+									)
+								: undefined) ?? fieldPicture,
 						ownLines: h.stadium?.fieldLines === "picture",
 					}
 				: {}),

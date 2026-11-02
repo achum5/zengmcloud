@@ -647,13 +647,29 @@ const EditTeamStadium = ({
 						onSet={(next) => setVersionPictures(version, next)}
 						trophy={
 							version === "finals" ? (
-								<PictureField
-									label="Championship trophy"
-									url={stadium.trophyURL}
-									pictures={pictures}
-									onChange={(v) => setField("trophyURL", v)}
-									onUpload={upload}
-								/>
+								<>
+									<PictureField
+										label="Championship trophy"
+										url={stadium.trophyURL}
+										pictures={pictures}
+										onChange={(v) => setField("trophyURL", v)}
+										onUpload={upload}
+									/>
+									{stadium.fieldURL ? (
+										<div className="mb-3">
+											<div className="form-label mb-1">
+												Field logo painted out
+											</div>
+											<AdjustFields
+												slot="cover"
+												adjust={stadium.adjust?.cover}
+												onAdjust={(next) => setAdjust("cover", next)}
+												room={FIELD_ROOM}
+												placeOnly
+											/>
+										</div>
+									) : null}
+								</>
 							) : null
 						}
 					/>

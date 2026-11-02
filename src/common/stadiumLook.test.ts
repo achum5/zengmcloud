@@ -79,6 +79,9 @@ test("a stadium's settings kept to the ones there are", () => {
 		{ adjust: { logo: { scale: 1.4, rotate: 90, fit: "fill" } } },
 	);
 	assert.isUndefined(cleanStadium({ adjust: { secondary: [] } }));
+	assert.deepEqual(cleanStadium({ adjust: { cover: { scale: 1.3, dx: 4 } } }), {
+		adjust: { cover: { scale: 1.3, dx: 4 } },
+	});
 	assert.strictEqual(
 		cleanStadium({ endZoneText: "X".repeat(40) })?.endZoneText?.length,
 		24,

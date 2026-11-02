@@ -17,6 +17,7 @@ import {
 	type DecalPicture,
 	type FieldTeam,
 } from "./fieldPaint.ts";
+import { coverMidfield, midCover } from "./coverMid.ts";
 import { FIELD_W, GOAL_R, MID_X, MID_Y } from "./geometry.ts";
 import { fieldGearFor, fieldKit, type FieldLook } from "./kit.ts";
 import { drawFieldFrame, type FieldPaint } from "./scene.ts";
@@ -82,7 +83,14 @@ export const paintPreview = (
 		...(decals.length > 0 ? { decals: paintDecals(decals) } : {}),
 		...(pictures.field
 			? {
-					field: pictures.field,
+					field:
+						(finals
+							? coverMidfield(
+									pictures.field,
+									midCover(own?.cover),
+									team.stadium?.fieldLines === "picture",
+								)
+							: undefined) ?? pictures.field,
 					ownLines: team.stadium?.fieldLines === "picture",
 				}
 			: {}),

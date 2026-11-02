@@ -84,7 +84,7 @@ export const cleanStadium = (raw: unknown): StadiumLook | undefined => {
 	if (r.adjust && typeof r.adjust === "object") {
 		const a = r.adjust as Record<string, unknown>;
 		const adjust: NonNullable<StadiumLook["adjust"]> = {};
-		for (const key of ["logo", "secondary"] as const) {
+		for (const key of ["logo", "secondary", "cover"] as const) {
 			const v = a[key];
 			if (v !== undefined && adjustProblem(v, key) === undefined) {
 				adjust[key] = v as NonNullable<StadiumLook["adjust"]>[typeof key];

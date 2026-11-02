@@ -3172,8 +3172,9 @@ export type StadiumLook = {
 	// The field picture has its own lines: the game paints none on it.
 	fieldLines?: "picture";
 	// Those two moved, sized, turned and faded from where they sit (as a
-	// court's pictures are).
-	adjust?: Partial<Record<"logo" | "secondary", CourtImageAdjust>>;
+	// court's pictures are) - and, for the championship game, where a field
+	// picture's own midfield logo is painted out (see coverMidfield).
+	adjust?: Partial<Record<"logo" | "secondary" | "cover", CourtImageAdjust>>;
 	// The stands' seats; left out, from the team's colors.
 	seatColor?: string;
 	// Words of its own along the boards round the field, in turn with the
