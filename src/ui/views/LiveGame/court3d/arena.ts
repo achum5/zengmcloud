@@ -213,18 +213,35 @@ export const benchPlane = (t: Side) =>
 		12,
 	);
 
-const PALETTE = [
-	"#f2f2f2",
-	"#1c1c1c",
-	"#3b3f46",
-	"#7c8592",
-	"#24365c",
-	"#8b2331",
-	"#2f5d3a",
-	"#c9b79c",
-	"#d9d9d9",
-	"#5a4636",
+// What a crowd wears that isn't the team's: mostly black, gray, white and
+// navy, some denim, a few muted colors - and the odd bright one. (Weights.)
+const CLOTHES: [string, number][] = [
+	["#16171a", 10],
+	["#2a2c31", 7],
+	["#45484f", 5],
+	["#8a8e95", 5],
+	["#e8e8e5", 8],
+	["#c9ccd1", 3],
+	["#1f2a44", 6],
+	["#3a4d6b", 3],
+	["#56653f", 2],
+	["#6a2a30", 2],
+	["#8a7357", 2],
+	["#2f4f4a", 1],
+	["#a5453b", 1],
+	["#c49a3f", 1],
 ];
+const CLOTHES_SUM = CLOTHES.reduce((n, [, w]) => n + w, 0);
+const clothes = (r: number) => {
+	let left = r * CLOTHES_SUM;
+	for (const [c, w] of CLOTHES) {
+		left -= w;
+		if (left < 0) {
+			return c;
+		}
+	}
+	return CLOTHES[0]![0];
+};
 
 const teamColor = (team: ArenaTeam | undefined, i: number, fallback: string) =>
 	team?.colors?.[i] || fallback;
@@ -243,9 +260,17 @@ const ROW_FT = 2.75;
 const RIBBON_ROW = 13;
 // How tall a fan's head is drawn, hair and all (feet).
 const FACE_FT = 0.98;
+// The fans in the stands drawn this much taller than they are, up the
+// rake: seen from the main camera, the slope of the stands is foreshortened
+// more than a man sat upright on it - drawn true to size, everyone came out
+// squat, with a gap between each row's heads and the next row's knees,
+// where in a real building each row's heads hide the laps behind them.
+const RAKE_TALL = 1.3;
 // Home fans in a jersey of their team's, of them; and what fans wear below.
 const JERSEY_SHARE = 0.22;
 const PANTS = ["#262b36", "#1d2330", "#3a3e47", "#4b3b2c", "#2f3a52"];
+// The jackets some have open over their shirts.
+const JACKETS = ["#16171a", "#2a2c31", "#1f2a44", "#45484f", "#3a2f28"];
 // The home fans down low who hold a sign up (the D and the fence): in the
 // first so many rows, so many of them.
 const SIGN_ROWS = 9;
@@ -304,6 +329,9 @@ export type Fan = {
 	// Sat with his phone up in front of him, or a drink in his hand - or
 	// his hands together at his chest, clapping.
 	holding?: "phone" | "drink" | "clap";
+	// An open jacket over his shirt (its color), a cap on his head.
+	jacket?: string;
+	cap?: string;
 };
 const fanHeadY = (f: Fan, px: number) =>
 	f.yb - (f.arms ? 2 : 1.45) * px - 0.75 * px - (f.arms ? 0.55 * px : 0);
@@ -321,7 +349,8 @@ export const drawFan = (ctx: CanvasRenderingContext2D, f: Fan, px: number) => {
 	ctx.fillRect(x - 0.13 * px, top - 0.2 * px, 0.26 * px, 0.28 * px);
 	ctx.fillStyle = pants;
 	ctx.fillRect(x - ww, bottom - 0.1 * px, 2 * ww, 0.38 * px);
-	ctx.fillStyle = color;
+	const coat = f.jacket ?? color;
+	ctx.fillStyle = coat;
 	ctx.beginPath();
 	ctx.moveTo(x - sw, top + 0.32 * px);
 	ctx.quadraticCurveTo(x - sw, top, x - sw + 0.3 * px, top);
@@ -331,6 +360,19 @@ export const drawFan = (ctx: CanvasRenderingContext2D, f: Fan, px: number) => {
 	ctx.lineTo(x - ww, bottom);
 	ctx.closePath();
 	ctx.fill();
+	// The shirt down the middle of an open jacket; the light on his
+	// shoulders, from above.
+	if (f.jacket) {
+		ctx.fillStyle = color;
+		ctx.fillRect(
+			x - bodyW * 0.14,
+			top + 0.04 * px,
+			bodyW * 0.28,
+			bottom - top - 0.04 * px,
+		);
+	}
+	ctx.fillStyle = shade(coat, 0.16);
+	ctx.fillRect(x - sw + 0.3 * px, top, bodyW - 0.6 * px, 0.14 * px);
 	if (jersey) {
 		// (The arm holes, and a number across his chest.)
 		ctx.fillStyle = skin;
@@ -443,6 +485,23 @@ export const drawFan = (ctx: CanvasRenderingContext2D, f: Fan, px: number) => {
 		ctx.arc(x, headY, 0.36 * px, 0, Math.PI * 2);
 		ctx.fill();
 	}
+	if (f.cap) {
+		// A cap pulled down over his hair, its bill out front.
+		ctx.fillStyle = f.cap;
+		ctx.beginPath();
+		ctx.ellipse(
+			x,
+			headY - 0.12 * px,
+			0.4 * px,
+			0.3 * px,
+			0,
+			Math.PI,
+			Math.PI * 2,
+		);
+		ctx.fill();
+		ctx.fillStyle = shade(f.cap, -0.25);
+		ctx.fillRect(x - 0.42 * px, headY - 0.14 * px, 0.84 * px, 0.09 * px);
+	}
 	if (f.fist) {
 		// Somebody with a hand up - a fist in the air.
 		const sx = x + sw - 0.12 * px;
@@ -510,18 +569,20 @@ export const paintStands = (
 
 	const homeC = [teamColor(home, 0, "#8c1d40"), teamColor(home, 1, "#f2c14e")];
 	const awayC = [teamColor(away, 0, "#1d3461"), teamColor(away, 1, "#f28c28")];
+	// A good third of the house in the home colors, a few in the visitors',
+	// the rest in what people wear.
 	const shirt = () => {
 		const r = rng();
-		if (r < 0.32) {
+		if (r < 0.26) {
 			return homeC[0]!;
 		}
-		if (r < 0.44) {
+		if (r < 0.36) {
 			return homeC[1]!;
 		}
-		if (r < 0.5) {
+		if (r < 0.41) {
 			return awayC[0]!;
 		}
-		return PALETTE[Math.floor(rng() * PALETTE.length)]!;
+		return clothes(rng());
 	};
 	const skins = ["#f1c7a5", "#d9a77f", "#b07a52", "#8a5a3b", "#5e3b26"];
 	const rows = Math.floor(SLOPE / ROW_FT);
@@ -558,11 +619,18 @@ export const paintStands = (
 	const taken =
 		wants[Math.min(wants.length - 1, Math.floor(fill * wants.length))]!;
 	const seatColor = spec.stands.seat;
-	let next = 0;
+	const byRow: (typeof seats)[] = Array.from({ length: rows }, () => []);
+	for (const st of seats) {
+		byRow[st.r]!.push(st);
+	}
 	const signs: { x: number; top: number }[] = [];
-	for (let r = 0; r < rows; r++) {
-		// Rows from the front (bottom of the picture) up.
+	// Rows from the back (top of the picture) down to the front, each the
+	// row behind's lower half hidden behind its heads - the stands as seen
+	// from the floor: a bank of heads and shoulders.
+	for (let r = rows - 1; r >= 0; r--) {
 		const yb = h - r * ROW_FT * px;
+		// (No two rows sat quite the same way across.)
+		const shift = (((((r * 0.618) % 1) + 1) % 1) - 0.5) * 0.8 * px;
 		if (r === RIBBON_ROW && end === undefined) {
 			// The ribbon board goes here (see RIBBON).
 			ctx.fillStyle = "#050507";
@@ -572,14 +640,19 @@ export const paintStands = (
 		// Seat backs.
 		ctx.fillStyle = r % 2 ? "#22252c" : "#1d2026";
 		ctx.fillRect(0, yb - 0.9 * px, w, 0.9 * px);
-		for (; next < seats.length && seats[next]!.r === r; next++) {
-			const xf = seats[next]!.xf;
-			if (seats[next]!.want > taken) {
+		// (The row drawn taller up the rake: see RAKE_TALL.)
+		ctx.save();
+		ctx.translate(0, yb);
+		ctx.scale(1, RAKE_TALL);
+		ctx.translate(0, -yb);
+		for (const seat of byRow[r]!) {
+			const xf = seat.xf;
+			if (seat.want > taken) {
 				// An empty seat.
 				ctx.fillStyle = seatColor;
 				ctx.beginPath();
 				ctx.roundRect(
-					(xf - A0) * px - 0.62 * px,
+					(xf - A0) * px - 0.62 * px + shift,
 					yb - 1.55 * px,
 					1.24 * px,
 					1.2 * px,
@@ -588,8 +661,12 @@ export const paintStands = (
 				ctx.fill();
 				continue;
 			}
-			const x = (xf - A0) * px + (rng() - 0.5) * 2;
-			const bodyW = (1.25 + rng() * 0.35) * px;
+			// (Sat a little to one side or the other of his seat; a kid now
+			// and then, smaller.)
+			const x = (xf - A0) * px + shift + (rng() - 0.5) * 0.45 * px;
+			const kid = faceRng() < 0.05;
+			const fpx = px * (kid ? 0.84 : 1.08);
+			const bodyW = (1.3 + rng() * 0.38) * fpx;
 			// (Picked either way, so the rest of the crowd is the same people.)
 			const picked = shirt();
 			// PLAYOFF COLOR-OUT: every seat in a section in one of the home
@@ -610,6 +687,18 @@ export const paintStands = (
 			const pants = PANTS[Math.floor(faceRng() * PANTS.length)]!;
 			const number = jersey ? Math.floor(faceRng() * 40) : 0;
 			const phone = faceRng() < 0.05;
+			// (A color-out has nobody in a jacket over his color, or a cap
+			// in any other.)
+			const jacket =
+				!jersey && faceRng() < 0.16 && !playoffs
+					? JACKETS[Math.floor(faceRng() * JACKETS.length)]!
+					: undefined;
+			const cap =
+				faceRng() < 0.09
+					? faceRng() < 0.5 || playoffs
+						? color
+						: clothes(faceRng())
+					: undefined;
 			let arms: Fan["arms"];
 			if (standing) {
 				const reach = 1.25 + rise() * 0.45;
@@ -632,16 +721,19 @@ export const paintStands = (
 				...(jersey ? { number } : {}),
 				...(arms ? { arms } : {}),
 				...(phone && !arms ? { holding: "phone" as const } : {}),
+				...(jacket && jacket !== color ? { jacket } : {}),
+				...(cap ? { cap } : {}),
 			};
-			const headY = fanHeadY(fan, px);
+			const headY = yb - (yb - fanHeadY(fan, fpx)) * RAKE_TALL;
 			// Now and then a home fan down low holds a sign up over his head
 			// (painted once the rows behind him are: see below).
 			if (homeFan && r < SIGN_ROWS && seatRng() < spec.stands.signShare) {
 				signs.push({ x, top: headY - 0.55 * px - (standing ? 0.6 * px : 0) });
 			}
 			fan.fist = rng() < 0.05 && !standing && !fan.holding;
-			drawFan(ctx, fan, px);
+			drawFan(ctx, fan, fpx);
 		}
+		ctx.restore();
 		// The aisles - a light on each step.
 		ctx.fillStyle = "#2b2e35";
 		for (let xf = A0; xf < A1; xf += aisle) {
@@ -651,6 +743,12 @@ export const paintStands = (
 		for (let xf = A0; xf < A1; xf += aisle) {
 			ctx.fillRect((xf - A0 + 0.15) * px, yb - 0.35 * px, 0.35 * px, 0.2 * px);
 		}
+		// Down at their seats, in the shadow of the row in front.
+		const low = ctx.createLinearGradient(0, yb - 1.2 * px, 0, yb);
+		low.addColorStop(0, "rgba(0, 0, 0, 0)");
+		low.addColorStop(1, "rgba(0, 0, 0, 0.42)");
+		ctx.fillStyle = low;
+		ctx.fillRect(0, yb - 1.2 * px, w, 1.2 * px);
 	}
 	// The signs held up: the D and the fence, in the home team's color.
 	for (const { x, top } of signs) {

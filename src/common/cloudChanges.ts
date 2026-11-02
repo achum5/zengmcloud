@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 141,
+		date: "2026-11-02",
+		text: "3D game: a more lifelike crowd. Fans in the stands are drawn the right height for the camera (they used to come out short and squat), each row's heads in front of the laps behind it the way raked seats look, not lined up in a grid; they wear what people wear - lots of black, gray, white and navy, open jackets, caps, a third of the house in the home colors - and sit in the shadow of the row in front. No cost to how smoothly the game runs.",
+	},
+	{
 		n: 140,
 		date: "2026-11-02",
 		text: "Every team the game comes with now has its own home floor, laid out like an NBA floor: its wood, its lane painted in its colors with a trim, a colored border with the city and name on the baselines, its logo at center court and its second logo out on the wings. Customize Court opens on it and can change any of it - and courts can now have a two-tone floor, a lane trim, a filled center circle, your own baseline text and a choice of lettering.",
