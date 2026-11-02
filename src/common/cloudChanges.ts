@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 142,
+		date: "2026-11-02",
+		text: "3D game: clean profiles again. A player turning toward the camera no longer has his face squeezed and slid over the side of his head (it read as his face and profile smeared together); he shows his profile, then his face, never one faded in over the other.",
+	},
+	{
 		n: 141,
 		date: "2026-11-02",
 		text: "3D game: a more lifelike crowd. Fans in the stands are drawn the right height for the camera (they used to come out short and squat), each row's heads in front of the laps behind it the way raked seats look, not lined up in a grid; they wear what people wear - lots of black, gray, white and navy, open jackets, caps, a third of the house in the home colors - and sit in the shadow of the row in front. No cost to how smoothly the game runs.",

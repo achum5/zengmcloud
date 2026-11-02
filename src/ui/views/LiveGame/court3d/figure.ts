@@ -215,12 +215,12 @@ export const headOf = (st: PlayerState, body: Body): V3 =>
 	skeleton(body, poseOf(st)).head;
 
 // How far round to the camera he is (1 facing it, -1 away) when his head
-// shows in profile, and when his face comes in over it - over this much more.
-// (Drawn in sixteen turns, he shows his profile square on and a turn either
-// side of it toward the camera, his face from two turns on.)
+// shows in profile, and when his face does instead. (Drawn in sixteen turns,
+// he shows his profile square on and a turn either side of it toward the
+// camera, his face from two turns on.) One or the other, never both: his
+// face faded in over his profile is the two blended into one smear.
 const PROFILE_FROM = -0.3;
 const FACE_FROM = 0.5;
-const FACE_IN = 0.04;
 
 // THE SHAPE OF HIS HAIR, side on and from behind (see HairStyle): round a
 // skull centered at (cx, cy), rx across and ry tall, it stands off his head
@@ -1111,37 +1111,28 @@ const drawHead = (
 	};
 	// Facing away: the back of his head. Side on: his head in profile - not
 	// his face turned to the camera over the back of his skull - and, as he
-	// comes round to the camera, his face over it.
+	// comes round to the camera, his face in place of it.
 	if (front < PROFILE_FROM) {
 		back();
 		return;
 	}
-	if (front < FACE_FROM + FACE_IN) {
+	if (front < FACE_FROM) {
 		profileHead(ctx, c, r, turn as 1 | -1, look, ink, yell, whistle);
 	}
-	const vis = sprite ? Math.min(1, (front - FACE_FROM) / FACE_IN) : 0;
+	const vis = sprite && front >= FACE_FROM ? 1 : 0;
 	if (!sprite || vis <= 0) {
-		if (!sprite && front >= FACE_FROM + FACE_IN) {
+		if (!sprite && front >= FACE_FROM) {
 			back();
 		}
 		return;
 	}
 	// Round to the camera: his face, cheated toward it the way a cartoon's
-	// is - narrower and shifted the way he looks as he turns from it, the
-	// round of his skull and his hair behind it on the far side.
-	const away = Math.min(1, Math.max(0, (1 - front) / (1 - FACE_FROM)));
-	const squash = 1 - 0.26 * away;
-	const shift = turn * away * r * 0.24;
-	if (away > 0.15 && vis >= 1) {
-		// (Only past his face on the far side: none of it round the near.)
-		ctx.save();
-		const edge = c.x + shift;
-		ctx.beginPath();
-		ctx.rect(turn > 0 ? edge - r * 3 : edge, c.y - r * 3, r * 3, r * 6);
-		ctx.clip();
-		back(-shift * 0.35, 0);
-		ctx.restore();
-	}
+	// is - shifted a little the way he looks. (Only his face: no skull or
+	// hair of the back of his head drawn round it on the far side, and the
+	// face not squeezed narrow - a face slid over a skull reads as the two
+	// of them blended into one, his profile smeared, on the move.)
+	const squash = 0.82 + 0.18 * Math.max(0, front);
+	const shift = turn * (1 - Math.max(0, front)) * r * 0.14;
 	const scale = (r * 2.45) / sprite.h;
 	ctx.save();
 	ctx.globalAlpha *= vis;
