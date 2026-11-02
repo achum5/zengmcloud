@@ -92,7 +92,7 @@ with "the Pistons", not with a named person.
   of mood. Half the teams each way, 4 leagues each way round over 6 seasons:
   29 titles to 19, about as many games and playoff rounds (352 to 368), 56
   seasons under 20 wins to 81 and 8 under 12 to 19, with 29% of rosters
-  priced twice; bad teams signed more free agents (148 of 50 or better to 117) and left big room unspent half as often. Counting hype as well, and
+  priced twice (an arena season 1,220 s against 974 - kept, owner's call); bad teams signed more free agents (148 of 50 or better to 117) and left big room unspent half as often. Counting hype as well, and
   what the next summer's room buys, teams shied from losing far more - 5
   seasons under 20 wins to 41, in 2 leagues each way - and won 8 titles to
   16: in this game a deep rebuild still wins titles, and those costs were
