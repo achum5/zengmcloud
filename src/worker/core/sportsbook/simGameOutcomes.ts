@@ -1,6 +1,7 @@
 import GameSim from "../GameSim.ts";
 import { processTeam } from "../game/loadTeams.ts";
 import { healedForward } from "./healInjuriesForward.ts";
+import { rosterAtTipoff } from "../team/rosterAtTipoff.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers } from "../../util/index.ts";
 import { mulberry32 } from "../../../common/sportsbookOdds.ts";
@@ -116,6 +117,13 @@ const SIM_SETTINGS = [
 	"elamPoints",
 	"elamOvertime",
 	"injuryRate",
+	"foulsNeededToFoulOut",
+	"foulsUntilBonus",
+	"maxOvertimes",
+	"maxOvertimesPlayoffs",
+	"overtimeLength",
+	"overtimeLengthPlayoffs",
+	"rotationPlans",
 	"gender",
 	"phase",
 	"season",
@@ -147,7 +155,9 @@ const fingerprint = (
 		...SIM_SETTINGS.map((key) => String(g.get(key as any))),
 	];
 	for (const t of teams) {
-		parts.push("t", t.id);
+		// (The rotation plan too: the sim follows it, and an edited one has to
+		// re-price the board rather than keep serving the old lines.)
+		parts.push("t", t.id, JSON.stringify(t.rotation ?? null));
 		for (const p of t.player) {
 			parts.push(
 				p.pid,
@@ -241,7 +251,13 @@ const loadSide = async (tid: number, daysInFuture: number) => {
 	// Healed forward as COPIES - see healInjuriesForward.ts. These rows are the
 	// live cache records, and writing a hypothetical onto them put it in the
 	// league and then published it to the whole room.
-	return processTeam(t, teamSeason, healedForward(players, daysInFuture));
+	// And in the order the game will be played in (see rosterAtTipoff), as the
+	// spread reads it: CPU rosters are re-sorted just before each day's games.
+	return processTeam(
+		t,
+		teamSeason,
+		await rosterAtTipoff(tid, healedForward(players, daysInFuture)),
+	);
 };
 
 export const simGameOutcomes = async ({

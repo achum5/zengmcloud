@@ -9,7 +9,10 @@ import {
 	type SimmedTeam,
 	type SimTeamStat,
 } from "./simGameOutcomes.ts";
-import { probToAmerican } from "../../../common/sportsbook.ts";
+import {
+	probToAmerican,
+	SPORTSBOOK_MAX_AMERICAN,
+} from "../../../common/sportsbook.ts";
 import {
 	eventProb,
 	sampleMean,
@@ -54,7 +57,17 @@ import { team } from "../index.ts";
 // opposite of "no freebies". See the same scoping decision for
 // All-Star/All-Defensive futures in getLines.ts.
 
-const priceOdds = (prob: number) => probToAmerican(prob);
+// (The longest price the book offers anywhere - a triple-double for a man who
+// never got one in five hundred runs was going up at +49900.)
+const priceOdds = (prob: number) =>
+	probToAmerican(prob, { maxAmerican: SPORTSBOOK_MAX_AMERICAN });
+
+// A side priced past this is as good as decided - "over 0.5 points" for a
+// starter - and its market is left off the board, as a book would: priced at
+// the clamp it loses its hold, and a sure thing at -9900 is free money.
+const DECIDED_PRICE = -9000;
+const decided = (row: { over: number; under: number }) =>
+	row.over <= DECIDED_PRICE || row.under <= DECIDED_PRICE;
 
 // Keep the board to players who are actually going to play. The sim answers
 // this directly - a player who's hurt, or buried on the bench, simply doesn't
@@ -110,10 +123,37 @@ const playerRow = (p: SimmedPlayer, abbrev: string, numSims: number) => ({
 		ouRow("pra", combinedSamples(p, ["pts", "trb", "ast"])),
 		ouRow("pr", combinedSamples(p, ["pts", "trb"])),
 		ouRow("pa", combinedSamples(p, ["pts", "ast"])),
-	],
+	].filter((row) => !decided(row)),
 	doubleDouble: priceOdds(eventProb(p.dd, numSims)),
 	tripleDouble: priceOdds(eventProb(p.td, numSims)),
 });
+
+// THE PAGE TELLS ONE STORY. The game total and spread come from the shared
+// pricer (gameLines.ts) - the main board's numbers, which a bet placed here is
+// validated against - while the team and player props come from simulating
+// the game. Left alone the two disagreed on the same page (team points of
+// 95.5 and 109.5 under a 213.5 total, the away side by 14 under a spread with
+// the home team favoured), and the gap between them was a bet against the
+// book's own numbers. So each team's points are centred on what the main
+// lines imply for it - half the total, plus or minus half the margin - and
+// its players' points scaled with it; the sim keeps the shape: how scoring
+// spreads, who gets it, how it moves with the rest of the line.
+const centredOn = (t: SimmedTeam, target: number): SimmedTeam => {
+	const simMean = sampleMean(t.samples.pts);
+	if (!(simMean > 0) || !Number.isFinite(target) || target <= 0) {
+		return t;
+	}
+	const shift = target - simMean;
+	const k = target / simMean;
+	return {
+		...t,
+		samples: { ...t.samples, pts: t.samples.pts.map((x) => x + shift) },
+		players: t.players.map((p) => ({
+			...p,
+			samples: { ...p.samples, pts: p.samples.pts.map((x) => x * k) },
+		})),
+	};
+};
 
 const playerField = (t: SimmedTeam) =>
 	t.players
@@ -127,7 +167,7 @@ const teamPropRows = (t: SimmedTeam) =>
 	TEAM_PROP_STATS.map((stat) => ({
 		tid: t.tid,
 		...ouRow(stat, t.samples[stat]),
-	}));
+	})).filter((row) => !decided(row));
 
 export type GamePropsBoard = Awaited<ReturnType<typeof getGameProps>>;
 
@@ -195,6 +235,12 @@ export const getGameProps = async (gid: number) => {
 	}
 
 	const numSims = simmed.numSims;
+	const [homeSim, awaySim] = main
+		? [
+				centredOn(simmed.teams[0], (main.expectedTotal + main.margin) / 2),
+				centredOn(simmed.teams[1], (main.expectedTotal - main.margin) / 2),
+			]
+		: simmed.teams;
 	const side = (t: typeof home, simTeam: SimmedTeam) => ({
 		tid: t.tid,
 		abbrev: t.abbrev,
@@ -206,8 +252,8 @@ export const getGameProps = async (gid: number) => {
 
 	return {
 		gid,
-		home: side(home, simmed.teams[0]),
-		away: side(away, simmed.teams[1]),
+		home: side(home, homeSim),
+		away: side(away, awaySim),
 		// How often the simulated game actually needed an extra period, rather
 		// than a guess at how often a projected margin lands near zero.
 		overtime: priceOdds(eventProb(simmed.overtimes, simmed.numSims)),

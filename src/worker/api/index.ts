@@ -238,7 +238,6 @@ import { getPlayer } from "../views/player.ts";
 import {
 	placeBet as sportsbookPlaceBetCore,
 	placeBetSlip as sportsbookPlaceBetSlipCore,
-	cancelBet as sportsbookCancelBetCore,
 	settleBetsIfAuthority as sportsbookSettleCore,
 } from "../core/sportsbook/bets.ts";
 import {
@@ -3065,10 +3064,6 @@ const sportsbookPlaceBetSlip = async (info: {
 	stake?: number;
 }) => {
 	return sportsbookPlaceBetSlipCore(info);
-};
-
-const sportsbookCancelBet = async (info: { tid: number; betID: number }) => {
-	return sportsbookCancelBetCore(info);
 };
 
 // Trivia games: fresh puzzle/round on demand. Pure reads - no league writes.
@@ -8270,7 +8265,6 @@ const api = {
 		getPlayerTeamStats,
 		sportsbookPlaceBet,
 		sportsbookPlaceBetSlip,
-		sportsbookCancelBet,
 		sportsbookSettle,
 		trivia82Options,
 		trivia82Simulate,

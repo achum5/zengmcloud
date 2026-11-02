@@ -2,11 +2,11 @@ import { afterEach, assert, beforeEach, describe, test } from "vitest";
 import { mockIDBLeague, resetCache, resetG } from "../../../test/helpers.ts";
 import { g } from "../../util/index.ts";
 import { idb } from "../../db/index.ts";
-import { cancelBet, placeBetSlip, settleBets } from "./bets.ts";
+import { placeBetSlip, settleBets } from "./bets.ts";
 import type { SportsbookBet } from "../../../common/types.ts";
 
 // Regression coverage for the sportsbook money-moving code (placeBet(Slip),
-// cancelBet, settleBets/resolveBet). Before the concurrency fix, none of this
+// settleBets/resolveBet). Before the concurrency fix, none of this
 // had any test coverage at all - and this is exactly the layer where
 // "payouts sometimes don't pay out" and "money resets" originated.
 
@@ -118,6 +118,38 @@ describe("sportsbook bets", () => {
 				"the bet must land in `history` exactly once (no duplicates)",
 			);
 			assert.strictEqual(wallet.history[0]!.result, "won");
+		});
+
+		// A tie (no shootout, overtimes run out) pushes both moneylines. The
+		// game records its "winner" as the away side then, which paid one side
+		// and lost the other.
+		test("a tied game pushes the moneyline, either side", async () => {
+			await idb.cache.games.add({
+				gid: 999,
+				season: g.get("season"),
+				day: 5,
+				teams: [
+					{ tid: 0, pts: 100 },
+					{ tid: 1, pts: 100 },
+				],
+				won: { tid: 1, pts: 100 },
+				lost: { tid: 0, pts: 100 },
+			} as any);
+			await setWallet(0, 0, [
+				moneylineBet({ betID: 1, stake: 100 }),
+				moneylineBet({
+					betID: 2,
+					stake: 100,
+					market: { type: "gameMoneyline", gid: 999, pickTid: 1 },
+				}),
+			]);
+			await settleBets();
+			const wallet = await getWallet(0);
+			assert.deepStrictEqual(
+				wallet.history.map((b) => b.result),
+				["push", "push"],
+			);
+			assert.strictEqual(wallet.balance, 200);
 		});
 
 		test("settling twice sequentially is a no-op the second time", async () => {
@@ -402,27 +434,6 @@ describe("sportsbook bets", () => {
 				threw = true;
 			}
 			assert.strictEqual(threw, true);
-		});
-	});
-
-	describe("cancelBet", () => {
-		test("refunds the exact stake and removes the bet", async () => {
-			await setWallet(0, 500, [moneylineBet({ betID: 7, stake: 250 })]);
-
-			const result = await cancelBet({ tid: 0, betID: 7 });
-
-			assert.strictEqual(result?.balance, 750);
-			const wallet = await getWallet(0);
-			assert.strictEqual(wallet.bets.length, 0);
-			assert.strictEqual(wallet.balance, 750);
-		});
-
-		test("is a no-op for an unknown betID", async () => {
-			await setWallet(0, 500, [moneylineBet({ betID: 7, stake: 250 })]);
-			await cancelBet({ tid: 0, betID: 999 });
-			const wallet = await getWallet(0);
-			assert.strictEqual(wallet.balance, 500);
-			assert.strictEqual(wallet.bets.length, 1);
 		});
 	});
 
@@ -823,6 +834,24 @@ describe("sportsbook bets", () => {
 			assert.strictEqual(settled, false);
 			const wallet = await getWallet(0);
 			assert.strictEqual(wallet.bets.length, 1);
+		});
+
+		// A leg lost is the ticket lost, even with another still to play - not
+		// left open (where it could be cancelled) till the rest are in.
+		test("a lost leg settles the ticket at once, with another still to play", async () => {
+			await seedGame(998, 1, 0); // leg picks tid 0 -> lost
+			await idb.cache.schedule.add({
+				gid: 999,
+				homeTid: 0,
+				awayTid: 1,
+				day: 10,
+			} as any);
+			await setWallet(0, 1000, [parlayBet([leg(998, 0, 2), leg(999, 0, 2)])]);
+			assert.strictEqual(await settleBets(), true);
+			const wallet = await getWallet(0);
+			assert.strictEqual(wallet.bets.length, 0);
+			assert.strictEqual(wallet.history[0]!.result, "lost");
+			assert.strictEqual(wallet.balance, 1000);
 		});
 
 		test("a voided leg drops out; only surviving winners compound the payout", async () => {

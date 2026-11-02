@@ -152,9 +152,13 @@ describe("parlayConflict", () => {
 		assert.strictEqual(parlayConflict([ml(1, 10), ml(2, 20)]), undefined);
 	});
 
-	test("allows correlated same-game legs that can all hit", () => {
+	// A parlay is paid at the product of its legs' prices, so legs that lean on
+	// each other aren't a fair parlay: one leg per game, as at a real book.
+	test("takes one leg per game - correlated same-game legs are refused", () => {
+		assert.ok(parlayConflict([ml(1, 10), playerProp(1, 100, "over")]));
+		assert.ok(parlayConflict([ml(1, 10), spread(1, 10)]));
 		assert.strictEqual(
-			parlayConflict([ml(1, 10), playerProp(1, 100, "over")]),
+			parlayConflict([ml(1, 10), playerProp(2, 100, "over")]),
 			undefined,
 		);
 	});
@@ -215,6 +219,22 @@ describe("parlayConflict", () => {
 		type: "allStarTeam",
 		pid,
 		season: 2026,
+	});
+
+	// Legs that imply each other: the title implies the conference, and an
+	// MVP and an All-League spot move together.
+	test("takes one futures leg per team and one award leg per player", () => {
+		assert.ok(parlayConflict([champion(10), conf(10, 0)]));
+		assert.ok(parlayConflict([champion(10), winTotal(10, "over")]));
+		assert.strictEqual(
+			parlayConflict([champion(10), winTotal(20, "over")]),
+			undefined,
+		);
+		assert.ok(parlayConflict([award("mvp", 1), allLeague(1, 1)]));
+		assert.strictEqual(
+			parlayConflict([award("mvp", 1), allLeague(2, 1)]),
+			undefined,
+		);
 	});
 
 	test("blocks backing two different champions", () => {
