@@ -1067,13 +1067,26 @@ const build = (
 			g,
 			side,
 		);
+		// (As the elbow bends, the biceps bunch up: thicker, shorter, gathered
+		// toward the middle of the upper arm - straight, long and flat to it.)
+		const flexed = Math.acos(Math.max(-1, Math.min(1, dotV(a, c))));
+		const bunch = Math.max(0, Math.min(1, (flexed - 0.5) / 1.4));
+		const bulge = bunch * bunch * (3 - 2 * bunch);
 		add(
-			addV(lerpV(limb.root, limb.mid, 0.36), inside, body.upperR * 0.32),
-			addV(lerpV(limb.root, limb.mid, 0.78), inside, body.upperR * 0.28),
+			addV(
+				lerpV(limb.root, limb.mid, 0.36 + 0.06 * bulge),
+				inside,
+				body.upperR * (0.32 + 0.1 * bulge),
+			),
+			addV(
+				lerpV(limb.root, limb.mid, 0.78 - 0.1 * bulge),
+				inside,
+				body.upperR * (0.28 + 0.08 * bulge),
+			),
 			[
-				[0, body.upperR * 0.62],
-				[0.5, body.upperR * 0.74],
-				[1, body.upperR * 0.56],
+				[0, body.upperR * (0.62 + 0.06 * bulge)],
+				[0.5, body.upperR * (0.74 + 0.22 * bulge)],
+				[1, body.upperR * (0.56 + 0.04 * bulge)],
 			],
 			UPPER,
 			g,
@@ -1222,9 +1235,12 @@ const build = (
 		const ts = v3(thumbSide.f * sgn, thumbSide.s * sgn, thumbSide.u * sgn);
 		const g = G_HAND + side;
 		pn[side] = palmN;
-		const L = H * 0.124;
-		const halfW = H * 0.016;
-		const palmR = H * 0.018;
+		// (As a real hand is, a touch over life so it reads: as long as a
+		// ninth of him, its palm about as wide as half its length, the fingers
+		// slim enough to stand apart.)
+		const L = H * 0.118;
+		const halfW = H * 0.0125;
+		const palmR = H * 0.0148;
 		// The palm: broad across, thin through - two masses side by side.
 		const knuckles = addV(wrist, h, L * 0.5);
 		for (const o of [-1, 1]) {
@@ -1246,7 +1262,7 @@ const build = (
 		// ball, each joint bent just as far as keeps the next bone on its
 		// surface, the pads of his fingers on it, spread wide.
 		const ball = cup;
-		const fingerR = H * 0.0078;
+		const fingerR = H * 0.006;
 		const lens = [0.4, 0.44, 0.41, 0.33];
 		// The joints of a finger (or the thumb) from base, set off along d:
 		// each bone's length, its bend at rest, and how far it bends back
@@ -1436,9 +1452,22 @@ const build = (
 							: grip === "ball"
 								? [0.2, 0.2]
 								: [0.1, 0.12],
-						H * 0.0095,
+						H * 0.0076,
 					);
-		bones(thumb, H * 0.0105, G_FINGER + side * 5 + 4);
+		bones(thumb, H * 0.0084, G_FINGER + side * 5 + 4);
+		// The ball of his thumb: the muscle of the palm on its side, swelling
+		// out to where the thumb leaves it.
+		add(
+			addV(addV(wrist, h, L * 0.1), ts, halfW * 0.55),
+			addV(addV(wrist, h, L * 0.3), ts, halfW * 0.95),
+			[
+				[0, palmR * 0.72],
+				[1, palmR * 0.66],
+			],
+			HAND,
+			g,
+			side,
+		);
 	};
 	arm(sk.armR, 0);
 	arm(sk.armL, 1);

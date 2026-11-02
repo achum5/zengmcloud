@@ -1044,6 +1044,38 @@ const drawHead = (
 				ink,
 			);
 		}
+		// Round, not flat: the light from above on the crown of his head,
+		// falling off down the back of it and round its sides - and the
+		// hair's edge a shade over the skin of his neck below it.
+		const solid = new Path2D();
+		solid.addPath(skull);
+		if (hairy) {
+			solid.addPath(hair);
+		}
+		ctx.save();
+		ctx.clip(solid);
+		const lit = ctx.createRadialGradient(
+			x - r * 0.25,
+			top - tall * 0.55,
+			r * 0.08,
+			x,
+			top - tall * 0.1,
+			r * 1.25,
+		);
+		lit.addColorStop(0, "rgba(255, 255, 255, 0.2)");
+		lit.addColorStop(0.45, "rgba(255, 255, 255, 0)");
+		lit.addColorStop(0.8, "rgba(0, 0, 0, 0.1)");
+		lit.addColorStop(1, "rgba(0, 0, 0, 0.3)");
+		ctx.fillStyle = lit;
+		ctx.fillRect(x - r * 1.6, top - tall * 1.8, r * 3.2, tall * 3.2);
+		if (hairy && cut !== "long") {
+			const under = ctx.createLinearGradient(0, nape, 0, nape + r * 0.16);
+			under.addColorStop(0, "rgba(0, 0, 0, 0.22)");
+			under.addColorStop(1, "rgba(0, 0, 0, 0)");
+			ctx.fillStyle = under;
+			ctx.fillRect(x - r * 1.2, nape, r * 2.4, r * 0.16);
+		}
+		ctx.restore();
 		const band = look.profile?.band;
 		if (band) {
 			// His headband, round the back of his head as high as it sits at
@@ -1095,9 +1127,21 @@ const drawHead = (
 		return;
 	}
 	// Round to the camera: his face, cheated toward it the way a cartoon's
-	// is - shifted a little the way he looks.
-	const squash = 0.82 + 0.18 * Math.max(0, front);
-	const shift = turn * (1 - Math.max(0, front)) * r * 0.14;
+	// is - narrower and shifted the way he looks as he turns from it, the
+	// round of his skull and his hair behind it on the far side.
+	const away = Math.min(1, Math.max(0, (1 - front) / (1 - FACE_FROM)));
+	const squash = 1 - 0.26 * away;
+	const shift = turn * away * r * 0.24;
+	if (away > 0.15 && vis >= 1) {
+		// (Only past his face on the far side: none of it round the near.)
+		ctx.save();
+		const edge = c.x + shift;
+		ctx.beginPath();
+		ctx.rect(turn > 0 ? edge - r * 3 : edge, c.y - r * 3, r * 3, r * 6);
+		ctx.clip();
+		back(-shift * 0.35, 0);
+		ctx.restore();
+	}
 	const scale = (r * 2.45) / sprite.h;
 	ctx.save();
 	ctx.globalAlpha *= vis;

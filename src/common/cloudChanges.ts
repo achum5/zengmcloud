@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 139,
+		date: "2026-11-02",
+		text: "3D game: more lifelike players. Hands are sized like real hands - slimmer palms and fingers, with a thumb muscle at the base - the back of the head is shaded round instead of flat, faces turn properly at three-quarter angles, and the biceps bunch up as the elbow bends.",
+	},
+	{
 		n: 138,
 		date: "2026-11-02",
 		text: "3D game: a scorer celebrates on his way back down the floor - a fist pump, a three up, a flex - and points at the man who set him up as he runs, instead of standing still for it. He only stops to celebrate on a dead ball, like an and-one or a timeout.",
