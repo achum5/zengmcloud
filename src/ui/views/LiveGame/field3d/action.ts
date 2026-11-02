@@ -2343,6 +2343,8 @@ const DROP_CLEAR = 1.6;
 // A gunner set in front of the returner by this long after he would have
 // got there at full tilt, ms.
 const GUNNER_SET_MS = 900;
+// (Waiting on a kick nobody returns at least this long, ms: set for it.)
+const FAIR_SET_LEAST_MS = 400;
 
 // ---- the play ----------------------------------------------------------------
 
@@ -12295,6 +12297,23 @@ class Action {
 			m.run(to, m.top * 0.85, "sprint");
 		});
 
+		// (No return coming - a fair catch, or into the end zone: the wall
+		// set up for it, the jammers down with the gunners, the gunners
+		// broken down in front of him, watching it come down, set - not
+		// stood there like statues till the whistle.)
+		const setFor = () => {
+			const jams = this.d.filter((m) => m.role === "JAMMER");
+			for (const m of [...peel, ...jams, ...gunners]) {
+				if (!this.done.has(m.pid) && this.whistle - m.t >= FAIR_SET_LEAST_MS) {
+					m.hold(
+						this.whistle,
+						m.role === "GUNNER" ? "backerReady" : "safetyReady",
+						this.toward(m.at, landPt),
+					);
+				}
+			}
+		};
+
 		// The rest of the cover in their lanes, spread across the field.
 		const lanes = [...line].sort((x, y) => this.of(x.at).a - this.of(y.at).a);
 		// (Funneling in on him, the men outside staying wider and a little
@@ -12366,6 +12385,7 @@ class Action {
 				);
 			});
 			this.downfield(inside);
+			setFor();
 			for (const m of this.d) {
 				if (!this.done.has(m.pid)) {
 					m.hold(Math.max(m.t, free) + 300);
@@ -12411,6 +12431,7 @@ class Action {
 			// (The rush held up at the line off down the field after it at a
 			// jog - not stood where it was kicked from.)
 			this.downfield(inside);
+			setFor();
 			return;
 		}
 
