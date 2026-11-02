@@ -1,5 +1,12 @@
 import { adjustProblem } from "./courtDecals.ts";
-import type { HelmetLook, StadiumLook } from "./types.ts";
+import { COURT_VERSIONS, pairProblem } from "./courtVersions.ts";
+import type {
+	CourtImageAdjust,
+	CourtPair,
+	CourtVersionPicture,
+	HelmetLook,
+	StadiumLook,
+} from "./types.ts";
 
 // A FOOTBALL TEAM'S STADIUM AND HELMET SETTINGS, kept to what they can be:
 // anything else - an unknown key, a value no option has, a color that is
@@ -86,6 +93,54 @@ export const cleanStadium = (raw: unknown): StadiumLook | undefined => {
 		if (Object.keys(adjust).length > 0) {
 			out.adjust = adjust;
 		}
+	}
+	const versions = cleanVersions(r.versions);
+	if (versions) {
+		out.versions = versions;
+	}
+	return Object.keys(out).length > 0 ? out : undefined;
+};
+
+// Its versions (see StadiumLook.versions): each picture a link or an
+// upload, its knobs and pair kept if they are any - a version with a list
+// of its own kept even with nothing in it (the finals with no pictures, not
+// the playoffs').
+const cleanVersions = (raw: unknown): StadiumLook["versions"] => {
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+		return undefined;
+	}
+	const r = raw as Record<string, unknown>;
+	const out: NonNullable<StadiumLook["versions"]> = {};
+	for (const name of COURT_VERSIONS) {
+		const v = r[name];
+		if (!v || typeof v !== "object" || Array.isArray(v)) {
+			continue;
+		}
+		const list = (v as { pictures?: unknown }).pictures;
+		if (!Array.isArray(list)) {
+			continue;
+		}
+		const pictures: CourtVersionPicture[] = [];
+		for (const p of list) {
+			if (!p || typeof p !== "object") {
+				continue;
+			}
+			const { image, adjust, pair } = p as Record<string, unknown>;
+			if (typeof image !== "string" || !PICTURE.test(image)) {
+				continue;
+			}
+			pictures.push({
+				image,
+				...(adjust !== undefined &&
+				adjustProblem(adjust, "adjust") === undefined
+					? { adjust: adjust as CourtImageAdjust }
+					: {}),
+				...(pair && pairProblem(pair, "pair") === undefined
+					? { pair: pair as CourtPair }
+					: {}),
+			});
+		}
+		out[name] = { pictures };
 	}
 	return Object.keys(out).length > 0 ? out : undefined;
 };

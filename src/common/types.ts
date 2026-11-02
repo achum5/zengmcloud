@@ -3181,8 +3181,13 @@ export type StadiumLook = {
 	// there in turn with them (the 3D court's rail picture).
 	boardText?: string;
 	boardURL?: string;
+	// Its own pictures on the field for its home opener, the playoffs and
+	// the finals (see CourtVersion), laid at midfield and moved from there.
+	// The finals, having none of their own, have the playoffs'.
+	versions?: Partial<Record<CourtVersionName, CourtVersion>>;
 	// The league's decals laid on its field for the game being shown (see
-	// CourtDecal) - put there by the game, never saved with a team.
+	// CourtDecal) - and its own version's pictures - put there by the game,
+	// never saved with a team.
 	decals?: CourtDecalPlaced[];
 };
 

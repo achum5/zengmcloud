@@ -26,6 +26,8 @@ const StadiumPreview = ({
 	helmet,
 	sky,
 	field = false,
+	playoffs = false,
+	finals = false,
 }: {
 	team: {
 		abbrev?: string;
@@ -39,6 +41,10 @@ const StadiumPreview = ({
 	sky: "day" | "night";
 	// The whole field instead, nobody on it (see drawPreview).
 	field?: boolean;
+	// A playoff game's crowd - or the championship game, its trophy at
+	// midfield (see paintPreview).
+	playoffs?: boolean;
+	finals?: boolean;
 }) => {
 	const canvas = useRef<HTMLCanvasElement>(null);
 	const scratch = useMemo(() => makePreviewScratch(), []);
@@ -62,12 +68,14 @@ const StadiumPreview = ({
 		secondary?: HTMLCanvasElement;
 		field?: HTMLCanvasElement;
 		board?: HTMLCanvasElement;
+		trophy?: HTMLCanvasElement;
 	}>({});
 	const endURL = stadium.endZoneURL;
 	const midURL = stadium.midLogoURL;
 	const secondURL = stadium.secondaryLogoURL;
 	const fieldURL = stadium.fieldURL;
 	const boardURL = stadium.boardURL;
+	const trophyURL = finals ? stadium.trophyURL : undefined;
 	useEffect(() => {
 		let alive = true;
 		void Promise.all([
@@ -76,15 +84,16 @@ const StadiumPreview = ({
 			logoPicture(secondURL, END_ZONE_PX),
 			logoPicture(fieldURL, FIELD_PX),
 			logoPicture(boardURL, END_ZONE_PX),
-		]).then(([end, mid, secondary, field, board]) => {
+			logoPicture(trophyURL),
+		]).then(([end, mid, secondary, field, board, trophy]) => {
 			if (alive) {
-				setOwn({ end, mid, secondary, field, board });
+				setOwn({ end, mid, secondary, field, board, trophy });
 			}
 		});
 		return () => {
 			alive = false;
 		};
-	}, [endURL, midURL, secondURL, fieldURL, boardURL]);
+	}, [endURL, midURL, secondURL, fieldURL, boardURL, trophyURL]);
 
 	// (The league's decals on it, if any: see CourtDecals.)
 	const [decals, setDecals] = useState<DecalPicture[]>([]);
@@ -119,8 +128,9 @@ const StadiumPreview = ({
 		[team.abbrev, team.name, team.region, c0, c1, c2, stadium],
 	);
 	const paint = useMemo(
-		() => paintPreview(shown, sky, logo, { ...own, decals }),
-		[shown, sky, logo, own, decals],
+		() =>
+			paintPreview(shown, sky, logo, { ...own, decals }, { playoffs, finals }),
+		[shown, sky, logo, own, decals, playoffs, finals],
 	);
 
 	useEffect(() => {

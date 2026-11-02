@@ -32,10 +32,13 @@ export const versionOfGame = (game: {
 				? "homeOpener"
 				: undefined;
 
+// (A court, or a football stadium's field: see StadiumLook.)
+type Versioned = { versions?: CourtStyle["versions"] };
+
 // The pictures a court has on for a version - the finals, having none of
 // their own, the playoffs'.
 export const versionPictures = (
-	court: CourtStyle | undefined,
+	court: Versioned | undefined,
 	version: CourtVersionName | undefined,
 ): CourtVersionPicture[] => {
 	const versions = court?.versions;
@@ -51,7 +54,7 @@ export const versionPictures = (
 
 // Every picture a court's versions name.
 export const allVersionPictures = (
-	court: CourtStyle | undefined,
+	court: Versioned | undefined,
 ): CourtVersionPicture[] =>
 	COURT_VERSIONS.flatMap((v) => court?.versions?.[v]?.pictures ?? []);
 

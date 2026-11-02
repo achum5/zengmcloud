@@ -83,6 +83,41 @@ test("a stadium's settings kept to the ones there are", () => {
 		cleanStadium({ endZoneText: "X".repeat(40) })?.endZoneText?.length,
 		24,
 	);
+	assert.deepEqual(
+		cleanStadium({
+			versions: {
+				playoffs: {
+					pictures: [
+						{
+							image: "https://x.com/a.png",
+							adjust: { scale: 2 },
+							pair: "diagonal",
+						},
+						{ image: "javascript:1" },
+						{ image: "pic:0123456789abcdef0123", pair: "both" },
+					],
+				},
+				finals: { pictures: [] },
+				homeOpener: { pictures: "x" },
+				allStar: { pictures: [] },
+			},
+		}),
+		{
+			versions: {
+				playoffs: {
+					pictures: [
+						{
+							image: "https://x.com/a.png",
+							adjust: { scale: 2 },
+							pair: "diagonal",
+						},
+						{ image: "pic:0123456789abcdef0123" },
+					],
+				},
+				finals: { pictures: [] },
+			},
+		},
+	);
 	assert.isUndefined(cleanStadium({}));
 	assert.isUndefined(cleanStadium("dome"));
 	assert.isUndefined(cleanStadium(undefined));

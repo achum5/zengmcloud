@@ -1,10 +1,8 @@
 import {
-	decalsForGame,
 	homeCourtForGame,
 	resolveCourt,
 	resolveScoreBug,
 	resolveStadium,
-	withDecals,
 } from "../util/courtPictures.ts";
 import { player, team } from "../core/index.ts";
 import { getFollowedBroadcastPayload } from "../core/sync/connect.ts";
@@ -312,9 +310,10 @@ export const boxScoreToLiveSim = async ({
 				// Cosmetic; the 3D game picks its own.
 			}
 		}
-		// (And at home, the league's decals for the game laid on its field.)
+		// (And at home, its own version's pictures and the league's decals for
+		// the game laid on its field.)
 		if (__SPORT === "football" && i === 0) {
-			t.stadium = withDecals(t.stadium, await decalsForGame(boxScore));
+			t.stadium = await homeCourtForGame(t.stadium, boxScore);
 		}
 		t.ptsQtrs = [];
 
@@ -489,7 +488,6 @@ export default defineView({
 					if (row?.looks) {
 						// (Each court's uploaded pictures filled in, to draw.)
 						const looks: ReplayLooks = row.looks;
-						const decals = await decalsForGame(boxScore);
 						const homeTid = boxScore.teams[0].tid;
 						const teams = Object.fromEntries(
 							await Promise.all(
@@ -506,14 +504,14 @@ export default defineView({
 											...(t.stadium
 												? { stadium: await resolveStadium(t.stadium) }
 												: {}),
-											// (Football's field gets the decals.)
+											// (Football's field gets them too.)
 											...(__SPORT === "football" && Number(tid) === homeTid
 												? {
-														stadium: withDecals(
+														stadium: await homeCourtForGame(
 															t.stadium
 																? await resolveStadium(t.stadium)
 																: undefined,
-															decals,
+															boxScore,
 														),
 													}
 												: {}),

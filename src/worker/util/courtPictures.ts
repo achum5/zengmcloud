@@ -134,7 +134,7 @@ export const resolveCourt = async (
 // THE COURT'S OWN PICTURES FOR A GAME - those of the version it is played
 // on (see CourtVersion), its pictures filled in - laid on as decals are.
 export const versionDecals = (
-	court: CourtStyle | undefined,
+	court: CourtStyle | StadiumLook | undefined,
 	version: CourtVersionName | undefined,
 ): CourtDecalPlaced[] =>
 	versionPictures(court, version)
@@ -185,6 +185,11 @@ export const stadiumPictureIds = (
 			ids.push(v.slice(PIC.length));
 		}
 	}
+	for (const p of allVersionPictures(stadium)) {
+		if (p.image.startsWith(PIC)) {
+			ids.push(p.image.slice(PIC.length));
+		}
+	}
 	return ids;
 };
 
@@ -223,6 +228,9 @@ export const resolveStadium = async (
 				out[key] = url;
 			}
 		}
+	}
+	if (out.versions) {
+		out.versions = withVersionPictures(out.versions, pictures);
 	}
 	return out;
 };
@@ -312,8 +320,9 @@ export const withDecals = <T extends CourtStyle | StadiumLook>(
 
 // THE HOME COURT FOR A GAME (its pictures filled in): the pictures of the
 // version it is played on, and the league's decals for the game, laid on it.
-export const homeCourtForGame = async (
-	court: CourtStyle | undefined,
+// (Or a football stadium's field, the same.)
+export const homeCourtForGame = async <T extends CourtStyle | StadiumLook>(
+	court: T | undefined,
 	game: {
 		gid: number;
 		season: number;
@@ -322,7 +331,7 @@ export const homeCourtForGame = async (
 		finals?: boolean;
 		teams: { tid: number }[];
 	},
-): Promise<CourtStyle | undefined> => {
+): Promise<T | undefined> => {
 	const homeOpener =
 		!game.playoffs &&
 		(court?.versions?.homeOpener?.pictures?.length ?? 0) > 0 &&

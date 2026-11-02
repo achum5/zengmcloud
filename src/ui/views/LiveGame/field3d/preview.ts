@@ -10,7 +10,9 @@ import {
 	secondaryDecal,
 	paintEndZone,
 	paintMidLogo,
+	paintMidTrophy,
 	paintNumbers,
+	paintTrophyPicture,
 	paintTurf,
 	type DecalPicture,
 	type FieldTeam,
@@ -35,16 +37,20 @@ export const paintPreview = (
 	sky: "day" | "night" | undefined,
 	logo: HTMLCanvasElement | undefined,
 	// Its own pictures - for the end zones, midfield (the logo, left out),
-	// the 25-yard lines, the whole field and the boards - and the league's
-	// decals on it (see StadiumLook, paintDecals).
+	// the 25-yard lines, the whole field, the boards and the championship
+	// trophy - and the league's decals on it (see StadiumLook, paintDecals).
 	pictures: {
 		end?: HTMLCanvasElement;
 		mid?: HTMLCanvasElement;
 		secondary?: HTMLCanvasElement;
 		field?: HTMLCanvasElement;
 		board?: HTMLCanvasElement;
+		trophy?: HTMLCanvasElement;
 		decals?: DecalPicture[];
 	} = {},
+	// A playoff game - its crowd in the team's colors - or the championship
+	// game, its trophy at midfield (as Field3D has them).
+	game: { playoffs?: boolean; finals?: boolean } = {},
 ): FieldPaint => {
 	const picked = venueFor(team, { gid: 0, primeTime: sky === "night" });
 	const venue = { ...picked, shadow: undefined };
@@ -56,8 +62,9 @@ export const paintPreview = (
 			? (pictures.mid ?? (pictures.field ? undefined : logo))
 			: undefined;
 	const own = team.stadium?.adjust;
+	const finals = game.finals === true;
 	const decals = [
-		...(mid && own?.logo ? [midLogoDecal(mid, own.logo)] : []),
+		...(mid && own?.logo && !finals ? [midLogoDecal(mid, own.logo)] : []),
 		...(pictures.secondary
 			? [secondaryDecal(pictures.secondary, own?.secondary)]
 			: []),
@@ -79,11 +86,18 @@ export const paintPreview = (
 					ownLines: team.stadium?.fieldLines === "picture",
 				}
 			: {}),
+		...(finals
+			? {
+					trophy: pictures.trophy
+						? paintTrophyPicture(pictures.trophy, pictures.mid ?? logo)
+						: paintMidTrophy(pictures.mid ?? logo),
+				}
+			: {}),
 		stadium: paintStadium(
 			team,
 			undefined,
 			"preview",
-			undefined,
+			game.playoffs || finals ? { playoffs: true } : undefined,
 			logo,
 			venue,
 			undefined,

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo, useState } from "react";
+import { lazy, Suspense, useMemo, useState, type ReactNode } from "react";
 import useTitleBar from "../hooks/useTitleBar.tsx";
 import { toWorker } from "../util/toWorker.ts";
 import { realtimeUpdate } from "../util/realtimeUpdate.ts";
@@ -6,10 +6,14 @@ import { helpers } from "../util/helpers.ts";
 import { showNotification } from "../util/showNotification.ts";
 import type {
 	CourtImageAdjust,
+	CourtPair,
+	CourtVersionName,
+	CourtVersionPicture,
 	HelmetLook,
 	StadiumLook,
 	View,
 } from "../../common/types.ts";
+import { versionPictures } from "../../common/courtVersions.ts";
 import {
 	AdjustFields,
 	PIC,
@@ -195,6 +199,124 @@ const FIELD_UPLOAD = {
 	type: "image/jpeg",
 } as const;
 
+// The field's versions, as the page shows them (see StadiumLook.versions).
+type Version = "regular" | CourtVersionName;
+const VERSIONS: [Version, string][] = [
+	["regular", "Regular season"],
+	["homeOpener", "Home opener"],
+	["playoffs", "Playoffs"],
+	["finals", "Finals"],
+];
+// A picture added to a version: one at each 30-yard line, between the
+// hashes, clear of a secondary logo at the 25s.
+const NEW_PICTURE: CourtVersionPicture = {
+	image: "",
+	adjust: { scale: 0.5, dx: -58 },
+	pair: true,
+};
+const PAIRS: [string, CourtPair | undefined][] = [
+	["One", undefined],
+	["Two, mirrored", true],
+	["Two, diagonal", "diagonal"],
+];
+
+// A version's own pictures: each with where it sits, one or a pair, and
+// another added. (The finals, with none of their own, show the playoffs' -
+// till given their own.)
+const VersionPictures = ({
+	name,
+	stadium,
+	pictures,
+	onUpload,
+	onChange,
+	onSet,
+	trophy,
+}: {
+	name: CourtVersionName;
+	stadium: StadiumLook;
+	pictures: Record<string, string>;
+	onUpload: (file: File) => Promise<string | undefined>;
+	onChange: (i: number, next: Partial<CourtVersionPicture>) => void;
+	onSet: (next: CourtVersionPicture[] | undefined) => void;
+	trophy: ReactNode;
+}) => {
+	const own = stadium.versions?.[name];
+	const borrowed = name === "finals" && own === undefined;
+	const list = borrowed
+		? (stadium.versions?.playoffs?.pictures ?? [])
+		: (own?.pictures ?? []);
+	return (
+		<div className="border rounded p-2 mb-3">
+			{trophy}
+			{borrowed && list.length > 0 ? (
+				<div className="d-flex align-items-center gap-2 mb-3">
+					<span className="text-body-secondary small flex-grow-1">
+						Same as playoffs
+					</span>
+					<button
+						type="button"
+						className="btn btn-sm btn-light-bordered"
+						onClick={() => onSet(list.map((p) => ({ ...p })))}
+					>
+						Own pictures
+					</button>
+				</div>
+			) : (
+				list.map((p, i) => (
+					<div key={i} className="mb-3">
+						<PictureField
+							label={`Picture ${i + 1}`}
+							url={p.image === "" ? undefined : p.image}
+							pictures={pictures}
+							onChange={(v) => onChange(i, { image: v ?? "" })}
+							onUpload={onUpload}
+							clear="None"
+							adjust={{
+								slot: `${name}${i}`,
+								value: p.adjust,
+								onChange: (next) => onChange(i, { adjust: next }),
+							}}
+						/>
+						<div className="d-flex align-items-center gap-2">
+							<select
+								className="form-select form-select-sm w-auto"
+								value={PAIRS.findIndex(([, pair]) => pair === p.pair)}
+								onChange={(e) =>
+									onChange(i, {
+										pair: PAIRS[Number.parseInt(e.target.value)]![1],
+									})
+								}
+							>
+								{PAIRS.map(([label], k) => (
+									<option key={label} value={k}>
+										{label}
+									</option>
+								))}
+							</select>
+							<button
+								type="button"
+								className="btn btn-sm btn-light-bordered ms-auto"
+								onClick={() => onSet(list.filter((_, j) => j !== i))}
+							>
+								Delete
+							</button>
+						</div>
+					</div>
+				))
+			)}
+			{borrowed && list.length > 0 ? null : (
+				<button
+					type="button"
+					className="btn btn-sm btn-light-bordered"
+					onClick={() => onSet([...list, { ...NEW_PICTURE }])}
+				>
+					Add picture
+				</button>
+			)}
+		</div>
+	);
+};
+
 // A helmet color: the team's own pick until one is chosen - and, for a
 // stripe, none at all.
 const HelmetColor = ({
@@ -261,6 +383,7 @@ const EditTeamStadium = ({
 	const [stadium, setStadium] = useState<StadiumLook>(savedStadium ?? {});
 	const [helmet, setHelmet] = useState<HelmetLook>(savedHelmet ?? {});
 	const [previewSky, setPreviewSky] = useState<"day" | "night">("day");
+	const [version, setVersion] = useState<Version>("regular");
 	const [saving, setSaving] = useState(false);
 	// Pictures by id: the stadium's own, and any uploaded since.
 	const [pictures, setPictures] = useState<Record<string, string>>(
@@ -285,9 +408,10 @@ const EditTeamStadium = ({
 			return undefined;
 		}
 	};
-	// (The stadium as the preview draws it: its uploaded pictures filled in.)
+	// (The stadium as the preview draws it: its uploaded pictures filled in,
+	// and the version's laid on the field.)
 	const drawn = useMemo(() => {
-		const out = { ...stadium };
+		const out: StadiumLook = { ...stadium };
 		for (const key of STADIUM_PICTURE_KEYS) {
 			const v = out[key];
 			if (v?.startsWith(PIC)) {
@@ -299,18 +423,35 @@ const EditTeamStadium = ({
 				}
 			}
 		}
+		const decals = versionPictures(
+			stadium,
+			version === "regular" ? undefined : version,
+		).flatMap((p) => {
+			const href = p.image.startsWith(PIC)
+				? pictures[p.image.slice(PIC.length)]
+				: p.image;
+			return href ? [{ href, adjust: p.adjust, pair: p.pair }] : [];
+		});
+		if (decals.length > 0) {
+			out.decals = decals;
+		}
 		return out;
-	}, [stadium, pictures]);
-	const [json, setJSON] = useState<string | undefined>();
+	}, [stadium, pictures, version]);
+	// The JSON open beside it: the stadium as it is, as it changes - or, once
+	// typed in, the text typed, till it is applied.
+	const [jsonOpen, setJSONOpen] = useState(false);
+	const [typed, setTyped] = useState<string | undefined>();
 	const [jsonError, setJSONError] = useState<string | undefined>();
+	const json = typed ?? JSON.stringify({ stadium, helmet }, null, 2);
 	const apply = (text: string) => {
 		const parsed = parseLook(text);
 		if (typeof parsed === "string") {
-			setJSON(text);
+			setJSONOpen(true);
+			setTyped(text);
 			setJSONError(parsed);
 			return;
 		}
-		setJSON(undefined);
+		setTyped(undefined);
 		setJSONError(undefined);
 		setStadium(parsed.stadium);
 		setHelmet(parsed.helmet);
@@ -341,6 +482,50 @@ const EditTeamStadium = ({
 			next[slot] = value;
 		}
 		setField("adjust", Object.keys(next).length > 0 ? next : undefined);
+	};
+	// A version's own pictures (the finals with none of their own have the
+	// playoffs' - see versionPictures), changed.
+	const setVersionPictures = (
+		name: CourtVersionName,
+		next: CourtVersionPicture[] | undefined,
+	) => {
+		setStadium((s) => {
+			const versions = { ...s.versions };
+			if (next === undefined) {
+				delete versions[name];
+			} else {
+				versions[name] = { pictures: next };
+			}
+			const out = { ...s };
+			if (Object.keys(versions).length > 0) {
+				out.versions = versions;
+			} else {
+				delete out.versions;
+			}
+			return out;
+		});
+	};
+	const changePicture = (
+		name: CourtVersionName,
+		i: number,
+		next: Partial<CourtVersionPicture>,
+	) => {
+		const list = stadium.versions?.[name]?.pictures ?? [];
+		setVersionPictures(
+			name,
+			list.map((p, j) => {
+				if (j !== i) {
+					return p;
+				}
+				const out: CourtVersionPicture = { ...p, ...next };
+				for (const key of Object.keys(next) as (keyof CourtVersionPicture)[]) {
+					if (next[key] === undefined) {
+						delete out[key];
+					}
+				}
+				return out;
+			}),
+		);
 	};
 	const setPart = <K extends keyof HelmetLook>(
 		key: K,
@@ -415,26 +600,64 @@ const EditTeamStadium = ({
 						stadium={drawn}
 						helmet={helmet}
 						sky={sky}
+						field={version !== "regular"}
+						playoffs={version === "playoffs" || version === "finals"}
+						finals={version === "finals"}
 					/>
 				</Suspense>
-				{stadium.sky === undefined && stadium.roof !== "dome" ? (
-					<div className="btn-group btn-group-sm mt-2" role="group">
-						{(["day", "night"] as const).map((s) => (
+				<div className="d-flex flex-wrap gap-2 mt-2">
+					<div className="btn-group btn-group-sm flex-wrap" role="group">
+						{VERSIONS.map(([v, label]) => (
 							<button
-								key={s}
+								key={v}
 								type="button"
-								className={`btn ${previewSky === s ? "btn-secondary" : "btn-light-bordered"}`}
-								onClick={() => setPreviewSky(s)}
+								className={`btn ${version === v ? "btn-secondary" : "btn-light-bordered"}`}
+								onClick={() => setVersion(v)}
 							>
-								{s === "day" ? "Day" : "Night"}
+								{label}
 							</button>
 						))}
 					</div>
-				) : null}
+					{stadium.sky === undefined && stadium.roof !== "dome" ? (
+						<div className="btn-group btn-group-sm" role="group">
+							{(["day", "night"] as const).map((s) => (
+								<button
+									key={s}
+									type="button"
+									className={`btn ${previewSky === s ? "btn-secondary" : "btn-light-bordered"}`}
+									onClick={() => setPreviewSky(s)}
+								>
+									{s === "day" ? "Day" : "Night"}
+								</button>
+							))}
+						</div>
+					) : null}
+				</div>
 			</div>
 
 			<div className="col-lg-5">
 				<h3 className="h6 text-body-secondary">{`${region} ${name}`}</h3>
+				{version === "regular" ? null : (
+					<VersionPictures
+						name={version}
+						stadium={stadium}
+						pictures={pictures}
+						onUpload={(file) => upload(file)}
+						onChange={(i, next) => changePicture(version, i, next)}
+						onSet={(next) => setVersionPictures(version, next)}
+						trophy={
+							version === "finals" ? (
+								<PictureField
+									label="Championship trophy"
+									url={stadium.trophyURL}
+									pictures={pictures}
+									onChange={(v) => setField("trophyURL", v)}
+									onUpload={upload}
+								/>
+							) : null
+						}
+					/>
+				)}
 				<Choice<"roof">
 					label="Roof"
 					value={stadium.roof}
@@ -671,13 +894,6 @@ const EditTeamStadium = ({
 							}
 						: {})}
 				/>
-				<PictureField
-					label="Championship trophy"
-					url={stadium.trophyURL}
-					pictures={pictures}
-					onChange={(v) => setField("trophyURL", v)}
-					onUpload={upload}
-				/>
 				<Choice<"sky">
 					label="Kickoff"
 					value={stadium.sky}
@@ -764,14 +980,11 @@ const EditTeamStadium = ({
 					className="btn btn-sm btn-light-bordered"
 					onClick={() => {
 						setJSONError(undefined);
-						setJSON(
-							json === undefined
-								? JSON.stringify({ stadium, helmet }, null, 2)
-								: undefined,
-						);
+						setTyped(undefined);
+						setJSONOpen(!jsonOpen);
 					}}
 				>
-					{json === undefined ? "Edit as JSON" : "Close JSON"}
+					{jsonOpen ? "Close JSON" : "Edit as JSON"}
 				</button>
 				<label className="btn btn-sm btn-light-bordered ms-2 mb-0">
 					Load file
@@ -786,31 +999,46 @@ const EditTeamStadium = ({
 								return;
 							}
 							file.text().then(apply, () => {
-								setJSON("");
+								setJSONOpen(true);
+								setTyped("");
 								setJSONError("Could not read that file.");
 							});
 						}}
 					/>
 				</label>
-				{json !== undefined ? (
+				{jsonOpen ? (
 					<div className="mt-2">
 						<textarea
 							className="form-control font-monospace small"
 							rows={12}
 							spellCheck={false}
 							value={json}
-							onChange={(e) => setJSON(e.target.value)}
+							onChange={(e) => setTyped(e.target.value)}
 						/>
 						{jsonError ? (
 							<div className="text-danger small mt-1">{jsonError}</div>
 						) : null}
-						<button
-							type="button"
-							className="btn btn-sm btn-secondary mt-2"
-							onClick={() => apply(json)}
-						>
-							Apply
-						</button>
+						{typed !== undefined ? (
+							<div className="d-flex gap-2 mt-2">
+								<button
+									type="button"
+									className="btn btn-sm btn-secondary"
+									onClick={() => apply(typed)}
+								>
+									Apply
+								</button>
+								<button
+									type="button"
+									className="btn btn-sm btn-light-bordered"
+									onClick={() => {
+										setJSONError(undefined);
+										setTyped(undefined);
+									}}
+								>
+									Discard
+								</button>
+							</div>
+						) : null}
 					</div>
 				) : null}
 
