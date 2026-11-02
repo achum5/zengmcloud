@@ -154,6 +154,7 @@ const SLOW_STRIDES = new Map<Move, number>([
 	["walk", 2],
 	["backerReady", 0.5],
 	["receiverReady", 0.5],
+	["safetyReady", 0.5],
 ]);
 
 // The frame of an act he is on, and where it starts (each the nearest to

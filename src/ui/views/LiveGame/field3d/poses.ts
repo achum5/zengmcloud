@@ -352,6 +352,20 @@ const RECEIVER_STANCE = pose({
 	abF: 12,
 	wide: 0.35,
 });
+const SAFETY = pose({
+	hipN: 16,
+	kneeN: 26,
+	hipF: 18,
+	kneeF: 28,
+	lean: 16,
+	shN: 22,
+	elN: 40,
+	abN: 14,
+	shF: 22,
+	elF: 40,
+	abF: 14,
+	wide: 0.75,
+});
 // Alive in a stance (the i'th of four, round): down into his knees, onto
 // one foot, back up, onto the other - his shoulders and hands going with
 // it - by as much as `by` of it.
@@ -1062,22 +1076,13 @@ const FIELD_ANIMS = {
 		}),
 	},
 	// A safety deep: upright, square, at ease but live.
-	safetyStance: {
-		kind: "still",
-		pose: pose({
-			hipN: 16,
-			kneeN: 26,
-			hipF: 18,
-			kneeF: 28,
-			lean: 16,
-			shN: 22,
-			elN: 40,
-			abN: 14,
-			shF: 22,
-			elF: 40,
-			abF: 14,
-			wide: 0.75,
-		}),
+	safetyStance: { kind: "still", pose: SAFETY },
+	// Back deep for a kick, waiting on it (see receiverReady).
+	safetyReady: {
+		kind: "loop",
+		n: 4,
+		fps: 1.7,
+		pose: (i) => alive(SAFETY, i, 0.6),
 	},
 	// The holder on a knee seven yards back, just to the side of the spot:
 	// his right knee down, his left foot up under him, both hands out for
@@ -3984,6 +3989,7 @@ const STANDS = new Set<Move>([
 	"receiverReady",
 	"cornerStance",
 	"safetyStance",
+	"safetyReady",
 	"backerStance",
 	"backerReady",
 ]);

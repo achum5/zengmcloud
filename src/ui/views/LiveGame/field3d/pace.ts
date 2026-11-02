@@ -47,6 +47,7 @@ export const SET = new Set<Move>([
 	"backerReady",
 	"cornerStance",
 	"safetyStance",
+	"safetyReady",
 	"holdKneel",
 	"kickReady",
 ]);

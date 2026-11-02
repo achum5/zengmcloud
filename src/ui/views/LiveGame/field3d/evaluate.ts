@@ -477,6 +477,7 @@ const PIVOTS = new Set<Move>([
 	"receiverReady",
 	"cornerStance",
 	"safetyStance",
+	"safetyReady",
 	"backerStance",
 	"backerReady",
 ]);

@@ -703,8 +703,8 @@ export const KICKOFF_RECEIVE = (zone: number, back: number): Align[] => [
 		across,
 		move: "backerReady",
 	})),
-	{ role: "KR", pos: "KR", depth: back, across: -12, move: "safetyStance" },
-	{ role: "KR", pos: "KR", depth: back + 9, across: 10, move: "safetyStance" },
+	{ role: "KR", pos: "KR", depth: back, across: -12, move: "safetyReady" },
+	{ role: "KR", pos: "KR", depth: back + 9, across: 10, move: "safetyReady" },
 ];
 // Against an onside kick, the hands team: five across eleven yards off the
 // ball, four more behind them, two back for one kicked over the top. (The
@@ -726,10 +726,10 @@ export const ONSIDE_RECEIVE: Align[] = [
 		pos: SETUP_POS[i]!,
 		depth,
 		across,
-		move: "backerStance",
+		move: "backerReady",
 	})),
-	{ role: "KR", pos: "KR", depth: 90, across: -15, move: "safetyStance" },
-	{ role: "KR", pos: "KR", depth: 90, across: 15, move: "safetyStance" },
+	{ role: "KR", pos: "KR", depth: 90, across: -15, move: "safetyReady" },
+	{ role: "KR", pos: "KR", depth: 90, across: 15, move: "safetyReady" },
 ];
 
 // The spread punt: the snapper, two guards and two tackles tight, the
@@ -798,7 +798,7 @@ export const PUNT_RETURN = (back: number): Align[] => [
 	},
 	{ role: "WALL", pos: "S", depth: 21, across: -9, move: "backerStance" },
 	{ role: "WALL", pos: "S", depth: 24, across: 9, move: "backerStance" },
-	{ role: "PR", pos: "PR", depth: back, across: 0, move: "safetyStance" },
+	{ role: "PR", pos: "PR", depth: back, across: 0, move: "safetyReady" },
 ];
 
 // A field goal or a try: the snapper and a wall of eight shoulder to
