@@ -3133,17 +3133,17 @@ const DOWN_WAY_LEAST = 0.5;
 const ROUNDS = new Set<Move>([...GAITS, "shuffle", "back"]);
 // Two of a side blocking, or taking on a block, in the one spot - nearer
 // than TWIN_APART (feet), two men drawn in each other - spread shoulder to
-// shoulder (see noTwins): eased apart over TWIN_EASE_MS either side of it
-// where he is free to be (no less than TWIN_EASE_LEAST, in it); looked at
-// every TWIN_EVERY_MS, spells of it this near each other (ms) as one.
+// shoulder (see noTwins), no more than TWIN_MOST each (feet): eased apart
+// over TWIN_EASE_MS either side of it where he is free to be (no less than
+// TWIN_EASE_LEAST, in it); looked at every TWIN_EVERY_MS, spells of it
+// this near each other (ms) as one.
 const TWIN_APART = 1.9;
+const TWIN_MOST = 1.2;
 const TWIN_EASE_MS = 250;
 const TWIN_EASE_LEAST = 150;
 const TWIN_EVERY_MS = 50;
 const TWIN_JOIN_MS = 300;
 const LINE_PLAY = new Set<Move>(["engage", "drive"]);
-// (Nearer each other than this all told, feet, the one in the other.)
-const TWIN_SAME = 0.2;
 // (Up against a man, driving him, feet.)
 const DRIVE_ON = 3.5;
 // (Nor bent round him into a man on his feet: nearer than this, feet, and
@@ -3922,9 +3922,10 @@ class Action {
 	}
 
 	// Two of a side in a block in the one spot - two men on one blocker,
-	// two blockers on one man - spread shoulder to shoulder: each eased
-	// half the way out (TWIN_APART), the way they are apart (or across the
-	// field, the one in the other), while they are at it.
+	// two blockers on one man, or two blocks run into one another - spread
+	// shoulder to shoulder: each eased half the way out (TWIN_APART) to his
+	// side, square to the way they face (not on into the man in front of
+	// them), while they are at it.
 	noTwins() {
 		const { snap } = this.input;
 		const men = this.men.filter((m) => m.legs.length > 0);
@@ -3992,7 +3993,15 @@ class Action {
 					k++;
 				}
 				const l = m.legs[k]!;
-				return LINE_PLAY.has(l.move) && !l.ball ? m.posAt(t) : undefined;
+				if (!LINE_PLAY.has(l.move) || l.ball) {
+					return undefined;
+				}
+				const yaw =
+					l.yaw ??
+					(l.from.x !== l.to.x || l.from.y !== l.to.y
+						? Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x)
+						: 0);
+				return { at: m.posAt(t), yaw };
 			});
 		});
 		for (let i = 0; i < men.length; i++) {
@@ -4004,58 +4013,65 @@ class Action {
 				}
 				const gp = grids[i]!;
 				const gq = grids[j]!;
-				let spell:
-					| {
-							a: number;
-							b: number;
-							x: number;
-							y: number;
-							n: number;
-							least: number;
-					  }
-					| undefined;
+				// (Spells of it: when, how q is off p each time, and the way
+				// square to p's facing, all told.)
+				let spell: { a: number; b: number; seps: Pt[]; side: Pt } | undefined;
 				const done = () => {
 					if (!spell) {
 						return;
 					}
-					const len = Math.hypot(spell.x, spell.y) / spell.n;
-					const pa = p.posAt(spell.a);
-					const qa = q.posAt(spell.a);
-					// (The one in the other: across the field, the one this
-					// side of him that way.)
-					const ux = len > TWIN_SAME ? spell.x / spell.n / len : 0;
-					const uy =
-						len > TWIN_SAME ? spell.y / spell.n / len : qa.y >= pa.y ? 1 : -1;
-					const half = (TWIN_APART - spell.least) / 2;
-					const s = spell;
+					const { a, b, seps, side } = spell;
 					spell = undefined;
-					if (half <= 0 || s.b <= s.a) {
+					const len = Math.hypot(side.x, side.y);
+					if (b <= a || len === 0) {
 						return;
 					}
-					ease(p, s.a, s.b, { x: -ux * half, y: -uy * half });
-					ease(q, s.a, s.b, { x: ux * half, y: uy * half });
+					// (Out to the sides they are on, as far as it takes each
+					// time: q on p's left if more often there than not.)
+					const nx = side.x / len;
+					const ny = side.y / len;
+					const on = seps.reduce((sum, d) => sum + d.x * nx + d.y * ny, 0);
+					const sx = on >= 0 ? nx : -nx;
+					const sy = on >= 0 ? ny : -ny;
+					let need = 0;
+					for (const d of seps) {
+						const f = d.x * sy - d.y * sx;
+						const l = d.x * sx + d.y * sy;
+						need = Math.max(
+							need,
+							Math.sqrt(Math.max(0, TWIN_APART ** 2 - f ** 2)) - l,
+						);
+					}
+					const half = Math.min(TWIN_MOST, need / 2);
+					if (half <= 0) {
+						return;
+					}
+					ease(p, a, b, { x: -sx * half, y: -sy * half });
+					ease(q, a, b, { x: sx * half, y: sy * half });
 				};
 				times.forEach((t, k) => {
-					const a = gp[k];
-					const b = gq[k];
-					if (!a || !b) {
+					const gpk = gp[k];
+					const gqk = gq[k];
+					if (!gpk || !gqk) {
 						return;
 					}
-					const d = dist(a, b);
+					const d = dist(gpk.at, gqk.at);
 					if (d >= TWIN_APART) {
 						return;
 					}
 					if (spell && t - spell.b > TWIN_JOIN_MS) {
 						done();
 					}
+					const sep = { x: gqk.at.x - gpk.at.x, y: gqk.at.y - gpk.at.y };
+					const sx = -Math.sin(gpk.yaw);
+					const sy = Math.cos(gpk.yaw);
 					if (spell) {
 						spell.b = t;
-						spell.x += b.x - a.x;
-						spell.y += b.y - a.y;
-						spell.n++;
-						spell.least = Math.min(spell.least, d);
+						spell.seps.push(sep);
+						spell.side.x += sx;
+						spell.side.y += sy;
 					} else {
-						spell = { a: t, b: t, x: b.x - a.x, y: b.y - a.y, n: 1, least: d };
+						spell = { a: t, b: t, seps: [sep], side: { x: sx, y: sy } };
 					}
 				});
 				done();
