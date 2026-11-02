@@ -642,17 +642,16 @@ class Actor {
 	// where it leaves him).
 	posAt(t: number): Pt {
 		const legs = this.part.legs;
-		for (let k = legs.length - 1; k >= 0; k--) {
-			const l = legs[k]!;
-			if (t >= l.t0) {
-				const u = l.t1 > l.t0 ? clamp((t - l.t0) / (l.t1 - l.t0), 0, 1) : 1;
-				return {
-					x: l.from.x + (l.to.x - l.from.x) * u,
-					y: l.from.y + (l.to.y - l.from.y) * u,
-				};
-			}
+		const k = legIndexAt(legs, t);
+		if (k < 0) {
+			return legs[0]!.from;
 		}
-		return legs[0]!.from;
+		const l = legs[k]!;
+		const u = l.t1 > l.t0 ? clamp((t - l.t0) / (l.t1 - l.t0), 0, 1) : 1;
+		return {
+			x: l.from.x + (l.to.x - l.from.x) * u,
+			y: l.from.y + (l.to.y - l.from.y) * u,
+		};
 	}
 
 	private push(l: Leg) {
@@ -3132,6 +3131,19 @@ const DOWN_SOME = 1;
 const DOWN_WAY_MS = 150;
 const DOWN_WAY_LEAST = 0.5;
 const ROUNDS = new Set<Move>([...GAITS, "shuffle", "back"]);
+// Two of a side blocking, or taking on a block, in the one spot - nearer
+// than TWIN_APART (feet), two men drawn in each other - spread shoulder to
+// shoulder (see noTwins): eased apart over TWIN_EASE_MS either side of it
+// where he is free to be (no less than TWIN_EASE_LEAST, in it); looked at
+// every TWIN_EVERY_MS, spells of it this near each other (ms) as one.
+const TWIN_APART = 1.9;
+const TWIN_EASE_MS = 250;
+const TWIN_EASE_LEAST = 150;
+const TWIN_EVERY_MS = 50;
+const TWIN_JOIN_MS = 300;
+const LINE_PLAY = new Set<Move>(["engage", "drive"]);
+// (Nearer each other than this all told, feet, the one in the other.)
+const TWIN_SAME = 0.2;
 // (Up against a man, driving him, feet.)
 const DRIVE_ON = 3.5;
 // (Nor bent round him into a man on his feet: nearer than this, feet, and
@@ -3424,18 +3436,15 @@ class Action {
 	// turf, to the length of him (see LIE_BACK).
 	private nearOf(m: Actor, t: number, q: Pt): number {
 		const at = m.posAt(t);
-		let yaw = m.yaw;
-		let move: Move | undefined;
-		for (const l of m.legs) {
-			if (l.t0 > t) {
-				break;
-			}
-			yaw = yawOf(l, yaw);
-			move = l.move;
-		}
+		const k = legIndexAt(m.legs, t);
+		const move = k < 0 ? undefined : m.legs[k]!.move;
 		const back = move !== undefined && LIE_BACKWARD.has(move);
 		if (move === undefined || (!back && !LIE_FACING.has(move))) {
 			return dist(at, q);
+		}
+		let yaw = m.yaw;
+		for (let i = 0; i <= k; i++) {
+			yaw = yawOf(m.legs[i]!, yaw);
 		}
 		const a = back ? yaw + Math.PI : yaw;
 		const ux = Math.cos(a);
@@ -3727,6 +3736,7 @@ class Action {
 		this.celebrate();
 		this.regroup();
 		this.noAirBlocks();
+		this.noTwins();
 		this.offMenDown();
 		this.noFlicks();
 		this.overHeads();
@@ -3911,6 +3921,189 @@ class Action {
 		}
 	}
 
+	// Two of a side in a block in the one spot - two men on one blocker,
+	// two blockers on one man - spread shoulder to shoulder: each eased
+	// half the way out (TWIN_APART), the way they are apart (or across the
+	// field, the one in the other), while they are at it.
+	noTwins() {
+		const { snap } = this.input;
+		const men = this.men.filter((m) => m.legs.length > 0);
+		const end = Math.max(...men.map((m) => m.t));
+		// (Where he is free to be somewhere else: blocking, on his way, or
+		// stood about - not with the ball, not before the snap.)
+		const movable = (l: Leg) =>
+			l.t0 >= snap &&
+			!l.ball &&
+			!l.turn &&
+			(LINE_PLAY.has(l.move) ||
+				ROUNDS.has(l.move) ||
+				(!touching(l) &&
+					l.from.x === l.to.x &&
+					l.from.y === l.to.y &&
+					moveKind(l.move) !== "act" &&
+					moveKind(l.move) !== "cycle"));
+		const stretch = (m: Actor, t: number): [number, number] => {
+			const legs = m.legs;
+			let k = Math.max(0, legIndexAt(legs, t));
+			let j = k;
+			while (
+				k > 0 &&
+				movable(legs[k - 1]!) &&
+				legs[k - 1]!.t1 === legs[k]!.t0
+			) {
+				k--;
+			}
+			while (
+				j + 1 < legs.length &&
+				movable(legs[j + 1]!) &&
+				legs[j + 1]!.t0 === legs[j]!.t1
+			) {
+				j++;
+			}
+			return [legs[k]!.t0, legs[j]!.t1];
+		};
+		type Ease = { w0: number; a: number; b: number; w1: number; off: Pt };
+		const eases = new Map<Actor, Ease[]>();
+		const ease = (m: Actor, a: number, b: number, off: Pt) => {
+			const [s0, s1] = stretch(m, a);
+			const w0 = Math.max(s0, a - TWIN_EASE_MS);
+			const w1 = Math.min(s1, b + TWIN_EASE_MS);
+			const e = {
+				w0,
+				a: Math.min(Math.max(a, w0 + TWIN_EASE_LEAST), (a + b) / 2),
+				b: Math.max(Math.min(b, w1 - TWIN_EASE_LEAST), (a + b) / 2),
+				w1,
+				off,
+			};
+			if (e.a > e.w0 && e.b < e.w1) {
+				eases.set(m, [...(eases.get(m) ?? []), e]);
+			}
+		};
+		// (Where each is every TWIN_EVERY_MS from the snap, if blocking then
+		// without the ball.)
+		const times: number[] = [];
+		for (let t = snap; t <= end; t += TWIN_EVERY_MS) {
+			times.push(t);
+		}
+		const grids = men.map((m) => {
+			let k = 0;
+			return times.map((t) => {
+				while (k + 1 < m.legs.length && m.legs[k + 1]!.t0 <= t) {
+					k++;
+				}
+				const l = m.legs[k]!;
+				return LINE_PLAY.has(l.move) && !l.ball ? m.posAt(t) : undefined;
+			});
+		});
+		for (let i = 0; i < men.length; i++) {
+			for (let j = i + 1; j < men.length; j++) {
+				const p = men[i]!;
+				const q = men[j]!;
+				if (p.team !== q.team) {
+					continue;
+				}
+				const gp = grids[i]!;
+				const gq = grids[j]!;
+				let spell:
+					| {
+							a: number;
+							b: number;
+							x: number;
+							y: number;
+							n: number;
+							least: number;
+					  }
+					| undefined;
+				const done = () => {
+					if (!spell) {
+						return;
+					}
+					const len = Math.hypot(spell.x, spell.y) / spell.n;
+					const pa = p.posAt(spell.a);
+					const qa = q.posAt(spell.a);
+					// (The one in the other: across the field, the one this
+					// side of him that way.)
+					const ux = len > TWIN_SAME ? spell.x / spell.n / len : 0;
+					const uy =
+						len > TWIN_SAME ? spell.y / spell.n / len : qa.y >= pa.y ? 1 : -1;
+					const half = (TWIN_APART - spell.least) / 2;
+					const s = spell;
+					spell = undefined;
+					if (half <= 0 || s.b <= s.a) {
+						return;
+					}
+					ease(p, s.a, s.b, { x: -ux * half, y: -uy * half });
+					ease(q, s.a, s.b, { x: ux * half, y: uy * half });
+				};
+				times.forEach((t, k) => {
+					const a = gp[k];
+					const b = gq[k];
+					if (!a || !b) {
+						return;
+					}
+					const d = dist(a, b);
+					if (d >= TWIN_APART) {
+						return;
+					}
+					if (spell && t - spell.b > TWIN_JOIN_MS) {
+						done();
+					}
+					if (spell) {
+						spell.b = t;
+						spell.x += b.x - a.x;
+						spell.y += b.y - a.y;
+						spell.n++;
+						spell.least = Math.min(spell.least, d);
+					} else {
+						spell = { a: t, b: t, x: b.x - a.x, y: b.y - a.y, n: 1, least: d };
+					}
+				});
+				done();
+			}
+		}
+		for (const [m, es] of eases) {
+			const at = (t: number): Pt => {
+				let x = 0;
+				let y = 0;
+				for (const e of es) {
+					const w = bumpOf(t, e.w0, e.a, e.b, e.w1);
+					x += e.off.x * w;
+					y += e.off.y * w;
+				}
+				return { x, y };
+			};
+			for (const e of es) {
+				m.split(e.w0);
+				m.split(e.w1);
+				for (let t = e.w0 + DOWN_STEP_MS; t < e.w1; t += DOWN_STEP_MS) {
+					const l = legAt(m, t);
+					if (
+						l.t1 - l.t0 > DOWN_STEP_MS * 1.5 &&
+						t - l.t0 >= DOWN_SLIVER_MS &&
+						l.t1 - t >= DOWN_SLIVER_MS
+					) {
+						m.split(t);
+					}
+				}
+			}
+			const lo = Math.min(...es.map((e) => e.w0));
+			const hi = Math.max(...es.map((e) => e.w1));
+			const legs = m.legs.filter((l) => l.t1 > lo && l.t0 < hi);
+			const moved = legs.map((l) => {
+				const d0 = at(l.t0);
+				const d1 = at(l.t1);
+				return {
+					from: { x: l.from.x + d0.x, y: l.from.y + d0.y },
+					to: { x: l.to.x + d1.x, y: l.to.y + d1.y },
+				};
+			});
+			legs.forEach((l, k) => {
+				l.from = moved[k]!.from;
+				l.to = moved[k]!.to;
+			});
+		}
+	}
+
 	// A man on his feet with his way over a man down on the turf - across
 	// him, or close by the length of him - bent out round him instead (see
 	// DOWN_CLEAR): off to the side, round the nearer end of him first, or
@@ -3981,18 +4174,31 @@ class Action {
 		};
 		// (Whether `q` at t takes m nearer anybody on his feet than
 		// PASS_APART, and nearer him than `p` - where he was to be - did.)
-		const crowds = (m: Actor, t: number, q: Pt, p: Pt) =>
-			this.men.some((o) => {
-				if (
-					o === m ||
-					spells.some((s) => s.m === o && t >= s.t0 && t <= s.t1)
-				) {
-					return false;
-				}
-				const at = o.posAt(t);
+		// (Where the others on their feet are at t, kept while it is m's
+		// way that is bent - nobody else's changes meanwhile.)
+		let upFor: Actor | undefined;
+		const up = new Map<number, Pt[]>();
+		const crowds = (m: Actor, t: number, q: Pt, p: Pt) => {
+			if (upFor !== m) {
+				upFor = m;
+				up.clear();
+			}
+			let them = up.get(t);
+			if (!them) {
+				them = this.men
+					.filter(
+						(o) =>
+							o !== m &&
+							!spells.some((s) => s.m === o && t >= s.t0 && t <= s.t1),
+					)
+					.map((o) => o.posAt(t));
+				up.set(t, them);
+			}
+			return them.some((at) => {
 				const d = dist(q, at);
 				return d < PASS_APART && d < dist(p, at) - PASS_SLACK;
 			});
+		};
 		// (Free to go another way, or to stand somewhere else: on his way,
 		// or stood about, nobody's to mind - not with the ball, not on
 		// anybody; or driving on at nobody on his feet there, into a man
@@ -12419,7 +12625,23 @@ const skirt = (a: Pt, b: Pt, c: Pt): Pt[] => {
 
 // The leg he is in at t (or the last).
 const legAt = (m: Actor, t: number): Leg =>
-	m.legs.findLast((l) => l.t0 <= t) ?? m.legs[0]!;
+	m.legs[Math.max(0, legIndexAt(m.legs, t))]!;
+
+// The index of the last of `legs` begun by t (-1: none of them) - they go
+// in time order.
+const legIndexAt = (legs: readonly Leg[], t: number): number => {
+	let lo = 0;
+	let hi = legs.length;
+	while (lo < hi) {
+		const mid = (lo + hi) >> 1;
+		if (legs[mid]!.t0 <= t) {
+			lo = mid + 1;
+		} else {
+			hi = mid;
+		}
+	}
+	return lo - 1;
+};
 
 // Down on the turf until `until` at least: the last time he lies there made
 // longer, and what he does after it later by as much.
