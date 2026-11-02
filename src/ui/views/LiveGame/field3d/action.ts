@@ -3182,6 +3182,14 @@ const GATHER_APART = 3;
 const GATHER_ROUND = [0, 2, -2, 4, -4, 6, -6, 8, -8];
 const GATHER_LEAST_MS = 400;
 const GATHER_FALLEN_MS = 1400;
+// Up off the turf with the play still going (see upAgain): back in after it
+// a beat after he is up (ms, soonest and latest - see countOf), at this
+// much of his top speed, to round where it ends up this far off (feet, and
+// up to this much more). Not with less than this long to go (ms).
+const UP_AGAIN_REACT_MS = [250, 550] as const;
+const UP_AGAIN_PACE = 0.6;
+const UP_AGAIN_FT = [8, 7] as const;
+const UP_AGAIN_LEAST_MS = 1200;
 // A loose ball batted about: no nearer than this to the spot he dives from
 // (feet), he is laid out for it from where he is, not stepping in first.
 const BAT_RUN_LEAST_FT = 1.5;
@@ -3943,6 +3951,7 @@ class Action {
 			}
 			this.deadBall(flagI);
 		}
+		this.upAgain();
 		this.afterWhistle();
 		this.watch();
 		this.celebrate();
@@ -13367,6 +13376,83 @@ class Action {
 				m.easeOff(EASE_OFF_FT);
 			}
 			m.hold(Math.max(m.t, t) + 600, "stand");
+		}
+	}
+
+	// UP AGAIN WITH IT STILL GOING: a man up off the turf with the play
+	// going on a while yet - in on a loose ball and missed it, knocked down
+	// as it came out - back in after it at an easy run, each on his own
+	// count, to a place of his own round where it ends up: not stood where
+	// he got up till the whistle.
+	upAgain() {
+		const { snap } = this.input;
+		const end = this.ballAt(this.whistle);
+		if (!end) {
+			return;
+		}
+		const still = (l: Leg) =>
+			l.move === "stand" &&
+			!l.arms &&
+			!l.ball &&
+			l.from.x === l.to.x &&
+			l.from.y === l.to.y;
+		const up = new Map<Actor, number>();
+		for (const m of this.men) {
+			const legs = m.legs;
+			let k = legs.length - 1;
+			while (k > 0 && still(legs[k]!) && dist(legs[k]!.to, m.at) < 0.01) {
+				k--;
+			}
+			const l = legs[k];
+			if (
+				l &&
+				RISING.has(l.move) &&
+				l.move !== "sitUp" &&
+				l.t1 >= snap &&
+				this.whistle - l.t1 >= UP_AGAIN_LEAST_MS
+			) {
+				up.set(m, l.t1);
+			}
+		}
+		// (The nearest it first, to the nearest places round it - each clear
+		// of the others' and of anybody stood there then.)
+		const taken = this.men
+			.filter((m) => !up.has(m))
+			.map((m) => m.posAt(this.whistle));
+		for (const [m, t] of [...up].sort(
+			(a, b) => dist(a[0].at, end) - dist(b[0].at, end),
+		)) {
+			const ring = UP_AGAIN_FT[0] + UP_AGAIN_FT[1] * countOf(m, snap, 25);
+			const far = dist(m.at, end);
+			if (far <= ring + 2) {
+				continue;
+			}
+			const a = Math.atan2(m.at.y - end.y, m.at.x - end.x);
+			const round = (turn: number) => ({
+				x: end.x + Math.cos(a + turn / ring) * ring,
+				y: end.y + Math.sin(a + turn / ring) * ring,
+			});
+			const to = GATHER_ROUND.map(round).find((q) =>
+				taken.every((p) => dist(p, q) >= GATHER_APART),
+			);
+			if (!to) {
+				continue;
+			}
+			taken.push(to);
+			const go =
+				t +
+				UP_AGAIN_REACT_MS[0] +
+				(UP_AGAIN_REACT_MS[1] - UP_AGAIN_REACT_MS[0]) * countOf(m, snap, 26);
+			if (m.t > go) {
+				m.cut(go);
+			}
+			m.hold(go);
+			const pace = m.top * UP_AGAIN_PACE;
+			if (go + (dist(m.at, to) / pace) * 1000 <= this.whistle) {
+				m.runUp(to, pace);
+			} else {
+				m.chase(to, this.whistle, pace);
+			}
 		}
 	}
 
