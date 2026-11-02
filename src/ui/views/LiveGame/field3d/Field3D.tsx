@@ -198,6 +198,9 @@ const KEY_DIP_MS = 320;
 // How quickly the camera pans and zooms after what it follows (per second).
 const CAM_PAN = 3.2;
 const CAM_ZOOM = 2.4;
+// (From behind the end zone, a man coming at it: kept up with closely, not
+// let get down out of the bottom of the picture.)
+const CAM_PAN_END = 9;
 // The most of a frame (ms) given to drawing players in poses not drawn
 // before; over that, a man waits a frame for his new one (see sprite.ts).
 const SPRITE_BUDGET_MS = 6;
@@ -1168,7 +1171,13 @@ const Field3D = ({
 					[aim.x, aim.y, width, lift],
 					secs * 1000,
 				);
-				[c.x, c.vx] = follow(c.x, c.vx, gx!, CAM_PAN, secs);
+				[c.x, c.vx] = follow(
+					c.x,
+					c.vx,
+					gx!,
+					angle !== undefined ? CAM_PAN_END : CAM_PAN,
+					secs,
+				);
 				[c.w, c.vw] = follow(c.w, c.vw, gw!, CAM_ZOOM, secs);
 				[c.y, c.vy] = follow(c.y, c.vy, gy!, CAM_ZOOM, secs);
 				[c.z, c.vz] = follow(c.z, c.vz, gz!, CAM_ZOOM, secs);
