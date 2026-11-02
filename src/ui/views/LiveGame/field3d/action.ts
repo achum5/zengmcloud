@@ -3484,6 +3484,8 @@ class Action {
 	// they crowd round the man who made it.
 	readonly mob = new Set<number>();
 	mobAt?: Pt;
+	// A touchdown: when he got there, and who (see tdArms).
+	scored?: { t: number; scorer: Actor };
 	party?: { from: number; at: Pt };
 	// The man who brought the carrier down, the last time one did.
 	downer?: Actor;
@@ -3849,6 +3851,7 @@ class Action {
 		this.offMenDown();
 		this.noFlicks();
 		this.overHeads();
+		this.tdArms();
 		for (const x of this.reaches) {
 			x.m.arms(x.move, x.t0, x.t1);
 		}
@@ -11985,6 +11988,7 @@ class Action {
 			c0 = Math.max(c0, tTD + 300);
 			scorer.cut(c0);
 		}
+		this.scored = { t: tTD, scorer };
 		const at = scorer.at;
 		const u = r();
 		if (u < BOWL && this.bowl(scorer, c0)) {
@@ -12043,6 +12047,51 @@ class Action {
 		scorer.hold(scorer.t + 2600, "stand");
 		this.mob.add(scorer.pid);
 		this.mobRound(scorer, c0);
+	}
+
+	// A touchdown seen from up the field: the quarterback who threw it, and
+	// now and then a man of his not in on the mob, both arms straight up as
+	// the man gets there - while he is on his feet with his hands free.
+	tdArms() {
+		const s = this.scored;
+		if (!s) {
+			return;
+		}
+		const snap = this.input.snap;
+		const thrown = this.ball.some((b) => b.kind === "fly" && b.spiral);
+		for (const m of this.men) {
+			if (m.team !== s.scorer.team || m === s.scorer || this.mob.has(m.pid)) {
+				continue;
+			}
+			const odds = m.role === "QB" && thrown ? TD_ARMS_QB : TD_ARMS;
+			if (countOf(m, snap, 13) >= odds) {
+				continue;
+			}
+			const t0 =
+				s.t + TD_ARMS_REACT[0] + countOf(m, snap, 14) * TD_ARMS_REACT[1];
+			let t1 = Math.min(
+				m.t,
+				t0 + TD_ARMS_MS[0] + countOf(m, snap, 15) * TD_ARMS_MS[1],
+			);
+			for (const l of m.legs) {
+				if (l.t1 <= t0 || l.t0 >= t1) {
+					continue;
+				}
+				const kind = moveKind(l.move);
+				if (
+					l.ball ||
+					l.arms ||
+					DOWN.has(l.move) ||
+					LINE_PLAY.has(l.move) ||
+					(kind !== "still" && kind !== "cycle")
+				) {
+					t1 = Math.min(t1, l.t0);
+				}
+			}
+			if (t1 - t0 >= TD_ARMS_LEAST) {
+				this.reaches.push({ m, move: "sigTD", t0, t1 });
+			}
+		}
 	}
 
 	// A score celebrated together, bowling: three of his teammates set up as
@@ -13116,6 +13165,15 @@ const stayDown = (m: Actor, until: number) => {
 	}
 };
 
+// A touchdown's arms up (see tdArms): the passer this often, any other man
+// of his away from the mob this often; from this long after the score
+// (and up to this much more), for this long (and up to this much more) -
+// for at least TD_ARMS_LEAST of it, or not at all.
+const TD_ARMS_QB = 0.8;
+const TD_ARMS = 0.3;
+const TD_ARMS_REACT = [250, 400] as const;
+const TD_ARMS_MS = [1300, 600] as const;
+const TD_ARMS_LEAST = 700;
 // After a score: the scorer's moment, then his teammates' around him -
 // at the most this many of them, from no further than this away.
 const MOB = 4;

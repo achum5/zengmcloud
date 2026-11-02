@@ -902,6 +902,21 @@ const FIELD_ANIMS = {
 			[1, SHOTGUN],
 		],
 	},
+	// The same with nobody picked out: a look the other way instead.
+	gunLook: {
+		kind: "act",
+		keys: [
+			[0, SHOTGUN],
+			[0.16, { ...SHOTGUN, twist: 26 }],
+			[0.34, { ...SHOTGUN, twist: 26 }],
+			[0.52, { ...SHOTGUN, twist: -22 }],
+			[0.68, { ...SHOTGUN, twist: -22 }],
+			[0.78, SHOTGUN],
+			[0.86, { ...SHOTGUN, ...CLAP }],
+			[0.93, SHOTGUN],
+			[1, SHOTGUN],
+		],
+	},
 	// The huddle broken: up off his knees and a clap, all of them at once.
 	huddleBreak: {
 		kind: "act",

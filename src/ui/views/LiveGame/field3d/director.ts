@@ -640,7 +640,9 @@ const HAND_ON_BALL_MS = 500;
 // The quarterback's read of the defense (see cadence): under center, down
 // under him this long before the snap, getting there over GET_UNDER_MS,
 // stood reading it for at least SURVEY_MIN first; in the gun, from this
-// long before it (at least GUN_CALL_MIN). Pointing out a man this often.
+// long before it (at least GUN_CALL_MIN). Pointing out a man this often -
+// or, where the game has ratings, from POINT_LOW to POINT_LOW + POINT_SPAN
+// by how well he reads it (Flair.vision).
 const UNDER_AT = 650;
 const GET_UNDER_MS = 320;
 const SURVEY_BACK = 1.6;
@@ -648,6 +650,8 @@ const SURVEY_MIN = 600;
 const GUN_CALL_MS = 1500;
 const GUN_CALL_MIN = 900;
 const POINT = 0.4;
+const POINT_LOW = 0.15;
+const POINT_SPAN = 0.6;
 // Pre-snap motion: on this share of pass plays, a man off the line (the
 // flanker, a slot) this far across (feet) at this pace - never in closer
 // to the ball than this, nor nearer a sideline. In man coverage, his man
@@ -2684,6 +2688,11 @@ class Director {
 			return;
 		}
 		const r = this.rng(i0, "cadence");
+		const vision = this.flair.get(qb.pid)?.vision;
+		const point =
+			vision === undefined
+				? POINT
+				: POINT_LOW + POINT_SPAN * ((vision + 1) / 2);
 		const at = set.to;
 		const still = (t: number, move: Move): Leg => ({
 			t0: t,
@@ -2727,7 +2736,7 @@ class Director {
 			qb.legs.pop();
 			qb.legs.push(
 				{
-					...act(set.t0, down, r() < POINT ? "qbPoint" : "qbSurvey"),
+					...act(set.t0, down, r() < point ? "qbPoint" : "qbSurvey"),
 					from: back,
 					to: back,
 				},
@@ -2741,7 +2750,11 @@ class Director {
 			}
 			set.t1 = from;
 			qb.legs.push(
-				act(from, snap - 40, "gunCall"),
+				act(
+					from,
+					snap - 40,
+					vision === undefined || r() < point ? "gunCall" : "gunLook",
+				),
 				still(snap - 40, "shotgun"),
 			);
 		}

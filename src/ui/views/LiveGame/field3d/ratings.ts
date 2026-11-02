@@ -108,13 +108,14 @@ const standOut = (
 	return out;
 };
 
-// Where the stars show it: a quarterback's arm (how hard he throws it), a
-// receiver's hands (up for it, or laid out for it), a back's strength (an
+// Where the stars show it: a quarterback's arm (how hard he throws it) and
+// his eye (how often he points a man out before the snap), a receiver's hands (up for it, or laid out for it), a back's strength (an
 // arm out into a man), a pass rusher's hands and a blocker's feet against
 // each other (see passRush), a defensive back's coverage (how tight he
 // sits on his man) - each against the others at his position.
 export type Flair = {
 	arm?: number;
+	vision?: number;
 	hands?: number;
 	power?: number;
 	rush?: number;
@@ -125,6 +126,7 @@ export const flairOf = (
 	players: { pid: number; pos: string; ratings?: FieldRatings }[],
 ): Map<number, Flair> => {
 	const arm = standOut(players, "thp");
+	const vision = standOut(players, "thv");
 	const hands = standOut(players, "hnd");
 	const power = standOut(players, "stre");
 	const rush = standOut(players, "prs");
@@ -134,6 +136,7 @@ export const flairOf = (
 	for (const p of players) {
 		const f: Flair = {
 			...(arm.has(p.pid) ? { arm: arm.get(p.pid) } : {}),
+			...(vision.has(p.pid) ? { vision: vision.get(p.pid) } : {}),
 			...(hands.has(p.pid) ? { hands: hands.get(p.pid) } : {}),
 			...(power.has(p.pid) ? { power: power.get(p.pid) } : {}),
 			...(rush.has(p.pid) ? { rush: rush.get(p.pid) } : {}),

@@ -186,6 +186,33 @@ describe("3D field ratings", () => {
 		assert.isBelow(pace(rated, 1), pace(plain, 1) * 0.99);
 	}, 80_000);
 
+	test("a quarterback who reads it well points a man out before the snap more often", () => {
+		const game = games[0]!;
+		const rated = staged(game, (p) =>
+			p.pos === "QB" ? { thv: p.team === 0 ? 95 : 45 } : {},
+		);
+		// Of each side's reads at the line, the share with a man pointed out.
+		const share = (side: 0 | 1) => {
+			let points = 0;
+			let looks = 0;
+			for (const play of rated.plays) {
+				if (play.offense !== side) {
+					continue;
+				}
+				for (const l of play.parts.find((p) => p.role === "QB")?.legs ?? []) {
+					if (l.move === "qbPoint" || l.move === "gunCall") {
+						points += 1;
+					} else if (l.move === "qbSurvey" || l.move === "gunLook") {
+						looks += 1;
+					}
+				}
+			}
+			assert.isAbove(points + looks, 20);
+			return points / (points + looks);
+		};
+		assert.isAbove(share(0), share(1) + 0.15);
+	}, 80_000);
+
 	test("a pass rusher who has the better of the man on him works him harder, and backs him up further - and a cover man who stands out sits tighter", () => {
 		const game = games[0]!;
 		const plain = staged(game);
