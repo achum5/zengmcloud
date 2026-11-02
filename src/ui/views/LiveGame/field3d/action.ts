@@ -3099,6 +3099,7 @@ const DOWN_RISING_TILL = 0.5;
 // if it is this much (feet) the clearer.)
 const DOWN_EVERY_MS = 50;
 const DOWN_STEP_MS = 100;
+const DOWN_SLIVER_MS = 40;
 const DOWN_JOIN_MS = 500;
 const DOWN_PACE_LEAST = 1.5;
 const DOWN_GAIN = 0.5;
@@ -4289,19 +4290,25 @@ class Action {
 				continue;
 			}
 			const { wa, wb, ui, a1, b1, uo, off } = best;
-			const at = [wa, wb, ta, tb];
+			// (Bent in steps: his legs there cut every DOWN_STEP_MS or so -
+			// not into slivers.)
+			m.split(wa);
+			m.split(wb);
 			for (const r of runs) {
 				for (
-					let t = Math.max(r.t0, wa);
+					let t = Math.max(r.t0, wa) + DOWN_STEP_MS;
 					t < Math.min(r.t1, wb);
 					t += DOWN_STEP_MS
 				) {
-					at.push(t);
+					const l = legAt(m, t);
+					if (
+						l.t1 - l.t0 > DOWN_STEP_MS * 1.5 &&
+						t - l.t0 >= DOWN_SLIVER_MS &&
+						l.t1 - t >= DOWN_SLIVER_MS
+					) {
+						m.split(t);
+					}
 				}
-			}
-			at.push(timeAt(a1), timeAt(b1));
-			for (const t of at) {
-				m.split(t);
 			}
 			const legs = m.legs.filter((l) => l.t0 >= wa && l.t1 <= wb);
 			const moved = legs.map((l) => {
