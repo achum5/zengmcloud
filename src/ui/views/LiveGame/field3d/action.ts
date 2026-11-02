@@ -2881,6 +2881,16 @@ const STEP_UP_FT = 2.5;
 const STEP_UP_MS = 420;
 const PUMP = 0.12;
 const PUMP_MS = 520;
+// And with long enough still before he goes to the man it goes to: up to
+// SCAN_MOST reads first, each this long (and up to this much more), at a
+// man at least SCAN_APART (radians) off him and off the last, no more than
+// SCAN_WIDE off straight downfield - with SCAN_LAST_MS left on him at
+// least.
+const SCAN_MOST = 2;
+const SCAN_MS = [450, 250] as const;
+const SCAN_APART = 0.4;
+const SCAN_WIDE = 1.6;
+const SCAN_LAST_MS = 650;
 // The rush: working a blocker's shoulder, a step over (feet) this often
 // (ms) - eased over and back, a step this long (ms) at a time, not swung
 // like a pendulum; off the edge, on a tackle's outside shoulder (feet out,
@@ -5489,11 +5499,11 @@ class Action {
 		} else if (first === intI && thrown && target && catchPt) {
 			this.intercepted(intI, qb, target, catchPt, catchAt, coverage);
 		} else if (sacked) {
-			this.sacked(sackI, qb, outT, sackD, sacker);
+			this.sacked(sackI, qb, outT, sackD, sacker, runners);
 		} else if (scrambled) {
-			this.scramble(scrI, qb, outT);
+			this.scramble(scrI, qb, outT, runners);
 		} else if (stripped) {
-			this.strip(fumI, qb, outT);
+			this.strip(fumI, qb, outT, runners);
 		} else {
 			this.whistle = Math.max(ready + 1500, qb.t);
 		}
@@ -5529,7 +5539,11 @@ class Action {
 					(y) => Math.abs(Math.atan2(Math.sin(y - to), Math.cos(y - to))) > 0.5,
 				);
 			const other = others[Math.floor(r() * others.length)];
-			qb.hold(qb.t + spare * (0.35 + r() * 0.2), "pocket", other ?? this.ahead);
+			qb.hold(
+				qb.t + spare * (0.35 + r() * 0.2),
+				"pocket",
+				other === undefined ? this.ahead : other + SET_OPEN,
+			);
 		}
 		if (windAt - qb.t > STEP_UP_MS + 250 && r() < STEP_UP) {
 			const t0 = qb.t;
@@ -5543,8 +5557,51 @@ class Action {
 			qb.arms("qbSet", t0, qb.t);
 		}
 		if (windAt - qb.t > PUMP_MS + 400 && r() < PUMP) {
-			qb.hold(windAt - PUMP_MS - 250 - r() * 150, "pocket", to);
+			const at = windAt - PUMP_MS - 250 - r() * 150;
+			this.scan(qb, target, to, at, runners);
+			qb.hold(at, "pocket", to);
 			qb.act("pump", qb.t + PUMP_MS, to);
+		} else {
+			this.scan(qb, target, to + SET_OPEN, windAt, runners);
+		}
+	}
+
+	// Long in the pocket yet before he goes to him (at `until`): his eyes
+	// through a read or two first - another man out on his route, downfield
+	// of him, a moment each, side on to him as he will be to the man it goes
+	// to - and round to the way he faces for that (`end`) with time to see
+	// him. (No r() draws.)
+	scan(
+		qb: Actor,
+		target: Actor | undefined,
+		end: number,
+		until: number,
+		runners: Actor[],
+	) {
+		const snap = this.input.snap;
+		const off = (a: number, b: number) =>
+			Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
+		for (let k = 0; k < SCAN_MOST; k++) {
+			const hold = SCAN_MS[0] + countOf(qb, snap, 16 + k) * SCAN_MS[1];
+			if (until - qb.t < hold + SCAN_LAST_MS) {
+				return;
+			}
+			const at = qb.t + hold / 2;
+			const was = qb.last.yaw ?? end;
+			const ways = runners
+				.filter((m) => m !== target)
+				.map((m) => this.toward(qb.at, m.posAt(at)))
+				.filter(
+					(y) =>
+						off(y + SET_OPEN, end) > SCAN_APART &&
+						off(y + SET_OPEN, was) > SCAN_APART &&
+						off(y, this.ahead) < SCAN_WIDE,
+				);
+			if (ways.length === 0) {
+				return;
+			}
+			const y = ways[Math.floor(countOf(qb, snap, 18 + k) * ways.length)]!;
+			qb.hold(qb.t + hold, "pocket", y + SET_OPEN);
 		}
 	}
 
@@ -8117,6 +8174,7 @@ class Action {
 		t: number,
 		sackD: number,
 		sacker: Actor | undefined,
+		runners: Actor[] = [],
 	) {
 		const r = this.r;
 		const at = this.w({
@@ -8128,6 +8186,7 @@ class Action {
 			),
 		});
 		// Feeling it, he tries to get away from it.
+		this.scan(qb, undefined, this.ahead, t - 800, runners);
 		qb.hold(t - 800, "pocket", this.ahead);
 		qb.go(at, t);
 		this.endCarry(
@@ -8140,10 +8199,11 @@ class Action {
 		);
 	}
 
-	scramble(i: number, qb: Actor, go: number) {
+	scramble(i: number, qb: Actor, go: number, runners: Actor[] = []) {
 		const r = this.r;
 		const e = this.ev(i);
 		const yds = typeof e.yds === "number" ? e.yds : 0;
+		this.scan(qb, undefined, this.ahead, go, runners);
 		qb.hold(go, "pocket", this.ahead);
 		const ta = this.tacklerA(qb, go);
 		const side =
@@ -8166,7 +8226,7 @@ class Action {
 
 	// Stripped in the pocket: the ball out of his hands as he is hit, where
 	// the sim says, and loose behind the line.
-	strip(i: number, qb: Actor, t: number) {
+	strip(i: number, qb: Actor, t: number, runners: Actor[] = []) {
 		const r = this.r;
 		const recI = this.find("fumbleRecovery", i);
 		const before = recI >= 0 ? this.ev(recI).ydsBefore : undefined;
@@ -8183,7 +8243,9 @@ class Action {
 				: qb.at;
 		const forcer = this.man(this.statPids("defFmbFrc")[0]);
 		const step = (dist(qb.at, at) / (qb.top * 0.6)) * 1000;
-		qb.hold(Math.max(qb.t, t - Math.max(800, step)), "pocket", this.ahead);
+		const hold = Math.max(qb.t, t - Math.max(800, step));
+		this.scan(qb, undefined, this.ahead, hold, runners);
+		qb.hold(hold, "pocket", this.ahead);
 		qb.go(at, t);
 		const down = this.downBy(qb, at, t, this.d, forcer ? [forcer] : undefined);
 		this.at.set(i, down.t);
