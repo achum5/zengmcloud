@@ -146,6 +146,18 @@ import {
 	type Finish,
 } from "../../../util/liveGameWording.basketball.ts";
 
+// How far a point is from the segment a-b (feet).
+const toSegment = (p: Pt, a: Pt, b: Pt): number => {
+	const dx = b.x - a.x;
+	const dy = b.y - a.y;
+	const L2 = dx * dx + dy * dy;
+	const k =
+		L2 > 0
+			? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / L2))
+			: 0;
+	return Math.hypot(p.x - (a.x + dx * k), p.y - (a.y + dy * k));
+};
+
 // THE DIRECTOR.
 //
 // The sim says WHAT happened - who shot, from which zone, who rebounded - and
@@ -2294,6 +2306,10 @@ class Director {
 	private readonly marking = new Map<Move, number>();
 	// Each back-down in the post, whose it is, and the man he backs down -
 	// as the plan had it (see onHisBack).
+	// Runs that go round somebody on purpose - out wide of a man before
+	// coming in to where he is going - which following his man must not cut
+	// the corner of (see mark's straighten).
+	private readonly detours = new Set<Move>();
 	// The sets in which the man with it has sent somebody to his spot (see
 	// direct): once a set is enough.
 	private readonly directed = new WeakSet<Running>();
@@ -3634,7 +3650,15 @@ class Director {
 	// of him - round his side if he comes from behind him - leans in, takes
 	// both his hands, and pulls him up. Returns when the pull begins (as
 	// long as HELP_UP_MS), or nothing, if nobody comes.
-	private helpUp(down: number, F: Pt, A: Pt, hit: number): number | undefined {
+	private helpUp(
+		down: number,
+		F: Pt,
+		A: Pt,
+		hit: number,
+		// Where the man who ran into him is backing off to, if anybody: the
+		// teammate comes round the other side from him, not into him.
+		clear?: Pt,
+	): number | undefined {
 		const p = this.helperOf(down, F);
 		if (p === undefined) {
 			return undefined;
@@ -3642,7 +3666,14 @@ class Director {
 		const u = unitVec(F, A);
 		const side = { x: -u.y, y: u.x };
 		const P = this.posOf(p);
-		const s = (P.x - F.x) * side.x + (P.y - F.y) * side.y >= 0 ? 1 : -1;
+		const s =
+			clear !== undefined
+				? (clear.x - F.x) * side.x + (clear.y - F.y) * side.y >= 0
+					? -1
+					: 1
+				: (P.x - F.x) * side.x + (P.y - F.y) * side.y >= 0
+					? 1
+					: -1;
 		const spot = clampPt({
 			x: F.x + u.x * HELP_UP_FRONT,
 			y: F.y + u.y * HELP_UP_FRONT,
@@ -3670,21 +3701,24 @@ class Director {
 		if (from + need > hit + HELP_UP_BY) {
 			return undefined;
 		}
-		const there = round
-			? this.goBy(
-					p,
-					spot,
-					this.goBy(
-						p,
-						round,
-						from,
-						from + (need * dist(P, round)) / way,
-						"run",
-					),
-					from + need + 120,
-					"run",
-				)
-			: this.goBy(p, spot, from, from + need + 120, "run");
+		let there: number;
+		if (round) {
+			const by = this.goBy(
+				p,
+				round,
+				from,
+				from + (need * dist(P, round)) / way,
+				"run",
+			);
+			// (Round him on purpose: not a corner to cut - see mark.)
+			const leg = this.track(p)?.moves.at(-1);
+			if (leg) {
+				this.detours.add(leg);
+			}
+			there = this.goBy(p, spot, by, from + need + 120, "run");
+		} else {
+			there = this.goBy(p, spot, from, from + need + 120, "run");
+		}
 		// (Turned to him before he reaches for his hands: as long again as
 		// he has to turn round from the way he came.)
 		const came = unitVec(round ?? P, spot);
@@ -17841,23 +17875,31 @@ class Director {
 			const away = unitVec(C, E);
 			const mate = this.helperOf(helper, C);
 			const across = { x: -away.y, y: away.x };
-			const off =
-				mate === undefined
-					? 0
-					: (this.posOf(mate).x - C.x) * across.x +
-								(this.posOf(mate).y - C.y) * across.y >=
-						  0
-						? -CHARGE_ASIDE
-						: CHARGE_ASIDE;
-			const V = clampPt({
-				x: E.x + away.x * CHARGE_BACK + across.x * off,
-				y: E.y + away.y * CHARGE_BACK + across.y * off,
-			});
+			const backTo = (off: number) =>
+				clampPt({
+					x: E.x + away.x * CHARGE_BACK + across.x * off,
+					y: E.y + away.y * CHARGE_BACK + across.y * off,
+				});
+			// (Whichever side keeps him furthest off the teammate's way in to
+			// the man's feet - from where he is to where he takes his hands -
+			// not across it as he comes.)
+			let V = backTo(0);
+			if (mate !== undefined) {
+				const M = this.posOf(mate);
+				const ua = unitVec(C, A);
+				const feet = clampPt({
+					x: C.x + ua.x * HELP_UP_FRONT,
+					y: C.y + ua.y * HELP_UP_FRONT,
+				});
+				const a = backTo(-CHARGE_ASIDE);
+				const b = backTo(CHARGE_ASIDE);
+				V = toSegment(a, M, feet) >= toSegment(b, M, feet) ? a : b;
+			}
 			const backed = this.go(victim, V, hit + 250, 4.5, "back", dir);
 			// Down on the floor with it - sat there till a teammate gets to
 			// him, and pulled up by the hands (see helpUp); or, nobody coming,
 			// up on his own.
-			const pull = this.helpUp(helper, C, A, hit);
+			const pull = this.helpUp(helper, C, A, hit, V);
 			let up: number;
 			if (pull === undefined) {
 				up = hit + CHARGE_DOWN_MS;
@@ -21026,6 +21068,7 @@ class Director {
 			const straighten = (m: Move, next: Move | undefined) => {
 				if (
 					!next ||
+					this.detours.has(m) ||
 					this.marking.has(next) ||
 					Math.abs(next.t0 - m.t1) > 1 ||
 					dist(next.from, m.to) > 0.05
@@ -22017,7 +22060,7 @@ class Director {
 					if (
 						w.down &&
 						dist(m.from, w.at) < BODY &&
-						(m.from.x - w.at.x) * dx + (m.from.y - w.at.y) * dy > 0
+						toSegment(w.at, m.from, m.to) >= dist(m.from, w.at) - 0.05
 					) {
 						continue;
 					}
