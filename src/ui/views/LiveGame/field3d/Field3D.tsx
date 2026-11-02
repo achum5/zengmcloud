@@ -820,6 +820,19 @@ const Field3D = ({
 		[kits, arts],
 	);
 
+	// (Each man's look kept from one time to the next unless what makes it
+	// has changed, as in Court3D: his pictures are kept by his look - and
+	// sent to the sculpting workers by it - so a new one for everybody each
+	// time somebody's face came in had every man made again, a hundred times
+	// over at the start of a game. The officials, the coaches and the rest
+	// kept the same way, all together.)
+	const kept = useRef(
+		new Map<number, { made: unknown[]; look: FieldLook; body: Body }>(),
+	);
+	const keptRest = useRef<{
+		made: unknown[];
+		looks: [number, FieldLook, Body][];
+	}>(undefined);
 	const appearance = useMemo(() => {
 		const looks = new Map<number, FieldLook>();
 		const bodies = new Map<number, Body>();
@@ -827,8 +840,19 @@ const Field3D = ({
 			const f = faces.current.get(p.pid) ?? undefined;
 			const kit = dressed[p.team]!;
 			const art = arts[p.team];
+			const logo =
+				[away, home][p.team]?.helmet?.logo !== false
+					? logos[p.team]
+					: undefined;
+			const made = [f, kit, art, logo, p.pos, p.jerseyNumber, p.name];
+			const was = kept.current.get(p.pid);
+			if (was && was.made.every((x, i) => x === made[i])) {
+				looks.set(p.pid, was.look);
+				bodies.set(p.pid, was.body);
+				continue;
+			}
 			const head = headColors(f?.face);
-			looks.set(p.pid, {
+			const look: FieldLook = {
 				kit,
 				gear: fieldGearFor(p.pid, p.pos, kit),
 				skin: head.skin,
@@ -836,13 +860,32 @@ const Field3D = ({
 				...(f?.face ? { head: bareHead(f.face, head) } : {}),
 				jerseyNumber: f?.jerseyNumber ?? p.jerseyNumber ?? "",
 				lastName: lastNameOf(p.name),
-				...(logos[p.team] && [away, home][p.team]?.helmet?.logo !== false
-					? { logo: logos[p.team] }
-					: {}),
+				...(logo ? { logo } : {}),
 				...(art ? { kitArt: art } : {}),
-			});
-			bodies.set(p.pid, drawnFootballBody(f?.hgt, f?.weight));
+			};
+			const body = drawnFootballBody(f?.hgt, f?.weight);
+			looks.set(p.pid, look);
+			bodies.set(p.pid, body);
+			kept.current.set(p.pid, { made, look, body });
 		}
+		const madeRest = [
+			gid,
+			kits,
+			home?.name,
+			home?.region,
+			home?.abbrev,
+			home?.tid,
+			String(home?.colors),
+		];
+		const rest = keptRest.current;
+		if (rest && rest.made.every((x, i) => x === madeRest[i])) {
+			for (const [id, look, body] of rest.looks) {
+				looks.set(id, look);
+				bodies.set(id, body);
+			}
+			return { looks, bodies };
+		}
+		const firstOfRest = looks.size;
 		for (const o of crewFor(gid ?? 0)) {
 			looks.set(o.id, officialLook(o.o === "R", o.number, `${gid}|${o.o}`));
 			bodies.set(o.id, drawnOfficialBody(o.hgt, o.weight));
@@ -902,6 +945,12 @@ const Field3D = ({
 			),
 		);
 		bodies.set(MASCOT_ID, drawnBody(mascotBody()));
+		keptRest.current = {
+			made: madeRest,
+			looks: [...looks]
+				.slice(firstOfRest)
+				.map(([id, look]) => [id, look, bodies.get(id)!]),
+		};
 		return { looks, bodies };
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [roster, kits, dressed, arts, logos, facesVersion]);
