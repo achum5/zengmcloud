@@ -439,7 +439,10 @@ describe("playoff games price off the playoff model", () => {
 			const ovrs = await teamOvrsForMatchup(true);
 			const synergyOf = async (tid: number) =>
 				pregameLineupSynergyFromPlayers(
-					await idb.cache.players.indexGetAll("playersByTid", tid),
+					await rosterAtTipoff(
+						tid,
+						await idb.cache.players.indexGetAll("playersByTid", tid),
+					),
 					{
 						numDaysInFuture: 0,
 						playThroughInjuries: [0, 0],

@@ -1,4 +1,5 @@
 import { PHASE } from "../../../common/constants.ts";
+import type { Player } from "../../../common/types.ts";
 import { idb } from "../../db/index.ts";
 import { g, local } from "../../util/index.ts";
 import { player } from "../index.ts";
@@ -16,9 +17,7 @@ import { getRosterOrderByPid } from "./rosterAutoSort.basketball.ts";
 // sort, same values, same five.
 //
 // Basketball only: it is the only sport whose spread reads a lineup.
-export const rosterAtTipoff = async <
-	T extends { pid: number; rosterOrder: number },
->(
+export const rosterAtTipoff = async <T extends Player>(
 	tid: number,
 	players: T[],
 ): Promise<T[]> => {
