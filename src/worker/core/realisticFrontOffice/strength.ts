@@ -296,6 +296,8 @@ const REPLACEMENT_RATINGS: ValueRatings = {
 export type StrengthPlayer = PlayerLine & {
 	// What the sim's substitutions rank him by.
 	valueNoPot: number;
+	// His age that season, where it is known (for injuries by age).
+	age?: number;
 };
 
 let replacement: StrengthPlayer | undefined;
@@ -644,7 +646,7 @@ const sortedSynergyInput: (SynergyInput | undefined)[] = [];
 const layOut = (
 	sorted: readonly (StrengthPlayer & { availability: number })[],
 	enumerated: readonly StrengthPlayer[],
-	factor: number | readonly number[],
+	factor: AvailabilityFactor,
 ) => {
 	const n = sorted.length;
 	if (n > capacity) {
@@ -659,7 +661,8 @@ const layOut = (
 	}
 	for (let i = 0; i < n; i++) {
 		const p = sorted[i]!;
-		sortedAvailability[i] = Math.min(1, p.availability) * factorAt(factor, i);
+		sortedAvailability[i] =
+			Math.min(1, p.availability) * factorAt(factor, i, p);
 		sortedRoleFree[i] = p.roleFree;
 		sortedOffense[i] = p.offense;
 		sortedUsage[i] = p.usage;
@@ -880,23 +883,32 @@ const inPeckingOrder = (
 const ENUMERATED = 2;
 
 // A chance of being there scaled by `factor` at this place in the pecking
-// order: one for everyone, or one a place (past the last, none).
-const factorAt = (factor: number | readonly number[], i: number) =>
-	typeof factor === "number" ? factor : (factor[i] ?? 1);
+// order: one for everyone, one a place (past the last, none), or one by the
+// player.
+export type AvailabilityFactor =
+	| number
+	| readonly number[]
+	| ((p: StrengthPlayer) => number);
+const factorAt = (factor: AvailabilityFactor, i: number, p: StrengthPlayer) =>
+	typeof factor === "number"
+		? factor
+		: typeof factor === "function"
+			? factor(p)
+			: (factor[i] ?? 1);
 
 // `factor` scales everyone's chance of being there - or each place's, by
 // where he stands in the pecking order: a share of games lost to injuries
 // yet to come (outlookSettings.injuryRisk).
 export const expectedRosterPoints = (
 	players: readonly (StrengthPlayer & { availability: number })[],
-	factor: number | readonly number[] = 1,
+	factor: AvailabilityFactor = 1,
 ) => {
 	const sorted = inPeckingOrder(players);
 	const n = sorted.length;
 	const uncertain: (StrengthPlayer & { availability: number })[] = [];
 	for (let i = 0; i < n; i++) {
 		const p = sorted[i]!;
-		if (Math.min(1, p.availability) * factorAt(factor, i) < 1) {
+		if (Math.min(1, p.availability) * factorAt(factor, i, p) < 1) {
 			uncertain.push(p);
 			if (uncertain.length === ENUMERATED) {
 				break;
@@ -933,7 +945,7 @@ export const expectedRosterPoints = (
 		if (i >= 0) {
 			which.push(i);
 			odds.push(
-				Math.min(1, p.availability) * factorAt(factor, sorted.indexOf(p)),
+				Math.min(1, p.availability) * factorAt(factor, sorted.indexOf(p), p),
 			);
 		}
 	}

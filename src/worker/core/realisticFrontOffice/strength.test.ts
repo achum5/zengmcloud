@@ -316,3 +316,20 @@ test("injuries by minutes cost a star with little behind him more than the same 
 		full - expectedRosterPoints(lines(starred), 0.92),
 	);
 });
+
+test("by age, injuries yet to come cost an old roster more than a young one as good", () => {
+	const lines = (players: StrengthPlayer[], age: number) =>
+		players.map((p) => ({ ...p, availability: 1, age }));
+	const byAge = (p: StrengthPlayer) => 1 - 0.08 * 1.038 ** ((p.age ?? 26) - 26);
+	const loss = (age: number) =>
+		expectedRosterPoints(lines(roster, age)) -
+		expectedRosterPoints(lines(roster, age), byAge);
+	assert.isAbove(loss(32), loss(26));
+	assert.isAbove(loss(26), loss(21));
+	// At 26, the same as everyone 8%.
+	assert.closeTo(
+		expectedRosterPoints(lines(roster, 26), byAge),
+		expectedRosterPoints(lines(roster, 26), 0.92),
+		1e-9,
+	);
+});

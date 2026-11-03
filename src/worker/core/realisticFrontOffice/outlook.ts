@@ -335,6 +335,7 @@ const computeSeasonLine = (
 			...playerLine(r as unknown as ValueRatings, r.pos),
 			valueNoPot: p.valueNoPot,
 			availability,
+			age: season - p.born.year,
 		};
 	}
 	const projection = projectPlayer(p, season);
@@ -353,7 +354,12 @@ const computeSeasonLine = (
 	if (p.contract.exp < season + index) {
 		availability *= retention;
 	}
-	return lineFromProjection(projection, index, availability);
+	const line = lineFromProjection(projection, index, availability);
+	line.age = age + index;
+	for (const half of line.halves ?? []) {
+		half.age = age + index;
+	}
+	return line;
 };
 
 // A projected player's line `index` seasons on, here this share of it.
@@ -434,18 +440,30 @@ const UPSIDE_SPLIT = 4;
 // Whether a roster's points count injuries yet to come: by the team's own
 // setting when it prices its moves, by the league's (injuryView) where teams
 // are set against each other - where they finish, the league's average.
-type InjuryMode = "off" | "flat" | "minutes";
+type InjuryMode = "off" | "flat" | "minutes" | "age";
 const injuryModeOf = (settings: {
 	injuryRisk: boolean;
 	injuryByMinutes: boolean;
+	injuryByAge: boolean;
 }): InjuryMode =>
-	!settings.injuryRisk ? "off" : settings.injuryByMinutes ? "minutes" : "flat";
+	!settings.injuryRisk
+		? "off"
+		: settings.injuryByMinutes
+			? "minutes"
+			: settings.injuryByAge
+				? "age"
+				: "flat";
 const leagueInjuryMode = () => injuryModeOf(outlookSettings);
 const teamInjuryMode = (tid: number) =>
 	injuryModeOf({
 		injuryRisk: outlookSettingFor(tid, "injuryRisk"),
 		injuryByMinutes: outlookSettingFor(tid, "injuryByMinutes"),
+		injuryByAge: outlookSettingFor(tid, "injuryByAge"),
 	});
+// Each player there for INJURY_SHARE fewer of his games at 26, more for
+// every year older and fewer for every year younger (injuryByAge).
+const byAge = (p: StrengthPlayer) =>
+	1 - INJURY_SHARE * INJURY_AGE_RATE ** ((p.age ?? 26) - 26);
 // Each place in the pecking order there for its share of games fewer, by its
 // minutes (injuryByMinutes).
 let byMinutes: number[] | undefined;
@@ -458,7 +476,9 @@ const injuryFactor = (tid: number) => {
 		? 1
 		: mode === "flat"
 			? 1 - INJURY_SHARE
-			: minutesFactors();
+			: mode === "age"
+				? byAge
+				: minutesFactors();
 };
 const withInjuryView = <T>(view: InjuryMode, work: () => T) => {
 	const was = injuryView;
@@ -680,6 +700,13 @@ export const outlookSettings = {
 	// each way round over 5 seasons, 3 titles to 7, 60 playoff rounds to 90,
 	// and the read of a team missed by more (2.09 points a game to 1.98).
 	injuryByMinutes: false,
+	// Injuries by age: the game's injury rate rises 3% a year past 26, and
+	// players on a team all season, at 24 minutes a game or more, missed 7.3%
+	// of its games at 23 or younger, 8.7% at 24-27, 9.8% at 28-31 and 11.2%
+	// at 32 or older - INJURY_AGE_RATE a year. Read with flat injuries, a
+	// roster whose top eight were a year older came in 0.19 ± 0.06 points a
+	// game worse than read (579 team-seasons). Off while it is measured.
+	injuryByAge: false,
 };
 
 // Measured in arena leagues: players on a team all season missed 6.5% of its
@@ -688,6 +715,7 @@ export const INJURY_SHARE = 0.08;
 // The same by the share of the game a player is on the floor: 9.5% at 30-36
 // minutes a game is 0.14 of 0.69 of the game.
 export const INJURY_PER_MINUTES = 0.14;
+export const INJURY_AGE_RATE = 1.038;
 
 // For the arena's version-against-version leagues: settings for some teams'
 // own rosters, over outlookSettings - the ones a team's pricing alone reads.
@@ -712,6 +740,7 @@ export const teamOutlookSettings = new Map<
 			| "measuredDeadline"
 			| "injuryRisk"
 			| "injuryByMinutes"
+			| "injuryByAge"
 		>
 	>
 >();
@@ -732,7 +761,8 @@ const outlookSettingFor = <
 		| "colaPath"
 		| "measuredDeadline"
 		| "injuryRisk"
-		| "injuryByMinutes",
+		| "injuryByMinutes"
+		| "injuryByAge",
 >(
 	tid: number,
 	key: K,
