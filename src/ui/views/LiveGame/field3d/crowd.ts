@@ -1,6 +1,6 @@
 import type { FieldTimeline, Play } from "./director.ts";
 import { playAt } from "./evaluate.ts";
-import type { Side } from "./geometry.ts";
+import { MID_X, type Dir, type Side } from "./geometry.ts";
 import type { BoardScreen, Shout } from "./stadium.ts";
 
 // THE CROWD ON ITS FEET: up for a big play of the home team's (and for the
@@ -94,6 +94,29 @@ type Stand = { up: number; wave: boolean };
 export type Crowd = Stand & {
 	full: number;
 	ends?: [Stand | undefined, Stand | undefined];
+	// The wave, where it is along the field and the way it goes (see
+	// rollingAt).
+	rolling?: { x: number; dir: Dir };
+};
+
+// THE WAVE, over a quarter break (see director.ts): from the look round the
+// stadium on, a band of the crowd across the field up out of their seats,
+// arms high, rolling along the lower bowl at this pace (feet a second) -
+// this far short of the middle of it as the picture comes to it.
+const WAVE_FPS = 55;
+const WAVE_FROM = 120;
+export const rollingAt = (
+	play: Play | undefined,
+	t: number,
+): { x: number; dir: Dir } | undefined => {
+	const w = play?.wave;
+	if (!play || !w || t < w.t || t > play.t1) {
+		return undefined;
+	}
+	return {
+		x: MID_X + w.dir * ((WAVE_FPS * (t - w.t)) / 1000 - WAVE_FROM),
+		dir: w.dir,
+	};
 };
 
 // At the final whistle (the 3D court's final horn: see court3d/scene.ts
@@ -260,6 +283,7 @@ export const crowdAt = (
 	const loud = play ? loudAt(play, t, neutral) : 0;
 	const hush = c && c.side === 0 && c.big && !neutral ? 1 - c.level : 1;
 	const ends = play && !neutral ? postsAt(play, t, now) : undefined;
+	const rolling = rollingAt(play, t);
 	return {
 		up: Math.max(
 			roar,
@@ -269,6 +293,7 @@ export const crowdAt = (
 		wave: roar > 0.3 ? fast : tense >= 1 && slow,
 		full,
 		...(ends ? { ends } : {}),
+		...(rolling ? { rolling } : {}),
 	};
 };
 

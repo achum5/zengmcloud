@@ -214,6 +214,37 @@ test("the look round the stadium between quarters", () => {
 	}
 });
 
+// Over a quarter break, now and then - not at the half - the crowd across
+// the field does the wave: going as the picture cuts to the stadium, rolling
+// one way along the stands, steadily, past the middle of them before the
+// picture cuts away.
+test("the wave over a quarter break", () => {
+	let waves = 0;
+	for (const tl of tls) {
+		for (const p of tl.plays) {
+			const w = p.wave;
+			if (!w) {
+				continue;
+			}
+			waves += 1;
+			assert.strictEqual(w.t, p.between, `${p.i}`);
+			assert.notStrictEqual(p.quarter, 2, `${p.i}`);
+			assert.isUndefined(crowdAt(tl, w.t - 1, 0).rolling, `${p.i}`);
+			const first = crowdAt(tl, w.t, 0).rolling!;
+			const last = crowdAt(tl, p.t1 - 1, 0).rolling!;
+			assert.strictEqual(first.dir, w.dir);
+			assert.isBelow((first.x - MID_X) * w.dir, -50, `${p.i}`);
+			assert.isAbove((last.x - MID_X) * w.dir, 50, `${p.i}`);
+			for (let t = w.t; t + 500 < p.t1; t += 500) {
+				const a = crowdAt(tl, t, 0).rolling!;
+				const b = crowdAt(tl, t + 500, 0).rolling!;
+				assert.closeTo((b.x - a.x) * w.dir, 27.5, 0.01, `${p.i}`);
+			}
+		}
+	}
+	assert.isAbove(waves, 0);
+});
+
 // The boards: DEFENSE, blinking, while the visitors have the ball from
 // scrimmage; a shout for the home side's big play; the team's name once the
 // game is over.

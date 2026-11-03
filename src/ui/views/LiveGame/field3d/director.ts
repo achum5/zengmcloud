@@ -295,6 +295,10 @@ export type Play = {
 	// Between quarters, and at the half: when the picture cuts to the whole
 	// stadium (see aim.ts).
 	between?: number;
+	// And over a quarter break, now and then, the crowd across the field
+	// doing the wave: going from then on, the way it goes (see crowd.ts
+	// rollingAt).
+	wave?: { t: number; dir: Dir };
 	postgame?: {
 		from: number;
 		shake: number;
@@ -489,6 +493,8 @@ const CALL_AFTER = 1100;
 const BETWEEN_AFTER = 1500;
 const HALF_BETWEEN_AFTER = 3400;
 const BETWEEN_MS = 4200;
+// (The crowd doing the wave over it - not at the half - this often.)
+const WAVE_SHARE = 0.6;
 // A field goal shown again (see replays.ts) if it ties the game, or puts
 // them ahead, in the last this many minutes of it.
 const LATE_KICK = 5;
@@ -2396,6 +2402,11 @@ class Director {
 			// (And from it to the next play.)
 			this.cuts.push(between, t1);
 		}
+		const waves = this.rng(i0, "wave");
+		const wave =
+			between !== undefined && !half && waves() < WAVE_SHARE
+				? { t: between, dir: (waves() < 0.5 ? 1 : -1) as Dir }
+				: undefined;
 		// Each line of the play ends where its own action does; the last one,
 		// with the play.
 		const last = this.beats.at(-1);
@@ -2851,6 +2862,7 @@ class Director {
 			...(callIn ? { callIn } : {}),
 			...(coachReact ? { coachReact } : {}),
 			...(between !== undefined ? { between } : {}),
+			...(wave ? { wave } : {}),
 			...(acted?.party && acted.until
 				? { party: { ...acted.party, until: acted.until } }
 				: {}),

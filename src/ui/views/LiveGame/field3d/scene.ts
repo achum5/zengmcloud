@@ -257,6 +257,55 @@ const softenBehind = (ctx: CanvasRenderingContext2D, px: number) => {
 	ctx.restore();
 };
 
+// The wave (see crowd.ts rollingAt): the crowd on its feet over a band of
+// the lower bowl - all of them across the middle of it, some up already
+// ahead of it, some sitting back down behind - each stretch of it (feet
+// ahead of its middle the way it goes, and how many up) the picture of
+// them up, arms going, laid over the seats, clipped to that stretch.
+const WAVE_BANDS: [number, number, number][] = [
+	[14, 24, 0.45],
+	[-8, 14, 1],
+	[-20, -8, 0.55],
+	[-32, -20, 0.25],
+];
+const drawWave = (
+	ctx: CanvasRenderingContext2D,
+	cam: Camera,
+	roll: { x: number; dir: 1 | -1 },
+	up: HTMLCanvasElement,
+	fill: number,
+) => {
+	const o = LOWER.origin;
+	const down = LOWER.alongY;
+	const at = (x: number, v: number) => ({
+		x,
+		y: o.y + down.y * v,
+		z: o.z + down.z * v,
+	});
+	for (const [a, b, share] of WAVE_BANDS) {
+		const xa = roll.x + roll.dir * a;
+		const xb = roll.x + roll.dir * b;
+		const corners = [at(xa, 0), at(xb, 0), at(xb, LOWER.h), at(xa, LOWER.h)];
+		if (corners.some((c) => depthOf(cam, c) <= 1)) {
+			continue;
+		}
+		const pts = corners.map((c) => project(cam, c));
+		ctx.save();
+		ctx.beginPath();
+		pts.forEach((p, k) => {
+			if (k === 0) {
+				ctx.moveTo(p.x, p.y);
+			} else {
+				ctx.lineTo(p.x, p.y);
+			}
+		});
+		ctx.closePath();
+		ctx.clip();
+		drawTexturedPlane(ctx, cam, LOWER, up, 24, 6, share * fill);
+		ctx.restore();
+	}
+};
+
 export const drawFieldFrame = (f: FieldFrame) => {
 	const { ctx, cam, paint } = f;
 	const st = paint.stadium;
@@ -292,6 +341,9 @@ export const drawFieldFrame = (f: FieldFrame) => {
 		];
 	};
 	drawTexturedLayers(ctx, cam, LOWER, stands(st.lowerSparse, st.lower), 24, 6);
+	if (crowd.rolling) {
+		drawWave(ctx, cam, crowd.rolling, st.lower[2], fill);
+	}
 	// Behind each end zone: the board high over the stands, the stands, the
 	// wall.
 	for (const side of [0, 1] as const) {
