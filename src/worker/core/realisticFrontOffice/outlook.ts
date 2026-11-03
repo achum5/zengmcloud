@@ -673,7 +673,9 @@ export const outlookSettings = {
 	// Injuries by minutes: each place in the pecking order there for a share
 	// of games fewer as it plays (INJURY_PER_MINUTES of its share of the
 	// game) - a starter about 10%, the end of the bench almost none - not
-	// everyone 8%. Off while it is measured.
+	// everyone 8%. Measured and left off: half the teams each way, a league
+	// each way round over 5 seasons, 3 titles to 7, 60 playoff rounds to 90,
+	// and the read of a team missed by more (2.09 points a game to 1.98).
 	injuryByMinutes: false,
 };
 

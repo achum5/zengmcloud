@@ -197,6 +197,10 @@ with "the Pistons", not with a named person.
   (10 to 10), 153 playoff rounds to 147, 12 seasons under 20 wins to 22,
   and 4 to 6 points more of their games won in the third and fourth
   seasons. No slower.
+  Weighting it by minutes instead (a starter about 10%, the end of the
+  bench almost none) did worse: 3 titles to 7 and 60 playoff rounds to 90
+  in a league each way round, and a looser read (2.09 points a game to
+  1.98). Left off.
 - **Retirement by the game's own rule.** Nobody on a roster retires before
   34; after that, the older and the less valuable, the likelier (a starter
   at 35 almost never, the end of the bench often).
