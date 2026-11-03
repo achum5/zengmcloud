@@ -2562,6 +2562,9 @@ const JOG_LEAST_FPS = 7.5;
 // on a pile round a loose ball.)
 const PULL_FPS = 12;
 const PILE_RUN_FPS = 12;
+// (The guard at the hole this long before the man with the ball - well
+// ahead of him, for him to come off his hip, not up his back.)
+const PULL_AHEAD_MS = 450;
 // (Within a few steps of it already, and going no quicker than this (feet a
 // second): broken down if he has this long before he goes in, this far off
 // it, shuffled there at this pace.)
@@ -10748,7 +10751,7 @@ class Action {
 			pull.hold(snap + 40);
 			pull.go(this.w({ d: s.d - 1.8, a: s.a + side * 1.5 }), snap + 330, "run");
 			const pre = this.w({ d: -1.5, a: holeA - side * 2.5 });
-			const by = Math.max(atHole - 250, snap + 700);
+			const by = Math.max(atHole - PULL_AHEAD_MS, snap + 700);
 			if (
 				(dist(pull.at, pre) / Math.max(1, by - pull.t)) * 1000 <
 				WALK_MOST_FPS
@@ -10940,9 +10943,44 @@ class Action {
 			meet = meetOf();
 		}
 		if (!m || !meet) {
-			// (Up to the next level, and nobody there.)
+			// (Up to the next level, and nobody there - off to the side of
+			// the way the man with the ball comes up behind him, not up the
+			// middle of it ahead of him for him to run up his back.)
 			const s = this.of(b.at);
-			b.chase(this.w({ d: s.d + 9, a: s.a }), b.t + 900, b.top * 0.6, "run");
+			const from = b.at;
+			const t0 = b.t;
+			const t1 = b.t + 900;
+			const to = (o: number) => this.w({ d: s.d + 9, a: s.a + o });
+			let over = 0;
+			if (clear) {
+				const nearest = (o: number) => {
+					const p = to(o);
+					let near = Infinity;
+					for (let c = t0; c <= Math.min(until, t1 + 600); c += 50) {
+						const u = Math.min(1, (c - t0) / (t1 - t0));
+						near = Math.min(
+							near,
+							dist(clear.posAt(c), {
+								x: from.x + (p.x - from.x) * u,
+								y: from.y + (p.y - from.y) * u,
+							}),
+						);
+					}
+					return near;
+				};
+				let best = nearest(0);
+				for (const o of [2, -2, 3, -3, 4, -4, 5, -5]) {
+					if (best >= BLOCK_CLEAR_FT) {
+						break;
+					}
+					const near = nearest(o);
+					if (near > best + 0.5) {
+						best = near;
+						over = o;
+					}
+				}
+			}
+			b.chase(to(over), t1, b.top * 0.6, "run");
 			this.offBlock(b, until);
 			b.hold(until, "stand", this.ahead);
 			return;
