@@ -268,7 +268,10 @@ export type Gesture = {
 		| "three"
 		| "fist"
 		| "flex"
-		| "pound";
+		| "pound"
+		// His hands up on his head on his way back up the floor, a chance
+		// blown (see armAt).
+		| "head";
 	// What he points or waves at: a man, wherever he is, or a spot.
 	at?: number | Pt;
 	// A follow-through off his left hand.
@@ -1552,6 +1555,12 @@ const DEAD_SETUPS =
 // The last of the clock, ahead, dribbled out at real speed at the end of a
 // game (ms) - and, behind, the last look for a shot that never comes.
 const FINAL_DRIBBLE = 3600;
+// A chance at the rim blown, the other side's ball: so many of them have
+// their hands on their heads going back, from so long after it (ms), for
+// so long.
+const RUE_SHARE = 0.55;
+const RUE_FROM = 450;
+const RUE_MS = 1300;
 // A star gets it going one-on-one more than most (see isoFor).
 const ISO_FROM = 0.6;
 const ISO_STAR = 2;
@@ -1796,6 +1805,7 @@ const IN_PLACE = new Set<AnimName>([
 	"postUp",
 	"protest",
 	"hips",
+	"headHands",
 	"point",
 	"thanks",
 	"flex",
@@ -3858,6 +3868,26 @@ class Director {
 			kind === "point" ? { x: benchX(team), y: -4 } : undefined,
 		);
 		return t0 + CHEER_MS + 60;
+	}
+
+	// A layup rolled off, a dunk off the back of the rim - off it at `off` -
+	// and the other side has it: his hands on his head as he goes back.
+	private rueMiss(
+		shot: { pid: number; dunk?: boolean; zone?: string },
+		i: number,
+		off: number,
+	) {
+		if (
+			!(shot.dunk || shot.zone === "atRim") ||
+			this.peek(i, 1)[0]?.e.type !== "drb"
+		) {
+			return;
+		}
+		const t0 = off + RUE_FROM;
+		const last = this.track(shot.pid)?.arms.at(-1);
+		if ((last?.t1 ?? -Infinity) <= t0) {
+			this.gesture(shot.pid, "head", t0, t0 + RUE_MS, undefined, RUE_SHARE);
+		}
 	}
 
 	private lookAt(pid: number, t: number, at: Pt) {
@@ -15582,7 +15612,8 @@ class Director {
 				// The winners: all over the man who won it - mobbed where he
 				// stands - or, a close one, celebrating where the buzzer found
 				// them; a blowout, a clap and that is all. The losers: hands on
-				// their hips, or - beaten at the buzzer - doubled over.
+				// their hips, or - beaten at the buzzer - doubled over, hands on
+				// a head.
 				// A series won and not at the buzzer: together at center court,
 				// all over each other.
 				const middle = { x: COURT_W / 2, y: COURT_H / 2 };
@@ -15666,8 +15697,15 @@ class Director {
 					}
 					if (hero !== undefined && j < 2) {
 						this.react(pid, "crouch", from, 1800);
-					} else if (this.rng() < 0.75) {
-						this.react(pid, "hips", from, 1500);
+					} else {
+						// (Beaten at the buzzer, the next of them stood there with
+						// his hands on his head.)
+						const r = this.rng();
+						if (hero !== undefined && j === 2) {
+							this.react(pid, "headHands", from, 1700);
+						} else if (r < 0.75) {
+							this.react(pid, "hips", from, 1500);
+						}
 					}
 				});
 				// Then the dap-ups - no line, the NBA's way: out on the floor each
@@ -16346,6 +16384,7 @@ class Director {
 			if (play) {
 				// Off the rim (see shootAtRim), and on from where it leaves it.
 				const end = play.found.play.end;
+				this.rueMiss(shot, i, play.t0 + end.t);
 				const next = this.afterMiss(
 					play.t0 + end.t,
 					end.p,
@@ -16369,6 +16408,7 @@ class Director {
 				({ t, at: from } = this.rollAround(team, at, from));
 				this.effect("clank", t, { rim: team });
 			}
+			this.rueMiss(shot, i, t);
 			const next = this.afterMiss(
 				t,
 				from,

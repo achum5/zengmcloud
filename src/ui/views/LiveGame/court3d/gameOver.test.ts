@@ -59,6 +59,14 @@ describe("3D end of game", () => {
 			}
 			assert.isBelow(near, 4, `${mate}`);
 		}
+		// Beaten at the buzzer, the other side doubled over - and one of them
+		// stood with his hands on his head.
+		const stunned = [11, 12, 13, 14, 15].filter((q) =>
+			tl.tracks
+				.get(q)!
+				.acts.some((a) => a.anim === "headHands" && a.t0 >= over.actionStart),
+		);
+		assert.strictEqual(stunned.length, 1);
 		// Everybody daps up at least two of the other team - no line: each
 		// with a different man, the two of them face to face, gripping right
 		// hands; and pulled into a hug, their heads past each other's.

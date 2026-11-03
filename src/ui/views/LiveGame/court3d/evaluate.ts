@@ -279,6 +279,10 @@ export type ArmPose = {
 	// how far his mouth is open with it (0 to 1, at all of the arm).
 	grip?: "fist" | "three";
 	yell?: number;
+	// Both arms the same way - and both hands up on his head (see Pose's
+	// onHeadN), not where these angles put them.
+	both?: boolean;
+	head?: boolean;
 };
 
 // Bounces a second on a dribble, unless a piece of it says otherwise (see
@@ -3688,6 +3692,12 @@ const armAt = (
 			yell: 1,
 		};
 	}
+	if (g.kind === "head") {
+		// (Both hands: whether one is free or not, none on the ball.)
+		return free === "both"
+			? { hand, sh: 150, el: 120, ab: 20, wr: 0, w, both: true, head: true }
+			: undefined;
+	}
 	if (g.kind === "pound") {
 		// (Twice, on the far side of his chest from the arm.)
 		const knock = Math.abs(Math.sin(u * Math.PI * 2));
@@ -4224,6 +4234,8 @@ const easedArm = (
 		...(mine.some((x) => x.a.say) ? { say: true } : {}),
 		...(last.grip ? { grip: last.grip } : {}),
 		...(mine.some((x) => x.a.yell) ? { yell: mean((a) => a.yell ?? 0) } : {}),
+		...(last.both ? { both: true } : {}),
+		...(last.head ? { head: true } : {}),
 	};
 };
 
@@ -5967,6 +5979,8 @@ const UPPER: (keyof Pose)[] = [
 	"foldF",
 	"teeN",
 	"teeF",
+	"onHeadN",
+	"onHeadF",
 	"onKneeN",
 	"onKneeF",
 	"flexN",
@@ -6562,6 +6576,18 @@ const poseFor = (st: PlayerState): Pose => {
 	}
 	const mix = (v: number, to: number) => v + (to - v) * a.w;
 	const tuck = a.tuck === undefined ? p.tuck : mix(p.tuck, a.tuck);
+	if (a.both && a.head) {
+		// Both hands up on his head.
+		return {
+			...p,
+			onHeadN: mix(p.onHeadN, 1),
+			onHeadF: mix(p.onHeadF, 1),
+			onHipN: mix(p.onHipN, 0),
+			onHipF: mix(p.onHipF, 0),
+			foldN: mix(p.foldN, 0),
+			foldF: mix(p.foldF, 0),
+		};
+	}
 	// (Off his hip, or out of his folded arms, as it does.)
 	return a.hand === "R"
 		? {
@@ -6573,6 +6599,7 @@ const poseFor = (st: PlayerState): Pose => {
 				onHipN: mix(p.onHipN, 0),
 				foldN: mix(p.foldN, 0),
 				teeN: mix(p.teeN, 0),
+				onHeadN: mix(p.onHeadN, 0),
 				onKneeN: mix(p.onKneeN, 0),
 				flexN: mix(p.flexN, 0),
 				tuck,
@@ -6586,6 +6613,7 @@ const poseFor = (st: PlayerState): Pose => {
 				onHipF: mix(p.onHipF, 0),
 				foldF: mix(p.foldF, 0),
 				teeF: mix(p.teeF, 0),
+				onHeadF: mix(p.onHeadF, 0),
 				onKneeF: mix(p.onKneeF, 0),
 				flexF: mix(p.flexF, 0),
 				tuck,

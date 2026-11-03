@@ -84,6 +84,10 @@ export type Pose = {
 	// front of his face, his left stood up under the middle of it.
 	teeN: number;
 	teeF: number;
+	// Each hand up on top of his head, the elbow out (0 to 1): a chance
+	// blown, a play he can't believe.
+	onHeadN: number;
+	onHeadF: number;
 	onKneeN: number;
 	onKneeF: number;
 	flexN: number;
@@ -126,6 +130,8 @@ const BASE: Pose = {
 	foldN: 0,
 	teeN: 0,
 	teeF: 0,
+	onHeadN: 0,
+	onHeadF: 0,
 	foldF: 0,
 	onKneeN: 0,
 	onKneeF: 0,
@@ -147,6 +153,7 @@ const SIDES: [keyof Pose, keyof Pose][] = [
 	["onHipN", "onHipF"],
 	["foldN", "foldF"],
 	["teeN", "teeF"],
+	["onHeadN", "onHeadF"],
 	["onKneeN", "onKneeF"],
 	["flexN", "flexF"],
 ];
@@ -5842,6 +5849,18 @@ export const ANIMS = {
 			[1, P.ready],
 		],
 	},
+	// Both hands up on top of his head, the elbows out: he can't believe
+	// it.
+	headHands: {
+		kind: "act",
+		n: 5,
+		keys: [
+			[0, P.ready],
+			[0.25, pose({ onHeadN: 1, onHeadF: 1, lean: -6 })],
+			[0.8, pose({ onHeadN: 1, onHeadF: 1, lean: -4 })],
+			[1, P.ready],
+		],
+	},
 	// TIME OUT: his hands in a T up in front of his face - the one flat
 	// across the fingertips of the other, stood up (see shapedArm) - held
 	// there at the official till he sees it.
@@ -7415,6 +7434,7 @@ export const skeleton = (b: Body, q: Pose): Skeleton => {
 		legR,
 		q.flexN,
 		q.teeN,
+		q.onHeadN,
 	);
 	const armL = shapedArm(
 		b,
@@ -7428,6 +7448,7 @@ export const skeleton = (b: Body, q: Pose): Skeleton => {
 		legL,
 		q.flexF,
 		q.teeF,
+		q.onHeadF,
 	);
 	if (q.twist === 0 && q.tilt === 0) {
 		return { pelvis, chest, head, legR, legL, armR, armL };
@@ -7755,6 +7776,7 @@ const shapedArm = (
 	leg: Limb,
 	flex: number,
 	tee = 0,
+	head = 0,
 ): Limb => {
 	let out = arm;
 	if (flex > 0) {
@@ -7798,8 +7820,23 @@ const shapedArm = (
 			tee,
 		);
 	}
+	if (head > 0) {
+		// His hand up on top of his head, the fingers laid over it, the elbow
+		// out wide.
+		const top = chest.u + b.neck + b.headR * ON_HEAD.u;
+		const at = v3(
+			chest.f + b.headR * ON_HEAD.f,
+			side * b.headR * ON_HEAD.s,
+			top,
+		);
+		out = mixArm(out, flared(armTo(b, chest, at, 60, side), 105, side), head);
+	}
 	return out;
 };
+// (The wrist of a hand on his head: so far over the back of his head and
+// out to its side, and up - head radii, from his chest's middle and the top
+// of his neck.)
+const ON_HEAD = { f: -0.1, s: 0.62, u: 1.7 };
 // (The wrists of a T: out in front of him; the bar's a hand's width to its
 // own side, up at his eyes; the stem's under it, at his chin - feet, from
 // his chest and his shoulders.)

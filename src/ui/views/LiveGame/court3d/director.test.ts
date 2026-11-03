@@ -4401,6 +4401,7 @@ describe("3D director", () => {
 			fist: 0,
 			flex: 0,
 			pound: 0,
+			head: 0,
 		};
 		let onTheMove = 0;
 		for (const tr of tl.tracks.values()) {
@@ -4417,6 +4418,20 @@ describe("3D director", () => {
 				}
 				const q = poseOf(st);
 				const bare = poseOf({ ...st, arm: undefined });
+				if (st.arm.both) {
+					// (Both hands up on his head: both arms, his legs as they were.)
+					for (const k of ["hipN", "kneeN", "hipF", "kneeF", "lean"] as const) {
+						assert.strictEqual(q[k], bare[k], k);
+					}
+					assert.isAbove(q.onHeadN, bare.onHeadN);
+					assert.isAbove(q.onHeadF, bare.onHeadF);
+					assert.isNotTrue(st.holding);
+					assert.isUndefined(st.dribbleHand);
+					if (st.moving) {
+						onTheMove += 1;
+					}
+					return;
+				}
 				const still =
 					st.arm.hand === "R"
 						? (["shF", "elF", "abF", "wrF"] as const)
