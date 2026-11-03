@@ -1013,6 +1013,42 @@ describe("a foul", () => {
 	}, 20_000);
 });
 
+describe("the bean bags", () => {
+	// An official's bean bag down where a punt was fielded and run back,
+	// or where the ball came loose - on no other play - landing before the
+	// next one, on the field.
+	test("a bean bag on the spot of a punt fielded or a fumble, and nowhere else", () => {
+		let punts = 0;
+		for (const game of games) {
+			const tl = stage(game);
+			for (const p of tl.plays) {
+				const bags = p.bags ?? [];
+				if (bags.length === 0) {
+					continue;
+				}
+				const seg = game.events.slice(
+					p.i,
+					tl.plays.find((q) => q.i > p.i)?.i ?? game.events.length,
+				);
+				const fumbles = seg.filter((e) => e.type === "fumble").length;
+				const returned =
+					p.kind === "punt" && seg.some((e) => e.type === "puntReturn");
+				assert.isAtMost(bags.length, fumbles + (returned ? 1 : 0), `${p.i}`);
+				for (const b of bags) {
+					assert.isAtLeast(b.t0, p.snap, `${p.i}`);
+					assert.isAtMost(b.t1, p.t1, `${p.i}`);
+					assert.isAtLeast(b.to.y, 0, `${p.i}`);
+					assert.isAtMost(b.to.y, FIELD_W, `${p.i}`);
+				}
+				if (returned) {
+					punts++;
+				}
+			}
+		}
+		assert.isAbove(punts, 2);
+	}, 20_000);
+});
+
 describe("a man hurt", () => {
 	test("down after the whistle, the trainers out to him from his sideline, and helped off toward it", () => {
 		let hurt = 0;

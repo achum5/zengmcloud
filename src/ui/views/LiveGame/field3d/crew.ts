@@ -93,6 +93,8 @@ export type CrewInput = {
 	fouls: Foul[];
 	calls: { t: number; foul: Foul }[];
 	signals: { what: Signaled; t: number; at: Pt }[];
+	// The spots marked with a bean bag (see BAG_NEAR): when, and where.
+	bags?: { t: number; at: Pt }[];
 	r: () => number;
 };
 
@@ -138,6 +140,16 @@ const REACT_MS = 250;
 // most this far from him it comes down.
 const FLAG_Z = 7.2;
 const FLAG_REACH = 40;
+// A bean bag (to mark a spot: a punt fielded, a fumble): tossed by an
+// official no further from it than this, his arm through it over this long
+// either side of the moment; from this high, down on it in this long and
+// this much more a foot it goes, at most this long.
+const BAG_NEAR = 30;
+const BAG_ARMS = 300;
+const BAG_Z = 5.5;
+const BAG_MS = 350;
+const BAG_MS_FT = 12;
+const BAG_MOST_MS = 900;
 // The whistle at the end of the play: blown by the man nearest the ball
 // then (no further off than this, feet) not busy with his arms, this long
 // after it and for this long (ms).
@@ -325,7 +337,7 @@ const leftArm = (yaw: number, way: number) => -Math.sin(yaw) * way < 0;
 
 export const stageCrew = (
 	input: CrewInput,
-): { parts: CrewPart[]; flags: FlagFlight[] } => {
+): { parts: CrewPart[]; flags: FlagFlight[]; bags: FlagFlight[] } => {
 	const { kind, dir, losX, ballY, r } = input;
 	const w = (p: OPt): Pt => ({ x: losX + dir * p.d, y: ballY + dir * p.a });
 	const of = (p: Pt): OPt => ({
@@ -771,6 +783,33 @@ export const stageCrew = (
 			to,
 		});
 	}
+	// The bean bags: each tossed down on its spot by the nearest man to it
+	// then - no further off than BAG_NEAR, his arms not busy - low and
+	// short.
+	const bags: FlagFlight[] = [];
+	for (const b of input.bags ?? []) {
+		const o = [...CREW]
+			.filter(
+				(o) =>
+					dist(where(o, b.t), b.at) <= BAG_NEAR &&
+					!arms.some(
+						(a) => a.o === o && a.t1 > b.t - BAG_ARMS && a.t0 < b.t + BAG_ARMS,
+					),
+			)
+			.sort((x, y) => dist(where(x, b.t), b.at) - dist(where(y, b.t), b.at))[0];
+		if (!o) {
+			continue;
+		}
+		arms.push({ o, move: "flagToss", t0: b.t - BAG_ARMS, t1: b.t + BAG_ARMS });
+		const t0 = b.t + BAG_ARMS / 2;
+		const from = where(o, t0);
+		bags.push({
+			t0,
+			t1: t0 + Math.min(BAG_MOST_MS, BAG_MS + dist(from, b.at) * BAG_MS_FT),
+			from: { ...from, z: BAG_Z },
+			to: onField(b.at),
+		});
+	}
 	// The whistle, the play over: his hand up to it at his mouth.
 	const blowT = whistle + WHISTLE_AFTER_MS;
 	const blower = [...CREW]
@@ -807,6 +846,7 @@ export const stageCrew = (
 			legs: legsOf.get(p.o)!,
 		})),
 		flags,
+		bags,
 	};
 };
 

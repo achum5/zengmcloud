@@ -58,6 +58,8 @@ export type FieldMoment = {
 	// The flags thrown: in the air (turning over as it comes down), or down
 	// on the turf.
 	flags?: { at: Pt3; down: boolean; turn: number }[];
+	// ...and the bean bags, the same.
+	bags?: { at: Pt3; down: boolean; turn: number }[];
 };
 
 // From one move into the next, his pose eased over this long; and his
@@ -1542,6 +1544,21 @@ export const momentAt = (
 				turn: u >= 1 ? f.t0 % 6.28 : ((t - f.t0) / 1000) * 7,
 			};
 		});
+	// (A bean bag: tossed low, end over end, down quick.)
+	const bags = (play.bags ?? [])
+		.filter((f) => t >= f.t0)
+		.map((f) => {
+			const u = clamp01((t - f.t0) / (f.t1 - f.t0));
+			return {
+				at: {
+					x: f.from.x + (f.to.x - f.from.x) * u,
+					y: f.from.y + (f.to.y - f.from.y) * u,
+					z: f.from.z * (1 - u) + BAG_RISE * 4 * u * (1 - u),
+				},
+				down: u >= 1,
+				turn: u >= 1 ? f.t0 % 6.28 : ((t - f.t0) / 1000) * 9,
+			};
+		});
 	return {
 		t,
 		play,
@@ -1550,8 +1567,11 @@ export const momentAt = (
 		...(focus ? { focus } : {}),
 		...(carrier !== undefined ? { carrier } : {}),
 		...(flags.length > 0 ? { flags } : {}),
+		...(bags.length > 0 ? { bags } : {}),
 	};
 };
+// How high over the straight way down a bean bag goes, halfway.
+const BAG_RISE = 1.2;
 
 // How high over his hand a flag goes.
 const FLAG_RISE = 5;

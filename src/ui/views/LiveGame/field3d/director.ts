@@ -42,7 +42,7 @@ import {
 	type RosterMan,
 } from "./personnel.ts";
 import { moveKind, type Move } from "./poses.ts";
-import { actOut, HERO_CAM_FT } from "./action.ts";
+import { actOut, HERO_CAM_FT, type Acted } from "./action.ts";
 import {
 	anyBall,
 	CALL_FOR_MS,
@@ -215,6 +215,8 @@ export type Play = {
 	// The officials (see crew.ts), and the flags they throw.
 	crew: CrewPart[];
 	flags: FlagFlight[];
+	// The bean bags the officials toss down, to mark a spot (see crew.ts).
+	bags?: FlagFlight[];
 	// The referee's calls of the fouls on it that stand: when, and against
 	// which side.
 	calls?: { t: number; side: Side }[];
@@ -1582,6 +1584,48 @@ class Director {
 		return out;
 	}
 
+	// The spots the officials mark with a bean bag: where a punt was
+	// fielded to be run back (not a fair catch, nor let go), where the ball
+	// came loose.
+	bagsOf(
+		kind: PlayKind,
+		offense: Side,
+		i0: number,
+		i1: number,
+		acted: Acted | undefined,
+		ball: BallSeg[],
+		parts: Part[],
+	): { t: number; at: Pt }[] {
+		if (!acted) {
+			return [];
+		}
+		const { events } = this;
+		const out: { t: number; at: Pt }[] = [];
+		const seg = events.slice(i0, i1);
+		if (kind === "punt" && seg.some((e) => e?.type === "puntReturn")) {
+			const fielded = ball.find(
+				(b): b is Extract<BallSeg, { kind: "held" }> =>
+					b.kind === "held" &&
+					b.t0 > (acted.follow ?? 0) &&
+					parts.find((p) => p.pid === b.pid)?.team !== offense,
+			);
+			const at = fielded && anyBall(ball, parts, fielded.t0);
+			if (fielded && at) {
+				out.push({ t: fielded.t0, at });
+			}
+		}
+		for (let i = i0; i < i1; i++) {
+			const t = acted.at.get(i);
+			if (events[i]?.type === "fumble" && t !== undefined) {
+				const at = anyBall(ball, parts, t);
+				if (at) {
+					out.push({ t, at });
+				}
+			}
+		}
+		return out;
+	}
+
 	// The next play a punt or a field goal (its unit coming on said first,
 	// after the clock line at i1) - not a go for it, nor past the end of a
 	// quarter.
@@ -2386,6 +2430,7 @@ class Director {
 			fouls,
 			calls,
 			signals,
+			bags: this.bagsOf(kind, offense, i0, i1, acted, ball, parts),
 			r: this.rng(i0, "crew"),
 		});
 		if (postgame) {
@@ -2751,6 +2796,7 @@ class Director {
 			parts,
 			crew: crew.parts,
 			flags: crew.flags,
+			...(crew.bags.length > 0 ? { bags: crew.bags } : {}),
 			...(calls.some((c) => c.foul.accepted)
 				? {
 						calls: calls

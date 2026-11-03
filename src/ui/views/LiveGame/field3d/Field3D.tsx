@@ -1466,6 +1466,14 @@ const Field3D = ({
 					},
 				});
 			}
+			for (const f of moment.bags ?? []) {
+				items.push({
+					depth: depthOf(view, { ...f.at, z: 0 }),
+					draw: () => {
+						drawFlag(ctx, view, drawnUp(f.at), f.down, f.turn, true);
+					},
+				});
+			}
 			startFrame(sprites);
 			const drawStart = performance.now();
 			prepareFieldSprites(scratch, view, men, 1, sprites, farm);
