@@ -4191,9 +4191,11 @@ class Action {
 	// A man the sim says was hurt on it down on the turf after the whistle
 	// as hurt.ts will have him (see fallHurt) - and there for good, as far
 	// as anybody going about him knows (see offMenDown): the trainers out
-	// to him and the rest of it are hurt.ts's.
+	// to him and the rest of it are hurt.ts's. Or, a man with no part in it
+	// the sim names, going all out away from the ball late on: pulled up
+	// there, lame, and down - on the turf when the whistle goes.
 	hurtDown() {
-		const { events, i0, i1 } = this.input;
+		const { events, i0, i1, snap, stats } = this.input;
 		let n = 0;
 		for (let i = i0; i < i1 && n < HURT_MOST; i++) {
 			const e = events[i];
@@ -4201,10 +4203,46 @@ class Action {
 				continue;
 			}
 			const m = this.man(e.injuredPID);
-			if (m && m.legs.length > 0) {
-				fallHurt(m.legs, this.whistle);
-				n++;
+			if (!m || m.legs.length === 0) {
+				continue;
 			}
+			n++;
+			const named =
+				m.role === "QB" ||
+				stats.some((x) => x.pid === m.pid && x.i >= i0 && x.i < i1) ||
+				this.ball.some((b) => b.kind === "held" && b.pid === m.pid);
+			let lame: number | undefined;
+			for (
+				let t = this.whistle - HURT_LAME_LEAD_MS;
+				!named && t >= snap + HURT_LAME_FROM_MS;
+				t -= 50
+			) {
+				const l = legAt(m, t);
+				const ball = this.ballAt(t);
+				if (
+					GAITS.has(l.move) &&
+					!l.arms &&
+					!l.ball &&
+					legPace(l) >= HURT_LAME_FPS &&
+					ball &&
+					dist(m.posAt(t), ball) >= HURT_LAME_OFF_FT
+				) {
+					lame = t;
+					break;
+				}
+			}
+			if (lame === undefined) {
+				fallHurt(m.legs, this.whistle);
+				continue;
+			}
+			m.cut(lame);
+			m.easeOff(HURT_LAME_PULL_FT);
+			const back = countOf(m, snap, 41) < HURT_LAME_BACK;
+			m.act(back ? "tackledBack" : "tackled", m.t + HURT_LAME_FALL_MS);
+			m.hold(
+				Math.max(m.t, this.whistle) + HURT_LAME_PAST_MS,
+				back ? "supine" : "prone",
+			);
 		}
 	}
 
@@ -15315,6 +15353,20 @@ const RUSH_MOVE_AFTER = 400;
 const RUSH_MOVE_LEAST_MS = 380;
 const RUSH_MOVE_NEAR = 6;
 const RUSH_MOVE_LEAST = 700;
+// A man hurt with no part in it the sim names: pulled up lame no later
+// than this long before the whistle (ms), nor sooner than this long after
+// the snap, going all out (at least this quick, ft/s) at least this far
+// off the ball (feet) - pulled up within this far (feet), down over this
+// long (ms), on his back this often, else on his front; lying there till
+// this long past the whistle at least (see hurt.ts).
+const HURT_LAME_LEAD_MS = 900;
+const HURT_LAME_FROM_MS = 800;
+const HURT_LAME_FPS = 13;
+const HURT_LAME_OFF_FT = 12;
+const HURT_LAME_PULL_FT = 5;
+const HURT_LAME_FALL_MS = 500;
+const HURT_LAME_BACK = 0.5;
+const HURT_LAME_PAST_MS = 500;
 // The quarterback hit as he throws: this often (on a pass from the
 // pocket, caught or not), this long after it leaves his hand (ms, from the
 // first to the first and second; flagged for it, late, this long after);

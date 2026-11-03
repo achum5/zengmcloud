@@ -295,6 +295,60 @@ describe("the plays acted out", () => {
 		assert.isBelow(hits, passes / 5);
 	}, 20_000);
 
+	test("a man hurt with no part in it the sim names, out on the run away from the ball: pulled up lame and down before the whistle, and there", () => {
+		let lame = 0;
+		eachPlay((play, seg) => {
+			for (const e of seg) {
+				if (e.type !== "injury" || typeof e.injuredPID !== "number") {
+					continue;
+				}
+				const him = play.parts.find((p) => p.pid === e.injuredPID);
+				const k =
+					him?.legs.findIndex(
+						(l) =>
+							(l.move === "tackled" || l.move === "tackledBack") &&
+							l.t0 < play.whistle,
+					) ?? -1;
+				if (!him || k < 0 || him.role === "QB") {
+					continue;
+				}
+				const named = seg.some((x) => x.type === "stat" && x.pid === him.pid);
+				const held = play.ball.some(
+					(b) => b.kind === "held" && b.pid === him.pid,
+				);
+				const fell = him.legs[k]!;
+				// (Brought down in the play itself - not this.)
+				if (named || held) {
+					continue;
+				}
+				lame += 1;
+				// (Pulled up first: slowing over his last steps on his feet.)
+				const before = him.legs[k - 1]!;
+				const pace =
+					Math.hypot(before.to.x - before.from.x, before.to.y - before.from.y) /
+					((before.t1 - before.t0) / 1000);
+				assert.isBelow(pace, 8, `play ${play.i}`);
+				// (And on the turf, there, till they see to him.)
+				for (const l of him.legs.slice(k + 1)) {
+					if (l.t0 > play.whistle + 300) {
+						break;
+					}
+					assert.include(
+						["prone", "supine", "hurt", "hurtProne"],
+						l.move,
+						`play ${play.i}`,
+					);
+					assert.isBelow(
+						Math.hypot(l.to.x - fell.to.x, l.to.y - fell.to.y),
+						0.01,
+						`play ${play.i}`,
+					);
+				}
+			}
+		});
+		assert.isAbove(lame, 0);
+	}, 20_000);
+
 	test("a touchdown when he gets in with it, not before", () => {
 		const bad: string[] = [];
 		let checked = 0;

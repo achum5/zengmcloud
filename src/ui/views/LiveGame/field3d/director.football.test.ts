@@ -1154,6 +1154,11 @@ describe("a man hurt", () => {
 				assert.isAbove(medics.length, 0, `play ${play.i}`);
 				for (const m of medics) {
 					assert.isTrue(off(m.legs[0]!.from.y), `play ${play.i}: ${m.pid}`);
+					// (Not out onto the field with the ball still live.)
+					const out = m.legs.find(
+						(l) => l.from.x !== l.to.x || l.from.y !== l.to.y,
+					);
+					assert.isAtLeast(out!.t0, play.whistle, `play ${play.i}: ${m.pid}`);
 					const tend = m.legs.find((l) => l.move === "tend");
 					assert.isAtMost(
 						Math.hypot(tend!.to.x - at.x, tend!.to.y - at.y),

@@ -515,6 +515,10 @@ const COACH_REACT_SAD = 0.3;
 const COACH_REACT_AFTER = 500;
 const COACH_REACT_MS = 1800;
 const COACH_REACT_TAIL = 900;
+// A man hurt on it: the play shown again while they see to him - no
+// longer than this (ms), on till this long after he is down.
+const HURT_REPLAY_MS = 6000;
+const HURT_SEEN_MS = 700;
 
 // Each man stays as his last leg left him until t1.
 const holdTill = (parts: { legs: Leg[] }[], t1: number) => {
@@ -2556,12 +2560,16 @@ class Director {
 		const replay =
 			shown ??
 			(hurt && !fouls.some((f) => f.accepted) && hurt.tending > whistle
-				? {
-						cue: hurt.tending,
-						from: Math.max(t0, snap - 300, whistle - 5600),
-						to: whistle + 400,
-						pid: hurt.pid,
-					}
+				? (() => {
+						// (On till he is down - not cut away as he goes.)
+						const to = Math.max(whistle + 400, hurt.down + HURT_SEEN_MS);
+						return {
+							cue: hurt.tending,
+							from: Math.max(t0, snap - 300, to - HURT_REPLAY_MS),
+							to,
+							pid: hurt.pid,
+						};
+					})()
 				: undefined);
 		const heroClose = (() => {
 			const party = acted?.party;
