@@ -1,4 +1,4 @@
-import { project, type Camera, type Projected } from "./camera.ts";
+import { depthOf, project, type Camera, type Projected } from "./camera.ts";
 import {
 	legTurnFrom,
 	type Blend,
@@ -823,6 +823,10 @@ type Plan = {
 	farmed?: boolean;
 };
 
+// The nearest a man is drawn in front of the camera (feet): any nearer - or
+// behind it, a camera down courtside or on the baseline - and he is out of
+// the picture, not drawn up huge across it.
+const NEAR_FT = 3;
 const planOf = (
 	cam: Camera,
 	st: PlayerState,
@@ -831,6 +835,11 @@ const planOf = (
 	px: number,
 	cache?: SpriteCache,
 ): Plan | undefined => {
+	// Behind a camera down on the floor, or right up against it: not in the
+	// picture (see NEAR_FT).
+	if (depthOf(cam, { x: st.x, y: st.y, z: 0 }) < NEAR_FT) {
+		return undefined;
+	}
 	const base = project(cam, { x: st.x, y: st.y, z: 0 });
 	const k = base.k;
 	// Room for him wherever his arms and feet go: a box round where he stands
