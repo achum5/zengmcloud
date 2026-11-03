@@ -34,6 +34,9 @@ export type SeasonSimResult = {
 	playoffs: number;
 	// Playoff series won, on average.
 	roundsWon: number;
+	// The chance of each finish: missing the playoffs first, then winning 0,
+	// 1, ... series.
+	rounds: number[];
 };
 
 export const normalCdf = (x: number) => {
@@ -110,10 +113,19 @@ export const simulateSeason = ({
 
 	const results = new Map<number, SeasonSimResult>();
 	for (const t of teams) {
-		results.set(t.tid, { title: 0, finals: 0, playoffs: 0, roundsWon: 0 });
+		results.set(t.tid, {
+			title: 0,
+			finals: 0,
+			playoffs: 0,
+			roundsWon: 0,
+			rounds: [],
+		});
 	}
 
 	const numRounds = numGamesPlayoffSeries.length;
+	for (const r of results.values()) {
+		r.rounds = new Array<number>(numRounds + 2).fill(0);
+	}
 	const groups = byConference
 		? [...new Set(teams.map((t) => t.cid))].sort((a, b) => a - b)
 		: [0];
@@ -170,6 +182,8 @@ export const simulateSeason = ({
 		playoffStrength: 0,
 		wins: 0,
 		tiebreak: 0,
+		// Series won this time round, -1 out of the playoffs.
+		series: -1,
 	}));
 
 	for (let it = 0; it < iterations; it++) {
@@ -181,6 +195,7 @@ export const simulateSeason = ({
 			s.playoffStrength = (t.playoffStrength ?? t.strength) + error;
 			s.wins = t.won;
 			s.tiebreak = random();
+			s.series = -1;
 		}
 
 		// The rest of the regular season, against the field.
@@ -224,6 +239,7 @@ export const simulateSeason = ({
 			}
 			for (const t of seeds) {
 				results.get(t.tid)!.playoffs += 1;
+				t.series = 0;
 			}
 
 			// 1 v n, 2 v n-1, ... laid out so the top seeds meet as late as
@@ -266,6 +282,7 @@ export const simulateSeason = ({
 						numGamesPlayoffSeries[round] ?? 7,
 					);
 					results.get(winner.tid)!.roundsWon += 1;
+					winner.series += 1;
 					winners.push(winner);
 				}
 				bracket = winners;
@@ -299,6 +316,7 @@ export const simulateSeason = ({
 					numGamesPlayoffSeries[round] ?? 7,
 				);
 				results.get(winner.tid)!.roundsWon += 1;
+				winner.series += 1;
 				winners.push(winner);
 			}
 			finalists = winners;
@@ -307,6 +325,9 @@ export const simulateSeason = ({
 		if (finalists[0]) {
 			results.get(finalists[0].tid)!.title += 1;
 		}
+		for (const t of sim) {
+			results.get(t.tid)!.rounds[t.series + 1]! += 1;
+		}
 	}
 
 	for (const r of results.values()) {
@@ -314,6 +335,9 @@ export const simulateSeason = ({
 		r.finals /= iterations;
 		r.playoffs /= iterations;
 		r.roundsWon /= iterations;
+		for (let i = 0; i < r.rounds.length; i++) {
+			r.rounds[i]! /= iterations;
+		}
 	}
 	return results;
 };

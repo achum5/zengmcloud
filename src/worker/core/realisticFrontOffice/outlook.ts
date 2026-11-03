@@ -39,7 +39,11 @@ import {
 } from "./strength.ts";
 import getRookieContractLength from "../draft/getRookieContractLength.ts";
 import { getSlotPickProbsCached } from "../team/pickProbsCache.ts";
-import { getNumColaLotteryTeams } from "../draft/cola.ts";
+import {
+	DRAFT_LOTTERY_FACTORS,
+	getNumColaLotteryTeams,
+	PLAYOFF_FACTORS,
+} from "../draft/cola.ts";
 
 // WHERE EVERY TEAM IS HEADED, season by season: each roster projected forward
 // with the game's own development, its draft picks turned into the players
@@ -158,6 +162,9 @@ export type LeagueOutlook = {
 		alpha: number;
 		// Where a pick lands from each finish, by its team's share of points.
 		matrices: Map<number, number[][]>;
+		// Each team's share of points toward each draft's draw, as its path
+		// there would leave them (colaPaths): by team, then by draft.
+		path?: Map<number, Map<number, number>>;
 	};
 	// What draftPlace ranks each team by, each season: its strength on its
 	// roster alone, and this season, once games are played, the wins it is
@@ -242,12 +249,16 @@ export const strengthUncertainty = (
 		? measuredStrengthUncertainty(y, progress)
 		: Math.sqrt((1.5 + 2 * (1 - progress)) ** 2 + (1.6 * y) ** 2);
 
-// As measured in arena leagues: each outlook's read of every team's strength
-// against how far its points a game, the regular season through, landed from
-// it (less the games' own luck in that). MEASURED_NOW now, then a spread
-// growing by MEASURED_PER_SEASON a season, as a random walk does.
-const MEASURED_NOW = 1.3;
-const MEASURED_PER_SEASON = 7.2;
+// As measured in arena leagues (3 leagues x 5 seasons, every team at every
+// outlook): how far a team's points a game, the regular season through,
+// landed from the outlook's read of it, less the games' own luck in that.
+// This season 1.5 points from its start (the first slice's guess was 3.5:
+// favourites given 15-30% won 28% of the time, those given over 30% 57%);
+// seasons out, a spread growing as a random walk does, MEASURED_PER_SEASON
+// in variance a season - 3.6, 4.9 and 6.0 points one, two and three out,
+// about the first slice's there.
+const MEASURED_NOW = 1.5;
+const MEASURED_PER_SEASON = 11;
 export const measuredStrengthUncertainty = (y: number, progress: number) =>
 	Math.sqrt(
 		(MEASURED_NOW * (1 - 0.25 * progress)) ** 2 + MEASURED_PER_SEASON * y,
@@ -577,6 +588,11 @@ export const outlookSettings = {
 	// measured against how teams did (measuredStrengthUncertainty) - not the
 	// first slice's guess. Off while it is measured.
 	measuredUncertainty: false,
+	// COLA: each team's chances toward a draw projected along its own path
+	// (colaPaths) - its playoff runs and draw wins cost it chances, as the
+	// game charges - not as if every team added the same each season. Off
+	// while it is measured.
+	colaPath: false,
 };
 
 // For the arena's version-against-version leagues: settings for some teams'
@@ -598,6 +614,7 @@ export const teamOutlookSettings = new Map<
 			| "moneyUnderCap"
 			| "knownClasses"
 			| "measuredUncertainty"
+			| "colaPath"
 		>
 	>
 >();
@@ -614,7 +631,8 @@ const outlookSettingFor = <
 		| "moneyPerCap"
 		| "moneyUnderCap"
 		| "knownClasses"
-		| "measuredUncertainty",
+		| "measuredUncertainty"
+		| "colaPath",
 >(
 	tid: number,
 	key: K,
@@ -747,6 +765,8 @@ type PickYears = {
 	own: boolean;
 	// Whether it is priced by its draft's class (knownClassFor).
 	known: boolean;
+	// Whether its COLA draw goes by its team's path (colaPath).
+	colaPath: boolean;
 	byYear: (PickAt | null | undefined)[];
 };
 
@@ -758,6 +778,7 @@ const pickYearsOf = (
 	let entry = outlook.pickYears.get(dp);
 	const own = holder === dp.originalTid;
 	const known = knownClassFor(outlook, dp, holder) !== undefined;
+	const colaPath = colaPathFor(outlook, holder);
 	if (
 		!entry ||
 		entry.originalTid !== dp.originalTid ||
@@ -766,7 +787,8 @@ const pickYearsOf = (
 		entry.pick !== dp.pick ||
 		entry.board !== (outlook.classBoard?.version ?? 0) ||
 		entry.own !== own ||
-		entry.known !== known
+		entry.known !== known ||
+		entry.colaPath !== colaPath
 	) {
 		entry = {
 			originalTid: dp.originalTid,
@@ -776,6 +798,7 @@ const pickYearsOf = (
 			board: outlook.classBoard?.version ?? 0,
 			own,
 			known,
+			colaPath,
 			byYear: [],
 		};
 		outlook.pickYears.set(dp, entry);
@@ -1001,7 +1024,12 @@ export const pickLineAt = (
 	if (dp.pick <= 0 && dp.round === 1 && outlook.cola) {
 		const ratio =
 			holder === undefined || holder === dp.originalTid
-				? colaRatio(outlook.cola, dp, outlook.season)
+				? colaRatio(
+						outlook.cola,
+						dp,
+						outlook.season,
+						colaPathFor(outlook, holder ?? dp.originalTid),
+					)
 				: 0;
 		lottery = colaPicks(outlook.cola, outlook.numTeams, ratio);
 		lotteryKey = `:C${ratio}`;
@@ -1073,7 +1101,14 @@ const colaRatio = (
 	cola: NonNullable<LeagueOutlook["cola"]>,
 	dp: PickLike,
 	season: number,
+	path: boolean,
 ) => {
+	if (path) {
+		const ratio = cola.path?.get(dp.originalTid)?.get(dp.season as number);
+		if (ratio !== undefined) {
+			return ratio;
+		}
+	}
 	const added =
 		cola.alpha * ((dp.season as number) - season + (cola.addNow ? 1 : 0));
 	const mean = cola.meanPoints + added;
@@ -1084,6 +1119,24 @@ const colaRatio = (
 		Math.round((20 * ((cola.points.get(dp.originalTid) ?? 0) + added)) / mean) /
 		20
 	);
+};
+
+// Whether this team prices COLA draws by each team's path (colaPaths).
+const colaPathFor = (outlook: Pick<LeagueOutlook, "cola">, tid: number) =>
+	outlook.cola?.path !== undefined && outlookSettingFor(tid, "colaPath");
+
+// A team's chance of winning each drawn pick under COLA, by its points against
+// the average's in the draw.
+const colaWins = (cola: NonNullable<LeagueOutlook["cola"]>, ratio: number) => {
+	const others = cola.numLottery - 1;
+	const win: number[] = [];
+	let left = 1;
+	for (let j = 0; j < cola.numPicks; j++) {
+		const p = ratio > 0 ? ratio / (ratio + others - j) : 0;
+		win.push(left * p);
+		left *= 1 - p;
+	}
+	return { win, left };
 };
 
 // Where a pick in the first round lands from each place its team finishes in,
@@ -1102,13 +1155,7 @@ const colaPicks = (
 	}
 	const { numLottery, numPicks } = cola;
 	const others = numLottery - 1;
-	const win: number[] = [];
-	let left = 1;
-	for (let j = 0; j < numPicks; j++) {
-		const p = ratio > 0 ? ratio / (ratio + others - j) : 0;
-		win.push(left * p);
-		left *= 1 - p;
-	}
+	const { win, left } = colaWins(cola, ratio);
 	rows = [];
 	for (let k = 0; k < n; k++) {
 		const row = new Array<number>(n).fill(0);
@@ -2488,6 +2535,95 @@ const colaState = async (
 	};
 };
 
+// COLA: each team's points toward each draft's draw, carried along its own
+// path there. Each season out of the last three playoff rounds adds the
+// game's COLA_ALPHA and each one in them keeps a share (PLAYOFF_FACTORS); a
+// team holding its own first loses a share for each drawn pick it wins
+// (DRAFT_LOTTERY_FACTORS). Expected points, by the chance of each finish the
+// season sims give (`finishes`, by outlook year from `first`); a draw goes by
+// a team's points against the average of the teams likely to be in it.
+// Priced as if every team added the same each season, a contender that goes
+// deep year after year kept the draw odds of one that never does.
+export const colaPaths = ({
+	cola,
+	finishes,
+	holds,
+	season,
+	first,
+	lastDraft,
+	numPlayoffRounds,
+}: {
+	cola: NonNullable<LeagueOutlook["cola"]>;
+	finishes: Map<number, number[][]>;
+	// "tid:season" for each first a team holds of its own.
+	holds: Set<string>;
+	season: number;
+	first: number;
+	lastDraft: number;
+	numPlayoffRounds: number;
+}) => {
+	const offset = numPlayoffRounds - PLAYOFF_FACTORS.length + 1;
+	const tids = [...cola.points.keys()];
+	const points = new Map(cola.points);
+	const path = new Map(tids.map((tid) => [tid, new Map<number, number>()]));
+	for (let d = season; d <= lastDraft; d++) {
+		const inDraw = new Map<number, number>();
+		const chance = new Map<number, number>();
+		const after = new Map<number, number>();
+		for (const tid of tids) {
+			const p = points.get(tid)!;
+			if (d < first) {
+				// This season's playoffs are over, and its points with them.
+				inDraw.set(tid, p);
+				chance.set(tid, 1);
+				after.set(tid, p);
+				continue;
+			}
+			const odds = finishes.get(tid)?.[Math.min(OUTLOOK_YEARS, d - first)];
+			let out = 1;
+			let kept = 0;
+			if (odds) {
+				out = 0;
+				for (const [i, q] of odds.entries()) {
+					// i - 1 series won, -1 out of the playoffs.
+					const factor = i === 0 ? undefined : PLAYOFF_FACTORS[i - 1 - offset];
+					if (factor === undefined) {
+						out += q;
+					} else {
+						kept += q * factor;
+					}
+				}
+			}
+			inDraw.set(tid, p + cola.alpha);
+			chance.set(tid, out);
+			after.set(tid, p * (out + kept) + cola.alpha * out);
+		}
+		let weight = 0;
+		let total = 0;
+		for (const tid of tids) {
+			weight += chance.get(tid)!;
+			total += chance.get(tid)! * inDraw.get(tid)!;
+		}
+		const mean = weight > 0 ? total / weight : 0;
+		for (const tid of tids) {
+			const ratio =
+				mean > 0 ? Math.round((20 * inDraw.get(tid)!) / mean) / 20 : 1;
+			path.get(tid)!.set(d, ratio);
+			let p = after.get(tid)!;
+			if (holds.has(`${tid}:${d}`) && ratio > 0) {
+				const { win } = colaWins(cola, ratio);
+				let lost = 0;
+				for (const [j, q] of win.entries()) {
+					lost += q * (1 - (DRAFT_LOTTERY_FACTORS[j] ?? 1));
+				}
+				p -= chance.get(tid)! * lost * inDraw.get(tid)!;
+			}
+			points.set(tid, Math.max(0, p));
+		}
+	}
+	return path;
+};
+
 // In the offseason before this season's draft order is set: where each team
 // goes into it, the worst first - the teams that missed the playoffs by
 // record, then the rest.
@@ -2737,6 +2873,8 @@ export const buildOutlook = async ({
 	)
 		? { title: [] as Curve[], playoff: [] as Curve[] }
 		: undefined;
+	// Each team's chance of each finish, season by season (colaPaths).
+	const finishes = new Map<number, number[][]>(teams.map((t) => [t.tid, []]));
 
 	for (let y = 0; y <= OUTLOOK_YEARS; y++) {
 		const mean =
@@ -2767,6 +2905,9 @@ export const buildOutlook = async ({
 				seed: season * 1009 + y * 101 + Math.round(progress * 1000),
 			});
 		const sim = simWith(outlookSettings.measuredUncertainty);
+		for (const t of teams) {
+			finishes.get(t.tid)!.push(sim.get(t.tid)!.rounds);
+		}
 
 		for (const t of teams) {
 			const o = outlooks.get(t.tid)!;
@@ -2822,6 +2963,30 @@ export const buildOutlook = async ({
 				),
 			);
 		}
+	}
+
+	if (
+		base.cola &&
+		(outlookSettings.colaPath ||
+			[...teamOutlookSettings.values()].some((x) => x.colaPath))
+	) {
+		const holds = new Set<string>();
+		for (const list of picks.values()) {
+			for (const dp of list) {
+				if (dp.round === 1 && dp.tid === dp.originalTid) {
+					holds.add(`${dp.originalTid}:${dp.season}`);
+				}
+			}
+		}
+		base.cola.path = colaPaths({
+			cola: base.cola,
+			finishes,
+			holds,
+			season,
+			first: outlookSeason(base, 0),
+			lastDraft: Math.max(lastPickSeason, outlookSeason(base, OUTLOOK_YEARS)),
+			numPlayoffRounds: g.get("numGamesPlayoffSeries", "current").length,
+		});
 	}
 
 	let deadline: DeadlineView | undefined;

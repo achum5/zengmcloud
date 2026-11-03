@@ -1,6 +1,11 @@
 import { assert, beforeAll, test } from "vitest";
 import { resetG } from "../../../test/helpers.ts";
-import { losingShifts, outlookSettings, retireChance } from "./outlook.ts";
+import {
+	colaPaths,
+	losingShifts,
+	outlookSettings,
+	retireChance,
+} from "./outlook.ts";
 
 beforeAll(() => {
 	resetG();
@@ -70,4 +75,48 @@ test("tearing a team down costs it its players' mood", () => {
 	} finally {
 		outlookSettings.losingParts = was;
 	}
+});
+
+test("under COLA, a team that goes deep each year keeps few chances at the draw", () => {
+	// Four playoff rounds: index 0 out of the playoffs, then 0-4 series won.
+	const contender = [0, 0.1, 0.3, 0.3, 0.2, 0.1];
+	const lottery = [0.9, 0.1, 0, 0, 0, 0];
+	const middle = [0.4, 0.4, 0.2, 0, 0, 0];
+	const tids = [0, 1, 2, 3];
+	const finishes = new Map(
+		tids.map((tid) => [
+			tid,
+			Array.from({ length: 11 }, () =>
+				tid === 0 ? contender : tid === 1 ? lottery : middle,
+			),
+		]),
+	);
+	const path = (holds: Set<string>) =>
+		colaPaths({
+			cola: {
+				points: new Map(tids.map((tid) => [tid, 2000])),
+				meanPoints: 2000,
+				addNow: true,
+				numLottery: 3,
+				numPicks: 2,
+				alpha: 1000,
+				matrices: new Map(),
+			},
+			finishes,
+			holds,
+			season: 2030,
+			first: 2030,
+			lastDraft: 2033,
+			numPlayoffRounds: 4,
+		});
+	const none = path(new Set());
+	// Level this season, as everyone adds the same before the playoffs...
+	assert.strictEqual(none.get(0)!.get(2030), none.get(1)!.get(2030));
+	// ...then the contender's runs cost it and the lottery team builds up.
+	assert.isBelow(none.get(0)!.get(2032)!, 0.5);
+	assert.isAbove(none.get(1)!.get(2032)!, none.get(2)!.get(2032)!);
+	assert.isAbove(none.get(2)!.get(2032)!, none.get(0)!.get(2032)!);
+	// Winning the draw with its own pick costs a team chances later.
+	const own = path(new Set(["1:2030", "1:2031"]));
+	assert.isBelow(own.get(1)!.get(2032)!, none.get(1)!.get(2032)!);
 });

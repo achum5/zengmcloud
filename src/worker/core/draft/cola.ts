@@ -51,7 +51,7 @@ const logChange = (
 };
 
 // Champion gets their lottery chances multiplied by 0. Loser of the finals, 0.25. Loser of the semifinals, 0.5. Loser of the quarterfinals, 0.75.
-const PLAYOFF_FACTORS = [0.75, 0.5, 0.25, 0];
+export const PLAYOFF_FACTORS = [0.75, 0.5, 0.25, 0];
 
 // Reaching the final three rounds is what costs a team its stockpile, and it is
 // the same line that keeps a team out of the draw - getNumColaLotteryTeams
@@ -113,7 +113,7 @@ export const updateColaAfterPlayoffs = async () => {
 };
 
 // Top 4 picks have their draft index multiplied by this amount
-const DRAFT_LOTTERY_FACTORS = [0, 0.25, 0.5, 0.75];
+export const DRAFT_LOTTERY_FACTORS = [0, 0.25, 0.5, 0.75];
 
 export const updateColaAfterLottery = async (tids: number[]) => {
 	for (const [i, tid] of tids.entries()) {
