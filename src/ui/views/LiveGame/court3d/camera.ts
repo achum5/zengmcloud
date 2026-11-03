@@ -53,6 +53,9 @@ export type Rig = {
 	high: number;
 	slide: number;
 	upright: boolean;
+	// Or stood just there, wherever the shot is (a camera that does not
+	// track along the sideline: down on the baseline, say).
+	at?: Pt3;
 };
 export const MAIN_RIG: Rig = { back: 70, high: 62, slide: 1, upright: true };
 export const REPLAY_RIG: Rig = {
@@ -86,7 +89,7 @@ export const makeCamera = (
 ): Camera => {
 	// It slides along the sideline as well as panning, so the far end of the
 	// floor is never seen at too steep an angle.
-	const pos = {
+	const pos = rig.at ?? {
 		x: COURT_W / 2 + (shot.x - COURT_W / 2) * rig.slide,
 		y: COURT_H + rig.back,
 		z: rig.high,

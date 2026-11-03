@@ -477,6 +477,8 @@ export type Beat = {
 	actionStart: number;
 	end: number;
 };
+export type CloseUp = { t0: number; t1: number; pid: number };
+
 export type CourtTimeline = {
 	tracks: Map<number, Track>;
 	// How low each man the game has ratings for keeps his dribble, his own
@@ -513,6 +515,9 @@ export type CourtTimeline = {
 	huddles?: Huddle[];
 	// The starting lineups called out before the opening tip (see intro.ts).
 	intro?: Intro;
+	// In close on a man at the line, through his routine before the first of
+	// his free throws (see beatFreeThrow).
+	closeUps?: CloseUp[];
 	// The warm-ups, before it is ready (see pregame.ts): the pre-game show
 	// on the floor.
 	warmup?: boolean;
@@ -644,6 +649,13 @@ const RUN = 21;
 const SPRINT = 24;
 const DRIBBLE = 19;
 const JOG = 13;
+// In close on a man at the line (see beatFreeThrow): from so long before he
+// has the ball to so long before he sets to shoot (ms), if that is long
+// enough; and on so many trips to the line.
+const CLOSE_BEFORE = 120;
+const CLOSE_AFTER = 160;
+const CLOSE_LEAST = 1300;
+const CLOSE_SHARE = 0.75;
 // Called out for the starting lineups: running out, pumped up.
 const INTRO_RUN = 17;
 const WALK = 6;
@@ -16633,6 +16645,19 @@ class Director {
 		this.lookAt(shooter, caught + 111, rimSpot);
 		const set = this.ftRoutine(shooter, caught + 160, S, rimSpot) + 200;
 		this.hold(shooter, set, "hold");
+		// Most trips: in close on him through it, from down on the baseline
+		// under the basket - and back out for the shot.
+		const c0 = caught - CLOSE_BEFORE;
+		const c1 = set - CLOSE_AFTER;
+		if (
+			first &&
+			c1 - c0 >= CLOSE_LEAST &&
+			hash01(shooter * 7 + 3, Math.floor(T)) < CLOSE_SHARE
+		) {
+			// (Not a cut in the timeline - nobody is anywhere else after it:
+			// the camera just goes straight there and back, see Court3D.)
+			this.closeUps.push({ t0: c0, t1: c1, pid: shooter });
+		}
 		if (!first) {
 			// The ball back out to the official and in to him again, and his
 			// routine - seen once already this trip - run through fast.
@@ -17113,6 +17138,7 @@ class Director {
 	}
 
 	private lastFtShooter: number | undefined;
+	private readonly closeUps: CloseUp[] = [];
 	// The ball sent out of bounds off a miss already (see missOut): the
 	// out-of-bounds line after it needs only the whistle.
 	private outOffMiss = false;
@@ -26439,6 +26465,7 @@ class Director {
 			jumps: this.jumps,
 			shots,
 			...(this.intro ? { intro: this.intro } : {}),
+			...(this.closeUps.length > 0 ? { closeUps: this.closeUps } : {}),
 			tension: this.tension,
 			seats: this.seats,
 			fast,

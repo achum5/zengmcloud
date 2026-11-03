@@ -117,6 +117,7 @@ import { helpers } from "../../../util/helpers.ts";
 import {
 	aimFor,
 	arenaAim,
+	closeUpAim,
 	crowdAt,
 	drawFrame,
 	introAim,
@@ -1020,6 +1021,8 @@ const Court3D = ({
 		introCall: -1,
 		introOn: false,
 		introTitle: false,
+		// In close on a man (see closeUpAim).
+		closeOn: false,
 		// No period on: the final horn gone, or between two (see isFinal,
 		// isBreak).
 		ended: false,
@@ -1272,11 +1275,14 @@ const Court3D = ({
 							bodyOfPid,
 							replay ? undefined : { rate, wall: now },
 						);
-			// Over a break, a look round the building; at the starting lineups,
-			// each man called.
+			// Over a break, a look round the building; in close on a man at the
+			// line; at the starting lineups, each man called.
+			const arenaView = replay ? undefined : arenaAim(tl, s.t, p.narrow);
+			const closeView =
+				replay || arenaView ? undefined : closeUpAim(tl, moment, p.narrow);
 			const view = replay
 				? undefined
-				: (arenaAim(tl, s.t, p.narrow) ?? introAim(tl, moment, p.narrow));
+				: (arenaView ?? closeView ?? introAim(tl, moment, p.narrow));
 			const on = !!tl.intro && s.t >= tl.intro.t0 && s.t < tl.intro.t1;
 			const called = callAt(tl.intro, s.t);
 			const k = called ? tl.intro!.calls.indexOf(called) : -1;
@@ -1305,6 +1311,11 @@ const Court3D = ({
 					s.flashHold = -Infinity;
 				}
 				s.replayRig = rigNow;
+			}
+			// (In close on a man and back out: straight there, a cut.)
+			if (!!closeView !== s.closeOn) {
+				s.closeOn = !!closeView;
+				s.snapCam = true;
 			}
 			const snap = s.snapCam;
 			const secs = (dt / 1000) * Math.min(24, Math.max(1, rate));

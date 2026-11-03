@@ -2402,6 +2402,34 @@ export const introAim = (
 	};
 };
 
+// IN CLOSE ON A MAN AT THE LINE (see the director's beatFreeThrow): from
+// down on the baseline under the basket, looking up the lane at him - his
+// face, the ball in his hands - through his routine.
+const CLOSE_AT = { back: 1.2, across: 1.5, high: 5.4 };
+export const closeUpAim = (
+	tl: CourtTimeline,
+	m: Moment,
+	narrow: boolean,
+): { shot: Shot; rig: Rig } | undefined => {
+	const c = tl.closeUps?.find((x) => m.t >= x.t0 && m.t < x.t1);
+	const st = c && m.players.find((p) => p.pid === c.pid);
+	if (!st) {
+		return undefined;
+	}
+	const left = st.x < COURT_W / 2;
+	return {
+		shot: { x: st.x, width: narrow ? 8.5 : 10.5, y: st.y, z: 4.7 },
+		rig: {
+			...REPLAY_RIG,
+			at: {
+				x: left ? -CLOSE_AT.back : COURT_W + CLOSE_AT.back,
+				y: 25 + CLOSE_AT.across,
+				z: CLOSE_AT.high,
+			},
+		},
+	};
+};
+
 // Whether a point is on screen, for skipping work.
 export const onScreen = (cam: Camera, x: number, y: number, z: number) => {
 	const p = project(cam, { x, y, z });

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 152,
+		date: "2026-11-03",
+		text: "3D game: a close-up at the free throw line. On most trips to the line the broadcast cuts in close on the shooter from under the basket - his face, the ball in his hands, the crowd soft behind him - through his routine before the first free throw, then back out for the shot.",
+	},
+	{
 		n: 151,
 		date: "2026-11-03",
 		text: "Player recaps: season and retirement pieces are now written like a beat reporter's - a real angle and lede, the moments that defined the year or the career, no stat-sheet recitals. Retirement headlines are about the player himself, not a count of years and rings, and the retirement piece now knows his best single games.",
