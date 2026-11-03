@@ -2155,6 +2155,17 @@ const yawOf = (l: Leg, before: number): number =>
 		(l.from.x !== l.to.x || l.from.y !== l.to.y
 			? Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x)
 			: before)) + (l.turn ?? 0);
+// (The way he faces as t comes: as the legs before it left him.)
+const yawThen = (m: Actor, t: number): number => {
+	let yaw = m.legs[0]?.yaw ?? 0;
+	for (const l of m.legs) {
+		if (l.t0 >= t) {
+			break;
+		}
+		yaw = yawOf(l, yaw);
+	}
+	return yaw;
+};
 
 // ---- the ball ---------------------------------------------------------------
 
@@ -3717,8 +3728,9 @@ class Action {
 		return Math.atan2(to.y - from.y, to.x - from.x);
 	}
 	// How near a man comes to `q` at t: to where he stands, or, down on the
-	// turf, to the length of him (see LIE_BACK).
-	private nearOf(m: Actor, t: number, q: Pt): number {
+	// turf, to the length of him (see LIE_BACK - or `legs` behind his hips,
+	// his legs and all).
+	private nearOf(m: Actor, t: number, q: Pt, legs = LIE_BACK): number {
 		const at = m.posAt(t);
 		const k = legIndexAt(m.legs, t);
 		const move = k < 0 ? undefined : m.legs[k]!.move;
@@ -3733,11 +3745,7 @@ class Action {
 		const a = back ? yaw + Math.PI : yaw;
 		const ux = Math.cos(a);
 		const uy = Math.sin(a);
-		const along = clamp(
-			(q.x - at.x) * ux + (q.y - at.y) * uy,
-			-LIE_BACK,
-			LIE_HEAD,
-		);
+		const along = clamp((q.x - at.x) * ux + (q.y - at.y) * uy, -legs, LIE_HEAD);
 		return Math.hypot(q.x - at.x - ux * along, q.y - at.y - uy * along);
 	}
 
@@ -14139,19 +14147,85 @@ class Action {
 			)[0];
 			if (helper) {
 				const from = helper.posAt(free.get(helper.pid)!);
-				const ang = Math.atan2(from.y - at.y, from.x - at.x);
-				const by = {
-					x: at.x + Math.cos(ang) * 2.3,
-					y: at.y + Math.sin(ang) * 2.3,
+				// (Beside him at his chest, on the side he comes from - not
+				// stood on him, come round from his head or his feet: he lies
+				// a man's length along the way he faces, his head that way
+				// down on his front, the other way on his back. Nor on any
+				// other man down there, nor where a man on his feet is - one
+				// up off the pile, say: pushed aside from there as he helps,
+				// slid along the turf. Taken up there, at his hips, at his
+				// head; or round the other side, if the way there is clear of
+				// them - and him; or no hand up.)
+				const yaw = yawThen(down, up.t0);
+				const u = { x: Math.cos(yaw), y: Math.sin(yaw) };
+				const n = { x: -u.y, y: u.x };
+				const head = up.move === "getUpBack" ? -1 : 1;
+				const chest = {
+					x: at.x + u.x * head * HELP_CHEST,
+					y: at.y + u.y * head * HELP_CHEST,
 				};
+				const near =
+					(from.x - chest.x) * n.x + (from.y - chest.y) * n.y >= 0 ? 1 : -1;
+				const others = this.men.filter((m) => m !== down && m !== helper);
+				const lies = (m: Actor, t: number) => {
+					const move = legAt(m, t).move;
+					return LIE_FACING.has(move) || LIE_BACKWARD.has(move);
+				};
+				const when = [up.t0 - 80, (up.t0 + up.t1) / 2, up.t1];
+				const spot = (along: number, side: number): Pt => ({
+					x: at.x + u.x * head * along + n.x * side,
+					y: at.y + u.y * head * along + n.y * side,
+				});
+				const roomAt = (p: Pt) =>
+					others.every((m) =>
+						when.every(
+							(t) =>
+								this.nearOf(m, t, p, HELP_LEGS) >=
+								(lies(m, t) ? HELP_CLEAR : HELP_ROOM),
+						),
+					);
+				const wayClear = (p: Pt) => {
+					const steps = Math.ceil(dist(from, p));
+					for (let k = 1; k < steps; k++) {
+						const q = {
+							x: from.x + ((p.x - from.x) * k) / steps,
+							y: from.y + ((p.y - from.y) * k) / steps,
+						};
+						// (Clear of where he is already.)
+						if (
+							dist(q, from) >= HELP_PATH &&
+							[down, ...others].some(
+								(m) =>
+									lies(m, up.t0 - 1) &&
+									this.nearOf(m, up.t0 - 1, q) < HELP_PATH,
+							)
+						) {
+							return false;
+						}
+					}
+					return true;
+				};
+				const by = [
+					spot(HELP_CHEST, near * HELP_BESIDE),
+					spot(0, near * HELP_BESIDE),
+					spot(HELP_HEAD, 0),
+					spot(HELP_CHEST, -near * HELP_BESIDE),
+					spot(0, -near * HELP_BESIDE),
+				].find((p) => roomAt(p) && wayClear(p));
 				// (A step or so over taken, not hopped.)
-				const need = Math.max(HELP_STEP_MS, (dist(from, by) / HELP_FPS) * 1000);
+				const need = by
+					? Math.max(HELP_STEP_MS, (dist(from, by) / HELP_FPS) * 1000)
+					: 0;
 				const leave = up.t0 - 80 - need;
-				if (dist(from, at) < HELP_FROM && leave >= free.get(helper.pid)!) {
+				if (
+					by &&
+					dist(from, at) < HELP_FROM &&
+					leave >= free.get(helper.pid)!
+				) {
 					helper.cut(leave);
 					helper.hold(leave);
-					helper.go(by, up.t0 - 80, undefined, this.toward(by, at));
-					helper.act("helpUp", up.t1, this.toward(by, at));
+					helper.go(by, up.t0 - 80, undefined, this.toward(by, chest));
+					helper.act("helpUp", up.t1, this.toward(by, chest));
 					free.set(helper.pid, helper.t);
 				}
 			}
@@ -14544,6 +14618,20 @@ const HELP_FROM = 22;
 const HELP_FPS = 6;
 // (No quicker over to him than this, ms.)
 const HELP_STEP_MS = 450;
+// (His chest this far along him from where he is, feet - see skeleton's
+// prone and supine; the helper this far out beside it.)
+const HELP_CHEST = 1.8;
+const HELP_BESIDE = 2;
+// (Or this far along him, past his head; and on the way there no nearer
+// any man down than this.)
+const HELP_HEAD = 4.4;
+const HELP_PATH = 1.1;
+// (Clear by this much of any other man down there, feet - the length of
+// him, see nearOf, his legs this far back of his hips.)
+const HELP_CLEAR = 1.5;
+const HELP_LEGS = 3.2;
+// (And this far from any man on his feet, feet - see apart.ts APART.)
+const HELP_ROOM = 2.2;
 const TOSS_MS = 380;
 // (Round from the way he faces, radians, to toss it clear of anybody - no
 // nearer the ball's way than this, feet, past this share of it - from his
