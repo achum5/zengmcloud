@@ -17,6 +17,7 @@ import { playAt } from "./physics.ts";
 import {
 	ANIMS,
 	armReaching,
+	mixArm,
 	armTo,
 	bodyOf,
 	bounceAt,
@@ -3896,13 +3897,26 @@ const reachAt = (
 	up: number,
 ): { sh: number; el: number; ab: number } => {
 	const r = Math.max(0.7, Math.min(most, d - them));
-	const a = (Math.max(0, Math.min(100, deg)) * Math.PI) / 180;
-	return armReaching(ARM_BODY, q, hand, {
-		f: r * Math.cos(a),
-		s: Math.max(0.45, r * Math.sin(a)),
-		u: up,
-	});
+	// (Round toward his front till his shoulder can get it there: a man
+	// beside and behind him is reached for out to the side, the arm never
+	// swung back and up behind him - see SHOULDER_BACK.)
+	let reached = { sh: 0, el: 0, ab: 0 };
+	for (let at = Math.max(0, Math.min(100, deg)); at >= 0; at -= 10) {
+		const a = (at * Math.PI) / 180;
+		reached = armReaching(ARM_BODY, q, hand, {
+			f: r * Math.cos(a),
+			s: Math.max(0.45, r * Math.sin(a)),
+			u: up,
+		});
+		if (reached.sh >= REACH_BACK && reached.el <= REACH_BEND) {
+			break;
+		}
+	}
+	return reached;
 };
+// (How far back, and how bent, an arm reaching out at a man goes.)
+const REACH_BACK = -45;
+const REACH_BEND = 125;
 // A defender's hand on the man he rides: on his side - let go as he
 // crosses in front, and only put back once he is past, on the other, so it
 // never swaps while it is on him.
@@ -5731,7 +5745,7 @@ const footLock = (
 	// (His legs turned under him as this move has them: under his arms at
 	// something on the run, not at all.)
 	const turned = (from: number, to: number) =>
-		hipsTurn(legs + (wrapAngle(to - from) * 180) / Math.PI) - legs;
+		footTurn(hipsTurn(legs + (wrapAngle(to - from) * 180) / Math.PI) - legs);
 	const out = ([0, 1] as const).map((leg) => {
 		const c = footThrough(now, leg === 0 ? now.r : now.l);
 		const f = falls[leg];
@@ -5761,6 +5775,25 @@ const footLock = (
 		out[1] = l + (r - l) * w;
 	}
 	return Math.abs(out[0]) < 0.05 && Math.abs(out[1]) < 0.05 ? undefined : out;
+};
+
+// A foot down turned from where his leg points no further than a leg turns
+// (degrees, hip and knee together - about FOOT_TURN): turned on further,
+// it pivots round on the floor with him, not left pointing where it came
+// down with his ankle wrung round past where an ankle goes. (Eased into it,
+// so the pivot doesn't start with a jolt.)
+const FOOT_TURN = 48;
+const FOOT_EASE = 16;
+const footTurn = (deg: number) => {
+	const a = Math.abs(deg);
+	if (a <= FOOT_TURN - FOOT_EASE) {
+		return deg;
+	}
+	return (
+		Math.sign(deg) *
+		(FOOT_TURN -
+			FOOT_EASE * Math.exp(-(a - (FOOT_TURN - FOOT_EASE)) / FOOT_EASE))
+	);
 };
 
 // TURNING WHERE HE STANDS.
@@ -6372,8 +6405,45 @@ const slipped = (
 // and an arm in whatever it is saying.
 export const poseOf = (st: PlayerState): Pose => {
 	const p = leanRoom(poseFor(st), st.room);
-	return st.armsIn ? tuckedArms(p, st.armsIn) : p;
+	return humane(st.armsIn ? tuckedArms(p, st.armsIn) : p);
 };
+
+// WHAT A BODY CAN DO. However his move, his turns and what his arms are
+// saying stack up, no joint goes past where a man's goes: the wrist folded
+// forward no more than about 85 degrees (a shooter's gooseneck) or cocked
+// back 80, the elbow bent no more than about 150, the arm swung back
+// behind him no more than about 70 - each eased into its end, not stopped
+// dead at it, so a swing that would go past slows into it.
+const WRIST_FWD = -88;
+const WRIST_BACK = 82;
+const ELBOW_MOST = 152;
+const SHOULDER_BACK = -72;
+const LIMIT_EASE = 14;
+// (Past `to - LIMIT_EASE` toward the end, eased in to it.)
+const softMin = (v: number, to: number) =>
+	v >= to + LIMIT_EASE
+		? v
+		: to + LIMIT_EASE * Math.exp((v - to - LIMIT_EASE) / LIMIT_EASE);
+const softMax = (v: number, to: number) => -softMin(-v, -to);
+const humane = (p: Pose): Pose =>
+	p.wrN > WRIST_FWD + LIMIT_EASE &&
+	p.wrF > WRIST_FWD + LIMIT_EASE &&
+	p.wrN < WRIST_BACK - LIMIT_EASE &&
+	p.wrF < WRIST_BACK - LIMIT_EASE &&
+	p.elN < ELBOW_MOST - LIMIT_EASE &&
+	p.elF < ELBOW_MOST - LIMIT_EASE &&
+	p.shN > SHOULDER_BACK + LIMIT_EASE &&
+	p.shF > SHOULDER_BACK + LIMIT_EASE
+		? p
+		: {
+				...p,
+				wrN: softMax(softMin(p.wrN, WRIST_FWD), WRIST_BACK),
+				wrF: softMax(softMin(p.wrF, WRIST_FWD), WRIST_BACK),
+				elN: softMax(p.elN, ELBOW_MOST),
+				elF: softMax(p.elF, ELBOW_MOST),
+				shN: softMin(p.shN, SHOULDER_BACK),
+				shF: softMin(p.shF, SHOULDER_BACK),
+			};
 const poseFor = (st: PlayerState): Pose => {
 	const own = posed(
 		st.anim,
@@ -6570,19 +6640,9 @@ const toBody = (st: PlayerState, p: Pt3): V3 => {
 	return { f: dx * c + dy * s, s: dx * s - dy * c, u: p.z - st.z };
 };
 
-const mixLimb = (a: Limb, b: Limb, w: number): Limb => {
-	const m = (p: V3, q: V3): V3 => ({
-		f: p.f + (q.f - p.f) * w,
-		s: p.s + (q.s - p.s) * w,
-		u: p.u + (q.u - p.u) * w,
-	});
-	return {
-		root: m(a.root, b.root),
-		mid: m(a.mid, b.mid),
-		end: m(a.end, b.end),
-		tip: m(a.tip ?? a.end, b.tip ?? b.end),
-	};
-};
+// (An arm part the way to another, each bone its own length - see mixArm.)
+const mixLimb = (a: Limb, b: Limb, w: number): Limb =>
+	mixArm({ ...a, tip: a.tip ?? a.end }, { ...b, tip: b.tip ?? b.end }, w);
 
 // The ball just come into his hands: his arms part the way from where they
 // were to it (see grip).

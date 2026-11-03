@@ -7623,14 +7623,98 @@ const ON_HIP = { f: -0.08, s: 0.26, u: 0.34 };
 // (The wrist of a folded arm: in front of his chest, across at the other
 // arm, so far below his shoulders - the right forearm over the left.)
 const FOLD = { f: 0.4, s: 0.12, u: 0.6, under: 0.14 };
-const mixArm = (a: Limb, b: Limb, w: number): Limb => {
+// One arm going over into another, `w` of the way: the wrist moved along
+// from where it was to where it goes, and the arm put back together to it -
+// each bone its own length all the way, the elbow out the way the two have
+// it between them. (Slid straight across from the one to the other, the
+// joints cut the corner and the forearm shrank a third of its length on the
+// way, going to a hand on his hip or his knee, arms crossed.)
+export const mixArm = (a: Limb, b: Limb, w: number): Limb => {
+	if (w <= 0) {
+		return a;
+	}
+	if (w >= 1) {
+		return b;
+	}
 	const m = (p: V3, o: V3) =>
 		v3(p.f + (o.f - p.f) * w, p.s + (o.s - p.s) * w, p.u + (o.u - p.u) * w);
+	const sub = (p: V3, o: V3) => v3(p.f - o.f, p.s - o.s, p.u - o.u);
+	const len = (v: V3) => Math.hypot(v.f, v.s, v.u);
+	const root = m(a.root, b.root);
+	const L1 =
+		len(sub(a.mid, a.root)) +
+		(len(sub(b.mid, b.root)) - len(sub(a.mid, a.root))) * w;
+	const L2 =
+		len(sub(a.end, a.mid)) +
+		(len(sub(b.end, b.mid)) - len(sub(a.end, a.mid))) * w;
+	let end = m(a.end, b.end);
+	let toEnd = sub(end, root);
+	let d = len(toEnd);
+	if (d < 1e-6 || L1 < 1e-6 || L2 < 1e-6) {
+		return {
+			root,
+			mid: m(a.mid, b.mid),
+			end,
+			...(a.tip && b.tip ? { tip: m(a.tip, b.tip) } : {}),
+		};
+	}
+	// (Out of reach: the wrist as far as the arm goes along the way to it;
+	// too near: as near as it folds.)
+	const most = (L1 + L2) * 0.9999;
+	const least = Math.abs(L1 - L2) + 1e-4;
+	const D = Math.min(most, Math.max(least, d));
+	if (D !== d) {
+		end = v3(
+			root.f + (toEnd.f * D) / d,
+			root.s + (toEnd.s * D) / d,
+			root.u + (toEnd.u * D) / d,
+		);
+		toEnd = sub(end, root);
+		d = D;
+	}
+	const k = v3(toEnd.f / d, toEnd.s / d, toEnd.u / d);
+	const x = (d * d + L1 * L1 - L2 * L2) / (2 * d);
+	const h = Math.sqrt(Math.max(0, L1 * L1 - x * x));
+	// The elbow out the way the two have it between them.
+	const pole = sub(m(a.mid, b.mid), root);
+	const along = pole.f * k.f + pole.s * k.s + pole.u * k.u;
+	let out = v3(
+		pole.f - k.f * along,
+		pole.s - k.s * along,
+		pole.u - k.u * along,
+	);
+	let ol = len(out);
+	if (ol < 1e-6) {
+		// (Straight on to it: out the way the first had it.)
+		const p0 = sub(a.mid, a.root);
+		const a0 = p0.f * k.f + p0.s * k.s + p0.u * k.u;
+		out = v3(p0.f - k.f * a0, p0.s - k.s * a0, p0.u - k.u * a0);
+		ol = len(out) || 1;
+	}
+	const mid = v3(
+		root.f + k.f * x + (out.f / ol) * h,
+		root.s + k.s * x + (out.s / ol) * h,
+		root.u + k.u * x + (out.u / ol) * h,
+	);
+	if (!a.tip || !b.tip) {
+		return { root, mid, end };
+	}
+	// The hand off the wrist the way the two point it between them, its own
+	// length.
+	const ha = sub(a.tip, a.end);
+	const hb = sub(b.tip, b.end);
+	const hl = len(ha) + (len(hb) - len(ha)) * w;
+	const hd = m(ha, hb);
+	const hn = len(hd) || 1;
 	return {
-		root: m(a.root, b.root),
-		mid: m(a.mid, b.mid),
-		end: m(a.end, b.end),
-		...(a.tip && b.tip ? { tip: m(a.tip, b.tip) } : {}),
+		root,
+		mid,
+		end,
+		tip: v3(
+			end.f + (hd.f / hn) * hl,
+			end.s + (hd.s / hn) * hl,
+			end.u + (hd.u / hn) * hl,
+		),
 	};
 };
 // (A hand on his knee: on top of his thigh just above it.)

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 143,
+		date: "2026-11-03",
+		text: "3D game: joints that bend like a real body's. A planted foot pivots on the floor as a player turns instead of staying put with his ankle wrung round, arms keep their length going to the hips, the knees or the ball (the forearm used to shrink by a third), a defender reaching for a man beside him reaches out to the side instead of swinging his arm up behind his back, and no wrist, elbow or shoulder bends past where a real one stops.",
+	},
+	{
 		n: 142,
 		date: "2026-11-02",
 		text: "3D game: clean profiles again. A player turning toward the camera no longer has his face squeezed and slid over the side of his head (it read as his face and profile smeared together); he shows his profile, then his face, never one faded in over the other.",
