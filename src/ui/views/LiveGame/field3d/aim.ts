@@ -112,7 +112,7 @@ const INTERVIEW_CAM_Z = 6.2;
 const KICK_CLOSE = { width: 24, z: 3.4, camFt: 26, camZ: 4.4 };
 // And on the referee giving a foul after the play (see the director's
 // refCall), from the knees up - his arms over his head in it.
-const REF_CLOSE = { width: 13, z: 5.3, camFt: REF_CAM_FT, camZ: 5.6 };
+const REF_CLOSE = { width: 13, z: 5.3, camFt: REF_CAM_FT, camZ: 6.2 };
 // The winners' head coach under the cooler: in on him, this wide, the
 // picture's middle this far toward the near side of him (on the far
 // sideline, this far).

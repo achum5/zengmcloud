@@ -705,6 +705,9 @@ const untwistTable = (q: Pose, pel: V3): Float64Array => {
 // bare head, in helmet radii.)
 const HELMET = 1.1;
 const OFFICIAL_HEAD = 0.9;
+// (Its brim: a strip of masses side by side out over his eyes, across it
+// this far out each side, head radii.)
+const BRIM = [-0.36, -0.12, 0.12, 0.36];
 // A coach's headset band: this far out over his cap (head radii), round
 // this far either way of straight up, in so many pieces.
 const BAND = 0.95;
@@ -1085,11 +1088,11 @@ const build = (
 		// His bare head, a cap on it, and its brim out over his eyes.
 		add(at(0, 0, 0), at(0, 0, 0), [[0, R * OFFICIAL_HEAD]], SHELL, G_HELMET);
 		features(OFFICIAL_HEAD, 0);
-		for (const sd of [-1, 1]) {
+		for (const s of BRIM) {
 			add(
-				at(0.6, sd * 0.26, 0.27),
-				at(1.12, sd * 0.2, 0.2),
-				[[0, R * 0.15]],
+				at(0.62, s, 0.25),
+				at(1.3, s * 0.8, 0.13),
+				[[0, R * 0.13]],
 				SHELL,
 				G_HELMET,
 			);
@@ -2750,10 +2753,10 @@ export const sculptFigure = (
 							cloth = false;
 							if (lf > 0.3) {
 								const eye =
-									lu > -0.08 &&
-									lu < 0.1 &&
-									Math.abs(ls) > 0.12 &&
-									Math.abs(ls) < 0.42;
+									lu > -0.06 &&
+									lu < 0.05 &&
+									Math.abs(ls) > 0.16 &&
+									Math.abs(ls) < 0.36;
 								const mouth =
 									lf > 0.5 && lu > -0.39 && lu < -0.33 && Math.abs(ls) < 0.2;
 								c = scaled(
