@@ -18,6 +18,7 @@ import { validateTeam } from "../util/processInputs.ts";
 import { validateSeason } from "../util/processInputs.ts";
 import { validateSeasonType } from "../util/processInputs.ts";
 import { posValue } from "../core/player/pos.basketball.ts";
+import { getMoreTeamInfo } from "./rosterMoreInfo.ts";
 
 const processInputs = (params: RouteParams<"roster">) => {
 	// Fix broken links
@@ -468,10 +469,13 @@ export default defineView({
 				};
 			}
 
+			const moreInfo = await getMoreTeamInfo(inputs.season, inputs.tid);
+
 			return {
 				collegeInfo,
 				conf,
 				editable,
+				moreInfo,
 				maxRosterSize: g.get("maxRosterSize"),
 				numPlayersOnCourt: g.get("numPlayersOnCourt"),
 				luxuryTaxAmount,

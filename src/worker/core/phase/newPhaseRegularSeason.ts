@@ -12,6 +12,7 @@ import {
 	TWITTER_HANDLE,
 } from "../../../common/constants.ts";
 import { getMetaAttribute, putMetaAttribute } from "../../db/metaAttributes.ts";
+import { savePreseasonOdds } from "../sportsbook/savePreseasonOdds.ts";
 
 class GameHasYourTeamCache {
 	cache: Record<number, boolean> = {};
@@ -175,6 +176,14 @@ const newPhaseRegularSeason = async (
 		regularSeason: {},
 		playoffs: {},
 	});
+
+	// The lines the season starts on, for the team pages. A garnish: a failure
+	// here must never stop the season from starting.
+	try {
+		await savePreseasonOdds();
+	} catch (error) {
+		console.error("Could not save preseason odds", error);
+	}
 
 	if (!local.autoPlayUntil) {
 		if (g.get("season") > g.get("startingSeason") && Math.random() < 0.1) {

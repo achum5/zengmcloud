@@ -3503,6 +3503,14 @@ export type TeamSeasonWithoutKey = {
 	ovrStart?: number;
 	ovrEnd?: number;
 
+	// The sportsbook's lines as the regular season began - the title price in
+	// American odds and the win total - kept the way Basketball Reference keeps
+	// them, long after the futures board has moved on. Basketball only.
+	preseasonOdds?: {
+		title?: number;
+		winTotal?: number;
+	};
+
 	// Copied over from Team
 	cid: number;
 	did: number;

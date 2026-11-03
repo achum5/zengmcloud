@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 161,
+		date: "2026-11-03",
+		text: "Team pages have a More team info dropdown, like Basketball Reference's: points scored and allowed, SRS, pace, offensive, defensive and net rating and expected record, each with where it ranks in the league, plus attendance and how the playoffs went. It also shows the preseason odds - the title price and the win total, and whether the team went over or under - saved from this season on.",
+	},
+	{
 		n: 160,
 		date: "2026-11-03",
 		text: "Realistic Front Offices: swapping picks in the same draft makes sense again. A CPU team offered the pick just ahead of its own, straight up for its own, takes it as offered - it no longer asks to be paid a first and a second to move up - and two picks in the same draft no longer each count their full doubt.",

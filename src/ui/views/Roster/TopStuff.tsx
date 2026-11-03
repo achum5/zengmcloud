@@ -14,6 +14,7 @@ import { RosterComposition } from "../../components/RosterComposition.tsx";
 import { PlusMinus } from "../../components/PlusMinus.tsx";
 import { useLocal } from "../../util/local.ts";
 import { hardCapForTid } from "../../../common/getHardCap.ts";
+import { MoreTeamInfo } from "./MoreTeamInfo.tsx";
 
 const fontSizeLarger = { fontSize: "larger" };
 
@@ -150,6 +151,7 @@ const TopStuff = ({
 	editable,
 	luxuryTaxAmount,
 	minPayrollAmount,
+	moreInfo,
 	openRosterSpots,
 	payroll,
 	players,
@@ -169,6 +171,7 @@ const TopStuff = ({
 	| "editable"
 	| "luxuryTaxAmount"
 	| "minPayrollAmount"
+	| "moreInfo"
 	| "payroll"
 	| "players"
 	| "playoffsByConf"
@@ -341,6 +344,7 @@ const TopStuff = ({
 									: {t.seasonAttrs.avgAge?.toFixed(1)}
 								</div>
 							</div>
+							<MoreTeamInfo info={moreInfo} season={season} />
 						</div>
 
 						{isCurrentSeason ? (

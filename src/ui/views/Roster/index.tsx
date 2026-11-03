@@ -103,6 +103,7 @@ const Roster = ({
 	luxuryTaxAmount,
 	maxRosterSize,
 	minPayrollAmount,
+	moreInfo,
 	numPlayersOnCourt,
 	payroll,
 	players,
@@ -520,6 +521,7 @@ const Roster = ({
 				editable={editable}
 				luxuryTaxAmount={luxuryTaxAmount}
 				minPayrollAmount={minPayrollAmount}
+				moreInfo={moreInfo}
 				openRosterSpots={maxRosterSize - players.length}
 				players={players}
 				playoffsByConf={playoffsByConf}
