@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 157,
+		date: "2026-11-03",
+		text: "Realistic Front Offices, COLA leagues: CPU teams now project each team's draft-lottery chances along the path it is likely to take - deep playoff runs and lottery wins cost a team its chances, missing the playoffs builds them up - so a contender values its own future firsts less and a team out of contention values its own more.",
+	},
+	{
 		n: 156,
 		date: "2026-11-03",
 		text: "Realistic Front Offices: CPU teams now expect their players to miss some games to injuries still to come, not just the ones they have now - so a team built around one star no longer counts on him playing every game, and a deep bench counts for more.",

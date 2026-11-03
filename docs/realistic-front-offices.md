@@ -521,6 +521,17 @@ every team, again whenever a signing changes the pool), memory cleanup 17%.
   arena under COLA the worst team drew a top-four pick 40% of the time and
   picked fifth to eighth otherwise; teams finishing 7th-12th from the bottom
   drew one 22% of the time. A team's pick held by another is never drawn.
+  **Under COLA each team's chances are projected along its own path**: what
+  it has, plus a season's share for each season it is likely to miss the
+  final three rounds, less what its likely playoff runs and draw wins cost
+  it, as the game charges them - not as if every team added the same each
+  season. A contender's own picks seasons out are worth less (it keeps
+  spending its chances), a team out of contention's more. Half the teams
+  each way, 3 leagues each way round over 5 seasons: as many titles (15 to
+  15), 241 playoff rounds to 209 (more in every league), and more seasons
+  under 20 wins (29 to 18) - a team out of contention builds its chances
+  by staying out of the playoffs, and does. Contenders on it gave their own
+  firsts more readily.
   Before this season's lottery is run, its picks go by the final standings
   (they were priced by next season's projection).
 - **A deal moves the picks of the teams in it.** A pick's place comes from
@@ -816,10 +827,10 @@ room unused 75 summers of 84).
 - **Trading between picks comes later** (owner's call).
 - Teams understand whatever lottery system the league uses, and build to it.
   The same front offices with no lottery (the worst record picks first) as
-  under COLA (an arena league of 5 seasons against 45 COLA seasons): 4.2
-  teams a season under 20 wins against 1.7, the three worst averaging 12.5
-  wins against 18.6, 6.6 teams in the middle against 10.4, and 14 firsts
-  traded a season against 7 - the bad teams taking them in. The NBA's 2027
+  under COLA (2 arena leagues of 5 seasons against 70 COLA seasons): 4.4
+  teams a season under 20 wins against 1.9, the three worst averaging 13.1
+  wins against 17.9, 7.6 teams in the middle against 10.0, and 12 firsts
+  traded a season against 7.5 - the bad teams taking them in. The NBA's 2027
   lottery is priced by the game's odds for each finish; its limits on how
   high a team that was just in the lottery can pick are left out (a few
   hundredths of one or two teams' pick value a season).

@@ -645,9 +645,12 @@ export const outlookSettings = {
 	measuredUncertainty: false,
 	// COLA: each team's chances toward a draw projected along its own path
 	// (colaPaths) - its playoff runs and draw wins cost it chances, as the
-	// game charges - not as if every team added the same each season. Off
-	// while it is measured.
-	colaPath: false,
+	// game charges - not as if every team added the same each season. Half
+	// the teams each way, 3 leagues each way round over 5 seasons: as many
+	// titles (15 to 15), 241 playoff rounds to 209 (more in every league),
+	// and more seasons under 20 wins (29 to 18): a team out of contention
+	// builds its chances by staying out of the playoffs, and does.
+	colaPath: true,
 	// Before the deadline, how much a team expects to learn about itself by
 	// then (DeadlineView.revealedMeasured) as its read of a team really moves
 	// by then - about 0.7 points a game from the season's start, its own
