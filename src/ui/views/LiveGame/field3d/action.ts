@@ -4033,6 +4033,7 @@ class Action {
 		this.noTwins();
 		this.offMenDown();
 		this.readyUp();
+		this.noTreading();
 		this.noFlicks();
 		this.overHeads();
 		this.tdArms();
@@ -4187,6 +4188,45 @@ class Action {
 	// the gait he was in. Nor a step of one between two of the same other
 	// stride (a blocker's drive, a step on to the man): on in that, facing
 	// the way he was.
+	// Stepping on the spot - a man run up against the sideline, say, his
+	// legs cut short at it but his gait carried on into nothing: a stretch
+	// of steps that go next to nowhere (under CRAWL_FPS each) for at least
+	// GAIT_LEAST_MS, stood there instead, facing the way he was. (See legTo,
+	// which does as much for one leg; these come a step at a time.)
+	noTreading() {
+		const still = (l: Leg) =>
+			STEPS.has(l.move) &&
+			dist(l.from, l.to) < (CRAWL_FPS * (l.t1 - l.t0)) / 1000;
+		for (const m of this.men) {
+			const legs = m.legs;
+			let yaw = legs[0]?.yaw ?? 0;
+			const faced = legs.map((l) => (yaw = yawOf(l, yaw)));
+			for (let i = 0; i < legs.length;) {
+				if (!still(legs[i]!)) {
+					i++;
+					continue;
+				}
+				let j = i + 1;
+				while (
+					j < legs.length &&
+					still(legs[j]!) &&
+					legs[j]!.t0 === legs[j - 1]!.t1
+				) {
+					j++;
+				}
+				if (legs[j - 1]!.t1 - legs[i]!.t0 >= GAIT_LEAST_MS) {
+					const face = faced[i - 1] ?? faced[i]!;
+					for (let k = i; k < j; k++) {
+						const l = legs[k]!;
+						l.move = "stand";
+						l.yaw ??= face;
+					}
+				}
+				i = j;
+			}
+		}
+	}
+
 	noFlicks() {
 		for (const m of this.men) {
 			const legs = m.legs;
