@@ -990,6 +990,27 @@ describe("a foul", () => {
 		}
 		assert.isAbove(held, 4);
 	}, 20_000);
+
+	// And after the whistle, now and then, the man flagged with his arms out
+	// to the officials - nobody on a play without a flag.
+	test("the man flagged, arms out after the whistle: what was that?", () => {
+		let protests = 0;
+		for (const game of games) {
+			const tl = stage(game);
+			for (const p of tl.plays) {
+				for (const part of p.parts) {
+					const legs = part.legs.filter((l) => l.arms === "protest");
+					if (legs.length === 0) {
+						continue;
+					}
+					assert.isAbove(p.flags.length, 0, `${p.i}`);
+					assert.isAtLeast(legs[0]!.t0, p.whistle, `${p.i}`);
+					protests++;
+				}
+			}
+		}
+		assert.isAbove(protests, 2);
+	}, 20_000);
 });
 
 describe("a man hurt", () => {

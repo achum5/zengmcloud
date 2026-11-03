@@ -1965,8 +1965,9 @@ class Director {
 					r: this.rng(i0, "fouls"),
 				})
 			: [];
-		// The fouls acted out, where the field has the men who did them.
-		actFouls(fouls, parts);
+		// The fouls acted out, where the field has the men who did them - and
+		// the man flagged, after the whistle, now and then not having it.
+		actFouls(fouls, parts, whistle);
 		// When the play has each line happen.
 		const timed = new Map(acted?.at ?? []);
 		for (const f of fouls) {

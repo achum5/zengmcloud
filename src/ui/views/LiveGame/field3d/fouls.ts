@@ -415,10 +415,63 @@ const facingOf = (l: Leg): number | undefined =>
 		? Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x)
 		: undefined);
 
-export const actFouls = (fouls: Foul[], parts: Part[]) => {
+// His arms in `move` over t0..t1, whatever the rest of him is doing.
+const armsOver = (legs: Leg[], move: Move, t0: number, t1: number) => {
+	splitLeg(legs, t0);
+	splitLeg(legs, t1);
+	for (const l of legs) {
+		if (l.t0 >= t0 && l.t1 <= t1 && l.t1 > l.t0) {
+			l.arms = move;
+			l.armsSpan = [(l.t0 - t0) / (t1 - t0), (l.t1 - t0) / (t1 - t0)];
+		}
+	}
+};
+
+// After the whistle, this often, the man flagged for a foul in the play
+// (not one before the snap) with his arms out to the officials, palms up -
+// what was that? - from this long after it (and up to this much later),
+// this long, over whatever he is doing then if his arms are free all of
+// it. (His own count, from who he is and the flag - not the play's dice.)
+const PROTEST = 0.55;
+const PROTEST_AFTER = 300;
+const PROTEST_LATE = 700;
+const PROTEST_MS = 1300;
+const countOf = (pid: number, flagI: number, salt: number) => {
+	let x = (pid * 2654435761 + flagI * 40503 + salt * 97) >>> 0;
+	x ^= x >>> 15;
+	x = Math.imul(x, 2246822519) >>> 0;
+	x ^= x >>> 13;
+	return (x >>> 0) / 4294967296;
+};
+const protest = (f: Foul, man: Part, whistle: number) => {
+	const when = WHEN[f.name];
+	if (
+		when === "pre" ||
+		when === "snap" ||
+		countOf(man.pid, f.flagI, 1) >= PROTEST
+	) {
+		return;
+	}
+	const t0 =
+		whistle + PROTEST_AFTER + countOf(man.pid, f.flagI, 2) * PROTEST_LATE;
+	const t1 = t0 + PROTEST_MS;
+	const legs = man.legs;
+	if (
+		(legs.at(-1)?.t1 ?? 0) < t1 ||
+		legs.some((l) => l.t1 > t0 && l.t0 < t1 && !freeArms(l))
+	) {
+		return;
+	}
+	armsOver(legs, "protest", t0, t1);
+};
+
+export const actFouls = (fouls: Foul[], parts: Part[], whistle: number) => {
 	for (const f of fouls) {
 		const move = FOUL_ARMS[f.name];
 		const man = parts.find((p) => p.pid === f.pid);
+		if (man) {
+			protest(f, man, whistle);
+		}
 		if (!move || !man) {
 			continue;
 		}
@@ -467,13 +520,6 @@ export const actFouls = (fouls: Foul[], parts: Part[]) => {
 		if (t1 - t0 < FOUL_LEAST) {
 			continue;
 		}
-		splitLeg(legs, t0);
-		splitLeg(legs, t1);
-		for (const l of legs) {
-			if (l.t0 >= t0 && l.t1 <= t1 && l.t1 > l.t0) {
-				l.arms = move;
-				l.armsSpan = [(l.t0 - t0) / (t1 - t0), (l.t1 - t0) / (t1 - t0)];
-			}
-		}
+		armsOver(legs, move, t0, t1);
 	}
 };
