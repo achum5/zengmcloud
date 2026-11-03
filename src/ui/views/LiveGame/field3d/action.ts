@@ -5540,7 +5540,20 @@ class Action {
 
 		// Who stays in to block, who goes out.
 		const kept = new Set(this.statPids("pba", "pbw"));
-		const target = this.man(this.statPids("tgt")[0]);
+		const named = this.man(this.statPids("tgt")[0]);
+		// (A two-point try's man read off his name - one the passer shares,
+		// say: thrown to a man out on a route all the same.)
+		const target =
+			named && named !== qb && named.team === this.input.offense
+				? named
+				: thrown
+					? this.o.find(
+							(m) =>
+								RECEIVERS.has(m.role) &&
+								!kept.has(m.pid) &&
+								!this.done.has(m.pid),
+						)
+					: undefined;
 		const runners = this.o.filter(
 			(m) =>
 				RECEIVERS.has(m.role) && (!kept.has(m.pid) || m === target) && m !== qb,
