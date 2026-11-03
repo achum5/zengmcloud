@@ -332,6 +332,13 @@ every team, again whenever a signing changes the pool), memory cleanup 17%.
   it where the usual pick was worth 0.005, but half the teams each way, 2
   leagues each way round over 5 seasons: 9 titles to 11, 155 playoff rounds
   to 145, as many games won.
+- **Searched as wide as it is** (measured, left as is): picks five drafts
+  ahead on the table, not three, 10 titles to 10 and 149 playoff rounds to
+  151 (2 leagues each way round); twenty deals a pair priced in full, not
+  ten, 6 titles to 4 but 63 playoff rounds to 87 (a league each way round).
+  Pricing a team's cuts as cuts.ts makes them, not by lowest value: 16
+  titles to 14, 217 playoff rounds to 233 (3 leagues each way round),
+  about 10% slower. All left off.
 - **Shopping.** When you offer a CPU team a deal, it compares three things:
   keeping its players, your offer, and the best deal it can get elsewhere by
   asking the other CPU teams instantly. Yours is best: it accepts. Someone

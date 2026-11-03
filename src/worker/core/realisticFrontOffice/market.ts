@@ -155,7 +155,9 @@ export const marketSettings = {
 	// teams in three leagues, deals both would make went from 2, 0 and 4 to
 	// 22, 6 and 12, the best of them better for both.
 	surplusPackages: true,
-	// How many drafts ahead a team's picks are on the table.
+	// How many drafts ahead a team's picks are on the table. Five measured and
+	// left at three: half the teams each way, 2 leagues each way round over 5
+	// seasons, 10 titles to 10, 149 playoff rounds to 151.
 	pickDraftsOnTable: PICK_DRAFTS_ON_TABLE,
 	// A deal's title chances for the other team come out of everyone else's,
 	// this team's among them.
@@ -167,9 +169,9 @@ export const marketSettings = {
 	fullRosterSignings: true,
 	// A team over the roster limit is priced as cutting whom it would really
 	// cut (cuts.ts): whoever it loses least by releasing, his salary owed
-	// unless just drafted - not simply the lowest value (cutLoss). Off: with
-	// half the teams on it an arena league ran 46% slower; not yet measured
-	// to win more.
+	// unless just drafted - not simply the lowest value (cutLoss). Measured
+	// and left off: half the teams each way, 3 leagues each way round over 5
+	// seasons, 16 titles to 14, 217 playoff rounds to 233, about 10% slower.
 	smartCuts: false,
 	// FRICTION (owner's call: deals between CPU teams went too easily). Firsts
 	// are scarce: each first a team gives costs it more the fewer it would
@@ -201,6 +203,8 @@ export const marketSettings = {
 	selfishShopping: false,
 	// How many of the deals that pass the screens a team out shopping prices
 	// in full with each team it talks to (the ones the screens rate best).
+	// Twenty measured and left at ten: half the teams each way, a league each
+	// way round over 5 seasons, 6 titles to 4 but 63 playoff rounds to 87.
 	candidatesPerPair: CANDIDATES_PER_PAIR,
 };
 
