@@ -268,6 +268,10 @@ const SLID = pose({
 
 // The quarterback set in the pocket: on the balls of his feet, the ball up
 // at his chest in both hands.
+// (Bent over, his hands on his thighs just above his knees; on his hips at
+// his waist, the elbows out wide; his arms folded across his chest, the
+// right forearm over the left - each worked out from where the hands go,
+// as the court has them: see court3d/poses.ts shapedArm.)
 const HUDDLE = pose({
 	hipN: 28,
 	kneeN: 26,
@@ -280,19 +284,31 @@ const HUDDLE = pose({
 	shF: 26,
 	elF: 18,
 	abF: 10,
+	onKneeN: 1,
+	onKneeF: 1,
 	wide: 0.6,
 });
-const ON_HIPS = pose({
-	shN: -14,
-	elN: 106,
-	abN: 48,
-	wrN: 10,
-	shF: -14,
-	elF: 106,
-	abF: 48,
-	wrF: 10,
-	lean: 8,
-});
+const HIPS = {
+	shN: -6,
+	elN: 56,
+	abN: 30,
+	shF: -6,
+	elF: 56,
+	abF: 30,
+	onHipN: 1,
+	onHipF: 1,
+};
+const ON_HIPS = pose({ ...HIPS, lean: 8 });
+const FOLDED = {
+	shN: 26,
+	elN: 116,
+	abN: -14,
+	shF: 30,
+	elF: 112,
+	abF: -14,
+	foldN: 1,
+	foldF: 1,
+};
 const UNDER_CENTER = pose({
 	hipN: 34,
 	kneeN: 52,
@@ -2878,7 +2894,7 @@ const FIELD_ANIMS = {
 	// Arms folded across his chest: a coach watching.
 	armsFolded: {
 		kind: "still",
-		pose: pose({ shN: 46, elN: 124, abN: -34, shF: 50, elF: 120, abF: -34 }),
+		pose: pose(FOLDED),
 	},
 	// Sat on the bench, leaning on his forearms on his thighs.
 	sit: {
@@ -3602,16 +3618,7 @@ const FIELD_ANIMS = {
 		{ shN: 48, elN: 110, abN: -10, shF: 64, elF: 96, abF: -10 },
 	),
 	// Offside, encroachment, the neutral zone: hands on hips.
-	sigHips: held({
-		shN: -14,
-		elN: 106,
-		abN: 48,
-		wrN: 10,
-		shF: -14,
-		elF: 106,
-		abF: 48,
-		wrF: 10,
-	}),
+	sigHips: held(HIPS),
 	// Pass interference, a block in the back: both hands pushed out.
 	sigPush: over(
 		{ shN: 70, elN: 110, abN: 4, shF: 70, elF: 110, abF: 4 },
@@ -3627,7 +3634,7 @@ const FIELD_ANIMS = {
 	// Unsportsmanlike conduct: the arms out wide, palms down.
 	sigT: held({ shN: 90, elN: 2, abN: 88, shF: 90, elF: 2, abF: 88 }),
 	// Delay of game: the arms folded across his chest.
-	sigFold: held({ shN: 46, elN: 124, abN: -34, shF: 50, elF: 120, abF: -34 }),
+	sigFold: held(FOLDED),
 	// Too many men, a man downfield who should not be: hands on his head.
 	sigHead: held(HANDS_ON_HEAD),
 	// A fake handoff taken: his arms shut round his belly on nothing.
