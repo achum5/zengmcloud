@@ -8,12 +8,14 @@ import {
 	compileField,
 	isLineItem,
 	targetForCursor,
+	type BallSeg,
 	type FieldTimeline,
 	type Leg,
 	type Play,
 } from "./director.ts";
 import { momentAt } from "./evaluate.ts";
 import {
+	CROSSBAR_Z,
 	dirFor,
 	FIELD_L,
 	FIELD_W,
@@ -24,6 +26,7 @@ import {
 	yardLineX,
 } from "./geometry.ts";
 import { makeFieldClock, REPLAY_SPEED, stepField } from "./playback.ts";
+import { replayFor } from "./replays.ts";
 import { coachId, headCoachAt, sidelineAt, sidelineFor } from "./sideline.ts";
 import type { FieldPlayerState } from "./sprite.ts";
 import { stageField, stageOpening } from "./stageField.ts";
@@ -328,6 +331,68 @@ describe("replays", () => {
 		}
 		assert.isAbove(behind, 3);
 	}, 20_000);
+
+	test("a long field goal, or one late that ties it or puts them ahead: from behind the kicker, onto the posts", () => {
+		const snap = 1000;
+		const ball: BallSeg[] = [
+			{ kind: "held", t0: 0, pid: 1 },
+			{
+				kind: "fly",
+				t0: snap,
+				t1: snap + 350,
+				from: { x: 300, y: 80, z: 1 },
+				to: { x: 279, y: 80, z: 1 },
+				peak: 0,
+			},
+			{ kind: "held", t0: snap + 350, pid: 2 },
+			{ kind: "spot", t0: snap + 700, at: { x: 279, y: 80, z: 0 } },
+			{
+				kind: "fly",
+				t0: snap + 1300,
+				t1: snap + 3100,
+				from: { x: 279, y: 80, z: 0.5 },
+				to: { x: 380, y: 82, z: 0 },
+				peak: 30,
+			},
+		];
+		const shown = (yds: number, made: boolean, clutch: boolean) =>
+			replayFor({
+				kind: "fieldGoal",
+				dir: 1,
+				events: [{ type: "fieldGoal", made, yds }],
+				beats: [
+					{
+						i: 0,
+						type: "fieldGoal",
+						preStart: snap + 1300,
+						actionStart: snap + 2400,
+						end: snap + 5000,
+					},
+				],
+				t0: 0,
+				snap,
+				whistle: snap + 3200,
+				t1: snap + 9000,
+				ball,
+				fouled: false,
+				clutch,
+			});
+		const long = shown(52, true, false);
+		const sky = long?.sky;
+		assert.isDefined(sky);
+		assert.isUndefined(long!.endZone);
+		// (Behind where it is kicked from, from before it is.)
+		assert.isBelow(sky!.at!, 279);
+		assert.isBelow(sky!.from, snap + 1300);
+		// (Over the bar at the end line, and the replay on a moment past it.)
+		assert.strictEqual(sky!.goal!.x, FIELD_L);
+		assert.isAbove(sky!.goal!.z, CROSSBAR_Z);
+		const over = snap + 1300 + 1800 * ((FIELD_L - 279) / 101);
+		assert.approximately(long!.to, over + 900, 1);
+		assert.isUndefined(shown(35, true, false));
+		assert.isDefined(shown(35, true, true)?.sky?.goal);
+		assert.isUndefined(shown(52, false, true));
+	});
 
 	test("anything else's cut to from the Skycam, looking the way it went, for the last of it", () => {
 		let sky = 0;

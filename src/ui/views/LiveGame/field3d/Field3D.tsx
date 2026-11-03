@@ -190,6 +190,9 @@ import { inShadow, venueFor } from "./venue.ts";
 // In close on a man, the stadium behind him this far out of focus (picture
 // pixels - see scene.ts).
 const CLOSE_SOFT = 1.1;
+// (And behind a kick shown again from behind the kicker, the ball against
+// it: see replays.ts.)
+const KICK_SOFT = 1.6;
 const DIP_MS = 150;
 // A replay cut from one of its cameras to the other (see replays.ts): a
 // flash of white, and the new angle up out of it over this long (ms).
@@ -1283,7 +1286,10 @@ const Field3D = ({
 			const width = aim.width * (fw / fh < 1.5 ? 0.8 : 1);
 			const c = cam.current;
 			const lift = aim.z ?? 2;
-			if (s.snapCam) {
+			// (A kick from behind the kicker: right on the ball the whole way -
+			// it goes as smoothly as any camera would after it, and a camera
+			// after it would be left behind.)
+			if (s.snapCam || sky?.goal) {
 				c.x = aim.x;
 				c.w = width;
 				c.y = aim.y;
@@ -1324,7 +1330,7 @@ const Field3D = ({
 				end !== undefined
 					? makeEndZoneCamera(shot, end, fw, fh)
 					: sky !== undefined
-						? makeSkyCamera(shot, sky, fw, fh)
+						? makeSkyCamera(shot, sky.way, fw, fh, sky.at)
 						: makeFieldCamera(
 								shot,
 								fw,
@@ -1469,7 +1475,11 @@ const Field3D = ({
 				...(confetti ? { confetti: { of: confetti, t: moment.t } } : {}),
 				flashes: flashesAt(photographersRef.current, moment),
 				...(replay ? {} : { marks: marksAt(moment.play, moment.t) }),
-				...(!replay && closeIn(moment) ? { soft: CLOSE_SOFT } : {}),
+				...(!replay && closeIn(moment)
+					? { soft: CLOSE_SOFT }
+					: sky?.goal
+						? { soft: KICK_SOFT }
+						: {}),
 			});
 			if (now - covers.current.at > 500) {
 				covers.current = {

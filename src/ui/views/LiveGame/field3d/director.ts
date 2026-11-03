@@ -451,6 +451,9 @@ const CALL_AFTER = 1100;
 // the whole stadium this long after the play is over, for this long.
 const BETWEEN_AFTER = 1500;
 const BETWEEN_MS = 4200;
+// A field goal shown again (see replays.ts) if it ties the game, or puts
+// them ahead, in the last this many minutes of it.
+const LATE_KICK = 5;
 // After the play: how long after the line before each is said.
 const AFTER_PLAY: Record<string, number> = {
 	penalty: 1600,
@@ -1955,6 +1958,19 @@ class Director {
 						e?.type === "overtime",
 				);
 		const offAt = Math.max(whistle, acted?.until ?? 0);
+		// (A field goal that ties it, or puts them ahead, late.)
+		const clutch =
+			kind === "fieldGoal" &&
+			quarter >= this.numPeriods &&
+			(typeof clock.clock === "number" ? clock.clock : 15) <= LATE_KICK &&
+			(() => {
+				const before = this.pointsTo(i0);
+				const after = this.pointsTo(i1);
+				return (
+					before[offense] <= before[1 - offense]! &&
+					after[offense] >= after[1 - offense]!
+				);
+			})();
 		// The play shown again, if it is, with the picture on it until t1.
 		const replayTill = (till: number) =>
 			replayFor({
@@ -1969,6 +1985,7 @@ class Director {
 				t1: till,
 				ball,
 				fouled: fouls.some((f) => f.accepted),
+				clutch,
 			});
 		if (half) {
 			t1 = stageHalftime({

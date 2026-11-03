@@ -1,7 +1,16 @@
 import type { Shot } from "./camera.ts";
 import type { Beat, BallSeg, PlayKind, RawEvent } from "./director.ts";
 import type { FieldMoment } from "./evaluate.ts";
-import { dist, MID_Y, type Dir, type Pt3, type Side } from "./geometry.ts";
+import { FIGURE_SCALE } from "./body.ts";
+import {
+	CROSSBAR_Z,
+	dist,
+	FIELD_L,
+	MID_Y,
+	type Dir,
+	type Pt3,
+	type Side,
+} from "./geometry.ts";
 
 // A BIG PLAY SHOWN AGAIN: a score, a takeaway, a long gain, a big sack, a
 // stop on fourth down - slowed down,
@@ -10,7 +19,8 @@ import { dist, MID_Y, type Dir, type Pt3, type Side } from "./geometry.ts";
 // score's, as the dunk's slam is, cut to from behind the end zone for the
 // last of it (see camera.ts makeEndZoneCamera) - through a flash of white;
 // anything else's, the same way, to the Skycam over the field behind it
-// (makeSkyCamera).
+// (makeSkyCamera). And a long field goal, or one late that ties it or puts
+// them ahead: from behind the kicker, the ball away at the posts.
 
 export type FieldReplay = {
 	// When the live picture cuts to it, and what it shows (timeline ms).
@@ -24,9 +34,12 @@ export type FieldReplay = {
 	endZone?: { from: number; end: Side };
 	// Anything else: from when it is seen from the Skycam, behind it and
 	// looking the way it went (the offense's way; a return's, back up the
-	// field).
-	sky?: { from: number; way: Dir };
+	// field) - for a field goal, held still behind the kicker, over `at`,
+	// and on the ball up to where it goes over the bar (`goal`), there
+	// after.
+	sky?: FieldSky;
 };
+export type FieldSky = { from: number; way: Dir; at?: number; goal?: Pt3 };
 
 // How long after the whistle it cuts to it - after the signals, a moment
 // of whoever made the play (a score, longer).
@@ -46,6 +59,12 @@ const END_ZONE_LEAST = 1000;
 const SKY_LEAD = 1700;
 const SKY_FIRST = 1200;
 const SKY_LEAST = 1000;
+// A field goal from behind the kicker: from this long before it is away,
+// the Skycam held this far behind where it is kicked from.
+const KICK_SKY_BEFORE = 450;
+const KICK_BACK = 42;
+// Long enough a field goal to be shown again, made (yards).
+const LONG_KICK = 50;
 // Long enough a gain, or a return, to be shown again (yards).
 const BIG_GAIN = 25;
 const BIG_RETURN = 35;
@@ -63,6 +82,8 @@ const SCORES = new Set([
 	"puntReturn",
 	"fumbleRecovery",
 ]);
+
+const clamp01 = (u: number) => Math.min(1, Math.max(0, u));
 
 // Who has the ball at t, if anybody.
 export const holderAt = (ball: BallSeg[], t: number): number | undefined => {
@@ -94,6 +115,8 @@ export const replayFor = (input: {
 	ball: BallSeg[];
 	// A flag that stands: what it was is shown instead.
 	fouled: boolean;
+	// A field goal late that would tie it, or put them ahead.
+	clutch?: boolean;
 }): FieldReplay | undefined => {
 	const { events, beats, whistle } = input;
 	if (input.fouled || input.kind === "kneel" || input.kind === "none") {
@@ -110,6 +133,13 @@ export const replayFor = (input: {
 	let skyWay: Dir = input.dir;
 	let fumbleAt: number | undefined;
 	let lost = false;
+	// (The kick, a field goal's: the second flight from the snap, after the
+	// snap back to the holder.)
+	const kick =
+		input.kind === "fieldGoal"
+			? input.ball.filter((b) => b.kind === "fly" && b.t0 >= input.snap)[1]
+			: undefined;
+	let kicked: { at: number; goal: Pt3 } | undefined;
 	for (const b of beats) {
 		const e = events[b.i]!;
 		const yds = typeof e.yds === "number" ? e.yds : 0;
@@ -126,6 +156,29 @@ export const replayFor = (input: {
 		}
 		if (e.type === "fumble") {
 			fumbleAt ??= b.actionStart;
+		} else if (
+			e.type === "fieldGoal" &&
+			e.made === true &&
+			(yds >= LONG_KICK || input.clutch === true) &&
+			kick?.kind === "fly"
+		) {
+			// (Over the bar, at the end line.)
+			const u = clamp01(
+				((input.dir === 1 ? FIELD_L : 0) - kick.from.x) /
+					(kick.to.x - kick.from.x || 1),
+			);
+			key ??= kick.t0 + (kick.t1 - kick.t0) * u;
+			kicked = {
+				at: kick.from.x - input.dir * KICK_BACK,
+				goal: {
+					x: kick.from.x + (kick.to.x - kick.from.x) * u,
+					y: kick.from.y + (kick.to.y - kick.from.y) * u,
+					z:
+						kick.from.z +
+						(kick.to.z - kick.from.z) * u +
+						4 * kick.peak * u * (1 - u),
+				},
+			};
 		} else if (e.type === "interception") {
 			key ??= b.actionStart;
 		} else if (e.type === "fumbleRecovery") {
@@ -175,7 +228,10 @@ export const replayFor = (input: {
 	}
 	const pid = holderAt(input.ball, key);
 	const ez = Math.max(from + END_ZONE_FIRST, key - END_ZONE_LEAD);
-	const sky = Math.max(from + SKY_FIRST, key - SKY_LEAD);
+	const sky = Math.max(
+		from + SKY_FIRST,
+		kicked && kick?.kind === "fly" ? kick.t0 - KICK_SKY_BEFORE : key - SKY_LEAD,
+	);
 	return {
 		cue,
 		from,
@@ -185,7 +241,13 @@ export const replayFor = (input: {
 			? { endZone: { from: ez, end: way === 1 ? 1 : 0 } }
 			: {}),
 		...(!scored && end - sky >= SKY_LEAST
-			? { sky: { from: sky, way: skyWay } }
+			? {
+					sky: {
+						from: sky,
+						way: skyWay,
+						...kicked,
+					},
+				}
 			: {}),
 	};
 };
@@ -207,6 +269,11 @@ const END_ZONE_WIDTH = 40;
 // of the way, not to lose it out of the top.
 const SKY_AHEAD = 4;
 const SKY_WIDTH = 46;
+// (A kick, onto the posts over the last this many feet to them - wide
+// enough there for the bar and the ball, this many feet across for each
+// foot of the height between.)
+const KICK_EASE = 50;
+const KICK_ROOM = 1.9;
 const SKY_Z = 3;
 const SKY_UP = 0.45;
 
@@ -215,19 +282,36 @@ const SKY_UP = 0.45;
 export const replayEnd = (r: FieldReplay, t: number): Side | undefined =>
 	r.endZone && t >= r.endZone.from ? r.endZone.end : undefined;
 
-// Or the Skycam's, and the way it looks.
-export const replaySky = (r: FieldReplay, t: number): Dir | undefined =>
-	r.sky && t >= r.sky.from ? r.sky.way : undefined;
+// Or the Skycam's.
+export const replaySky = (r: FieldReplay, t: number): FieldSky | undefined =>
+	r.sky && t >= r.sky.from ? r.sky : undefined;
 
 export const replayAim = (m: FieldMoment, r: FieldReplay): Shot => {
-	const way = replaySky(r, m.t);
-	if (m.focus && way !== undefined) {
+	const sky = replaySky(r, m.t);
+	if (m.focus && sky) {
+		const way = sky.way;
 		const side = m.play
 			? way === m.play.dir
 				? m.play.offense
 				: ((1 - m.play.offense) as Side)
 			: undefined;
 		const ahead = m.carrier === undefined || m.carrier === side ? SKY_AHEAD : 0;
+		// (A kick: on the ball, up as high as it is drawn; and coming in to
+		// the posts, onto where it goes over the bar - the bar and the ball
+		// both in the picture - held there once it is.)
+		if (sky.goal) {
+			const g = sky.goal;
+			const high = g.z * FIGURE_SCALE;
+			const u = clamp01(1 - ((g.x - m.focus.x) * way) / KICK_EASE);
+			const ball = Math.max(SKY_Z, m.focus.z * FIGURE_SCALE);
+			const mix = (a: number, b: number) => a + (b - a) * u;
+			return {
+				x: mix(m.focus.x, g.x),
+				y: mix(m.focus.y, g.y),
+				width: mix(SKY_WIDTH, Math.max(SKY_WIDTH, (high - 3) * KICK_ROOM)),
+				z: mix(ball, (high + CROSSBAR_Z + 1) / 2),
+			};
+		}
 		return {
 			x: m.focus.x + way * ahead,
 			y: m.focus.y,
