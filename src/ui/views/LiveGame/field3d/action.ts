@@ -9289,17 +9289,23 @@ class Action {
 		const b = blockers
 			.filter((x) => !this.done.has(x.pid))
 			.sort((x, y) => dist(x.posAt(shed), from) - dist(y.posAt(shed), from))[0];
-		if (
+		const beaten =
 			b &&
 			dist(b.posAt(shed), from) <= QB_HIT_BLOCKER_FT &&
 			!rushers.some(
 				(x) =>
 					x !== m && dist(x.posAt(shed), b.posAt(shed)) <= QB_HIT_BLOCKER_FT,
 			)
-		) {
-			b.cut(shed + QB_HIT_SEE_MS);
-			b.hold(hitT, "passSet", this.toward(b.at, q));
-			b.hold(hitT + QB_HIT_STAND_MS, "stand", this.toward(b.at, down));
+				? b
+				: undefined;
+		if (beaten) {
+			beaten.cut(shed + QB_HIT_SEE_MS);
+			beaten.hold(hitT, "passSet", this.toward(beaten.at, q));
+			beaten.hold(
+				hitT + QB_HIT_STAND_MS,
+				"stand",
+				this.toward(beaten.at, down),
+			);
 		}
 		// (Him: put down there a moment, and up - on his back, facing the
 		// man who hit him, or on his front, hit from behind: whichever has
@@ -9315,14 +9321,89 @@ class Action {
 			back ? into + Math.PI : into,
 			down,
 		);
+		const lie = back ? "supine" : "prone";
 		// (Hurt on it: down there for good - see hurtDown.)
-		qb.hold(
-			qb.t + (hurt ? QB_HURT_DOWN_MS : QB_HIT_DOWN_MS),
-			back ? "supine" : "prone",
-		);
-		if (!hurt) {
-			qb.act(back ? "getUpBack" : "getUp", qb.t + GET_UP_MS);
+		if (hurt) {
+			qb.hold(qb.t + QB_HURT_DOWN_MS, lie);
+			return;
 		}
+		const downAt = qb.t;
+		// (A hand up, now and then: from the man who let him through, or
+		// another of his line free near him, or the man who put him down -
+		// over beside his chest, from round the side he is on, not over him;
+		// him down till he gets there.)
+		const leave = hitT + QB_HIT_THROUGH_MS + QB_HAND_SEE_MS;
+		const ux = Math.cos(into);
+		const uy = Math.sin(into);
+		const chest = at(down, HELP_CHEST);
+		const clear = (x: Actor) => {
+			for (let t = leave; t <= leave + QB_HAND_WAIT_MS; t += 250) {
+				const xp = x.posAt(t);
+				if (
+					rushers.some(
+						(o) => o !== m && dist(o.posAt(t), xp) <= QB_HIT_BLOCKER_FT,
+					)
+				) {
+					return false;
+				}
+			}
+			return !DOWN.has(legAt(x, leave).move);
+		};
+		const mate =
+			beaten ??
+			blockers
+				.filter(
+					(x) =>
+						!this.done.has(x.pid) &&
+						dist(x.posAt(leave), chest) <= QB_HAND_MATE_FT &&
+						clear(x),
+				)
+				.sort(
+					(x, y) => dist(x.posAt(leave), chest) - dist(y.posAt(leave), chest),
+				)[0];
+		const helper =
+			countOf(qb, snap, 42) >= QB_HAND_UP
+				? undefined
+				: countOf(qb, snap, 43) < HELP_FOE || !mate
+					? m
+					: mate;
+		const was = helper?.posAt(leave) ?? chest;
+		const side = (was.x - chest.x) * -uy + (was.y - chest.y) * ux >= 0 ? 1 : -1;
+		const by = (p: Pt) => ({
+			x: p.x - uy * side * HELP_BESIDE,
+			y: p.y + ux * side * HELP_BESIDE,
+		});
+		const spot = by(chest);
+		// (Out round his feet first, if he comes from past them.)
+		const route =
+			(was.x - down.x) * ux + (was.y - down.y) * uy < 0
+				? [by(down), spot]
+				: [spot];
+		let far = 0;
+		let p = was;
+		for (const x of route) {
+			far += dist(p, x);
+			p = x;
+		}
+		const arrive = leave + Math.max(HELP_STEP_MS, (far / HELP_FPS) * 1000);
+		const upAt = Math.max(downAt + QB_HIT_DOWN_MS, arrive + 80);
+		const helped = helper && upAt - downAt <= QB_HAND_WAIT_MS;
+		qb.hold(helped ? upAt : downAt + QB_HIT_DOWN_MS, lie);
+		qb.act(back ? "getUpBack" : "getUp", qb.t + GET_UP_MS);
+		if (!helped) {
+			return;
+		}
+		helper.cut(leave);
+		helper.hold(leave);
+		let t = leave;
+		p = helper.at;
+		for (const x of route) {
+			t += ((arrive - leave) * dist(p, x)) / Math.max(0.01, far);
+			helper.go(x, t, undefined, this.toward(x, chest));
+			p = x;
+		}
+		helper.hold(upAt - 80);
+		helper.act("helpUp", upAt + GET_UP_MS, this.toward(spot, chest));
 	}
 
 	scramble(i: number, qb: Actor, go: number, runners: Actor[] = []) {
@@ -15446,6 +15527,14 @@ const QB_HIT_DOWN_MS = 700;
 const QB_HURT_DOWN_MS = 60_000;
 const QB_HIT_BLOCKER_FT = 5;
 const QB_HIT_SEE_MS = 200;
+// Helped up after it this often (see HELP_UP) - the man to do it off
+// after him this long after he is through it (ms), him down no longer for
+// it than this (ms), one of his line no further off than this (ft) to be
+// the one.
+const QB_HAND_UP = 0.5;
+const QB_HAND_SEE_MS = 250;
+const QB_HAND_WAIT_MS = 2000;
+const QB_HAND_MATE_FT = 12;
 // The side it went for (a long way gained: this many yards): this often
 // a man of it after a high five - with the nearest of them done with the
 // play no later than this after the whistle (ms), no further off than

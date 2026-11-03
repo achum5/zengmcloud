@@ -234,9 +234,10 @@ describe("the plays acted out", () => {
 		assert.isAbove(moves, sacks / 3);
 	}, 120_000);
 
-	test("the quarterback hit now and then as he lets it go: the ball gone first, a man of the other side's shove, down, and up again (or, hurt, not)", () => {
+	test("the quarterback hit now and then as he lets it go: the ball gone first, a man of the other side's shove, down, and up again, a hand up now and then (or, hurt, not)", () => {
 		let passes = 0;
 		let hits = 0;
+		let helped = 0;
 		eachPlay((play, seg) => {
 			if (
 				play.kind !== "pass" ||
@@ -289,9 +290,28 @@ describe("the plays acted out", () => {
 				qb.legs[k + 2]?.move,
 				`play ${play.i}`,
 			);
+			// (A hand up, now and then - from one of his own, or the man who
+			// hit him: there beside him as he gets up.)
+			const up = qb.legs[k + 2]!;
+			for (const p of play.parts) {
+				const l = p.legs.find(
+					(x) => x.move === "helpUp" && x.t0 <= up.t0 && x.t1 >= up.t0,
+				);
+				if (!l || hurt) {
+					continue;
+				}
+				helped += 1;
+				assert.isTrue(p.team === play.offense || p === by[0], `play ${play.i}`);
+				assert.isBelow(
+					dist(posAt(p, up.t0), posAt(qb, up.t0)),
+					4,
+					`play ${play.i}`,
+				);
+			}
 		});
 		assert.isAbove(passes, 40);
 		assert.isAbove(hits, 0);
+		assert.isAbove(helped, 0);
 		assert.isBelow(hits, passes / 5);
 	}, 20_000);
 
