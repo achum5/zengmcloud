@@ -62,6 +62,7 @@ export const bestProspect = async (
 		return franchiseValue(
 			outlook,
 			teamStrengths(outlook, dp.tid, [...t.players, drafted], picks),
+			dp.tid,
 		);
 	};
 	if (!draftSettings.talentFirst) {
@@ -85,6 +86,7 @@ export const bestProspect = async (
 		base = franchiseValue(
 			outlook,
 			teamStrengths(outlook, dp.tid, t.players, picks),
+			dp.tid,
 		);
 		talent = prospects.map((p) => ({ p, value: valueOf(p) - base }));
 	} finally {

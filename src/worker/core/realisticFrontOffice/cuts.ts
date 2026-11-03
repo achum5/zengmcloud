@@ -40,6 +40,7 @@ const worthWithout = (
 			players.filter((x) => x !== p),
 			picks,
 		),
+		tid,
 	);
 };
 
@@ -106,6 +107,7 @@ export const frontOfficeFill = async (
 		const value = franchiseValue(
 			outlook,
 			teamStrengths(outlook, tid, [...t.players, signed], t.picks),
+			tid,
 		);
 		if (!best || value > best.value) {
 			best = { p, value };

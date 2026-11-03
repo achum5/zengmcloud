@@ -134,7 +134,7 @@ export const publicTeam = (outlook: LeagueOutlook, t: TeamState): TeamState => {
 		players,
 		tradablePlayers: t.tradablePlayers.map(publicPlayer),
 		path,
-		value: franchiseValue(pub, path),
+		value: franchiseValue(pub, path, t.tid),
 	};
 };
 

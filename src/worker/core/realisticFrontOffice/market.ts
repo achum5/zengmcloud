@@ -287,6 +287,7 @@ const valueOf = (
 	franchiseValue(
 		outlook,
 		teamStrengths(outlook, tid, players, picks, trading, undefined, known),
+		tid,
 	);
 
 const tradedAwayOf = async (tid: number): Promise<TradedAway> => {
@@ -383,7 +384,7 @@ export const loadTeam = async (
 		trades: await tradesThisSeason(tid),
 		tradedAway: await tradedAwayOf(tid),
 		path,
-		value: franchiseValue(outlook, path),
+		value: franchiseValue(outlook, path, tid),
 		rosterKey: players
 			.map((p) => `${p.pid}.${p.injury.gamesRemaining}`)
 			.sort()
@@ -549,7 +550,7 @@ const cutLoss = (outlook: LeagueOutlook, tid: number, p: Player) => {
 	let loss = ref.losses.get(p.pid);
 	if (loss === undefined) {
 		const worth = (view: LeagueOutlook, players: readonly Player[]) =>
-			franchiseValue(view, teamStrengths(view, tid, players, ref.picks));
+			franchiseValue(view, teamStrengths(view, tid, players, ref.picks), tid);
 		const free = helpers.justDrafted(p, g.get("phase"), g.get("season"));
 		const released = free
 			? outlook
@@ -962,7 +963,7 @@ export const priceFor = (
 	} else {
 		path = pathOf(t, outgoing, incoming);
 		if (floor !== undefined) {
-			let most = franchiseValue(outlook, path) - valueAsKept(outlook, t);
+			let most = franchiseValue(outlook, path, t.tid) - valueAsKept(outlook, t);
 			for (const [y, s] of path.entries()) {
 				const curve = outlook.titleCurves[y]!;
 				const was = curveAt(curve, partner.path[y]!);
@@ -984,7 +985,7 @@ export const priceFor = (
 		paths: [path, theirs],
 	};
 	return (
-		franchiseValue(outlook, path) +
+		franchiseValue(outlook, path, t.tid) +
 		rivalEffect(outlook, path, partner.path, theirs) -
 		valueAsKept(outlook, t)
 	);
@@ -1510,10 +1511,10 @@ export const waitingOf = (
 			t.letGo,
 		);
 		const later =
-			franchiseValue(outlook, pathAfter) -
-			seasonValue(outlook, 0, pathAfter[0]!) -
-			(franchiseValue(outlook, pathBefore) -
-				seasonValue(outlook, 0, pathBefore[0]!));
+			franchiseValue(outlook, pathAfter, t.tid) -
+			seasonValue(outlook, 0, pathAfter[0]!, t.tid) -
+			(franchiseValue(outlook, pathBefore, t.tid) -
+				seasonValue(outlook, 0, pathBefore[0]!, t.tid));
 		const before = pathBefore[0]!;
 		const after = pathAfter[0]!;
 		return {

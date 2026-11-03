@@ -108,7 +108,7 @@ export const without = (
 		players,
 		tradablePlayers: t.tradablePlayers.filter((p) => p.pid !== pid),
 		path,
-		value: franchiseValue(outlook, path),
+		value: franchiseValue(outlook, path, t.tid),
 	};
 };
 
@@ -146,6 +146,7 @@ const valueAfterCuts = (
 			undefined,
 			t.letGo,
 		),
+		t.tid,
 	);
 };
 
