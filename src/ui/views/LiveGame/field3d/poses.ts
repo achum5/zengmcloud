@@ -630,14 +630,15 @@ const TAKE_KEYS: [number, Pose][] = [
 	[0.8, TAKE_SHUT],
 	[1, TAKE_SHUT],
 ];
-// Both hands on top of his head (in close: see tuck).
+// Both hands on top of his head, the elbows up in front of him (in close:
+// see tuck).
 const HANDS_ON_HEAD: Partial<Pose> = {
-	shN: 162,
-	elN: 142,
-	abN: 14,
-	shF: 162,
-	elF: 142,
-	abF: 14,
+	shN: 122,
+	elN: 118,
+	abN: -6,
+	shF: 122,
+	elF: 118,
+	abF: -6,
 	tuck: 1,
 };
 // The hand held out to shake, his elbow in by his side (and the shake down
