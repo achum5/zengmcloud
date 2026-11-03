@@ -199,6 +199,9 @@ export const marketSettings = {
 	// the side it does least for (the other side still haggles). Off while it
 	// is measured.
 	selfishShopping: false,
+	// How many of the deals that pass the screens a team out shopping prices
+	// in full with each team it talks to (the ones the screens rate best).
+	candidatesPerPair: CANDIDATES_PER_PAIR,
 };
 
 // For the arena's version-against-version leagues: settings for some teams'
@@ -1172,7 +1175,7 @@ export const bestDealWith = (
 	let best: Deal | undefined;
 	let checked = 0;
 	for (const { giveA, giveB } of candidates) {
-		if (checked >= CANDIDATES_PER_PAIR) {
+		if (checked >= settingFor(a.tid, "candidatesPerPair")) {
 			break;
 		}
 		const sizeA = a.players.length + count(giveB) - count(giveA);
