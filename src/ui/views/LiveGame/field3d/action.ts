@@ -2856,6 +2856,9 @@ const SWING_SIDE = 0.7;
 const BEHIND = -0.3;
 const SWING = 0.4;
 const SWING_TURN = 1.6;
+// A run stopped behind the line: when (ms after the snap) the hole is
+// filled, its blocks up into it, all the same.
+const NO_HOLE_MS = 1600;
 // (The man who swung him round down beside him, this far (feet) back
 // toward his feet from his hips.)
 const SWUNG_BACK = 1;
@@ -10697,7 +10700,15 @@ class Action {
 		const drive = this.of(endPt).d > 3 ? 4 : this.of(endPt).d < 0 ? -2 : 1;
 		const side = Math.sign(holeA) || 1;
 		const until = t + 300;
-		const atHole = Math.min(this.reachesAt(carrier, 0), t);
+		// (Stopped behind the line, never up to it: the hole filled when he
+		// would have been there - not the blocks up through it put off
+		// till he is down, walked there.)
+		const reach = this.reachesAt(carrier, 0);
+		const atHole = Math.min(
+			reach,
+			t,
+			reach === Infinity ? snap + NO_HOLE_MS : Infinity,
+		);
 		// (Off a block to go after him as he goes by a man `d` deep, well
 		// before he is down.)
 		// (No such time: `late`, when it is over for him.)
