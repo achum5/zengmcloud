@@ -705,6 +705,8 @@ type Plan = {
 const NEAR_FT = 3;
 // (His mouth drawn going only this big, pixels a foot - see planOf.)
 const MOUTH_LEAST_K = 24;
+// (Nor turned further from the camera than this - the cosine.)
+const MOUTH_AWAY = -0.15;
 const planOf = (
 	cam: Camera,
 	st: FieldPlayerState,
@@ -733,14 +735,22 @@ const planOf = (
 	}
 	const scale = Math.round(Math.log(k) / Math.log(1.04));
 	// (His mouth going as he talks: on a face - not in his helmet, not the
-	// mascot's - near enough to see it.)
+	// mascot's - near enough to see it, and not turned away.)
 	if (
 		st.mouth &&
 		k >= MOUTH_LEAST_K * px &&
 		!look.mascot &&
 		(look.bare || look.official || look.reporter || look.cheer)
 	) {
-		step.mouth = st.mouth;
+		const yaw = facing(st);
+		const tx = cam.pos.x - st.x;
+		const ty = cam.pos.y - st.y;
+		if (
+			Math.cos(yaw) * tx + Math.sin(yaw) * ty >
+			MOUTH_AWAY * Math.hypot(tx, ty)
+		) {
+			step.mouth = st.mouth;
+		}
 	}
 	const plan: Plan = {
 		base,

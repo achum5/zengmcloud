@@ -3799,6 +3799,8 @@ export const TALKS: Partial<Record<Move, number>> = {
 	micAsk: 0.55,
 	coachTalk: 0.65,
 	protest: 0.9,
+	// (Calling out to the others as he claps.)
+	clap: 0.6,
 };
 // His mouth as he talks (0 shut to 1 wide open), at t: a syllable every
 // SYLLABLE_MS, open and shut again over it, some wider than others and now
@@ -3817,6 +3819,39 @@ export const mouthAt = (id: number, t: number, most: number): number => {
 	return (
 		Math.round(open * Math.sin(Math.PI * (s - j)) * MOUTH_STEPS) / MOUTH_STEPS
 	);
+};
+// And yelling as he does it - up in the air, pumping his fist, flexing,
+// soaked from behind - from this far through it to this far, his mouth
+// this far open: eased in and out (see the 3D court's figure.ts YELLS).
+const YELLS: Partial<Record<Move, [number, number, number]>> = {
+	leap: [0.2, 0.85, 0.9],
+	fistPump: [0.1, 0.9, 0.85],
+	flex: [0.08, 0.92, 1],
+	chestBump: [0.15, 0.85, 0.8],
+	doused: [0.06, 0.5, 0.9],
+};
+const YELL_EASE = 0.08;
+// His mouth (0 to 1) doing `move`: talking or yelling, if it has him at
+// either.
+export const mouthOf = (
+	id: number,
+	t: number,
+	move: Move,
+	phase: number,
+): number => {
+	const talks = TALKS[move];
+	if (talks) {
+		return mouthAt(id, t, talks);
+	}
+	const w = YELLS[move];
+	if (!w) {
+		return 0;
+	}
+	const u = phase > 1 ? phase % 1 : phase;
+	const k = Math.min((u - w[0]) / YELL_EASE, (w[1] - u) / YELL_EASE, 1);
+	return k <= 0
+		? 0
+		: Math.round(k * k * (3 - 2 * k) * w[2] * MOUTH_STEPS) / MOUTH_STEPS;
 };
 // (0 to 1, all but at random, from two whole numbers.)
 const mixed = (a: number, b: number): number => {

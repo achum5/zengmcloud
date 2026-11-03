@@ -30,9 +30,9 @@ import {
 	loopRate,
 	moveKind,
 	mouthAt,
+	mouthOf,
 	stepsOver,
 	strideOf,
-	TALKS,
 	tucked,
 	type Move,
 } from "./poses.ts";
@@ -1311,9 +1311,10 @@ const stateOf = (
 		pivots(legs[j]!) ? 1 : plantOf(j) !== undefined ? 2 : 0;
 	const phase = phaseOf(l, t, offset, stride.ph);
 	const z = liftOf(l.move, phase);
-	// (Talking, his mouth going.)
-	const talks = l.talk ? MIC_TALK : TALKS[l.move as Move];
-	const mouth = talks ? mouthAt(part.pid, t, talks) : 0;
+	// (Talking or yelling, his mouth open.)
+	const mouth = l.talk
+		? mouthAt(part.pid, t, MIC_TALK)
+		: mouthOf(part.pid, t, l.move as Move, phase);
 	const turned = z <= 0 ? feetOf(k, t, yaw) : undefined;
 	const pivot: Feet | undefined =
 		turned ??
