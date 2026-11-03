@@ -61,6 +61,7 @@ import {
 import {
 	makeEndZoneCamera,
 	makeFieldCamera,
+	makeSkyCamera,
 	MAIN_RIG,
 	REPLAY_RIG,
 } from "./camera.ts";
@@ -135,7 +136,7 @@ import {
 	type KeySegment,
 } from "../court3d/keyPlays.ts";
 import { planFieldKeyPlays } from "./keyPlays.ts";
-import { replayAim, replayEnd } from "./replays.ts";
+import { replayAim, replayEnd, replaySky } from "./replays.ts";
 import { poolsOf } from "./pools.ts";
 import { REPORTER_ID, type Stakes } from "./postgame.ts";
 import { drawFieldFrame, type FieldPaint } from "./scene.ts";
@@ -1184,7 +1185,7 @@ const Field3D = ({
 		// (The play clock's own color on the bug, kept while it shows red.)
 		let shownInk: string | undefined;
 		// The replay's camera, and the flash at a cut from one to the other.
-		let replayAngle: Side | undefined;
+		let replayAngle: string | undefined;
 		let replayWas: unknown;
 		let closeWas = false;
 		let flashAt = -Infinity;
@@ -1266,7 +1267,10 @@ const Field3D = ({
 			}
 			// (Which of the replay's cameras: cut straight to the other, through
 			// a flash.)
-			const angle = replay ? replayEnd(replay, replay.at) : undefined;
+			const end = replay ? replayEnd(replay, replay.at) : undefined;
+			const sky = replay ? replaySky(replay, replay.at) : undefined;
+			const angle =
+				end !== undefined ? `end${end}` : sky !== undefined ? "sky" : undefined;
 			if (angle !== replayAngle) {
 				if (replay && replayWas === replay) {
 					s.snapCam = true;
@@ -1307,20 +1311,29 @@ const Field3D = ({
 				);
 				[c.w, c.vw] = follow(c.w, c.vw, gw!, CAM_ZOOM, secs);
 				[c.y, c.vy] = follow(c.y, c.vy, gy!, CAM_ZOOM, secs);
-				[c.z, c.vz] = follow(c.z, c.vz, gz!, CAM_ZOOM, secs);
+				[c.z, c.vz] = follow(
+					c.z,
+					c.vz,
+					gz!,
+					sky !== undefined ? CAM_PAN_END : CAM_ZOOM,
+					secs,
+				);
 			}
 			const shot = { x: c.x, width: c.w, y: c.y, z: c.z };
 			const view =
-				angle !== undefined
-					? makeEndZoneCamera(shot, angle, fw, fh)
-					: makeFieldCamera(
-							shot,
-							fw,
-							fh,
-							replay
-								? REPLAY_RIG
-								: (rigFor(moment) ?? (fromLow(moment) ? REPLAY_RIG : MAIN_RIG)),
-						);
+				end !== undefined
+					? makeEndZoneCamera(shot, end, fw, fh)
+					: sky !== undefined
+						? makeSkyCamera(shot, sky, fw, fh)
+						: makeFieldCamera(
+								shot,
+								fw,
+								fh,
+								replay
+									? REPLAY_RIG
+									: (rigFor(moment) ??
+											(fromLow(moment) ? REPLAY_RIG : MAIN_RIG)),
+							);
 			const white = flashRef.current;
 			if (white) {
 				const o = replay ? Math.max(0, 1 - (now - flashAt) / FLASH_MS) : 0;

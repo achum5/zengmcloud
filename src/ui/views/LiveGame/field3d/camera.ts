@@ -101,6 +101,34 @@ export const makeEndZoneCamera = (
 		false,
 	);
 
+// The Skycam: hung over the field on its wires behind the play, looking
+// down the field the way it is going - this far back from what it looks
+// at, this high, across the field with it this share of the way; no
+// farther back than over the end zone's wall.
+const SKY_BACK = 55;
+const SKY_HIGH = 28;
+const SKY_SLIDE = 0.6;
+export const makeSkyCamera = (
+	shot: Shot,
+	way: 1 | -1,
+	viewW: number,
+	viewH: number,
+): Camera =>
+	cameraAt(
+		{
+			x: Math.min(
+				FIELD_L + END_BACK,
+				Math.max(-END_BACK, shot.x - way * SKY_BACK),
+			),
+			y: MID_Y + (shot.y - MID_Y) * SKY_SLIDE,
+			z: SKY_HIGH,
+		},
+		shot,
+		viewW,
+		viewH,
+		false,
+	);
+
 const cameraAt = (
 	pos: Pt3,
 	shot: Shot,

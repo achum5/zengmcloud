@@ -8,7 +8,9 @@ import { dist, MID_Y, type Dir, type Pt3, type Side } from "./geometry.ts";
 // from down on the sideline, once the play is over and before the next one
 // (the 3D court's dunk replay, for football: see court3d/playback.ts). A
 // score's, as the dunk's slam is, cut to from behind the end zone for the
-// last of it (see camera.ts makeEndZoneCamera) - through a flash of white.
+// last of it (see camera.ts makeEndZoneCamera) - through a flash of white;
+// anything else's, the same way, to the Skycam over the field behind it
+// (makeSkyCamera).
 
 export type FieldReplay = {
 	// When the live picture cuts to it, and what it shows (timeline ms).
@@ -20,6 +22,10 @@ export type FieldReplay = {
 	// A score: from when it is seen from behind the end zone it was scored
 	// in (0 the left one, 1 the right).
 	endZone?: { from: number; end: Side };
+	// Anything else: from when it is seen from the Skycam, behind it and
+	// looking the way it went (the offense's way; a return's, back up the
+	// field).
+	sky?: { from: number; way: Dir };
 };
 
 // How long after the whistle it cuts to it - after the signals, a moment
@@ -36,6 +42,10 @@ const REPLAY_MOST = 6000;
 const END_ZONE_LEAD = 1700;
 const END_ZONE_FIRST = 1200;
 const END_ZONE_LEAST = 1000;
+// And anything else's from the Skycam the same way.
+const SKY_LEAD = 1700;
+const SKY_FIRST = 1200;
+const SKY_LEAST = 1000;
 // Long enough a gain, or a return, to be shown again (yards).
 const BIG_GAIN = 25;
 const BIG_RETURN = 35;
@@ -96,6 +106,8 @@ export const replayFor = (input: {
 	let scored = false;
 	// (The way the score went: the offense's, or back the other way.)
 	let way: Dir = input.dir;
+	// (And the way the Skycam looks.)
+	let skyWay: Dir = input.dir;
 	let fumbleAt: number | undefined;
 	let lost = false;
 	for (const b of beats) {
@@ -133,7 +145,12 @@ export const replayFor = (input: {
 			e.safety === true ||
 			e.type === "turnoverOnDowns"
 		) {
-			key ??= whistle;
+			if (key === undefined) {
+				key = whistle;
+				if (RETURNS.has(e.type)) {
+					skyWay = -input.dir as Dir;
+				}
+			}
 		}
 	}
 	if (key === undefined) {
@@ -158,6 +175,7 @@ export const replayFor = (input: {
 	}
 	const pid = holderAt(input.ball, key);
 	const ez = Math.max(from + END_ZONE_FIRST, key - END_ZONE_LEAD);
+	const sky = Math.max(from + SKY_FIRST, key - SKY_LEAD);
 	return {
 		cue,
 		from,
@@ -165,6 +183,9 @@ export const replayFor = (input: {
 		...(pid === undefined ? {} : { pid }),
 		...(scored && end - ez >= END_ZONE_LEAST
 			? { endZone: { from: ez, end: way === 1 ? 1 : 0 } }
+			: {}),
+		...(!scored && end - sky >= SKY_LEAST
+			? { sky: { from: sky, way: skyWay } }
 			: {}),
 	};
 };
@@ -179,13 +200,41 @@ const NEAR = 70;
 
 // From behind the end zone: on him, or the ball, this wide where he is.
 const END_ZONE_WIDTH = 40;
+// From the Skycam: on the ball - a little ahead of it down the field
+// (feet), while the side it looks along with has it (or it is in the air),
+// the turf behind not much to see; taken away and coming back at it, on
+// the man - this wide where it is, and up after it in the air this share
+// of the way, not to lose it out of the top.
+const SKY_AHEAD = 4;
+const SKY_WIDTH = 46;
+const SKY_Z = 3;
+const SKY_UP = 0.45;
 
 // Which of the replay's cameras it is seen from at t: the sideline's
 // (undefined), or the one behind the end zone at that end.
 export const replayEnd = (r: FieldReplay, t: number): Side | undefined =>
 	r.endZone && t >= r.endZone.from ? r.endZone.end : undefined;
 
+// Or the Skycam's, and the way it looks.
+export const replaySky = (r: FieldReplay, t: number): Dir | undefined =>
+	r.sky && t >= r.sky.from ? r.sky.way : undefined;
+
 export const replayAim = (m: FieldMoment, r: FieldReplay): Shot => {
+	const way = replaySky(r, m.t);
+	if (m.focus && way !== undefined) {
+		const side = m.play
+			? way === m.play.dir
+				? m.play.offense
+				: ((1 - m.play.offense) as Side)
+			: undefined;
+		const ahead = m.carrier === undefined || m.carrier === side ? SKY_AHEAD : 0;
+		return {
+			x: m.focus.x + way * ahead,
+			y: m.focus.y,
+			width: SKY_WIDTH,
+			z: SKY_Z + Math.max(0, m.focus.z - SKY_Z) * SKY_UP,
+		};
+	}
 	if (replayEnd(r, m.t) !== undefined) {
 		const him =
 			r.pid === undefined ? undefined : m.players.find((p) => p.id === r.pid);

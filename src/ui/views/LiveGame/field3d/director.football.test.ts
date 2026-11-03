@@ -329,6 +329,28 @@ describe("replays", () => {
 		assert.isAbove(behind, 3);
 	}, 20_000);
 
+	test("anything else's cut to from the Skycam, looking the way it went, for the last of it", () => {
+		let sky = 0;
+		for (const game of games) {
+			const tl = stage(game);
+			for (const play of tl.plays) {
+				const r = play.replay;
+				if (!r?.sky) {
+					continue;
+				}
+				sky += 1;
+				assert.isUndefined(r.endZone, `play ${play.i}`);
+				assert.isAtLeast(r.sky.from, r.from + 1000, `play ${play.i}`);
+				assert.isAtMost(r.sky.from, r.to - 1000, `play ${play.i}`);
+				// (Anything but a kick's return, the way the offense went.)
+				if (play.kind !== "kickoff" && play.kind !== "punt") {
+					assert.strictEqual(r.sky.way, play.dir, `play ${play.i}`);
+				}
+			}
+		}
+		assert.isAbove(sky, 3);
+	}, 20_000);
+
 	test("the live picture held while one shows, slowed down - and not on fast", () => {
 		const tl = stage(games[0]!);
 		const play = tl.plays.find((p) => p.replay)!;
