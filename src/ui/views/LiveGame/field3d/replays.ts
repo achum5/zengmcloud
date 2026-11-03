@@ -3,7 +3,8 @@ import type { Beat, BallSeg, PlayKind, RawEvent } from "./director.ts";
 import type { FieldMoment } from "./evaluate.ts";
 import { dist, MID_Y, type Dir, type Pt3, type Side } from "./geometry.ts";
 
-// A BIG PLAY SHOWN AGAIN: a score, a takeaway, a long gain - slowed down,
+// A BIG PLAY SHOWN AGAIN: a score, a takeaway, a long gain, a big sack, a
+// stop on fourth down - slowed down,
 // from down on the sideline, once the play is over and before the next one
 // (the 3D court's dunk replay, for football: see court3d/playback.ts). A
 // score's, as the dunk's slam is, cut to from behind the end zone for the
@@ -38,6 +39,9 @@ const END_ZONE_LEAST = 1000;
 // Long enough a gain, or a return, to be shown again (yards).
 const BIG_GAIN = 25;
 const BIG_RETURN = 35;
+// And the defense's (the 3D court's block shown again, for football): a
+// sack for this big a loss, a safety, a stop on fourth down (yards).
+const BIG_SACK = 9;
 
 const GAINS = new Set(["run", "passComplete"]);
 const RETURNS = new Set(["kickoffReturn", "puntReturn", "interceptionReturn"]);
@@ -86,7 +90,7 @@ export const replayFor = (input: {
 		return undefined;
 	}
 	// The moment it is shown for: a score above all, then the ball taken
-	// away, then the long gain.
+	// away, then the long gain - or the big stop.
 	let key: number | undefined;
 	let to: number | undefined;
 	let scored = false;
@@ -124,7 +128,10 @@ export const replayFor = (input: {
 			}
 		} else if (
 			(GAINS.has(e.type) && yds >= BIG_GAIN) ||
-			(RETURNS.has(e.type) && yds >= BIG_RETURN)
+			(RETURNS.has(e.type) && yds >= BIG_RETURN) ||
+			(e.type === "sack" && -yds >= BIG_SACK) ||
+			e.safety === true ||
+			e.type === "turnoverOnDowns"
 		) {
 			key ??= whistle;
 		}

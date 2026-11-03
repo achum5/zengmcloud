@@ -256,8 +256,9 @@ describe("compileField", () => {
 });
 
 describe("replays", () => {
-	test("a score, a pick, a long gain shown again once the play is over", () => {
+	test("a score, a pick, a long gain, a big sack shown again once the play is over", () => {
 		let shown = 0;
+		let sacks = 0;
 		for (const game of games) {
 			const tl = stage(game);
 			tl.plays.forEach((play, k) => {
@@ -275,6 +276,13 @@ describe("replays", () => {
 				if (td && !stands) {
 					assert.isDefined(r, `a score on play ${play.i}`);
 				}
+				const sack = seg.some(
+					(e) => e.type === "sack" && typeof e.yds === "number" && e.yds <= -9,
+				);
+				if (sack && !stands) {
+					assert.isDefined(r, `a sack on play ${play.i}`);
+					sacks += 1;
+				}
 				if (!r) {
 					return;
 				}
@@ -288,6 +296,7 @@ describe("replays", () => {
 			});
 		}
 		assert.isAbove(shown, 15);
+		assert.isAbove(sacks, 0);
 	}, 20_000);
 
 	test("a score's cut to from behind the end zone it was scored in, for the last of it - nothing else's", () => {
