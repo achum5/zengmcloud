@@ -48,7 +48,7 @@ import {
 } from "./aim.ts";
 import { buildFieldClocks, fieldClockAt } from "./clock.ts";
 import { buildPlayClocks, playClockAt } from "./playClock.ts";
-import { drawFlyingBall, drawLooseBall } from "./ball.ts";
+import { drawFlyingBall, drawLooseBall, drawTee } from "./ball.ts";
 import { drawFlag } from "./flag.ts";
 import {
 	cheerBody,
@@ -1463,6 +1463,15 @@ const Field3D = ({
 					depth: depthOf(view, { ...f.at, z: 0 }),
 					draw: () => {
 						drawFlag(ctx, view, drawnUp(f.at), f.down, f.turn);
+					},
+				});
+			}
+			const tee = moment.tee;
+			if (tee) {
+				items.push({
+					depth: depthOf(view, { ...tee, z: 0 }),
+					draw: () => {
+						drawTee(ctx, view, drawnUp(tee));
 					},
 				});
 			}

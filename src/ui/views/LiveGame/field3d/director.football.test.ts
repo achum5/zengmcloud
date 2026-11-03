@@ -1049,6 +1049,33 @@ describe("the bean bags", () => {
 	}, 20_000);
 });
 
+describe("the tee", () => {
+	// Kicked off: the tee left lying a step on from its spot - not before.
+	test("the ball kicked off its tee, the tee left lying a step on", () => {
+		let kicks = 0;
+		for (const game of games) {
+			const tl = stage(game);
+			for (const p of tl.plays) {
+				const k = p.ball.findIndex(
+					(b) => b.kind === "spot" && b.stood === "tee",
+				);
+				const on = p.ball[k];
+				const off = p.ball[k + 1];
+				if (k < 0 || on?.kind !== "spot" || !off) {
+					continue;
+				}
+				assert.isUndefined(momentAt(tl, off.t0 - 50).tee, `${p.i}`);
+				const tee = momentAt(tl, off.t0 + 1000).tee;
+				assert.isDefined(tee, `${p.i}`);
+				assert.isBelow(Math.hypot(tee!.x - on.at.x, tee!.y - on.at.y), 2.5);
+				assert.strictEqual(tee!.z, 0, `${p.i}`);
+				kicks++;
+			}
+		}
+		assert.isAbove(kicks, 10);
+	}, 20_000);
+});
+
 describe("a man hurt", () => {
 	test("down after the whistle, the trainers out to him from his sideline, and helped off toward it", () => {
 		let hurt = 0;

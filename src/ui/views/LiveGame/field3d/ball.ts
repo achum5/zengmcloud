@@ -46,6 +46,47 @@ export const restingZ = (stood: "tee" | "hold" | undefined): number =>
 	(stood ? BALL_LEN / 2 + (stood === "tee" ? TEE_H : 0) : BALL_R * 0.8) /
 	FIGURE_SCALE;
 
+// The tee, the ball kicked off it: on its side on the turf (or in the air,
+// knocked off its spot), a squat orange cup.
+export const drawTee = (
+	ctx: CanvasRenderingContext2D,
+	cam: Camera,
+	at: Pt3,
+) => {
+	const base = project(cam, at);
+	const ground = project(cam, { ...at, z: 0 });
+	const k = base.k;
+	if (base.x < -20 || base.x > cam.viewW + 20) {
+		return;
+	}
+	ctx.save();
+	ctx.fillStyle = "rgba(0, 0, 0, 0.25)";
+	ctx.beginPath();
+	ctx.ellipse(
+		ground.x,
+		ground.y,
+		Math.max(1, 0.3 * k),
+		Math.max(0.5, 0.1 * k),
+		0,
+		0,
+		Math.PI * 2,
+	);
+	ctx.fill();
+	ctx.fillStyle = TEE_ORANGE;
+	ctx.beginPath();
+	ctx.ellipse(
+		base.x,
+		base.y - Math.max(0.5, 0.1 * k),
+		Math.max(1, 0.3 * k),
+		Math.max(0.7, 0.14 * k),
+		0,
+		0,
+		Math.PI * 2,
+	);
+	ctx.fill();
+	ctx.restore();
+};
+
 export const drawLooseBall = (
 	ctx: CanvasRenderingContext2D,
 	cam: Camera,

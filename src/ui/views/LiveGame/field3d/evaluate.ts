@@ -60,6 +60,8 @@ export type FieldMoment = {
 	flags?: { at: Pt3; down: boolean; turn: number }[];
 	// ...and the bean bags, the same.
 	bags?: { at: Pt3; down: boolean; turn: number }[];
+	// The tee, the ball kicked off it: knocked on a step and lying there.
+	tee?: Pt3;
 };
 
 // From one move into the next, his pose eased over this long; and his
@@ -1559,6 +1561,7 @@ export const momentAt = (
 				turn: u >= 1 ? f.t0 % 6.28 : ((t - f.t0) / 1000) * 9,
 			};
 		});
+	const tee = teeLeft(play, t);
 	return {
 		t,
 		play,
@@ -1568,6 +1571,26 @@ export const momentAt = (
 		...(carrier !== undefined ? { carrier } : {}),
 		...(flags.length > 0 ? { flags } : {}),
 		...(bags.length > 0 ? { bags } : {}),
+		...(tee ? { tee } : {}),
+	};
+};
+// The tee, once the ball is kicked off it: knocked on this far the way the
+// kick goes, up off the turf this high over it, in this long.
+const TEE_KNOCK = 1.6;
+const TEE_HOP = 0.5;
+const TEE_HOP_MS = 260;
+const teeLeft = (play: Play, t: number): Pt3 | undefined => {
+	const k = play.ball.findIndex((b) => b.kind === "spot" && b.stood === "tee");
+	const on = play.ball[k];
+	const off = play.ball[k + 1];
+	if (k < 0 || on?.kind !== "spot" || !off || t < off.t0) {
+		return undefined;
+	}
+	const u = clamp01((t - off.t0) / TEE_HOP_MS);
+	return {
+		x: on.at.x + play.dir * TEE_KNOCK * u,
+		y: on.at.y,
+		z: TEE_HOP * 4 * u * (1 - u),
 	};
 };
 // How high over the straight way down a bean bag goes, halfway.
