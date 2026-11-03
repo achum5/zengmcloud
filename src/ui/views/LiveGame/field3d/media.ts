@@ -17,7 +17,12 @@ import {
 } from "./geometry.ts";
 import { poseOfMove, withArms, type Move } from "./poses.ts";
 import { bodyPoint } from "./sculpt.ts";
-import { drawnLift, type FieldPlayerState } from "./sprite.ts";
+import {
+	drawnLift,
+	drawnPose,
+	drawnShift,
+	type FieldPlayerState,
+} from "./sprite.ts";
 
 // THE PHOTOGRAPHERS: along each sideline past the team areas, back behind
 // the limit line (none right in front of the cheerleaders' rows - see
@@ -336,36 +341,30 @@ const MIC_D = 0.1 * FIGURE_SCALE;
 const MIC_HEAD_R = 0.12 * FIGURE_SCALE;
 const MIC_FLAG_FT = 0.2 * FIGURE_SCALE;
 const MIC_LEAN = 0.3;
-const grips = new WeakMap<Body, Map<string, V3>>();
-const gripOf = (b: Body, move: Move, phase: number): V3 => {
-	let byMove = grips.get(b);
-	if (!byMove) {
-		byMove = new Map();
-		grips.set(b, byMove);
-	}
-	// (The loop's few poses, each its own.)
-	const key = `${move}|${Math.round(phase * 8) % 8}`;
-	let at = byMove.get(key);
-	if (!at) {
-		const sk = skeleton(b, poseOfMove(move, phase));
-		at = sk.armR.tip ?? sk.armR.end;
-		byMove.set(key, at);
-	}
-	return at;
-};
 export const micGear = (
 	ctx: CanvasRenderingContext2D,
 	cam: Camera,
 	states: FieldPlayerState[],
 	bodyOf: (pid: number) => Body,
 	pid: number,
+	fine: boolean,
 ): Item[] =>
 	states.flatMap((st) => {
 		if (st.id !== pid) {
 			return [];
 		}
-		const g = gripOf(bodyOf(st.id), st.move, st.phase);
-		const placed = { x: st.x, y: st.y, z: drawnLift(st), yaw: st.yaw };
+		// (In her hand as she is drawn: out of what she was doing, too.)
+		const body = bodyOf(st.id);
+		const { pose, yaw } = drawnPose(st, fine);
+		const sk = skeleton(body, pose);
+		const g = sk.armR.tip ?? sk.armR.end;
+		const on = drawnShift(st, body, fine);
+		const placed = {
+			x: st.x + on.x,
+			y: st.y + on.y,
+			z: drawnLift(st, fine),
+			yaw,
+		};
 		const at = bodyPoint(placed, g);
 		const top = bodyPoint(placed, {
 			f: g.f + MIC_FT * MIC_LEAN,

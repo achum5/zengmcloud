@@ -157,6 +157,11 @@ const REPORTER_FROM = 4;
 const REPORTER_FPS = 6.3;
 const INTERVIEW_SET_MS = 700;
 const INTERVIEW_MS = 6500;
+// Her question (her microphone up at her own mouth from this long before
+// the picture comes to them), then a beat before his answer.
+const INTERVIEW_ASK_MS = 1700;
+const INTERVIEW_MIC_UP = 400;
+const INTERVIEW_BEAT = 250;
 const INTERVIEW_AFTER = 800;
 // (Looked for this far round where he would go, along the field and across
 // it - toward the camera first.)
@@ -962,7 +967,8 @@ const interviewOf = (
 		go + walkMs + INTERVIEW_SET_MS,
 	);
 	const t1 = Math.max(t0 + INTERVIEW_MS, till);
-	star.hold(t0 - 300, "stand", hisYaw);
+	// (Her question first, him listening - then his answer.)
+	star.hold(t0 + INTERVIEW_ASK_MS + INTERVIEW_BEAT, "stand", hisYaw);
 	star.hold(t1, "talk", hisYaw);
 	const leave = t0 - INTERVIEW_SET_MS - walkMs;
 	const reporter = new Man(
@@ -980,7 +986,8 @@ const interviewOf = (
 		REPORTER_FPS,
 	);
 	reporter.walk(her, REPORTER_FPS);
-	reporter.hold(t0, "stand", herYaw);
+	reporter.hold(t0 - INTERVIEW_MIC_UP, "stand", herYaw);
+	reporter.hold(t0 + INTERVIEW_ASK_MS, "micAsk", herYaw);
 	reporter.hold(t1, "micOut", herYaw);
 	return {
 		t0,

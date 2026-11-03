@@ -3755,6 +3755,22 @@ const FIELD_ANIMS = {
 				lean: 2,
 			}),
 	},
+	// And up at her own mouth, asking him her question first.
+	micAsk: {
+		kind: "loop",
+		n: 2,
+		fps: 0.6,
+		pose: (i) =>
+			pose({
+				shN: -20 + i * 3,
+				elN: 150 - i * 3,
+				abN: -10,
+				wrN: 0,
+				shF: 8,
+				elF: 18,
+				lean: 1,
+			}),
+	},
 	// Talking it through: his right hand making the point, his helmet hung
 	// from his left.
 	talk: {
@@ -3780,6 +3796,7 @@ export type FieldAnimName = keyof typeof FIELD_ANIMS;
 // mouth at the most (see mouthAt).
 export const TALKS: Partial<Record<Move, number>> = {
 	talk: 0.6,
+	micAsk: 0.55,
 	coachTalk: 0.65,
 	protest: 0.9,
 };
