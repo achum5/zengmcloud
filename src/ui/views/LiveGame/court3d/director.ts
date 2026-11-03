@@ -429,6 +429,8 @@ export type Fx = {
 	team?: Side;
 	big?: boolean;
 	what?: "three" | "dunk" | "andOne";
+	// Who did it: a block's, the man who blocked it.
+	pid?: number;
 	// A whistle's call, where it was, and (as `team`) who gets the ball -
 	// and, a foul, what it was (the official signals it: see crew.ts).
 	call?: Call;
@@ -437,6 +439,29 @@ export type Fx = {
 };
 // A foul: a hit on the arm or the ball, holding, blocking, pushing.
 export type FoulHow = "hit" | "hold" | "block" | "push";
+// A BLOCK SHOWN AGAIN, the way a broadcast does it: when the ball goes
+// dead straight off it - swatted out of bounds, a whistle - not one the
+// game goes on from, which would be stopped mid-play for it (a replay holds
+// the game while it plays - see playback). So soon after it, the whistle
+// (ms).
+const BLOCK_DEAD_MS = 2600;
+const blocksShownAgain = (fx: Fx[]) => {
+	for (const [i, f] of fx.entries()) {
+		if (f.kind !== "block") {
+			continue;
+		}
+		for (let k = i + 1; k < fx.length && fx[k]!.t - f.t < BLOCK_DEAD_MS; k++) {
+			const x = fx[k]!;
+			if (x.kind === "whistle" && (x.call === "out" || x.call === "stop")) {
+				f.big = true;
+				break;
+			}
+			if (x.kind !== "whistle" && x.kind !== "roar" && x.kind !== "cheer") {
+				break;
+			}
+		}
+	}
+};
 // A look round the building while play is stopped - before the opening tip,
 // through a timeout, between periods: the whole arena wide, or low in the
 // seats looking up at the crowd and the rafters. The picture cuts in and out
@@ -16358,7 +16383,12 @@ class Director {
 		}
 		// Blocked: swatted off his hand - back out the way it came, and down -
 		// and on, bouncing, to whoever gets it (see afterMiss).
-		this.effect("block", at, { team: other(team) });
+		// (Shown again if the ball goes dead straight off it: see
+		// blocksShownAgain.)
+		this.effect("block", at, {
+			team: other(team),
+			...(typeof e.pid === "number" ? { pid: e.pid } : {}),
+		});
 		const sp = this.posOf(shot.pid);
 		const bp = this.posOf(e.pid);
 		const back = unitVec(rim, sp);
@@ -26299,6 +26329,7 @@ class Director {
 			}
 		}
 		this.fx.sort((a, b) => a.t - b.t);
+		blocksShownAgain(this.fx);
 		this.ease();
 		this.clearTheWayIn();
 		const fast = hurried(this.fast, this.beats);

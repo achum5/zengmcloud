@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 145,
+		date: "2026-11-03",
+		text: "3D game: blocks get the slow-motion replay too. When a block sends the ball out of bounds or play stops right after it, the broadcast shows it again in slow motion from courtside, with both the shooter and the man who sent it back in the picture.",
+	},
+	{
 		n: 144,
 		date: "2026-11-03",
 		text: "3D game: the home crowd claps. After every home basket the fans in their seats give it a hand, and with a game on the line they clap along with DEFENSE on the boards. And the arena lights now reflect off the floor as streaks running toward the camera instead of round white spots.",

@@ -39,14 +39,17 @@ const REPLAY_RATE_MAX = 2;
 const REPLAY_FROM = 1700;
 const REPLAY_FROM_THREE = 2300;
 const REPLAY_TO = 450;
+// A block's: from as he goes up with it, on past it as the ball goes away.
+const REPLAY_FROM_BLOCK = 1500;
+const REPLAY_TO_BLOCK = 800;
 export const REPLAY_AFTER = 1150;
 const REPLAY_SPEED = 0.42;
 // Which plays are shown again: every dunk, the way a broadcast shows them
 // all again - not only a big one (on somebody, off a lob, through contact)
 // - and a big basket: a three in a tight finish, anything at the buzzer,
-// an and-one (see Fx).
+// an and-one; and a big block, at the rim, a dunk sent back (see Fx).
 export const replayed = (f: Fx) =>
-	f.kind === "dunk" || (!!f.big && f.kind === "swish");
+	f.kind === "dunk" || (!!f.big && (f.kind === "swish" || f.kind === "block"));
 
 // THE WIPE: a replay is gone into, and come out of, behind a wipe across
 // the picture in the colors of the team whose play it is, the way a
@@ -137,6 +140,8 @@ export type Replay = {
 	pid?: number;
 	rim?: Side;
 	slam?: number;
+	// And the man who sent it back, a block's - kept in the picture too.
+	also?: number;
 };
 
 // Who had the ball last at or before t: the man who dunked it (it leaves his
@@ -171,15 +176,26 @@ export const lastHolder = (
 };
 
 export const replayOf = (tl: CourtTimeline, f: Fx): Replay => {
-	const from = f.t - (f.kind === "swish" ? REPLAY_FROM_THREE : REPLAY_FROM);
+	const block = f.kind === "block";
+	const from =
+		f.t -
+		(f.kind === "swish"
+			? REPLAY_FROM_THREE
+			: block
+				? REPLAY_FROM_BLOCK
+				: REPLAY_FROM);
 	const pid = lastHolder(tl, f.t);
+	// (A block's rim: the one the shot went at - the other side's than the
+	// blocker's.)
+	const rim = block && f.team !== undefined ? (f.team === 0 ? 1 : 0) : f.rim;
 	return {
 		at: from,
 		from,
-		to: f.t + REPLAY_TO,
+		to: f.t + (block ? REPLAY_TO_BLOCK : REPLAY_TO),
 		...(pid === undefined ? {} : { pid }),
-		...(f.rim === undefined ? {} : { rim: f.rim }),
+		...(rim === undefined ? {} : { rim }),
 		...(f.kind === "dunk" ? { slam: f.t } : {}),
+		...(block && f.pid !== undefined ? { also: f.pid } : {}),
 	};
 };
 

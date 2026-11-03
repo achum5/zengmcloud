@@ -2209,6 +2209,17 @@ export const replayAim = (
 		feet.push({ x: him.x, y: him.y, z: 0 });
 		tops.push({ x: him.x, y: him.y, z: him.z + 7.2 });
 	}
+	// A block's: the man who sent it back too, once he is on the play.
+	const blocker =
+		r?.also === undefined ? undefined : m.players.find((p) => p.pid === r.also);
+	if (
+		blocker &&
+		(Math.hypot(blocker.x - ball.x, blocker.y - ball.y) < 6 ||
+			(him && Math.hypot(blocker.x - him.x, blocker.y - him.y) < 6))
+	) {
+		feet.push({ x: blocker.x, y: blocker.y, z: 0 });
+		tops.push({ x: blocker.x, y: blocker.y, z: blocker.z + 7.2 });
+	}
 	let lo = Infinity;
 	let hi = -Infinity;
 	let ys = 0;
