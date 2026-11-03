@@ -3775,6 +3775,40 @@ const FIELD_ANIMS = {
 
 export type FieldAnimName = keyof typeof FIELD_ANIMS;
 
+// Talking as he does it - the star of the game answering, a coach going
+// over it with a man, having words over a call - and how wide it opens his
+// mouth at the most (see mouthAt).
+export const TALKS: Partial<Record<Move, number>> = {
+	talk: 0.6,
+	coachTalk: 0.65,
+	protest: 0.9,
+};
+// His mouth as he talks (0 shut to 1 wide open), at t: a syllable every
+// SYLLABLE_MS, open and shut again over it, some wider than others and now
+// and then none (a breath) - his own, from his id - in MOUTH_STEPS.
+const SYLLABLE_MS = 170;
+const BREATH = 0.2;
+export const MOUTH_STEPS = 3;
+export const mouthAt = (id: number, t: number, most: number): number => {
+	const s = (t + id * 97) / SYLLABLE_MS;
+	const j = Math.floor(s);
+	const h = mixed(id, j);
+	if (h < BREATH) {
+		return 0;
+	}
+	const open = most * (0.45 + (0.55 * (h - BREATH)) / (1 - BREATH));
+	return (
+		Math.round(open * Math.sin(Math.PI * (s - j)) * MOUTH_STEPS) / MOUTH_STEPS
+	);
+};
+// (0 to 1, all but at random, from two whole numbers.)
+const mixed = (a: number, b: number): number => {
+	let h = Math.imul(a ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(b, 0xc2b2ae35);
+	h = Math.imul(h ^ (h >>> 16), 0x7feb352d);
+	h = Math.imul(h ^ (h >>> 15), 0x846ca68b);
+	return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+};
+
 // The court's moves a football player makes as they are: walking, jogging,
 // running, sprinting, backpedaling, sliding, shuffling across. (And the
 // dance team's routine, the cheerleaders' at a timeout.)

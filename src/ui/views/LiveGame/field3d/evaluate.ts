@@ -29,8 +29,10 @@ import {
 	liftOf,
 	loopRate,
 	moveKind,
+	mouthAt,
 	stepsOver,
 	strideOf,
+	TALKS,
 	tucked,
 	type Move,
 } from "./poses.ts";
@@ -1193,6 +1195,10 @@ const driveOf = (tr: Track, t: number): number => {
 	);
 };
 
+// (How wide the referee's mouth opens giving a call over his microphone:
+// see poses.ts TALKS.)
+const MIC_TALK = 0.55;
+
 // Where one man is at t and what he is doing.
 const stateOf = (
 	part: { pid: number; team: Side; legs: Leg[] },
@@ -1305,6 +1311,9 @@ const stateOf = (
 		pivots(legs[j]!) ? 1 : plantOf(j) !== undefined ? 2 : 0;
 	const phase = phaseOf(l, t, offset, stride.ph);
 	const z = liftOf(l.move, phase);
+	// (Talking, his mouth going.)
+	const talks = l.talk ? MIC_TALK : TALKS[l.move as Move];
+	const mouth = talks ? mouthAt(part.pid, t, talks) : 0;
 	const turned = z <= 0 ? feetOf(k, t, yaw) : undefined;
 	const pivot: Feet | undefined =
 		turned ??
@@ -1448,9 +1457,9 @@ const stateOf = (
 		...(l.ball ? { ball: l.ball } : {}),
 		...(l.arms ? { arms: { move: l.arms, phase: armsPhaseOf(l, t) } } : {}),
 		...(l.bare ? { bare: true as const } : {}),
+		...(mouth > 0 ? { mouth } : {}),
 	};
 };
-
 export const momentAt = (
 	tl: FieldTimeline,
 	t: number,

@@ -140,6 +140,9 @@ export type Leg = {
 	armsSpan?: [number, number];
 	// His helmet off, in his hand.
 	bare?: true;
+	// Talking as he does it (whatever it is): the referee giving a call over
+	// his microphone.
+	talk?: true;
 };
 
 // How a man has the ball: under his hand on the turf over it (a center or

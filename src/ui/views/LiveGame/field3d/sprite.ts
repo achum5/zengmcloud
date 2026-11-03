@@ -24,6 +24,7 @@ import {
 	heldBall,
 	holding,
 	moveKind,
+	MOUTH_STEPS,
 	poseOfMove,
 	settleStep,
 	strideLift,
@@ -81,6 +82,8 @@ export type FieldPlayerState = {
 	arms?: { move: Move; phase: number };
 	// His helmet off, in his hand: on the sideline.
 	bare?: true;
+	// His mouth open (0 to 1), talking (see poses.ts mouthAt).
+	mouth?: number;
 	// The ball he has on its way to another man's hands, or coming to his:
 	// drawn on its own, not in his (see evaluate.ts).
 	unseen?: true;
@@ -259,6 +262,8 @@ type Stepped = {
 	arms: { move: Move; phase: number } | undefined;
 	feet: Feet | undefined;
 	drive: number | undefined;
+	// His mouth open (see FieldPlayerState.mouth), where it shows.
+	mouth?: number;
 };
 // Each foot turned under him (degrees, his right then his left) and how far
 // up off the turf.
@@ -646,6 +651,10 @@ export const drawnShift = (
 
 const figureOf = (st: FieldPlayerState, body: Body, s: Stepped): Figure => {
 	const pose = poseFor(st, s);
+	const whistle =
+		s.arms?.move === "blowWhistle" &&
+		s.arms.phase > WHISTLE_FROM &&
+		s.arms.phase < 1 - WHISTLE_FROM;
 	return {
 		x: st.x,
 		y: st.y,
@@ -654,11 +663,11 @@ const figureOf = (st: FieldPlayerState, body: Body, s: Stepped): Figure => {
 		pose,
 		grips: gripsOf(st.move, st.ball, s.arms?.move, st.mirrored),
 		...(st.ball ? { ball: ballFor(st, body, pose, s, st.ball) } : {}),
-		...(s.arms?.move === "blowWhistle" &&
-		s.arms.phase > WHISTLE_FROM &&
-		s.arms.phase < 1 - WHISTLE_FROM
+		...(whistle
 			? { whistle: true as const }
-			: {}),
+			: s.mouth
+				? { mouth: s.mouth }
+				: {}),
 	};
 };
 // (His whistle in his mouth from this far into blowing it to as far from
@@ -694,6 +703,8 @@ type Plan = {
 // see court3d/sprite.ts): any nearer, or behind it - a camera down on the
 // field - and he is out of the picture, not drawn up huge across it.
 const NEAR_FT = 3;
+// (His mouth drawn going only this big, pixels a foot - see planOf.)
+const MOUTH_LEAST_K = 24;
 const planOf = (
 	cam: Camera,
 	st: FieldPlayerState,
@@ -721,6 +732,16 @@ const planOf = (
 		return undefined;
 	}
 	const scale = Math.round(Math.log(k) / Math.log(1.04));
+	// (His mouth going as he talks: on a face - not in his helmet, not the
+	// mascot's - near enough to see it.)
+	if (
+		st.mouth &&
+		k >= MOUTH_LEAST_K * px &&
+		!look.mascot &&
+		(look.bare || look.official || look.reporter || look.cheer)
+	) {
+		step.mouth = st.mouth;
+	}
 	const plan: Plan = {
 		base,
 		lift,
@@ -734,7 +755,7 @@ const planOf = (
 		shaded,
 	};
 	if (cache) {
-		const { phase, turn, from, arms, len, feet, drive } = step;
+		const { phase, turn, from, arms, len, feet, drive, mouth } = step;
 		const known = cache.ids.get(look);
 		const id = known ?? cache.next++;
 		if (known === undefined) {
@@ -744,7 +765,7 @@ const planOf = (
 			from
 				? `|${from.move}${from.mirrored ? "m" : ""}${from.steps ? "!" : ""}${from.phase}~${from.w}${from.arms ? `+${from.arms.move}${from.arms.phase}` : ""}${from.ball ? `@${from.ball}` : ""}${underKey(from.under)}`
 				: ""
-		}${shaded ? "|d" : ""}`;
+		}${shaded ? "|d" : ""}${mouth ? `|o${Math.round(mouth * MOUTH_STEPS)}` : ""}`;
 	}
 	return plan;
 };

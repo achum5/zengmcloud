@@ -16,7 +16,7 @@ import {
 } from "./geometry.ts";
 import type { RosterMan } from "./personnel.ts";
 import { netBallAt, netKickAt, netKickOf, type NetKick } from "./netKicks.ts";
-import { liftOf, strideOf, type Move } from "./poses.ts";
+import { liftOf, mouthAt, strideOf, TALKS, type Move } from "./poses.ts";
 import type { FieldPlayerState } from "./sprite.ts";
 
 // THE SIDELINES: each team on its own, the home team across the field and
@@ -1154,6 +1154,9 @@ export const sidelineAt = (
 				};
 			}
 		}
+		// (Talking, his mouth going.)
+		const talks = TALKS[move];
+		const mouth = talks ? mouthAt(s.id, m.t, talks) : 0;
 		out.push({
 			id: s.id,
 			team: s.team,
@@ -1166,6 +1169,7 @@ export const sidelineAt = (
 			...(from ? { from } : {}),
 			...(arms ? { arms } : {}),
 			...(spot.bare && !kick ? { bare: true as const } : {}),
+			...(mouth > 0 ? { mouth } : {}),
 		});
 	}
 	return out;

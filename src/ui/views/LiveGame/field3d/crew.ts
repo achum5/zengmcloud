@@ -151,6 +151,8 @@ const CALL_SIGNAL_MS = 1500;
 const CALL_SIDE_MS = 1000;
 const SETTLE_MS = 600;
 export const CALL_FOR_MS = CALL_SIGNAL_MS + CALL_SIDE_MS;
+// (Talking from this far into it, ms.)
+const CALL_TALK_AFTER = 150;
 // The picture in close on him giving it (see aim.ts): from down on the
 // field this far in front of him.
 export const REF_CAM_FT = 20;
@@ -302,6 +304,17 @@ const armsOver = (
 			if (mirrored) {
 				l.mirrored = true;
 			}
+		}
+	}
+};
+
+// Talking over t0..t1, whatever he is doing.
+const talkOver = (legs: Leg[], t0: number, t1: number) => {
+	splitAt(legs, t0);
+	splitAt(legs, t1);
+	for (const l of legs) {
+		if (l.t0 >= t0 && l.t1 <= t1 && l.t1 > l.t0) {
+			l.talk = true;
 		}
 	}
 };
@@ -781,6 +794,10 @@ export const stageCrew = (
 	}
 	for (const a of arms) {
 		armsOver(legsOf.get(a.o)!, a.move, a.t0, a.t1, a.left);
+	}
+	// (The referee giving each call over his microphone as he signals it.)
+	for (const c of input.calls) {
+		talkOver(legsOf.get("R")!, c.t + CALL_TALK_AFTER, c.t + CALL_FOR_MS);
 	}
 
 	return {

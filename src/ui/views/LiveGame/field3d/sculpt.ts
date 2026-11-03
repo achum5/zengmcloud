@@ -208,6 +208,8 @@ export type Figure = Placed & {
 	ball?: HeldBall;
 	// An official's whistle in his mouth, blowing it.
 	whistle?: true;
+	// His mouth open (0 to 1), talking.
+	mouth?: number;
 };
 
 // The football: eleven inches point to point, a little bigger than life so
@@ -1808,6 +1810,26 @@ type Palette = {
 // A bare head's beard, where his face has one (in the head's frame - see
 // SHELL - helmet radii, across it either way): over his lip, on his chin,
 // along his jaw, his sideburns.
+// His mouth on his face, its top `top` up it (helmet radii): shut, a line
+// across under his nose; open (see Figure.mouth), his jaw dropping it - dark
+// inside, his top teeth along the top of it, his lips round it. Which of
+// those is at (as across from the middle, lu up): 0 none of it, 1 the line
+// or his lips, 2 inside, 3 his teeth.
+const MOUTH_LINE = 0.06;
+const MOUTH_W = 0.2;
+const mouthOn = (lu: number, as: number, top: number, open: number) => {
+	if (open <= 0) {
+		return lu > top - MOUTH_LINE && lu < top && as < MOUTH_W ? 1 : 0;
+	}
+	const hh = MOUTH_LINE / 2 + 0.085 * open;
+	const mid = top - hh + 0.01;
+	const hw = MOUTH_W - 0.03 * open;
+	const e = ((lu - mid) / hh) ** 2 + (as / hw) ** 2;
+	return e > 1.3 ? 0 : e > 1 ? 1 : open > 0.3 && lu > mid + hh * 0.42 ? 3 : 2;
+};
+const MOUTH_RGB: RGB = [58, 20, 22];
+const TEETH_RGB: RGB = [236, 230, 218];
+
 const beardAt = (h: BareHead, lf: number, as: number, lu: number): boolean =>
 	(h.lip === true && lf > 0.6 && lu > -0.41 && lu < -0.33 && as < 0.24) ||
 	(h.chin === true && lf > 0.35 && lu < -0.52 && as < 0.4) ||
@@ -2017,6 +2039,7 @@ export const sculptFigure = (
 	const b = build(cam, fig, body, look, px, ox, oy);
 	const pal = paletteOf(look);
 	const official = look.official === true;
+	const open = fig.mouth ?? 0;
 	const masses = b.masses;
 	const n = masses.length;
 	const img = new ImageData(w, h);
@@ -2716,7 +2739,10 @@ export const sculptFigure = (
 							gloss = 0;
 							const as = Math.abs(ls);
 							const hd = look.head;
-							if (hd && beardAt(hd, lf, as, lu)) {
+							const said = lf > 0.5 ? mouthOn(lu, as, -0.41, open) : 0;
+							if (said >= 2) {
+								c = said === 3 ? TEETH_RGB : MOUTH_RGB;
+							} else if (hd && beardAt(hd, lf, as, lu)) {
 								c = pal.whiskers;
 							} else if (lf > 0.3 && lu < 0.42) {
 								const eye = lu > -0.02 && lu < 0.16 && as > 0.12 && as < 0.42;
@@ -2729,7 +2755,7 @@ export const sculptFigure = (
 									as < 0.36;
 								const brow =
 									lf > 0.5 && lu > 0.21 && lu < 0.28 && as > 0.1 && as < 0.44;
-								const mouth = lf > 0.5 && lu > -0.47 && lu < -0.41 && as < 0.2;
+								const mouth = said === 1;
 								c = brow
 									? pal.whiskers
 									: smear
@@ -2757,12 +2783,23 @@ export const sculptFigure = (
 									lu < 0.05 &&
 									Math.abs(ls) > 0.16 &&
 									Math.abs(ls) < 0.36;
-								const mouth =
-									lf > 0.5 && lu > -0.39 && lu < -0.33 && Math.abs(ls) < 0.2;
-								c = scaled(
-									pal.skin,
-									eye ? 0.34 : lu > 0.06 ? 0.8 : mouth ? 0.66 : 0.96,
-								);
+								const said =
+									lf > 0.5 ? mouthOn(lu, Math.abs(ls), -0.33, open) : 0;
+								c =
+									said === 3
+										? TEETH_RGB
+										: said === 2
+											? MOUTH_RGB
+											: scaled(
+													pal.skin,
+													eye
+														? 0.34
+														: lu > 0.06
+															? 0.8
+															: said === 1
+																? 0.66
+																: 0.96,
+												);
 							} else {
 								c = lf < -0.2 || lu > 0.05 ? pal.hair : pal.skin;
 							}
