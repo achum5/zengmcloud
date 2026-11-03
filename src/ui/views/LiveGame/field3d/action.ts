@@ -6103,6 +6103,16 @@ class Action {
 		if (thrown && target && catchPt && tr?.name !== "screen" && !slip) {
 			this.callFor(target, qb, coverage, catchPt, throwAt, catchAt);
 		}
+		if (
+			thrown &&
+			catchPt &&
+			!bootSide &&
+			tr?.name !== "screen" &&
+			!slip &&
+			(first === cmpI || first === incI)
+		) {
+			this.qbHit(rushers, blockers, qb, throwAt);
+		}
 
 		// And what came of it.
 		if (first === cmpI && thrown && target && catchPt) {
@@ -9099,6 +9109,140 @@ class Action {
 		const left = Math.sin(Math.atan2(foe.p.y - at.y, foe.p.x - at.x) - way) > 0;
 		const swim = countOf(m, this.input.snap, 38) < RUSH_SWIM;
 		m.arms(swim ? (left ? "swimL" : "swimR") : left ? "ripL" : "ripR", t0, t1);
+	}
+
+	// THE PASSER HIT AS IT LEAVES HIS HAND: now and then (and the man the
+	// sim flags for roughing him, always) one of the rush off his block and
+	// into the quarterback just after he lets it go - both hands into him and
+	// on through it - him knocked off his feet, and up again after; the man
+	// he got off turned to watch it. Only off a block he can get off in time
+	// - not a man the sim names on anything else in it, nor a quarterback it
+	// says was hurt.
+	qbHit(rushers: Actor[], blockers: Actor[], qb: Actor, throwAt: number) {
+		const { snap, events, i0, i1, stats } = this.input;
+		let rough = -1;
+		for (let i = i0; i < i1; i++) {
+			const e = events[i];
+			if (e?.type === "injury" && e.injuredPID === qb.pid) {
+				return;
+			}
+			if (e?.type === "penalty" && e.penaltyName === "Roughing the passer") {
+				rough = i;
+			}
+		}
+		const flagged =
+			rough >= 0
+				? this.man(this.statPidsIn(rough, this.hi, "pen")[0])
+				: undefined;
+		const named = new Set(
+			stats.filter((x) => x.i > this.lo && x.i <= this.hi).map((x) => x.pid),
+		);
+		const pool =
+			flagged && rushers.includes(flagged)
+				? [flagged]
+				: countOf(qb, snap, 39) < QB_HIT
+					? rushers.filter((m) => !named.has(m.pid))
+					: [];
+		// (Flagged for it: late, the ball well gone - see fouls.ts.)
+		const hitT =
+			throwAt +
+			(pool[0] === flagged
+				? QB_HIT_LATE_MS
+				: QB_HIT_AFTER_MS[0] +
+					(QB_HIT_AFTER_MS[1] - QB_HIT_AFTER_MS[0]) * countOf(qb, snap, 40));
+		const q = qb.posAt(hitT);
+		let best: { m: Actor; shed: number; from: Pt } | undefined;
+		for (const m of pool) {
+			if (this.done.has(m.pid)) {
+				continue;
+			}
+			// (Off it as late as gets him there in time.)
+			for (
+				let shed = hitT - QB_HIT_LEAST_MS;
+				shed >= throwAt - QB_HIT_EARLY_MS &&
+				shed >= snap + RUSH_MOVE_LEAST &&
+				(!best || shed > best.shed);
+				shed -= 50
+			) {
+				const from = m.posAt(shed);
+				const far = dist(from, q) - QB_HIT_ON;
+				if (legAt(m, shed).move !== "engage" || far > QB_HIT_FAR) {
+					break;
+				}
+				if (
+					rampedMs(
+						Math.max(0, far),
+						m.top * QB_HIT_PACE,
+						QB_HIT_FROM_FPS,
+						GET_OFF_ACCEL,
+					) <=
+					hitT - shed
+				) {
+					best = { m, shed, from };
+					break;
+				}
+			}
+		}
+		if (!best) {
+			return;
+		}
+		const { m, shed, from } = best;
+		const into = this.toward(from, q);
+		const at = (p: Pt, by: number) => ({
+			x: p.x + Math.cos(into) * by,
+			y: p.y + Math.sin(into) * by,
+		});
+		const hit = at(q, -QB_HIT_ON);
+		const down = at(q, QB_HIT_BACK_FT);
+		const fast = dist(from, hit) / ((hitT - shed) / 1000) >= QB_HIT_RUN_FPS;
+		m.cut(shed);
+		m.getOff(
+			hit,
+			hitT,
+			QB_HIT_FROM_FPS,
+			GET_OFF_ACCEL,
+			fast ? "run" : undefined,
+		);
+		m.go(at(hit, QB_HIT_THROUGH_FT), hitT + QB_HIT_THROUGH_MS, undefined, into);
+		m.hold(hitT + QB_HIT_STAND_MS, "stand", this.toward(m.at, down));
+		if (hitT - shed >= RUSH_MOVE_AFTER + QB_HIT_SHOVE_MS[0]) {
+			this.rushMove(m, qb, hitT);
+		}
+		m.arms("shove", hitT - QB_HIT_SHOVE_MS[0], hitT + QB_HIT_SHOVE_MS[1]);
+		this.done.add(m.pid);
+		// (The man he was on: stood up out of his set where he was, round to
+		// it - not if he has another of them on him.)
+		const b = blockers
+			.filter((x) => !this.done.has(x.pid))
+			.sort((x, y) => dist(x.posAt(shed), from) - dist(y.posAt(shed), from))[0];
+		if (
+			b &&
+			dist(b.posAt(shed), from) <= QB_HIT_BLOCKER_FT &&
+			!rushers.some(
+				(x) =>
+					x !== m && dist(x.posAt(shed), b.posAt(shed)) <= QB_HIT_BLOCKER_FT,
+			)
+		) {
+			b.cut(shed + QB_HIT_SEE_MS);
+			b.hold(hitT, "passSet", this.toward(b.at, q));
+			b.hold(hitT + QB_HIT_STAND_MS, "stand", this.toward(b.at, down));
+		}
+		// (Him: put down there a moment, and up - on his back, facing the
+		// man who hit him, or on his front, hit from behind: whichever has
+		// him turned the less from the way he faced - on his back, hit from
+		// the side.)
+		qb.cut(hitT);
+		const turned = (a: number) =>
+			Math.abs(Math.atan2(Math.sin(a - qb.yaw), Math.cos(a - qb.yaw)));
+		const back = turned(into + Math.PI) <= turned(into) + QB_HIT_BACK_BIAS;
+		qb.act(
+			back ? "tackledBack" : "tackled",
+			hitT + QB_HIT_FALL_MS,
+			back ? into + Math.PI : into,
+			down,
+		);
+		qb.hold(qb.t + QB_HIT_DOWN_MS, back ? "supine" : "prone");
+		qb.act(back ? "getUpBack" : "getUp", qb.t + GET_UP_MS);
 	}
 
 	scramble(i: number, qb: Actor, go: number, runners: Actor[] = []) {
@@ -15164,6 +15308,40 @@ const RUSH_MOVE_AFTER = 400;
 const RUSH_MOVE_LEAST_MS = 380;
 const RUSH_MOVE_NEAR = 6;
 const RUSH_MOVE_LEAST = 700;
+// The quarterback hit as he throws: this often (on a pass from the
+// pocket, caught or not), this long after it leaves his hand (ms, from the
+// first to the first and second; flagged for it, late, this long after);
+// the man who hits him off his block no sooner than this long before
+// that, nor more than this long before the throw (ms) - from no further
+// than this off (feet) - at no more than this
+// share of his top speed, into him from this far off him (feet), and on
+// through it this far over this long (in a run from this quick on, ft/s;
+// off his block at this pace, pushing on already); the shove from this
+// long before it to this long after; stood over him till this long after
+// it. The quarterback knocked this far (feet) over this long (onto his
+// back unless that turns him this much more, radians), down this long.
+// The blocker he got off: no further from him than this (feet), seeing it
+// this long after (ms).
+const QB_HIT = 0.1;
+const QB_HIT_AFTER_MS = [120, 140] as const;
+const QB_HIT_LATE_MS = 300;
+const QB_HIT_LEAST_MS = 350;
+const QB_HIT_EARLY_MS = 700;
+const QB_HIT_FAR = 14;
+const QB_HIT_PACE = 0.85;
+const QB_HIT_ON = 1.9;
+const QB_HIT_THROUGH_FT = 1.6;
+const QB_HIT_THROUGH_MS = 260;
+const QB_HIT_RUN_FPS = 6;
+const QB_HIT_FROM_FPS = 4;
+const QB_HIT_SHOVE_MS = [220, 240] as const;
+const QB_HIT_STAND_MS = 1300;
+const QB_HIT_BACK_FT = 2.4;
+const QB_HIT_FALL_MS = 450;
+const QB_HIT_BACK_BIAS = 0.35;
+const QB_HIT_DOWN_MS = 700;
+const QB_HIT_BLOCKER_FT = 5;
+const QB_HIT_SEE_MS = 200;
 // The side it went for (a long way gained: this many yards): this often
 // a man of it after a high five - with the nearest of them done with the
 // play no later than this after the whistle (ms), no further off than

@@ -234,6 +234,63 @@ describe("the plays acted out", () => {
 		assert.isAbove(moves, sacks / 3);
 	}, 120_000);
 
+	test("the quarterback hit now and then as he lets it go: the ball gone first, a man of the other side's shove, down, and up again", () => {
+		let passes = 0;
+		let hits = 0;
+		eachPlay((play, seg) => {
+			if (
+				play.kind !== "pass" ||
+				!seg.some(
+					(e) => e.type === "passComplete" || e.type === "passIncomplete",
+				)
+			) {
+				return;
+			}
+			const thrown = play.ball.find(
+				(s) => s.kind === "fly" && s.t0 > play.snap,
+			);
+			const qb = play.parts.find(
+				(p) => p.role === "QB" && p.team === play.offense,
+			);
+			if (!thrown || !qb) {
+				return;
+			}
+			passes += 1;
+			const k = qb.legs.findIndex(
+				(l) =>
+					(l.move === "tackledBack" || l.move === "tackled") &&
+					l.t0 >= thrown.t0 &&
+					l.t0 < thrown.t0 + 500,
+			);
+			if (k < 0) {
+				return;
+			}
+			hits += 1;
+			const t = qb.legs[k]!.t0;
+			assert.isAbove(t, thrown.t0 + 100, `play ${play.i}`);
+			const by = play.parts.filter(
+				(p) =>
+					p.team !== play.offense &&
+					p.legs.some((l) => l.arms === "shove" && l.t0 <= t && l.t1 >= t) &&
+					dist(posAt(p, t), posAt(qb, t)) < 3,
+			);
+			assert.lengthOf(by, 1, `play ${play.i}`);
+			assert.include(
+				["supine", "prone"],
+				qb.legs[k + 1]?.move,
+				`play ${play.i}`,
+			);
+			assert.include(
+				["getUpBack", "getUp"],
+				qb.legs[k + 2]?.move,
+				`play ${play.i}`,
+			);
+		});
+		assert.isAbove(passes, 40);
+		assert.isAbove(hits, 0);
+		assert.isBelow(hits, passes / 5);
+	}, 20_000);
+
 	test("a touchdown when he gets in with it, not before", () => {
 		const bad: string[] = [];
 		let checked = 0;
