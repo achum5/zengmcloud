@@ -1828,6 +1828,34 @@ const mouthOn = (lu: number, as: number, top: number, open: number) => {
 	return e > 1.3 ? 0 : e > 1 ? 1 : open > 0.3 && lu > mid + hh * 0.42 ? 3 : 2;
 };
 const MOUTH_RGB: RGB = [58, 20, 22];
+// His eye, near enough to see it (EYE_SEEN_K sprite pixels a foot, and
+// more): an almond round (as, lu) - half so wide, half so high (helmet
+// radii) - the white of it, the dark of his iris in the middle, his upper
+// lid's line over it. Which of those is at (as, lu): 0 none of it, 1 his
+// lid, 2 the white, 3 his iris.
+const EYE_SEEN_K = 16;
+const eyeOn = (
+	as: number,
+	lu: number,
+	eye: { as: number; lu: number; w: number; h: number },
+) => {
+	const x = (as - eye.as) / eye.w;
+	const y = (lu - eye.lu) / eye.h;
+	// (Pointed at the corners.)
+	if (y * y + x * x > 1 || Math.abs(y) > 1 - x * x * 0.55) {
+		return 0;
+	}
+	if (y > 0.5 - x * x * 0.4) {
+		return 1;
+	}
+	return x * x * (eye.w / eye.h) ** 2 + (y + 0.08) ** 2 < 0.62 * 0.62 ? 3 : 2;
+};
+const BARE_EYE = { as: 0.27, lu: 0.07, w: 0.13, h: 0.075 };
+const OFFICIAL_EYE = { as: 0.26, lu: -0.005, w: 0.1, h: 0.055 };
+const EYE_WHITE: RGB = [226, 220, 210];
+// (An official's, in the shade of his cap's brim.)
+const SHADED_WHITE = 0.78;
+const IRIS_RGB: RGB = [44, 30, 24];
 const TEETH_RGB: RGB = [236, 230, 218];
 
 const beardAt = (h: BareHead, lf: number, as: number, lu: number): boolean =>
@@ -2040,6 +2068,7 @@ export const sculptFigure = (
 	const pal = paletteOf(look);
 	const official = look.official === true;
 	const open = fig.mouth ?? 0;
+	const eyesSeen = b.k >= EYE_SEEN_K;
 	const masses = b.masses;
 	const n = masses.length;
 	const img = new ImageData(w, h);
@@ -2745,7 +2774,13 @@ export const sculptFigure = (
 							} else if (hd && beardAt(hd, lf, as, lu)) {
 								c = pal.whiskers;
 							} else if (lf > 0.3 && lu < 0.42) {
-								const eye = lu > -0.02 && lu < 0.16 && as > 0.12 && as < 0.42;
+								const eyed = eyesSeen ? eyeOn(as, lu, BARE_EYE) : 0;
+								const eye =
+									!eyesSeen &&
+									lu > -0.02 &&
+									lu < 0.16 &&
+									as > 0.12 &&
+									as < 0.42;
 								const smear =
 									pal.eyeBlack &&
 									lf > 0.5 &&
@@ -2760,7 +2795,14 @@ export const sculptFigure = (
 									? pal.whiskers
 									: smear
 										? EYE_BLACK_RGB
-										: scaled(pal.skin, eye ? 0.34 : mouth ? 0.66 : 0.96);
+										: eyed === 3
+											? IRIS_RGB
+											: eyed === 2
+												? EYE_WHITE
+												: scaled(
+														pal.skin,
+														eye || eyed === 1 ? 0.34 : mouth ? 0.66 : 0.96,
+													);
 							} else {
 								c = scalpAt(pal, hd, lf, ls, lu);
 							}
@@ -2778,11 +2820,16 @@ export const sculptFigure = (
 							}
 							cloth = false;
 							if (lf > 0.3) {
+								const eyed = eyesSeen
+									? eyeOn(Math.abs(ls), lu, OFFICIAL_EYE)
+									: 0;
 								const eye =
-									lu > -0.06 &&
-									lu < 0.05 &&
-									Math.abs(ls) > 0.16 &&
-									Math.abs(ls) < 0.36;
+									eyed === 1 ||
+									(!eyesSeen &&
+										lu > -0.06 &&
+										lu < 0.05 &&
+										Math.abs(ls) > 0.16 &&
+										Math.abs(ls) < 0.36);
 								const said =
 									lf > 0.5 ? mouthOn(lu, Math.abs(ls), -0.33, open) : 0;
 								c =
@@ -2790,16 +2837,20 @@ export const sculptFigure = (
 										? TEETH_RGB
 										: said === 2
 											? MOUTH_RGB
-											: scaled(
-													pal.skin,
-													eye
-														? 0.34
-														: lu > 0.06
-															? 0.8
-															: said === 1
-																? 0.66
-																: 0.96,
-												);
+											: eyed === 3
+												? IRIS_RGB
+												: eyed === 2
+													? scaled(EYE_WHITE, SHADED_WHITE)
+													: scaled(
+															pal.skin,
+															eye
+																? 0.34
+																: lu > 0.06
+																	? 0.8
+																	: said === 1
+																		? 0.66
+																		: 0.96,
+														);
 							} else {
 								c = lf < -0.2 || lu > 0.05 ? pal.hair : pal.skin;
 							}
