@@ -4476,7 +4476,17 @@ class Action {
 					const t0 = run[0]!.t0;
 					const span = Math.max(1, run.at(-1)!.t1 - t0);
 					const fps = dist(a, b) / (span / 1000);
-					const move = fps < 1 ? "stand" : fps < WALK_UNDER ? "walk" : "jog";
+					// (A blocker stays in his set, hands up, looking for
+					// somebody to block - not stood, nor on at a crawl of a
+					// walk.)
+					const move =
+						fps >= WALK_UNDER
+							? "jog"
+							: m.team === this.input.offense
+								? "passSet"
+								: fps < 1
+									? "stand"
+									: "walk";
 					const on = (t: number) => ({
 						x: a.x + ((b.x - a.x) * (t - t0)) / span,
 						y: a.y + ((b.y - a.y) * (t - t0)) / span,
