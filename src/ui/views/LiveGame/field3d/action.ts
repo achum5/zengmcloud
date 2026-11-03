@@ -2641,10 +2641,10 @@ const POINT_MS = 1000;
 const TAKEAWAY = 0.75;
 // A sack: the man who made it up and into it this often.
 const SACK_PARTY = 0.7;
-// A man in his moment after a big play - a sack, a stop, a takeaway -
-// played out to the crowd on the press box side, more or less: give or
-// take up to five times this (radians), his own way of standing (no draw
-// of the play's).
+// A man in his moment after a big play - a sack, a stop, a takeaway, a
+// score - played out to the crowd on the press box side, more or less:
+// give or take up to five times this (radians), his own way of standing
+// (no draw of the play's).
 const OUT_YAW = Math.PI / 2;
 const OUT_OFF = 0.1;
 const playedOut = (m: Actor) =>
@@ -13511,15 +13511,15 @@ class Action {
 				{ kind: "spot", t0: out + 110 + BOUNCE_MS, at: { ...rest, z: 0 } },
 			);
 		} else if (u < 0.46) {
-			scorer.hold(c0 + 1400, "ballUp");
+			scorer.hold(c0 + 1400, "ballUp", playedOut(scorer));
 		} else if (u < 0.6) {
-			scorer.act("leap", c0 + 800);
+			scorer.act("leap", c0 + 800, playedOut(scorer));
 		} else if (u < 0.78) {
-			scorer.act("griddy", c0 + GRIDDY_MS);
+			scorer.act("griddy", c0 + GRIDDY_MS, playedOut(scorer));
 		} else if (u < 0.9) {
-			scorer.hold(c0 + 1500, "pointSky");
+			scorer.hold(c0 + 1500, "pointSky", playedOut(scorer));
 		} else {
-			scorer.hold(c0 + 1800, "kneelPoint");
+			scorer.hold(c0 + 1800, "kneelPoint", playedOut(scorer));
 		}
 		const went = this.meetUp(scorer, mobFrom);
 		this.until = scorer.t;
