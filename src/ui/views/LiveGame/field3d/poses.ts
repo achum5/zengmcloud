@@ -2885,6 +2885,34 @@ const FIELD_ANIMS = {
 		{ shN: 100, elN: 40, abN: 80, shF: 100, elF: 40, abF: 80, lean: -8 },
 		{ shN: 150, elN: 26, abN: 50, shF: 150, elF: 26, abF: 50, lean: -10 },
 	),
+	// Taunting: stood over a man on the turf, bent at him, a finger jabbed
+	// down at him again and again, his other hand on his hip.
+	taunt: over(
+		{
+			shN: -6,
+			elN: 56,
+			abN: 30,
+			onHipN: 1,
+			shF: 58,
+			elF: 22,
+			abF: 6,
+			lean: 14,
+			hipN: 6,
+			kneeN: 10,
+		},
+		{
+			shN: -6,
+			elN: 56,
+			abN: 30,
+			onHipN: 1,
+			shF: 46,
+			elF: 4,
+			abF: 6,
+			lean: 20,
+			hipN: 8,
+			kneeN: 12,
+		},
+	),
 	// A new set of downs: his free arm up and thrust out, pointing the way
 	// they are going, held there a moment.
 	pointFirst: {

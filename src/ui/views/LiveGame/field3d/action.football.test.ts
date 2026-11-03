@@ -315,6 +315,61 @@ describe("the plays acted out", () => {
 		assert.isBelow(hits, passes / 5);
 	}, 20_000);
 
+	test("a man flagged for taunting at it after the whistle: at a man of the other side, pointing down at him or flexing, the flag coming in on it", async () => {
+		// (A game of its own, flags all over it.)
+		const [game] = await simGames([47], { foulRateFactor: 30 });
+		const tl = compileField({
+			events: game!.events,
+			players: game!.roster,
+			gid: 0,
+		});
+		let flagged = 0;
+		let acted = 0;
+		tl.plays.forEach((play, j) => {
+			const seg = game!.events.slice(
+				play.i,
+				tl.plays[j + 1]?.i ?? game!.events.length,
+			);
+			const k = seg.findIndex(
+				(e) => e.type === "penalty" && e.penaltyName === "Taunting",
+			);
+			if (k < 0) {
+				return;
+			}
+			const pid = seg
+				.slice(k)
+				.find((e) => e.type === "stat" && e.s === "pen")?.pid;
+			const him = play.parts.find((p) => p.pid === pid);
+			if (!him) {
+				return;
+			}
+			flagged += 1;
+			const l = him.legs.find(
+				(x) =>
+					(x.move === "taunt" || x.move === "flex") && x.t0 >= play.whistle,
+			);
+			if (!l) {
+				return;
+			}
+			acted += 1;
+			assert.isAtMost(l.t0, play.whistle + 2300, `play ${play.i}`);
+			// (Him right there, at it.)
+			const mid = (l.t0 + l.t1) / 2;
+			assert.isTrue(
+				play.parts.some(
+					(p) => p.team !== him.team && dist(posAt(p, mid), l.to) < 4,
+				),
+				`play ${play.i}`,
+			);
+			assert.isTrue(
+				play.flags.some((f) => f.t0 >= l.t0 - 500 && f.t0 <= l.t1),
+				`play ${play.i}`,
+			);
+		});
+		assert.isAbove(acted, 0);
+		assert.isAtLeast(acted, flagged / 2);
+	}, 60_000);
+
 	test("a man hurt with no part in it the sim names - out on the run away from the ball, or in a block: pulled up lame, or down in it, before the whistle, and there", () => {
 		let lame = 0;
 		eachPlay((play, seg) => {

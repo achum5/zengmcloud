@@ -105,6 +105,9 @@ const ORDER: When[] = [
 	"after",
 ];
 
+// A taunt acted out: the flag this long into it (ms).
+const TAUNT_SEEN_MS = 600;
+
 // Who would see it: the wings and the umpire on the line, the referee on
 // the passer, the deep men on the routes - anybody, a hit on a ball carrier
 // or what goes on after the play.
@@ -304,8 +307,14 @@ export const foulsOf = (input: FoulInput): Foul[] => {
 			case "tackle":
 				t = whistle - 120;
 				break;
-			case "after":
-				t = whistle + 600;
+			case "after": {
+				// (On the taunt itself, where the field has one - see
+				// action.ts taunt.)
+				const at = man?.legs.find(
+					(l) => (l.move === "taunt" || l.move === "flex") && l.t0 >= whistle,
+				);
+				t = at ? at.t0 + TAUNT_SEEN_MS : whistle + 600;
+			}
 		}
 		if (when !== "pre" && when !== "after") {
 			t = Math.max(snap + 100, Math.min(t, whistle - 100));
@@ -428,7 +437,7 @@ const armsOver = (legs: Leg[], move: Move, t0: number, t1: number) => {
 };
 
 // After the whistle, this often, the man flagged for a foul in the play
-// (not one before the snap) with his arms out to the officials, palms up -
+// (not one before the snap, nor taunting) with his arms out to the officials, palms up -
 // what was that? - from this long after it (and up to this much later),
 // this long, over whatever he is doing then if his arms are free all of
 // it. (His own count, from who he is and the flag - not the play's dice.)
@@ -448,6 +457,7 @@ const protest = (f: Foul, man: Part, whistle: number) => {
 	if (
 		when === "pre" ||
 		when === "snap" ||
+		f.name === "Taunting" ||
 		countOf(man.pid, f.flagI, 1) >= PROTEST
 	) {
 		return;

@@ -3742,6 +3742,9 @@ class Action {
 	// they crowd round the man who made it.
 	readonly mob = new Set<number>();
 	mobAt?: Pt;
+	// Men kept where they are after it till then (see taunt): not off with
+	// the rest before.
+	readonly busy = new Map<number, number>();
 	// Where the scorer came out from to meet them (see meetUp).
 	went?: Pt;
 	// A touchdown: when he got there, and who (see tdArms).
@@ -4102,6 +4105,7 @@ class Action {
 		this.afterWhistle();
 		this.watch();
 		this.celebrate();
+		this.taunt();
 		this.regroup();
 		this.hurtDown();
 		this.noAirBlocks();
@@ -14796,6 +14800,243 @@ class Action {
 
 	// Stood with nothing to do while the play goes on: turned, now and then,
 	// to keep the ball in front of him - not a statue looking off at nothing.
+	// TAUNTING, as the sim flags it: the man it names, free of what the play
+	// left him in, over to the nearest of the other side - one down on the
+	// turf, stood over him beside his chest pointing down at him, or flexing
+	// (him kept down for it); on his feet, in his face, flexing (him stood
+	// there taking it) - the flag coming in on it (see fouls.ts). Not over
+	// a man hurt, nor out of a party. (No dice: nothing else in the play
+	// changes with it.)
+	taunt() {
+		const { events, i0, i1 } = this.input;
+		let k = -1;
+		for (let i = i0; i < i1; i++) {
+			const e = events[i];
+			if (e?.type === "penalty" && e.penaltyName === "Taunting") {
+				k = i;
+			}
+		}
+		const m =
+			k >= 0 ? this.man(this.statPidsIn(k, this.hi, "pen")[0]) : undefined;
+		if (!m || this.mob.has(m.pid)) {
+			return;
+		}
+		const w = this.whistle;
+		let from = w + TAUNT_AFTER_MS;
+		for (const l of m.legs) {
+			if (
+				l.t0 <= from &&
+				l.t1 > from &&
+				!GAITS.has(l.move) &&
+				l.move !== "stand"
+			) {
+				from = l.t1;
+			}
+		}
+		if (from > w + TAUNT_LATE_MS) {
+			return;
+		}
+		const me = m.posAt(from);
+		const lies = (o: Actor) => TAUNT_LIES.has(legAt(o, from).move);
+		// (Stood still from: pulled up.)
+		const stillAt = (o: Actor) =>
+			o.legs.find(
+				(l) =>
+					l.t1 > from &&
+					l.move === "stand" &&
+					l.from.x === l.to.x &&
+					l.from.y === l.to.y,
+			)?.t0 ?? o.t;
+		const foes = this.men
+			.filter(
+				(o) =>
+					o.team !== m.team &&
+					!this.mob.has(o.pid) &&
+					!o.legs.some((l) => l.move === "hurt" || l.move === "hurtProne") &&
+					(lies(o) || !DOWN.has(legAt(o, from).move)) &&
+					dist(o.posAt(from), me) <= TAUNT_FAR,
+			)
+			.sort((a, b) => dist(a.posAt(from), me) - dist(b.posAt(from), me));
+		const others = this.men.filter((o) => o !== m);
+		for (const foe of [...foes.filter(lies), ...foes.filter((o) => !lies(o))]) {
+			const down = lies(foe);
+			// (Where he lies once he is down, through the fall first - or
+			// stands once he has pulled up.)
+			const fall = legAt(foe, from);
+			const kept = down
+				? moveKind(fall.move) === "act"
+					? fall.t1
+					: from
+				: Math.max(from, stillAt(foe));
+			const at = foe.posAt(kept);
+			let spots: Pt[];
+			let chest = at;
+			// (The way there: round his head or his feet, not over him.)
+			let round = (p: Pt): Pt[] => [p];
+			if (down) {
+				// (Where a hand up would be, either side - see regroup.)
+				const yaw = yawThen(foe, kept + 1);
+				const u = { x: Math.cos(yaw), y: Math.sin(yaw) };
+				const head = LIE_BACKWARD.has(legAt(foe, kept + 1).move) ? -1 : 1;
+				const along = (d: number): Pt => ({
+					x: at.x + u.x * head * d,
+					y: at.y + u.y * head * d,
+				});
+				chest = along(HELP_CHEST);
+				const n = { x: -u.y, y: u.x };
+				// (Him, head to feet.)
+				const tip = along(HELP_CHEST + TAUNT_HEAD_FT);
+				const toe = along(-HELP_LEGS);
+				spots = [1, -1].map((x) => ({
+					x: chest.x + n.x * x * HELP_BESIDE,
+					y: chest.y + n.y * x * HELP_BESIDE,
+				}));
+				// (Round him by a corner past either end, or two, the shortest
+				// way clear of him.)
+				const corner = (d: number, x: number): Pt => {
+					const c = along(d);
+					return {
+						x: c.x + n.x * x * TAUNT_ROUND_FT,
+						y: c.y + n.y * x * TAUNT_ROUND_FT,
+					};
+				};
+				const heads = [1, -1].map((x) =>
+					corner(HELP_CHEST + TAUNT_HEAD_FT + TAUNT_ROUND_FT, x),
+				);
+				const feet = [1, -1].map((x) => corner(-HELP_LEGS - TAUNT_ROUND_FT, x));
+				const ways = [
+					[],
+					...[...heads, ...feet].map((c) => [c]),
+					...[heads, feet].flatMap(([a, b]) => [
+						[a!, b!],
+						[b!, a!],
+					]),
+				];
+				round = (p) => {
+					let best: Pt[] = [p];
+					let most = Infinity;
+					for (const w of ways) {
+						const path = [me, ...w, p];
+						let len = 0;
+						let clear = true;
+						// (No nearer him on the way than either end of it, if
+						// that is nearer - a little.)
+						for (let j = 1; j < path.length; j++) {
+							const a = path[j - 1]!;
+							const b = path[j]!;
+							len += dist(a, b);
+							clear &&=
+								segGap(a, b, tip, toe) >=
+								Math.min(
+									TAUNT_CLEAR_FT,
+									segGap(a, a, tip, toe),
+									segGap(b, b, tip, toe),
+								) -
+									TAUNT_SLACK_FT;
+						}
+						if (clear && len < most) {
+							most = len;
+							best = [...w, p];
+						}
+					}
+					return best;
+				};
+			} else {
+				// (In his face already: where he is.)
+				const d = Math.max(0.01, dist(me, at));
+				spots = [
+					d <= TAUNT_FACE_FT + TAUNT_STAY_FT
+						? me
+						: {
+								x: at.x + ((me.x - at.x) / d) * TAUNT_FACE_FT,
+								y: at.y + ((me.y - at.y) / d) * TAUNT_FACE_FT,
+							},
+				];
+			}
+			const far = (p: Pt) => {
+				let d = 0;
+				let q = me;
+				for (const x of round(p)) {
+					d += dist(q, x);
+					q = x;
+				}
+				return d;
+			};
+			// (The far side of him first, facing the camera over him - not
+			// for a long way round.)
+			const cost = (p: Pt) => far(p) + (p.y > chest.y ? TAUNT_FAR_SIDE_FT : 0);
+			spots.sort((a, b) => cost(a) - cost(b));
+			const time = (p: Pt) =>
+				from + Math.max(TAUNT_STEP_MS, (far(p) / TAUNT_FPS) * 1000);
+			// (Room there: clear of anybody else down there, or stood.)
+			const spot = spots.find((p) =>
+				others.every(
+					(o) =>
+						o === foe ||
+						[time(p), time(p) + TAUNT_MS].every((t) => {
+							const move = legAt(o, t).move;
+							return (
+								this.nearOf(o, t, p, HELP_LEGS) >=
+								(LIE_FACING.has(move) || LIE_BACKWARD.has(move)
+									? HELP_CLEAR
+									: HELP_ROOM)
+							);
+						}),
+				),
+			);
+			// (Not there before he is down, or stood to take it.)
+			const there = spot
+				? Math.max(time(spot), kept + TAUNT_TURN_MS)
+				: Infinity;
+			if (
+				!spot ||
+				there > w + TAUNT_THERE_MS ||
+				(down && !TAUNT_LIES.has(legAt(foe, kept + 1).move))
+			) {
+				continue;
+			}
+			const face = this.toward(spot, chest);
+			const end = there + TAUNT_MS;
+			m.cut(from);
+			m.hold(from);
+			if (spot !== me) {
+				// (Each stretch of the way its share of the time.)
+				const all = Math.max(0.01, far(spot));
+				let t = from;
+				let q = me;
+				for (const x of round(spot)) {
+					t += ((there - from) * dist(q, x)) / all;
+					m.go(x, t);
+					q = x;
+				}
+			}
+			m.hold(there);
+			// (Pointing down at him where the camera sees it, over him; or
+			// flexing, the arms flung out wide, his back to it.)
+			m.act(down && spot.y < chest.y ? "taunt" : "flex", end, face);
+			m.hold(end + TAUNT_AFTER_MS, "stand");
+			this.busy.set(m.pid, m.t);
+			if (down) {
+				// (Kept down till it is over: up as he would have got up.)
+				const up = foe.legs.find((l) => RISING.has(l.move) && l.t0 >= kept);
+				if (up && up.t0 < end) {
+					const lie = foe.legs[foe.legs.indexOf(up) - 1];
+					const ms = up.t1 - up.t0;
+					foe.cut(up.t0);
+					foe.hold(end, lie?.move, lie?.yaw);
+					foe.act(up.move, end + ms, up.yaw);
+				}
+			} else {
+				// (Stood there, round to him, taking it.)
+				foe.cut(kept);
+				foe.hold(there - TAUNT_TURN_MS);
+				foe.hold(end, "stand", this.toward(at, spot));
+				this.busy.set(foe.pid, end);
+			}
+			return;
+		}
+	}
+
 	watch() {
 		const from = this.input.snap + WATCH_FROM_MS;
 		const to = this.whistle;
@@ -14927,7 +15168,7 @@ class Action {
 			) {
 				k--;
 			}
-			return Math.max(t, legs[k]!.t1);
+			return Math.max(t, legs[k]!.t1, this.busy.get(m.pid) ?? 0);
 		};
 		const free = new Map<number, number>();
 		for (const m of this.men) {
@@ -15237,6 +15478,33 @@ class Action {
 	}
 }
 
+// How near the segments a-b and c-d come to each other.
+const segGap = (a: Pt, b: Pt, c: Pt, d: Pt): number => {
+	const cross = (o: Pt, p: Pt, q: Pt) =>
+		(p.x - o.x) * (q.y - o.y) - (p.y - o.y) * (q.x - o.x);
+	const d1 = cross(a, b, c);
+	const d2 = cross(a, b, d);
+	const d3 = cross(c, d, a);
+	const d4 = cross(c, d, b);
+	if (d1 * d2 < 0 && d3 * d4 < 0) {
+		return 0;
+	}
+	const toSeg = (p: Pt, q: Pt, r: Pt) => {
+		const dx = r.x - q.x;
+		const dy = r.y - q.y;
+		const len2 = dx * dx + dy * dy;
+		const u =
+			len2 > 0 ? clamp(((p.x - q.x) * dx + (p.y - q.y) * dy) / len2, 0, 1) : 0;
+		return dist(p, { x: q.x + dx * u, y: q.y + dy * u });
+	};
+	return Math.min(
+		toSeg(a, c, d),
+		toSeg(b, c, d),
+		toSeg(c, a, b),
+		toSeg(d, a, b),
+	);
+};
+
 // The way from a to b round a crowd at c, as far off it as SKIRT: straight
 // there, or by a point off to the side of it.
 const skirt = (a: Pt, b: Pt, c: Pt): Pt[] => {
@@ -15535,6 +15803,40 @@ const QB_HAND_UP = 0.5;
 const QB_HAND_SEE_MS = 250;
 const QB_HAND_WAIT_MS = 2000;
 const QB_HAND_MATE_FT = 12;
+// Taunting (see taunt): from this long after the whistle (no later than
+// this, and there no later than this), at a man of the other side no further off than this (ft), over to
+// him at this pace (ft/s, no quicker than this, ms) - this far from him on
+// his feet (ft) - where he is, if no further off than this more (ft) - at
+// it this long (ms), him round to it this long before.
+const TAUNT_AFTER_MS = 200;
+const TAUNT_LATE_MS = 1500;
+const TAUNT_THERE_MS = 2200;
+const TAUNT_FAR = 15;
+const TAUNT_FPS = 7;
+const TAUNT_STEP_MS = 400;
+const TAUNT_FACE_FT = 2.6;
+const TAUNT_STAY_FT = 1.5;
+// (Round a man down - his head, or his hands out past it, this far past
+// his chest, ft - by corners
+// this far out past his ends and beside him, ft, the way there no nearer
+// him than this, ft - or than where it starts or ends, less this, ft.)
+const TAUNT_HEAD_FT = 1.8;
+const TAUNT_ROUND_FT = 2.2;
+const TAUNT_CLEAR_FT = 1.8;
+const TAUNT_SLACK_FT = 0.3;
+// (The far side of him, facing the camera, worth this much further to go,
+// ft.)
+const TAUNT_FAR_SIDE_FT = 7;
+const TAUNT_MS = 1500;
+const TAUNT_TURN_MS = 300;
+// (Down on the turf to be stood over: lying there, or going down.)
+const TAUNT_LIES = new Set<Move>([
+	"prone",
+	"supine",
+	"tackled",
+	"tackledBack",
+	"dive",
+]);
 // The side it went for (a long way gained: this many yards): this often
 // a man of it after a high five - with the nearest of them done with the
 // play no later than this after the whistle (ms), no further off than
