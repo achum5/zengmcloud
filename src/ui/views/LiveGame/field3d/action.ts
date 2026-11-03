@@ -7524,7 +7524,9 @@ class Action {
 		}
 		if (far > 1 && moveKind(l.move) !== "act") {
 			l.t1 += ms;
-			if (l.move !== "drive") {
+			// (A shuffle or a backpedal kept one, slower: not walked
+			// sideways.)
+			if (GAITS.has(l.move)) {
 				l.move = gait(far / ((l.t1 - l.t0) / 1000));
 			}
 		} else {
@@ -8931,10 +8933,11 @@ class Action {
 				this.bounds.right - 6,
 			),
 		});
-		// Feeling it, he tries to get away from it.
+		// Feeling it, he tries to get away from it - eyes still downfield,
+		// shuffling, slow as it is (see faced): not walked into it.
 		this.scan(qb, undefined, this.ahead, t - 800, runners);
 		qb.hold(t - 800, "pocket", this.ahead);
-		qb.go(at, t);
+		qb.go(at, t, undefined, this.ahead);
 		this.endCarry(
 			i,
 			qb,
@@ -8992,7 +8995,8 @@ class Action {
 		const hold = Math.max(qb.t, t - Math.max(800, step));
 		this.scan(qb, undefined, this.ahead, hold, runners);
 		qb.hold(hold, "pocket", this.ahead);
-		qb.go(at, t);
+		// (Eyes still downfield, as on a sack.)
+		qb.go(at, t, undefined, this.ahead);
 		const down = this.downBy(qb, at, t, this.d, forcer ? [forcer] : undefined);
 		this.at.set(i, down.t);
 		this.whistle = down.t;
