@@ -771,9 +771,9 @@ room unused 75 summers of 84).
   what the slot usually yields, so a deep or a thin class moves its picks'
   prices, and a human who knows the class is strong can't buy its picks at
   the average.
-- **Before that, a draft whose class is already in the league is priced by
-  it too** (the owner's league export; built, off while version-against-version
-  leagues measure it): every league holds the next three
+- **Before that, a draft whose class is already in the league could be priced
+  by it too** (the owner's league export; built, and left off - knownClasses):
+  every league holds the next three
   classes (Draft Scouting), and a real-players league every real draftee to
   come - Wembanyama's 2023, Flagg's 2025. A pick lands where its team is
   expected to finish, moved by the lottery, as always; what each place is
@@ -785,7 +785,10 @@ room unused 75 summers of 84).
   high schoolers whose best is 42/71 at his draft - fell toward nothing.
   (A pick table rebuilt from 100 Realistic Draft Prospects classes came out
   the same as the generated classes' one: it is the real classes that
-  differ.)
+  differ.) Half the teams each way, 5 leagues each way round over 5 seasons:
+  its teams won a little more in the second and third seasons (1-2% of
+  games) and a little less in the fourth and fifth, with 23 titles to 27,
+  367 playoff rounds to 383 and 64 seasons under 20 wins to 59. Left off.
 - Against stock's drafting (arena, 2 leagues x 5 seasons, 6 drafts judged
   three seasons on): pick order predicts a player's overall a little better
   (rank correlation 0.59 against 0.58), the top 5 picks rate 60 against 58,

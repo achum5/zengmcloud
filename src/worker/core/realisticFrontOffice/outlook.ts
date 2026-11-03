@@ -550,7 +550,8 @@ export const outlookSettings = {
 	moneyUnderCap: true,
 	// A pick in a draft whose class is already in the league (Draft Scouting)
 	// is priced by who would go where it lands (knownClassFor), not by what
-	// the place usually yields. Off while it is measured.
+	// the place usually yields. Measured and left off: half the teams each
+	// way, 5 leagues each way round, 23 titles to 27.
 	knownClasses: false,
 };
 
