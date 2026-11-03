@@ -9139,6 +9139,9 @@ class Action {
 		this.at.set(i, down.t);
 		this.whistle = down.t;
 		this.fumbled(i, qb, at, down.t, down.by, this.d);
+		if (down.by[0]) {
+			this.rushMove(down.by[0], qb, down.t);
+		}
 	}
 
 	// Hit at `pt` at t, and the ball out: the men on him (the one the sim

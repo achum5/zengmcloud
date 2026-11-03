@@ -1032,7 +1032,7 @@ const Field3D = ({
 
 	const bugRef = useRef<HTMLDivElement | null>(null);
 	const covers = useRef({ at: -Infinity, boxes: [] as TagCover[] });
-	const tagsOver = useRef(new Map<number, boolean>());
+	const tagsOver = useRef(new Map<number, { over: boolean; y: number }>());
 	const dipRef = useRef<HTMLDivElement | null>(null);
 	const flashRef = useRef<HTMLDivElement | null>(null);
 	const stingRefs = useRef<[HTMLDivElement | null, HTMLDivElement | null]>([
