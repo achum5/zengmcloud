@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 149,
+		date: "2026-11-03",
+		text: 'Team History: in multi team mode, the "All seasons / With you as GM" toggle and the GM season marks are gone.',
+	},
+	{
 		n: 148,
 		date: "2026-11-03",
 		text: "Key plays settings: the close-game boxes can be cleared to type a new number - they used to snap straight back to the old one.",

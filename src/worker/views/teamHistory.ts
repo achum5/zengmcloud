@@ -324,6 +324,11 @@ export default defineView({
 			) {
 				userTeamSeasons = [];
 			}
+			// In multi-team mode there's no one team that was "yours", so no "with
+			// you as GM" view or marks at all.
+			if (g.get("userTids").length > 1) {
+				userTeamSeasons = [];
+			}
 			const userSeasons = userTeamSeasons.map((ts) => ts.season);
 			const userSeasonsSet = new Set(userSeasons);
 			let userTotals;
