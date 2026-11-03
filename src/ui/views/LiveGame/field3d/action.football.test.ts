@@ -232,6 +232,7 @@ describe("the plays acted out", () => {
 	test("after a score, his teammates round the scorer - and the home crowd on its feet", () => {
 		let checked = 0;
 		let home = 0;
+		let alone = 0;
 		eachPlay((play, seg, tl) => {
 			if (!ACTED.has(play.kind) || seg.some((e) => e.type === "flag")) {
 				return;
@@ -268,6 +269,12 @@ describe("the plays acted out", () => {
 				Math.min(2, by.length),
 				`round him on play ${play.i}`,
 			);
+			// (Away on his own, the first of them with him all the same - he
+			// out to meet them - before the picture moves on.)
+			if (by.length === 0) {
+				assert.isAtLeast(round.length, 1, `met on play ${play.i}`);
+				alone += 1;
+			}
 			// (The home side: 1.)
 			const up = crowdAt(tl, beat.actionStart + 1500, 0).up;
 			if (scorer.team === 1) {
@@ -280,6 +287,7 @@ describe("the plays acted out", () => {
 		});
 		assert.isAbove(checked, 10);
 		assert.isAbove(home, 3);
+		assert.isAbove(alone, 2);
 	}, 20_000);
 	test("a pick taken back from where the sim says, to where it says", () => {
 		let checked = 0;

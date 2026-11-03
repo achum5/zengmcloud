@@ -3646,6 +3646,8 @@ class Action {
 	// they crowd round the man who made it.
 	readonly mob = new Set<number>();
 	mobAt?: Pt;
+	// Where the scorer came out from to meet them (see meetUp).
+	went?: Pt;
 	// A touchdown: when he got there, and who (see tdArms).
 	scored?: { t: number; scorer: Actor };
 	party?: { from: number; at: Pt };
@@ -13057,10 +13059,69 @@ class Action {
 		} else {
 			scorer.hold(c0 + 1800, "kneelPoint");
 		}
+		const went = this.meetUp(scorer, mobFrom);
 		this.until = scorer.t;
 		scorer.hold(scorer.t + 2600, "stand");
 		this.mob.add(scorer.pid);
 		this.mobRound(scorer, mobFrom);
+		if (went && this.party) {
+			// (The picture on the both of where he was and where they meet.)
+			const meet = this.party.at;
+			this.party.at = {
+				x: (went.x + meet.x) / 2,
+				y: (went.y + meet.y) / 2,
+			};
+		}
+	}
+
+	// Away on his own, his teammates still a long way back up the field: out
+	// to meet the first of them as he comes, after his moment - not stood on
+	// his own in the end zone till they get there. (Where he was, if he goes.)
+	meetUp(scorer: Actor, c0: number): Pt | undefined {
+		const r = this.r;
+		const at = scorer.at;
+		const start = c0 + 150;
+		let first: Actor | undefined;
+		let far = Infinity;
+		for (const m of this.men) {
+			if (
+				m === scorer ||
+				m.team !== scorer.team ||
+				DOWN.has(legAt(m, start).move)
+			) {
+				continue;
+			}
+			const d = dist(m.posAt(start), at);
+			if (d < far) {
+				first = m;
+				far = d;
+			}
+		}
+		if (!first || far < MEET_FROM) {
+			return undefined;
+		}
+		// (Where the two of them get to at about the one time: he at a jog
+		// once he is off, the other flat out from the start - see mobRound.)
+		const off = scorer.t + MEET_AFTER[0] + r() * MEET_AFTER[1];
+		const v = first.top * 0.775;
+		const lead =
+			((start - off) / 1000 + (far - MOB_RING) / v) / (1 / MEET_FPS + 1 / v);
+		const go = Math.min(MEET_MOST, lead);
+		if (go < MEET_LEAST) {
+			return undefined;
+		}
+		const q = first.posAt(start);
+		this.went = at;
+		scorer.hold(off);
+		scorer.runUp(
+			{
+				x: at.x + ((q.x - at.x) * go) / far,
+				y: at.y + ((q.y - at.y) * go) / far,
+			},
+			MEET_FPS,
+			"jog",
+		);
+		return at;
 	}
 
 	// A touchdown seen from up the field: the quarterback who threw it, and
@@ -13355,10 +13416,27 @@ class Action {
 			.filter((m) => m.team !== hero.team && dist(m.posAt(c0), at) < 40)
 			.sort((a, b) => dist(a.posAt(c0), at) - dist(b.posAt(c0), at))
 			.slice(0, 3);
+		// (Off the way the scorer came out to meet his - not into it.)
+		const w = this.went;
+		const along = (p: Pt): Pt => {
+			if (!w) {
+				return at;
+			}
+			const dx = at.x - w.x;
+			const dy = at.y - w.y;
+			const u = Math.min(
+				1,
+				Math.max(
+					0,
+					((p.x - w.x) * dx + (p.y - w.y) * dy) / (dx * dx + dy * dy),
+				),
+			);
+			return { x: w.x + dx * u, y: w.y + dy * u };
+		};
 		for (const m of beaten) {
 			const t = Math.max(m.t, c0 + 300 + r() * 700);
 			m.hold(t);
-			const away = this.toward(at, m.at) + (r() - 0.5) * 0.8;
+			const away = this.toward(along(m.at), m.at) + (r() - 0.5) * 0.8;
 			m.go(
 				{ x: m.at.x + Math.cos(away) * 6, y: m.at.y + Math.sin(away) * 6 },
 				t + 1800,
@@ -14288,6 +14366,14 @@ const MOB_ROOM = 1.8;
 // (Down this near him: in on it once up.)
 const MOB_UP_NEAR = 12;
 const SPIKE_MS = 720;
+// Out to meet them (see meetUp): his first teammate no nearer than this
+// (feet) - off this long after his moment (ms, and up to this much more),
+// at this pace - no further than this, and not for less.
+const MEET_FROM = 55;
+const MEET_AFTER = [200, 400] as const;
+const MEET_FPS = 9;
+const MEET_MOST = 30;
+const MEET_LEAST = 6;
 // The griddy this long.
 const GRIDDY_MS = 2400;
 // Bowling, this often (with three teammates no further than this off): the
