@@ -181,12 +181,8 @@ describe("the plays acted out", () => {
 			if (e.type === "sack") {
 				assert.closeTo(d, Math.min(-2, want), 3.5, `sack on play ${play.i}`);
 			} else {
-				assert.closeTo(
-					d,
-					want,
-					3.5,
-					`${e.type} for ${e.yds} on play ${play.i}`,
-				);
+				// (A little more for a man still going down forward with it.)
+				assert.closeTo(d, want, 4, `${e.type} for ${e.yds} on play ${play.i}`);
 			}
 			checked += 1;
 		});

@@ -156,6 +156,10 @@ const TABLET = { width: 13, z: 5.2, camZ: 5.8 };
 // callIn): from down low on the near side - this wide, this high.
 const CALL_IN_WIDTH = 15;
 const CALL_IN_Z = 5;
+// And taking a big play (see director.ts COACH_REACT_GLAD): the same, room
+// over him for his arms.
+const REACT_WIDTH = 17;
+const REACT_Z = 5.2;
 // Over a timeout, the crowd (see crowd.ts): from down low on the near side,
 // up into the stands across the field, panning this far along them.
 const CROWD_SHOT = { width: 150, y: -80, z: 22, pan: 30 };
@@ -213,6 +217,10 @@ export const aimFor = (m: FieldMoment): Shot => {
 		if (him) {
 			return { x: him.x, width: close.width, y: him.y, z: close.z };
 		}
+	}
+	const react = play.coachReact;
+	if (react && t >= react.t0 && t < react.t1) {
+		return { x: react.at.x, width: REACT_WIDTH, y: react.at.y, z: REACT_Z };
 	}
 	const callIn = play.callIn;
 	if (callIn && t >= callIn.t0) {
@@ -526,8 +534,13 @@ export const closeIn = (m: FieldMoment): boolean => {
 		callingIn(m)
 	);
 };
-const callingIn = (m: FieldMoment): boolean =>
-	!!m.play?.callIn && m.t >= m.play.callIn.t0;
+const callingIn = (m: FieldMoment): boolean => {
+	const react = m.play?.coachReact;
+	return (
+		(!!m.play?.callIn && m.t >= m.play.callIn.t0) ||
+		(!!react && m.t >= react.t0 && m.t < react.t1)
+	);
+};
 
 // Whom the picture is in close on now, if anyone - the kicker through his
 // routine, the quarterback at the line, the referee giving a foul, a big
@@ -599,7 +612,8 @@ export const rigFor = (m: FieldMoment): FieldRig | undefined => {
 
 // Whether the picture is from down low on the near side (see camera.ts
 // REPLAY_RIG): over a timeout, on the head coach calling it, the huddle or
-// the crowd - not on the cheerleaders; on the head coach calling a play in.
+// the crowd - not on the cheerleaders; on the head coach calling a play in,
+// or taking a big play.
 export const fromLow = (m: FieldMoment): boolean => {
 	const timeout = m.play?.timeout;
 	return (

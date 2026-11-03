@@ -276,6 +276,10 @@ export type Play = {
 	// In close on the referee as he gives the fouls on it (see crew.ts): from
 	// when, until when, and where he stands for it.
 	refCall?: { t0: number; t1: number; at: Pt };
+	// A big play's moment over, the picture on the home side's head coach
+	// across the field taking it (see COACH_REACT): from when, until when,
+	// where he stands, and whether it went his side's way.
+	coachReact?: { t0: number; t1: number; side: Side; at: Pt; glad: boolean };
 	// Third down for the home side next: the picture on its head coach
 	// across the field, calling it in, from when to the next play - and
 	// where he stands for it (see sideline.ts, aim.ts).
@@ -492,6 +496,45 @@ const LATE_KICK = 5;
 // leaves this long of it - to the next play. Not in the two-minute drill
 // (no huddle), nor with anything else to show after the play.
 const CALL_IN_SHARE = 0.5;
+// A big play's moment over (its party: see action.ts), the picture on the
+// home side's head coach taking it - a fist pumped and clapping it, his
+// side's; hands on his head, the other side's - this share of the time,
+// this long after the moment (any close-up in it done), for this long; the
+// replay, if there is one, straight after - and the play over no sooner
+// than this long after him.
+const COACH_REACT_GLAD = 0.45;
+const COACH_REACT_SAD = 0.3;
+const COACH_REACT_AFTER = 500;
+const COACH_REACT_MS = 1800;
+const COACH_REACT_TAIL = 900;
+
+// Each man stays as his last leg left him until t1.
+const holdTill = (parts: { legs: Leg[] }[], t1: number) => {
+	for (const part of parts) {
+		const l = part.legs.at(-1);
+		if (!l || l.t1 >= t1) {
+			continue;
+		}
+		if (
+			l.from.x === l.to.x &&
+			l.from.y === l.to.y &&
+			moveKind(l.move) === "still" &&
+			!l.arms
+		) {
+			l.t1 = t1;
+		} else {
+			part.legs.push({
+				t0: l.t1,
+				t1,
+				from: l.to,
+				to: l.to,
+				move: moveKind(l.move) === "still" ? l.move : "stand",
+				...(l.yaw !== undefined ? { yaw: l.yaw } : {}),
+				...(l.ball ? { ball: l.ball } : {}),
+			});
+		}
+	}
+};
 const CALL_IN_AFTER = 1300;
 const CALL_IN_LEAST = 1500;
 const HURRY_MINUTES = 2;
@@ -2148,8 +2191,9 @@ class Director {
 					after[offense] >= after[1 - offense]!
 				);
 			})();
-		// The play shown again, if it is, with the picture on it until t1.
-		const replayTill = (till: number) =>
+		// The play shown again, if it is, with the picture on it until t1 - not
+		// cued before `until`, less 400 ms.
+		const replayTill = (till: number, until = acted?.until) =>
 			replayFor({
 				kind,
 				dir,
@@ -2158,7 +2202,7 @@ class Director {
 				t0,
 				snap,
 				whistle,
-				...(acted?.until ? { until: acted.until } : {}),
+				...(until ? { until } : {}),
 				t1: till,
 				ball,
 				fouled: fouls.some((f) => f.accepted),
@@ -2284,30 +2328,7 @@ class Director {
 			last.end = t1;
 		}
 		// And everybody stays as the play left him until the next one.
-		for (const part of parts) {
-			const l = part.legs.at(-1);
-			if (!l || l.t1 >= t1) {
-				continue;
-			}
-			if (
-				l.from.x === l.to.x &&
-				l.from.y === l.to.y &&
-				moveKind(l.move) === "still" &&
-				!l.arms
-			) {
-				l.t1 = t1;
-			} else {
-				part.legs.push({
-					t0: l.t1,
-					t1,
-					from: l.to,
-					to: l.to,
-					move: moveKind(l.move) === "still" ? l.move : "stand",
-					...(l.yaw !== undefined ? { yaw: l.yaw } : {}),
-					...(l.ball ? { ball: l.ball } : {}),
-				});
-			}
-		}
+		holdTill(parts, t1);
 		// The officials, with the play.
 		const minutes = typeof clock.clock === "number" ? clock.clock : 15;
 		const crew = stageCrew({
@@ -2402,7 +2423,48 @@ class Director {
 				? { t0: from, t1: until, at }
 				: undefined;
 		})();
-		const shown = replayTill(t1);
+		const coachReact = (() => {
+			const party = acted?.party;
+			const until = acted?.until;
+			const hero = parts.find((p) => p.pid === party?.hero);
+			if (
+				!party ||
+				!until ||
+				!hero ||
+				ended ||
+				half ||
+				hurt ||
+				timeout ||
+				measureAt ||
+				between !== undefined ||
+				refCall
+			) {
+				return undefined;
+			}
+			const glad = hero.team === 1;
+			const from = until + COACH_REACT_AFTER;
+			if (
+				this.rng(i0, "coachReact")() >=
+				(glad ? COACH_REACT_GLAD : COACH_REACT_SAD)
+			) {
+				return undefined;
+			}
+			return {
+				t0: from,
+				t1: from + COACH_REACT_MS,
+				side: 1 as Side,
+				at: headCoachAt(1, i0),
+				glad,
+			};
+		})();
+		if (coachReact) {
+			this.cuts.push(coachReact.t0, coachReact.t1);
+			t1 = Math.max(t1, coachReact.t1 + COACH_REACT_TAIL);
+			// (Everybody, officials too, as they were over the longer play.)
+			holdTill([...parts, ...crew.parts], t1);
+		}
+		// (The replay, if any, straight after the head coach.)
+		const shown = replayTill(t1, coachReact ? coachReact.t1 - 400 : undefined);
 		// (A man hurt: the play shown again while they see to him.)
 		const replay =
 			shown ??
@@ -2512,6 +2574,7 @@ class Director {
 				replay ||
 				refCall ||
 				heroClose ||
+				coachReact ||
 				next?.type !== "clock" ||
 				next.t !== 0 ||
 				next.down !== 3 ||
@@ -2709,6 +2772,7 @@ class Director {
 			...(refCall ? { refCall } : {}),
 			...(heroClose ? { heroClose } : {}),
 			...(callIn ? { callIn } : {}),
+			...(coachReact ? { coachReact } : {}),
 			...(between !== undefined ? { between } : {}),
 			...(acted?.party && acted.until
 				? { party: { ...acted.party, until: acted.until } }

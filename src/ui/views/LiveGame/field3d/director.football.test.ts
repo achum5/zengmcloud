@@ -1141,6 +1141,50 @@ describe("the head coach", () => {
 	// Now and then before the home side's third down, the picture on its head
 	// coach across the field calling it in, the play sheet up over his mouth
 	// - on his spot for it, and on to the next play from there.
+	test("taking a big play: a fist pumped, or his hands on his head", () => {
+		let shots = 0;
+		for (const game of games) {
+			const tl = stage(game);
+			const men = sidelineFor(game.roster, 1);
+			for (const play of tl.plays) {
+				const react = play.coachReact;
+				if (!react) {
+					continue;
+				}
+				shots += 1;
+				const at = `play ${play.i}`;
+				assert.isDefined(play.party, at);
+				assert.isUndefined(play.callIn, at);
+				assert.closeTo(react.t0, play.party!.until + 500, 0.01, at);
+				assert.closeTo(react.t1 - react.t0, 1800, 0.01, at);
+				assert.include(tl.cuts, react.t0, at);
+				assert.include(tl.cuts, react.t1, at);
+				assert.isAtLeast(play.t1, react.t1 + 900, at);
+				// (The replay straight after him, not over him.)
+				if (play.replay) {
+					assert.isAtLeast(play.replay.cue, react.t1, at);
+				}
+				const shot = aimFor(momentAt(tl, react.t0 + 100));
+				assert.isBelow(shot.width, 20, at);
+				assert.closeTo(shot.x, react.at.x, 0.01, at);
+				const him = sidelineAt(men, tl, momentAt(tl, react.t0 + 600)).find(
+					(s) => s.id === coachId(1, 0),
+				)!;
+				assert.include(
+					react.glad ? ["fistPump", "clap"] : ["handsOnHelmet"],
+					him.move,
+					at,
+				);
+				assert.isBelow(
+					Math.hypot(him.x - react.at.x, him.y - react.at.y),
+					2,
+					at,
+				);
+			}
+		}
+		assert.isAbove(shots, 2);
+	}, 120_000);
+
 	test("calling in a third down, the play sheet up over his mouth", () => {
 		let shots = 0;
 		for (const game of games) {

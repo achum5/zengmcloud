@@ -651,6 +651,15 @@ const callInOf = (s: SidelineMan, play: Play) =>
 	s.unit === "coach" && s.coach === 0 && play.callIn?.side === s.team
 		? play.callIn
 		: undefined;
+// Taking a big play (see director.ts COACH_REACT_GLAD), from this long
+// before the picture cuts to him: a fist pumped (over this long) and
+// clapping, or his hands on his head.
+const REACT_LEAD = 300;
+const REACT_FIST_MS = 900;
+const reactOf = (s: SidelineMan, play: Play) =>
+	s.unit === "coach" && s.coach === 0 && play.coachReact?.side === s.team
+		? play.coachReact
+		: undefined;
 // What has him whatever else he was at: his side's big play, a call
 // against it.
 const reactionAt = (
@@ -693,9 +702,14 @@ const pacesOf = (s: SidelineMan, play: Play, tl: FieldTimeline): Pace[] => {
 	if (!out) {
 		out = [];
 		const home = headCoachAt(s.team, play.i);
-		// (Stood still from a while before he calls a play in.)
+		// (Stood still from a while before he calls a play in, or the picture
+		// is on him taking a big play.)
 		const call = callInOf(s, play);
-		const until = call ? call.t0 - CALL_IN_LEAD - COACH_BLEND : play.t1;
+		const shot = reactOf(s, play);
+		const until = Math.min(
+			call ? call.t0 - CALL_IN_LEAD - COACH_BLEND : play.t1,
+			shot ? shot.t0 - REACT_LEAD - COACH_BLEND : play.t1,
+		);
 		let at = home;
 		for (let j = Math.ceil(play.t0 / PACE_MS); j * PACE_MS < until; j++) {
 			const t0 = j * PACE_MS;
@@ -718,9 +732,12 @@ const pacesOf = (s: SidelineMan, play: Play, tl: FieldTimeline): Pace[] => {
 			}
 		}
 		// (And back on his spot by then, if he is off it - the walk before
-		// given up, if there is no time for both.)
-		while (call && at.x !== home.x) {
-			const go = until - (Math.abs(home.x - at.x) / PACE_FPS) * 1000;
+		// given up, if there is no time for both - a step or two of it as
+		// long as any walk, never one too quick to be seen into.)
+		while ((call || shot) && at.x !== home.x) {
+			const go =
+				until -
+				Math.max(PACE_LEAST, (Math.abs(home.x - at.x) / PACE_FPS) * 1000);
 			const last = out.at(-1);
 			if (last && last.t1 + COACH_BLEND > go) {
 				out.pop();
@@ -766,6 +783,19 @@ const bossDoing = (
 		return {
 			move: "callIn",
 			phase: Math.min(1, (t - from) / (call.t1 - from)),
+		};
+	}
+	const shot = reactOf(s, play);
+	if (shot && t >= shot.t0 - REACT_LEAD && t < shot.t1) {
+		const e = t - (shot.t0 - REACT_LEAD);
+		if (shot.glad) {
+			return e < REACT_FIST_MS
+				? { move: "fistPump", phase: e / REACT_FIST_MS }
+				: { move: "clap", phase: ((e - REACT_FIST_MS) / CLAP_MS) % 1 };
+		}
+		return {
+			move: "handsOnHelmet",
+			phase: Math.min(1, e / (shot.t1 - shot.t0 + REACT_LEAD)),
 		};
 	}
 	const react = reactionAt(s, play, tl, t);
