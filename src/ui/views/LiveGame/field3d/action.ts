@@ -2852,6 +2852,12 @@ const SWING_SIDE = 0.7;
 const BEHIND = -0.3;
 const SWING = 0.4;
 const SWING_TURN = 1.6;
+// (The man who swung him round down beside him, this far (feet) back
+// toward his feet from his hips.)
+const SWUNG_BACK = 1;
+// (Beside a man lying the way `yaw` goes: +1 or -1 to his left, whichever
+// is the far side of him from the cameras across the field.)
+const farSide = (yaw: number) => (Math.cos(yaw) > 0 ? -1 : 1);
 // One man in the secondary bringing him down from the side or behind: this
 // often on his feet still after it, stood over him.
 const UPRIGHT = 0.3;
@@ -7622,6 +7628,8 @@ class Action {
 			: swing
 				? along(pt, (1.4 * carried) / TACKLED_LEAST, -from1 * 2)
 				: along(pt, back ? -1.4 : carried, 0);
+		// (Swung round, the way he lies after it.)
+		let swungBy = 0;
 		if (keptUp) {
 			this.runOn(carrier, 450);
 		} else if (lying) {
@@ -7631,7 +7639,8 @@ class Action {
 		} else {
 			carrier.act(back ? "tackledBack" : "tackled", t + 450, fall, downAt);
 			if (swing) {
-				carrier.turn(-from1 * SWING_TURN * (0.8 + r() * 0.4));
+				swungBy = -from1 * SWING_TURN * (0.8 + r() * 0.4);
+				carrier.turn(swungBy);
 			}
 			carrier.hold(t + 450 + DOWN_MS, back ? "supine" : "prone");
 			carrier.act(back ? "getUpBack" : "getUp", t + 450 + DOWN_MS + GET_UP_MS);
@@ -7663,34 +7672,50 @@ class Action {
 				face,
 				carrier,
 			);
-			if (upright) {
+			// (Only from right there on him: late in from further off, down
+			// into him the way the others are - not shot across to him.)
+			const over = {
+				x: hit.x + Math.cos(face) * 1.6,
+				y: hit.y + Math.sin(face) * 1.6,
+			};
+			if (
+				upright &&
+				dist(m.at, over) <= (LUNGE_MOST_FPS * (t + 450 - m.t)) / 1000
+			) {
 				// Through him and up, over him.
-				m.go(
-					{ x: hit.x + Math.cos(face) * 1.6, y: hit.y + Math.sin(face) * 1.6 },
-					t + 450,
-					"drive",
-					face,
-				);
+				m.go(over, t + 450, "drive", face);
 				m.hold(t + 450 + DOWN_MS + 300, "stand", face);
 				this.done.add(m.pid);
 				return;
 			}
 			// Down alongside him on the side he came in from, not on top of
-			// him - the man who drove him back down across his legs.
+			// him - the man who drove him back down across his legs; the man
+			// who swung him round, down beside him as he lies, the far side
+			// of him from the cameras, not along him on top of him (in from
+			// his side, swung round, he is at his feet now: either side of
+			// him as near).
 			// (Two in from the same side not down in the one place: the next
 			// over the other side of him, or further down his legs.)
+			const towards = Math.sin(ang - fall) > 0 ? 1 : -1;
+			const lies = fall + swungBy;
 			const landing = (by: number) =>
 				swing
 					? {
-							x: downAt.x - Math.sin(fall) * by,
-							y: downAt.y + Math.cos(fall) * by,
+							x:
+								downAt.x -
+								Math.cos(lies) * SWUNG_BACK -
+								Math.sin(lies) * by * towards * farSide(lies),
+							y:
+								downAt.y -
+								Math.sin(lies) * SWUNG_BACK +
+								Math.cos(lies) * by * towards * farSide(lies),
 						}
 					: !back
 						? along(downAt, -1.2, by)
 						: k === 0
 							? along(downAt, 2.6, 2)
 							: along(downAt, 0.6, by);
-			const by = (Math.sin(ang - fall) > 0 ? 1 : -1) * 2.1;
+			const by = towards * 2.1;
 			const free = (p: Pt) => landed.every((q) => dist(p, q) >= LANDED_APART);
 			const lands =
 				[landing(by), landing(-by), along(landing(by), -LANDED_APART, 0)].find(
