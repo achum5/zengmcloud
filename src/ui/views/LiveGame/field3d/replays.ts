@@ -268,6 +268,11 @@ const TIGHT = 58;
 const LOOSE = 140;
 const ROOM = 34;
 const NEAR = 70;
+// (But a kick in the air higher than this (feet): on the man waiting
+// under it, not tilted up after it from down on the sideline at nothing
+// but the stands - it comes down into the picture to him.)
+const KICK_HIGH = 9;
+const KICKED = new Set(["punt", "kickoff", "onside"]);
 
 // From behind the end zone: on him, or the ball, this wide where he is.
 const END_ZONE_WIDTH = 40;
@@ -339,11 +344,20 @@ export const replayAim = (m: FieldMoment, r: FieldReplay): Shot => {
 		}
 	}
 	const pts: Pt3[] = [];
+	const him =
+		r.pid === undefined ? undefined : m.players.find((p) => p.id === r.pid);
+	const waiting =
+		him !== undefined &&
+		m.play !== undefined &&
+		KICKED.has(m.play.kind) &&
+		m.carrier === undefined &&
+		(m.focus?.z ?? 0) > KICK_HIGH;
+	if (waiting) {
+		return { x: him.x, y: him.y, width: TIGHT, z: 4 };
+	}
 	if (m.focus) {
 		pts.push(m.focus);
 	}
-	const him =
-		r.pid === undefined ? undefined : m.players.find((p) => p.id === r.pid);
 	if (him && (!m.focus || dist(him, m.focus) < NEAR)) {
 		pts.push({ x: him.x, y: him.y, z: 3.5 });
 	}

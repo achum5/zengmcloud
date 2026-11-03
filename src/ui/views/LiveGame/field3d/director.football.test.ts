@@ -33,7 +33,7 @@ import {
 } from "./geometry.ts";
 import { NET_HALF, NET_TOP, netAt } from "./net.ts";
 import { makeFieldClock, REPLAY_SPEED, stepField } from "./playback.ts";
-import { replayFor, replaySky } from "./replays.ts";
+import { replayAim, replayFor, replaySky } from "./replays.ts";
 import { coachId, headCoachAt, sidelineAt, sidelineFor } from "./sideline.ts";
 import type { FieldPlayerState } from "./sprite.ts";
 import { stageField, stageOpening } from "./stageField.ts";
@@ -308,6 +308,41 @@ describe("replays", () => {
 		assert.isAbove(shown, 15);
 		assert.isAbove(sacks, 0);
 	}, 20_000);
+
+	test("a kick shown again, high in the air: on the man waiting under it, not tilted up at the stands", () => {
+		let high = 0;
+		for (const game of games) {
+			const tl = stage(game);
+			for (const play of tl.plays) {
+				const r = play.replay;
+				if (
+					!r ||
+					r.pid === undefined ||
+					!["punt", "kickoff", "onside"].includes(play.kind)
+				) {
+					continue;
+				}
+				for (let t = r.from; t < r.to; t += 100) {
+					if (replaySky(r, t) || (r.endZone && t >= r.endZone.from)) {
+						continue;
+					}
+					const m = momentAt(tl, t);
+					if (m.carrier !== undefined || (m.focus?.z ?? 0) <= 12) {
+						continue;
+					}
+					const him = m.players.find((p) => p.id === r.pid);
+					if (!him) {
+						continue;
+					}
+					high += 1;
+					const shot = replayAim(m, r);
+					assert.isAtMost(shot.z ?? 0, 4.5, `play ${play.i}`);
+					assert.closeTo(shot.x, him.x, 0.01, `play ${play.i}`);
+				}
+			}
+		}
+		assert.isAbove(high, 0);
+	}, 60_000);
 
 	test("a score's cut to from behind the end zone it was scored in, for the last of it - nothing else's", () => {
 		let behind = 0;
