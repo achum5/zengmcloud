@@ -258,8 +258,9 @@ export type Play = {
 	// when, until when, and where he stands for it.
 	refCall?: { t0: number; t1: number; at: Pt };
 	// In close on the man a big play's moment after it is about - the man
-	// who made the sack, the scorer - on his own in it, before the rest get
-	// to him (see heroClose): from when, until when, and where he stands.
+	// who made the sack, the scorer, the man pointing out a first down after
+	// a long gain - on his own in it, before the rest get to him (see
+	// heroClose): from when, until when, and where he stands.
 	// (And the camera this far along the field from him - see aim.ts.)
 	heroClose?: { t0: number; t1: number; pid: number; at: Pt; shift: number };
 	// Between quarters: when the picture cuts to the whole stadium (see

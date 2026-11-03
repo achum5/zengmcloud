@@ -2636,6 +2636,10 @@ const PULL_UP_FT = 3.4;
 const POINT_FIRST = 0.55;
 const UP_QUICK = 450;
 const POINT_MS = 1000;
+// (Made by this many yards gained at least: his moment after it, the
+// camera in on it from this long before he points.)
+const POINT_BIG = 20;
+const POINT_LEAD = 300;
 
 // A turnover: the man who came up with it mobbed this often.
 const TAKEAWAY = 0.75;
@@ -14113,6 +14117,22 @@ class Action {
 		}
 		m.act("pointFirst", t0 + POINT_MS, this.ahead + (r() - 0.5) * 0.7);
 		m.hold(m.t + 300, "stand");
+		// (After a long way gained, his moment: the camera in on it.)
+		const { events, i0, i1 } = this.input;
+		const gain = num(
+			events
+				.slice(i0, i1)
+				.find((e) => e?.type === "run" || e?.type === "passComplete")?.yds,
+			0,
+		);
+		if (gain >= POINT_BIG) {
+			this.party = {
+				from: Math.max(this.whistle, t0 - POINT_LEAD),
+				at: m.at,
+				hero: m.pid,
+			};
+			this.until = Math.max(this.until, m.t);
+		}
 	}
 
 	// Everyone not already given his part to the end: pulled up where the
