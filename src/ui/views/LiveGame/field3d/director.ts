@@ -364,7 +364,7 @@ const AT_SNAP: Record<string, number> = {
 	kneel: 900,
 };
 // Besides his getting out of bounds, what stops the clock after a run or a
-// catch.
+// catch. (The ball over on downs, too: a change of hands.)
 const STOPS_CLOCK = new Set<string | undefined>([
 	"timeout",
 	"twoMinuteWarning",
@@ -372,6 +372,7 @@ const STOPS_CLOCK = new Set<string | undefined>([
 	"fumble",
 	"interception",
 	"injury",
+	"turnoverOnDowns",
 ]);
 // What happened, said when it does.
 const RESULTS = new Set([
