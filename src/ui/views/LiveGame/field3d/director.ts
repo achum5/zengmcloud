@@ -1582,6 +1582,30 @@ class Director {
 		return out;
 	}
 
+	// The next play a punt or a field goal (its unit coming on said first,
+	// after the clock line at i1) - not a go for it, nor past the end of a
+	// quarter.
+	kicksNext(i1: number) {
+		const { events } = this;
+		for (let i = i1 + 1; i < events.length; i++) {
+			const type = events[i]?.type;
+			if (type === "puntTeam" || type === "fieldGoalAttempt") {
+				return true;
+			}
+			if (
+				type === "clock" ||
+				type === "quarter" ||
+				type === "overtime" ||
+				type === "gameOver" ||
+				(type !== undefined && PLAY_KIND[type] !== undefined) ||
+				type === "goingForItOn4th"
+			) {
+				return false;
+			}
+		}
+		return false;
+	}
+
 	play(i0: number, i1: number) {
 		const { events } = this;
 		const clock = events[i0]!;
@@ -1857,6 +1881,9 @@ class Director {
 						? ("third" as const)
 						: undefined
 				: undefined;
+		// (Stopped on third, and the punt or the kick on next: both sides
+		// off for the units coming on - not back to their huddles.)
+		const kicksNext = stopped === "third" && this.kicksNext(i1);
 		// Out of bounds: a run or a catch the sim stopped the clock after
 		// with nothing else to stop it - no score, no change of hands, no
 		// flag, no timeout, no two-minute warning - no more time gone by the
@@ -1903,6 +1930,7 @@ class Director {
 						i1,
 						...(moved ? { firstDown: true } : {}),
 						...(stopped ? { stopped } : {}),
+						...(kicksNext ? { kicksNext: true } : {}),
 						...(out ? { out: true } : {}),
 						speeds: this.speeds,
 						rated: this.rated,

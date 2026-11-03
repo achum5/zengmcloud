@@ -887,6 +887,70 @@ describe("a long drive", () => {
 	}, 20_000);
 });
 
+describe("third down", () => {
+	// Stopped short on third, the punt or the kick next: both sides off to
+	// their benches after the whistle for the units coming on - going for
+	// it on fourth instead, back to their huddles. (A timeout called, the
+	// picture off to it.)
+	test("stopped on it, a kick next: both units off to their sidelines - going for it, not", () => {
+		let kicked = 0;
+		let went = 0;
+		const benched = (p: Play) => {
+			let off = 0;
+			let all = 0;
+			for (const part of p.parts) {
+				if (p.hurt?.pid === part.pid) {
+					continue;
+				}
+				const l = part.legs.findLast(
+					(l) =>
+						l.t0 >= p.whistle &&
+						l.t0 < p.t1 &&
+						(l.from.x !== l.to.x || l.from.y !== l.to.y),
+				);
+				if (!l) {
+					continue;
+				}
+				all++;
+				const y = l.to.y;
+				if (y < 10 || y > FIELD_W - 10) {
+					off++;
+				}
+			}
+			return all > 0 ? off / all : 0;
+		};
+		for (const game of games) {
+			const tl = stage(game);
+			const plays = tl.plays.filter((p) => p.kind !== "none");
+			for (let k = 0; k + 1 < plays.length; k++) {
+				const p = plays[k]!;
+				const next = plays[k + 1]!;
+				if (
+					!p.situation.startsWith("3rd") ||
+					(p.kind !== "run" && p.kind !== "pass") ||
+					p.flags.length > 0 ||
+					p.timeout ||
+					!next.situation.startsWith("4th") ||
+					next.offense !== p.offense ||
+					next.quarter !== p.quarter
+				) {
+					continue;
+				}
+				const share = benched(p);
+				if (next.kind === "punt" || next.kind === "fieldGoal") {
+					kicked++;
+					assert.isAbove(share, 0.6, `${p.i}`);
+				} else {
+					went++;
+					assert.isBelow(share, 0.3, `${p.i}`);
+				}
+			}
+		}
+		assert.isAbove(kicked, 10);
+		assert.isAbove(went, 0);
+	}, 20_000);
+});
+
 describe("a man hurt", () => {
 	test("down after the whistle, the trainers out to him from his sideline, and helped off toward it", () => {
 		let hurt = 0;

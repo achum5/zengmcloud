@@ -85,6 +85,8 @@ export type ActInput = {
 	// short on third down, or on fourth and the ball over on downs.
 	firstDown?: boolean;
 	stopped?: "third" | "fourth";
+	// ...stopped on third, and a punt or a field goal next.
+	kicksNext?: boolean;
 	// The man with it got out of bounds (see the director).
 	out?: boolean;
 	// Each man's speed against the others at his position, and his ratings,
@@ -14563,14 +14565,17 @@ class Action {
 				scored = true;
 			}
 		}
-		const downs = this.input.stopped === "fourth";
+		const downs =
+			this.input.stopped === "fourth" ||
+			(this.input.stopped === "third" && this.input.kicksNext === true);
 		const off =
 			KICK_KINDS.has(kind) ||
 			scored ||
 			downs ||
 			(holder !== undefined && holder.team !== offense);
-		// (The side scored on, that had the ball taken off it or gave it up on
-		// downs: slow off the field, heads down.)
+		// (The side scored on, that had the ball taken off it, gave it up on
+		// downs or was stopped on third with a kick next: slow off the field,
+		// heads down.)
 		// (Scored: whoever had it last, whatever he did with it after.)
 		const scorer =
 			holder ??
