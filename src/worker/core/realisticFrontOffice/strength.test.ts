@@ -269,3 +269,28 @@ test("a player whose skills are not known yet brings those of his overall", () =
 		assert.closeTo(low[key], replacement[key], 0.02);
 	}
 });
+
+test("injuries yet to come cost a roster leaning on one star more than a deep one", () => {
+	const lines = (players: StrengthPlayer[]) =>
+		players.map((p) => ({ ...p, availability: 1 }));
+	// A star and little behind him, against a deep roster about as good.
+	const starred = [at(72), ...Array.from({ length: 12 }, (_, i) => at(50 - i))];
+	let deepTop = 60;
+	const deep = () =>
+		Array.from({ length: 13 }, (_, i) => at(deepTop - Math.floor(i / 2)));
+	while (rosterPoints(deep()) > rosterPoints(starred)) {
+		deepTop -= 1;
+	}
+	const loss = (players: StrengthPlayer[]) =>
+		expectedRosterPoints(lines(players)) -
+		expectedRosterPoints(lines(players), 1 - 0.08);
+	assert.isAbove(loss(starred), 0);
+	assert.isAbove(loss(deep()), 0);
+	assert.isAbove(loss(starred), loss(deep()));
+	// Nothing is lost when everyone is there.
+	assert.closeTo(
+		expectedRosterPoints(lines(starred), 1),
+		rosterPoints(starred),
+		1e-9,
+	);
+});

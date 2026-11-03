@@ -201,6 +201,10 @@ export type LeagueOutlook = {
 	// Roster points of the average team each season, so a hypothetical roster
 	// can be put on the same scale.
 	meanPoints: number[];
+	// For the arena's version-against-version leagues: how much higher the
+	// average team's points are each season at the other injuryRisk, for the
+	// teams set to it.
+	injuryShift?: number[];
 	titleCurves: Curve[];
 	playoffCurves: Curve[];
 	// For the arena's version-against-version leagues: the same curves at the
@@ -426,6 +430,34 @@ export type SeasonLine = StrengthPlayer & {
 // The gap between the halves' overalls below which a player is played as one.
 const UPSIDE_SPLIT = 4;
 
+// Whether a roster's points count injuries yet to come: by the team's own
+// setting when it prices its moves, by the league's (injuryView) where teams
+// are set against each other - where they finish, the league's average.
+let injuryView: boolean | undefined;
+const injuryFactor = (tid: number) =>
+	(injuryView ?? outlookSettingFor(tid, "injuryRisk")) ? 1 - INJURY_SHARE : 1;
+const withInjuryView = <T>(view: boolean, work: () => T) => {
+	const was = injuryView;
+	injuryView = view;
+	try {
+		return work();
+	} finally {
+		injuryView = was;
+	}
+};
+
+// How much higher the average team's points are for this team, at its own
+// injuryRisk, than the league's (injuryShift).
+const injuryShiftFor = (
+	outlook: Pick<LeagueOutlook, "injuryShift">,
+	tid: number,
+	y: number,
+) =>
+	outlook.injuryShift &&
+	outlookSettingFor(tid, "injuryRisk") !== outlookSettings.injuryRisk
+		? (outlook.injuryShift[y] ?? 0)
+		: 0;
+
 // A roster's lines with each split player as his two halves.
 const asPlayed = (tid: number, lines: readonly SeasonLine[]) =>
 	outlookSettingFor(tid, "upside") && lines.some((line) => line.halves)
@@ -599,7 +631,19 @@ export const outlookSettings = {
 	// trades aside - not by the first slice's guess, 2.6. Off while it is
 	// measured.
 	measuredDeadline: false,
+	// Games lost to injuries yet to come: everyone is there for this share of
+	// games fewer (INJURY_SHARE), as the roster plays without him. Off, only
+	// the injuries a team has now count - so a roster leaning on one star was
+	// read as better than it played, and a deep one as worse (470
+	// team-seasons: -0.10 ± 0.03 points a game for each point the best
+	// player's overall stands above the top eight's, +0.12 ± 0.03 for each
+	// point the 9th-12th men's do). Off while it is measured.
+	injuryRisk: false,
 };
+
+// Measured in arena leagues: players on a team all season missed 6.5% of its
+// games at 12-18 minutes a game, 9.5% at 30-36.
+export const INJURY_SHARE = 0.08;
 
 // For the arena's version-against-version leagues: settings for some teams'
 // own rosters, over outlookSettings - the ones a team's pricing alone reads.
@@ -622,6 +666,7 @@ export const teamOutlookSettings = new Map<
 			| "measuredUncertainty"
 			| "colaPath"
 			| "measuredDeadline"
+			| "injuryRisk"
 		>
 	>
 >();
@@ -640,7 +685,8 @@ const outlookSettingFor = <
 		| "knownClasses"
 		| "measuredUncertainty"
 		| "colaPath"
-		| "measuredDeadline",
+		| "measuredDeadline"
+		| "injuryRisk",
 >(
 	tid: number,
 	key: K,
@@ -1885,7 +1931,7 @@ export const teamPoints = (
 	if (known !== false && outlookSettingFor(tid, "letGo")) {
 		letGo(
 			seasons,
-			(all) => expectedRosterPoints(asPlayed(tid, all)),
+			(all) => expectedRosterPoints(asPlayed(tid, all), injuryFactor(tid)),
 			known,
 			worth,
 			spend,
@@ -1901,7 +1947,8 @@ export const teamPoints = (
 		}
 		roster?.(y, lines);
 		let points =
-			seasons[y]!.points ?? expectedRosterPoints(asPlayed(tid, lines));
+			seasons[y]!.points ??
+			expectedRosterPoints(asPlayed(tid, lines), injuryFactor(tid));
 		// This season's playoffs count with everyone back who will be by then
 		// (playoffWeight): a star out for the rest of the regular season is
 		// still worth his playoffs.
@@ -1927,7 +1974,12 @@ export const teamPoints = (
 			}
 			if (playoffLines) {
 				points +=
-					weight * (expectedRosterPoints(asPlayed(tid, playoffLines)) - points);
+					weight *
+					(expectedRosterPoints(
+						asPlayed(tid, playoffLines),
+						injuryFactor(tid),
+					) -
+						points);
 			}
 		}
 		out.push(points);
@@ -1995,7 +2047,18 @@ const rosterOnlyPoints = (
 	tid: number,
 	players: readonly Player[],
 ) =>
-	teamPoints(outlook, tid, players, [], undefined, undefined, undefined, false);
+	withInjuryView(outlookSettings.injuryRisk, () =>
+		teamPoints(
+			outlook,
+			tid,
+			players,
+			[],
+			undefined,
+			undefined,
+			undefined,
+			false,
+		),
+	);
 
 // A team keeps a drafted player past his rookie deal only while it is better
 // with him than with what his salary buys as cap room, over the seasons ahead
@@ -2378,7 +2441,8 @@ export const teamStrengths = (
 ) => {
 	const strengthOf = (y: number, points: number) =>
 		points -
-		outlook.meanPoints[y]! +
+		outlook.meanPoints[y]! -
+		injuryShiftFor(outlook, tid, y) +
 		(y === 0 ? (outlook.recordEdge.get(tid) ?? 0) : 0);
 	const perCap = outlookSettingFor(tid, "moneyPerCap");
 	const salaryCap = g.get("salaryCap");
@@ -2409,7 +2473,11 @@ export const teamStrengths = (
 	let points = pointsWith();
 	if (outlookSettingFor(tid, "costsOfLosing")) {
 		losingClock.priced += 1;
-		const losing = losingShifts(outlook, tid, points);
+		const losing = losingShifts(
+			outlook,
+			tid,
+			points.map((x, y) => x - injuryShiftFor(outlook, tid, y)),
+		);
 		if (losing) {
 			losingClock.repriced += 1;
 			points = pointsWith(losing);
@@ -2758,6 +2826,7 @@ export const buildOutlook = async ({
 		records,
 		basePoints: undefined as LeagueOutlook["basePoints"],
 		meanPoints: [] as number[],
+		injuryShift: undefined as LeagueOutlook["injuryShift"],
 		progress: inSeason ? progress : 0,
 		recordEdge: new Map<number, number>(),
 		winShare: undefined as LeagueOutlook["winShare"],
@@ -2859,13 +2928,37 @@ export const buildOutlook = async ({
 	base.pickYears = new WeakMap();
 	base.futurePicks.clear();
 
-	const points = new Map(
-		teams.map((t) => [
-			t.tid,
-			teamPoints(base, t.tid, rosters.get(t.tid)!, picks.get(t.tid)!),
-		]),
-	);
+	const pointsAt = (view: boolean) =>
+		withInjuryView(
+			view,
+			() =>
+				new Map(
+					teams.map((t) => [
+						t.tid,
+						teamPoints(base, t.tid, rosters.get(t.tid)!, picks.get(t.tid)!),
+					]),
+				),
+		);
+	const points = pointsAt(outlookSettings.injuryRisk);
 	base.basePoints = points;
+	// Only in the arena's version-against-version leagues: the average team at
+	// the other injuryRisk.
+	if (
+		[...teamOutlookSettings.values()].some(
+			(x) =>
+				x.injuryRisk !== undefined &&
+				x.injuryRisk !== outlookSettings.injuryRisk,
+		)
+	) {
+		const other = pointsAt(!outlookSettings.injuryRisk);
+		const meanOf = (map: Map<number, number[]>, y: number) =>
+			teams.reduce((a, t) => a + map.get(t.tid)![y]!, 0) /
+			Math.max(1, teams.length);
+		base.injuryShift = Array.from(
+			{ length: OUTLOOK_YEARS + 1 },
+			(_, y) => meanOf(other, y) - meanOf(points, y),
+		);
+	}
 
 	const outlooks = new Map<number, TeamOutlook>();
 	for (const t of teams) {
