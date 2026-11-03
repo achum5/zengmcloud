@@ -9041,6 +9041,49 @@ class Action {
 			this.d,
 			sacker ? [sacker] : undefined,
 		);
+		if (sacker) {
+			this.rushMove(sacker, qb, t);
+		}
+	}
+
+	// The man who got home on the quarterback off his block on the way:
+	// with the arm on the side of him the blocker is as he goes by, a swim
+	// over the top of him or a rip up under his arm (see RUSH_SWIM).
+	rushMove(m: Actor, qb: Actor, t: number) {
+		const legs = m.legs;
+		const k = legs.findLastIndex((l) => l.move === "engage" && l.t1 <= t);
+		const next = legs[k + 1];
+		if (k < 0 || !next || !GAITS.has(next.move)) {
+			return;
+		}
+		const off = legs[k]!.t1;
+		if (off < this.input.snap + RUSH_MOVE_LEAST) {
+			return;
+		}
+		// (No longer than his run on to him lasts, nor over anything else
+		// his arms are at.)
+		const stop = legs.find((l) => l.t0 >= off && !GAITS.has(l.move))?.t0 ?? t;
+		const t0 = off - RUSH_MOVE_BEFORE;
+		const t1 = Math.min(off + RUSH_MOVE_AFTER, stop);
+		if (
+			t1 - t0 < RUSH_MOVE_LEAST_MS ||
+			legs.some((l) => l.arms && l.t1 > t0 && l.t0 < t1)
+		) {
+			return;
+		}
+		// (The man he beats: the nearest of the other side to him then.)
+		const at = m.posAt(off);
+		const foe = this.men
+			.filter((o) => o.team !== m.team && o !== qb)
+			.map((o) => ({ o, p: o.posAt(off) }))
+			.sort((a, b) => dist(a.p, at) - dist(b.p, at))[0];
+		if (!foe || dist(foe.p, at) > RUSH_MOVE_NEAR) {
+			return;
+		}
+		const way = Math.atan2(next.to.y - next.from.y, next.to.x - next.from.x);
+		const left = Math.sin(Math.atan2(foe.p.y - at.y, foe.p.x - at.x) - way) > 0;
+		const swim = countOf(m, this.input.snap, 38) < RUSH_SWIM;
+		m.arms(swim ? (left ? "swimL" : "swimR") : left ? "ripL" : "ripR", t0, t1);
 	}
 
 	scramble(i: number, qb: Actor, go: number, runners: Actor[] = []) {
@@ -15089,6 +15132,17 @@ const TOSS_BEFORE_MS = 250;
 // (Out in his hands this long first, at least, ms - not flicked out from
 // under his arm and gone in a frame.)
 const TOSS_HANDS_MS = 220;
+// The man who got home on the quarterback off his block: a swim this
+// often, else a rip (see rushMove) - from this long before he is off it to
+// this long after, at the most (no less than this long of it, ms); only off
+// a man no further from him than this (feet), and no sooner after the snap
+// than this.
+const RUSH_SWIM = 0.6;
+const RUSH_MOVE_BEFORE = 150;
+const RUSH_MOVE_AFTER = 400;
+const RUSH_MOVE_LEAST_MS = 380;
+const RUSH_MOVE_NEAR = 6;
+const RUSH_MOVE_LEAST = 700;
 // The side it went for (a long way gained: this many yards): this often
 // a man of it after a high five - with the nearest of them done with the
 // play no later than this after the whistle (ms), no further off than

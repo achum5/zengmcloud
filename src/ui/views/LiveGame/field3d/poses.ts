@@ -662,6 +662,38 @@ const TAKE_SHUT = pose({
 	elF: 103,
 	abF: -14,
 });
+// A rusher getting off his block, the arm on the blocker's side (his right,
+// here): a swim - the other hand clubbing the blocker's shoulder down as
+// this arm comes up and over the top of him and down past him - or a rip,
+// that arm dropped and driven up under the blocker's like an uppercut, the
+// other hand shoving him off.
+const RUSH_FIGHT = pose({
+	shN: 80,
+	elN: 26,
+	abN: 14,
+	shF: 80,
+	elF: 26,
+	abF: 14,
+});
+const SWIM_KEYS: [number, Pose][] = [
+	[0, RUSH_FIGHT],
+	[
+		0.3,
+		pose({ shN: 118, elN: 58, abN: 10, shF: 62, elF: 18, abF: -14, wrF: 20 }),
+	],
+	[0.55, pose({ shN: 168, elN: 28, abN: -18, shF: 52, elF: 26, abF: -10 })],
+	[0.8, pose({ shN: 70, elN: 34, abN: -16, shF: 34, elF: 70, abF: 0 })],
+	[1, pose({ shN: 34, elN: 84, shF: 30, elF: 88 })],
+];
+const RIP_KEYS: [number, Pose][] = [
+	[0, RUSH_FIGHT],
+	[
+		0.35,
+		pose({ shN: 18, elN: 76, abN: 6, shF: 76, elF: 18, abF: -12, wrF: 30 }),
+	],
+	[0.65, pose({ shN: 142, elN: 84, abN: 4, shF: 54, elF: 30, abF: -6 })],
+	[1, pose({ shN: 40, elN: 86, shF: 30, elF: 88 })],
+];
 const TAKE_KEYS: [number, Pose][] = [
 	[0, pose({ shN: 10, elN: 85, shF: 10, elF: 85 })],
 	[0.4, TAKE_OPEN],
@@ -3759,6 +3791,18 @@ const FIELD_ANIMS = {
 	sigHead: held(HANDS_ON_HEAD),
 	// A fake handoff taken: his arms shut round his belly on nothing.
 	fakeCarry: held({ shN: 24, elN: 104, abN: -16, shF: 30, elF: 98, abF: -16 }),
+	// Off his block past the man on him (see SWIM_KEYS, RIP_KEYS), with his
+	// right arm or his left.
+	swimR: { kind: "act", keys: SWIM_KEYS },
+	swimL: {
+		kind: "act",
+		keys: SWIM_KEYS.map(([k, q]): [number, Pose] => [k, mirror(q)]),
+	},
+	ripR: { kind: "act", keys: RIP_KEYS },
+	ripL: {
+		kind: "act",
+		keys: RIP_KEYS.map(([k, q]): [number, Pose] => [k, mirror(q)]),
+	},
 	// A handoff taken from his right, or his left (see TAKE_KEYS).
 	takeR: { kind: "act", keys: TAKE_KEYS },
 	takeL: {

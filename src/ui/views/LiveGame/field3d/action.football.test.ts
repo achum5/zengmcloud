@@ -190,6 +190,50 @@ describe("the plays acted out", () => {
 		// (The first to have every play's men laid out.)
 	}, 120_000);
 
+	test("the man who gets home on the quarterback off his block with a swim or a rip, the arm on the blocker's side", () => {
+		let sacks = 0;
+		let moves = 0;
+		eachPlay((play, seg) => {
+			if (play.kind !== "pass" || !seg.some((e) => e.type === "sack")) {
+				return;
+			}
+			sacks += 1;
+			for (const part of play.parts) {
+				const ls = part.legs.filter((l) =>
+					/^(swim|rip)[LR]$/.test(l.arms ?? ""),
+				);
+				if (ls.length === 0) {
+					continue;
+				}
+				moves += 1;
+				assert.notStrictEqual(part.team, play.offense, `play ${play.i}`);
+				const t0 = ls[0]!.t0;
+				const t1 = ls.at(-1)!.t1;
+				assert.isAtLeast(t1 - t0, 370, `play ${play.i}`);
+				// (Off his block in the middle of it, onto the quarterback.)
+				const off = part.legs.findLast(
+					(l) => l.move === "engage" && l.t1 <= t1,
+				);
+				assert.isDefined(off, `play ${play.i}`);
+				assert.isAbove(off!.t1, t0, `play ${play.i}`);
+				// (The arm on the side of him the nearest of the other side is
+				// as he goes by.)
+				const at = posAt(part, off!.t1);
+				const ahead = posAt(part, off!.t1 + 150);
+				const way = Math.atan2(ahead.y - at.y, ahead.x - at.x);
+				const foe = play.parts
+					.filter((p) => p.team === play.offense && p.role !== "QB")
+					.map((p) => posAt(p, off!.t1))
+					.sort((a, b) => dist(a, at) - dist(b, at))[0]!;
+				const left = Math.sin(Math.atan2(foe.y - at.y, foe.x - at.x) - way) > 0;
+				assert.strictEqual(ls[0]!.arms!.endsWith("L"), left, `play ${play.i}`);
+			}
+		});
+		// (Not a man come free with nobody on him.)
+		assert.isAbove(sacks, 3);
+		assert.isAbove(moves, sacks / 3);
+	}, 120_000);
+
 	test("a touchdown when he gets in with it, not before", () => {
 		const bad: string[] = [];
 		let checked = 0;
