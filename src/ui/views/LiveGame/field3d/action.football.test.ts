@@ -234,7 +234,7 @@ describe("the plays acted out", () => {
 		assert.isAbove(moves, sacks / 3);
 	}, 120_000);
 
-	test("the quarterback hit now and then as he lets it go: the ball gone first, a man of the other side's shove, down, and up again", () => {
+	test("the quarterback hit now and then as he lets it go: the ball gone first, a man of the other side's shove, down, and up again (or, hurt, not)", () => {
 		let passes = 0;
 		let hits = 0;
 		eachPlay((play, seg) => {
@@ -280,8 +280,12 @@ describe("the plays acted out", () => {
 				qb.legs[k + 1]?.move,
 				`play ${play.i}`,
 			);
+			// (Hurt on it, as the sim says: down there till they see to him.)
+			const hurt = seg.some(
+				(e) => e.type === "injury" && e.injuredPID === qb.pid,
+			);
 			assert.include(
-				["getUpBack", "getUp"],
+				hurt ? ["hurt", "hurtProne"] : ["getUpBack", "getUp"],
 				qb.legs[k + 2]?.move,
 				`play ${play.i}`,
 			);

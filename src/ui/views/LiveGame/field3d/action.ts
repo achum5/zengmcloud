@@ -9116,15 +9116,16 @@ class Action {
 	// into the quarterback just after he lets it go - both hands into him and
 	// on through it - him knocked off his feet, and up again after; the man
 	// he got off turned to watch it. Only off a block he can get off in time
-	// - not a man the sim names on anything else in it, nor a quarterback it
-	// says was hurt.
+	// - not a man the sim names on anything else in it. (The quarterback the
+	// sim says was hurt on it: always, and he stays down.)
 	qbHit(rushers: Actor[], blockers: Actor[], qb: Actor, throwAt: number) {
 		const { snap, events, i0, i1, stats } = this.input;
 		let rough = -1;
+		let hurt = false;
 		for (let i = i0; i < i1; i++) {
 			const e = events[i];
 			if (e?.type === "injury" && e.injuredPID === qb.pid) {
-				return;
+				hurt = true;
 			}
 			if (e?.type === "penalty" && e.penaltyName === "Roughing the passer") {
 				rough = i;
@@ -9140,7 +9141,7 @@ class Action {
 		const pool =
 			flagged && rushers.includes(flagged)
 				? [flagged]
-				: countOf(qb, snap, 39) < QB_HIT
+				: hurt || countOf(qb, snap, 39) < QB_HIT
 					? rushers.filter((m) => !named.has(m.pid))
 					: [];
 		// (Flagged for it: late, the ball well gone - see fouls.ts.)
@@ -9241,8 +9242,14 @@ class Action {
 			back ? into + Math.PI : into,
 			down,
 		);
-		qb.hold(qb.t + QB_HIT_DOWN_MS, back ? "supine" : "prone");
-		qb.act(back ? "getUpBack" : "getUp", qb.t + GET_UP_MS);
+		// (Hurt on it: down there for good - see hurtDown.)
+		qb.hold(
+			qb.t + (hurt ? QB_HURT_DOWN_MS : QB_HIT_DOWN_MS),
+			back ? "supine" : "prone",
+		);
+		if (!hurt) {
+			qb.act(back ? "getUpBack" : "getUp", qb.t + GET_UP_MS);
+		}
 	}
 
 	scramble(i: number, qb: Actor, go: number, runners: Actor[] = []) {
@@ -15319,7 +15326,8 @@ const RUSH_MOVE_LEAST = 700;
 // off his block at this pace, pushing on already); the shove from this
 // long before it to this long after; stood over him till this long after
 // it. The quarterback knocked this far (feet) over this long (onto his
-// back unless that turns him this much more, radians), down this long.
+// back unless that turns him this much more, radians), down this long
+// (hurt on it, as long as he is hurt: no less than this).
 // The blocker he got off: no further from him than this (feet), seeing it
 // this long after (ms).
 const QB_HIT = 0.1;
@@ -15340,6 +15348,7 @@ const QB_HIT_BACK_FT = 2.4;
 const QB_HIT_FALL_MS = 450;
 const QB_HIT_BACK_BIAS = 0.35;
 const QB_HIT_DOWN_MS = 700;
+const QB_HURT_DOWN_MS = 60_000;
 const QB_HIT_BLOCKER_FT = 5;
 const QB_HIT_SEE_MS = 200;
 // The side it went for (a long way gained: this many yards): this often
