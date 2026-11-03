@@ -13355,12 +13355,18 @@ class Action {
 				}
 			}
 		}
-		// (The kicker, wide or short: hands on his helmet now and then.)
-		if (!made && fg && r() < KICKER_RUE) {
+		// (The kicker, wide or short: hands on his helmet now and then - late
+		// in a close game, always: his moment, the camera in on it.)
+		const blown = !made && fg && this.crunch;
+		if (!made && fg && (r() < KICKER_RUE || blown)) {
 			const seen = Math.max(k.t, crossT + KICK_SEEN_MS);
 			k.cut(seen);
 			k.hold(seen, "stand", this.toward(k.at, posts));
 			k.act("handsOnHelmet", seen + RUE_HELMET_MS + r() * 400);
+			if (blown) {
+				this.party = { from: seen, at: k.posAt(seen), hero: k.pid };
+				this.until = Math.max(this.until, k.t);
+			}
 		}
 		// Good: this often the holder over to the kicker, a high five - the
 		// kicker's fist pumped first, now and then. A long one, or one late
