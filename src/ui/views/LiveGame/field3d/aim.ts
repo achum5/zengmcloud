@@ -44,8 +44,10 @@ const FOLLOWS = new Set<Play["kind"]>(["pass", "run", "kneel"]);
 const FOLLOW_AHEAD = 12;
 // (Eased onto it from the shot on the line over this long, ms.)
 const FOLLOW_EASE_MS = 400;
-// (And in on the man with it over this long, ms.)
+// (And in on the man with it over this long, ms; and onto it, the ball
+// dead, over this long.)
 const CARRY_EASE_MS = 500;
+const SETTLE_MS = 1400;
 const OPEN_UP = 0.3;
 const WIDEST = 190;
 // Once a man of the offense has it past the line - a catch, a back through
@@ -382,9 +384,13 @@ export const aimFor = (m: FieldMoment): Shot => {
 	}
 	const down = (focus.x - play.losX) * play.dir;
 	const back = m.carrier !== undefined && m.carrier !== play.offense;
-	const lead = back
+	const going = back
 		? down - FOLLOW_AHEAD
 		: Math.max(down + FOLLOW_AHEAD, f.ahead * 0.6);
+	// (The ball dead, the picture settles onto it - the tackle, the pass
+	// on the turf - not still looking on ahead of it at nobody.)
+	const dead = Math.min(1, Math.max(0, (t - play.whistle) / SETTLE_MS));
+	const lead = going + (down - going) * dead * dead * (3 - 2 * dead);
 	const carried = m.carrier === play.offense || t >= play.whistle;
 	const open = Math.min(WIDEST, f.width + Math.max(0, down) * OPEN_UP);
 	const tight = Math.max(CARRY_WIDTH, f.width - Math.max(0, down) * NARROW);
