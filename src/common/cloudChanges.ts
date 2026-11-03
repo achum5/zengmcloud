@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 148,
+		date: "2026-11-03",
+		text: "Key plays settings: the close-game boxes can be cleared to type a new number - they used to snap straight back to the old one.",
+	},
+	{
 		n: 147,
 		date: "2026-11-03",
 		text: "3D game: a player who blows a layup or a dunk that the other team rebounds puts his hands on his head on the way back up the floor; and beaten at the buzzer, one of the losers stands there stunned with his hands on his head.",

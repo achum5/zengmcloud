@@ -47,6 +47,12 @@ const KeyPlaysSettings = ({
 	onChange: (value: KeyPlaySettings) => void;
 }) => {
 	const [show, setShow] = useState(false);
+	// What is typed in each number box, while it is being typed - so the box
+	// can be emptied to type a new number over it, which a box showing only
+	// the saved number snapped straight back from.
+	const [typed, setTyped] = useState<
+		Partial<Record<"closePoints" | "closeMinutes", string>>
+	>({});
 	const set = (next: Partial<KeyPlaySettings>) => {
 		const v = parseKeyPlays({ ...value, ...next });
 		setKeyPlays(v);
@@ -64,16 +70,23 @@ const KeyPlaysSettings = ({
 			<input
 				id={`kp-${key}`}
 				type="number"
+				inputMode={step < 1 ? "decimal" : "numeric"}
 				className="form-control form-control-sm"
 				min={KEY_PLAY_LIMITS[key][0]}
 				max={KEY_PLAY_LIMITS[key][1]}
 				step={step}
-				value={value[key]}
+				value={typed[key] ?? value[key]}
 				onChange={(e) => {
-					const n = Number.parseFloat(e.target.value);
+					const text = e.target.value;
+					setTyped((t) => ({ ...t, [key]: text }));
+					const n = Number.parseFloat(text);
 					if (Number.isFinite(n)) {
 						set({ [key]: n });
 					}
+				}}
+				// (Left empty, or out of range: back to what was saved.)
+				onBlur={() => {
+					setTyped((t) => ({ ...t, [key]: undefined }));
 				}}
 			/>
 		</div>
