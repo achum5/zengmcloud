@@ -8871,17 +8871,33 @@ class Action {
 				const ring =
 					WITH_IT_FT[0] + WITH_IT_FT[1] * countOf(m, this.input.snap, 21);
 				const far = dist(m.at, pt);
-				if (far > ring + 2) {
+				const by = Math.max(m.t + WITH_IT_LEAST_MS, t);
+				if (
+					far > ring + 2 &&
+					((far - ring) / Math.max(0.001, by - m.t)) * 1000 < WALK_MOST_FPS
+				) {
+					// (Time enough to walk it: a look, and after it at a jog,
+					// kept off it - not walked there while it is still going.)
+					const { snap } = this.input;
+					m.hold(
+						m.t +
+							TRAIL_LOOK_MS[0] +
+							(TRAIL_LOOK_MS[1] - TRAIL_LOOK_MS[0]) * countOf(m, snap, 29),
+					);
+					this.alongWith(
+						m,
+						TRAIL_JOG_FPS[0] +
+							(TRAIL_JOG_FPS[1] - TRAIL_JOG_FPS[0]) * countOf(m, snap, 30),
+						Math.max(ring, TRAIL_KEEP_FT),
+						t - 300,
+					);
+				} else if (far > ring + 2) {
 					const to = {
 						x: pt.x + ((m.at.x - pt.x) / far) * ring,
 						y: pt.y + ((m.at.y - pt.y) / far) * ring,
 					};
 					m.plantFor(to);
-					m.chase(
-						to,
-						Math.max(m.t + WITH_IT_LEAST_MS, t),
-						m.top * WITH_IT_PACE,
-					);
+					m.chase(to, by, m.top * WITH_IT_PACE);
 				} else if (t - 300 - m.t >= ROUTE_AFTER_LEAST_MS) {
 					// (Where it ends up already: out to meet it, and back with
 					// it as it comes - kept off it - not stood waiting for it.)
