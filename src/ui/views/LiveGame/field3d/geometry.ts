@@ -60,6 +60,9 @@ export const CROSSBAR_Z = 10;
 export const UPRIGHT_Z = CROSSBAR_Z + 35;
 // The gooseneck: the post comes up behind the end line and reaches forward.
 export const POST_BACK = 6;
+// The net that goes up behind the posts for a kick, this far behind the
+// end line, catching the ball (see action.ts fieldGoal, net.ts).
+export const NET_BACK = 20;
 
 export const other = (t: Side): Side => (t === 0 ? 1 : 0);
 

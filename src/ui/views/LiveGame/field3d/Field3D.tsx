@@ -97,6 +97,7 @@ import { confettiFor } from "./confetti.ts";
 import { crewFor } from "./crew.ts";
 import { boardAt, crowdAt } from "./crowd.ts";
 import { marksAt } from "./marks.ts";
+import { netAt } from "./net.ts";
 import {
 	chainCrewLook,
 	coachLook,
@@ -1475,6 +1476,7 @@ const Field3D = ({
 				...(confetti ? { confetti: { of: confetti, t: moment.t } } : {}),
 				flashes: flashesAt(photographersRef.current, moment),
 				...(replay ? {} : { marks: marksAt(moment.play, moment.t) }),
+				net: netAt(moment.play, moment.t),
 				...(!replay && closeIn(moment)
 					? { soft: CLOSE_SOFT }
 					: sky?.goal

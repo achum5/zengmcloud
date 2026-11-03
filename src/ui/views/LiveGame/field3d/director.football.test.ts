@@ -4,6 +4,7 @@ import processLiveGameEvents, {
 	type SportState,
 } from "../../../util/processLiveGameEvents.football.tsx";
 import { aimFor } from "./aim.ts";
+import { FIGURE_SCALE } from "./body.ts";
 import {
 	compileField,
 	isLineItem,
@@ -22,9 +23,12 @@ import {
 	GOAL_L,
 	GOAL_R,
 	MID_X,
+	MID_Y,
+	NET_BACK,
 	TEAM_AREA,
 	yardLineX,
 } from "./geometry.ts";
+import { NET_HALF, NET_TOP, netAt } from "./net.ts";
 import { makeFieldClock, REPLAY_SPEED, stepField } from "./playback.ts";
 import { replayFor } from "./replays.ts";
 import { coachId, headCoachAt, sidelineAt, sidelineFor } from "./sideline.ts";
@@ -453,6 +457,37 @@ describe("replays", () => {
 		assert.isAbove(seen.at(-1)!.t, r.cue);
 		// On fast: on through it.
 		assert.isTrue(run(4).every((x) => x.at === undefined));
+	}, 20_000);
+});
+
+describe("the net behind the posts", () => {
+	test("up for a kick, where it catches the ball, and down again after", () => {
+		let caught = 0;
+		for (const game of games) {
+			const tl = stage(game);
+			for (const play of tl.plays) {
+				const kick = play.kind === "fieldGoal" || play.kind === "extraPoint";
+				if (!kick) {
+					assert.isUndefined(netAt(play, play.snap), `play ${play.i}`);
+					continue;
+				}
+				assert.isUndefined(netAt(play, play.t0), `play ${play.i}`);
+				const side = play.dir === 1 ? 1 : 0;
+				const x = side === 1 ? FIELD_L + NET_BACK : -NET_BACK;
+				assert.deepEqual(netAt(play, play.snap), { side, up: 1 });
+				for (const b of play.ball) {
+					if (b.kind !== "fly" || b.to.z < 0.1 || Math.abs(b.to.x - x) > 0.01) {
+						continue;
+					}
+					caught += 1;
+					assert.strictEqual(netAt(play, b.t1)?.up, 1, `play ${play.i}`);
+					assert.isBelow(Math.abs(b.to.y - MID_Y), NET_HALF, `play ${play.i}`);
+					assert.isBelow(b.to.z * FIGURE_SCALE, NET_TOP, `play ${play.i}`);
+				}
+				assert.isUndefined(netAt(play, play.whistle + 4000), `play ${play.i}`);
+			}
+		}
+		assert.isAbove(caught, 10);
 	}, 20_000);
 });
 

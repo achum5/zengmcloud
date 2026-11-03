@@ -4,6 +4,7 @@ import { drawConfetti, type Confetti } from "./confetti.ts";
 import type { Crowd } from "./crowd.ts";
 import { drawFieldLines } from "./fieldLines.ts";
 import { drawMarks, type Mark } from "./marks.ts";
+import { drawNet, type NetUp } from "./net.ts";
 import { drawPools, type Pool } from "./pools.ts";
 import {
 	END_ZONE_PLANES,
@@ -83,6 +84,8 @@ export type FieldFrame = {
 	marks?: Mark[];
 	// The shadows under the men and the ball (see pools.ts).
 	pools?: Pool[];
+	// The net behind the posts at a kick (see net.ts).
+	net?: NetUp;
 	// Drawn among the posts, back to front: each with how far it is from the
 	// camera.
 	items?: { depth: number; draw: () => void }[];
@@ -345,6 +348,10 @@ export const drawFieldFrame = (f: FieldFrame) => {
 	}
 	if (f.confetti) {
 		drawConfetti(ctx, cam, f.confetti.of, f.confetti.t, false);
+	}
+	// (Behind everything else standing up.)
+	if (f.net) {
+		drawNet(ctx, cam, f.net);
 	}
 	// Everything standing up, back to front.
 	const items = [

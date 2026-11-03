@@ -18,6 +18,7 @@ import {
 	GOAL_L,
 	GOAL_R,
 	MID_Y,
+	NET_BACK,
 	POST_W,
 	sideOn,
 	TEAM_AREA,
@@ -3664,10 +3665,8 @@ const KICKER_JOG_LEAST = 7;
 // have to be there.
 const ONSIDE_GO_MS = 250;
 const ONSIDE_GO_PACE = 0.6;
-// The ball on its tee (its middle, off the turf); and how far behind the
-// end line the net behind the posts catches a kick.
+// The ball on its tee (its middle, off the turf).
 const TEE_Z = 0.8;
-const NET_BACK = 20;
 // How high over the straight line a kick gets that is in the air `ms`.
 const peakFor = (ms: number) => (G * (ms / 1000) ** 2) / 8;
 
