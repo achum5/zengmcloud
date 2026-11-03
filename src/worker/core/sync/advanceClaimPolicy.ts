@@ -30,6 +30,10 @@ export type AdvanceClaimDoc = {
 	// Set by completeDraftAdvance once the claimed step's advance finished, which
 	// closes the crash-recovery re-claim window for it.
 	completed?: boolean;
+	// Set alongside completed by clients that only complete a step once they
+	// have seen the world move past it (draftReady's advanceTookEffect). Such a
+	// completion is never false, so the step is never re-claimable.
+	verified?: boolean;
 };
 
 export type AdvanceClaimDecision =
@@ -85,6 +89,14 @@ export const decideAdvanceClaim = (
 		// was false and honoring it forever wedges the league. See
 		// COMPLETED_RECLAIM_GRACE_MS.
 		if (existing.completed) {
+			// A completion its holder saw take effect is the truth: whoever still
+			// derives this step is out of date, however long it has been. The
+			// grace below once let an out-of-date copy of the game re-run the last
+			// day of free agency, and the season rollover with it, five minutes
+			// after both had happened.
+			if (existing.verified) {
+				return { grant: false, reason: "step-completed" };
+			}
 			if (ask.now - existing.at >= COMPLETED_RECLAIM_GRACE_MS) {
 				return { grant: true, maxPick };
 			}

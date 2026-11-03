@@ -1,3 +1,9 @@
+import {
+	hasStoodDown,
+	setStandDownHandler,
+	stillSyncOwner,
+	takeSyncOwnership,
+} from "./instanceOwner.ts";
 import { SyncEngineV2 } from "./v2/engine.ts";
 import {
 	formatInjuryForensics,
@@ -2304,6 +2310,14 @@ const doConnectSharedLeague = async ({
 		throw new Error("A league code is required.");
 	}
 
+	// A copy of the game that another copy on this device took over from stays
+	// off until it is reloaded - reconnecting would take syncing back from the
+	// copy that has the league as it is (see instanceOwner.ts).
+	if (hasStoodDown()) {
+		syncDebugLog("connect:stood-down", { code: trimmed });
+		return { connected: false };
+	}
+
 	// Never connect while the league itself is still loading (or an import is
 	// mid-flight). The UI's auto-reconnect fires as soon as it sees a lid, which
 	// on a SharedWorker (desktop) races the worker's own league switch: the
@@ -2744,6 +2758,16 @@ const doConnectSharedLeague = async ({
 		]);
 	}
 
+	// This copy of the game is now the one on this device that syncs - any
+	// older copy still alive stands down the next time it looks (see
+	// instanceOwner.ts).
+	if (connectedLid !== undefined) {
+		await takeSyncOwnership(connectedLid);
+	}
+	setStandDownHandler(async () => {
+		await teardownSharedLeague({});
+	});
+
 	const engine = new SyncEngineV2(transport, {
 		isHost,
 		code: trimmed,
@@ -2768,7 +2792,10 @@ const doConnectSharedLeague = async ({
 			// game whose fence completion was waiting on exactly that.
 			completeDeferredSimDayFence();
 		},
-		beforePublish: revalidateQueuedSingleGame,
+		// (A copy that is no longer the one syncing on this device leaves its
+		// queue for the copy that is.)
+		beforePublish: async (entry) =>
+			(await stillSyncOwner()) ? revalidateQueuedSingleGame(entry) : "wait",
 		// The header's catching-up indicator. V2 only reports when the
 		// device is visibly behind and working on it (a multi-version walk,
 		// or fetches failing and retrying) - exactly when a quiet screen
@@ -2874,6 +2901,8 @@ const doConnectSharedLeague = async ({
 	healthTimer = setInterval(() => {
 		// (First: a long gap since the last tick is time spent asleep.)
 		wakeClock.tick();
+		// Still the copy of the game that syncs on this device?
+		void stillSyncOwner();
 		// Re-assert the whole sync UI state (not just health/edits) so a UI that
 		// drifted from the engine - stale "nobody simming", an unlocked Play menu -
 		// heals itself within a tick instead of needing a manual refresh.

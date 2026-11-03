@@ -171,6 +171,8 @@ const MultiplayerSync = () => {
 	const [unsynced, setUnsynced] = useState<any>();
 	const [unsyncedBusy, setUnsyncedBusy] = useState(false);
 	const [unsyncedResult, setUnsyncedResult] = useState<string | undefined>();
+	const [repairBusy, setRepairBusy] = useState(false);
+	const [repairResult, setRepairResult] = useState<string | undefined>();
 
 	// The same repair with the day named by hand, for a room that never recorded
 	// a position of its own and so cannot be compared against.
@@ -320,6 +322,23 @@ const MultiplayerSync = () => {
 			setUnsyncedResult((error as Error).message ?? String(error));
 		} finally {
 			setUnsyncedBusy(false);
+		}
+	};
+
+	const applyRepairFile = async (file: File) => {
+		setRepairBusy(true);
+		setRepairResult(undefined);
+		try {
+			const out = await toWorker("main", "applySyncRepair", await file.text());
+			setRepairResult(
+				out.outcome === "confirmed"
+					? `Repair applied (${out.records} records). Everyone gets it on their next sync.`
+					: `Repair applied here (${out.records} records). It goes up as soon as the connection allows.`,
+			);
+		} catch (error) {
+			setRepairResult((error as Error).message ?? String(error));
+		} finally {
+			setRepairBusy(false);
 		}
 	};
 
@@ -1016,6 +1035,26 @@ const MultiplayerSync = () => {
 							<p className="text-body-secondary small">{unsynced.reason}</p>
 						) : null}
 						{unsyncedResult ? <p className="small">{unsyncedResult}</p> : null}
+
+						<label
+							className={`btn btn-light-bordered btn-sm mb-3 ms-2${repairBusy ? " disabled" : ""}`}
+						>
+							{repairBusy ? "Applying…" : "Apply repair file"}
+							<input
+								type="file"
+								accept=".json,application/json"
+								className="d-none"
+								disabled={repairBusy}
+								onChange={(event) => {
+									const file = event.target.files?.[0];
+									event.target.value = "";
+									if (file) {
+										void applyRepairFile(file);
+									}
+								}}
+							/>
+						</label>
+						{repairResult ? <p className="small">{repairResult}</p> : null}
 
 						<button
 							className="btn btn-light-bordered btn-sm mb-3 ms-2"

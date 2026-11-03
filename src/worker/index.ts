@@ -21,6 +21,7 @@ import { syncDebugLog } from "./core/sync/debugLog.ts";
 import { setAfterActionHook } from "./core/sync/afterActionHook.ts";
 import { setLiveBroadcastStartHook } from "./core/sync/liveBroadcastHook.ts";
 import { getSyncEngine } from "./core/sync/engineHolder.ts";
+import { stillSyncOwner } from "./core/sync/instanceOwner.ts";
 import { getLeaguePosition } from "./core/sync/leaguePosition.ts";
 import {
 	beginOwnLiveSimRequest,
@@ -310,6 +311,12 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 	}
 
 	if (needsConnection) {
+		// Another copy of the game on this device has taken over syncing (see
+		// core/sync/instanceOwner.ts): nothing from this one goes to the room.
+		if (syncEngine && !(await stillSyncOwner())) {
+			syncDebugLog("api:guard-refused", { type, name, step: "owner" });
+			return undefined;
+		}
 		if (syncEngine) {
 			// One carve-out: your OWN team's single game. A one-gid sim is a
 			// disjoint slice of the day and simDayClaimPolicy's fence refuses any

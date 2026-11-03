@@ -34,6 +34,9 @@ export type MetaAttributes = {
 	// worker core modules.
 	phaseForensics: unknown[];
 	injuryForensics: unknown[];
+	// Which copy of the game on this device syncs a shared league (see
+	// core/sync/instanceOwner.ts).
+	syncInstanceOwner: { id: string; lid: number; at: number };
 };
 
 // export is needed just for https://github.com/microsoft/TypeScript/issues/59951

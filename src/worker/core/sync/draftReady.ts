@@ -47,6 +47,7 @@ import { resolveFaBoards } from "./faBoard.ts";
 import { getSyncEngine } from "./engineHolder.ts";
 import { runAfterActionHook } from "./afterActionHook.ts";
 import { syncDebugLog } from "./debugLog.ts";
+import { stillSyncOwner } from "./instanceOwner.ts";
 import {
 	allowCrossingNextSimStop,
 	clearCrossingNextSimStop,
@@ -1040,6 +1041,12 @@ const evaluate = async () => {
 			readyTeamTids(latestReady, g.get("userTids"), stageKey, stage.nextStep)
 				.length < g.get("userTids").length
 		) {
+			return;
+		}
+
+		// Only the copy of the game that syncs on this device - an older copy
+		// still alive behind it has its own, out-of-date picture of the league.
+		if (!(await stillSyncOwner())) {
 			return;
 		}
 

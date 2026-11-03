@@ -773,7 +773,8 @@ export class FirebaseTransport implements SyncTransport {
 					data.pick === pick &&
 					data.holderId === this.clientId
 				) {
-					tx.set(ref, { ...data, completed: true });
+					// (Only called once draftReady has seen the step take effect.)
+					tx.set(ref, { ...data, completed: true, verified: true });
 				}
 			});
 			this.markContact();

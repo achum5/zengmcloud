@@ -153,6 +153,7 @@ import {
 	teardownSharedLeague,
 	updateLiveBroadcast,
 } from "../core/sync/index.ts";
+import { applySyncRepair } from "../core/sync/applyRepair.ts";
 import { resetSingleGameSims } from "../core/sync/afterActionHook.ts";
 import { releaseLiveSimNotifications } from "../core/sync/liveSimNotificationHold.ts";
 import { liveSimBlocksDaySim } from "../core/sync/liveSimDayCollision.ts";
@@ -8313,6 +8314,7 @@ const api = {
 		resyncSharedLeague,
 		reportUnsyncedDays,
 		pushUnsyncedDays,
+		applySyncRepair,
 		getTeamGraphStat,
 		getTradingBlockOffers,
 		ping,

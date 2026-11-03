@@ -97,6 +97,32 @@ describe("decideAdvanceClaim", () => {
 		assert.deepStrictEqual(d, { grant: true, maxPick: 41 });
 	});
 
+	describe("REGRESSION: a step seen to take effect is never re-run", () => {
+		// A league's last day of free agency, which rolls into the preseason and
+		// runs progs. An out-of-date copy of the game on a league-mate's phone
+		// still derived that day five minutes later, the grace let it claim it,
+		// and it ran the day and the rollover again for everyone.
+		test("verified completion, long past the grace: still sealed", () => {
+			const d = decideAdvanceClaim(
+				doc({
+					completed: true,
+					verified: true,
+					at: NOW - 10 * COMPLETED_RECLAIM_GRACE_MS,
+				}),
+				ask(40),
+			);
+			assert.deepStrictEqual(d, { grant: false, reason: "step-completed" });
+		});
+
+		test("verified completion: the next step is still free to claim", () => {
+			const d = decideAdvanceClaim(
+				doc({ completed: true, verified: true }),
+				ask(41),
+			);
+			assert.deepStrictEqual(d, { grant: true, maxPick: 41 });
+		});
+	});
+
 	describe("REGRESSION: a falsely-completed step is not a permanent wedge", () => {
 		// A live league at a day-15 stop: the advance winner's sim declined
 		// cleanly (its stop-crossing permission had been consumed by a
