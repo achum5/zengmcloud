@@ -109,6 +109,16 @@ export type Deal = {
 const netOf = (deal: Pick<Deal, "gains" | "margins">) =>
 	Math.min(deal.gains[0] - deal.margins[0], deal.gains[1] - deal.margins[1]);
 
+// What the team shopping (the deal's first side) ranks deals by: its own net
+// if it shops for itself (selfishShopping), otherwise the net of the side the
+// deal does least for.
+const shopperNetOf = (
+	deal: Pick<Deal, "gains" | "margins"> & { tids: readonly [number, number] },
+) =>
+	settingFor(deal.tids[0], "selfishShopping")
+		? deal.gains[0] - deal.margins[0]
+		: netOf(deal);
+
 // For the arena, to measure what a behaviour is worth by turning it off.
 export const marketSettings = {
 	valueWaiting: true,
@@ -184,6 +194,11 @@ export const marketSettings = {
 	// place - and pricing deals against releases nobody makes cut trades by a
 	// third in an arena league.
 	freeDisposal: false,
+	// A team out shopping takes the deal that does the most for itself that
+	// the other team would still make, not the one that does the most for
+	// the side it does least for (the other side still haggles). Off while it
+	// is measured.
+	selfishShopping: false,
 };
 
 // For the arena's version-against-version leagues: settings for some teams'
@@ -1125,6 +1140,9 @@ export const bestDealWith = (
 			: -single.get(key(giver, "-", x))!;
 	const packagesA = summarize(a, b, packages(assetsA, order(a, b)));
 	const packagesB = summarize(b, a, packages(assetsB, order(b, a)));
+	// A team shopping for itself ranks the deals both would make by what they
+	// do for it.
+	const selfish = settingFor(a.tid, "selfishShopping");
 	const candidates: { giveA: Asset[]; giveB: Asset[]; screen: number }[] = [];
 	for (const pa of packagesA) {
 		for (const pb of packagesB) {
@@ -1134,9 +1152,14 @@ export const bestDealWith = (
 			if (!marketSettings.pickSwaps && !pa.hasPlayer && !pb.hasPlayer) {
 				continue;
 			}
-			const worst = Math.min(pa.cost + pb.worth, pb.cost + pa.worth);
+			const mine = pa.cost + pb.worth;
+			const worst = Math.min(mine, pb.cost + pa.worth);
 			if (worst > 0) {
-				candidates.push({ giveA: pa.assets, giveB: pb.assets, screen: worst });
+				candidates.push({
+					giveA: pa.assets,
+					giveB: pb.assets,
+					screen: selfish ? mine : worst,
+				});
 			}
 		}
 	}
@@ -1183,11 +1206,15 @@ export const bestDealWith = (
 			marginOf(outlook, a, giveA, giveB),
 			marginOf(outlook, b, giveB, giveA),
 		];
-		const candidate = { gains, margins };
+		const candidate = {
+			gains,
+			margins,
+			tids: [a.tid, b.tid] as [number, number],
+		};
 		if (
 			gains[0] - margins[0] >= MIN_GAIN &&
 			gains[1] - margins[1] >= MIN_GAIN &&
-			(!best || netOf(candidate) > netOf(best))
+			(!best || shopperNetOf(candidate) > shopperNetOf(best))
 		) {
 			best = {
 				tids: [a.tid, b.tid],
@@ -1463,7 +1490,7 @@ export const findBestDeal = async (
 		await ensureRetention(outlook, b.tradablePlayers, a.tid);
 		await ensureRetention(outlook, a.tradablePlayers, b.tid);
 		const deal = bestDealWith(outlook, a, b, single);
-		if (deal && (!best || netOf(deal) > netOf(best.deal))) {
+		if (deal && (!best || shopperNetOf(deal) > shopperNetOf(best.deal))) {
 			best = { deal, b };
 		}
 	}
