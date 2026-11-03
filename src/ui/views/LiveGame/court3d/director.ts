@@ -477,7 +477,23 @@ export type Beat = {
 	actionStart: number;
 	end: number;
 };
-export type CloseUp = { t0: number; t1: number; pid: number };
+// (From down on the baseline under the basket, for a man at the line; or
+// from `cam`, on `aim`.)
+export type CloseUp = {
+	t0: number;
+	t1: number;
+	pid: number;
+	cam?: Pt3;
+	aim?: Pt3;
+};
+// THE INTERVIEW after the game (see gameOver): the winners' top scorer and
+// the sideline reporter, from when to when, and where he stands for it.
+export type Interview = {
+	pid: number;
+	t0: number;
+	t1: number;
+	at: Pt;
+};
 
 export type CourtTimeline = {
 	tracks: Map<number, Track>;
@@ -516,8 +532,10 @@ export type CourtTimeline = {
 	// The starting lineups called out before the opening tip (see intro.ts).
 	intro?: Intro;
 	// In close on a man at the line, through his routine before the first of
-	// his free throws (see beatFreeThrow).
+	// his free throws (see beatFreeThrow); and on the interview after the
+	// game.
 	closeUps?: CloseUp[];
+	interview?: Interview;
 	// The warm-ups, before it is ready (see pregame.ts): the pre-game show
 	// on the floor.
 	warmup?: boolean;
@@ -1112,6 +1130,13 @@ const [DAP_APART, DAP_SIDE] = (() => {
 })();
 // (Pulled into a hug, nearer - see HUG_APART.)
 const DAP_MS = 800;
+// The interview after the game (see interviewStar): of a man with this many
+// points at least; this far in from the near sideline, the reporter this
+// far over from him (feet); and how long (ms).
+const STAR_LEAST = 10;
+const INTERVIEW_IN = 3.2;
+const INTERVIEW_APART = 2.4;
+const INTERVIEW_MS = 6500;
 // Crossing the floor, he goes this far (feet) round two in the middle of it.
 const DAP_BY = 3;
 // (Holding his line - see keepOff - from this long before he gets to where
@@ -15935,6 +15960,15 @@ class Director {
 				for (const pid of [...W, ...L]) {
 					t1 = Math.max(t1, ready.get(pid)!);
 				}
+				// But the winners' top scorer: over to the sideline reporter
+				// first, for his interview (see interviewStar).
+				const star = this.topScorer(W, i);
+				// (The rest off as the picture goes in close on him, not before.)
+				const talked =
+					star === undefined
+						? undefined
+						: this.interviewStar(star, ready.get(star)!);
+				const off = talked ? Math.max(t1, talked.t0) : t1;
 				for (const [side, team] of [
 					[winner, W],
 					[loser, L],
@@ -15942,8 +15976,19 @@ class Director {
 					team.forEach((pid, k) => {
 						const x =
 							benchX(side) < cx ? 2.5 + k * 1.6 : COURT_W - 2.5 - k * 1.6;
-						walkTo(pid, t1 + k * 150, { x, y: -2.4 - (k % 2) * 1.4 }, -1, WALK);
+						walkTo(
+							pid,
+							pid === star && talked !== undefined
+								? talked.t1 + 200
+								: off + k * 150,
+							{ x, y: -2.4 - (k % 2) * 1.4 },
+							-1,
+							WALK,
+						);
 					});
+				}
+				if (talked !== undefined) {
+					t1 = Math.max(t1, talked.t1 - (title ? 5000 : 400) + 200);
 				}
 				this.effect("cheer", T, { team: winner });
 				if (stakes) {
@@ -17139,6 +17184,7 @@ class Director {
 
 	private lastFtShooter: number | undefined;
 	private readonly closeUps: CloseUp[] = [];
+	private interview: Interview | undefined;
 	// The ball sent out of bounds off a miss already (see missOut): the
 	// out-of-bounds line after it needs only the whistle.
 	private outOffMiss = false;
@@ -18627,6 +18673,59 @@ class Director {
 		this.phase = "tip";
 		this.motionTeam = undefined;
 		this.beat(i, e.type, toss + 520, toss + 1300);
+	}
+
+	// Of these, the one with the most points so far (to event i), if he has
+	// any worth talking about.
+	private topScorer(men: number[], i: number): number | undefined {
+		// (As the box score has them: see trackScore.)
+		const pts = new Map<number, number>();
+		for (let k = 0; k < i; k++) {
+			const ev = this.events[k];
+			if (ev?.type === "stat" && ev.s === "pts" && typeof ev.pid === "number") {
+				pts.set(ev.pid, (pts.get(ev.pid) ?? 0) + (ev.amt ?? 0));
+			}
+		}
+		let best: number | undefined;
+		for (const pid of men) {
+			if (
+				(pts.get(pid) ?? 0) >= STAR_LEAST &&
+				(best === undefined || (pts.get(pid) ?? 0) > (pts.get(best) ?? 0))
+			) {
+				best = pid;
+			}
+		}
+		return best;
+	}
+
+	// THE INTERVIEW: from t, over to the near sideline, where the sideline
+	// reporter comes out to him with her microphone (see crew's staffState);
+	// turned half to her and half to the camera, he talks it through - the
+	// picture in close on the two of them. Returns when that is, from when to
+	// when.
+	private interviewStar(pid: number, t: number): { t0: number; t1: number } {
+		const P = this.posAt(pid, t);
+		const at = {
+			x: Math.min(COURT_W - 20, Math.max(20, P.x)),
+			y: COURT_H - INTERVIEW_IN,
+		};
+		const there = this.go(pid, at, t + 200, WALK, "walk");
+		const t0 = there + 500;
+		const t1 = t0 + INTERVIEW_MS;
+		const her = { x: at.x + INTERVIEW_APART, y: at.y + 0.5 };
+		this.act(pid, "talk", t0 - 300, t1, {
+			look: { x: (at.x + her.x) / 2 + 2, y: COURT_H + 30 },
+		});
+		this.free.set(pid, Math.max(this.free.get(pid) ?? 0, t1));
+		this.interview = { pid, t0, t1, at };
+		this.closeUps.push({
+			t0,
+			t1,
+			pid,
+			cam: { x: at.x + INTERVIEW_APART / 2 + 1.5, y: COURT_H + 15, z: 6.4 },
+			aim: { x: at.x + INTERVIEW_APART / 2, y: at.y + 0.2, z: 5.2 },
+		});
+		return { t0, t1 };
 	}
 
 	// A man coming on has been down at the scorer's table a while, waiting
@@ -26466,6 +26565,7 @@ class Director {
 			shots,
 			...(this.intro ? { intro: this.intro } : {}),
 			...(this.closeUps.length > 0 ? { closeUps: this.closeUps } : {}),
+			...(this.interview ? { interview: this.interview } : {}),
 			tension: this.tension,
 			seats: this.seats,
 			fast,

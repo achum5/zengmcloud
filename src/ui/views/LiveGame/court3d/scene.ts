@@ -2422,6 +2422,13 @@ export const closeUpAim = (
 	if (!st) {
 		return undefined;
 	}
+	if (c.cam) {
+		const aim = c.aim ?? { x: st.x, y: st.y, z: 4.8 };
+		return {
+			shot: { x: aim.x, width: narrow ? 9 : 11, y: aim.y, z: aim.z },
+			rig: { ...REPLAY_RIG, at: c.cam },
+		};
+	}
 	const left = st.x < COURT_W / 2;
 	return {
 		shot: { x: st.x, width: narrow ? 8.5 : 10.5, y: st.y, z: 4.7 },

@@ -882,6 +882,9 @@ const T_ZIP = 0.22;
 // figure.ts).
 const FACE_LIFT = 0.15;
 
+// A microphone this far from his own mouth (feet) is held out to somebody
+// else's.
+const MIC_OWN = 1.1;
 const build = (
 	cam: Camera,
 	st: PlayerState,
@@ -1657,11 +1660,16 @@ const build = (
 			sk.head.s,
 			sk.head.u - body.headR * 0.45,
 		);
-		const toward = unit(subV(mouth, hand), v3(0, 0, 1));
+		// (Held out to somebody else, far from his own: pointed out and up,
+		// at the other man's mouth.)
+		const far = lenV(subV(mouth, hand)) > MIC_OWN;
+		const toward = far
+			? unit(v3(0.8, 0, 0.6), v3(0, 0, 1))
+			: unit(subV(mouth, hand), v3(0, 0, 1));
 		const top = addV(
 			hand,
 			toward,
-			Math.min(0.5, lenV(subV(mouth, hand)) - 0.14),
+			far ? 0.42 : Math.min(0.5, lenV(subV(mouth, hand)) - 0.14),
 		);
 		add(
 			addV(hand, toward, -0.08),

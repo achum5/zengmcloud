@@ -400,10 +400,19 @@ const STAFF: { at: Pt; anim: AnimName }[] = [
 	{ at: { x: -3.6, y: COURT_H - 2.2 }, anim: "shootStand" },
 	{ at: { x: COURT_W + 3.6, y: COURT_H - 2.2 }, anim: "shootStand" },
 ];
-const staffState = (t: number, m: CrewMember): PlayerState => {
+const staffState = (
+	tl: CourtTimeline,
+	t: number,
+	m: CrewMember,
+): PlayerState => {
 	const k = -71 - m.pid;
 	const at = m.spot!;
 	const anim = STAFF[k]!.anim;
+	// (The reporter, out for the interview after the game.)
+	const out = anim === "mic" ? reporterAt(tl, t, m, at) : undefined;
+	if (out) {
+		return out;
+	}
 	return {
 		pid: m.pid,
 		team: m.team,
@@ -679,6 +688,55 @@ const danceState = (
 	return k0 > 0
 		? { ...st, from: { anim: "run", phase: (t / 1000) * 1.7, w: k0 } }
 		: st;
+};
+
+// THE SIDELINE REPORTER after the game (see the director's interviewStar):
+// out from her corner across the floor to beside him as he comes over, the
+// microphone out to him through it, and back. (Walking, feet a second.)
+const REPORTER_PACE = 5.5;
+const reporterAt = (
+	tl: CourtTimeline,
+	t: number,
+	m: CrewMember,
+	from: Pt,
+): PlayerState | undefined => {
+	const iv = tl.interview;
+	if (!iv) {
+		return undefined;
+	}
+	const spot = { x: iv.at.x + 2.4, y: iv.at.y + 0.5 };
+	const walk = (dist(from, spot) / REPORTER_PACE) * 1000;
+	const in0 = iv.t0 - walk - 600;
+	if (t < in0 || t >= iv.t1 + walk) {
+		return undefined;
+	}
+	const base = { pid: m.pid, team: m.team, shown: true, z: 0 };
+	if (t < in0 + walk || t >= iv.t1) {
+		const back = t >= iv.t1;
+		const [A, B] = back ? [spot, from] : [from, spot];
+		const u = Math.min(1, Math.max(0, (t - (back ? iv.t1 : in0)) / walk));
+		return {
+			...base,
+			x: A.x + (B.x - A.x) * u,
+			y: A.y + (B.y - A.y) * u,
+			yaw: yawTo(A, B),
+			anim: "walk",
+			phase: (t / 1000) * 0.9,
+			moving: true,
+		};
+	}
+	const w = 1 - smooth01((t - in0 - walk) / 300);
+	return {
+		...base,
+		x: spot.x,
+		y: spot.y,
+		// (Half to him, half to the camera.)
+		yaw: yawTo(spot, { x: iv.at.x - 1, y: iv.at.y + 3 }),
+		anim: t < iv.t0 ? "ready" : "micOut",
+		phase: loopPhase("micOut", t, 0.2),
+		moving: false,
+		...(w > 0 ? { from: { anim: "walk", phase: 0, w } } : {}),
+	};
 };
 
 // Where the pre-game show stands, and what each of them does.
@@ -2868,7 +2926,7 @@ export const crewAt = (
 		} else if (m.role === "mop") {
 			states.push(mopState(tl, t, m));
 		} else if (m.role === "staff") {
-			states.push(staffState(t, m));
+			states.push(staffState(tl, t, m));
 		} else if (m.role === "dance") {
 			const st = danceState(tl, t, m);
 			if (st) {

@@ -246,7 +246,7 @@ describe("3D free throws", () => {
 		{ timeout: 120_000 },
 		() => {
 			const { tl, players } = compile("ftclose", 160);
-			const closeUps = tl.closeUps ?? [];
+			const closeUps = (tl.closeUps ?? []).filter((c) => !c.cam);
 			assert.isAtLeast(closeUps.length, 3);
 			for (const c of closeUps) {
 				// (No cut in the timeline for it: nobody is anywhere else after.)

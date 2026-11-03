@@ -6603,6 +6603,23 @@ export const ANIMS = {
 		},
 	},
 	// Talking it over: one hand making the point.
+	// A reporter's microphone held out to the man she is talking to, up at
+	// his mouth, the other hand easy at her side.
+	micOut: {
+		kind: "loop",
+		n: 2,
+		fps: 0.6,
+		pose: (i) =>
+			pose({
+				shN: 84 + i * 3,
+				elN: 58 - i * 4,
+				abN: 10,
+				wrN: 8,
+				shF: 8,
+				elF: 18,
+				lean: 2,
+			}),
+	},
 	talk: {
 		kind: "loop",
 		n: 4,

@@ -72,6 +72,10 @@ describe("3D camera", () => {
 			const over = tl.beats.find((b) => b.type === "gameOver")!;
 			const last = tl.shots.at(-1)!.t0;
 			for (let t = over.actionStart + 4000; t < last; t += 1000) {
+				// (Not while the picture is in close on the interview.)
+				if (tl.closeUps?.some((c) => t >= c.t0 && t < c.t1)) {
+					continue;
+				}
 				const m = momentAt(tl, t, players, () => body);
 				const aim = aimFor(m, false, tl, fit);
 				const cam = makeCamera(aim, w, h, MAIN_RIG);

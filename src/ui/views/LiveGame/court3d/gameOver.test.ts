@@ -8,6 +8,10 @@ import {
 import { bodyPoint, evalPlayer, poseOf } from "./evaluate.ts";
 import { attackDir, benchX, COURT_W, HUDDLE_Y } from "./geometry.ts";
 import { bodyOf, skeleton } from "./poses.ts";
+import { makeCamera, project } from "./camera.ts";
+import { crewAt, crewFor } from "./crew.ts";
+import { closeUpAim, momentAt } from "./scene.ts";
+import { compile, gidOf } from "./testGame.ts";
 
 // The last seconds of a game, the sim's way, won (or not) on the last shot.
 const ending = (
@@ -266,4 +270,47 @@ describe("3D end of game", () => {
 			plain.end - plain.actionStart,
 		);
 	});
+
+	test("the winners' top scorer gives his interview at the near sideline, the picture in close", () => {
+		const { tl, players } = compile("interview-a", 150);
+		const iv = tl.interview!;
+		assert.ok(iv);
+		const team = (region: string) => ({
+			region,
+			name: region,
+			colors: ["#1d3461", "#f28c28", "#ffffff"] as [string, string, string],
+		});
+		const crew = crewFor(gidOf("interview-a"), team("Road"), team("Home"));
+		const reporter = crew.find(
+			(m) => m.role === "staff" && m.dress.outfit?.mic,
+		)!;
+		const body = bodyOf();
+		let n = 0;
+		for (let t = iv.t0 + 200; t < iv.t1 - 200; t += 400) {
+			n += 1;
+			const st = evalPlayer(tl, iv.pid, t);
+			assert.isBelow(Math.hypot(st.x - iv.at.x, st.y - iv.at.y), 0.6, `@${t}`);
+			assert.strictEqual(st.anim, "talk", `@${t}`);
+			const her = crewAt(tl, t, crew).states.find(
+				(x) => x.pid === reporter.pid,
+			);
+			assert.ok(her, `@${t}`);
+			assert.strictEqual(her!.anim, "micOut");
+			assert.isBelow(Math.hypot(her!.x - st.x, her!.y - st.y), 3.2);
+			// The two of them in the middle of the picture.
+			const m = momentAt(tl, t, players, () => body);
+			const aim = closeUpAim(tl, m, false);
+			assert.ok(aim, `@${t}`);
+			const cam = makeCamera(aim!.shot, 640, 360, aim!.rig);
+			for (const p of [st, her!]) {
+				const head = project(cam, { x: p.x, y: p.y, z: 5.6 });
+				assert.isAbove(head.x, 120, `@${t}`);
+				assert.isBelow(head.x, 520, `@${t}`);
+				assert.isAbove(head.y, 20, `@${t}`);
+			}
+		}
+		assert.isAbove(n, 10);
+		// Then the last look round the building.
+		assert.isAtLeast(tl.shots.at(-1)!.t0, iv.t1);
+	}, 240_000);
 });

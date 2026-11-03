@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 153,
+		date: "2026-11-03",
+		text: "3D game: the post-game interview. After the handshakes, the winners' top scorer heads to the near sideline, the sideline reporter comes out to him with her microphone, and the broadcast closes in on the two of them for his interview before its last look round the building.",
+	},
+	{
 		n: 152,
 		date: "2026-11-03",
 		text: "3D game: a close-up at the free throw line. On most trips to the line the broadcast cuts in close on the shooter from under the basket - his face, the ball in his hands, the crowd soft behind him - through his routine before the first free throw, then back out for the shot.",
