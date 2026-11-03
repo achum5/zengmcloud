@@ -88,8 +88,13 @@ export const upSpansAt = (
 };
 
 // The stands at t: how much of the crowd is on its feet (0 to 1), arms
-// waving rather than up, and how full they are (see director.ts seatsOf).
-export type Crowd = { up: number; wave: boolean; full: number };
+// waving rather than up, and how full they are (see director.ts seatsOf) -
+// and the stands behind either end zone, where they are up on their own.
+type Stand = { up: number; wave: boolean };
+export type Crowd = Stand & {
+	full: number;
+	ends?: [Stand | undefined, Stand | undefined];
+};
 
 // At the final whistle (the 3D court's final horn: see court3d/scene.ts
 // buildingAt), a home win brings the whole stadium up - arms going, then on
@@ -130,6 +135,46 @@ const loudAt = (play: Play, t: number, neutral: boolean): number => {
 			Math.min(1, (t - play.t0) / LOUD_UP, 1 - (t - play.whistle) / FALL),
 		)
 	);
+};
+
+// THE FANS BEHIND THE POSTS (the 3D court's behind the basket at the
+// visitors' free throws: see court3d/scene.ts endsAt): the visitors kicking
+// at them - a field goal, an extra point - the home fans in the stands
+// behind the end line it goes to are up, arms going, to put the kicker off:
+// from the kicking team out of its huddle until the ball is through (or
+// short), then sat again. (A home kicker they leave be.)
+const POSTS_WAVE_FROM = 600;
+const POSTS_WAVE_UP_MS = 300;
+const POSTS_WAVE_DOWN_MS = 600;
+const POSTS_WAVE_EVERY = 90;
+const KICKS = new Set(["fieldGoal", "extraPoint"]);
+const postsAt = (
+	play: Play,
+	t: number,
+	now: number,
+): Crowd["ends"] | undefined => {
+	if (!KICKS.has(play.kind) || play.offense !== 0) {
+		return undefined;
+	}
+	// (The kick: the second flight from the snap, after the snap back to the
+	// holder.)
+	const kick = play.ball.filter(
+		(b) => b.kind === "fly" && b.t0 >= play.snap,
+	)[1];
+	const over = kick?.kind === "fly" ? kick.t1 : play.whistle;
+	const up = Math.max(
+		0,
+		Math.min(
+			1,
+			(t - play.t0 - POSTS_WAVE_FROM) / POSTS_WAVE_UP_MS,
+			1 - (t - over) / POSTS_WAVE_DOWN_MS,
+		),
+	);
+	if (up <= 0) {
+		return undefined;
+	}
+	const end = { up, wave: Math.floor(now / POSTS_WAVE_EVERY) % 2 === 0 };
+	return play.dir === 1 ? [undefined, end] : [end, undefined];
 };
 
 // THE KICKOFF OF A HALF (and of overtime): the stands on their feet for
@@ -214,6 +259,7 @@ export const crowdAt = (
 	const tense = play?.tense ?? 0;
 	const loud = play ? loudAt(play, t, neutral) : 0;
 	const hush = c && c.side === 0 && c.big && !neutral ? 1 - c.level : 1;
+	const ends = play && !neutral ? postsAt(play, t, now) : undefined;
 	return {
 		up: Math.max(
 			roar,
@@ -222,6 +268,7 @@ export const crowdAt = (
 		),
 		wave: roar > 0.3 ? fast : tense >= 1 && slow,
 		full,
+		...(ends ? { ends } : {}),
 	};
 };
 

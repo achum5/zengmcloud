@@ -281,11 +281,16 @@ export const drawFieldFrame = (f: FieldFrame) => {
 	const stands = (
 		sparse: HTMLCanvasElement,
 		[sat, up, wave]: [HTMLCanvasElement, HTMLCanvasElement, HTMLCanvasElement],
-	) => [
-		...(thin ? [{ img: sparse, alpha: 1 }] : []),
-		{ img: sat, alpha: fill },
-		{ img: crowd.wave ? wave : up, alpha: crowd.up * fill },
-	];
+		// (Up on their own, behind an end zone: see crowd.ts postsAt.)
+		own?: { up: number; wave: boolean },
+	) => {
+		const on = own ? { up: Math.max(own.up, crowd.up), wave: own.wave } : crowd;
+		return [
+			...(thin ? [{ img: sparse, alpha: 1 }] : []),
+			{ img: sat, alpha: fill },
+			{ img: on.wave ? wave : up, alpha: on.up * fill },
+		];
+	};
 	drawTexturedLayers(ctx, cam, LOWER, stands(st.lowerSparse, st.lower), 24, 6);
 	// Behind each end zone: the board high over the stands, the stands, the
 	// wall.
@@ -295,7 +300,7 @@ export const drawFieldFrame = (f: FieldFrame) => {
 			ctx,
 			cam,
 			END_STANDS[side],
-			stands(st.endSparse, st.endStands),
+			stands(st.endSparse, st.endStands, crowd.ends?.[side]),
 			16,
 			8,
 		);

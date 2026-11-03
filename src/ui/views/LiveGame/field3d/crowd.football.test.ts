@@ -109,6 +109,42 @@ test("the home crowd up for the visitors' third downs", () => {
 	assert.isAtLeast(home, 10);
 });
 
+// The visitors kicking at the posts - a field goal, an extra point - the
+// home fans in the stands behind them up and waving, to put him off, until
+// the ball is through; the rest of the stands as they were. A home kicker
+// they leave be; at a neutral site, nobody's fans.
+test("the fans behind the posts at the visitors' kicks", () => {
+	let road = 0;
+	let home = 0;
+	for (const tl of tls) {
+		for (const p of tl.plays) {
+			if (p.kind !== "fieldGoal" && p.kind !== "extraPoint") {
+				continue;
+			}
+			const at = p.snap;
+			const c = crowdAt(tl, at, 0);
+			if (p.offense !== 0) {
+				home += 1;
+				assert.isUndefined(c.ends, `${p.i}`);
+				continue;
+			}
+			road += 1;
+			const end = c.ends?.[p.dir === 1 ? 1 : 0];
+			assert.strictEqual(end?.up, 1, `${p.i}`);
+			assert.isUndefined(c.ends?.[p.dir === 1 ? 0 : 1], `${p.i}`);
+			assert.notStrictEqual(
+				crowdAt(tl, at, 90).ends?.[p.dir === 1 ? 1 : 0]?.wave,
+				end?.wave,
+				`${p.i}`,
+			);
+			assert.isUndefined(crowdAt(tl, at, 0, true).ends, `${p.i}`);
+			assert.isUndefined(crowdAt(tl, p.whistle + 700, 0).ends, `${p.i}`);
+		}
+	}
+	assert.isAtLeast(road, 3);
+	assert.isAtLeast(home, 3);
+});
+
 // Now and then over a timeout the cheerleaders are not on, the picture on
 // the crowd from down low - up and waving at it - till the next play.
 test("the picture on the crowd over a timeout", () => {
