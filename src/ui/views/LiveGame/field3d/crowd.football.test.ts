@@ -138,14 +138,15 @@ test("the picture on the crowd over a timeout", () => {
 	assert.isAtLeast(shots, 2);
 });
 
-// Between quarters - not at the half, nor the end - the whole stadium,
-// panning along it, as the teams change ends; and from it to the next play.
+// Between quarters - and at the half, the teams on their way off, not at
+// the end - the whole stadium, panning along it; and from it to the next
+// play.
 test("the look round the stadium between quarters", () => {
 	for (const [k, tl] of tls.entries()) {
 		const looks = tl.plays.filter((p) => p.between !== undefined);
 		assert.deepEqual(
 			looks.map((p) => p.quarter),
-			[1, 3],
+			[1, 2, 3],
 			`${k}`,
 		);
 		for (const p of looks) {

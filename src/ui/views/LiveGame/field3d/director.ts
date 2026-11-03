@@ -263,8 +263,8 @@ export type Play = {
 	// heroClose): from when, until when, and where he stands.
 	// (And the camera this far along the field from him - see aim.ts.)
 	heroClose?: { t0: number; t1: number; pid: number; at: Pt; shift: number };
-	// Between quarters: when the picture cuts to the whole stadium (see
-	// aim.ts).
+	// Between quarters, and at the half: when the picture cuts to the whole
+	// stadium (see aim.ts).
 	between?: number;
 	postgame?: {
 		from: number;
@@ -454,8 +454,11 @@ const TIMEOUT_AFTER_REPLAY = 400;
 const CALL_AFTER = 1100;
 // Between quarters (the 3D court's look round the building over a break:
 // see court3d/director.ts shots), as the teams change ends: the picture on
-// the whole stadium this long after the play is over, for this long.
+// the whole stadium this long after the play is over, for this long. At
+// the half, this long after it - once the teams are on their way off (see
+// postgame.ts stageHalftime).
 const BETWEEN_AFTER = 1500;
+const HALF_BETWEEN_AFTER = 3400;
 const BETWEEN_MS = 4200;
 // A field goal shown again (see replays.ts) if it ties the game, or puts
 // them ahead, in the last this many minutes of it.
@@ -2103,13 +2106,12 @@ class Director {
 		// (After any replay.)
 		const between =
 			!ended &&
-			!half &&
 			!hurt &&
 			!timeout &&
 			!measureAt &&
 			events.slice(i0, i1).some((e) => e?.type === "quarter")
 				? Math.max(
-						offAt + BETWEEN_AFTER,
+						offAt + (half ? HALF_BETWEEN_AFTER : BETWEEN_AFTER),
 						(replayTill(whistle + 60000)?.cue ?? 0) + TIMEOUT_AFTER_REPLAY,
 					)
 				: undefined;

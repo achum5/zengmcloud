@@ -1076,8 +1076,9 @@ export const crewOff = (
 // THE HALF - and the end of regulation, before overtime: the last play of
 // it over, everybody off the field for the break, each side toward its own
 // bench - at a walk, now and then a jog - from a moment after the whistle
-// (and up to a little later), to just off the field; the picture on them
-// this long, until it cuts to the kickoff after it.
+// (and up to a little later), to just off the field; the picture on them a
+// moment, then on the whole stadium (see director.ts between) - all of it
+// this long at the least, until it cuts to the kickoff after it.
 const HALF_GO = 900;
 const HALF_LATE = 1300;
 // (Not stood there a moment between pulling up and walking off: straight
