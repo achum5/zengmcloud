@@ -181,6 +181,32 @@ test.runIf(env.ARENA_RUN === "1")(
 					});
 				});
 			}
+			// ARENA_STRENGTH_SURVEY=1: every outlook's read of each team's
+			// strength and title odds, season by season, to set against how the
+			// teams did (strength-survey-<tag>.json).
+			const strengthSurvey: unknown[] = [];
+			if (env.ARENA_STRENGTH_SURVEY === "1") {
+				const r2 = (x: number) => Math.round(x * 100) / 100;
+				const r4 = (x: number) => Math.round(x * 10000) / 10000;
+				outlookWatchers.push((outlook) => {
+					strengthSurvey.push({
+						season: g.get("season"),
+						phase: g.get("phase"),
+						first: outlookSeason(outlook, 0),
+						progress: r4(outlook.progress),
+						teams: Object.fromEntries(
+							[...outlook.teams.values()].map((t) => [
+								t.tid,
+								{
+									strength: t.strength.map(r2),
+									title: t.title.map(r4),
+									playoffs: t.playoffs.map(r4),
+								},
+							]),
+						),
+					});
+				});
+			}
 			// ARENA_ROSTER_CHECK=1: for every player a CPU team trades away, each
 			// season, whether the roster without him looks better than with him
 			// by more than half a point - the lines of both, to reproduce.
@@ -773,6 +799,36 @@ test.runIf(env.ARENA_RUN === "1")(
 							order: s.draftOrder,
 						})),
 					}),
+				);
+			}
+			if (env.ARENA_STRENGTH_SURVEY === "1") {
+				// How each team did, regular season: points a game against.
+				const done: unknown[] = [];
+				for (let s = firstSeason; s <= g.get("season"); s++) {
+					for (let tid = 0; tid < g.get("numTeams"); tid++) {
+						const stats = await idb.merged.teamStats.getAll({
+							tid,
+							season: s,
+						});
+						const ts = stats.find((x) => !x.playoffs);
+						const [season] = await idb.merged.teamSeasons.getAll({
+							tid,
+							season: s,
+						});
+						if (ts && ts.gp > 0) {
+							done.push({
+								season: s,
+								tid,
+								gp: ts.gp,
+								mov: Math.round(((ts.pts - ts.oppPts) / ts.gp) * 100) / 100,
+								playoffRoundsWon: season?.playoffRoundsWon,
+							});
+						}
+					}
+				}
+				await fs.writeFile(
+					`${out}/strength-survey-${tag}.json`,
+					JSON.stringify({ outlooks: strengthSurvey, done }),
 				);
 			}
 			if (env.ARENA_ROSTER_CHECK === "1") {
