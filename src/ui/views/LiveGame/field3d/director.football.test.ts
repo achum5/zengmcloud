@@ -6,6 +6,7 @@ import processLiveGameEvents, {
 import { HERO_CAM_FT } from "./action.ts";
 import { aimFor } from "./aim.ts";
 import { FIGURE_SCALE } from "./body.ts";
+import { GREET_CAM_FT } from "./greet.ts";
 import {
 	compileField,
 	isLineItem,
@@ -1565,6 +1566,92 @@ describe("the quarterback over the tablet", () => {
 						);
 					}
 				}
+			}
+		}
+		assert.isAbove(shots, 0);
+	}, 60_000);
+});
+
+// The home side's man who scored, back to his sideline as the try is set
+// up: in to two of his teammates out of the crowd, a high five from the one
+// and a hug from the other - the picture on it, nobody on the field in the
+// way, and out wide again a while before the snap.
+describe("the scorer greeted on his sideline", () => {
+	test("after a home touchdown: a high five, a hug, in the picture", () => {
+		let shots = 0;
+		for (const game of games) {
+			const tl = stage(game);
+			const men = sidelineFor(game.roster, 1);
+			for (const [k, play] of tl.plays.entries()) {
+				const greet = play.greet;
+				if (!greet) {
+					continue;
+				}
+				shots += 1;
+				const at = `play ${play.i}`;
+				assert.strictEqual(play.kind, "extraPoint", at);
+				assert.strictEqual(play.offense, 1, at);
+				// (Him: the man with the ball at the end of the score just
+				// before.)
+				const before = tl.plays[k - 1]!;
+				const held = before.ball.findLast(
+					(b) => b.kind === "held" && b.t0 <= before.whistle,
+				);
+				assert.strictEqual(held?.kind === "held" && held.pid, greet.pid, at);
+				assert.isFalse(
+					play.parts.some((p) => p.pid === greet.pid),
+					at,
+				);
+				assert.strictEqual(greet.t0, play.t0, at);
+				assert.isAtMost(greet.t1, play.snap - 2500, at);
+				assert.include(tl.cuts, greet.t1, at);
+				const three = play.coaches ?? [];
+				assert.strictEqual(three.length, 3, at);
+				assert.strictEqual(three[0]!.pid, greet.pid, at);
+				const shot = aimFor(momentAt(tl, greet.t0 + 200));
+				assert.isBelow(shot.width, 20, at);
+				assert.closeTo(shot.x, greet.at.x, 0.01, at);
+				// (Out wide again after.)
+				assert.isAbove(aimFor(momentAt(tl, greet.t1 + 50)).width, 40, at);
+				let fived = false;
+				let hugged = false;
+				for (let t = greet.t0; t < greet.t1; t += 100) {
+					const m = momentAt(tl, t);
+					// (The three of them not stood in the crowd as well.)
+					const side = sidelineAt(men, tl, m);
+					for (const c of three) {
+						assert.isFalse(
+							side.some((s) => s.id === c.pid),
+							`${at} ${c.pid}`,
+						);
+					}
+					const [him, ...mates] = three.map((c) =>
+						m.players.find((p) => p.id === c.pid)!,
+					);
+					for (const mate of mates) {
+						const d = Math.hypot(him!.x - mate!.x, him!.y - mate!.y);
+						if (him!.move === "highFive" && mate!.move === "highFive") {
+							fived = true;
+							assert.isBelow(d, 5.2, at);
+						}
+						if (him!.move === "hug" && mate!.move === "hug") {
+							hugged = true;
+							assert.isBelow(d, 2.2, at);
+						}
+					}
+					for (const p of m.players) {
+						if (three.some((c) => c.pid === p.id)) {
+							continue;
+						}
+						const d = p.y - greet.at.y;
+						assert.isFalse(
+							Math.abs(p.x - greet.at.x) < 5 && d > -1.5 && d < GREET_CAM_FT,
+							`${at} ${p.id} @${t - greet.t0}`,
+						);
+					}
+				}
+				assert.isTrue(fived, at);
+				assert.isTrue(hugged, at);
 			}
 		}
 		assert.isAbove(shots, 0);

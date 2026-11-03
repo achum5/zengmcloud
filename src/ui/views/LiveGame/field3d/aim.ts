@@ -13,6 +13,7 @@ import {
 } from "./geometry.ts";
 import { officialId, REF_CAM_FT } from "./crew.ts";
 import { INTERVIEW_CAM_FT } from "./postgame.ts";
+import { GREET_CAM_FT } from "./greet.ts";
 import { runOutShot } from "./tunnel.ts";
 
 // WHERE THE CAMERA LOOKS: the way a game is shot from the press box - on the
@@ -154,6 +155,10 @@ const CALL_Z = 4.5;
 // the director's TABLET_SHARE): from down on the field in front of them,
 // this wide on the two of them, this high - the camera this high.
 const TABLET = { width: 13, z: 5.2, camZ: 5.8 };
+// The home side's man who scored, greeted on its sideline (see greet.ts):
+// from down on the field in front of them, this wide on the three of them,
+// this high - the camera this high.
+const GREET = { width: 16, z: 5.2, camZ: 5.8 };
 // The home side's head coach calling in its third down (see director.ts
 // callIn): from down low on the near side - this wide, this high.
 const CALL_IN_WIDTH = 15;
@@ -201,6 +206,11 @@ export const aimFor = (m: FieldMoment): Shot => {
 			width: TOSS_WIDE + (TOSS_TIGHT - TOSS_WIDE) * e,
 			y: across(toss.at.y),
 		};
+	}
+	// On the man who scored, greeted on his sideline.
+	const greet = greetOf(m);
+	if (greet) {
+		return { x: greet.at.x, width: GREET.width, y: greet.at.y, z: GREET.z };
 	}
 	// On the quarterback over the tablet.
 	const tablet = tabletOf(m);
@@ -572,6 +582,12 @@ export const closeUpOf = (m: FieldMoment) => {
 };
 
 // The quarterback over the tablet on the sideline now, if he is.
+// The man who scored being greeted on his sideline now, if he is.
+export const greetOf = (m: FieldMoment) => {
+	const greet = m.play?.greet;
+	return greet && m.t >= greet.t0 && m.t < greet.t1 ? greet : undefined;
+};
+
 export const tabletOf = (m: FieldMoment) => {
 	const tablet = m.play?.tablet;
 	return tablet && m.t >= tablet.t0 && m.t < tablet.t1 ? tablet : undefined;
@@ -580,9 +596,18 @@ export const tabletOf = (m: FieldMoment) => {
 // Where the picture is from, if not from the press box or down low on the
 // near side (see fromLow): over the interview after the game, down on the
 // field in front of the two of them; on the quarterback over the tablet
-// on the sideline, the same; in close on the kicker or the referee, in
-// front of him.
+// on the sideline, the same, and on the man who scored greeted there; in
+// close on the kicker or the referee, in front of him.
 export const rigFor = (m: FieldMoment): FieldRig | undefined => {
+	const greet = greetOf(m);
+	if (greet) {
+		return {
+			back: greet.at.y + GREET_CAM_FT - FIELD_W,
+			high: GREET.camZ,
+			slide: 1,
+			upright: false,
+		};
+	}
 	const tablet = tabletOf(m);
 	if (tablet) {
 		const y = (tablet.at.y + tablet.oc.y) / 2;

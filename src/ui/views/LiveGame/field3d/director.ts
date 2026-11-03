@@ -77,6 +77,7 @@ import { stageTv } from "./tv.ts";
 import { stageToss, tossCrew } from "./toss.ts";
 import { runOutCrew, stageRunOut, type RunOut } from "./tunnel.ts";
 import { coordinatorAt, headCoachAt, sidelineOf } from "./sideline.ts";
+import { stageGreet, type Greet } from "./greet.ts";
 
 // THE GAME STAGED: every snap of the play-by-play, in feet and milliseconds -
 // who is on the field for it, where each man lines up, the ball, and the
@@ -271,6 +272,10 @@ export type Play = {
 		oc: Pt;
 		ocYaw: number;
 	};
+	// The home side's man who scored, back to his sideline as the try is set
+	// up, greeted by two teammates there (see greet.ts) - the picture on it
+	// from when until when. (Him and them in coaches, all the play.)
+	greet?: Greet;
 	// In close on the quarterback at the line before the snap (see
 	// QB_CLOSE): from when, until when, where he sets, and how far along the
 	// field from him, the way he faces, the camera is.
@@ -810,6 +815,11 @@ const TABLET_OPEN = 0.6;
 const TABLET_OC_OPEN = 0.25;
 export const TABLET_CAM_FT = 28;
 const TABLET_CLEAR = 4.5;
+// The home side's man who scored greeted on its sideline as the try is set
+// up (see greet.ts), this share of the time - not if it would leave less
+// than this long of it out wide before the snap.
+const GREET_SHARE = 0.7;
+const GREET_WIDE = 2500;
 // In close on the quarterback in the gun before the snap, from t0 to t1:
 // where he is set, and whether anybody is ever between him and the camera
 // on him (see QB_CAM_FT) over it, or just behind him in the picture - not
@@ -1308,6 +1318,8 @@ class Director {
 	];
 	// Who is out: hurt, and gone for the day.
 	readonly out = new Set<number>();
+	// The kickers - stood by their net on the sideline (see sideline.ts).
+	readonly kickers = new Set<number>();
 	readonly plays: Play[] = [];
 	readonly beats: Beat[] = [];
 	readonly cuts: number[] = [];
@@ -1351,6 +1363,11 @@ class Director {
 		];
 		this.speeds = speedsOf(players);
 		this.flair = flairOf(players);
+		for (const p of players) {
+			if (p.pos === "K" || p.pos === "P") {
+				this.kickers.add(p.pid);
+			}
+		}
 		for (const p of players) {
 			if (p.ratings) {
 				this.rated.set(p.pid, p.ratings);
@@ -2782,6 +2799,68 @@ class Director {
 		if (tablet) {
 			this.cuts.push(tablet.t1);
 		}
+		const tv = stageTv({
+			dir,
+			losX,
+			t0,
+			snap,
+			whistle,
+			t1,
+			parts,
+			ball,
+			r: this.rng(i0, "tv"),
+		});
+		// The home side's man who scored, back to his sideline as the try is
+		// set up - greeted there, the camera on it clear of the field.
+		const greeted = (() => {
+			const prev = this.plays.at(-1);
+			if (
+				kind !== "extraPoint" ||
+				offense !== 1 ||
+				!prev ||
+				timeout ||
+				postgame ||
+				routine?.closeUp ||
+				!this.events.slice(prev.i, i0).some((e) => e?.td === true)
+			) {
+				return undefined;
+			}
+			const held = prev.ball.findLast(
+				(b): b is Extract<BallSeg, { kind: "held" }> =>
+					b.kind === "held" && b.t0 <= prev.whistle,
+			);
+			const scorer = prev.parts.find((p) => p.pid === held?.pid);
+			if (
+				!scorer ||
+				scorer.team !== 1 ||
+				prev.hurt?.pid === scorer.pid ||
+				parts.some((p) => p.pid === scorer.pid) ||
+				this.rng(i0, "greet")() >= GREET_SHARE
+			) {
+				return undefined;
+			}
+			const on = new Set(parts.map((p) => p.pid));
+			return stageGreet({
+				team: 1,
+				line: sidelineOf(1),
+				t0,
+				most: snap - GREET_WIDE,
+				playI: i0,
+				scorer: scorer.pid,
+				mates: this.roster[1].filter(
+					(pid) =>
+						pid !== scorer.pid &&
+						!on.has(pid) &&
+						!this.out.has(pid) &&
+						!this.kickers.has(pid),
+				),
+				field: [...parts, ...medics, ...crew.parts, ...chains.parts, ...tv],
+				r: this.rng(i0, "greeted"),
+			});
+		})();
+		if (greeted) {
+			this.cuts.push(greeted.greet.t1);
+		}
 		if (kind === "pass" || kind === "run" || kind === "kneel") {
 			this.lastScrimmage = offense;
 			const qbPid = parts.find(
@@ -2825,17 +2904,7 @@ class Director {
 				: {}),
 			chains: chains.parts,
 			down: chains.spots.down,
-			tv: stageTv({
-				dir,
-				losX,
-				t0,
-				snap,
-				whistle,
-				t1,
-				parts,
-				ball,
-				r: this.rng(i0, "tv"),
-			}),
+			tv,
 			...(medics.length > 0 ? { medics } : {}),
 			...(hurt ? { hurt: { pid: hurt.pid, from: hurt.down } } : {}),
 			...(runOut ? { runOut } : {}),
@@ -2865,6 +2934,7 @@ class Director {
 			...(routine?.closeUp ? { closeUp: routine.closeUp } : {}),
 			...(qbCloseUp ? { qbClose: qbCloseUp } : {}),
 			...(tablet ? { tablet } : {}),
+			...(greeted ? { coaches: greeted.men, greet: greeted.greet } : {}),
 			...(refCall ? { refCall } : {}),
 			...(heroClose ? { heroClose } : {}),
 			...(callIn ? { callIn } : {}),
