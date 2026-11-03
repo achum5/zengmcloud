@@ -2356,6 +2356,12 @@ const DROP_CLEAR = 1.6;
 const GUNNER_SET_MS = 900;
 // (Waiting on a kick nobody returns at least this long, ms: set for it.)
 const FAIR_SET_LEAST_MS = 400;
+// On a return, a jammer within this far (feet) of a gunner on him again,
+// going in at this pace (feet a second).
+const JAM_AGAIN_FT = 25;
+const JAM_AGAIN_FPS = 8;
+// (Down there with him, squared up to him at least this long, ms.)
+const JAM_SET_MS = 300;
 
 // ---- the play ----------------------------------------------------------------
 
@@ -12809,11 +12815,17 @@ class Action {
 					"engage",
 					this.behind,
 				);
-				// A step behind him and inside, all the way down.
+				// A step behind him and inside, all the way down - and squared
+				// up to him there, waiting on it with him (not stood).
 				for (let time = snap + 1300; time < g.t; time += 400) {
 					const q = this.of(g.posAt(time));
 					j.go(this.w({ d: q.d - 2.5, a: q.a - side * 2.5 }), time);
 				}
+				j.hold(
+					Math.max(j.t + JAM_SET_MS, g.t),
+					"backerReady",
+					this.toward(j.at, g.at),
+				);
 			}
 		}
 
@@ -13006,6 +13018,19 @@ class Action {
 				pr,
 			),
 		);
+		// (The jammers, down the field with the gunners, on them again as
+		// they go in after him - not stood watching it go by.)
+		const jams = this.d.filter(
+			(m) => m.role === "JAMMER" && !this.done.has(m.pid),
+		);
+		const loose = gunners.filter(
+			(g) => !this.done.has(g.pid) && !pairs.some(([, c]) => c === g),
+		);
+		for (const [b, c] of this.pairUp(jams, loose)) {
+			if (dist(b.at, c.at) < JAM_AGAIN_FT) {
+				locks.push(this.lockUp(b, c, landT, JAM_AGAIN_FPS, endPt, t, pr));
+			}
+		}
 		lanes.forEach((m, k) => {
 			if (!pairs.some(([, c]) => c === m)) {
 				m.run(this.w(laneEnd(k)), m.top * (0.8 + r() * 0.12), "sprint");
@@ -13013,6 +13038,24 @@ class Action {
 		});
 		this.endReturn(retI, pr, endPt, t, td, this.o);
 		this.release(locks, endPt);
+		// (The rush held up at the line turned and after it at a jog, and
+		// with it as it comes back - not stood at the line through it all.)
+		for (const m of inside) {
+			if (!this.done.has(m.pid) && m.t < this.whistle - TRAIL_LOOK_MS[1]) {
+				m.hold(
+					m.t +
+						TRAIL_LOOK_MS[0] +
+						(TRAIL_LOOK_MS[1] - TRAIL_LOOK_MS[0]) * countOf(m, snap, 29),
+				);
+				this.alongWith(
+					m,
+					TRAIL_JOG_FPS[0] +
+						(TRAIL_JOG_FPS[1] - TRAIL_JOG_FPS[0]) * countOf(m, snap, 30),
+					TRAIL_KEEP_FT,
+					this.whistle - 300,
+				);
+			}
+		}
 		for (const m of [...this.d, ...this.o]) {
 			if (!this.done.has(m.pid) && m.t < this.whistle - 300) {
 				this.trail(m, endPt);
