@@ -13880,15 +13880,33 @@ class Action {
 			);
 			return { x: w.x + dx * u, y: w.y + dy * u };
 		};
-		for (const m of beaten) {
+		for (const [k, m] of beaten.entries()) {
 			const t = Math.max(m.t, c0 + 300 + r() * 700);
 			m.hold(t);
+			// (The man on him for a pass, now and then, at the official on the
+			// nearer sideline for a flag first: his arms out.)
+			if (
+				k === 0 &&
+				this.input.kind === "pass" &&
+				dist(m.posAt(c0), at) < APPEAL_NEAR &&
+				r() < APPEAL
+			) {
+				m.act(
+					"protest",
+					t + APPEAL_MS,
+					m.at.y > MID_Y ? FACING_NEAR : -FACING_NEAR,
+				);
+			}
 			const away = this.toward(along(m.at), m.at) + (r() - 0.5) * 0.8;
+			const from = m.t;
 			m.go(
 				{ x: m.at.x + Math.cos(away) * 6, y: m.at.y + Math.sin(away) * 6 },
-				t + 1800,
+				from + 1800,
 				"walk",
 			);
+			if (r() < RUE_HIPS) {
+				m.arms("onHips", from, m.t);
+			}
 			m.hold(m.t + 2400, "blowing");
 			this.mob.add(m.pid);
 		}
@@ -15042,6 +15060,13 @@ const RUE_HELMET = 0.2;
 const RUE_QB = 0.55;
 const RUE_HELMET_MS = 1500;
 const RUE_HIPS = 0.45;
+// A catch for a score, or a pick: the man beaten on it - this near the man
+// with it - this often at the officials for a flag, his arms out, for this
+// long (ms).
+const APPEAL_NEAR = 12;
+const APPEAL = 0.4;
+const APPEAL_MS = 1300;
+const FACING_NEAR = Math.PI / 2;
 const SKIRT = 11;
 // ...and the side that got it: this often a fist pumped, or a clap, first.
 const GLAD = 0.3;
