@@ -1203,6 +1203,32 @@ const FIELD_ANIMS = {
 			wide: 0.55,
 		}),
 	},
+	// His steps back off the spot and over to the side, measured out (see
+	// the director's kickerRoutine): upright, arms easy, each foot lifted
+	// and swung back behind him, and set down there - a walk backward.
+	kickStep: {
+		kind: "cycle",
+		n: 8,
+		stride: 4.4,
+		pose: (i) => {
+			const a = Math.sin((2 * Math.PI * i) / 8);
+			const swing = 18 * Math.cos((2 * Math.PI * i) / 8);
+			return pose({
+				hipN: swing,
+				kneeN: 8 + 30 * Math.max(0, a),
+				hipF: -swing,
+				kneeF: 8 + 30 * Math.max(0, -a),
+				lean: 4,
+				shN: 6 + 4 * a,
+				elN: 16,
+				abN: 12,
+				shF: 6 - 4 * a,
+				elF: 16,
+				abF: 12,
+				wide: 0.4,
+			});
+		},
+	},
 
 	prone: { kind: "still", pose: PRONE },
 	supine: { kind: "still", pose: SUPINE },

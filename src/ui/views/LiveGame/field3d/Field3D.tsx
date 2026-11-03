@@ -42,6 +42,7 @@ import {
 	closeIn,
 	fromLow,
 	glideAim,
+	kickClose,
 	rigFor,
 	type Glide,
 } from "./aim.ts";
@@ -1179,6 +1180,7 @@ const Field3D = ({
 		// The replay's camera, and the flash at a cut from one to the other.
 		let replayAngle: Side | undefined;
 		let replayWas: unknown;
+		let kickerWas = false;
 		let flashAt = -Infinity;
 
 		const tick = (now: number, draw: boolean) => {
@@ -1249,6 +1251,12 @@ const Field3D = ({
 			const replay = s.replay;
 			const moment = momentAt(tl, replay ? replay.at : s.t, handsOf);
 			const aim = replay ? replayAim(moment, replay) : aimFor(moment);
+			// (In close on the kicker and back out: straight there, a cut.)
+			const kicker = !replay && kickClose(moment) !== undefined;
+			if (kicker !== kickerWas) {
+				kickerWas = kicker;
+				s.snapCam = true;
+			}
 			// (Which of the replay's cameras: cut straight to the other, through
 			// a flash.)
 			const angle = replay ? replayEnd(replay, replay.at) : undefined;

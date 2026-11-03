@@ -244,6 +244,9 @@ export type Play = {
 	// A measurement (see measure.ts): when the picture cuts to the chain out
 	// on the field, and where it looks.
 	measure?: { cut: number; at: Pt };
+	// In close on the kicker through his routine before the snap (see
+	// kickerRoutine): from when, until when, and where he sets.
+	closeUp?: { t0: number; t1: number; pid: number; at: Pt };
 	// Between quarters: when the picture cuts to the whole stadium (see
 	// aim.ts).
 	between?: number;
@@ -702,6 +705,22 @@ const GUN_CALL_MIN = 900;
 const POINT = 0.4;
 const POINT_LOW = 0.15;
 const POINT_SPAN = 0.6;
+// The kicker's routine (see kickerRoutine): up to just behind the spot the
+// ball goes down on (feet), eyes on the posts this long (ms, and up to this
+// much more); his steps back off it and over, at this pace (feet a second),
+// a breath between; set this long before the snap. In close on him through
+// it (see aim.ts) on this share of field goals - of extra points - from
+// just before he gets to the spot until just after he is set.
+const ROUTINE_BEHIND = 2;
+const ROUTINE_LOOK = 700;
+const ROUTINE_LOOK_MORE = 500;
+const ROUTINE_FPS = 3.2;
+const ROUTINE_PAUSE = 250;
+const ROUTINE_SET_MS = 1100;
+const KICK_CLOSE = 0.75;
+const KICK_CLOSE_XP = 0.25;
+const KICK_CLOSE_BEFORE = 400;
+const KICK_CLOSE_AFTER = 350;
 // Pre-snap motion: on this share of pass plays, a man off the line (the
 // flanker, a slot) this far across (feet) at this pace - never in closer
 // to the ball than this, nor nearer a sideline. In man coverage, his man
@@ -1500,6 +1519,13 @@ class Director {
 			snap = this.motion(parts, offense, dir, losX, ballY, set, snap, i0);
 		}
 		this.cadence(parts, offense, snap, i0);
+		const routine =
+			kind === "fieldGoal" || kind === "extraPoint"
+				? this.kickerRoutine(parts, offense, dir, snap, i0, kind)
+				: undefined;
+		if (routine) {
+			snap = routine.snap;
+		}
 		if (kind === "pass" || kind === "run") {
 			this.defenseSet(parts, offense, dir, losX, ballY, snap, i0);
 		}
@@ -2187,6 +2213,7 @@ class Director {
 					}
 				: {}),
 			...(measure ? { measure: { cut: measure.cut, at: measure.at } } : {}),
+			...(routine?.closeUp ? { closeUp: routine.closeUp } : {}),
 			...(between !== undefined ? { between } : {}),
 			...(acted?.party && acted.until
 				? { party: { ...acted.party, until: acted.until } }
@@ -2895,6 +2922,96 @@ class Director {
 				still(snap - 40, "shotgun"),
 			);
 		}
+	}
+
+	// THE KICKER'S ROUTINE, before a kick at the posts: out of the huddle up
+	// to just behind the spot the ball goes down on, a look at the posts,
+	// his steps back off it and over to the side, and set - the snap no
+	// sooner than ROUTINE_SET_MS after. When the snap is, then; and, on most
+	// field goals, the picture in close on him through it (see aim.ts).
+	kickerRoutine(
+		parts: Part[],
+		offense: Side,
+		dir: Dir,
+		snap: number,
+		i0: number,
+		kind: PlayKind,
+	):
+		| {
+				snap: number;
+				closeUp?: { t0: number; t1: number; pid: number; at: Pt };
+		  }
+		| undefined {
+		const k = parts.find((p) => p.team === offense && p.role === "K");
+		const h = parts.find((p) => p.team === offense && p.role === "H");
+		const set = k?.legs.at(-1);
+		const held = h?.legs.at(-1)?.to;
+		// (Out of the huddle - stood, clapped and broken - and up to his spot.)
+		const j = k
+			? k.legs.findLastIndex(
+					(l) => l !== set && l.from.x === l.to.x && l.from.y === l.to.y,
+				)
+			: -1;
+		const left = k?.legs[j];
+		if (
+			!k ||
+			!set ||
+			!held ||
+			!left ||
+			set.t1 > set.t0 ||
+			set.move !== "kickReady"
+		) {
+			return undefined;
+		}
+		const r = this.rng(i0, "routine");
+		const yaw = facing(dir);
+		// (Where the holder puts it down: see action.ts fieldGoal.)
+		const spot = { x: held.x + dir * 0.7, y: held.y - dir * 1.7 };
+		const at = set.to;
+		const A = { x: spot.x - dir * ROUTINE_BEHIND, y: spot.y };
+		const B = { x: at.x, y: spot.y };
+		const from = left.to;
+		const leave = left.t1;
+		const arrive =
+			leave + (dist(from, A) / WALK_FPS) * 1000 + goingMs(WALK_FPS);
+		const looked = arrive + ROUTINE_LOOK + r() * ROUTINE_LOOK_MORE;
+		const backed = looked + (dist(A, B) / ROUTINE_FPS) * 1000;
+		const over = backed + ROUTINE_PAUSE;
+		const sets = over + (dist(B, at) / ROUTINE_FPS) * 1000;
+		const still = (t0: number, t1: number, p: Pt, move: Move): Leg => ({
+			t0,
+			t1,
+			from: p,
+			to: p,
+			move,
+			yaw,
+		});
+		k.legs = [
+			...k.legs.slice(0, j + 1),
+			...intoStance(from, A, leave, arrive, "walk"),
+			still(arrive, looked, A, "stand"),
+			{ t0: looked, t1: backed, from: A, to: B, move: "kickStep", yaw },
+			still(backed, over, B, "stand"),
+			{ t0: over, t1: sets, from: B, to: at, move: "kickStep", yaw },
+			{ ...set, t0: sets, t1: sets },
+		];
+		const after = Math.max(snap, sets + ROUTINE_SET_MS);
+		const close =
+			this.rng(i0, "kickClose")() <
+			(kind === "fieldGoal" ? KICK_CLOSE : KICK_CLOSE_XP);
+		return {
+			snap: after,
+			...(close
+				? {
+						closeUp: {
+							t0: arrive - KICK_CLOSE_BEFORE,
+							t1: sets + KICK_CLOSE_AFTER,
+							pid: k.pid,
+							at,
+						},
+					}
+				: {}),
+		};
 	}
 
 	// PRE-SNAP MOTION, on a pass play now and then: a receiver off the line

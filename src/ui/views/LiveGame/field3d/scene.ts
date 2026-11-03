@@ -171,6 +171,8 @@ const drawPost = (ctx: CanvasRenderingContext2D, cam: Camera, side: 0 | 1) => {
 	ctx.restore();
 };
 
+// The nearest the camera anything standing up is drawn (feet).
+const ITEM_NEAR = 1;
 // The pylons: orange, four inches square and eighteen tall, on the outside
 // corners of both goal lines and both end lines.
 const PYLON = "#ff6a14";
@@ -362,7 +364,12 @@ export const drawFieldFrame = (f: FieldFrame) => {
 	];
 	items.sort((a, b) => b.depth - a.depth);
 	for (const it of items) {
-		it.draw();
+		// (Nothing behind a camera down on the field, or right up against
+		// it - a down box on the near sideline, say - drawn up huge across
+		// the picture: see sprite.ts NEAR_FT.)
+		if (it.depth > ITEM_NEAR) {
+			it.draw();
+		}
 	}
 	if (f.confetti) {
 		drawConfetti(ctx, cam, f.confetti.of, f.confetti.t, true);

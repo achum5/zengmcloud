@@ -105,6 +105,13 @@ const LOOK_MS = 3000;
 const INTERVIEW_WIDTH = 14;
 const INTERVIEW_Z = 6;
 const INTERVIEW_CAM_Z = 6.2;
+// In close on the kicker through his routine before the snap (see the
+// director's kickerRoutine): this wide, at about his chest - from down on
+// the field this far in front of where he sets, this high (see rigFor).
+const KICK_CLOSE_WIDTH = 24;
+const KICK_CLOSE_Z = 3.4;
+const KICK_CAM_FT = 26;
+const KICK_CAM_Z = 4.4;
 // The winners' head coach under the cooler: in on him, this wide, the
 // picture's middle this far toward the near side of him (on the far
 // sideline, this far).
@@ -170,6 +177,14 @@ export const aimFor = (m: FieldMoment): Shot => {
 			width: TOSS_WIDE + (TOSS_TIGHT - TOSS_WIDE) * e,
 			y: across(toss.at.y),
 		};
+	}
+	// In close on the kicker, through his routine.
+	const close = kickClose(m);
+	if (close) {
+		const him = m.players.find((p) => p.id === close.pid);
+		if (him) {
+			return { x: him.x, width: KICK_CLOSE_WIDTH, y: him.y, z: KICK_CLOSE_Z };
+		}
 	}
 	// A timeout: on the side that called it, at its sideline - or on the
 	// cheerleaders.
@@ -474,10 +489,26 @@ export const closeIn = (m: FieldMoment): boolean => {
 	);
 };
 
+// The kicker's routine, if the picture is in close on him through it now.
+export const kickClose = (m: FieldMoment) => {
+	const close = m.play?.closeUp;
+	return close && m.t >= close.t0 && m.t < close.t1 ? close : undefined;
+};
+
 // Where the picture is from, if not from the press box or down low on the
 // near side (see fromLow): over the interview after the game, down on the
-// field in front of the two of them.
+// field in front of the two of them; in close on the kicker, in front of
+// him.
 export const rigFor = (m: FieldMoment): FieldRig | undefined => {
+	const close = kickClose(m);
+	if (close) {
+		return {
+			back: close.at.y + KICK_CAM_FT - FIELD_W,
+			high: KICK_CAM_Z,
+			slide: 1,
+			upright: false,
+		};
+	}
 	const post = m.play?.postgame;
 	const talk = post?.interview;
 	if (!post || !talk || m.t < talk.t0 || m.t >= post.look) {
