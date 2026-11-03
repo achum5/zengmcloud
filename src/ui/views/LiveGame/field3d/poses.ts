@@ -337,6 +337,23 @@ const SHOTGUN = pose({
 	abF: 6,
 	wide: 0.7,
 });
+// A punter's hands out for the snap (see puntReady).
+const PUNT_READY = pose({
+	hipN: 10,
+	kneeN: 16,
+	hipF: 12,
+	kneeF: 18,
+	lean: 10,
+	shN: 58,
+	elN: 24,
+	abN: 16,
+	wrN: -10,
+	shF: 58,
+	elF: 24,
+	abF: 16,
+	wrF: -10,
+	wide: 0.6,
+});
 // Stood up behind the center, hands at his belt.
 const QB_SURVEY = pose({
 	hipN: 8,
@@ -1202,6 +1219,26 @@ const FIELD_ANIMS = {
 			abF: 18,
 			wide: 0.55,
 		}),
+	},
+	// A punter back for the snap: knees a little bent, both hands out in
+	// front of him at his belt, the snapper's target - and getting there.
+	puntReady: { kind: "still", pose: PUNT_READY },
+	puntHands: {
+		kind: "act",
+		keys: [
+			[0, BASE],
+			[1, PUNT_READY],
+		],
+	},
+	// A kicker before a kickoff: his hand up high, ready - and down again.
+	handUp: {
+		kind: "act",
+		keys: [
+			[0, BASE],
+			[0.16, pose({ shN: 172, elN: 6, abN: 8, wrN: 6 })],
+			[0.84, pose({ shN: 168, elN: 10, abN: 8, wrN: 6 })],
+			[1, BASE],
+		],
 	},
 	// His steps back off the spot and over to the side, measured out (see
 	// the director's kickerRoutine): upright, arms easy, each foot lifted

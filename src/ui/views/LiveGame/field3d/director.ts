@@ -705,6 +705,10 @@ const GUN_CALL_MIN = 900;
 const POINT = 0.4;
 const POINT_LOW = 0.15;
 const POINT_SPAN = 0.6;
+// The punter's hands out for the snap this long before it, out over this
+// long (see punterSet).
+const PUNT_HANDS_MS = 1300;
+const PUNT_HANDS_IN = 300;
 // The kicker's routine (see kickerRoutine): up to just behind the spot the
 // ball goes down on (feet), eyes on the posts this long (ms, and up to this
 // much more); his steps back off it and over, at this pace (feet a second),
@@ -784,8 +788,11 @@ const CREEP_MS = 1600;
 const CREEP_FPS = 9;
 const LBS = new Set<Role>(["SAM", "MIKE", "WILL", "BUCK"]);
 const DL_ROLES = new Set<Role>(["DE", "DT", "NT"]);
-// A kickoff: everyone lined up, the kicker off on his run-up this long in.
+// A kickoff: everyone lined up, the kicker off on his run-up this long in -
+// his hand up from so long before it, and down again so long before.
 const KICK_AT = 2600;
+const KICK_HAND_UP = 1900;
+const KICK_HAND_DOWN = 350;
 // The coin toss: this many captains a side, from these groups in turn. The
 // men for the kick waiting for it on their sidelines in two rows - this
 // far off the field, rows this far apart, men this far apart along them -
@@ -1491,6 +1498,17 @@ class Director {
 					yaw: p.yaw,
 					...(p.mirrored ? { mirrored: true } : {}),
 				});
+				// (The kicker's hand up, ready - and down again as he goes.)
+				if (p.role === "K" && p.move === "stand") {
+					const up = base + KICK_AT - KICK_HAND_UP;
+					const down = base + KICK_AT - KICK_HAND_DOWN;
+					const still = legs.at(-1)!;
+					still.t1 = up;
+					legs.push(
+						{ ...still, t0: up, t1: down, move: "handUp" },
+						{ ...still, t0: down, t1: down },
+					);
+				}
 				parts.push({ pid: p.pid, team: p.team, role: p.role, legs });
 			}
 		} else {
@@ -1525,6 +1543,9 @@ class Director {
 				: undefined;
 		if (routine) {
 			snap = routine.snap;
+		}
+		if (kind === "punt") {
+			this.punterSet(parts, offense, snap);
 		}
 		if (kind === "pass" || kind === "run") {
 			this.defenseSet(parts, offense, dir, losX, ballY, snap, i0);
@@ -3012,6 +3033,34 @@ class Director {
 					}
 				: {}),
 		};
+	}
+
+	// THE PUNTER, back for the snap: stood up waiting, and his hands out in
+	// front of him for it - the snapper's target - for the last of it.
+	punterSet(parts: Part[], offense: Side, snap: number) {
+		const p = parts.find((q) => q.team === offense && q.role === "P");
+		const set = p?.legs.at(-1);
+		const out = snap - PUNT_HANDS_MS;
+		if (
+			!p ||
+			!set ||
+			set.t1 > set.t0 ||
+			set.move !== "shotgun" ||
+			out - set.t0 < PUNT_HANDS_MS / 2
+		) {
+			return;
+		}
+		set.t1 = out;
+		set.move = "stand";
+		p.legs.push(
+			{ ...set, t0: out, t1: out + PUNT_HANDS_IN, move: "puntHands" },
+			{
+				...set,
+				t0: out + PUNT_HANDS_IN,
+				t1: out + PUNT_HANDS_IN,
+				move: "puntReady",
+			},
+		);
 	}
 
 	// PRE-SNAP MOTION, on a pass play now and then: a receiver off the line
