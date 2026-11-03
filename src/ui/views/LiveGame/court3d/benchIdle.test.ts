@@ -1,12 +1,20 @@
 import { assert, test } from "vitest";
 import {
+	evalPlayer,
+	handWorld,
+	shownAt,
+	type PlayerState,
+} from "./evaluate.ts";
+import {
 	benchMoodAt,
 	benchPhase,
 	benchShare,
+	benchStates,
+	greetsFor,
 	type BenchMood,
 } from "./scene.ts";
 import { compile } from "./testGame.ts";
-import { ANIMS } from "./poses.ts";
+import { ANIMS, bodyOf } from "./poses.ts";
 
 // The bench idles at the pace each pose was written for, on the wall clock -
 // not at a flat 1.5 cycles a second of game time, which rocked every seated
@@ -51,3 +59,117 @@ test("the bench gets up and sits back down over a moment, not in a frame", () =>
 		assert.isAbove(changes, 4);
 	}
 }, 60_000);
+
+// Back at his chair after he comes off, a man is greeted: the man sat
+// nearest it either side up out of his, over beside him, the two of them
+// slapping hands up high - and all of them sat back down after. Not
+// popped from one way of standing to another between two frames.
+test("a man coming off is greeted at his chair: up, a slap of the hands, sat back down", () => {
+	const { tl, players } = compile("bench greets", 160);
+	const roster = players.map((p) => ({ pid: p.pid, team: p.team }));
+	const body = bodyOf();
+	const FRAME = 1000 / 30;
+	const at = (t: number) => {
+		const onFloor = new Set(
+			roster.filter((p) => shownAt(tl, p.pid, t)).map((p) => p.pid),
+		);
+		return new Map(
+			benchStates({ tl, roster, now: t, moment: { t } }, onFloor).map((x) => [
+				x.st.pid,
+				x.st,
+			]),
+		);
+	};
+	const hands = (st: PlayerState) => [
+		handWorld(st, body, "near"),
+		handWorld(st, body, "far"),
+	];
+	let greeted = 0;
+	let slaps = 0;
+	const greets = greetsFor(tl, roster);
+	for (const sd of tl.sitDowns ?? []) {
+		// Who stands up for him, and his own first moment at his chair.
+		const g = greets.find((x) => x.pid === sd.pid && x.t === sd.t);
+		const up = new Set(g?.greeters.map((x) => x.pid));
+		let prev: Map<number, PlayerState> | undefined;
+		for (let t = sd.t - 3000; t < sd.t + 4500; t += FRAME) {
+			const now = at(t);
+			for (const pid of up) {
+				const st = now.get(pid);
+				// (Up, he is up in front of the bench, a step out from it.)
+				if (st && st.anim !== "sit") {
+					assert.isAtLeast(st.y, g!.seat.y - 0.1);
+					assert.isBelow(st.y, g!.seat.y + 2.5);
+					// (Not out there in his way before he gets to his chair.)
+					if (t < sd.t) {
+						assert.isBelow(st.y, g!.seat.y + 0.3);
+					}
+				}
+			}
+			const me = now.get(sd.pid);
+			if (prev && me && !prev.has(sd.pid)) {
+				// (Where he got to on the floor, he is at his chair.)
+				const was = evalPlayer(tl, sd.pid, t - FRAME);
+				assert.isBelow(Math.hypot(was.x - me.x, was.y - me.y), 0.5);
+			}
+			for (const pid of [sd.pid, ...up]) {
+				const a = prev?.get(pid);
+				const b = now.get(pid);
+				if (!a || !b) {
+					continue;
+				}
+				assert.isBelow(Math.hypot(a.x - b.x, a.y - b.y), 0.4, `${pid} @${t}`);
+				const ha = hands(a);
+				const hb = hands(b);
+				for (const k of [0, 1]) {
+					const d = Math.hypot(
+						ha[k]!.x - hb[k]!.x,
+						ha[k]!.y - hb[k]!.y,
+						ha[k]!.z - hb[k]!.z,
+					);
+					assert.isBelow(d, 0.8, `${pid}'s hand @${Math.round(t)}`);
+				}
+			}
+			// The slap: his hand and the other man's, met, up high.
+			if (me) {
+				for (const pid of up) {
+					const st = now.get(pid);
+					if (st?.anim !== "reachFive" || Math.abs(st.phase - 0.5) > 0.025) {
+						continue;
+					}
+					assert.strictEqual(me.anim, "reachFive");
+					let close = Infinity;
+					let high = 0;
+					for (const p of hands(me)) {
+						for (const q of hands(st)) {
+							const d = Math.hypot(p.x - q.x, p.y - q.y, p.z - q.z);
+							if (d < close) {
+								close = d;
+								high = Math.min(p.z, q.z);
+							}
+						}
+					}
+					assert.isBelow(close, 0.6, `${sd.pid} and ${pid} @${Math.round(t)}`);
+					assert.isAbove(high, 5.2);
+					slaps++;
+				}
+			}
+			prev = now;
+		}
+		if (up.size > 0) {
+			greeted++;
+			// All sat back down.
+			const after = at(sd.t + 4500);
+			for (const pid of [sd.pid, ...up]) {
+				const st = after.get(pid);
+				if (st) {
+					assert.strictEqual(st.anim, "sit", `${pid}`);
+					assert.isUndefined(st.from);
+				}
+			}
+		}
+	}
+	// (Most subs come at a break, the bench up in the huddle for it anyway.)
+	assert.isAtLeast(greeted, 5);
+	assert.isAtLeast(slaps, 5);
+}, 120_000);

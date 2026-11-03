@@ -5692,6 +5692,18 @@ export const ANIMS = {
 			[1, P.ready],
 		],
 	},
+	// Up and out to a man a step away, palm to palm up over their heads -
+	// the bench greeting a man coming off.
+	reachFive: {
+		kind: "act",
+		n: 5,
+		keys: [
+			[0, P.easy],
+			[0.4, { ...P.easy, shN: 138, elN: 10, abN: 0, wrN: 30, lean: 0 }],
+			[0.6, { ...P.easy, shN: 134, elN: 14, abN: 0, wrN: 20, lean: 0 }],
+			[1, P.easy],
+		],
+	},
 	// A low five: the hand swung down and out in front of him to meet the
 	// other man's, palm to palm at the hip, leaning into it a little - and
 	// through.

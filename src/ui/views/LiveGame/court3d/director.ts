@@ -530,6 +530,9 @@ export type CourtTimeline = {
 	fast: [number, number][];
 	// The men going to the scorer's table to check in, before each comes on.
 	checkIns?: CheckIn[];
+	// Each man subbed out, back at his chair: when he gets there, and the
+	// way he is going as he does (see the bench's greeting in scene.ts).
+	sitDowns?: SitDown[];
 	// The huddles at the breaks, the five sat on chairs (see toHuddles).
 	huddles?: Huddle[];
 	// The starting lineups called out before the opening tip (see intro.ts).
@@ -560,6 +563,7 @@ export type CheckIn = {
 };
 // How long pulling the warm-up off takes.
 export const STRIP_MS = 1000;
+export type SitDown = { pid: number; team: Side; t: number; yaw: number };
 
 // A team's huddle at a break: called at `called`; its chairs out on the
 // floor from t0 to t1 (as they are put out, and cleared away), and who sits
@@ -2298,6 +2302,7 @@ class Director {
 	// before the tip - how they stood or went would give away who won it.
 	readonly jumps: [number, number][] = [];
 	readonly checkIns: CheckIn[] = [];
+	readonly sitDowns: SitDown[] = [];
 	readonly huddles: Huddle[] = [];
 	// Each man subbed out: who came on for him, when he went off, when the
 	// man coming on was out there, and when he came back on himself (see
@@ -18842,6 +18847,15 @@ class Director {
 			const t0 = T + j * 80;
 			const gone = this.go(pid, seat, t0, JOG, "run");
 			this.show(pid, gone, false);
+			const leg = this.track(pid)?.moves.at(-1);
+			this.sitDowns.push({
+				pid,
+				team: this.teamOf(pid),
+				t: gone,
+				yaw: leg
+					? Math.atan2(leg.to.y - leg.from.y, leg.to.x - leg.from.x)
+					: -Math.PI / 2,
+			});
 			const offFloor =
 				from.y > 0 && seat.y < 0
 					? from.y / (from.y - seat.y)
@@ -18861,6 +18875,13 @@ class Director {
 						last.to = here;
 						last.t1 = t0;
 						this.pos.set(incoming, here);
+						// (Not back at his chair after all.)
+						const k = this.sitDowns.findIndex(
+							(c) => c.pid === incoming && c.t > t0,
+						);
+						if (k >= 0) {
+							this.sitDowns.splice(k, 1);
+						}
 					} else {
 						const ci = this.checkIn(incoming, team, j, t0);
 						this.pos.set(
@@ -26586,6 +26607,7 @@ class Director {
 			seats: this.seats,
 			fast,
 			checkIns: this.checkIns,
+			sitDowns: this.sitDowns,
 			huddles: this.huddles,
 			end: this.T,
 		};

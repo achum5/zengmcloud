@@ -55,6 +55,7 @@ import {
 	poseOf,
 	evalBall,
 	evalPlayer,
+	handWorld,
 	shownAt,
 	offenseAt,
 	warmBall,
@@ -75,6 +76,7 @@ import {
 	huddleCoach,
 	huddleRing,
 	RIM_Z,
+	SEAT_GAP,
 	seatSpot,
 	type Chair,
 	type Pt,
@@ -931,7 +933,7 @@ const WALK = ANIMS.walk;
 // any about to check in, from their seats to the table - the nearest the
 // middle as many places as there are of them, each to the one on his side.)
 const RING_KEEP = 12_000;
-const ringOf = (f: Frame, h: Huddle): Map<number, Pt> => {
+const ringOf = (f: BenchFrame, h: Huddle): Map<number, Pt> => {
 	const sat = new Set(h.seats.map((x) => x.pid));
 	const men = f.roster.filter(
 		(p) =>
@@ -947,7 +949,7 @@ const ringOf = (f: Frame, h: Huddle): Map<number, Pt> => {
 	return new Map(men.map((p, k) => [p.pid, spots[k]!]));
 };
 const ringState = (
-	f: Frame,
+	f: BenchFrame,
 	pid: number,
 	team: Side,
 	seat: Pt,
@@ -1084,12 +1086,366 @@ export const benchShare = (
 		? of(m.now) * (1 - m.from.w) +
 			benchShare({ now: m.from.mood, from: m.from.from }, of) * m.from.w
 		: of(m.now);
-const benchStates = (
-	f: Frame,
+// THE BENCH GREETS A MAN COMING OFF: as he gets back to his chair, the man
+// sat nearest it on either side (two seats along at the most) is up out of
+// his and a step out in front of the next chair over, and the two slap hands
+// up high - one, then the other - and they all sit back down. (Not with the
+// bench already on its feet, nor with a break near: then they are all up
+// anyway.)
+const GREET_ALONG = 2;
+// Walking over and back (feet a second); the slap (ms), the second on the
+// first's heels; the first after he gets there (ms); and, the hands met,
+// turned round to the next man over this long (ms).
+const GREET_PACE = 4.5;
+const GREET_SLAP = 800;
+const GREET_FIRST = 150;
+const GREET_TURN = 300;
+// Two men slapping a high five stand this far apart (feet, middle to
+// middle): each one's hand up in front of him, palm to palm.
+const GREET_APART =
+	2 *
+	handWorld(
+		{
+			pid: 0,
+			team: 0,
+			shown: true,
+			x: 0,
+			y: 0,
+			z: 0,
+			yaw: 0,
+			anim: "reachFive",
+			phase: 0.5,
+			moving: false,
+		},
+		bodyOf(),
+		"near",
+	).x;
+// (So, out in front of the next chair along, this far: feet.)
+const GREET_OUT = Math.sqrt(Math.max(0, GREET_APART ** 2 - SEAT_GAP ** 2));
+// (Into a walk and out of one over this long, ms.)
+const GREET_EASE = 220;
+type Greeter = {
+	pid: number;
+	seat: Pt;
+	spot: Pt;
+	walk: number;
+	// His slap: from here, for GREET_SLAP.
+	slap: number;
+	// Which way the man coming off faces to him there, and he to the man.
+	face: number;
+	toHim: number;
+};
+type Greet = {
+	pid: number;
+	team: Side;
+	t: number;
+	yaw: number;
+	// How long he takes turning round to the first (ms).
+	turn: number;
+	seat: Pt;
+	greeters: Greeter[];
+	end: number;
+};
+// Turned from one way to another, the short way round, `u` of it.
+const turnTo = (a: number, b: number, u: number): number => {
+	const d = Math.atan2(Math.sin(b - a), Math.cos(b - a));
+	return a + d * Math.max(0, Math.min(1, u));
+};
+const greetsOf = new WeakMap<CourtTimeline, Greet[]>();
+export const greetsFor = (
+	tl: CourtTimeline,
+	roster: { pid: number; team: Side }[],
+): Greet[] => {
+	const had = greetsOf.get(tl);
+	if (had) {
+		return had;
+	}
+	const seats = new Map<number, number>();
+	const count: [number, number] = [0, 0];
+	for (const p of roster) {
+		seats.set(p.pid, count[p.team]++);
+	}
+	const out: Greet[] = [];
+	for (const sd of tl.sitDowns ?? []) {
+		const i = seats.get(sd.pid);
+		const team = roster.find((p) => p.pid === sd.pid)?.team;
+		if (i === undefined || team === undefined) {
+			continue;
+		}
+		const from = sd.t - 2500;
+		const to = sd.t + 3500;
+		const calm = (t: number) => {
+			const m = benchMoodAt(tl, t, team);
+			return m.now === "sat" && !m.from;
+		};
+		if (
+			!calm(from) ||
+			!calm(sd.t) ||
+			!calm(to) ||
+			(tl.huddles ?? []).some(
+				(h) => h.team === team && h.called < to + 1000 && h.t1 > from - 1000,
+			)
+		) {
+			continue;
+		}
+		// Sat there all through it: not on the floor, not on his way to the
+		// table or back from it, not just back himself.
+		const sat = (pid: number) =>
+			!shownAt(tl, pid, from) &&
+			!shownAt(tl, pid, sd.t) &&
+			!shownAt(tl, pid, to) &&
+			!(tl.checkIns ?? []).some(
+				(c) => c.pid === pid && c.t0 < to && c.t1 > from,
+			) &&
+			!(tl.sitDowns ?? []).some(
+				(o) => o.pid === pid && o.t > from - 2000 && o.t < to,
+			);
+		const seat = seatSpot(team, i);
+		const greeters: Greeter[] = [];
+		for (const dir of [1, -1] as const) {
+			for (let k = 1; k <= GREET_ALONG; k++) {
+				const q = roster.find(
+					(p) => p.team === team && seats.get(p.pid) === i + dir * k,
+				);
+				if (!q || !sat(q.pid)) {
+					continue;
+				}
+				const at = seatSpot(team, i + dir * k);
+				const spot = {
+					x: seat.x + dir * Math.min(SEAT_GAP, GREET_APART),
+					y: seat.y + GREET_OUT,
+				};
+				const d = Math.hypot(spot.x - at.x, spot.y - at.y);
+				const face = Math.atan2(spot.y - seat.y, spot.x - seat.x);
+				greeters.push({
+					pid: q.pid,
+					seat: at,
+					spot,
+					walk: (d / GREET_PACE) * 1000,
+					slap: 0,
+					face,
+					toHim: face + Math.PI,
+				});
+				break;
+			}
+		}
+		if (greeters.length === 0) {
+			continue;
+		}
+		// The one he is facing more nearly first - round to him at the pace
+		// he turns, the slap once he is.
+		const round = (g: Greeter) => Math.abs(turnTo(sd.yaw, g.face, 1) - sd.yaw);
+		greeters.sort((a, b) => round(a) - round(b));
+		const turn = Math.max(
+			GREET_TURN * 0.6,
+			(round(greeters[0]!) / (Math.PI / 2)) * GREET_TURN,
+		);
+		// (And not out in front of the bench in his way as he comes in: out
+		// once he is at his chair.)
+		const first = Math.max(
+			GREET_FIRST,
+			turn - 100,
+			greeters[0]!.walk + GREET_TURN + 50,
+		);
+		greeters.forEach((g, k) => {
+			g.slap = sd.t + first + k * GREET_SLAP;
+		});
+		const last = greeters.at(-1)!;
+		out.push({
+			pid: sd.pid,
+			team,
+			t: sd.t,
+			yaw: sd.yaw,
+			turn,
+			seat,
+			greeters,
+			end: Math.max(
+				last.slap + GREET_SLAP + BENCH_EASE,
+				...greeters.map((g) => g.slap + GREET_SLAP + g.walk + BENCH_EASE),
+			),
+		});
+	}
+	greetsOf.set(tl, out);
+	return out;
+};
+// A man in on a greeting at t - the man coming off, or a man greeting him -
+// or undefined.
+const greetState = (
+	tl: CourtTimeline,
+	greets: Greet[],
+	pid: number,
+	team: Side,
+	t: number,
+	now: number,
+): PlayerState | undefined => {
+	for (const g of greets) {
+		if (g.team !== team || t < g.t - 3000 || t >= g.end) {
+			continue;
+		}
+		const base = { pid, team, shown: true, z: 0 };
+		const sit = (at: Pt, yaw: number, w: number): PlayerState => ({
+			...base,
+			x: at.x,
+			y: at.y,
+			yaw: turnTo(yaw, Math.PI / 2, 1 - w),
+			anim: "sit",
+			phase: benchPhase("sit", now, pid),
+			moving: false,
+			...(w > 0 ? { from: { anim: "easy", phase: 0, w } } : {}),
+		});
+		const stood = (
+			at: Pt,
+			yaw: number,
+			from?: Blend,
+			slap?: { t0: number; mirror: boolean },
+		): PlayerState => {
+			const u = slap ? (t - slap.t0) / GREET_SLAP : -1;
+			const act = u >= 0 && u < 1;
+			return {
+				...base,
+				x: at.x,
+				y: at.y,
+				yaw,
+				anim: act ? "reachFive" : "easy",
+				phase: act ? u : 0,
+				moving: false,
+				...(act && slap!.mirror ? { mirror: true } : {}),
+				...(from && from.w > 0 ? { from } : {}),
+			};
+		};
+		if (pid === g.pid) {
+			if (t < g.t) {
+				return undefined;
+			}
+			// Back at his chair: round to the first of them, a slap; round to
+			// the next, another; then sat down.
+			const done = g.greeters.at(-1)!.slap + GREET_SLAP;
+			if (t >= done) {
+				const last = g.greeters.at(-1)!.face;
+				return sit(g.seat, last, 1 - (t - done) / BENCH_EASE);
+			}
+			const k = Math.min(
+				g.greeters.length - 1,
+				Math.max(0, Math.floor((t - g.greeters[0]!.slap) / GREET_SLAP)),
+			);
+			const gr = g.greeters[k]!;
+			// (Turned to the next as his hand comes down from the last.)
+			const next = g.greeters[k + 1];
+			const after = gr.slap + GREET_SLAP - GREET_TURN;
+			const yaw = next
+				? t < after
+					? turnTo(k === 0 ? g.yaw : gr.face, gr.face, (t - g.t) / g.turn)
+					: turnTo(gr.face, next.face, (t - after) / GREET_TURN)
+				: k === 0
+					? turnTo(g.yaw, gr.face, (t - g.t) / g.turn)
+					: gr.face;
+			const arrive = 1 - (t - g.t) / 250;
+			const was = arrive > 0 ? evalPlayer(tl, pid, g.t - 1) : undefined;
+			return stood(
+				g.seat,
+				yaw,
+				was ? { anim: was.anim, phase: was.phase, w: arrive } : undefined,
+				{ t0: gr.slap, mirror: false },
+			);
+		}
+		const gr = g.greeters.find((x) => x.pid === pid);
+		if (!gr) {
+			continue;
+		}
+		// Up out of his chair facing the floor, a step out, round to him, the
+		// slap - and backed into his chair again, sat down.
+		const toHim = gr.toHim;
+		const arrive = gr.slap - GREET_TURN;
+		const out = arrive - gr.walk;
+		const up = out - BENCH_EASE;
+		const back = gr.slap + GREET_SLAP;
+		const home = back + gr.walk;
+		if (t < up) {
+			return undefined;
+		}
+		if (t >= home + BENCH_EASE) {
+			continue;
+		}
+		const front = Math.PI / 2;
+		const stride = WALK.kind === "cycle" ? WALK.stride : 4.6;
+		const d = Math.hypot(gr.spot.x - gr.seat.x, gr.spot.y - gr.seat.y);
+		// (The last step of each way, to blend out of: backing up, his legs go
+		// the other way round.)
+		const stepped = (way: 1 | -1, w: number): Blend => ({
+			anim: "walk",
+			phase: (way * d) / stride,
+			w,
+		});
+		const walking = (
+			A: Pt,
+			B: Pt,
+			a: number,
+			yaw: number,
+			way: 1 | -1,
+		): PlayerState => {
+			const v = gr.walk > 0 ? Math.min(1, Math.max(0, (t - a) / gr.walk)) : 1;
+			const w = 1 - (t - a) / GREET_EASE;
+			return {
+				...base,
+				x: A.x + (B.x - A.x) * v,
+				y: A.y + (B.y - A.y) * v,
+				yaw,
+				anim: "walk",
+				phase: (way * v * d) / stride,
+				moving: true,
+				...(w > 0 ? { from: { anim: "easy", phase: 0, w } } : {}),
+			};
+		};
+		if (t < out) {
+			return stood(gr.seat, front, {
+				anim: "sit",
+				phase: benchPhase("sit", now, pid),
+				w: 1 - (t - up) / BENCH_EASE,
+			});
+		}
+		if (t < arrive) {
+			return walking(gr.seat, gr.spot, out, front, 1);
+		}
+		if (t < back) {
+			return stood(
+				gr.spot,
+				turnTo(front, toHim, (t - arrive) / GREET_TURN),
+				stepped(1, 1 - (t - arrive) / GREET_EASE),
+				{ t0: gr.slap, mirror: true },
+			);
+		}
+		// (Round to the floor again as he backs up.)
+		const turning = gr.walk + BENCH_EASE;
+		if (t < home) {
+			return walking(
+				gr.spot,
+				gr.seat,
+				back,
+				turnTo(toHim, front, (t - back) / turning),
+				-1,
+			);
+		}
+		const w = 1 - (t - home) / BENCH_EASE;
+		const got = turnTo(toHim, front, gr.walk / turning);
+		return {
+			...sit(gr.seat, got, w),
+			...(w > 0 ? { from: stepped(-1, w) } : {}),
+		};
+	}
+	return undefined;
+};
+
+// What the bench needs of a frame.
+export type BenchFrame = Pick<Frame, "tl" | "roster" | "now"> & {
+	moment: { t: number };
+};
+export const benchStates = (
+	f: BenchFrame,
 	onFloor: Set<number>,
 ): { st: PlayerState; warm: boolean }[] => {
 	const out: { st: PlayerState; warm: boolean }[] = [];
 	const t = f.moment.t;
+	const greets = greetsFor(f.tl, f.roster);
 	const seat: [number, number] = [0, 0];
 	const moods = ([0, 1] as const).map((team) => benchMoodAt(f.tl, t, team));
 	const clinch = recentFx(f.tl, t, ["clinch"], 10 * 60_000);
@@ -1119,6 +1475,11 @@ const benchStates = (
 		const ring = ringState(f, p.pid, p.team, at, t);
 		if (ring) {
 			out.push({ st: ring, warm });
+			continue;
+		}
+		const greet = greetState(f.tl, greets, p.pid, p.team, t, f.now ?? t);
+		if (greet) {
+			out.push({ st: greet, warm });
 			continue;
 		}
 		const mood = moods[p.team]!;
