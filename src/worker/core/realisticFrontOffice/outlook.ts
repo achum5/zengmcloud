@@ -29,6 +29,7 @@ import { buildDeadlineView, type DeadlineView } from "./timing.ts";
 import {
 	expectedRosterPoints,
 	lineSynergy,
+	SLOT_MINUTES,
 	playerLine,
 	typicalSynergy,
 	TYPICAL_FORWARD,
@@ -433,10 +434,33 @@ const UPSIDE_SPLIT = 4;
 // Whether a roster's points count injuries yet to come: by the team's own
 // setting when it prices its moves, by the league's (injuryView) where teams
 // are set against each other - where they finish, the league's average.
-let injuryView: boolean | undefined;
-const injuryFactor = (tid: number) =>
-	(injuryView ?? outlookSettingFor(tid, "injuryRisk")) ? 1 - INJURY_SHARE : 1;
-const withInjuryView = <T>(view: boolean, work: () => T) => {
+type InjuryMode = "off" | "flat" | "minutes";
+const injuryModeOf = (settings: {
+	injuryRisk: boolean;
+	injuryByMinutes: boolean;
+}): InjuryMode =>
+	!settings.injuryRisk ? "off" : settings.injuryByMinutes ? "minutes" : "flat";
+const leagueInjuryMode = () => injuryModeOf(outlookSettings);
+const teamInjuryMode = (tid: number) =>
+	injuryModeOf({
+		injuryRisk: outlookSettingFor(tid, "injuryRisk"),
+		injuryByMinutes: outlookSettingFor(tid, "injuryByMinutes"),
+	});
+// Each place in the pecking order there for its share of games fewer, by its
+// minutes (injuryByMinutes).
+let byMinutes: number[] | undefined;
+const minutesFactors = () =>
+	(byMinutes ??= SLOT_MINUTES.map((m) => 1 - INJURY_PER_MINUTES * m));
+let injuryView: InjuryMode | undefined;
+const injuryFactor = (tid: number) => {
+	const mode = injuryView ?? teamInjuryMode(tid);
+	return mode === "off"
+		? 1
+		: mode === "flat"
+			? 1 - INJURY_SHARE
+			: minutesFactors();
+};
+const withInjuryView = <T>(view: InjuryMode, work: () => T) => {
 	const was = injuryView;
 	injuryView = view;
 	try {
@@ -453,8 +477,7 @@ const injuryShiftFor = (
 	tid: number,
 	y: number,
 ) =>
-	outlook.injuryShift &&
-	outlookSettingFor(tid, "injuryRisk") !== outlookSettings.injuryRisk
+	outlook.injuryShift && teamInjuryMode(tid) !== leagueInjuryMode()
 		? (outlook.injuryShift[y] ?? 0)
 		: 0;
 
@@ -644,11 +667,19 @@ export const outlookSettings = {
 	// fourth seasons. Measured deadline waiting (measuredDeadline) is left
 	// off: CPU deals are almost never put off for the deadline.
 	injuryRisk: true,
+	// Injuries by minutes: each place in the pecking order there for a share
+	// of games fewer as it plays (INJURY_PER_MINUTES of its share of the
+	// game) - a starter about 10%, the end of the bench almost none - not
+	// everyone 8%. Off while it is measured.
+	injuryByMinutes: false,
 };
 
 // Measured in arena leagues: players on a team all season missed 6.5% of its
 // games at 12-18 minutes a game, 9.5% at 30-36.
 export const INJURY_SHARE = 0.08;
+// The same by the share of the game a player is on the floor: 9.5% at 30-36
+// minutes a game is 0.14 of 0.69 of the game.
+export const INJURY_PER_MINUTES = 0.14;
 
 // For the arena's version-against-version leagues: settings for some teams'
 // own rosters, over outlookSettings - the ones a team's pricing alone reads.
@@ -672,6 +703,7 @@ export const teamOutlookSettings = new Map<
 			| "colaPath"
 			| "measuredDeadline"
 			| "injuryRisk"
+			| "injuryByMinutes"
 		>
 	>
 >();
@@ -691,7 +723,8 @@ const outlookSettingFor = <
 		| "measuredUncertainty"
 		| "colaPath"
 		| "measuredDeadline"
-		| "injuryRisk",
+		| "injuryRisk"
+		| "injuryByMinutes",
 >(
 	tid: number,
 	key: K,
@@ -2052,7 +2085,7 @@ const rosterOnlyPoints = (
 	tid: number,
 	players: readonly Player[],
 ) =>
-	withInjuryView(outlookSettings.injuryRisk, () =>
+	withInjuryView(leagueInjuryMode(), () =>
 		teamPoints(
 			outlook,
 			tid,
@@ -2933,7 +2966,7 @@ export const buildOutlook = async ({
 	base.pickYears = new WeakMap();
 	base.futurePicks.clear();
 
-	const pointsAt = (view: boolean) =>
+	const pointsAt = (view: InjuryMode) =>
 		withInjuryView(
 			view,
 			() =>
@@ -2944,18 +2977,15 @@ export const buildOutlook = async ({
 					]),
 				),
 		);
-	const points = pointsAt(outlookSettings.injuryRisk);
+	const points = pointsAt(leagueInjuryMode());
 	base.basePoints = points;
 	// Only in the arena's version-against-version leagues: the average team at
-	// the other injuryRisk.
-	if (
-		[...teamOutlookSettings.values()].some(
-			(x) =>
-				x.injuryRisk !== undefined &&
-				x.injuryRisk !== outlookSettings.injuryRisk,
-		)
-	) {
-		const other = pointsAt(!outlookSettings.injuryRisk);
+	// the other injury setting.
+	const otherMode = teams
+		.map((t) => teamInjuryMode(t.tid))
+		.find((mode) => mode !== leagueInjuryMode());
+	if (otherMode) {
+		const other = pointsAt(otherMode);
 		const meanOf = (map: Map<number, number[]>, y: number) =>
 			teams.reduce((a, t) => a + map.get(t.tid)![y]!, 0) /
 			Math.max(1, teams.length);

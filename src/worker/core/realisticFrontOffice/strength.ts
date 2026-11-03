@@ -644,7 +644,7 @@ const sortedSynergyInput: (SynergyInput | undefined)[] = [];
 const layOut = (
 	sorted: readonly (StrengthPlayer & { availability: number })[],
 	enumerated: readonly StrengthPlayer[],
-	factor: number,
+	factor: number | readonly number[],
 ) => {
 	const n = sorted.length;
 	if (n > capacity) {
@@ -659,7 +659,7 @@ const layOut = (
 	}
 	for (let i = 0; i < n; i++) {
 		const p = sorted[i]!;
-		sortedAvailability[i] = Math.min(1, p.availability) * factor;
+		sortedAvailability[i] = Math.min(1, p.availability) * factorAt(factor, i);
 		sortedRoleFree[i] = p.roleFree;
 		sortedOffense[i] = p.offense;
 		sortedUsage[i] = p.usage;
@@ -879,17 +879,24 @@ const inPeckingOrder = (
 // Played out both ways, exactly: the best players we may or may not have.
 const ENUMERATED = 2;
 
-// `factor` scales everyone's chance of being there: a share of games lost
-// to injuries yet to come (outlookSettings.injuryRisk).
+// A chance of being there scaled by `factor` at this place in the pecking
+// order: one for everyone, or one a place (past the last, none).
+const factorAt = (factor: number | readonly number[], i: number) =>
+	typeof factor === "number" ? factor : (factor[i] ?? 1);
+
+// `factor` scales everyone's chance of being there - or each place's, by
+// where he stands in the pecking order: a share of games lost to injuries
+// yet to come (outlookSettings.injuryRisk).
 export const expectedRosterPoints = (
 	players: readonly (StrengthPlayer & { availability: number })[],
-	factor = 1,
+	factor: number | readonly number[] = 1,
 ) => {
 	const sorted = inPeckingOrder(players);
 	const n = sorted.length;
 	const uncertain: (StrengthPlayer & { availability: number })[] = [];
-	for (const p of sorted) {
-		if (Math.min(1, p.availability) * factor < 1) {
+	for (let i = 0; i < n; i++) {
+		const p = sorted[i]!;
+		if (Math.min(1, p.availability) * factorAt(factor, i) < 1) {
 			uncertain.push(p);
 			if (uncertain.length === ENUMERATED) {
 				break;
@@ -925,7 +932,9 @@ export const expectedRosterPoints = (
 		const i = uncertain.indexOf(p);
 		if (i >= 0) {
 			which.push(i);
-			odds.push(Math.min(1, p.availability) * factor);
+			odds.push(
+				Math.min(1, p.availability) * factorAt(factor, sorted.indexOf(p)),
+			);
 		}
 	}
 	let total = 0;

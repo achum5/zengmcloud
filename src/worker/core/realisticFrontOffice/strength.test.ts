@@ -16,6 +16,7 @@ import {
 	positionCost,
 	ROSTER_PLACES,
 	rosterPoints,
+	SLOT_MINUTES,
 	typicalSynergy,
 	type StrengthPlayer,
 	type ValueRatings,
@@ -292,5 +293,26 @@ test("injuries yet to come cost a roster leaning on one star more than a deep on
 		expectedRosterPoints(lines(starred), 1),
 		rosterPoints(starred),
 		1e-9,
+	);
+});
+
+test("injuries by minutes cost a star with little behind him more than the same share for everyone", () => {
+	const lines = (players: StrengthPlayer[]) =>
+		players.map((p) => ({ ...p, availability: 1 }));
+	const starred = [at(72), ...Array.from({ length: 12 }, (_, i) => at(50 - i))];
+	// A place-by-place factor the same everywhere is the flat factor.
+	assert.closeTo(
+		expectedRosterPoints(
+			lines(starred),
+			Array.from({ length: ROSTER_PLACES }, () => 0.92),
+		),
+		expectedRosterPoints(lines(starred), 0.92),
+		1e-9,
+	);
+	const byMinutes = SLOT_MINUTES.map((m) => 1 - 0.14 * m);
+	const full = expectedRosterPoints(lines(starred));
+	assert.isAbove(
+		full - expectedRosterPoints(lines(starred), byMinutes),
+		full - expectedRosterPoints(lines(starred), 0.92),
 	);
 });
