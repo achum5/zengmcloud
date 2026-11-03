@@ -229,6 +229,12 @@ const FINE_ON_MS = 7;
 const FINE_OFF_MS = 11;
 const FINE_RETRY_MS = 20_000;
 const FINE_SETTLE_MS = 3000;
+// A flag out on a play: the bug's down and distance a yellow FLAG from this
+// long after it is thrown (ms) until the next play.
+const FLAG_BUG_AFTER = 600;
+const FLAG_BUG_BG = "#f4cb16";
+const FLAG_BUG_INK = "#141414";
+const FLAG_BUG_PAD = "0.1em 0.45em";
 // How long the play-by-play may disagree with the roster before the field
 // gives up on the game (ms).
 const ROSTER_WAIT = 5000;
@@ -1573,12 +1579,25 @@ const Field3D = ({
 					capEl.style.opacity = o;
 				}
 			}
-			// The down and distance, and which side has the ball.
+			// The down and distance, and which side has the ball - a flag out on
+			// the play, in its place, a yellow FLAG until the next.
 			const play = playAt(tl, s.t);
-			const down = play?.situation ?? "";
-			if (down !== shown.current.down && downRef.current) {
+			const flagged =
+				play?.flags.some((f) => s.t >= f.t0 + FLAG_BUG_AFTER) === true;
+			const down = flagged ? "FLAG" : (play?.situation ?? "");
+			const downEl = downRef.current;
+			if (down !== shown.current.down && downEl) {
 				shown.current.down = down;
-				downRef.current.textContent = down;
+				downEl.textContent = down;
+				// (A league's own bug's bare text given a box of its own.)
+				const st = downEl.style;
+				downEl.dataset.was ??= [st.background, st.color, st.padding].join("|");
+				const [bg, ink, pad] = downEl.dataset.was.split("|");
+				st.background = flagged ? FLAG_BUG_BG : (bg ?? "");
+				st.color = flagged ? FLAG_BUG_INK : (ink ?? "");
+				st.fontWeight = flagged ? "700" : "";
+				st.padding = flagged && !pad ? FLAG_BUG_PAD : (pad ?? "");
+				st.borderRadius = flagged && !pad ? "0.15em" : "";
 			}
 			const side = play ? play.offense : -1;
 			if (side !== shown.current.ball) {
