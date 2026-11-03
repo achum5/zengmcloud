@@ -1,6 +1,6 @@
 import { HERO_CAM_FT } from "./action.ts";
 import type { FieldRig, Shot } from "./camera.ts";
-import type { Play } from "./director.ts";
+import { type Play, QB_CAM_FT } from "./director.ts";
 import type { FieldMoment } from "./evaluate.ts";
 import {
 	FIELD_L,
@@ -111,6 +111,10 @@ const INTERVIEW_CAM_Z = 6.2;
 // director's kickerRoutine): this wide, at about his chest - from down on
 // the field this far in front of where he sets, this high (see rigFor).
 const KICK_CLOSE = { width: 24, z: 3.4, camFt: 26, camZ: 4.4 };
+// And on the quarterback at the line before the snap (see the director's
+// QB_CLOSE): from his waist up, the camera up over the linemen down in
+// front of him and a way along toward the defense, on his face.
+const QB_CLOSE = { width: 16, z: 5, camFt: QB_CAM_FT, camZ: 6.8 };
 // And on the referee giving a foul after the play (see the director's
 // refCall), from the knees up - his arms over his head in it.
 const REF_CLOSE = { width: 13, z: 5.3, camFt: REF_CAM_FT, camZ: 6.2 };
@@ -512,12 +516,16 @@ const callingIn = (m: FieldMoment): boolean =>
 	!!m.play?.callIn && m.t >= m.play.callIn.t0;
 
 // Whom the picture is in close on now, if anyone - the kicker through his
-// routine, the referee giving a foul, a big play's man - where he stands
-// for it, and how.
+// routine, the quarterback at the line, the referee giving a foul, a big
+// play's man - where he stands for it, and how.
 export const closeUpOf = (m: FieldMoment) => {
 	const kick = m.play?.closeUp;
 	if (kick && m.t >= kick.t0 && m.t < kick.t1) {
 		return { pid: kick.pid, at: kick.at, ...KICK_CLOSE };
+	}
+	const qb = m.play?.qbClose;
+	if (qb && m.t >= qb.t0 && m.t < qb.t1) {
+		return { pid: qb.pid, at: qb.at, shift: qb.shift, ...QB_CLOSE };
 	}
 	const ref = m.play?.refCall;
 	if (ref && m.t >= ref.t0 && m.t < ref.t1) {

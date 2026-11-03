@@ -250,41 +250,42 @@ describe("3D field ratings", () => {
 	}, 80_000);
 
 	test("a back careful with the ball covers it up as he is hit more often", () => {
-		const game = games[0]!;
-		const careful = staged(game, (p) => ({ bsc: p.team === 0 ? 95 : 45 }));
-		// Of the men with the ball hit when `side` has it, the share with
-		// their other hand over it.
-		const share = (side: 0 | 1) => {
-			let covered = 0;
-			let hit = 0;
-			for (const play of careful.plays) {
-				if (play.offense !== side) {
-					continue;
-				}
-				for (const part of play.parts) {
-					if (part.team !== side) {
-						continue;
-					}
-					for (const l of part.legs) {
-						if (
-							["tackled", "tackledBack", "drive"].includes(l.move) &&
-							l.ball !== undefined &&
-							l.ball !== "hands" &&
-							l.ball !== "throw"
-						) {
-							hit += 1;
-							if (l.ball === "cover" || l.ball === "coverL") {
-								covered += 1;
+		// Of the men with the ball hit, the share with their other hand over
+		// it - the careful side's, the careless side's: in both games, each
+		// side the careful one in turn (the hits in one game too few to tell
+		// by).
+		const covered: [number, number] = [0, 0];
+		const hit: [number, number] = [0, 0];
+		for (const game of games) {
+			for (const side of [0, 1] as const) {
+				const tl = staged(game, (p) => ({ bsc: p.team === side ? 95 : 45 }));
+				for (const play of tl.plays) {
+					const k = play.offense === side ? 0 : 1;
+					for (const part of play.parts) {
+						if (part.team !== play.offense) {
+							continue;
+						}
+						for (const l of part.legs) {
+							if (
+								["tackled", "tackledBack", "drive"].includes(l.move) &&
+								l.ball !== undefined &&
+								l.ball !== "hands" &&
+								l.ball !== "throw"
+							) {
+								hit[k] += 1;
+								if (l.ball === "cover" || l.ball === "coverL") {
+									covered[k] += 1;
+								}
 							}
 						}
 					}
 				}
 			}
-			assert.isAbove(hit, 20);
-			return covered / hit;
-		};
-		assert.isAbove(share(0), share(1) + 0.08);
-	}, 80_000);
+		}
+		assert.isAbove(hit[0], 80);
+		assert.isAbove(hit[1], 80);
+		assert.isAbove(covered[0] / hit[0], covered[1] / hit[1] + 0.08);
+	}, 120_000);
 
 	test("a pass rusher who has the better of the man on him works him harder, and backs him up further - and a cover man who stands out sits tighter", () => {
 		const game = games[0]!;

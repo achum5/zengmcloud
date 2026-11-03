@@ -9,6 +9,7 @@ import { FIGURE_SCALE } from "./body.ts";
 import {
 	compileField,
 	isLineItem,
+	QB_CAM_FT,
 	targetForCursor,
 	type BallSeg,
 	type FieldTimeline,
@@ -541,6 +542,70 @@ describe("in close on a big play's man", () => {
 		}
 		assert.isAbove(close, 2);
 	}, 20_000);
+});
+
+// Before the snap on a big down, in close on the quarterback in the gun
+// reading the defense - from the near side, nobody in the way or stood just
+// behind him in the picture - and out wide again a while before the snap.
+describe("in close on the quarterback", () => {
+	test("in the gun, the camera on him clear, out before the snap", () => {
+		let close = 0;
+		for (const game of games) {
+			const tl = stage(game);
+			for (const play of tl.plays) {
+				const c = play.qbClose;
+				if (!c) {
+					continue;
+				}
+				close += 1;
+				const at = `play ${play.i}`;
+				assert.include(["pass", "run"], play.kind, at);
+				assert.isAtLeast(c.t0, play.t0 + 1500, at);
+				assert.isAtLeast(c.t1 - c.t0, 2599, at);
+				assert.isAtMost(c.t1 - c.t0, 3600, at);
+				assert.isAtMost(c.t1, play.snap - 1400, at);
+				assert.strictEqual(Math.sign(c.shift), play.dir, at);
+				const qb = play.parts.find((p) => p.pid === c.pid)!;
+				assert.strictEqual(qb.role, "QB", at);
+				assert.include(
+					["shotgun", "gunCall", "gunLook"],
+					legAt(qb, c.t1).move,
+					at,
+				);
+				const shot = aimFor(momentAt(tl, c.t0 + 100));
+				assert.isBelow(shot.width, 20, at);
+				for (let t = c.t0; t < c.t1; t += 100) {
+					const m = momentAt(tl, t);
+					const him = m.players.find((p) => p.id === c.pid)!;
+					if (t >= c.t0 + 1500) {
+						assert.isBelow(
+							Math.hypot(him.x - c.at.x, him.y - c.at.y),
+							0.01,
+							at,
+						);
+					}
+					for (const p of m.players) {
+						const d = p.y - c.at.y;
+						if (
+							p.id === c.pid ||
+							Math.abs(d) <= 1.5 ||
+							d <= -8 ||
+							d >= QB_CAM_FT
+						) {
+							continue;
+						}
+						const x = c.at.x + (c.shift * d) / QB_CAM_FT;
+						assert.isAtLeast(
+							Math.abs(p.x - x),
+							2.5,
+							`${at} ${p.id} @${t - c.t0}`,
+						);
+					}
+				}
+			}
+		}
+		assert.isAbove(close, 0);
+	}, 30_000);
 });
 
 describe("the chain crew", () => {

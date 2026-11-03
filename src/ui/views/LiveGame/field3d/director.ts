@@ -255,6 +255,10 @@ export type Play = {
 	// In close on the kicker through his routine before the snap (see
 	// kickerRoutine): from when, until when, and where he sets.
 	closeUp?: { t0: number; t1: number; pid: number; at: Pt };
+	// In close on the quarterback at the line before the snap (see
+	// QB_CLOSE): from when, until when, where he sets, and how far along the
+	// field from him, the way he faces, the camera is.
+	qbClose?: { t0: number; t1: number; pid: number; at: Pt; shift: number };
 	// In close on the referee as he gives the fouls on it (see crew.ts): from
 	// when, until when, and where he stands for it.
 	refCall?: { t0: number; t1: number; at: Pt };
@@ -719,6 +723,59 @@ const ringOut = (slots: Pt[], to: Pt[]) => {
 		}
 	}
 };
+// In close on the quarterback in the gun before the snap, from t0 to t1:
+// where he is set, and whether anybody is ever between him and the camera
+// on him (see QB_CAM_FT) over it, or just behind him in the picture - not
+// if so.
+const qbCloseFor = (
+	parts: Part[],
+	offense: Side,
+	dir: Dir,
+	t0: number,
+	t1: number,
+): Play["qbClose"] => {
+	const qb = parts.find((p) => p.team === offense && p.role === "QB");
+	const set = qb?.legs.at(-1);
+	if (!qb || !set || set.move !== "shotgun") {
+		return undefined;
+	}
+	const at = set.to;
+	const between = (q: Pt) => {
+		const d = q.y - at.y;
+		const x = at.x + (dir * QB_CAM_ALONG * d) / QB_CAM_FT;
+		return (
+			Math.abs(d) > 1.5 &&
+			d > -QB_BEHIND &&
+			d < QB_CAM_FT &&
+			Math.abs(q.x - x) < QB_CLEAR
+		);
+	};
+	const blocked = parts.some(
+		(p) =>
+			p !== qb &&
+			p.legs.some((l, j) => {
+				if (l.t0 > t1 || (l.t1 < t0 && j < p.legs.length - 1)) {
+					return false;
+				}
+				const n = Math.ceil(dist(l.from, l.to) / 1.5);
+				for (let k = 0; k <= n; k++) {
+					const u = n === 0 ? 0 : k / n;
+					if (
+						between({
+							x: l.from.x + (l.to.x - l.from.x) * u,
+							y: l.from.y + (l.to.y - l.from.y) * u,
+						})
+					) {
+						return true;
+					}
+				}
+				return false;
+			}),
+	);
+	return blocked
+		? undefined
+		: { t0, t1, pid: qb.pid, at, shift: dir * QB_CAM_ALONG };
+};
 // Set this long after the last man is, before the snap; and the cadence
 // from there (shortest, longest).
 const SET_HOLD = 450;
@@ -761,6 +818,22 @@ const KICK_CLOSE = 0.75;
 const KICK_CLOSE_XP = 0.25;
 const KICK_CLOSE_BEFORE = 400;
 const KICK_CLOSE_AFTER = 350;
+// In close on the quarterback in the gun, reading the defense, on this
+// share of third and fourth downs and plays in a tight finish - not one his head coach was just shown
+// calling in, not in a hurry: from this long before the offense is set,
+// until this long before the snap - the snap put back for it to be at
+// least this long, and no longer than this. From this far toward the near side of him (see aim.ts),
+// this far along toward the defense - nobody stood within this much of
+// the way between, or of it on past him this far.
+const QB_CLOSE = 0.8;
+const QB_CLOSE_BEFORE = 1200;
+const QB_CLOSE_LEAST = 2600;
+const QB_CLOSE_MOST = 3600;
+const QB_WIDE_BEFORE = 1400;
+export const QB_CAM_FT = 34;
+const QB_CAM_ALONG = 7;
+const QB_CLEAR = 2.5;
+const QB_BEHIND = 8;
 // Pre-snap motion: on this share of pass plays, a man off the line (the
 // flanker, a slot) this far across (feet) at this pace - never in closer
 // to the ball than this, nor nearer a sideline. In man coverage, his man
@@ -1606,11 +1679,25 @@ class Director {
 			: kind === "none"
 				? set + 400
 				: set + CADENCE[0] + (CADENCE[1] - CADENCE[0]) * r();
+		const qbClose =
+			!hurried &&
+			(kind === "pass" || kind === "run") &&
+			(clock.down === 3 || clock.down === 4 || tensed > 0) &&
+			!this.plays.at(-1)?.callIn &&
+			parts.find((p) => p.team === offense && p.role === "QB")?.legs.at(-1)
+				?.move === "shotgun" &&
+			this.rng(i0, "qbClose")() < QB_CLOSE;
+		if (qbClose) {
+			snap = Math.max(
+				snap,
+				set - QB_CLOSE_BEFORE + QB_CLOSE_LEAST + QB_WIDE_BEFORE,
+			);
+		}
 		const flagged = events.slice(i0, i1).some((e) => e?.type === "flag");
 		if (kind === "pass" && !flagged) {
 			snap = this.motion(parts, offense, dir, losX, ballY, set, snap, i0);
 		}
-		this.cadence(parts, offense, snap, i0);
+		this.cadence(parts, offense, snap, i0, qbClose);
 		const routine =
 			kind === "fieldGoal" || kind === "extraPoint"
 				? this.kickerRoutine(parts, offense, dir, snap, i0, kind)
@@ -1628,6 +1715,18 @@ class Director {
 			this.lineDown(parts, offense, snap, i0);
 		}
 		paceWalkUps(parts);
+		const qbCloseUp = qbClose
+			? qbCloseFor(
+					parts,
+					offense,
+					dir,
+					set - QB_CLOSE_BEFORE,
+					Math.min(
+						snap - QB_WIDE_BEFORE,
+						set - QB_CLOSE_BEFORE + QB_CLOSE_MOST,
+					),
+				)
+			: undefined;
 
 		// The ball: spotted (on its tee, for a kickoff), then under the
 		// center's hand once he is over it.
@@ -2502,6 +2601,7 @@ class Director {
 				: {}),
 			...(measure ? { measure: { cut: measure.cut, at: measure.at } } : {}),
 			...(routine?.closeUp ? { closeUp: routine.closeUp } : {}),
+			...(qbCloseUp ? { qbClose: qbCloseUp } : {}),
 			...(refCall ? { refCall } : {}),
 			...(heroClose ? { heroClose } : {}),
 			...(callIn ? { callIn } : {}),
@@ -3135,8 +3235,15 @@ class Director {
 	// THE QUARTERBACK AT THE LINE: under center, stood up behind him first
 	// to read the defense - his head round one way and the other, now and
 	// then an arm out at the man he picks out - and down under him for the
-	// ball; in the gun, the same look round and a clap for it.
-	cadence(parts: Part[], offense: Side, snap: number, i0: number) {
+	// ball; in the gun, the same look round and a clap for it - from as
+	// soon as he is set, with the picture in close on him for it.
+	cadence(
+		parts: Part[],
+		offense: Side,
+		snap: number,
+		i0: number,
+		close: boolean,
+	) {
 		const qb = parts.find((p) => p.team === offense && p.role === "QB");
 		const set = qb?.legs.at(-1);
 		if (!qb || !set || set.t1 > set.t0) {
@@ -3199,7 +3306,9 @@ class Director {
 				still(down + GET_UNDER_MS, "underCenter"),
 			);
 		} else if (set.move === "shotgun") {
-			const from = Math.max(set.t0 + 150, snap - GUN_CALL_MS);
+			const from = close
+				? set.t0 + 150
+				: Math.max(set.t0 + 150, snap - GUN_CALL_MS);
 			if (snap - from < GUN_CALL_MIN) {
 				return;
 			}
