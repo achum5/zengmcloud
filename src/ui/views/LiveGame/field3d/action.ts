@@ -3294,6 +3294,11 @@ const UP_AGAIN_REACT_MS = [250, 550] as const;
 const UP_AGAIN_PACE = 0.6;
 const UP_AGAIN_FT = [8, 7] as const;
 const UP_AGAIN_LEAST_MS = 1200;
+// (Up again with the ball still going (see upAgain): with it, not off to
+// its last spot, if he would be there this long (ms) before it is - in it
+// once it is no further from there than SETTLED_FT.)
+const UP_AGAIN_EARLY_MS = 1000;
+const SETTLED_FT = 4;
 // A loose ball batted about: no nearer than this to the spot he dives from
 // (feet), he is laid out for it from where he is, not stepping in first.
 const BAT_RUN_LEAST_FT = 1.5;
@@ -14208,6 +14213,16 @@ class Action {
 		const taken = this.men
 			.filter((m) => !up.has(m))
 			.map((m) => m.posAt(this.whistle));
+		// (When the ball is in the spot it ends in: from then on no further
+		// off it than SETTLED_FT.)
+		let settled = this.whistle;
+		for (let c = this.whistle; c > snap; c -= 50) {
+			const at = this.ballAt(c);
+			if (!at || dist(at, end) > SETTLED_FT) {
+				break;
+			}
+			settled = c;
+		}
 		for (const [m, t] of [...up].sort(
 			(a, b) => dist(a[0].at, end) - dist(b[0].at, end),
 		)) {
@@ -14216,31 +14231,47 @@ class Action {
 			if (far <= ring + 2) {
 				continue;
 			}
-			const a = Math.atan2(m.at.y - end.y, m.at.x - end.x);
-			const round = (turn: number) => ({
-				x: end.x + Math.cos(a + turn / ring) * ring,
-				y: end.y + Math.sin(a + turn / ring) * ring,
-			});
-			const to = GATHER_ROUND.map(round).find((q) =>
-				taken.every((p) => dist(p, q) >= GATHER_APART),
-			);
-			if (!to) {
-				continue;
-			}
-			taken.push(to);
+			const spot = () => {
+				const a = Math.atan2(m.at.y - end.y, m.at.x - end.x);
+				const round = (turn: number) => ({
+					x: end.x + Math.cos(a + turn / ring) * ring,
+					y: end.y + Math.sin(a + turn / ring) * ring,
+				});
+				return GATHER_ROUND.map(round).find((q) =>
+					taken.every((p) => dist(p, q) >= GATHER_APART),
+				);
+			};
 			const go =
 				t +
 				UP_AGAIN_REACT_MS[0] +
 				(UP_AGAIN_REACT_MS[1] - UP_AGAIN_REACT_MS[0]) * countOf(m, snap, 26);
+			const pace = m.top * UP_AGAIN_PACE;
+			// (The ball still going a good while after he would be there - a
+			// return, a fumble picked up and taken on: with it as it goes,
+			// kept off it, till it is in its spot - not off to that spot
+			// ahead of it, to stand there waiting for it.)
+			const early =
+				settled - go - ((far - ring) / pace) * 1000 > UP_AGAIN_EARLY_MS;
+			const to = early ? undefined : spot();
+			if (!early && !to) {
+				continue;
+			}
 			if (m.t > go) {
 				m.cut(go);
 			}
 			m.hold(go);
-			const pace = m.top * UP_AGAIN_PACE;
-			if (go + (dist(m.at, to) / pace) * 1000 <= this.whistle) {
-				m.runUp(to, pace);
+			if (early) {
+				this.alongWith(m, pace, ring, settled);
+			}
+			const at = to ?? spot();
+			if (!at) {
+				continue;
+			}
+			taken.push(at);
+			if (m.t + (dist(m.at, at) / pace) * 1000 <= this.whistle) {
+				m.runUp(at, pace);
 			} else {
-				m.chase(to, this.whistle, pace);
+				m.chase(at, this.whistle, pace);
 			}
 		}
 	}
