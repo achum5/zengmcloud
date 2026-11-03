@@ -168,6 +168,29 @@ const CALL_TALK_AFTER = 150;
 // The picture in close on him giving it (see aim.ts): from down on the
 // field this far in front of him.
 export const REF_CAM_FT = 20;
+// The foul told to the referee (see stageCrew): from this long after the
+// whistle, over to him at this pace (ft/s), the referee no further than
+// this to meet him (feet), and no nearer the sidelines than this (with the
+// picture in close on him from in front - REF_CAM_FT - on the field), this
+// far apart side by side; over the last of it (feet off), turned to him;
+// over this long to get there on top of the going, at it this long at
+// least, his signal shown from this long in for this long (from this long
+// in, from far off) - done this long before the referee turns to give it.
+const TOLD_GO = 300;
+const TOLD_FPS = 13;
+const TOLD_R_MOST = 15;
+const TOLD_IN = 6;
+const TOLD_APART = 3.6;
+const TOLD_TURN_FT = 2.5;
+const TOLD_EASE_MS = 450;
+const TOLD_LEAST = 900;
+const TOLD_SIGN_AFTER = 150;
+const TOLD_SIGN_MS = 1100;
+const TOLD_FAR_SIGN = 500;
+const TOLD_GAP = 150;
+// (Off this far further along from him after.)
+const TOLD_BACK = 8;
+const TOLD_BEHIND = 0.8;
 // How long each other signal is held.
 const SIGNAL_MS: Record<Signaled, number> = {
 	td: 2000,
@@ -267,8 +290,16 @@ export const anyBall = (
 	return s?.kind === "spot" ? s.at : groundBall(segs, parts, t);
 };
 
-// Stopped where he is, facing `yaw`, from t0 to t1 (to give a signal).
-type Hold = { o: Official; t0: number; t1: number; yaw: number };
+// Stopped where he is, facing `yaw`, from t0 to t1 (to give a signal) -
+// or, `to` somewhere, over there at that pace first.
+type Hold = {
+	o: Official;
+	t0: number;
+	t1: number;
+	yaw: number;
+	to?: Pt;
+	fps?: number;
+};
 
 // The leg he is in at t made two, there.
 const splitAt = (legs: Leg[], t: number) => {
@@ -337,7 +368,14 @@ const leftArm = (yaw: number, way: number) => -Math.sin(yaw) * way < 0;
 
 export const stageCrew = (
 	input: CrewInput,
-): { parts: CrewPart[]; flags: FlagFlight[]; bags: FlagFlight[] } => {
+): {
+	parts: CrewPart[];
+	flags: FlagFlight[];
+	bags: FlagFlight[];
+	// The foul told to the referee (see below): from when to when, and
+	// whether at his side.
+	report?: { t0: number; t1: number; near: boolean };
+} => {
 	const { kind, dir, losX, ballY, r } = input;
 	const w = (p: OPt): Pt => ({ x: losX + dir * p.d, y: ballY + dir * p.a });
 	const of = (p: Pt): OPt => ({
@@ -543,7 +581,10 @@ export const stageCrew = (
 			let target: Pt;
 			let fps = TOP;
 			if (hold) {
-				target = at;
+				target = hold.to ?? at;
+				if (hold.to) {
+					fps = hold.fps ?? JOG;
+				}
 			} else if (playing) {
 				const ball =
 					t >= follow ? groundBall(input.ball, input.parts, t) : undefined;
@@ -600,8 +641,18 @@ export const stageCrew = (
 			const going = Math.atan2(vy, vx);
 			let move: Move;
 			let yaw: number;
-			if (hold) {
-				move = speed < 0.8 ? "stand" : "walk";
+			if (hold?.to && speed >= 0.8 && dist(at, hold.to) > TOLD_TURN_FT) {
+				// (On his way over: turned the way he goes.)
+				move = gait(speed);
+				yaw = going;
+			} else if (hold) {
+				// (Backing off, still turned the way he holds.)
+				move =
+					speed < 0.8
+						? "stand"
+						: Math.cos(going - hold.yaw) < -0.4
+							? "back"
+							: "walk";
 				yaw = hold.yaw;
 			} else if (speed < 0.8) {
 				move = "stand";
@@ -755,18 +806,127 @@ export const stageCrew = (
 			});
 		}
 	}
+	// THE FOUL TOLD TO THE REFEREE: the first seen in the play, by the man
+	// who threw for it (not the referee's own), once it is dead - over to
+	// him, the referee a few steps to meet him, side by side to the press
+	// box, the foul's signal shown him as he tells it - then off as the
+	// referee turns to give it. From too far off for that, stopped where he
+	// is, turned to him and the signal shown him from there.
+	let report: { t0: number; t1: number; near: boolean } | undefined;
+	let beside:
+		| { o: Official; side: number; there: Hold; at: Hold; after: Hold }
+		| undefined;
+	const thrower = new Map<Foul, Official>();
+	const told = input.calls.find((c) => c.foul.told);
+	if (told) {
+		const f = told.foul;
+		const o = nearest(f.by, f.at, f.t);
+		thrower.set(f, o);
+		const by = told.t - SETTLE_MS - TOLD_GAP;
+		const go = Math.max(
+			whistle + TOLD_GO,
+			...holds
+				.filter((h) => (h.o === o || h.o === "R") && h.t0 < by)
+				.map((h) => h.t1),
+		);
+		if (o !== "R" && by - go >= TOLD_LEAST) {
+			const pO = where(o, go);
+			const pR = where("R", go);
+			const apart = dist(pO, pR) || 1;
+			const step = Math.min(apart / 2, TOLD_R_MOST);
+			const rTo = {
+				x: clamp(pR.x + ((pO.x - pR.x) / apart) * step, 2, FIELD_L - 2),
+				y: clamp(
+					pR.y + ((pO.y - pR.y) / apart) * step,
+					TOLD_IN,
+					FIELD_W - REF_CAM_FT - TOLD_IN,
+				),
+			};
+			const side = pO.x >= rTo.x ? 1 : -1;
+			// (A touch back of him from the press box, never in front.)
+			const oTo = { x: rTo.x + side * TOLD_APART, y: rTo.y - TOLD_BEHIND };
+			const met =
+				go +
+				Math.max(
+					(dist(pO, oTo) / TOLD_FPS) * 1000,
+					(dist(pR, rTo) / JOG) * 1000,
+				) +
+				TOLD_EASE_MS;
+			const faceR = Math.atan2(rTo.y - oTo.y, rTo.x - oTo.x);
+			if (by - met >= TOLD_LEAST) {
+				// (Then a few steps off along the field, out of the picture
+				// in close on the referee - not across in front of him - and
+				// turned to him again as he gives it.)
+				const off = { x: oTo.x + side * TOLD_BACK, y: oTo.y };
+				const gone = Math.max(...input.calls.map((c) => c.t)) + CALL_FOR_MS;
+				beside = {
+					o,
+					side,
+					there: { o, t0: go, t1: met, yaw: faceR, to: oTo, fps: TOLD_FPS },
+					at: { o, t0: met, t1: by, yaw: faceR },
+					after: { o, t0: by, t1: gone, yaw: faceR, to: off, fps: WALK },
+				};
+				holds.push(
+					beside.there,
+					beside.at,
+					beside.after,
+					{ o: "R", t0: go, t1: met, yaw: faceR + Math.PI, to: rTo, fps: JOG },
+					{ o: "R", t0: met, t1: told.t - SETTLE_MS, yaw: faceR + Math.PI },
+				);
+				arms.push({
+					o,
+					move: f.signal,
+					t0: met + TOLD_SIGN_AFTER,
+					t1: Math.min(by, met + TOLD_SIGN_AFTER + TOLD_SIGN_MS),
+				});
+				report = { t0: met, t1: by, near: true };
+			} else {
+				const yaw = Math.atan2(pR.y - pO.y, pR.x - pO.x);
+				holds.push(
+					{ o, t0: go, t1: by, yaw },
+					{ o: "R", t0: go, t1: told.t - SETTLE_MS, yaw: yaw + Math.PI },
+				);
+				arms.push({
+					o,
+					move: f.signal,
+					t0: go + TOLD_FAR_SIGN,
+					t1: Math.min(by, go + TOLD_FAR_SIGN + TOLD_SIGN_MS),
+				});
+				report = { t0: go, t1: by, near: false };
+			}
+		}
+	}
 	for (const p of posts) {
 		const mine = holds.filter((h) => h.o === p.o);
 		if (mine.length > 0) {
 			legsOf.set(p.o, walk(p, mine));
 		}
 	}
+	// (Beside the referee where he has got to, not where he was going.)
+	if (beside && report) {
+		const r = where("R", report.t0);
+		const to = { x: r.x + beside.side * TOLD_APART, y: r.y - TOLD_BEHIND };
+		const yaw = Math.atan2(r.y - to.y, r.x - to.x);
+		beside.there.to = to;
+		beside.after.to = { x: to.x + beside.side * TOLD_BACK, y: to.y };
+		for (const h of [beside.there, beside.at, beside.after]) {
+			h.yaw = yaw;
+		}
+		const p = posts.find((q) => q.o === beside!.o)!;
+		legsOf.set(
+			p.o,
+			walk(
+				p,
+				holds.filter((h) => h.o === p.o),
+			),
+		);
+	}
 
 	// The flags: each thrown by the nearest of the men who would see it,
 	// toward where it was, high and down there.
 	const flags: FlagFlight[] = [];
 	for (const f of input.fouls) {
-		const o = nearest(f.by, f.at, f.t);
+		const o = thrower.get(f) ?? nearest(f.by, f.at, f.t);
 		arms.push({ o, move: "flagToss", t0: f.t - 350, t1: f.t + 350 });
 		const t0 = f.t + 175;
 		const from = where(o, t0);
@@ -838,6 +998,11 @@ export const stageCrew = (
 	for (const c of input.calls) {
 		talkOver(legsOf.get("R")!, c.t + CALL_TALK_AFTER, c.t + CALL_FOR_MS);
 	}
+	// (And the man telling him, telling him.)
+	if (report?.near && told) {
+		const o = thrower.get(told.foul)!;
+		talkOver(legsOf.get(o)!, report.t0 + CALL_TALK_AFTER, report.t1);
+	}
 
 	return {
 		parts: posts.map((p) => ({
@@ -847,6 +1012,7 @@ export const stageCrew = (
 		})),
 		flags,
 		bags,
+		...(report ? { report } : {}),
 	};
 };
 

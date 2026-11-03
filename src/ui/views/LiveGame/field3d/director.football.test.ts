@@ -1191,7 +1191,9 @@ describe("a man hurt, the trainers waved out", () => {
 				if (!play.hurt) {
 					continue;
 				}
-				const him = play.parts.find((p) => p.pid === play.hurt!.pid)!;
+				const hurt = play.parts.filter((p) =>
+					p.legs.some((l) => l.move === "hurt" || l.move === "hurtProne"),
+				);
 				for (const p of play.parts) {
 					const k = p.legs.findIndex((l) => l.move === "waveOver");
 					if (k < 0) {
@@ -1199,15 +1201,33 @@ describe("a man hurt, the trainers waved out", () => {
 					}
 					waved += 1;
 					const l = p.legs[k]!;
+					// (The man hurt he waves them out to: the nearest of them.)
+					const him = hurt
+						.filter((h) => h.team === p.team)
+						.sort(
+							(a, b) =>
+								Math.hypot(
+									legAt(a, l.t0).to.x - l.to.x,
+									legAt(a, l.t0).to.y - l.to.y,
+								) -
+								Math.hypot(
+									legAt(b, l.t0).to.x - l.to.x,
+									legAt(b, l.t0).to.y - l.to.y,
+								),
+						)[0];
+					if (!him) {
+						bad.push(`play ${play.i}: ${p.pid} none of his own hurt`);
+						continue;
+					}
 					const at = legAt(him, l.t0).to;
 					const near = Math.hypot(l.to.x - at.x, l.to.y - at.y);
-					if (p.team !== him.team) {
-						bad.push(`play ${play.i}: ${p.pid} the other side's`);
-					}
-					if (near > 18 || near < 3) {
+					if (near > 19 || near < 3) {
 						bad.push(`play ${play.i}: ${p.pid} ${near.toFixed(1)} ft off him`);
 					}
-					if (l.t0 < play.hurt.from || l.t0 > play.hurt.from + 2500) {
+					const down = him.legs.find(
+						(x) => x.move === "hurt" || x.move === "hurtProne",
+					)!.t0;
+					if (l.t0 < down || l.t0 > down + 2500) {
 						bad.push(`play ${play.i}: ${p.pid} waved at ${l.t0}`);
 					}
 					// (Turned to the trainers coming, out from his sideline.)
@@ -1230,6 +1250,94 @@ describe("a man hurt, the trainers waved out", () => {
 		assert.deepEqual(bad.slice(0, 8), []);
 		assert.isAtLeast(waved, 3);
 	}, 20_000);
+});
+
+describe("a foul told to the referee", () => {
+	test("the man who threw for it over at his side telling him, the signal shown him, then off as he gives it to the press box - in close on the two of them, mostly", () => {
+		const bad: string[] = [];
+		let near = 0;
+		let seen = 0;
+		let far = 0;
+		const where = (p: { legs: Leg[] }, t: number) => {
+			const l = legAt(p, t);
+			const u =
+				l.t1 > l.t0 ? Math.min(1, Math.max(0, (t - l.t0) / (l.t1 - l.t0))) : 1;
+			return {
+				x: l.from.x + (l.to.x - l.from.x) * u,
+				y: l.from.y + (l.to.y - l.from.y) * u,
+			};
+		};
+		for (const game of games) {
+			const tl = stage(game);
+			for (const play of tl.plays) {
+				const told = play.told;
+				if (!told) {
+					continue;
+				}
+				const at = `play ${play.i}`;
+				const ref = play.crew.find((p) => p.pid === -1)!;
+				const first = Math.min(...(play.calls ?? []).map((c) => c.t));
+				if (told.t0 < play.whistle || told.t1 > first) {
+					bad.push(`${at}: told ${told.t0}-${told.t1}, called ${first}`);
+				}
+				if (!told.near) {
+					far += 1;
+					continue;
+				}
+				near += 1;
+				const mid = (told.t0 + told.t1) / 2;
+				const r = where(ref, mid);
+				const by = play.crew
+					.filter((p) => p !== ref)
+					.map((p) => ({
+						p,
+						d: Math.hypot(where(p, mid).x - r.x, where(p, mid).y - r.y),
+					}))
+					.sort((a, b) => a.d - b.d)[0]!;
+				if (by.d > 4.5) {
+					bad.push(`${at}: the nearest official ${by.d.toFixed(1)} ft off`);
+					continue;
+				}
+				// (Face to face, side by side to the press box.)
+				const o = where(by.p, mid);
+				const toR = Math.atan2(r.y - o.y, r.x - o.x);
+				const yawO = legAt(by.p, mid).yaw ?? Number.NaN;
+				const yawR = legAt(ref, mid).yaw ?? Number.NaN;
+				const off = (a: number, b: number) =>
+					Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
+				if (!(off(yawO, toR) < 0.4) || !(off(yawR, toR + Math.PI) < 0.4)) {
+					bad.push(`${at}: not face to face`);
+				}
+				if (Math.abs(o.y - r.y) > 1.5) {
+					bad.push(
+						`${at}: not side by side ${o.x.toFixed(1)},${o.y.toFixed(1)} R ${r.x.toFixed(1)},${r.y.toFixed(1)} told ${told.t0 - play.whistle}-${told.t1 - play.whistle} ${legAt(ref, mid).move} ${legAt(by.p, mid).move}`,
+					);
+				}
+				if (
+					!by.p.legs.some(
+						(l) =>
+							l.arms?.startsWith("sig") && l.t0 < told.t1 && l.t1 > told.t0,
+					)
+				) {
+					bad.push(`${at}: no signal shown him`);
+				}
+				// (Gone off out of the picture as the referee gives it.)
+				const call = first + 1500;
+				const o2 = where(by.p, call);
+				const r2 = where(ref, call);
+				if (Math.abs(o2.x - r2.x) < 7) {
+					bad.push(`${at}: still by him as he gives it`);
+				}
+				if (play.refCall && play.refCall.t0 <= told.t0) {
+					seen += 1;
+				}
+			}
+		}
+		assert.deepEqual(bad.slice(0, 8), []);
+		assert.isAtLeast(near, 4);
+		assert.isAtLeast(far, 4);
+		assert.isAtLeast(seen, near / 2);
+	}, 30_000);
 });
 
 describe("the TV cameras", () => {

@@ -283,6 +283,10 @@ export type Play = {
 	// In close on the referee as he gives the fouls on it (see crew.ts): from
 	// when, until when, and where he stands for it.
 	refCall?: { t0: number; t1: number; at: Pt };
+	// The first foul seen in the play told him first by the official who
+	// threw for it (see crew.ts): from when, until when, and whether at his
+	// side or from far off.
+	told?: { t0: number; t1: number; near: boolean };
 	// A big play's moment over, the picture on the home side's head coach
 	// across the field taking it (see COACH_REACT): from when, until when,
 	// where he stands, and whether it went his side's way.
@@ -568,6 +572,9 @@ const AFTER_PLAY: Record<string, number> = {
 	turnoverOnDowns: 1000,
 	twoPointConversionFailed: 900,
 };
+// (And a foul seen in the play this much later: told to the referee
+// first.)
+const TOLD_MS = 2500;
 // Lines that come one after another, no closer than this.
 const LINE_GAP = 450;
 // On to the next play this long after the last line of one.
@@ -2051,6 +2058,7 @@ class Director {
 		let results = 0;
 		let lastAt = base;
 		let pre = 0;
+		let told = false;
 		for (let i = i0; i < i1; i++) {
 			const e = events[i];
 			if (!e) {
@@ -2105,6 +2113,16 @@ class Director {
 				want = snap + 1300;
 			} else {
 				want = lastAt + (AFTER_PLAY[e.type] ?? 1200);
+				// (The first foul seen in the play: told to the referee by the
+				// man who threw for it first - see crew.ts.)
+				if (
+					e.type === "penalty" &&
+					!told &&
+					fouls.some((f) => f.penI === i && f.told)
+				) {
+					want += TOLD_MS;
+					told = true;
+				}
 			}
 			lastAt = this.line(i, e.type, want);
 		}
@@ -2490,6 +2508,7 @@ class Director {
 			const done =
 				Math.max(...calls.map((c) => c.t)) + CALL_FOR_MS + REF_CLOSE_AFTER;
 			let from = first - REF_CLOSE_BEFORE;
+			let least = -Infinity;
 			let until = Math.min(
 				t1 - done < REF_CLOSE_ON ? t1 : done,
 				timeout?.call?.from ?? Infinity,
@@ -2499,7 +2518,8 @@ class Director {
 			);
 			// (Not over the moment after a big play.)
 			if (acted?.party && acted.until && acted.party.from < until) {
-				from = Math.max(from, acted.until + REF_AFTER_PARTY);
+				least = acted.until + REF_AFTER_PARTY;
+				from = Math.max(from, least);
 			}
 			// (Nobody between the camera and him: in on him once nobody is,
 			// and back out if somebody comes.)
@@ -2526,6 +2546,14 @@ class Director {
 					until = t;
 					break;
 				}
+			}
+			// (And back to the man who threw the flag at his side telling him
+			// it, as long as nobody comes between them and the camera.)
+			const told = crew.report?.near
+				? Math.max(crew.report.t0 - REF_CLOSE_BEFORE, least)
+				: Infinity;
+			while (from - REF_WAY_STEP >= told && !inWay(from - REF_WAY_STEP)) {
+				from -= REF_WAY_STEP;
 			}
 			return until - from >= REF_CLOSE_LEAST && at.y + REF_CAM_FT < FIELD_W
 				? { t0: from, t1: until, at }
@@ -2936,6 +2964,7 @@ class Director {
 			...(tablet ? { tablet } : {}),
 			...(greeted ? { coaches: greeted.men, greet: greeted.greet } : {}),
 			...(refCall ? { refCall } : {}),
+			...(crew.report ? { told: crew.report } : {}),
 			...(heroClose ? { heroClose } : {}),
 			...(callIn ? { callIn } : {}),
 			...(coachReact ? { coachReact } : {}),

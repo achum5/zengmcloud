@@ -282,6 +282,25 @@ const pullUp = (legs: Leg[], t: number): number => {
 	return t0;
 };
 
+// Where he stops if pulled up at t (see pullUp).
+const stopsAt = (legs: Leg[], t: number): Pt => {
+	const p = posOf(legs, t);
+	const l = legs.findLast((x) => x.t0 <= t);
+	if (!l || moveKind(l.move) !== "cycle" || l.yaw !== undefined) {
+		return p;
+	}
+	const far = dist(l.from, l.to);
+	const v = l.t1 > l.t0 ? far / ((l.t1 - l.t0) / 1000) : 0;
+	if (v < PULL_LEAST || far === 0) {
+		return p;
+	}
+	const on = (v * v) / (2 * PULL_EASE);
+	return {
+		x: p.x + ((l.to.x - l.from.x) / far) * on,
+		y: p.y + ((l.to.y - l.from.y) / far) * on,
+	};
+};
+
 // Out to him at OUT_FPS - pulled up over the last of it at OUT_EASE
 // (ft/s/s, down to a walk's pace), in steps this long, not stopped dead.
 const OUT_EASE = 12;
@@ -544,7 +563,7 @@ export const stageHurt = (input: {
 							) &&
 							onFeet(p),
 					)
-					.map((p) => ({ p, d: dist(posOf(p.legs, waveAt), at) }))
+					.map((p) => ({ p, d: dist(stopsAt(p.legs, waveAt), at) }))
 					.filter(({ d }) => d >= WAVE_OFF && d <= WAVE_NEAR)
 					.sort((a, b) => a.d - b.d)[0]?.p
 			: undefined;

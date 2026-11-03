@@ -23,6 +23,9 @@ export type Foul = {
 	at: Pt;
 	// Who throws for it: whichever of these is nearest.
 	by: readonly Official[];
+	// Seen in the play (not before the snap, nor at it, nor after the
+	// whistle): told to the referee before he gives it (see crew.ts).
+	told?: true;
 };
 
 export type FoulInput = {
@@ -344,6 +347,9 @@ export const foulsOf = (input: FoulInput): Foul[] => {
 			t,
 			at: { x: at.x, y: at.y },
 			by: name === "Delay of game" ? ["BJ", "R"] : BY[when],
+			...(when !== "pre" && when !== "snap" && when !== "after"
+				? { told: true as const }
+				: {}),
 		};
 	});
 };
