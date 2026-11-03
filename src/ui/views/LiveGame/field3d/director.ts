@@ -76,7 +76,7 @@ import { SHOWER, SHOWER_MARGIN, type Shower } from "./shower.ts";
 import { stageTv } from "./tv.ts";
 import { stageToss, tossCrew } from "./toss.ts";
 import { runOutCrew, stageRunOut, type RunOut } from "./tunnel.ts";
-import { sidelineOf } from "./sideline.ts";
+import { headCoachAt, sidelineOf } from "./sideline.ts";
 
 // THE GAME STAGED: every snap of the play-by-play, in feet and milliseconds -
 // who is on the field for it, where each man lines up, the ball, and the
@@ -258,6 +258,10 @@ export type Play = {
 	// In close on the referee as he gives the fouls on it (see crew.ts): from
 	// when, until when, and where he stands for it.
 	refCall?: { t0: number; t1: number; at: Pt };
+	// Third down for the home side next: the picture on its head coach
+	// across the field, calling it in, from when to the next play - and
+	// where he stands for it (see sideline.ts, aim.ts).
+	callIn?: { t0: number; t1: number; side: Side; at: Pt };
 	// In close on the man a big play's moment after it is about - the man
 	// who made the sack, the scorer, the man pointing out a first down after
 	// a long gain - on his own in it, before the rest get to him (see
@@ -464,6 +468,15 @@ const BETWEEN_MS = 4200;
 // A field goal shown again (see replays.ts) if it ties the game, or puts
 // them ahead, in the last this many minutes of it.
 const LATE_KICK = 5;
+// Third down for the home side next (its head coach across the field from
+// the camera, the visitors' under it), this share of the time: the picture
+// on him calling it in, from this long after the play is over - if that
+// leaves this long of it - to the next play. Not in the two-minute drill
+// (no huddle), nor with anything else to show after the play.
+const CALL_IN_SHARE = 0.5;
+const CALL_IN_AFTER = 1300;
+const CALL_IN_LEAST = 1500;
+const HURRY_MINUTES = 2;
 // After the play: how long after the line before each is said.
 const AFTER_PLAY: Record<string, number> = {
 	penalty: 1600,
@@ -2352,6 +2365,41 @@ class Director {
 				? { ...best, pid, at }
 				: undefined;
 		})();
+		const callIn = (() => {
+			const next = events[i1];
+			if (
+				ended ||
+				half ||
+				hurt ||
+				timeout ||
+				measureAt ||
+				between !== undefined ||
+				replay ||
+				refCall ||
+				heroClose ||
+				next?.type !== "clock" ||
+				next.t !== 0 ||
+				next.down !== 3 ||
+				next.awaitingAfterTouchdown
+			) {
+				return undefined;
+			}
+			const left = typeof next.clock === "number" ? next.clock : 15;
+			if (
+				left <= HURRY_MINUTES &&
+				(quarter * 2 === this.numPeriods || quarter >= this.numPeriods)
+			) {
+				return undefined;
+			}
+			const t0 = offAt + CALL_IN_AFTER;
+			return this.rng(i0, "callIn")() < CALL_IN_SHARE &&
+				t1 - t0 >= CALL_IN_LEAST
+				? { t0, t1, side: 1 as Side, at: headCoachAt(1, i0) }
+				: undefined;
+		})();
+		if (callIn) {
+			this.cuts.push(callIn.t0);
+		}
 		const chains = stageChains({
 			quarter,
 			dir,
@@ -2456,6 +2504,7 @@ class Director {
 			...(routine?.closeUp ? { closeUp: routine.closeUp } : {}),
 			...(refCall ? { refCall } : {}),
 			...(heroClose ? { heroClose } : {}),
+			...(callIn ? { callIn } : {}),
 			...(between !== undefined ? { between } : {}),
 			...(acted?.party && acted.until
 				? { party: { ...acted.party, until: acted.until } }

@@ -1071,6 +1071,43 @@ describe("the head coach", () => {
 		assert.isAbove(protests, 0);
 		assert.isBelow(protests, calls);
 	}, 120_000);
+
+	// Now and then before the home side's third down, the picture on its head
+	// coach across the field calling it in, the play sheet up over his mouth
+	// - on his spot for it, and on to the next play from there.
+	test("calling in a third down, the play sheet up over his mouth", () => {
+		let shots = 0;
+		for (const game of games) {
+			const tl = stage(game);
+			const men = sidelineFor(game.roster, 1);
+			for (const [k, play] of tl.plays.entries()) {
+				const call = play.callIn;
+				if (!call) {
+					continue;
+				}
+				shots += 1;
+				const next = tl.plays[k + 1]!;
+				assert.strictEqual(next.offense, 1, `${play.i}`);
+				assert.match(next.situation, /^3rd/, `${play.i}`);
+				assert.include(tl.cuts, call.t0, `${play.i}`);
+				assert.strictEqual(call.t1, play.t1, `${play.i}`);
+				assert.isAbove(call.t0, play.whistle, `${play.i}`);
+				assert.isUndefined(play.replay, `${play.i}`);
+				const t = call.t0 + 200;
+				const m = momentAt(tl, t);
+				const shot = aimFor(m);
+				assert.isBelow(shot.width, 20, `${play.i}`);
+				assert.closeTo(shot.x, call.at.x, 0.01, `${play.i}`);
+				const him = sidelineAt(men, tl, m).find((s) => s.id === coachId(1, 0))!;
+				assert.strictEqual(him.move, "callIn", `${play.i}`);
+				// (In the shot - over a step, if a man out of bounds by him has
+				// him out of the way.)
+				assert.closeTo(him.x, call.at.x, 2, `${play.i}`);
+				assert.closeTo(him.y, call.at.y, 2, `${play.i}`);
+			}
+		}
+		assert.isAbove(shots, 2);
+	}, 120_000);
 });
 
 // (Nobody's cheer up then.)

@@ -155,6 +155,7 @@ import {
 	cameraGear,
 	flashesAt,
 	micGear,
+	sheetGear,
 	photographersAt,
 	photographersFor,
 	tvCameraGear,
@@ -1450,6 +1451,7 @@ const Field3D = ({
 					sprites.fine === true,
 				),
 				...waterGear(ctx, view, moment.players, body),
+				...sheetGear(ctx, view, standing, body, sprites.fine === true),
 				...showerGear(ctx, view, moment, body, sprites.fine === true),
 				...runOutGear(ctx, view, moment.play?.runOut, moment.t),
 			);

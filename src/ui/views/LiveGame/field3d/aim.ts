@@ -144,6 +144,10 @@ const TIMEOUT_Z = 4;
 // from down low on the near side - this wide, this high.
 const CALL_WIDTH = 18;
 const CALL_Z = 4.5;
+// The home side's head coach calling in its third down (see director.ts
+// callIn): from down low on the near side - this wide, this high.
+const CALL_IN_WIDTH = 15;
+const CALL_IN_Z = 5;
 // Over a timeout, the crowd (see crowd.ts): from down low on the near side,
 // up into the stands across the field, panning this far along them.
 const CROWD_SHOT = { width: 150, y: -80, z: 22, pan: 30 };
@@ -191,6 +195,15 @@ export const aimFor = (m: FieldMoment): Shot => {
 		if (him) {
 			return { x: him.x, width: close.width, y: him.y, z: close.z };
 		}
+	}
+	const callIn = play.callIn;
+	if (callIn && t >= callIn.t0) {
+		return {
+			x: callIn.at.x,
+			width: CALL_IN_WIDTH,
+			y: callIn.at.y,
+			z: CALL_IN_Z,
+		};
 	}
 	// A timeout: on the side that called it, at its sideline - or on the
 	// cheerleaders.
@@ -491,9 +504,12 @@ export const closeIn = (m: FieldMoment): boolean => {
 	const call = m.play?.timeout?.call;
 	return (
 		rigFor(m) !== undefined ||
-		(!!call && m.t >= call.from && m.t < m.play!.timeout!.cut)
+		(!!call && m.t >= call.from && m.t < m.play!.timeout!.cut) ||
+		callingIn(m)
 	);
 };
+const callingIn = (m: FieldMoment): boolean =>
+	!!m.play?.callIn && m.t >= m.play.callIn.t0;
 
 // Whom the picture is in close on now, if anyone - the kicker through his
 // routine, the referee giving a foul, a big play's man - where he stands
@@ -544,12 +560,13 @@ export const rigFor = (m: FieldMoment): FieldRig | undefined => {
 
 // Whether the picture is from down low on the near side (see camera.ts
 // REPLAY_RIG): over a timeout, on the head coach calling it, the huddle or
-// the crowd - not on the cheerleaders.
+// the crowd - not on the cheerleaders; on the head coach calling a play in.
 export const fromLow = (m: FieldMoment): boolean => {
 	const timeout = m.play?.timeout;
 	return (
-		!!timeout &&
-		m.t >= (timeout.call?.from ?? timeout.cut) &&
-		!(timeout.cheer && m.t >= timeout.cheer.cut)
+		(!!timeout &&
+			m.t >= (timeout.call?.from ?? timeout.cut) &&
+			!(timeout.cheer && m.t >= timeout.cheer.cut)) ||
+		callingIn(m)
 	);
 };

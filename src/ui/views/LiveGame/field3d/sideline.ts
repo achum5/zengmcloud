@@ -611,6 +611,13 @@ const smooth01 = (u: number) => {
 	return v * v * (3 - 2 * v);
 };
 type Doing = { move: Move; phase: number };
+// Calling a play in (see director.ts callIn): stood at his spot, the play
+// sheet up over his mouth from this long before the picture cuts to him.
+const CALL_IN_LEAD = 500;
+const callInOf = (s: SidelineMan, play: Play) =>
+	s.unit === "coach" && s.coach === 0 && play.callIn?.side === s.team
+		? play.callIn
+		: undefined;
 // What has him whatever else he was at: his side's big play, a call
 // against it.
 const reactionAt = (
@@ -653,13 +660,16 @@ const pacesOf = (s: SidelineMan, play: Play, tl: FieldTimeline): Pace[] => {
 	if (!out) {
 		out = [];
 		const home = headCoachAt(s.team, play.i);
+		// (Stood still from a while before he calls a play in.)
+		const call = callInOf(s, play);
+		const until = call ? call.t0 - CALL_IN_LEAD - COACH_BLEND : play.t1;
 		let at = home;
-		for (let j = Math.ceil(play.t0 / PACE_MS); j * PACE_MS < play.t1; j++) {
+		for (let j = Math.ceil(play.t0 / PACE_MS); j * PACE_MS < until; j++) {
 			const t0 = j * PACE_MS;
 			const r = makeCourtRng(`pace|${s.id}|${j}`);
 			const to = { x: home.x + (r() - 0.5) * PACE_ALONG, y: home.y };
 			const ms = (Math.abs(to.x - at.x) / PACE_FPS) * 1000;
-			if (ms < PACE_LEAST || t0 + ms + COACH_BLEND > play.t1) {
+			if (ms < PACE_LEAST || t0 + ms + COACH_BLEND > until) {
 				continue;
 			}
 			let clear = true;
@@ -673,6 +683,19 @@ const pacesOf = (s: SidelineMan, play: Play, tl: FieldTimeline): Pace[] => {
 				out.push({ t0, t1: t0 + ms, from: at, to });
 				at = to;
 			}
+		}
+		// (And back on his spot by then, if he is off it - the walk before
+		// given up, if there is no time for both.)
+		while (call && at.x !== home.x) {
+			const go = until - (Math.abs(home.x - at.x) / PACE_FPS) * 1000;
+			const last = out.at(-1);
+			if (last && last.t1 + COACH_BLEND > go) {
+				out.pop();
+				at = last.from;
+				continue;
+			}
+			out.push({ t0: go, t1: until, from: at, to: home });
+			at = home;
 		}
 		byMan.set(s.id, out);
 	}
@@ -704,6 +727,14 @@ const bossDoing = (
 	tl: FieldTimeline,
 	t: number,
 ): Doing => {
+	const call = callInOf(s, play);
+	if (call && t >= call.t0 - CALL_IN_LEAD) {
+		const from = call.t0 - CALL_IN_LEAD;
+		return {
+			move: "callIn",
+			phase: Math.min(1, (t - from) / (call.t1 - from)),
+		};
+	}
 	const react = reactionAt(s, play, tl, t);
 	if (react) {
 		return react;

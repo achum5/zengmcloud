@@ -445,6 +445,16 @@ const BACKER_UP = {
 const CLAP = { abN: -6, abF: -6, shF: 60, elF: 56 };
 // A play sheet held up at his chest, in his left hand.
 const SHEET = { shF: 34, elF: 104, abF: -18, wrF: 10 };
+// Or up over his mouth, the other hand down at his side.
+const SHEET_UP = {
+	shF: 60,
+	elF: 134,
+	abF: -12,
+	wrF: 0,
+	shN: 8,
+	elN: 16,
+	abN: 6,
+};
 // (Both hands on the ball, at his chest.)
 // A receiver sat down, hands up (see settle).
 const SETTLE = pose({
@@ -3217,6 +3227,21 @@ const FIELD_ANIMS = {
 			[1, pose({ ...SHEET })],
 		],
 	},
+	// Calling the play in over his headset: the play sheet up over his
+	// mouth, so nobody across the field reads his lips - a word now and then
+	// in behind it.
+	callIn: {
+		kind: "act",
+		keys: [
+			[0, BASE],
+			[0.12, pose(SHEET_UP)],
+			[0.34, pose({ ...SHEET_UP, lean: 4, twist: 4 })],
+			[0.56, pose({ ...SHEET_UP, lean: 2, twist: -3 })],
+			[0.76, pose({ ...SHEET_UP, lean: 5, twist: 2 })],
+			[0.88, pose(SHEET_UP)],
+			[1, BASE],
+		],
+	},
 	// Time out: his hands up in a T at the official - the one flat across
 	// in front of his face, the other stood up under the middle of it (the
 	// 3D court's: see its poses.ts shapedArm) - held there till he sees it.
@@ -3798,6 +3823,7 @@ export const TALKS: Partial<Record<Move, number>> = {
 	talk: 0.6,
 	micAsk: 0.55,
 	coachTalk: 0.65,
+	callIn: 0.5,
 	protest: 0.9,
 	// (Calling out to the others as he claps.)
 	clap: 0.6,
@@ -4137,6 +4163,8 @@ const FISTS = new Set<Move>([
 	"holdPole",
 	"coolerCarry",
 	"coolerDump",
+	// (The play sheet pinched in the one.)
+	"callIn",
 ]);
 const RELAXED = new Set<Move>(["stand", "walk", "jog", "hands", "winded"]);
 // (An official's hands as his signal has them - over whatever his legs are

@@ -483,3 +483,127 @@ export const tvCameraGear = (
 	}
 	return items;
 };
+
+// A COACH'S PLAY SHEET: laminated, a grid of plays printed on it, a band of
+// color along its top - in his hand going over it with a man (at his chest)
+// or calling a play in (up over his mouth: see poses.ts callIn). As big as
+// it is (feet), its face out the way he faces, its top edge this far up
+// and out from his fingers; faded in and out with the move it is held in.
+const SHEET_W = 0.72 * FIGURE_SCALE;
+const SHEET_H = 0.9 * FIGURE_SCALE;
+const SHEET_TOP = 0.1 * FIGURE_SCALE;
+const SHEET_OUT = 0.08 * FIGURE_SCALE;
+const SHEET_FACE = "#efede4";
+const SHEET_EDGE = "#8d8a80";
+const SHEET_BAND = "#b8202c";
+const SHEET_LINE = "rgba(70, 70, 80, 0.55)";
+const SHEET_MOVES = new Set<Move>(["callIn", "coachTalk"]);
+const SHEET_ROWS = 4;
+
+export const sheetGear = (
+	ctx: CanvasRenderingContext2D,
+	cam: Camera,
+	states: FieldPlayerState[],
+	bodyOf: (pid: number) => Body,
+	fine: boolean,
+): Item[] =>
+	states.flatMap((st) => {
+		const now = SHEET_MOVES.has(st.move);
+		const was = st.from !== undefined && SHEET_MOVES.has(st.from.move);
+		const alpha = now
+			? st.from && !was
+				? 1 - st.from.w
+				: 1
+			: was
+				? st.from!.w
+				: 0;
+		if (alpha <= 0.02) {
+			return [];
+		}
+		const body = bodyOf(st.id);
+		const { pose, yaw } = drawnPose(st, fine);
+		const sk = skeleton(body, pose);
+		// (In whichever hand he has up nearer his face.)
+		const near = (l: { end: V3; tip?: V3 }) => l.tip ?? l.end;
+		const gap = (v: V3) =>
+			Math.hypot(v.f - sk.head.f, v.s - sk.head.s, v.u - sk.head.u);
+		const g =
+			gap(near(sk.armL)) <= gap(near(sk.armR)) ? near(sk.armL) : near(sk.armR);
+		const on = drawnShift(st, body, fine);
+		const placed = {
+			x: st.x + on.x,
+			y: st.y + on.y,
+			z: drawnLift(st, fine),
+			yaw,
+		};
+		// (Its middle in front of him, off the fingers holding it at its
+		// edge.)
+		const c = {
+			f: g.f + SHEET_OUT,
+			s: g.s + (sk.chest.s - g.s) * 0.7,
+			u: g.u + SHEET_TOP - SHEET_H / 2,
+		};
+		const at = (a: number, b: number) =>
+			bodyPoint(placed, { f: c.f, s: c.s + a * SHEET_W, u: c.u + b * SHEET_H });
+		const corners = [
+			at(-0.5, 0.5),
+			at(0.5, 0.5),
+			at(0.5, -0.5),
+			at(-0.5, -0.5),
+		];
+		return [
+			{
+				depth: Math.min(...corners.map((p) => depthOf(cam, p))),
+				draw: () => {
+					drawSheet(ctx, cam, at, alpha);
+				},
+			},
+		];
+	});
+
+const drawSheet = (
+	ctx: CanvasRenderingContext2D,
+	cam: Camera,
+	at: (a: number, b: number) => { x: number; y: number; z: number },
+	alpha: number,
+) => {
+	const P = (a: number, b: number) => project(cam, at(a, b));
+	const quad = (a0: number, b0: number, a1: number, b1: number) => {
+		const ps = [P(a0, b0), P(a1, b0), P(a1, b1), P(a0, b1)];
+		ctx.beginPath();
+		ps.forEach((p, n) =>
+			n === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y),
+		);
+		ctx.closePath();
+	};
+	ctx.save();
+	ctx.globalAlpha *= alpha;
+	quad(-0.5, 0.5, 0.5, -0.5);
+	ctx.fillStyle = SHEET_FACE;
+	ctx.fill();
+	const k = P(0, 0).k;
+	ctx.lineWidth = Math.max(0.5, 0.02 * k);
+	ctx.strokeStyle = SHEET_EDGE;
+	ctx.stroke();
+	// (Too small to make out: the sheet and its edge, no more.)
+	if (k * SHEET_W >= 10) {
+		quad(-0.5, 0.5, 0.5, 0.36);
+		ctx.fillStyle = SHEET_BAND;
+		ctx.fill();
+		ctx.strokeStyle = SHEET_LINE;
+		ctx.beginPath();
+		for (let n = 1; n < SHEET_ROWS; n++) {
+			const b = 0.36 - (0.86 * n) / SHEET_ROWS;
+			const p = P(-0.44, b);
+			const q = P(0.44, b);
+			ctx.moveTo(p.x, p.y);
+			ctx.lineTo(q.x, q.y);
+		}
+		const m0 = P(0, 0.36);
+		const m1 = P(0, -0.46);
+		ctx.moveTo(m0.x, m0.y);
+		ctx.lineTo(m1.x, m1.y);
+		ctx.stroke();
+	}
+	ctx.restore();
+};
