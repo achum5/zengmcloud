@@ -2849,6 +2849,13 @@ const UPRIGHT = 0.3;
 const AIR_BLOCK = 5;
 const WALK_UNDER = 6;
 const FIRST_STEP = 150;
+// (A long one with a man there for only some of it: on in it this long
+// either side of him, ms, where at least this much of it is left over; a
+// man there under this long, not at the start or the end of it, only going
+// by.)
+const AIR_AFTER_MS = 150;
+const AIR_LEAST_MS = 500;
+const AIR_PASS_MS = 400;
 // A man on the line with the man he had off him this long before the end
 // of the blocking: up out of his block this long after.
 const FREED_MS = 600;
@@ -4271,30 +4278,77 @@ class Action {
 	noAirBlocks() {
 		for (const m of this.men) {
 			const them = m.team === this.input.offense ? this.d : this.o;
-			const air = m.legs.map((l) => {
-				// (Not his first step out of his stance: low and hard, at
-				// whoever comes.)
-				if (
-					(l.move !== "drive" && l.move !== "engage") ||
-					l.t0 < this.input.snap + FIRST_STEP
-				) {
-					return false;
+			const by = (t: number) => {
+				const at = m.posAt(t);
+				return them.some(
+					(o) =>
+						dist(o.posAt(t), at) < AIR_BLOCK && !DOWN.has(legAt(o, t).move),
+				);
+			};
+			// (A push he had a man on him for only some of - the man gone off
+			// after the ball, say, or one come back at him late: made pieces
+			// where he went, the ones between his own, not on driving into
+			// nobody. A man only running by him a moment, or come up to him
+			// just as it ends: no block.)
+			const pushing = (l?: Leg) =>
+				l !== undefined &&
+				(l.move === "drive" || l.move === "engage") &&
+				l.t0 >= this.input.snap + FIRST_STEP;
+			const free: [number, number][] = [];
+			const runs: [number, number][] = [];
+			for (const [i, l] of m.legs.entries()) {
+				const was = runs.at(-1);
+				if (!pushing(l)) {
+					continue;
 				}
-				const steps = Math.max(1, Math.ceil((l.t1 - l.t0) / 100));
+				if (was && pushing(m.legs[i - 1]) && was[1] === l.t0) {
+					was[1] = l.t1;
+				} else {
+					runs.push([l.t0, l.t1]);
+				}
+			}
+			for (const [t0, t1] of runs) {
+				const steps = Math.max(1, Math.ceil((t1 - t0) / 50));
+				const on: [number, number][] = [];
 				for (let k = 0; k <= steps; k++) {
-					const t = l.t0 + ((l.t1 - l.t0) * k) / steps;
-					const at = m.posAt(t);
-					if (
-						them.some(
-							(o) =>
-								dist(o.posAt(t), at) < AIR_BLOCK && !DOWN.has(legAt(o, t).move),
-						)
-					) {
-						return false;
+					const t = t0 + ((t1 - t0) * k) / steps;
+					if (!by(t)) {
+						continue;
+					}
+					const was = on.at(-1);
+					if (was && t - was[1] <= 100) {
+						was[1] = t;
+					} else {
+						on.push([t, t]);
 					}
 				}
-				return true;
-			});
+				const held = on.filter(([a, b]) => a === t0 || b - a >= AIR_PASS_MS);
+				if (held.length === 0) {
+					free.push([t0, t1]);
+					continue;
+				}
+				const gaps: [number, number][] = [
+					[t0, held[0]![0]],
+					...held.slice(1).map((h, i): [number, number] => [held[i]![1], h[0]]),
+					[held.at(-1)![1], t1],
+				];
+				for (const [a, b] of gaps) {
+					const lo = a === t0 ? a : a + AIR_AFTER_MS;
+					const hi = b === t1 ? b : b - AIR_AFTER_MS;
+					if (hi - lo < AIR_LEAST_MS) {
+						continue;
+					}
+					m.split(lo);
+					m.split(hi);
+					free.push([lo, hi]);
+				}
+			}
+			const air = m.legs.map(
+				(l) =>
+					(l.move === "drive" || l.move === "engage") &&
+					l.t0 >= this.input.snap + FIRST_STEP &&
+					free.some(([a, b]) => l.t0 >= a && l.t1 <= b),
+			);
 			// (A run of them together the one way, at the one pace: not
 			// swaying on with the push he had into nobody, a step a walk and
 			// the next a jog.)
