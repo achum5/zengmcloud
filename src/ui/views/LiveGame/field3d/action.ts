@@ -4609,8 +4609,20 @@ class Action {
 				return { at: m.posAt(t), yaw };
 			});
 		});
+		// (Each man's first and last time in it at all: two can only be at it
+		// together between the later of the firsts and the earlier of the
+		// lasts.)
+		const spans = grids.map((g) => [
+			g.findIndex((x) => x !== undefined),
+			g.findLastIndex((x) => x !== undefined),
+		]);
 		for (let i = 0; i < men.length; i++) {
 			for (let j = i + 1; j < men.length; j++) {
+				const k0 = Math.max(spans[i]![0]!, spans[j]![0]!);
+				const k1 = Math.min(spans[i]![1]!, spans[j]![1]!);
+				if (spans[i]![0]! < 0 || spans[j]![0]! < 0 || k0 > k1) {
+					continue;
+				}
 				const p = men[i]!;
 				const q = men[j]!;
 				const cross = p.team !== q.team;
@@ -4681,15 +4693,16 @@ class Action {
 					ease(p, a, b, { x: -sx * half, y: -sy * half });
 					ease(q, a, b, { x: sx * half, y: sy * half });
 				};
-				times.forEach((t, k) => {
+				for (let k = k0; k <= k1; k++) {
+					const t = times[k]!;
 					const gpk = gp[k];
 					const gqk = gq[k];
 					if (!gpk || !gqk) {
-						return;
+						continue;
 					}
 					const d = dist(gpk.at, gqk.at);
 					if (d >= TWIN_APART) {
-						return;
+						continue;
 					}
 					if (cross && d > 0) {
 						const ux = (gqk.at.x - gpk.at.x) / d;
@@ -4710,7 +4723,7 @@ class Action {
 									clash = { a: t, b: t, seps: [sep] };
 								}
 							}
-							return;
+							continue;
 						}
 					}
 					if (spell && t - spell.b > TWIN_JOIN_MS) {
@@ -4727,7 +4740,7 @@ class Action {
 					} else {
 						spell = { a: t, b: t, seps: [sep], side: { x: sx, y: sy } };
 					}
-				});
+				}
 				done();
 				clashed();
 			}
