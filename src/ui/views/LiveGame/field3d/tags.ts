@@ -18,6 +18,8 @@ const OUT_MS = 300;
 // Over his head, as drawn: higher than the tallest man's, helmet and all
 // (feet) - not well up off him, close in, as basketball's isn't.
 const TAG_OVER = 6.9 * FIGURE_SCALE;
+// (Room below him, in tags, to go back down there from over his head.)
+const TAG_STAY = 1.5;
 
 // Where a box over the picture is (fractions of it across, and its top
 // down): the score bug, the line over it.
@@ -84,11 +86,19 @@ export const drawTags = (
 	lookFor: (pid: number) => FieldLook | undefined,
 	scale: number,
 	clear: TagCover[] = [],
+	// Whose tag went over his head last frame (kept by whoever draws them).
+	over?: Map<number, boolean>,
 ) => {
 	if (!play) {
+		over?.clear();
 		return;
 	}
 	const shown = shownAt(play, t);
+	for (const pid of over?.keys() ?? []) {
+		if (!shown.has(pid)) {
+			over!.delete(pid);
+		}
+	}
 	if (shown.size === 0) {
 		return;
 	}
@@ -137,13 +147,17 @@ export const drawTags = (
 				cam.viewH - h - scale,
 			),
 		);
-		// (Behind the score bug or the line over it, over his head instead.)
+		// (Behind the score bug or the line over it, over his head instead -
+		// and kept there till there is room to spare below him again, not
+		// flicked from the one to the other as he moves.)
+		const stay = over?.get(st.id) ? h * TAG_STAY : 0;
 		const behind = clear.some(
 			(b) =>
 				x < b.x1 * cam.viewW &&
 				x + total > b.x0 * cam.viewW &&
-				y + h > b.y0 * cam.viewH,
+				y + h + stay > b.y0 * cam.viewH,
 		);
+		over?.set(st.id, behind);
 		if (behind) {
 			y = Math.max(
 				scale,

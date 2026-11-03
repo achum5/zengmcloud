@@ -1032,6 +1032,7 @@ const Field3D = ({
 
 	const bugRef = useRef<HTMLDivElement | null>(null);
 	const covers = useRef({ at: -Infinity, boxes: [] as TagCover[] });
+	const tagsOver = useRef(new Map<number, boolean>());
 	const dipRef = useRef<HTMLDivElement | null>(null);
 	const flashRef = useRef<HTMLDivElement | null>(null);
 	const stingRefs = useRef<[HTMLDivElement | null, HTMLDivElement | null]>([
@@ -1503,6 +1504,7 @@ const Field3D = ({
 				look,
 				Math.max(1, Math.round(8 / ((7 * art) / dpr))),
 				covers.current.boxes,
+				tagsOver.current,
 			);
 			if (
 				judging &&
