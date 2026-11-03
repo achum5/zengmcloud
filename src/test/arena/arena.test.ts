@@ -185,12 +185,13 @@ test.runIf(env.ARENA_RUN === "1")(
 			// strength and title odds, season by season, to set against how the
 			// teams did (strength-survey-<tag>.json).
 			const strengthSurvey: unknown[] = [];
+			const surveyReads: Promise<void>[] = [];
 			const rosterSurvey: unknown[] = [];
 			if (env.ARENA_STRENGTH_SURVEY === "1") {
 				const r2 = (x: number) => Math.round(x * 100) / 100;
 				const r4 = (x: number) => Math.round(x * 10000) / 10000;
 				outlookWatchers.push((outlook) => {
-					strengthSurvey.push({
+					const entry: Record<string, unknown> = {
 						season: g.get("season"),
 						phase: g.get("phase"),
 						first: outlookSeason(outlook, 0),
@@ -205,7 +206,32 @@ test.runIf(env.ARENA_RUN === "1")(
 								},
 							]),
 						),
-					});
+					};
+					strengthSurvey.push(entry);
+					// In the season, each team's games, points and points against so
+					// far: to set the read against the rest of its season. No games
+					// are played while the market works, so these stand as read.
+					if (g.get("phase") === PHASE.REGULAR_SEASON) {
+						surveyReads.push(
+							(async () => {
+								const soFar: Record<number, number[]> = {};
+								for (const t of outlook.teams.values()) {
+									const stats = (await idb.cache.teamStats.indexGet(
+										"teamStatsByPlayoffsTid",
+										[false, t.tid],
+									)) as
+										| { gp?: number; pts?: number; oppPts?: number }
+										| undefined;
+									soFar[t.tid] = [
+										stats?.gp ?? 0,
+										stats?.pts ?? 0,
+										stats?.oppPts ?? 0,
+									];
+								}
+								entry.soFar = soFar;
+							})(),
+						);
+					}
 				});
 			}
 			// ARENA_ROSTER_CHECK=1: for every player a CPU team trades away, each
@@ -851,6 +877,7 @@ test.runIf(env.ARENA_RUN === "1")(
 						}
 					}
 				}
+				await Promise.all(surveyReads);
 				await fs.writeFile(
 					`${out}/strength-survey-${tag}.json`,
 					JSON.stringify({
