@@ -1238,6 +1238,78 @@ export const bestDealWith = (
 // The margin of error on a team's gain from a deal: every player it gives or
 // gets, at his place on the roster he is priced for, and every pick as the
 // player it is expected to become.
+// A pick a team gets and a later one it gives in the same draft, its order
+// set, one for one: at the earlier pick it can still take whoever it would
+// have taken at the later one, so the pair is worth no less to it than
+// keeping the later pick. The deal's other assets are the rest.
+export const pickUpgrades = (
+	outlook: LeagueOutlook,
+	outgoing: readonly Asset[],
+	incoming: readonly Asset[],
+) => {
+	const overall = (dp: DraftPick) =>
+		(dp.round - 1) * outlook.numTeams + dp.pick;
+	const classPicks = (xs: readonly Asset[]) =>
+		xs
+			.filter(
+				(x): x is Extract<Asset, { kind: "pick" }> =>
+					x.kind === "pick" && isClassPick(outlook, x.dp),
+			)
+			.sort((a, b) => overall(a.dp) - overall(b.dp));
+	const ins = classPicks(incoming);
+	const outs = classPicks(outgoing);
+	const paired = new Set<Asset>();
+	let pairs = 0;
+	for (let i = 0; i < Math.min(ins.length, outs.length); i++) {
+		if (overall(ins[i]!.dp) < overall(outs[i]!.dp)) {
+			paired.add(ins[i]!);
+			paired.add(outs[i]!);
+			pairs += 1;
+		}
+	}
+	return {
+		pairs,
+		restOut: outgoing.filter((x) => !paired.has(x)),
+		restIn: incoming.filter((x) => !paired.has(x)),
+	};
+};
+
+// What a CPU team clears with a human's deal: past releasing what it gives
+// instead, and past its margin of error counted `factor` times - and at least
+// what the deal clears without the picks it moves up with (pickUpgrades).
+// Undefined if it could not make the deal at all.
+export const humanDealNet = (
+	outlook: LeagueOutlook,
+	a: TeamState,
+	h: TeamState,
+	giving: readonly Asset[],
+	getting: readonly Asset[],
+	factor: number,
+) => {
+	const netFor = (out: readonly Asset[], inc: readonly Asset[]) => {
+		const floor = releaseAlternative(outlook, a, out, inc);
+		if (floor === undefined) {
+			return undefined;
+		}
+		return (
+			priceFor(outlook, a, out, inc, h) -
+			floor -
+			factor * marginOf(outlook, a, out, inc)
+		);
+	};
+	const net = netFor(giving, getting);
+	const { pairs, restOut, restIn } = pickUpgrades(outlook, giving, getting);
+	if (pairs === 0) {
+		return net;
+	}
+	const without =
+		restOut.length + restIn.length === 0 ? 0 : netFor(restOut, restIn);
+	if (without === undefined) {
+		return net;
+	}
+	return net === undefined ? without : Math.max(net, without);
+};
+
 export const marginOf = (
 	outlook: LeagueOutlook,
 	t: TeamState,
@@ -1246,8 +1318,16 @@ export const marginOf = (
 ) => {
 	const after = applyTrade(t, outgoing, incoming).players;
 	const moved: MovedPlayer[] = [];
+	// This draft's picks, its order set, each as the player it is priced as -
+	// those it gets and those it gives, to be set against each other.
+	const classIn: MovedPlayer[] = [];
+	const classOut: MovedPlayer[] = [];
 	// A pick: what it is worth if its team is misread a little either way.
-	const addPick = (dp: DraftPick, roster: readonly Player[]) => {
+	const addPick = (
+		dp: DraftPick,
+		roster: readonly Player[],
+		into: MovedPlayer[],
+	) => {
 		// Once it is priced as one of the class's players, it is him, with a
 		// player's error. Before, a deal of this draft's picks made after the
 		// lottery carried no doubt at all.
@@ -1257,7 +1337,7 @@ export const marginOf = (
 				(_, y) => pickLineAt(outlook, dp, y, 0, t.tid)?.line,
 			);
 			const ovr = lines.map((line) => line?.valueNoPot ?? 0);
-			moved.push({
+			into.push({
 				place: placeBySeason(
 					roster.map((x) => x.valueNoPot),
 					ovr,
@@ -1308,21 +1388,35 @@ export const marginOf = (
 			ovr,
 		});
 	};
-	for (const x of incoming) {
+	// This draft's picks in order, so the one it gets is set against the one it
+	// gives nearest it (one for one; the rest each in full).
+	const byPick = (xs: readonly Asset[]) =>
+		[...xs].sort(
+			(a, b) =>
+				(a.kind === "pick" ? a.dp.round * 1000 + a.dp.pick : 0) -
+				(b.kind === "pick" ? b.dp.round * 1000 + b.dp.pick : 0),
+		);
+	for (const x of byPick(incoming)) {
 		if (x.kind === "player") {
 			add(x.p, after);
 		} else if (marketSettings.pickMargins) {
-			addPick(x.dp, after);
+			addPick(x.dp, after, classIn);
 		}
 	}
-	for (const x of outgoing) {
+	for (const x of byPick(outgoing)) {
 		if (x.kind === "player") {
 			add(x.p, t.players);
 		} else if (marketSettings.pickMargins) {
-			addPick(x.dp, t.players);
+			addPick(x.dp, t.players, classOut);
 		}
 	}
-	return sideMargin(outlook, t.path, moved);
+	const pairs: [MovedPlayer, MovedPlayer][] = [];
+	const n = Math.min(classIn.length, classOut.length);
+	for (let i = 0; i < n; i++) {
+		pairs.push([classIn[i]!, classOut[i]!]);
+	}
+	moved.push(...classIn.slice(n), ...classOut.slice(n));
+	return sideMargin(outlook, t.path, moved, pairs);
 };
 
 // A deal found earlier, as it stands today - for the arena, to see how long

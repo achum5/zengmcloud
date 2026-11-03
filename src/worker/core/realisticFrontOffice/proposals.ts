@@ -20,10 +20,12 @@ import {
 	assetKey,
 	count,
 	currentOutlook,
+	humanDealNet,
 	loadTeam,
 	marginOf,
 	MIN_GAIN,
 	packages,
+	pickUpgrades,
 	priceFor,
 	releaseAlternative,
 	salariesWork,
@@ -223,6 +225,21 @@ export const bestProposal = async (
 		: [[], ...cpuAssets.map((x) => [x])];
 	// And a deal has to clear its margin of error on the screen too.
 	const bar = factor * marginOf(outlook, cpu, keep.give, keep.get) + MIN_GAIN;
+	// A pick it moves up to in this draft for its own later one is worth no
+	// less to it than keeping its own (pickUpgrades): on the screen, those
+	// pairs count for nothing less.
+	const upgrades = pickUpgrades(outlook, keep.give, keep.get);
+	const pairedOf = (xs: readonly Asset[], rest: readonly Asset[]) =>
+		xs.filter((x) => !rest.includes(x));
+	const movedUp = upgrades.pairs
+		? Math.max(
+				0,
+				-(
+					sum(cpuSingle, pairedOf(keep.give, upgrades.restOut)) +
+					sum(cpuSingle, pairedOf(keep.get, upgrades.restIn))
+				),
+			)
+		: 0;
 	const extraGet = packages(humanAssets, across);
 	for (const pg of extraGive) {
 		for (const ph of extraGet) {
@@ -233,7 +250,7 @@ export const bestProposal = async (
 				// offered something for nothing.
 				continue;
 			}
-			const forCpu = sum(cpuSingle, give) + sum(cpuSingle, get);
+			const forCpu = sum(cpuSingle, give) + sum(cpuSingle, get) + movedUp;
 			if (forCpu > bar) {
 				candidates.push({ give, get, forCpu });
 			}
@@ -265,14 +282,10 @@ export const bestProposal = async (
 			continue;
 		}
 		checked += 1;
-		const floor = releaseAlternative(outlook, cpu, give, get);
-		if (floor === undefined) {
+		const net = humanDealNet(outlook, cpu, human, give, get, factor);
+		if (net === undefined) {
 			continue;
 		}
-		const net =
-			priceFor(outlook, cpu, give, get, human) -
-			floor -
-			factor * marginOf(outlook, cpu, give, get);
 		if (net >= MIN_GAIN && (!best || net < best.net)) {
 			best = { give, get, net };
 		}

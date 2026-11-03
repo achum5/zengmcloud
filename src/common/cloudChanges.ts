@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 160,
+		date: "2026-11-03",
+		text: "Realistic Front Offices: swapping picks in the same draft makes sense again. A CPU team offered the pick just ahead of its own, straight up for its own, takes it as offered - it no longer asks to be paid a first and a second to move up - and two picks in the same draft no longer each count their full doubt.",
+	},
+	{
 		n: 159,
 		date: "2026-11-03",
 		text: "Multiplayer: if the game ends up running twice on one device (an older copy still alive in the background), only the newest copy syncs now - the other one stops and asks to be reloaded. A ready-up step that has already run can no longer be run again, and the device in charge of simming can apply a repair file from Multiplayer Sync.",

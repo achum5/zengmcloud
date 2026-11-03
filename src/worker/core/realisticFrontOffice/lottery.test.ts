@@ -5,7 +5,8 @@ import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
 import { createArenaLeague } from "../../../test/arena/runLeague.ts";
 import { draft } from "../index.ts";
-import { humanMarginFactor } from "./humanTrades.ts";
+import { humanMarginFactor, judgeHumanOffer } from "./humanTrades.ts";
+import { counterOffer } from "./proposals.ts";
 import {
 	currentOutlook,
 	loadTeam,
@@ -190,6 +191,69 @@ test(
 				priceFor(outlook, seller, outgoing, incoming, buyer) -
 					humanMarginFactor() * marginOf(outlook, seller, outgoing, incoming),
 				MIN_GAIN,
+			);
+		} finally {
+			g.setWithoutSavingToDB("phase", PHASE.REGULAR_SEASON);
+		}
+	},
+);
+
+test(
+	"once the draft order is set, a team takes the pick just ahead of its own for its own",
+	{ timeout: 300_000 },
+	async () => {
+		const season = g.get("season");
+		g.setWithoutSavingToDB("phase", PHASE.DRAFT);
+		try {
+			const picks = await idb.cache.draftPicks.indexGetAll(
+				"draftPicksBySeason",
+				season,
+			);
+			const at = (overall: number) =>
+				picks.find(
+					(dp) => (dp.round - 1) * g.get("numTeams") + dp.pick === overall,
+				)!;
+			const outlook = await currentOutlook();
+			// The owner's: the Thunder offered their 12th for the Bucks' 13th, and
+			// the Bucks asked for a first and a second on top to move up.
+			const ahead = at(12);
+			const mine = at(13);
+			const cpu = { tid: mine.tid, pids: [], dpids: [mine.dpid] };
+			const human = { tid: ahead.tid, pids: [], dpids: [ahead.dpid] };
+			assert.strictEqual((await judgeHumanOffer(cpu, human)).kind, "yes");
+			const counter = await counterOffer(outlook, cpu, human);
+			assert.isDefined(counter);
+			assert.deepEqual(
+				counter!.give.map((x) => (x.kind === "pick" ? x.dp.dpid : -1)),
+				[mine.dpid],
+			);
+			assert.deepEqual(
+				counter!.get.map((x) => (x.kind === "pick" ? x.dp.dpid : -1)),
+				[ahead.dpid],
+			);
+			// Both picks are players off the same board: what is in doubt is the
+			// gap between them, less than the error of either alone.
+			const t = await loadTeam(outlook, mine.tid);
+			const get = [{ kind: "pick" as const, dp: ahead }];
+			const give = [{ kind: "pick" as const, dp: mine }];
+			assert.isBelow(
+				marginOf(outlook, t, give, get),
+				marginOf(outlook, t, [], get),
+			);
+			// The other way round, the team moving down asks something for it,
+			// not a first.
+			const reverse = await counterOffer(
+				outlook,
+				{ tid: ahead.tid, pids: [], dpids: [ahead.dpid] },
+				{ tid: mine.tid, pids: [], dpids: [mine.dpid] },
+			);
+			console.log(
+				"moving up from 13 to 12 costs:",
+				reverse?.get.map((x) =>
+					x.kind === "pick"
+						? `${x.dp.season} R${x.dp.round} #${x.dp.pick}`
+						: `${x.p.firstName} ${x.p.lastName}`,
+				),
 			);
 		} finally {
 			g.setWithoutSavingToDB("phase", PHASE.REGULAR_SEASON);

@@ -845,7 +845,19 @@ room unused 75 summers of 84).
   three seasons on): pick order predicts a player's overall a little better
   (rank correlation 0.59 against 0.58), the top 5 picks rate 60 against 58,
   and of each draft's 10 best players 5.8 went in the top 10 against 5.0.
-- **Trading between picks comes later** (owner's call).
+- **Moving up in the same draft is never a cost.** Once the order is set, a
+  pick is priced as the player who would go there off the class's board - but
+  at an earlier pick a team can still take whoever it would have taken at its
+  own later one, so the earlier pick is worth no less to it. Priced each as its
+  own player, the Bucks found the 12th worth less to them than their 13th
+  (they liked the 13th's player more) and, with each pick's doubt counted in
+  full, asked the owner's Thunder for a first and a second on top to swap
+  (owner's report). Now a deal counts at least what it would without the
+  picks a team moves up with, a straight swap up is taken as offered, and two
+  picks in the same draft count only the gap between their doubts.
+- **Trading between picks comes later** (owner's call). Still to do (owner):
+  price a pick this draft by whom the team itself would take there and the
+  chance a better prospect falls to it, not one player off a general board.
 - Teams understand whatever lottery system the league uses, and build to it.
   The same front offices with no lottery (the worst record picks first) as
   under COLA (2 arena leagues of 5 seasons against 70 COLA seasons): 4.4

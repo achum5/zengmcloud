@@ -114,29 +114,46 @@ export const placeBySeason = (
 ) => ovr.map((mine) => others.filter((x) => x > mine).length);
 
 // One side's margin, in the same units as franchiseValue. `path` is the team's
-// strength each season, as it stands.
+// strength each season, as it stands. `pairs`: a pick it gets and one it gives
+// in the same draft, its order set - priced as the players the team would take
+// there, off the same board, so a misread of the class moves both: what is in
+// doubt is the gap between them, not each in full. Moving up a place, the team
+// can still take whoever it would have.
 export const sideMargin = (
 	outlook: LeagueOutlook,
 	path: readonly number[],
 	moved: readonly MovedPlayer[],
+	pairs: readonly (readonly [MovedPlayer, MovedPlayer])[] = [],
 ) => {
 	let variance = 0;
+	for (const [a, b] of pairs) {
+		variance += (sdOf(outlook, path, a) - sdOf(outlook, path, b)) ** 2;
+	}
 	for (const p of moved) {
-		let sd = 0;
-		for (let y = 0; y <= OUTLOOK_YEARS; y++) {
-			const place = typeof p.place === "number" ? p.place : (p.place[y] ?? 0);
-			const minutes = SLOT_MINUTES[Math.min(place, SLOT_MINUTES.length - 1)]!;
-			const curve = outlook.titleCurves[y]!;
-			const q = curveAt(curve, path[y]!);
-			const slope = curve.b * q * (1 - q);
-			const ovr = p.ovr?.[y] ?? 52;
-			const projection =
-				(PROJECTION_ERROR[y] ?? PROJECTION_ERROR.at(-1)!) * perOvr(ovr);
-			const error =
-				p.error?.[y] ?? Math.sqrt(valueError(ovr) ** 2 + projection ** 2);
-			sd += PATIENCE ** y * slope * minutes * (p.availability[y] ?? 0) * error;
-		}
-		variance += sd * sd;
+		variance += sdOf(outlook, path, p) ** 2;
 	}
 	return marginSettings.z * Math.sqrt(variance);
+};
+
+// A moved player's error on a team's franchise value, added up over the seasons.
+const sdOf = (
+	outlook: LeagueOutlook,
+	path: readonly number[],
+	p: MovedPlayer,
+) => {
+	let sd = 0;
+	for (let y = 0; y <= OUTLOOK_YEARS; y++) {
+		const place = typeof p.place === "number" ? p.place : (p.place[y] ?? 0);
+		const minutes = SLOT_MINUTES[Math.min(place, SLOT_MINUTES.length - 1)]!;
+		const curve = outlook.titleCurves[y]!;
+		const q = curveAt(curve, path[y]!);
+		const slope = curve.b * q * (1 - q);
+		const ovr = p.ovr?.[y] ?? 52;
+		const projection =
+			(PROJECTION_ERROR[y] ?? PROJECTION_ERROR.at(-1)!) * perOvr(ovr);
+		const error =
+			p.error?.[y] ?? Math.sqrt(valueError(ovr) ** 2 + projection ** 2);
+		sd += PATIENCE ** y * slope * minutes * (p.availability[y] ?? 0) * error;
+	}
+	return sd;
 };

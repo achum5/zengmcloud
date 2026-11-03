@@ -3,12 +3,13 @@ import {
 	aiTids,
 	count,
 	currentOutlook,
+	humanDealNet,
 	loadTeam,
 	marginOf,
 	MIN_GAIN,
 	packages,
+	pickUpgrades,
 	priceFor,
-	releaseAlternative,
 	salariesWork,
 	singlePrice,
 	tableAssets,
@@ -210,17 +211,21 @@ export const judgeHumanOffer = async (
 	await ensureRetention(outlook, playersIn(getting), a.tid);
 	await ensureRetention(outlook, playersIn(giving), h.tid);
 
+	// Nothing but moving up in this draft (pickUpgrades): at the earlier pick
+	// it can still take whoever it would have, so it takes the swap as
+	// offered - asking to be paid to move up made no sense to the owner.
+	const upgrades = pickUpgrades(outlook, giving, getting);
+	if (
+		upgrades.pairs > 0 &&
+		upgrades.restOut.length + upgrades.restIn.length === 0
+	) {
+		return { kind: "yes" };
+	}
+
 	// Better than keeping what it has, or releasing the players it gives, by
 	// more than its margin of error counts for in a deal with a human.
-	const floor = releaseAlternative(outlook, a, giving, getting);
-	if (floor === undefined) {
-		return { kind: "no" };
-	}
-	const net =
-		priceFor(outlook, a, giving, getting, h) -
-		floor -
-		humanMarginFactor() * marginOf(outlook, a, giving, getting);
-	if (net < MIN_GAIN) {
+	const net = humanDealNet(outlook, a, h, giving, getting, humanMarginFactor());
+	if (net === undefined || net < MIN_GAIN) {
 		return { kind: "no" };
 	}
 
