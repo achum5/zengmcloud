@@ -2529,6 +2529,12 @@ const CLIMB_PACE = 0.85;
 const SHED_MS = 550;
 const SHED_SPREAD = 350;
 const OFF_SPREAD = 350;
+// (Nor held up on a block, a man up front, with the man with the ball this
+// far (feet) off from where it is, round the edge or back behind it all -
+// from this long after the snap (ms): off after him, up to OFF_SPREAD
+// later.)
+const AWAY_FT = 24;
+const AWAY_LEAST_MS = 1500;
 const STALK_FAR = 36;
 const STALK_WON = 0.6;
 // (Nobody to block out there: in toward where the run goes once he has
@@ -2896,6 +2902,9 @@ const READY_LEAST_MS = 400;
 const READY_FROM_MS = 300;
 const READY_BEFORE_MS = 150;
 const FREED_REACT = 200;
+// (A man up front on a run let up off nobody (see letUp) no sooner than
+// this after the snap: his first step in.)
+const LET_UP_FROM_MS = 550;
 // (And then after the ball at a jog (ft/s, slowest, quickest), kept this
 // far off it (and up to this much more), ft - with this long (ms) at least
 // to go.)
@@ -10690,7 +10699,7 @@ class Action {
 			scheme !== "stretch" &&
 			yds <= PILE_YDS &&
 			r() < (end.td ? OVER_TOP : short ? PILE_SHORT : PILE);
-		this.runBlock(
+		const blocks = this.runBlock(
 			carrier,
 			holeA,
 			end.pt,
@@ -10711,6 +10720,7 @@ class Action {
 			this.d,
 			end.td ? undefined : down.by,
 		);
+		this.letUp(blocks.men, blocks.until);
 		this.heap = 0;
 	}
 
@@ -10771,6 +10781,14 @@ class Action {
 			return by < t - 400
 				? Math.min(t - 250, by + 150 + r() * OFF_SPREAD)
 				: late;
+		};
+		const awayAt = (m: Actor, late: number) => {
+			for (let c = snap + AWAY_LEAST_MS; c < Math.min(late, t - 400); c += 50) {
+				if (dist(carrier.posAt(c), m.at) > AWAY_FT) {
+					return c + 150 + OFF_SPREAD * countOf(m, snap, 37);
+				}
+			}
+			return late;
 		};
 
 		// The first step, all as one: across to the hole on zone, flat down
@@ -10892,7 +10910,7 @@ class Action {
 				const end =
 					wins || !free(m) || shed > t - 300
 						? wins && free(m)
-							? offAt(this.of(m.at).d, till)
+							? Math.min(offAt(this.of(m.at).d, till), awayAt(m, till))
 							: till
 						: shed;
 				// (Off in time to be on him while he is - see fireInto.)
@@ -11062,6 +11080,7 @@ class Action {
 		// The receivers: out onto the nearest man off the ball, and on him -
 		// or, nobody near, on downfield.
 		const dbs = this.d.filter((m) => DB.has(m.role) && free(m));
+		const stalks: Actor[] = [];
 		for (const m of this.o) {
 			if (this.done.has(m.pid) || m === carrier || blockers.includes(m)) {
 				continue;
@@ -11129,6 +11148,49 @@ class Action {
 				"run",
 			);
 			this.blockOn(m, db, r() < STALK_WON, offAt, until, carrier, through);
+			stalks.push(m);
+		}
+		return { men: [...blockers, ...stalks], until };
+	}
+
+	// Men blocking on a run left pushing at nobody well before it is
+	// over - the man on them gone off to make the tackle, say: up out of
+	// it a beat after he is, and after the ball (see offBlock) - not stood
+	// there till the whistle. (Not one since put to something else.)
+	letUp(men: Actor[], until: number) {
+		const { snap } = this.input;
+		const pushing = (l: Leg) => l.move === "drive" || l.move === "engage";
+		for (const b of men) {
+			const end = b.legs.findLast(pushing)?.t1;
+			if (
+				end === undefined ||
+				this.done.has(b.pid) ||
+				b.legs.some((l) => l.t0 >= end && l.move !== "stand")
+			) {
+				continue;
+			}
+			const near = (c: number) =>
+				this.d.some(
+					(o) =>
+						dist(o.posAt(c), b.posAt(c)) < AIR_BLOCK &&
+						!DOWN.has(legAt(o, c).move),
+				);
+			let last = snap + LET_UP_FROM_MS;
+			for (let c = end; c > last; c -= 50) {
+				if (near(c)) {
+					last = c;
+					break;
+				}
+			}
+			const off = last + FREED_REACT;
+			if (
+				off > end - FREED_MS ||
+				b.legs.some((l) => l.t1 > off && !pushing(l) && l.move !== "stand")
+			) {
+				continue;
+			}
+			b.cut(off);
+			this.offBlock(b, until, 0);
 		}
 	}
 
