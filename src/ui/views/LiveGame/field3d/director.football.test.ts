@@ -951,6 +951,47 @@ describe("third down", () => {
 	}, 20_000);
 });
 
+describe("a foul", () => {
+	// The man flagged for a hold or hands to the face doing it - over a
+	// moment, on his feet, a man of the other side right there in front of
+	// him - and nobody else, on no play without a flag.
+	test("the man flagged for a hold doing it, the man he holds right there", () => {
+		let held = 0;
+		for (const game of games) {
+			const tl = stage(game);
+			for (const p of tl.plays) {
+				for (const part of p.parts) {
+					const legs = part.legs.filter(
+						(l) => l.arms === "holdOn" || l.arms === "handsFace",
+					);
+					if (legs.length === 0) {
+						continue;
+					}
+					assert.isAbove(p.flags.length, 0, `${p.i}`);
+					const t0 = legs[0]!.t0;
+					const t1 = legs.at(-1)!.t1;
+					assert.isAtLeast(t1 - t0, 440, `${p.i}`);
+					assert.isAtLeast(t0, p.snap, `${p.i}`);
+					const mid = (t0 + t1) / 2;
+					const me = momentAt(tl, mid).players.find((x) => x.id === part.pid)!;
+					const near = Math.min(
+						...momentAt(tl, mid)
+							.players.filter(
+								(x) =>
+									p.parts.find((q) => q.pid === x.id)?.team !== undefined &&
+									p.parts.find((q) => q.pid === x.id)!.team !== part.team,
+							)
+							.map((x) => Math.hypot(x.x - me.x, x.y - me.y)),
+					);
+					assert.isBelow(near, 7, `${p.i}`);
+					held++;
+				}
+			}
+		}
+		assert.isAbove(held, 4);
+	}, 20_000);
+});
+
 describe("a man hurt", () => {
 	test("down after the whistle, the trainers out to him from his sideline, and helped off toward it", () => {
 		let hurt = 0;

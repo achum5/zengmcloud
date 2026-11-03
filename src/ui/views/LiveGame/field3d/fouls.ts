@@ -1,7 +1,7 @@
 import type { Official } from "./crew.ts";
-import type { BallSeg, Part, PlayKind, RawEvent } from "./director.ts";
+import type { BallSeg, Leg, Part, PlayKind, RawEvent } from "./director.ts";
 import { dist, type Dir, type Pt, type Side } from "./geometry.ts";
-import type { Move } from "./poses.ts";
+import { moveKind, type Move } from "./poses.ts";
 
 // THE FLAGS: each foul the sim calls on a play - what it was and on whom,
 // when in the play it happened and where, the officials who would have
@@ -260,9 +260,23 @@ export const foulsOf = (input: FoulInput): Foul[] => {
 		const when = call?.when ?? (snapped ? "line" : "pre");
 		const rawT = call?.e.t === 1 ? 1 : 0;
 		const side = (1 - rawT) as Side;
+		// (The man: off the stat line that goes with the penalty, when it
+		// was taken - or by his name.)
+		let pid: number | undefined;
+		for (let j = (call?.i ?? i1) + 1; j < i1; j++) {
+			const e = events[j];
+			if (e?.type === "penalty") {
+				break;
+			}
+			if (e?.type === "stat" && e.s === "pen" && typeof e.pid === "number") {
+				pid = e.pid;
+				break;
+			}
+		}
 		const named = call?.e.names?.[0];
-		const pid =
-			typeof named === "string" ? input.pidOf(side, named) : undefined;
+		if (pid === undefined && typeof named === "string") {
+			pid = input.pidOf(side, named);
+		}
 		const man =
 			pid === undefined ? undefined : parts.find((p) => p.pid === pid);
 		let t: number;
@@ -323,4 +337,143 @@ export const foulsOf = (input: FoulInput): Foul[] => {
 			by: name === "Delay of game" ? ["BJ", "R"] : BY[when],
 		};
 	});
+};
+
+// THE FOUL ITSELF, where the field has the man who did it and he is on his
+// feet at it, face to face with a man of the other side: his arms in it
+// over whatever his feet are doing - a hold (on a block, on a man running a
+// route); hands to the face; a shove in the back, after the whistle, or
+// into the passer with the ball gone. (A foul on the tackle, the tackle
+// itself: nothing more.)
+const FOUL_ARMS: Record<string, Move> = {
+	Holding: "holdOn",
+	"Pass interference": "holdOn",
+	"Illegal contact": "holdOn",
+	"Illegal use of hands": "handsFace",
+	"Illegal block in the back": "shove",
+	"Unnecessary roughness": "shove",
+	"Roughing the passer": "shove",
+};
+// Over this long before the foul's moment and this long after, cut down to
+// the stretch he is on his feet and his arms free (no less than this) - the
+// man he does it to no further off than this, and in front of him.
+const FOUL_BEFORE = 450;
+const FOUL_AFTER = 450;
+const FOUL_LEAST = 450;
+const FOUL_NEAR = 5;
+const FOUL_FACING = Math.PI / 3;
+
+// The legs his arms can do it over: running, blocking, stood.
+const freeArms = (l: Leg) =>
+	!l.arms && !l.ball && (moveKind(l.move) === "cycle" || l.move === "stand");
+
+// The leg he is in at t made two, there (an act through it, a turn, his
+// arms in one of their own, split with it).
+const splitLeg = (legs: Leg[], t: number) => {
+	const k = legs.findIndex((l) => l.t0 < t && t < l.t1);
+	if (k < 0) {
+		return;
+	}
+	const l = legs[k]!;
+	const u = (t - l.t0) / (l.t1 - l.t0);
+	const mid = {
+		x: l.from.x + (l.to.x - l.from.x) * u,
+		y: l.from.y + (l.to.y - l.from.y) * u,
+	};
+	const [p0, p1] = l.span ?? [0, 1];
+	const [q0, q1] = l.armsSpan ?? [0, 1];
+	const act = moveKind(l.move) === "act";
+	legs.splice(k + 1, 0, {
+		...l,
+		t0: t,
+		from: mid,
+		...(act ? { span: [p0 + (p1 - p0) * u, p1] as [number, number] } : {}),
+		...(l.arms
+			? { armsSpan: [q0 + (q1 - q0) * u, q1] as [number, number] }
+			: {}),
+		...(l.turn && l.yaw !== undefined
+			? { yaw: l.yaw + l.turn * u, turn: l.turn * (1 - u) }
+			: {}),
+	});
+	if (l.turn) {
+		l.turn *= u;
+	}
+	l.t1 = t;
+	l.to = mid;
+	if (act) {
+		l.span = [p0, p0 + (p1 - p0) * u];
+	}
+	if (l.arms) {
+		l.armsSpan = [q0, q0 + (q1 - q0) * u];
+	}
+};
+
+// Which way he faces in a leg: as it says, or the way he goes.
+const facingOf = (l: Leg): number | undefined =>
+	l.yaw ??
+	(dist(l.from, l.to) > 0.5
+		? Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x)
+		: undefined);
+
+export const actFouls = (fouls: Foul[], parts: Part[]) => {
+	for (const f of fouls) {
+		const move = FOUL_ARMS[f.name];
+		const man = parts.find((p) => p.pid === f.pid);
+		if (!move || !man) {
+			continue;
+		}
+		const legs = man.legs;
+		const k = legs.findIndex((l) => l.t0 <= f.t && f.t < l.t1);
+		const at = legs[k];
+		if (!at || !freeArms(at)) {
+			continue;
+		}
+		// (Who he did it to: the nearest of the other side, in front of him -
+		// the passer, roughed.)
+		const me = posOf(man, f.t);
+		const way = facingOf(at);
+		const foe = parts
+			.filter(
+				(p) =>
+					p.team !== man.team &&
+					(f.name !== "Roughing the passer" || p.role === "QB"),
+			)
+			.map((p) => ({ p, d: dist(posOf(p, f.t), me) }))
+			.sort((a, b) => a.d - b.d)[0];
+		if (!foe || foe.d > FOUL_NEAR || way === undefined) {
+			continue;
+		}
+		const to = posOf(foe.p, f.t);
+		let off = Math.atan2(to.y - me.y, to.x - me.x) - way;
+		off = Math.atan2(Math.sin(off), Math.cos(off));
+		if (Math.abs(off) > FOUL_FACING) {
+			continue;
+		}
+		// (Over the legs either side of it his arms are free in.)
+		let a = k;
+		while (a > 0 && legs[a - 1]!.t1 === legs[a]!.t0 && freeArms(legs[a - 1]!)) {
+			a--;
+		}
+		let b = k;
+		while (
+			b + 1 < legs.length &&
+			legs[b + 1]!.t0 === legs[b]!.t1 &&
+			freeArms(legs[b + 1]!)
+		) {
+			b++;
+		}
+		const t0 = Math.max(f.t - FOUL_BEFORE, legs[a]!.t0);
+		const t1 = Math.min(f.t + FOUL_AFTER, legs[b]!.t1);
+		if (t1 - t0 < FOUL_LEAST) {
+			continue;
+		}
+		splitLeg(legs, t0);
+		splitLeg(legs, t1);
+		for (const l of legs) {
+			if (l.t0 >= t0 && l.t1 <= t1 && l.t1 > l.t0) {
+				l.arms = move;
+				l.armsSpan = [(l.t0 - t0) / (t1 - t0), (l.t1 - t0) / (t1 - t0)];
+			}
+		}
+	}
 };

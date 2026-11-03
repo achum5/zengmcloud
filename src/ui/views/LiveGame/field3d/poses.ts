@@ -694,6 +694,61 @@ const RIP_KEYS: [number, Pose][] = [
 	[0.65, pose({ shN: 142, elN: 84, abN: 4, shF: 54, elF: 30, abF: -6 })],
 	[1, pose({ shN: 40, elN: 86, shF: 30, elF: 88 })],
 ];
+// A hold: his hands out wide of the man on him and round onto his back,
+// hung on to and pulled in - and let go. (Hands to the face: one arm
+// locked out high into the facemask.)
+const HOLD_KEYS: [number, Pose][] = [
+	[0, RUSH_FIGHT],
+	[
+		0.25,
+		pose({
+			shN: 88,
+			elN: 30,
+			abN: 40,
+			wrN: 20,
+			shF: 88,
+			elF: 30,
+			abF: 40,
+			wrF: 20,
+		}),
+	],
+	[
+		0.45,
+		pose({
+			shN: 80,
+			elN: 72,
+			abN: 22,
+			wrN: 30,
+			shF: 80,
+			elF: 72,
+			abF: 22,
+			wrF: 30,
+		}),
+	],
+	[
+		0.8,
+		pose({
+			shN: 56,
+			elN: 96,
+			abN: 18,
+			wrN: 30,
+			shF: 62,
+			elF: 90,
+			abF: 20,
+			wrF: 30,
+		}),
+	],
+	[1, RUSH_FIGHT],
+];
+const FACE_KEYS: [number, Pose][] = [
+	[0, RUSH_FIGHT],
+	[
+		0.3,
+		pose({ shN: 112, elN: 10, abN: 4, wrN: 40, shF: 80, elF: 26, abF: 14 }),
+	],
+	[0.7, pose({ shN: 116, elN: 6, abN: 2, wrN: 44, shF: 78, elF: 30, abF: 14 })],
+	[1, RUSH_FIGHT],
+];
 const TAKE_KEYS: [number, Pose][] = [
 	[0, pose({ shN: 10, elN: 85, shF: 10, elF: 85 })],
 	[0.4, TAKE_OPEN],
@@ -3803,6 +3858,9 @@ const FIELD_ANIMS = {
 		kind: "act",
 		keys: RIP_KEYS.map(([k, q]): [number, Pose] => [k, mirror(q)]),
 	},
+	// A foul (see fouls.ts actFouls): a hold, hands to the face.
+	holdOn: { kind: "act", keys: HOLD_KEYS },
+	handsFace: { kind: "act", keys: FACE_KEYS },
 	// A handoff taken from his right, or his left (see TAKE_KEYS).
 	takeR: { kind: "act", keys: TAKE_KEYS },
 	takeL: {

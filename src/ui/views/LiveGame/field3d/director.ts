@@ -54,7 +54,7 @@ import {
 	type CrewPart,
 	type FlagFlight,
 } from "./crew.ts";
-import { foulsOf } from "./fouls.ts";
+import { actFouls, foulsOf } from "./fouls.ts";
 import { stageChains, type ChainSpots } from "./chains.ts";
 import { holderAt, replayFor, type FieldReplay } from "./replays.ts";
 import { crewClear, stageTimeout } from "./timeout.ts";
@@ -1965,6 +1965,8 @@ class Director {
 					r: this.rng(i0, "fouls"),
 				})
 			: [];
+		// The fouls acted out, where the field has the men who did them.
+		actFouls(fouls, parts);
 		// When the play has each line happen.
 		const timed = new Map(acted?.at ?? []);
 		for (const f of fouls) {
