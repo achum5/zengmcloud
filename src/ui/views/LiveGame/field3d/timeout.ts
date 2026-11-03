@@ -468,6 +468,13 @@ export const crewClear = (crew: CrewPart[], timeout: Timeout, t1: number) => {
 				x: c.at.x + Math.cos(a) * c.far,
 				y: clamp(c.at.y + Math.sin(a) * c.far, -CREW_OUT, FIELD_W + CREW_OUT),
 			};
+			// (Kept on the field that way, still in among them: off to the
+			// side of them instead, along the sideline.)
+			const dy = to.y - c.at.y;
+			if (dist(to, c.at) < c.far - 0.01) {
+				const side = at.x >= c.at.x ? 1 : -1;
+				to.x = c.at.x + side * Math.sqrt(Math.max(0, c.far * c.far - dy * dy));
+			}
 			cutAt(part.legs, cut);
 			const l = part.legs.at(-1)!;
 			if (l.t1 < cut) {
