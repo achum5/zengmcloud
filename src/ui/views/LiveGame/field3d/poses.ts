@@ -630,8 +630,9 @@ const TAKE_KEYS: [number, Pose][] = [
 	[0.8, TAKE_SHUT],
 	[1, TAKE_SHUT],
 ];
-// Both hands on top of his head, the elbows up in front of him (in close:
-// see tuck).
+// Both hands on top of his helmet, the elbows out wide (see the court's
+// shapedArm) - from, and partway back toward, the hands up there in close
+// with the elbows in front of him that these angles make.
 const HANDS_ON_HEAD: Partial<Pose> = {
 	shN: 122,
 	elN: 118,
@@ -640,6 +641,8 @@ const HANDS_ON_HEAD: Partial<Pose> = {
 	elF: 118,
 	abF: -6,
 	tuck: 1,
+	onHeadN: 1,
+	onHeadF: 1,
 };
 // The hand held out to shake, his elbow in by his side (and the shake down
 // from it); in close, his left arm round a man's back (and patting it);
@@ -3405,8 +3408,8 @@ const FIELD_ANIMS = {
 			[0, BASE],
 			[0.08, pose(DOUSED)],
 			[0.3, pose({ ...DOUSED, lean: 30, shN: 66, shF: 66 })],
-			[0.46, pose({ ...HANDS_ON_HEAD, elN: 130, elF: 130, lean: 16 })],
-			[0.62, pose({ ...HANDS_ON_HEAD, shN: 150, shF: 150, lean: 12 })],
+			[0.46, pose({ ...HANDS_ON_HEAD, lean: 16 })],
+			[0.62, pose({ ...HANDS_ON_HEAD, onHeadN: 0.7, onHeadF: 0.8, lean: 12 })],
 			[
 				0.82,
 				pose({
