@@ -3510,16 +3510,16 @@ const FIELD_ANIMS = {
 		}),
 	},
 	// A TV camera on his right shoulder: the right hand up on its grip by
-	// his head, the left out in front on the lens.
+	// the lens, the left under the front of it.
 	shoulderCam: {
 		kind: "still",
 		pose: pose({
-			shN: 84,
-			elN: 104,
-			abN: 46,
-			shF: 58,
-			elF: 72,
-			abF: -14,
+			shN: 54,
+			elN: 132,
+			abN: 8,
+			shF: 52,
+			elF: 114,
+			abF: -33,
 			tuck: 1,
 		}),
 	},
@@ -3528,12 +3528,12 @@ const FIELD_ANIMS = {
 	holdPole: {
 		kind: "still",
 		pose: pose({
-			shN: 38,
-			elN: 98,
-			abN: -4,
-			shF: 24,
-			elF: 84,
-			abF: -4,
+			shN: 25,
+			elN: 116,
+			abN: -18,
+			shF: 9,
+			elF: 97,
+			abF: -18,
 		}),
 	},
 
