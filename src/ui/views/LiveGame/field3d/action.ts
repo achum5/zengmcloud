@@ -2523,6 +2523,8 @@ const JOSTLE_STEP_MS = 90;
 const DOUBLE_FT = 2.2;
 const FILL_MS = 1050;
 const FILL_PACE = 0.7;
+// (Over to fill no slower than this, ft/s.)
+const FILL_LEAST_FPS = 9;
 const CLIMB_PACE = 0.85;
 const SHED_MS = 550;
 const SHED_SPREAD = 350;
@@ -10945,9 +10947,19 @@ class Action {
 				a: holeA + (s.a - holeA) * 0.4,
 			};
 			const across = Math.abs(fill.a - s.a);
+			const by = filled + r() * 250;
+			// (Not far to go, across: set reading it a moment longer, and
+			// over at a pace - not walked into the hole.)
+			const far = dist(m.at, this.w(fill));
+			if (
+				across > 5 &&
+				(far / Math.max(0.001, by - m.t)) * 1000 < FILL_LEAST_FPS
+			) {
+				m.hold(by - (far / FILL_LEAST_FPS) * 1000, "backerReady", this.behind);
+			}
 			m.chase(
 				this.w(fill),
-				filled + r() * 250,
+				by,
 				m.top * FILL_PACE,
 				across > 5 ? "run" : "slide",
 				across > 5 ? undefined : this.behind,
