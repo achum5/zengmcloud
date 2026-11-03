@@ -111,9 +111,9 @@ export type Acted = {
 	// A kick: when it is away.
 	follow?: number;
 	// A big play's moment after it (see celebrate): when it is over - and
-	// when it starts, where.
+	// when it starts, where, and the man it is about (if one).
 	until?: number;
-	party?: { from: number; at: Pt };
+	party?: { from: number; at: Pt; hero?: number };
 	// Where the man with it went out of bounds.
 	out?: Pt;
 };
@@ -2641,11 +2641,22 @@ const POINT_MS = 1000;
 const TAKEAWAY = 0.75;
 // A sack: the man who made it up and into it this often.
 const SACK_PARTY = 0.7;
+// A man in his moment after a big play - a sack, a stop, a takeaway -
+// played out to the crowd on the press box side, more or less: give or
+// take up to five times this (radians), his own way of standing (no draw
+// of the play's).
+const OUT_YAW = Math.PI / 2;
+const OUT_OFF = 0.1;
+const playedOut = (m: Actor) =>
+	OUT_YAW + ((Math.abs(m.pid * 37) % 11) - 5) * OUT_OFF;
 // In crunch time: a sack, a stop, a turnover let out this often; a new set
 // of downs pointed this often; and this many round a man who scores.
 const CRUNCH_PARTY = 0.95;
 const CRUNCH_POINT = 0.85;
 const CRUNCH_MOB = 6;
+// The picture in close on the man a moment is about (see the director's
+// heroClose, aim.ts): from down on the field this far in front of him.
+export const HERO_CAM_FT = 22;
 
 // Out of bounds: the whistle as he gets this far over the sideline (feet),
 // on another stride or two - no further over than OUT_MOST - and pulled up;
@@ -3729,7 +3740,7 @@ class Action {
 	went?: Pt;
 	// A touchdown: when he got there, and who (see tdArms).
 	scored?: { t: number; scorer: Actor };
-	party?: { from: number; at: Pt };
+	party?: { from: number; at: Pt; hero?: number };
 	// The man who brought the carrier down, the last time one did.
 	downer?: Actor;
 	// A pile on the carrier when he goes down (see pileUp): the most men in
@@ -13391,8 +13402,8 @@ class Action {
 				if (up) {
 					sacker.cut(up.t1);
 				}
-				this.party = { from: sacker.t, at: sacker.at };
-				sacker.act("flex", sacker.t + 1100);
+				this.party = { from: sacker.t, at: sacker.at, hero: sacker.pid };
+				sacker.act("flex", sacker.t + 1100, playedOut(sacker));
 				this.until = sacker.t;
 				sacker.hold(sacker.t + 400, "stand");
 				this.mob.add(sacker.pid);
@@ -13767,7 +13778,7 @@ class Action {
 		const r = this.r;
 		const at = hero.at;
 		this.mobAt = at;
-		this.party = { from: c0, at };
+		this.party = { from: c0, at, hero: hero.pid };
 		// His teammates nearest, to him.
 		const start = c0 + 150;
 		// (Away on his own, a long way ahead of them all: the nearest of them
@@ -13950,9 +13961,9 @@ class Action {
 		hero.cut(c0);
 		hero.hold(c0);
 		if (r() < 0.6) {
-			hero.hold(c0 + 1400, "ballUp");
+			hero.hold(c0 + 1400, "ballUp", playedOut(hero));
 		} else {
-			hero.act("leap", c0 + 800);
+			hero.act("leap", c0 + 800, playedOut(hero));
 		}
 		this.until = hero.t;
 		hero.hold(hero.t + 2200, "stand");
@@ -14002,11 +14013,12 @@ class Action {
 		hero.act(
 			u < 0.4 ? "flex" : u < 0.7 ? "fistPump" : "leap",
 			hero.t + (u < 0.7 ? 1200 : 800),
+			playedOut(hero),
 		);
 		this.mob.add(hero.pid);
 		const at = hero.at;
 		this.mobAt = at;
-		this.party = { from: c0, at };
+		this.party = { from: c0, at, hero: hero.pid };
 		const start = c0 + 150;
 		const mates = this.men
 			.filter(

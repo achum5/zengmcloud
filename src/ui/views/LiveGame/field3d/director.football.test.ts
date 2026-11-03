@@ -3,6 +3,7 @@ import processLiveGameEvents, {
 	DEFAULT_SPORT_STATE,
 	type SportState,
 } from "../../../util/processLiveGameEvents.football.tsx";
+import { HERO_CAM_FT } from "./action.ts";
 import { aimFor } from "./aim.ts";
 import { FIGURE_SCALE } from "./body.ts";
 import {
@@ -488,6 +489,43 @@ describe("the net behind the posts", () => {
 			}
 		}
 		assert.isAbove(caught, 10);
+	}, 20_000);
+});
+
+describe("in close on a big play's man", () => {
+	test("on his own in his moment, the camera on the field, out before anything else", () => {
+		let close = 0;
+		for (const game of games) {
+			const tl = stage(game);
+			for (const play of tl.plays) {
+				const c = play.heroClose;
+				if (!c) {
+					continue;
+				}
+				close += 1;
+				const at = `play ${play.i}`;
+				assert.strictEqual(play.party?.from !== undefined, true, at);
+				assert.isAtLeast(c.t1 - c.t0, 1300, at);
+				assert.isAtMost(c.t1 - c.t0, 2600, at);
+				assert.isBelow(c.at.y + HERO_CAM_FT, FIELD_W, at);
+				assert.isAtMost(c.t1, play.t1 - 400, at);
+				if (play.refCall) {
+					assert.isAtMost(c.t1, play.refCall.t0, at);
+				}
+				if (play.replay) {
+					assert.isAtMost(c.t1, play.replay.cue - 300, at);
+				}
+				const him = play.parts.find((p) => p.pid === c.pid)!;
+				for (let t = c.t0; t < c.t1; t += 100) {
+					const l = legAt(him, t);
+					const u = Math.min(1, Math.max(0, (t - l.t0) / (l.t1 - l.t0)));
+					const x = l.from.x + (l.to.x - l.from.x) * u;
+					const y = l.from.y + (l.to.y - l.from.y) * u;
+					assert.isAtMost(Math.hypot(x - c.at.x, y - c.at.y), 6.01, at);
+				}
+			}
+		}
+		assert.isAbove(close, 2);
 	}, 20_000);
 });
 

@@ -25,6 +25,8 @@ export type FieldRig = {
 	high: number;
 	slide: number;
 	upright: boolean;
+	// (And this far along the field from there.)
+	shift?: number;
 };
 export const MAIN_RIG: FieldRig = {
 	back: 230,
@@ -64,7 +66,7 @@ export const makeFieldCamera = (
 ): Camera =>
 	cameraAt(
 		{
-			x: MID_X + (shot.x - MID_X) * rig.slide,
+			x: MID_X + (shot.x - MID_X) * rig.slide + (rig.shift ?? 0),
 			y: FIELD_W + rig.back,
 			z: rig.high,
 		},

@@ -1489,10 +1489,11 @@ const Field3D = ({
 					boxes: coversOf(wrapRef.current, bugRef.current),
 				};
 			}
+			// (In close on a man: no name under anybody.)
 			drawTags(
 				ctx,
 				view,
-				moment.play,
+				close ? undefined : moment.play,
 				moment.t,
 				moment.players,
 				look,

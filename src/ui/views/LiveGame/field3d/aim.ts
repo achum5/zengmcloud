@@ -1,3 +1,4 @@
+import { HERO_CAM_FT } from "./action.ts";
 import type { FieldRig, Shot } from "./camera.ts";
 import type { Play } from "./director.ts";
 import type { FieldMoment } from "./evaluate.ts";
@@ -113,6 +114,10 @@ const KICK_CLOSE = { width: 24, z: 3.4, camFt: 26, camZ: 4.4 };
 // And on the referee giving a foul after the play (see the director's
 // refCall), from the knees up - his arms over his head in it.
 const REF_CLOSE = { width: 13, z: 5.3, camFt: REF_CAM_FT, camZ: 6.2 };
+// And on the man a big play's moment is about (see the director's
+// heroClose): all of him, and room over him for the ball held up, a leap
+// (the men drawn bigger than they are - see body.ts FIGURE_SCALE).
+const HERO_CLOSE = { width: 20, z: 5, camFt: HERO_CAM_FT, camZ: 5.6 };
 // The winners' head coach under the cooler: in on him, this wide, the
 // picture's middle this far toward the near side of him (on the far
 // sideline, this far).
@@ -491,7 +496,8 @@ export const closeIn = (m: FieldMoment): boolean => {
 };
 
 // Whom the picture is in close on now, if anyone - the kicker through his
-// routine, the referee giving a foul - where he stands for it, and how.
+// routine, the referee giving a foul, a big play's man - where he stands
+// for it, and how.
 export const closeUpOf = (m: FieldMoment) => {
 	const kick = m.play?.closeUp;
 	if (kick && m.t >= kick.t0 && m.t < kick.t1) {
@@ -500,6 +506,10 @@ export const closeUpOf = (m: FieldMoment) => {
 	const ref = m.play?.refCall;
 	if (ref && m.t >= ref.t0 && m.t < ref.t1) {
 		return { pid: officialId("R"), at: ref.at, ...REF_CLOSE };
+	}
+	const hero = m.play?.heroClose;
+	if (hero && m.t >= hero.t0 && m.t < hero.t1) {
+		return { pid: hero.pid, at: hero.at, shift: hero.shift, ...HERO_CLOSE };
 	}
 	return undefined;
 };
@@ -516,6 +526,7 @@ export const rigFor = (m: FieldMoment): FieldRig | undefined => {
 			high: close.camZ,
 			slide: 1,
 			upright: false,
+			...("shift" in close ? { shift: close.shift } : {}),
 		};
 	}
 	const post = m.play?.postgame;

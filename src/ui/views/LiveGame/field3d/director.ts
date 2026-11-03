@@ -42,7 +42,7 @@ import {
 	type RosterMan,
 } from "./personnel.ts";
 import { moveKind, type Move } from "./poses.ts";
-import { actOut } from "./action.ts";
+import { actOut, HERO_CAM_FT } from "./action.ts";
 import {
 	anyBall,
 	CALL_FOR_MS,
@@ -257,6 +257,11 @@ export type Play = {
 	// In close on the referee as he gives the fouls on it (see crew.ts): from
 	// when, until when, and where he stands for it.
 	refCall?: { t0: number; t1: number; at: Pt };
+	// In close on the man a big play's moment after it is about - the man
+	// who made the sack, the scorer - on his own in it, before the rest get
+	// to him (see heroClose): from when, until when, and where he stands.
+	// (And the camera this far along the field from him - see aim.ts.)
+	heroClose?: { t0: number; t1: number; pid: number; at: Pt; shift: number };
 	// Between quarters: when the picture cuts to the whole stadium (see
 	// aim.ts).
 	between?: number;
@@ -872,6 +877,25 @@ const REF_AFTER_PARTY = 600;
 const REF_WAY_NEAR = 0.5;
 const REF_SEEN = 7;
 const REF_WAY_STEP = 50;
+// In close on a big play's man (see aim.ts): this often, from this long
+// into his moment, for this long at most and no less than this - and no
+// longer than he stays this near where he started it (feet), nobody
+// between the camera and him (this near the line to him, feet) - put off
+// this long at most for somebody who is.
+const HERO_CLOSE_SHARE = 0.7;
+const HERO_CLOSE_AFTER = 150;
+const HERO_CLOSE_MOST = 2600;
+const HERO_CLOSE_LEAST = 1300;
+const HERO_DRIFT = 6;
+const HERO_BLOCK = 2.5;
+const HERO_LATE = 800;
+// (The camera straight in front of him, or this far along the field to
+// one side.)
+const HERO_SHIFTS = [0, -7, 7, -12, 12];
+// (Nor his back to it - faced no further round from it than this, as he
+// is this long into it.)
+const HERO_BACK_ON = -0.2;
+const HERO_FACED_AT = 400;
 const FIRST_DOWN_AT = 1100;
 const OUT_SIGNAL_AT = 150;
 const OUT_FIRST_AT = 1700;
@@ -2218,6 +2242,104 @@ class Director {
 				? { t0: from, t1: until, at }
 				: undefined;
 		})();
+		const shown = replayTill(t1);
+		// (A man hurt: the play shown again while they see to him.)
+		const replay =
+			shown ??
+			(hurt && !fouls.some((f) => f.accepted) && hurt.tending > whistle
+				? {
+						cue: hurt.tending,
+						from: Math.max(t0, snap - 300, whistle - 5600),
+						to: whistle + 400,
+						pid: hurt.pid,
+					}
+				: undefined);
+		const heroClose = (() => {
+			const party = acted?.party;
+			const pid = party?.hero;
+			const hero = parts.find((p) => p.pid === pid);
+			if (
+				!party ||
+				pid === undefined ||
+				!hero ||
+				!acted?.until ||
+				postgame ||
+				half ||
+				measureAt ||
+				this.rng(i0, "heroClose")() >= HERO_CLOSE_SHARE
+			) {
+				return undefined;
+			}
+			const from = party.from + HERO_CLOSE_AFTER;
+			const at = posOf(hero.legs, from);
+			const camY = at.y + HERO_CAM_FT;
+			if (camY >= FIELD_W) {
+				return undefined;
+			}
+			const others = [...parts, ...medics, ...crew.parts].filter(
+				(q) => q !== hero && q.legs.length > 0,
+			);
+			// (Anyone on the line from the camera - this far along the field
+			// from him - to him, between the two.)
+			const inWay = (t: number, shift: number) => {
+				const him = posOf(hero.legs, t);
+				return others.some((q) => {
+					const p = posOf(q.legs, t);
+					if (p.y <= him.y + REF_WAY_NEAR || p.y >= camY) {
+						return false;
+					}
+					const u = (camY - p.y) / (camY - him.y);
+					return Math.abs(p.x - (him.x + shift * (1 - u))) < HERO_BLOCK;
+				});
+			};
+			const end = Math.min(
+				from + HERO_CLOSE_MOST,
+				acted.until + 400,
+				t1 - 400,
+				(replay?.cue ?? Infinity) - 300,
+				refCall?.t0 ?? Infinity,
+				timeout?.call?.from ?? Infinity,
+				timeout?.cut ?? Infinity,
+				between ?? Infinity,
+			);
+			// (Which way he is faced, a while into it.)
+			const leg = hero.legs.findLast((l) => l.t0 <= from + HERO_FACED_AT);
+			const yaw =
+				leg?.yaw ??
+				(leg && dist(leg.from, leg.to) > 0.5
+					? Math.atan2(leg.to.y - leg.from.y, leg.to.x - leg.from.x)
+					: undefined);
+			// (From whichever of the camera's spots sees him longest - and not
+			// his back.)
+			let best: { t0: number; t1: number; shift: number } | undefined;
+			for (const shift of HERO_SHIFTS) {
+				if (
+					yaw !== undefined &&
+					Math.cos(yaw - Math.atan2(HERO_CAM_FT, shift)) < HERO_BACK_ON
+				) {
+					continue;
+				}
+				let t0 = from;
+				while (t0 < from + HERO_LATE && inWay(t0, shift)) {
+					t0 += REF_WAY_STEP;
+				}
+				let until = t0;
+				while (
+					until < end &&
+					!inWay(until, shift) &&
+					dist(posOf(hero.legs, until), at) <= HERO_DRIFT
+				) {
+					until += REF_WAY_STEP;
+				}
+				until = Math.min(until, end);
+				if (!best || until - t0 > best.t1 - best.t0) {
+					best = { t0, t1: until, shift };
+				}
+			}
+			return best && best.t1 - best.t0 >= HERO_CLOSE_LEAST
+				? { ...best, pid, at }
+				: undefined;
+		})();
 		const chains = stageChains({
 			quarter,
 			dir,
@@ -2249,18 +2371,6 @@ class Director {
 						r: this.rng(i0, "measured"),
 					})
 				: undefined;
-		const shown = replayTill(t1);
-		// (A man hurt: the play shown again while they see to him.)
-		const replay =
-			shown ??
-			(hurt && !fouls.some((f) => f.accepted) && hurt.tending > whistle
-				? {
-						cue: hurt.tending,
-						from: Math.max(t0, snap - 300, whistle - 5600),
-						to: whistle + 400,
-						pid: hurt.pid,
-					}
-				: undefined);
 		if (!this.opens.has(quarter)) {
 			this.opens.set(quarter, minutes);
 		}
@@ -2333,6 +2443,7 @@ class Director {
 			...(measure ? { measure: { cut: measure.cut, at: measure.at } } : {}),
 			...(routine?.closeUp ? { closeUp: routine.closeUp } : {}),
 			...(refCall ? { refCall } : {}),
+			...(heroClose ? { heroClose } : {}),
 			...(between !== undefined ? { between } : {}),
 			...(acted?.party && acted.until
 				? { party: { ...acted.party, until: acted.until } }
