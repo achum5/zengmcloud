@@ -33,6 +33,9 @@ export type DeadlineView = {
 	// How much of our uncertainty about a team's strength is gone by the
 	// deadline, in points a game.
 	revealed: number;
+	// The same by the measured uncertainty (measuredStrengthUncertainty), for
+	// the teams set to it (measuredDeadline).
+	revealedMeasured?: number;
 	curve: DeadlineCurve;
 };
 
@@ -86,6 +89,8 @@ export const buildDeadlineView = ({
 	byConference,
 	uncertaintyNow,
 	uncertaintyAtDeadline,
+	measuredNow,
+	measuredAtDeadline,
 	daysToDeadline,
 	daysLeft,
 	seed,
@@ -96,6 +101,8 @@ export const buildDeadlineView = ({
 	byConference: boolean;
 	uncertaintyNow: number;
 	uncertaintyAtDeadline: number;
+	measuredNow?: number;
+	measuredAtDeadline?: number;
 	daysToDeadline: number;
 	daysLeft: number;
 	seed: number;
@@ -135,6 +142,10 @@ export const buildDeadlineView = ({
 		revealed: Math.sqrt(
 			Math.max(0, uncertaintyNow ** 2 - uncertaintyAtDeadline ** 2),
 		),
+		revealedMeasured:
+			measuredNow !== undefined && measuredAtDeadline !== undefined
+				? Math.sqrt(Math.max(0, measuredNow ** 2 - measuredAtDeadline ** 2))
+				: undefined,
 		curve: fitDeadlineCurve(points),
 	};
 };

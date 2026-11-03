@@ -593,6 +593,12 @@ export const outlookSettings = {
 	// game charges - not as if every team added the same each season. Off
 	// while it is measured.
 	colaPath: false,
+	// Before the deadline, how much a team expects to learn about itself by
+	// then (DeadlineView.revealedMeasured) as its read of a team really moves
+	// by then - about 0.7 points a game from the season's start, its own
+	// trades aside - not by the first slice's guess, 2.6. Off while it is
+	// measured.
+	measuredDeadline: false,
 };
 
 // For the arena's version-against-version leagues: settings for some teams'
@@ -615,6 +621,7 @@ export const teamOutlookSettings = new Map<
 			| "knownClasses"
 			| "measuredUncertainty"
 			| "colaPath"
+			| "measuredDeadline"
 		>
 	>
 >();
@@ -632,7 +639,8 @@ const outlookSettingFor = <
 		| "moneyUnderCap"
 		| "knownClasses"
 		| "measuredUncertainty"
-		| "colaPath",
+		| "colaPath"
+		| "measuredDeadline",
 >(
 	tid: number,
 	key: K,
@@ -3017,6 +3025,8 @@ export const buildOutlook = async ({
 				byConference: g.get("playoffsByConf", "current") ?? true,
 				uncertaintyNow: uncertaintyAt(progress),
 				uncertaintyAtDeadline: uncertaintyAt(progressAtDeadline),
+				measuredNow: measuredStrengthUncertainty(0, progress),
+				measuredAtDeadline: measuredStrengthUncertainty(0, progressAtDeadline),
 				daysToDeadline,
 				daysLeft,
 				seed: season * 7919 + Math.round(progress * 1000),
@@ -3078,6 +3088,20 @@ export const curvesFor = (
 		outlookSettings.measuredUncertainty
 		? outlook.otherCurves
 		: { title: outlook.titleCurves, playoff: outlook.playoffCurves };
+
+// The deadline as a team reads it: what it expects to learn by then by its
+// own measuredDeadline.
+export const deadlineViewFor = (
+	outlook: Pick<LeagueOutlook, "deadline">,
+	tid: number,
+) => {
+	const view = outlook.deadline;
+	return view &&
+		view.revealedMeasured !== undefined &&
+		outlookSettingFor(tid, "measuredDeadline")
+		? { ...view, revealed: view.revealedMeasured }
+		: view;
+};
 
 // What a run of seasons at these strengths is worth to a franchise, in titles:
 // discounted title chances, plus a sliver for making the playoffs.

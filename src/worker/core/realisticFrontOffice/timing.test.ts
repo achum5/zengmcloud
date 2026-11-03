@@ -1,5 +1,16 @@
 import { assert, test } from "vitest";
-import { prefersWaiting, stillOnOffer, type DeadlineView } from "./timing.ts";
+import {
+	deadlineViewFor,
+	measuredStrengthUncertainty,
+	teamOutlookSettings,
+} from "./outlook.ts";
+import {
+	buildDeadlineView,
+	prefersWaiting,
+	stillOnOffer,
+	waitingValues,
+	type DeadlineView,
+} from "./timing.ts";
 
 // Title chances that rise steeply with playoff strength and barely with the
 // regular season's.
@@ -49,4 +60,51 @@ test("nobody waits once the deadline is here", () => {
 			later: -0.06,
 		}),
 	);
+});
+
+test("by the measured read, a team learns less about itself before the deadline", () => {
+	const built = buildDeadlineView({
+		teams: [6, 2, -2, -6].map((strength, tid) => ({
+			tid,
+			cid: tid % 2,
+			strength,
+			won: 20,
+			lost: 20,
+			gamesRemaining: 42,
+		})),
+		numGamesPlayoffSeries: [7],
+		playIn: false,
+		byConference: false,
+		uncertaintyNow: 1.5 + 2 * (1 - 0.3),
+		uncertaintyAtDeadline: 1.5 + 2 * (1 - 0.6),
+		measuredNow: measuredStrengthUncertainty(0, 0.3),
+		measuredAtDeadline: measuredStrengthUncertainty(0, 0.6),
+		daysToDeadline: 40,
+		daysLeft: 100,
+		seed: 1,
+	});
+	assert.isBelow(built.revealedMeasured!, 0.6);
+	assert.isAbove(built.revealed, 1);
+
+	teamOutlookSettings.set(1, { measuredDeadline: true });
+	try {
+		const outlook = { deadline: built };
+		assert.strictEqual(deadlineViewFor(outlook, 0)!.revealed, built.revealed);
+		assert.strictEqual(
+			deadlineViewFor(outlook, 1)!.revealed,
+			built.revealedMeasured,
+		);
+		// The same deal, waited on less by the team that expects to learn less.
+		const deal = { before: 4, after: 5, later: -0.06 };
+		const waits = (tid: number) => {
+			const { now, wait } = waitingValues({
+				view: deadlineViewFor(outlook, tid)!,
+				...deal,
+			});
+			return wait - now;
+		};
+		assert.isBelow(waits(1), waits(0));
+	} finally {
+		teamOutlookSettings.clear();
+	}
 });

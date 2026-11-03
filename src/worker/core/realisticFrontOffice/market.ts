@@ -24,6 +24,7 @@ import { valueOverReplacement } from "./strength.ts";
 import {
 	buildOutlook,
 	curveAt,
+	deadlineViewFor,
 	ensureRetention,
 	franchiseValue,
 	isClassPick,
@@ -1480,7 +1481,6 @@ export const waitingOf = (
 	deal: Pick<Deal, "tids" | "assets">,
 	sides: readonly [TeamState, TeamState],
 ) => {
-	const view = outlook.deadline!;
 	// The two teams' picks land where the deal leaves them, as in priceFor.
 	const traded = ([0, 1] as const).map((k) =>
 		applyTrade(sides[k], deal.assets[k], deal.assets[k === 0 ? 1 : 0]),
@@ -1517,6 +1517,7 @@ export const waitingOf = (
 				seasonValue(outlook, 0, pathBefore[0]!, t.tid));
 		const before = pathBefore[0]!;
 		const after = pathAfter[0]!;
+		const view = deadlineViewFor(outlook, t.tid)!;
 		return {
 			before,
 			after,
