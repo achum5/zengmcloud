@@ -33,7 +33,7 @@ import {
 } from "./geometry.ts";
 import { NET_HALF, NET_TOP, netAt } from "./net.ts";
 import { makeFieldClock, REPLAY_SPEED, stepField } from "./playback.ts";
-import { replayAim, replayFor, replaySky } from "./replays.ts";
+import { replayAim, replayFor, replayGoal, replaySky } from "./replays.ts";
 import { coachId, headCoachAt, sidelineAt, sidelineFor } from "./sideline.ts";
 import type { FieldPlayerState } from "./sprite.ts";
 import { stageField, stageOpening } from "./stageField.ts";
@@ -372,6 +372,57 @@ describe("replays", () => {
 			});
 		}
 		assert.isAbove(behind, 3);
+	}, 20_000);
+
+	test("a short run in for a score: the last of it from up level with the goal line, looking along it", () => {
+		let along = 0;
+		for (const game of games) {
+			const tl = stage(game);
+			tl.plays.forEach((play, k) => {
+				const r = play.replay;
+				const end = tl.plays[k + 1]?.i ?? game.events.length;
+				const run = game.events
+					.slice(play.i, end)
+					.find((e) => e.td === true && e.type !== "extraPoint");
+				const short =
+					run?.type === "run" && typeof run.yds === "number" && run.yds <= 3;
+				if (!r || !run) {
+					return;
+				}
+				if (!short) {
+					assert.isUndefined(r.goalLine, `play ${play.i}`);
+					return;
+				}
+				const gl = r.goalLine;
+				if (!gl) {
+					return;
+				}
+				along += 1;
+				// (Instead of from behind the end zone, and nothing else after.)
+				assert.isUndefined(r.endZone, `play ${play.i}`);
+				assert.isUndefined(r.sky, `play ${play.i}`);
+				assert.strictEqual(gl.x, play.dir === 1 ? GOAL_R : GOAL_L);
+				assert.isAbove(gl.from, r.from + 1000, `play ${play.i}`);
+				assert.isBelow(gl.from, r.to - 900, `play ${play.i}`);
+				// (Over the line by the end of it.)
+				const ball = momentAt(tl, r.to).focus!;
+				assert.isAbove((ball.x - gl.x) * play.dir, -3, `play ${play.i}`);
+				// On him, the line kept near the middle of the picture.
+				for (let t = gl.from; t <= r.to; t += 200) {
+					assert.strictEqual(replayGoal(r, t), gl.x);
+					const m = momentAt(tl, t);
+					const him = m.players.find((p) => p.id === r.pid)!;
+					const shot = replayAim(m, r);
+					assert.closeTo(shot.y, him.y, 0.01, `play ${play.i}`);
+					assert.isAtMost(
+						Math.abs(shot.x - gl.x),
+						Math.abs(him.x - gl.x) * 0.5,
+						`play ${play.i}`,
+					);
+				}
+			});
+		}
+		assert.isAbove(along, 0);
 	}, 20_000);
 
 	test("a long field goal, or one late that ties it or puts them ahead: from behind the kicker, onto the posts", () => {

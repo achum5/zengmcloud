@@ -6,6 +6,8 @@ import {
 	CROSSBAR_Z,
 	dist,
 	FIELD_L,
+	GOAL_L,
+	GOAL_R,
 	MID_Y,
 	type Dir,
 	type Pt3,
@@ -20,7 +22,9 @@ import {
 // last of it (see camera.ts makeEndZoneCamera) - through a flash of white;
 // anything else's, the same way, to the Skycam over the field behind it
 // (makeSkyCamera). And a long field goal, or one late that ties it or puts
-// them ahead: from behind the kicker, the ball away at the posts.
+// them ahead: from behind the kicker, the ball away at the posts. And a
+// short run in for a score: from the goal line, for whether he got the ball
+// over it.
 
 export type FieldReplay = {
 	// When the live picture cuts to it, and what it shows (timeline ms).
@@ -38,6 +42,10 @@ export type FieldReplay = {
 	// and on the ball up to where it goes over the bar (`goal`), there
 	// after.
 	sky?: FieldSky;
+	// A short run in for a score: from when it is seen from the near side,
+	// up level with the goal line (at x) he went over, looking along it (see
+	// camera.ts makeGoalLineCamera) - instead of from behind the end zone.
+	goalLine?: { from: number; x: number };
 };
 export type FieldSky = { from: number; way: Dir; at?: number; goal?: Pt3 };
 
@@ -76,6 +84,8 @@ const BIG_RETURN = 35;
 // And the defense's (the 3D court's block shown again, for football): a
 // sack for this big a loss, a safety, a stop on fourth down (yards).
 const BIG_SACK = 9;
+// Short enough a run in for a score to be shown from the goal line (yards).
+const SHORT_SCORE = 3;
 
 const GAINS = new Set(["run", "passComplete"]);
 const RETURNS = new Set(["kickoffReturn", "puntReturn", "interceptionReturn"]);
@@ -138,6 +148,7 @@ export const replayFor = (input: {
 	let skyWay: Dir = input.dir;
 	let fumbleAt: number | undefined;
 	let lost = false;
+	let short = false;
 	// (The kick, a field goal's: the second flight from the snap, after the
 	// snap back to the holder.)
 	const kick =
@@ -152,6 +163,7 @@ export const replayFor = (input: {
 			key = Math.max(b.actionStart, whistle);
 			to = undefined;
 			scored = true;
+			short = e.type === "run" && yds <= SHORT_SCORE;
 			const back =
 				e.type === "fumbleRecovery"
 					? e.lost === true
@@ -241,13 +253,17 @@ export const replayFor = (input: {
 					? kick.t0 - KICK_SKY_BEFORE
 					: key - SKY_LEAD,
 			);
-	const endZone = scored && end - ez >= END_ZONE_LEAST;
+	const late = scored && end - ez >= END_ZONE_LEAST;
+	const endZone = late && !short;
 	return {
 		cue,
 		from,
 		to: end,
 		...(pid === undefined ? {} : { pid }),
 		...(endZone ? { endZone: { from: ez, end: way === 1 ? 1 : 0 } } : {}),
+		...(late && short
+			? { goalLine: { from: ez, x: way === 1 ? GOAL_R : GOAL_L } }
+			: {}),
 		...((!scored && end - sky >= SKY_LEAST) ||
 		(endZone && ez - sky >= SKY_SCORE_LEAST)
 			? {
@@ -276,6 +292,11 @@ const KICKED = new Set(["punt", "kickoff", "onside"]);
 
 // From behind the end zone: on him, or the ball, this wide where he is.
 const END_ZONE_WIDTH = 40;
+// From the goal line: on him, or the ball, as far across the field as he
+// is - and along it, from the line, this share of the way to him (the line
+// kept near the middle of the picture) - this wide there.
+const GOAL_FOLLOW = 0.4;
+const GOAL_WIDTH = 34;
 // From the Skycam: on the ball - a little ahead of it down the field
 // (feet), while the side it looks along with has it (or it is in the air),
 // the turf behind not much to see; taken away and coming back at it, on
@@ -295,6 +316,10 @@ const SKY_UP = 0.45;
 // (undefined), or the one behind the end zone at that end.
 export const replayEnd = (r: FieldReplay, t: number): Side | undefined =>
 	r.endZone && t >= r.endZone.from ? r.endZone.end : undefined;
+
+// Or the goal line's (where along the field it is).
+export const replayGoal = (r: FieldReplay, t: number): number | undefined =>
+	r.goalLine && t >= r.goalLine.from ? r.goalLine.x : undefined;
 
 // Or the Skycam's.
 export const replaySky = (r: FieldReplay, t: number): FieldSky | undefined =>
@@ -341,6 +366,20 @@ export const replayAim = (m: FieldMoment, r: FieldReplay): Shot => {
 		const on = him ?? m.focus;
 		if (on) {
 			return { x: on.x, y: on.y, width: END_ZONE_WIDTH, z: 3.5 };
+		}
+	}
+	const line = replayGoal(r, m.t);
+	if (line !== undefined) {
+		const him =
+			r.pid === undefined ? undefined : m.players.find((p) => p.id === r.pid);
+		const on = him ?? m.focus;
+		if (on) {
+			return {
+				x: line + (on.x - line) * GOAL_FOLLOW,
+				y: on.y,
+				width: GOAL_WIDTH,
+				z: 3,
+			};
 		}
 	}
 	const pts: Pt3[] = [];

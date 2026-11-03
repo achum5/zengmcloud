@@ -60,6 +60,7 @@ import {
 } from "./body.ts";
 import {
 	makeEndZoneCamera,
+	makeGoalLineCamera,
 	makeFieldCamera,
 	makeSkyCamera,
 	MAIN_RIG,
@@ -137,7 +138,7 @@ import {
 	type KeySegment,
 } from "../court3d/keyPlays.ts";
 import { planFieldKeyPlays } from "./keyPlays.ts";
-import { replayAim, replayEnd, replaySky } from "./replays.ts";
+import { replayAim, replayEnd, replayGoal, replaySky } from "./replays.ts";
 import { poolsOf } from "./pools.ts";
 import { REPORTER_ID, type Stakes } from "./postgame.ts";
 import { drawFieldFrame, type FieldPaint } from "./scene.ts";
@@ -1276,8 +1277,15 @@ const Field3D = ({
 			// a flash.)
 			const end = replay ? replayEnd(replay, replay.at) : undefined;
 			const sky = replay ? replaySky(replay, replay.at) : undefined;
+			const line = replay ? replayGoal(replay, replay.at) : undefined;
 			const angle =
-				end !== undefined ? `end${end}` : sky !== undefined ? "sky" : undefined;
+				end !== undefined
+					? `end${end}`
+					: sky !== undefined
+						? "sky"
+						: line !== undefined
+							? "line"
+							: undefined;
 			if (angle !== replayAngle) {
 				if (replay && replayWas === replay) {
 					s.snapCam = true;
@@ -1335,15 +1343,17 @@ const Field3D = ({
 					? makeEndZoneCamera(shot, end, fw, fh)
 					: sky !== undefined
 						? makeSkyCamera(shot, sky.way, fw, fh, sky.at)
-						: makeFieldCamera(
-								shot,
-								fw,
-								fh,
-								replay
-									? REPLAY_RIG
-									: (rigFor(moment) ??
-											(fromLow(moment) ? REPLAY_RIG : MAIN_RIG)),
-							);
+						: line !== undefined
+							? makeGoalLineCamera(shot, line, fw, fh)
+							: makeFieldCamera(
+									shot,
+									fw,
+									fh,
+									replay
+										? REPLAY_RIG
+										: (rigFor(moment) ??
+												(fromLow(moment) ? REPLAY_RIG : MAIN_RIG)),
+								);
 			const white = flashRef.current;
 			if (white) {
 				const o = replay ? Math.max(0, 1 - (now - flashAt) / FLASH_MS) : 0;

@@ -132,6 +132,25 @@ export const makeSkyCamera = (
 		false,
 	);
 
+// The goal line's: up in the stands on the near side level with the line
+// (at x), looking along it at the man going over it - this far back from
+// the sideline, this high.
+const GOAL_BACK = 50;
+const GOAL_HIGH = 40;
+export const makeGoalLineCamera = (
+	shot: Shot,
+	x: number,
+	viewW: number,
+	viewH: number,
+): Camera =>
+	cameraAt(
+		{ x, y: FIELD_W + GOAL_BACK, z: GOAL_HIGH },
+		shot,
+		viewW,
+		viewH,
+		false,
+	);
+
 const cameraAt = (
 	pos: Pt3,
 	shot: Shot,
