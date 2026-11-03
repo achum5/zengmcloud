@@ -6,7 +6,7 @@ import { FIELD_W } from "./geometry.ts";
 // THE BROADCAST'S LINES ON THE FIELD: blue across it at the line of
 // scrimmage, yellow at the line to gain - painted on the turf under the men
 // standing on it, there from when the offense comes to the line until just
-// after the whistle.
+// after the whistle (or the ball is kicked).
 
 export type Mark = { x: number; color: string; alpha: number };
 
@@ -22,6 +22,10 @@ const IN_MS = 400;
 const SHOW_BEFORE = 1600;
 const OUT_MS = 500;
 const SHOW_AFTER = 900;
+// (A punt, a field goal: down from this long after it is kicked - nothing
+// left to gain.)
+const KICKS = new Set(["punt", "fieldGoal"]);
+const SHOW_KICKED = 300;
 // How wide each is (feet).
 const LOS_W = 0.9;
 const GAIN_W = 1.2;
@@ -31,7 +35,14 @@ export const marksAt = (play: Play | undefined, t: number): Mark[] => {
 		return [];
 	}
 	const on = play.set - SHOW_BEFORE;
-	const off = play.whistle + SHOW_AFTER;
+	// (The kick: the ball's next flight after the long snap.)
+	const kicked = KICKS.has(play.kind)
+		? play.ball.filter((b) => b.kind === "fly" && b.t0 >= play.snap)[1]
+		: undefined;
+	const off = Math.min(
+		play.whistle + SHOW_AFTER,
+		kicked ? kicked.t0 + SHOW_KICKED : Infinity,
+	);
 	const a = Math.min(
 		1,
 		Math.max(0, (t - on) / IN_MS),
