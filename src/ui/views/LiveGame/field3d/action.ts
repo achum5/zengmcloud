@@ -3387,6 +3387,9 @@ const DOWN_ACROSS = 0.8;
 const DOWN_ACROSS_FPS = 10;
 const DOWN_PINCH = 1.5;
 const DOWN_ON = new Set<Move>(["prone", "hurtProne", "supine", "hurt"]);
+// (Down there on the turf, the length of his legs behind his hips too,
+// feet - not stood on - till he is getting up.)
+const DOWN_LEGS = 3.2;
 const DOWN_GOING = new Set<Move>(["tackled", "dive", "tackledBack"]);
 const DOWN_FROM = 0.6;
 // (Or getting up off it, until this far through.)
@@ -4702,7 +4705,13 @@ class Action {
 	// somebody).
 	offMenDown() {
 		const { snap } = this.input;
-		const spells: { m: Actor; t0: number; t1: number; yaw: number }[] = [];
+		const spells: {
+			m: Actor;
+			t0: number;
+			t1: number;
+			yaw: number;
+			back: number;
+		}[] = [];
 		for (const m of this.men) {
 			let yaw = m.legs[0]?.yaw ?? 0;
 			m.legs.forEach((l, k) => {
@@ -4724,6 +4733,7 @@ class Action {
 								? Infinity
 								: l.t1,
 						yaw: LIE_BACKWARD.has(l.move) ? a + Math.PI : a,
+						back: DOWN_RISING.has(l.move) ? LIE_BACK : DOWN_LEGS,
 					});
 				}
 				yaw = yawOf(l, yaw);
@@ -4732,13 +4742,16 @@ class Action {
 		if (spells.length === 0) {
 			return;
 		}
-		// (How near `q` comes at t to anybody but m down then - and the
-		// middle of the nearest of them.)
-		const nearDown = (m: Actor, t: number, q: Pt) => {
+		// (How near `q` comes at t to anybody but m - or `but` - down then:
+		// and the nearest of them, the middle of him, and the way straight
+		// out off him to it, radians: square off his length, on it.)
+		const nearDown = (m: Actor, t: number, q: Pt, but?: Actor) => {
 			let near = Infinity;
 			let mid: Pt | undefined;
+			let out: number | undefined;
+			let who: Actor | undefined;
 			for (const s of spells) {
-				if (s.m === m || t < s.t0 || t > s.t1) {
+				if (s.m === m || s.m === but || t < s.t0 || t > s.t1) {
 					continue;
 				}
 				const at = s.m.posAt(t);
@@ -4746,17 +4759,24 @@ class Action {
 				const uy = Math.sin(s.yaw);
 				const along = clamp(
 					(q.x - at.x) * ux + (q.y - at.y) * uy,
-					-LIE_BACK,
+					-s.back,
 					LIE_HEAD,
 				);
-				const d = Math.hypot(q.x - at.x - ux * along, q.y - at.y - uy * along);
+				const ex = q.x - at.x - ux * along;
+				const ey = q.y - at.y - uy * along;
+				const d = Math.hypot(ex, ey);
 				if (d < near) {
 					near = d;
-					const half = (LIE_HEAD - LIE_BACK) / 2;
+					const half = (LIE_HEAD - s.back) / 2;
 					mid = { x: at.x + ux * half, y: at.y + uy * half };
+					out =
+						d > 0.05
+							? Math.atan2(ey, ex)
+							: s.yaw + (ex * -uy + ey * ux >= 0 ? 1 : -1) * (Math.PI / 2);
+					who = s.m;
 				}
 			}
-			return { near, mid };
+			return { near, mid, out, who };
 		};
 		// (Whether `q` at t takes m nearer anybody on his feet than
 		// PASS_APART, and nearer him than `p` - where he was to be - did.)
@@ -4877,7 +4897,12 @@ class Action {
 		c0: number,
 		c1: number,
 		open: boolean,
-		nearDown: (m: Actor, t: number, q: Pt) => { near: number; mid?: Pt },
+		nearDown: (
+			m: Actor,
+			t: number,
+			q: Pt,
+			but?: Actor,
+		) => { near: number; mid?: Pt; out?: number; who?: Actor },
 		crowds: (m: Actor, t: number, q: Pt, p: Pt) => boolean,
 	) {
 		const lead = m.legs.find((l) => l.t0 === c0);
@@ -4964,16 +4989,17 @@ class Action {
 			}
 			// (Which way he is going there - and out to the side of it away
 			// from the middle of the man there first, the other side, or
-			// back short of him, square or slant. Stepping off a man, away
-			// from the middle of him, or slant, or square.)
+			// back short of him, square or slant. Stepping off a man, straight
+			// out off him, or slant, or square.)
 			const tm = (ta + tb) / 2;
 			const pm = m.posAt(tm);
 			const mid = nearDown(m, tm, pm).mid;
 			let ways: Pt[];
+			// (Stepping off him, the man he is on: kept clear of anybody else
+			// down by him as he does.)
+			const on = stepping ? nearDown(m, c0, m.posAt(c0)) : undefined;
 			if (stepping) {
-				const p = m.posAt(c0);
-				const len = mid ? dist(p, mid) : 0;
-				const a = len > 0.01 ? Math.atan2(p.y - mid!.y, p.x - mid!.x) : m.yaw;
+				const a = on?.out ?? m.yaw;
 				ways = STEP_OFF_TURNS.map((r) => ({
 					x: Math.cos(a + r),
 					y: Math.sin(a + r),
@@ -5008,8 +5034,8 @@ class Action {
 				off: Pt;
 			};
 			// (Clear of anybody on his feet as he goes, if there is a way
-			// - and if not, on his way, any way: off a man he stands on,
-			// only into the clear.)
+			// - and if not, any way: better in among men on their feet, for
+			// a moment, than stood on a man down.)
 			const search = (careful: boolean): Pick | undefined => {
 				let best: Pick | undefined;
 				let fair: { h: number; pick: Pick } | undefined;
@@ -5059,7 +5085,7 @@ class Action {
 						const off = { x: way.x * h, y: way.y * h };
 						let near = Infinity;
 						for (
-							let t = stepping ? ta : wa;
+							let t = stepping ? c0 : wa;
 							t <= wb && near >= (best?.near ?? 0);
 							t += DOWN_EVERY_MS
 						) {
@@ -5070,7 +5096,10 @@ class Action {
 							near =
 								careful && w > 0 && crowds(m, t, q, p)
 									? -1
-									: Math.min(near, nearDown(m, t, q).near);
+									: Math.min(
+											near,
+											nearDown(m, t, q, t < ta ? on?.who : undefined).near,
+										);
 						}
 						if (!best || near > best.near) {
 							best = { near, wa, wb, ui, a1, b1, uo, off };
@@ -5096,7 +5125,7 @@ class Action {
 				(p.near >= DOWN_CLEAR ||
 					(p.near >= was + DOWN_GAIN && p.near >= DOWN_SOME));
 			const careful = search(true);
-			const best = ok(careful) || stepping ? careful : search(false);
+			const best = ok(careful) ? careful : search(false);
 			if (!ok(best)) {
 				continue;
 			}
