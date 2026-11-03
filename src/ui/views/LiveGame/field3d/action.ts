@@ -2844,6 +2844,10 @@ const DRIVEN_BACK = 0.55;
 const TACKLED_CARRY_S = 0.15;
 const TACKLED_LEAST = 2.5;
 const TACKLED_MOST = 4.5;
+// A safety: brought down this far (feet) into his own end zone, and as
+// much as this more - the ball still in it as he goes down forward with
+// it, carried on (see TACKLED_MOST).
+const SAFETY_IN = [6, 4] as const;
 // Come at from the side (the sine of it at least this): this often swung
 // round as he goes down, about this far (radians) - away from him, down
 // the way he is thrown.
@@ -5574,9 +5578,14 @@ class Action {
 		const catchD = Math.min(airYds * YD, this.goalD + 25);
 		// Sacked, where they get him.
 		const sackYds = sacked ? events[sackI]!.yds : undefined;
+		// (For a safety, down in his own end zone - not on the goal line,
+		// to fall out over it.)
 		const sackD = Math.min(
 			-2,
 			(typeof sackYds === "number" ? sackYds : -6) * YD,
+			sacked && events[sackI]!.safety === true
+				? this.ownGoalD - SAFETY_IN[0] - r() * SAFETY_IN[1]
+				: Infinity,
 		);
 
 		// The route the ball goes to him on.
@@ -7005,7 +7014,7 @@ class Action {
 		if (td) {
 			d = this.goalD + 4 + r() * 14;
 		} else if (safety) {
-			d = this.ownGoalD - 2 - r() * 6;
+			d = this.ownGoalD - SAFETY_IN[0] - r() * SAFETY_IN[1];
 		}
 		d = clamp(d, this.ownGoalD - 27, this.goalD + 27);
 		if (out && !td && !safety) {
