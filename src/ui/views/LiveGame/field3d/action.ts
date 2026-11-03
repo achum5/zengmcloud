@@ -13363,18 +13363,25 @@ class Action {
 			k.act("handsOnHelmet", seen + RUE_HELMET_MS + r() * 400);
 		}
 		// Good: this often the holder over to the kicker, a high five - the
-		// kicker's fist pumped first, now and then.
+		// kicker's fist pumped first, now and then. A long one, or one late
+		// in a close game: always, his fist pumped out to the crowd first -
+		// his moment, the camera in on it.
+		const big = made && fg && (yds >= KICK_BIG || this.crunch);
 		if (
 			made &&
-			r() < (this.input.kind === "fieldGoal" ? KICK_FIVE : TRY_FIVE)
+			(r() < (this.input.kind === "fieldGoal" ? KICK_FIVE : TRY_FIVE) || big)
 		) {
 			const go = crossT + r() * 150;
 			k.cut(go);
 			k.hold(go, "stand", this.toward(k.at, posts));
-			if (r() < KICK_PUMP) {
-				k.act("fistPump", go + 900);
+			if (r() < KICK_PUMP || big) {
+				k.act("fistPump", go + 900, big ? playedOut(k) : undefined);
 			}
 			this.highFive(h, k, Math.max(go + 100, k.t));
+			if (big) {
+				this.party = { from: go, at: k.posAt(go), hero: k.pid };
+				this.until = Math.max(this.until, k.t, h.t);
+			}
 		}
 		return true;
 	}
@@ -15149,6 +15156,8 @@ const FAIR_TO = 700;
 const KICK_FIVE = 0.75;
 const TRY_FIVE = 0.4;
 const KICK_PUMP = 0.35;
+// (A long field goal: this far, yards.)
+const KICK_BIG = 45;
 // The rest of them as it goes over or by (see fieldGoal): this often glad
 // of it - a field goal good, a try good, a kick missed - or rueing a miss;
 // the kicker, this often; seeing it this long after it crosses (from 0.4
