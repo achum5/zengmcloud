@@ -2957,6 +2957,9 @@ const SLIP_UP_FT = 5.5;
 const SLIP_SWAT_LEAD = 200;
 const SLIP_SWAT_MS = 300;
 const SLIP_SWAT_ON = 2;
+// (Out of his set to a man to block, with time to spare: at no less than
+// this much of his pace.)
+const LEAD_OUT = 0.5;
 // Up for a ball at its highest, this often, thrown this deep at least
 // (feet past the quarterback) with no more than this far to go after it,
 // and a man on him (this near) or the end zone; how long he is up (ms), and
@@ -6378,6 +6381,15 @@ class Action {
 			if (!meet) {
 				continue;
 			}
+			// (Time to spare, a lineman: on in his set a while longer, as if
+			// to block, and out to him at a pace - not walked out there.)
+			if (l.move === "passSet") {
+				const leave =
+					meet.t - (dist(b.at, meet.at) / (b.top * LEAD_OUT)) * 1000;
+				if (leave > b.t) {
+					b.hold(leave, "passSet", this.ahead);
+				}
+			}
 			b.go(meet.at, meet.t);
 			// (Broken down into him, not run into him flat out.)
 			b.breakDown(LOCK_KEEP);
@@ -9033,6 +9045,7 @@ class Action {
 			pt,
 			t,
 			hitters,
+			carrier,
 		);
 		this.loose(fumI, recI, rec, carrier, t + POP_MS);
 	}
