@@ -38,6 +38,15 @@ beforeAll(async () => {
 	);
 }, 120_000);
 
+// A game of its own, flags all over it - staged once, for the tests that
+// want one.
+let fouledGame: Promise<{ game: SimGame; tl: FieldTimeline }> | undefined;
+const fouled = () =>
+	(fouledGame ??= simGames([47], { foulRateFactor: 30 }).then(([game]) => ({
+		game: game!,
+		tl: compileField({ events: game!.events, players: game!.roster, gid: 0 }),
+	})));
+
 const ACTED = new Set([
 	"pass",
 	"run",
@@ -316,19 +325,13 @@ describe("the plays acted out", () => {
 	}, 20_000);
 
 	test("a man flagged for taunting at it after the whistle: at a man of the other side, pointing down at him or flexing, the flag coming in on it", async () => {
-		// (A game of its own, flags all over it.)
-		const [game] = await simGames([47], { foulRateFactor: 30 });
-		const tl = compileField({
-			events: game!.events,
-			players: game!.roster,
-			gid: 0,
-		});
+		const { game, tl } = await fouled();
 		let flagged = 0;
 		let acted = 0;
 		tl.plays.forEach((play, j) => {
-			const seg = game!.events.slice(
+			const seg = game.events.slice(
 				play.i,
-				tl.plays[j + 1]?.i ?? game!.events.length,
+				tl.plays[j + 1]?.i ?? game.events.length,
 			);
 			const k = seg.findIndex(
 				(e) => e.type === "penalty" && e.penaltyName === "Taunting",
@@ -368,6 +371,51 @@ describe("the plays acted out", () => {
 		});
 		assert.isAbove(acted, 0);
 		assert.isAtLeast(acted, flagged / 2);
+	}, 60_000);
+
+	test("unsportsmanlike before the snap: the man flagged up in the face of a man of the other side, a shove, the flag on it", async () => {
+		const { game, tl } = await fouled();
+		let flagged = 0;
+		let acted = 0;
+		tl.plays.forEach((play, j) => {
+			const seg = game.events.slice(
+				play.i,
+				tl.plays[j + 1]?.i ?? game.events.length,
+			);
+			const k = seg.findIndex(
+				(e) =>
+					e.type === "penalty" && e.penaltyName === "Unsportsmanlike conduct",
+			);
+			if (k < 0 || seg.some((e) => e.type === "penalty" && e !== seg[k])) {
+				return;
+			}
+			const pid = seg
+				.slice(k)
+				.find((e) => e.type === "stat" && e.s === "pen")?.pid;
+			const him = play.parts.find((p) => p.pid === pid);
+			if (!him) {
+				return;
+			}
+			flagged += 1;
+			const l = him.legs.find((x) => x.arms === "shove");
+			if (!l) {
+				return;
+			}
+			acted += 1;
+			const flag = play.flags[0];
+			assert.isDefined(flag, `play ${play.i}`);
+			assert.isBelow(l.t0, flag!.t0, `play ${play.i}`);
+			assert.isAbove(l.t1, flag!.t0 - 800, `play ${play.i}`);
+			const t = (l.t0 + l.t1) / 2;
+			assert.isTrue(
+				play.parts.some(
+					(p) => p.team !== him.team && dist(posAt(p, t), posAt(him, t)) < 3.4,
+				),
+				`play ${play.i}`,
+			);
+		});
+		assert.isAbove(acted, 0);
+		assert.isAtLeast(acted, flagged / 3);
 	}, 60_000);
 
 	test("a man hurt with no part in it the sim names - out on the run away from the ball, or in a block: pulled up lame, or down in it, before the whistle, and there", () => {

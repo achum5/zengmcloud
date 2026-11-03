@@ -3286,6 +3286,26 @@ const JUMP: Record<string, number> = {
 	"Neutral zone infraction": 3,
 	Encroachment: 3.5,
 };
+// Unsportsmanlike before the snap (see jaw): at a man of the other side no
+// further off than this (ft), over to him at this pace (ft/s; no quicker
+// than this, ms; off no sooner than this before the snap), up in his face this far from him (where he is, if no
+// further off than this more), there this long before the shove, the shove
+// this long before the flag - his arms in it this long either side of it;
+// the other man up out of his stance over this long, shoved back this far
+// (ft) over this long. Nobody over the ball, or at the kick.
+const JAW_NOT = new Set(["C", "QB", "LS", "H", "K", "P"]);
+const JAW_FAR = 30;
+const JAW_FPS = 7;
+const JAW_LEAST_MS = 500;
+const JAW_EARLY_MS = 4000;
+const JAW_FACE_FT = 2.3;
+const JAW_STAY_FT = 1;
+const JAW_SET_MS = 300;
+const JAW_SHOVE_MS = 350;
+const JAW_SHOVE_ARMS_MS = 200;
+const JAW_UP_MS = 350;
+const JAW_BACK_FT = 1.3;
+const JAW_BACK_MS = 350;
 // Picked off: the rest of his side after it with him, off once they are
 // through with what they were doing (with this long to go at least, ms),
 // at this much of their top speed - to round where it ends up, this far
@@ -5386,6 +5406,9 @@ class Action {
 			);
 			who.hold(this.whistle, "drive");
 		}
+		if (who && name === "Unsportsmanlike conduct") {
+			this.jaw(who, t);
+		}
 		this.at.set(flagI, t);
 		const spot = this.w({ d: 0, a: 0 });
 		this.ball.push({ kind: "spot", t0: this.whistle, at: { ...spot, z: 0 } });
@@ -5407,6 +5430,71 @@ class Action {
 			m.hold(m.t + 400, "stand");
 			this.done.add(m.pid);
 		}
+	}
+
+	// UNSPORTSMANLIKE BEFORE THE SNAP: the man flagged up out of where he is,
+	// into the face of the nearest of the other side, and a shove - him up
+	// out of his stance, back a step from it, round to him - the flag on it.
+	// Not a man over the ball or at the kick; nobody near enough, nothing.
+	// (No dice: see deadBall.)
+	jaw(who: Actor, t: number) {
+		if (JAW_NOT.has(who.role)) {
+			return;
+		}
+		const shove = t - JAW_SHOVE_MS;
+		const seen = who.posAt(shove);
+		const foe = this.men
+			.filter((o) => o.team !== who.team && !JAW_NOT.has(o.role))
+			.sort(
+				(a, b) => dist(a.posAt(shove), seen) - dist(b.posAt(shove), seen),
+			)[0];
+		if (!foe || dist(foe.posAt(shove), seen) > JAW_FAR) {
+			return;
+		}
+		// (Off over to him as long before it as it takes - from where he is
+		// then, to where the other man is when it comes.)
+		const at = foe.posAt(shove - JAW_SET_MS - JAW_UP_MS);
+		const spotFrom = (me: Pt): Pt => {
+			const d = Math.max(0.01, dist(me, at));
+			return d <= JAW_FACE_FT + JAW_STAY_FT
+				? me
+				: {
+						x: at.x + ((me.x - at.x) / d) * JAW_FACE_FT,
+						y: at.y + ((me.y - at.y) / d) * JAW_FACE_FT,
+					};
+		};
+		let t0 = shove - JAW_SET_MS - JAW_LEAST_MS;
+		for (let k = 0; k < 3; k++) {
+			const me = who.posAt(t0);
+			t0 =
+				shove -
+				JAW_SET_MS -
+				Math.max(JAW_LEAST_MS, (dist(me, spotFrom(me)) / JAW_FPS) * 1000);
+		}
+		const me = who.posAt(t0);
+		const spot = spotFrom(me);
+		if (dist(me, spot) > JAW_FAR || t0 < this.input.snap - JAW_EARLY_MS) {
+			return;
+		}
+		who.cut(t0);
+		who.hold(t0);
+		if (spot !== me) {
+			who.go(spot, shove - JAW_SET_MS);
+		}
+		who.hold(shove - JAW_SET_MS / 2, "stand", this.toward(spot, at));
+		who.hold(this.whistle, "stand", this.toward(spot, at));
+		who.arms("shove", shove - JAW_SHOVE_ARMS_MS, shove + JAW_SHOVE_ARMS_MS);
+		// (Him: up to it as he comes, and shoved back a step.)
+		const face = this.toward(at, spot);
+		const back = {
+			x: at.x - Math.cos(face) * JAW_BACK_FT,
+			y: at.y - Math.sin(face) * JAW_BACK_FT,
+		};
+		foe.cut(Math.max(t0, shove - JAW_SET_MS - JAW_UP_MS));
+		foe.hold(shove - JAW_SET_MS, "stand", face);
+		foe.hold(shove);
+		foe.go(back, shove + JAW_BACK_MS, undefined, face);
+		foe.hold(this.whistle, "stand", face);
 	}
 
 	// The ball drawn with whoever has it, the way what he is doing holds it
