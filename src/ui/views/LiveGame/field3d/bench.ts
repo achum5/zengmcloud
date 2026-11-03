@@ -1,14 +1,22 @@
 import { depthOf, project, type Camera } from "../court3d/camera.ts";
 import { FIGURE_SCALE } from "./body.ts";
 import { shade } from "./color.ts";
-import { BENCH_OFF, FIELD_W, MID_X, type Pt3, type Side } from "./geometry.ts";
+import {
+	BENCH_OFF,
+	FIELD_W,
+	MID_X,
+	TEAM_AREA,
+	type Pt3,
+	type Side,
+} from "./geometry.ts";
 import { drawStandingCooler } from "./shower.ts";
 import { BENCHES, NET_OFF, NET_W, netX, sidelineOf } from "./sideline.ts";
 
 // WHAT STANDS ON THE SIDELINES: each team's benches - long, dark, a seat in
 // the team's color - a drinks table at either end of them, the coolers and
-// a stack of cups on it, and the kickers' net down at the end of the team
-// area, a square of black netting on a frame.
+// a stack of cups on it, the kickers' net down at the end of the team
+// area, a square of black netting on a frame, and at the other end, back
+// behind the benches, the blue medical tent.
 
 // (Dark, a rail along the top of its back in the team's color.)
 const BACK = "#2a2c31";
@@ -33,6 +41,19 @@ const CUPS_R = 0.22 * FIGURE_SCALE;
 const CUPS_H = 1.1 * FIGURE_SCALE;
 const CUPS = "#2fa84f";
 const CUPS_RIM = "#f2f2ee";
+
+// The medical tent: its middle this far in from the end of the team area,
+// from this far back off the sideline to this far, this long along it;
+// its walls this high, the peak of its roof this high (as tall as the men
+// by it, see body.ts); blue, closed up, a darker band round the top of its
+// walls and a flap down the face of it to the field.
+const TENT_IN = 12;
+const TENT_OFF = [BENCH_OFF + 3, BENCH_OFF + 10.5] as const;
+const TENT_L = 10;
+const TENT_H = 7 * FIGURE_SCALE;
+const TENT_PEAK = 9.5 * FIGURE_SCALE;
+const TENT = "#2c5fae";
+const TENT_BAND = 0.8 * FIGURE_SCALE;
 
 type Item = { depth: number; draw: () => void };
 type P = { x: number; y: number };
@@ -149,6 +170,18 @@ export const sidelineGear = (
 				),
 			);
 		}
+		// The tent, at the end of the team area away from the net.
+		const tx = line === 0 ? TEAM_AREA[1] - TENT_IN : TEAM_AREA[0] + TENT_IN;
+		items.push(
+			...tentGear(
+				ctx,
+				cam,
+				tx - TENT_L / 2,
+				tx + TENT_L / 2,
+				y(TENT_OFF[0]),
+				y(TENT_OFF[1]),
+			),
+		);
 		// The net, its face to the field.
 		const nx = netX(line);
 		const ny = y(NET_OFF);
@@ -230,6 +263,100 @@ const tableGear = (
 		{
 			depth: depthOf(cam, mid),
 			draw: () => drawCups(ctx, cam, at(mid.x)),
+		},
+	];
+};
+
+// The medical tent from x0 to x1, its face to the field at y0, its back at
+// y1: its walls, then its roof up to its peak over the middle - each face
+// shaded by the way it looks.
+const tentGear = (
+	ctx: CanvasRenderingContext2D,
+	cam: Camera,
+	x0: number,
+	x1: number,
+	y0: number,
+	y1: number,
+): Item[] => {
+	const mid = { x: (x0 + x1) / 2, y: (y0 + y1) / 2, z: 0 };
+	const depth = depthOf(cam, mid);
+	if (depth <= 1) {
+		return [];
+	}
+	const c = (x: number, y: number, z: number): Pt3 => ({ x, y, z });
+	const peak = c(mid.x, mid.y, TENT_PEAK);
+	// (Each wall from one corner to the next, and how much darker it is.)
+	const walls: [Pt3, Pt3, number][] = [
+		[c(x0, y0, 0), c(x1, y0, 0), -0.05],
+		[c(x1, y0, 0), c(x1, y1, 0), -0.3],
+		[c(x1, y1, 0), c(x0, y1, 0), -0.15],
+		[c(x0, y1, 0), c(x0, y0, 0), -0.3],
+	];
+	// (Only the faces turned to the camera: from where it is, the way out
+	// of each from the middle of the tent.)
+	const toward = (p: Pt3, out: Pt3) =>
+		(cam.pos.x - p.x) * out.x +
+			(cam.pos.y - p.y) * out.y +
+			(cam.pos.z - p.z) * out.z >
+		0;
+	const rise = TENT_PEAK - TENT_H;
+	return [
+		{
+			depth: depth + 0.4,
+			draw: () => {
+				for (const [a, b, dark] of walls) {
+					const m = c((a.x + b.x) / 2, (a.y + b.y) / 2, TENT_H / 2);
+					const out = c(m.x - mid.x, m.y - mid.y, 0);
+					if (!toward(m, out)) {
+						continue;
+					}
+					const top = { ...a, z: TENT_H };
+					const topB = { ...b, z: TENT_H };
+					quad(ctx, cam, [top, topB, b, a], shade(TENT, dark));
+					quad(
+						ctx,
+						cam,
+						[
+							top,
+							topB,
+							{ ...b, z: TENT_H - TENT_BAND },
+							{ ...a, z: TENT_H - TENT_BAND },
+						],
+						shade(TENT, dark - 0.25),
+					);
+					// (The flap down the middle of the face to the field.)
+					if (a.y === y0 && b.y === y0) {
+						quad(
+							ctx,
+							cam,
+							[
+								c(mid.x - 0.08, y0, TENT_H - TENT_BAND),
+								c(mid.x + 0.08, y0, TENT_H - TENT_BAND),
+								c(mid.x + 0.08, y0, 0),
+								c(mid.x - 0.08, y0, 0),
+							],
+							shade(TENT, -0.4),
+						);
+					}
+				}
+				for (const [a, b, dark] of walls) {
+					// (Its slope: out as far as the wall is from the middle,
+					// up as far as the peak is over the wall.)
+					const m = c((a.x + b.x) / 2, (a.y + b.y) / 2, TENT_H);
+					const h = c(m.x - mid.x, m.y - mid.y, 0);
+					const run = Math.hypot(h.x, h.y) || 1;
+					const out = c((h.x / run) * rise, (h.y / run) * rise, run);
+					if (!toward(m, out)) {
+						continue;
+					}
+					quad(
+						ctx,
+						cam,
+						[{ ...a, z: TENT_H }, { ...b, z: TENT_H }, peak],
+						shade(TENT, 0.12 + dark * 0.5),
+					);
+				}
+			},
 		},
 	];
 };

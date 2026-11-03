@@ -695,8 +695,8 @@ const RIP_KEYS: [number, Pose][] = [
 	[1, pose({ shN: 40, elN: 86, shF: 30, elF: 88 })],
 ];
 // A hold: his hands out wide of the man on him and round onto his back,
-// hung on to and pulled in - and let go. (Hands to the face: one arm
-// locked out high into the facemask.)
+// hung on to and pulled in - and let go. (Hands to the face: his right arm
+// locked out high into the facemask - the other as it was.)
 const HOLD_KEYS: [number, Pose][] = [
 	[0, RUSH_FIGHT],
 	[
@@ -4323,6 +4323,7 @@ const SIGNAL_GRIPS: Partial<Record<Move, Grip>> = {
 };
 // (One arm only: the other hand as the rest of him has it.)
 const ONE_ARM = new Set<Move>([
+	"handsFace",
 	"sigSide",
 	"sigContact",
 	"fairCatch",
