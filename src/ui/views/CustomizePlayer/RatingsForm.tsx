@@ -116,7 +116,7 @@ const RatingsForm = ({
 		hideRatingsOnesDigit &&
 		// One player on his own, same as his player page - a retired career reads
 		// exact here because there is no other player's column to disagree with.
-		!exemptFromCoarseRatings(tid, hideRatingsOnesDigitExceptProspects, true);
+		!exemptFromCoarseRatings(tid, hideRatingsOnesDigitExceptProspects);
 
 	const fuzzRating = (
 		ratingsRow: any,

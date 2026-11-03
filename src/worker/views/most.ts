@@ -195,6 +195,7 @@ const getMostXPlayers = async ({
 	const playersFiltered = await player.formatAll(playersAll, {
 		attrs: [
 			"pid",
+			"tid",
 			"firstName",
 			"lastName",
 			"draft",
@@ -232,9 +233,11 @@ const getMostXPlayers = async ({
 		ranked.push({
 			...p,
 			rank: i + 1,
-			most: coarsenMost
-				? coarsenMostForDisplay(most, type)
-				: (most as MostShown),
+			// (A retired player's career is a record: exact here too.)
+			most:
+				coarsenMost && p.tid !== PLAYER.RETIRED
+					? coarsenMostForDisplay(most, type)
+					: (most as MostShown),
 		});
 	}
 

@@ -33,10 +33,9 @@ export const RatingsOverview = ({
 			ratings.findLast((row) => row.season === season) ?? ratings.at(-1);
 	}
 
-	// `true`: this is the player's own page, where player.formatAll hands back a
-	// retired career at full resolution (retiredRatingsExact), so the colour
-	// scale has to be the 0-100 one.
-	const coarse = ratingsAreCoarse(tid, currentSeason?.season, draftYear, true);
+	// (A retired career comes back at full resolution, so its colour scale is
+	// the 0-100 one.)
+	const coarse = ratingsAreCoarse(tid, currentSeason?.season, draftYear);
 
 	// A rookie's progs are everyone else's progs: what the tens digit did across
 	// the year flip. The wrinkle is that his draft-year row is shown exact (68)
@@ -50,7 +49,7 @@ export const RatingsOverview = ({
 	const previousCoarse =
 		previous === undefined
 			? coarse
-			: ratingsAreCoarse(tid, previous.season, draftYear, true);
+			: ratingsAreCoarse(tid, previous.season, draftYear);
 
 	const change = (rating: string) => {
 		if (previous === undefined) {

@@ -188,7 +188,6 @@ const processAttrs = (
 		attrs,
 		coarsenRatings,
 		prospectSeasonsExact,
-		retiredRatingsExact,
 		fuzz,
 		numGamesRemaining,
 		season,
@@ -253,7 +252,6 @@ const processAttrs = (
 				!exemptFromCoarseRatings(
 					p.tid,
 					g.get("hideRatingsOnesDigitExceptProspects"),
-					retiredRatingsExact,
 				)
 			) {
 				output.draft.ovr = coarsenRating(output.draft.ovr);
@@ -467,7 +465,6 @@ const processRatings = (
 	{
 		coarsenRatings,
 		prospectSeasonsExact,
-		retiredRatingsExact,
 		fuzz,
 		ratings,
 		showDraftProspectRookieRatings,
@@ -492,11 +489,7 @@ const processRatings = (
 	const hideOnesDigit = coarsenRatings && g.get("hideRatingsOnesDigit");
 	// Kept alongside the season rule for the legacy future-draft-class tids,
 	// whose rows aren't guaranteed to sit at or below the draft year.
-	const playerExempt = exemptFromCoarseRatings(
-		p.tid,
-		exceptProspects,
-		retiredRatingsExact,
-	);
+	const playerExempt = exemptFromCoarseRatings(p.tid, exceptProspects);
 	const rowIsCoarse = (rowSeason: number | undefined) =>
 		hideOnesDigit &&
 		!playerExempt &&
@@ -1480,7 +1473,6 @@ const normalizeOptions = (
 		fuzz = false,
 		coarsenRatings = true,
 		prospectSeasonsExact = false,
-		retiredRatingsExact = false,
 		oldStats = false,
 		numGamesRemaining = 0,
 		statType = "perGame",
@@ -1515,7 +1507,6 @@ const normalizeOptions = (
 		fuzz,
 		coarsenRatings,
 		prospectSeasonsExact,
-		retiredRatingsExact,
 		oldStats,
 		numGamesRemaining,
 		statType,

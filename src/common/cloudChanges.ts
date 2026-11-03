@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 150,
+		date: "2026-11-03",
+		text: "Coarse Ratings: a retired player's full ratings now show on every page - old team rosters, the Hall of Fame, draft history and the rest - not just his own player page. Tables still sort him in with the tens digit his ratings would show.",
+	},
+	{
 		n: 149,
 		date: "2026-11-03",
 		text: 'Team History: in multi team mode, the "All seasons / With you as GM" toggle and the GM season marks are gone.',

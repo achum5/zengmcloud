@@ -24,24 +24,21 @@ const RETIRED_TID = -3;
 // that one is about the scouting report you were shown before the draft, and it
 // ends the moment he lands on a roster.
 //
-// And a RETIRED player, but only where `retiredExempt` says one career is what's
-// on screen. The reason a closed career reads at full resolution is that his
-// page is a record rather than a scouting report - nothing is left to decide
-// about him, so there is nothing to hide. That argument is about the PAGE, and
-// it stops holding the moment he is one row in a list: a column that shows 53
-// for a retired player and 6 for an active one is carrying two scales at once,
-// so 53 sits above 6 when the 6 means 60-69. Lists coarsen everybody (the
-// default); a player's own page opts in.
+// And a RETIRED player, everywhere he shows up - his own page, an old team's
+// roster, the Hall of Fame, any list. A closed career is a record rather than a
+// scouting report: nothing is left to decide about him, so there is nothing to
+// hide. In a list he shares a column with active players' tens digits, so a
+// table marks his row exempt (DataTable's `coarseExempt`) and sorts it by the
+// decade it would have shown, the way it already does a prospect's.
 export const exemptFromCoarseRatings = (
 	tid: number | undefined,
 	exceptProspects: boolean,
-	retiredExempt = false,
 ): boolean => {
 	if (tid === undefined) {
 		return false;
 	}
 	if (tid === RETIRED_TID) {
-		return retiredExempt;
+		return true;
 	}
 	return exceptProspects && UNDRAFTED_TIDS.has(tid);
 };
@@ -84,7 +81,7 @@ export const comparisonEntryExact = (
 	season: number | "career",
 	exceptProspects: boolean,
 ): boolean =>
-	exemptFromCoarseRatings(tid, exceptProspects, true) ||
+	exemptFromCoarseRatings(tid, exceptProspects) ||
 	(season !== "career" &&
 		prospectRatingsSeason(draftYear, season, exceptProspects));
 
@@ -213,12 +210,11 @@ export const coarsenRatingsRow = <T extends Record<string, any>>(
 export const coarsenPlayerForDisplay = <T extends Record<string, any>>(
 	p: T,
 	ratings: readonly string[],
-	// The "prospects exempt" option. Requires `tid` to have been requested.
+	// The "prospects exempt" option. Requires `tid` to have been requested -
+	// which a retired player's exemption needs as well.
 	exceptProspects = false,
-	// Whether a retired player reads exact here - only on his own page.
-	retiredExempt = false,
 ): T => {
-	if (exemptFromCoarseRatings(p.tid, exceptProspects, retiredExempt)) {
+	if (exemptFromCoarseRatings(p.tid, exceptProspects)) {
 		return p;
 	}
 	const out: Record<string, any> = { ...p };

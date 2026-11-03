@@ -128,21 +128,37 @@ export const processRows = ({
 			// exact number order them against each other - which is the whole point
 			// of exempting them. "Below" means later in the list whichever way the
 			// column is pointing, so that middle key never flips with the order.
+			//
+			// A retired player's row is exempt too, everywhere he shows up - an
+			// old team's roster, the Hall of Fame. Not every page flags his row,
+			// so the rating says it for him: a coarsened rating is a tens digit,
+			// 0 to 10, and anything above that can only be an exact one. (A
+			// year-over-year change is a difference, not a rating, so it is
+			// never read that way.)
+			const exactAt = (row: DataTableRow<MetadataType>) => {
+				if (row.coarseExempt) {
+					return true;
+				}
+				const value = valueOf(row, i);
+				return (
+					cols[i]?.key !== "Prog" && typeof value === "number" && value > 10
+				);
+			};
 			if (
 				coarseRatings &&
 				isCoarsenedRatingCol(cols[i]?.key) &&
-				rowsFiltered.some((row) => row.coarseExempt)
+				rowsFiltered.some(exactAt)
 			) {
 				const decade = (row: DataTableRow<MetadataType>) => {
 					const value = valueOf(row, i);
-					if (row.coarseExempt && typeof value === "number") {
+					if (exactAt(row) && typeof value === "number") {
 						return coarsenRating(value);
 					}
 					return value;
 				};
 				sortKeys.push(
 					decade,
-					(row) => (row.coarseExempt ? 1 : 0),
+					(row) => (exactAt(row) ? 1 : 0),
 					(row) => valueOf(row, i),
 				);
 				orders.push(order, "asc", order);

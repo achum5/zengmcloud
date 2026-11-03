@@ -171,6 +171,24 @@ describe("rows exempt from the coarsening", () => {
 		]);
 	});
 
+	// A retired player reads exact in every list, and not every page flags his
+	// row - so a rating above 10, which no tens digit can be, is read as exact
+	// and goes in under the players showing its decade all the same.
+	test("an exact rating sorts by its decade, flagged or not", () => {
+		const roster: DataTableRow[] = [
+			{ key: 1, data: ["Retired 67", 67, 30] },
+			{ key: 2, data: ["Active 7", 7, 27] },
+			{ key: 3, data: ["Retired 72", 72, 33] },
+			{ key: 4, data: ["Active 6", 6, 25] },
+		];
+		assert.deepEqual(names(true, BY_OVR, roster), [
+			"Active 7",
+			"Retired 72",
+			"Active 6",
+			"Retired 67",
+		]);
+	});
+
 	// The exemption only exists because the mode is on. With it off nobody is
 	// coarsened, so there is nothing to fold back.
 	test("without the mode the exact numbers just sort", () => {

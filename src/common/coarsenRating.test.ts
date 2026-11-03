@@ -169,31 +169,19 @@ describe("exemptFromCoarseRatings", () => {
 	});
 
 	// A retiree is never a prospect, so the prospects option has nothing to say
-	// about him either way. What decides him is whether one career is what's on
-	// screen.
-	test("a retired player is coarsened in a list, whatever the option says", () => {
-		assert.strictEqual(exemptFromCoarseRatings(-3, true), false);
-		assert.strictEqual(exemptFromCoarseRatings(-3, false), false);
+	// about him either way. His career is closed - a record, nothing left to
+	// hide - so it reads exact wherever he shows up: his own page, an old
+	// team's roster, any list.
+	test("a retired player is exact everywhere, whatever the option says", () => {
+		assert.strictEqual(exemptFromCoarseRatings(-3, true), true);
+		assert.strictEqual(exemptFromCoarseRatings(-3, false), true);
 	});
 
-	// His own page is a record rather than a scouting report, and nothing there
-	// shares a column with an active player.
-	test("a retired player is exempt on his own page", () => {
-		assert.strictEqual(exemptFromCoarseRatings(-3, true, true), true);
-		assert.strictEqual(exemptFromCoarseRatings(-3, false, true), true);
-	});
-
-	// The bug this rule exists to prevent: one column, two scales. 53 sorts and
-	// reads above 6 when the 6 stands for 60-69.
-	test("retired and active players in one list land on the same scale", () => {
-		const inAList = (tid: number) => exemptFromCoarseRatings(tid, true);
-		assert.strictEqual(inAList(-3), inAList(7));
-	});
-
-	// Opting in doesn't make anyone ELSE exact - it's only about the retired rule.
-	test("the page exemption does not spill onto active players", () => {
-		assert.strictEqual(exemptFromCoarseRatings(7, false, true), false);
-		assert.strictEqual(exemptFromCoarseRatings(-1, false, true), false);
+	// Only the retired rule - it doesn't make an active player or a free agent
+	// exact.
+	test("the retired exemption does not spill onto anyone else", () => {
+		assert.strictEqual(exemptFromCoarseRatings(7, false), false);
+		assert.strictEqual(exemptFromCoarseRatings(-1, false), false);
 	});
 
 	test("no prospect is exempt with the option off", () => {
@@ -234,16 +222,21 @@ describe("coarsenPlayerForDisplay honours the exemption", () => {
 		draft: { year: 1998, ovr: 47, pot: 72 },
 	});
 
-	test("a retired player's whole career comes back untouched on his page", () => {
-		const out = coarsenPlayerForDisplay(retired(), ["ovr", "pot"], false, true);
+	test("a retired player's whole career comes back untouched", () => {
+		const out = coarsenPlayerForDisplay(retired(), ["ovr", "pot"]);
 		assert.strictEqual(out.ratings[0]!.ovr, 74);
 		assert.strictEqual(out.ratings[1]!.ovr, 68);
 		assert.strictEqual(out.draft.ovr, 47);
 		assert.strictEqual(out.draft.pot, 72);
 	});
 
-	test("but in a list he rounds like everyone else", () => {
-		const out = coarsenPlayerForDisplay(retired(), ["ovr", "pot"]);
+	// The same in a list - an old team's roster, the Hall of Fame - as on his
+	// own page.
+	test("an active player beside him is still rounded", () => {
+		const out = coarsenPlayerForDisplay({ ...retired(), tid: 4 }, [
+			"ovr",
+			"pot",
+		]);
 		assert.strictEqual(out.ratings[0]!.ovr, 7);
 		assert.strictEqual(out.ratings[1]!.ovr, 6);
 		assert.strictEqual(out.draft.ovr, 4);

@@ -1873,7 +1873,7 @@ export const settings: Setting[] = (
 			name: "Coarse Ratings (Tens Digit Only)",
 			type: "bool",
 			description:
-				"Display-only: shows every rating, overall, and potential floored to its tens digit, so a 56 appears as 5. A softer version of No Visible Player Ratings. Doesn't change any underlying data or the simulation.",
+				"Display-only: shows every rating, overall, and potential floored to its tens digit, so a 56 appears as 5. Retired players keep their full ratings. A softer version of No Visible Player Ratings. Doesn't change any underlying data or the simulation.",
 			// The prospect exemption only means anything when this is on, so it
 			// lives in the same box rather than as a second entry in the list.
 			customForm: ({ disabled, handleChange, id, inputStyle, state }) => {

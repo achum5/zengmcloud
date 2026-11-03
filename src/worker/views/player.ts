@@ -83,7 +83,7 @@ const shownInjuries = (p: Player): ShownInjury[] => {
 	const exceptProspects = g.get("hideRatingsOnesDigitExceptProspects");
 	const coarse =
 		g.get("hideRatingsOnesDigit") &&
-		!exemptFromCoarseRatings(p.tid, exceptProspects, true);
+		!exemptFromCoarseRatings(p.tid, exceptProspects);
 	if (!coarse) {
 		return p.injuries;
 	}
@@ -165,9 +165,6 @@ export const getPlayer = async <
 		// drafted - opening his prospect year still shows the scouting report you
 		// were given at the time.
 		prospectSeasonsExact: true,
-		// One closed career, read on its own page - nothing here sits in a column
-		// next to an active player, so there is no second scale to collide with.
-		retiredRatingsExact: true,
 		mergeStats: "totAndTeams",
 		seasonRange,
 		seasons,

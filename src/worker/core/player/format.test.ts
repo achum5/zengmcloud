@@ -1162,11 +1162,7 @@ describe("hideRatingsOnesDigitExceptProspects", () => {
 		season: 2012,
 	} as const;
 
-	const readBack = async (
-		tid: number,
-		exceptProspects: boolean,
-		retiredRatingsExact = false,
-	) => {
+	const readBack = async (tid: number, exceptProspects: boolean) => {
 		const original = p.tid;
 		p.tid = tid;
 		g.setWithoutSavingToDB("hideRatingsOnesDigit", true);
@@ -1174,10 +1170,7 @@ describe("hideRatingsOnesDigitExceptProspects", () => {
 			"hideRatingsOnesDigitExceptProspects",
 			exceptProspects,
 		);
-		const out = await player.format(p, {
-			...opts,
-			retiredRatingsExact,
-		});
+		const out = await player.format(p, opts);
 		g.setWithoutSavingToDB("hideRatingsOnesDigit", false);
 		g.setWithoutSavingToDB("hideRatingsOnesDigitExceptProspects", false);
 		p.tid = original;
@@ -1216,26 +1209,15 @@ describe("hideRatingsOnesDigitExceptProspects", () => {
 
 	// Not because he counts as a prospect, but because hiding the ones digit is
 	// there to keep a decision hard, and there is no decision left to make about
-	// a retired player. That argument is about his PAGE, which asks for it by
-	// name - with the prospects option on or off.
-	test("a retired player keeps his exact ratings on his own page", async () => {
-		const full = await trueRatings();
-		const retired = await readBack(PLAYER.RETIRED, true, true);
-		assert.deepStrictEqual(retired.ratings, full);
-
-		const retiredNoOption = await readBack(PLAYER.RETIRED, false, true);
-		assert.deepStrictEqual(retiredNoOption.ratings, full);
-	});
-
-	// Everywhere else he is a row in a list, and a column that shows his exact
-	// 53 beside an active player's 6 puts two scales side by side - 53 then reads
-	// and sorts above a 6 that stands for 60-69.
-	test("but a list coarsens him like everyone else", async () => {
+	// a retired player. So wherever he is read - his own page, an old team's
+	// roster, any list - his ratings are exact, with the prospects option on or
+	// off. (A table sorts his row by the decade it would have shown: see
+	// DataTable's coarseExempt.)
+	test("a retired player keeps his exact ratings everywhere", async () => {
 		const full = await trueRatings();
 		for (const exceptProspects of [true, false]) {
 			const retired = await readBack(PLAYER.RETIRED, exceptProspects);
-			assert.strictEqual(retired.ratings.ovr, Math.floor(full.ovr / 10));
-			assert.strictEqual(retired.ratings.pot, Math.floor(full.pot / 10));
+			assert.deepStrictEqual(retired.ratings, full);
 		}
 	});
 
@@ -1248,20 +1230,18 @@ describe("hideRatingsOnesDigitExceptProspects", () => {
 		g.setWithoutSavingToDB("hideRatingsOnesDigit", false);
 		const full = await player.format(p, { attrs: ["draft"] });
 		g.setWithoutSavingToDB("hideRatingsOnesDigit", true);
-		const inAList = await player.format(p, { attrs: ["draft"] });
-		const onHisPage = await player.format(p, {
-			attrs: ["draft"],
-			retiredRatingsExact: true,
-		});
+		const shown = await player.format(p, { attrs: ["draft"] });
+		p.tid = 4;
+		const active = await player.format(p, { attrs: ["draft"] });
 		g.setWithoutSavingToDB("hideRatingsOnesDigit", false);
 		p.tid = original;
-		if (!full || !inAList || !onHisPage) {
+		if (!full || !shown || !active) {
 			throw new Error("Missing player");
 		}
-		assert.strictEqual(inAList.draft.ovr, Math.floor(full.draft.ovr / 10));
-		assert.strictEqual(inAList.draft.pot, Math.floor(full.draft.pot / 10));
-		assert.strictEqual(onHisPage.draft.ovr, full.draft.ovr);
-		assert.strictEqual(onHisPage.draft.pot, full.draft.pot);
+		assert.strictEqual(shown.draft.ovr, full.draft.ovr);
+		assert.strictEqual(shown.draft.pot, full.draft.pot);
+		assert.strictEqual(active.draft.ovr, Math.floor(full.draft.ovr / 10));
+		assert.strictEqual(active.draft.pot, Math.floor(full.draft.pot / 10));
 	});
 
 	// With the option off, coarse ratings mean coarse ratings for everyone.
