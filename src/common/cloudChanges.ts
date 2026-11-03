@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 151,
+		date: "2026-11-03",
+		text: "Player recaps: season and retirement pieces are now written like a beat reporter's - a real angle and lede, the moments that defined the year or the career, no stat-sheet recitals. Retirement headlines are about the player himself, not a count of years and rings, and the retirement piece now knows his best single games.",
+	},
+	{
 		n: 150,
 		date: "2026-11-03",
 		text: "Coarse Ratings: a retired player's full ratings now show on every page - old team rosters, the Hall of Fame, draft history and the rest - not just his own player page. Tables still sort him in with the tens digit his ratings would show.",

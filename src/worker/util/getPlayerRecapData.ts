@@ -184,6 +184,19 @@ export type RecapRetirement = {
 	// Every team he suited up for, with the span and games.
 	teams: { abbrev: string; from: number; to: number; gp: number }[];
 	rings: number;
+	// His best single game in each category over the whole career, regular
+	// season and playoffs apart: the nights a retrospective is told through,
+	// which no amount of per-game averages gives a writer. Each carries the
+	// season and team it came with, and the game, so bests from the same night
+	// can be told as one.
+	careerHighs?: Record<string, RecapCareerHigh>;
+	playoffHighs?: Record<string, RecapCareerHigh>;
+};
+export type RecapCareerHigh = {
+	value: number;
+	season: number;
+	abbrev: string;
+	gid?: number;
 };
 
 // A player in NEXT season's draft class, written up as a scouting report rather
@@ -283,6 +296,34 @@ const LEADER_BOARD_SIZE = 5;
 // categories anyone writes about - "dropped 51 in March" is the kind of detail
 // that makes a recap read like writing, and it is nowhere in a season average.
 const HIGH_STATS = ["pts", "trb", "ast", "stl", "blk", "tp"] as const;
+
+// A career's best single game in each category, up to and including `season`.
+export const careerHighsFor = (
+	p: any,
+	season: number,
+	playoffs: boolean,
+	abbrevFor: (row: any) => string,
+): Record<string, RecapCareerHigh> | undefined => {
+	const out: Record<string, RecapCareerHigh> = {};
+	for (const row of p.stats ?? []) {
+		if (row.season > season || !!row.playoffs !== playoffs) {
+			continue;
+		}
+		for (const stat of HIGH_STATS) {
+			const entry = maxEntry(row[`${stat}Max`]);
+			// (A tie keeps the first time he did it.)
+			if (entry !== undefined && entry.value > (out[stat]?.value ?? 0)) {
+				out[stat] = {
+					value: entry.value,
+					season: row.season,
+					abbrev: abbrevFor(row),
+					...(entry.gid !== undefined ? { gid: entry.gid } : {}),
+				};
+			}
+		}
+	}
+	return Object.keys(out).length > 0 ? out : undefined;
+};
 
 const seasonHighsFor = (p: any, season: number) => {
 	const out: Record<string, { value: number; gid?: number }> = {};
@@ -1133,15 +1174,16 @@ export const getPlayerRecapData = async ({
 		const seasonRatings = ratingsForSeason(p, season);
 		const bornYear = p.born?.year ?? season;
 
+		const abbrevOf = (s: any): string =>
+			teamAbbrevByKey.get(`${s.season}|${s.tid}`) ??
+			abbrevByTid.get(s.tid) ??
+			`T${s.tid}`;
 		const statRows: RecapPlayerSeasonStats[] = upTo(p.stats)
 			.filter((s: any) => s.gp > 0)
 			.map((s: any) => ({
 				season: s.season,
 				age: s.season - bornYear,
-				abbrev:
-					teamAbbrevByKey.get(`${s.season}|${s.tid}`) ??
-					abbrevByTid.get(s.tid) ??
-					`T${s.tid}`,
+				abbrev: abbrevOf(s),
 				teamResult: s.playoffs
 					? undefined
 					: teamResultByKey.get(`${s.season}|${s.tid}`),
@@ -1242,6 +1284,8 @@ export const getPlayerRecapData = async ({
 				teams: [...byTeam.values()].sort((a, b) => a.from - b.from),
 				rings: awards.filter((a: any) => String(a.type) === "Won Championship")
 					.length,
+				careerHighs: careerHighsFor(p, season, false, abbrevOf),
+				playoffHighs: careerHighsFor(p, season, true, abbrevOf),
 			};
 		}
 

@@ -279,6 +279,58 @@ describe("buildPlayerRecapPrompt", () => {
 		assert.ok(prompt.includes("RETIRING PLAYERS GET TWO PIECES"));
 	});
 
+	// A retrospective is told through nights, not averages - and the best
+	// points and best assists that came in the same game are one night, not two.
+	test("a retiring player's best games go out, told as the nights they were", () => {
+		const p = {
+			...player(7, 16),
+			retiring: {
+				ageAtRetirement: 38,
+				seasonsPlayed: 16,
+				firstSeason: 1990,
+				lastSeason: 2005,
+				totalGP: 1204,
+				peakOvr: 79,
+				teams: [{ abbrev: "BOS", from: 1990, to: 2005, gp: 1204 }],
+				rings: 0,
+				careerHighs: {
+					pts: { value: 44, season: 1996, abbrev: "BOS", gid: 10 },
+					ast: { value: 15, season: 1996, abbrev: "BOS", gid: 10 },
+					trb: { value: 13, season: 1993, abbrev: "BOS", gid: 4 },
+				},
+				playoffHighs: {
+					pts: { value: 39, season: 1998, abbrev: "BOS" },
+				},
+			},
+		};
+		const prompt = buildPlayerRecapPrompt(batch([p]));
+		assert.ok(
+			prompt.includes(
+				"44 points and 15 assists in one game (1996 BOS); 13 rebounds (1993 BOS)",
+			),
+		);
+		assert.ok(prompt.includes("Playoff bests"));
+		assert.ok(prompt.includes("39 points (1998 BOS)"));
+	});
+
+	// The headline that started it: "Fourteen years and one ring" over a career
+	// that had a story to tell. The prompt has to rule out the counting kind and
+	// stop handing it counting examples to copy.
+	test("the retirement headline is asked for as a headline about the man, not a count", () => {
+		const prompt = buildPlayerRecapPrompt(batch([player(7, 3)]));
+		assert.ok(prompt.includes("Never build it from a count of years"));
+		const at = prompt.indexOf("THE RETIREMENT HEADLINE");
+		const examples = prompt.slice(at, prompt.indexOf("Never build", at));
+		assert.isFalse(
+			/\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\s+(years|seasons|games|rings|titles|teams)\b/i.test(
+				examples,
+			),
+		);
+		// And the season piece is a reporter's, not a recitation.
+		assert.ok(prompt.includes("WRITE IT LIKE A REPORTER"));
+		assert.ok(prompt.includes("no quotes from anyone"));
+	});
+
 	test("the listed season's injuries are called out, not just buried in the history", () => {
 		// A fifteen-year veteran's INJURY HISTORY is thirty entries long; the three
 		// that shaped THIS season have to be findable.

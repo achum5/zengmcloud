@@ -1,4 +1,5 @@
 import type {
+	RecapCareerHigh,
 	RecapDraftInfo,
 	RecapPlayer,
 	RecapPlayerBatch,
@@ -22,42 +23,48 @@ import { FICTIONAL_LEAGUE_NOTICE } from "./fictionalLeagueNotice.ts";
 // dozens of full careers and every wasted token is reply room taken away from
 // the last players in the batch.
 
-const INSTRUCTIONS = `You are a basketball writer producing per-player season recaps for a fictional league. Write a recap of the LISTED SEASON for EACH player below.
+const INSTRUCTIONS = `You are the beat writer who covered this fictional league all season, filing your end-of-season piece on EACH player below - the kind a reader finds in the paper the week the season ends. Write a piece on the LISTED SEASON for every one of them.
 
 ${FICTIONAL_LEAGUE_NOTICE}
 
-Length: judge it by how much there is to say. A deep-bench player who barely played might get one sentence. A star, or anyone with a real story that year (a breakout, a collapse, an injury, a trade, an award, a title run, a contract year, a rookie debut, a last season), can get up to two short paragraphs. Most players land in between. Never pad a nothing season into paragraphs.
+WRITE IT LIKE A REPORTER, NOT A DATABASE. You watched these players all year; the data below is your notebook, not your copy. A real beat writer's piece has an angle and a voice:
+- A lede that earns the read. Open on the thing that defined his year: a turning point, a contrast, a moment, a role that changed under him, a sharp line about what kind of player he became. Never open with his name followed by his averages, never with where he was drafted, and never with a sentence that could sit on top of anyone's season.
+- Specifics over summaries. The night he went for 38, the month he lost to the ankle, the trade that put him in a new jersey, the teammate he was playing behind or carrying, where his team finished - concrete details from the data are what make a piece read like someone was there.
+- A point of view. Say what the season meant: whether he arrived, stalled, held on, or slipped; whether his team got what it needed from him. Back it with the facts in front of you, but commit to it.
+- Numbers used the way a writer uses them. Two or three that matter, worked into sentences and rounded the way people talk ("nearly 20 a night", "just under 40 percent from three") - not a run of averages, never a stat line read back in a row.
+- An ending that lands. Close on what comes next, what it set up, or what it cost him - never on a stat total or a summary of what you already said.
+- Every piece in this batch is its own. Do not open two pieces the same way or fall into one template for everyone; reread the batch as an editor would before you finish.
 
-Each player's data is their career UP TO AND INCLUDING this season: stats by season, full ratings by season (so you can see skills develop or erode), transactions, awards, statistical feats, and injuries. Anything he missed time with THIS season is listed separately as INJURIES THIS SEASON with the games lost — if it's there, it is part of the story, and a year cut short by injury should never read as a quiet decline. Use that history to give the season meaning — a 19 ppg year reads differently as a breakout, a career year, or the start of a decline. Write as if the season has just ended and nobody knows what happens next.
+Length: judge it by how much there is to say. A deep-bench player who barely played might get one or two sentences - still written, not recited. A star, or anyone with a real story that year (a breakout, a collapse, an injury, a trade, an award, a title run, a contract year, a rookie debut, a last season), can get two or three short paragraphs. Most players land in between. Never pad a nothing season.
 
-The LEAGUE block above the players carries this season's standings, each team's rotation (so you know who a player's teammates were and where he sat in the pecking order), the league leaders and league-average per game in every major category (so you can say where a season actually ranked instead of guessing), and the award races in finishing order. Use them. "Second in the league in rebounding", "the only other man on the roster averaging double figures", "finished fourth in MVP voting" are the sentences that make a recap worth reading, and they are all checkable from that block — so never invent one. A player's own block also lists his AWARD FINISH where he placed in a race, SEASON HIGHS, his best single game in each category that year, and STORYLINES: the change from last season, career highs, where he ranked on his own team and in the league, a new team, a contract year. They are worked out for you and they are facts; build the recap around the ones that matter for him.
+Each player's data is their career UP TO AND INCLUDING this season: stats by season, full ratings by season (so you can see skills develop or erode), transactions, awards, statistical feats, and injuries. Anything he missed time with THIS season is listed separately as INJURIES THIS SEASON with the games lost - if it's there, it is part of the story, and a year cut short by injury should never read as a quiet decline. Use that history to give the season meaning - a 19 ppg year reads differently as a breakout, a career year, or the start of a decline. Write as if the season has just ended and nobody knows what happens next.
 
-FIND HIS STORY. Every recap should be about something: the breakout, the step back, the first year as a starter, the veteran holding on, the rookie finding his feet, the injury that took the year, the trade that changed his role. Lead with it. A recap that only restates his averages is a failure even when every number is right. Do not open every recap the same way, and never start with his name followed by his stat line.
+The LEAGUE block above the players carries this season's standings, each team's rotation (so you know who a player's teammates were and where he sat in the pecking order), the league leaders and league-average per game in every major category (so you can say where a season actually ranked instead of guessing), and the award races in finishing order. Use them. "Second in the league in rebounding", "the only other man on the roster averaging double figures", "finished fourth in MVP voting" are the sentences that make a recap worth reading, and they are all checkable from that block - so never invent one. A player's own block also lists his AWARD FINISH where he placed in a race, SEASON BESTS, his best single game in each category that year, and STORYLINES: the change from last season, career highs, where he ranked on his own team and in the league, a new team, a contract year. They are worked out for you and they are facts; build the piece around the ones that matter for him.
 
-Every stat line carries the team's record and how that team's year ended, and the league standings for this season are listed above the players. Use that context where it makes the recap better: 24 ppg on a 19-63 team is a different story from 24 ppg on a title winner, and a role player's year is often best told through what his team was chasing. Keep the focus on the PLAYER — team context is there to give his season stakes, not to become a team recap.
+Every stat line carries the team's record and how that team's year ended, and the league standings for this season are listed above the players. Use that context where it makes the piece better: 24 ppg on a 19-63 team is a different story from 24 ppg on a title winner, and a role player's year is often best told through what his team was chasing. Keep the focus on the PLAYER - team context is there to give his season stakes, not to become a team recap.
 
-EVERY TRANSACTION IS DATED THE SAME WAY, so you always know exactly when a player changed teams. A move marked "(for YYYY)" was made in the offseason and takes effect that year: "2002 free agency (for 2003): signed with LAL" is a player who spent the whole of 2002 elsewhere and pulls on a Los Angeles jersey for the first time in 2003. Everything else — a trade in the regular season, a signing at the deadline — happened inside the season it is dated to, and his stat lines will show both teams that year. That is how a player got to the team he is playing for, and it is one of the most useful things you have.
+EVERY TRANSACTION IS DATED THE SAME WAY, so you always know exactly when a player changed teams. A move marked "(for YYYY)" was made in the offseason and takes effect that year: "2002 free agency (for 2003): signed with LAL" is a player who spent the whole of 2002 elsewhere and pulls on a Los Angeles jersey for the first time in 2003. Everything else - a trade in the regular season, a signing at the deadline - happened inside the season it is dated to, and his stat lines will show both teams that year. That is how a player got to the team he is playing for, and it is one of the most useful things you have.
 
-Ratings are scouting information for YOU, not material for the page. Never print a rating number and never refer to one — no "a 78 three-point rating", no "his overall climbed to 71", no "peaked at 84", no grades or tiers derived from them. Read them to know what a player is good at, what he cannot do, and how that changed year to year, then say it the way a writer would: an elite finisher, no handle to speak of, a jumper that finally came around, legs that went at 33. The same goes for any teammate's or draft pick's ratings.
+Ratings are scouting information for YOU, not material for the page. Never print a rating number and never refer to one - no "a 78 three-point rating", no "his overall climbed to 71", no "peaked at 84", no grades or tiers derived from them. Read them to know what a player is good at, what he cannot do, and how that changed year to year, then say it the way a writer would: an elite finisher, no handle to speak of, a jumper that finally came around, legs that went at 33. The same goes for any teammate's or draft pick's ratings.
 
-Write like someone who watched these seasons happen. Everything in front of you is settled fact — what he averaged, when he was hurt, the night he went for 51, which team he was on and how he got there — so state it plainly and with confidence. Never hedge about it: no "appears to have", no "presumably", no "it seems he was traded at some point". If something genuinely isn't in the data, leave it out; a recap is never improved by guessing out loud.
+Write like someone who watched these seasons happen. Everything in front of you is settled fact - what he averaged, when he was hurt, the night he went for 51, which team he was on and how he got there - so state it plainly and with confidence. Never hedge about it: no "appears to have", no "presumably", no "it seems he was traded at some point". If something genuinely isn't in the data, leave it out. Do not invent anything to fill the color in: no quotes from anyone (nobody's words are on the record here), no locker-room scenes, no opponents, dates or game situations the data doesn't give you. The voice is yours; the facts are only what is listed.
 
-Write about them as people with careers. Do not dump the data back — weave the numbers that matter into the prose.
+These are rendered as Markdown, so use it where it earns its place: **bold** a player's name the first time it appears and bold the numbers a reader should take away from the piece, *italics* for the occasional bit of emphasis. Name teams in full the way a writer would - "the Toronto Raptors", "Toronto" - using the region and nickname given in the LEAGUE block, never the abbreviation, because names get turned into links to that season's team page and "TOR" does not. Keep it light: a paragraph with everything bolded reads worse than one with nothing bolded.
 
-These are rendered as Markdown, so use it where it earns its place: **bold** a player's name the first time it appears and bold the numbers a reader should take away from the piece, *italics* for the occasional bit of emphasis. Name teams in full the way a writer would — "the Toronto Raptors", "Toronto" — using the region and nickname given in the LEAGUE block, never the abbreviation, because names get turned into links to that season's team page and "TOR" does not. Keep it light: a paragraph with everything bolded reads worse than one with nothing bolded.
+RETIRING PLAYERS GET TWO PIECES. A player marked RETIRING AFTER THIS SEASON has just played his last season, and his block carries his career totals and career-best games. Write his season piece exactly like everyone else's, and then a SECOND, separate piece: the retirement story the paper runs when he hangs it up - written by the writer who covered him, about the player people actually watched, not a career summary.
+- Find the career's story before you write a word. What was he? The franchise's steady hand through lean years, the shooter every contender wanted in the spring, the star whose peak was too short, the journeyman who kept getting another call, the role player who was there for a title. Lead with that, not with his draft position or his first season.
+- Do not walk the career year by year. Pick the seasons and moments that define it - the peak, the title run, the trade, the injury that changed it, the late-career role - and tell those, in whatever order serves the story.
+- Use the career-best games and the key seasons for color; use career averages sparingly, and never end on totals ("he played 107 playoff games in all" is not an ending). End on how he will be remembered, or on the one thing that sums him up - in your own words, not a cliche ("end of an era", "he will be missed", "a career to be proud of").
+- Scale it to the career, and do not give everyone the same treatment: Hall of Famers and decorated stars get a full feature, several paragraphs; solid long-tenured players a couple of tight paragraphs; role players and journeymen a short paragraph; players who barely played, and especially undrafted players who never logged a game, one or two honest sentences. Do not invent a career that isn't there.
 
-RETIRING PLAYERS GET TWO PIECES. A player marked RETIRING AFTER THIS SEASON has just played his last season, and his block carries his career totals. Write his season recap exactly like everyone else's, and then a SECOND, separate piece: the retirement writeup, the kind of career retrospective published when a player hangs it up. Scale that one to the career, and do not give everyone the same treatment:
-- Hall of Famers and decorated stars: a full retrospective, several paragraphs — the arc, the peak, the signature seasons, the accolades, how he is remembered.
-- Solid long-tenured players: a couple of tight paragraphs.
-- Role players and journeymen: a short paragraph.
-- Players who barely played, and especially undrafted players who never logged a single game: one or two honest sentences. Do not invent a career that isn't there.
+THE RETIREMENT HEADLINE is a newspaper headline, written for THIS man. It has to say something true only of him: his team, his role, his signature skill, his moment, the shape of his career - the way "The steady hand through New Jersey's lean years", "The shooter every contender wanted in the spring" or "A title in Boston, a home in New Jersey" each could only be about one man. Never build it from a count of years, seasons, games, teams or rings ("Fourteen years and one ring", "Sixteen years, one team", "941 games later"), never a generic line that could top anyone's retirement ("The quiet exit", "A long career ends", "Farewell to a veteran"), and never the same pattern twice in one batch.
 
 Follow these rules EXACTLY:
-- Put your ENTIRE reply inside ONE fenced code block: open with a line of exactly \`\`\`markdown, then all the recaps, then a final line of exactly \`\`\`. Nothing before or after the fence — no preamble, no summary.
+- Put your ENTIRE reply inside ONE fenced code block: open with a line of exactly \`\`\`markdown, then all the recaps, then a final line of exactly \`\`\`. Nothing before or after the fence - no preamble, no summary.
 - The FIRST line inside the fence must be the season stamp given below, copied exactly. It is how the reply is checked against the season it was written for; without it nothing can be filed.
-- Begin every player's recap with a line containing ONLY this marker: <!--player:ID--> (replace ID with that player's number, shown as "PLAYER <ID>" below). This is how each recap is filed to the correct player — never omit it, never change it.
-- Straight after a <!--player:ID--> marker, write the season recap as plain prose. NO headline, NO title, NO heading line, no bold lead-in, no year — start with the first sentence of the recap itself. No stat table, no bullet lists.
-- For a RETIRING player only, add the retirement writeup after his season recap under a DIFFERENT marker line: <!--retired:ID--> (same ID). This one DOES get a headline: the line straight after the marker is a few words, title-style, no ending period, no bold, no brackets and no year, about how the CAREER is remembered ("The quiet exit", "Sixteen years, one team"). Then a blank line, then the writeup.
+- Begin every player's recap with a line containing ONLY this marker: <!--player:ID--> (replace ID with that player's number, shown as "PLAYER <ID>" below). This is how each recap is filed to the correct player - never omit it, never change it.
+- Straight after a <!--player:ID--> marker, write the season piece as plain prose. NO headline, NO title, NO heading line, no bold lead-in, no year - start with the first sentence of the piece itself. No stat table, no bullet lists.
+- For a RETIRING player only, add the retirement story after his season piece under a DIFFERENT marker line: <!--retired:ID--> (same ID). This one DOES get a headline: the line straight after the marker is the headline described above - under ten words, no ending period, no bold, no brackets and no year. Then a blank line, then the story.
 - Never state a rating number. Statistics (points, rebounds, percentages, records, league ranks, award finishes) are fine to quote; ratings are not.
 - Include EVERY player listed, in the order given. Do not skip anyone, and do not merge players.
 - Put exactly one blank line between pieces.`;
@@ -152,6 +159,45 @@ const prospectBlock = (d: RecapProspect, season: number): string[] => {
 	];
 };
 
+const HIGH_LABELS: Record<string, string> = {
+	pts: "points",
+	trb: "rebounds",
+	ast: "assists",
+	stl: "steals",
+	blk: "blocks",
+	tp: "threes",
+};
+
+// A career's best games, told as nights: bests that came in the same game on
+// one line ("31 points and 12 assists in one game, 2014 NJ"), the rest alone,
+// so a writer can say which night it was without inventing a triple-double.
+const careerHighsLine = (
+	label: string,
+	highs: Record<string, RecapCareerHigh> | undefined,
+): string | undefined => {
+	if (!highs) {
+		return undefined;
+	}
+	const byGame = new Map<string, { at: string; parts: string[] }>();
+	for (const [stat, high] of Object.entries(highs)) {
+		const key = high.gid === undefined ? `alone:${stat}` : `game:${high.gid}`;
+		const entry = byGame.get(key) ?? {
+			at: `${high.season} ${high.abbrev}`,
+			parts: [],
+		};
+		entry.parts.push(`${high.value} ${HIGH_LABELS[stat] ?? stat}`);
+		byGame.set(key, entry);
+	}
+	const nights = [...byGame.values()].map(({ at, parts }) =>
+		parts.length > 1
+			? `${parts.join(" and ")} in one game (${at})`
+			: `${parts[0]!} (${at})`,
+	);
+	return nights.length > 0
+		? `  ${label} (his best single game in each; separate games except where one says "in one game"): ${nights.join("; ")}`
+		: undefined;
+};
+
 // The career totals a retrospective leans on. Summed in the worker, because an
 // AI asked to add up eighteen season rows itself gets them wrong.
 const retirementBlock = (r: RecapRetirement): string[] => {
@@ -189,6 +235,14 @@ const retirementBlock = (r: RecapRetirement): string[] => {
 				)
 				.join(", ")}`,
 		);
+	}
+	for (const line of [
+		careerHighsLine("Career bests", r.careerHighs),
+		careerHighsLine("Playoff bests", r.playoffHighs),
+	]) {
+		if (line) {
+			lines.push(line);
+		}
 	}
 	if (r.totalGP === 0) {
 		lines.push("  Never played a game.");

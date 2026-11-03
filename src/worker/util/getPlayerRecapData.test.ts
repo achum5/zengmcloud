@@ -1,5 +1,6 @@
 import { assert, beforeEach, describe, test } from "vitest";
 import {
+	careerHighsFor,
 	describeTransaction,
 	draftIsComplete,
 	storyHooks,
@@ -249,5 +250,51 @@ describe("storyHooks", () => {
 			leagueRanks: [],
 		});
 		assert.deepStrictEqual(none, []);
+	});
+});
+
+describe("careerHighsFor", () => {
+	// A retirement story is told through his best nights. Each is the best
+	// across every season he played up to the one being written, with where it
+	// came and the game, kept apart for the regular season and the playoffs.
+	const p = {
+		stats: [
+			{
+				season: 2001,
+				tid: 0,
+				playoffs: false,
+				ptsMax: [31, 5],
+				astMax: [9, 6],
+			},
+			{
+				season: 2002,
+				tid: 1,
+				playoffs: false,
+				ptsMax: [44, 20],
+				astMax: [12, 20],
+			},
+			{ season: 2002, tid: 1, playoffs: true, ptsMax: [38, 30] },
+			// After the season being written: not his yet.
+			{ season: 2003, tid: 1, playoffs: false, ptsMax: [50, 40] },
+		],
+	};
+	const abbrevFor = (row: any) => abbrevs.get(row.tid) ?? "?";
+
+	test("the best of each across the career, with its season, team and game", () => {
+		const highs = careerHighsFor(p, 2002, false, abbrevFor)!;
+		assert.deepStrictEqual(highs.pts, {
+			value: 44,
+			season: 2002,
+			abbrev: "BOS",
+			gid: 20,
+		});
+		assert.strictEqual(highs.ast!.gid, 20);
+		assert.isUndefined(highs.blk);
+	});
+
+	test("the playoffs apart", () => {
+		const highs = careerHighsFor(p, 2002, true, abbrevFor)!;
+		assert.strictEqual(highs.pts!.value, 38);
+		assert.isUndefined(careerHighsFor(p, 2001, true, abbrevFor));
 	});
 });
