@@ -90,6 +90,9 @@ export type FieldFrame = {
 	confetti?: { of: Confetti; t: number };
 	// Photographers' cameras going off (see media.ts flashesAt).
 	flashes?: Pt3[];
+	// In close on a man, a long lens's: the stadium behind him this far out
+	// of focus (picture pixels; the 3D court's - see court3d/scene.ts).
+	soft?: number;
 };
 
 const POST_YELLOW = "#f5d31c";
@@ -225,6 +228,30 @@ const drawShadow = (
 export const postDepth = (cam: Camera, side: 0 | 1): number =>
 	depthOf(cam, postParts(side).neck);
 
+// The picture so far (the stadium, behind everything on the field) drawn
+// again over itself out of focus.
+let behind: HTMLCanvasElement | undefined;
+const softenBehind = (ctx: CanvasRenderingContext2D, px: number) => {
+	const c = ctx.canvas;
+	behind ??= document.createElement("canvas");
+	if (behind.width !== c.width || behind.height !== c.height) {
+		behind.width = c.width;
+		behind.height = c.height;
+	}
+	const bc = behind.getContext("2d");
+	if (!bc) {
+		return;
+	}
+	bc.setTransform(1, 0, 0, 1, 0, 0);
+	bc.clearRect(0, 0, c.width, c.height);
+	bc.drawImage(c, 0, 0);
+	ctx.save();
+	ctx.setTransform(1, 0, 0, 1, 0, 0);
+	ctx.filter = `blur(${px}px)`;
+	ctx.drawImage(behind, 0, 0);
+	ctx.restore();
+};
+
 export const drawFieldFrame = (f: FieldFrame) => {
 	const { ctx, cam, paint } = f;
 	const st = paint.stadium;
@@ -278,6 +305,9 @@ export const drawFieldFrame = (f: FieldFrame) => {
 	}
 	drawTexturedPlane(ctx, cam, WALL, st.screen("wall", board), 24, 1);
 	drawTexturedPlane(ctx, cam, TUNNEL, st.tunnel, 4, 2);
+	if (f.soft) {
+		softenBehind(ctx, f.soft);
+	}
 	// The ground: the turf, the end zones' paint, the logo, the numbers.
 	drawTexturedPlane(ctx, cam, TURF_PLANE, paint.turf, 32, 16);
 	if (paint.field) {

@@ -140,6 +140,36 @@ const CREW_LATE = 900;
 const CREW_FPS = 8;
 const CREW_PAST = 18;
 
+// THE INTERVIEW (the 3D court's: see court3d/director.ts interviewStar):
+// the winners' star of the game (see director.ts starOf), his hands
+// shaken, a few steps over toward the near side - this far, at the most -
+// to a spot clear of the rest of them (none nearer than this, feet, nor in
+// the way of the camera in on him from the near side: see aim.ts); the
+// sideline reporter out to him there from just off the near sideline at a
+// walk (feet a second), this far over from him, set this long before he
+// starts. He talks it through for this long - no sooner than this long
+// after the head coaches are done.
+export const REPORTER_ID = -330;
+const INTERVIEW_TOWARD = 10;
+const INTERVIEW_ROOM = 6;
+const INTERVIEW_APART = 2.8;
+const REPORTER_FROM = 4;
+const REPORTER_FPS = 6.3;
+const INTERVIEW_SET_MS = 700;
+const INTERVIEW_MS = 6500;
+const INTERVIEW_AFTER = 800;
+// (Looked for this far round where he would go, along the field and across
+// it - toward the camera first.)
+const INTERVIEW_OFF_X = [0, 8, -8, 16, -16, 24, -24, 32, -32, 40, -40];
+const INTERVIEW_OFF_Y = [0, 8, 16, 24, 32, 40, -8];
+// (The picture, from the camera this far in front of them: kept clear this
+// far either side at them, narrowing to the camera - and this much more,
+// for a man's width - from this far behind them on.)
+export const INTERVIEW_CAM_FT = 22;
+const CAM_WAY = 8;
+const CAM_CLEAR = 3;
+const INTERVIEW_BEHIND = 14;
+
 // Two men shaking hands, or slapping hands: how far apart they stand, and
 // turned (see handsMeet) - right hand to right hand between them (as the
 // men are drawn).
@@ -180,6 +210,17 @@ export type { Stakes };
 // A playoff round won (see Postgame) - the championship, it may be.
 export type Clinch = { title: boolean };
 
+// The interview: the star's, from when to when; where he stands for it, and
+// she does; and her, out to him and back.
+export type Interview = {
+	pid: number;
+	t0: number;
+	t1: number;
+	at: Pt;
+	her: Pt;
+	reporter: CrewPart;
+};
+
 export type Postgame = {
 	coaches: CrewPart[];
 	// When it starts, when the head coaches shake hands, and where.
@@ -194,6 +235,7 @@ export type Postgame = {
 	shower?: Shower;
 	// When the picture cuts to the last look.
 	look: number;
+	interview?: Interview;
 	// The round won by it (the 3D court's series won: see
 	// court3d/director.ts) - celebrated however big the win, the building up
 	// for it all the way, the winners' sideline out onto the field at a run
@@ -527,6 +569,8 @@ export const stagePostgame = (input: {
 	whistle: number;
 	// The man who won it on the last play, if anybody did.
 	hero?: number;
+	// The winners' star of the game, for the interview after it.
+	star?: number;
 	t0: number;
 	t1: number;
 	playI: number;
@@ -802,10 +846,31 @@ export const stagePostgame = (input: {
 	far.walk({ x: at.x - half - 1.5, y: at.y });
 	near.walk({ x: at.x + half + 1.5, y: at.y });
 	const { shake, end } = meet(far, near, r, at, COACH_HUG);
-
-	const look = Math.max(input.t1, end + COACH_AFTER, done + 800) + LOOK_AFTER;
-	const t1 = look + LAST_LOOK_MS;
 	const others = dumpers.map((p) => new Man(p.team, p.legs, PACE[0]));
+
+	// The interview, the head coaches done.
+	const star = freed.find((f) => f.p.pid === input.star)?.man;
+	const talk =
+		star && winner !== undefined && star.team === winner
+			? interviewOf(
+					star,
+					[...men, ...bosses, ...others].filter((m) => m !== star),
+					go,
+					end + INTERVIEW_AFTER,
+					done + 800,
+				)
+			: undefined;
+	const interview = talk ? { ...talk, pid: input.star! } : undefined;
+
+	const look =
+		Math.max(input.t1, end + COACH_AFTER, done + 800, interview?.t1 ?? 0) +
+		LOOK_AFTER;
+	const t1 = look + LAST_LOOK_MS;
+	if (interview) {
+		const her = interview.reporter.legs;
+		const l = her.at(-1)!;
+		her.push({ ...l, t0: l.t1, t1, from: l.to });
+	}
 	for (const m of [...men, ...bosses, ...others]) {
 		const l = m.legs.at(-1)!;
 		m.hold(t1, moveKind(l.move) === "still" ? l.move : "stand");
@@ -820,7 +885,109 @@ export const stagePostgame = (input: {
 		...(shower ? { shower } : {}),
 		look,
 		...(clinch ? { clinch } : {}),
+		...(interview ? { interview } : {}),
 		t1,
+	};
+};
+
+// The interview: the star (free from now) over to a spot of his own a few
+// steps toward the near side, clear of the rest (`others`, where they end
+// up), his helmet off; the reporter out to him there from the near sideline
+// - from `go` at the soonest - and the two of them at it, from no sooner
+// than `from`, until `till` at least.
+const interviewOf = (
+	star: Man,
+	others: Man[],
+	go: number,
+	from: number,
+	till: number,
+): Omit<Interview, "pid"> => {
+	if (!star.bare) {
+		star.helmetOff();
+	}
+	// (The camera on the field in front of them, clear of the near
+	// sideline.)
+	const nearest = FIELD_W - INTERVIEW_CAM_FT - 8;
+	const base = {
+		x: clamp(star.at.x, 30, FIELD_L - 30),
+		y: clamp(star.at.y + INTERVIEW_TOWARD, 12, nearest),
+	};
+	const herOf = (p: Pt) => ({ x: p.x - INTERVIEW_APART, y: p.y + 0.4 });
+	const ends = others.map((m) => m.at);
+	// (How many are in the way there: none, or as few as anywhere.)
+	const inWay = (p: Pt) => {
+		const her = herOf(p);
+		const mid = { x: (p.x + her.x) / 2, y: p.y };
+		return ends.filter(
+			(q) =>
+				dist(q, p) < INTERVIEW_ROOM ||
+				dist(q, her) < INTERVIEW_ROOM ||
+				// (In the picture with them, as near the camera as they are or
+				// nearer - between them and it, or either side.)
+				(q.y > mid.y - INTERVIEW_BEHIND &&
+					q.y < mid.y + INTERVIEW_CAM_FT + 2 &&
+					Math.abs(q.x - mid.x) <
+						CAM_WAY * (1 - (q.y - mid.y) / INTERVIEW_CAM_FT) + CAM_CLEAR),
+		).length;
+	};
+	let at = base;
+	let fewest = Infinity;
+	for (const dy of INTERVIEW_OFF_Y) {
+		for (const dx of INTERVIEW_OFF_X) {
+			const p = {
+				x: clamp(base.x + dx, 30, FIELD_L - 30),
+				y: clamp(base.y + dy, 12, nearest),
+			};
+			const n = inWay(p);
+			if (n < fewest) {
+				fewest = n;
+				at = p;
+			}
+		}
+		if (fewest === 0) {
+			break;
+		}
+	}
+	const her = herOf(at);
+	star.walk(at);
+	// (Turned mostly to the camera, a little to her - and her to him, a
+	// little to the camera.)
+	const hisYaw = toward(at, { x: (at.x + her.x) / 2, y: at.y + 8 });
+	const herYaw = toward(her, { x: at.x + 1, y: at.y + 3 });
+	const start = { x: her.x - 6, y: FIELD_W + REPORTER_FROM };
+	const walkMs = (dist(start, her) / REPORTER_FPS) * 1000;
+	const t0 = Math.max(
+		star.t + INTERVIEW_SET_MS,
+		from,
+		go + walkMs + INTERVIEW_SET_MS,
+	);
+	const t1 = Math.max(t0 + INTERVIEW_MS, till);
+	star.hold(t0 - 300, "stand", hisYaw);
+	star.hold(t1, "talk", hisYaw);
+	const leave = t0 - INTERVIEW_SET_MS - walkMs;
+	const reporter = new Man(
+		0,
+		[
+			{
+				t0: leave - 1,
+				t1: leave,
+				from: start,
+				to: start,
+				move: "stand",
+				yaw: toward(start, her),
+			},
+		],
+		REPORTER_FPS,
+	);
+	reporter.walk(her, REPORTER_FPS);
+	reporter.hold(t0, "stand", herYaw);
+	reporter.hold(t1, "micOut", herYaw);
+	return {
+		t0,
+		t1,
+		at,
+		her,
+		reporter: { pid: REPORTER_ID, team: 0, legs: reporter.legs },
 	};
 };
 

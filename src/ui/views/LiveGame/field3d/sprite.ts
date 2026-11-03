@@ -1,4 +1,4 @@
-import { project, type Camera } from "../court3d/camera.ts";
+import { depthOf, project, type Camera } from "../court3d/camera.ts";
 import {
 	lerpPose,
 	skeleton,
@@ -690,6 +690,10 @@ type Plan = {
 	// Off the field - on the sideline, at the back of the picture.
 	off?: boolean;
 };
+// The nearest a man is drawn in front of the camera (feet; the 3D court's -
+// see court3d/sprite.ts): any nearer, or behind it - a camera down on the
+// field - and he is out of the picture, not drawn up huge across it.
+const NEAR_FT = 3;
 const planOf = (
 	cam: Camera,
 	st: FieldPlayerState,
@@ -699,6 +703,9 @@ const planOf = (
 	cache: SpriteCache | undefined,
 	shaded: boolean,
 ): Plan | undefined => {
+	if (depthOf(cam, { x: st.x, y: st.y, z: 0 }) < NEAR_FT) {
+		return undefined;
+	}
 	const base = project(cam, { x: st.x, y: st.y, z: 0 });
 	const k = base.k;
 	const fine = cache?.fine === true;

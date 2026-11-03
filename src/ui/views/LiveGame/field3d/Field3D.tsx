@@ -37,7 +37,14 @@ import {
 	startFrame,
 } from "../court3d/sprite.ts";
 import type { Body } from "../court3d/poses.ts";
-import { aimFor, fromLow, glideAim, type Glide } from "./aim.ts";
+import {
+	aimFor,
+	closeIn,
+	fromLow,
+	glideAim,
+	rigFor,
+	type Glide,
+} from "./aim.ts";
 import { buildFieldClocks, fieldClockAt } from "./clock.ts";
 import { buildPlayClocks, playClockAt } from "./playClock.ts";
 import { drawFlyingBall, drawLooseBall } from "./ball.ts";
@@ -99,6 +106,7 @@ import {
 	cheerLook,
 	mascotLook,
 	photographerLook,
+	reporterLook,
 	tvCrewLook,
 	type BareHead,
 	type FieldLook,
@@ -128,7 +136,7 @@ import {
 import { planFieldKeyPlays } from "./keyPlays.ts";
 import { replayAim, replayEnd } from "./replays.ts";
 import { poolsOf } from "./pools.ts";
-import type { Stakes } from "./postgame.ts";
+import { REPORTER_ID, type Stakes } from "./postgame.ts";
 import { drawFieldFrame, type FieldPaint } from "./scene.ts";
 import {
 	coachId,
@@ -143,6 +151,7 @@ import { HURT_MOST, MEDICS, medicId } from "./hurt.ts";
 import {
 	cameraGear,
 	flashesAt,
+	micGear,
 	photographersAt,
 	photographersFor,
 	tvCameraGear,
@@ -176,6 +185,9 @@ import { inShadow, venueFor } from "./venue.ts";
 // happens on screen.
 
 // How long the picture dips to black either side of a cut (timeline ms).
+// In close on a man, the stadium behind him this far out of focus (picture
+// pixels - see scene.ts).
+const CLOSE_SOFT = 1.1;
 const DIP_MS = 150;
 // A replay cut from one of its cameras to the other (see replays.ts): a
 // flash of white, and the new angle up out of it over this long (ms).
@@ -945,6 +957,9 @@ const Field3D = ({
 			),
 		);
 		bodies.set(MASCOT_ID, drawnBody(mascotBody()));
+		// The sideline reporter, out for the interview after the game.
+		looks.set(REPORTER_ID, reporterLook(`${gid}|reporter`));
+		bodies.set(REPORTER_ID, drawnBody(cheerBody(66, 128)));
 		keptRest.current = {
 			made: madeRest,
 			looks: [...looks]
@@ -1287,7 +1302,9 @@ const Field3D = ({
 							shot,
 							fw,
 							fh,
-							replay || fromLow(moment) ? REPLAY_RIG : MAIN_RIG,
+							replay
+								? REPLAY_RIG
+								: (rigFor(moment) ?? (fromLow(moment) ? REPLAY_RIG : MAIN_RIG)),
 						);
 			const white = flashRef.current;
 			if (white) {
@@ -1389,6 +1406,7 @@ const Field3D = ({
 				...sidelineGear(ctx, view, sideColors.current),
 				...cameraGear(ctx, view, snappers, body),
 				...tvCameraGear(ctx, view, moment.players, body),
+				...micGear(ctx, view, moment.players, body, REPORTER_ID),
 				...waterGear(ctx, view, moment.players, body),
 				...showerGear(ctx, view, moment, body, sprites.fine === true),
 				...runOutGear(ctx, view, moment.play?.runOut, moment.t),
@@ -1416,6 +1434,7 @@ const Field3D = ({
 				...(confetti ? { confetti: { of: confetti, t: moment.t } } : {}),
 				flashes: flashesAt(photographersRef.current, moment),
 				...(replay ? {} : { marks: marksAt(moment.play, moment.t) }),
+				...(!replay && closeIn(moment) ? { soft: CLOSE_SOFT } : {}),
 			});
 			if (now - covers.current.at > 500) {
 				covers.current = {

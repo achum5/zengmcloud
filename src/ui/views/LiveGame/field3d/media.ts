@@ -323,6 +323,93 @@ const drawCamera = (
 	ctx.fillRect(a.x - w / 2, a.y - w / 2, w, w);
 };
 
+// ---- the sideline reporter's microphone, drawn -------------------------------
+
+// Its handle (long, and thick), up out of her right hand and a little
+// forward - its head, round, and the flag under it with the network's
+// colors.
+const MIC_HANDLE = "#3a3b40";
+const MIC_HEAD = "#141416";
+const MIC_FLAG = "#b8202c";
+const MIC_FT = 0.6 * FIGURE_SCALE;
+const MIC_D = 0.1 * FIGURE_SCALE;
+const MIC_HEAD_R = 0.12 * FIGURE_SCALE;
+const MIC_FLAG_FT = 0.2 * FIGURE_SCALE;
+const MIC_LEAN = 0.3;
+const grips = new WeakMap<Body, Map<string, V3>>();
+const gripOf = (b: Body, move: Move, phase: number): V3 => {
+	let byMove = grips.get(b);
+	if (!byMove) {
+		byMove = new Map();
+		grips.set(b, byMove);
+	}
+	// (The loop's few poses, each its own.)
+	const key = `${move}|${Math.round(phase * 8) % 8}`;
+	let at = byMove.get(key);
+	if (!at) {
+		const sk = skeleton(b, poseOfMove(move, phase));
+		at = sk.armR.tip ?? sk.armR.end;
+		byMove.set(key, at);
+	}
+	return at;
+};
+export const micGear = (
+	ctx: CanvasRenderingContext2D,
+	cam: Camera,
+	states: FieldPlayerState[],
+	bodyOf: (pid: number) => Body,
+	pid: number,
+): Item[] =>
+	states.flatMap((st) => {
+		if (st.id !== pid) {
+			return [];
+		}
+		const g = gripOf(bodyOf(st.id), st.move, st.phase);
+		const placed = { x: st.x, y: st.y, z: drawnLift(st), yaw: st.yaw };
+		const at = bodyPoint(placed, g);
+		const top = bodyPoint(placed, {
+			f: g.f + MIC_FT * MIC_LEAN,
+			s: g.s,
+			u: g.u + MIC_FT,
+		});
+		return [
+			{
+				depth: Math.min(depthOf(cam, at), depthOf(cam, top)),
+				draw: () => {
+					drawMic(ctx, cam, at, top);
+				},
+			},
+		];
+	});
+
+const drawMic = (
+	ctx: CanvasRenderingContext2D,
+	cam: Camera,
+	at: Pt3,
+	top: Pt3,
+) => {
+	const a = project(cam, at);
+	const b = project(cam, top);
+	ctx.lineCap = "round";
+	ctx.strokeStyle = MIC_HANDLE;
+	ctx.lineWidth = Math.max(MIN_PX, MIC_D * a.k);
+	ctx.beginPath();
+	ctx.moveTo(a.x, a.y);
+	ctx.lineTo(b.x, b.y);
+	ctx.stroke();
+	// (The flag, square round the handle just under the head.)
+	const u = 1 - MIC_FLAG_FT / MIC_FT;
+	const fx = a.x + (b.x - a.x) * u;
+	const fy = a.y + (b.y - a.y) * u;
+	const w = Math.max(MIN_PX + 1, MIC_FLAG_FT * a.k);
+	ctx.fillStyle = MIC_FLAG;
+	ctx.fillRect(fx - w / 2, fy - w / 2, w, w);
+	ctx.fillStyle = MIC_HEAD;
+	ctx.beginPath();
+	ctx.arc(b.x, b.y, Math.max(MIN_PX, MIC_HEAD_R * b.k), 0, Math.PI * 2);
+	ctx.fill();
+};
+
 // ---- the TV cameras, drawn --------------------------------------------------
 
 const TV_BODY = "#686b72";

@@ -3673,6 +3673,41 @@ const FIELD_ANIMS = {
 			[1, BASE],
 		],
 	},
+
+	// ---- the interview after the game (the 3D court's) ----
+	// The sideline reporter's microphone held out to the man she is talking
+	// to, up at his mouth, the other hand easy at her side.
+	micOut: {
+		kind: "loop",
+		n: 2,
+		fps: 0.6,
+		pose: (i) =>
+			pose({
+				shN: 84 + i * 3,
+				elN: 58 - i * 4,
+				abN: 10,
+				wrN: 8,
+				shF: 8,
+				elF: 18,
+				lean: 2,
+			}),
+	},
+	// Talking it through: his right hand making the point, his helmet hung
+	// from his left.
+	talk: {
+		kind: "loop",
+		n: 4,
+		fps: 2.2,
+		pose: (i) =>
+			pose({
+				shN: [44, 58, 50, 62][i]!,
+				elN: [70, 54, 80, 48][i]!,
+				wrN: 20,
+				shF: 6,
+				elF: 14,
+				lean: 3,
+			}),
+	},
 } satisfies Record<string, FieldAnim>;
 
 export type FieldAnimName = keyof typeof FIELD_ANIMS;

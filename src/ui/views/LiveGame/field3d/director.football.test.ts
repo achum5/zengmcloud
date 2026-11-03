@@ -700,7 +700,8 @@ describe("the game over", () => {
 			const play = tl.plays.at(-1)!;
 			const post = play.postgame!;
 			assert.isDefined(post, "a postgame");
-			assert.isBelow(play.t1 - play.whistle, 30_000);
+			// (The star's interview in it, after the head coaches.)
+			assert.isBelow(play.t1 - play.whistle, 35_000);
 			for (const part of play.parts) {
 				const shakes = part.legs.filter((l) => l.move === "shake");
 				assert.isAbove(shakes.length, 0, `${part.pid} shook nobody's hand`);

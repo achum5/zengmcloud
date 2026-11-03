@@ -923,7 +923,7 @@ const build = (
 	}
 	const official = look.official === true;
 	const cheer = look.cheer !== undefined;
-	if (official || cheer) {
+	if (official || cheer || look.reporter) {
 		// (An official: no pads - just his shoulders under his shirt.)
 		torso(up(0.88, -sw * 0.72), up(0.88, sw * 0.72), [
 			[0, dp * 0.36],
@@ -987,8 +987,8 @@ const build = (
 		up(0.9, 0, -dp * 0.02),
 		at(-0.1, 0, -0.55),
 		[
-			[0, sw * (cheer ? 0.26 : official ? 0.3 : 0.42)],
-			[1, sw * (cheer ? 0.22 : official ? 0.26 : 0.36)],
+			[0, sw * (cheer || look.reporter ? 0.26 : official ? 0.3 : 0.42)],
+			[1, sw * (cheer || look.reporter ? 0.22 : official ? 0.26 : 0.36)],
 		],
 		NECK,
 		G_NECK,
@@ -1138,7 +1138,7 @@ const build = (
 				0.42,
 			);
 		}
-	} else if (cheer) {
+	} else if (cheer || look.reporter) {
 		// Her head, and her ponytail down from the back of it.
 		add(
 			at(0, 0, -0.08),
@@ -2706,7 +2706,7 @@ export const sculptFigure = (
 							set(mascotFace(pal, pal.mascot, lf, ls, lu));
 							break;
 						}
-						if (look.bare || pal.poms) {
+						if (look.bare || pal.poms || look.reporter) {
 							// His face - his eyes, his brows over them, his
 							// mouth; his hair over the top and round the back,
 							// his ears either side a shade darker.

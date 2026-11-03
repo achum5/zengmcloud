@@ -1465,6 +1465,7 @@ export const momentAt = (
 	// (The home team out of its tunnel, until the cut to the kick: each man
 	// once he is out of it, and not yet those of them set for the kick.)
 	const out = play.runOut && t < play.runOut.cut ? play.runOut : undefined;
+	const reporter = play.postgame?.interview?.reporter;
 	for (const part of [
 		...(out ? play.parts.filter((p) => p.team !== out.team) : play.parts),
 		...play.crew,
@@ -1473,6 +1474,8 @@ export const momentAt = (
 		...(play.medics ?? []),
 		...(play.coaches ?? []),
 		...(play.toss && t < play.toss.cut ? play.toss.men : []),
+		// (The sideline reporter, once she is out for the interview.)
+		...(reporter && t >= reporter.legs[0]!.t0 ? [reporter] : []),
 		...(out ? out.men.filter((m) => m.legs[0]!.t0 <= t) : []),
 	]) {
 		const st = stateOf(part, t, apart, play);

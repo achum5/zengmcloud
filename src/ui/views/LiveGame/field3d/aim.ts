@@ -1,7 +1,16 @@
-import type { Shot } from "./camera.ts";
+import type { FieldRig, Shot } from "./camera.ts";
 import type { Play } from "./director.ts";
 import type { FieldMoment } from "./evaluate.ts";
-import { FIELD_L, GOAL_L, GOAL_R, MID_X, MID_Y, type Pt } from "./geometry.ts";
+import {
+	FIELD_L,
+	FIELD_W,
+	GOAL_L,
+	GOAL_R,
+	MID_X,
+	MID_Y,
+	type Pt,
+} from "./geometry.ts";
+import { INTERVIEW_CAM_FT } from "./postgame.ts";
 import { runOutShot } from "./tunnel.ts";
 
 // WHERE THE CAMERA LOOKS: the way a game is shot from the press box - on the
@@ -90,6 +99,12 @@ const POST_IN_MS = 4000;
 const LOOK_FROM = { width: 300, y: 66, z: 2 };
 const LOOK = { width: 440, y: 29, z: 21 };
 const LOOK_MS = 3000;
+// The interview after it (see postgame.ts): in close on the two of them,
+// this wide, this high - from down on the field in front of them at about
+// their heads' height (see rigFor).
+const INTERVIEW_WIDTH = 14;
+const INTERVIEW_Z = 6;
+const INTERVIEW_CAM_Z = 6.2;
 // The winners' head coach under the cooler: in on him, this wide, the
 // picture's middle this far toward the near side of him (on the far
 // sideline, this far).
@@ -223,6 +238,15 @@ export const aimFor = (m: FieldMoment): Shot => {
 			width: LOOK_FROM.width + (LOOK.width - LOOK_FROM.width) * e,
 			y: LOOK_FROM.y + (LOOK.y - LOOK_FROM.y) * e,
 			z: LOOK_FROM.z + (LOOK.z - LOOK_FROM.z) * e,
+		};
+	}
+	const talk = post?.interview;
+	if (talk && t >= talk.t0) {
+		return {
+			x: (talk.at.x + talk.her.x) / 2,
+			width: INTERVIEW_WIDTH,
+			y: (talk.at.y + talk.her.y) / 2,
+			z: INTERVIEW_Z,
 		};
 	}
 	if (post?.mob && t >= post.from && t < post.mob.until) {
@@ -438,6 +462,33 @@ export const glideAim = (g: Glide, to: number[], ms: number): number[] => {
 	g.ms += ms;
 	const l = left();
 	return to.map((v, i) => v + (g.off[i] ?? 0) * l);
+};
+
+// In close on a man - the head coach calling a timeout, the interview after
+// the game: the stadium behind out of focus (see scene.ts).
+export const closeIn = (m: FieldMoment): boolean => {
+	const call = m.play?.timeout?.call;
+	return (
+		rigFor(m) !== undefined ||
+		(!!call && m.t >= call.from && m.t < m.play!.timeout!.cut)
+	);
+};
+
+// Where the picture is from, if not from the press box or down low on the
+// near side (see fromLow): over the interview after the game, down on the
+// field in front of the two of them.
+export const rigFor = (m: FieldMoment): FieldRig | undefined => {
+	const post = m.play?.postgame;
+	const talk = post?.interview;
+	if (!post || !talk || m.t < talk.t0 || m.t >= post.look) {
+		return undefined;
+	}
+	return {
+		back: (talk.at.y + talk.her.y) / 2 + INTERVIEW_CAM_FT - FIELD_W,
+		high: INTERVIEW_CAM_Z,
+		slide: 1,
+		upright: false,
+	};
 };
 
 // Whether the picture is from down low on the near side (see camera.ts

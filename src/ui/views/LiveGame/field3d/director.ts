@@ -63,6 +63,7 @@ import {
 	crewOff,
 	stageHalftime,
 	stagePostgame,
+	type Interview,
 	type Clinch,
 	type Stakes,
 } from "./postgame.ts";
@@ -260,6 +261,9 @@ export type Play = {
 		look: number;
 		// A playoff round won by it - the championship, it may be.
 		clinch?: Clinch;
+		// The winners' star of the game talking to the sideline reporter
+		// (see postgame.ts).
+		interview?: Interview;
 	};
 	ball: BallSeg[];
 	// A big play's moment after it (see action.ts celebrate): from when, till
@@ -395,6 +399,31 @@ const RESULTS = new Set([
 	"turnoverOnDowns",
 	"shootoutShot",
 ]);
+// The star of the game, for the interview after it (see starOf): what each
+// stat of his counts for - so much a yard, a touchdown, a takeaway (a field
+// goal made, STAR_FG) - and how much it takes all told.
+const STAR_WORTH: Record<string, number> = {
+	pssYds: 1 / 25,
+	pssTD: 4,
+	pssInt: -2,
+	rusYds: 1 / 10,
+	rusTD: 6,
+	recYds: 1 / 10,
+	recTD: 6,
+	krYds: 1 / 25,
+	prYds: 1 / 25,
+	fmbLost: -2,
+	defInt: 5,
+	defSk: 3,
+	defSft: 4,
+	defFmbRec: 3,
+	defFmbFrc: 2,
+	defTckLoss: 1,
+	defTckSolo: 0.5,
+	defTckAst: 0.25,
+};
+const STAR_FG = 3;
+const STAR_LEAST = 10;
 // A timeout: the picture on to the side that called it no sooner than this
 // long after the ball is dead (and the moment after), after the referee's
 // signal, and after a replay is cued.
@@ -1162,6 +1191,44 @@ class Director {
 		return pts;
 	}
 
+	// The star of the game, for the interview after it (see postgame.ts):
+	// of the winners on the field for the last play, the one whose game by
+	// the lines before i1 counts for the most (see STAR_WORTH) - if it counts
+	// for enough.
+	starOf(parts: Part[], pts: [number, number], i1: number): number | undefined {
+		const winner = pts[0] > pts[1] ? 0 : pts[1] > pts[0] ? 1 : undefined;
+		if (winner === undefined) {
+			return undefined;
+		}
+		const on = new Set(
+			parts.filter((p) => p.team === winner).map((p) => p.pid),
+		);
+		const worth = new Map<number, number>();
+		for (let i = 0; i < i1; i++) {
+			const e = this.events[i];
+			// (Raw team t is display side 1 - t.)
+			if (
+				e?.type !== "stat" ||
+				typeof e.pid !== "number" ||
+				typeof e.amt !== "number" ||
+				(e.t === 1 ? 0 : 1) !== winner ||
+				!on.has(e.pid)
+			) {
+				continue;
+			}
+			const s = String(e.s);
+			const w = STAR_WORTH[s] ?? (/^fg\d/.test(s) ? STAR_FG : 0);
+			worth.set(e.pid, (worth.get(e.pid) ?? 0) + w * e.amt);
+		}
+		let best: number | undefined;
+		for (const [pid, w] of worth) {
+			if (w >= STAR_LEAST && (best === undefined || w > worth.get(best)!)) {
+				best = pid;
+			}
+		}
+		return best;
+	}
+
 	// Who did what in a play, by its stats - on a two-point try, by the
 	// names in its lines.
 	statsOf(i0: number, i1: number): StatLine[] {
@@ -1761,10 +1828,12 @@ class Director {
 			ended && hero === undefined
 				? this.showerOf(kind, pts, parts, i0)
 				: undefined;
+		const star = ended ? this.starOf(parts, pts, i1) : undefined;
 		const postgame = ended
 			? stagePostgame({
 					parts,
 					pts,
+					...(star !== undefined ? { star } : {}),
 					// (Won on it: from the moment it was - not after the scorer's
 					// moment.)
 					whistle:
@@ -1783,6 +1852,9 @@ class Director {
 			: undefined;
 		if (postgame) {
 			t1 = postgame.t1;
+			if (postgame.interview) {
+				this.cuts.push(postgame.interview.t0);
+			}
 			this.cuts.push(postgame.look);
 			if (postgame.winner !== undefined) {
 				cheer = {
@@ -2133,6 +2205,7 @@ class Director {
 							...(postgame.shower ? { shower: postgame.shower } : {}),
 							look: postgame.look,
 							...(postgame.clinch ? { clinch: postgame.clinch } : {}),
+							...(postgame.interview ? { interview: postgame.interview } : {}),
 						},
 					}
 				: {}),

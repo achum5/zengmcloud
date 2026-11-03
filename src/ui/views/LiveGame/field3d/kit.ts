@@ -93,6 +93,9 @@ export type FieldLook = {
 	// top and a skirt, bare arms and legs, and a pom-pom in each hand in
 	// these colors.
 	cheer?: { poms: [string, string] };
+	// The sideline reporter: no pads, no cap - her hair tied back, as a
+	// cheerleader's is - in a jacket and slacks.
+	reporter?: true;
 	// The mascot: fur (his skin's color) for skin, and a furry head of his
 	// own - its muzzle and the inside of its ears in the pale shade, its
 	// brows and nose the dark one.
@@ -590,6 +593,43 @@ export const cheerLook = (kit: FieldKit, seed: string): FieldLook => {
 		jerseyNumber: "",
 		lastName: "",
 		cheer: { poms: [top, trim] },
+	};
+};
+
+// THE SIDELINE REPORTER, out for the interview after the game: a blazer
+// with its sleeves to the wrist over a pale blouse, dark slacks and shoes -
+// her hair tied back.
+const BLAZERS = ["#1f2d4d", "#7a2230", "#202125", "#2c5b5e", "#5a2e5c"];
+export const reporterLook = (seed: string): FieldLook => {
+	const rng = makeCourtRng(`reporter|${seed}`);
+	const blazer = BLAZERS[Math.floor(rng() * BLAZERS.length)]!;
+	return {
+		kit: {
+			helmet: blazer,
+			facemask: INK,
+			jersey: blazer,
+			collar: "#ece8df",
+			number: INK,
+			numberEdge: WHITE,
+			name: INK,
+			sleeveStripes: [],
+			pants: "#26272d",
+			pantsStripes: [],
+			sock: "#26272d",
+			sockStripes: [],
+		},
+		gear: {
+			mask: "open",
+			cleat: INK,
+			cleatSole: "#2a2a2e",
+			cleatAccent: INK,
+			sleeve: { arms: "RL", color: blazer },
+		},
+		skin: OFFICIAL_SKIN[Math.floor(rng() * OFFICIAL_SKIN.length)]!,
+		hair: CHEER_HAIR[Math.floor(rng() * CHEER_HAIR.length)]!,
+		jerseyNumber: "",
+		lastName: "",
+		reporter: true,
 	};
 };
 
