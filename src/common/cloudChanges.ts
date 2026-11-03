@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 156,
+		date: "2026-11-03",
+		text: "Realistic Front Offices: CPU teams now expect their players to miss some games to injuries still to come, not just the ones they have now - so a team built around one star no longer counts on him playing every game, and a deep bench counts for more.",
+	},
+	{
 		n: 155,
 		date: "2026-11-03",
 		text: "3D game: the bench greets a man coming off. As he gets back to his chair, the teammate sat nearest him on either side gets up, steps out in front of the bench and slaps him a high five, then they all sit back down.",

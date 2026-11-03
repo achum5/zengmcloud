@@ -183,6 +183,20 @@ with "the Pistons", not with a named person.
   or a free agent a team may sign, whose skills are not known yet, brings
   those of a typical player of his overall - not a minimum player's, which
   cost a lineup about half a point for every projected starter in it.
+- **Injuries yet to come count.** Everyone is there for 8% fewer games than
+  the injuries he has now leave him, played out as the roster plays without
+  him: players on a team all season missed 6.5% of its games at 12-18
+  minutes a game and 9.5% at 30-36. Counting only the injuries a team had,
+  a roster leaning on one star came in worse than read and a deep one
+  better - against how 300 team-seasons went, 0.14 points a game worse for
+  each point its best player's overall stood above its top eight's - and
+  the read missed by 2.05 points a game. Counting them, the star's share
+  halves and the miss is 1.97. A star with little behind him loses 1.18
+  points a game to injuries to come, a deep roster as good 0.29. Half the
+  teams each way, 2 leagues each way round over 5 seasons: as many titles
+  (10 to 10), 153 playoff rounds to 147, 12 seasons under 20 wins to 22,
+  and 4 to 6 points more of their games won in the third and fourth
+  seasons. No slower.
 - **Retirement by the game's own rule.** Nobody on a roster retires before
   34; after that, the older and the less valuable, the likelier (a starter
   at 35 almost never, the end of the bench often).
@@ -298,6 +312,12 @@ every team, again whenever a signing changes the pool), memory cleanup 17%.
   two. Half the teams each way (4 leagues x 2 seasons): haggling teams were
   the short side of 67 trades to 111, clearing their margins by 0.81 of what
   the other side did against 0.73 (medians), better in hindsight (+13 to -9).
+- **Not the deal best for the team shopping** (measured, left off): taking,
+  of the deals both would make, the one that does most for the team out
+  shopping - the other still haggling - found one worth 0.045 of a title to
+  it where the usual pick was worth 0.005, but half the teams each way, 2
+  leagues each way round over 5 seasons: 9 titles to 11, 155 playoff rounds
+  to 145, as many games won.
 - **Shopping.** When you offer a CPU team a deal, it compares three things:
   keeping its players, your offer, and the best deal it can get elsewhere by
   asking the other CPU teams instantly. Yours is best: it accepts. Someone

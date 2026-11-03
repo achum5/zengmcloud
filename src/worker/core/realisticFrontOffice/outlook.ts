@@ -637,8 +637,13 @@ export const outlookSettings = {
 	// read as better than it played, and a deep one as worse (470
 	// team-seasons: -0.10 ± 0.03 points a game for each point the best
 	// player's overall stands above the top eight's, +0.12 ± 0.03 for each
-	// point the 9th-12th men's do). Off while it is measured.
-	injuryRisk: false,
+	// point the 9th-12th men's do). With them, half that for the star; half
+	// the teams each way, 2 leagues each way round over 5 seasons: as many
+	// titles (10 to 10), 153 playoff rounds to 147, 12 seasons under 20 wins
+	// to 22, and 4 to 6 points more of their games won in the third and
+	// fourth seasons. Measured deadline waiting (measuredDeadline) is left
+	// off: CPU deals are almost never put off for the deadline.
+	injuryRisk: true,
 };
 
 // Measured in arena leagues: players on a team all season missed 6.5% of its
