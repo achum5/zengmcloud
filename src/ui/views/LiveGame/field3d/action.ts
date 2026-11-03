@@ -2362,6 +2362,9 @@ const JAM_AGAIN_FT = 25;
 const JAM_AGAIN_FPS = 8;
 // (Down there with him, squared up to him at least this long, ms.)
 const JAM_SET_MS = 300;
+// The cover with nobody bringing it back: down the field at this pace at
+// least (feet a second).
+const COVER_LEAST_FPS = 10;
 
 // ---- the play ----------------------------------------------------------------
 
@@ -12887,11 +12890,11 @@ class Action {
 		// stood there like statues till the whistle.)
 		const setFor = () => {
 			const jams = this.d.filter((m) => m.role === "JAMMER");
-			for (const m of [...peel, ...jams, ...gunners]) {
+			for (const m of [...peel, ...jams, ...gunners, ...lanes]) {
 				if (!this.done.has(m.pid) && this.whistle - m.t >= FAIR_SET_LEAST_MS) {
 					m.hold(
 						this.whistle,
-						m.role === "GUNNER" ? "backerReady" : "safetyReady",
+						m.team === this.o[0]!.team ? "backerReady" : "safetyReady",
 						this.toward(m.at, landPt),
 					);
 				}
@@ -12900,6 +12903,14 @@ class Action {
 
 		// The rest of the cover in their lanes, spread across the field.
 		const lanes = [...line].sort((x, y) => this.of(x.at).a - this.of(y.at).a);
+		// (Down there by just after the whistle - or, if that is so near it
+		// is no more than a walk, at COVER_LEAST_FPS: down the field after
+		// it, and pulled up there.)
+		const coverBy = (m: Actor, to: Pt) =>
+			Math.min(
+				this.whistle + 900,
+				Math.max(m.t, free) + (dist(m.at, to) / COVER_LEAST_FPS) * 1000,
+			);
 		// (Funneling in on him, the men outside staying wider and a little
 		// deeper to keep him in.)
 		const laneEnd = (k: number): OPt => {
@@ -12956,17 +12967,11 @@ class Action {
 			lanes.forEach((m, k) => {
 				const end = laneEnd(k);
 				const off = Math.abs(k - (lanes.length - 1) / 2);
-				m.chase(
-					this.w({
-						d: Math.min(
-							end.d,
-							goalPull - TB_SHORT - r() * TB_SPREAD - off * 1.5,
-						),
-						a: end.a,
-					}),
-					this.whistle + 900,
-					m.top * 0.85,
-				);
+				const to = this.w({
+					d: Math.min(end.d, goalPull - TB_SHORT - r() * TB_SPREAD - off * 1.5),
+					a: end.a,
+				});
+				m.chase(to, coverBy(m, to), m.top * 0.85);
 			});
 			this.downfield(inside);
 			setFor();
@@ -13010,7 +13015,8 @@ class Action {
 			}
 			this.done.add(pr.pid);
 			lanes.forEach((m, k) => {
-				m.chase(this.w(laneEnd(k)), this.whistle + 900, m.top * 0.85);
+				const to = this.w(laneEnd(k));
+				m.chase(to, coverBy(m, to), m.top * 0.85);
 			});
 			// (The rush held up at the line off down the field after it at a
 			// jog - not stood where it was kicked from.)
