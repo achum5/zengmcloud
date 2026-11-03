@@ -2410,6 +2410,10 @@ const LOCK_REACT_SPREAD_MS = 250;
 // him let go of once it is over, each up to this much later, ms.)
 const LOCK_GO_SPREAD_MS = 200;
 const LOCK_END_SPREAD_MS = 400;
+// (The man with the ball this far by a block on a return (feet): it let go
+// of this long after (ms) - not still at it the length of the field.)
+const LOCK_PAST_FT = 15;
+const LOCK_PAST_MS = 900;
 // (A blocker waiting on him where he is: down in his stance for the last
 // this long (and up to this much more), ms - stood up watching it before
 // that, if that is LOCK_WATCH_MS at least.)
@@ -8906,7 +8910,9 @@ class Action {
 		this.whistle = crossT;
 		carrier.hold(t + 2200, "stand");
 		this.done.add(carrier.pid);
-		this.pursue(chasers, pt, t, []);
+		// (After him till he is in, then given up: not all of them on to
+		// the end zone round him - see endCarry.)
+		this.pullUp(chasers, carrier, crossT);
 	}
 
 	crossingBack(m: Actor, fallback: number): number {
@@ -11628,6 +11634,7 @@ class Action {
 		bv: number,
 		endPt: Pt,
 		until: number,
+		carrier?: Actor,
 	): Lock {
 		// (Each at his own pace, and off on his own count - see countOf -
 		// not two blocks met on the same step.)
@@ -11708,8 +11715,10 @@ class Action {
 			const o = this.of(p);
 			return this.w({ d: o.d + dd, a: o.a + da });
 		};
+		const by = carrier ? this.goneBy(carrier, meet, tm, until) : until;
 		const t1 = Math.max(
-			until + LOCK_END_SPREAD_MS * countOf(b, snap, 11),
+			Math.min(until, by + LOCK_PAST_MS) +
+				LOCK_END_SPREAD_MS * countOf(b, snap, 11),
 			tm + 300,
 		);
 		c.go(shift(cHit), t1, "engage", ang + Math.PI);
@@ -12110,6 +12119,7 @@ class Action {
 				Math.abs(this.of(b.at).a - this.of(endPt).a) > 45
 					? this.seen + 1600 + r() * 800
 					: t,
+				kr,
 			),
 		);
 		this.endReturn(retI, kr, endPt, t, td, this.o);
@@ -12504,6 +12514,18 @@ class Action {
 			.map(([b, c]) => this.lockUp(b, c, go, 6, pt, until));
 	}
 
+	// When a man coming back up the field with the ball is LOCK_PAST_FT by
+	// `at`, between t0 and t1 (t1, if he never is).
+	goneBy(m: Actor, at: Pt, t0: number, t1: number): number {
+		const d = this.of(at).d - LOCK_PAST_FT;
+		for (let c = t0; c < t1; c += 50) {
+			if (this.of(m.posAt(c)).d < d) {
+				return c;
+			}
+		}
+		return t1;
+	}
+
 	// The kicker, his kick away, on after it at a jog.
 	kickerAfter(k: Actor, at: OPt, until: number) {
 		if (this.done.has(k.pid)) {
@@ -12873,6 +12895,7 @@ class Action {
 				Math.abs(this.of(b.at).a - this.of(endPt).a) > 40
 					? b.t + 1200 + r() * 600
 					: t,
+				pr,
 			),
 		);
 		lanes.forEach((m, k) => {
