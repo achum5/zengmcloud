@@ -2,7 +2,9 @@ import { assert, beforeAll, test } from "vitest";
 import { aimFor, fromLow } from "./aim.ts";
 import { boardAt, crowdAt } from "./crowd.ts";
 import { compileField, type FieldTimeline } from "./director.ts";
+import { momentAt } from "./evaluate.ts";
 import { SIDE_ROOM } from "./geometry.ts";
+import { sidelineOf } from "./sideline.ts";
 import { simGames } from "./testGames.ts";
 
 let tls: FieldTimeline[] = [];
@@ -249,7 +251,8 @@ test("the huddle over a timeout, from down low", () => {
 			huddles += 1;
 			const end = to.cheer?.cut ?? to.crowd?.cut ?? p.t1;
 			const at = (t: number) => ({ t, play: p, players: [] });
-			assert.isFalse(fromLow(at(to.cut - 1)), `${p.i}`);
+			// (Or on the head coach calling it, already.)
+			assert.strictEqual(fromLow(at(to.cut - 1)), !!to.call, `${p.i}`);
 			assert.isTrue(fromLow(at(to.cut + 1)), `${p.i}`);
 			assert.isTrue(fromLow(at(end - 1)), `${p.i}`);
 			assert.isAbove(
@@ -263,4 +266,51 @@ test("the huddle over a timeout, from down low", () => {
 		}
 	}
 	assert.isAtLeast(huddles, 5);
+});
+
+// A timeout his side takes: the head coach's hands up in a T at the
+// official before the signal - and, across the field, the picture in on him
+// as they go up, from down low, before it cuts to the huddle.
+test("the head coach calls time with his hands in a T", () => {
+	let calls = 0;
+	let shots = 0;
+	for (const tl of tls) {
+		for (const p of tl.plays) {
+			const to = p.timeout;
+			if (!to) {
+				continue;
+			}
+			for (const c of p.coaches ?? []) {
+				const tee = c.legs.find((l) => l.move === "timeoutT");
+				if (tee) {
+					calls += 1;
+					assert.isBelow(tee.t1, to.cut, `${p.i}`);
+				}
+			}
+			const call = to.call;
+			if (!call) {
+				continue;
+			}
+			shots += 1;
+			const boss = p.coaches!.find((c) => c.pid === call.pid)!;
+			const tee = boss.legs.find((l) => l.move === "timeoutT")!;
+			assert.strictEqual(sidelineOf(boss.team), 0, `${p.i}`);
+			assert.isAtLeast(call.from, tee.t0, `${p.i}`);
+			assert.isBelow(
+				call.from,
+				tee.t0 + (tee.t1 - tee.t0) * 0.8 - 300,
+				`${p.i}`,
+			);
+			assert.isAtLeast(to.cut - call.from, 1300, `${p.i}`);
+			const m = momentAt(tl, call.from + 100);
+			assert.isTrue(fromLow(m), `${p.i}`);
+			const him = m.players.find((s) => s.id === call.pid)!;
+			assert.strictEqual(him.move, "timeoutT", `${p.i}`);
+			const aim = aimFor(m);
+			assert.isBelow(Math.abs(aim.x - him.x), 1, `${p.i}`);
+			assert.isBelow(aim.width, 30, `${p.i}`);
+		}
+	}
+	assert.isAtLeast(calls, 10);
+	assert.isAtLeast(shots, 3);
 });

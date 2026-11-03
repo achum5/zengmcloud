@@ -232,7 +232,14 @@ export type Play = {
 	// called it, and where it looks - and, now and then, from when on to the
 	// cheerleaders at their routine (see cheerleaders.ts), or the crowd (see
 	// crowd.ts).
-	timeout?: { cut: number; at: Pt; cheer?: CheerShot; crowd?: CrowdShot };
+	// (And first, from when, on the head coach calling it - see aim.ts.)
+	timeout?: {
+		cut: number;
+		at: Pt;
+		call?: { from: number; pid: number };
+		cheer?: CheerShot;
+		crowd?: CrowdShot;
+	};
 	// A measurement (see measure.ts): when the picture cuts to the chain out
 	// on the field, and where it looks.
 	measure?: { cut: number; at: Pt };
@@ -393,6 +400,9 @@ const RESULTS = new Set([
 const TIMEOUT_AFTER = 1800;
 const TIMEOUT_SAID = 1700;
 const TIMEOUT_AFTER_REPLAY = 400;
+// Called by the head coach across the field: the picture on him calling it
+// no sooner than this long after the ball is dead (see timeout.ts).
+const CALL_AFTER = 1100;
 // Between quarters (the 3D court's look round the building over a break:
 // see court3d/director.ts shots), as the teams change ends: the picture on
 // the whole stadium this long after the play is over, for this long.
@@ -1838,6 +1848,10 @@ class Director {
 						const said =
 							this.beats.find((b) => b.i === calledI)?.actionStart ?? whistle;
 						const again = replayTill(whistle + 60000);
+						const team: Side =
+							e.type === "timeout" && typeof e.t === "number"
+								? ((1 - e.t) as Side)
+								: offense;
 						return stageTimeout({
 							parts,
 							ball,
@@ -1846,19 +1860,31 @@ class Director {
 								said + TIMEOUT_SAID,
 								again ? again.cue + TIMEOUT_AFTER_REPLAY : 0,
 							),
-							team:
-								e.type === "timeout" && typeof e.t === "number"
-									? ((1 - e.t) as Side)
-									: offense,
+							team,
 							spot: anyBall(ball, parts, offAt) ?? { x: losX, y: ballY },
 							t0,
 							playI: i0,
 							r: this.rng(i0, "timeout"),
+							// (Called by his head coach - the picture on him, across
+							// the field, if no replay comes between.)
+							...(e.type === "timeout"
+								? {
+										call: {
+											at: said,
+											...(!again && sidelineOf(team) === 0
+												? { shot: offAt + CALL_AFTER }
+												: {}),
+										},
+									}
+								: {}),
 						});
 					})()
 				: undefined;
 		if (timeout) {
 			t1 = Math.max(t1, timeout.t1);
+			if (timeout.call) {
+				this.cuts.push(timeout.call.from);
+			}
 			this.cuts.push(timeout.cut);
 			this.drive = undefined;
 		}
@@ -2081,6 +2107,7 @@ class Director {
 						timeout: {
 							cut: timeout.cut,
 							at: timeout.at,
+							...(timeout.call ? { call: timeout.call } : {}),
 							...(cheerShot ? { cheer: cheerShot } : {}),
 							...(crowdShot ? { crowd: crowdShot } : {}),
 						},

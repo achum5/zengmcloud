@@ -59,6 +59,20 @@ const SHIFT = 0.4;
 // The head coach's points, each this long, a moment between them.
 const TALK_MS = 2300;
 const TALK_GAP = 400;
+// TIME OUT, CALLED BY HIM (the 3D court's: see its crew.ts timeoutsCalled):
+// his hands up in a T at the official from this long before the signal
+// till this long after it, turned no further from straight out onto the
+// field than this - then on out to meet them at this pace (feet a second).
+// From across the field, the picture on him from no sooner than this
+// before the signal (the T going up) and no later than this, for this
+// long at least.
+const T_BEFORE = 900;
+const T_AFTER = 500;
+const T_TURN = 0.3;
+const T_WALK_FPS = 4.5;
+const T_SHOT_BEFORE = 650;
+const T_SHOT_LATEST = 200;
+const T_SHOT_LEAST = 1300;
 // The trainers with the water, this many to a side, a carrier of bottles
 // each: to the side that called it from just off the field, round the ends
 // of it; to the other side, this far short of its ring at the cut, in at
@@ -84,6 +98,8 @@ export type Timeout = {
 	coaches: CrewPart[];
 	// Where each side is gathered, and how far round it to keep clear.
 	clear: { at: Pt; far: number }[];
+	// The picture on the head coach calling it, from when (to the cut).
+	call?: { from: number; pid: number };
 };
 
 const toward = (a: Pt, b: Pt) => Math.atan2(b.y - a.y, b.x - a.x);
@@ -107,6 +123,9 @@ export const stageTimeout = (input: {
 	t0: number;
 	playI: number;
 	r: () => number;
+	// His head coach calling it: the official's signal - and, if the
+	// picture may go to him, no sooner than when.
+	call?: { at: number; shot?: number };
 }): Timeout => {
 	const { parts, ball, cut, team, spot, r } = input;
 	const t1 = cut + TIMEOUT_MS + r() * TIMEOUT_MORE;
@@ -316,28 +335,74 @@ export const stageTimeout = (input: {
 		water((1 - team) as Side, n, start, stop, cut + r() * 300);
 	}
 
-	// The head coach: stood where he stands until the cut, then out at the
-	// sideline with his man.
+	// The head coach: stood where he stands until the cut (calling it
+	// first, if he did - then on out toward them), then out at the sideline
+	// with his man.
 	const from = headCoachAt(team, input.playI);
 	const face = toward(coachAt, middle);
+	const call = input.call;
+	const tUp = call ? call.at - T_BEFORE : 0;
+	const tDown = call ? call.at + T_AFTER : 0;
+	const calling = !!call && tUp > input.t0 + 300 && tDown < cut;
 	const legs: Leg[] = [
 		{
 			t0: input.t0,
-			t1: cut,
+			t1: calling ? tUp : cut,
 			from,
 			to: from,
 			move: "armsFolded",
-			yaw: Math.atan2(into, 0),
-		},
-		{
-			t0: cut,
-			t1: cut + 500,
-			from: coachAt,
-			to: coachAt,
-			move: "stand",
-			yaw: face,
+			yaw: out,
 		},
 	];
+	if (calling) {
+		const at = toward(from, spot) - out;
+		const turn = Math.atan2(Math.sin(at), Math.cos(at));
+		legs.push({
+			t0: tUp,
+			t1: tDown,
+			from,
+			to: from,
+			move: "timeoutT",
+			yaw: out + clamp(turn, -T_TURN, T_TURN),
+		});
+		const way = dist(from, coachAt);
+		const go = Math.min(way, (T_WALK_FPS * (cut - tDown)) / 1000);
+		const to =
+			go > 1
+				? {
+						x: from.x + ((coachAt.x - from.x) * go) / way,
+						y: from.y + ((coachAt.y - from.y) * go) / way,
+					}
+				: from;
+		legs.push({
+			t0: tDown,
+			t1: cut,
+			from,
+			to,
+			move: go > 1 ? "walk" : "stand",
+			...(go > 1 ? {} : { yaw: out }),
+		});
+	}
+	legs.push({
+		t0: cut,
+		t1: cut + 500,
+		from: coachAt,
+		to: coachAt,
+		move: "stand",
+		yaw: face,
+	});
+	// (The picture on him: the T going up, if it may.)
+	const shotFrom =
+		calling && call.shot !== undefined
+			? Math.max(call.shot, call.at - T_SHOT_BEFORE)
+			: undefined;
+	const shot =
+		call &&
+		shotFrom !== undefined &&
+		cut - shotFrom >= T_SHOT_LEAST &&
+		shotFrom <= call.at - T_SHOT_LATEST
+			? shotFrom
+			: undefined;
 	let t = cut + 500;
 	while (t + TALK_MS <= t1) {
 		const ms = TALK_MS * (0.85 + r() * 0.3);
@@ -377,6 +442,9 @@ export const stageTimeout = (input: {
 		at: { x, y: edge + into * (MIDDLE_IN + 3) },
 		t1,
 		coaches: [{ pid: coachId(team, 0), team, legs }, ...trainers],
+		...(shot !== undefined
+			? { call: { from: shot, pid: coachId(team, 0) } }
+			: {}),
 		clear: [
 			{ at: middle, far: ROWS[1]! + CLEAR },
 			{ at: ring, far: RING + CLEAR },

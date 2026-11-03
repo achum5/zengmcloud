@@ -3134,6 +3134,18 @@ const FIELD_ANIMS = {
 			[1, pose({ ...SHEET })],
 		],
 	},
+	// Time out: his hands up in a T at the official - the one flat across
+	// in front of his face, the other stood up under the middle of it (the
+	// 3D court's: see its poses.ts shapedArm) - held there till he sees it.
+	timeoutT: {
+		kind: "act",
+		keys: [
+			[0, BASE],
+			[0.2, pose({ teeN: 1, teeF: 1, lean: -2 })],
+			[0.8, pose({ teeN: 1, teeF: 1, lean: -3 })],
+			[1, BASE],
+		],
+	},
 	shake: {
 		kind: "act",
 		keys: [

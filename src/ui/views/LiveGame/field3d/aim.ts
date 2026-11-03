@@ -112,6 +112,10 @@ const TOSS_TIGHT = 52;
 const TIMEOUT_WIDE = 56;
 const TIMEOUT_TIGHT = 44;
 const TIMEOUT_Z = 4;
+// Called by the head coach across the field: first in on him calling it,
+// from down low on the near side - this wide, this high.
+const CALL_WIDTH = 18;
+const CALL_Z = 4.5;
 // Over a timeout, the crowd (see crowd.ts): from down low on the near side,
 // up into the stands across the field, panning this far along them.
 const CROWD_SHOT = { width: 150, y: -80, z: 22, pan: 30 };
@@ -164,6 +168,13 @@ export const aimFor = (m: FieldMoment): Shot => {
 		const u = Math.min(1, (t - crowd.cut) / Math.max(1, play.t1 - crowd.cut));
 		const { width, y, z, pan } = CROWD_SHOT;
 		return { x: crowd.x + pan * u, width, y, z };
+	}
+	const call = timeout?.call;
+	if (call && t >= call.from && t < timeout.cut) {
+		const him = m.players.find((p) => p.id === call.pid);
+		if (him) {
+			return { x: him.x, width: CALL_WIDTH, y: him.y, z: CALL_Z };
+		}
 	}
 	if (timeout && t >= timeout.cut) {
 		const end = timeout.cheer?.cut ?? crowd?.cut ?? play.t1;
@@ -430,13 +441,13 @@ export const glideAim = (g: Glide, to: number[], ms: number): number[] => {
 };
 
 // Whether the picture is from down low on the near side (see camera.ts
-// REPLAY_RIG): over a timeout, on the huddle or the crowd - not on the
-// cheerleaders.
+// REPLAY_RIG): over a timeout, on the head coach calling it, the huddle or
+// the crowd - not on the cheerleaders.
 export const fromLow = (m: FieldMoment): boolean => {
 	const timeout = m.play?.timeout;
 	return (
 		!!timeout &&
-		m.t >= timeout.cut &&
+		m.t >= (timeout.call?.from ?? timeout.cut) &&
 		!(timeout.cheer && m.t >= timeout.cheer.cut)
 	);
 };
