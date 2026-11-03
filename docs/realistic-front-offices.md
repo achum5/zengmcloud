@@ -794,7 +794,15 @@ room unused 75 summers of 84).
   (rank correlation 0.59 against 0.58), the top 5 picks rate 60 against 58,
   and of each draft's 10 best players 5.8 went in the top 10 against 5.0.
 - **Trading between picks comes later** (owner's call).
-- Teams understand whatever lottery system the league uses.
+- Teams understand whatever lottery system the league uses, and build to it.
+  The same front offices with no lottery (the worst record picks first) as
+  under COLA (an arena league of 5 seasons against 45 COLA seasons): 4.2
+  teams a season under 20 wins against 1.7, the three worst averaging 12.5
+  wins against 18.6, 6.6 teams in the middle against 10.4, and 14 firsts
+  traded a season against 7 - the bad teams taking them in. The NBA's 2027
+  lottery is priced by the game's odds for each finish; its limits on how
+  high a team that was just in the lottery can pick are left out (a few
+  hundredths of one or two teams' pick value a season).
 
 ## Roster cuts
 
