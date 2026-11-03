@@ -295,7 +295,7 @@ describe("the plays acted out", () => {
 		assert.isBelow(hits, passes / 5);
 	}, 20_000);
 
-	test("a man hurt with no part in it the sim names, out on the run away from the ball: pulled up lame and down before the whistle, and there", () => {
+	test("a man hurt with no part in it the sim names - out on the run away from the ball, or in a block: pulled up lame, or down in it, before the whistle, and there", () => {
 		let lame = 0;
 		eachPlay((play, seg) => {
 			for (const e of seg) {
@@ -322,7 +322,8 @@ describe("the plays acted out", () => {
 					continue;
 				}
 				lame += 1;
-				// (Pulled up first: slowing over his last steps on his feet.)
+				// (Pulled up first, slowing over his last steps on his feet - or
+				// in a block.)
 				const before = him.legs[k - 1]!;
 				const pace =
 					Math.hypot(before.to.x - before.from.x, before.to.y - before.from.y) /

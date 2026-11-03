@@ -4193,7 +4193,8 @@ class Action {
 	// as anybody going about him knows (see offMenDown): the trainers out
 	// to him and the rest of it are hurt.ts's. Or, a man with no part in it
 	// the sim names, going all out away from the ball late on: pulled up
-	// there, lame, and down - on the turf when the whistle goes.
+	// there, lame, and down - on the turf when the whistle goes; or, in a
+	// block late on, down there in it.
 	hurtDown() {
 		const { events, i0, i1, snap, stats } = this.input;
 		let n = 0;
@@ -4230,6 +4231,40 @@ class Action {
 					lame = t;
 					break;
 				}
+			}
+			// (Or, in the line, a man of the other side up against him: down
+			// there in it, on his back.)
+			let blocked: number | undefined;
+			for (
+				let t = this.whistle - HURT_BLOCK_LEAD_MS;
+				!named && lame === undefined && t >= snap + HURT_BLOCK_FROM_MS;
+				t -= 50
+			) {
+				const l = legAt(m, t);
+				const at = m.posAt(t);
+				if (
+					HURT_BLOCKS.has(l.move) &&
+					!l.arms &&
+					this.men.some(
+						(o) =>
+							o.team !== m.team &&
+							!DOWN.has(legAt(o, t).move) &&
+							dist(o.posAt(t), at) <= HURT_BLOCK_NEAR,
+					)
+				) {
+					blocked = t;
+					break;
+				}
+			}
+			if (blocked !== undefined) {
+				m.cut(blocked);
+				const yaw = m.yaw;
+				m.act("tackledBack", m.t + HURT_LAME_FALL_MS, yaw, {
+					x: m.at.x - Math.cos(yaw) * HURT_BLOCK_BACK_FT,
+					y: m.at.y - Math.sin(yaw) * HURT_BLOCK_BACK_FT,
+				});
+				m.hold(Math.max(m.t, this.whistle) + HURT_LAME_PAST_MS, "supine");
+				continue;
 			}
 			if (lame === undefined) {
 				fallHurt(m.legs, this.whistle);
@@ -15367,6 +15402,14 @@ const HURT_LAME_PULL_FT = 5;
 const HURT_LAME_FALL_MS = 500;
 const HURT_LAME_BACK = 0.5;
 const HURT_LAME_PAST_MS = 500;
+// Or in a block - in it, a man of the other side no further off than this
+// (feet), no later than this long before the whistle nor sooner than this
+// long after the snap (ms): down there, this far back (feet).
+const HURT_BLOCKS = new Set<Move>(["engage", "drive", "passSet"]);
+const HURT_BLOCK_NEAR = 3.5;
+const HURT_BLOCK_LEAD_MS = 700;
+const HURT_BLOCK_FROM_MS = 700;
+const HURT_BLOCK_BACK_FT = 1.2;
 // The quarterback hit as he throws: this often (on a pass from the
 // pocket, caught or not), this long after it leaves his hand (ms, from the
 // first to the first and second; flagged for it, late, this long after);
