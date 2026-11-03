@@ -48,6 +48,16 @@ with "the Pistons", not with a named person.
 - **Patience:** each season out counts 90% of the one before, so a title five
   years away is worth about 60% of one this season.
 - **Titles count most**, added up over roughly the next decade.
+- **As sure of its read as it has earned.** Title chances come from playing
+  the seasons out many times with each team's strength off by as much as
+  the read of a team really is: about 1.5 points a game this season,
+  measured against how teams did in three arena leagues (the first slice
+  guessed 3.5), and spreading as a random walk does seasons out - 3.6, 4.9
+  and 6.0 points one, two and three out. Surer of who can win, a contender
+  pushes for it and a team that cannot waits. Half the teams each way, 5
+  leagues each way round over 5 seasons: 30 titles to 20 (more or as many
+  in every league), 368 playoff rounds to 382, and 65 seasons under 20 wins
+  to 49.
 - **Playoff runs count for something**, but never at the cost of real title
   chances later. Selling the future for a 2% title chance and a 75% chance at the
   conference semis is a franchise disaster, not a strategy.

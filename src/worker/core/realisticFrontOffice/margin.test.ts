@@ -65,12 +65,13 @@ test("a pick's player carries doubt only once he is drafted", () => {
 });
 
 test("a pick's team is misread less once its draft order is set", () => {
+	// A third of a point apart: mid-season the misread is under a point.
 	const teams = new Map(
 		Array.from({ length: 30 }, (_, tid) => [
 			tid,
 			{
 				tid,
-				strength: always.map(() => tid - 15),
+				strength: always.map(() => (tid - 15) / 3),
 				title: [],
 				playoffs: [],
 			},

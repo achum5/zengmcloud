@@ -641,8 +641,11 @@ export const outlookSettings = {
 	knownClasses: false,
 	// How far a team's true strength may be from the outlook's read of it, as
 	// measured against how teams did (measuredStrengthUncertainty) - not the
-	// first slice's guess. Off while it is measured.
-	measuredUncertainty: false,
+	// first slice's guess. Half the teams each way, 5 leagues each way round
+	// over 5 seasons: 30 titles to 20 (more or as many in every league), 368
+	// playoff rounds to 382, 65 seasons under 20 wins to 49 - surer of who
+	// can win, contenders push and the rest wait.
+	measuredUncertainty: true,
 	// COLA: each team's chances toward a draw projected along its own path
 	// (colaPaths) - its playoff runs and draw wins cost it chances, as the
 	// game charges - not as if every team added the same each season. Half
