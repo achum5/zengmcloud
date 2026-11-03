@@ -68,7 +68,8 @@ export type CrewRole =
 	| "media"
 	| "mop"
 	| "staff"
-	| "dance";
+	| "dance"
+	| "trainer";
 export type CrewMember = {
 	// Never a player's: crew are numbered below zero.
 	pid: number;
@@ -332,6 +333,27 @@ export const crewFor = (
 			),
 		});
 	});
+	// Each team's athletic trainer, in a polo in its color and khakis - out
+	// to a man of his down hurt (see trainerState).
+	for (const t of [0, 1] as const) {
+		const tm = t === 0 ? away : home;
+		const seed = `trainer|${teamKey(tm)}|${gid}`;
+		const r = makeCourtRng(seed);
+		out.push({
+			pid: -97 - t,
+			role: "trainer",
+			team: t,
+			hgt: 66 + r() * 8,
+			weight: 160 + r() * 50,
+			face: faceFor(seed, r() < 0.3),
+			dress: dress(
+				tm?.colors?.[0] ?? "#2a2c31",
+				r() < 0.6 ? "#b9a98a" : "#2b2e35",
+				{ sleeves: "short" },
+				"#f2f2ee",
+			),
+		});
+	}
 	// The dance team, in the home colors (see danceState).
 	DANCE_SPOTS.slice(0, spec.entertainment.dancers).forEach((at, n) => {
 		const seed = `dance|${teamKey(home)}|${n}`;
@@ -736,6 +758,69 @@ const reporterAt = (
 		phase: loopPhase("micOut", t, 0.2),
 		moving: false,
 		...(w > 0 ? { from: { anim: "walk", phase: 0, w } } : {}),
+	};
+};
+
+// THE TRAINER: out from the end of his bench at a jog to a man of his down
+// hurt, down on a knee beside him, toward the bench, till he is up - and
+// back. (Only if he gets there with some of it left: feet a second, ms.)
+const TRAINER_PACE = 11;
+const TRAINER_OFF = 700;
+const TRAINER_LEAST = 900;
+const trainerState = (
+	tl: CourtTimeline,
+	t: number,
+	m: CrewMember,
+): PlayerState | undefined => {
+	const h = tl.hurts?.find(
+		(x) => x.team === m.team && t >= x.t0 && t < x.t1 + 6000,
+	);
+	if (!h) {
+		return undefined;
+	}
+	const from = {
+		x: benchX(m.team) + (m.team === 0 ? -1 : 1) * 9,
+		y: -3.4,
+	};
+	const L = dist(h.at, from) || 1;
+	const u = { x: (from.x - h.at.x) / L, y: (from.y - h.at.y) / L };
+	const spot = { x: h.at.x + u.x * 1.7, y: h.at.y + u.y * 1.7 };
+	const go0 = h.t0 + TRAINER_OFF;
+	const there = go0 + (dist(from, spot) / TRAINER_PACE) * 1000;
+	if (there > h.t1 - TRAINER_LEAST) {
+		return undefined;
+	}
+	const back = (dist(spot, from) / 5) * 1000;
+	if (t < go0 || t >= h.t1 + back) {
+		return undefined;
+	}
+	const base = { pid: m.pid, team: m.team, shown: true, z: 0 };
+	const going = (A: Pt, B: Pt, a: number, ms: number, anim: AnimName) => {
+		const k = Math.min(1, Math.max(0, (t - a) / ms));
+		return {
+			...base,
+			x: A.x + (B.x - A.x) * k,
+			y: A.y + (B.y - A.y) * k,
+			yaw: yawTo(A, B),
+			anim,
+			phase: (t / 1000) * (anim === "run" ? 1.6 : 0.9),
+			moving: true,
+		};
+	};
+	if (t < there) {
+		return going(from, spot, go0, there - go0, "run");
+	}
+	if (t >= h.t1) {
+		return going(spot, from, h.t1, back, "walk");
+	}
+	return {
+		...base,
+		x: spot.x,
+		y: spot.y,
+		yaw: yawTo(spot, h.at),
+		anim: "coachKneel",
+		phase: loopPhase("coachKneel", t, 0.4),
+		moving: false,
 	};
 };
 
@@ -2927,6 +3012,11 @@ export const crewAt = (
 			states.push(mopState(tl, t, m));
 		} else if (m.role === "staff") {
 			states.push(staffState(tl, t, m));
+		} else if (m.role === "trainer") {
+			const st = trainerState(tl, t, m);
+			if (st) {
+				states.push(st);
+			}
 		} else if (m.role === "dance") {
 			const st = danceState(tl, t, m);
 			if (st) {

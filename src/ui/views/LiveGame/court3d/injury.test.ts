@@ -1,4 +1,5 @@
 import { assert, describe, test } from "vitest";
+import { crewAt, crewFor } from "./crew.ts";
 import { compileCourt, type CourtPlayer, type RawEvent } from "./director.ts";
 import { evalPlayer, poseOf, withBody } from "./evaluate.ts";
 import { bodyOf, skeleton } from "./poses.ts";
@@ -62,6 +63,24 @@ describe("3D injuries", () => {
 				return Math.hypot(Q.x - P.x, Q.y - P.y) < 4.5;
 			});
 			assert.isAtLeast(near.length, 1, type);
+			// Down, his team's trainer comes out to him and gets down beside
+			// him.
+			const team = (region: string) => ({
+				region,
+				name: region,
+				colors: ["#8c1d40", "#f2c14e", "#ffffff"] as [string, string, string],
+			});
+			const crew = crewFor(1, team("Road"), team("Home"));
+			const trainers = new Set(
+				crew.filter((m) => m.role === "trainer").map((m) => m.pid),
+			);
+			const by = crewAt(tl, a!.t1 - 300, crew).states.filter(
+				(c) => trainers.has(c.pid) && Math.hypot(c.x - P.x, c.y - P.y) < 2.5,
+			);
+			assert.strictEqual(by.length, down ? 1 : 0, type);
+			if (down) {
+				assert.strictEqual(by[0]!.anim, "coachKneel", type);
+			}
 		}
 	}, 60_000);
 });

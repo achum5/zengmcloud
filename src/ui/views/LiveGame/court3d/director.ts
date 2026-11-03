@@ -486,6 +486,9 @@ export type CloseUp = {
 	cam?: Pt3;
 	aim?: Pt3;
 };
+// A man down hurt (see the injury's beat), from when to when, where - for
+// his team's trainer to come out to him (see crew's trainerState).
+export type Hurt = { pid: number; team: Side; t0: number; t1: number; at: Pt };
 // THE INTERVIEW after the game (see gameOver): the winners' top scorer and
 // the sideline reporter, from when to when, and where he stands for it.
 export type Interview = {
@@ -536,6 +539,7 @@ export type CourtTimeline = {
 	// game.
 	closeUps?: CloseUp[];
 	interview?: Interview;
+	hurts?: Hurt[];
 	// The warm-ups, before it is ready (see pregame.ts): the pre-game show
 	// on the floor.
 	warmup?: boolean;
@@ -15555,10 +15559,20 @@ class Director {
 					at: this.posOf(pid),
 				});
 				const { anim, down } = hurtFor(this.injuries.get(pid));
-				const dur = down ? 3800 : 2200;
+				// (Down, long enough for his team's trainer to get out to him.)
+				const dur = down ? 5600 : 2200;
 				this.act(pid, anim, T + 200, T + 200 + dur, {
 					face: this.face.get(pid) ?? 1,
 				});
+				if (down) {
+					this.hurts.push({
+						pid,
+						team: this.teamOf(pid),
+						t0: T + 200,
+						t1: T + 200 + dur,
+						at: this.posOf(pid),
+					});
+				}
 				// A teammate or two over to him; down, they bend over him.
 				const P = this.posOf(pid);
 				const team = this.teamOf(pid);
@@ -17185,6 +17199,7 @@ class Director {
 	private lastFtShooter: number | undefined;
 	private readonly closeUps: CloseUp[] = [];
 	private interview: Interview | undefined;
+	private readonly hurts: Hurt[] = [];
 	// The ball sent out of bounds off a miss already (see missOut): the
 	// out-of-bounds line after it needs only the whistle.
 	private outOffMiss = false;
@@ -26566,6 +26581,7 @@ class Director {
 			...(this.intro ? { intro: this.intro } : {}),
 			...(this.closeUps.length > 0 ? { closeUps: this.closeUps } : {}),
 			...(this.interview ? { interview: this.interview } : {}),
+			...(this.hurts.length > 0 ? { hurts: this.hurts } : {}),
 			tension: this.tension,
 			seats: this.seats,
 			fast,
