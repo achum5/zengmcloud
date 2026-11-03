@@ -1434,12 +1434,17 @@ class Actor {
 			return;
 		}
 		const way = Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x);
-		const gaited = GAITS.has(l.move);
+		// (Off the end of an act - a swat at the ball, say - stepped down out
+		// of it: not that act over again, from the start, every step.)
+		const act = moveKind(l.move) === "act";
+		const gaited = act || GAITS.has(l.move);
 		const T = (2 * d) / v;
 		const n = Math.max(1, Math.round((T * 1000) / STOP_STEP_MS));
 		const dt = T / n;
 		const paceOf = (i: number) => v * (1 - (i + 0.5) / n);
-		const moveOf = slower(l.move, n, dt, paceOf);
+		const moveOf = act
+			? (i: number) => gait(paceOf(i))
+			: slower(l.move, n, dt, paceOf);
 		const stepsOf = (bend: number) => {
 			const out: Pt[] = [];
 			let at = this.at;
