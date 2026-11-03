@@ -32,9 +32,9 @@ export type FieldReplay = {
 	// A score: from when it is seen from behind the end zone it was scored
 	// in (0 the left one, 1 the right).
 	endZone?: { from: number; end: Side };
-	// Anything else: from when it is seen from the Skycam, behind it and
-	// looking the way it went (the offense's way; a return's, back up the
-	// field) - for a field goal, held still behind the kicker, over `at`,
+	// Anything else (and a long score, before the end zone's): from when it
+	// is seen from the Skycam, behind it and looking the way it went (the
+	// offense's way; a return's, back up the field) - for a field goal, held still behind the kicker, over `at`,
 	// and on the ball up to where it goes over the bar (`goal`), there
 	// after.
 	sky?: FieldSky;
@@ -48,6 +48,8 @@ const REPLAY_AFTER_SCORE = 3700;
 // From this long before the moment it is shown for, to this long after.
 const REPLAY_BEFORE = 3800;
 const REPLAY_TO = 900;
+// (A score: from this long before it.)
+const SCORE_BEFORE = 5200;
 // The most of a play it shows (timeline ms): the end of it, if it is long.
 const REPLAY_MOST = 6000;
 // A score's from behind the end zone from this long before it - the first
@@ -55,10 +57,13 @@ const REPLAY_MOST = 6000;
 const END_ZONE_LEAD = 1700;
 const END_ZONE_FIRST = 1200;
 const END_ZONE_LEAST = 1000;
-// And anything else's from the Skycam the same way.
+// And anything else's from the Skycam the same way. (A score's too, a
+// long one's - between the first angle and the end zone's, this long at
+// least.)
 const SKY_LEAD = 1700;
 const SKY_FIRST = 1200;
 const SKY_LEAST = 1000;
+const SKY_SCORE_LEAST = 1400;
 // A field goal from behind the kicker: from this long before it is away,
 // the Skycam held this far behind where it is kicked from.
 const KICK_SKY_BEFORE = 450;
@@ -220,7 +225,7 @@ export const replayFor = (input: {
 	const from = Math.max(
 		input.t0,
 		input.snap - 300,
-		key - REPLAY_BEFORE,
+		key - (scored ? SCORE_BEFORE : REPLAY_BEFORE),
 		end - REPLAY_MOST,
 	);
 	if (end - from < 1000 || cue <= whistle) {
@@ -228,23 +233,27 @@ export const replayFor = (input: {
 	}
 	const pid = holderAt(input.ball, key);
 	const ez = Math.max(from + END_ZONE_FIRST, key - END_ZONE_LEAD);
-	const sky = Math.max(
-		from + SKY_FIRST,
-		kicked && kick?.kind === "fly" ? kick.t0 - KICK_SKY_BEFORE : key - SKY_LEAD,
-	);
+	const sky = scored
+		? from + SKY_FIRST
+		: Math.max(
+				from + SKY_FIRST,
+				kicked && kick?.kind === "fly"
+					? kick.t0 - KICK_SKY_BEFORE
+					: key - SKY_LEAD,
+			);
+	const endZone = scored && end - ez >= END_ZONE_LEAST;
 	return {
 		cue,
 		from,
 		to: end,
 		...(pid === undefined ? {} : { pid }),
-		...(scored && end - ez >= END_ZONE_LEAST
-			? { endZone: { from: ez, end: way === 1 ? 1 : 0 } }
-			: {}),
-		...(!scored && end - sky >= SKY_LEAST
+		...(endZone ? { endZone: { from: ez, end: way === 1 ? 1 : 0 } } : {}),
+		...((!scored && end - sky >= SKY_LEAST) ||
+		(endZone && ez - sky >= SKY_SCORE_LEAST)
 			? {
 					sky: {
 						from: sky,
-						way: skyWay,
+						way: scored ? way : skyWay,
 						...kicked,
 					},
 				}
@@ -284,7 +293,9 @@ export const replayEnd = (r: FieldReplay, t: number): Side | undefined =>
 
 // Or the Skycam's.
 export const replaySky = (r: FieldReplay, t: number): FieldSky | undefined =>
-	r.sky && t >= r.sky.from ? r.sky : undefined;
+	r.sky && t >= r.sky.from && !(r.endZone && t >= r.endZone.from)
+		? r.sky
+		: undefined;
 
 export const replayAim = (m: FieldMoment, r: FieldReplay): Shot => {
 	const sky = replaySky(r, m.t);

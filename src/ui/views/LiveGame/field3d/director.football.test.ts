@@ -31,7 +31,7 @@ import {
 } from "./geometry.ts";
 import { NET_HALF, NET_TOP, netAt } from "./net.ts";
 import { makeFieldClock, REPLAY_SPEED, stepField } from "./playback.ts";
-import { replayFor } from "./replays.ts";
+import { replayFor, replaySky } from "./replays.ts";
 import { coachId, headCoachAt, sidelineAt, sidelineFor } from "./sideline.ts";
 import type { FieldPlayerState } from "./sprite.ts";
 import { stageField, stageOpening } from "./stageField.ts";
@@ -401,6 +401,7 @@ describe("replays", () => {
 
 	test("anything else's cut to from the Skycam, looking the way it went, for the last of it", () => {
 		let sky = 0;
+		let scores = 0;
 		for (const game of games) {
 			const tl = stage(game);
 			for (const play of tl.plays) {
@@ -409,8 +410,20 @@ describe("replays", () => {
 					continue;
 				}
 				sky += 1;
-				assert.isUndefined(r.endZone, `play ${play.i}`);
 				assert.isAtLeast(r.sky.from, r.from + 1000, `play ${play.i}`);
+				// (A long score: the Skycam between the first angle and the end
+				// zone's, looking the way he went in.)
+				if (r.endZone) {
+					scores += 1;
+					assert.isAtMost(r.sky.from, r.endZone.from - 1400, `play ${play.i}`);
+					assert.strictEqual(
+						r.sky.way,
+						r.endZone.end === 1 ? 1 : -1,
+						`play ${play.i}`,
+					);
+					assert.isUndefined(replaySky(r, r.endZone.from), `play ${play.i}`);
+					continue;
+				}
 				assert.isAtMost(r.sky.from, r.to - 1000, `play ${play.i}`);
 				// (Anything but a kick's return, the way the offense went.)
 				if (play.kind !== "kickoff" && play.kind !== "punt") {
@@ -419,6 +432,7 @@ describe("replays", () => {
 			}
 		}
 		assert.isAbove(sky, 3);
+		assert.isAbove(scores, 0);
 	}, 20_000);
 
 	test("the live picture held while one shows, slowed down - and not on fast", () => {
