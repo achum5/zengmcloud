@@ -1119,3 +1119,31 @@ export const stageHalftime = (input: {
 	}
 	return Math.max(input.t1, go + HALF_MS);
 };
+
+// THE QUARTER OVER, the teams changing ends: over the look round the
+// stadium (see director.ts between), everybody on his way to the other end
+// - to about where he stands, the other side of midfield - at a walk, now
+// and then a jog, from the picture cutting to it (and up to a little
+// later).
+const ENDS_LATE = 900;
+const ENDS_SPREAD = 10;
+
+export const stageChangeEnds = (input: {
+	parts: Part[];
+	from: number;
+	ball: BallSeg[];
+	r: () => number;
+}) => {
+	const { parts, from, ball, r } = input;
+	for (const { man } of freeMen(parts, from, ball, r)) {
+		const leave = from + r() * ENDS_LATE;
+		man.hold(leave - man.t < HALF_STILL_MS ? man.t : leave);
+		man.walk(
+			{
+				x: clamp(FIELD_L - man.at.x + (r() - 0.5) * ENDS_SPREAD, 0, FIELD_L),
+				y: clamp(man.at.y + (r() - 0.5) * ENDS_SPREAD, 2, FIELD_W - 2),
+			},
+			r() < HALF_JOG ? HALF_JOG_FPS : man.pace,
+		);
+	}
+};

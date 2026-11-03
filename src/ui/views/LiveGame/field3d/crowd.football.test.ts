@@ -1,9 +1,10 @@
 import { assert, beforeAll, test } from "vitest";
 import { aimFor, fromLow } from "./aim.ts";
+import { posOf } from "./crew.ts";
 import { boardAt, crowdAt } from "./crowd.ts";
 import { compileField, type FieldTimeline } from "./director.ts";
 import { momentAt } from "./evaluate.ts";
-import { SIDE_ROOM } from "./geometry.ts";
+import { MID_X, SIDE_ROOM } from "./geometry.ts";
 import { sidelineOf } from "./sideline.ts";
 import { simGames } from "./testGames.ts";
 
@@ -161,6 +162,18 @@ test("the look round the stadium between quarters", () => {
 			const b = at(p.t1 - 1);
 			assert.isAbove(a.width, 300, `${p.i}`);
 			assert.isAbove(b.x, a.x + 40, `${p.i}`);
+			// (The teams on their way to the other end over it, a quarter
+			// over - those not stood about midfield already.)
+			if (p.quarter !== 2) {
+				const far = p.parts
+					.filter((q) => q.pid >= 0 && q.legs.length > 0)
+					.map((q) => [posOf(q.legs, p.between!), posOf(q.legs, p.t1)])
+					.filter(([from]) => Math.abs(from!.x - MID_X) > 20);
+				const going = far.filter(
+					([from, to]) => (to!.x - from!.x) * Math.sign(MID_X - from!.x) > 3,
+				);
+				assert.isAtLeast(going.length, far.length * 0.8, `${p.i}`);
+			}
 		}
 	}
 });

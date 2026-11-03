@@ -65,6 +65,7 @@ import { measureTimes, stageMeasure } from "./measure.ts";
 import { HURT_MOST, MEDICS, stageHurt } from "./hurt.ts";
 import {
 	crewOff,
+	stageChangeEnds,
 	stageHalftime,
 	stagePostgame,
 	type Interview,
@@ -2116,6 +2117,14 @@ class Director {
 					)
 				: undefined;
 		if (between !== undefined) {
+			if (!half) {
+				stageChangeEnds({
+					parts,
+					from: between,
+					ball,
+					r: this.rng(i0, "ends"),
+				});
+			}
 			t1 = Math.max(t1, between + BETWEEN_MS);
 			// (And from it to the next play.)
 			this.cuts.push(between, t1);
