@@ -3650,6 +3650,12 @@ const PUNT_CONTACT = 0.55;
 const KICKOFF_RUN = 1250;
 const LONG_SNAP_FPS = 60;
 const KICKER_JOG = 12;
+const KICKER_JOG_LEAST = 7;
+// On an onside kick, a man going to the ball set where he is till he has
+// to go: this long, and at this share of his top speed, before he would
+// have to be there.
+const ONSIDE_GO_MS = 250;
+const ONSIDE_GO_PACE = 0.6;
 // The ball on its tee (its middle, off the turf); and how far behind the
 // end line the net behind the posts catches a kick.
 const TEE_Z = 0.8;
@@ -11862,9 +11868,10 @@ class Action {
 		const far = dist(m.at, to);
 		if (
 			far > TRAIL_JOG_LEAST_FT &&
-			(far / Math.max(0.001, this.whistle - m.t)) * 1000 < WALK_MOST_FPS
+			(far / Math.max(0.001, by - m.t)) * 1000 < WALK_MOST_FPS
 		) {
-			// (Slower than a walk gets him there by the whistle: a look at it,
+			// (Slower than a walk gets him there by the whistle - or, a little
+			// after it, as he would: a look at it,
 			// and along after the ball at a jog, kept off it - with it as it
 			// comes back his way - and in to where it ends, not walked in
 			// while it is still going on.)
@@ -12381,15 +12388,24 @@ class Action {
 			}
 		}
 
+		// (Set where he is till he has to go to get there by `t` - not crept
+		// up on it at a walk.)
+		const offFor = (m: Actor, to: Pt, t: number) =>
+			m.hold(
+				Math.max(
+					goOf(m),
+					t - ONSIDE_GO_MS - (dist(m.at, to) / (m.top * ONSIDE_GO_PACE)) * 1000,
+				),
+			);
 		// Up for it as it comes, facing it, his hands on it at `t`.
 		const handsOn = (m: Actor, at: Pt, t: number) => {
 			const yaw = this.toward(at, down);
-			m.hold(goOf(m));
-			m.press(
-				{ x: at.x + Math.cos(yaw) * 1.5, y: at.y + Math.sin(yaw) * 1.5 },
-				t - 250,
-				m.top * 0.9,
-			);
+			const to = {
+				x: at.x + Math.cos(yaw) * 1.5,
+				y: at.y + Math.sin(yaw) * 1.5,
+			};
+			offFor(m, to, t - 250);
+			m.press(to, t - 250, m.top * 0.9);
 			m.hold(t - CATCH_REACH_MS, "stand", yaw);
 			m.catchOn(t, yaw, at);
 		};
@@ -12398,7 +12414,7 @@ class Action {
 			// Caught coming down, the hands team's man facing the kick, the
 			// kicking team's going with it.
 			const near = this.w({ d: at.d + (ahead ? -1.5 : 1.5), a: at.a });
-			rec.hold(goOf(rec));
+			offFor(rec, near, landT - 250);
 			rec.press(near, landT - 250, rec.top * 0.9);
 			rec.hold(landT - CATCH_REACH_MS, "stand", face);
 			rec.catchOn(landT, face, restPt);
@@ -12645,12 +12661,22 @@ class Action {
 		if (this.done.has(k.pid)) {
 			return;
 		}
-		// (At a jog at most, from wherever he has got to.)
+		// (At a jog at most, from wherever he has got to - and a jog at
+		// least, not walked out there while it is still going on; then along
+		// with it, kept off it.)
 		const to = this.w({ d: at.d * 0.45 + this.r() * 8, a: at.a * 0.4 });
+		const far = dist(k.at, to);
 		k.go(
 			to,
-			Math.max(k.t + 600, k.t + (dist(k.at, to) / KICKER_JOG) * 1000, until),
+			Math.max(
+				k.t + 600,
+				k.t + (far / KICKER_JOG) * 1000,
+				Math.min(until, k.t + (far / KICKER_JOG_LEAST) * 1000),
+			),
 		);
+		if (k.t < until - 300) {
+			this.alongWith(k, KICKER_JOG_LEAST, TRAIL_KEEP_FT, until - 300);
+		}
 	}
 
 	// A ball off the turf from `from` at t0 to `to` at t1, in hops - each a
