@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 146,
+		date: "2026-11-03",
+		text: "3D game: coaches call timeout like coaches do - the head coach of the team taking it throws his hands up in a T at the official just before the whistle, then heads for the huddle.",
+	},
+	{
 		n: 145,
 		date: "2026-11-03",
 		text: "3D game: blocks get the slow-motion replay too. When a block sends the ball out of bounds or play stops right after it, the broadcast shows it again in slow motion from courtside, with both the shooter and the man who sent it back in the picture.",

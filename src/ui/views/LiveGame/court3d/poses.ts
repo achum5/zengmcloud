@@ -80,6 +80,10 @@ export type Pose = {
 	onHipF: number;
 	foldN: number;
 	foldF: number;
+	// His hands in a T, calling time (0 to 1): his right flat across in
+	// front of his face, his left stood up under the middle of it.
+	teeN: number;
+	teeF: number;
 	onKneeN: number;
 	onKneeF: number;
 	flexN: number;
@@ -120,6 +124,8 @@ const BASE: Pose = {
 	onHipN: 0,
 	onHipF: 0,
 	foldN: 0,
+	teeN: 0,
+	teeF: 0,
 	foldF: 0,
 	onKneeN: 0,
 	onKneeF: 0,
@@ -140,6 +146,7 @@ const SIDES: [keyof Pose, keyof Pose][] = [
 	["wideN", "wideF"],
 	["onHipN", "onHipF"],
 	["foldN", "foldF"],
+	["teeN", "teeF"],
 	["onKneeN", "onKneeF"],
 	["flexN", "flexF"],
 ];
@@ -5835,6 +5842,19 @@ export const ANIMS = {
 			[1, P.ready],
 		],
 	},
+	// TIME OUT: his hands in a T up in front of his face - the one flat
+	// across the fingertips of the other, stood up (see shapedArm) - held
+	// there at the official till he sees it.
+	timeoutT: {
+		kind: "act",
+		n: 6,
+		keys: [
+			[0, P.ready],
+			[0.22, pose({ teeN: 1, teeF: 1, lean: -2 })],
+			[0.82, pose({ teeN: 1, teeF: 1, lean: -3 })],
+			[1, P.ready],
+		],
+	},
 	// The goggles: a ring of finger and thumb up round each eye, elbows out -
 	// he saw that one all the way in.
 	goggles: {
@@ -7394,6 +7414,7 @@ export const skeleton = (b: Body, q: Pose): Skeleton => {
 		q.onKneeN,
 		legR,
 		q.flexN,
+		q.teeN,
 	);
 	const armL = shapedArm(
 		b,
@@ -7406,6 +7427,7 @@ export const skeleton = (b: Body, q: Pose): Skeleton => {
 		q.onKneeF,
 		legL,
 		q.flexF,
+		q.teeF,
 	);
 	if (q.twist === 0 && q.tilt === 0) {
 		return { pelvis, chest, head, legR, legL, armR, armL };
@@ -7732,6 +7754,7 @@ const shapedArm = (
 	knee: number,
 	leg: Limb,
 	flex: number,
+	tee = 0,
 ): Limb => {
 	let out = arm;
 	if (flex > 0) {
@@ -7760,8 +7783,27 @@ const shapedArm = (
 		);
 		out = mixArm(out, flared(armTo(b, chest, at, 40, side), 70, side), fold);
 	}
+	if (tee > 0) {
+		// The T: his right hand the bar of it, flat across in front of his
+		// face, the elbow out; his left the stem, stood up under it, the
+		// fingertips at the middle of his right palm.
+		const sh = shoulderOf(b, chest, side);
+		const bar = side < 0;
+		const at = bar
+			? v3(chest.f + TEE.f, side * TEE.barS, sh.u + TEE.barU)
+			: v3(chest.f + TEE.f - 0.04, side * TEE.stemS, sh.u + TEE.stemU);
+		out = mixArm(
+			out,
+			flared(armTo(b, chest, at, bar ? -70 : 0, side), bar ? 88 : 12, side),
+			tee,
+		);
+	}
 	return out;
 };
+// (The wrists of a T: out in front of him; the bar's a hand's width to its
+// own side, up at his eyes; the stem's under it, at his chin - feet, from
+// his chest and his shoulders.)
+const TEE = { f: 0.85, barS: 0.3, barU: 0.82, stemS: 0.02, stemU: 0.2 };
 
 // How a move holds the ball: in both hands, one on each side of it; up on
 // the shooting hand with the other guiding it; palmed in one hand; pushed

@@ -2219,6 +2219,37 @@ const COACH_Y = -2.7;
 const IDLE: AnimName[] = ["crossed", "crossed", "crouch", "ready", "talk"];
 // A tight finish: bent over watching every play, calling out to his five.
 const IDLE_TENSE: AnimName[] = ["crouch", "talk", "crouch", "talk", "point"];
+// TIME OUT, CALLED BY HIM: his hands up in a T at the official, from a
+// moment before the whistle till just after it - then off to the huddle
+// out of it (see huddleWalk). The whistle stopping play for each of his
+// team's timeouts (when, ms), kept.
+const T_BEFORE = 750;
+const T_AFTER = 350;
+const T_EASE = 220;
+const timeoutsCalled = new WeakMap<CourtTimeline, [number, Side][]>();
+const timeoutCallAt = (
+	tl: CourtTimeline,
+	t: number,
+	team: Side,
+): number | undefined => {
+	let calls = timeoutsCalled.get(tl);
+	if (!calls) {
+		calls = [];
+		for (const b of tl.beats) {
+			if (b.type !== "timeout") {
+				continue;
+			}
+			const w = recentFx(tl, b.actionStart + 1, ["whistle"], 60);
+			if (w?.team !== undefined) {
+				calls.push([w.t, w.team]);
+			}
+		}
+		timeoutsCalled.set(tl, calls);
+	}
+	return calls.find(
+		([at, by]) => by === team && t >= at - T_BEFORE && t < at + T_AFTER,
+	)?.[0];
+};
 const coachState = (
 	tl: CourtTimeline,
 	t: number,
@@ -2226,8 +2257,23 @@ const coachState = (
 	ball: Pt,
 	// (Only pacing his box, the breaks aside.)
 	paced = false,
+	// (Not calling time just now.)
+	calling = true,
 ): PlayerState => {
 	const team = m.team;
+	const call = calling ? timeoutCallAt(tl, t, team) : undefined;
+	if (call !== undefined) {
+		const st = coachState(tl, t, m, ball, paced, false);
+		const t0 = call - T_BEFORE;
+		const w = 1 - smooth01((t - t0) / T_EASE);
+		return {
+			...st,
+			anim: "timeoutT",
+			phase: Math.min(1, (t - t0) / (T_BEFORE + T_AFTER)),
+			moving: false,
+			...(w > 0 ? { from: { anim: st.anim, phase: st.phase, w } } : {}),
+		};
+	}
 	const home = benchX(team);
 	const spotOf = (j: number) => ({
 		x: home + (unit(j, team * 97 + 13) - 0.5) * 11,
