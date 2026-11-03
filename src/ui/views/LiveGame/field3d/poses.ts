@@ -3920,6 +3920,21 @@ const FIELD_ANIMS = {
 		],
 	},
 
+	// Waving the trainers out to a man down: his right arm up over his head,
+	// swung across it and back, and let down.
+	waveOver: {
+		kind: "act",
+		keys: [
+			[0, BASE],
+			[0.16, pose({ shN: 158, elN: 20, abN: 32, wrN: 10 })],
+			[0.32, pose({ shN: 164, elN: 16, abN: -8, wrN: 10 })],
+			[0.48, pose({ shN: 158, elN: 20, abN: 32, wrN: 10 })],
+			[0.64, pose({ shN: 164, elN: 16, abN: -8, wrN: 10 })],
+			[0.8, pose({ shN: 158, elN: 20, abN: 32, wrN: 10 })],
+			[1, BASE],
+		],
+	},
+
 	// ---- the interview after the game (the 3D court's) ----
 	// The sideline reporter's microphone held out to the man she is talking
 	// to, up at his mouth, the other hand easy at her side.
@@ -4340,6 +4355,7 @@ const SIGNAL_GRIPS: Partial<Record<Move, Grip>> = {
 	sigContact: "open",
 	fairCatch: "open",
 	callFor: "open",
+	waveOver: "open",
 	sigHold: "fist",
 	sigRoll: "fist",
 	sigMask: "fist",
@@ -4356,6 +4372,7 @@ const ONE_ARM = new Set<Move>([
 	"sigContact",
 	"fairCatch",
 	"callFor",
+	"waveOver",
 	"sigMask",
 	"flagToss",
 	"blowWhistle",

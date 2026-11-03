@@ -1181,6 +1181,57 @@ describe("a man hurt", () => {
 	}, 20_000);
 });
 
+describe("a man hurt, the trainers waved out", () => {
+	test("one of his own near him turned to the trainers, an arm waving them out, then down on a knee by him", () => {
+		let waved = 0;
+		const bad: string[] = [];
+		for (const game of games) {
+			const tl = stage(game);
+			for (const play of tl.plays) {
+				if (!play.hurt) {
+					continue;
+				}
+				const him = play.parts.find((p) => p.pid === play.hurt!.pid)!;
+				for (const p of play.parts) {
+					const k = p.legs.findIndex((l) => l.move === "waveOver");
+					if (k < 0) {
+						continue;
+					}
+					waved += 1;
+					const l = p.legs[k]!;
+					const at = legAt(him, l.t0).to;
+					const near = Math.hypot(l.to.x - at.x, l.to.y - at.y);
+					if (p.team !== him.team) {
+						bad.push(`play ${play.i}: ${p.pid} the other side's`);
+					}
+					if (near > 18 || near < 3) {
+						bad.push(`play ${play.i}: ${p.pid} ${near.toFixed(1)} ft off him`);
+					}
+					if (l.t0 < play.hurt.from || l.t0 > play.hurt.from + 2500) {
+						bad.push(`play ${play.i}: ${p.pid} waved at ${l.t0}`);
+					}
+					// (Turned to the trainers coming, out from his sideline.)
+					const medic = play.medics!.find((m) => m.team === him.team)!;
+					const from = medic.legs[0]!.from;
+					const to = Math.atan2(from.y - l.to.y, from.x - l.to.x);
+					const off = Math.abs(
+						Math.atan2(Math.sin(l.yaw! - to), Math.cos(l.yaw! - to)),
+					);
+					if (off > 0.5) {
+						bad.push(`play ${play.i}: ${p.pid} turned ${off.toFixed(2)} off`);
+					}
+					const after = p.legs.slice(k + 1).map((x) => x.move);
+					if (!after.includes("takeKnee") && !after.includes("stand")) {
+						bad.push(`play ${play.i}: ${p.pid} then ${after.join(",")}`);
+					}
+				}
+			}
+		}
+		assert.deepEqual(bad.slice(0, 8), []);
+		assert.isAtLeast(waved, 3);
+	}, 20_000);
+});
+
 describe("the TV cameras", () => {
 	test("a man on each sideline, off the field, after the ball at a man's speed", () => {
 		const bad: string[] = [];

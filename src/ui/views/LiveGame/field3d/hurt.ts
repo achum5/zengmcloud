@@ -78,6 +78,18 @@ const HIPS = 0.6;
 const HEAD = 3;
 // (Hardly a step off where he is, feet: down there.)
 const KNEEL_STEP_FT = 0.75;
+// One of his own on his feet near him (this near, feet - not right over
+// him) waving the trainers out, on this share of men hurt: from this long
+// after he is down, turned to them over this long first, for this long -
+// then down on a knee with the rest. (Not a man about to slap hands with
+// another: the other would be left slapping at nobody.)
+const WAVE_NEAR = 18;
+const WAVE_OFF = 3;
+const WAVE_SHARE = 0.75;
+const WAVE_AFTER = 150;
+const WAVE_TURN_MS = 250;
+const WAVE_MS = 1700;
+const PAIRED = new Set<Move>(["highFive", "chestBump", "hug", "shake"]);
 // (How near the way from a to b comes to the length of him, p0 to p1.)
 const nearOn = (a: Pt, b: Pt, p0: Pt, p1: Pt): number => {
 	const vx = p1.x - p0.x;
@@ -506,6 +518,52 @@ export const stageHurt = (input: {
 		);
 	});
 
+	// One of his own waving the trainers out to him.
+	const waveAt = downAt + WAVE_AFTER;
+	const onFeet = (p: Part) => {
+		const l = p.legs.findLast((l) => l.t0 <= waveAt);
+		return (
+			l !== undefined &&
+			!LYING.has(l.move) &&
+			!RISING.has(l.move) &&
+			moveKind(l.move) !== "act"
+		);
+	};
+	const waver =
+		r() < WAVE_SHARE
+			? parts
+					.filter(
+						(p) =>
+							p.team === team &&
+							p.pid >= 0 &&
+							!input.busy.has(p.pid) &&
+							!p.legs.some(
+								(l) =>
+									(l.ball && l.t1 > waveAt) ||
+									(l.t1 > waveAt && PAIRED.has(l.move)),
+							) &&
+							onFeet(p),
+					)
+					.map((p) => ({ p, d: dist(posOf(p.legs, waveAt), at) }))
+					.filter(({ d }) => d >= WAVE_OFF && d <= WAVE_NEAR)
+					.sort((a, b) => a.d - b.d)[0]?.p
+			: undefined;
+	if (waver) {
+		const c = cut(waver.legs, waveAt);
+		const t = pullUp(waver.legs, c.at);
+		const from = waver.legs.at(-1)!.to;
+		const face = toward(from, { x: fromX, y: sideY });
+		still(waver.legs, t, t + WAVE_TURN_MS, from, "stand", face);
+		still(
+			waver.legs,
+			t + WAVE_TURN_MS,
+			t + WAVE_TURN_MS + WAVE_MS,
+			from,
+			"waveOver",
+			face,
+		);
+	}
+
 	// The men round him, down on a knee while he is - each in a place of his
 	// own (see KNEEL_APART), off the ball where it lies.
 	const knelt: Pt[] = [];
@@ -530,13 +588,17 @@ export const stageHurt = (input: {
 			continue;
 		}
 		const pos = posOf(p.legs, downAt);
-		if (dist(pos, at) > KNEEL_NEAR || r() > KNEELS) {
+		// (Him that waved them out, always.)
+		if (dist(pos, at) > KNEEL_NEAR || (r() > KNEELS && p !== waver)) {
 			continue;
 		}
 		input.busy.add(p.pid);
 		// (Up off the turf first, one getting up then - or lying there
 		// still, once he is up.)
 		let kneel = go + 500 + r() * 1400;
+		if (p === waver) {
+			kneel = Math.max(kneel, waver.legs.at(-1)!.t1);
+		}
 		const lying = LYING.has(
 			p.legs.findLast((l) => l.t0 <= kneel)?.move ?? "stand",
 		);
@@ -594,6 +656,14 @@ export const stageHurt = (input: {
 			still(p.legs, there, rise, where, "takeKnee", toward(where, at));
 			still(p.legs, rise, rise + 1, where, "stand", toward(where, at));
 		}
+	}
+
+	// (Him that waved them out, not down on a knee after all: stood there,
+	// to him, until he is up.)
+	if (waver && !input.busy.has(waver.pid)) {
+		input.busy.add(waver.pid);
+		const l = waver.legs.at(-1)!;
+		still(waver.legs, l.t1, up + UP_MS, l.to, "stand", toward(l.to, at));
 	}
 
 	const t1 = Math.max(input.t1, Math.min(walk1 + 900, walk0 + SHOWN_OFF));
