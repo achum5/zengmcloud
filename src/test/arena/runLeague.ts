@@ -208,10 +208,16 @@ export type SeasonSnapshot = {
 // A random-players league with the owner's settings, built the way the new
 // league screen builds one: no file, default teams, the settings passed in at
 // creation.
+// ARENA_LEAGUE='{"draftType":"noLottery"}': league settings over the owner's.
+const arenaSettings = (): Record<string, unknown> => ({
+	...ARENA_SETTINGS,
+	...JSON.parse((globalThis as any).process?.env?.ARENA_LEAGUE ?? "{}"),
+});
+
 export const createArenaLeague = async (lid: number) => {
 	const settings: Record<string, unknown> =
 		helpers.deepCopy(getDefaultSettings());
-	for (const [key, value] of Object.entries(ARENA_SETTINGS)) {
+	for (const [key, value] of Object.entries(arenaSettings())) {
 		if (Object.hasOwn(settings, key)) {
 			settings[key] = value;
 		}
@@ -241,7 +247,7 @@ export const createArenaLeague = async (lid: number) => {
 	} as any);
 	await league.loadGameAttributes();
 	await league.setGameAttributes({
-		...ARENA_SETTINGS,
+		...arenaSettings(),
 		// Every team is run by the CPU.
 		spectator: true,
 		// Faces are drawn for the UI only and are slow to generate.
