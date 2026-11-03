@@ -185,6 +185,7 @@ test.runIf(env.ARENA_RUN === "1")(
 			// strength and title odds, season by season, to set against how the
 			// teams did (strength-survey-<tag>.json).
 			const strengthSurvey: unknown[] = [];
+			const rosterSurvey: unknown[] = [];
 			if (env.ARENA_STRENGTH_SURVEY === "1") {
 				const r2 = (x: number) => Math.round(x * 100) / 100;
 				const r4 = (x: number) => Math.round(x * 10000) / 10000;
@@ -515,9 +516,33 @@ test.runIf(env.ARENA_RUN === "1")(
 			const surveyAt: number[] = JSON.parse(
 				env.ARENA_SURVEY_AT ?? "[56, 42, 28, 14, 7, 1]",
 			);
-			const snapshots = await advanceSeasons(
-				numSeasons,
-				env.ARENA_DEAL_SURVEY === "1"
+			const snapshots = await advanceSeasons(numSeasons, {
+				// ARENA_STRENGTH_SURVEY: each roster as the season starts, for
+				// what the outlook's read of it misses (strength-survey).
+				onPreseason:
+					env.ARENA_STRENGTH_SURVEY === "1"
+						? async () => {
+								for (let tid = 0; tid < g.get("numTeams"); tid++) {
+									const players = await idb.cache.players.indexGetAll(
+										"playersByTid",
+										tid,
+									);
+									rosterSurvey.push({
+										season: g.get("season"),
+										tid,
+										players: players
+											.map((p) => ({
+												ovr: p.ratings.at(-1)!.ovr,
+												value: Math.round(p.value * 10) / 10,
+												age: g.get("season") - p.born.year,
+												injury: p.injury.gamesRemaining,
+											}))
+											.sort((a, b) => b.value - a.value),
+									});
+								}
+							}
+						: undefined,
+				...(env.ARENA_DEAL_SURVEY === "1"
 					? {
 							surveyAt,
 							onSurvey: async (daysToDeadline) => {
@@ -658,8 +683,8 @@ test.runIf(env.ARENA_RUN === "1")(
 								}
 							},
 						}
-					: {},
-			);
+					: {}),
+			});
 			const metrics = await computeMetrics(snapshots);
 			const fs = await importNode("node:fs/promises");
 			await fs.mkdir(out, { recursive: true });
@@ -828,7 +853,11 @@ test.runIf(env.ARENA_RUN === "1")(
 				}
 				await fs.writeFile(
 					`${out}/strength-survey-${tag}.json`,
-					JSON.stringify({ outlooks: strengthSurvey, done }),
+					JSON.stringify({
+						outlooks: strengthSurvey,
+						done,
+						rosters: rosterSurvey,
+					}),
 				);
 			}
 			if (env.ARENA_ROSTER_CHECK === "1") {
