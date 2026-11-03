@@ -607,3 +607,178 @@ const drawSheet = (
 	}
 	ctx.restore();
 };
+
+// THE TABLET: the quarterback over it with his coordinator on the sideline
+// (see director.ts TABLET_SHARE) - held in both hands in front of him, its
+// screen tipped up to his face: this wide and tall, out from his hands this
+// far, tipped back this far (degrees from upright); a dark case round a
+// lit screen, a play drawn up on it.
+const TABLET_W = 0.82 * FIGURE_SCALE;
+const TABLET_H = 0.6 * FIGURE_SCALE;
+const TABLET_OUT = 0.06 * FIGURE_SCALE;
+const TABLET_TIP = 50;
+const TABLET_CASE = "#17191e";
+const TABLET_SCREEN = "#d9e4ef";
+const TABLET_INK = "rgba(30, 60, 120, 0.8)";
+const TABLET_RED = "rgba(190, 40, 40, 0.85)";
+const TABLET_RIM = 0.07;
+
+export const tabletGear = (
+	ctx: CanvasRenderingContext2D,
+	cam: Camera,
+	states: FieldPlayerState[],
+	bodyOf: (pid: number) => Body,
+	fine: boolean,
+): Item[] =>
+	states.flatMap((st) => {
+		const now = st.move === "tablet";
+		const was = st.from?.move === "tablet";
+		const alpha = now
+			? st.from && !was
+				? 1 - st.from.w
+				: 1
+			: was
+				? st.from!.w
+				: 0;
+		if (alpha <= 0.02) {
+			return [];
+		}
+		const body = bodyOf(st.id);
+		const { pose, yaw } = drawnPose(st, fine);
+		const sk = skeleton(body, pose);
+		const tip = (l: { end: V3; tip?: V3 }) => l.tip ?? l.end;
+		const l = tip(sk.armL);
+		const r = tip(sk.armR);
+		const on = drawnShift(st, body, fine);
+		const placed = {
+			x: st.x + on.x,
+			y: st.y + on.y,
+			z: drawnLift(st, fine),
+			yaw,
+		};
+		// (Between his hands - the lower of them, a finger to it, has it -
+		// and out from them a little.)
+		const c = {
+			f: Math.max(l.f, r.f) + TABLET_OUT,
+			s: (l.s + r.s) / 2,
+			u: Math.min(l.u, r.u),
+		};
+		const a = (TABLET_TIP * Math.PI) / 180;
+		const at = (x: number, y: number) =>
+			bodyPoint(placed, {
+				f: c.f + y * TABLET_H * Math.sin(a),
+				s: c.s + x * TABLET_W,
+				u: c.u + y * TABLET_H * Math.cos(a),
+			});
+		const corners = [
+			at(-0.5, 0.5),
+			at(0.5, 0.5),
+			at(0.5, -0.5),
+			at(-0.5, -0.5),
+		];
+		// (Its screen seen, or the back of it: which side of it the camera
+		// is on.)
+		const o = at(0, 0);
+		const across = sub3(at(0.5, 0), o);
+		const upIt = sub3(at(0, 0.5), o);
+		const face = {
+			x: across.y * upIt.z - across.z * upIt.y,
+			y: across.z * upIt.x - across.x * upIt.z,
+			z: across.x * upIt.y - across.y * upIt.x,
+		};
+		const eye = sub3(cam.pos, o);
+		const screen = face.x * eye.x + face.y * eye.y + face.z * eye.z > 0;
+		return [
+			{
+				depth: Math.min(...corners.map((p) => depthOf(cam, p))),
+				draw: () => {
+					drawTablet(ctx, cam, at, alpha, screen);
+				},
+			},
+		];
+	});
+
+const sub3 = (p: Pt3, q: Pt3): Pt3 => ({
+	x: p.x - q.x,
+	y: p.y - q.y,
+	z: p.z - q.z,
+});
+
+const drawTablet = (
+	ctx: CanvasRenderingContext2D,
+	cam: Camera,
+	at: (x: number, y: number) => Pt3,
+	alpha: number,
+	screen: boolean,
+) => {
+	const P = (x: number, y: number) => project(cam, at(x, y));
+	const quad = (x0: number, y0: number, x1: number, y1: number) => {
+		const ps = [P(x0, y0), P(x1, y0), P(x1, y1), P(x0, y1)];
+		ctx.beginPath();
+		ps.forEach((p, n) =>
+			n === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y),
+		);
+		ctx.closePath();
+	};
+	ctx.save();
+	ctx.globalAlpha *= alpha;
+	quad(-0.5, 0.5, 0.5, -0.5);
+	ctx.fillStyle = TABLET_CASE;
+	ctx.fill();
+	if (screen) {
+		const e = 0.5 - TABLET_RIM;
+		quad(-e, e, e, -e);
+		ctx.fillStyle = TABLET_SCREEN;
+		ctx.fill();
+		// (Too small to make out: the screen lit, no more.)
+		const k = P(0, 0).k;
+		if (k * TABLET_W >= 14) {
+			const line = (pts: [number, number][], color: string) => {
+				ctx.beginPath();
+				pts.forEach(([x, y], n) => {
+					const p = P(x, y);
+					if (n === 0) {
+						ctx.moveTo(p.x, p.y);
+					} else {
+						ctx.lineTo(p.x, p.y);
+					}
+				});
+				ctx.strokeStyle = color;
+				ctx.stroke();
+			};
+			ctx.lineWidth = Math.max(0.5, 0.012 * k);
+			// (The line of scrimmage across it, three routes off it.)
+			line(
+				[
+					[-0.36, -0.12],
+					[0.36, -0.12],
+				],
+				TABLET_INK,
+			);
+			line(
+				[
+					[-0.3, -0.18],
+					[-0.3, 0.2],
+					[-0.16, 0.3],
+				],
+				TABLET_RED,
+			);
+			line(
+				[
+					[0, -0.18],
+					[0, 0.06],
+					[0.18, 0.24],
+				],
+				TABLET_RED,
+			);
+			line(
+				[
+					[0.3, -0.18],
+					[0.3, 0.32],
+				],
+				TABLET_RED,
+			);
+		}
+	}
+	ctx.restore();
+};

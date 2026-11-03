@@ -76,7 +76,7 @@ import { SHOWER, SHOWER_MARGIN, type Shower } from "./shower.ts";
 import { stageTv } from "./tv.ts";
 import { stageToss, tossCrew } from "./toss.ts";
 import { runOutCrew, stageRunOut, type RunOut } from "./tunnel.ts";
-import { headCoachAt, sidelineOf } from "./sideline.ts";
+import { coordinatorAt, headCoachAt, sidelineOf } from "./sideline.ts";
 
 // THE GAME STAGED: every snap of the play-by-play, in feet and milliseconds -
 // who is on the field for it, where each man lines up, the ball, and the
@@ -255,6 +255,20 @@ export type Play = {
 	// In close on the kicker through his routine before the snap (see
 	// kickerRoutine): from when, until when, and where he sets.
 	closeUp?: { t0: number; t1: number; pid: number; at: Pt };
+	// The home side's quarterback off the field over the tablet with his
+	// coordinator, as the visitors' next drive starts (see TABLET_SHARE):
+	// from when, until when; whose side, him, where he stands and which way
+	// he faces; and the coordinator the same.
+	tablet?: {
+		t0: number;
+		t1: number;
+		side: Side;
+		pid: number;
+		at: Pt;
+		yaw: number;
+		oc: Pt;
+		ocYaw: number;
+	};
 	// In close on the quarterback at the line before the snap (see
 	// QB_CLOSE): from when, until when, where he sets, and how far along the
 	// field from him, the way he faces, the camera is.
@@ -723,6 +737,24 @@ const ringOut = (slots: Pt[], to: Pt[]) => {
 		}
 	}
 };
+// The home side's quarterback, off the field after its drive, over the
+// tablet with his offensive coordinator (coach 1) on the sideline: the
+// picture on the two of them across the field as the visitors' drive
+// starts, this share of the time - from the first of it until this long
+// into it, if that leaves this long of it before the snap. Him this far
+// along from the coordinator, away from midfield, turned this share of the
+// way to the field from facing him (it in his hands), the coordinator this
+// share from facing him; the camera on
+// the field this far in front of them (see aim.ts) - not with anybody
+// within this much of the way to them, or stood in among them.
+const TABLET_SHARE = 0.6;
+const TABLET_MS = 3200;
+const TABLET_WIDE = 1800;
+const TABLET_APART = 2.6;
+const TABLET_OPEN = 0.6;
+const TABLET_OC_OPEN = 0.25;
+export const TABLET_CAM_FT = 28;
+const TABLET_CLEAR = 4.5;
 // In close on the quarterback in the gun before the snap, from t0 to t1:
 // where he is set, and whether anybody is ever between him and the camera
 // on him (see QB_CAM_FT) over it, or just behind him in the picture - not
@@ -1238,6 +1270,10 @@ class Director {
 	// The snaps in a row the defense has been out there for against this
 	// offense, since the last break - a timeout, a quarter over.
 	drive: { offense: Side; snaps: number } | undefined;
+	// Which side had the last snap from scrimmage, and each side's
+	// quarterback for its last one.
+	lastScrimmage: Side | undefined;
+	lastQb: [number | undefined, number | undefined] = [undefined, undefined];
 	// Each man's speed against the others at his position, and his ratings,
 	// where the game has them (see ratings.ts).
 	readonly speeds: Map<number, number>;
@@ -2530,6 +2566,73 @@ class Director {
 						r: this.rng(i0, "measured"),
 					})
 				: undefined;
+		// The home side's quarterback over the tablet as the visitors' drive
+		// starts - the camera on him clear of everybody else.
+		const tablet = (() => {
+			const pid = this.lastQb[1];
+			if (
+				offense !== 0 ||
+				this.lastScrimmage !== 1 ||
+				pid === undefined ||
+				hurried ||
+				qbCloseUp ||
+				(kind !== "pass" && kind !== "run") ||
+				snap - t0 < TABLET_MS + TABLET_WIDE ||
+				parts.some((p) => p.pid === pid) ||
+				this.rng(i0, "tablet")() >= TABLET_SHARE
+			) {
+				return undefined;
+			}
+			const oc = coordinatorAt(1, 1, i0);
+			const away = oc.x < MID_X ? -1 : 1;
+			const at = { x: oc.x + away * TABLET_APART, y: oc.y };
+			const mid = { x: (at.x + oc.x) / 2, y: at.y };
+			const line = sidelineOf(1);
+			const toField = line === 0 ? 1 : -1;
+			const others = [...parts, ...medics, ...crew.parts, ...chains.parts];
+			for (let t = t0; t <= t0 + TABLET_MS; t += 100) {
+				for (const q of others) {
+					if (q.legs.length === 0) {
+						continue;
+					}
+					const p = posOf(q.legs, t);
+					const d = (p.y - mid.y) * toField;
+					if (
+						Math.abs(p.x - mid.x) < TABLET_CLEAR &&
+						d > -1.5 &&
+						d < TABLET_CAM_FT
+					) {
+						return undefined;
+					}
+				}
+			}
+			// (Turned from facing one another a way toward the field.)
+			const field = (toField * Math.PI) / 2;
+			const turned = (yaw: number, share: number) =>
+				yaw + Math.atan2(Math.sin(field - yaw), Math.cos(field - yaw)) * share;
+			return {
+				t0,
+				t1: t0 + TABLET_MS,
+				side: 1 as Side,
+				pid,
+				at,
+				yaw: turned(away > 0 ? Math.PI : 0, TABLET_OPEN),
+				oc,
+				ocYaw: turned(away > 0 ? 0 : Math.PI, TABLET_OC_OPEN),
+			};
+		})();
+		if (tablet) {
+			this.cuts.push(tablet.t1);
+		}
+		if (kind === "pass" || kind === "run" || kind === "kneel") {
+			this.lastScrimmage = offense;
+			const qbPid = parts.find(
+				(p) => p.team === offense && p.role === "QB",
+			)?.pid;
+			if (qbPid !== undefined) {
+				this.lastQb[offense] = qbPid;
+			}
+		}
 		if (!this.opens.has(quarter)) {
 			this.opens.set(quarter, minutes);
 		}
@@ -2602,6 +2705,7 @@ class Director {
 			...(measure ? { measure: { cut: measure.cut, at: measure.at } } : {}),
 			...(routine?.closeUp ? { closeUp: routine.closeUp } : {}),
 			...(qbCloseUp ? { qbClose: qbCloseUp } : {}),
+			...(tablet ? { tablet } : {}),
 			...(refCall ? { refCall } : {}),
 			...(heroClose ? { heroClose } : {}),
 			...(callIn ? { callIn } : {}),

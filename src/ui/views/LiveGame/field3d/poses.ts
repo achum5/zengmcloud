@@ -455,6 +455,18 @@ const SHEET_UP = {
 	elN: 16,
 	abN: 6,
 };
+// A tablet held in both hands in front of him, bent over it a little.
+const TABLET = pose({
+	shN: 30,
+	elN: 96,
+	abN: -10,
+	wrN: 6,
+	shF: 30,
+	elF: 96,
+	abF: -10,
+	wrF: 6,
+	lean: 12,
+});
 // (Both hands on the ball, at his chest.)
 // A receiver sat down, hands up (see settle).
 const SETTLE = pose({
@@ -3240,6 +3252,22 @@ const FIELD_ANIMS = {
 			[0.76, pose({ ...SHEET_UP, lean: 5, twist: 2 })],
 			[0.88, pose(SHEET_UP)],
 			[1, BASE],
+		],
+	},
+	// Over the tablet with his coordinator on the sideline: looking it over,
+	// a finger to it, a look up at him, and back down to it.
+	tablet: {
+		kind: "act",
+		keys: [
+			[0, TABLET],
+			[0.26, TABLET],
+			[0.34, { ...TABLET, shN: 40, elN: 74, abN: 0 }],
+			[0.44, { ...TABLET, shN: 40, elN: 74, abN: 0, twist: 3 }],
+			[0.52, TABLET],
+			[0.62, { ...TABLET, lean: 4, twist: -10 }],
+			[0.8, { ...TABLET, lean: 4, twist: -10 }],
+			[0.9, TABLET],
+			[1, TABLET],
 		],
 	},
 	// Time out: his hands up in a T at the official - the one flat across

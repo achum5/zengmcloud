@@ -227,6 +227,18 @@ export const sidelineFor = (
 	return out;
 };
 
+// Where a coordinator (coach 1 or 2) stands for a play: up front, one
+// either side of the head coach.
+export const coordinatorAt = (team: Side, i: 1 | 2, playI: number): Pt => {
+	const line = sidelineOf(team);
+	const lean = line === 0 ? 1 : -1;
+	const r = makeCourtRng(`coach|${coachId(team, i)}|${playI}`);
+	return {
+		x: MID_X + lean * (i === 1 ? -1 : 1) * (14 + r() * 12),
+		y: yOf(line, COACH_LINE - 1.6 - r() * 1.6),
+	};
+};
+
 // Where the head coach stands for a play: up front, about midfield.
 export const headCoachAt = (team: Side, playI: number): Pt => {
 	const r = makeCourtRng(`coach|${coachId(team, 0)}|${playI}`);
@@ -251,6 +263,8 @@ type Spot = {
 	seated?: boolean;
 	facing?: number;
 	bare?: boolean;
+	// (Going through it over and over, once every this long - ms.)
+	cycle?: number;
 };
 
 const layouts = new WeakMap<SidelineMan[], WeakMap<Play, Map<number, Spot>>>();
@@ -410,9 +424,22 @@ const lay = (men: SidelineMan[], play: Play): Map<number, Spot> => {
 	const kick = KICKS.has(play.kind);
 	for (const team of [0, 1] as Side[]) {
 		const line = sidelineOf(team);
-		const lean = line === 0 ? 1 : -1;
 		const toField = line === 0 ? Math.PI / 2 : -Math.PI / 2;
-		const mine = men.filter((s) => s.team === team && !on.has(s.id));
+		// (The quarterback over the tablet with his coordinator - see
+		// director.ts TABLET_SHARE.)
+		const tablet = play.tablet?.side === team ? play.tablet : undefined;
+		if (tablet) {
+			out.set(tablet.pid, {
+				at: tablet.at,
+				move: "tablet",
+				facing: tablet.yaw,
+				bare: true,
+				cycle: TABLET_CYCLE,
+			});
+		}
+		const mine = men.filter(
+			(s) => s.team === team && !on.has(s.id) && s.id !== tablet?.pid,
+		);
 		const working = play.offense === team ? "offense" : "defense";
 		const resting = working === "offense" ? "defense" : "offense";
 		for (const s of mine) {
@@ -474,12 +501,16 @@ const lay = (men: SidelineMan[], play: Play): Map<number, Spot> => {
 			const r = makeCourtRng(`coach|${c.id}|${play.i}`);
 			if (i === 0) {
 				out.set(c.id, { at: headCoachAt(team, play.i), move: c.move });
+			} else if (i === 1 && tablet) {
+				out.set(c.id, {
+					at: tablet.oc,
+					move: "coachTalk",
+					facing: tablet.ocYaw,
+					cycle: TALK_MS,
+				});
 			} else if (i <= 2) {
 				out.set(c.id, {
-					at: {
-						x: MID_X + lean * (i === 1 ? -1 : 1) * (14 + r() * 12),
-						y: yOf(line, COACH_LINE - 1.6 - r() * 1.6),
-					},
+					at: coordinatorAt(team, i === 1 ? 1 : 2, play.i),
 					move: c.move,
 				});
 			} else if (i <= 4 && seated.length > 0) {
@@ -603,6 +634,8 @@ const IDLE_TENSE: Move[] = [
 	"onHips",
 ];
 const TALK_MS = 2600;
+// The quarterback over the tablet: through it once every this long.
+const TABLET_CYCLE = 4200;
 const PROTESTS = 0.45;
 const PROTEST_MS = 1800;
 const COACH_BLEND = 350;
@@ -1105,7 +1138,7 @@ export const sidelineAt = (
 			yaw += d * boss.turn.w;
 		}
 		let move = spot.move;
-		let phase = 0;
+		let phase = spot.cycle ? (m.t / spot.cycle) % 1 : 0;
 		let from: FieldPlayerState["from"];
 		if (boss) {
 			({ move, phase, from } = boss);

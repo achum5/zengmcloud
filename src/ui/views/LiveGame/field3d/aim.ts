@@ -1,6 +1,6 @@
 import { HERO_CAM_FT } from "./action.ts";
 import type { FieldRig, Shot } from "./camera.ts";
-import { type Play, QB_CAM_FT } from "./director.ts";
+import { type Play, QB_CAM_FT, TABLET_CAM_FT } from "./director.ts";
 import type { FieldMoment } from "./evaluate.ts";
 import {
 	FIELD_L,
@@ -148,6 +148,10 @@ const TIMEOUT_Z = 4;
 // from down low on the near side - this wide, this high.
 const CALL_WIDTH = 18;
 const CALL_Z = 4.5;
+// The home side's quarterback over the tablet with his coordinator (see
+// the director's TABLET_SHARE): from down on the field in front of them,
+// this wide on the two of them, this high - the camera this high.
+const TABLET = { width: 13, z: 5.2, camZ: 5.8 };
 // The home side's head coach calling in its third down (see director.ts
 // callIn): from down low on the near side - this wide, this high.
 const CALL_IN_WIDTH = 15;
@@ -190,6 +194,16 @@ export const aimFor = (m: FieldMoment): Shot => {
 			x: toss.at.x,
 			width: TOSS_WIDE + (TOSS_TIGHT - TOSS_WIDE) * e,
 			y: across(toss.at.y),
+		};
+	}
+	// On the quarterback over the tablet.
+	const tablet = tabletOf(m);
+	if (tablet) {
+		return {
+			x: (tablet.at.x + tablet.oc.x) / 2,
+			width: TABLET.width,
+			y: (tablet.at.y + tablet.oc.y) / 2,
+			z: TABLET.z,
 		};
 	}
 	// In close on the kicker through his routine, the referee giving a foul.
@@ -538,11 +552,28 @@ export const closeUpOf = (m: FieldMoment) => {
 	return undefined;
 };
 
+// The quarterback over the tablet on the sideline now, if he is.
+export const tabletOf = (m: FieldMoment) => {
+	const tablet = m.play?.tablet;
+	return tablet && m.t >= tablet.t0 && m.t < tablet.t1 ? tablet : undefined;
+};
+
 // Where the picture is from, if not from the press box or down low on the
 // near side (see fromLow): over the interview after the game, down on the
-// field in front of the two of them; in close on the kicker or the
-// referee, in front of him.
+// field in front of the two of them; on the quarterback over the tablet
+// on the sideline, the same; in close on the kicker or the referee, in
+// front of him.
 export const rigFor = (m: FieldMoment): FieldRig | undefined => {
+	const tablet = tabletOf(m);
+	if (tablet) {
+		const y = (tablet.at.y + tablet.oc.y) / 2;
+		return {
+			back: y + TABLET_CAM_FT - FIELD_W,
+			high: TABLET.camZ,
+			slide: 1,
+			upright: false,
+		};
+	}
 	const close = closeUpOf(m);
 	if (close) {
 		return {

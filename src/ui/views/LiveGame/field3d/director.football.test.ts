@@ -10,6 +10,7 @@ import {
 	compileField,
 	isLineItem,
 	QB_CAM_FT,
+	TABLET_CAM_FT,
 	targetForCursor,
 	type BallSeg,
 	type FieldTimeline,
@@ -1178,6 +1179,73 @@ describe("the head coach", () => {
 // (Nobody's cheer up then.)
 const cheerless = (play: Play, t: number) =>
 	!play.cheer || t < play.cheer.t || t > play.cheer.t + 6000;
+
+// As the visitors' drive starts, now and then, the home side's quarterback
+// off the field over the tablet with his coordinator: the picture on the two
+// of them, nobody between, and out wide again a while before the snap.
+describe("the quarterback over the tablet", () => {
+	test("after his drive, with his coordinator, in the picture", () => {
+		let shots = 0;
+		for (const game of games) {
+			const tl = stage(game);
+			const men = sidelineFor(game.roster, 1);
+			for (const [k, play] of tl.plays.entries()) {
+				const tab = play.tablet;
+				if (!tab) {
+					continue;
+				}
+				shots += 1;
+				const at = `play ${play.i}`;
+				assert.strictEqual(play.offense, 0, at);
+				assert.include(["pass", "run"], play.kind, at);
+				const before = tl.plays
+					.slice(0, k)
+					.findLast((p) => ["pass", "run", "kneel"].includes(p.kind))!;
+				assert.strictEqual(before.offense, 1, at);
+				assert.strictEqual(
+					before.parts.find((p) => p.team === 1 && p.role === "QB")?.pid,
+					tab.pid,
+					at,
+				);
+				assert.isFalse(
+					play.parts.some((p) => p.pid === tab.pid),
+					at,
+				);
+				assert.strictEqual(tab.t0, play.t0, at);
+				assert.isAtMost(tab.t1, play.snap - 1800, at);
+				assert.include(tl.cuts, tab.t1, at);
+				const mid = {
+					x: (tab.at.x + tab.oc.x) / 2,
+					y: (tab.at.y + tab.oc.y) / 2,
+				};
+				const shot = aimFor(momentAt(tl, tab.t0 + 200));
+				assert.isBelow(shot.width, 20, at);
+				assert.closeTo(shot.x, mid.x, 0.01, at);
+				// (Out wide again after.)
+				assert.isAbove(aimFor(momentAt(tl, tab.t1 + 50)).width, 40, at);
+				for (let t = tab.t0; t < tab.t1; t += 200) {
+					const m = momentAt(tl, t);
+					const side = sidelineAt(men, tl, m);
+					const qb = side.find((s) => s.id === tab.pid)!;
+					assert.strictEqual(qb.move, "tablet", at);
+					assert.isTrue(qb.bare, at);
+					assert.isBelow(Math.hypot(qb.x - tab.at.x, qb.y - tab.at.y), 2, at);
+					const oc = side.find((s) => s.id === coachId(1, 1))!;
+					assert.strictEqual(oc.move, "coachTalk", at);
+					assert.isBelow(Math.hypot(oc.x - tab.oc.x, oc.y - tab.oc.y), 2, at);
+					for (const p of m.players) {
+						const d = p.y - mid.y;
+						assert.isFalse(
+							Math.abs(p.x - mid.x) < 4.5 && d > -1.5 && d < TABLET_CAM_FT,
+							`${at} ${p.id} @${t - tab.t0}`,
+						);
+					}
+				}
+			}
+		}
+		assert.isAbove(shots, 0);
+	}, 60_000);
+});
 
 describe("the sidelines, up for a big play", () => {
 	test("up off the line for it - jumping, an arm up - and back down, into it and out of it over a moment, never in a frame", () => {
