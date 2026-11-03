@@ -45,6 +45,10 @@ import { moveKind, type Move } from "./poses.ts";
 import { actOut } from "./action.ts";
 import {
 	anyBall,
+	CALL_FOR_MS,
+	officialId,
+	posOf,
+	REF_CAM_FT,
 	stageCrew,
 	type CrewInput,
 	type CrewPart,
@@ -247,6 +251,9 @@ export type Play = {
 	// In close on the kicker through his routine before the snap (see
 	// kickerRoutine): from when, until when, and where he sets.
 	closeUp?: { t0: number; t1: number; pid: number; at: Pt };
+	// In close on the referee as he gives the fouls on it (see crew.ts): from
+	// when, until when, and where he stands for it.
+	refCall?: { t0: number; t1: number; at: Pt };
 	// Between quarters: when the picture cuts to the whole stadium (see
 	// aim.ts).
 	between?: number;
@@ -840,6 +847,25 @@ const CELEBRATE_MOST = 7500;
 // down signaled this long after the whistle - after the clock stopped is,
 // for a man out of bounds.
 const CALL_MS = 2900;
+// The picture in close on the referee as he gives it (see aim.ts): from
+// this long before his signal - stopped and faced to the press box by then
+// - to this long after he is done (or on to the next play, if that is
+// within this long of it); not for less than this long (cut short by the
+// picture going to a timeout or between quarters), nor with the camera in
+// front of him off the field.
+const REF_CLOSE_BEFORE = 300;
+const REF_CLOSE_AFTER = 250;
+const REF_CLOSE_ON = 700;
+const REF_CLOSE_LEAST = 1500;
+// (Not over the moment after a big play - until this long after it, as
+// aim.ts has it.)
+const REF_AFTER_PARTY = 600;
+// (In the way of it: anyone between that camera and him - nearer it than
+// this past him, inside the picture, this far either side of him at his
+// distance - looked for this often, ms.)
+const REF_WAY_NEAR = 0.5;
+const REF_SEEN = 7;
+const REF_WAY_STEP = 50;
 const FIRST_DOWN_AT = 1100;
 const OUT_SIGNAL_AT = 150;
 const OUT_FIRST_AT = 1700;
@@ -2121,6 +2147,57 @@ class Director {
 		if (timeout) {
 			crewClear(crew.parts, timeout, t1);
 		}
+		const refCall = (() => {
+			const ref = crew.parts.find((p) => p.pid === officialId("R"));
+			if (!ref || calls.length === 0 || postgame || half || measureAt) {
+				return undefined;
+			}
+			const first = Math.min(...calls.map((c) => c.t));
+			const at = posOf(ref.legs, first);
+			const done =
+				Math.max(...calls.map((c) => c.t)) + CALL_FOR_MS + REF_CLOSE_AFTER;
+			let from = first - REF_CLOSE_BEFORE;
+			let until = Math.min(
+				t1 - done < REF_CLOSE_ON ? t1 : done,
+				timeout?.call?.from ?? Infinity,
+				timeout?.cut ?? Infinity,
+				between ?? Infinity,
+				t1,
+			);
+			// (Not over the moment after a big play.)
+			if (acted?.party && acted.until && acted.party.from < until) {
+				from = Math.max(from, acted.until + REF_AFTER_PARTY);
+			}
+			// (Nobody between the camera and him: in on him once nobody is,
+			// and back out if somebody comes.)
+			const others = [...parts, ...medics, ...crew.parts].filter(
+				(q) => q !== ref && q.legs.length > 0,
+			);
+			const inWay = (t: number) => {
+				const him = posOf(ref.legs, t);
+				return others.some((q) => {
+					const p = posOf(q.legs, t);
+					const d = at.y + REF_CAM_FT - p.y;
+					return (
+						p.y > him.y + REF_WAY_NEAR &&
+						d > 0 &&
+						Math.abs(p.x - him.x) < (REF_SEEN * d) / REF_CAM_FT + 1
+					);
+				});
+			};
+			while (from < until && inWay(from)) {
+				from += REF_WAY_STEP;
+			}
+			for (let t = from; t < until; t += REF_WAY_STEP) {
+				if (inWay(t)) {
+					until = t;
+					break;
+				}
+			}
+			return until - from >= REF_CLOSE_LEAST && at.y + REF_CAM_FT < FIELD_W
+				? { t0: from, t1: until, at }
+				: undefined;
+		})();
 		const chains = stageChains({
 			quarter,
 			dir,
@@ -2235,6 +2312,7 @@ class Director {
 				: {}),
 			...(measure ? { measure: { cut: measure.cut, at: measure.at } } : {}),
 			...(routine?.closeUp ? { closeUp: routine.closeUp } : {}),
+			...(refCall ? { refCall } : {}),
 			...(between !== undefined ? { between } : {}),
 			...(acted?.party && acted.until
 				? { party: { ...acted.party, until: acted.until } }

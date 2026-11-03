@@ -10,6 +10,7 @@ import {
 	MID_Y,
 	type Pt,
 } from "./geometry.ts";
+import { officialId, REF_CAM_FT } from "./crew.ts";
 import { INTERVIEW_CAM_FT } from "./postgame.ts";
 import { runOutShot } from "./tunnel.ts";
 
@@ -108,10 +109,10 @@ const INTERVIEW_CAM_Z = 6.2;
 // In close on the kicker through his routine before the snap (see the
 // director's kickerRoutine): this wide, at about his chest - from down on
 // the field this far in front of where he sets, this high (see rigFor).
-const KICK_CLOSE_WIDTH = 24;
-const KICK_CLOSE_Z = 3.4;
-const KICK_CAM_FT = 26;
-const KICK_CAM_Z = 4.4;
+const KICK_CLOSE = { width: 24, z: 3.4, camFt: 26, camZ: 4.4 };
+// And on the referee giving a foul after the play (see the director's
+// refCall), from the knees up - his arms over his head in it.
+const REF_CLOSE = { width: 13, z: 5.3, camFt: REF_CAM_FT, camZ: 5.6 };
 // The winners' head coach under the cooler: in on him, this wide, the
 // picture's middle this far toward the near side of him (on the far
 // sideline, this far).
@@ -178,12 +179,12 @@ export const aimFor = (m: FieldMoment): Shot => {
 			y: across(toss.at.y),
 		};
 	}
-	// In close on the kicker, through his routine.
-	const close = kickClose(m);
+	// In close on the kicker through his routine, the referee giving a foul.
+	const close = closeUpOf(m);
 	if (close) {
 		const him = m.players.find((p) => p.id === close.pid);
 		if (him) {
-			return { x: him.x, width: KICK_CLOSE_WIDTH, y: him.y, z: KICK_CLOSE_Z };
+			return { x: him.x, width: close.width, y: him.y, z: close.z };
 		}
 	}
 	// A timeout: on the side that called it, at its sideline - or on the
@@ -489,22 +490,30 @@ export const closeIn = (m: FieldMoment): boolean => {
 	);
 };
 
-// The kicker's routine, if the picture is in close on him through it now.
-export const kickClose = (m: FieldMoment) => {
-	const close = m.play?.closeUp;
-	return close && m.t >= close.t0 && m.t < close.t1 ? close : undefined;
+// Whom the picture is in close on now, if anyone - the kicker through his
+// routine, the referee giving a foul - where he stands for it, and how.
+export const closeUpOf = (m: FieldMoment) => {
+	const kick = m.play?.closeUp;
+	if (kick && m.t >= kick.t0 && m.t < kick.t1) {
+		return { pid: kick.pid, at: kick.at, ...KICK_CLOSE };
+	}
+	const ref = m.play?.refCall;
+	if (ref && m.t >= ref.t0 && m.t < ref.t1) {
+		return { pid: officialId("R"), at: ref.at, ...REF_CLOSE };
+	}
+	return undefined;
 };
 
 // Where the picture is from, if not from the press box or down low on the
 // near side (see fromLow): over the interview after the game, down on the
-// field in front of the two of them; in close on the kicker, in front of
-// him.
+// field in front of the two of them; in close on the kicker or the
+// referee, in front of him.
 export const rigFor = (m: FieldMoment): FieldRig | undefined => {
-	const close = kickClose(m);
+	const close = closeUpOf(m);
 	if (close) {
 		return {
-			back: close.at.y + KICK_CAM_FT - FIELD_W,
-			high: KICK_CAM_Z,
+			back: close.at.y + close.camFt - FIELD_W,
+			high: close.camZ,
 			slide: 1,
 			upright: false,
 		};

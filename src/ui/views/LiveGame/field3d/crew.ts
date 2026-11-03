@@ -150,6 +150,10 @@ const WHISTLE_MS = 900;
 const CALL_SIGNAL_MS = 1500;
 const CALL_SIDE_MS = 1000;
 const SETTLE_MS = 600;
+export const CALL_FOR_MS = CALL_SIGNAL_MS + CALL_SIDE_MS;
+// The picture in close on him giving it (see aim.ts): from down on the
+// field this far in front of him.
+export const REF_CAM_FT = 20;
 // How long each other signal is held.
 const SIGNAL_MS: Record<Signaled, number> = {
 	td: 2000,
