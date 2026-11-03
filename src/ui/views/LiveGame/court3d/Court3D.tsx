@@ -137,6 +137,9 @@ import {
 // animation, not a timer, sets the pace, and every line's text appears as its
 // play happens on screen.
 
+// In close on a man, the building behind him this far out of focus
+// (picture pixels - see drawFrame).
+const CLOSE_SOFT = 1.1;
 // How long the picture dips to black either side of a cut (timeline ms).
 const DIP_MS = 130;
 // Up out of black onto the next of the key plays (ms).
@@ -1572,6 +1575,7 @@ const Court3D = ({
 				textScale: Math.max(1, Math.round(8 / ((7 * art) / dpr))),
 				tagClear: s.covers,
 				away: !!view || !!replay,
+				...(closeView ? { soft: CLOSE_SOFT } : {}),
 				crew: working.states.flatMap((st) => {
 					const c = cr.crewLooks.get(st.pid);
 					return c ? [{ st, body: c.body, look: c.look }] : [];

@@ -485,6 +485,9 @@ export type Frame = {
 	// Off the play: a look round the building, in on a huddle, the starting
 	// lineups - or a replay of it, shown clean - nobody's name tag over it.
 	away?: boolean;
+	// In close on a man, a long lens's: the building behind him this far out
+	// of focus (picture pixels).
+	soft?: number;
 	// The officials, the coaches and the photographers (see crew.ts), and
 	// any of their cameras going off.
 	crew?: { st: PlayerState; body: Body; look: Look }[];
@@ -1516,6 +1519,9 @@ export const drawFrame = (f: Frame) => {
 			drawTexturedPlane(ctx, cam, END_WALL[side], end, 12, 1);
 		}
 	}
+	if (f.soft) {
+		softenBehind(ctx, f.soft);
+	}
 	// The apron: the court's own color carried out past the lines all the
 	// way back to the stands - under the seats behind the baskets, the
 	// benches and the table along the far side.
@@ -2428,6 +2434,30 @@ export const closeUpAim = (
 			},
 		},
 	};
+};
+
+// The picture so far (the building, behind everything on the floor) drawn
+// again over itself out of focus.
+let behind: HTMLCanvasElement | undefined;
+const softenBehind = (ctx: CanvasRenderingContext2D, px: number) => {
+	const c = ctx.canvas;
+	behind ??= document.createElement("canvas");
+	if (behind.width !== c.width || behind.height !== c.height) {
+		behind.width = c.width;
+		behind.height = c.height;
+	}
+	const bc = behind.getContext("2d");
+	if (!bc) {
+		return;
+	}
+	bc.setTransform(1, 0, 0, 1, 0, 0);
+	bc.clearRect(0, 0, c.width, c.height);
+	bc.drawImage(c, 0, 0);
+	ctx.save();
+	ctx.setTransform(1, 0, 0, 1, 0, 0);
+	ctx.filter = `blur(${px}px)`;
+	ctx.drawImage(behind, 0, 0);
+	ctx.restore();
 };
 
 // Whether a point is on screen, for skipping work.
