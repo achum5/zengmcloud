@@ -3286,6 +3286,20 @@ const JUMP: Record<string, number> = {
 	"Neutral zone infraction": 3,
 	Encroachment: 3.5,
 };
+// Offsides, the play run (see offside): the man flagged out of his stance
+// this long before the snap (ms), up to this much sooner, a step this far
+// (ft) across toward the ball - no further off it than this (ft), set there
+// this long at least - the step let go of as he goes on this far (ft), no
+// later than this long after he would have gone (ms), or near enough (this
+// share of it left, let go of in his next stride).
+const OFFSIDE_MS = 170;
+const OFFSIDE_SPREAD_MS = 130;
+const OFFSIDE_FT = 1;
+const OFFSIDE_NEAR = 4;
+const OFFSIDE_SET_MS = 300;
+const OFFSIDE_FADE_FT = 2;
+const OFFSIDE_FADE_MS = 900;
+const OFFSIDE_LEFT = 0.1;
 // Unsportsmanlike before the snap (see jaw): at a man of the other side no
 // further off than this (ft), over to him at this pace (ft/s; no quicker
 // than this, ms; off no sooner than this before the snap), up in his face this far from him (where he is, if no
@@ -4120,6 +4134,9 @@ class Action {
 				return undefined;
 			}
 			this.deadBall(flagI);
+		}
+		if (snapped) {
+			this.offside();
 		}
 		this.upAgain();
 		this.afterWhistle();
@@ -5430,6 +5447,90 @@ class Action {
 			m.hold(m.t + 400, "stand");
 			this.done.add(m.pid);
 		}
+	}
+
+	// OFFSIDES, THE PLAY RUN: the man flagged off a moment before the snap -
+	// up out of his stance and a step across into the neutral zone, the ball
+	// not yet gone - and on into the play from there when he would have gone
+	// anyway, the step he has on it let go of as he goes on. Not a man off
+	// the ball (a linebacker back off it), or on the move at the snap, or not
+	// on forward off it soon (dropping off it, say). (No dice: see countOf.)
+	offside() {
+		const { snap, offense, events, i0, i1 } = this.input;
+		let pen = -1;
+		for (let i = i0; i < i1 && pen < 0; i++) {
+			const e = events[i];
+			if (e?.type === "penalty" && e.penaltyName === "Offsides") {
+				pen = i;
+			}
+		}
+		if (pen < 0) {
+			return;
+		}
+		const who = this.man(this.statPidsIn(pen, i1, "pen")[0]);
+		if (!who || who.team === offense) {
+			return;
+		}
+		const legs = who.legs;
+		const k = legIndexAt(legs, snap);
+		const set = legs[k];
+		const off = legs[k + 1];
+		if (
+			!set ||
+			!off ||
+			off.t0 !== set.t1 ||
+			set.t1 <= snap ||
+			moveKind(set.move) === "cycle" ||
+			set.from.x !== set.to.x ||
+			set.from.y !== set.to.y
+		) {
+			return;
+		}
+		const s = this.of(set.to);
+		const t0 = snap - OFFSIDE_MS - OFFSIDE_SPREAD_MS * countOf(who, snap, 44);
+		if (s.d > OFFSIDE_NEAR || t0 - set.t0 < OFFSIDE_SET_MS) {
+			return;
+		}
+		// (How far on forward he would have been off where he set - the
+		// furthest yet, pushed back after: the step he has on that let go of
+		// as he goes on, all of it (near enough) by the time he is
+		// OFFSIDE_FADE_FT on, which is soon enough, on the move all the way.)
+		const on = (p: Pt) => s.d - this.of(p).d;
+		const left = (most: number) => clamp(1 - most / OFFSIDE_FADE_FT, 0, 1);
+		const most: number[] = [];
+		let n = k + 1;
+		let far = 0;
+		while (n < legs.length && left(far) > 0) {
+			const l = legs[n]!;
+			if (moveKind(l.move) !== "cycle" || l.t1 > off.t0 + OFFSIDE_FADE_MS) {
+				if (left(far) > OFFSIDE_LEFT) {
+					return;
+				}
+				break;
+			}
+			most.push(far);
+			far = Math.max(far, on(l.to));
+			n++;
+		}
+		const jump = this.w({ d: s.d - OFFSIDE_FT, a: s.a });
+		const vx = jump.x - set.to.x;
+		const vy = jump.y - set.to.y;
+		for (let j = k + 1; j < n; j++) {
+			const l = legs[j]!;
+			const a = left(most[j - k - 1]!);
+			const b = j + 1 < n ? left(most[j - k]!) : 0;
+			l.from = { x: l.from.x + vx * a, y: l.from.y + vy * a };
+			l.to = { x: l.to.x + vx * b, y: l.to.y + vy * b };
+		}
+		set.t1 = t0;
+		legs.splice(k + 1, 0, {
+			t0,
+			t1: off.t0,
+			from: set.to,
+			to: jump,
+			move: "drive",
+			yaw: set.yaw ?? this.behind,
+		});
 	}
 
 	// UNSPORTSMANLIKE BEFORE THE SNAP: the man flagged up out of where he is,

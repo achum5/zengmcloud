@@ -418,6 +418,51 @@ describe("the plays acted out", () => {
 		assert.isAtLeast(acted, flagged / 3);
 	}, 60_000);
 
+	test("offsides, the play run: the man flagged up out of his stance and a step across a moment before the snap, on into the play from there", async () => {
+		const { game, tl } = await fouled();
+		let flagged = 0;
+		let acted = 0;
+		tl.plays.forEach((play, j) => {
+			const seg = game.events.slice(
+				play.i,
+				tl.plays[j + 1]?.i ?? game.events.length,
+			);
+			const k = seg.findIndex(
+				(e) => e.type === "penalty" && e.penaltyName === "Offsides",
+			);
+			if (k < 0) {
+				return;
+			}
+			const pid = seg
+				.slice(k)
+				.find((e) => e.type === "stat" && e.s === "pen")?.pid;
+			const him = play.parts.find((p) => p.pid === pid);
+			if (!him || him.team === play.offense) {
+				return;
+			}
+			flagged += 1;
+			const l = him.legs.find(
+				(x) => x.move === "drive" && x.t0 < play.snap && x.t1 > play.snap,
+			);
+			if (!l) {
+				return;
+			}
+			acted += 1;
+			assert.isAtLeast(l.t0, play.snap - 320, `play ${play.i}`);
+			assert.isAtMost(l.t0, play.snap - 160, `play ${play.i}`);
+			// (A step on toward the ball - and on from there, not back.)
+			const off = (t: number) => (posAt(him, t).x - play.losX) * play.dir;
+			assert.approximately(off(l.t0) - off(l.t1), 1, 0.05, `play ${play.i}`);
+			assert.isAtMost(off(l.t1 + 100), off(l.t1) + 0.05, `play ${play.i}`);
+			assert.isTrue(
+				play.flags.some((f) => f.t0 > l.t0),
+				`play ${play.i}`,
+			);
+		});
+		assert.isAbove(acted, 0);
+		assert.isAtLeast(acted, flagged / 3);
+	}, 60_000);
+
 	test("a man hurt with no part in it the sim names - out on the run away from the ball, or in a block: pulled up lame, or down in it, before the whistle, and there", () => {
 		let lame = 0;
 		eachPlay((play, seg) => {
