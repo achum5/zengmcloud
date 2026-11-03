@@ -412,6 +412,8 @@ export type ArenaPaint = {
 	stands: HTMLCanvasElement;
 	standsUp: HTMLCanvasElement;
 	standsWave: HTMLCanvasElement;
+	// Sat, the home crowd's hands together - the other half of a clap.
+	standsClap?: HTMLCanvasElement;
 	// The stands half empty (see seatsAt), side and ends.
 	standsSparse?: HTMLCanvasElement;
 	endStandsSparse?: HTMLCanvasElement;
@@ -632,7 +634,8 @@ const FT_WAVE_FROM = 400;
 const FT_WAVE_UP_MS = 300;
 const FT_WAVE_DOWN_MS = 600;
 const FT_WAVE_EVERY = 90;
-type Stand = { up: number; wave: boolean };
+// (`clap`: sat, the home crowd's hands together just now - see clapAt.)
+type Stand = { up: number; wave: boolean; clap?: boolean };
 export type Crowd = Stand & { ends?: [Stand | undefined, Stand | undefined] };
 const endsAt = (tl: CourtTimeline, t: number, now: number): Crowd["ends"] => {
 	const beat = beatAt(tl, t);
@@ -729,7 +732,26 @@ const buildingAt = (tl: CourtTimeline, t: number, now: number): Stand => {
 			roar > 0.3
 				? Math.sin(now / 130) > 0
 				: tense >= 1 && Math.sin(now / 520) > 0.55,
+		...(clapAt(tl, t, now, tense) ? { clap: true } : {}),
 	};
+};
+// THE HOME CROWD CLAPPING, sat in its seats: a hand for each basket of its
+// team's, a few seconds of it - and with a game on the line, along with
+// DEFENSE on the boards, on the beat it blinks to. (Whether their hands are
+// together just now: the picture of them that way, or the other.)
+const APPLAUSE_MS = 2600;
+const CLAP_MS = 170;
+const CHANT_FROM = 0.25;
+const clapAt = (
+	tl: CourtTimeline,
+	t: number,
+	now: number,
+	tense: number,
+): boolean => {
+	if (recentFx(tl, t, ["cheer"], APPLAUSE_MS)?.team === 1) {
+		return Math.floor(now / CLAP_MS) % 2 === 1;
+	}
+	return tense >= CHANT_FROM && boardAt(tl, t) === "defense2";
 };
 // The look up at the crowd from low in the seats over a break: the people
 // it is on are up and waving at it, the way a building's crowd goes when
@@ -1428,7 +1450,15 @@ export const drawFrame = (f: Frame) => {
 		drawTexturedPlane(ctx, cam, STANDS, arena.standsSparse!, 24, 6);
 	}
 	if (fill > 0.01) {
-		drawTexturedPlane(ctx, cam, STANDS, arena.stands, 24, 6, fill);
+		drawTexturedPlane(
+			ctx,
+			cam,
+			STANDS,
+			f.crowd.clap && arena.standsClap ? arena.standsClap : arena.stands,
+			24,
+			6,
+			fill,
+		);
 	}
 	if (f.crowd.up > 0.01) {
 		drawTexturedPlane(

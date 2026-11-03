@@ -269,6 +269,8 @@ const RAKE_TALL = 1.3;
 // Home fans in a jersey of their team's, of them; and what fans wear below.
 const JERSEY_SHARE = 0.22;
 const PANTS = ["#262b36", "#1d2330", "#3a3e47", "#4b3b2c", "#2f3a52"];
+// Of the home fans in their seats, so many clap along (see paintStands).
+const CLAP_SHARE = 0.6;
 // The jackets some have open over their shirts.
 const JACKETS = ["#16171a", "#2a2c31", "#1f2a44", "#45484f", "#3a2f28"];
 // The home fans down low who hold a sign up (the D and the fence): in the
@@ -545,6 +547,9 @@ export const paintStands = (
 	// A playoff game: the home crowd's color-out - each section of seats in
 	// one of the home colors, the next in the other.
 	playoffs = false,
+	// Sat, the home crowd clapping - hands together, those of them that
+	// clap (the same people, the rest of them as they are).
+	clap = false,
 ): HTMLCanvasElement => {
 	const P = end === undefined ? STANDS : END_STANDS[end];
 	const A0 = end === undefined ? X0 : END_Y0;
@@ -561,6 +566,8 @@ export const paintStands = (
 	const rise = makeCourtRng(`stands-up|${seed}${end ?? ""}`);
 	// (Whose face each fan has is decided apart from all that, too.)
 	const faceRng = makeCourtRng(`stands-face|${seed}${end ?? ""}`);
+	// (And who claps along.)
+	const clapRng = makeCourtRng(`stands-clap|${seed}${end ?? ""}`);
 	const g = ctx.createLinearGradient(0, 0, 0, h);
 	g.addColorStop(0, "#07080b");
 	g.addColorStop(1, "#1a1c22");
@@ -731,6 +738,10 @@ export const paintStands = (
 				signs.push({ x, top: headY - 0.55 * px - (standing ? 0.6 * px : 0) });
 			}
 			fan.fist = rng() < 0.05 && !standing && !fan.holding;
+			if (clapRng() < CLAP_SHARE && clap && homeFan && !standing) {
+				fan.holding = "clap";
+				fan.fist = false;
+			}
 			drawFan(ctx, fan, fpx);
 		}
 		ctx.restore();
@@ -2864,6 +2875,8 @@ const LIGHT_Z = RAFTERS.origin.z - 2.2 - 2 / 8;
 const GLINT_R = 1.6;
 const GLINT_DRAWN = 2.8;
 const GLINT_ALPHA = 0.42;
+const GLINT_NARROW = 0.7;
+const GLINT_LONG = 2.2;
 let glint: HTMLCanvasElement | undefined;
 const glintSprite = (): HTMLCanvasElement => {
 	if (!glint) {
@@ -2901,8 +2914,12 @@ export const glintsAt = (
 		}
 		const p = project(cam, { x, y, z: 0 });
 		const near = project(cam, { x, y: y + GLINT_R, z: 0 });
-		const rx = GLINT_R * p.k;
-		const ry = Math.max(rx * 0.5, (near.y - p.y) * GLINT_DRAWN);
+		// (A light's reflection in a floor runs on toward the camera as a
+		// streak, narrower than it is long - near the camera too, where the
+		// floor is seen from above and it would otherwise come out a round
+		// white spot.)
+		const rx = GLINT_R * p.k * GLINT_NARROW;
+		const ry = Math.max(rx * GLINT_LONG, (near.y - p.y) * GLINT_DRAWN);
 		if (p.x + rx < 0 || p.x - rx > cam.viewW || rx < 0.5) {
 			continue;
 		}

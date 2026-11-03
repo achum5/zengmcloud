@@ -605,14 +605,19 @@ const Court3D = ({
 		const spec = arenaSpecFor(h);
 		// A playoff game: the home crowd's color-out (see paintStands).
 		const playoffs = !!boxScore?.playoffs;
-		const stands = (up: 0 | 1 | 2, seats: typeof crowd, end: 0 | undefined) =>
-			paintStands(h, a, seed, up, seats, end, fans, spec, playoffs);
+		const stands = (
+			up: 0 | 1 | 2,
+			seats: typeof crowd,
+			end: 0 | undefined,
+			clap = false,
+		) => paintStands(h, a, seed, up, seats, end, fans, spec, playoffs, clap);
 		return {
 			courtside: courtsideFor(h, a, spec, fans),
 			stanchion: paintStanchionPanel(h, h?.colors?.[0] ?? "#8c1d40"),
 			stands: stands(0, crowd, undefined),
 			standsUp: stands(1, crowd, undefined),
 			standsWave: stands(2, crowd, undefined),
+			standsClap: stands(0, crowd, undefined, true),
 			standsSparse: stands(0, sparse, undefined),
 			endStandsSparse: stands(0, sparse, 0),
 			endStands: [0, 1, 2].map((up) => stands(up as 0 | 1 | 2, crowd, 0)) as [
@@ -1537,6 +1542,7 @@ const Court3D = ({
 					stands: pt.stands,
 					standsUp: pt.standsUp,
 					standsWave: pt.standsWave,
+					standsClap: pt.standsClap,
 					standsSparse: pt.standsSparse,
 					endStandsSparse: pt.endStandsSparse,
 					endStands: pt.endStands,

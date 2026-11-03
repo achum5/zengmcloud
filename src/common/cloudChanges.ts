@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 144,
+		date: "2026-11-03",
+		text: "3D game: the home crowd claps. After every home basket the fans in their seats give it a hand, and with a game on the line they clap along with DEFENSE on the boards. And the arena lights now reflect off the floor as streaks running toward the camera instead of round white spots.",
+	},
+	{
 		n: 143,
 		date: "2026-11-03",
 		text: "3D game: joints that bend like a real body's. A planted foot pivots on the floor as a player turns instead of staying put with his ankle wrung round, arms keep their length going to the hips, the knees or the ball (the forearm used to shrink by a third), a defender reaching for a man beside him reaches out to the side instead of swinging his arm up behind his back, and no wrist, elbow or shoulder bends past where a real one stops.",
