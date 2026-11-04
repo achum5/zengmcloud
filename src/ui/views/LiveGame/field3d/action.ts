@@ -2503,6 +2503,8 @@ const LOCK_SHIFTS = new Set<Move>(["backerReady", "safetyReady"]);
 // with the return no quicker than this, ft/s.)
 const LOCK_LEAST_MS = 600;
 const LOCK_DRIFT_FPS = 4;
+// (How closely lockUp works out where the two meet.)
+const LOCK_MEET_TRIES = 20;
 // (A tackler set waiting on the man with the ball: turned with him every
 // this long, ms, if he has come round this far, radians.)
 const KEEP_STEP_MS = 300;
@@ -12726,14 +12728,34 @@ class Action {
 		} else {
 			b.hold(go + LOCK_REACT_SPREAD_MS * countOf(b, snap, 7));
 			const bAt = b.at;
-			const u = vc / (vc + bv);
+			const D = dist(bAt, cAt);
+			// (Met where the two of them get to at the same time, each up to
+			// speed off what he was doing - the blocker as much as the man
+			// coming, not off at his pace from a standing start.)
+			const bInto = SET.has(b.last.move) ? undefined : paceOn(b.last, bAt, cAt);
+			const bV0 = bInto ?? 0;
+			const bA = bInto === undefined ? RELEASE_ACCEL : RAMP_ACCEL;
+			const cTo = (u: number) => cGo + rampedMs(u * D, vc, cV0, cA);
+			const bTo = (u: number) => b.t + rampedMs((1 - u) * D, bv, bV0, bA);
+			let lo = 0;
+			let hi = 1;
+			for (let i = 0; i < LOCK_MEET_TRIES; i++) {
+				const mid = (lo + hi) / 2;
+				if (cTo(mid) < bTo(mid)) {
+					lo = mid;
+				} else {
+					hi = mid;
+				}
+			}
+			const u = (lo + hi) / 2;
 			meet = {
 				x: cAt.x + (bAt.x - cAt.x) * u,
 				y: cAt.y + (bAt.y - cAt.y) * u,
 			};
 			tm = Math.max(
-				Math.max(b.t, cGo) + 150 + (dist(bAt, cAt) / (vc + bv)) * 1000,
-				cGo + rampedMs(dist(cAt, meet), vc, cV0, cA),
+				Math.max(b.t, cGo) + 150 + (D / (vc + bv)) * 1000,
+				cTo(u),
+				bTo(u),
 			);
 		}
 		// Squared up to each other, a step apart.

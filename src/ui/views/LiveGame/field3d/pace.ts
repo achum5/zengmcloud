@@ -32,6 +32,10 @@ const EASE_LEAST_MS = 120;
 // anything but run on).
 const SNAP_CATCH_MS = 500;
 const SNAP_CATCH_MOST = 0.8;
+// (Up from nothing a step at a time instead - a first step this long at the
+// most, slower than this share of the next - not behind it at all.)
+const SNAP_STEP_MS = 160;
+const SNAP_STEP_SHARE = 0.6;
 
 // Set for the snap.
 export const SET = new Set<Move>([
@@ -239,6 +243,19 @@ export const offsOf = (legs: Leg[]) => {
 	const off: { b: number; r: number }[] = [];
 	for (let j = 1; j < legs.length; j++) {
 		if (!runsOn(legs[j]!) || !SET.has(legs[j - 1]!.move)) {
+			continue;
+		}
+		// (Not off it a step at a time, up from nothing - see rampInto: as
+		// slow off it as that, not behind it and then caught up the quicker
+		// for it.)
+		const next = legs[j + 1];
+		if (
+			next &&
+			runsOn(next) &&
+			joined(legs[j]!, next) &&
+			legs[j]!.t1 - legs[j]!.t0 <= SNAP_STEP_MS &&
+			paceIn(legs[j]!) < paceIn(next) * SNAP_STEP_SHARE
+		) {
 			continue;
 		}
 		const b = legs[j]!.t0;
