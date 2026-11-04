@@ -5601,8 +5601,16 @@ class Action {
 					const stop = stays
 						? undefined
 						: pauses.find((u) => u > b1 && u < b1 + rout);
+					// (Or, with too little of it after, back in before his stop and
+					// into it: not still coming across as he pulls up.)
 					if (stop !== undefined && stop + rout <= T) {
 						b1 = stop;
+					} else if (stop !== undefined) {
+						const back = Math.max(a1, stop - rout);
+						if (stop - back >= least) {
+							b1 = back;
+							rout = stop - back;
+						}
 					}
 					const ui = a1 - rin;
 					const uo = stays ? Infinity : b1 + rout;
@@ -6563,8 +6571,20 @@ class Action {
 			: 0;
 		if (slip) {
 			target!.hold(snap + 100);
+			// (As far as a set step or two gets him: short of it, if it is
+			// farther - not crabbed across there flat out.)
+			const aim = this.w({
+				d: this.of(setAt).d + 3,
+				a: qbStart.a + slipSide * 3,
+			});
+			const far = dist(target!.at, aim);
+			const most = (SHUFFLE_MOST * Math.max(0, snap + 550 - target!.t)) / 1000;
+			const u = far > most ? most / far : 1;
 			target!.go(
-				this.w({ d: this.of(setAt).d + 3, a: qbStart.a + slipSide * 3 }),
+				{
+					x: target!.at.x + (aim.x - target!.at.x) * u,
+					y: target!.at.y + (aim.y - target!.at.y) * u,
+				},
 				snap + 550,
 				"passSet",
 				this.ahead,
@@ -11101,8 +11121,13 @@ class Action {
 			}
 			// (Where he is on the blocker at t - `lat` feet over, across the
 			// field.)
+			// (Met on the move - a back still going through a fake: pulled up
+			// there, not the two of them carried on together at his pace.)
+			let stop: ((t: number) => Pt) | undefined;
+			const bAt = (t: number) =>
+				stop !== undefined && t > hitT ? stop(t) : b.posAt(t);
 			const on = (t: number, lat: number) => {
-				const p = b.posAt(t);
+				const p = bAt(t);
 				const u = clamp((t - hitT) / Math.max(1, end - hitT), 0, 1);
 				const ahead = edge ? EDGE_ON - u * (EDGE_ON + EDGE_PAST) : 2.6;
 				return {
@@ -11171,6 +11196,24 @@ class Action {
 				}
 			}
 			hits.set(m, hitT);
+			const moves = !moved.has(b) && !this.done.has(b.pid);
+			{
+				const p1 = b.posAt(hitT);
+				const p0 = b.posAt(hitT - 50);
+				const v = dist(p0, p1) / 0.05;
+				if (moves && v > SHUFFLE_MOST * HOLD_ON) {
+					const A = STOP_ACCEL * STOP_HARD;
+					const u = {
+						x: (p1.x - p0.x) / (v * 0.05),
+						y: (p1.y - p0.y) / (v * 0.05),
+					};
+					stop = (t: number) => {
+						const s = Math.min((t - hitT) / 1000, v / A);
+						const far = v * s - (A * s * s) / 2;
+						return { x: p1.x + u.x * far, y: p1.y + u.y * far };
+					};
+				}
+			}
 			const over = this.rushEdge(b, engaged);
 			const per = HAND_MS * (0.8 + r() * 0.5) * (1 - RUSH_QUICKER * over);
 			const amp = edge ? 0 : HAND_FT * (0.5 + r()) * (1 + RUSH_WIDER * over);
@@ -11197,10 +11240,9 @@ class Action {
 				t0 = x.t;
 				lat0 = x.lat;
 			}
-			const held = steps.map((x) => b.posAt(x.t));
+			const held = steps.map((x) => bAt(x.t));
 			// (Knocked back a step as he gets into him, the two of them - see
 			// JOLT_PER_FPS - and that ground made up as he gives the rest.)
-			const moves = !moved.has(b) && !this.done.has(b.pid);
 			const jolt = moves ? Math.min(JOLT_MOST, vHit * JOLT_PER_FPS) : 0;
 			const shove = (t: number) => {
 				const u = clamp((t - hitT) / JOLT_MS, 0, 1);
@@ -11229,7 +11271,13 @@ class Action {
 						x: held[k]!.x - dir * shove(x.t),
 						y: held[k]!.y + dir * x.lat * 0.6,
 					};
-					b.go(at, x.t, "passSet", this.facing(at, him[k]!));
+					// (In strides while he is still quicker than a set.)
+					const fps = (dist(b.at, at) / Math.max(1, x.t - b.t)) * 1000;
+					if (fps > SHUFFLE_MOST * HOLD_ON) {
+						b.go(at, x.t);
+					} else {
+						b.go(at, x.t, "passSet", this.facing(at, him[k]!));
+					}
 				});
 			}
 			locks.push({ m, b, hitT, ts: steps.map((x) => x.t) });
@@ -15202,7 +15250,13 @@ class Action {
 			const v = m.top * 0.8;
 			const far = dist(m.at, ring);
 			const ease = Math.min(far * 0.5, (v * v) / (2 * STOP_ACCEL * STOP_HARD));
-			const u = far > 0 ? (far - ease) / far : 1;
+			// (Round any man down on the way - not over him.)
+			const way = this.wayRound(m.at, ring, m.t);
+			for (const p of way.slice(0, -1)) {
+				m.run(p, v, "run");
+			}
+			const last = dist(m.at, ring);
+			const u = last > 0 ? Math.max(0, last - ease) / last : 1;
 			m.run(
 				{
 					x: m.at.x + (ring.x - m.at.x) * u,
@@ -15227,6 +15281,79 @@ class Action {
 		// (The camera on them all.)
 		this.party = { from: c0, at: spotOf(PIN_SPOTS[0]!.f / 2, 0) };
 		return true;
+	}
+
+	// The way from `from` to `to` at t round every man down then but `but`,
+	// past his head or his feet - by a corner or two, the shortest way clear
+	// of them all (see taunt); straight there, if there is none - or, with
+	// `near`, if he is too near one to start with (stepped off it after:
+	// see offMenDown). The corners on it, and `to`.
+	wayRound(from: Pt, to: Pt, t: number, but: Actor[] = [], near = false): Pt[] {
+		const bodies = this.men
+			.filter((o) => !but.includes(o) && DOWN.has(legAt(o, t).move))
+			.map((o) => {
+				const at = o.posAt(t);
+				const yaw = yawThen(o, t + 1);
+				const head = LIE_BACKWARD.has(legAt(o, t + 1).move) ? -1 : 1;
+				const u = { x: Math.cos(yaw) * head, y: Math.sin(yaw) * head };
+				const along = (d: number, x: number): Pt => ({
+					x: at.x + u.x * d - u.y * x,
+					y: at.y + u.y * d + u.x * x,
+				});
+				return {
+					tip: along(HELP_CHEST + TAUNT_HEAD_FT, 0),
+					toe: along(-HELP_LEGS, 0),
+					corners: [1, -1].flatMap((x) => [
+						along(
+							HELP_CHEST + TAUNT_HEAD_FT + TAUNT_ROUND_FT,
+							x * TAUNT_ROUND_FT,
+						),
+						along(-HELP_LEGS - TAUNT_ROUND_FT, x * TAUNT_ROUND_FT),
+					]),
+				};
+			});
+		// (No nearer any of them on the way than either end of it, if that
+		// is nearer - a little.)
+		const clear = (a: Pt, b: Pt) =>
+			bodies.every(
+				(o) =>
+					segGap(a, b, o.tip, o.toe) >=
+					Math.min(
+						TAUNT_CLEAR_FT,
+						segGap(a, a, o.tip, o.toe),
+						segGap(b, b, o.tip, o.toe),
+					) -
+						TAUNT_SLACK_FT,
+			);
+		if (
+			bodies.length === 0 ||
+			clear(from, to) ||
+			(near &&
+				bodies.some((o) => segGap(from, from, o.tip, o.toe) < TAUNT_CLEAR_FT))
+		) {
+			return [to];
+		}
+		const corners = bodies.flatMap((o) => o.corners);
+		let best: Pt[] = [to];
+		let most = Infinity;
+		for (const a of corners) {
+			if (!clear(from, a)) {
+				continue;
+			}
+			const la = dist(from, a);
+			if (la + dist(a, to) < most && clear(a, to)) {
+				most = la + dist(a, to);
+				best = [a, to];
+			}
+			for (const b of corners) {
+				const len = la + dist(a, b) + dist(b, to);
+				if (b !== a && len < most && clear(a, b) && clear(b, to)) {
+					most = len;
+					best = [a, b, to];
+				}
+			}
+		}
+		return best;
 	}
 
 	// The moment after: `hero`'s teammates nearest running to him from c0,
@@ -15292,7 +15419,13 @@ class Action {
 			const v = m.top * (0.7 + r() * 0.15);
 			const far = dist(m.at, to);
 			const ease = Math.min(far * 0.5, (v * v) / (2 * STOP_ACCEL * STOP_HARD));
-			const u = far > 0 ? (far - ease) / far : 1;
+			// (Round any man down on the way - not over him.)
+			const way = this.wayRound(m.at, to, m.t);
+			for (const p of way.slice(0, -1)) {
+				m.run(p, v, "sprint");
+			}
+			const last = dist(m.at, to);
+			const u = last > 0 ? Math.max(0, last - ease) / last : 1;
 			m.run(
 				{ x: m.at.x + (to.x - m.at.x) * u, y: m.at.y + (to.y - m.at.y) * u },
 				v,
@@ -16449,7 +16582,10 @@ class Action {
 					: (big ? 3 : 3.6) + r() * 1.1;
 			if (dist(m.at, to) > 2) {
 				const from = m.t;
-				const way = this.mobAt ? skirt(m.at, to, this.mobAt) : [to];
+				// (Round any man still down on the way, too.)
+				const way = this.mobAt
+					? skirt(m.at, to, this.mobAt)
+					: this.wayRound(m.at, to, m.t, [m], true);
 				const pace = worn ? fps * (1 - WINDED_SLOWER * winded) : fps;
 				way.forEach((p, k) => {
 					if (k === way.length - 1 && pace >= 7) {
