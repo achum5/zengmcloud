@@ -513,8 +513,9 @@ export const stageCrew = (
 			return { to: w({ d: spotO.d - 3, a: spotO.a - 2 }), fps: JOG };
 		}
 		if (o === "R") {
+			// (Not back out past the end line, dead near it.)
 			return {
-				to: w({ d: deadO.d - 30, a: clamp(deadO.a + 15, -60, 60) }),
+				to: onField(w({ d: deadO.d - 30, a: clamp(deadO.a + 15, -60, 60) })),
 				fps: JOG,
 			};
 		}

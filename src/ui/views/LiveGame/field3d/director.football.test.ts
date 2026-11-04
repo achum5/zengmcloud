@@ -1553,8 +1553,9 @@ describe("after the whistle", () => {
 							!["jog", "run", "sprint"].includes(a.move) ||
 							b.move !== "stand" ||
 							b.t0 !== a.t1 ||
-							b.from.x !== a.to.x ||
-							b.from.y !== a.to.y
+							// (Stood, or all but: a step shoved against an edge.)
+							Math.hypot(b.to.x - b.from.x, b.to.y - b.from.y) >
+								(b.t1 - b.t0) / 1000
 						) {
 							return;
 						}

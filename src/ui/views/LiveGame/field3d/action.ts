@@ -17,6 +17,7 @@ import {
 	FIELD_W,
 	GOAL_L,
 	GOAL_R,
+	MID_X,
 	MID_Y,
 	NET_BACK,
 	POST_W,
@@ -1448,11 +1449,11 @@ class Actor {
 		const moveOf = act
 			? (i: number) => gait(paceOf(i))
 			: slower(l.move, n, dt, paceOf);
-		const stepsOf = (bend: number) => {
+		const stepsOf = (bend: number, by = 1) => {
 			const out: Pt[] = [];
 			let at = this.at;
 			for (let i = 0; i < n; i++) {
-				const h = way + (bend * (i + 0.5)) / n;
+				const h = way + bend * Math.min(1, (i + 0.5) / (n * by));
 				const ft = paceOf(i) * dt;
 				at = { x: at.x + Math.cos(h) * ft, y: at.y + Math.sin(h) * ft };
 				out.push(at);
@@ -1475,6 +1476,40 @@ class Actor {
 					break;
 				}
 				steps = stepsOf(side * bend);
+			}
+		}
+		// (Into the edge of where he can go - an end line, a sideline he is
+		// not let over: turned along it as he slows, sooner the nearer it
+		// is - not stopped dead against it.)
+		const inside = (p: Pt) =>
+			p.x >= 1 &&
+			p.x <= FIELD_L - 1 &&
+			p.y >= 1 - this.roam &&
+			p.y <= FIELD_W - 1 + this.roam;
+		const out = steps.find((p) => !inside(p));
+		if (out) {
+			const end = out.x < 1 || out.x > FIELD_L - 1;
+			const offOf = (a: number) =>
+				Math.atan2(Math.sin(a - way), Math.cos(a - way));
+			const [a, b] = (end ? [Math.PI / 2, -Math.PI / 2] : [0, Math.PI]).map(
+				offOf,
+			);
+			const mid = end
+				? Math.sign(MID_Y - this.at.y || 1) * (Math.PI / 2)
+				: Math.sign(MID_X - this.at.x || 1) > 0
+					? 0
+					: Math.PI;
+			const turn =
+				Math.abs(Math.abs(a!) - Math.abs(b!)) < EASE_EDGE_TIE
+					? offOf(mid)
+					: Math.abs(a!) < Math.abs(b!)
+						? a!
+						: b!;
+			for (const by of EASE_EDGE_BY) {
+				steps = stepsOf(turn, by);
+				if (steps.every(inside)) {
+					break;
+				}
 			}
 		}
 		for (let i = 0; i < n; i++) {
@@ -2613,6 +2648,11 @@ const PURSUIT_LANE = 7;
 const EASE_OFF_FT = 12;
 const EASE_BENDS = [0.35, 0.7, 1.05, 1.4];
 const EASE_PAST_FT = 3.5;
+// (Easing off into an edge: turned along it over all of it, or if that
+// still takes him over, over the first this much of it - the nearer way
+// round, or toward the middle when the two are within this much, radians.)
+const EASE_EDGE_BY = [1, 0.6, 0.35, 0.2, 0.1] as const;
+const EASE_EDGE_TIE = 0.2;
 // (Carrying on the way he was going, before he eases off, ms - see carryOn.)
 const CARRY_MOST_MS = 500;
 // (Broken down a few steps off a man to hit, this long at least - see
