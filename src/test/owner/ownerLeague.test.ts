@@ -531,7 +531,8 @@ test.skipIf(!env.OWNER_LEAGUE || !env.OWNER_SEASONS)(
 				} else if (
 					(e.type === "freeAgent" || e.type === "reSigned") &&
 					e.contract &&
-					e.contract.amount >= 0.12 * g.get("salaryCap")
+					e.contract.amount >=
+						Number(env.OWNER_SIGN_SHARE ?? 0.12) * g.get("salaryCap")
 				) {
 					lines.push(
 						`${e.season} ph${e.phase ?? g.get("phase")} ${e.type} ${abbrev.get(e.tids[0])} ${await label(e.pids[0])}`,
