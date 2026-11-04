@@ -3701,6 +3701,9 @@ const TWIN_EVERY_MS = 50;
 const TWIN_JOIN_MS = 300;
 // (Stood, and moved this quick or more by it, ft/s: stepped.)
 const TWIN_STEP_FPS = 2;
+// (Shorter than this (ms), a piece of one of those steps goes as the step
+// next to it does.)
+const TWIN_SLIVER_MS = 100;
 // One of his own side nearer the man with the ball than this (feet): eased
 // off his way, no more than this (feet) - not this long (ms) after he has
 // it, nor before it leaves him (or he goes down).
@@ -5188,6 +5191,7 @@ class Action {
 			});
 			// (Stood about, and moved off where he stood by it: stepped over,
 			// not slid there still stood.)
+			const stepped = new Set<Leg>();
 			for (const l of legs) {
 				const fps =
 					l.t1 > l.t0 ? dist(l.from, l.to) / ((l.t1 - l.t0) / 1000) : 0;
@@ -5202,6 +5206,35 @@ class Action {
 					delete l.yaw;
 				} else {
 					l.yaw = way.yaw;
+				}
+				stepped.add(l);
+			}
+			// (A sliver of the first or last of it, easing into it or out of
+			// it, in the step it is part of: not a walk for a moment into a
+			// shuffle.)
+			for (const [k, l] of legs.entries()) {
+				if (!stepped.has(l) || l.t1 - l.t0 >= TWIN_SLIVER_MS) {
+					continue;
+				}
+				const next = legs[k + 1];
+				const prev = legs[k - 1];
+				const like = [next, prev].find(
+					(o) =>
+						o !== undefined &&
+						stepped.has(o) &&
+						o.t1 - o.t0 >= TWIN_SLIVER_MS &&
+						(o === next ? o.t0 === l.t1 : o.t1 === l.t0) &&
+						(o.to.x - o.from.x) * (l.to.x - l.from.x) +
+							(o.to.y - o.from.y) * (l.to.y - l.from.y) >
+							0,
+				);
+				if (like) {
+					l.move = like.move;
+					if (like.yaw === undefined) {
+						delete l.yaw;
+					} else {
+						l.yaw = like.yaw;
+					}
 				}
 			}
 		}
