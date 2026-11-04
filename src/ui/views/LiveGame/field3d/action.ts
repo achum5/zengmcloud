@@ -3746,6 +3746,10 @@ const breakOf = (a: Pt, b: Pt, c: Pt, vIn: number, vOut: number): Break => {
 // out into it - off a fake - up from the `v0` ft/s he has of it at
 // RAMP_ACCEL.)
 const RELEASE_ACCEL = 24;
+// In motion across behind the line on a sweep: at this pace (ft/s) - no
+// quicker than this, if he has less time for it.
+const JET_FPS = 19;
+const JET_MOST_FPS = 22;
 const offLine = (fps: number, v0 = 0): Break =>
 	v0 > 0
 		? {
@@ -11451,8 +11455,23 @@ class Action {
 			}
 			const since = carrier.legs[k]?.t0 ?? set.t0;
 			const far = dist(set.from, meshPt);
-			const go = Math.max(since + 300, mesh - (far / 19) * 1000);
-			mesh = Math.max(mesh, go + (far / (carrier.top * 0.85)) * 1000);
+			// (Up to speed out of his stance - and, set only just in time,
+			// no quicker across than a man goes in motion, the handoff
+			// later for it: see JET_FPS.)
+			const go = Math.max(
+				since + 300,
+				mesh - rampedMs(far, JET_FPS, 0, RELEASE_ACCEL),
+			);
+			mesh = Math.max(
+				mesh,
+				go +
+					rampedMs(
+						far,
+						Math.min(carrier.top * 0.85, JET_MOST_FPS),
+						0,
+						RELEASE_ACCEL,
+					),
+			);
 			carrier.cut(go);
 			carrier.go(meshPt, mesh, undefined, this.toward(carrier.at, meshPt));
 		}
