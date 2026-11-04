@@ -106,10 +106,26 @@ threes at real speed):
 | Same man, same setup + spot + form again |              8 of 72 |                                                                                                                                          |
 
 Next, in order: how it misses (aimed short / long / off the side / air /
-glass by his shooting, distance and where the rebound goes - in testing);
+glass by his shooting, distance and where the rebound goes - built and
+measured, not pushed: every rebound landing somewhere new reshuffles the
+test games, and seven older glitches show up in the reshuffled ones - see
+"Blocking" below);
 his footwork into it (measure first); how he got it (the pass, his way to
 the spot, his catch); the defense (closeout kinds, the man's reaction
 after); everyone after it.
+
+Blocking how it misses - glitches the reshuffled test games turn up, each
+to be fixed for itself (they would turn up in real games too):
+
+- a man jumps 4.9 ft in a tenth of a second (a run set to start where a
+  drift off the ball took him, with 28 ms to get back)
+- a loose ball bouncing through a man stood there (4 where 1 is allowed)
+- a contested jumper hidden behind his defender from the camera
+- a man backing down in the post with nobody to back into
+- the help on a kick-out not closing back out often enough (79%, 85% wanted)
+- sliding, the foot he is down on turning (0.39, under 0.3 wanted)
+- a man sat on his chair too near the coach in a huddle
+- with air balls on: the ball jumping 3.5 ft between frames off one
 
 Checks: the existing tests (feet behind the line, a contested jumper stays
 in sight, the ball never jumps, real speed with no darts) on every change.
