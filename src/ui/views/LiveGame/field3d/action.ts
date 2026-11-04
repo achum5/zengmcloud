@@ -905,6 +905,25 @@ class Actor {
 		const most = Math.sqrt(BEND_LAT * R);
 		if (most < v * BEND_SLOW) {
 			pace = this.slowInto(most / legPace(lk), CUT_ACCEL) ?? v;
+			if (pace > most) {
+				// (Or, still getting up to speed into it - no time on the
+				// stretch to slow for it as well: no quicker than he can take
+				// it at to the last of it, and round it at that - there that
+				// much later.)
+				let shift = 0;
+				for (let i = this.stretchFrom(); i < legs.length; i++) {
+					const x = legs[i]!;
+					const ms = x.t1 - x.t0;
+					if (x.t0 + shift < this.pinned) {
+						continue;
+					}
+					x.t0 += shift;
+					const need = (dist(x.from, x.to) / most) * 1000;
+					shift += Math.max(0, need - ms);
+					x.t1 = x.t0 + Math.max(ms, need);
+				}
+				pace = most;
+			}
 		}
 		const s = Math.sign(u.x * o.y - u.y * o.x) || 1;
 		const c = { x: start.x - s * u.y * R, y: start.y + s * u.x * R };
