@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 169,
+		date: "2026-11-04",
+		text: "3D games: defenders closing out on a shooter no longer dart the last few feet faster than anyone can run. They get only as far as they really could, so a late closeout looks late.",
+	},
+	{
 		n: 168,
 		date: "2026-11-04",
 		text: "3D games: a shooter waiting for a pass he'll shoot right away now stands with his feet already turned toward the rim, instead of facing the passer and spinning round after the catch.",

@@ -21437,21 +21437,37 @@ class Director {
 			// sets off from there).
 			let left: Pt | undefined;
 			// How far he gets in a run of his set off from there: from
-			// standing - unless it follows straight on from a run of his he is
-			// still going at the end of, or takes him to the spot he does
-			// something on (the shot he contests from the side), however hard
-			// he has to go to get there.
+			// standing and pulled up at the end - or on from the pace of a run
+			// of his he is still going at the end of, and on at a pace into
+			// something he does at the end of it (the shot he contests from the
+			// side), as hard as he can go to get there. Never faster than
+			// his legs get him going: a closeout put in off a man he was
+			// shuffling along with was five feet in a third of a second, from
+			// next to standing.
 			const reach = (m: Move): number => {
 				const prev = out.at(-1);
 				const onto = tr.acts.some(
 					(a) => a.t0 <= m.t1 + 300 && a.t1 >= m.t1 - 50,
 				);
-				return onto ||
-					(prev &&
-						(prev.v1 === undefined || prev.v1 > 0) &&
-						m.t0 - prev.t1 <= 300)
-					? (FASTEST * (m.t1 - m.t0)) / 1000
-					: reachIn(m.t1 - m.t0, FASTEST, BURST);
+				const flows =
+					prev !== undefined &&
+					(prev.v1 === undefined || prev.v1 > 0) &&
+					m.t0 - prev.t1 <= 300;
+				if (!onto && !flows) {
+					return reachIn(m.t1 - m.t0, FASTEST, BURST);
+				}
+				const v0 = !flows
+					? 0
+					: (prev.v1 ??
+						dist(prev.from, prev.to) /
+							Math.max(0.05, (prev.t1 - prev.t0) / 1000));
+				return reachIn(
+					m.t1 - m.t0,
+					FASTEST,
+					BURST,
+					Math.min(v0, FASTEST),
+					onto ? CLOSE_CHOP : FASTEST,
+				);
 			};
 			// A run set off from farther back than it was planned from, no
 			// faster than his legs: all the way there, taking the time it

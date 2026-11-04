@@ -417,19 +417,26 @@ export const paceFor = (
 };
 
 // The farthest (feet) a man going for `speed` gets in `ms` - from
-// standing, and pulled up at the end of it (see runMs).
-export const reachIn = (ms: number, speed: number, effort = 1): number => {
+// standing, and pulled up at the end of it (see runMs) - or already going
+// v0 as he sets off, and going v1 still at the end.
+export const reachIn = (
+	ms: number,
+	speed: number,
+	effort = 1,
+	v0 = 0,
+	v1 = 0,
+): number => {
 	if (ms <= 0) {
 		return 0;
 	}
 	let a = 0;
-	let b = (Math.max(0.5, speed) * ms) / 1000;
-	if (runMs(b, speed, 0, effort) <= ms) {
+	let b = (Math.max(0.5, speed, v0) * ms) / 1000;
+	if (runMs(b, speed, v0, effort, v1) <= ms) {
 		return b;
 	}
 	for (let n = 0; n < 24; n++) {
 		const m = (a + b) / 2;
-		if (runMs(m, speed, 0, effort) <= ms) {
+		if (runMs(m, speed, v0, effort, v1) <= ms) {
 			a = m;
 		} else {
 			b = m;

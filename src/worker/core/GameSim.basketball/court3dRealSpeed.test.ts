@@ -15,6 +15,12 @@ import { simRealGame } from "./realGameForTests.ts";
 // every tenth of a second.
 const STEP = 100;
 const RUNS = new Set(["run", "jog", "sprint", "walk"]);
+// A dart: this much quicker or slower (feet a second) from one tenth of a
+// second to the next - and no more of them than this in the game. (37,
+// when a closeout put in off a man he was shuffling along with could go
+// five feet in a third of a second from next to standing.)
+const DART = 10;
+const DARTS_MOST = 33;
 
 let tl: CourtTimeline;
 beforeAll(async () => {
@@ -26,6 +32,10 @@ describe("3D court, a real game", () => {
 	test("at real speed nobody jumps from one spot to another, or runs backward at a run", () => {
 		const jumps: string[] = [];
 		const backward: string[] = [];
+		// (And darts - from next to standing to a run, or back, in a tenth
+		// of a second - are few.)
+		const darts: string[] = [];
+		const pace = new Map<number, number>();
 		let frames = 0;
 		const tracks = [...tl.tracks.values()].filter((t) => t.pid >= 0);
 		const end = tl.beats.at(-1)!.end;
@@ -35,15 +45,19 @@ describe("3D court, a real game", () => {
 			if (fastAt(tl, t) > 1.2) {
 				prev.clear();
 				since.clear();
+				pace.clear();
 				continue;
 			}
 			const cut = tl.cuts.some((c) => c > t - STEP - 1 && c <= t + 1);
+			// (A dart is over two steps: either side of a cut, neither.)
+			const nearCut = tl.cuts.some((c) => c > t - 2 * STEP - 1 && c <= t + 1);
 			for (const tr of tracks) {
 				const q = evalPlayer(tl, tr.pid, t);
 				const p = prev.get(tr.pid);
 				prev.set(tr.pid, q.shown ? q : undefined);
 				if (!q.shown || !p || cut) {
 					since.delete(tr.pid);
+					pace.delete(tr.pid);
 					continue;
 				}
 				frames += 1;
@@ -52,6 +66,11 @@ describe("3D court, a real game", () => {
 				const v = Math.hypot(vx, vy);
 				if (v > 30) {
 					jumps.push(`${tr.pid} ${(v / 10).toFixed(1)} ft at ${t}`);
+				}
+				const was = pace.get(tr.pid);
+				pace.set(tr.pid, v);
+				if (was !== undefined && !nearCut && Math.abs(v - was) > DART) {
+					darts.push(`${tr.pid} ${was.toFixed(0)} to ${v.toFixed(0)} at ${t}`);
 				}
 				const back =
 					v > 4 &&
@@ -71,6 +90,7 @@ describe("3D court, a real game", () => {
 		assert.isAbove(frames, 100_000);
 		assert.deepEqual(jumps, []);
 		assert.deepEqual(backward, []);
+		assert.isAtMost(darts.length, DARTS_MOST, darts.join("; "));
 	}, 900_000);
 
 	// Backed his man down on the block, a set's drop step or up-and-under to
