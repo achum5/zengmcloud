@@ -9379,6 +9379,30 @@ class Action {
 		}
 		const way = Math.atan2(next.to.y - next.from.y, next.to.x - next.from.x);
 		const left = Math.sin(Math.atan2(foe.p.y - at.y, foe.p.x - at.x) - way) > 0;
+		// (Now and then a spin: round on a planted foot off him, his back to
+		// him, as far on as he would have gone - with the room to run on
+		// after it.)
+		const end = off + SPIN_MS;
+		const on = m.posAt(end);
+		if (
+			countOf(m, this.input.snap, 45) < RUSH_SPIN &&
+			stop - end >= RUSH_SPIN_AFTER &&
+			dist(at, on) >= RUSH_SPIN_LEAST_FT
+		) {
+			m.split(end);
+			const i = legs.findIndex((l) => l.t0 >= off);
+			const j = legs.findIndex((l) => l.t0 >= end);
+			legs.splice(i, j - i, {
+				t0: off,
+				t1: end,
+				from: at,
+				to: on,
+				move: "spin",
+				yaw: way,
+				turn: (left ? 1 : -1) * Math.PI * 2,
+			});
+			return;
+		}
 		const swim = countOf(m, this.input.snap, 38) < RUSH_SWIM;
 		m.arms(swim ? (left ? "swimL" : "swimR") : left ? "ripL" : "ripR", t0, t1);
 	}
@@ -15938,6 +15962,11 @@ const RUSH_MOVE_AFTER = 400;
 const RUSH_MOVE_LEAST_MS = 380;
 const RUSH_MOVE_NEAR = 6;
 const RUSH_MOVE_LEAST = 700;
+// (A spin instead, this often - with this long left to run on after it at
+// least, ms, and going this far in it, feet.)
+const RUSH_SPIN = 0.2;
+const RUSH_SPIN_AFTER = 150;
+const RUSH_SPIN_LEAST_FT = 2;
 // A man hurt with no part in it the sim names: pulled up lame no later
 // than this long before the whistle (ms), nor sooner than this long after
 // the snap, going all out (at least this quick, ft/s) at least this far

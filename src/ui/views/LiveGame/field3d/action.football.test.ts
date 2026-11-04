@@ -208,6 +208,11 @@ describe("the plays acted out", () => {
 			}
 			sacks += 1;
 			for (const part of play.parts) {
+				// (Or a spin off him instead: see below.)
+				if (part.legs.some((l) => l.move === "spin")) {
+					moves += 1;
+					continue;
+				}
 				const ls = part.legs.filter((l) =>
 					/^(swim|rip)[LR]$/.test(l.arms ?? ""),
 				);
@@ -241,6 +246,41 @@ describe("the plays acted out", () => {
 		// (Not a man come free with nobody on him.)
 		assert.isAbove(sacks, 3);
 		assert.isAbove(moves, sacks / 3);
+	}, 120_000);
+
+	test("a pass rusher now and then spins off his block instead: round once, his feet going on, straight off the block and onto a run", () => {
+		let spins = 0;
+		eachPlay((play) => {
+			if (play.kind !== "pass") {
+				return;
+			}
+			for (const part of play.parts) {
+				part.legs.forEach((l, k) => {
+					const before = part.legs[k - 1];
+					if (l.move !== "spin" || before?.move !== "engage") {
+						return;
+					}
+					spins += 1;
+					assert.notStrictEqual(part.team, play.offense, `play ${play.i}`);
+					assert.strictEqual(before.t1, l.t0, `play ${play.i}`);
+					// (In one piece or cut in two: round once, all told.)
+					let n = k;
+					let turn = 0;
+					while (part.legs[n]?.move === "spin") {
+						turn += part.legs[n]!.turn ?? 0;
+						n += 1;
+					}
+					const last = part.legs[n - 1]!;
+					assert.closeTo(Math.abs(turn), Math.PI * 2, 1e-9, `play ${play.i}`);
+					assert.isAtLeast(dist(l.from, last.to), 2, `play ${play.i}`);
+					const after = part.legs[n];
+					assert.isDefined(after, `play ${play.i}`);
+					assert.strictEqual(after!.t0, last.t1, `play ${play.i}`);
+					assert.notStrictEqual(after!.move, "stand", `play ${play.i}`);
+				});
+			}
+		});
+		assert.isAtLeast(spins, 2);
 	}, 120_000);
 
 	test("the quarterback hit now and then as he lets it go: the ball gone first, a man of the other side's shove, down, and up again, a hand up now and then (or, hurt, not)", () => {

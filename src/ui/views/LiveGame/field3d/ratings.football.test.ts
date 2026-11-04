@@ -103,7 +103,11 @@ const missesIn = (tl: FieldTimeline) => {
 	const n = { hurdle: 0, spin: 0, juke: 0 };
 	for (const play of tl.plays) {
 		for (const part of play.parts) {
-			for (const l of part.legs) {
+			for (const [k, l] of part.legs.entries()) {
+				// (Not a pass rusher's spin off his block.)
+				if (l.move === "spin" && part.legs[k - 1]?.move === "engage") {
+					continue;
+				}
 				if ((MISSES as readonly string[]).includes(l.move)) {
 					n[l.move as (typeof MISSES)[number]] += 1;
 				}
