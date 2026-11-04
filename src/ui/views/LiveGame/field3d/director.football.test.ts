@@ -4,7 +4,7 @@ import processLiveGameEvents, {
 	type SportState,
 } from "../../../util/processLiveGameEvents.football.tsx";
 import { HERO_CAM_FT } from "./action.ts";
-import { aimFor } from "./aim.ts";
+import { aimFor, glideAim, leadAim, type Glide, type Lead } from "./aim.ts";
 import { FIGURE_SCALE } from "./body.ts";
 import { GREET_CAM_FT } from "./greet.ts";
 import {
@@ -630,6 +630,75 @@ describe("in close on a big play's man", () => {
 		}
 		assert.isAbove(close, 2);
 	}, 20_000);
+});
+
+// The camera going after a man with it down the field leads him - room in
+// the picture ahead of him, not him in the middle of it at a sprint (the
+// camera eased after its aim trails it) - and never lets the ball out of it.
+describe("the camera after a runner", () => {
+	test("a man going away down the field kept back of the middle of the picture", () => {
+		// (As Field3D follows its aim: critically damped.)
+		const follow = (x: number, v: number, to: number, w: number, s: number) => {
+			const y = x - to;
+			const e = Math.exp(-w * s);
+			const k = (v + w * y) * s;
+			return [to + (y + k) * e, (v - w * k) * e] as const;
+		};
+		const STEP = 16;
+		const rel: number[] = [];
+		for (const game of games) {
+			const tl = stage(game);
+			for (const play of tl.plays) {
+				if (play.kind !== "run" && play.kind !== "pass") {
+					continue;
+				}
+				let g: Glide | undefined;
+				const lead: Lead = { v: 0 };
+				let x = 0;
+				let vx = 0;
+				let w = 0;
+				let vw = 0;
+				let was: number | undefined;
+				for (let t = play.snap - 500; t < play.whistle; t += STEP) {
+					const m = momentAt(tl, t);
+					const aim = aimFor(m);
+					const to = [aim.x, aim.y, aim.width, aim.z ?? 2];
+					if (!g) {
+						g = { was: to, off: [], ms: 0 };
+						x = aim.x;
+						w = aim.width;
+						leadAim(lead, aim.x, 0, false);
+						continue;
+					}
+					const [gx, , gw] = glideAim(g, to, STEP);
+					const ahead = leadAim(lead, aim.x, STEP, m.carrier !== undefined);
+					[x, vx] = follow(x, vx, gx! + ahead, 3.2, STEP / 1000);
+					[w, vw] = follow(w, vw, gw!, 2.4, STEP / 1000);
+					const f = m.focus;
+					if (!f) {
+						was = undefined;
+						continue;
+					}
+					assert.isBelow(Math.abs(f.x - x), w / 2, `play ${play.i}`);
+					const v = was === undefined ? 0 : (f.x - was) / (STEP / 1000);
+					was = f.x;
+					if (
+						m.carrier === play.offense &&
+						(f.x - play.losX) * play.dir > 5 &&
+						v * play.dir > 15
+					) {
+						rel.push(((f.x - x) * play.dir) / (w / 2));
+					}
+				}
+			}
+		}
+		rel.sort((a, b) => a - b);
+		assert.isAbove(rel.length, 300);
+		const at = (q: number) => rel[Math.floor(rel.length * q)]!;
+		assert.isBelow(at(0.5), -0.08);
+		assert.isBelow(at(0.9), 0);
+		assert.isAbove(at(0.1), -0.4);
+	}, 120_000);
 });
 
 // Before the snap on a big down, in close on the quarterback in the gun

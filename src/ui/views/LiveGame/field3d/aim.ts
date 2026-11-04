@@ -540,6 +540,37 @@ export const glideAim = (g: Glide, to: number[], ms: number): number[] => {
 	return to.map((v, i) => v + (g.off[i] ?? 0) * l);
 };
 
+// And the camera going after it on along the field leads it, the way a man
+// on a camera leads a runner: by as much as it would otherwise trail behind
+// him (the picture is followed easing in - see Field3D's follow - and so
+// lags a man at a sprint by half a second, the room left ahead of him in
+// the picture eaten up). How fast what it looks at is going along (a jump
+// left out), eased over LEAD_EASE_MS; looked on ahead of it this long, and
+// no further than LEAD_MOST feet. Only a man with it (`held`), not the ball
+// in the air - a kick comes down to a man going back the way it came.
+const LEAD_S = 0.45;
+const LEAD_EASE_MS = 350;
+const LEAD_MOST = 14;
+export type Lead = { was?: number; v: number };
+export const leadAim = (
+	l: Lead,
+	x: number,
+	ms: number,
+	held: boolean,
+): number => {
+	if (l.was !== undefined && ms > 0) {
+		const d = x - l.was;
+		const v = !held
+			? 0
+			: Math.abs(d) > AIM_JUMPS[0]! * Math.max(1, ms / FRAME_MS)
+				? l.v
+				: d / (ms / 1000);
+		l.v += (v - l.v) * (1 - Math.exp(-ms / LEAD_EASE_MS));
+	}
+	l.was = x;
+	return Math.min(LEAD_MOST, Math.max(-LEAD_MOST, l.v * LEAD_S));
+};
+
 // In close on a man - the head coach calling a timeout, the interview after
 // the game: the stadium behind out of focus (see scene.ts).
 export const closeIn = (m: FieldMoment): boolean => {

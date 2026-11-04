@@ -43,8 +43,10 @@ import {
 	fromLow,
 	glideAim,
 	closeUpOf,
+	leadAim,
 	rigFor,
 	type Glide,
+	type Lead,
 } from "./aim.ts";
 import { buildFieldClocks, fieldClockAt } from "./clock.ts";
 import { buildPlayClocks, playClockAt } from "./playClock.ts";
@@ -1064,6 +1066,7 @@ const Field3D = ({
 		vz: 0,
 	});
 	const glide = useRef<Glide>({ was: [], off: [], ms: 0 });
+	const lead = useRef<Lead>({ v: 0 });
 	// The turn each man was drawn in last frame (see steadied).
 	const turns = useRef(
 		new Map<number, { n: number; turn: number; at: number }>(),
@@ -1312,6 +1315,7 @@ const Field3D = ({
 				c.vz = 0;
 				s.snapCam = false;
 				glide.current = { was: [aim.x, aim.y, width, lift], off: [], ms: 0 };
+				lead.current = { was: aim.x, v: 0 };
 			} else {
 				const secs =
 					(dt / 1000) * Math.max(1, p.rate) * (replay ? REPLAY_SPEED : 1);
@@ -1320,10 +1324,23 @@ const Field3D = ({
 					[aim.x, aim.y, width, lift],
 					secs * 1000,
 				);
+				// (Live, from the press box: on ahead of a man going along.)
+				if (replay || close) {
+					lead.current = { v: 0 };
+				}
+				const ahead =
+					replay || close
+						? 0
+						: leadAim(
+								lead.current,
+								aim.x,
+								secs * 1000,
+								moment.carrier !== undefined,
+							);
 				[c.x, c.vx] = follow(
 					c.x,
 					c.vx,
-					gx!,
+					gx! + ahead,
 					angle !== undefined ? CAM_PAN_END : CAM_PAN,
 					secs,
 				);
