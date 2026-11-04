@@ -12,6 +12,16 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 171,
+		date: "2026-11-04",
+		text: "3D games: free throws are shown from the normal court camera. The close-up from under the basket is gone.",
+	},
+	{
+		n: 170,
+		date: "2026-11-04",
+		text: "3D games: a point guard who's about to have a pass stolen no longer stands alone dribbling in his own backcourt for seconds and then throws it the length of the floor to a defender. He brings it up first, and the pass is picked off up the floor.",
+	},
+	{
 		n: 169,
 		date: "2026-11-04",
 		text: "3D games: defenders closing out on a shooter no longer dart the last few feet faster than anyone can run. They get only as far as they really could, so a late closeout looks late.",

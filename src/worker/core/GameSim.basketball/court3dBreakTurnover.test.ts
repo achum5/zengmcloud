@@ -3,8 +3,16 @@ import {
 	compileCourt,
 	type CourtTimeline,
 } from "../../../ui/views/LiveGame/court3d/director.ts";
-import { evalPlayer } from "../../../ui/views/LiveGame/court3d/evaluate.ts";
-import { COURT_H, rimX } from "../../../ui/views/LiveGame/court3d/geometry.ts";
+import {
+	evalPlayer,
+	fastAt,
+} from "../../../ui/views/LiveGame/court3d/evaluate.ts";
+import {
+	attackDir,
+	COURT_H,
+	COURT_W,
+	rimX,
+} from "../../../ui/views/LiveGame/court3d/geometry.ts";
 import { simRealGame } from "./realGameForTests.ts";
 
 let tl: CourtTimeline;
@@ -67,6 +75,44 @@ describe("3D court, a real game", () => {
 			}
 		}
 		assert.isAbove(lost, 5);
+		assert.deepEqual(bad, []);
+	}, 900_000);
+
+	// A pass picked off off a steal at the other end: he used to stand in his
+	// own backcourt, all alone, dribbling, for as long as it took a man of
+	// theirs to get across into the lane - and then throw it up the floor
+	// to him. He brings it up first.
+	test("a pass that's picked off isn't thrown from the backcourt after standing there with it", () => {
+		const bad: string[] = [];
+		for (let k = 1; k < tl.ball.length; k++) {
+			const s = tl.ball[k]!;
+			if (s.kind !== "fly" || !("pid" in s.from) || !("pid" in s.to)) {
+				continue;
+			}
+			const A = tl.tracks.get(s.from.pid);
+			const B = tl.tracks.get(s.to.pid);
+			if (!A || !B || A.team === B.team || fastAt(tl, s.t0) > 1.2) {
+				continue;
+			}
+			const P = evalPlayer(tl, A.pid, s.t0);
+			if ((P.x - COURT_W / 2) * attackDir(A.team) >= 0) {
+				continue;
+			}
+			let j = k - 1;
+			while (j > 0) {
+				const h = tl.ball[j]!;
+				if (h.kind !== "hold" || h.pid !== A.pid) {
+					break;
+				}
+				j -= 1;
+			}
+			const had = s.t0 - tl.ball[j + 1]!.t0;
+			if (had > 2500) {
+				bad.push(
+					`${A.pid} at ${Math.round(s.t0)}, had it ${Math.round(had)} ms`,
+				);
+			}
+		}
 		assert.deepEqual(bad, []);
 	}, 900_000);
 

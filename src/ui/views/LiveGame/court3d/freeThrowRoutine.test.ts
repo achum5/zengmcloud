@@ -15,9 +15,7 @@ import {
 	LANE_SPACES,
 	type Side,
 } from "./geometry.ts";
-import { makeCamera, project } from "./camera.ts";
 import { bodyOf, skeleton } from "./poses.ts";
-import { closeUpAim, momentAt } from "./scene.ts";
 import { compile } from "./testGame.ts";
 
 const body = bodyOf();
@@ -241,51 +239,22 @@ describe("3D free throws", () => {
 		},
 	);
 
+	// No cutting in close on him at the line, from down under the basket:
+	// the picture stays out on the floor for his free throws.
 	test(
-		"in close on him at the line through his routine, then back out for the shot",
-		{ timeout: 120_000 },
+		"free throws are seen from the usual camera, not in close",
+		{
+			timeout: 120_000,
+		},
 		() => {
-			const { tl, players } = compile("ftclose", 160);
-			const closeUps = (tl.closeUps ?? []).filter((c) => !c.cam);
-			assert.isAtLeast(closeUps.length, 3);
-			for (const c of closeUps) {
-				// (No cut in the timeline for it: nobody is anywhere else after.)
-				assert.notInclude(tl.cuts, c.t0);
-				let had = 0;
-				let n = 0;
-				for (let t = c.t0; t < c.t1; t += 50) {
-					n += 1;
-					const st = evalPlayer(tl, c.pid, t);
-					assert.notInclude(["setShot", "follow"], st.anim, `@${t}`);
-					// (The ball with him: in his hands, or on his dribble.)
-					const b = evalBall(tl, t, bodyFor);
-					if (b.holder === c.pid || Math.hypot(b.x - st.x, b.y - st.y) < 2.5) {
-						had += 1;
-					}
-					// He fills the middle of the picture, and nobody stands
-					// between him and the camera.
-					const m = momentAt(tl, t, players, bodyFor);
-					const aim = closeUpAim(tl, m, false);
-					assert.ok(aim, `@${t}`);
-					const cam = makeCamera(aim!.shot, 640, 360, aim!.rig);
-					const head = project(cam, { x: st.x, y: st.y, z: 6.2 });
-					assert.isAbove(head.x, 200, `@${t}`);
-					assert.isBelow(head.x, 440, `@${t}`);
-					assert.isAbove(head.y, 0, `@${t}`);
-					const far = Math.hypot(st.x - cam.pos.x, st.y - cam.pos.y);
-					for (const o of m.players) {
-						if (o.pid === c.pid || !o.shown) {
-							continue;
-						}
-						const q = project(cam, { x: o.x, y: o.y, z: 5 });
-						const near = Math.hypot(o.x - cam.pos.x, o.y - cam.pos.y);
-						assert.isFalse(
-							near < far && Math.abs(q.x - head.x) < q.k * 1.4,
-							`#${o.pid} in front of #${c.pid} @${t}`,
-						);
-					}
-				}
-				assert.isAbove(had / n, 0.8);
+			const { tl } = compile("ftclose", 160);
+			const at = tl.beats.filter((b) => /^(ft|missFt)$/.test(b.type));
+			assert.isAtLeast(at.length, 3);
+			for (const c of tl.closeUps ?? []) {
+				assert.isFalse(
+					at.some((b) => c.t0 < b.end && c.t1 > b.preStart),
+					`close-up at ${c.t0}`,
+				);
 			}
 		},
 	);

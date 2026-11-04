@@ -477,13 +477,12 @@ export type Beat = {
 	actionStart: number;
 	end: number;
 };
-// (From down on the baseline under the basket, for a man at the line; or
-// from `cam`, on `aim`.)
+// (From `cam`, on `aim`.)
 export type CloseUp = {
 	t0: number;
 	t1: number;
 	pid: number;
-	cam?: Pt3;
+	cam: Pt3;
 	aim?: Pt3;
 };
 // A man down hurt (see the injury's beat), from when to when, where - for
@@ -537,9 +536,7 @@ export type CourtTimeline = {
 	huddles?: Huddle[];
 	// The starting lineups called out before the opening tip (see intro.ts).
 	intro?: Intro;
-	// In close on a man at the line, through his routine before the first of
-	// his free throws (see beatFreeThrow); and on the interview after the
-	// game.
+	// In close on the interview after the game.
 	closeUps?: CloseUp[];
 	interview?: Interview;
 	hurts?: Hurt[];
@@ -675,13 +672,6 @@ const RUN = 21;
 const SPRINT = 24;
 const DRIBBLE = 19;
 const JOG = 13;
-// In close on a man at the line (see beatFreeThrow): from so long before he
-// has the ball to so long before he sets to shoot (ms), if that is long
-// enough; and on so many trips to the line.
-const CLOSE_BEFORE = 120;
-const CLOSE_AFTER = 160;
-const CLOSE_LEAST = 1300;
-const CLOSE_SHARE = 0.75;
 // Called out for the starting lineups: running out, pumped up.
 const INTRO_RUN = 17;
 const WALK = 6;
@@ -1578,6 +1568,11 @@ const BREAK_DEEP = 12;
 // Pushing it into somebody else's turnover, where he gives it up: this far
 // from the baseline (feet) - the top of the floor, at the arc.
 const BREAK_GIVE_UP_DEPTH = 27;
+// A pass picked off with him still in his own end, nobody of theirs able to
+// get into the lane for longer than this (ms): he brings it up first, to
+// this far from the baseline he attacks (feet).
+const LOST_UP_WAIT = 1200;
+const LOST_UP_DEPTH = 33;
 // The sets there are to run with the ball over half court already: none
 // that starts with it back over (see setsFor).
 const OVER_SETS = PLAYS.filter(
@@ -16789,19 +16784,6 @@ class Director {
 		this.lookAt(shooter, caught + 111, rimSpot);
 		const set = this.ftRoutine(shooter, caught + 160, S, rimSpot) + 200;
 		this.hold(shooter, set, "hold");
-		// Most trips: in close on him through it, from down on the baseline
-		// under the basket - and back out for the shot.
-		const c0 = caught - CLOSE_BEFORE;
-		const c1 = set - CLOSE_AFTER;
-		if (
-			first &&
-			c1 - c0 >= CLOSE_LEAST &&
-			hash01(shooter * 7 + 3, Math.floor(T)) < CLOSE_SHARE
-		) {
-			// (Not a cut in the timeline - nobody is anywhere else after it:
-			// the camera just goes straight there and back, see Court3D.)
-			this.closeUps.push({ t0: c0, t1: c1, pid: shooter });
-		}
 		if (!first) {
 			// The ball back out to the official and in to him again, and his
 			// routine - seen once already this trip - run through fast.
@@ -17847,8 +17829,8 @@ class Director {
 			if (to === undefined) {
 				return false;
 			}
-			const A = this.posOf(victim);
-			const T0 = thief !== undefined ? this.posOf(thief) : undefined;
+			let A = this.posOf(victim);
+			let T0 = thief !== undefined ? this.posOf(thief) : undefined;
 			// A pass to `q`, and - for a steal - where along it the thief
 			// gets to it: farther along if the lane is a long way off, and,
 			// if even that is too far, late (the pass hanging for him).
@@ -17867,7 +17849,9 @@ class Director {
 					thief === undefined ? ready : Math.min(ready, t + 500),
 				);
 				const release = start + wind;
-				if (thief === undefined || T0 === undefined) {
+				// (Where he is as it is thrown - see the bring-up, below.)
+				const T = T0;
+				if (thief === undefined || T === undefined) {
 					return { B, d, flight, over, wind, start, release };
 				}
 				// He reads it a beat before it is thrown (or sits in the lane,
@@ -17875,8 +17859,7 @@ class Director {
 				const go = Math.max(start - read, this.free.get(thief) ?? 0);
 				const along =
 					d > 0.1
-						? ((T0.x - A.x) * (B.x - A.x) + (T0.y - A.y) * (B.y - A.y)) /
-							(d * d)
+						? ((T.x - A.x) * (B.x - A.x) + (T.y - A.y) * (B.y - A.y)) / (d * d)
 						: 0.6;
 				const at = (f: number) => {
 					const I = clampPt({
@@ -17886,7 +17869,7 @@ class Director {
 					return {
 						I,
 						tI: release + flight * f,
-						need: go + runMs(dist(T0, I), SPRINT) + 40,
+						need: go + runMs(dist(T, I), SPRINT) + 40,
 					};
 				};
 				let f = Math.min(0.85, Math.max(0.35, along));
@@ -17906,6 +17889,26 @@ class Director {
 					lane: { ...pick, go, late: pick.need > pick.tI },
 				};
 			};
+			// Still back in his own end with it - off a steal, say, his team
+			// going the other way and theirs all back - and nobody of theirs
+			// near enough to the lane to pick it off for a while: he brings it
+			// up the floor first, as they get back, and it is picked off up
+			// there - not stood dribbling where he got it, all alone, till a
+			// man can get across, and thrown the length of the floor to him.
+			if (thief !== undefined && this.inBackcourt(team, A)) {
+				const first = throwTo(to);
+				const wait = first.lane
+					? Math.max(0, first.lane.need - first.lane.tI)
+					: 0;
+				if (wait > LOST_UP_WAIT) {
+					const P = spot(team, LOST_UP_DEPTH, Math.min(36, Math.max(14, A.y)));
+					const go = Math.max(t, this.free.get(victim) ?? 0);
+					this.hold(victim, go, "dribble");
+					t = this.go(victim, P, go, DRIBBLE * 0.8, "dribble", dir);
+					A = this.posOf(victim);
+					T0 = this.posOf(thief);
+				}
+			}
 			let receiver: number = to;
 			let thrown = throwTo(receiver);
 			// The pass he jumps is one he can get to: another outlet of the

@@ -2771,10 +2771,8 @@ export const introAim = (
 	};
 };
 
-// IN CLOSE ON A MAN AT THE LINE (see the director's beatFreeThrow): from
-// down on the baseline under the basket, looking up the lane at him - his
-// face, the ball in his hands - through his routine.
-const CLOSE_AT = { back: 1.2, across: 1.5, high: 5.4 };
+// IN CLOSE ON A MAN: the interview after the game (see the director's
+// gameOver), from its own camera.
 export const closeUpAim = (
 	tl: CourtTimeline,
 	m: Moment,
@@ -2785,24 +2783,10 @@ export const closeUpAim = (
 	if (!st) {
 		return undefined;
 	}
-	if (c.cam) {
-		const aim = c.aim ?? { x: st.x, y: st.y, z: 4.8 };
-		return {
-			shot: { x: aim.x, width: narrow ? 9 : 11, y: aim.y, z: aim.z },
-			rig: { ...REPLAY_RIG, at: c.cam },
-		};
-	}
-	const left = st.x < COURT_W / 2;
+	const aim = c.aim ?? { x: st.x, y: st.y, z: 4.8 };
 	return {
-		shot: { x: st.x, width: narrow ? 8.5 : 10.5, y: st.y, z: 4.7 },
-		rig: {
-			...REPLAY_RIG,
-			at: {
-				x: left ? -CLOSE_AT.back : COURT_W + CLOSE_AT.back,
-				y: 25 + CLOSE_AT.across,
-				z: CLOSE_AT.high,
-			},
-		},
+		shot: { x: aim.x, width: narrow ? 9 : 11, y: aim.y, z: aim.z },
+		rig: { ...REPLAY_RIG, at: c.cam },
 	};
 };
 
