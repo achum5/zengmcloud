@@ -268,6 +268,9 @@ const STRETCH_MS = 3000;
 const HOLD_LEFT_MS = 150;
 // (Down at as much as this many times as hard, if he has to be.)
 const STOP_HARD = 1.5;
+// (Short of where that hard a stop takes him by more than this, feet: on
+// past it - see Actor.pullsPast.)
+const PAST_SLACK_FT = 0.5;
 // (Cut short no more than this long into a leg, ms: none of it kept - or,
 // in a gait, this long: kept as the one before it.)
 const CUT_SLIVER_MS = 1;
@@ -909,20 +912,36 @@ class Actor {
 				// (Or, still getting up to speed into it - no time on the
 				// stretch to slow for it as well: no quicker than he can take
 				// it at to the last of it, and round it at that - there that
-				// much later.)
+				// much later. Or planting into it, off quicker than that: down
+				// no harder than he can be - see CUT_ACCEL, STOP_HARD - and round
+				// it the quicker for it, not braked to it in a stride.)
 				let shift = 0;
+				let vIn: number | undefined;
+				let s = 0;
+				const A = CUT_ACCEL * STOP_HARD;
+				const floor = (at: number) =>
+					Math.sqrt(Math.max(0, (vIn ?? 0) ** 2 - 2 * A * at));
 				for (let i = this.stretchFrom(); i < legs.length; i++) {
 					const x = legs[i]!;
 					const ms = x.t1 - x.t0;
 					if (x.t0 + shift < this.pinned) {
 						continue;
 					}
+					if (vIn === undefined) {
+						const b = legs[i - 1];
+						vIn =
+							b && b.t1 === x.t0 && RAMPS.has(b.move) && !b.arms && !b.turn
+								? legPace(b)
+								: 0;
+					}
+					const d = dist(x.from, x.to);
 					x.t0 += shift;
-					const need = (dist(x.from, x.to) / most) * 1000;
+					const need = (d / Math.max(most, floor(s + d / 2))) * 1000;
+					s += d;
 					shift += Math.max(0, need - ms);
 					x.t1 = x.t0 + Math.max(ms, need);
 				}
-				pace = most;
+				pace = Math.min(legPace(this.last), Math.max(most, floor(s)));
 			}
 		}
 		const s = Math.sign(u.x * o.y - u.y * o.x) || 1;
@@ -1440,6 +1459,37 @@ class Actor {
 			this.cut(t);
 			this.easeOff(2 * ft);
 		}
+	}
+
+	// No sooner than t, when he can be stood from the pace he is going,
+	// pulled up as hard as he can be (see STOP_HARD) - not from a sprint
+	// to a stand in a stride, for a look round at t.
+	stoppedBy(t: number): number {
+		const l = this.last;
+		const v = RAMPS.has(l.move) && !l.arms && !l.turn ? legPace(l) : 0;
+		return v < STOP_LEAST
+			? t
+			: Math.max(t, this.t + (v / (STOP_ACCEL * STOP_HARD)) * 1000);
+	}
+
+	// Too quick to get no further than `to` - by t1, or at all - pulling up
+	// as hard as he can (see STOP_HARD): pulled up that hard on the way he
+	// is going, on past it (see easeOff) - not braked to it in a stride.
+	// (Whether he was.)
+	pullsPast(to: Pt, t1 = Infinity): boolean {
+		const l = this.last;
+		const v = RAMPS.has(l.move) && !l.arms && !l.turn ? legPace(l) : 0;
+		if (v < STOP_LEAST) {
+			return false;
+		}
+		const A = STOP_ACCEL * STOP_HARD;
+		const T = Math.max(0, t1 - this.t) / 1000;
+		const least = v > A * T ? v * T - (A * T * T) / 2 : (v * v) / (2 * A);
+		if (!(dist(this.at, to) < least - PAST_SLACK_FT)) {
+			return false;
+		}
+		this.easeOff((v * v) / (2 * A));
+		return true;
 	}
 
 	// On the way he was going, slowing to a stop no more than `most` feet
@@ -5120,12 +5170,22 @@ class Action {
 					}
 					spell = undefined;
 				};
+				// (Nor the back in on the fake of a handoff: meant to be in on
+				// him, as he would be for the real one.)
+				const fake = m.legs.filter((l) => l.arms === "fakeCarry");
+				const fakeFrom = (fake[0]?.t0 ?? Infinity) - CARRY_CLEAR_SKIP_MS;
+				const fakeTo = (fake.at(-1)?.t1 ?? -Infinity) + CARRY_CLEAR_SKIP_MS;
 				for (let t = t0; t <= t1; t += TWIN_EVERY_MS) {
 					const l = legAt(m, t);
 					const p = c.posAt(t);
 					const q = m.posAt(t);
 					const d = dist(p, q);
-					if (d >= CARRY_APART || !movable(l) || DOWN.has(l.move)) {
+					if (
+						d >= CARRY_APART ||
+						!movable(l) ||
+						DOWN.has(l.move) ||
+						(t >= fakeFrom && t <= fakeTo)
+					) {
 						continue;
 					}
 					if (spell && t - spell.b > TWIN_JOIN_MS) {
@@ -11551,7 +11611,9 @@ class Action {
 					// on to him at full speed. On after him from the next step,
 					// if that takes him up to this one.)
 					m.plantFor(to);
-					if (t - m.t < FLICK_MS) {
+					// (Coming on to it too quick to stop there: on past it, pulled
+					// up hard, back for him from there.)
+					if (t - m.t < FLICK_MS || m.pullsPast(to, t)) {
 						continue;
 					}
 					// (No further a step than he can get up to going there, off
@@ -11792,7 +11854,13 @@ class Action {
 					);
 					const quick =
 						m.t + rampedMs(D - ease, fps, v0) + ((2 * ease) / fps) * 1000;
-					if (
+					if (m.pullsPast(spot)) {
+						// (On to it too quick to pull up there: on past it, pulled
+						// up hard - and broken down square to it, time to spare.)
+						if (due - m.t >= BREAK_SET_MS) {
+							m.hold(due, "backerStance", this.toward(m.at, to));
+						}
+					} else if (
 						D < ZONE_STIR_FT &&
 						due - m.t >= BREAK_SET_MS &&
 						legPace(m.last) < STOP_LEAST
@@ -13472,10 +13540,11 @@ class Action {
 			// and along after the ball at a jog, kept off it - with it as it
 			// comes back his way - and in to where it ends, not walked in
 			// while it is still going on.)
-			const look =
+			const look = m.stoppedBy(
 				m.t +
-				TRAIL_LOOK_MS[0] +
-				(TRAIL_LOOK_MS[1] - TRAIL_LOOK_MS[0]) * countOf(m, snap, 29);
+					TRAIL_LOOK_MS[0] +
+					(TRAIL_LOOK_MS[1] - TRAIL_LOOK_MS[0]) * countOf(m, snap, 29),
+			);
 			const fps =
 				TRAIL_JOG_FPS[0] +
 				(TRAIL_JOG_FPS[1] - TRAIL_JOG_FPS[0]) * countOf(m, snap, 30);
@@ -13535,10 +13604,11 @@ class Action {
 			if (this.done.has(m.pid)) {
 				continue;
 			}
-			const from =
+			const from = m.stoppedBy(
 				Math.max(m.t, caught) +
-				ROUTE_AFTER_MS[0] +
-				(ROUTE_AFTER_MS[1] - ROUTE_AFTER_MS[0]) * countOf(m, snap, 31);
+					ROUTE_AFTER_MS[0] +
+					(ROUTE_AFTER_MS[1] - ROUTE_AFTER_MS[0]) * countOf(m, snap, 31),
+			);
 			const keep = keepFt[0] + keepFt[1] * countOf(m, snap, 33);
 			const ball = this.ballAt(from);
 			if (
