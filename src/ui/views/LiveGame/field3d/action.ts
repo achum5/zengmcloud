@@ -2604,6 +2604,8 @@ const DOUBLE_FT = 2.2;
 // (In beside a man on a double team no further off than this from where he
 // is a moment after the snap, feet - and only while he is on his man.)
 const DOUBLE_REACH_FT = 10;
+// (Over to him up the field, driving, no quicker than this, ft/s.)
+const DOUBLE_DRIVE_FPS = 8;
 const FILL_MS = 1050;
 const FILL_PACE = 0.7;
 // (Over to fill no slower than this, ft/s - set first for it, if he is,
@@ -12015,13 +12017,23 @@ class Action {
 			);
 			// (Over to him square to the line: across in a slide, not run
 			// there crabwise.)
+			// (In push steps no quicker than a man takes them - not across
+			// in a blink, back the way his first step took him.)
 			const over = this.of(beside(snap + 800));
 			const at = this.of(b.at);
-			b.chase(
-				beside(snap + 800),
+			const across = Math.abs(over.a - at.a) > Math.abs(over.d - at.d);
+			const there = Math.max(
 				snap + 800,
+				b.t +
+					(Math.hypot(over.a - at.a, over.d - at.d) /
+						(across ? SHUFFLE_MOST : DOUBLE_DRIVE_FPS)) *
+						1000,
+			);
+			b.chase(
+				beside(there),
+				there,
 				b.top * 0.8,
-				Math.abs(over.a - at.a) > Math.abs(over.d - at.d) ? "slide" : "drive",
+				across ? "slide" : "drive",
 				this.ahead,
 			);
 			if (upTo > b.t) {
