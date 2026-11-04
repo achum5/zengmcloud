@@ -805,6 +805,13 @@ export const outlookSettings = {
 	// became a 65 or better 11% of the time, 31-35 2% - and a first went for a
 	// second, three for a 48. Off while it is measured.
 	boom: false,
+	// Money short of the league's minimum payroll is free only this season,
+	// once games are played: before then, or for seasons ahead, a team that
+	// reads itself short nearly always ends up past it (6% of arena teams
+	// paid the fine in a season) - it signs and trades for more. Without, a
+	// team with room to spare for years bid the most for anyone: a 57 at the
+	// maximum for three years. Off while it is measured.
+	floorNow: false,
 };
 
 // Measured in arena leagues: players on a team all season missed 6.5% of its
@@ -841,6 +848,7 @@ export const teamOutlookSettings = new Map<
 			| "injuryByAge"
 			| "wantedOnly"
 			| "boom"
+			| "floorNow"
 		>
 	>
 >();
@@ -864,7 +872,8 @@ const outlookSettingFor = <
 		| "injuryByMinutes"
 		| "injuryByAge"
 		| "wantedOnly"
-		| "boom",
+		| "boom"
+		| "floorNow",
 >(
 	tid: number,
 	key: K,
@@ -2716,6 +2725,12 @@ export const teamStrengths = (
 	const floor = outlookSettingFor(tid, "moneyUnderCap")
 		? g.get("minPayroll") / salaryCap
 		: 1;
+	// Payroll short of the league's minimum is paid as a fine (at the
+	// playoffs), so money spent up to it is free - but only this season once
+	// games are played can a team know it will be short (floorNow).
+	const floorNow = outlookSettingFor(tid, "floorNow");
+	const floorAt = (y: number) =>
+		floorNow && floor < 1 && !(outlook.offset === 0 && y === 0) ? 0 : floor;
 	const money: number[] = [];
 	const pointsWith = (losing?: LosingShifts) =>
 		teamPoints(
@@ -2725,7 +2740,7 @@ export const teamStrengths = (
 			picks,
 			trading,
 			(y, room, signings) => {
-				money[y] = payrollCost(perCap, floor, y, room, signings);
+				money[y] = payrollCost(perCap, floorAt(y), y, room, signings);
 				refill?.(y, room, signings);
 			},
 			undefined,
@@ -2734,7 +2749,7 @@ export const teamStrengths = (
 				? (y, points) => seasonValue(outlook, y, strengthOf(y, points), tid)
 				: undefined,
 			(y, room, signings) =>
-				payrollCost(perCap, floor, y, room / salaryCap, signings),
+				payrollCost(perCap, floorAt(y), y, room / salaryCap, signings),
 			losing,
 		);
 	let points = pointsWith();

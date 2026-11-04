@@ -907,6 +907,15 @@ room unused 75 summers of 84).
   first four years out for an early second now (both sides gaining under a
   half a hundredth of a title) is not changed by it: that is the contender
   valuing the seasons it can win in.
+- **Still to measure: money short of the league's minimum payroll is free only
+  this season, once games are played** (floorNow, off). A team short of the
+  minimum pays the rest as a fine when the playoffs start, so salary up to it
+  costs nothing - but before then, and for seasons ahead, a team that reads
+  itself short nearly always ends up past it (6% of arena teams paid the fine
+  in a season): it signs and trades for more, room the outlook expects to buy
+  only two free agents. Without, a team with room to spare for years bid the
+  most for anyone - in the 2005 replay a 57 got the maximum for three years,
+  a 64 for five - and set prices for everyone.
 - **Still to measure: a team plays and re-signs only players it wants**
   (wantedOnly, off). A player worse than a minimum free agent never plays
   ahead of one, and once his contract is up, any player is let go when his
