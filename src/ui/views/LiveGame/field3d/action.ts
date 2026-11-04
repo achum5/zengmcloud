@@ -2859,6 +2859,7 @@ const OUT_TURN_BY = [1, 0.7, 0.45, 0.25] as const;
 const OUT_MOST_NEAR = 4.5;
 const OUT_CROWD = 10;
 const SHOVE = 0.6;
+const SHOVE_ON_FT = 8;
 const OUT_FAR = 66;
 const OUT_NEAR = 30;
 
@@ -3750,6 +3751,8 @@ const TWIN_APART = 1.9;
 const TWIN_MOST = 1.2;
 const TWIN_EASE_MS = 250;
 const TWIN_EASE_LEAST = 150;
+// (Back over no quicker than this, ft/s, as he comes to a stand.)
+const TWIN_BACK_FPS = 5;
 const TWIN_EVERY_MS = 50;
 const TWIN_JOIN_MS = 300;
 // (Stood, and moved this quick or more by it, ft/s: stepped.)
@@ -4966,10 +4969,40 @@ class Action {
 		};
 		type Ease = { w0: number; a: number; b: number; w1: number; off: Pt };
 		const eases = new Map<Actor, Ease[]>();
-		const ease = (m: Actor, a: number, b: number, off: Pt) => {
+		const ease = (m: Actor, a: number, b0: number, off: Pt) => {
 			const [s0, s1] = stretch(m, a);
+			// (Stood once it is over, before it is eased off: back over as
+			// he comes to a stand, if there is time for it then; if not, stood
+			// where he is eased over to, and back as he next goes - not
+			// stepped over and back stood there.)
+			const still = (l: Leg) => l.from.x === l.to.x && l.from.y === l.to.y;
+			const goes = m.legs.find(
+				(l) =>
+					l.t0 >= b0 + TWIN_EVERY_MS &&
+					l.t0 < s1 - TWIN_EASE_LEAST &&
+					!still(l),
+			);
+			const until = goes?.t0 ?? s1;
+			const stands =
+				m.legs.findLast((l) => l.t1 > b0 && l.t0 < until && !still(l))?.t1 ??
+				b0;
+			let b = b0;
+			let w1 = Math.min(s1, b0 + TWIN_EASE_MS);
+			if (stands < until && w1 > stands) {
+				if (
+					stands - b0 >=
+					Math.max(
+						TWIN_EASE_LEAST,
+						(Math.hypot(off.x, off.y) / TWIN_BACK_FPS) * 1000,
+					)
+				) {
+					w1 = stands;
+				} else if (goes) {
+					b = goes.t0;
+					w1 = Math.min(s1, b + TWIN_EASE_MS);
+				}
+			}
 			const w0 = Math.max(s0, a - TWIN_EASE_MS);
-			const w1 = Math.min(s1, b + TWIN_EASE_MS);
 			const e = {
 				w0,
 				a: Math.min(Math.max(a, w0 + TWIN_EASE_LEAST), (a + b) / 2),
@@ -8124,21 +8157,15 @@ class Action {
 			const o = this.of(at);
 			const hit = this.w({ d: o.d - 1.5 - k * 2.5, a: o.a - side * (2.2 + k) });
 			this.closeOn(m, hit, down.t - 60, this.toward(hit, at), carrier);
-			return hit;
 		};
 		if (first) {
-			const hit = inside(first, 0);
+			inside(first, 0);
 			if (r() < SHOVE) {
-				// Both hands into him, and through it - over the line with him
-				// a stride or two, not stopped dead on it (nor pulled back
-				// over it after).
-				const on = this.of(hit);
-				first.roam = Math.max(first.roam, OUT_MOST + 1);
-				first.go(
-					this.w({ d: on.d + dd * 3, a: on.a + side * 2.5 }),
-					down.t + 380,
-					"jog",
-				);
+				// Both hands into him, and through it: on over the line with
+				// him the way he came, slowing (see STOP_ACCEL) - not stopped
+				// dead on it, nor pulled back over it after.
+				first.roam = Math.max(first.roam, most);
+				first.easeOff(SHOVE_ON_FT);
 				first.arms("shove", down.t - 260, down.t + 240);
 			}
 			first.hold(down.t + 1500, "stand");
@@ -12094,7 +12121,10 @@ class Action {
 					: meshPt,
 			);
 			const set = mesh - 60;
-			const out = Math.min(set, Math.max(qb.t + 1, mesh - HAND_OUT_MS));
+			// (Only a blink of a step before his arms go out with it: out
+			// from the first of it, not a sliver of a step between.)
+			const reach = Math.min(set, Math.max(qb.t + 1, mesh - HAND_OUT_MS));
+			const out = reach - qb.t < FLICK_MS ? qb.t + 1 : reach;
 			const most = set - qb.t;
 			const u = most > 0 ? (out - qb.t) / most : 1;
 			if (out > qb.t + 1) {
