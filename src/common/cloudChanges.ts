@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 164,
+		date: "2026-11-04",
+		text: "Fixed: on a phone, opening More team info on a team page no longer makes the whole page wider than the screen - its stats now wrap onto new lines.",
+	},
+	{
 		n: 163,
 		date: "2026-11-04",
 		text: "Realistic Front Offices: CPU teams with a full roster stop signing and releasing the same end-of-bench players over and over during the season. A team no longer signs a player it would turn around and cut, and signs at most one player a day when it has no open spot.",

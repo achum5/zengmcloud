@@ -23,7 +23,7 @@ const Stat = ({
 	format: (value: number) => string;
 }) =>
 	ranked ? (
-		<span className="me-3 text-nowrap">
+		<span className="text-nowrap">
 			<span className="fw-bold" title={title}>
 				{label}
 			</span>
@@ -33,6 +33,10 @@ const Stat = ({
 			</span>
 		</span>
 	) : null;
+
+// A line of stats breaks between them on a narrow screen (each one stays
+// together), rather than running off the side and widening the page.
+const STAT_ROW = "d-flex flex-wrap column-gap-3";
 
 const signed = (value: number, digits: number) =>
 	`${value > 0 ? "+" : ""}${value.toFixed(digits)}`;
@@ -75,7 +79,7 @@ export const MoreTeamInfo = ({
 				<div className="mt-2" style={{ maxWidth: 560 }}>
 					{info.gp > 0 ? (
 						<>
-							<div>
+							<div className={STAT_ROW}>
 								<Stat
 									label="PTS/G"
 									numTeams={numTeams}
@@ -89,7 +93,7 @@ export const MoreTeamInfo = ({
 									format={(v) => v.toFixed(1)}
 								/>
 							</div>
-							<div>
+							<div className={STAT_ROW}>
 								<Stat
 									label="SRS"
 									title="Simple Rating System: margin of victory adjusted for strength of schedule"
@@ -105,7 +109,7 @@ export const MoreTeamInfo = ({
 									format={(v) => v.toFixed(1)}
 								/>
 							</div>
-							<div>
+							<div className={STAT_ROW}>
 								<Stat
 									label="Off Rtg"
 									title="Points scored per 100 possessions"
@@ -128,7 +132,7 @@ export const MoreTeamInfo = ({
 								/>
 							</div>
 							{info.expected ? (
-								<div>
+								<div className={STAT_ROW}>
 									<Stat
 										label="Expected W-L"
 										title="Pythagorean record, from points scored and allowed"
@@ -158,7 +162,7 @@ export const MoreTeamInfo = ({
 						</div>
 					) : null}
 					{info.att ? (
-						<div>
+						<div className={STAT_ROW}>
 							<Stat
 								label="Attendance"
 								numTeams={numTeams}
