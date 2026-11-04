@@ -11,7 +11,7 @@ import { uniformSeed } from "../../../common/random.ts";
 import { revertBefore } from "../player/revertSnapshot.ts";
 import { contractNegotiation, player, team } from "../index.ts";
 import { mayPay } from "./contracts.ts";
-import { frontOfficeCuts } from "./cuts.ts";
+import { frontOfficeCuts, worthSigningAtLimit } from "./cuts.ts";
 import { marketSalary, setFreeAgentPoolLeft } from "./payroll.ts";
 import { REPLACEMENT_OVR } from "./strength.ts";
 import {
@@ -1026,6 +1026,14 @@ export const freeAgencyDay = async () => {
 	for (const p of queue) {
 		await choose(p);
 	}
+	// Once games are played, a CPU team signs no more in a day than it had
+	// places for when it made its offers - one, at a full roster. Each offer
+	// was priced on that roster as the day's only signing: a second at a full
+	// one releases a player no price counted. Without, a team at the limit
+	// signed two a day, cutting one of them, or a player it had just signed.
+	const signedToday = new Map<number, number>();
+	const placesToday = (tid: number) =>
+		Math.max(1, g.get("maxRosterSize") - states.get(tid)!.players.length);
 	while (chosen.size > 0) {
 		queue = [];
 		const byTeam = new Map<number, Offer[]>();
@@ -1039,6 +1047,8 @@ export const freeAgencyDay = async () => {
 			for (const offer of offers.sort((a, b) => priority(a) - priority(b))) {
 				const p = pool.find((x) => x.pid === offer.pid)!;
 				const roster = await idb.cache.players.indexGetAll("playersByTid", tid);
+				const atLimit =
+					inSeason && cpu.has(tid) && roster.length === g.get("maxRosterSize");
 				const fits =
 					mayPay({
 						tid,
@@ -1048,11 +1058,20 @@ export const freeAgencyDay = async () => {
 						rosterSize: roster.length,
 					}) &&
 					(!inSeason ||
-						roster.length < g.get("maxRosterSize") ||
-						(cpu.has(tid) && roster.length === g.get("maxRosterSize")));
+						(cpu.has(tid)
+							? roster.length <= g.get("maxRosterSize") &&
+								(signedToday.get(tid) ?? 0) < placesToday(tid)
+							: roster.length < g.get("maxRosterSize"))) &&
+					(!atLimit ||
+						(await worthSigningAtLimit(tid, {
+							...p,
+							tid,
+							contract: { ...p.contract, amount: offer.amount, exp: offer.exp },
+						})));
 				if (fits) {
 					await sign(p, tid, { amount: offer.amount, exp: offer.exp });
 					remaining.delete(p.pid);
+					signedToday.set(tid, (signedToday.get(tid) ?? 0) + 1);
 					if (inSeason && roster.length === g.get("maxRosterSize")) {
 						await frontOfficeCuts(
 							await idb.cache.players.indexGetAll("playersByTid", tid),

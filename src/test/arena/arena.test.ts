@@ -181,6 +181,21 @@ test.runIf(env.ARENA_RUN === "1")(
 					});
 				});
 			}
+			// ARENA_DRAFT_SURVEY=1: each draft's board as it opens - the class
+			// best first by what each prospect is generally worth - to set
+			// against who went where (drafts-<tag>.json).
+			const boards = new Map<number, number[]>();
+			if (env.ARENA_DRAFT_SURVEY === "1") {
+				outlookWatchers.push((outlook) => {
+					const board = outlook.classBoard;
+					if (board && !boards.has(board.season)) {
+						boards.set(
+							board.season,
+							board.prospects.map((p) => p.pid),
+						);
+					}
+				});
+			}
 			// ARENA_STRENGTH_SURVEY=1: every outlook's read of each team's
 			// strength and title odds, season by season, to set against how the
 			// teams did (strength-survey-<tag>.json).
@@ -839,6 +854,12 @@ test.runIf(env.ARENA_RUN === "1")(
 					}
 				}
 				await fs.writeFile(`${out}/drafts-${tag}.json`, JSON.stringify(drafts));
+			}
+			if (env.ARENA_DRAFT_SURVEY === "1") {
+				await fs.writeFile(
+					`${out}/boards-${tag}.json`,
+					JSON.stringify(Object.fromEntries(boards)),
+				);
 			}
 			if (env.ARENA_PICK_SURVEY === "1") {
 				await fs.writeFile(

@@ -210,7 +210,10 @@ with "the Pistons", not with a named person.
   Weighting it by minutes instead (a starter about 10%, the end of the
   bench almost none) did worse: 3 titles to 7 and 60 playoff rounds to 90
   in a league each way round, and a looser read (2.09 points a game to
-  1.98). Left off.
+  1.98). Left off. So did weighting it by age (the game's injury rate rises
+  3% a year past 26; a roster whose top eight were a year older came in
+  0.19 points a game worse than read): 8 titles to 12 in 2 leagues each way
+  round, and 27 seasons under 20 wins to 20. Left off.
 - **Retirement by the game's own rule.** Nobody on a roster retires before
   34; after that, the older and the less valuable, the likelier (a starter
   at 35 almost never, the end of the bench often).
@@ -883,6 +886,25 @@ room unused 75 summers of 84).
   fifteenth man all season: as one season opened, 22 teams were full, and
   21 of them would have gained from one of the best free agents left - a 62
   asking 6% of the cap among them - even releasing a player for it.
+- **But it signs no one it would release, and one a day.** Before a full
+  roster signs, it looks at the whole roster with him on it as it will when
+  it cuts: if he is the one it would let go, or the team is no better for
+  the swap, it passes. And it signs no more in a day than it had places for
+  when it made its offers - one, at a full roster - since each was priced
+  as the day's only signing. In the owner's league (18-man rosters), the
+  first two weeks of a season had 78 in-season releases, some players cut
+  four to six times, a team signing a player every day only to release him
+  (priced cutting its least valuable, while the cut looked at everyone);
+  with both, 45, nobody cut twice.
+- **Still to measure: a team plays and re-signs only players it wants**
+  (wantedOnly, off). A player worse than a minimum free agent never plays
+  ahead of one, and once his contract is up, any player is let go when his
+  salary buys more as room. Without, every expiring player is re-signed at
+  his odds of staying - in the owner's league a 38-overall with an 84%
+  chance - and a thin future roster plays its worst players, so a scrub
+  costs his team for a decade: teams cut prospects (a 21-year-old 39/57)
+  and younger veterans for older ones about to retire. On, those cuts gain
+  nothing, and in-season releases fall to 23-32; about a quarter slower.
 
 ## Coaching
 

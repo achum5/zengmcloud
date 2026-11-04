@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 163,
+		date: "2026-11-04",
+		text: "Realistic Front Offices: CPU teams with a full roster stop signing and releasing the same end-of-bench players over and over during the season. A team no longer signs a player it would turn around and cut, and signs at most one player a day when it has no open spot.",
+	},
+	{
 		n: 162,
 		date: "2026-11-04",
 		text: "3D game: no more open lanes passed up. When a player with the ball pulls up, floats it or passes out with nothing between him and the rim, a help defender now steps into the lane in front of him first and contests the shot - then gets back to his own man. Also fixed a player jumping several feet in a frame after picking up a loose ball, and defenders running backwards at full speed on their way back.",

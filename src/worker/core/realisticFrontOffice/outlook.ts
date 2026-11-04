@@ -501,11 +501,71 @@ const injuryShiftFor = (
 		? (outlook.injuryShift[y] ?? 0)
 		: 0;
 
-// A roster's lines with each split player as his two halves.
-const asPlayed = (tid: number, lines: readonly SeasonLine[]) =>
-	outlookSettingFor(tid, "upside") && lines.some((line) => line.halves)
-		? lines.flatMap((line) => line.halves ?? [line])
-		: lines;
+// Worse than a minimum free agent.
+const belowReplacement = (line: SeasonLine) => valueOverReplacement(line) < 0;
+
+// A player past his contract, as his team would have him: not re-signed if
+// worse than a minimum free agent the first season it may let him go
+// (wantedOnly), and gone from then on - each half on its own, where his line
+// has them: by then the team knows which he turned out to be. Without, the
+// team paid a scrub's market salary for years, re-signed at the odds a player
+// who would take its offer stays.
+type Gone = "none" | "whole" | "worse" | "better";
+const goneOf = (line: SeasonLine): Gone => {
+	if (!(line.availability > 0)) {
+		return "none";
+	}
+	if (line.halves) {
+		const [worse, better] = line.halves.map(belowReplacement);
+		return better ? "whole" : worse ? "worse" : "none";
+	}
+	return belowReplacement(line) ? "whole" : "none";
+};
+const keptLines = {
+	whole: new WeakMap<SeasonLine, SeasonLine>(),
+	worse: new WeakMap<SeasonLine, SeasonLine>(),
+	better: new WeakMap<SeasonLine, SeasonLine>(),
+};
+const withoutGone = (line: SeasonLine, gone: Gone) => {
+	if (gone === "none" || !(line.availability > 0)) {
+		return line;
+	}
+	let kept = keptLines[gone].get(line);
+	if (!kept) {
+		if (gone === "whole" || !line.halves) {
+			kept =
+				gone === "whole"
+					? { ...line, availability: 0, halves: undefined }
+					: line;
+		} else {
+			const k = gone === "worse" ? 1 : 0;
+			const left = line.halves[k]!;
+			kept = {
+				...line,
+				halves: line.halves.map((half, j) =>
+					j === k ? half : { ...half, availability: 0 },
+				),
+				availability: left.availability,
+				valueNoPot: left.valueNoPot,
+			};
+		}
+		keptLines[gone].set(line, kept);
+	}
+	return kept;
+};
+
+// A roster's lines with each split player as his two halves - and, by
+// wantedOnly, without those (or the halves) worse than a minimum free
+// agent, whose places one takes.
+const asPlayed = (tid: number, lines: readonly SeasonLine[]) => {
+	const played =
+		outlookSettingFor(tid, "upside") && lines.some((line) => line.halves)
+			? lines.flatMap((line) => line.halves ?? [line])
+			: lines;
+	return outlookSettingFor(tid, "wantedOnly") && played.some(belowReplacement)
+		? played.filter((line) => !belowReplacement(line))
+		: played;
+};
 
 const projectedHalfSynergy = new WeakMap<
 	RatingsProjection,
@@ -705,8 +765,22 @@ export const outlookSettings = {
 	// of its games at 23 or younger, 8.7% at 24-27, 9.8% at 28-31 and 11.2%
 	// at 32 or older - INJURY_AGE_RATE a year. Read with flat injuries, a
 	// roster whose top eight were a year older came in 0.19 ± 0.06 points a
-	// game worse than read (579 team-seasons). Off while it is measured.
+	// game worse than read (579 team-seasons). Measured and left off: half
+	// the teams each way, 2 leagues each way round over 5 seasons, 8 titles
+	// to 12, and 27 seasons under 20 wins to 20.
 	injuryByAge: false,
+	// A team plays and re-signs only players it wants. One worse than a
+	// minimum free agent (valueOverReplacement) never plays ahead of one -
+	// the team can always sign one instead - and once his contract is up is
+	// not re-signed; and any player past his contract is let go when his
+	// salary buys more as room, as a pick's player past his rookie deal
+	// (letGo). Without, a projected roster thin in years to come played its
+	// worst players, and re-signed every player at his odds of staying: a
+	// scrub, or a prospect whose market salary bought more as room, cost his
+	// team for a decade - so teams cut him, still paying him, for an older
+	// one who would soon retire, and signed and cut players at the end of the
+	// bench all season. Off while it is measured.
+	wantedOnly: false,
 };
 
 // Measured in arena leagues: players on a team all season missed 6.5% of its
@@ -741,6 +815,7 @@ export const teamOutlookSettings = new Map<
 			| "injuryRisk"
 			| "injuryByMinutes"
 			| "injuryByAge"
+			| "wantedOnly"
 		>
 	>
 >();
@@ -762,7 +837,8 @@ const outlookSettingFor = <
 		| "measuredDeadline"
 		| "injuryRisk"
 		| "injuryByMinutes"
-		| "injuryByAge",
+		| "injuryByAge"
+		| "wantedOnly",
 >(
 	tid: number,
 	key: K,
@@ -1882,21 +1958,29 @@ export const teamPoints = (
 	// League settings, looked up once: nothing here can change them.
 	let salaryCap: number | undefined;
 	let marketSalary: ((value: number) => number) | undefined;
+	const wanted = outlookSettingFor(tid, "wantedOnly");
+	// Whom the team lets go, worse than a minimum player, the first season it
+	// may (withoutGone).
+	const gone: (Gone | undefined)[] = [];
 	// Every season's roster, before the team lets anyone go.
 	const seasons: SeasonState[] = [];
 	for (let y = 0; y <= OUTLOOK_YEARS; y++) {
-		const lines = players.map(
-			(p, i) =>
-				(byPlayer[i]!.byYear[y] ??= computeSeasonLine(
-					p,
-					outlook.season,
-					outlook.offset,
-					y,
-					gamesRemaining,
-					retention[i]!,
-				)),
-		);
 		const season = outlookSeason(outlook, y);
+		const lines = players.map((p, i) => {
+			const line = (byPlayer[i]!.byYear[y] ??= computeSeasonLine(
+				p,
+				outlook.season,
+				outlook.offset,
+				y,
+				gamesRemaining,
+				retention[i]!,
+			));
+			if (!wanted || p.contract.exp >= season) {
+				return line;
+			}
+			gone[i] ??= goneOf(line);
+			return withoutGone(line, gone[i]);
+		});
 		// Its picks' players past their rookie deals, whom the team may let go
 		// rather than pay that season - each half on its own where a line has
 		// them: by then the team knows which he turned out to be.
@@ -1979,13 +2063,40 @@ export const teamPoints = (
 			marketSalary ??= marketSalaries();
 			let committed = salaries;
 			for (let i = 0; i < players.length; i++) {
-				committed += salaryIn(
+				const salary = salaryIn(
 					players[i]!,
 					season,
 					y + outlook.offset,
 					lines[i]!,
 					marketSalary,
 				);
+				committed += salary;
+				// A player past his contract, whom the team may let go rather
+				// than re-sign, as a pick's player past his rookie deal
+				// (wantedOnly) - each half on its own, paid as he is.
+				if (wanted && players[i]!.contract.exp < season && salary > 0) {
+					const line = lines[i]!;
+					const key = `vet:${players[i]!.pid}`;
+					if (line.halves && outlookSettingFor(tid, "upside")) {
+						const paid = line.halves.map((half) =>
+							half.availability > 0 ? marketSalary!(half.valueNoPot) : 0,
+						);
+						const total = paid[0]! + paid[1]!;
+						for (const half of [0, 1] as const) {
+							if (paid[half]! > 0) {
+								options.push({
+									i,
+									half,
+									key: `${key}:${half}`,
+									pick: key,
+									salary: (salary * paid[half]!) / total,
+								});
+							}
+						}
+					} else {
+						options.push({ i, key, pick: key, salary });
+					}
+				}
 			}
 			for (const row of outlook.deadMoney.get(tid) ?? []) {
 				if (row.exp >= season) {
@@ -2073,6 +2184,9 @@ type LetGoOption = {
 	pick: string;
 	salary: number;
 };
+
+// A player past his contract, not a pick's player (wantedOnly).
+const isVeteran = (o: LetGoOption) => o.pick.startsWith("vet:");
 
 const optionLine = (line: SeasonLine, o: LetGoOption) =>
 	o.half === undefined ? line : line.halves![o.half]!;
@@ -2211,24 +2325,11 @@ const letGo = (
 		}
 		const best = (room: number) =>
 			Math.max(...now.signingsAt!(room).map((x) => x.valueNoPot));
-		// Those his salary would buy the most better than him go first; room
-		// that buys nobody better is no reason to let him go.
-		const sorted = fresh
-			.filter((o) => o.salary >= minContract || o.key.endsWith(":drafted"))
-			.map((o) => ({
-				o,
-				surplus:
-					optionLine(now.lines[o.i]!, o).valueNoPot -
-					best(now.room! + o.salary),
-			}))
-			.filter((x) => x.surplus < 0)
-			.sort((a, b) => a.surplus - b.surplus || a.o.i - b.o.i)
-			.map((x) => x.o);
-		let keptInARow = 0;
-		for (const o of sorted) {
-			if (cut.has(o.pick)) {
-				continue;
-			}
+		// What letting him go from this season on is worth, and the team's
+		// points each season without him.
+		// Over this many seasons from now (for ranking them): the seasons
+		// after, where he is gone too, are worked out again.
+		const goneGain = (o: LetGoOption, seasonsAhead = Infinity) => {
 			const ahead = aheadOf(y, o.key);
 			let gain = 0;
 			const freed: number[] = [];
@@ -2236,8 +2337,8 @@ const letGo = (
 			// first few alone, it let young players go who were about to get
 			// better. One worth more than his room the first season only gets
 			// better - but a drafted player is not decided by that: what he
-			// costs is room later on.
-			for (const [s, at] of ahead) {
+			// costs is room later on, nor a veteran, paid what he is worth.
+			for (const [s, at] of ahead.slice(0, seasonsAhead)) {
 				const kept = pointsOf(s);
 				const line = s.lines[at.i]!;
 				s.lines[at.i] = withoutOption(line, at);
@@ -2250,7 +2351,8 @@ const letGo = (
 				if (
 					freed.length === 1 &&
 					after <= kept &&
-					!o.key.endsWith(":drafted")
+					!o.key.endsWith(":drafted") &&
+					!isVeteran(o)
 				) {
 					break;
 				}
@@ -2261,20 +2363,62 @@ const letGo = (
 						spend(s.y, s.room! + at.salary, s.signingsAt!(s.room! + at.salary));
 				}
 			}
-			if (gain > 0) {
-				if (known?.record) {
-					known.decisions.set(o.key, { gone: true, room });
+			return { ahead, gain, freed };
+		};
+		// Tries them in turn, letting go each the team is better without,
+		// until two in a row are kept: the rest are better for the money.
+		const tryInTurn = (options: readonly LetGoOption[]) => {
+			let keptInARow = 0;
+			for (const o of options) {
+				if (cut.has(o.pick)) {
+					continue;
 				}
-				goFrom(ahead, freed);
-				keptInARow = 0;
-			} else {
-				// The rest are better for the money.
-				keptInARow += 1;
-				if (keptInARow === 2) {
-					break;
+				const { ahead, gain, freed } = goneGain(o);
+				if (gain > 0) {
+					if (known?.record) {
+						known.decisions.set(o.key, { gone: true, room });
+					}
+					goFrom(ahead, freed);
+					keptInARow = 0;
+				} else {
+					keptInARow += 1;
+					if (keptInARow === 2) {
+						break;
+					}
 				}
 			}
-		}
+		};
+		// Picks' players: those his salary would buy the most better than
+		// him go first; room that buys nobody better is no reason to let him
+		// go.
+		tryInTurn(
+			fresh
+				.filter(
+					(o) =>
+						!isVeteran(o) &&
+						(o.salary >= minContract || o.key.endsWith(":drafted")),
+				)
+				.map((o) => ({
+					o,
+					surplus:
+						optionLine(now.lines[o.i]!, o).valueNoPot -
+						best(now.room! + o.salary),
+				}))
+				.filter((x) => x.surplus < 0)
+				.sort((a, b) => a.surplus - b.surplus || a.o.i - b.o.i)
+				.map((x) => x.o),
+		);
+		// Veterans (wantedOnly): by what letting him go is worth the first
+		// season, best first - his market salary may be worth more as room
+		// than any one player it buys. Decided on the first few seasons
+		// alone, a team was better off without players it kept.
+		tryInTurn(
+			fresh
+				.filter((o) => isVeteran(o) && !cut.has(o.pick))
+				.map((o) => ({ o, first: goneGain(o, 1).gain }))
+				.sort((a, b) => b.first - a.first || a.o.i - b.o.i)
+				.map((x) => x.o),
+		);
 	}
 };
 

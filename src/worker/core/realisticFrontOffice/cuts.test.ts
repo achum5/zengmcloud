@@ -5,7 +5,18 @@ import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
 import { player } from "../index.ts";
 import { createArenaLeague } from "../../../test/arena/runLeague.ts";
-import { frontOfficeCuts, frontOfficeFill } from "./cuts.ts";
+import {
+	frontOfficeCuts,
+	frontOfficeFill,
+	worthSigningAtLimit,
+} from "./cuts.ts";
+import { currentOutlook, loadTeam } from "./market.ts";
+import {
+	franchiseValue,
+	outlookSettings,
+	retentionKey,
+	teamStrengths,
+} from "./outlook.ts";
 
 const importNode = (name: string) => import(/* @vite-ignore */ name);
 
@@ -81,5 +92,73 @@ test(
 		);
 		const p = await frontOfficeFill(other, candidates);
 		assert.include(p!.ratings.at(-1)!.pos, "G");
+	},
+);
+
+test(
+	"a team at the limit does not sign a player it would release",
+	{ timeout: 120_000 },
+	async () => {
+		// The first test left the team at the limit.
+		const roster = await idb.cache.players.indexGetAll("playersByTid", tid);
+		assert.strictEqual(roster.length, g.get("maxRosterSize"));
+		const worst = (
+			await idb.cache.players.indexGetAll("playersByTid", PLAYER.FREE_AGENT)
+		).sort((a, b) => a.value - b.value)[0]!;
+		const signed = {
+			...worst,
+			tid,
+			contract: { ...worst.contract, amount: g.get("minContract") },
+		};
+		assert.isFalse(await worthSigningAtLimit(tid, signed));
+	},
+);
+
+test(
+	"a player worse than a minimum free agent costs his team nothing once his contract is up",
+	{ timeout: 120_000 },
+	async () => {
+		const other = 9;
+		const season = g.get("season");
+		// A veteran scrub on a deal that runs out this season.
+		const scrub = (
+			await idb.cache.players.indexGetAll("playersByTid", PLAYER.FREE_AGENT)
+		)
+			.filter((p) => season - p.born.year >= 28)
+			.sort((a, b) => a.valueNoPot - b.valueNoPot)[0]!;
+		const outlook = await currentOutlook();
+		const t = await loadTeam(outlook, other);
+		const players = [
+			...t.players,
+			{
+				...scrub,
+				tid: other,
+				contract: {
+					...scrub.contract,
+					amount: g.get("minContract"),
+					exp: season,
+				},
+			},
+		];
+		const valueAt = (stay: number) => {
+			outlook.retention.set(retentionKey(scrub.pid, other), stay);
+			return franchiseValue(
+				outlook,
+				teamStrengths(outlook, other, players, t.picks),
+				other,
+			);
+		};
+		const was = outlookSettings.wantedOnly;
+		try {
+			// Re-signed or not, he is let go: whatever his odds of staying,
+			// the team is worth the same.
+			outlookSettings.wantedOnly = true;
+			assert.closeTo(valueAt(0.9), valueAt(0), 1e-9);
+			// Not so when a team keeps everyone at his odds.
+			outlookSettings.wantedOnly = false;
+			assert.isBelow(valueAt(0.9), valueAt(0));
+		} finally {
+			outlookSettings.wantedOnly = was;
+		}
 	},
 );

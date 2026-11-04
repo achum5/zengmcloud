@@ -32,6 +32,12 @@ export const loadOwnerLeague = async (file: string) => {
 			await import("../../worker/core/realisticFrontOffice/outlook.ts");
 		outlookSettings.knownClasses = env.OWNER_KNOWN === "1";
 	}
+	// OWNER_OUTLOOK: outlook settings to run with (JSON).
+	if (env.OWNER_OUTLOOK) {
+		const { outlookSettings } =
+			await import("../../worker/core/realisticFrontOffice/outlook.ts");
+		Object.assign(outlookSettings, JSON.parse(env.OWNER_OUTLOOK));
+	}
 	const fs = await importNode("node:fs/promises");
 	const data = JSON.parse(await fs.readFile(file, "utf8"));
 	const ga = data.gameAttributes;
