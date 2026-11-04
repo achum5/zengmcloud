@@ -5709,8 +5709,11 @@ class Action {
 					if (stop !== undefined && stop + rout <= T) {
 						b1 = stop;
 					} else if (stop !== undefined) {
+						// (Quicker across than he would be, if that is all the time
+						// there is before it - DOWN_RAMP_MS at least: not at his
+						// quickest across as he stops.)
 						const back = Math.max(a1, stop - rout);
-						if (stop - back >= least) {
+						if (stop - back >= Math.min(least, DOWN_RAMP_MS)) {
 							b1 = back;
 							rout = stop - back;
 						}
@@ -6581,7 +6584,16 @@ class Action {
 					d: Math.min(qbStart.d - dropD, this.of(qbMesh).d - (gun ? 4 : 7)),
 					a: qbStart.a,
 				});
-				qb.go(setAt, qb.t + 250 + dist(qb.at, setAt) * 50, "back", this.ahead);
+				// (Back off the fake no quicker than on any drop - see
+				// QB_DROP_FPS - and pulled up into his set: not flat out off it
+				// and stopped dead in his set.)
+				const far = dist(qb.at, setAt);
+				qb.go(
+					setAt,
+					qb.t + Math.max(300 + far * 55, (far / QB_DROP_FPS) * 1000 + 150),
+					"back",
+					this.ahead,
+				);
 			}
 			faker.hold(fakeT - reach);
 			faker.getOff(

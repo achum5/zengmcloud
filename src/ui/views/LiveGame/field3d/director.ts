@@ -734,7 +734,14 @@ const paceWalkUps = (parts: Part[]) => {
 				next.from.y === l.to.y
 					? next
 					: l;
-			return paced(l, 0, paceOf(into));
+			// (No walk on into his stance - sent on further, say, with a man
+			// in motion: down to a walk's pace into it all the same, not
+			// stopped dead in it off his jog.)
+			return paced(
+				l,
+				0,
+				into === l ? Math.min(paceOf(l), SET_IN_FPS) : paceOf(into),
+			);
 		});
 	}
 };
