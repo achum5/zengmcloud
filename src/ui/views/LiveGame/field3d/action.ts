@@ -2412,6 +2412,19 @@ const WAY_LEAST_MS = 300;
 const WAY_EASE_FT = 1;
 // (Driven back, the block won, no quicker than this - ft/s.)
 const BLOCK_DRIVE_FPS = 6;
+// A pancake now and then: a lineman the sim says won his block on a run,
+// on his man alone and driving him at least this long (ms), puts him on
+// his back - over this long (ms), this far back (feet), down this long
+// (ms) - and steps on over him this far (feet); never where the man with
+// the ball comes by, nor with anybody else there (no nearer than this,
+// feet).
+const PANCAKE = 0.03;
+const PANCAKE_DRIVE_MS = 700;
+const PANCAKE_FALL_MS = 450;
+const PANCAKE_BACK_FT = 1.6;
+const PANCAKE_DOWN_MS = 1100;
+const PANCAKE_ON_FT = 0.8;
+const PANCAKE_CLEAR_FT = 5;
 // Let up after a pass is away on his own count too, up to this much later
 // (ms) - and a block on a run once the man with the ball is down.
 const PASS_END_SPREAD_MS = 450;
@@ -11707,6 +11720,42 @@ class Action {
 				m.go(at(end, (r() - 0.5) * 0.6), end, "engage", this.behind);
 				locked = Math.min(locked, end);
 				freed = Math.max(freed, end);
+				// (Driven off his feet: see PANCAKE.)
+				const p = this.of(m.at);
+				const lands = this.w({ d: p.d + PANCAKE_BACK_FT, a: p.a });
+				let clear = true;
+				for (let c = end; c <= Math.max(end, t) && clear; c += 50) {
+					clear = dist(carrier.posAt(c), lands) >= PANCAKE_CLEAR_FT;
+				}
+				// (Nor with another man there, to go on through it.)
+				clear &&= this.men.every(
+					(x) =>
+						x === b || x === m || dist(x.posAt(end), lands) >= PANCAKE_CLEAR_FT,
+				);
+				if (
+					wins &&
+					clear &&
+					won.has(b.pid) &&
+					men.length === 1 &&
+					OL.has(b.role) &&
+					free(m) &&
+					end - (snap + 450) >= PANCAKE_DRIVE_MS &&
+					end < till - FREED_MS &&
+					countOf(b, snap, 61) < PANCAKE
+				) {
+					m.act("tackledBack", end + PANCAKE_FALL_MS, this.behind, lands);
+					m.hold(m.t + PANCAKE_DOWN_MS, "supine");
+					m.act("getUpBack", m.t + GET_UP_MS);
+					this.done.add(m.pid);
+					b.cut(end);
+					const q = this.of(b.at);
+					b.go(
+						this.w({ d: q.d + PANCAKE_ON_FT, a: q.a }),
+						end + PANCAKE_FALL_MS,
+						"drive",
+						this.ahead,
+					);
+				}
 			}
 			this.jostle([b, ...men], snap + JOSTLE_FROM, locked);
 			// (Nobody left on him well before it is over: up out of it, and

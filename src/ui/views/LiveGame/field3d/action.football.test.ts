@@ -350,6 +350,53 @@ describe("the plays acted out", () => {
 		assert.isAtLeast(twists, 2);
 	}, 120_000);
 
+	test("a pancake now and then on a run: a lineman driven off his feet onto his back off his block, down a while and up again, with nobody going over him", () => {
+		let pancakes = 0;
+		eachPlay((play) => {
+			if (play.kind !== "run") {
+				return;
+			}
+			for (const part of play.parts) {
+				if (
+					part.team === play.offense ||
+					!["DE", "DT", "NT"].includes(part.role)
+				) {
+					continue;
+				}
+				const k = part.legs.findIndex(
+					(l, j) =>
+						l.move === "tackledBack" && part.legs[j - 1]?.move === "engage",
+				);
+				if (k < 0) {
+					continue;
+				}
+				pancakes += 1;
+				const fall = part.legs[k]!;
+				const down = part.legs[k + 1];
+				assert.strictEqual(down?.move, "supine", `play ${play.i}`);
+				assert.strictEqual(
+					part.legs[k + 2]?.move,
+					"getUpBack",
+					`play ${play.i}`,
+				);
+				// (Nobody else on his feet over him while he is down.)
+				for (let t = fall.t1; t <= down!.t1; t += 50) {
+					for (const other of play.parts) {
+						if (other === part || other.pid < 0) {
+							continue;
+						}
+						assert.isAtLeast(
+							dist(posAt(other, t), down!.to),
+							1.2,
+							`play ${play.i} at ${t - play.snap}`,
+						);
+					}
+				}
+			}
+		});
+		assert.isAtLeast(pancakes, 2);
+	}, 120_000);
+
 	test("the quarterback hit now and then as he lets it go: the ball gone first, a man of the other side's shove, down, and up again, a hand up now and then (or, hurt, not)", () => {
 		let passes = 0;
 		let hits = 0;
