@@ -204,6 +204,12 @@ const GAIT_LEAST: Partial<Record<Move, number>> = {
 	sprint: 10.5,
 };
 const GAIT_LEAST_MS = 300;
+// A gait gone a good deal quicker than it goes (ft/s): the next one up.
+const GAIT_MOST: Partial<Record<Move, number>> = {
+	walk: 9,
+	jog: 15,
+	run: 24,
+};
 // Up to speed from the pace he was going at (as much of it as was the way
 // he goes now): at no more than RAMP_ACCEL ft/s/s, in steps RAMP_STEP_MS
 // long, and the rest of the way that much quicker, to be there on time -
@@ -266,6 +272,10 @@ const STRETCH_TURN = 0.12;
 const STRETCH_SLACK = 1.5;
 const STRETCH_MS = 3000;
 const HOLD_LEFT_MS = 150;
+// A way in slowed along (see slowAlong): bent no further round than this
+// (radians) from a stride to the next, over the last this long (ms).
+const SLOW_ALONG_TURN = 0.6;
+const SLOW_ALONG_MS = 1500;
 // (Down at as much as this many times as hard, if he has to be.)
 const STOP_HARD = 1.5;
 // (Short of where that hard a stop takes him by more than this, feet: on
@@ -1897,6 +1907,109 @@ class Actor {
 			yaw,
 		);
 		this.pin(t1);
+	}
+
+	// Coming in on `to` (by t1) quicker than it takes: his way in over the
+	// last SLOW_ALONG_MS - the run he is on, bent no sharper than
+	// SLOW_ALONG_TURN a stride, and on to `to` - taken slowing as he goes
+	// (see STOP_ACCEL, STOP_HARD) and in at what that leaves him - not on
+	// at full tilt to a stride off it and walked the rest. (Whether he was.)
+	slowAlong(to: Pt, t1: number): boolean {
+		const legs = this.part.legs;
+		const l = this.last;
+		const okLeg = (x: Leg) =>
+			RAMPS.has(x.move) &&
+			!x.arms &&
+			!x.turn &&
+			!x.span &&
+			x.t1 > x.t0 &&
+			dist(x.from, x.to) > 0 &&
+			x.yaw === l.yaw &&
+			x.ball === l.ball &&
+			x.mirrored === l.mirrored;
+		const from = Math.max(t1 - SLOW_ALONG_MS, this.pinned);
+		if (!okLeg(l) || l.t0 < from || legPace(l) < STOP_LEAST) {
+			return false;
+		}
+		const wayOf = (x: Leg) => Math.atan2(x.to.y - x.from.y, x.to.x - x.from.x);
+		let j = legs.length - 1;
+		while (j > 0) {
+			const p = legs[j - 1]!;
+			const n = legs[j]!;
+			if (
+				p.t0 < from ||
+				!okLeg(p) ||
+				p.t1 !== n.t0 ||
+				Math.abs(angleOff(wayOf(n) - wayOf(p))) > SLOW_ALONG_TURN
+			) {
+				break;
+			}
+			j--;
+		}
+		const pts = [legs[j]!.from, ...legs.slice(j).map((x) => x.to)];
+		if (dist(l.to, to) > 0.01) {
+			if (angleAt(l.from, l.to, to) > SLOW_ALONG_TURN) {
+				return false;
+			}
+			pts.push(to);
+		}
+		const t0 = legs[j]!.t0;
+		const T = (t1 - t0) / 1000;
+		let L = 0;
+		for (let i = 1; i < pts.length; i++) {
+			L += dist(pts[i - 1]!, pts[i]!);
+		}
+		const vs = legPace(legs[j]!);
+		if (T <= 0 || L <= 0 || !(L / T < vs - RAMP_LEAST)) {
+			return false;
+		}
+		// (Down at Ad over td, then on at v1 - or, it taking a stop to,
+		// stopped on it and stood there.)
+		const easeAt = (Ad: number) => {
+			const q = T * T - (2 * (vs * T - L)) / Ad;
+			const v1 = q >= 0 ? vs - Ad * (T - Math.sqrt(q)) : -1;
+			return v1 >= 0 ? { v1, Ad } : undefined;
+		};
+		const stopA = (vs * vs) / (2 * L);
+		const plan =
+			easeAt(STOP_ACCEL) ??
+			easeAt(STOP_ACCEL * STOP_HARD) ??
+			(stopA <= STOP_ACCEL * STOP_HARD ? { v1: 0, Ad: stopA } : undefined);
+		if (!plan) {
+			return false;
+		}
+		const { v1, Ad } = plan;
+		const td = (vs - v1) / Ad;
+		const sAt = (t: number) => {
+			const u = Math.min(t, td);
+			return vs * u - (Ad * u * u) / 2 + v1 * Math.max(0, t - td);
+		};
+		const ptAt = (s: number): Pt => {
+			for (let i = 1; i < pts.length; i++) {
+				const a = pts[i - 1]!;
+				const b = pts[i]!;
+				const d = dist(a, b);
+				if (s <= d || i === pts.length - 1) {
+					const u = d > 0 ? clamp(s / d, 0, 1) : 1;
+					return { x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u };
+				}
+				s -= d;
+			}
+			return pts.at(-1)!;
+		};
+		const yaw = l.yaw;
+		legs.splice(j);
+		const end = v1 > 0 ? T : Math.min(T, td);
+		const n = Math.max(1, Math.round((end * 1000) / STOP_STEP_MS));
+		for (let i = 1; i <= n; i++) {
+			const a = (end * (i - 1)) / n;
+			const b = (end * i) / n;
+			const pace = (sAt(b) - sAt(a)) / (b - a);
+			this.go(ptAt(sAt(b)), t0 + b * 1000, gait(pace), yaw);
+		}
+		this.hold(t1);
+		this.pin(t1);
+		return true;
 	}
 
 	// Toward `to` by t1 at no more than `fps`, as chase - but getting up to
@@ -4700,22 +4813,32 @@ class Action {
 	// A leg run, or sprinted, slower than the gait goes for GAIT_LEAST_MS
 	// or more - slowed after it was laid, to meet a ball or another man:
 	// in the quickest gait that goes that slow (a run at a jog's pace a
-	// jog), not run on the spot.
+	// jog), not run on the spot. And one walked or jogged a good deal
+	// quicker than that gait goes (see GAIT_MOST) - bent out round a man
+	// down, or sent off in a gait asked for at a pace beyond it: in the
+	// gait that goes that quick, not his legs a blur under him.
 	noSlowGaits() {
 		const DOWN: Partial<Record<Move, Move>> = {
 			sprint: "run",
 			run: "jog",
 			jog: "walk",
 		};
+		const UP: Partial<Record<Move, Move>> = {
+			walk: "jog",
+			jog: "run",
+			run: "sprint",
+		};
 		for (const m of this.men) {
 			for (const l of m.legs) {
-				if (l.t1 - l.t0 < GAIT_LEAST_MS) {
-					continue;
-				}
 				const fps = legPace(l);
 				let move = l.move;
-				while (fps < (GAIT_LEAST[move] ?? -1) && DOWN[move]) {
-					move = DOWN[move]!;
+				while (fps > (GAIT_MOST[move] ?? Infinity) && UP[move]) {
+					move = UP[move]!;
+				}
+				if (l.t1 - l.t0 >= GAIT_LEAST_MS) {
+					while (fps < (GAIT_LEAST[move] ?? -1) && DOWN[move]) {
+						move = DOWN[move]!;
+					}
 				}
 				l.move = move;
 			}
@@ -9691,7 +9814,7 @@ class Action {
 					setTill(lead - fireMs);
 				}
 				inTo();
-			} else {
+			} else if (gives || !m.slowAlong(hit, lead)) {
 				// (Backpedaling, if he gives ground and can go that quick so.)
 				m.press(
 					hit,
@@ -11947,7 +12070,14 @@ class Action {
 					T * 1000 >= BAIL_LEAST_MS;
 				const fit = bail ? room : Math.min(room, BACK_MOST_FPS * T - far);
 				let ease = fit < 0.5 ? 0 : fit;
-				let fps = Math.min(m.top * 0.6, (far + ease) / T);
+				// (Backpedaling the whole way, no quicker than a backpedal goes
+				// - see BACK_TOP: not run backward at a sprint's pace to beat the
+				// ball there. As far as that gets him.)
+				let fps = Math.min(
+					m.top * 0.6,
+					bail ? Infinity : BACK_TOP,
+					(far + ease) / T,
+				);
 				let reach = far;
 				if (bail) {
 					// (Up to speed out of his stance as he goes - see
