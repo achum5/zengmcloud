@@ -73,10 +73,18 @@ const passPlays = (tl: FieldTimeline, roster: RosterMan[], side: 0 | 1) => {
 				);
 				linemen += 1;
 			} else if (part.team !== side && at === "DL") {
-				// (Across the field, over and back, working the man on him.)
+				// (Across the field, over and back, working the man on him -
+				// once he is on him: not on his way round onto him on a twist.)
+				const on = part.legs.find(
+					(l) => l.move === "engage" && l.t0 >= play.snap,
+				);
+				if (!on || on.t0 > play.snap + PROTECT_MS) {
+					continue;
+				}
 				let lo = Infinity;
 				let hi = -Infinity;
-				for (let t = play.snap + 700; t <= play.snap + PROTECT_MS; t += 50) {
+				const t0 = Math.max(play.snap + 700, on.t0);
+				for (let t = t0; t <= play.snap + PROTECT_MS; t += 50) {
 					const y = posAt(part, t).y;
 					lo = Math.min(lo, y);
 					hi = Math.max(hi, y);

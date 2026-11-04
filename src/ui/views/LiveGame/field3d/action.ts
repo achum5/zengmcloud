@@ -3121,6 +3121,23 @@ const EDGE_ON = 1.6;
 const EDGE_PAST = 1.8;
 // (Up the arc onto him bent through so many points.)
 const EDGE_ARC_PTS = 6;
+// A twist this often on a pass play with this long to rush (ms): an end and
+// the man inside him next on the line (no further apart than this, feet -
+// and their blockers no further apart than this, side by side) swapping
+// blockers - the inside man slanting out onto the end's, the end
+// a hard step up the field (feet) and round under him onto the man he
+// left: stepping across (feet) for at least this long (ms), off once the
+// other is this long short of getting onto his - and round behind him by
+// this far (feet).
+const TWIST = 0.18;
+const TWIST_LEAST_MS = 2400;
+const TWIST_APART = 11;
+const TWIST_BLOCKERS_APART = 6;
+const TWIST_JAB_FT = 2;
+const TWIST_ACROSS_MS = 120;
+const TWIST_SLIDE_FT = 1.4;
+const TWIST_LEAD_MS = 300;
+const TWIST_CLEAR_FT = 3.5;
 // Off the ball into the man across from him: up to speed at GET_OFF_ACCEL
 // ft/s/s, no quicker than RUSH_HIT_PACE of his top speed by the time he
 // gets there - not at full tilt from his first step.
@@ -10372,6 +10389,50 @@ class Action {
 				engaged.set(m, b);
 			}
 		}
+		// A twist now and then (see TWIST): an end and the man inside him
+		// trading blockers - not the pair the sim says got home.
+		const loops = new Map<Actor, Actor>();
+		if (end - snap >= TWIST_LEAST_MS && countOf(qb, snap, 52) < TWIST) {
+			const live = (x: Actor) =>
+				DL.has(x.role) && x !== pair?.[0] && !this.done.has(x.pid);
+			const aOf = (x: Actor) => this.of(x.at).a;
+			const can: [Actor, Actor][] = [];
+			for (const [m, b] of engaged) {
+				if (m.role !== "DE" || !live(m) || b === pair?.[1]) {
+					continue;
+				}
+				const side = Math.sign(aOf(m)) || 1;
+				const inside = [...engaged.keys()]
+					.filter(
+						(x) =>
+							x !== m &&
+							live(x) &&
+							Math.sign(aOf(x)) === side &&
+							Math.abs(aOf(x)) < Math.abs(aOf(m)),
+					)
+					.sort((x, y) => Math.abs(aOf(y)) - Math.abs(aOf(x)))[0];
+				const bi = inside && engaged.get(inside);
+				if (
+					inside &&
+					bi &&
+					bi !== b &&
+					bi !== pair?.[1] &&
+					Math.abs(aOf(m) - aOf(inside)) <= TWIST_APART &&
+					Math.abs(aOf(bi)) < Math.abs(aOf(b)) &&
+					Math.abs(aOf(b) - aOf(bi)) <= TWIST_BLOCKERS_APART
+				) {
+					can.push([m, inside]);
+				}
+			}
+			const pick = can[Math.floor(countOf(qb, snap, 53) * can.length)];
+			if (pick) {
+				const [m, inside] = pick;
+				const b = engaged.get(m)!;
+				engaged.set(m, engaged.get(inside)!);
+				engaged.set(inside, b);
+				loops.set(m, inside);
+			}
+		}
 		// The blockers' sets: back off the line, the tackles out wide; a
 		// back kept in, up beside the quarterback (two of them, one either
 		// side of him) - but never up in among the line.
@@ -10464,7 +10525,12 @@ class Action {
 				)[0];
 		const moved = new Set<Actor>();
 		const locks: { m: Actor; b: Actor; hitT: number; ts: number[] }[] = [];
-		for (const [m, b] of engaged) {
+		// (On a twist, the man going first laid out first.)
+		const hits = new Map<Actor, number>();
+		const order = [...engaged].sort(
+			([x], [y]) => Number(loops.has(x)) - Number(loops.has(y)),
+		);
+		for (const [m, b] of order) {
 			const s = this.of(m.at);
 			const side = Math.sign(s.a) || 1;
 			// Off the edge - lined up outside the last man on the line: up the
@@ -10477,10 +10543,49 @@ class Action {
 			m.hold(snap + 40 + r() * 60);
 			// Into him as soon as he can get there out of his stance (see
 			// GET_OFF_ACCEL).
-			const least = snap + 380 + r() * 150;
+			let least = snap + 380 + r() * 150;
 			const offMs = (far: number) =>
 				rampedMs(far, m.top * RUSH_HIT_PACE, 0, GET_OFF_ACCEL);
 			let hitT = least;
+			const first = loops.get(m);
+			let under: Pt | undefined;
+			if (first) {
+				// The end on a twist: a hard step up the field, sold as a rush
+				// round the edge - a step across, and off under the man going
+				// first as he gets onto his.
+				const jab = this.w({ d: s.d - TWIST_JAB_FT, a: s.a });
+				const jabT = m.t + offMs(TWIST_JAB_FT);
+				m.getOff(jab, jabT, 0, GET_OFF_ACCEL, "run", GET_OFF_SQUARE_MS);
+				const go = Math.min(
+					Math.max(
+						jabT + TWIST_ACROSS_MS,
+						(hits.get(first) ?? jabT) - TWIST_LEAD_MS,
+					),
+					end - HAND_MS * 2,
+				);
+				m.go(
+					this.w({ d: s.d - TWIST_JAB_FT, a: s.a - side * TWIST_SLIDE_FT }),
+					go,
+					"slide",
+					this.behind,
+				);
+				least = m.t;
+				hitT = least;
+				// (Round behind him where he has got to, if he is in the way:
+				// straight across, no further his side of him than that.)
+				const pen = this.of(first.posAt(hits.get(first) ?? m.t));
+				const now = this.of(m.at);
+				const to = this.of(b.posAt(m.t));
+				to.d += 2.6;
+				const u = (pen.a - now.a) / (to.a - now.a);
+				if (
+					u > 0 &&
+					u < 1 &&
+					now.d + (to.d - now.d) * u < pen.d + TWIST_CLEAR_FT
+				) {
+					under = this.w({ d: pen.d + TWIST_CLEAR_FT, a: pen.a });
+				}
+			}
 			// (Where he is on the blocker at t - `lat` feet over, across the
 			// field.)
 			const on = (t: number, lat: number) => {
@@ -10493,7 +10598,8 @@ class Action {
 				};
 			};
 			// (Up the arc first, off the edge, and in onto him.)
-			const arc = edge ? this.w({ d: s.d - 2, a: s.a + side * 1.5 }) : m.at;
+			const arc =
+				under ?? (edge ? this.w({ d: s.d - 2, a: s.a + side * 1.5 }) : m.at);
 			const a = dist(m.at, arc);
 			const reachBy = (t: number) =>
 				Math.max(least, m.t + offMs(a + dist(arc, on(t, 0))));
@@ -10507,21 +10613,30 @@ class Action {
 				hitT = (hitT + reachBy(hitT)) / 2;
 			}
 			hitT = Math.min(hitT, Math.max(least, end - HAND_MS));
+			hits.set(m, hitT);
 			const hitLat = (r() - 0.5) * 0.6;
 			const hit = on(hitT, hitLat);
 			// (Bent up round it onto him, not off one way and turned the
-			// other.)
-			const vHit = edge
-				? this.getOffAlong(
-						m,
-						this.curve(m.at, arc, hit, EDGE_ARC_PTS),
-						hitT,
-						GET_OFF_ACCEL,
-						m.top * RUSH_HIT_PACE,
-						"run",
-						GET_OFF_SQUARE_MS,
-					)
-				: m.getOff(hit, hitT, 0, GET_OFF_ACCEL, "run", GET_OFF_SQUARE_MS);
+			// other - or, on a twist, through the point behind the man going
+			// first.)
+			const via = under
+				? {
+						x: 2 * under.x - (m.at.x + hit.x) / 2,
+						y: 2 * under.y - (m.at.y + hit.y) / 2,
+					}
+				: arc;
+			const vHit =
+				edge || under
+					? this.getOffAlong(
+							m,
+							this.curve(m.at, via, hit, EDGE_ARC_PTS),
+							hitT,
+							GET_OFF_ACCEL,
+							m.top * RUSH_HIT_PACE,
+							"run",
+							GET_OFF_SQUARE_MS,
+						)
+					: m.getOff(hit, hitT, 0, GET_OFF_ACCEL, "run", GET_OFF_SQUARE_MS);
 			const over = this.rushEdge(b, engaged);
 			const per = HAND_MS * (0.8 + r() * 0.5) * (1 - RUSH_QUICKER * over);
 			const amp = edge ? 0 : HAND_FT * (0.5 + r()) * (1 + RUSH_WIDER * over);

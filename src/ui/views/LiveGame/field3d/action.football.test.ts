@@ -283,6 +283,73 @@ describe("the plays acted out", () => {
 		assert.isAtLeast(spins, 2);
 	}, 120_000);
 
+	test("a twist on the line now and then: an end a step up the field and round under the man inside him, who slants out ahead of him - never in each other's way", () => {
+		let twists = 0;
+		eachPlay((play) => {
+			if (play.kind !== "pass") {
+				return;
+			}
+			const center = play.parts.find((p) => p.role === "C");
+			if (!center) {
+				return;
+			}
+			const mid = posAt(center, play.snap).y;
+			const off = (part: Part, t: number) => Math.abs(posAt(part, t).y - mid);
+			const line = play.parts.filter(
+				(p) => p.team !== play.offense && ["DE", "DT", "NT"].includes(p.role),
+			);
+			for (const end of line) {
+				if (end.role !== "DE") {
+					continue;
+				}
+				// (Stepping across, before he is on anybody.)
+				const k = end.legs.findIndex(
+					(l) =>
+						l.t0 > play.snap &&
+						l.t0 < play.snap + 1500 &&
+						(l.move === "slide" || l.move === "shuffle"),
+				);
+				const hit = end.legs.find((l) => l.move === "engage");
+				if (k < 0 || !hit || hit.t0 < end.legs[k]!.t1) {
+					continue;
+				}
+				const side = Math.sign(posAt(end, play.snap).y - mid);
+				const first = line.find(
+					(p) =>
+						p !== end &&
+						Math.sign(posAt(p, play.snap).y - mid) === side &&
+						off(p, play.snap) < off(end, play.snap) &&
+						off(p, hit.t0) > off(p, play.snap) + 2,
+				);
+				if (!first) {
+					continue;
+				}
+				twists += 1;
+				// (Up the field first: off the ball, not across it.)
+				const jab = end.legs[k]!.from;
+				assert.isAtLeast(
+					Math.abs(jab.x - posAt(end, play.snap).x),
+					1.5,
+					`play ${play.i}`,
+				);
+				// (In on a man inside where he started.)
+				assert.isBelow(
+					off(end, hit.t0),
+					off(end, play.snap) - 2,
+					`play ${play.i}`,
+				);
+				for (let t = play.snap; t <= hit.t0; t += 50) {
+					assert.isAtLeast(
+						dist(posAt(end, t), posAt(first, t)),
+						2.5,
+						`play ${play.i} at ${t - play.snap}`,
+					);
+				}
+			}
+		});
+		assert.isAtLeast(twists, 2);
+	}, 120_000);
+
 	test("the quarterback hit now and then as he lets it go: the ball gone first, a man of the other side's shove, down, and up again, a hand up now and then (or, hurt, not)", () => {
 		let passes = 0;
 		let hits = 0;
