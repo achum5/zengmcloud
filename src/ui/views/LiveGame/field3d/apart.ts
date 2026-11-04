@@ -61,6 +61,9 @@ const BALL_APART = 1.4;
 const HANDS_OUT = 2;
 const HANDS_APART = 1;
 const TURF_APART = 1;
+// Free (see touching) between two touching legs for fewer than this many
+// samples: not, all through.
+const FREE_LEAST = 12;
 // The man the ball comes to, left where he is from this long (ms) before
 // it is his; the man it leaves, until this long after.
 const GATHER_MS = 400;
@@ -149,6 +152,27 @@ export const keepApart = (play: Play): Map<number, Sep[]> => {
 		const out = new Uint8Array(n);
 		for (let s = 0; s < n; s++) {
 			out[s] = touching(m.legs[k[s]!]!) ? 0 : 1;
+		}
+		// (Nor a moment free between one and the next - a step back out of
+		// a block before he goes in on the pile: moved over then, he would
+		// be slid over in the block too, as it comes on.)
+		for (let s = 0; s < n;) {
+			if (out[s]) {
+				s++;
+				continue;
+			}
+			let e = s;
+			while (e < n && !out[e]) {
+				e++;
+			}
+			let f = e;
+			while (f < n && out[f]) {
+				f++;
+			}
+			if (f < n && f - e < FREE_LEAST) {
+				out.fill(0, e, f);
+			}
+			s = f;
 		}
 		return out;
 	});
