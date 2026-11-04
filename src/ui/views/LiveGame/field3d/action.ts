@@ -4780,6 +4780,16 @@ class Action {
 				}
 				const held = on.filter(([a, b]) => a === t0 || b - a >= AIR_PASS_MS);
 				if (held.length === 0) {
+					// (Not the last moment of his first step on its own - see
+					// FIRST_STEP: a blink of something else between it and what
+					// he does next.)
+					const before = m.legs.find((l) => l.t1 === t0);
+					if (
+						t1 - t0 < AIR_LEAST_MS &&
+						(before?.move === "drive" || before?.move === "engage")
+					) {
+						continue;
+					}
 					free.push([t0, t1]);
 					continue;
 				}
