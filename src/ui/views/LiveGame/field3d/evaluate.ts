@@ -170,6 +170,17 @@ const ownWay = (l: Leg) =>
 		Math.abs(
 			wrapAngle(l.yaw - Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x)),
 		) < OWN_WAY);
+// (Going nearly his own way, faced this near it, radians: turned into it as
+// quickly as if he were - not swung round over TURN_MS once he is off.)
+const NEAR_OWN = 0.7;
+const nearOwn = (l: Leg) =>
+	ownWay(l) ||
+	(goes(l) &&
+		!l.turn &&
+		l.yaw !== undefined &&
+		Math.abs(
+			wrapAngle(l.yaw - Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x)),
+		) < NEAR_OWN);
 const facings = new WeakMap<Leg[], Facing>();
 // (A short way he goes his own way along, faced a little the way he goes on
 // after it - where he will be LOOK_MS from its start, or the way he is to
@@ -255,7 +266,8 @@ const facingOf = (legs: Leg[]): Facing => {
 			cuts.push(lj.t0);
 		}
 		const lp = cut ? undefined : legs[j - 1];
-		const startsOff = own && lp && !goes(lp) && !lp.turn;
+		const near = nearOwn(lj);
+		const startsOff = near && lp && !goes(lp) && !lp.turn;
 		const setsUp = !goes(lj) && lp && goes(lp) && SET.has(lj.move);
 		// (Or down on a knee: round as he gets there - or, stood, round on
 		// his feet first, all the way, and then down.)
@@ -319,7 +331,7 @@ const facingOf = (legs: Leg[]): Facing => {
 		ms[j] =
 			(PIVOTS.has(lj.move) && !goes(lj)) || stood
 				? Math.max(TURN_MS, (Math.abs(by) / STAND_TURN) * 1000)
-				: snap[j] || own
+				: snap[j] || near
 					? Math.max(
 							snap[j] ? TURN_SNAP_MS : TURN_GO_MS,
 							(Math.abs(by) / turnMost(lj)) * 1000,
