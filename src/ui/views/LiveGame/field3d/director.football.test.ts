@@ -609,7 +609,8 @@ describe("in close on a big play's man", () => {
 				const at = `play ${play.i}`;
 				assert.strictEqual(play.party?.from !== undefined, true, at);
 				assert.isAtLeast(c.t1 - c.t0, 1300, at);
-				assert.isAtMost(c.t1 - c.t0, 2600, at);
+				// (To within rounding: from + 2600 less from, on a long clock.)
+				assert.isAtMost(c.t1 - c.t0, 2600 + 1e-6, at);
 				assert.isBelow(c.at.y + HERO_CAM_FT, FIELD_W, at);
 				assert.isAtMost(c.t1, play.t1 - 400, at);
 				if (play.refCall) {

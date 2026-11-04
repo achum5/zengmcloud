@@ -3674,6 +3674,14 @@ const TWIN_EASE_MS = 250;
 const TWIN_EASE_LEAST = 150;
 const TWIN_EVERY_MS = 50;
 const TWIN_JOIN_MS = 300;
+// (Stood, and moved this quick or more by it, ft/s: stepped.)
+const TWIN_STEP_FPS = 2;
+// One of his own side nearer the man with the ball than this (feet): eased
+// off his way, no more than this (feet) - not this long (ms) after he has
+// it, nor before it leaves him (or he goes down).
+const CARRY_APART = 1.8;
+const CARRY_CLEAR_MOST = 1.5;
+const CARRY_CLEAR_SKIP_MS = 350;
 // (Of two of different sides, one facing the other - more than this, the
 // cosine of the angle off his facing - as good as in a block with him.)
 const TWIN_FACING = 0.7;
@@ -5016,6 +5024,77 @@ class Action {
 				clashed();
 			}
 		}
+		// The man with the ball: none of his own side in him as he comes by
+		// - eased off his way, to the side they are on, all of it theirs (not
+		// as he gets it, nor as he goes down, nor off their feet).
+		this.ball.forEach((seg, k) => {
+			const c = seg.kind === "held" ? this.man(seg.pid) : undefined;
+			if (!c || seg.kind !== "held") {
+				return;
+			}
+			const t0 = Math.max(seg.t0 + CARRY_CLEAR_SKIP_MS, snap);
+			const t1 =
+				Math.min(this.ball[k + 1]?.t0 ?? end, this.whistle, end) -
+				CARRY_CLEAR_SKIP_MS;
+			for (const m of men) {
+				if (m === c || m.team !== c.team) {
+					continue;
+				}
+				let spell:
+					| { a: number; b: number; nx: number; ny: number; need: number }
+					| undefined;
+				const eased = () => {
+					if (spell && spell.b > spell.a) {
+						const len = Math.hypot(spell.nx, spell.ny);
+						if (len > 0) {
+							const h = Math.min(CARRY_CLEAR_MOST, spell.need);
+							ease(m, spell.a, spell.b, {
+								x: (spell.nx / len) * h,
+								y: (spell.ny / len) * h,
+							});
+						}
+					}
+					spell = undefined;
+				};
+				for (let t = t0; t <= t1; t += TWIN_EVERY_MS) {
+					const l = legAt(m, t);
+					const p = c.posAt(t);
+					const q = m.posAt(t);
+					const d = dist(p, q);
+					if (d >= CARRY_APART || !movable(l) || DOWN.has(l.move)) {
+						continue;
+					}
+					if (spell && t - spell.b > TWIN_JOIN_MS) {
+						eased();
+					}
+					const a = c.posAt(t - 50);
+					const b = c.posAt(t + 50);
+					const run = dist(a, b);
+					const ux =
+						run > 0.05 ? (b.x - a.x) / run : (q.x - p.x) / Math.max(d, 1e-6);
+					const uy =
+						run > 0.05 ? (b.y - a.y) / run : (q.y - p.y) / Math.max(d, 1e-6);
+					const along = (q.x - p.x) * ux + (q.y - p.y) * uy;
+					const across = (q.x - p.x) * -uy + (q.y - p.y) * ux;
+					const sign = across >= 0 ? 1 : -1;
+					const need =
+						Math.sqrt(Math.max(0, CARRY_APART ** 2 - along ** 2)) -
+						Math.abs(across);
+					if (need <= 0) {
+						continue;
+					}
+					if (spell) {
+						spell.b = t;
+						spell.nx += -uy * sign;
+						spell.ny += ux * sign;
+						spell.need = Math.max(spell.need, need);
+					} else {
+						spell = { a: t, b: t, nx: -uy * sign, ny: ux * sign, need };
+					}
+				}
+				eased();
+			}
+		});
 		for (const [m, es] of eases) {
 			const at = (t: number): Pt => {
 				let x = 0;
@@ -5056,6 +5135,24 @@ class Action {
 				l.from = moved[k]!.from;
 				l.to = moved[k]!.to;
 			});
+			// (Stood about, and moved off where he stood by it: stepped over,
+			// not slid there still stood.)
+			for (const l of legs) {
+				const fps =
+					l.t1 > l.t0 ? dist(l.from, l.to) / ((l.t1 - l.t0) / 1000) : 0;
+				if (moveKind(l.move) !== "still" || fps < TWIN_STEP_FPS) {
+					continue;
+				}
+				const was = m.legs[m.legs.indexOf(l) - 1];
+				const yaw = l.yaw ?? (was ? yawOf(was, m.yaw) : m.yaw);
+				const way = faced(gait(fps), yaw, l.from, l.to, fps, was);
+				l.move = way.move;
+				if (way.yaw === undefined) {
+					delete l.yaw;
+				} else {
+					l.yaw = way.yaw;
+				}
+			}
 		}
 	}
 
@@ -11951,15 +12048,15 @@ class Action {
 				}
 			};
 			lay(0, s.t);
-			const way = through
-				? this.wayThrough(
-						b,
-						carrier,
-						s.t,
-						Math.min(until, t - CLEAR_DOWN_MS),
-						[...on].flatMap(([o, them]) => (o === b ? [] : [o, ...them])),
-					)
-				: { over: 0, by: s.t };
+			// (Into a pile too: out of his way as he comes up to it, not run
+			// through by him on the way in.)
+			const way = this.wayThrough(
+				b,
+				carrier,
+				s.t,
+				Math.min(until, t - CLEAR_DOWN_MS),
+				[...on].flatMap(([o, them]) => (o === b ? [] : [o, ...them])),
+			);
 			if (way.over !== 0) {
 				b.cut(s.t);
 				lay(way.over, way.by);
