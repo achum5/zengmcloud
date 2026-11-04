@@ -2130,7 +2130,12 @@ export const teamPoints = (
 				// A player past his contract, whom the team may let go rather
 				// than re-sign, as a pick's player past his rookie deal
 				// (wantedOnly) - each half on its own, paid as he is.
-				if (wanted && players[i]!.contract.exp < season && salary > 0) {
+				if (
+					wanted &&
+					players[i]!.contract.exp < season &&
+					salary > 0 &&
+					lines[i]!.availability >= VETERAN_OPTION_CHANCE
+				) {
 					const line = lines[i]!;
 					const key = `vet:${players[i]!.pid}`;
 					if (line.halves && outlookSettingFor(tid, "upside")) {
@@ -2240,6 +2245,12 @@ type LetGoOption = {
 	pick: string;
 	salary: number;
 };
+
+// A veteran less likely than this to be there past his contract is not
+// worth deciding on (wantedOnly): whichever way, he moves his team little,
+// and trying every one cost more than twice as much as the rest of a
+// roster's outlook.
+const VETERAN_OPTION_CHANCE = 0.2;
 
 // A player past his contract, not a pick's player (wantedOnly).
 const isVeteran = (o: LetGoOption) => o.pick.startsWith("vet:");
@@ -2732,6 +2743,14 @@ export const teamStrengths = (
 	const floorAt = (y: number) =>
 		floorNow && floor < 1 && !(outlook.offset === 0 && y === 0) ? 0 : floor;
 	const money: number[] = [];
+	// With wantedOnly, whom the team lets go is decided on the first pass and
+	// kept on the second, for its record's shift - as on a deal's roster
+	// (LetGoDecisions): deciding afresh doubled the cost of every veteran.
+	const decisions: LetGoDecisions | undefined =
+		known ??
+		(outlookSettingFor(tid, "wantedOnly")
+			? { decisions: new Map(), record: true }
+			: undefined);
 	const pointsWith = (losing?: LosingShifts) =>
 		teamPoints(
 			outlook,
@@ -2744,7 +2763,7 @@ export const teamStrengths = (
 				refill?.(y, room, signings);
 			},
 			undefined,
-			known,
+			decisions,
 			outlook.titleCurves.length > 0
 				? (y, points) => seasonValue(outlook, y, strengthOf(y, points), tid)
 				: undefined,
@@ -2762,6 +2781,9 @@ export const teamStrengths = (
 		);
 		if (losing) {
 			losingClock.repriced += 1;
+			if (decisions && decisions !== known) {
+				decisions.record = false;
+			}
 			points = pointsWith(losing);
 		}
 	}
