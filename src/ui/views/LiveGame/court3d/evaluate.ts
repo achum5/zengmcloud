@@ -1619,9 +1619,48 @@ const passComing = (tl: CourtTimeline, pid: number, t: number): boolean => {
 	return false;
 };
 
+// Carried by something other than his own run - nudged or kept off a man
+// (see spotAt) - more than by the run, and faster than a step: the way he is
+// really going (radians). Undefined when his run is what takes him.
+const carriedHeading = (tr: Track, t: number): number | undefined => {
+	if (!tr.nudges?.length && !tr.sep?.length) {
+		return undefined;
+	}
+	const a = spotAt(tr, t - OFFSET_DT, false);
+	const b = spotAt(tr, t + OFFSET_DT, false);
+	const vx = ((b.x - a.x) * 1000) / (2 * OFFSET_DT);
+	const vy = ((b.y - a.y) * 1000) / (2 * OFFSET_DT);
+	if (vx * vx + vy * vy < OFFSET_GO_FTPS * OFFSET_GO_FTPS) {
+		return undefined;
+	}
+	const pa = rawSpotAt(tr, t - OFFSET_DT, false);
+	const pb = rawSpotAt(tr, t + OFFSET_DT, false);
+	const px = ((pb.x - pa.x) * 1000) / (2 * OFFSET_DT);
+	const py = ((pb.y - pa.y) * 1000) / (2 * OFFSET_DT);
+	const ox = vx - px;
+	const oy = vy - py;
+	return ox * ox + oy * oy > px * px + py * py ? Math.atan2(vy, vx) : undefined;
+};
+
 // Which way he means to face at t: at what he is doing (a shot faces the rim),
 // where he is running, or - standing - at the ball.
+// Carried a long way by something other than his own run - stepped up into
+// the way of a man with the ball and back to his own (see stopTheBall), kept
+// off a man - faster than a step, and the other way from how he would face:
+// he faces where he is really going. Facing where his run would have him
+// heading, he ran backward at full speed. (Carried off to the side of how he
+// faces - a slide with the ball, say - he goes on as he was.)
 const yawTarget = (tl: CourtTimeline, tr: Track, t: number): number => {
+	const planned = plannedYaw(tl, tr, t);
+	const carried = carriedHeading(tr, t);
+	if (carried === undefined || actAt(tr, t)?.look) {
+		return planned;
+	}
+	return Math.abs(wrapAngle(carried - planned)) > CARRIED_TURN
+		? carried
+		: planned;
+};
+const plannedYaw = (tl: CourtTimeline, tr: Track, t: number): number => {
 	const here = spotAt(tr, t);
 	const fi = lastIndex(tr.faces, t, (f) => f[0]);
 	const face = fi >= 0 ? tr.faces[fi]![1] : 1;
@@ -1771,6 +1810,14 @@ const yawTarget = (tl: CourtTimeline, tr: Track, t: number): number => {
 // did - and eased between beats. No state that depends on which frames were
 // drawn before, so any frame can be asked for and every viewing agrees.
 const TURN_STEP = 40;
+// Carried by an offset (see yawTarget): how fast (feet a second), read over
+// this long either side (ms).
+const OFFSET_GO_FTPS = 7;
+const OFFSET_DT = 60;
+// How far round from how he would face that has to be (radians), and how
+// near to facing it he is when he has turned to it.
+const CARRIED_TURN = (100 * Math.PI) / 180;
+const CARRIED_FACING = Math.PI / 3;
 // (Radians a ms.)
 export const TURN_RATE = (Math.PI * 3) / 1000;
 const TURN_MAX = TURN_RATE * TURN_STEP;
@@ -2508,8 +2555,14 @@ const shownSteps = (
 	}
 	// (Turned that far from the way he goes for a moment either side, not
 	// just in passing - a wobble as one run gives way to the next is no
-	// backpedal for a frame.)
-	const heading = Math.atan2(here.hy, here.hx);
+	// backpedal for a frame.) The way he really goes, carried along by
+	// something other than his run (see carriedHeading).
+	const carried = carriedHeading(tr, t);
+	const heading =
+		carried !== undefined &&
+		Math.abs(wrapAngle(carried - yawAt(tl, tr, t))) < CARRIED_FACING
+			? carried
+			: Math.atan2(here.hy, here.hx);
 	const offAt = (when: number) =>
 		Math.abs(wrapAngle(yawAt(tl, tr, when) - heading));
 	const off0 = offAt(t);

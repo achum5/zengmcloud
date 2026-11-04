@@ -1717,6 +1717,54 @@ const CLOSE_FINISHES = new Set<AnimName>([
 const WALL_FT = 4.5;
 // And this near a jumper, a hand up at it.
 const WALL_JUMPER_FT = 4;
+
+// The ball stopped (see stopTheBall): a man in the scoring area - this far
+// from the rim (feet) - who has had it this long (ms) or more, pulling up,
+// floating it or passing out of it with nothing between him and the rim.
+const STOP_NEAR = 6;
+const STOP_FAR = 24;
+const STOP_HELD = 350;
+// He makes up his mind to let it go this long (ms) before it goes.
+const STOP_DECIDE = 250;
+// The way to the rim: this wide either side (feet), a touch wider further
+// on - and a man of theirs within this much of him is on him.
+const STOP_LANE = 2.2;
+const STOP_ON = 5;
+// Where the help steps up to: this far (feet) in front of him on his way to
+// the rim, this far off to the side if square in front would hide him from
+// the camera; there this long (ms) before it goes, and stays a beat after.
+const STOP_AHEAD = 3.8;
+const STOP_SIGHT = 1.6;
+const STOP_EARLY = 120;
+const STOP_HOLD = 150;
+// The help: no further than this (feet), at this pace (ft/s) - over this
+// long (ms) at least and at most - and somewhere he stays put meanwhile
+// (no further than this from where he'd have been, feet).
+const STOP_REACH = 20;
+const STOP_FTPS = 14;
+const STOP_RAMP: [number, number] = [320, 1300];
+const STOP_DRIFT = 2.5;
+// Pulling up off a drive: going this fast (ft/s), up to this long (ms)
+// before it goes - but not the step or hop he goes up off, this long (ms)
+// before it.
+const STOP_DRIVE = 7;
+const STOP_LOOK = 2500;
+const STOP_GATHER = 400;
+// The plays in which the ball stops like that.
+const STOP_PLAYS = /^(fg|miss|tp|ast|tov|stl|pf|blk|orb|drb)/;
+// Not a man down on the floor, or already busy getting up off it.
+const STOP_BUSY = new Set<string>([
+	"fall",
+	"takeCharge",
+	"chargeDown",
+	"sitFloor",
+	"stumble",
+	"hurtKnee",
+	"hurtAnkle",
+	"hurtHead",
+	"hurtHand",
+	"hurtArm",
+]);
 // A hack on a man going up (see poses): this long (ms), off the floor for
 // the middle of it - as high as that long in the air takes him.
 const HACK_MS = 670;
@@ -20209,6 +20257,39 @@ class Director {
 	// (not before the ball moves, a cut, the ball changing hands - what he
 	// goes on). And running on into a run he pulls up at the end of, he
 	// goes into it no faster than he can pull up in it.
+	// Never from one spot to another in an instant. A run put in over the one
+	// he was still on - laid out from where that one was taking him, not
+	// from where it had got him - starts from where he is: the man who picked
+	// a loose ball up 8 feet short of where his run out of it was headed was
+	// there one frame and 8 feet away the next. (Not at a cut, where the
+	// picture is somewhere else anyway, nor off the floor out of sight.)
+	private noJumps() {
+		const JUMP = 0.5;
+		const CUT_NEAR = 80;
+		for (const tr of this.tracks.values()) {
+			const ms = tr.moves;
+			for (let k = 1; k < ms.length; k++) {
+				const m = ms[k]!;
+				// (Only over a run he is still on: off a seat, out of a huddle,
+				// he goes from where that has him - not from his last run.)
+				if (
+					ms[k - 1]!.t1 <= m.t0 + 1 ||
+					this.cuts.some((c) => c > m.t0 - CUT_NEAR && c < m.t0 + CUT_NEAR)
+				) {
+					continue;
+				}
+				const s = lastBy(tr.shown, m.t0, (x) => x[0]);
+				if (s >= 0 && !tr.shown[s]![1]) {
+					continue;
+				}
+				const at = this.posAt(tr.pid, m.t0 - 0.5, false, true);
+				if (dist(at, m.from) > JUMP) {
+					m.from = { ...at };
+				}
+			}
+		}
+	}
+
 	private ease() {
 		// (Past this much harder than he usually goes, he takes it easier,
 		// as easy as he can.)
@@ -22594,6 +22675,14 @@ class Director {
 			x = m.from.x + (m.to.x - m.from.x) * e;
 			y = m.from.y + (m.to.y - m.from.y) * e;
 		}
+		const off = this.nudgeAt(tr, t);
+		return { x: x + off.x, y: y + off.y };
+	}
+
+	// How far his steps aside have him off his plan at t.
+	private nudgeAt(tr: Track, t: number): Pt {
+		let x = 0;
+		let y = 0;
 		const list = tr.nudges ?? [];
 		for (let i = lastBy(list, t, (n) => n.t0); i >= 0; i--) {
 			const n = list[i]!;
@@ -25804,7 +25893,7 @@ class Director {
 		}
 		const t0Of = (x: { tr: Track; k: number }) => x.tr.moves[x.k]!.t0;
 		starts.sort((a, b) => t0Of(a) - t0Of(b));
-		for (let i = 0; i < starts.length;) {
+		for (let i = 0; i < starts.length; ) {
 			let n = 1;
 			while (
 				i + n < starts.length &&
@@ -25918,6 +26007,13 @@ class Director {
 				walls.push(w);
 			}
 		}
+		// (Where he really is: a man who stepped up into the way - see
+		// stopTheBall - is right there too.)
+		const at = (tr: Track, t: number): Pt => {
+			const P = this.posAt(tr.pid, t, false, true);
+			const off = this.nudgeAt(tr, t);
+			return { x: P.x + off.x, y: P.y + off.y };
+		};
 		for (const { shooter, release, jumper } of walls) {
 			const team = this.teamOf(shooter);
 			const S = this.posAt(shooter, release, false, true);
@@ -25925,8 +26021,7 @@ class Director {
 				if (
 					tr.team === team ||
 					tr.pid < 0 ||
-					dist(this.posAt(tr.pid, release, false, true), S) >
-						(jumper ? WALL_JUMPER_FT : WALL_FT)
+					dist(at(tr, release), S) > (jumper ? WALL_JUMPER_FT : WALL_FT)
 				) {
 					continue;
 				}
@@ -25943,7 +26038,7 @@ class Director {
 					continue;
 				}
 				tr.acts = tr.acts.filter((a) => !busy.includes(a));
-				const D = this.posAt(tr.pid, release, false, true);
+				const D = at(tr, release);
 				// (Up as high as he gets up; a sharp one on time, a poor one a
 				// beat late - and now and then caught flat-footed, just a hand
 				// up. Only for a man the game has ratings for.)
@@ -25974,6 +26069,183 @@ class Director {
 				});
 				tr.acts.sort((a, b) => a.t0 - b.t0);
 			}
+		}
+	}
+
+	// THE BALL STOPPED. Nobody leaves a man with the ball an open way to the
+	// rim. In the scoring area with it a moment - on the dribble, or stood
+	// holding it - and nobody in the way or on him (his man beaten, or never
+	// there), whoever of theirs is nearest steps up into the way in front of
+	// him: there by the time he makes up his mind, and back to his own man
+	// as the ball goes. So the pull-up, the floater, the pass out of the lane
+	// is made against the man who came over - not with nothing between him
+	// and the rim, which no man with the ball passes up.
+	private stopTheBall() {
+		const shown = (tr: Track, t: number) => {
+			let on = false;
+			for (const [at, v] of tr.shown) {
+				if (at > t) {
+					break;
+				}
+				on = v;
+			}
+			return on;
+		};
+		const holdSince = (pid: number, t: number): number => {
+			let since = t;
+			for (let k = this.ball.length - 1; k >= 0; k--) {
+				const s = this.ball[k]!;
+				// (From before it left his hands.)
+				if (s.t0 >= t) {
+					continue;
+				}
+				if (s.kind !== "hold" || s.pid !== pid) {
+					break;
+				}
+				since = s.t0;
+			}
+			return since;
+		};
+		for (const b of this.ball) {
+			if (b.kind !== "fly" || !("pid" in b.from) || b.from.pid < 0) {
+				continue;
+			}
+			const h = b.from.pid;
+			const team = this.teamOf(h);
+			const release = b.t0;
+			const pass =
+				"pid" in b.to && b.to.pid !== h && this.teamOf(b.to.pid) === team;
+			const shot = !("pid" in b.to);
+			if (!pass && !shot) {
+				continue;
+			}
+			// (Not at a free throw, nor anything at a dead ball.)
+			const beat = this.beats.findLast((x) => x.preStart <= release);
+			if (!beat || /ft$/i.test(beat.type) || !STOP_PLAYS.test(beat.type)) {
+				continue;
+			}
+			// He has had it a moment: not caught and gone with it at once - a
+			// swing of it on, a catch-and-shoot.
+			const held = release - holdSince(h, release);
+			if (held < STOP_HELD) {
+				continue;
+			}
+			// Pulling up off a drive, a moment before he lets it go: there as
+			// he pulls up - the reason he does - not only as it goes.
+			let arrive = release - STOP_EARLY;
+			// (Before the step or hop he goes up off, which is quick too.)
+			for (
+				let t = release - STOP_GATHER;
+				t > release - held + 100 && t > release - STOP_LOOK;
+				t -= 50
+			) {
+				const a = this.posAt(h, t - 100, false, true);
+				const c = this.posAt(h, t, false, true);
+				if (dist(a, c) * 10 > STOP_DRIVE) {
+					arrive = Math.min(arrive, t + 120);
+					break;
+				}
+			}
+			const rim = { x: rimX(team), y: COURT_H / 2 };
+			// The way to the rim at t: anybody of theirs in it, ahead of him -
+			// or right on him, not beaten - or nothing between him and it.
+			const clearAt = (t: number): boolean => {
+				const P = this.posAt(h, t, false, true);
+				const d = dist(P, rim);
+				if (d < STOP_NEAR || d > STOP_FAR) {
+					return false;
+				}
+				const u = unitVec(P, rim);
+				let near = Infinity;
+				let nearAhead = 0;
+				for (const tr of this.tracks.values()) {
+					if (tr.team === team || tr.pid < 0 || !shown(tr, t)) {
+						continue;
+					}
+					const D = this.posAt(tr.pid, t, false, true);
+					const along = (D.x - P.x) * u.x + (D.y - P.y) * u.y;
+					const off = Math.abs((D.x - P.x) * u.y - (D.y - P.y) * u.x);
+					if (along > 0.5 && along < d + 2 && off < STOP_LANE + along * 0.08) {
+						return false;
+					}
+					const dd = dist(D, P);
+					if (dd < near) {
+						near = dd;
+						nearAhead = along;
+					}
+				}
+				return near > STOP_ON || nearAhead < -0.5;
+			};
+			// As he pulls up, and as he makes up his mind to let it go: open
+			// at either, and somebody steps up - there by the first of them.
+			const late = release - STOP_DECIDE;
+			if (arrive - 50 < late && clearAt(arrive - 50)) {
+				// (There as he pulls up.)
+			} else if (clearAt(late)) {
+				arrive = release - STOP_EARLY;
+			} else {
+				continue;
+			}
+			const decided = Math.min(late, arrive - 50);
+			const H = this.posAt(h, release, false, true);
+			const defs = [...this.tracks.values()].filter(
+				(tr) => tr.team !== team && tr.pid >= 0 && shown(tr, decided),
+			);
+			// Where he steps up to: a stride in front of him on his way to the
+			// rim, as he lets it go - off to the side of him if that would put
+			// him square between the shooter and the camera (see "a contested
+			// jumper stays in sight").
+			const uh = unitVec(H, rim);
+			const ahead = Math.min(STOP_AHEAD, dist(H, rim) - 2.5);
+			let S = { x: H.x + uh.x * ahead, y: H.y + uh.y * ahead };
+			if (S.y > H.y && Math.abs(S.x - H.x) < STOP_SIGHT) {
+				S = { x: H.x + (COURT_W / 2 >= H.x ? 1 : -1) * STOP_SIGHT, y: S.y };
+			}
+			S = clampPt(S);
+			const until = release + STOP_HOLD;
+			let best: { tr: Track; dx: number; dy: number; ramp: number } | undefined;
+			let bestCost = Infinity;
+			for (const tr of defs) {
+				// (Not a man down on the floor, or one already stepping aside.)
+				if (
+					tr.acts.some(
+						(a) =>
+							STOP_BUSY.has(a.anim) && a.t1 > decided - 1500 && a.t0 < until,
+					) ||
+					(tr.nudges ?? []).some((n) => n.t1 > decided - 1500 && n.t0 < until)
+				) {
+					continue;
+				}
+				const D0 = this.posAt(tr.pid, decided, false, true);
+				const cost = dist(D0, S);
+				if (cost >= bestCost || cost > STOP_REACH) {
+					continue;
+				}
+				// He stays put there: where he would have been anyway mustn't run
+				// off from under it while he holds it.
+				const A = this.posAt(tr.pid, arrive, false, true);
+				const B = this.posAt(tr.pid, until, false, true);
+				if (dist(A, B) > STOP_DRIFT) {
+					continue;
+				}
+				const ramp = Math.min(
+					STOP_RAMP[1],
+					Math.max(STOP_RAMP[0], (cost / STOP_FTPS) * 1000),
+				);
+				bestCost = cost;
+				best = { tr, dx: S.x - A.x, dy: S.y - A.y, ramp };
+			}
+			if (!best || Math.hypot(best.dx, best.dy) < 1) {
+				continue;
+			}
+			(best.tr.nudges ??= []).push({
+				t0: arrive - best.ramp,
+				t1: until + best.ramp,
+				dx: best.dx,
+				dy: best.dy,
+				ramp: best.ramp,
+			});
+			best.tr.nudges.sort((a, b) => a.t0 - b.t0);
 		}
 	}
 
@@ -26489,6 +26761,7 @@ class Director {
 		this.stagger();
 		this.keepClear();
 		this.aroundBodies();
+		this.stopTheBall();
 		this.biteOnFakes();
 		this.wallUp();
 		this.workHisMan();
@@ -26531,6 +26804,7 @@ class Director {
 		}
 		this.fx.sort((a, b) => a.t - b.t);
 		blocksShownAgain(this.fx);
+		this.noJumps();
 		this.ease();
 		this.clearTheWayIn();
 		const fast = hurried(this.fast, this.beats);

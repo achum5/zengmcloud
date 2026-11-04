@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 162,
+		date: "2026-11-04",
+		text: "3D game: no more open lanes passed up. When a player with the ball pulls up, floats it or passes out with nothing between him and the rim, a help defender now steps into the lane in front of him first and contests the shot - then gets back to his own man. Also fixed a player jumping several feet in a frame after picking up a loose ball, and defenders running backwards at full speed on their way back.",
+	},
+	{
 		n: 161,
 		date: "2026-11-03",
 		text: "Team pages have a More team info dropdown, like Basketball Reference's: points scored and allowed, SRS, pace, offensive, defensive and net rating and expected record, each with where it ranks in the league, plus attendance and how the playoffs went. It also shows the preseason odds - the title price and the win total, and whether the team went over or under - saved from this season on.",
