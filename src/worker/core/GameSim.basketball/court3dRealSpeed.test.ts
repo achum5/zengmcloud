@@ -7,6 +7,7 @@ import {
 	evalPlayer,
 	fastAt,
 } from "../../../ui/views/LiveGame/court3d/evaluate.ts";
+import { COURT_H, rimX } from "../../../ui/views/LiveGame/court3d/geometry.ts";
 import { simRealGame } from "./realGameForTests.ts";
 
 // A game the real sim played, as the 3D court plays it: at real speed (not
@@ -109,6 +110,60 @@ describe("3D court, a real game", () => {
 		}
 		assert.isAbove(posted, 0);
 		assert.deepEqual(bad, []);
+	}, 900_000);
+
+	// Stood waiting on a pass he shoots straight off, his feet are already
+	// turned to the rim: not square to the passer and swung right round on
+	// it once it is in his hands.
+	test("a spot-up shooter waits on the pass turned to the rim", () => {
+		const turns: number[] = [];
+		for (let k = 1; k < tl.ball.length; k++) {
+			const s = tl.ball[k]!;
+			if (
+				s.kind !== "fly" ||
+				!("pid" in s.from) ||
+				"pid" in s.to ||
+				s.from.pid < 0
+			) {
+				continue;
+			}
+			const pid = s.from.pid;
+			let j = k - 1;
+			while (j > 0) {
+				const h = tl.ball[j]!;
+				if (h.kind !== "hold" || h.pid !== pid) {
+					break;
+				}
+				j -= 1;
+			}
+			const pass = tl.ball[j]!;
+			if (
+				j === k - 1 ||
+				pass.kind !== "fly" ||
+				!("pid" in pass.to) ||
+				pass.to.pid !== pid
+			) {
+				continue;
+			}
+			const caught = tl.ball[j + 1]!.t0;
+			const team = tl.tracks.get(pid)!.team;
+			const R = evalPlayer(tl, pid, s.t0);
+			if (
+				s.t0 - caught > 1200 ||
+				Math.hypot(R.x - rimX(team), R.y - COURT_H / 2) < 15 ||
+				evalPlayer(tl, pid, caught - 300).anim !== "ready"
+			) {
+				continue;
+			}
+			const a = R.yaw - evalPlayer(tl, pid, caught).yaw;
+			turns.push(
+				(Math.abs(a - 2 * Math.PI * Math.round(a / (2 * Math.PI))) * 180) /
+					Math.PI,
+			);
+		}
+		assert.isAtLeast(turns.length, 5);
+		const mean = turns.reduce((x, y) => x + y, 0) / turns.length;
+		assert.isBelow(mean, 35, turns.map((x) => x.toFixed(0)).join(" "));
 	}, 900_000);
 });
 

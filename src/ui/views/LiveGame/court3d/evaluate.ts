@@ -1666,6 +1666,20 @@ const plannedYaw = (tl: CourtTimeline, tr: Track, t: number): number => {
 	const face = fi >= 0 ? tr.faces[fi]![1] : 1;
 	const fallback = face === 1 ? 0 : Math.PI;
 	const act = actAt(tr, t);
+	// Stood waiting on a pass he will shoot straight off: his feet already
+	// turned to the rim, only his hands and eyes to the man throwing it -
+	// not square to the passer, and swung right round on it once it is in
+	// his hands.
+	if (!here.moving && (!act || act.anim === "catch")) {
+		const set = catchToShoot(tl, tr, t);
+		if (set) {
+			const base = angleTo(here, set.from, fallback);
+			const to = wrapAngle(
+				angleTo(here, { x: rimX(tr.team), y: 25 }, fallback) - base,
+			);
+			return base + Math.max(-SET_TURN, Math.min(SET_TURN, to)) * set.w;
+		}
+	}
 	if (act?.look) {
 		const to = angleTo(here, act.look, fallback);
 		// Caught on the run, he opens up to it only as far as running on lets
@@ -1828,6 +1842,80 @@ const plannedYaw = (tl: CourtTimeline, tr: Track, t: number): number => {
 		return Math.atan2(a.y * 0.65 + b.y * 0.35, a.x * 0.65 + b.x * 0.35);
 	}
 	return angleTo(here, ball, fallback);
+};
+
+// A pass to him he shoots straight off (see plannedYaw): from this long
+// before it is thrown (ms) he turns his feet to the rim - by the time it is
+// thrown, this far round from facing the passer (radians) - and shoots no
+// later than this after it is in his hands (ms).
+const SET_LEAD = 900;
+const SET_TURN = (50 * Math.PI) / 180;
+const SET_SHOOT = 1200;
+// (Just caught it, in his catch: still the pass he caught.)
+const SET_CAUGHT = 600;
+const catchToShoot = (
+	tl: CourtTimeline,
+	tr: Track,
+	t: number,
+): { from: Pt; w: number } | undefined => {
+	const list = tl.ball;
+	const k0 = Math.max(
+		0,
+		lastIndex(list, t, (s) => s.t0),
+	);
+	let k = k0;
+	const cur = list[k0];
+	if (cur?.kind === "hold" && cur.pid === tr.pid) {
+		while (k > 0 && list[k]!.kind === "hold") {
+			const h = list[k]!;
+			if (h.kind !== "hold" || h.pid !== tr.pid) {
+				break;
+			}
+			k -= 1;
+		}
+	} else {
+		while (k < list.length && k < k0 + 3 && list[k]!.kind !== "fly") {
+			k += 1;
+		}
+	}
+	const pass = list[k];
+	if (
+		!pass ||
+		pass.kind !== "fly" ||
+		!("pid" in pass.to) ||
+		pass.to.pid !== tr.pid ||
+		!("pid" in pass.from) ||
+		pass.from.pid === tr.pid ||
+		pass.t0 - t > SET_LEAD ||
+		t - pass.t1 > SET_CAUGHT
+	) {
+		return undefined;
+	}
+	let j = k + 1;
+	while (j < list.length) {
+		const h = list[j]!;
+		if (h.kind !== "hold" || h.pid !== tr.pid) {
+			break;
+		}
+		j += 1;
+	}
+	const shot = list[j];
+	if (
+		!shot ||
+		shot.kind !== "fly" ||
+		!("pid" in shot.from) ||
+		shot.from.pid !== tr.pid ||
+		"pid" in shot.to ||
+		shot.t0 - pass.t1 > SET_SHOOT
+	) {
+		return undefined;
+	}
+	const passer = tl.tracks.get(pass.from.pid);
+	if (!passer) {
+		return undefined;
+	}
+	const u = Math.min(1, Math.max(0, 1 - (pass.t0 - t) / SET_LEAD));
+	return { from: spotAt(passer, pass.t0, false), w: u * u * (3 - 2 * u) };
 };
 
 // Turning takes a moment: he turns toward wherever he means to face no
