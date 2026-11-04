@@ -287,6 +287,10 @@ const LUNGE_BACK_MS = 250;
 const LUNGE_ON_MS = 150;
 const LUNGE_STEP_MS = 10;
 const LUNGE_MOST_FPS = 28;
+// (Launched more than this far round from the way he faces in it (radians),
+// this far or more (feet): faced the way he goes.)
+const LUNGE_ROUND = 1.75;
+const LUNGE_ROUND_FT = 0.5;
 const CUT_MERGE_MS = 60;
 const GAITS = new Set<Move>(["walk", "jog", "run", "sprint"]);
 const STEPS = new Set<Move>([...GAITS, "back", "slide", "shuffle"]);
@@ -2037,6 +2041,20 @@ class Actor {
 	// throw himself the last yard or two - and slowed as he goes (see
 	// pace.ts carriedOf).
 	lunge(move: Move, t1: number, yaw: number, to: Pt) {
+		// (Only a blink of a stride out of something else - off a block, up
+		// out of his set: launched from that, not a flick of a stride first.)
+		const was = this.legs.at(-2);
+		const step = this.last;
+		if (
+			was &&
+			GAITS.has(step.move) &&
+			!GAITS.has(was.move) &&
+			was.t1 === step.t0 &&
+			step.t1 - step.t0 < FLICK_MS &&
+			!step.arms
+		) {
+			this.cut(step.t0);
+		}
 		const l = this.last;
 		const v = GAITS.has(l.move) ? legPace(l) : 0;
 		if (v >= LUNGE_LEAST_FPS) {
@@ -2069,7 +2087,12 @@ class Actor {
 		const far = dist(this.at, to);
 		const most = (LUNGE_MOST_FPS * (t1 - this.t)) / 1000;
 		const u = far > most ? most / far : 1;
-		this.act(move, t1, yaw, {
+		// (Back behind him, past it as he is: thrown back round at it, the
+		// way he goes - not launched backward, facing away from it.)
+		const way = Math.atan2(to.y - this.at.y, to.x - this.at.x);
+		const round =
+			far * u >= LUNGE_ROUND_FT && Math.abs(angleOff(way - yaw)) > LUNGE_ROUND;
+		this.act(move, t1, round ? way : yaw, {
 			x: this.at.x + (to.x - this.at.x) * u,
 			y: this.at.y + (to.y - this.at.y) * u,
 		});
@@ -3356,6 +3379,13 @@ const JOLT_MOST = 1.1;
 const JOLT_MS = 250;
 const GANG = [0.5, 0.35];
 const GANG_LATE = 250;
+// (Down round a loose ball off the others down on it: this far apart at
+// least (feet), as little way round from where he comes in as does it.)
+const PILE_ON_APART = 1.6;
+const PILE_ON_ROUND = [0, 0.5, -0.5, 1, -1, 1.5, -1.5, 2, -2];
+// (Round the pile from a man down there already by no more than this,
+// radians, tried in turn.)
+const GANG_ROUND = [0, 0.4, -0.4, 0.8, -0.8, 1.2, -1.2];
 // A short run up the middle, this often a pile on him (one or less yards,
 // or a sneak, this often, and the most men in it; up to this many yards,
 // and this many men).
@@ -3391,6 +3421,13 @@ const PILE_IN = [0.95, 0.85, 0.7, 0.55, 0.4];
 const PILE_FIRST = 120;
 const PILE_GO = 130;
 const PILE_FALL_MS = 550;
+// (In past his place on it by more than this (feet): back out to it first,
+// to this far short of it, over this long at the least (ms), at no more
+// than this (ft/s).)
+const PILE_BACK_LEAST = 0.4;
+const PILE_BACK_IN = 0.5;
+const PILE_BACK_MS = 300;
+const PILE_BACK_FPS = 5;
 const PILE_OFF = 2.5;
 const PILE_OFF_MORE = 1.1;
 const PILE_ROOM = 1.8;
@@ -8965,12 +9002,28 @@ class Action {
 			if (this.canReach(m, hit) > go) {
 				return;
 			}
+			// (Down off the men down there already - the one who brought him
+			// down, say: round the pile from them, a little way, or not in on
+			// it - not down on top of one, the two of them up out of each
+			// other.)
+			const lies = (a: number) => ({
+				x: pile.x + Math.cos(a) * 1.6,
+				y: pile.y + Math.sin(a) * 1.6,
+			});
+			const down = this.men
+				.filter(
+					(o) => o !== m && o !== carrier && DOWN.has(legAt(o, go + 450).move),
+				)
+				.map((o) => o.posAt(go + 450));
+			const round = GANG_ROUND.find((d) =>
+				down.every((p) => dist(p, lies(ang + d)) >= LANDED_APART),
+			);
+			if (round === undefined) {
+				return;
+			}
 			const face = this.toward(hit, pile);
 			this.closeOn(m, hit, go, face, carrier);
-			m.lunge("dive", go + 450, face, {
-				x: pile.x + Math.cos(ang) * 1.6,
-				y: pile.y + Math.sin(ang) * 1.6,
-			});
+			m.lunge("dive", go + 450, face, lies(ang + round));
 			m.hold(go + 450 + DOWN_MS, "prone");
 			m.act("getUp", go + 450 + DOWN_MS + GET_UP_MS);
 			this.done.add(m.pid);
@@ -9144,6 +9197,27 @@ class Action {
 						y: x.m.at.y + (x.at.y - x.m.at.y) * u,
 					},
 					x.m.top * 0.8,
+				);
+			}
+			// (In past his place on it already - right on the man down, say:
+			// a step or two back out to it first, facing in, and in from
+			// there - not driven back onto it as he pitches in.)
+			const fx = Math.cos(face);
+			const fy = Math.sin(face);
+			if (
+				(x.at.x - x.m.at.x) * fx + (x.at.y - x.m.at.y) * fy <
+				-PILE_BACK_LEAST
+			) {
+				const set = {
+					x: x.at.x - fx * PILE_BACK_IN,
+					y: x.at.y - fy * PILE_BACK_IN,
+				};
+				x.m.go(
+					set,
+					x.m.t +
+						Math.max(PILE_BACK_MS, (dist(x.m.at, set) / PILE_BACK_FPS) * 1000),
+					undefined,
+					face,
 				);
 			}
 			x.m.act(top ? "pileDive" : "pileIn", x.m.t + PILE_FALL_MS, face, x.at);
@@ -14403,9 +14477,27 @@ class Action {
 	// him.
 	pileOn(pile: Actor[], pt: Pt, hitT: number) {
 		const r = this.r;
+		// (Each of those off his feet into it down round it from the others
+		// in on it before him - not on top of one, in the one spot.)
+		const landed: Pt[] = [];
+		const lands = (a: number) => ({
+			x: pt.x + Math.cos(a) * 1.2,
+			y: pt.y + Math.sin(a) * 1.2,
+		});
 		pile.forEach((m, n) => {
 			const t1 = hitT + 150 + n * 170 + r() * 200;
-			const ang = Math.atan2(m.at.y - pt.y, m.at.x - pt.x) + (r() - 0.5) * 0.9;
+			const came = Math.atan2(m.at.y - pt.y, m.at.x - pt.x) + (r() - 0.5) * 0.9;
+			const room = (a: number) =>
+				Math.min(Infinity, ...landed.map((p) => dist(p, lands(a))));
+			const ang =
+				n < 3
+					? (PILE_ON_ROUND.map((d) => came + d).find(
+							(a) => room(a) >= PILE_ON_APART,
+						) ??
+						PILE_ON_ROUND.map((d) => came + d).reduce((x, y) =>
+							room(y) > room(x) ? y : x,
+						))
+					: came;
 			// (No further out than he is: not stepping off it to come back.)
 			const ring = Math.max(
 				HIT_LEAST_FT,
@@ -14438,10 +14530,8 @@ class Action {
 				m.hold(lead, undefined, inward);
 			}
 			if (n < 3 && dist(m.at, hit) < 3) {
-				m.lunge("dive", t1, inward, {
-					x: pt.x + Math.cos(ang) * 1.2,
-					y: pt.y + Math.sin(ang) * 1.2,
-				});
+				landed.push(lands(ang));
+				m.lunge("dive", t1, inward, lands(ang));
 				m.hold(t1 + 1100 + n * 150, "prone");
 				m.act("getUp", t1 + 1100 + n * 150 + GET_UP_MS);
 			} else {
