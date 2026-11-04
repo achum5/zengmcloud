@@ -5572,6 +5572,29 @@ class Action {
 				return d < PASS_APART && d < dist(p, at) - PASS_SLACK;
 			});
 		};
+		// (When, from a to b, a man comes down on m where he stands - clear of
+		// anybody down as he stood there, with STEP_OFF_LEAST_MS of it left.)
+		const landsOn = (m: Actor, a: number, b: number) => {
+			for (const l of m.legs) {
+				if (l.t1 <= a || l.t0 >= b) {
+					continue;
+				}
+				if (l.from.x !== l.to.x || l.from.y !== l.to.y) {
+					continue;
+				}
+				const s0 = Math.max(l.t0, a);
+				const till = Math.min(l.t1, b) - STEP_OFF_LEAST_MS;
+				if (till <= s0 || nearDown(m, s0, l.from).near < DOWN_CLEAR) {
+					continue;
+				}
+				for (let t = s0 + DOWN_EVERY_MS; t <= till; t += DOWN_EVERY_MS) {
+					if (nearDown(m, t, l.from).near < DOWN_CLEAR) {
+						return t;
+					}
+				}
+			}
+			return undefined;
+		};
 		// (Free to go another way, or to stand somewhere else: on his way,
 		// or stood about, nobody's to mind - not with the ball, not on
 		// anybody; or driving on at nobody on his feet there, into a man
@@ -5616,14 +5639,20 @@ class Action {
 					c1,
 				];
 				for (let k = 0; k + 1 < cuts.length; k++) {
-					this.roundDown(
-						m,
-						cuts[k]!,
-						cuts[k + 1]!,
-						open && k + 2 === cuts.length,
-						nearDown,
-						crowds,
-					);
+					const a = cuts[k]!;
+					const b = cuts[k + 1]!;
+					const last = open && k + 2 === cuts.length;
+					// (Stood there clear, and a man brought down at his feet,
+					// onto them: from then on as stood on him to begin with -
+					// a step off him.)
+					const lands = landsOn(m, a, b);
+					if (lands === undefined) {
+						this.roundDown(m, a, b, last, nearDown, crowds);
+					} else {
+						m.split(lands);
+						this.roundDown(m, a, lands, false, nearDown, crowds);
+						this.roundDown(m, lands, b, last, nearDown, crowds);
+					}
 				}
 				const next = m.legs.findIndex((l) => l.t0 >= c1);
 				if (next < 0) {
@@ -5929,6 +5958,11 @@ class Action {
 				// takes him on after he stood - stood where it gets him for
 				// the rest of it - not stood on him till then.)
 				if (stepping && lead && this.onSooner(m, lead, c1)) {
+					// (And round anybody down on his way, as he goes now.)
+					const now = m.legs.find((l) => l.t0 === c0);
+					if (now && (now.from.x !== now.to.x || now.from.y !== now.to.y)) {
+						this.roundDown(m, c0, c1, open, nearDown, crowds);
+					}
 					return;
 				}
 				continue;
@@ -10384,7 +10418,19 @@ class Action {
 			GET_OFF_ACCEL,
 			fast ? "run" : undefined,
 		);
-		m.go(at(hit, QB_HIT_THROUGH_FT), hitT + QB_HIT_THROUGH_MS, undefined, into);
+		const peel =
+			into +
+			QB_HIT_PEEL *
+				(Math.sin(into + QB_HIT_PEEL) <= Math.sin(into - QB_HIT_PEEL) ? 1 : -1);
+		m.go(
+			{
+				x: hit.x + Math.cos(peel) * QB_HIT_THROUGH_FT,
+				y: hit.y + Math.sin(peel) * QB_HIT_THROUGH_FT,
+			},
+			hitT + QB_HIT_THROUGH_MS,
+			undefined,
+			(into + peel) / 2,
+		);
 		m.hold(hitT + QB_HIT_STAND_MS, "stand", this.toward(m.at, down));
 		if (hitT - shed >= RUSH_MOVE_AFTER + QB_HIT_SHOVE_MS[0]) {
 			this.rushMove(m, qb, hitT);
@@ -14494,11 +14540,39 @@ class Action {
 			x: pt.x + Math.cos(a) * 1.2,
 			y: pt.y + Math.sin(a) * 1.2,
 		});
+		// (Those off their feet into it, the way each lies: his legs out
+		// from where he lands the way he came in from - and the rest, on
+		// their feet round it, stood off the length of them, not on them.)
+		const lain: number[] = [];
+		const offLain = (q: Pt) =>
+			Math.min(
+				Infinity,
+				...lain.map((a) => {
+					const at = lands(a);
+					const ux = Math.cos(a);
+					const uy = Math.sin(a);
+					const along = clamp(
+						(q.x - at.x) * ux + (q.y - at.y) * uy,
+						-LIE_HEAD,
+						DOWN_LEGS,
+					);
+					return Math.hypot(q.x - at.x - ux * along, q.y - at.y - uy * along);
+				}),
+			);
 		pile.forEach((m, n) => {
 			const t1 = hitT + 150 + n * 170 + r() * 200;
 			const came = Math.atan2(m.at.y - pt.y, m.at.x - pt.x) + (r() - 0.5) * 0.9;
 			const room = (a: number) =>
 				Math.min(Infinity, ...landed.map((p) => dist(p, lands(a))));
+			// (No further out than he is: not stepping off it to come back.)
+			const ring = Math.max(
+				HIT_LEAST_FT,
+				Math.min(2.4 + n * 0.5 + r() * 1.5, dist(m.at, pt)),
+			);
+			const spot = (a: number) => ({
+				x: pt.x + Math.cos(a) * ring,
+				y: pt.y + Math.sin(a) * ring,
+			});
 			const ang =
 				n < 3
 					? (PILE_ON_ROUND.map((d) => came + d).find(
@@ -14507,12 +14581,12 @@ class Action {
 						PILE_ON_ROUND.map((d) => came + d).reduce((x, y) =>
 							room(y) > room(x) ? y : x,
 						))
-					: came;
-			// (No further out than he is: not stepping off it to come back.)
-			const ring = Math.max(
-				HIT_LEAST_FT,
-				Math.min(2.4 + n * 0.5 + r() * 1.5, dist(m.at, pt)),
-			);
+					: (PILE_ON_ROUND.map((d) => came + d).find(
+							(a) => offLain(spot(a)) >= PILE_ON_APART,
+						) ??
+						PILE_ON_ROUND.map((d) => came + d).reduce((x, y) =>
+							offLain(spot(y)) > offLain(spot(x)) ? y : x,
+						));
 			const hit = {
 				x: pt.x + Math.cos(ang) * ring,
 				y: pt.y + Math.sin(ang) * ring,
@@ -14541,6 +14615,7 @@ class Action {
 			}
 			if (n < 3 && dist(m.at, hit) < 3) {
 				landed.push(lands(ang));
+				lain.push(ang);
 				m.lunge("dive", t1, inward, lands(ang));
 				m.hold(t1 + 1100 + n * 150, "prone");
 				m.act("getUp", t1 + 1100 + n * 150 + GET_UP_MS);
@@ -17454,6 +17529,10 @@ const QB_HIT_PACE = 0.85;
 const QB_HIT_ON = 1.9;
 const QB_HIT_THROUGH_FT = 1.6;
 const QB_HIT_THROUGH_MS = 260;
+// (On through past him off to one side, radians off straight at him - the
+// far side of him from the cameras - not on through onto his legs as he
+// lies.)
+const QB_HIT_PEEL = 1;
 const QB_HIT_RUN_FPS = 6;
 const QB_HIT_FROM_FPS = 4;
 const QB_HIT_SHOVE_MS = [220, 240] as const;
