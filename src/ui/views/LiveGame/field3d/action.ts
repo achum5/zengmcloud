@@ -3382,6 +3382,8 @@ const GANG_LATE = 250;
 // (Down round a loose ball off the others down on it: this far apart at
 // least (feet), as little way round from where he comes in as does it.)
 const PILE_ON_APART = 1.6;
+// (A man down on it already this near it, feet.)
+const PILE_ON_NEAR = 3;
 const PILE_ON_ROUND = [0, 0.5, -0.5, 1, -1, 1.5, -1.5, 2, -2];
 // (Round the pile from a man down there already by no more than this,
 // radians, tried in turn.)
@@ -14478,8 +14480,16 @@ class Action {
 	pileOn(pile: Actor[], pt: Pt, hitT: number) {
 		const r = this.r;
 		// (Each of those off his feet into it down round it from the others
-		// in on it before him - not on top of one, in the one spot.)
-		const landed: Pt[] = [];
+		// in on it before him, and the man down on it already - not on top of
+		// one, in the one spot.)
+		const landed: Pt[] = this.men
+			.filter(
+				(o) =>
+					!pile.includes(o) &&
+					DOWN.has(legAt(o, hitT + 600).move) &&
+					dist(o.posAt(hitT + 600), pt) < PILE_ON_NEAR,
+			)
+			.map((o) => o.posAt(hitT + 600));
 		const lands = (a: number) => ({
 			x: pt.x + Math.cos(a) * 1.2,
 			y: pt.y + Math.sin(a) * 1.2,
