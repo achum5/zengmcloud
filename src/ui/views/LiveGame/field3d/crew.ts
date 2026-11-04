@@ -140,6 +140,31 @@ const WALK = 4.6;
 const ACCEL = 20;
 const STEP_MS = 150;
 const REACT_MS = 250;
+// A man in the way of an official on his way somewhere (a player, where he
+// is this long on, ms): gone round, by him this far off (center to center,
+// feet), the side of him he is on already - or the other, where there is
+// not this much (of that) room by him - looked for no further on than
+// this, none nearer where he is going than this, and not when he goes no
+// quicker than this (ft/s); turned no further off his way than this (rad).
+// A man down on the turf, all of him that matters: these far (feet) along
+// him from his hips to his head.
+const ROUND_CLEAR = 2.6;
+const ROUND_ROOM = 0.8;
+const ROUND_LOOK = 10;
+const ROUND_AHEAD_MS = 250;
+const ROUND_NOT_NEAR = 3.5;
+const ROUND_LEAST_FPS = 1.5;
+const ROUND_TURN = 1.2;
+const LIE_AT = [-0.4, 1.2, 2.8];
+const ON_FRONT = new Set<Move>([
+	"prone",
+	"hurtProne",
+	"tackled",
+	"dive",
+	"pileDive",
+	"diveCatch",
+]);
+const ON_BACK = new Set<Move>(["supine", "hurt", "tackledBack"]);
 // The flag: in his hand over his head (its height, feet) as it goes; at
 // most this far from him it comes down.
 const FLAG_Z = 7.2;
@@ -543,6 +568,92 @@ export const stageCrew = (
 	};
 	const keeps = new Map(posts.map((p) => [p.o, r()]));
 	const walk = (p: Post, holds: Hold[]): Leg[] => {
+		// (The players, each where he is as the play goes on - looked at
+		// in order, from where he was last looked at.)
+		const others = input.parts
+			.filter((q) => q.pid >= 0 && q.legs.length > 0)
+			.map((q) => ({ legs: q.legs, k: 0 }));
+		// The nearest man in his way on to `target` (`far` off, the way
+		// ux, uy), where they are at t: the spot to go by him at, the side
+		// of him he is on already - or the other, somebody there.
+		const roundBy = (
+			at: Pt,
+			ux: number,
+			uy: number,
+			target: Pt,
+			far: number,
+			t: number,
+		): Pt | undefined => {
+			const look = Math.min(far, ROUND_LOOK);
+			const pts: Pt[] = [];
+			for (const o of others) {
+				while (o.k < o.legs.length - 1 && o.legs[o.k]!.t1 <= t) {
+					o.k++;
+				}
+				const l = o.legs[o.k]!;
+				const u = l.t1 > l.t0 ? clamp((t - l.t0) / (l.t1 - l.t0), 0, 1) : 1;
+				const q = {
+					x: l.from.x + (l.to.x - l.from.x) * u,
+					y: l.from.y + (l.to.y - l.from.y) * u,
+				};
+				const reach = look + ROUND_CLEAR + LIE_AT.at(-1)!;
+				if (Math.abs(q.x - at.x) > reach || Math.abs(q.y - at.y) > reach) {
+					continue;
+				}
+				const lies = ON_FRONT.has(l.move)
+					? 0
+					: ON_BACK.has(l.move)
+						? Math.PI
+						: undefined;
+				const body =
+					lies === undefined || l.yaw === undefined
+						? [q]
+						: LIE_AT.map((f) => ({
+								x: q.x + Math.cos(l.yaw! + lies) * f,
+								y: q.y + Math.sin(l.yaw! + lies) * f,
+							}));
+				for (const b of body) {
+					if (dist(b, target) >= ROUND_NOT_NEAR) {
+						pts.push(b);
+					}
+				}
+			}
+			let first: Pt | undefined;
+			let firstAlong = Infinity;
+			let firstLat = 0;
+			for (const b of pts) {
+				const rx = b.x - at.x;
+				const ry = b.y - at.y;
+				const along = rx * ux + ry * uy;
+				const lat = ry * ux - rx * uy;
+				if (
+					along > 0 &&
+					along < look &&
+					Math.abs(lat) < ROUND_CLEAR &&
+					along < firstAlong
+				) {
+					first = b;
+					firstAlong = along;
+					firstLat = lat;
+				}
+			}
+			if (!first) {
+				return undefined;
+			}
+			const f = first;
+			const side = firstLat >= 0 ? -1 : 1;
+			const past = (s: number) =>
+				onField({
+					x: f.x - uy * s * ROUND_CLEAR,
+					y: f.y + ux * s * ROUND_CLEAR,
+				});
+			const room = (w: Pt) => Math.min(...pts.map((b) => dist(b, w)));
+			const mine = past(side);
+			const other = past(-side);
+			return room(mine) >= ROUND_CLEAR * ROUND_ROOM || room(mine) >= room(other)
+				? mine
+				: other;
+		};
 		const legs: Leg[] = [];
 		const start = p.at;
 		const startO = of(start);
@@ -638,13 +749,33 @@ export const stageCrew = (
 				target = after.to;
 				fps = after.fps;
 			}
-			// Toward it, speeding up and slowing down as a man does.
+			// Toward it, speeding up and slowing down as a man does - round
+			// anybody in his way to it, not through him.
 			const dx = target.x - at.x;
 			const dy = target.y - at.y;
 			const far = Math.hypot(dx, dy);
-			const want = Math.min(fps, far / 0.4);
-			const ux = far > 0.01 ? dx / far : 0;
-			const uy = far > 0.01 ? dy / far : 0;
+			let want = Math.min(fps, far / 0.4);
+			let ux = far > 0.01 ? dx / far : 0;
+			let uy = far > 0.01 ? dy / far : 0;
+			const by =
+				want >= ROUND_LEAST_FPS
+					? roundBy(at, ux, uy, target, far, t2 + ROUND_AHEAD_MS)
+					: undefined;
+			if (by && dist(at, by) > 0.01) {
+				// (Never back the way he came: no more than so far round,
+				// slowed to a walk, if it takes more.)
+				const off = Math.atan2(
+					(by.y - at.y) * ux - (by.x - at.x) * uy,
+					(by.x - at.x) * ux + (by.y - at.y) * uy,
+				);
+				const turn = clamp(off, -ROUND_TURN, ROUND_TURN);
+				if (turn !== off) {
+					want = Math.min(want, WALK);
+				}
+				const c = Math.cos(turn);
+				const s = Math.sin(turn);
+				[ux, uy] = [ux * c - uy * s, ux * s + uy * c];
+			}
 			const secs = (t2 - t) / 1000;
 			let nvx = vx + clamp(ux * want - vx, -ACCEL * secs, ACCEL * secs);
 			let nvy = vy + clamp(uy * want - vy, -ACCEL * secs, ACCEL * secs);
