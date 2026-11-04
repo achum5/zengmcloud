@@ -447,10 +447,11 @@ const plantedFor = (
 	sin: number,
 	to: Pt,
 	down?: number,
+	most = Infinity,
 ): { ve: number; want: number } => {
 	const ahead = (to.x - at.x) * cos + (to.y - at.y) * sin;
 	const round = (p: Pt) => angleAt({ x: p.x - cos, y: p.y - sin }, p, to);
-	let want = down ?? v * cutKeep(round(at));
+	let want = Math.min(most, down ?? v * cutKeep(round(at)));
 	let ve = plantedTo(v, want, ahead);
 	for (let k = 0; k < 2 && down === undefined; k++) {
 		const d = (v * v - ve * ve) / (2 * CUT_ACCEL);
@@ -1359,7 +1360,7 @@ class Actor {
 	// to as much of his pace as he can take round with him (as on a route,
 	// see breakOf), or to `down` ft/s, at CUT_ACCEL - not turned round at
 	// full speed.
-	plantFor(to: Pt, down?: number) {
+	plantFor(to: Pt, down?: number, most?: number) {
 		const l = this.last;
 		const v = legPace(l);
 		if (!RAMPS.has(l.move) || v < STOP_LEAST || l.arms || l.turn) {
@@ -1372,7 +1373,7 @@ class Actor {
 		const far = dist(l.from, l.to);
 		const cos = (l.to.x - l.from.x) / far;
 		const sin = (l.to.y - l.from.y) / far;
-		const { ve, want } = plantedFor(v, l.to, cos, sin, to, down);
+		const { ve, want } = plantedFor(v, l.to, cos, sin, to, down, most);
 		// (No room to plant for it short of where he goes: bent round into
 		// it, if he can be.)
 		if (ve - want > (v - want) / 2 && this.bendInto(to, v)) {
@@ -1831,8 +1832,13 @@ class Actor {
 	chaseUp(to: Pt, t1: number, fps: number, move?: Move) {
 		const p = onField(to, this.roam);
 		// (Planted first, well round from the way he is going - all the
-		// time there is, maybe.)
-		this.plantFor(p);
+		// time there is, maybe - and down to no quicker than he goes on at
+		// after it: not planted at a run and off at a walk.)
+		this.plantFor(
+			p,
+			undefined,
+			Math.min(fps, dist(this.at, p) / Math.max(0.001, (t1 - this.t) / 1000)),
+		);
 		if (t1 - this.t < STOP_STEP_MS) {
 			this.hold(t1);
 			return;
@@ -2993,6 +2999,10 @@ const UPRIGHT = 0.3;
 // nobody there; on at a walk, under this pace (feet a second), a jog over.
 const AIR_BLOCK = 5;
 const WALK_UNDER = 6;
+// (Or a pile this near, of either side, to shove in on - not a man flat
+// on the turf.)
+const AIR_PILE = 5.5;
+const PILED = new Set<Move>(["pileIn", "overPile", "pileDive", "pileTop"]);
 const FIRST_STEP = 150;
 // (A long one with a man there for only some of it: on in it this long
 // either side of him, ms, where at least this much of it is left over; a
@@ -4614,9 +4624,17 @@ class Action {
 			const them = m.team === this.input.offense ? this.d : this.o;
 			const by = (t: number) => {
 				const at = m.posAt(t);
-				return them.some(
-					(o) =>
-						dist(o.posAt(t), at) < AIR_BLOCK && !DOWN.has(legAt(o, t).move),
+				return (
+					them.some(
+						(o) =>
+							dist(o.posAt(t), at) < AIR_BLOCK && !DOWN.has(legAt(o, t).move),
+					) ||
+					this.men.some(
+						(o) =>
+							o !== m &&
+							PILED.has(legAt(o, t).move) &&
+							dist(o.posAt(t), at) < AIR_PILE,
+					)
 				);
 			};
 			// (A push he had a man on him for only some of - the man gone off
