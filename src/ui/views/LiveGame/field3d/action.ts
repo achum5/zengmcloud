@@ -3151,6 +3151,9 @@ const STOOD_APART = 1;
 // over twice this far, feet.)
 const STOOD_IN_LEAST = 8;
 const STOOD_IN_FT = 1.2;
+// (Further off where the drive takes him than this, feet, when he gets
+// there: late to it, in at a run - see standUp.)
+const STOOD_GAP_FT = 5;
 // A cover man into the blocker he meets (or a lead blocker into his man):
 // down to this much of his pace as they meet (see breakDown).
 const LOCK_KEEP = 0.5;
@@ -8776,12 +8779,22 @@ class Action {
 				face,
 				carrier,
 			);
-			m.easeIn(STOOD_IN_FT, STOOD_IN_LEAST);
-			// (Not into it for a moment and straight on to the drive.)
-			if (t - m.t >= WAIT_LEAST_MS) {
-				m.hold(t, "engage", face);
+			const into = { x: hit.x + back.x, y: hit.y + back.y };
+			if (dist(m.at, into) > STOOD_GAP_FT) {
+				// (Still a way off it, late to it: in at a run, pulled up on
+				// it - not driven in across the gap at a run's pace.)
+				m.runUp(into, Math.max(legPace(m.last), m.top * 0.7));
+				if (end - m.t >= WAIT_LEAST_MS) {
+					m.hold(end, "engage", face);
+				}
+			} else {
+				m.easeIn(STOOD_IN_FT, STOOD_IN_LEAST);
+				// (Not into it for a moment and straight on to the drive.)
+				if (t - m.t >= WAIT_LEAST_MS) {
+					m.hold(t, "engage", face);
+				}
+				m.go(into, end, "drive", face);
 			}
-			m.go({ x: hit.x + back.x, y: hit.y + back.y }, end, "drive", face);
 			m.hold(end + 300 + r() * 300, "stand", face);
 			this.done.add(m.pid);
 		});
