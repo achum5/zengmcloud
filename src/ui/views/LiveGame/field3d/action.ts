@@ -2539,6 +2539,29 @@ const MIRROR_NEAR_FT = 4;
 const MIRROR_MOST = 0.5;
 const MIRROR_STEP_FT = 1.2;
 const MIRROR_STEP_LEAST_FT = 0.5;
+// (Broken on the ball sooner, going away from it - see breakSoonest -
+// looked at this often, ms.)
+const BREAK_SOONER_STEP_MS = 50;
+// (A carrier's run weaved to take the time it has to: cut no further round
+// than this (radians) at the turn in it.)
+const WEAVE_TURN = 1;
+// (Nor broken on it at all, if his way takes him this near (feet) where
+// he is to be for it anyway.)
+const BREAK_KEEP_FT = 2;
+// (Nor with less time for it than this, ms. Going away from it, no time
+// to plant, stopped short over this far, feet, before he comes back.)
+const BREAK_LEAST_MS = 200;
+const BREAK_STOP_FT = 3;
+// (The man the sim says got to the ball, on his man: no deeper than it,
+// feet - see cover.)
+const MARK_DEEP_FT = 3;
+// (Over toward it from this far off his man (feet), all the way this much
+// further.)
+const MARK_NEAR_FT = 8;
+const MARK_FAR_FT = 16;
+// (And all the way over to it by the time he sees it thrown, from this
+// long before then, ms.)
+const MARK_READ_MS = 1000;
 // (And one this deep, feet, set with this long to spare at least (ms):
 // read steps back first, this far (feet), over this long.)
 const READ_DEEP_FT = 18;
@@ -3647,6 +3670,8 @@ const DOWN_RISING_TILL = 0.5;
 // ft/s, he is hardly going anywhere - and nowhere clear, round him only
 // if it is this much (feet) the clearer.)
 const DOWN_EVERY_MS = 50;
+// (Stood this long at least (ms) on his way past a man down: a stop.)
+const DOWN_PAUSE_MS = 150;
 const DOWN_STEP_MS = 100;
 const DOWN_SLIVER_MS = 40;
 const DOWN_JOIN_MS = 500;
@@ -5426,6 +5451,10 @@ class Action {
 		if (T <= 0) {
 			return;
 		}
+		// (Where on his clock he stops a while, and goes on again.)
+		const pauses = runs
+			.filter((r, k) => k > 0 && r.t0 - runs[k - 1]!.t1 >= DOWN_PAUSE_MS)
+			.map((r) => r.at);
 		const clock = (t: number) => {
 			for (let k = runs.length - 1; k >= 0; k--) {
 				const r = runs[k]!;
@@ -5566,6 +5595,14 @@ class Action {
 					}
 					if ((!stepping && rin < least) || (!stays && rout < least)) {
 						continue;
+					}
+					// (Not back in over the last of his way into a stop, and on
+					// after it: all of it after - not hurried into his stop.)
+					const stop = stays
+						? undefined
+						: pauses.find((u) => u > b1 && u < b1 + rout);
+					if (stop !== undefined && stop + rout <= T) {
+						b1 = stop;
 					}
 					const ui = a1 - rin;
 					const uo = stays ? Infinity : b1 + rout;
@@ -8214,8 +8251,11 @@ class Action {
 		if (far > 1 && moveKind(l.move) !== "act" && this.weave && ms > 300) {
 			const v = Math.min(m.top * 0.9, far / ((l.t1 - l.t0) / 1000));
 			const half = (v * (l.t1 - l.t0 + ms)) / 2000;
+			// (No sharper a cut at the far end of it than WEAVE_TURN - not
+			// turned back the way he came at full tilt.)
 			const h = Math.min(
 				24,
+				far / 2 / Math.tan((Math.PI - WEAVE_TURN) / 2),
 				Math.sqrt(Math.max(0, half ** 2 - (far / 2) ** 2)),
 			);
 			if (h > 3) {
@@ -9560,10 +9600,68 @@ class Action {
 				Math.sin(toQb) * (aside ? BREAK_IN : 2.2) +
 				Math.cos(toQb) * off * BREAK_ASIDE,
 		};
-		const go = Math.max(this.seen, catchAt - 700);
-		m.cut(go);
-		m.hold(go);
-		m.press(spot, catchAt - early, m.top * FLAT_OUT, "sprint");
+		const by = catchAt - early;
+		const latest = Math.max(this.seen, catchAt - 700);
+		// (There or near enough by then on his own - or no time to be
+		// anywhere else: left be.)
+		if (
+			dist(m.posAt(by), spot) <= BREAK_KEEP_FT ||
+			by - latest < BREAK_LEAST_MS
+		) {
+			m.cut(by);
+			return;
+		}
+		const go = this.breakSoonest(m, spot, by, latest);
+		m.cut(go ?? latest);
+		m.hold(go ?? latest);
+		// (Planted first, going the other way - not turned round on the
+		// spot at full tilt - if there is the time for it; if not, stopped
+		// short, hard, before he comes back for it.)
+		if (go !== undefined) {
+			m.plantFor(spot);
+		} else {
+			const l = m.last;
+			const away =
+				(l.to.x - l.from.x) * (spot.x - l.to.x) +
+					(l.to.y - l.from.y) * (spot.y - l.to.y) <
+				0;
+			if (away && legPace(l) >= STOP_LEAST) {
+				m.easeOff(BREAK_STOP_FT);
+			}
+		}
+		m.press(spot, by, m.top * FLAT_OUT, "sprint");
+	}
+
+	// When to break on it, `latest` at the latest: sooner - as soon as he
+	// sees it, at most - if he is going away from it then, to plant and
+	// be back to it by `by` (see plantFor). (None, if he can't be.)
+	private breakSoonest(
+		m: Actor,
+		spot: Pt,
+		by: number,
+		latest: number,
+	): number | undefined {
+		const fps = m.top * FLAT_OUT;
+		for (let go = latest; go >= this.seen; go -= BREAK_SOONER_STEP_MS) {
+			const at = m.posAt(go);
+			const was = m.posAt(go - BREAK_SOONER_STEP_MS);
+			const k = 1000 / BREAK_SOONER_STEP_MS;
+			const vx = (at.x - was.x) * k;
+			const vy = (at.y - was.y) * k;
+			const v = Math.hypot(vx, vy);
+			const far = dist(at, spot);
+			const away =
+				far > 0 && v > 0
+					? -(vx * (spot.x - at.x) + vy * (spot.y - at.y)) / far
+					: 0;
+			// (Back over the ground he plants in, as much of it as was away.)
+			const plant = away > 0 ? (v / CUT_ACCEL) * 1000 : 0;
+			const past = away > 0 ? ((v * v) / (2 * CUT_ACCEL)) * (away / v) : 0;
+			if (go + plant + rampedMs(far + past, fps, 0) <= by) {
+				return go;
+			}
+		}
+		return undefined;
 	}
 
 	intercepted(
@@ -11270,6 +11368,15 @@ class Action {
 				this.offSnap(m, MAN_OFF_MS, MAN_OFF_SPREAD_MS);
 				const rs = set(rec);
 				const inside = -Math.sign(rs.a || 1);
+				// (The man the sim says got to the ball: never deeper than
+				// where it goes, by more than MARK_DEEP_FT - sat on the route
+				// as it comes back, not run on past it to turn round flat out
+				// for it.)
+				const marks = marked && m === marked[0] && catchPt;
+				const deepest = marks ? this.of(catchPt).d + MARK_DEEP_FT : Infinity;
+				const mark = marks
+					? this.w({ d: deepest, a: this.of(catchPt).a })
+					: undefined;
 				// (A step at a time, the last of them on to the break - not
 				// short of it, stood waiting for it.)
 				const steps: number[] = [];
@@ -11301,7 +11408,30 @@ class Action {
 							COVER_SOFT *
 								Math.log1p(Math.exp((room - COVER_MIN) / COVER_SOFT))) *
 						(1 - COVER_TIGHT * (m.flair.cover ?? 0));
-					const to = this.w({ d: p.d + cushion, a: p.a + inside * 1.8 });
+					const on = this.w({
+						d: Math.min(p.d + cushion, deepest),
+						a: p.a + inside * 1.8,
+					});
+					// (And a way off him, or over the last MARK_READ_MS before
+					// it is thrown, over toward where it goes rather than on
+					// after him - reading it, not run to where he was and on
+					// past it as he cuts back.)
+					const k = mark
+						? Math.max(
+								clamp(
+									(dist(m.at, rec.posAt(t)) - MARK_NEAR_FT) / MARK_FAR_FT,
+									0,
+									1,
+								),
+								clamp(1 - (until - t) / MARK_READ_MS, 0, 1),
+							)
+						: 0;
+					const to = mark
+						? {
+								x: on.x + (mark.x - on.x) * k,
+								y: on.y + (mark.y - on.y) * k,
+							}
+						: on;
 					const front = this.of(m.at).d > p.d + COVER_FRONT;
 					// (His man broken off well round from the way he is going:
 					// planted for it first - see plantFor - not snapped round
