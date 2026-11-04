@@ -9097,10 +9097,32 @@ class Action {
 			c - began.t0 < CLOSE_SLIVER_MS &&
 			m.legs[k - 1]!.move !== began.move
 		) {
+			const was = m.legs[k - 1]!;
 			if (began.t0 >= this.seen) {
 				c = began.t0;
-			} else if (sits(m.legs[k - 1]!.move)) {
+			} else if (sits(was.move)) {
 				m.cut(began.t0);
+			} else if (
+				sits(began.move) &&
+				began.from.x === began.to.x &&
+				began.from.y === began.to.y &&
+				was.t1 === began.t0 &&
+				was.t1 > was.t0 &&
+				(was.from.x !== was.to.x || was.from.y !== was.to.y)
+			) {
+				// (Or pulled up into a set a moment before he knows: on as he
+				// was going till then instead - not a blink of it.)
+				const u = (c - was.t1) / (was.t1 - was.t0);
+				m.cut(began.t0);
+				m.go(
+					{
+						x: was.to.x + (was.to.x - was.from.x) * u,
+						y: was.to.y + (was.to.y - was.from.y) * u,
+					},
+					c,
+					was.move,
+					was.yaw,
+				);
 			}
 		}
 		m.cut(c);
