@@ -46,7 +46,7 @@ each part, so the table below can say how far along each part is.
 | #   | Line                                                                                          | Per game | Status  |
 | --- | --------------------------------------------------------------------------------------------- | -------: | ------- |
 | 1   | Three pointer, no good (`fgaTp` → `missTp`)                                                   |       39 | working |
-| 2   | Defensive rebound (`drb`)                                                                     |       74 | todo    |
+| 2   | Defensive rebound (`drb`)                                                                     |       74 | working |
 | 3   | Three pointer, made (`tp`)                                                                    |       25 | todo    |
 | 4   | Post shot, made or missed (`fgaLowPost` → `fgLowPost` / `missLowPost`)                        |       49 | todo    |
 | 5   | Shot at the rim, made or missed (`fgaAtRim` → `fgAtRim` / `missAtRim`)                        |       47 | todo    |
@@ -69,6 +69,18 @@ each part, so the table below can say how far along each part is.
 | 22  | Heaves and the clock running out (`noShot`, `runOutClock`, `fgaTpFake`)                       |     rare | todo    |
 | 23  | Intentional foul (`intentionalFoul`)                                                          |     rare | todo    |
 | 24  | Elam ending, shootout (`elamActive`, `shootout*`)                                             |  setting | todo    |
+
+## Side notes (behind the list, not ahead of it)
+
+- **A break that stops dead** (an OKC clip, 2026-11-04): off the rebound the
+  man with it has the floor in front of him, then stops and throws it cross
+  court. The pass can stay - the way into it should look like a man reading
+  the floor: easing off as the defense gets back, picking his dribble up, a
+  look, then the pass.
+- **Injured men on the bench in street clothes**, not in uniform.
+- **The opening tip** (a clip, 2026-11-04): the two bigs should step up into
+  the circle and go up for it like men jumping, not stand there; and off the
+  tip, men of the team that won it ran the wrong way. (See #19.)
 
 ## 1. Three pointer, no good
 
@@ -131,3 +143,21 @@ Checks: the existing tests (feet behind the line, a contested jumper stays
 in sight, the ball never jumps, real speed with no darts) on every change.
 
 Done: (commits)
+
+## 2. Defensive rebound
+
+Measured over the same three games (223 at real speed):
+
+| Part                   |             Ways now | Notes                                                                                                                                                                     |
+| ---------------------- | -------------------: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Who                    |                    9 | by position: F, FC, GF, PG, SG, SF, PF, C, G                                                                                                                              |
+| How he came up with it |                5 → 6 | up high two hands 65%, chest height 30%; now and then tipped up to himself (more in a crowd, more for a poor rebounder) - in testing                                      |
+| Where                  |                   11 | under the rim in the middle 56% - too many: the ball comes off the rim to where the rebounder already is (see `reads` in crashTheGlass, `towardOf`) and few come off long |
+| Traffic                |                    9 | alone / one man near / in a crowd; box-outs by him or his mates                                                                                                           |
+| What he did with it    |                   13 | outlet (long or not), handed off, brought it up himself, held it; pushed or walked up                                                                                     |
+| Whole combination      | 195 of 223 different |                                                                                                                                                                           |
+
+Next: rebounds coming off long (the ball off the rim decides where it
+goes, and the man goes and gets it), the grab (a one-handed snatch, two
+men up for it, a bobble), the landing (chinned, a pivot away from
+pressure), the outlet (overhead, baseball, a dribble out of traffic first).
