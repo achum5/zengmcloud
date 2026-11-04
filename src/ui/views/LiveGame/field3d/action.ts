@@ -2466,6 +2466,8 @@ const PANCAKE_BACK_FT = 1.6;
 const PANCAKE_DOWN_MS = 1100;
 const PANCAKE_ON_FT = 0.8;
 const PANCAKE_CLEAR_FT = 5;
+// (Nor anybody else through where he lands while he is down, feet.)
+const PANCAKE_ROOM_FT = 2;
 // Let up after a pass is away on his own count too, up to this much later
 // (ms) - and a block on a run once the man with the ball is down.
 const PASS_END_SPREAD_MS = 450;
@@ -3223,6 +3225,10 @@ const TWIST_ACROSS_MS = 120;
 const TWIST_SLIDE_FT = 1.4;
 const TWIST_LEAD_MS = 300;
 const TWIST_CLEAR_FT = 3.5;
+// (And never nearer him than this on the way round, feet: further round
+// behind him by as much more as it takes of these, if he would be.)
+const TWIST_ROOM_FT = 3;
+const TWIST_WIDER_FT = [0, 1.5, 3];
 // Off the ball into the man across from him: up to speed at GET_OFF_ACCEL
 // ft/s/s, no quicker than RUSH_HIT_PACE of his top speed by the time he
 // gets there - not at full tilt from his first step.
@@ -7002,8 +7008,19 @@ class Action {
 			const t1 = m.t + stretchMs(go, routeFps(speed, k), cut, next) / pace;
 			if (until !== undefined && t1 > until) {
 				// (Still cut into the last of it, as far as he gets: not
-				// turned square at his pace.)
-				const u = (until - m.t) / (t1 - m.t);
+				// turned square at his pace - and only as far as he gets up
+				// out of the cut by then, not as far as the stretch's pace
+				// would have taken him from the first of it.)
+				const fps = routeFps(speed, k);
+				const v0 = cut.up > 0 ? cut.v : fps;
+				const a0 = cut.upAccel ?? RAMP_ACCEL;
+				const ts = ((until - m.t) / 1000) * pace;
+				const tUp = Math.max(0, (fps - v0) / a0);
+				const gone =
+					ts <= tUp
+						? v0 * ts + (a0 * ts * ts) / 2
+						: ((v0 + fps) / 2) * tUp + fps * (ts - tUp);
+				const u = go > 0 ? clamp(gone / go, 0, 1) : 1;
 				const p = m.at;
 				const part = { x: p.x + (to.x - p.x) * u, y: p.y + (to.y - p.y) * u };
 				if (k > 1 && cut.keep < 1) {
@@ -9583,8 +9600,14 @@ class Action {
 		const { snap, events, i0, i1, stats } = this.input;
 		let rough = -1;
 		let hurt = false;
+		// (Nor a man hurt on it himself: he goes down where it happens to
+		// him instead - see hurtDown.)
+		const lame = new Set<number>();
 		for (let i = i0; i < i1; i++) {
 			const e = events[i];
+			if (e?.type === "injury") {
+				lame.add(e.injuredPID);
+			}
 			if (e?.type === "injury" && e.injuredPID === qb.pid) {
 				hurt = true;
 			}
@@ -9615,7 +9638,7 @@ class Action {
 		const q = qb.posAt(hitT);
 		let best: { m: Actor; shed: number; from: Pt } | undefined;
 		for (const m of pool) {
-			if (this.done.has(m.pid)) {
+			if (this.done.has(m.pid) || lame.has(m.pid)) {
 				continue;
 			}
 			// (Off it as late as gets him there in time.)
@@ -10697,6 +10720,7 @@ class Action {
 			let hitT = least;
 			const first = loops.get(m);
 			let under: Pt | undefined;
+			let pen: { d: number; a: number } | undefined;
 			if (first) {
 				// The end on a twist: a hard step up the field, sold as a rush
 				// round the edge - a step across, and off under the man going
@@ -10721,7 +10745,7 @@ class Action {
 				hitT = least;
 				// (Round behind him where he has got to, if he is in the way:
 				// straight across, no further his side of him than that.)
-				const pen = this.of(first.posAt(hits.get(first) ?? m.t));
+				pen = this.of(first.posAt(hits.get(first) ?? m.t));
 				const now = this.of(m.at);
 				const to = this.of(b.posAt(m.t));
 				to.d += 2.6;
@@ -10745,46 +10769,67 @@ class Action {
 					y: p.y + dir * (edge ? side * EDGE_OUT : lat),
 				};
 			};
-			// (Up the arc first, off the edge, and in onto him.)
-			const arc =
-				under ?? (edge ? this.w({ d: s.d - 2, a: s.a + side * 1.5 }) : m.at);
-			const a = dist(m.at, arc);
-			const reachBy = (t: number) =>
-				Math.max(least, m.t + offMs(a + dist(arc, on(t, 0))));
-			for (let k = 0; k < 2; k++) {
-				hitT = reachBy(hitT);
-			}
-			// (Not where the blocker is at a time he cannot be there by - a
-			// back coming up at him through a fake, say: halfway to when he
-			// could, a few times.)
-			for (let k = 0; k < 4 && reachBy(hitT) > hitT + 1; k++) {
-				hitT = (hitT + reachBy(hitT)) / 2;
-			}
-			hitT = Math.min(hitT, Math.max(least, end - HAND_MS));
-			hits.set(m, hitT);
+			const mark = m.t;
 			const hitLat = (r() - 0.5) * 0.6;
-			const hit = on(hitT, hitLat);
-			// (Bent up round it onto him, not off one way and turned the
-			// other - or, on a twist, through the point behind the man going
-			// first.)
-			const via = under
-				? {
-						x: 2 * under.x - (m.at.x + hit.x) / 2,
-						y: 2 * under.y - (m.at.y + hit.y) / 2,
-					}
-				: arc;
-			const vHit =
-				edge || under
-					? this.getOffAlong(
-							m,
-							this.curve(m.at, via, hit, EDGE_ARC_PTS),
-							hitT,
-							GET_OFF_ACCEL,
-							m.top * RUSH_HIT_PACE,
-							"run",
-							GET_OFF_SQUARE_MS,
-						)
-					: m.getOff(hit, hitT, 0, GET_OFF_ACCEL, "run", GET_OFF_SQUARE_MS);
+			let vHit = 0;
+			// (On a twist, round behind the man going first by more if he
+			// has got into the way of it since - see TWIST_ROOM_FT.)
+			for (const wider of TWIST_WIDER_FT) {
+				if (wider > 0) {
+					m.cut(mark);
+					hitT = least;
+					under = this.w({ d: pen!.d + TWIST_CLEAR_FT + wider, a: pen!.a });
+				}
+				// (Up the arc first, off the edge, and in onto him.)
+				const arc =
+					under ?? (edge ? this.w({ d: s.d - 2, a: s.a + side * 1.5 }) : m.at);
+				const a = dist(m.at, arc);
+				const reachBy = (t: number) =>
+					Math.max(least, m.t + offMs(a + dist(arc, on(t, 0))));
+				for (let k = 0; k < 2; k++) {
+					hitT = reachBy(hitT);
+				}
+				// (Not where the blocker is at a time he cannot be there by - a
+				// back coming up at him through a fake, say: halfway to when he
+				// could, a few times.)
+				for (let k = 0; k < 4 && reachBy(hitT) > hitT + 1; k++) {
+					hitT = (hitT + reachBy(hitT)) / 2;
+				}
+				hitT = Math.min(hitT, Math.max(least, end - HAND_MS));
+				const hit = on(hitT, hitLat);
+				// (Bent up round it onto him, not off one way and turned the
+				// other - or, on a twist, through the point behind the man going
+				// first.)
+				const via = under
+					? {
+							x: 2 * under.x - (m.at.x + hit.x) / 2,
+							y: 2 * under.y - (m.at.y + hit.y) / 2,
+						}
+					: arc;
+				vHit =
+					edge || under
+						? this.getOffAlong(
+								m,
+								this.curve(m.at, via, hit, EDGE_ARC_PTS),
+								hitT,
+								GET_OFF_ACCEL,
+								m.top * RUSH_HIT_PACE,
+								"run",
+								GET_OFF_SQUARE_MS,
+							)
+						: m.getOff(hit, hitT, 0, GET_OFF_ACCEL, "run", GET_OFF_SQUARE_MS);
+				if (!first || !pen) {
+					break;
+				}
+				let near = Infinity;
+				for (let t = mark; t <= hitT; t += 50) {
+					near = Math.min(near, dist(m.posAt(t), first.posAt(t)));
+				}
+				if (near >= TWIST_ROOM_FT) {
+					break;
+				}
+			}
+			hits.set(m, hitT);
 			const over = this.rushEdge(b, engaged);
 			const per = HAND_MS * (0.8 + r() * 0.5) * (1 - RUSH_QUICKER * over);
 			const amp = edge ? 0 : HAND_FT * (0.5 + r()) * (1 + RUSH_WIDER * over);
@@ -11730,6 +11775,7 @@ class Action {
 
 		// Who is on whom up front.
 		const on = new Map<Actor, Actor[]>();
+		const flats: { b: Actor; m: Actor; end: number; lands: Pt }[] = [];
 		for (const m of this.d) {
 			if (!DL.has(m.role) || this.done.has(m.pid)) {
 				continue;
@@ -11860,18 +11906,7 @@ class Action {
 					end < till - FREED_MS &&
 					countOf(b, snap, 61) < PANCAKE
 				) {
-					m.act("tackledBack", end + PANCAKE_FALL_MS, this.behind, lands);
-					m.hold(m.t + PANCAKE_DOWN_MS, "supine");
-					m.act("getUpBack", m.t + GET_UP_MS);
-					this.done.add(m.pid);
-					b.cut(end);
-					const q = this.of(b.at);
-					b.go(
-						this.w({ d: q.d + PANCAKE_ON_FT, a: q.a }),
-						end + PANCAKE_FALL_MS,
-						"drive",
-						this.ahead,
-					);
+					flats.push({ b, m, end, lands });
 				}
 			}
 			this.jostle([b, ...men], snap + JOSTLE_FROM, locked);
@@ -12043,6 +12078,43 @@ class Action {
 			if (upTo > b.t) {
 				b.go(beside(upTo), upTo, "drive", this.ahead);
 			}
+		}
+		// (Put on his back - see PANCAKE - once everybody's part round him is
+		// laid out: nobody else on through where he goes down while he is
+		// down, a man up onto a linebacker, say.)
+		for (const { b, m, end, lands } of flats) {
+			const upT = end + PANCAKE_FALL_MS + PANCAKE_DOWN_MS;
+			const room = this.men.every((x) => {
+				if (x === b || x === m) {
+					return true;
+				}
+				for (let t = end; t <= upT; t += 50) {
+					if (dist(x.posAt(t), lands) < PANCAKE_ROOM_FT) {
+						return false;
+					}
+				}
+				return true;
+			});
+			if (!room) {
+				continue;
+			}
+			m.cut(end);
+			m.act("tackledBack", end + PANCAKE_FALL_MS, this.behind, lands);
+			m.hold(m.t + PANCAKE_DOWN_MS, "supine");
+			m.act("getUpBack", m.t + GET_UP_MS);
+			this.done.add(m.pid);
+			b.cut(end);
+			const q = this.of(b.at);
+			b.go(
+				this.w({ d: q.d + PANCAKE_ON_FT, a: q.a }),
+				end + PANCAKE_FALL_MS,
+				"drive",
+				this.ahead,
+			);
+			// (Stood over him till he is up again - not on after the ball over
+			// the top of him.)
+			b.hold(Math.max(b.t, m.t), "stand", this.ahead);
+			this.offBlock(b, until, 0);
 		}
 
 		// The receivers: out onto the nearest man off the ball, and on him -
