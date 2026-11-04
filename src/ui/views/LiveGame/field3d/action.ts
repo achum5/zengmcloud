@@ -13445,6 +13445,18 @@ class Action {
 		// (Well round from the way he was going: planted first - see
 		// plantFor - not turned at full speed.)
 		m.plantFor(to);
+		// (Brought by that nearer it than he can pull up in from the pace
+		// he is going: eased off on past it - not braked from a sprint to a
+		// walk in a stride on it.)
+		const l = m.last;
+		const v = RAMPS.has(l.move) && !l.arms && !l.turn ? legPace(l) : 0;
+		if (
+			v >= STOP_LEAST &&
+			dist(m.at, to) < (v * v) / (2 * STOP_ACCEL * STOP_HARD)
+		) {
+			m.easeOff((v * v) / (2 * STOP_ACCEL));
+			return;
+		}
 		const { snap } = this.input;
 		const by = Math.max(
 			m.t + 400,
