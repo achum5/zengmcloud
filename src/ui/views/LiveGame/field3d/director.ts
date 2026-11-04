@@ -1442,6 +1442,7 @@ class Director {
 
 	finish(): FieldTimeline {
 		const end = Math.max(this.T, this.lastLine + TAIL);
+		standEasy(this.plays);
 		return {
 			plays: this.plays,
 			beats: this.beats,
@@ -4165,6 +4166,30 @@ type Named = {
 	side: Side;
 	groups: Group[] | undefined;
 	rank: number;
+};
+
+// STOOD EASY (the court's - see court3d's evaluate): a man on the field
+// stood still EASY_LEAST_MS or more with the ball dead - after the whistle,
+// or before the snap - his weight shifted from one leg onto the other and
+// back (see poses.ts easy), not set like a statue.
+const EASY_LEAST_MS = 2000;
+const standEasy = (plays: Play[]) => {
+	for (const p of plays) {
+		for (const part of p.parts) {
+			for (const l of part.legs) {
+				if (
+					l.move === "stand" &&
+					!l.arms &&
+					l.t1 - l.t0 >= EASY_LEAST_MS &&
+					(l.t0 >= p.whistle || l.t1 <= p.snap) &&
+					l.from.x === l.to.x &&
+					l.from.y === l.to.y
+				) {
+					l.move = "easy";
+				}
+			}
+		}
+	}
 };
 
 export const compileField = (input: FieldInput): FieldTimeline =>

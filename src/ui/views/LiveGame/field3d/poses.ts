@@ -1040,6 +1040,42 @@ const GET_UP_KEYS: [number, Pose][] = [
 const FIELD_ANIMS = {
 	// Standing easy: between plays, on the sideline.
 	stand: { kind: "still", pose: BASE },
+	// Stood about a good while with the ball dead (the court's easy - see
+	// director.ts standEasy): his weight shifted slowly from one leg onto
+	// the other and back - the hip over the leg he stands on, the other
+	// knee given, his shoulders the other way. Not set like a statue.
+	easy: {
+		kind: "loop",
+		n: 4,
+		fps: 0.5,
+		pose: (i) =>
+			[
+				BASE,
+				{
+					...BASE,
+					hipN: -2,
+					kneeN: 2,
+					hipF: 7,
+					kneeF: 17,
+					tilt: -2.5,
+					twist: 3,
+					shN: BASE.shN - 2,
+					shF: BASE.shF + 3,
+				},
+				{ ...BASE, kneeN: 7, kneeF: 9, lean: 4 },
+				{
+					...BASE,
+					hipN: 1,
+					kneeN: 16,
+					hipF: 2,
+					kneeF: 3,
+					tilt: 2.5,
+					twist: -3,
+					shN: BASE.shN + 4,
+					shF: BASE.shF - 3,
+				},
+			][i]!,
+	},
 	// Bent over, hands on his knees: catching his breath, in the huddle.
 	hands: { kind: "still", pose: HUDDLE },
 	threePoint: { kind: "still", pose: THREE_POINT },
@@ -4339,7 +4375,14 @@ const FISTS = new Set<Move>([
 	// (The play sheet pinched in the one.)
 	"callIn",
 ]);
-const RELAXED = new Set<Move>(["stand", "walk", "jog", "hands", "winded"]);
+const RELAXED = new Set<Move>([
+	"stand",
+	"easy",
+	"walk",
+	"jog",
+	"hands",
+	"winded",
+]);
 // (An official's hands as his signal has them - over whatever his legs are
 // doing: palms open, the arms up for a score, out for a first down; fists,
 // a wrist gripped for holding, the forearms rolled; his flag in his fist.)
@@ -4418,6 +4461,7 @@ export const gripsOf = (
 // the other where it was till its turn.
 const STANDS = new Set<Move>([
 	"stand",
+	"easy",
 	"armsFolded",
 	"onHips",
 	"hands",

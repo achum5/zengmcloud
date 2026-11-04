@@ -471,6 +471,7 @@ const PIVOT_STEP_MS = 110;
 const PIVOT_FULL = 0.35;
 const PIVOTS = new Set<Move>([
 	"stand",
+	"easy",
 	"armsFolded",
 	"onHips",
 	"hands",

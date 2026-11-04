@@ -1311,7 +1311,11 @@ describe("a man hurt, the trainers waved out", () => {
 						bad.push(`play ${play.i}: ${p.pid} turned ${off.toFixed(2)} off`);
 					}
 					const after = p.legs.slice(k + 1).map((x) => x.move);
-					if (!after.includes("takeKnee") && !after.includes("stand")) {
+					if (
+						!after.includes("takeKnee") &&
+						!after.includes("stand") &&
+						!after.includes("easy")
+					) {
 						bad.push(`play ${play.i}: ${p.pid} then ${after.join(",")}`);
 					}
 				}
@@ -1552,7 +1556,7 @@ describe("after the whistle", () => {
 							a.t1 < play.whistle + 300 ||
 							a.t0 > play.t1 ||
 							!["jog", "run", "sprint"].includes(a.move) ||
-							b.move !== "stand" ||
+							(b.move !== "stand" && b.move !== "easy") ||
 							b.t0 !== a.t1 ||
 							// (Stood, or all but: a step shoved against an edge.)
 							Math.hypot(b.to.x - b.from.x, b.to.y - b.from.y) >
