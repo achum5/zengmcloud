@@ -139,6 +139,31 @@ to be fixed for itself (they would turn up in real games too):
 - a man sat on his chair too near the coach in a huddle
 - with air balls on: the ball jumping 3.5 ft between frames off one
 
+Fixes made for those, held back - each turns up a few more in the games it
+reshuffles in turn (any change to how a play is laid out moves everything
+after it), so each waits until its own fallout is fixed:
+
+- the ball off a dunk goes down through the net away from where the dunker
+  comes down, not bouncing up through his legs (the slam's push off the
+  rim, away from him)
+- his man gives ground step for step with a man backing him down, from when
+  the back-down really starts - and whoever of theirs is on him, if his own
+  man isn't (backDown)
+- a drift off the ball (keeping his spacing) skipped where his next run, set
+  off from the end of it, would be too quick for his legs
+- a man right on a jumper square in front of him from the camera: the hand
+  up has to stay (a test), so he has to step aside for it - a nudge in
+  wallUp only for that man, not a pass over every contest (that broke the
+  and-one's foul, the poster, the close contests)
+- a rebounder tipping it up to himself and taking it on the way down (more
+  in a crowd, for a poor rebounder - about 6% of boards)
+
+Still turned up by the reshuffled games, not yet fixed: a man running his
+lane to his team's huddle through the other team's chairs; a man sat in the
+huddle far from his chair as the picture gets there (late); a rebound's
+ball flying to a man the marking pass has moved away from it; a heave at
+the buzzer whose ball goes out of bounds late.
+
 Checks: the existing tests (feet behind the line, a contested jumper stays
 in sight, the ball never jumps, real speed with no darts) on every change.
 
