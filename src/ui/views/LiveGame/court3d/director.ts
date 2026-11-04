@@ -87,6 +87,7 @@ import {
 	playShot,
 	SAMPLE_MS,
 	type FoundShot,
+	type MissStyle,
 	type ShotKind,
 	type ShotPlay,
 	type ShotWant,
@@ -1565,6 +1566,21 @@ const BREAK_NO_BACK = 4;
 // ... unless he is in under the rim, or would be once over to its side of
 // the floor: this near it (feet).
 const BREAK_DEEP = 12;
+// How a jumper misses (see missStyleFor), before his shooting and where the
+// rebound goes have their say: off the front of the rim, long off the back,
+// off the side, an air ball, the glass (from the side only) - and how much
+// more likely the way toward the man who gets the rebound is.
+const MISS_STYLE: Record<MissStyle, number> = {
+	short: 0.42,
+	long: 0.3,
+	side: 0.2,
+	air: 0.03,
+	glass: 0.02,
+};
+const MISS_TOWARD = 1.7;
+// Off till the glitches the test games it reshuffles turn up are fixed (see
+// tools/court3d-tape/PLAYS.md, "Blocking").
+const MISS_STYLES = false;
 // Pushing it into somebody else's turnover, where he gives it up: this far
 // from the baseline (feet) - the top of the floor, at the arc.
 const BREAK_GIVE_UP_DEPTH = 27;
@@ -13063,15 +13079,90 @@ class Director {
 								? ["air"]
 								: ["off", "rimOut", "brick"];
 		}
+		// How a jumper misses that the line doesn't say: off the front of the
+		// rim, long off the back, off a side of it - now and then nothing at
+		// all, or the glass - by how well he shoots, how far out he is, and
+		// where the rebound goes.
+		const plain = !plan.finish || plan.finish === "plain";
+		const style =
+			MISS_STYLES &&
+			plan.kind === "miss" &&
+			(plain || plan.finish === "brick") &&
+			(zone === "three" || zone === "midRange")
+				? this.missStyleFor(
+						shooter,
+						P,
+						rim,
+						plan.rebounder,
+						release,
+						side > 0.35 && side < 0.95,
+					)
+				: undefined;
+		// (A brick is off the front or the back of the iron, hard.)
+		const miss =
+			plan.finish === "brick" && style !== "short" && style !== "long"
+				? undefined
+				: style;
+		if (miss === "air") {
+			kinds = ["air"];
+		}
 		return this.playAtRim(team, shooter, from, release, flight, {
 			made: plan.kind === "make",
 			kinds,
+			...(miss ? { miss } : {}),
 			...(plan.rebounder === undefined
 				? { inPlay: true }
 				: {
 						toward: this.towardOf(team, plan.rebounder, dist(P, rim)),
 					}),
 		});
+	}
+
+	private missStyleFor(
+		shooter: number,
+		P: Pt,
+		rim: Pt,
+		rebounder: number | undefined,
+		release: number,
+		glass: boolean,
+	): MissStyle {
+		const far = dist(P, rim);
+		const three = far >= 22;
+		// (0 to 1; the middle for a man the game has no ratings for.)
+		const touch = this.level(shooter, three ? "tp" : "fg") ?? 0.5;
+		const w: Record<MissStyle, number> = {
+			// A poor shooter leaves it short more; a good one, when he misses,
+			// is just off - long, or to the side.
+			short: MISS_STYLE.short * (1.25 - 0.5 * touch),
+			long: MISS_STYLE.long * (0.75 + 0.5 * touch),
+			side: MISS_STYLE.side * (0.85 + 0.3 * touch),
+			air: MISS_STYLE.air * (three ? 1 : 0.35) * (1.6 - 1.2 * touch),
+			glass: glass ? MISS_STYLE.glass : 0,
+		};
+		// Toward where it comes down: long to a man behind the rim, short to
+		// one out in front of it, off the side to one off to its side.
+		if (rebounder !== undefined) {
+			const R = this.posOf(rebounder);
+			const u = unitVec(P, rim);
+			const a = (R.x - rim.x) * u.x + (R.y - rim.y) * u.y;
+			const c = Math.abs((R.x - rim.x) * -u.y + (R.y - rim.y) * u.x);
+			if (c > Math.abs(a) + 1) {
+				w.side *= MISS_TOWARD;
+			} else if (a > 2) {
+				w.long *= MISS_TOWARD;
+			} else if (a < -2) {
+				w.short *= MISS_TOWARD;
+			}
+		}
+		const total = Object.values(w).reduce((x, y) => x + y, 0);
+		let x = hash01(shooter * 13 + 5, Math.round(release)) * total;
+		for (const k of Object.keys(w) as MissStyle[]) {
+			x -= w[k];
+			if (x < 0) {
+				return k;
+			}
+		}
+		return "short";
 	}
 
 	// Out of his hands at `release`, from `from`, and played out at the rim

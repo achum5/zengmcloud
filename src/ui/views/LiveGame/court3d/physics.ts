@@ -355,6 +355,33 @@ export type ShotWant = {
 	// A miss that has to leave the rim with the ball still over the floor -
 	// somebody gets a hand to it before it goes anywhere.
 	inPlay?: boolean;
+	// How a miss misses, if it matters (see missStyleOf): tried for along
+	// with the kind.
+	miss?: MissStyle;
+};
+
+// Where a miss first meets the rim, along the line of the shot: short off
+// the front of it, long off the back, off the side of it - or nothing at all
+// (an air ball), or the glass first.
+export type MissStyle = "short" | "long" | "side" | "air" | "glass";
+export const missStyleOf = (side: Side, from: Pt3, p: ShotPlay): MissStyle => {
+	const first = p.touches[0];
+	if (!first) {
+		return "air";
+	}
+	if (!first.rim) {
+		return "glass";
+	}
+	const cx = rimX(side);
+	const cy = COURT_H / 2;
+	const hx = cx - from.x;
+	const hy = cy - from.y;
+	const far = Math.sqrt(hx * hx + hy * hy) || 1;
+	const along = ((first.at.x - cx) * hx + (first.at.y - cy) * hy) / far;
+	const across = Math.abs(
+		((first.at.x - cx) * -hy + (first.at.y - cy) * hx) / far,
+	);
+	return across > Math.abs(along) ? "side" : along < 0 ? "short" : "long";
 };
 
 export type FoundShot = {
@@ -424,13 +451,31 @@ export const findShot = (
 			: 0.55 + (k / tries) * 0.5;
 		const u1 = rand() * 2 - 1;
 		const u2 = rand() * 2 - 1;
-		const glass = rand() < (want.made ? 0.18 : 0.08) && far < 20;
+		const style = want.made ? undefined : want.miss;
+		const glass =
+			style === "glass" ||
+			(style === undefined && rand() < (want.made ? 0.18 : 0.08) && far < 20);
 		const ms = flight[0] + (flight[1] - flight[0]) * rand();
 		const T = ms / 1000;
 		let along = u1 * spread;
-		const across = u2 * spread * 0.7;
+		let across = u2 * spread * 0.7;
 		if (!want.made && Math.abs(along) < 0.3 && Math.abs(across) < 0.25) {
 			along = (along < 0 ? -1 : 1) * (0.3 + Math.abs(along));
+		}
+		// (Aimed the way it is to miss: short of the middle, past it, off to
+		// a side of it - or well short or wide of all of it.)
+		if (style === "short" || style === "long") {
+			along = (style === "short" ? -1 : 1) * (0.32 + Math.abs(u1) * spread);
+			across *= 0.6;
+		} else if (style === "side") {
+			across = (u2 < 0 ? -1 : 1) * (0.5 + Math.abs(u2) * spread * 0.6);
+			along *= 0.35;
+		} else if (style === "air") {
+			if (u1 < 0.2) {
+				along = -(1.7 + Math.abs(u2) * 1.3);
+			} else {
+				across = (u2 < 0 ? -1 : 1) * (1.6 + Math.abs(u1) * 1.0);
+			}
 		}
 		let aim = {
 			x: cx + ax * along - ay * across,
@@ -545,7 +590,10 @@ export const findShot = (
 		}
 		// Off the rim: toward the rebound - coming down near the man who gets
 		// it, as it falls into a rebounder's reach - and decided soon enough.
-		let score = right ? 0 : 2;
+		// (Missed the way it was to miss, first.)
+		let score =
+			(right ? 0 : 2) +
+			(want.miss && missStyleOf(side, from, play) !== want.miss ? 1.5 : 0);
 		if (want.toward) {
 			const e = play.end;
 			const drop = Math.max(0, e.p.z - REACH);
