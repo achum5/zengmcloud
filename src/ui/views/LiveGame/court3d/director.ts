@@ -1740,12 +1740,12 @@ const STOP_AHEAD = 3.8;
 const STOP_SIGHT = 1.6;
 const STOP_EARLY = 120;
 const STOP_HOLD = 150;
-// The help: no further than this (feet), at this pace (ft/s) - over this
-// long (ms) at least and at most - and somewhere he stays put meanwhile
-// (no further than this from where he'd have been, feet).
+// The help: no further than this (feet), at this pace at his quickest
+// (ft/s) - over this long (ms) at least and at most - and somewhere he stays
+// put meanwhile (no further than this from where he'd have been, feet).
 const STOP_REACH = 20;
-const STOP_FTPS = 14;
-const STOP_RAMP: [number, number] = [320, 1300];
+const STOP_FTPS = 10;
+const STOP_RAMP: [number, number] = [320, 2000];
 const STOP_DRIFT = 2.5;
 // Pulling up off a drive: going this fast (ft/s), up to this long (ms)
 // before it goes - but not the step or hop he goes up off, this long (ms)
@@ -2166,6 +2166,9 @@ const UP_WITH_SHOT = new Set<AnimName>([
 // A man of theirs in his way in gives way this far off him (feet, middle to
 // middle) - from this long (ms) before he goes up - taking this long (ms)
 // about the step aside.
+// A set's drop step or up-and-under is the real thing (see postFinish) from
+// no further out than this (feet).
+const POST_FINISH_FROM = 9;
 const GIVE_WAY = 1.5;
 const GIVE_WAY_BEFORE = 400;
 const GIVE_WAY_MS = 300;
@@ -8612,8 +8615,19 @@ class Director {
 				this.hold(pid, start, "hold");
 				return start + 450;
 			}
-			// A drop step, an up-and-under: one big step at the rim.
+			// A drop step, an up-and-under, down on the block: round his man
+			// or under him, to the rim (see postFinish) - not turned round to
+			// face him and walked in at him. (Further out, one big step at
+			// the rim.)
 			const from = this.posOf(pid);
+			if (dist(from, rimPt(run.team)) < POST_FINISH_FROM) {
+				return this.postFinish(
+					pid,
+					run.team,
+					start,
+					move === "up_and_under" ? "upUnder" : "dropStep",
+				);
+			}
 			const u = unitVec(from, { x: rimX(run.team), y: COURT_H / 2 });
 			this.hold(pid, start, "dribble");
 			const t = this.go(
@@ -26254,12 +26268,20 @@ class Director {
 				if (dist(A, B) > STOP_DRIFT) {
 					continue;
 				}
+				// (Eased in and out, his quickest is half as fast again as his
+				// average: that, at the pace - not twenty-odd feet a second in
+				// a defensive shuffle.)
+				const dx = S.x - A.x;
+				const dy = S.y - A.y;
 				const ramp = Math.min(
 					STOP_RAMP[1],
-					Math.max(STOP_RAMP[0], (cost / STOP_FTPS) * 1000),
+					Math.max(
+						STOP_RAMP[0],
+						((1.5 * Math.hypot(dx, dy)) / STOP_FTPS) * 1000,
+					),
 				);
 				bestCost = cost;
-				best = { tr, dx: S.x - A.x, dy: S.y - A.y, ramp };
+				best = { tr, dx, dy, ramp };
 			}
 			if (!best || Math.hypot(best.dx, best.dy) < 1) {
 				continue;

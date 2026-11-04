@@ -33,6 +33,8 @@ import { compile as compileFake } from "../../src/ui/views/LiveGame/court3d/test
 
 const body = bodyOf();
 const STEP = 100;
+// (Facings are not kept to one turn round: the angle between two, -pi to pi.)
+const wrap = (a: number) => a - 2 * Math.PI * Math.round(a / (2 * Math.PI));
 const RUNS = new Set(["run", "jog", "sprint", "walk"]);
 const STEPPING = new Set([
 	"run",
@@ -109,6 +111,10 @@ test.skipIf(!process.env.TAPE_GAMES)(
 					counts[kind] = (counts[kind] ?? 0) + 1;
 				};
 				const prev = new Map<number, any>();
+				const still0 = new Map<
+					number,
+					{ x: number; y: number; yaw: number; anim: string; t: number }
+				>();
 				const run = new Map<string, number>();
 				const sustain = (
 					key: string,
@@ -131,6 +137,9 @@ test.skipIf(!process.env.TAPE_GAMES)(
 						const q = evalPlayer(tl, tr.pid, t);
 						return {
 							pid: tr.pid,
+							v: undefined as number | undefined,
+							vx: undefined as number | undefined,
+							vy: undefined as number | undefined,
 							team: tr.team,
 							x: q.x,
 							y: q.y,
@@ -138,6 +147,9 @@ test.skipIf(!process.env.TAPE_GAMES)(
 							anim: q.anim,
 							shown: q.shown,
 							moving: q.moving,
+							// (Legs keeping on with a stride under an act, or up off
+							// the floor: not sliding.)
+							striding: q.stride !== undefined || q.z > 0.3,
 						};
 					});
 					const beat = tl.beats.findLast((b) => b.preStart <= t);
@@ -172,6 +184,7 @@ test.skipIf(!process.env.TAPE_GAMES)(
 							continue;
 						}
 						const vx = (p.x - q.x) * (1000 / STEP);
+						// (prev holds last frame's p, with its v.)
 						const vy = (p.y - q.y) * (1000 / STEP);
 						const v = Math.hypot(vx, vy);
 						if (!real) {
@@ -197,13 +210,59 @@ test.skipIf(!process.env.TAPE_GAMES)(
 								`${p.pid} running backwards (${p.anim}) at ${v.toFixed(1)} ft/s`,
 							);
 						}
-						const glide = v > 3 && !p.moving && !STEPPING.has(p.anim);
+						const glide =
+							v > 3 && !p.moving && !p.striding && !STEPPING.has(p.anim);
 						if (sustain(`gl${p.pid}`, glide, t, 300)) {
 							flag(
 								t,
 								"glide",
 								p.pid,
 								`${p.pid} slides ${v.toFixed(1)} ft/s without stepping (${p.anim})`,
+							);
+						}
+						// Robot tells: turned on the spot faster than anybody turns
+						// (stood, his facing swung 70 degrees and more in 0.1 s), or
+						// from a run to a stop, or a stop to a run, in one step.
+						const turn = Math.abs(wrap(p.yaw - q.yaw));
+						if (v < 2 && turn > (70 * Math.PI) / 180 && !cutNear(t - STEP, t)) {
+							flag(
+								t,
+								"snap",
+								p.pid,
+								`${p.pid} spins ${((turn * 180) / Math.PI).toFixed(0)} deg in 0.1 s (${q.anim}>${p.anim})`,
+							);
+						}
+						const qv = q.v ?? v;
+						p.v = v;
+						p.vx = vx;
+						p.vy = vy;
+						// (Or at speed, his way swung round in one step: a corner.)
+						if (
+							v > 8 &&
+							qv > 8 &&
+							q.vx !== undefined &&
+							!cutNear(t - 2 * STEP, t)
+						) {
+							const swing = Math.abs(
+								((Math.atan2(vy, vx) - Math.atan2(q.vy, q.vx) + 3 * Math.PI) %
+									(2 * Math.PI)) -
+									Math.PI,
+							);
+							if (swing > (40 * Math.PI) / 180) {
+								flag(
+									t,
+									"corner",
+									p.pid,
+									`${p.pid} turns ${((swing * 180) / Math.PI).toFixed(0)} deg at ${v.toFixed(0)} ft/s in 0.1 s (${q.anim}>${p.anim})`,
+								);
+							}
+						}
+						if (Math.abs(v - qv) > 8 && !cutNear(t - 2 * STEP, t)) {
+							flag(
+								t,
+								"lurch",
+								p.pid,
+								`${p.pid} ${qv.toFixed(0)} to ${v.toFixed(0)} ft/s in 0.1 s (${q.anim}>${p.anim})`,
 							);
 						}
 						const offFloor =
@@ -221,6 +280,25 @@ test.skipIf(!process.env.TAPE_GAMES)(
 							);
 						if (live && sustain(`ob${p.pid}`, out, t, 1500)) {
 							flag(t, "offCourt", p.pid, `${p.pid} off the floor in play`);
+						}
+						// Stood like a statue in play: not a step, not a turn of his
+						// head or his body, the same pose, 3 s on end.
+						const ref = still0.get(p.pid);
+						if (
+							!ref ||
+							Math.hypot(p.x - ref.x, p.y - ref.y) > 0.4 ||
+							Math.abs(wrap(p.yaw - ref.yaw)) > (8 * Math.PI) / 180 ||
+							p.anim !== ref.anim
+						) {
+							still0.set(p.pid, {
+								x: p.x,
+								y: p.y,
+								yaw: p.yaw,
+								anim: p.anim,
+								t,
+							});
+						} else if (live && t - ref.t >= 3000 && t - ref.t < 3000 + STEP) {
+							flag(t, "statue", p.pid, `${p.pid} stock still 3 s (${p.anim})`);
 						}
 						if (live && p.pid === holder) {
 							const still = v < 0.5;

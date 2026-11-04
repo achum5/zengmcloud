@@ -1762,6 +1762,33 @@ const plannedYaw = (tl: CourtTimeline, tr: Track, t: number): number => {
 				return angleTo(here, { x: rimX(tr.team), y: 25 }, fallback);
 			}
 		}
+		// Dribbling into a pull-up: as he gets there he opens up to the rim,
+		// turned into his shot over the last of his dribble - not run in
+		// facing the way he goes, stopped, and spun round on it where he
+		// stands. (Only so far round that he still dribbles on forward: the
+		// rest of the turn is his gather.)
+		if (mv.anim === "dribble" && d >= 3) {
+			const next = tr.acts[lastIndex(tr.acts, t + PULLUP_OPEN_MS, (a) => a.t0)];
+			const own =
+				next && next.t0 > t && PULLUP_SHOTS.has(next.anim)
+					? ballSegAt(tl, t)
+					: undefined;
+			if (own?.kind === "hold" && own.pid === tr.pid) {
+				const heading =
+					here.hx * here.hx + here.hy * here.hy > 1e-6
+						? Math.atan2(here.hy, here.hx)
+						: Math.atan2(dy, dx);
+				const to = wrapAngle(
+					angleTo(here, { x: rimX(tr.team), y: 25 }, fallback) - heading,
+				);
+				const u = Math.min(1, Math.max(0, 1 - (next!.t0 - t) / PULLUP_OPEN_MS));
+				const e = u * u * (3 - 2 * u);
+				return (
+					heading +
+					Math.max(-PULLUP_OPEN_MOST, Math.min(PULLUP_OPEN_MOST, to)) * e
+				);
+			}
+		}
 		if (d >= 3) {
 			const heading =
 				here.hx * here.hx + here.hy * here.hy > 1e-6
@@ -1810,6 +1837,19 @@ const plannedYaw = (tl: CourtTimeline, tr: Track, t: number): number => {
 // did - and eased between beats. No state that depends on which frames were
 // drawn before, so any frame can be asked for and every viewing agrees.
 const TURN_STEP = 40;
+// Dribbling into a pull-up (see plannedYaw): how long before he goes up he
+// starts opening up to the rim (ms), and how far round from the way he goes
+// he gets while still dribbling.
+const PULLUP_OPEN_MS = 700;
+const PULLUP_OPEN_MOST = (75 * Math.PI) / 180;
+const PULLUP_SHOTS = new Set<AnimName>([
+	"shoot",
+	"setShot",
+	"shootQuick",
+	"shootQuickKick",
+	"shootQuickSplit",
+	"fade",
+]);
 // Carried by an offset (see yawTarget): how fast (feet a second), read over
 // this long either side (ms).
 const OFFSET_GO_FTPS = 7;
@@ -6057,6 +6097,11 @@ const STRIDE_ACTS = new Set<AnimName>([
 	"boxOut",
 	"fight",
 	"bump",
+	// (A swipe at the ball chasing a man down, a hand going up at his shot
+	// on the way to it: his legs run on under it, not slid along the floor
+	// in the lunge.)
+	"hack",
+	"block",
 ]);
 const STRIDE_LEGS: (keyof Pose)[] = [
 	"hipN",

@@ -71,4 +71,55 @@ describe("3D court, a real game", () => {
 		assert.deepEqual(jumps, []);
 		assert.deepEqual(backward, []);
 	}, 900_000);
+
+	// Backed his man down on the block, a set's drop step or up-and-under to
+	// the rim: round him or under him - not turned round to face him and
+	// walked in at him, dribbling, into a dunk through him.
+	test("off a back-down, a finish at the rim comes off a move on his man", () => {
+		const bad: string[] = [];
+		let posted = 0;
+		for (const tr of tl.tracks.values()) {
+			for (const a of tr.acts) {
+				if (!AT_RIM.has(a.anim)) {
+					continue;
+				}
+				const down = tr.moves.findLast(
+					(m) => m.anim === "post" && m.t1 <= a.t0 && m.t1 > a.t0 - 2500,
+				);
+				if (!down) {
+					continue;
+				}
+				posted += 1;
+				const walkedIn = tr.moves.some(
+					(m) =>
+						m.t0 >= down.t1 &&
+						m.t1 <= a.t0 &&
+						(m.anim === "dribble" || m.anim === "dribbleWalk"),
+				);
+				const moved = tr.acts.some(
+					(b) =>
+						(b.anim === "jab" || b.anim === "shotFake") &&
+						b.t0 >= down.t1 - 100 &&
+						b.t0 < a.t0,
+				);
+				if (walkedIn || !moved) {
+					bad.push(`${tr.pid} at ${Math.round(a.t0)} (${a.anim})`);
+				}
+			}
+		}
+		assert.isAbove(posted, 0);
+		assert.deepEqual(bad, []);
+	}, 900_000);
 });
+
+const AT_RIM = new Set([
+	"dunk",
+	"dunk1",
+	"tomahawk",
+	"windmill",
+	"layup",
+	"powerLayup",
+	"reverseLayup",
+	"fingerRoll",
+	"scoop",
+]);
