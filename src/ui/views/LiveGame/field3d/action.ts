@@ -11273,7 +11273,7 @@ class Action {
 					};
 					// (In strides while he is still quicker than a set.)
 					const fps = (dist(b.at, at) / Math.max(1, x.t - b.t)) * 1000;
-					if (fps > SHUFFLE_MOST * HOLD_ON) {
+					if (stop !== undefined && fps > SHUFFLE_MOST * HOLD_ON) {
 						b.go(at, x.t);
 					} else {
 						b.go(at, x.t, "passSet", this.facing(at, him[k]!));
