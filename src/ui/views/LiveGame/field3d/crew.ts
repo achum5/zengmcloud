@@ -109,7 +109,8 @@ export type Signaled =
 	| "timeout"
 	// Whose ball it is now - a fumble's, a takeaway's - pointed the way they
 	// go (see `way`).
-	| "ball";
+	| "ball"
+	| "touchback";
 
 // A flag thrown: from his hand at t0, down on the turf at `to` at t1, lying
 // there from then on.
@@ -205,6 +206,7 @@ const SIGNAL_MS: Record<Signaled, number> = {
 	out: 1300,
 	timeout: 1600,
 	ball: 1500,
+	touchback: 1500,
 };
 // Whose ball it is: pointed out by the first two officials in this near it
 // (feet) - by this long after the time for it at the latest, looked for
@@ -787,7 +789,9 @@ export const stageCrew = (
 											? ["DJ", "LJ"]
 											: sg.what === "out"
 												? ["DJ", "LJ", "SJ", "FJ"]
-												: CREW.filter((o) => o !== "R"),
+												: sg.what === "touchback"
+													? CREW
+													: CREW.filter((o) => o !== "R"),
 										sg.at,
 										sg.t,
 									),
@@ -843,7 +847,8 @@ export const stageCrew = (
 				continue;
 			}
 			// (Faced in to the field - under the posts, back out to the kick;
-			// whose ball it is, to the press box, if he is out on it.)
+			// whose ball it is, or a touchback, to the press box, if he is
+			// out on it.)
 			const p = where(o, t);
 			const yaw =
 				sg.what === "good" || sg.what === "noGood"
@@ -851,7 +856,8 @@ export const stageCrew = (
 						? Math.PI
 						: 0
 					: sg.what === "timeout" ||
-						  (sg.what === "ball" && p.y < FIELD_W - BALL_IN)
+						  ((sg.what === "ball" || sg.what === "touchback") &&
+								p.y < FIELD_W - BALL_IN)
 						? FACING_US
 						: p.y > MID_Y
 							? -Math.PI / 2
@@ -868,7 +874,9 @@ export const stageCrew = (
 								? "sigSide"
 								: sg.what === "out" || sg.what === "timeout"
 									? "sigTime"
-									: "sigWave",
+									: sg.what === "touchback"
+										? "waveOver"
+										: "sigWave",
 				t0: t,
 				t1: t + ms,
 				left:

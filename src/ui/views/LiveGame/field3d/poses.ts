@@ -3921,7 +3921,7 @@ const FIELD_ANIMS = {
 	},
 
 	// Waving the trainers out to a man down: his right arm up over his head,
-	// swung across it and back, and let down.
+	// swung across it and back, and let down. (An official's touchback.)
 	waveOver: {
 		kind: "act",
 		keys: [

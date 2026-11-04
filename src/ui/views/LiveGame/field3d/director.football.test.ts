@@ -1392,6 +1392,37 @@ describe("whose ball it is", () => {
 		assert.isAtLeast(plays, 3);
 		assert.isAtLeast(pointed, plays * 0.75);
 	}, 30_000);
+
+	test("a touchback: an official waves it, his arm over his head", () => {
+		const bad: string[] = [];
+		let backs = 0;
+		for (const game of games) {
+			const tl = stage(game);
+			tl.plays.forEach((play, k) => {
+				const evs = game.events.slice(play.i, tl.plays[k + 1]?.i);
+				if (
+					!evs.some((e) => e?.touchback === true) ||
+					evs.some((e) => e?.td === true || e?.safety === true)
+				) {
+					return;
+				}
+				backs += 1;
+				const waved = play.crew.some((o) =>
+					o.legs.some(
+						(l) =>
+							l.arms === "waveOver" &&
+							l.t0 >= play.whistle &&
+							l.t0 < play.whistle + 600,
+					),
+				);
+				if (!waved) {
+					bad.push(`play ${play.i}: ${play.kind} not waved`);
+				}
+			});
+		}
+		assert.deepEqual(bad.slice(0, 8), []);
+		assert.isAtLeast(backs, 2);
+	}, 30_000);
 });
 
 describe("the TV cameras", () => {

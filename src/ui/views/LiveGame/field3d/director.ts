@@ -1094,6 +1094,7 @@ const HERO_FACED_AT = 400;
 const FIRST_DOWN_AT = 1100;
 // (Whose ball it is, a fumble's or a takeaway's, this long after.)
 const BALL_SIGNAL_AT = 700;
+const TOUCHBACK_AT = 250;
 const OUT_SIGNAL_AT = 150;
 const OUT_FIRST_AT = 1700;
 // A first down on third or fourth down made by no more than this (feet
@@ -2206,9 +2207,20 @@ class Director {
 				? parts.find((p) => p.pid === had.pid)?.team
 				: undefined;
 		const loose = events.slice(i0, i1).some((e) => e?.type === "fumble");
+		// (Downed in the end zone it was kicked into, or picked off in: a
+		// touchback, waved over his head.)
+		const back = events.slice(i0, i1).some((e) => e?.touchback === true);
+		if (acted && back && !scored) {
+			signals.push({
+				what: "touchback",
+				t: whistle + TOUCHBACK_AT,
+				at: spotAt(whistle),
+			});
+		}
 		if (
 			acted &&
 			!scored &&
+			!back &&
 			hasIt !== undefined &&
 			(loose ||
 				(kind === "onside"
