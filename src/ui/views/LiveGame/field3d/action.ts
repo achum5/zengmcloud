@@ -8129,8 +8129,11 @@ class Action {
 		if (first) {
 			const hit = inside(first, 0);
 			if (r() < SHOVE) {
-				// Both hands into him, and through it to the line.
+				// Both hands into him, and through it - over the line with him
+				// a stride or two, not stopped dead on it (nor pulled back
+				// over it after).
 				const on = this.of(hit);
+				first.roam = Math.max(first.roam, OUT_MOST + 1);
 				first.go(
 					this.w({ d: on.d + dd * 3, a: on.a + side * 2.5 }),
 					down.t + 380,
@@ -11762,13 +11765,35 @@ class Action {
 						this.behind,
 					);
 				}
-				m.chase(
-					settleAt,
-					by - ((2 * ease) / Math.max(1, fps)) * 1000,
-					fps,
-					bail ? gait(fps) : "back",
-					bail ? undefined : this.behind,
-				);
+				// (Up into his backpedal out of his stance - see RELEASE_ACCEL -
+				// not off it at full pace from still: short of where that would
+				// have him by as much, on time.)
+				const easeMs = ((2 * ease) / Math.max(1, fps)) * 1000;
+				const T1 = (by - easeMs - m.t) / 1000;
+				const go = dist(m.at, settleAt);
+				const gets = Math.min(go, fps * T1) - (fps * fps) / (2 * RELEASE_ACCEL);
+				if (!bail && legPace(m.last) < 0.5 && T1 > 0 && gets > 0.5) {
+					m.getOff(
+						{
+							x: m.at.x + ((settleAt.x - m.at.x) * gets) / go,
+							y: m.at.y + ((settleAt.y - m.at.y) * gets) / go,
+						},
+						by - easeMs,
+						0,
+						RELEASE_ACCEL,
+						"back",
+						0,
+						this.behind,
+					);
+				} else {
+					m.chase(
+						settleAt,
+						by - easeMs,
+						fps,
+						bail ? gait(fps) : "back",
+						bail ? undefined : this.behind,
+					);
+				}
 				if (ease > 0) {
 					m.easeOff(ease);
 				}
@@ -13135,16 +13160,11 @@ class Action {
 	// little way across the field and back, a half step up and back - each
 	// fighting the other.
 	// Off the ball into the man across from him (`at`, where that is at t)
-	// by `by`: a step or two up into him - or, lined up further off him
-	// than he gets to by then out of his stance (see GET_OFF_ACCEL), up to
-	// speed and into him as soon as he can (on him FIRE_HELD_MS before
-	// `until` at the latest, when he is off him).
+	// by `by`, or as soon after as he can be: up out of his stance and into
+	// him (see GET_OFF_ACCEL) - a step or two, his arms out into him, or a
+	// run (see fireOff); not off from still at full pace. (On him
+	// FIRE_HELD_MS before `until` at the latest, when he is off him.)
 	fireInto(m: Actor, at: (t: number) => Pt, by: number, until: number) {
-		const near = at(by);
-		if (fireOff(m, near) === "engage") {
-			m.chase(near, by, m.top * 0.9, "engage");
-			return;
-		}
 		let t = by;
 		for (let k = 0; k < 2; k++) {
 			t = Math.max(
@@ -13154,7 +13174,7 @@ class Action {
 			);
 		}
 		t = Math.min(t, Math.max(by, until - FIRE_HELD_MS));
-		m.getOff(at(t), t, 0, GET_OFF_ACCEL, "run", GET_OFF_SQUARE_MS);
+		m.getOff(at(t), t, 0, GET_OFF_ACCEL, fireOff(m, at(by)), GET_OFF_SQUARE_MS);
 	}
 
 	// Off from still along `path` (on from where he is), up to speed at `a`
