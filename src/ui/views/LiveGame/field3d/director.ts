@@ -4109,7 +4109,10 @@ class Director {
 			const far = Math.hypot(gap.x - p.x, gap.y - p.y);
 			const ms = (far / MUG_FPS) * 1000;
 			const set = snap - MUG_SET;
-			const back = set - Math.max(MUG_BACK, (far / MUG_BACK_FPS) * 1000);
+			// (Slowed into his set at the last - see intoStance - so as long
+			// again as that takes over the rest.)
+			const back =
+				set - Math.max(MUG_BACK, ((far * SET_IN_MOST) / MUG_BACK_FPS) * 1000);
 			const latest = back - 300 - ms;
 			if (r() < MUG && latest > st.t0 + 200) {
 				// Showing blitz - and back out of it as the ball goes.

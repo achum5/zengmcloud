@@ -4307,6 +4307,7 @@ class Action {
 		this.offMenDown();
 		this.readyUp();
 		this.noTreading();
+		this.noSlowGaits();
 		this.noFlicks();
 		this.overHeads();
 		this.tdArms();
@@ -4569,6 +4570,31 @@ class Action {
 					}
 				}
 				i = j;
+			}
+		}
+	}
+
+	// A leg run, or sprinted, slower than the gait goes for GAIT_LEAST_MS
+	// or more - slowed after it was laid, to meet a ball or another man:
+	// in the quickest gait that goes that slow (a run at a jog's pace a
+	// jog), not run on the spot.
+	noSlowGaits() {
+		const DOWN: Partial<Record<Move, Move>> = {
+			sprint: "run",
+			run: "jog",
+			jog: "walk",
+		};
+		for (const m of this.men) {
+			for (const l of m.legs) {
+				if (l.t1 - l.t0 < GAIT_LEAST_MS) {
+					continue;
+				}
+				const fps = legPace(l);
+				let move = l.move;
+				while (fps < (GAIT_LEAST[move] ?? -1) && DOWN[move]) {
+					move = DOWN[move]!;
+				}
+				l.move = move;
 			}
 		}
 	}
@@ -9114,9 +9140,29 @@ class Action {
 		// (In at him off it, square to him: backpedaled into the spot if it
 		// is behind him, a slide if off to his side - not run there backward
 		// or crabbed across.)
-		const inMove = (): Move => {
+		// (Quicker at the last of it than a man goes in push steps or a
+		// backpedal, though - SHUFFLE_MOST, BACK_MOST - turned and run at
+		// him: not crabbed in sideways flat out.)
+		const inTo = () => {
 			const c = Math.cos(this.toward(m.at, hit) - face);
-			return c < GIVE_COS ? "back" : c < SIDE_COS ? "slide" : "run";
+			const move = c < GIVE_COS ? "back" : c < SIDE_COS ? "slide" : "run";
+			const D = dist(m.at, hit);
+			const T = Math.max(0.001, (lead - m.t) / 1000);
+			const room = T * T - (2 * D) / GET_OFF_ACCEL;
+			const top =
+				room >= 0 ? GET_OFF_ACCEL * (T - Math.sqrt(room)) : (2 * D) / T;
+			const quick =
+				move !== "run" &&
+				top > (move === "back" ? BACK_MOST : SHUFFLE_MOST) * HOLD_ON;
+			m.getOff(
+				hit,
+				lead,
+				0,
+				GET_OFF_ACCEL,
+				quick ? gait(top) : move,
+				0,
+				quick ? undefined : face,
+			);
 		};
 		// (Giving ground in front of him: backpedaling, square to him.)
 		const gives =
@@ -9169,7 +9215,7 @@ class Action {
 			);
 			m.easeOff(pull);
 			setTill(lead - upMs);
-			m.getOff(hit, lead, 0, GET_OFF_ACCEL, inMove(), 0, face);
+			inTo();
 		} else if (
 			far > 8 &&
 			far < m.top * 0.5 * secs &&
@@ -9182,7 +9228,7 @@ class Action {
 			);
 			m.easeOff(ease);
 			setTill(fire);
-			m.getOff(hit, lead, 0, GET_OFF_ACCEL, inMove(), 0, face);
+			inTo();
 		} else if (
 			far <= 8 &&
 			legPace(m.last) < BREAK_NEAR_MOST &&
@@ -9199,7 +9245,7 @@ class Action {
 				m.go(at, m.t + nearMs, "slide", look());
 			}
 			setTill(fireNear);
-			m.getOff(hit, lead, 0, GET_OFF_ACCEL, inMove(), 0, face);
+			inTo();
 		} else {
 			// (A step or two off him, time over to walk it: set where he is,
 			// and in at him off it - not walked in on him.)
@@ -9215,7 +9261,7 @@ class Action {
 				if (set) {
 					setTill(lead - fireMs);
 				}
-				m.getOff(hit, lead, 0, GET_OFF_ACCEL, inMove(), 0, face);
+				inTo();
 			} else {
 				// (Backpedaling, if he gives ground and can go that quick so.)
 				m.press(
