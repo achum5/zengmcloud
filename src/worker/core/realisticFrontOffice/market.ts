@@ -206,6 +206,11 @@ export const marketSettings = {
 	// Twenty measured and left at ten: half the teams each way, a league each
 	// way round over 5 seasons, 6 titles to 4 but 63 playoff rounds to 87.
 	candidatesPerPair: CANDIDATES_PER_PAIR,
+	// For measuring whether the model is right to: a team never gives a first
+	// for no first back and nobody rated 55 or better (diagnostic only - in
+	// the owner's league from 2005, contenders gave far-future firsts for 48s
+	// about four times a season).
+	noCheapFirsts: false,
 };
 
 // For the arena's version-against-version leagues: settings for some teams'
@@ -791,12 +796,23 @@ const firstsFriction = (
 	get: readonly Asset[],
 	single?: Map<string, number>,
 ) => {
-	if (!settingFor(t.tid, "scarceFirsts")) {
-		return 0;
-	}
 	const firstsGiven = give.flatMap((x) =>
 		x.kind === "pick" && x.dp.round === 1 ? [x] : [],
 	);
+	if (
+		firstsGiven.length > 0 &&
+		settingFor(t.tid, "noCheapFirsts") &&
+		!get.some(
+			(x) =>
+				(x.kind === "pick" && x.dp.round === 1) ||
+				(x.kind === "player" && x.p.ratings.at(-1)!.ovr >= 55),
+		)
+	) {
+		return Infinity;
+	}
+	if (!settingFor(t.tid, "scarceFirsts")) {
+		return 0;
+	}
 	if (firstsGiven.length === 0) {
 		return 0;
 	}
