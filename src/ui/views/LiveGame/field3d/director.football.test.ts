@@ -1527,6 +1527,54 @@ describe("the TV cameras", () => {
 	}, 20_000);
 });
 
+// After the whistle - off to the other end over a quarter break, off the
+// field at the half, everybody on to what is next - nobody pulling up off a
+// run is stopped dead at speed: he comes to his stop first.
+describe("after the whistle", () => {
+	test("nobody stood still straight out of a run", () => {
+		const out: string[] = [];
+		let breaks = 0;
+		for (const game of games) {
+			const tl = stage(game);
+			tl.plays.forEach((play, k) => {
+				const next = tl.plays[k + 1]?.i ?? game.events.length;
+				if (
+					game.events.slice(play.i, next).some((e) => e?.type === "quarter")
+				) {
+					breaks += 1;
+				}
+				for (const part of play.parts) {
+					part.legs.forEach((a, j) => {
+						const b = part.legs[j + 1];
+						if (
+							!b ||
+							a.t1 < play.whistle + 300 ||
+							a.t0 > play.t1 ||
+							!["jog", "run", "sprint"].includes(a.move) ||
+							b.move !== "stand" ||
+							b.t0 !== a.t1 ||
+							b.from.x !== a.to.x ||
+							b.from.y !== a.to.y
+						) {
+							return;
+						}
+						const pace =
+							Math.hypot(a.to.x - a.from.x, a.to.y - a.from.y) /
+							((a.t1 - a.t0) / 1000);
+						if (pace >= 10.5) {
+							out.push(
+								`play ${play.i} ${part.role} ${a.move} ${pace.toFixed(1)} ft/s, ${Math.round(a.t1 - play.whistle)} ms after`,
+							);
+						}
+					});
+				}
+			});
+		}
+		assert.isAbove(breaks, 2);
+		assert.deepEqual(out, []);
+	}, 60_000);
+});
+
 describe("the game over", () => {
 	test("everyone on the field shakes hands with one of the other side's, and the head coaches out to shake in the middle", () => {
 		for (const game of games) {

@@ -252,10 +252,24 @@ const cut = (legs: Leg[], t: number): { at: number; down: boolean } => {
 // OUT_STEP_MS long - not down on a knee in his stride. (When he is stood.)
 const PULL_LEAST = 6.5;
 const PULL_EASE = 14;
+// (Faced some way of his own - a backpedal, a shuffle - not: only going
+// the way he faces, near enough, this near it (radians).)
+const PULL_FACED = 0.7;
+const goingOn = (l: Leg): boolean => {
+	if (moveKind(l.move) !== "cycle") {
+		return false;
+	}
+	if (l.yaw === undefined) {
+		return true;
+	}
+	const way = Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x);
+	const off = Math.atan2(Math.sin(l.yaw - way), Math.cos(l.yaw - way));
+	return Math.abs(off) < PULL_FACED;
+};
 const pullUp = (legs: Leg[], t: number): number => {
 	const l = legs.at(-1)!;
 	const v = l.t1 > l.t0 ? dist(l.from, l.to) / ((l.t1 - l.t0) / 1000) : 0;
-	if (moveKind(l.move) !== "cycle" || l.yaw !== undefined || v < PULL_LEAST) {
+	if (!goingOn(l) || v < PULL_LEAST) {
 		return t;
 	}
 	const cos = (l.to.x - l.from.x) / (v * ((l.t1 - l.t0) / 1000));
@@ -275,6 +289,7 @@ const pullUp = (legs: Leg[], t: number): number => {
 			from: at,
 			to,
 			move: pace < PULL_LEAST ? "walk" : l.move,
+			...(l.yaw !== undefined ? { yaw: l.yaw } : {}),
 		});
 		at = to;
 		t0 = t1;
@@ -286,7 +301,7 @@ const pullUp = (legs: Leg[], t: number): number => {
 const stopsAt = (legs: Leg[], t: number): Pt => {
 	const p = posOf(legs, t);
 	const l = legs.findLast((x) => x.t0 <= t);
-	if (!l || moveKind(l.move) !== "cycle" || l.yaw !== undefined) {
+	if (!l || !goingOn(l)) {
 		return p;
 	}
 	const far = dist(l.from, l.to);

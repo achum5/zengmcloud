@@ -268,16 +268,22 @@ const freeAt = (legs: Leg[], t: number): number => {
 		at = l.t1;
 	}
 	// (Only just off on his way somewhere: free from before he was - not a
-	// step and stopped again.)
+	// step and stopped again. From when he set off, that is - back past
+	// the steps a run is laid in, getting up to speed or slowing from it:
+	// not cut off at speed partway through pulling up.)
+	const goes = (l: Leg | undefined) =>
+		!!l &&
+		moveKind(l.move) === "cycle" &&
+		(l.from.x !== l.to.x || l.from.y !== l.to.y);
 	const on = legs[k];
-	if (
-		on &&
-		on.t0 < at &&
-		at - on.t0 < JUST_OFF_MS &&
-		moveKind(on.move) === "cycle" &&
-		(on.from.x !== on.to.x || on.from.y !== on.to.y)
-	) {
-		return on.t0;
+	if (on && on.t0 < at && goes(on)) {
+		let s = k;
+		while (s > 0 && goes(legs[s - 1]) && legs[s - 1]!.t1 === legs[s]!.t0) {
+			s--;
+		}
+		if (at - legs[s]!.t0 < JUST_OFF_MS) {
+			return legs[s]!.t0;
+		}
 	}
 	// (Slowing to a stop still: there first - not stood still in a frame,
 	// at speed.)
