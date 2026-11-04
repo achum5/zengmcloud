@@ -2542,6 +2542,9 @@ const JOSTLE_A: [number, number] = [0.5, 1.1];
 const JOSTLE_D = 0.4;
 const JOSTLE_STEP_MS = 90;
 const DOUBLE_FT = 2.2;
+// (In beside a man on a double team no further off than this from where he
+// is a moment after the snap, feet - and only while he is on his man.)
+const DOUBLE_REACH_FT = 10;
 const FILL_MS = 1050;
 const FILL_PACE = 0.7;
 // (Over to fill no slower than this, ft/s - set first for it, if he is,
@@ -11825,7 +11828,10 @@ class Action {
 				this.blockOn(b, m, beat(b), offAt, until, carrier, through);
 				continue;
 			}
-			const mate = closest([...on.keys()], b.at);
+			const near = (x: Actor) => dist(x.posAt(snap + 800), b.at);
+			const mate = [...on.keys()]
+				.filter((x) => near(x) <= DOUBLE_REACH_FT)
+				.sort((x, y) => near(x) - near(y))[0];
 			if (!mate) {
 				b.go(
 					this.w({ ...this.of(b.at), d: this.of(b.at).d + drive }),
@@ -11840,8 +11846,27 @@ class Action {
 				const p = this.of(mate.posAt(time));
 				return this.w({ d: p.d - 0.4, a: p.a + by * DOUBLE_FT });
 			};
-			b.chase(beside(snap + 800), snap + 800, b.top * 0.8, "drive", this.ahead);
-			b.go(beside(until), until, "drive", this.ahead);
+			// (Off it as he is - not on beside where he goes after it, the
+			// man on him gone.)
+			const upTo = Math.min(
+				until,
+				mate.legs.findLast((l) => l.move === "drive" || l.move === "engage")
+					?.t1 ?? until,
+			);
+			// (Over to him square to the line: across in a slide, not run
+			// there crabwise.)
+			const over = this.of(beside(snap + 800));
+			const at = this.of(b.at);
+			b.chase(
+				beside(snap + 800),
+				snap + 800,
+				b.top * 0.8,
+				Math.abs(over.a - at.a) > Math.abs(over.d - at.d) ? "slide" : "drive",
+				this.ahead,
+			);
+			if (upTo > b.t) {
+				b.go(beside(upTo), upTo, "drive", this.ahead);
+			}
 		}
 
 		// The receivers: out onto the nearest man off the ball, and on him -
