@@ -1340,6 +1340,60 @@ describe("a foul told to the referee", () => {
 	}, 30_000);
 });
 
+describe("whose ball it is", () => {
+	test("a takeaway or a fumble: the officials nearest it point the way the side that has it now goes", () => {
+		const bad: string[] = [];
+		let plays = 0;
+		let pointed = 0;
+		for (const game of games) {
+			const tl = stage(game);
+			tl.plays.forEach((play, k) => {
+				const evs = game.events.slice(play.i, tl.plays[k + 1]?.i);
+				const loose = evs.some(
+					(e) => e?.type === "fumble" || e?.type === "interception",
+				);
+				const had = play.ball.findLast((b) => b.t0 <= play.whistle);
+				if (
+					!loose ||
+					evs.some((e) => e?.td === true || e?.safety === true) ||
+					had?.kind !== "held"
+				) {
+					return;
+				}
+				const team = play.parts.find((p) => p.pid === had.pid)?.team;
+				const way = team === play.offense ? play.dir : -play.dir;
+				plays += 1;
+				let any = false;
+				// (Not the referee: his are the fouls'.)
+				for (const o of play.crew.filter((p) => p.pid !== -1)) {
+					const l = o.legs.find(
+						(q) =>
+							q.arms === "sigSide" &&
+							q.t0 > play.whistle + 500 &&
+							q.t0 < play.whistle + 2600,
+					);
+					if (!l) {
+						continue;
+					}
+					any = true;
+					// (His right arm out to his right, his left to his left.)
+					const yaw = l.yaw ?? 0;
+					const along = l.mirrored ? Math.sin(yaw) : -Math.sin(yaw);
+					if (Math.sign(along) !== way) {
+						bad.push(`play ${play.i}: ${o.pid} points ${along}, not ${way}`);
+					}
+				}
+				if (any) {
+					pointed += 1;
+				}
+			});
+		}
+		assert.deepEqual(bad.slice(0, 8), []);
+		assert.isAtLeast(plays, 3);
+		assert.isAtLeast(pointed, plays * 0.75);
+	}, 30_000);
+});
+
 describe("the TV cameras", () => {
 	test("a man on each sideline, off the field, after the ball at a man's speed", () => {
 		const bad: string[] = [];

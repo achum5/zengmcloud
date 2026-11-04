@@ -1092,6 +1092,8 @@ const HERO_SHIFTS = [0, -7, 7, -12, 12];
 const HERO_BACK_ON = -0.2;
 const HERO_FACED_AT = 400;
 const FIRST_DOWN_AT = 1100;
+// (Whose ball it is, a fumble's or a takeaway's, this long after.)
+const BALL_SIGNAL_AT = 700;
 const OUT_SIGNAL_AT = 150;
 const OUT_FIRST_AT = 1700;
 // A first down on third or fourth down made by no more than this (feet
@@ -2192,6 +2194,32 @@ class Director {
 				what: "first",
 				t: whistle + (acted?.out ? OUT_FIRST_AT : FIRST_DOWN_AT),
 				at: spotAt(whistle),
+			});
+		}
+		// The ball come loose, or the other side's: whose it is now pointed
+		// out - the way they go - by the officials there. (Not a score.)
+		// (In a man's hands at the whistle: a fumble's, recovered; the other
+		// side's, from scrimmage; or the kicking side's again, an onside kick.)
+		const had = ball.findLast((b) => b.t0 <= whistle);
+		const hasIt =
+			had?.kind === "held"
+				? parts.find((p) => p.pid === had.pid)?.team
+				: undefined;
+		const loose = events.slice(i0, i1).some((e) => e?.type === "fumble");
+		if (
+			acted &&
+			!scored &&
+			hasIt !== undefined &&
+			(loose ||
+				(kind === "onside"
+					? hasIt === offense
+					: (kind === "run" || kind === "pass") && hasIt !== offense))
+		) {
+			signals.push({
+				what: "ball",
+				t: whistle + BALL_SIGNAL_AT,
+				at: spotAt(whistle),
+				way: hasIt === offense ? dir : (-dir as Dir),
 			});
 		}
 		let cheer = this.cheerOf(i0, i1, offense, whistle, ball, parts, stopped);

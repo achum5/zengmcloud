@@ -92,7 +92,7 @@ export type CrewInput = {
 	// play, when its line is said; what else gets signaled, and when.
 	fouls: Foul[];
 	calls: { t: number; foul: Foul }[];
-	signals: { what: Signaled; t: number; at: Pt }[];
+	signals: { what: Signaled; t: number; at: Pt; way?: Dir }[];
 	// The spots marked with a bean bag (see BAG_NEAR): when, and where.
 	bags?: { t: number; at: Pt }[];
 	r: () => number;
@@ -106,7 +106,10 @@ export type Signaled =
 	| "safety"
 	| "first"
 	| "out"
-	| "timeout";
+	| "timeout"
+	// Whose ball it is now - a fumble's, a takeaway's - pointed the way they
+	// go (see `way`).
+	| "ball";
 
 // A flag thrown: from his hand at t0, down on the turf at `to` at t1, lying
 // there from then on.
@@ -201,7 +204,24 @@ const SIGNAL_MS: Record<Signaled, number> = {
 	first: 1500,
 	out: 1300,
 	timeout: 1600,
+	ball: 1500,
 };
+// Whose ball it is: pointed out by the first two officials in this near it
+// (feet) - by this long after the time for it at the latest, looked for
+// this often (ms) - the one no sooner than this long after the other.
+// (Faced to the press box, unless he is on the near sideline - then in to
+// the field: this far in from it, feet.)
+const BALL_NEAR = 50;
+const BALL_LATE = 1800;
+const BALL_STEP = 100;
+const BALL_AFTER = 250;
+const BALL_IN = 3;
+// (Nobody on the field this near where he stops for it, from just before
+// to the end of it - looked at these long in, ms.)
+const BALL_ROOM = 5;
+const BALL_ROOM_AT = [-200, 300, 800, 1300];
+// (At it this long, at least, before the next play.)
+const BALL_LEAST = 1000;
 // Facing the press box.
 const FACING_US = Math.PI / 2;
 
@@ -759,35 +779,84 @@ export const stageCrew = (
 										dist(where(a, sg.t), sg.at) - dist(where(b, sg.t), sg.at),
 								)
 								.slice(0, 2)
-						: [
-								nearest(
-									sg.what === "first"
-										? ["DJ", "LJ"]
-										: sg.what === "out"
-											? ["DJ", "LJ", "SJ", "FJ"]
-											: CREW.filter((o) => o !== "R"),
-									sg.at,
-									sg.t,
-								),
-							];
+						: sg.what === "ball"
+							? []
+							: [
+									nearest(
+										sg.what === "first"
+											? ["DJ", "LJ"]
+											: sg.what === "out"
+												? ["DJ", "LJ", "SJ", "FJ"]
+												: CREW.filter((o) => o !== "R"),
+										sg.at,
+										sg.t,
+									),
+								];
+		// Whose ball it is: pointed out by the first two to get in near it
+		// once it is (each when he does).
+		const when = new Map<Official, number>();
+		if (sg.what === "ball") {
+			for (const o of CREW) {
+				if (o === "R") {
+					continue;
+				}
+				const late = Math.min(sg.t + BALL_LATE, t1 - BALL_LEAST);
+				for (let t = sg.t; t <= late; t += BALL_STEP) {
+					// (Stopped there, out of the way of the men getting up off
+					// it and going.)
+					const at = where(o, t);
+					if (
+						dist(at, sg.at) <= BALL_NEAR &&
+						!input.parts.some((p) =>
+							BALL_ROOM_AT.some(
+								(ms) => dist(posOf(p.legs, t + ms), at) < BALL_ROOM,
+							),
+						)
+					) {
+						when.set(o, t);
+						break;
+					}
+				}
+			}
+			const firsts = [...when.keys()]
+				.filter(
+					(o) =>
+						!holds.some(
+							(h) =>
+								h.o === o && h.t1 > when.get(o)! && h.t0 < when.get(o)! + ms,
+						),
+				)
+				.sort((a, b) => when.get(a)! - when.get(b)!)
+				.slice(0, 2);
+			if (firsts.length === 2) {
+				when.set(
+					firsts[1]!,
+					Math.max(when.get(firsts[1]!)!, when.get(firsts[0]!)! + BALL_AFTER),
+				);
+			}
+			who.push(...firsts);
+		}
 		for (const o of who) {
+			const t = when.get(o) ?? sg.t;
 			// (Busy with a call of his own: not this.)
-			if (holds.some((h) => h.o === o && h.t1 > sg.t && h.t0 < sg.t + ms)) {
+			if (holds.some((h) => h.o === o && h.t1 > t && h.t0 < t + ms)) {
 				continue;
 			}
-			// (Faced in to the field - under the posts, back out to the kick.)
-			const p = where(o, sg.t);
+			// (Faced in to the field - under the posts, back out to the kick;
+			// whose ball it is, to the press box, if he is out on it.)
+			const p = where(o, t);
 			const yaw =
 				sg.what === "good" || sg.what === "noGood"
 					? dir === 1
 						? Math.PI
 						: 0
-					: sg.what === "timeout"
+					: sg.what === "timeout" ||
+						  (sg.what === "ball" && p.y < FIELD_W - BALL_IN)
 						? FACING_US
 						: p.y > MID_Y
 							? -Math.PI / 2
 							: Math.PI / 2;
-			holds.push({ o, t0: sg.t - 200, t1: sg.t + ms, yaw });
+			holds.push({ o, t0: t - 200, t1: t + ms, yaw });
 			arms.push({
 				o,
 				move:
@@ -795,14 +864,16 @@ export const stageCrew = (
 						? "sigTD"
 						: sg.what === "safety"
 							? "sigSafety"
-							: sg.what === "first"
+							: sg.what === "first" || sg.what === "ball"
 								? "sigSide"
 								: sg.what === "out" || sg.what === "timeout"
 									? "sigTime"
 									: "sigWave",
-				t0: sg.t,
-				t1: sg.t + ms,
-				left: sg.what === "first" && leftArm(yaw, dir),
+				t0: t,
+				t1: t + ms,
+				left:
+					(sg.what === "first" || sg.what === "ball") &&
+					leftArm(yaw, sg.way ?? dir),
 			});
 		}
 	}
