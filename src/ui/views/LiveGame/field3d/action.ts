@@ -3169,6 +3169,17 @@ const BACK_OFF_LINE = 9;
 const BACK_STEP_FT = 5;
 const BACK_UP_PACE = 0.6;
 const BACK_SET_MS = 150;
+// A blocker with nobody to block (see passRush): looking off to one side
+// and the other, a step that way (this far out, feet), every so long (ms),
+// the first this long after he is set - each step taking this long (ms),
+// turned this far round (radians) - if he stands set no further than this
+// (feet) all of it.
+const SCAN_OUT_FT: [number, number] = [0.4, 0.9];
+const SCAN_STEP_MS: [number, number] = [750, 1150];
+const SCAN_FIRST_MS = 350;
+const SCAN_GO_MS = 280;
+const SCAN_LOOK = 0.4;
+const SCAN_STILL_FT = 2;
 // A play-action pass: this often, when it goes this far in the air (yards)
 // and a back is there to fake it to; the fake this long (the ball out to
 // him half way through), the back on past it this far (feet); and the
@@ -4578,6 +4589,7 @@ class Action {
 		this.offMenDown();
 		this.readyUp();
 		this.noTreading();
+		this.noIdleSets();
 		this.noSlowGaits();
 		this.noFlicks();
 		this.overHeads();
@@ -4841,6 +4853,79 @@ class Action {
 					}
 				}
 				i = j;
+			}
+		}
+	}
+
+	// A man in to block with nobody come at him - a back, mostly - set the
+	// whole time: eyes up for the blitz, a look one way and a step that way,
+	// then the other, and back square where he was to be - not stood set
+	// like a statue. (Last of all, his way laid out: nothing else goes by
+	// where he is meanwhile - see countOf.)
+	noIdleSets() {
+		const snap = this.input.snap;
+		for (const b of this.o) {
+			const legs = b.legs;
+			for (let i = 0; i < legs.length; i++) {
+				const l = legs[i]!;
+				if (
+					l.move !== "passSet" ||
+					l.arms ||
+					l.t0 < snap ||
+					l.t1 - l.t0 < 2 * SCAN_STEP_MS[1] ||
+					dist(l.from, l.to) > SCAN_STILL_FT
+				) {
+					continue;
+				}
+				const { t0, t1 } = l;
+				const face = l.yaw ?? this.ahead;
+				const baseAt = (t: number) => {
+					const u = (t - t0) / (t1 - t0);
+					return this.of({
+						x: l.from.x + (l.to.x - l.from.x) * u,
+						y: l.from.y + (l.to.y - l.from.y) * u,
+					});
+				};
+				const out: Leg[] = [];
+				let at = l.from;
+				let yaw = face;
+				let tw = t0;
+				const step = (to: Pt, ta: number, tb: number, y: number) => {
+					if (ta > tw) {
+						out.push({ ...l, t0: tw, t1: ta, from: at, to: at, yaw });
+					}
+					out.push({ ...l, t0: ta, t1: tb, from: at, to, yaw: y });
+					at = to;
+					yaw = y;
+					tw = tb;
+				};
+				let side = countOf(b, snap, 74) < 0.5 ? -1 : 1;
+				let t = t0 + SCAN_FIRST_MS;
+				for (let k = 0; t + SCAN_STEP_MS[0] <= t1; k++) {
+					const h = countOf(b, snap, 75 + (k % 4));
+					const o = baseAt(t + SCAN_GO_MS);
+					step(
+						this.w({
+							d: o.d,
+							a:
+								o.a +
+								side * (SCAN_OUT_FT[0] + (SCAN_OUT_FT[1] - SCAN_OUT_FT[0]) * h),
+						}),
+						t,
+						t + SCAN_GO_MS,
+						face + side * SCAN_LOOK,
+					);
+					side = -side;
+					t += SCAN_STEP_MS[0] + (SCAN_STEP_MS[1] - SCAN_STEP_MS[0]) * h;
+				}
+				if (out.length === 0) {
+					continue;
+				}
+				// (Back square where he was to be, by then.)
+				step(l.to, tw, tw + SCAN_GO_MS, face);
+				out.push({ ...l, t0: tw, t1, from: at, to: at, yaw: face });
+				legs.splice(i, 1, ...out);
+				i += out.length - 1;
 			}
 		}
 	}
