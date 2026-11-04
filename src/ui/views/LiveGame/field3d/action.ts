@@ -2879,6 +2879,8 @@ const GIVE_MOST_FT = 8;
 const GIVE_FAR_FT = 16;
 const GIVE_FPS = 6;
 const GIVE_COS = -0.5;
+// (Off to his side, this much or less of the way he is faced: a slide.)
+const SIDE_COS = 0.3;
 // (Given ground with the time: pulled up this far (feet) short of where he
 // meets him, set there this long (ms) at the least, and up into him off it.)
 const GIVE_STEP_FT = 1.5;
@@ -3300,6 +3302,9 @@ const evasive = (m: Actor) => {
 // How much later than he would have been a carrier can be brought down, his
 // run slowed, for the man the sim says made the tackle to get there.
 const SLACK_MS = 700;
+// After a flag before the snap, the men who walk off a few steps: no
+// quicker than this, ft/s.
+const DEAD_WALK_FPS = 4;
 // How far (feet) the man who jumps early before the snap goes, for the
 // foul: out of his stance, or over the line.
 const JUMP: Record<string, number> = {
@@ -5458,12 +5463,15 @@ class Action {
 			if (r() < 0.5) {
 				const s = this.of(m.at);
 				const back = m.team === offense ? -1 : 1;
+				const to = this.w({
+					d: s.d + back * (2 + r() * 5),
+					a: s.a + (r() - 0.5) * 4,
+				});
+				// (At a walk: no quicker than DEAD_WALK_FPS.)
 				m.go(
-					this.w({
-						d: s.d + back * (2 + r() * 5),
-						a: s.a + (r() - 0.5) * 4,
-					}),
-					up + 900 + r() * 700,
+					to,
+					up +
+						Math.max(900 + r() * 700, (dist(m.at, to) / DEAD_WALK_FPS) * 1000),
 					"walk",
 				);
 			}
@@ -8756,6 +8764,13 @@ class Action {
 			m.t +
 			rampedMs(far - 5 - ease, v, paceOn(m.last, m.at, off)) +
 			((2 * ease) / v) * 1000;
+		// (In at him off it, square to him: backpedaled into the spot if it
+		// is behind him, a slide if off to his side - not run there backward
+		// or crabbed across.)
+		const inMove = (): Move => {
+			const c = Math.cos(this.toward(m.at, hit) - face);
+			return c < GIVE_COS ? "back" : c < SIDE_COS ? "slide" : "run";
+		};
 		// (Giving ground in front of him: backpedaling, square to him.)
 		const gives =
 			far > 0 &&
@@ -8807,7 +8822,7 @@ class Action {
 			);
 			m.easeOff(pull);
 			setTill(lead - upMs);
-			m.getOff(hit, lead, 0, GET_OFF_ACCEL, "run", 0, face);
+			m.getOff(hit, lead, 0, GET_OFF_ACCEL, inMove(), 0, face);
 		} else if (
 			far > 8 &&
 			far < m.top * 0.5 * secs &&
@@ -8820,7 +8835,7 @@ class Action {
 			);
 			m.easeOff(ease);
 			setTill(fire);
-			m.getOff(hit, lead, 0, GET_OFF_ACCEL, "run", 0, face);
+			m.getOff(hit, lead, 0, GET_OFF_ACCEL, inMove(), 0, face);
 		} else if (
 			far <= 8 &&
 			legPace(m.last) < BREAK_NEAR_MOST &&
@@ -8837,7 +8852,7 @@ class Action {
 				m.go(at, m.t + nearMs, "slide", look());
 			}
 			setTill(fireNear);
-			m.getOff(hit, lead, 0, GET_OFF_ACCEL, "run", 0, face);
+			m.getOff(hit, lead, 0, GET_OFF_ACCEL, inMove(), 0, face);
 		} else {
 			// (A step or two off him, time over to walk it: set where he is,
 			// and in at him off it - not walked in on him.)
@@ -8853,7 +8868,7 @@ class Action {
 				if (set) {
 					setTill(lead - fireMs);
 				}
-				m.getOff(hit, lead, 0, GET_OFF_ACCEL, "run", 0, face);
+				m.getOff(hit, lead, 0, GET_OFF_ACCEL, inMove(), 0, face);
 			} else {
 				// (Backpedaling, if he gives ground and can go that quick so.)
 				m.press(
