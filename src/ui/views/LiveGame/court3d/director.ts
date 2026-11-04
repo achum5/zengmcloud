@@ -1575,6 +1575,9 @@ const BREAK_NO_BACK = 4;
 // ... unless he is in under the rim, or would be once over to its side of
 // the floor: this near it (feet).
 const BREAK_DEEP = 12;
+// Pushing it into somebody else's turnover, where he gives it up: this far
+// from the baseline (feet) - the top of the floor, at the arc.
+const BREAK_GIVE_UP_DEPTH = 27;
 // The sets there are to run with the ball over half court already: none
 // that starts with it back over (see setsFor).
 const OVER_SETS = PLAYS.filter(
@@ -6024,6 +6027,7 @@ class Director {
 		t: number,
 		shot?: Zone,
 		shooter?: number,
+		loser?: number,
 	): number {
 		const slots = this.slots(team);
 		const pg = this.handlerOf(team);
@@ -6069,7 +6073,19 @@ class Director {
 			shooter === handler && (shot === "three" || shot === "midRange")
 				? this.shotSpotNear(team, shot, this.posOf(handler))
 				: undefined;
-		const pushTo = pullUp ?? spots[0]!;
+		// Pushing it into a turnover somebody else makes - lost off a pass to
+		// him, or by him - he gives it up on the way, at the top: not taken all
+		// the way in to the rim and kicked back out for no reason, for the man
+		// he kicks it to to throw it straight back in to the other side.
+		const giveUp =
+			!pullUp && loser !== undefined && loser !== handler
+				? spot(
+						team,
+						BREAK_GIVE_UP_DEPTH,
+						Math.min(34, Math.max(16, this.posOf(handler).y)),
+					)
+				: undefined;
+		const pushTo = pullUp ?? giveUp ?? spots[0]!;
 		const ballY = (this.posOf(handler).y + pushTo.y) / 2;
 		const arrive = this.go(
 			handler,
@@ -6200,6 +6216,8 @@ class Director {
 		heave = false,
 		// Who takes the shot, if it is known.
 		shooter?: number,
+		// A trip that ends in a turnover: who loses it.
+		loser?: number,
 	): { t: number; run?: Running } {
 		const phase = this.phase;
 		const changed = this.offense !== team;
@@ -6335,7 +6353,7 @@ class Director {
 			run = call?.("break");
 			t = run
 				? this.startBreak(run, t)
-				: this.pushBreak(team, t, shot, shooter);
+				: this.pushBreak(team, t, shot, shooter, loser);
 		} else if (rushed) {
 			// Up the floor if it isn't, fast - and no set.
 			if (!heave && this.inBackcourt(team, handlerPos)) {
@@ -17280,15 +17298,23 @@ class Director {
 						fiveSeconds: 0.05,
 						shotClock: gap !== undefined && gap >= 20 ? 2 : 0,
 					};
-		const dev = this.develop(team, T, gap, (entry) =>
-			this.callForTurnover(
-				entry,
-				team,
-				victim,
-				kinds,
-				gap,
-				typeof e.clock === "number" ? e.clock : undefined,
-			),
+		const dev = this.develop(
+			team,
+			T,
+			gap,
+			(entry) =>
+				this.callForTurnover(
+					entry,
+					team,
+					victim,
+					kinds,
+					gap,
+					typeof e.clock === "number" ? e.clock : undefined,
+				),
+			undefined,
+			false,
+			undefined,
+			victim,
 		);
 		const run = dev.run;
 		let t = dev.t;
@@ -25893,7 +25919,7 @@ class Director {
 		}
 		const t0Of = (x: { tr: Track; k: number }) => x.tr.moves[x.k]!.t0;
 		starts.sort((a, b) => t0Of(a) - t0Of(b));
-		for (let i = 0; i < starts.length; ) {
+		for (let i = 0; i < starts.length;) {
 			let n = 1;
 			while (
 				i + n < starts.length &&
