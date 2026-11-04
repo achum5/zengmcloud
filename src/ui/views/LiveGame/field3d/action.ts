@@ -276,6 +276,9 @@ const HOLD_LEFT_MS = 150;
 // (radians) from a stride to the next, over the last this long (ms).
 const SLOW_ALONG_TURN = 0.6;
 const SLOW_ALONG_MS = 1500;
+// (Pressed up toward somewhere he can't get to in time: short of it by as
+// much as he can't, less this much, feet - see pressUp.)
+const PRESS_SLACK_FT = 0.5;
 // (Down at as much as this many times as hard, if he has to be.)
 const STOP_HARD = 1.5;
 // (Short of where that hard a stop takes him by more than this, feet: on
@@ -1907,6 +1910,38 @@ class Actor {
 			yaw,
 		);
 		this.pin(t1);
+	}
+
+	// As press - but up to it no harder than RAMP_HARD times as hard as he
+	// gets up to speed (out of a stand, RELEASE_ACCEL): as far toward it as
+	// that gets him by t1, short of it - not shot off at it from nothing to
+	// full tilt in a stride.
+	pressUp(to: Pt, t1: number, fps: number, move?: Move, yaw?: number) {
+		const p = onField(to, this.roam);
+		const far = dist(this.at, p);
+		const into = this.paceInto(p);
+		const v0 = into ?? 0;
+		const A = (into === undefined ? RELEASE_ACCEL : RAMP_ACCEL) * RAMP_HARD;
+		const T = Math.max(0, t1 - this.t) / 1000;
+		const top = Math.max(v0, fps);
+		const ta = Math.min(T, (top - v0) / A);
+		const reach = v0 * ta + (A * ta * ta) / 2 + top * (T - ta);
+		if (far <= reach + PRESS_SLACK_FT) {
+			this.press(p, t1, fps, move, yaw);
+			return;
+		}
+		// (In the gait he gets up to - going all out, not walked there.)
+		const u = Math.max(0, reach - PRESS_SLACK_FT) / far;
+		this.press(
+			{
+				x: this.at.x + (p.x - this.at.x) * u,
+				y: this.at.y + (p.y - this.at.y) * u,
+			},
+			t1,
+			fps,
+			move ?? gait(v0 + A * ta),
+			yaw,
+		);
 	}
 
 	// Coming in on `to` (by t1) quicker than it takes: his way in over the
@@ -9816,7 +9851,7 @@ class Action {
 				inTo();
 			} else if (gives || !m.slowAlong(hit, lead)) {
 				// (Backpedaling, if he gives ground and can go that quick so.)
-				m.press(
+				m.pressUp(
 					hit,
 					lead,
 					m.top * FLAT_OUT,
