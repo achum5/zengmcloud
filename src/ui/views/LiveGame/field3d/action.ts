@@ -3345,6 +3345,10 @@ const PILE_OVER = 0.6;
 const PILE_TOP_OFF = 0.7;
 const PILE_PAST = 1.4;
 const PILE_TOP_WAIT = 500;
+// (Off the top of it back the way he came over it, this much further out,
+// feet - not stood up on the man under it - or round from that, radians.)
+const OFF_TOP_FT = 2.4;
+const OFF_TOP_TURNS = [0, 0.6, -0.6, 1.2, -1.2, 1.8, -1.8];
 // In from right there: over the top this often - off his feet this far
 // short of the goal line (once he has had it this long), laid out this far
 // over it (and up to this much more), at this pace, over this long; on top
@@ -8663,6 +8667,7 @@ class Action {
 			// it on the way as he goes in himself: after him, if not long.)
 			let top = k >= 2 && tops < PILE_TOPS && r() < PILE_OVER;
 			let dive = x.go;
+			let out: Pt | undefined;
 			if (top) {
 				const far = PILE_TOP_OFF + r() * 0.5;
 				const from = x.m.posAt(x.go);
@@ -8690,6 +8695,24 @@ class Action {
 					tops++;
 					overs.push(over);
 					x.at = over;
+					// (Off it clear of the rest in on it - the way he came, or
+					// as near it as that is.)
+					for (const turn of OFF_TOP_TURNS) {
+						const p = {
+							x: at.x + Math.cos(way + turn) * (far + OFF_TOP_FT),
+							y: at.y + Math.sin(way + turn) * (far + OFF_TOP_FT),
+						};
+						if (
+							on.every(
+								(o) =>
+									o === x ||
+									(dist(o.at, p) >= PILE_ROOM && wide(o.at, over, p)),
+							)
+						) {
+							out = p;
+							break;
+						}
+					}
 				}
 			}
 			const face = this.toward(x.at, at);
@@ -8713,7 +8736,7 @@ class Action {
 				t + PILE_HOLD + (n - 1 - k) * PILE_PEEL + r() * 120,
 			);
 			x.m.hold(off, top ? "pileTop" : "overPile", face);
-			x.m.act(top ? "offTop" : "offPile", off + OFF_PILE_MS, face);
+			x.m.act(top ? "offTop" : "offPile", off + OFF_PILE_MS, face, out);
 			this.done.add(x.m.pid);
 		});
 		// The men stood round it: in on it, shoving, a moment - and back off.
@@ -16206,11 +16229,37 @@ class Action {
 				continue;
 			}
 			const pa = a.posAt(free.get(a.pid)!);
+			// (Not over to each other across a man down between them.)
+			const across = (b: Actor) => {
+				const from = Math.max(free.get(a.pid)!, free.get(b.pid)!);
+				const pb = b.posAt(free.get(b.pid)!);
+				return this.men.some((o) =>
+					FIVE_DOWN_LOOKS.some((after) => {
+						const c = from + after;
+						if (o === a || o === b || !DOWN.has(legAt(o, c).move)) {
+							return false;
+						}
+						const at = o.posAt(c);
+						const yaw = yawThen(o, c);
+						const ux = Math.cos(yaw) * LIE_HEAD;
+						const uy = Math.sin(yaw) * LIE_HEAD;
+						return (
+							segGap(
+								pa,
+								pb,
+								{ x: at.x - ux, y: at.y - uy },
+								{ x: at.x + ux, y: at.y + uy },
+							) < DOWN_CLEAR
+						);
+					}),
+				);
+			};
 			let k = -1;
 			for (let j = 0; j < left.length; j++) {
 				const d = dist(pa, left[j]!.posAt(free.get(left[j]!.pid)!));
 				if (
 					d < FIVE_NEAR &&
+					!across(left[j]!) &&
 					(k < 0 || d < dist(pa, left[k]!.posAt(free.get(left[k]!.pid)!)))
 				) {
 					k = j;
@@ -16641,6 +16690,9 @@ const FIVE_FPS = 5;
 // (A step or so to him, no quicker than this, ms.)
 const FIVE_STEP_MS = 450;
 const FIVE_MOST = 2;
+// (Not paired across a man down between them as they go - looked for this
+// long after the later of them is free, ms.)
+const FIVE_DOWN_LOOKS = [0, 600, 1200];
 // The side that lost it off the field: this often a man's hands to his
 // helmet first (for this long, give or take - the quarterback's more often),
 // this often his hands on his hips on the way; and round a crowd of the
