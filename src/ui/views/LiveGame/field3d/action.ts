@@ -3689,7 +3689,7 @@ const CATCH_BEAT_YAC = 10;
 const CATCH_BEAT_MS = 250;
 const CATCH_BEAT_STRIDE_MS = 200;
 const CATCH_BEAT_LEFT_MS = 500;
-const CLOSE_SLIVER_MS = 120;
+const CLOSE_SLIVER_MS = 150;
 // (A gait no longer than this between two others, ms: see noFlicks.)
 const FLICK_MS = 150;
 // (One that size from stood to stood: a step, this long - his stand either
@@ -3759,7 +3759,7 @@ const TWIN_JOIN_MS = 300;
 const TWIN_STEP_FPS = 2;
 // (Shorter than this (ms), a piece of one of those steps goes as the step
 // next to it does.)
-const TWIN_SLIVER_MS = 100;
+const TWIN_SLIVER_MS = 150;
 // One of his own side nearer the man with the ball than this (feet): eased
 // off his way, no more than this (feet) - not this long (ms) after he has
 // it, nor before it leaves him (or he goes down).
@@ -4719,6 +4719,34 @@ class Action {
 					}
 				} else if (
 					GAITS.has(l.move) &&
+					GAITS.has(next.move) &&
+					!GAITS.has(was.move) &&
+					l.move !== next.move &&
+					next.t0 === l.t1 &&
+					l.yaw === next.yaw &&
+					!l.arms
+				) {
+					// (Off out of something else into one gait, a blink of
+					// another first: in the one from the first of it.)
+					l.move = next.move;
+				} else if (
+					GAITS.has(l.move) &&
+					sits(was.move) &&
+					(next.move === "engage" || next.move === "drive") &&
+					next.t0 === l.t1 &&
+					legPace(l) < BLOCK_DRIVE_FPS &&
+					!l.arms
+				) {
+					// (Set, and a blink of a step off it before a block is on
+					// him: in the block from the first of it.)
+					l.move = next.move;
+					if (next.yaw === undefined) {
+						delete l.yaw;
+					} else {
+						l.yaw = next.yaw;
+					}
+				} else if (
+					GAITS.has(l.move) &&
 					next.t0 === l.t1 &&
 					[was, next].every(
 						(n) =>
@@ -4737,6 +4765,28 @@ class Action {
 					l.t1 += on;
 					next.t0 = l.t1;
 					l.move = "walk";
+				} else if (
+					sits(l.move) &&
+					sits(was.move) &&
+					l.move !== next.move &&
+					!l.arms &&
+					!l.ball &&
+					!was.arms &&
+					l.from.x === l.to.x &&
+					l.from.y === l.to.y &&
+					was.to.x === l.from.x &&
+					was.to.y === l.from.y &&
+					was.from.x === was.to.x &&
+					was.from.y === was.to.y
+				) {
+					// (Stood, set a moment before he goes - his set cut short
+					// by it: stood as he was till then, not a blink of it.)
+					l.move = was.move;
+					if (was.yaw === undefined) {
+						delete l.yaw;
+					} else {
+						l.yaw = was.yaw;
+					}
 				} else if (
 					l.move === "stand" &&
 					!l.arms &&
@@ -4802,10 +4852,21 @@ class Action {
 			// where he went, the ones between his own, not on driving into
 			// nobody. A man only running by him a moment, or come up to him
 			// just as it ends: no block.)
+			// (Nor his first step out of his stance cut to a blink of it -
+			// see FLICK_MS - before he is walked on from there.)
+			const step = m.legs.find(
+				(l) =>
+					(l.move === "drive" || l.move === "engage") &&
+					l.t0 < this.input.snap + FIRST_STEP,
+			);
+			const from = Math.max(
+				this.input.snap + FIRST_STEP,
+				step ? step.t0 + FLICK_MS : 0,
+			);
 			const pushing = (l?: Leg) =>
 				l !== undefined &&
 				(l.move === "drive" || l.move === "engage") &&
-				l.t0 >= this.input.snap + FIRST_STEP;
+				l.t0 >= from;
 			const free: [number, number][] = [];
 			const runs: [number, number][] = [];
 			for (const [i, l] of m.legs.entries()) {
@@ -4868,7 +4929,7 @@ class Action {
 			const air = m.legs.map(
 				(l) =>
 					(l.move === "drive" || l.move === "engage") &&
-					l.t0 >= this.input.snap + FIRST_STEP &&
+					l.t0 >= from &&
 					free.some(([a, b]) => l.t0 >= a && l.t1 <= b),
 			);
 			// (A run of them together the one way, at the one pace: not
@@ -5324,16 +5385,30 @@ class Action {
 				}
 				const next = legs[k + 1];
 				const prev = legs[k - 1];
-				const like = [next, prev].find(
-					(o) =>
-						o !== undefined &&
-						stepped.has(o) &&
-						o.t1 - o.t0 >= TWIN_SLIVER_MS &&
-						(o === next ? o.t0 === l.t1 : o.t1 === l.t0) &&
-						(o.to.x - o.from.x) * (l.to.x - l.from.x) +
-							(o.to.y - o.from.y) * (l.to.y - l.from.y) >
-							0,
-				);
+				const along = (o: Leg) =>
+					(o.to.x - o.from.x) * (l.to.x - l.from.x) +
+						(o.to.y - o.from.y) * (l.to.y - l.from.y) >
+					0;
+				// (Or, the last of it as he comes to a stand out of a block,
+				// say, in what he came out of: not a walk for a moment between
+				// the two.)
+				const like =
+					[next, prev].find(
+						(o) =>
+							o !== undefined &&
+							stepped.has(o) &&
+							o.t1 - o.t0 >= TWIN_SLIVER_MS &&
+							(o === next ? o.t0 === l.t1 : o.t1 === l.t0) &&
+							along(o),
+					) ??
+					(prev !== undefined &&
+					!stepped.has(prev) &&
+					prev.t1 === l.t0 &&
+					moveKind(prev.move) !== "still" &&
+					moveKind(prev.move) !== "act" &&
+					along(prev)
+						? prev
+						: undefined);
 				if (like) {
 					l.move = like.move;
 					if (like.yaw === undefined) {
@@ -9318,6 +9393,10 @@ class Action {
 		// round to it, to keep in front of him as he was - see MIRROR_MOST -
 		// not stood still as he cuts.)
 		const setTill = (t1: number) => {
+			// (Only a blink of it to be set for: in at him from the first.)
+			if (t1 - m.t < FLICK_MS) {
+				return;
+			}
 			let yaw = look();
 			if (watch && t1 - m.t >= 2 * KEEP_STEP_MS) {
 				const ahead = watch.posAt(m.t + KEEP_STEP_MS / 2);
@@ -12642,8 +12721,11 @@ class Action {
 			) {
 				// (Flat down the line at a run all the same - not walked there -
 				// and set at the hole for the back.)
+				// (Only a blink early: on through it, not set for a moment.)
 				pull.run(pre, PULL_FPS, "run");
-				pull.setInto(by, "passSet", this.ahead);
+				if (by - pull.t >= FLICK_MS) {
+					pull.setInto(by, "passSet", this.ahead);
+				}
 			} else {
 				pull.chase(pre, by, pull.top * 0.9, "run");
 			}
@@ -12944,8 +13026,19 @@ class Action {
 			return undefined;
 		};
 		let meet = meetOf();
-		if (m && meet && clear && through && this.outOfWay(m, clear, meet.t)) {
-			meet = meetOf();
+		if (m && meet && clear && through) {
+			const was = m.legs.map((l) => ({ ...l }));
+			const from = this.outOfWay(m, clear, meet.t);
+			if (from !== undefined) {
+				const again = meetOf();
+				// (Not cut off a blink into his step over by the blocker on
+				// him: stood his ground for him instead.)
+				if (again && again.t < from + FLICK_MS) {
+					m.legs.splice(0, m.legs.length, ...was);
+				} else {
+					meet = again;
+				}
+			}
 		}
 		if (!m || !meet) {
 			// (Up to the next level, and nobody there - off to the side of
@@ -13123,8 +13216,9 @@ class Action {
 
 	// A man waiting on a blocker, with the man with the ball by him before
 	// then (`by`): a step or two over out of his way in his low steps,
-	// there as he comes - not run through stood there. Whether he was.
-	outOfWay(m: Actor, clear: Actor, by: number): boolean {
+	// there as he comes - not run through stood there. When he goes, if he
+	// does.
+	outOfWay(m: Actor, clear: Actor, by: number): number | undefined {
 		const at = m.at;
 		const nearest = (to: Pt) => {
 			let near = Infinity;
@@ -13143,7 +13237,7 @@ class Action {
 		const z = clear.posAt(when + 100);
 		const run = dist(a, z);
 		if (near >= WAY_CLEAR_FT || run < 0.5) {
-			return false;
+			return undefined;
 		}
 		const n = { x: -(z.y - a.y) / run, y: (z.x - a.x) / run };
 		const q = clear.posAt(when);
@@ -13169,7 +13263,7 @@ class Action {
 			}
 		}
 		if (to === at) {
-			return false;
+			return undefined;
 		}
 		const pace = (run / 200) * 1000;
 		const there = Math.max(
@@ -13183,7 +13277,7 @@ class Action {
 		m.hold(from);
 		m.go(to, there, "slide", this.behind);
 		m.easeOff(WAY_EASE_FT);
-		return true;
+		return from;
 	}
 
 	// Men locked up, from t0 to t1: shoved this way and that together - a
@@ -15863,7 +15957,11 @@ class Action {
 			} else {
 				m.hold(start);
 			}
-			m.runUp(spot, Math.min(m.top * 0.6, STOP_FPS));
+			// (There already, near enough: turned to him where he is - not
+			// a blink of a run on the spot.)
+			if (dist(m.at, spot) > STOP_THERE_FT) {
+				m.runUp(spot, Math.min(m.top * 0.6, STOP_FPS));
+			}
 			if (bump) {
 				const t = Math.max(m.t, hero.t) + FIVE_SET_MS;
 				m.hold(t, "stand", way + Math.PI);
@@ -17364,6 +17462,8 @@ const STOP_STEP = 7;
 const STOP_NEAR = 30;
 const STOP_FPS = 13;
 const STOP_RING = 3.6;
+// (There already, this near it, feet.)
+const STOP_THERE_FT = 0.6;
 const STOP_BUMP = 0.55;
 const STOP_BUMP_APART = 2;
 const STOP_BUMP_MS = 900;

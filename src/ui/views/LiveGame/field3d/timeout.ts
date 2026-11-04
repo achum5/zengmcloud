@@ -87,6 +87,8 @@ const WATER_BY = 2.4;
 const DRINK_NEAR = 10;
 const DRINKS = 0.5;
 const DRINK_MS = 1700;
+// (No less of what he was at before it than this, ms.)
+const DRINK_LEAD_LEAST_MS = 300;
 
 export type Timeout = {
 	// When the picture cuts to it, and where it looks.
@@ -302,12 +304,15 @@ export const stageTimeout = (input: {
 				continue;
 			}
 			drinks.add(p);
+			// (Only a blink of what he was doing first: the drink from the
+			// first of it, not a flick of it between.)
+			const at = then - l.t0 < DRINK_LEAD_LEAST_MS ? l.t0 : then;
 			p.legs.splice(
 				k,
 				1,
-				{ ...l, t1: then },
-				{ ...l, t0: then, t1: then + DRINK_MS, move: "drink" },
-				{ ...l, t0: then + DRINK_MS },
+				...(at > l.t0 ? [{ ...l, t1: at }] : []),
+				{ ...l, t0: at, t1: at + DRINK_MS, move: "drink" as const },
+				{ ...l, t0: at + DRINK_MS },
 			);
 		}
 	};

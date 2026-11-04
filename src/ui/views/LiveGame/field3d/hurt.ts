@@ -177,11 +177,17 @@ const kneelSpot = (from: Pt, at: Pt, knelt: Pt[], ball?: Pt): Pt => {
 
 // (Into what he does next less than this long, ms, at t: not begun.)
 const BEGUN_MS = 200;
+// (Down on the turf less than this long, ms, at t: hurt from the fall.)
+const LAID_LEAST_MS = 300;
 
 // His legs up to t, and nothing after - the leg he is in at t ended there
 // (an act let finish, or - getting up, and not up yet - not begun): when
 // they end, and whether he is down on the turf then.
-const cut = (legs: Leg[], t: number): { at: number; down: boolean } => {
+const cut = (
+	legs: Leg[],
+	t: number,
+	hurt = false,
+): { at: number; down: boolean } => {
 	let k = legs.findLastIndex((l) => l.t0 <= t);
 	if (k < 0) {
 		k = 0;
@@ -241,10 +247,22 @@ const cut = (legs: Leg[], t: number): { at: number; down: boolean } => {
 			});
 		}
 	}
-	return {
-		at: t,
-		down: l.move === "prone" || l.move === "supine" || l.move === "slid",
-	};
+	const down = l.move === "prone" || l.move === "supine" || l.move === "slid";
+	// (Hurt, and only just down off the fall: hurt from the end of it, not
+	// a blink of lying there first.)
+	const fell = legs[k - 1];
+	if (
+		hurt &&
+		down &&
+		t - l.t0 < LAID_LEAST_MS &&
+		fell &&
+		fell.t1 === l.t0 &&
+		moveKind(fell.move) === "act"
+	) {
+		legs.length = k;
+		return { at: l.t0, down };
+	}
+	return { at: t, down };
 };
 
 // Still on the move at t, quicker than a walk (PULL_LEAST ft/s): pulled
@@ -381,7 +399,7 @@ export const fallHurt = (
 	legs: Leg[],
 	whistle: number,
 ): { at: Pt; yaw: number; downAt: number; faceDown: boolean } => {
-	const fell = cut(legs, whistle + DOWN_AFTER);
+	const fell = cut(legs, whistle + DOWN_AFTER, true);
 	const last = legs.at(-1)!;
 	let at = last.to;
 	const goes = last.from.x !== last.to.x || last.from.y !== last.to.y;
