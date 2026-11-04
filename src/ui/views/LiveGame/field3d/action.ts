@@ -2440,6 +2440,10 @@ const LOCK_SET_MS = [900, 400] as const;
 // walked up over all the time there is, if it leaves this long (ms) set.)
 const LOCK_STEP_FPS = 7.5;
 const LOCK_STEP_SET_MS = 300;
+// (Waiting on him, set: a step to him no longer than this, feet, not
+// taken.)
+const LOCK_SHIFT_FT = 1;
+const LOCK_SHIFTS = new Set<Move>(["backerReady", "safetyReady"]);
 // (A tackler set waiting on the man with the ball: turned with him every
 // this long, ms, if he has come round this far, radians.)
 const KEEP_STEP_MS = 300;
@@ -2540,8 +2544,10 @@ const JOSTLE_STEP_MS = 90;
 const DOUBLE_FT = 2.2;
 const FILL_MS = 1050;
 const FILL_PACE = 0.7;
-// (Over to fill no slower than this, ft/s.)
+// (Over to fill no slower than this, ft/s - set first for it, if he is,
+// no less than this long, ms.)
 const FILL_LEAST_FPS = 9;
+const FILL_SET_LEAST = 150;
 const CLIMB_PACE = 0.85;
 const SHED_MS = 550;
 const SHED_SPREAD = 350;
@@ -11575,13 +11581,12 @@ class Action {
 			const across = Math.abs(fill.a - s.a);
 			const by = filled + r() * 250;
 			// (Not far to go, across: set reading it a moment longer, and
-			// over at a pace - not walked into the hole.)
+			// over at a pace - not walked into the hole. Set for more than a
+			// blink of it, between his read step and going.)
 			const far = dist(m.at, this.w(fill));
-			if (
-				across > 5 &&
-				(far / Math.max(0.001, by - m.t)) * 1000 < FILL_LEAST_FPS
-			) {
-				m.hold(by - (far / FILL_LEAST_FPS) * 1000, "backerReady", this.behind);
+			const set = by - (far / FILL_LEAST_FPS) * 1000;
+			if (across > 5 && set > m.t) {
+				m.hold(Math.max(set, m.t + FILL_SET_LEAST), "backerReady", this.behind);
 			}
 			m.chase(
 				this.w(fill),
@@ -12408,7 +12413,14 @@ class Action {
 				b.hold(tm - step, "backerReady", ang);
 			}
 		}
-		b.go(bHit, tm, undefined, ang);
+		// (Set waiting, and a step to him no more than this: set on till he
+		// gets there, and taken up in the fight - not a stride back or
+		// forward for a blink of it.)
+		if (dist(b.at, bHit) < LOCK_SHIFT_FT && LOCK_SHIFTS.has(b.last.move)) {
+			b.hold(tm, b.last.move, ang);
+		} else {
+			b.go(bHit, tm, undefined, ang);
+		}
 		c.go(
 			cHit,
 			tm,
