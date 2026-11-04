@@ -15148,13 +15148,19 @@ class Action {
 		const postA = (MID_Y - ballY) * dir;
 		const short = !made && yds >= 45 && r() < 0.35;
 		const wide = r() < 0.5 ? -1 : 1;
+		// (Or off the post - see DOINK: the outside of it, back off it. On
+		// the kicker's own count, as how it comes back off it is - see
+		// countOf: no new draws.)
+		const doink = !made && !short && countOf(k, snap, 70) < DOINK;
 		const crossA =
 			postA +
 			(made
 				? (r() - 0.5) * 11
 				: short
 					? (r() - 0.5) * 8
-					: wide * (POST_W / 2 + 1 + r() * 6));
+					: doink
+						? wide * (POST_W / 2 + r() * DOINK_OUT)
+						: wide * (POST_W / 2 + 1 + r() * 6));
 		const vh = 64 + yds * 0.22 + r() * 5;
 		const tc = Math.hypot(lineD - spot.d, crossA - spot.a) / vh;
 		const z1 = short
@@ -15173,7 +15179,7 @@ class Action {
 		};
 		const tLand = (vz + Math.sqrt(vz * vz + 2 * G * from.z)) / G;
 		const tNet = (tc * (lineD + NET_BACK - spot.d)) / (lineD - spot.d);
-		const tEnd = Math.min(tLand, tNet);
+		const tEnd = doink ? tc : Math.min(tLand, tNet);
 		const end = along(tEnd);
 		const endT = kickT + tEnd * 1000;
 		this.ball.push({
@@ -15184,7 +15190,43 @@ class Action {
 			to: end,
 			peak: peakFor(tEnd * 1000),
 		});
-		if (tNet < tLand) {
+		if (doink) {
+			// (Back off the post and out from the middle, falling from where
+			// it hit - onto the turf, a hop, and lying there.)
+			const fps =
+				DOINK_FPS[0] + countOf(k, snap, 71) * (DOINK_FPS[1] - DOINK_FPS[0]);
+			const turn =
+				DOINK_TURN[0] + countOf(k, snap, 72) * (DOINK_TURN[1] - DOINK_TURN[0]);
+			const vz = (countOf(k, snap, 73) - 0.6) * 10;
+			const fall = (vz + Math.sqrt(vz * vz + 2 * G * end.z)) / G;
+			const hit = this.of(end);
+			const off = (by: number): OPt => ({
+				d: hit.d - Math.cos(turn) * fps * by,
+				a: hit.a + wide * Math.sin(turn) * fps * by,
+			});
+			const lands: Pt3 = { ...this.w(off(fall)), z: 0 };
+			const lies: Pt3 = { ...this.w(off(fall * (1 + DOINK_HOP))), z: 0 };
+			const downT = endT + fall * 1000;
+			this.ball.push(
+				{
+					kind: "fly",
+					t0: endT,
+					t1: downT,
+					from: end,
+					to: lands,
+					peak: peakFor(fall * 1000),
+				},
+				{
+					kind: "fly",
+					t0: downT,
+					t1: downT + DOINK_HOP_MS,
+					from: lands,
+					to: lies,
+					peak: peakFor(DOINK_HOP_MS),
+				},
+				{ kind: "spot", t0: downT + DOINK_HOP_MS, at: lies },
+			);
+		} else if (tNet < tLand) {
 			const fall = Math.sqrt((2 * end.z) / G) * 1000;
 			const below: Pt3 = { ...end, z: 0 };
 			this.ball.push(
@@ -17659,6 +17701,17 @@ const UNDER_EARLY = 1.25;
 // to this long before (ms).
 const FAIR_FROM = 2000;
 const FAIR_TO = 700;
+// A miss wide, now and then off an upright instead - doink - and back off
+// it (this often of them): hit this far (feet) out from the middle of the
+// post at most; back off it at this pace (ft/s, a range), this far round
+// from straight back out off it (radians, a range); a hop on the turf this
+// much again of the way, over this long (ms), and lying there.
+const DOINK = 0.12;
+const DOINK_OUT = 0.25;
+const DOINK_FPS: [number, number] = [10, 22];
+const DOINK_TURN: [number, number] = [0.3, 1.1];
+const DOINK_HOP = 0.3;
+const DOINK_HOP_MS = 420;
 // A field goal good, a try good: this often the holder and the kicker slap
 // hands after it - the kicker this often with his fist pumped first.
 const KICK_FIVE = 0.75;

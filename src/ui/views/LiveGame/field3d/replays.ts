@@ -76,8 +76,10 @@ const SKY_SCORE_LEAST = 1400;
 // the Skycam held this far behind where it is kicked from.
 const KICK_SKY_BEFORE = 450;
 const KICK_BACK = 42;
-// Long enough a field goal to be shown again, made (yards).
+// Long enough a field goal to be shown again, made (yards). Or one off an
+// upright: on until this long after it is down off it (ms).
 const LONG_KICK = 50;
+const DOINK_AFTER = 400;
 // Long enough a gain, or a return, to be shown again (yards).
 const BIG_GAIN = 25;
 const BIG_RETURN = 35;
@@ -196,6 +198,27 @@ export const replayFor = (input: {
 						4 * kick.peak * u * (1 - u),
 				},
 			};
+		} else if (
+			e.type === "fieldGoal" &&
+			e.made !== true &&
+			kick?.kind === "fly"
+		) {
+			// (Off an upright - see action.ts DOINK: its flight over in the
+			// air on the end line, and back off the post from there - and
+			// down onto the turf.)
+			const off = input.ball.find((s) => s.kind === "fly" && s.t0 === kick.t1);
+			if (
+				off?.kind === "fly" &&
+				kick.to.z > 1 &&
+				Math.abs(kick.to.x - (input.dir === 1 ? FIELD_L : 0)) < 0.5
+			) {
+				key ??= kick.t1;
+				to = off.t1 + DOINK_AFTER;
+				kicked = {
+					at: kick.from.x - input.dir * KICK_BACK,
+					goal: kick.to,
+				};
+			}
 		} else if (e.type === "interception") {
 			key ??= b.actionStart;
 		} else if (e.type === "fumbleRecovery") {
