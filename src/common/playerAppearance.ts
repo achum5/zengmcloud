@@ -52,7 +52,11 @@ export type PlayerAppearance = {
 
 export type Look = { face?: FaceConfig; imgURL?: string };
 
-type PlayerLike = Look & { appearances?: PlayerAppearance[] };
+type PlayerLike = Look & {
+	appearances?: PlayerAppearance[];
+	// The photo the face converter made his face from (see setPlayerFace).
+	faceSourceURL?: string;
+};
 
 const isPlainObject = (x: unknown): x is Record<string, unknown> =>
 	typeof x === "object" && x !== null && !Array.isArray(x);
@@ -173,7 +177,20 @@ export const appearanceForSeason = (
 	) {
 		return current;
 	}
-	return historyLook(history, season, current);
+	const look = historyLook(history, season, current);
+	// The photo his face was made from - turned into a face since: in no
+	// season is he that photo now (the link to it may not even load any
+	// more), but the face it became. (The face it covers in the history is
+	// one nobody ever saw.)
+	if (
+		look.imgURL &&
+		!p.imgURL &&
+		p.faceSourceURL !== undefined &&
+		look.imgURL === p.faceSourceURL
+	) {
+		return current;
+	}
+	return look;
 };
 
 // Do two looks differ in any way that would show on screen?

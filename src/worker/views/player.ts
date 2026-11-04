@@ -133,6 +133,7 @@ export const getPlayer = async <
 			"salariesTotal",
 			"awards",
 			"imgURL",
+			"faceSourceURL",
 			"watch",
 			"college",
 			"collegeYear0",

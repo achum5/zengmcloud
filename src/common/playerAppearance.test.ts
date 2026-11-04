@@ -105,6 +105,48 @@ describe("appearanceForSeason", () => {
 	});
 });
 
+describe("appearanceForSeason, a photo turned into a face", () => {
+	// The face converter made his face from his photo (see setPlayerFace):
+	// p.imgURL is cleared and the photo kept in faceSourceURL. The seasons the
+	// history recorded under that photo used to show it - a broken picture,
+	// once the link stopped loading - instead of the face it became.
+	const photo = "https://example.com/doncic.png";
+	const p = {
+		face: face("short"),
+		imgURL: "",
+		faceSourceURL: photo,
+		appearances: [
+			{ season: 2018, face: face("afro"), imgURL: photo },
+			{ season: 2020, changes: { fatness: 0.3 } },
+		] as PlayerAppearance[],
+	};
+
+	test("every season shows the face, not the photo it was made from", () => {
+		for (const season of [2018, 2019, 2020, 2021]) {
+			const look = appearanceForSeason(p, season, 2022);
+			assert.strictEqual(look.imgURL, "", `${season}`);
+			assert.strictEqual(look.face!.hair.id, "short", `${season}`);
+		}
+	});
+
+	test("a photo of his own in an earlier season is still shown", () => {
+		const other = {
+			...p,
+			appearances: [
+				{
+					season: 2018,
+					face: face("afro"),
+					imgURL: "https://example.com/old.png",
+				},
+			] as PlayerAppearance[],
+		};
+		assert.strictEqual(
+			appearanceForSeason(other, 2019, 2022).imgURL,
+			"https://example.com/old.png",
+		);
+	});
+});
+
 describe("latestAppearanceSeason", () => {
 	test("is the newest ratings season", () => {
 		assert.strictEqual(

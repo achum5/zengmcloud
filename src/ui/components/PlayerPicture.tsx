@@ -1,4 +1,5 @@
 import type { FaceConfig } from "facesjs";
+import { useState } from "react";
 import { MyFace } from "./MyFace.tsx";
 
 const imgStyle = {
@@ -19,8 +20,20 @@ export const PlayerPicture = ({
 	jersey?: string;
 	lazy?: boolean;
 }) => {
-	if (imgURL) {
-		return <img alt="Player" src={imgURL} style={imgStyle} />;
+	// (A link that doesn't load - an old photo gone from wherever it was - and
+	// he is drawn as his face, not as a broken picture.)
+	const [failed, setFailed] = useState<string | undefined>();
+	if (imgURL && (failed !== imgURL || !face)) {
+		return (
+			<img
+				alt="Player"
+				src={imgURL}
+				style={imgStyle}
+				onError={() => {
+					setFailed(imgURL);
+				}}
+			/>
+		);
 	}
 
 	if (face) {

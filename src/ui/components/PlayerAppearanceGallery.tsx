@@ -141,6 +141,7 @@ export const PlayerAppearanceGallery = ({
 		pid: number;
 		face?: FaceConfig;
 		imgURL?: string;
+		faceSourceURL?: string;
 		appearances?: PlayerAppearance[];
 	};
 	// Uniform per season. A season with no entry is one he spent on nobody's

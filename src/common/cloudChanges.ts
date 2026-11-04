@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 172,
+		date: "2026-11-04",
+		text: "Fixed: a player whose photo was turned into a face no longer shows broken pictures for his past seasons in his career gallery - every season shows his face. Any player picture that fails to load now falls back to the face too.",
+	},
+	{
 		n: 171,
 		date: "2026-11-04",
 		text: "3D games: free throws are shown from the normal court camera. The close-up from under the basket is gone.",
