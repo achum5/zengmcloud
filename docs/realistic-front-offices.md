@@ -896,6 +896,17 @@ room unused 75 summers of 84).
   four to six times, a team signing a player every day only to release him
   (priced cutting its least valuable, while the cut looked at everyone);
   with both, 45, nobody cut twice.
+- **Still to measure: a pick's player, and a young player, as the best quarter
+  of what he may become and the rest** (boom, off), not two halves. In the
+  owner's league picks 21-25 became a 65 or better 11% of the time and picks
+  31-35 2%, though their averages differ by three points; the better half
+  averages that chance away, and to a team far from contending a pick is
+  worth only what it might become. In the 2005 replay a contender gave three
+  late firsts for a 53 and a rebuilding team took them at about the 53's
+  worth; with boom the contender no longer gains from it. A contender's
+  first four years out for an early second now (both sides gaining under a
+  half a hundredth of a title) is not changed by it: that is the contender
+  valuing the seasons it can win in.
 - **Still to measure: a team plays and re-signs only players it wants**
   (wantedOnly, off). A player worse than a minimum free agent never plays
   ahead of one, and once his contract is up, any player is let go when his

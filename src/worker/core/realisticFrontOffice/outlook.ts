@@ -20,7 +20,11 @@ import {
 	shiftRetention,
 	type TradedAway,
 } from "./tradePenalty.ts";
-import { projectRatings, type RatingsProjection } from "./projection.ts";
+import {
+	BOOM_SHARE,
+	projectRatings,
+	type RatingsProjection,
+} from "./projection.ts";
 import getDaysLeftSchedule from "../season/getDaysLeftSchedule.ts";
 import { normalCdf, simulateSeason, winProbability } from "./seasonSim.ts";
 import { fitLogistic } from "./logistic.ts";
@@ -324,6 +328,7 @@ const computeSeasonLine = (
 	y: number,
 	gamesRemaining: number,
 	retention: number,
+	boom = false,
 ): SeasonLine => {
 	const index = y + offset;
 	if (index === 0) {
@@ -354,7 +359,7 @@ const computeSeasonLine = (
 	if (p.contract.exp < season + index) {
 		availability *= retention;
 	}
-	const line = lineFromProjection(projection, index, availability);
+	const line = lineFromProjection(projection, index, availability, boom);
 	line.age = age + index;
 	for (const half of line.halves ?? []) {
 		half.age = age + index;
@@ -367,6 +372,7 @@ const lineFromProjection = (
 	projection: RatingsProjection,
 	index: number,
 	availability: number,
+	boom = false,
 ): SeasonLine => {
 	const [roleFree, offense, usage, guard, forward] =
 		projection.measures[index]!;
@@ -391,16 +397,19 @@ const lineFromProjection = (
 		valueNoPot: projection.ovr[index]!,
 		availability,
 	};
-	const halves = projection.halves[index];
+	// The worse and better half - or with boom, the rest and the best quarter.
+	const halves = (boom ? projection.boom : projection.halves)[index];
+	const shares = boom ? [1 - BOOM_SHARE, BOOM_SHARE] : [0.5, 0.5];
 	if (
 		(outlookSettings.upside || teamOutlookSettings.size > 0) &&
 		halves &&
 		halves.ovr[1] - halves.ovr[0] >= UPSIDE_SPLIT
 	) {
-		let halfSynergies = projectedHalfSynergy.get(projection);
+		const synergyCache = boom ? projectedBoomSynergy : projectedHalfSynergy;
+		let halfSynergies = synergyCache.get(projection);
 		if (!halfSynergies) {
 			halfSynergies = [];
-			projectedHalfSynergy.set(projection, halfSynergies);
+			synergyCache.set(projection, halfSynergies);
 		}
 		const pair = (halfSynergies[index] ??= [0, 1].map((k) =>
 			lineSynergy({
@@ -418,7 +427,7 @@ const lineFromProjection = (
 				guard: guard!,
 				forward: forward!,
 				valueNoPot: halves.ovr[k]!,
-				availability: availability / 2,
+				availability: availability * shares[k]!,
 			};
 		});
 	}
@@ -572,6 +581,11 @@ const projectedHalfSynergy = new WeakMap<
 	ReturnType<typeof lineSynergy>[][]
 >();
 
+const projectedBoomSynergy = new WeakMap<
+	RatingsProjection,
+	ReturnType<typeof lineSynergy>[][]
+>();
+
 const projectedSynergy = new WeakMap<
 	RatingsProjection,
 	ReturnType<typeof lineSynergy>[]
@@ -587,6 +601,7 @@ type PlayerLines = {
 	exp: number;
 	ovr: number;
 	valueNoPot: number;
+	boom: boolean;
 	byYear: (SeasonLine | undefined)[];
 };
 export type SeasonLines = Map<number, Map<number, PlayerLines[]>>;
@@ -597,6 +612,7 @@ const playerLines = (
 	season: number,
 	gamesRemaining: number,
 	retention: number,
+	boom = false,
 ) => {
 	let byRetention = lines.get(p.pid);
 	if (!byRetention) {
@@ -619,7 +635,8 @@ const playerLines = (
 			entry.gamesRemaining === gamesRemaining &&
 			entry.exp === exp &&
 			entry.ovr === ovr &&
-			entry.valueNoPot === valueNoPot
+			entry.valueNoPot === valueNoPot &&
+			entry.boom === boom
 		) {
 			return entry;
 		}
@@ -631,6 +648,7 @@ const playerLines = (
 		exp,
 		ovr,
 		valueNoPot,
+		boom,
 		byYear: [],
 	};
 	list.push(entry);
@@ -781,6 +799,12 @@ export const outlookSettings = {
 	// one who would soon retire, and signed and cut players at the end of the
 	// bench all season. Off while it is measured.
 	wantedOnly: false,
+	// A pick's player, and a young player, as the best quarter of what he may
+	// become and the rest (BOOM_SHARE), not as two halves: a star's chance,
+	// which a better half averages away. In the owner's league picks 21-25
+	// became a 65 or better 11% of the time, 31-35 2% - and a first went for a
+	// second, three for a 48. Off while it is measured.
+	boom: false,
 };
 
 // Measured in arena leagues: players on a team all season missed 6.5% of its
@@ -816,6 +840,7 @@ export const teamOutlookSettings = new Map<
 			| "injuryByMinutes"
 			| "injuryByAge"
 			| "wantedOnly"
+			| "boom"
 		>
 	>
 >();
@@ -838,7 +863,8 @@ const outlookSettingFor = <
 		| "injuryRisk"
 		| "injuryByMinutes"
 		| "injuryByAge"
-		| "wantedOnly",
+		| "wantedOnly"
+		| "boom",
 >(
 	tid: number,
 	key: K,
@@ -973,6 +999,8 @@ type PickYears = {
 	known: boolean;
 	// Whether its COLA draw goes by its team's path (colaPath).
 	colaPath: boolean;
+	// Whether it is priced with the boom split (outlookSettings.boom).
+	boom: boolean;
 	byYear: (PickAt | null | undefined)[];
 };
 
@@ -985,6 +1013,7 @@ const pickYearsOf = (
 	const own = holder === dp.originalTid;
 	const known = knownClassFor(outlook, dp, holder) !== undefined;
 	const colaPath = colaPathFor(outlook, holder);
+	const boom = outlookSettingFor(holder, "boom");
 	if (
 		!entry ||
 		entry.originalTid !== dp.originalTid ||
@@ -994,7 +1023,8 @@ const pickYearsOf = (
 		entry.board !== (outlook.classBoard?.version ?? 0) ||
 		entry.own !== own ||
 		entry.known !== known ||
-		entry.colaPath !== colaPath
+		entry.colaPath !== colaPath ||
+		entry.boom !== boom
 	) {
 		entry = {
 			originalTid: dp.originalTid,
@@ -1005,6 +1035,7 @@ const pickYearsOf = (
 			own,
 			known,
 			colaPath,
+			boom,
 			byYear: [],
 		};
 		outlook.pickYears.set(dp, entry);
@@ -1211,12 +1242,18 @@ export const pickLineAt = (
 	if (typeof dp.season !== "number" || dp.season >= season) {
 		return undefined;
 	}
-	const fromClass = classPickAt(outlook, dp, y);
+	// With the boom split, by the holder's own setting.
+	const boom =
+		holder === undefined
+			? outlookSettings.boom
+			: outlookSettingFor(holder, "boom");
+	const boomKey = boom ? ":B" : "";
+	const fromClass = classPickAt(outlook, dp, y, boom);
 	if (fromClass !== undefined) {
 		return fromClass ?? undefined;
 	}
 	const known = knownClassFor(outlook, dp, holder);
-	const knownKey = known ? `:K${known.season}` : "";
+	const knownKey = known ? `:K${known.season}${boomKey}` : boomKey;
 	const n = outlook.numTeams;
 	const center = Math.min(
 		n - 1,
@@ -1269,7 +1306,7 @@ export const pickLineAt = (
 				weights = landing(n, at / PLACE_GRID, spread, lottery);
 				byPlace.set(landingKey, weights);
 			}
-			sums = pickSums(outlook, dp.round, weights, years, known);
+			sums = pickSums(outlook, dp.round, weights, years, known, boom);
 			bySums.set(key, sums);
 		}
 		return sums;
@@ -1423,6 +1460,7 @@ const classPickAt = (
 	outlook: Omit<LeagueOutlook, "teams" | "titleCurves" | "playoffCurves">,
 	dp: PickLike,
 	y: number,
+	boom = false,
 ): PickAt | null | undefined => {
 	const board = outlook.classBoard;
 	if (!board || dp.season !== board.season || dp.pick <= 0) {
@@ -1432,7 +1470,7 @@ const classPickAt = (
 	if (k < 0) {
 		return undefined;
 	}
-	const key = `class:${board.version}:${dp.round}:${dp.pick}:${y}`;
+	const key = `class:${board.version}:${dp.round}:${dp.pick}:${y}${boom ? ":B" : ""}`;
 	let at = outlook.pickLines.get(key);
 	if (at === undefined) {
 		const p = board.prospects[k];
@@ -1448,6 +1486,7 @@ const classPickAt = (
 				y,
 				0,
 				ROOKIE_RETENTION,
+				boom,
 			);
 			const years = outlookSeason(outlook, y) - board.season;
 			const paid = (half: { availability: number; valueNoPot: number }) =>
@@ -1526,11 +1565,13 @@ const prospectLine = (
 	projection: RatingsProjection,
 	years: number,
 	round: number,
+	boom = false,
 ) =>
 	lineFromProjection(
 		projection,
 		Math.min(projection.ovr.length - 1, years),
 		years > getRookieContractLength(round) ? ROOKIE_RETENTION : 1,
+		boom,
 	);
 
 // The classes of the drafts still to come that are already in the league: from
@@ -1597,8 +1638,9 @@ const knownSlots = (
 	n: number,
 	round: number,
 	years: number,
+	boom = false,
 ) => {
-	const key = `${n}:${round}:${years}:${g.get("salaryCap")}:${g.get("minContract")}:${g.get("maxContract")}`;
+	const key = `${n}:${round}:${years}:${g.get("salaryCap")}:${g.get("minContract")}:${g.get("maxContract")}${boom ? ":B" : ""}`;
 	let slots = known.slots.get(key);
 	if (!slots) {
 		const pickSalary = pickSalaries();
@@ -1610,7 +1652,7 @@ const knownSlots = (
 				slots.push([undefined, undefined, undefined]);
 				continue;
 			}
-			const line = prospectLine(prospect.projection, years, round);
+			const line = prospectLine(prospect.projection, years, round, boom);
 			const rowOf = (x: StrengthPlayer & { availability: number }) => {
 				const a = x.availability;
 				return a > 0
@@ -1706,15 +1748,16 @@ const slotsFor = (
 	numPicks: number,
 	round: number,
 	years: number,
+	boom = false,
 ) => {
-	const key = `${n}:${numPicks}:${round}:${years}:${g.get("salaryCap")}:${g.get("minContract")}:${g.get("maxContract")}`;
+	const key = `${n}:${numPicks}:${round}:${years}:${g.get("salaryCap")}:${g.get("minContract")}:${g.get("maxContract")}${boom ? ":B" : ""}`;
 	let slots = slotPlayers.get(key);
 	if (!slots) {
 		const pickSalary = pickSalaries();
 		slots = [];
 		for (let k = 0; k < n; k++) {
 			const slot = (round - 1) * n + k;
-			const p = pickPlayer({ slot, numPicks, years });
+			const p = pickPlayer({ slot, numPicks, years, boom });
 			const rowOf = (x: StrengthPlayer & { availability: number }) => {
 				const a = x.availability;
 				return a > 0
@@ -1797,13 +1840,14 @@ const pickSums = (
 	years: number,
 	// Its draft's class, when it is priced by it.
 	known?: KnownClass,
+	boom = false,
 ) => {
 	const n = outlook.numTeams;
 	const numPicks = outlook.numRounds * n;
 	const sums = new Float64Array(SUMS);
 	const slots = known
-		? knownSlots(known, n, round, years)
-		: slotsFor(n, numPicks, round, years);
+		? knownSlots(known, n, round, years, boom)
+		: slotsFor(n, numPicks, round, years, boom);
 	for (const [k, w] of weights.entries()) {
 		if (w < 1e-4) {
 			continue;
@@ -1945,6 +1989,7 @@ export const teamPoints = (
 	};
 	const gamesRemaining = outlook.remaining.get(tid) ?? 0;
 	const retention = players.map(retentionFor);
+	const boom = outlookSettingFor(tid, "boom");
 	const byPlayer = players.map((p, i) =>
 		playerLines(
 			outlook.lines,
@@ -1952,6 +1997,7 @@ export const teamPoints = (
 			outlook.season,
 			gamesRemaining,
 			retention[i]!,
+			boom,
 		),
 	);
 	const byPick = picks.map((dp) => pickYearsOf(outlook, dp, tid));
@@ -1974,6 +2020,7 @@ export const teamPoints = (
 				y,
 				gamesRemaining,
 				retention[i]!,
+				boom,
 			));
 			if (!wanted || p.contract.exp >= season) {
 				return line;

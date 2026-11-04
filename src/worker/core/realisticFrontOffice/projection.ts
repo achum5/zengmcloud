@@ -19,12 +19,24 @@ export type RatingsProjection = {
 	// his overall then: their average ratings, overall and measure. A roster
 	// gives a player who turns out well the minutes of one who did, which an
 	// average of the two undersells. Empty without measure.
-	halves: {
-		ratings: [MinimalPlayerRatings, MinimalPlayerRatings];
-		ovr: [number, number];
-		measures: [number[], number[]];
-	}[];
+	halves: Split[];
+	// The same split into the best quarter of his careers (BOOM_SHARE) and the
+	// rest: a star's chance, which the better half averages away. Empty
+	// without measure.
+	boom: Split[];
+	// Every simulated career, each season, when asked for (keepCareers).
+	careers?: { ratings: number[]; ovr: number; measure: number[] }[][];
 };
+
+type Split = {
+	ratings: [MinimalPlayerRatings, MinimalPlayerRatings];
+	ovr: [number, number];
+	measures: [number[], number[]];
+};
+
+// The share of a player's simulated careers in the better part of the boom
+// split (RatingsProjection.boom).
+export const BOOM_SHARE = 0.25;
 
 // A player's ratings in the seasons ahead, played out with the game's own
 // development code many times over and averaged. Seeded from the caller (a
@@ -42,6 +54,7 @@ export const projectRatings = ({
 	seed,
 	coachingLevel = DEFAULT_LEVEL,
 	measure,
+	keepCareers = false,
 }: {
 	ratings: MinimalPlayerRatings;
 	age: number;
@@ -50,6 +63,7 @@ export const projectRatings = ({
 	seed: number;
 	coachingLevel?: number;
 	measure?: (ratings: MinimalPlayerRatings) => number[];
+	keepCareers?: boolean;
 }): RatingsProjection => {
 	const sums = Array.from({ length: years + 1 }, () =>
 		Object.fromEntries(RATINGS.map((key) => [key, 0])),
@@ -110,35 +124,54 @@ export const projectRatings = ({
 		),
 		measures: measureSums.map((sum) => sum.map((x) => x / samples)),
 		halves: measure
-			? careers.map((season) => {
-					const sorted = [...season].sort((a, b) => a.ovr - b.ovr);
-					const mid = Math.floor(sorted.length / 2);
-					const half = (list: typeof sorted) => {
-						const n = Math.max(1, list.length);
-						return {
-							ratings: {
-								...ratings,
-								...Object.fromEntries(
-									RATINGS.map((key, i) => [
-										key,
-										list.reduce((a, c) => a + c.ratings[i]!, 0) / n,
-									]),
-								),
-							} as MinimalPlayerRatings,
-							ovr: list.reduce((a, c) => a + c.ovr, 0) / n,
-							measure: (list[0]?.measure ?? []).map(
-								(_, i) => list.reduce((a, c) => a + c.measure[i]!, 0) / n,
-							),
-						};
-					};
-					const lo = half(sorted.slice(0, mid));
-					const hi = half(sorted.slice(mid));
-					return {
-						ratings: [lo.ratings, hi.ratings],
-						ovr: [lo.ovr, hi.ovr],
-						measures: [lo.measure, hi.measure],
-					};
-				})
+			? careers.map((season) =>
+					splitCareers(ratings, season, Math.floor(season.length / 2)),
+				)
 			: [],
+		boom: measure
+			? careers.map((season) =>
+					splitCareers(
+						ratings,
+						season,
+						season.length - Math.max(1, Math.round(season.length * BOOM_SHARE)),
+					),
+				)
+			: [],
+		careers: keepCareers ? careers : undefined,
+	};
+};
+
+// Careers split by overall at `at`: the average ratings, overall and measure
+// of those below it and of the rest.
+const splitCareers = (
+	ratings: MinimalPlayerRatings,
+	season: { ratings: number[]; ovr: number; measure: number[] }[],
+	at: number,
+): Split => {
+	const sorted = [...season].sort((a, b) => a.ovr - b.ovr);
+	const part = (list: typeof sorted) => {
+		const n = Math.max(1, list.length);
+		return {
+			ratings: {
+				...ratings,
+				...Object.fromEntries(
+					RATINGS.map((key, i) => [
+						key,
+						list.reduce((a, c) => a + c.ratings[i]!, 0) / n,
+					]),
+				),
+			} as MinimalPlayerRatings,
+			ovr: list.reduce((a, c) => a + c.ovr, 0) / n,
+			measure: (list[0]?.measure ?? []).map(
+				(_, i) => list.reduce((a, c) => a + c.measure[i]!, 0) / n,
+			),
+		};
+	};
+	const lo = part(sorted.slice(0, at));
+	const hi = part(sorted.slice(at));
+	return {
+		ratings: [lo.ratings, hi.ratings],
+		ovr: [lo.ovr, hi.ovr],
+		measures: [lo.measure, hi.measure],
 	};
 };

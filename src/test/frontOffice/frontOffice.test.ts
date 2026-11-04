@@ -12,7 +12,10 @@ import {
 import { DEFAULT_LEVEL } from "../../common/budgetLevels.ts";
 import { last } from "../../common/utils.ts";
 import genPlayersWithoutSaving from "../../worker/core/draft/genPlayersWithoutSaving.ts";
-import { projectRatings } from "../../worker/core/realisticFrontOffice/projection.ts";
+import {
+	BOOM_SHARE,
+	projectRatings,
+} from "../../worker/core/realisticFrontOffice/projection.ts";
 import {
 	playerValue,
 	REPLACEMENT_OVR,
@@ -119,6 +122,11 @@ test.runIf(env.FO_PICKS !== undefined)(
 			const halfOutcomes = Array.from({ length: numPicks }, () =>
 				Array.from({ length: years + 1 }, () => [] as number[][]),
 			);
+			// And every simulated career, worth a roster place or not: overall,
+			// roleFree, offense and usage - for the boom split (BOOM_SHARE).
+			const careerOutcomes = Array.from({ length: numPicks }, () =>
+				Array.from({ length: years + 1 }, () => [] as number[][]),
+			);
 			for (let c = 0; c < numClasses; c++) {
 				const prospects = await genPlayersWithoutSaving(
 					season,
@@ -134,6 +142,7 @@ test.runIf(env.FO_PICKS !== undefined)(
 							samples: 16,
 							seed: c * 1000 + i,
 							measure: lineMeasure,
+							keepCareers: true,
 						});
 						let score = 0;
 						for (let y = 0; y <= years; y++) {
@@ -150,7 +159,13 @@ test.runIf(env.FO_PICKS !== undefined)(
 					.sort((a, b) => b.score - a.score);
 				for (let k = 0; k < numPicks && k < board.length; k++) {
 					for (let y = 0; y <= years; y++) {
-						const { measures, ovr, halves } = board[k]!.projection;
+						const { measures, ovr, halves, careers } = board[k]!.projection;
+						for (const career of careers![y]!) {
+							careerOutcomes[k]![y]!.push([
+								career.ovr,
+								...career.measure.slice(0, 3),
+							]);
+						}
 						for (let h = 0; h < 2; h++) {
 							const half = halves[y]!;
 							if (half.ovr[h]! >= REPLACEMENT_OVR) {
@@ -226,6 +241,37 @@ test.runIf(env.FO_PICKS !== undefined)(
 								return [roleFree!, offense!, usage!, ovr!].map(round);
 							});
 							return [...means, round(outcomes.length / (2 * numClasses))];
+						}),
+					),
+					// Per pick, per season after the draft: every career taken there
+					// split at the best quarter (BOOM_SHARE) - roleFree, offense,
+					// usage and overall of those worth a roster place in the rest,
+					// and the share of all careers they are, then the same for the
+					// best quarter.
+					boom: careerOutcomes.map((rows) =>
+						rows.map((outcomes) => {
+							if (outcomes.length === 0) {
+								return [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+							}
+							const sorted = [...outcomes].sort((a, b) => a[0]! - b[0]!);
+							const at =
+								sorted.length -
+								Math.max(1, Math.round(sorted.length * BOOM_SHARE));
+							return [sorted.slice(0, at), sorted.slice(at)].flatMap((part) => {
+								const kept = part.filter((o) => o[0]! >= REPLACEMENT_OVR);
+								if (kept.length === 0) {
+									return [0, 0, 0, 0, 0];
+								}
+								const mean = (j: number) =>
+									kept.reduce((a, o) => a + o[j]!, 0) / kept.length;
+								return [
+									mean(1),
+									mean(2),
+									mean(3),
+									mean(0),
+									kept.length / sorted.length,
+								].map(round);
+							});
 						}),
 					),
 				}),
