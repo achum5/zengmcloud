@@ -3469,6 +3469,8 @@ const UP_AGAIN_REACT_MS = [250, 550] as const;
 const UP_AGAIN_PACE = 0.6;
 const UP_AGAIN_FT = [8, 7] as const;
 const UP_AGAIN_LEAST_MS = 1200;
+// (Further out than that by this much, feet, if there is no room there.)
+const UP_AGAIN_OUT_FT = [0, 4, 8] as const;
 // (Up again with the ball still going (see upAgain): with it, not off to
 // its last spot, if he would be there this long (ms) before it is - in it
 // once it is no further from there than SETTLED_FT.)
@@ -15329,15 +15331,24 @@ class Action {
 			if (far <= ring + 2) {
 				continue;
 			}
+			// (Round it with room for him - further out, if it is crowded
+			// there: not left stood where he got up.)
 			const spot = () => {
 				const a = Math.atan2(m.at.y - end.y, m.at.x - end.x);
-				const round = (turn: number) => ({
-					x: end.x + Math.cos(a + turn / ring) * ring,
-					y: end.y + Math.sin(a + turn / ring) * ring,
-				});
-				return GATHER_ROUND.map(round).find((q) =>
-					taken.every((p) => dist(p, q) >= GATHER_APART),
-				);
+				for (const out of UP_AGAIN_OUT_FT) {
+					const R = ring + out;
+					if (far <= R + 2) {
+						break;
+					}
+					const q = GATHER_ROUND.map((turn) => ({
+						x: end.x + Math.cos(a + turn / R) * R,
+						y: end.y + Math.sin(a + turn / R) * R,
+					})).find((q) => taken.every((p) => dist(p, q) >= GATHER_APART));
+					if (q) {
+						return q;
+					}
+				}
+				return undefined;
 			};
 			const go =
 				t +
