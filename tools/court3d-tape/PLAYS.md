@@ -9,6 +9,38 @@ doesn't feel like the same clip again.
 Status: `todo`, `working`, `done` (with the commits). Per game: how often a
 line comes up in a real-sim game (three games, seeds 11/22/33).
 
+## The goal
+
+Thousands of different ways every line can play out - each one real - and
+which of them happens decided by the ratings of the men on the floor; and
+for any one player, or group of players with the same ratings, still
+thousands, so somebody who watches one team all season never sees the same
+thing twice and it never feels scripted.
+
+Not thousands of clips: each line is put together from parts that vary on
+their own (how he got the ball, where, his footwork, the defense, how it
+ends, what everybody else does), and the ways multiply. Each part is:
+
+1. **Real every time** - checked on every game the tape plays (see
+   gameTape.test.ts), not just on the ones looked at.
+2. **Weighted by ratings** - a shooter gets his catch-and-shoots, a handler
+   his pull-ups, a sharp defender is there on time.
+3. **Remembered** - a man doesn't get the same combination again while
+   another is there for him.
+
+Each line's section lists its parts, how many ways each has today and
+should have, how they are measured (distinct combinations a game, per
+player; repeats), and its checks.
+
+**The target is hundreds of ways for each part (on the order of 500), for
+every line.** No part gets there as a list. Each is itself put together from
+smaller pieces that vary on their own and multiply - "how he got the shot"
+is the pass (kind, from where, early or on time) times his way to the spot
+(the cut, the relocation, the screen and how he used it) times his catch
+(the hop, the 1-2, turning into it), each piece weighted by the ratings of
+the men in it. The variety tool counts the distinct combinations inside
+each part, so the table below can say how far along each part is.
+
 ## Order
 
 | #   | Line                                                                                          | Per game | Status  |
@@ -58,6 +90,28 @@ What can be different about it, and each needs to look right on its own:
 - **Everyone else**: crashing or getting back, boxing out, the shooter's
   reaction.
 
-Checks: (to be filled in as the work goes)
+Measured with `variety.test.ts` over three real-sim games (116 missed
+threes at real speed):
+
+| Part                                     |             Ways now | Notes                                                                                                                                    |
+| ---------------------------------------- | -------------------: | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| How he got it                            |                   18 | swing 31%, skip, kick-out, handoff, pull-up, step-back, hesitation; + screen, + fake, + transition                                       |
+| Where from                               |                    8 | corners, wings, top; on the line / a step off / deep                                                                                     |
+| His form                                 |                   10 | his own jumper: shoot, quick, push, split, kick, high kick, lean, high                                                                   |
+| His footwork into it                     |                    - | not measured yet                                                                                                                         |
+| The defense                              |                    6 | wide open, open, contested, late closeout, hand in his face, late hand                                                                   |
+| How it misses                            |                6 → 9 | was 70% front rim, nothing long, no air balls; now front 58%, back 26% (half in and out), side 13%, air balls and the glass now and then |
+| After it                                 |                   11 | rebound by whom, short / mid / long, off the floor                                                                                       |
+| Whole combination                        | 116 of 116 different |                                                                                                                                          |
+| Same man, same setup + spot + form again |              8 of 72 |                                                                                                                                          |
+
+Next, in order: how it misses (aimed short / long / off the side / air /
+glass by his shooting, distance and where the rebound goes - in testing);
+his footwork into it (measure first); how he got it (the pass, his way to
+the spot, his catch); the defense (closeout kinds, the man's reaction
+after); everyone after it.
+
+Checks: the existing tests (feet behind the line, a contested jumper stays
+in sight, the ball never jumps, real speed with no darts) on every change.
 
 Done: (commits)
