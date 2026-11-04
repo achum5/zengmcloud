@@ -177,6 +177,71 @@ test("short of time, the men nearest the camera get their new pose first", () =>
 	);
 });
 
+// And the men in the game before a man sat on the bench or crouched with a
+// camera at the baseline, however much nearer the camera he is.
+test("short of time, the men in the game get their new pose before the rest", () => {
+	const W = 640;
+	const H = 360;
+	const cam = makeCamera({ x: 47, width: 72, y: 24 }, W, H, MAIN_RIG);
+	const body = bodyOf();
+	const kits = kitsFor(undefined, undefined);
+	// One far off in the game, two by the near sideline out of it.
+	const men = [
+		{ y: 10, inPlay: true },
+		{ y: 44, inPlay: false },
+		{ y: 46, inPlay: false },
+	].map(({ y, inPlay }, i) => {
+		const look: Look = {
+			kit: kits[i % 2]!,
+			skin: "#8d5524",
+			hair: "#1f1612",
+			jerseyNumber: "",
+			name: "",
+			lastName: "",
+			wordmark: "",
+		};
+		const st = (phase: number): PlayerState =>
+			({
+				pid: i,
+				team: i % 2,
+				shown: true,
+				x: 30 + i * 8,
+				y,
+				z: 0,
+				yaw: 0,
+				anim: "run",
+				phase,
+				moving: true,
+			}) as PlayerState;
+		return { look, st, inPlay };
+	});
+	const scratch = makeScratch();
+	const cache = makeSpriteCache();
+	const ctx = stubCanvas().getContext() as unknown as CanvasRenderingContext2D;
+	const frame = (phase: number) => {
+		startFrame(cache);
+		const now = men.map((m) => ({
+			st: m.st(phase),
+			body,
+			look: m.look,
+			inPlay: m.inPlay,
+		}));
+		prepareSprites(scratch, cam, now, 1, cache);
+		for (const m of now) {
+			drawSprite(ctx, scratch, cam, m.st, m.body, m.look, 1, cache);
+		}
+		return now;
+	};
+	frame(0);
+	// Time for two new pictures: his, then the nearer of the other two.
+	cache.budget = 1;
+	const now = frame(0.25);
+	assert.deepEqual(
+		now.map((m) => cache.last.get(m.st.pid)!.behind),
+		[0, 1, 0],
+	);
+});
+
 // Each new picture is kept as a picture of its own, its pixels put on it
 // once. Drawn from a scratch sheet, the sheet would be held on to as it was
 // until the kept picture is next painted, and the next man sculpted on it

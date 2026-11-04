@@ -1774,13 +1774,15 @@ export const drawFrame = (f: Frame) => {
 	const onFloor = new Set(players.map((p) => p.pid));
 	const bench = benchStates(f, onFloor);
 	// Everybody drawn as a sprite, in what he wears - his new pictures made
-	// before anything is drawn, nearest first (see prepareSprites).
+	// before anything is drawn, the men in the game first, nearest first
+	// (see prepareSprites).
 	const onCourt = players.map((st) => {
 		const look = f.lookFor(st.pid);
 		return {
 			st,
 			body: f.bodyFor(st.pid),
 			look: f.moment.warm ? warmupLook(look, f.warmups[st.team]) : look,
+			inPlay: true,
 		};
 	});
 	const benched = bench.map(({ st, warm }) => {

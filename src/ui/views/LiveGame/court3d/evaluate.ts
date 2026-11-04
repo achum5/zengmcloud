@@ -4703,33 +4703,51 @@ const seenOff = (h: Pt3, head: Pt3): number =>
 	Math.abs(h.y - head.y) > SEEN_DEPTH
 		? Infinity
 		: Math.hypot(h.x - head.x, h.z - head.z - SEEN_TILT * (h.y - head.y));
-// Where a man's body is (his hips, chest and head), every ROOM_STEP, without
-// his arms drawn in (they make no odds to it).
-const bodySteps = new WeakMap<
-	Track,
-	Map<number, { hip: Pt3; chest: Pt3; head: Pt3 }>
->();
-const bodyAtStep = (tl: CourtTimeline, tr: Track, t: number) => {
-	let steps = bodySteps.get(tr);
+// A man as he is at a step, without his arms drawn in (see tuckNow) -
+// worked out once for both of the things that ask: his own hands' room off
+// the men near him, and where his body is for each of them working out
+// theirs. (His pose and skeleton only once something asks for them.)
+type Bare = {
+	st: PlayerState;
+	pose?: Pose;
+	sk?: Skeleton;
+	body?: { hip: Pt3; chest: Pt3; head: Pt3 };
+};
+const bareSteps = new WeakMap<Track, Map<number, Bare>>();
+const bareAtStep = (tl: CourtTimeline, tr: Track, t: number): Bare => {
+	let steps = bareSteps.get(tr);
 	if (!steps) {
 		steps = new Map();
-		bodySteps.set(tr, steps);
+		bareSteps.set(tr, steps);
 	}
 	let b = steps.get(t);
 	if (!b) {
-		const st = playerAt(tl, tr.pid, t, true);
-		const sk = skeleton(TYPICAL, poseOf(st));
-		b = {
-			hip: bodyPoint(st, sk.pelvis),
-			chest: bodyPoint(st, sk.chest),
-			head: bodyPoint(st, sk.head),
-		};
+		b = { st: playerAt(tl, tr.pid, t, true) };
 		steps.set(t, b);
 		if (steps.size > 8) {
 			steps.delete(steps.keys().next().value!);
 		}
 	}
 	return b;
+};
+const bareSkeleton = (b: Bare): Skeleton => {
+	b.pose ??= poseOf(b.st);
+	b.sk ??= skeleton(TYPICAL, b.pose);
+	return b.sk;
+};
+// Where a man's body is (his hips, chest and head), every ROOM_STEP, without
+// his arms drawn in (they make no odds to it).
+const bodyAtStep = (tl: CourtTimeline, tr: Track, t: number) => {
+	const b = bareAtStep(tl, tr, t);
+	if (!b.body) {
+		const sk = bareSkeleton(b);
+		b.body = {
+			hip: bodyPoint(b.st, sk.pelvis),
+			chest: bodyPoint(b.st, sk.chest),
+			head: bodyPoint(b.st, sk.head),
+		};
+	}
+	return b.body;
 };
 const toSegment = (p: Pt3, a: Pt3, b: Pt3): number => {
 	const ab = { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z };
@@ -4771,7 +4789,8 @@ const tuckNow = (
 	tr: Track,
 	t: number,
 ): readonly [number, number] => {
-	const st = playerAt(tl, tr.pid, t, true);
+	const bare = bareAtStep(tl, tr, t);
+	const st = bare.st;
 	// (Dribbling, only his other hand - the arm he keeps his man off with.)
 	const dribbling = st.dribbleHand !== undefined;
 	if (
@@ -4800,10 +4819,8 @@ const tuckNow = (
 	if (near.length === 0) {
 		return NO_TUCK;
 	}
-	const p0 = poseOf(st);
-	const p1 = tuckedArms(p0, [1, 1]);
-	const sk0 = skeleton(TYPICAL, p0);
-	const sk1 = skeleton(TYPICAL, p1);
+	const sk0 = bareSkeleton(bare);
+	const sk1 = skeleton(TYPICAL, tuckedArms(bare.pose!, [1, 1]));
 	// (How far the hand is into the nearest man's body: its room off the
 	// line of his back past ARM_CLEAR, or off his head past its size - the
 	// less of the two.)

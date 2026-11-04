@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 167,
+		date: "2026-11-04",
+		text: "3D games on slower phones: the players on the court are now redrawn before the bench and the crew, so their running and moves look smoother, and each frame does a little less work.",
+	},
+	{
 		n: 166,
 		date: "2026-11-04",
 		text: "3D games: players move more like people. Pulling up off the dribble, a player turns toward the rim on his last dribbles instead of stopping and spinning round on the spot. A drop step or up-and-under on the block now really fakes or steps round his man instead of dribbling into him. A help defender stepping up no longer zips across sideways, and legs keep running while a player swipes at the ball or goes up for a block.",

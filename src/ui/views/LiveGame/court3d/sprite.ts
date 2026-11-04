@@ -1378,7 +1378,8 @@ const took = (cache: SpriteCache, farm: Farm, scratch: Scratch) => {
 export const prepareSprites = (
 	scratch: Scratch,
 	cam: Camera,
-	men: { st: PlayerState; body: Body; look: Look }[],
+	// (`inPlay`: one of the men in the game - see below.)
+	men: { st: PlayerState; body: Body; look: Look; inPlay?: boolean }[],
 	px: number,
 	cache: SpriteCache,
 ) => {
@@ -1399,7 +1400,16 @@ export const prepareSprites = (
 			todo.push({ man, plan, wait: asWas(cache, plan) !== undefined });
 		}
 	}
-	todo.sort((a, b) => b.plan.base.k - a.plan.base.k);
+	// Short of time, the men in the game first - their strides and moves
+	// are what the eye is on; a man sat on the bench or a photographer
+	// crouched at the baseline barely moves, and is none the worse drawn
+	// as he was a frame or two longer (see asWas) - and of each, the
+	// nearest the camera.
+	todo.sort(
+		(a, b) =>
+			Number(b.man.inPlay === true) - Number(a.man.inPlay === true) ||
+			b.plan.base.k - a.plan.base.k,
+	);
 	for (const { man, plan, wait } of todo) {
 		const key = plan.key!;
 		// Made off the page's thread, if it can be, and drawn as he was till
