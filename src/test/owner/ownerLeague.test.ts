@@ -576,6 +576,34 @@ test.skipIf(!env.OWNER_LEAGUE || !env.OWNER_SEASONS)(
 				await phase.newPhase((ph + 1) as any, conditions);
 			}
 			await flush();
+			// How each team's seasons went so far, to set against the league's
+			// own history.
+			if (env.OWNER_OUT && ph === PHASE.PLAYOFFS) {
+				const rows: unknown[] = [];
+				for (let s = season0; s <= g.get("season"); s++) {
+					for (let tid = 0; tid < g.get("numTeams"); tid++) {
+						const [ts] = await idb.merged.teamSeasons.getAll({
+							tid,
+							season: s,
+						});
+						if (!ts) {
+							continue;
+						}
+						rows.push({
+							season: ts.season,
+							tid: ts.tid,
+							abbrev: abbrev.get(ts.tid),
+							won: ts.won,
+							lost: ts.lost,
+							playoffRoundsWon: ts.playoffRoundsWon,
+						});
+					}
+				}
+				await fs.writeFile(
+					`${env.OWNER_OUT}.seasons.json`,
+					JSON.stringify(rows),
+				);
+			}
 		}
 	},
 );
