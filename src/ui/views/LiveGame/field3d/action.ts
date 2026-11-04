@@ -2583,6 +2583,9 @@ const FOLLOW_ON_LEAST = 0.6;
 // (A kick wall let up once the kick is away, up to this much later, ms.)
 const KICK_WALL_SPREAD_MS = 350;
 const RUN_END_SPREAD_MS = 400;
+// A lineman's first step on a run, off his stance: no quicker than this
+// on it, ft/s (his pace over the whole of it - see runBlock).
+const FIRST_STEP_FPS = 8;
 // Off the snap, each on his own count: a blocker this long after it (ms),
 // up to this much later; his first step this much longer or shorter (a
 // share of it) - and a lineman across from him reading it, this long
@@ -3620,7 +3623,7 @@ const STEP_LEFT_MS = 60;
 // DOWN_ACROSS_FPS - at a pinch, half as quick again. Down: on the turf, or
 // on his way down from DOWN_FROM through it.
 const DOWN_CLEAR = 1.6;
-const DOWN_OFFS = [1, 1.5, 2, 2.5, 3, 3.5, 4.5, 5.5];
+const DOWN_OFFS = [1, 1.5, 2, 2.5, 3, 3.5, 4.5, 5.5, 7, 8.5];
 const DOWN_TAPER_FT = 5;
 const DOWN_RAMP_MS = 300;
 const DOWN_ACROSS = 0.8;
@@ -5275,6 +5278,7 @@ class Action {
 				? c0 + (stood >= STEP_OFF_MS + STEP_OFF_LEFT_MS ? STEP_OFF_MS : stood)
 				: undefined;
 		const stepMs = stepTo === undefined ? 0 : stepTo - c0;
+		const stoodTill = lead ? Math.min(lead.t1, c1) : c0;
 		const runs: { t0: number; t1: number; at: number }[] = [];
 		let T = 0;
 		if (stepTo !== undefined) {
@@ -5451,14 +5455,21 @@ class Action {
 							const w = bumpOf(clock(t), ui, a1, b1, uo);
 							const p = m.posAt(t);
 							const q = { x: p.x + off.x * w, y: p.y + off.y * w };
+							// (Stepped off him, and back onto his way where it goes
+							// by him anyway after he stood - over to help him up,
+							// say: no nearer him there than he was to be.)
+							const n = nearDown(m, t, q, t < ta ? on?.who : undefined).near;
+							const by =
+								stepping && t > stoodTill
+									? n +
+										DOWN_CLEAR -
+										Math.min(DOWN_CLEAR, nearDown(m, t, p).near)
+									: n;
 							// (Not into somebody else instead.)
 							near =
 								careful && w > 0 && crowds(m, t, q, p)
 									? -1
-									: Math.min(
-											near,
-											nearDown(m, t, q, t < ta ? on?.who : undefined).near,
-										);
+									: Math.min(near, by);
 						}
 						if (!best || near > best.near) {
 							best = { near, wa, wb, ui, a1, b1, uo, off };
@@ -5486,6 +5497,12 @@ class Action {
 			const careful = search(true);
 			const best = ok(careful) ? careful : search(false);
 			if (!ok(best)) {
+				// (No stepping off him and back in time: on his way now, if it
+				// takes him on after he stood - stood where it gets him for
+				// the rest of it - not stood on him till then.)
+				if (stepping && lead && this.onSooner(m, lead, c1)) {
+					return;
+				}
 				continue;
 			}
 			const { wa, wb, ui, a1, b1, uo, off } = best;
@@ -5543,6 +5560,43 @@ class Action {
 				}
 			}
 		}
+	}
+
+	// (See roundDown: the legs he goes on after he stands in `lead`, up to
+	// c1, gone on at once - and that stand, as long, at the end of them.
+	// Whether there were any.)
+	private onSooner(m: Actor, lead: Leg, c1: number): boolean {
+		const legs = m.legs;
+		const i = legs.indexOf(lead);
+		const moves: Leg[] = [];
+		let t = lead.t1;
+		for (let k = i + 1; k < legs.length && legs[k]!.t0 < c1; k++) {
+			const l = legs[k]!;
+			if (l.t0 !== t || l.t1 > c1) {
+				return false;
+			}
+			moves.push(l);
+			t = l.t1;
+		}
+		if (i < 0 || moves.length === 0 || lead.t1 > c1) {
+			return false;
+		}
+		const sooner = lead.t1 - lead.t0;
+		for (const l of moves) {
+			l.t0 -= sooner;
+			l.t1 -= sooner;
+		}
+		const end = moves.at(-1)!;
+		legs.splice(i, 1);
+		legs.splice(i + moves.length, 0, {
+			...lead,
+			t0: end.t1,
+			t1: end.t1 + sooner,
+			from: end.to,
+			to: end.to,
+			yaw: yawOf(end, lead.yaw ?? m.yaw),
+		});
+		return true;
 	}
 
 	// A foul before the snap: the man who jumped early - over the line, or
@@ -11796,19 +11850,24 @@ class Action {
 						: { d: 3, a: 2 * side };
 		const backs = blockers.filter((b) => b !== pull && this.of(b.at).d < -8);
 		const front = blockers.filter((b) => b !== pull && !backs.includes(b));
+		// (A wide one given the time it takes him - no quicker on it than
+		// FIRST_STEP_FPS - not lunged across in half a second; and the man
+		// over him met as he gets there.)
+		const fired = new Map<Actor, number>();
 		for (const b of front) {
 			const s = this.of(b.at);
 			const own = 1 + GET_OFF_STEP * (countOf(b, snap, 1) - 0.5);
 			this.offSnap(b, GET_OFF_MS, GET_OFF_SPREAD_MS);
-			b.go(
-				this.w({
-					d: s.d + (step.d * (drive > 1 ? 1 : 0.5) + drive * 0.3) * own,
-					a: s.a + step.a * own,
-				}),
+			const to = this.w({
+				d: s.d + (step.d * (drive > 1 ? 1 : 0.5) + drive * 0.3) * own,
+				a: s.a + step.a * own,
+			});
+			const by = Math.max(
 				snap + 550,
-				"drive",
-				this.ahead,
+				b.t + (dist(b.at, to) / FIRST_STEP_FPS) * 1000,
 			);
+			b.go(to, by, "drive", this.ahead);
+			fired.set(b, by);
 		}
 
 		// Who is on whom up front.
@@ -11884,6 +11943,7 @@ class Action {
 			}
 			let locked = till;
 			let freed = snap;
+			const hit = (fired.get(b) ?? snap + 550) - 100;
 			for (const m of men) {
 				const at = (time: number, lat: number) => {
 					const p = this.of(b.posAt(time));
@@ -11906,14 +11966,14 @@ class Action {
 					end -
 						FIRE_HELD_MS -
 						rampedMs(
-							dist(m.at, at(snap + 450, 0)),
+							dist(m.at, at(hit, 0)),
 							m.top * RUSH_HIT_PACE,
 							0,
 							GET_OFF_ACCEL,
 						),
 				);
 				const lat = (r() - 0.5) * 0.6;
-				this.fireInto(m, (time) => at(time, lat), snap + 450, end);
+				this.fireInto(m, (time) => at(time, lat), hit, end);
 				// (Over with him, by when they are out of the way.)
 				if (way.over !== 0 && m.t < way.by && way.by < end) {
 					m.go(at(way.by, lat), way.by, "engage", this.behind);
@@ -11940,7 +12000,7 @@ class Action {
 					men.length === 1 &&
 					OL.has(b.role) &&
 					free(m) &&
-					end - (snap + 450) >= PANCAKE_DRIVE_MS &&
+					end - hit >= PANCAKE_DRIVE_MS &&
 					end < till - FREED_MS &&
 					countOf(b, snap, 61) < PANCAKE
 				) {
@@ -12095,8 +12155,16 @@ class Action {
 			// (Over to him square to the line: across in a slide, not run
 			// there crabwise.)
 			// (In push steps no quicker than a man takes them - not across
-			// in a blink, back the way his first step took him.)
+			// in a blink, back the way his first step took him. Nor that step
+			// taken at all, if it takes him across past him, or away: straight
+			// over instead.)
+			const first = b.last;
 			const over = this.of(beside(snap + 800));
+			const was = this.of(first.from).a;
+			const stepTo = this.of(first.to).a;
+			if (first.t1 === fired.get(b) && (over.a - stepTo) * (stepTo - was) < 0) {
+				b.cut(first.t0);
+			}
 			const at = this.of(b.at);
 			const across = Math.abs(over.a - at.a) > Math.abs(over.d - at.d);
 			const there = Math.max(
