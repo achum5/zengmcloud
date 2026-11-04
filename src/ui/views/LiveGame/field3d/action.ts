@@ -2457,6 +2457,11 @@ const LOCK_STEP_SET_MS = 300;
 // taken.)
 const LOCK_SHIFT_FT = 1;
 const LOCK_SHIFTS = new Set<Move>(["backerReady", "safetyReady"]);
+// (Not to him till this close to the end of it (ms): no block at all -
+// still on his way in when it is over - and the two locked up drifting
+// with the return no quicker than this, ft/s.)
+const LOCK_LEAST_MS = 600;
+const LOCK_DRIFT_FPS = 4;
 // (A tackler set waiting on the man with the ball: turned with him every
 // this long, ms, if he has come round this far, radians.)
 const KEEP_STEP_MS = 300;
@@ -2692,8 +2697,16 @@ export const HERO_CAM_FT = 22;
 // than OUT_FAR across the field from it on a run, OUT_NEAR from a catch (or
 // most of the way he goes downfield, if more).
 const OUT_PAST = 1.5;
-const OUT_ON = 7;
 const OUT_MOST = 9;
+// (Pulled up over it from his pace - this fast at least, ft/s; this fast
+// off a toe tap - at this many ft/s a second, over this far, feet, at the
+// least and most; turned along the line over all of it, or if that takes
+// him too far over, over the first this much of it.)
+const OUT_LEAST_FPS = 6;
+const OUT_TOE_FPS = 8;
+const OUT_DECEL = 14;
+const OUT_EASE_FT = [3, 11] as const;
+const OUT_TURN_BY = [1, 0.7, 0.45, 0.25] as const;
 // (Into a team area on the near sideline - or this near one - no further
 // over than this: the men stood there between him and the camera.)
 const OUT_MOST_NEAR = 4.5;
@@ -7591,14 +7604,54 @@ class Action {
 			side > 0 ? Math.min(edge + most, a) : Math.max(edge - most, a);
 		// (Off a catch with his toes in, a stride or two on.)
 		const toe = l.move === "toeTap";
-		const on = toe ? OUT_ON / 2 : OUT_ON;
-		const p1 = { d: to.d + dd * on, a: over(to.a + side * da * on) };
-		const p2 = {
-			d: p1.d + Math.sign(dd || 1) * 3,
-			a: over(p1.a + side * 1.5),
+		// Slowed from his pace to a stop, turned along the line as he goes -
+		// sooner, the less room there is over it: not run into the crowd,
+		// nor stopped dead against it.
+		const v = toe
+			? OUT_TOE_FPS
+			: Math.max(
+					OUT_LEAST_FPS,
+					(dist(l.from, l.to) / Math.max(1, l.t1 - l.t0)) * 1000,
+				);
+		const far = clamp(
+			(v * v) / (2 * OUT_DECEL),
+			OUT_EASE_FT[0],
+			OUT_EASE_FT[1],
+		);
+		const T = (2 * far) / v;
+		const n = Math.max(2, Math.round((T * 1000) / STOP_STEP_MS));
+		const dt = T / n;
+		const h0 = Math.atan2(side * da, dd);
+		const h1 = dd < 0 ? Math.PI : 0;
+		const turn = Math.atan2(Math.sin(h1 - h0), Math.cos(h1 - h0));
+		const room = Math.abs(edge + side * most - to.a);
+		const pathOf = (by: number) => {
+			const out: OPt[] = [];
+			let p = to;
+			for (let k = 0; k < n; k++) {
+				const h = h0 + turn * Math.min(1, (k + 0.5) / (n * by));
+				const ft = v * (1 - (k + 0.5) / n) * dt;
+				p = { d: p.d + Math.cos(h) * ft, a: p.a + Math.sin(h) * ft };
+				out.push(p);
+			}
+			return out;
 		};
-		carrier.go(this.w(p1), down.t + 330, toe ? "jog" : "run");
-		carrier.go(this.w(p2), down.t + 330 + 520, toe ? "walk" : "jog");
+		let path = pathOf(OUT_TURN_BY[0]);
+		for (const by of OUT_TURN_BY) {
+			path = pathOf(by);
+			if (path.every((p) => side * (p.a - to.a) <= room)) {
+				break;
+			}
+		}
+		const t0 = carrier.t;
+		path.forEach((p, k) => {
+			carrier.go(
+				this.w({ d: p.d, a: over(p.a) }),
+				t0 + dt * 1000 * (k + 1),
+				gait(v * (1 - (k + 0.5) / n)),
+			);
+		});
+		const p2 = path.at(-1)!;
 		carrier.hold(
 			down.t + 2200,
 			"stand",
@@ -12621,6 +12674,20 @@ class Action {
 			x: meet.x - Math.cos(ang) * 1.3,
 			y: meet.y - Math.sin(ang) * 1.3,
 		};
+		if (tm > until - LOCK_LEAST_MS) {
+			// (Not to him before it is over: on his way in still, pulled up
+			// with the rest - see afterWhistle - and the other not set in
+			// his stance for a man who never comes.)
+			c.go(
+				cHit,
+				tm,
+				gait(
+					Math.min(vc, paceFor(dist(cAt, cHit), (tm - c.t) / 1000, cV0, cA)),
+				),
+			);
+			const run = c.last;
+			return { b, c, go: cGo, run, lock: run };
+		}
 		if (bv <= 0) {
 			// (A long wait: up watching it first, and down into his stance
 			// as the man comes - not crouched there the whole time; alive in
@@ -12660,18 +12727,24 @@ class Action {
 		// Along with the return a little, each fighting the other.
 		const end = this.of(endPt);
 		const m = this.of(meet);
-		const dd = clamp(end.d - m.d, -5, 5) * 0.4;
-		const da = clamp(end.a - m.a, -10, 10) * 0.45;
-		const shift = (p: Pt) => {
-			const o = this.of(p);
-			return this.w({ d: o.d + dd, a: o.a + da });
-		};
 		const by = carrier ? this.goneBy(carrier, meet, tm, until) : until;
 		const t1 = Math.max(
 			Math.min(until, by + LOCK_PAST_MS) +
 				LOCK_END_SPREAD_MS * countOf(b, snap, 11),
 			tm + 300,
 		);
+		let dd = clamp(end.d - m.d, -5, 5) * 0.4;
+		let da = clamp(end.a - m.a, -10, 10) * 0.45;
+		const most = (LOCK_DRIFT_FPS * (t1 - tm)) / 1000;
+		const drift = Math.hypot(dd, da);
+		if (drift > most) {
+			dd *= most / drift;
+			da *= most / drift;
+		}
+		const shift = (p: Pt) => {
+			const o = this.of(p);
+			return this.w({ d: o.d + dd, a: o.a + da });
+		};
 		c.go(shift(cHit), t1, "engage", ang + Math.PI);
 		const lock = c.last;
 		b.go(shift(bHit), t1, "drive", ang);
@@ -14959,6 +15032,10 @@ class Action {
 			(kind === "pass" || kind === "run") && last?.kind === "held"
 				? this.man(last.pid)
 				: undefined;
+		// (Gone over the sideline with it: pulled up there already - see
+		// runOut.)
+		const out =
+			this.outAt && last?.kind === "held" ? this.man(last.pid) : undefined;
 		// (Since when he has stood, his arms to himself.)
 		const idleFrom = (m: Actor) => {
 			const legs = m.legs;
@@ -15051,7 +15128,7 @@ class Action {
 					m.chase(to, by, fps, gait(fps));
 				}
 			}
-			if (m.t > t + 400) {
+			if (m.t > t + 400 && m !== out) {
 				// (Nothing left for him but running on - a route, after a man
 				// who is down: pulled up as he sees it is over.)
 				// (Each as quick to see it as he is: no dice thrown for it,

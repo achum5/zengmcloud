@@ -1573,6 +1573,80 @@ describe("after the whistle", () => {
 		assert.isAbove(breaks, 2);
 		assert.deepEqual(out, []);
 	}, 60_000);
+
+	test("no block on a kick met after it is over, and none flung along at a run", () => {
+		const out: string[] = [];
+		let locks = 0;
+		for (const game of games) {
+			const tl = stage(game);
+			tl.plays.forEach((play) => {
+				if (play.kind !== "punt" && play.kind !== "kickoff") {
+					return;
+				}
+				for (const part of play.parts) {
+					for (const l of part.legs) {
+						if (
+							l.move !== "engage" ||
+							l.t0 < play.snap ||
+							l.t0 > play.t1 ||
+							l.t1 - l.t0 < 80
+						) {
+							continue;
+						}
+						const pace =
+							Math.hypot(l.to.x - l.from.x, l.to.y - l.from.y) /
+							((l.t1 - l.t0) / 1000);
+						locks += 1;
+						if (l.t0 >= play.whistle && pace >= 8) {
+							out.push(
+								`play ${play.i} ${part.role} ${pace.toFixed(1)} ft/s, ${Math.round(l.t0 - play.whistle)} ms after`,
+							);
+						}
+					}
+				}
+			});
+		}
+		assert.isAbove(locks, 20);
+		assert.deepEqual(out, []);
+	}, 60_000);
+
+	test("out of bounds with it, slowed along the line - not stopped dead at the edge", () => {
+		const out: string[] = [];
+		let outs = 0;
+		for (const game of games) {
+			const tl = stage(game);
+			tl.plays.forEach((play) => {
+				const held = play.ball.findLast((b) => b.t0 <= play.whistle);
+				const part = play.parts.find(
+					(p) => held?.kind === "held" && p.pid === held.pid,
+				);
+				if (!part) {
+					return;
+				}
+				const at = legAt(part, play.whistle).to;
+				if (at.y > 0 && at.y < FIELD_W) {
+					return;
+				}
+				outs += 1;
+				const pace = (l: Leg) =>
+					Math.hypot(l.to.x - l.from.x, l.to.y - l.from.y) /
+					Math.max(0.001, (l.t1 - l.t0) / 1000);
+				const after = part.legs.filter(
+					(l) => l.t0 >= play.whistle && l.t0 < play.whistle + 2000,
+				);
+				after.forEach((l, k) => {
+					const next = after[k + 1];
+					if (next && pace(l) - pace(next) > 7) {
+						out.push(
+							`play ${play.i} ${l.move} ${pace(l).toFixed(1)} > ${next.move} ${pace(next).toFixed(1)} ft/s`,
+						);
+					}
+				});
+			});
+		}
+		assert.isAbove(outs, 2);
+		assert.deepEqual(out, []);
+	}, 60_000);
 });
 
 describe("the game over", () => {
