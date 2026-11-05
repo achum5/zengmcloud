@@ -852,9 +852,15 @@ const tryParts = (tl: FieldTimeline, p: Play, made: boolean) => {
 								(l) =>
 									l.t0 >= kick.t1 - 300 &&
 									l.t0 < p.whistle + 3000 &&
-									(moveKindOf(l.move) === "act" || l.arms),
+									(moveKindOf(l.move) === "act" ||
+										l.arms ||
+										l.move === "onHips" ||
+										l.move === "easyHips" ||
+										l.move === "takeKnee"),
 							)
-							.map((l) => l.arms ?? l.move),
+							.map((l) =>
+								l.move === "easyHips" ? "onHips" : (l.arms ?? l.move),
+							),
 					),
 				]
 			: [];

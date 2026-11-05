@@ -210,13 +210,18 @@ how high over the bar, how it bent, and the kicker and the holder after it.
 Each kicker's kicks bend his own way - a hook or a fade - more the longer
 the kick, and still go through (or by) where they were going.
 
-Now (48 kicks): 38 different combinations. Down the middle 15, inside the
-upright 17, wide 13, short 3. Bending left 19, right 17, straight 12.
+A kick missed (a try too), the kicker as a rule shows it his own way: hands
+on his helmet, or on his hips with his head down, or down on a knee a
+moment - pulled up first, facing the posts.
+
+Now (48 kicks): 39 different combinations. Down the middle 15, inside the
+upright 17, wide 12, short 4. Bending left 21, right 18, straight 9. The
+kicker after a miss: hands on his helmet 7, on a knee 5, on his hips 3.
 
 A two-point try is a run or a pass from the 2, so it is in those lines.
 
-To do: a blocked kick (the sim has none in these games), the kicker's look
-after a miss.
+To do: a blocked kick (the sim has none in these games), the holder over to
+the kicker after a miss.
 
 ## 10. Interception
 

@@ -18043,14 +18043,30 @@ class Action {
 				}
 			}
 		}
-		// (The kicker, wide or short: hands on his helmet now and then - late
-		// in a close game, always: his moment, the camera in on it.)
+		// (The kicker, wide or short, as a rule - late in a close game,
+		// always: his moment, the camera in on it - his own way with it, see
+		// KICKER_LOOK: hands on his helmet, or on his hips with his head
+		// down, or down on a knee a moment.)
 		const blown = !made && fg && this.crunch;
-		if (!made && fg && (r() < KICKER_RUE || blown)) {
+		if (!made && (r() < KICKER_RUE || blown)) {
 			const seen = Math.max(k.t, crossT + KICK_SEEN_MS);
+			const look = this.toward(k.at, posts);
 			k.cut(seen);
-			k.hold(seen, "stand", this.toward(k.at, posts));
-			k.act("handsOnHelmet", seen + RUE_HELMET_MS + r() * 400);
+			k.hold(seen, "stand", look);
+			const u = countOf(k, this.input.snap, 130);
+			if (u < KICKER_LOOK[0]) {
+				k.act("handsOnHelmet", seen + RUE_HELMET_MS + r() * 400);
+			} else {
+				// (Pulled up first, off his last steps.)
+				k.hold(seen + KICKER_STOP_MS, "stand", look);
+				const hips = u < KICKER_LOOK[1];
+				k.hold(
+					k.t + (hips ? KICKER_HIPS_MS : KICKER_KNEE_MS) * (0.8 + 0.4 * u),
+					hips ? "onHips" : "takeKnee",
+					look,
+				);
+				k.hold(k.t + KICKER_UP_MS, "stand", look);
+			}
 			if (blown) {
 				this.party = { from: seen, at: k.posAt(seen), hero: k.pid };
 				this.until = Math.max(this.until, k.t);
@@ -20601,7 +20617,17 @@ const KICK_GLAD = 0.35;
 const TRY_GLAD = 0.15;
 const MISS_GLAD = 0.4;
 const KICK_RUE = 0.2;
-const KICKER_RUE = 0.5;
+const KICKER_RUE = 0.8;
+// The kicker's way with a miss (see fieldGoal), his own count: hands on his
+// helmet under the first share, on his hips (his head down) under the
+// second, else down on a knee: either pulled up first this long after he
+// sees it (ms), then there so long (ms, give or take a fifth); up out of
+// either over this long (ms).
+const KICKER_LOOK = [0.45, 0.75] as const;
+const KICKER_STOP_MS = 350;
+const KICKER_HIPS_MS = 2200;
+const KICKER_KNEE_MS = 1500;
+const KICKER_UP_MS = 500;
 const KICK_SEEN_MS = 300;
 const FIVE_MS = 800;
 // (Squared up to each other this long first, the later there of the two -
