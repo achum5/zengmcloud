@@ -12,7 +12,7 @@
 //     npx vitest run --project football tools/field3d-tape/variety.football.test.ts
 //
 // Lines: run (a carry from scrimmage), catch (a completed pass), incomplete
-// (a pass not caught), punt, kickoff, flag.
+// (a pass not caught), punt, kickoff, flag, sack.
 // Games: files from realGames.football.test.ts. VARIETY_BY=throw,catch adds
 // how those parts go together, just them.
 
@@ -647,6 +647,92 @@ const flagParts = (tl: FieldTimeline, p: Play) => {
 	};
 };
 
+// A sack: how long he had, what the quarterback did with it (stood in
+// the pocket, stepped up, drifted, slid, got out of it), where the man who
+// got there came at him from, how he was brought down, and the
+// celebration.
+const PARTY = new Set([
+	"flex",
+	"fistPump",
+	"leap",
+	"griddy",
+	"pointSky",
+	"kneelPoint",
+	"chestBump",
+	"highFive",
+	"taunt",
+]);
+const sackParts = (tl: FieldTimeline, p: Play) => {
+	const qb = p.parts.find((q) => q.role === "QB" && q.team === p.offense);
+	if (!qb) {
+		return undefined;
+	}
+	const w = p.whistle;
+	const a = posOf(tl, qb.pid, w - 1200);
+	const b = posOf(tl, qb.pid, w - 100);
+	if (!a || !b) {
+		return undefined;
+	}
+	const moved = dist(a, b);
+	const fwd = ((b.x - a.x) * p.dir) / (moved || 1);
+	const qbDid =
+		moved < 3
+			? "stood in the pocket"
+			: moved > 12
+				? "out of the pocket"
+				: fwd > 0.5
+					? "stepped up"
+					: fwd < -0.5
+						? "drifted back"
+						: "slid aside";
+	// (The man of theirs nearest him as it ends: from which side of the
+	// way he faced.)
+	const faced = momentAt(tl, w - 300).players.find((st) => st.id === qb.pid);
+	const near = p.parts
+		.filter((q) => q.team !== p.offense)
+		.map((q) => ({ q, at: posOf(tl, q.pid, w - 300) }))
+		.filter((x) => x.at)
+		.sort((x, y) => dist(x.at!, b) - dist(y.at!, b))[0];
+	let from = "-";
+	if (near && faced) {
+		const ang = Math.atan2(near.at!.y - b.y, near.at!.x - b.x) - faced.yaw;
+		const c = Math.cos(ang);
+		from = c > 0.5 ? "head on" : c < -0.3 ? "from behind" : "from the side";
+	}
+	const party =
+		[
+			...new Set(
+				p.parts.flatMap((q) =>
+					q.team === p.offense
+						? []
+						: q.legs
+								.filter((l) => PARTY.has(l.move) && l.t0 >= w - 200)
+								.map((l) => l.move),
+				),
+			),
+		]
+			.sort()
+			.join("+") || "none";
+	const rest = endParts(tl, p, qb, w - 1500);
+	return {
+		pid: near?.q.pid ?? 0,
+		parts: {
+			time: bucket(
+				(w - p.snap) / 1000,
+				[2.8, 3.4],
+				["under 2.8 s", "2.8-3.4 s", "over 3.4 s"],
+			),
+			qb: qbDid,
+			from,
+			by: near ? near.q.role : "-",
+			evades: rest.evades!,
+			end: rest.end!,
+			tacklers: rest.tacklers!,
+			party,
+		},
+	};
+};
+
 test.skipIf(games.length === 0)(
 	"football variety of one line",
 	() => {
@@ -683,7 +769,9 @@ test.skipIf(games.length === 0)(
 										? kickParts(tl, p)
 										: line === "flag" && p.flags.length > 0
 											? flagParts(tl, p)
-											: undefined;
+											: line === "sack" && evs.includes("sack")
+												? sackParts(tl, p)
+												: undefined;
 				if (got) {
 					all.push({ pid: `${tag}:${got.pid}`, parts: got.parts });
 				}

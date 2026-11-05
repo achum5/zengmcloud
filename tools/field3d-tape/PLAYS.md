@@ -20,7 +20,7 @@ Combinations: distinct whole combinations of the variety tool's parts.
 | 4   | Punt and return (`puntTeam`, `punt`, `puntReturn`) |       10 | `punt`       | working |
 | 5   | Kickoff and return (`kickoff`, `kickoffReturn`)    |        7 | `kickoff`    | working |
 | 6   | Flags (`flag`, `penalty`)                          |       13 | `flag`       | working |
-| 7   | Sack (`sack`)                                      |        4 | -            | todo    |
+| 7   | Sack (`sack`)                                      |        4 | `sack`       | working |
 | 8   | Extra point, two-point try                         |        4 | -            | todo    |
 | 9   | Field goal (`fieldGoalAttempt`, `fieldGoal`)       |        2 | -            | todo    |
 | 10  | Interception and return                            |        2 | -            | todo    |
@@ -144,6 +144,27 @@ Now (115 flags): 63 different combinations. Thrown by the umpire 51 (from
 to the referee 22, argued 35.
 
 To do: the yards walked off after the call.
+
+## 7. Sack
+
+Parts: how long he had, what the quarterback did with it (stood in the
+pocket, stepped up, drifted back, slid aside, got out of it), where the man
+who got there came at him from, how he was brought down and by how many,
+and the celebration.
+
+On his own count the quarterback now and then drops past where they get
+him and steps up into it, or - with the room behind the line - gets out of
+the pocket away from the man coming and is run down out there. The man who
+got the sack celebrates his own way (a flex, a fist pump, a leap, a dance,
+a finger to the sky), his mates in on it.
+
+Now (38 sacks): 36 different combinations. Drifted back 15, stepped up 8,
+slid aside 7, stood 5, out of the pocket 3. Celebrations 13 ways (from 6,
+every one a flex).
+
+To do: the quarterback ducking or spinning away from the first man and
+caught by the next (no sack has an evade), more from the blind side (2 of
+38).
 
 ## Side notes
 

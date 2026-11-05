@@ -3220,6 +3220,25 @@ const POINT_LEAD = 300;
 const TAKEAWAY = 0.75;
 // A sack: the man who made it up and into it this often.
 const SACK_PARTY = 0.7;
+// The man who got the sack, up off him: a flex, a fist pump, a leap, a
+// dance or a finger to the sky - up to each of these shares of his count
+// (the last, the rest).
+const SACK_WAYS = [0.35, 0.55, 0.7, 0.85] as const;
+// The quarterback sacked, on his own count: out of the pocket this often -
+// with it this far behind the line at least (feet), the room back there
+// for it - this far across (feet), away over this long (ms); or else back
+// past where they get him and stepping up into it this often, this far
+// (feet).
+const SACK_OUT = 0.2;
+const SACK_OUT_LEAST = 18;
+const SACK_OUT_FT = [14, 24] as const;
+const SACK_OUT_MS = 1500;
+const SACK_STEP_UP = 0.35;
+const SACK_STEP_FT = [3, 6] as const;
+const sackOut = (qb: Actor, snap: number, sackD: number) =>
+	sackD <= -SACK_OUT_LEAST && countOf(qb, snap, 105) < SACK_OUT;
+const sackStepUp = (qb: Actor, snap: number, sackD: number) =>
+	!sackOut(qb, snap, sackD) && countOf(qb, snap, 107) < SACK_STEP_UP;
 // A man in his moment after a big play - a sack, a stop, a takeaway, a
 // score - played out to the crowd on the press box side, more or less:
 // give or take up to five times this (radians), his own way of standing
@@ -7367,7 +7386,16 @@ class Action {
 				? SLIP_DROP_GUN
 				: SLIP_DROP
 			: sacked
-				? clamp(qbStart.d - sackD - 2 - r() * 4, 0, 24)
+				? sackStepUp(qb, snap, sackD)
+					? clamp(
+							qbStart.d -
+								sackD +
+								SACK_STEP_FT[0] +
+								(SACK_STEP_FT[1] - SACK_STEP_FT[0]) * countOf(qb, snap, 108),
+							0,
+							24,
+						)
+					: clamp(qbStart.d - sackD - 2 - r() * 4, 0, 24)
 				: !thrown
 					? gun
 						? 4
@@ -11220,19 +11248,46 @@ class Action {
 		runners: Actor[] = [],
 	) {
 		const r = this.r;
+		const { snap } = this.input;
+		const from = this.of(qb.at);
+		const near = (r() - 0.5) * 14;
+		// (Now and then, on his own count - and with the room behind the
+		// line for it - out of the pocket away from the man coming, and run
+		// down out there: see SACK_OUT.)
+		const side = sacker
+			? Math.sign(from.a - this.of(sacker.posAt(snap)).a) || 1
+			: from.a > 0
+				? -1
+				: 1;
+		const out = sackOut(qb, snap, sackD) && qb.t <= t - SACK_OUT_MS - 300;
 		const at = this.w({
 			d: sackD,
 			a: clamp(
-				this.of(qb.at).a + (r() - 0.5) * 14,
+				out
+					? from.a +
+							side *
+								(SACK_OUT_FT[0] +
+									(SACK_OUT_FT[1] - SACK_OUT_FT[0]) * countOf(qb, snap, 106))
+					: from.a + near,
 				this.bounds.left + 6,
 				this.bounds.right - 6,
 			),
 		});
-		// Feeling it, he tries to get away from it - eyes still downfield,
-		// shuffling, slow as it is (see faced): not walked into it.
-		this.scan(qb, undefined, this.ahead, t - 800, runners);
-		qb.hold(t - 800, "pocket", this.ahead);
-		qb.go(at, t, undefined, this.ahead);
+		if (out) {
+			// Out of it: the last of his look downfield, a moment in the
+			// pocket feeling it, and away - running, his eyes still out
+			// there.
+			this.scan(qb, undefined, this.ahead, t - SACK_OUT_MS - 300, runners);
+			qb.hold(t - SACK_OUT_MS, "pocket", this.ahead);
+			qb.go(at, t);
+		} else {
+			// Feeling it, he tries to get away from it - eyes still
+			// downfield, shuffling, slow as it is (see faced): not walked
+			// into it. (Back far enough before it, stepping up into it.)
+			this.scan(qb, undefined, this.ahead, t - 800, runners);
+			qb.hold(t - 800, "pocket", this.ahead);
+			qb.go(at, t, undefined, this.ahead);
+		}
 		this.endCarry(
 			i,
 			qb,
@@ -17063,7 +17118,20 @@ class Action {
 					sacker.cut(up.t1);
 				}
 				this.party = { from: sacker.t, at: sacker.at, hero: sacker.pid };
-				sacker.act("flex", sacker.t + 1100, playedOut(sacker));
+				// (His own way of it, on his own count - see SACK_WAYS.)
+				const u = countOf(sacker, this.input.snap, 104);
+				const way = playedOut(sacker);
+				if (u < SACK_WAYS[0]) {
+					sacker.act("flex", sacker.t + 1100, way);
+				} else if (u < SACK_WAYS[1]) {
+					sacker.act("fistPump", sacker.t + 1200, way);
+				} else if (u < SACK_WAYS[2]) {
+					sacker.act("leap", sacker.t + 800, way);
+				} else if (u < SACK_WAYS[3]) {
+					sacker.act("griddy", sacker.t + GRIDDY_MS, way);
+				} else {
+					sacker.hold(sacker.t + 1500, "pointSky", way);
+				}
 				this.until = sacker.t;
 				sacker.hold(sacker.t + 400, "stand");
 				this.mob.add(sacker.pid);
