@@ -13,7 +13,8 @@
 // - moonwalk: running backward in a gait that faces where it goes
 // - glide: sliding along without stepping
 // - fastwalk / fastjog: a walk quicker than 10 ft/s, a jog than 18
-// - statue: in play, not a step or a turn, the same move, 3 s on end
+// - statue: not a step or a turn, the same still move (not one that plays
+//   through, a look round, say), 3 s on end
 //
 // Skipped unless asked:
 //
@@ -274,7 +275,8 @@ test.skipIf(!process.env.TAPE_GAMES)(
 							t - r0.t >= 3000 &&
 							t - r0.t < 3000 + STEP &&
 							!HELD.test(st.move) &&
-							kind !== "loop"
+							kind !== "loop" &&
+							kind !== "act"
 						) {
 							flag(t, "statue", st.id, `${who} stock still 3 s (${st.move})`);
 						}
