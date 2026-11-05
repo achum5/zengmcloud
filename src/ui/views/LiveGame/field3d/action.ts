@@ -108,6 +108,9 @@ export type ActInput = {
 	// the director's tensionOf): the big moments let out more.
 	tense?: number;
 	r: () => number;
+	// The play's own number, 0 to 1, for each man's counts on it (see
+	// countOf).
+	key: number;
 };
 
 export type Acted = {
@@ -3777,10 +3780,10 @@ const SLIP_ROUND = 0.8;
 const SLIP_ROUND_ON = 0.3;
 const SLIP_OVER = 3;
 const SLIP_CLEAR = 3.5;
-const sackOut = (qb: Actor, snap: number, sackD: number) =>
-	sackD <= -SACK_OUT_LEAST && countOf(qb, snap, 105) < SACK_OUT;
-const sackStepUp = (qb: Actor, snap: number, sackD: number) =>
-	!sackOut(qb, snap, sackD) && countOf(qb, snap, 107) < SACK_STEP_UP;
+const sackOut = (qb: Actor, key: number, sackD: number) =>
+	sackD <= -SACK_OUT_LEAST && countOf(qb, key, 105) < SACK_OUT;
+const sackStepUp = (qb: Actor, key: number, sackD: number) =>
+	!sackOut(qb, key, sackD) && countOf(qb, key, 107) < SACK_STEP_UP;
 // A man in his moment after a big play - a sack, a stop, a takeaway, a
 // score - played out to the crowd on the press box side, more or less:
 // give or take up to five times this (radians), his own way of standing
@@ -5922,7 +5925,7 @@ class Action {
 			}
 			m.cut(lame);
 			m.easeOff(HURT_LAME_PULL_FT);
-			const back = countOf(m, snap, 41) < HURT_LAME_BACK;
+			const back = countOf(m, this.input.key, 41) < HURT_LAME_BACK;
 			m.act(back ? "tackledBack" : "tackled", m.t + HURT_LAME_FALL_MS);
 			m.hold(
 				Math.max(m.t, this.whistle) + HURT_LAME_PAST_MS,
@@ -6078,10 +6081,10 @@ class Action {
 					yaw = y;
 					tw = tb;
 				};
-				let side = countOf(b, snap, 74) < 0.5 ? -1 : 1;
+				let side = countOf(b, this.input.key, 74) < 0.5 ? -1 : 1;
 				let t = t0 + SCAN_FIRST_MS;
 				for (let k = 0; t + SCAN_STEP_MS[0] <= t1; k++) {
-					const h = countOf(b, snap, 75 + (k % 4));
+					const h = countOf(b, this.input.key, 75 + (k % 4));
 					const o = baseAt(t + SCAN_GO_MS);
 					step(
 						this.w({
@@ -7678,7 +7681,8 @@ class Action {
 			return;
 		}
 		const s = this.of(set.to);
-		const t0 = snap - OFFSIDE_MS - OFFSIDE_SPREAD_MS * countOf(who, snap, 44);
+		const t0 =
+			snap - OFFSIDE_MS - OFFSIDE_SPREAD_MS * countOf(who, this.input.key, 44);
 		if (s.d > OFFSIDE_NEAR || t0 - set.t0 < OFFSIDE_SET_MS) {
 			return;
 		}
@@ -7951,7 +7955,7 @@ class Action {
 		if (
 			!hit ||
 			hit.t1 > t1 ||
-			countOf(m, this.input.snap, 22) >=
+			countOf(m, this.input.key, 22) >=
 				COVER_ODDS[0] + COVER_ODDS[1] * (m.flair.secure ?? 0)
 		) {
 			return undefined;
@@ -8042,15 +8046,17 @@ class Action {
 		).filter(
 			([b, c]) =>
 				Math.abs(this.of(b.at).a - this.of(c.at).a) < KNEEL_PAIR_FT &&
-				countOf(b, snap, 112) < KNEEL_LEAN,
+				countOf(b, this.input.key, 112) < KNEEL_LEAN,
 		);
 		for (const [b, c] of pairs) {
-			const go = snap + KNEEL_OFF_MS + countOf(c, snap, 112) * KNEEL_OFF_MORE;
+			const go =
+				snap + KNEEL_OFF_MS + countOf(c, this.input.key, 112) * KNEEL_OFF_MORE;
 			const p = this.of(b.at);
 			const q = this.of(c.at);
 			const mid = (p.d + q.d) / 2;
 			const a = (p.a + q.a) / 2;
-			const till = this.whistle - 100 + countOf(b, snap, 113) * KNEEL_LEAN_MORE;
+			const till =
+				this.whistle - 100 + countOf(b, this.input.key, 113) * KNEEL_LEAN_MORE;
 			b.hold(go);
 			c.hold(go);
 			b.go(
@@ -8146,7 +8152,7 @@ class Action {
 			!!picker &&
 			typeof pickYds === "number" &&
 			pickYds <= PICK_BAT_YDS &&
-			countOf(picker, snap, 137) < PICK_BAT;
+			countOf(picker, this.input.key, 137) < PICK_BAT;
 		const rushers = this.d.filter(
 			(m) =>
 				(DL.has(m.role) || m === sacker) &&
@@ -8213,7 +8219,7 @@ class Action {
 			(first === cmpI
 				? gain - airYds >= SLUGGO_YAC || events[first]!.td === true
 				: first !== intI && this.statPids("defPssDef").length === 0) &&
-			countOf(target, snap, 146) < SLUGGO
+			countOf(target, this.input.key, 146) < SLUGGO
 				? "sluggo"
 				: routed;
 		const slip = targetName === "slip";
@@ -8264,12 +8270,13 @@ class Action {
 				? SLIP_DROP_GUN
 				: SLIP_DROP
 			: sacked
-				? sackStepUp(qb, snap, sackD)
+				? sackStepUp(qb, this.input.key, sackD)
 					? clamp(
 							qbStart.d -
 								sackD +
 								SACK_STEP_FT[0] +
-								(SACK_STEP_FT[1] - SACK_STEP_FT[0]) * countOf(qb, snap, 108),
+								(SACK_STEP_FT[1] - SACK_STEP_FT[0]) *
+									countOf(qb, this.input.key, 108),
 							0,
 							24,
 						)
@@ -8680,7 +8687,7 @@ class Action {
 			!pressed &&
 			tr?.name !== "backShoulder" &&
 			!jab &&
-			countOf(qb, snap, 147) < (twoHigh ? ZONE_TWO : ZONE_ONE);
+			countOf(qb, this.input.key, 147) < (twoHigh ? ZONE_TWO : ZONE_ONE);
 		this.cover(
 			coverage,
 			runners,
@@ -8790,7 +8797,6 @@ class Action {
 	// till the whistle. (The punt rush the same, once it is kicked and
 	// nobody is bringing it back.)
 	downfield(blockers: Actor[]) {
-		const { snap } = this.input;
 		const end = this.ballAt(this.whistle);
 		const men = blockers.filter((b) => !this.done.has(b.pid));
 		if (!end || men.length === 0) {
@@ -8812,10 +8818,11 @@ class Action {
 			const from =
 				b.t +
 				DOWNFIELD_REACT_MS[0] +
-				(DOWNFIELD_REACT_MS[1] - DOWNFIELD_REACT_MS[0]) * countOf(b, snap, 23);
+				(DOWNFIELD_REACT_MS[1] - DOWNFIELD_REACT_MS[0]) *
+					countOf(b, this.input.key, 23);
 			const fps =
 				DOWNFIELD_FPS[0] +
-				(DOWNFIELD_FPS[1] - DOWNFIELD_FPS[0]) * countOf(b, snap, 24);
+				(DOWNFIELD_FPS[1] - DOWNFIELD_FPS[0]) * countOf(b, this.input.key, 24);
 			const go = Math.min(
 				far - DOWNFIELD_SHORT_FT,
 				(fps * (this.whistle - from)) / 1000,
@@ -8913,11 +8920,11 @@ class Action {
 		until: number,
 		runners: Actor[],
 	) {
-		const snap = this.input.snap;
 		const off = (a: number, b: number) =>
 			Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
 		for (let k = 0; k < SCAN_MOST; k++) {
-			const hold = SCAN_MS[0] + countOf(qb, snap, 16 + k) * SCAN_MS[1];
+			const hold =
+				SCAN_MS[0] + countOf(qb, this.input.key, 16 + k) * SCAN_MS[1];
 			if (until - qb.t < hold + SCAN_LAST_MS) {
 				return;
 			}
@@ -8935,7 +8942,8 @@ class Action {
 			if (ways.length === 0) {
 				return;
 			}
-			const y = ways[Math.floor(countOf(qb, snap, 18 + k) * ways.length)]!;
+			const y =
+				ways[Math.floor(countOf(qb, this.input.key, 18 + k) * ways.length)]!;
 			qb.hold(qb.t + hold, "pocket", y + SET_OPEN);
 		}
 	}
@@ -9616,7 +9624,7 @@ class Action {
 			.map((m) => ({ m, far: dist(m.posAt(catchAt), catchPt) }))
 			.filter((x) => x.far < CONTEST_FT && x.far >= CONTEST_LEAST_FT)
 			.sort((a, b) => a.far - b.far)[0];
-		if (!near || countOf(near.m, this.input.snap, 82) >= CONTEST) {
+		if (!near || countOf(near.m, this.input.key, 82) >= CONTEST) {
 			return;
 		}
 		const { m, far } = near;
@@ -9656,11 +9664,10 @@ class Action {
 	// man going up for it (see leapFor: where he goes up from, and on
 	// through it to). False, if there is no way up for him clear of him.
 	upWith(m: Actor, rec: Actor, catchPt: Pt, catchAt: number): boolean {
-		const { snap } = this.input;
 		const t0 =
 			catchAt -
 			CONTEST_UP_MS / 2 +
-			(countOf(m, snap, 123) - 0.5) * 2 * CONTEST_UP_SPREAD_MS;
+			(countOf(m, this.input.key, 123) - 0.5) * 2 * CONTEST_UP_SPREAD_MS;
 		const r0 = catchAt - LEAP_MS / 2;
 		const rFrom = rec.posAt(r0);
 		const rFar = dist(rFrom, catchPt);
@@ -9848,7 +9855,7 @@ class Action {
 			hands === undefined
 				? CALL_ODDS
 				: CALL_LOW + CALL_SPAN * ((hands + 1) / 2);
-		if (!open(t0) || !open(up) || countOf(rec, snap, 12) >= odds) {
+		if (!open(t0) || !open(up) || countOf(rec, this.input.key, 12) >= odds) {
 			return;
 		}
 		this.reaches.push({ m: rec, move: "callFor", t0, t1 });
@@ -9923,8 +9930,7 @@ class Action {
 	// The man it was for, on his own count this often (see countOf): pulled
 	// up, round to the quarterback, and his palms up at him over it.
 	palmsUp(rec: Actor, qb: Actor, share: number) {
-		const { snap } = this.input;
-		if (countOf(rec, snap, 129) >= share) {
+		if (countOf(rec, this.input.key, 129) >= share) {
 			return;
 		}
 		this.slowUp(rec);
@@ -10309,8 +10315,7 @@ class Action {
 			.sort((a, b) => a.t - b.t)[0];
 		if (
 			!m ||
-			(rated &&
-				countOf(m.c, this.input.snap, 142) * MISSED_MOST > missable(m.c))
+			(rated && countOf(m.c, this.input.key, 142) * MISSED_MOST > missable(m.c))
 		) {
 			return t;
 		}
@@ -11896,7 +11901,6 @@ class Action {
 		bat?: Bat,
 	) {
 		const r = this.r;
-		const { snap } = this.input;
 		const breakup = this.man(this.statPids("defPssDef")[0]);
 		const ground = catchAt + INC_DROP_MS;
 		// (Where it gets to: out in front of him the way it came, at his
@@ -11920,7 +11924,7 @@ class Action {
 		let dropPeak = 0.8;
 		let hopPeak = 1.6;
 		let away = false;
-		const u = countOf(rec, this.input.snap, 83);
+		const u = countOf(rec, this.input.key, 83);
 		const throwFt = thrown?.kind === "fly" ? dist(thrown.from, catchPt) : 0;
 		const pace =
 			thrown?.kind === "fly"
@@ -11941,7 +11945,7 @@ class Action {
 				u < INC_DROP + INC_DIVE ||
 				shortOne ||
 				thrown?.kind !== "fly" ||
-				countOf(rec, snap, 136) >= INC_BEHIND
+				countOf(rec, this.input.key, 136) >= INC_BEHIND
 			) {
 				return undefined;
 			}
@@ -11984,31 +11988,33 @@ class Action {
 			at0 = bat.t;
 			const pop =
 				LINE_BAT_POP[0] +
-				(LINE_BAT_POP[1] - LINE_BAT_POP[0]) * countOf(bat.m, snap, 118);
+				(LINE_BAT_POP[1] - LINE_BAT_POP[0]) *
+					countOf(bat.m, this.input.key, 118);
 			// (Down under G - see the fly's 4 * peak * u * (1 - u).)
 			groundAt = at0 + Math.sqrt((8 * pop) / G) * 1000;
 			const far =
 				LINE_BAT_FT[0] +
-				(LINE_BAT_FT[1] - LINE_BAT_FT[0]) * countOf(bat.m, snap, 119);
+				(LINE_BAT_FT[1] - LINE_BAT_FT[0]) * countOf(bat.m, this.input.key, 119);
 			lands = this.dropWay(
 				bat.at,
 				at0,
 				far,
 				this.toward(bat.at, thrown.from) +
-					(countOf(bat.m, snap, 120) - 0.5) * 2 * LINE_BAT_TURN,
+					(countOf(bat.m, this.input.key, 120) - 0.5) * 2 * LINE_BAT_TURN,
 			);
 			k = LINE_BAT_AIR;
 			dropPeak = pop;
 			hopPeak = 1;
 			batSeen = at0 + LINE_BAT_SEEN_MS[0];
-			const seen = batSeen + LINE_BAT_SEEN_MS[1] * countOf(rec, snap, 121);
+			const seen =
+				batSeen + LINE_BAT_SEEN_MS[1] * countOf(rec, this.input.key, 121);
 			if (rec.t > seen) {
 				rec.cut(seen);
 				rec.easeOff(EASE_OFF_FT);
 			}
 			const m = bat.m;
 			m.hold(m.t + 150, "stand", this.toward(m.at, lands));
-			if (countOf(m, snap, 122) < WAVE_OFF) {
+			if (countOf(m, this.input.key, 122) < WAVE_OFF) {
 				m.act("sigWave", m.t + WAVE_MS, this.toward(m.at, qb.at));
 			}
 		} else if (breakup && coverage.includes(breakup)) {
@@ -12057,7 +12063,7 @@ class Action {
 		} else if (
 			pressed &&
 			thrown?.kind === "fly" &&
-			countOf(rec, this.input.snap, 84) < AWAY
+			countOf(rec, this.input.key, 84) < AWAY
 		) {
 			// Thrown away: nobody's ball, high over the man it went to and
 			// down well past him - out of bounds, if the sideline comes
@@ -12084,7 +12090,7 @@ class Action {
 			const fps = pace * AWAY_KEEP;
 			const past0 =
 				AWAY_PAST[0] +
-				(AWAY_PAST[1] - AWAY_PAST[0]) * countOf(rec, this.input.snap, 85);
+				(AWAY_PAST[1] - AWAY_PAST[0]) * countOf(rec, this.input.key, 85);
 			const spotFor = (turn: number, longer: number) => {
 				const ud = Math.cos(way + turn);
 				const ua = Math.sin(way + turn);
@@ -12299,7 +12305,7 @@ class Action {
 		for (const m of coverage) {
 			const seen =
 				batSeen !== undefined
-					? batSeen + LINE_BAT_SEEN_MS[1] * countOf(m, snap, 121)
+					? batSeen + LINE_BAT_SEEN_MS[1] * countOf(m, this.input.key, 121)
 					: groundAt + DEAD_SEEN_MS[0] + r() * DEAD_SEEN_MS[1];
 			const l = m.legs.findLast((x) => x.t0 < seen);
 			if (
@@ -12425,14 +12431,13 @@ class Action {
 			this.man(this.statPids("defInt")[0]) ??
 			this.nearest(coverage, catchPt, 1)[0];
 		this.at.set(i, catchAt);
-		const { snap } = this.input;
 		if (bat) {
 			// (Knocked up at the line: the man it was meant for pulled up once
 			// he sees it go up - see LINE_BAT_SEEN_MS.)
 			const seen =
 				bat.t +
 				LINE_BAT_SEEN_MS[0] +
-				LINE_BAT_SEEN_MS[1] * countOf(rec, snap, 121);
+				LINE_BAT_SEEN_MS[1] * countOf(rec, this.input.key, 121);
 			if (rec.t > seen) {
 				rec.cut(seen);
 				rec.easeOff(EASE_OFF_FT);
@@ -12456,7 +12461,7 @@ class Action {
 		// him and away.
 		const thrown = this.ball.at(-1);
 		const long = thrown?.kind === "fly" ? dist(thrown.from, thrown.to) : 0;
-		const u = countOf(picker, snap, 111);
+		const u = countOf(picker, this.input.key, 111);
 		const recAt = rec.posAt(catchAt);
 		const tip =
 			!bat &&
@@ -12509,7 +12514,8 @@ class Action {
 			thrown.to = bat.at;
 			const pop =
 				PICK_BAT_POP[0] +
-				(PICK_BAT_POP[1] - PICK_BAT_POP[0]) * countOf(picker, snap, 138);
+				(PICK_BAT_POP[1] - PICK_BAT_POP[0]) *
+					countOf(picker, this.input.key, 138);
 			// (Down under G - see the fly's 4 * peak * u * (1 - u).)
 			gotAt = bat.t + Math.sqrt((8 * pop) / G) * 1000;
 			if (self) {
@@ -12517,7 +12523,7 @@ class Action {
 				const ft =
 					PICK_BAT_SELF_FT[0] +
 					(PICK_BAT_SELF_FT[1] - PICK_BAT_SELF_FT[0]) *
-						countOf(picker, snap, 139);
+						countOf(picker, this.input.key, 139);
 				gotPt = {
 					x: picker.at.x + Math.cos(on) * ft,
 					y: picker.at.y + Math.sin(on) * ft,
@@ -12664,7 +12670,7 @@ class Action {
 				m.t < t - WITH_IT_LEAST_MS
 			) {
 				const ring =
-					WITH_IT_FT[0] + WITH_IT_FT[1] * countOf(m, this.input.snap, 21);
+					WITH_IT_FT[0] + WITH_IT_FT[1] * countOf(m, this.input.key, 21);
 				const far = dist(m.at, pt);
 				const by = Math.max(m.t + WITH_IT_LEAST_MS, t);
 				if (
@@ -12673,16 +12679,17 @@ class Action {
 				) {
 					// (Time enough to walk it: a look, and after it at a jog,
 					// kept off it - not walked there while it is still going.)
-					const { snap } = this.input;
 					m.hold(
 						m.t +
 							TRAIL_LOOK_MS[0] +
-							(TRAIL_LOOK_MS[1] - TRAIL_LOOK_MS[0]) * countOf(m, snap, 29),
+							(TRAIL_LOOK_MS[1] - TRAIL_LOOK_MS[0]) *
+								countOf(m, this.input.key, 29),
 					);
 					this.alongWith(
 						m,
 						TRAIL_JOG_FPS[0] +
-							(TRAIL_JOG_FPS[1] - TRAIL_JOG_FPS[0]) * countOf(m, snap, 30),
+							(TRAIL_JOG_FPS[1] - TRAIL_JOG_FPS[0]) *
+								countOf(m, this.input.key, 30),
 						Math.max(ring, TRAIL_KEEP_FT),
 						t - 300,
 					);
@@ -12700,7 +12707,7 @@ class Action {
 						m.t +
 							TRAIL_LOOK_MS[0] +
 							(TRAIL_LOOK_MS[1] - TRAIL_LOOK_MS[0]) *
-								countOf(m, this.input.snap, 29),
+								countOf(m, this.input.key, 29),
 					);
 					this.alongWith(m, m.top * WITH_IT_PACE, ring, t - 300);
 				}
@@ -12766,7 +12773,8 @@ class Action {
 			: from.a > 0
 				? -1
 				: 1;
-		const out = sackOut(qb, snap, sackD) && qb.t <= t - SACK_OUT_MS - 300;
+		const out =
+			sackOut(qb, this.input.key, sackD) && qb.t <= t - SACK_OUT_MS - 300;
 		let at = this.w({
 			d: sackD,
 			a: clamp(
@@ -12774,7 +12782,8 @@ class Action {
 					? from.a +
 							side *
 								(SACK_OUT_FT[0] +
-									(SACK_OUT_FT[1] - SACK_OUT_FT[0]) * countOf(qb, snap, 106))
+									(SACK_OUT_FT[1] - SACK_OUT_FT[0]) *
+										countOf(qb, this.input.key, 106))
 					: from.a + near,
 				this.bounds.left + 6,
 				this.bounds.right - 6,
@@ -12829,8 +12838,7 @@ class Action {
 		t: number,
 		runners: Actor[],
 	): number | undefined {
-		const { snap } = this.input;
-		if (!sacker || countOf(qb, snap, 140) >= SACK_BLIND) {
+		if (!sacker || countOf(qb, this.input.key, 140) >= SACK_BLIND) {
 			return undefined;
 		}
 		const off = (y: number) =>
@@ -12844,7 +12852,7 @@ class Action {
 			.filter((y) => y >= SACK_BLIND_LOOK[0] && y <= SACK_BLIND_LOOK[1]);
 		const y =
 			ways.length > 0
-				? ways[Math.floor(countOf(qb, snap, 141) * ways.length)]!
+				? ways[Math.floor(countOf(qb, this.input.key, 141) * ways.length)]!
 				: (SACK_BLIND_LOOK[0] + SACK_BLIND_LOOK[1]) / 2;
 		return this.ahead + y + SET_OPEN;
 	}
@@ -12869,8 +12877,11 @@ class Action {
 		const tm =
 			t -
 			SLIP_BEFORE[0] -
-			(SLIP_BEFORE[1] - SLIP_BEFORE[0]) * countOf(qb, snap, 115);
-		if (countOf(qb, snap, 114) >= SACK_SLIP || qb.t > tm - SLIP_SET_MS) {
+			(SLIP_BEFORE[1] - SLIP_BEFORE[0]) * countOf(qb, this.input.key, 115);
+		if (
+			countOf(qb, this.input.key, 114) >= SACK_SLIP ||
+			qb.t > tm - SLIP_SET_MS
+		) {
 			return undefined;
 		}
 		const lame = new Set<number>();
@@ -12943,7 +12954,7 @@ class Action {
 			// (Or ducked under him, on his own count: him in at the
 			// quarterback high, by him on the other side - over the top of
 			// him as he goes down under it.)
-			const way = countOf(qb, snap, 116);
+			const way = countOf(qb, this.input.key, 116);
 			const duck = way < SLIP_DUCK;
 			const by = (p: Pt) => (duck ? beside(p, away, -SLIP_DUCK_BY) : p);
 			// (Brought down over on that side - moved across the field to
@@ -13079,7 +13090,7 @@ class Action {
 		const end = off + SPIN_MS;
 		const on = m.posAt(end);
 		if (
-			countOf(m, this.input.snap, 45) < RUSH_SPIN &&
+			countOf(m, this.input.key, 45) < RUSH_SPIN &&
 			stop - end >= RUSH_SPIN_AFTER &&
 			dist(at, on) >= RUSH_SPIN_LEAST_FT
 		) {
@@ -13097,7 +13108,7 @@ class Action {
 			});
 			return;
 		}
-		const swim = countOf(m, this.input.snap, 38) < RUSH_SWIM;
+		const swim = countOf(m, this.input.key, 38) < RUSH_SWIM;
 		m.arms(swim ? (left ? "swimL" : "swimR") : left ? "ripL" : "ripR", t0, t1);
 	}
 
@@ -13214,7 +13225,7 @@ class Action {
 			return undefined;
 		}
 		// (With nobody named on it, only now and then.)
-		if (!named && !pick && countOf(qb, snap, 117) >= LINE_BAT) {
+		if (!named && !pick && countOf(qb, this.input.key, 117) >= LINE_BAT) {
 			return undefined;
 		}
 		const { m, shed, x } = best;
@@ -13320,7 +13331,7 @@ class Action {
 		const pool =
 			flagged && rushers.includes(flagged)
 				? [flagged]
-				: hurt || countOf(qb, snap, 39) < QB_HIT
+				: hurt || countOf(qb, this.input.key, 39) < QB_HIT
 					? rushers.filter((m) => !named.has(m.pid))
 					: [];
 		// (Flagged for it: late, the ball well gone - see fouls.ts.)
@@ -13329,7 +13340,8 @@ class Action {
 			(pool[0] === flagged
 				? QB_HIT_LATE_MS
 				: QB_HIT_AFTER_MS[0] +
-					(QB_HIT_AFTER_MS[1] - QB_HIT_AFTER_MS[0]) * countOf(qb, snap, 40));
+					(QB_HIT_AFTER_MS[1] - QB_HIT_AFTER_MS[0]) *
+						countOf(qb, this.input.key, 40));
 		const q = qb.posAt(hitT);
 		let best: { m: Actor; shed: number; from: Pt } | undefined;
 		for (const m of pool) {
@@ -13480,9 +13492,9 @@ class Action {
 					(x, y) => dist(x.posAt(leave), chest) - dist(y.posAt(leave), chest),
 				)[0];
 		const helper =
-			countOf(qb, snap, 42) >= QB_HAND_UP
+			countOf(qb, this.input.key, 42) >= QB_HAND_UP
 				? undefined
-				: countOf(qb, snap, 43) < HELP_FOE || !mate
+				: countOf(qb, this.input.key, 43) < HELP_FOE || !mate
 					? m
 					: mate;
 		const was = helper?.posAt(leave) ?? chest;
@@ -13503,7 +13515,17 @@ class Action {
 			far += dist(p, x);
 			p = x;
 		}
-		const arrive = leave + Math.max(HELP_STEP_MS, (far / HELP_FPS) * 1000);
+		// (Turned round first where he stands, him behind where he faces -
+		// not walked off backward at him as he comes round.)
+		const l0 = helper && legAt(helper, leave);
+		const y0 = l0
+			? (l0.yaw ?? Math.atan2(l0.to.y - l0.from.y, l0.to.x - l0.from.x))
+			: 0;
+		const w0 = Math.atan2(route[0]!.y - was.y, route[0]!.x - was.x);
+		const pivot =
+			l0 && far >= HELP_TURN_FT && Math.cos(w0 - y0) < 0 ? HELP_PIVOT_MS : 0;
+		const arrive =
+			leave + pivot + Math.max(HELP_STEP_MS, (far / HELP_FPS) * 1000);
 		const upAt = Math.max(downAt + QB_HIT_DOWN_MS, arrive + 80);
 		const helped = helper && upAt - downAt <= QB_HAND_WAIT_MS;
 		qb.hold(helped ? upAt : downAt + QB_HIT_DOWN_MS, lie);
@@ -13513,11 +13535,25 @@ class Action {
 		}
 		helper.cut(leave);
 		helper.hold(leave);
-		let t = leave;
+		if (pivot > 0) {
+			helper.hold(leave + pivot, "stand", w0);
+		}
+		let t = leave + pivot;
 		p = helper.at;
 		for (const x of route) {
-			t += ((arrive - leave) * dist(p, x)) / Math.max(0.01, far);
-			helper.go(x, t, undefined, this.toward(x, chest));
+			t += ((arrive - leave - pivot) * dist(p, x)) / Math.max(0.01, far);
+			// (Turned to him on his way over - or, him behind the way he
+			// goes, the way he goes: not walked over backward.)
+			const face = this.toward(x, chest);
+			const way = Math.atan2(x.y - p.y, x.x - p.x);
+			helper.go(
+				x,
+				t,
+				undefined,
+				Math.cos(face - way) >= 0 || dist(p, x) < HELP_TURN_FT
+					? face
+					: undefined,
+			);
 			p = x;
 		}
 		helper.hold(upAt - 80);
@@ -14252,14 +14288,24 @@ class Action {
 		const endFor = (b: Actor) =>
 			pair && b === pair[1]
 				? end
-				: end + PASS_END_SPREAD_MS * countOf(b, snap, 3);
-		for (const m of rushers) {
+				: end + PASS_END_SPREAD_MS * countOf(b, this.input.key, 3);
+		// (The men on the line first, each onto a man on the line across from
+		// him if there is one free - a back kept in left for a man coming
+		// from off the ball, not a tackle run on past his guard to the back
+		// behind him.)
+		const lineFirst = [...rushers].sort(
+			(x, y) => Number(DL.has(y.role)) - Number(DL.has(x.role)),
+		);
+		for (const m of lineFirst) {
 			if (this.done.has(m.pid) || engaged.has(m)) {
 				continue;
 			}
 			const a = this.of(m.at).a;
 			const free = blockers.filter((b) => ![...engaged.values()].includes(b));
-			const pool = free.length > 0 ? free : blockers;
+			const line = DL.has(m.role)
+				? free.filter((b) => OL.has(b.role) || b.role === "TE")
+				: [];
+			const pool = line.length > 0 ? line : free.length > 0 ? free : blockers;
 			const b = pool.sort(
 				(x, y) => Math.abs(this.of(x.at).a - a) - Math.abs(this.of(y.at).a - a),
 			)[0];
@@ -14270,7 +14316,10 @@ class Action {
 		// A twist now and then (see TWIST): an end and the man inside him
 		// trading blockers - not the pair the sim says got home.
 		const loops = new Map<Actor, Actor>();
-		if (end - snap >= TWIST_LEAST_MS && countOf(qb, snap, 52) < TWIST) {
+		if (
+			end - snap >= TWIST_LEAST_MS &&
+			countOf(qb, this.input.key, 52) < TWIST
+		) {
 			const live = (x: Actor) =>
 				DL.has(x.role) && x !== pair?.[0] && !this.done.has(x.pid);
 			const aOf = (x: Actor) => this.of(x.at).a;
@@ -14302,7 +14351,8 @@ class Action {
 					can.push([m, inside]);
 				}
 			}
-			const pick = can[Math.floor(countOf(qb, snap, 53) * can.length)];
+			const pick =
+				can[Math.floor(countOf(qb, this.input.key, 53) * can.length)];
 			if (pick) {
 				const [m, inside] = pick;
 				const b = engaged.get(m)!;
@@ -14811,7 +14861,7 @@ class Action {
 			const until =
 				marked && m === marked[0]
 					? upTo
-					: upTo + COVER_BREAK_SPREAD_MS * countOf(m, snap, 5);
+					: upTo + COVER_BREAK_SPREAD_MS * countOf(m, this.input.key, 5);
 			if (rec) {
 				// On his man: a step behind him and to the inside, until the
 				// ball is in the air - backpedaling out of his stance, then
@@ -15324,7 +15374,7 @@ class Action {
 			!sweep &&
 			carrier !== qb &&
 			cs.d <= -PITCH_DEEP &&
-			countOf(carrier, snap, 80) < PITCH;
+			countOf(carrier, this.input.key, 80) < PITCH;
 		// Or the option out of the gun: down the line with it, the back out
 		// wide of him, and pitched to him on the run.
 		const q0 = this.of(qb.at);
@@ -15337,7 +15387,7 @@ class Action {
 			Math.sign(cs.a - q0.a) === strong &&
 			Math.abs(cs.a - q0.a) <= OPTION_BESIDE[0] &&
 			Math.abs(cs.d - q0.d) <= OPTION_BESIDE[1] &&
-			countOf(carrier, snap, 124) < OPTION;
+			countOf(carrier, this.input.key, 124) < OPTION;
 		const optionAt = this.w({
 			d: q0.d + OPTION_UP,
 			a: q0.a + strong * OPTION_ALONG,
@@ -15379,7 +15429,7 @@ class Action {
 			spotOf(carrier.role) === "back" &&
 			Math.abs(cs.d - q0.d) <= DRAW_BESIDE &&
 			Math.abs(cs.a - q0.a) >= MESH_APART &&
-			countOf(carrier, snap, 143) < (passingDown ? DRAW_LONG : DRAW);
+			countOf(carrier, this.input.key, 143) < (passingDown ? DRAW_LONG : DRAW);
 		const scheme: RunScheme = draw ? "zone" : picked;
 		// On inside zone, now and then, the play made to go the other way -
 		// the line stepping that way, the back handed it that side and
@@ -15388,7 +15438,7 @@ class Action {
 			scheme === "zone" &&
 			!draw &&
 			carrier !== qb &&
-			countOf(carrier, snap, 81) < CUTBACK;
+			countOf(carrier, this.input.key, 81) < CUTBACK;
 		const flow = cutback ? -strong : strong;
 		// Or, on power, now and then a counter (see COUNTER).
 		const counter =
@@ -15397,7 +15447,7 @@ class Action {
 			!sweep &&
 			spotOf(carrier.role) === "back" &&
 			cs.d <= -COUNTER_DEEP &&
-			countOf(carrier, snap, 145) < COUNTER;
+			countOf(carrier, this.input.key, 145) < COUNTER;
 
 		// The quarterback: a reverse pivot under center to hand it off
 		// deep, or a ride in the gun - and on with his fake. A receiver
@@ -15470,7 +15520,7 @@ class Action {
 			has +
 			dropMs +
 			DRAW_LOOK_MS[0] +
-			(DRAW_LOOK_MS[1] - DRAW_LOOK_MS[0]) * countOf(qb, snap, 144);
+			(DRAW_LOOK_MS[1] - DRAW_LOOK_MS[0]) * countOf(qb, this.input.key, 144);
 		if (draw) {
 			mesh = Math.max(
 				mesh,
@@ -15929,7 +15979,7 @@ class Action {
 		tacklers: Actor[],
 	): Actor | undefined {
 		const { snap, events, i0, i1, stats } = this.input;
-		if (countOf(qb, snap, 126) >= OPTION_HIT || letGo <= snap) {
+		if (countOf(qb, this.input.key, 126) >= OPTION_HIT || letGo <= snap) {
 			return undefined;
 		}
 		const named = new Set(
@@ -15968,11 +16018,10 @@ class Action {
 	// after it is gone, and on through; the quarterback put down and up
 	// again. Then after the ball (see trail).
 	optionHit(m: Actor, qb: Actor, letGo: number, endPt: Pt) {
-		const { snap } = this.input;
 		const hitT =
 			letGo +
 			OPTION_HIT_MS[0] +
-			(OPTION_HIT_MS[1] - OPTION_HIT_MS[0]) * countOf(m, snap, 127);
+			(OPTION_HIT_MS[1] - OPTION_HIT_MS[0]) * countOf(m, this.input.key, 127);
 		const q = qb.posAt(hitT);
 		this.offSnap(m, READ_OFF_MS, READ_OFF_SPREAD_MS);
 		const s = this.of(m.at);
@@ -16036,7 +16085,9 @@ class Action {
 			down,
 		);
 		qb.hold(
-			qb.t + QB_HIT_DOWN_MS + OPTION_DOWN_SPREAD_MS * countOf(qb, snap, 128),
+			qb.t +
+				QB_HIT_DOWN_MS +
+				OPTION_DOWN_SPREAD_MS * countOf(qb, this.input.key, 128),
 			back ? "supine" : "prone",
 		);
 		qb.act(back ? "getUpBack" : "getUp", qb.t + GET_UP_MS);
@@ -16106,7 +16157,7 @@ class Action {
 		const awayAt = (m: Actor, late: number) => {
 			for (let c = snap + AWAY_LEAST_MS; c < Math.min(late, t - 400); c += 50) {
 				if (dist(carrier.posAt(c), m.at) > AWAY_FT) {
-					return c + 150 + OFF_SPREAD * countOf(m, snap, 37);
+					return c + 150 + OFF_SPREAD * countOf(m, this.input.key, 37);
 				}
 			}
 			return late;
@@ -16149,7 +16200,7 @@ class Action {
 		const fired = new Map<Actor, number>();
 		for (const b of front) {
 			const s = this.of(b.at);
-			const own = 1 + GET_OFF_STEP * (countOf(b, snap, 1) - 0.5);
+			const own = 1 + GET_OFF_STEP * (countOf(b, this.input.key, 1) - 0.5);
 			this.offSnap(b, GET_OFF_MS, GET_OFF_SPREAD_MS);
 			if (draw) {
 				// (On a draw, back into his set as on a pass first.)
@@ -16216,7 +16267,7 @@ class Action {
 			const s = { ...this.of(b.at), t: b.t };
 			const wins = beat(b);
 			// (Let up on his own count once it is over - see countOf.)
-			const till = until + RUN_END_SPREAD_MS * countOf(b, snap, 4);
+			const till = until + RUN_END_SPREAD_MS * countOf(b, this.input.key, 4);
 			const endO = this.of(endPt);
 			const face =
 				!through && Math.abs(s.a + step.a * 0.4 - endO.a) < PILE_FACE_A
@@ -16330,7 +16381,7 @@ class Action {
 					free(m) &&
 					end - hit >= PANCAKE_DRIVE_MS &&
 					end < till - FREED_MS &&
-					countOf(b, snap, 61) < PANCAKE
+					countOf(b, this.input.key, 61) < PANCAKE
 				) {
 					flats.push({ b, m, end, lands });
 				}
@@ -16636,10 +16687,10 @@ class Action {
 				const from =
 					m.t +
 					WIDE_IN_MS[0] +
-					(WIDE_IN_MS[1] - WIDE_IN_MS[0]) * countOf(m, snap, 27);
+					(WIDE_IN_MS[1] - WIDE_IN_MS[0]) * countOf(m, this.input.key, 27);
 				const fps =
 					WIDE_IN_FPS[0] +
-					(WIDE_IN_FPS[1] - WIDE_IN_FPS[0]) * countOf(m, snap, 28);
+					(WIDE_IN_FPS[1] - WIDE_IN_FPS[0]) * countOf(m, this.input.key, 28);
 				const go = Math.min(
 					far - WIDE_IN_SHORT_FT,
 					(fps * (until - from)) / 1000,
@@ -16734,7 +16785,7 @@ class Action {
 			latest,
 			m.role === "C"
 				? snap + SNAPPER_OFF_MS
-				: snap + ms + spread * countOf(m, snap),
+				: snap + ms + spread * countOf(m, this.input.key),
 		);
 		if (t - m.t >= OFF_LEAST_MS) {
 			m.hold(t);
@@ -16851,7 +16902,7 @@ class Action {
 		m.hold(meet.t);
 		const p = this.of(m.at);
 		// (Let up on his own count once it is over - see countOf.)
-		const till = until + RUN_END_SPREAD_MS * countOf(b, this.input.snap, 4);
+		const till = until + RUN_END_SPREAD_MS * countOf(b, this.input.key, 4);
 		const off = Math.max(meet.t + 200, offAt(p.d, till));
 		const end = won ? off : Math.min(off, meet.t + SHED_MS + r() * SHED_SPREAD);
 		// (Broken down over his last strides and his hands pressed into him
@@ -16914,7 +16965,6 @@ class Action {
 	// down): a look, and after the ball at a jog, kept off it, on his own
 	// count - not stood where it left him.
 	offBlock(b: Actor, until: number, react = FREED_REACT) {
-		const { snap } = this.input;
 		const by = until - 600;
 		if (by - b.t - react < FREED_AFTER_LEAST_MS) {
 			return;
@@ -16922,8 +16972,9 @@ class Action {
 		b.hold(b.t + react);
 		this.alongWith(
 			b,
-			FREED_FPS[0] + (FREED_FPS[1] - FREED_FPS[0]) * countOf(b, snap, 34),
-			FREED_KEEP_FT[0] + FREED_KEEP_FT[1] * countOf(b, snap, 35),
+			FREED_FPS[0] +
+				(FREED_FPS[1] - FREED_FPS[0]) * countOf(b, this.input.key, 34),
+			FREED_KEEP_FT[0] + FREED_KEEP_FT[1] * countOf(b, this.input.key, 35),
 			by,
 		);
 	}
@@ -17364,10 +17415,10 @@ class Action {
 	): Lock {
 		// (Each at his own pace, and off on his own count - see countOf -
 		// not two blocks met on the same step.)
-		const { snap } = this.input;
 		const vc =
-			c.top * (LOCK_PACE + LOCK_PACE_SPREAD * (countOf(c, snap, 7) - 0.5));
-		c.hold(go + LOCK_GO_SPREAD_MS * countOf(c, snap, 10));
+			c.top *
+			(LOCK_PACE + LOCK_PACE_SPREAD * (countOf(c, this.input.key, 7) - 0.5));
+		c.hold(go + LOCK_GO_SPREAD_MS * countOf(c, this.input.key, 10));
 		const cGo = c.t;
 		const cAt = c.at;
 		// (Up to speed off what he was doing - out of his stance, from
@@ -17381,7 +17432,7 @@ class Action {
 			meet = b.at;
 			tm = Math.max(b.t, cGo + rampedMs(dist(cAt, meet), vc, cV0, cA));
 		} else {
-			b.hold(go + LOCK_REACT_SPREAD_MS * countOf(b, snap, 7));
+			b.hold(go + LOCK_REACT_SPREAD_MS * countOf(b, this.input.key, 7));
 			const bAt = b.at;
 			const D = dist(bAt, cAt);
 			// (Met where the two of them get to at the same time, each up to
@@ -17442,7 +17493,10 @@ class Action {
 			// as the man comes - not crouched there the whole time; alive in
 			// it either way, not stood like a statue.)
 			const set =
-				tm - 200 - LOCK_SET_MS[0] - LOCK_SET_MS[1] * countOf(b, snap, 20);
+				tm -
+				200 -
+				LOCK_SET_MS[0] -
+				LOCK_SET_MS[1] * countOf(b, this.input.key, 20);
 			if (set - b.t >= LOCK_WATCH_MS) {
 				b.hold(set, "safetyReady", ang);
 			}
@@ -17479,7 +17533,7 @@ class Action {
 		const by = carrier ? this.goneBy(carrier, meet, tm, until) : until;
 		const t1 = Math.max(
 			Math.min(until, by + LOCK_PAST_MS) +
-				LOCK_END_SPREAD_MS * countOf(b, snap, 11),
+				LOCK_END_SPREAD_MS * countOf(b, this.input.key, 11),
 			tm + 300,
 		);
 		let dd = clamp(end.d - m.d, -5, 5) * 0.4;
@@ -17525,10 +17579,9 @@ class Action {
 			m.easeOff((v * v) / (2 * STOP_ACCEL));
 			return;
 		}
-		const { snap } = this.input;
 		const by = Math.max(
 			m.t + 400,
-			this.whistle + 300 + TRAIL_SPREAD_MS * countOf(m, snap, 8),
+			this.whistle + 300 + TRAIL_SPREAD_MS * countOf(m, this.input.key, 8),
 		);
 		const far = dist(m.at, to);
 		if (
@@ -17543,11 +17596,12 @@ class Action {
 			const look = m.stoppedBy(
 				m.t +
 					TRAIL_LOOK_MS[0] +
-					(TRAIL_LOOK_MS[1] - TRAIL_LOOK_MS[0]) * countOf(m, snap, 29),
+					(TRAIL_LOOK_MS[1] - TRAIL_LOOK_MS[0]) *
+						countOf(m, this.input.key, 29),
 			);
 			const fps =
 				TRAIL_JOG_FPS[0] +
-				(TRAIL_JOG_FPS[1] - TRAIL_JOG_FPS[0]) * countOf(m, snap, 30);
+				(TRAIL_JOG_FPS[1] - TRAIL_JOG_FPS[0]) * countOf(m, this.input.key, 30);
 			m.hold(look);
 			this.alongWith(m, fps, Math.max(ring, TRAIL_KEEP_FT), this.whistle - 300);
 			if (dist(m.at, to) > 1) {
@@ -17598,7 +17652,6 @@ class Action {
 		fpsOf: readonly [number, number] = ROUTE_AFTER_FPS,
 		near = true,
 	) {
-		const { snap } = this.input;
 		const caught = catchAt + BREAK_MS;
 		for (const m of men) {
 			if (this.done.has(m.pid)) {
@@ -17607,9 +17660,10 @@ class Action {
 			const from = m.stoppedBy(
 				Math.max(m.t, caught) +
 					ROUTE_AFTER_MS[0] +
-					(ROUTE_AFTER_MS[1] - ROUTE_AFTER_MS[0]) * countOf(m, snap, 31),
+					(ROUTE_AFTER_MS[1] - ROUTE_AFTER_MS[0]) *
+						countOf(m, this.input.key, 31),
 			);
-			const keep = keepFt[0] + keepFt[1] * countOf(m, snap, 33);
+			const keep = keepFt[0] + keepFt[1] * countOf(m, this.input.key, 33);
 			const ball = this.ballAt(from);
 			if (
 				!ball ||
@@ -17621,7 +17675,7 @@ class Action {
 			m.hold(from);
 			this.alongWith(
 				m,
-				fpsOf[0] + (fpsOf[1] - fpsOf[0]) * countOf(m, snap, 32),
+				fpsOf[0] + (fpsOf[1] - fpsOf[0]) * countOf(m, this.input.key, 32),
 				keep,
 				this.whistle - 300,
 			);
@@ -17667,7 +17721,7 @@ class Action {
 		// REVERSE.
 		const away =
 			Math.sign(from.a - endA) ||
-			(countOf(m, this.input.snap, 132) < 0.5 ? 1 : -1);
+			(countOf(m, this.input.key, 132) < 0.5 ? 1 : -1);
 		const awayA = clamp(
 			from.a + away * REVERSE_OUT,
 			this.bounds.left + REVERSE_EDGE,
@@ -17676,7 +17730,7 @@ class Action {
 		if (
 			run >= REVERSE_RUN &&
 			Math.abs(awayA - endA) >= REVERSE_ACROSS &&
-			countOf(m, this.input.snap, 131) < REVERSE
+			countOf(m, this.input.key, 131) < REVERSE
 		) {
 			// (Round up the field at the far end of it, not stopped dead and
 			// sent back the way he came.)
@@ -17759,7 +17813,7 @@ class Action {
 		m.hold(catchAt - CATCH_REACH_MS, "stand", this.behind);
 		// (Now and then in a basket, his elbows in - not his hands up at it:
 		// in at his belly, then.)
-		const basket = countOf(m, this.input.snap, 125) < BASKET;
+		const basket = countOf(m, this.input.key, 125) < BASKET;
 		m.catchOn(
 			catchAt,
 			this.behind,
@@ -17782,18 +17836,18 @@ class Action {
 		how: "up" | "back",
 	): Pt3 | undefined {
 		const r = this.r;
-		const { snap } = this.input;
 		const at = { d: land.d + 1, a: land.a };
 		const run =
 			how === "up"
 				? FIELD_UP_RUN[0] +
-					(FIELD_UP_RUN[1] - FIELD_UP_RUN[0]) * countOf(m, snap, 96)
+					(FIELD_UP_RUN[1] - FIELD_UP_RUN[0]) * countOf(m, this.input.key, 96)
 				: FIELD_BACK_RUN;
 		const fps =
 			how === "up"
 				? m.top *
 					(FIELD_UP_PACE[0] +
-						(FIELD_UP_PACE[1] - FIELD_UP_PACE[0]) * countOf(m, snap, 97))
+						(FIELD_UP_PACE[1] - FIELD_UP_PACE[0]) *
+							countOf(m, this.input.key, 97))
 				: FIELD_BACK_FPS;
 		// (Off a little to one side of where it comes down, coming up - not
 		// straight up the line of it every time.)
@@ -17885,9 +17939,8 @@ class Action {
 	// rest up out of their stances.
 	coverDown(cover: Actor[], others: Actor[]) {
 		const r = this.r;
-		const { snap } = this.input;
 		for (const m of cover) {
-			m.hold(this.seen + LOCK_GO_SPREAD_MS * countOf(m, snap, 10));
+			m.hold(this.seen + LOCK_GO_SPREAD_MS * countOf(m, this.input.key, 10));
 			const s = this.of(m.at);
 			m.chase(
 				this.w({ d: s.d + 25 + r() * 25, a: s.a * 0.85 }),
@@ -17924,13 +17977,13 @@ class Action {
 			: Math.min(this.goalD - kickTo * YD, this.goalD + 27);
 		const a0 = (r() - 0.5) * 80;
 		const aimed =
-			(countOf(k, snap, 100) < 0.5 ? -1 : 1) *
+			(countOf(k, this.input.key, 100) < 0.5 ? -1 : 1) *
 			(KICK_OUT_FT[0] +
-				(KICK_OUT_FT[1] - KICK_OUT_FT[0]) * countOf(k, snap, 101));
+				(KICK_OUT_FT[1] - KICK_OUT_FT[0]) * countOf(k, this.input.key, 101));
 		const land: OPt = {
 			d: d0,
 			a: clamp(
-				countOf(k, snap, 99) < KICK_AIM_OUT ? aimed : a0,
+				countOf(k, this.input.key, 99) < KICK_AIM_OUT ? aimed : a0,
 				this.bounds.left + 14,
 				this.bounds.right - 14,
 			),
@@ -18001,7 +18054,7 @@ class Action {
 		if (
 			noRet &&
 			land.d > this.goalD + KICK_LET_IN &&
-			countOf(kr, snap, 103) < KICK_LET
+			countOf(kr, this.input.key, 103) < KICK_LET
 		) {
 			// Let go into the end zone, nobody's to get to it: him off to the
 			// side of where it comes down, watching it in and on toward the
@@ -18086,11 +18139,11 @@ class Action {
 		const how: "set" | "up" | "back" = hop
 			? "set"
 			: delta > FIELD_BACK_LEAST
-				? countOf(kr, snap, 94) < KICK_BACK
+				? countOf(kr, this.input.key, 94) < KICK_BACK
 					? "back"
 					: "set"
 				: !noRet &&
-					  countOf(kr, snap, 94) <
+					  countOf(kr, this.input.key, 94) <
 							(delta < -FIELD_UP_LEAST ? KICK_UP : FIELD_UP_ANY)
 					? "up"
 					: "set";
@@ -18144,7 +18197,7 @@ class Action {
 			!hop &&
 			!noRet &&
 			(kr.last.move === "catch" || kr.last.move === "basket") &&
-			countOf(kr, snap, 95) <
+			countOf(kr, this.input.key, 95) <
 				JUGGLE * (1 - JUGGLE_HANDS * (kr.flair.hands ?? 0))
 		) {
 			gotT = catchAt + JUGGLE_MS;
@@ -18180,7 +18233,7 @@ class Action {
 			const knee =
 				catchAt +
 				KICK_KNEE_MS[0] +
-				(KICK_KNEE_MS[1] - KICK_KNEE_MS[0]) * countOf(kr, snap, 102);
+				(KICK_KNEE_MS[1] - KICK_KNEE_MS[0]) * countOf(kr, this.input.key, 102);
 			kr.hold(knee);
 			kr.hold(knee + 1150, "kneelDown", this.behind);
 			this.whistle = knee + 50;
@@ -18793,16 +18846,22 @@ class Action {
 		const near = r() - 0.5;
 		const kept = yds * YD > this.goalD - POOCH_IN * YD;
 		const pooch =
-			!touchback && kept && yds <= POOCH_YDS && countOf(p, snap, 89) < POOCH;
+			!touchback &&
+			kept &&
+			yds <= POOCH_YDS &&
+			countOf(p, this.input.key, 89) < POOCH;
 		const shank =
-			!touchback && !kept && yds < SHANK_YDS && countOf(p, snap, 88) < SHANK;
+			!touchback &&
+			!kept &&
+			yds < SHANK_YDS &&
+			countOf(p, this.input.key, 88) < SHANK;
 		const midA = (MID_Y - ballY) * dir;
-		const out = shank || countOf(p, snap, 90) < AIM_OUT;
+		const out = shank || countOf(p, this.input.key, 90) < AIM_OUT;
 		const outA =
 			midA +
-			(countOf(p, snap, 91) < 0.5 ? -1 : 1) *
+			(countOf(p, this.input.key, 91) < 0.5 ? -1 : 1) *
 				(AIM_OUT_FT[0] +
-					(AIM_OUT_FT[1] - AIM_OUT_FT[0]) * countOf(p, snap, 92));
+					(AIM_OUT_FT[1] - AIM_OUT_FT[0]) * countOf(p, this.input.key, 92));
 		const land: OPt = {
 			d: touchback
 				? clamp(yds * YD, this.goalD - 12, this.goalD + 22)
@@ -18816,12 +18875,13 @@ class Action {
 		const landPt = this.w(land);
 		const hang0 = clamp(2800 + yds * 30 + r() * 400, 3300, 4900);
 		const hang = shank
-			? SHANK_HANG[0] + (SHANK_HANG[1] - SHANK_HANG[0]) * countOf(p, snap, 93)
+			? SHANK_HANG[0] +
+				(SHANK_HANG[1] - SHANK_HANG[0]) * countOf(p, this.input.key, 93)
 			: pooch
 				? Math.max(
 						hang0,
 						POOCH_HANG[0] +
-							(POOCH_HANG[1] - POOCH_HANG[0]) * countOf(p, snap, 93),
+							(POOCH_HANG[1] - POOCH_HANG[0]) * countOf(p, this.input.key, 93),
 					)
 				: hang0;
 		const spiral = !shank && !pooch;
@@ -18836,7 +18896,7 @@ class Action {
 		// it - see countOf.)
 		const free = this.seen;
 		const freeOf = (m: Actor) =>
-			free + KICK_WALL_SPREAD_MS * countOf(m, snap, 6);
+			free + KICK_WALL_SPREAD_MS * countOf(m, this.input.key, 6);
 		for (const m of line) {
 			const s = this.of(m.at);
 			if (m.role !== "LS") {
@@ -18884,7 +18944,7 @@ class Action {
 			const held =
 				!touchback && ret && retYds >= JAM_HELD_YDS
 					? JAM_HELD_MS[0] +
-						(JAM_HELD_MS[1] - JAM_HELD_MS[0]) * countOf(g, snap, 98)
+						(JAM_HELD_MS[1] - JAM_HELD_MS[0]) * countOf(g, this.input.key, 98)
 					: 0;
 			this.offSnap(g, GET_OFF_MS, GET_OFF_SPREAD_MS);
 			g.goOff(
@@ -19103,12 +19163,13 @@ class Action {
 
 		const tacklers = this.statPids("defTckSolo", "defTckAst");
 		const noReturn = !ret || (retYds === 0 && tacklers.length === 0);
-		if (noReturn && countOf(pr, snap, 86) < LET_GO) {
+		if (noReturn && countOf(pr, this.input.key, 86) < LET_GO) {
 			// Let go: down short of him and bounding on to where it stops,
 			// him off to the side of it waving his men away from it - the
 			// first of the cover there over it, bent to it, downed.
 			const short =
-				LET_SHORT[0] + (LET_SHORT[1] - LET_SHORT[0]) * countOf(pr, snap, 87);
+				LET_SHORT[0] +
+				(LET_SHORT[1] - LET_SHORT[0]) * countOf(pr, this.input.key, 87);
 			const first = this.w({
 				d: Math.max(land.d - short, 10),
 				a: land.a + (r() - 0.5) * 6,
@@ -19209,10 +19270,10 @@ class Action {
 		const how: "set" | "up" | "back" = noReturn
 			? "set"
 			: delta > FIELD_BACK_LEAST
-				? countOf(pr, snap, 94) < FIELD_BACK
+				? countOf(pr, this.input.key, 94) < FIELD_BACK
 					? "back"
 					: "set"
-				: countOf(pr, snap, 94) <
+				: countOf(pr, this.input.key, 94) <
 					  (delta < -FIELD_UP_LEAST ? FIELD_UP : FIELD_UP_ANY)
 					? "up"
 					: "set";
@@ -19242,7 +19303,7 @@ class Action {
 		if (
 			!noReturn &&
 			set &&
-			countOf(pr, snap, 95) <
+			countOf(pr, this.input.key, 95) <
 				JUGGLE * (1 - JUGGLE_HANDS * (pr.flair.hands ?? 0))
 		) {
 			gotT = landT + JUGGLE_MS;
@@ -19341,12 +19402,14 @@ class Action {
 				m.hold(
 					m.t +
 						TRAIL_LOOK_MS[0] +
-						(TRAIL_LOOK_MS[1] - TRAIL_LOOK_MS[0]) * countOf(m, snap, 29),
+						(TRAIL_LOOK_MS[1] - TRAIL_LOOK_MS[0]) *
+							countOf(m, this.input.key, 29),
 				);
 				this.alongWith(
 					m,
 					TRAIL_JOG_FPS[0] +
-						(TRAIL_JOG_FPS[1] - TRAIL_JOG_FPS[0]) * countOf(m, snap, 30),
+						(TRAIL_JOG_FPS[1] - TRAIL_JOG_FPS[0]) *
+							countOf(m, this.input.key, 30),
 					TRAIL_KEEP_FT,
 					this.whistle - 300,
 				);
@@ -19407,7 +19470,7 @@ class Action {
 		// (Or off the post - see DOINK: the outside of it, back off it. On
 		// the kicker's own count, as how it comes back off it is - see
 		// countOf: no new draws.)
-		const doink = !made && !short && countOf(k, snap, 70) < DOINK;
+		const doink = !made && !short && countOf(k, this.input.key, 70) < DOINK;
 		const crossA =
 			postA +
 			(made
@@ -19446,7 +19509,8 @@ class Action {
 			uc <= 1
 				? (countOf(k, 0, 109) < 0.5 ? -1 : 1) *
 					(KICK_BEND_FT[0] +
-						(KICK_BEND_FT[1] - KICK_BEND_FT[0]) * countOf(k, snap, 110)) *
+						(KICK_BEND_FT[1] - KICK_BEND_FT[0]) *
+							countOf(k, this.input.key, 110)) *
 					Math.min(KICK_BEND_MOST, yds / KICK_BEND_YDS)
 				: 0;
 		if (bend !== 0) {
@@ -19469,10 +19533,12 @@ class Action {
 			// (Back off the post and out from the middle, falling from where
 			// it hit - onto the turf, a hop, and lying there.)
 			const fps =
-				DOINK_FPS[0] + countOf(k, snap, 71) * (DOINK_FPS[1] - DOINK_FPS[0]);
+				DOINK_FPS[0] +
+				countOf(k, this.input.key, 71) * (DOINK_FPS[1] - DOINK_FPS[0]);
 			const turn =
-				DOINK_TURN[0] + countOf(k, snap, 72) * (DOINK_TURN[1] - DOINK_TURN[0]);
-			const vz = (countOf(k, snap, 73) - 0.6) * 10;
+				DOINK_TURN[0] +
+				countOf(k, this.input.key, 72) * (DOINK_TURN[1] - DOINK_TURN[0]);
+			const vz = (countOf(k, this.input.key, 73) - 0.6) * 10;
 			const fall = (vz + Math.sqrt(vz * vz + 2 * G * end.z)) / G;
 			const hit = this.of(end);
 			const off = (by: number): OPt => ({
@@ -19528,7 +19594,7 @@ class Action {
 		// (Each holding it until the kick is away, and on his own count
 		// after it - see countOf.)
 		const heldOf = (m: Actor) =>
-			kickT + 250 + KICK_WALL_SPREAD_MS * countOf(m, snap, 6);
+			kickT + 250 + KICK_WALL_SPREAD_MS * countOf(m, this.input.key, 6);
 		for (const m of wall) {
 			const s = this.of(m.at);
 			if (m.role !== "LS") {
@@ -19663,7 +19729,7 @@ class Action {
 			const look = this.toward(k.at, posts);
 			k.cut(seen);
 			k.hold(seen, "stand", look);
-			const u = countOf(k, this.input.snap, 130);
+			const u = countOf(k, this.input.key, 130);
 			if (u < KICKER_LOOK[0]) {
 				k.act("handsOnHelmet", seen + RUE_HELMET_MS + r() * 400);
 			} else {
@@ -19680,7 +19746,7 @@ class Action {
 			// (The holder, this often, over to him while he stands there with
 			// it - not down on a knee - a hand on his shoulder, a pat or two:
 			// see holderPat.)
-			if (u < KICKER_LOOK[1] && countOf(h, this.input.snap, 133) < HOLDER_PAT) {
+			if (u < KICKER_LOOK[1] && countOf(h, this.input.key, 133) < HOLDER_PAT) {
 				const go = seen + HOLDER_PAT_MS[0] + r() * HOLDER_PAT_MS[1];
 				this.holderPat(h, k, Math.max(go, h.t), look);
 			}
@@ -19742,7 +19808,7 @@ class Action {
 				}
 				this.party = { from: sacker.t, at: sacker.at, hero: sacker.pid };
 				// (His own way of it, on his own count - see SACK_WAYS.)
-				const u = countOf(sacker, this.input.snap, 104);
+				const u = countOf(sacker, this.input.key, 104);
 				const way = playedOut(sacker);
 				if (u < SACK_WAYS[0]) {
 					sacker.act("flex", sacker.t + 1100, way);
@@ -19818,7 +19884,7 @@ class Action {
 			qb &&
 			qb !== scorer &&
 			scorer.team === this.input.offense &&
-			countOf(scorer, this.input.snap, 36) < THANKS
+			countOf(scorer, this.input.key, 36) < THANKS
 		) {
 			scorer.act("thanks", c0 + THANKS_MS, this.toward(at, qb.posAt(c0)));
 			c0 = scorer.t;
@@ -19945,21 +20011,22 @@ class Action {
 		if (!s) {
 			return;
 		}
-		const snap = this.input.snap;
 		const thrown = this.ball.some((b) => b.kind === "fly" && b.spiral);
 		for (const m of this.men) {
 			if (m.team !== s.scorer.team || m === s.scorer || this.mob.has(m.pid)) {
 				continue;
 			}
 			const odds = m.role === "QB" && thrown ? TD_ARMS_QB : TD_ARMS;
-			if (countOf(m, snap, 13) >= odds) {
+			if (countOf(m, this.input.key, 13) >= odds) {
 				continue;
 			}
 			const t0 =
-				s.t + TD_ARMS_REACT[0] + countOf(m, snap, 14) * TD_ARMS_REACT[1];
+				s.t +
+				TD_ARMS_REACT[0] +
+				countOf(m, this.input.key, 14) * TD_ARMS_REACT[1];
 			let t1 = Math.min(
 				m.t,
-				t0 + TD_ARMS_MS[0] + countOf(m, snap, 15) * TD_ARMS_MS[1],
+				t0 + TD_ARMS_MS[0] + countOf(m, this.input.key, 15) * TD_ARMS_MS[1],
 			);
 			for (const l of m.legs) {
 				if (l.t1 <= t0 || l.t0 >= t1) {
@@ -20693,7 +20760,7 @@ class Action {
 					// own count - see countOf - not all on the whistle.)
 					const by = Math.max(
 						go + (t - go) * FOLLOW_ON_LEAST,
-						t - FOLLOW_UP_SPREAD_MS * countOf(m, this.input.snap, 9),
+						t - FOLLOW_UP_SPREAD_MS * countOf(m, this.input.key, 9),
 					);
 					m.hold(go);
 					m.chase(to, by, fps, gait(fps));
@@ -20854,7 +20921,8 @@ class Action {
 		for (const [m, t] of [...up].sort(
 			(a, b) => dist(a[0].at, end) - dist(b[0].at, end),
 		)) {
-			const ring = UP_AGAIN_FT[0] + UP_AGAIN_FT[1] * countOf(m, snap, 25);
+			const ring =
+				UP_AGAIN_FT[0] + UP_AGAIN_FT[1] * countOf(m, this.input.key, 25);
 			const far = dist(m.at, end);
 			if (far <= ring + 2) {
 				continue;
@@ -20881,7 +20949,8 @@ class Action {
 			const go =
 				t +
 				UP_AGAIN_REACT_MS[0] +
-				(UP_AGAIN_REACT_MS[1] - UP_AGAIN_REACT_MS[0]) * countOf(m, snap, 26);
+				(UP_AGAIN_REACT_MS[1] - UP_AGAIN_REACT_MS[0]) *
+					countOf(m, this.input.key, 26);
 			const pace = m.top * UP_AGAIN_PACE;
 			// (The ball still going a good while after he would be there - a
 			// return, a fumble picked up and taken on: with it as it goes,
@@ -21485,7 +21554,7 @@ class Action {
 				}
 				const t0 = m.t;
 				const u =
-					(2 * countOf(m, 0, 134) + countOf(m, this.input.snap, 135)) / 3;
+					(2 * countOf(m, 0, 134) + countOf(m, this.input.key, 135)) / 3;
 				const meant = this.man(this.statPids("tgt")[0]);
 				if (
 					u >= PICK_QB_LOOK[1] &&
@@ -21751,13 +21820,15 @@ const skirt = (a: Pt, b: Pt, c: Pt): Pt[] => {
 	return [{ x: c.x + nx * SKIRT, y: c.y + ny * SKIRT }, b];
 };
 
-// A man's own count off the snap, 0 to 1 - the same each time it is asked
+// A man's own count on a play, 0 to 1 - the same each time it is asked
 // for (not off the play's dice, so nothing else in the play changes with
-// it); `salt` for another of his.
-const countOf = (m: Actor, snap: number, salt = 0): number => {
+// it), by the play's own number (see ActInput's key: not its time, so not
+// another play's for anything earlier in the game going a moment longer);
+// `salt` for another of his.
+const countOf = (m: Actor, key: number, salt = 0): number => {
 	let h =
 		Math.imul(m.pid + 0x9e37, 0x85ebca6b) ^
-		Math.imul(Math.round(snap) + salt * 7919, 0xc2b2ae35);
+		Math.imul(((key * 2147483647) | 0) + salt * 7919, 0xc2b2ae35);
 	h ^= h >>> 16;
 	h = Math.imul(h, 0x7feb352d);
 	h ^= h >>> 15;
@@ -21921,6 +21992,11 @@ const HELP_STEP_MS = 450;
 // (His chest this far along him from where he is, feet - see skeleton's
 // prone and supine; the helper this far out beside it.)
 const HELP_CHEST = 1.8;
+// (Further than this to go, feet, to be walked there turned the way he
+// goes rather than backward.)
+const HELP_TURN_FT = 1.5;
+// (Round where he stands first, this long, ms.)
+const HELP_PIVOT_MS = 300;
 const HELP_BESIDE = 2;
 // (Or this far along him, past his head; and on the way there no nearer
 // any man down than this.)

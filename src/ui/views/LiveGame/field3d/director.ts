@@ -2079,6 +2079,7 @@ class Director {
 						...(winded > 0 ? { winded } : {}),
 						...(tensed > 0 ? { tense: tensed } : {}),
 						r: this.rng(i0, "action"),
+						key: this.rng(i0, "count")(),
 					})
 				: undefined;
 		if (acted) {

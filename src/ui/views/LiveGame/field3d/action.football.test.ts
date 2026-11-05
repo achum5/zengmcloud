@@ -374,12 +374,16 @@ describe("the plays acted out", () => {
 				pancakes += 1;
 				const fall = part.legs[k]!;
 				const down = part.legs[k + 1];
-				assert.strictEqual(down?.move, "supine", `play ${play.i}`);
 				// (Or, the sim has him hurt on it, down through it: see
-				// hurt.ts.)
+				// hurt.ts - hurt as he lands, if it is blown dead as he goes
+				// down.)
 				const hurt = seg.some(
 					(e) => e.type === "injury" && e.injuredPID === part.pid,
 				);
+				if (hurt && down?.move === "hurt") {
+					continue;
+				}
+				assert.strictEqual(down?.move, "supine", `play ${play.i}`);
 				assert.strictEqual(
 					part.legs[k + 2]?.move,
 					hurt ? "hurt" : "getUpBack",
