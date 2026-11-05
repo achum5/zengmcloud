@@ -371,6 +371,8 @@ const QB_SURVEY = pose({
 });
 // One arm out straight, pointing; both hands in together, a clap.
 const POINT_OUT = { shF: 94, elF: 6, abF: 4 };
+// (The same over the ball, bent: out ahead of him across the line.)
+const CENTER_POINT = { shF: 88, elF: 6, abF: 24 };
 const BACKER = pose({
 	hipN: 34,
 	kneeN: 50,
@@ -1097,6 +1099,21 @@ const FIELD_ANIMS = {
 		},
 	},
 	center: { kind: "still", pose: CENTER },
+	// Over the ball before the snap, making the call: his head and
+	// shoulders up, round to the one side, his free arm out at the man he
+	// picks out - and round to the other side, and back down over it.
+	centerCall: {
+		kind: "act",
+		keys: [
+			[0, CENTER],
+			[0.16, { ...CENTER, lean: 54, twist: 20 }],
+			[0.3, { ...CENTER, lean: 54, twist: 18, ...CENTER_POINT }],
+			[0.56, { ...CENTER, lean: 54, twist: 18, ...CENTER_POINT }],
+			[0.72, { ...CENTER, lean: 56, twist: -14 }],
+			[0.86, { ...CENTER, lean: 56, twist: -14 }],
+			[1, CENTER],
+		],
+	},
 	// The quarterback under center: knees flexed, feet under his shoulders,
 	// hands together under the center, eyes up over the defense.
 	underCenter: { kind: "still", pose: UNDER_CENTER },
@@ -3084,6 +3101,36 @@ const FIELD_ANIMS = {
 	},
 	// Hands on his hips: the other side's score.
 	onHips: { kind: "still", pose: ON_HIPS },
+	// The same, stood there a good while (see director.ts standEasy): his
+	// weight over onto the one leg and back, as easy has it.
+	easyHips: {
+		kind: "loop",
+		n: 4,
+		fps: 0.5,
+		pose: (i) =>
+			[
+				ON_HIPS,
+				{
+					...ON_HIPS,
+					hipN: -2,
+					kneeN: 2,
+					hipF: 7,
+					kneeF: 17,
+					tilt: -2.5,
+					twist: 3,
+				},
+				{ ...ON_HIPS, kneeN: 7, kneeF: 9 },
+				{
+					...ON_HIPS,
+					hipN: 1,
+					kneeN: 16,
+					hipF: 2,
+					kneeF: 3,
+					tilt: 2.5,
+					twist: -3,
+				},
+			][i]!,
+	},
 	// The same, getting his breath back (the court's hips): blowing, his
 	// chest heaving with it, and his weight over onto the one leg and then
 	// the other.
@@ -4464,6 +4511,7 @@ const STANDS = new Set<Move>([
 	"easy",
 	"armsFolded",
 	"onHips",
+	"easyHips",
 	"hands",
 	"blowing",
 	"winded",

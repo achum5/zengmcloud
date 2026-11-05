@@ -156,6 +156,7 @@ const FINE: Steps = {
 const SLOW_STRIDES = new Map<Move, number>([
 	["walk", 2],
 	["easy", 0.5],
+	["easyHips", 0.5],
 	["backerReady", 0.5],
 	["receiverReady", 0.5],
 	["safetyReady", 0.5],

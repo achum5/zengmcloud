@@ -970,6 +970,15 @@ const LINE_DOWN_MS = [950, 1300] as const;
 const LINE_EACH_MS = 160;
 const LINE_DL_MS = [80, 380] as const;
 const LINE_UP_LEAST = 350;
+// The center over the ball making the call (see centerCall): this often,
+// over this long (soonest, latest; at least CENTER_CALL_MIN), done this
+// long before the line goes down at the latest - and not till this long
+// after he gets down over it.
+const CENTER_CALL = 0.55;
+const CENTER_CALL_MS = [1300, 1800] as const;
+const CENTER_CALL_MIN = 1000;
+const CENTER_CALL_BEFORE = 200;
+const CENTER_CALL_AFTER = 300;
 // (The backs and the men split out down into theirs with it, up to this
 // much after - stood up, or hands on hips, till then; the corners after
 // it, as the line across from them is, up on their toes till then.)
@@ -1006,6 +1015,8 @@ const CREEP_D = 21;
 const CREEP_MS = 1600;
 // (At no more than this, feet a second.)
 const CREEP_FPS = 9;
+// (Nor for less of a way down than this, feet.)
+const CREEP_LEAST = 5;
 const LBS = new Set<Role>(["SAM", "MIKE", "WILL", "BUCK"]);
 const DL_ROLES = new Set<Role>(["DE", "DT", "NT"]);
 // A kickoff: everyone lined up, the kicker off on his run-up this long in -
@@ -1905,6 +1916,7 @@ class Director {
 		}
 		if (!kick && kind !== "none") {
 			this.lineDown(parts, offense, snap, i0);
+			this.centerCall(parts, offense, snap, i0);
 		}
 		paceWalkUps(parts);
 		const qbCloseUp = qbClose
@@ -4020,6 +4032,29 @@ class Director {
 		}
 	}
 
+	// THE CENTER OVER THE BALL MAKING THE CALL for the line (see poses.ts
+	// centerCall) - the middle linebacker picked out - before it goes down.
+	centerCall(parts: Part[], offense: Side, snap: number, i0: number) {
+		const r = this.rng(i0, "center");
+		const c = parts.find(
+			(p) => p.team === offense && p.role === "C" && walkedUp(p),
+		);
+		const st = c?.legs.at(-1);
+		if (!c || !st || st.move !== "center" || r() >= CENTER_CALL) {
+			return;
+		}
+		const t1 = snap - LINE_DOWN_MS[1] - CENTER_CALL_BEFORE;
+		const t0 = Math.max(
+			st.t0 + CENTER_CALL_AFTER,
+			t1 - CENTER_CALL_MS[0] - r() * (CENTER_CALL_MS[1] - CENTER_CALL_MS[0]),
+		);
+		if (t1 - t0 < CENTER_CALL_MIN) {
+			return;
+		}
+		st.t1 = t0;
+		c.legs.push({ ...st, t0, t1, move: "centerCall" }, { ...st, t0: t1, t1 });
+	}
+
 	// THE DEFENSE WAITING ON THE SNAP: not stood stock still - the middle
 	// linebacker turned round one way and the other making the call, an arm
 	// out at the strength; a linebacker now and then over a step, or up
@@ -4144,15 +4179,20 @@ class Director {
 		if (deep.length === 2 && down && r() < CREEP) {
 			const st = down.legs.at(-1)!;
 			const p = st.to;
-			const to = { x: losX - dir * -CREEP_D, y: p.y + (ballY - p.y) * 0.25 };
-			const far = Math.hypot(to.x - p.x, to.y - p.y);
+			const all = { x: losX - dir * -CREEP_D, y: p.y + (ballY - p.y) * 0.25 };
+			const way = Math.hypot(all.x - p.x, all.y - p.y);
 			const set = snap - MUG_SET;
 			const t = Math.max(
 				st.t0 + 200,
-				set - Math.max(CREEP_MS, (far / CREEP_FPS) * 1000),
+				set - Math.max(CREEP_MS, (way / CREEP_FPS) * 1000),
 			);
+			// (Set late, no time for all of it: as far down as he gets at
+			// CREEP_FPS - not off from his stance at a run.)
+			const far = Math.min(way, (CREEP_FPS * (set - t)) / 1000);
+			const u = way > 0 ? far / way : 0;
+			const to = { x: p.x + (all.x - p.x) * u, y: p.y + (all.y - p.y) * u };
 			const fps = far / ((set - t) / 1000);
-			if (set - t > 550) {
+			if (set - t > 550 && far >= CREEP_LEAST) {
 				over(down, t, set, to, fps < 6.5 ? "walk" : "jog", "walk");
 			}
 		}
@@ -4171,21 +4211,27 @@ type Named = {
 // STOOD EASY (the court's - see court3d's evaluate): a man on the field
 // stood still EASY_LEAST_MS or more with the ball dead - after the whistle,
 // or before the snap - his weight shifted from one leg onto the other and
-// back (see poses.ts easy), not set like a statue.
+// back (see poses.ts easy), not set like a statue. (The same with his
+// hands on his hips: easyHips.)
 const EASY_LEAST_MS = 2000;
+const EASY_OF = new Map<Move, Move>([
+	["stand", "easy"],
+	["onHips", "easyHips"],
+]);
 const standEasy = (plays: Play[]) => {
 	for (const p of plays) {
 		for (const part of p.parts) {
 			for (const l of part.legs) {
+				const easy = EASY_OF.get(l.move);
 				if (
-					l.move === "stand" &&
+					easy &&
 					!l.arms &&
 					l.t1 - l.t0 >= EASY_LEAST_MS &&
 					(l.t0 >= p.whistle || l.t1 <= p.snap) &&
 					l.from.x === l.to.x &&
 					l.from.y === l.to.y
 				) {
-					l.move = "easy";
+					l.move = easy;
 				}
 			}
 		}

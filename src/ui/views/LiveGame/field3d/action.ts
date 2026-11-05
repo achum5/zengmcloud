@@ -2102,6 +2102,101 @@ class Actor {
 		return true;
 	}
 
+	// Gathering for something he does where his run ends (a leap): the last
+	// of the way he is on taken slowing, at A ft/s/s, to v1 at its end -
+	// there a little later for it - not run into at full tilt and stopped
+	// dead in a stride. (No further back than the run he is on goes, bent
+	// no sharper than SLOW_ALONG_TURN a stride. Not as slowInto, which has
+	// him quicker before it to be there on time.)
+	gatherFor(v1: number, A: number) {
+		const legs = this.part.legs;
+		const l = this.last;
+		const vs = legPace(l);
+		if (vs <= v1 + RAMP_LEAST || l.t1 < this.pinned) {
+			return;
+		}
+		const okLeg = (x: Leg) =>
+			RAMPS.has(x.move) &&
+			!x.arms &&
+			!x.turn &&
+			!x.span &&
+			x.t1 > x.t0 &&
+			dist(x.from, x.to) > 0 &&
+			x.yaw === l.yaw &&
+			x.ball === l.ball &&
+			x.mirrored === l.mirrored;
+		if (!okLeg(l)) {
+			return;
+		}
+		const wayOf = (x: Leg) => Math.atan2(x.to.y - x.from.y, x.to.x - x.from.x);
+		// (The way back to where he starts slowing: as far as that takes.)
+		const need = (vs * vs - v1 * v1) / (2 * A);
+		let j = legs.length - 1;
+		let got = dist(l.from, l.to);
+		while (got < need && j > 0) {
+			const p = legs[j - 1]!;
+			const n = legs[j]!;
+			if (
+				p.t0 < this.pinned ||
+				!okLeg(p) ||
+				p.t1 !== n.t0 ||
+				Math.abs(angleOff(wayOf(n) - wayOf(p))) > SLOW_ALONG_TURN
+			) {
+				break;
+			}
+			j--;
+			got += dist(p.from, p.to);
+		}
+		const D = Math.min(need, got);
+		const ve = Math.sqrt(Math.max(0, vs * vs - 2 * A * D));
+		// (Where on the way he starts slowing, and when he would have been
+		// there.)
+		const lead = legs[j]!;
+		const into = got - D;
+		const u = into / dist(lead.from, lead.to);
+		const cut: Pt = {
+			x: lead.from.x + (lead.to.x - lead.from.x) * u,
+			y: lead.from.y + (lead.to.y - lead.from.y) * u,
+		};
+		const tc = lead.t0 + (lead.t1 - lead.t0) * u;
+		const pts = [cut, ...legs.slice(j).map((x) => x.to)];
+		const ptAt = (s: number): Pt => {
+			for (let i = 1; i < pts.length; i++) {
+				const a = pts[i - 1]!;
+				const b = pts[i]!;
+				const d = dist(a, b);
+				if (s <= d || i === pts.length - 1) {
+					const w = d > 0 ? clamp(s / d, 0, 1) : 1;
+					return { x: a.x + (b.x - a.x) * w, y: a.y + (b.y - a.y) * w };
+				}
+				s -= d;
+			}
+			return pts.at(-1)!;
+		};
+		const { move, yaw } = lead;
+		legs.splice(j);
+		if (u > 0) {
+			this.push({ ...lead, to: cut, t1: tc });
+		}
+		const td = (vs - ve) / A;
+		const sAt = (t: number) => vs * t - (A * t * t) / 2;
+		const n = Math.max(1, Math.round((td * 1000) / STOP_STEP_MS));
+		for (let i = 1; i <= n; i++) {
+			const a = (td * (i - 1)) / n;
+			const b = (td * i) / n;
+			const pace = (sAt(b) - sAt(a)) / (b - a);
+			this.push({
+				...lead,
+				from: ptAt(sAt(a)),
+				to: ptAt(sAt(b)),
+				t0: tc + a * 1000,
+				t1: tc + b * 1000,
+				move: RAMPS.has(move) ? gait(pace) : move,
+				yaw,
+			});
+		}
+	}
+
 	// Toward `to` by t1 at no more than `fps`, as chase - but getting up to
 	// it from the pace he was going at (see RAMP_ACCEL) as he goes: there,
 	// or as far as that gets him.
@@ -2699,6 +2794,8 @@ const EDGE_ARC_STEPS = 5;
 // seconds, and no further than this, feet.)
 const SWAT_ON = 0.2;
 const SWAT_ON_MOST = 4;
+// (Off the edge at a kick, slowed to this, ft/s, to go up for it.)
+const SWAT_IN_FPS = 11;
 // (No quicker about it than this, ms.)
 const SWAT_LEAST_MS = 450;
 // (A man breaking up a pass no nearer where it was to be caught than this,
@@ -15783,8 +15880,10 @@ class Action {
 					top,
 					"sprint",
 				);
-				// (Laid out for it off his last stride: carried on a little
-				// way with it, not stopped dead.)
+				// (Gathered for it over his last strides - not leapt from full
+				// tilt and stopped dead in the air - and up for it off the
+				// last: carried on a little way with it.)
+				m.gatherFor(SWAT_IN_FPS, STOP_ACCEL * STOP_HARD);
 				const l = m.last;
 				const far = dist(l.from, l.to);
 				const on = far > 0 ? Math.min(SWAT_ON_MOST, legPace(l) * SWAT_ON) : 0;

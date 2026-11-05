@@ -474,6 +474,7 @@ const PIVOTS = new Set<Move>([
 	"easy",
 	"armsFolded",
 	"onHips",
+	"easyHips",
 	"hands",
 	"blowing",
 	"winded",
