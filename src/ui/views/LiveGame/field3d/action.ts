@@ -1149,84 +1149,122 @@ class Actor {
 	// over his last strides to `ve` (at `A` ft/s/s) and on in to it over `S`
 	// ms, in `into`, as that takes the rest out of him - there that much
 	// later than he would have been, not run into it flat out and stopped
-	// dead. Only off a straight run in. (When he gets there, if he does.)
+	// dead. Along the way he was going in at it (bent round, as it may be),
+	// only off a run in a gait, since `pinned` (by default, when where he
+	// has been was fixed till). (When he gets there, if he does.)
 	gatherTo(
 		to: Pt,
 		ve: number,
 		A: number,
 		S: number,
 		into: Move,
+		pinned = this.pinned,
 	): number | undefined {
 		const legs = this.part.legs;
 		const l = this.last;
 		const v = legPace(l);
 		const press = (ve * S) / 2000;
 		const far = (v * v - ve * ve) / (2 * A) + press;
-		if (!(v > ve) || l.to.x !== to.x || l.to.y !== to.y) {
+		const fits = (x: Leg) =>
+			RAMPS.has(x.move) && !x.arms && !x.turn && !x.span && x.t1 > x.t0;
+		if (
+			!(v > ve) ||
+			l.to.x !== to.x ||
+			l.to.y !== to.y ||
+			!fits(l) ||
+			l.t1 <= pinned
+		) {
 			return undefined;
 		}
-		// (From where he is that far off it.)
-		let t0 = l.t1;
-		while (t0 > this.pinned && dist(this.posAt(t0), to) < far) {
-			t0 -= STOP_STEP_MS / 10;
-		}
-		const from = legIndexAt(legs, t0);
-		const way = Math.atan2(to.y - l.from.y, to.x - l.from.x);
-		if (from < 0 || t0 <= this.pinned || dist(this.posAt(t0), to) < far) {
-			return undefined;
-		}
-		for (let k = from; k < legs.length; k++) {
+		// (From that far off it along his way in - or, his run in at it
+		// shorter than that, from the start of it, a little harder: see
+		// GATHER_HARD - leg by leg back, none turned off the next by more
+		// than GATHER_STRAIGHT.)
+		const wayOf = (x: Leg) => Math.atan2(x.to.y - x.from.y, x.to.x - x.from.x);
+		let k = legs.length - 1;
+		let gone = 0;
+		let t0 = l.t0;
+		for (;;) {
 			const x = legs[k]!;
-			const a = Math.atan2(x.to.y - x.from.y, x.to.x - x.from.x) - way;
-			if (
-				!RAMPS.has(x.move) ||
-				x.arms ||
-				x.turn ||
-				x.span ||
-				x.t1 <= x.t0 ||
-				Math.abs(Math.atan2(Math.sin(a), Math.cos(a))) > STRETCH_TURN
-			) {
-				return undefined;
+			const len = dist(x.from, x.to);
+			// (As far as it takes from the pace he is going on this one.)
+			const vx = Math.max(ve, legPace(x));
+			const need = Math.max(far, (vx * vx - ve * ve) / (2 * A) + press);
+			if (gone + len >= need) {
+				t0 = x.t0 + (x.t1 - x.t0) * (1 - (need - gone) / Math.max(len, 1e-6));
+				break;
 			}
+			gone += len;
+			t0 = x.t0;
+			const prev = legs[k - 1];
+			const turn = prev ? wayOf(x) - wayOf(prev) : 0;
+			if (
+				!prev ||
+				!fits(prev) ||
+				Math.abs(prev.t1 - x.t0) > 1 ||
+				dist(prev.to, x.from) > 0.01 ||
+				Math.abs(Math.atan2(Math.sin(turn), Math.cos(turn))) > GATHER_STRAIGHT
+			) {
+				break;
+			}
+			k--;
 		}
-		const move = legs[from]!.move;
-		const v0 = legPace(legs[from]!);
-		this.cut(t0);
-		const D = dist(this.at, to);
-		const cos = (to.x - this.at.x) / D;
-		const sin = (to.y - this.at.y) / D;
-		const q = { x: to.x - cos * press, y: to.y - sin * press };
+		t0 = Math.max(t0, pinned + 1);
+		k = legIndexAt(legs, t0);
+		if (k < 0 || legs[k]!.t1 <= t0) {
+			return undefined;
+		}
+		// (The way he goes in, from there.)
+		const path = [this.posAt(t0), ...legs.slice(k).map((x) => x.to)];
+		const at = [0];
+		for (let i = 1; i < path.length; i++) {
+			at.push(at[i - 1]! + dist(path[i - 1]!, path[i]!));
+		}
+		const P = at.at(-1)!;
+		const along = (s: number): Pt => {
+			let i = 1;
+			while (i < path.length - 1 && at[i]! < s) {
+				i++;
+			}
+			const u = clamp(
+				(s - at[i - 1]!) / Math.max(at[i]! - at[i - 1]!, 1e-6),
+				0,
+				1,
+			);
+			const a = path[i - 1]!;
+			const b = path[i]!;
+			return { x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u };
+		};
+		const move = legs[k]!.move;
+		const v0 = legPace(legs[k]!);
 		// (Slowed evenly over what is left before he is on it.)
-		const Dq = Math.max(0.01, D - press);
-		const Ad = Math.max(0.01, (v0 * v0 - ve * ve) / (2 * Dq));
-		const td = v0 > ve ? (v0 - ve) / Ad : Dq / ve;
+		const Dq = P - press;
+		const Ad = (v0 * v0 - ve * ve) / (2 * Math.max(0.01, Dq));
+		if (!(Dq > 0) || !(v0 > ve) || Ad > A * GATHER_HARD) {
+			return undefined;
+		}
+		this.cut(t0);
+		const td = (v0 - ve) / Ad;
 		const n = Math.max(1, Math.round((td * 1000) / STOP_STEP_MS));
 		const dt = td / n;
 		const paceOf = (i: number) => v0 - (v0 - ve) * ((i + 0.5) / n);
 		const moveOf = slower(move, n, dt, paceOf);
 		for (let i = 0; i < n; i++) {
-			const pace = paceOf(i);
-			const p = this.at;
+			const u = (i + 1) * dt;
 			this.push(
 				this.legTo(
-					i === n - 1
-						? q
-						: { x: p.x + cos * pace * dt, y: p.y + sin * pace * dt },
+					along(i === n - 1 ? Dq : v0 * u - (Ad * u * u) / 2),
 					this.t + dt * 1000,
 					moveOf(i),
 				),
 			);
 		}
+		const way = wayOf(l);
 		const m = Math.round(S / HIT_PRESS_STEP_MS);
 		const t1 = this.t;
-		for (let k = 1; k <= m; k++) {
-			const u = (1 - k / m) * (1 - k / m);
-			this.go(
-				{ x: to.x - cos * press * u, y: to.y - sin * press * u },
-				t1 + (S * k) / m,
-				into,
-				way,
-			);
+		for (let j = 1; j <= m; j++) {
+			const u = (1 - j / m) * (1 - j / m);
+			this.go(along(P - press * u), t1 + (S * j) / m, into, way);
 		}
 		return this.t;
 	}
@@ -4274,6 +4312,12 @@ const STOOD_GAP_FT = 5;
 // A cover man into the blocker he meets (or a lead blocker into his man):
 // down to this much of his pace as they meet (see breakDown).
 const LOCK_KEEP = 0.5;
+// (Gathered into a man off a run in too short to be pulled up at the pace
+// asked for: up to this many times as hard - see gatherTo.)
+const GATHER_HARD = 2;
+// (And no stride of his way in at it turned off the next by more than
+// this, radians.)
+const GATHER_STRAIGHT = 0.35;
 // (A blocker gathered into his man only on a block this long at least, ms
 // - see blockOn.)
 const GATHER_BLOCK_LEAST_MS = 500;
@@ -10917,6 +10961,9 @@ class Action {
 			// (In on it where it has got to by then.)
 			const there = Math.max(lead, at + 100);
 			const u = clamp((there - t) / STOOD_MS, 0, 1);
+			// (Where he has been fixed till before he went in on it - his
+			// run in at it his own to brace at the last of.)
+			const pinned = m.pinned;
 			this.closeOn(
 				m,
 				{ x: hit.x + back.x * u, y: hit.y + back.y * u },
@@ -10926,14 +10973,44 @@ class Action {
 			);
 			const into = { x: hit.x + back.x, y: hit.y + back.y };
 			if (dist(m.at, into) > STOOD_GAP_FT) {
-				// (Still a way off it, late to it: in at a run, pulled up on
-				// it - not driven in across the gap at a run's pace.)
-				m.runUp(into, Math.max(legPace(m.last), m.top * 0.7));
+				// (Still a way off it, late to it: in at a run, braced into it
+				// as the man with the ball was - see gatherTo - not driven in
+				// across the gap at a run's pace; or pulled up on it.)
+				const fps = Math.max(legPace(m.last), m.top * 0.7);
+				const was = m.legs.map((x) => ({ ...x }));
+				const { yaw, pinned: pin } = m;
+				m.run(into, fps);
+				if (
+					m.gatherTo(
+						m.at,
+						STOOD_FPS,
+						STOOD_GATHER,
+						STOOD_PRESS_MS,
+						"drive",
+						pinned,
+					) === undefined
+				) {
+					m.legs.splice(0, m.legs.length, ...was);
+					m.yaw = yaw;
+					m.pinned = pin;
+					m.runUp(into, fps);
+				}
 				if (end - m.t >= WAIT_LEAST_MS) {
 					m.hold(end, "engage", face);
 				}
 			} else {
-				m.easeIn(STOOD_IN_FT, STOOD_IN_LEAST);
+				if (
+					m.gatherTo(
+						m.at,
+						STOOD_FPS,
+						STOOD_GATHER,
+						STOOD_PRESS_MS,
+						"drive",
+						pinned,
+					) === undefined
+				) {
+					m.easeIn(STOOD_IN_FT, STOOD_IN_LEAST);
+				}
 				// (Not into it for a moment and straight on to the drive.)
 				if (t - m.t >= WAIT_LEAST_MS) {
 					m.hold(t, "engage", face);
