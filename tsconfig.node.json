@@ -13,8 +13,9 @@
 	// bulk, and pulling that in would drag all of src/ into this project.
 	// recapVerify.ts does the same, checking the prose's claims against the box
 	// scores rather than printing it.
-	// The 3D game tape tools (tools/court3d-tape) run the real sim and the 3D
-	// court through vitest, so they are the same deal again.
+	// The 3D game tape tools (tools/court3d-tape, tools/field3d-tape) run the
+	// real sim and the 3D court or field through vitest, so they are the same
+	// deal again.
 	"exclude": [
 		"node_modules",
 		"analysis/venv",
@@ -23,6 +24,7 @@
 		"tools/faceFromPhoto/renderSheets.mjs",
 		"tools/recapSample.ts",
 		"tools/recapVerify.ts",
-		"tools/court3d-tape"
+		"tools/court3d-tape",
+		"tools/field3d-tape"
 	]
 }
