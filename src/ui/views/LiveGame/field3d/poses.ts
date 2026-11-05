@@ -1943,6 +1943,55 @@ const FIELD_ANIMS = {
 		],
 	},
 	playBall: { kind: "act", keys: PLAY_BALL },
+	// Up at a ball going on over his hands: his arms carried as he goes,
+	// up and out at it all the way, his fingers at it - and, it gone on,
+	// let down again. (Arms only - see catch.)
+	reachUp: {
+		kind: "act",
+		keys: [
+			[0, pose({ shN: 26, elN: 92, abN: 8, shF: 26, elF: 92, abF: 8 })],
+			[
+				0.25,
+				pose({
+					shN: 92,
+					elN: 50,
+					abN: 2,
+					shF: 92,
+					elF: 50,
+					abF: 2,
+					wrN: 14,
+					wrF: 14,
+				}),
+			],
+			[
+				0.43,
+				pose({
+					shN: 160,
+					elN: 8,
+					abN: 6,
+					shF: 160,
+					elF: 8,
+					abF: 6,
+					wrN: 26,
+					wrF: 26,
+				}),
+			],
+			[
+				0.65,
+				pose({
+					shN: 122,
+					elN: 22,
+					abN: 10,
+					shF: 122,
+					elF: 22,
+					abF: 10,
+					wrN: 12,
+					wrF: 12,
+				}),
+			],
+			[1, pose({ shN: 30, elN: 88, abN: 8, shF: 30, elF: 88, abF: 8 })],
+		],
+	},
 	playBallL: {
 		kind: "act",
 		keys: PLAY_BALL.map(([u, q]): [number, Pose] => [u, mirror(q)]),
@@ -4538,6 +4587,7 @@ const SIGNAL_GRIPS: Partial<Record<Move, Grip>> = {
 	blowWhistle: "relaxed",
 	playBall: "open",
 	playBallL: "open",
+	reachUp: "open",
 };
 // (One arm only: the other hand as the rest of him has it.)
 const ONE_ARM = new Set<Move>([

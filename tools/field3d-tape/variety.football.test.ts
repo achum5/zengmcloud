@@ -11,7 +11,8 @@
 //   VARIETY_OUT=/tmp/variety_run.txt \
 //     npx vitest run --project football tools/field3d-tape/variety.football.test.ts
 //
-// Lines: run (a carry from scrimmage), catch (a completed pass).
+// Lines: run (a carry from scrimmage), catch (a completed pass), incomplete
+// (a pass not caught).
 // Games: files from realGames.football.test.ts. VARIETY_BY=throw,catch adds
 // how those parts go together, just them.
 
@@ -276,6 +277,103 @@ const catchParts = (tl: FieldTimeline, p: Play) => {
 	};
 };
 
+// A pass not caught: where it went, how it got away (knocked away, off his
+// hands, dove for and missed, overthrown...), how near him it was, and what
+// came after.
+const incParts = (tl: FieldTimeline, p: Play) => {
+	const qb = p.parts.find((q) => q.role === "QB");
+	const throwSeg = p.ball.find(
+		(s) =>
+			s.kind === "fly" &&
+			s.t0 > p.snap + 300 &&
+			qb !== undefined &&
+			dist(s.from, posOf(tl, qb.pid, s.t0) ?? s.from) < 4,
+	);
+	if (!throwSeg || throwSeg.kind !== "fly" || !qb) {
+		return undefined;
+	}
+	const t = throwSeg.t1;
+	const to = throwSeg.to;
+	let rec: Part | undefined;
+	let off = Infinity;
+	for (const q of p.parts) {
+		const a = q.team === qb.team && q !== qb ? posOf(tl, q.pid, t) : undefined;
+		if (a && dist(a, to) < off) {
+			off = dist(a, to);
+			rec = q;
+		}
+	}
+	if (!rec) {
+		return undefined;
+	}
+	const at = posOf(tl, rec.pid, t)!;
+	const air = ((to.x - p.losX) * p.dir) / 3;
+	const across = acrossOf(p, to);
+	const did = (q: Part, moves: string[], t0: number, t1: number) =>
+		q.legs.some(
+			(l) =>
+				(moves.includes(l.move) || moves.includes(l.arms ?? "")) &&
+				l.t1 > t0 &&
+				l.t0 < t1,
+		);
+	const other = p.parts.filter((q) => q.team !== qb.team);
+	let near = Infinity;
+	for (const q of other) {
+		const d = posOf(tl, q.pid, t);
+		if (d) {
+			near = Math.min(near, dist(d, at));
+		}
+	}
+	const how = other.some((q) => did(q, ["swat"], t - 400, t + 300))
+		? "knocked away"
+		: did(rec, ["dive"], t - 400, t + 900)
+			? "dove for it"
+			: to.z < 0.5
+				? "short, in the turf"
+				: did(rec, ["reachUp"], t - 500, t + 300)
+					? "over his hands"
+					: did(rec, ["catch"], t - 500, t + 300)
+						? "off his hands"
+						: "-";
+	const after = did(rec, ["handsOnHelmet"], t, t + 4000)
+		? "hands on helmet"
+		: other.some((q) => did(q, ["sigWave"], t, t + 4000))
+			? "waved off"
+			: "-";
+	const before = posOf(tl, rec.pid, t - 200) ?? at;
+	const pace = dist(before, at) / 0.2;
+	return {
+		pid: rec.pid,
+		parts: {
+			formation: p.formation ?? "-",
+			throw: `${bucket(air, [0, 5, 12, 25], ["behind the line", "short", "middle", "deep", "bomb"])} ${bucket(across, [-12, 12], ["left", "middle", "right"])}`,
+			arc: bucket(
+				throwSeg.peak,
+				[4, 9, 16],
+				["line drive", "on a line", "touch", "lob"],
+			),
+			how,
+			height: bucket(
+				to.z,
+				[2, 7],
+				["at his feet", "at his hands", "over his head"],
+			),
+			missedBy: bucket(
+				off,
+				[2, 5, 10],
+				["at him", "a step off", "well off", "nowhere near"],
+			),
+			him: pace > 10 ? "in stride" : pace > 4 ? "on the move" : "sat down",
+			defense: bucket(
+				near,
+				[3, 6, 12],
+				["contested", "tight", "a step", "open"],
+			),
+			after,
+		},
+	};
+};
+
 test.skipIf(games.length === 0)(
 	"football variety of one line",
 	() => {
@@ -304,7 +402,9 @@ test.skipIf(games.length === 0)(
 						? runParts(tl, p)
 						: line === "catch" && evs.includes("passComplete")
 							? catchParts(tl, p)
-							: undefined;
+							: line === "incomplete" && evs.includes("passIncomplete")
+								? incParts(tl, p)
+								: undefined;
 				if (got) {
 					all.push({ pid: `${tag}:${got.pid}`, parts: got.parts });
 				}

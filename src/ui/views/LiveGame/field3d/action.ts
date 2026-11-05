@@ -2817,6 +2817,30 @@ const INC_OFF_FT = 4;
 const INC_KNOCKED_FT = 9;
 const INC_DROP_MS = 350;
 const INC_BOUNCE_MS = 420;
+// Not knocked away: how it gets away from him, his own count - off his
+// hands (INC_DROP of the time), out of his reach and laid out for
+// (INC_DIVE), and the rest sailed on over his hands as he reaches up at it
+// - or, thrown no further than INC_SHORT_FT, into the turf in front of him
+// (INC_SHORT of the time). Over him: this high as it goes over (feet), on
+// at this share of its pace, to the ground as far as that takes it in
+// INC_DROP_MS (no less, no more than these, feet), and on this far on the
+// bounce. Short: down this far in front of his hands (feet), and on round
+// him on the hop, this far over so long (ms), this high.
+const INC_DROP = 0.18;
+const INC_DIVE = 0.17;
+const INC_SHORT = 0.3;
+const INC_SHORT_FT = 45;
+const INC_OVER_UP_Z = 8.6;
+const INC_SAIL_KEEP = 0.85;
+const INC_SAIL_FT = [10, 22] as const;
+const INC_SAIL_BOUNCE = 8;
+const INC_SHORT_BY = 3.5;
+const INC_HOP_FT = 7;
+const INC_HOP_MS = 380;
+const INC_HOP_PEAK = 1.3;
+// (Up at it as it goes over, his arms up from as it comes till this long
+// after it gets there, ms - see reachFor.)
+const REACH_UP_AFTER_MS = 400;
 // (Round from the way it would go, radians, to pass nobody - no nearer
 // the middle of any man than this, feet.)
 const DROP_TURNS = [0, 0.7, -0.7, 1.4, -1.4, 2.1, -2.1, 2.8, -2.8];
@@ -8725,7 +8749,13 @@ class Action {
 	// Reaching for it as it comes - in stride, his arms up for it as he
 	// runs on, or sat down in his route waiting on it, and in to his chest.
 	// Whether in stride.
-	reachFor(rec: Actor, catchAt: number, qb: Actor | undefined): boolean {
+	// (`up`: going on over his hands - up at it, and not in to him.)
+	reachFor(
+		rec: Actor,
+		catchAt: number,
+		qb: Actor | undefined,
+		up = false,
+	): boolean {
 		const reach = catchAt - CATCH_REACH_MS;
 		rec.pin(catchAt);
 		// (There a moment early, on the move: on the way he was going to
@@ -8745,9 +8775,9 @@ class Action {
 		) {
 			this.reaches.push({
 				m: rec,
-				move: "catch",
+				move: up ? "reachUp" : "catch",
 				t0: reach,
-				t1: catchAt + CATCH_IN_MS,
+				t1: catchAt + (up ? REACH_UP_AFTER_MS : CATCH_IN_MS),
 			});
 			return true;
 		}
@@ -8767,6 +8797,16 @@ class Action {
 		) {
 			rec.cut(Math.max(reach, w.t0));
 			rec.hold(reach);
+		}
+		if (up) {
+			rec.hold(catchAt + REACH_UP_AFTER_MS, undefined, face);
+			this.reaches.push({
+				m: rec,
+				move: "reachUp",
+				t0: reach,
+				t1: catchAt + REACH_UP_AFTER_MS,
+			});
+			return false;
 		}
 		rec.catchOn(catchAt, face);
 		return false;
@@ -10601,6 +10641,23 @@ class Action {
 		};
 		let lands: Pt;
 		let from = hands;
+		// (Where it is let go of, if not at his hands or over them, and when;
+		// the share of the way on to where it comes to rest that it drops to
+		// the ground in, and how high it goes on the way and on the bounce.)
+		let p0: Pt3 | undefined;
+		let at0 = catchAt;
+		let groundAt = ground;
+		let k = 0.5;
+		let dropPeak = 0.8;
+		let hopPeak = 1.6;
+		const u = countOf(rec, this.input.snap, 83);
+		const throwFt = thrown?.kind === "fly" ? dist(thrown.from, catchPt) : 0;
+		const pace =
+			thrown?.kind === "fly"
+				? dist(thrown.from, thrown.to) /
+					Math.max(0.001, (thrown.t1 - thrown.t0) / 1000)
+				: PASS_FPS;
+		const went = came + Math.PI;
 		if (breakup && coverage.includes(breakup)) {
 			// Got a hand on it: knocked away. (In at his shoulder, the side he
 			// came from - not stood in the way of it.)
@@ -10644,7 +10701,7 @@ class Action {
 					this.toward(breakup.at, qb.at),
 				);
 			}
-		} else if (r() < 0.5) {
+		} else if (u < INC_DROP) {
 			// Off his hands.
 			if (this.reachFor(rec, catchAt, qb)) {
 				this.runOn(rec, 600);
@@ -10654,6 +10711,44 @@ class Action {
 				}
 			}
 			lands = this.dropWay(hands, catchAt, INC_OFF_FT, r() * Math.PI * 2);
+		} else if (
+			u >= INC_DROP + INC_DIVE &&
+			throwFt <= INC_SHORT_FT &&
+			u >= 1 - INC_SHORT
+		) {
+			// Short: into the turf in front of him, and on round him on the
+			// hop - him pulled up for it, or there waiting on it.
+			p0 = {
+				x: hands.x + Math.cos(came) * INC_SHORT_BY,
+				y: hands.y + Math.sin(came) * INC_SHORT_BY,
+				z: 0,
+			};
+			at0 = catchAt - ((INC_SHORT_BY + INC_HANDS_OUT) / pace) * 1000;
+			groundAt = at0;
+			lands = this.dropWay(p0, at0, INC_HOP_FT, went);
+			const l = rec.last;
+			if (GAITS.has(l.move) && legPace(l) >= STOP_LEAST) {
+				this.runOn(rec, 600);
+			} else {
+				rec.hold(catchAt + 600);
+			}
+		} else if (u >= INC_DROP + INC_DIVE) {
+			// Over his hands: up at it as it goes on over them, on past him
+			// as far as it goes in the time it takes to come down, and on
+			// the bounce.
+			if (this.reachFor(rec, catchAt, qb, true)) {
+				this.runOn(rec, 700);
+			}
+			const sail = clamp(
+				(pace * INC_SAIL_KEEP * INC_DROP_MS) / 1000,
+				INC_SAIL_FT[0],
+				INC_SAIL_FT[1],
+			);
+			p0 = { ...catchPt, z: INC_OVER_UP_Z };
+			lands = this.dropWay(catchPt, catchAt, sail + INC_SAIL_BOUNCE, went);
+			k = sail / (sail + INC_SAIL_BOUNCE);
+			dropPeak = 0.3;
+			hopPeak = 1.2;
 		} else {
 			// Out of his reach: on past him, and a dive for it.
 			const dx =
@@ -10679,40 +10774,62 @@ class Action {
 		}
 		this.done.add(rec.pid);
 		// It drops, and bounces. (Over his hands, out of his reach.)
-		const p0: Pt3 = {
+		const at: Pt3 = p0 ?? {
 			...from,
 			z: from === catchPt ? INC_OVER_Z : CATCH_Z,
 		};
 		if (thrown?.kind === "fly") {
-			thrown.t1 = catchAt;
-			thrown.to = p0;
+			thrown.t1 = at0;
+			thrown.to = at;
 		}
-		const mid = { x: (p0.x + lands.x) / 2, y: (p0.y + lands.y) / 2 };
-		this.ball.push(
-			{
-				kind: "fly",
-				t0: catchAt,
-				t1: ground,
-				from: p0,
-				to: { ...mid, z: 0 },
-				peak: 0.8,
-			},
-			{
-				kind: "fly",
-				t0: ground,
-				t1: ground + INC_BOUNCE_MS,
-				from: { ...mid, z: 0 },
-				to: { ...lands, z: 0 },
-				peak: 1.6,
-			},
-			{ kind: "spot", t0: ground + INC_BOUNCE_MS, at: { ...lands, z: 0 } },
-		);
-		this.at.set(i, ground);
-		this.whistle = ground;
+		if (at.z <= 0) {
+			// (Down already: on the hop.)
+			this.ball.push(
+				{
+					kind: "fly",
+					t0: at0,
+					t1: at0 + INC_HOP_MS,
+					from: at,
+					to: { ...lands, z: 0 },
+					peak: INC_HOP_PEAK,
+				},
+				{ kind: "spot", t0: at0 + INC_HOP_MS, at: { ...lands, z: 0 } },
+			);
+		} else {
+			const mid = {
+				x: at.x + (lands.x - at.x) * k,
+				y: at.y + (lands.y - at.y) * k,
+			};
+			this.ball.push(
+				{
+					kind: "fly",
+					t0: at0,
+					t1: groundAt,
+					from: at,
+					to: { ...mid, z: 0 },
+					peak: dropPeak,
+				},
+				{
+					kind: "fly",
+					t0: groundAt,
+					t1: groundAt + INC_BOUNCE_MS,
+					from: { ...mid, z: 0 },
+					to: { ...lands, z: 0 },
+					peak: hopPeak,
+				},
+				{
+					kind: "spot",
+					t0: groundAt + INC_BOUNCE_MS,
+					at: { ...lands, z: 0 },
+				},
+			);
+		}
+		this.at.set(i, groundAt);
+		this.whistle = groundAt;
 		this.pursue(coverage, catchPt, catchAt + 200, []);
 		// (Not on in at it after, all of them round the man it was for.)
 		for (const m of coverage) {
-			const seen = ground + DEAD_SEEN_MS[0] + r() * DEAD_SEEN_MS[1];
+			const seen = groundAt + DEAD_SEEN_MS[0] + r() * DEAD_SEEN_MS[1];
 			const l = m.legs.findLast((x) => x.t0 < seen);
 			if (
 				this.done.has(m.pid) ||

@@ -16,7 +16,7 @@ Combinations: distinct whole combinations of the variety tool's parts.
 | --- | -------------------------------------------------- | -------: | ------------ | ------- |
 | 1   | Run from scrimmage (`handoff` → `run`)             |       51 | `run`        | working |
 | 2   | Pass complete (`dropback` → `passComplete`)        |       46 | `catch`      | working |
-| 3   | Pass incomplete (`passIncomplete`)                 |       15 | -            | todo    |
+| 3   | Pass incomplete (`passIncomplete`)                 |       15 | `incomplete` | working |
 | 4   | Punt and return (`puntTeam`, `punt`, `puntReturn`) |       10 | -            | todo    |
 | 5   | Kickoff and return (`kickoff`, `kickoffReturn`)    |        7 | -            | todo    |
 | 6   | Flags (`flag`, `penalty`)                          |       13 | -            | todo    |
@@ -60,6 +60,21 @@ side).
 To do: a back-shoulder throw, a contested catch fought for (both up for
 it, a hand on it in the air), a catch at the sideline with his feet in
 more often.
+
+## 3. Pass incomplete
+
+Parts: where the throw goes and its arc; how it gets away from him (knocked
+away by the man the sim credits with it, off his hands, out of his reach and
+laid out for, sailed on over his hands, short into the turf in front of
+him); how near him it was and whether he was in his stride; what came after
+(his hands on his helmet, the man who broke it up waving it off).
+
+Now (132 incompletions): 131 different combinations. Over his hands 43,
+knocked away 31, dove for it 25, off his hands 20, short in the turf 13.
+
+To do: thrown away under pressure (out of bounds, nobody near), batted down
+at the line, thrown behind an open man, the receiver's palms up at a ball
+short of him.
 
 ## Side notes
 
