@@ -226,40 +226,46 @@ describe("3D field ratings", () => {
 	}, 80_000);
 
 	test("a sure tackler drives the man he hits back more often", () => {
-		const game = games[0]!;
-		const rated = staged(game, (p) =>
-			["LB", "S", "CB", "DL"].includes(p.pos)
-				? { tck: p.team === 0 ? 95 : 45 }
-				: {},
-		);
-		// Of the men with the ball brought down when `side` has it, the share
-		// put down on their backs.
-		const share = (side: 0 | 1) => {
-			let back = 0;
-			let down = 0;
-			for (const play of rated.plays) {
-				if (play.offense !== side) {
-					continue;
-				}
-				for (const part of play.parts) {
-					if (part.team !== side) {
-						continue;
-					}
-					for (const l of part.legs) {
-						if (l.move === "tackledBack") {
-							back += 1;
+		// Of the men with the ball brought down, the share put down on their
+		// backs - by the sure tacklers, by the poor ones: in both games, each
+		// side the sure one in turn (the tackles in one game too few to tell
+		// by).
+		const back: [number, number] = [0, 0];
+		const down: [number, number] = [0, 0];
+		for (const game of games) {
+			for (const side of [0, 1] as const) {
+				const tl = staged(game, (p) =>
+					["LB", "S", "CB", "DL"].includes(p.pos)
+						? { tck: p.team === side ? 95 : 45 }
+						: {},
+				);
+				for (const play of tl.plays) {
+					const k = play.offense === side ? 1 : 0;
+					for (const part of play.parts) {
+						if (part.team !== play.offense) {
+							continue;
 						}
-						if (l.move === "tackled" || l.move === "tackledBack") {
-							down += 1;
+						for (const l of part.legs) {
+							if (
+								(l.move !== "tackled" && l.move !== "tackledBack") ||
+								l.ball === undefined ||
+								l.ball === "throw"
+							) {
+								continue;
+							}
+							down[k] += 1;
+							if (l.move === "tackledBack") {
+								back[k] += 1;
+							}
 						}
 					}
 				}
 			}
-			assert.isAbove(down, 20);
-			return back / down;
-		};
-		assert.isAbove(share(1), share(0) + 0.08);
-	}, 80_000);
+		}
+		assert.isAbove(down[0], 80);
+		assert.isAbove(down[1], 80);
+		assert.isAbove(back[0] / down[0], back[1] / down[1] + 0.08);
+	}, 120_000);
 
 	test("a back careful with the ball covers it up as he is hit more often", () => {
 		// Of the men with the ball hit, the share with their other hand over

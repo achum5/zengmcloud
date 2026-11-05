@@ -3848,6 +3848,14 @@ const PILE_UNDER = 350;
 const EVADE = 0.5;
 const EVADE_FAR = 30;
 const EVADE_MS = 1200;
+// (Or, a quick one, this often on a stretch this long at least.)
+const EVADE_SHORT = 0.35;
+const EVADE_SHORT_FAR = 20;
+const EVADE_SHORT_MS = 800;
+// (Met no sooner than this much of the way along it, and with this much of
+// it after, feet.)
+const EVADE_FIRST = 0.25;
+const EVADE_AFTER_FT = 12;
 const STIFF_ARM = 0.5;
 // (Strong, against the others at his position: an arm out that much more
 // often at the most.)
@@ -8861,18 +8869,29 @@ class Action {
 		const l = carrier.last;
 		const { t1 } = l;
 		const ms = t1 - l.t0;
+		// (On a shorter stretch, less often, and only a quick one: a cut or
+		// an arm out - no room to go round or over him.)
+		const far = dist(l.from, l.to);
+		const short = far < EVADE_FAR || ms < EVADE_MS;
 		if (
 			moveKind(l.move) !== "cycle" ||
-			dist(l.from, l.to) < EVADE_FAR ||
-			ms < EVADE_MS ||
-			r() > EVADE * evasive(carrier)
+			far < EVADE_SHORT_FAR ||
+			ms < EVADE_SHORT_MS ||
+			r() > (short ? EVADE_SHORT : EVADE) * evasive(carrier)
 		) {
 			return t;
 		}
 		// (Not the men the sim has bring him down.)
 		const tacklers = this.statPids("defTckSolo", "defTckAst");
 		const ang = Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x);
-		const tc = l.t0 + ms * (0.3 + r() * 0.35);
+		// (With room after it to get back on his way - not a cut, and
+		// straight back across at the man ahead.)
+		const most = 1 - EVADE_AFTER_FT / far;
+		const u = Math.min(0.3 + r() * 0.35, most);
+		if (u < EVADE_FIRST) {
+			return t;
+		}
+		const tc = l.t0 + ms * u;
 		const at = carrier.posAt(tc);
 		const m = chasers
 			.filter(
@@ -8898,12 +8917,21 @@ class Action {
 		if (!m) {
 			return t;
 		}
-		return this.makeMiss(carrier, m.c, m.from, tc, l, t);
+		return this.makeMiss(
+			carrier,
+			m.c,
+			m.from,
+			tc,
+			l,
+			t,
+			short ? "quick" : undefined,
+		);
 	}
 
 	// `m`, coming from `from`, made to miss the carrier at tc on his stretch
-	// `l` (see evade) - by the move `how`, if it has to be that one. Gives
-	// when the carry (to have ended at t) ends now.
+	// `l` (see evade) - by the move `how`, if it has to be that one ("quick":
+	// a stiff arm or a juke). Gives when the carry (to have ended at t) ends
+	// now.
 	makeMiss(
 		carrier: Actor,
 		m: Actor,
@@ -8911,7 +8939,7 @@ class Action {
 		tc: number,
 		l: Leg,
 		t: number,
-		how?: "spin" | "juke",
+		how?: "spin" | "juke" | "quick",
 	): number {
 		const r = this.r;
 		const { t1 } = l;
@@ -8930,7 +8958,7 @@ class Action {
 		const out = (ft: number) =>
 			Math.max(HIT_LEAST_FT, Math.min(ft, dist(from, at)));
 		if (
-			!how &&
+			(!how || how === "quick") &&
 			side < 0 &&
 			r() < STIFF_ARM * (1 + STRONG * (carrier.flair.power ?? 0))
 		) {
@@ -8961,7 +8989,8 @@ class Action {
 			const fancy = lvl === undefined ? 1 : FANCY_LEAST + lvl;
 			const hurdle = HURDLE * fancy;
 			const spin = SPIN * fancy;
-			const u = how === "spin" ? hurdle : how === "juke" ? 1 : r();
+			const u =
+				how === "spin" ? hurdle : how === "juke" || how === "quick" ? 1 : r();
 			const half = HURDLE_MS / 2;
 			if (
 				u < hurdle &&
@@ -12097,6 +12126,26 @@ class Action {
 					hitT = (hitT + reachBy(hitT)) / 2;
 				}
 				hitT = Math.min(hitT, Math.max(least, end - HAND_MS));
+				// (But no sooner than he could get there flat out - a backer
+				// from deep on a quick throw, on him late; and not into him at
+				// all if not before he lets up: on at the quarterback, below.)
+				if (!first && m !== pair?.[0]) {
+					const flat = (t: number) =>
+						m.t +
+						rampedMs(
+							a + dist(arc, on(t, 0)),
+							m.top * FLAT_OUT,
+							0,
+							GET_OFF_ACCEL,
+						);
+					for (let k = 0; k < 3 && flat(hitT) > hitT + 1; k++) {
+						hitT = flat(hitT);
+					}
+					if (hitT > end - HAND_STEP_MS * 2) {
+						engaged.delete(m);
+						break;
+					}
+				}
 				const hit = on(hitT, hitLat);
 				// (Bent up round it onto him, not off one way and turned the
 				// other - or, on a twist, through the point behind the man going
@@ -12129,6 +12178,9 @@ class Action {
 				if (near >= TWIST_ROOM_FT) {
 					break;
 				}
+			}
+			if (!engaged.has(m)) {
+				continue;
 			}
 			hits.set(m, hitT);
 			const moves = !moved.has(b) && !this.done.has(b.pid);

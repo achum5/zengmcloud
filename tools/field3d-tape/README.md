@@ -55,3 +55,6 @@ repo root:
 
    `VARIETY_LINE=catch` for completed passes; `VARIETY_BY=throw,catch` also
    counts just how those parts go together.
+
+`PLAYS.md` takes the lines one at a time: their parts, how many ways each
+comes out today, and what is next.
