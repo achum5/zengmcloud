@@ -3964,6 +3964,28 @@ const TOE_IN = 1.8;
 const TOE_BEFORE = 250;
 const TOE_MS = 900;
 const TO_LINE = new Set<Route["name"]>(["out", "comeback", "backShoulder"]);
+// Thrown to a man split out this far downfield at least (yards) - caught
+// with this far to go after it at least (yards), or a touchdown, or over
+// him - this often a slant-and-go (see routes.ts):
+// the man on him in man coverage up on the jab in - from this long before
+// the top of it, to this long after (ms) - at a spot this far down (feet)
+// from where he was, and in past the jab this far; then turned and after
+// him, up to speed at this (ft/s/s), this far behind him at best (feet). The
+// quarterback's pump at the jab, the middle of it this long (ms) before the
+// top of it - or as much as this long, to have this long (ms) at least
+// after it before he winds up to throw.
+const SLUGGO = 0.5;
+const SLUGGO_YDS = 15;
+const SLUGGO_YAC = 4;
+const SLUGGO_BITE_BEFORE_MS = 300;
+const SLUGGO_BITE_MS = 250;
+const SLUGGO_BITE_DOWN = 4;
+const SLUGGO_BITE_IN = 5;
+const SLUGGO_TURN_ACCEL = 24;
+const SLUGGO_TRAIL_FT = 3;
+const SLUGGO_PUMP_LEAD_MS = 250;
+const SLUGGO_PUMP_EARLY_MS = 500;
+const SLUGGO_PUMP_GAP_MS = 150;
 // The quarterback in the pocket: looking off another man first, this often
 // with this long to spare at least; up a step (feet, ms), this often; a pump
 // this often, and how long it takes.
@@ -4607,12 +4629,19 @@ type Break = {
 };
 // A break at b in a route from a on to c, into it at vIn ft/s and out of
 // it at vOut: cut at CUT_ACCEL, up out of it at RAMP_ACCEL.
-const breakOf = (a: Pt, b: Pt, c: Pt, vIn: number, vOut: number): Break => {
+const breakOf = (
+	a: Pt,
+	b: Pt,
+	c: Pt,
+	vIn: number,
+	vOut: number,
+	plant = false,
+): Break => {
 	const turn = angleAt(a, b, c);
-	if (turn <= CUT_LEAST) {
+	if (turn <= CUT_LEAST && !plant) {
 		return { keep: 1, down: 0, up: 0, v: vIn, accel: CUT_ACCEL };
 	}
-	const keep = cutKeep(turn);
+	const keep = plant ? Math.min(CUT_KEEP, cutKeep(turn)) : cutKeep(turn);
 	const lost = (v: number, A: number) =>
 		v > 0 ? (Math.max(0, v - vIn * keep) ** 2 / (2 * A * v)) * 1000 : 0;
 	return {
@@ -7632,7 +7661,7 @@ class Action {
 		);
 
 		// The route the ball goes to him on.
-		const targetName =
+		const routed =
 			thrown && target
 				? targetRoute(
 						spotOf(target.role),
@@ -7641,6 +7670,20 @@ class Action {
 						first === cmpI && !!this.input.out,
 					)
 				: undefined;
+		// (Deep, now and then a double move off a jab in - see SLUGGO: the
+		// man on him beaten by it, so caught with room to run after it, or
+		// thrown over him, not where somebody got a hand to it.)
+		const targetName: RouteName | undefined =
+			routed !== undefined &&
+			airYds >= SLUGGO_YDS &&
+			target &&
+			(spotOf(target.role) === "wide" || spotOf(target.role) === "slot") &&
+			(first === cmpI
+				? gain - airYds >= SLUGGO_YAC || events[first]!.td === true
+				: first !== intI && this.statPids("defPssDef").length === 0) &&
+			countOf(target, snap, 146) < SLUGGO
+				? "sluggo"
+				: routed;
 		const slip = targetName === "slip";
 		// (Toward the middle of the field from where he lines up.)
 		const inSignOf = (start: OPt): 1 | -1 =>
@@ -7943,6 +7986,9 @@ class Action {
 		let throwAt = ready + 300 + r() * 900;
 		let catchAt = throwAt;
 		let catchPt: Pt | undefined;
+		// (A slant-and-go: when he is at the top of the jab in, there, and
+		// where he broke it in from.)
+		let jab: { at: number; top: Pt; stem: Pt } | undefined;
 		const tr = target ? routes.get(target.pid) : undefined;
 		if (thrown && target && tr) {
 			catchPt = this.w(tr.catchAt);
@@ -7992,6 +8038,19 @@ class Action {
 			throwAt = catchAt - fl.ms;
 			catchPt = this.runRoute(target, tr, go, catchAt) ?? catchPt;
 			this.at.set(first, catchAt);
+			if (tr.name === "sluggo") {
+				const top = this.w(tr.path[2]!);
+				let near = Infinity;
+				let at = go;
+				for (let t = go; t <= catchAt; t += 20) {
+					const d = dist(target.posAt(t), top);
+					if (d < near) {
+						near = d;
+						at = t;
+					}
+				}
+				jab = { at, top, stem: this.w(tr.path[1]!) };
+			}
 		}
 
 		// Everyone else's routes, run on through the throw.
@@ -8014,7 +8073,21 @@ class Action {
 			if (bootSide) {
 				this.onTheRun(qb, bootSide, catchPt, throwAt);
 			} else {
-				this.reads(qb, target!, catchPt, throwAt - WIND_MS, runners);
+				this.reads(
+					qb,
+					target!,
+					catchPt,
+					throwAt - WIND_MS,
+					runners,
+					jab && {
+						at: jab.at - PUMP_MS / 2 - SLUGGO_PUMP_LEAD_MS,
+						least: jab.at - PUMP_MS / 2 - SLUGGO_PUMP_EARLY_MS,
+						to: {
+							x: 2 * jab.top.x - jab.stem.x,
+							y: 2 * jab.top.y - jab.stem.y,
+						},
+					},
+				);
 				this.pocketThrow(qb, catchPt, throwAt);
 			}
 			const at = this.of(qb.posAt(throwAt));
@@ -8066,6 +8139,7 @@ class Action {
 			fakeT,
 			first === cmpI ? Math.max(0, (gain - airYds) * YD) : 0,
 			tr?.name === "backShoulder" ? target : undefined,
+			jab && target ? { m: target, ...jab } : undefined,
 		);
 		const beaten = sacker ? this.man(this.statPids("skAlw")[0]) : undefined;
 		this.passRush(
@@ -8215,10 +8289,29 @@ class Action {
 		catchPt: Pt,
 		windAt: number,
 		runners: Actor[],
+		pump?: { at: number; least: number; to: Pt },
 	) {
 		const r = this.r;
 		const spare = windAt - qb.t;
 		const to = this.toward(qb.at, catchPt);
+		// (A double move: a pump at the jab, as he makes it - as soon as he
+		// is set for it, or early enough to have time after it to go back
+		// to him, not a pump straight into the throw - and his eyes back up
+		// the field with him after it. See SLUGGO.)
+		const pumpAt = pump
+			? Math.min(Math.max(pump.at, qb.t), windAt - PUMP_MS - SLUGGO_PUMP_GAP_MS)
+			: -Infinity;
+		if (pump && pumpAt >= Math.max(qb.t, pump.least)) {
+			const way = this.toward(qb.at, pump.to);
+			this.scan(qb, target, way, pumpAt, runners);
+			// (Only a moment to it: straight into it - see FLICK_MS.)
+			if (pumpAt - qb.t >= FLICK_MS) {
+				qb.hold(pumpAt, "pocket", way);
+			}
+			qb.act("pump", qb.t + PUMP_MS, way);
+			this.scan(qb, target, to + SET_OPEN, windAt, runners);
+			return;
+		}
 		if (spare > LOOK_OFF_MS && r() < LOOK_OFF) {
 			const at = qb.t + spare * 0.3;
 			const others = runners
@@ -8541,6 +8634,7 @@ class Action {
 				speed,
 				go < seg || upto - along - go <= ROUTE_LEFT,
 				route.settles,
+				route.plant === k,
 			);
 			ms += stretchMs(go, routeFps(speed, k), cut, next);
 			cut = next;
@@ -8551,13 +8645,15 @@ class Action {
 
 	// The break at the end of the kth stretch of a route (see breakOf) - none,
 	// if it ends there (`ends`) or goes on no further: but for the time it
-	// takes him to pull up there, if he sits down in it (`settles`).
+	// takes him to pull up there, if he sits down in it (`settles`). (Planted
+	// hard there: see Route's plant.)
 	private breakAt(
 		pts: Pt[],
 		k: number,
 		speed: number,
 		ends: boolean,
 		settles: boolean,
+		plant = false,
 	): Break {
 		return ends || k + 1 >= pts.length
 			? {
@@ -8573,6 +8669,7 @@ class Action {
 					pts[k + 1]!,
 					routeFps(speed, k),
 					routeFps(speed, k + 1),
+					plant,
 				);
 	}
 
@@ -8624,6 +8721,7 @@ class Action {
 				speed,
 				go < seg || room - go <= ROUTE_LEFT,
 				route.settles,
+				route.plant === k,
 			);
 			const t1 = m.t + stretchMs(go, routeFps(speed, k), cut, next) / pace;
 			if (until !== undefined && t1 > until) {
@@ -14017,6 +14115,7 @@ class Action {
 		fake?: number,
 		yac = 0,
 		late?: Actor,
+		fooled?: { m: Actor; at: number; top: Pt; stem: Pt },
 	) {
 		const { snap } = this.input;
 		const r = this.r;
@@ -14080,6 +14179,10 @@ class Action {
 				const mark = marks
 					? this.w({ d: deepest, a: this.of(catchPt).a })
 					: undefined;
+				// (On a slant-and-go - see SLUGGO - up on the jab in, and
+				// after him once he is by.)
+				const bit = fooled && rec === fooled.m && !marks ? fooled : undefined;
+				let biteTo: Pt | undefined;
 				// (A step at a time, the last of them on to the break - not
 				// short of it, stood waiting for it.)
 				const steps: number[] = [];
@@ -14111,10 +14214,55 @@ class Action {
 							COVER_SOFT *
 								Math.log1p(Math.exp((room - COVER_MIN) / COVER_SOFT))) *
 						(1 - COVER_TIGHT * (m.flair.cover ?? 0));
-					const on = this.w({
-						d: Math.min(p.d + cushion, deepest),
-						a: p.a + inside * 1.8,
-					});
+					const biting =
+						bit &&
+						t >= bit.at - SLUGGO_BITE_BEFORE_MS &&
+						t <= bit.at + SLUGGO_BITE_MS;
+					if (biting && !biteTo) {
+						const top = this.of(bit.top);
+						const jabIn = Math.sign(top.a - this.of(bit.stem).a) || -inside;
+						biteTo = this.w({
+							d: Math.max(top.d + 2, this.of(m.at).d - SLUGGO_BITE_DOWN),
+							a: top.a + jabIn * SLUGGO_BITE_IN,
+						});
+					}
+					if (bit && !biting && t > bit.at) {
+						// (Beaten: turned and after him flat out, to just behind
+						// him where he will be when it is in the air - or as
+						// far as he gets toward there by then.)
+						const e = this.of(rec.posAt(until));
+						const aim = this.w({
+							d: e.d - SLUGGO_TRAIL_FT,
+							a: e.a + inside * 1.8,
+						});
+						m.plantFor(aim);
+						const far = dist(m.at, aim);
+						const T = (until - m.t) / 1000;
+						if (T * 1000 > FLICK_MS && far > ROUTE_LEFT) {
+							const fps = m.top * 0.95;
+							const v0 = Math.min(fps, paceOn(m.last, m.at, aim));
+							const ta = Math.min(T, (fps - v0) / SLUGGO_TURN_ACCEL);
+							const gets =
+								v0 * ta + (SLUGGO_TURN_ACCEL * ta * ta) / 2 + fps * (T - ta);
+							const u = Math.min(1, gets / far);
+							m.getOff(
+								{
+									x: m.at.x + (aim.x - m.at.x) * u,
+									y: m.at.y + (aim.y - m.at.y) * u,
+								},
+								until,
+								v0,
+								SLUGGO_TURN_ACCEL,
+							);
+						}
+						break;
+					}
+					const on = biting
+						? biteTo!
+						: this.w({
+								d: Math.min(p.d + cushion, deepest),
+								a: p.a + inside * 1.8,
+							});
 					// (And a way off him, or over the last MARK_READ_MS before
 					// it is thrown, over toward where it goes rather than on
 					// after him - reading it, not run to where he was and on

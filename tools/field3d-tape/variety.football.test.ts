@@ -325,6 +325,30 @@ const catchParts = (tl: FieldTimeline, p: Play) => {
 		back >= 0.5 &&
 		back <= 4 &&
 		Math.abs(at.y - FIELD_W / 2) > Math.abs(deep.y - FIELD_W / 2) + 0.5;
+	// (A double move: in toward the middle of the field a moment, quick,
+	// then straight up it to the ball, deep; see routes.ts's sluggo.)
+	const lateIn = (t: number) => {
+		const a = posOf(tl, rec.pid, t - 50);
+		const b = posOf(tl, rec.pid, t + 50);
+		return a && b
+			? {
+					in: (Math.abs(a.y - FIELD_W / 2) - Math.abs(b.y - FIELD_W / 2)) / 0.1,
+					up: ((b.x - a.x) * p.dir) / 0.1,
+				}
+			: undefined;
+	};
+	let jabbed = false;
+	for (let t = p.snap + 300; t < got!.t0 - 900; t += 50) {
+		if ((lateIn(t)?.in ?? 0) > 8) {
+			jabbed = true;
+			break;
+		}
+	}
+	let straight = jabbed && air >= 15;
+	for (let t = got!.t0 - 700; straight && t <= got!.t0 - 200; t += 50) {
+		const v = lateIn(t);
+		straight = !!v && v.up >= 15 && Math.abs(v.in) < 6;
+	}
 	return {
 		pid: rec.pid,
 		parts: {
@@ -336,7 +360,7 @@ const catchParts = (tl: FieldTimeline, p: Play) => {
 				[4, 9, 16],
 				["line drive", "on a line", "touch", "lob"],
 			),
-			catch: `${how}${shoulder ? " back shoulder" : pace > 10 ? " in stride" : pace > 4 ? " on the move" : " sat down"}`,
+			catch: `${how}${shoulder ? " back shoulder" : straight ? " off a double move" : pace > 10 ? " in stride" : pace > 4 ? " on the move" : " sat down"}`,
 			defense:
 				bucket(near, [3, 6, 12], ["contested", "tight", "a step", "open"]) +
 				(upWith ? ", up with him" : handIn ? ", a hand in" : ""),

@@ -22,6 +22,7 @@ export type RouteName =
 	| "curl"
 	| "comeback"
 	| "backShoulder"
+	| "sluggo"
 	| "drag"
 	| "flat"
 	| "swing"
@@ -41,6 +42,9 @@ export type Route = {
 	// He works back to the ball and sits down at the end of it - turned to
 	// face the quarterback - rather than running on.
 	settles: boolean;
+	// (The point on it where he plants hard - a double move's: down to as
+	// little of his pace as a cut back the way he came, and up out of it.)
+	plant?: number;
 };
 
 // What kind of receiver: split out, in the slot, a tight end, a back.
@@ -50,6 +54,10 @@ export type Spot = "wide" | "slot" | "te" | "back";
 export type Bounds = { left: number; right: number };
 
 const RAD = Math.PI / 180;
+
+// (A slant-and-go's jab in: this far up, and in, off the top of its stem -
+// feet.)
+export const SLUGGO_FAKE_FT = 6;
 
 const lengthOf = (path: OPt[], upTo = path.length - 1) => {
 	let s = 0;
@@ -230,6 +238,20 @@ export const layRoute = (
 				at(D + 1, s.a + out * (5.5 + u)),
 			];
 			return laid(name, path, 3, true);
+		}
+		case "sluggo": {
+			// A double move: three steps up and a jab in as if on a slant -
+			// the quarterback's pump at it - then up the field past the man
+			// who came up on it, drifting back out toward the sideline.
+			const stem = 9 + 4 * u;
+			const path = [
+				s,
+				at(stem, s.a),
+				at(stem + SLUGGO_FAKE_FT, s.a + inSign * SLUGGO_FAKE_FT),
+				at(D, s.a + out * 2),
+				at(D + 40, s.a + out * 3),
+			];
+			return { ...laid(name, path, 3), plant: 2 };
 		}
 		case "drag": {
 			// A step up and across under the linebackers, past the ball.
@@ -502,6 +524,7 @@ const DECOY_DEPTH: Record<RouteName, [number, number]> = {
 	curl: [8, 12],
 	comeback: [12, 15],
 	backShoulder: [12, 18],
+	sluggo: [25, 30],
 	drag: [2, 5],
 	flat: [1, 4],
 	swing: [-1, 0],
@@ -531,6 +554,7 @@ const OUTSIDE = new Set<RouteName>([
 	"out",
 	"comeback",
 	"backShoulder",
+	"sluggo",
 	"flat",
 	"swing",
 	"screen",

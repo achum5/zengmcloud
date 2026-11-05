@@ -78,7 +78,7 @@ Parts: formation; the drop; where the throw goes (depth, side) and its arc;
 the route; how it is caught (in stride, on the move, sat down; diving,
 leaping) and how open; then the same ending as a run.
 
-Now (417 catches): 404 different combinations. Caught standing still 37%
+Now (417 catches): 406 different combinations. Caught standing still 37%
 (hitches, curls, comebacks, screens and check-downs). Deep throws lofted a
 little, more the further they go (of 103 tried: on a line 90, touch 10, a
 lob 3). A man on him reaching a hand in at it as it gets there on 16 of
@@ -99,6 +99,16 @@ field - pulled up a step past where it goes and back out toward the
 sideline to it, turned to the quarterback, the ball there as he turns; the
 man on him, his back to it, carried on up the field past him a moment
 before he turns back. On 3 (from 0).
+
+A double move (a slant-and-go) on about half the throws 15 yards or more
+down to a man split out - caught with room to run after it, in the end
+zone, or thrown on over him (not one the sim has somebody getting a hand
+to): three steps up and a jab in as if on a slant, planted hard, and up
+the field. The quarterback pumps at the jab when he is set in time; the
+man on him comes up and in on it, plants, turns and chases him. The
+variety tool calls it "off a double move" (in toward the middle quick,
+then straight up the field to it, deep - none before it existed). Thrown
+on 3 in 9 games, 2 of them caught.
 
 Not done: his toes in on a deeper throw along the sideline - in 9 games
 only one catch out of bounds that deep with next to nothing after it.
