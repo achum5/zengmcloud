@@ -4011,6 +4011,10 @@ const FLAT_OUT = 0.97;
 // the end of it for the ball, up for it this long before it comes.
 const ROUTE_PACE = 0.76;
 const CATCH_LEAD_MS = 380;
+// A route laid on past the back of the end zone (a decoy's, deep in the
+// red zone): run no deeper than this short of the end line (feet), and
+// sat down there - not into the line and slid along it.
+const ROUTE_BACK_FT = 4;
 // (With no more than this left of it to the catch (feet), no break.)
 const ROUTE_LEFT = 0.4;
 // A break in it sharper than CUT_LEAST (radians), cut: into it at as much
@@ -4083,6 +4087,23 @@ const offLine = (fps: number, v0 = 0): Break =>
 				accel: CUT_ACCEL,
 				upAccel: RELEASE_ACCEL,
 			};
+// A route no deeper than `deep` feet downfield: as far as it goes before
+// it gets there, and ended there.
+const backIn = (path: OPt[], deep: number): OPt[] => {
+	const k = path.findIndex((p) => p.d > deep);
+	if (k < 1) {
+		return path;
+	}
+	const p0 = path[k - 1]!;
+	const p1 = path[k]!;
+	const u = (deep - p0.d) / (p1.d - p0.d);
+	const end = { d: deep, a: p0.a + (p1.a - p0.a) * u };
+	const out = path.slice(0, k);
+	if (Math.hypot(end.d - p0.d, end.a - p0.a) > 0.5) {
+		out.push(end);
+	}
+	return out.length >= 2 ? out : path;
+};
 // How long (ms) a stretch of a route `ft` long takes him at `fps`, out of
 // the break before it and into the one at its end: if it is too short for
 // him to get up to his pace in between (a hitch's step back down to the
@@ -7788,7 +7809,9 @@ class Action {
 						1,
 					)
 				: 1;
-		const pts = route.path.map((p) => this.w(p));
+		const deep = this.endLineD() - ROUTE_BACK_FT;
+		const path = target ? route.path : backIn(route.path, deep);
+		const pts = path.map((p) => this.w(p));
 		let along = 0;
 		let cut = offLine(routeFps(speed, 1), v0);
 		for (let k = 1; k < pts.length; k++) {
@@ -7850,19 +7873,31 @@ class Action {
 			along += go;
 		}
 		if (!target && !route.settles && until !== undefined && m.t < until) {
-			// Past the end of his route: on the way it goes.
-			const p = route.path;
-			const a = this.w(p.at(-2)!);
-			const b = this.w(p.at(-1)!);
+			// Past the end of his route: on the way it goes - as far as the
+			// back of the end zone (see ROUTE_BACK_FT), and sat down there,
+			// turned to the quarterback.
+			const pa = path.at(-2)!;
+			const pb = path.at(-1)!;
+			const a = this.w(pa);
+			const b = this.w(pb);
 			const len = dist(a, b) || 1;
 			const left = ((until - m.t) / 1000) * speed;
-			m.go(
-				{
-					x: b.x + ((b.x - a.x) / len) * left,
-					y: b.y + ((b.y - a.y) / len) * left,
-				},
-				until,
-			);
+			const down = (pb.d - pa.d) / len;
+			const room = down > 0 ? Math.max(0, (deep - pb.d) / down) : Infinity;
+			const go = Math.min(left, room);
+			const to = {
+				x: b.x + ((b.x - a.x) / len) * go,
+				y: b.y + ((b.y - a.y) / len) * go,
+			};
+			if (go >= left) {
+				m.go(to, until);
+			} else {
+				if (go > ROUTE_LEFT) {
+					m.go(to, m.t + (go / speed) * 1000);
+				}
+				const qb = this.role("QB");
+				m.hold(until, "settle", qb ? this.toward(m.at, qb.at) : this.behind);
+			}
 		}
 		if (route.settles || target) {
 			// Sat down in it, turned to the quarterback.
@@ -8888,6 +8923,12 @@ class Action {
 
 	goalLineX() {
 		return this.input.dir === 1 ? GOAL_R : GOAL_L;
+	}
+
+	// How far downfield of the line the end line is (feet).
+	endLineD() {
+		const { dir, losX } = this.input;
+		return dir === 1 ? FIELD_L - losX : losX;
 	}
 
 	// When a man's legs take him over the line x = gx (or `fallback`).
