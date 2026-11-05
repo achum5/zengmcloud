@@ -2061,11 +2061,24 @@ const yawOnBeat = (tl: CourtTimeline, tr: Track, g: number): number => {
 				? TURN_MAX * RUSH_TURN
 				: calm(tl, tr, k)
 					? TURN_MAX * CALM_TURN
-					: TURN_MAX,
+					: sliding(tr, k)
+						? TURN_MAX * SLIDE_TURN
+						: TURN_MAX,
 		);
 		kept.set(key(k), turning);
 	}
 	return turning.yaw;
+};
+// Down in his stance sliding with his man, he comes round slower - his head
+// goes to a pass whipping by him (see lookAt), his body after it, a step at
+// a time: not swivelled half round in a third of a second on the foot he
+// is down on.
+const SLIDE_TURN = 0.55;
+const sliding = (tr: Track, t: number): boolean => {
+	const m = tr.moves[lastIndex(tr.moves, t, (x) => x.t0)];
+	return (
+		m !== undefined && m.t1 > t && (m.anim === "shuffle" || m.anim === "slide")
+	);
 };
 // And a man gets going round and slows as he comes onto it - never from
 // stood still to turning flat out in a frame, nor stopped dead in the next,

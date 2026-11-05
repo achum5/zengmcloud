@@ -257,6 +257,127 @@ const jumperParts = (tl: CourtTimeline, shot: BallSeg & { kind: "fly" }) => {
 	};
 };
 
+// The parts of one rebound: how he came up with it, where, in what traffic,
+// and what he did with it.
+const reboundParts = (
+	tl: CourtTimeline,
+	pid: number,
+	from: number,
+	until: number,
+	pos: string,
+) => {
+	const k = tl.ball.findIndex(
+		(s) => s.kind === "hold" && s.pid === pid && s.t0 >= from && s.t0 <= until,
+	);
+	if (k < 1) {
+		return undefined;
+	}
+	const h = tl.ball[k]!;
+	const t = h.t0;
+	const tr = tl.tracks.get(pid)!;
+	const team = tr.team;
+	// The rim the shot was at: the other side's, off a defensive board.
+	const shotTeam = tl.tracks.get(pid)!.team === 0 ? 1 : 0;
+	const prev = tl.ball[k - 1]!;
+	const R = evalPlayer(tl, pid, t);
+	const act = tr.acts.find((a) => a.t0 <= t + 30 && a.t1 >= t - 30);
+	const before = tl.ball.slice(Math.max(0, k - 4), k).map((s) => s.kind);
+	let how =
+		prev.kind === "fly" && !("pid" in prev.from)
+			? R.z > 0.6
+				? "up high for it"
+				: "taken at chest height"
+			: "picked up";
+	if (before.includes("bounce") || before.includes("rest")) {
+		how = R.z > 0.4 ? "off the bounce, in the air" : "off the floor";
+	}
+	const tap = tl.ball[k - 2];
+	if (
+		tap?.kind === "fly" &&
+		!("pid" in tap.from) &&
+		!("pid" in tap.to) &&
+		prev.kind === "fly" &&
+		!("pid" in prev.from) &&
+		Math.abs(tap.t1 - tap.t0 - 240) < 3
+	) {
+		how = "tipped up to himself";
+	}
+	if (act?.anim === "rebound") {
+		how += ", one hand";
+	} else if (act?.anim === "board") {
+		how += ", two hands";
+	}
+	// Where: how far out, and which side.
+	const rimAt = { x: rimX(shotTeam as 0 | 1), y: 25 };
+	const d = dist(R, rimAt);
+	const where = `${d < 7 ? "under it" : d < 13 ? "in the lane" : d < 20 ? "out a way" : "long"}, ${Math.abs(R.y - 25) < 6 ? "middle" : R.y < 25 ? "left" : "right"}`;
+	// Traffic, and box-outs.
+	let near = 0;
+	let boxed = false;
+	for (const o of tl.tracks.values()) {
+		if (o.pid < 0 || o.pid === pid) {
+			continue;
+		}
+		const q = evalPlayer(tl, o.pid, t);
+		if (q.shown && dist(q, R) < 4) {
+			near += 1;
+		}
+		if (
+			o.team === team &&
+			o.acts.some((a) => a.anim === "boxOut" && a.t1 > t - 1500 && a.t0 < t)
+		) {
+			boxed = true;
+		}
+	}
+	const self = tr.acts.some(
+		(a) =>
+			(a.anim === "boxOut" || a.anim === "fight") &&
+			a.t1 > t - 1500 &&
+			a.t0 < t,
+	);
+	const traffic = `${near === 0 ? "alone" : near === 1 ? "one man near" : "in a crowd"}${self ? ", boxed his man out" : boxed ? ", mates boxed out" : ""}`;
+	// What he did with it.
+	let j = k;
+	while (j + 1 < tl.ball.length) {
+		const z = tl.ball[j + 1]!;
+		if (z.kind !== "hold" || z.pid !== pid) {
+			break;
+		}
+		j += 1;
+	}
+	const kept = tl.ball.slice(k, j + 1);
+	const dribbled = kept.some((z) => z.kind === "hold" && z.style !== "hold");
+	const next = tl.ball[j + 1];
+	const heldFor = (next?.t0 ?? t) - t;
+	let after: string;
+	if (next?.kind === "fly" && "pid" in next.to && "pid" in next.from) {
+		const to = tl.tracks.get(next.to.pid);
+		const L = dist(
+			evalPlayer(tl, pid, next.t0),
+			evalPlayer(tl, next.to.pid, next.t1),
+		);
+		after =
+			to?.team === team
+				? `${dribbled ? "dribbled, then " : ""}${L > 30 ? "long outlet" : L > 12 ? "outlet" : "handed off"}${heldFor < 900 ? " at once" : ""}`
+				: "lost it";
+	} else if (dribbled) {
+		after = "brought it up himself";
+	} else {
+		after = "held it";
+	}
+	const pace = fastAt(tl, t + 2500) > 1.2 ? "walked up" : "pushed";
+	return {
+		pid,
+		parts: {
+			who: pos || "?",
+			how,
+			where,
+			traffic,
+			after: `${after}, ${pace}`,
+		},
+	};
+};
+
 test.skipIf(games.length === 0)(
 	"variety of one line",
 	() => {
@@ -269,8 +390,33 @@ test.skipIf(games.length === 0)(
 				.split("/")
 				.at(-1)!
 				.replace(/\.json$/, "");
+			const posOf = new Map<number, string>(
+				players.map((p: { pid: number; pos?: string }) => [p.pid, p.pos ?? ""]),
+			);
 			for (const b of tl.beats) {
 				if (b.type !== line) {
+					continue;
+				}
+				if (line === "drb" || line === "orb") {
+					const rpid = events[b.i]?.pid as number | undefined;
+					if (rpid === undefined) {
+						continue;
+					}
+					const got = reboundParts(
+						tl,
+						rpid,
+						b.preStart - 3000,
+						b.end + 1500,
+						posOf.get(rpid) ?? "",
+					);
+					if (!got) {
+						continue;
+					}
+					if (fastAt(tl, b.actionStart) > 1.2) {
+						fastOnes += 1;
+						continue;
+					}
+					all.push({ pid: `${tag}:${got.pid}`, parts: got.parts });
 					continue;
 				}
 				const shot = tl.ball.findLast(
