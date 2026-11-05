@@ -304,6 +304,12 @@ const LUNGE_MOST_FPS = 28;
 // this far or more (feet): faced the way he goes.)
 const LUNGE_ROUND = 1.75;
 const LUNGE_ROUND_FT = 0.5;
+// (Diving in on a man down (see Actor.diveIn): from no further off than
+// DIVE_STILL_FT and as far again as LUNGE_AIR_MS at his pace takes him
+// (LUNGE_MOST_FT at most) - run in to there first, and in the air no less
+// than DIVE_LEAST_MS.)
+const DIVE_STILL_FT = 4;
+const DIVE_LEAST_MS = 380;
 const CUT_MERGE_MS = 60;
 const GAITS = new Set<Move>(["walk", "jog", "run", "sprint"]);
 const STEPS = new Set<Move>([...GAITS, "back", "slide", "shuffle"]);
@@ -2274,6 +2280,33 @@ class Actor {
 		});
 	}
 
+	// Diving in on `to` (a man going down there) by t1, or as soon after as
+	// he gets there: from too far off to dive it, run in to where he can
+	// first - not launched at it across the field from a stand. When he is
+	// down.
+	diveIn(to: Pt, t1: number, yaw: number): number {
+		const l = this.last;
+		const v = GAITS.has(l.move) ? legPace(l) : 0;
+		const reach = Math.min(
+			LUNGE_MOST_FT,
+			DIVE_STILL_FT + (v * LUNGE_AIR_MS) / 1000,
+		);
+		const far = dist(this.at, to);
+		if (far > reach + PAST_SLACK_FT) {
+			const u = (far - reach) / far;
+			this.run(
+				{
+					x: this.at.x + (to.x - this.at.x) * u,
+					y: this.at.y + (to.y - this.at.y) * u,
+				},
+				Math.max(v, this.top * FLAT_OUT),
+			);
+			t1 = Math.max(t1, this.t + DIVE_LEAST_MS);
+		}
+		this.lunge("dive", t1, yaw, to);
+		return this.t;
+	}
+
 	// Reaching for it, his hands on it at `at` (see CATCH_REACH_MS) - only
 	// so much of the reach as there is still time for, if he gets to it
 	// late: his hands there as it gets there, not up for it after.
@@ -3696,6 +3729,11 @@ const STRONG = 0.5;
 const JUKE_MS = 300;
 const JUKE_ON = 2;
 const JUKE_OVER = 5;
+// (All of it going into it at JUKE_FULL_FPS or more - his pace over the
+// last JUKE_INTO_MS - and less slower, down to JUKE_LEAST of it.)
+const JUKE_FULL_FPS = 14;
+const JUKE_INTO_MS = 150;
+const JUKE_LEAST = 0.45;
 // Instead, now and then, a hurdle (him coming from no wider than this off
 // straight ahead: the cosine), this long; or a spin, this long, this far on
 // and over.
@@ -8737,9 +8775,12 @@ class Action {
 			// (Off it as fast as he went into it - in the gait he goes at, if
 			// that is less.)
 			const v = Math.min(carrier.top, dist(l.from, to) / (ms / 1000));
+			// (Back up to it off what the move left him going at - see
+			// rampInto - not shot out of it at full tilt.)
 			const on = () => {
 				const far = dist(carrier.at, to);
-				const at = Math.max(t1, carrier.t + (far / v) * 1000);
+				const v0 = Math.min(v, paceOn(carrier.last, carrier.at, to));
+				const at = Math.max(t1, carrier.t + rampedMs(far, v, v0));
 				const fps = far / Math.max(0.001, (at - carrier.t) / 1000);
 				carrier.go(to, at, GAITS.has(move) ? gait(fps) : move);
 			};
@@ -8795,10 +8836,21 @@ class Action {
 				this.done.add(m.pid);
 				return t + carrier.t - t1;
 			}
+			// (Only as far over as the pace he comes into it at carries him -
+			// a step aside, off next to nothing, not thrown five feet over.)
+			const into = Math.min(
+				1,
+				Math.max(
+					JUKE_LEAST,
+					(dist(carrier.posAt(tc - JUKE_INTO_MS), at) * 1000) /
+						JUKE_INTO_MS /
+						JUKE_FULL_FPS,
+				),
+			);
 			const off = beside(
-				beside(at, ang, JUKE_ON),
+				beside(at, ang, JUKE_ON * into),
 				ang - (side * Math.PI) / 2,
-				JUKE_OVER,
+				JUKE_OVER * into,
 			);
 			carrier.cut(tc);
 			carrier.act("juke", tc + JUKE_MS, ang, off);
@@ -9175,9 +9227,9 @@ class Action {
 					free,
 				) ?? along(landing(by), -LANDED_APART * 2, 0);
 			landed.push(lands);
-			m.lunge("dive", t + 450, face, lands);
-			m.hold(t + 450 + DOWN_MS + 150 * k, "prone");
-			m.act("getUp", t + 450 + DOWN_MS + GET_UP_MS + 150 * k);
+			const down = m.diveIn(lands, t + 450, face);
+			m.hold(down + DOWN_MS + 150 * k, "prone");
+			m.act("getUp", down + DOWN_MS + GET_UP_MS + 150 * k);
 			this.done.add(m.pid);
 		});
 		return downAt;
@@ -9377,9 +9429,9 @@ class Action {
 			}
 			const face = this.toward(hit, pile);
 			this.closeOn(m, hit, go, face, carrier);
-			m.lunge("dive", go + 450, face, lies(ang + round));
-			m.hold(go + 450 + DOWN_MS, "prone");
-			m.act("getUp", go + 450 + DOWN_MS + GET_UP_MS);
+			const downT = m.diveIn(lies(ang + round), go + 450, face);
+			m.hold(downT + DOWN_MS, "prone");
+			m.act("getUp", downT + DOWN_MS + GET_UP_MS);
 			this.done.add(m.pid);
 		});
 	}
@@ -13320,12 +13372,20 @@ class Action {
 			const s = this.of(m.at);
 			this.offSnap(m, STALK_OFF_MS, STALK_OFF_SPREAD_MS);
 			const db = closest(dbs, m.at);
-			if (!db || dist(db.at, m.at) > STALK_FAR) {
+			// (Off his line no quicker than he can get going out of his
+			// stance - not shot off it from nothing to full tilt in a stride.)
+			const release = (to: Pt, by: number) =>
 				m.go(
-					this.w({ d: s.d + 9 + r() * 8, a: s.a * 0.92 }),
-					snap + 1300,
+					to,
+					Math.max(
+						by,
+						m.t +
+							rampedMs(dist(m.at, to), m.top * CLIMB_PACE, 0, RELEASE_ACCEL),
+					),
 					"run",
 				);
+			if (!db || dist(db.at, m.at) > STALK_FAR) {
+				release(this.w({ d: s.d + 9 + r() * 8, a: s.a * 0.92 }), snap + 1300);
 				// (Pulled up there, a step or two on - and in toward it at a
 				// jog, not stood out there till the whistle.)
 				m.easeOff(STALK_EASE_FT);
@@ -13374,11 +13434,7 @@ class Action {
 			);
 			// (Pulled up there, a step or two on.)
 			db.easeOff(STALK_EASE_FT);
-			m.go(
-				this.w({ d: s.d + 4, a: s.a + (c.a - s.a) * 0.3 }),
-				snap + 650,
-				"run",
-			);
+			release(this.w({ d: s.d + 4, a: s.a + (c.a - s.a) * 0.3 }), snap + 650);
 			this.blockOn(m, db, r() < STALK_WON, offAt, until, carrier, through);
 			stalks.push(m);
 		}
