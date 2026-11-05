@@ -3724,12 +3724,12 @@ const LEAD_OUT = 0.5;
 // (feet past the quarterback) with no more than this far to go after it,
 // and a man on him (this near) or the end zone; how long he is up (ms), and
 // how high it is caught (feet).
-const LEAP = 0.5;
+const LEAP = 0.6;
 // (Sure hands, against the other receivers in the game: up for it, or laid
 // out for it, that much more often at the most.)
 const HANDS = 0.5;
 const LEAP_DEEP = 36;
-const LEAP_YAC = 9;
+const LEAP_YAC = 18;
 const CONTESTED = 6;
 const LEAP_MS = 760;
 const LEAP_Z = 8.4;
@@ -3743,6 +3743,15 @@ const CONTEST_BEHIND = -0.2;
 const CONTEST = 0.7;
 const CONTEST_FROM_MS = 300;
 const CONTEST_TO_MS = 300;
+// Up for it with him (a ball he goes up for, see LEAP): off both feet over
+// this long (ms), a beat (ms, give or take) either side of him; carried on
+// toward it as far as this share of his pace takes him, this far at the
+// most (feet), and no nearer the man going up for it than this (feet).
+const CONTEST_UP_MS = 800;
+const CONTEST_UP_SPREAD_MS = 60;
+const CONTEST_UP_CARRY = 0.35;
+const CONTEST_UP_MOST_FT = 4;
+const CONTEST_UP_APART = 2.2;
 // (On his feet: in his stride, or sat in his stance reading it.)
 const ON_FEET = new Set<Move>([
 	...GAITS,
@@ -8684,7 +8693,7 @@ class Action {
 			const at = rec.posAt(catchAt);
 			fly.to = { ...fly.to, x: at.x, y: at.y };
 		}
-		this.playBall(rec, catchAt);
+		this.playBall(rec, catchAt, leap ? catchPt : undefined);
 		if (leap) {
 			this.leapFor(rec, catchPt, catchAt, qb);
 		} else if (dive) {
@@ -8735,9 +8744,11 @@ class Action {
 	// The man on him as it gets there, in his stride after him or sat
 	// reading it: a hand in at it, the one on its side, too late. (His own
 	// count, no draw of the play's.)
-	playBall(rec: Actor, catchAt: number) {
+	// (Up for it: the man on him up off his feet with him - see
+	// CONTEST_UP.)
+	playBall(rec: Actor, catchAt: number, upAt?: Pt) {
 		// (Where it gets to him: at him, in his stride - see inStride.)
-		const catchPt = rec.posAt(catchAt);
+		const catchPt = upAt ?? rec.posAt(catchAt);
 		const near = this.d
 			.filter((m) => !this.done.has(m.pid))
 			.map((m) => ({ m, far: dist(m.posAt(catchAt), catchPt) }))
@@ -8763,6 +8774,9 @@ class Action {
 		if (hx * bx + hy * by < CONTEST_BEHIND) {
 			return;
 		}
+		if (upAt && this.upWith(m, rec, upAt, catchAt)) {
+			return;
+		}
 		// (On his right, or his left - see carryArm.)
 		const right = hx * by - hy * bx > 0;
 		this.reaches.push({
@@ -8772,6 +8786,71 @@ class Action {
 			t1: catchAt + CONTEST_TO_MS,
 			onFeet: true,
 		});
+	}
+
+	// A jump ball fought for: the man on him up off both feet for it with
+	// him, arms up at it, on his own count a beat either side of him - from
+	// his stride on toward it as far as it carries him, but never into the
+	// man going up for it (see leapFor: where he goes up from, and on
+	// through it to). False, if there is no way up for him clear of him.
+	upWith(m: Actor, rec: Actor, catchPt: Pt, catchAt: number): boolean {
+		const { snap } = this.input;
+		const t0 =
+			catchAt -
+			CONTEST_UP_MS / 2 +
+			(countOf(m, snap, 123) - 0.5) * 2 * CONTEST_UP_SPREAD_MS;
+		const r0 = catchAt - LEAP_MS / 2;
+		const rFrom = rec.posAt(r0);
+		const rFar = dist(rFrom, catchPt);
+		const rTo =
+			rFar > 1
+				? {
+						x: catchPt.x + (catchPt.x - rFrom.x) * 0.9,
+						y: catchPt.y + (catchPt.y - rFrom.y) * 0.9,
+					}
+				: rFrom;
+		const from = m.posAt(t0);
+		const was = m.posAt(t0 - 100);
+		const v = dist(from, was) * 10;
+		const way = this.toward(from, catchPt);
+		const recAt = (t: number) => {
+			const u = clamp((t - r0) / LEAP_MS, 0, 1);
+			return {
+				x: rFrom.x + (rTo.x - rFrom.x) * u,
+				y: rFrom.y + (rTo.y - rFrom.y) * u,
+			};
+		};
+		for (
+			let go = Math.min(
+				CONTEST_UP_MOST_FT,
+				v * CONTEST_UP_CARRY,
+				Math.max(0, dist(from, catchPt) - CONTEST_UP_APART),
+			);
+			go >= 0;
+			go -= 0.5
+		) {
+			const to = {
+				x: from.x + Math.cos(way) * go,
+				y: from.y + Math.sin(way) * go,
+			};
+			let clear = true;
+			for (let k = 0; k <= 8 && clear; k++) {
+				const t = t0 + (CONTEST_UP_MS * k) / 8;
+				const u = k / 8;
+				const at = {
+					x: from.x + (to.x - from.x) * u,
+					y: from.y + (to.y - from.y) * u,
+				};
+				clear = dist(at, recAt(t)) >= CONTEST_UP_APART;
+			}
+			if (!clear) {
+				continue;
+			}
+			m.cut(t0);
+			m.act("leap", t0 + CONTEST_UP_MS, way, to);
+			return true;
+		}
+		return false;
 	}
 
 	// The man of the other side on a receiver as he catches it, if any: near

@@ -50,15 +50,20 @@ Parts: formation; the drop; where the throw goes (depth, side) and its arc;
 the route; how it is caught (in stride, on the move, sat down; diving,
 leaping) and how open; then the same ending as a run.
 
-Now (417 catches): 402 different combinations. Caught standing still 37%
+Now (417 catches): 404 different combinations. Caught standing still 37%
 (hitches, curls, comebacks, screens and check-downs). Deep throws lofted a
 little, more the further they go (of 103 tried: on a line 90, touch 10, a
-lob 3). A man on him reaching a hand in at it as it gets there on 26 of
-the 111 tight catches (in his stride or sat reading it, the arm on its
+lob 3). A man on him reaching a hand in at it as it gets there on 16 of
+the 101 tight catches (in his stride or sat reading it, the arm on its
 side).
 
-To do: a back-shoulder throw, a contested catch fought for (both up for
-it, a hand on it in the air), a catch at the sideline with his feet in
+Up for it at its highest on 7 (from 3): thrown deep, covered or into the
+end zone, and no more than 6 yards left to go with it after - he comes
+down with it and goes on. A jump ball fought for on 2 of those: the man on
+him up off both feet with him, arms up at it, on his own count, never
+into him.
+
+To do: a back-shoulder throw, a catch at the sideline with his feet in
 more often.
 
 ## 3. Pass incomplete
