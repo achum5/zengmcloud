@@ -1121,6 +1121,92 @@ class Actor {
 		return v0 + a * ta;
 	}
 
+	// Into a man at `to`, there at the end of the leg he is on: pulled up
+	// over his last strides to `ve` (at `A` ft/s/s) and on in to it over `S`
+	// ms, in `into`, as that takes the rest out of him - there that much
+	// later than he would have been, not run into it flat out and stopped
+	// dead. Only off a straight run in. (When he gets there, if he does.)
+	gatherTo(
+		to: Pt,
+		ve: number,
+		A: number,
+		S: number,
+		into: Move,
+	): number | undefined {
+		const legs = this.part.legs;
+		const l = this.last;
+		const v = legPace(l);
+		const press = (ve * S) / 2000;
+		const far = (v * v - ve * ve) / (2 * A) + press;
+		if (!(v > ve) || l.to.x !== to.x || l.to.y !== to.y) {
+			return undefined;
+		}
+		// (From where he is that far off it.)
+		let t0 = l.t1;
+		while (t0 > this.pinned && dist(this.posAt(t0), to) < far) {
+			t0 -= STOP_STEP_MS / 10;
+		}
+		const from = legIndexAt(legs, t0);
+		const way = Math.atan2(to.y - l.from.y, to.x - l.from.x);
+		if (from < 0 || t0 <= this.pinned || dist(this.posAt(t0), to) < far) {
+			return undefined;
+		}
+		for (let k = from; k < legs.length; k++) {
+			const x = legs[k]!;
+			const a = Math.atan2(x.to.y - x.from.y, x.to.x - x.from.x) - way;
+			if (
+				!RAMPS.has(x.move) ||
+				x.arms ||
+				x.turn ||
+				x.span ||
+				x.t1 <= x.t0 ||
+				Math.abs(Math.atan2(Math.sin(a), Math.cos(a))) > STRETCH_TURN
+			) {
+				return undefined;
+			}
+		}
+		const move = legs[from]!.move;
+		const v0 = legPace(legs[from]!);
+		this.cut(t0);
+		const D = dist(this.at, to);
+		const cos = (to.x - this.at.x) / D;
+		const sin = (to.y - this.at.y) / D;
+		const q = { x: to.x - cos * press, y: to.y - sin * press };
+		// (Slowed evenly over what is left before he is on it.)
+		const Dq = Math.max(0.01, D - press);
+		const Ad = Math.max(0.01, (v0 * v0 - ve * ve) / (2 * Dq));
+		const td = v0 > ve ? (v0 - ve) / Ad : Dq / ve;
+		const n = Math.max(1, Math.round((td * 1000) / STOP_STEP_MS));
+		const dt = td / n;
+		const paceOf = (i: number) => v0 - (v0 - ve) * ((i + 0.5) / n);
+		const moveOf = slower(move, n, dt, paceOf);
+		for (let i = 0; i < n; i++) {
+			const pace = paceOf(i);
+			const p = this.at;
+			this.push(
+				this.legTo(
+					i === n - 1
+						? q
+						: { x: p.x + cos * pace * dt, y: p.y + sin * pace * dt },
+					this.t + dt * 1000,
+					moveOf(i),
+				),
+			);
+		}
+		const m = Math.max(1, Math.round(S / HIT_PRESS_STEP_MS));
+		const t1 = this.t;
+		for (let k = 1; k <= m; k++) {
+			const u = (1 - k / m) * (1 - k / m);
+			this.go(
+				{ x: to.x - cos * press * u, y: to.y - sin * press * u },
+				t1 + (S * k) / m,
+				into,
+				way,
+			);
+		}
+		return this.t;
+	}
+
 	// Met on the run at t (a blocker onto him, say): pulled up from the pace
 	// he is going to `ve` by then, at `A` ft/s/s, on the way he is going -
 	// over his last strides to it, not stopped dead in a stride at t. Only
@@ -4132,6 +4218,11 @@ const STOOD_LATE = 350;
 const STOOD_BACK = 2.6;
 const STOOD_MS = 1100;
 const STOOD_APART = 1;
+// (Into them braced, at this, ft/s - pulled up to it at this, ft/s/s, and
+// on into them over this long, ms.)
+const STOOD_FPS = 10;
+const STOOD_GATHER = 50;
+const STOOD_PRESS_MS = 150;
 // (In on him off a run this quick or more, ft/s: the last of it eased off
 // over twice this far, feet.)
 const STOOD_IN_LEAST = 8;
@@ -10712,6 +10803,8 @@ class Action {
 			y: -Math.sin(fall) * STOOD_BACK,
 		};
 		this.downer = by[0]!;
+		// (Braced for it - see STOOD_FPS - not into them flat out.)
+		carrier.gatherTo(pt, STOOD_FPS, STOOD_GATHER, STOOD_PRESS_MS, "drive");
 		carrier.go({ x: pt.x + back.x, y: pt.y + back.y }, end, "drive", fall);
 		carrier.hold(end + 500, "stand", fall);
 		this.done.add(carrier.pid);

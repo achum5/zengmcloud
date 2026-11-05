@@ -72,6 +72,12 @@ there, not bending his run in. A linebacker (or anybody) met on the run
 by a blocker climbing to him pulls up into it over his last strides, the
 same way (hard stops at contact on the game tape: 335 before, 50 now).
 
+Stood up, the man with the ball braces for it - pulled up to about 10 feet
+a second over his last strides, there a moment later, and on into them as
+that takes the rest out of him - before they drive him back, not met at a
+full sprint and sent straight back the other way (sudden slowdowns on the
+game tape 123 before, 75 now).
+
 Now (9 games, 442 runs): 380 different combinations. A counter on 16, a
 draw on 9. A toss on 42 (runs to the edge under center, to a back lined up
 deep). The option on 3 (a run to the edge out of the gun, the back beside
