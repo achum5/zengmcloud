@@ -251,6 +251,8 @@ const RAMPS = new Set<Move>(["jog", "run", "sprint"]);
 // as near as he has to), in steps STOP_STEP_MS long (see slower).
 const STOP_ACCEL = 20;
 const STOP_STEP_MS = 100;
+// (Off a backpedal: see plantBack.)
+const BACK_PLANT_ACCEL = 40;
 // (From no slower than this, ft/s.)
 const STOP_LEAST = 8;
 // (Sitting down in a route, cut off at speed: eased off over this share of
@@ -1476,6 +1478,38 @@ class Actor {
 	// to as much of his pace as he can take round with him (as on a route,
 	// see breakOf), or to `down` ft/s, at CUT_ACCEL - not turned round at
 	// full speed.
+	// Backpedaling, and off it another way: planted first - down off his
+	// backpedal at BACK_PLANT_ACCEL, still facing the way he was, to as much
+	// of his pace as goes on the new way - not turned and gone at once from
+	// all his pace back.
+	plantBack(to: Pt) {
+		const l = this.last;
+		const v = legPace(l);
+		if (l.move !== "back" || v < STOP_LEAST || l.arms || l.turn) {
+			return;
+		}
+		const turn = angleAt(l.from, l.to, to);
+		if (!(turn > CUT_LEAST)) {
+			return;
+		}
+		const far = dist(l.from, l.to);
+		const cos = (l.to.x - l.from.x) / far;
+		const sin = (l.to.y - l.from.y) / far;
+		const ve = v * Math.max(0, Math.cos(turn));
+		const T = (v - ve) / BACK_PLANT_ACCEL;
+		const n = Math.max(1, Math.round((T * 1000) / STOP_STEP_MS));
+		const dt = T / n;
+		for (let i = 0; i < n; i++) {
+			const pace = v - (v - ve) * ((i + 0.5) / n);
+			this.go(
+				{ x: this.at.x + cos * pace * dt, y: this.at.y + sin * pace * dt },
+				this.t + dt * 1000,
+				"back",
+				l.yaw,
+			);
+		}
+	}
+
 	plantFor(to: Pt, down?: number, most?: number) {
 		const l = this.last;
 		const v = legPace(l);
@@ -3486,6 +3520,18 @@ const COVER_FRONT = 1;
 const COVER_LATE_MS = 600;
 const COVER_LATE_LEAST = 10;
 const COVER_LATE_KEEP = 0.9;
+// Zone behind it, this often - two safeties deep (the strong safety this
+// deep at the snap at least, feet), or one - the rest man; never with a
+// corner pressed (this near the line, feet). Two deep, the safeties each
+// take a half (out toward this share of the way to the sideline) and the
+// corners sit in the flats - or, man under it, the safeties are the only
+// two not on a man. One deep, the free safety the middle and the corners a
+// deep third each, the strong safety and the rest under them.
+const ZONE_TWO = 0.7;
+const ZONE_ONE = 0.55;
+const TWO_HIGH_FT = 33;
+const PRESSED_FT = 8;
+const HALF_OUT = 0.45;
 // Back into his zone at this pace (ft/s), this far back at least (feet) -
 // settling into it over as much as this (feet), and turned and run there
 // if it takes him any quicker than this (ft/s) over this long (ms) at least
@@ -3506,6 +3552,9 @@ const ZONE_STEP_MS = 300;
 const ZONE_SEE_FT = 50;
 const ZONE_LEAN = 0.3;
 const ZONE_REACH_FT = 8;
+// (A cover man against the others at his position: that much more of the
+// way to him, and further, at the most - or less.)
+const ZONE_TIGHT = 0.5;
 const ZONE_DRIFT_FPS = 6;
 const ZONE_STIR_FT = 1.5;
 const ZONE_SIT_MS = 300;
@@ -8129,6 +8178,20 @@ class Action {
 		const onBall = thrown
 			? this.man(this.statPids(first === intI ? "defInt" : "defPssDef")[0])
 			: undefined;
+		// (Zone or man behind it, by the look the defense showed - see
+		// ZONE_ONE: man on a back-shoulder throw or a double move, which are
+		// thrown at the man on him.)
+		const ss = coverage.find((m) => m.role === "SS");
+		const twoHigh =
+			ss !== undefined && this.of(ss.posAt(snap)).d >= TWO_HIGH_FT;
+		const pressed = coverage.some(
+			(m) => m.role === "CB" && this.of(m.posAt(snap)).d <= PRESSED_FT,
+		);
+		const zone =
+			!pressed &&
+			tr?.name !== "backShoulder" &&
+			!jab &&
+			countOf(qb, snap, 147) < (twoHigh ? ZONE_TWO : ZONE_ONE);
 		this.cover(
 			coverage,
 			runners,
@@ -8140,6 +8203,7 @@ class Action {
 			first === cmpI ? Math.max(0, (gain - airYds) * YD) : 0,
 			tr?.name === "backShoulder" ? target : undefined,
 			jab && target ? { m: target, ...jab } : undefined,
+			{ zone, twoHigh },
 		);
 		const beaten = sacker ? this.man(this.statPids("skAlw")[0]) : undefined;
 		this.passRush(
@@ -14116,6 +14180,7 @@ class Action {
 		yac = 0,
 		late?: Actor,
 		fooled?: { m: Actor; at: number; top: Pt; stem: Pt },
+		call: { zone: boolean; twoHigh: boolean } = { zone: false, twoHigh: false },
 	) {
 		const { snap } = this.input;
 		const r = this.r;
@@ -14129,15 +14194,21 @@ class Action {
 		if (marked && free.includes(marked[0]) && runners.includes(marked[1])) {
 			pairs.set(marked[0], marked[1]);
 		}
-		const order = runners
-			.filter((m) => !(marked && marked[1] === m && pairs.has(marked[0])))
-			.sort((a, b) => Math.abs(set(b).a) - Math.abs(set(a).a));
+		const order = call.zone
+			? []
+			: runners
+					.filter((m) => !(marked && marked[1] === m && pairs.has(marked[0])))
+					.sort((a, b) => Math.abs(set(b).a) - Math.abs(set(a).a));
+		// (The safeties deep, two of them, the free safety alone: not on a
+		// man.)
+		const deep = (m: Actor) =>
+			m.role === "FS" || (call.twoHigh && m.role === "SS");
 		for (const rec of order) {
 			const ra = set(rec);
 			let best: Actor | undefined;
 			let bestScore = Infinity;
 			for (const m of free) {
-				if (pairs.has(m) || m.role === "FS") {
+				if (pairs.has(m) || deep(m)) {
 					continue;
 				}
 				const ma = set(m);
@@ -14309,14 +14380,30 @@ class Action {
 					);
 				}
 			} else {
-				// Back into his zone: deep middle, a deep half, under the
-				// routes over the middle.
+				// Back into his zone: deep middle, a deep half or third, a
+				// flat, under the routes over the middle - see ZONE_TWO.
+				const mid = (this.bounds.left + this.bounds.right) / 2;
+				const outward = Math.sign(start.a - mid) || 1;
 				const zone =
-					m.role === "FS"
-						? { d: Math.max(start.d, 42 + r() * 12), a: start.a * 0.4 }
-						: m.role === "SS" || m.role === "CB"
-							? { d: Math.max(start.d, 36 + r() * 10), a: start.a * 0.9 }
-							: { d: 18 + r() * 10, a: start.a * 0.8 };
+					call.twoHigh && deep(m)
+						? {
+								d: Math.max(start.d, 38 + r() * 10),
+								a:
+									mid +
+									outward *
+										(this.bounds.right - this.bounds.left) *
+										HALF_OUT *
+										0.5,
+							}
+						: m.role === "FS"
+							? { d: Math.max(start.d, 42 + r() * 12), a: start.a * 0.4 }
+							: m.role === "CB" && call.zone && call.twoHigh
+								? { d: 16 + r() * 6, a: start.a + outward * 3 }
+								: (m.role === "SS" && !call.zone) || m.role === "CB"
+									? { d: Math.max(start.d, 36 + r() * 10), a: start.a * 0.9 }
+									: m.role === "SS"
+										? { d: 15 + r() * 8, a: start.a * 1.2 }
+										: { d: 18 + r() * 10, a: start.a * 0.8 };
 				this.offSnap(m, ZONE_OFF_MS, ZONE_OFF_SPREAD_MS);
 				// (Up a step or two to the fake first, a linebacker, and stood
 				// reading it.)
@@ -14497,9 +14584,10 @@ class Action {
 							near = p;
 						}
 					}
+					const tight = 1 + ZONE_TIGHT * (m.flair.cover ?? 0);
 					const u =
 						near && nd < ZONE_SEE_FT
-							? Math.min(ZONE_REACH_FT, nd * ZONE_LEAN) / nd
+							? Math.min(ZONE_REACH_FT * tight, nd * ZONE_LEAN * tight) / nd
 							: 0;
 					const to = near
 						? {
@@ -14562,8 +14650,9 @@ class Action {
 						spots.find((p) => closing.every((q) => dist(q, p) > 3.5)) ??
 						spots.at(-1)!;
 					closing.push(spot);
-					// (Planted first, going the other way - see plantFor - and up
-					// to speed out of it.)
+					// (Planted first, going the other way - see plantFor, and
+					// plantBack off a backpedal - and up to speed out of it.)
+					m.plantBack(spot);
 					m.plantFor(spot);
 					const v0 = paceOn(m.last, m.at, spot);
 					const due = catchAt + 150;

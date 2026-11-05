@@ -692,7 +692,12 @@ const reactionAt = (
 // or when either of those has him.
 type Pace = { t0: number; t1: number; from: Pt; to: Pt };
 const pacing = new WeakMap<Play, Map<number, Pace[]>>();
-const pacesOf = (s: SidelineMan, play: Play, tl: FieldTimeline): Pace[] => {
+const pacesOf = (
+	s: SidelineMan,
+	play: Play,
+	tl: FieldTimeline,
+	way?: Way,
+): Pace[] => {
 	let byMan = pacing.get(play);
 	if (!byMan) {
 		byMan = new Map();
@@ -719,9 +724,18 @@ const pacesOf = (s: SidelineMan, play: Play, tl: FieldTimeline): Pace[] => {
 			if (ms < PACE_LEAST || t0 + ms + COACH_BLEND > until) {
 				continue;
 			}
+			// (Nor with him stepping out of a man's way then - see making
+			// way - or only just done.)
 			let clear = true;
-			for (let t = t0 - COACH_BLEND; t < t0 + ms + COACH_BLEND; t += 100) {
-				if (reactionAt(s, play, tl, t)) {
+			for (
+				let t = t0 - COACH_BLEND - WAY_BLEND;
+				t < t0 + ms + COACH_BLEND;
+				t += 100
+			) {
+				if (
+					(t >= t0 - COACH_BLEND && reactionAt(s, play, tl, t)) ||
+					(way && wayAt(way, t).fps > WAY_STEP)
+				) {
 					clear = false;
 					break;
 				}
@@ -757,8 +771,9 @@ const bossSpot = (
 	play: Play,
 	tl: FieldTimeline,
 	t: number,
+	way?: Way,
 ): { at: Pt; walk?: Pace } => {
-	const p = pacesOf(s, play, tl).findLast((p) => p.t0 <= t);
+	const p = pacesOf(s, play, tl, way).findLast((p) => p.t0 <= t);
 	if (!p) {
 		return { at: headCoachAt(s.team, play.i) };
 	}
@@ -776,6 +791,7 @@ const bossDoing = (
 	play: Play,
 	tl: FieldTimeline,
 	t: number,
+	way?: Way,
 ): Doing => {
 	const call = callInOf(s, play);
 	if (call && t >= call.t0 - CALL_IN_LEAD) {
@@ -802,7 +818,7 @@ const bossDoing = (
 	if (react) {
 		return react;
 	}
-	const { at, walk } = bossSpot(s, play, tl, t);
+	const { at, walk } = bossSpot(s, play, tl, t, way);
 	if (walk) {
 		return {
 			move: "walk",
@@ -826,32 +842,37 @@ const bossAt = (
 	play: Play,
 	tl: FieldTimeline,
 	t: number,
+	way?: Way,
 ): Pick<FieldPlayerState, "move" | "phase" | "from"> & {
 	at: Pt;
 	turn?: { to: number; w: number };
 } => {
-	const { at, walk } = bossSpot(s, play, tl, t);
+	const { at, walk } = bossSpot(s, play, tl, t, way);
 	const turn = walk
 		? {
 				to: walk.to.x > walk.from.x ? 0 : Math.PI,
 				w: smooth01(Math.min(t - walk.t0, walk.t1 - t) / PACE_TURN),
 			}
 		: undefined;
-	const now = { ...bossDoing(s, play, tl, t), at, ...(turn ? { turn } : {}) };
+	const now = {
+		...bossDoing(s, play, tl, t, way),
+		at,
+		...(turn ? { turn } : {}),
+	};
 	let lo = t - COACH_BLEND;
-	if (bossDoing(s, play, tl, lo).move === now.move) {
+	if (bossDoing(s, play, tl, lo, way).move === now.move) {
 		return now;
 	}
 	let hi = t;
 	for (let k = 0; k < 9; k++) {
 		const mid = (lo + hi) / 2;
-		if (bossDoing(s, play, tl, mid).move === now.move) {
+		if (bossDoing(s, play, tl, mid, way).move === now.move) {
 			hi = mid;
 		} else {
 			lo = mid;
 		}
 	}
-	const was = bossDoing(s, play, tl, lo);
+	const was = bossDoing(s, play, tl, lo, way);
 	const w = 1 - smooth01((t - hi) / COACH_BLEND);
 	return { ...now, from: { move: was.move, phase: was.phase, w } };
 };
@@ -1150,7 +1171,7 @@ export const sidelineAt = (
 		const off = way ? wayAt(way, m.t) : undefined;
 		const boss =
 			s.unit === "coach" && s.coach === 0
-				? bossAt(s, play, tl, m.t)
+				? bossAt(s, play, tl, m.t, way)
 				: undefined;
 		const stood = boss?.at ?? spot.at;
 		const at = off ? { x: stood.x + off.x, y: stood.y + off.y } : stood;

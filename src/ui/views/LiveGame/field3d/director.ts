@@ -543,6 +543,10 @@ const COACH_REACT_SAD = 0.3;
 const COACH_REACT_AFTER = 500;
 const COACH_REACT_MS = 1800;
 const COACH_REACT_TAIL = 900;
+// (Nobody on the move within this far (feet) of him from this long (ms)
+// before the shot of him till the end of it.)
+const COACH_REACT_CLEAR = 9;
+const REACT_SHOT_LEAD = 800;
 // A man hurt on it: the play shown again while they see to him - no
 // longer than this (ms), on till this long after he is down.
 const HURT_REPLAY_MS = 6000;
@@ -2751,11 +2755,46 @@ class Director {
 			) {
 				return undefined;
 			}
+			// (Not with a man on the move right by him then, run out of
+			// bounds there: he would be stepping out of his way on camera.)
+			const at = headCoachAt(1, i0);
+			const by = (l: (typeof parts)[number]["legs"][number]) => {
+				const vx = l.to.x - l.from.x;
+				const vy = l.to.y - l.from.y;
+				const len = vx * vx + vy * vy;
+				const u =
+					len > 0
+						? Math.max(
+								0,
+								Math.min(
+									1,
+									((at.x - l.from.x) * vx + (at.y - l.from.y) * vy) / len,
+								),
+							)
+						: 0;
+				return (
+					Math.hypot(l.from.x + vx * u - at.x, l.from.y + vy * u - at.y) <
+					COACH_REACT_CLEAR
+				);
+			};
+			if (
+				parts.some((p) =>
+					p.legs.some(
+						(l) =>
+							l.t1 > from - REACT_SHOT_LEAD &&
+							l.t0 < from + COACH_REACT_MS &&
+							(l.from.x !== l.to.x || l.from.y !== l.to.y) &&
+							by(l),
+					),
+				)
+			) {
+				return undefined;
+			}
 			return {
 				t0: from,
 				t1: from + COACH_REACT_MS,
 				side: 1 as Side,
-				at: headCoachAt(1, i0),
+				at,
 				glad,
 			};
 		})();

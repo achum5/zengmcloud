@@ -78,6 +78,16 @@ Parts: formation; the drop; where the throw goes (depth, side) and its arc;
 the route; how it is caught (in stride, on the move, sat down; diving,
 leaping) and how open; then the same ending as a run.
 
+Coverage, behind the look the defense shows: zone most of the time (with
+two safeties deep 70%, one deep 55%), man the rest - always man with a
+corner pressed, or on a back-shoulder throw or a double move. Two-deep
+zone: the safeties a deep half each, the corners sitting in the flats, the
+linebackers dropping under the routes. One-deep zone: the free safety in
+the deep middle, the corners bailing to a deep third each, the strong
+safety and the linebackers under them. Man: everybody on a man but the
+free safety (two deep, both safeties, a deep half each). A man breaking
+on the ball off his backpedal plants first.
+
 Now (417 catches): 406 different combinations. Caught standing still 37%
 (hitches, curls, comebacks, screens and check-downs). Deep throws lofted a
 little, more the further they go (of 103 tried: on a line 90, touch 10, a
@@ -107,8 +117,8 @@ to): three steps up and a jab in as if on a slant, planted hard, and up
 the field. The quarterback pumps at the jab when he is set in time; the
 man on him comes up and in on it, plants, turns and chases him. The
 variety tool calls it "off a double move" (in toward the middle quick,
-then straight up the field to it, deep - none before it existed). Thrown
-on 3 in 9 games, 2 of them caught.
+then straight up the field to it, deep - none before it existed). Caught
+on 4 in 9 games.
 
 Not done: his toes in on a deeper throw along the sideline - in 9 games
 only one catch out of bounds that deep with next to nothing after it.
