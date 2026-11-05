@@ -81,6 +81,7 @@ import {
 	type Shown,
 } from "./follow.ts";
 import {
+	askedReplay,
 	lastHolder,
 	makeWipe,
 	onCursor,
@@ -267,6 +268,9 @@ type Props = {
 	// No game: the two teams warming up on the home floor, round and round -
 	// a look at the court (see CourtPreview).
 	preview?: boolean;
+	// A play the page asks to see again (a highlight tapped): the line that
+	// ended at `cursor`, shown again each time `n` goes up (see askedReplay).
+	replayAsk?: { n: number; cursor: number };
 };
 
 const Court3D = ({
@@ -287,6 +291,7 @@ const Court3D = ({
 	onFail,
 	onLost,
 	preview = false,
+	replayAsk,
 }: Props) => {
 	const { lid, gender } = useLocal(["lid", "gender"]);
 	const gid: number | undefined = boxScore?.gid;
@@ -1161,6 +1166,28 @@ const Court3D = ({
 		eventsLength: events?.length ?? 0,
 		preview,
 	};
+
+	// A highlight tapped: that play again, the game held while it shows -
+	// not on a court following another device's, which shows what that one
+	// does.
+	const askedN = replayAsk?.n;
+	useEffect(() => {
+		if (askedN === undefined || !replayAsk || !timeline) {
+			return;
+		}
+		if (follower && !along) {
+			return;
+		}
+		const r = askedReplay(timeline, replayAsk.cursor);
+		if (!r) {
+			return;
+		}
+		const s = play.current;
+		s.replay = r;
+		s.snapCam = true;
+		s.paceAt = -1;
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [askedN]);
 
 	useEffect(() => {
 		// The picture is drawn small - pixel art - and the page blows it up

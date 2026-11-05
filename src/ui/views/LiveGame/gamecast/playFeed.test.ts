@@ -1,6 +1,7 @@
 import { assert, describe, test } from "vitest";
 import {
 	feedRows,
+	highlightOf,
 	periodLabel,
 	playTitle,
 	type FeedEntry,
@@ -87,5 +88,31 @@ describe("the gamecast's play rows", () => {
 		assert.strictEqual(periodLabel(5, 4, ordinal), "OT");
 		assert.strictEqual(periodLabel(7, 4, ordinal), "3OT");
 		assert.isUndefined(periodLabel(undefined, 4, ordinal));
+	});
+
+	test("the highlights: dunks, threes, blocks, and-ones - not layups or misses", () => {
+		const one = (lines: FeedEntry[]) => highlightOf(feedRows(lines)[0]!);
+		assert.strictEqual(
+			one([line(2, "fgAtRim", 0, { finish: "dunk" }), line(1, "fgaAtRim", 0)]),
+			"Dunk",
+		);
+		assert.strictEqual(
+			one([
+				line(2, "fgAtRim", 0, { finish: "poster" }),
+				line(1, "fgaAtRim", 0),
+			]),
+			"Poster dunk",
+		);
+		assert.isUndefined(
+			one([line(2, "fgAtRim", 0, { finish: "layup" }), line(1, "fgaAtRim", 0)]),
+		);
+		assert.strictEqual(one([line(2, "tp", 1), line(1, "fgaTp", 1)]), "Three");
+		assert.strictEqual(
+			one([line(2, "blkAtRim", 0), line(1, "fgaAtRim", 1)]),
+			"Block",
+		);
+		assert.isUndefined(one([line(2, "missTp", 1), line(1, "fgaTp", 1)]));
+		// (Still in the air: not yet.)
+		assert.isUndefined(one([line(1, "fgaTp", 1)]));
 	});
 });

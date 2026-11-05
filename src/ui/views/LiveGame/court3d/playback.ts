@@ -142,6 +142,9 @@ export type Replay = {
 	slam?: number;
 	// And the man who sent it back, a block's - kept in the picture too.
 	also?: number;
+	// Asked for from the page (a highlight, see askedReplay): it plays even
+	// with the game paused.
+	asked?: boolean;
 };
 
 // Who had the ball last at or before t: the man who dunked it (it leaves his
@@ -196,6 +199,49 @@ export const replayOf = (tl: CourtTimeline, f: Fx): Replay => {
 		...(rim === undefined ? {} : { rim }),
 		...(f.kind === "dunk" ? { slam: f.t } : {}),
 		...(block && f.pid !== undefined ? { also: f.pid } : {}),
+	};
+};
+
+// A PLAY SHOWN AGAIN BECAUSE THE PAGE ASKED (a highlight tapped): the line
+// that ended at `cursor` - from the beat before it (the shot, for the line
+// that says how it went) to the end of its own - shown the way a dunk is
+// shown again, off the moment the court marked in it (the basket, the
+// block), and then back to the game where it was.
+export const askedReplay = (
+	tl: CourtTimeline,
+	cursor: number,
+): Replay | undefined => {
+	const i = cursor - 1;
+	let k = -1;
+	for (let j = 0; j < tl.beats.length; j++) {
+		if (tl.beats[j]!.i <= i) {
+			k = j;
+		} else {
+			break;
+		}
+	}
+	const beat = tl.beats[k];
+	if (!beat) {
+		return undefined;
+	}
+	const from = tl.beats[k - 1]?.preStart ?? beat.preStart;
+	const marked = tl.fx.find(
+		(f) =>
+			(f.kind === "dunk" || f.kind === "swish" || f.kind === "block") &&
+			f.t >= from &&
+			f.t <= beat.end + 300,
+	);
+	if (marked) {
+		return { ...replayOf(tl, marked), asked: true };
+	}
+	const pid = lastHolder(tl, beat.actionStart);
+	const start = Math.max(from, beat.end - REPLAY_FROM);
+	return {
+		at: start,
+		from: start,
+		to: beat.end + REPLAY_TO,
+		...(pid === undefined ? {} : { pid }),
+		asked: true,
 	};
 };
 
@@ -541,7 +587,7 @@ export const stepPlay = (
 			s.t = Math.min(target, s.t + show * rate);
 		}
 	} else if (r) {
-		if (!p.paused) {
+		if (!p.paused || r.asked) {
 			const at = r.at + show * base * REPLAY_SPEED;
 			s.w += (Math.min(at, r.to) - r.at) / (base * REPLAY_SPEED);
 			r.at = at;

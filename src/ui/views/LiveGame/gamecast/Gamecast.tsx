@@ -30,6 +30,7 @@ import {
 import { TEAM_NUMS_DISPLAY_ORDER } from "../../../util/boxScoreDisplayOrder.ts";
 import {
 	feedRows,
+	highlightOf,
 	periodLabel,
 	type FeedEntry,
 	type FeedRow,
@@ -393,6 +394,87 @@ const AllPlays = ({
 				season={season}
 				numPeriods={numPeriods}
 			/>
+		</Section>
+	);
+};
+
+// The game's dunks, threes and blocks so far, newest first, each one to be
+// shown again on the court.
+const Highlights = ({
+	rows,
+	teams,
+	season,
+	numPeriods,
+	onReplay,
+}: {
+	rows: FeedRow[];
+	teams: [any, any];
+	season: number;
+	numPeriods: number;
+	onReplay?: (cursor: number) => void;
+}) => {
+	const [all, setAll] = useState(false);
+	const highlights = rows.filter((row) => highlightOf(row) !== undefined);
+	if (highlights.length === 0) {
+		return null;
+	}
+	const SHOWN = 4;
+	const shown = all ? highlights : highlights.slice(0, SHOWN);
+	return (
+		<Section
+			title="Highlights"
+			action={
+				highlights.length > SHOWN ? (
+					<LinkButton onClick={() => setAll((a) => !a)}>
+						{all ? "Fewer" : `All ${highlights.length}`}
+					</LinkButton>
+				) : null
+			}
+		>
+			<div className="gamecast-plays">
+				{shown.map((row) => {
+					const team = row.t !== undefined ? teams[row.t] : undefined;
+					const when = [
+						row.time,
+						periodLabel(row.period, numPeriods, helpers.ordinal),
+					]
+						.filter(Boolean)
+						.join(" - ");
+					return (
+						<div key={row.key} className="gamecast-play align-items-center">
+							<div className="gamecast-play-picture">
+								<PlayPicture
+									pid={row.pid}
+									team={team}
+									season={season}
+									size={38}
+								/>
+							</div>
+							<div className="flex-grow-1" style={{ minWidth: 0 }}>
+								<div className="gamecast-play-title">
+									{highlightOf(row)}
+									{when ? (
+										<span className="gamecast-play-when">{when}</span>
+									) : null}
+								</div>
+								<div className="gamecast-play-text gamecast-clamp">
+									{textOf(row.texts)}
+								</div>
+							</div>
+							{onReplay && row.cursor !== undefined ? (
+								<button
+									type="button"
+									className="btn btn-sm btn-light-bordered flex-shrink-0"
+									title="Show it again on the court"
+									onClick={() => onReplay(row.cursor!)}
+								>
+									<span className="glyphicon glyphicon-play" /> Replay
+								</button>
+							) : null}
+						</div>
+					);
+				})}
+			</div>
 		</Section>
 	);
 };
@@ -1000,6 +1082,7 @@ export const LiveGamecast = ({
 	controls,
 	boxScoreTab,
 	header,
+	onReplay,
 }: {
 	boxScore: any;
 	entries: readonly FeedEntry[];
@@ -1010,6 +1093,9 @@ export const LiveGamecast = ({
 	boxScoreTab: ReactNode;
 	// Anything over the court (the replay label).
 	header?: ReactNode;
+	// Show a play again on the court (a highlight tapped) - where the court
+	// can.
+	onReplay?: (cursor: number) => void;
 }) => {
 	const [tab, setTab] = useState<Tab>("gamecast");
 	const teams = boxScore.teams as [any, any];
@@ -1111,6 +1197,37 @@ export const LiveGamecast = ({
 									numPeriods={numPeriods}
 								/>
 							</Section>
+							<Highlights
+								rows={rows}
+								teams={teams}
+								season={season}
+								numPeriods={numPeriods}
+								onReplay={
+									onReplay
+										? (cursor) => {
+												// (The court in sight to watch it: a phone's is
+												// pinned, a wide screen's may be scrolled away.)
+												const wrap = wrapRef.current;
+												const pin = wrap?.firstElementChild;
+												if (
+													wrap &&
+													pin &&
+													getComputedStyle(pin).position !== "sticky" &&
+													wrap.getBoundingClientRect().top < 0
+												) {
+													window.scrollTo({
+														top:
+															wrap.getBoundingClientRect().top +
+															window.scrollY -
+															60,
+														behavior: "smooth",
+													});
+												}
+												onReplay(cursor);
+											}
+										: undefined
+								}
+							/>
 							<Section
 								title="On the Court"
 								className="d-lg-none"

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 176,
+		date: "2026-11-05",
+		text: "The tabbed live game layout has a Highlights section: the game's dunks, threes and blocks so far, each with a Replay button that shows it again on the 3D court before going back to the game.",
+	},
+	{
 		n: 175,
 		date: "2026-11-05",
 		text: "New, to try: a tabbed layout for live games, like a sports app's gamecast. The court with the score by quarter and who's on the floor beside it, the latest play right under the picture, then Gamecast, Box Score, Play-by-Play, Team Stats and Game Flow tabs. Turn it on with \"Tabbed layout\" at the foot of the live game page, or in Global Settings.",

@@ -22,7 +22,8 @@ import useTitleBar from "../../hooks/useTitleBar.tsx";
 import { helpers } from "../../util/helpers.ts";
 import { realtimeUpdate } from "../../util/realtimeUpdate.ts";
 import { toWorker } from "../../util/toWorker.ts";
-import { localActions, useLocal } from "../../util/local.ts";
+import { local, localActions, useLocal } from "../../util/local.ts";
+import { finishOf } from "../../util/liveGameWording.basketball.ts";
 import { LiveGamecast } from "./gamecast/Gamecast.tsx";
 import { orderBoxScoreTeams } from "../../util/liveBoxScoreLayout.ts";
 import type { View } from "../../../common/types.ts";
@@ -215,6 +216,8 @@ type PlayByPlayEntryInfo = {
 	period?: number;
 	pts?: [number, number];
 	scored?: number;
+	finish?: string;
+	cursor?: number;
 	score: ReactNode | undefined;
 	scoreDiff: number;
 	scoreType: string | undefined;
@@ -529,6 +532,10 @@ export const LiveGame = (props: View<"liveGame">) => {
 	// Each "next play" asked for: the 3D court cuts straight past the play
 	// shown rather than playing it out.
 	const [skips3d, setSkips3d] = useState(0);
+	// A highlight tapped in the gamecast, for the 3D court to show again.
+	const [replayAsk, setReplayAsk] = useState<
+		{ n: number; cursor: number } | undefined
+	>();
 	const [started, setStarted] = useState(false);
 	const [confetti, setConfetti] = useState<{
 		colors?: [string, string, string];
@@ -2071,6 +2078,15 @@ export const LiveGame = (props: View<"liveGame">) => {
 						boxScore.current.teams[1][ptsKey],
 					],
 					scored: scoreDiff > 0 ? scoreDiff : undefined,
+					finish:
+						__SPORT === "basketball" && (output as any).event
+							? finishOf(
+									(output as any).event,
+									boxScore.current.gid,
+									local.getState().gender,
+								)
+							: undefined,
+					cursor: initialEventCount.current - (events.current?.length ?? 0),
 				});
 			}
 
@@ -3121,6 +3137,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 								onJump={onCourt3DJump}
 								onFail={onCourt3DFail}
 								onLost={onCourt3DLost}
+								replayAsk={replayAsk}
 							/>
 						)}
 					</Suspense>
@@ -3264,6 +3281,13 @@ export const LiveGame = (props: View<"liveGame">) => {
 						boxScore={boxScore.current}
 						entries={playByPlayEntries.current}
 						court={courtNode}
+						onReplay={
+							court3d && !(isFollower && !along)
+								? (cursor: number) => {
+										setReplayAsk((r) => ({ n: (r?.n ?? 0) + 1, cursor }));
+									}
+								: undefined
+						}
 						controls={
 							!locked ? (
 								<div className="d-flex align-items-center gap-1">

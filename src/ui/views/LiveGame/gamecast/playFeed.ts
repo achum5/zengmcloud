@@ -24,6 +24,12 @@ export type FeedEntry = {
 	pts?: [number, number];
 	// It scored: the points it put up.
 	scored?: number;
+	// How the line says it finished, where it could say it more than one
+	// way (a dunk, a layup - see liveGameWording's finishOf).
+	finish?: string;
+	// The page's place in the game's events once the line was shown (the
+	// 3D court finds the play by it, to show it again).
+	cursor?: number;
 };
 
 export type FeedRow = {
@@ -39,6 +45,10 @@ export type FeedRow = {
 	period?: number;
 	pts?: [number, number];
 	scored?: number;
+	finish?: string;
+	cursor?: number;
+	// The line that finished it.
+	type?: string;
 	// A shot still in the air: its row is open for the result.
 	pending: boolean;
 };
@@ -179,6 +189,9 @@ export const feedRows = (entries: readonly FeedEntry[]): FeedRow[] => {
 			open.time = e.time || open.time;
 			open.pts = e.pts ?? open.pts;
 			open.scored = e.scored;
+			open.finish = e.finish;
+			open.cursor = e.cursor ?? open.cursor;
+			open.type = e.type;
 			open.pending = false;
 			open = undefined;
 			openType = undefined;
@@ -195,6 +208,9 @@ export const feedRows = (entries: readonly FeedEntry[]): FeedRow[] => {
 			period: e.period,
 			pts: e.pts,
 			scored: e.scored,
+			finish: e.finish,
+			cursor: e.cursor,
+			type: e.type,
 			pending: isAttempt(e.type),
 		};
 		// (A line that isn't the attempt's result - there is always one, but
@@ -223,4 +239,27 @@ export const periodLabel = (
 	}
 	const ot = period - numPeriods;
 	return ot === 1 ? "OT" : `${ot}OT`;
+};
+
+// THE GAME'S HIGHLIGHTS so far: its dunks, threes, blocks and and-ones, as a
+// broadcast would cut them - and what to call each.
+export const highlightOf = (row: FeedRow): string | undefined => {
+	const type = row.type;
+	if (row.pending || type === undefined) {
+		return undefined;
+	}
+	if (type.startsWith("blk")) {
+		return "Block";
+	}
+	if (!type.startsWith("fg") && type !== "tp" && type !== "tpAndOne") {
+		return undefined;
+	}
+	const dunk = row.finish === "dunk" || row.finish === "poster";
+	if (type.endsWith("AndOne")) {
+		return dunk ? "Dunk and the foul" : "And-one";
+	}
+	if (type === "tp") {
+		return "Three";
+	}
+	return row.finish === "poster" ? "Poster dunk" : dunk ? "Dunk" : undefined;
 };
