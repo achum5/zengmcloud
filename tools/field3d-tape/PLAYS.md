@@ -100,12 +100,15 @@ On his own count, the man it was for now and then pulls up after one short
 of him in the turf (about half the time) or sailed on over his hands (a
 fifth), turns round to the quarterback, and puts his palms up at him.
 
-Now (132 incompletions): 130 different combinations. Over his hands 41,
-knocked away 31, off his hands 20, dove for it 16, thrown away 10, short in
-the turf 7, batted at the line 6. Palms up 8, hands on his helmet 12, waved
-off 19.
+Thrown behind him: on his own count, a throw to a man running across in
+his stride now and then comes in behind him - one arm back for it, the
+ball off the ends of his fingers and on past behind him into the turf,
+him running on and pulling up.
 
-To do: thrown behind an open man.
+Now (132 incompletions): 129 different combinations. Over his hands 42,
+knocked away 31, off his hands 14, short in the turf 13, dove for it 12,
+thrown away 7, behind him 7, batted at the line 6. Palms up 11, hands on
+his helmet 12, waved off 18.
 
 ## 4. Punt
 

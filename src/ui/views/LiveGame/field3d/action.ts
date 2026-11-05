@@ -35,6 +35,7 @@ import { fallHurt, HURT_MOST } from "./hurt.ts";
 import {
 	HIGH_FIVE_AT,
 	PAT_AT,
+	REACH_BACK_AT,
 	handOf,
 	handsMeet,
 	heldBall,
@@ -2849,6 +2850,21 @@ const INC_SHORT_BY = 3.5;
 const INC_HOP_FT = 7;
 const INC_HOP_MS = 380;
 const INC_HOP_PEAK = 1.3;
+// Thrown behind him, running across its way: this often of those that
+// would have gone on over his hands, him at this pace at least (ft/s),
+// running this square to the way it comes at the least (the sine); this
+// far behind where he is as it gets there and this far out to the side it
+// comes from, this high (feet) - his arm back for it over this long (ms) -
+// to the ground this long after (ms), coming to rest this far on.
+const INC_BEHIND = 0.45;
+const INC_BEHIND_FPS = 11;
+const INC_BEHIND_ACROSS = 0.65;
+const INC_BEHIND_FT = 1.6;
+const INC_BEHIND_OUT = 2.2;
+const INC_BEHIND_Z = 4.4;
+const INC_BEHIND_REACH_MS = 900;
+const INC_BEHIND_DROP_MS = 380;
+const INC_BEHIND_ON = 9;
 // After one short of him (or over his hands, this often), his palms up at
 // the quarterback this often (see palmsUp): round to him over this long
 // (ms), and up at him so long (ms).
@@ -11077,6 +11093,46 @@ class Action {
 		const pressed = this.d.some(
 			(m) => dist(m.posAt(throwAt), qb.posAt(throwAt)) < AWAY_NEAR,
 		);
+		// (Thrown behind him: on his own count, one that would have gone on
+		// over his hands - him running across its way at a good clip there,
+		// see INC_BEHIND.)
+		const behind = (() => {
+			const shortOne = throwFt <= INC_SHORT_FT && u >= 1 - INC_SHORT;
+			if (
+				u < INC_DROP + INC_DIVE ||
+				shortOne ||
+				thrown?.kind !== "fly" ||
+				countOf(rec, snap, 136) >= INC_BEHIND
+			) {
+				return undefined;
+			}
+			const l = rec.legs.findLast((x) => x.t0 < catchAt);
+			if (
+				!l ||
+				!GAITS.has(l.move) ||
+				l.t1 < catchAt - 50 ||
+				legPace(l) < INC_BEHIND_FPS
+			) {
+				return undefined;
+			}
+			const far = dist(l.from, l.to);
+			const hx = (l.to.x - l.from.x) / far;
+			const hy = (l.to.y - l.from.y) / far;
+			// (Across it: square enough to the way it comes.)
+			const across = hx * Math.sin(came) - hy * Math.cos(came);
+			if (Math.abs(across) < INC_BEHIND_ACROSS) {
+				return undefined;
+			}
+			// (Which side of him it comes from: +1 his left.)
+			const side = (
+				Math.cos(came) * Math.sin(Math.atan2(hy, hx)) -
+					Math.sin(came) * Math.cos(Math.atan2(hy, hx)) >=
+				0
+					? 1
+					: -1
+			) as Sign;
+			return { hx, hy, side };
+		})();
 		// (Knocked down at the line: when it went up off his hands, give or
 		// take, for all of them - see LINE_BAT_SEEN_MS.)
 		let batSeen: number | undefined;
@@ -11235,6 +11291,38 @@ class Action {
 				x: end.x + Math.cos(this.toward(thrown.from, end)) * AWAY_BOUNCE,
 				y: end.y + Math.sin(this.toward(thrown.from, end)) * AWAY_BOUNCE,
 			};
+		} else if (behind) {
+			// Thrown behind him running across: an arm back and out for it as
+			// it goes by behind him - the arm on the side it comes from - off
+			// his hand, and down on past him the way it was going. Him on
+			// with his run, pulled up after it.
+			const { hx, hy, side } = behind;
+			rec.pin(catchAt);
+			const l = rec.last;
+			if (GAITS.has(l.move) && rec.t < catchAt) {
+				rec.carryOn(catchAt);
+			}
+			this.reaches.push({
+				m: rec,
+				move: side > 0 ? "reachBackL" : "reachBack",
+				t0: catchAt - INC_BEHIND_REACH_MS * REACH_BACK_AT,
+				t1: catchAt + INC_BEHIND_REACH_MS * (1 - REACH_BACK_AT),
+			});
+			this.runOn(rec, 700);
+			this.slowUp(rec);
+			// (His left: see bodyPoint.)
+			const lx = Math.sin(Math.atan2(hy, hx));
+			const ly = -Math.cos(Math.atan2(hy, hx));
+			p0 = {
+				x: catchPt.x - hx * INC_BEHIND_FT + lx * side * INC_BEHIND_OUT,
+				y: catchPt.y - hy * INC_BEHIND_FT + ly * side * INC_BEHIND_OUT,
+				z: INC_BEHIND_Z,
+			};
+			groundAt = catchAt + INC_BEHIND_DROP_MS;
+			lands = this.dropWay(p0, catchAt, INC_BEHIND_ON, went);
+			k = 0.55;
+			dropPeak = 0.3;
+			hopPeak = 1;
 		} else if (u < INC_DROP) {
 			// Off his hands.
 			if (this.reachFor(rec, catchAt, qb)) {

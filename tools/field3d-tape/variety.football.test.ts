@@ -393,11 +393,13 @@ const incParts = (tl: FieldTimeline, p: Play) => {
 				? "thrown away"
 				: to.z < 0.5
 					? "short, in the turf"
-					: did(rec, ["reachUp"], t - 500, t + 300)
-						? "over his hands"
-						: did(rec, ["catch"], t - 500, t + 300)
-							? "off his hands"
-							: "-";
+					: did(rec, ["reachBack", "reachBackL"], t - 500, t + 300)
+						? "behind him"
+						: did(rec, ["reachUp"], t - 500, t + 300)
+							? "over his hands"
+							: did(rec, ["catch"], t - 500, t + 300)
+								? "off his hands"
+								: "-";
 	const after = did(rec, ["handsOnHelmet"], t, t + 4000)
 		? "hands on helmet"
 		: did(rec, ["protest"], t, t + 4000)

@@ -803,6 +803,18 @@ const PAT_KEYS: [number, Pose][] = [
 	[0.84, pose(PAT)],
 	[1, BASE],
 ];
+// Thrown behind him on the run: his arm back and out low behind him for it
+// (on the side it comes from), and back in.
+const REACH_BACK: Partial<Pose> = { shN: -60, elN: 25, abN: 40, wrN: -10 };
+const REACH_BACK_FAR: Partial<Pose> = { shN: -68, elN: 20, abN: 46, wrN: -14 };
+export const REACH_BACK_AT = 0.5;
+const REACH_BACK_KEYS: [number, Pose][] = [
+	[0, BASE],
+	[0.38, pose(REACH_BACK)],
+	[REACH_BACK_AT, pose(REACH_BACK_FAR)],
+	[0.66, pose(REACH_BACK)],
+	[1, BASE],
+];
 // A cheerleader's arms (see poms): up in a V, out level, down in a V.
 const POMS_UP: Partial<Pose> = {
 	shN: 158,
@@ -3789,6 +3801,13 @@ const FIELD_ANIMS = {
 			[1, BASE],
 		],
 	},
+	// Back for one thrown behind him as he runs (see REACH_BACK) - his
+	// right arm, or his left.
+	reachBack: { kind: "act", keys: REACH_BACK_KEYS },
+	reachBackL: {
+		kind: "act",
+		keys: REACH_BACK_KEYS.map(([k, q]): [number, Pose] => [k, mirror(q)]),
+	},
 	// A hand on a man's shoulder from behind him and to his side, a pat or
 	// two on it (see PAT) - his right hand, or his left.
 	pat: { kind: "act", keys: PAT_KEYS },
@@ -4755,11 +4774,13 @@ const SIGNAL_GRIPS: Partial<Record<Move, Grip>> = {
 	blowWhistle: "relaxed",
 	playBall: "open",
 	playBallL: "open",
+	reachBack: "open",
+	reachBackL: "open",
 	reachUp: "open",
 };
 // (One arm only: the other hand as the rest of him has it.)
 const ONE_ARM = new Set<Move>([
-	"playBall",
+	"reachBack",
 	"handsFace",
 	"sigSide",
 	"sigContact",
@@ -4771,7 +4792,7 @@ const ONE_ARM = new Set<Move>([
 	"blowWhistle",
 ]);
 // (One arm only, his left.)
-const LEFT_ARM = new Set<Move>(["playBallL"]);
+const LEFT_ARM = new Set<Move>(["playBallL", "reachBackL"]);
 export const gripsOf = (
 	m: Move,
 	hold?: BallHold,
