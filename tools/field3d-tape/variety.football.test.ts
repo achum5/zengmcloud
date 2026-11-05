@@ -244,6 +244,17 @@ const catchParts = (tl: FieldTimeline, p: Play) => {
 			}
 		}
 	}
+	// (A hand in at it as it got there, from a man on him.)
+	const handIn = p.parts.some(
+		(q) =>
+			q.team !== rec.team &&
+			q.legs.some(
+				(l) =>
+					(l.arms === "playBall" || l.arms === "playBallL") &&
+					l.t0 < got!.t0 + 300 &&
+					l.t1 > got!.t0 - 300,
+			),
+	);
 	const drop = qb ? ((p.losX - throwSeg.from.x) * p.dir) / 3 : 0;
 	return {
 		pid: rec.pid,
@@ -257,11 +268,9 @@ const catchParts = (tl: FieldTimeline, p: Play) => {
 				["line drive", "on a line", "touch", "lob"],
 			),
 			catch: `${how}${pace > 10 ? " in stride" : pace > 4 ? " on the move" : " sat down"}`,
-			defense: bucket(
-				near,
-				[3, 6, 12],
-				["contested", "tight", "a step", "open"],
-			),
+			defense:
+				bucket(near, [3, 6, 12], ["contested", "tight", "a step", "open"]) +
+				(handIn ? ", a hand in" : ""),
 			...endParts(tl, p, rec, got!.t0),
 		},
 	};

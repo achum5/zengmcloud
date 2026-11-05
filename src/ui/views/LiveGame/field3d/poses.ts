@@ -1039,6 +1039,16 @@ const GET_UP_KEYS: [number, Pose][] = [
 	[1, BASE],
 ];
 
+// A hand in at the ball as it gets to the man he is on: his right arm up
+// off his stride and in at it, raked down through it, and back to his
+// running. (An arm only - see ONE_ARM; with his left, mirrored.)
+const PLAY_BALL: [number, Pose][] = [
+	[0, pose({ shN: 26, elN: 92, abN: 8 })],
+	[0.5, pose({ shN: 112, elN: 14, abN: 32, wrN: 12 })],
+	[0.7, pose({ shN: 86, elN: 24, abN: 26, wrN: -12 })],
+	[1, pose({ shN: 28, elN: 90, abN: 8 })],
+];
+
 const FIELD_ANIMS = {
 	// Standing easy: between plays, on the sideline.
 	stand: { kind: "still", pose: BASE },
@@ -1931,6 +1941,11 @@ const FIELD_ANIMS = {
 				}),
 			],
 		],
+	},
+	playBall: { kind: "act", keys: PLAY_BALL },
+	playBallL: {
+		kind: "act",
+		keys: PLAY_BALL.map(([u, q]): [number, Pose] => [u, mirror(q)]),
 	},
 	// Brought down: his legs taken, pitching forward onto the turf.
 	tackled: {
@@ -4521,9 +4536,12 @@ const SIGNAL_GRIPS: Partial<Record<Move, Grip>> = {
 	sigFold: "relaxed",
 	sigHead: "relaxed",
 	blowWhistle: "relaxed",
+	playBall: "open",
+	playBallL: "open",
 };
 // (One arm only: the other hand as the rest of him has it.)
 const ONE_ARM = new Set<Move>([
+	"playBall",
 	"handsFace",
 	"sigSide",
 	"sigContact",
@@ -4534,6 +4552,8 @@ const ONE_ARM = new Set<Move>([
 	"flagToss",
 	"blowWhistle",
 ]);
+// (One arm only, his left.)
+const LEFT_ARM = new Set<Move>(["playBallL"]);
 export const gripsOf = (
 	m: Move,
 	hold?: BallHold,
@@ -4543,11 +4563,12 @@ export const gripsOf = (
 	const g: Grip = FISTS.has(m) ? "fist" : RELAXED.has(m) ? "relaxed" : "open";
 	const sig = arms === undefined ? undefined : SIGNAL_GRIPS[arms];
 	const one = arms !== undefined && ONE_ARM.has(arms);
+	const lefty = arms !== undefined && LEFT_ARM.has(arms);
 	const [right, left]: [Grip, Grip] = !sig
 		? [g, g]
-		: !one
+		: !one && !lefty
 			? [sig, sig]
-			: mirrored
+			: mirrored !== lefty
 				? [g, sig]
 				: [sig, g];
 	if (hold === "carry" || hold === "throw") {
@@ -4733,7 +4754,17 @@ export const withArms = (
 ): Pose => {
 	const out = { ...q };
 	const keys =
-		move !== undefined && ONE_ARM.has(move) ? (mirrored ? ARM_F : ARM_N) : ARMS;
+		move === undefined
+			? ARMS
+			: ONE_ARM.has(move)
+				? mirrored
+					? ARM_F
+					: ARM_N
+				: LEFT_ARM.has(move)
+					? mirrored
+						? ARM_N
+						: ARM_F
+					: ARMS;
 	for (const k of keys) {
 		out[k] = arms[k];
 	}

@@ -3608,6 +3608,23 @@ const LEAP_YAC = 9;
 const CONTESTED = 6;
 const LEAP_MS = 760;
 const LEAP_Z = 8.4;
+// The man on him as it is caught - this near where it is caught (feet), no
+// nearer, in his stride and with it no further behind him than this (the
+// cosine) - a hand in at it, his own count of the time: from this long
+// before it gets there till this long after (ms).
+const CONTEST_FT = 5.5;
+const CONTEST_LEAST_FT = 2;
+const CONTEST_BEHIND = -0.2;
+const CONTEST = 0.7;
+const CONTEST_FROM_MS = 300;
+const CONTEST_TO_MS = 300;
+// (On his feet: in his stride, or sat in his stance reading it.)
+const ON_FEET = new Set<Move>([
+	...GAITS,
+	"backerStance",
+	"backerReady",
+	"safetyReady",
+]);
 // Carried on across the field after the catch as far as he goes in this
 // long (s) at the pace he caught it at - the whole of it from this pace
 // (ft/s) on.
@@ -4446,7 +4463,15 @@ class Action {
 	readonly done = new Set<number>();
 	// Arms of their own over what the rest of a man does (see Leg.arms),
 	// put on once everybody has the rest.
-	readonly reaches: { m: Actor; move: Move; t0: number; t1: number }[] = [];
+	// (`onFeet`: only if he is on his feet all through it - see ON_FEET -
+	// with nothing else in his arms.)
+	readonly reaches: {
+		m: Actor;
+		move: Move;
+		t0: number;
+		t1: number;
+		onFeet?: boolean;
+	}[] = [];
 	// When the defense (the ball picked off, the offense) sees where the
 	// play is going, and can leave what it was doing to go after it.
 	seen: number;
@@ -4849,6 +4874,17 @@ class Action {
 		this.overHeads();
 		this.tdArms();
 		for (const x of this.reaches) {
+			if (
+				x.onFeet &&
+				x.m.legs.some(
+					(l) =>
+						l.t1 > x.t0 &&
+						l.t0 < x.t1 &&
+						(!ON_FEET.has(l.move) || l.arms !== undefined || l.ball),
+				)
+			) {
+				continue;
+			}
 			x.m.arms(x.move, x.t0, x.t1);
 		}
 		this.handBall();
@@ -8457,6 +8493,7 @@ class Action {
 			const at = rec.posAt(catchAt);
 			fly.to = { ...fly.to, x: at.x, y: at.y };
 		}
+		this.playBall(rec, catchAt);
 		if (leap) {
 			this.leapFor(rec, catchPt, catchAt, qb);
 		} else if (dive) {
@@ -8502,6 +8539,48 @@ class Action {
 		}
 		this.ball.push({ kind: "held", t0: catchAt, pid: rec.pid });
 		this.endCarry(i, rec, end, t, this.d);
+	}
+
+	// The man on him as it gets there, in his stride after him or sat
+	// reading it: a hand in at it, the one on its side, too late. (His own
+	// count, no draw of the play's.)
+	playBall(rec: Actor, catchAt: number) {
+		// (Where it gets to him: at him, in his stride - see inStride.)
+		const catchPt = rec.posAt(catchAt);
+		const near = this.d
+			.filter((m) => !this.done.has(m.pid))
+			.map((m) => ({ m, far: dist(m.posAt(catchAt), catchPt) }))
+			.filter((x) => x.far < CONTEST_FT && x.far >= CONTEST_LEAST_FT)
+			.sort((a, b) => a.far - b.far)[0];
+		if (!near || countOf(near.m, this.input.snap, 82) >= CONTEST) {
+			return;
+		}
+		const { m, far } = near;
+		const l = legAt(m, catchAt);
+		const run = dist(l.from, l.to);
+		const face =
+			l.yaw ??
+			(run > 0 ? Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x) : undefined);
+		if (!ON_FEET.has(l.move) || face === undefined) {
+			return;
+		}
+		const at = m.posAt(catchAt);
+		const hx = Math.cos(face);
+		const hy = Math.sin(face);
+		const bx = (catchPt.x - at.x) / far;
+		const by = (catchPt.y - at.y) / far;
+		if (hx * bx + hy * by < CONTEST_BEHIND) {
+			return;
+		}
+		// (On his right, or his left - see carryArm.)
+		const right = hx * by - hy * bx > 0;
+		this.reaches.push({
+			m,
+			move: right ? "playBall" : "playBallL",
+			t0: catchAt - CONTEST_FROM_MS,
+			t1: catchAt + CONTEST_TO_MS,
+			onFeet: true,
+		});
 	}
 
 	// The man of the other side on a receiver as he catches it, if any: near
