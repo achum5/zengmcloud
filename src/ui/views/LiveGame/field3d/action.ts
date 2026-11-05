@@ -1121,6 +1121,69 @@ class Actor {
 		return v0 + a * ta;
 	}
 
+	// Met on the run at t (a blocker onto him, say): pulled up from the pace
+	// he is going to `ve` by then, at `A` ft/s/s, on the way he is going -
+	// over his last strides to it, not stopped dead in a stride at t. Only
+	// off a straight run in a gait, nothing else going on. (Whether he was.)
+	brakeBy(t: number, ve: number, A: number): boolean {
+		const legs = this.part.legs;
+		const at = legAt(this, t);
+		const v = legPace(at);
+		if (!(v > ve) || at.t1 < t) {
+			return false;
+		}
+		// (From the last moment that leaves him time to get down to it by t,
+		// off the pace he was going then.)
+		let t0 = t;
+		let v0 = v;
+		let fits = false;
+		while (!fits && t0 > t - BRAKE_MOST_MS) {
+			t0 -= STOP_STEP_MS / 5;
+			v0 = legPace(legAt(this, t0));
+			fits = ((v0 - ve) / A) * 1000 <= t - t0;
+		}
+		const way = Math.atan2(at.to.y - at.from.y, at.to.x - at.from.x);
+		const from = legIndexAt(legs, t0);
+		if (!fits || !(v0 > ve) || from < 0 || t0 <= this.pinned) {
+			return false;
+		}
+		for (let k = from; k < legs.length && legs[k]!.t0 < t; k++) {
+			const l = legs[k]!;
+			const a = Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x) - way;
+			if (
+				!RAMPS.has(l.move) ||
+				l.arms ||
+				l.turn ||
+				l.span ||
+				l.t1 <= l.t0 ||
+				Math.abs(Math.atan2(Math.sin(a), Math.cos(a))) > STRETCH_TURN
+			) {
+				return false;
+			}
+		}
+		const move = legs[from]!.move;
+		this.cut(t0);
+		const T = (t - this.t) / 1000;
+		const n = Math.max(1, Math.round((T * 1000) / STOP_STEP_MS));
+		const dt = T / n;
+		const cos = Math.cos(way);
+		const sin = Math.sin(way);
+		const paceOf = (i: number) => v0 - (v0 - ve) * ((i + 0.5) / n);
+		const moveOf = slower(move, n, dt, paceOf);
+		for (let i = 0; i < n; i++) {
+			const pace = paceOf(i);
+			const p = this.at;
+			this.push(
+				this.legTo(
+					{ x: p.x + cos * pace * dt, y: p.y + sin * pace * dt },
+					i === n - 1 ? t : this.t + dt * 1000,
+					moveOf(i),
+				),
+			);
+		}
+		return true;
+	}
+
 	// Off from still into a man at `to` by t1 (see hitMs): up to speed at
 	// `A` ft/s/s, no quicker than `top`, and - got going quicker than `ve`
 	// - gathered into him at `Ad` ft/s/s, there at `ve`: not into him at all
@@ -4295,6 +4358,10 @@ const RUSH_HIT_PACE = 0.7;
 // this, ft/s/s, over the last of his run at him: see Actor.hitInto.)
 const HIT_FPS = 10;
 const HIT_ACCEL = 40;
+// (A man on the run a blocker gets to - see blockOn: pulled up to this,
+// ft/s, by then, at HIT_ACCEL.)
+const BRAKE_FPS = 7;
+const BRAKE_MOST_MS = 600;
 // (Short of time for that: into him this many times quicker, slowed this
 // many times harder - the first of them that does it.)
 const HIT_SHORT: [number, number][] = [
@@ -16476,6 +16543,13 @@ class Action {
 			this.offBlock(b, until);
 			b.hold(until, "stand", this.ahead);
 			return;
+		}
+		// (Met on the run: pulled up into it over his last strides - not
+		// stopped dead in his stride as the blocker gets to him. Met where
+		// that has him.)
+		if (m.brakeBy(meet.t, BRAKE_FPS, HIT_ACCEL)) {
+			const q = this.of(m.posAt(meet.t));
+			meet = { t: meet.t, at: this.w({ d: q.d - BLOCK_GAP, a: q.a }) };
 		}
 		// (Only a step or so to square up to him: in his drive steps, facing
 		// up the field - not turned round and walked back there.)
