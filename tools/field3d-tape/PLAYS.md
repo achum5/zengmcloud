@@ -258,11 +258,19 @@ Most returns are short and still getting up to speed when they end, the
 nearest man the receiver at his side: now and then he gets a hand on him,
 and is spun out of.
 
-Now (14 picks): 14 different combinations. Off a tip 4, diving 3, set 3,
-on the run 3, up for it 1 (all set before). Spun out of a man's grab in the
-return on 1.
+The quarterback takes it his own way, much the same each time - hands on
+his helmet, bent over with his hands on his knees, or his arms out at the
+man it was meant for - once the other side's moment with it is over, and
+now and then the picture comes in tight on him for it (from the press box,
+when nobody is right in front of him and he isn't turned away).
 
-To do: a pick batted up at the line, the quarterback's own look after it.
+Now (14 picks): 14 different combinations. Off a tip 6, set 3, on the run
+3, diving 1, up for it 1 (all set before). Spun out of a man's grab in the
+return on 1. The quarterback after it: hands on his helmet 6, at the man
+it was meant for 4, bent over 2, in on the tackle 2; the picture tight on
+him 5.
+
+To do: a pick batted up at the line.
 
 ## 11. Timeouts, two-minute warning, quarters
 

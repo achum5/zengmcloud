@@ -990,12 +990,21 @@ const pickParts = (tl: FieldTimeline, p: Play) => {
 	const qb = p.parts.find((q) => q.role === "QB" && q.team === p.offense);
 	const qbDid = !qb
 		? "-"
-		: near(qb, ["handsOnHelmet", "onHips"], p.whistle - 500, p.whistle + 4000)
-			? "hands on helmet or hips"
-			: posOf(tl, qb.pid, p.whistle) &&
-				  dist(posOf(tl, qb.pid, p.whistle)!, end) < 12
-				? "in on the tackle"
-				: "after him";
+		: near(qb, ["protest"], p.whistle - 500, p.whistle + 8000)
+			? "at the man it was meant for"
+			: near(qb, ["winded"], p.whistle - 500, p.whistle + 8000)
+				? "bent over"
+				: near(
+							qb,
+							["handsOnHelmet", "onHips"],
+							p.whistle - 500,
+							p.whistle + 8000,
+					  )
+					? "hands on helmet or hips"
+					: posOf(tl, qb.pid, p.whistle) &&
+						  dist(posOf(tl, qb.pid, p.whistle)!, end) < 12
+						? "in on the tackle"
+						: "after him";
 	const party =
 		[
 			...new Set(

@@ -121,6 +121,9 @@ const QB_CLOSE = { width: 16, z: 5, camFt: QB_CAM_FT, camZ: 6.8 };
 // And on the referee giving a foul after the play (see the director's
 // refCall), from the knees up - his arms over his head in it.
 const REF_CLOSE = { width: 13, z: 5.3, camFt: REF_CAM_FT, camZ: 6.2 };
+// And picked off, on the quarterback taking it (see the director's qbRue):
+// all of him, from the press box.
+const RUE = { width: 15, z: 4 };
 // And on the man a big play's moment is about (see the director's
 // heroClose): all of him, and room over him for the ball held up, a leap
 // (the men drawn bigger than they are - see body.ts FIGURE_SCALE).
@@ -229,6 +232,12 @@ export const aimFor = (m: FieldMoment): Shot => {
 		if (him) {
 			return { x: him.x, width: close.width, y: him.y, z: close.z };
 		}
+	}
+	// Picked off: tight on the quarterback taking it, from the press box.
+	const rue = play.qbRue;
+	if (rue && t >= rue.t0 && t < rue.t1) {
+		const him = m.players.find((p) => p.id === rue.pid) ?? rue.at;
+		return { x: him.x, width: RUE.width, y: him.y, z: RUE.z };
 	}
 	const react = play.coachReact;
 	if (react && t >= react.t0 && t < react.t1) {

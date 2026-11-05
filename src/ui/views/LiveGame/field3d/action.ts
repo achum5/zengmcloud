@@ -119,6 +119,9 @@ export type Acted = {
 	// when it starts, where, and the man it is about (if one).
 	until?: number;
 	party?: { from: number; at: Pt; hero?: number };
+	// Picked off: the quarterback's look after it (see regroup) - who, from
+	// when, until when.
+	qbRue?: { pid: number; t0: number; t1: number };
 	// Where the man with it went out of bounds.
 	out?: Pt;
 };
@@ -4717,6 +4720,7 @@ class Action {
 	// A touchdown: when he got there, and who (see tdArms).
 	scored?: { t: number; scorer: Actor };
 	party?: { from: number; at: Pt; hero?: number };
+	qbRue?: { pid: number; t0: number; t1: number };
 	// The man who brought the carrier down, the last time one did.
 	downer?: Actor;
 	// A pile on the carrier when he goes down (see pileUp): the most men in
@@ -5110,6 +5114,7 @@ class Action {
 			...(this.follow !== undefined ? { follow: this.follow } : {}),
 			...(this.until > 0 ? { until: this.until } : {}),
 			...(this.party && this.until > 0 ? { party: this.party } : {}),
+			...(this.qbRue ? { qbRue: this.qbRue } : {}),
 			...(this.outAt ? { out: this.outAt } : {}),
 		};
 	}
@@ -19939,6 +19944,11 @@ class Action {
 			this.fives(cheered, free, holder);
 		}
 		let toss: { t: number; yaw: number } | undefined;
+		// (Picked off: the man who threw it.)
+		const passer =
+			this.find("interception") >= 0
+				? this.o.find((m) => m.role === "QB")
+				: undefined;
 		for (const m of this.men) {
 			if (this.mob.has(m.pid)) {
 				continue;
@@ -19987,7 +19997,35 @@ class Action {
 			const big = OL.has(m.role) || DL.has(m.role);
 			const beaten = won !== undefined && m.team !== won;
 			const glad = won !== undefined && m.team === won;
-			if (beaten && r() < (m.role === "QB" ? RUE_QB : RUE_HELMET)) {
+			if (beaten && m === passer && r() < PICK_QB) {
+				// (Picked off: the quarterback as a rule his own way with it,
+				// more often than not the same way each time - see
+				// PICK_QB_LOOK - once the other side's moment with it is over:
+				// the picture may come in on him for it, see the director's
+				// qbRue.)
+				if (this.until > 0) {
+					m.hold(Math.max(m.t, this.until + PICK_QB_AFTER_MS));
+				}
+				const t0 = m.t;
+				const u =
+					(2 * countOf(m, 0, 134) + countOf(m, this.input.snap, 135)) / 3;
+				const meant = this.man(this.statPids("tgt")[0]);
+				if (
+					u >= PICK_QB_LOOK[1] &&
+					meant &&
+					meant !== m &&
+					dist(meant.posAt(m.t), m.at) >= PICK_QB_AT_FT
+				) {
+					const at = this.toward(m.at, meant.posAt(m.t));
+					m.hold(m.t + PICK_QB_TURN_MS, "stand", at);
+					m.act("protest", m.t + PICK_QB_AT_MS, at);
+				} else if (u >= PICK_QB_LOOK[0]) {
+					m.hold(m.t + PICK_QB_BENT_MS * (0.8 + 0.4 * u), "winded");
+				} else {
+					m.act("handsOnHelmet", m.t + RUE_HELMET_MS + r() * 400);
+				}
+				this.qbRue = { pid: m.pid, t0, t1: m.t };
+			} else if (beaten && r() < (m.role === "QB" ? RUE_QB : RUE_HELMET)) {
 				m.act("handsOnHelmet", m.t + RUE_HELMET_MS + r() * 400);
 			} else if (glad && r() < GLAD) {
 				m.act(r() < 0.5 ? "fistPump" : "clap", m.t + 1200 + r() * 300);
@@ -20611,6 +20649,22 @@ const RUE_HELMET = 0.2;
 const RUE_QB = 0.55;
 const RUE_HELMET_MS = 1500;
 const RUE_HIPS = 0.45;
+// Picked off, the quarterback this often shows it his own way (his own
+// count, two thirds of it the same every time): hands on his helmet under
+// the first share, bent over with his hands on his knees under the second
+// (this long, give or take a fifth, ms), else at the man it was meant for,
+// his arms out - turned to him over this long first, ms, and at it so
+// long.
+const PICK_QB = 0.85;
+const PICK_QB_LOOK = [0.4, 0.7] as const;
+const PICK_QB_BENT_MS = 1700;
+const PICK_QB_TURN_MS = 300;
+const PICK_QB_AT_MS = 1300;
+// (Not before this long after the other side's moment with it is over,
+// ms; nor at the man it was meant for nearer him than this, feet - his
+// hands to his helmet instead.)
+const PICK_QB_AFTER_MS = 650;
+const PICK_QB_AT_FT = 10;
 // A catch for a score, or a pick: the man beaten on it - this near the man
 // with it - this often at the officials for a flag, his arms out, for this
 // long (ms).

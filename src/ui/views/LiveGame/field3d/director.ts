@@ -310,6 +310,10 @@ export type Play = {
 	// heroClose): from when, until when, and where he stands.
 	// (And the camera this far along the field from him - see aim.ts.)
 	heroClose?: { t0: number; t1: number; pid: number; at: Pt; shift: number };
+	// Picked off: tight on the quarterback taking it, once the other side's
+	// moment with it is over (see qbRue): from when, until when, and where
+	// he stands.
+	qbRue?: { t0: number; t1: number; pid: number; at: Pt };
 	// Between quarters, and at the half: when the picture cuts to the whole
 	// stadium (see aim.ts).
 	between?: number;
@@ -1123,6 +1127,21 @@ const HERO_SHIFTS = [0, -7, 7, -12, 12];
 // (Nor his back to it - faced no further round from it than this, as he
 // is this long into it.)
 const HERO_BACK_ON = -0.2;
+// Picked off: tight on the quarterback taking it (see action.ts regroup)
+// this often - from this long before he starts on it to this long after he
+// is through, this long at most - as long as nobody is in front of him
+// (and he stays where he is, as heroClose has it).
+const QB_RUE_SHARE = 0.8;
+const QB_RUE_BEFORE = 150;
+const QB_RUE_AFTER = 250;
+const QB_RUE_MOST = 3000;
+// (Nobody nearer the press box than he is by up to this much, feet, this
+// near him along the field: in front of him in the picture, looking down
+// on him.)
+const QB_RUE_FRONT = 6;
+const QB_RUE_SIDE = 2.2;
+// (Nor faced further round from it than this - see heroClose.)
+const QB_RUE_BACK = -0.3;
 const HERO_FACED_AT = 400;
 const FIRST_DOWN_AT = 1100;
 // (Whose ball it is, a fumble's or a takeaway's, this long after.)
@@ -2649,6 +2668,60 @@ class Director {
 				? { t0: from, t1: until, at }
 				: undefined;
 		})();
+		const qbRue = (() => {
+			const rue = acted?.qbRue;
+			const qb = parts.find((p) => p.pid === rue?.pid);
+			if (
+				!rue ||
+				!qb ||
+				ended ||
+				half ||
+				hurt ||
+				timeout ||
+				measureAt ||
+				between !== undefined ||
+				refCall ||
+				this.rng(i0, "qbRue")() >= QB_RUE_SHARE
+			) {
+				return undefined;
+			}
+			const from = rue.t0 - QB_RUE_BEFORE;
+			const to = Math.min(rue.t1 + QB_RUE_AFTER, from + QB_RUE_MOST);
+			const at = posOf(qb.legs, rue.t0);
+			// (Not his back to it - the press box on the near side.)
+			const yaw = qb.legs.findLast((l) => l.t0 <= rue.t0 + HERO_FACED_AT)?.yaw;
+			if (yaw !== undefined && Math.sin(yaw) < QB_RUE_BACK) {
+				return undefined;
+			}
+			// (From the press box, looking down on him: in the way, only a
+			// man right in front of him, toward it - see QB_RUE_FRONT.)
+			const others = [...parts, ...medics, ...crew.parts].filter(
+				(q) => q !== qb && q.legs.length > 0,
+			);
+			for (let t = from; t <= to; t += REF_WAY_STEP) {
+				const him = posOf(qb.legs, t);
+				if (
+					dist(him, at) > HERO_DRIFT ||
+					others.some((q) => {
+						const p = posOf(q.legs, t);
+						const d = p.y - him.y;
+						return (
+							d > REF_WAY_NEAR &&
+							d < QB_RUE_FRONT &&
+							Math.abs(p.x - him.x) < QB_RUE_SIDE
+						);
+					})
+				) {
+					return undefined;
+				}
+			}
+			return { t0: from, t1: to, pid: qb.pid, at };
+		})();
+		if (qbRue) {
+			this.cuts.push(qbRue.t0, qbRue.t1);
+			t1 = Math.max(t1, qbRue.t1 + COACH_REACT_TAIL);
+			holdTill([...parts, ...crew.parts], t1);
+		}
 		const coachReact = (() => {
 			const party = acted?.party;
 			const until = acted?.until;
@@ -2657,6 +2730,7 @@ class Director {
 				!party ||
 				!until ||
 				!hero ||
+				qbRue ||
 				ended ||
 				half ||
 				hurt ||
@@ -2690,7 +2764,8 @@ class Director {
 			holdTill([...parts, ...crew.parts], t1);
 		}
 		// (The replay, if any, straight after the head coach.)
-		const shown = replayTill(t1, coachReact ? coachReact.t1 - 400 : undefined);
+		const reacted = coachReact ?? qbRue;
+		const shown = replayTill(t1, reacted ? reacted.t1 - 400 : undefined);
 		// (A man hurt: the play shown again while they see to him.)
 		const replay =
 			shown ??
@@ -2805,6 +2880,7 @@ class Director {
 				refCall ||
 				heroClose ||
 				coachReact ||
+				qbRue ||
 				next?.type !== "clock" ||
 				next.t !== 0 ||
 				next.down !== 3 ||
@@ -3057,6 +3133,7 @@ class Director {
 			...(refCall ? { refCall } : {}),
 			...(crew.report ? { told: crew.report } : {}),
 			...(heroClose ? { heroClose } : {}),
+			...(qbRue ? { qbRue } : {}),
 			...(callIn ? { callIn } : {}),
 			...(coachReact ? { coachReact } : {}),
 			...(between !== undefined ? { between } : {}),
