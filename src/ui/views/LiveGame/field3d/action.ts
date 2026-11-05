@@ -3341,6 +3341,17 @@ const PICK_DIVE_YDS = 6;
 const PICK_DIVE_PER = 0.6;
 const PICK_DIVE_LEAST = 6;
 const PICK_DIVE_MOST = 13;
+// A knee: a lineman and the man across from him (no further along the line
+// than this, feet) up out of their stances into each other, this often on
+// the lineman's own count - off the snap after this long (ms, and up to this
+// much more), in this long, leaned on each other till about the whistle (up
+// to this much after it) - and let go.
+const KNEEL_LEAN = 0.7;
+const KNEEL_PAIR_FT = 3.5;
+const KNEEL_OFF_MS = 80;
+const KNEEL_OFF_MORE = 150;
+const KNEEL_IN_MS = 300;
+const KNEEL_LEAN_MORE = 400;
 // A defender sees the ball thrown and breaks on it this long after.
 const BREAK_MS = 250;
 // On his man in coverage: where he goes, worked out a step at a time, so
@@ -7238,13 +7249,52 @@ class Action {
 		qb.hold(down + 1400, "kneelDown");
 		this.at.set(i, down);
 		this.whistle = down + 300;
-		// Nobody wants any of it: up out of their stances and standing.
+		// The lines into each other a moment, most of them (see KNEEL_LEAN),
+		// and let go.
+		const pairs = this.pairUp(
+			this.o.filter((m) => OL.has(m.role)),
+			this.d.filter((m) => DL.has(m.role)),
+		).filter(
+			([b, c]) =>
+				Math.abs(this.of(b.at).a - this.of(c.at).a) < KNEEL_PAIR_FT &&
+				countOf(b, snap, 112) < KNEEL_LEAN,
+		);
+		for (const [b, c] of pairs) {
+			const go = snap + KNEEL_OFF_MS + countOf(c, snap, 112) * KNEEL_OFF_MORE;
+			const p = this.of(b.at);
+			const q = this.of(c.at);
+			const mid = (p.d + q.d) / 2;
+			const a = (p.a + q.a) / 2;
+			const till = this.whistle - 100 + countOf(b, snap, 113) * KNEEL_LEAN_MORE;
+			b.hold(go);
+			c.hold(go);
+			b.go(
+				this.w({ d: mid - BLOCK_GAP / 2, a }),
+				go + KNEEL_IN_MS,
+				"engage",
+				this.ahead,
+			);
+			c.go(
+				this.w({ d: mid + BLOCK_GAP / 2, a }),
+				go + KNEEL_IN_MS,
+				"engage",
+				this.behind,
+			);
+			b.hold(till, "engage", this.ahead);
+			c.hold(till, "engage", this.behind);
+			b.hold(Math.max(till, this.whistle) + 300, "stand", this.ahead);
+			c.hold(Math.max(till, this.whistle) + 300, "stand", this.behind);
+		}
+		// Nobody wants any of it: the rest up out of their stances and
+		// standing.
 		for (const m of this.men) {
 			if (m === qb) {
 				continue;
 			}
-			m.hold(snap + 300 + this.r() * 300);
-			m.hold(this.whistle, "stand");
+			if (!pairs.some(([b, c]) => b === m || c === m)) {
+				m.hold(snap + 300 + this.r() * 300);
+				m.hold(this.whistle, "stand");
+			}
 			this.done.add(m.pid);
 		}
 		this.done.add(qb.pid);

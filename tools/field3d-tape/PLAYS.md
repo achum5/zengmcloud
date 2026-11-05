@@ -26,7 +26,7 @@ Combinations: distinct whole combinations of the variety tool's parts.
 | 10  | Interception and return                            |        2 | `pick`       | working |
 | 11  | Timeouts, two-minute warning, quarters             |       15 | `break`      | working |
 | 12  | Injury (`injury`)                                  |        6 | `hurt`       | working |
-| 13  | Kneel, fumble, onside kick, safety                 |     rare | -            | todo    |
+| 13  | Kneel, fumble, onside kick, safety                 |     rare | `kneel`      | working |
 
 ## 1. Run
 
@@ -235,6 +235,21 @@ Now (50 men hurt): on his back 36, on his face 14; waved out 28; helped off
 
 To do: the crowd standing to clap him off, a cart for a bad one (the sim
 gives no word of how bad).
+
+## 13. Kneel, fumble, onside kick, safety
+
+Kneels are the only ones of these the nine games have much of (16; one
+fumble, no onside kick, no safety). Parts: what the lines did, what the
+quarterback did after it, and where the ball went.
+
+Most of the linemen now come up out of their stances into the man across
+from them a moment, each pair on its own count, and let go - not all eleven
+stood straight up together.
+
+Now (16 kneels): the lines came together 14, stood up 2.
+
+To do: the ball back to an official after the knee (and after every
+play: it is only ever tossed down or left).
 
 ## Side notes
 
