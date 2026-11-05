@@ -2838,6 +2838,23 @@ const INC_SHORT_BY = 3.5;
 const INC_HOP_FT = 7;
 const INC_HOP_MS = 380;
 const INC_HOP_PEAK = 1.3;
+// Thrown away, a man of theirs this near him (feet) as he lets it go, his
+// own count of the time: lofted, at this share of the pace he throws it
+// at, high over the man it went to and down this far past him (feet) - or
+// this far out of bounds, if the sideline comes first - and on this far on
+// the bounce.
+const AWAY_NEAR = 8;
+const AWAY = 0.6;
+const AWAY_KEEP = 0.7;
+const AWAY_PAST = [20, 34] as const;
+const AWAY_OUT = 5;
+const AWAY_BOUNCE = 6;
+// (Nobody's: coming down no nearer anybody than this (feet), turned off
+// the way it went this much (radians) or sent this much further or
+// shorter (feet) if it would.)
+const AWAY_CLEAR = 10;
+const AWAY_TURNS = [0, 0.15, -0.15, 0.3, -0.3];
+const AWAY_LONGER = [0, 10, -6];
 // (Up at it as it goes over, his arms up from as it comes till this long
 // after it gets there, ms - see reachFor.)
 const REACH_UP_AFTER_MS = 400;
@@ -10650,6 +10667,7 @@ class Action {
 		let k = 0.5;
 		let dropPeak = 0.8;
 		let hopPeak = 1.6;
+		let away = false;
 		const u = countOf(rec, this.input.snap, 83);
 		const throwFt = thrown?.kind === "fly" ? dist(thrown.from, catchPt) : 0;
 		const pace =
@@ -10658,6 +10676,10 @@ class Action {
 					Math.max(0.001, (thrown.t1 - thrown.t0) / 1000)
 				: PASS_FPS;
 		const went = came + Math.PI;
+		const throwAt = thrown?.kind === "fly" ? thrown.t0 : catchAt;
+		const pressed = this.d.some(
+			(m) => dist(m.posAt(throwAt), qb.posAt(throwAt)) < AWAY_NEAR,
+		);
 		if (breakup && coverage.includes(breakup)) {
 			// Got a hand on it: knocked away. (In at his shoulder, the side he
 			// came from - not stood in the way of it.)
@@ -10701,6 +10723,82 @@ class Action {
 					this.toward(breakup.at, qb.at),
 				);
 			}
+		} else if (
+			pressed &&
+			thrown?.kind === "fly" &&
+			countOf(rec, this.input.snap, 84) < AWAY
+		) {
+			// Thrown away: nobody's ball, high over the man it went to and
+			// down well past him - out of bounds, if the sideline comes
+			// first. Him on a step or two and pulled up, watching it go; the
+			// men on him pulled up too, nobody going for it (laid first, so
+			// it comes down clear of where they are).
+			away = true;
+			this.runOn(rec, 700);
+			this.slowUp(rec);
+			for (const m of coverage) {
+				if (this.done.has(m.pid)) {
+					continue;
+				}
+				const seen = catchAt + DEAD_SEEN_MS[0];
+				if (m.t > seen + 300) {
+					m.cut(seen);
+				}
+				m.easeOff(EASE_OFF_FT);
+			}
+			const c = this.of(catchPt);
+			const q = this.of(thrown.from);
+			const way = Math.atan2(c.a - q.a, c.d - q.d);
+			// (Harder, the harder he throws - see flightOf.)
+			const fps = pace * AWAY_KEEP;
+			const past0 =
+				AWAY_PAST[0] +
+				(AWAY_PAST[1] - AWAY_PAST[0]) * countOf(rec, this.input.snap, 85);
+			const spotFor = (turn: number, longer: number) => {
+				const ud = Math.cos(way + turn);
+				const ua = Math.sin(way + turn);
+				// (From where it was thrown, as far as it would have gone and
+				// on past - or to just out of bounds, or the back of the end
+				// zone, if one of them comes first.)
+				let far = Math.hypot(c.d - q.d, c.a - q.a) + past0 + longer;
+				if (ua !== 0) {
+					const edge =
+						ua > 0 ? this.bounds.right + AWAY_OUT : this.bounds.left - AWAY_OUT;
+					far = Math.min(far, Math.max(0, (edge - q.a) / ua));
+				}
+				if (ud > 0) {
+					far = Math.min(far, Math.max(0, (this.goalD + 27 - q.d) / ud));
+				}
+				const pt = this.w({ d: q.d + ud * far, a: q.a + ua * far });
+				const t = thrown.t0 + (dist(thrown.from, pt) / fps) * 1000;
+				const clear = Math.min(...this.men.map((m) => dist(m.posAt(t), pt)));
+				return { pt, clear };
+			};
+			let best = spotFor(0, 0);
+			for (const turn of AWAY_TURNS) {
+				for (const longer of AWAY_LONGER) {
+					const x = spotFor(turn, longer);
+					if (x.clear > best.clear) {
+						best = x;
+					}
+					if (best.clear >= AWAY_CLEAR) {
+						break;
+					}
+				}
+				if (best.clear >= AWAY_CLEAR) {
+					break;
+				}
+			}
+			const end = best.pt;
+			const fl = dist(thrown.from, end) / fps;
+			at0 = thrown.t0 + fl * 1000;
+			p0 = { ...end, z: 0 };
+			groundAt = at0;
+			thrown.peak = Math.max(thrown.peak, (G * fl * fl) / 8);
+			lands = {
+				x: end.x + Math.cos(this.toward(thrown.from, end)) * AWAY_BOUNCE,
+				y: end.y + Math.sin(this.toward(thrown.from, end)) * AWAY_BOUNCE,
+			};
 		} else if (u < INC_DROP) {
 			// Off his hands.
 			if (this.reachFor(rec, catchAt, qb)) {
@@ -10826,6 +10924,9 @@ class Action {
 		}
 		this.at.set(i, groundAt);
 		this.whistle = groundAt;
+		if (away) {
+			return;
+		}
 		this.pursue(coverage, catchPt, catchAt + 200, []);
 		// (Not on in at it after, all of them round the man it was for.)
 		for (const m of coverage) {

@@ -186,7 +186,9 @@ describe("3D field ratings", () => {
 					continue;
 				}
 				for (const b of play.ball) {
-					if (b.kind === "fly" && b.spiral) {
+					// (Not one thrown away, nor one into the turf in front of
+					// him: lofted, or short, for what it is - not his arm.)
+					if (b.kind === "fly" && b.spiral && b.to.z > 0) {
 						ft += dist(b.from, b.to);
 						ms += b.t1 - b.t0;
 					}

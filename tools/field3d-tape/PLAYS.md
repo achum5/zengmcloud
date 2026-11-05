@@ -66,15 +66,16 @@ more often.
 Parts: where the throw goes and its arc; how it gets away from him (knocked
 away by the man the sim credits with it, off his hands, out of his reach and
 laid out for, sailed on over his hands, short into the turf in front of
-him); how near him it was and whether he was in his stride; what came after
-(his hands on his helmet, the man who broke it up waving it off).
+him, thrown away with a man on the quarterback); how near him it was and
+whether he was in his stride; what came after (his hands on his helmet, the
+man who broke it up waving it off).
 
-Now (132 incompletions): 131 different combinations. Over his hands 43,
-knocked away 31, dove for it 25, off his hands 20, short in the turf 13.
+Now (132 incompletions): 128 different combinations. Over his hands 44,
+knocked away 30, thrown away 19, dove for it 16, off his hands 14, short in
+the turf 9.
 
-To do: thrown away under pressure (out of bounds, nobody near), batted down
-at the line, thrown behind an open man, the receiver's palms up at a ball
-short of him.
+To do: batted down at the line, thrown behind an open man, the receiver's
+palms up at a ball short of him.
 
 ## Side notes
 

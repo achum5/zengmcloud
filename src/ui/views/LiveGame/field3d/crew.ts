@@ -224,6 +224,10 @@ const TOLD_GAP = 150;
 // (Off this far further along from him after.)
 const TOLD_BACK = 8;
 const TOLD_BEHIND = 0.8;
+// (On the side of him nobody is standing at: no player this near the spot
+// there, looked at every so often, ms.)
+const TOLD_CLEAR = 2.5;
+const TOLD_CLEAR_STEP = 100;
 // How long each other signal is held.
 const SIGNAL_MS: Record<Signaled, number> = {
 	td: 2000,
@@ -1123,10 +1127,33 @@ export const stageCrew = (
 			legsOf.set(p.o, walk(p, mine));
 		}
 	}
-	// (Beside the referee where he has got to, not where he was going.)
+	// (Beside the referee where he has got to, not where he was going - on
+	// the other side of him, if a player is stood where he would be.)
 	if (beside && report) {
 		const r = where("R", report.t0);
-		const to = { x: r.x + beside.side * TOLD_APART, y: r.y - TOLD_BEHIND };
+		const spot = (side: number) => ({
+			x: r.x + side * TOLD_APART,
+			y: r.y - TOLD_BEHIND,
+		});
+		const clear = (pt: Pt) => {
+			for (let t = report!.t0; t <= report!.t1; t += TOLD_CLEAR_STEP) {
+				if (
+					input.parts.some(
+						(q) =>
+							q.pid >= 0 &&
+							q.legs.length > 0 &&
+							dist(posOf(q.legs, t), pt) < TOLD_CLEAR,
+					)
+				) {
+					return false;
+				}
+			}
+			return true;
+		};
+		if (!clear(spot(beside.side)) && clear(spot(-beside.side))) {
+			beside.side = -beside.side;
+		}
+		const to = spot(beside.side);
 		const yaw = Math.atan2(r.y - to.y, r.x - to.x);
 		beside.there.to = to;
 		beside.after.to = { x: to.x + beside.side * TOLD_BACK, y: to.y };
