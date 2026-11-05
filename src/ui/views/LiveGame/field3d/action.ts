@@ -8884,11 +8884,22 @@ class Action {
 				carrier.last.mirrored = true;
 			}
 			on();
-			// (Off his feet at where he was.)
+			// (Off his feet at where he was - short of it on his own side, by
+			// as much as the juke is short of a full one: by him, not through
+			// him.)
 			const hit = beside(at, toHim, out(3.5));
 			const face = this.toward(hit, at);
 			this.closeOn(m, hit, tc - 100, face, carrier);
-			m.lunge("dive", tc + 380, face, beside(at, face, 0.8));
+			m.lunge(
+				"dive",
+				tc + 380,
+				face,
+				beside(
+					beside(at, face, 0.8),
+					ang + (side * Math.PI) / 2,
+					JUKE_OVER * (1 - into),
+				),
+			);
 			m.hold(tc + 380 + 700, "prone");
 			m.act("getUp", tc + 380 + 700 + GET_UP_MS);
 		}
