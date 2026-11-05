@@ -13,7 +13,7 @@
 //
 // Lines: run (a carry from scrimmage), catch (a completed pass), incomplete
 // (a pass not caught), punt, kickoff, flag, sack, kick (a field goal or
-// a try).
+// a try), pick (an interception).
 // Games: files from realGames.football.test.ts. VARIETY_BY=throw,catch adds
 // how those parts go together, just them.
 
@@ -820,10 +820,104 @@ const tryParts = (tl: FieldTimeline, p: Play, made: boolean) => {
 	};
 };
 
+// An interception: how deep the throw, how he picked it off (on the run,
+// set, up for it, diving, off a tip), who, the return, the man it was meant
+// for and the quarterback after it, and the celebration.
+const pickParts = (tl: FieldTimeline, p: Play) => {
+	const thrown = p.ball.find(
+		(b) => b.kind === "fly" && b.spiral === true && b.t0 >= p.snap,
+	);
+	if (!thrown || thrown.kind !== "fly") {
+		return undefined;
+	}
+	const got = holders(p).find(
+		(h) =>
+			h.t0 >= thrown.t1 - 50 &&
+			p.parts.find((q) => q.pid === h.pid)?.team !== p.offense,
+	);
+	const picker = got && p.parts.find((q) => q.pid === got.pid);
+	if (!picker) {
+		return undefined;
+	}
+	const near = (q: Part, moves: string[], t0: number, t1: number) =>
+		q.legs.some(
+			(l) =>
+				(moves.includes(l.move) || moves.includes(l.arms ?? "")) &&
+				l.t1 > t0 &&
+				l.t0 < t1,
+		);
+	const flies = p.ball.filter(
+		(b) => b.kind === "fly" && b.t0 >= thrown.t1 - 5 && b.t1 <= got!.t0 + 5,
+	);
+	const pace = () => {
+		const a0 = posOf(tl, picker.pid, got!.t0 - 150);
+		const a1 = posOf(tl, picker.pid, got!.t0);
+		return a0 && a1 ? dist(a0, a1) / 0.15 : 0;
+	};
+	const how =
+		flies.length > 0
+			? "off a tip"
+			: near(picker, ["diveCatch"], got!.t0 - 600, got!.t0 + 300)
+				? "diving"
+				: near(picker, ["leapCatch"], got!.t0 - 600, got!.t0 + 300)
+					? "up for it"
+					: pace() > 7
+						? "on the run"
+						: "set";
+	const air = ((thrown.to.x - p.losX) * p.dir) / 3;
+	const ends = endParts(tl, p, picker, got!.t0);
+	const at = posOf(tl, picker.pid, got!.t0) ?? thrown.to;
+	const end = posOf(tl, picker.pid, p.whistle) ?? at;
+	const qb = p.parts.find((q) => q.role === "QB" && q.team === p.offense);
+	const qbDid = !qb
+		? "-"
+		: near(qb, ["handsOnHelmet", "onHips"], p.whistle - 500, p.whistle + 4000)
+			? "hands on helmet or hips"
+			: posOf(tl, qb.pid, p.whistle) &&
+				  dist(posOf(tl, qb.pid, p.whistle)!, end) < 12
+				? "in on the tackle"
+				: "after him";
+	const party =
+		[
+			...new Set(
+				p.parts.flatMap((q) =>
+					q.team === p.offense
+						? []
+						: q.legs
+								.filter((l) => PARTY.has(l.move) && l.t0 >= p.whistle - 200)
+								.map((l) => l.move),
+				),
+			),
+		]
+			.sort()
+			.join("+") || "none";
+	return {
+		pid: picker.pid,
+		parts: {
+			throw: bucket(air, [10, 20, 35], ["short", "middle", "deep", "bomb"]),
+			how,
+			by: picker.role,
+			evades: ends.evades!,
+			end: ends.end!,
+			gain: bucket(
+				((end.x - at.x) * -p.dir) / 3,
+				[1, 10, 25],
+				["none", "1-9 yds", "10-24 yds", "25+ yds"],
+			),
+			qb: qbDid,
+			party,
+		},
+	};
+};
+
 test.skipIf(games.length === 0)(
 	"football variety of one line",
 	() => {
-		const all: { pid: string; parts: Record<string, string> }[] = [];
+		const all: {
+			pid: string;
+			parts: Record<string, string>;
+			where: string;
+		}[] = [];
 		for (const g of games) {
 			const raw = JSON.parse(readFileSync(g, "utf8"));
 			const n = Number(/(\d+)\.json$/.exec(g)?.[1] ?? 1);
@@ -876,9 +970,15 @@ test.skipIf(games.length === 0)(
 																		e.made === true,
 																),
 														)
-													: undefined;
+													: line === "pick" && evs.includes("interception")
+														? pickParts(tl, p)
+														: undefined;
 				if (got) {
-					all.push({ pid: `${tag}:${got.pid}`, parts: got.parts });
+					all.push({
+						pid: `${tag}:${got.pid}`,
+						parts: got.parts,
+						where: `${tag} play ${tl.plays.indexOf(p)}`,
+					});
 				}
 			}
 		}
@@ -912,6 +1012,15 @@ test.skipIf(games.length === 0)(
 			out.push(`\n${by0.join(" + ")}: ${c.size} ways`);
 			for (const [v, k] of [...c].sort((a, b) => b[1] - a[1])) {
 				out.push(`  ${String(k).padStart(4)}  ${v}`);
+			}
+		}
+		// (VARIETY_WHERE="how=diving|off a tip": the plays they were, to
+		// film.)
+		const [wk, wv] = (process.env.VARIETY_WHERE ?? "").split("=");
+		if (wk && wv) {
+			out.push(`\nwhere ${wk} is ${wv}:`);
+			for (const x of all.filter((x) => wv.split("|").includes(x.parts[wk]!))) {
+				out.push(`  ${x.parts[wk]}: ${x.where}`);
 			}
 		}
 		out.push(`\nwhole combinations: ${sigs.size} different of ${all.length}`);

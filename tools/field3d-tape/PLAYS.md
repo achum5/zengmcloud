@@ -23,7 +23,7 @@ Combinations: distinct whole combinations of the variety tool's parts.
 | 7   | Sack (`sack`)                                      |        4 | `sack`       | working |
 | 8   | Extra point, two-point try                         |        4 | `kick`       | working |
 | 9   | Field goal (`fieldGoalAttempt`, `fieldGoal`)       |        2 | `kick`       | working |
-| 10  | Interception and return                            |        2 | -            | todo    |
+| 10  | Interception and return                            |        2 | `pick`       | working |
 | 11  | Timeouts, two-minute warning, quarters             |       15 | -            | todo    |
 | 12  | Injury (`injury`)                                  |        6 | -            | todo    |
 | 13  | Kneel, fumble, onside kick, safety                 |     rare | -            | todo    |
@@ -182,6 +182,25 @@ A two-point try is a run or a pass from the 2, so it is in those lines.
 
 To do: a blocked kick (the sim has none in these games), the kicker's look
 after a miss.
+
+## 10. Interception
+
+Parts: how far it was thrown, how the man got it (set, on the run, up off
+his feet for it, laid out for it, off the receiver's hands), who got it,
+what he did with it after (evades, how he went down, the gain), the
+quarterback after it, and the defense's party.
+
+Each man gets his own way: now and then it pops up off the receiver's
+hands and he takes it coming down, his hands up for it the whole way; up
+in the air for one thrown a long way; laid out for one with little to come
+of it after, a dive the length a receiver's would be at his pace, and up
+off the turf with it.
+
+Now (14 picks): 14 different combinations. Diving 5, set 4, on the run 2,
+off a tip 2, up for it 1 (all set before).
+
+To do: a return with a move in it (no pick return has an evade), a pick
+batted up at the line, the quarterback's own look after it.
 
 ## Side notes
 

@@ -3322,6 +3322,25 @@ const CATCH_IN_MS = 220;
 // Picking it off going at least this fast: caught on the run, his arms
 // up for it as he goes - not stopped dead to catch it.
 const PICK_ON_FPS = 10;
+// A pick, on the man's own count: off the receiver's hands this often (him
+// no further than this, feet, from where it was going) - up this high off
+// them (feet), this far over toward the man who gets it (feet), his this
+// long after (ms); up off his feet for it this often, on one thrown this
+// far (feet) or more; laid out for it this often, a return of no more than
+// this many yards after - as far as a man going his pace goes in this long
+// (s), no less and no more than these (feet): a receiver's dive.
+const PICK_TIP = 0.15;
+const PICK_TIP_NEAR = 5;
+const PICK_TIP_UP = 3.5;
+const PICK_TIP_OFF = 3.5;
+const PICK_TIP_MS = 550;
+const PICK_LEAP = 0.3;
+const PICK_LEAP_FT = 50;
+const PICK_DIVE = 0.2;
+const PICK_DIVE_YDS = 6;
+const PICK_DIVE_PER = 0.6;
+const PICK_DIVE_LEAST = 6;
+const PICK_DIVE_MOST = 13;
 // A defender sees the ball thrown and breaks on it this long after.
 const BREAK_MS = 250;
 // On his man in coverage: where he goes, worked out a step at a time, so
@@ -8676,11 +8695,11 @@ class Action {
 
 	// Laid out for it: off his feet from a stride or two short, his arms out
 	// for it as it comes in low, and down with it on the turf at `at`.
-	diveFor(rec: Actor, at: Pt, catchAt: number) {
+	diveFor(rec: Actor, at: Pt, catchAt: number, yaw?: number) {
 		const t0 = catchAt - DIVE_BEFORE;
 		rec.cut(t0);
 		rec.hold(t0);
-		rec.act("diveCatch", t0 + DIVE_CATCH_MS, rec.yaw, at);
+		rec.act("diveCatch", t0 + DIVE_CATCH_MS, yaw ?? rec.yaw, at);
 		rec.hold(rec.t + 200, "prone");
 		// (The ball thrown to his hands, out there.)
 		const fly = this.ball.findLast((b) => b.kind === "fly");
@@ -9182,11 +9201,13 @@ class Action {
 				t: this.canReach(c, at),
 				from: c.posAt(Math.max(this.seen, Math.min(c.t, tc - 700))),
 			}))
-			// (Coming at him, not from behind.)
+			// (Coming at him, not from behind - and able to get to him in
+			// time, off what he is doing: see closeOn.)
 			.filter(
 				(x) =>
 					x.t < tc - 250 &&
-					Math.cos(Math.atan2(x.from.y - at.y, x.from.x - at.x) - ang) > -0.3,
+					Math.cos(Math.atan2(x.from.y - at.y, x.from.x - at.x) - ang) > -0.3 &&
+					this.closeFrom(x.c, at, tc - 300).need <= x.c.top * CLOSE,
 			)
 			.sort((a, b) => a.t - b.t)[0];
 		if (!m) {
@@ -10176,11 +10197,9 @@ class Action {
 		this.until = Math.max(this.until, carrier.t);
 	}
 
-	// A man to `hit` by `lead`, facing `face` there: leaving what he was
-	// doing as late as he can and still get there at most of his speed (or
-	// whenever gets him there easiest) - with time to spare, up to a few
-	// steps off to break down, and in from there.
-	closeOn(m: Actor, hit: Pt, lead: number, face: number, watch?: Actor) {
+	// When `m` leaves what he is doing to get to `hit` by `lead` (see
+	// closeOn) - and the pace he has to get up to for it.
+	closeFrom(m: Actor, hit: Pt, lead: number): { c: number; need: number } {
 		// (Where and when he is off his new way, leaving what he was doing
 		// at c: planted on past it first, going at all quick and well round
 		// from it - see plantFor.)
@@ -10242,6 +10261,15 @@ class Action {
 		if (need(c) > m.top * CLOSE) {
 			c = best;
 		}
+		return { c, need: need(c) };
+	}
+
+	// A man to `hit` by `lead`, facing `face` there: leaving what he was
+	// doing as late as he can and still get there at most of his speed (or
+	// whenever gets him there easiest) - with time to spare, up to a few
+	// steps off to break down, and in from there.
+	closeOn(m: Actor, hit: Pt, lead: number, face: number, watch?: Actor) {
+		let { c } = this.closeFrom(m, hit, lead);
 		// (Not a step or two into something new first - a backpedal just
 		// begun: off from before it. Or, begun before he could know to,
 		// still in the stance he was in until then.)
@@ -10476,12 +10504,43 @@ class Action {
 				: disc >= 0
 					? (backT - Math.sqrt(disc)) / (2 * per)
 					: Infinity;
-		if (
+		const back =
 			gives &&
 			backFar > GIVE_STEP_FT &&
 			backV <= BACK_MOST &&
-			legPace(m.last) < STOP_LEAST
-		) {
+			legPace(m.last) < STOP_LEAST;
+		// (On a way to five feet off him, eased into it, and set there till
+		// he goes in - if that has him there in time for it: round on his
+		// way there first, say, quicker about it - not there only as he has
+		// to be in on him already.)
+		const runIn = (fps: number): boolean => {
+			const was = m.legs.map((l) => ({ ...l }));
+			const { yaw, pinned } = m;
+			const easeAt = Math.min(
+				(far - 5) * 0.5,
+				(fps * fps) / (2 * STOP_ACCEL * STOP_HARD),
+			);
+			const u = (far - 5 - easeAt) / (far - 5);
+			m.run(
+				{ x: m.at.x + (off.x - m.at.x) * u, y: m.at.y + (off.y - m.at.y) * u },
+				fps,
+			);
+			m.easeOff(easeAt);
+			if (m.t <= fire) {
+				return true;
+			}
+			m.legs.splice(0, m.legs.length, ...was);
+			m.yaw = yaw;
+			m.pinned = pinned;
+			return false;
+		};
+		const ranIn =
+			!back &&
+			far > 8 &&
+			far < m.top * 0.5 * secs &&
+			downBy <= fire - BREAK_SET_MS &&
+			(runIn(v) || (v < m.top * 0.7 && runIn(m.top * 0.7)));
+		if (back) {
 			const bv = Math.min(backV, Math.sqrt(backFar / per));
 			const pull = Math.min(backFar / 2, (bv * bv) / (2 * down));
 			m.hold(backBy - stepMs(backFar, bv, RELEASE_ACCEL, down));
@@ -10501,17 +10560,7 @@ class Action {
 			m.easeOff(pull);
 			setTill(lead - upMs);
 			inTo();
-		} else if (
-			far > 8 &&
-			far < m.top * 0.5 * secs &&
-			downBy <= fire - BREAK_SET_MS
-		) {
-			const u = (far - 5 - ease) / (far - 5);
-			m.run(
-				{ x: m.at.x + (off.x - m.at.x) * u, y: m.at.y + (off.y - m.at.y) * u },
-				v,
-			);
-			m.easeOff(ease);
+		} else if (ranIn) {
 			setTill(fire);
 			inTo();
 		} else if (
@@ -11093,36 +11142,112 @@ class Action {
 			this.whistle = catchAt + 600;
 			return;
 		}
-		// He jumps the route and takes it the other way.
-		this.breakOn(picker, catchPt, catchAt, 60);
-		const ball = this.ball.at(-1);
-		const fly = ball?.kind === "fly" ? ball : undefined;
-		const onRun =
-			GAITS.has(picker.last.move) && legPace(picker.last) >= PICK_ON_FPS;
-		if (onRun) {
-			this.reaches.push({
-				m: picker,
-				move: "catch",
-				t0: catchAt - CATCH_REACH_MS,
-				t1: catchAt + CATCH_IN_MS,
-			});
-		} else {
-			picker.catchOn(catchAt, this.toward(picker.at, catchPt));
-		}
-		if (fly) {
-			fly.to = { ...picker.at, z: CATCH_Z };
-		}
-		this.ball.push({ kind: "held", t0: catchAt, pid: picker.pid });
+		const { snap } = this.input;
 		const retI = this.find("interceptionReturn", i);
 		const ret = retI >= 0 ? this.ev(retI) : undefined;
 		const yds = typeof ret?.yds === "number" ? ret.yds : 0;
+		const td = ret?.td === true;
+		// How he gets it, on his own count: now and then off the hands of
+		// the man it was meant for, popped up (see PICK_TIP); up off his
+		// feet for one thrown a long way (PICK_LEAP); laid out for it, with
+		// little or nothing to come of it after (PICK_DIVE) - or in front of
+		// him and away.
+		const thrown = this.ball.at(-1);
+		const long = thrown?.kind === "fly" ? dist(thrown.from, thrown.to) : 0;
+		const u = countOf(picker, snap, 111);
+		const recAt = rec.posAt(catchAt);
+		const tip =
+			thrown?.kind === "fly" &&
+			u < PICK_TIP &&
+			dist(recAt, catchPt) < PICK_TIP_NEAR;
+		const leap = !tip && long >= PICK_LEAP_FT && u < PICK_TIP + PICK_LEAP;
+		const dive =
+			!tip &&
+			!leap &&
+			!td &&
+			yds <= PICK_DIVE_YDS &&
+			u < PICK_TIP + PICK_LEAP + PICK_DIVE;
+		// (Off the receiver's hands: up off them a little way the side the
+		// man picking it comes from, and his then.)
+		let gotAt = catchAt;
+		let gotPt = catchPt;
+		if (tip && thrown?.kind === "fly") {
+			gotAt = catchAt + PICK_TIP_MS;
+			const from = picker.posAt(catchAt - 500);
+			const far = dist(from, catchPt) || 1;
+			gotPt = {
+				x: catchPt.x + ((from.x - catchPt.x) / far) * PICK_TIP_OFF,
+				y: catchPt.y + ((from.y - catchPt.y) / far) * PICK_TIP_OFF,
+			};
+			const face = this.toward(recAt, qb.posAt(catchAt));
+			thrown.to = {
+				x: recAt.x + Math.cos(face),
+				y: recAt.y + Math.sin(face),
+				z: CATCH_Z,
+			};
+			this.ball.push({
+				kind: "fly",
+				t0: catchAt,
+				t1: gotAt,
+				from: thrown.to,
+				to: { ...gotPt, z: CATCH_Z },
+				peak: PICK_TIP_UP,
+			});
+		}
+		// He jumps the route and takes it the other way.
+		this.breakOn(picker, gotPt, gotAt, 60);
+		const ball = this.ball.at(-1);
+		const fly = ball?.kind === "fly" ? ball : undefined;
+		const onRun =
+			!leap &&
+			!dive &&
+			GAITS.has(picker.last.move) &&
+			legPace(picker.last) >= PICK_ON_FPS;
+		if (leap) {
+			this.leapFor(picker, gotPt, gotAt, qb);
+		} else if (dive) {
+			// (From where he is as he leaves his feet, toward it: no further
+			// than he could - the ball to his hands out there.)
+			const t0 = gotAt - DIVE_BEFORE;
+			const from = picker.posAt(t0);
+			const face = this.toward(from, gotPt);
+			const far = clamp(
+				legPace(legAt(picker, t0)) * PICK_DIVE_PER,
+				PICK_DIVE_LEAST,
+				PICK_DIVE_MOST,
+			);
+			this.diveFor(
+				picker,
+				{
+					x: from.x + Math.cos(face) * far,
+					y: from.y + Math.sin(face) * far,
+				},
+				gotAt,
+				face,
+			);
+			picker.act("getUp", picker.t + GET_UP_MS);
+		} else if (onRun || tip) {
+			// (Off a tip: his hands up for it as it comes off the other
+			// man's, on it all the way down.)
+			this.reaches.push({
+				m: picker,
+				move: "catch",
+				t0: tip ? catchAt : gotAt - CATCH_REACH_MS,
+				t1: gotAt + CATCH_IN_MS,
+			});
+		} else {
+			picker.catchOn(gotAt, this.toward(picker.at, gotPt));
+		}
+		if (fly && !leap && !dive) {
+			fly.to = { ...picker.at, z: CATCH_Z };
+		}
+		this.ball.push({ kind: "held", t0: gotAt, pid: picker.pid });
 		// (Taken back from where the sim says it was picked off.)
 		const at = this.ev(i).yds;
 		const pickD =
 			typeof at === "number"
 				? Math.min(at * YD, this.goalD + 25)
 				: this.of(picker.at).d;
-		const td = ret?.td === true;
 		let d = pickD - yds * YD;
 		if (td) {
 			d = this.ownGoalD - 4 - r() * 12;
@@ -11132,7 +11257,7 @@ class Action {
 		const pt = this.w({
 			d: clamp(d, this.ownGoalD - 27, this.goalD + 27),
 			a: clamp(
-				this.of(picker.at).a + (r() - 0.5) * 30,
+				this.of(picker.at).a + (r() - 0.5) * (dive ? 8 : 30),
 				this.bounds.left + 6,
 				this.bounds.right - 6,
 			),
@@ -11141,9 +11266,9 @@ class Action {
 		if (dist(picker.at, pt) > 2) {
 			t = picker.run(pt, picker.top * 0.9, "sprint");
 		}
-		// (Caught on the run: where he was as it got to him.)
-		if (onRun && fly) {
-			fly.to = { ...picker.posAt(catchAt), z: CATCH_Z };
+		// (Caught on the run, or off a tip: where he was as it got to him.)
+		if ((onRun || tip) && fly) {
+			fly.to = { ...picker.posAt(gotAt), z: CATCH_Z };
 		}
 		// The offense sees it picked off, and comes after him.
 		this.seen = catchAt + BREAK_MS;
