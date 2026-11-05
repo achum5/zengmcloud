@@ -1180,6 +1180,361 @@ tr.table-warning:hover > td {
 	padding-bottom: 3.5rem;
 }
 
+// The live game's tabbed layout (LiveGame/gamecast). On a phone, the court,
+// the latest play and the tab bar stay pinned under the navbar while the
+// tab's content scrolls; on a wide screen the page just scrolls.
+.gamecast {
+	--gamecast-line: var(--bs-border-color-translucent);
+	--gamecast-soft: var(--bs-tertiary-bg);
+}
+.gamecast-pin {
+	background-color: var(--bs-body-bg);
+}
+@include media-breakpoint-down(lg) {
+	.gamecast-pin {
+		position: sticky;
+		top: 52px;
+		// Over the box score's frozen first column and its corner cell
+		// (z-index 10 and 12).
+		z-index: 13;
+		box-shadow: 0 6px 8px -8px rgba(0, 0, 0, 0.35);
+	}
+}
+.gamecast-court {
+	position: relative;
+	// (The court's own bottom margin: the latest play sits right under it.)
+	> .mb-3 {
+		margin-bottom: 0 !important;
+	}
+}
+
+// Play / pause / speed, small, over the picture: bottom right on a wide
+// screen (beside the score bug), top right over the crowd on a phone.
+.gamecast-controls {
+	position: absolute;
+	right: 8px;
+	bottom: 8px;
+	z-index: 5;
+	opacity: 0.85;
+	transition: opacity 0.15s;
+	&:hover,
+	&:focus-within {
+		opacity: 1;
+	}
+	.btn,
+	.form-select {
+		font-size: 0.8rem;
+		padding-top: 0.2rem;
+		padding-bottom: 0.2rem;
+	}
+	.btn {
+		padding-left: 0.45rem;
+		padding-right: 0.45rem;
+		color: #fff;
+		background-color: rgba(10, 10, 14, 0.72);
+		border-color: rgba(255, 255, 255, 0.25);
+	}
+	.btn-primary {
+		background-color: rgba(var(--bs-primary-rgb), 0.9);
+	}
+	.form-select {
+		color: #fff;
+		background-color: rgba(10, 10, 14, 0.72);
+		border-color: rgba(255, 255, 255, 0.25);
+		margin-left: 0 !important;
+	}
+	.btn-link {
+		align-self: stretch;
+		margin-left: 0 !important;
+		padding: 0.2rem 0.45rem !important;
+		border-radius: var(--bs-border-radius-sm);
+		color: #fff !important;
+	}
+}
+@include media-breakpoint-down(lg) {
+	.gamecast-controls {
+		top: 6px;
+		bottom: auto;
+		right: 6px;
+	}
+}
+
+// Sections: a heading and what it heads, the way the rest of the game is
+// laid out. More room above a heading than under it, so each one reads
+// with what follows it.
+.gamecast-section {
+	margin-bottom: 2rem;
+}
+.gamecast-section-head {
+	display: flex;
+	align-items: baseline;
+	gap: 0.75rem;
+	margin-bottom: 0.5rem;
+	h2 {
+		margin: 0;
+	}
+}
+.gamecast-headshot {
+	border-radius: 50%;
+	overflow: hidden;
+	background-color: var(--bs-tertiary-bg);
+	display: flex;
+	justify-content: center;
+}
+
+// Tabs, underlined.
+.gamecast-tabs {
+	display: flex;
+	gap: 0.25rem;
+	margin-top: 0.5rem;
+	border-bottom: 1px solid var(--bs-border-color);
+	overflow-x: auto;
+	scrollbar-width: none;
+	&::-webkit-scrollbar {
+		display: none;
+	}
+	button {
+		flex-shrink: 0;
+		border: 0;
+		background: none;
+		padding: 0.6rem 0.8rem 0.5rem;
+		font-weight: 600;
+		color: var(--bs-secondary-color);
+		border-bottom: 3px solid transparent;
+		white-space: nowrap;
+		&:hover {
+			color: var(--bs-body-color);
+		}
+		&.active {
+			color: var(--bs-body-color);
+			border-bottom-color: var(--bs-primary);
+		}
+	}
+}
+.gamecast-content {
+	padding-top: 1.25rem;
+}
+.gamecast-narrow {
+	max-width: 760px;
+}
+@include media-breakpoint-up(lg) {
+	.gamecast-grid {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+		column-gap: 2rem;
+	}
+}
+
+// Plays.
+.gamecast-plays {
+	border-top: 1px solid var(--bs-border-color);
+}
+.gamecast-play {
+	display: flex;
+	gap: 0.75rem;
+	padding: 0.65rem 0;
+	border-bottom: 1px solid var(--bs-border-color);
+}
+.gamecast-play-picture {
+	flex-shrink: 0;
+	width: 38px;
+	display: flex;
+	justify-content: center;
+}
+.gamecast-play-face {
+	position: relative;
+	flex-shrink: 0;
+}
+// His team's logo on the corner of his face.
+.gamecast-play-badge {
+	position: absolute;
+	right: -4px;
+	bottom: -3px;
+	padding: 1px;
+	border-radius: 50%;
+	background-color: var(--bs-body-bg);
+}
+.gamecast-play-title {
+	font-weight: 700;
+	line-height: 1.3;
+}
+.gamecast-play-when {
+	margin-left: 0.5rem;
+	font-weight: 400;
+	font-size: 0.875rem;
+	color: var(--bs-secondary-color);
+	white-space: nowrap;
+}
+.gamecast-play-text {
+	margin-top: 0.15rem;
+	line-height: 1.4;
+}
+.gamecast-play-score {
+	font-size: 1.05rem;
+	color: var(--bs-secondary-color);
+	font-variant-numeric: tabular-nums;
+}
+.gamecast-scorer {
+	font-weight: 700;
+	color: var(--bs-body-color);
+}
+.gamecast-score-gap {
+	display: inline-block;
+	width: 0.9rem;
+}
+.gamecast-divider {
+	padding: 0.5rem 0;
+	text-align: center;
+	font-weight: 700;
+	background-color: var(--bs-tertiary-bg);
+	border-bottom: 1px solid var(--bs-border-color);
+}
+.gamecast-latest {
+	min-height: 4.6rem;
+	border-bottom: 1px solid var(--bs-border-color);
+	.gamecast-play {
+		padding: 0.6rem 0.25rem;
+		border-bottom: 0;
+	}
+	.gamecast-play-picture {
+		width: 44px;
+	}
+	.gamecast-play-title {
+		font-size: 1.15rem;
+	}
+	.gamecast-play-score {
+		font-size: 1.3rem;
+	}
+}
+.gamecast-clamp {
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+}
+
+// Tables.
+.gamecast-table {
+	font-variant-numeric: tabular-nums;
+	th,
+	td {
+		text-align: right;
+		vertical-align: middle;
+		white-space: nowrap;
+	}
+	th:first-child,
+	td:first-child {
+		text-align: left;
+		white-space: normal;
+	}
+	.gamecast-team-head th {
+		background-color: var(--bs-tertiary-bg);
+	}
+}
+.gamecast-linescore {
+	th,
+	td {
+		text-align: center;
+	}
+	thead th {
+		color: var(--bs-secondary-color);
+		font-weight: 600;
+	}
+	thead th.current,
+	thead th.total {
+		color: var(--bs-body-color);
+	}
+	td.current {
+		background-color: var(--bs-tertiary-bg);
+	}
+	td.total {
+		font-weight: 700;
+		font-size: 1.15rem;
+	}
+}
+.gamecast-oncourt td:first-child {
+	max-width: 11rem;
+}
+
+// Game leaders and team stats.
+.gamecast-teams-line {
+	display: flex;
+	justify-content: space-between;
+	padding-bottom: 0.5rem;
+	border-bottom: 1px solid var(--bs-border-color);
+}
+.gamecast-leader-row {
+	display: flex;
+	align-items: center;
+	padding: 0.65rem 0;
+	border-bottom: 1px solid var(--bs-border-color);
+}
+.gamecast-leader {
+	display: flex;
+	align-items: center;
+	gap: 0.6rem;
+	flex: 1 1 0;
+	min-width: 0;
+}
+.gamecast-leader-label {
+	flex-shrink: 0;
+	width: 6rem;
+	text-align: center;
+	font-weight: 700;
+}
+.gamecast-leader-value {
+	font-size: 1.5rem;
+	font-weight: 700;
+	line-height: 1.1;
+}
+.gamecast-leader-line {
+	font-size: 0.875rem;
+	color: var(--bs-secondary-color);
+}
+.gamecast-bar-row {
+	padding: 0.55rem 0;
+}
+.gamecast-bar-values {
+	display: flex;
+	align-items: baseline;
+	margin-bottom: 0.3rem;
+	> div:first-child,
+	> div:last-child {
+		flex: 1 1 0;
+	}
+	.text-body-secondary {
+		font-size: 0.875rem;
+	}
+}
+.gamecast-bar-value {
+	font-size: 1.1rem;
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+}
+.gamecast-bar-label {
+	text-align: center;
+	font-weight: 600;
+	padding: 0 0.5rem;
+}
+.gamecast-bar-tracks {
+	display: flex;
+	gap: 0.5rem;
+}
+.gamecast-bar {
+	flex: 1 1 0;
+	height: 8px;
+	display: flex;
+	background-color: var(--bs-tertiary-bg);
+	border-radius: 2px;
+	overflow: hidden;
+	&.flip {
+		justify-content: flex-end;
+	}
+	> div {
+		transition: width 0.3s;
+	}
+}
+
 .live-game-sticky {
 	position: sticky;
 	top: 52px;

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 175,
+		date: "2026-11-05",
+		text: "New, to try: a tabbed layout for live games, like a sports app's gamecast. The court with the score by quarter and who's on the floor beside it, the latest play right under the picture, then Gamecast, Box Score, Play-by-Play, Team Stats and Game Flow tabs. Turn it on with \"Tabbed layout\" at the foot of the live game page, or in Global Settings.",
+	},
+	{
 		n: 174,
 		date: "2026-11-05",
 		text: "Fixed: in 3D games, a player off the ball who drifted over to keep his spacing could jump back across the floor in an instant for his next run. He now only drifts when he has time to get back.",

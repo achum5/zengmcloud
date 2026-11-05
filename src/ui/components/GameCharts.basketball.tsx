@@ -200,7 +200,8 @@ const LeadChart = ({
 	const H1 = 150;
 	const GAP = 22;
 	const H2 = 96;
-	const padL = 34;
+	// (Room for "100%" on the win chart's scale.)
+	const padL = 40;
 	const padR = 8;
 	const padT = 8;
 	const padB = 20;
@@ -847,16 +848,21 @@ const Section = ({
 	title,
 	control,
 	children,
+	hideTitle,
 }: {
 	title: string;
 	control?: ReactNode;
 	children: ReactNode;
+	// Its title is on the card it sits in (the live gamecast).
+	hideTitle?: boolean;
 }) => (
-	<div className="mb-3">
-		<div className="d-flex flex-wrap align-items-center column-gap-3 row-gap-1 mb-2">
-			<h2 className="mb-0">{title}</h2>
-			{control}
-		</div>
+	<div className={hideTitle ? undefined : "mb-3"}>
+		{hideTitle && !control ? null : (
+			<div className="d-flex flex-wrap align-items-center column-gap-3 row-gap-1 mb-2">
+				{hideTitle ? null : <h2 className="mb-0">{title}</h2>}
+				{control}
+			</div>
+		)}
 		{children}
 	</div>
 );
@@ -918,9 +924,11 @@ const liveLead = (boxScore: any, numPeriods: number) => {
 export const GameCharts = ({
 	boxScore,
 	live,
+	hideTitle,
 }: {
 	boxScore: any;
 	live?: boolean;
+	hideTitle?: boolean;
 }) => {
 	const numPeriods = boxScore.numPeriods ?? 4;
 	const now = live ? liveLead(boxScore, numPeriods) : undefined;
@@ -937,7 +945,7 @@ export const GameCharts = ({
 
 	return (
 		<>
-			<Section title="Game Flow">
+			<Section title="Game Flow" hideTitle={hideTitle}>
 				<LeadChart
 					charts={lead}
 					order={order}

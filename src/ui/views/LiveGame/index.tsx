@@ -1,4 +1,5 @@
 import clsx from "clsx";
+import { Dropdown } from "react-bootstrap";
 import { clearCourtRng, seedCourtRng } from "./courtRng.ts";
 import {
 	Component,
@@ -21,7 +22,8 @@ import useTitleBar from "../../hooks/useTitleBar.tsx";
 import { helpers } from "../../util/helpers.ts";
 import { realtimeUpdate } from "../../util/realtimeUpdate.ts";
 import { toWorker } from "../../util/toWorker.ts";
-import { useLocal } from "../../util/local.ts";
+import { localActions, useLocal } from "../../util/local.ts";
+import { LiveGamecast } from "./gamecast/Gamecast.tsx";
 import { orderBoxScoreTeams } from "../../util/liveBoxScoreLayout.ts";
 import type { View } from "../../../common/types.ts";
 import { bySport } from "../../../common/sportFunctions.ts";
@@ -208,6 +210,11 @@ const DEFAULT_SPORT_STATE = bySport<any>({
 
 type PlayByPlayEntryInfo = {
 	key: number;
+	type?: string;
+	pid?: number;
+	period?: number;
+	pts?: [number, number];
+	scored?: number;
 	score: ReactNode | undefined;
 	scoreDiff: number;
 	scoreType: string | undefined;
@@ -398,6 +405,40 @@ const Court3DSpeeds = ({
 			</button>
 		))}
 	</div>
+);
+
+// The same, as one small button (the controls laid over the gamecast's
+// court).
+const Court3DSpeedMenu = ({
+	value,
+	onChange,
+}: {
+	value: Court3DSpeed;
+	onChange: (speed: Court3DSpeed) => void;
+}) => (
+	<Dropdown align="end">
+		<Dropdown.Toggle
+			id="court3d-speed"
+			className="btn-light-bordered"
+			variant={"no-class" as any}
+			title="Speed"
+		>
+			{value}x
+		</Dropdown.Toggle>
+		<Dropdown.Menu>
+			{COURT3D_SPEEDS.map((s) => (
+				<Dropdown.Item
+					key={s}
+					active={s === value}
+					onClick={() => {
+						onChange(s);
+					}}
+				>
+					{s}x
+				</Dropdown.Item>
+			))}
+		</Dropdown.Menu>
+	</Dropdown>
 );
 
 // Every play, or only the key plays (see keyPlays.ts) in about so many
@@ -1602,7 +1643,8 @@ export const LiveGame = (props: View<"liveGame">) => {
 	// the simmer's cursor (no own timer) and the page is locked; on the broadcaster
 	// we additionally heartbeat our cursor to the room. In single-player both are
 	// false and nothing below changes.
-	const { mpLiveBroadcast, userTid } = useLocal([
+	const { gamecastLayout, mpLiveBroadcast, userTid } = useLocal([
+		"gamecastLayout",
 		"mpLiveBroadcast",
 		// Which team this device manages, so the box scores below can lead with
 		// it - see liveBoxScoreLayout.ts.
@@ -2017,6 +2059,18 @@ export const LiveGame = (props: View<"liveGame">) => {
 					textOnly: output.textOnly,
 					t,
 					time,
+					// For the gamecast's rows (see gamecast/playFeed.ts).
+					type: (output as any).event?.type,
+					pid:
+						typeof (output as any).event?.pid === "number"
+							? (output as any).event.pid
+							: (output as any).event?.pids?.[0],
+					period: boxScore.current.teams[0].ptsQtrs?.length,
+					pts: [
+						boxScore.current.teams[0][ptsKey],
+						boxScore.current.teams[1][ptsKey],
+					],
+					scored: scoreDiff > 0 ? scoreDiff : undefined,
 				});
 			}
 
@@ -2981,6 +3035,178 @@ export const LiveGame = (props: View<"liveGame">) => {
 		useState<HTMLElement | null>(null);
 	const isStuck = useIsStuck(liveGameStickyDiv);
 
+	// The tabbed layout (see gamecast/Gamecast.tsx): basketball, on a device
+	// that has turned it on - here at the foot of the page, or in Global
+	// Settings. With the plays right under the picture, the picture carries
+	// no caption.
+	const gamecast = __SPORT === "basketball" && gamecastLayout;
+
+	const courtNode =
+		boxScore.current.gid >= 0 ? (
+			<>
+				{__SPORT === "football" && !court3d ? (
+					<div>
+						<LiveField
+							scene={fieldScene.current}
+							teams={displayTeams(boxScore.current.teams)}
+							season={boxScore.current.season}
+							sceneMs={speedToMs(speedRef.current)}
+							neutralSite={boxScore.current.neutralSite}
+						/>
+					</div>
+				) : null}
+				{court3d ? (
+					<Suspense
+						fallback={
+							<div
+								className="mb-3"
+								style={{
+									aspectRatio: "384 / 216",
+									background: "#07060a",
+									borderRadius: 6,
+								}}
+							/>
+						}
+					>
+						{__SPORT === "football" ? (
+							<Field3D
+								events={props.events}
+								cursor={
+									initialEventCount.current - (events.current?.length ?? 0)
+								}
+								boxScore={boxScore.current}
+								caption={
+									gamecast ? undefined : playByPlayEntries.current[0]?.text
+								}
+								captionT={
+									gamecast ? undefined : playByPlayEntries.current[0]?.t
+								}
+								paused={paused}
+								rate={sync3d && sync3d.rate > 0 ? sync3d.rate : rate3d}
+								follower={isFollower && !along}
+								along={along}
+								report={court3dReport}
+								skips={skips3d}
+								keyPlays={
+									sync3d ? alongKeyPlays : isFollower ? undefined : keyPlays3d
+								}
+								onReady={onCourt3DReady}
+								onJump={onCourt3DJump}
+								onFail={onCourt3DFail}
+								onLost={onCourt3DLost}
+							/>
+						) : (
+							<Court3D
+								events={props.events}
+								cursor={
+									initialEventCount.current - (events.current?.length ?? 0)
+								}
+								boxScore={boxScore.current}
+								caption={
+									gamecast ? undefined : playByPlayEntries.current[0]?.text
+								}
+								captionT={
+									gamecast ? undefined : playByPlayEntries.current[0]?.t
+								}
+								paused={paused}
+								rate={sync3d && sync3d.rate > 0 ? sync3d.rate : rate3d}
+								follower={isFollower && !along}
+								along={along}
+								report={court3dReport}
+								skips={skips3d}
+								keyPlays={
+									sync3d ? alongKeyPlays : isFollower ? undefined : keyPlays3d
+								}
+								onReady={onCourt3DReady}
+								onJump={onCourt3DJump}
+								onFail={onCourt3DFail}
+								onLost={onCourt3DLost}
+							/>
+						)}
+					</Suspense>
+				) : null}
+				{__SPORT === "basketball" && !court3d ? (
+					<div>
+						<LiveCourt
+							scene={courtScene.current}
+							teams={displayTeams(boxScore.current.teams)}
+							finals={!!boxScore.current.finals}
+							season={boxScore.current.season}
+							sceneMs={speedToMs(speedRef.current)}
+						/>
+					</div>
+				) : null}
+			</>
+		) : null;
+
+	const speedControls = court3d ? (
+		<>
+			<Court3DSpeeds
+				value={rate3d}
+				onChange={(s) => {
+					setSpeed3d(String(s));
+				}}
+			/>
+			{__SPORT === "basketball" || __SPORT === "football" ? (
+				<>
+					<KeyPlaysPicker value={keyPlays} onChange={setKeyPlaysState} />
+					<KeyPlaysSettings value={keyPlays} onChange={setKeyPlaysState} />
+				</>
+			) : null}
+		</>
+	) : (
+		<input
+			type="range"
+			className="form-range flex-grow-1"
+			min="1"
+			max="33"
+			step="1"
+			value={speed}
+			onChange={handleSpeedChange}
+			title="Speed"
+		/>
+	);
+
+	// The gamecast's, small enough to lie over the court: the speed in one
+	// button, and every play or the key plays picked under the gear.
+	const overlaySpeedControls = court3d ? (
+		<>
+			<Court3DSpeedMenu
+				value={rate3d}
+				onChange={(s) => {
+					setSpeed3d(String(s));
+				}}
+			/>
+			<KeyPlaysSettings
+				value={keyPlays}
+				onChange={setKeyPlaysState}
+				picker={<KeyPlaysPicker value={keyPlays} onChange={setKeyPlaysState} />}
+				label={
+					keyPlays.on ? (
+						<span className="small me-1">{keyPlays.minutes}m</span>
+					) : null
+				}
+			/>
+		</>
+	) : (
+		speedControls
+	);
+
+	const layoutToggle =
+		__SPORT === "basketball" ? (
+			<div className="text-center mt-4">
+				<button
+					type="button"
+					className="btn btn-link btn-sm text-body-secondary"
+					onClick={() => {
+						localActions.setGamecastLayout(!gamecastLayout);
+					}}
+				>
+					{gamecastLayout ? "Classic layout" : "Tabbed layout"}
+				</button>
+			</div>
+		) : null;
+
 	// Needs to return actual div, not fragment, for AutoAffix!!!
 	return (
 		<div>
@@ -3032,292 +3258,251 @@ export const LiveGame = (props: View<"liveGame">) => {
 				</p>
 			) : null}
 
-			<div className="row" ref={scrollTop}>
-				<div className="col-md-9">
-					{boxScore.current.gid >= 0 ? (
-						<div className="live-game-sticky mb-3" ref={setLiveGameStickyDiv}>
-							<div className="pt-1 pt-md-0 live-game-score-wrapper">
-								{boxScore.current.replay ? (
-									<div className="text-center small text-body-secondary mb-1">
-										<span className="badge text-bg-secondary">▶ Replay</span>{" "}
-										{boxScore.current.replayLabel}
-									</div>
-								) : null}
-								{court3d ? null : (
-									// (The 3D court carries its own score bug.)
-									<HeadlineScoreLive
-										boxScore={boxScore.current}
-										isStuck={isStuck}
+			{gamecast ? (
+				boxScore.current.gid >= 0 ? (
+					<LiveGamecast
+						boxScore={boxScore.current}
+						entries={playByPlayEntries.current}
+						court={courtNode}
+						controls={
+							!locked ? (
+								<div className="d-flex align-items-center gap-1">
+									<PlayPauseNext
+										disabled={boxScore.current.gameOver}
+										fastForwardAlignRight
+										fastForwards={fastForwardMenuItems}
+										rewinds={canRewind ? rewindMenuItems : undefined}
+										onPlay={handlePlay}
+										onPause={handlePause}
+										onNext={handleNextPlay}
+										paused={paused}
+										titlePlay="Resume Simulation"
+										titlePause="Pause Simulation"
+										titleNext="Show Next Play"
 									/>
-								)}
-								{!locked ? (
-									<div className="d-flex flex-wrap row-gap-2 align-items-center d-md-none pt-2">
-										<PlayPauseNext
-											className="me-2"
-											disabled={boxScore.current.gameOver}
-											fastForwardAlignRight
-											fastForwards={fastForwardMenuItems}
-											rewinds={canRewind ? rewindMenuItems : undefined}
-											onPlay={handlePlay}
-											onPause={handlePause}
-											onNext={handleNextPlay}
-											paused={paused}
-											titlePlay="Resume Simulation"
-											titlePause="Pause Simulation"
-											titleNext="Show Next Play"
-											// Since we have two PlayPauseNexts rendered, ignore shortcuts on one
-											ignoreKeyboardShortcuts
-										/>
-										{court3d ? (
-											<>
-												<Court3DSpeeds
-													value={rate3d}
-													onChange={(s) => {
-														setSpeed3d(String(s));
-													}}
-												/>
-												{__SPORT === "basketball" || __SPORT === "football" ? (
-													<>
-														<KeyPlaysPicker
-															value={keyPlays}
-															onChange={setKeyPlaysState}
-														/>
-														<KeyPlaysSettings
-															value={keyPlays}
-															onChange={setKeyPlaysState}
-														/>
-													</>
-												) : null}
-											</>
-										) : (
-											<input
-												type="range"
-												className="form-range flex-grow-1"
-												min="1"
-												max="33"
-												step="1"
-												value={speed}
-												onChange={handleSpeedChange}
-												title="Speed"
-											/>
-										)}
-									</div>
-								) : null}
-							</div>
-							<div className="d-flex d-md-none">
-								<div className="ms-auto btn-group">
-									<button
-										className="btn btn-light-bordered"
-										onClick={() => {
-											scrollTop.current?.scrollIntoView();
-										}}
-									>
-										Top
-									</button>
-									{__SPORT !== "football"
-										? // Same ordering the box scores below use, so a button
-											// always scrolls to the team named on it. The anchors
-											// are assigned by position, so deriving the labels from
-											// the raw team order would send them to the wrong team
-											// whenever the device's team was hoisted.
-											orderBoxScoreTeams(
-												displayTeams(boxScore.current.teams),
-												userTid,
-											).map((t: any, i: number) => (
-												<button
-													key={t.abbrev}
-													className="btn btn-light-bordered"
-													onClick={() => {
-														document
-															.getElementById(`scroll-team-${i + 1}`)
-															?.scrollIntoView();
-													}}
-												>
-													{t.abbrev}
-												</button>
-											))
-										: null}
-									<button
-										className="btn btn-light-bordered"
-										onClick={() => {
-											playByPlayDiv.current?.scrollIntoView();
-										}}
-									>
-										Plays
-									</button>
+									{overlaySpeedControls}
 								</div>
-							</div>
-						</div>
-					) : null}
-					{boxScore.current.gid >= 0 ? (
-						<>
-							{__SPORT === "football" && !court3d ? (
-								<div>
-									<LiveField
-										scene={fieldScene.current}
-										teams={displayTeams(boxScore.current.teams)}
-										season={boxScore.current.season}
-										sceneMs={speedToMs(speedRef.current)}
-										neutralSite={boxScore.current.neutralSite}
-									/>
+							) : null
+						}
+						header={
+							boxScore.current.replay ? (
+								<div className="text-center small text-body-secondary mb-1">
+									<span className="badge text-bg-secondary">▶ Replay</span>{" "}
+									{boxScore.current.replayLabel}
 								</div>
-							) : null}
-							{court3d ? (
-								<Suspense
-									fallback={
-										<div
-											className="mb-3"
-											style={{
-												aspectRatio: "384 / 216",
-												background: "#07060a",
-												borderRadius: 6,
-											}}
-										/>
-									}
-								>
-									{__SPORT === "football" ? (
-										<Field3D
-											events={props.events}
-											cursor={
-												initialEventCount.current -
-												(events.current?.length ?? 0)
-											}
-											boxScore={boxScore.current}
-											caption={playByPlayEntries.current[0]?.text}
-											captionT={playByPlayEntries.current[0]?.t}
-											paused={paused}
-											rate={sync3d && sync3d.rate > 0 ? sync3d.rate : rate3d}
-											follower={isFollower && !along}
-											along={along}
-											report={court3dReport}
-											skips={skips3d}
-											keyPlays={
-												sync3d
-													? alongKeyPlays
-													: isFollower
-														? undefined
-														: keyPlays3d
-											}
-											onReady={onCourt3DReady}
-											onJump={onCourt3DJump}
-											onFail={onCourt3DFail}
-											onLost={onCourt3DLost}
-										/>
-									) : (
-										<Court3D
-											events={props.events}
-											cursor={
-												initialEventCount.current -
-												(events.current?.length ?? 0)
-											}
-											boxScore={boxScore.current}
-											caption={playByPlayEntries.current[0]?.text}
-											captionT={playByPlayEntries.current[0]?.t}
-											paused={paused}
-											rate={sync3d && sync3d.rate > 0 ? sync3d.rate : rate3d}
-											follower={isFollower && !along}
-											along={along}
-											report={court3dReport}
-											skips={skips3d}
-											keyPlays={
-												sync3d
-													? alongKeyPlays
-													: isFollower
-														? undefined
-														: keyPlays3d
-											}
-											onReady={onCourt3DReady}
-											onJump={onCourt3DJump}
-											onFail={onCourt3DFail}
-											onLost={onCourt3DLost}
-										/>
-									)}
-								</Suspense>
-							) : null}
-							{__SPORT === "basketball" && !court3d ? (
-								<div>
-									<LiveCourt
-										scene={courtScene.current}
-										teams={displayTeams(boxScore.current.teams)}
-										finals={!!boxScore.current.finals}
-										season={boxScore.current.season}
-										sceneMs={speedToMs(speedRef.current)}
-									/>
-								</div>
-							) : null}
+							) : null
+						}
+						boxScoreTab={
 							<BoxScoreWrapper
 								Row={PlayerRow}
 								boxScore={boxScore.current}
 								live
 								playIndex={playIndex}
 								sportState={sportState.current}
+								tablesOnly
 							/>
-						</>
-					) : (
-						<h2>Loading...</h2>
-					)}
-				</div>
-				<div className="col-md-3">
-					<div className="live-game-affix">
-						{!locked ? (
-							<div className="d-none d-md-flex flex-wrap row-gap-2 align-items-center mb-3 pt-md-2">
-								<PlayPauseNext
-									className="me-2"
-									disabled={boxScore.current.gameOver}
-									fastForwardAlignRight
-									fastForwards={fastForwardMenuItems}
-									rewinds={canRewind ? rewindMenuItems : undefined}
-									onPlay={handlePlay}
-									onPause={handlePause}
-									onNext={handleNextPlay}
-									paused={paused}
-									titlePlay="Resume Simulation"
-									titlePause="Pause Simulation"
-									titleNext="Show Next Play"
-								/>
-								{court3d ? (
-									<>
-										<Court3DSpeeds
-											value={rate3d}
-											onChange={(s) => {
-												setSpeed3d(String(s));
-											}}
+						}
+					/>
+				) : (
+					<h2>Loading...</h2>
+				)
+			) : (
+				<div className="row" ref={scrollTop}>
+					<div className="col-md-9">
+						{boxScore.current.gid >= 0 ? (
+							<div className="live-game-sticky mb-3" ref={setLiveGameStickyDiv}>
+								<div className="pt-1 pt-md-0 live-game-score-wrapper">
+									{boxScore.current.replay ? (
+										<div className="text-center small text-body-secondary mb-1">
+											<span className="badge text-bg-secondary">▶ Replay</span>{" "}
+											{boxScore.current.replayLabel}
+										</div>
+									) : null}
+									{court3d ? null : (
+										// (The 3D court carries its own score bug.)
+										<HeadlineScoreLive
+											boxScore={boxScore.current}
+											isStuck={isStuck}
 										/>
-										{__SPORT === "basketball" || __SPORT === "football" ? (
-											<>
-												<KeyPlaysPicker
-													value={keyPlays}
-													onChange={setKeyPlaysState}
+									)}
+									{!locked ? (
+										<div className="d-flex flex-wrap row-gap-2 align-items-center d-md-none pt-2">
+											<PlayPauseNext
+												className="me-2"
+												disabled={boxScore.current.gameOver}
+												fastForwardAlignRight
+												fastForwards={fastForwardMenuItems}
+												rewinds={canRewind ? rewindMenuItems : undefined}
+												onPlay={handlePlay}
+												onPause={handlePause}
+												onNext={handleNextPlay}
+												paused={paused}
+												titlePlay="Resume Simulation"
+												titlePause="Pause Simulation"
+												titleNext="Show Next Play"
+												// Since we have two PlayPauseNexts rendered, ignore shortcuts on one
+												ignoreKeyboardShortcuts
+											/>
+											{court3d ? (
+												<>
+													<Court3DSpeeds
+														value={rate3d}
+														onChange={(s) => {
+															setSpeed3d(String(s));
+														}}
+													/>
+													{__SPORT === "basketball" ||
+													__SPORT === "football" ? (
+														<>
+															<KeyPlaysPicker
+																value={keyPlays}
+																onChange={setKeyPlaysState}
+															/>
+															<KeyPlaysSettings
+																value={keyPlays}
+																onChange={setKeyPlaysState}
+															/>
+														</>
+													) : null}
+												</>
+											) : (
+												<input
+													type="range"
+													className="form-range flex-grow-1"
+													min="1"
+													max="33"
+													step="1"
+													value={speed}
+													onChange={handleSpeedChange}
+													title="Speed"
 												/>
-												<KeyPlaysSettings
-													value={keyPlays}
-													onChange={setKeyPlaysState}
-												/>
-											</>
-										) : null}
-									</>
-								) : (
-									<input
-										type="range"
-										className="form-range flex-grow-1"
-										min="1"
-										max="33"
-										step="1"
-										value={speed}
-										onChange={handleSpeedChange}
-										title="Speed"
-									/>
-								)}
+											)}
+										</div>
+									) : null}
+								</div>
+								<div className="d-flex d-md-none">
+									<div className="ms-auto btn-group">
+										<button
+											className="btn btn-light-bordered"
+											onClick={() => {
+												scrollTop.current?.scrollIntoView();
+											}}
+										>
+											Top
+										</button>
+										{__SPORT !== "football"
+											? // Same ordering the box scores below use, so a button
+												// always scrolls to the team named on it. The anchors
+												// are assigned by position, so deriving the labels from
+												// the raw team order would send them to the wrong team
+												// whenever the device's team was hoisted.
+												orderBoxScoreTeams(
+													displayTeams(boxScore.current.teams),
+													userTid,
+												).map((t: any, i: number) => (
+													<button
+														key={t.abbrev}
+														className="btn btn-light-bordered"
+														onClick={() => {
+															document
+																.getElementById(`scroll-team-${i + 1}`)
+																?.scrollIntoView();
+														}}
+													>
+														{t.abbrev}
+													</button>
+												))
+											: null}
+										<button
+											className="btn btn-light-bordered"
+											onClick={() => {
+												playByPlayDiv.current?.scrollIntoView();
+											}}
+										>
+											Plays
+										</button>
+									</div>
+								</div>
 							</div>
 						) : null}
-						<PlayByPlay
-							boxScore={boxScore.current}
-							entries={playByPlayEntries.current}
-							playByPlayDivRef={playByPlayDiv}
-						/>
+						{boxScore.current.gid >= 0 ? (
+							<>
+								{courtNode}
+								<BoxScoreWrapper
+									Row={PlayerRow}
+									boxScore={boxScore.current}
+									live
+									playIndex={playIndex}
+									sportState={sportState.current}
+								/>
+							</>
+						) : (
+							<h2>Loading...</h2>
+						)}
+					</div>
+					<div className="col-md-3">
+						<div className="live-game-affix">
+							{!locked ? (
+								<div className="d-none d-md-flex flex-wrap row-gap-2 align-items-center mb-3 pt-md-2">
+									<PlayPauseNext
+										className="me-2"
+										disabled={boxScore.current.gameOver}
+										fastForwardAlignRight
+										fastForwards={fastForwardMenuItems}
+										rewinds={canRewind ? rewindMenuItems : undefined}
+										onPlay={handlePlay}
+										onPause={handlePause}
+										onNext={handleNextPlay}
+										paused={paused}
+										titlePlay="Resume Simulation"
+										titlePause="Pause Simulation"
+										titleNext="Show Next Play"
+									/>
+									{court3d ? (
+										<>
+											<Court3DSpeeds
+												value={rate3d}
+												onChange={(s) => {
+													setSpeed3d(String(s));
+												}}
+											/>
+											{__SPORT === "basketball" || __SPORT === "football" ? (
+												<>
+													<KeyPlaysPicker
+														value={keyPlays}
+														onChange={setKeyPlaysState}
+													/>
+													<KeyPlaysSettings
+														value={keyPlays}
+														onChange={setKeyPlaysState}
+													/>
+												</>
+											) : null}
+										</>
+									) : (
+										<input
+											type="range"
+											className="form-range flex-grow-1"
+											min="1"
+											max="33"
+											step="1"
+											value={speed}
+											onChange={handleSpeedChange}
+											title="Speed"
+										/>
+									)}
+								</div>
+							) : null}
+							<PlayByPlay
+								boxScore={boxScore.current}
+								entries={playByPlayEntries.current}
+								playByPlayDivRef={playByPlayDiv}
+							/>
+						</div>
 					</div>
 				</div>
-			</div>
+			)}
+			{layoutToggle}
 		</div>
 	);
 };

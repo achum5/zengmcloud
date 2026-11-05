@@ -1782,6 +1782,9 @@ export type LocalStateUI = {
 	showLeagueTopBar: boolean;
 	// The depth chart over the roster table, on THIS device (Global Settings).
 	showDepthChart: boolean;
+	// The live game's tabbed layout, on THIS device (Global Settings, or the
+	// foot of the live game page).
+	gamecastLayout: boolean;
 	showNagModal: boolean;
 	sidebarOpen: boolean;
 	statusText: string;

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Modal } from "../../components/Modal.tsx";
 import {
 	KEY_PLAY_LIMITS,
@@ -42,9 +42,16 @@ const TOGGLES: [Toggle, string, boolean][] = [
 const KeyPlaysSettings = ({
 	value,
 	onChange,
+	picker,
+	label,
 }: {
 	value: KeyPlaySettings;
 	onChange: (value: KeyPlaySettings) => void;
+	// Every play or the key plays, picked in here rather than beside the
+	// button (the controls laid over the gamecast's court, short of room).
+	picker?: ReactNode;
+	// Beside the gear (the key plays' length, when they're on).
+	label?: ReactNode;
 }) => {
 	const [show, setShow] = useState(false);
 	// What is typed in each number box, while it is being typed - so the box
@@ -96,10 +103,11 @@ const KeyPlaysSettings = ({
 		<>
 			<button
 				type="button"
-				className="btn btn-link p-0 ms-2 border-0 text-body-secondary lh-1"
+				className="btn btn-link p-0 ms-2 border-0 text-body-secondary lh-1 d-inline-flex align-items-center"
 				title="Key plays settings"
 				onClick={() => setShow(true)}
 			>
+				{label}
 				<svg
 					width="16"
 					height="16"
@@ -117,6 +125,7 @@ const KeyPlaysSettings = ({
 					<Modal.Title>Key plays</Modal.Title>
 				</Modal.Header>
 				<Modal.Body>
+					{picker ? <div className="mb-3">{picker}</div> : null}
 					<div className="fw-bold mb-1">Close game</div>
 					<div className="row g-2 mb-2">
 						{number("closePoints", "Within (pts)", 1)}

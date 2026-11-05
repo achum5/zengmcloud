@@ -15,6 +15,7 @@ import {
 } from "./gameLog.ts";
 import { primeTimeFor } from "../core/game/primeTime.ts";
 import { takeArenaLooks } from "../core/game/replayLooks.ts";
+import { gamecastInfo } from "./liveGameInfo.ts";
 import type {
 	AllStars,
 	ArenaLooks,
@@ -451,6 +452,18 @@ export default defineView({
 
 			const { finals, confetti } = championshipStakes(boxScore);
 
+			// The season series and the standings, for the gamecast (see
+			// liveGameInfo.ts) - read before boxScoreToLiveSim empties the box
+			// score, and cosmetic, so never in the way of the game.
+			let info;
+			if (__SPORT === "basketball" && !allStarGame) {
+				try {
+					info = await gamecastInfo(boxScore);
+				} catch {
+					// The cards just don't show.
+				}
+			}
+
 			const out = await boxScoreToLiveSim({
 				allStars,
 				boxScore,
@@ -467,6 +480,9 @@ export default defineView({
 						boxScore.teams[0].tid,
 						boxScore.teams[1].tid,
 					]));
+			}
+			if (info) {
+				(out.initialBoxScore as any).gamecast = info;
 			}
 			// The league's own score bug, if it has one (see ScoreBugStyle).
 			(out.initialBoxScore as any).scoreBug = await resolveScoreBug(

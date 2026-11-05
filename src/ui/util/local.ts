@@ -14,6 +14,7 @@ type LocalActions = {
 	resetLeague: () => void;
 	setShowLeagueTopBar: (showLeagueTopBar: boolean) => void;
 	setShowDepthChart: (showDepthChart: boolean) => void;
+	setGamecastLayout: (gamecastLayout: boolean) => void;
 	setSidebarOpen: (sidebarOpen: boolean) => void;
 	update: (obj: Partial<LocalStateUI>) => void;
 	updateGameAttributes: (
@@ -26,6 +27,7 @@ const defaultUnits: "metric" | "us" =
 	window.navigator.language === "en-US" ? "us" : "metric";
 
 const SHOW_DEPTH_CHART_KEY = "bbgmShowDepthChart";
+const GAMECAST_LAYOUT_KEY = "bbgmGamecastLayout";
 
 type LocalStateWithActions = LocalStateUI & {
 	actions: LocalActions;
@@ -53,6 +55,11 @@ if (showTemp === "true") {
 // On unless this device has said otherwise.
 const initialShowDepthChart =
 	safeLocalStorage.getItem(SHOW_DEPTH_CHART_KEY) !== "false";
+
+// The live game's tabbed layout (see LiveGame/gamecast): off unless this
+// device has turned it on, while it's new.
+const initialGamecastLayout =
+	safeLocalStorage.getItem(GAMECAST_LAYOUT_KEY) === "true";
 
 const useLocalRaw = createWithEqualityFn<LocalStateWithActions>(
 	(set, get) => ({
@@ -131,6 +138,7 @@ const useLocalRaw = createWithEqualityFn<LocalStateWithActions>(
 		season: 0,
 		showLeagueTopBar: initialShowLeagueTopBar,
 		showDepthChart: initialShowDepthChart,
+		gamecastLayout: initialGamecastLayout,
 		showNagModal: false,
 		sidebarOpen: initialSidebarOpen,
 		spectator: false,
@@ -253,6 +261,11 @@ const useLocalRaw = createWithEqualityFn<LocalStateWithActions>(
 			setShowDepthChart(showDepthChart: boolean) {
 				set({ showDepthChart });
 				safeLocalStorage.setItem(SHOW_DEPTH_CHART_KEY, String(showDepthChart));
+			},
+
+			setGamecastLayout(gamecastLayout: boolean) {
+				set({ gamecastLayout });
+				safeLocalStorage.setItem(GAMECAST_LAYOUT_KEY, String(gamecastLayout));
 			},
 
 			setSidebarOpen(sidebarOpen: boolean) {

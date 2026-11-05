@@ -44,6 +44,7 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 			fullNames,
 			scoresBar: local.getState().showLeagueTopBar ? "show" : ("hide" as const),
 			depthChart: local.getState().showDepthChart ? "show" : ("hide" as const),
+			gamecast: local.getState().gamecastLayout ? "show" : ("hide" as const),
 			phaseChangeRedirects: props.phaseChangeRedirects,
 			realPlayerPhotos: props.realPlayerPhotos,
 			realTeamInfo: props.realTeamInfo,
@@ -103,6 +104,7 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 		// game.)
 		localActions.setShowLeagueTopBar(state.scoresBar === "show");
 		localActions.setShowDepthChart(state.depthChart === "show");
+		localActions.setGamecastLayout(state.gamecast === "show");
 
 		const units = state.units === "default" ? undefined : state.units;
 		try {
@@ -153,7 +155,12 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 		};
 	});
 
-	const showHide = (name: string, label: string, title?: string) => (
+	const showHide = (
+		name: string,
+		label: string,
+		title?: string,
+		labels: [string, string] = ["Show", "Hide"],
+	) => (
 		<div className="col-sm-3 col-6 mb-3">
 			<label className="form-label" htmlFor={`options-${name}`} title={title}>
 				{label}
@@ -162,10 +169,10 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 				id={`options-${name}`}
 				className="form-select"
 				onChange={handleChange(name)}
-				value={state[name as "scoresBar" | "depthChart"]}
+				value={state[name as "scoresBar" | "depthChart" | "gamecast"]}
 			>
-				<option value="show">Show</option>
-				<option value="hide">Hide</option>
+				<option value="show">{labels[0]}</option>
+				<option value="hide">{labels[1]}</option>
 			</select>
 		</div>
 	);
@@ -261,6 +268,12 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 					)}
 					{__SPORT === "basketball"
 						? showHide("depthChart", "Roster Depth Chart", "On this device")
+						: null}
+					{__SPORT === "basketball"
+						? showHide("gamecast", "Live Game Layout", "On this device", [
+								"Tabs",
+								"Classic",
+							])
 						: null}
 				</div>
 

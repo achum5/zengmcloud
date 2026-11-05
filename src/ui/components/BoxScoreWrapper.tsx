@@ -1177,9 +1177,13 @@ export const BoxScoreWrapper = ({
 	sportState,
 	tid,
 	Row,
+	tablesOnly,
 }: {
 	abbrev?: string;
 	boxScore: any;
+	// Just the two teams' tables (the live gamecast's Box Score tab, which
+	// has the score and the charts elsewhere).
+	tablesOnly?: boolean;
 	currentGidInList?: boolean;
 	live?: boolean;
 	nextGid?: number;
@@ -1286,6 +1290,17 @@ export const BoxScoreWrapper = ({
 		boxScore.gid >= 0 ? (
 			<WatchReplayButton gid={boxScore.gid} />
 		) : null;
+
+	if (tablesOnly) {
+		return (
+			<BoxScore
+				boxScore={boxScore}
+				Row={Row}
+				forceRowUpdate={forceRowUpdate}
+				sportState={sportState}
+			/>
+		);
+	}
 
 	return (
 		<>
