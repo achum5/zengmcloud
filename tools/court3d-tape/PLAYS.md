@@ -145,7 +145,11 @@ after it), so each waits until its own fallout is fixed:
 
 - the ball off a dunk goes down through the net away from where the dunker
   comes down, not bouncing up through his legs (the slam's push off the
-  rim, away from him)
+  rim, away from him). Tried alone (2026-11-05): the games it reshuffles
+  fail 5 checks - the game rated every which way (a man 1262 where under
+  1216 is wanted), the camera after the final buzzer, a man pulling up in
+  the lane with nobody between him and the rim, an and-one's foul, a
+  contested jumper out of sight (and a ball jumping 2.9 ft between frames)
 - his man gives ground step for step with a man backing him down, from when
   the back-down really starts - and whoever of theirs is on him, if his own
   man isn't (backDown)
