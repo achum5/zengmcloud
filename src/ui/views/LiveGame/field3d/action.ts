@@ -204,6 +204,10 @@ const GAIT_LEAST: Partial<Record<Move, number>> = {
 	sprint: 10.5,
 };
 const GAIT_LEAST_MS = 300;
+// (Pulled up into it - his step before it slower than TREAD_FROM_FPS: this
+// long will do - see noTreading.)
+const TREAD_FROM_FPS = 5;
+const TREAD_PULLED_MS = 150;
 // A gait gone a good deal quicker than it goes (ft/s): the next one up.
 const GAIT_MOST: Partial<Record<Move, number>> = {
 	walk: 9,
@@ -4956,7 +4960,18 @@ class Action {
 				) {
 					j++;
 				}
-				if (legs[j - 1]!.t1 - legs[i]!.t0 >= GAIT_LEAST_MS) {
+				// (Or not so long, pulled up into it - his last steps slow
+				// already: stood, not stalled in a stride.)
+				const before = legs[i - 1];
+				const pulled =
+					before !== undefined &&
+					before.t1 === legs[i]!.t0 &&
+					STEPS.has(before.move) &&
+					legPace(before) < TREAD_FROM_FPS;
+				if (
+					legs[j - 1]!.t1 - legs[i]!.t0 >=
+					(pulled ? TREAD_PULLED_MS : GAIT_LEAST_MS)
+				) {
 					const face = faced[i - 1] ?? faced[i]!;
 					for (let k = i; k < j; k++) {
 						const l = legs[k]!;
