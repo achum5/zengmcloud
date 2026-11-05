@@ -15279,14 +15279,25 @@ class Action {
 		this.at.set(i, kickT);
 		this.follow = kickT;
 
-		// Off to one side of the landing zone or the other - or, out the
-		// back, deep in the end zone.
+		// Off to one side of the landing zone or the other - now and then,
+		// on the kicker's own count, aimed out toward the numbers - or, out
+		// the back, deep in the end zone.
 		const deep = kickTo <= -10;
+		const d0 = deep
+			? this.goalD + 15 + r() * 12
+			: Math.min(this.goalD - kickTo * YD, this.goalD + 27);
+		const a0 = (r() - 0.5) * 80;
+		const aimed =
+			(countOf(k, snap, 100) < 0.5 ? -1 : 1) *
+			(KICK_OUT_FT[0] +
+				(KICK_OUT_FT[1] - KICK_OUT_FT[0]) * countOf(k, snap, 101));
 		const land: OPt = {
-			d: deep
-				? this.goalD + 15 + r() * 12
-				: Math.min(this.goalD - kickTo * YD, this.goalD + 27),
-			a: clamp((r() - 0.5) * 80, this.bounds.left + 14, this.bounds.right - 14),
+			d: d0,
+			a: clamp(
+				countOf(k, snap, 99) < KICK_AIM_OUT ? aimed : a0,
+				this.bounds.left + 14,
+				this.bounds.right - 14,
+			),
 		};
 		const landPt = this.w(land);
 		const tee: Pt3 = { ...this.w({ d: 0, a: 0 }), z: TEE_Z };
@@ -15350,10 +15361,113 @@ class Action {
 			return;
 		}
 
-		// The catch - on the fly, or a line drive fielded on the hop.
+		const noRet = !ret || e.touchback === true;
+		if (
+			noRet &&
+			land.d > this.goalD + KICK_LET_IN &&
+			countOf(kr, snap, 103) < KICK_LET
+		) {
+			// Let go into the end zone, nobody's to get to it: him off to the
+			// side of where it comes down, watching it in and on toward the
+			// back of it - a touchback.
+			const side = Math.sign(this.of(kr.at).a - land.a) || 1;
+			const h1 = this.w({
+				d: land.d + KICK_LET_HOP[0] + r() * KICK_LET_HOP[1],
+				a: land.a + (r() - 0.5) * 4,
+			});
+			const on = this.of(h1);
+			const h2 = this.w({
+				d: Math.min(
+					on.d + KICK_LET_ROLL[0] + r() * KICK_LET_ROLL[1],
+					this.goalD + END_ZONE + 6,
+				),
+				a: on.a + (on.a - land.a),
+			});
+			const t1 = landT + KICK_LET_MS[0];
+			const t2 = t1 + KICK_LET_MS[1];
+			this.ball.push(
+				{
+					kind: "fly",
+					t0: kickT,
+					t1: landT,
+					from: tee,
+					to: { ...landPt, z: 0 },
+					peak: peakFor(hang),
+				},
+				{
+					kind: "fly",
+					t0: landT,
+					t1,
+					from: { ...landPt, z: 0 },
+					to: { ...h1, z: 0 },
+					peak: KICK_LET_UP,
+				},
+				{
+					kind: "fly",
+					t0: t1,
+					t1: t2,
+					from: { ...h1, z: 0 },
+					to: { ...h2, z: 0 },
+					peak: 0.6,
+				},
+				{ kind: "spot", t0: t2, at: { ...h2, z: 0 } },
+			);
+			this.whistle = landT + 400;
+			if (retI >= 0) {
+				this.at.set(retI, this.whistle);
+			}
+			kr.hold(kickT + 300);
+			kr.chase(
+				this.w({ d: land.d - 3, a: land.a + side * KICK_LET_ASIDE }),
+				landT - 500,
+				kr.top * 0.6,
+			);
+			kr.hold(landT - 150, "stand", this.toward(kr.at, landPt));
+			kr.hold(t2 + 1000, "stand", this.toward(kr.at, h2));
+			this.done.add(kr.pid);
+			for (const m of others) {
+				m.hold(kickT + 300);
+				m.chase(
+					this.w({ d: this.goalD - 4, a: this.of(m.at).a }),
+					landT,
+					m.top * 0.6,
+				);
+				m.hold(landT + 300, "stand", this.ahead);
+				this.done.add(m.pid);
+			}
+			this.coverDown(cover, front);
+			return;
+		}
+
+		// The catch - on the fly, or a line drive fielded on the hop. On the
+		// fly, on his own count: set under it, or back under one over where
+		// he lined up, caught still going back; or up into one short of him
+		// at a run, caught in his stride (not one he is to down in the end
+		// zone).
 		const hop = kickTo >= 0 && r() < 0.3;
 		const catchAt = landT + (hop ? 650 : 0);
-		const hands = this.getUnder(kr, land, kickT + 250, catchAt);
+		const delta = land.d - this.of(kr.at).d;
+		const how: "set" | "up" | "back" = hop
+			? "set"
+			: delta > FIELD_BACK_LEAST
+				? countOf(kr, snap, 94) < KICK_BACK
+					? "back"
+					: "set"
+				: !noRet &&
+					  countOf(kr, snap, 94) <
+							(delta < -FIELD_UP_LEAST ? KICK_UP : FIELD_UP_ANY)
+					? "up"
+					: "set";
+		const room = cover.every(
+			(m) => dist(m.posAt(landT), landPt) >= FIELD_UP_ROOM,
+		);
+		const hands = this.getUnder(
+			kr,
+			land,
+			kickT + 250,
+			catchAt,
+			how === "up" && !room ? "set" : how,
+		);
 		if (hop) {
 			const bounce: Pt3 = {
 				...this.w({ d: land.d - 14 - r() * 8, a: land.a + (r() - 0.5) * 4 }),
@@ -15387,7 +15501,30 @@ class Action {
 				peak: peakFor(hang),
 			});
 		}
-		this.ball.push({ kind: "held", t0: catchAt, pid: kr.pid });
+		// (Now and then one caught set under it on a return juggled - see
+		// JUGGLE.)
+		let gotT = catchAt;
+		if (
+			!hop &&
+			!noRet &&
+			kr.last.move === "catch" &&
+			countOf(kr, snap, 95) <
+				JUGGLE * (1 - JUGGLE_HANDS * (kr.flair.hands ?? 0))
+		) {
+			gotT = catchAt + JUGGLE_MS;
+			const at = this.of(kr.posAt(catchAt));
+			kr.catchOn(gotT, this.behind, this.w({ d: at.d - JUGGLE_ON, a: at.a }));
+			const again = this.of(kr.posAt(gotT));
+			this.ball.push({
+				kind: "fly",
+				t0: catchAt,
+				t1: gotT,
+				from: hands,
+				to: { ...this.w({ d: again.d - 1, a: again.a }), z: hands.z },
+				peak: JUGGLE_UP,
+			});
+		}
+		this.ball.push({ kind: "held", t0: gotT, pid: kr.pid });
 		// The other returner up in front of him, to lead him.
 		for (const m of others) {
 			m.hold(kickT + 300);
@@ -15401,11 +15538,16 @@ class Action {
 			);
 		}
 
-		if (!ret || e.touchback === true) {
-			// Downed in the end zone: a knee.
-			kr.hold(catchAt + 650);
-			kr.hold(catchAt + 1800, "kneelDown", this.behind);
-			this.whistle = catchAt + 700;
+		if (noRet) {
+			// Downed in the end zone: a knee - at once, or a beat after, on
+			// his own count.
+			const knee =
+				catchAt +
+				KICK_KNEE_MS[0] +
+				(KICK_KNEE_MS[1] - KICK_KNEE_MS[0]) * countOf(kr, snap, 102);
+			kr.hold(knee);
+			kr.hold(knee + 1150, "kneelDown", this.behind);
+			this.whistle = knee + 50;
 			if (retI >= 0) {
 				this.at.set(retI, this.whistle);
 			}
@@ -19300,6 +19442,27 @@ const LET_ASIDE = 9;
 const LET_WAVE_FROM = 1800;
 const LET_WAVE_TO = 300;
 const LET_DOWN_MS = 900;
+// A kickoff aimed out toward the numbers this often (on the kicker's own
+// count), this far (feet) out from the middle.
+const KICK_AIM_OUT = 0.35;
+const KICK_OUT_FT = [36, 60] as const;
+// The returner going back under one over him this often, up into one
+// short of him this often (see FIELD_BACK, FIELD_UP).
+const KICK_BACK = 0.5;
+const KICK_UP = 0.55;
+// Downed in the end zone: his knee this long after the catch (ms).
+const KICK_KNEE_MS = [350, 1000] as const;
+// One coming down this far (feet) or more into the end zone, nobody's to
+// get to it, let go this often: on a hop (feet, and up to this much more)
+// and a roll (the same) toward the back of it, this long each (ms), the hop
+// this high (feet); him this far off to the side of it.
+const KICK_LET_IN = 3;
+const KICK_LET = 0.3;
+const KICK_LET_HOP = [8, 6] as const;
+const KICK_LET_ROLL = [10, 12] as const;
+const KICK_LET_MS = [600, 650] as const;
+const KICK_LET_UP = 2.6;
+const KICK_LET_ASIDE = 8;
 // A miss wide, now and then off an upright instead - doink - and back off
 // it (this often of them): hit this far (feet) out from the middle of the
 // post at most; back off it at this pace (ft/s, a range), this far round

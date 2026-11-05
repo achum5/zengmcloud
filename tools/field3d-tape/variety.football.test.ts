@@ -12,7 +12,7 @@
 //     npx vitest run --project football tools/field3d-tape/variety.football.test.ts
 //
 // Lines: run (a carry from scrimmage), catch (a completed pass), incomplete
-// (a pass not caught), punt.
+// (a pass not caught), punt, kickoff, flag.
 // Games: files from realGames.football.test.ts. VARIETY_BY=throw,catch adds
 // how those parts go together, just them.
 
@@ -26,6 +26,10 @@ import {
 	type Part,
 	type Play,
 } from "../../src/ui/views/LiveGame/field3d/director.ts";
+import {
+	officialId,
+	officialOf,
+} from "../../src/ui/views/LiveGame/field3d/crew.ts";
 import { momentAt } from "../../src/ui/views/LiveGame/field3d/evaluate.ts";
 import {
 	END_ZONE,
@@ -472,6 +476,177 @@ const puntParts = (tl: FieldTimeline, p: Play) => {
 	};
 };
 
+// A kickoff: where it came down (out the back, in the end zone, at the
+// goal line, short of it) and across, how high, how it was fielded (out
+// the back, caught and knelt, on the hop, caught) and how he was under
+// it, and the return.
+const kickParts = (tl: FieldTimeline, p: Play) => {
+	const kick = p.ball
+		.filter((s) => s.kind === "fly" && s.t0 >= p.snap - 50)
+		.sort(
+			(a, b) =>
+				(b.kind === "fly" ? b.peak : 0) - (a.kind === "fly" ? a.peak : 0),
+		)[0];
+	if (!kick || kick.kind !== "fly") {
+		return undefined;
+	}
+	const kicking = p.offense;
+	const kr0 = holders(p).find((h) => h.t0 >= kick.t1 - 50);
+	const ret = kr0 && p.parts.find((q) => q.pid === kr0.pid);
+	const goal = p.dir > 0 ? FIELD_L - END_ZONE : END_ZONE;
+	// (Yards out from the goal line it came down; in the end zone, less
+	// than nothing.)
+	const out = ((goal - kick.to.x) * p.dir) / 3;
+	const hang = (kick.t1 - kick.t0) / 1000;
+	const edge = Math.min(kick.to.y, FIELD_W - kick.to.y);
+	const did = (q: Part, moves: string[], t0: number, t1: number) =>
+		q.legs.some(
+			(l) =>
+				(moves.includes(l.move) || moves.includes(l.arms ?? "")) &&
+				l.t1 > t0 &&
+				l.t0 < t1,
+		);
+	let fielded = "let go, touchback";
+	let him = "-";
+	let rest: Record<string, string> = {
+		evades: "-",
+		end: "-",
+		tacklers: "-",
+		gain: "-",
+	};
+	if (ret && ret.team !== kicking) {
+		const at = posOf(tl, ret.pid, kr0!.t0) ?? kick.to;
+		const touch = kick.t1;
+		const at0 = posOf(tl, ret.pid, touch) ?? at;
+		const before = posOf(tl, ret.pid, touch - 150) ?? at0;
+		const pace = dist(before, at0) / 0.15;
+		const back = ret.legs.some(
+			(l) => l.move === "back" && l.t0 < touch && l.t1 > touch - 200,
+		);
+		him = back
+			? "going back"
+			: pace > 12
+				? "on the run, coming up"
+				: pace > 7
+					? "on the move"
+					: "set under it";
+		const flies = p.ball.filter(
+			(s) => s.kind === "fly" && s.t0 >= kick.t1 - 5 && s.t1 <= kr0!.t0 + 5,
+		);
+		const knelt = did(ret, ["kneelDown"], kr0!.t0, p.whistle + 2500);
+		fielded = knelt
+			? "caught, knelt"
+			: flies.some((s) => s.kind === "fly" && s.from.z < 0.5)
+				? "on the hop"
+				: flies.length > 0
+					? "caught, juggled"
+					: "caught";
+		if (!knelt) {
+			rest = endParts(tl, p, ret, kr0!.t0);
+			const end = posOf(tl, ret.pid, p.whistle) ?? at;
+			rest.gain = bucket(
+				((at.x - end.x) * p.dir) / 3,
+				[10, 20, 30, 45],
+				["under 10 yds", "10-19 yds", "20-29 yds", "30-44 yds", "45+ yds"],
+			);
+		}
+	}
+	return {
+		pid: ret && ret.team !== kicking ? ret.pid : 0,
+		parts: {
+			kick: bucket(
+				out,
+				[-5, 0, 5, 15],
+				[
+					"deep in the end zone",
+					"in the end zone",
+					"at the goal line",
+					"inside the 15",
+					"short",
+				],
+			),
+			hang: bucket(hang, [3.4, 4], ["low", "3.5 s", "high"]),
+			where: bucket(
+				edge,
+				[20, 50],
+				["by the sideline", "outside the hashes", "middle"],
+			),
+			fielded,
+			him,
+			...rest,
+		},
+	};
+};
+
+// A flag: when it came out (before the snap, in the play, after the
+// whistle), who threw it and how, whether he went and told the referee,
+// whether the man flagged argued it, and the referee's signal.
+const flagParts = (tl: FieldTimeline, p: Play) => {
+	const f = p.flags[0];
+	if (!f) {
+		return undefined;
+	}
+	const when =
+		f.t0 < p.snap - 50
+			? "before the snap"
+			: f.t0 <= p.whistle + 100
+				? "in the play"
+				: "after the whistle";
+	const there = (id: number, t: number) => posOf(tl, id, t);
+	const thrower = p.crew
+		.map((c) => ({ c, at: there(c.pid, f.t0) }))
+		.filter((x) => x.at)
+		.sort((a, b) => dist(a.at!, f.from) - dist(b.at!, f.from))[0]?.c;
+	const by = thrower ? (officialOf(thrower.pid) ?? "?") : "?";
+	const far = dist(f.from, f.to);
+	const at0 = thrower && there(thrower.pid, f.t0 - 150);
+	const at1 = thrower && there(thrower.pid, f.t0);
+	const pace = at0 && at1 ? dist(at0, at1) / 0.15 : 0;
+	const call = p.calls?.[0]?.t;
+	const ref = officialId("R");
+	let told = "-";
+	if (thrower && thrower.pid !== ref && call !== undefined) {
+		told = "no";
+		for (let t = p.whistle; t <= call; t += 100) {
+			const a = there(thrower.pid, t);
+			const b = there(ref, t);
+			if (a && b && dist(a, b) < 8) {
+				told = "told the referee";
+				break;
+			}
+		}
+	}
+	const sig =
+		call === undefined
+			? "-"
+			: [
+					...new Set(
+						(p.crew.find((c) => c.pid === ref)?.legs ?? []).flatMap((l) =>
+							l.t1 > call - 300 && l.t0 < call + 4000
+								? [l.move, l.arms ?? ""].filter((m) => m.startsWith("sig"))
+								: [],
+						),
+					),
+				].join("+") || "none";
+	const argued = p.parts.some((q) =>
+		q.legs.some(
+			(l) =>
+				l.arms === "protest" && l.t1 > p.whistle && l.t0 < p.whistle + 4000,
+		),
+	);
+	return {
+		pid: 0,
+		parts: {
+			when,
+			by,
+			throw: `${bucket(far, [6, 20], ["dropped at his feet", "tossed", "thrown at the spot"])}, ${pace > 6 ? "on the run" : pace > 2 ? "on the move" : "stood"}`,
+			told,
+			argued: argued ? "argued" : "no",
+			signal: sig,
+		},
+	};
+};
+
 test.skipIf(games.length === 0)(
 	"football variety of one line",
 	() => {
@@ -504,7 +679,11 @@ test.skipIf(games.length === 0)(
 								? incParts(tl, p)
 								: line === "punt" && evs.includes("punt")
 									? puntParts(tl, p)
-									: undefined;
+									: line === "kickoff" && evs.includes("kickoff")
+										? kickParts(tl, p)
+										: line === "flag" && p.flags.length > 0
+											? flagParts(tl, p)
+											: undefined;
 				if (got) {
 					all.push({ pid: `${tag}:${got.pid}`, parts: got.parts });
 				}

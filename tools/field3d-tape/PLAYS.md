@@ -18,8 +18,8 @@ Combinations: distinct whole combinations of the variety tool's parts.
 | 2   | Pass complete (`dropback` → `passComplete`)        |       46 | `catch`      | working |
 | 3   | Pass incomplete (`passIncomplete`)                 |       15 | `incomplete` | working |
 | 4   | Punt and return (`puntTeam`, `punt`, `puntReturn`) |       10 | `punt`       | working |
-| 5   | Kickoff and return (`kickoff`, `kickoffReturn`)    |        7 | -            | todo    |
-| 6   | Flags (`flag`, `penalty`)                          |       13 | -            | todo    |
+| 5   | Kickoff and return (`kickoff`, `kickoffReturn`)    |        7 | `kickoff`    | working |
+| 6   | Flags (`flag`, `penalty`)                          |       13 | `flag`       | todo    |
 | 7   | Sack (`sack`)                                      |        4 | -            | todo    |
 | 8   | Extra point, two-point try                         |        4 | -            | todo    |
 | 9   | Field goal (`fieldGoalAttempt`, `fieldGoal`)       |        2 | -            | todo    |
@@ -101,7 +101,28 @@ catches and punts let bounce are rare.
 To do: a muff (the sim has none), the returner's catch with his arms in a
 basket, a return that bounces outside off the wall. The game tape has more
 sharp turns on punts since (27 of them, from 9: the returner and the cover
-cutting across in the return, at about 10 feet a second).
+cutting across in the return, at about 10 feet a second). Most of those
+are jukes in the return, which are meant.
+
+## 5. Kickoff
+
+Parts: where it comes down (deep in the end zone, in it, at the goal line,
+inside the 15, short of that) and across (round the middle, or aimed out
+toward the numbers on the kicker's own count), how high; how it is fielded
+(set under it, going back under one over where he lined up, coming up into
+one short of him at a run, on the hop, juggled, caught and a knee in the
+end zone, or let go into the end zone for the touchback); then the return.
+
+The setup is the sim's: the cover at the receiving 40, the front five yards
+off them, two returners at the 5 and the 2, and nobody but the kicker and
+the returners moving till it is down.
+
+Now (66 kickoffs): 59 different combinations. Out toward the numbers 33.
+Set under it 41, coming up at a run 17, going back 6. On the hop 16,
+knelt 10, juggled 2, let go 1.
+
+To do: a kick out of bounds (the sim has none in these games), a return
+man reversing field.
 
 ## Side notes
 
