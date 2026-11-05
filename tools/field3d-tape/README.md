@@ -38,3 +38,20 @@ repo root:
    `sheet.py` draws a small panel for every flag of one kind; `view.py` draws a
    whole play (or a stretch of it, times from the snap, and a man to follow)
    in 1.5 s panels.
+
+4. **Variety.** How many different ways one kind of play comes out on the
+   field, from the parts it is put together from - a run: the formation,
+   the exchange, the hole, a cutback or not, a move to make a man miss,
+   how it ended and how many brought him down; a catch: the drop, where
+   the throw went and how high, how it was caught and how open he was,
+   and the same ending - overall, every combination, and for each player
+   how often he did it a way he had before:
+
+   ```
+   VARIETY_GAMES=/tmp/games/real_7.json,/tmp/games/real_23.json \
+   VARIETY_LINE=run VARIETY_OUT=/tmp/variety_run.txt \
+     npx vitest run --project football tools/field3d-tape/variety.football.test.ts
+   ```
+
+   `VARIETY_LINE=catch` for completed passes; `VARIETY_BY=throw,catch` also
+   counts just how those parts go together.

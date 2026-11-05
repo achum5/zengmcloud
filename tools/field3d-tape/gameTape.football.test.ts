@@ -12,7 +12,8 @@
 // - snap: stood, his facing swings round more than 70 degrees in one step
 // - moonwalk: running backward in a gait that faces where it goes
 // - glide: sliding along without stepping
-// - fastwalk / fastjog: a walk quicker than 10 ft/s, a jog than 18
+// - fastwalk / fastjog: a walk quicker than 10 ft/s, a jog than 18, 0.2 s on
+//   end
 // - statue: not a step or a turn, the same still move (not one that plays
 //   through, a look round, say), 3 s on end
 //
@@ -175,10 +176,12 @@ test.skipIf(!process.env.TAPE_GAMES)(
 						cur.vy = vy;
 						const who = `${roles.get(st.id) ?? "?"}${st.id}`;
 						const moves = `(${q.move}>${st.move})`;
-						if (
-							(st.move === "walk" && v > 10) ||
-							(st.move === "jog" && v > 18)
-						) {
+						// (Two samples on end: not the one a change of gait
+						// falls in, the pace before it.)
+						const fast =
+							(st.move === "walk" && v > 10) || (st.move === "jog" && v > 18);
+						cur.fast = fast ? (q.fast ?? 0) + 1 : 0;
+						if (cur.fast === 2) {
 							flag(
 								t,
 								`fast${st.move}`,
