@@ -25,7 +25,7 @@ Combinations: distinct whole combinations of the variety tool's parts.
 | 9   | Field goal (`fieldGoalAttempt`, `fieldGoal`)       |        2 | `kick`       | working |
 | 10  | Interception and return                            |        2 | `pick`       | working |
 | 11  | Timeouts, two-minute warning, quarters             |       15 | `break`      | working |
-| 12  | Injury (`injury`)                                  |        6 | -            | todo    |
+| 12  | Injury (`injury`)                                  |        6 | `hurt`       | working |
 | 13  | Kneel, fumble, onside kick, safety                 |     rare | -            | todo    |
 
 ## 1. Run
@@ -219,6 +219,22 @@ Now (95 timeouts): rows 48, the quarterback over 29, on a knee 18. The
 other side in a ring 48, at its sideline 31, on a knee 16.
 
 To do: the quarter breaks (the change of ends is the same each time).
+
+## 12. Injury
+
+Parts: how he lies (on his back, on his face), whether one of his own
+waved the trainers out, how many went down on a knee round him, how he
+went off (helped, an arm over each trainer, or on his own), and how many
+clapped him off - and from which sides.
+
+Up off the knee as he is, men of both sides now and then clap him off,
+turned to him as he goes.
+
+Now (50 men hurt): on his back 36, on his face 14; waved out 28; helped off
+36, on his own 14; clapped off by 3 or more 35, by both sides 32.
+
+To do: the crowd standing to clap him off, a cart for a bad one (the sim
+gives no word of how bad).
 
 ## Side notes
 

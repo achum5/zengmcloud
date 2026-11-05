@@ -976,6 +976,45 @@ const breakParts = (p: Play, warning: boolean) => {
 	};
 };
 
+// A man hurt: how he lies, who waved the trainers out, how many went down
+// on a knee round him, how he went off, and how many clapped him off.
+const hurtParts = (p: Play) => {
+	const h = p.hurt;
+	const him = h && p.parts.find((q) => q.pid === h.pid);
+	if (!h || !him) {
+		return undefined;
+	}
+	const after = (q: Part, moves: string[]) =>
+		q.legs.some((l) => l.t0 >= h.from && moves.includes(l.move));
+	const lies = him.legs.some((l) => l.move === "hurtProne")
+		? "on his face"
+		: "on his back";
+	const off = him.legs.some((l) => l.t0 >= h.from && l.arms === "overShoulders")
+		? "helped off"
+		: "on his own";
+	const others = p.parts.filter((q) => q.pid >= 0 && q !== him);
+	const knees = others.filter((q) => after(q, ["takeKnee"])).length;
+	const waved = others.some((q) => after(q, ["waveOver"]));
+	const claps = others.filter((q) => after(q, ["clap"]));
+	return {
+		pid: h.pid,
+		parts: {
+			lies,
+			waved: waved ? "waved out" : "no",
+			knees: bucket(knees, [1, 4, 8], ["none", "1-3", "4-7", "8+"]),
+			off,
+			claps: bucket(claps.length, [1, 3, 6], ["none", "1-2", "3-5", "6+"]),
+			both:
+				claps.some((q) => q.team === him.team) &&
+				claps.some((q) => q.team !== him.team)
+					? "both sides"
+					: claps.length > 0
+						? "one side"
+						: "-",
+		},
+	};
+};
+
 test.skipIf(games.length === 0)(
 	"football variety of one line",
 	() => {
@@ -1038,9 +1077,14 @@ test.skipIf(games.length === 0)(
 														)
 													: line === "pick" && evs.includes("interception")
 														? pickParts(tl, p)
-														: line === "break" && p.timeout
-															? breakParts(p, evs.includes("twoMinuteWarning"))
-															: undefined;
+														: line === "hurt" && p.hurt
+															? hurtParts(p)
+															: line === "break" && p.timeout
+																? breakParts(
+																		p,
+																		evs.includes("twoMinuteWarning"),
+																	)
+																: undefined;
 				if (got) {
 					all.push({
 						pid: `${tag}:${got.pid}`,

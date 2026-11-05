@@ -55,6 +55,14 @@ const HELPED = 0.6;
 // the trainers go, up again as he is.
 const KNEEL_NEAR = 30;
 const KNEELS = 0.75;
+// Up off the knee, this share of them - both sides - clapping him as he
+// goes off: from this long after (ms, up to this much more), for this long
+// (up to this much more).
+const CLAPS = 0.55;
+const CLAP_AFTER = 300;
+const CLAP_LATER = 600;
+const CLAP_MS = 1200;
+const CLAP_MORE = 600;
 // (Getting up off the turf to, on his feet a moment first - turned to him -
 // before he goes down on the knee.)
 const STOOD_FIRST_MS = 700;
@@ -722,6 +730,14 @@ export const stageHurt = (input: {
 			knelt.push(where);
 			still(p.legs, there, rise, where, "takeKnee", toward(where, at));
 			still(p.legs, rise, rise + 1, where, "stand", toward(where, at));
+			// (Turned to him as he goes, clapping him off.)
+			if (r() < CLAPS) {
+				const c0 = rise + 1 + CLAP_AFTER + r() * CLAP_LATER;
+				const ms = CLAP_MS + r() * CLAP_MORE;
+				const face = toward(where, posOf(him.legs, c0 + ms / 2));
+				still(p.legs, rise + 1, c0, where, "stand", face);
+				still(p.legs, c0, c0 + ms, where, "clap", face);
+			}
 		}
 	}
 
