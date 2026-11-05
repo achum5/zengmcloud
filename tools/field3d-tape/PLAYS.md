@@ -60,6 +60,12 @@ tackle, round and up through the hole onto the men filling it. A man up
 front the tackle has left with nobody near enough to block him comes up
 the field after it from the back side.
 
+A man up front off the ball into the man blocking him gathers into him -
+slowed over his last strides to about 10 feet a second, harder and a
+little quicker if he is short of time - not into him at all he got up to
+and stopped dead (hard stops at contact on the game tape: 335 before, 240
+now).
+
 Now (9 games, 442 runs): 380 different combinations. A counter on 16, a
 draw on 9. A toss on 42 (runs to the edge under center, to a back lined up
 deep). The option on 3 (a run to the edge out of the gun, the back beside

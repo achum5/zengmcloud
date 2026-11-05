@@ -1121,6 +1121,73 @@ class Actor {
 		return v0 + a * ta;
 	}
 
+	// Off from still into a man at `to` by t1 (see hitMs): up to speed at
+	// `A` ft/s/s, no quicker than `top`, and - got going quicker than `ve`
+	// - gathered into him at `Ad` ft/s/s, there at `ve`: not into him at all
+	// he got up to and stopped dead. Still facing the way he was over the
+	// first `square` ms.
+	hitInto(
+		to: Pt,
+		t1: number,
+		top: number,
+		A: number,
+		ve: number,
+		Ad: number,
+		move: Move,
+		square: number,
+	) {
+		const D = dist(this.at, to);
+		const T = (t1 - this.t) / 1000;
+		// (Short of time for it: gathered as much as he can be - harder, and
+		// into him quicker - see HIT_SHORT.)
+		let vc = Infinity;
+		for (const [k, u] of HIT_SHORT) {
+			const vk = ve * k;
+			const Au = Ad * u;
+			const qa = 1 / (2 * A) + 1 / (2 * Au);
+			const qb = T + vk / Au;
+			const qc = (vk * vk) / (2 * Au) + D;
+			const disc = qb * qb - 4 * qa * qc;
+			vc = disc >= 0 ? (qb - Math.sqrt(disc)) / (2 * qa) : Infinity;
+			if (vc <= top * RAMP_OVER) {
+				ve = vk;
+				Ad = Au;
+				break;
+			}
+		}
+		if (D <= 0 || T <= 0 || !(vc > ve) || vc > top * RAMP_OVER) {
+			this.getOff(to, t1, 0, A, move, square);
+			return;
+		}
+		const sd = (vc * vc - ve * ve) / (2 * Ad);
+		const td = (vc - ve) / Ad;
+		const cos = (to.x - this.at.x) / D;
+		const sin = (to.y - this.at.y) / D;
+		this.getOff(
+			{ x: to.x - cos * sd, y: to.y - sin * sd },
+			t1 - td * 1000,
+			0,
+			A,
+			move,
+			square,
+		);
+		const n = Math.max(1, Math.round((td * 1000) / STOP_STEP_MS));
+		const dt = td / n;
+		for (let i = 0; i < n; i++) {
+			const pace = vc - (vc - ve) * ((i + 0.5) / n);
+			const at = this.at;
+			this.push(
+				this.legTo(
+					i === n - 1
+						? to
+						: { x: at.x + cos * pace * dt, y: at.y + sin * pace * dt },
+					i === n - 1 ? t1 : this.t + dt * 1000,
+					move,
+				),
+			);
+		}
+	}
+
 	// Pulled up to a stand by the end of the leg he is on, going at a pace
 	// he could not stop dead from (see slowInto).
 	pullUpOn() {
@@ -4224,6 +4291,34 @@ const TWIST_WIDER_FT = [0, 1.5, 3];
 // gets there - not at full tilt from his first step.
 const GET_OFF_ACCEL = 28;
 const RUSH_HIT_PACE = 0.7;
+// (Into the man on him no quicker than this, ft/s - slowed into him at
+// this, ft/s/s, over the last of his run at him: see Actor.hitInto.)
+const HIT_FPS = 10;
+const HIT_ACCEL = 40;
+// (Short of time for that: into him this many times quicker, slowed this
+// many times harder - the first of them that does it.)
+const HIT_SHORT: [number, number][] = [
+	[1, 1],
+	[1.3, 1.5],
+	[1.6, 1.5],
+];
+// (How long it takes him from still, that far (feet): see Actor.hitInto.)
+const hitMs = (far: number, top: number): number => {
+	const A = GET_OFF_ACCEL;
+	const Ad = HIT_ACCEL;
+	const ve = HIT_FPS;
+	if (Math.sqrt(2 * A * far) <= ve) {
+		return Math.sqrt((2 * far) / A) * 1000;
+	}
+	const qa = 1 / (2 * A) + 1 / (2 * Ad);
+	const vc = Math.min(top, Math.sqrt((far + (ve * ve) / (2 * Ad)) / qa));
+	if (vc <= ve) {
+		return rampedMs(far, top, 0, A);
+	}
+	const up = (vc * vc) / (2 * A);
+	const down = (vc * vc - ve * ve) / (2 * Ad);
+	return (vc / A + (vc - ve) / Ad + Math.max(0, far - up - down) / vc) * 1000;
+};
 // (Square to the line over his first steps, coming up out of his stance -
 // turned the way he goes once he is up.)
 const GET_OFF_SQUARE_MS = 200;
@@ -16585,7 +16680,8 @@ class Action {
 	// Off the ball into the man across from him (`at`, where that is at t)
 	// by `by`, or as soon after as he can be: up out of his stance and into
 	// him (see GET_OFF_ACCEL) - a step or two, his arms out into him, or a
-	// run (see fireOff); not off from still at full pace. (On him
+	// run (see fireOff); not off from still at full pace, nor into him at
+	// all he got up to - gathered into him (see hitInto). (On him
 	// FIRE_HELD_MS before `until` at the latest, when he is off him.)
 	fireInto(
 		m: Actor,
@@ -16594,15 +16690,22 @@ class Action {
 		until: number,
 		pace = RUSH_HIT_PACE,
 	) {
+		const top = m.top * pace;
 		let t = by;
 		for (let k = 0; k < 2; k++) {
-			t = Math.max(
-				by,
-				m.t + rampedMs(dist(m.at, at(t)), m.top * pace, 0, GET_OFF_ACCEL),
-			);
+			t = Math.max(by, m.t + hitMs(dist(m.at, at(t)), top));
 		}
 		t = Math.min(t, Math.max(by, until - FIRE_HELD_MS));
-		m.getOff(at(t), t, 0, GET_OFF_ACCEL, fireOff(m, at(by)), GET_OFF_SQUARE_MS);
+		m.hitInto(
+			at(t),
+			t,
+			top,
+			GET_OFF_ACCEL,
+			HIT_FPS,
+			HIT_ACCEL,
+			fireOff(m, at(by)),
+			GET_OFF_SQUARE_MS,
+		);
 	}
 
 	// Off from still along `path` (on from where he is), up to speed at `a`
