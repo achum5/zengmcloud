@@ -1217,7 +1217,7 @@ class Actor {
 				),
 			);
 		}
-		const m = Math.max(1, Math.round(S / HIT_PRESS_STEP_MS));
+		const m = Math.round(S / HIT_PRESS_STEP_MS);
 		const t1 = this.t;
 		for (let k = 1; k <= m; k++) {
 			const u = (1 - k / m) * (1 - k / m);
@@ -4274,6 +4274,9 @@ const STOOD_GAP_FT = 5;
 // A cover man into the blocker he meets (or a lead blocker into his man):
 // down to this much of his pace as they meet (see breakDown).
 const LOCK_KEEP = 0.5;
+// (A blocker gathered into his man only on a block this long at least, ms
+// - see blockOn.)
+const GATHER_BLOCK_LEAST_MS = 500;
 // More men in on a tackle: the first, and the second, there in time to (as
 // late as this after it), this often.
 // The ball out of his hands this long after the snap at the soonest (ms),
@@ -9106,8 +9109,14 @@ class Action {
 				}
 			}
 			b.go(meet.at, meet.t);
-			// (Broken down into him, not run into him flat out.)
-			b.breakDown(LOCK_KEEP);
+			// (Broken down into him and his hands pressed in, not run into
+			// him flat out - see gatherTo.)
+			if (
+				b.gatherTo(b.at, BRAKE_FPS, HIT_ACCEL, HIT_PRESS_MS, "drive") ===
+				undefined
+			) {
+				b.breakDown(LOCK_KEEP);
+			}
 			m.cut(meet.t);
 			const p = this.of(m.at);
 			const end = Math.max(meet.t, catchAt) + SCREEN_HOLD + r() * 500;
@@ -16768,6 +16777,18 @@ class Action {
 		const till = until + RUN_END_SPREAD_MS * countOf(b, this.input.snap, 4);
 		const off = Math.max(meet.t + 200, offAt(p.d, till));
 		const end = won ? off : Math.min(off, meet.t + SHED_MS + r() * SHED_SPREAD);
+		// (Broken down over his last strides and his hands pressed into him
+		// - not run into him at full tilt and stopped dead: see gatherTo -
+		// pressed in only with the time on him for it, not glanced off him.)
+		if (!near) {
+			b.gatherTo(
+				b.at,
+				BRAKE_FPS,
+				HIT_ACCEL,
+				end - meet.t >= GATHER_BLOCK_LEAST_MS ? HIT_PRESS_MS : 0,
+				"drive",
+			);
+		}
 		const give = won
 			? Math.min(2.5 + r() * 2, (BLOCK_DRIVE_FPS * (end - meet.t)) / 1000)
 			: -1;
