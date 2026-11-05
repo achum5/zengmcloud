@@ -1188,7 +1188,7 @@ class Actor {
 	// `A` ft/s/s, no quicker than `top`, and - got going quicker than `ve`
 	// - gathered into him at `Ad` ft/s/s, there at `ve`: not into him at all
 	// he got up to and stopped dead. Still facing the way he was over the
-	// first `square` ms.
+	// first `square` ms. (The pace he gets to him at.)
 	hitInto(
 		to: Pt,
 		t1: number,
@@ -1198,7 +1198,7 @@ class Actor {
 		Ad: number,
 		move: Move,
 		square: number,
-	) {
+	): number {
 		const D = dist(this.at, to);
 		const T = (t1 - this.t) / 1000;
 		// (Short of time for it: gathered as much as he can be - harder, and
@@ -1219,8 +1219,7 @@ class Actor {
 			}
 		}
 		if (D <= 0 || T <= 0 || !(vc > ve) || vc > top * RAMP_OVER) {
-			this.getOff(to, t1, 0, A, move, square);
-			return;
+			return this.getOff(to, t1, 0, A, move, square);
 		}
 		const sd = (vc * vc - ve * ve) / (2 * Ad);
 		const td = (vc - ve) / Ad;
@@ -1249,6 +1248,7 @@ class Actor {
 				),
 			);
 		}
+		return ve;
 	}
 
 	// Pulled up to a stand by the end of the leg he is on, going at a pace
@@ -14152,10 +14152,15 @@ class Action {
 			// Into him as soon as he can get there out of his stance (see
 			// GET_OFF_ACCEL).
 			let least = snap + 380 + r() * 150;
-			const offMs = (far: number) =>
-				rampedMs(far, m.top * RUSH_HIT_PACE, 0, GET_OFF_ACCEL);
-			let hitT = least;
 			const first = loops.get(m);
+			// (Straight at him, gathered into him - see hitMs. Not on a twist,
+			// where the two of them are timed off each other flat out.)
+			const gather = !edge && !first && ![...loops.values()].includes(m);
+			const offMs = (far: number) =>
+				gather
+					? hitMs(far, m.top * RUSH_HIT_PACE)
+					: rampedMs(far, m.top * RUSH_HIT_PACE, 0, GET_OFF_ACCEL);
+			let hitT = least;
 			let under: Pt | undefined;
 			let pen: { d: number; a: number } | undefined;
 			if (first) {
@@ -14279,7 +14284,18 @@ class Action {
 								"run",
 								GET_OFF_SQUARE_MS,
 							)
-						: m.getOff(hit, hitT, 0, GET_OFF_ACCEL, "run", GET_OFF_SQUARE_MS);
+						: gather
+							? m.hitInto(
+									hit,
+									hitT,
+									m.top * RUSH_HIT_PACE,
+									GET_OFF_ACCEL,
+									HIT_FPS,
+									HIT_ACCEL,
+									"run",
+									GET_OFF_SQUARE_MS,
+								)
+							: m.getOff(hit, hitT, 0, GET_OFF_ACCEL, "run", GET_OFF_SQUARE_MS);
 				if (!first || !pen) {
 					break;
 				}
