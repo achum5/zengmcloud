@@ -21,6 +21,7 @@ export type RouteName =
 	| "hitch"
 	| "curl"
 	| "comeback"
+	| "backShoulder"
 	| "drag"
 	| "flat"
 	| "swing"
@@ -217,6 +218,19 @@ export const layRoute = (
 			const path = [s, at(D + 9, s.a), at(D, s.a + out * (6 + 4 * u))];
 			return laid(name, path, 2, true);
 		}
+		case "backShoulder": {
+			// Off the line like a go - a step outside and straight up the
+			// field - pulled up a step past it and back out to it, turned
+			// to the quarterback: thrown to his back shoulder, short of
+			// where he was going and outside him.
+			const path = [
+				s,
+				at(Math.min(D, 15), s.a + out * 3),
+				at(D + 3, s.a + out * 4),
+				at(D + 1, s.a + out * (5.5 + u)),
+			];
+			return laid(name, path, 3, true);
+		}
 		case "drag": {
 			// A step up and across under the linebackers, past the ball.
 			const cross = inSign * (6 + 18 * u);
@@ -372,6 +386,7 @@ const TARGET_ROUTES: { upTo: number; by: Record<Spot, Choice> }[] = [
 				["dig", 3],
 				["out", 2],
 				["comeback", 2],
+				["backShoulder", 1],
 			],
 			slot: [
 				["dig", 3],
@@ -398,6 +413,7 @@ const TARGET_ROUTES: { upTo: number; by: Record<Spot, Choice> }[] = [
 				["post", 3],
 				["corner", 2],
 				["comeback", 1],
+				["backShoulder", 1],
 			],
 			slot: [
 				["seam", 3],
@@ -485,6 +501,7 @@ const DECOY_DEPTH: Record<RouteName, [number, number]> = {
 	hitch: [5, 6],
 	curl: [8, 12],
 	comeback: [12, 15],
+	backShoulder: [12, 18],
 	drag: [2, 5],
 	flat: [1, 4],
 	swing: [-1, 0],
@@ -513,6 +530,7 @@ const OUTSIDE = new Set<RouteName>([
 	"corner",
 	"out",
 	"comeback",
+	"backShoulder",
 	"flat",
 	"swing",
 	"screen",

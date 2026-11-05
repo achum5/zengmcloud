@@ -287,6 +287,30 @@ const catchParts = (tl: FieldTimeline, p: Play) => {
 			q.legs.some((l) => l.move === "leap" && l.t0 < got!.t0 && l.t1 > got!.t0),
 	);
 	const drop = qb ? ((p.losX - throwSeg.from.x) * p.dir) / 3 : 0;
+	// (Thrown to his back shoulder: straight up the field at speed till
+	// the last of it, then pulled up and back a step or two - no more -
+	// out toward the sideline to it; see routes.ts.)
+	const was = posOf(tl, rec.pid, got!.t0 - 1300);
+	const then = posOf(tl, rec.pid, got!.t0 - 1100);
+	let deep = then;
+	for (let t = got!.t0 - 1100; t <= got!.t0; t += 50) {
+		const q = posOf(tl, rec.pid, t);
+		if (q && deep && (q.x - deep.x) * p.dir > 0) {
+			deep = q;
+		}
+	}
+	const back = deep ? (deep.x - at.x) * p.dir : 0;
+	const shoulder =
+		air >= 9 &&
+		pace <= 6 &&
+		!!was &&
+		!!then &&
+		!!deep &&
+		((then.x - was.x) * p.dir) / 0.2 >= 12 &&
+		Math.abs(then.y - was.y) / 0.2 < 5 &&
+		back >= 0.5 &&
+		back <= 4 &&
+		Math.abs(at.y - FIELD_W / 2) > Math.abs(deep.y - FIELD_W / 2) + 0.5;
 	return {
 		pid: rec.pid,
 		parts: {
@@ -298,7 +322,7 @@ const catchParts = (tl: FieldTimeline, p: Play) => {
 				[4, 9, 16],
 				["line drive", "on a line", "touch", "lob"],
 			),
-			catch: `${how}${pace > 10 ? " in stride" : pace > 4 ? " on the move" : " sat down"}`,
+			catch: `${how}${shoulder ? " back shoulder" : pace > 10 ? " in stride" : pace > 4 ? " on the move" : " sat down"}`,
 			defense:
 				bucket(near, [3, 6, 12], ["contested", "tight", "a step", "open"]) +
 				(upWith ? ", up with him" : handIn ? ", a hand in" : ""),

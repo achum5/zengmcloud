@@ -3420,6 +3420,9 @@ const PICK_TIP_OFF = 3.5;
 const PICK_TIP_MS = 550;
 const PICK_LEAP = 0.3;
 const PICK_LEAP_FT = 50;
+// (From no further from it than this (feet) as he goes up: no faster
+// through the air than a man - see leapFor.)
+const PICK_LEAP_REACH = 12;
 const PICK_DIVE = 0.2;
 const PICK_DIVE_YDS = 6;
 const PICK_DIVE_PER = 0.6;
@@ -3474,6 +3477,12 @@ const COVER_SOFT = 3;
 // on his man - or looser - at the most.)
 const COVER_TIGHT = 0.3;
 const COVER_FRONT = 1;
+// (On a man thrown to on his back shoulder: carried on up the field past
+// him as he pulls up for it, this long (ms) - going this fast at least
+// (ft/s) - at this share of his pace.)
+const COVER_LATE_MS = 600;
+const COVER_LATE_LEAST = 10;
+const COVER_LATE_KEEP = 0.9;
 // Back into his zone at this pace (ft/s), this far back at least (feet) -
 // settling into it over as much as this (feet), and turned and run there
 // if it takes him any quicker than this (ft/s) over this long (ms) at least
@@ -3912,7 +3921,7 @@ const TOE_YAC = 6;
 const TOE_IN = 1.8;
 const TOE_BEFORE = 250;
 const TOE_MS = 900;
-const TO_LINE = new Set<Route["name"]>(["out", "comeback"]);
+const TO_LINE = new Set<Route["name"]>(["out", "comeback", "backShoulder"]);
 // The quarterback in the pocket: looking off another man first, this often
 // with this long to spare at least; up a step (feet, ms), this often; a pump
 // this often, and how long it takes.
@@ -7903,8 +7912,12 @@ class Action {
 				catchPt,
 				qb.flair.arm,
 			);
+			// (Thrown to his back shoulder: there as he turns to it.)
+			const shoulder = tr.name === "backShoulder";
 			const hold =
-				tr.settles && tr.name !== "screen" ? r() * SETTLE_HOLD_MS : 0;
+				tr.settles && tr.name !== "screen" && !shoulder
+					? r() * SETTLE_HOLD_MS
+					: 0;
 			// (Not before he has had his time back there - longer, the deeper
 			// it goes.)
 			const least =
@@ -7920,8 +7933,9 @@ class Action {
 			// (Nor, to a man running on through it, held on to while he
 			// jogs his route out to wait on it: out to him in his stride as
 			// he comes open - see ROUTE_SLOW_MOST.)
-			const due =
-				tr.settles && tr.name !== "screen" && !slip
+			const due = shoulder
+				? onTime
+				: tr.settles && tr.name !== "screen" && !slip
 					? Math.min(least, onTime + SETTLE_MOST_MS)
 					: tr.settles
 						? least
@@ -8003,6 +8017,7 @@ class Action {
 			onBall && target ? [onBall, target] : undefined,
 			fakeT,
 			first === cmpI ? Math.max(0, (gain - airYds) * YD) : 0,
+			tr?.name === "backShoulder" ? target : undefined,
 		);
 		const beaten = sacker ? this.man(this.statPids("skAlw")[0]) : undefined;
 		this.passRush(
@@ -11667,8 +11682,7 @@ class Action {
 			thrown?.kind === "fly" &&
 			u < PICK_TIP &&
 			dist(recAt, catchPt) < PICK_TIP_NEAR;
-		const leap =
-			!bat && !tip && long >= PICK_LEAP_FT && u < PICK_TIP + PICK_LEAP;
+		let leap = !bat && !tip && long >= PICK_LEAP_FT && u < PICK_TIP + PICK_LEAP;
 		const dive =
 			!bat &&
 			!tip &&
@@ -11769,6 +11783,14 @@ class Action {
 			}
 		} else {
 			this.breakOn(picker, gotPt, gotAt, 60);
+		}
+		// (Up off his feet for it only from near enough it to get there in
+		// the leap - see PICK_LEAP_REACH.)
+		if (
+			leap &&
+			dist(picker.posAt(gotAt - LEAP_MS / 2), gotPt) > PICK_LEAP_REACH
+		) {
+			leap = false;
 		}
 		const ball = this.ball.at(-1);
 		const fly = ball?.kind === "fly" ? ball : undefined;
@@ -13937,6 +13959,7 @@ class Action {
 		marked?: [Actor, Actor],
 		fake?: number,
 		yac = 0,
+		late?: Actor,
 	) {
 		const { snap } = this.input;
 		const r = this.r;
@@ -14289,6 +14312,26 @@ class Action {
 					}
 				}
 				sit(until);
+			}
+			// (On the man thrown to on his back shoulder: his back to it,
+			// carried on up the field past him a moment as he pulls up for
+			// it, before he sees it - see COVER_LATE_MS.)
+			const l = m.last;
+			if (
+				rec !== undefined &&
+				rec === late &&
+				GAITS.has(l.move) &&
+				legPace(l) >= COVER_LATE_LEAST
+			) {
+				const far = dist(l.from, l.to);
+				const ft = legPace(l) * COVER_LATE_KEEP * (COVER_LATE_MS / 1000);
+				m.go(
+					{
+						x: m.at.x + ((l.to.x - l.from.x) / far) * ft,
+						y: m.at.y + ((l.to.y - l.from.y) / far) * ft,
+					},
+					m.t + COVER_LATE_MS,
+				);
 			}
 			// The ball in the air: everyone near breaks for it, each to a
 			// spot of his own round it.

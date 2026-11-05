@@ -62,7 +62,7 @@ Parts: formation; the drop; where the throw goes (depth, side) and its arc;
 the route; how it is caught (in stride, on the move, sat down; diving,
 leaping) and how open; then the same ending as a run.
 
-Now (417 catches): 408 different combinations. Caught standing still 37%
+Now (417 catches): 404 different combinations. Caught standing still 37%
 (hitches, curls, comebacks, screens and check-downs). Deep throws lofted a
 little, more the further they go (of 103 tried: on a line 90, touch 10, a
 lob 3). A man on him reaching a hand in at it as it gets there on 16 of
@@ -77,8 +77,14 @@ down with it and goes on. A jump ball fought for on 2 of those: the man on
 him up off both feet with him, arms up at it, on his own count, never
 into him.
 
-To do: a back-shoulder throw, his toes in on a deeper throw along the
-sideline.
+Thrown to his back shoulder (now and then, to a man split out, 9 to 25
+yards down): off the line like a go - a step outside and straight up the
+field - pulled up a step past where it goes and back out toward the
+sideline to it, turned to the quarterback, the ball there as he turns; the
+man on him, his back to it, carried on up the field past him a moment
+before he turns back. On 3 (from 0).
+
+To do: his toes in on a deeper throw along the sideline.
 
 ## 3. Pass incomplete
 
@@ -277,11 +283,12 @@ and down to him a step on from where he lands; or off another of them near
 enough him, and him over under it with his hands up. The man it was meant
 for pulls up once he sees it go up.
 
-Now (14 picks): 14 different combinations. On the run 4, off a tip 4, set
-3, up for it 1, knocked up at the line 2 (one his own). Spun out of a
-man's grab in the return on 1. The quarterback after it: hands on his
-helmet 6, bent over 5, at the man it was meant for 1, after him 1, in on
-the tackle 1; the picture tight on him 6.
+Now (14 picks): 14 different combinations. Off a tip 6, on the run 4, set
+2, up for it 1, knocked up at the line 1 (his own; 2 before the routes
+moved on). Spun out of a man's grab in the return on 1. The quarterback
+after it: hands on his helmet 6, bent over 5, at the man it was meant for
+1, after him 1, in on the tackle 1; the picture tight on him 5. Up off
+his feet for it only from near enough to get there in the leap.
 
 ## 11. Timeouts, two-minute warning, quarters
 
