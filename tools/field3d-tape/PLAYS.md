@@ -88,7 +88,15 @@ safety and the linebackers under them. Man: everybody on a man but the
 free safety (two deep, both safeties, a deep half each). A man breaking
 on the ball off his backpedal plants first.
 
-Now (417 catches): 406 different combinations. Caught standing still 37%
+A break in a route taken at pace (an out, a dig, a post, a back's angle
+out of the backfield) is rounded off as tight as he can take it at the
+pace he cuts at - not turned square in a blink; a curl, a comeback or a
+double move's jab is still planted. A back carrying out a play-action fake
+and staying in to block rounds off it into the line. Sharp turns at speed
+on the game tape: 266 before, 178 now (pass catchers 145 to 56, most of
+those left jukes after the catch).
+
+Now (417 catches): 403 different combinations. Caught standing still 37%
 (hitches, curls, comebacks, screens and check-downs). Deep throws lofted a
 little, more the further they go (of 103 tried: on a line 90, touch 10, a
 lob 3). A man on him reaching a hand in at it as it gets there on 16 of
@@ -118,7 +126,8 @@ the field. The quarterback pumps at the jab when he is set in time; the
 man on him comes up and in on it, plants, turns and chases him. The
 variety tool calls it "off a double move" (in toward the middle quick,
 then straight up the field to it, deep - none before it existed). Caught
-on 4 in 9 games.
+on 2 to 4 in 9 games (which throws get one moves with the timing of the
+plays before).
 
 Not done: his toes in on a deeper throw along the sideline - in 9 games
 only one catch out of bounds that deep with next to nothing after it.

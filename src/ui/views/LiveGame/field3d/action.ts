@@ -260,6 +260,11 @@ const STOP_LEAST = 8;
 const SETTLE_EASE = 0.6;
 // Sinking into a cut: down at this (ft/s/s).
 const CUT_ACCEL = 28;
+// (Cut on the move at this pace (ft/s) or quicker, and turned no more
+// than PLANT_TURN: round it at the pace he cuts at, in an arc as tight as
+// CUT_LAT ft/s/s across him takes - see Actor.roundCut.)
+const CUT_ROUND_PACE = 7;
+const CUT_LAT = 50;
 // (Easing down to steps this much slower, ft/s, or more - or for a turn
 // sharper than this, radians, that he plants for: see slowFor.)
 const SLOW_DROP = 6;
@@ -1139,11 +1144,129 @@ class Actor {
 	// way up from there.
 	// (The pace he comes out of it at.)
 	cutTo(to: Pt, t1: number, keep: number): number | undefined {
-		const ve = this.slowInto(keep, CUT_ACCEL);
+		let ve = this.slowInto(keep, CUT_ACCEL);
+		if (ve !== undefined && this.roundCut(to, t1)) {
+			ve = legPace(this.last);
+		}
 		const leg = this.legTo(to, t1);
 		this.rampInto(leg, ve);
 		this.push(leg);
 		return ve;
+	}
+
+	// Out of a cut on the move toward `to` (see cutTo): round it, at the
+	// pace he is down to, in an arc as tight as he takes at it (see
+	// CUT_LAT) - in off the last of the way he came in to it straight, and
+	// out onto the way on - not turned square in a blink. Not for less
+	// than BEND_LEAST_FT of it, nor if it leaves him no time to be there
+	// by t1 at no more than PLANT_ON times the pace he would have been.
+	// (Whether he was.)
+	private roundCut(to: Pt, t1: number): boolean {
+		const legs = this.part.legs;
+		const l = this.last;
+		const v = legPace(l);
+		const dOut = dist(l.to, to);
+		if (
+			!RAMPS.has(l.move) ||
+			l.arms ||
+			l.turn ||
+			l.span ||
+			v < CUT_ROUND_PACE ||
+			dOut <= 0
+		) {
+			return false;
+		}
+		const turn = angleAt(l.from, l.to, to);
+		if (!(turn > BEND_LEAST && turn <= PLANT_TURN)) {
+			return false;
+		}
+		const way = Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x);
+		const want = ((v * v) / CUT_LAT) * Math.tan(turn / 2);
+		// (As far back as he came in straight at it, nothing else going on,
+		// since he was pinned.)
+		let straight = 0;
+		for (let k = legs.length - 1; k >= 0 && straight < want; k--) {
+			const lk = legs[k]!;
+			const a = Math.atan2(lk.to.y - lk.from.y, lk.to.x - lk.from.x) - way;
+			if (
+				!RAMPS.has(lk.move) ||
+				lk.arms ||
+				lk.turn ||
+				lk.span ||
+				lk.t1 <= lk.t0 ||
+				lk.t0 < this.pinned ||
+				lk.yaw !== l.yaw ||
+				lk.mirrored !== l.mirrored ||
+				lk.ball !== l.ball ||
+				dist(lk.from, lk.to) <= 0 ||
+				Math.abs(Math.atan2(Math.sin(a), Math.cos(a))) > STRETCH_TURN
+			) {
+				break;
+			}
+			straight += dist(lk.from, lk.to);
+		}
+		const back = Math.min(want, straight * BEND_IN, dOut * BEND_OUT);
+		if (back < BEND_LEAST_FT) {
+			return false;
+		}
+		let k = legs.length - 1;
+		let left = back;
+		while (dist(legs[k]!.from, legs[k]!.to) <= left) {
+			left -= dist(legs[k]!.from, legs[k]!.to);
+			k--;
+		}
+		const lk = legs[k]!;
+		const f = 1 - left / Math.max(dist(lk.from, lk.to), 1e-6);
+		const corner = l.to;
+		const { yaw, ...was } = l;
+		const keep =
+			yaw !== undefined &&
+			Math.abs(Math.atan2(Math.sin(yaw - way), Math.cos(yaw - way))) >
+				BEND_LEAST;
+		const start = {
+			x: lk.from.x + (lk.to.x - lk.from.x) * f,
+			y: lk.from.y + (lk.to.y - lk.from.y) * f,
+		};
+		const tIn = Math.max(dist(start, corner), 1e-6);
+		const u = { x: (corner.x - start.x) / tIn, y: (corner.y - start.y) / tIn };
+		const o = { x: (to.x - corner.x) / dOut, y: (to.y - corner.y) / dOut };
+		const round = Math.acos(clamp(u.x * o.x + u.y * o.y, -1, 1));
+		if (!(round > BEND_LEAST && round <= PLANT_TURN)) {
+			return false;
+		}
+		const R = tIn / Math.tan(round / 2);
+		// (No quicker round it than it is wide enough for, cut short.)
+		const pace = Math.min(v, Math.sqrt(CUT_LAT * R));
+		const tStart = lk.t0 + (lk.t1 - lk.t0) * f;
+		const tEnd = tStart + ((R * round) / pace) * 1000;
+		const was0 = dOut / Math.max((t1 - l.t1) / 1000, 1e-3);
+		if (
+			!(t1 > tEnd) ||
+			(dOut - tIn) / ((t1 - tEnd) / 1000) > Math.max(was0, pace) * PLANT_ON
+		) {
+			return false;
+		}
+		legs.splice(k + 1);
+		lk.to = start;
+		lk.t1 = tStart;
+		const s = Math.sign(u.x * o.y - u.y * o.x) || 1;
+		const c = { x: start.x - s * u.y * R, y: start.y + s * u.x * R };
+		const r0 = Math.atan2(start.y - c.y, start.x - c.x);
+		const n = Math.max(2, Math.ceil(round / BEND_STEP));
+		const dt = ((R * round) / n / pace) * 1000;
+		for (let i = 1; i <= n; i++) {
+			const q = r0 + (s * round * i) / n;
+			const at = this.last;
+			this.push({
+				...was,
+				...(keep ? { yaw } : {}),
+				t0: at.t1,
+				t1: at.t1 + dt,
+				from: at.to,
+				to: { x: c.x + Math.cos(q) * R, y: c.y + Math.sin(q) * R },
+			});
+		}
+		return true;
 	}
 
 	// Sat down at the end of the stretch he is on, there when it has him
@@ -3734,8 +3857,9 @@ const PA_ACROSS = 0.75;
 // (Staying in to block, round off the fake from the way he came in to it:
 // on into the line as far as he pulls up in at STOP_ACCEL * STOP_HARD - no
 // less than PA_PAST - the curve pulled this share of that on past the
-// mesh toward the way he came, in so many steps.)
-const PA_ROUND = 0.4;
+// mesh the way he came, and on into the line from there, in so many
+// steps.)
+const PA_ROUND = 0.8;
 const PA_PACE_MS = 40;
 const PA_ROUND_STEPS = 8;
 const PA_BITE = 4;
@@ -7934,7 +8058,13 @@ class Action {
 					x: meshPt.x + ((into.to.x - into.from.x) / inFt) * far * PA_ROUND,
 					y: meshPt.y + ((into.to.y - into.from.y) / inFt) * far * PA_ROUND,
 				};
-				const fine = [meshPt, ...this.curve(meshPt, via, onTo, 32)];
+				// (Round a quarter turn into the line off it, as wide as he
+				// takes at his pace - not hooked back the way he came.)
+				const end = {
+					x: onTo.x + via.x - meshPt.x,
+					y: onTo.y + via.y - meshPt.y,
+				};
+				const fine = [meshPt, ...this.curve(meshPt, via, end, 32)];
 				const at = [0];
 				for (let k = 1; k < fine.length; k++) {
 					at.push(at[k - 1]! + dist(fine[k - 1]!, fine[k]!));
