@@ -3416,6 +3416,21 @@ const PICK_DIVE_YDS = 6;
 const PICK_DIVE_PER = 0.6;
 const PICK_DIVE_LEAST = 6;
 const PICK_DIVE_MOST = 13;
+// Picked off right at the line - no more than this many yards past it -
+// on the man's own count, this often: knocked up there by one of the rush
+// (see batAt) - him, if he is one of the front, or one no further than
+// this from him (feet) as it goes by. Up this high off his hands (feet,
+// see the fly's peak); down a step or so on from where he comes down
+// (feet), or this far over toward the other man at most; his hands this
+// far out in front of him to it, up for it this long before (ms).
+const PICK_BAT_YDS = 3;
+const PICK_BAT = 0.65;
+const PICK_BAT_NEAR = 22;
+const PICK_BAT_POP = [6, 11] as const;
+const PICK_BAT_SELF_FT = [1.5, 3.5] as const;
+const PICK_BAT_FT = 12;
+const PICK_BAT_HANDS_FT = 1.2;
+const PICK_BAT_REACH_MS = 650;
 // A knee: a lineman and the man across from him (no further along the line
 // than this, feet) up out of their stances into each other, this often on
 // the lineman's own count - off the snap after this long (ms, and up to this
@@ -7497,8 +7512,18 @@ class Action {
 			first >= 0 && first === intI
 				? this.man(this.statPids("defInt")[0])
 				: undefined;
+		// (Picked off right at the line, on his own count: knocked up there
+		// by one of the rush - him, if he is one of the front - see PICK_BAT.)
+		const pickYds = first === intI ? events[first]?.yds : undefined;
+		const pickBat =
+			!!picker &&
+			typeof pickYds === "number" &&
+			pickYds <= PICK_BAT_YDS &&
+			countOf(picker, snap, 137) < PICK_BAT;
 		const rushers = this.d.filter(
-			(m) => (DL.has(m.role) || m === sacker) && m !== picker,
+			(m) =>
+				(DL.has(m.role) || m === sacker) &&
+				(m !== picker || (pickBat && DL.has(m.role))),
 		);
 		if (!sacker && r() < 0.22) {
 			const lb = this.d.find(
@@ -8005,7 +8030,16 @@ class Action {
 			tr?.name !== "screen" &&
 			!slip
 				? this.batAt(rushers, blockers, qb, catchPt, throwAt)
-				: undefined;
+				: pickBat &&
+					  picker &&
+					  thrown &&
+					  target &&
+					  catchPt &&
+					  !bootSide &&
+					  tr?.name !== "screen" &&
+					  !slip
+					? this.batAt(rushers, blockers, qb, catchPt, throwAt, picker)
+					: undefined;
 		if (
 			thrown &&
 			catchPt &&
@@ -8036,7 +8070,7 @@ class Action {
 		} else if (first === incI && thrown && target && catchPt) {
 			this.incomplete(incI, qb, target, catchPt, catchAt, coverage, bat);
 		} else if (first === intI && thrown && target && catchPt) {
-			this.intercepted(intI, qb, target, catchPt, catchAt, coverage);
+			this.intercepted(intI, qb, target, catchPt, catchAt, coverage, bat);
 		} else if (sacked) {
 			this.sacked(sackI, qb, outT, sackD, sacker, runners);
 		} else if (scrambled) {
@@ -11579,13 +11613,26 @@ class Action {
 		catchPt: Pt,
 		catchAt: number,
 		coverage: Actor[],
+		bat?: Bat,
 	) {
 		const r = this.r;
 		const picker =
 			this.man(this.statPids("defInt")[0]) ??
 			this.nearest(coverage, catchPt, 1)[0];
 		this.at.set(i, catchAt);
-		if (this.reachFor(rec, catchAt, qb)) {
+		const { snap } = this.input;
+		if (bat) {
+			// (Knocked up at the line: the man it was meant for pulled up once
+			// he sees it go up - see LINE_BAT_SEEN_MS.)
+			const seen =
+				bat.t +
+				LINE_BAT_SEEN_MS[0] +
+				LINE_BAT_SEEN_MS[1] * countOf(rec, snap, 121);
+			if (rec.t > seen) {
+				rec.cut(seen);
+				rec.easeOff(EASE_OFF_FT);
+			}
+		} else if (this.reachFor(rec, catchAt, qb)) {
 			this.runOn(rec, 500);
 		}
 		if (!picker) {
@@ -11593,7 +11640,6 @@ class Action {
 			this.whistle = catchAt + 600;
 			return;
 		}
-		const { snap } = this.input;
 		const retI = this.find("interceptionReturn", i);
 		const ret = retI >= 0 ? this.ev(retI) : undefined;
 		const yds = typeof ret?.yds === "number" ? ret.yds : 0;
@@ -11608,11 +11654,14 @@ class Action {
 		const u = countOf(picker, snap, 111);
 		const recAt = rec.posAt(catchAt);
 		const tip =
+			!bat &&
 			thrown?.kind === "fly" &&
 			u < PICK_TIP &&
 			dist(recAt, catchPt) < PICK_TIP_NEAR;
-		const leap = !tip && long >= PICK_LEAP_FT && u < PICK_TIP + PICK_LEAP;
+		const leap =
+			!bat && !tip && long >= PICK_LEAP_FT && u < PICK_TIP + PICK_LEAP;
 		const dive =
+			!bat &&
 			!tip &&
 			!leap &&
 			!td &&
@@ -11645,8 +11694,73 @@ class Action {
 				peak: PICK_TIP_UP,
 			});
 		}
-		// He jumps the route and takes it the other way.
-		this.breakOn(picker, gotPt, gotAt, 60);
+		// Knocked up at the line (see batAt): the throw cut short at the man
+		// who got a hand to it, up off his hands and down to the man who
+		// picks it off - him, a step on from where he comes down, or one
+		// near enough, over to it under it.
+		const self = bat?.m === picker;
+		if (bat && thrown?.kind === "fly") {
+			thrown.peak = bat.peak;
+			thrown.t1 = bat.t;
+			thrown.to = bat.at;
+			const pop =
+				PICK_BAT_POP[0] +
+				(PICK_BAT_POP[1] - PICK_BAT_POP[0]) * countOf(picker, snap, 138);
+			// (Down under G - see the fly's 4 * peak * u * (1 - u).)
+			gotAt = bat.t + Math.sqrt((8 * pop) / G) * 1000;
+			if (self) {
+				const on = this.toward(thrown.from, bat.at);
+				const ft =
+					PICK_BAT_SELF_FT[0] +
+					(PICK_BAT_SELF_FT[1] - PICK_BAT_SELF_FT[0]) *
+						countOf(picker, snap, 139);
+				gotPt = {
+					x: picker.at.x + Math.cos(on) * ft,
+					y: picker.at.y + Math.sin(on) * ft,
+				};
+			} else {
+				const p = picker.posAt(bat.t);
+				const far = dist(bat.at, p) || 1;
+				const ft = Math.min(far, PICK_BAT_FT);
+				gotPt = {
+					x: bat.at.x + ((p.x - bat.at.x) / far) * ft,
+					y: bat.at.y + ((p.y - bat.at.y) / far) * ft,
+				};
+			}
+			this.ball.push({
+				kind: "fly",
+				t0: bat.t,
+				t1: gotAt,
+				from: bat.at,
+				to: { ...gotPt, z: CATCH_Z },
+				peak: pop,
+			});
+			this.at.set(i, gotAt);
+			// (The one who got a hand to it round to watch it down, and with
+			// the rest of them after.)
+			if (!self) {
+				const m = bat.m;
+				m.hold(m.t + 150, "stand", this.toward(m.at, gotPt));
+				this.done.delete(m.pid);
+			}
+		}
+		// He jumps the route and takes it the other way. (Off his own hands,
+		// over under it from where he comes down, his hands up to it.)
+		if (self) {
+			const face = this.toward(picker.at, gotPt);
+			const under = {
+				x: gotPt.x - Math.cos(face) * PICK_BAT_HANDS_FT,
+				y: gotPt.y - Math.sin(face) * PICK_BAT_HANDS_FT,
+			};
+			const by = gotAt - CATCH_REACH_MS;
+			if (dist(picker.at, under) > 0.5 && by - picker.t > 200) {
+				picker.go(under, by, "walk", face);
+			} else {
+				picker.hold(Math.max(picker.t, by), "stand", face);
+			}
+		} else {
+			this.breakOn(picker, gotPt, gotAt, 60);
+		}
 		const ball = this.ball.at(-1);
 		const fly = ball?.kind === "fly" ? ball : undefined;
 		const onRun =
@@ -11677,13 +11791,18 @@ class Action {
 				face,
 			);
 			picker.act("getUp", picker.t + GET_UP_MS);
-		} else if (onRun || tip) {
+		} else if ((onRun || tip || bat) && !self) {
 			// (Off a tip: his hands up for it as it comes off the other
-			// man's, on it all the way down.)
+			// man's, on it all the way down - knocked up at the line, from
+			// once he is under it.)
 			this.reaches.push({
 				m: picker,
 				move: "catch",
-				t0: tip ? catchAt : gotAt - CATCH_REACH_MS,
+				t0: tip
+					? catchAt
+					: bat
+						? Math.max(gotAt - PICK_BAT_REACH_MS, bat.t + 300)
+						: gotAt - CATCH_REACH_MS,
 				t1: gotAt + CATCH_IN_MS,
 			});
 		} else {
@@ -11718,11 +11837,11 @@ class Action {
 			t = picker.run(pt, picker.top * 0.9, "sprint");
 		}
 		// (Caught on the run, or off a tip: where he was as it got to him.)
-		if ((onRun || tip) && fly) {
+		if ((onRun || tip || (bat && !self)) && fly) {
 			fly.to = { ...picker.posAt(gotAt), z: CATCH_Z };
 		}
 		// The offense sees it picked off, and comes after him.
-		this.seen = catchAt + BREAK_MS;
+		this.seen = (bat ? gotAt : catchAt) + BREAK_MS;
 		// (And his own side, through with what they were doing, after it
 		// with him at an easy run - not stood where the pass left them.)
 		for (const m of this.men) {
@@ -12143,20 +12262,28 @@ class Action {
 	// goes by: off his hands, see incomplete. Only where it goes by him in
 	// front of the quarterback, near enough the lane, and no higher than he
 	// gets his hands - and with room to go up. (Not a man hurt on it, nor
-	// one of them the sim names on anything else.)
+	// one of them the sim names on anything else.) Or picked off there:
+	// `pick`, the man the sim says picks it off - knocked up by him, if he
+	// is in the rush, or by one of the others near enough him for it to
+	// come down to him (see PICK_BAT_NEAR).
 	batAt(
 		rushers: Actor[],
 		blockers: Actor[],
 		qb: Actor,
 		catchPt: Pt,
 		throwAt: number,
+		pick?: Actor,
 	): Bat | undefined {
 		const { snap, events, i0, i1, stats } = this.input;
 		const fly = this.ball.at(-1);
 		if (fly?.kind !== "fly" || fly.t0 !== throwAt) {
 			return undefined;
 		}
-		const named = this.man(this.statPids("defPssDef")[0]);
+		const named = pick
+			? rushers.includes(pick)
+				? pick
+				: undefined
+			: this.man(this.statPids("defPssDef")[0]);
 		if (named && !rushers.includes(named)) {
 			return undefined;
 		}
@@ -12172,6 +12299,9 @@ class Action {
 				.filter((x) => x.i > this.lo && x.i <= this.hi && x.s !== "defPssDef")
 				.map((x) => x.pid),
 		);
+		if (pick) {
+			others.delete(pick.pid);
+		}
 		const len = dist(fly.from, catchPt);
 		if (len <= 0) {
 			return undefined;
@@ -12208,7 +12338,7 @@ class Action {
 		let best:
 			| { m: Actor; shed: number; x: ReturnType<typeof lane> }
 			| undefined;
-		for (const m of named ? [named] : rushers) {
+		for (const m of named ? [named] : rushers.filter((o) => o !== pick)) {
 			if (
 				this.done.has(m.pid) ||
 				lame.has(m.pid) ||
@@ -12238,7 +12368,7 @@ class Action {
 			return undefined;
 		}
 		// (With nobody named on it, only now and then.)
-		if (!named && countOf(qb, snap, 117) >= LINE_BAT) {
+		if (!named && !pick && countOf(qb, snap, 117) >= LINE_BAT) {
 			return undefined;
 		}
 		const { m, shed, x } = best;
@@ -12249,15 +12379,32 @@ class Action {
 			x: fly.from.x + ux * x.along,
 			y: fly.from.y + uy * x.along,
 		};
-		const spot =
+		if (pick && pick !== m && dist(pick.posAt(x.t1), lanePt) > PICK_BAT_NEAR) {
+			return undefined;
+		}
+		const roomAt = (p: Pt) =>
+			!this.men.some((o) => o !== m && dist(o.posAt(x.t1), p) < LINE_BAT_ROOM);
+		let spot =
 			x.stepFt > 0 ? { x: lanePt.x + uy * off, y: lanePt.y - ux * off } : x.p;
-		if (
-			this.men.some((o) => o !== m && dist(o.posAt(x.t1), spot) < LINE_BAT_ROOM)
-		) {
+		// (Picked off: the far side of it, if there is no room this side -
+		// off his block that much sooner for the step further.)
+		let off0 = shed;
+		if (pick && x.stepFt > 0 && !roomAt(spot)) {
+			const far = { x: lanePt.x - uy * off, y: lanePt.y + ux * off };
+			const at = shed - ((2 * Math.abs(off)) / LINE_BAT_STEP_FPS) * 1000;
+			if (
+				at >= snap + RUSH_MOVE_LEAST &&
+				["engage", ...GAITS].includes(legAt(m, at).move)
+			) {
+				spot = far;
+				off0 = at;
+			}
+		}
+		if (!roomAt(spot)) {
 			return undefined;
 		}
 		const face = this.toward(spot, fly.from);
-		m.cut(shed);
+		m.cut(off0);
 		if (x.stepFt > 0) {
 			m.go(spot, x.leap, "shuffle", face);
 		} else {

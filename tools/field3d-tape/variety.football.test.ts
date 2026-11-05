@@ -942,7 +942,7 @@ const tryParts = (tl: FieldTimeline, p: Play, made: boolean) => {
 };
 
 // An interception: how deep the throw, how he picked it off (on the run,
-// set, up for it, diving, off a tip), who, the return, the man it was meant
+// set, up for it, diving, off a tip, knocked up at the line), who, the return, the man it was meant
 // for and the quarterback after it, and the celebration.
 const pickParts = (tl: FieldTimeline, p: Play) => {
 	const thrown = p.ball.find(
@@ -975,8 +975,21 @@ const pickParts = (tl: FieldTimeline, p: Play) => {
 		const a1 = posOf(tl, picker.pid, got!.t0);
 		return a0 && a1 ? dist(a0, a1) / 0.15 : 0;
 	};
-	const how =
+	// (Knocked up at the line: off the hands of one of the rush up off his
+	// feet as it got to him.)
+	const batter =
 		flies.length > 0
+			? p.parts.find(
+					(q) =>
+						q.team !== p.offense &&
+						near(q, ["leap"], thrown.t1 - 100, thrown.t1 + 100),
+				)
+			: undefined;
+	const how = batter
+		? batter === picker
+			? "knocked up at the line, his own"
+			: "knocked up at the line"
+		: flies.length > 0
 			? "off a tip"
 			: near(picker, ["diveCatch"], got!.t0 - 600, got!.t0 + 300)
 				? "diving"

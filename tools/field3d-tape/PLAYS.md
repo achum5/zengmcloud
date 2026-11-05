@@ -247,7 +247,8 @@ To do: a blocked kick (the sim has none in these games).
 ## 10. Interception
 
 Parts: how far it was thrown, how the man got it (set, on the run, up off
-his feet for it, laid out for it, off the receiver's hands), who got it,
+his feet for it, laid out for it, off the receiver's hands, knocked up at
+the line), who got it,
 what he did with it after (evades, how he went down, the gain), the
 quarterback after it, and the defense's party.
 
@@ -267,13 +268,17 @@ man it was meant for - once the other side's moment with it is over, and
 now and then the picture comes in tight on him for it (from the press box,
 when nobody is right in front of him and he isn't turned away).
 
-Now (14 picks): 14 different combinations. Off a tip 6, set 3, on the run
-3, diving 1, up for it 1 (all set before). Spun out of a man's grab in the
-return on 1. The quarterback after it: hands on his helmet 6, at the man
-it was meant for 4, bent over 2, in on the tackle 2; the picture tight on
-him 5.
+Picked off right at the line, on the man's own count: knocked up there by
+one of the rush up off his feet for it - him, if he is one of the front,
+and down to him a step on from where he lands; or off another of them near
+enough him, and him over under it with his hands up. The man it was meant
+for pulls up once he sees it go up.
 
-To do: a pick batted up at the line.
+Now (14 picks): 14 different combinations. On the run 4, off a tip 4, set
+3, up for it 1, knocked up at the line 2 (one his own). Spun out of a
+man's grab in the return on 1. The quarterback after it: hands on his
+helmet 6, bent over 5, at the man it was meant for 1, after him 1, in on
+the tackle 1; the picture tight on him 6.
 
 ## 11. Timeouts, two-minute warning, quarters
 
