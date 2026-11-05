@@ -254,7 +254,9 @@ const catchParts = (tl: FieldTimeline, p: Play) => {
 	const how =
 		rec.legs.find(
 			(l) =>
-				(l.move === "leapCatch" || l.move === "diveCatch") &&
+				(l.move === "leapCatch" ||
+					l.move === "diveCatch" ||
+					l.move === "toeTap") &&
 				l.t1 > got!.t0 - 300 &&
 				l.t0 < got!.t0 + 300,
 		)?.move ?? "catch";
@@ -437,6 +439,28 @@ const incParts = (tl: FieldTimeline, p: Play) => {
 	};
 };
 
+// A return run one way across the field and back the other: out 15 feet
+// or more from where he had it, and on from there 30 feet or more the other
+// way by the whistle.
+const reversed = (tl: FieldTimeline, p: Play, ret: Part, from: number) => {
+	const y0 = posOf(tl, ret.pid, from)?.y;
+	const y1 = posOf(tl, ret.pid, p.whistle)?.y;
+	if (y0 === undefined || y1 === undefined) {
+		return false;
+	}
+	for (let t = from; t < p.whistle; t += 100) {
+		const y = posOf(tl, ret.pid, t)?.y;
+		if (y !== undefined) {
+			for (const s of [1, -1]) {
+				if ((y - y0) * s >= 15 && (y - y1) * s >= 30) {
+					return true;
+				}
+			}
+		}
+	}
+	return false;
+};
+
 // A punt: how far and how high it went and where it came down, how it
 // was fielded (caught - and how he was under it -, a fair catch, let
 // bounce and downed, into the end zone), and the return.
@@ -503,6 +527,12 @@ const puntParts = (tl: FieldTimeline, p: Play) => {
 				: "caught";
 		if (fielded !== "fair catch") {
 			rest = endParts(tl, p, ret, pr!.t0);
+			if (reversed(tl, p, ret, pr!.t0)) {
+				rest.evades =
+					rest.evades === "none"
+						? "field reversed"
+						: `field reversed+${rest.evades}`;
+			}
 			// (The return's own yards, from where he had it.)
 			const end = posOf(tl, ret.pid, p.whistle) ?? at;
 			rest.gain = bucket(
@@ -604,6 +634,12 @@ const kickParts = (tl: FieldTimeline, p: Play) => {
 					: "caught";
 		if (!knelt) {
 			rest = endParts(tl, p, ret, kr0!.t0);
+			if (reversed(tl, p, ret, kr0!.t0)) {
+				rest.evades =
+					rest.evades === "none"
+						? "field reversed"
+						: `field reversed+${rest.evades}`;
+			}
 			const end = posOf(tl, ret.pid, p.whistle) ?? at;
 			rest.gain = bucket(
 				((at.x - end.x) * p.dir) / 3,

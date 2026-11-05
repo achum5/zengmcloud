@@ -4073,6 +4073,23 @@ const EVADE_MS = 1200;
 const EVADE_SHORT = 0.35;
 const EVADE_SHORT_FAR = 20;
 const EVADE_SHORT_MS = 800;
+// A kick return reversed (see returnRun) this often, one of this many feet
+// or more up the field: off up the field this far (feet) and this far
+// across (feet; kept this far in from the sideline) at this share of his
+// speed - away from where it ends, this far or more across from it - then
+// round up the field this far (feet) and back in this far (feet), and back
+// across, up the field this much more (feet), to this share of the way back
+// from where it ends to there.
+const REVERSE = 0.12;
+const REVERSE_RUN = 60;
+const REVERSE_UP = 15;
+const REVERSE_OUT = 28;
+const REVERSE_EDGE = 14;
+const REVERSE_PACE = 0.75;
+const REVERSE_ROUND = [8, 5] as const;
+const REVERSE_ACROSS = 26;
+const REVERSE_BACK_UP = 8;
+const REVERSE_BACK_SHORT = 0.3;
 // (A return still getting up to speed: its steps up taken as one stretch,
 // none turned more than this off the last of them, radians.)
 const EVADE_RAMP_TURN = 0.2;
@@ -16133,7 +16150,47 @@ class Action {
 			ta !== undefined ? ta + (r() - 0.5) * 16 : aim + (r() - 0.5) * 60;
 		const endA = clamp(lane, this.bounds.left + 6, this.bounds.right - 6);
 		const run = from.d - endD;
-		if (run > 24) {
+		// Now and then on a long one, the field reversed: off hard the other
+		// way first, up the field and toward the far side from where it
+		// ends, then planted (see run) and back across the field - see
+		// REVERSE.
+		const away =
+			Math.sign(from.a - endA) ||
+			(countOf(m, this.input.snap, 132) < 0.5 ? 1 : -1);
+		const awayA = clamp(
+			from.a + away * REVERSE_OUT,
+			this.bounds.left + REVERSE_EDGE,
+			this.bounds.right - REVERSE_EDGE,
+		);
+		if (
+			run >= REVERSE_RUN &&
+			Math.abs(awayA - endA) >= REVERSE_ACROSS &&
+			countOf(m, this.input.snap, 131) < REVERSE
+		) {
+			// (Round up the field at the far end of it, not stopped dead and
+			// sent back the way he came.)
+			m.run(
+				this.w({ d: from.d - REVERSE_UP, a: awayA }),
+				m.top * REVERSE_PACE,
+				"sprint",
+			);
+			m.run(
+				this.w({
+					d: from.d - REVERSE_UP - REVERSE_ROUND[0],
+					a: awayA - away * REVERSE_ROUND[1],
+				}),
+				m.top * REVERSE_PACE,
+				"sprint",
+			);
+			m.run(
+				this.w({
+					d: from.d - REVERSE_UP - REVERSE_ROUND[0] - REVERSE_BACK_UP,
+					a: endA + (awayA - endA) * REVERSE_BACK_SHORT,
+				}),
+				m.top * 0.9,
+				"sprint",
+			);
+		} else if (run > 24) {
 			m.run(
 				this.w({
 					d: from.d - Math.min(36, run * 0.35),

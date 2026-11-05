@@ -62,12 +62,14 @@ Parts: formation; the drop; where the throw goes (depth, side) and its arc;
 the route; how it is caught (in stride, on the move, sat down; diving,
 leaping) and how open; then the same ending as a run.
 
-Now (417 catches): 404 different combinations. Caught standing still 37%
+Now (417 catches): 408 different combinations. Caught standing still 37%
 (hitches, curls, comebacks, screens and check-downs). Deep throws lofted a
 little, more the further they go (of 103 tried: on a line 90, touch 10, a
 lob 3). A man on him reaching a hand in at it as it gets there on 16 of
 the 101 tight catches (in his stride or sat reading it, the arm on its
-side).
+side). Caught at the sideline with his toes dragged in on 15 (an out or a
+comeback that goes out of bounds with next to nothing after the catch; the
+variety tool counts them now - it missed them before).
 
 Up for it at its highest on 7 (from 3): thrown deep, covered or into the
 end zone, and no more than 6 yards left to go with it after - he comes
@@ -75,8 +77,8 @@ down with it and goes on. A jump ball fought for on 2 of those: the man on
 him up off both feet with him, arms up at it, on his own count, never
 into him.
 
-To do: a back-shoulder throw, a catch at the sideline with his feet in
-more often.
+To do: a back-shoulder throw, his toes in on a deeper throw along the
+sideline.
 
 ## 3. Pass incomplete
 
@@ -127,10 +129,10 @@ A man made to miss in the return can come while he is still getting up to
 speed, and one grabbing at him from the side is spun out of (as on an
 interception return).
 
-Now (86 punts): 73 different combinations. Out toward the numbers or the
-sideline 40, end over end 17. Set under it 58 (in a basket 24), going back
-5, coming up at a run or on the move 9, juggled 5. A man made to miss on 11
-returns (spun out of 5, juked 5, stiff-armed 1).
+Now (86 punts): 71 different combinations. Out toward the numbers or the
+sideline 42, end over end 19. Set under it 56 (in a basket 26), going back
+4, coming up at a run or on the move 12, juggled 4. A man made to miss on 10
+returns (juked 5, spun out of 4, stiff-armed 1).
 
 The sim credits a tackle on almost every return, even of 0 yards, so fair
 catches and punts let bounce are rare.
@@ -153,13 +155,18 @@ The setup is the sim's: the cover at the receiving 40, the front five yards
 off them, two returners at the 5 and the 2, and nobody but the kicker and
 the returners moving till it is down.
 
-Now (66 kickoffs): 59 different combinations. Out toward the numbers 32.
-Set under it 44 (in a basket 16, as on a punt), coming up at a run or on
-the move 13, going back 7. On the hop 16, knelt 9, juggled 1, let go 2. A
-man made to miss on 1 return (spun out of).
+Now and then on a long return (20 yards or more from where he has it) he
+reverses the field: off hard up and out toward one sideline - the other
+side from where it ends -, round up the field at the far end of it, and
+back across.
 
-To do: a kick out of bounds (the sim has none in these games), a return
-man reversing field.
+Now (66 kickoffs): 58 different combinations. Out toward the numbers 34.
+Set under it 45 (in a basket 17, as on a punt), coming up at a run or on
+the move 12, going back 7. On the hop 16, knelt 9, juggled 1, let go 2.
+Field reversed 3, a man spun out of on 2.
+
+To do: a kick out of bounds (the sim has none in these games), the
+coverage turned back after a returner reversing the field.
 
 ## 6. Flags
 
