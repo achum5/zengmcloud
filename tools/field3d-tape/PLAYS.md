@@ -64,18 +64,25 @@ more often.
 ## 3. Pass incomplete
 
 Parts: where the throw goes and its arc; how it gets away from him (knocked
-away by the man the sim credits with it, off his hands, out of his reach and
-laid out for, sailed on over his hands, short into the turf in front of
-him, thrown away with a man on the quarterback); how near him it was and
-whether he was in his stride; what came after (his hands on his helmet, the
-man who broke it up waving it off).
+away by the man the sim credits with it, batted down at the line, off his
+hands, out of his reach and laid out for, sailed on over his hands, short
+into the turf in front of him, thrown away with a man on the quarterback);
+how near him it was and whether he was in his stride; what came after (his
+hands on his helmet, the man who broke it up waving it off).
 
-Now (132 incompletions): 128 different combinations. Over his hands 44,
-knocked away 30, thrown away 19, dove for it 16, off his hands 14, short in
-the turf 9.
+Batted down at the line: by the man in the rush the sim credits with it (a
+step across into the lane if he has to), or now and then one in the lane
+anyway with nobody credited - off his block as the quarterback winds up,
+up with his arms as it goes by, the ball off his hands up in the air and
+down behind the line, the man it was for pulling up when he sees it. Only
+where the throw goes by him low enough to reach.
 
-To do: batted down at the line, thrown behind an open man, the receiver's
-palms up at a ball short of him.
+Now (132 incompletions): 129 different combinations. Over his hands 40,
+knocked away 31, off his hands 24, dove for it 14, thrown away 11, short in
+the turf 8, batted at the line 4.
+
+To do: thrown behind an open man, the receiver's palms up at a ball short
+of him.
 
 ## 4. Punt
 
@@ -236,8 +243,9 @@ turned to him as he goes.
 Now (50 men hurt): on his back 36, on his face 14; waved out 28; helped off
 36, on his own 14; clapped off by 3 or more 35, by both sides 32.
 
-To do: the crowd standing to clap him off, a cart for a bad one (the sim
-gives no word of how bad).
+To do: a cart for a bad one (the sim gives no word of how bad). (Not the
+crowd standing to clap him off: the picture over him going off looks down
+at the field, no stands in it.)
 
 ## 13. Kneel, fumble, onside kick, safety
 
@@ -251,8 +259,14 @@ stood straight up together.
 
 Now (16 kneels): the lines came together 14, stood up 2.
 
-To do: the ball back to an official after the knee (and after every
-play: it is only ever tossed down or left).
+The ball tossed down at the end of any play (a knee too) now goes back to
+an official when the picture stays on it long enough - flipped to one near
+enough in front, or picked up off the turf by the nearest free one - and is
+carried in toward the spot (variety line `back`: 20 of 1005 tosses in nine
+games; most come under a second before the cut to the next play).
+
+To do: the umpire setting it down on the spot, a wing flipping it on to
+the umpire.
 
 ## Side notes
 

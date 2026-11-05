@@ -301,6 +301,37 @@ const incParts = (tl: FieldTimeline, p: Play) => {
 	}
 	const t = throwSeg.t1;
 	const to = throwSeg.to;
+	// (Knocked down at the line: a man of theirs up off both feet under
+	// where it got to.)
+	const batter = p.parts.find(
+		(q) =>
+			q.team !== qb.team &&
+			q.legs.some((l) => l.move === "leap" && l.t0 < t && l.t1 > t) &&
+			dist(posOf(tl, q.pid, t) ?? { x: 1e9, y: 0 }, to) < 2.5,
+	);
+	if (batter) {
+		const waved = batter.legs.some((l) => l.move === "sigWave" && l.t0 > t);
+		return {
+			pid: batter.pid,
+			parts: {
+				formation: p.formation ?? "-",
+				throw: `${bucket(((to.x - p.losX) * p.dir) / 3, [-6, -3, 0], ["deep in the backfield", "in the backfield", "at the line", "past the line"])} ${bucket(acrossOf(p, to), [-12, 12], ["left", "middle", "right"])}`,
+				arc: "-",
+				how: `batted at the line by the ${batter.role}`,
+				height: bucket(
+					to.z,
+					[8, 9],
+					["arms up", "reaching", "up off his feet"],
+				),
+				missedBy: "-",
+				him: batter.legs.some((l) => l.move === "shuffle" && l.t1 <= t)
+					? "stepped into the lane"
+					: "where he was",
+				defense: "-",
+				after: waved ? "waved off" : "-",
+			},
+		};
+	}
 	let rec: Part | undefined;
 	let off = Infinity;
 	for (const q of p.parts) {

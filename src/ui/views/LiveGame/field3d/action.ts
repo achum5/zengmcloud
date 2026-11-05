@@ -125,6 +125,9 @@ export type Acted = {
 // sideline (+1 the one on the offense's +a side).
 type Sign = 1 | -1;
 type End = { pt: Pt; td: boolean; d: number; out?: Sign };
+// A pass knocked down at the line (see batAt): who, where it comes off his
+// hands and when, and how high the throw is arched on its way there.
+type Bat = { m: Actor; at: Pt3; t: number; peak: number };
 
 // ---- who is who ------------------------------------------------------------
 
@@ -7885,6 +7888,16 @@ class Action {
 		if (thrown && target && catchPt && tr?.name !== "screen" && !slip) {
 			this.callFor(target, qb, coverage, catchPt, throwAt, catchAt);
 		}
+		const bat =
+			first === incI &&
+			thrown &&
+			target &&
+			catchPt &&
+			!bootSide &&
+			tr?.name !== "screen" &&
+			!slip
+				? this.batAt(rushers, blockers, qb, catchPt, throwAt)
+				: undefined;
 		if (
 			thrown &&
 			catchPt &&
@@ -7893,7 +7906,12 @@ class Action {
 			!slip &&
 			(first === cmpI || first === incI)
 		) {
-			this.qbHit(rushers, blockers, qb, throwAt);
+			this.qbHit(
+				rushers.filter((m) => m !== bat?.m),
+				blockers,
+				qb,
+				throwAt,
+			);
 		}
 
 		// And what came of it.
@@ -7908,7 +7926,7 @@ class Action {
 			}
 			this.withIt([qb], catchAt, QB_AFTER_KEEP_FT, QB_AFTER_FPS, false);
 		} else if (first === incI && thrown && target && catchPt) {
-			this.incomplete(incI, qb, target, catchPt, catchAt, coverage);
+			this.incomplete(incI, qb, target, catchPt, catchAt, coverage, bat);
 		} else if (first === intI && thrown && target && catchPt) {
 			this.intercepted(intI, qb, target, catchPt, catchAt, coverage);
 		} else if (sacked) {
@@ -10805,8 +10823,10 @@ class Action {
 		catchPt: Pt,
 		catchAt: number,
 		coverage: Actor[],
+		bat?: Bat,
 	) {
 		const r = this.r;
+		const { snap } = this.input;
 		const breakup = this.man(this.statPids("defPssDef")[0]);
 		const ground = catchAt + INC_DROP_MS;
 		// (Where it gets to: out in front of him the way it came, at his
@@ -10842,7 +10862,46 @@ class Action {
 		const pressed = this.d.some(
 			(m) => dist(m.posAt(throwAt), qb.posAt(throwAt)) < AWAY_NEAR,
 		);
-		if (breakup && coverage.includes(breakup)) {
+		// (Knocked down at the line: when it went up off his hands, give or
+		// take, for all of them - see LINE_BAT_SEEN_MS.)
+		let batSeen: number | undefined;
+		if (bat && thrown?.kind === "fly") {
+			// Knocked down at the line: off his hands up in the air and down
+			// round the line, on the hop - the man it was for pulled up once
+			// he sees it go up, the man who got it round to watch it down.
+			thrown.peak = bat.peak;
+			p0 = bat.at;
+			at0 = bat.t;
+			const pop =
+				LINE_BAT_POP[0] +
+				(LINE_BAT_POP[1] - LINE_BAT_POP[0]) * countOf(bat.m, snap, 118);
+			// (Down under G - see the fly's 4 * peak * u * (1 - u).)
+			groundAt = at0 + Math.sqrt((8 * pop) / G) * 1000;
+			const far =
+				LINE_BAT_FT[0] +
+				(LINE_BAT_FT[1] - LINE_BAT_FT[0]) * countOf(bat.m, snap, 119);
+			lands = this.dropWay(
+				bat.at,
+				at0,
+				far,
+				this.toward(bat.at, thrown.from) +
+					(countOf(bat.m, snap, 120) - 0.5) * 2 * LINE_BAT_TURN,
+			);
+			k = LINE_BAT_AIR;
+			dropPeak = pop;
+			hopPeak = 1;
+			batSeen = at0 + LINE_BAT_SEEN_MS[0];
+			const seen = batSeen + LINE_BAT_SEEN_MS[1] * countOf(rec, snap, 121);
+			if (rec.t > seen) {
+				rec.cut(seen);
+				rec.easeOff(EASE_OFF_FT);
+			}
+			const m = bat.m;
+			m.hold(m.t + 150, "stand", this.toward(m.at, lands));
+			if (countOf(m, snap, 122) < WAVE_OFF) {
+				m.act("sigWave", m.t + WAVE_MS, this.toward(m.at, qb.at));
+			}
+		} else if (breakup && coverage.includes(breakup)) {
 			// Got a hand on it: knocked away. (In at his shoulder, the side he
 			// came from - not stood in the way of it.)
 			this.breakOn(breakup, catchPt, catchAt, 150, true);
@@ -11089,10 +11148,15 @@ class Action {
 		if (away) {
 			return;
 		}
-		this.pursue(coverage, catchPt, catchAt + 200, []);
+		if (batSeen === undefined) {
+			this.pursue(coverage, catchPt, catchAt + 200, []);
+		}
 		// (Not on in at it after, all of them round the man it was for.)
 		for (const m of coverage) {
-			const seen = groundAt + DEAD_SEEN_MS[0] + r() * DEAD_SEEN_MS[1];
+			const seen =
+				batSeen !== undefined
+					? batSeen + LINE_BAT_SEEN_MS[1] * countOf(m, snap, 121)
+					: groundAt + DEAD_SEEN_MS[0] + r() * DEAD_SEEN_MS[1];
 			const l = m.legs.findLast((x) => x.t0 < seen);
 			if (
 				this.done.has(m.pid) ||
@@ -11748,6 +11812,161 @@ class Action {
 		}
 		const swim = countOf(m, this.input.snap, 38) < RUSH_SWIM;
 		m.arms(swim ? (left ? "swimL" : "swimR") : left ? "ripL" : "ripR", t0, t1);
+	}
+
+	// KNOCKED DOWN AT THE LINE: the man in the rush the sim says got to the
+	// pass (or, now and then with nobody named on it, one in the way of it
+	// anyway) off his block as the quarterback winds up - a step across
+	// into the lane, if he needs it - and up off both feet, arms up, as it
+	// goes by: off his hands, see incomplete. Only where it goes by him in
+	// front of the quarterback, near enough the lane, and no higher than he
+	// gets his hands - and with room to go up. (Not a man hurt on it, nor
+	// one of them the sim names on anything else.)
+	batAt(
+		rushers: Actor[],
+		blockers: Actor[],
+		qb: Actor,
+		catchPt: Pt,
+		throwAt: number,
+	): Bat | undefined {
+		const { snap, events, i0, i1, stats } = this.input;
+		const fly = this.ball.at(-1);
+		if (fly?.kind !== "fly" || fly.t0 !== throwAt) {
+			return undefined;
+		}
+		const named = this.man(this.statPids("defPssDef")[0]);
+		if (named && !rushers.includes(named)) {
+			return undefined;
+		}
+		const lame = new Set<number>();
+		for (let i = i0; i < i1; i++) {
+			const e = events[i];
+			if (e?.type === "injury") {
+				lame.add(e.injuredPID);
+			}
+		}
+		const others = new Set(
+			stats
+				.filter((x) => x.i > this.lo && x.i <= this.hi && x.s !== "defPssDef")
+				.map((x) => x.pid),
+		);
+		const len = dist(fly.from, catchPt);
+		if (len <= 0) {
+			return undefined;
+		}
+		const ux = (catchPt.x - fly.from.x) / len;
+		const uy = (catchPt.y - fly.from.y) / len;
+		// (Where along it he is at t, how far to the side - and the ball as it
+		// goes by there: how high, when.)
+		const lane = (m: Actor, t: number) => {
+			const p = m.posAt(t);
+			const dx = p.x - fly.from.x;
+			const dy = p.y - fly.from.y;
+			const along = dx * ux + dy * uy;
+			const side = dx * uy - dy * ux;
+			const u = along / len;
+			const z =
+				fly.from.z + (fly.to.z - fly.from.z) * u + 4 * fly.peak * u * (1 - u);
+			const t1 = fly.t0 + u * (fly.t1 - fly.t0);
+			// (Up off his feet so his hands are there as it gets there - the
+			// rise to them read off the leap's lift, sin-shaped.)
+			const need = z - LINE_BAT_HANDS_Z;
+			const ph =
+				LEAP_UP_FROM +
+				(LEAP_UP_SPAN * Math.asin(clamp(need / LEAP_UP, 0.05, 1))) / Math.PI;
+			const leap = t1 - ph * LINE_BAT_LEAP_MS;
+			const stepFt = Math.max(0, Math.abs(side) - LINE_BAT_SIDE_FT);
+			const stepMs =
+				stepFt > 0
+					? Math.max(LINE_BAT_STEP_MS, (stepFt / LINE_BAT_STEP_FPS) * 1000)
+					: 0;
+			return { p, along, side, u, z, t1, leap, stepFt, stepMs };
+		};
+		const most = named ? LINE_BAT_STEP_FT : LINE_BAT_LANE_FT;
+		let best:
+			| { m: Actor; shed: number; x: ReturnType<typeof lane> }
+			| undefined;
+		for (const m of named ? [named] : rushers) {
+			if (
+				this.done.has(m.pid) ||
+				lame.has(m.pid) ||
+				(!named && others.has(m.pid))
+			) {
+				continue;
+			}
+			// (Read where he is as he comes off it - a second look from there.)
+			const guess = lane(m, throwAt);
+			const shed0 = guess.leap - guess.stepMs;
+			const x = lane(m, shed0);
+			const shed = x.leap - x.stepMs;
+			if (
+				x.along < LINE_BAT_ALONG[0] ||
+				x.along > LINE_BAT_ALONG[1] ||
+				Math.abs(x.side) > most ||
+				x.z > LINE_BAT_TOP_Z ||
+				shed < snap + RUSH_MOVE_LEAST ||
+				!["engage", ...GAITS].includes(legAt(m, shed).move) ||
+				(best && Math.abs(x.side) >= Math.abs(best.x.side))
+			) {
+				continue;
+			}
+			best = { m, shed, x };
+		}
+		if (!best) {
+			return undefined;
+		}
+		// (With nobody named on it, only now and then.)
+		if (!named && countOf(qb, snap, 117) >= LINE_BAT) {
+			return undefined;
+		}
+		const { m, shed, x } = best;
+		// (Stood in the lane, his hands just to his side of it.)
+		const off =
+			Math.sign(x.side) * Math.min(Math.abs(x.side), LINE_BAT_SIDE_FT);
+		const lanePt = {
+			x: fly.from.x + ux * x.along,
+			y: fly.from.y + uy * x.along,
+		};
+		const spot =
+			x.stepFt > 0 ? { x: lanePt.x + uy * off, y: lanePt.y - ux * off } : x.p;
+		if (
+			this.men.some((o) => o !== m && dist(o.posAt(x.t1), spot) < LINE_BAT_ROOM)
+		) {
+			return undefined;
+		}
+		const face = this.toward(spot, fly.from);
+		m.cut(shed);
+		if (x.stepFt > 0) {
+			m.go(spot, x.leap, "shuffle", face);
+		} else {
+			m.hold(x.leap, "stand", face);
+		}
+		m.act("leap", x.leap + LINE_BAT_LEAP_MS, face);
+		this.done.add(m.pid);
+		// (The man he was on: stood up out of his set where he was, round to
+		// it - not if he has another of them on him.)
+		const b = blockers
+			.filter((o) => !this.done.has(o.pid))
+			.sort((o, q) => dist(o.posAt(shed), x.p) - dist(q.posAt(shed), x.p))[0];
+		if (
+			b &&
+			dist(b.posAt(shed), x.p) <= QB_HIT_BLOCKER_FT &&
+			!rushers.some(
+				(o) =>
+					o !== m && dist(o.posAt(shed), b.posAt(shed)) <= QB_HIT_BLOCKER_FT,
+			)
+		) {
+			b.cut(shed + LINE_BAT_SEE_MS);
+			b.hold(x.t1, "passSet", this.toward(b.at, spot));
+		}
+		// (The throw on its way there arched as it was, cut short at him -
+		// see the fly's peak.)
+		return {
+			m,
+			at: { ...lanePt, z: x.z },
+			t: x.t1,
+			peak: fly.peak * x.u * x.u,
+		};
 	}
 
 	// THE PASSER HIT AS IT LEAVES HIS HAND: now and then (and the man the
@@ -19741,6 +19960,40 @@ const QB_HIT_DOWN_MS = 700;
 const QB_HURT_DOWN_MS = 60_000;
 const QB_HIT_BLOCKER_FT = 5;
 const QB_HIT_SEE_MS = 200;
+// A pass knocked down at the line (see batAt): by the man in the rush the
+// sim says got to it - or, this often with nobody named on it, one in the
+// way of it anyway - this far in front of the quarterback (feet), no
+// further than this to the side of the lane it goes up (feet; the man the
+// sim names, this far - a step across into it, at this pace, ft/s, no
+// quicker than this, ms), where it goes by no higher than he gets his
+// hands (feet up). His hands this far up stood (feet) - more off the
+// turf, see the leap's lift (LEAP_UP, at most, at so far through it); off
+// both feet over this long (ms), and no nearer anybody than this (feet)
+// as he goes up. The man on him seeing he is off it this long after (ms).
+// The ball: off his hands up this high (a fly's peak, feet, from one to
+// the other) and down this far off (feet, the most of it in the air), the
+// way back to the quarterback give or take this much (radians). The rest
+// seeing it go up this long after (ms, give or take).
+const LINE_BAT = 0.2;
+const LINE_BAT_ALONG = [4, 16] as const;
+const LINE_BAT_LANE_FT = 2;
+const LINE_BAT_STEP_FT = 4;
+const LINE_BAT_SIDE_FT = 0.5;
+const LINE_BAT_STEP_FPS = 9;
+const LINE_BAT_STEP_MS = 250;
+const LINE_BAT_TOP_Z = 9.8;
+const LINE_BAT_HANDS_Z = 8.3;
+const LEAP_UP = 1.7;
+const LEAP_UP_FROM = 0.3;
+const LEAP_UP_SPAN = 0.52;
+const LINE_BAT_LEAP_MS = 800;
+const LINE_BAT_ROOM = 2.2;
+const LINE_BAT_SEE_MS = 150;
+const LINE_BAT_POP = [4, 9] as const;
+const LINE_BAT_FT = [6, 16] as const;
+const LINE_BAT_AIR = 0.75;
+const LINE_BAT_TURN = 1.2;
+const LINE_BAT_SEEN_MS = [350, 300] as const;
 // Helped up after it this often (see HELP_UP) - the man to do it off
 // after him this long after he is through it (ms), him down no longer for
 // it than this (ms), one of his line no further off than this (ft) to be
