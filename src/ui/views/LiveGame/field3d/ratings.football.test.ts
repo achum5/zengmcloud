@@ -269,6 +269,52 @@ describe("3D field ratings", () => {
 		assert.isAbove(back[0] / down[0], back[1] / down[1] + 0.08);
 	}, 120_000);
 
+	test("a sure tackler is made to miss less often", () => {
+		// The men made to miss with the ball in hand (a juke, a spin, a
+		// hurdle or an arm out), against the sure tacklers and against the
+		// poor ones: in both games, each side the sure one in turn. (Not
+		// all of them by much: a receiver beating the man right on him as
+		// he catches it does whoever that is.)
+		const missed: [number, number] = [0, 0];
+		const carries: [number, number] = [0, 0];
+		for (const game of games) {
+			for (const side of [0, 1] as const) {
+				const tl = staged(game, (p) =>
+					["LB", "S", "CB", "DL"].includes(p.pos)
+						? { tck: p.team === side ? 95 : 45 }
+						: {},
+				);
+				for (const play of tl.plays) {
+					if (play.kind !== "run" && play.kind !== "pass") {
+						continue;
+					}
+					const k = play.offense === side ? 1 : 0;
+					carries[k] += 1;
+					for (const part of play.parts) {
+						if (part.team !== play.offense) {
+							continue;
+						}
+						for (const l of part.legs) {
+							if (
+								((MISSES as readonly string[]).includes(l.move) ||
+									l.arms === "stiffArm") &&
+								l.ball !== undefined
+							) {
+								missed[k] += 1;
+							}
+						}
+					}
+				}
+			}
+		}
+		assert.isAbove(carries[0], 200);
+		assert.isAbove(
+			missed[1],
+			missed[0] * 1.15,
+			JSON.stringify({ missed, carries }),
+		);
+	}, 120_000);
+
 	test("a back careful with the ball covers it up as he is hit more often", () => {
 		// Of the men with the ball hit, the share with their other hand over
 		// it - the careful side's, the careless side's: in both games, each

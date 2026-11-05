@@ -51,10 +51,10 @@ quarterback down the line with it, the back out wide of him and a step
 behind, pitched to him on the run, the quarterback easing up after it - or
 put down by the end man, both of these). A cutback on 64 (inside zone made
 to go one way, the back pressing it and cutting back behind the line). A
-move to make a man miss on 30 (7%).
-
-To do: the move to make a man miss weighted by who is chasing as much as by
-his elusiveness.
+move to make a man miss on 30 (7%) - more often the more elusive he is,
+and, in a game with the ratings, the poorer a tackler the man he goes past
+(a sure one about two thirds as often as a poor one; as often as ever over
+them all).
 
 ## 2. Pass complete
 
@@ -84,7 +84,8 @@ sideline to it, turned to the quarterback, the ball there as he turns; the
 man on him, his back to it, carried on up the field past him a moment
 before he turns back. On 3 (from 0).
 
-To do: his toes in on a deeper throw along the sideline.
+Not done: his toes in on a deeper throw along the sideline - in 9 games
+only one catch out of bounds that deep with next to nothing after it.
 
 ## 3. Pass incomplete
 

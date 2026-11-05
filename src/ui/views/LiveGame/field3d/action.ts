@@ -4197,6 +4197,12 @@ const evasive = (m: Actor) => {
 	const lvl = elusiveness(m.rated);
 	return lvl === undefined ? 1 : EVADE_LEAST + EVADE_MORE * lvl;
 };
+// ...and by the man he goes past: a sure tackler (see Flair) this much less
+// often made to miss, a poor one this much more - as often as ever, over
+// them all. (A game without the ratings, as it always was.)
+const MISSED_BY = 0.35;
+const MISSED_MOST = 1 + MISSED_BY;
+const missable = (m: Actor) => 1 - MISSED_BY * (m.flair.tackle ?? 0);
 // How much later than he would have been a carrier can be brought down, his
 // run slowed, for the man the sim says made the tackle to get there.
 const SLACK_MS = 700;
@@ -9552,11 +9558,16 @@ class Action {
 		// an arm out - no room to go round or over him.)
 		const far = dist(l.from, l.to);
 		const short = far < EVADE_FAR || ms < EVADE_MS;
+		// (A game with the tacklers rated: see missable.)
+		const rated = chasers.some((c) => c.flair.tackle !== undefined);
 		if (
 			moveKind(l.move) !== "cycle" ||
 			far < EVADE_SHORT_FAR ||
 			ms < EVADE_SHORT_MS ||
-			r() > (short ? EVADE_SHORT : EVADE) * evasive(carrier)
+			r() >
+				(short ? EVADE_SHORT : EVADE) *
+					evasive(carrier) *
+					(rated ? MISSED_MOST : 1)
 		) {
 			return t;
 		}
@@ -9597,7 +9608,11 @@ class Action {
 					this.closeFrom(x.c, at, tc - 300).need <= x.c.top * CLOSE,
 			)
 			.sort((a, b) => a.t - b.t)[0];
-		if (!m) {
+		if (
+			!m ||
+			(rated &&
+				countOf(m.c, this.input.snap, 142) * MISSED_MOST > missable(m.c))
+		) {
 			return t;
 		}
 		const behind =
