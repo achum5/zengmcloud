@@ -137,6 +137,10 @@ const TOP = 21;
 const TURN_AND_RUN = 14;
 const JOG = 10;
 const WALK = 4.6;
+// (Told to stop where he is and give a signal, still going quicker than
+// this: pulling up turned the way he goes - not slid to a stop on his
+// feet turned square to it, walking.)
+const HELD_TURN_FPS = 6.5;
 const ACCEL = 20;
 const STEP_MS = 150;
 const REACT_MS = 250;
@@ -795,8 +799,14 @@ export const stageCrew = (
 			const going = Math.atan2(vy, vx);
 			let move: Move;
 			let yaw: number;
-			if (hold?.to && speed >= 0.8 && dist(at, hold.to) > TOLD_TURN_FT) {
-				// (On his way over: turned the way he goes.)
+			if (
+				hold &&
+				speed >= 0.8 &&
+				((hold.to && dist(at, hold.to) > TOLD_TURN_FT) ||
+					(speed > HELD_TURN_FPS && Math.cos(going - hold.yaw) > -0.4))
+			) {
+				// (On his way over, or still pulling up: turned the way he
+				// goes.)
 				move = gait(speed);
 				yaw = going;
 			} else if (hold) {

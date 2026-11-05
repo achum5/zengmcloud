@@ -44,6 +44,11 @@ const SHUFFLE_FPS = 7;
 const AFTER_WHISTLE = 1500;
 const PULL_UP = 14;
 const PULL_UP_STEP_MS = 100;
+// Getting going, or going quicker, no quicker than this (ft/s/s) - a man
+// with a camera on his shoulder, not off from 6 ft/s to 15 in a stride;
+// easing off as he gets there, no harder than this.
+const CAM_UP = 12;
+const CAM_DOWN = 20;
 const ARMS: Move = "shoulderCam";
 
 export type TvInput = {
@@ -98,20 +103,35 @@ export const stageTv = (input: TvInput): CrewPart[] => {
 			yaw: facing(start, snap),
 			arms: ARMS,
 		});
-		// (With the play, after the ball.)
+		// (With the play, after the ball - up to the pace it takes and down
+		// off it no quicker than a man goes: see CAM_UP.)
 		const stop = whistle + AFTER_WHISTLE;
+		let vel = 0;
 		for (let t = snap; t < stop; t += STEP_MS) {
 			const dt = Math.min(STEP_MS, stop - t);
 			const want = clampX(ballAt(t + dt).x - dir * trail);
 			const off = want - x;
-			const fps =
+			const aim =
 				Math.abs(off) < SETTLE
 					? 0
-					: Math.min(FASTEST, (Math.abs(off) - SETTLE) * gain + 3);
+					: Math.sign(off) *
+						Math.min(FASTEST, (Math.abs(off) - SETTLE) * gain + 3);
+			const up = aim * vel >= 0 && Math.abs(aim) > Math.abs(vel);
+			const most = ((up ? CAM_UP : CAM_DOWN) * dt) / 1000;
+			const was = vel;
+			vel += Math.max(-most, Math.min(most, aim - vel));
+			// (From a stand, or to one, not a sliver of a step either way.)
+			if (Math.abs(vel) < 1 && aim === 0) {
+				vel = 0;
+			}
+			const fps = Math.abs(vel);
 			const from = { x, y };
-			x = clampX(
-				x + Math.sign(off) * Math.min(Math.abs(off), (fps * dt) / 1000),
-			);
+			const free = x + (((was + vel) / 2) * dt) / 1000;
+			x = clampX(free);
+			// (Up against the end of his run: stopped there.)
+			if (x !== free) {
+				vel = 0;
+			}
 			const to = { x, y };
 			if (fps === 0 || to.x === from.x) {
 				push({
