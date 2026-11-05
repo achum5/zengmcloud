@@ -507,6 +507,12 @@ const WAVE_SHARE = 0.6;
 // A field goal shown again (see replays.ts) if it ties the game, or puts
 // them ahead, in the last this many minutes of it.
 const LATE_KICK = 5;
+// The punt returner lined up this many yards from the line, this much of
+// the way toward where the sim's punt comes down - no nearer his goal line
+// than this many yards.
+const PR_DEPTH = 45;
+const PR_READ = 0.5;
+const PR_GOAL = 8;
 // Third down for the home side next (its head coach across the field from
 // the camera, the visitors' under it), this share of the time: the picture
 // on him calling it in, from this long after the play is over - if that
@@ -3319,8 +3325,12 @@ class Director {
 			const punt = event("punt");
 			const room = 100 - scrimmage;
 			const yds = typeof punt?.yds === "number" ? punt.yds : 42;
+			// (The returner at his usual depth, leaning the way of where it
+			// will come down - not stood on the spot: up for a short one,
+			// back for a long one. Short of his own goal line.)
+			const want = PR_DEPTH + (yds - PR_DEPTH) * PR_READ;
 			const back =
-				Math.max(Math.min(30, room - 1), Math.min(yds, room - 1)) * 3;
+				Math.max(Math.min(30, room - 1), Math.min(want, room - PR_GOAL)) * 3;
 			off = PUNT_TEAM;
 			def = PUNT_RETURN(back);
 		} else if (kind === "fieldGoal" || kind === "extraPoint") {

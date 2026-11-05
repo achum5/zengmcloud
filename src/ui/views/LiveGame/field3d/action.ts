@@ -4502,6 +4502,9 @@ class Action {
 	// else has a part of his own - a route, a block, his coverage - that a
 	// play on the ball takes him off.
 	readonly done = new Set<number>();
+	// Men stood over a man down until then (see PANCAKE): not idle, on
+	// after the ball, while he is.
+	readonly over = new Map<Actor, number>();
 	// Arms of their own over what the rest of a man does (see Leg.arms),
 	// put on once everybody has the rest.
 	// (`onFeet`: only if he is on his feet all through it - see ON_FEET -
@@ -12646,6 +12649,15 @@ class Action {
 				const p = on(x.t, x.lat);
 				p.x -= dir * shove(x.t);
 				him.push(p);
+				// (On to him a moment later than he would have been - round the
+				// edge, say: on to the step after, not this one quicker than he
+				// can go.)
+				if (
+					x !== steps.at(-1) &&
+					dist(p, m.at) > (m.top * Math.max(0, x.t - m.t)) / 1000
+				) {
+					continue;
+				}
 				m.go(
 					p,
 					x.t,
@@ -14088,6 +14100,7 @@ class Action {
 			// (Stood over him till he is up again - not on after the ball over
 			// the top of him.)
 			b.hold(Math.max(b.t, m.t), "stand", this.ahead);
+			this.over.set(b, m.t);
 			this.offBlock(b, until, 0);
 		}
 
@@ -15085,10 +15098,129 @@ class Action {
 	// Under a kick coming down at `land`, a step behind it, and up into it
 	// as it comes - caught at `catchAt`, from `from` (when he can go). Where
 	// his hands have it.
-	getUnder(m: Actor, land: OPt, from: number, catchAt: number): Pt3 {
+	// (`how`: set under it, the default; "up", set back off it and up into
+	// it at a run, caught in his stride - see FIELD_UP_RUN; "back", short
+	// of it and caught going back into it.)
+	getUnder(
+		m: Actor,
+		land: OPt,
+		from: number,
+		catchAt: number,
+		how: "set" | "up" | "back" = "set",
+	): Pt3 {
 		m.hold(from);
-		const to = this.w({ d: land.d + 3.5, a: land.a });
+		if (how !== "set") {
+			const caught = this.fieldOnMove(m, land, catchAt, how);
+			if (caught) {
+				return caught;
+			}
+		}
+		// (Not there in time - a low one well short of him, say: as far
+		// toward it as he can get, and it to him there - not him shot the
+		// rest of the way to it as he catches it.)
+		let to = this.w({ d: land.d + 3.5, a: land.a });
 		const by = catchAt - 700;
+		const most = (m.top * 0.85 * Math.max(0, by - m.t)) / 1000;
+		const far = dist(m.at, to);
+		if (far > most) {
+			const u = most / far;
+			to = {
+				x: m.at.x + (to.x - m.at.x) * u,
+				y: m.at.y + (to.y - m.at.y) * u,
+			};
+		}
+		const spot = this.of(to);
+		this.setBack(m, to, by);
+		m.hold(catchAt - CATCH_REACH_MS, "stand", this.behind);
+		m.catchOn(catchAt, this.behind, this.w({ d: spot.d - 2.7, a: spot.a }));
+		const at = this.of(m.posAt(catchAt));
+		return { ...this.w({ d: at.d - 1, a: at.a }), z: CATCH_Z };
+	}
+
+	// Fielded on the move (see getUnder): there in time, or nothing (and
+	// nothing done) if he can't be.
+	fieldOnMove(
+		m: Actor,
+		land: OPt,
+		catchAt: number,
+		how: "up" | "back",
+	): Pt3 | undefined {
+		const r = this.r;
+		const { snap } = this.input;
+		const at = { d: land.d + 1, a: land.a };
+		const run =
+			how === "up"
+				? FIELD_UP_RUN[0] +
+					(FIELD_UP_RUN[1] - FIELD_UP_RUN[0]) * countOf(m, snap, 96)
+				: FIELD_BACK_RUN;
+		const fps =
+			how === "up"
+				? m.top *
+					(FIELD_UP_PACE[0] +
+						(FIELD_UP_PACE[1] - FIELD_UP_PACE[0]) * countOf(m, snap, 97))
+				: FIELD_BACK_FPS;
+		// (Off a little to one side of where it comes down, coming up - not
+		// straight up the line of it every time.)
+		const off = how === "up" ? (r() - 0.5) * FIELD_UP_SLANT : 0;
+		const start = this.w({
+			d: at.d + (how === "up" ? run : -run),
+			a: at.a + off,
+		});
+		// (Up to speed from a stand - see run - and on at it: how long that
+		// takes.)
+		const ta = Math.min(
+			fps / RELEASE_ACCEL,
+			Math.sqrt((2 * run) / RELEASE_ACCEL),
+		);
+		const ms =
+			how === "up"
+				? (ta + Math.max(0, run - (RELEASE_ACCEL * ta * ta) / 2) / fps) * 1000
+				: (run / fps) * 1000;
+		const go = catchAt - ms;
+		// (Set there a moment before he comes up; going back, on into it in
+		// the one drift.)
+		const by = go - (how === "up" ? FIELD_SET_MS : 0);
+		const far = dist(m.at, start);
+		const need = (far / Math.max(1, by - m.t)) * 1000;
+		if (by <= m.t || need > m.top * 0.85) {
+			// (No time to set back off it: straight up into it from where he
+			// is, if it is in front of him and he can be there - in his
+			// stride as it gets there.)
+			const to = this.w(at);
+			const T = catchAt - m.t;
+			const fast = (dist(m.at, to) / Math.max(1, T)) * 1000;
+			const front = Math.cos(this.toward(m.at, to) - this.behind);
+			if (
+				how !== "up" ||
+				front < FIELD_UP_FRONT ||
+				fast < FIELD_UP_LEAST_FPS ||
+				fast > m.top * 0.95
+			) {
+				return undefined;
+			}
+			m.chase(to, catchAt, m.top * 0.95);
+		} else {
+			this.setBack(m, start, by);
+			m.hold(go, "stand", this.behind);
+			const to = this.w(at);
+			if (how === "up") {
+				m.run(to, fps);
+			} else {
+				m.go(to, catchAt, "back", this.behind);
+			}
+		}
+		this.reaches.push({
+			m,
+			move: "catch",
+			t0: catchAt - CATCH_REACH_MS,
+			t1: catchAt + CATCH_IN_MS,
+		});
+		const now = this.of(m.posAt(catchAt));
+		return { ...this.w({ d: now.d - 1, a: now.a }), z: CATCH_Z };
+	}
+
+	// To `to` by `by`, where a kick is coming down (see getUnder).
+	setBack(m: Actor, to: Pt, by: number) {
 		const fps = (dist(m.at, to) / Math.max(1, by - m.t)) * 1000;
 		const rel = this.toward(m.at, to) - this.behind;
 		const c = Math.cos(rel);
@@ -15111,10 +15243,6 @@ class Action {
 		} else {
 			m.press(to, by, m.top * 0.85);
 		}
-		m.hold(catchAt - CATCH_REACH_MS, "stand", this.behind);
-		m.catchOn(catchAt, this.behind, this.w({ d: land.d + 0.8, a: land.a }));
-		const at = this.of(m.posAt(catchAt));
-		return { ...this.w({ d: at.d - 1, a: at.a }), z: CATCH_Z };
 	}
 
 	// No return: the cover men on down the field a way and pulling up, the
@@ -15840,7 +15968,7 @@ class Action {
 	// ---- a punt ----------------------------------------------------------------------
 
 	punt(i: number) {
-		const { snap } = this.input;
+		const { snap, ballY, dir } = this.input;
 		const r = this.r;
 		const e = this.ev(i);
 		const yds = num(e.yds, 42);
@@ -15876,19 +16004,49 @@ class Action {
 		});
 
 		// Where it comes down: near the returner, or - a touchback - in the
-		// end zone or bounding into it.
+		// end zone or bounding into it. Across the field: round where he
+		// stands, or - now and then, on the punter's own count (see countOf)
+		// - out toward the numbers on one side or the other, away from the
+		// room in the middle.
+		// (A short one now and then off the side of his foot - a shank:
+		// low, end over end, and off toward a sideline. One kept short of
+		// the end zone from near midfield, as often as not a pooch: up, end
+		// over end, to come down short of the goal line.)
+		const near = r() - 0.5;
+		const kept = yds * YD > this.goalD - POOCH_IN * YD;
+		const pooch =
+			!touchback && kept && yds <= POOCH_YDS && countOf(p, snap, 89) < POOCH;
+		const shank =
+			!touchback && !kept && yds < SHANK_YDS && countOf(p, snap, 88) < SHANK;
+		const midA = (MID_Y - ballY) * dir;
+		const out = shank || countOf(p, snap, 90) < AIM_OUT;
+		const outA =
+			midA +
+			(countOf(p, snap, 91) < 0.5 ? -1 : 1) *
+				(AIM_OUT_FT[0] +
+					(AIM_OUT_FT[1] - AIM_OUT_FT[0]) * countOf(p, snap, 92));
 		const land: OPt = {
 			d: touchback
 				? clamp(yds * YD, this.goalD - 12, this.goalD + 22)
 				: Math.min(yds * YD, this.goalD - 1),
 			a: clamp(
-				(pr ? this.of(pr.at).a : 0) + (r() - 0.5) * 36,
+				out ? outA : (pr ? this.of(pr.at).a : 0) + near * 36,
 				this.bounds.left + 12,
 				this.bounds.right - 12,
 			),
 		};
 		const landPt = this.w(land);
-		const hang = clamp(2800 + yds * 30 + r() * 400, 3300, 4900);
+		const hang0 = clamp(2800 + yds * 30 + r() * 400, 3300, 4900);
+		const hang = shank
+			? SHANK_HANG[0] + (SHANK_HANG[1] - SHANK_HANG[0]) * countOf(p, snap, 93)
+			: pooch
+				? Math.max(
+						hang0,
+						POOCH_HANG[0] +
+							(POOCH_HANG[1] - POOCH_HANG[0]) * countOf(p, snap, 93),
+					)
+				: hang0;
+		const spiral = !shank && !pooch;
 		const landT = kickT + hang;
 		this.seen = kickT + 120;
 		p.go(this.w({ d: p0.d + 30, a: land.a * 0.2 }), landT + 600, "jog");
@@ -15936,10 +16094,20 @@ class Action {
 		const gunners = this.o.filter((m) => m.role === "GUNNER");
 		const jammers = this.d.filter((m) => m.role === "JAMMER");
 		const goalPull = this.goalD - 4;
+		// (On a return that goes somewhere, a gunner held up at the line by
+		// the man on him a while longer - on his own count - and down there
+		// late, still coming as it comes down: the returner's room.)
+		const retYds = num(ret?.yds, 0);
+		const lateG = new Set<Actor>();
 		for (const g of gunners) {
 			const s = this.of(g.at);
 			const side = Math.sign(s.a) || 1;
 			const j = this.acrossFrom(jammers, s.a);
+			const held =
+				!touchback && ret && retYds >= JAM_HELD_YDS
+					? JAM_HELD_MS[0] +
+						(JAM_HELD_MS[1] - JAM_HELD_MS[0]) * countOf(g, snap, 98)
+					: 0;
 			this.offSnap(g, GET_OFF_MS, GET_OFF_SPREAD_MS);
 			g.goOff(
 				this.w({ d: s.d + 9, a: s.a - side * 2 }),
@@ -15947,6 +16115,14 @@ class Action {
 				"engage",
 				this.ahead,
 			);
+			if (held > 0) {
+				g.go(
+					this.w({ d: s.d + 9 + JAM_HELD_FT, a: s.a - side * 2.5 }),
+					snap + 900 + held,
+					"engage",
+					this.ahead,
+				);
+			}
 			g.run(
 				this.w({
 					d: Math.min(land.d - 10 - r() * 6, goalPull),
@@ -15955,8 +16131,16 @@ class Action {
 				g.top * 0.95,
 				"sprint",
 			);
-			// (Broken down there, slowing into it over his last strides.)
-			g.hold(g.t + GUNNER_SET_MS, "backerReady", this.toward(g.at, landPt));
+			const late = held > 0 && g.t > landT;
+			if (late) {
+				lateG.add(g);
+				// (Still on his way as he has it: after him from there - see
+				// trail - not on to where he would have broken down.)
+				g.cut(landT + 150);
+			} else {
+				// (Broken down there, slowing into it over his last strides.)
+				g.hold(g.t + GUNNER_SET_MS, "backerReady", this.toward(g.at, landPt));
+			}
 			if (j) {
 				jammers.splice(jammers.indexOf(j), 1);
 				this.offSnap(j, READ_OFF_MS, READ_OFF_SPREAD_MS);
@@ -15966,6 +16150,17 @@ class Action {
 					"engage",
 					this.behind,
 				);
+				if (held > 0) {
+					j.go(
+						this.w({
+							d: s.d + 11.6 + JAM_HELD_FT,
+							a: s.a - side * 2.5,
+						}),
+						snap + 900 + held,
+						"engage",
+						this.behind,
+					);
+				}
 				// A step behind him and inside, all the way down - and squared
 				// up to him there, waiting on it with him (not stood).
 				// (Round to the inside of him first, and only then dropped in
@@ -15976,7 +16171,11 @@ class Action {
 				const ahead = jam.d - was.d;
 				const beside = jam.a - was.a;
 				const jamT = j.t;
-				for (let time = snap + 1300; time < g.t; time += 400) {
+				for (
+					let time = Math.max(snap + 1300, jamT + 400);
+					time < g.t;
+					time += 400
+				) {
 					const q = this.of(g.posAt(time));
 					const u = Math.min(1, (time - jamT) / JAM_DROP_MS);
 					const w = Math.min(1, (time - jamT) / JAM_IN_MS);
@@ -15988,11 +16187,13 @@ class Action {
 						time,
 					);
 				}
-				j.hold(
-					Math.max(j.t + JAM_SET_MS, g.t),
-					"backerReady",
-					this.toward(j.at, g.at),
-				);
+				if (!late) {
+					j.hold(
+						Math.max(j.t + JAM_SET_MS, g.t),
+						"backerReady",
+						this.toward(j.at, g.at),
+					);
+				}
 			}
 		}
 
@@ -16077,7 +16278,7 @@ class Action {
 					from: off,
 					to: { ...landPt, z: 0 },
 					peak: peakFor(hang),
-					spiral: true,
+					spiral,
 				},
 				{
 					kind: "fly",
@@ -16122,7 +16323,6 @@ class Action {
 			return;
 		}
 
-		const retYds = num(ret?.yds, 0);
 		const tacklers = this.statPids("defTckSolo", "defTckAst");
 		const noReturn = !ret || (retYds === 0 && tacklers.length === 0);
 		if (noReturn && countOf(pr, snap, 86) < LET_GO) {
@@ -16156,7 +16356,7 @@ class Action {
 					from: off,
 					to: { ...first, z: 0 },
 					peak: peakFor(hang),
-					spiral: true,
+					spiral,
 				},
 				{
 					kind: "fly",
@@ -16223,20 +16423,64 @@ class Action {
 			return;
 		}
 
-		// The catch.
-		const hands = this.getUnder(pr, land, kickT + 200, landT);
-		this.ball.push(
-			{
-				kind: "fly",
-				t0: kickT,
-				t1: landT,
-				from: off,
-				to: { ...hands, z: CATCH_Z + 0.6 },
-				peak: peakFor(hang),
-				spiral: true,
-			},
-			{ kind: "held", t0: landT, pid: pr.pid },
+		// The catch: set under it, or - on his own count - back under one
+		// going over where he lined up, caught still going back; or up into
+		// one short of him (or, with room, one he could have stood under)
+		// at a run, caught in his stride.
+		const delta = land.d - this.of(pr.at).d;
+		const how: "set" | "up" | "back" = noReturn
+			? "set"
+			: delta > FIELD_BACK_LEAST
+				? countOf(pr, snap, 94) < FIELD_BACK
+					? "back"
+					: "set"
+				: countOf(pr, snap, 94) <
+					  (delta < -FIELD_UP_LEAST ? FIELD_UP : FIELD_UP_ANY)
+					? "up"
+					: "set";
+		const room = gunners.every(
+			(g) => dist(g.posAt(landT), landPt) >= FIELD_UP_ROOM,
 		);
+		const hands = this.getUnder(
+			pr,
+			land,
+			kickT + 200,
+			landT,
+			how === "up" && !room ? "set" : how,
+		);
+		this.ball.push({
+			kind: "fly",
+			t0: kickT,
+			t1: landT,
+			from: off,
+			to: { ...hands, z: CATCH_Z + 0.6 },
+			peak: peakFor(hang),
+			spiral,
+		});
+		// (Now and then juggled - off his hands and up, and his hands on it
+		// again a beat later - the surer his hands, the less often.)
+		let gotT = landT;
+		const set = pr.last.move === "catch";
+		if (
+			!noReturn &&
+			set &&
+			countOf(pr, snap, 95) <
+				JUGGLE * (1 - JUGGLE_HANDS * (pr.flair.hands ?? 0))
+		) {
+			gotT = landT + JUGGLE_MS;
+			const at = this.of(pr.posAt(landT));
+			pr.catchOn(gotT, this.behind, this.w({ d: at.d - JUGGLE_ON, a: at.a }));
+			const again = this.of(pr.posAt(gotT));
+			this.ball.push({
+				kind: "fly",
+				t0: landT,
+				t1: gotT,
+				from: { ...hands, z: CATCH_Z + 0.6 },
+				to: { ...this.w({ d: again.d - 1, a: again.a }), z: CATCH_Z + 0.6 },
+				peak: JUGGLE_UP,
+			});
+		}
+		this.ball.push({ kind: "held", t0: gotT, pid: pr.pid });
 		if (noReturn) {
 			// A fair catch: his arm up and waved as it comes, and nobody
 			// touches him.
@@ -16270,7 +16514,7 @@ class Action {
 			this.ownGoalD - 27,
 			this.goalD + 27,
 		);
-		const t = this.returnRun(pr, endD, landT, land.a);
+		const t = this.returnRun(pr, endD, gotT, land.a);
 		this.weave = true;
 		const endPt = pr.at;
 		const pairs = this.pairUp(peel, lanes);
@@ -16292,8 +16536,13 @@ class Action {
 		const jams = this.d.filter(
 			(m) => m.role === "JAMMER" && !this.done.has(m.pid),
 		);
+		// (Not a gunner held up and still coming as he has it: past the man
+		// on him, after the ball.)
 		const loose = gunners.filter(
-			(g) => !this.done.has(g.pid) && !pairs.some(([, c]) => c === g),
+			(g) =>
+				!this.done.has(g.pid) &&
+				!lateG.has(g) &&
+				!pairs.some(([, c]) => c === g),
 		);
 		for (const [b, c] of this.pairUp(jams, loose)) {
 			if (dist(b.at, c.at) < JAM_AGAIN_FT) {
@@ -17529,7 +17778,10 @@ class Action {
 			}
 			// His part done (stood where it left him) and the ball still
 			// going, a long way: on after it, keeping off the man with it.
-			const idle = carrier && m !== carrier ? idleFrom(m) : t;
+			const idle =
+				carrier && m !== carrier
+					? Math.max(idleFrom(m), this.over.get(m) ?? 0)
+					: t;
 			if (
 				carrier &&
 				idle < t - FOLLOW_LEFT &&
@@ -17568,6 +17820,23 @@ class Action {
 					// after it get to - in from a little to one side, if not.)
 					const from = Math.atan2(m.at.y - c.y, m.at.x - c.x);
 					const room = (most * (t - go)) / 1000;
+					// (Not on to - nor through - a man down then.)
+					const downs = this.men
+						.filter((x) => x !== m && DOWN.has(legAt(x, t).move))
+						.map((x) => x.posAt(t));
+					const clear = (p: Pt) =>
+						downs.every((d) => {
+							for (let u = 0; u <= 1.001; u += 0.1) {
+								const q = {
+									x: m.at.x + (p.x - m.at.x) * u,
+									y: m.at.y + (p.y - m.at.y) * u,
+								};
+								if (dist(q, d) < FOLLOW_DOWN_CLEAR) {
+									return false;
+								}
+							}
+							return true;
+						});
 					let to = c;
 					let end = c;
 					for (const turn of FOLLOW_TURNS) {
@@ -17581,7 +17850,7 @@ class Action {
 							x: m.at.x + (to.x - m.at.x) * u,
 							y: m.at.y + (to.y - m.at.y) * u,
 						};
-						if (!ends.some((e) => dist(e, end) < FOLLOW_APART)) {
+						if (!ends.some((e) => dist(e, end) < FOLLOW_APART) && clear(end)) {
 							break;
 						}
 					}
@@ -18725,6 +18994,8 @@ const FOLLOW_FPS = { line: 8, qb: 6.5, other: 12, after: 3 };
 // little to the side (radians), if so.
 const FOLLOW_APART = 3.5;
 const FOLLOW_TURNS = [0, 0.45, -0.45, 0.9, -0.9];
+// (Nor to, or by, a man down then any nearer than this, feet.)
+const FOLLOW_DOWN_CLEAR = 2.5;
 // Between plays: the offense's huddle this far back of the ball, the
 // defense gathering this far off it, between these (across the field); a
 // man down with the ball helped up this often - by the other side's man
@@ -18968,6 +19239,60 @@ const FAIR_TO = 700;
 // there - over these long (ms) - him off to the side of it this far
 // (feet), waving his men off it; the first of the cover over it, bent to
 // it, downed.
+// A punt (on the punter's own count - see countOf): aimed out toward the
+// numbers this often, this far out from the middle of the field (feet).
+// One coming down within POOCH_IN yards of the goal line, no more than
+// POOCH_YDS, a pooch this often: up this long, end over end. Any other
+// under SHANK_YDS shanked this often - low, this long in the air (ms), end
+// over end.
+const AIM_OUT = 0.45;
+// A gunner held up at the line on a return of this many yards or more, this
+// much longer (ms), the two of them this far on down the field over it
+// (feet).
+const JAM_HELD_YDS = 10;
+const JAM_HELD_MS = [1300, 2100] as const;
+const JAM_HELD_FT = 4;
+const AIM_OUT_FT = [24, 62] as const;
+const SHANK = 0.4;
+const SHANK_YDS = 36;
+const SHANK_HANG = [2500, 3100] as const;
+const POOCH = 0.45;
+const POOCH_YDS = 45;
+const POOCH_IN = 15;
+const POOCH_HANG = [4300, 4800] as const;
+// Fielding it (on the returner's own count): one coming down this far
+// (feet) or more past where he stood, caught going back this often - the
+// last of it this far (feet) at this pace (feet a second); one this far
+// short of him, caught coming up at a run this often (one about where he
+// stood, this often) - when no gunner is within this far (feet) of it as
+// it comes down - off from this far back (feet) at this much of his top
+// speed, from off to one side up to this much (feet). There this long
+// before he goes (ms).
+const FIELD_BACK_LEAST = 10;
+const FIELD_BACK = 0.6;
+const FIELD_BACK_RUN = 5;
+const FIELD_BACK_FPS = 7.5;
+const FIELD_UP_LEAST = 10;
+const FIELD_UP = 0.6;
+const FIELD_UP_ANY = 0.15;
+const FIELD_UP_ROOM = 18;
+const FIELD_UP_RUN = [12, 22] as const;
+const FIELD_UP_PACE = [0.55, 0.75] as const;
+const FIELD_UP_SLANT = 8;
+const FIELD_SET_MS = 250;
+// (No time to set back off it: straight up into it at a run if it is in
+// front of him - no more than this far round from straight at the kicker,
+// the cosine - and it takes this pace at least, feet a second.)
+const FIELD_UP_FRONT = 0.5;
+const FIELD_UP_LEAST_FPS = 8;
+// Juggled this often (less, the surer his hands - this much less at the
+// surest), his hands on it again this long after (ms), it up this high off
+// them (feet), him this far on into it (feet).
+const JUGGLE = 0.07;
+const JUGGLE_HANDS = 0.6;
+const JUGGLE_MS = 520;
+const JUGGLE_UP = 1.8;
+const JUGGLE_ON = 1.2;
 const LET_GO = 0.35;
 const LET_SHORT = [16, 30] as const;
 const LET_HOPS_MS = [650, 420, 520] as const;

@@ -17,7 +17,7 @@ Combinations: distinct whole combinations of the variety tool's parts.
 | 1   | Run from scrimmage (`handoff` → `run`)             |       51 | `run`        | working |
 | 2   | Pass complete (`dropback` → `passComplete`)        |       46 | `catch`      | working |
 | 3   | Pass incomplete (`passIncomplete`)                 |       15 | `incomplete` | working |
-| 4   | Punt and return (`puntTeam`, `punt`, `puntReturn`) |       10 | -            | todo    |
+| 4   | Punt and return (`puntTeam`, `punt`, `puntReturn`) |       10 | `punt`       | working |
 | 5   | Kickoff and return (`kickoff`, `kickoffReturn`)    |        7 | -            | todo    |
 | 6   | Flags (`flag`, `penalty`)                          |       13 | -            | todo    |
 | 7   | Sack (`sack`)                                      |        4 | -            | todo    |
@@ -76,6 +76,32 @@ the turf 9.
 
 To do: batted down at the line, thrown behind an open man, the receiver's
 palms up at a ball short of him.
+
+## 4. Punt
+
+Parts: how far and how high it goes and where across the field it comes
+down (round the returner, or out toward the numbers; a shank low and end
+over end, a pooch up and end over end); how it is fielded (set under it,
+going back under one over where he lined up, coming up into it at a run,
+juggled, a fair catch, let bounce and downed by the cover, into the end
+zone); then the return (as a run's end, and its own yards).
+
+The returner lines up at his usual depth leaning toward where it will go,
+not on the spot, so a short one brings him up and a long one sends him
+back. On a return of 10 yards or more the gunners are held up at the line a
+while longer by the men on them, which gives him room to come up into it.
+
+Now (86 punts): 76 different combinations. Out toward the numbers or the
+sideline 43, end over end 20. Set under it 51, going back 8, coming up at a
+run or on the move 12, juggled 6. A man made to miss on 11 returns.
+
+The sim credits a tackle on almost every return, even of 0 yards, so fair
+catches and punts let bounce are rare.
+
+To do: a muff (the sim has none), the returner's catch with his arms in a
+basket, a return that bounces outside off the wall. The game tape has more
+sharp turns on punts since (27 of them, from 9: the returner and the cover
+cutting across in the return, at about 10 feet a second).
 
 ## Side notes
 

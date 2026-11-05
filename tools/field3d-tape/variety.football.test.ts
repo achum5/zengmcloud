@@ -12,7 +12,7 @@
 //     npx vitest run --project football tools/field3d-tape/variety.football.test.ts
 //
 // Lines: run (a carry from scrimmage), catch (a completed pass), incomplete
-// (a pass not caught).
+// (a pass not caught), punt.
 // Games: files from realGames.football.test.ts. VARIETY_BY=throw,catch adds
 // how those parts go together, just them.
 
@@ -376,6 +376,102 @@ const incParts = (tl: FieldTimeline, p: Play) => {
 	};
 };
 
+// A punt: how far and how high it went and where it came down, how it
+// was fielded (caught - and how he was under it -, a fair catch, let
+// bounce and downed, into the end zone), and the return.
+const puntParts = (tl: FieldTimeline, p: Play) => {
+	const kick = p.ball
+		.filter((s) => s.kind === "fly" && s.t0 > p.snap)
+		.sort(
+			(a, b) =>
+				(b.kind === "fly" ? b.peak : 0) - (a.kind === "fly" ? a.peak : 0),
+		)[0];
+	if (!kick || kick.kind !== "fly" || kick.peak < 15) {
+		return undefined;
+	}
+	const kicking = p.offense;
+	const pr = holders(p).find((h) => h.t0 >= kick.t1 - 50);
+	const ret = pr && p.parts.find((q) => q.pid === pr.pid);
+	const yds = ((kick.to.x - p.losX) * p.dir) / 3;
+	const hang = (kick.t1 - kick.t0) / 1000;
+	const edge = Math.min(kick.to.y, FIELD_W - kick.to.y);
+	const did = (q: Part, moves: string[], t0: number, t1: number) =>
+		q.legs.some(
+			(l) =>
+				(moves.includes(l.move) || moves.includes(l.arms ?? "")) &&
+				l.t1 > t0 &&
+				l.t0 < t1,
+		);
+	const end = p.ball.at(-1);
+	const endX = end?.kind === "spot" ? end.at.x : kick.to.x;
+	const goal = p.dir > 0 ? FIELD_L - END_ZONE : END_ZONE;
+	let fielded = "-";
+	let him = "-";
+	let rest: Record<string, string> = {
+		evades: "-",
+		end: "-",
+		tacklers: "-",
+		gain: "-",
+	};
+	if (ret && ret.team !== kicking) {
+		const at = posOf(tl, ret.pid, pr!.t0) ?? kick.to;
+		// (Off the first touch of it: juggled, the held comes later.)
+		const touch = kick.t1;
+		const at0 = posOf(tl, ret.pid, touch) ?? at;
+		const before = posOf(tl, ret.pid, touch - 150) ?? at0;
+		const pace = dist(before, at0) / 0.15;
+		const back = ret.legs.some(
+			(l) => l.move === "back" && l.t0 < touch && l.t1 > touch - 200,
+		);
+		him = back
+			? "going back"
+			: pace > 12
+				? "on the run, coming up"
+				: pace > 7
+					? "on the move"
+					: "set under it";
+		const juggled = p.ball.some(
+			(s) => s.kind === "fly" && s.t0 >= kick.t1 - 5 && s.t1 <= pr!.t0 + 5,
+		);
+		fielded = did(ret, ["fairCatch"], kick.t1 - 3000, kick.t1)
+			? "fair catch"
+			: juggled
+				? "caught, juggled"
+				: "caught";
+		if (fielded !== "fair catch") {
+			rest = endParts(tl, p, ret, pr!.t0);
+			// (The return's own yards, from where he had it.)
+			const end = posOf(tl, ret.pid, p.whistle) ?? at;
+			rest.gain = bucket(
+				((at.x - end.x) * p.dir) / 3,
+				[1, 5, 10, 20],
+				["none", "1-4 yds", "5-9 yds", "10-19 yds", "20+ yds"],
+			);
+		}
+	} else if (
+		p.parts.some((q) => did(q, ["spotBall"], kick.t1, p.whistle + 500))
+	) {
+		fielded = "let bounce, downed";
+	} else if ((endX - goal) * p.dir > 0) {
+		fielded = "into the end zone";
+	}
+	return {
+		pid: p.parts.find((q) => did(q, ["punt"], p.snap, kick.t1))?.pid ?? 0,
+		parts: {
+			kick: bucket(
+				yds,
+				[35, 45, 55],
+				["under 35 yds", "35-44 yds", "45-54 yds", "55+ yds"],
+			),
+			hang: bucket(hang, [3.8, 4.4], ["low", "4 s", "high"]),
+			where: `${bucket(edge, [20, 50], ["by the sideline", "outside the hashes", "middle"])}${kick.spiral ? "" : ", end over end"}`,
+			fielded,
+			him,
+			...rest,
+		},
+	};
+};
+
 test.skipIf(games.length === 0)(
 	"football variety of one line",
 	() => {
@@ -406,7 +502,9 @@ test.skipIf(games.length === 0)(
 							? catchParts(tl, p)
 							: line === "incomplete" && evs.includes("passIncomplete")
 								? incParts(tl, p)
-								: undefined;
+								: line === "punt" && evs.includes("punt")
+									? puntParts(tl, p)
+									: undefined;
 				if (got) {
 					all.push({ pid: `${tag}:${got.pid}`, parts: got.parts });
 				}

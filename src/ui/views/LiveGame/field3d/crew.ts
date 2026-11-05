@@ -1039,7 +1039,14 @@ export const stageCrew = (
 	// is, turned to him and the signal shown him from there.
 	let report: { t0: number; t1: number; near: boolean } | undefined;
 	let beside:
-		| { o: Official; side: number; there: Hold; at: Hold; after: Hold }
+		| {
+				o: Official;
+				side: number;
+				there: Hold;
+				at: Hold;
+				after: Hold;
+				ref: Hold;
+		  }
 		| undefined;
 	const thrower = new Map<Foul, Official>();
 	const told = input.calls.find((c) => c.foul.told);
@@ -1090,13 +1097,19 @@ export const stageCrew = (
 					there: { o, t0: go, t1: met, yaw: faceR, to: oTo, fps: TOLD_FPS },
 					at: { o, t0: met, t1: by, yaw: faceR },
 					after: { o, t0: by, t1: gone, yaw: faceR, to: off, fps: WALK },
+					ref: {
+						o: "R",
+						t0: met,
+						t1: told.t - SETTLE_MS,
+						yaw: faceR + Math.PI,
+					},
 				};
 				holds.push(
 					beside.there,
 					beside.at,
 					beside.after,
 					{ o: "R", t0: go, t1: met, yaw: faceR + Math.PI, to: rTo, fps: JOG },
-					{ o: "R", t0: met, t1: told.t - SETTLE_MS, yaw: faceR + Math.PI },
+					beside.ref,
 				);
 				arms.push({
 					o,
@@ -1156,18 +1169,28 @@ export const stageCrew = (
 		const to = spot(beside.side);
 		const yaw = Math.atan2(r.y - to.y, r.x - to.x);
 		beside.there.to = to;
+		// (And onto it, if he got there off it - round a man in his way,
+		// say, or pulling up past it: not stood where he got to.)
+		beside.at.to = to;
+		beside.at.fps = WALK;
 		beside.after.to = { x: to.x + beside.side * TOLD_BACK, y: to.y };
 		for (const h of [beside.there, beside.at, beside.after]) {
 			h.yaw = yaw;
 		}
-		const p = posts.find((q) => q.o === beside!.o)!;
-		legsOf.set(
-			p.o,
-			walk(
-				p,
-				holds.filter((h) => h.o === p.o),
-			),
-		);
+		// (The referee turned to him there - the other side, too.)
+		const turned = beside.ref.yaw !== yaw + Math.PI;
+		beside.ref.yaw = yaw + Math.PI;
+		for (const p of posts.filter(
+			(q) => q.o === beside!.o || (turned && q.o === "R"),
+		)) {
+			legsOf.set(
+				p.o,
+				walk(
+					p,
+					holds.filter((h) => h.o === p.o),
+				),
+			);
+		}
 	}
 
 	// The flags: each thrown by the nearest of the men who would see it,
