@@ -187,11 +187,21 @@ export const replayFor = (input: {
 					(kick.to.x - kick.from.x || 1),
 			);
 			key ??= kick.t0 + (kick.t1 - kick.t0) * u;
+			// (Bent off its line, if it is - see director.ts bend.)
+			const len =
+				Math.hypot(kick.to.x - kick.from.x, kick.to.y - kick.from.y) || 1;
+			const off = 4 * (kick.bend ?? 0) * u * (1 - u);
 			kicked = {
 				at: kick.from.x - input.dir * KICK_BACK,
 				goal: {
-					x: kick.from.x + (kick.to.x - kick.from.x) * u,
-					y: kick.from.y + (kick.to.y - kick.from.y) * u,
+					x:
+						kick.from.x +
+						(kick.to.x - kick.from.x) * u -
+						((kick.to.y - kick.from.y) / len) * off,
+					y:
+						kick.from.y +
+						(kick.to.y - kick.from.y) * u +
+						((kick.to.x - kick.from.x) / len) * off,
 					z:
 						kick.from.z +
 						(kick.to.z - kick.from.z) * u +

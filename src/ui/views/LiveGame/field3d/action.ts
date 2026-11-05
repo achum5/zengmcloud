@@ -16855,8 +16855,26 @@ class Action {
 		const tLand = (vz + Math.sqrt(vz * vz + 2 * G * from.z)) / G;
 		const tNet = (tc * (lineD + NET_BACK - spot.d)) / (lineD - spot.d);
 		const tEnd = doink ? tc : Math.min(tLand, tNet);
-		const end = along(tEnd);
+		let end = along(tEnd);
 		const endT = kickT + tEnd * 1000;
+		// Bent on its way - each kicker's own way, a hook or a fade, more the
+		// longer it is (see KICK_BEND_FT) - and through where it would have
+		// gone straight: the end of it moved over to take it there.
+		const uc = tc / tEnd;
+		const bend =
+			uc <= 1
+				? (countOf(k, 0, 109) < 0.5 ? -1 : 1) *
+					(KICK_BEND_FT[0] +
+						(KICK_BEND_FT[1] - KICK_BEND_FT[0]) * countOf(k, snap, 110)) *
+					Math.min(KICK_BEND_MOST, yds / KICK_BEND_YDS)
+				: 0;
+		if (bend !== 0) {
+			// (Across only: still on to the net, or the post.)
+			const dx = end.x - from.x;
+			const len = Math.hypot(dx, end.y - from.y) || 1;
+			const off = (4 * bend * uc * (1 - uc)) / uc;
+			end = { ...end, y: end.y - (dx / len) * off };
+		}
 		this.ball.push({
 			kind: "fly",
 			t0: kickT,
@@ -16864,6 +16882,7 @@ class Action {
 			from,
 			to: end,
 			peak: peakFor(tEnd * 1000),
+			...(bend !== 0 ? { bend } : {}),
 		});
 		if (doink) {
 			// (Back off the post and out from the middle, falling from where
@@ -19537,6 +19556,13 @@ const KICK_LET_ASIDE = 8;
 // from straight back out off it (radians, a range); a hop on the turf this
 // much again of the way, over this long (ms), and lying there.
 const DOINK = 0.12;
+// A kick bent on its way, at the most this far (feet) out from straight
+// halfway along - this much of the most (a range) on the kick's count - at
+// this many yards, more the longer it is (no more than this many times
+// as much).
+const KICK_BEND_FT = [1.2, 4.5] as const;
+const KICK_BEND_YDS = 40;
+const KICK_BEND_MOST = 1.4;
 const DOINK_OUT = 0.25;
 const DOINK_FPS: [number, number] = [10, 22];
 const DOINK_TURN: [number, number] = [0.3, 1.1];

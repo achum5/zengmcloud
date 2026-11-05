@@ -183,6 +183,11 @@ export type BallSeg =
 			to: Pt3;
 			peak: number;
 			spiral?: boolean;
+			// Bent off the straight line from `from` to `to` - this far
+			// (feet) out from it halfway along, to the left of the way it
+			// goes (less than nothing, the right): a kick hooking or
+			// fading.
+			bend?: number;
 	  };
 
 export type Play = {

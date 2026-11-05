@@ -12,7 +12,8 @@
 //     npx vitest run --project football tools/field3d-tape/variety.football.test.ts
 //
 // Lines: run (a carry from scrimmage), catch (a completed pass), incomplete
-// (a pass not caught), punt, kickoff, flag, sack.
+// (a pass not caught), punt, kickoff, flag, sack, kick (a field goal or
+// a try).
 // Games: files from realGames.football.test.ts. VARIETY_BY=throw,catch adds
 // how those parts go together, just them.
 
@@ -31,6 +32,7 @@ import {
 	officialOf,
 } from "../../src/ui/views/LiveGame/field3d/crew.ts";
 import { momentAt } from "../../src/ui/views/LiveGame/field3d/evaluate.ts";
+import { moveKind as moveKindOf } from "../../src/ui/views/LiveGame/field3d/poses.ts";
 import {
 	END_ZONE,
 	FIELD_L,
@@ -733,6 +735,91 @@ const sackParts = (tl: FieldTimeline, p: Play) => {
 	};
 };
 
+// A field goal or a try: how far, how it went through or by the posts and
+// how high over the bar, how it bent, and the kicker and the holder after
+// it.
+const tryParts = (tl: FieldTimeline, p: Play, made: boolean) => {
+	const kick = p.ball.filter((b) => b.kind === "fly" && b.t0 >= p.snap)[1];
+	if (!kick || kick.kind !== "fly") {
+		return undefined;
+	}
+	const endX = p.dir > 0 ? FIELD_L : 0;
+	let cross: { y: number; z: number } | undefined;
+	for (let t = kick.t0; t <= kick.t1; t += 5) {
+		const b = momentAt(tl, t).ball?.at;
+		if (b && (b.x - endX) * p.dir >= 0) {
+			cross = b;
+			break;
+		}
+	}
+	// (Across to the kicker's left, feet from the middle.)
+	const off = cross ? (cross.y - FIELD_W / 2) * p.dir : 0;
+	// (Back off the post: on toward the field from where it hit.)
+	const doink = p.ball.some(
+		(b) =>
+			b.kind === "fly" && b.t0 === kick.t1 && (b.to.x - b.from.x) * p.dir < -1,
+	);
+	const how = !cross
+		? "short"
+		: doink
+			? "off the upright"
+			: made
+				? Math.abs(off) < 3
+					? "down the middle"
+					: "inside the upright"
+				: off > 0
+					? "wide left"
+					: "wide right";
+	const bend = kick.bend ?? 0;
+	const after = (role: string) => {
+		const q = p.parts.find((x) => x.role === role && x.team === p.offense);
+		const acts = q
+			? [
+					...new Set(
+						q.legs
+							.filter(
+								(l) =>
+									l.t0 >= kick.t1 - 300 &&
+									l.t0 < p.whistle + 3000 &&
+									(moveKindOf(l.move) === "act" || l.arms),
+							)
+							.map((l) => l.arms ?? l.move),
+					),
+				]
+			: [];
+		return acts.sort().join("+") || "none";
+	};
+	return {
+		pid: p.parts.find((x) => x.role === "K" && x.team === p.offense)?.pid ?? 0,
+		parts: {
+			kick:
+				p.kind === "extraPoint"
+					? "try"
+					: bucket(
+							Math.abs(kick.from.x - endX) / 3,
+							[35, 45, 52],
+							["under 35 yds", "35-44 yds", "45-51 yds", "52+ yds"],
+						),
+			how,
+			over: !cross
+				? "-"
+				: bucket(
+						cross.z - 10,
+						[8, 16],
+						["just over", "well over", "high over"],
+					),
+			bend:
+				Math.abs(bend) < 1.5
+					? "straight"
+					: bend > 0
+						? "bending left"
+						: "bending right",
+			kicker: after("K"),
+			holder: after("H"),
+		},
+	};
+};
+
 test.skipIf(games.length === 0)(
 	"football variety of one line",
 	() => {
@@ -771,7 +858,25 @@ test.skipIf(games.length === 0)(
 											? flagParts(tl, p)
 											: line === "sack" && evs.includes("sack")
 												? sackParts(tl, p)
-												: undefined;
+												: line === "kick" &&
+													  (p.kind === "fieldGoal" || p.kind === "extraPoint")
+													? tryParts(
+															tl,
+															p,
+															raw.events
+																.slice(
+																	p.i,
+																	tl.plays[tl.plays.indexOf(p) + 1]?.i ??
+																		raw.events.length,
+																)
+																.some(
+																	(e: { type: string; made?: boolean }) =>
+																		(e.type === "fieldGoal" ||
+																			e.type === "extraPoint") &&
+																		e.made === true,
+																),
+														)
+													: undefined;
 				if (got) {
 					all.push({ pid: `${tag}:${got.pid}`, parts: got.parts });
 				}

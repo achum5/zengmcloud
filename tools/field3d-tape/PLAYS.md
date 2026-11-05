@@ -21,8 +21,8 @@ Combinations: distinct whole combinations of the variety tool's parts.
 | 5   | Kickoff and return (`kickoff`, `kickoffReturn`)    |        7 | `kickoff`    | working |
 | 6   | Flags (`flag`, `penalty`)                          |       13 | `flag`       | working |
 | 7   | Sack (`sack`)                                      |        4 | `sack`       | working |
-| 8   | Extra point, two-point try                         |        4 | -            | todo    |
-| 9   | Field goal (`fieldGoalAttempt`, `fieldGoal`)       |        2 | -            | todo    |
+| 8   | Extra point, two-point try                         |        4 | `kick`       | working |
+| 9   | Field goal (`fieldGoalAttempt`, `fieldGoal`)       |        2 | `kick`       | working |
 | 10  | Interception and return                            |        2 | -            | todo    |
 | 11  | Timeouts, two-minute warning, quarters             |       15 | -            | todo    |
 | 12  | Injury (`injury`)                                  |        6 | -            | todo    |
@@ -165,6 +165,23 @@ every one a flex).
 To do: the quarterback ducking or spinning away from the first man and
 caught by the next (no sack has an evade), more from the blind side (2 of
 38).
+
+## 8, 9. Extra point and field goal
+
+Parts: how far (a try, or the field goal's yards), how it went (down the
+middle, inside an upright, wide left or right, short, off the upright),
+how high over the bar, how it bent, and the kicker and the holder after it.
+
+Each kicker's kicks bend his own way - a hook or a fade - more the longer
+the kick, and still go through (or by) where they were going.
+
+Now (48 kicks): 38 different combinations. Down the middle 15, inside the
+upright 17, wide 13, short 3. Bending left 19, right 17, straight 12.
+
+A two-point try is a run or a pass from the 2, so it is in those lines.
+
+To do: a blocked kick (the sim has none in these games), the kicker's look
+after a miss.
 
 ## Side notes
 

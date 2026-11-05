@@ -723,16 +723,23 @@ const flying = (
 	spin?: Spin,
 ): { at: Pt3; axis: Pt3 } => {
 	const u = s.t1 > s.t0 ? clamp01((t - s.t0) / (s.t1 - s.t0)) : 1;
+	// (Bent off the line, if it is - see bend: out to its left.)
+	const dx = s.to.x - s.from.x;
+	const dy = s.to.y - s.from.y;
+	const len = Math.hypot(dx, dy) || 1;
+	const bend = s.bend ?? 0;
+	const off = 4 * bend * u * (1 - u);
 	const at = {
-		x: s.from.x + (s.to.x - s.from.x) * u,
-		y: s.from.y + (s.to.y - s.from.y) * u,
+		x: s.from.x + dx * u - (dy / len) * off,
+		y: s.from.y + dy * u + (dx / len) * off,
 		z: s.from.z + (s.to.z - s.from.z) * u + 4 * s.peak * u * (1 - u),
 	};
 	// A spiral points the way it goes; end over end, it tumbles.
 	const secs = (s.t1 - s.t0) / 1000 || 1;
+	const turnOff = (4 * bend * (1 - 2 * u)) / secs;
 	let axis = {
-		x: (s.to.x - s.from.x) / secs,
-		y: (s.to.y - s.from.y) / secs,
+		x: dx / secs - (dy / len) * turnOff,
+		y: dy / secs + (dx / len) * turnOff,
 		z: (s.to.z - s.from.z) / secs + (4 * s.peak * (1 - 2 * u)) / secs,
 	};
 	if (!s.spiral) {
