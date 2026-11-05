@@ -946,6 +946,30 @@ class Actor {
 			yaw !== undefined &&
 			Math.abs(Math.atan2(Math.sin(yaw - way), Math.cos(yaw - way))) >
 				BEND_LEAST;
+		// (Not round over the edge of where he can go - see onField: cut
+		// back in to it, that would be, in a blink.)
+		{
+			const p0 = {
+				x: lk.from.x + (lk.to.x - lk.from.x) * f,
+				y: lk.from.y + (lk.to.y - lk.from.y) * f,
+			};
+			const tIn = Math.max(dist(p0, corner), 1e-6);
+			const u = { x: (corner.x - p0.x) / tIn, y: (corner.y - p0.y) / tIn };
+			const o = { x: (to.x - corner.x) / dOut, y: (to.y - corner.y) / dOut };
+			const round = Math.acos(clamp(u.x * o.x + u.y * o.y, -1, 1));
+			const R = tIn / Math.tan(round / 2);
+			const s = Math.sign(u.x * o.y - u.y * o.x) || 1;
+			const c = { x: p0.x - s * u.y * R, y: p0.y + s * u.x * R };
+			const r0 = Math.atan2(p0.y - c.y, p0.x - c.x);
+			const n = Math.max(2, Math.ceil(round / BEND_STEP));
+			for (let i = 1; i <= n; i++) {
+				const q = r0 + (s * round * i) / n;
+				const p = { x: c.x + Math.cos(q) * R, y: c.y + Math.sin(q) * R };
+				if (dist(onField(p, this.roam), p) > 1e-6) {
+					return false;
+				}
+			}
+		}
 		legs.splice(k + 1);
 		lk.to = {
 			x: lk.from.x + (lk.to.x - lk.from.x) * f,
@@ -1860,6 +1884,11 @@ class Actor {
 
 	plantFor(to: Pt, down?: number, most?: number) {
 		const l = this.last;
+		// (Off a backpedal: see plantBack.)
+		if (l.move === "back") {
+			this.plantBack(to);
+			return;
+		}
 		const v = legPace(l);
 		if (!RAMPS.has(l.move) || v < STOP_LEAST || l.arms || l.turn) {
 			return;
@@ -2016,6 +2045,10 @@ class Actor {
 			p.x <= FIELD_L - 1 &&
 			p.y >= 1 - this.roam &&
 			p.y <= FIELD_W - 1 + this.roam;
+		// (Over it already - no way back in on the way he goes.)
+		if (!inside(this.at)) {
+			return;
+		}
 		const out = steps.find((p) => !inside(p));
 		if (out) {
 			const end = out.x < 1 || out.x > FIELD_L - 1;
@@ -4167,6 +4200,14 @@ const farSide = (yaw: number) => (Math.cos(yaw) > 0 ? -1 : 1);
 // One man in the secondary bringing him down from the side or behind: this
 // often on his feet still after it, stood over him.
 const UPRIGHT = 0.3;
+// (Carried on through him that way off the pace he hits him at, over this
+// long (ms) - no further than this, feet: as far as the man he hits, see
+// TACKLED_MOST.)
+const UPRIGHT_THROUGH_MS = 400;
+const UPRIGHT_THROUGH_MOST = 4.5;
+// (Eased down that way from as far off where he hits him as this, feet - a
+// man further off still on his way in.)
+const UPRIGHT_NEAR_FT = 2;
 // Driving or fighting off a man with nobody of the other side this near:
 // nobody there; on at a walk, under this pace (feet a second), a jog over.
 const AIR_BLOCK = 5;
@@ -10695,16 +10736,45 @@ class Action {
 			);
 			// (Only from right there on him: late in from further off, down
 			// into him the way the others are - not shot across to him.)
+			// (On through him off the pace he gets to him at, as far as that
+			// takes him - see UPRIGHT_THROUGH_MS - not stopped dead on him.)
+			const thru = Math.min(
+				UPRIGHT_THROUGH_MOST,
+				Math.max(1.6, (legPace(m.last) * UPRIGHT_THROUGH_MS) / 2000),
+			);
 			const over = {
-				x: hit.x + Math.cos(face) * 1.6,
-				y: hit.y + Math.sin(face) * 1.6,
+				x: hit.x + Math.cos(face) * thru,
+				y: hit.y + Math.sin(face) * thru,
 			};
 			if (
 				upright &&
 				dist(m.at, over) <= (LUNGE_MOST_FPS * (t + 450 - m.t)) / 1000
 			) {
-				// Through him and up, over him.
-				m.go(over, t + 450, "drive", face);
+				// Through him and up, over him. (Eased down off the pace he
+				// gets there at, if he is there.)
+				const from = m.at;
+				const v = legPace(m.last);
+				const S =
+					dist(from, hit) < UPRIGHT_NEAR_FT && v > 0
+						? Math.min(t + 450 - m.t, ((dist(from, over) * 2) / v) * 1000)
+						: 0;
+				const n = S > 0 ? Math.max(1, Math.round(S / HIT_PRESS_STEP_MS)) : 0;
+				const t0 = m.t;
+				for (let k = 1; k <= n; k++) {
+					const u = 1 - (1 - k / n) * (1 - k / n);
+					m.go(
+						{
+							x: from.x + (over.x - from.x) * u,
+							y: from.y + (over.y - from.y) * u,
+						},
+						t0 + (S * k) / n,
+						"drive",
+						face,
+					);
+				}
+				if (m.t < t + 450) {
+					m.go(over, t + 450, "drive", face);
+				}
 				m.hold(t + 450 + DOWN_MS + 300, "stand", face);
 				this.done.add(m.pid);
 				return;
@@ -11683,6 +11753,9 @@ class Action {
 				);
 			}
 			m.chaseUp(end(), arrive, m.top * 0.95);
+			// (Pulled up as he gets there - not stopped dead in a stride,
+			// off to the side of the pile if it is in his way.)
+			m.easeOff(EASE_OFF_FT, pt);
 		}
 	}
 
@@ -15071,7 +15144,6 @@ class Action {
 					closing.push(spot);
 					// (Planted first, going the other way - see plantFor, and
 					// plantBack off a backpedal - and up to speed out of it.)
-					m.plantBack(spot);
 					m.plantFor(spot);
 					const v0 = paceOn(m.last, m.at, spot);
 					const due = catchAt + 150;

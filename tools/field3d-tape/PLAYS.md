@@ -75,8 +75,11 @@ same way (hard stops at contact on the game tape: 335 before, 50 now).
 Stood up, the man with the ball braces for it - pulled up to about 10 feet
 a second over his last strides, there a moment later, and on into them as
 that takes the rest out of him - before they drive him back, not met at a
-full sprint and sent straight back the other way (sudden slowdowns on the
-game tape 123 before, 75 now).
+full sprint and sent straight back the other way. A man in the secondary
+left on his feet after his tackle carries on through it off the pace he
+got there at, as far as the man he hit goes down; the rest of the
+defense after the ball plant first off a backpedal and pull up as they
+get there (sudden slowdowns on the game tape 123 before, 63 now).
 
 Now (9 games, 442 runs): 380 different combinations. A counter on 16, a
 draw on 9. A toss on 42 (runs to the edge under center, to a back lined up
