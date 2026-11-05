@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 174,
+		date: "2026-11-05",
+		text: "Fixed: in 3D games, a player off the ball who drifted over to keep his spacing could jump back across the floor in an instant for his next run. He now only drifts when he has time to get back.",
+	},
+	{
 		n: 173,
 		date: "2026-11-05",
 		text: "3D games: a defender sliding with his man no longer spins his whole body round on his planted foot when a pass whips past him - his head goes to the ball and his body follows more slowly.",

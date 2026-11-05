@@ -25973,7 +25973,14 @@ class Director {
 				const t1 = t + (d / LANE_PACE) * 1000;
 				const k = tr.moves.findIndex((x) => x.t0 > t);
 				const next = k >= 0 ? tr.moves[k] : undefined;
-				if (next && next.t0 < t1 + 150) {
+				// (Nor where his next run, set off from there instead, would be
+				// too quick for his legs - back where it was taking him in a
+				// blink.)
+				if (
+					next &&
+					(next.t0 < t1 + 150 ||
+						next.t1 - next.t0 < runMs(dist(Q, next.to), SPRINT, 0, BURST) * 0.9)
+				) {
 					continue;
 				}
 				const step: Move = {
