@@ -1339,7 +1339,8 @@ class Actor {
 	// `A` ft/s/s, no quicker than `top`, and - got going quicker than `ve`
 	// - gathered into him at `Ad` ft/s/s, there at `ve`: not into him at all
 	// he got up to and stopped dead. Still facing the way he was over the
-	// first `square` ms. (The pace he gets to him at.)
+	// first `square` ms. (The pace he gets to him at.) (Short of time for
+	// it at `top`, no quicker than `most`.)
 	hitInto(
 		to: Pt,
 		t1: number,
@@ -1349,13 +1350,18 @@ class Actor {
 		Ad: number,
 		move: Move,
 		square: number,
+		most = top,
 	): number {
 		const D = dist(this.at, to);
 		let T = (t1 - this.t) / 1000;
 		// (Short of time for it: gathered as much as he can be - harder, and
-		// into him quicker - see HIT_SHORT.)
+		// into him quicker - see HIT_SHORT; or got going quicker first, and
+		// gathered from that.)
 		let vc = Infinity;
-		for (const [k, u] of HIT_SHORT) {
+		const tries = [top, ...(most > top ? [most] : [])].flatMap((lim) =>
+			HIT_SHORT.map(([k, u]) => [k, u, lim] as const),
+		);
+		for (const [k, u, lim] of tries) {
 			const vk = ve * k;
 			const Au = Ad * u;
 			const qa = 1 / (2 * A) + 1 / (2 * Au);
@@ -1370,11 +1376,12 @@ class Actor {
 				disc >= -1e-9 * qb * qb
 					? (qb - Math.sqrt(Math.max(0, disc))) / (2 * qa)
 					: Infinity;
-			if (vc <= top * RAMP_OVER) {
+			if (vc <= lim * RAMP_OVER) {
 				ve = vk;
 				Ad = Au;
 				T = Tk;
 				t1 = this.t + T * 1000;
+				top = lim;
 				break;
 			}
 		}
@@ -4519,6 +4526,10 @@ const RUSH_GIVE = 0.4;
 const EDGE_OUT = 1.7;
 const EDGE_ON = 1.6;
 const EDGE_PAST = 1.8;
+// (The blocker giving ground with him, as he rides him past: this much
+// (feet) at the most, no quicker than this, ft/s.)
+const EDGE_GIVE = 2.5;
+const EDGE_GIVE_FPS = 1.2;
 // (Up the arc onto him bent through so many points.)
 const EDGE_ARC_PTS = 6;
 // A twist this often on a pass play with this long to rush (ms): an end and
@@ -5070,6 +5081,10 @@ const TWIN_BACK_FPS = 5;
 // no more than TWIN_EASE_FPS over, if he is that quick already.)
 const TWIN_TOP_FPS = 30;
 const TWIN_EASE_FPS = 2;
+// (On the move, this quick or more (ft/s): eased over no harder than this,
+// ft/s/s, at the most - see noTwins.)
+const TWIN_RUN_FPS = 6;
+const TWIN_RUN_ACCEL = 25;
 const TWIN_EVERY_MS = 50;
 const TWIN_JOIN_MS = 300;
 // (Stood, and moved this quick or more by it, ft/s: stepped.)
@@ -6559,8 +6574,24 @@ class Action {
 			const stands =
 				m.legs.findLast((l) => l.t1 > b0 && l.t0 < until && !still(l))?.t1 ??
 				b0;
+			// (On the move as it comes on, or goes off: eased over the
+			// longer it takes - not put on a spurt, or pulled up, by it.)
+			const paceOver = (t0: number, t1: number) =>
+				Math.max(
+					0,
+					...m.legs
+						.filter((l) => l.t1 > t0 && l.t0 < t1 && l.t1 - l.t0 > 0)
+						.map((l) => legPace(l)),
+				);
+			const runFor = (t0: number, t1: number) =>
+				paceOver(t0, t1) >= TWIN_RUN_FPS
+					? Math.max(
+							TWIN_EASE_MS,
+							Math.sqrt((6 * Math.hypot(off.x, off.y)) / TWIN_RUN_ACCEL) * 1000,
+						)
+					: TWIN_EASE_MS;
 			let b = b0;
-			let w1 = Math.min(s1, b0 + TWIN_EASE_MS);
+			let w1 = Math.min(s1, b0 + runFor(b0, b0 + TWIN_EASE_MS));
 			if (stands < until && w1 > stands) {
 				if (
 					stands - b0 >=
@@ -6575,7 +6606,7 @@ class Action {
 					w1 = Math.min(s1, b + TWIN_EASE_MS);
 				}
 			}
-			const w0 = Math.max(s0, a - TWIN_EASE_MS);
+			const w0 = Math.max(s0, a - runFor(a - TWIN_EASE_MS, a));
 			const ea = Math.min(Math.max(a, w0 + TWIN_EASE_LEAST), (a + b) / 2);
 			const eb = Math.max(Math.min(b, w1 - TWIN_EASE_LEAST), (a + b) / 2);
 			// (Going flat out then: eased over by no more than takes him
@@ -9170,6 +9201,8 @@ class Action {
 				b.breakDown(LOCK_KEEP);
 			}
 			m.cut(meet.t);
+			// (Pulled up into him as he comes - not stopped dead by him.)
+			m.gatherTo(m.at, BRAKE_FPS, HIT_ACCEL, 0, "engage");
 			const p = this.of(m.at);
 			const end = Math.max(meet.t, catchAt) + SCREEN_HOLD + r() * 500;
 			const give = 1 + r() * 2.5;
@@ -14475,9 +14508,11 @@ class Action {
 			const first = loops.get(m);
 			// (Straight at him, gathered into him - see hitMs. Not on a twist,
 			// where the two of them are timed off each other flat out.)
-			const gather = !edge && !first && ![...loops.values()].includes(m);
+			// (Off the edge too, at the end of the arc - see getOffAlong.)
+			let gathers = !first && ![...loops.values()].includes(m);
+			const gather = gathers && !edge;
 			const offMs = (far: number) =>
-				gather
+				gathers
 					? hitMs(far, m.top * RUSH_HIT_PACE)
 					: rampedMs(far, m.top * RUSH_HIT_PACE, 0, GET_OFF_ACCEL);
 			let hitT = least;
@@ -14562,7 +14597,25 @@ class Action {
 				for (let k = 0; k < 4 && reachBy(hitT) > hitT + 1; k++) {
 					hitT = (hitT + reachBy(hitT)) / 2;
 				}
-				hitT = Math.min(hitT, Math.max(least, end - HAND_MS));
+				// (Off the edge, and no time to be gathered into him by then: up
+				// the arc flat out, as he can be there.)
+				if (edge && gathers && hitT > end - HAND_MS) {
+					gathers = false;
+					hitT = least;
+					for (let k = 0; k < 2; k++) {
+						hitT = reachBy(hitT);
+					}
+					for (let k = 0; k < 4 && reachBy(hitT) > hitT + 1; k++) {
+						hitT = (hitT + reachBy(hitT)) / 2;
+					}
+				}
+				// (Gathered into him, if not on him till late: on him as late as
+				// that, for a moment - not sent flat out into him to be on him
+				// a while longer.)
+				hitT = Math.min(
+					hitT,
+					Math.max(least, end - (gather ? HAND_STEP_MS * 2 : HAND_MS)),
+				);
 				// (But no sooner than he could get there flat out - a backer
 				// from deep on a quick throw, on him late; and not into him at
 				// all if not before he lets up: on at the quarterback, below.)
@@ -14603,6 +14656,7 @@ class Action {
 								m.top * RUSH_HIT_PACE,
 								"run",
 								GET_OFF_SQUARE_MS,
+								gathers ? HIT_FPS : undefined,
 							)
 						: gather
 							? m.hitInto(
@@ -14614,6 +14668,7 @@ class Action {
 									HIT_ACCEL,
 									"run",
 									GET_OFF_SQUARE_MS,
+									m.top * FLAT_OUT,
 								)
 							: m.getOff(hit, hitT, 0, GET_OFF_ACCEL, "run", GET_OFF_SQUARE_MS);
 				if (!first || !pen) {
@@ -14679,10 +14734,17 @@ class Action {
 			// (Knocked back a step as he gets into him, the two of them - see
 			// JOLT_PER_FPS - and that ground made up as he gives the rest.)
 			const jolt = moves ? Math.min(JOLT_MOST, vHit * JOLT_PER_FPS) : 0;
+			// (Off the edge, ridden on past: the blocker giving ground with
+			// him as he goes, not stood where he set the while.)
+			const give = edge
+				? Math.min(EDGE_GIVE, (EDGE_GIVE_FPS * Math.max(0, end - hitT)) / 1000)
+				: 0;
 			const shove = (t: number) => {
 				const u = clamp((t - hitT) / JOLT_MS, 0, 1);
-				const left = clamp(1 - (t - hitT) / Math.max(1, end - hitT), 0, 1);
-				return jolt * (1 - (1 - u) * (1 - u)) * left;
+				const w = clamp((t - hitT) / Math.max(1, end - hitT), 0, 1);
+				return (
+					jolt * (1 - (1 - u) * (1 - u)) * (1 - w) + give * w * w * (3 - 2 * w)
+				);
 			};
 			const him: Pt[] = [];
 			for (const x of steps) {
@@ -16333,12 +16395,12 @@ class Action {
 				// (Beaten, off him - if he is not the one to make the tackle,
 				// who goes from wherever he is when he goes.)
 				const shed = snap + SHED_MS * 1.6 + r() * SHED_SPREAD;
-				const end =
-					wins || !free(m) || shed > t - 300
-						? wins && free(m)
-							? Math.min(offAt(this.of(m.at).d, till), awayAt(m, till))
-							: till
-						: shed;
+				const sheds = !wins && free(m) && shed <= t - 300;
+				let end = !sheds
+					? wins && free(m)
+						? Math.min(offAt(this.of(m.at).d, till), awayAt(m, till))
+						: till
+					: shed;
 				// (Off in time to be on him while he is - see fireInto. On a
 				// draw, up the field after the quarterback, into a man set for
 				// him - not as hard into him as on a run.)
@@ -16351,7 +16413,14 @@ class Action {
 						FIRE_HELD_MS -
 						rampedMs(dist(m.at, at(hit, 0)), m.top * pace, 0, GET_OFF_ACCEL),
 				);
+				// (Shed, but not before he has got to him and been on him a
+				// while: a man well off him not sent flat out into him to be
+				// off him again at once.)
 				const lat = (r() - 0.5) * 0.6;
+				if (sheds) {
+					const aim = this.fireAim(m, (time) => at(time, lat), hit, pace);
+					end = Math.min(till, Math.max(end, aim.t + aim.S + FIRE_HELD_MS));
+				}
 				this.fireInto(m, (time) => at(time, lat), hit, end, pace);
 				// (Over with him, by when they are out of the way.)
 				if (way.over !== 0 && m.t < way.by && way.by < end) {
@@ -17099,19 +17168,10 @@ class Action {
 	// Men locked up, from t0 to t1: shoved this way and that together - a
 	// little way across the field and back, a half step up and back - each
 	// fighting the other.
-	// Off the ball into the man across from him (`at`, where that is at t)
-	// by `by`, or as soon after as he can be: up out of his stance and into
-	// him (see GET_OFF_ACCEL) - a step or two, his arms out into him, or a
-	// run (see fireOff); not off from still at full pace, nor into him at
-	// all he got up to - gathered into him (see hitInto). (On him
-	// FIRE_HELD_MS before `until` at the latest, when he is off him.)
-	fireInto(
-		m: Actor,
-		at: (t: number) => Pt,
-		by: number,
-		until: number,
-		pace = RUSH_HIT_PACE,
-	) {
+	// When he can be into the man across from him (`at`, where that is at
+	// t), off from where he is, no sooner than `by` - see fireInto - and
+	// how he goes into him.
+	fireAim(m: Actor, at: (t: number) => Pt, by: number, pace = RUSH_HIT_PACE) {
 		const top = m.top * pace;
 		const move = fireOff(m, at(by));
 		// (Off at a run: his hands on him a little way off, and on in to
@@ -17140,7 +17200,32 @@ class Action {
 				break;
 			}
 		}
-		t = Math.min(t, Math.max(by, until - FIRE_HELD_MS - S));
+		return { top, move, S, press, way, hands, t };
+	}
+
+	// Off the ball into the man across from him (`at`, where that is at t)
+	// by `by`, or as soon after as he can be: up out of his stance and into
+	// him (see GET_OFF_ACCEL) - a step or two, his arms out into him, or a
+	// run (see fireOff); not off from still at full pace, nor into him at
+	// all he got up to - gathered into him (see hitInto). (On him
+	// FIRE_HELD_MS before `until` at the latest, when he is off him.)
+	fireInto(
+		m: Actor,
+		at: (t: number) => Pt,
+		by: number,
+		until: number,
+		pace = RUSH_HIT_PACE,
+	) {
+		const {
+			top,
+			move,
+			S,
+			press,
+			way,
+			hands,
+			t: soonest,
+		} = this.fireAim(m, at, by, pace);
+		const t = Math.min(soonest, Math.max(by, until - FIRE_HELD_MS - S));
 		const u = way(t);
 		m.hitInto(
 			hands(t),
@@ -17151,6 +17236,7 @@ class Action {
 			HIT_ACCEL,
 			move,
 			GET_OFF_SQUARE_MS,
+			m.top * FLAT_OUT,
 		);
 		if (S === 0 || (u.x === 0 && u.y === 0)) {
 			return;
@@ -17172,7 +17258,9 @@ class Action {
 	// Off from still along `path` (on from where he is), up to speed at `a`
 	// - no quicker than `top` - and on at it: at the end of it by t1, or as
 	// soon after as he can be; still facing the way he was over the first
-	// `square` ms. (The pace he ends at.)
+	// `square` ms. (The pace he ends at.) Or, given `ve` and the time for
+	// it, gathered into the end of it at that (see hitInto): there just as
+	// soon, quicker before it.
 	getOffAlong(
 		m: Actor,
 		path: Pt[],
@@ -17181,6 +17269,7 @@ class Action {
 		top: number,
 		move: Move,
 		square = 0,
+		ve?: number,
 	): number {
 		const go = m.t;
 		const gone: number[] = [];
@@ -17190,6 +17279,66 @@ class Action {
 			all += dist(was, p);
 			gone.push(all);
 			was = p;
+		}
+		if (ve !== undefined && all > 0 && path.length > 0) {
+			const Ad = HIT_ACCEL;
+			const T = (t1 - go) / 1000;
+			const qa = 1 / (2 * a) + 1 / (2 * Ad);
+			const qb = T + ve / Ad;
+			const qc = (ve * ve) / (2 * Ad) + all;
+			const disc = qb * qb - 4 * qa * qc;
+			const vc = disc >= 0 ? (qb - Math.sqrt(disc)) / (2 * qa) : Infinity;
+			const sd = (vc * vc - ve * ve) / (2 * Ad);
+			if (vc > ve && vc <= top && all - sd >= (vc * vc) / (2 * a)) {
+				// (Where he starts slowing, and the rest of the way from it.)
+				const td = (vc - ve) / Ad;
+				const from = all - sd;
+				const k = gone.findIndex((g) => g >= from);
+				const a0 = k > 0 ? path[k - 1]! : m.at;
+				const g0 = k > 0 ? gone[k - 1]! : 0;
+				const w = gone[k]! > g0 ? (from - g0) / (gone[k]! - g0) : 1;
+				const cut = {
+					x: a0.x + (path[k]!.x - a0.x) * w,
+					y: a0.y + (path[k]!.y - a0.y) * w,
+				};
+				const rest = [cut, ...path.slice(k)];
+				const along = (d: number): Pt => {
+					let left = d;
+					for (let i = 1; i < rest.length; i++) {
+						const p = rest[i - 1]!;
+						const q = rest[i]!;
+						const len = dist(p, q);
+						if (left <= len || i === rest.length - 1) {
+							const u = len > 0 ? clamp(left / len, 0, 1) : 1;
+							return { x: p.x + (q.x - p.x) * u, y: p.y + (q.y - p.y) * u };
+						}
+						left -= len;
+					}
+					return rest.at(-1)!;
+				};
+				const tc = t1 - td * 1000;
+				this.getOffAlong(
+					m,
+					[...path.slice(0, k), cut],
+					tc,
+					a,
+					top,
+					move,
+					square,
+				);
+				const n = Math.max(1, Math.round((td * 1000) / STOP_STEP_MS));
+				for (let i = 1; i <= n; i++) {
+					const u = (td * i) / n;
+					m.go(
+						i === n ? path.at(-1)! : along(vc * u - (Ad * u * u) / 2),
+						tc + u * 1000,
+						move,
+						undefined,
+						{},
+					);
+				}
+				return ve;
+			}
 		}
 		const up = (top * top) / (2 * a);
 		const soonest =
