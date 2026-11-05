@@ -3362,6 +3362,11 @@ const PITCH_PEAK = 1.3;
 // (The quarterback off the other way after it, this far back and across,
 // feet.)
 const PITCH_BOOT = [5, 9] as const;
+// An inside zone run made to go one way and cut back the other this often;
+// the back pressing it to this far behind the line and this far over that
+// way first (feet).
+const CUTBACK = 0.3;
+const CUTBACK_PRESS = [5, 4] as const;
 // The line gives no ground nearer than this to where the quarterback sets
 // (feet).
 const POCKET_ROOM = 7;
@@ -4129,6 +4134,8 @@ const DOWN_RAMP_MS = 300;
 const DOWN_ACROSS = 0.8;
 const DOWN_ACROSS_FPS = 10;
 const DOWN_PINCH = 1.5;
+// (And no quicker than this on his way for it, all told, ft/s.)
+const DOWN_TOP_FPS = 31;
 const DOWN_ON = new Set<Move>(["prone", "hurtProne", "supine", "hurt"]);
 // (Down there on the turf, the length of his legs behind his hips too,
 // feet - not stood on - till he is getting up.)
@@ -6353,6 +6360,34 @@ class Action {
 			// (Clear of anybody on his feet as he goes, if there is a way
 			// - and if not, any way: better in among men on their feet, for
 			// a moment, than stood on a man down.)
+			// (No quicker on his way for it than a man goes - DOWN_TOP_FPS -
+			// back short of him and in again, say, flat out already.)
+			const tooQuick = (
+				off: Pt,
+				wa: number,
+				wb: number,
+				ui: number,
+				a1: number,
+				b1: number,
+				uo: number,
+			) => {
+				for (let t = wa; t + DOWN_SLIVER_MS < wb; t += DOWN_STEP_MS) {
+					const t2 = Math.min(wb, t + DOWN_STEP_MS);
+					const s = (t2 - t) / 1000;
+					const w0 = bumpOf(clock(t), ui, a1, b1, uo);
+					const w1 = bumpOf(clock(t2), ui, a1, b1, uo);
+					const p0 = m.posAt(t);
+					const p1 = m.posAt(t2);
+					const v = Math.hypot(
+						p1.x - p0.x + off.x * (w1 - w0),
+						p1.y - p0.y + off.y * (w1 - w0),
+					);
+					if (v / s > Math.max(DOWN_TOP_FPS, dist(p0, p1) / s + 0.5)) {
+						return true;
+					}
+				}
+				return false;
+			};
 			const search = (careful: boolean): Pick | undefined => {
 				let best: Pick | undefined;
 				let fair: { h: number; pick: Pick } | undefined;
@@ -6419,6 +6454,9 @@ class Action {
 					const wb = stays ? c1 : timeAt(uo);
 					for (const way of ways) {
 						const off = { x: way.x * h, y: way.y * h };
+						if (tooQuick(off, stepping ? c0 : wa, wb, ui, a1, b1, uo)) {
+							continue;
+						}
 						let near = Infinity;
 						for (
 							let t = stepping ? c0 : wa;
@@ -12869,12 +12907,20 @@ class Action {
 				: r() < POWER
 					? "power"
 					: "zone";
+		// On inside zone, now and then, the play made to go the other way -
+		// the line stepping that way, the back handed it that side and
+		// pressing it - and him cutting back behind it to the hole.
+		const cutback =
+			scheme === "zone" &&
+			carrier !== qb &&
+			countOf(carrier, snap, 81) < CUTBACK;
+		const flow = cutback ? -strong : strong;
 
 		// The quarterback: a reverse pivot under center to hand it off
 		// deep, or a ride in the gun - and on with his fake. A receiver
 		// coming round for it on a sweep takes it behind him.
 		const qs = this.of(qb.at);
-		const side = sweep ? (cs.a > 0 ? 1 : -1) : strong;
+		const side = sweep ? (cs.a > 0 ? 1 : -1) : flow;
 		const meshPt =
 			carrier === qb
 				? qb.at
@@ -12890,7 +12936,7 @@ class Action {
 						);
 		const qbMesh = this.w({
 			...this.of(meshPt),
-			a: this.of(meshPt).a - (sweep ? side : strong) * MESH_APART,
+			a: this.of(meshPt).a - side * MESH_APART,
 		});
 		const lead = cs.a === 0 && cs.d < -10 ? 0 : 150;
 		let mesh =
@@ -13049,7 +13095,7 @@ class Action {
 			qb.act("handOff", mesh + 160, face);
 			qb.last.span = [there, 1];
 			qb.go(
-				this.w({ d: this.of(qbMesh).d - 6, a: this.of(qbMesh).a - strong * 9 }),
+				this.w({ d: this.of(qbMesh).d - 6, a: this.of(qbMesh).a - flow * 9 }),
 				mesh + 1400,
 				"run",
 			);
@@ -13174,6 +13220,14 @@ class Action {
 		} else {
 			// Pressing the hole, patient - then through it (on a sweep or a
 			// keeper, flat out for the edge; on outside zone, hard for it).
+			// (On a cutback, the way the play goes first, and planted and
+			// back across.)
+			if (cutback) {
+				carrier.run(
+					this.w({ d: -CUTBACK_PRESS[0], a: -strong * CUTBACK_PRESS[1] }),
+					carrier.top * 0.6,
+				);
+			}
 			carrier.run(
 				holePt,
 				carrier.top * (sweep || rider || pitch ? 0.88 : outside ? 0.76 : 0.64),
@@ -13208,6 +13262,7 @@ class Action {
 			scheme,
 			down.by,
 			!piled,
+			flow,
 		);
 		if (piled) {
 			this.heap = short ? PILE_IN.length : PILE_SMALL;
@@ -13242,6 +13297,7 @@ class Action {
 		scheme: RunScheme,
 		tacklers: Actor[],
 		through: boolean,
+		flow?: number,
 	) {
 		const { snap } = this.input;
 		const r = this.r;
@@ -13291,8 +13347,9 @@ class Action {
 			return late;
 		};
 
-		// The first step, all as one: across to the hole on zone, flat down
-		// the line on outside zone, down away from the hole on power - and
+		// The first step, all as one: across to the hole on zone (or the
+		// way the play is made to go, `flow`, on a cutback), flat down the
+		// line on outside zone, down away from the hole on power - and
 		// straight ahead into the pile on a sneak.
 		const pull =
 			scheme === "power"
@@ -13309,7 +13366,7 @@ class Action {
 					? { d: 3, a: -2 * side }
 					: scheme === "sneak"
 						? { d: 2.5, a: 0 }
-						: { d: 3, a: 2 * side };
+						: { d: 3, a: 2 * (flow ?? side) };
 		const backs = blockers.filter((b) => b !== pull && this.of(b.at).d < -8);
 		const front = blockers.filter((b) => b !== pull && !backs.includes(b));
 		// (A wide one given the time it takes him - no quicker on it than

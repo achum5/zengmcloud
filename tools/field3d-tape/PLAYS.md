@@ -36,12 +36,13 @@ side) and a cutback or not; a move to make a man miss (juke, spin, hurdle,
 stiff arm); how it ends (tackled, swung down, driven back, stood up, slid,
 out of bounds, in); how many bring him down; the gain (the sim's).
 
-Now (9 games, 449 runs): 371 different combinations. A toss on 39 (runs to
-the edge under center, to a back lined up deep). A move to make a man miss
-on 36 (8%).
+Now (9 games, 449 runs): 378 different combinations. A toss on 39 (runs to
+the edge under center, to a back lined up deep). A cutback on 60 (inside
+zone made to go one way, the back pressing it and cutting back behind the
+line). A move to make a man miss on 36 (8%).
 
-To do: a pitch on the option out of the gun, more cutbacks (40), the move
-to make a man miss weighted by who is chasing as much as by his elusiveness.
+To do: a pitch on the option out of the gun, the move to make a man miss
+weighted by who is chasing as much as by his elusiveness.
 
 ## 2. Pass complete
 
