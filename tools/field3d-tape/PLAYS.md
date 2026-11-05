@@ -37,16 +37,24 @@ spin, hurdle, stiff arm); how it ends (tackled, swung down, driven back,
 stood up, slid, out of bounds, in); how many bring him down; the gain (the
 sim's).
 
-Now (9 games, 443 runs): 379 different combinations. A toss on 35 (runs to
-the edge under center, to a back lined up deep). The option on 4 (a run to
+The option: on its own count the end man on that side is left to the
+quarterback, not blocked - off the snap a step up the field and in, reading
+it if there is time, then at him as he pitches it and into him just after
+it is gone. The quarterback is put down (on his back hit from in front, on
+along the way he was going), and up a moment later; the end man on after
+the ball.
+
+Now (9 games, 443 runs): 378 different combinations. A toss on 36 (runs to
+the edge under center, to a back lined up deep). The option on 2 (a run to
 the edge out of the gun, the back beside the quarterback on that side: the
 quarterback down the line with it, the back out wide of him and a step
-behind, pitched to him on the run, the quarterback easing up after it). A
-cutback on 66 (inside zone made to go one way, the back pressing it and
-cutting back behind the line). A move to make a man miss on 30 (7%).
+behind, pitched to him on the run, the quarterback easing up after it - or
+put down by the end man, both of these). A cutback on 64 (inside zone made
+to go one way, the back pressing it and cutting back behind the line). A
+move to make a man miss on 30 (7%).
 
 To do: the move to make a man miss weighted by who is chasing as much as by
-his elusiveness; the end man hitting the quarterback after the pitch.
+his elusiveness.
 
 ## 2. Pass complete
 

@@ -3506,6 +3506,24 @@ const OPTION_PACE = 0.6;
 const OPTION_OUT = 9;
 const OPTION_BEHIND = 2.5;
 const OPTION_EASE_FT = 8;
+// The end man on it at the quarterback this often (see optionEnd): one on
+// the line - no further up the field than this (feet) - into him this long
+// after he lets it go (ms, on his own count); off the snap a step up the
+// field and in (feet) over this long (ms), there reading it no less than
+// this (ms) - or straight at him -, and on after the ball this long after
+// the hit (ms). The quarterback down this much longer (ms, on his count).
+const OPTION_HIT = 0.6;
+const OPTION_HIT_LINE = 4;
+const OPTION_HIT_MS = [140, 300] as const;
+const OPTION_SQUEEZE = [2.5, 1] as const;
+const OPTION_SQUEEZE_MS = 450;
+const OPTION_READ_LEAST_MS = 150;
+const OPTION_HIT_SEE_MS = 700;
+// (Down this much of a second on along the way he was going, at his pace -
+// no further than this, feet.)
+const OPTION_HIT_CARRY_S = 0.2;
+const OPTION_HIT_CARRY_FT = 3;
+const OPTION_DOWN_SPREAD_MS = 600;
 // An inside zone run made to go one way and cut back the other this often;
 // the back pressing it to this far behind the line and this far over that
 // way first (feet).
@@ -14139,6 +14157,7 @@ class Action {
 		if (handoffI >= 0 && carrier !== qb) {
 			this.at.set(handoffI, mesh);
 		}
+		let optionGo = 0;
 		if (option) {
 			// Down the line with it, the back out wide of him: pitched to him
 			// as he gets there, in his stride - let go as soon as he is
@@ -14165,6 +14184,7 @@ class Action {
 				snap + lead + reach - flight,
 			);
 			mesh = letGo + flight;
+			optionGo = letGo;
 			if (handoffI >= 0) {
 				this.at.set(handoffI, letGo);
 			}
@@ -14441,6 +14461,10 @@ class Action {
 		const down = end.td
 			? { by: [], t }
 			: this.downBy(carrier, end.pt, t, this.d);
+		// (The option: the end man left to the quarterback - see optionEnd.)
+		const ender = option
+			? this.optionEnd(qb, strong, optionGo, down.by)
+			: undefined;
 		// (Short and up the middle, like as not a pile on him - or, in from
 		// right there, over the top of it.)
 		const short = sneak || yds <= 1 || end.td;
@@ -14471,8 +14495,135 @@ class Action {
 			this.d,
 			end.td ? undefined : down.by,
 		);
+		if (ender) {
+			this.optionHit(ender, qb, optionGo, end.pt);
+		}
 		this.letUp(blocks.men, blocks.until);
 		this.heap = 0;
+	}
+
+	// The end man on the option, on its own count (OPTION_HIT): the last
+	// man on the line on the side it goes, left to the quarterback - not
+	// blocked - if he is not one to bring the back down, nor named for
+	// anything else on it, nor hurt on it; nor the quarterback.
+	optionEnd(
+		qb: Actor,
+		strong: number,
+		letGo: number,
+		tacklers: Actor[],
+	): Actor | undefined {
+		const { snap, events, i0, i1, stats } = this.input;
+		if (countOf(qb, snap, 126) >= OPTION_HIT || letGo <= snap) {
+			return undefined;
+		}
+		const named = new Set(
+			stats.filter((x) => x.i > this.lo && x.i <= this.hi).map((x) => x.pid),
+		);
+		for (let i = i0; i < i1; i++) {
+			const e = events[i];
+			if (e?.type === "injury") {
+				named.add(e.injuredPID);
+			}
+		}
+		if (named.has(qb.pid)) {
+			return undefined;
+		}
+		const m = this.d
+			.filter((x) => {
+				const p = this.of(x.at);
+				return (
+					(DL.has(x.role) || LB.has(x.role)) &&
+					!this.done.has(x.pid) &&
+					x.t <= snap + 50 &&
+					p.d <= OPTION_HIT_LINE &&
+					Math.sign(p.a) === strong
+				);
+			})
+			.sort((x, y) => Math.abs(this.of(y.at).a) - Math.abs(this.of(x.at).a))[0];
+		if (!m || tacklers.includes(m) || named.has(m.pid)) {
+			return undefined;
+		}
+		this.done.add(m.pid);
+		return m;
+	}
+
+	// Him at the quarterback: off the snap a step up the field and in -
+	// squeezed down, reading it - then at him as it goes, into him just
+	// after it is gone, and on through; the quarterback put down and up
+	// again. Then after the ball (see trail).
+	optionHit(m: Actor, qb: Actor, letGo: number, endPt: Pt) {
+		const { snap } = this.input;
+		const hitT =
+			letGo +
+			OPTION_HIT_MS[0] +
+			(OPTION_HIT_MS[1] - OPTION_HIT_MS[0]) * countOf(m, snap, 127);
+		const q = qb.posAt(hitT);
+		this.offSnap(m, READ_OFF_MS, READ_OFF_SPREAD_MS);
+		const s = this.of(m.at);
+		const sq = this.w({
+			d: s.d - OPTION_SQUEEZE[0],
+			a: s.a - Math.sign(s.a) * OPTION_SQUEEZE[1],
+		});
+		const into = this.toward(sq, q);
+		const hit = {
+			x: q.x - Math.cos(into) * QB_HIT_ON,
+			y: q.y - Math.sin(into) * QB_HIT_ON,
+		};
+		const need = rampedMs(dist(sq, hit), m.top * QB_HIT_PACE, 0, GET_OFF_ACCEL);
+		const sqBy = m.t + OPTION_SQUEEZE_MS;
+		if (hitT - need >= sqBy + OPTION_READ_LEAST_MS) {
+			m.go(sq, sqBy, undefined, this.toward(sq, qb.posAt(sqBy)));
+			m.hold(
+				hitT - need,
+				"backerReady",
+				this.toward(sq, qb.posAt(hitT - need)),
+			);
+		}
+		const from = m.at;
+		const fast = dist(from, hit) / ((hitT - m.t) / 1000) >= QB_HIT_RUN_FPS;
+		m.getOff(hit, hitT, 0, GET_OFF_ACCEL, fast ? "run" : undefined);
+		const way = this.toward(from, hit);
+		const peel =
+			way +
+			QB_HIT_PEEL *
+				(Math.sin(way + QB_HIT_PEEL) <= Math.sin(way - QB_HIT_PEEL) ? 1 : -1);
+		m.go(
+			{
+				x: hit.x + Math.cos(peel) * QB_HIT_THROUGH_FT,
+				y: hit.y + Math.sin(peel) * QB_HIT_THROUGH_FT,
+			},
+			hitT + QB_HIT_THROUGH_MS,
+			undefined,
+			(way + peel) / 2,
+		);
+		m.arms("shove", hitT - QB_HIT_SHOVE_MS[0], hitT + QB_HIT_SHOVE_MS[1]);
+		// (Down on from where he was going, too - not stopped dead in it.)
+		const ql = legAt(qb, hitT);
+		const qv = Math.min(legPace(ql) * OPTION_HIT_CARRY_S, OPTION_HIT_CARRY_FT);
+		const qw = Math.atan2(ql.to.y - ql.from.y, ql.to.x - ql.from.x);
+		const down = {
+			x: q.x + Math.cos(way) * QB_HIT_BACK_FT + Math.cos(qw) * qv,
+			y: q.y + Math.sin(way) * QB_HIT_BACK_FT + Math.sin(qw) * qv,
+		};
+		m.hold(hitT + OPTION_HIT_SEE_MS, "stand", this.toward(m.at, down));
+		this.trail(m, endPt);
+		// (Him: down on his back, hit from in front - on his front from
+		// behind - a moment, and up.)
+		qb.cut(hitT);
+		const turned = (a: number) =>
+			Math.abs(Math.atan2(Math.sin(a - qb.yaw), Math.cos(a - qb.yaw)));
+		const back = turned(way + Math.PI) <= turned(way) + QB_HIT_BACK_BIAS;
+		qb.act(
+			back ? "tackledBack" : "tackled",
+			hitT + QB_HIT_FALL_MS,
+			back ? way + Math.PI : way,
+			down,
+		);
+		qb.hold(
+			qb.t + QB_HIT_DOWN_MS + OPTION_DOWN_SPREAD_MS * countOf(qb, snap, 128),
+			back ? "supine" : "prone",
+		);
+		qb.act(back ? "getUpBack" : "getUp", qb.t + GET_UP_MS);
 	}
 
 	// Up front on a run, the sim's blocks: each man on the line on whoever

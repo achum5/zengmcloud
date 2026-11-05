@@ -177,7 +177,15 @@ const runParts = (tl: FieldTimeline, p: Play) => {
 							posOf(tl, qb.pid, p.snap) ?? { x: 0, y: 0 },
 							posOf(tl, qb.pid, last.t0 - 300) ?? { x: 0, y: 0 },
 						) > 6
-						? "option pitch"
+						? // (And the end man into him after it.)
+							qb.legs.some(
+								(l) =>
+									(l.move === "tackled" || l.move === "tackledBack") &&
+									l.t0 > last.t0 - 300 &&
+									l.t0 < last.t0 + 1500,
+							)
+							? "option pitch, QB hit"
+							: "option pitch"
 						: "pitch"
 					: "handoff";
 	// Where he hit the line: where he first got across it, and the way he
