@@ -1615,6 +1615,73 @@ const FIELD_ANIMS = {
 			],
 		],
 	},
+	// A toss to the back: opened up to him, the ball down low by his hip in
+	// both hands, swung up and out at him underhand - let go halfway - and
+	// his arms on out after it.
+	pitch: {
+		kind: "act",
+		keys: [
+			[0, QB_SET],
+			[
+				0.35,
+				pose({
+					hipN: 22,
+					kneeN: 36,
+					hipF: 14,
+					kneeF: 28,
+					lean: 22,
+					shN: 4,
+					elN: 34,
+					abN: -24,
+					shF: 8,
+					elF: 30,
+					abF: -10,
+					twist: -14,
+					wide: 1.1,
+				}),
+			],
+			[
+				0.5,
+				pose({
+					hipN: 16,
+					kneeN: 30,
+					hipF: 12,
+					kneeF: 24,
+					lean: 16,
+					shN: 58,
+					elN: 14,
+					abN: -8,
+					wrN: 24,
+					shF: 58,
+					elF: 14,
+					abF: -8,
+					wrF: 24,
+					twist: 6,
+					wide: 1.1,
+				}),
+			],
+			[
+				1,
+				pose({
+					hipN: 10,
+					kneeN: 22,
+					hipF: 10,
+					kneeF: 20,
+					lean: 10,
+					shN: 74,
+					elN: 10,
+					abN: 4,
+					wrN: 30,
+					shF: 70,
+					elF: 12,
+					abF: 4,
+					wrF: 30,
+					twist: 10,
+					wide: 1.0,
+				}),
+			],
+		],
+	},
 	// The catch: his arms carried as he goes, up in front of him late - the
 	// elbows bent, only reached out to it at the last - his hands together at
 	// the ball, and in to his chest.

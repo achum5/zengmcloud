@@ -352,7 +352,7 @@ describe("the plays acted out", () => {
 
 	test("a pancake now and then on a run: a lineman driven off his feet onto his back off his block, down a while and up again, with nobody going over him", () => {
 		let pancakes = 0;
-		eachPlay((play) => {
+		eachPlay((play, seg) => {
 			if (play.kind !== "run") {
 				return;
 			}
@@ -374,9 +374,14 @@ describe("the plays acted out", () => {
 				const fall = part.legs[k]!;
 				const down = part.legs[k + 1];
 				assert.strictEqual(down?.move, "supine", `play ${play.i}`);
+				// (Or, the sim has him hurt on it, down through it: see
+				// hurt.ts.)
+				const hurt = seg.some(
+					(e) => e.type === "injury" && e.injuredPID === part.pid,
+				);
 				assert.strictEqual(
 					part.legs[k + 2]?.move,
-					"getUpBack",
+					hurt ? "hurt" : "getUpBack",
 					`play ${play.i}`,
 				);
 				// (Nobody else on his feet over him while he is down.)

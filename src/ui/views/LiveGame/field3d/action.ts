@@ -2642,6 +2642,7 @@ const IN_HANDS = new Set<Move>([
 	"qbSet",
 	"pocket",
 	"handOff",
+	"pitch",
 	"kneelDown",
 	"catch",
 	"leapCatch",
@@ -3341,6 +3342,26 @@ const QB_RIDE = 0.8;
 const RIDE_MS = 450;
 const RIDE_PAST = 12;
 const RIDE_EDGE = 13;
+// A run to the edge under center tossed to the back this often (a back
+// lined up this deep at least, feet): taken on the move this far out to
+// the side of where he lined up and this far up from it (feet), going at
+// this much of his top speed. The quarterback opened up to him, the toss
+// over this long (ms), let go halfway through - out of his hands this high
+// (feet) and this far out in front of him - and in the air at this pace
+// (ft/s), this far over the line between at the top.
+const PITCH = 0.4;
+const PITCH_DEEP = 15;
+const PITCH_OUT = 8;
+const PITCH_UP = 4;
+const PITCH_PACE = 0.8;
+const PITCH_MS = 440;
+const PITCH_FROM_Z = 3.6;
+const PITCH_FROM_FT = 1.6;
+const PITCH_FPS = 30;
+const PITCH_PEAK = 1.3;
+// (The quarterback off the other way after it, this far back and across,
+// feet.)
+const PITCH_BOOT = [5, 9] as const;
 // The line gives no ground nearer than this to where the quarterback sets
 // (feet).
 const POCKET_ROOM = 7;
@@ -12814,6 +12835,15 @@ class Action {
 		const outside = !sneak && (toEdge || r() < 0.35);
 		const cs = this.of(carrier.at);
 		const sweep = spotOf(carrier.role) !== "back" && carrier !== qb;
+		// A toss to the edge, now and then, under center - to a back lined up
+		// deep enough to take it out in front of him on his way there.
+		const pitch =
+			outside &&
+			!gun &&
+			!sweep &&
+			carrier !== qb &&
+			cs.d <= -PITCH_DEEP &&
+			countOf(carrier, snap, 80) < PITCH;
 		// The quarterback keeping it (not a sneak), as a rule off a ride: the
 		// read option in the gun, a fake to the back under center - the back
 		// one way, and he the other, round the edge. (Under center, always:
@@ -12848,14 +12878,16 @@ class Action {
 		const meshPt =
 			carrier === qb
 				? qb.at
-				: this.w(
-						sweep
-							? { d: gun ? qs.d + 2 : qs.d - 2.5, a: side * 1.5 }
-							: {
-									d: gun ? qs.d + 0.5 : qs.d - 9,
-									a: side * (gun ? 2.5 : 3),
-								},
-					);
+				: pitch
+					? this.w({ d: cs.d + PITCH_UP, a: cs.a + strong * PITCH_OUT })
+					: this.w(
+							sweep
+								? { d: gun ? qs.d + 2 : qs.d - 2.5, a: side * 1.5 }
+								: {
+										d: gun ? qs.d + 0.5 : qs.d - 9,
+										a: side * (gun ? 2.5 : 3),
+									},
+						);
 		const qbMesh = this.w({
 			...this.of(meshPt),
 			a: this.of(meshPt).a - (sweep ? side : strong) * MESH_APART,
@@ -12925,7 +12957,60 @@ class Action {
 		if (handoffI >= 0 && carrier !== qb) {
 			this.at.set(handoffI, mesh);
 		}
-		if (carrier !== qb) {
+		if (pitch) {
+			// The quarterback opened up to him, a step back his way, and the
+			// ball tossed out in front of him underhand, to take on the move:
+			// let go as soon as he is there - or later, the back too far off
+			// it to be there to meet it.
+			const open = this.w({ d: qs.d - 2.5, a: qs.a + strong * 1.5 });
+			const face = this.toward(open, meshPt);
+			const from: Pt3 = {
+				x: open.x + Math.cos(face) * PITCH_FROM_FT,
+				y: open.y + Math.sin(face) * PITCH_FROM_FT,
+				z: PITCH_FROM_Z,
+			};
+			const to: Pt3 = { ...meshPt, z: CATCH_Z };
+			const flight = (dist(from, to) / PITCH_FPS) * 1000;
+			const reach = rampedMs(
+				dist(carrier.at, meshPt),
+				carrier.top * PITCH_PACE,
+				0,
+				RELEASE_ACCEL,
+			);
+			const letGo = Math.max(
+				Math.max(has, qb.t) + qbStepMs(dist(qb.at, open)) + PITCH_MS / 2,
+				snap + lead + reach - flight,
+			);
+			mesh = letGo + flight;
+			if (handoffI >= 0) {
+				this.at.set(handoffI, letGo);
+			}
+			qb.go(open, letGo - PITCH_MS / 2, "slide", face);
+			qb.act("pitch", letGo + PITCH_MS / 2, face);
+			// (And off the other way after it, out of the back's way - a
+			// bootleg sold.)
+			qb.run(
+				this.w({ d: qs.d - PITCH_BOOT[0], a: qs.a - strong * PITCH_BOOT[1] }),
+				QB_STEP_FPS * 0.8,
+			);
+			qb.hold(mesh + 2000, "stand");
+			this.done.add(qb.pid);
+			this.ball.push(
+				{ kind: "fly", t0: letGo, t1: mesh, from, to, peak: PITCH_PEAK },
+				{ kind: "held", t0: mesh, pid: carrier.pid },
+			);
+			// The back off as late as has him there at his pace, his hands
+			// up for it as it comes.
+			carrier.hold(Math.max(snap + lead, mesh - reach));
+			carrier.getOff(meshPt, mesh, 0, RELEASE_ACCEL, "run");
+			carrier.pin(mesh);
+			this.reaches.push({
+				m: carrier,
+				move: "catch",
+				t0: mesh - CATCH_REACH_MS,
+				t1: mesh + CATCH_IN_MS,
+			});
+		} else if (carrier !== qb) {
 			// (His arms out with it as he comes the last of the way there: out
 			// in front of him as the back gets to it - into his belly, a
 			// little ahead of where he is then.)
@@ -13091,7 +13176,7 @@ class Action {
 			// keeper, flat out for the edge; on outside zone, hard for it).
 			carrier.run(
 				holePt,
-				carrier.top * (sweep || rider ? 0.88 : outside ? 0.76 : 0.64),
+				carrier.top * (sweep || rider || pitch ? 0.88 : outside ? 0.76 : 0.64),
 			);
 			t = carrier.run(
 				end.pt,

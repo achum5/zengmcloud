@@ -30,17 +30,18 @@ Combinations: distinct whole combinations of the variety tool's parts.
 
 ## 1. Run
 
-Parts: formation and the quarterback's set; the exchange (handoff, keeper);
-where he hits the line (inside, off tackle, outside, wide, each side) and a
-cutback or not; a move to make a man miss (juke, spin, hurdle, stiff arm);
-how it ends (tackled, swung down, driven back, stood up, slid, out of
-bounds, in); how many bring him down; the gain (the sim's).
+Parts: formation and the quarterback's set; the exchange (handoff, keeper,
+a toss); where he hits the line (inside, off tackle, outside, wide, each
+side) and a cutback or not; a move to make a man miss (juke, spin, hurdle,
+stiff arm); how it ends (tackled, swung down, driven back, stood up, slid,
+out of bounds, in); how many bring him down; the gain (the sim's).
 
-Now (9 games, 449 runs): 365 different combinations. Left 205 / right 205.
-A move to make a man miss on 36 (8%).
+Now (9 games, 449 runs): 371 different combinations. A toss on 39 (runs to
+the edge under center, to a back lined up deep). A move to make a man miss
+on 36 (8%).
 
-To do: pitches and tosses (none yet), more cutbacks (40), the move to make
-a man miss weighted by who is chasing as much as by his elusiveness.
+To do: a pitch on the option out of the gun, more cutbacks (40), the move
+to make a man miss weighted by who is chasing as much as by his elusiveness.
 
 ## 2. Pass complete
 
