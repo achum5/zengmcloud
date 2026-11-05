@@ -1102,11 +1102,25 @@ class Actor {
 	// Cutting to `to` by t1 off the leg he is on: down to `keep` of his pace
 	// over the last of it (see CUT_ACCEL), his foot planted, and off the new
 	// way up from there.
-	cutTo(to: Pt, t1: number, keep: number) {
+	// (The pace he comes out of it at.)
+	cutTo(to: Pt, t1: number, keep: number): number | undefined {
 		const ve = this.slowInto(keep, CUT_ACCEL);
 		const leg = this.legTo(to, t1);
 		this.rampInto(leg, ve);
 		this.push(leg);
+		return ve;
+	}
+
+	// Sat down at the end of the stretch he is on, there when it has him
+	// there (a receiver at the end of his route - see runRoute): up out of
+	// the cut into it from `vs` ft/s (as he came out of it - or, unset, as
+	// slowInto has it), as quick as `top`, and pulled up into where it ends
+	// - not run in flat at the pace that averages and stopped dead.
+	gatherInto(vs: number | undefined, top: number) {
+		const l = this.last;
+		if (GAITS.has(l.move) && legPace(l) >= SLOW_DROP) {
+			this.slowInto(0, STOP_ACCEL, 0, { vs, top });
+		}
 	}
 
 	private legTo(
@@ -1145,7 +1159,15 @@ class Actor {
 	// `spare` ms after it to make it up in, there later (still to be there
 	// HOLD_LEFT_MS before it is up). Or, none of that doing it, as slowLast.
 	// (The pace he is down to.)
-	private slowInto(keep = 0, A = STOP_ACCEL, spare = 0): number | undefined {
+	// (`shape`, laid out to be run that way - see gatherInto: up from
+	// `vs`, unless unset, and as quick as `top`, however slow he goes on
+	// it as it is.)
+	private slowInto(
+		keep = 0,
+		A = STOP_ACCEL,
+		spare = 0,
+		shape?: { vs: number | undefined; top: number },
+	): number | undefined {
 		const legs = this.part.legs;
 		const leg = this.last;
 		const ms = leg.t1 - leg.t0;
@@ -1157,7 +1179,7 @@ class Actor {
 		const T = (leg.t1 - first.t0) / 1000;
 		const D = dist(first.from, leg.to);
 		const vl = dist(leg.from, leg.to) / (ms / 1000);
-		if (T * 1000 < RAMP_LEG_MS || vl < STOP_LEAST || D <= 0) {
+		if (T * 1000 < RAMP_LEG_MS || (vl < STOP_LEAST && !shape) || D <= 0) {
 			return this.slowLast(keep, A);
 		}
 		const cos = (leg.to.x - first.from.x) / D;
@@ -1165,13 +1187,19 @@ class Actor {
 		const before = legs[j - 1];
 		const vf = dist(first.from, first.to) / ((first.t1 - first.t0) / 1000);
 		const vs =
-			!before || SET.has(before.move)
-				? vf
-				: Math.min(vf, paceOn(before, first.from, leg.to));
+			shape?.vs !== undefined
+				? Math.min(shape.vs, vf)
+				: !before || SET.has(before.move)
+					? vf
+					: Math.min(vf, paceOn(before, first.from, leg.to));
 		const ve = vl * keep;
 		// (Up out of his stance as he got up out of it - see rampInto.)
 		const Au = !before || SET.has(before.move) ? RELEASE_ACCEL : RAMP_ACCEL;
-		const most = Math.max(vl, Math.min((D / T) * RAMP_OVER, RAMP_TOP));
+		const most = Math.max(
+			vl,
+			Math.min((D / T) * RAMP_OVER, RAMP_TOP),
+			shape ? Math.min(shape.top, RAMP_TOP) : 0,
+		);
 		// (Up from vs to vc, on at it, and down to ve at Ad: as slow a vc as
 		// gets him there on time - or, too quick, at no more than `most`, as
 		// soon as that gets him there. Down at A if that does it, harder if
@@ -7856,6 +7884,7 @@ class Action {
 				}
 				return;
 			}
+			let out: number | undefined;
 			if (k === 1) {
 				m.getOff(
 					to,
@@ -7865,9 +7894,14 @@ class Action {
 					gait(routeFps(speed, 1)),
 				);
 			} else if (cut.keep < 1) {
-				m.cutTo(to, t1, cut.keep);
+				out = m.cutTo(to, t1, cut.keep);
 			} else {
 				m.go(to, t1);
+			}
+			// (Sat down at the end of it: up out of the last cut and pulled
+			// up into it, as he was timed to be - see breakAt.)
+			if (next.v === 0 && next.down > 0) {
+				m.gatherInto(out, routeFps(speed, k));
 			}
 			cut = next;
 			along += go;
