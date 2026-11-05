@@ -16122,6 +16122,107 @@ class Action {
 			return;
 		}
 
+		const retYds = num(ret?.yds, 0);
+		const tacklers = this.statPids("defTckSolo", "defTckAst");
+		const noReturn = !ret || (retYds === 0 && tacklers.length === 0);
+		if (noReturn && countOf(pr, snap, 86) < LET_GO) {
+			// Let go: down short of him and bounding on to where it stops,
+			// him off to the side of it waving his men away from it - the
+			// first of the cover there over it, bent to it, downed.
+			const short =
+				LET_SHORT[0] + (LET_SHORT[1] - LET_SHORT[0]) * countOf(pr, snap, 87);
+			const first = this.w({
+				d: Math.max(land.d - short, 10),
+				a: land.a + (r() - 0.5) * 6,
+			});
+			const hop1 = {
+				x: first.x + (landPt.x - first.x) * 0.55 + (r() - 0.5) * 3,
+				y: first.y + (landPt.y - first.y) * 0.55 + (r() - 0.5) * 3,
+				z: 0,
+			};
+			const hop2 = {
+				x: first.x + (landPt.x - first.x) * 0.85,
+				y: first.y + (landPt.y - first.y) * 0.85,
+				z: 0,
+			};
+			const t1 = landT + LET_HOPS_MS[0];
+			const t2 = t1 + LET_HOPS_MS[1];
+			const stopT = t2 + LET_HOPS_MS[2];
+			this.ball.push(
+				{
+					kind: "fly",
+					t0: kickT,
+					t1: landT,
+					from: off,
+					to: { ...first, z: 0 },
+					peak: peakFor(hang),
+					spiral: true,
+				},
+				{
+					kind: "fly",
+					t0: landT,
+					t1,
+					from: { ...first, z: 0 },
+					to: hop1,
+					peak: 3.2,
+				},
+				{ kind: "fly", t0: t1, t1: t2, from: hop1, to: hop2, peak: 1 },
+				{
+					kind: "fly",
+					t0: t2,
+					t1: stopT,
+					from: hop2,
+					to: { ...landPt, z: 0 },
+					peak: 0,
+				},
+				{ kind: "spot", t0: stopT, at: { ...landPt, z: 0 } },
+			);
+			// (Him off to the side of where it comes down, the side he is
+			// on, waving them off it, and watching it go.)
+			const side = Math.sign(this.of(pr.at).a - land.a) || 1;
+			pr.hold(kickT + 300);
+			pr.chase(
+				this.w({ d: land.d + 4, a: land.a + side * LET_ASIDE }),
+				landT - 600,
+				14,
+			);
+			pr.hold(stopT + 1200, "stand", this.toward(pr.at, first));
+			this.reaches.push({
+				m: pr,
+				move: "waveOver",
+				t0: landT - LET_WAVE_FROM,
+				t1: landT - LET_WAVE_TO,
+			});
+			this.done.add(pr.pid);
+			// (The first of the cover to it: on over it and bent to it.)
+			const by = [...gunners, ...lanes]
+				.filter((m) => !this.done.has(m.pid))
+				.sort(
+					(x, y) => dist(x.posAt(stopT), landPt) - dist(y.posAt(stopT), landPt),
+				)[0];
+			let downT = stopT + 400;
+			if (by) {
+				const over = this.w({ d: land.d - 1.6, a: land.a });
+				by.chase(over, Math.max(by.t, stopT) + 200, by.top * 0.85);
+				by.act("spotBall", by.t + LET_DOWN_MS, this.toward(by.at, landPt));
+				downT = by.t - LET_DOWN_MS / 2;
+				this.done.add(by.pid);
+			}
+			this.whistle = Math.max(stopT + 200, downT);
+			if (retI >= 0) {
+				this.at.set(retI, this.whistle);
+			}
+			lanes.forEach((m, k) => {
+				if (!this.done.has(m.pid)) {
+					const to = this.w(laneEnd(k));
+					m.chase(to, coverBy(m, to), m.top * 0.85);
+				}
+			});
+			this.downfield(inside);
+			setFor();
+			return;
+		}
+
 		// The catch.
 		const hands = this.getUnder(pr, land, kickT + 200, landT);
 		this.ball.push(
@@ -16136,9 +16237,7 @@ class Action {
 			},
 			{ kind: "held", t0: landT, pid: pr.pid },
 		);
-		const retYds = num(ret?.yds, 0);
-		const tacklers = this.statPids("defTckSolo", "defTckAst");
-		if (!ret || (retYds === 0 && tacklers.length === 0)) {
+		if (noReturn) {
 			// A fair catch: his arm up and waved as it comes, and nobody
 			// touches him.
 			this.reaches.push({
@@ -18864,6 +18963,18 @@ const UNDER_EARLY = 1.25;
 // to this long before (ms).
 const FAIR_FROM = 2000;
 const FAIR_TO = 700;
+// No return, and let go instead, this often (his own count): it comes down
+// this far short of where it stops (feet, a range), bounds on and rolls
+// there - over these long (ms) - him off to the side of it this far
+// (feet), waving his men off it; the first of the cover over it, bent to
+// it, downed.
+const LET_GO = 0.35;
+const LET_SHORT = [16, 30] as const;
+const LET_HOPS_MS = [650, 420, 520] as const;
+const LET_ASIDE = 9;
+const LET_WAVE_FROM = 1800;
+const LET_WAVE_TO = 300;
+const LET_DOWN_MS = 900;
 // A miss wide, now and then off an upright instead - doink - and back off
 // it (this often of them): hit this far (feet) out from the middle of the
 // post at most; back off it at this pace (ft/s, a range), this far round
