@@ -2067,6 +2067,8 @@ class Director {
 						...(stopped ? { stopped } : {}),
 						...(kicksNext ? { kicksNext: true } : {}),
 						...(out ? { out: true } : {}),
+						...(typeof clock.down === "number" ? { down: clock.down } : {}),
+						...(typeof clock.toGo === "number" ? { toGo: clock.toGo } : {}),
 						speeds: this.speeds,
 						rated: this.rated,
 						flair: this.flair,

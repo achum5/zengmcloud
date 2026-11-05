@@ -187,7 +187,13 @@ const runParts = (tl: FieldTimeline, p: Play) => {
 							? "option pitch, QB hit"
 							: "option pitch"
 						: "pitch"
-					: "handoff";
+					: // (A draw: the back in his set first, as on a pass.)
+						carrier.legs.some(
+								(l) =>
+									l.move === "passSet" && l.t0 >= p.snap && l.t1 <= last.t0 + 1,
+						  )
+						? "draw"
+						: "handoff";
 	// Where he hit the line: where he first got across it, and the way he
 	// first went after he had it.
 	let crossed: Pt | undefined;

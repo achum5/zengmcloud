@@ -93,6 +93,9 @@ export type ActInput = {
 	kicksNext?: boolean;
 	// The man with it got out of bounds (see the director).
 	out?: boolean;
+	// The down, and the yards to go for a first down (where the sim says).
+	down?: number;
+	toGo?: number;
 	// Each man's speed against the others at his position, and his ratings,
 	// where the game has them (see ratings.ts).
 	speeds?: Map<number, number>;
@@ -3600,6 +3603,31 @@ const OPTION_DOWN_SPREAD_MS = 600;
 // way first (feet).
 const CUTBACK = 0.3;
 const CUTBACK_PRESS = [5, 4] as const;
+// A draw: out of the gun, inside, the back lined up beside the quarterback
+// (no further up or back from him than this, feet) - this often on second
+// or third and this far or more to go, and this often else. Made to look
+// like a pass first: the line back into its sets this far (feet), the back
+// up into his set beside the quarterback, the quarterback back this far
+// (feet) and looking it over this long (ms, on his own count) - then
+// handed off; the linebackers dropping back this far (feet) over this long
+// (ms) before they come up to fill; the quarterback back on with his fake
+// after it this far (feet); the rush into the line's sets at this share of
+// the pace it fires into a run block at.
+const DRAW_LONG = 0.5;
+const DRAW = 0.2;
+const DRAW_BESIDE = 2;
+const DRAW_TO_GO = 7;
+const DRAW_SET_FT = 2.5;
+const DRAW_DROP_FT = 2;
+const DRAW_LOOK_MS = [250, 450] as const;
+const DRAW_LB_FT = 5;
+const DRAW_LB_MS = 700;
+const DRAW_FAKE_FT = 4;
+const DRAW_HIT = 0.6;
+// (The handoff this far up the field of where the quarterback lined up,
+// and this far in from where the back did - feet.)
+const DRAW_MESH_UP = 1;
+const DRAW_MESH_IN = 1.8;
 // The line gives no ground nearer than this to where the quarterback sets
 // (feet).
 const POCKET_ROOM = 7;
@@ -14504,18 +14532,33 @@ class Action {
 		const blockersBack = this.statPids("rba", "rbw");
 		// Up front: a sneak, outside zone on a run to the edge - or inside,
 		// zone, or now and then power.
-		const scheme: RunScheme = sneak
+		const picked: RunScheme = sneak
 			? "sneak"
 			: outside || sweep
 				? "stretch"
 				: r() < POWER
 					? "power"
 					: "zone";
+		// Or now and then, inside, a draw (see DRAW): handed off on his side
+		// of the quarterback once it looks like a pass - zone up front.
+		const passingDown =
+			(this.input.down ?? 1) >= 2 && (this.input.toGo ?? 10) >= DRAW_TO_GO;
+		const draw =
+			gun &&
+			(picked === "zone" || picked === "power") &&
+			!rider &&
+			carrier !== qb &&
+			spotOf(carrier.role) === "back" &&
+			Math.abs(cs.d - q0.d) <= DRAW_BESIDE &&
+			Math.abs(cs.a - q0.a) >= MESH_APART &&
+			countOf(carrier, snap, 143) < (passingDown ? DRAW_LONG : DRAW);
+		const scheme: RunScheme = draw ? "zone" : picked;
 		// On inside zone, now and then, the play made to go the other way -
 		// the line stepping that way, the back handed it that side and
 		// pressing it - and him cutting back behind it to the hole.
 		const cutback =
 			scheme === "zone" &&
+			!draw &&
 			carrier !== qb &&
 			countOf(carrier, snap, 81) < CUTBACK;
 		const flow = cutback ? -strong : strong;
@@ -14524,7 +14567,13 @@ class Action {
 		// deep, or a ride in the gun - and on with his fake. A receiver
 		// coming round for it on a sweep takes it behind him.
 		const qs = this.of(qb.at);
-		const side = sweep ? (cs.a > 0 ? 1 : -1) : flow;
+		const side = sweep
+			? cs.a > 0
+				? 1
+				: -1
+			: draw
+				? Math.sign(cs.a - qs.a) || flow
+				: flow;
 		const meshPt =
 			carrier === qb
 				? qb.at
@@ -14538,10 +14587,13 @@ class Action {
 						: this.w(
 								sweep
 									? { d: gun ? qs.d + 2 : qs.d - 2.5, a: side * 1.5 }
-									: {
-											d: gun ? qs.d + 0.5 : qs.d - 9,
-											a: side * (gun ? 2.5 : 3),
-										},
+									: draw
+										? // (Up and in a step from his set beside him.)
+											{ d: qs.d + DRAW_MESH_UP, a: cs.a - side * DRAW_MESH_IN }
+										: {
+												d: gun ? qs.d + 0.5 : qs.d - 9,
+												a: side * (gun ? 2.5 : 3),
+											},
 							);
 		const qbMesh = this.w({
 			...this.of(meshPt),
@@ -14571,6 +14623,24 @@ class Action {
 									RELEASE_ACCEL,
 								),
 						);
+		// (A draw: the quarterback back into his drop, the ball up, a look
+		// down the field - and then out to the back with it.)
+		const dropPt = this.w({ d: qs.d - DRAW_DROP_FT, a: qs.a });
+		const dropMs = Math.max(
+			300 + DRAW_DROP_FT * 55,
+			(DRAW_DROP_FT / QB_DROP_FPS) * 1000 + 150,
+		);
+		const looked =
+			has +
+			dropMs +
+			DRAW_LOOK_MS[0] +
+			(DRAW_LOOK_MS[1] - DRAW_LOOK_MS[0]) * countOf(qb, snap, 144);
+		if (draw) {
+			mesh = Math.max(
+				mesh,
+				looked + qbStepMs(dist(dropPt, qbMesh)) + HAND_OUT_MS,
+			);
+		}
 		if (sweep) {
 			// In motion before the snap, across behind the line, to take it
 			// on the run just as the quarterback has it - going as soon as he
@@ -14742,6 +14812,14 @@ class Action {
 					: meshPt,
 			);
 			const set = mesh - HAND_SET_MS;
+			if (draw) {
+				qb.go(dropPt, Math.max(has, qb.t) + dropMs, "back", this.ahead);
+				qb.hold(
+					mesh - HAND_OUT_MS - qbStepMs(dist(dropPt, qbMesh)),
+					"pocket",
+					this.ahead,
+				);
+			}
 			// (Only a blink of a step before his arms go out with it: out
 			// from the first of it, not a sliver of a step between.)
 			const reach = Math.min(set, Math.max(qb.t + 1, mesh - HAND_OUT_MS));
@@ -14764,14 +14842,44 @@ class Action {
 			qb.last.span = [0, there];
 			qb.act("handOff", mesh + 160, face);
 			qb.last.span = [there, 1];
-			qb.go(
-				this.w({ d: this.of(qbMesh).d - 6, a: this.of(qbMesh).a - flow * 9 }),
-				mesh + 1400,
-				"run",
-			);
+			if (draw) {
+				// (Back on with his look, as if he still had it to throw.)
+				qb.go(
+					this.w({
+						d: this.of(qbMesh).d - DRAW_FAKE_FT,
+						a: this.of(qbMesh).a,
+					}),
+					mesh + 900,
+					"back",
+					this.ahead,
+				);
+				qb.hold(mesh + 1600, "pocket", this.ahead);
+			} else {
+				qb.go(
+					this.w({
+						d: this.of(qbMesh).d - 6,
+						a: this.of(qbMesh).a - flow * 9,
+					}),
+					mesh + 1400,
+					"run",
+				);
+			}
 			qb.hold(mesh + 2400, "stand");
 			this.done.add(qb.pid);
-			if (!sweep) {
+			let drawGo = 0;
+			if (draw) {
+				// The back up into his set beside the quarterback as if to
+				// block - and across to the mesh as it comes.
+				const c0 = this.of(carrier.at);
+				const setPt = this.w({ d: c0.d + 0.5, a: c0.a });
+				carrier.hold(snap + lead);
+				carrier.go(setPt, snap + 550, "passSet", this.ahead);
+				drawGo =
+					mesh -
+					rampedMs(dist(setPt, meshPt), carrier.top * 0.75, 0, RELEASE_ACCEL);
+				carrier.hold(drawGo, "passSet", this.ahead);
+				carrier.getOff(meshPt, mesh, 0, RELEASE_ACCEL, "run");
+			} else if (!sweep) {
 				// The back to the mesh.
 				carrier.hold(snap + lead);
 				carrier.getOff(meshPt, mesh, 0, RELEASE_ACCEL, "run");
@@ -14792,7 +14900,7 @@ class Action {
 				move: left ? "takeL" : "takeR",
 				t0: Math.max(
 					mesh - TAKE_BEFORE_MS,
-					sweep ? carrier.last.t0 : snap + lead + 100,
+					sweep ? carrier.last.t0 : draw ? drawGo : snap + lead + 100,
 				),
 				t1: mesh + TAKE_AFTER_MS,
 			});
@@ -14938,6 +15046,7 @@ class Action {
 			down.by,
 			!piled,
 			flow,
+			draw,
 		);
 		if (piled) {
 			this.heap = short ? PILE_IN.length : PILE_SMALL;
@@ -15100,6 +15209,7 @@ class Action {
 		tacklers: Actor[],
 		through: boolean,
 		flow?: number,
+		draw = false,
 	) {
 		const { snap } = this.input;
 		const r = this.r;
@@ -15179,6 +15289,21 @@ class Action {
 			const s = this.of(b.at);
 			const own = 1 + GET_OFF_STEP * (countOf(b, snap, 1) - 0.5);
 			this.offSnap(b, GET_OFF_MS, GET_OFF_SPREAD_MS);
+			if (draw) {
+				// (On a draw, back into his set as on a pass first.)
+				const by = Math.max(
+					snap + 650,
+					b.t + Math.max(SET_LEAST_MS, (DRAW_SET_FT / SET_FPS) * 1000),
+				);
+				b.go(
+					this.w({ d: s.d - DRAW_SET_FT * own, a: s.a }),
+					by,
+					"passSet",
+					this.ahead,
+				);
+				fired.set(b, by);
+				continue;
+			}
 			const to = this.w({
 				d: s.d + (step.d * (drive > 1 ? 1 : 0.5) + drive * 0.3) * own,
 				a: s.a + step.a * own,
@@ -15279,22 +15404,20 @@ class Action {
 							? Math.min(offAt(this.of(m.at).d, till), awayAt(m, till))
 							: till
 						: shed;
-				// (Off in time to be on him while he is - see fireInto.)
+				// (Off in time to be on him while he is - see fireInto. On a
+				// draw, up the field after the quarterback, into a man set for
+				// him - not as hard into him as on a run.)
+				const pace = RUSH_HIT_PACE * (draw ? DRAW_HIT : 1);
 				this.offSnap(
 					m,
 					READ_OFF_MS,
 					READ_OFF_SPREAD_MS,
 					end -
 						FIRE_HELD_MS -
-						rampedMs(
-							dist(m.at, at(hit, 0)),
-							m.top * RUSH_HIT_PACE,
-							0,
-							GET_OFF_ACCEL,
-						),
+						rampedMs(dist(m.at, at(hit, 0)), m.top * pace, 0, GET_OFF_ACCEL),
 				);
 				const lat = (r() - 0.5) * 0.6;
-				this.fireInto(m, (time) => at(time, lat), hit, end);
+				this.fireInto(m, (time) => at(time, lat), hit, end, pace);
 				// (Over with him, by when they are out of the way.)
 				if (way.over !== 0 && m.t < way.by && way.by < end) {
 					m.go(at(way.by, lat), way.by, "engage", this.behind);
@@ -15341,16 +15464,26 @@ class Action {
 		// The linebackers: a read step, then over to fill - but for one to
 		// make the tackle, who goes from where he is.
 		const backers = this.d.filter((m) => LB.has(m.role) && free(m));
-		const filled = snap + FILL_MS;
+		// (On a draw, back in their drops first, as on a pass.)
+		const filled = snap + FILL_MS + (draw ? DRAW_LB_MS : 0);
 		for (const m of backers) {
 			const s = this.of(m.at);
 			this.offSnap(m, READ_STEP_MS, READ_STEP_SPREAD_MS);
-			m.go(
-				this.w({ d: s.d - 1.5, a: s.a + side }),
-				snap + 450,
-				"slide",
-				this.behind,
-			);
+			if (draw) {
+				m.go(
+					this.w({ d: s.d + DRAW_LB_FT, a: s.a }),
+					snap + DRAW_LB_MS,
+					"back",
+					this.behind,
+				);
+			} else {
+				m.go(
+					this.w({ d: s.d - 1.5, a: s.a + side }),
+					snap + 450,
+					"slide",
+					this.behind,
+				);
+			}
 			const fill = {
 				d: Math.max(3, s.d - (drive > 1 ? 4 : 7)),
 				a: holeA + (s.a - holeA) * 0.4,
@@ -15978,13 +16111,18 @@ class Action {
 	// him (see GET_OFF_ACCEL) - a step or two, his arms out into him, or a
 	// run (see fireOff); not off from still at full pace. (On him
 	// FIRE_HELD_MS before `until` at the latest, when he is off him.)
-	fireInto(m: Actor, at: (t: number) => Pt, by: number, until: number) {
+	fireInto(
+		m: Actor,
+		at: (t: number) => Pt,
+		by: number,
+		until: number,
+		pace = RUSH_HIT_PACE,
+	) {
 		let t = by;
 		for (let k = 0; k < 2; k++) {
 			t = Math.max(
 				by,
-				m.t +
-					rampedMs(dist(m.at, at(t)), m.top * RUSH_HIT_PACE, 0, GET_OFF_ACCEL),
+				m.t + rampedMs(dist(m.at, at(t)), m.top * pace, 0, GET_OFF_ACCEL),
 			);
 		}
 		t = Math.min(t, Math.max(by, until - FIRE_HELD_MS));

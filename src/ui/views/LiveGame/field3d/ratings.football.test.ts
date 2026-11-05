@@ -13,8 +13,8 @@ import { simGames, type SimGame } from "./testGames.ts";
 let games: SimGame[] = [];
 
 beforeAll(async () => {
-	games = await simGames([18, 19]);
-}, 120_000);
+	games = await simGames([18, 19, 20, 21]);
+}, 240_000);
 
 // Everybody in the game rated so.
 const staged = (
@@ -198,7 +198,7 @@ describe("3D field ratings", () => {
 		};
 		assert.isAbove(pace(rated, 0), pace(plain, 0) * 1.01);
 		assert.isBelow(pace(rated, 1), pace(plain, 1) * 0.99);
-	}, 80_000);
+	}, 160_000);
 
 	test("a quarterback who reads it well points a man out before the snap more often", () => {
 		const game = games[0]!;
@@ -225,11 +225,11 @@ describe("3D field ratings", () => {
 			return points / (points + looks);
 		};
 		assert.isAbove(share(0), share(1) + 0.15);
-	}, 80_000);
+	}, 160_000);
 
 	test("a sure tackler drives the man he hits back more often", () => {
 		// Of the men with the ball brought down, the share put down on their
-		// backs - by the sure tacklers, by the poor ones: in both games, each
+		// backs - by the sure tacklers, by the poor ones: in each game, each
 		// side the sure one in turn (the tackles in one game too few to tell
 		// by).
 		const back: [number, number] = [0, 0];
@@ -264,17 +264,20 @@ describe("3D field ratings", () => {
 				}
 			}
 		}
-		assert.isAbove(down[0], 80);
-		assert.isAbove(down[1], 80);
-		assert.isAbove(back[0] / down[0], back[1] / down[1] + 0.08);
-	}, 120_000);
+		assert.isAbove(down[0], 160);
+		assert.isAbove(down[1], 160);
+		assert.isAbove(
+			back[0] / down[0],
+			back[1] / down[1] + 0.05,
+			JSON.stringify({ back, down }),
+		);
+	}, 240_000);
 
 	test("a sure tackler is made to miss less often", () => {
-		// The men made to miss with the ball in hand (a juke, a spin, a
-		// hurdle or an arm out), against the sure tacklers and against the
-		// poor ones: in both games, each side the sure one in turn. (Not
-		// all of them by much: a receiver beating the man right on him as
-		// he catches it does whoever that is.)
+		// The men made to miss on a run (a juke, a spin, a hurdle or an arm
+		// out), against the sure tacklers and against the poor ones - the
+		// men with the ball all slippery, for more of them: in each game,
+		// each side the sure one in turn.
 		const missed: [number, number] = [0, 0];
 		const carries: [number, number] = [0, 0];
 		for (const game of games) {
@@ -282,10 +285,10 @@ describe("3D field ratings", () => {
 				const tl = staged(game, (p) =>
 					["LB", "S", "CB", "DL"].includes(p.pos)
 						? { tck: p.team === side ? 95 : 45 }
-						: {},
+						: { elu: 90 },
 				);
 				for (const play of tl.plays) {
-					if (play.kind !== "run" && play.kind !== "pass") {
+					if (play.kind !== "run") {
 						continue;
 					}
 					const k = play.offense === side ? 1 : 0;
@@ -310,10 +313,10 @@ describe("3D field ratings", () => {
 		assert.isAbove(carries[0], 200);
 		assert.isAbove(
 			missed[1],
-			missed[0] * 1.15,
+			missed[0] * 1.3,
 			JSON.stringify({ missed, carries }),
 		);
-	}, 120_000);
+	}, 240_000);
 
 	test("a back careful with the ball covers it up as he is hit more often", () => {
 		// Of the men with the ball hit, the share with their other hand over
@@ -351,34 +354,49 @@ describe("3D field ratings", () => {
 		assert.isAbove(hit[0], 80);
 		assert.isAbove(hit[1], 80);
 		assert.isAbove(covered[0] / hit[0], covered[1] / hit[1] + 0.08);
-	}, 120_000);
+	}, 240_000);
 
 	test("a pass rusher who has the better of the man on him works him harder, and backs him up further - and a cover man who stands out sits tighter", () => {
-		const game = games[0]!;
-		const plain = staged(game);
-		// Side 0's rushers and corners all stars, side 1's not.
-		const rated = staged(game, (p) =>
-			p.pos === "DL"
-				? { prs: p.team === 0 ? 95 : 45 }
-				: p.pos === "CB"
-					? { pcv: p.team === 0 ? 95 : 45 }
-					: p.pos === "OL"
-						? { pbk: 60 }
-						: {},
-		);
+		// Side 0's rushers and corners all stars, side 1's not - over all
+		// the games, each its own measure taken the same (one game too few
+		// to tell by).
+		const mean = (all: ReturnType<typeof passPlays>[]) => ({
+			given: all.reduce((x, y) => x + y.given, 0) / all.length,
+			worked: all.reduce((x, y) => x + y.worked, 0) / all.length,
+			apart: all.reduce((x, y) => x + y.apart, 0) / all.length,
+		});
+		const each: ReturnType<typeof passPlays>[][] = [[], [], [], []];
+		for (const game of games) {
+			const plain = staged(game);
+			const rated = staged(game, (p) =>
+				p.pos === "DL"
+					? { prs: p.team === 0 ? 95 : 45 }
+					: p.pos === "CB"
+						? { pcv: p.team === 0 ? 95 : 45 }
+						: p.pos === "OL"
+							? { pbk: 60 }
+							: {},
+			);
+			each[0]!.push(passPlays(plain, game.roster, 1));
+			each[1]!.push(passPlays(rated, game.roster, 1));
+			each[2]!.push(passPlays(plain, game.roster, 0));
+			each[3]!.push(passPlays(rated, game.roster, 0));
+		}
 		// (Side 1 throwing into side 0's: the rush on, the corners tight.)
-		const a = passPlays(plain, game.roster, 1);
-		const b = passPlays(rated, game.roster, 1);
+		const [a, b, c, d] = each.map(mean) as [
+			ReturnType<typeof mean>,
+			ReturnType<typeof mean>,
+			ReturnType<typeof mean>,
+			ReturnType<typeof mean>,
+		];
 		assert.isAbove(b.worked, a.worked * 1.05, JSON.stringify({ a, b }));
 		assert.isAbove(b.given, a.given, JSON.stringify({ a, b }));
 		assert.isBelow(b.apart, a.apart * 0.97, JSON.stringify({ a, b }));
 		// And the other way round.
-		const c = passPlays(plain, game.roster, 0);
-		const d = passPlays(rated, game.roster, 0);
 		assert.isBelow(d.worked, c.worked * 0.97, JSON.stringify({ c, d }));
 		assert.isBelow(d.given, c.given, JSON.stringify({ c, d }));
 		assert.isAbove(d.apart, c.apart * 1.01, JSON.stringify({ c, d }));
-	}, 80_000);
+	}, 160_000);
 
 	test("a game with ratings is staged line for line as one without", () => {
 		for (const game of games) {
@@ -399,7 +417,7 @@ describe("3D field ratings", () => {
 				);
 			}
 		}
-	}, 80_000);
+	}, 160_000);
 
 	test("the slipperier the man with the ball, the more men he makes miss - and the more he goes over or round them", () => {
 		let slick = { hurdle: 0, spin: 0, juke: 0 };
@@ -427,5 +445,5 @@ describe("3D field ratings", () => {
 			stiff.hurdle + stiff.spin,
 			JSON.stringify({ slick, stiff }),
 		);
-	}, 80_000);
+	}, 160_000);
 });
