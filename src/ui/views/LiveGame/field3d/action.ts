@@ -3269,6 +3269,15 @@ const SACK_OUT_FT = [14, 24] as const;
 const SACK_OUT_MS = 1500;
 const SACK_STEP_UP = 0.35;
 const SACK_STEP_FT = [3, 6] as const;
+// Sacked from his blind side (see blindLook): this often, on his own
+// count, with the man who gets him this far round to his left of
+// downfield (radians) this long before it (ms) - his eyes at the last out
+// to his right, this far round (radians, a man out there in it if there
+// is one).
+const SACK_BLIND = 0.55;
+const SACK_BLIND_MS = 900;
+const SACK_BLIND_FROM = 0.3;
+const SACK_BLIND_LOOK = [0.5, 1.2] as const;
 // Another of them slipped first (see slipFirst): this often, on his own
 // count, this long before the sack (ms) - him set this long before it at
 // least - off his block this long before it at the least and at the most,
@@ -11985,9 +11994,12 @@ class Action {
 				// Feeling it, he tries to get away from it - eyes still
 				// downfield, shuffling, slow as it is (see faced): not walked
 				// into it. (Back far enough before it, stepping up into it.)
-				this.scan(qb, undefined, this.ahead, t - 800, runners);
-				qb.hold(t - 800, "pocket", this.ahead);
-				qb.go(at, t, undefined, this.ahead);
+				// Or - now and then, the man coming round from his left - his
+				// eyes out to his right, never seeing him: see SACK_BLIND.
+				const look = this.blindLook(qb, sacker, t, runners) ?? this.ahead;
+				this.scan(qb, undefined, look, t - 800, runners);
+				qb.hold(t - 800, "pocket", look);
+				qb.go(at, t, undefined, look);
 			}
 		}
 		this.endCarry(
@@ -12001,6 +12013,37 @@ class Action {
 		if (sacker) {
 			this.rushMove(sacker, qb, t);
 		}
+	}
+
+	// SACKED FROM HIS BLIND SIDE: on his own count, the man who gets him
+	// coming from his left (his back to it, set to throw), the way he faces
+	// at the last - his eyes out to his right, on a man out there if there
+	// is one, side on to him the way he would be to throw it. (None, if
+	// not.)
+	blindLook(
+		qb: Actor,
+		sacker: Actor | undefined,
+		t: number,
+		runners: Actor[],
+	): number | undefined {
+		const { snap } = this.input;
+		if (!sacker || countOf(qb, snap, 140) >= SACK_BLIND) {
+			return undefined;
+		}
+		const off = (y: number) =>
+			Math.atan2(Math.sin(y - this.ahead), Math.cos(y - this.ahead));
+		const from = off(this.toward(qb.at, sacker.posAt(t - SACK_BLIND_MS)));
+		if (from > -SACK_BLIND_FROM) {
+			return undefined;
+		}
+		const ways = runners
+			.map((m) => off(this.toward(qb.at, m.posAt(t - SACK_BLIND_MS))))
+			.filter((y) => y >= SACK_BLIND_LOOK[0] && y <= SACK_BLIND_LOOK[1]);
+		const y =
+			ways.length > 0
+				? ways[Math.floor(countOf(qb, snap, 141) * ways.length)]!
+				: (SACK_BLIND_LOOK[0] + SACK_BLIND_LOOK[1]) / 2;
+		return this.ahead + y + SET_OPEN;
 	}
 
 	// THE SACK, ANOTHER OF THEM SLIPPED FIRST: now and then (on his own

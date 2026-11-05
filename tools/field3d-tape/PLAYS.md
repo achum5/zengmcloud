@@ -214,12 +214,15 @@ count about a third of those times, he ducks under him - down low with the
 ball tucked at his chest as that man comes in high and goes on by over the
 top of him, beside him - and up and on.
 
-Now (38 sacks): slipped first 4 (stepped aside 3, spun out 1; none ducked
-under in these nine games - with every slip made a duck, all 4 filmed
-right). Drifted back 14, stepped up 9, stood 7, slid aside 5, out of the
-pocket 3. Head on 24, from behind 8, from the side 6. Celebrations 13 ways.
+From his blind side: on his own count, with the man who gets him coming
+round from his left, the quarterback's eyes are out to his right at the
+last - on a man out there if there is one, side on to him the way he would
+be to throw it - his back to the man coming, never seeing him.
 
-To do: more from the blind side.
+Now (38 sacks): slipped first 8 (spun out 4, stepped aside 3, ducked under
+1). Drifted back 15, stood 8, stepped up 7, slid aside 5, out of the
+pocket 3. Head on 24, from the side 6, from behind 5, from behind on his
+blind side 3. Celebrations 13 ways.
 
 ## 8, 9. Extra point and field goal
 

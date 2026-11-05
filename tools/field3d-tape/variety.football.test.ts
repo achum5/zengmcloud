@@ -796,7 +796,15 @@ const sackParts = (tl: FieldTimeline, p: Play) => {
 	if (near && faced) {
 		const ang = Math.atan2(near.at!.y - b.y, near.at!.x - b.x) - faced.yaw;
 		const c = Math.cos(ang);
-		from = c > 0.5 ? "head on" : c < -0.3 ? "from behind" : "from the side";
+		// (From behind on his left: his blind side, set to throw.)
+		from =
+			c > 0.5
+				? "head on"
+				: c < -0.3
+					? Math.sin(ang) < 0
+						? "from behind, his blind side"
+						: "from behind"
+					: "from the side";
 	}
 	const party =
 		[
