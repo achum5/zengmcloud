@@ -193,7 +193,15 @@ const runParts = (tl: FieldTimeline, p: Play) => {
 									l.move === "passSet" && l.t0 >= p.snap && l.t1 <= last.t0 + 1,
 						  )
 						? "draw"
-						: "handoff";
+						: // (A counter: his jab step the other way first.)
+							carrier.legs.some(
+									(l) =>
+										l.move === "shuffle" &&
+										l.t0 >= p.snap &&
+										l.t1 <= last.t0 + 1,
+							  )
+							? "counter"
+							: "handoff";
 	// Where he hit the line: where he first got across it, and the way he
 	// first went after he had it.
 	let crossed: Pt | undefined;

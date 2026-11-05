@@ -31,7 +31,7 @@ Combinations: distinct whole combinations of the variety tool's parts.
 ## 1. Run
 
 Parts: formation and the quarterback's set; the exchange (handoff, keeper,
-a toss, the option, a draw); where he hits the line (inside, off tackle, outside,
+a toss, the option, a draw, a counter); where he hits the line (inside, off tackle, outside,
 wide, each side) and a cutback or not; a move to make a man miss (juke,
 spin, hurdle, stiff arm); how it ends (tackled, swung down, driven back,
 stood up, slid, out of bounds, in); how many bring him down; the gain (the
@@ -53,17 +53,24 @@ the back coming up and in, and drifts on back with his fake. The rush
 comes up the field into the sets (not as hard as into a run block), and
 the linebackers drop back first and come up to fill late.
 
-Now (9 games, 441 runs): 371 different combinations. A draw on 9. A toss on
-38 (runs to the edge under center, to a back lined up deep). The option on
-3 (a run to the edge out of the gun, the back beside the quarterback on
-that side: the quarterback down the line with it, the back out wide of him
-and a step behind, pitched to him on the run, the quarterback easing up
-after it - or put down by the end man, both of these). A cutback on 60
-(inside zone made to go one way, the back pressing it and cutting back
-behind the line). A move to make a man miss on 31 (7%) - more often the
-more elusive he is, and, in a game with the ratings, the poorer a tackler
-the man he goes past (a sure one about two thirds as often as a poor one;
-as often as ever over them all).
+The counter: now and then on power to a back lined up deep, his first step
+a jab the other way, then back across to the handoff and on behind the
+pullers - the backside guard and, after him a step deeper, the backside
+tackle, round and up through the hole onto the men filling it. A man up
+front the tackle has left with nobody near enough to block him comes up
+the field after it from the back side.
+
+Now (9 games, 442 runs): 380 different combinations. A counter on 16, a
+draw on 9. A toss on 42 (runs to the edge under center, to a back lined up
+deep). The option on 3 (a run to the edge out of the gun, the back beside
+the quarterback on that side: the quarterback down the line with it, the
+back out wide of him and a step behind, pitched to him on the run, the
+quarterback easing up after it - or put down by the end man, both of
+these). A cutback on 56 (inside zone made to go one way, the back pressing
+it and cutting back behind the line). A move to make a man miss on 30
+(7%) - more often the more elusive he is, and, in a game with the ratings,
+the poorer a tackler the man he goes past (a sure one about two thirds as
+often as a poor one; as often as ever over them all).
 
 ## 2. Pass complete
 

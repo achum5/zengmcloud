@@ -3628,6 +3628,20 @@ const DRAW_HIT = 0.6;
 // and this far in from where the back did - feet.)
 const DRAW_MESH_UP = 1;
 const DRAW_MESH_IN = 1.8;
+// A counter, this often of the power runs to a back lined up deep (this
+// far behind the line at least, feet): his first step a jab the other way,
+// this far (feet) over this long (ms), before he comes back to it - and the
+// backside tackle pulled round behind the guard too, up through the hole
+// onto the next man in it, at the hole this much after the guard (ms).
+const COUNTER = 0.4;
+const COUNTER_DEEP = 15;
+const COUNTER_JAB_FT = 1.6;
+const COUNTER_JAB_MS = 280;
+const COUNTER_AFTER_MS = 200;
+// (A man up front with nobody left this near to block him, feet: up the
+// field this far after it, feet.)
+const COUNTER_FREE_FT = 7;
+const COUNTER_FREE_UP = 3.5;
 // The line gives no ground nearer than this to where the quarterback sets
 // (feet).
 const POCKET_ROOM = 7;
@@ -14562,6 +14576,14 @@ class Action {
 			carrier !== qb &&
 			countOf(carrier, snap, 81) < CUTBACK;
 		const flow = cutback ? -strong : strong;
+		// Or, on power, now and then a counter (see COUNTER).
+		const counter =
+			scheme === "power" &&
+			carrier !== qb &&
+			!sweep &&
+			spotOf(carrier.role) === "back" &&
+			cs.d <= -COUNTER_DEEP &&
+			countOf(carrier, snap, 145) < COUNTER;
 
 		// The quarterback: a reverse pivot under center to hand it off
 		// deep, or a ride in the gun - and on with his fake. A receiver
@@ -14639,6 +14661,16 @@ class Action {
 			mesh = Math.max(
 				mesh,
 				looked + qbStepMs(dist(dropPt, qbMesh)) + HAND_OUT_MS,
+			);
+		}
+		// (A counter: the back's jab step the other way first.)
+		const jabPt = this.w({ d: cs.d + 0.3, a: cs.a - side * COUNTER_JAB_FT });
+		const jabbed = snap + lead + COUNTER_JAB_MS;
+		if (counter) {
+			mesh = Math.max(
+				mesh,
+				jabbed +
+					rampedMs(dist(jabPt, meshPt), carrier.top * 0.75, 0, RELEASE_ACCEL),
 			);
 		}
 		if (sweep) {
@@ -14879,6 +14911,11 @@ class Action {
 					rampedMs(dist(setPt, meshPt), carrier.top * 0.75, 0, RELEASE_ACCEL);
 				carrier.hold(drawGo, "passSet", this.ahead);
 				carrier.getOff(meshPt, mesh, 0, RELEASE_ACCEL, "run");
+			} else if (counter) {
+				// The back's jab step away, planted, and back to the mesh.
+				carrier.hold(snap + lead);
+				carrier.go(jabPt, jabbed, "shuffle", this.ahead);
+				carrier.getOff(meshPt, mesh, 0, RELEASE_ACCEL, "run");
 			} else if (!sweep) {
 				// The back to the mesh.
 				carrier.hold(snap + lead);
@@ -15047,6 +15084,7 @@ class Action {
 			!piled,
 			flow,
 			draw,
+			counter,
 		);
 		if (piled) {
 			this.heap = short ? PILE_IN.length : PILE_SMALL;
@@ -15210,6 +15248,7 @@ class Action {
 		through: boolean,
 		flow?: number,
 		draw = false,
+		counter = false,
 	) {
 		const { snap } = this.input;
 		const r = this.r;
@@ -15279,8 +15318,17 @@ class Action {
 					: scheme === "sneak"
 						? { d: 2.5, a: 0 }
 						: { d: 3, a: 2 * (flow ?? side) };
-		const backs = blockers.filter((b) => b !== pull && this.of(b.at).d < -8);
-		const front = blockers.filter((b) => b !== pull && !backs.includes(b));
+		// (On a counter, the backside tackle after him.)
+		const pull2 = counter
+			? blockers.find(
+					(b) =>
+						(b.role === "LT" || b.role === "RT") &&
+						Math.sign(this.of(b.at).a) === -side,
+				)
+			: undefined;
+		const pulled = (b: Actor) => b === pull || b === pull2;
+		const backs = blockers.filter((b) => !pulled(b) && this.of(b.at).d < -8);
+		const front = blockers.filter((b) => !pulled(b) && !backs.includes(b));
 		// (A wide one given the time it takes him - no quicker on it than
 		// FIRST_STEP_FPS - not lunged across in half a second; and the man
 		// over him met as he gets there.)
@@ -15324,6 +15372,28 @@ class Action {
 				continue;
 			}
 			const b = closest(front, m.at);
+			// (On a counter, the man the tackle has left behind him -
+			// nobody else near enough to him to block him: up the field
+			// after it from the back side, as the rest go after it - see
+			// pursue.)
+			if (
+				counter &&
+				b &&
+				!tacklers.includes(m) &&
+				dist(b.at, m.at) > COUNTER_FREE_FT
+			) {
+				const p = this.of(m.at);
+				this.offSnap(m, READ_OFF_MS, READ_OFF_SPREAD_MS);
+				m.getOff(
+					this.w({ d: p.d - COUNTER_FREE_UP, a: p.a + side * 1.5 }),
+					snap + 750,
+					0,
+					GET_OFF_ACCEL,
+					"run",
+					GET_OFF_SQUARE_MS,
+				);
+				continue;
+			}
 			if (b) {
 				on.set(b, [...(on.get(b) ?? []), m]);
 			}
@@ -15557,6 +15627,45 @@ class Action {
 				pull,
 				pick(holePt),
 				beat(pull),
+				offAt,
+				until,
+				carrier,
+				through,
+			);
+		}
+		if (pull2) {
+			// Round behind the guard, a step deeper, and up through it after
+			// him.
+			const s = this.of(pull2.at);
+			pull2.hold(snap + 90);
+			pull2.go(
+				this.w({ d: s.d - 1.8, a: s.a + side * 2.5 }),
+				snap + 400,
+				"run",
+			);
+			const pre = this.w({ d: -3, a: holeA - side * 4 });
+			const by = Math.max(
+				atHole - PULL_AHEAD_MS + COUNTER_AFTER_MS,
+				snap + 900,
+			);
+			if (
+				(dist(pull2.at, pre) / Math.max(1, by - pull2.t)) * 1000 <
+				WALK_MOST_FPS
+			) {
+				pull2.run(pre, PULL_FPS, "run");
+			} else {
+				pull2.chase(pre, by, pull2.top * 0.9, "run");
+			}
+			pull2.chase(
+				this.w({ d: 2, a: holeA - side * 0.5 }),
+				pull2.t + 300,
+				pull2.top * 0.9,
+				"run",
+			);
+			this.blockOn(
+				pull2,
+				pick(holePt),
+				beat(pull2),
 				offAt,
 				until,
 				carrier,
