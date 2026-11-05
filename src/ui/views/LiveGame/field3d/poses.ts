@@ -1804,6 +1804,99 @@ const FIELD_ANIMS = {
 			],
 		],
 	},
+	// A kick caught in a basket: set under it, his elbows in at his sides
+	// and his forearms up in front of him, hands open at his chest - and it
+	// down into them, his arms giving with it into his belly, him bent over
+	// it a little, then up with it.
+	basket: {
+		kind: "act",
+		keys: [
+			[
+				0,
+				pose({
+					hipN: 20,
+					kneeN: 30,
+					hipF: 22,
+					kneeF: 32,
+					lean: 12,
+					shN: 26,
+					elN: 92,
+					abN: 8,
+					shF: 26,
+					elF: 92,
+					abF: 8,
+				}),
+			],
+			[
+				0.35,
+				pose({
+					hipN: 16,
+					kneeN: 26,
+					hipF: 18,
+					kneeF: 28,
+					lean: 8,
+					shN: 28,
+					elN: 112,
+					abN: -10,
+					shF: 28,
+					elF: 112,
+					abF: -10,
+					wrN: -12,
+					wrF: -12,
+				}),
+			],
+			[
+				0.56,
+				pose({
+					hipN: 20,
+					kneeN: 30,
+					hipF: 22,
+					kneeF: 32,
+					lean: 16,
+					shN: 32,
+					elN: 98,
+					abN: -12,
+					shF: 32,
+					elF: 98,
+					abF: -12,
+					wrN: 6,
+					wrF: 6,
+				}),
+			],
+			[
+				0.75,
+				pose({
+					hipN: 24,
+					kneeN: 36,
+					hipF: 26,
+					kneeF: 38,
+					lean: 22,
+					shN: 16,
+					elN: 118,
+					abN: -8,
+					shF: 16,
+					elF: 118,
+					abF: -8,
+				}),
+			],
+			[
+				1,
+				pose({
+					hipN: 16,
+					kneeN: 26,
+					hipF: 18,
+					kneeF: 28,
+					lean: 14,
+					shN: 26,
+					elN: 108,
+					abN: -2,
+					shF: 26,
+					elF: 108,
+					abF: -2,
+				}),
+			],
+		],
+	},
 	// Up for it at its highest: off both feet, his hands up over his head
 	// to it at the top, and down with it into his chest, landing.
 	leapCatch: {

@@ -87,6 +87,7 @@ const TOUCH = new Set<Move>([
 	"handOff",
 	"fakeCarry",
 	"catch",
+	"basket",
 	"leapCatch",
 	"diveCatch",
 	"toeTap",

@@ -480,7 +480,9 @@ const puntParts = (tl: FieldTimeline, p: Play) => {
 				? "on the run, coming up"
 				: pace > 7
 					? "on the move"
-					: "set under it";
+					: did(ret, ["basket"], touch - 1500, touch + 300)
+						? "set under it, in a basket"
+						: "set under it";
 		const juggled = p.ball.some(
 			(s) => s.kind === "fly" && s.t0 >= kick.t1 - 5 && s.t1 <= pr!.t0 + 5,
 		);
@@ -576,7 +578,9 @@ const kickParts = (tl: FieldTimeline, p: Play) => {
 				? "on the run, coming up"
 				: pace > 7
 					? "on the move"
-					: "set under it";
+					: did(ret, ["basket"], touch - 1500, touch + 300)
+						? "set under it, in a basket"
+						: "set under it";
 		const flies = p.ball.filter(
 			(s) => s.kind === "fly" && s.t0 >= kick.t1 - 5 && s.t1 <= kr0!.t0 + 5,
 		);

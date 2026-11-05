@@ -107,18 +107,22 @@ not on the spot, so a short one brings him up and a long one sends him
 back. On a return of 10 yards or more the gunners are held up at the line a
 while longer by the men on them, which gives him room to come up into it.
 
-Now (86 punts): 76 different combinations. Out toward the numbers or the
-sideline 43, end over end 20. Set under it 51, going back 8, coming up at a
-run or on the move 12, juggled 6. A man made to miss on 11 returns.
+Set under it, on his own count he takes it in a basket about half the time:
+elbows in, his hands low, the ball into his belly - not always hands up at
+it.
+
+Now (86 punts): 74 different combinations. Out toward the numbers or the
+sideline 41, end over end 15. Set under it 57 (in a basket 27), going back
+6, coming up at a run or on the move 9, juggled 3. A man made to miss on 7
+returns.
 
 The sim credits a tackle on almost every return, even of 0 yards, so fair
 catches and punts let bounce are rare.
 
-To do: a muff (the sim has none), the returner's catch with his arms in a
-basket, a return that bounces outside off the wall. The game tape has more
-sharp turns on punts since (27 of them, from 9: the returner and the cover
-cutting across in the return, at about 10 feet a second). Most of those
-are jukes in the return, which are meant.
+To do: a muff (the sim has none), a return that bounces outside off the
+wall. The game tape has more sharp turns on punts since (27 of them, from
+9: the returner and the cover cutting across in the return, at about 10
+feet a second). Most of those are jukes in the return, which are meant.
 
 ## 5. Kickoff
 
@@ -133,9 +137,9 @@ The setup is the sim's: the cover at the receiving 40, the front five yards
 off them, two returners at the 5 and the 2, and nobody but the kicker and
 the returners moving till it is down.
 
-Now (66 kickoffs): 59 different combinations. Out toward the numbers 33.
-Set under it 41, coming up at a run 17, going back 6. On the hop 16,
-knelt 10, juggled 2, let go 1.
+Now (66 kickoffs): 61 different combinations. Out toward the numbers 34.
+Set under it 37 (in a basket 15, as on a punt), coming up at a run or on
+the move 21, going back 5. On the hop 16, knelt 8, juggled 1, let go 3.
 
 To do: a kick out of bounds (the sim has none in these games), a return
 man reversing field.

@@ -2429,8 +2429,8 @@ class Actor {
 	// Reaching for it, his hands on it at `at` (see CATCH_REACH_MS) - only
 	// so much of the reach as there is still time for, if he gets to it
 	// late: his hands there as it gets there, not up for it after.
-	catchOn(at: number, yaw?: number, to?: Pt) {
-		this.act("catch", at + CATCH_IN_MS, yaw, to);
+	catchOn(at: number, yaw?: number, to?: Pt, move: Move = "catch") {
+		this.act(move, at + CATCH_IN_MS, yaw, to);
 		const l = this.last;
 		const late = l.t0 - (at - CATCH_REACH_MS);
 		if (late > 0 && l.t0 < at) {
@@ -2648,6 +2648,7 @@ const IN_HANDS = new Set<Move>([
 	"pitch",
 	"kneelDown",
 	"catch",
+	"basket",
 	"leapCatch",
 	"diveCatch",
 	"toeTap",
@@ -2749,6 +2750,7 @@ const OVER_NOT = new Set<Move>([
 	"kneelDown",
 	"swat",
 	"catch",
+	"basket",
 	"leapCatch",
 	"diveCatch",
 ]);
@@ -15968,9 +15970,20 @@ class Action {
 		const spot = this.of(to);
 		this.setBack(m, to, by);
 		m.hold(catchAt - CATCH_REACH_MS, "stand", this.behind);
-		m.catchOn(catchAt, this.behind, this.w({ d: spot.d - 2.7, a: spot.a }));
+		// (Now and then in a basket, his elbows in - not his hands up at it:
+		// in at his belly, then.)
+		const basket = countOf(m, this.input.snap, 125) < BASKET;
+		m.catchOn(
+			catchAt,
+			this.behind,
+			this.w({ d: spot.d - 2.7, a: spot.a }),
+			basket ? "basket" : "catch",
+		);
 		const at = this.of(m.posAt(catchAt));
-		return { ...this.w({ d: at.d - 1, a: at.a }), z: CATCH_Z };
+		return {
+			...this.w({ d: at.d - (basket ? BASKET_IN : 1), a: at.a }),
+			z: basket ? BASKET_Z : CATCH_Z,
+		};
 	}
 
 	// Fielded on the move (see getUnder): there in time, or nothing (and
@@ -16343,7 +16356,7 @@ class Action {
 		if (
 			!hop &&
 			!noRet &&
-			kr.last.move === "catch" &&
+			(kr.last.move === "catch" || kr.last.move === "basket") &&
 			countOf(kr, snap, 95) <
 				JUGGLE * (1 - JUGGLE_HANDS * (kr.flair.hands ?? 0))
 		) {
@@ -17431,14 +17444,14 @@ class Action {
 			t0: kickT,
 			t1: landT,
 			from: off,
-			to: { ...hands, z: CATCH_Z + 0.6 },
+			to: { ...hands, z: hands.z + 0.6 },
 			peak: peakFor(hang),
 			spiral,
 		});
 		// (Now and then juggled - off his hands and up, and his hands on it
 		// again a beat later - the surer his hands, the less often.)
 		let gotT = landT;
-		const set = pr.last.move === "catch";
+		const set = pr.last.move === "catch" || pr.last.move === "basket";
 		if (
 			!noReturn &&
 			set &&
@@ -17453,7 +17466,7 @@ class Action {
 				kind: "fly",
 				t0: landT,
 				t1: gotT,
-				from: { ...hands, z: CATCH_Z + 0.6 },
+				from: { ...hands, z: hands.z + 0.6 },
 				to: { ...this.w({ d: again.d - 1, a: again.a }), z: CATCH_Z + 0.6 },
 				peak: JUGGLE_UP,
 			});
@@ -20337,6 +20350,11 @@ const FIELD_SET_MS = 250;
 // the cosine - and it takes this pace at least, feet a second.)
 const FIELD_UP_FRONT = 0.5;
 const FIELD_UP_LEAST_FPS = 8;
+// A kick caught set under it in a basket this often: in at his belly, this
+// high (feet) and this far out in front of him (feet).
+const BASKET = 0.5;
+const BASKET_Z = 3.7;
+const BASKET_IN = 0.7;
 // Juggled this often (less, the surer his hands - this much less at the
 // surest), his hands on it again this long after (ms), it up this high off
 // them (feet), him this far on into it (feet).
