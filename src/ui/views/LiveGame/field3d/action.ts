@@ -6381,13 +6381,18 @@ class Action {
 							const q = { x: p.x + off.x * w, y: p.y + off.y * w };
 							// (Stepped off him, and back onto his way where it goes
 							// by him anyway after he stood - over to help him up,
-							// say: no nearer him there than he was to be.)
+							// say: no nearer him there than he was to be. Not on
+							// over him, his way across him: DOWN_SOME off him at
+							// least.)
 							const n = nearDown(m, t, q, t < ta ? on?.who : undefined).near;
 							const by =
 								stepping && t > stoodTill
 									? n +
 										DOWN_CLEAR -
-										Math.min(DOWN_CLEAR, nearDown(m, t, p).near)
+										Math.min(
+											DOWN_CLEAR,
+											Math.max(DOWN_SOME, nearDown(m, t, p).near),
+										)
 									: n;
 							// (Not into somebody else instead.)
 							near =
@@ -17677,10 +17682,12 @@ class Action {
 					: (big ? 3 : 3.6) + r() * 1.1;
 			if (dist(m.at, to) > 2) {
 				const from = m.t;
-				// (Round any man still down on the way, too.)
+				// (Round any man still down on the way, too - one down at his
+				// feet as well, stepped off first (see offMenDown): not back
+				// across him after.)
 				const way = this.mobAt
 					? skirt(m.at, to, this.mobAt)
-					: this.wayRound(m.at, to, m.t, [m], true);
+					: this.wayRound(m.at, to, m.t, [m]);
 				const pace = worn ? fps * (1 - WINDED_SLOWER * winded) : fps;
 				way.forEach((p, k) => {
 					if (k === way.length - 1 && pace >= 7) {

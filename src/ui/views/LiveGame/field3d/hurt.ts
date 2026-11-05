@@ -407,6 +407,20 @@ export const fallHurt = (
 		last.yaw ??
 		(goes ? Math.atan2(last.to.y - last.from.y, last.to.x - last.from.x) : 0);
 	let t = fell.at;
+	let faceDown = FACE_DOWN.has(last.move);
+	if (fell.down && t < whistle) {
+		// (Down already as it was blown dead - knocked flat, or getting up
+		// off the turf: kept down on through the whistle.)
+		legs.push({
+			t0: t,
+			t1: whistle,
+			from: at,
+			to: at,
+			move: faceDown ? "hurtProne" : "hurt",
+			yaw,
+		});
+		t = whistle;
+	}
 	if (!fell.down) {
 		const v =
 			last.t1 > last.t0
@@ -429,8 +443,9 @@ export const fallHurt = (
 		});
 		at = to;
 		t += FALL_MS;
+		faceDown = FACE_DOWN.has(legs.at(-1)!.move);
 	}
-	return { at, yaw, downAt: t, faceDown: FACE_DOWN.has(legs.at(-1)!.move) };
+	return { at, yaw, downAt: t, faceDown };
 };
 
 export type Hurt = {

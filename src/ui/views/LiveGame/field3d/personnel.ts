@@ -104,12 +104,15 @@ export type Want = { group: Group };
 // `named` the men the play's stats say were on, with the groups they could
 // have been playing in (unsaid: any); `out` anyone hurt and gone; `roster`
 // the rest of the side's men, for a group nobody on the chart is left for.
+// `u` which of his group's free slots a named man takes (by default the
+// first) - the end or the tackle, the left corner or the right.
 export const fillSlots = (
 	slots: Want[],
 	depth: DepthChart,
 	named: { pid: number; groups?: Group[] }[],
 	out: Set<number>,
 	roster: number[],
+	u: () => number = () => 0,
 ): (number | undefined)[] => {
 	const got: (number | undefined)[] = slots.map(() => undefined);
 	const used = new Set<number>();
@@ -130,7 +133,7 @@ export const fillSlots = (
 		// chart for first - or, if the formation has none of those free, of
 		// a group he could stand in for.
 		const own = n.groups ?? any;
-		let best = -1;
+		let best: number[] = [];
 		let bestRank = Infinity;
 		for (const [pass, groups] of [
 			own,
@@ -141,20 +144,25 @@ export const fillSlots = (
 					continue;
 				}
 				const r = rank(n.pid, s.group) + pass * 1000;
-				if (best < 0 || r < bestRank) {
-					best = i;
+				if (best.length === 0 || r < bestRank) {
+					best = [i];
 					bestRank = r;
+				} else if (r === bestRank && s.group === slots[best[0]!]!.group) {
+					// (Another of the same group's: never a group he would not
+					// have been in.)
+					best.push(i);
 				}
 			}
-			if (best >= 0) {
+			if (best.length > 0) {
 				break;
 			}
 		}
-		if (best < 0) {
-			best = got.indexOf(undefined);
-		}
-		if (best >= 0) {
-			place(n.pid, best);
+		const i =
+			best.length > 0
+				? best[Math.min(best.length - 1, Math.floor(u() * best.length))]!
+				: got.indexOf(undefined);
+		if (i >= 0) {
+			place(n.pid, i);
 		}
 	}
 	const free = (pid: number) => !used.has(pid) && !out.has(pid);

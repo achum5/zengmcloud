@@ -1024,17 +1024,19 @@ describe("third down", () => {
 				if (p.hurt?.pid === part.pid) {
 					continue;
 				}
-				const l = part.legs.findLast(
-					(l) =>
-						l.t0 >= p.whistle &&
-						l.t0 < p.t1 &&
-						(l.from.x !== l.to.x || l.from.y !== l.to.y),
+				const moves = (l: Leg) => l.from.x !== l.to.x || l.from.y !== l.to.y;
+				let k = part.legs.findLastIndex(
+					(l) => l.t0 >= p.whistle && l.t0 < p.t1 && moves(l),
 				);
-				if (!l) {
+				if (k < 0) {
 					continue;
 				}
+				// (Where he is on his way to: on round a man down in his way.)
+				while (k + 1 < part.legs.length && moves(part.legs[k + 1]!)) {
+					k++;
+				}
 				all++;
-				const y = l.to.y;
+				const y = part.legs[k]!.to.y;
 				if (y < 10 || y > FIELD_W - 10) {
 					off++;
 				}

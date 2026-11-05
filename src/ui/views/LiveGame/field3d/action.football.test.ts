@@ -460,7 +460,9 @@ describe("the plays acted out", () => {
 				const l = p.legs.find(
 					(x) => x.move === "helpUp" && x.t0 <= up.t0 && x.t1 >= up.t0,
 				);
-				if (!l || hurt) {
+				// (Not a hand up to somebody else then: the man who caught it,
+				// down the field.)
+				if (!l || hurt || dist(posAt(p, up.t0), posAt(qb, up.t0)) > 10) {
 					continue;
 				}
 				helped += 1;
@@ -916,13 +918,15 @@ describe("the plays acted out", () => {
 			const want = e.success ? play.offense : 1 - play.offense;
 			assert.strictEqual(m.carrier, want, `play ${play.i}`);
 			// Down where the next snap is from (as near as the man on it: the
-			// ball out at arm's length in front of him).
+			// ball out at arm's length in front of him, whichever side of it
+			// he comes from - and it out the ten yards at least, see
+			// action.ts onside).
 			const next = tl.plays[tl.plays.indexOf(play) + 1];
 			if (next && next.quarter === play.quarter && m.focus) {
 				const d = (m.focus.x - play.losX) * play.dir;
 				const at = (next.losX - play.losX) * play.dir;
 				if (at >= 10 * YD && at <= 25 * YD) {
-					assert.closeTo(d, at, 4, `play ${play.i}`);
+					assert.closeTo(d, at, 5, `play ${play.i}`);
 				}
 				assert.isAtLeast(d, 9 * YD, `play ${play.i}`);
 			}

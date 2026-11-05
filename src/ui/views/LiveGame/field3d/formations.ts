@@ -458,7 +458,8 @@ export const alignDefense = (
 			move,
 			...(mirrored ? { mirrored: true } : {}),
 		});
-	// The strength: the side with the tight end (or more receivers).
+	// The strength: the side with the tight end (or more receivers) - a
+	// balanced set, set to the wide side of the field.
 	const tes = offense.filter((o) => o.pos === "TE" && Math.abs(o.across) < 20);
 	const weight = offense.reduce(
 		(s, o) => (o.role === "QB" || o.role === "C" ? s : s + Math.sign(o.across)),
@@ -467,9 +468,13 @@ export const alignDefense = (
 	const strong: -1 | 1 =
 		tes.length === 1
 			? (Math.sign(tes[0]!.across) as -1 | 1)
-			: weight < 0
-				? -1
-				: 1;
+			: weight !== 0
+				? weight < 0
+					? -1
+					: 1
+				: hashes[0] + hashes[1] < 0
+					? -1
+					: 1;
 	const tackle = (side: -1 | 1) =>
 		Math.max(
 			...offense
@@ -608,8 +613,11 @@ export const alignDefense = (
 	}
 	if (call.front !== "goalLine") {
 		if (call.shell === "two") {
-			at("FS", "S", hashes[0] - 2, S_DEEP, "safetyReady");
-			at("SS", "S", hashes[1] + 2, S_DEEP + 2, "safetyReady");
+			// (The strong safety over the strength's hash.)
+			const [weakH, strongH] =
+				strong > 0 ? [hashes[0], hashes[1]] : [hashes[1], hashes[0]];
+			at("FS", "S", weakH - strong * 2, S_DEEP, "safetyReady");
+			at("SS", "S", strongH + strong * 2, S_DEEP + 2, "safetyReady");
 		} else {
 			at("FS", "S", 0, S_MIDDLE, "safetyReady");
 			at("SS", "S", strong * 15, S_BOX, "backerReady");

@@ -3351,7 +3351,11 @@ class Director {
 
 		const placed: Placed[] = [];
 		const offsets: Offset[] = [];
-		const offPids = this.fill(off, offense, named[offense]);
+		// (Which of his group's places a man the play names is in: any of
+		// them - the sim's tackler a tackle as often as an end, the right
+		// corner as often as the left, and the play his way.)
+		const u = this.rng(i0, "fill");
+		const offPids = this.fill(off, offense, named[offense], u);
 		for (const [k, a] of off.entries()) {
 			const pid = offPids[k];
 			const across = acrossOf(a, dir, ballY, flip);
@@ -3385,7 +3389,7 @@ class Director {
 			) as [number, number];
 			def = alignDefense(offsets, call, hashes);
 		}
-		const defPids = this.fill(def, defense, named[defense]);
+		const defPids = this.fill(def, defense, named[defense], u);
 		for (const [k, a] of def.entries()) {
 			const pid = defPids[k];
 			if (pid === undefined) {
@@ -3461,13 +3465,19 @@ class Director {
 		return other ?? pick;
 	}
 
-	fill(slots: Align[], side: Side, named: Named[]): (number | undefined)[] {
+	fill(
+		slots: Align[],
+		side: Side,
+		named: Named[],
+		u?: () => number,
+	): (number | undefined)[] {
 		return fillSlots(
 			slots.map((s) => ({ group: s.pos })),
 			this.depth[side],
 			named.map((n) => ({ pid: n.pid, groups: n.groups })),
 			this.out,
 			this.roster[side],
+			u,
 		);
 	}
 
