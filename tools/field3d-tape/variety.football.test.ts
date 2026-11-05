@@ -717,9 +717,21 @@ const sackParts = (tl: FieldTimeline, p: Play) => {
 			.sort()
 			.join("+") || "none";
 	const rest = endParts(tl, p, qb, w - 1500);
+	// (Another of them slipped first - see action.ts slipFirst - and how.)
+	const slipped = p.parts.some(
+		(q) =>
+			q.team !== p.offense &&
+			q.legs.some((l) => l.move === "dive" && l.t0 > p.snap && l.t1 < w - 300),
+	);
+	const slip = !slipped
+		? "none"
+		: qb.legs.some((l) => l.move === "spin" && l.t0 > p.snap && l.t0 < w)
+			? "spun out"
+			: "stepped aside";
 	return {
 		pid: near?.q.pid ?? 0,
 		parts: {
+			slip,
 			time: bucket(
 				(w - p.snap) / 1000,
 				[2.8, 3.4],

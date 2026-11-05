@@ -147,8 +147,9 @@ To do: the yards walked off after the call.
 
 ## 7. Sack
 
-Parts: how long he had, what the quarterback did with it (stood in the
-pocket, stepped up, drifted back, slid aside, got out of it), where the man
+Parts: another of them slipped first or not (spun out, stepped aside), how
+long he had, what the quarterback did with it (stood in the pocket, stepped
+up, drifted back, slid aside, got out of it), where the man
 who got there came at him from, how he was brought down and by how many,
 and the celebration.
 
@@ -156,15 +157,17 @@ On his own count the quarterback now and then drops past where they get
 him and steps up into it, or - with the room behind the line - gets out of
 the pocket away from the man coming and is run down out there. The man who
 got the sack celebrates his own way (a flex, a fist pump, a leap, a dance,
-a finger to the sky), his mates in on it.
+a finger to the sky), his mates in on it. Now and then another of the rush
+gets off his block and at him first, a moment before - the quarterback
+spins out or steps aside from under it, eyes still downfield, and that man
+is left on the turf where he was (only one coming from in front or behind,
+with the man who gets him on the side he gets away to).
 
-Now (38 sacks): 36 different combinations. Drifted back 15, stepped up 8,
-slid aside 7, stood 5, out of the pocket 3. Celebrations 13 ways (from 6,
-every one a flex).
+Now (38 sacks): slipped first 7 (stepped aside 6, spun out 1). Drifted back
+15, stepped up 9, slid aside 7, stood 4, out of the pocket 3. Celebrations
+13 ways (from 6, every one a flex).
 
-To do: the quarterback ducking or spinning away from the first man and
-caught by the next (no sack has an evade), more from the blind side (2 of
-38).
+To do: a duck under the first man, more from the blind side (2 of 38).
 
 ## 8, 9. Extra point and field goal
 

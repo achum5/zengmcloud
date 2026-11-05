@@ -3235,6 +3235,38 @@ const SACK_OUT_FT = [14, 24] as const;
 const SACK_OUT_MS = 1500;
 const SACK_STEP_UP = 0.35;
 const SACK_STEP_FT = [3, 6] as const;
+// Another of them slipped first (see slipFirst): this often, on his own
+// count, this long before the sack (ms) - him set this long before it at
+// least - off his block this long before it at the least and at the most,
+// from no further than this (feet), at him from no more across than this
+// (the cosine off the line of the field), the man who gets him this far
+// over on the side he gets away to (feet); in this far short of him (feet)
+// this long after it, off his feet at him and down this far past where he
+// was by this long after it, there this long (ms). Him out from under it:
+// round on a planted foot this often, else a quick step aside over this
+// long (ms) - either way this far (feet) - and brought down no nearer the
+// line of the dive than this (feet).
+const SACK_SLIP = 0.45;
+const SLIP_BEFORE = [1100, 1400] as const;
+const SLIP_SET_MS = 400;
+const SLIP_LEAST_MS = 350;
+const SLIP_EARLY_MS = 900;
+const SLIP_FAR = 16;
+const SLIP_ALONG = 0.6;
+const SLIP_SACKER = 2;
+const SLIP_HIT_FT = 3;
+const SLIP_DIVE_AFTER = 60;
+const SLIP_DIVE_MS = 520;
+const SLIP_PAST = 0.2;
+const SLIP_DOWN_MS = 700;
+const SLIP_SPIN = 0.5;
+const SLIP_STEP_MS = 380;
+// (The step round toward where he goes: this share of the way over, then
+// this share on from there toward it.)
+const SLIP_ROUND = 0.8;
+const SLIP_ROUND_ON = 0.3;
+const SLIP_OVER = 3;
+const SLIP_CLEAR = 3.5;
 const sackOut = (qb: Actor, snap: number, sackD: number) =>
 	sackD <= -SACK_OUT_LEAST && countOf(qb, snap, 105) < SACK_OUT;
 const sackStepUp = (qb: Actor, snap: number, sackD: number) =>
@@ -11435,7 +11467,7 @@ class Action {
 				? -1
 				: 1;
 		const out = sackOut(qb, snap, sackD) && qb.t <= t - SACK_OUT_MS - 300;
-		const at = this.w({
+		let at = this.w({
 			d: sackD,
 			a: clamp(
 				out
@@ -11456,12 +11488,19 @@ class Action {
 			qb.hold(t - SACK_OUT_MS, "pocket", this.ahead);
 			qb.go(at, t);
 		} else {
-			// Feeling it, he tries to get away from it - eyes still
-			// downfield, shuffling, slow as it is (see faced): not walked
-			// into it. (Back far enough before it, stepping up into it.)
-			this.scan(qb, undefined, this.ahead, t - 800, runners);
-			qb.hold(t - 800, "pocket", this.ahead);
-			qb.go(at, t, undefined, this.ahead);
+			// (Now and then out from under another of them first: see
+			// slipFirst.)
+			const slipped = sacker && this.slipFirst(qb, t, sacker, at, runners);
+			if (slipped) {
+				at = slipped;
+			} else {
+				// Feeling it, he tries to get away from it - eyes still
+				// downfield, shuffling, slow as it is (see faced): not walked
+				// into it. (Back far enough before it, stepping up into it.)
+				this.scan(qb, undefined, this.ahead, t - 800, runners);
+				qb.hold(t - 800, "pocket", this.ahead);
+				qb.go(at, t, undefined, this.ahead);
+			}
 		}
 		this.endCarry(
 			i,
@@ -11474,6 +11513,177 @@ class Action {
 		if (sacker) {
 			this.rushMove(sacker, qb, t);
 		}
+	}
+
+	// THE SACK, ANOTHER OF THEM SLIPPED FIRST: now and then (on his own
+	// count, with the time for it) one more of the rush off his block and at
+	// the quarterback a moment before the man the sim has get him - him out
+	// from under it, round on a planted foot or a quick step aside, eyes
+	// still downfield, the man left on the turf where he was. Only one
+	// coming at him from in front or behind (not straight across), with the
+	// man who gets him on the side he gets away to - not back across the
+	// man down to him. Gives where he is brought down now (out on that side,
+	// clear of the man down), if it is so.
+	slipFirst(
+		qb: Actor,
+		t: number,
+		sacker: Actor,
+		at: Pt,
+		runners: Actor[],
+	): Pt | undefined {
+		const { snap, events, i0, i1, stats } = this.input;
+		const tm =
+			t -
+			SLIP_BEFORE[0] -
+			(SLIP_BEFORE[1] - SLIP_BEFORE[0]) * countOf(qb, snap, 115);
+		if (countOf(qb, snap, 114) >= SACK_SLIP || qb.t > tm - SLIP_SET_MS) {
+			return undefined;
+		}
+		const lame = new Set<number>();
+		for (let i = i0; i < i1; i++) {
+			const e = events[i];
+			if (e?.type === "injury") {
+				lame.add(e.injuredPID);
+			}
+		}
+		const named = new Set(
+			stats.filter((x) => x.i > this.lo && x.i <= this.hi).map((x) => x.pid),
+		);
+		const p0 = qb.at;
+		const beside = (p: Pt, a: number, by: number) => ({
+			x: p.x + Math.cos(a) * by,
+			y: p.y + Math.sin(a) * by,
+		});
+		const pool = this.men.filter(
+			(m) =>
+				m.team !== qb.team &&
+				m !== sacker &&
+				!this.done.has(m.pid) &&
+				!named.has(m.pid) &&
+				!lame.has(m.pid),
+		);
+		for (const m of pool) {
+			// (Off it as late as gets him there in time.)
+			let shed: number | undefined;
+			let from: Pt | undefined;
+			for (
+				let x = tm - SLIP_LEAST_MS;
+				x >= tm - SLIP_EARLY_MS && x >= snap + RUSH_MOVE_LEAST;
+				x -= 50
+			) {
+				const f = m.posAt(x);
+				const far = dist(f, p0) - SLIP_HIT_FT;
+				if (legAt(m, x).move !== "engage" || far > SLIP_FAR) {
+					break;
+				}
+				if (
+					rampedMs(
+						Math.max(0, far),
+						m.top * QB_HIT_PACE,
+						QB_HIT_FROM_FPS,
+						GET_OFF_ACCEL,
+					) <=
+					tm - x
+				) {
+					shed = x;
+					from = f;
+					break;
+				}
+			}
+			if (shed === undefined || !from) {
+				continue;
+			}
+			const face = this.toward(from, p0);
+			if (Math.abs(Math.cos(face)) < SLIP_ALONG) {
+				continue;
+			}
+			// (How far to one side of the line of his dive: + its left.)
+			const off = (p: Pt) =>
+				Math.cos(face) * (p.y - p0.y) - Math.sin(face) * (p.x - p0.x);
+			const side = off(sacker.posAt(tm)) >= 0 ? 1 : -1;
+			if (off(sacker.posAt(tm)) * side < SLIP_SACKER) {
+				continue;
+			}
+			const away = face + (side * Math.PI) / 2;
+			const p1 = beside(p0, away, SLIP_OVER);
+			// (Brought down over on that side - moved across the field to
+			// it, if it takes that: as far back as the sim has it.)
+			const short = SLIP_CLEAR - off(at) * side;
+			const down =
+				short > 0 ? { x: at.x, y: at.y + (side * short) / Math.cos(face) } : at;
+			const a = this.of(down).a;
+			if (a < this.bounds.left + 6 || a > this.bounds.right - 6) {
+				continue;
+			}
+			// Him: off his block, in, and off his feet at where the
+			// quarterback was.
+			const hit = beside(p0, face, -SLIP_HIT_FT);
+			const fast = dist(from, hit) / ((tm - shed) / 1000) >= QB_HIT_RUN_FPS;
+			m.cut(shed);
+			m.getOff(
+				hit,
+				tm + SLIP_DIVE_AFTER,
+				QB_HIT_FROM_FPS,
+				GET_OFF_ACCEL,
+				fast ? "run" : undefined,
+			);
+			m.lunge("dive", tm + SLIP_DIVE_MS, face, beside(p0, face, SLIP_PAST));
+			m.hold(m.t + SLIP_DOWN_MS, "prone");
+			m.act("getUp", m.t + GET_UP_MS);
+			if (tm - shed >= RUSH_MOVE_AFTER) {
+				this.rushMove(m, qb, tm);
+			}
+			this.done.add(m.pid);
+			// (The man he was on: stood up out of his set, round to it.)
+			const b = this.men
+				.filter(
+					(x) =>
+						x.team === qb.team &&
+						x !== qb &&
+						!this.done.has(x.pid) &&
+						legAt(x, shed).move === "engage",
+				)
+				.sort(
+					(x, y) => dist(x.posAt(shed), from) - dist(y.posAt(shed), from),
+				)[0];
+			if (
+				b &&
+				dist(b.posAt(shed), from) <= QB_HIT_BLOCKER_FT &&
+				!pool.some(
+					(x) =>
+						x !== m && dist(x.posAt(shed), b.posAt(shed)) <= QB_HIT_BLOCKER_FT,
+				)
+			) {
+				b.cut(shed + QB_HIT_SEE_MS);
+				b.hold(tm + SLIP_DIVE_MS, "passSet", this.toward(b.at, p0));
+				b.hold(t + QB_HIT_STAND_MS, "stand", this.toward(b.at, p0));
+			}
+			// The quarterback: his look downfield till it comes, and out
+			// from under it - then on as before.
+			this.scan(qb, undefined, this.ahead, tm - SLIP_SET_MS, runners);
+			qb.hold(tm, "pocket", this.ahead);
+			if (countOf(qb, snap, 116) < SLIP_SPIN) {
+				qb.act("spin", tm + SPIN_MS, this.ahead, p1);
+				qb.turn(-side * Math.PI * 2);
+				qb.go(down, t, undefined, this.ahead);
+			} else {
+				// (Most of the way over, then on round toward where he goes -
+				// not stepped square across and turned sharp off it.)
+				const v = (SLIP_OVER / SLIP_STEP_MS) * 1000;
+				const q1 = beside(p0, away, SLIP_OVER * SLIP_ROUND);
+				const q2 = {
+					x: p1.x + (down.x - p1.x) * SLIP_ROUND_ON,
+					y: p1.y + (down.y - p1.y) * SLIP_ROUND_ON,
+				};
+				const t1 = tm + SLIP_STEP_MS * SLIP_ROUND;
+				const t2 = Math.min(t - 200, t1 + (dist(q1, q2) / v) * 1000);
+				qb.go(q1, t1, undefined, this.ahead);
+				qb.go(q2, t2, undefined, this.ahead);
+				qb.go(down, t, undefined, this.ahead);
+			}
+			return down;
+		}
+		return undefined;
 	}
 
 	// The man who got home on the quarterback off his block on the way:
