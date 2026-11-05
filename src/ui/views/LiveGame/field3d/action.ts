@@ -2843,6 +2843,13 @@ const INC_SHORT_BY = 3.5;
 const INC_HOP_FT = 7;
 const INC_HOP_MS = 380;
 const INC_HOP_PEAK = 1.3;
+// After one short of him (or over his hands, this often), his palms up at
+// the quarterback this often (see palmsUp): round to him over this long
+// (ms), and up at him so long (ms).
+const INC_PALMS = 0.45;
+const INC_PALMS_OVER = 0.2;
+const INC_PALMS_TURN_MS = 450;
+const INC_PALMS_MS = 1100;
 // Thrown away, a man of theirs this near him (feet) as he lets it go, his
 // own count of the time: lofted, at this share of the pace he throws it
 // at, high over the man it went to and down this far past him (feet) - or
@@ -9094,6 +9101,23 @@ class Action {
 		return false;
 	}
 
+	// The man it was for, on his own count this often (see countOf): pulled
+	// up, round to the quarterback, and his palms up at him over it.
+	palmsUp(rec: Actor, qb: Actor, share: number) {
+		const { snap } = this.input;
+		if (countOf(rec, snap, 129) >= share) {
+			return;
+		}
+		this.slowUp(rec);
+		const at = rec.t + INC_PALMS_TURN_MS;
+		rec.hold(at, "stand", this.toward(rec.at, qb.posAt(at)));
+		rec.act(
+			"protest",
+			at + INC_PALMS_MS,
+			this.toward(rec.at, qb.posAt(at + INC_PALMS_MS)),
+		);
+	}
+
 	// On a few steps the way he was going, slowing up.
 	// From what he is doing to a stop over a step or two, a walk the way he
 	// was going.
@@ -11166,12 +11190,14 @@ class Action {
 			} else {
 				rec.hold(catchAt + 600);
 			}
+			this.palmsUp(rec, qb, INC_PALMS);
 		} else if (u >= INC_DROP + INC_DIVE) {
 			// Over his hands: up at it as it goes on over them, on past him
 			// as far as it goes in the time it takes to come down, and on
 			// the bounce.
 			if (this.reachFor(rec, catchAt, qb, true)) {
 				this.runOn(rec, 700);
+				this.palmsUp(rec, qb, INC_PALMS_OVER);
 			}
 			const sail = clamp(
 				(pace * INC_SAIL_KEEP * INC_DROP_MS) / 1000,

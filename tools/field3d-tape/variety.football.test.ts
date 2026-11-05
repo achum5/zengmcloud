@@ -398,9 +398,11 @@ const incParts = (tl: FieldTimeline, p: Play) => {
 							: "-";
 	const after = did(rec, ["handsOnHelmet"], t, t + 4000)
 		? "hands on helmet"
-		: other.some((q) => did(q, ["sigWave"], t, t + 4000))
-			? "waved off"
-			: "-";
+		: did(rec, ["protest"], t, t + 4000)
+			? "palms up"
+			: other.some((q) => did(q, ["sigWave"], t, t + 4000))
+				? "waved off"
+				: "-";
 	const before = posOf(tl, rec.pid, t - 200) ?? at;
 	const pace = dist(before, at) / 0.2;
 	return {

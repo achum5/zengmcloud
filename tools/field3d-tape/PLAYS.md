@@ -94,12 +94,16 @@ up with his arms as it goes by, the ball off his hands up in the air and
 down behind the line, the man it was for pulling up when he sees it. Only
 where the throw goes by him low enough to reach.
 
-Now (132 incompletions): 129 different combinations. Over his hands 40,
-knocked away 31, off his hands 24, dove for it 14, thrown away 11, short in
-the turf 8, batted at the line 4.
+On his own count, the man it was for now and then pulls up after one short
+of him in the turf (about half the time) or sailed on over his hands (a
+fifth), turns round to the quarterback, and puts his palms up at him.
 
-To do: thrown behind an open man, the receiver's palms up at a ball short
-of him.
+Now (132 incompletions): 130 different combinations. Over his hands 41,
+knocked away 31, off his hands 20, dove for it 16, thrown away 10, short in
+the turf 7, batted at the line 6. Palms up 8, hands on his helmet 12, waved
+off 19.
+
+To do: thrown behind an open man.
 
 ## 4. Punt
 
