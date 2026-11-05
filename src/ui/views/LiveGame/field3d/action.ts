@@ -14787,12 +14787,15 @@ class Action {
 		}
 
 		// (Set where he is till he has to go to get there by `t` - not crept
-		// up on it at a walk.)
+		// up on it at a walk, nor shot off at it from a stand: up to speed
+		// for it - see rampedMs.)
 		const offFor = (m: Actor, to: Pt, t: number) =>
 			m.hold(
 				Math.max(
 					goOf(m),
-					t - ONSIDE_GO_MS - (dist(m.at, to) / (m.top * ONSIDE_GO_PACE)) * 1000,
+					t -
+						ONSIDE_GO_MS -
+						rampedMs(dist(m.at, to), m.top * ONSIDE_GO_PACE, 0, RELEASE_ACCEL),
 				),
 			);
 		// Up for it as it comes, facing it, his hands on it at `t`.
@@ -14858,7 +14861,7 @@ class Action {
 					x: restPt.x - Math.cos(yaw) * 1.6,
 					y: restPt.y - Math.sin(yaw) * 1.6,
 				};
-				muff.press(by, takeT - 200, muff.top * 0.8);
+				muff.pressUp(by, takeT - 200, muff.top * 0.8);
 				muff.lunge("dive", takeT + 250, yaw, by);
 				muff.hold(takeT + 1500, "prone");
 				muff.act("getUp", takeT + 1500 + GET_UP_MS);
