@@ -279,6 +279,8 @@ const SLOW_ALONG_MS = 1500;
 // (Pressed up toward somewhere he can't get to in time: short of it by as
 // much as he can't, less this much, feet - see pressUp.)
 const PRESS_SLACK_FT = 0.5;
+// (Short of it by so much he gets less far than this, feet: stood for it.)
+const PRESS_LEAST_FT = 0.5;
 // (Down at as much as this many times as hard, if he has to be.)
 const STOP_HARD = 1.5;
 // (Short of where that hard a stop takes him by more than this, feet: on
@@ -1973,8 +1975,14 @@ class Actor {
 			this.press(p, t1, fps, move, yaw);
 			return;
 		}
-		// (In the gait he gets up to - going all out, not walked there.)
+		// (In the gait he gets up to - going all out, not walked there, nor
+		// in a sprint he never gets up to.)
 		const u = Math.max(0, reach - PRESS_SLACK_FT) / far;
+		// (Next to nowhere: stood there for it - not running on the spot.)
+		if (u * far < PRESS_LEAST_FT) {
+			this.hold(t1, "stand", yaw);
+			return;
+		}
 		this.press(
 			{
 				x: this.at.x + (p.x - this.at.x) * u,
@@ -1982,7 +1990,7 @@ class Actor {
 			},
 			t1,
 			fps,
-			move ?? gait(v0 + A * ta),
+			move === undefined || RAMPS.has(move) ? gait(v0 + A * ta) : move,
 			yaw,
 		);
 	}
@@ -3206,6 +3214,8 @@ const MESH_APART = 3;
 // (The quarterback's arms out with the ball from this long before the
 // back gets to it, into him this far ahead of the middle of him.)
 const HAND_OUT_MS = 200;
+// (There with it, his arms out, this long before the back has it, ms.)
+const HAND_SET_MS = 60;
 // (The back's arms in to take it this long before it gets to him, and on
 // round it so long after - see poses.ts TAKE_KEYS.)
 const TAKE_BEFORE_MS = 450;
@@ -10403,7 +10413,9 @@ class Action {
 				m.easeOff(BREAK_STOP_FT);
 			}
 		}
-		m.press(spot, by, m.top * FLAT_OUT, "sprint");
+		// (Back up to speed for it no harder than a man can - short of it, if
+		// that is all he gets, not shot back at it from a stand.)
+		m.pressUp(spot, by, m.top * FLAT_OUT, "sprint");
 	}
 
 	// When to break on it, `latest` at the latest: sooner - as soon as he
@@ -12644,7 +12656,13 @@ class Action {
 			carrier === qb
 				? has
 				: sweep
-					? has + (gun ? 150 : 250) + r() * 100
+					? // (No sooner than he can step over to it with it - not
+						// thrown across to it in a blink.)
+						has +
+						Math.max(
+							(gun ? 150 : 250) + r() * 100,
+							HAND_SET_MS + qbStepMs(dist(qb.at, qbMesh)),
+						)
 					: Math.max(
 							has + 180 + qbStepMs(dist(qb.at, qbMesh)) + r() * 150,
 							// (Out of his stance to it, up to speed: see the rider.)
@@ -12713,7 +12731,7 @@ class Action {
 						}
 					: meshPt,
 			);
-			const set = mesh - 60;
+			const set = mesh - HAND_SET_MS;
 			// (Only a blink of a step before his arms go out with it: out
 			// from the first of it, not a sliver of a step between.)
 			const reach = Math.min(set, Math.max(qb.t + 1, mesh - HAND_OUT_MS));
