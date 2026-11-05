@@ -70,16 +70,20 @@ half step off and he presses on in over the next moment as that takes the
 pace out of him, and the shoving that follows comes on gradually from
 there, not bending his run in. A linebacker (or anybody) met on the run
 by a blocker climbing to him pulls up into it over his last strides, the
-same way (hard stops at contact on the game tape: 335 before, 50 now).
+same way - and so does the blocker, a lead blocker up through the hole
+or one out in front of a screen, breaking down into his man and his
+hands pressed in (hard stops at contact on the game tape: 335 before, 39
+now).
 
 Stood up, the man with the ball braces for it - pulled up to about 10 feet
 a second over his last strides, there a moment later, and on into them as
 that takes the rest out of him - before they drive him back, not met at a
-full sprint and sent straight back the other way. A man in the secondary
-left on his feet after his tackle carries on through it off the pace he
-got there at, as far as the man he hit goes down; the rest of the
-defense after the ball plant first off a backpedal and pull up as they
-get there (sudden slowdowns on the game tape 123 before, 63 now).
+full sprint and sent straight back the other way; the men who pile in on
+him do the same, along the way they come in, bent round or not. A man in
+the secondary left on his feet after his tackle carries on through it off
+the pace he got there at, as far as the man he hit goes down; the rest of
+the defense after the ball plant first off a backpedal and pull up as
+they get there (sudden slowdowns on the game tape 123 before, 25 now).
 
 Now (9 games, 442 runs): 380 different combinations. A counter on 16, a
 draw on 9. A toss on 42 (runs to the edge under center, to a back lined up
