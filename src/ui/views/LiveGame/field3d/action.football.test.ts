@@ -114,17 +114,18 @@ describe("the plays acted out", () => {
 				return;
 			}
 			const segs = play.ball;
-			const part = (pid: number) => play.parts.find((p) => p.pid === pid)!;
+			// (An official's too, given it after the play - see crew.ts
+			// ballBack.)
+			const part = (pid: number) =>
+				(play.parts.find((p) => p.pid === pid) ??
+					play.crew.find((p) => p.pid === pid)) as Part;
 			let at: Pt | undefined;
 			for (const [k, s] of segs.entries()) {
 				if (k > 0) {
 					assert.isAtLeast(s.t0, segs[k - 1]!.t0, `play ${play.i}`);
 				}
 				if (s.kind === "held") {
-					assert.isDefined(
-						play.parts.find((p) => p.pid === s.pid),
-						`play ${play.i}`,
-					);
+					assert.isDefined(part(s.pid), `play ${play.i}`);
 					const p = posAt(part(s.pid), s.t0);
 					if (at && s.t0 > play.snap) {
 						// Caught where it came down; taken from the hands that

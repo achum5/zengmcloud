@@ -188,6 +188,10 @@ export type BallSeg =
 			// goes (less than nothing, the right): a kick hooking or
 			// fading.
 			bend?: number;
+			// Tossed down by the man who had it, the play over (see
+			// action.ts) - for an official to take, maybe (see crew.ts
+			// ballBack).
+			down?: true;
 	  };
 
 export type Play = {
@@ -2528,6 +2532,19 @@ class Director {
 		holdTill(parts, t1);
 		// The officials, with the play.
 		const minutes = typeof clock.clock === "number" ? clock.clock : 15;
+		// (The picture on the play after the whistle till the first cut away
+		// from it - the officials left as they are to the end of it.)
+		const ballBack =
+			timeout || postgame || half || measureAt || toss || runOut
+				? undefined
+				: Math.min(
+						t1,
+						replayTill(t1)?.cue ?? Infinity,
+						...this.cuts.filter((c) => c > whistle),
+						// (In close on the referee giving a call, or on a party.)
+						...calls.map((c) => c.t - REF_CLOSE_BEFORE),
+						acted?.party?.from ?? Infinity,
+					);
 		const crew = stageCrew({
 			kind,
 			offense,
@@ -2553,6 +2570,7 @@ class Director {
 			calls,
 			signals,
 			bags: this.bagsOf(kind, offense, i0, i1, acted, ball, parts),
+			...(ballBack !== undefined ? { ballBack } : {}),
 			r: this.rng(i0, "crew"),
 		});
 		if (postgame) {
@@ -2908,6 +2926,7 @@ class Director {
 			t1,
 			parts,
 			ball,
+			crew: crew.parts,
 			r: this.rng(i0, "tv"),
 		});
 		// The home side's man who scored, back to his sideline as the try is

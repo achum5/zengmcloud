@@ -60,6 +60,9 @@ export type TvInput = {
 	t1: number;
 	parts: Part[];
 	ball: BallSeg[];
+	// (The officials: one of them with it, after the play - see crew.ts
+	// ballBack.)
+	crew: CrewPart[];
 	r: () => number;
 };
 
@@ -67,12 +70,14 @@ const clampX = (x: number) => Math.min(FIELD_L + 2, Math.max(-2, x));
 
 export const stageTv = (input: TvInput): CrewPart[] => {
 	const { dir, losX, t0, snap, whistle, t1, parts, ball } = input;
+	const holders = [...parts, ...input.crew];
 	return ([0, 1] as const).map((side) => {
 		const y = side === 0 ? -OFF : FIELD_W + OFF;
 		// (Each his own way of going after it.)
 		const trail = TRAIL * (0.6 + input.r() * 0.9);
 		const gain = GAIN * (0.8 + input.r() * 0.4);
-		const ballAt = (t: number): Pt => anyBall(ball, parts, t) ?? { x: losX, y };
+		const ballAt = (t: number): Pt =>
+			anyBall(ball, holders, t) ?? { x: losX, y };
 		const facing = (at: Pt, t: number) => {
 			const b = ballAt(t);
 			return Math.atan2(b.y - at.y, b.x - at.x);

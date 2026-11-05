@@ -95,6 +95,10 @@ export type CrewInput = {
 	signals: { what: Signaled; t: number; at: Pt; way?: Dir }[];
 	// The spots marked with a bean bag (see BAG_NEAR): when, and where.
 	bags?: { t: number; at: Pt }[];
+	// The picture on the play till then, after the whistle - with the
+	// officials as they are to the end of it: the ball tossed down at the
+	// end of it given back to one of them, if there is time (see BACK_*).
+	ballBack?: number;
 	r: () => number;
 };
 
@@ -201,6 +205,75 @@ const BAG_Z = 5.5;
 const BAG_MS = 350;
 const BAG_MS_FT = 12;
 const BAG_MOST_MS = 900;
+// THE BALL BACK: tossed down by the man who had it, the play over, with the
+// picture on it this long yet at least (ms), this often - flipped underhand
+// to an official in front of him (no further round from the way he faces
+// than this, radians), this far off (feet), free for it and nobody in its
+// way (this near it, feet), stopped and turned to him from this long
+// before (ms) to this long after it is his; it goes this fast (ft/s), from
+// this long at the least to this long at the most (ms), this high over
+// the line (feet, and this much more a foot), to his hands (this far out
+// in front of him, this high).
+const BACK_CATCH_ROOM = 1500;
+const BACK_CATCH = 0.8;
+const BACK_CATCH_OFF = 1.1;
+const BACK_CATCH_LEAST = 6;
+const BACK_CATCH_MOST = 20;
+const BACK_CATCH_CLEAR = 1.6;
+const BACK_CATCH_BEFORE = 400;
+const BACK_CATCH_STAND = 500;
+const BACK_FPS = 24;
+const BACK_LEAST_MS = 380;
+const BACK_MOST_MS = 850;
+const BACK_PEAK = 1;
+const BACK_PEAK_FT = 0.07;
+const BACK_HANDS = 1.3;
+const BACK_HANDS_Z = 3.4;
+// The underhand flip: his arms through it over this long (ms), let go
+// halfway.
+const BACK_FLIP_MS = 440;
+// Else, lying there with the picture on it this long yet at least (ms),
+// this often: picked up by the nearest official free for it no further
+// off than this (feet) - over to it from this long after it is down (ms),
+// at a walk (a jog, from further off than this), stood this far off it
+// (feet) once there (this near it) and this long settled (ms), bent to it
+// over this long and up with it over this long (ms) - the picture on him
+// this long after he has it at least - nobody this near him (feet) the
+// while.
+const BACK_PICK_ROOM = 2600;
+const BACK_PICK = 0.85;
+const BACK_PICK_MOST = 40;
+const BACK_PICK_GO = 350;
+const BACK_PICK_JOG = 10;
+const BACK_REACH = 1.7;
+const BACK_THERE = 0.5;
+const BACK_SETTLE = 200;
+const BACK_SEEN = 300;
+const BACK_DOWN_MS = 450;
+const BACK_UP_MS = 550;
+const BACK_ROOM = 2.2;
+// (Looked at this often (ms), and to this long after he is done with it.)
+const BACK_LOOK_MS = 100;
+const BACK_AFTER_MS = 600;
+// His, then: in both hands stood or walking, tucked away going quicker -
+// and in with it toward the spot of the next snap, this far short of it
+// (feet; round it from where the umpire goes, this far from him at least),
+// at this pace (ft/s).
+const BACK_IN = 4;
+const BACK_APART = 4;
+const BACK_IN_FPS = 5.2;
+const BACK_HELD_UP = new Set<Move>(["stand", "walk", "back"]);
+const FLIP_ON = new Set<Move>(["stand", "walk", "easy"]);
+// How far p is from the line from a to b (feet).
+const offLine = (p: Pt, a: Pt, b: Pt): number => {
+	const vx = b.x - a.x;
+	const vy = b.y - a.y;
+	const l2 = vx * vx + vy * vy;
+	const u =
+		l2 > 0 ? clamp(((p.x - a.x) * vx + (p.y - a.y) * vy) / l2, 0, 1) : 0;
+	return Math.hypot(p.x - a.x - vx * u, p.y - a.y - vy * u);
+};
+
 // The whistle at the end of the play: blown by the man nearest the ball
 // then (no further off than this, feet) not busy with his arms, this long
 // after it and for this long (ms).
@@ -320,9 +393,11 @@ export const posOf = (legs: Leg[], t: number): Pt => {
 
 // Where the ball is at t, along the ground - with a man, or loose on it.
 // (In the air, or stood up for a kick, unsaid: nobody goes by that.)
+// (Anybody's who has it - an official too.)
+type Holds = readonly { pid: number; legs: Leg[] }[];
 const groundBall = (
 	segs: BallSeg[],
-	parts: Part[],
+	parts: Holds,
 	t: number,
 ): Pt | undefined => {
 	let s: BallSeg | undefined;
@@ -344,7 +419,7 @@ const groundBall = (
 // And, wherever it is, where it is over the ground.
 export const anyBall = (
 	segs: BallSeg[],
-	parts: Part[],
+	parts: Holds,
 	t: number,
 ): Pt | undefined => {
 	let s: BallSeg | undefined;
@@ -1296,6 +1371,284 @@ export const stageCrew = (
 			t0: blowT,
 			t1: blowT + WHISTLE_MS,
 		});
+	}
+	// THE BALL BACK (see BACK_*): tossed down by the man who had it, the
+	// play over, and the picture on it a while yet - flipped to an official
+	// in front of him, or picked up off the turf by one - then his, in with
+	// it toward the spot.
+	const segs = input.ball;
+	const had = segs.at(-3);
+	const tossed = segs.at(-2);
+	const lies = segs.at(-1);
+	const seen = input.ballBack;
+	let back: { o: Official; t: number; from: number } | undefined;
+	if (
+		seen !== undefined &&
+		had?.kind === "held" &&
+		tossed?.kind === "fly" &&
+		tossed.down &&
+		lies?.kind === "spot"
+	) {
+		// (Nothing else for him to do or be from then on.)
+		const free = (o: Official, from: number) =>
+			!holds.some((h) => h.o === o && h.t1 > from) &&
+			!arms.some((a) => a.o === o && a.t1 > from);
+		const rewalk = (o: Official) => {
+			const p = posts.find((q) => q.o === o)!;
+			legsOf.set(
+				o,
+				walk(
+					p,
+					holds.filter((h) => h.o === o),
+				),
+			);
+		};
+		const men = input.parts.filter((q) => q.pid >= 0 && q.legs.length > 0);
+		// (Nobody by him over t0..t1 - him where he stands, or this way
+		// over it.)
+		const clear = (at: (x: number) => Pt, t0: number, t1: number) => {
+			for (let x = t0; x <= t1; x += BACK_LOOK_MS) {
+				const p = at(x);
+				if (men.some((q) => dist(posOf(q.legs, x), p) < BACK_ROOM)) {
+					return false;
+				}
+			}
+			return true;
+		};
+		const holder = men.find((q) => q.pid === had.pid);
+		const t = tossed.t0;
+		const hAt = holder && posOf(holder.legs, t);
+		const hYaw = holder?.legs.findLast((l) => l.t0 <= t)?.yaw;
+		if (
+			hAt &&
+			hYaw !== undefined &&
+			seen - t >= BACK_CATCH_ROOM &&
+			r() < BACK_CATCH
+		) {
+			const near = (o: Official) => dist(where(o, t), hAt);
+			for (const o of [...CREW]
+				.filter((o) => free(o, t - BACK_CATCH_BEFORE))
+				.sort((a, b) => near(a) - near(b))) {
+				const at = where(o, t);
+				const far = near(o);
+				if (far > BACK_CATCH_MOST) {
+					break;
+				}
+				const way = Math.atan2(at.y - hAt.y, at.x - hAt.x);
+				if (
+					far < BACK_CATCH_LEAST ||
+					Math.cos(way - hYaw) < Math.cos(BACK_CATCH_OFF)
+				) {
+					continue;
+				}
+				const ms = clamp(
+					(dist(tossed.from, at) / BACK_FPS) * 1000,
+					BACK_LEAST_MS,
+					BACK_MOST_MS,
+				);
+				// (Nobody across its way, there as it goes.)
+				const crossed = men.some(
+					(q) =>
+						q !== holder &&
+						[0, 0.5, 1].some(
+							(u) =>
+								offLine(posOf(q.legs, t + ms * u), tossed.from, at) <
+								BACK_CATCH_CLEAR,
+						),
+				);
+				if (crossed) {
+					continue;
+				}
+				const got = t + ms;
+				const hold: Hold = {
+					o,
+					t0: t - BACK_CATCH_BEFORE,
+					t1: got + BACK_CATCH_STAND,
+					yaw: way + Math.PI,
+				};
+				holds.push(hold);
+				rewalk(o);
+				// (Nobody - him who flipped it either - walking into him.)
+				if (!clear((x) => where(o, x), t, hold.t1 + BACK_AFTER_MS)) {
+					holds.pop();
+					rewalk(o);
+					continue;
+				}
+				const c = where(o, got);
+				const to = {
+					x: c.x + Math.cos(hold.yaw) * BACK_HANDS,
+					y: c.y + Math.sin(hold.yaw) * BACK_HANDS,
+					z: BACK_HANDS_Z,
+				};
+				const d = dist(tossed.from, to);
+				tossed.to = to;
+				tossed.t1 = got;
+				tossed.peak = BACK_PEAK + d * BACK_PEAK_FT;
+				segs[segs.length - 1] = { kind: "held", t0: got, pid: officialId(o) };
+				arms.push({ o, move: "catch", t0: got - 300, t1: got + 220 });
+				// (His arms through it, stood there.)
+				const f0 = t - BACK_FLIP_MS / 2;
+				const f1 = t + BACK_FLIP_MS / 2;
+				if (
+					holder!.legs.every(
+						(l) =>
+							l.t1 <= f0 ||
+							l.t0 >= f1 ||
+							(FLIP_ON.has(l.move) &&
+								!l.span &&
+								(!l.arms || l.arms === "qbSet")),
+					)
+				) {
+					armsOver(holder!.legs, "pitch", f0, f1);
+				}
+				back = { o, t: got, from: hold.t1 };
+				break;
+			}
+		}
+		// (Picked up: over to it, bent to it, and up with it.)
+		const ball = lies.at;
+		if (!back && seen - lies.t0 >= BACK_PICK_ROOM && r() < BACK_PICK) {
+			const go = lies.t0 + BACK_PICK_GO;
+			const near = (o: Official) => dist(where(o, go), ball);
+			for (const o of [...CREW]
+				.filter((o) => free(o, lies.t0))
+				.sort((a, b) => near(a) - near(b))) {
+				const from = where(o, go);
+				const far = near(o);
+				if (far > BACK_PICK_MOST) {
+					break;
+				}
+				const face = Math.atan2(ball.y - from.y, ball.x - from.x);
+				const stand = {
+					x: ball.x - Math.cos(face) * BACK_REACH,
+					y: ball.y - Math.sin(face) * BACK_REACH,
+				};
+				const fps = far > BACK_PICK_JOG ? JOG - 2 : WALK + 1;
+				// (Over there - when he is, as he gets there, settled.)
+				const there: Hold = {
+					o,
+					t0: go,
+					t1: seen,
+					yaw: face,
+					to: stand,
+					fps,
+				};
+				holds.push(there);
+				rewalk(o);
+				const arrived = legsOf
+					.get(o)!
+					.find(
+						(l) =>
+							l.t0 >= go &&
+							l.from.x === l.to.x &&
+							l.from.y === l.to.y &&
+							dist(l.from, stand) < BACK_THERE,
+					)?.t0;
+				const bend = (arrived ?? Infinity) + BACK_SETTLE;
+				const low = bend + BACK_DOWN_MS;
+				const up = low + BACK_UP_MS;
+				const crowded =
+					low + BACK_SEEN <= seen &&
+					(!clear(() => stand, bend - BACK_LOOK_MS, up + BACK_AFTER_MS) ||
+						!clear(() => ball, bend, up));
+				if (low + BACK_SEEN > seen || crowded) {
+					holds.pop();
+					rewalk(o);
+					if (crowded) {
+						continue;
+					}
+					break;
+				}
+				there.t1 = bend;
+				holds.push({ o, t0: bend, t1: up, yaw: face });
+				rewalk(o);
+				const legs = legsOf.get(o)!;
+				splitAt(legs, bend);
+				splitAt(legs, low);
+				splitAt(legs, up);
+				const over = legs.filter((l) => l.t0 >= bend && l.t1 <= up);
+				// (Still the while.)
+				if (
+					over.some((l) => l.from.x !== l.to.x || l.from.y !== l.to.y || l.arms)
+				) {
+					holds.splice(holds.length - 2, 2);
+					rewalk(o);
+					break;
+				}
+				for (const l of over) {
+					l.move = "spotBall";
+					l.yaw = face;
+					l.span =
+						l.t0 < low
+							? [
+									1 - (l.t0 - bend) / (low - bend),
+									1 - (l.t1 - bend) / (low - bend),
+								]
+							: [(l.t0 - low) / (up - low), (l.t1 - low) / (up - low)];
+				}
+				segs.push({ kind: "held", t0: low, pid: officialId(o) });
+				back = { o, t: low, from: up };
+				break;
+			}
+		}
+		// (Then in toward the spot with it - not where the umpire goes.)
+		if (back && back.from < t1) {
+			const spot = w(spotO);
+			const at = where(back.o, back.from);
+			const off = dist(at, spot);
+			if (back.o !== "U" && off > BACK_IN + 1) {
+				const ump = w({ d: spotO.d - 3, a: spotO.a - 2 });
+				let a = Math.atan2(at.y - spot.y, at.x - spot.x);
+				const by = (x: number) => ({
+					x: spot.x + Math.cos(x) * BACK_IN,
+					y: spot.y + Math.sin(x) * BACK_IN,
+				});
+				for (const turn of [0, 0.8, -0.8, 1.6, -1.6]) {
+					if (dist(by(a + turn), ump) >= BACK_APART) {
+						a += turn;
+						break;
+					}
+				}
+				const to = by(a);
+				holds.push({
+					o: back.o,
+					t0: back.from,
+					t1,
+					yaw: Math.atan2(spot.y - to.y, spot.x - to.x),
+					to,
+					fps: BACK_IN_FPS,
+				});
+				// (The way there, after what he did for it as it was.)
+				const from = back.from;
+				const was = legsOf.get(back.o)!;
+				splitAt(was, from);
+				rewalk(back.o);
+				const now = legsOf.get(back.o)!;
+				splitAt(now, from);
+				legsOf.set(back.o, [
+					...was.filter((l) => l.t1 <= from),
+					...now.filter((l) => l.t0 >= from),
+				]);
+			}
+		}
+		// (In both hands, stood or walking; tucked away going quicker.)
+		if (back) {
+			const legs = legsOf.get(back.o)!;
+			splitAt(legs, back.t);
+			for (const l of legs) {
+				if (l.t0 < back.t) {
+					continue;
+				}
+				if (l.move === "spotBall" || l.arms) {
+					l.ball = "hands";
+				} else if (BACK_HELD_UP.has(l.move)) {
+					l.ball = "hands";
+					l.arms = "qbSet";
+				} else {
+					l.ball = "carry";
+				}
+			}
+		}
 	}
 	for (const a of arms) {
 		armsOver(legsOf.get(a.o)!, a.move, a.t0, a.t1, a.left);

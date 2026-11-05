@@ -13,7 +13,8 @@
 //
 // Lines: run (a carry from scrimmage), catch (a completed pass), incomplete
 // (a pass not caught), punt, kickoff, flag, sack, kick (a field goal or
-// a try), pick (an interception).
+// a try), pick (an interception), back (the ball tossed down at the end of
+// a play, and given back to an official).
 // Games: files from realGames.football.test.ts. VARIETY_BY=throw,catch adds
 // how those parts go together, just them.
 
@@ -1051,6 +1052,36 @@ const kneelParts = (p: Play) => {
 	};
 };
 
+// The ball tossed down at the end of a play (see crew.ts ballBack): flipped
+// to an official, picked up off the turf by one, or left lying there - and
+// how he had it.
+const backParts = (p: Play) => {
+	const toss = p.ball.find((b) => b.kind === "fly" && b.down);
+	if (toss?.kind !== "fly") {
+		return undefined;
+	}
+	const last = p.ball.at(-1);
+	const his = last?.kind === "held" && last.pid < 0 ? last : undefined;
+	const legs = his ? p.crew.find((c) => c.pid === his.pid)?.legs : undefined;
+	const held = new Set(
+		(legs ?? [])
+			.filter((l) => his && l.t0 >= his.t0 && l.ball)
+			.map((l) => l.ball),
+	);
+	return {
+		pid: his?.pid ?? 0,
+		parts: {
+			how: !his
+				? "left lying"
+				: his.t0 === toss.t1
+					? "flipped to him"
+					: "picked up",
+			by: his ? (officialOf(his.pid) ?? "?") : "-",
+			held: [...held].join("/") || "-",
+		},
+	};
+};
+
 test.skipIf(games.length === 0)(
 	"football variety of one line",
 	() => {
@@ -1115,14 +1146,16 @@ test.skipIf(games.length === 0)(
 														? pickParts(tl, p)
 														: line === "kneel" && p.kind === "kneel"
 															? kneelParts(p)
-															: line === "hurt" && p.hurt
-																? hurtParts(p)
-																: line === "break" && p.timeout
-																	? breakParts(
-																			p,
-																			evs.includes("twoMinuteWarning"),
-																		)
-																	: undefined;
+															: line === "back"
+																? backParts(p)
+																: line === "hurt" && p.hurt
+																	? hurtParts(p)
+																	: line === "break" && p.timeout
+																		? breakParts(
+																				p,
+																				evs.includes("twoMinuteWarning"),
+																			)
+																		: undefined;
 				if (got) {
 					all.push({
 						pid: `${tag}:${got.pid}`,

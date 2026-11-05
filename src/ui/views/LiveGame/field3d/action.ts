@@ -19082,7 +19082,15 @@ class Action {
 			const from = { ...way.from, z: 3.2 };
 			const to = { ...way.to, z: 0.3 };
 			this.ball.push(
-				{ kind: "fly", t0: tossAt, t1: tossAt + TOSS_MS, from, to, peak: 1.2 },
+				{
+					kind: "fly",
+					t0: tossAt,
+					t1: tossAt + TOSS_MS,
+					from,
+					to,
+					peak: 1.2,
+					down: true,
+				},
 				{ kind: "spot", t0: tossAt + TOSS_MS, at: { ...to, z: 0 } },
 			);
 		}

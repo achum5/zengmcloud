@@ -813,10 +813,7 @@ const handsMet = (
 		end: Pt3,
 		thrown: boolean,
 	): Pt3 => {
-		const part =
-			seg?.kind === "held"
-				? play.parts.find((p) => p.pid === seg.pid)
-				: undefined;
+		const part = seg?.kind === "held" ? holderOf(play, seg.pid) : undefined;
 		const st = part ? stateOf(part, t, apart, play) : undefined;
 		const hold =
 			seg?.kind === "held" ? holdNear(play, seg.pid, t, thrown) : undefined;
@@ -928,6 +925,8 @@ const ballAt = (
 	if (!p) {
 		return {};
 	}
+	// (An official's, given it after the play: nobody's side.)
+	const side = s.pid >= 0 ? { carrier: p.team } : {};
 	const him = { x: p.x, y: p.y, z: HELD_Z };
 	// (Into his hands - caught, or handed to him: the eye from the ball
 	// there, out in front of him, onto him - not from the one to the other
@@ -938,11 +937,11 @@ const ballAt = (
 		if (drawn) {
 			return {
 				focus: eased(drawn, him, (t - into) / FOCUS_EASE_MS),
-				carrier: p.team,
+				...side,
 			};
 		}
 	}
-	return { focus: him, carrier: p.team };
+	return { focus: him, ...side };
 };
 const SNAP_FOCUS_Z = 0.6;
 const HELD_Z = 3.5;
@@ -969,6 +968,12 @@ const PASS_MS = 240;
 const PASS_RISE = 0.12;
 const PASS_RISE_MOST = 1;
 
+// Whoever has it: a man in the play, or an official given it after (see
+// crew.ts ballBack).
+const holderOf = (play: Play, pid: number) =>
+	play.parts.find((p) => p.pid === pid) ??
+	(pid < 0 ? play.crew.find((p) => p.pid === pid) : undefined);
+
 // How he has the ball handing it over at t - the last way he had it by
 // then - or taking it, the first way he has it from then on. (Not long
 // before or after: it is his only so long.)
@@ -979,7 +984,7 @@ const holdNear = (
 	t: number,
 	giving: boolean,
 ): BallHold | undefined => {
-	const legs = play.parts.find((p) => p.pid === pid)?.legs ?? [];
+	const legs = holderOf(play, pid)?.legs ?? [];
 	if (giving) {
 		for (let i = legs.length - 1; i >= 0; i--) {
 			const l = legs[i]!;
