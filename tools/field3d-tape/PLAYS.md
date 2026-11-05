@@ -123,10 +123,14 @@ Set under it, on his own count he takes it in a basket about half the time:
 elbows in, his hands low, the ball into his belly - not always hands up at
 it.
 
-Now (86 punts): 74 different combinations. Out toward the numbers or the
-sideline 41, end over end 15. Set under it 57 (in a basket 27), going back
-6, coming up at a run or on the move 9, juggled 3. A man made to miss on 7
-returns.
+A man made to miss in the return can come while he is still getting up to
+speed, and one grabbing at him from the side is spun out of (as on an
+interception return).
+
+Now (86 punts): 73 different combinations. Out toward the numbers or the
+sideline 40, end over end 17. Set under it 58 (in a basket 24), going back
+5, coming up at a run or on the move 9, juggled 5. A man made to miss on 11
+returns (spun out of 5, juked 5, stiff-armed 1).
 
 The sim credits a tackle on almost every return, even of 0 yards, so fair
 catches and punts let bounce are rare.
@@ -149,9 +153,10 @@ The setup is the sim's: the cover at the receiving 40, the front five yards
 off them, two returners at the 5 and the 2, and nobody but the kicker and
 the returners moving till it is down.
 
-Now (66 kickoffs): 61 different combinations. Out toward the numbers 34.
-Set under it 37 (in a basket 15, as on a punt), coming up at a run or on
-the move 21, going back 5. On the hop 16, knelt 8, juggled 1, let go 3.
+Now (66 kickoffs): 59 different combinations. Out toward the numbers 32.
+Set under it 44 (in a basket 16, as on a punt), coming up at a run or on
+the move 13, going back 7. On the hop 16, knelt 9, juggled 1, let go 2. A
+man made to miss on 1 return (spun out of).
 
 To do: a kick out of bounds (the sim has none in these games), a return
 man reversing field.
@@ -236,11 +241,15 @@ in the air for one thrown a long way; laid out for one with little to come
 of it after, a dive the length a receiver's would be at his pace, and up
 off the turf with it.
 
-Now (14 picks): 14 different combinations. Diving 5, set 4, on the run 2,
-off a tip 2, up for it 1 (all set before).
+Most returns are short and still getting up to speed when they end, the
+nearest man the receiver at his side: now and then he gets a hand on him,
+and is spun out of.
 
-To do: a return with a move in it (no pick return has an evade), a pick
-batted up at the line, the quarterback's own look after it.
+Now (14 picks): 14 different combinations. Off a tip 4, diving 3, set 3,
+on the run 3, up for it 1 (all set before). Spun out of a man's grab in the
+return on 1.
+
+To do: a pick batted up at the line, the quarterback's own look after it.
 
 ## 11. Timeouts, two-minute warning, quarters
 

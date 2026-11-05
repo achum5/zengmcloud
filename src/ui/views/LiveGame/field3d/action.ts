@@ -4073,6 +4073,12 @@ const EVADE_MS = 1200;
 const EVADE_SHORT = 0.35;
 const EVADE_SHORT_FAR = 20;
 const EVADE_SHORT_MS = 800;
+// (A return still getting up to speed: its steps up taken as one stretch,
+// none turned more than this off the last of them, radians.)
+const EVADE_RAMP_TURN = 0.2;
+// (And a man at his side, as far round as this - the cosine off straight
+// ahead of him - grabbing at him: spun out of.)
+const EVADE_RAMP_BEHIND = -0.75;
 // (Met no sooner than this much of the way along it, and with this much of
 // it after, feet.)
 const EVADE_FIRST = 0.25;
@@ -9200,6 +9206,7 @@ class Action {
 		t: number,
 		chasers: Actor[],
 		by?: Actor[],
+		ramped = false,
 	) {
 		if (end.out) {
 			this.runOut(i, carrier, end.pt, end.out, t, chasers, by);
@@ -9230,7 +9237,7 @@ class Action {
 		const down = this.downBy(
 			carrier,
 			end.pt,
-			this.evade(carrier, by ?? [], chasers, t),
+			this.evade(carrier, by ?? [], chasers, t, ramped),
 			chasers,
 			by,
 		);
@@ -9397,9 +9404,40 @@ class Action {
 	// his free arm, put on his back with a stiff arm; or a spin out of his
 	// hands, or over the top of him gone low. Gives when the carry (to have
 	// ended at t) ends now: a cut or a spin costs him a beat.
-	evade(carrier: Actor, by: Actor[], chasers: Actor[], t: number): number {
+	evade(
+		carrier: Actor,
+		by: Actor[],
+		chasers: Actor[],
+		t: number,
+		ramped = false,
+	): number {
 		const r = this.r;
-		const l = carrier.last;
+		let l = carrier.last;
+		// (`ramped`: a return still getting up to speed to the end of it -
+		// its steps up, one stretch the one way, as one.)
+		if (ramped && dist(l.from, l.to) < EVADE_SHORT_FAR) {
+			const legs = carrier.legs;
+			const way = Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x);
+			let k = legs.length - 1;
+			while (k > 0) {
+				const p = legs[k - 1]!;
+				const q = legs[k]!;
+				const pw = Math.atan2(p.to.y - p.from.y, p.to.x - p.from.x);
+				if (
+					!GAITS.has(p.move) ||
+					p.arms !== undefined ||
+					p.ball !== l.ball ||
+					Math.abs(p.t1 - q.t0) > 1 ||
+					dist(p.from, p.to) < 0.05 ||
+					Math.abs(Math.atan2(Math.sin(pw - way), Math.cos(pw - way))) >
+						EVADE_RAMP_TURN
+				) {
+					break;
+				}
+				k--;
+			}
+			l = { ...l, from: legs[k]!.from, t0: legs[k]!.t0 };
+		}
 		const { t1 } = l;
 		const ms = t1 - l.t0;
 		// (On a shorter stretch, less often, and only a quick one: a cut or
@@ -9440,18 +9478,22 @@ class Action {
 				t: this.canReach(c, at),
 				from: c.posAt(Math.max(this.seen, Math.min(c.t, tc - 700))),
 			}))
-			// (Coming at him, not from behind - and able to get to him in
-			// time, off what he is doing: see closeOn.)
+			// (Coming at him, not from behind - on a return, from no further
+			// round than his side, a hand on him: spun out of - and able to
+			// get to him in time, off what he is doing: see closeOn.)
 			.filter(
 				(x) =>
 					x.t < tc - 250 &&
-					Math.cos(Math.atan2(x.from.y - at.y, x.from.x - at.x) - ang) > -0.3 &&
+					Math.cos(Math.atan2(x.from.y - at.y, x.from.x - at.x) - ang) >
+						(ramped ? EVADE_RAMP_BEHIND : -0.3) &&
 					this.closeFrom(x.c, at, tc - 300).need <= x.c.top * CLOSE,
 			)
 			.sort((a, b) => a.t - b.t)[0];
 		if (!m) {
 			return t;
 		}
+		const behind =
+			Math.cos(Math.atan2(m.from.y - at.y, m.from.x - at.x) - ang) <= -0.3;
 		return this.makeMiss(
 			carrier,
 			m.c,
@@ -9459,7 +9501,7 @@ class Action {
 			tc,
 			l,
 			t,
-			short ? "quick" : undefined,
+			behind ? "spin" : short ? "quick" : undefined,
 		);
 	}
 
@@ -11631,7 +11673,7 @@ class Action {
 		chasers: Actor[],
 	) {
 		if (!td) {
-			this.endCarry(i, carrier, { pt, td: false }, t, chasers);
+			this.endCarry(i, carrier, { pt, td: false }, t, chasers, undefined, true);
 			return;
 		}
 		const crossT = this.crossingBack(carrier, t);
