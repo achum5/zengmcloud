@@ -821,7 +821,9 @@ const sackParts = (tl: FieldTimeline, p: Play) => {
 		? "none"
 		: qb.legs.some((l) => l.move === "spin" && l.t0 > p.snap && l.t0 < w)
 			? "spun out"
-			: "stepped aside";
+			: qb.legs.some((l) => l.move === "duck" && l.t0 > p.snap && l.t0 < w)
+				? "ducked under"
+				: "stepped aside";
 	return {
 		pid: near?.q.pid ?? 0,
 		parts: {

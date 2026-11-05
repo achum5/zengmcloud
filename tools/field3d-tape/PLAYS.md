@@ -191,7 +191,8 @@ To do: the yards walked off after the call.
 
 ## 7. Sack
 
-Parts: another of them slipped first or not (spun out, stepped aside), how
+Parts: another of them slipped first or not (spun out, stepped aside,
+ducked under), how
 long he had, what the quarterback did with it (stood in the pocket, stepped
 up, drifted back, slid aside, got out of it), where the man
 who got there came at him from, how he was brought down and by how many,
@@ -205,13 +206,17 @@ a finger to the sky), his mates in on it. Now and then another of the rush
 gets off his block and at him first, a moment before - the quarterback
 spins out or steps aside from under it, eyes still downfield, and that man
 is left on the turf where he was (only one coming from in front or behind,
-with the man who gets him on the side he gets away to).
+with the man who gets him on the side he gets away to). Or, on his own
+count about a third of those times, he ducks under him - down low with the
+ball tucked at his chest as that man comes in high and goes on by over the
+top of him, beside him - and up and on.
 
-Now (38 sacks): slipped first 7 (stepped aside 6, spun out 1). Drifted back
-15, stepped up 9, slid aside 7, stood 4, out of the pocket 3. Celebrations
-13 ways (from 6, every one a flex).
+Now (38 sacks): slipped first 4 (stepped aside 3, spun out 1; none ducked
+under in these nine games - with every slip made a duck, all 4 filmed
+right). Drifted back 14, stepped up 9, stood 7, slid aside 5, out of the
+pocket 3. Head on 24, from behind 8, from the side 6. Celebrations 13 ways.
 
-To do: a duck under the first man, more from the blind side (2 of 38).
+To do: more from the blind side.
 
 ## 8, 9. Extra point and field goal
 

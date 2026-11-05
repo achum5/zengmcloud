@@ -2141,6 +2141,49 @@ const FIELD_ANIMS = {
 	},
 	// A spin move: a foot planted, low, round on it with his free arm out -
 	// and off again.
+	// The quarterback ducking under a man coming at him high: down low,
+	// the ball tucked in at his chest, his head down - and up out of it.
+	duck: {
+		kind: "act",
+		keys: [
+			[0, QB_SET],
+			[
+				0.3,
+				pose({
+					hipN: 52,
+					kneeN: 80,
+					hipF: 56,
+					kneeF: 84,
+					lean: 32,
+					wide: 0.9,
+					shN: 24,
+					elN: 112,
+					abN: -12,
+					shF: 24,
+					elF: 112,
+					abF: -12,
+				}),
+			],
+			[
+				0.6,
+				pose({
+					hipN: 60,
+					kneeN: 92,
+					hipF: 62,
+					kneeF: 94,
+					lean: 38,
+					wide: 0.9,
+					shN: 22,
+					elN: 116,
+					abN: -12,
+					shF: 22,
+					elF: 116,
+					abF: -12,
+				}),
+			],
+			[1, QB_SET],
+		],
+	},
 	spin: {
 		kind: "act",
 		keys: [

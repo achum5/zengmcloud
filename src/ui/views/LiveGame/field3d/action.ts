@@ -2647,6 +2647,7 @@ const IN_HANDS = new Set<Move>([
 	"handOff",
 	"pitch",
 	"kneelDown",
+	"duck",
 	"catch",
 	"basket",
 	"leapCatch",
@@ -3273,6 +3274,15 @@ const SLIP_PAST = 0.2;
 const SLIP_DOWN_MS = 700;
 const SLIP_SPIN = 0.5;
 const SLIP_STEP_MS = 380;
+// (Ducked under him this often - the rest spun or stepped out of, half and
+// half: him by on the other side this far (feet) and down this far on past
+// where the quarterback was (feet); down under it from this long before
+// he gets there (ms), over this long.)
+const SLIP_DUCK = 0.35;
+const SLIP_DUCK_BY = 2.2;
+const SLIP_DUCK_PAST = 2.5;
+const SLIP_DUCK_IN = 250;
+const SLIP_DUCK_MS = 750;
 // (The step round toward where he goes: this share of the way over, then
 // this share on from there toward it.)
 const SLIP_ROUND = 0.8;
@@ -11870,6 +11880,12 @@ class Action {
 			}
 			const away = face + (side * Math.PI) / 2;
 			const p1 = beside(p0, away, SLIP_OVER);
+			// (Or ducked under him, on his own count: him in at the
+			// quarterback high, by him on the other side - over the top of
+			// him as he goes down under it.)
+			const way = countOf(qb, snap, 116);
+			const duck = way < SLIP_DUCK;
+			const by = (p: Pt) => (duck ? beside(p, away, -SLIP_DUCK_BY) : p);
 			// (Brought down over on that side - moved across the field to
 			// it, if it takes that: as far back as the sim has it.)
 			const short = SLIP_CLEAR - off(at) * side;
@@ -11881,7 +11897,7 @@ class Action {
 			}
 			// Him: off his block, in, and off his feet at where the
 			// quarterback was.
-			const hit = beside(p0, face, -SLIP_HIT_FT);
+			const hit = by(beside(p0, face, -SLIP_HIT_FT));
 			const fast = dist(from, hit) / ((tm - shed) / 1000) >= QB_HIT_RUN_FPS;
 			m.cut(shed);
 			m.getOff(
@@ -11891,7 +11907,12 @@ class Action {
 				GET_OFF_ACCEL,
 				fast ? "run" : undefined,
 			);
-			m.lunge("dive", tm + SLIP_DIVE_MS, face, beside(p0, face, SLIP_PAST));
+			m.lunge(
+				"dive",
+				tm + SLIP_DIVE_MS,
+				face,
+				by(beside(p0, face, duck ? SLIP_DUCK_PAST : SLIP_PAST)),
+			);
 			m.hold(m.t + SLIP_DOWN_MS, "prone");
 			m.act("getUp", m.t + GET_UP_MS);
 			if (tm - shed >= RUSH_MOVE_AFTER) {
@@ -11925,8 +11946,14 @@ class Action {
 			// The quarterback: his look downfield till it comes, and out
 			// from under it - then on as before.
 			this.scan(qb, undefined, this.ahead, tm - SLIP_SET_MS, runners);
+			if (duck) {
+				qb.hold(tm - SLIP_DUCK_IN, "pocket", this.ahead);
+				qb.act("duck", tm + SLIP_DUCK_MS - SLIP_DUCK_IN, this.ahead);
+				qb.go(down, t, undefined, this.ahead);
+				return down;
+			}
 			qb.hold(tm, "pocket", this.ahead);
-			if (countOf(qb, snap, 116) < SLIP_SPIN) {
+			if (way < SLIP_DUCK + (1 - SLIP_DUCK) * SLIP_SPIN) {
 				qb.act("spin", tm + SPIN_MS, this.ahead, p1);
 				qb.turn(-side * Math.PI * 2);
 				qb.go(down, t, undefined, this.ahead);
