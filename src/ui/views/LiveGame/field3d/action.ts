@@ -2751,10 +2751,11 @@ const OVER_NOT = new Set<Move>([
 ]);
 const G = 32;
 // A pass: on a line at this pace (ft/s), lofted a little slower over this
-// much more for each foot it goes, down to no slower than this.
+// much more for each foot it goes, down to no slower than this - a deep
+// one with some touch on it, up and over and down into his hands.
 const PASS_FPS = 70;
-const PASS_LOFT = 0.05;
-const PASS_LEAST_FPS = 60;
+const PASS_LOFT = 0.12;
+const PASS_LEAST_FPS = 48;
 // (A big arm, against the other quarterbacks in the game: that much harder
 // at the most, a weak one that much softer.)
 const ARM = 0.08;
@@ -5478,6 +5479,13 @@ class Action {
 					l.t0 >= from &&
 					free.some(([a, b]) => l.t0 >= a && l.t1 <= b),
 			);
+			const eases: {
+				t0: number;
+				t1: number;
+				a: Pt;
+				b: Pt;
+				f: (u: number) => number;
+			}[] = [];
 			// (A run of them together the one way, at the one pace: not
 			// swaying on with the push he had into nobody, a step a walk and
 			// the next a jog.)
@@ -5523,8 +5531,49 @@ class Action {
 						l.to = on(l.t1);
 						l.move = move;
 					}
+					// (At a jog, and stood after it: slowed into that over all
+					// of it - up to it from a stand too, if stood before - not
+					// stopped dead off it.)
+					const prev = m.legs[i - 1];
+					const still = (l?: Leg) =>
+						l !== undefined &&
+						moveKind(l.move) === "still" &&
+						l.from.x === l.to.x &&
+						l.from.y === l.to.y;
+					if (move === "jog" && next?.t0 === run.at(-1)!.t1 && still(next)) {
+						const up = !prev || still(prev) || legPace(prev) < fps * 1.5;
+						eases.push({
+							t0,
+							t1: t0 + span,
+							a,
+							b,
+							f: up ? (u) => u * u * (3 - 2 * u) : (u) => 1 - (1 - u) * (1 - u),
+						});
+					}
 				}
 				i = j;
+			}
+			for (const e of eases) {
+				for (
+					let t = e.t0 + STOP_STEP_MS;
+					t < e.t1 - STOP_STEP_MS / 2;
+					t += STOP_STEP_MS
+				) {
+					m.split(t);
+				}
+				const at = (t: number) => {
+					const u = e.f(clamp((t - e.t0) / (e.t1 - e.t0), 0, 1));
+					return {
+						x: e.a.x + (e.b.x - e.a.x) * u,
+						y: e.a.y + (e.b.y - e.a.y) * u,
+					};
+				};
+				for (const l of m.legs) {
+					if (l.t0 >= e.t0 && l.t1 <= e.t1) {
+						l.from = at(l.t0);
+						l.to = at(l.t1);
+					}
+				}
 			}
 		}
 	}
@@ -17203,6 +17252,7 @@ class Action {
 				// (Short of it by half the way, or as much as pulling up hard
 				// takes, short of the ball.)
 				// (Or by it, if he cannot pull up short of it.)
+				// (Nor over a man down on the way: bent off by him.)
 				if (GAITS.has(m.last.move) && ball) {
 					const v = legPace(m.last);
 					const near = dist(m.at, ball);
@@ -17210,7 +17260,8 @@ class Action {
 					if (stop > near - 2.5) {
 						m.easeOff(Math.min(EASE_OFF_FT, stop), ball);
 					} else {
-						m.easeOff(Math.min(EASE_OFF_FT, Math.max(near * 0.5, stop)));
+						const ft = Math.min(EASE_OFF_FT, Math.max(near * 0.5, stop));
+						m.easeOff(ft, this.lyingOn(m, ft));
 					}
 				}
 				m.hold(m.t + 600, "stand");
@@ -17223,6 +17274,33 @@ class Action {
 			}
 			m.hold(Math.max(m.t, t) + 600, "stand");
 		}
+	}
+
+	// Where a man down is in m's way on along the way he is going, the
+	// next `ft` feet of it, if anybody is - as he gets there, near enough
+	// (see easeOff).
+	private lyingOn(m: Actor, ft: number): Pt | undefined {
+		const l = m.last;
+		const far = dist(l.from, l.to);
+		const v = legPace(l);
+		if (far <= 0 || v <= 0) {
+			return undefined;
+		}
+		const ux = (l.to.x - l.from.x) / far;
+		const uy = (l.to.y - l.from.y) / far;
+		for (let s = 0; s <= ft * 2; s += 1) {
+			const p = { x: m.at.x + ux * s, y: m.at.y + uy * s };
+			const t = m.t + (s / v) * 1000;
+			for (const o of this.men) {
+				if (o !== m && DOWN.has(legAt(o, t).move)) {
+					const at = o.posAt(t);
+					if (dist(at, p) < EASE_PAST_FT) {
+						return at;
+					}
+				}
+			}
+		}
+		return undefined;
 	}
 
 	// UP AGAIN WITH IT STILL GOING: a man up off the turf with the play

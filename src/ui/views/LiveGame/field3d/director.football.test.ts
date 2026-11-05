@@ -1560,6 +1560,9 @@ describe("after the whistle", () => {
 							!["jog", "run", "sprint"].includes(a.move) ||
 							(b.move !== "stand" && b.move !== "easy") ||
 							b.t0 !== a.t1 ||
+							// (The picture cuts away there, and he is somewhere
+							// else after it - nobody sees him stop.)
+							tl.cuts.includes(b.t0) ||
 							// (Stood, or all but: a step shoved against an edge.)
 							Math.hypot(b.to.x - b.from.x, b.to.y - b.from.y) >
 								(b.t1 - b.t0) / 1000
