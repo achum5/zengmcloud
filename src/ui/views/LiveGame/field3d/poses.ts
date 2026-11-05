@@ -787,6 +787,22 @@ const HUG: Partial<Pose> = {
 	lean: 8,
 };
 const HUG_SLAP: Partial<Pose> = { ...HUG, shF: 100, elF: 74 };
+// From behind a man and to his side, his right hand out on top of the
+// man's near shoulder (his arm out in front of him, the elbow a little
+// bent), and up off it for a pat; reached there at PAT_AT.
+const PAT: Partial<Pose> = { shN: 48, elN: 66, abN: 4, lean: 4 };
+const PAT_UP: Partial<Pose> = { ...PAT, shN: 52, elN: 80 };
+export const PAT_AT = 0.26;
+const PAT_KEYS: [number, Pose][] = [
+	[0, BASE],
+	[PAT_AT, pose(PAT)],
+	[0.38, pose(PAT_UP)],
+	[0.48, pose(PAT)],
+	[0.6, pose(PAT_UP)],
+	[0.7, pose(PAT)],
+	[0.84, pose(PAT)],
+	[1, BASE],
+];
 // A cheerleader's arms (see poms): up in a V, out level, down in a V.
 const POMS_UP: Partial<Pose> = {
 	shN: 158,
@@ -3773,6 +3789,13 @@ const FIELD_ANIMS = {
 			[1, BASE],
 		],
 	},
+	// A hand on a man's shoulder from behind him and to his side, a pat or
+	// two on it (see PAT) - his right hand, or his left.
+	pat: { kind: "act", keys: PAT_KEYS },
+	patL: {
+		kind: "act",
+		keys: PAT_KEYS.map(([k, q]): [number, Pose] => [k, mirror(q)]),
+	},
 	// A step in, up off both feet, chests together in the air with the arms
 	// flung back, and down (the court's).
 	chestBump: {
@@ -4627,6 +4650,15 @@ export const handsMeet = (
 		turn: Math.atan2(-hand.s, hand.f),
 	};
 };
+
+// Where his right hand is partway through a move, in his own frame (feet:
+// forward, to his left, up).
+export const handOf = (
+	b: Body,
+	m: Move,
+	phase: number,
+): { f: number; s: number; u: number } =>
+	skeleton(b, poseOfMove(m, phase)).armR.end;
 
 // How far off the turf his strides take him partway through a move (feet,
 // as the court has it): running, between one foot and the next; walking,

@@ -897,7 +897,11 @@ const tryParts = (tl: FieldTimeline, p: Play, made: boolean) => {
 										l.move === "takeKnee"),
 							)
 							.map((l) =>
-								l.move === "easyHips" ? "onHips" : (l.arms ?? l.move),
+								l.move === "easyHips"
+									? "onHips"
+									: l.move === "patL"
+										? "pat"
+										: (l.arms ?? l.move),
 							),
 					),
 				]

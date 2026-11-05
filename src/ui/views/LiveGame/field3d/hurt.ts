@@ -97,7 +97,14 @@ const WAVE_SHARE = 0.75;
 const WAVE_AFTER = 150;
 const WAVE_TURN_MS = 250;
 const WAVE_MS = 1700;
-const PAIRED = new Set<Move>(["highFive", "chestBump", "hug", "shake"]);
+const PAIRED = new Set<Move>([
+	"highFive",
+	"chestBump",
+	"hug",
+	"shake",
+	"pat",
+	"patL",
+]);
 // (How near the way from a to b comes to the length of him, p0 to p1.)
 const nearOn = (a: Pt, b: Pt, p0: Pt, p1: Pt): number => {
 	const vx = p1.x - p0.x;

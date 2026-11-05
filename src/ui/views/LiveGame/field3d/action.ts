@@ -34,6 +34,8 @@ import { touching } from "./apart.ts";
 import { fallHurt, HURT_MOST } from "./hurt.ts";
 import {
 	HIGH_FIVE_AT,
+	PAT_AT,
+	handOf,
 	handsMeet,
 	heldBall,
 	liftOf,
@@ -18193,6 +18195,13 @@ class Action {
 				);
 				k.hold(k.t + KICKER_UP_MS, "stand", look);
 			}
+			// (The holder, this often, over to him while he stands there with
+			// it - not down on a knee - a hand on his shoulder, a pat or two:
+			// see holderPat.)
+			if (u < KICKER_LOOK[1] && countOf(h, this.input.snap, 133) < HOLDER_PAT) {
+				const go = seen + HOLDER_PAT_MS[0] + r() * HOLDER_PAT_MS[1];
+				this.holderPat(h, k, Math.max(go, h.t), look);
+			}
 			if (blown) {
 				this.party = { from: seen, at: k.posAt(seen), hero: k.pid };
 				this.until = Math.max(this.until, k.t);
@@ -20107,6 +20116,40 @@ class Action {
 		}
 	}
 
+	// The holder up and over to the kicker after a miss, from `go`: in
+	// behind him on the side he is already on, a little turned in to him,
+	// his near hand out onto the kicker's shoulder (see PAT_ON) - a pat or
+	// two on it - and off it. The kicker stood where he is from `go`, facing
+	// `look`.
+	holderPat(h: Actor, k: Actor, go: number, look: number) {
+		const at = k.posAt(go);
+		const fx = Math.cos(look);
+		const fy = Math.sin(look);
+		// (His left: see bodyPoint.)
+		const side = (h.at.x - at.x) * fy - (h.at.y - at.y) * fx >= 0 ? 1 : -1;
+		const yaw = look + side * PAT_TURN;
+		const on = {
+			x: at.x + fx * PAT_ON.f + fy * side * PAT_ON.s,
+			y: at.y + fy * PAT_ON.f - fx * side * PAT_ON.s,
+		};
+		const hf = PAT_HAND.f;
+		const hs = PAT_HAND.s * side;
+		const stand = {
+			x: on.x - (Math.cos(yaw) * hf + Math.sin(yaw) * hs),
+			y: on.y - (Math.sin(yaw) * hf - Math.cos(yaw) * hs),
+		};
+		h.cut(go);
+		h.hold(go);
+		if ((dist(h.at, stand) / PAT_FPS) * 1000 < FIVE_STEP_MS) {
+			h.go(stand, h.t + FIVE_STEP_MS, undefined, yaw);
+		} else {
+			h.run(stand, PAT_FPS);
+		}
+		h.hold(h.t + PAT_SET_MS, "stand", yaw);
+		h.act(side > 0 ? "pat" : "patL", h.t + PAT_MS, yaw);
+		h.hold(h.t + PAT_AFTER_MS, "stand", yaw);
+	}
+
 	// Two men, from `go`, over to each other at FIVE_FPS (to meet halfway)
 	// and a high five.
 	highFive(a: Actor, b: Actor, go: number) {
@@ -20755,6 +20798,22 @@ const KICKER_HIPS_MS = 2200;
 const KICKER_KNEE_MS = 1500;
 const KICKER_UP_MS = 500;
 const KICK_SEEN_MS = 300;
+// A kick missed, the kicker stood there with it: the holder this often up
+// and over to him (see holderPat), from this long after the kicker sees it
+// (ms, and up to this much later); at this pace (ft/s), turned in to him
+// this much (radians), his hand out onto this spot on him (his frame, feet:
+// on top of his near shoulder, behind the arm); there this long (ms) first,
+// then at it this long, and stood there after this long.
+const HOLDER_PAT = 0.65;
+const HOLDER_PAT_MS: [number, number] = [250, 400];
+const PAT_FPS = 4.5;
+const PAT_TURN = 0.2;
+const PAT_ON = { f: -0.5, s: 0.4 };
+const PAT_SET_MS = 150;
+const PAT_MS = 1400;
+const PAT_AFTER_MS = 400;
+// (Where his hand is on him, out on the shoulder: see PAT.)
+const PAT_HAND = handOf(drawnBody(footballBody()), "pat", PAT_AT);
 const FIVE_MS = 800;
 // (Squared up to each other this long first, the later there of the two -
 // not into it off his last step.)

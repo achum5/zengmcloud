@@ -125,6 +125,8 @@ const TOUCH = new Set<Move>([
 	"hug",
 	"chestBump",
 	"highFive",
+	"pat",
+	"patL",
 	"coolerCarry",
 	"coolerDump",
 	"doused",
