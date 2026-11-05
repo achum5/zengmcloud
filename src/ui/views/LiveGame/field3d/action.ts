@@ -3488,6 +3488,22 @@ const PITCH_PEAK = 1.3;
 // (The quarterback off the other way after it, this far back and across,
 // feet.)
 const PITCH_BOOT = [5, 9] as const;
+// The option out of the gun, this often on a run to the edge with the back
+// lined up beside the quarterback on that side (no further off him than
+// this, feet, either way): the quarterback down the line with it this far
+// across and this far up (feet) at no more than this much of his top
+// speed, the back out wide of him, this far further across and this far
+// behind him (feet) as it is pitched - on the run, the quarterback's arms
+// through it as he goes, and him eased up after it in no more than this
+// (feet).
+const OPTION = 0.25;
+const OPTION_BESIDE = [8, 4] as const;
+const OPTION_ALONG = 9;
+const OPTION_UP = 4;
+const OPTION_PACE = 0.6;
+const OPTION_OUT = 9;
+const OPTION_BEHIND = 2.5;
+const OPTION_EASE_FT = 8;
 // An inside zone run made to go one way and cut back the other this often;
 // the back pressing it to this far behind the line and this far over that
 // way first (feet).
@@ -13978,6 +13994,23 @@ class Action {
 			carrier !== qb &&
 			cs.d <= -PITCH_DEEP &&
 			countOf(carrier, snap, 80) < PITCH;
+		// Or the option out of the gun: down the line with it, the back out
+		// wide of him, and pitched to him on the run.
+		const q0 = this.of(qb.at);
+		const option =
+			outside &&
+			gun &&
+			!sweep &&
+			carrier !== qb &&
+			spotOf(carrier.role) === "back" &&
+			Math.sign(cs.a - q0.a) === strong &&
+			Math.abs(cs.a - q0.a) <= OPTION_BESIDE[0] &&
+			Math.abs(cs.d - q0.d) <= OPTION_BESIDE[1] &&
+			countOf(carrier, snap, 124) < OPTION;
+		const optionAt = this.w({
+			d: q0.d + OPTION_UP,
+			a: q0.a + strong * OPTION_ALONG,
+		});
 		// The quarterback keeping it (not a sneak), as a rule off a ride: the
 		// read option in the gun, a fake to the back under center - the back
 		// one way, and he the other, round the edge. (Under center, always:
@@ -14022,14 +14055,19 @@ class Action {
 				? qb.at
 				: pitch
 					? this.w({ d: cs.d + PITCH_UP, a: cs.a + strong * PITCH_OUT })
-					: this.w(
-							sweep
-								? { d: gun ? qs.d + 2 : qs.d - 2.5, a: side * 1.5 }
-								: {
-										d: gun ? qs.d + 0.5 : qs.d - 9,
-										a: side * (gun ? 2.5 : 3),
-									},
-						);
+					: option
+						? this.w({
+								d: q0.d + OPTION_UP - OPTION_BEHIND,
+								a: q0.a + strong * (OPTION_ALONG + OPTION_OUT),
+							})
+						: this.w(
+								sweep
+									? { d: gun ? qs.d + 2 : qs.d - 2.5, a: side * 1.5 }
+									: {
+											d: gun ? qs.d + 0.5 : qs.d - 9,
+											a: side * (gun ? 2.5 : 3),
+										},
+							);
 		const qbMesh = this.w({
 			...this.of(meshPt),
 			a: this.of(meshPt).a - side * MESH_APART,
@@ -14099,7 +14137,66 @@ class Action {
 		if (handoffI >= 0 && carrier !== qb) {
 			this.at.set(handoffI, mesh);
 		}
-		if (pitch) {
+		if (option) {
+			// Down the line with it, the back out wide of him: pitched to him
+			// as he gets there, in his stride - let go as soon as he is
+			// there, or later, the back too far off it to be there to meet
+			// it - and eased up after it.
+			const from: Pt3 = { ...optionAt, z: PITCH_FROM_Z };
+			const to: Pt3 = { ...meshPt, z: CATCH_Z };
+			const flight = (dist(from, to) / PITCH_FPS) * 1000;
+			const reach = rampedMs(
+				dist(carrier.at, meshPt),
+				carrier.top * PITCH_PACE,
+				0,
+				RELEASE_ACCEL,
+			);
+			const hasIt = Math.max(has, qb.t);
+			const letGo = Math.max(
+				hasIt +
+					rampedMs(
+						dist(qb.at, optionAt),
+						qb.top * OPTION_PACE,
+						0,
+						RELEASE_ACCEL,
+					),
+				snap + lead + reach - flight,
+			);
+			mesh = letGo + flight;
+			if (handoffI >= 0) {
+				this.at.set(handoffI, letGo);
+			}
+			qb.getOff(optionAt, letGo, 0, RELEASE_ACCEL, "run");
+			const v = legPace(qb.last);
+			const way = this.toward(qb.last.from, optionAt);
+			const on = (v * PITCH_MS) / 2000;
+			qb.go(
+				{
+					x: optionAt.x + Math.cos(way) * on,
+					y: optionAt.y + Math.sin(way) * on,
+				},
+				letGo + PITCH_MS / 2,
+			);
+			qb.arms("pitch", letGo - PITCH_MS / 2, letGo + PITCH_MS / 2);
+			qb.easeOff(OPTION_EASE_FT);
+			qb.hold(mesh + 2000, "stand");
+			this.done.add(qb.pid);
+			this.ball.push(
+				{ kind: "fly", t0: letGo, t1: mesh, from, to, peak: PITCH_PEAK },
+				{ kind: "held", t0: mesh, pid: carrier.pid },
+			);
+			// The back off with the snap, out wide of him and there as it
+			// comes, his hands up for it.
+			carrier.hold(snap + lead);
+			carrier.getOff(meshPt, mesh, 0, RELEASE_ACCEL, "run");
+			carrier.pin(mesh);
+			this.reaches.push({
+				m: carrier,
+				move: "catch",
+				t0: mesh - CATCH_REACH_MS,
+				t1: mesh + CATCH_IN_MS,
+			});
+		} else if (pitch) {
 			// The quarterback opened up to him, a step back his way, and the
 			// ball tossed out in front of him underhand, to take on the move:
 			// let go as soon as he is there - or later, the back too far off
@@ -14326,7 +14423,8 @@ class Action {
 			}
 			carrier.run(
 				holePt,
-				carrier.top * (sweep || rider || pitch ? 0.88 : outside ? 0.76 : 0.64),
+				carrier.top *
+					(sweep || rider || pitch || option ? 0.88 : outside ? 0.76 : 0.64),
 			);
 			t = carrier.run(
 				end.pt,
@@ -19974,7 +20072,7 @@ const RUSH_MOVE_NEAR = 6;
 const RUSH_MOVE_LEAST = 700;
 // (A spin instead, this often - with this long left to run on after it at
 // least, ms, and going this far in it, feet.)
-const RUSH_SPIN = 0.2;
+const RUSH_SPIN = 0.3;
 const RUSH_SPIN_AFTER = 150;
 const RUSH_SPIN_LEAST_FT = 2;
 // A man hurt with no part in it the sim names: pulled up lame no later

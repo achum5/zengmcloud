@@ -31,18 +31,22 @@ Combinations: distinct whole combinations of the variety tool's parts.
 ## 1. Run
 
 Parts: formation and the quarterback's set; the exchange (handoff, keeper,
-a toss); where he hits the line (inside, off tackle, outside, wide, each
-side) and a cutback or not; a move to make a man miss (juke, spin, hurdle,
-stiff arm); how it ends (tackled, swung down, driven back, stood up, slid,
-out of bounds, in); how many bring him down; the gain (the sim's).
+a toss, the option); where he hits the line (inside, off tackle, outside,
+wide, each side) and a cutback or not; a move to make a man miss (juke,
+spin, hurdle, stiff arm); how it ends (tackled, swung down, driven back,
+stood up, slid, out of bounds, in); how many bring him down; the gain (the
+sim's).
 
-Now (9 games, 449 runs): 378 different combinations. A toss on 39 (runs to
-the edge under center, to a back lined up deep). A cutback on 60 (inside
-zone made to go one way, the back pressing it and cutting back behind the
-line). A move to make a man miss on 36 (8%).
+Now (9 games, 443 runs): 379 different combinations. A toss on 35 (runs to
+the edge under center, to a back lined up deep). The option on 4 (a run to
+the edge out of the gun, the back beside the quarterback on that side: the
+quarterback down the line with it, the back out wide of him and a step
+behind, pitched to him on the run, the quarterback easing up after it). A
+cutback on 66 (inside zone made to go one way, the back pressing it and
+cutting back behind the line). A move to make a man miss on 30 (7%).
 
-To do: a pitch on the option out of the gun, the move to make a man miss
-weighted by who is chasing as much as by his elusiveness.
+To do: the move to make a man miss weighted by who is chasing as much as by
+his elusiveness; the end man hitting the quarterback after the pitch.
 
 ## 2. Pass complete
 

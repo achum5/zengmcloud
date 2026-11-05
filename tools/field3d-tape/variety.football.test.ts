@@ -171,7 +171,14 @@ const runParts = (tl: FieldTimeline, p: Play) => {
 			: toQb < 0
 				? "direct snap"
 				: last.by === "air"
-					? "pitch"
+					? // (On the option: him down the line with it first.)
+						qb &&
+						dist(
+							posOf(tl, qb.pid, p.snap) ?? { x: 0, y: 0 },
+							posOf(tl, qb.pid, last.t0 - 300) ?? { x: 0, y: 0 },
+						) > 6
+						? "option pitch"
+						: "pitch"
 					: "handoff";
 	// Where he hit the line: where he first got across it, and the way he
 	// first went after he had it.
