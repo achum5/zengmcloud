@@ -4143,6 +4143,10 @@ const TWIN_EASE_MS = 250;
 const TWIN_EASE_LEAST = 150;
 // (Back over no quicker than this, ft/s, as he comes to a stand.)
 const TWIN_BACK_FPS = 5;
+// (Eased over going flat out: no quicker than this, all told, ft/s - or
+// no more than TWIN_EASE_FPS over, if he is that quick already.)
+const TWIN_TOP_FPS = 30;
+const TWIN_EASE_FPS = 2;
 const TWIN_EVERY_MS = 50;
 const TWIN_JOIN_MS = 300;
 // (Stood, and moved this quick or more by it, ft/s: stepped.)
@@ -5570,12 +5574,28 @@ class Action {
 				}
 			}
 			const w0 = Math.max(s0, a - TWIN_EASE_MS);
+			const ea = Math.min(Math.max(a, w0 + TWIN_EASE_LEAST), (a + b) / 2);
+			const eb = Math.max(Math.min(b, w1 - TWIN_EASE_LEAST), (a + b) / 2);
+			// (Going flat out then: eased over by no more than takes him
+			// past TWIN_TOP_FPS as he goes - not shot over and back.)
+			const fps = Math.max(
+				0,
+				...m.legs
+					.filter((l) => l.t1 > w0 && l.t0 < w1 && l.t1 - l.t0 > 0)
+					.map((l) => dist(l.from, l.to) / ((l.t1 - l.t0) / 1000)),
+			);
+			const room =
+				(Math.max(TWIN_EASE_FPS, TWIN_TOP_FPS - fps) *
+					Math.min(ea - w0, w1 - eb)) /
+				1000;
+			const size = Math.hypot(off.x, off.y);
+			const k = size > room ? room / size : 1;
 			const e = {
 				w0,
-				a: Math.min(Math.max(a, w0 + TWIN_EASE_LEAST), (a + b) / 2),
-				b: Math.max(Math.min(b, w1 - TWIN_EASE_LEAST), (a + b) / 2),
+				a: ea,
+				b: eb,
 				w1,
-				off,
+				off: { x: off.x * k, y: off.y * k },
 			};
 			if (e.a > e.w0 && e.b < e.w1) {
 				eases.set(m, [...(eases.get(m) ?? []), e]);
@@ -7118,7 +7138,16 @@ class Action {
 				start.a === 0 && ta !== undefined
 					? (ta < 0 ? 0 : 0.5) + r() * 0.5
 					: r();
-			const route = layRoute(name, start, inSign, catchD, this.bounds, u, v);
+			const route = layRoute(
+				name,
+				start,
+				inSign,
+				catchD,
+				this.bounds,
+				u,
+				v,
+				true,
+			);
 			return first === cmpI &&
 				this.input.out &&
 				TO_LINE.has(name) &&

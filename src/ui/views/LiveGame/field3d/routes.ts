@@ -95,7 +95,7 @@ export const toTheLine = (r: Route, bounds: Bounds, inFt: number): Route => {
 // `inSign` (+1 to the offense's right) - `depth` (feet downfield of the
 // line) where it is caught, or where it breaks if it is run as a decoy -
 // kept a few feet inside the sidelines. `u` and `v` (0 to 1) pick its
-// details.
+// details. `thrownTo`: the man the ball goes to.
 export const layRoute = (
 	name: RouteName,
 	start: OPt,
@@ -104,6 +104,7 @@ export const layRoute = (
 	bounds: Bounds,
 	u: number,
 	v: number,
+	thrownTo = false,
 ): Route => {
 	const lo = bounds.left + 5;
 	const hi = bounds.right - 5;
@@ -169,13 +170,25 @@ export const layRoute = (
 			return laid(name, path, 2);
 		}
 		case "out": {
-			// Up to his depth and square to the sideline, a step back down.
+			// Up to his depth and square to the sideline, a step back down,
+			// sat down there - or, the man it is thrown to, met on his way
+			// out to it in his stride, not stood waiting: on to the sideline
+			// and up it after.
 			const w = Math.max(
 				6,
 				Math.min(12 + 6 * u, Math.abs(inside(s.a + out * 30) - s.a)),
 			);
-			const path = [s, at(D + 1, s.a), at(D - 1, s.a + out * w)];
-			return laid(name, path, 2, true);
+			const c = at(D - 1, s.a + out * w);
+			const path = [s, at(D + 1, s.a), c];
+			if (!thrownTo) {
+				return laid(name, path, 2, true);
+			}
+			const on = at(D - 1.5, c.a + out * 12);
+			if (Math.abs(on.a - c.a) > 2) {
+				path.push(on);
+			}
+			path.push(at(D + 24, path.at(-1)!.a));
+			return laid(name, path, 2);
 		}
 		case "slant": {
 			// Three steps up and in at 50 degrees.

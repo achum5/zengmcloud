@@ -89,7 +89,10 @@ const endParts = (
 		(l) => l.t1 > from && l.t0 <= p.whistle + 1500,
 	);
 	const evades = [
-		...new Set(legs.filter((l) => EVADES.has(l.move)).map((l) => l.move)),
+		...new Set([
+			...legs.filter((l) => EVADES.has(l.move)).map((l) => l.move),
+			...legs.filter((l) => l.arms === "stiffArm").map(() => "stiffArm"),
+		]),
 	];
 	const at = posOf(tl, carrier.pid, p.whistle) ?? { x: p.losX, y: p.ballY };
 	const goal = p.dir > 0 ? FIELD_L - END_ZONE : END_ZONE;
@@ -112,7 +115,7 @@ const endParts = (
 									? "dove for it"
 									: has("drive")
 										? "stood up"
-										: "other";
+										: `other (${legs.findLast((l) => l.t0 <= p.whistle)?.move ?? "-"})`;
 	// Men of the other side in on it at the end: their acts there, near him.
 	let tacklers = 0;
 	for (const q of p.parts) {

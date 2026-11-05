@@ -371,12 +371,13 @@ const FOUL_ARMS: Record<string, Move> = {
 };
 // Over this long before the foul's moment and this long after, cut down to
 // the stretch he is on his feet and his arms free (no less than this) - the
-// man he does it to no further off than this, and in front of him.
+// man he does it to no further off than this, and in front of him (or
+// getting round him: a rusher past his shoulder, held).
 const FOUL_BEFORE = 450;
 const FOUL_AFTER = 450;
 const FOUL_LEAST = 450;
-const FOUL_NEAR = 5;
-const FOUL_FACING = Math.PI / 3;
+const FOUL_NEAR = 6;
+const FOUL_FACING = (5 * Math.PI) / 12;
 
 // The legs his arms can do it over: running, blocking, stood.
 const freeArms = (l: Leg) =>
