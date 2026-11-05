@@ -1452,8 +1452,24 @@ tr.table-warning:hover > td {
 		font-size: 1.15rem;
 	}
 }
-.gamecast-oncourt td:first-child {
-	max-width: 11rem;
+.gamecast-oncourt {
+	// Short rows, so beside the court it ends about where the latest play
+	// under the court does.
+	th,
+	td {
+		padding-top: 0.2rem;
+		padding-bottom: 0.2rem;
+	}
+	td:first-child {
+		max-width: 11rem;
+	}
+}
+.gamecast-linescore {
+	th,
+	td {
+		padding-top: 0.25rem;
+		padding-bottom: 0.25rem;
+	}
 }
 
 // Game leaders and team stats.

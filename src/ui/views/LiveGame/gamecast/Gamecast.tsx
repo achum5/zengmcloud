@@ -468,7 +468,7 @@ export const OnCourt = ({ boxScore }: { boxScore: any }) => (
 					<tr className="gamecast-team-head">
 						<th>
 							<div className="d-flex align-items-center gap-2">
-								<Logo t={t} size={22} />
+								<Logo t={t} size={18} />
 								{t.abbrev}
 							</div>
 						</th>
@@ -482,7 +482,7 @@ export const OnCourt = ({ boxScore }: { boxScore: any }) => (
 						<tr key={p.pid}>
 							<td>
 								<div className="d-flex align-items-center gap-2">
-									<Headshot pid={p.pid} season={boxScore.season} size={28} />
+									<Headshot pid={p.pid} season={boxScore.season} size={22} />
 									<div style={{ minWidth: 0 }} className="text-truncate">
 										<a href={playerUrl(p.pid)}>{shortName(p.name)}</a>{" "}
 										<span className="text-body-secondary">{p.pos}</span>
