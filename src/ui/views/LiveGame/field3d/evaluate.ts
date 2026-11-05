@@ -1554,7 +1554,9 @@ export const momentAt = (
 				at: {
 					x: f.from.x + (f.to.x - f.from.x) * u,
 					y: f.from.y + (f.to.y - f.from.y) * u,
-					z: f.from.z * (1 - u) + FLAG_RISE * Math.sin((rise * Math.PI) / 2),
+					z:
+						f.from.z * (1 - u) +
+						(f.rise ?? FLAG_RISE) * Math.sin((rise * Math.PI) / 2),
 				},
 				down: u >= 1,
 				turn: u >= 1 ? f.t0 % 6.28 : ((t - f.t0) / 1000) * 7,

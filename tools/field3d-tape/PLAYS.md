@@ -19,7 +19,7 @@ Combinations: distinct whole combinations of the variety tool's parts.
 | 3   | Pass incomplete (`passIncomplete`)                 |       15 | `incomplete` | working |
 | 4   | Punt and return (`puntTeam`, `punt`, `puntReturn`) |       10 | `punt`       | working |
 | 5   | Kickoff and return (`kickoff`, `kickoffReturn`)    |        7 | `kickoff`    | working |
-| 6   | Flags (`flag`, `penalty`)                          |       13 | `flag`       | todo    |
+| 6   | Flags (`flag`, `penalty`)                          |       13 | `flag`       | working |
 | 7   | Sack (`sack`)                                      |        4 | -            | todo    |
 | 8   | Extra point, two-point try                         |        4 | -            | todo    |
 | 9   | Field goal (`fieldGoalAttempt`, `fieldGoal`)       |        2 | -            | todo    |
@@ -123,6 +123,27 @@ knelt 10, juggled 2, let go 1.
 
 To do: a kick out of bounds (the sim has none in these games), a return
 man reversing field.
+
+## 6. Flags
+
+Parts: when it comes out (before the snap, in the play, after the
+whistle), who throws it (and a second flag on it), how (thrown at the
+spot, or up high on a dead-ball foul; standing, on the move, on the run),
+whether he goes and tells the referee, whether the man flagged argues it,
+and the referee's signal (the sim's foul).
+
+Who throws: whichever of the officials who would see that kind of foul is
+nearest. Off the ball at the snap or before it (a false start, offside, in
+the neutral zone, a formation or motion foul) that is the line judge or the
+down judge, on the man's side - the umpire, for a false start in the middle
+of the line - and now and then a second of them throws too. A dead-ball
+foul (before the snap, after the whistle) goes up high, not at a spot.
+
+Now (115 flags): 63 different combinations. Thrown by the umpire 51 (from
+76), the wings 35, the back judge 16, the referee 11; two flags on 8. Told
+to the referee 22, argued 35.
+
+To do: the yards walked off after the call.
 
 ## Side notes
 

@@ -114,7 +114,17 @@ export type Signaled =
 
 // A flag thrown: from his hand at t0, down on the turf at `to` at t1, lying
 // there from then on.
-export type FlagFlight = { t0: number; t1: number; from: Pt3; to: Pt };
+// (`rise`: how high over the line from his hand to where it comes down
+// it goes, feet - see evaluate.ts FLAG_RISE; `second`: a second man's flag
+// on a foul another has thrown his for.)
+export type FlagFlight = {
+	t0: number;
+	t1: number;
+	from: Pt3;
+	to: Pt;
+	rise?: number;
+	second?: true;
+};
 
 // Just off the field: the wings on the sidelines, the deep men a step in.
 const OFF_FIELD = 3;
@@ -173,6 +183,14 @@ const ON_BACK = new Set<Move>(["supine", "hurt", "tackledBack"]);
 // most this far from him it comes down.
 const FLAG_Z = 7.2;
 const FLAG_REACH = 40;
+// A dead-ball foul (before the snap, after the whistle): the flag up high
+// - this high over the line of it, feet - and down no further off than
+// this, feet, in this long (ms).
+const FLAG_UP_RISE = 15;
+const FLAG_UP_REACH = 10;
+const FLAG_UP_MS = 1700;
+// A second man's flag on the same foul, this long after the first (ms).
+const SECOND_FLAG_MS = [150, 550] as const;
 // A bean bag (to mark a spot: a punt fielded, a fumble): tossed by an
 // official no further from it than this, his arm through it over this long
 // either side of the moment; from this high, down on it in this long and
@@ -1196,23 +1214,40 @@ export const stageCrew = (
 	// The flags: each thrown by the nearest of the men who would see it,
 	// toward where it was, high and down there.
 	const flags: FlagFlight[] = [];
-	for (const f of input.fouls) {
-		const o = thrower.get(f) ?? nearest(f.by, f.at, f.t);
-		arms.push({ o, move: "flagToss", t0: f.t - 350, t1: f.t + 350 });
-		const t0 = f.t + 175;
+	const toss = (o: Official, f: Foul, t: number, second = false) => {
+		arms.push({ o, move: "flagToss", t0: t - 350, t1: t + 350 });
+		const t0 = t + 175;
 		const from = where(o, t0);
 		const far = dist(from, f.at);
-		const reach = Math.min(far, FLAG_REACH) / (far || 1);
+		const reach =
+			Math.min(far, f.dead ? FLAG_UP_REACH : FLAG_REACH) / (far || 1);
 		const to = onField({
 			x: from.x + (f.at.x - from.x) * reach + (r() - 0.5) * 2,
 			y: from.y + (f.at.y - from.y) * reach + (r() - 0.5) * 2,
 		});
 		flags.push({
 			t0,
-			t1: t0 + Math.min(1300, 650 + dist(from, to) * 14),
+			t1:
+				t0 + (f.dead ? FLAG_UP_MS : Math.min(1300, 650 + dist(from, to) * 14)),
 			from: { ...from, z: FLAG_Z },
 			to,
+			...(f.dead ? { rise: FLAG_UP_RISE } : {}),
+			...(second ? { second: true as const } : {}),
 		});
+	};
+	for (const f of input.fouls) {
+		const o = thrower.get(f) ?? nearest(f.by, f.at, f.t);
+		toss(o, f, f.t);
+		// (A second man's flag on it, a beat after the first.)
+		const also = f.also?.filter((x) => x !== o);
+		if (also?.length) {
+			toss(
+				nearest(also, f.at, f.t),
+				f,
+				f.t + SECOND_FLAG_MS[0] + r() * (SECOND_FLAG_MS[1] - SECOND_FLAG_MS[0]),
+				true,
+			);
+		}
 	}
 	// The bean bags: each tossed down on its spot by the nearest man to it
 	// then - no further off than BAG_NEAR, his arms not busy - low and

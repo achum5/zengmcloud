@@ -638,7 +638,7 @@ const flagParts = (tl: FieldTimeline, p: Play) => {
 		pid: 0,
 		parts: {
 			when,
-			by,
+			by: `${by}${p.flags.some((x) => x.second) ? ", two flags" : ""}`,
 			throw: `${bucket(far, [6, 20], ["dropped at his feet", "tossed", "thrown at the spot"])}, ${pace > 6 ? "on the run" : pace > 2 ? "on the move" : "stood"}`,
 			told,
 			argued: argued ? "argued" : "no",

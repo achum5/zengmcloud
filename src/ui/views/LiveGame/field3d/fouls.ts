@@ -21,11 +21,16 @@ export type Foul = {
 	signal: Move;
 	t: number;
 	at: Pt;
-	// Who throws for it: whichever of these is nearest.
+	// Who throws for it: whichever of these is nearest - and, now and then,
+	// the nearest of these others too, a second flag on it.
 	by: readonly Official[];
+	also?: readonly Official[];
 	// Seen in the play (not before the snap, nor at it, nor after the
 	// whistle): told to the referee before he gives it (see crew.ts).
 	told?: true;
+	// The ball dead (before the snap, after the whistle): the flag thrown
+	// up high, not at a spot.
+	dead?: true;
 };
 
 export type FoulInput = {
@@ -125,6 +130,22 @@ const BY: Record<When, readonly Official[]> = {
 	tackle: ALL,
 	after: ALL,
 };
+
+// Fouls off the ball as it is snapped, or before: thrown by the wings
+// (or, a false start in the middle of the line - this far either side of
+// the ball, feet - the umpire); a second flag on one this often.
+const LINED = new Set([
+	"False start",
+	"Neutral zone infraction",
+	"Encroachment",
+	"Offsides",
+	"Illegal formation",
+	"Illegal shift",
+	"Illegal motion",
+]);
+const WINGS: readonly Official[] = ["LJ", "DJ"];
+const LINE_INSIDE = 7;
+const SECOND_FLAG = 0.3;
 
 // The referee's signal for each.
 const SIGNAL: Record<string, Move> = {
@@ -336,6 +357,30 @@ export const foulsOf = (input: FoulInput): Foul[] => {
 		if (when === "cover" && pass && man && dist(at, pass.to) > 30) {
 			at = pass.to;
 		}
+		// (Off the ball before it is snapped or as it is: the wing on his
+		// side - an offensive lineman in the middle of the line jumping
+		// early, the umpire - and now and then another of them too.)
+		const lined = LINED.has(name);
+		const inside =
+			side === input.offense &&
+			name === "False start" &&
+			Math.abs(at.y - input.ballY) <= LINE_INSIDE;
+		const by: readonly Official[] =
+			name === "Delay of game"
+				? ["BJ", "R"]
+				: lined
+					? inside
+						? ["U"]
+						: WINGS
+					: BY[when];
+		const also =
+			lined && countOf(pid ?? 0, flagI, 3) < SECOND_FLAG
+				? inside
+					? WINGS
+					: side === input.offense
+						? (["U", ...WINGS] as const)
+						: WINGS
+				: undefined;
 		return {
 			flagI,
 			penI: call?.i ?? -1,
@@ -346,7 +391,9 @@ export const foulsOf = (input: FoulInput): Foul[] => {
 			signal: SIGNAL[name] ?? "sigSide",
 			t,
 			at: { x: at.x, y: at.y },
-			by: name === "Delay of game" ? ["BJ", "R"] : BY[when],
+			by,
+			...(also ? { also } : {}),
+			...(when === "pre" || when === "after" ? { dead: true as const } : {}),
 			...(when !== "pre" && when !== "snap" && when !== "after"
 				? { told: true as const }
 				: {}),

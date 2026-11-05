@@ -1006,11 +1006,15 @@ describe("the plays acted out", () => {
 		const bad: string[] = [];
 		let flags = 0;
 		let early = 0;
+		let seconds = 0;
 		eachPlay((play, seg) => {
 			const thrown = seg.filter((x) => x.type === "flag").length;
-			if (play.flags.length !== thrown) {
-				bad.push(`${play.flags.length} of ${thrown} flags on play ${play.i}`);
+			// (Not counting a second man's flag on one: see crew.ts.)
+			const firsts = play.flags.filter((f) => !f.second).length;
+			if (firsts !== thrown) {
+				bad.push(`${firsts} of ${thrown} flags on play ${play.i}`);
 			}
+			seconds += play.flags.length - firsts;
 			for (const f of play.flags) {
 				if (f.t0 < play.t0 || f.t1 > play.t1) {
 					bad.push(`a flag out of its play on play ${play.i}`);
@@ -1066,6 +1070,7 @@ describe("the plays acted out", () => {
 		assert.deepEqual(bad.slice(0, 5), []);
 		assert.isAbove(flags, 20);
 		assert.isAbove(early, 3);
+		assert.isAbove(seconds, 0);
 	}, 20_000);
 	test("the officials on every play: all seven, at a man's speed, on the field or just off it", () => {
 		const bad: string[] = [];
