@@ -61,13 +61,16 @@ front the tackle has left with nobody near enough to block him comes up
 the field after it from the back side.
 
 A man up front off the ball into the man blocking him gathers into him -
-slowed over his last strides to about 10 feet a second, harder and a
+slowed over his last strides to about 7 feet a second, harder and a
 little quicker if he is short of time - not into him at all he got up to
 and stopped dead. So does a pass rusher straight into his man's pass set
 (not one round the edge, nor the two on a twist, timed off each other flat
-out). A linebacker (or anybody) met on the run by a blocker climbing to
-him pulls up into it over his last strides, the same way (hard stops at
-contact on the game tape: 335 before, 127 now).
+out). Off at a run into a run block (an end, say), his hands get to him a
+half step off and he presses on in over the next moment as that takes the
+pace out of him, and the shoving that follows comes on gradually from
+there, not bending his run in. A linebacker (or anybody) met on the run
+by a blocker climbing to him pulls up into it over his last strides, the
+same way (hard stops at contact on the game tape: 335 before, 50 now).
 
 Now (9 games, 442 runs): 380 different combinations. A counter on 16, a
 draw on 9. A toss on 42 (runs to the edge under center, to a back lined up

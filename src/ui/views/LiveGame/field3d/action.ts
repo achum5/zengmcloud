@@ -1200,7 +1200,7 @@ class Actor {
 		square: number,
 	): number {
 		const D = dist(this.at, to);
-		const T = (t1 - this.t) / 1000;
+		let T = (t1 - this.t) / 1000;
 		// (Short of time for it: gathered as much as he can be - harder, and
 		// into him quicker - see HIT_SHORT.)
 		let vc = Infinity;
@@ -1208,13 +1208,22 @@ class Actor {
 			const vk = ve * k;
 			const Au = Ad * u;
 			const qa = 1 / (2 * A) + 1 / (2 * Au);
-			const qb = T + vk / Au;
 			const qc = (vk * vk) / (2 * Au) + D;
+			// (Given just the time it takes - see hitMs - or a hair less:
+			// there that much later, not harder into him - see HIT_LATE_MS.)
+			const least = 2 * Math.sqrt(qa * qc) - vk / Au;
+			const Tk = least > T && least - T <= HIT_LATE_MS / 1000 ? least : T;
+			const qb = Tk + vk / Au;
 			const disc = qb * qb - 4 * qa * qc;
-			vc = disc >= 0 ? (qb - Math.sqrt(disc)) / (2 * qa) : Infinity;
+			vc =
+				disc >= -1e-9 * qb * qb
+					? (qb - Math.sqrt(Math.max(0, disc))) / (2 * qa)
+					: Infinity;
 			if (vc <= top * RAMP_OVER) {
 				ve = vk;
 				Ad = Au;
+				T = Tk;
+				t1 = this.t + T * 1000;
 				break;
 			}
 		}
@@ -3422,6 +3431,8 @@ const JOSTLE_FROM = 650;
 const JOSTLE_A: [number, number] = [0.5, 1.1];
 const JOSTLE_D = 0.4;
 const JOSTLE_STEP_MS = 90;
+// (A man into it after it has begun: into the shoving over this long, ms.)
+const JOSTLE_IN_MS = 300;
 const DOUBLE_FT = 2.2;
 // (In beside a man on a double team no further off than this from where he
 // is a moment after the snap, feet - and only while he is on his man.)
@@ -4356,7 +4367,7 @@ const GET_OFF_ACCEL = 28;
 const RUSH_HIT_PACE = 0.7;
 // (Into the man on him no quicker than this, ft/s - slowed into him at
 // this, ft/s/s, over the last of his run at him: see Actor.hitInto.)
-const HIT_FPS = 10;
+const HIT_FPS = 7;
 const HIT_ACCEL = 40;
 // (A man on the run a blocker gets to - see blockOn: pulled up to this,
 // ft/s, by then, at HIT_ACCEL.)
@@ -4369,6 +4380,13 @@ const HIT_SHORT: [number, number][] = [
 	[1.3, 1.5],
 	[1.6, 1.5],
 ];
+// (Or there as much as this later (ms), as he would be at it - not into him
+// harder for the want of a moment: that blocker on his way from him, say.)
+const HIT_LATE_MS = 20;
+// (His hands on him at that, and the rest of the way in to him over this
+// long, ms, the pace going out of him - in steps this long.)
+const HIT_PRESS_MS = 150;
+const HIT_PRESS_STEP_MS = 50;
 // (How long it takes him from still, that far (feet): see Actor.hitInto.)
 const hitMs = (far: number, top: number): number => {
 	const A = GET_OFF_ACCEL;
@@ -16781,21 +16799,60 @@ class Action {
 		pace = RUSH_HIT_PACE,
 	) {
 		const top = m.top * pace;
+		const move = fireOff(m, at(by));
+		// (Off at a run: his hands on him a little way off, and on in to
+		// him as that takes the pace out of him - see HIT_PRESS_MS.)
+		const S = move === "run" ? HIT_PRESS_MS : 0;
+		const press = (HIT_FPS * S) / 2000;
+		const way = (t: number) => {
+			const p = at(t);
+			const D = dist(m.at, p);
+			return D > press * 2
+				? { x: (p.x - m.at.x) / D, y: (p.y - m.at.y) / D }
+				: { x: 0, y: 0 };
+		};
+		const hands = (t: number) => {
+			const p = at(t);
+			const u = way(t);
+			return { x: p.x - u.x * press, y: p.y - u.y * press };
+		};
+		// (Him getting away from him as he comes: as many goes at it as
+		// it takes.)
 		let t = by;
-		for (let k = 0; k < 2; k++) {
-			t = Math.max(by, m.t + hitMs(dist(m.at, at(t)), top));
+		for (let k = 0; k < 6; k++) {
+			const was = t;
+			t = Math.max(by, m.t + hitMs(dist(m.at, hands(t)), top));
+			if (Math.abs(t - was) < 0.5) {
+				break;
+			}
 		}
-		t = Math.min(t, Math.max(by, until - FIRE_HELD_MS));
+		t = Math.min(t, Math.max(by, until - FIRE_HELD_MS - S));
+		const u = way(t);
 		m.hitInto(
-			at(t),
+			hands(t),
 			t,
 			top,
 			GET_OFF_ACCEL,
 			HIT_FPS,
 			HIT_ACCEL,
-			fireOff(m, at(by)),
+			move,
 			GET_OFF_SQUARE_MS,
 		);
+		if (S === 0 || (u.x === 0 && u.y === 0)) {
+			return;
+		}
+		const n = Math.max(1, Math.round(S / HIT_PRESS_STEP_MS));
+		for (let k = 1; k <= n; k++) {
+			const tk = t + (S * k) / n;
+			const s = (1 - k / n) * (1 - k / n);
+			const p = at(tk);
+			m.go(
+				{ x: p.x - u.x * press * s, y: p.y - u.y * press * s },
+				tk,
+				"engage",
+				this.behind,
+			);
+		}
 	}
 
 	// Off from still along `path` (on from where he is), up to speed at `a`
@@ -16917,15 +16974,29 @@ class Action {
 			return { d: a.o.d + (b.o.d - a.o.d) * u, a: a.o.a + (b.o.a - a.o.a) * u };
 		};
 		for (const m of men) {
+			// (Not a man still on his way into it, though: from when he gets
+			// to him, eased into it - see JOSTLE_IN_MS - not his run in at
+			// him bent this way and that.)
+			const hit = Math.max(
+				t0,
+				m.legs.find((l) => l.move === "engage" && l.t1 > t0)?.t0 ?? t0,
+			);
+			const into = (t: number, o: OPt): OPt => {
+				const u = clamp((t - hit) / JOSTLE_IN_MS, 0, 1);
+				const w = hit > t0 ? (1 - Math.cos(Math.PI * u)) / 2 : 1;
+				return { d: o.d * w, a: o.a * w };
+			};
 			for (const t of steps) {
-				m.split(t);
+				if (t > hit) {
+					m.split(t);
+				}
 			}
 			for (const l of m.legs) {
-				if (l.t0 > t0 && l.t0 < t1) {
-					l.from = over(l.from, offAt(l.t0));
+				if (l.t0 > hit && l.t0 < t1) {
+					l.from = over(l.from, into(l.t0, offAt(l.t0)));
 				}
-				if (l.t1 > t0 && l.t1 < t1) {
-					l.to = over(l.to, offAt(l.t1));
+				if (l.t1 > hit && l.t1 < t1) {
+					l.to = over(l.to, into(l.t1, offAt(l.t1)));
 				}
 			}
 		}
