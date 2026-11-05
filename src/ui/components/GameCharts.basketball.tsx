@@ -925,10 +925,13 @@ export const GameCharts = ({
 	boxScore,
 	live,
 	hideTitle,
+	leadOnly,
 }: {
 	boxScore: any;
 	live?: boolean;
 	hideTitle?: boolean;
+	// Just the game flow, not the rotations, lineups and on/off under it.
+	leadOnly?: boolean;
 }) => {
 	const numPeriods = boxScore.numPeriods ?? 4;
 	const now = live ? liveLead(boxScore, numPeriods) : undefined;
@@ -965,7 +968,7 @@ export const GameCharts = ({
 					{...(now ? { upTo: now.upTo } : {})}
 				/>
 			</Section>
-			{charts ? (
+			{charts && !leadOnly ? (
 				<GameFlowRest
 					charts={charts}
 					teams={teams}

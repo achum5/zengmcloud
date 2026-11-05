@@ -423,7 +423,7 @@ const FourFactorsTotalLine = ({
 	);
 };
 
-const FourFactors = ({ teams }: { teams: any[] }) => {
+export const FourFactors = ({ teams }: { teams: any[] }) => {
 	const fourFactorsNetPoints = getFourFactorsNetPoints(teams);
 
 	// +10 shows up in the gradient as maximum color, unless there is one component beyond that, in which case we use that value to highlight how extreme it is. But keeping +10 as the minumum possible max is good to show when they are all pretty close.
@@ -652,7 +652,7 @@ const FourFactorsHockey = ({ teams }: { teams: any[] }) => {
 	);
 };
 
-const NextButton = ({
+export const NextButton = ({
 	abbrev,
 	boxScore,
 	currentGidInList,
@@ -1110,7 +1110,7 @@ const PlayoffRecord = ({
 // "View Replay" for a completed game whose live play-by-play was saved when it
 // was first live-simmed. Shown only when a saved replay exists; clicking it
 // routes the stored play-by-play back through the live-game view (un-gated).
-const WatchReplayButton = ({ gid }: { gid: number }) => {
+export const WatchReplayButton = ({ gid }: { gid: number }) => {
 	const [available, setAvailable] = useState(false);
 	const [loading, setLoading] = useState(false);
 

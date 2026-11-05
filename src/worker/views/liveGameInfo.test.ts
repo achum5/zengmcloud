@@ -59,4 +59,18 @@ describe("the gamecast's season series and streaks", () => {
 		assert.strictEqual(streakBefore(1, watched, played), 2);
 		assert.strictEqual(streakBefore(2, watched, played), 0);
 	});
+
+	test("a finished game's page: every meeting played so far with its score, this one too", () => {
+		const watched = game(20, 10, [1, 99], [2, 90]);
+		const played = [
+			game(5, 3, [2, 100], [1, 95]),
+			watched,
+			game(40, 30, [1, 80], [2, 70]),
+		];
+		const series = seriesOf(watched, played, [], true);
+		assert.deepEqual(series[0]!.pts, [100, 95]);
+		assert.isTrue(series[1]!.now);
+		assert.deepEqual(series[1]!.pts, [99, 90]);
+		assert.deepEqual(series[2]!.pts, [80, 70]);
+	});
 });

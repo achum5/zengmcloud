@@ -66,6 +66,9 @@ export const seriesOf = (
 	game: Played,
 	played: readonly Played[],
 	scheduled: readonly Scheduled[],
+	// A finished game's page (the box score): every meeting played so far
+	// with its score, this one too - nothing to hold back.
+	final = false,
 ): SeriesGame[] => {
 	const tids = [game.teams[0].tid, game.teams[1].tid];
 	const between = (a: number, b: number) =>
@@ -83,11 +86,10 @@ export const seriesOf = (
 			gid: p.gid,
 			day: p.day,
 			tids: [p.teams[0].tid, p.teams[1].tid],
-			...(now
-				? { now: true }
-				: before(p, game)
-					? { pts: [p.teams[0].pts, p.teams[1].pts] as [number, number] }
-					: {}),
+			...(now ? { now: true } : {}),
+			...((now && final) || (!now && (final || before(p, game)))
+				? { pts: [p.teams[0].pts, p.teams[1].pts] as [number, number] }
+				: {}),
 		});
 	}
 	if (!game.playoffs) {
@@ -141,6 +143,9 @@ export const streakBefore = (
 
 export const gamecastInfo = async (
 	game: Game,
+	// The box score's: the meetings with their scores and the standings as
+	// they are now, not as they stood at the tip.
+	final = false,
 ): Promise<GamecastInfo | undefined> => {
 	const tids = [game.teams[0].tid, game.teams[1].tid] as const;
 	if (tids[0] < 0 || tids[1] < 0 || (game as any).exhibition) {
@@ -150,7 +155,7 @@ export const gamecastInfo = async (
 	const played = (await idb.merged.games.getAll({ season })) as Played[];
 	const scheduled =
 		season === g.get("season") ? await idb.cache.schedule.getAll() : [];
-	const series = seriesOf(game, played, scheduled);
+	const series = seriesOf(game, played, scheduled, final);
 
 	const standings: GamecastInfo["standings"] = [];
 	if (!game.playoffs) {
@@ -189,7 +194,7 @@ export const gamecastInfo = async (
 				// This game, taken back off the two teams that played it.
 				const i = tids.indexOf(ts.tid as any);
 				const thisGame = played.find((p) => p.gid === game.gid);
-				if (i >= 0 && thisGame) {
+				if (i >= 0 && thisGame && !final) {
 					const us = thisGame.teams[i]!.pts;
 					const them = thisGame.teams[i === 0 ? 1 : 0]!.pts;
 					if (us > them) {

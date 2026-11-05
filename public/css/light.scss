@@ -1492,10 +1492,13 @@ tr.table-warning:hover > td {
 	border-bottom: 1px solid var(--bs-border-color);
 }
 .gamecast-leader-row {
-	display: flex;
-	align-items: center;
-	padding: 0.65rem 0;
+	padding: 0.55rem 0 0.65rem;
 	border-bottom: 1px solid var(--bs-border-color);
+}
+// Both teams' leader in it, under its label.
+.gamecast-leader-pair {
+	display: flex;
+	gap: 1rem;
 }
 .gamecast-leader {
 	display: flex;
@@ -1505,10 +1508,9 @@ tr.table-warning:hover > td {
 	min-width: 0;
 }
 .gamecast-leader-label {
-	flex-shrink: 0;
-	width: 6rem;
 	text-align: center;
 	font-weight: 700;
+	margin-bottom: 0.25rem;
 }
 .gamecast-leader-value {
 	font-size: 1.5rem;
@@ -1561,6 +1563,134 @@ tr.table-warning:hover > td {
 	> div {
 		transition: width 0.3s;
 	}
+}
+
+// A finished game laid out as a game recap (LiveGame/gamecast/GameRecap):
+// the score across the top, then tabs, then on a wide screen three columns
+// - the leaders and team stats, the story of the game in the middle, the
+// line, series and standings - which stack, story first, on a phone.
+.recap-header {
+	padding: 0.5rem 0 0.75rem;
+}
+.recap-scoreline {
+	display: flex;
+	align-items: center;
+	gap: 1.5rem;
+}
+.recap-team {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 0.9rem;
+	flex: 1 1 0;
+	min-width: 0;
+	.recap-team-name {
+		text-align: right;
+		min-width: 0;
+	}
+	&.recap-team-right {
+		flex-direction: row-reverse;
+		.recap-team-name {
+			text-align: left;
+		}
+	}
+}
+.recap-record {
+	font-size: 0.875rem;
+	color: var(--bs-secondary-color);
+}
+.recap-score {
+	font-size: 2.75rem;
+	font-weight: 700;
+	line-height: 1;
+	color: var(--bs-secondary-color);
+	font-variant-numeric: tabular-nums;
+	&.won {
+		color: var(--bs-body-color);
+	}
+}
+.recap-middle {
+	flex: 0 0 auto;
+	text-align: center;
+	.gamecast-linescore {
+		margin-bottom: 0;
+	}
+}
+.recap-status {
+	font-weight: 700;
+	margin-bottom: 0.15rem;
+}
+.recap-nav {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+	margin-top: 0.75rem;
+	.recap-next > div {
+		display: flex;
+		gap: 0.5rem;
+	}
+}
+@include media-breakpoint-down(md) {
+	.recap-scoreline {
+		gap: 0.5rem;
+	}
+	.recap-team {
+		gap: 0.5rem;
+	}
+	.recap-score {
+		font-size: 2rem;
+	}
+	.recap-header > .d-md-none .gamecast-linescore {
+		margin: 0.75rem 0 0;
+	}
+}
+.recap-grid {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	grid-template-areas: "mid" "left" "right";
+	column-gap: 2rem;
+}
+.recap-mid {
+	grid-area: mid;
+}
+.recap-left {
+	grid-area: left;
+}
+.recap-right {
+	grid-area: right;
+}
+@include media-breakpoint-up(lg) {
+	.recap-grid {
+		grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+		grid-template-areas: "mid right" "left right";
+	}
+}
+@include media-breakpoint-up(xl) {
+	.recap-grid {
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 1fr);
+		grid-template-areas: "left mid right";
+	}
+}
+.recap-headline {
+	font-size: 1.4rem;
+	font-weight: 700;
+	line-height: 1.25;
+	margin-bottom: 0.6rem;
+	p {
+		margin: 0;
+	}
+}
+.recap-body {
+	line-height: 1.55;
+	p:last-child {
+		margin-bottom: 0;
+	}
+}
+.recap-games {
+	max-height: 26rem;
+	overflow: auto;
 }
 
 .live-game-sticky {

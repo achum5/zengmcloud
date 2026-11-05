@@ -59,7 +59,7 @@ const shortName = (name: string | undefined) => {
 
 const playerUrl = (pid: number) => helpers.leagueUrl(["player", pid]);
 
-const Logo = ({ t, size = 24 }: { t: any; size?: number }) => (
+export const Logo = ({ t, size = 24 }: { t: any; size?: number }) => (
 	<TeamLogoInline
 		alt={t.abbrev}
 		className="flex-shrink-0"
@@ -78,7 +78,7 @@ const Logo = ({ t, size = 24 }: { t: any; size?: number }) => (
 // photo fills the circle from its top.
 const FACE_TOP = 32;
 const FACE_WINDOW = 548;
-const Headshot = ({
+export const Headshot = ({
 	pid,
 	season,
 	size = 36,
@@ -125,7 +125,7 @@ const Headshot = ({
 };
 
 // A heading and what it heads.
-const Section = ({
+export const Section = ({
 	title,
 	action,
 	children,
@@ -147,7 +147,7 @@ const Section = ({
 	</section>
 );
 
-const LinkButton = ({
+export const LinkButton = ({
 	children,
 	onClick,
 }: {
@@ -160,7 +160,7 @@ const LinkButton = ({
 );
 
 // Bootstrap's button group, as the game's own switches are (see GameCharts).
-const Switch = <T extends string | number>({
+export const Switch = <T extends string | number>({
 	options,
 	value,
 	onChange,
@@ -228,7 +228,7 @@ const Score = ({ row }: { row: FeedRow }) => {
 
 // Whose play it is: his face, his team's logo on its corner - or, for a
 // play that is nobody's (a timeout), the team's logo alone.
-const PlayPicture = ({
+export const PlayPicture = ({
 	pid,
 	team,
 	season,
@@ -321,7 +321,7 @@ export const PlayRow = memo(
 		a.latest === b.latest,
 );
 
-const PlayList = ({
+export const PlayList = ({
 	rows,
 	teams,
 	season,
@@ -348,7 +348,7 @@ const PlayList = ({
 	</div>
 );
 
-const AllPlays = ({
+export const AllPlays = ({
 	rows,
 	teams,
 	season,
@@ -415,7 +415,7 @@ const AllPlays = ({
 
 // The game's dunks, threes and blocks so far, newest first, each one to be
 // shown again on the court.
-const Highlights = ({
+export const Highlights = ({
 	rows,
 	teams,
 	season,
@@ -619,7 +619,7 @@ const LEADER_STATS = [
 	},
 ];
 
-const TeamsLine = ({ boxScore }: { boxScore: any }) => (
+export const TeamsLine = ({ boxScore }: { boxScore: any }) => (
 	<div className="gamecast-teams-line">
 		{TEAM_NUMS_DISPLAY_ORDER.map((ti, i) => (
 			<div
@@ -635,7 +635,7 @@ const TeamsLine = ({ boxScore }: { boxScore: any }) => (
 	</div>
 );
 
-const Leaders = ({ boxScore }: { boxScore: any }) => (
+export const Leaders = ({ boxScore }: { boxScore: any }) => (
 	<div>
 		<TeamsLine boxScore={boxScore} />
 		{LEADER_STATS.map((stat) => {
@@ -650,12 +650,11 @@ const Leaders = ({ boxScore }: { boxScore: any }) => (
 			});
 			return (
 				<div key={stat.label} className="gamecast-leader-row">
-					{best.map((p, i) => (
-						<Fragment key={i}>
-							{i === 1 ? (
-								<div className="gamecast-leader-label">{stat.label}</div>
-							) : null}
+					<div className="gamecast-leader-label">{stat.label}</div>
+					<div className="gamecast-leader-pair">
+						{best.map((p, i) => (
 							<div
+								key={i}
 								className={clsx("gamecast-leader", {
 									"flex-row-reverse text-end": i === 1,
 								})}
@@ -670,8 +669,17 @@ const Leaders = ({ boxScore }: { boxScore: any }) => (
 											<div className="text-truncate">
 												<a href={playerUrl(p.pid)}>{shortName(p.name)}</a>
 											</div>
-											<div className="gamecast-leader-line text-truncate">
-												{stat.line(p)}
+											<div className="gamecast-leader-line">
+												{/* (Each part kept whole, wrapping between them.) */}
+												{stat
+													.line(p)
+													.split(", ")
+													.map((part, j) => (
+														<Fragment key={j}>
+															{j > 0 ? ", " : null}
+															<span className="text-nowrap">{part}</span>
+														</Fragment>
+													))}
 											</div>
 										</div>
 									</>
@@ -679,8 +687,8 @@ const Leaders = ({ boxScore }: { boxScore: any }) => (
 									<span className="text-body-secondary">-</span>
 								)}
 							</div>
-						</Fragment>
-					))}
+						))}
+					</div>
 				</div>
 			);
 		})}
@@ -760,7 +768,13 @@ const statRows = (boxScore: any, full: boolean): StatRow[] => {
 		shown: [pct(t0[m], t0[a]), pct(t1[m], t1[a])],
 		sub: [`${t0[m]}-${t0[a]}`, `${t1[m]}-${t1[a]}`],
 	});
-	const leads = leadsOf(boxScore.liveFlow);
+	// (Live, the score line so far; a finished game's, all of it.)
+	const leads = leadsOf(
+		boxScore.liveFlow ??
+			(boxScore.charts
+				? { scores: boxScore.charts.scores, now: boxScore.charts.total }
+				: undefined),
+	);
 	return [
 		shooting("Field Goal %", "fg", "fga"),
 		shooting("Three Point %", "tp", "tpa"),
@@ -789,7 +803,7 @@ const statRows = (boxScore: any, full: boolean): StatRow[] => {
 	];
 };
 
-const TeamStatBars = ({
+export const TeamStatBars = ({
 	boxScore,
 	colors,
 	full,
@@ -873,7 +887,7 @@ const injuryText = (injury: any) => {
 		: undefined;
 };
 
-const Injuries = ({ boxScore }: { boxScore: any }) => {
+export const Injuries = ({ boxScore }: { boxScore: any }) => {
 	const lists = TEAM_NUMS_DISPLAY_ORDER.map((ti) => ({
 		t: boxScore.teams[ti],
 		hurt: (boxScore.teams[ti].players ?? []).filter(
@@ -933,7 +947,13 @@ const Injuries = ({ boxScore }: { boxScore: any }) => {
 const teamByTid = (boxScore: any, tid: number) =>
 	boxScore.teams.find((t: any) => t.tid === tid);
 
-const Series = ({ boxScore, info }: { boxScore: any; info: GamecastInfo }) => {
+export const Series = ({
+	boxScore,
+	info,
+}: {
+	boxScore: any;
+	info: GamecastInfo;
+}) => {
 	if (info.series.length === 0) {
 		return null;
 	}
@@ -989,7 +1009,7 @@ const Series = ({ boxScore, info }: { boxScore: any; info: GamecastInfo }) => {
 									</div>
 								</td>
 								<td className="text-nowrap">
-									{s.now ? (
+									{s.now && !s.pts ? (
 										<span className="fw-bold">Now</span>
 									) : s.pts ? (
 										<>
@@ -1017,7 +1037,7 @@ const Series = ({ boxScore, info }: { boxScore: any; info: GamecastInfo }) => {
 const streakText = (streak: number) =>
 	streak > 0 ? `W${streak}` : streak < 0 ? `L${-streak}` : "-";
 
-const Standings = ({
+export const Standings = ({
 	boxScore,
 	info,
 }: {

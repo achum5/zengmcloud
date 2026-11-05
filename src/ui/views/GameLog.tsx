@@ -11,6 +11,7 @@ import { BoxScoreWrapper } from "../components/BoxScoreWrapper.tsx";
 import { SocialEmbed } from "../components/SocialEmbed.tsx";
 import { BoxScoreRow } from "../components/BoxScoreRow.tsx";
 import { useLocal } from "../util/local.ts";
+import { GameRecap } from "./LiveGame/gamecast/GameRecap.tsx";
 
 const StatsRow = ({
 	p,
@@ -194,7 +195,10 @@ const GameLog = ({
 		},
 	});
 
-	const { season: currentSeason } = useLocal(["season"]);
+	const { gamecastLayout, season: currentSeason } = useLocal([
+		"gamecastLayout",
+		"season",
+	]);
 
 	const { currentGidInList, nextGid, prevGid } = findPrevNextGids(
 		gamesList.games,
@@ -212,6 +216,46 @@ const GameLog = ({
 
 			{noGamesAndNoBoxScore ? (
 				<NoGamesMessage warnAboutDelete />
+			) : __SPORT === "basketball" && gamecastLayout && boxScore.gid >= 0 ? (
+				// Laid out as a game recap (the tabbed layout, as the live game's).
+				<GameRecap
+					boxScore={boxScore}
+					abbrev={
+						team === "special"
+							? "special"
+							: (boxScore as any).teams?.find((t: any) => t.tid === tid)?.abbrev
+					}
+					currentGidInList={currentGidInList}
+					nextGid={nextGid}
+					prevGid={prevGid}
+					tid={tid}
+					Row={StatsRow}
+					gamesList={
+						<GamesList
+							currentSeason={currentSeason}
+							gamesList={gamesList}
+							gid={boxScore.gid}
+							season={season}
+							team={team}
+							tid={tid}
+						/>
+					}
+					reactions={
+						reactions && reactions.posts.length > 0 ? (
+							<div className="mt-3">
+								<SocialEmbed
+									pictures={reactions.pictures}
+									playerNames={reactions.playerNames}
+									posts={reactions.posts}
+									season={reactions.season}
+									showDay={false}
+									teams={reactions.teams}
+									title="Reactions"
+								/>
+							</div>
+						) : null
+					}
+				/>
 			) : (
 				<>
 					<p />

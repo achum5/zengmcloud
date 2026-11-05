@@ -1,4 +1,5 @@
 import { idb } from "../db/index.ts";
+import { gamecastInfo } from "./liveGameInfo.ts";
 import { feedAbout } from "../util/socialFeed.ts";
 import { g, helpers } from "../util/index.ts";
 import type { AllStars, CourtStyle, Game } from "../../common/types.ts";
@@ -317,6 +318,14 @@ const boxScore = async (gid: number) => {
 			);
 		}
 		(game2 as any).charts = charts;
+		// The season series and the standings, for the box score laid out as a
+		// game recap (see LiveGame/gamecast/GameRecap) - cosmetic, never in the
+		// way of the box score.
+		try {
+			(game2 as any).gamecast = await gamecastInfo(game, true);
+		} catch {
+			// The cards just don't show.
+		}
 	}
 
 	return game2;
