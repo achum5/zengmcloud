@@ -71,7 +71,13 @@ const Logo = ({ t, size = 24 }: { t: any; size?: number }) => (
 );
 
 // His face in a circle, head and shoulders, as a broadcast's graphics show a
-// player (loaded on demand and cached - see usePlayerFace).
+// player (loaded on demand and cached - see usePlayerFace). A drawn face is
+// 400 x 600 with his head from about 100 down to 505 (his hair from 55) and
+// his shirt from 300: the circle takes a window FACE_WINDOW across from
+// FACE_TOP down, centered - all of his head, a little of his shoulders. A
+// photo fills the circle from its top.
+const FACE_TOP = 32;
+const FACE_WINDOW = 548;
 const Headshot = ({
 	pid,
 	season,
@@ -83,18 +89,27 @@ const Headshot = ({
 }) => {
 	const { lid } = useLocal(["lid"]);
 	const face = usePlayerFace(pid, season, lid);
+	const k = size / FACE_WINDOW;
+	const photo = !!face?.imgURL;
 	return (
 		<div
-			className="gamecast-headshot flex-shrink-0"
+			className={clsx("gamecast-headshot flex-shrink-0", {
+				"gamecast-headshot-photo": photo,
+			})}
 			style={{ width: size, height: size }}
 		>
 			{face && (face.face || face.imgURL) ? (
 				<div
-					style={{
-						width: size,
-						height: size * 1.5,
-						marginTop: face.imgURL && !face.face ? 0 : size * 0.04,
-					}}
+					style={
+						photo
+							? { width: size, height: size }
+							: {
+									width: 400 * k,
+									height: 600 * k,
+									marginTop: -FACE_TOP * k,
+									marginLeft: ((FACE_WINDOW - 400) / 2) * k,
+								}
+					}
 				>
 					<PlayerPicture
 						face={face.face}
