@@ -811,6 +811,15 @@ class Actor {
 		this.push(leg);
 	}
 
+	// As go, in a move that is no stride (fighting his way off the line,
+	// say): up to its pace off what he was doing as rampInto has him - out
+	// of his stance, up from nothing - not off at it in a blink.
+	goOff(to: Pt, t1: number, move: Move, yaw?: number) {
+		const leg = this.legTo(to, t1, move, yaw);
+		this.rampInto(leg, this.paceInto(leg.to), true);
+		this.push(leg);
+	}
+
 	// Slowing for `leg`: steps a good deal slower (SLOW_DROP ft/s or more)
 	// than the stride he is in, or a turn sharper than PLANT_TURN he can
 	// carry only so much of his pace round (as on a route - see breakOf):
@@ -1656,9 +1665,9 @@ class Actor {
 
 	// (Out of his stance: up from nothing, at RELEASE_ACCEL - not left to
 	// catch up with the play all at once, quicker than it has him going.)
-	private rampInto(leg: Leg, into = this.paceInto(leg.to)) {
+	private rampInto(leg: Leg, into = this.paceInto(leg.to), any = false) {
 		const T = (leg.t1 - leg.t0) / 1000;
-		if (!RAMPS.has(leg.move) || T * 1000 < RAMP_LEG_MS) {
+		if ((!any && !RAMPS.has(leg.move)) || T * 1000 < RAMP_LEG_MS) {
 			return;
 		}
 		const dx = leg.to.x - leg.from.x;
@@ -2712,6 +2721,12 @@ const JAM_AGAIN_FT = 25;
 const JAM_AGAIN_FPS = 8;
 // (Down there with him, squared up to him at least this long, ms.)
 const JAM_SET_MS = 300;
+// (Running with him this far behind him and inside him, feet - over to the
+// inside of him over JAM_IN_MS, back behind him over JAM_DROP_MS.)
+const JAM_BEHIND_FT = 2.5;
+const JAM_INSIDE_FT = 2.5;
+const JAM_IN_MS = 400;
+const JAM_DROP_MS = 1200;
 // The cover with nobody bringing it back: down the field at this pace at
 // least (feet a second).
 const COVER_LEAST_FPS = 10;
@@ -15208,7 +15223,7 @@ class Action {
 			const side = Math.sign(s.a) || 1;
 			const j = this.acrossFrom(jammers, s.a);
 			this.offSnap(g, GET_OFF_MS, GET_OFF_SPREAD_MS);
-			g.go(
+			g.goOff(
 				this.w({ d: s.d + 9, a: s.a - side * 2 }),
 				snap + 900,
 				"engage",
@@ -15227,7 +15242,7 @@ class Action {
 			if (j) {
 				jammers.splice(jammers.indexOf(j), 1);
 				this.offSnap(j, READ_OFF_MS, READ_OFF_SPREAD_MS);
-				j.go(
+				j.goOff(
 					this.w({ d: s.d + 11.6, a: s.a - side * 2 }),
 					snap + 900,
 					"engage",
@@ -15235,9 +15250,25 @@ class Action {
 				);
 				// A step behind him and inside, all the way down - and squared
 				// up to him there, waiting on it with him (not stood).
+				// (Round to the inside of him first, and only then dropped in
+				// behind him, over JAM_DROP_MS - not through him from in front
+				// of him to behind, nor stood still while he goes.)
+				const jam = this.of(j.at);
+				const was = this.of(g.posAt(j.t));
+				const ahead = jam.d - was.d;
+				const beside = jam.a - was.a;
+				const jamT = j.t;
 				for (let time = snap + 1300; time < g.t; time += 400) {
 					const q = this.of(g.posAt(time));
-					j.go(this.w({ d: q.d - 2.5, a: q.a - side * 2.5 }), time);
+					const u = Math.min(1, (time - jamT) / JAM_DROP_MS);
+					const w = Math.min(1, (time - jamT) / JAM_IN_MS);
+					j.go(
+						this.w({
+							d: q.d + ahead + (-JAM_BEHIND_FT - ahead) * u,
+							a: q.a + beside * (1 - w) - side * JAM_INSIDE_FT * w,
+						}),
+						time,
+					);
 				}
 				j.hold(
 					Math.max(j.t + JAM_SET_MS, g.t),
