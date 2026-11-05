@@ -2443,6 +2443,7 @@ class Director {
 							t0,
 							playI: i0,
 							r: this.rng(i0, "timeout"),
+							...(e.type === "twoMinuteWarning" ? { warning: true } : {}),
 							// (Called by his head coach - the picture on him, across
 							// the field, if no replay comes between.)
 							...(e.type === "timeout"

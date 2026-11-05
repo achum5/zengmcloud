@@ -24,7 +24,7 @@ Combinations: distinct whole combinations of the variety tool's parts.
 | 8   | Extra point, two-point try                         |        4 | `kick`       | working |
 | 9   | Field goal (`fieldGoalAttempt`, `fieldGoal`)       |        2 | `kick`       | working |
 | 10  | Interception and return                            |        2 | `pick`       | working |
-| 11  | Timeouts, two-minute warning, quarters             |       15 | -            | todo    |
+| 11  | Timeouts, two-minute warning, quarters             |       15 | `break`      | working |
 | 12  | Injury (`injury`)                                  |        6 | -            | todo    |
 | 13  | Kneel, fumble, onside kick, safety                 |     rare | -            | todo    |
 
@@ -201,6 +201,24 @@ off a tip 2, up for it 1 (all set before).
 
 To do: a return with a move in it (no pick return has an evade), a pick
 batted up at the line, the quarterback's own look after it.
+
+## 11. Timeouts, two-minute warning, quarters
+
+Parts: who called it (or the two-minute warning), how that side gathered,
+how the other side did, the drinks, and the pictures (the coach's T, the
+huddle, then the cheerleaders or the crowd).
+
+Each timeout its own way: the side that called it in rows round the head
+coach, or the same with the front row on a knee, or the quarterback (the
+middle linebacker, for the defense) over to the coach on his own, the rest
+in a ring of their own out on the field. The other side in its ring, on a
+knee in it, or at its own sideline round its coordinator - always at the
+two-minute warning.
+
+Now (95 timeouts): rows 48, the quarterback over 29, on a knee 18. The
+other side in a ring 48, at its sideline 31, on a knee 16.
+
+To do: the quarter breaks (the change of ends is the same each time).
 
 ## Side notes
 

@@ -910,6 +910,72 @@ const pickParts = (tl: FieldTimeline, p: Play) => {
 	};
 };
 
+// A timeout (or the two-minute warning): who called it, how that side
+// gathered (rows round the head coach, the front row on a knee, the
+// quarterback over to him on his own), the other side (a ring, on a knee,
+// at its own sideline), the drinks, and the picture after.
+const breakParts = (p: Play, warning: boolean) => {
+	const to = p.timeout;
+	const boss = p.coaches?.[0];
+	if (!to || !boss) {
+		return undefined;
+	}
+	const t = to.cut + 1500;
+	const moveAt = (q: Part) =>
+		q.legs.find((l) => l.t0 <= t && t < l.t1)?.move ?? "-";
+	const atOf = (q: Part) => {
+		const l = q.legs.find((x) => x.t0 <= t && t < x.t1);
+		return l ? l.from : undefined;
+	};
+	const mine = p.parts.filter((q) => q.pid >= 0 && q.team === boss.team);
+	const theirs = p.parts.filter((q) => q.pid >= 0 && q.team !== boss.team);
+	const talker =
+		mine.find((q) => q.role === "QB") ?? mine.find((q) => q.role === "MIKE");
+	const tAt = talker && atOf(talker);
+	const rest = mine
+		.filter((q) => q !== talker)
+		.map(atOf)
+		.filter(Boolean) as Pt[];
+	const mid = rest.length
+		? {
+				x: rest.reduce((a, b) => a + b.x, 0) / rest.length,
+				y: rest.reduce((a, b) => a + b.y, 0) / rest.length,
+			}
+		: undefined;
+	const gather = mine.some((q) => moveAt(q) === "takeKnee")
+		? "front row on a knee"
+		: tAt && mid && dist(tAt, mid) > 10
+			? "quarterback over to the coach"
+			: "rows round the coach";
+	const them = (p.coaches ?? []).some(
+		(c) =>
+			c.team !== boss.team &&
+			c.pid < 0 &&
+			c.legs.some((l) => l.move === "coachTalk"),
+	)
+		? "at their sideline"
+		: theirs.some((q) => moveAt(q) === "takeKnee")
+			? "ring, on a knee"
+			: "ring";
+	const drinks = p.parts.filter((q) =>
+		q.legs.some((l) => l.move === "drink" && l.t0 >= to.cut),
+	).length;
+	return {
+		pid: 0,
+		parts: {
+			what: warning
+				? "two-minute warning"
+				: mine.some((q) => q.role === "QB")
+					? "offense called it"
+					: "defense called it",
+			gather,
+			them,
+			drinks: bucket(drinks, [1, 3, 6], ["none", "1-2", "3-5", "6+"]),
+			shots: `${to.call ? "the coach's T, " : ""}huddle${to.cheer ? ", cheerleaders" : to.crowd ? ", crowd" : ""}`,
+		},
+	};
+};
+
 test.skipIf(games.length === 0)(
 	"football variety of one line",
 	() => {
@@ -972,7 +1038,9 @@ test.skipIf(games.length === 0)(
 														)
 													: line === "pick" && evs.includes("interception")
 														? pickParts(tl, p)
-														: undefined;
+														: line === "break" && p.timeout
+															? breakParts(p, evs.includes("twoMinuteWarning"))
+															: undefined;
 				if (got) {
 					all.push({
 						pid: `${tag}:${got.pid}`,

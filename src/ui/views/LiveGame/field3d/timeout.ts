@@ -11,7 +11,7 @@ import {
 import { medicId } from "./hurt.ts";
 import type { Move } from "./poses.ts";
 import { cutAt } from "./postgame.ts";
-import { coachId, headCoachAt, sidelineOf } from "./sideline.ts";
+import { coachId, coordinatorAt, headCoachAt, sidelineOf } from "./sideline.ts";
 
 // A TIMEOUT (the two-minute warning too): the referee's signal, then the
 // picture cuts to the side that called it gathered at the edge of the field
@@ -56,6 +56,20 @@ const CREW_OUT = 3;
 const HIPS = 0.3;
 const BENT = 0.18;
 const SHIFT = 0.4;
+// How the side that called it gathers, on its own draw: in rows round the
+// head coach (up to the first share), the same with the front row on a
+// knee (up to the second) - or the quarterback (the man he talks to) over
+// to him on his own, the rest in a ring of their own out on the field, this
+// far in off the sideline and this far along it from them.
+const GATHER = [0.45, 0.7];
+const OVER_IN = 15;
+const OVER_ASIDE = 10;
+// And the other side: in its ring (up to the first share), the ring with
+// this share of them on a knee (up to the second) - or at its own sideline
+// round a coordinator of its own, in rows too (the two-minute warning,
+// always: a long break, the both of them off to their sidelines).
+const THEIRS = [0.55, 0.75];
+const KNEEL_RING = 0.6;
 // The head coach's points, each this long, a moment between them.
 const TALK_MS = 2300;
 const TALK_GAP = 400;
@@ -128,6 +142,8 @@ export const stageTimeout = (input: {
 	// His head coach calling it: the official's signal - and, if the
 	// picture may go to him, no sooner than when.
 	call?: { at: number; shot?: number };
+	// The two-minute warning (see THEIRS).
+	warning?: boolean;
 }): Timeout => {
 	const { parts, ball, cut, team, spot, r } = input;
 	const t1 = cut + TIMEOUT_MS + r() * TIMEOUT_MORE;
@@ -135,6 +151,7 @@ export const stageTimeout = (input: {
 	// Each man as the play left him until the cut, then where the scene has
 	// him.
 	const spots: { p: Part; at: Pt }[] = [];
+	const kneel = new Set<Part>();
 	const place = (p: Part, at: Pt, yaw: number, move: Move) => {
 		spots.push({ p, at });
 		cutAt(p.legs, cut);
@@ -143,6 +160,11 @@ export const stageTimeout = (input: {
 			p.legs.push({ t0: l.t1, t1: cut, from: l.to, to: l.to, move: "stand" });
 		}
 		p.legs.push({ t0: cut, t1, from: at, to: at, move, yaw });
+		// (On a knee, all of it - not up and down.)
+		if (move === "takeKnee") {
+			kneel.add(p);
+			return;
+		}
 		// (Part way through, now and then, another way of standing it.)
 		if (r() < SHIFT) {
 			const l = p.legs.at(-1)!;
@@ -156,71 +178,133 @@ export const stageTimeout = (input: {
 		}
 	};
 
-	// The side that called it, at its sideline.
-	const line = sidelineOf(team);
-	const into = line === 0 ? 1 : -1;
-	const edge = line === 0 ? 0 : FIELD_W;
-	const x = clamp(spot.x, MID_X - ALONG, MID_X + ALONG) + (r() - 0.5) * 6;
-	const middle = { x, y: edge + into * MIDDLE_IN };
-	const coachAt = { x, y: edge + into * COACH_IN };
-	const mine = parts.filter((p) => p.pid >= 0 && p.team === team);
-	const talker =
-		mine.find((p) => p.role === "QB") ??
-		mine.find((p) => p.role === "MIKE") ??
-		mine[0];
-	const out = Math.atan2(into, 0);
-	let k = 0;
-	for (const p of mine) {
-		if (p === talker) {
+	// A side gathered at its sideline round a coach: the man he talks to
+	// (its quarterback, or its middle linebacker) with him, the rest round
+	// the two in rows - the front row on a knee, if `knee` - or, `over`, the
+	// rest in a ring of their own out on the field.
+	const talkerOf = (men: Part[]) =>
+		men.find((p) => p.role === "QB") ??
+		men.find((p) => p.role === "MIKE") ??
+		men[0];
+	const gather = (
+		men: Part[],
+		side: Side,
+		along: number,
+		how: "rows" | "knee" | "over",
+	) => {
+		const line = sidelineOf(side);
+		const into = line === 0 ? 1 : -1;
+		const edge = line === 0 ? 0 : FIELD_W;
+		const x = clamp(along, MID_X - ALONG, MID_X + ALONG) + (r() - 0.5) * 6;
+		const middle = { x, y: edge + into * MIDDLE_IN };
+		const coachAt = { x, y: edge + into * COACH_IN };
+		const talker = talkerOf(men);
+		const out = Math.atan2(into, 0);
+		// (Over: off to the side of the two, toward the middle of the field
+		// - seen past them, not behind them.)
+		const aside = x < MID_X ? 1 : -1;
+		const ringAt =
+			how === "over"
+				? { x: x + aside * OVER_ASIDE, y: edge + into * OVER_IN }
+				: undefined;
+		const rest = men.filter((p) => p !== talker);
+		if (talker) {
 			const at = {
 				x: x + (line === 0 ? ASIDE : 0) + (r() - 0.5) * 1.2,
 				y: edge + into * TALKER_IN,
 			};
-			place(p, at, toward(at, coachAt), "stand");
-			continue;
+			place(talker, at, toward(at, coachAt), "stand");
 		}
-		const row = k < FIRST_ROW ? 0 : 1;
-		const inRow =
-			row === 0
-				? Math.min(FIRST_ROW, mine.length - 1)
-				: mine.length - 1 - FIRST_ROW;
-		const j = row === 0 ? k : k - FIRST_ROW;
-		// (Across the field from the camera, gathered either side of the two,
-		// not in front of them.)
-		const u = inRow > 1 ? j / (inRow - 1) : 0.5;
-		const wing = j % 2 === 0 ? -1 : 1;
-		const v =
-			inRow > 2 ? Math.floor(j / 2) / Math.max(1, Math.ceil(inRow / 2) - 1) : 0;
-		const a =
-			out +
-			(line === 0
-				? wing * (OPEN + (SPREAD - OPEN) * v)
-				: (u * 2 - 1) * SPREAD) +
-			(r() - 0.5) * 0.12 +
-			row * 0.1;
-		const far = ROWS[row]! + (r() - 0.5) * 0.8;
-		const at = {
-			x: middle.x + Math.cos(a) * far,
-			y: middle.y + Math.sin(a) * far,
-		};
-		place(p, at, toward(at, middle) + (r() - 0.5) * 0.4, stoodOf(r));
-		k++;
-	}
+		if (ringAt) {
+			ringOf(rest, ringAt, 0);
+		} else {
+			rest.forEach((p, k) => {
+				const row = k < FIRST_ROW ? 0 : 1;
+				const inRow =
+					row === 0
+						? Math.min(FIRST_ROW, rest.length)
+						: rest.length - FIRST_ROW;
+				const j = row === 0 ? k : k - FIRST_ROW;
+				// (Across the field from the camera, gathered either side of
+				// the two, not in front of them.)
+				const u = inRow > 1 ? j / (inRow - 1) : 0.5;
+				const wing = j % 2 === 0 ? -1 : 1;
+				const v =
+					inRow > 2
+						? Math.floor(j / 2) / Math.max(1, Math.ceil(inRow / 2) - 1)
+						: 0;
+				const a =
+					out +
+					(line === 0
+						? wing * (OPEN + (SPREAD - OPEN) * v)
+						: (u * 2 - 1) * SPREAD) +
+					(r() - 0.5) * 0.12 +
+					row * 0.1;
+				const far = ROWS[row]! + (r() - 0.5) * 0.8;
+				const at = {
+					x: middle.x + Math.cos(a) * far,
+					y: middle.y + Math.sin(a) * far,
+				};
+				place(
+					p,
+					at,
+					toward(at, middle) + (r() - 0.5) * 0.4,
+					how === "knee" && row === 0 ? "takeKnee" : stoodOf(r),
+				);
+			});
+		}
+		return { line, into, edge, x, middle, coachAt, out, ringAt };
+	};
+	// A side in a ring, `knees` of them on a knee.
+	const ringOf = (men: Part[], at: Pt, knees: number) => {
+		const turn = r() * Math.PI * 2;
+		men.forEach((p, j) => {
+			const a = turn + (j / men.length) * Math.PI * 2 + (r() - 0.5) * 0.15;
+			const far = RING + (r() - 0.5) * 0.7;
+			const to = { x: at.x + Math.cos(a) * far, y: at.y + Math.sin(a) * far };
+			place(
+				p,
+				to,
+				toward(to, at) + (r() - 0.5) * 0.3,
+				r() < knees ? "takeKnee" : stoodOf(r),
+			);
+		});
+	};
 
-	// The other side, in a ring of its own.
+	// The side that called it.
+	const mine = parts.filter((p) => p.pid >= 0 && p.team === team);
+	const u = r();
+	const how = u < GATHER[0]! ? "rows" : u < GATHER[1]! ? "knee" : "over";
+	const { line, into, edge, x, middle, coachAt, out, ringAt } = gather(
+		mine,
+		team,
+		spot.x,
+		how,
+	);
+
+	// The other side: in a ring of its own - or at its sideline too.
 	const other = parts.filter((p) => p.pid >= 0 && p.team !== team);
+	const them = (1 - team) as Side;
+	const v = r();
+	const there = input.warning
+		? "sideline"
+		: v < THEIRS[0]!
+			? "ring"
+			: v < THEIRS[1]!
+				? "knee"
+				: "sideline";
 	const theirs = line === 0 ? FIELD_W : 0;
 	const ring = {
 		x: clamp(spot.x, MID_X - RING_ALONG, MID_X + RING_ALONG),
 		y: theirs + (line === 0 ? -RING_IN : RING_IN),
 	};
-	const turn = r() * Math.PI * 2;
-	other.forEach((p, j) => {
-		const a = turn + (j / other.length) * Math.PI * 2 + (r() - 0.5) * 0.15;
-		const far = RING + (r() - 0.5) * 0.7;
-		const at = { x: ring.x + Math.cos(a) * far, y: ring.y + Math.sin(a) * far };
-		place(p, at, toward(at, ring) + (r() - 0.5) * 0.3, stoodOf(r));
-	});
+	const atLine =
+		there === "sideline"
+			? gather(other, them, spot.x + (r() - 0.5) * 30, "rows")
+			: undefined;
+	if (!atLine) {
+		ringOf(other, ring, there === "knee" ? KNEEL_RING : 0);
+	}
 
 	// The ball, if anybody had it, spotted - nothing more done with it.
 	const after = ball.findIndex((b) => b.t0 >= cut);
@@ -288,7 +372,7 @@ export const stageTimeout = (input: {
 		trainers.push({ pid: medicId(side, 1, n), team: side, legs });
 		// (Those near him, a drink - one at a time or so, not all at once.)
 		const near = spots
-			.filter((s) => s.p.team === side && !drinks.has(s.p))
+			.filter((s) => s.p.team === side && !drinks.has(s.p) && !kneel.has(s.p))
 			.filter((s) => dist(s.at, stop) < DRINK_NEAR && r() < DRINKS);
 		for (const { p } of near) {
 			const from = there + 300;
@@ -316,28 +400,46 @@ export const stageTimeout = (input: {
 			);
 		}
 	};
-	for (let n = 0; n < WATER; n++) {
-		// (Round either end of the ones who called it, from off the field
-		// behind them.)
-		const wing = n === 0 ? -1 : 1;
-		const a = out + wing * WATER_ROUND;
-		const stop = {
-			x: middle.x + Math.cos(a) * (ROWS[1]! + 0.6),
-			y: middle.y + Math.sin(a) * (ROWS[1]! + 0.6),
-		};
-		const start = { x: stop.x + wing * 3, y: edge - into * WATER_OFF };
-		water(team, n, start, stop, cut + 200 + r() * 500);
+	// (Round either end of a side gathered at its sideline, from off the
+	// field behind them.)
+	const toRows = (
+		side: Side,
+		g: { middle: Pt; out: number; edge: number; into: number },
+		at: () => number,
+	) => {
+		for (let n = 0; n < WATER; n++) {
+			const wing = n === 0 ? -1 : 1;
+			const a = g.out + wing * WATER_ROUND;
+			const stop = {
+				x: g.middle.x + Math.cos(a) * (ROWS[1]! + 0.6),
+				y: g.middle.y + Math.sin(a) * (ROWS[1]! + 0.6),
+			};
+			const start = { x: stop.x + wing * 3, y: g.edge - g.into * WATER_OFF };
+			water(side, n, start, stop, at());
+		}
+	};
+	// (In to a ring from its side's sideline.)
+	const toRing = (side: Side, ring: Pt, at: () => number) => {
+		const toLine = sidelineOf(side) === 0 ? -1 : 1;
+		for (let n = 0; n < WATER; n++) {
+			const by = (n === 0 ? -1 : 1) * WATER_BY;
+			const stop = { x: ring.x + by, y: ring.y + toLine * (RING + 2.2) };
+			const start = {
+				x: stop.x + by * 1.5,
+				y: stop.y + toLine * WATER_FROM,
+			};
+			water(side, n, start, stop, at());
+		}
+	};
+	if (ringAt) {
+		toRing(team, ringAt, () => cut + 200 + r() * 500);
+	} else {
+		toRows(team, { middle, out, edge, into }, () => cut + 200 + r() * 500);
 	}
-	for (let n = 0; n < WATER; n++) {
-		// (In to the other side from its sideline.)
-		const toLine = line === 0 ? 1 : -1;
-		const side = (n === 0 ? -1 : 1) * WATER_BY;
-		const stop = { x: ring.x + side, y: ring.y + toLine * (RING + 2.2) };
-		const start = {
-			x: stop.x + side * 1.5,
-			y: stop.y + toLine * WATER_FROM,
-		};
-		water((1 - team) as Side, n, start, stop, cut + r() * 300);
+	if (atLine) {
+		toRows(them, atLine, () => cut + r() * 300);
+	} else {
+		toRing(them, ring, () => cut + r() * 300);
 	}
 
 	// The head coach: stood where he stands until the cut (calling it
@@ -408,51 +510,77 @@ export const stageTimeout = (input: {
 		shotFrom <= call.at - T_SHOT_LATEST
 			? shotFrom
 			: undefined;
-	let t = cut + 500;
-	while (t + TALK_MS <= t1) {
-		const ms = TALK_MS * (0.85 + r() * 0.3);
-		legs.push({
-			t0: t,
-			t1: t + ms,
-			from: coachAt,
-			to: coachAt,
-			move: "coachTalk",
-			yaw: face,
-		});
-		t += ms;
-		const gap = Math.min(t1, t + TALK_GAP);
-		legs.push({
-			t0: t,
-			t1: gap,
-			from: coachAt,
-			to: coachAt,
-			move: "stand",
-			yaw: face,
-		});
-		t = gap;
-	}
-	if (t < t1) {
-		legs.push({
-			t0: t,
-			t1,
-			from: coachAt,
-			to: coachAt,
-			move: "stand",
-			yaw: face,
-		});
+	// (Going over it with them, a point at a time, till it is over.)
+	const talk = (legs: Leg[], at: Pt, yaw: number, from: number) => {
+		let t = from;
+		while (t + TALK_MS <= t1) {
+			const ms = TALK_MS * (0.85 + r() * 0.3);
+			legs.push({
+				t0: t,
+				t1: t + ms,
+				from: at,
+				to: at,
+				move: "coachTalk",
+				yaw,
+			});
+			t += ms;
+			const gap = Math.min(t1, t + TALK_GAP);
+			legs.push({ t0: t, t1: gap, from: at, to: at, move: "stand", yaw });
+			t = gap;
+		}
+		if (t < t1) {
+			legs.push({ t0: t, t1, from: at, to: at, move: "stand", yaw });
+		}
+	};
+	talk(legs, coachAt, face, cut + 500);
+
+	// The other side at its sideline: its coordinator (the one for the
+	// side of the ball it is on) out with it, from where he stands.
+	const coaches: CrewPart[] = [{ pid: coachId(team, 0), team, legs }];
+	if (atLine) {
+		const i = other.some((p) => p.role === "QB") ? 1 : 2;
+		const was = coordinatorAt(them, i, input.playI);
+		const yaw = toward(atLine.coachAt, atLine.middle);
+		const theirLegs: Leg[] = [
+			{
+				t0: input.t0,
+				t1: cut,
+				from: was,
+				to: was,
+				move: "stand",
+				yaw: atLine.out,
+			},
+			{
+				t0: cut,
+				t1: cut + 300,
+				from: atLine.coachAt,
+				to: atLine.coachAt,
+				move: "stand",
+				yaw,
+			},
+		];
+		talk(theirLegs, atLine.coachAt, yaw, cut + 300);
+		coaches.push({ pid: coachId(them, i), team: them, legs: theirLegs });
 	}
 
 	return {
 		cut,
-		at: { x, y: edge + into * (MIDDLE_IN + 3) },
+		// (Over: between the two at the sideline and the rest out on the
+		// field.)
+		at: ringAt
+			? { x: (x + ringAt.x) / 2, y: edge + into * (OVER_IN / 2 + 2) }
+			: { x, y: edge + into * (MIDDLE_IN + 3) },
 		t1,
-		coaches: [{ pid: coachId(team, 0), team, legs }, ...trainers],
+		coaches: [...coaches, ...trainers],
 		...(shot !== undefined
 			? { call: { from: shot, pid: coachId(team, 0) } }
 			: {}),
 		clear: [
-			{ at: middle, far: ROWS[1]! + CLEAR },
-			{ at: ring, far: RING + CLEAR },
+			{ at: middle, far: (ringAt ? TALKER_IN : ROWS[1]!) + CLEAR },
+			...(ringAt ? [{ at: ringAt, far: RING + CLEAR }] : []),
+			atLine
+				? { at: atLine.middle, far: ROWS[1]! + CLEAR }
+				: { at: ring, far: RING + CLEAR },
 		],
 	};
 };
