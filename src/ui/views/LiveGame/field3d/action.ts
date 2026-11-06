@@ -5279,6 +5279,9 @@ const ROUTE_LEFT = 0.4;
 // further back, none of it straight back (a curl, a comeback: planted, not
 // sent back the way he came at the pace he had on).
 const CUT_LEAST = 0.5;
+// (A man in motion at the snap: his motion ended no further off it than
+// this, ms - see runRoute.)
+const MOTION_SNAP_MS = 50;
 const CUT_KEEP = 0.25;
 const CUT_BACK = (2 * Math.PI) / 3;
 const cutKeep = (turn: number): number =>
@@ -9274,7 +9277,8 @@ class Action {
 			// (Up to speed for it off what he was doing - out of his stance,
 			// from nothing - and time to break down into him at the last: see
 			// LOCK_KEEP. Or, no catching him like that, as soon as he could
-			// be there at that pace, flat out to the last.)
+			// be there up to speed as hard as he can be (see RAMP_HARD), flat
+			// out to the last - not off at full speed from a stand.)
 			const l = b.last;
 			const off = SET.has(l.move);
 			const late = ((fps * (1 - LOCK_KEEP) ** 2) / (2 * STOP_ACCEL)) * 1000;
@@ -9288,14 +9292,13 @@ class Action {
 					const p = this.of(m.posAt(c));
 					const to = this.w({ d: p.d - BLOCK_GAP, a: p.a });
 					const far = dist(b.at, to);
-					const ms = up
-						? rampedMs(
-								far,
-								fps,
-								off ? 0 : paceOn(l, b.at, to),
-								off ? RELEASE_ACCEL : RAMP_ACCEL,
-							) + late
-						: (far / fps) * 1000;
+					const ms =
+						rampedMs(
+							far,
+							fps,
+							off ? 0 : paceOn(l, b.at, to),
+							(off ? RELEASE_ACCEL : RAMP_ACCEL) * (up ? 1 : RAMP_HARD),
+						) + (up ? late : 0);
 					if (ms <= c - b.t) {
 						meet = { t: c, at: to };
 					}
@@ -9409,6 +9412,22 @@ class Action {
 		until?: number,
 	): Pt | undefined {
 		const speed = m.top * ROUTE_PACE;
+		// (In motion at the snap, and off on his route well round from it:
+		// slowed into the snap over the last of his motion, down to as much
+		// of his pace as he can take round - not turned at his pace, or
+		// stopped dead in it and off again from nothing.)
+		{
+			const l = m.last;
+			const first = route.path[1];
+			const turn = first ? angleAt(l.from, l.to, this.w(first)) : 0;
+			if (
+				Math.abs(l.t1 - release) < MOTION_SNAP_MS &&
+				GAITS.has(l.move) &&
+				turn > CUT_LEAST
+			) {
+				m.breakDown(cutKeep(turn));
+			}
+		}
 		const v0 = this.releasePace(m, route, release);
 		m.hold(release);
 		const target = catchAt !== undefined;
