@@ -1052,6 +1052,10 @@ class Actor {
 		// (Too tight a turn to take at his pace: slowed into it, off the
 		// stretch he is on, to one he can take it at.)
 		let pace = v;
+		// (Still getting up to speed where he starts round it: from the pace
+		// he is at there, up as he goes round - not round it at the pace he
+		// was to be up to by the turn, off a slower one in a stride.)
+		let vStart = Math.min(v, legPace(lk));
 		const most = Math.sqrt(BEND_LAT * R);
 		if (most < v * BEND_SLOW) {
 			pace = this.slowInto(most / legPace(lk), CUT_ACCEL) ?? v;
@@ -1090,6 +1094,7 @@ class Actor {
 				}
 				pace = Math.min(legPace(this.last), Math.max(most, floor(s)));
 			}
+			vStart = pace;
 		}
 		const s = Math.sign(u.x * o.y - u.y * o.x) || 1;
 		const c = { x: start.x - s * u.y * R, y: start.y + s * u.x * R };
@@ -1105,7 +1110,7 @@ class Actor {
 			const q = r0 + (s * round * i) / n;
 			const at = this.last;
 			const dt =
-				((R * round) / n / (pace - ((pace - ve) * (i - 0.5)) / n)) * 1000;
+				((R * round) / n / (vStart + ((ve - vStart) * (i - 0.5)) / n)) * 1000;
 			this.push({
 				...was,
 				...(keep ? { yaw } : {}),
@@ -9225,8 +9230,12 @@ class Action {
 				a: this.of(meshPt).a + side * on * past,
 			});
 			const inFt = dist(into.from, into.to);
-			if (on > 0 || inFt <= 0 || v <= 0) {
-				faker.go(onTo, fakeT + 300, "run", on > 0 ? undefined : this.ahead);
+			if (on > 0) {
+				// (Bent round off the way he came in on across - not turned
+				// in a stride at full tilt.)
+				faker.chase(onTo, fakeT + 300, faker.top, "run");
+			} else if (inFt <= 0 || v <= 0) {
+				faker.go(onTo, fakeT + 300, "run", this.ahead);
 			} else {
 				// (Staying in to block: on off it round from the way he came
 				// in, pulled up as he goes - not turned square in a stride at
