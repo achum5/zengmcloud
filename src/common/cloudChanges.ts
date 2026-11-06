@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 194,
+		date: "2026-11-06",
+		text: "Live gamecast: the players on the court beside the game no longer show skill badges, so their names show in full.",
+	},
+	{
 		n: 193,
 		date: "2026-11-06",
 		text: 'Game recaps read more like a sportswriter wrote them: close games go straight to how they were decided instead of always giving the halftime score, and stock lines like "in a losing cause", "more than doubled his average" and bracketed double-doubles turn up far less. Plainer verbs, runs told more than one way, and wire-style lists.',

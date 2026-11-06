@@ -1487,10 +1487,12 @@ tr.table-warning:hover > td {
 			max-width: 8rem;
 		}
 	}
-	// Short of room: the badges give way long before the name does, and the
-	// position before it too.
+	// Short of room: the position gives way before the name does (any give
+	// at all in the name and it ends in "..." - it only gives way where it is
+	// wider than the room by itself).
 	.gamecast-oncourt-name {
-		flex-shrink: 1;
+		flex-shrink: 0;
+		max-width: 100%;
 	}
 	.gamecast-oncourt-pos {
 		flex-shrink: 100;
@@ -1498,13 +1500,6 @@ tr.table-warning:hover > td {
 		overflow: hidden;
 		white-space: nowrap;
 		padding-left: 0.3em;
-	}
-	.gamecast-oncourt-skills {
-		flex-shrink: 10000;
-		min-width: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
 	}
 }
 .gamecast-linescore {

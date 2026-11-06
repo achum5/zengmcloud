@@ -25,7 +25,6 @@ import { useLocal } from "../../../util/local.ts";
 import { usePlayerFace } from "../../../util/playerFaces.ts";
 import { PlayerPicture } from "../../../components/PlayerPicture.tsx";
 import { TeamLogoInline } from "../../../components/TeamLogoInline.tsx";
-import { SkillsBlock } from "../../../components/SkillsBlock.tsx";
 import { RatingsStatsPopover } from "../../../components/RatingsStatsPopover/index.tsx";
 import { sideColors } from "../../../components/GameCharts.basketball.tsx";
 import { TEAM_NUMS_DISPLAY_ORDER } from "../../../util/boxScoreDisplayOrder.ts";
@@ -733,17 +732,13 @@ export const OnCourt = ({ boxScore }: { boxScore: any }) => (
 											style={{ minWidth: 0 }}
 											className="d-flex align-items-center"
 										>
-											{/* (Short of room, his badges are cut
-											    first, then his position, and only then
-											    his name.) */}
+											{/* (Short of room, his position is cut
+											    before his name.) */}
 											<span className="text-truncate gamecast-oncourt-name">
 												<a href={playerUrl(p.pid)}>{shortName(p.name)}</a>
 											</span>
 											<span className="text-body-secondary gamecast-oncourt-pos">
 												{p.pos}
-											</span>
-											<span className="gamecast-oncourt-skills">
-												<SkillsBlock skills={p.skills} />
 											</span>
 											<span className="flex-shrink-0">
 												<RatingsStatsPopover
