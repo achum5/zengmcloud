@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 182,
+		date: "2026-11-06",
+		text: "Tabbed layout: in a live game, the Box Score tab shows the box score a quarter at a time too - the whole game, or any quarter so far.",
+	},
+	{
 		n: 181,
 		date: "2026-11-06",
 		text: "Tabbed layout: a shot chart - every shot right where the 3D court had it taken, made or missed, for both teams or one. On a box score it shows for games watched in 3D from now on (it is kept with the saved replay, a few kilobytes a game).",

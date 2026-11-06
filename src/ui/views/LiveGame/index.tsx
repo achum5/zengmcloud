@@ -24,7 +24,9 @@ import { realtimeUpdate } from "../../util/realtimeUpdate.ts";
 import { toWorker } from "../../util/toWorker.ts";
 import { local, localActions, useLocal } from "../../util/local.ts";
 import { finishOf } from "../../util/liveGameWording.basketball.ts";
-import { LiveGamecast } from "./gamecast/Gamecast.tsx";
+import { LiveGamecast, Switch } from "./gamecast/Gamecast.tsx";
+import { linesOf, periodBoxScore, type Lines } from "./gamecast/replayFeed.ts";
+import { periodLabel } from "./gamecast/playFeed.ts";
 import { packShots, type ShotSpot } from "./gamecast/shots.ts";
 import { orderBoxScoreTeams } from "../../util/liveBoxScoreLayout.ts";
 import type { View } from "../../../common/types.ts";
@@ -538,6 +540,11 @@ export const LiveGame = (props: View<"liveGame">) => {
 	// the gamecast's shot chart - and kept with the saved replay, for its
 	// box score's.
 	const [shots, setShots] = useState<ShotSpot[] | undefined>();
+	// Each man's line as each period ended, for the box score a quarter at
+	// a time (see gamecast/replayFeed.ts).
+	const periodEnds = useRef<Lines[]>([]);
+	const periodSeen = useRef(0);
+	const [boxPeriod, setBoxPeriod] = useState<number | "all">("all");
 	// A highlight tapped in the gamecast, for the 3D court to show again.
 	const [replayAsk, setReplayAsk] = useState<
 		{ n: number; cursor: number } | undefined
@@ -1951,6 +1958,15 @@ export const LiveGame = (props: View<"liveGame">) => {
 				sportState: sportState.current,
 			});
 			const text = output.text;
+			if (__SPORT === "basketball") {
+				const now = boxScore.current.teams[0].ptsQtrs?.length ?? 0;
+				if (now > periodSeen.current) {
+					if (periodSeen.current > 0) {
+						periodEnds.current.push(linesOf(boxScore.current));
+					}
+					periodSeen.current = now;
+				}
+			}
 			const currentPts =
 				boxScore.current.teams[0][ptsKey] + boxScore.current.teams[1][ptsKey];
 			const scoreDiff = currentPts - prevPts;
@@ -2541,6 +2557,8 @@ export const LiveGame = (props: View<"liveGame">) => {
 					? { ...DEFAULT_SPORT_STATE }
 					: undefined;
 				playByPlayEntries.current = [];
+				periodEnds.current = [];
+				periodSeen.current = 0;
 				playHistory.current = [];
 				courtScene.current = undefined;
 				courtSceneCount.current = 0;
@@ -3356,14 +3374,47 @@ export const LiveGame = (props: View<"liveGame">) => {
 							) : null
 						}
 						boxScoreTab={
-							<BoxScoreWrapper
-								Row={PlayerRow}
-								boxScore={boxScore.current}
-								live
-								playIndex={playIndex}
-								sportState={sportState.current}
-								tablesOnly
-							/>
+							<>
+								{periodEnds.current.length > 0 ? (
+									<div className="mb-2">
+										<Switch
+											options={[
+												["all", "Game"] as [number | "all", string],
+												...[...periodEnds.current, undefined].map(
+													(_, k) =>
+														[
+															k,
+															periodLabel(
+																k + 1,
+																boxScore.current.numPeriods ?? 4,
+																helpers.ordinal,
+															) ?? "",
+														] as [number | "all", string],
+												),
+											]}
+											value={boxPeriod}
+											onChange={setBoxPeriod}
+										/>
+									</div>
+								) : null}
+								<BoxScoreWrapper
+									key={String(boxPeriod)}
+									Row={PlayerRow}
+									boxScore={
+										boxPeriod === "all" || boxPeriod > periodEnds.current.length
+											? boxScore.current
+											: periodBoxScore(
+													boxScore.current,
+													[...periodEnds.current, linesOf(boxScore.current)],
+													boxPeriod,
+												)
+									}
+									live
+									playIndex={playIndex}
+									sportState={sportState.current}
+									tablesOnly
+								/>
+							</>
 						}
 					/>
 				) : (

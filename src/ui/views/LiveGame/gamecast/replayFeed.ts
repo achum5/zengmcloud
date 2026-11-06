@@ -30,9 +30,9 @@ export const PERIOD_STATS = [
 	"pm",
 ] as const;
 
-type Lines = Map<number, Record<string, number>>;
+export type Lines = Map<number, Record<string, number>>;
 
-const linesOf = (boxScore: any): Lines => {
+export const linesOf = (boxScore: any): Lines => {
 	const m: Lines = new Map();
 	for (const t of boxScore.teams) {
 		for (const p of t.players) {
