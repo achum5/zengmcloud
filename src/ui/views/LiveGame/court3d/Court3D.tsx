@@ -1949,7 +1949,8 @@ const Court3D = ({
 				style={{
 					display: "none",
 					position: "absolute",
-					right: "2cqw",
+					// (Up in the corner the page's controls are not in.)
+					left: "2cqw",
 					top: "2cqw",
 					padding: "0.35em 0.7em",
 					fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",

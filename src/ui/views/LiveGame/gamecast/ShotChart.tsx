@@ -3,10 +3,10 @@
 // right, made ones filled in, misses rings; and each, pointed at, the play
 // it was.
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { TeamLogoInline } from "../../../components/TeamLogoInline.tsx";
 import { helpers } from "../../../util/helpers.ts";
-import { periodLabel, type FeedEntry } from "./playFeed.ts";
+import { periodLabel, type FeedEntry, type FeedRow } from "./playFeed.ts";
 import type { ShotSpot } from "./shots.ts";
 
 const W = 94;
@@ -52,6 +52,7 @@ export const ShotChart = ({
 	names,
 	plays,
 	numPeriods = 4,
+	clip,
 }: {
 	spots: ShotSpot[];
 	// Box score order (0 home, 1 away), as their colors.
@@ -61,17 +62,55 @@ export const ShotChart = ({
 	// The game's lines, for the play each shot was (by its cursor).
 	plays?: readonly FeedEntry[];
 	numPeriods?: number;
+	// The play itself in 3D, for a shot clicked (see HighlightClip).
+	clip?: (row: FeedRow) => ReactNode;
 }) => {
+	// Pointed at, and clicked on (its play shown in the popup, and kept).
 	const [at, setAt] = useState<number | undefined>();
-	const byCursor = useMemo(() => {
-		const m = new Map<number, FeedEntry>();
+	const [pinned, setPinned] = useState<number | undefined>();
+	const wrapRef = useRef<HTMLDivElement>(null);
+	const { byCursor, byKey } = useMemo(() => {
+		const byCursor = new Map<number, FeedEntry>();
+		const byKey = new Map<number, FeedEntry>();
 		for (const e of plays ?? []) {
 			if (e.cursor !== undefined) {
-				m.set(e.cursor, e);
+				byCursor.set(e.cursor, e);
+			}
+			byKey.set(e.key, e);
+		}
+		return { byCursor, byKey };
+	}, [plays]);
+	// The line a shot's result was - or, a line or two off (a replay kept
+	// from a game staged a little differently), the nearest of his.
+	const playOf = (s: ShotSpot): FeedEntry | undefined => {
+		const exact = byCursor.get(s.cursor);
+		if (exact) {
+			return exact;
+		}
+		for (let k = 1; k <= 4; k++) {
+			for (const c of [s.cursor - k, s.cursor + k]) {
+				const e = byCursor.get(c);
+				if (e && e.pid === s.pid && !e.type?.startsWith("fga")) {
+					return e;
+				}
 			}
 		}
-		return m;
-	}, [plays]);
+		return undefined;
+	};
+	// The shot's row for its clip: from the attempt to the result.
+	const rowOf = (play: FeedEntry): FeedRow | undefined => {
+		if (play.cursor === undefined) {
+			return undefined;
+		}
+		let key = play.key;
+		for (let k = play.key - 1; k >= play.key - 3; k--) {
+			if (byKey.get(k)?.type?.startsWith("fga")) {
+				key = k;
+				break;
+			}
+		}
+		return { key, cursor: play.cursor } as FeedRow;
+	};
 	if (spots.length === 0) {
 		return null;
 	}
@@ -83,10 +122,13 @@ export const ShotChart = ({
 		const made = mine.filter((s) => s.made).length;
 		return `${made}-${mine.length}`;
 	};
-	const tip = at !== undefined ? spots[at] : undefined;
+	const shown = pinned ?? at;
+	const tip = shown !== undefined ? spots[shown] : undefined;
+	const tipPlay = tip ? playOf(tip) : undefined;
+	const tipRow = pinned !== undefined && tipPlay ? rowOf(tipPlay) : undefined;
 	return (
 		<div className="shot-chart">
-			<div className="position-relative">
+			<div className="position-relative" ref={wrapRef}>
 				<svg viewBox={`-1 -1 ${W + 2} ${H + 2}`} className="shot-court">
 					<rect x={0} y={0} width={W} height={H} className="shot-floor" />
 					<g className="shot-lines">
@@ -101,7 +143,7 @@ export const ShotChart = ({
 							className="shot-dot"
 							onMouseEnter={() => setAt(i)}
 							onMouseLeave={() => setAt((a) => (a === i ? undefined : a))}
-							onClick={() => setAt((a) => (a === i ? undefined : i))}
+							onClick={() => setPinned((p) => (p === i ? undefined : i))}
 						>
 							<circle
 								cx={s.x}
@@ -109,7 +151,7 @@ export const ShotChart = ({
 								r={0.95}
 								fill={s.made ? colorOf(s.side) : "var(--bs-body-bg)"}
 								stroke={colorOf(s.side)}
-								strokeWidth={at === i ? 0.7 : 0.4}
+								strokeWidth={shown === i ? 0.7 : 0.4}
 							/>
 							{/* (Easier to point at than the dot.) */}
 							<circle cx={s.x} cy={s.y} r={1.8} fill="transparent" />
@@ -119,7 +161,12 @@ export const ShotChart = ({
 				{tip ? (
 					<ShotTip
 						spot={tip}
-						play={byCursor.get(tip.cursor)}
+						play={tipPlay}
+						width={wrapRef.current?.clientWidth ?? 0}
+						onClose={
+							pinned !== undefined ? () => setPinned(undefined) : undefined
+						}
+						clip={tipRow && clip ? clip(tipRow) : undefined}
 						team={teamOf(tip.side)}
 						teams={teams}
 						names={names}
@@ -172,6 +219,9 @@ const ShotTip = ({
 	teams,
 	names,
 	numPeriods,
+	clip,
+	width,
+	onClose,
 }: {
 	spot: ShotSpot;
 	play: FeedEntry | undefined;
@@ -179,6 +229,10 @@ const ShotTip = ({
 	teams: [any, any];
 	names?: Map<number, string>;
 	numPeriods: number;
+	clip?: ReactNode;
+	// The chart's width (px), to keep a popup with the play in it inside it.
+	width: number;
+	onClose?: () => void;
 }) => {
 	const rim = spot.side === 0 ? RIM : W - RIM;
 	const feet = Math.round(Math.hypot(spot.x - rim, spot.y - H / 2));
@@ -201,16 +255,38 @@ const ShotTip = ({
 	const left = ((spot.x + 1) / W_ALL) * 100;
 	const top = ((spot.y + 1) / H_ALL) * 100;
 	const dx = left < 20 ? "0%" : left > 80 ? "-100%" : "-50%";
-	const below = top < 35;
+	const below = top < 50;
+	// With the play in it: as wide as it can be up to a size to watch, kept
+	// inside the chart side to side, and down from its top.
+	const wide = clip !== undefined && width > 0;
+	const w = Math.min(380, width);
+	const x = Math.min(Math.max((left / 100) * width - w / 2, 0), width - w);
 	return (
 		<div
-			className="shot-tip"
-			style={{
-				left: `${left}%`,
-				top: `${top}%`,
-				transform: `translate(${dx}, ${below ? "12px" : "calc(-100% - 12px)"})`,
-			}}
+			className={`shot-tip${wide ? " shot-tip-clip" : ""}`}
+			style={
+				wide
+					? {
+							left: x,
+							width: w,
+							// (Up from the top of the chart: too tall to hang off a dot.)
+							top: 4,
+						}
+					: {
+							left: `${left}%`,
+							top: `${top}%`,
+							transform: `translate(${dx}, ${below ? "12px" : "calc(-100% - 12px)"})`,
+						}
+			}
 		>
+			{onClose ? (
+				<button
+					type="button"
+					className="btn-close shot-tip-close"
+					aria-label="Close"
+					onClick={onClose}
+				/>
+			) : null}
 			<div className="d-flex align-items-center gap-2 fw-bold">
 				<TeamLogoInline
 					imgURL={team?.imgURL}
@@ -230,6 +306,7 @@ const ShotTip = ({
 					{teams[1]?.abbrev} {play.pts[1]} - {play.pts[0]} {teams[0]?.abbrev}
 				</div>
 			) : null}
+			{clip ? <div className="shot-tip-play">{clip}</div> : null}
 		</div>
 	);
 };

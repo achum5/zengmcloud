@@ -517,6 +517,7 @@ export const GameRecap = ({
 					names={names}
 					plays={replay.entries}
 					numPeriods={numPeriods}
+					clip={feed.clip}
 				/>
 			</Section>
 		) : null;

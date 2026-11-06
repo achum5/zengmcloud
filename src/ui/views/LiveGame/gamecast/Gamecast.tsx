@@ -1539,6 +1539,7 @@ export const LiveGamecast = ({
 					names={names}
 					plays={entries}
 					numPeriods={numPeriods}
+					clip={feed.clip}
 				/>
 			</Section>
 		) : null;

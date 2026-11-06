@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 198,
+		date: "2026-11-06",
+		text: "Live gamecast: the play, pause and speed controls sit up in the top corner of the court, clear of the score bug. And on any shot chart, click a shot to watch it in 3D right there in its popup.",
+	},
+	{
 		n: 197,
 		date: "2026-11-06",
 		text: "Realistic Front Offices: CPU teams no longer give up picks just to get rid of a cheap player they could simply release. In tests this won as many titles and more playoff rounds, with fewer bottom-of-the-league seasons.",

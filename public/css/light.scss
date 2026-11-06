@@ -1210,10 +1210,11 @@ tr.table-warning:hover > td {
 
 // Play / pause / speed, small, over the picture: bottom right on a wide
 // screen (beside the score bug), top right over the crowd on a phone.
+// Up in the corner, clear of the score bug along the bottom.
 .gamecast-controls {
 	position: absolute;
 	right: 8px;
-	bottom: 8px;
+	top: 8px;
 	z-index: 5;
 	opacity: 0.85;
 	transition: opacity 0.15s;
@@ -1254,7 +1255,6 @@ tr.table-warning:hover > td {
 @include media-breakpoint-down(lg) {
 	.gamecast-controls {
 		top: 6px;
-		bottom: auto;
 		right: 6px;
 	}
 }
@@ -1843,7 +1843,24 @@ tr.table-warning:hover > td {
 .shot-dot {
 	cursor: pointer;
 }
-// The play a shot was, over its dot.
+// The play a shot was, over its dot - and, clicked, the play itself in it.
+.shot-tip.shot-tip-clip {
+	pointer-events: auto;
+	white-space: normal;
+	z-index: 6;
+}
+.shot-tip-close {
+	position: absolute;
+	top: 0.45rem;
+	right: 0.45rem;
+	font-size: 0.6rem;
+}
+.shot-tip-play {
+	margin-top: 0.4rem;
+	.mb-3 {
+		margin-bottom: 0 !important;
+	}
+}
 .shot-tip {
 	position: absolute;
 	z-index: 2;
