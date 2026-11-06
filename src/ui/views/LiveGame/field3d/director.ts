@@ -4388,21 +4388,57 @@ const EASY_OF = new Map<Move, Move>([
 	["stand", "easy"],
 	["onHips", "easyHips"],
 ]);
+// (The ball in both hands at his chest - a scorer stood with it - easy all
+// the same: his arms as they are, his legs under him alive.)
+const EASY_ARMS = new Set<Move>(["qbSet"]);
 const standEasy = (plays: Play[]) => {
 	for (const p of plays) {
 		for (const part of p.parts) {
-			for (const l of part.legs) {
+			const legs = part.legs;
+			for (let k = 0; k < legs.length; k++) {
+				const l = legs[k]!;
 				const easy = EASY_OF.get(l.move);
 				if (
-					easy &&
-					!l.arms &&
-					l.t1 - l.t0 >= EASY_LEAST_MS &&
-					(l.t0 >= p.whistle || l.t1 <= p.snap) &&
-					l.from.x === l.to.x &&
-					l.from.y === l.to.y
+					!easy ||
+					(l.arms && !EASY_ARMS.has(l.arms)) ||
+					l.from.x !== l.to.x ||
+					l.from.y !== l.to.y
 				) {
-					l.move = easy;
+					continue;
 				}
+				// (Stood since before the whistle - his block over, say - and
+				// on long after it: easy from the whistle.)
+				if (
+					l.t0 > p.snap &&
+					l.t0 < p.whistle &&
+					l.t1 - p.whistle >= EASY_LEAST_MS
+				) {
+					legs.splice(k + 1, 0, { ...l, t0: p.whistle });
+					l.t1 = p.whistle;
+					continue;
+				}
+				// (Over legs one after another stood the same, turned a little
+				// between them, say: all of them.)
+				let j = k;
+				while (
+					j + 1 < legs.length &&
+					legs[j + 1]!.move === l.move &&
+					legs[j + 1]!.arms === l.arms &&
+					legs[j + 1]!.t0 === legs[j]!.t1 &&
+					legs[j + 1]!.from.x === l.from.x &&
+					legs[j + 1]!.from.y === l.from.y &&
+					legs[j + 1]!.to.x === l.to.x &&
+					legs[j + 1]!.to.y === l.to.y
+				) {
+					j++;
+				}
+				const t1 = legs[j]!.t1;
+				if (t1 - l.t0 >= EASY_LEAST_MS && (l.t0 >= p.whistle || t1 <= p.snap)) {
+					for (let i = k; i <= j; i++) {
+						legs[i]!.move = easy;
+					}
+				}
+				k = j;
 			}
 		}
 	}
