@@ -1211,14 +1211,17 @@ class Actor {
 	// and facing `face`: up to the pace that takes at RELEASE_ACCEL, on at
 	// it and eased off it to a stand there (see easeOff) - harder, if it
 	// takes that (STOP_HARD) - not off at it all at once and stopped dead
-	// on it. No quicker than `most` ft/s. (Whether there was the time for
-	// it so - and he was stood: if not, nothing done.)
+	// on it. No quicker than `most` ft/s; off as hard as `off` (ft/s/s, by
+	// default RELEASE_ACCEL).
+	// (Whether there was the time for it so - and he was stood: if not,
+	// nothing done.)
 	stepTo(
 		to: Pt,
 		t1: number,
 		most: number,
 		move?: Move,
 		face?: number,
+		off = RELEASE_ACCEL,
 	): boolean {
 		const far = dist(this.at, to);
 		const T = (t1 - this.t) / 1000;
@@ -1227,7 +1230,7 @@ class Actor {
 		}
 		// (The pace v that takes far / v + v * per seconds: T.)
 		const paceAt = (down: number) => {
-			const per = 1 / (2 * RELEASE_ACCEL) + 1 / (2 * down);
+			const per = 1 / (2 * off) + 1 / (2 * down);
 			const disc = T * T - 4 * per * far;
 			const v = disc >= 0 ? (T - Math.sqrt(disc)) / (2 * per) : Infinity;
 			return v <= most ? { v, down } : undefined;
@@ -1246,7 +1249,7 @@ class Actor {
 			},
 			t1 - ((2 * pull) / v) * 1000,
 			0,
-			RELEASE_ACCEL,
+			off,
 			move,
 			0,
 			face,
@@ -19549,6 +19552,7 @@ class Action {
 		from: number,
 		catchAt: number,
 		how: "set" | "up" | "back" = "set",
+		onRun = true,
 	): Pt3 {
 		m.hold(from);
 		if (how !== "set") {
@@ -19562,8 +19566,28 @@ class Action {
 		// rest of the way to it as he catches it.)
 		let to = this.w({ d: land.d + 3.5, a: land.a });
 		const by = catchAt - 700;
-		const most = (m.top * 0.85 * Math.max(0, by - m.t)) / 1000;
+		// (Stood there by then at the latest, a beat before he reaches up
+		// for it.)
+		const late = catchAt - CATCH_REACH_MS - UNDER_SETTLE_MS;
+		const most = setReach(late - m.t, m.top * 0.95, UNDER_OFF_ACCEL);
 		const far = dist(m.at, to);
+		if (far > most && onRun && catchAt > m.t) {
+			// (No time to be stood under it - one well across from him, say:
+			// on to it at a run, and caught in his stride as he gets there -
+			// not run there flat out and stopped dead under it as it comes.)
+			m.chase(this.w({ d: land.d + 1, a: land.a }), catchAt, m.top * 0.95);
+			// (Where he has it, his way on from there not bent round short of
+			// it - the ball to his hands.)
+			m.pin(catchAt);
+			this.reaches.push({
+				m,
+				move: "catch",
+				t0: catchAt - CATCH_REACH_MS,
+				t1: catchAt + CATCH_IN_MS,
+			});
+			const now = this.of(m.posAt(catchAt));
+			return { ...this.w({ d: now.d - 1, a: now.a }), z: CATCH_Z };
+		}
 		if (far > most) {
 			const u = most / far;
 			to = {
@@ -19572,7 +19596,7 @@ class Action {
 			};
 		}
 		const spot = this.of(to);
-		this.setBack(m, to, by);
+		this.setBack(m, to, by, late);
 		m.hold(catchAt - CATCH_REACH_MS, "stand", this.behind);
 		// (Now and then in a basket, his elbows in - not his hands up at it:
 		// in at his belly, then.)
@@ -19633,9 +19657,12 @@ class Action {
 		// (Set there a moment before he comes up; going back, on into it in
 		// the one drift.)
 		const by = go - (how === "up" ? FIELD_SET_MS : 0);
-		const far = dist(m.at, start);
-		const need = (far / Math.max(1, by - m.t)) * 1000;
-		if (by <= m.t || need > m.top * 0.85) {
+		// (Stood there by then - up to speed and eased off it, not stopped
+		// dead off a sprint: see setReach.)
+		if (
+			by <= m.t ||
+			dist(m.at, start) > setReach(by - m.t, m.top * 0.95, UNDER_OFF_ACCEL)
+		) {
 			// (No time to set back off it: straight up into it from where he
 			// is, if it is in front of him and he can be there - in his
 			// stride as it gets there.)
@@ -19672,8 +19699,9 @@ class Action {
 		return { ...this.w({ d: now.d - 1, a: now.a }), z: CATCH_Z };
 	}
 
-	// To `to` by `by`, where a kick is coming down (see getUnder).
-	setBack(m: Actor, to: Pt, by: number) {
+	// To `to` by `by`, where a kick is coming down (see getUnder) - or, a
+	// long way off, stood there by `late` at the latest.
+	setBack(m: Actor, to: Pt, by: number, late = by) {
 		const fps = (dist(m.at, to) / Math.max(1, by - m.t)) * 1000;
 		const rel = this.toward(m.at, to) - this.behind;
 		const c = Math.cos(rel);
@@ -19700,7 +19728,18 @@ class Action {
 			// than he has to, and pulled up under it - not across in his low
 			// steps at a run, nor stopped dead there.)
 			m.runUp(to, fps * UNDER_EARLY);
-		} else {
+		} else if (
+			!m.stepTo(
+				to,
+				Math.max(by, late),
+				m.top * 0.95,
+				undefined,
+				undefined,
+				UNDER_OFF_ACCEL,
+			)
+		) {
+			// (Further, and no more time than it takes: off to it out of his
+			// stance hard, and eased down under it - see stepTo.)
 			m.press(to, by, m.top * 0.85);
 		}
 	}
@@ -19926,6 +19965,7 @@ class Action {
 			kickT + 250,
 			catchAt,
 			how === "up" && !room ? "set" : how,
+			!hop && !noRet,
 		);
 		if (hop) {
 			const bounce: Pt3 = {
@@ -21075,6 +21115,7 @@ class Action {
 			kickT + 200,
 			landT,
 			how === "up" && !room ? "set" : how,
+			!noReturn,
 		);
 		this.ball.push({
 			kind: "fly",
@@ -24092,6 +24133,21 @@ const DRIFT_FPS = 9;
 const STEP_TO_LEAST_FT = 2;
 const DRIFT_ACROSS = 0.6;
 const UNDER_EARLY = 1.25;
+// (Stood under it at least this long before he reaches up for it, ms -
+// off to it, a long way, as hard as this, ft/s/s.)
+const UNDER_SETTLE_MS = 100;
+const UNDER_OFF_ACCEL = RELEASE_ACCEL * RAMP_HARD;
+
+// How far he gets from a stand in `ms` and is stood there at the end of
+// it: up to a pace no quicker than `most` (ft/s) at `off` (ft/s/s), on at
+// it and eased off it at STOP_ACCEL * STOP_HARD (as stepTo goes) - feet.
+function setReach(ms: number, most: number, off: number): number {
+	const T = Math.max(0, ms) / 1000;
+	const per = 1 / (2 * off) + 1 / (2 * STOP_ACCEL * STOP_HARD);
+	const v = Math.min(most, T / (2 * per));
+	return v * T - v * v * per;
+}
+
 // A fair catch: his arm waved from this long before the ball comes down
 // to this long before (ms).
 const FAIR_FROM = 2000;
