@@ -18562,19 +18562,23 @@ class Action {
 				"drive",
 			);
 		}
+		// (On him as late as gathering into him had him there, and on with
+		// him only as far as the time left on him takes them: not driven a
+		// step over in a blink.)
+		const hitT = Math.min(end, Math.max(meet.t, b.t));
 		const give = won
-			? Math.min(2.5 + r() * 2, (BLOCK_DRIVE_FPS * (end - meet.t)) / 1000)
+			? Math.min(2.5 + r() * 2, (BLOCK_DRIVE_FPS * (end - hitT)) / 1000)
 			: -Math.min(1, (BLOCK_GIVE_FPS * Math.max(0, end - b.t)) / 1000);
 		// (Turned off the way the man with the ball comes by - driven over
 		// to the side of it he is on, not stood in it as he comes through.)
 		// (As little as does it, or as far off him as it gets them.)
 		let over = 0;
 		if (clear) {
-			const most = (BLOCK_CLEAR_FPS * (end - meet.t)) / 1000;
+			const most = (BLOCK_CLEAR_FPS * (end - hitT)) / 1000;
 			const nearest = (o: number) => {
 				let near = Infinity;
-				for (let c = meet.t; c <= end + CLEAR_LATE_MS; c += 50) {
-					const u = Math.min(1, (c - meet.t) / Math.max(1, end - meet.t));
+				for (let c = hitT; c <= end + CLEAR_LATE_MS; c += 50) {
+					const u = Math.min(1, (c - hitT) / Math.max(1, end - hitT));
 					const q = this.of(clear.posAt(c));
 					const d = q.d - (p.d + give * u);
 					const a = q.a - (p.a + o * u);
@@ -18597,7 +18601,7 @@ class Action {
 		m.go(this.w({ d: p.d + give, a: p.a + over }), end, "engage", this.behind);
 		b.go(
 			this.w({ d: p.d + give - BLOCK_GAP, a: p.a + over }),
-			end,
+			Math.max(end, b.t),
 			"drive",
 			this.ahead,
 		);
