@@ -10434,6 +10434,11 @@ class Action {
 			this.done.add(m.pid);
 		}
 		const near = this.w({ d: to.d, a: to.a - side * 8 });
+		// (After him toward the line, on over it as far as it takes them to
+		// pull up - as far as he may go - not stopped dead on it.)
+		for (const m of chasers) {
+			m.roam = Math.max(m.roam, most);
+		}
 		this.pursue(chasers, near, down.t, down.by, carrier);
 	}
 
