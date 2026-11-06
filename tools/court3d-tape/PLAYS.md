@@ -181,6 +181,11 @@ in play the same:
 - a contested jumper hidden from the camera: a man going by a shooter as he
   lets it go - on his way across - put his hand up square in front of him.
   He puts it up a step to the side (`WALL_SIGHT`).
+- a rebound's ball flying the last nine feet into a man's hands in a frame:
+  sent in after a ball coming down off the rim, he was set off from where
+  following his man had him and cut short of it. He gets there (`mark`'s
+  fetch), and where he still can't, the ball carries on to him no faster
+  than a ball carries (`noSnatch`).
 
 Checks: the existing tests (feet behind the line, a contested jumper stays
 in sight, the ball never jumps, real speed with no darts) on every change.

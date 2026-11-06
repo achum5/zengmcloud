@@ -21591,16 +21591,31 @@ class Director {
 				const t1 = m.t0 + runMs(far, FASTEST, 0, BURST);
 				// (Off to pick the ball up off the floor, he gets to it: the
 				// play's moments on the way are nothing to do with him.)
-				const fetch = this.ball.some(
-					(b, j) =>
-						b.kind === "hold" &&
-						b.pid === tr.pid &&
-						b.t0 >= m.t1 - 50 &&
-						b.t0 <= t1 + 1500 &&
-						(this.ball[j - 1]?.kind === "rest" ||
-							this.ball[j - 1]?.kind === "bounce") &&
-						dist(this.ballSpotOf(this.ball[j - 1]!), m.to) < 4,
-				);
+				// (Or one coming down off the rim to him in the air - a rebound
+				// he was sent in after where it comes down: there as it does,
+				// if his legs get him there by then. Set off from farther out,
+				// where following his man had him, it was cut short of the ball
+				// and it flew the last nine feet to him in a frame.)
+				const fetch = this.ball.some((b, j) => {
+					const prev = this.ball[j - 1];
+					if (
+						b.kind !== "hold" ||
+						b.pid !== tr.pid ||
+						b.t0 < m.t1 - 50 ||
+						!prev
+					) {
+						return false;
+					}
+					if (prev.kind === "rest" || prev.kind === "bounce") {
+						return b.t0 <= t1 + 1500 && dist(this.ballSpotOf(prev), m.to) < 4;
+					}
+					return (
+						prev.kind === "fly" &&
+						!("pid" in prev.from) &&
+						t1 <= b.t0 &&
+						dist(prev.from, m.to) < 4
+					);
+				});
 				// (Nor, going for the ball - a poke at it, a strip, a hand to a
 				// pass - is the reach for it: late into it, he is there with
 				// his hand out as it gets there, not left short of it and the
@@ -26065,7 +26080,7 @@ class Director {
 		}
 		const t0Of = (x: { tr: Track; k: number }) => x.tr.moves[x.k]!.t0;
 		starts.sort((a, b) => t0Of(a) - t0Of(b));
-		for (let i = 0; i < starts.length; ) {
+		for (let i = 0; i < starts.length;) {
 			let n = 1;
 			while (
 				i + n < starts.length &&
@@ -26116,6 +26131,49 @@ class Director {
 				}
 			}
 			i += n;
+		}
+	}
+
+	// A LOOSE BALL TAKEN IN, NOT SNATCHED ACROSS THE FLOOR. A ball coming
+	// off the rim (or loose anywhere) into a man's hands flies there no
+	// faster than a ball carries: where he couldn't get to it in time - set
+	// off from farther out than the rebound was laid out from - it carries on
+	// to him a beat longer, not the last few feet in a frame. (Taken from
+	// where each man really is, once everybody's runs are laid out.)
+	private noSnatch() {
+		const CAROM_FTPS = 30;
+		const ball = this.ball;
+		for (let i = 0; i + 1 < ball.length; i++) {
+			const s = ball[i]!;
+			const next = ball[i + 1]!;
+			if (
+				s.kind !== "fly" ||
+				"pid" in s.from ||
+				!("pid" in s.to) ||
+				next.kind !== "hold" ||
+				next.pid !== s.to.pid ||
+				Math.abs(next.t0 - s.t1) > 1
+			) {
+				continue;
+			}
+			const tr = this.track(s.to.pid);
+			if (!tr) {
+				continue;
+			}
+			const P = this.posAt(tr.pid, s.t1, false, true);
+			const n = this.nudgeAt(tr, s.t1);
+			const d = dist(s.from, { x: P.x + n.x, y: P.y + n.y });
+			const need = (d / CAROM_FTPS) * 1000;
+			if (s.t1 - s.t0 >= need) {
+				continue;
+			}
+			// (Never into what comes after he has it.)
+			const until = (ball[i + 2]?.t0 ?? Infinity) - 150;
+			const t1 = Math.min(s.t0 + need, until);
+			if (t1 > s.t1) {
+				s.t1 = t1;
+				next.t0 = t1;
+			}
 		}
 	}
 
@@ -27019,6 +27077,7 @@ class Director {
 		this.aroundTheMan(fast);
 		this.keepOff(fast);
 		this.backOutFacing();
+		this.noSnatch();
 		// A look round the building runs on to the picture's next cut when
 		// that comes soon after (the substitutions over a timeout, the walk
 		// out for the next period), so the game picks up at a cut.
