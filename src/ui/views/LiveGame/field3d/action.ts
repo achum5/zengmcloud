@@ -4594,6 +4594,9 @@ const LEAP_MS = 760;
 const LEAP_Z = 8.4;
 // (Down from it to go back the other way: slowing over this many legs.)
 const LEAP_LAND_STEPS = 4;
+// (A leap going further round than this from the quarterback - cos, ~100
+// deg - faced the way he goes; see leapFor.)
+const LEAP_AWAY_COS = -0.17;
 // The man on him as it is caught - this near where it is caught (feet), no
 // nearer, in his stride and with it no further behind him than this (the
 // cosine) - a hand in at it, his own count of the time: from this long
@@ -4832,6 +4835,9 @@ const JOLT_MS = 250;
 const CONTACT_MS = 80;
 const GANG = [0.5, 0.35];
 const GANG_LATE = 250;
+// (Down on it no later than this after he is off for it - ms; DIVE_LEAST_MS
+// and a short run in take ~450-700.)
+const GANG_DIVE_MOST = 1000;
 // (Down round a loose ball off the others down on it: this far apart at
 // least (feet), as little way round from where he comes in as does it.)
 const PILE_ON_APART = 1.6;
@@ -10090,10 +10096,14 @@ class Action {
 						y: catchPt.y + Math.sin(ang) * far * on,
 					}
 				: from;
+		// (Faced the way he goes, going at it; or round to the quarterback
+		// - but not, going away from him at all, round in the air to him
+		// and carried on backward: it over his shoulder.)
+		const toQb = this.toward(from, qb.posAt(catchAt));
 		rec.act(
 			"leapCatch",
 			t0 + LEAP_MS,
-			far > 4 ? ang : this.toward(from, qb.posAt(catchAt)),
+			far > 4 || (far > 1 && Math.cos(ang - toQb) < LEAP_AWAY_COS) ? ang : toQb,
 			to,
 		);
 		if (back) {
@@ -11447,8 +11457,18 @@ class Action {
 				return;
 			}
 			const face = this.toward(hit, pile);
+			// (Not one that only gets there well after the rest - off the
+			// way he went, say, and only round to it after: not in on it.)
+			const was = m.legs.map((l) => ({ ...l }));
+			const { yaw, pinned } = m;
 			this.closeOn(m, hit, go, face, carrier);
 			const downT = m.diveIn(lies(ang + round), go + 450, face);
+			if (downT - go > GANG_DIVE_MOST) {
+				m.legs.splice(0, m.legs.length, ...was);
+				m.yaw = yaw;
+				m.pinned = pinned;
+				return;
+			}
 			m.hold(downT + DOWN_MS, "prone");
 			m.act("getUp", downT + DOWN_MS + GET_UP_MS);
 			this.done.add(m.pid);
