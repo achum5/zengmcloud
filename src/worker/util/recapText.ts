@@ -195,12 +195,6 @@ const ORDINALS = [
 	"seventh",
 	"eighth",
 	"ninth",
-	"tenth",
-	"eleventh",
-	"twelfth",
-	"thirteenth",
-	"fourteenth",
-	"fifteenth",
 ];
 
 // Past the words, the suffix the number takes: "22nd", not "22th" - "It
@@ -239,7 +233,7 @@ export const aFigure = (s: string): string =>
 // pass over the finished text catches the rest - every figure said with an
 // "eight" first, and 11 and 18 standing alone.
 export const fixArticles = (text: string): string =>
-	text.replaceAll(/\b([Aa]) (?=8|1[18]\b)/g, "$1n ");
+	text.replaceAll(/\b([Aa]) (?=8|1[18](?:\b|th\b))/g, "$1n ");
 
 // An ordinal with its article: "an eighth", "an 18th", "a 22nd".
 export const aOrdinal = (n: number): string => {
@@ -276,7 +270,15 @@ const NUM_WORDS = [
 	"twelve",
 ];
 
-export const numWord = (n: number): string => NUM_WORDS[n] ?? String(n);
+// Wire style: one through nine in words, 10 and up in figures ("seven
+// straight", "11 home losses in 13"). The mix the old list wrote - "eleven
+// home losses in 13" - is the kind of thing a copy desk marks every time.
+export const numWord = (n: number): string =>
+	n >= 0 && n <= 9 ? NUM_WORDS[n]! : String(n);
+
+// A number that opens a sentence, which is always spelled where it can be:
+// "Eleven players reached double figures", never "11 players...".
+export const spelledNum = (n: number): string => NUM_WORDS[n] ?? String(n);
 
 // How many overtimes, as a headline says it: "outlast the Kings in double
 // overtime", never "in overtime" over a game that needed two.

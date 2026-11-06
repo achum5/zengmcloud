@@ -40,6 +40,7 @@ import {
 	poss,
 	rngFromSeed,
 	scoredVerb,
+	spelledNum,
 	statPhrase,
 	theNick,
 } from "./recapText.ts";
@@ -211,7 +212,7 @@ export const seriesBeat = (ctx: BeatContext, rng: Rng): string | undefined => {
 				rng,
 				[
 					`${W} completed a season sweep of ${ln}, ${total}-0.`,
-					`The win finished a ${total}-0 season sweep of ${ln} for ${wn}.`,
+					`${W} swept the season series with ${ln}, ${total}-0.`,
 					// "all two meetings" is not English. Two of anything is
 					// "both" - the ongoing-series branch below already knew
 					// that, and this one did not.
@@ -325,7 +326,7 @@ export const seriesBeat = (ctx: BeatContext, rng: Rng): string | undefined => {
 			pick(
 				rng,
 				[
-					`It avenged a ${s.last.oppPts}-${s.last.pts} loss to ${ln} in the teams' previous meeting.`,
+					`${W} avenged a ${s.last.oppPts}-${s.last.pts} loss to ${ln} in the teams' previous meeting.`,
 					`The previous meeting had gone to ${ln}, ${s.last.oppPts}-${s.last.pts}.`,
 					`${W} had lost the last meeting by ${s.last.oppPts - s.last.pts}.`,
 				],
@@ -1029,7 +1030,9 @@ const nextPlayoffGame = (ctx: BeatContext, rng: Rng): string | undefined => {
 						[`The series shifts to ${city}.`, `The series heads to ${city}.`],
 						"nextPlayoffGameShifts",
 					)
-			: `${cap(hostNick)} are at home for it.`;
+			: stays
+				? `${cap(hostNick)} stay at home for the next one.`
+				: `${cap(hostNick)} have home court for the next one.`;
 	}
 	return pick(
 		rng,
@@ -1164,7 +1167,7 @@ export const scoringNormBeat = (
 						// the last mention of them attaches to the wrong one.
 						`The ${ctx.winner.pts} were ${numWord(over)} more than ${poss(wn)} season average of ${fmtAvg(wNorm.pts)}.`,
 						`${W} topped their season scoring average by ${numWord(over)}.`,
-						`${W} came in averaging ${fmtAvg(wNorm.pts)} and beat it by ${numWord(over)}.`,
+						`${W} scored ${numWord(over)} more than their ${fmtAvg(wNorm.pts)}-point average.`,
 					],
 					"normWinnerHigh",
 				),
@@ -1352,7 +1355,7 @@ export const seriesShapeBeat = (
 				[
 					`No game in the series has been decided by more than five.`,
 					`Every game of it has come down to the last minute.`,
-					`${cap(numWord(margins.length))} games, none of them by more than five points.`,
+					`${cap(spelledNum(margins.length))} games, none of them by more than five points.`,
 				],
 				"seriesTight",
 			),

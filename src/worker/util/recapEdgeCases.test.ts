@@ -1662,7 +1662,7 @@ describe("facts told once, in English", () => {
 			});
 			const [head, ...body] = run.split("\n\n");
 			assert.match(head!, /11-game winning streak/, run);
-			assert.match(body[0]!, /eleven-game winning streak/, run);
+			assert.match(body[0]!, /11-game winning streak/, run);
 			clean(run);
 
 			const skid = make(
@@ -1863,7 +1863,7 @@ describe("the lead that nearly went", () => {
 // a eighth straight defeat".
 describe("ordinals", () => {
 	test("past the words, the right suffix", () => {
-		assert.strictEqual(ordinal(15), "fifteenth");
+		assert.strictEqual(ordinal(15), "15th");
 		assert.strictEqual(ordinal(16), "16th");
 		assert.strictEqual(ordinal(21), "21st");
 		assert.strictEqual(ordinal(22), "22nd");
@@ -1895,7 +1895,7 @@ describe("ordinals", () => {
 
 	test("and the article that sounds right", () => {
 		assert.strictEqual(aOrdinal(8), "an eighth");
-		assert.strictEqual(aOrdinal(11), "an eleventh");
+		assert.strictEqual(aOrdinal(11), "an 11th");
 		assert.strictEqual(aOrdinal(18), "an 18th");
 		assert.strictEqual(aOrdinal(22), "a 22nd");
 		assert.strictEqual(aOrdinal(3), "a third");

@@ -1195,7 +1195,7 @@ describe("getAutoRecap play-in", () => {
 	// past the Pacers", the berth left to the second paragraph.
 	test("a play-in game's stakes lead the headline and the lede", () => {
 		for (const [kind, seed, said] of [
-			["seed7v8", 7, /#7 seed/],
+			["seed7v8", 7, /No\. 7 seed/],
 			["seed9v10", undefined, /Hawks' season|out of the play-in/],
 			["final", 8, /last playoff spot/],
 		] as const) {
@@ -1979,9 +1979,9 @@ describe("a headline fits on a line", () => {
 	test("past 80 characters, a man's line comes down to his points", () => {
 		assert.equal(
 			trimHeadline(
-				"Evan Carter has 35 points and 10 assists as the #8 Hornets push top-seeded Warriors to the brink, 3-1",
+				"Evan Carter has 35 points and 10 assists as the No. 8 Hornets push top-seeded Warriors to the brink, 3-1",
 			),
-			"Evan Carter scores 35 as the #8 Hornets push top-seeded Warriors to the brink, 3-1",
+			"Evan Carter scores 35 as the No. 8 Hornets push top-seeded Warriors to the brink, 3-1",
 		);
 		assert.equal(
 			trimHeadline(
@@ -2657,7 +2657,7 @@ describe("who was out", () => {
 			if (recap.includes("Star Guard")) {
 				seen += 1;
 				assert.ok(
-					/again without Star Guard|eleventh straight game|eleventh game without Star Guard/.test(
+					/again without Star Guard|(?:eleventh|11th) straight game|(?:eleventh|11th) game without Star Guard/.test(
 						recap,
 					),
 					recap,
@@ -4935,7 +4935,7 @@ describe("the losing side of a playoff series", () => {
 			const headline = getAutoRecap(
 				seriesGame(3, 3, { gid, round: 1, wSeed: 5, lSeed: 1 }),
 			).split("\n")[0]!;
-			if (/#5 .* top-seeded/.test(headline)) {
+			if (/No\. 5 .* top-seeded/.test(headline)) {
 				sawSeeds = true;
 			}
 		}
@@ -5223,7 +5223,9 @@ describe("a postseason read end to end", () => {
 			// through to a generic star line.
 			const playInHeadline = p.split("\n")[0] ?? "";
 			assert.ok(
-				/play-in|#\d seed|last playoff spot|final berth/.test(playInHeadline),
+				/play-in|No\. \d seed|last playoff spot|final berth/.test(
+					playInHeadline,
+				),
 				playInHeadline,
 			);
 			const o = dayOf([opener], day);

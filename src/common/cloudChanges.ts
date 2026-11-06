@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 196,
+		date: "2026-11-06",
+		text: 'Game recaps, round two: numbers the way a wire story prints them (nine in words, 11 in figures, "No. 7" seeds in playoff headlines), fewer lines about how many lead changes there were or who was still out hurt, and more ways of saying a player beat his scoring average.',
+	},
+	{
 		n: 195,
 		date: "2026-11-06",
 		text: "Live gamecast: the five on the court for each team are listed point guard to center, the way the depth chart lines them up.",

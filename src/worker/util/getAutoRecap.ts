@@ -41,6 +41,7 @@ import {
 	scoredVerb,
 	seeded,
 	shuffle,
+	spelledNum,
 	statPhrase,
 	stripHtml,
 	takeVerb,
@@ -1996,11 +1997,11 @@ const buildHeadlineText = (
 			typeof clinch.wSeed === "number" &&
 			typeof clinch.lSeed === "number"
 				? {
-						w: `#${clinch.wSeed} ${winnerN}`,
+						w: `No. ${clinch.wSeed} ${winnerN}`,
 						l:
 							clinch.lSeed === 1
 								? `top-seeded ${loserN}`
-								: `#${clinch.lSeed} ${loserN}`,
+								: `No. ${clinch.lSeed} ${loserN}`,
 					}
 				: undefined;
 		const starVerbLine =
@@ -2146,7 +2147,7 @@ const buildHeadlineText = (
 		const prize =
 			pi.kind === "seed7v8"
 				? typeof pi.prizeSeed === "number"
-					? `the #${pi.prizeSeed} seed`
+					? `the No. ${pi.prizeSeed} seed`
 					: "the higher seed"
 				: pi.kind === "final"
 					? "the last playoff spot"
@@ -2204,11 +2205,11 @@ const buildHeadlineText = (
 			typeof state.wSeed === "number" &&
 			typeof state.lSeed === "number"
 				? {
-						w: `#${state.wSeed} ${winnerN}`,
+						w: `No. ${state.wSeed} ${winnerN}`,
 						l:
 							state.lSeed === 1
 								? `top-seeded ${loserN}`
-								: `#${state.lSeed} ${loserN}`,
+								: `No. ${state.lSeed} ${loserN}`,
 					}
 				: undefined;
 		const W = seeds ? seeds.w : winnerN;
@@ -3847,7 +3848,7 @@ const statNote = (
 				[
 					`${cap(theNick(shape.winner))} had ${numWord(w.dblFig)} players score in double figures.`,
 					`${cap(theNick(shape.winner))} got double figures out of ${numWord(w.dblFig)} men.`,
-					`${cap(numWord(w.dblFig))} ${nick(shape.winner)} reached double figures.`,
+					`${cap(spelledNum(w.dblFig))} ${nick(shape.winner)} reached double figures.`,
 					`It came from everywhere for ${theNick(shape.winner)} - ${numWord(w.dblFig)} in double figures.`,
 				],
 				"statDblFig",
@@ -5197,7 +5198,7 @@ const gameStory = (
 			);
 			return { sentences: out, covers };
 		}
-		if (onlyPeak && plainHalfAt === out.length - 1 && rng() < 0.5) {
+		if (onlyPeak && plainHalfAt === out.length - 1 && rng() < 0.75) {
 			// One sentence for the half and what became of it, as a writer
 			// with a lead and nothing else to say about it puts it.
 			out[plainHalfAt] = pick(
@@ -5749,7 +5750,6 @@ const loserSentence = (
 		const triple = doubleCategories(leader).length >= 3;
 		const sp = statPhrase(leader);
 		const leaderLine = `${poss(leader.name)} ${sp}`;
-		const line = triple ? `a ${ddw} (${sp})` : sp;
 		const them = theNick(shape.loser);
 		// "Led them with" is the scorer's phrase: only for the man nobody on
 		// his side outscored.
@@ -5789,16 +5789,14 @@ const loserSentence = (
 		) {
 			return `${cap(them)} got ${leader.pts} apiece from ${leader.name} and ${second.name}.`;
 		}
-		const gotLine = triple
-			? `a ${ddw} from ${leader.name} (${sp})`
-			: `${sp} from ${leader.name}`;
+		const gotLine = `${sp} from ${leader.name}`;
 		const base = pickSentence(
 			rng,
 			triple
 				? [
 						`${leader.name} had a ${ddw} with ${sp} for ${them}`,
-						`${cap(them)} got ${gotLine}`,
-						`${leader.name} finished with ${line} for ${them}`,
+						`${cap(them)} got a ${ddw} from ${leader.name}, who had ${sp}`,
+						`${leader.name} finished with ${sp} for ${them}, a ${ddw}`,
 					]
 				: [
 						`${leaderLine} ${verb} ${them}`,
@@ -6115,8 +6113,11 @@ const absenceWorthNoting = (
 		return true;
 	}
 	const star = (out.mpg ?? 0) >= 30;
+	// Not every game of a series: "missed an eleventh straight game", then
+	// "a twelfth", then "a thirteenth" ran down every recap of one team's
+	// postseason.
 	if (playoffs) {
-		return star || rng() < 0.4;
+		return rng() < (star ? 0.6 : 0.3);
 	}
 	return rng() < (star ? 0.35 : 0.15);
 };
@@ -6375,12 +6376,12 @@ const vsAverageNote = (
 							`${star.name} had been averaging ${a} points a game, and he ${beat}.`,
 						]
 					: []),
-				...(ratio > 2.02
-					? [
-							`${star.name} came in averaging ${a} points a game, less than half that.`,
-						]
-					: []),
+				// Always four or more: with the two "doubled" shapes out of reach
+				// the pool was two lines, and one of them ran thirty times in a
+				// season.
 				`It was an unusual night for ${star.name}, who came in averaging ${a} points a game.`,
+				`${star.name} entered the game averaging ${a} points.`,
+				`Coming in, ${star.name} had been averaging ${a} points a game.`,
 			],
 			"vsAvgHigh",
 		);
@@ -6470,7 +6471,7 @@ const careerArcNote = (
 		return pick(
 			rng,
 			[
-				`${cap(numWord(seasons))} seasons in, ${star.name} turned back the clock.`,
+				`${cap(spelledNum(seasons))} seasons in, ${star.name} turned back the clock.`,
 				`It was a night from ${poss(star.name)} prime, ${numWord(seasons)} seasons into his career.`,
 			],
 			"careerVeteran",
@@ -6604,7 +6605,7 @@ const defensiveNote = (
 				[
 					`${cap(theNick(shape.winner))} blocked ${w.blk} shots.`,
 					`${cap(theNick(shape.winner))} sent back ${w.blk} shots.`,
-					`Nothing came easy inside - ${w.blk} ${nick(shape.winner)} blocks.`,
+					`${cap(theNick(shape.winner))} had ${w.blk} blocked shots.`,
 					`${cap(theNick(shape.winner))} finished with ${w.blk} blocks.`,
 				],
 				"teamBlk",
@@ -7249,15 +7250,17 @@ const leadChangesNote = (
 ): string[] => {
 	const out: string[] = [];
 	const biggest = Math.max(flow.maxLead[0], flow.maxLead[1]);
-	if (flow.leadChanges >= 10) {
+	// Ten lead changes is an ordinary close game; the count was in one recap
+	// in eight. Fourteen or more is a seesaw worth the line every time.
+	if (flow.leadChanges >= 14 || (flow.leadChanges >= 10 && rng() < 0.5)) {
+		const tieWord = flow.ties === 1 ? "tie" : "ties";
 		out.push(
 			flow.ties > 0
 				? pick(
 						rng,
 						[
-							`There were ${flow.leadChanges} lead changes and ${flow.ties} ${
-								flow.ties === 1 ? "tie" : "ties"
-							}.`,
+							`There were ${flow.leadChanges} lead changes and ${flow.ties} ${tieWord}.`,
+							`It was a back-and-forth game, with ${flow.leadChanges} lead changes and ${flow.ties} ${tieWord}.`,
 							`The lead changed hands ${flow.leadChanges} times, with ${flow.ties} ${
 								flow.ties === 1 ? "tie" : "ties"
 							}.`,
@@ -7752,10 +7755,10 @@ const buildGameRecap = (game: RecapGame): string => {
 			const line = statPhrase(star);
 			para1.push(
 				line !== pts
-					? pick(
+					? pickSentence(
 							rng,
 							[
-								`${star.name} totaled ${line} on ${split} shooting.`,
+								`${star.name} had ${line} on ${split} shooting.`,
 								`${star.name} put together ${line} on ${split} shooting.`,
 							],
 							"starSplitLine",
@@ -7796,7 +7799,7 @@ const buildGameRecap = (game: RecapGame): string => {
 			// rebounds as the Hornets take down the Bucks" sat over a body that
 			// never said his name.
 			para1.push(
-				`${star.name} totaled ${statPhrase(star)} on ${star.fg}-of-${star.fga} shooting.`,
+				`${star.name} ${claimVerb("had")} ${statPhrase(star)} on ${star.fg}-of-${star.fga} shooting.`,
 			);
 		}
 		// (A headline that printed his whole line, and a line with no split
@@ -10404,7 +10407,10 @@ const dayHeadline = (
 			const prize = marquee.playIn.prizeSeed;
 			const seedBits =
 				typeof prize === "number"
-					? [`${w} claim the #${prize} seed`, `${w} lock up the #${prize} seed`]
+					? [
+							`${w} claim the No. ${prize} seed`,
+							`${w} lock up the No. ${prize} seed`,
+						]
 					: [];
 			return hl(
 				pick(
@@ -10461,8 +10467,8 @@ const dayHeadline = (
 					!ss.finals
 				) {
 					stateBits.push(
-						`#${ss.wSeed} ${w} have the #${ss.lSeed} seed in trouble`,
-						`${w}, seeded #${ss.wSeed}, lead ${l} ${ss.wAfter}-${ss.lBefore}`,
+						`No. ${ss.wSeed} ${w} have the No. ${ss.lSeed} seed in trouble`,
+						`${w}, seeded No. ${ss.wSeed}, lead ${l} ${ss.wAfter}-${ss.lBefore}`,
 					);
 				}
 				stateBits.push(
@@ -10547,7 +10553,7 @@ const dayHeadline = (
 				pick(rng, [
 					`${poss(shot.name)} ${shot.shot} caps a night of upsets`,
 					`${shot.name} sinks ${l} at the wire on a night ${numWord(upsets.length)} favorites fell`,
-					`${cap(numWord(upsets.length))} favorites fall, and ${shot.name} finishes the night with a ${shot.shot}`,
+					`${cap(spelledNum(upsets.length))} favorites fall, and ${shot.name} finishes the night with a ${shot.shot}`,
 					`${shot.name} beats ${l} at the wire as the night goes to the underdogs`,
 					`${shot.name} settles it late as ${numWord(upsets.length)} favorites go down`,
 					`A ${shot.shot} from ${shot.name} decides the pick of an upset-filled night`,
@@ -11384,7 +11390,7 @@ const nightThemeSentence = (
 		// Half of them, at least: favorites lose a third of the time, and
 		// "Three of the seven favorites lost" is a normal night.
 		options.push(
-			`${cap(numWord(upsets))} of the ${numWord(lined)} favorites lost.`,
+			`${cap(spelledNum(upsets))} of the ${numWord(lined)} favorites lost.`,
 			...(favWins >= upsets
 				? [`The favorites went just ${favWins}-${upsets}.`]
 				: [`Only ${numWord(favWins)} of the ${numWord(lined)} favorites won.`]),
@@ -11425,11 +11431,11 @@ const closeGamesSentence = (
 	// all wraps.
 	if (close >= 3 && close >= 0.4 * nonExhibition.length) {
 		return /^\w+ of the /.test(before)
-			? `${cap(numWord(close))} games were decided by five points or fewer.`
-			: `${cap(numWord(close))} of the ${numWord(nonExhibition.length)} games were decided by five points or fewer.`;
+			? `${cap(spelledNum(close))} games were decided by five points or fewer.`
+			: `${cap(spelledNum(close))} of the ${numWord(nonExhibition.length)} games were decided by five points or fewer.`;
 	}
 	if (ot >= 3) {
-		return `${ot === nonExhibition.length ? "All" : cap(numWord(ot))} games went to overtime.`;
+		return `${ot === nonExhibition.length ? "All" : cap(spelledNum(ot))} games went to overtime.`;
 	}
 	return undefined;
 };

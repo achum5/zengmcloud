@@ -1128,11 +1128,15 @@ describe("the day wrap's context", () => {
 		assert.match(text, /11|eleven/);
 		const all = shapes((rng) => dayColdStreak(ctxOf(games), rng));
 		assert.ok(all.size >= 3);
-		// "The Grizzlies have now lost 6 straight": a count in prose is a word.
-		for (const x of all) {
-			assert.notMatch(x, /#/, x);
-			// In a wrap the sentence before is about another game.
-			assert.notMatch(x, /^That\b/, x);
+		// "The Grizzlies have now lost 6 straight": a count under 10 in prose
+		// is a word, as the wire writes it (and 11 is a figure).
+		for (let seed = 1; seed < 40; seed++) {
+			const x = dayColdStreak(ctxOf(games), rngFromSeed(seed));
+			if (x) {
+				assert.notMatch(x, /\b\d\b/, x);
+				// In a wrap the sentence before is about another game.
+				assert.notMatch(x, /^That\b/, x);
+			}
 		}
 
 		const short = [
