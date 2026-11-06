@@ -2096,7 +2096,10 @@ class Actor {
 	easeIn(ft: number, least: number) {
 		const l = this.last;
 		const v = legPace(l);
-		const t = this.t - ((2 * ft) / Math.max(1, v)) * 1000;
+		// (No harder than a man pulls up hard - see STOP_HARD - in off a
+		// sprint: over further than `ft`, if it takes that.)
+		const want = Math.max(ft, (v * v) / (4 * STOP_ACCEL * STOP_HARD));
+		const t = this.t - ((2 * want) / Math.max(1, v)) * 1000;
 		// (Back over the strides he got up to speed in, if it takes that -
 		// not only the last of them.)
 		const legs = this.part.legs;
@@ -2109,9 +2112,13 @@ class Actor {
 		) {
 			k--;
 		}
-		if (RAMPS.has(l.move) && v >= least && t > legs[k]!.t0) {
-			this.cut(t);
-			this.easeOff(2 * ft);
+		// (Back no further than that run goes: over as much of it as there
+		// is, if that is as far as `ft`.)
+		const from = Math.max(t, legs[k]!.t0 + 1);
+		const by = (v * (this.t - from)) / 2000;
+		if (RAMPS.has(l.move) && v >= least && by >= ft) {
+			this.cut(from);
+			this.easeOff(2 * by);
 		}
 	}
 
@@ -9592,6 +9599,10 @@ class Action {
 				if (go > ROUTE_LEFT) {
 					m.go(to, m.t + (go / speed) * 1000);
 				}
+				// (Pulled up into it over the last of the way there - there a
+				// little later for it - not run into it and stopped dead in a
+				// stride.)
+				m.gatherFor(0, STOP_ACCEL);
 				const qb = this.role("QB");
 				m.hold(until, "settle", qb ? this.toward(m.at, qb.at) : this.behind);
 			}
