@@ -231,6 +231,8 @@ const STANCES = new Set<Move>([
 	"receiverStance",
 	"receiverReady",
 	"cornerStance",
+	"holdReady",
+	"holdSpot",
 	"holdKneel",
 	"holdPlace",
 	"holdDown",

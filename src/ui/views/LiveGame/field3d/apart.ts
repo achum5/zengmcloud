@@ -78,6 +78,8 @@ const TOUCH = new Set<Move>([
 	"qbSurvey",
 	"qbPoint",
 	"getUnder",
+	"holdReady",
+	"holdSpot",
 	"holdKneel",
 	"holdPlace",
 	"holdDown",

@@ -938,6 +938,15 @@ const POINT_SPAN = 0.6;
 // long (see punterSet).
 const PUNT_HANDS_MS = 1300;
 const PUNT_HANDS_IN = 300;
+// The holder's hands out for the snap this long before it (see holderSet),
+// at rest till then if down this long first; his finger down on the spot
+// from this long before the kicker gets up behind it, for this long - if
+// down this long by then.
+const HOLD_HANDS_MS = 1100;
+const HOLD_REST_LEAST = 1200;
+const HOLD_SPOT_BEFORE = 150;
+const HOLD_SPOT_MS = 1000;
+const HOLD_SETTLE_MS = 500;
 // The kicker's routine (see kickerRoutine): up to just behind the spot the
 // ball goes down on (feet), eyes on the posts this long (ms, and up to this
 // much more); his steps back off it and over, at this pace (feet a second),
@@ -1947,6 +1956,9 @@ class Director {
 				: undefined;
 		if (routine) {
 			snap = routine.snap;
+		}
+		if (kind === "fieldGoal" || kind === "extraPoint") {
+			this.holderSet(parts, offense, snap, routine?.arrive);
 		}
 		if (kind === "punt") {
 			this.punterSet(parts, offense, snap);
@@ -3933,6 +3945,8 @@ class Director {
 	):
 		| {
 				snap: number;
+				// (When he gets up behind the spot.)
+				arrive: number;
 				closeUp?: { t0: number; t1: number; pid: number; at: Pt };
 		  }
 		| undefined {
@@ -3995,6 +4009,7 @@ class Director {
 			(kind === "fieldGoal" ? KICK_CLOSE : KICK_CLOSE_XP);
 		return {
 			snap: after,
+			arrive,
 			...(close
 				? {
 						closeUp: {
@@ -4006,6 +4021,43 @@ class Director {
 					}
 				: {}),
 		};
+	}
+
+	// THE HOLDER, down on his knee for it: at rest till the kicker gets up
+	// behind the spot (`arrive`), then his finger down on the spot it goes
+	// down on, showing him; and his hands out for it - the snapper's target
+	// - as the kicker sets, for the last of it.
+	holderSet(parts: Part[], offense: Side, snap: number, arrive?: number) {
+		const h = parts.find((q) => q.team === offense && q.role === "H");
+		const set = h?.legs.at(-1);
+		const out = snap - HOLD_HANDS_MS;
+		if (
+			!h ||
+			!set ||
+			set.t1 > set.t0 ||
+			set.move !== "holdKneel" ||
+			out - set.t0 < HOLD_REST_LEAST
+		) {
+			return;
+		}
+		const rest = (t0: number, t1: number): Leg => ({
+			...set,
+			t0,
+			t1,
+			move: "holdReady",
+		});
+		const legs: Leg[] = [];
+		const s0 = (arrive ?? Number.NaN) - HOLD_SPOT_BEFORE;
+		if (s0 - set.t0 >= HOLD_SETTLE_MS && out - (s0 + HOLD_SPOT_MS) >= 400) {
+			legs.push(
+				rest(set.t0, s0),
+				{ ...set, t0: s0, t1: s0 + HOLD_SPOT_MS, move: "holdSpot" },
+				rest(s0 + HOLD_SPOT_MS, out),
+			);
+		} else {
+			legs.push(rest(set.t0, out));
+		}
+		h.legs.splice(-1, 1, ...legs, { ...set, t0: out, t1: out });
 	}
 
 	// THE PUNTER, back for the snap: stood up waiting, and his hands out in

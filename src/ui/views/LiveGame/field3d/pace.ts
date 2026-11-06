@@ -53,6 +53,7 @@ export const SET = new Set<Move>([
 	"cornerStance",
 	"safetyStance",
 	"safetyReady",
+	"holdReady",
 	"holdKneel",
 	"kickReady",
 ]);

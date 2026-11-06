@@ -1114,6 +1114,8 @@ const DOWN = new Set<Move>(["threePoint", "dlThree", "center"]);
 // (Down on a knee the same: into it and up out of it no quicker.)
 const LOW = new Set<Move>([
 	...DOWN,
+	"holdReady",
+	"holdSpot",
 	"holdKneel",
 	"holdPlace",
 	"holdDown",

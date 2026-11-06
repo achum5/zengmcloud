@@ -199,6 +199,43 @@ const CENTER = pose({
 	wide: 1.25,
 });
 
+// The holder down on his knee before it is time for the snap: his right
+// knee down, his left foot up under him - at rest, his left forearm over
+// his knee and his right hand on his thigh, half turned to the kicker.
+const HOLD_REST = pose({
+	hipN: -24,
+	kneeN: 104,
+	hipF: 82,
+	kneeF: 88,
+	lean: 10,
+	twist: 14,
+	shN: 16,
+	elN: 36,
+	abN: 12,
+	shF: 24,
+	elF: 34,
+	abF: 8,
+	wide: 0.5,
+});
+// Leaning over the spot the ball goes down on, a finger of his left hand
+// down on it, the right back by his side out of the kicker's way.
+const HOLD_DOWN = pose({
+	hipN: -24,
+	kneeN: 104,
+	hipF: 82,
+	kneeF: 88,
+	lean: 40,
+	twist: 37,
+	tilt: 30,
+	shN: -30,
+	elN: 4,
+	abN: 5,
+	shF: 6,
+	elF: 8,
+	abF: 15,
+	wide: 0.5,
+});
+
 // Lying face down on the turf: legs out behind him, his arms out in front.
 const PRONE = pose({
 	hipN: -90,
@@ -1348,6 +1385,26 @@ const FIELD_ANIMS = {
 		fps: 1.7,
 		pose: (i) => alive(SAFETY, i, 0.6),
 	},
+	// Down on his knee for it, waiting on the kicker (see director.ts
+	// holderSet): at rest - alive in it, not stood stock still (see
+	// receiverReady).
+	holdReady: {
+		kind: "loop",
+		n: 4,
+		fps: 1.4,
+		pose: (i) => alive(HOLD_REST, i, 0.4),
+	},
+	// His finger down on the spot it goes down on, showing the kicker - and
+	// back.
+	holdSpot: {
+		kind: "act",
+		keys: [
+			[0, HOLD_REST],
+			[0.35, HOLD_DOWN],
+			[0.7, HOLD_DOWN],
+			[1, HOLD_REST],
+		],
+	},
 	// The holder on a knee seven yards back, just to the side of the spot:
 	// his right knee down, his left foot up under him, both hands out for
 	// the snap.
@@ -1391,25 +1448,7 @@ const FIELD_ANIMS = {
 	},
 	// And the ball down: leaning over it, a finger of his left hand on top
 	// of it, the right back by his side out of the kicker's way.
-	holdDown: {
-		kind: "still",
-		pose: pose({
-			hipN: -24,
-			kneeN: 104,
-			hipF: 82,
-			kneeF: 88,
-			lean: 40,
-			twist: 37,
-			tilt: 30,
-			shN: -30,
-			elN: 4,
-			abN: 5,
-			shF: 6,
-			elF: 8,
-			abF: 15,
-			wide: 0.5,
-		}),
-	},
+	holdDown: { kind: "still", pose: HOLD_DOWN },
 	// A kicker set back off the ball: still, a little crouched, eyes on the
 	// spot.
 	kickReady: {
