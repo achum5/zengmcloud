@@ -31,7 +31,7 @@ import {
 } from "./geometry.ts";
 import { drawnBody, footballBody } from "./body.ts";
 import { touching } from "./apart.ts";
-import { fallHurt, HURT_MOST } from "./hurt.ts";
+import { fallHurt, HURT_MOST, offHurt } from "./hurt.ts";
 import {
 	HIGH_FIVE_AT,
 	PAT_AT,
@@ -6233,6 +6233,8 @@ class Action {
 	hurtDown() {
 		const { events, i0, i1, snap, stats } = this.input;
 		let n = 0;
+		// (Where those hurt on it so far are down - see offHurt.)
+		const downs: Pt[] = [];
 		for (let i = i0; i < i1 && n < HURT_MOST; i++) {
 			const e = events[i];
 			if (e?.type !== "injury" || typeof e.injuredPID !== "number") {
@@ -6294,25 +6296,37 @@ class Action {
 			if (blocked !== undefined) {
 				m.cut(blocked);
 				const yaw = m.yaw;
-				m.act("tackledBack", m.t + HURT_LAME_FALL_MS, yaw, {
-					x: m.at.x - Math.cos(yaw) * HURT_BLOCK_BACK_FT,
-					y: m.at.y - Math.sin(yaw) * HURT_BLOCK_BACK_FT,
-				});
+				m.act(
+					"tackledBack",
+					m.t + HURT_LAME_FALL_MS,
+					yaw,
+					offHurt(
+						{
+							x: m.at.x - Math.cos(yaw) * HURT_BLOCK_BACK_FT,
+							y: m.at.y - Math.sin(yaw) * HURT_BLOCK_BACK_FT,
+						},
+						downs,
+					),
+				);
 				m.hold(Math.max(m.t, this.whistle) + HURT_LAME_PAST_MS, "supine");
-				continue;
+			} else if (lame === undefined) {
+				fallHurt(m.legs, this.whistle, downs);
+			} else {
+				m.cut(lame);
+				m.easeOff(HURT_LAME_PULL_FT);
+				const back = countOf(m, this.input.key, 41) < HURT_LAME_BACK;
+				m.act(
+					back ? "tackledBack" : "tackled",
+					m.t + HURT_LAME_FALL_MS,
+					undefined,
+					offHurt(m.at, downs),
+				);
+				m.hold(
+					Math.max(m.t, this.whistle) + HURT_LAME_PAST_MS,
+					back ? "supine" : "prone",
+				);
 			}
-			if (lame === undefined) {
-				fallHurt(m.legs, this.whistle);
-				continue;
-			}
-			m.cut(lame);
-			m.easeOff(HURT_LAME_PULL_FT);
-			const back = countOf(m, this.input.key, 41) < HURT_LAME_BACK;
-			m.act(back ? "tackledBack" : "tackled", m.t + HURT_LAME_FALL_MS);
-			m.hold(
-				Math.max(m.t, this.whistle) + HURT_LAME_PAST_MS,
-				back ? "supine" : "prone",
-			);
+			downs.push(m.legs.at(-1)!.to);
 		}
 	}
 

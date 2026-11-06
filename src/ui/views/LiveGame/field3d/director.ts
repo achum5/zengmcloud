@@ -62,7 +62,7 @@ import { cheerShotFor, type CheerShot } from "./cheerleaders.ts";
 import { crowdShotFor, type CrowdShot } from "./crowd.ts";
 import type { Shout } from "./stadium.ts";
 import { measureTimes, stageMeasure } from "./measure.ts";
-import { HURT_MOST, MEDICS, stageHurt } from "./hurt.ts";
+import { fallHurt, HURT_MOST, MEDICS, stageHurt } from "./hurt.ts";
 import {
 	crewOff,
 	stageChangeEnds,
@@ -2328,13 +2328,35 @@ class Director {
 		const medics: CrewPart[] = [];
 		const busy = new Set<number>();
 		let hurt: { pid: number; down: number; tending: number } | undefined;
+		// (Two of them hurt on it: neither down on a knee for the other, and
+		// each with his trainers and the men round him clear of the other -
+		// where he will lie, off a copy of his legs.)
+		const lies = new Map<number, Pt>();
+		for (let i = i0; i < i1; i++) {
+			const e = events[i];
+			const p =
+				e?.type === "injury" && typeof e.injuredPID === "number"
+					? parts.find((q) => q.pid === e.injuredPID)
+					: undefined;
+			if (p && !lies.has(p.pid)) {
+				busy.add(p.pid);
+				lies.set(
+					p.pid,
+					fallHurt(
+						p.legs.map((l) => ({ ...l })),
+						whistle,
+					).at,
+				);
+			}
+		}
 		for (let i = i0; i < i1 && medics.length < HURT_MOST * MEDICS; i++) {
 			const e = events[i];
 			if (e?.type !== "injury" || typeof e.injuredPID !== "number") {
 				continue;
 			}
+			const pid = e.injuredPID;
 			const h = stageHurt({
-				pid: e.injuredPID,
+				pid,
 				n: medics.length / MEDICS,
 				parts,
 				whistle,
@@ -2342,6 +2364,11 @@ class Director {
 				t1,
 				ball,
 				busy,
+				others: [...lies].filter(([q]) => q !== pid).map(([, at]) => at),
+				tending: medics.flatMap((m) => {
+					const l = m.legs.find((x) => x.move === "tend");
+					return l ? [l.to] : [];
+				}),
 				r: this.rng(i, "hurt"),
 			});
 			if (h) {

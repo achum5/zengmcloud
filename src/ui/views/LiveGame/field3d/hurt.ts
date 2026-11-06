@@ -47,6 +47,21 @@ const FACE_DOWN = new Set<Move>(["tackled", "dive", "prone"]);
 // more than FALL_ON_MOST feet) - not dropped where he was.
 const FALL_ON_FPS = 8;
 const FALL_ON_MOST = 4.5;
+// (Two hurt on it - down together, say, locked up in a block: no nearer
+// each other than this, feet, down - the second over off the first as he
+// goes down, not on top of him.)
+const HURT_APART_FT = 2.6;
+export const offHurt = (p: Pt, downs: Pt[]): Pt => {
+	for (const q of downs) {
+		const d = dist(p, q);
+		if (d < HURT_APART_FT) {
+			const ux = d > 0.01 ? (p.x - q.x) / d : 1;
+			const uy = d > 0.01 ? (p.y - q.y) / d : 0;
+			return { x: q.x + ux * HURT_APART_FT, y: q.y + uy * HURT_APART_FT };
+		}
+	}
+	return p;
+};
 const HELPED_FPS = 5;
 const ALONE_FPS = 7;
 const SHOWN_OFF = 6000;
@@ -158,6 +173,8 @@ const roundHim = (a: Pt, b: Pt, p0: Pt, p1: Pt): Pt[] => {
 
 // Where the trainers kneel by him, and walk with him (feet off him).
 const BESIDE = 2.6;
+// (No nearer than this to another man hurt on it or his trainers, feet.)
+const MEDIC_APART = 2.4;
 const ALONGSIDE = 2.3;
 const BEHIND = 4;
 // (The pace a trainer walks to his place by him, ft/s.)
@@ -169,9 +186,15 @@ const toward = (a: Pt, b: Pt) => Math.atan2(b.y - a.y, b.x - a.x);
 // others down at `knelt` (and the ball on the turf at `ball`): where he
 // is, or round him at that much off him (or out a little further), the
 // nearest clear of them all.
-const kneelSpot = (from: Pt, at: Pt, knelt: Pt[], ball?: Pt): Pt => {
+const kneelSpot = (
+	from: Pt,
+	at: Pt,
+	knelt: Pt[],
+	ball?: Pt,
+	others: Pt[] = [],
+): Pt => {
 	const clear = (p: Pt) =>
-		dist(p, at) >= KNEEL_OFF_HIM - 0.01 &&
+		[at, ...others].every((q) => dist(p, q) >= KNEEL_OFF_HIM - 0.01) &&
 		knelt.every((q) => dist(p, q) >= KNEEL_APART) &&
 		(!ball || dist(p, ball) >= KNEEL_OFF_BALL);
 	if (clear(from)) {
@@ -415,6 +438,7 @@ const still = (
 export const fallHurt = (
 	legs: Leg[],
 	whistle: number,
+	downs: Pt[] = [],
 ): { at: Pt; yaw: number; downAt: number; faceDown: boolean } => {
 	const fell = cut(legs, whistle + DOWN_AFTER, true);
 	const last = legs.at(-1)!;
@@ -446,9 +470,12 @@ export const fallHurt = (
 		const on = goes && v >= FALL_ON_FPS;
 		const way = Math.atan2(last.to.y - last.from.y, last.to.x - last.from.x);
 		const far = Math.min(FALL_ON_MOST, (v * FALL_MS) / 2000);
-		const to = on
-			? { x: at.x + Math.cos(way) * far, y: at.y + Math.sin(way) * far }
-			: at;
+		const to = offHurt(
+			on
+				? { x: at.x + Math.cos(way) * far, y: at.y + Math.sin(way) * far }
+				: at,
+			downs,
+		);
 		legs.push({
 			t0: t,
 			t1: t + FALL_MS,
@@ -482,8 +509,12 @@ export const stageHurt = (input: {
 	t0: number;
 	t1: number;
 	ball: BallSeg[];
-	// Men already kneeling for another man hurt on the play.
+	// Men already kneeling for another man hurt on the play (and the
+	// others hurt on it).
 	busy: Set<number>;
+	// Where the others hurt on it lie, and their trainers are.
+	others?: Pt[];
+	tending?: Pt[];
 	r: () => number;
 }): Hurt | undefined => {
 	const { parts, r } = input;
@@ -518,11 +549,31 @@ export const stageHurt = (input: {
 		{ x: at.x + BESIDE, y: at.y },
 		{ x: at.x - BESIDE, y: at.y },
 	];
+	// (Another man hurt on it lying there, or his trainers: round him from
+	// them, the nearest place clear of them - not down in among them.)
+	const others = input.others ?? [];
+	const placed: Pt[] = [...others, ...(input.tending ?? [])];
+	const placeOf = (p: Pt): Pt => {
+		const ok = (q: Pt) => placed.every((o) => dist(q, o) >= MEDIC_APART);
+		const a0 = toward(at, p);
+		for (let k = 0; k < 12; k++) {
+			const a = a0 + Math.ceil(k / 2) * (Math.PI / 6) * (k % 2 === 0 ? 1 : -1);
+			const q = {
+				x: at.x + Math.cos(a) * BESIDE,
+				y: at.y + Math.sin(a) * BESIDE,
+			};
+			if (ok(q)) {
+				return q;
+			}
+		}
+		return p;
+	};
 	const medics: CrewPart[] = [];
 	let arrived = go;
 	for (let k = 0; k < MEDICS; k++) {
 		const start = { x: fromX + (k - 1) * 3, y: sideY };
-		const to = besideOf[k]!;
+		const to = placeOf(besideOf[k]!);
+		placed.push(to);
 		const leave = go + k * 220;
 		const legs: Leg[] = [];
 		still(legs, input.t0, leave, start, "stand", toward(start, at));
@@ -730,7 +781,7 @@ export const stageHurt = (input: {
 			.filter((o) => o !== p && o.pid >= 0 && o.legs.length > 0)
 			.map((o) => posOf(o.legs, off))
 			.filter((q) => dist(q, from) < KNEEL_APART * 2);
-		const spot = kneelSpot(from, at, [...knelt, ...by], lies);
+		const spot = kneelSpot(from, at, [...knelt, ...by], lies, others);
 		const where = dist(from, spot) < KNEEL_STEP_FT ? from : spot;
 		const way = roundHim(from, where, hips, head);
 		let far = 0;
