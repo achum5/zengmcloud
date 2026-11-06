@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 185,
+		date: "2026-11-06",
+		text: "Realistic Front Offices: CPU teams no longer re-sign or play players they could replace with a minimum free agent, and let an expiring player go when his salary buys more as cap room. Fewer pointless cuts and signings at the end of benches, and in tests the teams that did this won more.",
+	},
+	{
 		n: 184,
 		date: "2026-11-06",
 		text: "3D games: a missed jumper misses like a real one - off the front of the rim, long off the back, off the side, in and out, now and then off the glass or an air ball - by how good a shooter he is, how far out, and where the rebound goes. The ball off a dunk drops through the net away from the dunker instead of bouncing up through his legs. And a high flier puts on a show at the rim about as often as his ratings say, a great shooter pulls up from way out now and then, instead of either depending on a run of luck.",

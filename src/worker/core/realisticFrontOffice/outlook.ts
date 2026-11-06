@@ -797,8 +797,10 @@ export const outlookSettings = {
 	// scrub, or a prospect whose market salary bought more as room, cost his
 	// team for a decade - so teams cut him, still paying him, for an older
 	// one who would soon retire, and signed and cut players at the end of the
-	// bench all season. Off while it is measured.
-	wantedOnly: false,
+	// bench all season. Measured: half the teams each way, 2 leagues each way
+	// round over 5 seasons, 4 times: 23 titles to 17, 0.04 more of its games
+	// won by seasons 3-5, and 48 seasons under 20 wins to 63.
+	wantedOnly: true,
 	// A pick's player, and a young player, as the best quarter of what he may
 	// become and the rest (BOOM_SHARE), not as two halves: a star's chance,
 	// which a better half averages away. In the owner's league picks 21-25
@@ -3389,6 +3391,11 @@ export const buildOutlook = async ({
 			lastDraft: Math.max(lastPickSeason, outlookSeason(base, OUTLOOK_YEARS)),
 			numPlayoffRounds: g.get("numGamesPlayoffSeries", "current").length,
 		});
+		// The team's own picks past the last draft that exists were worked
+		// out for its points before it had a path, and kept: a deal priced
+		// on a view of the outlook with them worked out again (placesAfter)
+		// gained or lost what the path moves them.
+		base.futurePicks.clear();
 	}
 
 	let deadline: DeadlineView | undefined;

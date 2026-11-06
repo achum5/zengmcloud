@@ -916,15 +916,17 @@ room unused 75 summers of 84).
   only two free agents. Without, a team with room to spare for years bid the
   most for anyone - in the 2005 replay a 57 got the maximum for three years,
   a 64 for five - and set prices for everyone.
-- **Still to measure: a team plays and re-signs only players it wants**
-  (wantedOnly, off). A player worse than a minimum free agent never plays
-  ahead of one, and once his contract is up, any player is let go when his
-  salary buys more as room. Without, every expiring player is re-signed at
-  his odds of staying - in the owner's league a 38-overall with an 84%
-  chance - and a thin future roster plays its worst players, so a scrub
-  costs his team for a decade: teams cut prospects (a 21-year-old 39/57)
-  and younger veterans for older ones about to retire. On, those cuts gain
-  nothing, and in-season releases fall to 23-32; about a quarter slower.
+- **A team plays and re-signs only players it wants.** A player worse than
+  a minimum free agent never plays ahead of one, and once his contract is
+  up, any player is let go when his salary buys more as room. Before, every
+  expiring player was re-signed at his odds of staying - in the owner's
+  league a 38-overall with an 84% chance - and a thin future roster played
+  its worst players, so a scrub cost his team for a decade: teams cut
+  prospects (a 21-year-old 39/57) and younger veterans for older ones about
+  to retire. Now those cuts gain nothing, and in-season releases fall to
+  23-32; about a quarter slower. Half the teams each way, 2 leagues each way
+  round over 5 seasons, 4 times: 23 titles to 17, 0.04 more of their games
+  won by seasons 3-5, 48 seasons under 20 wins to 63.
 
 ## Coaching
 
