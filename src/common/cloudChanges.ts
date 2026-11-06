@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 188,
+		date: "2026-11-06",
+		text: "Realistic Front Offices: CPU teams under the minimum payroll no longer treat future salary as free, so they stop paying bench veterans two or three times their asking price for years and keep their room for better players. In tests the teams that did this won more titles.",
+	},
+	{
 		n: 187,
 		date: "2026-11-06",
 		text: "3D games: a reverse layup carries under the rim to the far side at a believable pace instead of jumping across in the last instant before he leaves the floor. A loose ball on the floor is picked up when the man gets to it, never pulled up into his hands from feet away, and a hand up at a jump shot is always a step to the side, so the shot stays in sight.",

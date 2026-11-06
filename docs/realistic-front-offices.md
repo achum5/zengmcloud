@@ -907,15 +907,21 @@ room unused 75 summers of 84).
   first four years out for an early second now (both sides gaining under a
   half a hundredth of a title) is not changed by it: that is the contender
   valuing the seasons it can win in.
-- **Still to measure: money short of the league's minimum payroll is free only
-  this season, once games are played** (floorNow, off). A team short of the
+- **Money short of the league's minimum payroll is free only this season,
+  once games are played** (floorNow). A team short of the
   minimum pays the rest as a fine when the playoffs start, so salary up to it
   costs nothing - but before then, and for seasons ahead, a team that reads
   itself short nearly always ends up past it (6% of arena teams paid the fine
   in a season): it signs and trades for more, room the outlook expects to buy
   only two free agents. Without, a team with room to spare for years bid the
   most for anyone - in the 2005 replay a 57 got the maximum for three years,
-  a 64 for five - and set prices for everyone.
+  a 64 for five - and set prices for everyone. Measured: half the teams each
+  way, 2 leagues each way round over 5 seasons: 14 titles to 6 (7 to 3 in
+  each league), games won even; 17 deals near the maximum to 6, all to
+  players 60 or better, and less paid to 50-59s. In a 15-season replay of the
+  owner's league, reviewed team by team, the most common complaint was teams
+  short of the minimum paying 50-55 veterans two or three times their asking
+  price for years, with the room gone when a better player's price fell.
 - **A team plays and re-signs only players it wants.** A player worse than
   a minimum free agent never plays ahead of one, and once his contract is
   up, any player is let go when his salary buys more as room. Before, every

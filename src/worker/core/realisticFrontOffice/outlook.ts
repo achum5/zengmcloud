@@ -812,8 +812,11 @@ export const outlookSettings = {
 	// reads itself short nearly always ends up past it (6% of arena teams
 	// paid the fine in a season) - it signs and trades for more. Without, a
 	// team with room to spare for years bid the most for anyone: a 57 at the
-	// maximum for three years. Off while it is measured.
-	floorNow: false,
+	// maximum for three years. Measured: half the teams each way, 2 leagues
+	// each way round over 5 seasons: 14 titles to 6 (7 to 3 in each), games
+	// won even; 17 deals near the maximum to 6, all to players 60 or better,
+	// and less paid to 50-59s.
+	floorNow: true,
 };
 
 // Measured in arena leagues: players on a team all season missed 6.5% of its
