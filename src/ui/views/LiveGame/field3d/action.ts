@@ -5923,6 +5923,12 @@ const stretchMs = (ft: number, fps: number, from: Break, to: Break) => {
 	) {
 		return (ft / fps) * 1000 + from.up + to.down;
 	}
+	// (Too short to pull up in, to sit down at the end of it - the last short
+	// way of a checkdown, off a bend: pulled up over the last of the way in
+	// to it, there that much later - see runRoute.)
+	if (to.down > 0 && to.v === 0 && (v0 * v0) / (2 * a1) > ft) {
+		return (ft / v0 + v0 / (2 * a1)) * 1000;
+	}
 	const top = Math.sqrt(
 		(2 * ft * a0 * a1 + v0 * v0 * a1 + v1 * v1 * a0) / (a0 + a1),
 	);
@@ -10126,6 +10132,23 @@ class Action {
 				return;
 			}
 			let out: number | undefined;
+			const sits = next.v === 0 && next.down > 0;
+			const vIn = legPace(m.last);
+			if (
+				sits &&
+				k > 1 &&
+				cut.keep === 1 &&
+				GAITS.has(m.last.move) &&
+				(vIn * vIn) / (2 * next.accel) > go
+			) {
+				// (See stretchMs: on at his pace, and pulled up over the last
+				// of it and the way in to it.)
+				m.go(to, m.t + (go / vIn) * 1000);
+				m.gatherFor(0, next.accel);
+				cut = next;
+				along += go;
+				continue;
+			}
 			if (k === 1) {
 				m.getOff(
 					to,
@@ -10141,7 +10164,7 @@ class Action {
 			}
 			// (Sat down at the end of it: up out of the last cut and pulled
 			// up into it, as he was timed to be - see breakAt.)
-			if (next.v === 0 && next.down > 0) {
+			if (sits) {
 				m.gatherInto(out, routeFps(speed, k));
 			}
 			cut = next;
