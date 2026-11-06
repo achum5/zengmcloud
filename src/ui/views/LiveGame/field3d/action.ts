@@ -312,6 +312,17 @@ const STOP_HARD = 1.5;
 // (Short of where that hard a stop takes him by more than this, feet: on
 // past it - see Actor.pullsPast.)
 const PAST_SLACK_FT = 0.5;
+// Run at somewhere over an end line (see onField), or no more than
+// EDGE_NEAR_FT short of it, no more than EDGE_ALONG of the way along it:
+// pulled up into it, EDGE_SHORT_FT short of it, at least EDGE_LEAST_FT on
+// from where he is - see Actor.edgeOf.
+const EDGE_NEAR_FT = 1;
+const EDGE_ALONG = 0.5;
+const EDGE_SHORT_FT = 0.5;
+const EDGE_LEAST_FT = 1;
+// (Pulled up as much as this much later than he would have got there, ms,
+// if that is what it takes.)
+const EDGE_SPARE_MS = 450;
 // (Cut short no more than this long into a leg, ms: none of it kept - or,
 // in a gait, this long: kept as the one before it.)
 const CUT_SLIVER_MS = 1;
@@ -1930,6 +1941,54 @@ class Actor {
 		}
 	}
 
+	// How far he can go on from where he is, the way (cos, sin), before the
+	// edge of where he can go (see onField) - and whether that is an end
+	// line (or a sideline).
+	private roomOn(cos: number, sin: number): { ft: number; end: boolean } {
+		const p = this.at;
+		const lo = 1 - this.roam;
+		const hi = FIELD_W - 1 + this.roam;
+		const xs =
+			cos < -1e-9
+				? (p.x - 1) / -cos
+				: cos > 1e-9
+					? (FIELD_L - 1 - p.x) / cos
+					: Infinity;
+		const ys =
+			sin < -1e-9
+				? (p.y - lo) / -sin
+				: sin > 1e-9
+					? (hi - p.y) / sin
+					: Infinity;
+		return { ft: Math.max(0, Math.min(xs, ys)), end: xs <= ys };
+	}
+
+	// Run at `to`, over an end line (see onField) or no more than
+	// EDGE_NEAR_FT short of it, head on (no more than EDGE_ALONG of the way
+	// along it): where he comes up to it, EDGE_SHORT_FT short (or `to`, if
+	// that is shorter) - to be pulled up into there. (None: not near it,
+	// across it more than at it, or there already. Not a sideline: run up
+	// to that, he is pulled up as he is stood there - see hold.)
+	private edgeOf(to: Pt): Pt | undefined {
+		const far = dist(this.at, to);
+		if (far <= 0) {
+			return undefined;
+		}
+		const cos = (to.x - this.at.x) / far;
+		const sin = (to.y - this.at.y) / far;
+		const { ft, end } = this.roomOn(cos, sin);
+		const on = Math.min(far, ft - EDGE_SHORT_FT);
+		if (
+			ft - far > EDGE_NEAR_FT ||
+			!end ||
+			Math.abs(sin) > EDGE_ALONG ||
+			on < EDGE_LEAST_FT
+		) {
+			return undefined;
+		}
+		return { x: this.at.x + cos * on, y: this.at.y + sin * on };
+	}
+
 	plantFor(to: Pt, down?: number, most?: number) {
 		const l = this.last;
 		// (Off a backpedal: see plantBack.)
@@ -1957,11 +2016,37 @@ class Actor {
 		if (!(ve < v)) {
 			return;
 		}
-		const T = (v - ve) / CUT_ACCEL;
+		// (No room for it short of the edge of where he can go - the end
+		// line, say: slowed as he comes up to it, over the stretch he is on,
+		// to as much of his pace as he can plant from in the room there is -
+		// or, that not doing it, planted harder (see STOP_HARD) - not run
+		// into it and stopped dead in a stride.)
+		const room = this.roomOn(cos, sin).ft - EDGE_SHORT_FT;
+		let w = v;
+		let A = CUT_ACCEL;
+		if ((v * v - ve * ve) / (2 * CUT_ACCEL) > room) {
+			const vr = Math.sqrt(ve * ve + 2 * CUT_ACCEL * Math.max(0, room));
+			if (
+				vr < v &&
+				this.slowInto(vr / v, CUT_ACCEL, EDGE_SPARE_MS) !== undefined
+			) {
+				w = legPace(this.last);
+			}
+			A = clamp(
+				(w * w - ve * ve) / (2 * Math.max(room, 0.1)),
+				CUT_ACCEL,
+				CUT_ACCEL * STOP_HARD,
+			);
+		}
+		if (!(ve < w)) {
+			return;
+		}
+		const k = this.last;
+		const T = (w - ve) / A;
 		const n = Math.max(1, Math.round((T * 1000) / STOP_STEP_MS));
 		const dt = T / n;
-		const paceOf = (i: number) => v - (v - ve) * ((i + 0.5) / n);
-		const moveOf = slower(l.move, n, dt, paceOf);
+		const paceOf = (i: number) => w - (w - ve) * ((i + 0.5) / n);
+		const moveOf = slower(k.move, n, dt, paceOf);
 		for (let i = 0; i < n; i++) {
 			const pace = paceOf(i);
 			this.go(
@@ -2363,6 +2448,34 @@ class Actor {
 	// gets him - up to it off what he was doing as he goes, as hard as he
 	// can (see rampInto).
 	chase(to: Pt, t1: number, fps: number, move?: Move, yaw?: number) {
+		// (Over an end line, or up to it, head on - after a man into the end
+		// zone: up to it at the pace he would go, and pulled up into it - not
+		// run into it and stopped dead in a stride.)
+		// (Up to it at the pace he comes into it at, if that is quicker -
+		// there sooner, and slowed from it over the stretch he is on, there
+		// as much as EDGE_SPARE_MS later for it: not slowed in a stride as
+		// he comes up to it, and stopped in the next.)
+		const edge = this.edgeOf(to);
+		if (edge && t1 > this.t) {
+			const pace = Math.max(
+				Math.min(fps, dist(this.at, to) / ((t1 - this.t) / 1000)),
+				Math.min(this.paceInto(edge) ?? 0, this.top),
+			);
+			const tc = Math.min(
+				t1,
+				this.t + (dist(this.at, edge) / Math.max(pace, 0.001)) * 1000,
+			);
+			if (tc > this.t + 1) {
+				this.chaseOn(edge, tc, Math.max(fps, pace), move, yaw);
+				this.slowInto(0, STOP_ACCEL, t1 - this.t + EDGE_SPARE_MS);
+				this.hold(t1);
+				return;
+			}
+		}
+		this.chaseOn(to, t1, fps, move, yaw);
+	}
+
+	private chaseOn(to: Pt, t1: number, fps: number, move?: Move, yaw?: number) {
 		const p = onField(to, this.roam);
 		if (move === undefined || RAMPS.has(move)) {
 			this.bendInto(
