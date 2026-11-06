@@ -11853,6 +11853,7 @@ class Action {
 		const back =
 			gives &&
 			backFar > GIVE_STEP_FT &&
+			backV > 0 &&
 			backV <= BACK_MOST &&
 			legPace(m.last) < STOP_LEAST;
 		// (On a way to five feet off him, eased into it, and set there till
