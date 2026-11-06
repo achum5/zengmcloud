@@ -14629,10 +14629,10 @@ class Action {
 			// GET_OFF_ACCEL).
 			let least = snap + 380 + r() * 150;
 			const first = loops.get(m);
-			// (Straight at him, gathered into him - see hitMs. Not on a twist,
-			// where the two of them are timed off each other flat out.)
+			// (Straight at him, gathered into him - see hitMs. On a twist too,
+			// the end's jab off timed flat out.)
 			// (Off the edge too, at the end of the arc - see getOffAlong.)
-			let gathers = !first && ![...loops.values()].includes(m);
+			let gathers = true;
 			const gather = gathers && !edge;
 			const offMs = (far: number) =>
 				gathers
@@ -14646,7 +14646,8 @@ class Action {
 				// round the edge - a step across, and off under the man going
 				// first as he gets onto his.
 				const jab = this.w({ d: s.d - TWIST_JAB_FT, a: s.a });
-				const jabT = m.t + offMs(TWIST_JAB_FT);
+				const jabT =
+					m.t + rampedMs(TWIST_JAB_FT, m.top * RUSH_HIT_PACE, 0, GET_OFF_ACCEL);
 				m.getOff(jab, jabT, 0, GET_OFF_ACCEL, "run", GET_OFF_SQUARE_MS);
 				const go = Math.min(
 					Math.max(
@@ -14781,19 +14782,17 @@ class Action {
 								GET_OFF_SQUARE_MS,
 								gathers ? HIT_FPS : undefined,
 							)
-						: gather
-							? m.hitInto(
-									hit,
-									hitT,
-									m.top * RUSH_HIT_PACE,
-									GET_OFF_ACCEL,
-									HIT_FPS,
-									HIT_ACCEL,
-									"run",
-									GET_OFF_SQUARE_MS,
-									m.top * FLAT_OUT,
-								)
-							: m.getOff(hit, hitT, 0, GET_OFF_ACCEL, "run", GET_OFF_SQUARE_MS);
+						: m.hitInto(
+								hit,
+								hitT,
+								m.top * RUSH_HIT_PACE,
+								GET_OFF_ACCEL,
+								HIT_FPS,
+								HIT_ACCEL,
+								"run",
+								GET_OFF_SQUARE_MS,
+								m.top * FLAT_OUT,
+							);
 				if (!first || !pen) {
 					break;
 				}
