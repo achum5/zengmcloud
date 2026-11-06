@@ -3582,8 +3582,27 @@ describe("3D director", () => {
 				}
 				const at = `${seed}: ${recv} at ${Math.round(up.t0)}`;
 				shots.push(at);
-				if (up.t0 - s.t1 > 2600) {
-					slow.push(`${at} (${Math.round(up.t0 - s.t1)} ms)`);
+				// (Stood there with it: the longest he is still, off the catch
+				// till he starts up into his jumper - a dribble on from it, a
+				// screen to come off, a drive and up, all fine.)
+				let stood = 0;
+				let still = 0;
+				const rise =
+					tl.tracks
+						.get(recv)!
+						.acts.find(
+							(a) => a.anim === "shoot" && a.t0 <= up.t0 && a.t1 > up.t0,
+						)?.t0 ?? up.t0;
+				let last = evalPlayer(tl, recv, s.t1);
+				for (let t = s.t1 + 100; t <= rise; t += 100) {
+					const P = evalPlayer(tl, recv, t);
+					still =
+						Math.hypot(P.x - last.x, P.y - last.y) < 0.1 ? still + 100 : 0;
+					stood = Math.max(stood, still);
+					last = P;
+				}
+				if (stood > 1500) {
+					slow.push(`${at} (stood ${stood} ms)`);
 				}
 				const A = evalPlayer(tl, giver, up.t0);
 				const B = evalPlayer(tl, recv, up.t0);

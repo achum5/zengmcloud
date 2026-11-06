@@ -340,6 +340,45 @@ const besideShot = (P: Pt, p: Pt, toward: number): Pt => {
 		: p;
 };
 
+// `p` moved out to `clear` feet off the path (its points in order) at the
+// least - straight away from the nearest point of it, or, right on it, to
+// the `side` of it (1 left of the way it goes, -1 right).
+const clearOfPath = (p: Pt, path: Pt[], clear: number, side: number): Pt => {
+	let best: { d: number; q: Pt; a: Pt; b: Pt } | undefined;
+	for (let i = 0; i + 1 < path.length; i++) {
+		const a = path[i]!;
+		const b = path[i + 1]!;
+		const L2 = (b.x - a.x) ** 2 + (b.y - a.y) ** 2;
+		const u =
+			L2 < 1e-6
+				? 0
+				: Math.max(
+						0,
+						Math.min(
+							1,
+							((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / L2,
+						),
+					);
+		const q = { x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u };
+		const d = dist(p, q);
+		if (!best || d < best.d) {
+			best = { d, q, a, b };
+		}
+	}
+	if (!best || best.d >= clear) {
+		return p;
+	}
+	const { q, a, b } = best;
+	const n =
+		best.d > 0.05
+			? unitVec(q, p)
+			: (() => {
+					const w = dist(a, b) > 1e-3 ? unitVec(a, b) : { x: 1, y: 0 };
+					return { x: -w.y * side, y: w.x * side };
+				})();
+	return { x: q.x + n.x * clear, y: q.y + n.y * clear };
+};
+
 // How often a post-up set for the hook ends in a fadeaway instead.
 const POST_FADE = 0.3;
 
@@ -366,6 +405,9 @@ export type BallSeg =
 			t1: number;
 			from: BallEnd;
 			to: BallEnd;
+			// Handed over at a dead ball (to the man who takes it out, say):
+			// not the inbound, nor a pass in play.
+			dead?: true;
 	  }
 	| {
 			kind: "bounce";
@@ -772,6 +814,12 @@ const REVERSE_OUT = 2.4;
 // ...and the ball, in the hand up and back at the rim, no further behind the
 // middle of it than this as it leaves his hand (feet): clear of the glass.
 const REVERSE_BALL_BEHIND = 0.4;
+// A man getting back out (to box out, say) never goes through a man
+// nearer than this (feet) on the way.
+const RUN_THROUGH = 1.5;
+// A blocker meets a finish at the rim at least this far off the way the
+// finisher goes in (feet).
+const BLOCK_CLEAR = 1.6;
 // Going up for a finish beside the rim, he is at least this far (feet) out
 // in front of the middle of it: his hand, reaching out to the side with the
 // ball, still in front of the glass - not round behind it, where the ball can
@@ -3852,8 +3900,16 @@ class Director {
 		// Where the man who ran into him is backing off to, if anybody: the
 		// teammate comes round the other side from him, not into him.
 		clear?: Pt,
+		// And who he is.
+		by?: number,
 	): number | undefined {
-		const p = this.helperOf(down, F);
+		// (Not the man who had the one who ran into him: right there on him,
+		// he would come in by him, on top of him.)
+		const p = this.helperOf(
+			down,
+			F,
+			by === undefined ? undefined : this.defenderOf(by),
+		);
 		if (p === undefined) {
 			return undefined;
 		}
@@ -3934,9 +3990,11 @@ class Director {
 
 	// The teammate nearest a man down at F, if near enough to come and help
 	// him up.
-	private helperOf(down: number, F: Pt): number | undefined {
+	private helperOf(down: number, F: Pt, not?: number): number | undefined {
 		return this.slots(this.teamOf(down))
-			.filter((p) => p !== down && dist(this.posOf(p), F) < HELP_UP_FROM)
+			.filter(
+				(p) => p !== down && p !== not && dist(this.posOf(p), F) < HELP_UP_FROM,
+			)
 			.sort((a, b) => dist(this.posOf(a), F) - dist(this.posOf(b), F))[0];
 	}
 
@@ -4664,8 +4722,14 @@ class Director {
 		return lateral < -1 ? "L" : lateral > 1 ? "R" : this.ballHand;
 	}
 
-	private fly(t0: number, t1: number, from: BallEnd, to: BallEnd) {
-		this.pushBall({ kind: "fly", t0, t1, from, to });
+	private fly(
+		t0: number,
+		t1: number,
+		from: BallEnd,
+		to: BallEnd,
+		dead = false,
+	) {
+		this.pushBall({ kind: "fly", t0, t1, from, to, ...(dead ? { dead } : {}) });
 		if ("pid" in to) {
 			this.holder = to.pid;
 		} else {
@@ -5778,10 +5842,10 @@ class Director {
 				z: BALL_R,
 			};
 			const tHit = release + (arrive - release) * 0.58;
-			this.fly(release, tHit, { pid: from }, hit);
-			this.fly(tHit, arrive, hit, { pid: to });
+			this.fly(release, tHit, { pid: from }, hit, handOff);
+			this.fly(tHit, arrive, hit, { pid: to }, handOff);
 		} else {
-			this.fly(release, arrive, { pid: from }, { pid: to });
+			this.fly(release, arrive, { pid: from }, { pid: to }, handOff);
 		}
 		this.act(to, "catch", arrive - 90, arrive + 110, {
 			face: -toward as 1 | -1,
@@ -10437,18 +10501,35 @@ class Director {
 		this.hold(pid, t, "dribble");
 		const done = this.go(pid, to, t + 60, 2.6, "post", -dir as 1 | -1);
 		// His man gives ground with him - if he is on him, not off somewhere
-		// else (gone to meet the shot, say).
-		const guard = this.defenderOf(pid);
+		// else (gone to meet the shot, say). Or, his own man not there,
+		// whoever of theirs is on him there instead: switched onto him, or
+		// the help.
+		let guard = this.defenderOf(pid);
+		if (guard === undefined || dist(this.posOf(guard), at) >= 5) {
+			let best = 5;
+			for (const o of this.slots(other(this.teamOf(pid)))) {
+				const q = this.posOf(o);
+				const d = dist(q, at);
+				if (d < best && (q.x - at.x) * u.x + (q.y - at.y) * u.y > 0) {
+					best = d;
+					guard = o;
+				}
+			}
+		}
 		const m = this.track(pid)?.moves.at(-1);
 		if (m?.anim === "post" && m.t1 === done) {
 			this.backingDown.set(m, { pid, guard });
 		}
+		// (Step for step with him - from when he really starts in, until he
+		// is there - not giving ground on his own a beat ahead of him, with
+		// a gap opening up between them.)
 		if (guard !== undefined && dist(this.posOf(guard), at) < 5) {
-			this.go(
+			const into = m?.anim === "post" && m.t1 === done ? m.t0 : t + 60;
+			this.goBy(
 				guard,
 				clampPt({ x: to.x + u.x * BODY, y: to.y + u.y * BODY }),
-				t + 60,
-				2.6,
+				into,
+				done,
 				"back",
 				-dir as 1 | -1,
 			);
@@ -12806,7 +12887,7 @@ class Director {
 					Math.sign(
 						(G0.x - P1.x) * (toRim.y / len) - (G0.y - P1.y) * (toRim.x / len),
 					) || 1;
-				const B = chase
+				let B = chase
 					? clampPt({
 							x:
 								S1.x -
@@ -12818,6 +12899,19 @@ class Director {
 								(toRim.x / len) * sideOf * CHASE_SIDE,
 						})
 					: ahead(Math.min(2.6, Math.max(1.4, len - 1 - on)) + on);
+				// (Beside the way he goes on in, not on it: his way in bends
+				// off the straight line to the rim, round the front of it.)
+				if (!chase) {
+					B = clampPt(
+						clearOfPath(
+							B,
+							[P1, this.posOf(shooter), ...(drift ? [drift] : [])],
+							BLOCK_CLEAR,
+							// (sideOf is 1 with him off to the right of it.)
+							-sideOf,
+						),
+					);
+				}
 				const by = release - 80;
 				let from = gather - 600;
 				for (let n = 0; n < 4; n++) {
@@ -13809,6 +13903,16 @@ class Director {
 				);
 				spot = apart(clampPt({ x: rim.x + u.x * k, y: rim.y + u.y * k }));
 			}
+			// (Never back out through the shooter, still on his way in to the
+			// rim with it: in his way, he stays at the rim instead - a step
+			// in, nobody to put a body on.)
+			if (this.runsThrough(d, spot, r0 + 80, meet, shooter)) {
+				const D0 = this.posOf(d);
+				const u = unitVec(D0, rim);
+				const near = inPlay({ x: D0.x + u.x * 2, y: D0.y + u.y * 2 });
+				spot = this.runsThrough(d, near, r0 + 80, meet, shooter) ? D0 : near;
+				C = undefined;
+			}
 			const there = this.goBy(d, spot, r0 + 80, meet, "run", undefined, BURST);
 			if (C && there < until - 250) {
 				this.act(d, "boxOut", Math.max(meet, there), until, { look: rim });
@@ -14714,6 +14818,27 @@ class Director {
 			s += 2 * Math.sqrt((2 * h0 * 0.42 ** k) / GRAVITY);
 		}
 		return Math.max(least, (s / 0.85) * 1000);
+	}
+
+	// Whether a straight run of his from where he is to `to`, over [t0, t1],
+	// goes through `other` where he is then (see RUN_THROUGH).
+	private runsThrough(
+		pid: number,
+		to: Pt,
+		t0: number,
+		t1: number,
+		other: number,
+	): boolean {
+		const A = this.posOf(pid);
+		const span = Math.max(1, t1 - t0);
+		for (let t = t0; t <= t1; t += 40) {
+			const u = (t - t0) / span;
+			const P = { x: A.x + (to.x - A.x) * u, y: A.y + (to.y - A.y) * u };
+			if (dist(P, this.posAt(other, t)) < RUN_THROUGH) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	// Up for a rebound from `at`, leaving the floor at `t` - and, a fight for
@@ -18378,7 +18503,7 @@ class Director {
 			// the side away from the teammate who will come to help him up.
 			this.hold(victim, hit, "hold");
 			const away = unitVec(C, E);
-			const mate = this.helperOf(helper, C);
+			const mate = this.helperOf(helper, C, mine);
 			const across = { x: -away.y, y: away.x };
 			const backTo = (off: number) =>
 				clampPt({
@@ -18404,7 +18529,7 @@ class Director {
 			// Down on the floor with it - sat there till a teammate gets to
 			// him, and pulled up by the hands (see helpUp); or, nobody coming,
 			// up on his own.
-			const pull = this.helpUp(helper, C, A, hit, V);
+			const pull = this.helpUp(helper, C, A, hit, V, victim);
 			let up: number;
 			if (pull === undefined) {
 				up = hit + CHARGE_DOWN_MS;
@@ -21460,11 +21585,15 @@ class Director {
 					.findLast((x) => this.marking.has(x) && x.t1 >= m.t0 - FILL_RECENT);
 				const man = had && this.marking.get(had);
 				// (Nor in the middle of something of his own - up to block it,
-				// a hand at the shot: that is where the play has him.)
+				// a hand at the shot: that is where the play has him. Nor with
+				// the ball his own team's by then - in his own hands, say,
+				// brought up the floor: no man of theirs to pick up.)
 				const acting = tr.acts.some((a) => a.t0 <= t0 && t0 < a.t1);
+				const holder = ballAt(t0).holder;
 				if (
 					man === undefined ||
 					acting ||
+					(holder !== undefined && this.teamOf(holder) === tr.team) ||
 					firstAfter(cuts, had!.t0) <= t0 ||
 					firstAfter(changes, had!.t0) <= t0 ||
 					!shownAt(tr.pid, t0) ||

@@ -1849,7 +1849,7 @@ const plannedYaw = (tl: CourtTimeline, tr: Track, t: number): number => {
 // thrown, this far round from facing the passer (radians) - and shoots no
 // later than this after it is in his hands (ms).
 const SET_LEAD = 900;
-const SET_TURN = (50 * Math.PI) / 180;
+const SET_TURN = (75 * Math.PI) / 180;
 const SET_SHOOT = 1200;
 // (Just caught it, in his catch: still the pass he caught.)
 const SET_CAUGHT = 600;

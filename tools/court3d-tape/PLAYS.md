@@ -142,18 +142,17 @@ Fixes made for those, held back - each turns up a few more in the games it
 reshuffles in turn (any change to how a play is laid out moves everything
 after it), so each waits until its own fallout is fixed:
 
-- his man gives ground step for step with a man backing him down, from when
-  the back-down really starts - and whoever of theirs is on him, if his own
-  man isn't (backDown)
-- a drift off the ball (keeping his spacing) skipped where his next run, set
-  off from the end of it, would be too quick for his legs
 - a rebounder tipping it up to himself and taking it on the way down (more
-  in a crowd, for a poor rebounder - about 6% of boards)
+  in a crowd, for a poor rebounder - about 6% of boards) - lost, to be built
+  again
+- a jumper's miss coming off as far as the shot was from, not only as far
+  out as the rebounder already is (`towardOf`): off a three, under the rim
+  18 → 10 of 95, out a way 10 → 14 - small, for a change that reshuffles
+  every game; it waits to go in with the next one that does
 
 Still turned up by the reshuffled games, not yet fixed: a man running his
 lane to his team's huddle through the other team's chairs; a man sat in the
-huddle far from his chair as the picture gets there (late); a heave at
-the buzzer whose ball goes out of bounds late.
+huddle far from his chair as the picture gets there (late).
 
 Fixed at the root (2026-11-06) - each a glitch a reshuffled game turned up,
 fixed where it comes from, narrowly enough that the games it doesn't happen
@@ -179,6 +178,25 @@ in play the same:
   following his man had him and cut short of it. He gets there (`mark`'s
   fetch), and where he still can't, the ball carries on to him no faster
   than a ball carries (`noSnatch`).
+- his man giving ground step for step with a man backing him down, from
+  when the back-down really starts - and whoever of theirs is on him, if his
+  own man isn't (`backDown`). Its reshuffled games turned up two more, fixed
+  too: a man boxing out a trailer ran back out through the shooter on his
+  way in (`runsThrough`), and a shot blocker met a finish right on the
+  finisher's way in, round the front of the rim (`clearOfPath`). And then
+  two more: the clock after a ball out of bounds started on the ball handed
+  to the man taking it out, not on the inbound - with three seconds left,
+  it ran out before the heave went up (a hand-over is `dead` now, never the
+  inbound); and the man who had the one who ran into a charge, right on
+  him, came in by him to help his teammate up (somebody else comes, or
+  nobody). And two more again: a man who had just been on defense, the
+  ball his own after the board and brought up the floor in his own hands,
+  ran back after the man he had been guarding with it - into the
+  backcourt, sliding like a defender (`mark`'s fill picks a man up again
+  only with the ball the other team's); and a spot-up shooter on the wing,
+  the pass from the top, caught it still 60-75 degrees off the rim and
+  swung round on it - his feet turned no more than 50 degrees from the
+  passer toward the rim (`SET_TURN` 75 now).
 - a high flier's dunks plain eight in ten in one game, and a great shooter
   never once pulling up from way out in another: each was a coin flip, and
   a reshuffle could run them all one way. Each man's goes at them come in
@@ -193,14 +211,14 @@ Done: (commits)
 
 Measured over the same three games (223 at real speed):
 
-| Part                   |             Ways now | Notes                                                                                                                                                                     |
-| ---------------------- | -------------------: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Who                    |                    9 | by position: F, FC, GF, PG, SG, SF, PF, C, G                                                                                                                              |
-| How he came up with it |                5 → 6 | up high two hands 65%, chest height 30%; now and then tipped up to himself (more in a crowd, more for a poor rebounder) - in testing                                      |
-| Where                  |                   11 | under the rim in the middle 56% - too many: the ball comes off the rim to where the rebounder already is (see `reads` in crashTheGlass, `towardOf`) and few come off long |
-| Traffic                |                    9 | alone / one man near / in a crowd; box-outs by him or his mates                                                                                                           |
-| What he did with it    |                   13 | outlet (long or not), handed off, brought it up himself, held it; pushed or walked up                                                                                     |
-| Whole combination      | 195 of 223 different |                                                                                                                                                                           |
+| Part                   |             Ways now | Notes                                                                                                                                                                                                                       |
+| ---------------------- | -------------------: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Who                    |                    9 | by position: F, FC, GF, PG, SG, SF, PF, C, G                                                                                                                                                                                |
+| How he came up with it |                5 → 6 | up high two hands 65%, chest height 30%; now and then tipped up to himself (more in a crowd, more for a poor rebounder) - in testing                                                                                        |
+| Where                  |                   11 | under the rim in the middle 56%; by what it came off (`off`, 2026-11-06): at the rim 67 under it of 71, a jumper 42 of 57, a three 18 under, 62 in the lane, 15 out a way or long of 95 - long ones off threes a little few |
+| Traffic                |                    9 | alone / one man near / in a crowd; box-outs by him or his mates                                                                                                                                                             |
+| What he did with it    |                   13 | outlet (long or not), handed off, brought it up himself, held it; pushed or walked up                                                                                                                                       |
+| Whole combination      | 195 of 223 different |                                                                                                                                                                                                                             |
 
 Next: rebounds coming off long (the ball off the rim decides where it
 goes, and the man goes and gets it), the grab (a one-handed snatch, two

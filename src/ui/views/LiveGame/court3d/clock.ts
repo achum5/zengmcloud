@@ -315,7 +315,8 @@ export const inboundCaught = (
 		if (s.t0 >= b) {
 			break;
 		}
-		if (s.kind !== "fly" || !("pid" in s.from)) {
+		// (Not the ball handed over to the man who takes it out.)
+		if (s.kind !== "fly" || !("pid" in s.from) || s.dead) {
 			continue;
 		}
 		const up = ball[i + 1];
