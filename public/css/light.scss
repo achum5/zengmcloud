@@ -1473,14 +1473,19 @@ tr.table-warning:hover > td {
 }
 .gamecast-oncourt {
 	// Short rows, so beside the court it ends about where the latest play
-	// under the court does.
+	// under the court does - and narrow ones, to fit beside it.
+	font-size: 0.8125rem;
 	th,
 	td {
-		padding-top: 0.2rem;
-		padding-bottom: 0.2rem;
+		padding: 0.2rem 0.2rem;
 	}
+	th:first-child,
 	td:first-child {
-		max-width: 11rem;
+		padding-left: 0.4rem;
+		max-width: 9.5rem;
+		@media (max-width: 575.98px) {
+			max-width: 8rem;
+		}
 	}
 }
 .gamecast-linescore {

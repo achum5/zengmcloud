@@ -25,6 +25,8 @@ import { useLocal } from "../../../util/local.ts";
 import { usePlayerFace } from "../../../util/playerFaces.ts";
 import { PlayerPicture } from "../../../components/PlayerPicture.tsx";
 import { TeamLogoInline } from "../../../components/TeamLogoInline.tsx";
+import { SkillsBlock } from "../../../components/SkillsBlock.tsx";
+import { RatingsStatsPopover } from "../../../components/RatingsStatsPopover/index.tsx";
 import { sideColors } from "../../../components/GameCharts.basketball.tsx";
 import { TEAM_NUMS_DISPLAY_ORDER } from "../../../util/boxScoreDisplayOrder.ts";
 import {
@@ -612,48 +614,66 @@ const onFloor = (t: any): any[] => {
 };
 
 export const OnCourt = ({ boxScore }: { boxScore: any }) => (
-	<table className="table table-sm table-striped gamecast-table gamecast-oncourt">
-		{TEAM_NUMS_DISPLAY_ORDER.map((ti) => {
-			const t = boxScore.teams[ti];
-			return (
-				<tbody key={ti}>
-					<tr className="gamecast-team-head">
-						<th>
-							<div className="d-flex align-items-center gap-2">
-								<Logo t={t} size={18} />
-								{t.abbrev}
-							</div>
-						</th>
-						<th title="Points">PTS</th>
-						<th title="Field goals">FG</th>
-						<th title="Rebounds">REB</th>
-						<th title="Assists">AST</th>
-						<th title="Personal fouls">PF</th>
-					</tr>
-					{onFloor(t).map((p) => (
-						<tr key={p.pid}>
-							<td>
+	<div className="table-responsive">
+		<table className="table table-sm table-striped gamecast-table gamecast-oncourt">
+			{TEAM_NUMS_DISPLAY_ORDER.map((ti) => {
+				const t = boxScore.teams[ti];
+				return (
+					<tbody key={ti}>
+						<tr className="gamecast-team-head">
+							<th>
 								<div className="d-flex align-items-center gap-2">
-									<Headshot pid={p.pid} season={boxScore.season} size={22} />
-									<div style={{ minWidth: 0 }} className="text-truncate">
-										<a href={playerUrl(p.pid)}>{shortName(p.name)}</a>{" "}
-										<span className="text-body-secondary">{p.pos}</span>
-									</div>
+									<Logo t={t} size={18} />
+									{t.abbrev}
 								</div>
-							</td>
-							<td className="fw-bold">{p.pts}</td>
-							<td className="text-nowrap">
-								{p.fg}-{p.fga}
-							</td>
-							<td>{p.orb + p.drb}</td>
-							<td>{p.ast}</td>
-							<td className={clsx({ "text-danger": p.pf >= 5 })}>{p.pf}</td>
+							</th>
+							<th title="Game score">GmSc</th>
+							<th title="Minutes played">MP</th>
+							<th title="Points">PTS</th>
+							<th title="Field goals">FG</th>
+							<th title="Rebounds">REB</th>
+							<th title="Assists">AST</th>
+							<th title="Personal fouls">PF</th>
 						</tr>
-					))}
-				</tbody>
-			);
-		})}
-	</table>
+						{onFloor(t).map((p) => (
+							<tr key={p.pid}>
+								<td>
+									<div className="d-flex align-items-center gap-2">
+										<Headshot pid={p.pid} season={boxScore.season} size={22} />
+										<div
+											style={{ minWidth: 0 }}
+											className="d-flex align-items-center"
+										>
+											<span className="text-truncate">
+												<a href={playerUrl(p.pid)}>{shortName(p.name)}</a>{" "}
+												<span className="text-body-secondary">{p.pos}</span>
+											</span>
+											<span className="flex-shrink-0 text-nowrap">
+												<SkillsBlock skills={p.skills} />
+												<RatingsStatsPopover
+													pid={p.pid}
+													season={boxScore.season}
+												/>
+											</span>
+										</div>
+									</div>
+								</td>
+								<td>{helpers.gameScore(p).toFixed(1)}</td>
+								<td>{helpers.formatNumber(p.min, "minutes")}</td>
+								<td className="fw-bold">{p.pts}</td>
+								<td className="text-nowrap">
+									{p.fg}-{p.fga}
+								</td>
+								<td>{p.orb + p.drb}</td>
+								<td>{p.ast}</td>
+								<td className={clsx({ "text-danger": p.pf >= 5 })}>{p.pf}</td>
+							</tr>
+						))}
+					</tbody>
+				);
+			})}
+		</table>
+	</div>
 );
 
 const LEADER_STATS = [
