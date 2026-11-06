@@ -1797,6 +1797,11 @@ const WALL_JUMPER_FT = 4;
 // (feet), eased over this long (ms).
 const WALL_SIGHT = 1.7;
 const WALL_SIGHT_RAMP = 250;
+// A man eased aside off his run goes over at this pace at the most, on top
+// of it (feet a second): a step's (see easeNudges).
+const NUDGE_FTPS = 7;
+// ...if it is no more than this far over (feet): a step aside, not a run.
+const NUDGE_STEP_MOST = 3;
 // The ball stopped (see stopTheBall): a man in the scoring area - this far
 // from the rim (feet) - who has had it this long (ms) or more, pulling up,
 // floating it or passing out of it with nothing between him and the rim.
@@ -26313,6 +26318,44 @@ class Director {
 		}
 	}
 
+	// EVERY STEP ASIDE A STEP. A man eased aside off his run - into the way
+	// of the ball, off a man, a step to the side of a shot - goes over and
+	// back no faster than a step takes him (NUDGE_FTPS, on top of his run):
+	// eased in and out over as long as that takes - setting off over that
+	// much sooner, back that much later - never thrown a couple of feet over
+	// and back in a fifth of a second, a lurch on his way.
+	private easeNudges() {
+		for (const tr of this.tracks.values()) {
+			if (!tr.nudges?.length) {
+				continue;
+			}
+			for (const n of tr.nudges) {
+				// (Only a step aside: carried further than that, he is shown
+				// running there - see carriedHeading - as fast as the man who
+				// laid it out has him.)
+				const len = Math.hypot(n.dx, n.dy);
+				if (len > NUDGE_STEP_MOST) {
+					continue;
+				}
+				// (Eased in as smoothstep: at its quickest half again as fast
+				// as the ramp's average.)
+				const need = (1.5 * len * 1000) / NUDGE_FTPS;
+				const ramp = Math.min(n.ramp ?? NUDGE_RAMP, (n.t1 - n.t0) / 2);
+				if (ramp >= need) {
+					continue;
+				}
+				// (All the way over by when he was, and from then on as long as
+				// he was: eased in that much sooner and out that much later -
+				// not still on his way over into whatever he was over there
+				// for, a hand up at a shot, his feet planted.)
+				n.t0 -= need - ramp;
+				n.t1 += need - ramp;
+				n.ramp = need;
+			}
+			tr.nudges.sort((a, b) => a.t0 - b.t0);
+		}
+	}
+
 	// EVERY CONTESTED JUMPER IN SIGHT. Whoever has a hand up at a jump shot -
 	// his own man up on him, the help in late, a man going by - never
 	// square in front of him from the camera's side (across the floor from
@@ -27366,6 +27409,7 @@ class Director {
 		this.noSnatch();
 		this.pickUpWhereItIs();
 		this.contestsInSight();
+		this.easeNudges();
 		// A look round the building runs on to the picture's next cut when
 		// that comes soon after (the substitutions over a timeout, the walk
 		// out for the next period), so the game picks up at a cut.

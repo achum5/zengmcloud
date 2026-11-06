@@ -215,6 +215,13 @@ in play the same:
   never once pulling up from way out in another: each was a coin flip, and
   a reshuffle could run them all one way. Each man's goes at them come in
   turn now (`turnOf`), as often in a game as his ratings have him do it.
+- a man stepped aside off his run - into the way of the ball, off another
+  man, a hand up to the side of a shot - thrown two or three feet over and
+  back in a fifth of a second: the nudges' ramps were all 200 ms whatever
+  the distance. Each step aside (3 ft or less) is eased over no faster than
+  a step takes him (`easeNudges`, 7 ft/s on top of his run), over that much
+  sooner and back that much later; a bigger one is a run, shown as one. The
+  tape's lurches 51/52/47 to 33/36/33, its sharp corners 18/16/7 to 12/6/4.
 
 Checks: the existing tests (feet behind the line, a contested jumper stays
 in sight, the ball never jumps, real speed with no darts) on every change.

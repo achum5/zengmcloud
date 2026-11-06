@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 189,
+		date: "2026-11-06",
+		text: "3D games: a player stepping aside on his way - into the way of a pass, off another man, to the side of a shot - eases over like a real step instead of jerking a couple of feet over and back in a blink.",
+	},
+	{
 		n: 188,
 		date: "2026-11-06",
 		text: "Realistic Front Offices: CPU teams under the minimum payroll no longer treat future salary as free, so they stop paying bench veterans two or three times their asking price for years and keep their room for better players. In tests the teams that did this won more titles.",
