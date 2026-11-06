@@ -76,11 +76,13 @@ const STAND_TURN = 5;
 // quicker. Off his stance at the snap: quicker still, round as he comes up
 // out of it with his first step (on the clock he is on, slow just off it -
 // not swung round in his stance before he is up out of it). But
-// never round quicker than TURN_MOST a second - walking, half that - nor
+// never round quicker than TURN_MOST a second (near basketball's TURN_RATE,
+// 3 pi: not spun right round in a stride) - walking, TURN_WALK_MOST - nor
 // round a corner, if it comes too sharp for that so quick.)
 const TURN_GO_MS = 240;
 const TURN_SNAP_MS = 150;
-const TURN_MOST = 12;
+const TURN_MOST = 11.2;
+const TURN_WALK_MOST = 6;
 // (Out of his stance round the other way - a tight end off to the flat
 // behind the line - no quicker than this: his hips opened and round over
 // his first step or two, as basketball's men turn - not swung round on the
@@ -98,7 +100,7 @@ const SET_UP_MS = 300;
 const FLIP_LEAD_MS = 130;
 const FLIP_SAME = Math.PI / 4;
 const FLIP_AWAY = Math.PI / 2;
-const turnMost = (l: Leg) => (l.move === "walk" ? TURN_MOST / 2 : TURN_MOST);
+const turnMost = (l: Leg) => (l.move === "walk" ? TURN_WALK_MOST : TURN_MOST);
 // (How fast he goes through a move: taken over this long.)
 const RATE_MS = 5;
 
