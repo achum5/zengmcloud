@@ -3334,9 +3334,27 @@ class Actor {
 		) {
 			return;
 		}
-		const off = angleOff(
+		let off = angleOff(
 			Math.atan2(next.to.y - next.from.y, next.to.x - next.from.x) - l.yaw,
 		);
+		// (Right round from it: round the side his first strides go on round
+		// to - not the long way round, and back.)
+		if (Math.abs(off) > TURN_EITHER) {
+			let ex = 0;
+			let ey = 0;
+			for (let i = k + 1; i < legs.length; i++) {
+				const q = legs[i]!;
+				if (i > k + 1 && (q.t0 >= l.t1 + TURN_LOOK_MS || !GAITS.has(q.move))) {
+					break;
+				}
+				ex += q.to.x - q.from.x;
+				ey += q.to.y - q.from.y;
+			}
+			const look = angleOff(Math.atan2(ey, ex) - l.yaw);
+			if (look * off < 0) {
+				off -= Math.sign(off) * 2 * Math.PI;
+			}
+		}
 		if (Math.abs(off) <= TURN_INTO_LEAST) {
 			return;
 		}
@@ -4445,7 +4463,15 @@ const PICK_TURN_RATE = 9;
 // more than this, radians: turned onto it over the last of it - see
 // turnInto, turnsOffBlocks.)
 const TURN_INTO_LEAST = 1.2;
-const TURN_SETTLE_MS = 400;
+// (Set that way this long at least first, ms - a short lock has the rest
+// of it to come round in: round all the way before he goes, not half way
+// and spun the rest as he goes.)
+const TURN_SETTLE_MS = 200;
+// (Round from it more than this, radians - near enough right round to go
+// either way: round the way he goes on round to, over his first strides,
+// this long, ms.)
+const TURN_EITHER = 2.6;
+const TURN_LOOK_MS = 400;
 const SHEDS = new Set<Move>(["engage", "drive"]);
 const PICK_DIVE = 0.2;
 const PICK_DIVE_YDS = 6;
