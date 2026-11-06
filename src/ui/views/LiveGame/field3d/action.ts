@@ -4338,6 +4338,11 @@ const PICK_LEAP_FT = 50;
 // (From no further from it than this (feet) as he goes up: no faster
 // through the air than a man - see leapFor.)
 const PICK_LEAP_REACH = 12;
+const PICK_LEAP_STILL_FT = 4;
+// (Turned round to it as he waits on it, if he is round from it more than
+// this (radians) - at this many radians a second at the most.)
+const PICK_TURN_LEAST = 0.6;
+const PICK_TURN_RATE = 9;
 const PICK_DIVE = 0.2;
 const PICK_DIVE_YDS = 6;
 const PICK_DIVE_PER = 0.6;
@@ -11079,6 +11084,24 @@ class Action {
 		// (Where he leaves his feet, this far out - no further than he is.)
 		const out = (ft: number) =>
 			Math.max(HIT_LEAST_FT, Math.min(ft, dist(from, at)));
+		// (Down by `t1` - or, late there, off his feet no quicker than a man
+		// gets down (see DIVE_LEAST_MS): late into it, by him, not thrown at
+		// it in a blink.)
+		const diveBy = (t1: number) => Math.max(t1, m.t + DIVE_LEAST_MS);
+		// (And no further than he can throw himself off the pace he is at -
+		// see DIVE_STILL_FT, LUNGE_AIR_MS - pulled up first, not launched as
+		// far from a stand as off a sprint.)
+		const reach = (p: Pt) => {
+			const v = GAITS.has(m.last.move) ? legPace(m.last) : 0;
+			const most = DIVE_STILL_FT + (v * LUNGE_AIR_MS) / 1000;
+			const d = dist(m.at, p);
+			return v >= LUNGE_LEAST_FPS || d <= most
+				? p
+				: {
+						x: m.at.x + ((p.x - m.at.x) * most) / d,
+						y: m.at.y + ((p.y - m.at.y) * most) / d,
+					};
+		};
 		if (
 			(!how || how === "quick") &&
 			side < 0 &&
@@ -11153,9 +11176,10 @@ class Action {
 				const hit = beside(at, toHim, out(2.6));
 				const face = this.toward(hit, at);
 				this.closeOn(m, hit, tc - 300, face, carrier);
-				m.lunge("dive", tc + 250, face, beside(at, face, 1.2));
-				m.hold(tc + 250 + 700, "prone");
-				m.act("getUp", tc + 250 + 700 + GET_UP_MS);
+				const land = diveBy(tc + 250);
+				m.lunge("dive", land, face, reach(beside(at, face, 1.2)));
+				m.hold(land + 700, "prone");
+				m.act("getUp", land + 700 + GET_UP_MS);
 				this.done.add(m.pid);
 				return t + carrier.t - t1;
 			}
@@ -11173,9 +11197,10 @@ class Action {
 				const hit = beside(at, toHim, out(2.2));
 				const face = this.toward(hit, at);
 				this.closeOn(m, hit, tc + 60, face, carrier);
-				m.lunge("dive", tc + 520, face, beside(at, face, 0.2));
-				m.hold(tc + 520 + 600, "prone");
-				m.act("getUp", tc + 520 + 600 + GET_UP_MS);
+				const land = diveBy(tc + 520);
+				m.lunge("dive", land, face, reach(beside(at, face, 0.2)));
+				m.hold(land + 600, "prone");
+				m.act("getUp", land + 600 + GET_UP_MS);
 				this.done.add(m.pid);
 				return t + carrier.t - t1;
 			}
@@ -11208,18 +11233,21 @@ class Action {
 			const hit = beside(at, toHim, out(3.5));
 			const face = this.toward(hit, at);
 			this.closeOn(m, hit, tc - 100, face, carrier);
+			const land = diveBy(tc + 380);
 			m.lunge(
 				"dive",
-				tc + 380,
+				land,
 				face,
-				beside(
-					beside(at, face, 0.8),
-					ang + (side * Math.PI) / 2,
-					JUKE_OVER * (1 - into),
+				reach(
+					beside(
+						beside(at, face, 0.8),
+						ang + (side * Math.PI) / 2,
+						JUKE_OVER * (1 - into),
+					),
 				),
 			);
-			m.hold(tc + 380 + 700, "prone");
-			m.act("getUp", tc + 380 + 700 + GET_UP_MS);
+			m.hold(land + 700, "prone");
+			m.act("getUp", land + 700 + GET_UP_MS);
 		}
 		this.done.add(m.pid);
 		return t + carrier.t - t1;
@@ -13425,12 +13453,21 @@ class Action {
 			this.breakOn(picker, gotPt, gotAt, 60);
 		}
 		// (Up off his feet for it only from near enough it to get there in
-		// the leap - see PICK_LEAP_REACH.)
-		if (
-			leap &&
-			dist(picker.posAt(gotAt - LEAP_MS / 2), gotPt) > PICK_LEAP_REACH
-		) {
-			leap = false;
+		// the leap - see PICK_LEAP_REACH - off the pace he goes up at, on
+		// toward it: from a stand, or going away from it, no further than
+		// PICK_LEAP_STILL_FT, not flown back at it.)
+		if (leap) {
+			const t0 = gotAt - LEAP_MS / 2;
+			const from = picker.posAt(t0);
+			const l = legAt(picker, t0);
+			const v = GAITS.has(l.move) ? paceOn(l, from, gotPt) : 0;
+			const reach = Math.min(
+				PICK_LEAP_REACH,
+				PICK_LEAP_STILL_FT + (v * LEAP_MS) / 2000,
+			);
+			if (dist(from, gotPt) > reach) {
+				leap = false;
+			}
 		}
 		const ball = this.ball.at(-1);
 		const fly = ball?.kind === "fly" ? ball : undefined;
@@ -13485,7 +13522,36 @@ class Action {
 				t1: gotAt + CATCH_IN_MS,
 			});
 		} else {
-			picker.catchOn(gotAt, this.toward(picker.at, gotPt));
+			// (Stood waiting on it the wrong way round - pulled up going
+			// away from it: turned round to it as he waits, not spun round
+			// to it in a blink as it comes.)
+			const face = this.toward(picker.at, gotPt);
+			const l = picker.last;
+			const off = Math.atan2(
+				Math.sin(face - picker.yaw),
+				Math.cos(face - picker.yaw),
+			);
+			if (
+				l.move === "stand" &&
+				l.yaw !== undefined &&
+				!l.turn &&
+				l.from.x === l.to.x &&
+				l.from.y === l.to.y &&
+				l.t1 > l.t0 &&
+				Math.abs(off) > PICK_TURN_LEAST
+			) {
+				// (No quicker round than PICK_TURN_RATE: the rest of the way
+				// round as he takes it in.)
+				const most = ((l.t1 - l.t0) / 1000) * PICK_TURN_RATE;
+				const by = clamp(off, -most, most);
+				picker.turn(by);
+				picker.catchOn(gotAt, picker.yaw);
+				if (Math.abs(off - by) > 0.01) {
+					picker.turn(off - by);
+				}
+			} else {
+				picker.catchOn(gotAt, face);
+			}
 		}
 		if (fly && !leap && !dive) {
 			fly.to = { ...picker.at, z: CATCH_Z };
