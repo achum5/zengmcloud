@@ -45,7 +45,7 @@ import {
 	tucked,
 	type Move,
 } from "./poses.ts";
-import { SET } from "./pace.ts";
+import { carriedIn, carriedTo, SET } from "./pace.ts";
 import { sidelineOf } from "./sideline.ts";
 import {
 	alongRoute,
@@ -2224,15 +2224,21 @@ class Actor {
 		if (ms <= 0 || far <= 0) {
 			return;
 		}
-		const v = far / (ms / 1000);
+		// (Off the end of an act - a swat at the ball, say - stepped down out
+		// of it: not that act over again, from the start, every step. Off
+		// what it leaves him going at, if he came into it quicker - see
+		// pace.ts carriedTo - not its own pace.)
+		const act = moveKind(l.move) === "act";
+		const v =
+			(far / (ms / 1000)) *
+			(act
+				? carriedTo(carriedIn(this.part.legs, this.part.legs.length - 1))
+				: 1);
 		const d = Math.min(most, (v * v) / (2 * STOP_ACCEL));
 		if (d < 0.5) {
 			return;
 		}
 		const way = Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x);
-		// (Off the end of an act - a swat at the ball, say - stepped down out
-		// of it: not that act over again, from the start, every step.)
-		const act = moveKind(l.move) === "act";
 		const gaited = act || GAITS.has(l.move);
 		const T = (2 * d) / v;
 		const n = Math.max(1, Math.round((T * 1000) / STOP_STEP_MS));
@@ -3571,6 +3577,11 @@ const EDGE_ARC_STEPS = 5;
 // seconds, and no further than this, feet.)
 const SWAT_ON = 0.2;
 const SWAT_ON_MOST = 4;
+// (Breaking up a pass: carried on as far as slowing evenly through it, from
+// the pace he comes in at, down to a third of that takes him - see pace.ts
+// carriedTo - no further than this, feet.)
+const SWAT_CARRY = 1.5;
+const SWAT_CARRY_MOST = 8;
 // (Off the edge at a kick, slowed to this, ft/s, to go up for it.)
 const SWAT_IN_FPS = 11;
 // (No quicker about it than this, ms.)
@@ -3961,6 +3972,8 @@ const PURSUIT_LANE = 7;
 // bent round off the pile at the ball, if it is in the way, by as little of
 // these as (radians, all told) keeps him this far off it.)
 const EASE_OFF_FT = 12;
+// (A man slowing up after he is done: this far on, feet - see slowUp.)
+const SLOW_UP_FT = 2.5;
 const EASE_BENDS = [0.35, 0.7, 1.05, 1.4];
 const EASE_PAST_FT = 3.5;
 // (Easing off into an edge: turned along it over all of it, or if that
@@ -10442,12 +10455,24 @@ class Action {
 	// was going.
 	slowUp(m: Actor) {
 		const l = m.last;
+		// (Out of an act he came into quicker, off what it leaves him going
+		// at - see easeOff.)
+		if (
+			moveKind(l.move) === "act" &&
+			carriedIn(m.legs, m.legs.length - 1) > 1
+		) {
+			m.easeOff(SLOW_UP_FT);
+			return;
+		}
 		const ang =
 			l.from.x === l.to.x && l.from.y === l.to.y
 				? m.yaw
 				: Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x);
 		m.go(
-			{ x: m.at.x + Math.cos(ang) * 2.5, y: m.at.y + Math.sin(ang) * 2.5 },
+			{
+				x: m.at.x + Math.cos(ang) * SLOW_UP_FT,
+				y: m.at.y + Math.sin(ang) * SLOW_UP_FT,
+			},
 			m.t + 450,
 			"walk",
 		);
@@ -12565,7 +12590,15 @@ class Action {
 					0,
 					1,
 				);
-				const most = far > 0 ? Math.min(SWAT_ON_MOST, legPace(l) * SWAT_ON) : 0;
+				const most =
+					far > 0
+						? Math.min(
+								SWAT_CARRY_MOST,
+								(legPace(l) * Math.max(0, swatEnd - breakup.t)) /
+									1000 /
+									SWAT_CARRY,
+							)
+						: 0;
 				// (On the way he was going - or, that taking him through the
 				// man or the ball, veered off it a little, by them: not
 				// stopped dead in his tracks for it.)

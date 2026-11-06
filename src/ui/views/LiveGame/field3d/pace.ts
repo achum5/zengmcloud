@@ -118,6 +118,9 @@ export type Pace = {
 	// (Come into it quicker than it goes, and brought to a stop in it: see
 	// carriedOf.)
 	carry?: number;
+	// (Or, on into something slower after it, slowing evenly from it down
+	// to this share of its own pace by its end - see carriedTo.)
+	carryTo?: number;
 };
 const EVEN: Pace = { g: 0, early: 0, a: 0, top: 1, h: 0, stop: 0 };
 
@@ -131,18 +134,19 @@ const paceIn = (l: Leg) =>
 	l.t1 > l.t0
 		? Math.hypot(l.to.x - l.from.x, l.to.y - l.from.y) / ((l.t1 - l.t0) / 1000)
 		: 0;
-const carriedOf = (legs: Leg[], k: number): number => {
+// (How much quicker he comes into it than it goes, whatever comes after
+// it: brought to a stand in it, if nothing on the move does - see action.ts
+// easeOff.)
+export const carriedIn = (legs: Leg[], k: number): number => {
 	const l = legs[k]!;
 	const prev = legs[k - 1];
-	const next = legs[k + 1];
 	if (
 		!prev ||
 		!acts(l) ||
 		PULL_INTO.has(l.move) ||
 		moveKind(prev.move) !== "cycle" ||
 		!goes(prev) ||
-		!joined(prev, l) ||
-		(next && goes(next) && joined(l, next))
+		!joined(prev, l)
 	) {
 		return 1;
 	}
@@ -158,13 +162,36 @@ const carriedOf = (legs: Leg[], k: number): number => {
 	const own = paceIn(l);
 	return own > 0 ? Math.min(CARRY_MOST, Math.max(1, paceIn(prev) / own)) : 1;
 };
+// (What a carried act leaves him going at, as a share of its own pace:
+// slowed evenly through it from the pace he came into it at - none, if
+// that takes all of it, see carriedIn.)
+export const carriedTo = (carry: number): number => Math.max(0, 2 - carry);
+const carriedOf = (legs: Leg[], k: number): Pace | undefined => {
+	const l = legs[k]!;
+	const next = legs[k + 1];
+	const carry = carriedIn(legs, k);
+	if (carry <= 1) {
+		return undefined;
+	}
+	if (!next || !goes(next) || !joined(l, next)) {
+		return { ...EVEN, carry };
+	}
+	// (On into a slower stretch - stepping down out of it, see action.ts
+	// easeOff: slowed evenly down to what it leaves him going at, not
+	// brought to a stand and set off again. Not into a quicker one - out
+	// of a juke, say: at its own pace.)
+	const to = carriedTo(carry);
+	return to > 0 && paceIn(next) < paceIn(l)
+		? { ...EVEN, carry, carryTo: to }
+		: undefined;
+};
 
 export const paceOf = (legs: Leg[], k: number): Pace => {
 	const l = legs[k];
 	if (!l || !eases(l)) {
-		const carry = l ? carriedOf(legs, k) : 1;
-		if (carry > 1) {
-			return { ...EVEN, carry };
+		const carried = l ? carriedOf(legs, k) : undefined;
+		if (carried) {
+			return carried;
 		}
 		const stop = l && acts(l) ? stopOf(l, legs[k + 1], legs[k + 2]) : 0;
 		return stop > 0 ? { ...EVEN, h: stop / (l!.t1 - l!.t0), stop } : EVEN;
@@ -207,6 +234,10 @@ export const paceOf = (legs: Leg[], k: number): Pace => {
 const easedAlong = (l: Leg, t: number, p: Pace): number => {
 	if (p === EVEN) {
 		return along(l, t);
+	}
+	if (p.carry && p.carryTo !== undefined) {
+		const u = along(l, t);
+		return p.carry * u + ((p.carryTo - p.carry) * u * u) / 2;
 	}
 	if (p.carry) {
 		return 1 - (1 - along(l, t)) ** p.carry;
