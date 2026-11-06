@@ -4504,6 +4504,8 @@ const DRAW_DROP_FT = 2;
 const DRAW_LOOK_MS = [250, 450] as const;
 const DRAW_LB_FT = 5;
 const DRAW_LB_MS = 700;
+// (No quicker than this (ms) over the least time his drop takes him.)
+const DRAW_LB_SPARE_MS = 60;
 const DRAW_FAKE_FT = 4;
 const DRAW_HIT = 0.6;
 // (The handoff this far up the field of where the quarterback lined up,
@@ -17249,13 +17251,30 @@ class Action {
 			}
 			const read = across > 5 ? Math.min(s.d, FILL_SCRAPE_FT) : 0;
 			this.offSnap(m, READ_STEP_MS, READ_STEP_SPREAD_MS);
+			// (Back in his drop that much later than DRAW_LB_MS has it: over to
+			// fill that much later too.)
+			let late = 0;
 			if (draw) {
-				m.go(
-					this.w({ d: s.d + DRAW_LB_FT, a: s.a }),
-					snap + DRAW_LB_MS,
-					"back",
-					this.behind,
-				);
+				// (Back in it up to his pace and pulled up there - see stepTo
+				// - over as long as that takes him, if it is longer: not off
+				// it at a backpedal and stopped dead.)
+				const drop = this.w({ d: s.d + DRAW_LB_FT, a: s.a });
+				const per = 1 / (2 * RELEASE_ACCEL) + 1 / (2 * STOP_ACCEL);
+				const least =
+					m.t + 2 * Math.sqrt(per * DRAW_LB_FT) * 1000 + DRAW_LB_SPARE_MS;
+				if (
+					m.stepTo(
+						drop,
+						Math.max(snap + DRAW_LB_MS, least),
+						BACK_MOST,
+						"back",
+						this.behind,
+					)
+				) {
+					late = Math.max(0, least - (snap + DRAW_LB_MS));
+				} else {
+					m.go(drop, snap + DRAW_LB_MS, "back", this.behind);
+				}
 			} else {
 				m.go(
 					this.w({ d: Math.max(s.d - 1.5, read), a: s.a + side }),
@@ -17264,7 +17283,7 @@ class Action {
 					this.behind,
 				);
 			}
-			const by = filled + r() * 250;
+			const by = filled + late + r() * 250;
 			// (Not far to go, across: set reading it a moment longer, and
 			// over at a pace - not walked into the hole. Set for more than a
 			// blink of it, between his read step and going.)
