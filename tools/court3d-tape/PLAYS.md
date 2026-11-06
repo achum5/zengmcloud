@@ -178,6 +178,20 @@ in play the same:
   following his man had him and cut short of it. He gets there (`mark`'s
   fetch), and where he still can't, the ball carries on to him no faster
   than a ball carries (`noSnatch`).
+- a reverse layup's run under the rim to the far side done in the last
+  tenth of a second before he left the floor - ten feet at 30 ft/s, the
+  tape's sharpest lurches, 18 of them in three games: the far side came
+  down in 1.2 ft of room, so in the air he could carry on at 3 ft/s at the
+  most. Room to come down (`REVERSE_ROOM`), his pace through the air
+  (`REVERSE_AIR`), and a reverse only from where the far side is in his
+  last strides' reach (`REVERSE_REACH`): at 12-15 ft/s at the most now, 11
+  reverses in 167 layups. Its reshuffled games turned up: a ball up off the
+  floor into the hands of a man nine feet from it - set off after it from
+  where following his man had him, his run was cut short for what he did
+  next (what he does next waits on him now, and the ball waits on the floor
+  for him: `pickUpWhereItIs`); and a hand up at a jumper square in front of
+  him from the camera's side, from a contest wallUp hadn't put in itself
+  (`contestsInSight` puts every one a step to the side).
 - his man giving ground step for step with a man backing him down, from
   when the back-down really starts - and whoever of theirs is on him, if his
   own man isn't (`backDown`). Its reshuffled games turned up two more, fixed

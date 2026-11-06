@@ -814,6 +814,14 @@ const REVERSE_OUT = 2.4;
 // ...and the ball, in the hand up and back at the rim, no further behind the
 // middle of it than this as it leaves his hand (feet): clear of the glass.
 const REVERSE_BALL_BEHIND = 0.4;
+// ...and how far, at the most, the far side of the rim is from where he
+// gathers it (feet) - under the rim in his last two strides and the air,
+// never across the lane in a blink: going on in the air at this pace at
+// the most (feet a second), and with this much room the far side to come
+// down in, out from under it the way he goes (feet).
+const REVERSE_REACH = 8;
+const REVERSE_AIR = 12;
+const REVERSE_ROOM = 8;
 // A man getting back out (to box out, say) never goes through a man
 // nearer than this (feet) on the way.
 const RUN_THROUGH = 1.5;
@@ -848,6 +856,9 @@ const POST_FINISH_OUT = 3.4;
 const WIDE_OF = 3;
 // How far out in front of his feet a man bent to the floor has his hands.
 const PICKUP_REACH = releaseAt("pickup", 0.65).f;
+// A ball on the floor comes up into his hands only from this near him
+// (feet): his reach down to it (see pickUpWhereItIs).
+const PICK_UP_FROM = 2.5;
 // How far through a pickup his hands are down on the ball, and it is his
 // (see the pickup in poses.ts).
 const PICKUP_TAKE = 0.58;
@@ -12482,6 +12493,11 @@ class Director {
 			// at it.
 			const depth = Math.abs(P1.x - (rim.x + dir * RIM_INSET));
 			const across = Math.abs(P1.y - rim.y);
+			const under = Math.sign(P1.y - rim.y) || 1;
+			const reverseTo = clampPt({
+				x: rim.x - dir * FINISH_FRONT,
+				y: rim.y - under * REVERSE_OUT,
+			});
 			const reverse =
 				close &&
 				!tip &&
@@ -12493,12 +12509,9 @@ class Director {
 				depth < 8 &&
 				across >= 2 &&
 				across <= 11 &&
-				hash01(shooter, gather + 3) < REVERSE_SHARE;
-			const under = Math.sign(P1.y - rim.y) || 1;
-			const far = clampPt({
-				x: rim.x - dir * FINISH_FRONT,
-				y: rim.y - under * REVERSE_OUT,
-			});
+				hash01(shooter, gather + 3) < REVERSE_SHARE &&
+				dist(P1, reverseTo) <= REVERSE_REACH;
+			const far = reverseTo;
 			const going = unitVec(P1, far);
 			// (His left, going that way, and whether the rim is on it.)
 			const offLeft = (rim.x - far.x) * going.y - (rim.y - far.y) * going.x > 0;
@@ -12732,9 +12745,11 @@ class Director {
 						: reverse
 							? going
 							: { x: toRim.x / len, y: toRim.y / len };
-				const room = reverse ? 1.2 : Math.max(0, dist(S, rim) - LAND_IN);
+				const room = reverse
+					? REVERSE_ROOM
+					: Math.max(0, dist(S, rim) - LAND_IN);
 				const v = Math.min(
-					floater ? FLOAT_AIR : LAYUP_AIR,
+					floater ? FLOAT_AIR : reverse ? REVERSE_AIR : LAYUP_AIR,
 					rise / up,
 					// (Whatever is left of the room, coming down and pulling up.)
 					LAND_BRAKE *
@@ -21781,8 +21796,15 @@ class Director {
 				const forIt = inWay.every(
 					(a) => FOR_IT.has(a.anim) && t1 <= a.t0 + (a.t1 - a.t0) * 0.5,
 				);
-				if (t1 <= (next?.t0 ?? Infinity) && (fetch || forIt)) {
+				// (Off to pick it up, what he does next waits on him - as long
+				// as there is still time for it.)
+				const late =
+					fetch && next !== undefined && t1 > next.t0 && t1 < next.t1 - 300;
+				if ((t1 <= (next?.t0 ?? Infinity) || late) && (fetch || forIt)) {
 					m.t1 = t1;
+					if (late) {
+						next.t0 = t1;
+					}
 					return true;
 				}
 				// Too late even so to be there for the ball: he breaks off
@@ -26291,6 +26313,113 @@ class Director {
 		}
 	}
 
+	// EVERY CONTESTED JUMPER IN SIGHT. Whoever has a hand up at a jump shot -
+	// his own man up on him, the help in late, a man going by - never
+	// square in front of him from the camera's side (across the floor from
+	// the far sideline), hiding the whole shot: a step to the side of him
+	// (see wallUp, which does the same for the hands up it puts in itself).
+	private contestsInSight() {
+		const jumpers = new Map<number, { t0: number; t1: number }[]>();
+		for (const tr of this.tracks.values()) {
+			for (const a of tr.acts) {
+				if (a.anim === "shoot" || a.anim === "fade") {
+					(jumpers.get(tr.pid) ?? jumpers.set(tr.pid, []).get(tr.pid)!).push(a);
+				}
+			}
+		}
+		for (const tr of this.tracks.values()) {
+			for (const a of tr.acts) {
+				if (a.anim !== "contest") {
+					continue;
+				}
+				const mid = (a.t0 + a.t1) / 2;
+				const shooter = [...jumpers].find(
+					([pid, acts]) =>
+						this.teamOf(pid) !== tr.team &&
+						acts.some((x) => x.t0 <= mid && x.t1 >= mid),
+				)?.[0];
+				if (shooter === undefined) {
+					continue;
+				}
+				const P = this.posAt(tr.pid, mid, false, true);
+				const n = this.nudgeAt(tr, mid);
+				const D = { x: P.x + n.x, y: P.y + n.y };
+				const S0 = this.posAt(shooter, mid, false, true);
+				const sn = this.nudgeAt(this.track(shooter)!, mid);
+				const S = { x: S0.x + sn.x, y: S0.y + sn.y };
+				const off = D.x - S.x;
+				if (D.y <= S.y || Math.abs(off) >= WALL_SIGHT) {
+					continue;
+				}
+				const side = off !== 0 ? Math.sign(off) : S.x <= COURT_W / 2 ? 1 : -1;
+				(tr.nudges ??= []).push({
+					t0: a.t0 - WALL_SIGHT_RAMP,
+					t1: a.t1 + WALL_SIGHT_RAMP,
+					dx: side * WALL_SIGHT - off,
+					dy: 0,
+					ramp: WALL_SIGHT_RAMP,
+				});
+				tr.nudges.sort((x, y) => x.t0 - y.t0);
+			}
+		}
+	}
+
+	// A BALL ON THE FLOOR PICKED UP WHERE IT IS. Off the floor into a man's
+	// hands only once he is there to take it - set off from farther out
+	// than its pick-up was laid out from, he gets to it a beat later, and
+	// it waits there for him (his bend down for it with it) - never up off
+	// the floor into his hands from feet away. (Taken from where each man
+	// really is, once everybody's runs are laid out.)
+	private pickUpWhereItIs() {
+		const ball = this.ball;
+		for (let i = 1; i < ball.length; i++) {
+			const h = ball[i]!;
+			const prev = ball[i - 1]!;
+			if (
+				h.kind !== "hold" ||
+				(prev.kind !== "rest" && prev.kind !== "bounce")
+			) {
+				continue;
+			}
+			const tr = this.track(h.pid);
+			if (!tr) {
+				continue;
+			}
+			const spot = this.ballSpotOf(prev);
+			const at = (t: number) => {
+				const P = this.posAt(h.pid, t, false, true);
+				const n = this.nudgeAt(tr, t);
+				return dist(spot, { x: P.x + n.x, y: P.y + n.y });
+			};
+			if (at(h.t0) <= PICK_UP_FROM) {
+				continue;
+			}
+			const until = (ball[i + 1]?.t0 ?? Infinity) - 250;
+			let got: number | undefined;
+			for (let t = h.t0 + 20; t <= Math.min(until, h.t0 + 2500); t += 20) {
+				if (at(t) <= PICK_UP_FROM) {
+					got = t;
+					break;
+				}
+			}
+			if (got === undefined) {
+				continue;
+			}
+			const shift = got - h.t0;
+			for (const a of tr.acts) {
+				if (
+					(a.anim === "pickup" || a.anim === "scoop") &&
+					a.t0 <= h.t0 + 50 &&
+					a.t1 >= h.t0 - 50
+				) {
+					a.t0 += shift;
+					a.t1 += shift;
+				}
+			}
+			h.t0 = got;
+		}
+	}
+
 	// A LOOSE BALL TAKEN IN, NOT SNATCHED ACROSS THE FLOOR. A ball coming
 	// off the rim (or loose anywhere) into a man's hands flies there no
 	// faster than a ball carries: where he couldn't get to it in time - set
@@ -27235,6 +27364,8 @@ class Director {
 		this.keepOff(fast);
 		this.backOutFacing();
 		this.noSnatch();
+		this.pickUpWhereItIs();
+		this.contestsInSight();
 		// A look round the building runs on to the picture's next cut when
 		// that comes soon after (the substitutions over a timeout, the walk
 		// out for the next period), so the game picks up at a cut.

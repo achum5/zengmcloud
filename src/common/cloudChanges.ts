@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 187,
+		date: "2026-11-06",
+		text: "3D games: a reverse layup carries under the rim to the far side at a believable pace instead of jumping across in the last instant before he leaves the floor. A loose ball on the floor is picked up when the man gets to it, never pulled up into his hands from feet away, and a hand up at a jump shot is always a step to the side, so the shot stays in sight.",
+	},
+	{
 		n: 186,
 		date: "2026-11-06",
 		text: "3D games: a man backing his defender down in the post has the defender give ground step for step. A heave at the buzzer after the ball goes out of bounds goes up before the horn - the clock no longer starts when the ball is handed to the man taking it out. And a run of small fixes: a spot-up shooter on the wing waits turned to the rim, nobody runs back through a shooter or a man who just got the ball, and a teammate coming to help up a man who took a charge doesn't walk into the man who ran into him.",
