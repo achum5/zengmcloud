@@ -4027,6 +4027,9 @@ const TRAIL_SPREAD_MS = 500;
 const TRAIL_JOG_FPS = [8, 10] as const;
 const TRAIL_LOOK_MS = [150, 450] as const;
 const TRAIL_JOG_LEAST_FT = 5;
+// (There already, with longer than this (ms) to go till the whistle: with
+// it all the same, not stood there through it.)
+const TRAIL_IDLE_MS = 1500;
 const TRAIL_KEEP_FT = 12;
 // (The others out on routes once it is caught - see withIt: off after it
 // so long after they see it (soonest, latest), ms, at a jog (ft/s), kept
@@ -14580,15 +14583,7 @@ class Action {
 			into +
 			QB_HIT_PEEL *
 				(Math.sin(into + QB_HIT_PEEL) <= Math.sin(into - QB_HIT_PEEL) ? 1 : -1);
-		m.go(
-			{
-				x: hit.x + Math.cos(peel) * QB_HIT_THROUGH_FT,
-				y: hit.y + Math.sin(peel) * QB_HIT_THROUGH_FT,
-			},
-			hitT + QB_HIT_THROUGH_MS,
-			undefined,
-			(into + peel) / 2,
-		);
+		this.hitThrough(m, into, peel, hitT);
 		m.hold(hitT + QB_HIT_STAND_MS, "stand", this.toward(m.at, down));
 		if (hitT - shed >= RUSH_MOVE_AFTER + QB_HIT_SHOVE_MS[0]) {
 			this.rushMove(m, qb, hitT);
@@ -17433,6 +17428,29 @@ class Action {
 		return m;
 	}
 
+	// On through the quarterback he hits at `hitT`, `way` - round off him
+	// to the side, `peel`, as he goes: QB_HIT_THROUGH_FT over
+	// QB_HIT_THROUGH_MS, or - hitting him at a run - eased off the pace he
+	// hits him at to a stand, no harder than QB_HIT_STOP_ACCEL, over the
+	// ground that takes: not stopped in a stride by him.
+	private hitThrough(m: Actor, way: number, peel: number, hitT: number) {
+		const v = legPace(m.last);
+		const ms = Math.max(QB_HIT_THROUGH_MS, (v / QB_HIT_STOP_ACCEL) * 1000);
+		const ft = Math.max(QB_HIT_THROUGH_FT, (v * ms) / 2000);
+		const face = (way + peel) / 2;
+		const n = ft > QB_HIT_THROUGH_FT ? QB_HIT_THROUGH_STEPS : 1;
+		let at = m.at;
+		for (let k = 1; k <= n; k++) {
+			const u0 = (k - 1) / n;
+			const u1 = k / n;
+			const s = ft * (u1 * (2 - u1) - u0 * (2 - u0));
+			const dir =
+				n === 1 ? peel : way + (peel - way) * Math.min(1, (2 * k - 1) / n);
+			at = { x: at.x + Math.cos(dir) * s, y: at.y + Math.sin(dir) * s };
+			m.go(at, hitT + ms * u1, undefined, face);
+		}
+	}
+
 	// Him at the quarterback: off the snap a step up the field and in -
 	// squeezed down, reading it - then at him as it goes, into him just
 	// after it is gone, and on through; the quarterback put down and up
@@ -17472,15 +17490,7 @@ class Action {
 			way +
 			QB_HIT_PEEL *
 				(Math.sin(way + QB_HIT_PEEL) <= Math.sin(way - QB_HIT_PEEL) ? 1 : -1);
-		m.go(
-			{
-				x: hit.x + Math.cos(peel) * QB_HIT_THROUGH_FT,
-				y: hit.y + Math.sin(peel) * QB_HIT_THROUGH_FT,
-			},
-			hitT + QB_HIT_THROUGH_MS,
-			undefined,
-			(way + peel) / 2,
-		);
+		this.hitThrough(m, way, peel, hitT);
 		m.arms("shove", hitT - QB_HIT_SHOVE_MS[0], hitT + QB_HIT_SHOVE_MS[1]);
 		// (Down on from where he was going, too - not stopped dead in it.)
 		const ql = legAt(qb, hitT);
@@ -19338,7 +19348,7 @@ class Action {
 		);
 		const far = dist(m.at, to);
 		if (
-			far > TRAIL_JOG_LEAST_FT &&
+			(far > TRAIL_JOG_LEAST_FT || by - m.t > TRAIL_IDLE_MS) &&
 			(far / Math.max(0.001, by - m.t)) * 1000 < WALK_MOST_FPS
 		) {
 			// (Slower than a walk gets him there by the whistle - or, a little
@@ -23895,6 +23905,10 @@ const QB_HIT_PACE = 0.85;
 const QB_HIT_ON = 1.9;
 const QB_HIT_THROUGH_FT = 1.6;
 const QB_HIT_THROUGH_MS = 260;
+// (Into him quicker than that takes him: eased off to a stand no harder
+// than this, ft/s/s, in this many steps - see hitThrough.)
+const QB_HIT_STOP_ACCEL = 60;
+const QB_HIT_THROUGH_STEPS = 5;
 // (On through past him off to one side, radians off straight at him - the
 // far side of him from the cameras - not on through onto his legs as he
 // lies.)
