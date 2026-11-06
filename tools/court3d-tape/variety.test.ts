@@ -311,6 +311,24 @@ const reboundParts = (
 	const rimAt = { x: rimX(shotTeam as 0 | 1), y: 25 };
 	const d = dist(R, rimAt);
 	const where = `${d < 7 ? "under it" : d < 13 ? "in the lane" : d < 20 ? "out a way" : "long"}, ${Math.abs(R.y - 25) < 6 ? "middle" : R.y < 25 ? "left" : "right"}`;
+	// And how far out, by what it came off: a shot at the rim, a jumper,
+	// a three.
+	const shot = tl.ball
+		.slice(0, k)
+		.findLast(
+			(z) =>
+				z.kind === "fly" &&
+				"pid" in z.from &&
+				z.from.pid >= 0 &&
+				!("pid" in z.to) &&
+				tl.tracks.get(z.from.pid)?.team === shotTeam,
+		);
+	const S =
+		shot?.kind === "fly" && "pid" in shot.from
+			? evalPlayer(tl, shot.from.pid, shot.t0)
+			: undefined;
+	const sd = S ? dist(S, rimAt) : undefined;
+	const off = `${sd === undefined ? "?" : sd < 8 ? "off one at the rim" : sd < 22 ? "off a jumper" : "off a three"}, ${d < 7 ? "under it" : d < 13 ? "in the lane" : d < 20 ? "out a way" : "long"}`;
 	// Traffic, and box-outs.
 	let near = 0;
 	let boxed = false;
@@ -372,6 +390,7 @@ const reboundParts = (
 			who: pos || "?",
 			how,
 			where,
+			off,
 			traffic,
 			after: `${after}, ${pace}`,
 		},
