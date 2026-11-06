@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 184,
+		date: "2026-11-06",
+		text: "3D games: a missed jumper misses like a real one - off the front of the rim, long off the back, off the side, in and out, now and then off the glass or an air ball - by how good a shooter he is, how far out, and where the rebound goes. The ball off a dunk drops through the net away from the dunker instead of bouncing up through his legs. And a high flier puts on a show at the rim about as often as his ratings say, a great shooter pulls up from way out now and then, instead of either depending on a run of luck.",
+	},
+	{
 		n: 183,
 		date: "2026-11-06",
 		text: "3D games: a man sent in after a rebound coming off the rim gets there to take it, and a loose ball never flies the last few feet into a man's hands in a blink.",

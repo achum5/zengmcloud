@@ -117,12 +117,12 @@ threes at real speed):
 | Whole combination                        | 116 of 116 different |                                                                                                                                          |
 | Same man, same setup + spot + form again |              8 of 72 |                                                                                                                                          |
 
-Next, in order: how it misses (aimed short / long / off the side / air /
-glass by his shooting, distance and where the rebound goes - built and
-measured, not pushed: every rebound landing somewhere new reshuffles the
-test games, and seven older glitches show up in the reshuffled ones - see
-"Blocking" below);
-his footwork into it (measure first); how he got it (the pass, his way to
+How it misses (aimed short / long / off the side / air / glass by his
+shooting, distance and where the rebound goes) is in, 2026-11-06, with the
+ball off a dunk going down away from the dunker - once the glitches the
+games it reshuffles turned up were fixed (see "Blocking" below).
+
+Next, in order: his footwork into it (measure first); how he got it (the pass, his way to
 the spot, his catch); the defense (closeout kinds, the man's reaction
 after); everyone after it.
 
@@ -142,13 +142,6 @@ Fixes made for those, held back - each turns up a few more in the games it
 reshuffles in turn (any change to how a play is laid out moves everything
 after it), so each waits until its own fallout is fixed:
 
-- the ball off a dunk goes down through the net away from where the dunker
-  comes down, not bouncing up through his legs (the slam's push off the
-  rim, away from him). Tried alone (2026-11-05): the games it reshuffles
-  fail 5 checks - the ball jumping 2.9 ft between frames, the camera after
-  the final buzzer, a fight for position with nobody there, a contested
-  jumper out of sight (four fixed at the root, below), and one pull-up too
-  many with nobody between him and the rim (5 in 222, 4 allowed)
 - his man gives ground step for step with a man backing him down, from when
   the back-down really starts - and whoever of theirs is on him, if his own
   man isn't (backDown)
@@ -186,6 +179,10 @@ in play the same:
   following his man had him and cut short of it. He gets there (`mark`'s
   fetch), and where he still can't, the ball carries on to him no faster
   than a ball carries (`noSnatch`).
+- a high flier's dunks plain eight in ten in one game, and a great shooter
+  never once pulling up from way out in another: each was a coin flip, and
+  a reshuffle could run them all one way. Each man's goes at them come in
+  turn now (`turnOf`), as often in a game as his ratings have him do it.
 
 Checks: the existing tests (feet behind the line, a contested jumper stays
 in sight, the ball never jumps, real speed with no darts) on every change.

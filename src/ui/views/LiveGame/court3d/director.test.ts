@@ -3536,7 +3536,8 @@ describe("3D director", () => {
 		const shots: string[] = [];
 		const slow: string[] = [];
 		const close: string[] = [];
-		for (const seed of ["a", "b", "c", "d"]) {
+		// (Over six games: a handoff into a jumper only now and then.)
+		for (const seed of ["a", "b", "c", "d", "e", "f"]) {
 			const { tl } = compile(seed, 150);
 			tl.ball.forEach((s, i) => {
 				if (

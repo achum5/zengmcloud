@@ -1578,9 +1578,10 @@ const MISS_STYLE: Record<MissStyle, number> = {
 	glass: 0.02,
 };
 const MISS_TOWARD = 1.7;
-// Off till the glitches the test games it reshuffles turn up are fixed (see
-// tools/court3d-tape/PLAYS.md, "Blocking").
-const MISS_STYLES = false;
+// (A switch, to see the old misses again: on since 2026-11-06, once the
+// glitches the test games it reshuffled turned up were fixed - see
+// tools/court3d-tape/PLAYS.md, "Blocking".)
+const MISS_STYLES = true;
 // Pushing it into somebody else's turnover, where he gives it up: this far
 // from the baseline (feet) - the top of the floor, at the arc.
 const BREAK_GIVE_UP_DEPTH = 27;
@@ -2127,6 +2128,17 @@ const hash01 = (a: number, b: number): number => {
 	return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 };
 
+// A man's `turn`-th go at something he does now and then (0 to 1): each a
+// golden-ratio step on from where his own start is, so that over a game
+// he does it as often as his ratings have him do it - a high flier's
+// dunks a show about as often as he puts one on, a great shooter pulling
+// up from way out now and then - not as often as a run of luck has it, a
+// flier dunking plain five times running, or a shooter never once.
+const turnOf = (key: number, turn: number): number => {
+	const x = hash01(key, 4517) + turn * 0.6180339887498949;
+	return x - Math.floor(x);
+};
+
 // A shooter's own stroke: his jumper takes this much of the usual time,
 // from the quickest to the slowest.
 const FORM_LO = 0.93;
@@ -2346,6 +2358,10 @@ class Director {
 	private readonly skills = new Map<number, string[]>();
 	// Each man's ratings, where the game has them (see ratings.ts).
 	private rated = new Map<number, CourtRatings>();
+	// How many dunks each man has had so far, and his chances to pull up from
+	// way out (by when they came) - see turnOf.
+	private dunkTurns = new Map<number, number>();
+	private deepTurns = new Map<number, Map<number, number>>();
 	private readonly injuries = new Map<
 		number,
 		{ type: string; games: number }
@@ -3439,7 +3455,13 @@ class Director {
 			return 0;
 		}
 		const odds = (share * DEEP_MOST * (s - DEEP_FROM)) / (1 - DEEP_FROM);
-		return hash01(pid * 3 + 7, Math.round(t)) < odds
+		// (The same chance asked about again is the same chance.)
+		const turns = this.deepTurns.get(pid) ?? new Map<number, number>();
+		this.deepTurns.set(pid, turns);
+		const at = Math.round(t);
+		const turn = turns.get(at) ?? turns.size;
+		turns.set(at, turn);
+		return turnOf(pid * 3 + 7, turn) < odds
 			? DEEP_FT[0] +
 					(DEEP_FT[1] - DEEP_FT[0]) * hash01(pid * 3 + 8, Math.round(t))
 			: 0;
@@ -12032,8 +12054,13 @@ class Director {
 			// A made dunk hangs on the rim; one that is stuffed or rattles out
 			// comes straight back down.
 			const hang = plan.kind === "make";
-			// (On a man: one hand, or up over his head.)
-			const own = this.dunkFor(shooter, this.rng());
+			// (On a man: one hand, or up over his head.) His own ways of
+			// going up, each in its turn (see turnOf) - the draw it was
+			// still made, so all that comes after plays as it did.
+			this.rng();
+			const turn = this.dunkTurns.get(shooter) ?? 0;
+			this.dunkTurns.set(shooter, turn + 1);
+			const own = this.dunkFor(shooter, turnOf(shooter * 5 + 3, turn));
 			const anim: AnimName =
 				plan.finish === "poster" && own === "dunk" ? "dunk1" : own;
 			// He goes up in front of the rim, on the side he comes from, close
@@ -16407,10 +16434,11 @@ class Director {
 			}
 			// Out of the net and down to the floor, a bounce, and taken out
 			// (see inboundAfterMake). Slammed, it goes down through the net
-			// hard.
-			const slam = shot.dunk
-				? playShot(team, top, { x: -dir * 1.2, y: 0, z: -15 })
-				: undefined;
+			// hard - away from where he comes down, not onto him, his own
+			// slam bouncing up through his legs.
+			const away = dist(S, rim) > 0.3 ? unitVec(S, rim) : { x: dir, y: 0 };
+			const slamV = { x: away.x * 1.2, y: away.y * 1.2, z: -15 };
+			const slam = shot.dunk ? playShot(team, top, slamV) : undefined;
 			if (play) {
 				this.dropThrough(play.t0, play.found.play, settle);
 			} else if (slam?.made) {
@@ -16419,7 +16447,7 @@ class Director {
 					t0,
 					t1: t0 + (slam.pts.length / 3 - 1) * SAMPLE_MS,
 					pts: slam.pts,
-					v0: { x: -dir * 1.2, y: 0, z: -15 },
+					v0: slamV,
 					roll0: 0,
 					spin: 0,
 				});
