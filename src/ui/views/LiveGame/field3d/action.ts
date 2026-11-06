@@ -3982,6 +3982,9 @@ const FILL_PACE = 0.7;
 // no less than this long, ms.)
 const FILL_LEAST_FPS = 9;
 const FILL_SET_LEAST = 150;
+// (Over to fill from well across, no nearer the line than this, feet: run
+// over behind the men up front and the blocks on them, not through them.)
+const FILL_SCRAPE_FT = 6;
 // (Nor pulled up on into a block - a man in one this near (feet) where he
 // would pull up, from when he is to be there to this long after (ms),
 // looked at every FILL_ROOM_EVERY_MS: pulled up into the spot instead.)
@@ -17219,6 +17222,17 @@ class Action {
 		const filled = snap + FILL_MS + (draw ? DRAW_LB_MS : 0);
 		for (const m of backers) {
 			const s = this.of(m.at);
+			const fill = {
+				d: Math.max(3, s.d - (drive > 1 ? 4 : 7)),
+				a: holeA + (s.a - holeA) * 0.4,
+			};
+			const across = Math.abs(fill.a - s.a);
+			// (Over to it behind the line - see FILL_SCRAPE_FT - not along it:
+			// nor his read step up into it, if he is in nearer than that.)
+			if (across > 5) {
+				fill.d = Math.max(fill.d, FILL_SCRAPE_FT);
+			}
+			const read = across > 5 ? Math.min(s.d, FILL_SCRAPE_FT) : 0;
 			this.offSnap(m, READ_STEP_MS, READ_STEP_SPREAD_MS);
 			if (draw) {
 				m.go(
@@ -17229,17 +17243,12 @@ class Action {
 				);
 			} else {
 				m.go(
-					this.w({ d: s.d - 1.5, a: s.a + side }),
+					this.w({ d: Math.max(s.d - 1.5, read), a: s.a + side }),
 					snap + 450,
 					"slide",
 					this.behind,
 				);
 			}
-			const fill = {
-				d: Math.max(3, s.d - (drive > 1 ? 4 : 7)),
-				a: holeA + (s.a - holeA) * 0.4,
-			};
-			const across = Math.abs(fill.a - s.a);
 			const by = filled + r() * 250;
 			// (Not far to go, across: set reading it a moment longer, and
 			// over at a pace - not walked into the hole. Set for more than a
