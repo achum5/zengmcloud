@@ -4088,6 +4088,7 @@ const SNAPPER_OFF_MS = 40;
 // a step or two up into him, his arms out into him - not a run on the spot.
 const FIRE_FT = 4;
 const FIRE_HELD_MS = 250;
+const FIRE_LEAST_HELD_MS = 100;
 const fireOff = (m: Actor, to: Pt): Move =>
 	dist(m.at, to) < FIRE_FT ? "engage" : "run";
 // Locked up on a run: shoved one way and then the other, every this long
@@ -18681,7 +18682,18 @@ class Action {
 			hands,
 			t: soonest,
 		} = this.fireAim(m, at, by, pace);
-		const t = Math.min(soonest, Math.max(by, until - FIRE_HELD_MS - S));
+		let t = Math.min(soonest, Math.max(by, until - FIRE_HELD_MS - S));
+		// (On him a while before the end of it, but no sooner than he can be
+		// gathered into him at all, at the most he has - see hitMs - nor
+		// later than FIRE_LEAST_HELD_MS before it: not run into him flat
+		// out to be there in time.)
+		if (t < soonest) {
+			const quick = m.t + hitMs(dist(m.at, hands(t)), m.top * FLAT_OUT);
+			t = Math.min(
+				soonest,
+				Math.max(t, Math.min(quick, until - FIRE_LEAST_HELD_MS - S)),
+			);
+		}
 		const u = way(t);
 		m.hitInto(
 			hands(t),
