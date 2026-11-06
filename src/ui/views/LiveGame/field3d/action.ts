@@ -533,14 +533,13 @@ const plantedFor = (
 	const on = (to.x - at.x) * cos + (to.y - at.y) * sin;
 	// (Well off to the side of it, near square to the way he goes: on past
 	// it as far as PLANT_PAST of that, planting - round a little more after
-	// - not hardly slowed for it at all, and round at a crawl.)
+	// - not hardly slowed for it at all, and round at a crawl. The nearer
+	// square, the further: all the way down for it, square to it, as he is
+	// for one behind him - not planted a step or two, and round from most
+	// of his pace to a crawl in a stride.)
+	const off = Math.abs((to.y - at.y) * cos - (to.x - at.x) * sin);
 	const ahead =
-		on > 0
-			? Math.max(
-					on,
-					Math.abs((to.y - at.y) * cos - (to.x - at.x) * sin) * PLANT_PAST,
-				)
-			: on;
+		on > 0 ? Math.max(on, ((off * Math.hypot(on, off)) / on) * PLANT_PAST) : on;
 	const round = (p: Pt) => angleAt({ x: p.x - cos, y: p.y - sin }, p, to);
 	let want = Math.min(most, down ?? v * cutKeep(round(at)));
 	let ve = plantedTo(v, want, ahead, accel);
@@ -2690,6 +2689,9 @@ class Actor {
 			return false;
 		}
 		const wayOf = (x: Leg) => Math.atan2(x.to.y - x.from.y, x.to.x - x.from.x);
+		// (Back no further than he was still getting up to speed: slowed
+		// from the pace he got up to - not from the slower one he began the
+		// run at, too slow to have him there early at all.)
 		let j = legs.length - 1;
 		while (j > 0) {
 			const p = legs[j - 1]!;
@@ -2698,7 +2700,8 @@ class Actor {
 				p.t0 < from ||
 				!okLeg(p) ||
 				p.t1 !== n.t0 ||
-				Math.abs(angleOff(wayOf(n) - wayOf(p))) > SLOW_ALONG_TURN
+				Math.abs(angleOff(wayOf(n) - wayOf(p))) > SLOW_ALONG_TURN ||
+				legPace(p) < legPace(n) - STRETCH_SLACK
 			) {
 				break;
 			}
