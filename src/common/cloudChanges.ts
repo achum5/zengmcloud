@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 195,
+		date: "2026-11-06",
+		text: "Live gamecast: the five on the court for each team are listed point guard to center, the way the depth chart lines them up.",
+	},
+	{
 		n: 194,
 		date: "2026-11-06",
 		text: "Live gamecast: the players on the court beside the game no longer show skill badges, so their names show in full.",

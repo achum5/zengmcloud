@@ -694,11 +694,29 @@ export const Linescore = ({ boxScore }: { boxScore: any }) => {
 	);
 };
 
+// Point guard (0) to center (4), as the roster's depth chart lines them up
+// (see posValue in the worker's pos.basketball.ts, which names them).
+const POS_ORDER: Record<string, number> = {
+	PG: 0,
+	G: 0.5,
+	SG: 1,
+	GF: 1.5,
+	SF: 2,
+	F: 2.5,
+	PF: 3,
+	FC: 3.5,
+	C: 4,
+};
+
+// The five on the floor, 1 to 5: point guard down to center.
 const onFloor = (t: any): any[] => {
 	const players: any[] = t.players ?? [];
 	const on = players.filter((p) => p.inGame);
 	// (Before the tip: the starters, who are listed first.)
-	return on.length > 0 ? on : players.slice(0, 5);
+	const five = on.length > 0 ? on : players.slice(0, 5);
+	return [...five].sort(
+		(a, b) => (POS_ORDER[a.pos] ?? 2) - (POS_ORDER[b.pos] ?? 2),
+	);
 };
 
 export const OnCourt = ({ boxScore }: { boxScore: any }) => (
