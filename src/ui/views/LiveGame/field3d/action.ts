@@ -1009,6 +1009,23 @@ class Actor {
 					return false;
 				}
 			}
+			// (Pinned part of the way along it - the ball put in his hands
+			// there, say - and no room after that to slow to a pace he can
+			// take it round at, however hard: not round it at that pace off
+			// the pace he came in at in a stride - planted for it, on past
+			// it, instead: see plantFor.)
+			const most = Math.sqrt(BEND_LAT * R);
+			let all = 0;
+			for (let q = j; q < legs.length; q++) {
+				all += dist(legs[q]!.from, legs[q]!.to);
+			}
+			if (
+				most < v * BEND_SLOW &&
+				since < all - 1e-6 &&
+				since - back < (v * v - most * most) / (2 * CUT_ACCEL * STOP_HARD)
+			) {
+				return false;
+			}
 		}
 		legs.splice(k + 1);
 		lk.to = {
