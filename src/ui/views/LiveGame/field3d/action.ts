@@ -4032,6 +4032,10 @@ const PULL_UP_FT = 3.4;
 // this often - down only this long first (ms) - for this long.
 const POINT_FIRST = 0.55;
 const UP_QUICK = 450;
+// (Not while a man lies across him - nor in the spot he would stand in:
+// looked for this often (ms), up this long after the last of it.)
+const UP_OFF_EVERY_MS = 100;
+const UP_OFF_MS = 350;
 const POINT_MS = 1000;
 // (Made by this many yards gained at least: his moment after it, the
 // camera in on it from this long before he points.)
@@ -21441,7 +21445,17 @@ class Action {
 		if (RISING.has(rise.move) && moveKind(lay.move) === "still") {
 			legs.length = k + 1;
 			const ms = rise.t1 - rise.t0;
-			lay.t1 = Math.max(lay.t0 + 1, Math.min(lay.t1, lay.t0 + UP_QUICK));
+			// (Not up from under a man still lying across him, though - nor
+			// where he would stand: up once the last of them is.)
+			let quick = lay.t0 + UP_QUICK;
+			for (const o of this.men) {
+				for (let t = quick; o !== m && t < lay.t1; t += UP_OFF_EVERY_MS) {
+					if (this.nearOf(o, t, m.at, DOWN_LEGS) < DOWN_CLEAR) {
+						quick = t + UP_OFF_MS;
+					}
+				}
+			}
+			lay.t1 = Math.max(lay.t0 + 1, Math.min(lay.t1, quick));
 			rise.t0 = lay.t1;
 			rise.t1 = rise.t0 + ms * 0.8;
 			t0 = rise.t1;
