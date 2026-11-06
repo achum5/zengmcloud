@@ -2747,12 +2747,32 @@ class Actor {
 		const far = dist(from, p);
 		const room = (fps * Math.max(0, t1 - this.t)) / 1000;
 		const u = far > room ? room / far : 1;
-		this.go(
-			{ x: from.x + (p.x - from.x) * u, y: from.y + (p.y - from.y) * u },
-			t1,
-			move,
-			yaw,
-		);
+		const end = {
+			x: from.x + (p.x - from.x) * u,
+			y: from.y + (p.y - from.y) * u,
+		};
+		// (In a good deal quicker than that, and no time to have slowed for
+		// it on the way in - see slowFor: down to it over his first strides
+		// of it - see slowOn - not dropped to it in a stride.)
+		const T = Math.max(0, t1 - this.t) / 1000;
+		const S = far * u;
+		const into = this.paceInto(end);
+		if (
+			into !== undefined &&
+			S > 0 &&
+			T * 1000 >= RAMP_LEG_MS &&
+			into - S / T >= SLOW_DROP &&
+			this.slows(move) &&
+			this.last.t1 - this.part.legs[this.stretchFrom()]!.t0 < RAMP_LEG_MS
+		) {
+			const { gone } = this.slowOn(end, S, T, into, move, yaw);
+			if (S - gone > 0.01 && t1 > this.t) {
+				this.go(end, t1, move, yaw);
+			}
+			this.pin(t1);
+			return;
+		}
+		this.go(end, t1, move, yaw);
 		this.pin(t1);
 	}
 
@@ -4609,6 +4629,9 @@ const PA_BITE_FPS = 8;
 const BOOT = 0.4;
 const BOOT_OUT = 30;
 const BOOT_FPS = 16;
+// (No time for the walk on after a throw on the run, under this long (ms):
+// stood watching it - not a step of it in a blink.)
+const ONRUN_WALK_LEAST_MS = 200;
 // A pass he got a hand on: this often, the man who did waves it away -
 // no catch - as he slows up. One off a receiver's hands: this often, his
 // hands to his helmet.
@@ -9580,14 +9603,12 @@ class Action {
 	// hands, then cocked and let go, still going - and slowing up after.
 	onTheRun(qb: Actor, side: number, catchPt: Pt, throwAt: number) {
 		const end = throwAt + 500;
-		const v = BOOT_FPS * 0.75;
+		// (On at a quicker run than that already: on at it - not dropped
+		// to it in a stride.)
 		const was = qb.last;
+		const v = Math.max(BOOT_FPS * 0.75, GAITS.has(was.move) ? legPace(was) : 0);
 		if (qb.t > end) {
 			qb.cut(end);
-		} else if (GAITS.has(was.move) && legPace(was) > v + SLOW_DROP) {
-			// (On at a quicker run than that already: on at it - not
-			// dropped to it in a stride.)
-			qb.carryOn(end);
 		} else {
 			const s = this.of(qb.at);
 			const room = Math.max(
@@ -9607,6 +9628,10 @@ class Action {
 		if (GAITS.has(l.move) && legPace(l) >= STOP_LEAST) {
 			qb.easeOff(Infinity);
 			qb.hold(Math.max(qb.t, end) + 450, "stand", this.toward(qb.at, catchPt));
+			return;
+		}
+		if (end + 450 - qb.t < ONRUN_WALK_LEAST_MS) {
+			qb.hold(end + 450, "stand", this.toward(qb.at, catchPt));
 			return;
 		}
 		const q = this.of(qb.at);
