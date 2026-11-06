@@ -4737,6 +4737,9 @@ const HELP_OUT = 2.4;
 const HELP_BACK = 0.5;
 const JOLT_MOST = 1.1;
 const JOLT_MS = 250;
+// (A rusher met by a blocker still on the move - a back through a fake:
+// the two of them at the pace between them this long after, ms.)
+const CONTACT_MS = 80;
 const GANG = [0.5, 0.35];
 const GANG_LATE = 250;
 // (Down round a loose ball off the others down on it: this far apart at
@@ -14815,14 +14818,36 @@ class Action {
 				const v = dist(p0, p1) / 0.05;
 				if (moves && v > SHUFFLE_MOST * HOLD_ON) {
 					const A = STOP_ACCEL * STOP_HARD;
-					const u = {
-						x: (p1.x - p0.x) / (v * 0.05),
-						y: (p1.y - p0.y) / (v * 0.05),
+					// (Into each other: the two of them on at the pace between
+					// them - the rusher's into him and his own, CONTACT_MS
+					// getting to it - and pulled up from that. Not the rusher
+					// stopped dead and carried off backward at all the pace of
+					// a back still going through his fake.)
+					const q1 = m.posAt(hitT);
+					const q0 = m.posAt(hitT - 50);
+					const vb = { x: (p1.x - p0.x) / 0.05, y: (p1.y - p0.y) / 0.05 };
+					const vp = {
+						x: (vb.x + (q1.x - q0.x) / 0.05) / 2,
+						y: (vb.y + (q1.y - q0.y) / 0.05) / 2,
+					};
+					const w = Math.hypot(vp.x, vp.y);
+					const Tb = CONTACT_MS / 1000;
+					const pb = {
+						x: p1.x + ((vb.x + vp.x) / 2) * Tb,
+						y: p1.y + ((vb.y + vp.y) / 2) * Tb,
 					};
 					stop = (t: number) => {
-						const s = Math.min((t - hitT) / 1000, v / A);
-						const far = v * s - (A * s * s) / 2;
-						return { x: p1.x + u.x * far, y: p1.y + u.y * far };
+						const s = Math.max(0, (t - hitT) / 1000);
+						if (s <= Tb) {
+							const k = (s * s) / (2 * Tb);
+							return {
+								x: p1.x + vb.x * s + (vp.x - vb.x) * k,
+								y: p1.y + vb.y * s + (vp.y - vb.y) * k,
+							};
+						}
+						const sd = Math.min(s - Tb, w / A);
+						const far = w > 0 ? (w * sd - (A * sd * sd) / 2) / w : 0;
+						return { x: pb.x + vp.x * far, y: pb.y + vp.y * far };
 					};
 				}
 			}
