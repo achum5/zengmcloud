@@ -59,6 +59,9 @@ const STEP_MS = 450;
 const HUG_APART = 1.7;
 const HUG_MS = 1300;
 const AFTER_MS = 400;
+// (The one for the hug clapping him in as he comes, if he waits this long,
+// ms.)
+const CLAP_LEAST_MS = 700;
 // (Side on to the camera in front of them, near enough - not one of them
 // in front of the other: no more than this far round from it, radians.)
 const LEVEL = 0.25;
@@ -200,7 +203,15 @@ export const stageGreet = (input: {
 		five.hold(f.at, "stand", f.way + Math.PI - FIVE.turn);
 		s.act("highFive", FIVE_MS, f.way - FIVE.turn);
 		five.act("highFive", FIVE_MS, f.way + Math.PI - FIVE.turn);
-		// The hug.
+		// The hug. (Waiting on him a while first: clapping him in as he
+		// comes, turned to him - not stood stock still.)
+		if (s.t - hug.t >= CLAP_LEAST_MS) {
+			hug.act(
+				"clap",
+				s.t - hug.t,
+				level(Math.atan2(s.at.y - hug.at.y, s.at.x - hug.at.x)),
+			);
+		}
 		hug.hold(s.t);
 		const h = pair(s, hug, HUG_APART);
 		s.hold(h.at, "stand", h.way);
@@ -208,9 +219,10 @@ export const stageGreet = (input: {
 		s.act("hug", HUG_MS, h.way);
 		hug.act("hug", HUG_MS, h.way + Math.PI);
 		const t1 = s.t + AFTER_MS;
-		// (Stood after, turned to the field.)
+		// (Stood after, turned to the field - easy, his weight from one foot
+		// to the other, as long as it is till the snap: not a statue.)
 		for (const m of [s, five, hug]) {
-			m.hold(t1, "stand", toField);
+			m.hold(t1, "easy", toField);
 		}
 		const men = [
 			{ pid: input.scorer, team, legs: s.legs },
