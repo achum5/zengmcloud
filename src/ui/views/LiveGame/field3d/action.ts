@@ -290,6 +290,13 @@ const BEND_STEP = 0.2;
 const BEND_LEAST_FT = 0.5;
 // (Slowed into it, if he cannot take it at as much as this of his pace.)
 const BEND_SLOW = 0.9;
+// (Pinned where he turns, or no more than this far (feet) short of it -
+// see Actor.bendOut: round out of it from there, as much as this of a turn
+// (radians), no nearer the way on than this many times as far as he goes
+// round in.)
+const BEND_OUT_BACK_FT = 3;
+const BEND_OUT_MOST = 1.2;
+const BEND_OUT_ROOM = 1.5;
 // One stretch of his, pulling up over it (see slowInto): legs no further
 // round from each other than this (radians), none quicker than the next by
 // more than this (ft/s), over no longer than this (ms) - and still there
@@ -1119,6 +1126,123 @@ class Actor {
 				from: at.to,
 				to: { x: c.x + Math.cos(q) * R, y: c.y + Math.sin(q) * R },
 			});
+		}
+		return true;
+	}
+
+	// Pinned where he turns toward `to`, or just short of it - the ball put
+	// in his hands there, say - so no room to bend into it short of there
+	// (see bendInto): round out of it from there instead, at his pace, in
+	// an arc as tight as he takes at it (see BEND_LAT) - on past the turn
+	// a little as he goes round, not turned in a stride at full tilt. Not
+	// for more than BEND_OUT_MOST of a turn - planted for that (see
+	// plantFor). (Whether he was.)
+	private bendOut(to: Pt): boolean {
+		const legs = this.part.legs;
+		const l = this.last;
+		const v = legPace(l);
+		const far = dist(l.from, l.to);
+		if (
+			!RAMPS.has(l.move) ||
+			l.arms ||
+			l.turn ||
+			l.span ||
+			v < BEND_PACE ||
+			far <= 0 ||
+			this.pinned === -Infinity
+		) {
+			return false;
+		}
+		const turn = angleAt(l.from, l.to, to);
+		if (!(turn > BEND_LEAST && turn <= BEND_OUT_MOST)) {
+			return false;
+		}
+		const u = { x: (l.to.x - l.from.x) / far, y: (l.to.y - l.from.y) / far };
+		// (Back to where he was pinned: the same way on from there, and no
+		// further back than BEND_OUT_BACK_FT.)
+		let k = legs.length - 1;
+		let since = 0;
+		while (k >= 0 && legs[k]!.t1 > this.pinned) {
+			const lk = legs[k]!;
+			const d = dist(lk.from, lk.to);
+			const a =
+				Math.atan2(lk.to.y - lk.from.y, lk.to.x - lk.from.x) -
+				Math.atan2(u.y, u.x);
+			if (
+				!RAMPS.has(lk.move) ||
+				lk.arms ||
+				lk.turn ||
+				lk.span ||
+				lk.yaw !== l.yaw ||
+				lk.ball !== l.ball ||
+				(d > 0 && Math.abs(Math.atan2(Math.sin(a), Math.cos(a))) > STRETCH_TURN)
+			) {
+				return false;
+			}
+			since +=
+				lk.t0 >= this.pinned
+					? d
+					: (d * (lk.t1 - this.pinned)) / Math.max(lk.t1 - lk.t0, 1e-6);
+			if (since > BEND_OUT_BACK_FT) {
+				return false;
+			}
+			if (lk.t0 < this.pinned) {
+				break;
+			}
+			k--;
+		}
+		if (k < 0) {
+			return false;
+		}
+		// (The arc out from there - round the way on, off the way he came.)
+		const lk = legs[k]!;
+		const f =
+			lk.t1 > this.pinned && lk.t1 > lk.t0
+				? clamp((this.pinned - lk.t0) / (lk.t1 - lk.t0), 0, 1)
+				: 1;
+		const c = {
+			x: lk.from.x + (lk.to.x - lk.from.x) * f,
+			y: lk.from.y + (lk.to.y - lk.from.y) * f,
+		};
+		const s = Math.sign(u.x * (to.y - c.y) - u.y * (to.x - c.x)) || 1;
+		const R = (v * v) / BEND_LAT;
+		const o = { x: c.x - s * u.y * R, y: c.y + s * u.x * R };
+		const d = dist(o, to);
+		if (d <= R * BEND_OUT_ROOM) {
+			return false;
+		}
+		const a = Math.atan2(to.y - o.y, to.x - o.x);
+		const end = a - s * Math.acos(R / d);
+		const a0 = Math.atan2(c.y - o.y, c.x - o.x);
+		const sweep =
+			(((s * (end - a0)) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+		if (!(sweep > 0 && sweep <= BEND_OUT_MOST)) {
+			return false;
+		}
+		const n = Math.max(2, Math.ceil(sweep / BEND_STEP));
+		const pts: Pt[] = [];
+		for (let i = 1; i <= n; i++) {
+			const q = a0 + (s * sweep * i) / n;
+			const p = { x: o.x + Math.cos(q) * R, y: o.y + Math.sin(q) * R };
+			if (dist(onField(p, this.roam), p) > 1e-6) {
+				return false;
+			}
+			pts.push(p);
+		}
+		const { yaw, ...was } = l;
+		legs.splice(k + 1);
+		if (f < 1) {
+			lk.to = c;
+			lk.t1 = lk.t0 + (lk.t1 - lk.t0) * f;
+			if (lk.t1 - lk.t0 < CUT_SLIVER_MS && legs.length > 1) {
+				legs.pop();
+				legs.at(-1)!.to = c;
+			}
+		}
+		const dt = ((R * sweep) / n / v) * 1000;
+		for (const p of pts) {
+			const at = this.last;
+			this.push({ ...was, t0: at.t1, t1: at.t1 + dt, from: at.to, to: p });
 		}
 		return true;
 	}
@@ -2591,7 +2715,9 @@ class Actor {
 	run(to: Pt, fps: number, move?: Move, yaw?: number): number {
 		const p = onField(to, this.roam);
 		if (move === undefined || RAMPS.has(move)) {
-			this.bendInto(p, fps);
+			if (!this.bendInto(p, fps)) {
+				this.bendOut(p);
+			}
 			// (Too sharp a turn to bend round: planted for it first - not
 			// sent off the new way at the pace he had on the old one.)
 			this.plantFor(p);
