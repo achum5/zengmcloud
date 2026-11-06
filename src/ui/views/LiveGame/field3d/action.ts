@@ -3968,6 +3968,9 @@ const JOSTLE_FROM = 650;
 const JOSTLE_A: [number, number] = [0.5, 1.1];
 const JOSTLE_D = 0.4;
 const JOSTLE_STEP_MS = 90;
+// (Over from one to the next no quicker than this at the height of it,
+// ft/s: shoved a short way, given a short while - not flung across.)
+const JOSTLE_MOST_FPS = 5;
 // (A man into it after it has begun: into the shoving over this long, ms.)
 const JOSTLE_IN_MS = 300;
 const DOUBLE_FT = 2.2;
@@ -4947,6 +4950,18 @@ const SCAN_LAST_MS = 650;
 const HAND_MS = 420;
 const HAND_FT = 0.9;
 const HAND_STEP_MS = 90;
+// (Each step over on its own count - see countOf, from HAND_SALT: this
+// much as long as HAND_MS, or as wide as his, and one in HAND_MID back
+// to the middle of him - and no quicker across than HAND_MOST_FPS at the
+// height of it: not swung over and back the one way like a metronome.)
+const HAND_PER = [0.7, 1.35] as const;
+const HAND_WIDE = [0.8, 1.2] as const;
+const HAND_MID = 0.12;
+const HAND_MOST_FPS = 5.5;
+const HAND_SALT = 1000;
+// (The blocker on him over with him this much of each step, his feet
+// working with him - not stood in his set while the rusher works.)
+const HAND_WITH = 0.75;
 // (A rusher better at it than the blocker on him is at his job - each
 // against the others at their positions: working him this much wider and
 // quicker, and the blocker giving this much more ground, at the most. Or
@@ -15448,9 +15463,37 @@ class Action {
 				(lockedOn ? DOUBLE_RUSH_SWAY : 1);
 			let way = r() < 0.5 ? 1 : -1;
 			const turns: { t: number; lat: number }[] = [];
-			for (let t = hitT + per; t < end - per / 2; t += per) {
-				turns.push({ t, lat: mid + way * amp });
-				way = -way;
+			{
+				let t0 = hitT;
+				let lat0 = hitLat;
+				for (let k = 0; ; k++) {
+					const c = (j: number) =>
+						countOf(m, this.input.key, HAND_SALT + 3 * k + j);
+					const t =
+						t0 + per * (HAND_PER[0] + (HAND_PER[1] - HAND_PER[0]) * c(0));
+					if (t >= end - per / 2) {
+						break;
+					}
+					const want =
+						c(2) < HAND_MID && k > 0
+							? mid
+							: mid +
+								way *
+									amp *
+									(HAND_WIDE[0] + (HAND_WIDE[1] - HAND_WIDE[0]) * c(1));
+					// (Eased over and back - see below: at its quickest PI / 2
+					// times as quick as over all of it. Quicker about it, as
+					// much wider, the better he is than the man on him.)
+					const most =
+						(HAND_MOST_FPS * (1 + RUSH_WIDER * over) * 2 * (t - t0)) /
+						Math.PI /
+						1000;
+					const lat = lat0 + clamp(want - lat0, -most, most);
+					turns.push({ t, lat });
+					way = -way;
+					t0 = t;
+					lat0 = lat;
+				}
 			}
 			turns.push({ t: end, lat: mid });
 			// (Over and back easing in and out of each way he works him.)
@@ -15514,7 +15557,7 @@ class Action {
 				steps.forEach((x, k) => {
 					const at = {
 						x: held[k]!.x - dir * shove(x.t),
-						y: held[k]!.y + dir * x.lat * 0.6,
+						y: held[k]!.y + dir * x.lat * HAND_WITH,
 					};
 					// (In strides while he is still quicker than a set.)
 					const fps = (dist(b.at, at) / Math.max(1, x.t - b.t)) * 1000;
@@ -18340,12 +18383,24 @@ class Action {
 			times.push(t);
 		}
 		let side = r() < 0.5 ? 1 : -1;
-		const shifts = times.map(() => {
+		let was: OPt = { d: 0, a: 0 };
+		const shifts = times.map((t, k) => {
 			side = -side;
-			return {
+			const want = {
 				d: (r() - 0.5) * 2 * JOSTLE_D,
 				a: side * (JOSTLE_A[0] + r() * (JOSTLE_A[1] - JOSTLE_A[0])),
 			};
+			// (Eased into it - see below: at its quickest PI / 2 times as
+			// quick as over all of it.)
+			const most =
+				(JOSTLE_MOST_FPS * 2 * (t - (times[k - 1] ?? t0))) / Math.PI / 1000;
+			const far = Math.hypot(want.d - was.d, want.a - was.a);
+			const u = far > most ? most / far : 1;
+			was = {
+				d: was.d + (want.d - was.d) * u,
+				a: was.a + (want.a - was.a) * u,
+			};
+			return was;
 		});
 		const over = (p: Pt, o: OPt) => {
 			const q = this.of(p);
