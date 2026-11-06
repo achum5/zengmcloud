@@ -1204,6 +1204,54 @@ class Actor {
 		return v0 + a * ta;
 	}
 
+	// To `to` by t1 from a stand, in `move` (or the gaits his pace takes)
+	// and facing `face`: up to the pace that takes at RELEASE_ACCEL, on at
+	// it and eased off it to a stand there (see easeOff) - harder, if it
+	// takes that (STOP_HARD) - not off at it all at once and stopped dead
+	// on it. No quicker than `most` ft/s. (Whether there was the time for
+	// it so - and he was stood: if not, nothing done.)
+	stepTo(
+		to: Pt,
+		t1: number,
+		most: number,
+		move?: Move,
+		face?: number,
+	): boolean {
+		const far = dist(this.at, to);
+		const T = (t1 - this.t) / 1000;
+		if (legPace(this.last) >= 0.5 || far < STEP_TO_LEAST_FT) {
+			return false;
+		}
+		// (The pace v that takes far / v + v * per seconds: T.)
+		const paceAt = (down: number) => {
+			const per = 1 / (2 * RELEASE_ACCEL) + 1 / (2 * down);
+			const disc = T * T - 4 * per * far;
+			const v = disc >= 0 ? (T - Math.sqrt(disc)) / (2 * per) : Infinity;
+			return v <= most ? { v, down } : undefined;
+		};
+		const at = paceAt(STOP_ACCEL) ?? paceAt(STOP_ACCEL * STOP_HARD);
+		if (!at) {
+			return false;
+		}
+		const { v, down } = at;
+		const pull = (v * v) / (2 * down);
+		const u = (far - pull) / far;
+		this.getOff(
+			{
+				x: this.at.x + (to.x - this.at.x) * u,
+				y: this.at.y + (to.y - this.at.y) * u,
+			},
+			t1 - ((2 * pull) / v) * 1000,
+			0,
+			RELEASE_ACCEL,
+			move,
+			0,
+			face,
+		);
+		this.easeOff(pull);
+		return true;
+	}
+
 	// Into a man at `to`, there at the end of the leg he is on: pulled up
 	// over his last strides to `ve` (at `A` ft/s/s) and on in to it over `S`
 	// ms, in `into`, as that takes the rest out of him - there that much
@@ -4351,6 +4399,8 @@ const qbStepMs = (d: number) =>
 const QB_RIDE = 0.8;
 const RIDE_MS = 450;
 const RIDE_PAST = 12;
+// (Short of the line of scrimmage by this much at least, feet.)
+const RIDE_SHORT_FT = 2;
 const RIDE_EDGE = 13;
 // A run to the edge under center tossed to the back this often (a back
 // lined up this deep at least, feet): taken on the move this far out to
@@ -12085,14 +12135,15 @@ class Action {
 			);
 		}
 		m.plantFor(hit);
-		// (Right on it already, at full tilt, and a long while before it
-		// comes: pulled up hard on the way he was going, and set from there -
-		// not stopped dead on it and stood there.)
+		// (Right on it already, going - at a run, say, or full tilt - and a
+		// long while before it comes: pulled up hard on the way he was
+		// going, and set from there - not stopped dead on it and stood
+		// there.)
 		const pace = legPace(m.last);
 		if (
 			dist(m.at, hit) <= 8 &&
 			RAMPS.has(m.last.move) &&
-			pace >= BREAK_NEAR_MOST &&
+			pace >= STOP_LEAST &&
 			lead - m.t >= BREAK_PULL_LEAST_MS
 		) {
 			m.easeOff((pace * pace) / (2 * STOP_ACCEL * STOP_HARD));
@@ -16589,9 +16640,14 @@ class Action {
 			// walked there and away at a run - and up to his pace on past it.)
 			rider.hold(rideT - reach);
 			rider.getOff(riderMesh, rideT, 0, RELEASE_ACCEL, "run");
+			// (Pulled up behind his line, though - not on into the backs of
+			// the men blocking for it.)
 			const rm = this.of(riderMesh);
 			rider.runUp(
-				this.w({ d: rm.d + RIDE_PAST, a: rm.a + way * 3 }),
+				this.w({
+					d: Math.min(rm.d + RIDE_PAST, -RIDE_SHORT_FT),
+					a: rm.a + way * 3,
+				}),
 				rider.top * 0.7,
 			);
 			rider.hold(rider.t + 600, "stand");
@@ -18779,14 +18835,21 @@ class Action {
 		const across = Math.abs(c) < DRIFT_ACROSS;
 		if (fps < (across ? SHUFFLE_MOST : DRIFT_FPS)) {
 			// (Not far to go: under it with his eyes on it all the way, facing
-			// the kick - back, across, or in toward it.)
-			m.press(
-				to,
-				by,
-				m.top * 0.85,
-				across ? "slide" : c < 0 ? "back" : gait(fps),
-				this.behind,
-			);
+			// the kick - back, across, or in toward it. Up to it out of his
+			// stance and eased down under it, if there is the time - not off
+			// at it and stopped dead there.)
+			const move = across ? "slide" : c < 0 ? "back" : undefined;
+			if (
+				!m.stepTo(
+					to,
+					by,
+					across ? SHUFFLE_MOST : c < 0 ? BACK_MOST : m.top * 0.85,
+					move,
+					this.behind,
+				)
+			) {
+				m.press(to, by, m.top * 0.85, move ?? gait(fps), this.behind);
+			}
 		} else if (fps * UNDER_EARLY <= m.top * 0.85) {
 			// (Further, with time: turned and run there, a little quicker
 			// than he has to, and pulled up under it - not across in his low
@@ -23157,6 +23220,8 @@ const STOP_FIVE = 0.5;
 // steps go), or backpedaling. Further: run there this much quicker than he
 // has to be, with the time for it, and pulled up.
 const DRIFT_FPS = 9;
+// (Not stepped up to speed and down again to go less than this far, feet.)
+const STEP_TO_LEAST_FT = 2;
 const DRIFT_ACROSS = 0.6;
 const UNDER_EARLY = 1.25;
 // A fair catch: his arm waved from this long before the ball comes down
