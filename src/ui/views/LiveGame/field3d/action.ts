@@ -4884,6 +4884,8 @@ const PRONE_HANDS = heldBall(
 	"carry",
 ).at;
 const FALL_ON_FT = 4;
+// (And no nearer him than he can go down on it from, plus this - feet.)
+const FALL_ON_ROOM = 0.5;
 // (Where he comes down, facing `yaw`, for it to be in that hand.)
 const fallOn = (at: Pt, yaw: number): Pt => {
 	const h = PRONE_HANDS;
@@ -14460,6 +14462,22 @@ class Action {
 			: gain > 9
 				? spot.d + way * clamp(gain * 0.3, 3, 9)
 				: endD - way * 3;
+		// (Fallen on by a man all but on it already: rolled off to his side
+		// far enough for him to go down on it - not under his feet, for him
+		// to dive back off it.)
+		if (rec && !scoop) {
+			const near = this.of(rec.posAt(t + 150));
+			const room = Math.hypot(PRONE_HANDS.f, PRONE_HANDS.s) + FALL_ON_ROOM;
+			const dd = Math.abs(restD - near.d);
+			if (dd < room && Math.hypot(restD - near.d, a - near.a) < room) {
+				const s = a >= near.a ? 1 : -1;
+				a = clamp(
+					near.a + s * Math.sqrt(room * room - dd * dd),
+					this.bounds.left + 3,
+					this.bounds.right - 3,
+				);
+			}
+		}
 		const restPt = this.w({ d: restD, a });
 		// (Loose long enough to be called loose before anyone has it - the
 		// line before it said just before.)
@@ -14489,10 +14507,19 @@ class Action {
 		const into = SET.has(rec.last.move)
 			? undefined
 			: paceOn(rec.last, rec.at, restPt);
+		// (Fallen on: there once he is where he dives on it from - FALL_ON_FT
+		// short of where he comes down - or at once, nearer it than that.)
+		const runFt = scoop
+			? dist(rec.at, restPt)
+			: Math.max(
+					0,
+					dist(rec.at, fallOn(restPt, this.toward(rec.at, restPt))) -
+						FALL_ON_FT,
+				);
 		const reach =
 			rec.t +
 			rampedMs(
-				dist(rec.at, restPt),
+				runFt,
 				rec.top * 0.92,
 				into ?? 0,
 				into === undefined ? RELEASE_ACCEL : RAMP_ACCEL,
@@ -14843,11 +14870,15 @@ class Action {
 		if (!scoop) {
 			// Fallen on, and everybody near in on top.
 			const lands = fallOn(restPt, yaw);
-			const short = {
-				x: lands.x - Math.cos(yaw) * FALL_ON_FT,
-				y: lands.y - Math.sin(yaw) * FALL_ON_FT,
-			};
-			rec.press(short, takeT - 350, rec.top * FLAT_OUT, "sprint");
+			if (runFt > 0) {
+				const short = {
+					x: lands.x - Math.cos(yaw) * FALL_ON_FT,
+					y: lands.y - Math.sin(yaw) * FALL_ON_FT,
+				};
+				rec.press(short, takeT - 350, rec.top * FLAT_OUT, "sprint");
+			} else if (takeT - 350 > rec.t) {
+				rec.hold(takeT - 350, undefined, yaw);
+			}
 			rec.lunge("dive", takeT, yaw, lands);
 			rec.hold(takeT + 1400, "prone");
 			rec.act("getUp", takeT + 1400 + GET_UP_MS);
