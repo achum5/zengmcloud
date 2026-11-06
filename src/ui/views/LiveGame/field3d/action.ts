@@ -4592,6 +4592,8 @@ const LEAP_YAC = 18;
 const CONTESTED = 6;
 const LEAP_MS = 760;
 const LEAP_Z = 8.4;
+// (Down from it to go back the other way: slowing over this many legs.)
+const LEAP_LAND_STEPS = 4;
 // The man on him as it is caught - this near where it is caught (feet), no
 // nearer, in his stride and with it no further behind him than this (the
 // cosine) - a hand in at it, his own count of the time: from this long
@@ -9831,7 +9833,7 @@ class Action {
 		}
 		this.playBall(rec, catchAt, leap ? catchPt : undefined);
 		if (leap) {
-			this.leapFor(rec, catchPt, catchAt, qb);
+			this.leapFor(rec, catchPt, catchAt, qb, yac > 2 ? end.pt : undefined);
 		} else if (dive) {
 			this.diveFor(rec, end.pt, catchAt);
 		} else if (toe) {
@@ -10060,18 +10062,32 @@ class Action {
 	// Up off both feet for it at its highest: from wherever he is as it
 	// comes, on through the spot it is caught at (or, stood there, straight
 	// up), and the ball thrown up there to his hands.
-	leapFor(rec: Actor, catchPt: Pt, catchAt: number, qb: Actor) {
+	// (`next`: where he goes once he is down with it, if anywhere.)
+	leapFor(rec: Actor, catchPt: Pt, catchAt: number, qb: Actor, next?: Pt) {
 		const t0 = catchAt - LEAP_MS / 2;
 		rec.cut(t0);
 		rec.hold(t0);
 		const from = rec.at;
 		const far = dist(from, catchPt);
 		const ang = Math.atan2(catchPt.y - from.y, catchPt.x - from.x);
+		// (To go back the other way once he is down: come down slowing to a
+		// stop - not carried on at the pace he went up at and turned round
+		// on the spot.)
+		const down = {
+			x: catchPt.x + Math.cos(ang) * far * 0.9,
+			y: catchPt.y + Math.sin(ang) * far * 0.9,
+		};
+		const back =
+			far > 1 &&
+			next !== undefined &&
+			dist(down, next) > 1 &&
+			Math.cos(Math.atan2(next.y - down.y, next.x - down.x) - ang) < 0;
+		const on = back ? 0.5 : 0.9;
 		const to =
 			far > 1
 				? {
-						x: catchPt.x + Math.cos(ang) * far * 0.9,
-						y: catchPt.y + Math.sin(ang) * far * 0.9,
+						x: catchPt.x + Math.cos(ang) * far * on,
+						y: catchPt.y + Math.sin(ang) * far * on,
 					}
 				: from;
 		rec.act(
@@ -10080,6 +10096,38 @@ class Action {
 			far > 4 ? ang : this.toward(from, qb.posAt(catchAt)),
 			to,
 		);
+		if (back) {
+			// (Up to it at his pace, and down from it in LEAP_LAND_STEPS
+			// legs slowing evenly from that to nothing.)
+			const T = LEAP_MS / 2;
+			const v = far / T;
+			const along = (ms: number) => v * (ms - (ms * ms) / (2 * T));
+			const ts = [catchAt];
+			for (let k = 1; k < LEAP_LAND_STEPS; k++) {
+				ts.push(catchAt + (T * k) / LEAP_LAND_STEPS);
+			}
+			for (const t of ts) {
+				rec.split(t);
+			}
+			const legs = rec.legs.slice(-1 - LEAP_LAND_STEPS);
+			legs[0]!.to = catchPt;
+			for (let k = 1; k < legs.length; k++) {
+				const l = legs[k]!;
+				const a = along(l.t0 - catchAt);
+				const b = along(l.t1 - catchAt);
+				l.from = {
+					x: catchPt.x + Math.cos(ang) * a,
+					y: catchPt.y + Math.sin(ang) * a,
+				};
+				l.to =
+					k === legs.length - 1
+						? to
+						: {
+								x: catchPt.x + Math.cos(ang) * b,
+								y: catchPt.y + Math.sin(ang) * b,
+							};
+			}
+		}
 		const fly = this.ball.findLast((b) => b.kind === "fly");
 		if (fly?.kind === "fly" && Math.abs(fly.t1 - catchAt) < 1) {
 			fly.to = { ...fly.to, z: LEAP_Z };
@@ -12920,7 +12968,15 @@ class Action {
 			GAITS.has(picker.last.move) &&
 			legPace(picker.last) >= PICK_ON_FPS;
 		if (leap) {
-			this.leapFor(picker, gotPt, gotAt, qb);
+			// (Taken back the way the offense came.)
+			const got = this.of(gotPt);
+			this.leapFor(
+				picker,
+				gotPt,
+				gotAt,
+				qb,
+				this.w({ d: got.d - 10, a: got.a }),
+			);
 		} else if (dive) {
 			// (From where he is as he leaves his feet, toward it: no further
 			// than he could - the ball to his hands out there.)
