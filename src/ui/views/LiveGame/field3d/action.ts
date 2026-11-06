@@ -3747,7 +3747,7 @@ const JAM_SET_MS = 300;
 // inside of him over JAM_IN_MS, back behind him over JAM_DROP_MS.)
 const JAM_BEHIND_FT = 2.5;
 const JAM_INSIDE_FT = 2.5;
-const JAM_IN_MS = 400;
+const JAM_IN_MS = 800;
 const JAM_DROP_MS = 1200;
 // The cover with nobody bringing it back: down the field at this pace at
 // least (feet a second).
@@ -20078,8 +20078,8 @@ class Action {
 					: 0;
 			this.offSnap(g, GET_OFF_MS, GET_OFF_SPREAD_MS);
 			g.goOff(
-				this.w({ d: s.d + 9, a: s.a - side * 2 }),
-				snap + 900,
+				this.w({ d: s.d + JAM_FIGHT_FT, a: s.a - side * 0.5 }),
+				snap + JAM_FIGHT_MS,
 				"engage",
 				this.ahead,
 			);
@@ -20112,9 +20112,14 @@ class Action {
 			if (j) {
 				jammers.splice(jammers.indexOf(j), 1);
 				this.offSnap(j, READ_OFF_MS, READ_OFF_SPREAD_MS);
+				// (Squaring up on him as he comes: over toward in front of him,
+				// not all the way across with him in a blink.)
 				j.goOff(
-					this.w({ d: s.d + 11.6, a: s.a - side * 2 }),
-					snap + 900,
+					this.w({
+						d: s.d + JAM_FIGHT_FT + 2.4,
+						a: (this.of(j.at).a + s.a - side * 0.5) / 2,
+					}),
+					snap + JAM_FIGHT_MS,
 					"engage",
 					this.behind,
 				);
@@ -20139,11 +20144,7 @@ class Action {
 				const ahead = jam.d - was.d;
 				const beside = jam.a - was.a;
 				const jamT = j.t;
-				for (
-					let time = Math.max(snap + 1300, jamT + 400);
-					time < g.t;
-					time += 400
-				) {
+				for (let time = jamT + 400; time < g.t; time += 400) {
 					const q = this.of(g.posAt(time));
 					const u = Math.min(1, (time - jamT) / JAM_DROP_MS);
 					const w = Math.min(1, (time - jamT) / JAM_IN_MS);
@@ -23451,6 +23452,11 @@ const AIM_OUT = 0.45;
 const JAM_HELD_YDS = 10;
 const JAM_HELD_MS = [1300, 2100] as const;
 const JAM_HELD_FT = 4;
+// (Off the line, a gunner and the jammer on him locked up only so far
+// (feet) and so long after the snap (ms) - then off the jam into their
+// runs, not chopping their feet at full tilt in it.)
+const JAM_FIGHT_FT = 3;
+const JAM_FIGHT_MS = 800;
 const AIM_OUT_FT = [24, 62] as const;
 const SHANK = 0.4;
 const SHANK_YDS = 36;
