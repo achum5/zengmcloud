@@ -5769,6 +5769,14 @@ const SCOOP_REACH = 2.4;
 const SCOOP_LOW = 0.4;
 const SCOOP_DOWN_MS = 400;
 const SCOOP_UP_MS = 380;
+// (Picked up to be taken off a sharper turn than this (radians) from the
+// way he comes at it: slowed into it to this pace (feet a second), and
+// round with it as he comes up no quicker than this (radians a second),
+// on no further than this (feet) as he does.)
+const SCOOP_TURN = 1.05;
+const SCOOP_TURN_FPS = 5;
+const SCOOP_TURN_RATE = 6;
+const SCOOP_TURN_ON_FT = 1;
 // The holder: the snap in his hands this long before he brings it down to
 // its spot, and so long bringing it.
 const HOLD_CATCH_MS = 60;
@@ -14524,8 +14532,35 @@ class Action {
 				into ?? 0,
 				into === undefined ? RELEASE_ACCEL : RAMP_ACCEL,
 			);
+		// (Picked up: where he goes with it - and, that a sharp turn off the
+		// way he comes at it, slowed into it as he gets to it, down to
+		// SCOOP_TURN_FPS - the time that takes.)
+		const endPt = scoop
+			? this.w({
+					d: endD,
+					a: clamp(
+						a + (r() - 0.5) * 16,
+						this.bounds.left + 6,
+						this.bounds.right - 6,
+					),
+				})
+			: restPt;
+		const turning =
+			scoop &&
+			dist(rec.at, restPt) > SCOOP_REACH &&
+			Math.abs(
+				angleOff(this.toward(restPt, endPt) - this.toward(rec.at, restPt)),
+			) > SCOOP_TURN;
 		const takeT = scoop
-			? Math.max(restT, reach)
+			? Math.max(
+					restT,
+					reach +
+						(turning
+							? ((rec.top * 0.92 - SCOOP_TURN_FPS) /
+									(2 * STOP_ACCEL * STOP_HARD)) *
+								1000
+							: 0),
+				)
 			: Math.max(restT + 100, reach + 350);
 		this.gather(
 			others.filter((m) => m !== from),
@@ -14922,30 +14957,61 @@ class Action {
 				: rec.at;
 		const off = rec.t;
 		rec.press(low, takeT, rec.top * FLAT_OUT, "sprint");
+		if (turning) {
+			const v = legPace(rec.last);
+			if (v > SCOOP_TURN_FPS) {
+				rec.breakDown(SCOOP_TURN_FPS / v, STOP_ACCEL * STOP_HARD);
+			}
+		}
 		const down = takeT - SCOOP_DOWN_MS;
 		if (off < down && rec.t === takeT) {
 			rec.split(down);
-			rec.joinFrom(down);
-			Object.assign(rec.last, {
-				move: "scoop",
-				span: [0, SCOOP_LOW],
-				yaw,
-			});
+			// (Slowed into it: slowing as he goes down to it, too.)
+			if (!turning) {
+				rec.joinFrom(down);
+			}
+			for (const l of rec.legs) {
+				if (l.t0 >= down) {
+					Object.assign(l, {
+						move: "scoop",
+						span: [
+							((l.t0 - down) / SCOOP_DOWN_MS) * SCOOP_LOW,
+							((l.t1 - down) / SCOOP_DOWN_MS) * SCOOP_LOW,
+						],
+						yaw,
+					});
+				}
+			}
 		}
-		const endPt = this.w({
-			d: endD,
-			a: clamp(
-				a + (r() - 0.5) * 16,
-				this.bounds.left + 6,
-				this.bounds.right - 6,
-			),
-		});
+		// Up with it: round to the way he goes with it as he comes up, if it
+		// is the other way - or on at the pace he came in at, getting up to
+		// speed (see RAMP_ACCEL), not slowed to a set pace, nor shot off from
+		// nothing.
 		const on = Math.atan2(endPt.y - rec.at.y, endPt.x - rec.at.x);
 		const up = rec.last.move === "scoop" ? SCOOP_LOW : 0;
-		rec.act("scoop", takeT + SCOOP_UP_MS * (1 - up), on, {
-			x: rec.at.x + Math.cos(on) * 5 * (1 - up),
-			y: rec.at.y + Math.sin(on) * 5 * (1 - up),
-		});
+		const vIn = rec.last.move === "scoop" ? legPace(rec.last) : 0;
+		if (turning) {
+			const turn = angleOff(on - yaw);
+			const ms = Math.max(
+				SCOOP_UP_MS * (1 - up),
+				(Math.abs(turn) / SCOOP_TURN_RATE) * 1000,
+			);
+			const ft = Math.min(SCOOP_TURN_ON_FT, (vIn * ms) / 2000);
+			rec.act("scoop", takeT + ms, yaw, {
+				x: rec.at.x + Math.cos(yaw) * ft,
+				y: rec.at.y + Math.sin(yaw) * ft,
+			});
+			rec.last.turn = turn;
+		} else {
+			const T = (SCOOP_UP_MS * (1 - up)) / 1000;
+			const v0 = vIn * Math.max(0, Math.cos(angleOff(on - yaw)));
+			const v1 = Math.min(Math.max(v0, rec.top * 0.88), v0 + RAMP_ACCEL * T);
+			const ft = ((v0 + v1) / 2) * T;
+			rec.act("scoop", takeT + T * 1000, on, {
+				x: rec.at.x + Math.cos(on) * ft,
+				y: rec.at.y + Math.sin(on) * ft,
+			});
+		}
 		rec.last.span = [up, 1];
 		const tEnd =
 			dist(rec.at, endPt) > 2
