@@ -26,6 +26,8 @@ const SMOOTH = 4;
 const PASSES = 4;
 // (Pushed over and let back no quicker than this, ft/s: not slid aside.)
 const SLIDE_FPS = 3.5;
+// How much quicker than SLIDE_FPS, at most, from one side to the other.
+const SLEW_MOST = 1.5;
 // (Coming by each other quicker than this (ft/s), over across the way they
 // come - all of it by this - not shoved back along it.)
 const BY_FPS = 2;
@@ -384,11 +386,12 @@ export const keepApart = (play: Play): Map<number, Sep[]> => {
 			}
 		}
 	}
-	// (And all of it, put together, no quicker than that either.)
+	// (And all of it, put together, no quicker than that either - nor,
+	// from one side of where he is to the other, much more: see slewed.)
 	for (let i = 0; i < m; i++) {
 		if (ever[i]) {
-			sx[i] = smooth(eased(sx[i]!));
-			sy[i] = smooth(eased(sy[i]!));
+			sx[i] = smooth(slewed(eased(sx[i]!)));
+			sy[i] = smooth(slewed(eased(sy[i]!)));
 		}
 	}
 
@@ -714,6 +717,23 @@ const eased = (a: Float32Array): Float32Array => {
 		for (let s = 0; s < n; s++) {
 			out[s] = out[s]! + sign * e[s]!;
 		}
+	}
+	return out;
+};
+
+// No quicker than SLIDE_FPS * SLEW_MOST from each sample to the next,
+// either way - eased takes each side up and lets it go at SLIDE_FPS, but
+// over from one side to the other, the one let go as the other is taken
+// up, that is twice it.
+const slewed = (a: Float32Array): Float32Array => {
+	const r = (SLIDE_FPS * SLEW_MOST * SEP_MS) / 1000;
+	const n = a.length;
+	const out = new Float32Array(a);
+	for (let s = 1; s < n; s++) {
+		out[s] = Math.min(out[s - 1]! + r, Math.max(out[s - 1]! - r, out[s]!));
+	}
+	for (let s = n - 2; s >= 0; s--) {
+		out[s] = Math.min(out[s + 1]! + r, Math.max(out[s + 1]! - r, out[s]!));
 	}
 	return out;
 };
