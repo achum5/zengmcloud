@@ -4089,6 +4089,8 @@ const SNAPPER_OFF_MS = 40;
 const FIRE_FT = 4;
 const FIRE_HELD_MS = 250;
 const FIRE_LEAST_HELD_MS = 100;
+// (On him in less than this (feet): square to him all through it.)
+const FIRE_SQUARE_FT = 2;
 const fireOff = (m: Actor, to: Pt): Move =>
 	dist(m.at, to) < FIRE_FT ? "engage" : "run";
 // Locked up on a run: shoved one way and then the other, every this long
@@ -18758,6 +18760,8 @@ class Action {
 			);
 		}
 		const u = way(t);
+		const k0 = m.legs.length;
+		const from = m.at;
 		m.hitInto(
 			hands(t),
 			t,
@@ -18769,6 +18773,13 @@ class Action {
 			GET_OFF_SQUARE_MS,
 			m.top * FLAT_OUT,
 		);
+		// (Right on him from the first - a step at the most: square to him
+		// through it, not turned whichever way each inch of it goes.)
+		if (dist(from, m.at) < FIRE_SQUARE_FT) {
+			for (let k = k0; k < m.legs.length; k++) {
+				m.legs[k]!.yaw ??= this.behind;
+			}
+		}
 		if (S === 0 || (u.x === 0 && u.y === 0)) {
 			return;
 		}
@@ -20579,16 +20590,19 @@ class Action {
 		// over end, to come down short of the goal line.)
 		const near = r() - 0.5;
 		const kept = yds * YD > this.goalD - POOCH_IN * YD;
+		const sure = !touchback && yds < SHANK_SURE_YDS;
 		const pooch =
 			!touchback &&
+			!sure &&
 			kept &&
 			yds <= POOCH_YDS &&
 			countOf(p, this.input.key, 89) < POOCH;
 		const shank =
-			!touchback &&
-			!kept &&
-			yds < SHANK_YDS &&
-			countOf(p, this.input.key, 88) < SHANK;
+			sure ||
+			(!touchback &&
+				!kept &&
+				yds < SHANK_YDS &&
+				countOf(p, this.input.key, 88) < SHANK);
 		const midA = (MID_Y - ballY) * dir;
 		const out = shank || countOf(p, this.input.key, 90) < AIM_OUT;
 		const outA =
@@ -24063,7 +24077,8 @@ const FAIR_TO = 700;
 // One coming down within POOCH_IN yards of the goal line, no more than
 // POOCH_YDS, a pooch this often: up this long, end over end. Any other
 // under SHANK_YDS shanked this often - low, this long in the air (ms), end
-// over end.
+// over end - and any under SHANK_SURE_YDS, always: a ball barely past the
+// line was never up there for four seconds and more.
 const AIM_OUT = 0.45;
 // A gunner held up at the line on a return of this many yards or more, this
 // much longer (ms), the two of them this far on down the field over it
@@ -24079,6 +24094,7 @@ const JAM_FIGHT_MS = 800;
 const AIM_OUT_FT = [24, 62] as const;
 const SHANK = 0.4;
 const SHANK_YDS = 36;
+const SHANK_SURE_YDS = 15;
 const SHANK_HANG = [2500, 3100] as const;
 const POOCH = 0.45;
 const POOCH_YDS = 45;
