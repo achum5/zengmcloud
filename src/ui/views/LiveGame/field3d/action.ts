@@ -5799,6 +5799,9 @@ const FLAT_OUT = 0.97;
 // the end of it for the ball, up for it this long before it comes.
 const ROUTE_PACE = 0.76;
 const CATCH_LEAD_MS = 380;
+// Thrown to, slowed to no less than this much of that pace to come open on
+// time (see runRoute).
+const ROUTE_PACE_LEAST = 0.6;
 // A route laid on past the back of the end zone (a decoy's, deep in the
 // red zone): run no deeper than this short of the end line (feet), and
 // sat down there - not into the line and slid along it.
@@ -9962,7 +9965,14 @@ class Action {
 	// How long a route takes him, out of his stance to `upto` feet along it
 	// at `speed`: a little slower off the line, down into each cut and up
 	// out of it.
-	routeMs(route: Route, speed: number, upto: number, v0 = 0): number {
+	// (Pulled up into the end of it, `settles`, as if he sat down there.)
+	routeMs(
+		route: Route,
+		speed: number,
+		upto: number,
+		v0 = 0,
+		settles = route.settles,
+	): number {
 		const pts = route.path.map((p) => this.w(p));
 		let along = 0;
 		let ms = 0;
@@ -9975,7 +9985,7 @@ class Action {
 				k,
 				speed,
 				go < seg || upto - along - go <= ROUTE_LEFT,
-				route.settles,
+				settles,
 				route.plant === k,
 			);
 			ms += stretchMs(go, routeFps(speed, k), cut, next);
@@ -10049,12 +10059,21 @@ class Action {
 		m.hold(release);
 		const target = catchAt !== undefined;
 		const endAlong = target ? route.catchAlong : Infinity;
+		// (Thrown to late - the quarterback not set yet, say - with time to
+		// wait for it even jogged there: pulled up into where he takes it,
+		// not run into it at his pace and stopped dead in a stride.)
+		const late =
+			catchAt !== undefined &&
+			!route.settles &&
+			this.routeMs(route, speed, route.catchAlong, v0) <
+				ROUTE_PACE_LEAST * (catchAt - release);
+		const settles = route.settles || late;
 		const pace =
 			catchAt !== undefined && !route.settles
 				? clamp(
-						this.routeMs(route, speed, route.catchAlong, v0) /
+						this.routeMs(route, speed, route.catchAlong, v0, settles) /
 							Math.max(1, catchAt - release),
-						0.6,
+						ROUTE_PACE_LEAST,
 						1,
 					)
 				: 1;
@@ -10078,7 +10097,7 @@ class Action {
 				k,
 				speed,
 				go < seg || room - go <= ROUTE_LEFT,
-				route.settles,
+				settles,
 				route.plant === k,
 			);
 			const t1 = m.t + stretchMs(go, routeFps(speed, k), cut, next) / pace;
