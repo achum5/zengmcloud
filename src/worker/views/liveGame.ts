@@ -37,6 +37,57 @@ import { bySport } from "../../common/sportFunctions.ts";
 import type { RouteParams } from "../../ui/router/types.ts";
 import { courtOf } from "../../common/stockCourts.ts";
 
+// How everyone looked the night of a saved game, for the 3D court: each
+// court's uploaded pictures filled in, to draw. Undefined when the replay
+// kept none, or they cannot be read - today's looks it is.
+export const looksThatNight = async (
+	gid: number,
+	boxScore: Parameters<typeof homeCourtForGame>[1],
+): Promise<{ looks: ReplayLooks } | undefined> => {
+	try {
+		const row =
+			(await idb.cache.liveGamePlayByPlay.get(gid)) ??
+			(await (idb.league as any).get("liveGamePlayByPlay", gid));
+		if (!row?.looks) {
+			return undefined;
+		}
+		const looks: ReplayLooks = row.looks;
+		const homeTid = boxScore.teams[0].tid;
+		const teams = Object.fromEntries(
+			await Promise.all(
+				Object.entries(looks.teams).map(async ([tid, t]) => {
+					const court = await resolveCourt(t.court);
+					return [
+						tid,
+						{
+							...t,
+							court:
+								Number(tid) === homeTid
+									? await homeCourtForGame(court, boxScore)
+									: court,
+							...(t.stadium
+								? { stadium: await resolveStadium(t.stadium) }
+								: {}),
+							// (Football's field gets them too.)
+							...(__SPORT === "football" && Number(tid) === homeTid
+								? {
+										stadium: await homeCourtForGame(
+											t.stadium ? await resolveStadium(t.stadium) : undefined,
+											boxScore,
+										),
+									}
+								: {}),
+						},
+					] as const;
+				}),
+			),
+		);
+		return { looks: { ...looks, teams } };
+	} catch {
+		return undefined;
+	}
+};
+
 const processInputs = (params: RouteParams<"liveGame">, ctxBBGM: any) => {
 	const obj: {
 		fromAction: boolean;
@@ -507,53 +558,10 @@ export default defineView({
 					: `${boxScore.season} Regular Season`;
 				(out.initialBoxScore as any).replayLabel = label;
 				// How everyone looked that night, for the 3D court.
-				try {
-					const row =
-						(await idb.cache.liveGamePlayByPlay.get(gid)) ??
-						(await (idb.league as any).get("liveGamePlayByPlay", gid));
-					if (row?.looks) {
-						// (Each court's uploaded pictures filled in, to draw.)
-						const looks: ReplayLooks = row.looks;
-						const homeTid = boxScore.teams[0].tid;
-						const teams = Object.fromEntries(
-							await Promise.all(
-								Object.entries(looks.teams).map(async ([tid, t]) => {
-									const court = await resolveCourt(t.court);
-									return [
-										tid,
-										{
-											...t,
-											court:
-												Number(tid) === homeTid
-													? await homeCourtForGame(court, boxScore)
-													: court,
-											...(t.stadium
-												? { stadium: await resolveStadium(t.stadium) }
-												: {}),
-											// (Football's field gets them too.)
-											...(__SPORT === "football" && Number(tid) === homeTid
-												? {
-														stadium: await homeCourtForGame(
-															t.stadium
-																? await resolveStadium(t.stadium)
-																: undefined,
-															boxScore,
-														),
-													}
-												: {}),
-										},
-									] as const;
-								}),
-							),
-						);
-						(out.initialBoxScore as any).replayLooks = {
-							...looks,
-							teams,
-						};
-						arenaThen = row.looks.arena;
-					}
-				} catch {
-					// Cosmetic - today's looks it is.
+				const then = await looksThatNight(gid, boxScore);
+				if (then) {
+					(out.initialBoxScore as any).replayLooks = then.looks;
+					arenaThen = then.looks.arena;
 				}
 			}
 			// The home team's building, for the 3D court: as it was that night

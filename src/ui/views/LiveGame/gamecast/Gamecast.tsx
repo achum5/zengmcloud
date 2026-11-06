@@ -38,6 +38,7 @@ import type { GamecastInfo } from "../../../../worker/views/liveGameInfo.ts";
 import { FlowCharts } from "./FlowCharts.tsx";
 import { playSentence } from "./sentence.ts";
 import { ShotChart } from "./ShotChart.tsx";
+import { HighlightClip, type ClipGame } from "./HighlightClip.tsx";
 import type { ShotSpot } from "./shots.ts";
 
 type Tab = "gamecast" | "box" | "plays" | "stats" | "flow";
@@ -442,22 +443,23 @@ export const AllPlays = ({
 	);
 };
 
-// The game's dunks, threes and blocks so far, newest first, each one to be
-// shown again on the court.
+// The game's dunks, threes and blocks so far, newest first - each one, opened,
+// played right there under its row (`clip`).
 export const Highlights = ({
 	rows,
 	teams,
 	season,
 	numPeriods,
-	onReplay,
+	clip,
 }: {
 	rows: FeedRow[];
 	teams: [any, any];
 	season: number;
 	numPeriods: number;
-	onReplay?: (cursor: number) => void;
+	clip?: (row: FeedRow) => ReactNode;
 }) => {
 	const [all, setAll] = useState(false);
+	const [open, setOpen] = useState<number | undefined>();
 	const { say } = useContext(FeedContext);
 	const highlights = rows.filter((row) => highlightOf(row) !== undefined);
 	if (highlights.length === 0) {
@@ -485,37 +487,60 @@ export const Highlights = ({
 					]
 						.filter(Boolean)
 						.join(" - ");
+					const opens =
+						clip !== undefined && row.cursor !== undefined && !row.pending;
+					const isOpen = opens && open === row.key;
+					const toggle = () => setOpen(isOpen ? undefined : row.key);
 					return (
-						<div key={row.key} className="gamecast-play align-items-center">
-							<div className="gamecast-play-picture">
-								<PlayPicture
-									pid={row.pid}
-									team={team}
-									season={season}
-									size={38}
-								/>
-							</div>
-							<div className="flex-grow-1" style={{ minWidth: 0 }}>
-								<div className="gamecast-play-title">
-									{highlightOf(row)}
-									{when ? (
-										<span className="gamecast-play-when">{when}</span>
-									) : null}
+						<div key={row.key} className="gamecast-highlight">
+							<div
+								className={clsx("gamecast-play align-items-center", {
+									"gamecast-play-opens": opens,
+								})}
+								{...(opens
+									? {
+											role: "button",
+											tabIndex: 0,
+											"aria-expanded": isOpen,
+											title: isOpen ? "Close" : "Watch it",
+											onClick: toggle,
+											onKeyDown: (e: { key: string }) => {
+												if (e.key === "Enter") {
+													toggle();
+												}
+											},
+										}
+									: {})}
+							>
+								<div className="gamecast-play-picture">
+									<PlayPicture
+										pid={row.pid}
+										team={team}
+										season={season}
+										size={38}
+									/>
 								</div>
-								<div className="gamecast-play-text gamecast-clamp">
-									{say?.(row) ?? textOf(row.texts)}
+								<div className="flex-grow-1" style={{ minWidth: 0 }}>
+									<div className="gamecast-play-title">
+										{highlightOf(row)}
+										{when ? (
+											<span className="gamecast-play-when">{when}</span>
+										) : null}
+									</div>
+									<div className="gamecast-play-text gamecast-clamp">
+										{say?.(row) ?? textOf(row.texts)}
+									</div>
 								</div>
+								{opens ? (
+									<span
+										className={clsx(
+											"glyphicon glyphicon-menu-down gamecast-chevron",
+											{ open: isOpen },
+										)}
+									/>
+								) : null}
 							</div>
-							{onReplay && row.cursor !== undefined ? (
-								<button
-									type="button"
-									className="btn btn-sm btn-light-bordered flex-shrink-0"
-									title="Show it again on the court"
-									onClick={() => onReplay(row.cursor!)}
-								>
-									<span className="glyphicon glyphicon-play" /> Replay
-								</button>
-							) : null}
+							{isOpen ? <div className="gamecast-clip">{clip(row)}</div> : null}
 						</div>
 					);
 				})}
@@ -1236,6 +1261,7 @@ export const LiveGamecast = ({
 	boxScoreTab,
 	header,
 	onReplay,
+	clipGame,
 	shots,
 	cursor,
 }: {
@@ -1251,6 +1277,9 @@ export const LiveGamecast = ({
 	// Show a play again on the court (a highlight tapped) - where the court
 	// can.
 	onReplay?: (cursor: number) => void;
+	// The game, for a highlight played right there under its row (see
+	// HighlightClip).
+	clipGame?: ClipGame;
 	// The game's shots where the 3D court staged them, and how far into the
 	// game it is (only those already shown).
 	shots?: ShotSpot[];
@@ -1424,29 +1453,18 @@ export const LiveGamecast = ({
 									teams={teams}
 									season={season}
 									numPeriods={numPeriods}
-									onReplay={
-										onReplay
-											? (cursor) => {
-													// (The court in sight to watch it: a phone's is
-													// pinned, a wide screen's may be scrolled away.)
-													const wrap = wrapRef.current;
-													const pin = wrap?.firstElementChild;
-													if (
-														wrap &&
-														pin &&
-														getComputedStyle(pin).position !== "sticky" &&
-														wrap.getBoundingClientRect().top < 0
-													) {
-														window.scrollTo({
-															top:
-																wrap.getBoundingClientRect().top +
-																window.scrollY -
-																60,
-															behavior: "smooth",
-														});
-													}
-													onReplay(cursor);
-												}
+									clip={
+										clipGame
+											? (row) => (
+													<HighlightClip
+														game={{ ...clipGame, upTo: cursor }}
+														first={
+															entries.find((e) => e.key === row.key - 1)
+																?.cursor ?? 0
+														}
+														last={row.cursor!}
+													/>
+												)
 											: undefined
 									}
 								/>

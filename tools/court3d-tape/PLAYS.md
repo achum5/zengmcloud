@@ -222,6 +222,10 @@ in play the same:
   a step takes him (`easeNudges`, 7 ft/s on top of his run), over that much
   sooner and back that much later; a bigger one is a run, shown as one. The
   tape's lurches 51/52/47 to 33/36/33, its sharp corners 18/16/7 to 12/6/4.
+- a highlight played on its own (`clipOfPlay`: a box score's highlight
+  opened under its row) cut off on a turnover never staged: a defender's
+  last stretch of following his man ran on to forever, nothing after it
+  (`mark` follows no further than the end).
 
 Checks: the existing tests (feet behind the line, a contested jumper stays
 in sight, the ball never jumps, real speed with no darts) on every change.

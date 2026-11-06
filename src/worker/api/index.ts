@@ -1,14 +1,16 @@
 import { parseCourtDecals } from "../../common/courtDecals.ts";
-import { boxScoreToLiveSim } from "../views/liveGame.ts";
+import { boxScoreToLiveSim, looksThatNight } from "../views/liveGame.ts";
 import { parseScoreBug, scoreBugPictureIds } from "../../common/scoreBug.ts";
 import {
 	courtPictureIds,
 	decalPictureIds,
 	pictureById,
 	prunePictures,
+	resolveScoreBug,
 	stadiumPictureIds,
 	storePicture,
 } from "../util/courtPictures.ts";
+import { takeArenaLooks } from "../core/game/replayLooks.ts";
 import { sanitizeRotation, type TeamRotation } from "../../common/rotation.ts";
 import { prospectUniform } from "../../common/prospectColors.ts";
 import { csvFormat, csvFormatRows } from "d3-dsv";
@@ -8092,6 +8094,18 @@ const getReplayFeed = async (gid: number) => {
 	} catch {
 		// No chart.
 	}
+	// (Played again on its box score in 3D: as everyone looked that night,
+	// in the building as it was - see liveGame.)
+	const then = await looksThatNight(gid, boxScore);
+	if (then) {
+		(out.initialBoxScore as any).replayLooks = then.looks;
+	}
+	(out.initialBoxScore as any).arena =
+		then?.looks.arena ??
+		(await takeArenaLooks(boxScore.teams[0].tid, boxScore.season));
+	(out.initialBoxScore as any).scoreBug = await resolveScoreBug(
+		g.get("scoreBug"),
+	);
 	return {
 		events: out.events,
 		initialBoxScore: out.initialBoxScore,

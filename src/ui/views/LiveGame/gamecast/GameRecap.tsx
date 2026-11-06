@@ -52,6 +52,7 @@ import {
 } from "./playFeed.ts";
 import { playSentence } from "./sentence.ts";
 import { ShotChart } from "./ShotChart.tsx";
+import { HighlightClip } from "./HighlightClip.tsx";
 import { unpackShots, type ShotSpot } from "./shots.ts";
 import { winProb } from "../winProb.ts";
 
@@ -414,6 +415,7 @@ export const GameRecap = ({
 	const [replay, setReplay] = useState<
 		| {
 				events: any[];
+				initialBoxScore: any;
 				shots: ShotSpot[];
 				entries: FeedEntry[];
 				rows: FeedRow[];
@@ -438,6 +440,7 @@ export const GameRecap = ({
 				const f = feedFromEvents(got.events, got.initialBoxScore, gender);
 				setReplay({
 					events: got.events,
+					initialBoxScore: got.initialBoxScore,
 					shots: unpackShots(got.shots),
 					entries: f.entries,
 					rows: feedRows([...f.entries].reverse()),
@@ -491,12 +494,6 @@ export const GameRecap = ({
 		}),
 		[names, replay, gid, boxScore.teams],
 	);
-	const openAt = (cursor: number) => {
-		const row = replay?.rows.find((r) => r.cursor === cursor);
-		if (row) {
-			feed.open?.(row);
-		}
-	};
 	const numPeriods = boxScore.numPeriods ?? 4;
 	const tabs = TABS.filter(([key]) => key !== "plays" || replay !== undefined);
 	const shotChart =
@@ -548,7 +545,17 @@ export const GameRecap = ({
 											teams={boxScore.teams}
 											season={boxScore.season}
 											numPeriods={numPeriods}
-											onReplay={openAt}
+											clip={
+												__SPORT === "basketball"
+													? (row) => (
+															<HighlightClip
+																game={replay}
+																first={replay.entries[row.key - 1]?.cursor ?? 0}
+																last={row.cursor!}
+															/>
+														)
+													: undefined
+											}
 										/>
 									) : null}
 									{boxScore.charts ? (

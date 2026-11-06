@@ -3338,6 +3338,16 @@ export const LiveGame = (props: View<"liveGame">) => {
 						court={courtNode}
 						shots={shots}
 						cursor={initialEventCount.current - (events.current?.length ?? 0)}
+						clipGame={
+							__SPORT === "basketball" &&
+							props.events &&
+							props.initialBoxScore !== undefined
+								? {
+										events: props.events,
+										initialBoxScore: props.initialBoxScore,
+									}
+								: undefined
+						}
 						onReplay={
 							court3d && !(isFollower && !along)
 								? (cursor: number) => {

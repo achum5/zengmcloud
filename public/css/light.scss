@@ -4936,3 +4936,36 @@ body.has-league-ticker-collapsed .sidebar-inner {
 		animation: none;
 	}
 }
+// A highlight's row opens on the play itself (see Highlights).
+.gamecast-highlight {
+	border-bottom: 1px solid var(--bs-border-color);
+	.gamecast-play {
+		border-bottom: 0;
+	}
+}
+.gamecast-chevron {
+	flex-shrink: 0;
+	padding: 0 0.25rem;
+	color: var(--bs-secondary-color);
+	transition: transform 0.15s;
+	&.open {
+		transform: rotate(180deg);
+	}
+}
+.gamecast-clip {
+	padding-bottom: 0.25rem;
+}
+.gamecast-clip-again {
+	position: absolute;
+	left: 50%;
+	top: 50%;
+	transform: translate(-50%, -50%);
+	width: 3rem;
+	height: 3rem;
+	border-radius: 50%;
+	border: 1px solid rgba(255, 255, 255, 0.4);
+	background: rgba(10, 10, 14, 0.7);
+	color: #fff;
+	font-size: 1.25rem;
+	line-height: 1;
+}

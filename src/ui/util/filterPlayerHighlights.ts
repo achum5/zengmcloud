@@ -182,3 +182,111 @@ export const filterPlayerHighlights = (
 	}
 	return out;
 };
+
+// Does the live viewer stop on this event - a line of the play-by-play - or
+// apply it on its way (see processLiveGameEvents.basketball)?
+export const isLine = (event: any): boolean =>
+	typeof event?.type === "string" &&
+	event.type !== "init" &&
+	event.type !== "stat" &&
+	event.type !== "timeouts" &&
+	!(event.type === "sub" && event.silent);
+
+// The most lines of its own possession a single play is shown after.
+const CLIP_LEAD_MOST = 3;
+// A play shown with the steal it came off: no more than this long after it
+// (game seconds) - a break the other way.
+const CLIP_BREAK_MOST = 8;
+// A line of the ball in play: a shot, its miss, a block, a board off it.
+const inPlay = (type: string) =>
+	type === "orb" || (/^(fga|miss|blk)/.test(type) && type !== "missFt");
+
+// ONE PLAY, TO BE SHOWN ON ITS OWN (a highlight opened on its box score):
+// the game cut down the way a reel is (housekeeping all kept, the plays
+// before it dropped) to the play's own lines - from `first` to `last`,
+// events consumed - after a few lines of its own possession that led up to
+// it, and the one line after it, for how it ends (never past `upTo`, what
+// the page has shown). `start` and `end` are where it begins and ends, in
+// events of the clip consumed.
+export const clipOfPlay = (
+	playByPlay: any[],
+	first: number,
+	last: number,
+	upTo = playByPlay.length,
+): { events: any[]; start: number; end: number } => {
+	let own = first;
+	while (own < last && !isLine(playByPlay[own])) {
+		own += 1;
+	}
+	// The live play of its possession before it - the misses and the boards
+	// it came off - back to a dead ball (a whistle, a free throw) or what
+	// ended the last possession; or the steal it came straight off.
+	const lead = new Set<number>();
+	const clock = playByPlay[own]?.clock;
+	for (let i = own - 1; i >= 0 && lead.size < CLIP_LEAD_MOST; i--) {
+		const event = playByPlay[i];
+		if (!isLine(event) || event.type === "sub") {
+			continue;
+		}
+		if (
+			event.type === "stl" &&
+			typeof clock === "number" &&
+			typeof event.clock === "number" &&
+			event.clock - clock <= CLIP_BREAK_MOST
+		) {
+			lead.add(i);
+			break;
+		}
+		if (POSSESSION_ENDERS.has(event.type) || !inPlay(event.type)) {
+			break;
+		}
+		lead.add(i);
+	}
+	const from = lead.size > 0 ? Math.min(...lead) : own;
+	const events: any[] = [];
+	// (Where it begins: past the last line kept before it.)
+	let start = 0;
+	let end = -1;
+	let skipped = false;
+	let cut = false;
+	for (let i = 0; i < Math.min(playByPlay.length, upTo); i++) {
+		const event = playByPlay[i];
+		const type = event?.type;
+		const line = isLine(event);
+		if (i === last) {
+			end = events.length;
+		}
+		if (i >= last) {
+			// On to the next line, and it.
+			events.push(event);
+			if (line) {
+				break;
+			}
+		} else if (i >= from) {
+			if (!line || i >= own || lead.has(i)) {
+				// (Cut to: the game before it is not there.)
+				if (line && skipped && !cut) {
+					cut = true;
+					events.push({ ...event, clipStart: true });
+				} else {
+					events.push(event);
+				}
+			} else if (type === "sub") {
+				events.push({ ...event, silent: true });
+			}
+		} else if (ALWAYS_KEEP_TYPES.has(type)) {
+			events.push(event);
+			if (line) {
+				start = events.length;
+			}
+		} else if (type === "sub") {
+			events.push({ ...event, silent: true });
+		} else if (typeof type === "string") {
+			skipped = true;
+		}
+	}
+	if (end < 0) {
+		end = events.length;
+	}
+	return { events, start, end };
+};

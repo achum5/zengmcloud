@@ -368,6 +368,8 @@ export type PlayInput = {
 	report?: { current: Shown | undefined };
 	// What this court staged (see stagedAs), said along with where it is.
 	fp?: string;
+	// A clip (see Court3D's `until`): no further than this (timeline ms).
+	stopAt?: number;
 };
 
 // How far on the picture may run with the page's cursor where it is: to the
@@ -382,6 +384,24 @@ const stepTarget = (tl: CourtTimeline, cursor: number, follower: boolean) => {
 	}
 	const beat = tl.beats.find((b) => b.i >= cursor);
 	return beat ? beat.end : tl.end;
+};
+
+// A CLIP'S END (a highlight played on its own - see Court3D's `until`): a
+// moment past the end of the last line before `cursor` - and if it is a dunk
+// shown again, past that.
+const CLIP_TAIL = 1800;
+export const clipStopAt = (tl: CourtTimeline, cursor: number): number => {
+	const beat = tl.beats.findLast((b) => b.i < cursor);
+	if (!beat) {
+		return tl.end;
+	}
+	let stop = beat.end + CLIP_TAIL;
+	for (const f of tl.fx) {
+		if (replayed(f) && f.t >= beat.preStart && f.t <= beat.end + 300) {
+			stop = Math.max(stop, f.t + REPLAY_AFTER + 100);
+		}
+	}
+	return Math.min(tl.end, stop);
 };
 
 // Follow the page's cursor: run on to the next line normally; cut straight
@@ -537,7 +557,7 @@ export const stepPlay = (
 	}
 	const target = staging
 		? Math.min(WARMUP_MS, s.t + dt)
-		: stepTarget(tl, p.cursor, p.follower);
+		: Math.min(stepTarget(tl, p.cursor, p.follower), p.stopAt ?? Infinity);
 	const base = p.rate;
 	// Through the dead stretches, fast.
 	let rate = base * fastAt(tl, s.t);

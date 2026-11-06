@@ -21945,6 +21945,8 @@ class Director {
 						cap = moves[j]!.t0;
 					}
 				}
+				// (And never past the end: a clip cut off on a turnover - see
+				// clipOfPlay - has nothing after the last of it.)
 				const b = Math.min(
 					hard,
 					firstAfter(acts, a - 1),
@@ -21952,6 +21954,7 @@ class Director {
 					firstAfter(changes, a),
 					liveUntil(a),
 					cap,
+					this.T,
 				);
 				// The men he shadows through it, from when.
 				const men: [number, number][] = [];

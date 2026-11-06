@@ -82,6 +82,7 @@ import {
 } from "./follow.ts";
 import {
 	askedReplay,
+	clipStopAt,
 	lastHolder,
 	makeWipe,
 	onCursor,
@@ -276,6 +277,9 @@ type Props = {
 	// The game's shots and where each was let go from, once it is staged
 	// (see shotSpots) - for the shot chart.
 	onShots?: (shots: ShotSpot[]) => void;
+	// A clip (a highlight played on its own - see HighlightClip): it plays
+	// no further than a moment past the line before this cursor.
+	until?: number;
 };
 
 const Court3D = ({
@@ -298,6 +302,7 @@ const Court3D = ({
 	preview = false,
 	replayAsk,
 	onShots,
+	until,
 }: Props) => {
 	const onShotsRef = useRef(onShots);
 	onShotsRef.current = onShots;
@@ -1107,6 +1112,11 @@ const Court3D = ({
 	);
 	const rosterRef = useRef(roster);
 	rosterRef.current = roster;
+	const stopAt = useMemo(
+		() =>
+			until !== undefined && timeline ? clipStopAt(timeline, until) : undefined,
+		[until, timeline],
+	);
 	const live = useRef({
 		cursor,
 		paused,
@@ -1119,6 +1129,7 @@ const Court3D = ({
 		onLost,
 		keyPlan,
 		fp,
+		stopAt,
 		timeline,
 		pregame,
 		clocks,
@@ -1155,6 +1166,7 @@ const Court3D = ({
 		onLost,
 		keyPlan,
 		fp,
+		stopAt,
 		timeline,
 		pregame,
 		clocks,
