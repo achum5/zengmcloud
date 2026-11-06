@@ -998,8 +998,12 @@ const MOTION_FPS = [9, 13] as const;
 const MOTION_INSIDE = 19;
 const MOTION_EDGE = 8;
 const MAN_FOLLOWS = 0.5;
-// (Shuffled across with him no quicker than this - ft/s.)
+// (Shuffled across with him no quicker than this - ft/s. Set over him
+// there this long (ms) before he goes, up to there no quicker than this -
+// ft/s - or not with him at all.)
 const FOLLOW_SLIDE_FPS = 8;
+const FOLLOW_SET_MS = 200;
+const FOLLOW_UP_FPS = 9;
 // Still this far (ms) from his spot when the ball is snapped - on his way
 // out into his route without a stop.
 const IN_MOTION = 200;
@@ -4225,10 +4229,25 @@ class Director {
 			const st = over.legs[k - 1]!;
 			const d0 = spot(over);
 			const d1 = { x: d0.x, y: d0.y + shift * dir };
-			if (d1.y > MOTION_EDGE && d1.y < FIELD_W - MOTION_EDGE) {
-				const thereD =
-					up.t0 + (dist(up.from, d1) / (up.move === "jog" ? 9 : 4.6)) * 1000;
-				const goD = Math.max(go + 120, thereD + 200);
+			// (Over him in time to go with him from the start - a jog up to
+			// there, if a walk is too slow for it: not stood till late, then
+			// off across after him at a sprint.)
+			const walkFps = up.move === "jog" ? 9 : 4.6;
+			const byD = go + 120 - FOLLOW_SET_MS;
+			const fpsUp = Math.max(
+				walkFps,
+				dist(up.from, d1) / Math.max(0.001, (byD - up.t0) / 1000),
+			);
+			if (
+				d1.y > MOTION_EDGE &&
+				d1.y < FIELD_W - MOTION_EDGE &&
+				fpsUp <= FOLLOW_UP_FPS
+			) {
+				if (fpsUp > walkFps && up.move !== "jog") {
+					up.move = fpsUp > 6 ? "jog" : up.move;
+				}
+				const thereD = up.t0 + (dist(up.from, d1) / fpsUp) * 1000;
+				const goD = Math.max(go + 120, thereD + FOLLOW_SET_MS);
 				up.to = d1;
 				up.t1 = thereD;
 				over.legs[k - 1] = { ...st, t0: thereD, t1: goD, from: d1, to: d1 };
