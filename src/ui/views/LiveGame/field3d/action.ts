@@ -1496,7 +1496,13 @@ class Actor {
 	// way up from there.
 	// (The pace he comes out of it at.)
 	cutTo(to: Pt, t1: number, keep: number): number | undefined {
-		let ve = this.slowInto(keep, CUT_ACCEL);
+		// (There early for what is left of it - the last short way of a
+		// route to where it is caught, say: down into the cut to the pace
+		// he goes on out of it at, not cut at his pace and stopped dead.)
+		const l = this.last;
+		const v = legPace(l);
+		const on = dist(l.to, to) / Math.max((t1 - l.t1) / 1000, 1e-3);
+		let ve = this.slowInto(v > 0 && on < keep * v ? on / v : keep, CUT_ACCEL);
 		if (ve !== undefined && this.roundCut(to, t1)) {
 			ve = legPace(this.last);
 		}
@@ -1592,9 +1598,14 @@ class Actor {
 		const tStart = lk.t0 + (lk.t1 - lk.t0) * f;
 		const tEnd = tStart + ((R * round) / pace) * 1000;
 		const was0 = dOut / Math.max((t1 - l.t1) / 1000, 1e-3);
+		// (Nor if it has him there so early he as good as stops dead out of
+		// it - the last short way of a route to where it is caught, say:
+		// cut, as it was timed, slowing into it and up out of it.)
+		const after = (dOut - tIn) / ((t1 - tEnd) / 1000);
 		if (
 			!(t1 > tEnd) ||
-			(dOut - tIn) / ((t1 - tEnd) / 1000) > Math.max(was0, pace) * PLANT_ON
+			after > Math.max(was0, pace) * PLANT_ON ||
+			after < pace * ROUND_EARLY
 		) {
 			return false;
 		}
@@ -5396,6 +5407,9 @@ const ROUTE_LEFT = 0.4;
 // further back, none of it straight back (a curl, a comeback: planted, not
 // sent back the way he came at the pace he had on).
 const CUT_LEAST = 0.5;
+// (A cut not rounded if it leaves him going on out of it at less than this
+// share of the pace he takes it round at - see roundCut.)
+const ROUND_EARLY = 0.5;
 // (A man in motion at the snap: his motion ended no further off it than
 // this, ms - see runRoute.)
 const MOTION_SNAP_MS = 50;
