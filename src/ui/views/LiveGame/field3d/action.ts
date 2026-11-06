@@ -4226,6 +4226,8 @@ const BREAK_PULL_LEAST_MS = 900;
 const BREAK_FIRE_MS = 300;
 // (His run slowed by more than this much over: in the gait he goes in now.)
 const SLOW_RELABEL = 1.3;
+// (Slowed the more the further along he is: in pieces this long, ms.)
+const SLOW_PIECE_MS = 200;
 // After a man gone for a score, losing ground on him this far back (feet):
 // given up, now and then.
 const GIVE_UP_FT = 24;
@@ -11419,10 +11421,16 @@ class Action {
 	// Held up `ms` longer getting where he is going: the last of his run
 	// slowed to it (or, standing, held there) - or, a returner with the
 	// field to find his way in, the time made up going side to side.
-	slow(m: Actor, ms: number) {
+	slow(m: Actor, ms: number, weave = true, ramp = false) {
 		const l = m.last;
 		const far = dist(l.from, l.to);
-		if (far > 1 && moveKind(l.move) !== "act" && this.weave && ms > 300) {
+		if (
+			far > 1 &&
+			moveKind(l.move) !== "act" &&
+			weave &&
+			this.weave &&
+			ms > 300
+		) {
 			const v = Math.min(m.top * 0.9, far / ((l.t1 - l.t0) / 1000));
 			const half = (v * (l.t1 - l.t0 + ms)) / 2000;
 			// (No sharper a cut at the far end of it than WEAVE_TURN - not
@@ -11441,16 +11449,24 @@ class Action {
 				// (Away from the nearer sideline.)
 				const side = Math.sign(Math.cos(ang) * (MID_Y - mid.y)) || 1;
 				const end = l.to;
-				const t1 = l.t1 + ms;
 				const w = onField({
 					x: mid.x - Math.sin(ang) * h * side,
 					y: mid.y + Math.cos(ang) * h * side,
 				});
 				const a = dist(l.from, w);
-				const tw = l.t0 + ((t1 - l.t0) * a) / (a + dist(w, end));
+				const all = a + dist(w, end);
+				// (Round it at his pace - and, that not taking up all the time
+				// there is, the rest of it his whole run slowed - not run round
+				// it at half the pace he came into it at.)
+				const t1 = Math.min(l.t1 + ms, l.t0 + (all / v) * 1000);
+				const rest = l.t1 + ms - t1;
+				const tw = l.t0 + ((t1 - l.t0) * a) / all;
 				l.to = w;
 				l.t1 = tw;
 				m.go(end, t1, l.move);
+				if (rest > 1) {
+					this.slow(m, rest, false, true);
+				}
 				return;
 			}
 		}
@@ -11476,6 +11492,45 @@ class Action {
 			run.unshift(x);
 		}
 		const span = run.reduce((d, x) => d + dist(x.from, x.to), 0);
+		if (span > 1 && ramp) {
+			// (Or slowed the more the further along it he is - off quick from
+			// where he had it, down by the end of it into the men who bring him
+			// down: not slowed the whole way, nor all of it in the last stretch.
+			// A stride at a time - see SLOW_PIECE_MS.)
+			const t0 = run[0]!.t0;
+			for (const x of run) {
+				for (
+					let t = x.t0 + SLOW_PIECE_MS;
+					t < x.t1 - SLOW_PIECE_MS / 2;
+					t += SLOW_PIECE_MS
+				) {
+					m.split(t);
+				}
+			}
+			const pieces = m.legs.filter((x) => x.t0 >= t0);
+			let along = 0;
+			let sum = 0;
+			const us = pieces.map((x) => {
+				const d = dist(x.from, x.to);
+				const u = (along + d / 2) / span;
+				along += d;
+				sum += (x.t1 - x.t0) * u;
+				return u;
+			});
+			const c = ms / Math.max(sum, 1e-6);
+			let t = t0;
+			pieces.forEach((x, i) => {
+				const was = legPace(x);
+				const dt = (x.t1 - x.t0) * (1 + c * us[i]!);
+				x.t0 = t;
+				x.t1 = t + dt;
+				t += dt;
+				if (was > legPace(x) * SLOW_RELABEL) {
+					x.move = gait(legPace(x));
+				}
+			});
+			return;
+		}
 		if (span > 1) {
 			const t0 = run[0]!.t0;
 			const k = (l.t1 - t0 + ms) / (l.t1 - t0);
