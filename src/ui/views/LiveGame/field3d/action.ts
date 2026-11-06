@@ -529,6 +529,7 @@ const plantedFor = (
 	most = Infinity,
 	accel = CUT_ACCEL,
 	tries = 2,
+	past = PLANT_PAST,
 ): { ve: number; want: number } => {
 	const on = (to.x - at.x) * cos + (to.y - at.y) * sin;
 	// (Well off to the side of it, near square to the way he goes: on past
@@ -539,7 +540,9 @@ const plantedFor = (
 	// of his pace to a crawl in a stride.)
 	const off = Math.abs((to.y - at.y) * cos - (to.x - at.x) * sin);
 	const ahead =
-		on > 0 ? Math.max(on, ((off * Math.hypot(on, off)) / on) * PLANT_PAST) : on;
+		on > 0
+			? Math.max(on, off > 0 ? ((off * Math.hypot(on, off)) / on) * past : 0)
+			: on;
 	const round = (p: Pt) => angleAt({ x: p.x - cos, y: p.y - sin }, p, to);
 	let want = Math.min(most, down ?? v * cutKeep(round(at)));
 	let ve = plantedTo(v, want, ahead, accel);
@@ -2085,6 +2088,24 @@ class Actor {
 			));
 			hard = CUT_ACCEL * STOP_HARD;
 		}
+		// (Not even that: near it, too near to be down for it short of it
+		// even so - all the way down for it, on past it as far as that takes
+		// him - not round from most of his pace at a crawl in a stride, back
+		// to it.)
+		if (ve - want > PLANT_SHORT_FPS) {
+			({ ve, want } = plantedFor(
+				v,
+				l.to,
+				cos,
+				sin,
+				to,
+				down,
+				most,
+				CUT_ACCEL * STOP_HARD,
+				PLANT_HARD_TRIES,
+				Infinity,
+			));
+		}
 		if (!(ve < v)) {
 			return;
 		}
@@ -2764,11 +2785,14 @@ class Actor {
 			const v1 = q >= 0 ? vs - Ad * (T - Math.sqrt(q)) : -1;
 			return v1 >= 0 ? { v1, Ad } : undefined;
 		};
+		// (Too quick even for that - flat out round into it, near it: pulled
+		// up as hard as he plants for a cut (see CUT_ACCEL), stood there -
+		// not on at full tilt to a stride off it and walked the rest.)
 		const stopA = (vs * vs) / (2 * L);
 		const plan =
 			easeAt(STOP_ACCEL) ??
 			easeAt(STOP_ACCEL * STOP_HARD) ??
-			(stopA <= STOP_ACCEL * STOP_HARD ? { v1: 0, Ad: stopA } : undefined);
+			(stopA <= CUT_ACCEL * STOP_HARD ? { v1: 0, Ad: stopA } : undefined);
 		if (!plan) {
 			return false;
 		}
