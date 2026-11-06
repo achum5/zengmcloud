@@ -309,6 +309,9 @@ const PRESS_SLACK_FT = 0.5;
 const PRESS_LEAST_FT = 0.5;
 // (Down at as much as this many times as hard, if he has to be.)
 const STOP_HARD = 1.5;
+// (Harder still by as much as this, to stay short of where he is going in
+// a moment of a chase - see chaseOn.)
+const CHASE_SLOW_MOST = 1.5;
 // (Short of where that hard a stop takes him by more than this, feet: on
 // past it - see Actor.pullsPast.)
 const PAST_SLACK_FT = 0.5;
@@ -1980,6 +1983,12 @@ class Actor {
 	// CARRY_MOST_MS of it, and eased off from there) - or, not going
 	// anywhere much, stood there till then.
 	carryOn(t1: number) {
+		// (Already there, as good as - a hair short of it, in the sums: not
+		// a step of no time at all on the end of his run, and nothing of
+		// his pace left in it for the next to go on at - see legTo.)
+		if (t1 - this.t < 1) {
+			return;
+		}
 		const l = this.last;
 		const v = legPace(l);
 		const far = dist(l.from, l.to);
@@ -2659,8 +2668,19 @@ class Actor {
 			this.slows(move)
 		) {
 			const A = STOP_ACCEL * STOP_HARD;
-			const ve = Math.max(pace, into - A * T);
-			if (((into + ve) / 2) * T <= far) {
+			let ve = Math.max(pace, into - A * T);
+			// (Not quite room for that: as much harder as it takes to be
+			// there on time, if that is not much - see CHASE_SLOW_MOST - not
+			// dropped to the pace it would have him at in a stride.)
+			const vr = (2 * far) / T - into;
+			if (
+				((into + ve) / 2) * T > far &&
+				vr >= 0 &&
+				into - vr <= A * CHASE_SLOW_MOST * T
+			) {
+				ve = vr;
+			}
+			if (((into + ve) / 2) * T <= far + 1e-6) {
 				const n = Math.max(1, Math.round((T * 1000) / STOP_STEP_MS));
 				const dt = T / n;
 				const paceOf = (i: number) => into - (into - ve) * ((i + 0.5) / n);
@@ -6967,17 +6987,21 @@ class Action {
 						moveKind(l.move) === "still" &&
 						l.from.x === l.to.x &&
 						l.from.y === l.to.y;
-					if (move === "jog" && next?.t0 === run.at(-1)!.t1 && still(next)) {
-						// (In off a run quicker than that eases him down from -
-						// through a man and up, say: down from the pace he came in
-						// at, stood when that has him stopped - not dropped to a
-						// jog in a stride. In off one slower than that: on from
-						// the pace he came in at, not set off again from a stand -
-						// up from a stand only if stood before.)
-						const v0 =
-							prev && prev.t1 === t0 && !still(prev) && prev.t1 > prev.t0
-								? paceOn(prev, prev.to, b)
-								: 0;
+					// (In off a run quicker than that eases him down from -
+					// through a man and up, say: down from the pace he came in
+					// at, stood when that has him stopped - not dropped to a
+					// jog, or a walk, in a stride. In off one slower than that:
+					// on from the pace he came in at, not set off again from a
+					// stand - up from a stand only if stood before.)
+					const v0 =
+						prev && prev.t1 === t0 && !still(prev) && prev.t1 > prev.t0
+							? paceOn(prev, prev.to, b)
+							: 0;
+					if (
+						(move === "jog" || (move === "walk" && v0 >= STOP_LEAST)) &&
+						next?.t0 === run.at(-1)!.t1 &&
+						still(next)
+					) {
 						const D = dist(a, b);
 						const S = span / 1000;
 						const ts = v0 > 0 && D > 0 ? (2 * D) / v0 : Infinity;
@@ -9556,11 +9580,16 @@ class Action {
 	// hands, then cocked and let go, still going - and slowing up after.
 	onTheRun(qb: Actor, side: number, catchPt: Pt, throwAt: number) {
 		const end = throwAt + 500;
+		const v = BOOT_FPS * 0.75;
+		const was = qb.last;
 		if (qb.t > end) {
 			qb.cut(end);
+		} else if (GAITS.has(was.move) && legPace(was) > v + SLOW_DROP) {
+			// (On at a quicker run than that already: on at it - not
+			// dropped to it in a stride.)
+			qb.carryOn(end);
 		} else {
 			const s = this.of(qb.at);
-			const v = BOOT_FPS * 0.75;
 			const room = Math.max(
 				0,
 				(side > 0 ? this.bounds.right : -this.bounds.left) - side * s.a - 12,
@@ -9571,6 +9600,15 @@ class Action {
 		}
 		qb.arms("throwWind", throwAt - 320, throwAt);
 		qb.arms("throwFollow", throwAt, end);
+		// (Pulled up after it over a few strides, as a man slows from a
+		// run - see STOP_ACCEL - not dropped to a walk in a stride; and
+		// turned to watch it, stood.)
+		const l = qb.last;
+		if (GAITS.has(l.move) && legPace(l) >= STOP_LEAST) {
+			qb.easeOff(Infinity);
+			qb.hold(Math.max(qb.t, end) + 450, "stand", this.toward(qb.at, catchPt));
+			return;
+		}
 		const q = this.of(qb.at);
 		qb.go(
 			this.w({ d: q.d + 1, a: q.a + side * 2 }),
@@ -11480,9 +11518,30 @@ class Action {
 				x: hit.x + Math.cos(face) * thru,
 				y: hit.y + Math.sin(face) * thru,
 			};
+			// (Further off than that: on through him off the pace he comes
+			// in at, down to a stand over him - see noAirBlocks - if that is
+			// no quicker than a man can go; if it is, down into him with the
+			// rest.)
+			const T = (t + 450 - m.t) / 1000;
+			const D = dist(m.at, over);
+			const l0 = m.last;
+			const v0 =
+				l0.t1 > l0.t0 && dist(l0.from, l0.to) > 0 ? paceOn(l0, m.at, over) : 0;
+			const m0 = D > 0 && T > 0 ? (v0 * T) / D : 0;
+			let peak = v0;
+			if (m0 < 2 && T > 0) {
+				for (let u = 0; u <= 1; u += 0.05) {
+					peak = Math.max(
+						peak,
+						((6 * u * (1 - u) + m0 * (1 - u) * (1 - 3 * u)) * D) / T,
+					);
+				}
+			}
 			if (
 				upright &&
-				dist(m.at, over) <= (LUNGE_MOST_FPS * (t + 450 - m.t)) / 1000
+				D <= LUNGE_MOST_FPS * T &&
+				(dist(m.at, hit) < UPRIGHT_NEAR_FT ||
+					peak <= Math.max(v0, LUNGE_MOST_FPS))
 			) {
 				// Through him and up, over him. (Eased down off the pace he
 				// gets there at, if he is there.)
@@ -11505,6 +11564,26 @@ class Action {
 						"drive",
 						face,
 					);
+				}
+				if (n === 0 && D > 0) {
+					// (Off the pace he comes in at: down from it to a stand, if
+					// that is soon enough - or on from it, and then down.)
+					const ts = m0 >= 2 ? (2 * D) / v0 : T;
+					const at = (s: number) => {
+						const u =
+							m0 >= 2
+								? (v0 * s - (v0 * s * s) / (2 * ts)) / D
+								: (s / T) * (s / T) * (3 - (2 * s) / T) +
+									m0 * (s / T) * (1 - s / T) * (1 - s / T);
+						return {
+							x: from.x + (over.x - from.x) * u,
+							y: from.y + (over.y - from.y) * u,
+						};
+					};
+					const k1 = Math.max(1, Math.round((ts * 1000) / HIT_PRESS_STEP_MS));
+					for (let k = 1; k <= k1; k++) {
+						m.go(at((ts * k) / k1), t0 + (ts * 1000 * k) / k1, "drive", face);
+					}
 				}
 				if (m.t < t + 450) {
 					m.go(over, t + 450, "drive", face);
@@ -18690,6 +18769,13 @@ class Action {
 		let meet: Pt;
 		let tm: number;
 		if (bv <= 0) {
+			// (On his way to where he waits still, at a run: pulled up there
+			// over a few strides - see STOP_ACCEL - not stopped dead on it
+			// as the man gets to him.)
+			const bl = b.last;
+			if (RAMPS.has(bl.move) && legPace(bl) >= STOP_LEAST) {
+				b.easeOff(EASE_OFF_FT);
+			}
 			// (Squared up to him where he is - not a step back from it to
 			// square up, in a blink, if he is on the move still.)
 			const far = dist(cAt, b.at);
@@ -20355,7 +20441,22 @@ class Action {
 				m.t + PEEL_TURN_MS,
 				"jog",
 			);
-			m.run(to, m.top * 0.85, "sprint");
+			// (Pulled up as he gets there, over a few strides - see
+			// STOP_ACCEL - not on at full tilt till he is on it.)
+			const fps = m.top * 0.85;
+			const ease = Math.min(EASE_OFF_FT, (fps * fps) / (2 * STOP_ACCEL));
+			const left = dist(m.at, to);
+			if (left > ease * 2) {
+				const u = (left - ease) / left;
+				m.run(
+					{ x: m.at.x + (to.x - m.at.x) * u, y: m.at.y + (to.y - m.at.y) * u },
+					fps,
+					"sprint",
+				);
+				m.easeOff(ease);
+			} else {
+				m.run(to, fps, "sprint");
+			}
 		});
 
 		// (No return coming - a fair catch, or into the end zone: the wall
