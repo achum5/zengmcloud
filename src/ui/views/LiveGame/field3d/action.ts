@@ -3603,6 +3603,10 @@ const SWAT_VEER_GAIN = 0.5;
 // of him and this far to the side, feet.)
 const BREAK_IN = 1.4;
 const BREAK_ASIDE = 1.6;
+// (There this long before it gets there, ms - straight there as it goes
+// up, if he is on his way that way already, near enough: see paceOn.)
+const BREAK_UP_EARLY_MS = 150;
+const BREAK_UP_ON = 0.85;
 // An incomplete pass: at the receiver's hands, this far out in front of
 // him (feet) - or out of his reach, over them this high - and off them or
 // knocked away, coming to rest this far off (feet), dropping to the ground
@@ -12594,7 +12598,7 @@ class Action {
 		} else if (breakup && coverage.includes(breakup)) {
 			// Got a hand on it: knocked away. (In at his shoulder, the side he
 			// came from - not stood in the way of it.)
-			this.breakOn(breakup, catchPt, catchAt, 150, true);
+			this.breakOn(breakup, catchPt, catchAt, BREAK_UP_EARLY_MS, true);
 			// (Carried on a step or so with it, off his last stride - by the
 			// ball, not through the man it was for, nor on through it as he
 			// gets a hand to it.)
@@ -12951,24 +12955,7 @@ class Action {
 		early: number,
 		aside = false,
 	) {
-		const qb = this.role("QB");
-		const toQb = qb ? this.toward(catchPt, qb.at) : this.behind;
-		const off = aside
-			? Math.sign(
-					Math.cos(toQb) * (m.at.y - catchPt.y) -
-						Math.sin(toQb) * (m.at.x - catchPt.x),
-				) || 1
-			: 0;
-		const spot = {
-			x:
-				catchPt.x +
-				Math.cos(toQb) * (aside ? BREAK_IN : 2.2) -
-				Math.sin(toQb) * off * BREAK_ASIDE,
-			y:
-				catchPt.y +
-				Math.sin(toQb) * (aside ? BREAK_IN : 2.2) +
-				Math.cos(toQb) * off * BREAK_ASIDE,
-		};
+		const spot = this.breakSpot(m, catchPt, aside);
 		const by = catchAt - early;
 		const latest = Math.max(this.seen, catchAt - 700);
 		// (There or near enough by then on his own - or no time to be
@@ -13005,6 +12992,30 @@ class Action {
 		if (!m.slowAlong(spot, by)) {
 			m.pressUp(spot, by, m.top * FLAT_OUT, "sprint");
 		}
+	}
+
+	// Where he gets to it from: in front of it, toward the quarterback - or,
+	// knocking it away, `aside`, in at the shoulder of the man it was for,
+	// the side he comes from.
+	private breakSpot(m: Actor, catchPt: Pt, aside: boolean): Pt {
+		const qb = this.role("QB");
+		const toQb = qb ? this.toward(catchPt, qb.at) : this.behind;
+		const off = aside
+			? Math.sign(
+					Math.cos(toQb) * (m.at.y - catchPt.y) -
+						Math.sin(toQb) * (m.at.x - catchPt.x),
+				) || 1
+			: 0;
+		return {
+			x:
+				catchPt.x +
+				Math.cos(toQb) * (aside ? BREAK_IN : 2.2) -
+				Math.sin(toQb) * off * BREAK_ASIDE,
+			y:
+				catchPt.y +
+				Math.sin(toQb) * (aside ? BREAK_IN : 2.2) +
+				Math.cos(toQb) * off * BREAK_ASIDE,
+		};
 	}
 
 	// When to break on it, `latest` at the latest: sooner - as soon as he
@@ -15987,15 +15998,38 @@ class Action {
 							};
 						}),
 					);
+					// (The man the sim says knocked it away, with the time to
+					// get there and be set for it: straight to where he does
+					// it from - see breakOn - not to a place round it first and
+					// then on over to it. On to it too quick to pull up there,
+					// or late for it: to a place round it, and broken on it from
+					// there - see breakOn.)
+					const swat =
+						m === marked?.[0] && this.statPids("defPssDef")[0] === m.pid
+							? this.breakSpot(m, to, true)
+							: undefined;
+					const goes = legPace(m.last);
+					const swatFar = swat ? dist(m.at, swat) : 0;
+					const swats =
+						swat !== undefined &&
+						(goes < STOP_LEAST ||
+							paceOn(m.last, m.at, swat) >= goes * BREAK_UP_ON) &&
+						swatFar >=
+							(goes * goes) / (2 * STOP_ACCEL * STOP_HARD) + PAST_SLACK_FT &&
+						catchAt - BREAK_UP_EARLY_MS - m.t >=
+							((2 * swatFar) / Math.max(goes, JOG_LEAST_FPS)) * 1000 +
+								BREAK_SET_MS;
 					const spot =
-						spots.find((p) => closing.every((q) => dist(q, p) > 3.5)) ??
-						spots.at(-1)!;
+						swat && swats
+							? swat
+							: (spots.find((p) => closing.every((q) => dist(q, p) > 3.5)) ??
+								spots.at(-1)!);
 					closing.push(spot);
 					// (Planted first, going the other way - see plantFor, and
 					// plantBack off a backpedal - and up to speed out of it.)
 					m.plantFor(spot);
 					const v0 = paceOn(m.last, m.at, spot);
-					const due = catchAt + 150;
+					const due = swats ? catchAt - BREAK_UP_EARLY_MS : catchAt + 150;
 					// (Near it, time to spare: there on the break all the same -
 					// pulled up as he gets there - and broken down square to it,
 					// not walked there the while.)
