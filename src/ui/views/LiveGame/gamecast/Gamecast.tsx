@@ -736,9 +736,9 @@ export const OnCourt = ({ boxScore }: { boxScore: any }) => (
 							<th title="Game score">GmSc</th>
 							<th title="Minutes played">MP</th>
 							<th title="Points">PTS</th>
-							<th title="Field goals">FG</th>
 							<th title="Rebounds">REB</th>
 							<th title="Assists">AST</th>
+							<th title="Field goals">FG</th>
 							<th title="Personal fouls">PF</th>
 						</tr>
 						{onFloor(t).map((p) => (
@@ -770,11 +770,11 @@ export const OnCourt = ({ boxScore }: { boxScore: any }) => (
 								<td>{helpers.gameScore(p).toFixed(1)}</td>
 								<td>{helpers.formatNumber(p.min, "minutes")}</td>
 								<td className="fw-bold">{p.pts}</td>
+								<td>{p.orb + p.drb}</td>
+								<td>{p.ast}</td>
 								<td className="text-nowrap">
 									{p.fg}-{p.fga}
 								</td>
-								<td>{p.orb + p.drb}</td>
-								<td>{p.ast}</td>
 								<td className={clsx({ "text-danger": p.pf >= 5 })}>{p.pf}</td>
 							</tr>
 						))}
@@ -1591,6 +1591,20 @@ export const LiveGamecast = ({
 					{tab === "gamecast" ? (
 						<div className="gamecast-grid">
 							<div>
+								{/* (On a phone, up top: its size never changes, so the plays coming in
+								    below it never push it out of sight.) */}
+								<Section
+									title="On the Court"
+									className="d-lg-none"
+									action={
+										<LinkButton onClick={() => toTab("box")}>
+											Box score
+										</LinkButton>
+									}
+								>
+									<Linescore boxScore={boxScore} />
+									<OnCourt boxScore={boxScore} />
+								</Section>
 								<Section
 									title="Plays"
 									action={
@@ -1612,18 +1626,6 @@ export const LiveGamecast = ({
 									season={season}
 									numPeriods={numPeriods}
 								/>
-								<Section
-									title="On the Court"
-									className="d-lg-none"
-									action={
-										<LinkButton onClick={() => toTab("box")}>
-											Box score
-										</LinkButton>
-									}
-								>
-									<Linescore boxScore={boxScore} />
-									<OnCourt boxScore={boxScore} />
-								</Section>
 								<Section title="Game Leaders">
 									<Leaders boxScore={boxScore} />
 								</Section>
