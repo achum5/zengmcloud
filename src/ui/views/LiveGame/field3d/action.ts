@@ -2879,6 +2879,40 @@ class Actor {
 			Math.min(fps, dist(this.at, p) / Math.max(0.001, (t1 - this.t) / 1000)),
 		);
 		if (t1 - this.t < STOP_STEP_MS) {
+			// (Only a moment left after it - planted or bent round into it,
+			// there early: on at it at the pace he is going - or, there
+			// already, or well round from the way he goes, on that way, past
+			// it the little way that takes him, for the next of it to plant
+			// for - not the last stride of the turn stretched over it, down to
+			// half his pace in a stride and up again off it - see hold.)
+			const l = this.last;
+			const v = legPace(l);
+			const far = dist(this.at, p);
+			const ft = (v * (t1 - this.t)) / 1000;
+			const run = dist(l.from, l.to);
+			const [ux, uy] =
+				ft < far && run > 0 && angleAt(l.from, l.to, p) <= CUT_LEAST
+					? [(p.x - this.at.x) / far, (p.y - this.at.y) / far]
+					: [(l.to.x - l.from.x) / run, (l.to.y - l.from.y) / run];
+			if (
+				t1 > this.t &&
+				RAMPS.has(l.move) &&
+				!l.arms &&
+				!l.turn &&
+				!l.span &&
+				v >= STOP_LEAST &&
+				run > 0
+			) {
+				this.go(
+					onField(
+						{ x: this.at.x + ux! * ft, y: this.at.y + uy! * ft },
+						this.roam,
+					),
+					t1,
+					l.move,
+				);
+				return;
+			}
 			this.hold(t1);
 			return;
 		}
