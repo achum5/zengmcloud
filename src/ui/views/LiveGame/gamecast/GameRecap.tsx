@@ -6,8 +6,11 @@
 // same switch as the live game's - see local.gamecastLayout).
 
 import clsx from "clsx";
-import { useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { helpers } from "../../../util/helpers.ts";
+import { toWorker } from "../../../util/toWorker.ts";
+import { realtimeUpdate } from "../../../util/realtimeUpdate.ts";
+import { useLocal } from "../../../util/local.ts";
 import { linkifyRecap, buildRecapLinks } from "../../../util/linkifyRecap.ts";
 import { Markdown } from "../../../components/Markdown.tsx";
 import { BoxScore } from "../../../components/BoxScore.tsx";
@@ -26,9 +29,13 @@ import { roundHalf } from "../../../../common/getGameSpread.ts";
 import type { GamecastInfo } from "../../../../worker/views/liveGameInfo.ts";
 import {
 	Leaders,
+	AllPlays,
+	FeedContext,
+	Highlights,
 	Linescore,
 	Logo,
 	LinkButton,
+	Switch,
 	RecentGames,
 	Section,
 	Series,
@@ -36,13 +43,22 @@ import {
 	TeamStatBars,
 } from "./Gamecast.tsx";
 import { FlowCharts } from "./FlowCharts.tsx";
+import { feedFromEvents, periodBoxScore } from "./replayFeed.ts";
+import {
+	feedRows,
+	periodLabel,
+	type FeedEntry,
+	type FeedRow,
+} from "./playFeed.ts";
+import { playSentence } from "./sentence.ts";
 import { winProb } from "../winProb.ts";
 
-type Tab = "recap" | "box" | "stats" | "flow";
+type Tab = "recap" | "box" | "plays" | "stats" | "flow";
 
 const TABS: [Tab, string][] = [
 	["recap", "Recap"],
 	["box", "Box Score"],
+	["plays", "Play-by-Play"],
 	["stats", "Team Stats"],
 	["flow", "Game Flow"],
 ];
@@ -388,118 +404,255 @@ export const GameRecap = ({
 	const [tab, setTab] = useState<Tab>("recap");
 	const info: GamecastInfo | undefined = boxScore.gamecast;
 	const colors = sideColors(boxScore.teams);
+	const { gender } = useLocal(["gender"]);
+
+	// A saved replay's plays (see replayFeed): the play-by-play, its
+	// highlights, the box score a quarter at a time - and any play, tapped,
+	// opened in the replay right there.
+	const [replay, setReplay] = useState<
+		| {
+				events: any[];
+				entries: FeedEntry[];
+				rows: FeedRow[];
+				ends: ReturnType<typeof feedFromEvents>["ends"];
+		  }
+		| undefined
+	>();
+	const gid: number = boxScore.gid;
+	const hasReplay = !!boxScore.hasReplay;
+	useEffect(() => {
+		setReplay(undefined);
+		if (!hasReplay) {
+			return;
+		}
+		let live = true;
+		(async () => {
+			try {
+				const got: any = await toWorker("main", "getReplayFeed", gid);
+				if (!live || !got) {
+					return;
+				}
+				const f = feedFromEvents(got.events, got.initialBoxScore, gender);
+				setReplay({
+					events: got.events,
+					entries: f.entries,
+					rows: feedRows([...f.entries].reverse()),
+					ends: f.ends,
+				});
+			} catch {
+				// No plays to show.
+			}
+		})();
+		return () => {
+			live = false;
+		};
+	}, [gid, hasReplay, gender]);
+	const [period, setPeriod] = useState<number | "all">("all");
+
+	const names = useMemo(() => {
+		const m = new Map<number, string>();
+		for (const t of boxScore.teams) {
+			for (const p of t.players ?? []) {
+				m.set(p.pid, p.name);
+			}
+		}
+		return m;
+	}, [boxScore.teams]);
+	const feed = useMemo(
+		() => ({
+			say: (row: FeedRow) =>
+				playSentence({
+					events: row.events as any[],
+					finish: row.finish,
+					name: (pid) => (pid === undefined ? undefined : names.get(pid)),
+					teamName: (t) => {
+						const team = boxScore.teams[t];
+						return team ? `${team.region} ${team.name}` : undefined;
+					},
+				}),
+			// The replay, opened just before the play (before the shot, for
+			// one that is a shot and its result).
+			open: replay
+				? (row: FeedRow) => {
+						const start = replay.entries[row.key - 1]?.cursor ?? 0;
+						void realtimeUpdate([], helpers.leagueUrl(["live_game"]), {
+							gidOneGame: gid,
+							playByPlay: replay.events,
+							replay: true,
+							fromAction: true,
+							startAt: start,
+						});
+					}
+				: undefined,
+		}),
+		[names, replay, gid, boxScore.teams],
+	);
+	const openAt = (cursor: number) => {
+		const row = replay?.rows.find((r) => r.cursor === cursor);
+		if (row) {
+			feed.open?.(row);
+		}
+	};
+	const numPeriods = boxScore.numPeriods ?? 4;
+	const tabs = TABS.filter(([key]) => key !== "plays" || replay !== undefined);
 
 	return (
-		<div className="gamecast recap">
-			<RecapHeader
-				boxScore={boxScore}
-				abbrev={abbrev}
-				tid={tid}
-				prevGid={prevGid}
-				nextGid={nextGid}
-				currentGidInList={currentGidInList}
-			/>
-			<div className="gamecast-tabs" role="tablist">
-				{TABS.map(([key, label]) => (
-					<button
-						key={key}
-						type="button"
-						role="tab"
-						aria-selected={tab === key}
-						className={clsx({ active: tab === key })}
-						onClick={() => setTab(key)}
-					>
-						{label}
-					</button>
-				))}
-			</div>
-			<div className="gamecast-content">
-				{tab === "recap" ? (
-					<>
-						<div className="recap-grid">
-							<div className="recap-mid">
-								<RecapStory boxScore={boxScore} />
-								{boxScore.charts ? (
-									<Section title="Game Flow">
-										<FlowCharts boxScore={boxScore} colors={colors} />
+		<FeedContext.Provider value={feed}>
+			<div className="gamecast recap">
+				<RecapHeader
+					boxScore={boxScore}
+					abbrev={abbrev}
+					tid={tid}
+					prevGid={prevGid}
+					nextGid={nextGid}
+					currentGidInList={currentGidInList}
+				/>
+				<div className="gamecast-tabs" role="tablist">
+					{tabs.map(([key, label]) => (
+						<button
+							key={key}
+							type="button"
+							role="tab"
+							aria-selected={tab === key}
+							className={clsx({ active: tab === key })}
+							onClick={() => setTab(key)}
+						>
+							{label}
+						</button>
+					))}
+				</div>
+				<div className="gamecast-content">
+					{tab === "recap" ? (
+						<>
+							<div className="recap-grid">
+								<div className="recap-mid">
+									<RecapStory boxScore={boxScore} />
+									{replay ? (
+										<Highlights
+											rows={replay.rows}
+											teams={boxScore.teams}
+											season={boxScore.season}
+											numPeriods={numPeriods}
+											onReplay={openAt}
+										/>
+									) : null}
+									{boxScore.charts ? (
+										<Section title="Game Flow">
+											<FlowCharts boxScore={boxScore} colors={colors} />
+										</Section>
+									) : null}
+								</div>
+								<div className="recap-left">
+									<Section
+										title="Game Leaders"
+										action={
+											<LinkButton onClick={() => setTab("box")}>
+												Box score
+											</LinkButton>
+										}
+									>
+										<Leaders boxScore={boxScore} />
 									</Section>
-								) : null}
+									<Section
+										title="Team Stats"
+										action={
+											<LinkButton onClick={() => setTab("stats")}>
+												Full team stats
+											</LinkButton>
+										}
+									>
+										<TeamStatBars boxScore={boxScore} colors={colors} />
+									</Section>
+								</div>
+								<div className="recap-right">
+									<Line boxScore={boxScore} />
+									{info ? (
+										<>
+											<Series boxScore={boxScore} info={info} />
+											<Standings boxScore={boxScore} info={info} final />
+											<RecentGames boxScore={boxScore} info={info} />
+										</>
+									) : null}
+									<GameInfo boxScore={boxScore} />
+								</div>
 							</div>
-							<div className="recap-left">
-								<Section
-									title="Game Leaders"
-									action={
-										<LinkButton onClick={() => setTab("box")}>
-											Box score
-										</LinkButton>
-									}
-								>
-									<Leaders boxScore={boxScore} />
-								</Section>
-								<Section
-									title="Team Stats"
-									action={
-										<LinkButton onClick={() => setTab("stats")}>
-											Full team stats
-										</LinkButton>
-									}
-								>
-									<TeamStatBars boxScore={boxScore} colors={colors} />
-								</Section>
-							</div>
-							<div className="recap-right">
-								<Line boxScore={boxScore} />
-								{info ? (
-									<>
-										<Series boxScore={boxScore} info={info} />
-										<Standings boxScore={boxScore} info={info} final />
-										<RecentGames boxScore={boxScore} info={info} />
-									</>
-								) : null}
-								<GameInfo boxScore={boxScore} />
-							</div>
+							{reactions}
+						</>
+					) : tab === "box" ? (
+						<>
+							{replay && replay.ends.length > 1 ? (
+								<div className="mb-2">
+									<Switch
+										options={[
+											["all", "Game"] as [number | "all", string],
+											...replay.ends.map(
+												(_, k) =>
+													[
+														k,
+														periodLabel(k + 1, numPeriods, helpers.ordinal) ??
+															"",
+													] as [number | "all", string],
+											),
+										]}
+										value={period}
+										onChange={setPeriod}
+									/>
+								</div>
+							) : null}
+							<BoxScore
+								key={String(period)}
+								boxScore={
+									replay && period !== "all"
+										? periodBoxScore(boxScore, replay.ends, period)
+										: boxScore
+								}
+								Row={Row}
+								forceRowUpdate
+								sportState={undefined}
+							/>
+						</>
+					) : tab === "plays" && replay ? (
+						<div className="gamecast-narrow">
+							<AllPlays
+								rows={replay.rows}
+								teams={boxScore.teams}
+								season={boxScore.season}
+								numPeriods={numPeriods}
+							/>
 						</div>
-						{reactions}
-					</>
-				) : tab === "box" ? (
-					<BoxScore
-						boxScore={boxScore}
-						Row={Row}
-						forceRowUpdate={false}
-						sportState={undefined}
-					/>
-				) : tab === "stats" ? (
-					<div className="gamecast-narrow">
-						<Section title="Team Stats">
-							<TeamStatBars boxScore={boxScore} colors={colors} full />
-						</Section>
-						<Section title="Four Factors">
-							<FourFactors teams={teamsInDisplayOrder(boxScore.teams)} />
-						</Section>
-					</div>
-				) : (
-					<>
-						{boxScore.charts ? (
-							<Section title="Game Flow">
-								<FlowCharts boxScore={boxScore} colors={colors} />
+					) : tab === "stats" ? (
+						<div className="gamecast-narrow">
+							<Section title="Team Stats">
+								<TeamStatBars boxScore={boxScore} colors={colors} full />
 							</Section>
-						) : null}
-						<GameCharts boxScore={boxScore} restOnly />
-					</>
-				)}
-				{boxScore.exhibition ? null : (
-					<div className="mt-3">
-						<Note
-							key={boxScore.gid}
-							initialNote={boxScore.note}
-							info={{ type: "game", gid: boxScore.gid }}
-							infoLink
-							editOnly
-							autoLink={buildRecapLinks(boxScore)}
-						/>
-					</div>
-				)}
+							<Section title="Four Factors">
+								<FourFactors teams={teamsInDisplayOrder(boxScore.teams)} />
+							</Section>
+						</div>
+					) : (
+						<>
+							{boxScore.charts ? (
+								<Section title="Game Flow">
+									<FlowCharts boxScore={boxScore} colors={colors} />
+								</Section>
+							) : null}
+							<GameCharts boxScore={boxScore} restOnly />
+						</>
+					)}
+					{boxScore.exhibition ? null : (
+						<div className="mt-3">
+							<Note
+								key={boxScore.gid}
+								initialNote={boxScore.note}
+								info={{ type: "game", gid: boxScore.gid }}
+								infoLink
+								editOnly
+								autoLink={buildRecapLinks(boxScore)}
+							/>
+						</div>
+					)}
+				</div>
 			</div>
-		</div>
+		</FeedContext.Provider>
 	);
 };

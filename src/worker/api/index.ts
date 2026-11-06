@@ -1,4 +1,5 @@
 import { parseCourtDecals } from "../../common/courtDecals.ts";
+import { boxScoreToLiveSim } from "../views/liveGame.ts";
 import { parseScoreBug, scoreBugPictureIds } from "../../common/scoreBug.ts";
 import {
 	courtPictureIds,
@@ -8054,6 +8055,37 @@ const getLiveGamePlayByPlay = async (gid: number) => {
 	return row?.playByPlay;
 };
 
+// A saved replay's plays, for its box score laid out as a game recap (see
+// LiveGame/gamecast/GameRecap): the events and the box score they start
+// from - the same pair the live game plays from, so the page lists the
+// plays exactly as the replay shows them, and works out who did what in
+// each quarter.
+const getReplayFeed = async (gid: number) => {
+	const playByPlay = await getLiveGamePlayByPlay(gid);
+	if (!Array.isArray(playByPlay) || playByPlay.length === 0) {
+		return undefined;
+	}
+	const game = await idb.merged.games.get(gid);
+	if (!game) {
+		return undefined;
+	}
+	const boxScore = helpers.deepCopy(game);
+	let allStars;
+	if (boxScore.teams[0].tid === -1 || boxScore.teams[1].tid === -1) {
+		allStars = await idb.merged.allStars.get(boxScore.season);
+		if (!allStars) {
+			return undefined;
+		}
+	}
+	const out = await boxScoreToLiveSim({
+		allStars,
+		boxScore,
+		confetti: false,
+		playByPlay,
+	});
+	return { events: out.events, initialBoxScore: out.initialBoxScore };
+};
+
 // The chat that happened while a game was live-simmed, saved alongside its
 // replay so re-watching shows the conversation at the moments it happened.
 const getLiveGameChat = async (gid: number) => {
@@ -8247,6 +8279,7 @@ const api = {
 		getLeagues,
 		getLiveGameChat,
 		getLiveGamePlayByPlay,
+		getReplayFeed,
 		hasLiveGameReplay,
 		liveSimBlocksDaySim,
 		getGoatBreakdown,

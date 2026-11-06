@@ -30,6 +30,8 @@ export type FeedEntry = {
 	// The page's place in the game's events once the line was shown (the
 	// 3D court finds the play by it, to show it again).
 	cursor?: number;
+	// The game's own event behind the line.
+	event?: unknown;
 };
 
 export type FeedRow = {
@@ -49,6 +51,8 @@ export type FeedRow = {
 	cursor?: number;
 	// The line that finished it.
 	type?: string;
+	// The events behind its lines, oldest first.
+	events: unknown[];
 	// A shot still in the air: its row is open for the result.
 	pending: boolean;
 };
@@ -192,6 +196,7 @@ export const feedRows = (entries: readonly FeedEntry[]): FeedRow[] => {
 			open.finish = e.finish;
 			open.cursor = e.cursor ?? open.cursor;
 			open.type = e.type;
+			open.events.push(e.event);
 			open.pending = false;
 			open = undefined;
 			openType = undefined;
@@ -211,6 +216,7 @@ export const feedRows = (entries: readonly FeedEntry[]): FeedRow[] => {
 			finish: e.finish,
 			cursor: e.cursor,
 			type: e.type,
+			events: [e.event],
 			pending: isAttempt(e.type),
 		};
 		// (A line that isn't the attempt's result - there is always one, but

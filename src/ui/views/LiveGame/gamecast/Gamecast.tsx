@@ -11,8 +11,10 @@
 
 import clsx from "clsx";
 import {
+	createContext,
 	Fragment,
 	memo,
+	useContext,
 	useMemo,
 	useRef,
 	useState,
@@ -34,6 +36,7 @@ import {
 } from "./playFeed.ts";
 import type { GamecastInfo } from "../../../../worker/views/liveGameInfo.ts";
 import { FlowCharts } from "./FlowCharts.tsx";
+import { playSentence } from "./sentence.ts";
 
 type Tab = "gamecast" | "box" | "plays" | "stats" | "flow";
 
@@ -252,6 +255,14 @@ export const PlayPicture = ({
 	);
 };
 
+// How the plays listed are said (see sentence.ts) and what tapping one
+// does (shows it again on the court, or opens the replay at it) - set by
+// the page listing them.
+export const FeedContext = createContext<{
+	say?: (row: FeedRow) => string | undefined;
+	open?: (row: FeedRow) => void;
+}>({});
+
 export const PlayRow = memo(
 	({
 		row,
@@ -267,10 +278,14 @@ export const PlayRow = memo(
 		// The one under the court: bigger, and two lines of text at most.
 		latest?: boolean;
 	}) => {
+		const { say, open } = useContext(FeedContext);
 		if (row.textOnly) {
 			return <div className="gamecast-divider">{textOf(row.texts)}</div>;
 		}
 		const team = row.t !== undefined ? teams[row.t] : undefined;
+		const sentence = say?.(row);
+		const opens =
+			open !== undefined && row.cursor !== undefined && !row.pending;
 		const when = [
 			row.time,
 			periodLabel(row.period, numPeriods, helpers.ordinal),
@@ -281,7 +296,21 @@ export const PlayRow = memo(
 			<div
 				className={clsx("gamecast-play", {
 					"gamecast-play-latest": latest,
+					"gamecast-play-opens": opens,
 				})}
+				{...(opens
+					? {
+							role: "button",
+							tabIndex: 0,
+							title: "Watch it",
+							onClick: () => open(row),
+							onKeyDown: (e: { key: string }) => {
+								if (e.key === "Enter") {
+									open(row);
+								}
+							},
+						}
+					: {})}
 			>
 				<div className="gamecast-play-picture">
 					<PlayPicture
@@ -306,7 +335,7 @@ export const PlayRow = memo(
 							"gamecast-clamp": latest,
 						})}
 					>
-						{textOf(row.texts)}
+						{sentence ?? textOf(row.texts)}
 					</div>
 				</div>
 			</div>
@@ -427,6 +456,7 @@ export const Highlights = ({
 	onReplay?: (cursor: number) => void;
 }) => {
 	const [all, setAll] = useState(false);
+	const { say } = useContext(FeedContext);
 	const highlights = rows.filter((row) => highlightOf(row) !== undefined);
 	if (highlights.length === 0) {
 		return null;
@@ -471,7 +501,7 @@ export const Highlights = ({
 									) : null}
 								</div>
 								<div className="gamecast-play-text gamecast-clamp">
-									{textOf(row.texts)}
+									{say?.(row) ?? textOf(row.texts)}
 								</div>
 							</div>
 							{onReplay && row.cursor !== undefined ? (
@@ -1257,160 +1287,213 @@ export const LiveGamecast = ({
 		}
 	};
 
+	// The plays said as a broadcast says them, and each one, tapped, shown
+	// again on the court (where it can be).
+	const onReplayRef = useRef(onReplay);
+	onReplayRef.current = onReplay;
+	const canReplay = onReplay !== undefined;
+	const names = useMemo(() => {
+		const m = new Map<number, string>();
+		for (const t of teams) {
+			for (const p of t.players ?? []) {
+				m.set(p.pid, p.name);
+			}
+		}
+		return m;
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [boxScore.gid]);
+	const feed = useMemo(
+		() => ({
+			say: (row: FeedRow) =>
+				playSentence({
+					events: row.events as any[],
+					finish: row.finish,
+					name: (pid) => (pid === undefined ? undefined : names.get(pid)),
+					teamName: (t) =>
+						teams[t] ? `${teams[t].region} ${teams[t].name}` : undefined,
+				}),
+			open: !canReplay
+				? undefined
+				: (row: FeedRow) => {
+						if (row.cursor === undefined) {
+							return;
+						}
+						const wrap = wrapRef.current;
+						const pin = wrap?.firstElementChild;
+						if (
+							wrap &&
+							pin &&
+							getComputedStyle(pin).position !== "sticky" &&
+							wrap.getBoundingClientRect().top < 0
+						) {
+							window.scrollTo({
+								top: wrap.getBoundingClientRect().top + window.scrollY - 60,
+								behavior: "smooth",
+							});
+						}
+						onReplayRef.current?.(row.cursor);
+					},
+		}),
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+		[names, canReplay],
+	);
+
 	return (
-		<div className="gamecast" ref={wrapRef}>
-			<div className="gamecast-pin">
-				{header}
-				<div className="row g-3">
-					<div className="col-lg-8">
-						<div className="gamecast-court">
-							{court}
-							<div className="gamecast-controls">{controls}</div>
+		<FeedContext.Provider value={feed}>
+			<div className="gamecast" ref={wrapRef}>
+				<div className="gamecast-pin">
+					{header}
+					<div className="row g-3">
+						<div className="col-lg-8">
+							<div className="gamecast-court">
+								{court}
+								<div className="gamecast-controls">{controls}</div>
+							</div>
+							<div className="gamecast-latest">
+								{latest ? (
+									<PlayRow
+										row={latest}
+										teams={teams}
+										season={season}
+										numPeriods={numPeriods}
+										latest
+									/>
+								) : null}
+							</div>
 						</div>
-						<div className="gamecast-latest">
-							{latest ? (
-								<PlayRow
-									row={latest}
-									teams={teams}
-									season={season}
-									numPeriods={numPeriods}
-									latest
-								/>
-							) : null}
+						<div className="col-lg-4 d-none d-lg-block">
+							<Linescore boxScore={boxScore} />
+							<OnCourt boxScore={boxScore} />
 						</div>
 					</div>
-					<div className="col-lg-4 d-none d-lg-block">
-						<Linescore boxScore={boxScore} />
-						<OnCourt boxScore={boxScore} />
-					</div>
-				</div>
-				<div className="gamecast-tabs" role="tablist" ref={tabsRef}>
-					{TABS.map(([key, label]) => (
-						<button
-							key={key}
-							type="button"
-							role="tab"
-							aria-selected={tab === key}
-							className={clsx({ active: tab === key })}
-							onClick={() => toTab(key)}
-						>
-							{label}
-						</button>
-					))}
-				</div>
-			</div>
-			<div className="gamecast-content">
-				{tab === "gamecast" ? (
-					<div className="gamecast-grid">
-						<div>
-							<Section
-								title="Plays"
-								action={
-									<LinkButton onClick={() => toTab("plays")}>
-										Full play-by-play
-									</LinkButton>
-								}
+					<div className="gamecast-tabs" role="tablist" ref={tabsRef}>
+						{TABS.map(([key, label]) => (
+							<button
+								key={key}
+								type="button"
+								role="tab"
+								aria-selected={tab === key}
+								className={clsx({ active: tab === key })}
+								onClick={() => toTab(key)}
 							>
-								<PlayList
-									rows={rows.slice(0, 6)}
+								{label}
+							</button>
+						))}
+					</div>
+				</div>
+				<div className="gamecast-content">
+					{tab === "gamecast" ? (
+						<div className="gamecast-grid">
+							<div>
+								<Section
+									title="Plays"
+									action={
+										<LinkButton onClick={() => toTab("plays")}>
+											Full play-by-play
+										</LinkButton>
+									}
+								>
+									<PlayList
+										rows={rows.slice(0, 6)}
+										teams={teams}
+										season={season}
+										numPeriods={numPeriods}
+									/>
+								</Section>
+								<Highlights
+									rows={rows}
 									teams={teams}
 									season={season}
 									numPeriods={numPeriods}
+									onReplay={
+										onReplay
+											? (cursor) => {
+													// (The court in sight to watch it: a phone's is
+													// pinned, a wide screen's may be scrolled away.)
+													const wrap = wrapRef.current;
+													const pin = wrap?.firstElementChild;
+													if (
+														wrap &&
+														pin &&
+														getComputedStyle(pin).position !== "sticky" &&
+														wrap.getBoundingClientRect().top < 0
+													) {
+														window.scrollTo({
+															top:
+																wrap.getBoundingClientRect().top +
+																window.scrollY -
+																60,
+															behavior: "smooth",
+														});
+													}
+													onReplay(cursor);
+												}
+											: undefined
+									}
 								/>
-							</Section>
-							<Highlights
+								<Section
+									title="On the Court"
+									className="d-lg-none"
+									action={
+										<LinkButton onClick={() => toTab("box")}>
+											Box score
+										</LinkButton>
+									}
+								>
+									<Linescore boxScore={boxScore} />
+									<OnCourt boxScore={boxScore} />
+								</Section>
+								<Section title="Game Leaders">
+									<Leaders boxScore={boxScore} />
+								</Section>
+								<Injuries boxScore={boxScore} />
+							</div>
+							<div>
+								<Section title="Game Flow">
+									<FlowCharts boxScore={boxScore} colors={colors} live />
+								</Section>
+								<Section
+									title="Team Stats"
+									action={
+										<LinkButton onClick={() => toTab("stats")}>
+											Full team stats
+										</LinkButton>
+									}
+								>
+									<TeamStatBars boxScore={boxScore} colors={colors} />
+								</Section>
+								{info ? (
+									<>
+										<Series boxScore={boxScore} info={info} />
+										<Standings boxScore={boxScore} info={info} />
+									</>
+								) : null}
+							</div>
+						</div>
+					) : tab === "box" ? (
+						boxScoreTab
+					) : tab === "plays" ? (
+						<div className="gamecast-narrow">
+							<AllPlays
 								rows={rows}
 								teams={teams}
 								season={season}
 								numPeriods={numPeriods}
-								onReplay={
-									onReplay
-										? (cursor) => {
-												// (The court in sight to watch it: a phone's is
-												// pinned, a wide screen's may be scrolled away.)
-												const wrap = wrapRef.current;
-												const pin = wrap?.firstElementChild;
-												if (
-													wrap &&
-													pin &&
-													getComputedStyle(pin).position !== "sticky" &&
-													wrap.getBoundingClientRect().top < 0
-												) {
-													window.scrollTo({
-														top:
-															wrap.getBoundingClientRect().top +
-															window.scrollY -
-															60,
-														behavior: "smooth",
-													});
-												}
-												onReplay(cursor);
-											}
-										: undefined
-								}
 							/>
-							<Section
-								title="On the Court"
-								className="d-lg-none"
-								action={
-									<LinkButton onClick={() => toTab("box")}>
-										Box score
-									</LinkButton>
-								}
-							>
-								<Linescore boxScore={boxScore} />
-								<OnCourt boxScore={boxScore} />
-							</Section>
-							<Section title="Game Leaders">
-								<Leaders boxScore={boxScore} />
-							</Section>
-							<Injuries boxScore={boxScore} />
 						</div>
-						<div>
-							<Section title="Game Flow">
-								<FlowCharts boxScore={boxScore} colors={colors} live />
+					) : tab === "stats" ? (
+						<div className="gamecast-narrow">
+							<Section title="Team Stats">
+								<TeamStatBars boxScore={boxScore} colors={colors} full />
 							</Section>
-							<Section
-								title="Team Stats"
-								action={
-									<LinkButton onClick={() => toTab("stats")}>
-										Full team stats
-									</LinkButton>
-								}
-							>
-								<TeamStatBars boxScore={boxScore} colors={colors} />
-							</Section>
-							{info ? (
-								<>
-									<Series boxScore={boxScore} info={info} />
-									<Standings boxScore={boxScore} info={info} />
-								</>
-							) : null}
 						</div>
-					</div>
-				) : tab === "box" ? (
-					boxScoreTab
-				) : tab === "plays" ? (
-					<div className="gamecast-narrow">
-						<AllPlays
-							rows={rows}
-							teams={teams}
-							season={season}
-							numPeriods={numPeriods}
-						/>
-					</div>
-				) : tab === "stats" ? (
-					<div className="gamecast-narrow">
-						<Section title="Team Stats">
-							<TeamStatBars boxScore={boxScore} colors={colors} full />
+					) : (
+						<Section title="Game Flow">
+							<FlowCharts boxScore={boxScore} colors={colors} live />
 						</Section>
-					</div>
-				) : (
-					<Section title="Game Flow">
-						<FlowCharts boxScore={boxScore} colors={colors} live />
-					</Section>
-				)}
+					)}
+				</div>
 			</div>
-		</div>
+		</FeedContext.Provider>
 	);
 };

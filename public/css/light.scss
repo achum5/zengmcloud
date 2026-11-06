@@ -1337,7 +1337,14 @@ tr.table-warning:hover > td {
 	}
 }
 
-// Plays.
+// Plays. (One that opens - shown again on the court, or the replay at it -
+// shows it as the pointer goes over it.)
+.gamecast-play-opens {
+	cursor: pointer;
+	&:hover {
+		background-color: var(--bs-tertiary-bg);
+	}
+}
 .gamecast-plays {
 	border-top: 1px solid var(--bs-border-color);
 }

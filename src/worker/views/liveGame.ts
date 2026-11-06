@@ -50,6 +50,8 @@ const processInputs = (params: RouteParams<"liveGame">, ctxBBGM: any) => {
 		// A rewatch of a saved live game (not a fresh sim). Shows a "Replay" label
 		// and doesn't set the live-sim-in-progress lock.
 		replay?: boolean;
+		// A replay opened at a play (see GameRecap): the events in by then.
+		startAt?: number;
 	} = {
 		fromAction: !!ctxBBGM.fromAction,
 	};
@@ -60,6 +62,9 @@ const processInputs = (params: RouteParams<"liveGame">, ctxBBGM: any) => {
 		obj.boxScore = ctxBBGM.boxScore;
 		obj.mpFollower = !!ctxBBGM.mpFollower;
 		obj.replay = !!ctxBBGM.replay;
+		if (obj.replay && typeof ctxBBGM.startAt === "number") {
+			obj.startAt = ctxBBGM.startAt;
+		}
 	}
 
 	return obj;
@@ -494,6 +499,9 @@ export default defineView({
 			let arenaThen: ArenaLooks | undefined;
 			if (inputs.replay) {
 				(out.initialBoxScore as any).replay = true;
+				if (inputs.startAt !== undefined) {
+					(out as any).startAt = inputs.startAt;
+				}
 				const label = boxScore.playoffs
 					? `${boxScore.season} Playoffs`
 					: `${boxScore.season} Regular Season`;

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 180,
+		date: "2026-11-06",
+		text: 'Tabbed layout: plays read the way a broadcast lists them - "Devin Booker misses three point jumper", "Wendell Carter Jr. makes layup (Franz Wagner assists)". In a live game, tap a play to see it again on the court. On a box score whose replay is saved: a Play-by-Play tab and the game\'s highlights, where tapping any play opens the replay right at it in 3D, and the box score a quarter at a time.',
+	},
+	{
 		n: 179,
 		date: "2026-11-06",
 		text: "Tabbed layout: the box score's score line fits on one row on a phone, with the score by quarter in the middle. New Win Probability and Game Flow charts. Game leaders take less room. The line shows each side's spread, chance to win and whether it covered. Season series games link to their box scores, the standings show both teams' conferences as they stood that day, and each team's recent games are listed.",

@@ -218,6 +218,7 @@ type PlayByPlayEntryInfo = {
 	scored?: number;
 	finish?: string;
 	cursor?: number;
+	event?: unknown;
 	score: ReactNode | undefined;
 	scoreDiff: number;
 	scoreType: string | undefined;
@@ -2087,6 +2088,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 								)
 							: undefined,
 					cursor: initialEventCount.current - (events.current?.length ?? 0),
+					event: (output as any).event,
 				});
 			}
 
@@ -3037,6 +3039,20 @@ export const LiveGame = (props: View<"liveGame">) => {
 		props.quarterLength,
 		started,
 	]);
+
+	// A replay opened at a play (tapped on its box score - see GameRecap):
+	// on to just before it, and playing from there.
+	const startAt: number | undefined = (props as any).startAt;
+	const startedAt = useRef(false);
+	useEffect(() => {
+		if (startAt === undefined || startedAt.current || !isReplay) {
+			return;
+		}
+		startedAt.current = true;
+		seekTo(startAt);
+		handlePlay();
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [startAt, isReplay]);
 
 	const scrollTop = useRef<HTMLDivElement>(null);
 
