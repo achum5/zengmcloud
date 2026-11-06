@@ -2572,6 +2572,39 @@ class Actor {
 		// on his man in coverage: slowed from one to the next.)
 		const pace = T > 0 ? Math.min(fps, far / T) : fps;
 		const S = Math.min(far, pace * T);
+		// (Only a moment of it - the last of a step he bent round into it
+		// on, say: down from his pace as hard as he can be over it (see
+		// STOP_HARD), on toward it as far as that takes him, for the next
+		// of it to slow on from - not dropped to its pace in a stride.)
+		if (
+			into !== undefined &&
+			into - pace >= SLOW_DROP &&
+			T > 0 &&
+			T * 1000 < RAMP_LEG_MS &&
+			this.slows(move)
+		) {
+			const A = STOP_ACCEL * STOP_HARD;
+			const ve = Math.max(pace, into - A * T);
+			if (((into + ve) / 2) * T <= far) {
+				const n = Math.max(1, Math.round((T * 1000) / STOP_STEP_MS));
+				const dt = T / n;
+				const paceOf = (i: number) => into - (into - ve) * ((i + 0.5) / n);
+				const moveOf = slower(move ?? this.last.move, n, dt, paceOf);
+				const t0 = this.t;
+				let gone = 0;
+				for (let i = 0; i < n; i++) {
+					gone += paceOf(i) * dt;
+					const u = gone / far;
+					this.go(
+						{ x: from.x + (p.x - from.x) * u, y: from.y + (p.y - from.y) * u },
+						t0 + (i + 1) * dt * 1000,
+						move ?? moveOf(i),
+						yaw,
+					);
+				}
+				return;
+			}
+		}
 		if (
 			into !== undefined &&
 			into - pace >= SLOW_DROP &&
