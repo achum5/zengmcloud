@@ -81,6 +81,11 @@ const STAND_TURN = 5;
 const TURN_GO_MS = 240;
 const TURN_SNAP_MS = 150;
 const TURN_MOST = 12;
+// (Out of his stance round the other way - a tight end off to the flat
+// behind the line - no quicker than this: his hips opened and round over
+// his first step or two, as basketball's men turn - not swung round on the
+// spot as he comes up.)
+const TURN_SNAP_MOST = 9;
 // (Coming up into his stance for the snap, square to it as he gets there:
 // round into it over the last of his way up.)
 const SET_UP_MS = 300;
@@ -334,7 +339,7 @@ const facingOf = (legs: Leg[]): Facing => {
 				: snap[j] || near
 					? Math.max(
 							snap[j] ? TURN_SNAP_MS : TURN_GO_MS,
-							(Math.abs(by) / turnMost(lj)) * 1000,
+							(Math.abs(by) / (snap[j] ? TURN_SNAP_MOST : turnMost(lj))) * 1000,
 						)
 					: TURN_MS;
 		b = aim + (lj.turn ?? 0);
