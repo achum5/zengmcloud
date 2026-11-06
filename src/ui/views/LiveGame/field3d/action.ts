@@ -312,6 +312,10 @@ const STOP_HARD = 1.5;
 // (Harder still by as much as this, to stay short of where he is going in
 // a moment of a chase - see chaseOn.)
 const CHASE_SLOW_MOST = 1.5;
+// (Run in to a spot near a man to set there, coming in at this much of the
+// pace he runs it at or more: eased off over as much of the way as he needs
+// - see closeOn.)
+const RUN_IN_ON = 0.8;
 // (Short of where that hard a stop takes him by more than this, feet: on
 // past it - see Actor.pullsPast.)
 const PAST_SLACK_FT = 0.5;
@@ -12780,11 +12784,15 @@ class Action {
 		// he goes in - if that has him there in time for it: round on his
 		// way there first, say, quicker about it - not there only as he has
 		// to be in on him already.)
-		const runIn = (fps: number): boolean => {
+		const runIn = (fps: number, whole = true): boolean => {
 			const was = m.legs.map((l) => ({ ...l }));
 			const { yaw, pinned } = m;
+			// (Coming in near that quick already: eased off over as much of
+			// the way there as that takes - not on at it and stopped in a
+			// stride or two at the last.)
+			const v0 = GAITS.has(m.last.move) ? legPace(m.last) : 0;
 			const easeAt = Math.min(
-				(far - 5) * 0.5,
+				(far - 5) * (whole && v0 >= fps * RUN_IN_ON ? 1 : 0.5),
 				(fps * fps) / (2 * STOP_ACCEL * STOP_HARD),
 			);
 			const u = (far - 5 - easeAt) / (far - 5);
@@ -12801,13 +12809,23 @@ class Action {
 			m.pinned = pinned;
 			return false;
 		};
-		const ranIn =
+		const canRunIn =
 			!back &&
 			far > 8 &&
 			far < m.top * 0.5 * secs &&
-			downBy <= fire - BREAK_SET_MS &&
-			(runIn(v) || (v < m.top * 0.7 && runIn(m.top * 0.7)));
-		if (back) {
+			downBy <= fire - BREAK_SET_MS;
+		let ranIn =
+			canRunIn && (runIn(v) || (v < m.top * 0.7 && runIn(m.top * 0.7)));
+		// (No time to ease off over the whole way and set: slowed along in
+		// to him instead, if he can be - or, not that either, eased off
+		// over the last half of it as he can.)
+		const slowedIn = canRunIn && !ranIn && !gives && m.slowAlong(hit, lead);
+		if (canRunIn && !ranIn && !slowedIn) {
+			ranIn = runIn(v, false) || (v < m.top * 0.7 && runIn(m.top * 0.7, false));
+		}
+		if (slowedIn) {
+			// (See slowAlong.)
+		} else if (back) {
 			const bv = Math.min(backV, Math.sqrt(backFar / per));
 			const pull = Math.min(backFar / 2, (bv * bv) / (2 * down));
 			m.hold(backBy - stepMs(backFar, bv, RELEASE_ACCEL, down));
