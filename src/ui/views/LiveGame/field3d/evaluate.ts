@@ -482,6 +482,7 @@ const PIVOTS = new Set<Move>([
 	"qbSet",
 	"pocket",
 	"shotgun",
+	"gunReady",
 	"settle",
 	"overShoulders",
 	"carryWater",

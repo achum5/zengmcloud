@@ -929,6 +929,8 @@ const SURVEY_BACK = 1.6;
 const SURVEY_MIN = 600;
 const GUN_CALL_MS = 1500;
 const GUN_CALL_MIN = 900;
+// (In the gun this long, ms, before all that: alive in it till then.)
+const GUN_READY_LEAST = 1000;
 const POINT = 0.4;
 const POINT_LOW = 0.15;
 const POINT_SPAN = 0.6;
@@ -3901,6 +3903,10 @@ class Director {
 				return;
 			}
 			set.t1 = from;
+			// (In it a while first: alive in it till then, not stock still.)
+			if (from - set.t0 >= GUN_READY_LEAST) {
+				set.move = "gunReady";
+			}
 			qb.legs.push(
 				act(
 					from,

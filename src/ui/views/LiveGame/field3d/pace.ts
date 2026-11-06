@@ -44,6 +44,7 @@ export const SET = new Set<Move>([
 	"center",
 	"underCenter",
 	"shotgun",
+	"gunReady",
 	"backStance",
 	"receiverStance",
 	"receiverReady",

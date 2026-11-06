@@ -758,9 +758,9 @@ export const PUNT_TEAM: Align[] = [
 	{ role: "RG", pos: "OL", depth: 2.2, across: 4, move: "threePoint" },
 	{ role: "LT", pos: "OL", depth: 2.6, across: -8.2, move: "backerStance" },
 	{ role: "RT", pos: "OL", depth: 2.6, across: 8.2, move: "backerStance" },
-	{ role: "UP", pos: "OL", depth: 16, across: -3.4, move: "backerStance" },
-	{ role: "UP", pos: "RB", depth: 16, across: 2.6, move: "backerStance" },
-	{ role: "UP", pos: "OL", depth: 16, across: 8.2, move: "backerStance" },
+	{ role: "UP", pos: "OL", depth: 16, across: -3.4, move: "backerReady" },
+	{ role: "UP", pos: "RB", depth: 16, across: 2.6, move: "backerReady" },
+	{ role: "UP", pos: "OL", depth: 16, across: 8.2, move: "backerReady" },
 	{
 		role: "GUNNER",
 		pos: "CB",

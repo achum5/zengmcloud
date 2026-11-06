@@ -1158,6 +1158,15 @@ const FIELD_ANIMS = {
 	// In the shotgun: standing, a little crouched, hands up in front of him
 	// for the snap.
 	shotgun: { kind: "still", pose: SHOTGUN },
+	// In it a while before he goes over the defense for the snap (see
+	// gunCall): alive in it, his weight settling one foot to the other -
+	// not stood stock still (see receiverReady).
+	gunReady: {
+		kind: "loop",
+		n: 4,
+		fps: 1.6,
+		pose: (i) => alive(SHOTGUN, i, 0.5),
+	},
 	// At the line before the snap: stood up behind the center reading the
 	// defense, his head round one way and the other - now and then an arm
 	// out at the man he picks out - and down under him for the ball.
@@ -4845,6 +4854,7 @@ const STANDS = new Set<Move>([
 	"pointSky",
 	"qbSet",
 	"shotgun",
+	"gunReady",
 	"settle",
 	"overShoulders",
 	"kickReady",

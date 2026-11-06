@@ -359,6 +359,7 @@ const ALIVE = new Set<Move>([
 	"receiverReady",
 	"backerReady",
 	"safetyReady",
+	"gunReady",
 ]);
 const sits = (m: Move) => moveKind(m) === "still" || ALIVE.has(m);
 // (Slower than this, ft/s, he is not going anywhere.)
