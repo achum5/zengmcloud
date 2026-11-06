@@ -4585,6 +4585,9 @@ const PITCH_OUT = 8;
 const PITCH_UP = 4;
 const PITCH_PACE = 0.8;
 const PITCH_MS = 440;
+// (Opened up to him, a step back his way, no quicker than this, ft/s -
+// pulled up into the toss, not slid there at a run and stopped dead.)
+const PITCH_OPEN_FPS = 8;
 const PITCH_FROM_Z = 3.6;
 const PITCH_FROM_FT = 1.6;
 const PITCH_FPS = 30;
@@ -16995,7 +16998,12 @@ class Action {
 				RELEASE_ACCEL,
 			);
 			const letGo = Math.max(
-				Math.max(has, qb.t) + qbStepMs(dist(qb.at, open)) + PITCH_MS / 2,
+				Math.max(has, qb.t) +
+					Math.max(
+						QB_STEP_LEAST_MS,
+						(dist(qb.at, open) / PITCH_OPEN_FPS) * 1000,
+					) +
+					PITCH_MS / 2,
 				snap + lead + reach - flight,
 			);
 			mesh = letGo + flight;
