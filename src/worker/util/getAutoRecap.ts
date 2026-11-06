@@ -748,12 +748,14 @@ const leadVerb = (
 			: ["poured in", "erupted for", "exploded for", "piled up"];
 	} else if (p.pts >= 25) {
 		pool = hasExtras
-			? ["posted", "put up", "totaled", "racked up"]
-			: ["scored", "posted", "put up", "racked up"];
+			? ["had", "posted", "put up", "racked up"]
+			: ["scored", "had", "put up", "racked up"];
 	} else {
+		// Not "totaled": the word of a box score, not of a writer, and it
+		// opened one recap in six.
 		pool = hasExtras
-			? ["posted", "put up", "totaled", "had"]
-			: ["scored", "totaled", "put up", "had"];
+			? ["posted", "put up", "had"]
+			: ["scored", "had", "put up"];
 	}
 	return takeVerb(rng, pool);
 };
@@ -4872,6 +4874,19 @@ const gameStory = (
 	// Where the plain halftime line went, so the lead it grew into can join it.
 	let plainHalfAt = -1;
 	const firstRun = run && run.winner && run.period <= halfN ? run : undefined;
+	// THE HALF THAT WAS NOT THE STORY. A few points up at the break in a game
+	// settled late, with nothing in the first half worth telling: every recap
+	// on a page gave its halftime score, and a writer with a finish to tell
+	// goes straight to the fourth. Not when the first half has something the
+	// story places at the break - a run, a lead built or lost there.
+	const quietHalf =
+		!!flow &&
+		(close || wonInLast) &&
+		up <= 9 &&
+		!(raw && raw.period <= halfN && (raw.endPeriod ?? raw.period) > halfN) &&
+		!(lMaxAt !== undefined && lMaxAt <= halfN && lMax >= 6) &&
+		!(wMaxAt !== undefined && wMaxAt <= halfN && wMax > up + 3) &&
+		rng() < 0.7;
 	if (
 		!opts.comebackTold &&
 		lMaxAt !== undefined &&
@@ -4941,7 +4956,7 @@ const gameStory = (
 				"story:upRun",
 			),
 		);
-	} else {
+	} else if (!quietHalf) {
 		out.push(halfLine(shape.winner, wh, lh));
 		plainHalfAt = out.length - 1;
 	}
@@ -4954,6 +4969,14 @@ const gameStory = (
 	}
 
 	if (close) {
+		// Nothing else to tell, and the half was left out: it goes back in
+		// rather than leave the story empty.
+		const story = (): { sentences: string[]; covers: Set<StoryCover> } => {
+			if (out.length === 0) {
+				out.push(halfLine(shape.winner, wh, lh));
+			}
+			return { sentences: out, covers };
+		};
 		// Tight to the end: how tight, going into the last period. The finish
 		// takes it from there.
 		const most = Math.max(wMax, lMax);
@@ -4987,7 +5010,7 @@ const gameStory = (
 					out.push(e);
 				}
 			}
-			return { sentences: out, covers };
+			return story();
 		}
 		if (flow && most > 0 && most <= 8) {
 			out.push(
@@ -5006,7 +5029,7 @@ const gameStory = (
 				out.push(e);
 			}
 		}
-		return { sentences: out, covers };
+		return story();
 	}
 
 	// DECIDED, BUT NOT AT THE BREAK. "The Hornets led 67-54 at halftime.
@@ -5141,6 +5164,39 @@ const gameStory = (
 		// a lead that reached 20 in the third is a game over early, one
 		// that reached 20 in the fourth may have been close until then.
 		const at = wMaxAt !== undefined ? when(wMaxAt) : "the second half";
+		// A few points at the break and a second half that settled it: the
+		// half is told by what came after it. "By halftime the Lakers were in
+		// front 64-58. After the break, they outscored the Pacers 58-43" is
+		// two checkpoints where a writer says the Lakers pulled away.
+		const pulled = parts[0] === `outscored ${l} ${w2}-${l2}`;
+		const peakToo = parts.length === 2 && covers.has("winnerPeak");
+		if (
+			pulled &&
+			(parts.length === 1 || peakToo) &&
+			plainHalfAt === out.length - 1 &&
+			up <= 9 &&
+			// A run in the first half, or across it, is told against the
+			// halftime score, so that stays.
+			!(raw && raw.period <= halfN) &&
+			rng() < 0.6
+		) {
+			const q = `${w2}-${l2}`;
+			out[plainHalfAt] = pick(
+				rng,
+				[
+					`${W} pulled away in the second half, outscoring ${l} ${q}${peakToo ? ` and leading by as many as ${wMax}` : ""}.`,
+					`${W} broke it open after halftime, outscoring ${l} ${q}${peakToo ? ` and building the lead to ${wMax}` : ""}.`,
+					`${W} were only ${up} up at the break, then won the second half ${q}${peakToo ? ` and led by as many as ${wMax}` : ""}.`,
+					...(up <= 5
+						? [
+								`A close game at halftime got away from ${l}, who were outscored ${q} after the break.${peakToo ? ` ${W} led by as many as ${wMax}.` : ""}`,
+							]
+						: []),
+				],
+				"story:pulledAway",
+			);
+			return { sentences: out, covers };
+		}
 		if (onlyPeak && plainHalfAt === out.length - 1 && rng() < 0.5) {
 			// One sentence for the half and what became of it, as a writer
 			// with a lead and nothing else to say about it puts it.
@@ -5624,7 +5680,7 @@ const loserSentence = (
 				`, but ${stats.tov} turnovers proved costly`,
 				`, though ${stats.tov} giveaways kept undoing the good work`,
 				`, and ${stats.tov} turnovers were far too many`,
-				`, on a night they gave it away ${stats.tov} times`,
+				`, but they turned it over ${stats.tov} times`,
 			],
 			"loserTov",
 		);
@@ -5637,7 +5693,7 @@ const loserSentence = (
 			[
 				`, but they shot just ${stats.fgp}% as a team`,
 				`, but the team shot ${stats.fgp}% from the floor`,
-				`, on a night they shot ${stats.fgp}% from the floor`,
+				`, but they made only ${stats.fgp}% of their shots`,
 			],
 			"loserFgp",
 		);
@@ -5658,14 +5714,9 @@ const loserSentence = (
 	}
 
 	if (leader && (leader.pts >= 18 || doubleCategories(leader).length >= 2)) {
-		const verb = pick(rng, [
-			"led",
-			"paced",
-			"topped",
-			"headed",
-			"fronted",
-			"was the best of",
-		]);
+		// Two verbs a desk would use. "Headed", "fronted" and "was the best of"
+		// were synonyms for their own sake, and a reader notices a thesaurus.
+		const verb = pick(rng, ["led", "paced"], "loserLedVerb");
 		// A 40-point night on the losing side is its own story, not "the best
 		// the Nets could offer".
 		if (leader.pts >= 40) {
@@ -5691,28 +5742,24 @@ const loserSentence = (
 			)}${reason}.`;
 		}
 		const ddw = doubleWord(doubleCategories(leader).length);
-		const leaderLine = ddw
-			? `${poss(leader.name)} ${ddw} (${statPhrase(leader)})`
-			: `${poss(leader.name)} ${statPhrase(leader)}`;
-		// Bracketed, not dashed: "leaned on Scoot Carter for a double-double -
-		// 17 points and 11 rebounds, and Xavier Carter contributed 16" ran the
-		// next man into his line.
-		const line = ddw ? `a ${ddw} (${statPhrase(leader)})` : statPhrase(leader);
+		// The numbers, not a label and the numbers in brackets: "Payton Owens'
+		// double-double (10 points, 15 rebounds and 6 assists) headed the
+		// Bucks" was in more than a quarter of all recaps. The line says what
+		// it was; a triple-double alone is still called one.
+		const triple = doubleCategories(leader).length >= 3;
+		const sp = statPhrase(leader);
+		const leaderLine = `${poss(leader.name)} ${sp}`;
+		const line = triple ? `a ${ddw} (${sp})` : sp;
 		const them = theNick(shape.loser);
+		// "Led them with" is the scorer's phrase: only for the man nobody on
+		// his side outscored.
+		const isTop = !shape.loser.players.some((p) => p.pts > leader.pts);
 
 		// SHAPES, not synonyms. Rotating six verbs through one frame - "X's 22
 		// points led/paced/topped/headed the Y" - is the single most obvious tell
 		// that nobody wrote this: every losing team in the league gets the same
 		// sentence with the nouns swapped. These put the player, the team and the
 		// numbers in genuinely different places.
-		// "28 points and 9 rebounds WERE the best of the Grizzlies"; a lone
-		// "20 points was" is a quantity and stays singular - and so is "X's
-		// double-double (28 points and 12 rebounds)", whatever is inside the
-		// brackets.
-		const agreed =
-			verb === "was the best of" && !ddw && / and /.test(leaderLine)
-				? "were the best of"
-				: verb;
 		// With no reason clause to carry, the losers' second man rides along:
 		// "Obi Brooks' 18 points led the Celtics, and Keegan Brooks had 16"
 		// over two sentences of the same shape in a row.
@@ -5731,7 +5778,6 @@ const loserSentence = (
 		// double-double - 14 points and 10 assists from Tyrese Ellis" - so
 		// these frames name him first or bracket the line. A double-double's
 		// numbers say what it was; a triple-double is always called one.
-		const triple = doubleCategories(leader).length >= 3;
 		// Level with the next man and nothing else to his line: "Scoot Ellis'
 		// 21 points was the best of the Warriors, and Xavier Ellis supplied
 		// 21 points" crowned one of two equals.
@@ -5743,34 +5789,44 @@ const loserSentence = (
 		) {
 			return `${cap(them)} got ${leader.pts} apiece from ${leader.name} and ${second.name}.`;
 		}
-		const gotLine = !ddw
-			? `${line} from ${leader.name}`
-			: triple
-				? `a ${ddw} from ${leader.name} (${statPhrase(leader)})`
-				: `${statPhrase(leader)} from ${leader.name}`;
+		const gotLine = triple
+			? `a ${ddw} from ${leader.name} (${sp})`
+			: `${sp} from ${leader.name}`;
 		const base = pickSentence(
 			rng,
-			[
-				`${leaderLine} ${agreed} ${them}`,
-				`${cap(them)} got ${gotLine}`,
-				`${leader.name} finished with ${ddw ? `a ${ddw} (${statPhrase(leader)})` : line} for ${them}`,
-				// Not "22 points from X was..." - a sentence does not open with a
-				// numeral, and every one of these lines starts with one. And only
-				// for a modest line: "The best the Pelicans could offer was 32
-				// points and 11 assists" undersold the best line on the floor.
-				...(leader.pts < 25 && !triple
-					? [
-							`The best ${them} could offer was ${ddw ? leaderLine : `${line} from ${leader.name}`}`,
-						]
-					: []),
-				`For ${them}, it was ${leader.name} with ${line}`,
-				// Leaning on a man is a load he carried: not "The Celtics leaned
-				// on Payton Brooks for a double-double (15 points and 12
-				// rebounds)", one recap in six.
-				...(leader.pts >= 25 || leader.pts >= shape.loser.pts * 0.3
-					? [`${cap(them)} leaned on ${leader.name} for ${line}`]
-					: []),
-			],
+			triple
+				? [
+						`${leader.name} had a ${ddw} with ${sp} for ${them}`,
+						`${cap(them)} got ${gotLine}`,
+						`${leader.name} finished with ${line} for ${them}`,
+					]
+				: [
+						`${leaderLine} ${verb} ${them}`,
+						`${cap(them)} got ${gotLine}`,
+						`${leader.name} had ${sp} for ${them}`,
+						`${leader.name} finished with ${sp} for ${them}`,
+						...(isTop ? [`${leader.name} led ${them} with ${sp}`] : []),
+						...(ddw
+							? [`${leader.name} had a ${ddw} with ${sp} for ${them}`]
+							: sp === plural(leader.pts, "point")
+								? [`${leader.name} scored ${sp} for ${them}`]
+								: []),
+						// Not "22 points from X was..." - a sentence does not open
+						// with a numeral, and every one of these lines starts with
+						// one. And only for a modest line: "The best the Pelicans
+						// could offer was 32 points and 11 assists" undersold the
+						// best line on the floor.
+						...(leader.pts < 25
+							? [`The best ${them} could offer was ${sp} from ${leader.name}`]
+							: []),
+						`For ${them}, it was ${leader.name} with ${sp}`,
+						// Leaning on a man is a load he carried: not "The Celtics
+						// leaned on Payton Brooks for 15 points and 12 rebounds",
+						// one recap in six.
+						...(leader.pts >= 25 || leader.pts >= shape.loser.pts * 0.3
+							? [`${cap(them)} leaned on ${leader.name} for ${sp}`]
+							: []),
+					],
 			"loserShape",
 		);
 		const tail =
@@ -6307,15 +6363,24 @@ const vsAverageNote = (
 					: ratio >= 1.8
 						? "nearly doubled"
 						: "scored well above";
+		// More than one way into it: "more than doubled his 10.7-point average"
+		// was the line for every such night in a season, worded the same.
+		const a = fmtPct(avg.pts);
 		return pick(
 			rng,
 			[
-				`${star.name} ${against} his ${fmtPct(avg.pts)}-point average.`,
+				`${star.name} ${against} his ${a}-point average.`,
 				...(beat
 					? [
-							`${star.name} had been averaging ${fmtPct(avg.pts)} points a game, and he ${beat}.`,
+							`${star.name} had been averaging ${a} points a game, and he ${beat}.`,
 						]
 					: []),
+				...(ratio > 2.02
+					? [
+							`${star.name} came in averaging ${a} points a game, less than half that.`,
+						]
+					: []),
+				`It was an unusual night for ${star.name}, who came in averaging ${a} points a game.`,
 			],
 			"vsAvgHigh",
 		);
@@ -6748,9 +6813,13 @@ const loserSupportNote = (
 	// rotates too. Deliberately ONE shape: the verb and tail together give this
 	// sentence more distinct forms than a handful of alternative shapes would,
 	// and shapes without that variation collapse to a single frame each.
+	// Mostly the club, as the wire writes it ("for Boston" once the city pass
+	// has been over it): "in defeat", "in the loss", "in a losing cause" and
+	// "for the losing side" closed the losers' line in four recaps in ten.
+	const them = theNick(shape.loser);
 	return `${second.name} ${lineVerb(second, rng)} ${statPhrase(second, 1)} ${pick(
 		rng,
-		["in defeat", "in the loss", "in a losing cause", "for the losing side"],
+		[`for ${them}`, "in the loss", `for ${them}`, "in defeat"],
 		"loserTail",
 	)}.`;
 };
@@ -8127,6 +8196,11 @@ const buildGameRecap = (game: RecapGame): string => {
 		if (run && runEnd <= shape.regPeriods / 2 && halfAt >= 0) {
 			storyPara.splice(halfStartsEarlier ? halfAt + 1 : halfAt, 0, run);
 			finishAt += 1;
+		} else if (run && runEnd <= shape.regPeriods / 2 && halfAt < 0) {
+			// No halftime line to hang it on (a close game told from the
+			// fourth): the first half's run opens the story, in order.
+			storyPara.splice(combined ? 1 : 0, 0, run);
+			finishAt += 1;
 		} else if (run && runPeriod <= shape.regPeriods / 2 && halfAt >= 0) {
 			// One that spanned halftime comes right after the halftime score.
 			storyPara.splice(halfAt + 1, 0, run);
@@ -8945,8 +9019,44 @@ const teamsIn = (games: readonly RecapGame[]): ReferenceTeam[] =>
 		g.teams.map((t) => ({ name: t.name ?? "", region: t.region ?? "" })),
 	);
 
+// A RUN, SAID MORE THAN ONE WAY. "Ran off 14 straight points" was in more
+// than a quarter of all recaps, the same three words every time; a desk
+// writes "went on a 14-0 run" and "scored 14 unanswered points" as often.
+// The body only (headlines have their own verbs), each run on its own draw,
+// seeded by the game so the same game always reads the same way.
+export const varyRuns = (text: string, seed: number): string => {
+	const rng = rngFromSeed(seed * 2246822519 + 3266489917);
+	const cut = text.indexOf("\n\n");
+	if (cut < 0) {
+		return text;
+	}
+	// Sentence by sentence, so "scored" is not put beside another "scored":
+	// "they outscored the Bulls 64-38, scored 18 unanswered points".
+	const body = text
+		.slice(cut)
+		.split(/(?<=[!.?])(?=\s)/)
+		.map((sentence) =>
+			sentence.replaceAll(
+				/\bran off (\d+) straight points\b/g,
+				(m, n: string) => {
+					const r = rng();
+					const scoredAlready = /scor/.test(sentence);
+					return r < 0.4
+						? m
+						: r < 0.75 || scoredAlready
+							? `went on a ${n}-0 run`
+							: `scored ${n} unanswered points`;
+				},
+			),
+		)
+		.join("");
+	return text.slice(0, cut) + body;
+};
+
 export const getAutoRecap = (game: RecapGame): string => {
-	const text = fixArticles(buildGameRecap(withSettledLead(game)));
+	const text = fixArticles(
+		varyRuns(buildGameRecap(withSettledLead(game)), game.gid + 1),
+	);
 	const names = peopleIn([game]);
 	const teams = teamsIn([game]);
 	const referenced = secondReferences(

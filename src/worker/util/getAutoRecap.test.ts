@@ -2338,7 +2338,7 @@ describe("who got hurt", () => {
 	test("a man the recap had not named comes with his team", () => {
 		const recap = getAutoRecap(hurtNight());
 		assert.ok(
-			/[Tt]he Rockets' Kenny Thomas sprained his ankle and (?:is expected to|will) (?:miss|be out for) about six games/.test(
+			/(?:[Tt]he Rockets'|Houston's) Kenny Thomas sprained his ankle and (?:is expected to|will) (?:miss|be out for) about six games/.test(
 				recap,
 			),
 			recap,
@@ -8569,7 +8569,11 @@ describe("the game story", () => {
 			const half = recap.search(/52-42/);
 			const turn = recap.search(/58-38/);
 			assert.ok(half >= 0 && turn > half, recap);
-			assert.match(recap, /ran off 14 straight points in the third/, recap);
+			assert.match(
+				recap,
+				/(?:ran off 14 straight points|went on a 14-0 run|scored 14 unanswered points) in the third/,
+				recap,
+			);
 			assert.deepEqual(verifyRecap(recap, build(seed)), [], recap);
 		}
 	});

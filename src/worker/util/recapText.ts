@@ -167,7 +167,12 @@ export const naturalList = (items: string[]): string => {
 	if (items.length === 2) {
 		return `${items[0]} and ${items[1]}`;
 	}
-	return `${items.slice(0, -1).join(", ")}, and ${items.at(-1)}`;
+	// Wire style: no comma before the last "and" ("22 points, 10 rebounds and
+	// 6 assists"), unless the item before it has an "and" of its own and the
+	// list would run together without one.
+	const head = items.slice(0, -1);
+	const serial = / and /.test(head.at(-1)!) ? "," : "";
+	return `${head.join(", ")}${serial} and ${items.at(-1)}`;
 };
 
 export const stripHtml = (s: string): string =>
@@ -381,15 +386,16 @@ export const doubleWord = (count: number): string | undefined => {
 // them, so the only way one rotation covers all three is for all three to BE
 // one pool - hence the shared id as well as the shared array.
 export const SCORED_VERBS = [
+	// Ways a writer says it. "Kicked in", "was good for", "supplied", "came
+	// up with" and "delivered" were synonyms for their own sake, and a page
+	// of recaps reads as a thesaurus once they start turning up; a slate
+	// still needs a dozen or so so the same frame is not printed three times
+	// a night. The ledger keeps any one word to once a recap.
 	"added",
 	"chipped in",
 	"contributed",
-	"kicked in",
-	"pitched in with",
 	"tacked on",
-	"was good for",
-	"supplied",
-	"came up with",
+	"pitched in with",
 	// "finished with" is deliberately NOT here, and not in leadVerb either. The
 	// team-total lines ("They finished with 28 assists"), the foul-out line and
 	// the star's shooting line ("finished 7-of-15") all use it, and `pick` cannot
@@ -398,16 +404,12 @@ export const SCORED_VERBS = [
 	// recap. Taking it out of SCORED_VERBS alone was not enough: leadVerb still
 	// held it, and "Marbury finished with 18 points and 12 assists. They finished
 	// with 28 assists." came straight back. The word belongs to those builders
-	// and to no pool. Thirteen other verbs cost nothing.
+	// and to no pool.
 	"had",
-	"put up",
+	// Not "put up": the lead sentence's verb more often than any other,
+	// and in both pools it was in a third of all recaps.
 	"posted",
 	"went for",
-	// Enough options that a full night's slate doesn't lap the pool: the
-	// supporting-cast sentences draw from it fifteen-plus times across a day
-	// page, and with thirteen entries the flavored ones ("pitched in with")
-	// were landing three times a night.
-	"delivered",
 	"turned in",
 	"provided",
 	"threw in",
@@ -466,6 +468,13 @@ export const claimVerb = (verb: string): string => {
 // just had no way to know it was spent.
 const LEDGER_VERBS = [
 	...SCORED_VERBS,
+	// No longer drawn for a supporting line, but still baked into whole
+	// sentences elsewhere: the ledger must go on seeing them.
+	"kicked in",
+	"was good for",
+	"supplied",
+	"came up with",
+	"delivered",
 	"finished with",
 	"totaled",
 	"recorded",
