@@ -6,6 +6,7 @@ import {
 	paceAlong,
 	paceFor,
 	pushAlong,
+	reachIn,
 	runMs,
 	runShape,
 } from "./motion.ts";
@@ -133,5 +134,19 @@ describe("motion", () => {
 		assert.strictEqual(keepThrough(-1), 0);
 		assert.isAbove(keepThrough(0), 0.3);
 		assert.isBelow(keepThrough(0), 0.4);
+	});
+
+	test("a run that has to end flat out, too short a time to get up to it: as far as he gets, not nowhere", () => {
+		const FASTEST = 24 * 1.1;
+		// (Half a second, set off from a slide.)
+		const d = reachIn(570, FASTEST, BURST, 3.3, FASTEST);
+		assert.isAbove(d, 4);
+		// No farther than flat out all the way would take him.
+		assert.isBelow(d, (FASTEST * 570) / 1000);
+		// And where he could get up to it, the same as ever.
+		const long = reachIn(3000, FASTEST, BURST, 3.3, FASTEST);
+		assert.isAbove(long, 40);
+		// Pulled up at the end, the same as ever.
+		assert.isAbove(reachIn(570, FASTEST, BURST, 3.3, 0), 2);
 	});
 });

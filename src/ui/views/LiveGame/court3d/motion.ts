@@ -429,18 +429,41 @@ export const reachIn = (
 	if (ms <= 0) {
 		return 0;
 	}
-	let a = 0;
-	let b = (Math.max(0.5, speed, v0) * ms) / 1000;
-	if (runMs(b, speed, v0, effort, v1) <= ms) {
-		return b;
+	const far = (end: number) => {
+		let a = 0;
+		let b = (Math.max(0.5, speed, v0) * ms) / 1000;
+		if (runMs(b, speed, v0, effort, end) <= ms) {
+			return b;
+		}
+		for (let n = 0; n < 24; n++) {
+			const m = (a + b) / 2;
+			if (runMs(m, speed, v0, effort, end) <= ms) {
+				a = m;
+			} else {
+				b = m;
+			}
+		}
+		return a;
+	};
+	const d = far(v1);
+	// Going v1 still at the end can be more than he gets up to in the time
+	// there is - flat out at the end of half a second set off from a slide -
+	// and then no run of any length is quick enough. He goes as far as he
+	// gets, going as fast at the end as he does get up to: not nowhere (a
+	// rebounder's run to the ball was cut to nothing that way, and the ball
+	// flew the five feet to him in a frame).
+	if (d > 0 || v1 <= 0) {
+		return d;
 	}
-	for (let n = 0; n < 24; n++) {
-		const m = (a + b) / 2;
-		if (runMs(m, speed, v0, effort, v1) <= ms) {
-			a = m;
+	let lo = 0;
+	let hi = v1;
+	for (let n = 0; n < 16; n++) {
+		const m = (lo + hi) / 2;
+		if (far(m) > 0) {
+			lo = m;
 		} else {
-			b = m;
+			hi = m;
 		}
 	}
-	return a;
+	return far(lo);
 };

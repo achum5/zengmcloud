@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 178,
+		date: "2026-11-06",
+		text: "3D games: a few rare glitches fixed. The ball no longer flies the last few feet to a rebounder in a blink, nobody fights for rebounding position against nobody, a defender running past a shooter contests from beside him instead of hiding the shot from the camera, and after the final buzzer the picture goes straight from the interview to the last look round the arena.",
+	},
+	{
 		n: 177,
 		date: "2026-11-05",
 		text: "With the tabbed layout turned on, a game's box score page is laid out as a game recap too: the score across the top, then Recap, Box Score, Team Stats and Game Flow tabs. The Recap tab has the game leaders and team stats, the story of the game with how it went, and the line, the season series, the standings and the team's games.",

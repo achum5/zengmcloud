@@ -1732,6 +1732,11 @@ const WALL_FT = 4.5;
 // And this near a jumper, a hand up at it.
 const WALL_JUMPER_FT = 4;
 
+// A hand up at a jumper from right in front of him as seen from the camera
+// (see wallUp): a step to the side of him instead - this far off his line
+// (feet), eased over this long (ms).
+const WALL_SIGHT = 1.7;
+const WALL_SIGHT_RAMP = 250;
 // The ball stopped (see stopTheBall): a man in the scoring area - this far
 // from the rim (feet) - who has had it this long (ms) or more, pulling up,
 // floating it or passing out of it with nothing between him and the rim.
@@ -16192,7 +16197,17 @@ class Director {
 				// center court with the final score - and the picture holds on
 				// it once the game is over, not on the two lines stood still in
 				// the middle of the floor. (It never ends: the game does first.)
-				const over = t1 + (title ? 5000 : 400);
+				let over = t1 + (title ? 5000 : 400);
+				// (Straight on from the interview: not a moment of the main
+				// camera between the two, on men who have been walking off the
+				// whole time it was on him - spread from one end to the other.)
+				if (
+					talked !== undefined &&
+					over > talked.t1 &&
+					over - talked.t1 <= 400
+				) {
+					over = talked.t1;
+				}
 				this.shots.push({
 					t0: over,
 					t1: over + LAST_LOOK_MS + 60_000,
@@ -26050,7 +26065,7 @@ class Director {
 		}
 		const t0Of = (x: { tr: Track; k: number }) => x.tr.moves[x.k]!.t0;
 		starts.sort((a, b) => t0Of(a) - t0Of(b));
-		for (let i = 0; i < starts.length;) {
+		for (let i = 0; i < starts.length; ) {
 			let n = 1;
 			while (
 				i + n < starts.length &&
@@ -26225,6 +26240,29 @@ class Director {
 					...(this.leftToBall(D, shooter, S) ? { mirror: true as const } : {}),
 				});
 				tr.acts.sort((a, b) => a.t0 - b.t0);
+				// From the camera, across the floor, a man square in front of a
+				// jump shooter as it goes - one going by him, say, on his way
+				// across - hides the whole of his shot: the hand up goes up a
+				// step to the side of him (see "a contested jumper stays in
+				// sight").
+				if (jumper) {
+					const mid = (t0 + t1) / 2;
+					const Dm = at(tr, mid);
+					const Sm = this.posAt(shooter, mid, false, true);
+					const off = Dm.x - Sm.x;
+					if (Dm.y > Sm.y && Math.abs(off) < WALL_SIGHT) {
+						const side =
+							off !== 0 ? Math.sign(off) : Sm.x <= COURT_W / 2 ? 1 : -1;
+						(tr.nudges ??= []).push({
+							t0: t0 - WALL_SIGHT_RAMP,
+							t1: t1 + WALL_SIGHT_RAMP,
+							dx: side * WALL_SIGHT - off,
+							dy: 0,
+							ramp: WALL_SIGHT_RAMP,
+						});
+						tr.nudges.sort((a, b) => a.t0 - b.t0);
+					}
+				}
 			}
 		}
 	}
@@ -26461,6 +26499,13 @@ class Director {
 			const k = lastBy(o.shown, t, (x) => x[0]);
 			return k >= 0 && o.shown[k]![1];
 		};
+		// (Where each really is: his steps aside too - a man stepped up to
+		// the shooter is over there, not where his run was going.)
+		const at = (o: Track, t: number): Pt => {
+			const p = this.posAt(o.pid, t);
+			const n = this.nudgeAt(o, t);
+			return { x: p.x + n.x, y: p.y + n.y };
+		};
 		for (const tr of all) {
 			const theirs = all.filter((o) => o.team !== tr.team);
 			tr.acts = tr.acts.filter((a) => {
@@ -26468,12 +26513,8 @@ class Director {
 					return true;
 				}
 				for (let t = a.t0; t <= a.t1; t += 100) {
-					const P = this.posAt(tr.pid, t);
-					if (
-						theirs.some(
-							(o) => shown(o, t) && dist(this.posAt(o.pid, t), P) < NEAR,
-						)
-					) {
+					const P = at(tr, t);
+					if (theirs.some((o) => shown(o, t) && dist(at(o, t), P) < NEAR)) {
 						return true;
 					}
 				}

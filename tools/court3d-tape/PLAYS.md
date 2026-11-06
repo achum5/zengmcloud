@@ -132,7 +132,6 @@ to be fixed for itself (they would turn up in real games too):
 - a man jumps 4.9 ft in a tenth of a second (a run set to start where a
   drift off the ball took him, with 28 ms to get back)
 - a loose ball bouncing through a man stood there (4 where 1 is allowed)
-- a contested jumper hidden behind his defender from the camera
 - a man backing down in the post with nobody to back into
 - the help on a kick-out not closing back out often enough (79%, 85% wanted)
 - sliding, the foot he is down on turning (0.39, under 0.3 wanted)
@@ -146,27 +145,42 @@ after it), so each waits until its own fallout is fixed:
 - the ball off a dunk goes down through the net away from where the dunker
   comes down, not bouncing up through his legs (the slam's push off the
   rim, away from him). Tried alone (2026-11-05): the games it reshuffles
-  fail 5 checks - the game rated every which way (a man 1262 where under
-  1216 is wanted), the camera after the final buzzer, a man pulling up in
-  the lane with nobody between him and the rim, an and-one's foul, a
-  contested jumper out of sight (and a ball jumping 2.9 ft between frames)
+  fail 5 checks - the ball jumping 2.9 ft between frames, the camera after
+  the final buzzer, a fight for position with nobody there, a contested
+  jumper out of sight (four fixed at the root, below), and one pull-up too
+  many with nobody between him and the rim (5 in 222, 4 allowed)
 - his man gives ground step for step with a man backing him down, from when
   the back-down really starts - and whoever of theirs is on him, if his own
   man isn't (backDown)
 - a drift off the ball (keeping his spacing) skipped where his next run, set
   off from the end of it, would be too quick for his legs
-- a man right on a jumper square in front of him from the camera: the hand
-  up has to stay (a test), so he has to step aside for it - a nudge in
-  wallUp only for that man, not a pass over every contest (that broke the
-  and-one's foul, the poster, the close contests)
 - a rebounder tipping it up to himself and taking it on the way down (more
   in a crowd, for a poor rebounder - about 6% of boards)
 
 Still turned up by the reshuffled games, not yet fixed: a man running his
 lane to his team's huddle through the other team's chairs; a man sat in the
-huddle far from his chair as the picture gets there (late); a rebound's
-ball flying to a man the marking pass has moved away from it; a heave at
+huddle far from his chair as the picture gets there (late); a heave at
 the buzzer whose ball goes out of bounds late.
+
+Fixed at the root (2026-11-06) - each a glitch a reshuffled game turned up,
+fixed where it comes from, narrowly enough that the games it doesn't happen
+in play the same:
+
+- a rebound's ball flying the last five feet to the rebounder in a frame:
+  set off from where following his man had left him, his run to the ball
+  was cut to nothing - `reachIn` said a run that has to end flat out goes
+  nowhere in the half second there was, when he can't get up to flat out in
+  it. He goes as far as he gets, as fast as he does get up to.
+- the camera after the final buzzer on men walking off to both ends: a fifth
+  of a second of the main camera between the interview and the last look
+  round the building. Straight on from the one to the other now.
+- a fight for position with nobody there: `nobodyToBox` read where men's
+  runs had them, not their steps aside - the man to fight was a help
+  defender stepped over 16 ft to the shooter. It reads where they really
+  are.
+- a contested jumper hidden from the camera: a man going by a shooter as he
+  lets it go - on his way across - put his hand up square in front of him.
+  He puts it up a step to the side (`WALL_SIGHT`).
 
 Checks: the existing tests (feet behind the line, a contested jumper stays
 in sight, the ball never jumps, real speed with no darts) on every change.
