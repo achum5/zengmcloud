@@ -3992,6 +3992,21 @@ const FILL_ROOM_FT = 2.4;
 const FILL_ROOM_MS = 600;
 const FILL_ROOM_EVERY_MS = 100;
 const CLIMB_PACE = 0.85;
+// (Up to a man past others in blocks - over the line to the next level, say
+// - not straight through them: no nearer a man in one than CLIMB_CLEAR_FT,
+// looked at every CLIMB_LOOK_MS on his way, as near as it gets him - round
+// a corner bent off to one side of straight there, part of the way along it
+// (CLIMB_ALONG) and so far off it (CLIMB_OFF, feet) - in no more than
+// CLIMB_ROUND_MORE times the time it takes him at his pace for it. Not for
+// a way shorter than CLIMB_ROUND_LEAST_FT, nor in less than
+// CLIMB_ROUND_SLACK_FT of them.)
+const CLIMB_CLEAR_FT = 2.4;
+const CLIMB_LOOK_MS = 50;
+const CLIMB_ALONG = [0.5, 0.35, 0.65] as const;
+const CLIMB_OFF = [2, -2, 3, -3, 4, -4] as const;
+const CLIMB_ROUND_MORE = 1.1;
+const CLIMB_ROUND_LEAST_FT = 10;
+const CLIMB_ROUND_SLACK_FT = 0.3;
 const SHED_MS = 550;
 const SHED_SPREAD = 350;
 const OFF_SPREAD = 350;
@@ -17679,6 +17694,86 @@ class Action {
 		}
 	}
 
+	// The way round the men in blocks between him and `to` (see
+	// CLIMB_CLEAR_FT), there by t1: the points to go through, on to `to` -
+	// or none, straight there clear of them already (or no way round any
+	// clearer).
+	private roundBlocks(
+		b: Actor,
+		to: Pt,
+		t1: number,
+		him: Actor,
+	): Pt[] | undefined {
+		const from = b.at;
+		const t0 = b.t;
+		const D = dist(from, to);
+		if (t1 <= t0 || D < CLIMB_ROUND_LEAST_FT) {
+			return undefined;
+		}
+		const others = this.men.filter((x) => x !== b && x !== him);
+		// (How far into them at the worst, along `pts` at an even pace.)
+		const into = (pts: Pt[]) => {
+			const all = [from, ...pts];
+			const lens: number[] = [];
+			let L = 0;
+			for (let i = 1; i < all.length; i++) {
+				L += dist(all[i - 1]!, all[i]!);
+				lens.push(L);
+			}
+			let worst = 0;
+			for (let c = t0 + CLIMB_LOOK_MS; c < t1; c += CLIMB_LOOK_MS) {
+				const d = (L * (c - t0)) / (t1 - t0);
+				const k = Math.max(
+					0,
+					lens.findIndex((g) => g >= d),
+				);
+				const g0 = k > 0 ? lens[k - 1]! : 0;
+				const p0 = all[k]!;
+				const p1 = all[k + 1] ?? p0;
+				const u = lens[k]! > g0 ? (d - g0) / (lens[k]! - g0) : 1;
+				const p = {
+					x: p0.x + (p1.x - p0.x) * u,
+					y: p0.y + (p1.y - p0.y) * u,
+				};
+				for (const x of others) {
+					if (LINE_PLAY.has(legAt(x, c).move)) {
+						worst = Math.max(worst, CLIMB_CLEAR_FT - dist(x.posAt(c), p));
+					}
+				}
+			}
+			return { worst, L };
+		};
+		const straight = into([to]).worst;
+		if (straight <= CLIMB_ROUND_SLACK_FT) {
+			return undefined;
+		}
+		const ux = (to.x - from.x) / D;
+		const uy = (to.y - from.y) / D;
+		const fps = b.top * CLIMB_PACE;
+		const most = (t1 - t0) * CLIMB_ROUND_MORE;
+		let best: { pts: Pt[]; worst: number } | undefined;
+		for (const along of CLIMB_ALONG) {
+			for (const off of CLIMB_OFF) {
+				const corner = {
+					x: from.x + ux * D * along - uy * off,
+					y: from.y + uy * D * along + ux * off,
+				};
+				const pts = [...this.bend(from, corner, to, RELEASE_ACCEL, fps), to];
+				const { worst, L } = into(pts);
+				if (
+					rampedMs(L, fps, paceOn(b.last, from, pts[0]!)) <= most &&
+					worst < (best?.worst ?? straight - CLIMB_ROUND_SLACK_FT)
+				) {
+					best = { pts, worst };
+				}
+				if (best && best.worst <= CLIMB_ROUND_SLACK_FT) {
+					return best.pts;
+				}
+			}
+		}
+		return best?.pts;
+	}
+
 	blockOn(
 		b: Actor,
 		m: Actor | undefined,
@@ -17775,12 +17870,30 @@ class Action {
 		const near =
 			(dist(b.at, meet.at) / Math.max(0.001, meet.t - b.t)) * 1000 <
 			WALK_MOST_FPS;
-		b.go(
-			meet.at,
-			meet.t,
-			near ? "drive" : undefined,
-			near ? this.ahead : undefined,
-		);
+		const round = near ? undefined : this.roundBlocks(b, meet.at, meet.t, m);
+		if (round) {
+			// (Up to his pace off what he was doing, as straight there - see
+			// meetOf - and on round at it.)
+			const t0 = b.t;
+			const fps = b.top * CLIMB_PACE;
+			const v0 = paceOn(b.last, b.at, round[0]!);
+			let all = 0;
+			let was = b.at;
+			const ms = round.map((p) => {
+				all += dist(was, p);
+				was = p;
+				return rampedMs(all, fps, v0);
+			});
+			const scale = (meet.t - t0) / Math.max(ms.at(-1)!, 1e-6);
+			round.forEach((p, i) => b.go(p, t0 + ms[i]! * scale));
+		} else {
+			b.go(
+				meet.at,
+				meet.t,
+				near ? "drive" : undefined,
+				near ? this.ahead : undefined,
+			);
+		}
 		m.cut(meet.t);
 		m.hold(meet.t);
 		const p = this.of(m.at);
