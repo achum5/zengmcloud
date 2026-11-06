@@ -3719,6 +3719,10 @@ const AWAY_KEEP = 0.7;
 const AWAY_PAST = [20, 34] as const;
 const AWAY_OUT = 5;
 const AWAY_BOUNCE = 6;
+// (No further than this (feet), thrown away from a man a long way off:
+// not lofted half the field, hanging there for five seconds.)
+const AWAY_MOST_FT = 90;
+const AWAY_HANG_MS = 1800;
 // (Nobody's: coming down no nearer anybody than this (feet), turned off
 // the way it went this much (radians) or sent this much further or
 // shorter (feet) if it would.)
@@ -12810,8 +12814,10 @@ class Action {
 			const c = this.of(catchPt);
 			const q = this.of(thrown.from);
 			const way = Math.atan2(c.a - q.a, c.d - q.d);
-			// (Harder, the harder he throws - see flightOf.)
-			const fps = pace * AWAY_KEEP;
+			// (Harder, the harder he throws - see flightOf - and no longer in
+			// the air than AWAY_HANG_MS.)
+			const fps = (far: number) =>
+				Math.max(pace * AWAY_KEEP, far / (AWAY_HANG_MS / 1000));
 			const past0 =
 				AWAY_PAST[0] +
 				(AWAY_PAST[1] - AWAY_PAST[0]) * countOf(rec, this.input.key, 85);
@@ -12821,7 +12827,9 @@ class Action {
 				// (From where it was thrown, as far as it would have gone and
 				// on past - or to just out of bounds, or the back of the end
 				// zone, if one of them comes first.)
-				let far = Math.hypot(c.d - q.d, c.a - q.a) + past0 + longer;
+				let far =
+					Math.min(Math.hypot(c.d - q.d, c.a - q.a) + past0, AWAY_MOST_FT) +
+					longer;
 				if (ua !== 0) {
 					const edge =
 						ua > 0 ? this.bounds.right + AWAY_OUT : this.bounds.left - AWAY_OUT;
@@ -12831,7 +12839,9 @@ class Action {
 					far = Math.min(far, Math.max(0, (this.goalD + 27 - q.d) / ud));
 				}
 				const pt = this.w({ d: q.d + ud * far, a: q.a + ua * far });
-				const t = thrown.t0 + (dist(thrown.from, pt) / fps) * 1000;
+				const t =
+					thrown.t0 +
+					(dist(thrown.from, pt) / fps(dist(thrown.from, pt))) * 1000;
 				const clear = Math.min(...this.men.map((m) => dist(m.posAt(t), pt)));
 				return { pt, clear };
 			};
@@ -12851,11 +12861,11 @@ class Action {
 				}
 			}
 			const end = best.pt;
-			const fl = dist(thrown.from, end) / fps;
+			const fl = dist(thrown.from, end) / fps(dist(thrown.from, end));
 			at0 = thrown.t0 + fl * 1000;
 			p0 = { ...end, z: 0 };
 			groundAt = at0;
-			thrown.peak = Math.max(thrown.peak, (G * fl * fl) / 8);
+			thrown.peak = (G * fl * fl) / 8;
 			lands = {
 				x: end.x + Math.cos(this.toward(thrown.from, end)) * AWAY_BOUNCE,
 				y: end.y + Math.sin(this.toward(thrown.from, end)) * AWAY_BOUNCE,
