@@ -6968,29 +6968,33 @@ class Action {
 						l.from.x === l.to.x &&
 						l.from.y === l.to.y;
 					if (move === "jog" && next?.t0 === run.at(-1)!.t1 && still(next)) {
-						const up = !prev || still(prev) || legPace(prev) < fps * 1.5;
 						// (In off a run quicker than that eases him down from -
 						// through a man and up, say: down from the pace he came in
 						// at, stood when that has him stopped - not dropped to a
-						// jog in a stride.)
-						const v0 = prev && RAMPS.has(prev.move) ? legPace(prev) : 0;
+						// jog in a stride. In off one slower than that: on from
+						// the pace he came in at, not set off again from a stand -
+						// up from a stand only if stood before.)
+						const v0 =
+							prev && prev.t1 === t0 && !still(prev) && prev.t1 > prev.t0
+								? paceOn(prev, prev.to, b)
+								: 0;
 						const D = dist(a, b);
 						const S = span / 1000;
 						const ts = v0 > 0 && D > 0 ? (2 * D) / v0 : Infinity;
+						const m0 = D > 0 ? (v0 * S) / D : 0;
 						eases.push({
 							t0,
 							t1: t0 + span,
 							a,
 							b,
-							f: up
-								? (u) => u * u * (3 - 2 * u)
-								: ts < S
+							f:
+								ts < S
 									? (u) => {
 											const t = Math.min(u * S, ts);
 											return (v0 * t - (v0 * t * t) / (2 * ts)) / D;
 										}
-									: (u) => 1 - (1 - u) * (1 - u),
-							regait: ts < S,
+									: (u) => u * u * (3 - 2 * u) + m0 * u * (1 - u) * (1 - u),
+							regait: ts < S || v0 >= WALK_UNDER,
 						});
 					}
 				}
