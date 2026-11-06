@@ -1452,11 +1452,12 @@ class Actor {
 	}
 
 	// Broken down by the end of the leg he is on, into what he meets there:
-	// down to `keep` of his pace over the last of it (see slowInto).
-	breakDown(keep: number) {
+	// down to `keep` of his pace over the last of it (see slowInto) - at A
+	// ft/s/s, there as much as `spare` ms later for it.
+	breakDown(keep: number, A = STOP_ACCEL, spare = 0) {
 		const l = this.last;
 		if (GAITS.has(l.move) && legPace(l) * (1 - keep) >= SLOW_DROP) {
-			this.slowInto(keep, STOP_ACCEL);
+			this.slowInto(keep, A, spare);
 		}
 	}
 
@@ -3425,6 +3426,16 @@ const SWAT_LEAST_MS = 450;
 // (A man breaking up a pass no nearer where it was to be caught than this,
 // feet, for it.)
 const SWAT_CLEAR = 2;
+// (Come in at more than this, ft/s, over what the swat carries him on from:
+// gathered for it - see Action.incomplete - there as much as this, ms,
+// later for it.)
+const SWAT_GATHER_FPS = 3;
+const SWAT_GATHER_SPARE_MS = 250;
+// (Veered off the way he was going this much, radians, either way - for a
+// carry on at least SWAT_VEER_GAIN feet longer - by the man and the ball,
+// rather than stopped short of them.)
+const SWAT_VEER = [0, 0.25, -0.25, 0.5, -0.5, 0.8, -0.8] as const;
+const SWAT_VEER_GAIN = 0.5;
 // (And knocking it away, at the receiver's shoulder: this far out in front
 // of him and this far to the side, feet.)
 const BREAK_IN = 1.4;
@@ -12272,29 +12283,65 @@ class Action {
 			// (Carried on a step or so with it, off his last stride - by the
 			// ball, not through the man it was for, nor on through it as he
 			// gets a hand to it.)
-			const l = breakup.last;
-			const far = dist(l.from, l.to);
-			const ux = far > 0 ? (l.to.x - l.from.x) / far : 0;
-			const uy = far > 0 ? (l.to.y - l.from.y) / far : 0;
 			const swatEnd = catchAt + 250;
-			const atBall = clamp(
-				(catchAt - breakup.t) / Math.max(1, swatEnd - breakup.t),
-				0,
-				1,
-			);
-			const onTo = (k: number) => ({
-				x: l.to.x + ux * k,
-				y: l.to.y + uy * k,
-			});
-			let on = Math.min(SWAT_ON_MOST, legPace(l) * SWAT_ON);
-			while (
-				on > 0.25 &&
-				(dist(onTo(on), catchPt) < SWAT_CLEAR ||
-					dist(onTo(on * atBall), hands) < BREAK_ASIDE)
-			) {
-				on -= 0.25;
+			const carried = () => {
+				const l = breakup.last;
+				const far = dist(l.from, l.to);
+				const way = Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x);
+				const atBall = clamp(
+					(catchAt - breakup.t) / Math.max(1, swatEnd - breakup.t),
+					0,
+					1,
+				);
+				const most = far > 0 ? Math.min(SWAT_ON_MOST, legPace(l) * SWAT_ON) : 0;
+				// (On the way he was going - or, that taking him through the
+				// man or the ball, veered off it a little, by them: not
+				// stopped dead in his tracks for it.)
+				let best: { on: number; onTo: (k: number) => Pt } | undefined;
+				for (const by of SWAT_VEER) {
+					const ux = Math.cos(way + by);
+					const uy = Math.sin(way + by);
+					const onTo = (k: number) => ({
+						x: l.to.x + ux * k,
+						y: l.to.y + uy * k,
+					});
+					let on = most;
+					while (
+						on > 0.25 &&
+						(dist(onTo(on), catchPt) < SWAT_CLEAR ||
+							dist(onTo(on * atBall), hands) < BREAK_ASIDE)
+					) {
+						on -= 0.25;
+					}
+					if (!best || on > best.on + SWAT_VEER_GAIN) {
+						best = { on, onTo };
+					}
+					if (on >= most) {
+						break;
+					}
+				}
+				return { v: legPace(l), ...best! };
+			};
+			let swat = carried();
+			// (Coming in quicker than the swat carries him on from - slowing
+			// to a stand over it, see pace.ts carriedOf: twice its own pace -
+			// gathered for it over the last of his way in, not cut down to
+			// it in a stride.)
+			const vIn = (2 * swat.on) / Math.max(0.05, (swatEnd - breakup.t) / 1000);
+			if (swat.v > vIn + SWAT_GATHER_FPS) {
+				breakup.breakDown(
+					vIn / swat.v,
+					STOP_ACCEL * STOP_HARD,
+					SWAT_GATHER_SPARE_MS,
+				);
+				swat = carried();
 			}
-			breakup.act("swat", swatEnd, this.toward(breakup.at, catchPt), onTo(on));
+			breakup.act(
+				"swat",
+				swatEnd,
+				this.toward(breakup.at, catchPt),
+				swat.onTo(swat.on),
+			);
 			this.done.add(breakup.pid);
 			if (this.reachFor(rec, catchAt, qb)) {
 				this.runOn(rec, 600);
