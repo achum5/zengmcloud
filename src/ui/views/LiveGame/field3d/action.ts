@@ -5110,6 +5110,10 @@ const GATHER_NEAREST = 3.5;
 // way in to it this far, feet, as far as it takes.)
 const GATHER_APART = 3;
 const GATHER_ROUND = [0, 2, -2, 4, -4, 6, -6, 8, -8];
+// (And off a man down, this far from the length of him, feet - from when
+// he gets there to this much after, ms.)
+const GATHER_DOWN_CLEAR = 2.5;
+const GATHER_DOWN_STAY_MS = 800;
 const GATHER_LEAST_MS = 400;
 const GATHER_FALLEN_MS = 1400;
 // Up off the turf with the play still going (see upAgain): back in after it
@@ -14649,10 +14653,26 @@ class Action {
 				x: at.x + Math.cos(ang + turn / ring) * ring,
 				y: at.y + Math.sin(ang + turn / ring) * ring,
 			});
+			// (Nor on a man down there - in a heap round it, say: off the
+			// length of him, as he gets there and a while after.)
+			const there = Math.min(until, m.t + (dist(m.at, round(0)) / pace) * 1000);
+			const offDown = (q: Pt) =>
+				this.men.every(
+					(o) =>
+						o === m ||
+						[there, there + GATHER_DOWN_STAY_MS].every(
+							(u) =>
+								!DOWN.has(legAt(o, u).move) ||
+								this.nearOf(o, u, q, DOWN_LEGS) >= GATHER_DOWN_CLEAR,
+						),
+				);
+			const apart = (q: Pt) => taken.every((p) => dist(p, q) >= GATHER_APART);
+			const spots = GATHER_ROUND.map(round);
 			const to =
-				GATHER_ROUND.map(round).find((q) =>
-					taken.every((p) => dist(p, q) >= GATHER_APART),
-				) ?? round(0);
+				spots.find((q) => apart(q) && offDown(q)) ??
+				spots.find(offDown) ??
+				spots.find(apart) ??
+				round(0);
 			taken.push(to);
 			m.plantFor(to);
 			if (m.t + (dist(m.at, to) / pace) * 1000 <= until) {
@@ -21419,7 +21439,12 @@ class Action {
 			const l = m.last;
 			const moving = l.from.x !== l.to.x || l.from.y !== l.to.y;
 			if (moving) {
-				m.easeOff(EASE_OFF_FT);
+				// (Nor over a man down on the way: bent off by him.)
+				const v = legPace(l);
+				m.easeOff(
+					EASE_OFF_FT,
+					this.lyingOn(m, Math.min(EASE_OFF_FT, (v * v) / (2 * STOP_ACCEL))),
+				);
 			}
 			m.hold(Math.max(m.t, t) + 600, "stand");
 		}
@@ -21441,8 +21466,11 @@ class Action {
 			const p = { x: m.at.x + ux * s, y: m.at.y + uy * s };
 			const t = m.t + (s / v) * 1000;
 			for (const o of this.men) {
-				if (o !== m && DOWN.has(legAt(o, t).move)) {
-					const at = o.posAt(t);
+				const ol = legAt(o, t);
+				if (o !== m && DOWN.has(ol.move)) {
+					// (Going down still - in the air on a dive, say: where he
+					// comes down, not where he is.)
+					const at = moveKind(ol.move) === "act" ? ol.to : o.posAt(t);
 					if (dist(at, p) < EASE_PAST_FT) {
 						return at;
 					}
