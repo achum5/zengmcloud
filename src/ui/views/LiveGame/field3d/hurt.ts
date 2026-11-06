@@ -160,6 +160,8 @@ const roundHim = (a: Pt, b: Pt, p0: Pt, p1: Pt): Pt[] => {
 const BESIDE = 2.6;
 const ALONGSIDE = 2.3;
 const BEHIND = 4;
+// (The pace a trainer walks to his place by him, ft/s.)
+const PLACE_FPS = 5;
 
 const toward = (a: Pt, b: Pt) => Math.atan2(b.y - a.y, b.x - a.x);
 
@@ -593,9 +595,22 @@ export const stageHurt = (input: {
 		const from = m.legs.at(-1)!.to;
 		const a = { x: at.x + o.x, y: at.y + o.y };
 		const b = { x: off.x + o.x, y: off.y + o.y };
-		still(m.legs, up, up + UP_MS * 0.6, from, "stand", toward(from, at));
+		// (Over to it at a walk, from as soon as he is up if it is far -
+		// or a jog, if even then it is further than a walk goes.)
+		const step = Math.max(
+			up,
+			Math.min(up + UP_MS * 0.6, walk0 - (dist(from, a) / PLACE_FPS) * 1000),
+		);
+		const pace = dist(from, a) / ((walk0 - step) / 1000);
+		still(m.legs, up, step, from, "stand", toward(from, at));
 		m.legs.push(
-			{ t0: up + UP_MS * 0.6, t1: walk0, from, to: a, move: "walk" },
+			{
+				t0: step,
+				t1: walk0,
+				from,
+				to: a,
+				move: pace < 6.5 ? "walk" : "jog",
+			},
 			{ t0: walk0, t1: walk1, from: a, to: b, move: helped ? "walk" : "jog" },
 		);
 	});

@@ -262,7 +262,7 @@ const BACK_AFTER_MS = 600;
 const BACK_IN = 4;
 const BACK_APART = 4;
 const BACK_IN_FPS = 5.2;
-const BACK_HELD_UP = new Set<Move>(["stand", "walk", "back"]);
+const BACK_HELD_UP = new Set<Move>(["stand", "walk", "back", "shuffle"]);
 const FLIP_ON = new Set<Move>(["stand", "walk", "easy"]);
 // How far p is from the line from a to b (feet).
 const offLine = (p: Pt, a: Pt, b: Pt): number => {
@@ -376,6 +376,33 @@ const clamp = (x: number, lo: number, hi: number) =>
 
 const gait = (fps: number): Move =>
 	fps < 6.5 ? "walk" : fps < 12.5 ? "jog" : fps < 21 ? "run" : "sprint";
+
+// Going off square to the way he faces, as a man on the field does (see
+// action.ts): turned no further from it than this (the cosine), walking
+// at it; past that, shuffling across or backpedaling, square to the way
+// he goes - no further round from the way he faces than FACED_KEEP
+// (radians) - not a walk going sideways or backward.
+const CRAB_COS = 0.5;
+const FACED_KEEP = 0.3;
+const facedTo = (
+	going: number,
+	yaw: number,
+	ahead: Move,
+): { move: Move; yaw: number } => {
+	const rel = Math.cos(going - yaw);
+	if (rel > CRAB_COS) {
+		return { move: ahead, yaw };
+	}
+	const side = Math.sin(yaw - going) > 0 ? 1 : -1;
+	const square =
+		rel < -CRAB_COS ? going + Math.PI : going + side * (Math.PI / 2);
+	const d =
+		yaw - square - Math.round((yaw - square) / (2 * Math.PI)) * 2 * Math.PI;
+	return {
+		move: rel < -CRAB_COS ? "back" : "shuffle",
+		yaw: square + clamp(d, -FACED_KEEP, FACED_KEEP),
+	};
+};
 
 export const posOf = (legs: Leg[], t: number): Pt => {
 	for (let k = legs.length - 1; k >= 0; k--) {
@@ -908,35 +935,27 @@ export const stageCrew = (
 				yaw = going;
 			} else if (hold) {
 				// (Backing off, still turned the way he holds.)
-				move =
-					speed < 0.8
-						? "stand"
-						: Math.cos(going - hold.yaw) < -0.4
-							? "back"
-							: "walk";
-				yaw = hold.yaw;
+				if (speed < 0.8) {
+					move = "stand";
+					yaw = hold.yaw;
+				} else {
+					({ move, yaw } = facedTo(going, hold.yaw, "walk"));
+				}
 			} else if (speed < 0.8) {
 				move = "stand";
 				yaw = look;
 			} else if (speed > TURN_AND_RUN || !playing) {
 				move = gait(speed);
 				yaw = going;
+			} else if (Math.cos(going - look) > CRAB_COS) {
+				move = gait(speed);
+				yaw = going;
+			} else if (Math.cos(going - look) < -CRAB_COS || speed < 6.5) {
+				// (Stepping across or backing off, still facing it.)
+				({ move, yaw } = facedTo(going, look, "walk"));
 			} else {
-				const rel = Math.cos(going - look);
-				if (rel > 0.4) {
-					move = gait(speed);
-					yaw = going;
-				} else if (rel < -0.4) {
-					move = "back";
-					yaw = look;
-				} else if (speed < 6.5) {
-					// (Stepping across, still facing it.)
-					move = "walk";
-					yaw = look;
-				} else {
-					move = gait(speed);
-					yaw = going;
-				}
+				move = gait(speed);
+				yaw = going;
 			}
 			const l = legs.at(-1)!;
 			const still = l.from.x === l.to.x && l.from.y === l.to.y;
