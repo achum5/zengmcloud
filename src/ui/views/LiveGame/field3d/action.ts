@@ -1782,7 +1782,7 @@ class Actor {
 					: Math.min(vf, paceOn(before, first.from, leg.to));
 		const ve = vl * keep;
 		// (Up out of his stance as he got up out of it - see rampInto.)
-		const Au = !before || SET.has(before.move) ? RELEASE_ACCEL : RAMP_ACCEL;
+		const Aup = !before || SET.has(before.move) ? RELEASE_ACCEL : RAMP_ACCEL;
 		const most = Math.max(
 			vl,
 			Math.min((D / T) * RAMP_OVER, RAMP_TOP),
@@ -1796,12 +1796,20 @@ class Actor {
 		// even pace that had the slowing at the end of it in it.)
 		const fast = Math.max(most, Math.min(this.top, RAMP_TOP, vl * RAMP_FAST));
 		const room = Math.max(0, spare - HOLD_LEFT_MS) / 1000;
-		const plan = (Ad: number, most: number) => {
+		const cruise = (Ad: number, Au: number) => {
 			const qa = 1 / (2 * Au) + 1 / (2 * Ad);
 			const qb = T + vs / Au + ve / Ad;
 			const qc = (vs * vs) / (2 * Au) + (ve * ve) / (2 * Ad) + D;
 			const disc = qb * qb - 4 * qa * qc;
-			let vc = disc >= 0 ? (qb - Math.sqrt(disc)) / (2 * qa) : Infinity;
+			return {
+				qa,
+				qc,
+				vc: disc >= 0 ? (qb - Math.sqrt(disc)) / (2 * qa) : Infinity,
+			};
+		};
+		const plan = (Ad: number, most: number, Au = Aup) => {
+			const { qa, qc, vc: at } = cruise(Ad, Au);
+			let vc = at;
 			let Tn = T;
 			if (vc > most) {
 				vc = Math.min(most, Math.sqrt(qc / qa));
@@ -1816,18 +1824,46 @@ class Actor {
 				ta >= 0 &&
 				tc > -1e-6 &&
 				td > 0
-				? { vc, Tn, ta, td, tc: Math.max(0, tc), Ad }
+				? { vc, Tn, ta, td, tc: Math.max(0, tc), Ad, Au }
 				: undefined;
+		};
+		// (Or, the stretch laid up to speed harder or softer than that - see
+		// rampInto, getOff - up as hard as does it, within RAMP_HARD times it
+		// either way: harder for a quicker pace to be on at, softer for one
+		// he would be slowing up from to what he is down to at the end.)
+		const fit = (Ad: number, most: number) => {
+			let lo = Aup / RAMP_HARD;
+			let hi = Aup * RAMP_HARD;
+			for (let i = 0; i < 12; i++) {
+				const Au = (lo + hi) / 2;
+				const p = plan(Ad, most, Au);
+				if (p) {
+					return p;
+				}
+				const { vc } = cruise(Ad, Au);
+				if (vc <= Math.max(vs, ve)) {
+					hi = Au;
+				} else if (vc > most) {
+					lo = Au;
+				} else {
+					return undefined;
+				}
+			}
+			return undefined;
 		};
 		const p =
 			plan(A, most) ??
 			plan(A * STOP_HARD, most) ??
 			plan(A, fast) ??
-			plan(A * STOP_HARD, fast);
+			plan(A * STOP_HARD, fast) ??
+			fit(A, most) ??
+			fit(A * STOP_HARD, most) ??
+			fit(A, fast) ??
+			fit(A * STOP_HARD, fast);
 		if (!p) {
 			return this.slowLast(keep, A);
 		}
-		const { vc, Tn, ta, td, tc, Ad } = p;
+		const { vc, Tn, ta, td, tc, Ad, Au } = p;
 		const sa = vs * ta + (Au * ta * ta) / 2;
 		const sAt = (t: number) => {
 			if (t <= ta) {
