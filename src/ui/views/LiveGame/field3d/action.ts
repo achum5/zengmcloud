@@ -312,6 +312,11 @@ const STOP_HARD = 1.5;
 // (Short of where that hard a stop takes him by more than this, feet: on
 // past it - see Actor.pullsPast.)
 const PAST_SLACK_FT = 0.5;
+// (A plant left this much quicker, ft/s, than he can take round, for want
+// of room: planted harder for it - see plantFor - settling, as he gets on
+// round, over this many looks at it.)
+const PLANT_SHORT_FPS = 1;
+const PLANT_HARD_TRIES = 4;
 // Run at somewhere over an end line (see onField), or no more than
 // EDGE_NEAR_FT short of it, no more than EDGE_ALONG of the way along it:
 // pulled up into it, EDGE_SHORT_FT short of it, at least EDGE_LEAST_FT on
@@ -493,11 +498,16 @@ const angleAt = (a: Pt, b: Pt, c: Pt): number => {
 // Planted from v (ft/s) down to ve on the way he is going, where he is
 // going `ahead` feet on along it: no further on than that (see CUT_ACCEL)
 // - not past it and back. (The pace he is down to.)
-const plantedTo = (v: number, ve: number, ahead: number): number =>
+const plantedTo = (
+	v: number,
+	ve: number,
+	ahead: number,
+	accel = CUT_ACCEL,
+): number =>
 	Math.min(
 		v,
 		ahead > 0
-			? Math.max(ve, Math.sqrt(Math.max(0, v * v - 2 * CUT_ACCEL * ahead)))
+			? Math.max(ve, Math.sqrt(Math.max(0, v * v - 2 * accel * ahead)))
 			: ve,
 	);
 
@@ -514,13 +524,15 @@ const plantedFor = (
 	to: Pt,
 	down?: number,
 	most = Infinity,
+	accel = CUT_ACCEL,
+	tries = 2,
 ): { ve: number; want: number } => {
 	const ahead = (to.x - at.x) * cos + (to.y - at.y) * sin;
 	const round = (p: Pt) => angleAt({ x: p.x - cos, y: p.y - sin }, p, to);
 	let want = Math.min(most, down ?? v * cutKeep(round(at)));
-	let ve = plantedTo(v, want, ahead);
-	for (let k = 0; k < 2 && down === undefined; k++) {
-		const d = (v * v - ve * ve) / (2 * CUT_ACCEL);
+	let ve = plantedTo(v, want, ahead, accel);
+	for (let k = 0; k < tries && down === undefined; k++) {
+		const d = (v * v - ve * ve) / (2 * accel);
 		if (!(d > 0)) {
 			break;
 		}
@@ -529,7 +541,7 @@ const plantedFor = (
 			break;
 		}
 		want = less;
-		ve = plantedTo(v, want, ahead);
+		ve = plantedTo(v, want, ahead, accel);
 	}
 	return { ve, want };
 };
@@ -2008,11 +2020,29 @@ class Actor {
 		const far = dist(l.from, l.to);
 		const cos = (l.to.x - l.from.x) / far;
 		const sin = (l.to.y - l.from.y) / far;
-		const { ve, want } = plantedFor(v, l.to, cos, sin, to, down, most);
+		let { ve, want } = plantedFor(v, l.to, cos, sin, to, down, most);
 		// (No room to plant for it short of where he goes: bent round into
 		// it, if he can be.)
 		if (ve - want > (v - want) / 2 && this.bendInto(to, v)) {
 			return;
+		}
+		// (Or, still no room for it: planted harder - STOP_HARD times -
+		// down to what he can take round from where that has him, not left
+		// going at it near flat out and round at a crawl after.)
+		let hard = CUT_ACCEL;
+		if (ve - want > PLANT_SHORT_FPS) {
+			({ ve, want } = plantedFor(
+				v,
+				l.to,
+				cos,
+				sin,
+				to,
+				down,
+				most,
+				CUT_ACCEL * STOP_HARD,
+				PLANT_HARD_TRIES,
+			));
+			hard = CUT_ACCEL * STOP_HARD;
 		}
 		if (!(ve < v)) {
 			return;
@@ -2024,7 +2054,7 @@ class Actor {
 		// into it and stopped dead in a stride.)
 		const room = this.roomOn(cos, sin).ft - EDGE_SHORT_FT;
 		let w = v;
-		let A = CUT_ACCEL;
+		let A = hard;
 		if ((v * v - ve * ve) / (2 * CUT_ACCEL) > room) {
 			const vr = Math.sqrt(ve * ve + 2 * CUT_ACCEL * Math.max(0, room));
 			if (
@@ -2035,7 +2065,7 @@ class Actor {
 			}
 			A = clamp(
 				(w * w - ve * ve) / (2 * Math.max(room, 0.1)),
-				CUT_ACCEL,
+				hard,
 				CUT_ACCEL * STOP_HARD,
 			);
 		}
