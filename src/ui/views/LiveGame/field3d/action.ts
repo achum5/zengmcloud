@@ -4331,6 +4331,22 @@ const GIVE_SET_MS = 300;
 // front (the cosine of it); and then, this often, drove him back.
 const HEAD_ON = 0.5;
 const DRIVEN_BACK = 0.55;
+// (How far back, feet, stood when he is met; and the pace, ft/s, at which
+// he is met and goes down where he is, back no further.)
+const BACK_FT = 1.4;
+const BACK_EVEN_FPS = 10;
+// (Stiff-armed, on into it no more than this, feet, going at the carrier -
+// this much of the way he goes, or more: the arm keeps him off.)
+const STIFF_ARM_CARRY_FT = 1;
+const STIFF_ARM_AT = 0.7;
+// Met head on and driven back, onto his back: how far on (feet) the way he
+// was going - as far back as he was slow, `ft` stood, none at BACK_EVEN_FPS;
+// quicker than that, carried on through it by as much as he was over it.
+// Not stopped dead off a sprint and thrown back.
+const drivenBy = (pace: number, ft: number): number =>
+	pace < BACK_EVEN_FPS
+		? -ft * (1 - pace / BACK_EVEN_FPS)
+		: (pace - BACK_EVEN_FPS) * TACKLED_CARRY_S;
 // Brought down off the run, carried on down by it: as far as this long at
 // the pace he was going takes him (feet - TACKLED_LEAST at least, and no
 // more than TACKLED_MOST) - see pace.ts carriedOf - not stopped in a
@@ -10544,7 +10560,28 @@ class Action {
 			const hit = beside(at, ang - Math.PI / 2, 2.6);
 			const face = this.toward(hit, at);
 			this.closeOn(m, hit, tc - 80, face, carrier);
-			m.act("tackledBack", tc + 520, face, beside(hit, face, -1.6));
+			// (Back off it as he was slow - or quicker, on the way he was
+			// going as much as he was over BACK_EVEN_FPS, as a man met head on
+			// is (see drivenBy): not stopped dead off a sprint. On at the
+			// carrier, though, no more than STIFF_ARM_CARRY_FT: the arm keeps
+			// him off.)
+			const ml = m.last;
+			const v = legPace(ml);
+			const mf = dist(ml.from, ml.to);
+			const u =
+				mf > 0
+					? { x: (ml.to.x - ml.from.x) / mf, y: (ml.to.y - ml.from.y) / mf }
+					: { x: Math.cos(face), y: Math.sin(face) };
+			const into = u.x * Math.cos(face) + u.y * Math.sin(face);
+			const on = Math.min(
+				into > STIFF_ARM_AT ? STIFF_ARM_CARRY_FT : TACKLED_MOST,
+				Math.max(0, drivenBy(v, 0)),
+			);
+			const back = Math.min(0, drivenBy(v, 1.6));
+			m.act("tackledBack", tc + 520, face, {
+				x: hit.x + Math.cos(face) * back + u.x * on,
+				y: hit.y + Math.sin(face) * back + u.y * on,
+			});
 			m.hold(tc + 520 + 600, "supine");
 			m.act("getUpBack", tc + 520 + 600 + GET_UP_MS);
 			carrier.arms("stiffArm", tc - 280, tc + 300);
@@ -10913,16 +10950,16 @@ class Action {
 			y: p.y + Math.sin(fall) * f + Math.cos(fall) * s,
 		});
 		const l = carrier.last;
-		const carried = clamp(
-			(GAITS.has(l.move) ? legPace(l) : 0) * TACKLED_CARRY_S,
-			TACKLED_LEAST,
-			TACKLED_MOST,
-		);
+		const pace = GAITS.has(l.move) ? legPace(l) : 0;
+		const carried = clamp(pace * TACKLED_CARRY_S, TACKLED_LEAST, TACKLED_MOST);
 		const downAt = lying
 			? carrier.at
 			: swing
 				? along(pt, (1.4 * carried) / TACKLED_LEAST, -from1 * 2)
-				: along(pt, back ? -1.4 : carried, 0);
+				: along(pt, back ? drivenBy(pace, BACK_FT) : carried, 0);
+		// (The men who meet him head on down round where he would be, stood,
+		// driven back: in front of him, not carried on with him.)
+		const metAt = along(pt, -BACK_FT, 0);
 		// (Swung round, the way he lies after it.)
 		let swungBy = 0;
 		if (keptUp) {
@@ -11037,8 +11074,8 @@ class Action {
 					: !back
 						? along(downAt, -1.2, by)
 						: k === 0
-							? along(downAt, 2.6, 2)
-							: along(downAt, 0.6, by);
+							? along(metAt, 2.6, 2)
+							: along(metAt, 0.6, by);
 			const by = towards * 2.1;
 			const free = (p: Pt) => landed.every((q) => dist(p, q) >= LANDED_APART);
 			const lands =
@@ -20901,7 +20938,17 @@ class Action {
 			}
 			// (There already, near enough: turned to him where he is - not
 			// a blink of a run on the spot.)
-			if (dist(m.at, spot) > STOP_THERE_FT) {
+			// (A step or two off it: stepped over to it, still facing him -
+			// not turned and run there, his back to him.)
+			const left = dist(m.at, spot);
+			if (left > STOP_THERE_FT && left <= PARTY_STEP_FT) {
+				m.go(
+					spot,
+					m.t + Math.max(PARTY_STEP_MS, (left / PARTY_STEP_FPS) * 1000),
+					"walk",
+					way + Math.PI,
+				);
+			} else if (left > STOP_THERE_FT) {
 				m.runUp(spot, Math.min(m.top * 0.6, STOP_FPS));
 			}
 			if (bump) {
@@ -22597,6 +22644,11 @@ const STOP_FPS = 13;
 const STOP_RING = 3.6;
 // (There already, this near it, feet.)
 const STOP_THERE_FT = 0.6;
+// (No further than this, feet: stepped over to it at this pace, ft/s, over
+// this long at the least, ms.)
+const PARTY_STEP_FT = 3;
+const PARTY_STEP_FPS = 3.5;
+const PARTY_STEP_MS = 350;
 const STOP_BUMP = 0.55;
 const STOP_BUMP_APART = 2;
 const STOP_BUMP_MS = 900;

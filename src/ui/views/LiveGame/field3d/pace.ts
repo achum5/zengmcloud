@@ -145,6 +145,15 @@ const carriedOf = (legs: Leg[], k: number): number => {
 	) {
 		return 1;
 	}
+	// (Not if it takes him back the way he came: met head on and driven
+	// back - see action.ts tackle.)
+	if (
+		(l.to.x - l.from.x) * (prev.to.x - prev.from.x) +
+			(l.to.y - l.from.y) * (prev.to.y - prev.from.y) <=
+		0
+	) {
+		return 1;
+	}
 	const own = paceIn(l);
 	return own > 0 ? Math.min(CARRY_MOST, Math.max(1, paceIn(prev) / own)) : 1;
 };
