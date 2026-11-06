@@ -1487,6 +1487,25 @@ tr.table-warning:hover > td {
 			max-width: 8rem;
 		}
 	}
+	// Short of room: the badges give way long before the name does, and the
+	// position before it too.
+	.gamecast-oncourt-name {
+		flex-shrink: 1;
+	}
+	.gamecast-oncourt-pos {
+		flex-shrink: 100;
+		min-width: 0;
+		overflow: hidden;
+		white-space: nowrap;
+		padding-left: 0.3em;
+	}
+	.gamecast-oncourt-skills {
+		flex-shrink: 10000;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
 }
 .gamecast-linescore {
 	th,

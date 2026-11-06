@@ -733,12 +733,19 @@ export const OnCourt = ({ boxScore }: { boxScore: any }) => (
 											style={{ minWidth: 0 }}
 											className="d-flex align-items-center"
 										>
-											<span className="text-truncate">
-												<a href={playerUrl(p.pid)}>{shortName(p.name)}</a>{" "}
-												<span className="text-body-secondary">{p.pos}</span>
+											{/* (Short of room, his badges are cut
+											    first, then his position, and only then
+											    his name.) */}
+											<span className="text-truncate gamecast-oncourt-name">
+												<a href={playerUrl(p.pid)}>{shortName(p.name)}</a>
 											</span>
-											<span className="flex-shrink-0 text-nowrap">
+											<span className="text-body-secondary gamecast-oncourt-pos">
+												{p.pos}
+											</span>
+											<span className="gamecast-oncourt-skills">
 												<SkillsBlock skills={p.skills} />
+											</span>
+											<span className="flex-shrink-0">
 												<RatingsStatsPopover
 													pid={p.pid}
 													season={boxScore.season}
