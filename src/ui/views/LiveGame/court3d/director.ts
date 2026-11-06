@@ -959,6 +959,13 @@ const STAGGER_PACE = 1.15;
 // How long a pause (ms) a man's last stride up at the rim can follow on
 // from the end of his drive without his pulling up for it (see carry).
 const ON_FROM_MS = 700;
+// Carried on from a run (see carry's onFrom): as little of the pace he
+// had on it as he may go into it with - the run before it taken easier, to
+// give him that - and the least a carry so given time is left (a stride).
+const CARRY_DIP = 0.75;
+const CARRY_LEAST = 200;
+// Runs a man makes on his own feet (not dribbling, not sliding).
+const ON_FOOT = new Set<AnimName>(["run", "sprint", "jog", "walk"]);
 // Going this fast (feet a second) or faster - running, driving - a quick man
 // goes quicker and a slow one slower (see quick).
 const QUICK_FROM = 12;
@@ -3227,12 +3234,48 @@ class Director {
 			const keep = keepThrough(cos);
 			if (keep >= 0.1) {
 				start = last.t1;
+				const paceAt = (j: number) => {
+					const avg = d / ((end - j) / 1000);
+					return {
+						avg,
+						out: how.v1 ?? avg,
+						was: la / Math.max(0.05, (j - last.t0) / 1000),
+					};
+				};
+				// (There with time to spare before he has to be off it at the
+				// pace it ends at - a cut into the catch, then the gather and up
+				// for the dunk: not pulled up dead at the end of the cut and off
+				// again from nothing, but the last of the cut taken easier, on
+				// into this at the pace he has.)
+				const short = (j: number) => {
+					const { avg, out, was } = paceAt(j);
+					return 2 * avg - out < was * keep * CARRY_DIP;
+				};
+				if (
+					how.v0 === undefined &&
+					how.v1 !== undefined &&
+					ON_FOOT.has(last.anim) &&
+					short(start)
+				) {
+					let lo = start;
+					let hi = Math.max(start, end - CARRY_LEAST);
+					if (!short(hi)) {
+						for (let n = 0; n < 20; n++) {
+							const mid = (lo + hi) / 2;
+							if (short(mid)) {
+								lo = mid;
+							} else {
+								hi = mid;
+							}
+						}
+						start = hi;
+						last.t1 = start;
+					}
+				}
 				// (As fast as he was going on it, as the turn allows - but not so
 				// fast this could not slow to how it ends and still take as long
 				// as it does.)
-				const avg = d / ((end - start) / 1000);
-				const out = how.v1 ?? avg;
-				const was = la / Math.max(0.05, (last.t1 - last.t0) / 1000);
+				const { avg, out, was } = paceAt(start);
 				v0 =
 					how.v0 ?? Math.max(0, Math.min(was * keep, 2 * avg - out, 1.5 * avg));
 				last.v1 = v0;
@@ -19918,19 +19961,36 @@ class Director {
 					const t0 = from + 300 + this.rng() * 300;
 					const room = until - t0;
 					const d = dist(P, Q);
-					if (makesAtAll(Q, nm) && room > 400 && d / (room / 1000) <= SPRINT) {
-						const speed = Math.max(JOG, d / (room / 1000));
+					// (As easy a pace as gets him there in the time - getting going
+					// and pulling up up there counted in it, not crammed into its
+					// first and last strides.)
+					if (makesAtAll(Q, nm) && room > 400 && runMs(d, SPRINT) <= room) {
+						let speed = JOG;
+						if (runMs(d, JOG) > room) {
+							let lo = JOG;
+							let hi = SPRINT;
+							for (let n = 0; n < 20; n++) {
+								const mid = (lo + hi) / 2;
+								if (runMs(d, mid) > room) {
+									lo = mid;
+								} else {
+									hi = mid;
+								}
+							}
+							speed = hi;
+						}
+						const t1 = t0 + runMs(d, speed);
 						added.push({
 							tr,
 							move: {
 								t0,
-								t1: t0 + (d / speed) * 1000,
+								t1,
 								from: { ...P },
 								to: Q,
 								anim: speed >= RUN ? "sprint" : "run",
 							},
 						});
-						setOff(tr, w.next, Q, t0 + (d / speed) * 1000);
+						setOff(tr, w.next, Q, t1);
 						take(tr, w, Q);
 					}
 					continue;

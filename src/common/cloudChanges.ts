@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 199,
+		date: "2026-11-06",
+		text: "3D games: a cutter who catches the ball on his way to the rim takes it in stride into his dunk or layup instead of stopping dead to catch it, and a man trailing the play up the floor gets going and pulls up like a runner instead of starting and stopping at full speed.",
+	},
+	{
 		n: 198,
 		date: "2026-11-06",
 		text: "Live gamecast: the play, pause and speed controls sit up in the top corner of the court, clear of the score bug. And on any shot chart, click a shot to watch it in 3D right there in its popup.",

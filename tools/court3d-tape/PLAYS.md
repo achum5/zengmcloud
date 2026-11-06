@@ -226,6 +226,17 @@ in play the same:
   opened under its row) cut off on a turnover never staged: a defender's
   last stretch of following his man ran on to forever, nothing after it
   (`mark` follows no further than the end).
+- a cutter caught a pass on his way to the rim and stopped dead to take it:
+  the gather into the dunk or layup (`carry`, on from the cut) was a slow
+  step that had to leave the floor quick, so it started him from nothing,
+  and the cut braked from 14 ft/s to a stand in a tenth of a second. There
+  with time to spare, the cut runs on easier into the gather at the pace he
+  has (`CARRY_DIP`): 8.8 ft/s steady through the catch into the dunk.
+- a man trailing up the floor (`liven`) timed at distance over a flat pace
+  - 30 ft at 21 ft/s from standing, pulled up dead at the end: timed as a
+    run (`runMs`), getting going and pulling up in it, at the easiest pace that
+    gets him there - and not at all if even a sprint can't. Both: the tape's
+    lurches 33/36/33 to 25/27/26.
 
 Checks: the existing tests (feet behind the line, a contested jumper stays
 in sight, the ball never jumps, real speed with no darts) on every change.
