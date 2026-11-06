@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useMemo, useState } from "react";
-import { clipOfPlay } from "../../../util/filterPlayerHighlights.ts";
+import { clipOfPlay, isLine } from "../../../util/filterPlayerHighlights.ts";
 import { helpers } from "../../../util/helpers.ts";
 import processLiveGameEventsBasketball from "../../../util/processLiveGameEvents.basketball.tsx";
 
@@ -67,6 +67,21 @@ const ClipCourt = ({
 		};
 		while (r.queue.length > 0 && total - r.queue.length < start) {
 			step(r);
+		}
+		// (And what is kept between there and its first play - the points,
+		// the subs since the period began: the score as it was when it
+		// starts, not as of the period's start.)
+		const head: any[] = [];
+		while (r.queue.length > 0 && !isLine(r.queue[0])) {
+			head.push(r.queue.shift());
+		}
+		if (head.length > 0) {
+			processLiveGameEventsBasketball({
+				events: head,
+				boxScore: r.box,
+				overtimes: r.overtimes,
+				quarters: r.quarters,
+			});
 		}
 		return r;
 	}, [events, start, total, initialBoxScore]);

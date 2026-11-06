@@ -7,6 +7,7 @@ import {
 } from "../../../util/filterPlayerHighlights.ts";
 import { clipDipAt, compileCourt, snapForCursor } from "./director.ts";
 import { clipStopAt } from "./playback.ts";
+import { buildFouls, foulsAt } from "./scoreBug.ts";
 import { evalBall, evalPlayer, fastAt } from "./evaluate.ts";
 import { COURT_W } from "./geometry.ts";
 import { bodyOf } from "./poses.ts";
@@ -77,18 +78,33 @@ describe("3D highlight reels", () => {
 	}, 120_000);
 	// One play opened on its box score: just it, cut to - its possession's
 	// lead-up and the play - staged on its own in a moment.
+	// (Any play opened under its row on the play-by-play, too.)
 	test("a highlight on its own plays from a cut to the play, quickly", () => {
 		const { events, players } = fakeGame("hl1", 120);
+		const NOT_PLAYS = new Set([
+			"sub",
+			"timeout",
+			"injury",
+			"period",
+			"gameOver",
+		]);
 		let clips = 0;
+		let shots = 0;
 		for (let i = 0; i < events.length; i++) {
-			const e = events[i];
-			if (e?.type !== "tp" && e?.type !== "fgAtRim" && e?.type !== "blkAtRim") {
+			const e = events[i]!;
+			if (!isLine(e) || NOT_PLAYS.has(e.type)) {
 				continue;
 			}
-			// (The row: from the line before - the shot - to this one.)
-			let first = i - 1;
-			while (first > 0 && !isLine(events[first])) {
-				first -= 1;
+			// (A shot's row: from the line before - the shot - to this one.)
+			const shot =
+				e.type === "tp" || e.type === "fgAtRim" || e.type === "blkAtRim";
+			let first = i;
+			if (shot) {
+				first = i - 1;
+				while (first > 0 && !isLine(events[first])) {
+					first -= 1;
+				}
+				shots += 1;
 			}
 			const clip = clipOfPlay(events, first, i + 1);
 			const at0 = performance.now();
@@ -104,17 +120,50 @@ describe("3D highlight reels", () => {
 			assert.isDefined(play, `${i}`);
 			if (tl.clips?.length) {
 				assert.isAtMost(from, tl.clips[0]!);
-				assert.isAbove(play!.actionStart, tl.clips[0]!);
+				assert.isAtLeast(play!.actionStart, tl.clips[0]!);
 			}
 			// (As it plays: the dead stretches in it run through fast.)
 			let wall = 0;
 			for (let t = from; t < to; t += 50) {
 				wall += 50 / fastAt(tl, t);
 			}
-			assert.isBelow(wall, 16_000, `${i}`);
+			assert.isBelow(wall, 17_000, `${i} ${e.type}`);
 			assert.isAbove(to, play!.actionStart);
 			clips += 1;
 		}
-		assert.isAbove(clips, 10);
+		assert.isAbove(shots, 10);
+		assert.isAbove(clips, 100);
+	}, 120_000);
+	// And its score bug has the period's team fouls before it, not none.
+	test("a play shown on its own has the period's fouls so far", () => {
+		const { events, players } = fakeGame("hl2", 120);
+		let checked = 0;
+		for (let i = 0; i < events.length; i++) {
+			const e = events[i]!;
+			if (e.type !== "tp" && e.type !== "fgAtRim") {
+				continue;
+			}
+			// (As the whole game had them by then.)
+			const had: [number, number] = [0, 0];
+			for (let j = 0; j < i; j++) {
+				const x = events[j]!;
+				if (x.type === "period" || x.type === "overtime") {
+					had[0] = 0;
+					had[1] = 0;
+				} else if (/^pf/.test(x.type) && (x.t === 0 || x.t === 1)) {
+					had[x.t as 0 | 1] += 1;
+				}
+			}
+			const clip = clipOfPlay(events, i, i + 1);
+			const tl = compileCourt({ events: clip.events, players, gid: 1 });
+			const play = tl.beats.find((b) => b.i === clip.end - 1)!;
+			assert.deepEqual(
+				foulsAt(buildFouls(tl, clip.events), play.actionStart).fouls,
+				had,
+				`${i}`,
+			);
+			checked += had[0] + had[1] > 0 ? 1 : 0;
+		}
+		assert.isAbove(checked, 5);
 	}, 120_000);
 });

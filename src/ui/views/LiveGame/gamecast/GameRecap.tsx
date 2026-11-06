@@ -491,6 +491,17 @@ export const GameRecap = ({
 						});
 					}
 				: undefined,
+			// Or played right there, under its row.
+			clip:
+				replay && __SPORT === "basketball"
+					? (row: FeedRow) => (
+							<HighlightClip
+								game={replay}
+								first={replay.entries[row.key - 1]?.cursor ?? 0}
+								last={row.cursor!}
+							/>
+						)
+					: undefined,
 		}),
 		[names, replay, gid, boxScore.teams],
 	);
@@ -504,6 +515,8 @@ export const GameRecap = ({
 					teams={boxScore.teams}
 					colors={colors}
 					names={names}
+					plays={replay.entries}
+					numPeriods={numPeriods}
 				/>
 			</Section>
 		) : null;
@@ -545,17 +558,7 @@ export const GameRecap = ({
 											teams={boxScore.teams}
 											season={boxScore.season}
 											numPeriods={numPeriods}
-											clip={
-												__SPORT === "basketball"
-													? (row) => (
-															<HighlightClip
-																game={replay}
-																first={replay.entries[row.key - 1]?.cursor ?? 0}
-																last={row.cursor!}
-															/>
-														)
-													: undefined
-											}
+											best
 										/>
 									) : null}
 									{boxScore.charts ? (

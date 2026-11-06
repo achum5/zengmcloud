@@ -63,6 +63,18 @@ export const buildFouls = (
 			push(b.actionStart);
 			continue;
 		}
+		// A play shown on its own (see clipOfPlay): the period's fouls before
+		// it, cut out with the rest of the game.
+		if (Array.isArray(e.clipFouls)) {
+			for (const f of e.clipFouls as { t: 0 | 1; clock: number }[]) {
+				fouls[f.t] += 1;
+				if (f.clock <= LAST_TWO) {
+					late[f.t] += 1;
+				}
+				clock = f.clock;
+			}
+			push(b.preStart);
+		}
 		if (typeof e.clock === "number") {
 			clock = e.clock;
 		}

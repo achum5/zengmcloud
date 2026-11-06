@@ -249,6 +249,9 @@ export const clipOfPlay = (
 	let end = -1;
 	let skipped = false;
 	let cut = false;
+	// The period's team fouls cut out before it, for the score bug (see
+	// buildFouls): who, and when.
+	let fouls: { t: 0 | 1; clock: number }[] = [];
 	for (let i = 0; i < Math.min(playByPlay.length, upTo); i++) {
 		const event = playByPlay[i];
 		const type = event?.type;
@@ -267,7 +270,11 @@ export const clipOfPlay = (
 				// (Cut to: the game before it is not there.)
 				if (line && skipped && !cut) {
 					cut = true;
-					events.push({ ...event, clipStart: true });
+					events.push({
+						...event,
+						clipStart: true,
+						...(fouls.length > 0 ? { clipFouls: fouls } : {}),
+					});
 				} else {
 					events.push(event);
 				}
@@ -279,10 +286,20 @@ export const clipOfPlay = (
 			if (line) {
 				start = events.length;
 			}
+			if (type === "period" || type === "overtime") {
+				fouls = [];
+			}
 		} else if (type === "sub") {
 			events.push({ ...event, silent: true });
 		} else if (typeof type === "string") {
 			skipped = true;
+			if (
+				type.startsWith("pf") &&
+				(event.t === 0 || event.t === 1) &&
+				typeof event.clock === "number"
+			) {
+				fouls.push({ t: event.t, clock: event.clock });
+			}
 		}
 	}
 	if (end < 0) {

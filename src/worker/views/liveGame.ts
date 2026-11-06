@@ -52,7 +52,7 @@ export const looksThatNight = async (
 			return undefined;
 		}
 		const looks: ReplayLooks = row.looks;
-		const homeTid = boxScore.teams[0].tid;
+		const homeTid = boxScore.teams[0]?.tid;
 		const teams = Object.fromEntries(
 			await Promise.all(
 				Object.entries(looks.teams).map(async ([tid, t]) => {

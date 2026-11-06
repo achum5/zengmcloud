@@ -261,12 +261,44 @@ export const PlayPicture = ({
 };
 
 // How the plays listed are said (see sentence.ts) and what tapping one
-// does (shows it again on the court, or opens the replay at it) - set by
-// the page listing them.
+// does (shows it again on the court, or opens the replay at it) - or the
+// play itself, to be opened under its row (`clip`, see HighlightClip) - set
+// by the page listing them.
 export const FeedContext = createContext<{
 	say?: (row: FeedRow) => string | undefined;
 	open?: (row: FeedRow) => void;
+	clip?: (row: FeedRow) => ReactNode;
 }>({});
+
+// Lines with no play of their own to show.
+const UNWATCHED = new Set([
+	"sub",
+	"timeout",
+	"injury",
+	"foulOut",
+	"elamActive",
+	"shootoutStart",
+	"shootoutTie",
+	"shootoutTeam",
+	"gameOver",
+	"period",
+	"overtime",
+	"endOfPeriod",
+]);
+const watchable = (row: FeedRow) =>
+	row.cursor !== undefined &&
+	!row.pending &&
+	!row.textOnly &&
+	!UNWATCHED.has(row.type ?? "");
+
+// Down, or turned up while its play is open under it.
+const Chevron = ({ open }: { open: boolean }) => (
+	<span
+		className={clsx("glyphicon glyphicon-menu-down gamecast-chevron", {
+			open,
+		})}
+	/>
+);
 
 export const PlayRow = memo(
 	({
@@ -275,6 +307,8 @@ export const PlayRow = memo(
 		season,
 		numPeriods,
 		latest,
+		opened,
+		onOpen,
 	}: {
 		row: FeedRow;
 		teams: [any, any];
@@ -282,22 +316,33 @@ export const PlayRow = memo(
 		numPeriods: number;
 		// The one under the court: bigger, and two lines of text at most.
 		latest?: boolean;
+		// In a list, its play open under it (see PlayList).
+		opened?: boolean;
+		onOpen?: (key: number | undefined) => void;
 	}) => {
-		const { say, open } = useContext(FeedContext);
+		const { say, open, clip } = useContext(FeedContext);
 		if (row.textOnly) {
 			return <div className="gamecast-divider">{textOf(row.texts)}</div>;
 		}
 		const team = row.t !== undefined ? teams[row.t] : undefined;
 		const sentence = say?.(row);
+		const watch = clip !== undefined && onOpen !== undefined && watchable(row);
 		const opens =
-			open !== undefined && row.cursor !== undefined && !row.pending;
+			watch || (open !== undefined && row.cursor !== undefined && !row.pending);
+		const act = () => {
+			if (watch) {
+				onOpen(opened ? undefined : row.key);
+			} else {
+				open?.(row);
+			}
+		};
 		const when = [
 			row.time,
 			periodLabel(row.period, numPeriods, helpers.ordinal),
 		]
 			.filter(Boolean)
 			.join(" - ");
-		return (
+		const head = (
 			<div
 				className={clsx("gamecast-play", {
 					"gamecast-play-latest": latest,
@@ -307,11 +352,12 @@ export const PlayRow = memo(
 					? {
 							role: "button",
 							tabIndex: 0,
-							title: "Watch it",
-							onClick: () => open(row),
+							title: watch && opened ? "Close" : "Watch it",
+							...(watch ? { "aria-expanded": !!opened } : {}),
+							onClick: act,
 							onKeyDown: (e: { key: string }) => {
 								if (e.key === "Enter") {
-									open(row);
+									act();
 								}
 							},
 						}
@@ -343,6 +389,16 @@ export const PlayRow = memo(
 						{sentence ?? textOf(row.texts)}
 					</div>
 				</div>
+				{watch ? <Chevron open={!!opened} /> : null}
+			</div>
+		);
+		if (!watch) {
+			return head;
+		}
+		return (
+			<div className="gamecast-unit">
+				{head}
+				{opened ? <div className="gamecast-clip">{clip(row)}</div> : null}
 			</div>
 		);
 	},
@@ -350,7 +406,9 @@ export const PlayRow = memo(
 		a.row.key === b.row.key &&
 		a.row.title === b.row.title &&
 		a.row.texts.length === b.row.texts.length &&
-		a.latest === b.latest,
+		a.latest === b.latest &&
+		a.opened === b.opened &&
+		a.onOpen === b.onOpen,
 );
 
 export const PlayList = ({
@@ -363,22 +421,28 @@ export const PlayList = ({
 	teams: [any, any];
 	season: number;
 	numPeriods: number;
-}) => (
-	<div className="gamecast-plays">
-		{rows.map((row) => (
-			<PlayRow
-				key={row.key}
-				row={row}
-				teams={teams}
-				season={season}
-				numPeriods={numPeriods}
-			/>
-		))}
-		{rows.length === 0 ? (
-			<div className="text-body-secondary py-3">No plays yet.</div>
-		) : null}
-	</div>
-);
+}) => {
+	// (One play open at a time.)
+	const [opened, setOpened] = useState<number | undefined>();
+	return (
+		<div className="gamecast-plays">
+			{rows.map((row) => (
+				<PlayRow
+					key={row.key}
+					row={row}
+					teams={teams}
+					season={season}
+					numPeriods={numPeriods}
+					opened={opened === row.key}
+					onOpen={setOpened}
+				/>
+			))}
+			{rows.length === 0 ? (
+				<div className="text-body-secondary py-3">No plays yet.</div>
+			) : null}
+		</div>
+	);
+};
 
 export const AllPlays = ({
 	rows,
@@ -445,30 +509,63 @@ export const AllPlays = ({
 	);
 };
 
+// How big a highlight is, for the few a finished game shows (see Highlights).
+const HIGHLIGHT_WEIGHT: Record<string, number> = {
+	"Poster dunk": 6,
+	"Dunk and the foul": 5,
+	"And-one": 4,
+	Dunk: 3,
+	Block: 2,
+	Three: 2,
+};
+
 // The game's dunks, threes and blocks so far, newest first - each one, opened,
-// played right there under its row (`clip`).
+// played right there under its row (see FeedContext's clip). A game over
+// (`best`): its biggest few, in the order they happened, and all of them in
+// that order.
 export const Highlights = ({
 	rows,
 	teams,
 	season,
 	numPeriods,
-	clip,
+	best,
 }: {
 	rows: FeedRow[];
 	teams: [any, any];
 	season: number;
 	numPeriods: number;
-	clip?: (row: FeedRow) => ReactNode;
+	best?: boolean;
 }) => {
 	const [all, setAll] = useState(false);
 	const [open, setOpen] = useState<number | undefined>();
-	const { say } = useContext(FeedContext);
-	const highlights = rows.filter((row) => highlightOf(row) !== undefined);
-	if (highlights.length === 0) {
+	const { say, clip } = useContext(FeedContext);
+	const newest = rows.filter((row) => highlightOf(row) !== undefined);
+	if (newest.length === 0) {
 		return null;
 	}
 	const SHOWN = 4;
-	const shown = all ? highlights : highlights.slice(0, SHOWN);
+	const highlights = best ? [...newest].reverse() : newest;
+	let shown = highlights.slice(0, SHOWN);
+	if (best && !all) {
+		// (Late in a close one counts for more.)
+		const late = (row: FeedRow) =>
+			(row.period ?? 0) >= numPeriods &&
+			row.pts !== undefined &&
+			Math.abs(row.pts[0] - row.pts[1]) <= 6
+				? 1
+				: 0;
+		const weight = (row: FeedRow) =>
+			(HIGHLIGHT_WEIGHT[highlightOf(row)!] ?? 1) + late(row);
+		const top = new Set(
+			[...highlights]
+				.sort((a, b) => weight(b) - weight(a))
+				.slice(0, SHOWN)
+				.map((row) => row.key),
+		);
+		shown = highlights.filter((row) => top.has(row.key));
+	} else if (all) {
+		shown = highlights;
+	}
 	return (
 		<Section
 			title="Highlights"
@@ -489,12 +586,11 @@ export const Highlights = ({
 					]
 						.filter(Boolean)
 						.join(" - ");
-					const opens =
-						clip !== undefined && row.cursor !== undefined && !row.pending;
+					const opens = clip !== undefined && watchable(row);
 					const isOpen = opens && open === row.key;
 					const toggle = () => setOpen(isOpen ? undefined : row.key);
 					return (
-						<div key={row.key} className="gamecast-highlight">
+						<div key={row.key} className="gamecast-unit">
 							<div
 								className={clsx("gamecast-play align-items-center", {
 									"gamecast-play-opens": opens,
@@ -533,14 +629,7 @@ export const Highlights = ({
 										{say?.(row) ?? textOf(row.texts)}
 									</div>
 								</div>
-								{opens ? (
-									<span
-										className={clsx(
-											"glyphicon glyphicon-menu-down gamecast-chevron",
-											{ open: isOpen },
-										)}
-									/>
-								) : null}
+								{opens ? <Chevron open={isOpen} /> : null}
 							</div>
 							{isOpen ? <div className="gamecast-clip">{clip(row)}</div> : null}
 						</div>
@@ -1349,6 +1438,11 @@ export const LiveGamecast = ({
 	const onReplayRef = useRef(onReplay);
 	onReplayRef.current = onReplay;
 	const canReplay = onReplay !== undefined;
+	// A play opened under its row (see HighlightClip): the game as far as it
+	// has got when it is opened.
+	const clipRef = useRef({ clipGame, cursor, entries });
+	clipRef.current = { clipGame, cursor, entries };
+	const canClip = clipGame !== undefined;
 	const names = useMemo(() => {
 		const m = new Map<number, string>();
 		for (const t of teams) {
@@ -1390,9 +1484,25 @@ export const LiveGamecast = ({
 						}
 						onReplayRef.current?.(row.cursor);
 					},
+			clip: !canClip
+				? undefined
+				: (row: FeedRow) => {
+						const {
+							clipGame: game,
+							cursor: upTo,
+							entries: lines,
+						} = clipRef.current;
+						return game ? (
+							<HighlightClip
+								game={{ ...game, upTo }}
+								first={lines.find((e) => e.key === row.key - 1)?.cursor ?? 0}
+								last={row.cursor!}
+							/>
+						) : null;
+					},
 		}),
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-		[names, canReplay],
+		[names, canReplay, canClip],
 	);
 
 	const shown =
@@ -1402,7 +1512,14 @@ export const LiveGamecast = ({
 	const shotChart =
 		shown && shown.length > 0 ? (
 			<Section title="Shot Chart">
-				<ShotChart spots={shown} teams={teams} colors={colors} names={names} />
+				<ShotChart
+					spots={shown}
+					teams={teams}
+					colors={colors}
+					names={names}
+					plays={entries}
+					numPeriods={numPeriods}
+				/>
 			</Section>
 		) : null;
 
@@ -1473,20 +1590,6 @@ export const LiveGamecast = ({
 									teams={teams}
 									season={season}
 									numPeriods={numPeriods}
-									clip={
-										clipGame
-											? (row) => (
-													<HighlightClip
-														game={{ ...clipGame, upTo: cursor }}
-														first={
-															entries.find((e) => e.key === row.key - 1)
-																?.cursor ?? 0
-														}
-														last={row.cursor!}
-													/>
-												)
-											: undefined
-									}
 								/>
 								<Section
 									title="On the Court"
