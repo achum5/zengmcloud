@@ -23,10 +23,7 @@ import { useLocal } from "../../../util/local.ts";
 import { usePlayerFace } from "../../../util/playerFaces.ts";
 import { PlayerPicture } from "../../../components/PlayerPicture.tsx";
 import { TeamLogoInline } from "../../../components/TeamLogoInline.tsx";
-import {
-	GameCharts,
-	sideColors,
-} from "../../../components/GameCharts.basketball.tsx";
+import { sideColors } from "../../../components/GameCharts.basketball.tsx";
 import { TEAM_NUMS_DISPLAY_ORDER } from "../../../util/boxScoreDisplayOrder.ts";
 import {
 	feedRows,
@@ -36,6 +33,7 @@ import {
 	type FeedRow,
 } from "./playFeed.ts";
 import type { GamecastInfo } from "../../../../worker/views/liveGameInfo.ts";
+import { FlowCharts } from "./FlowCharts.tsx";
 
 type Tab = "gamecast" | "box" | "plays" | "stats" | "flow";
 
@@ -636,7 +634,7 @@ export const TeamsLine = ({ boxScore }: { boxScore: any }) => (
 );
 
 export const Leaders = ({ boxScore }: { boxScore: any }) => (
-	<div>
+	<div className="gl">
 		<TeamsLine boxScore={boxScore} />
 		{LEADER_STATS.map((stat) => {
 			const best = TEAM_NUMS_DISPLAY_ORDER.map((ti) => {
@@ -649,43 +647,56 @@ export const Leaders = ({ boxScore }: { boxScore: any }) => (
 				return top;
 			});
 			return (
-				<div key={stat.label} className="gamecast-leader-row">
-					<div className="gamecast-leader-label">{stat.label}</div>
-					<div className="gamecast-leader-pair">
+				<div key={stat.label} className="gl-row">
+					<div className="gl-line">
 						{best.map((p, i) => (
-							<div
-								key={i}
-								className={clsx("gamecast-leader", {
-									"flex-row-reverse text-end": i === 1,
-								})}
-							>
+							<Fragment key={i}>
+								{i === 1 ? <div className="gl-label">{stat.label}</div> : null}
+								<div className={clsx("gl-side", { "gl-right": i === 1 })}>
+									{p ? (
+										<>
+											<Headshot
+												pid={p.pid}
+												season={boxScore.season}
+												size={40}
+											/>
+											<span className="gl-value">{stat.value(p)}</span>
+										</>
+									) : (
+										<span className="text-body-secondary">-</span>
+									)}
+								</div>
+							</Fragment>
+						))}
+					</div>
+					<div className="gl-line">
+						{best.map((p, i) => (
+							<div key={i} className={clsx("gl-who", { "text-end": i === 1 })}>
 								{p ? (
 									<>
-										<Headshot pid={p.pid} season={boxScore.season} size={48} />
-										<div style={{ minWidth: 0 }}>
-											<div className="gamecast-leader-value">
-												{stat.value(p)}
-											</div>
-											<div className="text-truncate">
-												<a href={playerUrl(p.pid)}>{shortName(p.name)}</a>
-											</div>
-											<div className="gamecast-leader-line">
-												{/* (Each part kept whole, wrapping between them.) */}
-												{stat
-													.line(p)
-													.split(", ")
-													.map((part, j) => (
-														<Fragment key={j}>
-															{j > 0 ? ", " : null}
-															<span className="text-nowrap">{part}</span>
-														</Fragment>
-													))}
-											</div>
+										<div className="text-truncate">
+											<a href={playerUrl(p.pid)}>{shortName(p.name)}</a>
+											{p.jerseyNumber ? (
+												<span className="text-body-secondary">
+													{" "}
+													#{p.jerseyNumber}
+												</span>
+											) : null}
+										</div>
+										<div className="gl-stat">
+											{/* (Each part kept whole, wrapping between them.) */}
+											{stat
+												.line(p)
+												.split(", ")
+												.map((part, j) => (
+													<Fragment key={j}>
+														{j > 0 ? ", " : null}
+														<span className="text-nowrap">{part}</span>
+													</Fragment>
+												))}
 										</div>
 									</>
-								) : (
-									<span className="text-body-secondary">-</span>
-								)}
+								) : null}
 							</div>
 						))}
 					</div>
@@ -947,6 +958,9 @@ export const Injuries = ({ boxScore }: { boxScore: any }) => {
 const teamByTid = (boxScore: any, tid: number) =>
 	boxScore.teams.find((t: any) => t.tid === tid);
 
+const boxScoreUrl = (t: any, season: number, gid: number) =>
+	helpers.leagueUrl(["game_log", `${t.abbrev}_${t.tid}`, season, gid]);
+
 export const Series = ({
 	boxScore,
 	info,
@@ -984,6 +998,13 @@ export const Series = ({
 						const awayT = teamByTid(boxScore, s.tids[1]);
 						const won = (side: 0 | 1) =>
 							s.pts !== undefined && s.pts[side] > s.pts[side === 0 ? 1 : 0];
+						const score = s.pts ? (
+							<>
+								<span className={clsx({ "fw-bold": won(1) })}>{s.pts[1]}</span>
+								{" - "}
+								<span className={clsx({ "fw-bold": won(0) })}>{s.pts[0]}</span>
+							</>
+						) : null;
 						return (
 							<tr key={s.gid} className={clsx({ "table-warning": s.now })}>
 								<td className="text-nowrap">
@@ -1011,16 +1032,11 @@ export const Series = ({
 								<td className="text-nowrap">
 									{s.now && !s.pts ? (
 										<span className="fw-bold">Now</span>
-									) : s.pts ? (
-										<>
-											<span className={clsx({ "fw-bold": won(1) })}>
-												{s.pts[1]}
-											</span>
-											{" - "}
-											<span className={clsx({ "fw-bold": won(0) })}>
-												{s.pts[0]}
-											</span>
-										</>
+									) : s.pts && homeT ? (
+										// (Its box score.)
+										<a href={boxScoreUrl(homeT, boxScore.season, s.gid)}>
+											{score}
+										</a>
 									) : (
 										<span className="text-body-secondary">Upcoming</span>
 									)}
@@ -1040,9 +1056,12 @@ const streakText = (streak: number) =>
 export const Standings = ({
 	boxScore,
 	info,
+	final,
 }: {
 	boxScore: any;
 	info: GamecastInfo;
+	// Its box score: the standings that night (otherwise at the tip).
+	final?: boolean;
 }) => {
 	if (info.standings.length === 0) {
 		return null;
@@ -1052,23 +1071,23 @@ export const Standings = ({
 		<Section
 			title="Standings"
 			action={
-				<a href={helpers.leagueUrl(["standings", boxScore.season])}>
-					Full standings
-				</a>
+				<span className="text-body-secondary">
+					{final ? "After this game" : "Before this game"}
+				</span>
 			}
 		>
 			<table className="table table-sm gamecast-table gamecast-standings">
-				{info.standings.map((div) => (
-					<tbody key={div.name}>
+				{info.standings.map((conf) => (
+					<tbody key={conf.name}>
 						<tr className="gamecast-team-head">
-							<th>{div.name}</th>
+							<th>{conf.name}</th>
 							<th>W</th>
 							<th>L</th>
 							<th>PCT</th>
 							<th>GB</th>
 							<th>STRK</th>
 						</tr>
-						{div.teams.map((t) => {
+						{conf.teams.map((t) => {
 							const gp = t.won + t.lost + t.tied + t.otl;
 							return (
 								<tr
@@ -1076,18 +1095,18 @@ export const Standings = ({
 									className={clsx({ "table-warning": playing.has(t.tid) })}
 								>
 									<td>
-										<div className="d-flex align-items-center gap-2">
+										<a
+											className="d-flex align-items-center gap-2 text-reset text-decoration-none"
+											href={helpers.leagueUrl([
+												"roster",
+												`${t.abbrev}_${t.tid}`,
+												boxScore.season,
+											])}
+										>
+											<span className="gamecast-rank">{t.rank}</span>
 											<Logo t={t} size={20} />
-											<a
-												href={helpers.leagueUrl([
-													"roster",
-													`${t.abbrev}_${t.tid}`,
-													boxScore.season,
-												])}
-											>
-												{t.region}
-											</a>
-										</div>
+											<span className="text-truncate">{t.region}</span>
+										</a>
 									</td>
 									<td>{t.won}</td>
 									<td>{t.lost}</td>
@@ -1098,6 +1117,73 @@ export const Standings = ({
 									</td>
 									<td>{t.gb === 0 ? "-" : t.gb}</td>
 									<td>{streakText(t.streak)}</td>
+								</tr>
+							);
+						})}
+					</tbody>
+				))}
+			</table>
+			<div className="text-center">
+				<a href={helpers.leagueUrl(["standings", boxScore.season])}>
+					Full standings
+				</a>
+			</div>
+		</Section>
+	);
+};
+
+// Each team's last few games: who against, the result, each a link to its
+// box score.
+export const RecentGames = ({
+	boxScore,
+	info,
+}: {
+	boxScore: any;
+	info: GamecastInfo;
+}) => {
+	const lists = TEAM_NUMS_DISPLAY_ORDER.map((ti) => {
+		const t = boxScore.teams[ti];
+		return { t, games: info.recent?.find((r) => r.tid === t.tid)?.games ?? [] };
+	}).filter((x) => x.games.length > 0);
+	if (lists.length === 0) {
+		return null;
+	}
+
+	return (
+		<Section title="Recent Games">
+			<table className="table table-sm gamecast-table">
+				{lists.map(({ t, games }) => (
+					<tbody key={t.tid}>
+						<tr className="gamecast-team-head">
+							<th colSpan={3}>
+								<div className="d-flex align-items-center gap-2">
+									<Logo t={t} size={20} />
+									{t.region} {t.name}
+								</div>
+							</th>
+						</tr>
+						{games.map((gm) => {
+							const result =
+								gm.pts[0] > gm.pts[1] ? "W" : gm.pts[0] < gm.pts[1] ? "L" : "T";
+							return (
+								<tr key={gm.gid} className={clsx({ "table-warning": gm.now })}>
+									<td>
+										{gm.home ? "vs" : "@"}{" "}
+										{teamByTid(boxScore, gm.opp)?.abbrev ?? gm.oppAbbrev}
+									</td>
+									<td
+										className={clsx("fw-bold", {
+											"text-success": result === "W",
+											"text-danger": result === "L",
+										})}
+									>
+										{result}
+									</td>
+									<td>
+										<a href={boxScoreUrl(t, boxScore.season, gm.gid)}>
+											{gm.pts[0]}-{gm.pts[1]}
+										</a>
+									</td>
 								</tr>
 							);
 						})}
@@ -1282,7 +1368,7 @@ export const LiveGamecast = ({
 						</div>
 						<div>
 							<Section title="Game Flow">
-								<GameCharts boxScore={boxScore} live hideTitle />
+								<FlowCharts boxScore={boxScore} colors={colors} live />
 							</Section>
 							<Section
 								title="Team Stats"
@@ -1321,7 +1407,7 @@ export const LiveGamecast = ({
 					</div>
 				) : (
 					<Section title="Game Flow">
-						<GameCharts boxScore={boxScore} live hideTitle />
+						<FlowCharts boxScore={boxScore} colors={colors} live />
 					</Section>
 				)}
 			</div>

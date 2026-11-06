@@ -1693,6 +1693,162 @@ tr.table-warning:hover > td {
 	overflow: auto;
 }
 
+// Game leaders, compact: his face and the number either side of what it
+// is, the names and lines under them.
+.gl-row {
+	padding: 0.5rem 0;
+	border-bottom: 1px solid var(--bs-border-color);
+}
+.gl-line {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+}
+.gl-side {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	flex: 1 1 0;
+	&.gl-right {
+		flex-direction: row-reverse;
+	}
+}
+.gl-value {
+	font-size: 1.5rem;
+	font-weight: 700;
+	line-height: 1;
+	font-variant-numeric: tabular-nums;
+}
+.gl-label {
+	font-weight: 600;
+	text-align: center;
+	flex-shrink: 0;
+}
+.gl-who {
+	flex: 1 1 0;
+	min-width: 0;
+	margin-top: 0.2rem;
+	line-height: 1.3;
+}
+.gl-stat {
+	font-size: 0.875rem;
+	color: var(--bs-secondary-color);
+}
+.gamecast-rank {
+	width: 1.4em;
+	text-align: right;
+	color: var(--bs-secondary-color);
+	font-variant-numeric: tabular-nums;
+}
+.recap-line td:not(:first-child),
+.recap-line th:not(:first-child) {
+	text-align: center;
+}
+
+// The recap's score on a phone: both teams, the scores and the score by
+// quarter, on one line.
+.recap-phone {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.25rem;
+}
+.recap-phone-team {
+	display: flex;
+	align-items: center;
+	gap: 0.35rem;
+	color: inherit;
+	text-decoration: none;
+	&.recap-team-right {
+		flex-direction: row-reverse;
+		text-align: right;
+	}
+	.recap-score {
+		font-size: 1.9rem;
+	}
+	&:hover {
+		color: inherit;
+	}
+}
+.recap-phone-mid {
+	text-align: center;
+	min-width: 0;
+	.recap-status {
+		font-size: 0.8rem;
+	}
+}
+.recap-mini {
+	font-size: 0.8rem;
+	font-variant-numeric: tabular-nums;
+	margin: 0 auto;
+	th,
+	td {
+		padding: 0.05rem 0.3rem;
+		text-align: center;
+	}
+	thead th {
+		color: var(--bs-secondary-color);
+		font-weight: 600;
+	}
+	tbody th {
+		text-align: left;
+	}
+}
+.recap-team-logo {
+	flex-shrink: 0;
+}
+
+// Win probability and game flow (gamecast/FlowCharts).
+.flow-team {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	margin: 0.25rem 0;
+}
+.flow-big {
+	font-size: 1.35rem;
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+}
+.flow-key {
+	display: inline-block;
+	width: 14px;
+	height: 3px;
+	border-radius: 1px;
+}
+.flow-plot svg {
+	width: 100%;
+}
+.flow-grid {
+	stroke: var(--bs-border-color);
+	stroke-width: 1;
+	stroke-dasharray: 2 3;
+}
+.flow-mid {
+	stroke: var(--bs-secondary-color);
+	stroke-width: 1;
+}
+.flow-fill {
+	fill: var(--bs-secondary-color);
+	opacity: 0.12;
+}
+.flow-label {
+	font-size: 11px;
+	fill: var(--bs-secondary-color);
+}
+.flow-cursor {
+	stroke: var(--bs-body-color);
+	stroke-width: 1;
+}
+.flow-moment {
+	display: flex;
+	align-items: baseline;
+	gap: 0.5rem;
+	margin-top: 0.5rem;
+	padding-top: 0.5rem;
+	border-top: 1px solid var(--bs-border-color);
+}
+
 .live-game-sticky {
 	position: sticky;
 	top: 52px;

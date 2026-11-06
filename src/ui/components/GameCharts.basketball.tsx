@@ -894,7 +894,7 @@ const Switch = <T extends string | number>({
 
 // Live, the game so far (see LiveFlow): the scores to now, across the whole
 // of regulation - the periods still to come where they will end.
-const liveLead = (boxScore: any, numPeriods: number) => {
+export const liveLead = (boxScore: any, numPeriods: number) => {
 	// (Before the tip: the clock it will start from.)
 	const [m, sec] = String(boxScore.time ?? "").split(":");
 	const f: LiveFlow = boxScore.liveFlow ?? {
@@ -926,12 +926,16 @@ export const GameCharts = ({
 	live,
 	hideTitle,
 	leadOnly,
+	restOnly,
 }: {
 	boxScore: any;
 	live?: boolean;
 	hideTitle?: boolean;
 	// Just the game flow, not the rotations, lineups and on/off under it.
 	leadOnly?: boolean;
+	// Or just those, not the game flow (shown some other way - see the
+	// gamecast's FlowCharts).
+	restOnly?: boolean;
 }) => {
 	const numPeriods = boxScore.numPeriods ?? 4;
 	const now = live ? liveLead(boxScore, numPeriods) : undefined;
@@ -948,26 +952,28 @@ export const GameCharts = ({
 
 	return (
 		<>
-			<Section title="Game Flow" hideTitle={hideTitle}>
-				<LeadChart
-					charts={lead}
-					order={order}
-					abbrevs={abbrevs}
-					colors={colors}
-					numPeriods={numPeriods}
-					expected={
-						typeof boxScore.spread === "number" &&
-						Number.isFinite(boxScore.spread)
-							? boxScore.spread
-							: boxScore.neutralSite
-								? 0
-								: (HOME_EDGE *
-										(lead.periodEnds[numPeriods - 1] ?? lead.total)) /
-									GAME_S
-					}
-					{...(now ? { upTo: now.upTo } : {})}
-				/>
-			</Section>
+			{restOnly ? null : (
+				<Section title="Game Flow" hideTitle={hideTitle}>
+					<LeadChart
+						charts={lead}
+						order={order}
+						abbrevs={abbrevs}
+						colors={colors}
+						numPeriods={numPeriods}
+						expected={
+							typeof boxScore.spread === "number" &&
+							Number.isFinite(boxScore.spread)
+								? boxScore.spread
+								: boxScore.neutralSite
+									? 0
+									: (HOME_EDGE *
+											(lead.periodEnds[numPeriods - 1] ?? lead.total)) /
+										GAME_S
+						}
+						{...(now ? { upTo: now.upTo } : {})}
+					/>
+				</Section>
+			)}
 			{charts && !leadOnly ? (
 				<GameFlowRest
 					charts={charts}

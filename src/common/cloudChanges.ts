@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 179,
+		date: "2026-11-06",
+		text: "Tabbed layout: the box score's score line fits on one row on a phone, with the score by quarter in the middle. New Win Probability and Game Flow charts. Game leaders take less room. The line shows each side's spread, chance to win and whether it covered. Season series games link to their box scores, the standings show both teams' conferences as they stood that day, and each team's recent games are listed.",
+	},
+	{
 		n: 178,
 		date: "2026-11-06",
 		text: "3D games: a few rare glitches fixed. The ball no longer flies the last few feet to a rebounder in a blink, nobody fights for rebounding position against nobody, a defender running past a shooter contests from beside him instead of hiding the shot from the camera, and after the final buzzer the picture goes straight from the interview to the last look round the arena.",

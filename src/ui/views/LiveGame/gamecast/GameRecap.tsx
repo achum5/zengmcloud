@@ -29,11 +29,14 @@ import {
 	Linescore,
 	Logo,
 	LinkButton,
+	RecentGames,
 	Section,
 	Series,
 	Standings,
 	TeamStatBars,
 } from "./Gamecast.tsx";
+import { FlowCharts } from "./FlowCharts.tsx";
+import { winProb } from "../winProb.ts";
 
 type Tab = "recap" | "box" | "stats" | "flow";
 
@@ -53,8 +56,9 @@ const finalText = (boxScore: any) => {
 	return ot === 0 ? "Final" : ot === 1 ? "Final/OT" : `Final/${ot}OT`;
 };
 
-// One side of the score across the top: its logo, its name and record, its
-// score - the winner's dark, the loser's grey, as a scoreboard has them.
+// One side of the score across the top: its logo and its name (both to the
+// team), its record, its score - the winner's dark, the loser's grey, as a
+// scoreboard has them.
 const HeaderTeam = ({
 	t,
 	season,
@@ -66,28 +70,108 @@ const HeaderTeam = ({
 	won: boolean;
 	right?: boolean;
 }) => {
-	const name =
-		t.tid >= 0 ? <a href={teamUrl(t, season)}>{t.region}</a> : t.region;
+	const real = t.tid >= 0;
+	const link = (children: ReactNode, className?: string) =>
+		real ? (
+			<a href={teamUrl(t, season)} className={className}>
+				{children}
+			</a>
+		) : (
+			<span className={className}>{children}</span>
+		);
 	return (
 		<div className={clsx("recap-team", { "recap-team-right": right })}>
-			<div className="recap-team-logo d-none d-md-block">
-				<Logo t={t} size={64} />
-			</div>
-			<div className="recap-team-logo d-md-none">
-				<Logo t={t} size={40} />
-			</div>
+			{link(<Logo t={t} size={64} />, "recap-team-logo")}
 			<div className="recap-team-name">
-				<div className="d-none d-md-block">
-					{name} <span className="d-none d-xl-inline">{t.name}</span>
-				</div>
-				<div className="d-md-none fw-bold">
-					{t.tid >= 0 ? <a href={teamUrl(t, season)}>{t.abbrev}</a> : t.abbrev}
-				</div>
+				{link(
+					<>
+						{t.region} {t.name}
+					</>,
+				)}
 				{t.won !== undefined && t.lost !== undefined ? (
 					<div className="recap-record">{helpers.formatRecord(t)}</div>
 				) : null}
 			</div>
 			<div className={clsx("recap-score", { won })}>{t.pts}</div>
+		</div>
+	);
+};
+
+// The score by quarter, small, without the totals (the big scores are
+// either side of it): for the middle of a phone's score line.
+const MiniLinescore = ({ boxScore }: { boxScore: any }) => {
+	const regulation = boxScore.numPeriods ?? 4;
+	const n = Math.max(
+		boxScore.teams[0].ptsQtrs?.length ?? 0,
+		boxScore.teams[1].ptsQtrs?.length ?? 0,
+		regulation,
+	);
+	const labels = Array.from({ length: n }, (_, i) =>
+		i < regulation
+			? `Q${i + 1}`
+			: i === regulation
+				? "OT"
+				: `${i - regulation + 1}OT`,
+	);
+	return (
+		<table className="recap-mini">
+			<thead>
+				<tr>
+					<th />
+					{labels.map((l) => (
+						<th key={l}>{l}</th>
+					))}
+				</tr>
+			</thead>
+			<tbody>
+				{teamsInDisplayOrder(boxScore.teams as [any, any]).map((t) => (
+					<tr key={t.tid}>
+						<th>{t.abbrev}</th>
+						{labels.map((l, i) => (
+							<td key={l}>{t.ptsQtrs?.[i] ?? "-"}</td>
+						))}
+					</tr>
+				))}
+			</tbody>
+		</table>
+	);
+};
+
+// A phone's side of it: logo, then the abbreviation over the score over the
+// record - all on the one line with the score by quarter between them.
+const PhoneTeam = ({
+	t,
+	season,
+	won,
+	right,
+}: {
+	t: any;
+	season: number;
+	won: boolean;
+	right?: boolean;
+}) => {
+	const body = (
+		<>
+			<Logo t={t} size={34} />
+			<div className="recap-phone-text">
+				<div className="fw-bold lh-1">{t.abbrev}</div>
+				<div className={clsx("recap-score", { won })}>{t.pts}</div>
+				{t.won !== undefined && t.lost !== undefined ? (
+					<div className="recap-record lh-1">{helpers.formatRecord(t)}</div>
+				) : null}
+			</div>
+		</>
+	);
+	return t.tid >= 0 ? (
+		<a
+			href={teamUrl(t, season)}
+			className={clsx("recap-phone-team", { "recap-team-right": right })}
+		>
+			{body}
+		</a>
+	) : (
+		<div className={clsx("recap-phone-team", { "recap-team-right": right })}>
+			{body}
 		</div>
 	);
 };
@@ -113,18 +197,21 @@ const RecapHeader = ({
 	const season = boxScore.season;
 	return (
 		<div className="recap-header">
-			<div className="recap-scoreline">
+			<div className="recap-scoreline d-none d-md-flex">
 				<HeaderTeam t={away} season={season} won={winner === away.tid} />
 				<div className="recap-middle">
 					<div className="recap-status">{finalText(boxScore)}</div>
-					<div className="d-none d-md-block">
-						<Linescore boxScore={boxScore} />
-					</div>
+					<Linescore boxScore={boxScore} />
 				</div>
 				<HeaderTeam t={home} season={season} won={winner === home.tid} right />
 			</div>
-			<div className="d-md-none">
-				<Linescore boxScore={boxScore} />
+			<div className="recap-phone d-md-none">
+				<PhoneTeam t={away} season={season} won={winner === away.tid} />
+				<div className="recap-phone-mid">
+					<div className="recap-status">{finalText(boxScore)}</div>
+					<MiniLinescore boxScore={boxScore} />
+				</div>
+				<PhoneTeam t={home} season={season} won={winner === home.tid} right />
 			</div>
 			<div className="recap-nav">
 				<a
@@ -191,7 +278,10 @@ const RecapStory = ({ boxScore }: { boxScore: any }) => {
 	);
 };
 
-// The pregame line and how the game went against it.
+const signed = (x: number) => (x === 0 ? "PK" : x > 0 ? `+${x}` : `${x}`);
+
+// The pregame line - each side's spread, its chance to win at the tip - and
+// how the game went against it.
 const Line = ({ boxScore }: { boxScore: any }) => {
 	const raw = boxScore.spread;
 	if (typeof raw !== "number" || !Number.isFinite(raw)) {
@@ -199,24 +289,50 @@ const Line = ({ boxScore }: { boxScore: any }) => {
 	}
 	// The predicted home margin (above 0, home favored), as it was quoted.
 	const spread = roundHalf(raw);
+	const pHome = winProb({ margin: 0, left: 1, spread: raw });
 	const [away, home] = teamsInDisplayOrder(boxScore.teams as [any, any]);
-	const fav = spread > 0 ? home : spread < 0 ? away : undefined;
 	const diff = home.pts - away.pts - spread;
-	const covered = diff > 0 ? home : diff < 0 ? away : undefined;
+	const rows = [
+		{ t: away, line: spread, p: 1 - pHome, covered: diff < 0 },
+		{ t: home, line: -spread, p: pHome, covered: diff > 0 },
+	];
 	return (
 		<Section title="Line">
-			<table className="table table-sm gamecast-table mb-0">
+			<table className="table table-sm gamecast-table recap-line">
+				<thead>
+					<tr>
+						<th />
+						<th>Spread</th>
+						<th title="Its chance to win at the tip, from the spread">Win %</th>
+						<th>ATS</th>
+					</tr>
+				</thead>
 				<tbody>
-					<tr>
-						<td>Spread</td>
-						<td>{fav ? `${fav.abbrev} -${Math.abs(spread)}` : "Pick'em"}</td>
-					</tr>
-					<tr>
-						<td>Against the spread</td>
-						<td className="fw-bold">
-							{covered ? `${covered.abbrev} covered` : "Push"}
-						</td>
-					</tr>
+					{rows.map(({ t, line, p, covered }) => (
+						<tr key={t.tid}>
+							<td>
+								<div className="d-flex align-items-center gap-2">
+									<Logo t={t} size={22} />
+									<span className="fw-bold">{t.abbrev}</span>
+									{t.won !== undefined ? (
+										<span className="text-body-secondary">
+											{helpers.formatRecord(t)}
+										</span>
+									) : null}
+								</div>
+							</td>
+							<td className="fw-bold">{signed(line)}</td>
+							<td>{Math.round(100 * p)}%</td>
+							<td
+								className={clsx({
+									"fw-bold text-success": covered,
+									"text-body-secondary": !covered,
+								})}
+							>
+								{diff === 0 ? "Push" : covered ? "Covered" : "Lost"}
+							</td>
+						</tr>
+					))}
 				</tbody>
 			</table>
 		</Section>
@@ -256,7 +372,6 @@ export const GameRecap = ({
 	nextGid,
 	currentGidInList,
 	Row,
-	gamesList,
 	reactions,
 }: {
 	boxScore: any;
@@ -267,8 +382,6 @@ export const GameRecap = ({
 	currentGidInList?: boolean;
 	// The box score's row (see GameLog).
 	Row: unknown;
-	// The team's games this season, to flip through.
-	gamesList?: ReactNode;
 	// The posts about the game.
 	reactions?: ReactNode;
 }) => {
@@ -308,7 +421,7 @@ export const GameRecap = ({
 								<RecapStory boxScore={boxScore} />
 								{boxScore.charts ? (
 									<Section title="Game Flow">
-										<GameCharts boxScore={boxScore} hideTitle leadOnly />
+										<FlowCharts boxScore={boxScore} colors={colors} />
 									</Section>
 								) : null}
 							</div>
@@ -339,13 +452,9 @@ export const GameRecap = ({
 								{info ? (
 									<>
 										<Series boxScore={boxScore} info={info} />
-										<Standings boxScore={boxScore} info={info} />
+										<Standings boxScore={boxScore} info={info} final />
+										<RecentGames boxScore={boxScore} info={info} />
 									</>
-								) : null}
-								{gamesList ? (
-									<Section title="Games">
-										<div className="recap-games">{gamesList}</div>
-									</Section>
 								) : null}
 								<GameInfo boxScore={boxScore} />
 							</div>
@@ -369,7 +478,14 @@ export const GameRecap = ({
 						</Section>
 					</div>
 				) : (
-					<GameCharts boxScore={boxScore} />
+					<>
+						{boxScore.charts ? (
+							<Section title="Game Flow">
+								<FlowCharts boxScore={boxScore} colors={colors} />
+							</Section>
+						) : null}
+						<GameCharts boxScore={boxScore} restOnly />
+					</>
 				)}
 				{boxScore.exhibition ? null : (
 					<div className="mt-3">

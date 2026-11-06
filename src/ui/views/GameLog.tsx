@@ -230,16 +230,6 @@ const GameLog = ({
 					prevGid={prevGid}
 					tid={tid}
 					Row={StatsRow}
-					gamesList={
-						<GamesList
-							currentSeason={currentSeason}
-							gamesList={gamesList}
-							gid={boxScore.gid}
-							season={season}
-							team={team}
-							tid={tid}
-						/>
-					}
 					reactions={
 						reactions && reactions.posts.length > 0 ? (
 							<div className="mt-3">

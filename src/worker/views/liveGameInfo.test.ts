@@ -1,5 +1,10 @@
 import { assert, describe, test } from "vitest";
-import { seriesOf, streakBefore } from "./liveGameInfo.ts";
+import {
+	recentOf,
+	seriesOf,
+	standingsAsOf,
+	streakBefore,
+} from "./liveGameInfo.ts";
 
 const game = (
 	gid: number,
@@ -72,5 +77,46 @@ describe("the gamecast's season series and streaks", () => {
 		assert.isTrue(series[1]!.now);
 		assert.deepEqual(series[1]!.pts, [99, 90]);
 		assert.deepEqual(series[2]!.pts, [80, 70]);
+	});
+
+	test("the standings as they stood: at the tip, the day's games not in; that night, all of them", () => {
+		const watched = game(20, 10, [1, 99], [2, 90]);
+		const played = [
+			game(5, 3, [2, 100], [1, 95]),
+			game(18, 10, [3, 90], [4, 80]), // the same day
+			watched,
+			game(40, 30, [1, 80], [2, 70]), // later
+		];
+		const tip = standingsAsOf(watched, played, false);
+		assert.deepEqual(tip.get(1), { won: 0, lost: 1, tied: 0, streak: -1 });
+		assert.isUndefined(tip.get(3));
+		const night = standingsAsOf(watched, played, true);
+		assert.deepEqual(night.get(1), { won: 1, lost: 1, tied: 0, streak: 1 });
+		assert.deepEqual(night.get(3), { won: 1, lost: 0, tied: 0, streak: 1 });
+		// (Nothing from after it.)
+		assert.strictEqual(night.get(2)!.won + night.get(2)!.lost, 2);
+	});
+
+	test("each team's last games, latest first", () => {
+		const watched = game(20, 10, [1, 99], [2, 90]);
+		const played = [
+			game(5, 3, [2, 100], [1, 95]),
+			game(9, 5, [1, 88], [3, 80]),
+			watched,
+			game(40, 30, [1, 80], [2, 70]),
+		];
+		const atTip = recentOf(1, watched, played, false);
+		assert.deepEqual(
+			atTip.map((x) => x.gid),
+			[9, 5],
+		);
+		assert.deepEqual(atTip[1]!.pts, [95, 100]);
+		assert.isFalse(atTip[1]!.home);
+		const final = recentOf(1, watched, played, true);
+		assert.deepEqual(
+			final.map((x) => x.gid),
+			[20, 9, 5],
+		);
+		assert.isTrue(final[0]!.now);
 	});
 });
