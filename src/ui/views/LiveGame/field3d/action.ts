@@ -317,6 +317,8 @@ const PAST_SLACK_FT = 0.5;
 // round, over this many looks at it.)
 const PLANT_SHORT_FPS = 1;
 const PLANT_HARD_TRIES = 4;
+// (See plantedFor.)
+const PLANT_PAST = 0.3;
 // Run at somewhere over an end line (see onField), or no more than
 // EDGE_NEAR_FT short of it, no more than EDGE_ALONG of the way along it:
 // pulled up into it, EDGE_SHORT_FT short of it, at least EDGE_LEAST_FT on
@@ -527,7 +529,17 @@ const plantedFor = (
 	accel = CUT_ACCEL,
 	tries = 2,
 ): { ve: number; want: number } => {
-	const ahead = (to.x - at.x) * cos + (to.y - at.y) * sin;
+	const on = (to.x - at.x) * cos + (to.y - at.y) * sin;
+	// (Well off to the side of it, near square to the way he goes: on past
+	// it as far as PLANT_PAST of that, planting - round a little more after
+	// - not hardly slowed for it at all, and round at a crawl.)
+	const ahead =
+		on > 0
+			? Math.max(
+					on,
+					Math.abs((to.y - at.y) * cos - (to.x - at.x) * sin) * PLANT_PAST,
+				)
+			: on;
 	const round = (p: Pt) => angleAt({ x: p.x - cos, y: p.y - sin }, p, to);
 	let want = Math.min(most, down ?? v * cutKeep(round(at)));
 	let ve = plantedTo(v, want, ahead, accel);
