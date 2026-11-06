@@ -5240,6 +5240,13 @@ const PILE_ON_ROUND = [0, 0.5, -0.5, 1, -1, 1.5, -1.5, 2, -2];
 // (Round the pile from a man down there already by no more than this,
 // radians, tried in turn.)
 const GANG_ROUND = [0, 0.4, -0.4, 0.8, -0.8, 1.2, -1.2];
+// A sneak into the A gap, on one side of the center or the other, this
+// far over (feet) - not straight through him - give or take half this
+// much (feet).
+const SNEAK_GAP_A = 2.3;
+const SNEAK_SPREAD = 1;
+// (In it by the time he is up level with the ball, feet.)
+const SNEAK_GAP_D = -0.5;
 // A short run up the middle, this often a pile on him (one or less yards,
 // or a sneak, this often, and the most men in it; up to this many yards,
 // and this many men).
@@ -16796,7 +16803,7 @@ class Action {
 				? this.o.find((m) => m.role === "RB" && !this.done.has(m.pid))
 				: undefined;
 		const holeA = sneak
-			? (r() - 0.5) * 3
+			? (r() < 0.5 ? -1 : 1) * SNEAK_GAP_A
 			: sweep
 				? -Math.sign(cs.a || 1) * (18 + r() * 6)
 				: rider
@@ -17259,8 +17266,9 @@ class Action {
 
 		// Through the hole and on to where the sim says he was brought
 		// down.
-		let across = holeA + (r() - 0.5) * (yds > 8 ? 30 : 8);
-		if (ta !== undefined) {
+		let across =
+			holeA + (r() - 0.5) * (yds > 8 ? 30 : sneak ? SNEAK_SPREAD : 8);
+		if (ta !== undefined && !sneak) {
 			across += (ta - across) * (yds > 8 ? 0.5 : 0.25);
 		}
 		const end = this.endOf(
@@ -17286,14 +17294,21 @@ class Action {
 		let t = carrier.t;
 		const endD = this.of(end.pt).d;
 		if (sneak) {
-			// Behind the center, into the pile.
+			// Behind the center, into the pile - over into the gap beside
+			// him first, and on up it: not straight through him.
 			carrier.hold(has + 150, "qbSet", this.ahead);
-			carrier.go(
-				end.pt,
-				Math.max(snap + 1300, carrier.t + 600),
-				"drive",
-				this.ahead,
-			);
+			const by = Math.max(snap + 1300, carrier.t + 600);
+			const gap = this.w({ d: SNEAK_GAP_D, a: this.of(end.pt).a });
+			const all = dist(carrier.at, gap) + dist(gap, end.pt);
+			if (endD > 0 && all > 0) {
+				carrier.go(
+					gap,
+					carrier.t + ((by - carrier.t) * dist(carrier.at, gap)) / all,
+					"drive",
+					this.ahead,
+				);
+			}
+			carrier.go(end.pt, by, "drive", this.ahead);
 			t = carrier.t;
 		} else if (
 			endD < 0.5 &&
