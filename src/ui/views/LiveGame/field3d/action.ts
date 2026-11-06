@@ -3308,6 +3308,85 @@ class Actor {
 		this.yaw += by;
 	}
 
+	// Set in leg k, facing his own way - locked up with a man, say - well
+	// round (see TURN_INTO_LEAST) from the way his stride after it goes:
+	// turned onto it over the last of it, no quicker than PICK_TURN_RATE -
+	// the rest of the way round as he goes - not spun round in a blink into
+	// his stride.
+	turnInto(k: number) {
+		const legs = this.part.legs;
+		const l = legs[k];
+		const next = legs[k + 1];
+		if (
+			!l ||
+			!next ||
+			l.yaw === undefined ||
+			l.turn ||
+			GAITS.has(l.move) ||
+			l.t1 <= l.t0 ||
+			legPace(l) >= STOP_LEAST ||
+			next.t0 !== l.t1 ||
+			!GAITS.has(next.move) ||
+			(next.from.x === next.to.x && next.from.y === next.to.y)
+		) {
+			return;
+		}
+		const off = angleOff(
+			Math.atan2(next.to.y - next.from.y, next.to.x - next.from.x) - l.yaw,
+		);
+		if (Math.abs(off) <= TURN_INTO_LEAST) {
+			return;
+		}
+		// (Over the strides of it before, too, if he is set the same in
+		// them - locked up with a man a step at a time, say - but not till
+		// he has been set that way TURN_SETTLE_MS: not turned off it as he
+		// is still coming round into it.)
+		let j = k;
+		while (j > 0) {
+			const p = legs[j - 1]!;
+			const q = legs[j]!;
+			if (
+				p.t1 !== q.t0 ||
+				p.move !== q.move ||
+				p.yaw !== q.yaw ||
+				p.turn ||
+				legPace(p) >= STOP_LEAST
+			) {
+				break;
+			}
+			j--;
+		}
+		const t1 = l.t1;
+		const t0 = Math.max(
+			legs[j]!.t0 + TURN_SETTLE_MS,
+			t1 - (Math.abs(off) / PICK_TURN_RATE) * 1000,
+		);
+		const yaw = l.yaw;
+		if (!(t0 < t1)) {
+			return;
+		}
+		while (legs[j]!.t1 <= t0) {
+			j++;
+		}
+		if (t0 > legs[j]!.t0) {
+			this.split(t0);
+			j++;
+			k++;
+		}
+		const by = clamp(
+			off,
+			-((t1 - t0) / 1000) * PICK_TURN_RATE,
+			((t1 - t0) / 1000) * PICK_TURN_RATE,
+		);
+		for (let i = j; i <= k; i++) {
+			const p = legs[i]!;
+			const u0 = (p.t0 - t0) / (t1 - t0);
+			const u1 = (p.t1 - t0) / (t1 - t0);
+			p.yaw = yaw + by * u0;
+			p.turn = by * (u1 - u0);
+		}
+	}
+
 	// The leg he is in at t made two, there.
 	split(t: number) {
 		const legs = this.part.legs;
@@ -3833,8 +3912,11 @@ const WAY_FPS = 6;
 const WAY_MOST_FT = 4;
 const WAY_LEAST_MS = 300;
 const WAY_EASE_FT = 1;
-// (Driven back, the block won, no quicker than this - ft/s.)
+// (Driven back, the block won, no quicker than this - ft/s. Lost, the
+// ground he gives no quicker than BLOCK_GIVE_FPS: not shoved back off his
+// run at him in a stride.)
 const BLOCK_DRIVE_FPS = 6;
+const BLOCK_GIVE_FPS = 3;
 // A pancake now and then: a lineman the sim says won his block on a run,
 // on his man alone and driving him at least this long (ms), puts him on
 // his back - over this long (ms), this far back (feet), down this long
@@ -3915,6 +3997,11 @@ const BREAK_KEEP_FT = 2;
 // to plant, stopped short over this far, feet, before he comes back.)
 const BREAK_LEAST_MS = 200;
 const BREAK_STOP_FT = 3;
+// (Slowed sooner for it instead, if he saw it in time: at this, ft/s/s -
+// see STOP_ACCEL, STOP_HARD - off the way he goes, as long as he is going
+// that way still, near enough - this far round it, radians.)
+const BREAK_SLOW_ACCEL = 30;
+const BREAK_SLOW_TURN = 0.5;
 // (The man the sim says got to the ball, on his man: no deeper than it,
 // feet - see cover.)
 const MARK_DEEP_FT = 3;
@@ -4343,6 +4430,12 @@ const PICK_LEAP_STILL_FT = 4;
 // this (radians) - at this many radians a second at the most.)
 const PICK_TURN_LEAST = 0.6;
 const PICK_TURN_RATE = 9;
+// (Locked up with a man, facing him, round from the way he goes off after
+// more than this, radians: turned onto it over the last of it - see
+// turnInto, turnsOffBlocks.)
+const TURN_INTO_LEAST = 1.2;
+const TURN_SETTLE_MS = 400;
+const SHEDS = new Set<Move>(["engage", "drive"]);
 const PICK_DIVE = 0.2;
 const PICK_DIVE_YDS = 6;
 const PICK_DIVE_PER = 0.6;
@@ -6293,6 +6386,7 @@ class Action {
 		this.noTreading();
 		this.noIdleSets();
 		this.noSlowGaits();
+		this.turnsOffBlocks();
 		this.noFlicks();
 		this.overHeads();
 		this.tdArms();
@@ -6700,6 +6794,20 @@ class Action {
 					}
 				}
 				l.move = move;
+			}
+		}
+	}
+
+	// Off a block into his stride, well round from the way he faced the man
+	// - after the ball, say: turned off him as he sheds him (see turnInto),
+	// not spun round in a blink as he goes.
+	turnsOffBlocks() {
+		for (const m of this.men) {
+			const legs = m.legs;
+			for (let k = legs.length - 2; k >= 0; k--) {
+				if (SHEDS.has(legs[k]!.move)) {
+					m.turnInto(k);
+				}
 			}
 		}
 	}
@@ -12300,7 +12408,10 @@ class Action {
 			}
 		}
 		m.cut(c);
-		m.hold(c);
+		// (Not off to it till he knows to be: on the way he was going till
+		// then, at the pace he was - see carryOn - not pulled up dead short
+		// of it in a stride.)
+		m.carryOn(c);
 		// (Deep, set, and a long while before it gets to him: a read step or
 		// two back first, his depth kept till he knows - not stood stock
 		// still where he lined up till it comes.)
@@ -12326,6 +12437,21 @@ class Action {
 			);
 		}
 		m.plantFor(hit);
+		// (Still slowing for a turn when he knows - off his own plant, say -
+		// too slow by then to plant again, with it well round behind him:
+		// the last of his pace eased off first, not turned round on it from
+		// a jog in a stride.)
+		const slowing = m.last;
+		const slowPace = legPace(slowing);
+		if (
+			RAMPS.has(slowing.move) &&
+			!slowing.arms &&
+			!slowing.turn &&
+			slowPace < STOP_LEAST &&
+			angleAt(slowing.from, slowing.to, hit) > CUT_BACK
+		) {
+			m.easeOff((slowPace * slowPace) / (2 * CUT_ACCEL));
+		}
 		// (Right on it already, going - at a run, say, or full tilt - and a
 		// long while before it comes: pulled up hard on the way he was
 		// going, and set from there - not stopped dead on it and stood
@@ -13216,13 +13342,18 @@ class Action {
 			return;
 		}
 		const go = this.breakSoonest(m, spot, by, latest);
-		m.cut(go ?? latest);
-		m.hold(go ?? latest);
+		const slow =
+			go === undefined ? this.breakSlowing(m, spot, by, latest) : undefined;
+		m.cut(go ?? slow?.t ?? latest);
+		m.hold(go ?? slow?.t ?? latest);
 		// (Planted first, going the other way - not turned round on the
-		// spot at full tilt - if there is the time for it; if not, stopped
-		// short, hard, before he comes back for it.)
+		// spot at full tilt - if there is the time for it; if not, slowed
+		// as he comes up to it, to a stop by it, if he saw it in time; if
+		// not, stopped short, hard, before he comes back for it.)
 		if (go !== undefined) {
 			m.plantFor(spot);
+		} else if (slow) {
+			m.easeOff(slow.ft);
 		} else {
 			const l = m.last;
 			const away =
@@ -13240,6 +13371,61 @@ class Action {
 		if (!m.slowAlong(spot, by)) {
 			m.pressUp(spot, by, m.top * FLAT_OUT, "sprint");
 		}
+	}
+
+	// Going on past where he is to be for it at `latest`, with no time to
+	// plant and come back: slowed sooner, as he comes up to it - as hard as
+	// a man pulls up (see BREAK_SLOW_ACCEL), from where that stops him
+	// nearest it - on the way he was going still, once he has seen it.
+	// (When he starts, and how far on he goes; none, if that has him no
+	// nearer it, or there after `by`.)
+	private breakSlowing(
+		m: Actor,
+		spot: Pt,
+		by: number,
+		latest: number,
+	): { t: number; ft: number } | undefined {
+		const k = 1000 / BREAK_SOONER_STEP_MS;
+		const velAt = (t: number) => {
+			const at = m.posAt(t);
+			const was = m.posAt(t - BREAK_SOONER_STEP_MS);
+			return { at, vx: (at.x - was.x) * k, vy: (at.y - was.y) * k };
+		};
+		const end = velAt(latest);
+		const v1 = Math.hypot(end.vx, end.vy);
+		if (
+			v1 < STOP_LEAST ||
+			end.vx * (spot.x - end.at.x) + end.vy * (spot.y - end.at.y) >= 0
+		) {
+			return undefined;
+		}
+		const way = Math.atan2(end.vy, end.vx);
+		// (Where the hard stop off `latest` would leave him.)
+		const was = dist(
+			{
+				x: end.at.x + (end.vx / v1) * BREAK_STOP_FT,
+				y: end.at.y + (end.vy / v1) * BREAK_STOP_FT,
+			},
+			spot,
+		);
+		let best: { t: number; ft: number; off: number } | undefined;
+		for (let t = latest; t >= this.seen; t -= BREAK_SOONER_STEP_MS) {
+			const { at, vx, vy } = velAt(t);
+			const v = Math.hypot(vx, vy);
+			if (
+				v < STOP_LEAST ||
+				Math.abs(angleOff(Math.atan2(vy, vx) - way)) > BREAK_SLOW_TURN
+			) {
+				break;
+			}
+			const ft = (v * v) / (2 * BREAK_SLOW_ACCEL);
+			const stop = { x: at.x + (vx / v) * ft, y: at.y + (vy / v) * ft };
+			const off = dist(stop, spot);
+			if (t + ((2 * ft) / v) * 1000 <= by && (!best || off < best.off)) {
+				best = { t, ft, off };
+			}
+		}
+		return best && best.off < was ? { t: best.t, ft: best.ft } : undefined;
 	}
 
 	// Where he gets to it from: in front of it, toward the quarterback - or,
@@ -18258,7 +18444,7 @@ class Action {
 		}
 		const give = won
 			? Math.min(2.5 + r() * 2, (BLOCK_DRIVE_FPS * (end - meet.t)) / 1000)
-			: -1;
+			: -Math.min(1, (BLOCK_GIVE_FPS * Math.max(0, end - b.t)) / 1000);
 		// (Turned off the way the man with the ball comes by - driven over
 		// to the side of it he is on, not stood in it as he comes through.)
 		// (As little as does it, or as far off him as it gets them.)
