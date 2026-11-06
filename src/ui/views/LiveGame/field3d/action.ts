@@ -4857,6 +4857,10 @@ const HAND_STEP_MS = 90;
 const RUSH_WIDER = 0.45;
 const RUSH_QUICKER = 0.2;
 const RUSH_GIVE = 0.4;
+// (A second rusher on a blocker already locked up with one: this far over
+// on his shoulder (feet, across the field), working it this share as much.)
+const DOUBLE_RUSH_FT = 2.8;
+const DOUBLE_RUSH_SWAY = 0.3;
 const EDGE_OUT = 1.7;
 const EDGE_ON = 1.6;
 const EDGE_PAST = 1.8;
@@ -15046,6 +15050,7 @@ class Action {
 		const locks: { m: Actor; b: Actor; hitT: number; ts: number[] }[] = [];
 		// (On a twist, the man going first laid out first.)
 		const hits = new Map<Actor, number>();
+		const firstOn = new Map<Actor, Actor>();
 		const order = [...engaged].sort(
 			([x], [y]) => Number(loops.has(x)) - Number(loops.has(y)),
 		);
@@ -15131,7 +15136,18 @@ class Action {
 				};
 			};
 			const mark = m.t;
-			const hitLat = (r() - 0.5) * 0.6;
+			// (A second man on a blocker already locked up with one: on his
+			// shoulder the side he comes in on, leaning on him - not stood in
+			// the first man's spot, working him across through him as the
+			// blocker sways with the first.)
+			const lockedOn = firstOn.get(b);
+			const mid = lockedOn
+				? dir *
+					(Math.sign(m.at.y - lockedOn.posAt(hits.get(lockedOn) ?? m.t).y) ||
+						1) *
+					DOUBLE_RUSH_FT
+				: 0;
+			const hitLat = mid + (r() - 0.5) * 0.6;
 			let vHit = 0;
 			// (On a twist, round behind the man going first by more if he
 			// has got into the way of it since - see TWIST_ROOM_FT.)
@@ -15243,6 +15259,9 @@ class Action {
 				continue;
 			}
 			hits.set(m, hitT);
+			if (!firstOn.has(b)) {
+				firstOn.set(b, m);
+			}
 			const moves = !moved.has(b) && !this.done.has(b.pid);
 			{
 				const p1 = b.posAt(hitT);
@@ -15285,14 +15304,16 @@ class Action {
 			}
 			const over = this.rushEdge(b, engaged);
 			const per = HAND_MS * (0.8 + r() * 0.5) * (1 - RUSH_QUICKER * over);
-			const amp = edge ? 0 : HAND_FT * (0.5 + r()) * (1 + RUSH_WIDER * over);
+			const amp =
+				(edge ? 0 : HAND_FT * (0.5 + r()) * (1 + RUSH_WIDER * over)) *
+				(lockedOn ? DOUBLE_RUSH_SWAY : 1);
 			let way = r() < 0.5 ? 1 : -1;
 			const turns: { t: number; lat: number }[] = [];
 			for (let t = hitT + per; t < end - per / 2; t += per) {
-				turns.push({ t, lat: way * amp });
+				turns.push({ t, lat: mid + way * amp });
 				way = -way;
 			}
-			turns.push({ t: end, lat: 0 });
+			turns.push({ t: end, lat: mid });
 			// (Over and back easing in and out of each way he works him.)
 			const steps: { t: number; lat: number }[] = [];
 			let t0 = hitT;
