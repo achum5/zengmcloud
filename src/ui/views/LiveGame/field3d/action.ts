@@ -3982,6 +3982,12 @@ const FILL_PACE = 0.7;
 // no less than this long, ms.)
 const FILL_LEAST_FPS = 9;
 const FILL_SET_LEAST = 150;
+// (Nor pulled up on into a block - a man in one this near (feet) where he
+// would pull up, from when he is to be there to this long after (ms),
+// looked at every FILL_ROOM_EVERY_MS: pulled up into the spot instead.)
+const FILL_ROOM_FT = 2.4;
+const FILL_ROOM_MS = 600;
+const FILL_ROOM_EVERY_MS = 100;
 const CLIMB_PACE = 0.85;
 const SHED_MS = 550;
 const SHED_SPREAD = 350;
@@ -17243,6 +17249,7 @@ class Action {
 			if (across > 5 && set > m.t) {
 				m.hold(Math.max(set, m.t + FILL_SET_LEAST), "backerReady", this.behind);
 			}
+			const went = m.t;
 			m.chase(
 				this.w(fill),
 				by,
@@ -17252,6 +17259,9 @@ class Action {
 			);
 			// (Pulled up there, nobody on him yet - see STALK_EASE_FT. In his
 			// low steps too, if he comes up quick in them.)
+			if (across > 5) {
+				this.shortOfBlocks(m, went);
+			}
 			if (across > 5 || legPace(m.last) >= STOP_LEAST) {
 				m.easeOff(STALK_EASE_FT);
 			}
@@ -17606,6 +17616,60 @@ class Action {
 	// him, then on him - driving him back if he wins it; if not, the man
 	// off him in a moment. Till `until` - or the man off it as the carrier
 	// goes by, after him (and, `through` him, out of his way before then).
+	// Pulled up into a block, as he would be on from where he is (see
+	// easeOff): from far enough short of it to be pulled up where he is
+	// instead, if that is clear of them (see FILL_ROOM_FT) - not on into
+	// the men in it, and shoved out of them. Back no further than `from`.
+	private shortOfBlocks(m: Actor, from: number) {
+		const l = m.last;
+		const far = dist(l.from, l.to);
+		const v = legPace(l);
+		const ease = Math.min(STALK_EASE_FT, (v * v) / (2 * STOP_ACCEL));
+		if (far <= 0 || ease < 0.5) {
+			return;
+		}
+		const at = m.at;
+		const on = {
+			x: at.x + ((l.to.x - l.from.x) / far) * ease,
+			y: at.y + ((l.to.y - l.from.y) / far) * ease,
+		};
+		const blocked = (p: Pt) =>
+			this.men.some((x) => {
+				for (
+					let t = m.t;
+					x !== m && t <= m.t + FILL_ROOM_MS;
+					t += FILL_ROOM_EVERY_MS
+				) {
+					if (
+						LINE_PLAY.has(legAt(x, t).move) &&
+						dist(x.posAt(t), p) < FILL_ROOM_FT
+					) {
+						return true;
+					}
+				}
+				return false;
+			});
+		if (!blocked(on) || blocked(at)) {
+			return;
+		}
+		// (From as far short of it as he pulls up in, at his pace there.)
+		let left = 0;
+		for (let k = m.legs.length - 1; k >= 0; k--) {
+			const q = m.legs[k]!;
+			const f = dist(q.from, q.to);
+			if (q.t0 < from || !GAITS.has(q.move)) {
+				return;
+			}
+			const vq = legPace(q);
+			const eq = Math.min(STALK_EASE_FT, (vq * vq) / (2 * STOP_ACCEL));
+			if (left + f >= eq) {
+				m.cut(q.t1 - (q.t1 - q.t0) * (Math.max(0, eq - left) / f));
+				return;
+			}
+			left += f;
+		}
+	}
+
 	blockOn(
 		b: Actor,
 		m: Actor | undefined,
