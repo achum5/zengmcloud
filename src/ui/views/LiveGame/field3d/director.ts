@@ -652,11 +652,13 @@ const SET_IN_FPS = 4;
 const SET_IN_MOST = 1.35;
 const SET_IN_LEAST = 1;
 // Along a leg off `v0` ft/s and into the end of it at `w`: up to the pace
-// it takes at GOING_ACCEL ft/s/s, on at it and down to `w` at the last, in
+// it takes at GOING_ACCEL ft/s/s (GOING_HARD times that, if it takes
+// it), on at it and down to `w` at the last, in
 // steps GOING_STEP_MS long - there when he would have been, that much
 // quicker between; not off at it, nor pulled up out of it, in a stride.
 // (Just the leg, if it cannot be done.)
 const GOING_ACCEL = 14;
+const GOING_HARD = 2;
 const GOING_STEP_MS = 100;
 const GOING_LEAST_FPS = 3;
 // (What that costs him, ms, at `fps` the rest of it: from still, and down
@@ -664,11 +666,17 @@ const GOING_LEAST_FPS = 3;
 const goingMs = (fps: number) =>
 	((fps + Math.max(0, fps - SET_IN_FPS) ** 2 / fps) / (2 * GOING_ACCEL)) * 1000;
 const paced = (l: Leg, v0: number, w: number): Leg[] => {
-	const A = GOING_ACCEL;
 	const T = (l.t1 - l.t0) / 1000;
 	const D = Math.hypot(l.to.x - l.from.x, l.to.y - l.from.y);
+	const discOf = (A: number) => {
+		const b = T + (v0 + w) / A;
+		return b * b - (4 / A) * (D + (v0 * v0 + w * w) / (2 * A));
+	};
+	// (Harder about it, if that is what it takes - not left at the one
+	// pace all the way and stopped dead at the end of it.)
+	const A = discOf(GOING_ACCEL) >= 0 ? GOING_ACCEL : GOING_ACCEL * GOING_HARD;
 	const b = T + (v0 + w) / A;
-	const disc = b * b - (4 / A) * (D + (v0 * v0 + w * w) / (2 * A));
+	const disc = discOf(A);
 	if (!(T > 0 && D > 0 && disc >= 0)) {
 		return [l];
 	}
@@ -676,7 +684,7 @@ const paced = (l: Leg, v0: number, w: number): Leg[] => {
 	const tu = (vc - v0) / A;
 	const td = (vc - w) / A;
 	const tc = T - tu - td;
-	if (vc < Math.max(v0, w, GOING_LEAST_FPS) || tc < -1e-6) {
+	if (vc < Math.max(v0, w, GOING_LEAST_FPS) - 1e-6 || tc < -1e-6) {
 		return [l];
 	}
 	const sAt = (t: number) => {
@@ -4175,7 +4183,10 @@ class Director {
 			return snap;
 		}
 		const fps = MOTION_FPS[0] + r() * (MOTION_FPS[1] - MOTION_FPS[0]);
-		const takes = (Math.abs(shift) / fps) * 1000;
+		// (Up to his pace out of his stance - see paced - not off at it from
+		// the first step: what that costs him over going at it all the way.)
+		const takes =
+			(Math.abs(shift) / fps) * 1000 + (fps / (2 * GOING_ACCEL)) * 1000;
 		// Set over there first, the way he would be at his spot.
 		const n = him.legs.length;
 		const upTo = him.legs[n - 2]!;
@@ -4187,13 +4198,13 @@ class Director {
 		upTo.to = a;
 		upTo.t1 = there;
 		him.legs[n - 1] = { ...stance, t0: there, t1: go, from: a, to: a };
-		him.legs.push({
-			t0: go,
-			t1: end,
-			from: a,
-			to: b,
-			move: fps < 12 ? "jog" : "run",
-		});
+		him.legs.push(
+			...paced(
+				{ t0: go, t1: end, from: a, to: b, move: fps < 12 ? "jog" : "run" },
+				0,
+				fps,
+			),
+		);
 		// The man over him, in man, with him.
 		const over = parts
 			.filter(
@@ -4225,22 +4236,26 @@ class Director {
 				// than that, turned and run with him.)
 				const fpsD = dist(d1, d0) / Math.max(0.001, (end + 100 - goD) / 1000);
 				over.legs.push(
-					fpsD > FOLLOW_SLIDE_FPS
-						? {
-								t0: goD,
-								t1: end + 100,
-								from: d1,
-								to: d0,
-								move: fpsD < 12 ? "jog" : "run",
-							}
-						: {
-								t0: goD,
-								t1: end + 100,
-								from: d1,
-								to: d0,
-								move: "slide",
-								...(st.yaw !== undefined ? { yaw: st.yaw } : {}),
-							},
+					...paced(
+						fpsD > FOLLOW_SLIDE_FPS
+							? {
+									t0: goD,
+									t1: end + 100,
+									from: d1,
+									to: d0,
+									move: fpsD < 12 ? "jog" : "run",
+								}
+							: {
+									t0: goD,
+									t1: end + 100,
+									from: d1,
+									to: d0,
+									move: "slide",
+									...(st.yaw !== undefined ? { yaw: st.yaw } : {}),
+								},
+						0,
+						fpsD,
+					),
 				);
 			}
 		}

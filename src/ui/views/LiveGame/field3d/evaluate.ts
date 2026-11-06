@@ -551,32 +551,59 @@ const square = (p: Feet, yaw: number) =>
 // other, still till it is up (the last ASIDE_STEP_MS of it) and over by the
 // time it is down; up the higher the quicker he is going over (a full step
 // at ASIDE_FPS ft/s - none under ASIDE_LEAST_FPS, eased over as he was).
-// Only a step he stands through, start to end (`stood`): it starts and ends
-// where he would be eased over to anyway.
+// Only the part of it he stands through (`stood`) - all of it, or from when
+// he comes to a stand in it, or up to when he is off out of one: it starts
+// and ends where he would be eased over to anyway.
 const ASIDE_MS = 300;
 const ASIDE_STEP_MS = 220;
 const ASIDE_LEAST_FPS = 0.6;
 const ASIDE_FPS = 3;
+// (When in it he comes to a stand, or is off: to within this, ms.)
+const ASIDE_EDGE_MS = 5;
 const asideAt = (
 	spans: Sep[] | undefined,
 	t: number,
 	stood: (t: number) => boolean,
 ): { x: number; y: number; up?: [number, number] } | undefined => {
 	const now = apartAt(spans, t);
-	const k = Math.floor(t / ASIDE_MS);
-	const g = k * ASIDE_MS;
-	if (!spans || !stood(g) || !stood(g + ASIDE_MS)) {
+	if (!spans || !stood(t)) {
 		return now;
 	}
-	const a = apartAt(spans, g) ?? { x: 0, y: 0 };
-	const b = apartAt(spans, g + ASIDE_MS) ?? { x: 0, y: 0 };
-	const v = Math.hypot(b.x - a.x, b.y - a.y) / (ASIDE_MS / 1000);
+	const k = Math.floor(t / ASIDE_MS);
+	// (From `out`, not stood, to `t`, stood: the first of it he is.)
+	const edge = (out: number) => {
+		let [o, i] = [out, t];
+		while (Math.abs(i - o) > ASIDE_EDGE_MS) {
+			const c = (o + i) / 2;
+			if (stood(c)) {
+				i = c;
+			} else {
+				o = c;
+			}
+		}
+		return i;
+	};
+	const g0 = stood(k * ASIDE_MS) ? k * ASIDE_MS : edge(k * ASIDE_MS);
+	const g1 = stood((k + 1) * ASIDE_MS)
+		? (k + 1) * ASIDE_MS
+		: edge((k + 1) * ASIDE_MS);
+	if (g1 - g0 < ASIDE_EDGE_MS) {
+		return now;
+	}
+	const a = apartAt(spans, g0) ?? { x: 0, y: 0 };
+	const b = apartAt(spans, g1) ?? { x: 0, y: 0 };
+	const v = Math.hypot(b.x - a.x, b.y - a.y) / ((g1 - g0) / 1000);
 	if (v < ASIDE_LEAST_FPS) {
 		return now;
 	}
-	const u = clamp01((t - (g + ASIDE_MS - ASIDE_STEP_MS)) / ASIDE_STEP_MS);
+	const step = Math.min(ASIDE_STEP_MS, g1 - g0);
+	const u = clamp01((t - (g1 - step)) / step);
 	const e = u * u * (3 - 2 * u);
-	const up = Math.sin(Math.PI * u) * Math.min(1, v / ASIDE_FPS);
+	// (A short one, a foot only just off the turf.)
+	const up =
+		Math.sin(Math.PI * u) *
+		Math.min(1, v / ASIDE_FPS) *
+		Math.min(1, step / ASIDE_STEP_MS);
 	return {
 		x: a.x + (b.x - a.x) * e,
 		y: a.y + (b.y - a.y) * e,
