@@ -6767,6 +6767,7 @@ class Action {
 				a: Pt;
 				b: Pt;
 				f: (u: number) => number;
+				regait?: boolean;
 			}[] = [];
 			// (A run of them together the one way, at the one pace: not
 			// swaying on with the push he had into nobody, a step a walk and
@@ -6824,12 +6825,28 @@ class Action {
 						l.from.y === l.to.y;
 					if (move === "jog" && next?.t0 === run.at(-1)!.t1 && still(next)) {
 						const up = !prev || still(prev) || legPace(prev) < fps * 1.5;
+						// (In off a run quicker than that eases him down from -
+						// through a man and up, say: down from the pace he came in
+						// at, stood when that has him stopped - not dropped to a
+						// jog in a stride.)
+						const v0 = prev && RAMPS.has(prev.move) ? legPace(prev) : 0;
+						const D = dist(a, b);
+						const S = span / 1000;
+						const ts = v0 > 0 && D > 0 ? (2 * D) / v0 : Infinity;
 						eases.push({
 							t0,
 							t1: t0 + span,
 							a,
 							b,
-							f: up ? (u) => u * u * (3 - 2 * u) : (u) => 1 - (1 - u) * (1 - u),
+							f: up
+								? (u) => u * u * (3 - 2 * u)
+								: ts < S
+									? (u) => {
+											const t = Math.min(u * S, ts);
+											return (v0 * t - (v0 * t * t) / (2 * ts)) / D;
+										}
+									: (u) => 1 - (1 - u) * (1 - u),
+							regait: ts < S,
 						});
 					}
 				}
@@ -6854,6 +6871,10 @@ class Action {
 					if (l.t0 >= e.t0 && l.t1 <= e.t1) {
 						l.from = at(l.t0);
 						l.to = at(l.t1);
+						if (e.regait && l.t1 > l.t0) {
+							const v = legPace(l);
+							l.move = v < 1 ? "stand" : gait(v);
+						}
 					}
 				}
 			}
