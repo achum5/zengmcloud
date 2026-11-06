@@ -37,6 +37,8 @@ import {
 import type { GamecastInfo } from "../../../../worker/views/liveGameInfo.ts";
 import { FlowCharts } from "./FlowCharts.tsx";
 import { playSentence } from "./sentence.ts";
+import { ShotChart } from "./ShotChart.tsx";
+import type { ShotSpot } from "./shots.ts";
 
 type Tab = "gamecast" | "box" | "plays" | "stats" | "flow";
 
@@ -1234,6 +1236,8 @@ export const LiveGamecast = ({
 	boxScoreTab,
 	header,
 	onReplay,
+	shots,
+	cursor,
 }: {
 	boxScore: any;
 	entries: readonly FeedEntry[];
@@ -1247,6 +1251,10 @@ export const LiveGamecast = ({
 	// Show a play again on the court (a highlight tapped) - where the court
 	// can.
 	onReplay?: (cursor: number) => void;
+	// The game's shots where the 3D court staged them, and how far into the
+	// game it is (only those already shown).
+	shots?: ShotSpot[];
+	cursor?: number;
 }) => {
 	const [tab, setTab] = useState<Tab>("gamecast");
 	const teams = boxScore.teams as [any, any];
@@ -1337,6 +1345,17 @@ export const LiveGamecast = ({
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 		[names, canReplay],
 	);
+
+	const shown =
+		shots && cursor !== undefined
+			? shots.filter((x) => x.cursor <= cursor)
+			: undefined;
+	const shotChart =
+		shown && shown.length > 0 ? (
+			<Section title="Shot Chart">
+				<ShotChart spots={shown} teams={teams} colors={colors} names={names} />
+			</Section>
+		) : null;
 
 	return (
 		<FeedContext.Provider value={feed}>
@@ -1452,6 +1471,7 @@ export const LiveGamecast = ({
 								<Section title="Game Flow">
 									<FlowCharts boxScore={boxScore} colors={colors} live />
 								</Section>
+								{shotChart}
 								<Section
 									title="Team Stats"
 									action={
@@ -1474,6 +1494,7 @@ export const LiveGamecast = ({
 						boxScoreTab
 					) : tab === "plays" ? (
 						<div className="gamecast-narrow">
+							{shotChart}
 							<AllPlays
 								rows={rows}
 								teams={teams}

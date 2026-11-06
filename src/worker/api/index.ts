@@ -8083,7 +8083,53 @@ const getReplayFeed = async (gid: number) => {
 		confetti: false,
 		playByPlay,
 	});
-	return { events: out.events, initialBoxScore: out.initialBoxScore };
+	let shots: number[] | undefined;
+	try {
+		const row =
+			(await idb.cache.liveGamePlayByPlay.get(gid)) ??
+			(await (idb.league as any).get("liveGamePlayByPlay", gid));
+		shots = row?.shots;
+	} catch {
+		// No chart.
+	}
+	return {
+		events: out.events,
+		initialBoxScore: out.initialBoxScore,
+		shots,
+	};
+};
+
+// The shots of a game watched in 3D, where the court had them (see
+// LiveGame/gamecast/shots.ts), kept with its saved replay for the shot chart
+// on its box score - once: the court stages a game the same every time.
+const saveReplayShots = async ({
+	gid,
+	shots,
+}: {
+	gid: number;
+	shots: number[];
+}) => {
+	if (
+		typeof gid !== "number" ||
+		!Array.isArray(shots) ||
+		shots.length === 0 ||
+		shots.length > 20000 ||
+		!shots.every((x) => Number.isInteger(x))
+	) {
+		return;
+	}
+	let row = await idb.cache.liveGamePlayByPlay.get(gid);
+	if (!row) {
+		try {
+			row = await (idb.league as any).get("liveGamePlayByPlay", gid);
+		} catch {
+			return;
+		}
+	}
+	if (!row || (Array.isArray(row.shots) && row.shots.length > 0)) {
+		return;
+	}
+	await idb.cache.liveGamePlayByPlay.put({ ...row, shots });
 };
 
 // The chat that happened while a game was live-simmed, saved alongside its
@@ -8281,6 +8327,7 @@ const api = {
 		getLiveGamePlayByPlay,
 		getReplayFeed,
 		hasLiveGameReplay,
+		saveReplayShots,
 		liveSimBlocksDaySim,
 		getGoatBreakdown,
 		getNegotiationProps,

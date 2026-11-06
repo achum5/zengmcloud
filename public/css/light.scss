@@ -1805,6 +1805,30 @@ tr.table-warning:hover > td {
 	flex-shrink: 0;
 }
 
+// The shot chart (gamecast/ShotChart): the floor top down, in feet.
+.shot-court {
+	display: block;
+	width: 100%;
+	height: auto;
+}
+.shot-floor {
+	fill: var(--bs-tertiary-bg);
+	stroke: var(--bs-border-color);
+	stroke-width: 0.3;
+}
+.shot-lines {
+	fill: none;
+	stroke: var(--bs-border-color);
+	stroke-width: 0.3;
+}
+.shot-legend {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: space-between;
+	gap: 0.5rem 1rem;
+	margin-top: 0.5rem;
+}
+
 // Win probability and game flow (gamecast/FlowCharts).
 .flow-team {
 	display: flex;

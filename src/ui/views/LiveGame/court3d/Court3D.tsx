@@ -98,6 +98,8 @@ import {
 } from "./keyPlays.ts";
 import { bodyOf, type Body } from "./poses.ts";
 import { offenseAt } from "./evaluate.ts";
+import { shotSpots } from "./shotSpots.ts";
+import type { ShotSpot } from "../gamecast/shots.ts";
 import {
 	buildFouls,
 	breakText,
@@ -271,6 +273,9 @@ type Props = {
 	// A play the page asks to see again (a highlight tapped): the line that
 	// ended at `cursor`, shown again each time `n` goes up (see askedReplay).
 	replayAsk?: { n: number; cursor: number };
+	// The game's shots and where each was let go from, once it is staged
+	// (see shotSpots) - for the shot chart.
+	onShots?: (shots: ShotSpot[]) => void;
 };
 
 const Court3D = ({
@@ -292,7 +297,10 @@ const Court3D = ({
 	onLost,
 	preview = false,
 	replayAsk,
+	onShots,
 }: Props) => {
+	const onShotsRef = useRef(onShots);
+	onShotsRef.current = onShots;
 	const { lid, gender } = useLocal(["lid", "gender"]);
 	const gid: number | undefined = boxScore?.gid;
 	const season: number | undefined = boxScore?.season;
@@ -412,6 +420,11 @@ const Court3D = ({
 			(tl) => {
 				if (alive) {
 					setTimeline(tl);
+					try {
+						onShotsRef.current?.(shotSpots(tl));
+					} catch {
+						// The chart just doesn't show.
+					}
 				}
 			},
 			(error: unknown) => {

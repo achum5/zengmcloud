@@ -25,6 +25,7 @@ import { toWorker } from "../../util/toWorker.ts";
 import { local, localActions, useLocal } from "../../util/local.ts";
 import { finishOf } from "../../util/liveGameWording.basketball.ts";
 import { LiveGamecast } from "./gamecast/Gamecast.tsx";
+import { packShots, type ShotSpot } from "./gamecast/shots.ts";
 import { orderBoxScoreTeams } from "../../util/liveBoxScoreLayout.ts";
 import type { View } from "../../../common/types.ts";
 import { bySport } from "../../../common/sportFunctions.ts";
@@ -533,6 +534,10 @@ export const LiveGame = (props: View<"liveGame">) => {
 	// Each "next play" asked for: the 3D court cuts straight past the play
 	// shown rather than playing it out.
 	const [skips3d, setSkips3d] = useState(0);
+	// The game's shots where the 3D court staged them (see shotSpots), for
+	// the gamecast's shot chart - and kept with the saved replay, for its
+	// box score's.
+	const [shots, setShots] = useState<ShotSpot[] | undefined>();
 	// A highlight tapped in the gamecast, for the 3D court to show again.
 	const [replayAsk, setReplayAsk] = useState<
 		{ n: number; cursor: number } | undefined
@@ -3040,6 +3045,21 @@ export const LiveGame = (props: View<"liveGame">) => {
 		started,
 	]);
 
+	const shotsGid = boxScore.current.gid;
+	const onShots = useCallback(
+		(spots: ShotSpot[]) => {
+			setShots(spots);
+			// (Not on a court following another device's: that one keeps them.)
+			if (!isFollower && spots.length > 0) {
+				toWorker("main", "saveReplayShots", {
+					gid: shotsGid,
+					shots: packShots(spots),
+				}).catch(() => {});
+			}
+		},
+		[isFollower, shotsGid],
+	);
+
 	// A replay opened at a play (tapped on its box score - see GameRecap):
 	// on to just before it, and playing from there.
 	const startAt: number | undefined = (props as any).startAt;
@@ -3154,6 +3174,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 								onFail={onCourt3DFail}
 								onLost={onCourt3DLost}
 								replayAsk={replayAsk}
+								onShots={onShots}
 							/>
 						)}
 					</Suspense>
@@ -3297,6 +3318,8 @@ export const LiveGame = (props: View<"liveGame">) => {
 						boxScore={boxScore.current}
 						entries={playByPlayEntries.current}
 						court={courtNode}
+						shots={shots}
+						cursor={initialEventCount.current - (events.current?.length ?? 0)}
 						onReplay={
 							court3d && !(isFollower && !along)
 								? (cursor: number) => {

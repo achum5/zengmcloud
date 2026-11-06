@@ -51,6 +51,8 @@ import {
 	type FeedRow,
 } from "./playFeed.ts";
 import { playSentence } from "./sentence.ts";
+import { ShotChart } from "./ShotChart.tsx";
+import { unpackShots, type ShotSpot } from "./shots.ts";
 import { winProb } from "../winProb.ts";
 
 type Tab = "recap" | "box" | "plays" | "stats" | "flow";
@@ -412,6 +414,7 @@ export const GameRecap = ({
 	const [replay, setReplay] = useState<
 		| {
 				events: any[];
+				shots: ShotSpot[];
 				entries: FeedEntry[];
 				rows: FeedRow[];
 				ends: ReturnType<typeof feedFromEvents>["ends"];
@@ -435,6 +438,7 @@ export const GameRecap = ({
 				const f = feedFromEvents(got.events, got.initialBoxScore, gender);
 				setReplay({
 					events: got.events,
+					shots: unpackShots(got.shots),
 					entries: f.entries,
 					rows: feedRows([...f.entries].reverse()),
 					ends: f.ends,
@@ -495,6 +499,17 @@ export const GameRecap = ({
 	};
 	const numPeriods = boxScore.numPeriods ?? 4;
 	const tabs = TABS.filter(([key]) => key !== "plays" || replay !== undefined);
+	const shotChart =
+		replay && replay.shots.length > 0 ? (
+			<Section title="Shot Chart">
+				<ShotChart
+					spots={replay.shots}
+					teams={boxScore.teams}
+					colors={colors}
+					names={names}
+				/>
+			</Section>
+		) : null;
 
 	return (
 		<FeedContext.Provider value={feed}>
@@ -541,6 +556,7 @@ export const GameRecap = ({
 											<FlowCharts boxScore={boxScore} colors={colors} />
 										</Section>
 									) : null}
+									{shotChart}
 								</div>
 								<div className="recap-left">
 									<Section
@@ -613,6 +629,7 @@ export const GameRecap = ({
 						</>
 					) : tab === "plays" && replay ? (
 						<div className="gamecast-narrow">
+							{shotChart}
 							<AllPlays
 								rows={replay.rows}
 								teams={boxScore.teams}

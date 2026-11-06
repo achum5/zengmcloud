@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 181,
+		date: "2026-11-06",
+		text: "Tabbed layout: a shot chart - every shot right where the 3D court had it taken, made or missed, for both teams or one. On a box score it shows for games watched in 3D from now on (it is kept with the saved replay, a few kilobytes a game).",
+	},
+	{
 		n: 180,
 		date: "2026-11-06",
 		text: 'Tabbed layout: plays read the way a broadcast lists them - "Devin Booker misses three point jumper", "Wendell Carter Jr. makes layup (Franz Wagner assists)". In a live game, tap a play to see it again on the court. On a box score whose replay is saved: a Play-by-Play tab and the game\'s highlights, where tapping any play opens the replay right at it in 3D, and the box score a quarter at a time.',
