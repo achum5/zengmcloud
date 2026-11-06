@@ -907,6 +907,15 @@ room unused 75 summers of 84).
   first four years out for an early second now (both sides gaining under a
   half a hundredth of a title) is not changed by it: that is the contender
   valuing the seasons it can win in.
+- **A deal counts only past releasing the players given** (freeDisposal). A
+  team better off without a player could release him, still owing his
+  salary - little for a scrub on a minimum deal - so a deal is worth only
+  what it does beyond that. In a 15-season replay of the owner's league,
+  contenders paid firsts to be rid of cheap players their lineup model read
+  as hurting them (a reading the synergy lab showed is noise in the sim).
+  Measured: half the teams each way, 2 leagues each way round over 5
+  seasons: titles even (10 to 10), playoff rounds won 159 to 141, seasons
+  under 20 wins 23 to 30.
 - **Money short of the league's minimum payroll is free only this season,
   once games are played** (floorNow). A team short of the
   minimum pays the rest as a fine when the playoffs start, so salary up to it

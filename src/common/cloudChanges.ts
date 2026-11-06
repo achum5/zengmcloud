@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 197,
+		date: "2026-11-06",
+		text: "Realistic Front Offices: CPU teams no longer give up picks just to get rid of a cheap player they could simply release. In tests this won as many titles and more playoff rounds, with fewer bottom-of-the-league seasons.",
+	},
+	{
 		n: 196,
 		date: "2026-11-06",
 		text: 'Game recaps, round two: numbers the way a wire story prints them (nine in words, 11 in figures, "No. 7" seeds in playoff headlines), fewer lines about how many lead changes there were or who was still out hurt, and more ways of saying a player beat his scoring average.',

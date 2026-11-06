@@ -191,11 +191,15 @@ export const marketSettings = {
 	// its player let go for free when he is drafted (releaseAlternative).
 	noPickGifts: true,
 	// A deal counts for a team only past what releasing the players it gives
-	// would do (releaseGain). Off: CPU teams do not release players to open a
-	// place, so a deal that rids a team of a scrub is the only way it gets the
-	// place - and pricing deals against releases nobody makes cut trades by a
-	// third in an arena league.
-	freeDisposal: false,
+	// would do (releaseGain): nobody pays a first to be rid of a man it could
+	// cut for a few hundredths of a cap. Off at first, when CPU teams never
+	// released a player to open a place and it cut trades by a third; since
+	// they sign a better free agent and cut their worst in season, it costs
+	// little volume. Measured: half the teams each way, 2 leagues each way
+	// round over 5 seasons: titles even (10 to 10, 5 to 5 in each), playoff
+	// rounds won 159 to 141, seasons under 20 wins 23 to 30, games won up a
+	// little in seasons 2-4.
+	freeDisposal: true,
 	// A team out shopping takes the deal that does the most for itself that
 	// the other team would still make, not the one that does the most for
 	// the side it does least for (the other side still haggles). Off while it
@@ -683,7 +687,7 @@ const valueAsKept = (outlook: LeagueOutlook, t: TeamState) => {
 // little for a scrub on a minimum deal - and a deal would only be worth what
 // it does beyond that. A contender gave a first-round pick to be rid of a
 // 22-year-old rated 30 on a minimum deal, three years of which would have
-// cost it a few hundredths of a cap to release. Off for now (freeDisposal).
+// cost it a few hundredths of a cap to release (freeDisposal).
 const releaseValues = new WeakMap<LeagueOutlook, Map<string, number>>();
 const releaseGain = (
 	outlook: LeagueOutlook,
