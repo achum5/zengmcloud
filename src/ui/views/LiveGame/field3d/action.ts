@@ -2282,6 +2282,14 @@ class Actor {
 		return { x: this.at.x + cos * on, y: this.at.y + sin * on };
 	}
 
+	// Turned toward `to`, to go on at `w` ft/s: bent round into it, if he
+	// can be (see bendInto) - or planted for it (see plantFor).
+	turnFor(to: Pt, w: number) {
+		if (!this.bendInto(to, w)) {
+			this.plantFor(to);
+		}
+	}
+
 	plantFor(to: Pt, down?: number, most?: number) {
 		const l = this.last;
 		// (Off a backpedal: see plantBack.)
@@ -5982,8 +5990,11 @@ const CATCH_LEAD_MS = 380;
 const ROUTE_PACE_LEAST = 0.6;
 // A route laid on past the back of the end zone (a decoy's, deep in the
 // red zone): run no deeper than this short of the end line (feet), and
-// sat down there - not into the line and slid along it.
+// sat down there - not into the line and slid along it. Nor run on
+// nearer a sideline than ROUTE_SIDE_FT: sat down short of it, not run into
+// it flat out and turned along it in a stride.
 const ROUTE_BACK_FT = 4;
+const ROUTE_SIDE_FT = 3;
 // (With no more than this left of it to the catch (feet), no break.)
 const ROUTE_LEFT = 0.4;
 // A break in it sharper than CUT_LEAST (radians), cut: into it at as much
@@ -10354,8 +10365,8 @@ class Action {
 		}
 		if (!target && !route.settles && until !== undefined && m.t < until) {
 			// Past the end of his route: on the way it goes - as far as the
-			// back of the end zone (see ROUTE_BACK_FT), and sat down there,
-			// turned to the quarterback.
+			// back of the end zone, or a sideline (see ROUTE_BACK_FT), and sat
+			// down there, turned to the quarterback.
 			const pa = path.at(-2)!;
 			const pb = path.at(-1)!;
 			const a = this.w(pa);
@@ -10364,7 +10375,14 @@ class Action {
 			const left = ((until - m.t) / 1000) * speed;
 			const down = (pb.d - pa.d) / len;
 			const room = down > 0 ? Math.max(0, (deep - pb.d) / down) : Infinity;
-			const go = Math.min(left, room);
+			const across = (b.y - a.y) / len;
+			const side =
+				across > 0
+					? (FIELD_W - ROUTE_SIDE_FT - b.y) / across
+					: across < 0
+						? (b.y - ROUTE_SIDE_FT) / -across
+						: Infinity;
+			const go = Math.min(left, room, Math.max(0, side));
 			const to = {
 				x: b.x + ((b.x - a.x) / len) * go,
 				y: b.y + ((b.y - a.y) / len) * go,
@@ -12760,7 +12778,12 @@ class Action {
 				this.behind,
 			);
 		}
-		m.plantFor(hit);
+		// (Round to it at his pace, if the turn is one he can bend round -
+		// not planted for it and turned in a stride: see Actor.turnFor.)
+		m.turnFor(
+			hit,
+			Math.min(m.top, dist(m.at, hit) / Math.max(0.001, (lead - m.t) / 1000)),
+		);
 		// (Still slowing for a turn when he knows - off his own plant, say -
 		// too slow by then to plant again, with it well round behind him:
 		// the last of his pace eased off first, not turned round on it from
