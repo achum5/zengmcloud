@@ -346,6 +346,7 @@ const LUNGE_BACK_MS = 250;
 const LUNGE_ON_MS = 150;
 const LUNGE_STEP_MS = 10;
 const LUNGE_MOST_FPS = 28;
+const LUNGE_SLIDE_MOST_MS = 700;
 // (Launched more than this far round from the way he faces in it (radians),
 // this far or more (feet): faced the way he goes.)
 const LUNGE_ROUND = 1.75;
@@ -2977,7 +2978,7 @@ class Actor {
 	// that carries him (LUNGE_BACK_MS earlier at the most), not run on in to
 	// throw himself the last yard or two - and slowed as he goes (see
 	// pace.ts carriedOf).
-	lunge(move: Move, t1: number, yaw: number, to: Pt) {
+	lunge(move: Move, t1: number, yaw: number, to: Pt, slide = false) {
 		// (Only a blink of a stride out of something else - off a block, up
 		// out of his set: launched from that, not a flick of a stride first.)
 		const was = this.legs.at(-2);
@@ -3024,6 +3025,16 @@ class Actor {
 		const far = dist(this.at, to);
 		const most = (LUNGE_MOST_FPS * (t1 - this.t)) / 1000;
 		const u = far > most ? most / far : 1;
+		// (`slide`: down off it at the pace he launched at, and slid to a
+		// stop on the turf - over as long as that takes, up to
+		// LUNGE_SLIDE_MOST_MS - not stopped dead as he lands.)
+		const vl = GAITS.has(this.last.move) ? legPace(this.last) : 0;
+		if (slide && vl > 0) {
+			t1 = Math.max(
+				t1,
+				this.t + Math.min(LUNGE_SLIDE_MOST_MS, ((2 * far * u) / vl) * 1000),
+			);
+		}
 		// (Back behind him, past it as he is: thrown back round at it, the
 		// way he goes - not launched backward, facing away from it.)
 		const way = Math.atan2(to.y - this.at.y, to.x - this.at.x);
@@ -3058,7 +3069,7 @@ class Actor {
 			);
 			t1 = Math.max(t1, this.t + DIVE_LEAST_MS);
 		}
-		this.lunge("dive", t1, yaw, to);
+		this.lunge("dive", t1, yaw, to, true);
 		return this.t;
 	}
 
