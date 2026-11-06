@@ -4322,6 +4322,12 @@ const STOOD_GAP_FT = 5;
 // A cover man into the blocker he meets (or a lead blocker into his man):
 // down to this much of his pace as they meet (see breakDown).
 const LOCK_KEEP = 0.5;
+// (A blocker on his way to the man he locks up with, this near the spot
+// (feet) and this near the time (ms): there.)
+const LOCK_THERE_FT = 0.6;
+// (Each this far off where they meet, feet, squared up.)
+const LOCK_APART = 1.3;
+const LOCK_THERE_MS = 60;
 // (Gathered into a man off a run in too short to be pulled up at the pace
 // asked for: up to this many times as hard - see gatherTo.)
 const GATHER_HARD = 2;
@@ -12414,8 +12420,12 @@ class Action {
 			}
 		}
 		// (Back up to speed for it no harder than a man can - short of it, if
-		// that is all he gets, not shot back at it from a stand.)
-		m.pressUp(spot, by, m.top * FLAT_OUT, "sprint");
+		// that is all he gets, not shot back at it from a stand. On his way
+		// to it already, with time to spare: eased into it as he comes - not
+		// on at full tilt to a stride off it and jogged the rest.)
+		if (!m.slowAlong(spot, by)) {
+			m.pressUp(spot, by, m.top * FLAT_OUT, "sprint");
+		}
 	}
 
 	// When to break on it, `latest` at the latest: sooner - as soon as he
@@ -17578,7 +17588,16 @@ class Action {
 		let meet: Pt;
 		let tm: number;
 		if (bv <= 0) {
-			meet = b.at;
+			// (Squared up to him where he is - not a step back from it to
+			// square up, in a blink, if he is on the move still.)
+			const far = dist(cAt, b.at);
+			meet =
+				far > LOCK_APART * 2
+					? {
+							x: b.at.x + ((cAt.x - b.at.x) * LOCK_APART) / far,
+							y: b.at.y + ((cAt.y - b.at.y) * LOCK_APART) / far,
+						}
+					: b.at;
 			tm = Math.max(b.t, cGo + rampedMs(dist(cAt, meet), vc, cV0, cA));
 		} else {
 			b.hold(go + LOCK_REACT_SPREAD_MS * countOf(b, this.input.key, 7));
@@ -17616,12 +17635,12 @@ class Action {
 		// Squared up to each other, a step apart.
 		const ang = Math.atan2(cAt.y - meet.y, cAt.x - meet.x);
 		const cHit = {
-			x: meet.x + Math.cos(ang) * 1.3,
-			y: meet.y + Math.sin(ang) * 1.3,
+			x: meet.x + Math.cos(ang) * LOCK_APART,
+			y: meet.y + Math.sin(ang) * LOCK_APART,
 		};
 		const bHit = {
-			x: meet.x - Math.cos(ang) * 1.3,
-			y: meet.y - Math.sin(ang) * 1.3,
+			x: meet.x - Math.cos(ang) * LOCK_APART,
+			y: meet.y - Math.sin(ang) * LOCK_APART,
 		};
 		if (tm > until - LOCK_LEAST_MS) {
 			// (Not to him before it is over: on his way in still, pulled up
@@ -17666,7 +17685,12 @@ class Action {
 		if (dist(b.at, bHit) < LOCK_SHIFT_FT && LOCK_SHIFTS.has(b.last.move)) {
 			b.hold(tm, b.last.move, ang);
 		} else {
-			b.go(bHit, tm, undefined, ang);
+			// (There already, near enough: not a blink of a step on to it.)
+			if (dist(b.at, bHit) > LOCK_THERE_FT || tm - b.t > LOCK_THERE_MS) {
+				b.go(bHit, tm, undefined, ang);
+			}
+			// (Into him gathered, not run into him flat out - see gatherTo.)
+			b.gatherTo(b.at, BRAKE_FPS, HIT_ACCEL, 0, "drive");
 		}
 		c.go(
 			cHit,
@@ -17674,7 +17698,9 @@ class Action {
 			gait(Math.min(vc, paceFor(dist(cAt, cHit), (tm - c.t) / 1000, cV0, cA))),
 			ang + Math.PI,
 		);
-		c.breakDown(LOCK_KEEP);
+		if (c.gatherTo(c.at, BRAKE_FPS, HIT_ACCEL, 0, "engage") === undefined) {
+			c.breakDown(LOCK_KEEP);
+		}
 		const run = c.last;
 		// Along with the return a little, each fighting the other.
 		const end = this.of(endPt);
@@ -17714,8 +17740,20 @@ class Action {
 			y: pt.y + Math.sin(ang) * ring,
 		};
 		// (Well round from the way he was going: planted first - see
-		// plantFor - not turned at full speed.)
-		m.plantFor(to);
+		// plantFor - not turned at full speed; and down in it to the pace
+		// he goes on at, not out of it at full tilt and into a jog.)
+		const soon = Math.max(
+			m.t + 400,
+			this.whistle + 300 + TRAIL_SPREAD_MS * countOf(m, this.input.key, 8),
+		);
+		m.plantFor(
+			to,
+			undefined,
+			Math.max(
+				TRAIL_JOG_FPS[0],
+				dist(m.at, to) / Math.max(0.001, (soon - m.t) / 1000),
+			),
+		);
 		// (Brought by that nearer it than he can pull up in from the pace
 		// he is going: eased off on past it - not braked from a sprint to a
 		// walk in a stride on it.)
