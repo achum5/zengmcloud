@@ -1091,10 +1091,17 @@ class Actor {
 		const c = { x: start.x - s * u.y * R, y: start.y + s * u.x * R };
 		const r0 = Math.atan2(start.y - c.y, start.x - c.x);
 		const n = Math.max(2, Math.ceil(round / BEND_STEP));
-		const dt = ((R * round) / n / pace) * 1000;
+		// (To go on slower than that out of it - a chase to where he is to
+		// be in a moment, say: easing off round it toward `w`, at
+		// STOP_ACCEL - not round it at his pace, and down to what is left of
+		// the way there in a stride out of it.)
+		const ve =
+			w < pace ? Math.max(w, pace - (STOP_ACCEL * R * round) / pace) : pace;
 		for (let i = 1; i <= n; i++) {
 			const q = r0 + (s * round * i) / n;
 			const at = this.last;
+			const dt =
+				((R * round) / n / (pace - ((pace - ve) * (i - 0.5)) / n)) * 1000;
 			this.push({
 				...was,
 				...(keep ? { yaw } : {}),
