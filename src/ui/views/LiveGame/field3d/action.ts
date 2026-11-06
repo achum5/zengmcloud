@@ -10018,7 +10018,23 @@ class Action {
 			// gone for him there, and left on the turf - not along with him
 			// all the way.)
 			const on = yac > CATCH_BEAT_YAC ? this.onHim(rec, catchAt) : undefined;
-			const tc = off + (inStride ? CATCH_BEAT_STRIDE_MS : CATCH_BEAT_MS);
+			// (Once he is round onto the way he goes off on, if he planted to
+			// turn up it - not jinked off the plant while still going the
+			// other way, sent back the way he came.)
+			const { from: lf, to: lt } = rec.last;
+			const up = rec.legs.find(
+				(l) =>
+					l.t0 >= off &&
+					dist(l.from, l.to) > 0 &&
+					angleAt(lf, lt, {
+						x: lt.x + l.to.x - l.from.x,
+						y: lt.y + l.to.y - l.from.y,
+					}) < CUT_LEAST,
+			);
+			const tc = Math.max(
+				off + (inStride ? CATCH_BEAT_STRIDE_MS : CATCH_BEAT_MS),
+				(up?.t0 ?? off) + JUKE_INTO_MS,
+			);
 			if (on && t - tc > CATCH_BEAT_LEFT_MS) {
 				t = this.makeMiss(
 					rec,
