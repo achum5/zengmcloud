@@ -4634,6 +4634,15 @@ const PURSUIT_RING = 10;
 const PURSUIT_IN = 1.5;
 const PURSUIT_NEAREST = 5;
 const PURSUIT_LANE = 7;
+// (Stood off the play, the ball coming to within this of him: backed off
+// this far at the most, at this pace, over this long at the least - see
+// giveWay.)
+const GIVE_WAY_FT = 5;
+const GIVE_WAY_MOST_FT = 3.5;
+const GIVE_WAY_FPS = 6;
+const GIVE_WAY_MS = 500;
+const GIVE_WAY_EASE_FT = 2.5;
+const GIVE_WAY_EASE_LEAST = 3;
 // (A stretch of the chase moved over this far, either way - the nearest
 // first - to keep him round men in blocks: see wayClear.)
 const CHASE_CLEAR_OFF = [1.5, -1.5, 3, -3] as const;
@@ -4738,6 +4747,14 @@ const SACK_OUT = 0.2;
 const SACK_OUT_LEAST = 18;
 const SACK_OUT_FT = [14, 24] as const;
 const SACK_OUT_MS = 1500;
+// (A sack up in among his own line: moved across this far at the most, a
+// step at a time, to have his way to it this clear of them - see
+// pocketGap.)
+const SACK_GAP_FT = 2;
+const SACK_FALL_FT = 2.5;
+const SACK_FALL_MS = 450;
+const SACK_GAP_STEP = 0.5;
+const SACK_GAP_MOST = 8;
 const SACK_STEP_UP = 0.35;
 const SACK_STEP_FT = [3, 6] as const;
 // Sacked from his blind side (see blindLook): this often, on his own
@@ -6211,7 +6228,7 @@ const TWIN_TOP_FPS = 30;
 const TWIN_EASE_FPS = 2;
 // (On the move, this quick or more (ft/s): eased over no harder than this,
 // ft/s/s, at the most - see noTwins.)
-const TWIN_RUN_FPS = 6;
+const TWIN_RUN_FPS = 3;
 const TWIN_RUN_ACCEL = 25;
 const TWIN_EVERY_MS = 50;
 const TWIN_JOIN_MS = 300;
@@ -14733,6 +14750,9 @@ class Action {
 			qb.hold(t - SACK_OUT_MS, "pocket", this.ahead);
 			qb.go(at, t);
 		} else {
+			// (Brought down no deeper than his line is set: stepped up into
+			// it through a gap - see pocketGap - not run up his center's back.)
+			at = this.pocketGap(qb, at, Math.max(qb.t, t - 800), t);
 			// (Now and then out from under another of them first: see
 			// slipFirst.)
 			const slipped = sacker && this.slipFirst(qb, t, sacker, at, runners);
@@ -14761,6 +14781,66 @@ class Action {
 		if (sacker) {
 			this.rushMove(sacker, qb, t);
 		}
+	}
+
+	// Where he goes down, `at`, moved across - the least way - to where his
+	// way there from where he is (from t0, by t1) keeps SACK_GAP_FT clear
+	// of his own blockers, if it does not already: up through a gap in the
+	// line. Or the clearest of them, none clear.
+	private pocketGap(qb: Actor, at: Pt, t0: number, t1: number): Pt {
+		const line = this.o.filter(
+			(m) =>
+				m !== qb &&
+				!this.done.has(m.pid) &&
+				(OL.has(m.role) || m.role === "TE" || m.role === "TE2"),
+		);
+		const from = qb.at;
+		const s = this.of(at);
+		// (On through it as he goes down, too - see SACK_FALL_FT.)
+		const room = (p: Pt) => {
+			const D = Math.max(0.001, dist(from, p));
+			const end = {
+				x: p.x + ((p.x - from.x) / D) * SACK_FALL_FT,
+				y: p.y + ((p.y - from.y) / D) * SACK_FALL_FT,
+			};
+			const t2 = t1 + SACK_FALL_MS;
+			let near = Infinity;
+			for (let c = t0; c <= t2; c += 50) {
+				const u = c <= t1 ? (c - t0) / Math.max(1, t1 - t0) : 1;
+				const w = c <= t1 ? 0 : (c - t1) / SACK_FALL_MS;
+				const q =
+					c <= t1
+						? { x: from.x + (p.x - from.x) * u, y: from.y + (p.y - from.y) * u }
+						: { x: p.x + (end.x - p.x) * w, y: p.y + (end.y - p.y) * w };
+				for (const m of line) {
+					near = Math.min(near, dist(m.posAt(c), q));
+				}
+			}
+			return near;
+		};
+		let best = at;
+		let most = room(at);
+		if (most >= SACK_GAP_FT) {
+			return at;
+		}
+		for (let o = SACK_GAP_STEP; o <= SACK_GAP_MOST; o += SACK_GAP_STEP) {
+			for (const side of [1, -1]) {
+				const a = s.a + side * o;
+				if (a < this.bounds.left + 6 || a > this.bounds.right - 6) {
+					continue;
+				}
+				const p = this.w({ d: s.d, a });
+				const r = room(p);
+				if (r >= SACK_GAP_FT) {
+					return p;
+				}
+				if (r > most + 0.5) {
+					best = p;
+					most = r;
+				}
+			}
+		}
+		return best;
 	}
 
 	// SACKED FROM HIS BLIND SIDE: on his own count, the man who gets him
@@ -19399,9 +19479,26 @@ class Action {
 			const t0 = b.t;
 			const t1 = b.t + 900;
 			const to = (o: number) => this.w({ d: s.d + 9, a: s.a + o });
+			// (Nor through men in blocks on his way there, or stood where
+			// they get to - see blocksIn.)
+			const blocked = (o: number) => {
+				const p = to(o);
+				let worst = this.blocksIn(b, b, from, [p], t0, t1).worst;
+				for (let c = t1; c <= until; c += 100) {
+					for (const x of this.men) {
+						if (x !== b && LINE_PLAY.has(legAt(x, c).move)) {
+							worst = Math.max(worst, CLIMB_CLEAR_FT - dist(x.posAt(c), p));
+						}
+					}
+				}
+				return Math.max(0, worst - CLIMB_INTO_FT);
+			};
 			let over = 0;
-			if (clear) {
+			{
 				const nearest = (o: number) => {
+					if (!clear) {
+						return Infinity;
+					}
 					const p = to(o);
 					let near = Infinity;
 					// (Through to the end of it: not stood where he gets
@@ -19418,21 +19515,23 @@ class Action {
 					}
 					return near;
 				};
-				let best = nearest(0);
+				const bad = (o: number) =>
+					blocked(o) + Math.max(0, BLOCK_CLEAR_FT - nearest(o));
+				let best = bad(0);
 				for (const o of [2, -2, 3, -3, 4, -4, 5, -5]) {
-					if (best >= BLOCK_CLEAR_FT) {
+					if (best <= 0) {
 						break;
 					}
-					const near = nearest(o);
-					if (near > best + 0.5) {
-						best = near;
+					const now = bad(o);
+					if (now < best - 0.5) {
+						best = now;
 						over = o;
 					}
 				}
 			}
 			b.chase(to(over), t1, b.top * 0.6, "run");
 			this.offBlock(b, until);
-			b.hold(until, "stand", this.ahead);
+			this.giveWay(b, until);
 			return;
 		}
 		// (Met on the run: pulled up into it over his last strides - not
@@ -20421,6 +20520,68 @@ class Action {
 			return;
 		}
 		m.chase(to, by, m.top * 0.7);
+	}
+
+	// Stood where he is till `until` - but back off a step or two first if
+	// the ball comes to within GIVE_WAY_FT of him there, the men about it
+	// with it: not stood for them to run into.
+	giveWay(m: Actor, until: number) {
+		// (Backed off as far as the nearest it comes, away from it there -
+		// and before it does.)
+		let hit: number | undefined;
+		let near = Infinity;
+		let at: Pt | undefined;
+		let nearT = until;
+		const look = () => {
+			hit = undefined;
+			near = Infinity;
+			for (let c = m.t; c <= until; c += 50) {
+				const p = this.ballAt(c);
+				if (!p) {
+					continue;
+				}
+				const d = dist(p, m.at);
+				if (d < GIVE_WAY_FT && hit === undefined) {
+					hit = c;
+				}
+				if (d < near) {
+					near = d;
+					at = p;
+					nearT = c;
+				}
+			}
+		};
+		look();
+		if (hit === undefined || !at) {
+			m.hold(until, "stand", this.ahead);
+			return;
+		}
+		// (Pulled up first, if on the move still - not turned back off it
+		// in a stride.)
+		if (RAMPS.has(m.last.move) && legPace(m.last) >= GIVE_WAY_EASE_LEAST) {
+			m.easeOff(GIVE_WAY_EASE_FT, at);
+			look();
+			if (hit === undefined || !at) {
+				m.hold(until, "stand", this.ahead);
+				return;
+			}
+		}
+		const d = Math.max(0.1, near);
+		const far = Math.min(GIVE_WAY_MOST_FT, GIVE_WAY_FT + 0.5 - near);
+		const face = this.toward(m.at, at);
+		const ms = Math.max(GIVE_WAY_MS, (far / GIVE_WAY_FPS) * 1000);
+		const end = Math.max(m.t + ms, Math.min(nearT, hit + ms));
+		m.hold(end - ms, "stand", this.ahead);
+		m.go(
+			{
+				x: m.at.x + ((m.at.x - at.x) / d) * far,
+				y: m.at.y + ((m.at.y - at.y) / d) * far,
+			},
+			end,
+			"back",
+			face,
+		);
+		m.hold(until, "stand", face);
 	}
 
 	// After the ball at `fps` till `until`, a leg at a time (as pursue) -
