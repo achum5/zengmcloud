@@ -251,6 +251,11 @@ Set under it 45 (in a basket 17, as on a punt), coming up at a run or on
 the move 12, going back 7. On the hop 16, knelt 9, juggled 1, let go 2.
 Field reversed 3, a man spun out of on 2.
 
+The front's blocks on the cover happen even when the return is short: a
+block met only just before the tackle is popped there, not left with the
+cover man pulled up a step off the blocker (in games 1-3, 169 of 190 met,
+from 137).
+
 To do: a kick out of bounds (the sim has none in these games), the
 coverage turned back after a returner reversing the field.
 

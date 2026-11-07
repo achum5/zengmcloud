@@ -4353,8 +4353,9 @@ const LOCK_SHIFT_FT = 1;
 const LOCK_SHIFTS = new Set<Move>(["backerReady", "safetyReady"]);
 // (Not to him till this close to the end of it (ms): no block at all -
 // still on his way in when it is over - and the two locked up drifting
-// with the return no quicker than this, ft/s.)
-const LOCK_LEAST_MS = 600;
+// with the return no quicker than this, ft/s. Short of that, a block
+// popped just as he is brought down: on him, not stood a step off him.)
+const LOCK_LEAST_MS = 300;
 // (Waiting for him, not met till it is all but over: up to meet him as he
 // comes, there no later than this long before it would be too late - off
 // as late as that has him, at no more than the pace he is given.)
