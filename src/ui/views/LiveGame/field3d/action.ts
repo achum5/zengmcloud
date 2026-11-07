@@ -4630,6 +4630,10 @@ const PURSUIT_RING = 10;
 const PURSUIT_IN = 1.5;
 const PURSUIT_NEAREST = 5;
 const PURSUIT_LANE = 7;
+// (A stretch of the chase moved over this far, either way - the nearest
+// first - to keep him round men in blocks: see wayClear.)
+const CHASE_CLEAR_OFF = [1.5, -1.5, 3, -3] as const;
+const CHASE_CLEAR_SLACK_FT = 0.3;
 // (Given up, or at the whistle: pulled up no more than this far on - feet;
 // bent round off the pile at the ball, if it is in the way, by as little of
 // these as (radians, all told) keeps him this far off it.)
@@ -13522,25 +13526,33 @@ class Action {
 					const now = carrier.posAt(m.t + PURSUIT_LEAD);
 					const by = Math.min(PURSUIT_IN, Math.max(0, near - PURSUIT_NEAREST));
 					m.chaseUp(
-						{
-							x: m.at.x + him.x - now.x - Math.cos(a) * by,
-							y: m.at.y + him.y - now.y - Math.sin(a) * by,
-						},
+						this.wayClear(
+							m,
+							{
+								x: m.at.x + him.x - now.x - Math.cos(a) * by,
+								y: m.at.y + him.y - now.y - Math.sin(a) * by,
+							},
+							c,
+						),
 						c,
 						m.top * PURSUIT_PACE,
 					);
 					continue;
 				}
 				m.chaseUp(
-					{
-						x: him.x + Math.cos(a) * off - (him.y - was.y) * side,
-						y: him.y + Math.sin(a) * off + (him.x - was.x) * side,
-					},
+					this.wayClear(
+						m,
+						{
+							x: him.x + Math.cos(a) * off - (him.y - was.y) * side,
+							y: him.y + Math.sin(a) * off + (him.x - was.x) * side,
+						},
+						c,
+					),
 					c,
 					clamp(need * PURSUIT_URGE, m.top * 0.45, m.top * PURSUIT_PACE),
 				);
 			}
-			m.chaseUp(end(), arrive, m.top * 0.95);
+			m.chaseUp(this.wayClear(m, end(), arrive), arrive, m.top * 0.95);
 			// (Pulled up as he gets there - not stopped dead in a stride,
 			// off to the side of the pile if it is in his way.)
 			m.easeOff(EASE_OFF_FT, pt);
@@ -13570,7 +13582,11 @@ class Action {
 				const him = carrier.posAt(c + PURSUIT_LEAD);
 				const a = Math.atan2(m.at.y - him.y, m.at.x - him.x) + turn;
 				m.chaseUp(
-					{ x: him.x + Math.cos(a) * ring, y: him.y + Math.sin(a) * ring },
+					this.wayClear(
+						m,
+						{ x: him.x + Math.cos(a) * ring, y: him.y + Math.sin(a) * ring },
+						c,
+					),
 					c,
 					pace,
 				);
@@ -18809,28 +18825,32 @@ class Action {
 			filled,
 			(b, m) => this.climbClear(b, m, until),
 		);
-		const spare = backers.some(
-			(x) => !taken.has(x) && ![...ups.values()].includes(x),
-		);
+		for (const m of ups.values()) {
+			taken.add(m);
+		}
 		for (const b of front) {
 			if (on.has(b)) {
 				continue;
 			}
 			const m = ups.get(b);
 			if (m) {
-				taken.add(m);
 				this.blockOn(b, m, beat(b), offAt, until, carrier, through);
 				continue;
 			}
 			// (A backer left, but no way to him clear of the blocks between
 			// them: up to the next level on his own side all the same, if
-			// that is clear - not across through the blocks to him.)
-			const up = this.w({ ...this.of(b.at), d: this.of(b.at).d + 9 });
-			if (
-				spare &&
-				this.blocksIn(b, b, b.at, [up], b.t, b.t + 900).worst <= CLIMB_INTO_FT
-			) {
-				this.blockOn(b, undefined, beat(b), offAt, until, carrier, through);
+			// that is clear - not across through the blocks to him; or, not,
+			// onto the nearest of them after all - not in beside a man where
+			// the ball comes through.)
+			if (backers.some((x) => !taken.has(x))) {
+				const up = this.w({ ...this.of(b.at), d: this.of(b.at).d + 9 });
+				if (
+					this.blocksIn(b, b, b.at, [up], b.t, b.t + 900).worst <= CLIMB_INTO_FT
+				) {
+					this.blockOn(b, undefined, beat(b), offAt, until, carrier, through);
+				} else {
+					this.blockOn(b, pick(b.at), beat(b), offAt, until, carrier, through);
+				}
 				continue;
 			}
 			const near = (x: Actor) => dist(x.posAt(snap + 800), b.at);
@@ -18851,6 +18871,17 @@ class Action {
 				const p = this.of(mate.posAt(time));
 				return this.w({ d: p.d - 0.4, a: p.a + by * DOUBLE_FT });
 			};
+			// (Not in beside him where the ball comes through, for the man
+			// with it to run into: up to the next level instead, off its way
+			// - see blockOn.)
+			let lane = false;
+			for (let c = snap + 800; c <= until && !lane; c += 50) {
+				lane = dist(carrier.posAt(c), beside(c)) < BLOCK_CLEAR_FT;
+			}
+			if (lane) {
+				this.blockOn(b, undefined, beat(b), offAt, until, carrier, through);
+				continue;
+			}
 			// (Off it as he is - not on beside where he goes after it, the
 			// man on him gone.)
 			const upTo = Math.min(
@@ -19167,6 +19198,35 @@ class Action {
 		return { worst, L };
 	}
 
+	// The next stretch of a chase, to `to` by t1: over to one side of it,
+	// a little, if that has him clear of the men in blocks in his way (see
+	// CLIMB_CLEAR_FT) - round them, not on through them.
+	private wayClear(m: Actor, to: Pt, t1: number): Pt {
+		const D = dist(m.at, to);
+		if (t1 <= m.t || D < 1) {
+			return to;
+		}
+		let best = to;
+		let worst = this.blocksIn(m, m, m.at, [to], m.t, t1).worst;
+		if (worst <= CHASE_CLEAR_SLACK_FT) {
+			return to;
+		}
+		const ux = (to.x - m.at.x) / D;
+		const uy = (to.y - m.at.y) / D;
+		for (const off of CHASE_CLEAR_OFF) {
+			const p = { x: to.x - uy * off, y: to.y + ux * off };
+			const w = this.blocksIn(m, m, m.at, [p], m.t, t1).worst;
+			if (w < worst - CHASE_CLEAR_SLACK_FT) {
+				best = p;
+				worst = w;
+			}
+			if (worst <= CHASE_CLEAR_SLACK_FT) {
+				break;
+			}
+		}
+		return best;
+	}
+
 	// Up to `m` straight from where he is, at a climb's pace (met as in
 	// blockOn), no deeper into the men in blocks on the way than
 	// CLIMB_INTO_FT (see CLIMB_CLEAR_FT).
@@ -19303,7 +19363,9 @@ class Action {
 				const nearest = (o: number) => {
 					const p = to(o);
 					let near = Infinity;
-					for (let c = t0; c <= Math.min(until, t1 + 600); c += 50) {
+					// (Through to the end of it: not stood where he gets
+					// to for the man with the ball to come by him there.)
+					for (let c = t0; c <= Math.max(until, t1 + 600); c += 50) {
 						const u = Math.min(1, (c - t0) / (t1 - t0));
 						near = Math.min(
 							near,
