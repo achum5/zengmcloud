@@ -254,6 +254,8 @@ const RAMPS = new Set<Move>(["jog", "run", "sprint"]);
 // as near as he has to), in steps STOP_STEP_MS long (see slower).
 const STOP_ACCEL = 20;
 const STOP_STEP_MS = 100;
+// (A leg shorter than this, ms, eased off from: a sliver - see easeOff.)
+const EASE_SLIVER_MS = 25;
 // (Off a backpedal: see plantBack.)
 const BACK_PLANT_ACCEL = 40;
 // (From no slower than this, ft/s.)
@@ -2564,7 +2566,24 @@ class Actor {
 	// on (see STOP_ACCEL) - bent off to the side of `past` (the pile at the
 	// ball), as little as takes him by it, if he would run on through it.
 	easeOff(most: number, past?: Pt) {
-		const l = this.last;
+		const { legs } = this.part;
+		let li = legs.length - 1;
+		// (Off a sliver of a leg, cut off as it began - see EASE_SLIVER_MS:
+		// the way and the pace of the one it follows on from, not whatever
+		// jump there is in that sliver of it.)
+		const sliver = legs[li];
+		const before = legs[li - 1];
+		if (
+			sliver &&
+			before &&
+			sliver.t1 - sliver.t0 < EASE_SLIVER_MS &&
+			before.t1 === sliver.t0 &&
+			before.t1 - before.t0 >= EASE_SLIVER_MS &&
+			before.move === sliver.move
+		) {
+			li -= 1;
+		}
+		const l = legs[li] ?? this.last;
 		const ms = l.t1 - l.t0;
 		const far = dist(l.from, l.to);
 		if (ms <= 0 || far <= 0) {
@@ -2575,11 +2594,7 @@ class Actor {
 		// what it leaves him going at, if he came into it quicker - see
 		// pace.ts carriedTo - not its own pace.)
 		const act = moveKind(l.move) === "act";
-		const v =
-			(far / (ms / 1000)) *
-			(act
-				? carriedTo(carriedIn(this.part.legs, this.part.legs.length - 1))
-				: 1);
+		const v = (far / (ms / 1000)) * (act ? carriedTo(carriedIn(legs, li)) : 1);
 		const d = Math.min(most, (v * v) / (2 * STOP_ACCEL));
 		if (d < 0.5) {
 			return;
@@ -6049,6 +6064,13 @@ const DOWN_FROM = 0.6;
 // (Or getting up off it, until this far through.)
 const DOWN_RISING = new Set<Move>(["getUp", "getUpBack"]);
 const DOWN_RISING_TILL = 0.5;
+// (In on a pile, down on his knees over it, or laid over the top of it -
+// from DOWN_FROM through going in on it, till half way up off it - the
+// length of his legs this far behind his hips, feet.)
+const PILE_GOING = new Set<Move>(["pileIn", "pileDive"]);
+const PILE_DOWN = new Set<Move>(["overPile", "pileTop"]);
+const PILE_RISING = new Set<Move>(["offPile", "offTop"]);
+const PILE_LEGS = 1.5;
 // (Looked at this often, ms; bent in steps this long; two spells of it
 // this near each other gone round as one. Slower than DOWN_PACE_LEAST
 // ft/s, he is hardly going anywhere - and nowhere clear, round him only
@@ -8092,25 +8114,29 @@ class Action {
 		for (const m of this.men) {
 			let yaw = m.legs[0]?.yaw ?? 0;
 			m.legs.forEach((l, k) => {
-				const t0 = DOWN_ON.has(l.move)
-					? l.t0
-					: DOWN_GOING.has(l.move)
-						? l.t0 + (l.t1 - l.t0) * DOWN_FROM
-						: DOWN_RISING.has(l.move)
-							? l.t0
+				const piled =
+					PILE_GOING.has(l.move) ||
+					PILE_DOWN.has(l.move) ||
+					PILE_RISING.has(l.move);
+				const rising = DOWN_RISING.has(l.move) || PILE_RISING.has(l.move);
+				const t0 =
+					DOWN_ON.has(l.move) || PILE_DOWN.has(l.move) || rising
+						? l.t0
+						: DOWN_GOING.has(l.move) || PILE_GOING.has(l.move)
+							? l.t0 + (l.t1 - l.t0) * DOWN_FROM
 							: undefined;
 				if (t0 !== undefined && l.t1 > snap) {
 					const a = l.yaw ?? yaw;
 					spells.push({
 						m,
 						t0,
-						t1: DOWN_RISING.has(l.move)
+						t1: rising
 							? l.t0 + (l.t1 - l.t0) * DOWN_RISING_TILL
 							: k === m.legs.length - 1
 								? Infinity
 								: l.t1,
 						yaw: LIE_BACKWARD.has(l.move) ? a + Math.PI : a,
-						back: DOWN_RISING.has(l.move) ? LIE_BACK : DOWN_LEGS,
+						back: rising ? LIE_BACK : piled ? PILE_LEGS : DOWN_LEGS,
 					});
 				}
 				yaw = yawOf(l, yaw);
@@ -8185,15 +8211,31 @@ class Action {
 		// (When, from a to b, a man comes down on m where he stands - clear of
 		// anybody down as he stood there, with STEP_OFF_LEAST_MS of it left.)
 		const landsOn = (m: Actor, a: number, b: number) => {
-			for (const l of m.legs) {
+			const { legs } = m;
+			for (let i = 0; i < legs.length; i++) {
+				const l = legs[i]!;
 				if (l.t1 <= a || l.t0 >= b) {
 					continue;
 				}
 				if (l.from.x !== l.to.x || l.from.y !== l.to.y) {
 					continue;
 				}
+				// (Stood there over more than one leg - easy, getting his
+				// breath, say: as one.)
+				const same = (n: Leg) =>
+					n.from.x === l.from.x &&
+					n.from.y === l.from.y &&
+					n.to.x === l.from.x &&
+					n.to.y === l.from.y;
+				while (
+					i + 1 < legs.length &&
+					legs[i + 1]!.t0 === legs[i]!.t1 &&
+					same(legs[i + 1]!)
+				) {
+					i++;
+				}
 				const s0 = Math.max(l.t0, a);
-				const till = Math.min(l.t1, b) - STEP_OFF_LEAST_MS;
+				const till = Math.min(legs[i]!.t1, b) - STEP_OFF_LEAST_MS;
 				if (till <= s0 || nearDown(m, s0, l.from).near < DOWN_CLEAR) {
 					continue;
 				}
@@ -8206,7 +8248,8 @@ class Action {
 			return undefined;
 		};
 		// (Free to go another way, or to stand somewhere else: on his way,
-		// or stood about, nobody's to mind - not with the ball, not on
+		// or stood about - at something of his own where he stands, a fist
+		// pumped, say - nobody's to mind - not with the ball, not on
 		// anybody; or driving on at nobody on his feet there, into a man
 		// gone down.)
 		const free = (m: Actor, l: Leg) =>
@@ -8217,7 +8260,7 @@ class Action {
 				? l.t1 > l.t0 && !this.onSomebody(m, l)
 				: !touching(l) &&
 					(l.from.x === l.to.x && l.from.y === l.to.y
-						? moveKind(l.move) === "still" || moveKind(l.move) === "loop"
+						? moveKind(l.move) !== "cycle"
 						: ROUNDS.has(l.move) && l.t1 > l.t0));
 		for (const m of this.men) {
 			// (Where he is when the ball comes to him or leaves him, left be.)
@@ -8311,6 +8354,27 @@ class Action {
 		) => { near: number; mid?: Pt; out?: number; who?: Actor },
 		crowds: (m: Actor, t: number, q: Pt, p: Pt) => boolean,
 	) {
+		// (Stood there over more than one leg alike - split up along the
+		// way: as the one.)
+		const k0 = m.legs.findIndex((l) => l.t0 === c0);
+		const l0 = m.legs[k0];
+		if (l0 && l0.from.x === l0.to.x && l0.from.y === l0.to.y) {
+			const like = (l: Leg) => JSON.stringify({ ...l, t0: 0, t1: 0 });
+			const was = like(l0);
+			let k = k0 + 1;
+			while (
+				k < m.legs.length &&
+				m.legs[k]!.t0 === m.legs[k - 1]!.t1 &&
+				m.legs[k]!.t1 <= c1 &&
+				like(m.legs[k]!) === was
+			) {
+				k++;
+			}
+			if (k > k0 + 1) {
+				l0.t1 = m.legs[k - 1]!.t1;
+				m.legs.splice(k0 + 1, k - k0 - 1);
+			}
+		}
 		const lead = m.legs.find((l) => l.t0 === c0);
 		const stood = lead ? Math.min(lead.t1, c1) - c0 : 0;
 		const stepTo =
