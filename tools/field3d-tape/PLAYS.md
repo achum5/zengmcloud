@@ -396,7 +396,13 @@ turned to him as he goes.
 Now (50 men hurt): on his back 36, on his face 14; waved out 28; helped off
 36, on his own 14; clapped off by 3 or more 35, by both sides 32.
 
-To do: a cart for a bad one (the sim gives no word of how bad). (Not the
+How bad it is, where the box score says (the game knows by the time it is
+shown): off on his own from a knock that keeps him out a week or none,
+helped off from worse, down with the trainers longer from one that keeps
+him out a long time; both hands to his helmet for his head or neck, an arm
+held for a hand or an arm (the 3D court's hurt men the same way).
+
+To do: a cart for a bad one. (Not the
 crowd standing to clap him off: the picture over him going off looks down
 at the field, no stands in it.)
 
