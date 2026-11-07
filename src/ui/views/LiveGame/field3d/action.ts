@@ -2716,7 +2716,10 @@ class Actor {
 	// under it, there as soon as he would have been at it - or, too near
 	// to get down to it, as hard as it takes by the time he is there,
 	// STOP_HARD at most. (How far of it that takes him, and the pace he is
-	// down to.)
+	// down to.) To be there no sooner than T - `due` - with no room to get
+	// down to a pace to go on at: slowed over all of it as evenly as has
+	// him there then (STOP_HARD at most), in at what that leaves him - not
+	// down to that pace short of it and walked the rest.
 	private slowOn(
 		to: Pt,
 		far: number,
@@ -2724,6 +2727,7 @@ class Actor {
 		v0: number,
 		move?: Move,
 		yaw?: number,
+		due = false,
 	): { gone: number; on: number } {
 		const from = this.at;
 		const len = dist(from, to);
@@ -2739,8 +2743,18 @@ class Actor {
 		// it there, the rest of it in his first stride - not left to stop
 		// dead from there.)
 		let v = v0;
+		const even = (2 * (v0 * T - far)) / (T * T);
 		const need = (v0 * v0 - on * on) / (2 * far);
-		if (need > A) {
+		if (
+			due &&
+			on === fps &&
+			even > 0 &&
+			even <= A * STOP_HARD &&
+			v0 - even * T >= 0
+		) {
+			A = even;
+			on = v0 - even * T;
+		} else if (need > A) {
 			A = Math.min(A * STOP_HARD, need);
 			v = Math.min(v0, Math.sqrt(on * on + 2 * A * far));
 		}
@@ -2943,7 +2957,7 @@ class Actor {
 			T * 1000 >= RAMP_LEG_MS &&
 			this.slows(move)
 		) {
-			const { gone } = this.slowOn(p, S, T, into, move, yaw);
+			const { gone } = this.slowOn(p, S, T, into, move, yaw, true);
 			const u = S / far;
 			if (S - gone > 0.01 && t1 > this.t) {
 				this.go(
@@ -3001,7 +3015,7 @@ class Actor {
 			this.slows(move) &&
 			this.last.t1 - this.part.legs[this.stretchFrom()]!.t0 < RAMP_LEG_MS
 		) {
-			const { gone } = this.slowOn(end, S, T, into, move, yaw);
+			const { gone } = this.slowOn(end, S, T, into, move, yaw, true);
 			if (S - gone > 0.01 && t1 > this.t) {
 				this.go(end, t1, move, yaw);
 			}
@@ -11848,7 +11862,20 @@ class Action {
 			run.unshift(x);
 		}
 		const span = run.reduce((d, x) => d + dist(x.from, x.to), 0);
-		if (span > 1 && ramp) {
+		// (Going a good deal quicker than all of it slowed would have him
+		// going, as it starts - the ball taken on the run, say: slowed the
+		// more the further along it, as below - not down to its pace in a
+		// stride as he takes it.)
+		const before = run[0] && m.legs[m.legs.indexOf(run[0]) - 1];
+		const eased =
+			ramp ||
+			(span > 1 &&
+				before !== undefined &&
+				before.t1 === run[0]!.t0 &&
+				GAITS.has(before.move) &&
+				legPace(before) - span / ((l.t1 - run[0]!.t0 + ms) / 1000) >=
+					SLOW_DROP);
+		if (span > 1 && eased) {
 			// (Or slowed the more the further along it he is - off quick from
 			// where he had it, down by the end of it into the men who bring him
 			// down: not slowed the whole way, nor all of it in the last stretch.
@@ -14245,7 +14272,16 @@ class Action {
 						x: pt.x + ((m.at.x - pt.x) / far) * ring,
 						y: pt.y + ((m.at.y - pt.y) / far) * ring,
 					};
-					m.plantFor(to);
+					// (Round to it easing off toward the pace that has him there,
+					// if he can be - see Actor.turnFor - not round it flat out
+					// and pulled up hard after.)
+					m.turnFor(
+						to,
+						Math.min(
+							m.top * WITH_IT_PACE,
+							dist(m.at, to) / Math.max(0.001, (by - m.t) / 1000),
+						),
+					);
 					m.chase(to, by, m.top * WITH_IT_PACE);
 				} else if (t - 300 - m.t >= ROUTE_AFTER_LEAST_MS) {
 					// (Where it ends up already: out to meet it, and back with
