@@ -716,9 +716,9 @@ const spreadRound = (angles: number[], gap: number): number[] => {
 	return out;
 };
 
-// (Or as far as `roam` past a sideline.)
-const onField = (p: Pt, roam = 0): Pt => ({
-	x: clamp(p.x, 1, FIELD_L - 1),
+// (Or as far as `roam` past a sideline, `endRoam` past an end line.)
+const onField = (p: Pt, roam = 0, endRoam = 0): Pt => ({
+	x: clamp(p.x, 1 - endRoam, FIELD_L - 1 + endRoam),
 	y: clamp(p.y, 1 - roam, FIELD_W - 1 + roam),
 });
 
@@ -750,6 +750,9 @@ class Actor {
 	yaw: number;
 	// How far past a sideline he may go: out of bounds.
 	roam = 0;
+	// And past an end line: eased off out the back of the end zone (see
+	// easeOff).
+	endRoam = 0;
 	// Till when where he has been is fixed - where he takes the ball, say:
 	// no turn after it is bent into short of where he was then (see
 	// bendInto).
@@ -1033,7 +1036,7 @@ class Actor {
 			for (let i = 1; i <= n; i++) {
 				const q = r0 + (s * round * i) / n;
 				const p = { x: c.x + Math.cos(q) * R, y: c.y + Math.sin(q) * R };
-				if (dist(onField(p, this.roam), p) > 1e-6) {
+				if (dist(onField(p, this.roam, this.endRoam), p) > 1e-6) {
 					return false;
 				}
 			}
@@ -1251,7 +1254,7 @@ class Actor {
 		for (let i = 1; i <= n; i++) {
 			const q = a0 + (s * sweep * i) / n;
 			const p = { x: o.x + Math.cos(q) * R, y: o.y + Math.sin(q) * R };
-			if (dist(onField(p, this.roam), p) > 1e-6) {
+			if (dist(onField(p, this.roam, this.endRoam), p) > 1e-6) {
 				return false;
 			}
 			pts.push(p);
@@ -1875,7 +1878,7 @@ class Actor {
 		extra?: Partial<Leg>,
 	): Leg {
 		const l = this.last;
-		const p = onField(to, this.roam);
+		const p = onField(to, this.roam, this.endRoam);
 		const t0 = l.t1;
 		const end = Math.max(t1, t0 + 1);
 		const fps = dist(l.to, p) / ((end - t0) / 1000);
@@ -2270,9 +2273,9 @@ class Actor {
 		const hi = FIELD_W - 1 + this.roam;
 		const xs =
 			cos < -1e-9
-				? (p.x - 1) / -cos
+				? (p.x - 1 + this.endRoam) / -cos
 				: cos > 1e-9
-					? (FIELD_L - 1 - p.x) / cos
+					? (FIELD_L - 1 + this.endRoam - p.x) / cos
 					: Infinity;
 		const ys =
 			sin < -1e-9
@@ -2637,12 +2640,14 @@ class Actor {
 				steps = stepsOf(side * bend);
 			}
 		}
-		// (Into the edge of where he can go - an end line, a sideline he is
-		// not let over: turned along it as he slows, sooner the nearer it
-		// is - not stopped dead against it.)
+		// (Into the edge of where he can go - a few feet over an end line
+		// (see EASE_END_FT), a sideline he is not let over: turned along it
+		// as he slows, sooner the nearer it is - not stopped dead against
+		// it.)
+		const endOver = Math.max(this.endRoam, EASE_END_FT);
 		const inside = (p: Pt) =>
-			p.x >= 1 &&
-			p.x <= FIELD_L - 1 &&
+			p.x >= 1 - endOver &&
+			p.x <= FIELD_L - 1 + endOver &&
 			p.y >= 1 - this.roam &&
 			p.y <= FIELD_W - 1 + this.roam;
 		// (Over it already - no way back in on the way he goes.)
@@ -2651,7 +2656,7 @@ class Actor {
 		}
 		const out = steps.find((p) => !inside(p));
 		if (out) {
-			const end = out.x < 1 || out.x > FIELD_L - 1;
+			const end = out.x < 1 - endOver || out.x > FIELD_L - 1 + endOver;
 			const offOf = (a: number) =>
 				Math.atan2(Math.sin(a - way), Math.cos(a - way));
 			const [a, b] = (end ? [Math.PI / 2, -Math.PI / 2] : [0, Math.PI]).map(
@@ -2674,6 +2679,12 @@ class Actor {
 					break;
 				}
 			}
+		}
+		for (const p of steps) {
+			this.endRoam = Math.max(
+				this.endRoam,
+				Math.min(endOver, Math.max(1 - p.x, p.x - (FIELD_L - 1))),
+			);
 		}
 		for (let i = 0; i < n; i++) {
 			this.go(
@@ -2852,7 +2863,7 @@ class Actor {
 	// (On the move already, and that a good deal quicker: up to it first -
 	// see RAMP_ACCEL - there the later for it.)
 	run(to: Pt, fps: number, move?: Move, yaw?: number): number {
-		const p = onField(to, this.roam);
+		const p = onField(to, this.roam, this.endRoam);
 		if (move === undefined || RAMPS.has(move)) {
 			if (!(fps < BEND_PACE ? this.bendSlow(p, fps) : this.bendInto(p, fps))) {
 				this.bendOut(p);
@@ -2908,7 +2919,7 @@ class Actor {
 	// As run, to stop there: pulled up over the last of it, hard (see
 	// STOP_HARD) - not stopped dead off it.
 	runUp(to: Pt, fps: number, move?: Move): number {
-		const p = onField(to, this.roam);
+		const p = onField(to, this.roam, this.endRoam);
 		const far = dist(this.at, p);
 		const ease = Math.min(
 			far * 0.5,
@@ -2959,7 +2970,7 @@ class Actor {
 	}
 
 	private chaseOn(to: Pt, t1: number, fps: number, move?: Move, yaw?: number) {
-		const p = onField(to, this.roam);
+		const p = onField(to, this.roam, this.endRoam);
 		if (move === undefined || RAMPS.has(move)) {
 			this.bendInto(
 				p,
@@ -3062,7 +3073,7 @@ class Actor {
 	// but as hard as it takes to get up to it (see rampInto), somewhere he
 	// has to be: under a kick coming down, say.
 	press(to: Pt, t1: number, fps: number, move?: Move, yaw?: number) {
-		const p = onField(to, this.roam);
+		const p = onField(to, this.roam, this.endRoam);
 		const from = this.at;
 		const far = dist(from, p);
 		const room = (fps * Math.max(0, t1 - this.t)) / 1000;
@@ -3101,7 +3112,7 @@ class Actor {
 	// that gets him by t1, short of it - not shot off at it from nothing to
 	// full tilt in a stride.
 	pressUp(to: Pt, t1: number, fps: number, move?: Move, yaw?: number) {
-		const p = onField(to, this.roam);
+		const p = onField(to, this.roam, this.endRoam);
 		const far = dist(this.at, p);
 		const into = this.paceInto(p);
 		const v0 = into ?? 0;
@@ -3367,7 +3378,7 @@ class Actor {
 	// it from the pace he was going at (see RAMP_ACCEL) as he goes: there,
 	// or as far as that gets him.
 	chaseUp(to: Pt, t1: number, fps: number, move?: Move) {
-		const p = onField(to, this.roam);
+		const p = onField(to, this.roam, this.endRoam);
 		// (Planted first, well round from the way he is going - all the
 		// time there is, maybe - and down to no quicker than he goes on at
 		// after it: not planted at a run and off at a walk.)
@@ -3405,6 +3416,7 @@ class Actor {
 					onField(
 						{ x: this.at.x + ux! * ft, y: this.at.y + uy! * ft },
 						this.roam,
+						this.endRoam,
 					),
 					t1,
 					l.move,
@@ -3528,7 +3540,7 @@ class Actor {
 			t0: l.t1,
 			t1: Math.max(t1, l.t1 + 1),
 			from: l.to,
-			to: to ? onField(to, this.roam) : l.to,
+			to: to ? onField(to, this.roam, this.endRoam) : l.to,
 			move,
 			yaw: yaw ?? this.yaw,
 		});
@@ -4561,6 +4573,10 @@ const EASE_PAST_FT = 3.5;
 // round, or toward the middle when the two are within this much, radians.)
 const EASE_EDGE_BY = [1, 0.6, 0.35, 0.2, 0.1] as const;
 const EASE_EDGE_TIE = 0.2;
+// (An end line, though, he may ease off over, out the back of the end
+// zone - this much further than he can otherwise go, feet: short of the
+// posts' pads and the photographers behind it - see scene.ts, media.ts.)
+export const EASE_END_FT = 4;
 // (Carrying on the way he was going, before he eases off, ms - see carryOn.)
 const CARRY_MOST_MS = 500;
 // (Broken down a few steps off a man to hit, this long at least - see

@@ -3,7 +3,7 @@ import processLiveGameEvents, {
 	DEFAULT_SPORT_STATE,
 	type SportState,
 } from "../../../util/processLiveGameEvents.football.tsx";
-import { HERO_CAM_FT } from "./action.ts";
+import { EASE_END_FT, HERO_CAM_FT } from "./action.ts";
 import { aimFor, glideAim, leadAim, type Glide, type Lead } from "./aim.ts";
 import { FIGURE_SCALE } from "./body.ts";
 import { GREET_CAM_FT } from "./greet.ts";
@@ -184,15 +184,17 @@ describe("compileField", () => {
 					assert.isFalse(on.has(part.pid), `${part.pid} on twice`);
 					on.add(part.pid);
 					// (A man hurt on it off to his sideline - see "a man hurt". A
-					// man run out of bounds, a stride or two over a sideline.)
+					// man run out of bounds, a stride or two over a sideline - or
+					// eased off out the back of an end zone, a step or two over
+					// the end line.)
 					const hurt = part.legs.some(
 						(l) => l.move === "hurt" || l.move === "hurtProne",
 					);
 					for (const leg of hurt ? [] : part.legs) {
 						for (const p of [leg.from, leg.to]) {
 							assert.isTrue(
-								p.x >= 0 &&
-									p.x <= FIELD_L &&
+								p.x >= -EASE_END_FT &&
+									p.x <= FIELD_L + EASE_END_FT &&
 									p.y >= -OUT_OF_BOUNDS &&
 									p.y <= FIELD_W + OUT_OF_BOUNDS,
 								`${part.pid} at ${p.x}, ${p.y}`,
