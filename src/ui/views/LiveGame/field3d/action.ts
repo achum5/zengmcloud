@@ -5263,6 +5263,12 @@ const BACK_SET_OUT = 4;
 // straight behind the quarterback than this; set up in front of him this
 // much or more, as near as that.)
 const BACK_LANE_LEAST = 2;
+// (Or in the gap in the line the man he picks up comes through, no further
+// out than this (feet) from the quarterback - out past the last man on the
+// line this far - his way in crossing it this deep (feet).)
+const BACK_GAP_MOST = 9;
+const BACK_GAP_OUT = 2.5;
+const BACK_GAP_LINE = 4;
 const BACK_LANE_AHEAD = 2;
 const BACK_OFF_LINE = 9;
 // (Further off it than this (feet): up into it at a run, at no more than
@@ -5714,6 +5720,11 @@ const EDGE_GIVE = 2.5;
 const EDGE_GIVE_FPS = 1.2;
 // (Up the arc onto him bent through so many points.)
 const EDGE_ARC_PTS = 6;
+// (A rusher from off the ball onto a back kept in, straight at him through
+// the men on the line: in through the gap this far (feet) to one side or
+// the other of the worst of it, the nearest that has him clear - see
+// Action.rushGap.)
+const RUSH_GAP_OFF = [2, -2, 3.5, -3.5, 5, -5] as const;
 // A twist this often on a pass play with this long to rush (ms): an end and
 // the man inside him next on the line (no further apart than this, feet -
 // and their blockers no further apart than this, side by side) swapping
@@ -16697,6 +16708,119 @@ class Action {
 		return m ? clamp((m.flair.rush ?? 0) - (b.flair.block ?? 0), -1, 1) : 0;
 	}
 
+	// When a rusher straight off the ball gets to `on` (where he takes his
+	// man on, at t) - see passRush.
+	private rushHitT(
+		m: Actor,
+		least: number,
+		offMs: (far: number) => number,
+		on: (t: number, lat: number) => Pt,
+	): number {
+		let t1 = least;
+		for (let k = 0; k < 2; k++) {
+			t1 = Math.max(least, m.t + offMs(dist(m.at, on(t1, 0))));
+		}
+		return t1;
+	}
+
+	// A rusher's way from where he is to `hit` by t1, through the men on
+	// the line - in blocks, or set for them (not `b`, the man he is on):
+	// the point beside the worst of it, RUSH_GAP_OFF over, to bend his way
+	// through (see curve), that has him clear of them, or the most clear -
+	// none, clear already, or nothing clearer.
+	private rushGap(m: Actor, b: Actor, hit: Pt, t1: number): Pt | undefined {
+		const D = dist(m.at, hit);
+		if (D < 1 || t1 <= m.t) {
+			return undefined;
+		}
+		const into = (pts: Pt[], T1: number) => {
+			const all = [m.at, ...pts];
+			const lens = [0];
+			for (let i = 1; i < all.length; i++) {
+				lens.push(lens[i - 1]! + dist(all[i - 1]!, all[i]!));
+			}
+			const L = lens.at(-1)!;
+			let worst = 0;
+			let at = hit;
+			for (let c = m.t + CLIMB_LOOK_MS; c < T1; c += CLIMB_LOOK_MS) {
+				const g = (L * (c - m.t)) / (T1 - m.t);
+				const k = Math.max(
+					1,
+					lens.findIndex((x) => x >= g),
+				);
+				const p0 = all[k - 1]!;
+				const p1 = all[k] ?? p0;
+				const g0 = lens[k - 1]!;
+				const u = lens[k]! > g0 ? clamp((g - g0) / (lens[k]! - g0), 0, 1) : 1;
+				const p = { x: p0.x + (p1.x - p0.x) * u, y: p0.y + (p1.y - p0.y) * u };
+				for (const x of this.men) {
+					if (x === m || x === b) {
+						continue;
+					}
+					const l = legAt(x, c);
+					if (!LINE_PLAY.has(l.move) && l.move !== "passSet") {
+						continue;
+					}
+					const w = CLIMB_CLEAR_FT - dist(x.posAt(c), p);
+					if (w > worst) {
+						worst = w;
+						at = p;
+					}
+				}
+			}
+			return { worst, at, L };
+		};
+		const straight = into([hit], t1);
+		if (straight.worst <= CHASE_CLEAR_SLACK_FT) {
+			return undefined;
+		}
+		const ux = (hit.x - m.at.x) / D;
+		const uy = (hit.y - m.at.y) / D;
+		let best: Pt | undefined;
+		let worst = straight.worst;
+		for (const k of RUSH_GAP_OFF) {
+			const via = {
+				x: straight.at.x - uy * k,
+				y: straight.at.y + ux * k,
+			};
+			const pts = this.curve(
+				m.at,
+				{
+					x: 2 * via.x - (m.at.x + hit.x) / 2,
+					y: 2 * via.y - (m.at.y + hit.y) / 2,
+				},
+				hit,
+				EDGE_ARC_PTS,
+			);
+			// (Never out past where he hits and back, nor in on him turned
+			// further off his way than QB_HIT_ROUND_END.)
+			const last = pts.at(-2) ?? m.at;
+			const ax = hit.x - last.x;
+			const ay = hit.y - last.y;
+			if (
+				pts.some((p) => (p.x - m.at.x) * ux + (p.y - m.at.y) * uy > D) ||
+				ax * ux + ay * uy < Math.hypot(ax, ay) * Math.cos(QB_HIT_ROUND_END)
+			) {
+				continue;
+			}
+			let L = 0;
+			let was = m.at;
+			for (const p of pts) {
+				L += dist(was, p);
+				was = p;
+			}
+			const w = into(pts, m.t + ((t1 - m.t) * L) / D).worst;
+			if (w < worst - CHASE_CLEAR_SLACK_FT) {
+				best = via;
+				worst = w;
+			}
+			if (worst <= CHASE_CLEAR_SLACK_FT) {
+				break;
+			}
+		}
+		return best;
+	}
+
 	// Each rusher on a blocker (`pair`, the one the sim says got home on the
 	// one who gave it up): off the ball, into him, the two of them giving
 	// ground a step at a time back toward the quarterback - the pocket -
@@ -16815,6 +16939,26 @@ class Action {
 		// back kept in, up beside the quarterback (two of them, one either
 		// side of him) - but never up in among the line.
 		const backSides = new Set<number>();
+		// (The gaps in the line as it sets - halfway between each man on it
+		// and the next, and out past the last either side: see BACK_GAP_OUT.)
+		const lineAs = blockers
+			.filter(
+				(b) => !this.done.has(b.pid) && (OL.has(b.role) || b.role === "TE"),
+			)
+			.map((b) => {
+				const s = this.of(b.at);
+				const tackle = b.role === "LT" || b.role === "RT" || b.role === "TE";
+				return s.a + (tackle ? Math.sign(s.a) * 2 : 0);
+			})
+			.sort((x, y) => x - y);
+		const gaps =
+			lineAs.length > 0
+				? [
+						lineAs[0]! - BACK_GAP_OUT,
+						...lineAs.slice(1).map((a, i) => (a + lineAs[i]!) / 2),
+						lineAs.at(-1)! + BACK_GAP_OUT,
+					]
+				: [];
 		for (const b of blockers) {
 			if (this.done.has(b.pid)) {
 				continue;
@@ -16853,9 +16997,28 @@ class Action {
 							: side;
 				backSides.add(side);
 			}
-			const lane = his
+			// (In the gap he comes through - where his way in to the pocket
+			// crosses the line as it sets - not stood behind a man on it, for
+			// him to be met in among the line: no further out than
+			// BACK_GAP_MOST.)
+			let lane = his
 				? side * clamp(Math.abs(off), least, BACK_SET_OUT)
 				: undefined;
+			if (his && lane !== undefined && gaps.length > 0) {
+				const h = this.of(his.at);
+				const lineD = Math.max(pocket.d + 4, -BACK_GAP_LINE);
+				const u =
+					h.d > pocket.d ? clamp((h.d - lineD) / (h.d - pocket.d), 0, 1) : 1;
+				const cross = h.a + (pocket.a - h.a) * u;
+				const gap = gaps.reduce((x, y) =>
+					Math.abs(y - cross) < Math.abs(x - cross) ? y : x,
+				);
+				const g = gap - pocket.a;
+				if (Math.abs(g) >= least && Math.abs(g) <= BACK_GAP_MOST) {
+					lane = g;
+					side = Math.sign(g) || side;
+				}
+			}
 			this.offSnap(b, GET_OFF_MS, GET_OFF_SPREAD_MS);
 			// (A back through a fake already: set where it left him.)
 			const setPt =
@@ -17033,6 +17196,18 @@ class Action {
 				: 0;
 			const hitLat = mid + (r() - 0.5) * 0.6;
 			let vHit = 0;
+			// (A man from off the ball onto a back kept in: straight at him
+			// through the men on the line - in blocks, or set for them - in
+			// through the gap beside them instead (see RUSH_GAP_OFF), bent
+			// round them, not run through them.)
+			if (!first && !edge && (b.role === "RB" || b.role === "FB")) {
+				under = this.rushGap(
+					m,
+					b,
+					on(this.rushHitT(m, least, offMs, on), hitLat),
+					this.rushHitT(m, least, offMs, on),
+				);
+			}
 			// (On a twist, round behind the man going first by more if he
 			// has got into the way of it since - see TWIST_ROOM_FT.)
 			for (const wider of TWIST_WIDER_FT) {
@@ -17348,6 +17523,26 @@ class Action {
 				(t) => dist(from, spot(t)) <= (HELP_ON_FPS * (t - go)) / 1000,
 			);
 			if (k < 0) {
+				continue;
+			}
+			// (Not into the way of a back picking up a man from off the ball
+			// - where they meet - if he is clearer of them where he is.)
+			const backs = locks.filter((x) => x.b.role === "RB" || x.b.role === "FB");
+			const nearest = (at: (t: number) => Pt) => {
+				let w = Infinity;
+				for (const t of ts.slice(k)) {
+					for (const x of backs) {
+						w = Math.min(
+							w,
+							dist(at(t), x.m.posAt(t)),
+							dist(at(t), x.b.posAt(t)),
+						);
+					}
+				}
+				return w;
+			};
+			const there = nearest(spot);
+			if (there < CLIMB_CLEAR_FT && there < nearest((t) => f.posAt(t))) {
 				continue;
 			}
 			helped.add(lock.m);
