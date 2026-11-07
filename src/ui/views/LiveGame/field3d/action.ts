@@ -4673,9 +4673,15 @@ const GIVE_WAY_FPS = 6;
 const GIVE_WAY_MS = 500;
 const GIVE_WAY_EASE_FT = 2.5;
 const GIVE_WAY_EASE_LEAST = 3;
-// (A stretch of the chase moved over this far, either way - the nearest
-// first - to keep him round men in blocks: see wayClear.)
-const CHASE_CLEAR_OFF = [1.5, -1.5, 3, -3] as const;
+// (A stretch of the chase turned this far off, either way - the least
+// first - to keep him round men in blocks: see wayClear. Looked on along
+// it CHASE_LOOK_MS past its end; turned no further off the way he goes
+// than CHASE_TURN_MOST, if he is going - not planted for it; men going
+// slower than CHASE_STILL_FPS, ft/s, kept round too.)
+const CHASE_CLEAR_TURN = [0.15, -0.15, 0.3, -0.3, 0.45, -0.45] as const;
+const CHASE_LOOK_MS = 500;
+const CHASE_TURN_MOST = 0.5;
+const CHASE_STILL_FPS = 4;
 const CHASE_CLEAR_SLACK_FT = 0.3;
 // (Given up, or at the whistle: pulled up no more than this far on - feet;
 // bent round off the pile at the ball, if it is in the way, by as little of
@@ -13638,12 +13644,18 @@ class Action {
 								y: m.at.y + him.y - now.y - Math.sin(a) * by,
 							},
 							c,
+							m.top * PURSUIT_PACE,
 						),
 						c,
 						m.top * PURSUIT_PACE,
 					);
 					continue;
 				}
+				const fps = clamp(
+					need * PURSUIT_URGE,
+					m.top * 0.45,
+					m.top * PURSUIT_PACE,
+				);
 				m.chaseUp(
 					this.wayClear(
 						m,
@@ -13652,13 +13664,18 @@ class Action {
 							y: him.y + Math.sin(a) * off + (him.x - was.x) * side,
 						},
 						c,
+						fps,
 					),
 					c,
-					clamp(need * PURSUIT_URGE, m.top * 0.45, m.top * PURSUIT_PACE),
+					fps,
 				);
 			}
 			const went = m.t;
-			m.chaseUp(this.wayClear(m, end(), arrive), arrive, m.top * 0.95);
+			m.chaseUp(
+				this.wayClear(m, end(), arrive, m.top * 0.95),
+				arrive,
+				m.top * 0.95,
+			);
 			// (Pulled up as he gets there - not stopped dead in a stride,
 			// off to the side of the pile if it is in his way - and from short
 			// of the men about the ball, if that has him pulled up in them.)
@@ -13739,6 +13756,7 @@ class Action {
 						m,
 						{ x: him.x + Math.cos(a) * ring, y: him.y + Math.sin(a) * ring },
 						c,
+						pace,
 					),
 					c,
 					pace,
@@ -19579,33 +19597,86 @@ class Action {
 		return { worst, L };
 	}
 
-	// The next stretch of a chase, to `to` by t1: over to one side of it,
-	// a little, if that has him clear of the men in blocks in his way (see
-	// CLIMB_CLEAR_FT) - round them, not on through them.
-	private wayClear(m: Actor, to: Pt, t1: number): Pt {
+	// The next stretch of a chase, to `to` by t1 at `fps`: turned a little
+	// off it, if that has him clear of the men in blocks ahead of him, and
+	// any stood about (see CLIMB_CLEAR_FT) - over as far as he gets toward
+	// it by then, and on the same way CHASE_LOOK_MS more: round them in good
+	// time, not on into them (and planted for the next of it in them).
+	private wayClear(m: Actor, to: Pt, t1: number, fps: number): Pt {
 		const D = dist(m.at, to);
-		if (t1 <= m.t || D < 1) {
+		if (t1 <= m.t || D < 1 || !(fps > 0)) {
 			return to;
 		}
-		let best = to;
-		let worst = this.blocksIn(m, m, m.at, [to], m.t, t1).worst;
+		const ms = t1 + CHASE_LOOK_MS - m.t;
+		const v = Math.min(fps, (D * 1000) / (t1 - m.t));
+		const ux = (to.x - m.at.x) / D;
+		const uy = (to.y - m.at.y) / D;
+		// (The men in blocks, and those stood about - or near enough - by
+		// then: where he is as he goes, up to his pace from what he carries
+		// that way - see RAMP_ACCEL.)
+		const into = (turn: number) => {
+			const vx = ux * Math.cos(turn) - uy * Math.sin(turn);
+			const vy = uy * Math.cos(turn) + ux * Math.sin(turn);
+			const v0 = Math.min(
+				v,
+				paceOn(m.last, m.at, { x: m.at.x + vx, y: m.at.y + vy }),
+			);
+			const up = (v - v0) / RAMP_ACCEL;
+			let worst = 0;
+			for (let c = m.t + CLIMB_LOOK_MS; c < m.t + ms; c += CLIMB_LOOK_MS) {
+				const s = Math.min((c - m.t) / 1000, up);
+				const d =
+					v0 * s + (RAMP_ACCEL * s * s) / 2 + v * ((c - m.t) / 1000 - s);
+				const p = { x: m.at.x + vx * d, y: m.at.y + vy * d };
+				for (const x of this.men) {
+					const l = legAt(x, c);
+					if (
+						x !== m &&
+						(LINE_PLAY.has(l.move) ||
+							(c <= x.t && legPace(l) < CHASE_STILL_FPS))
+					) {
+						worst = Math.max(worst, CLIMB_CLEAR_FT - dist(x.posAt(c), p));
+					}
+				}
+			}
+			return worst;
+		};
+		let worst = into(0);
 		if (worst <= CHASE_CLEAR_SLACK_FT) {
 			return to;
 		}
-		const ux = (to.x - m.at.x) / D;
-		const uy = (to.y - m.at.y) / D;
-		for (const off of CHASE_CLEAR_OFF) {
-			const p = { x: to.x - uy * off, y: to.y + ux * off };
-			const w = this.blocksIn(m, m, m.at, [p], m.t, t1).worst;
+		// (No further round from the way he is going than CHASE_TURN_MOST,
+		// or than it was - not planted or cut hard for it.)
+		const l = m.last;
+		const goes = Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x);
+		const way = Math.atan2(uy, ux);
+		const most =
+			dist(l.from, l.to) > 0 && legPace(l) >= STOP_LEAST
+				? Math.max(CHASE_TURN_MOST, Math.abs(angleOff(way - goes)))
+				: Infinity;
+		let best = 0;
+		for (const turn of CHASE_CLEAR_TURN) {
+			if (Math.abs(angleOff(way + turn - goes)) > most) {
+				continue;
+			}
+			const w = into(turn);
 			if (w < worst - CHASE_CLEAR_SLACK_FT) {
-				best = p;
+				best = turn;
 				worst = w;
 			}
 			if (worst <= CHASE_CLEAR_SLACK_FT) {
 				break;
 			}
 		}
-		return best;
+		if (best === 0) {
+			return to;
+		}
+		const c = Math.cos(best);
+		const s = Math.sin(best);
+		return {
+			x: m.at.x + (ux * c - uy * s) * D,
+			y: m.at.y + (uy * c + ux * s) * D,
+		};
 	}
 
 	// Up to `m` straight from where he is, at a climb's pace (met as in
@@ -19690,11 +19761,6 @@ class Action {
 		return best?.pts;
 	}
 
-	// A back out of the backfield on his route from t0: round the men on the
-	// line - in blocks, or set for them - on his way out past it, if he
-	// would go through them (see RELEASE_INTO_FT): bent out round them as
-	// quick as he went (see bend), and on with his route from past it as it
-	// was. No later than `by`.
 	// A back out of the backfield on his route from t0: round the men on the
 	// line - in blocks, or set for them - on his way out past it, if he
 	// would go through them (see RELEASE_INTO_FT): bent out round them as
@@ -21136,6 +21202,7 @@ class Action {
 							y: m.at.y + ball.y - now.y + Math.sin(a) * out,
 						},
 						c,
+						fps,
 					),
 					c,
 					fps,
@@ -21149,6 +21216,7 @@ class Action {
 					m,
 					{ x: ball.x + Math.cos(a) * keep, y: ball.y + Math.sin(a) * keep },
 					c,
+					fps,
 				),
 				c,
 				fps,
