@@ -295,6 +295,10 @@ const BEND_STEP = 0.2;
 const BEND_LEAST_FT = 0.5;
 // (Slowed into it, if he cannot take it at as much as this of his pace.)
 const BEND_SLOW = 0.9;
+// (Not bent round at all, if even slowed into it that leaves him taking it
+// at more than this many times as quick as he can: too tight a turn for
+// his pace - a hairpin at a sprint - planted for instead.)
+const BEND_TOO_QUICK = 1.4;
 // (Pinned where he turns, or no more than this far (feet) short of it -
 // see Actor.bendOut: round out of it from there, as much as this of a turn
 // (radians), no nearer the way on than this many times as far as he goes
@@ -1067,6 +1071,7 @@ class Actor {
 				BEND_LEAST;
 		// (Not round over the edge of where he can go - see onField: cut
 		// back in to it, that would be, in a blink.)
+		let tight = false;
 		{
 			const p0 = {
 				x: lk.from.x + (lk.to.x - lk.from.x) * f,
@@ -1094,6 +1099,7 @@ class Actor {
 			// the pace he came in at in a stride - planted for it, on past
 			// it, instead: see plantFor.)
 			const most = Math.sqrt(BEND_LAT * R);
+			tight = most < v * BEND_SLOW;
 			let all = 0;
 			for (let q = j; q < legs.length; q++) {
 				all += dist(legs[q]!.from, legs[q]!.to);
@@ -1106,6 +1112,9 @@ class Actor {
 				return false;
 			}
 		}
+		// (As it was, to go back to - see BEND_TOO_QUICK.)
+		const before = tight ? legs.map((x) => ({ ...x })) : undefined;
+		const was0 = { yaw: this.yaw, pinned: this.pinned };
 		legs.splice(k + 1);
 		lk.to = {
 			x: lk.from.x + (lk.to.x - lk.from.x) * f,
@@ -1165,6 +1174,12 @@ class Actor {
 				pace = Math.min(legPace(this.last), Math.max(most, floor(s)));
 			}
 			vStart = pace;
+			if (before && pace > most * BEND_TOO_QUICK) {
+				legs.splice(0, legs.length, ...before);
+				this.yaw = was0.yaw;
+				this.pinned = was0.pinned;
+				return false;
+			}
 		}
 		const s = Math.sign(u.x * o.y - u.y * o.x) || 1;
 		const c = { x: start.x - s * u.y * R, y: start.y + s * u.x * R };
@@ -2361,10 +2376,12 @@ class Actor {
 	}
 
 	// Turned toward `to`, to go on at `w` ft/s: bent round into it, if he
-	// can be (see bendInto) - or planted for it (see plantFor).
+	// can be (see bendInto) - or planted for it (see plantFor), down to `w`
+	// if that is slower than he would take it round at: not round it
+	// quicker and braked to it in a stride after.
 	turnFor(to: Pt, w: number) {
 		if (!(w < BEND_PACE ? this.bendSlow(to, w) : this.bendInto(to, w))) {
-			this.plantFor(to, undefined, undefined, w);
+			this.plantFor(to, undefined, w, w);
 		}
 	}
 
