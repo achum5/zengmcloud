@@ -111,6 +111,9 @@ export type ActInput = {
 	// The play's own number, 0 to 1, for each man's counts on it (see
 	// countOf).
 	key: number;
+	// Who a name in a line is, on a side (a flag the sim gives no stat line
+	// for - declined - names the man).
+	pidOf?: (side: Side, name: string) => number | undefined;
 };
 
 export type Acted = {
@@ -4393,6 +4396,9 @@ const BREAK_SLOW_TURN = 0.5;
 // (The man the sim says got to the ball, on his man: no deeper than it,
 // feet - see cover.)
 const MARK_DEEP_FT = 3;
+// The man flagged for holding in coverage, no further off his man than this
+// (feet) - in his hip pocket, a hand on him.
+const HOLD_CUSHION = 1.5;
 // (Over toward it from this far off his man (feet), all the way this much
 // further.)
 const MARK_NEAR_FT = 8;
@@ -6713,10 +6719,16 @@ class Action {
 
 	// Of `coverage`, the man the sim flags for pass interference.
 	interferer(coverage: Actor[]): Actor | undefined {
-		const { events, i0, i1 } = this.input;
+		return this.flaggedFor("Pass interference", coverage);
+	}
+
+	// Of `men`, the man the sim flags for `name`: off the stat line that
+	// goes with the flag - or, none, by his name in it.
+	flaggedFor(name: string, men: Actor[]): Actor | undefined {
+		const { events, i0, i1, pidOf } = this.input;
 		for (let i = i0; i < i1; i++) {
 			const e = events[i];
-			if (e?.type !== "penalty" || e.penaltyName !== "Pass interference") {
+			if (e?.type !== "penalty" || e.penaltyName !== name) {
 				continue;
 			}
 			for (let j = i + 1; j < i1; j++) {
@@ -6726,9 +6738,15 @@ class Action {
 				}
 				if (x?.type === "stat" && x.s === "pen" && typeof x.pid === "number") {
 					const pid = x.pid;
-					return coverage.find((m) => m.pid === pid);
+					return men.find((m) => m.pid === pid);
 				}
 			}
+			const named = Array.isArray(e.names) ? e.names[0] : undefined;
+			const pid =
+				typeof named === "string"
+					? pidOf?.((1 - (e.t === 1 ? 1 : 0)) as Side, named)
+					: undefined;
+			return pid === undefined ? undefined : men.find((m) => m.pid === pid);
 		}
 		return undefined;
 	}
@@ -9945,6 +9963,7 @@ class Action {
 			tr?.name === "backShoulder" ? target : undefined,
 			jab && target ? { m: target, ...jab } : undefined,
 			{ zone, twoHigh },
+			this.flaggedFor("Holding", coverage),
 		);
 		const beaten = sacker ? this.man(this.statPids("skAlw")[0]) : undefined;
 		this.passRush(
@@ -16831,6 +16850,7 @@ class Action {
 		late?: Actor,
 		fooled?: { m: Actor; at: number; top: Pt; stem: Pt },
 		call: { zone: boolean; twoHigh: boolean } = { zone: false, twoHigh: false },
+		holding?: Actor,
 	) {
 		const { snap } = this.input;
 		const r = this.r;
@@ -16844,10 +16864,31 @@ class Action {
 		if (marked && free.includes(marked[0]) && runners.includes(marked[1])) {
 			pairs.set(marked[0], marked[1]);
 		}
+		// (The man the sim flags for holding: on the man nearest where he
+		// lined up, all over him - see HOLD_CUSHION - whatever the rest are
+		// in.)
+		const held = (rec: Actor) => [...pairs.values()].includes(rec);
+		if (holding && free.includes(holding) && !pairs.has(holding)) {
+			const h = set(holding);
+			const near = (rs: Actor[]) =>
+				rs
+					.map((rec) => {
+						const ra = set(rec);
+						return {
+							rec,
+							far: Math.abs(h.a - ra.a) + Math.abs(h.d - ra.d) * 0.3,
+						};
+					})
+					.sort((a, b) => a.far - b.far)[0]?.rec;
+			const rec = near(runners.filter((m) => !held(m))) ?? near(runners);
+			if (rec) {
+				pairs.set(holding, rec);
+			}
+		}
 		const order = call.zone
 			? []
 			: runners
-					.filter((m) => !(marked && marked[1] === m && pairs.has(marked[0])))
+					.filter((m) => !held(m))
 					.sort((a, b) => Math.abs(set(b).a) - Math.abs(set(a).a));
 		// (The safeties deep, two of them, the free safety alone: not on a
 		// man.)
@@ -16930,11 +16971,13 @@ class Action {
 						rs.d -
 						(1 - COVER_GIVE) * Math.max(0, p.d - rs.d) -
 						(COVER_COME * Math.max(0, t - snap - COVER_READ_MS)) / 1000;
-					const cushion =
+					const cushion = Math.min(
+						m === holding ? HOLD_CUSHION : Infinity,
 						(COVER_MIN +
 							COVER_SOFT *
 								Math.log1p(Math.exp((room - COVER_MIN) / COVER_SOFT))) *
-						(1 - COVER_TIGHT * (m.flair.cover ?? 0));
+							(1 - COVER_TIGHT * (m.flair.cover ?? 0)),
+					);
 					const biting =
 						bit &&
 						t >= bit.at - SLUGGO_BITE_BEFORE_MS &&

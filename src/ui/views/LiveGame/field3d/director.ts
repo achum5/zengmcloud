@@ -1324,6 +1324,7 @@ const interference = (
 	events: RawEvent[],
 	i0: number,
 	i1: number,
+	pidOf: (side: Side, name: string) => number | undefined,
 ): { by: number; on: number } | undefined => {
 	let by: number | undefined;
 	let on: number | undefined;
@@ -1343,6 +1344,11 @@ const interference = (
 			if (x?.type === "stat" && x.s === "pen" && typeof x.pid === "number") {
 				by = x.pid;
 			}
+		}
+		// (No stat line for it - declined - by his name in it.)
+		const named = Array.isArray(e.names) ? e.names[0] : undefined;
+		if (by === undefined && typeof named === "string") {
+			by = pidOf((1 - (e.t === 1 ? 1 : 0)) as Side, named);
 		}
 	}
 	return by !== undefined && on !== undefined ? { by, on } : undefined;
@@ -2177,6 +2183,7 @@ class Director {
 						...(tensed > 0 ? { tense: tensed } : {}),
 						r: this.rng(i0, "action"),
 						key: this.rng(i0, "count")(),
+						pidOf: (side, name) => this.byName[side].get(name),
 					})
 				: undefined;
 		if (acted) {
@@ -3717,7 +3724,9 @@ class Director {
 		// (The man the sim flags for interfering with a pass: in the place of
 		// his group across from the man it went to - on him - see action.ts
 		// interferer.)
-		const pi = interference(events, i0, i1);
+		const pi = interference(events, i0, i1, (side, name) =>
+			this.byName[side].get(name),
+		);
 		const by = pi ? defPids.indexOf(pi.by) : -1;
 		const on = pi && placed.find((p) => p.pid === pi.on && p.team === offense);
 		if (by >= 0 && on) {

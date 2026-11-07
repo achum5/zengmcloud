@@ -444,6 +444,10 @@ the umpire.
   sim names is near the target. A defender flagged for pass interference now
   lines up across from the man the ball goes to (his group's nearest place)
   and covers him, so he is on him as it comes where he can get there: 3 of
-  the nine games' 8 shown (none before). Left: a deep safety named on a short
-  throw to the far side, a flag with no stat naming the man, offensive
-  interference.
+  the nine games' 8 shown (none before). A flag with no stat line (declined)
+  finds the man by his name in it. Left: a deep safety named on a short
+  throw to the far side, offensive interference.
+- A defender flagged for holding on a pass play covers the receiver nearest
+  where he lined up, tight on him, so the hold is acted: holds shown 30 to
+  32 of 34 in the nine games (left: a linebacker after a back in the flat,
+  a safety named on a run).
