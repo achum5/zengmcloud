@@ -4704,11 +4704,14 @@ const GIVE_WAY_EASE_LEAST = 3;
 // first - to keep him round men in blocks: see wayClear. Looked on along
 // it CHASE_LOOK_MS past its end; turned no further off the way he goes
 // than CHASE_TURN_MOST, if he is going - not planted for it; men going
-// slower than CHASE_STILL_FPS, ft/s, kept round too.)
+// slower than CHASE_STILL_FPS, ft/s, kept round too, and men of the other
+// side going slower than CHASE_PASS_SLOWER of his pace - not run up the
+// back of.)
 const CHASE_CLEAR_TURN = [0.15, -0.15, 0.3, -0.3, 0.45, -0.45] as const;
 const CHASE_LOOK_MS = 500;
 const CHASE_TURN_MOST = 0.5;
 const CHASE_STILL_FPS = 4;
+const CHASE_PASS_SLOWER = 0.7;
 const CHASE_CLEAR_SLACK_FT = 0.3;
 // (Given up, or at the whistle: pulled up no more than this far on - feet;
 // bent round off the pile at the ball, if it is in the way, by as little of
@@ -20115,7 +20118,9 @@ class Action {
 					if (
 						x !== m &&
 						(LINE_PLAY.has(l.move) ||
-							(c <= x.t && legPace(l) < CHASE_STILL_FPS))
+							(c <= x.t &&
+								(legPace(l) < CHASE_STILL_FPS ||
+									(x.team !== m.team && legPace(l) < v * CHASE_PASS_SLOWER))))
 					) {
 						worst = Math.max(worst, CLIMB_CLEAR_FT - dist(x.posAt(c), p));
 					}
