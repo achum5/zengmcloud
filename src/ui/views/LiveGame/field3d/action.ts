@@ -2640,16 +2640,17 @@ class Actor {
 				steps = stepsOf(side * bend);
 			}
 		}
-		// (Into the edge of where he can go - a few feet over an end line
-		// (see EASE_END_FT), a sideline he is not let over: turned along it
-		// as he slows, sooner the nearer it is - not stopped dead against
+		// (Into the edge of where he can go - a few feet over an end line or
+		// a sideline, onto the white border (see EASE_END_FT): turned along
+		// it as he slows, sooner the nearer it is - not stopped dead against
 		// it.)
 		const endOver = Math.max(this.endRoam, EASE_END_FT);
+		const sideOver = Math.max(this.roam, EASE_SIDE_FT);
 		const inside = (p: Pt) =>
 			p.x >= 1 - endOver &&
 			p.x <= FIELD_L - 1 + endOver &&
-			p.y >= 1 - this.roam &&
-			p.y <= FIELD_W - 1 + this.roam;
+			p.y >= 1 - sideOver &&
+			p.y <= FIELD_W - 1 + sideOver;
 		// (Over it already - no way back in on the way he goes.)
 		if (!inside(this.at)) {
 			return;
@@ -2684,6 +2685,10 @@ class Actor {
 			this.endRoam = Math.max(
 				this.endRoam,
 				Math.min(endOver, Math.max(1 - p.x, p.x - (FIELD_L - 1))),
+			);
+			this.roam = Math.max(
+				this.roam,
+				Math.min(sideOver, Math.max(1 - p.y, p.y - (FIELD_W - 1))),
 			);
 		}
 		for (let i = 0; i < n; i++) {
@@ -4575,8 +4580,11 @@ const EASE_EDGE_BY = [1, 0.6, 0.35, 0.2, 0.1] as const;
 const EASE_EDGE_TIE = 0.2;
 // (An end line, though, he may ease off over, out the back of the end
 // zone - this much further than he can otherwise go, feet: short of the
-// posts' pads and the photographers behind it - see scene.ts, media.ts.)
+// posts' pads and the photographers behind it - see scene.ts, media.ts.
+// And a sideline, onto the white border - short of the chains, and the
+// coaches' line - see chains.ts, geometry.ts.)
 export const EASE_END_FT = 4;
+const EASE_SIDE_FT = 4;
 // (Carrying on the way he was going, before he eases off, ms - see carryOn.)
 const CARRY_MOST_MS = 500;
 // (Broken down a few steps off a man to hit, this long at least - see
