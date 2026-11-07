@@ -5210,6 +5210,11 @@ const POCKET_ROOM = 7;
 // than this (feet).
 const BACK_SET_UP = 4.5;
 const BACK_SET_OUT = 4;
+// (A back set in the way of the man he picks up - see passRush - no nearer
+// straight behind the quarterback than this; set up in front of him this
+// much or more, as near as that.)
+const BACK_LANE_LEAST = 2;
+const BACK_LANE_AHEAD = 2;
 const BACK_OFF_LINE = 9;
 // (Further off it than this (feet): up into it at a run, at no more than
 // this much of his top speed, and set there this long before he takes
@@ -16499,6 +16504,23 @@ class Action {
 		const lineFirst = [...rushers].sort(
 			(x, y) => Number(DL.has(y.role)) - Number(DL.has(x.role)),
 		);
+		// (The men on the line in the pairs that between them go the least
+		// way - see climbPairs - so not two of them across each other's way
+		// to theirs; any left over on a back, below.)
+		const taken = new Set(engaged.values());
+		const lineUp = climbPairs(
+			lineFirst.filter(
+				(m) => DL.has(m.role) && !this.done.has(m.pid) && !engaged.has(m),
+			),
+			blockers.filter(
+				(b) => (OL.has(b.role) || b.role === "TE") && !taken.has(b),
+			),
+			snap,
+			() => true,
+		);
+		for (const [m, b] of lineUp) {
+			engaged.set(m, b);
+		}
 		for (const m of lineFirst) {
 			if (this.done.has(m.pid) || engaged.has(m)) {
 				continue;
@@ -16582,10 +16604,33 @@ class Action {
 			const out = tackle ? Math.sign(s.a) * 2 : 0;
 			const inBack = b.role === "RB" || b.role === "FB";
 			let side = Math.sign(s.a - pocket.a) || 1;
+			// (A back with a man to pick up: set in the way he comes - the
+			// gap he comes through - not out behind the man on the line
+			// beside it, for him to come through that man to get to him.)
+			const his = inBack
+				? [...engaged].find(([, x]) => x === b)?.[0]
+				: undefined;
+			// (But not stood right behind the quarterback for it - off to
+			// the side of him, BACK_LANE_LEAST at least - unless set up in
+			// front of him, BACK_LANE_AHEAD or more.)
+			const off = his ? this.of(his.at).a - pocket.a : 0;
+			const least =
+				Math.min(pocket.d + BACK_SET_UP, -BACK_OFF_LINE) - pocket.d >=
+				BACK_LANE_AHEAD
+					? 0
+					: BACK_LANE_LEAST;
 			if (inBack) {
-				side = backSides.has(side) ? -side : side;
+				side =
+					his && Math.abs(off) >= Math.max(least, 0.5)
+						? Math.sign(off)
+						: backSides.has(side)
+							? -side
+							: side;
 				backSides.add(side);
 			}
+			const lane = his
+				? side * clamp(Math.abs(off), least, BACK_SET_OUT)
+				: undefined;
 			this.offSnap(b, GET_OFF_MS, GET_OFF_SPREAD_MS);
 			// (A back through a fake already: set where it left him.)
 			const setPt =
@@ -16594,7 +16639,7 @@ class Action {
 					: inBack
 						? {
 								d: Math.min(pocket.d + BACK_SET_UP, -BACK_OFF_LINE),
-								a: pocket.a + side * BACK_SET_OUT,
+								a: pocket.a + (lane ?? side * BACK_SET_OUT),
 							}
 						: { d: Math.max(pocket.d + 4, s.d - back), a: s.a + out };
 			const far = dist(b.at, this.w(setPt));
@@ -16611,7 +16656,13 @@ class Action {
 							STOP_ACCEL * STOP_HARD,
 						),
 				);
-				b.go(this.w(setPt), t1);
+				// (In strides that go with his pace at the most of it - not
+				// walked there at a run's pace.)
+				b.go(
+					this.w(setPt),
+					t1,
+					gait(Math.min(b.top * BACK_UP_PACE, (2 * far * 1000) / (t1 - b.t))),
+				);
 				b.setInto(t1 + BACK_SET_MS, "passSet", this.ahead);
 			} else {
 				b.go(
