@@ -4663,6 +4663,9 @@ const PURSUIT_RING = 10;
 // than so much.)
 const PURSUIT_IN = 1.5;
 const PURSUIT_NEAREST = 5;
+// (A man after him ahead of him kept this far out to the side of his way,
+// square to it, closing in - see pursue.)
+const PURSUIT_SIDE_FT = 3.5;
 const PURSUIT_LANE = 7;
 // (Stood off the play, the ball coming to within this of him: backed off
 // this far at the most, at this pace, over this long at the least - see
@@ -13636,12 +13639,31 @@ class Action {
 				if (near < off) {
 					const now = carrier.posAt(m.t + PURSUIT_LEAD);
 					const by = Math.min(PURSUIT_IN, Math.max(0, near - PURSUIT_NEAREST));
+					// (Ahead of him, on his way or near it - see
+					// PURSUIT_SIDE_FT: out to the side of it he is on, not
+					// run down from behind in it.)
+					let ox = 0;
+					let oy = 0;
+					if (goes > 0.2) {
+						const dx = (him.x - was.x) / goes;
+						const dy = (him.y - was.y) / goes;
+						const from = carrier.posAt(m.t);
+						const rx = m.at.x - from.x;
+						const ry = m.at.y - from.y;
+						const s = ry * dx - rx * dy;
+						const out = PURSUIT_SIDE_FT - Math.abs(s);
+						if (rx * dx + ry * dy > 0 && out > 0) {
+							const k = (s === 0 ? Math.sign(lane) : Math.sign(s)) * out;
+							ox = -dy * k;
+							oy = dx * k;
+						}
+					}
 					m.chaseUp(
 						this.wayClear(
 							m,
 							{
-								x: m.at.x + him.x - now.x - Math.cos(a) * by,
-								y: m.at.y + him.y - now.y - Math.sin(a) * by,
+								x: m.at.x + him.x - now.x - Math.cos(a) * by + ox,
+								y: m.at.y + him.y - now.y - Math.sin(a) * by + oy,
 							},
 							c,
 							m.top * PURSUIT_PACE,
