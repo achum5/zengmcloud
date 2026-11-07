@@ -4905,6 +4905,28 @@ const ZONE_EASE_LEAST_MS = 200;
 // his hands out to the ball, and not into each other. (Turned to it as he
 // goes there, side on, so he is facing it when the back gets there.)
 const MESH_APART = 3;
+// Under center, the mesh this far (feet) back of where the quarterback
+// takes the snap, this far across to the side it goes - or, for a back
+// lined up nearer than MESH_RUN_FT short of that (a fullback), out in
+// front of him on his way: that far on from where he stands, no nearer
+// the quarterback than MESH_QB_FT, and no further across from him than
+// MESH_SIDE_FT - not stepped back out of the way for it, or sent across
+// behind the quarterback to it.
+const MESH_DEEP_FT = 9;
+const MESH_SIDE_FT = 3;
+const MESH_RUN_FT = 4;
+const MESH_QB_FT = 3;
+const underMesh = (qb: OPt, back: OPt, side: number): OPt => {
+	const d = qb.d - MESH_DEEP_FT;
+	const a = side * MESH_SIDE_FT;
+	if (back.d + MESH_RUN_FT <= d) {
+		return { d, a };
+	}
+	return {
+		d: Math.min(back.d + MESH_RUN_FT, qb.d - MESH_QB_FT),
+		a: Math.max(back.a - MESH_SIDE_FT, Math.min(back.a + MESH_SIDE_FT, a)),
+	};
+};
 // (The quarterback's arms out with the ball from this long before the
 // back gets to it, into him this far ahead of the middle of him.)
 const HAND_OUT_MS = 200;
@@ -5790,7 +5812,7 @@ const evasive = (m: Actor) => {
 // ...and by the man he goes past: a sure tackler (see Flair) this much less
 // often made to miss, a poor one this much more - as often as ever, over
 // them all. (A game without the ratings, as it always was.)
-const MISSED_BY = 0.35;
+const MISSED_BY = 0.5;
 const MISSED_MOST = 1 + MISSED_BY;
 const missable = (m: Actor) => 1 - MISSED_BY * (m.flair.tackle ?? 0);
 // How much later than he would have been a carrier can be brought down, his
@@ -9440,7 +9462,7 @@ class Action {
 			const meshPt = this.w(
 				gun
 					? { d: qbStart.d + 0.5, a: side * 2.5 }
-					: { d: qbStart.d - 9, a: side * 3 },
+					: underMesh(qbStart, fs, side),
 			);
 			const qbMesh = this.w({
 				d: this.of(meshPt).d,
@@ -17379,10 +17401,9 @@ class Action {
 									: draw
 										? // (Up and in a step from his set beside him.)
 											{ d: qs.d + DRAW_MESH_UP, a: cs.a - side * DRAW_MESH_IN }
-										: {
-												d: gun ? qs.d + 0.5 : qs.d - 9,
-												a: side * (gun ? 2.5 : 3),
-											},
+										: gun
+											? { d: qs.d + 0.5, a: side * 2.5 }
+											: underMesh(qs, cs, side),
 							);
 		const qbMesh = this.w({
 			...this.of(meshPt),
