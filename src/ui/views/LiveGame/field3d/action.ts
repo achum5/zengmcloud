@@ -5463,6 +5463,8 @@ const GANG_ROUND = [0, 0.4, -0.4, 0.8, -0.8, 1.2, -1.2];
 // much (feet).
 const SNEAK_GAP_A = 2.3;
 const SNEAK_SPREAD = 1;
+// (Driving on into it no quicker than this over all of it, ft/s.)
+const SNEAK_FPS = 9;
 // (In it by the time he is up level with the ball, feet.)
 const SNEAK_GAP_D = -0.5;
 // A short run up the middle, this often a pile on him (one or less yards,
@@ -17582,11 +17584,17 @@ class Action {
 			// Behind the center, into the pile - over into the gap beside
 			// him first, and on up it: not straight through him.
 			carrier.hold(has + 150, "qbSet", this.ahead);
-			const by = Math.max(snap + 1300, carrier.t + 600);
 			const gap = this.w({ d: SNEAK_GAP_D, a: this.of(end.pt).a });
 			const all = dist(carrier.at, gap) + dist(gap, end.pt);
+			// (No quicker than SNEAK_FPS over it, and up to it off his set -
+			// see goOff - not off it at a sprint's pace in a blink.)
+			const by = Math.max(
+				snap + 1300,
+				carrier.t + 600,
+				carrier.t + (all / SNEAK_FPS) * 1000,
+			);
 			if (endD > 0 && all > 0) {
-				carrier.go(
+				carrier.goOff(
 					gap,
 					carrier.t + ((by - carrier.t) * dist(carrier.at, gap)) / all,
 					"drive",
