@@ -1202,7 +1202,8 @@ export const stageHurt = (input: {
 
 	// The men round him, down on a knee while he is - each in a place of his
 	// own (see KNEEL_APART), off the ball where it lies (and off the cart's
-	// way, if it comes, and his to it).
+	// way, if it comes, and his to it - all of it: one who ran on a way
+	// after the play down on a knee where he got to, not in it out there).
 	const knelt: Pt[] = [];
 	const cartWay: Pt[] = cart ? path.slice(1) : [];
 	if (cart) {
@@ -1215,10 +1216,7 @@ export const stageHurt = (input: {
 					x: c.x + Math.cos(c.yaw) * f,
 					y: c.y + Math.sin(c.yaw) * f,
 				};
-				if (
-					dist(q, at) < KNEEL_NEAR + KNEEL_OFF_HIM &&
-					cartWay.every((w) => dist(w, q) >= CART_CLEAR_STEP)
-				) {
+				if (cartWay.every((w) => dist(w, q) >= CART_CLEAR_STEP)) {
 					cartWay.push(q);
 				}
 			}

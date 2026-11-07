@@ -4471,6 +4471,10 @@ const TRAIL_JOG_LEAST_FT = 5;
 // it all the same, not stood there through it.)
 const TRAIL_IDLE_MS = 1500;
 const TRAIL_KEEP_FT = 12;
+// (Along with the ball, kept off it - see alongWith - no nearer it than
+// this (feet), out off it no more than ALONG_OUT_FT a step.)
+const ALONG_NEAREST_FT = 3.5;
+const ALONG_OUT_FT = 1.2;
 // (The others out on routes once it is caught - see withIt: off after it
 // so long after they see it (soonest, latest), ms, at a jog (ft/s), kept
 // this far off it (and up to this much more), ft - not for less than this
@@ -13496,7 +13500,11 @@ class Action {
 					setTill(lead - fireMs);
 				}
 				inTo();
-			} else if (gives || !m.slowAlong(hit, lead, STRETCH_SLACK)) {
+			} else if (
+				gives ||
+				(!m.slowAlong(hit, lead, STRETCH_SLACK) &&
+					!this.pressRound(m, hit, lead, watch))
+			) {
 				// (Backpedaling, if he gives ground and can go that quick so.)
 				m.pressUp(
 					hit,
@@ -13507,6 +13515,34 @@ class Action {
 				);
 			}
 		}
+	}
+
+	// In at `hit` by `lead` all out (see pressUp), round the men in blocks
+	// in his way, if there is a way round them that gets him there in time
+	// (see roundBlocks) - through the gap, not on through them. (Whether
+	// he was.)
+	private pressRound(m: Actor, hit: Pt, lead: number, watch?: Actor): boolean {
+		const round = this.roundBlocks(m, hit, lead, watch ?? m, FLAT_OUT);
+		if (!round) {
+			return false;
+		}
+		const t0 = m.t;
+		const v0 = paceOn(m.last, m.at, round[0]!);
+		let all = 0;
+		let was = m.at;
+		const ms = round.map((p) => {
+			all += dist(was, p);
+			was = p;
+			return rampedMs(all, m.top * FLAT_OUT, v0);
+		});
+		const most = ms.at(-1)!;
+		if (!(most > 0) || t0 + most > lead) {
+			return false;
+		}
+		const scale = (lead - t0) / most;
+		round.forEach((p, i) => m.go(p, t0 + ms[i]! * scale));
+		m.pin(lead);
+		return true;
 	}
 
 	// The rest of the defense after the ball - whoever is not busy with
@@ -13579,9 +13615,12 @@ class Action {
 					clamp(need * PURSUIT_URGE, m.top * 0.45, m.top * PURSUIT_PACE),
 				);
 			}
+			const went = m.t;
 			m.chaseUp(this.wayClear(m, end(), arrive), arrive, m.top * 0.95);
 			// (Pulled up as he gets there - not stopped dead in a stride,
-			// off to the side of the pile if it is in his way.)
+			// off to the side of the pile if it is in his way - and from short
+			// of the men about the ball, if that has him pulled up in them.)
+			this.easeShort(m, went, EASE_OFF_FT);
 			m.easeOff(EASE_OFF_FT, pt);
 		}
 	}
@@ -19075,9 +19114,12 @@ class Action {
 					"run",
 				);
 			if (!db || dist(db.at, m.at) > STALK_FAR) {
+				const went = m.t;
 				release(this.w({ d: s.d + 9 + r() * 8, a: s.a * 0.92 }), snap + 1300);
-				// (Pulled up there, a step or two on - and in toward it at a
-				// jog, not stood out there till the whistle.)
+				// (Pulled up there, a step or two on - short of the men in blocks,
+				// if that has him in them - and in toward it at a jog, not stood
+				// out there till the whistle.)
+				this.shortOfBlocks(m, went);
 				m.easeOff(STALK_EASE_FT);
 				const far = dist(m.at, endPt);
 				const from =
@@ -19277,6 +19319,65 @@ class Action {
 		}
 	}
 
+	// Pulled up from where he is, `most` feet at the most (see easeOff):
+	// cut back to as late as has him pulled up clear of the men in blocks
+	// and tackles (see FILL_ROOM_FT) as he gets there, if it does not -
+	// not on into them, and shoved out of them. Back no further than
+	// `from`, nor than FILL_BACK_MOST_MS.
+	private easeShort(m: Actor, from: number, most: number) {
+		const stopOf = (tc: number) => {
+			const q = legAt(m, tc);
+			const f = dist(q.from, q.to);
+			const v = legPace(q);
+			if (!GAITS.has(q.move) || f <= 0 || v <= 0) {
+				return undefined;
+			}
+			const e = Math.min(most, (v * v) / (2 * STOP_ACCEL));
+			const p = m.posAt(tc);
+			return {
+				at: {
+					x: p.x + ((q.to.x - q.from.x) / f) * e,
+					y: p.y + ((q.to.y - q.from.y) / f) * e,
+				},
+				t: tc + ((2 * e) / v) * 1000,
+			};
+		};
+		const blocked = (s: { at: Pt; t: number }) =>
+			this.men.some((x) => {
+				for (
+					let c = s.t - FILL_ROOM_EVERY_MS;
+					x !== m && c <= s.t + FILL_ROOM_MS;
+					c += FILL_ROOM_EVERY_MS
+				) {
+					if (
+						LINE_PLAY.has(legAt(x, c).move) &&
+						dist(x.posAt(c), s.at) < FILL_ROOM_FT
+					) {
+						return true;
+					}
+				}
+				return false;
+			});
+		const s = stopOf(m.t - 1);
+		if (!s || !blocked(s)) {
+			return;
+		}
+		for (
+			let tc = m.t - FILL_BACK_STEP_MS;
+			tc >= Math.max(from, m.t - FILL_BACK_MOST_MS);
+			tc -= FILL_BACK_STEP_MS
+		) {
+			const q = stopOf(tc);
+			if (!q) {
+				return;
+			}
+			if (!blocked(q)) {
+				m.cut(tc);
+				return;
+			}
+		}
+	}
+
 	// How far into the men in blocks (see CLIMB_CLEAR_FT) a man - not
 	// `him` - goes at the worst on his way from `from` through `pts`, at an
 	// even pace from t0 to t1; and how far that is.
@@ -19390,6 +19491,7 @@ class Action {
 		to: Pt,
 		t1: number,
 		him: Actor,
+		pace = CLIMB_PACE,
 	): Pt[] | undefined {
 		const from = b.at;
 		const t0 = b.t;
@@ -19404,7 +19506,7 @@ class Action {
 		}
 		const ux = (to.x - from.x) / D;
 		const uy = (to.y - from.y) / D;
-		const fps = b.top * CLIMB_PACE;
+		const fps = b.top * pace;
 		const most = (t1 - t0) * CLIMB_ROUND_MORE;
 		let best: { pts: Pt[]; worst: number } | undefined;
 		for (const along of CLIMB_ALONG) {
@@ -20594,15 +20696,22 @@ class Action {
 			if (!ball || !now) {
 				break;
 			}
-			if (dist(m.at, ball) < keep) {
+			const near = dist(m.at, ball);
+			const a = Math.atan2(m.at.y - ball.y, m.at.x - ball.x);
+			if (near < keep) {
+				// (Out off it a little as he goes, if he is right on it - not
+				// along with it in the man with it.)
+				const out = clamp(ALONG_NEAREST_FT - near, 0, ALONG_OUT_FT);
 				m.chaseUp(
-					{ x: m.at.x + ball.x - now.x, y: m.at.y + ball.y - now.y },
+					{
+						x: m.at.x + ball.x - now.x + Math.cos(a) * out,
+						y: m.at.y + ball.y - now.y + Math.sin(a) * out,
+					},
 					c,
 					fps,
 				);
 				continue;
 			}
-			const a = Math.atan2(m.at.y - ball.y, m.at.x - ball.x);
 			m.chaseUp(
 				{ x: ball.x + Math.cos(a) * keep, y: ball.y + Math.sin(a) * keep },
 				c,
