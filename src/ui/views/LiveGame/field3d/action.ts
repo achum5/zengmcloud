@@ -15561,36 +15561,104 @@ class Action {
 					(QB_HIT_AFTER_MS[1] - QB_HIT_AFTER_MS[0]) *
 						countOf(qb, this.input.key, 40));
 		const q = qb.posAt(hitT);
-		let best: { m: Actor; shed: number; from: Pt } | undefined;
-		for (const m of pool) {
-			if (this.done.has(m.pid) || lame.has(m.pid)) {
-				continue;
-			}
-			// (Off it as late as gets him there in time.)
-			for (
-				let shed = hitT - QB_HIT_LEAST_MS;
-				shed >= throwAt - QB_HIT_EARLY_MS &&
-				shed >= snap + RUSH_MOVE_LEAST &&
-				(!best || shed > best.shed);
-				shed -= 50
+		// (His way in off his man at `shed`: round the shoulder of the man he
+		// was on, if that man is in it - the side he is on of him already
+		// (see QB_HIT_ROUND_FT) - and how far it is.)
+		const wayIn = (from: Pt, shed: number, rounds: boolean) => {
+			const into = this.toward(from, q);
+			const hit = {
+				x: q.x - Math.cos(into) * QB_HIT_ON,
+				y: q.y - Math.sin(into) * QB_HIT_ON,
+			};
+			const D = dist(from, hit);
+			const b = blockers
+				.filter((x) => !this.done.has(x.pid))
+				.sort(
+					(x, y) => dist(x.posAt(shed), from) - dist(y.posAt(shed), from),
+				)[0];
+			if (
+				!rounds ||
+				!b ||
+				D <= 0 ||
+				dist(b.posAt(shed), from) > QB_HIT_BLOCKER_FT
 			) {
-				const from = m.posAt(shed);
-				const far = dist(from, q) - QB_HIT_ON;
-				if (legAt(m, shed).move !== "engage" || far > QB_HIT_FAR) {
-					break;
+				return { hit, far: D, round: undefined };
+			}
+			const B = b.posAt(shed);
+			const ux = (hit.x - from.x) / D;
+			const uy = (hit.y - from.y) / D;
+			const along = (B.x - from.x) * ux + (B.y - from.y) * uy;
+			const across = (B.y - from.y) * ux - (B.x - from.x) * uy;
+			if (!(along > 0 && along < D && Math.abs(across) < QB_HIT_ROUND_FT)) {
+				return { hit, far: D, round: undefined };
+			}
+			// (No further out than has him come in onto the quarterback near
+			// enough the way he would have straight - see QB_HIT_ROUND_END -
+			// not swung back in across him at the last.)
+			const side = across >= 0 ? -1 : 1;
+			const out = Math.min(
+				QB_HIT_ROUND_FT - Math.abs(across),
+				(Math.tan(QB_HIT_ROUND_END) * (1.5 * D - 2 * along)) / 2,
+			);
+			if (!(out >= QB_HIT_ROUND_LEAST)) {
+				return { hit, far: D, round: undefined };
+			}
+			const via = {
+				x: from.x + ux * along - uy * side * out,
+				y: from.y + uy * along + ux * side * out,
+			};
+			const round = {
+				x: 2 * via.x - (from.x + hit.x) / 2,
+				y: 2 * via.y - (from.y + hit.y) / 2,
+			};
+			let far = 0;
+			let was = from;
+			for (const p of this.curve(from, round, hit, QB_HIT_ROUND_PTS)) {
+				far += dist(was, p);
+				was = p;
+			}
+			return { hit, far, round };
+		};
+		// (Straight in through him only if nobody can get round him in time
+		// - the man the sim flags for roughing the passer, say.)
+		let best: { m: Actor; shed: number; from: Pt; rounds: boolean } | undefined;
+		for (const rounds of [true, false]) {
+			for (const m of pool) {
+				if (this.done.has(m.pid) || lame.has(m.pid)) {
+					continue;
 				}
-				if (
-					rampedMs(
-						Math.max(0, far),
-						m.top * QB_HIT_PACE,
-						QB_HIT_FROM_FPS,
-						GET_OFF_ACCEL,
-					) <=
-					hitT - shed
+				// (Off it as late as gets him there in time.)
+				for (
+					let shed = hitT - QB_HIT_LEAST_MS;
+					shed >= throwAt - QB_HIT_EARLY_MS &&
+					shed >= snap + RUSH_MOVE_LEAST &&
+					(!best || shed > best.shed);
+					shed -= 50
 				) {
-					best = { m, shed, from };
-					break;
+					const from = m.posAt(shed);
+					if (
+						legAt(m, shed).move !== "engage" ||
+						dist(from, q) - QB_HIT_ON > QB_HIT_FAR
+					) {
+						break;
+					}
+					const { far } = wayIn(from, shed, rounds);
+					if (
+						rampedMs(
+							Math.max(0, far),
+							m.top * QB_HIT_PACE,
+							QB_HIT_FROM_FPS,
+							GET_OFF_ACCEL,
+						) <=
+						hitT - shed
+					) {
+						best = { m, shed, from, rounds };
+						break;
+					}
 				}
+			}
+			if (best) {
+				break;
 			}
 		}
 		if (!best) {
@@ -15602,22 +15670,74 @@ class Action {
 			x: p.x + Math.cos(into) * by,
 			y: p.y + Math.sin(into) * by,
 		});
-		const hit = at(q, -QB_HIT_ON);
+		const way = wayIn(from, shed, best.rounds);
+		const { hit, round } = way;
 		const down = at(q, QB_HIT_BACK_FT);
-		const fast = dist(from, hit) / ((hitT - shed) / 1000) >= QB_HIT_RUN_FPS;
+		const fast = way.far / ((hitT - shed) / 1000) >= QB_HIT_RUN_FPS;
 		m.cut(shed);
-		m.getOff(
-			hit,
-			hitT,
-			QB_HIT_FROM_FPS,
-			GET_OFF_ACCEL,
-			fast ? "run" : undefined,
-		);
+		if (round) {
+			// (Round it as getOff would take him straight: up from what he
+			// has on at GET_OFF_ACCEL, as quick as gets him there at hitT -
+			// along the way round.)
+			const path = [from, ...this.curve(from, round, hit, QB_HIT_ROUND_PTS)];
+			const lens = [0];
+			for (let i = 1; i < path.length; i++) {
+				lens.push(lens[i - 1]! + dist(path[i - 1]!, path[i]!));
+			}
+			const L = lens.at(-1)!;
+			const T = (hitT - shed) / 1000;
+			const v0 = QB_HIT_FROM_FPS;
+			const room = T * T - (2 * (L - v0 * T)) / GET_OFF_ACCEL;
+			const a =
+				room >= 0 ? GET_OFF_ACCEL : (2 * (L - v0 * T)) / Math.max(T * T, 1e-6);
+			const ta = room >= 0 ? T - Math.sqrt(room) : T;
+			const gone = (t: number) =>
+				L <= v0 * T
+					? (L * t) / T
+					: t <= ta
+						? v0 * t + (a * t * t) / 2
+						: v0 * ta + (a * ta * ta) / 2 + (v0 + a * ta) * (t - ta);
+			const along = (g: number): Pt => {
+				const k = Math.max(
+					1,
+					lens.findIndex((x) => x >= g),
+				);
+				const p = path[k - 1]!;
+				const q = path[k] ?? p;
+				const g0 = lens[k - 1]!;
+				const u = lens[k]! > g0 ? clamp((g - g0) / (lens[k]! - g0), 0, 1) : 1;
+				return { x: p.x + (q.x - p.x) * u, y: p.y + (q.y - p.y) * u };
+			};
+			const n = Math.max(2, Math.round((T * 1000) / RAMP_STEP_MS));
+			for (let i = 1; i <= n; i++) {
+				const t = (T * i) / n;
+				m.go(
+					i === n ? hit : along(gone(t)),
+					shed + t * 1000,
+					fast ? "run" : undefined,
+				);
+			}
+		} else {
+			m.getOff(
+				hit,
+				hitT,
+				QB_HIT_FROM_FPS,
+				GET_OFF_ACCEL,
+				fast ? "run" : undefined,
+			);
+		}
+		// (On through him the way he came in on him - round the man he was
+		// on, that is the way the last of it had him going.)
+		const l = m.last;
+		const came =
+			round && dist(l.from, l.to) > 0
+				? Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x)
+				: into;
 		const peel =
-			into +
+			came +
 			QB_HIT_PEEL *
-				(Math.sin(into + QB_HIT_PEEL) <= Math.sin(into - QB_HIT_PEEL) ? 1 : -1);
-		this.hitThrough(m, into, peel, hitT);
+				(Math.sin(came + QB_HIT_PEEL) <= Math.sin(came - QB_HIT_PEEL) ? 1 : -1);
+		this.hitThrough(m, came, peel, hitT);
 		m.hold(hitT + QB_HIT_STAND_MS, "stand", this.toward(m.at, down));
 		if (hitT - shed >= RUSH_MOVE_AFTER + QB_HIT_SHOVE_MS[0]) {
 			this.rushMove(m, qb, hitT);
@@ -25969,6 +26089,16 @@ const QB_HIT_BACK_BIAS = 0.35;
 const QB_HIT_DOWN_MS = 700;
 const QB_HURT_DOWN_MS = 60_000;
 const QB_HIT_BLOCKER_FT = 5;
+// (Off the man he was on round his shoulder, no nearer him than this
+// (feet), if his way in to the quarterback goes through him - not run
+// through him.)
+const QB_HIT_ROUND_FT = 2.4;
+const QB_HIT_ROUND_PTS = 12;
+// (Coming in onto him no more than this far round (radians) from the way
+// he would have straight; not round at all if that leaves less than this
+// far (feet) out to the side to go.)
+const QB_HIT_ROUND_END = 0.7;
+const QB_HIT_ROUND_LEAST = 0.4;
 const QB_HIT_SEE_MS = 200;
 // A pass knocked down at the line (see batAt): by the man in the rush the
 // sim says got to it - or, this often with nobody named on it, one in the
