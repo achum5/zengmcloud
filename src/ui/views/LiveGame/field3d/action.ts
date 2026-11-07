@@ -11221,6 +11221,15 @@ class Action {
 		up = false,
 	): boolean {
 		const reach = catchAt - CATCH_REACH_MS;
+		// (On past it already, on the move - it taken in front of him,
+		// picked off, say: reaching as it goes by, in his stride - not run on
+		// past it and stopped dead for it after.)
+		if (rec.t > catchAt) {
+			const at = legAt(rec, catchAt);
+			if (GAITS.has(at.move) && legPace(at) >= STOP_LEAST) {
+				rec.cut(catchAt);
+			}
+		}
 		rec.pin(catchAt);
 		// (There a moment early, on the move: on the way he was going to
 		// meet it, in his stride - not stopped dead for it.)
@@ -21713,6 +21722,9 @@ class Action {
 			if (by) {
 				const over = this.w({ d: land.d - 1.6, a: land.a });
 				by.chase(over, Math.max(by.t, stopT) + 200, by.top * 0.85);
+				// (Pulled up into it as he gets there - there a moment later for
+				// it, if he must be - not stopped dead over it off a sprint.)
+				by.breakDown(0, STOP_ACCEL * STOP_HARD, LET_DOWN_SPARE_MS);
 				by.act("spotBall", by.t + LET_DOWN_MS, this.toward(by.at, landPt));
 				downT = by.t - LET_DOWN_MS / 2;
 				this.done.add(by.pid);
@@ -24918,6 +24930,9 @@ const LET_ASIDE = 9;
 const LET_WAVE_FROM = 1800;
 const LET_WAVE_TO = 300;
 const LET_DOWN_MS = 900;
+// (The cover man downing it there as much as this much later (ms), pulled
+// up into it.)
+const LET_DOWN_SPARE_MS = 400;
 // A kickoff aimed out toward the numbers this often (on the kicker's own
 // count), this far (feet) out from the middle.
 const KICK_AIM_OUT = 0.35;
