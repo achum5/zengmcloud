@@ -13527,8 +13527,30 @@ class Action {
 				: disc >= 0
 					? (backT - Math.sqrt(disc)) / (2 * per)
 					: Infinity;
+		// (Not backpedaled through the men in blocks behind him, though -
+		// see blocksIn: round them, if he can be, instead.)
+		const backBlocked =
+			gives &&
+			backFar > GIVE_STEP_FT &&
+			backV > 0 &&
+			Number.isFinite(backV) &&
+			this.blocksIn(
+				m,
+				watch ?? m,
+				m.at,
+				[setAt],
+				backBy -
+					stepMs(
+						backFar,
+						Math.min(backV, Math.sqrt(backFar / per)),
+						RELEASE_ACCEL,
+						down,
+					),
+				backBy,
+			).worst > CLIMB_INTO_FT;
 		const back =
 			gives &&
+			!backBlocked &&
 			backFar > GIVE_STEP_FT &&
 			backV > 0 &&
 			backV <= BACK_MOST &&
@@ -13635,9 +13657,10 @@ class Action {
 				}
 				inTo();
 			} else if (
-				gives ||
-				(!m.slowAlong(hit, lead, STRETCH_SLACK) &&
-					!this.pressRound(m, hit, lead, watch))
+				gives
+					? !(backBlocked && this.pressRound(m, hit, lead, watch))
+					: !m.slowAlong(hit, lead, STRETCH_SLACK) &&
+						!this.pressRound(m, hit, lead, watch)
 			) {
 				// (Backpedaling, if he gives ground and can go that quick so.)
 				m.pressUp(
