@@ -4576,6 +4576,10 @@ const FILL_SHORT = [0.3, 0.55, 0.8] as const;
 const FILL_ROOM_FT = 2.4;
 const FILL_ROOM_MS = 600;
 const FILL_ROOM_EVERY_MS = 100;
+// (Not clear even where he gets to: pulled up on his way there instead,
+// from no further back than this - see shortOfBlocks.)
+const FILL_BACK_STEP_MS = 50;
+const FILL_BACK_MOST_MS = 800;
 const CLIMB_PACE = 0.85;
 // (Up to a man past others in blocks - over the line to the next level, say
 // - not straight through them: no nearer a man in one than CLIMB_CLEAR_FT,
@@ -12615,8 +12619,14 @@ class Action {
 				y: pt.y + Math.sin(ang) * 2.3,
 			};
 			const face = this.toward(hit, pt);
-			// (In on it where it has got to by then.)
-			const there = Math.max(lead, at + 100);
+			// (In on it where it has got to by then. Coming from behind him,
+			// not there before he is by it - not stood in his way for him to
+			// run into from behind.)
+			const there = Math.max(
+				lead,
+				at + 100,
+				Math.cos(ang - fall) < 0 ? t + 50 : -Infinity,
+			);
 			const u = clamp((there - t) / STOOD_MS, 0, 1);
 			// (Where he has been fixed till before he went in on it - his
 			// run in at it his own to brace at the last of.)
@@ -19119,11 +19129,11 @@ class Action {
 			x: at.x + ((l.to.x - l.from.x) / far) * ease,
 			y: at.y + ((l.to.y - l.from.y) / far) * ease,
 		};
-		const blocked = (p: Pt) =>
+		const blocked = (p: Pt, t0 = m.t) =>
 			this.men.some((x) => {
 				for (
-					let t = m.t;
-					x !== m && t <= m.t + FILL_ROOM_MS;
+					let t = t0;
+					x !== m && t <= t0 + FILL_ROOM_MS;
 					t += FILL_ROOM_EVERY_MS
 				) {
 					if (
@@ -19135,7 +19145,38 @@ class Action {
 				}
 				return false;
 			});
-		if (!blocked(on) || blocked(at)) {
+		if (!blocked(on)) {
+			return;
+		}
+		if (blocked(at)) {
+			// (Not clear where he gets to, even - a block drifted over onto
+			// it, say: pulled up on his way there instead, where he comes to
+			// a stop clear of them - not stood in the middle of it.)
+			for (
+				let tc = m.t - FILL_BACK_STEP_MS;
+				tc >= Math.max(from, m.t - FILL_BACK_MOST_MS);
+				tc -= FILL_BACK_STEP_MS
+			) {
+				const q = legAt(m, tc);
+				const f = dist(q.from, q.to);
+				if (!GAITS.has(q.move)) {
+					return;
+				}
+				if (f <= 0) {
+					continue;
+				}
+				const vq = legPace(q);
+				const eq = Math.min(STALK_EASE_FT, (vq * vq) / (2 * STOP_ACCEL));
+				const p = m.posAt(tc);
+				const stop = {
+					x: p.x + ((q.to.x - q.from.x) / f) * eq,
+					y: p.y + ((q.to.y - q.from.y) / f) * eq,
+				};
+				if (!blocked(stop, tc)) {
+					m.cut(tc);
+					return;
+				}
+			}
 			return;
 		}
 		// (From as far short of it as he pulls up in, at his pace there.)
