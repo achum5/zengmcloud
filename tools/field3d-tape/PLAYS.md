@@ -420,5 +420,9 @@ the umpire.
 ## Side notes
 
 - Cover fouls (interference, illegal contact) are acted only when the man the
-  sim names is near the target - the coverage isn't arranged so he is, so most
-  aren't shown.
+  sim names is near the target. A defender flagged for pass interference now
+  lines up across from the man the ball goes to (his group's nearest place)
+  and covers him, so he is on him as it comes where he can get there: 3 of
+  the nine games' 8 shown (none before). Left: a deep safety named on a short
+  throw to the far side, a flag with no stat naming the man, offensive
+  interference.
