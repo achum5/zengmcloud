@@ -4329,7 +4329,7 @@ const BLOCK_CLEAR_FT = 3.5;
 const BLOCK_CLEAR_FPS = 4;
 // (Up front, only as long as he is up and running: until this long before
 // he is down, ms.)
-const CLEAR_DOWN_MS = 500;
+const CLEAR_DOWN_MS = 250;
 // (In the way of him before the blocker is on him: a step or two over out
 // of it, there as he is no nearer than this (feet), at this pace (ft/s) -
 // no more than this far over (feet), and in no less than this (ms) - and
