@@ -66,6 +66,16 @@ const HELPED_FPS = 5;
 const ALONE_FPS = 7;
 const SHOWN_OFF = 6000;
 const HELPED = 0.6;
+// How bad it is, where the game says (the box score's injury, as on the 3D
+// court - see court3d/director.ts hurtFor): out this many games or more,
+// helped off, and less, off on his own; this many or more, down with the
+// trainers this much longer - and less than HELPED_GAMES, this much
+// shorter. (Not said - a game that has none - helped off on HELPED of them,
+// each as long.)
+const HELPED_GAMES = 2;
+const BAD_GAMES = 8;
+const BAD_LONGER = 1.5;
+const KNOCK_SHORTER = 0.75;
 // The men round him: this near, most of them, down on a knee a moment after
 // the trainers go, up again as he is.
 const KNEEL_NEAR = 30;
@@ -512,6 +522,8 @@ export const stageHurt = (input: {
 	// Men already kneeling for another man hurt on the play (and the
 	// others hurt on it).
 	busy: Set<number>;
+	// What he hurt, and how many games it keeps him out, if the game says.
+	injury?: { type: string; games: number } | undefined;
 	// Where the others hurt on it lie, and their trainers are.
 	others?: Pt[];
 	tending?: Pt[];
@@ -582,7 +594,17 @@ export const stageHurt = (input: {
 		medics.push({ pid: medicId(team, input.n, k), team, legs });
 	}
 	const tending = arrived + 300;
-	const up = arrived + TEND_MS;
+	const games = input.injury?.games;
+	const up =
+		arrived +
+		TEND_MS *
+			(games === undefined
+				? 1
+				: games >= BAD_GAMES
+					? BAD_LONGER
+					: games < HELPED_GAMES
+						? KNOCK_SHORTER
+						: 1);
 	for (const m of medics) {
 		const to = m.legs.at(-1)!.to;
 		still(m.legs, m.legs.at(-1)!.t1, up, to, "tend", toward(to, at));
@@ -615,7 +637,8 @@ export const stageHurt = (input: {
 	});
 
 	// And off: to his sideline, helped or on his own.
-	const helped = r() < HELPED;
+	const roll = r();
+	const helped = games === undefined ? roll < HELPED : games >= HELPED_GAMES;
 	const off = {
 		x: Math.min(TEAM_AREA[1], Math.max(TEAM_AREA[0], at.x + (r() - 0.5) * 20)),
 		y: line === 0 ? -(COACH_LINE + 3) : FIELD_W + COACH_LINE + 3,

@@ -1468,6 +1468,9 @@ class Director {
 	readonly speeds: Map<number, number>;
 	readonly flair: Map<number, Flair>;
 	readonly rated = new Map<number, FieldRatings>();
+	// What each man hurt in the game hurt, and how badly, where the game
+	// says (see hurt.ts).
+	readonly injuries = new Map<number, { type: string; games: number }>();
 	readonly stakes: Stakes | undefined;
 	// What the clock read as each quarter started.
 	readonly opens = new Map<number, number>();
@@ -1493,6 +1496,9 @@ class Director {
 		for (const p of players) {
 			if (p.ratings) {
 				this.rated.set(p.pid, p.ratings);
+			}
+			if (p.injury) {
+				this.injuries.set(p.pid, p.injury);
 			}
 		}
 		for (const p of players) {
@@ -2409,6 +2415,7 @@ class Director {
 				t1,
 				ball,
 				busy,
+				injury: this.injuries.get(pid),
 				others: [...lies].filter(([q]) => q !== pid).map(([, at]) => at),
 				tending: medics.flatMap((m) => {
 					const l = m.legs.find((x) => x.move === "tend");

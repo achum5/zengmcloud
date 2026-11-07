@@ -1255,6 +1255,59 @@ describe("a man hurt", () => {
 	}, 20_000);
 });
 
+describe("a man hurt, as badly as the game says", () => {
+	// The box score's injury (see Field3D): off on his own from a knock that
+	// keeps him out a game or none, helped off from worse - and down with the
+	// trainers a while longer from one that keeps him out a long time.
+	test("off on his own from a knock, helped off from worse, down longer from a bad one", () => {
+		const OUT = [0, 4, 12];
+		const seen = new Set<number>();
+		for (const game of games) {
+			const hurt = game.events.flatMap((e) =>
+				e?.type === "injury" && typeof e.injuredPID === "number"
+					? [e.injuredPID]
+					: [],
+			);
+			const out = new Map(hurt.map((pid, k) => [pid, OUT[k % OUT.length]!]));
+			const tl = stage({
+				events: game.events,
+				roster: game.roster.map((p) =>
+					out.has(p.pid)
+						? {
+								...p,
+								injury: { type: "Sprained Ankle", games: out.get(p.pid)! },
+							}
+						: p,
+				),
+			});
+			for (const play of tl.plays) {
+				if (!play.hurt) {
+					continue;
+				}
+				const games = out.get(play.hurt.pid)!;
+				seen.add(games);
+				const him = play.parts.find((p) => p.pid === play.hurt!.pid)!;
+				const off = him.legs.at(-1)!;
+				assert.strictEqual(
+					off.arms === "overShoulders",
+					games >= 2,
+					`play ${play.i}`,
+				);
+				const tend = play
+					.medics!.find((m) => m.team === him.team)!
+					.legs.find((l) => l.move === "tend")!;
+				const long = tend.t1 - tend.t0;
+				// (From when they are all with him - this one there first,
+				// maybe.)
+				const least = games >= 8 ? 5400 : games >= 2 ? 3600 : 2700;
+				assert.isAtLeast(long, least - 1, `play ${play.i}`);
+				assert.isBelow(long, least + 1500, `play ${play.i}`);
+			}
+		}
+		assert.isAbove(seen.size, 1);
+	}, 20_000);
+});
+
 describe("a man hurt, the trainers waved out", () => {
 	test("one of his own near him turned to the trainers, an arm waving them out, then down on a knee by him", () => {
 		let waved = 0;

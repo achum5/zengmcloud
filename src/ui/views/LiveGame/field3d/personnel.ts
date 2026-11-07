@@ -35,6 +35,9 @@ export type RosterMan = {
 	name?: string;
 	// His ratings, where the game has them (see ratings.ts).
 	ratings?: FieldRatings;
+	// Hurt in this game: what it is, and how many games it keeps him out
+	// (the 3D court's: see court3d/director.ts).
+	injury?: { type: string; games: number };
 };
 
 const isGroup = (s: unknown): s is Group =>

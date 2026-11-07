@@ -449,6 +449,14 @@ const Field3D = ({
 						name: p.name,
 						jerseyNumber: p.jerseyNumber,
 						...(p.courtRatings ? { ratings: p.courtRatings } : {}),
+						...(p.injury?.newThisGame && typeof p.injury.type === "string"
+							? {
+									injury: {
+										type: p.injury.type,
+										games: p.injury.gamesRemaining ?? 0,
+									},
+								}
+							: {}),
 					});
 				}
 			}
