@@ -13002,10 +13002,13 @@ class Action {
 					wide(x.at, from, p) &&
 					wide(p, x.from, x.at),
 			);
-		near.forEach(({ m, from }, k) => {
+		near.forEach(({ m }, k) => {
 			if (r() > PILE_IN[k]!) {
 				return;
 			}
+			// (In from where he is when he goes in - not where he was as it
+			// went down, and through it from past it to that side of it.)
+			const from = m.posAt(t + PILE_FIRST + on.length * PILE_GO);
 			const was = Math.atan2(from.y - at.y, from.x - at.x) + (r() - 0.5) * 0.5;
 			const far = PILE_OFF + r() * PILE_OFF_MORE;
 			const spot = (way: number) => ({
