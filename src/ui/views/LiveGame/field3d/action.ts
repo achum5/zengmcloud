@@ -10294,7 +10294,12 @@ class Action {
 				continue;
 			}
 			b.hold(from);
-			b.runUp({ x: b.at.x + ux * go, y: b.at.y + uy * go }, fps);
+			// (Round any man down on the way - not over him.)
+			const to = { x: b.at.x + ux * go, y: b.at.y + uy * go };
+			for (const p of this.wayRound(b.at, to, b.t).slice(0, -1)) {
+				b.run(p, fps);
+			}
+			b.runUp(to, fps);
 		}
 	}
 
