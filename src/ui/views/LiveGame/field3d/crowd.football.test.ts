@@ -4,7 +4,7 @@ import { posOf } from "./crew.ts";
 import { boardAt, crowdAt } from "./crowd.ts";
 import { compileField, type FieldTimeline } from "./director.ts";
 import { momentAt } from "./evaluate.ts";
-import { MID_X, SIDE_ROOM } from "./geometry.ts";
+import { FIELD_W, MID_X, SIDE_ROOM } from "./geometry.ts";
 import { sidelineOf } from "./sideline.ts";
 import { simGames } from "./testGames.ts";
 
@@ -177,7 +177,7 @@ test("the picture on the crowd over a timeout", () => {
 
 // Between quarters - and at the half, the teams on their way off, not at
 // the end - the whole stadium, panning along it; and from it to the next
-// play.
+// play (or to the huddles).
 test("the look round the stadium between quarters", () => {
 	for (const [k, tl] of tls.entries()) {
 		const looks = tl.plays.filter((p) => p.between !== undefined);
@@ -194,8 +194,9 @@ test("the look round the stadium between quarters", () => {
 			// (After the play shown again, if it is.)
 			assert.isAbove(p.between!, p.replay?.cue ?? 0, `${p.i}`);
 			const at = (t: number) => aimFor({ t, play: p, players: [] });
+			const end = p.timeout?.cut ?? p.t1;
 			const a = at(p.between! + 1);
-			const b = at(p.t1 - 1);
+			const b = at(end - 1);
 			assert.isAbove(a.width, 300, `${p.i}`);
 			assert.isAbove(b.x, a.x + 40, `${p.i}`);
 			// (The teams on their way to the other end over it, a quarter
@@ -203,7 +204,7 @@ test("the look round the stadium between quarters", () => {
 			if (p.quarter !== 2) {
 				const far = p.parts
 					.filter((q) => q.pid >= 0 && q.legs.length > 0)
-					.map((q) => [posOf(q.legs, p.between!), posOf(q.legs, p.t1)])
+					.map((q) => [posOf(q.legs, p.between!), posOf(q.legs, end - 1)])
 					.filter(([from]) => Math.abs(from!.x - MID_X) > 20);
 				const going = far.filter(
 					([from, to]) => (to!.x - from!.x) * Math.sign(MID_X - from!.x) > 3,
@@ -212,6 +213,42 @@ test("the look round the stadium between quarters", () => {
 			}
 		}
 	}
+});
+
+// After the look round the stadium between quarters, now and then - not at
+// the half - the picture on the huddles: each side gathered at its own
+// sideline, as at the two-minute warning, nobody having called it; then on
+// to the next play.
+test("the huddles between quarters, now and then", () => {
+	let breaks = 0;
+	let huddles = 0;
+	for (const tl of tls) {
+		for (const p of tl.plays) {
+			if (p.between === undefined || p.quarter === 2) {
+				continue;
+			}
+			breaks += 1;
+			const to = p.timeout;
+			if (!to) {
+				continue;
+			}
+			huddles += 1;
+			assert.isUndefined(to.call, `${p.i}`);
+			assert.isAbove(to.cut, p.between, `${p.i}`);
+			assert.include(tl.cuts, to.cut, `${p.i}`);
+			assert.isTrue(fromLow({ t: to.cut + 1, play: p, players: [] }));
+			const men = p.parts.filter((q) => q.pid >= 0 && q.legs.length > 0);
+			for (const q of men) {
+				const at = posOf(q.legs, to.cut + 500);
+				const line = sidelineOf(q.team) === 0 ? 0 : FIELD_W;
+				// (Or, round the coach with the quarterback, out a step
+				// from him in a ring of their own.)
+				assert.isBelow(Math.abs(at.y - line), 24, `${p.i} ${q.pid}`);
+			}
+		}
+	}
+	assert.isAbove(huddles, 0);
+	assert.isBelow(huddles, breaks);
 });
 
 // Over a quarter break, now and then - not at the half - the crowd across
@@ -230,12 +267,14 @@ test("the wave over a quarter break", () => {
 			assert.strictEqual(w.t, p.between, `${p.i}`);
 			assert.notStrictEqual(p.quarter, 2, `${p.i}`);
 			assert.isUndefined(crowdAt(tl, w.t - 1, 0).rolling, `${p.i}`);
+			// (Up to the huddles after it, if the picture goes to them.)
+			const end = p.timeout?.cut ?? p.t1;
 			const first = crowdAt(tl, w.t, 0).rolling!;
-			const last = crowdAt(tl, p.t1 - 1, 0).rolling!;
+			const last = crowdAt(tl, end - 1, 0).rolling!;
 			assert.strictEqual(first.dir, w.dir);
 			assert.isBelow((first.x - MID_X) * w.dir, -50, `${p.i}`);
 			assert.isAbove((last.x - MID_X) * w.dir, 50, `${p.i}`);
-			for (let t = w.t; t + 500 < p.t1; t += 500) {
+			for (let t = w.t; t + 500 < end; t += 500) {
 				const a = crowdAt(tl, t, 0).rolling!;
 				const b = crowdAt(tl, t + 500, 0).rolling!;
 				assert.closeTo((b.x - a.x) * w.dir, 27.5, 0.01, `${p.i}`);

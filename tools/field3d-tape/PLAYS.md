@@ -377,7 +377,11 @@ two-minute warning.
 Now (95 timeouts): rows 48, the quarterback over 29, on a knee 18. The
 other side in a ring 48, at its sideline 31, on a knee 16.
 
-To do: the quarter breaks (the change of ends is the same each time).
+Between quarters (not at the half), the look round the stadium as the
+teams start for the other end, the crowd doing the wave on some; then, on
+about three breaks in five, the picture on the huddles - each side gathered
+at its own sideline round its coaches, as at the two-minute warning (the 3D
+court's huddles at a break) - and on from there to the next play.
 
 ## 12. Injury
 

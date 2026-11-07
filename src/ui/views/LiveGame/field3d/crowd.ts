@@ -110,7 +110,8 @@ export const rollingAt = (
 	t: number,
 ): { x: number; dir: Dir } | undefined => {
 	const w = play?.wave;
-	if (!play || !w || t < w.t || t > play.t1) {
+	// (Until the picture goes to the huddles, if it does.)
+	if (!play || !w || t < w.t || t > (play.timeout?.cut ?? play.t1)) {
 		return undefined;
 	}
 	return {

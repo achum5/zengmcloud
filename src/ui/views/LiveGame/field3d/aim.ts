@@ -284,10 +284,9 @@ export const aimFor = (m: FieldMoment): Shot => {
 		};
 	}
 	if (play.between !== undefined && t >= play.between) {
-		const u = Math.min(
-			1,
-			(t - play.between) / Math.max(1, play.t1 - play.between),
-		);
+		// (To the huddles after it, if the picture goes to them.)
+		const end = play.timeout?.cut ?? play.t1;
+		const u = Math.min(1, (t - play.between) / Math.max(1, end - play.between));
 		const { width, y, z, pan } = BETWEEN;
 		return { x: MID_X + pan * (2 * u - 1), width, y, z };
 	}

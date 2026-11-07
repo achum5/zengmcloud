@@ -515,6 +515,9 @@ const CALL_AFTER = 1100;
 const BETWEEN_AFTER = 1500;
 const HALF_BETWEEN_AFTER = 3400;
 const BETWEEN_MS = 4200;
+// (And after it, this often - not at the half - the picture on the
+// huddles.)
+const BREAK_HUDDLE = 0.6;
 // (The crowd doing the wave over it - not at the half - this often.)
 const WAVE_SHARE = 0.6;
 // A field goal shown again (see replays.ts) if it ties the game, or puts
@@ -2532,7 +2535,7 @@ class Director {
 				}
 			}
 		}
-		const timeout =
+		const called =
 			calledI >= 0
 				? (() => {
 						const e = events[calledI]!;
@@ -2572,28 +2575,17 @@ class Director {
 						});
 					})()
 				: undefined;
-		if (timeout) {
-			t1 = Math.max(t1, timeout.t1);
-			if (timeout.call) {
-				this.cuts.push(timeout.call.from);
+		if (called) {
+			t1 = Math.max(t1, called.t1);
+			if (called.call) {
+				this.cuts.push(called.call.from);
 			}
-			this.cuts.push(timeout.cut);
+			this.cuts.push(called.cut);
 			this.drive = undefined;
-		}
-		const cheerShot = timeout
-			? cheerShotFor(timeout.cut, t1, timeout.at, this.rng(i0, "cheer"))
-			: undefined;
-		const crowdShot =
-			timeout && !cheerShot
-				? crowdShotFor(timeout.cut, t1, this.rng(i0, "crowdShot"))
-				: undefined;
-		if (cheerShot || crowdShot) {
-			// (And from them to the next play.)
-			this.cuts.push((cheerShot ?? crowdShot)!.cut, t1);
 		}
 		// The measurement: the picture on it once the play is over.
 		const measureAt =
-			measuring && !timeout && !hurt && !half && !ended
+			measuring && !called && !hurt && !half && !ended
 				? measureTimes(offAt + MEASURE_AFTER)
 				: undefined;
 		if (measureAt) {
@@ -2605,7 +2597,7 @@ class Director {
 		const between =
 			!ended &&
 			!hurt &&
-			!timeout &&
+			!called &&
 			!measureAt &&
 			events.slice(i0, i1).some((e) => e?.type === "quarter")
 				? Math.max(
@@ -2623,8 +2615,43 @@ class Director {
 				});
 			}
 			t1 = Math.max(t1, between + BETWEEN_MS);
-			// (And from it to the next play.)
+			// (And from it to the next play - or to the huddles.)
 			this.cuts.push(between, t1);
+		}
+		// Between quarters, now and then - as at a break on the 3D court (see
+		// court3d/director.ts toHuddles) - after the look round the stadium:
+		// the picture on a side gathered at its sideline round its head coach,
+		// the other side at its own, as at the two-minute warning (see
+		// timeout.ts); then on to the next play.
+		const breaks = this.rng(i0, "break");
+		const huddle =
+			between !== undefined && !half && breaks() < BREAK_HUDDLE
+				? stageTimeout({
+						parts,
+						ball,
+						cut: between + BETWEEN_MS,
+						team: (breaks() < 0.5 ? 0 : 1) as Side,
+						spot: anyBall(ball, parts, offAt) ?? { x: losX, y: ballY },
+						t0,
+						playI: i0,
+						r: this.rng(i0, "breakHuddle"),
+						warning: true,
+					})
+				: undefined;
+		if (huddle) {
+			t1 = Math.max(t1, huddle.t1);
+		}
+		const timeout = called ?? huddle;
+		const cheerShot = timeout
+			? cheerShotFor(timeout.cut, t1, timeout.at, this.rng(i0, "cheer"))
+			: undefined;
+		const crowdShot =
+			timeout && !cheerShot
+				? crowdShotFor(timeout.cut, t1, this.rng(i0, "crowdShot"))
+				: undefined;
+		if (cheerShot || crowdShot) {
+			// (And from them to the next play.)
+			this.cuts.push((cheerShot ?? crowdShot)!.cut, t1);
 		}
 		const waves = this.rng(i0, "wave");
 		const wave =
