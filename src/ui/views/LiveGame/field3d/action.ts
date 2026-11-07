@@ -297,6 +297,9 @@ const BEND_SLOW = 0.9;
 const BEND_OUT_BACK_FT = 3;
 const BEND_OUT_MOST = 1.2;
 const BEND_OUT_ROOM = 1.5;
+// (Too near to round out to at his pace: as much again as tight, a try at a
+// time - see Actor.bendOut.)
+const BEND_OUT_TIGHTER = 0.85;
 // (No more than this many ms later for where he is going, for bending round
 // into it: see Actor.bendFor.)
 const BEND_LATE_MS = 100;
@@ -1214,18 +1217,31 @@ class Actor {
 			y: lk.from.y + (lk.to.y - lk.from.y) * f,
 		};
 		const s = Math.sign(u.x * (to.y - c.y) - u.y * (to.x - c.x)) || 1;
-		const R = (v * v) / BEND_LAT;
-		const o = { x: c.x - s * u.y * R, y: c.y + s * u.x * R };
-		const d = dist(o, to);
-		if (d <= R * BEND_OUT_ROOM) {
-			return false;
+		// (Too near it to round out to it at his pace: tighter, slowing to
+		// the pace he takes that at as he goes round - no harder than he
+		// plants (see CUT_ACCEL, STOP_HARD), nor below BEND_PACE - not
+		// turned in a stride.)
+		let R = (v * v) / BEND_LAT;
+		let o = { x: c.x - s * u.y * R, y: c.y + s * u.x * R };
+		let d = dist(o, to);
+		while (d <= R * BEND_OUT_ROOM) {
+			R *= BEND_OUT_TIGHTER;
+			if (R * BEND_LAT < BEND_PACE * BEND_PACE) {
+				return false;
+			}
+			o = { x: c.x - s * u.y * R, y: c.y + s * u.x * R };
+			d = dist(o, to);
 		}
+		const vArc = Math.sqrt(BEND_LAT * R);
 		const a = Math.atan2(to.y - o.y, to.x - o.x);
 		const end = a - s * Math.acos(R / d);
 		const a0 = Math.atan2(c.y - o.y, c.x - o.x);
 		const sweep =
 			(((s * (end - a0)) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
 		if (!(sweep > 0 && sweep <= BEND_OUT_MOST)) {
+			return false;
+		}
+		if ((v * v - vArc * vArc) / (2 * R * sweep) > CUT_ACCEL * STOP_HARD) {
 			return false;
 		}
 		const n = Math.max(2, Math.ceil(sweep / BEND_STEP));
@@ -1248,11 +1264,11 @@ class Actor {
 				legs.at(-1)!.to = c;
 			}
 		}
-		const dt = ((R * sweep) / n / v) * 1000;
-		for (const p of pts) {
+		pts.forEach((p, i) => {
 			const at = this.last;
+			const dt = ((R * sweep) / n / (v + ((vArc - v) * (i + 0.5)) / n)) * 1000;
 			this.push({ ...was, t0: at.t1, t1: at.t1 + dt, from: at.to, to: p });
-		}
+		});
 		return true;
 	}
 
@@ -23113,6 +23129,7 @@ class Action {
 				// takes, short of the ball.)
 				// (Or by it, if he cannot pull up short of it.)
 				// (Nor over a man down on the way: bent off by him.)
+				this.roundBegun(m);
 				if (GAITS.has(m.last.move) && ball) {
 					const v = legPace(m.last);
 					const near = dist(m.at, ball);
@@ -23127,6 +23144,7 @@ class Action {
 				m.hold(m.t + 600, "stand");
 				continue;
 			}
+			this.roundBegun(m);
 			const l = m.last;
 			const moving = l.from.x !== l.to.x || l.from.y !== l.to.y;
 			if (moving) {
@@ -23138,6 +23156,45 @@ class Action {
 				);
 			}
 			m.hold(Math.max(m.t, t) + 600, "stand");
+		}
+	}
+
+	// A cut he had only begun as the whistle goes - the last of his legs
+	// no more than WHISTLE_CUT_MS long, sharply off the one before:
+	// rounded into the way he was cutting, at his pace (see
+	// Actor.bendFor), for him to pull up along - not turned in a stride
+	// at full tilt.
+	private roundBegun(m: Actor) {
+		const [p, q] = m.legs.slice(-2);
+		const qFar = q ? dist(q.from, q.to) : 0;
+		if (
+			!p ||
+			!q ||
+			qFar <= 0 ||
+			q.t1 - q.t0 >= WHISTLE_CUT_MS ||
+			p.t1 !== q.t0 ||
+			!GAITS.has(p.move) ||
+			!GAITS.has(q.move) ||
+			p.arms ||
+			q.arms ||
+			dist(p.from, p.to) <= 0 ||
+			legPace(p) < WHISTLE_CUT_PACE ||
+			!(angleAt(p.from, p.to, q.to) > BEND_LEAST)
+		) {
+			return;
+		}
+		const v = legPace(p);
+		const ft = qFar + EASE_OFF_FT;
+		const to = {
+			x: q.from.x + ((q.to.x - q.from.x) / qFar) * ft,
+			y: q.from.y + ((q.to.y - q.from.y) / qFar) * ft,
+		};
+		m.cut(q.t0);
+		if (
+			m.bendFor(to, m.t + (dist(m.at, to) / Math.max(v, 1)) * 1000, 0) ===
+			undefined
+		) {
+			m.legs.push(q);
 		}
 	}
 
@@ -24266,6 +24323,12 @@ const WATCH_STEP_MS = 450;
 const WATCH_TURN = 0.6;
 const WATCH_NEAR_FT = 6;
 // (Pulled up from the step before rather than this little way into one.)
+// (A cut he had begun no more than this long (ms) before the whistle -
+// see Action.roundBegun.)
+const WHISTLE_CUT_MS = 300;
+// (Only one begun at this pace (ft/s) or more - slowed into, it is a
+// plant, cut in a stride as it was.)
+const WHISTLE_CUT_PACE = 14;
 const WHISTLE_SLIVER_MS = 150;
 // (Not with less time than this, ms, to go after it.)
 const FOLLOW_LEAST_MS = 400;
