@@ -1258,9 +1258,23 @@ describe("a man hurt", () => {
 describe("a man hurt, as badly as the game says", () => {
 	// The box score's injury (see Field3D): off on his own from a knock that
 	// keeps him out a game or none, helped off from worse - and down with the
-	// trainers a while longer from one that keeps him out a long time.
-	test("off on his own from a knock, helped off from worse, down longer from a bad one", () => {
+	// trainers a while longer from one that keeps him out a long time; both
+	// hands to his helmet for his head or his neck, an arm held for an arm,
+	// as he lies there and sat up.
+	test("off on his own from a knock, helped off from worse, down longer from a bad one - holding what he hurt", () => {
 		const OUT = [0, 4, 12];
+		const TYPES = [
+			"Sprained Ankle",
+			"Concussion",
+			"Sprained Wrist",
+			"Strained Neck",
+		];
+		const HOLDS: Record<string, string | undefined> = {
+			Concussion: "handsOnHelmet",
+			"Strained Neck": "handsOnHelmet",
+			"Sprained Wrist": "holdArm",
+		};
+		const holds = new Set<string | undefined>();
 		const seen = new Set<number>();
 		for (const game of games) {
 			const hurt = game.events.flatMap((e) =>
@@ -1269,13 +1283,16 @@ describe("a man hurt, as badly as the game says", () => {
 					: [],
 			);
 			const out = new Map(hurt.map((pid, k) => [pid, OUT[k % OUT.length]!]));
+			const types = new Map(
+				hurt.map((pid, k) => [pid, TYPES[k % TYPES.length]!]),
+			);
 			const tl = stage({
 				events: game.events,
 				roster: game.roster.map((p) =>
 					out.has(p.pid)
 						? {
 								...p,
-								injury: { type: "Sprained Ankle", games: out.get(p.pid)! },
+								injury: { type: types.get(p.pid)!, games: out.get(p.pid)! },
 							}
 						: p,
 				),
@@ -1287,6 +1304,22 @@ describe("a man hurt, as badly as the game says", () => {
 				const games = out.get(play.hurt.pid)!;
 				seen.add(games);
 				const him = play.parts.find((p) => p.pid === play.hurt!.pid)!;
+				// (Sat up - or up on a knee - holding it, if he holds it.)
+				const sat = him.legs.find(
+					(l) => l.move === "hurtUp" || l.move === "hurtKnee",
+				)!;
+				const held = HOLDS[types.get(him.pid)!];
+				holds.add(held);
+				assert.strictEqual(sat.arms, held, `play ${play.i}`);
+				if (held === "handsOnHelmet") {
+					// (Down as he lies there till he sits up - not, down
+					// already as it was blown dead, before then.)
+					const down = him.legs.findLast(
+						(l) =>
+							(l.move === "hurt" || l.move === "hurtProne") && l.t0 < sat.t0,
+					)!;
+					assert.strictEqual(down.arms, held, `play ${play.i}`);
+				}
 				const off = him.legs.at(-1)!;
 				assert.strictEqual(
 					off.arms === "overShoulders",
@@ -1305,6 +1338,7 @@ describe("a man hurt, as badly as the game says", () => {
 			}
 		}
 		assert.isAbove(seen.size, 1);
+		assert.isAbove(holds.size, 1);
 	}, 20_000);
 });
 

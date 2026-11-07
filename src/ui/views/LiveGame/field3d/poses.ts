@@ -4337,6 +4337,9 @@ const FIELD_ANIMS = {
 	},
 	// A ball he should have had: his hands to his helmet, his head down.
 	handsOnHelmet: held({ ...HANDS_ON_HEAD, lean: 10 }),
+	// Hurt (see hurt.ts): his far arm held in front of him, bent, in his near
+	// hand.
+	holdArm: held({ shN: 30, elN: 80, abN: -34, shF: 14, elF: 96, abF: -8 }),
 	// Illegal contact, illegal use of the hands: an open hand out in front.
 	sigContact: held({ shN: 92, elN: 6, abN: 0, wrN: -40 }),
 	// A fair catch called for: his right arm up straight over his head,
@@ -5029,11 +5032,14 @@ const ARMS = [
 	"free",
 	"flexN",
 	"flexF",
+	// (Hands up on his head - see handsOnHelmet - where they say.)
+	"onHeadN",
+	"onHeadF",
 ] as const;
 // (One arm's own - his right, or mirrored his left: that arm only, the
 // other as the rest of him has it.)
-const ARM_N = ["shN", "elN", "abN", "wrN", "flexN", "tuck"] as const;
-const ARM_F = ["shF", "elF", "abF", "wrF", "flexF", "tuck"] as const;
+const ARM_N = ["shN", "elN", "abN", "wrN", "flexN", "tuck", "onHeadN"] as const;
+const ARM_F = ["shF", "elF", "abF", "wrF", "flexF", "tuck", "onHeadF"] as const;
 export const withArms = (
 	q: Pose,
 	arms: Pose,

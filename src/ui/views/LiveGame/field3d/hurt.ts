@@ -76,6 +76,26 @@ const HELPED_GAMES = 2;
 const BAD_GAMES = 8;
 const BAD_LONGER = 1.5;
 const KNOCK_SHORTER = 0.75;
+// And what he holds as he lies there, and sat up (or up on a knee), by
+// what he hurt (the injury's name, as the game gives it - the 3D court's
+// hurtFor): his head or his neck, both hands to his helmet; a hand or an
+// arm, the one held in the other; a leg - most of them - or anything else,
+// as he lies (a knee drawn up, a hand to it). (His hands up to it this far
+// into the act as he goes down, and held - see poses.ts held.)
+const HEAD_HURT =
+	/head|concussion|orbital|cheek|jaw|nose|eye|face|facial|tooth|neck|whiplash|throat/;
+const ARM_HURT =
+	/hand|finger|thumb|wrist|shoulder|collarbone|bicep|tricep|elbow|arm|rotator/;
+const armsFor = (type: string | undefined): Move | undefined => {
+	const t = type?.toLowerCase() ?? "";
+	return HEAD_HURT.test(t)
+		? "handsOnHelmet"
+		: ARM_HURT.test(t)
+			? "holdArm"
+			: undefined;
+};
+const ARMS_FROM = 0.1;
+const ARMS_HELD = 0.5;
 // The men round him: this near, most of them, down on a knee a moment after
 // the trainers go, up again as he is.
 const KNEEL_NEAR = 30;
@@ -626,6 +646,25 @@ export const stageHurt = (input: {
 		yaw,
 	});
 	still(him.legs, sat, up, at, faceDown ? "hurtKnee" : "hurtUp", yaw);
+	// (Holding what he hurt: from going down - not on his face holding an
+	// arm, up on the knee for that - through sitting up, let go as he gets
+	// up.)
+	const holds = armsFor(input.injury?.type);
+	if (holds) {
+		let first = true;
+		for (const l of him.legs) {
+			if (
+				l.t0 < downAt ||
+				l.t0 >= up ||
+				(l.t0 < sitUp && faceDown && holds === "holdArm")
+			) {
+				continue;
+			}
+			l.arms = holds;
+			l.armsSpan = [first ? ARMS_FROM : ARMS_HELD, l.t0 >= sat ? 1 : ARMS_HELD];
+			first = false;
+		}
+	}
 	him.legs.push({
 		t0: up,
 		t1: up + UP_MS,
