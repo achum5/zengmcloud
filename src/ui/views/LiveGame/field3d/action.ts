@@ -5856,6 +5856,9 @@ const SPIN = 0.22;
 const SPIN_MS = 480;
 const SPIN_ON = 2.5;
 const SPIN_OVER = 2.5;
+// (Into it no quicker than this, ft/s: slowed to it over his last strides,
+// at CUT_ACCEL.)
+const SPIN_INTO_FPS = 12;
 // By his ratings (see ratings.ts), where the game has them: as often as
 // this times as everybody else to make a man miss, the least elusive, and
 // this much more often the most - and over or round a man that much more,
@@ -11902,8 +11905,12 @@ class Action {
 			}
 			if (u < hurdle + spin) {
 				// Got a hand on him: round on a planted foot, out of it, and on.
+				// (Gathered into it over his last strides - see SPIN_INTO_FPS -
+				// not into it flat out and round at half the pace in a blink.)
+				carrier.brakeBy(tc, SPIN_INTO_FPS, CUT_ACCEL);
+				const there = carrier.posAt(tc);
 				const off = beside(
-					beside(at, ang, SPIN_ON),
+					beside(there, ang, SPIN_ON),
 					ang - (side * Math.PI) / 2,
 					SPIN_OVER,
 				);
@@ -11911,11 +11918,11 @@ class Action {
 				carrier.act("spin", tc + SPIN_MS, ang, off);
 				carrier.turn(side * Math.PI * 2);
 				on();
-				const hit = beside(at, toHim, out(2.2));
-				const face = this.toward(hit, at);
+				const hit = beside(there, toHim, out(2.2));
+				const face = this.toward(hit, there);
 				this.closeOn(m, hit, tc + 60, face, carrier);
 				const land = diveBy(tc + 520);
-				m.lunge("dive", land, face, reach(beside(at, face, 0.2)));
+				m.lunge("dive", land, face, reach(beside(there, face, 0.2)));
 				m.hold(land + 600, "prone");
 				m.act("getUp", land + 600 + GET_UP_MS);
 				this.done.add(m.pid);
