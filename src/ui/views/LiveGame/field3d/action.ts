@@ -5097,6 +5097,11 @@ const ZONE_EASE_LEAST_MS = 200;
 // his hands out to the ball, and not into each other. (Turned to it as he
 // goes there, side on, so he is facing it when the back gets there.)
 const MESH_APART = 3;
+// (In the gun, a back coming from the far side of him: the mesh this far
+// (feet) up in front of the quarterback and this far across to the side
+// it goes - the back's way across in front of him, not through him.)
+const GUN_CROSS_UP = 3.2;
+const GUN_CROSS_ALONG = 1;
 // Under center, the mesh this far (feet) back of where the quarterback
 // takes the snap, this far across to the side it goes - or, for a back
 // lined up nearer than MESH_RUN_FT short of that (a fullback), out in
@@ -18323,6 +18328,17 @@ class Action {
 			: draw
 				? Math.sign(cs.a - qs.a) || flow
 				: flow;
+		// (In the gun, a back from the far side of him: across in front of
+		// him to it, the quarterback stood where he is - not through him
+		// to a mesh out the other side of him: see GUN_CROSS_UP.)
+		const crosses =
+			gun &&
+			carrier !== qb &&
+			!pitch &&
+			!option &&
+			!sweep &&
+			!draw &&
+			(cs.a - qs.a) * side < 0;
 		const meshPt =
 			carrier === qb
 				? qb.at
@@ -18339,14 +18355,21 @@ class Action {
 									: draw
 										? // (Up and in a step from his set beside him.)
 											{ d: qs.d + DRAW_MESH_UP, a: cs.a - side * DRAW_MESH_IN }
-										: gun
-											? { d: qs.d + 0.5, a: side * 2.5 }
-											: underMesh(qs, cs, side),
+										: crosses
+											? {
+													d: qs.d + GUN_CROSS_UP,
+													a: qs.a + side * GUN_CROSS_ALONG,
+												}
+											: gun
+												? { d: qs.d + 0.5, a: side * 2.5 }
+												: underMesh(qs, cs, side),
 							);
-		const qbMesh = this.w({
-			...this.of(meshPt),
-			a: this.of(meshPt).a - side * MESH_APART,
-		});
+		const qbMesh = crosses
+			? qb.at
+			: this.w({
+					...this.of(meshPt),
+					a: this.of(meshPt).a - side * MESH_APART,
+				});
 		const lead = cs.a === 0 && cs.d < -10 ? 0 : 150;
 		let mesh =
 			carrier === qb
