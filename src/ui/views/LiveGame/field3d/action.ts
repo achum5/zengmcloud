@@ -19043,8 +19043,25 @@ class Action {
 			};
 			// (Not filled where another of them already has: pulled up short
 			// of him on his own side of it - see FILL_APART_FT - not run into
-			// him and shoved off him.)
-			const crowded = () => fills.some((p) => dist(p, m.at) < FILL_APART_FT);
+			// him and shoved off him. Nor in among the men in blocks there -
+			// see FILL_ROOM_FT.)
+			const crowded = () => {
+				if (fills.some((p) => dist(p, m.at) < FILL_APART_FT)) {
+					return true;
+				}
+				for (let t = m.t; t <= m.t + FILL_ROOM_MS; t += FILL_ROOM_EVERY_MS) {
+					for (const x of this.men) {
+						if (
+							x !== m &&
+							LINE_PLAY.has(legAt(x, t).move) &&
+							dist(x.posAt(t), m.at) < FILL_ROOM_FT
+						) {
+							return true;
+						}
+					}
+				}
+				return false;
+			};
 			const to = this.w(fill);
 			lay(to);
 			for (const k of FILL_SHORT) {
