@@ -4672,6 +4672,8 @@ const WIDE_IN_SHORT_FT = 18;
 // (The man he goes out onto - or a linebacker over to fill - pulled up
 // there no more than this far on, feet.)
 const STALK_EASE_FT = 5;
+// (Nobody near to block: set for one this long at the most, ms.)
+const STALK_SET_MS = 1200;
 
 // After the ball: at this much of his speed at most - this much faster than
 // he needs to be, to get there in time - a leg this long at a time (ms), at
@@ -19830,7 +19832,10 @@ class Action {
 					);
 					m.hold(until);
 				}
-				m.hold(until, "drive", this.ahead);
+				// (Squared up for a man to block a moment, then stood watching
+				// it - see watch - not set in it stock still till it is over.)
+				m.hold(Math.min(until, m.t + STALK_SET_MS), "drive", this.ahead);
+				m.hold(until, "stand", this.ahead);
 				continue;
 			}
 			dbs.splice(dbs.indexOf(db), 1);
