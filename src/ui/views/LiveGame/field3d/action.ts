@@ -4343,6 +4343,8 @@ const BLOCK_GAP = 2.6;
 // way than this (feet), at no more than this (ft/s) across.)
 const CLEAR_LATE_MS = 300;
 const BLOCK_CLEAR_FT = 3.5;
+// (Blocks go on this long (ms) after he is down - see runBlock.)
+const UNTIL_PAST_MS = 300;
 const BLOCK_CLEAR_FPS = 4;
 // (Up front, only as long as he is up and running: until this long before
 // he is down, ms.)
@@ -19018,7 +19020,7 @@ class Action {
 		const free = (m: Actor) => !this.done.has(m.pid) && !tacklers.includes(m);
 		const drive = this.of(endPt).d > 3 ? 4 : this.of(endPt).d < 0 ? -2 : 1;
 		const side = Math.sign(holeA) || 1;
-		const until = t + 300;
+		const until = t + UNTIL_PAST_MS;
 		// (Stopped behind the line, never up to it: the hole filled when he
 		// would have been there - not the blocks up through it put off
 		// till he is down, walked there.)
@@ -20423,6 +20425,37 @@ class Action {
 		through = false,
 	) {
 		const r = this.r;
+		// (Not up the back of the man with the ball on the way to him - come
+		// up behind him and through him to a man past him, as he goes down:
+		// see BLOCK_CLEAR_FT, UNTIL_PAST_MS.)
+		const upHisBack = (at: Pt, c: number) => {
+			if (!clear || c <= b.t) {
+				return false;
+			}
+			const far = dist(b.at, at);
+			if (far < 1) {
+				return false;
+			}
+			const ux = (at.x - b.at.x) / far;
+			const uy = (at.y - b.at.y) / far;
+			for (
+				let k = Math.max(b.t + 50, until - UNTIL_PAST_MS - CLEAR_DOWN_MS);
+				k < c;
+				k += 50
+			) {
+				const u = (k - b.t) / (c - b.t);
+				const p = { x: b.at.x + ux * far * u, y: b.at.y + uy * far * u };
+				const q = clear.posAt(k);
+				if (
+					dist(p, q) < BLOCK_CLEAR_FT &&
+					(q.x - p.x) * ux + (q.y - p.y) * uy > 0
+				) {
+					return true;
+				}
+			}
+			return false;
+		};
+		let late = false;
 		const meetOf = () => {
 			if (!m) {
 				return undefined;
@@ -20434,6 +20467,10 @@ class Action {
 				const at = this.w({ d: p.d - BLOCK_GAP, a: p.a });
 				const far = dist(b.at, at);
 				if (rampedMs(far, fps, paceOn(b.last, b.at, at)) <= c - b.t) {
+					if (upHisBack(at, c)) {
+						late = true;
+						return undefined;
+					}
 					return { t: c, at };
 				}
 			}
@@ -20453,6 +20490,17 @@ class Action {
 					meet = again;
 				}
 			}
+		}
+		// (Too late to get to him but through the man with the ball going
+		// down: pulled up off it instead, out of the way of it.)
+		if (m && !meet && late) {
+			const went = b.t;
+			if (RAMPS.has(b.last.move) && legPace(b.last) >= STOP_LEAST) {
+				b.easeOff(EASE_OFF_FT, clear?.posAt(until));
+				this.easeShort(b, went, EASE_OFF_FT);
+			}
+			this.giveWay(b, until);
+			return;
 		}
 		if (!m || !meet) {
 			// (Up to the next level, and nobody there - off to the side of
