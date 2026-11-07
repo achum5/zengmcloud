@@ -425,6 +425,8 @@ const FOUL_AFTER = 450;
 const FOUL_LEAST = 450;
 const FOUL_NEAR = 6;
 const FOUL_FACING = (5 * Math.PI) / 12;
+// (On a man running a route: beside him too, an arm grabbed as they go.)
+const COVER_FACING = (7 * Math.PI) / 12;
 
 // The legs his arms can do it over: running, blocking, stood.
 const freeArms = (l: Leg) =>
@@ -563,7 +565,9 @@ export const actFouls = (fouls: Foul[], parts: Part[], whistle: number) => {
 		const to = posOf(foe.p, f.t);
 		let off = Math.atan2(to.y - me.y, to.x - me.x) - way;
 		off = Math.atan2(Math.sin(off), Math.cos(off));
-		if (Math.abs(off) > FOUL_FACING) {
+		if (
+			Math.abs(off) > (WHEN[f.name] === "cover" ? COVER_FACING : FOUL_FACING)
+		) {
 			continue;
 		}
 		// (Over the legs either side of it his arms are free in.)

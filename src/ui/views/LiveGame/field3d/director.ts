@@ -1310,6 +1310,36 @@ const acrossOf = (a: Align, dir: Dir, ballY: number, flip: boolean): number => {
 
 const facing = (dir: Dir): number => (dir === 1 ? 0 : Math.PI);
 
+// A pass interference flag in events i0..i1: the man flagged, and the man
+// the pass went to.
+const interference = (
+	events: RawEvent[],
+	i0: number,
+	i1: number,
+): { by: number; on: number } | undefined => {
+	let by: number | undefined;
+	let on: number | undefined;
+	for (let i = i0; i < i1; i++) {
+		const e = events[i];
+		if (e?.type === "stat" && e.s === "tgt" && typeof e.pid === "number") {
+			on = e.pid;
+		}
+		if (e?.type !== "penalty" || e.penaltyName !== "Pass interference") {
+			continue;
+		}
+		for (let j = i + 1; j < i1 && by === undefined; j++) {
+			const x = events[j];
+			if (x?.type === "penalty") {
+				break;
+			}
+			if (x?.type === "stat" && x.s === "pen" && typeof x.pid === "number") {
+				by = x.pid;
+			}
+		}
+	}
+	return by !== undefined && on !== undefined ? { by, on } : undefined;
+};
+
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
 const clampY = (y: number, lo = 4, hi = FIELD_W - 4) =>
 	Math.min(hi, Math.max(lo, y));
@@ -3597,6 +3627,24 @@ class Director {
 			def = alignDefense(offsets, call, hashes);
 		}
 		const defPids = this.fill(def, defense, named[defense], u);
+		// (The man the sim flags for interfering with a pass: in the place of
+		// his group across from the man it went to - on him - see action.ts
+		// interferer.)
+		const pi = interference(events, i0, i1);
+		const by = pi ? defPids.indexOf(pi.by) : -1;
+		const on = pi && placed.find((p) => p.pid === pi.on && p.team === offense);
+		if (by >= 0 && on) {
+			let best = by;
+			let near = Infinity;
+			for (const [k, a] of def.entries()) {
+				const y = ballY + acrossOf(a, dir, ballY, false) * dir;
+				if (a.pos === def[by]!.pos && Math.abs(y - on.at.y) < near) {
+					near = Math.abs(y - on.at.y);
+					best = k;
+				}
+			}
+			[defPids[by], defPids[best]] = [defPids[best], defPids[by]];
+		}
 		for (const [k, a] of def.entries()) {
 			const pid = defPids[k];
 			if (pid === undefined) {

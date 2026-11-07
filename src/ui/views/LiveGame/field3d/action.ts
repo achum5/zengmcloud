@@ -6704,6 +6704,28 @@ class Action {
 		return pts;
 	}
 
+	// Of `coverage`, the man the sim flags for pass interference.
+	interferer(coverage: Actor[]): Actor | undefined {
+		const { events, i0, i1 } = this.input;
+		for (let i = i0; i < i1; i++) {
+			const e = events[i];
+			if (e?.type !== "penalty" || e.penaltyName !== "Pass interference") {
+				continue;
+			}
+			for (let j = i + 1; j < i1; j++) {
+				const x = events[j];
+				if (x?.type === "penalty") {
+					break;
+				}
+				if (x?.type === "stat" && x.s === "pen" && typeof x.pid === "number") {
+					const pid = x.pid;
+					return coverage.find((m) => m.pid === pid);
+				}
+			}
+		}
+		return undefined;
+	}
+
 	// What the sim says: the play's events of a kind, its stats.
 	find(type: string, from = this.input.i0): number {
 		const { events, i1 } = this.input;
@@ -9884,8 +9906,11 @@ class Action {
 		// routes (the man the sim says got to the ball on the man it went
 		// to), the rush on the quarterback, the line holding it off (the man
 		// the sim says gave up the sack on the man who got there).
+		// (Or, nobody's, the man flagged for interfering with the man it went
+		// to: on him at the catch, his hands on him - see fouls.ts actFouls.)
 		const onBall = thrown
-			? this.man(this.statPids(first === intI ? "defInt" : "defPssDef")[0])
+			? (this.man(this.statPids(first === intI ? "defInt" : "defPssDef")[0]) ??
+				(first === intI ? undefined : this.interferer(coverage)))
 			: undefined;
 		// (Zone or man behind it, by the look the defense showed - see
 		// ZONE_ONE: man on a back-shoulder throw or a double move, which are
