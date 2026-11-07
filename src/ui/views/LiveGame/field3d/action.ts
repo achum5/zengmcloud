@@ -4609,6 +4609,24 @@ const CLIMB_ROUND_MORE = 1.1;
 const CLIMB_ROUND_LEAST_FT = 10;
 const CLIMB_ROUND_SLACK_FT = 0.3;
 const CLIMB_INTO_FT = 1.2;
+// A back out of the backfield on a route (from at least RELEASE_BACK_FT
+// behind the line to RELEASE_PAST_FT past the men on it), taken round the men in
+// blocks on it if he would come nearer one than CLIMB_CLEAR_FT less
+// RELEASE_INTO_FT on his way - a way round no more than RELEASE_MORE
+// times as far (see releaseRound).
+const RELEASE_BACK_FT = 4;
+const RELEASE_PAST_FT = 1.5;
+const RELEASE_SIDE_FT = 4;
+// (Back onto the way he was going no more than this far off it - radians -
+// as soon past them as that can be done, up to this much later, a step of
+// this long at a time.)
+const RELEASE_KINK = 0.4;
+const RELEASE_LATER_MS = 800;
+const RELEASE_LATER_STEP_MS = 100;
+const RELEASE_INTO_FT = 0.6;
+const RELEASE_MORE = 1.1;
+// (Thrown to: all of it this long before the ball gets to him, at least.)
+const RELEASE_CATCH_MS = 300;
 const SHED_MS = 550;
 const SHED_SPREAD = 350;
 const OFF_SPREAD = 350;
@@ -10070,6 +10088,17 @@ class Action {
 			(thrown ? catchAt : outT) + 300,
 			sacker && beaten ? [sacker, beaten] : undefined,
 		);
+		// (The backs out of the backfield on their routes round the line,
+		// not through it - see releaseRound.)
+		for (const m of runners) {
+			if (spotOf(m.role) === "back" && !(m === target && slip)) {
+				this.releaseRound(
+					m,
+					releases.get(m.pid)!,
+					m === target && thrown ? catchAt - RELEASE_CATCH_MS : Infinity,
+				);
+			}
+		}
 
 		if (thrown && target && tr?.name === "screen") {
 			this.screenBlocks(target, runners, catchAt);
@@ -19652,6 +19681,225 @@ class Action {
 			}
 		}
 		return best?.pts;
+	}
+
+	// A back out of the backfield on his route from t0: round the men on the
+	// line - in blocks, or set for them - on his way out past it, if he
+	// would go through them (see RELEASE_INTO_FT): bent out round them as
+	// quick as he went (see bend), and on with his route from past it as it
+	// was. No later than `by`.
+	// A back out of the backfield on his route from t0: round the men on the
+	// line - in blocks, or set for them - on his way out past it, if he
+	// would go through them (see RELEASE_INTO_FT): bent out round them as
+	// quick as he went (see bend), back onto his way a little past them
+	// (as soon after it as that can be done - see RELEASE_LATER_MS), and on
+	// with his route from there as it was. No later than `by`.
+	private releaseRound(m: Actor, t0: number, by: number) {
+		if (t0 >= m.t || this.of(m.posAt(t0)).d > -RELEASE_BACK_FT) {
+			return;
+		}
+		const inLine = (x: Actor, c: number) => {
+			const l = legAt(x, c);
+			return x !== m && (LINE_PLAY.has(l.move) || l.move === "passSet");
+		};
+		const into = (p: Pt, c: number) => {
+			let w = 0;
+			for (const x of this.men) {
+				if (inLine(x, c)) {
+					w = Math.max(w, CLIMB_CLEAR_FT - dist(x.posAt(c), p));
+				}
+			}
+			return w;
+		};
+		// (Past them: RELEASE_PAST_FT past the furthest up of them either side
+		// of him - see RELEASE_SIDE_FT.)
+		const last = Math.min(m.t, by);
+		let past: number | undefined;
+		for (let c = t0 + 100; c <= last; c += 20) {
+			const s = this.of(m.posAt(c));
+			let front = -Infinity;
+			for (const x of this.men) {
+				if (inLine(x, c)) {
+					const q = this.of(x.posAt(c));
+					if (Math.abs(q.a - s.a) <= RELEASE_SIDE_FT) {
+						front = Math.max(front, q.d);
+					}
+				}
+			}
+			if (s.d >= front + RELEASE_PAST_FT) {
+				past = c;
+				break;
+			}
+		}
+		if (past === undefined) {
+			return;
+		}
+		let was = 0;
+		for (let c = t0 + CLIMB_LOOK_MS; c < past; c += CLIMB_LOOK_MS) {
+			was = Math.max(was, into(m.posAt(c), c));
+		}
+		if (was <= RELEASE_INTO_FT) {
+			return;
+		}
+		const legs = m.legs.map((l) => ({ ...l }));
+		const at = (l: Leg, t: number): Pt => {
+			const u = l.t1 > l.t0 ? clamp((t - l.t0) / (l.t1 - l.t0), 0, 1) : 1;
+			return {
+				x: l.from.x + (l.to.x - l.from.x) * u,
+				y: l.from.y + (l.to.y - l.from.y) * u,
+			};
+		};
+		// (How far along his own way he has gone from t0 by t.)
+		const S = (t: number) => {
+			let s = 0;
+			for (const l of legs) {
+				const a = Math.max(l.t0, t0);
+				const b = Math.min(l.t1, t);
+				if (b > a) {
+					s += dist(at(l, a), at(l, b));
+				}
+			}
+			return s;
+		};
+		const lensOf = (all: Pt[]) => {
+			const lens = [0];
+			for (let i = 1; i < all.length; i++) {
+				lens.push(lens[i - 1]! + dist(all[i - 1]!, all[i]!));
+			}
+			return lens;
+		};
+		const along = (all: Pt[], lens: number[], g: number): Pt => {
+			const k = Math.max(
+				1,
+				lens.findIndex((x) => x >= g),
+			);
+			const a = all[k - 1]!;
+			const b = all[k] ?? a;
+			const g0 = lens[k - 1]!;
+			const u = lens[k]! > g0 ? clamp((g - g0) / (lens[k]! - g0), 0, 1) : 1;
+			return { x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u };
+		};
+		const P0 = m.posAt(t0);
+		const fps = m.top * ROUTE_PACE;
+		for (
+			let end = past;
+			end <= Math.min(last, past + RELEASE_LATER_MS);
+			end += RELEASE_LATER_STEP_MS
+		) {
+			const L = S(end);
+			const P1 = m.posAt(end);
+			const D = dist(P0, P1);
+			if (L < CLIMB_ROUND_LEAST_FT || D < 1) {
+				continue;
+			}
+			const ts: number[] = [];
+			for (let c = t0 + CLIMB_LOOK_MS; c < end; c += CLIMB_LOOK_MS) {
+				ts.push(c);
+			}
+			const ss = ts.map(S);
+			// (Back onto his way where it had him then, going near enough
+			// the way he was - see RELEASE_KINK.)
+			const on = legs.find((l) => l.t0 <= end && l.t1 > end);
+			const way =
+				on && dist(on.from, on.to) > 0
+					? Math.atan2(on.to.y - on.from.y, on.to.x - on.from.x)
+					: undefined;
+			const ux = (P1.x - P0.x) / D;
+			const uy = (P1.y - P0.y) / D;
+			let best: { all: Pt[]; lens: number[]; w: number } | undefined;
+			for (const u of CLIMB_ALONG) {
+				for (const off of CLIMB_OFF) {
+					const corner = {
+						x: P0.x + ux * D * u - uy * off,
+						y: P0.y + uy * D * u + ux * off,
+					};
+					const all = [
+						P0,
+						...this.bend(P0, corner, P1, RELEASE_ACCEL, fps),
+						P1,
+					];
+					const q = all.at(-2)!;
+					if (
+						way !== undefined &&
+						Math.cos(Math.atan2(P1.y - q.y, P1.x - q.x) - way) <
+							Math.cos(RELEASE_KINK)
+					) {
+						continue;
+					}
+					const lens = lensOf(all);
+					const Lp = lens.at(-1)!;
+					if (Lp > L * RELEASE_MORE) {
+						continue;
+					}
+					let w = 0;
+					ts.forEach((c, i) => {
+						w = Math.max(w, into(along(all, lens, (ss[i]! * Lp) / L), c));
+					});
+					if (w < (best?.w ?? was - RELEASE_INTO_FT)) {
+						best = { all, lens, w };
+					}
+				}
+			}
+			if (!best) {
+				continue;
+			}
+			// (Laid at the times his own legs had him going from one to the
+			// next, and at the points of the way round - S run backward for
+			// when he is at each.)
+			const Lp = best.lens.at(-1)!;
+			const when = (g: number) => {
+				const s = (g * L) / Lp;
+				let lo = t0;
+				let hi = end;
+				for (let k = 0; k < 30; k++) {
+					const mid = (lo + hi) / 2;
+					if (S(mid) < s) {
+						lo = mid;
+					} else {
+						hi = mid;
+					}
+				}
+				return Math.round((lo + hi) / 2);
+			};
+			const times = new Set<number>([end]);
+			for (const l of legs) {
+				if (l.t1 > t0 && l.t1 < end) {
+					times.add(l.t1);
+				}
+			}
+			for (const g of best.lens.slice(1, -1)) {
+				times.add(when(g));
+			}
+			const keep: Leg[] = [];
+			for (const l of legs) {
+				if (l.t1 <= t0) {
+					keep.push(l);
+				} else if (l.t0 < t0) {
+					keep.push({ ...l, t1: t0, to: at(l, t0) });
+				}
+			}
+			let from = P0;
+			let t = t0;
+			for (const c of [...times].sort((a, b) => a - b)) {
+				if (c <= t) {
+					continue;
+				}
+				const l = legs.find((x) => x.t0 < c && x.t1 >= c) ?? legs.at(-1)!;
+				const to = c === end ? P1 : along(best.all, best.lens, (S(c) * Lp) / L);
+				keep.push({ ...l, t0: t, t1: c, from, to });
+				from = to;
+				t = c;
+			}
+			for (const l of legs) {
+				if (l.t1 > end) {
+					keep.push(l.t0 < end ? { ...l, t0: end, from: P1 } : l);
+				}
+			}
+			const yaw = m.yaw;
+			m.legs.splice(0, m.legs.length, ...keep);
+			m.yaw = yaw;
+			return;
+		}
 	}
 
 	blockOn(
