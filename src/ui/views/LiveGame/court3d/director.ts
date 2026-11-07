@@ -962,9 +962,10 @@ const ON_FROM_MS = 700;
 // A man trailing up the floor short of time (see liven) goes as far up as
 // he gets - so long as that is this far (feet) at the least.
 const TRAIL_LEAST = 8;
-// Round a man in the way (see aroundBodies), a turn harder than this (its
-// cosine) needs this long (ms) on each leg of it at the least.
-const BEND_SHARP = 0.7;
+// Round a man in the way (see aroundBodies), a turn any harder than this
+// (its cosine) needs this long (ms) on each leg of it at the least: slowing
+// into it and going on out of it in less, he darts.
+const BEND_SHARP = 0.95;
 const BEND_LEG_MS = 300;
 // Going no faster than this (feet a second) as a run starts or ends, he is
 // all but standing: getting going over the first of it, or pulling up over
@@ -18659,13 +18660,14 @@ class Director {
 		let tt = this.go(victim, G, start, 16, "dribble", dir);
 		tt = Math.max(tt, this.hold(victim, tt, "hold"));
 		const u = unitVec(A, D);
+		// (Facing the way the strides carry him - along the baseline on a
+		// drive down it - not the end he attacks, stepped sideways and back.)
 		tt = this.go(
 			victim,
 			clampPt({ x: G.x + u.x * TRAVEL_FT, y: G.y + u.y * TRAVEL_FT }),
 			tt,
 			8,
 			"run",
-			dir,
 		);
 		this.effect("whistle", tt + 100, {
 			call: "travel",

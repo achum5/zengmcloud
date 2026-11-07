@@ -261,6 +261,12 @@ in play the same:
   it lasts); and a pass tipped off the man it was meant for and out, so
   little turned by his hands it read as off the man who tipped it (a third
   of a right angle at the least).
+- a travel's stride or two too many with the ball, along the baseline on a
+  drive down it, taken still facing the end he attacks - stepped sideways
+  and back, the tape's every moonwalk (three) - faces the way the strides
+  carry him. And a run bent round a man with a leg either side too short to
+  take even a mild turn in (`BEND_SHARP` 0.95): kept off him instead. The
+  tape's lurches 51 to 49, sharp corners 17 to 16, no moonwalks.
 
 Checks: the existing tests (feet behind the line, a contested jumper stays
 in sight, the ball never jumps, real speed with no darts) on every change.

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 202,
+		date: "2026-11-07",
+		text: "3D games: a man called for traveling on a drive along the baseline takes his extra steps facing where he is going, instead of jogging sideways and backward, and a run bent round another man no longer darts round him in a blink.",
+	},
+	{
 		n: 201,
 		date: "2026-11-07",
 		text: "3D games: far fewer players slamming to a stop or bursting off from nothing. A defender chasing his man into the corner slows into it instead of stopping dead on the sideline, the long step through to the rim off a post move pushes off like a real step, a hard dribble at a man builds up, and a defender stepping aside for a teammate never steps into a shooter going up at the rim.",
