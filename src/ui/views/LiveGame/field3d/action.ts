@@ -13848,8 +13848,22 @@ class Action {
 		const go = this.breakSoonest(m, spot, by, latest);
 		const slow =
 			go === undefined ? this.breakSlowing(m, spot, by, latest) : undefined;
-		m.cut(go ?? slow?.t ?? latest);
-		m.hold(go ?? slow?.t ?? latest);
+		const t0 = go ?? slow?.t ?? latest;
+		m.cut(t0);
+		// (His coverage run out short of then, on his way to it already: on
+		// into it from there - not eased off to a stand and off again.)
+		const l0 = m.last;
+		if (
+			!(
+				m.t < t0 &&
+				GAITS.has(l0.move) &&
+				legPace(l0) >= STOP_LEAST &&
+				dist(l0.from, l0.to) > 0 &&
+				angleAt(l0.from, l0.to, spot) <= CUT_LEAST
+			)
+		) {
+			m.hold(t0);
+		}
 		// (Planted first, going the other way - not turned round on the
 		// spot at full tilt - if there is the time for it; if not, slowed
 		// as he comes up to it, to a stop by it, if he saw it in time; if
@@ -18947,7 +18961,31 @@ class Action {
 		const near =
 			(dist(b.at, meet.at) / Math.max(0.001, meet.t - b.t)) * 1000 <
 			WALK_MOST_FPS;
-		const round = near ? undefined : this.roundBlocks(b, meet.at, meet.t, m);
+		let round = near ? undefined : this.roundBlocks(b, meet.at, meet.t, m);
+		// (Turned off the way he was going for it - round them from a stand,
+		// or back for him, past bending round to him: planted for it first
+		// - see Actor.plantFor - not turned in a stride at full tilt - and
+		// on him where that has him meet him. Not if it has him not get to
+		// him at all.)
+		const bl = b.last;
+		const first = round?.[0] ?? meet.at;
+		if (
+			!near &&
+			GAITS.has(bl.move) &&
+			dist(bl.from, bl.to) > 0 &&
+			angleAt(bl.from, bl.to, first) > (round ? CUT_LEAST : PLANT_TURN)
+		) {
+			const was = b.legs.map((l) => ({ ...l }));
+			const t0 = b.t;
+			b.plantFor(first);
+			const again = b.t > t0 ? meetOf() : undefined;
+			if (again) {
+				meet = again;
+				round = this.roundBlocks(b, meet.at, meet.t, m);
+			} else {
+				b.legs.splice(0, b.legs.length, ...was);
+			}
+		}
 		if (round) {
 			// (Up to his pace off what he was doing, as straight there - see
 			// meetOf - and on round at it.)
