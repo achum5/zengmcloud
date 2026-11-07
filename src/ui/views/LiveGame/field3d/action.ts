@@ -4589,6 +4589,9 @@ const CLIMB_PACE = 0.85;
 // way into him that has him in front of him, this far (ms) at the most,
 // a step at a time - see blockOn.)
 const PAST_BACK_STEP_MS = 50;
+// (A defensive lineman taken on by a man up front no more than this much
+// further off him than the nearest - feet: see runBlock.)
+const FRONT_PAIR_SLACK_FT = 3;
 const PAST_BACK_MOST_MS = 600;
 // (Up to a man past others in blocks - over the line to the next level, say
 // - not straight through them: no nearer a man in one than CLIMB_CLEAR_FT,
@@ -18621,21 +18624,40 @@ class Action {
 		// Who is on whom up front.
 		const on = new Map<Actor, Actor[]>();
 		const flats: { b: Actor; m: Actor; end: number; lands: Pt }[] = [];
-		for (const m of this.d) {
-			if (!DL.has(m.role) || this.done.has(m.pid)) {
-				continue;
-			}
-			const b = closest(front, m.at);
-			// (On a counter, the man the tackle has left behind him -
-			// nobody else near enough to him to block him: up the field
-			// after it from the back side, as the rest go after it - see
-			// pursue.)
-			if (
+		// (On a counter, the man the tackle has left behind him - nobody
+		// else near enough to him to block him: up the field after it from
+		// the back side, as the rest go after it - see pursue.)
+		const dl = this.d.filter((m) => DL.has(m.role) && !this.done.has(m.pid));
+		const left = (m: Actor) => {
+			const near = closest(front, m.at);
+			return (
 				counter &&
-				b &&
+				!!near &&
 				!tacklers.includes(m) &&
-				dist(b.at, m.at) > COUNTER_FREE_FT
-			) {
+				dist(near.at, m.at) > COUNTER_FREE_FT
+			);
+		};
+		// (The rest each on a man up front: the pairs that between them go
+		// the least way - see climbPairs - none much further off his man
+		// than the nearest; not two of them across each other's way, each
+		// to the man nearer the other after his first step. More of them
+		// than men up front: the rest on the nearest.)
+		const stepped = Math.max(snap, ...front.map((b) => b.t));
+		const mates = climbPairs(
+			dl.filter((m) => !left(m)),
+			front,
+			stepped,
+			(m, b) => {
+				const near = closest(front, m.at);
+				return (
+					!!near &&
+					dist(m.at, b.at) <= dist(m.at, near.at) + FRONT_PAIR_SLACK_FT
+				);
+			},
+		);
+		for (const m of dl) {
+			const b = mates.get(m) ?? closest(front, m.at);
+			if (left(m)) {
 				const p = this.of(m.at);
 				this.offSnap(m, READ_OFF_MS, READ_OFF_SPREAD_MS);
 				m.getOff(
