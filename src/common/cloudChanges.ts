@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 201,
+		date: "2026-11-07",
+		text: "3D games: far fewer players slamming to a stop or bursting off from nothing. A defender chasing his man into the corner slows into it instead of stopping dead on the sideline, the long step through to the rim off a post move pushes off like a real step, a hard dribble at a man builds up, and a defender stepping aside for a teammate never steps into a shooter going up at the rim.",
+	},
+	{
 		n: 200,
 		date: "2026-11-06",
 		text: "Live gamecast on a phone: the players on the court are up top under the tabs, so the plays coming in early in a game no longer push them down out of sight. And their line reads points, rebounds, assists, then field goals.",

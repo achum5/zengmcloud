@@ -1630,7 +1630,8 @@ const carriedHeading = (tr: Track, t: number): number | undefined => {
 	const b = spotAt(tr, t + OFFSET_DT, false);
 	const vx = ((b.x - a.x) * 1000) / (2 * OFFSET_DT);
 	const vy = ((b.y - a.y) * 1000) / (2 * OFFSET_DT);
-	if (vx * vx + vy * vy < OFFSET_GO_FTPS * OFFSET_GO_FTPS) {
+	const v2 = vx * vx + vy * vy;
+	if (v2 < OFFSET_BACK_FTPS * OFFSET_BACK_FTPS) {
 		return undefined;
 	}
 	const pa = rawSpotAt(tr, t - OFFSET_DT, false);
@@ -1639,7 +1640,14 @@ const carriedHeading = (tr: Track, t: number): number | undefined => {
 	const py = ((pb.y - pa.y) * 1000) / (2 * OFFSET_DT);
 	const ox = vx - px;
 	const oy = vy - py;
-	return ox * ox + oy * oy > px * px + py * py ? Math.atan2(vy, vx) : undefined;
+	if (ox * ox + oy * oy <= px * px + py * py) {
+		return undefined;
+	}
+	// (Faster than a step - or, slower, carried back the other way from
+	// his run: going that way at a jog, he faces it, not jogs backward.)
+	return v2 >= OFFSET_GO_FTPS * OFFSET_GO_FTPS || vx * px + vy * py < 0
+		? Math.atan2(vy, vx)
+		: undefined;
 };
 
 // Which way he means to face at t: at what he is doing (a shot faces the rim),
@@ -1941,6 +1949,8 @@ const PULLUP_SHOTS = new Set<AnimName>([
 // Carried by an offset (see yawTarget): how fast (feet a second), read over
 // this long either side (ms).
 const OFFSET_GO_FTPS = 7;
+// ...or, carried back against his own run, this fast (a jog).
+const OFFSET_BACK_FTPS = 4;
 const OFFSET_DT = 60;
 // How far round from how he would face that has to be (radians), and how
 // near to facing it he is when he has turned to it.

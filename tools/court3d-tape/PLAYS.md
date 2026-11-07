@@ -237,6 +237,30 @@ in play the same:
     run (`runMs`), getting going and pulling up in it, at the easiest pace that
     gets him there - and not at all if even a sprint can't. Both: the tape's
     lurches 33/36/33 to 25/27/26.
+- a batch of hard stops and starts, each from its own source: a defender
+  following his man down into the corner ran into the sideline and stopped
+  dead on it (`mark` brakes ahead of a line now); his stretch of following
+  forced to end at a stand when its own path still had him a stride from
+  one, which left the court to speed him up before slamming on the brakes
+  (it ends as slow as slowing evenly over it lets him be); the short burst
+  between the end of his following and his next run (that run sets off from
+  where following left him instead, when it goes the same way and still
+  gets him there in time); a run bent round a man from all but standing
+  timed as if already at speed (`ALL_BUT_STILL`), or with a hard turn and a
+  leg too short to take it in (`BEND_SHARP`, kept off him instead); the long
+  step through to the rim off a post move, at 12.6 ft/s from a standstill
+  (from standing now, `STEP_THROUGH_FTPS`); and the hard dribble attack
+  where he stands, 4.4 ft in 0.3 s stand to stand (timed as a burst). The
+  tape's lurches 77 to 51 over the three games, sharp corners 27 to 17.
+  Its reshuffled games turned up four more, fixed too: a man with no time
+  to trail all the way up left standing at the other end (he trails as far
+  as he gets, `TRAIL_LEAST`); a man carried back against his run by a long
+  step aside unwinding jogged backward (he faces it from a jog, not only
+  faster than a step - `OFFSET_BACK_FTPS`); a teammate's step aside
+  (`passBy`) into a shooter going up at the rim (clear of him all the while
+  it lasts); and a pass tipped off the man it was meant for and out, so
+  little turned by his hands it read as off the man who tipped it (a third
+  of a right angle at the least).
 
 Checks: the existing tests (feet behind the line, a contested jumper stays
 in sight, the ball never jumps, real speed with no darts) on every change.

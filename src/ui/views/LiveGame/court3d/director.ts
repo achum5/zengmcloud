@@ -959,6 +959,20 @@ const STAGGER_PACE = 1.15;
 // How long a pause (ms) a man's last stride up at the rim can follow on
 // from the end of his drive without his pulling up for it (see carry).
 const ON_FROM_MS = 700;
+// A man trailing up the floor short of time (see liven) goes as far up as
+// he gets - so long as that is this far (feet) at the least.
+const TRAIL_LEAST = 8;
+// Round a man in the way (see aroundBodies), a turn harder than this (its
+// cosine) needs this long (ms) on each leg of it at the least.
+const BEND_SHARP = 0.7;
+const BEND_LEG_MS = 300;
+// Going no faster than this (feet a second) as a run starts or ends, he is
+// all but standing: getting going over the first of it, or pulling up over
+// the last (see aroundBodies).
+const ALL_BUT_STILL = 3;
+// The long step through to the rim off a post move (see postFinish): from
+// standing, as fast as this at its quickest (feet a second).
+const STEP_THROUGH_FTPS = 16;
 // Carried on from a run (see carry's onFrom): as little of the pace he
 // had on it as he may go into it with - the run before it taken easier, to
 // give him that - and the least a carry so given time is left (a stride).
@@ -3203,6 +3217,10 @@ class Director {
 			// start (going on at the pace it left him at, in the air, say).
 			v1?: number;
 			v0?: number;
+			// From standing (a step through off a pivot, a shot fake): up
+			// from nothing and down again, a lunge of a step - not at its
+			// even pace from the off.
+			standing?: boolean;
 		} = {},
 	): number {
 		const tr = this.track(pid);
@@ -3289,8 +3307,10 @@ class Director {
 			to,
 			anim,
 			...(face === undefined ? {} : { face }),
-			v0: v0 ?? pace,
-			v1: how.v1 ?? pace,
+			v0: v0 ?? (how.standing ? 0 : pace),
+			// (From standing, and planted at the end of it unless what he does
+			// next carries him on - see onFrom, which sets it then.)
+			v1: how.v1 ?? (how.standing ? 0 : pace),
 		});
 		if (face !== undefined) {
 			tr.faces.push([start, face]);
@@ -10223,9 +10243,20 @@ class Director {
 			this.act(pid, "jab", start, start + 300, { face, look: rim });
 			t = start + 260;
 		}
-		// The long step through, round or under him, to the rim.
+		// The long step through, round or under him, to the rim - pushing
+		// off from where he stood for it, no quicker at its quickest than a
+		// burst.
 		this.hold(pid, t, "hold");
-		return this.carry(pid, to, t, 380, "run", face);
+		const through = dist(this.posOf(pid), to);
+		return this.carry(
+			pid,
+			to,
+			t,
+			Math.max(380, (2 * through * 1000) / STEP_THROUGH_FTPS),
+			"run",
+			face,
+			{ standing: true },
+		);
 	}
 
 	// THE HEAVE AT THE BUZZER.
@@ -18313,8 +18344,10 @@ class Director {
 				this.act(receiver, "catch", c0, c0 + CATCH_MS, { look: I });
 				// (Plainly off his hands: turned by them, not on through on the
 				// line it came in on.)
+				// (A third of a right angle at the least: off them slow, less
+				// than that reads as on through.)
 				const r = this.rand(-1, 1);
-				const a = (r < 0 ? -1 : 1) * (0.35 + 0.45 * Math.abs(r));
+				const a = (r < 0 ? -1 : 1) * (0.6 + 0.35 * Math.abs(r));
 				const tOut = this.knockOut(
 					tR,
 					R3,
@@ -19957,14 +19990,32 @@ class Director {
 							room: Math.min(9, ...others.map((m) => dist(m, q))) - k * 0.5,
 						}))
 						.sort((a, b) => b.room - a.room);
-					const Q = (spots.find((x) => makes(x.q, nm)) ?? spots[0]!).q;
+					const Q0 = (spots.find((x) => makes(x.q, nm)) ?? spots[0]!).q;
 					const t0 = from + 300 + this.rng() * 300;
 					const room = until - t0;
+					// (Not up there in the time even flat out: as far up as he
+					// gets, and on from there - not left back there standing.)
+					let Q = Q0;
+					if (room > 400 && runMs(dist(P, Q0), SPRINT) > room) {
+						const k = reachIn(room, SPRINT) / Math.max(0.1, dist(P, Q0));
+						Q =
+							k * dist(P, Q0) >= TRAIL_LEAST
+								? clampPt({
+										x: P.x + (Q0.x - P.x) * k,
+										y: P.y + (Q0.y - P.y) * k,
+									})
+								: P;
+					}
 					const d = dist(P, Q);
 					// (As easy a pace as gets him there in the time - getting going
 					// and pulling up up there counted in it, not crammed into its
 					// first and last strides.)
-					if (makesAtAll(Q, nm) && room > 400 && runMs(d, SPRINT) <= room) {
+					if (
+						d > 0.5 &&
+						makesAtAll(Q, nm) &&
+						room > 400 &&
+						runMs(d, SPRINT) <= room + 1
+					) {
 						let speed = JOG;
 						if (runMs(d, JOG) > room) {
 							let lo = JOG;
@@ -21012,7 +21063,9 @@ class Director {
 					}
 					const r = this.rng();
 					const L = this.rand(3.6, 4.8);
-					const go = Math.max(300, (L / 14) * 1000);
+					// (A burst from where he stands, and pulled up: as long as
+					// that takes him - not the even pace of a run already going.)
+					const go = Math.max(300, runMs(L, SPRINT, 0, BURST));
 					const out = Math.max(560, (L / 7) * 1000);
 					if (
 						!walked &&
@@ -22371,6 +22424,19 @@ class Director {
 							wx *= Math.min(vmax, most) / w;
 							wy *= Math.min(vmax, most) / w;
 						}
+						// (Toward a line, no faster than he can pull up from before
+						// it: down into the corner after his man he slows into it,
+						// not runs into the line and stops dead on it - see below.)
+						const edge = (room: number) =>
+							Math.sqrt(2 * ACCEL * BRAKE * Math.max(0, room));
+						wx = Math.min(
+							Math.max(wx, -edge(p.x - 1)),
+							edge(COURT_W - 1 - p.x),
+						);
+						wy = Math.min(
+							Math.max(wy, -edge(p.y - SIDELINE_GAP)),
+							edge(COURT_H - SIDELINE_GAP - p.y),
+						);
 						let dx = wx - vx;
 						let dy = wy - vy;
 						const dv = Math.hypot(dx, dy);
@@ -22605,7 +22671,7 @@ class Director {
 							? (!!end && !into) || path.at(-1)!.v < KEEP
 							: pace(e) < KEEP;
 					const v0 = setOff ? 0 : paceAt(q);
-					const v1 = stops ? 0 : paceAt(e);
+					let v1 = stops ? 0 : paceAt(e);
 					q = e;
 					ended = e;
 					const d = dist(A.p, Z.p);
@@ -22613,6 +22679,15 @@ class Director {
 						continue;
 					}
 					const secs = (Z.t - A.t) / 1000;
+					// (Pulled up at the end of it, he is still a stride from a
+					// stand at its last tick - the last few feet a second never
+					// come off at once: so not stopped dead on it, which leaves
+					// it further to go than slowing down covers and has him
+					// speed up to slam on the brakes, but as slow at the end as
+					// slowing evenly over it lets him be.)
+					if (stops && secs > 0) {
+						v1 = Math.min(v0, Math.max(0, (2 * d) / secs - v0));
+					}
 					const speed = d / secs;
 					const ux = (Z.p.x - A.p.x) / d;
 					const uy = (Z.p.y - A.p.y) / d;
@@ -22720,7 +22795,35 @@ class Director {
 					}
 				}
 				const gone = end ? dist(fin.p, end) : 0;
-				if (end && gone > 0.5) {
+				// (Not time to get there before his next run sets off from
+				// there, and that the way he would be going anyway: that run
+				// sets off from here instead, now - one run, getting going
+				// the once - not a burst there and off again on it.)
+				const nx = moves[j];
+				const nl = nx ? dist(nx.from, nx.to) : 0;
+				const merge =
+					end &&
+					nx &&
+					gone > 0.5 &&
+					nl > 0.5 &&
+					!this.marking.has(nx) &&
+					ON_FOOT.has(nx.anim) &&
+					fin.t + Math.max(240, runMs(gone, RUN_MAX)) > nx.t0 - 1 &&
+					nx.t0 - fin.t < 600 &&
+					dist(nx.from, end) < 0.5 &&
+					// (And still there when that run has him there - beside a
+					// shooter for the contest, say - from here.)
+					runMs(dist(fin.p, nx.to), RUN_MAX) <= nx.t1 - fin.t &&
+					!cuts.some((c) => c >= fin.t - 1 && c <= nx.t0 + 1) &&
+					!acts.some((x) => x >= fin.t - 1 && x <= nx.t0 + 1) &&
+					((end.x - fin.p.x) * (nx.to.x - nx.from.x) +
+						(end.y - fin.p.y) * (nx.to.y - nx.from.y)) /
+						(gone * nl) >
+						0.5;
+				if (merge) {
+					nx.t0 = fin.t;
+					left = { ...fin.p };
+				} else if (end && gone > 0.5) {
 					const need = Math.max(240, runMs(gone, RUN_MAX));
 					const t1 = Math.min(fin.t + need, moves[j]?.t0 ?? Infinity);
 					if (t1 - fin.t >= 100) {
@@ -22972,12 +23075,16 @@ class Director {
 				// the last of it, pulling up, slower than the rest.)
 				if (la + lb > 0.05) {
 					const f = la / (la + lb);
+					// (From all but standing - not only standing - he is still
+					// getting going over the first of it.)
 					const setsOff =
-						(m.v0 ?? 0) === 0 &&
-						(m.v0 === 0 || !before || m.t0 - before.t1 > FLOW_MS);
+						m.v0 !== undefined
+							? m.v0 < ALL_BUT_STILL
+							: !before || m.t0 - before.t1 > FLOW_MS;
 					const pullsUp =
-						(m.v1 ?? 0) === 0 &&
-						(m.v1 === 0 || !after || after.t0 - m.t1 > FLOW_MS);
+						m.v1 !== undefined
+							? m.v1 < ALL_BUT_STILL
+							: !after || after.t0 - m.t1 > FLOW_MS;
 					let lo = 0;
 					let hi = 1;
 					for (let k = 0; k < 24; k++) {
@@ -22991,6 +23098,21 @@ class Director {
 					bend.t = m.t0 + dur * ((lo + hi) / 2);
 				}
 				if (bend.t - m.t0 <= edge || m.t1 - bend.t <= edge) {
+					return [m];
+				}
+				// (Not round him with a hard turn in it and a leg either side too
+				// short to take it in - slowing into the turn, he would have to
+				// dash the rest: he is only kept off him.)
+				const cosBend =
+					la > 0.05 && lb > 0.05
+						? ((bend.at.x - m.from.x) * (m.to.x - bend.at.x) +
+								(bend.at.y - m.from.y) * (m.to.y - bend.at.y)) /
+							(la * lb)
+						: 1;
+				if (
+					cosBend < BEND_SHARP &&
+					Math.min(bend.t - m.t0, m.t1 - bend.t) < BEND_LEG_MS
+				) {
 					return [m];
 				}
 				// (Going on round him, not pulling up for him: what pace he had
@@ -23394,7 +23516,11 @@ class Director {
 					sy = (vx / v) * side;
 				}
 				const Q = { x: P.x + sx * by, y: P.y + sy * by };
-				const into = tracks.some(
+				// (Not into anybody else - nor, all the while he is over, into
+				// a man of theirs going up with a shot in close, who comes on
+				// into where he steps: as clear of him as of the man he steps
+				// off.)
+				let into = tracks.some(
 					(o) =>
 						o !== tr &&
 						o !== p.a &&
@@ -23402,6 +23528,23 @@ class Director {
 						shownAt(o, t) &&
 						dist(this.spotAt(o, t), Q) < 1.2,
 				);
+				const goingUp = tracks.filter(
+					(o) =>
+						o.team !== tr.team &&
+						o.acts.some(
+							(a) => UP_IN_CLOSE.has(a.anim) && a.t1 > n0 && a.t0 < n1,
+						),
+				);
+				for (let tt = n0; tt <= n1 && !into && goingUp.length > 0; tt += STEP) {
+					const q = Math.min(RAMP, (n1 - n0) / 2);
+					const w0 = Math.min(1, (tt - n0) / q, (n1 - tt) / q);
+					const w = w0 * w0 * (3 - 2 * w0);
+					const H = this.spotAt(tr, tt);
+					const S = { x: H.x + sx * by * w, y: H.y + sy * by * w };
+					into = goingUp.some(
+						(o) => shownAt(o, tt) && dist(this.spotAt(o, tt), S) < BY,
+					);
+				}
 				if (into || dist(inPlay(Q), Q) > dist(inPlay(P), P) + 0.01) {
 					continue;
 				}
