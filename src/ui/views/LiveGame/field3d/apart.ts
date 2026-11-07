@@ -1,3 +1,4 @@
+import { CART_L, CART_W, cartAt } from "./cart.ts";
 import type { Leg, Play } from "./director.ts";
 import { TRACK_MS, trackLength, trackOf } from "./pace.ts";
 import type { Move } from "./poses.ts";
@@ -66,6 +67,16 @@ const TURF_APART = 1;
 // Free (see touching) between two touching legs for fewer than this many
 // samples: not, all through.
 const FREE_LEAST = 12;
+// The cart out for a man hurt (see cart.ts): kept this far (feet) off by
+// anybody on his feet - its sides, and its ends - out to the side of it if
+// he is by it or in its way as it comes, straight off its end where it is
+// stopped (going slower than this, ft/s).
+const CART_AXIS = CART_L / 2 - CART_W / 2;
+const CART_APART = CART_W / 2 + 1.2;
+const CART_STILL_FPS = 1;
+// (Going, out of the way of where it will be this long on, s: not left to
+// the last moment.)
+const CART_LEAD_S = 0.6;
 // The man the ball comes to, left where he is from this long (ms) before
 // it is his; the man it leaves, until this long after.
 const GATHER_MS = 400;
@@ -295,6 +306,28 @@ export const keepApart = (play: Play): Map<number, Sep[]> => {
 			}
 		}
 	});
+	// (Where the cart is, out for a man hurt - and which way it points, and
+	// how quick it goes.)
+	const cartX = new Float32Array(n).fill(Number.NaN);
+	const cartY = new Float32Array(n);
+	const cartUX = new Float32Array(n);
+	const cartUY = new Float32Array(n);
+	const cartV = new Float32Array(n);
+	if (play.cart) {
+		const from = Math.max(0, Math.ceil((play.cart.legs[0]!.t0 - t0) / SEP_MS));
+		for (let s = from; s < n; s++) {
+			const c = cartAt(play.cart, t0 + s * SEP_MS);
+			cartX[s] = c.x;
+			cartY[s] = c.y;
+			cartUX[s] = Math.cos(c.yaw);
+			cartUY[s] = Math.sin(c.yaw);
+			if (s > from) {
+				cartV[s] =
+					(Math.hypot(c.x - cartX[s - 1]!, c.y - cartY[s - 1]!) * 1000) /
+					SEP_MS;
+			}
+		}
+	}
 	// (The captains out for the coin toss gone once it is done.)
 	const toss = play.toss;
 	if (toss) {
@@ -364,6 +397,7 @@ export const keepApart = (play: Play): Map<number, Sep[]> => {
 			official,
 			lie,
 			{ x: ballX, y: ballY, r: ballR, on: ballOn, of: ballOf, to: ballTo },
+			{ x: cartX, y: cartY, ux: cartUX, uy: cartUY, v: cartV },
 			n,
 			near,
 		);
@@ -432,6 +466,16 @@ export const keepApart = (play: Play): Map<number, Sep[]> => {
 	return out;
 };
 
+// Where the cart is at each sample (see keepApart) - x NaN, nowhere - which
+// way it points, and how quick it goes (ft/s).
+type CartAt = {
+	x: Float32Array;
+	y: Float32Array;
+	ux: Float32Array;
+	uy: Float32Array;
+	v: Float32Array;
+};
+
 // Where the ball is at each sample (see keepApart): off the man `on` it is
 // held by, or (-1) on the field; and the men it is with or comes to.
 type Ball = {
@@ -453,6 +497,7 @@ const pushed = (
 	official: boolean[],
 	lie: Float32Array[],
 	ball: Ball,
+	cart: CartAt,
 	n: number,
 	near: Uint8Array | undefined,
 ) => {
@@ -520,6 +565,16 @@ const pushed = (
 					) {
 						movedNow = true;
 					}
+				}
+			}
+			for (let up = 0; !Number.isNaN(cart.x[s]!) && up < m; up++) {
+				if (
+					fr[up] &&
+					Number.isNaN(lie[up]![s]!) &&
+					(round === 0 || was[up] || now[up]) &&
+					offCart(s, up)
+				) {
+					movedNow = true;
 				}
 			}
 			for (let i = 0; i < m; i++) {
@@ -627,6 +682,54 @@ const pushed = (
 		const ay = dy[up]!;
 		ax[s] = ax[s]! + ux * (r - d);
 		ay[s] = ay[s]! + uy * (r - d);
+		px[up] = xs[up]![s]! + ax[s]!;
+		py[up] = ys[up]![s]! + ay[s]!;
+		now[up] = 1;
+		moved[up] = 1;
+		hit ??= new Uint8Array(n);
+		hit[s] = 1;
+		return true;
+	}
+
+	// The man on his feet `up` off the cart at sample s (see CART_APART):
+	// out to the side of it - or off the end of it, where it is stopped.
+	// Whether he had to be.
+	function offCart(s: number, up: number): boolean {
+		const ux = cart.ux[s]!;
+		const uy = cart.uy[s]!;
+		const ex = px[up]! - cart.x[s]!;
+		const ey = py[up]! - cart.y[s]!;
+		const along = ex * ux + ey * uy;
+		const side = -ex * uy + ey * ux;
+		const ahead = CART_AXIS + cart.v[s]! * CART_LEAD_S;
+		if (
+			along >= ahead + CART_APART ||
+			along <= -CART_AXIS - CART_APART ||
+			side >= CART_APART ||
+			side <= -CART_APART
+		) {
+			return false;
+		}
+		const q = Math.max(-CART_AXIS, Math.min(ahead, along));
+		const d = Math.hypot(along - q, side);
+		if (d >= CART_APART) {
+			return false;
+		}
+		let da = 0;
+		let ds = 0;
+		if (along !== q && cart.v[s]! < CART_STILL_FPS) {
+			const k = (CART_APART - d) / Math.max(d, 1e-3);
+			da = (along - q) * k;
+			ds = side * k;
+		} else {
+			const off = along - q;
+			const reach = Math.sqrt(Math.max(0, CART_APART * CART_APART - off * off));
+			ds = (side >= 0 ? 1 : -1) * reach - side;
+		}
+		const ax = dx[up]!;
+		const ay = dy[up]!;
+		ax[s] = ax[s]! + da * ux - ds * uy;
+		ay[s] = ay[s]! + da * uy + ds * ux;
 		px[up] = xs[up]![s]! + ax[s]!;
 		py[up] = ys[up]![s]! + ay[s]!;
 		now[up] = 1;

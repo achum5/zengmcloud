@@ -156,6 +156,13 @@ const CART_ASIDE_MS = 2500;
 const CART_ASIDE_FPS = 4;
 const CART_ASIDE_MORE = 1;
 const STOOD_ABOUT = new Set<Move>(["stand", "easy"]);
+// (A man on his way about in its way - walking, jogging, stood a moment -
+// stopped this long or less before he would be (ms), for as little as he
+// can of up to this long, in steps of this.)
+const ABOUT = new Set<Move>(["walk", "jog", "stand", "easy"]);
+const CART_WAIT_BACK = 4000;
+const CART_WAIT_MOST = 10_000;
+const CART_WAIT_STEP = 500;
 // (Sampled along it this often, ms, for the men on it.)
 const RIDE_MS = 100;
 // (The trainers, once he is on it: after it, at a walk, to the sideline -
@@ -615,9 +622,10 @@ export const fallHurt = (
 	return { at, yaw, downAt: t, faceDown };
 };
 
-// Men stood about in the way of the cart (see stageHurt), from when it is
-// called for until t1: each over out of it a moment before it comes, and
-// stood there, turned to `to`.
+// Men about in the way of the cart (see stageHurt), from when it is called
+// for until t1: each stood there over out of it a moment before it comes,
+// and stood there, turned to `to` - each on his way somewhere stopped short
+// of it until it has gone by, then on his way.
 export const outOfCartWay = (
 	cart: Cart,
 	men: { legs: Leg[] }[],
@@ -625,8 +633,8 @@ export const outOfCartWay = (
 	t1: number,
 ) => {
 	const c0 = cart.legs[0]!.t0;
-	const inWay = (legs: Leg[]) => {
-		for (let t = c0; t <= t1; t += CART_LOOK_MS) {
+	const inWay = (legs: Leg[], from = c0) => {
+		for (let t = from; t <= t1; t += CART_LOOK_MS) {
 			const c = cartAt(cart, t);
 			const q = posOf(legs, t);
 			const cos = Math.cos(c.yaw);
@@ -641,13 +649,87 @@ export const outOfCartWay = (
 		}
 		return undefined;
 	};
+	// (His legs stopped at `stop` for `wait`, then on as they were - all of
+	// it on the way somewhere, and over by t1, his last leg a still one
+	// with the time to give if need be.)
+	const waited = (legs: Leg[], stop: number, wait: number) => {
+		const k = legs.findIndex((l) => l.t1 > stop);
+		const l = legs[k];
+		if (!l) {
+			return undefined;
+		}
+		const at = posOf(legs, stop);
+		const tail = [
+			l.t0 < stop ? { ...l, t0: stop, from: at } : l,
+			...legs.slice(k + 1),
+		];
+		const last = tail.at(-1)!;
+		const gives = dist(last.from, last.to) === 0 && last.t1 - last.t0 > wait;
+		if (
+			tail.some((x) => !ABOUT.has(x.move)) ||
+			(!gives && last.t1 + wait > t1)
+		) {
+			return undefined;
+		}
+		const yaw =
+			l.yaw ??
+			(dist(l.from, l.to) > 0
+				? Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x)
+				: undefined);
+		return [
+			...legs.slice(0, k),
+			...(l.t0 < stop ? [{ ...l, t1: stop, to: at }] : []),
+			{
+				t0: stop,
+				t1: stop + wait,
+				from: at,
+				to: at,
+				move: "stand" as Move,
+				...(yaw !== undefined ? { yaw } : {}),
+			},
+			...tail.map((x) =>
+				x === last && gives
+					? { ...x, t0: x.t0 + wait }
+					: { ...x, t0: x.t0 + wait, t1: x.t1 + wait },
+			),
+		];
+	};
 	for (const p of men) {
 		if (p.legs.length === 0) {
 			continue;
 		}
 		const hit = inWay(p.legs);
-		const go = hit ? Math.max(c0, hit.t - CART_ASIDE_MS) : 0;
-		if (!hit || p.legs.some((l) => l.t1 > go && !STOOD_ABOUT.has(l.move))) {
+		if (!hit) {
+			continue;
+		}
+		const go = hit.t - CART_ASIDE_MS;
+		if (p.legs.some((l) => l.t1 > go && !STOOD_ABOUT.has(l.move))) {
+			// (On his way: the latest he can stop and wait for it, the least
+			// while he can.)
+			let legs: Leg[] | undefined;
+			for (
+				let stop = hit.t - CART_LOOK_MS;
+				!legs && stop >= hit.t - CART_WAIT_BACK;
+				stop -= CART_LOOK_MS
+			) {
+				for (
+					let wait = CART_WAIT_STEP;
+					wait <= CART_WAIT_MOST;
+					wait += CART_WAIT_STEP
+				) {
+					const w = waited(p.legs, stop, wait);
+					if (!w) {
+						break;
+					}
+					if (!inWay(w, stop)) {
+						legs = w;
+						break;
+					}
+				}
+			}
+			if (legs) {
+				p.legs.splice(0, p.legs.length, ...legs);
+			}
 			continue;
 		}
 		const d = CART_W / 2 + CART_ROOM + CART_ASIDE_MORE;
@@ -1241,17 +1323,6 @@ export const stageHurt = (input: {
 				still(p.legs, c0, c0 + ms, where, "clap", face);
 			}
 		}
-	}
-
-	// (Anybody stood about in its way - not those down on a knee round him,
-	// kept off it already - over out of it a moment before it comes.)
-	if (cart) {
-		outOfCartWay(
-			cart,
-			parts.filter((p) => p !== him && !input.busy.has(p.pid)),
-			at,
-			carted,
-		);
 	}
 
 	// (Him that waved them out, not down on a knee after all: stood there,

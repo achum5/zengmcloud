@@ -1429,18 +1429,16 @@ describe("the cart, for a man hurt badly", () => {
 						`play ${play.i}`,
 					);
 				}
-				// (Nobody in its way.)
-				const men = [
-					...play.parts.filter((p) => p !== him),
-					...play.crew,
-					...play.medics!.filter((m) => m !== driver),
-				];
-				for (let t = inLeg!.t0; t <= play.t1; t += 100) {
-					for (const m of men) {
+				// (Nobody in its way, as drawn - eased round it, if need be.)
+				for (let t = inLeg!.t0; t < play.t1; t += 100) {
+					for (const st of momentAt(tl, t).players) {
+						if (st.id === him.pid || st.id === driver.pid) {
+							continue;
+						}
 						assert.isAtLeast(
-							gap(posOf(m.legs, t), t),
+							gap(st, t),
 							0.6,
-							`play ${play.i} pid ${m.pid} at ${t - play.snap}`,
+							`play ${play.i} pid ${st.id} at ${t - play.snap}`,
 						);
 					}
 				}

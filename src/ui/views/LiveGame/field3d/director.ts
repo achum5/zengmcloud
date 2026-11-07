@@ -37,6 +37,7 @@ import {
 import {
 	depthCharts,
 	fillSlots,
+	GROUPS,
 	type DepthChart,
 	type Group,
 	type RosterMan,
@@ -1872,6 +1873,33 @@ class Director {
 		// Who is on, and where each lines up.
 		const stats = this.statsOf(i0, i1);
 		const named = this.named(stats);
+		// (And a man hurt on it, if its stats say nothing of him: on for it,
+		// in a group he is on the depth chart for.)
+		for (let i = i0; i < i1; i++) {
+			const e = events[i];
+			const pid =
+				e?.type === "injury" && typeof e.injuredPID === "number"
+					? e.injuredPID
+					: undefined;
+			const side =
+				pid === undefined
+					? undefined
+					: ([0, 1] as const).find((k) => this.roster[k].includes(pid));
+			if (
+				pid === undefined ||
+				side === undefined ||
+				named[side].some((n) => n.pid === pid)
+			) {
+				continue;
+			}
+			const groups = GROUPS.filter((g) => this.depth[side][g]?.includes(pid));
+			named[side].push({
+				pid,
+				side,
+				groups: groups.length > 0 ? groups : undefined,
+				rank: Infinity,
+			});
+		}
 		const { placed, formation } = this.lineUp(
 			kind,
 			events,
@@ -2740,11 +2768,16 @@ class Director {
 		if (timeout) {
 			crewClear(crew.parts, timeout, t1);
 		}
-		// (Officials stood about in the way of a cart out for a man hurt:
-		// over out of it.)
+		// (Anybody about in the way of a cart out for a man hurt - players,
+		// officials - out of it, or waiting for it to go by: see hurt.ts.)
 		const lying = hurt && parts.find((p) => p.pid === hurt.pid);
 		if (cart && hurt && lying) {
-			outOfCartWay(cart, crew.parts, posOf(lying.legs, hurt.down), t1);
+			outOfCartWay(
+				cart,
+				[...parts.filter((p) => p !== lying), ...crew.parts],
+				posOf(lying.legs, hurt.down),
+				t1,
+			);
 		}
 		const refCall = (() => {
 			const ref = crew.parts.find((p) => p.pid === officialId("R"));
@@ -3179,6 +3212,10 @@ class Director {
 			crew: crew.parts,
 			r: this.rng(i0, "tv"),
 		});
+		// (The TV men on the sideline too, out of a cart's way.)
+		if (cart && hurt && lying) {
+			outOfCartWay(cart, tv, posOf(lying.legs, hurt.down), t1);
+		}
 		// The home side's man who scored, back to his sideline as the try is
 		// set up - greeted there, the camera on it clear of the field.
 		const greeted = (() => {
