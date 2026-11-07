@@ -10568,6 +10568,12 @@ class Action {
 	// what he was doing at `from` and out onto the man nearest where he
 	// catches it (each a man of his own, none of `not`) - there as it gets
 	// to him, or as soon after as he can be - and on him a moment.
+	// (Where a blocker meets him at c - BLOCK_GAP in front of him.)
+	private inFront(m: Actor, c: number): Pt {
+		const p = this.of(m.posAt(c));
+		return this.w({ d: p.d - BLOCK_GAP, a: p.a });
+	}
+
 	leadBlocks(
 		men: Actor[],
 		from: number,
@@ -10582,11 +10588,21 @@ class Action {
 				(a, b) =>
 					dist(a.posAt(catchAt), catchPt) - dist(b.posAt(catchAt), catchPt),
 			);
+		// (Not a man one of his own is on already - met where that one
+		// stands: see CLIMB_CLEAR_FT.)
+		const taken = (b: Actor, at: Pt, c: number) =>
+			this.o.some(
+				(o) =>
+					o !== b &&
+					dist(o.posAt(c), at) < CLIMB_CLEAR_FT &&
+					(legAt(o, c).move === "passSet" || LINE_PLAY.has(legAt(o, c).move)),
+			);
 		for (const b of men) {
-			const m = near.shift();
+			const m = near.find((x) => !taken(b, this.inFront(x, catchAt), catchAt));
 			if (!m) {
 				return;
 			}
+			near.splice(near.indexOf(m), 1);
 			b.cut(from);
 			const fps = b.top * 0.9;
 			// (Up to speed for it off what he was doing - out of his stance,
