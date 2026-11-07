@@ -1548,7 +1548,10 @@ export const momentAt = (
 		...play.crew,
 		...play.chains,
 		...play.tv,
-		...(play.medics ?? []),
+		// (The trainers - and a cart's driver, once it is called for.)
+		...(play.medics ?? []).filter(
+			(m) => m.legs[0]!.move !== "cartDrive" || m.legs[0]!.t0 <= t,
+		),
 		...(play.coaches ?? []),
 		...(play.toss && t < play.toss.cut ? play.toss.men : []),
 		// (The sideline reporter, once she is out for the interview.)

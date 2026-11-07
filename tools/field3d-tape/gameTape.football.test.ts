@@ -250,7 +250,12 @@ test.skipIf(!process.env.TAPE_GAMES)(
 								`${who} running backward (${st.move}) at ${v.toFixed(0)} ft/s`,
 							);
 						}
-						const glide = v > 3 && kind === "still";
+						// (Not on the cart: see cart.ts.)
+						const glide =
+							v > 3 &&
+							kind === "still" &&
+							st.move !== "ride" &&
+							st.move !== "cartDrive";
 						cur.gl = glide ? (q.gl ?? 0) + 1 : 0;
 						if (cur.gl === 3) {
 							flag(

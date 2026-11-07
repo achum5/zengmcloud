@@ -402,9 +402,14 @@ helped off from worse, down with the trainers longer from one that keeps
 him out a long time; both hands to his helmet for his head or neck, an arm
 held for a hand or an arm (the 3D court's hurt men the same way).
 
-To do: a cart for a bad one. (Not the
-crowd standing to clap him off: the picture over him going off looks down
-at the field, no stands in it.)
+Out 8 weeks or more: the cart out for him - white, his team's color down
+the sides, a roof over the front, a trainer driving - called for once the
+trainers are with him, round to park beside him (whichever way in is
+clearest, men stood about in its way stepping aside), him helped round
+behind it, turned and sat on the back, and away with him to his sideline.
+
+Not the crowd standing to clap him off: the picture over him going off
+looks down at the field, no stands in it.
 
 ## 13. Kneel, fumble, onside kick, safety
 

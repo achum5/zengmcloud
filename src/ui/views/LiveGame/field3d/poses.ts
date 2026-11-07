@@ -1114,6 +1114,20 @@ const PLAY_BALL: [number, Pose][] = [
 	[1, pose({ shN: 28, elN: 90, abN: 8 })],
 ];
 
+const RIDE = pose({
+	hipN: 84,
+	kneeN: 38,
+	hipF: 80,
+	kneeF: 30,
+	lean: -6,
+	shN: -14,
+	elN: 8,
+	abN: 18,
+	shF: -14,
+	elF: 8,
+	abF: 18,
+	wide: 0.7,
+});
 const FIELD_ANIMS = {
 	// Standing easy: between plays, on the sideline.
 	stand: { kind: "still", pose: BASE },
@@ -3542,6 +3556,29 @@ const FIELD_ANIMS = {
 			wide: 0.9,
 		}),
 	},
+	// On the back of the cart, a man hurt (see cart.ts): sat on the end of
+	// it, his legs hanging down over it, a hand on the deck either side of
+	// him (up off the turf: see liftOf) - and sitting down onto it.
+	ride: { kind: "still", pose: RIDE },
+	rideOn: { kind: "still", pose: RIDE },
+	// Driving it: sat up, both hands out on the wheel.
+	cartDrive: {
+		kind: "still",
+		pose: pose({
+			hipN: 86,
+			kneeN: 84,
+			hipF: 86,
+			kneeF: 84,
+			lean: 4,
+			shN: 52,
+			elN: 58,
+			abN: -6,
+			shF: 52,
+			elF: 58,
+			abF: -6,
+			wide: 0.6,
+		}),
+	},
 	// ---- a man hurt ----
 	// Down on his back on the turf, one knee drawn up, a hand to it.
 	hurt: {
@@ -4744,6 +4781,9 @@ export const strideLift = (m: Move, phase: number, len = 1): number =>
 // feet in a leap, a chest bump - laid out on top of a pile, this high.
 const PILE_TOP = 1.2;
 const GRIDDY_HOP = 0.22;
+// (Sat on the back of the cart, his feet hanging: his hips as high as its
+// deck - eased up onto it as he sits.)
+const RIDE_UP = 0.45;
 export const liftOf = (m: Move, phase: number): number => {
 	const arc = (lo: number, hi: number, up: number) =>
 		phase > lo && phase < hi
@@ -4773,6 +4813,10 @@ export const liftOf = (m: Move, phase: number): number => {
 			);
 		case "pileTop":
 			return PILE_TOP;
+		case "ride":
+			return RIDE_UP;
+		case "rideOn":
+			return RIDE_UP * smooth01(phase);
 		case "offTop":
 			return PILE_TOP * (1 - Math.min(1, phase / 0.45));
 		default:

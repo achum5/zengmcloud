@@ -122,6 +122,8 @@ const TOUCH = new Set<Move>([
 	"hurtProne",
 	"hurtKnee",
 	"hurtUp",
+	"ride",
+	"rideOn",
 	"tend",
 	"helpUp",
 	"takeKnee",

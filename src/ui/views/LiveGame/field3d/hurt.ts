@@ -1,9 +1,23 @@
+import {
+	BACK_AT,
+	CART_L,
+	CART_W,
+	cartAt,
+	cartLegMs,
+	DRIVER_AT,
+	DRIVER_LEFT,
+	onCart,
+	type Cart,
+} from "./cart.ts";
 import { posOf, type CrewPart } from "./crew.ts";
 import type { BallSeg, Leg, Part } from "./director.ts";
 import {
 	COACH_LINE,
 	dist,
+	END_ROOM,
+	FIELD_L,
 	FIELD_W,
+	MID_X,
 	TEAM_AREA,
 	type Pt,
 	type Side,
@@ -23,6 +37,9 @@ export const MEDICS = 3;
 export const HURT_MOST = 2;
 export const medicId = (team: Side, n: number, k: number) =>
 	-40 - team * 10 - n * MEDICS - k;
+// (And the man driving the cart out to him, if it comes: see CART_GAMES.)
+export const driverId = (team: Side, n: number) =>
+	-40 - team * 10 - HURT_MOST * MEDICS - n;
 
 // Down this long after the whistle; the trainers off the sideline this long
 // after he is, at this pace (feet a second), with him this long; up off the
@@ -96,6 +113,82 @@ const armsFor = (type: string | undefined): Move | undefined => {
 };
 const ARMS_FROM = 0.1;
 const ARMS_HELD = 0.5;
+// THE CART (see cart.ts), out to a man hurt this badly (games out): called
+// for this long after the trainers are down by him, out from beyond his
+// sideline (this far back along the field from where it parks, this far off
+// the field - and no further past an end line than this), round, to park
+// alongside him - its middle this far off him, its back end this far past
+// him along the field - in on a bend this long (longer, round him to his
+// far side, and away the same) - at this pace (feet a second, between the stops);
+// him up this long after it is there (sat up this long before, at most,
+// waiting on it), helped round behind it, turned round
+// and sat on the back of it; and off with him this long after, round and
+// away over his sideline at this pace - the picture on it this long. (Each
+// place along its way to it and away, no nearer than this to where a man
+// goes down on a knee round him.)
+const CART_GAMES = BAD_GAMES;
+const CART_CALL_MS = 600;
+const CART_FROM_ALONG = 90;
+const CART_OFF_FIELD = 3;
+const CART_PAST_END = END_ROOM - 10;
+const CART_SIDE = 6.5;
+const CART_PAST = 3.5;
+const CART_IN = 26;
+const CART_ROUND = 45;
+const CART_FPS = 12;
+const CART_LOAD_AFTER = 500;
+const CART_SAT_MS = 3500;
+const CART_STEP_BACK = 1.8;
+const CART_TURN_MS = 450;
+const CART_SIT_MS = 650;
+const CART_GO_AFTER = 800;
+const CART_OFF_FPS = 9;
+const CART_SHOWN = 5500;
+const CART_CLEAR_STEP = 2;
+// (Its ways in and away, looked along every this long, ms, for anybody in
+// it - there about this long; as clear as this, feet, will do.)
+const CART_LOOK_MS = 200;
+const CART_THERE_ABOUT = 6000;
+const CART_ROOM = 1.5;
+// (A man stood about in its way over out of it from this long, ms, before
+// it comes, at this pace, to as far again as this off it.)
+const CART_ASIDE_MS = 2500;
+const CART_ASIDE_FPS = 4;
+const CART_ASIDE_MORE = 1;
+const STOOD_ABOUT = new Set<Move>(["stand", "easy"]);
+// (Sampled along it this often, ms, for the men on it.)
+const RIDE_MS = 100;
+// (The trainers, once he is on it: after it, at a walk, to the sideline -
+// each this long after the last.)
+const MEDIC_OFF_FPS = 4.5;
+const MEDIC_OFF_AFTER = 350;
+// (A man on it, in `move`, from t0 to t1: along with it, a leg each RIDE_MS,
+// at `ahead` and `left` on it, faced the way it goes - or, `back`, the
+// other way.)
+const rideOn = (
+	legs: Leg[],
+	cart: Cart,
+	t0: number,
+	t1: number,
+	ahead: number,
+	left: number,
+	move: Move,
+	back = false,
+) => {
+	for (let t = t0; t < t1; t += RIDE_MS) {
+		const e = Math.min(t1, t + RIDE_MS);
+		const a = onCart(cart, t, ahead, left);
+		const b = onCart(cart, e, ahead, left);
+		legs.push({
+			t0: t,
+			t1: e,
+			from: { x: a.x, y: a.y },
+			to: { x: b.x, y: b.y },
+			move,
+			yaw: a.yaw + (back ? Math.PI : 0),
+		});
+	}
+};
 // The men round him: this near, most of them, down on a knee a moment after
 // the trainers go, up again as he is.
 const KNEEL_NEAR = 30;
@@ -522,8 +615,73 @@ export const fallHurt = (
 	return { at, yaw, downAt: t, faceDown };
 };
 
+// Men stood about in the way of the cart (see stageHurt), from when it is
+// called for until t1: each over out of it a moment before it comes, and
+// stood there, turned to `to`.
+export const outOfCartWay = (
+	cart: Cart,
+	men: { legs: Leg[] }[],
+	to: Pt,
+	t1: number,
+) => {
+	const c0 = cart.legs[0]!.t0;
+	const inWay = (legs: Leg[]) => {
+		for (let t = c0; t <= t1; t += CART_LOOK_MS) {
+			const c = cartAt(cart, t);
+			const q = posOf(legs, t);
+			const cos = Math.cos(c.yaw);
+			const sin = Math.sin(c.yaw);
+			const f = (q.x - c.x) * cos + (q.y - c.y) * sin;
+			const s = (q.y - c.y) * cos - (q.x - c.x) * sin;
+			if (
+				Math.max(Math.abs(f) - CART_L / 2, Math.abs(s) - CART_W / 2) < CART_ROOM
+			) {
+				return { t, c, cos, sin, f, side: s < 0 ? -1 : 1 };
+			}
+		}
+		return undefined;
+	};
+	for (const p of men) {
+		if (p.legs.length === 0) {
+			continue;
+		}
+		const hit = inWay(p.legs);
+		const go = hit ? Math.max(c0, hit.t - CART_ASIDE_MS) : 0;
+		if (!hit || p.legs.some((l) => l.t1 > go && !STOOD_ABOUT.has(l.move))) {
+			continue;
+		}
+		const d = CART_W / 2 + CART_ROOM + CART_ASIDE_MORE;
+		const spot = [hit.side, -hit.side, hit.side * 2, -hit.side * 2]
+			.map((k) => ({
+				x: hit.c.x + hit.cos * hit.f - hit.sin * k * d,
+				y: hit.c.y + hit.sin * hit.f + hit.cos * k * d,
+			}))
+			.find((q) => !inWay([{ t0: c0, t1, from: q, to: q, move: "stand" }]));
+		if (!spot) {
+			continue;
+		}
+		const end = p.legs.at(-1)!.t1;
+		const move = p.legs.at(-1)!.move;
+		const k = cut(p.legs, go);
+		const from = p.legs.at(-1)!.to;
+		const there = k.at + (dist(from, spot) / CART_ASIDE_FPS) * 1000;
+		p.legs.push({ t0: k.at, t1: there, from, to: spot, move: "walk" });
+		still(
+			p.legs,
+			there,
+			Math.max(end, there + 1),
+			spot,
+			move,
+			toward(spot, to),
+		);
+	}
+};
+
 export type Hurt = {
 	medics: CrewPart[];
+	// The cart, if it came for him, and its driver.
+	cart?: Cart;
+	driver?: CrewPart;
 	// When he is down, when the trainers are down beside him (for a replay
 	// of the play to show meanwhile), and when it is all over.
 	down: number;
@@ -544,6 +702,8 @@ export const stageHurt = (input: {
 	busy: Set<number>;
 	// What he hurt, and how many games it keeps him out, if the game says.
 	injury?: { type: string; games: number } | undefined;
+	// The cart out for another man hurt on it already: none for him.
+	noCart?: boolean;
 	// Where the others hurt on it lie, and their trainers are.
 	others?: Pt[];
 	tending?: Pt[];
@@ -615,7 +775,108 @@ export const stageHurt = (input: {
 	}
 	const tending = arrived + 300;
 	const games = input.injury?.games;
-	const up =
+	// (The cart, for a bad one: where it parks - its back end a little past
+	// him along the field, toward the middle of it unless the other way is
+	// clearer, on the side of him toward his sideline unless that is where
+	// his head is (or the other side is clearer) - and its way there, from
+	// beyond the sideline, and away.)
+	const toHead = faceDown ? yaw : yaw + Math.PI;
+	const sy = line === 0 ? -1 : 1;
+	const offY = line === 0 ? -CART_OFF_FIELD : FIELD_W + CART_OFF_FIELD;
+	const endsIn = (x: number) =>
+		Math.min(FIELD_L + CART_PAST_END, Math.max(-CART_PAST_END, x));
+	const tendAt = medics.map((m) => m.legs.at(-1)!.to);
+	const routeOf = (ax: number, ps: number) => {
+		const x = at.x + ax * (CART_L / 2 + CART_PAST);
+		// (Further off him, if need be, for room by his trainers.)
+		const side = Math.max(
+			CART_SIDE,
+			...tendAt
+				.filter((q) => Math.abs(q.x - x) < CART_L / 2 + CART_ROOM)
+				.map((q) => ps * (q.y - at.y) + CART_W / 2 + CART_ROOM * 2),
+		);
+		const parkAt = { x, y: at.y + ps * side };
+		const bend = ps === sy ? CART_IN : CART_ROUND;
+		return {
+			ax,
+			ps,
+			parkAt,
+			in: {
+				from: { x: endsIn(parkAt.x - ax * CART_FROM_ALONG), y: offY },
+				ctrl: {
+					x: parkAt.x - ax * bend,
+					y: parkAt.y,
+				},
+				to: parkAt,
+			},
+			out: {
+				from: parkAt,
+				ctrl: { x: parkAt.x + ax * bend, y: parkAt.y },
+				to: { x: endsIn(parkAt.x + ax * CART_FROM_ALONG), y: offY },
+			},
+		};
+	};
+	const cartGo = tending + CART_CALL_MS;
+	const ax0 = at.x < MID_X ? 1 : -1;
+	const headOut = Math.sin(toHead) * sy;
+	const ps0 = headOut > 0.5 ? -sy : sy;
+	const routes = [
+		routeOf(ax0, ps0),
+		routeOf(-ax0, ps0),
+		...(Math.abs(headOut) <= 0.5
+			? [routeOf(ax0, -ps0), routeOf(-ax0, -ps0)]
+			: []),
+	];
+	// (How near anybody comes to it, feet, on its way in, there, and away:
+	// the men about, where each is going - and him, his trainers by him.)
+	const headAt = {
+		x: at.x + Math.cos(toHead) * HEAD,
+		y: at.y + Math.sin(toHead) * HEAD,
+	};
+	const about = parts.filter((p) => p !== him && p.legs.length > 0);
+	const clearOf = (route: (typeof routes)[number]) => {
+		const there = cartGo + cartLegMs(route.in, CART_FPS);
+		const off = there + CART_THERE_ABOUT;
+		const legs: Cart["legs"] = [
+			{ t0: cartGo, t1: there, ...route.in },
+			{ t0: off, t1: off + cartLegMs(route.out, CART_OFF_FPS), ...route.out },
+		];
+		const c = { team, legs };
+		let least = Infinity;
+		for (let t = cartGo; t <= off + CART_SHOWN; t += CART_LOOK_MS) {
+			const p = cartAt(c, t);
+			const cos = Math.cos(p.yaw);
+			const sin = Math.sin(p.yaw);
+			const by = about.map((q) => posOf(q.legs, t));
+			if (t < there) {
+				by.push(at, headAt, ...tendAt);
+			}
+			for (const q of by) {
+				const dx = q.x - p.x;
+				const dy = q.y - p.y;
+				least = Math.min(
+					least,
+					Math.max(
+						Math.abs(dx * cos + dy * sin) - CART_L / 2,
+						Math.abs(dy * cos - dx * sin) - CART_W / 2,
+					),
+				);
+			}
+		}
+		return least;
+	};
+	const route = !(games !== undefined && games >= CART_GAMES && !input.noCart)
+		? undefined
+		: (() => {
+				const clear = routes.map(clearOf);
+				const k = clear.findIndex((c) => c >= CART_ROOM);
+				return routes[k >= 0 ? k : clear.indexOf(Math.max(...clear))]!;
+			})();
+	const ax = route?.ax ?? ax0;
+	const parkAt = route?.parkAt ?? at;
+	const cartIn = route?.in;
+	const cartThere = cartIn ? cartGo + cartLegMs(cartIn, CART_FPS) : 0;
+	let up =
 		arrived +
 		TEND_MS *
 			(games === undefined
@@ -625,13 +886,19 @@ export const stageHurt = (input: {
 					: games < HELPED_GAMES
 						? KNOCK_SHORTER
 						: 1);
+	if (cartIn) {
+		up = Math.max(up, cartThere + CART_LOAD_AFTER);
+	}
 	for (const m of medics) {
 		const to = m.legs.at(-1)!.to;
 		still(m.legs, m.legs.at(-1)!.t1, up, to, "tend", toward(to, at));
 	}
 	// Him: on his back, then sat up with them, then up - or face down, up
 	// on a knee, then up.
-	const sitUp = downAt + (up - downAt) * SIT_UP;
+	const sitUp = Math.max(
+		downAt + (up - downAt) * SIT_UP,
+		cartIn ? up - CART_SAT_MS : 0,
+	);
 	const sat = Math.min(sitUp + SIT_MS, up);
 	const rise = faceDown ? "getUp" : "getUpBack";
 	const part = faceDown ? KNEE_AT : SAT_AT;
@@ -675,39 +942,57 @@ export const stageHurt = (input: {
 		yaw,
 	});
 
-	// And off: to his sideline, helped or on his own.
+	// And off: to his sideline, helped or on his own - or, the cart there
+	// for him, helped to a step behind the back of it.
 	const roll = r();
-	const helped = games === undefined ? roll < HELPED : games >= HELPED_GAMES;
-	const off = {
-		x: Math.min(TEAM_AREA[1], Math.max(TEAM_AREA[0], at.x + (r() - 0.5) * 20)),
-		y: line === 0 ? -(COACH_LINE + 3) : FIELD_W + COACH_LINE + 3,
-	};
-	const way = toward(at, off);
+	const helped =
+		cartIn !== undefined ||
+		(games === undefined ? roll < HELPED : games >= HELPED_GAMES);
+	const offX = at.x + (r() - 0.5) * 20;
+	const seat = cartIn ? { x: parkAt.x + ax * BACK_AT, y: parkAt.y } : undefined;
+	const off = seat
+		? { x: seat.x - ax * CART_STEP_BACK, y: seat.y }
+		: {
+				x: Math.min(TEAM_AREA[1], Math.max(TEAM_AREA[0], offX)),
+				y: line === 0 ? -(COACH_LINE + 3) : FIELD_W + COACH_LINE + 3,
+			};
+	// (His way: straight there - or, to the cart, over level with the
+	// back of it first, then up behind it.)
+	const path = seat ? [at, { x: at.x, y: seat.y }, off] : [at, off];
+	const ways = path.slice(1).map((p, k) => toward(path[k]!, p));
 	const fps = helped ? HELPED_FPS : ALONE_FPS;
 	const walk0 = up + UP_MS + 150;
-	const walk1 = walk0 + (dist(at, off) / fps) * 1000;
-	still(him.legs, up + UP_MS, walk0, at, "stand", way);
-	him.legs.push({
-		t0: walk0,
-		t1: walk1,
-		from: at,
-		to: off,
-		move: helped ? "walk" : "jog",
-		...(helped ? { arms: "overShoulders" as Move } : {}),
-	});
+	const times = [walk0];
+	for (let k = 1; k < path.length; k++) {
+		times.push(times.at(-1)! + (dist(path[k - 1]!, path[k]!) / fps) * 1000);
+	}
+	const walk1 = times.at(-1)!;
+	still(him.legs, up + UP_MS, walk0, at, "stand", ways[0]!);
+	for (let k = 1; k < path.length; k++) {
+		him.legs.push({
+			t0: times[k - 1]!,
+			t1: times[k]!,
+			from: path[k - 1]!,
+			to: path[k]!,
+			move: helped ? "walk" : "jog",
+			...(helped ? { arms: "overShoulders" as Move } : {}),
+		});
+	}
 	// (Each trainer's place by him on the way: either side, or behind.)
-	const side = (d: number, back: number): Pt => ({
-		x: -Math.sin(way) * d - Math.cos(way) * back,
-		y: Math.cos(way) * d - Math.sin(way) * back,
-	});
-	const places = helped
-		? [side(ALONGSIDE, 0), side(-ALONGSIDE, 0), side(0, BEHIND)]
-		: [side(ALONGSIDE, 0.6), side(-1.5, BEHIND), side(1.5, BEHIND + 1)];
+	const placesOn = (way: number) => {
+		const side = (d: number, back: number): Pt => ({
+			x: -Math.sin(way) * d - Math.cos(way) * back,
+			y: Math.cos(way) * d - Math.sin(way) * back,
+		});
+		return helped
+			? [side(ALONGSIDE, 0), side(-ALONGSIDE, 0), side(0, BEHIND)]
+			: [side(ALONGSIDE, 0.6), side(-1.5, BEHIND), side(1.5, BEHIND + 1)];
+	};
+	const places = ways.map(placesOn);
 	medics.forEach((m, k) => {
-		const o = places[k]!;
+		const o = places[0]![k]!;
 		const from = m.legs.at(-1)!.to;
 		const a = { x: at.x + o.x, y: at.y + o.y };
-		const b = { x: off.x + o.x, y: off.y + o.y };
 		// (Over to it at a walk, from as soon as he is up if it is far -
 		// or a jog, if even then it is further than a walk goes.)
 		const step = Math.max(
@@ -716,17 +1001,76 @@ export const stageHurt = (input: {
 		);
 		const pace = dist(from, a) / ((walk0 - step) / 1000);
 		still(m.legs, up, step, from, "stand", toward(from, at));
-		m.legs.push(
-			{
-				t0: step,
-				t1: walk0,
-				from,
-				to: a,
-				move: pace < 6.5 ? "walk" : "jog",
-			},
-			{ t0: walk0, t1: walk1, from: a, to: b, move: helped ? "walk" : "jog" },
-		);
+		m.legs.push({
+			t0: step,
+			t1: walk0,
+			from,
+			to: a,
+			move: pace < 6.5 ? "walk" : "jog",
+		});
+		for (let j = 1; j < path.length; j++) {
+			const q = places[j - 1]![k]!;
+			m.legs.push({
+				t0: times[j - 1]!,
+				t1: times[j]!,
+				from: m.legs.at(-1)!.to,
+				to: { x: path[j]!.x + q.x, y: path[j]!.y + q.y },
+				move: helped ? "walk" : "jog",
+			});
+		}
 	});
+
+	// On the cart: turned round, sat down on the back of it - and off with
+	// it, the trainers after it to the sideline at a walk.
+	let cart: Cart | undefined;
+	let driver: CrewPart | undefined;
+	let carted = 0;
+	if (route && cartIn && seat) {
+		const backYaw = ax > 0 ? Math.PI : 0;
+		const sit = walk1 + CART_TURN_MS;
+		const board = sit + CART_SIT_MS;
+		const cartOff = board + CART_GO_AFTER;
+		const cartOut = route!.out;
+		cart = {
+			team,
+			legs: [
+				{ t0: cartGo, t1: cartThere, ...cartIn },
+				{
+					t0: cartOff,
+					t1: cartOff + cartLegMs(cartOut, CART_OFF_FPS),
+					...cartOut,
+				},
+			],
+		};
+		carted = Math.max(input.t1, cartOff + CART_SHOWN);
+		still(him.legs, walk1, sit, off, "stand", backYaw);
+		him.legs.push({
+			t0: sit,
+			t1: board,
+			from: off,
+			to: seat,
+			move: "rideOn",
+			yaw: backYaw,
+		});
+		rideOn(him.legs, cart, board, carted, BACK_AT, 0, "ride", true);
+		medics.forEach((m, k) => {
+			const l = m.legs.at(-1)!;
+			const go = cartOff + 400 + k * MEDIC_OFF_AFTER;
+			const to = { x: l.to.x + ax * 6, y: offY + sy * 2 };
+			still(m.legs, l.t1, go, l.to, "stand", toward(l.to, seat));
+			m.legs.push({
+				t0: go,
+				t1: go + (dist(l.to, to) / MEDIC_OFF_FPS) * 1000,
+				from: l.to,
+				to,
+				move: "walk",
+			});
+		});
+		// (The driver on it from when it is called for: see evaluate.ts.)
+		const legs: Leg[] = [];
+		rideOn(legs, cart, cartGo, carted, DRIVER_AT, DRIVER_LEFT, "cartDrive");
+		driver = { pid: driverId(team, input.n), team, legs };
+	}
 
 	// One of his own waving the trainers out to him.
 	const waveAt = downAt + WAVE_AFTER;
@@ -775,9 +1119,29 @@ export const stageHurt = (input: {
 	}
 
 	// The men round him, down on a knee while he is - each in a place of his
-	// own (see KNEEL_APART), off the ball where it lies.
+	// own (see KNEEL_APART), off the ball where it lies (and off the cart's
+	// way, if it comes, and his to it).
 	const knelt: Pt[] = [];
-	const toHead = faceDown ? yaw : yaw + Math.PI;
+	const cartWay: Pt[] = cart ? path.slice(1) : [];
+	if (cart) {
+		const t0 = cart.legs[0]!.t0;
+		const t1 = cart.legs.at(-1)!.t1;
+		for (let t = t0; t <= t1; t += RIDE_MS) {
+			const c = cartAt(cart, t);
+			for (const f of [-CART_L / 2, 0, CART_L / 2]) {
+				const q = {
+					x: c.x + Math.cos(c.yaw) * f,
+					y: c.y + Math.sin(c.yaw) * f,
+				};
+				if (
+					dist(q, at) < KNEEL_NEAR + KNEEL_OFF_HIM &&
+					cartWay.every((w) => dist(w, q) >= CART_CLEAR_STEP)
+				) {
+					cartWay.push(q);
+				}
+			}
+		}
+	}
 	const hips = {
 		x: at.x - Math.cos(toHead) * HIPS,
 		y: at.y - Math.sin(toHead) * HIPS,
@@ -843,7 +1207,10 @@ export const stageHurt = (input: {
 			.filter((o) => o !== p && o.pid >= 0 && o.legs.length > 0)
 			.map((o) => posOf(o.legs, off))
 			.filter((q) => dist(q, from) < KNEEL_APART * 2);
-		const spot = kneelSpot(from, at, [...knelt, ...by], lies, others);
+		const spot = kneelSpot(from, at, [...knelt, ...by], lies, [
+			...others,
+			...cartWay,
+		]);
 		const where = dist(from, spot) < KNEEL_STEP_FT ? from : spot;
 		const way = roundHim(from, where, hips, head);
 		let far = 0;
@@ -876,6 +1243,17 @@ export const stageHurt = (input: {
 		}
 	}
 
+	// (Anybody stood about in its way - not those down on a knee round him,
+	// kept off it already - over out of it a moment before it comes.)
+	if (cart) {
+		outOfCartWay(
+			cart,
+			parts.filter((p) => p !== him && !input.busy.has(p.pid)),
+			at,
+			carted,
+		);
+	}
+
 	// (Him that waved them out, not down on a knee after all: stood there,
 	// to him, until he is up.)
 	if (waver && !input.busy.has(waver.pid)) {
@@ -884,10 +1262,18 @@ export const stageHurt = (input: {
 		still(waver.legs, l.t1, up + UP_MS, l.to, "stand", toward(l.to, at));
 	}
 
-	const t1 = Math.max(input.t1, Math.min(walk1 + 900, walk0 + SHOWN_OFF));
+	const t1 = cart
+		? carted
+		: Math.max(input.t1, Math.min(walk1 + 900, walk0 + SHOWN_OFF));
 	for (const m of medics) {
 		const l = m.legs.at(-1)!;
 		still(m.legs, l.t1, t1, l.to, "stand", toward(l.to, at));
 	}
-	return { medics, down: downAt, tending, t1 };
+	return {
+		medics,
+		down: downAt,
+		tending,
+		t1,
+		...(cart && driver ? { cart, driver } : {}),
+	};
 };

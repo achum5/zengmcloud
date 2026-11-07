@@ -153,7 +153,8 @@ import {
 	STAFF,
 	staffId,
 } from "./sideline.ts";
-import { HURT_MOST, MEDICS, medicId } from "./hurt.ts";
+import { driverId, HURT_MOST, MEDICS, medicId } from "./hurt.ts";
+import { cartGear } from "./cart.ts";
 import {
 	cameraGear,
 	flashesAt,
@@ -955,6 +956,10 @@ const Field3D = ({
 					looks.set(id, trainerLook(kits[team], `${gid}|${id}`));
 					bodies.set(id, drawnOfficialBody(68 + ((k * 3) % 5), 180 + k * 14));
 				}
+				// (And the cart's driver.)
+				const id = driverId(team, n);
+				looks.set(id, trainerLook(kits[team], `${gid}|${id}`));
+				bodies.set(id, drawnOfficialBody(69, 195));
 			}
 		}
 		for (const o of tvCrewFor(gid ?? 0)) {
@@ -1492,6 +1497,7 @@ const Field3D = ({
 				...tabletGear(ctx, view, standing, body, sprites.fine === true),
 				...showerGear(ctx, view, moment, body, sprites.fine === true),
 				...runOutGear(ctx, view, moment.play?.runOut, moment.t),
+				...cartGear(ctx, view, moment.play, moment.t, sideColors.current),
 			);
 			for (const f of moment.flags ?? []) {
 				items.push({

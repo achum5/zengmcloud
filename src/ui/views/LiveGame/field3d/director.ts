@@ -62,7 +62,8 @@ import { cheerShotFor, type CheerShot } from "./cheerleaders.ts";
 import { crowdShotFor, type CrowdShot } from "./crowd.ts";
 import type { Shout } from "./stadium.ts";
 import { measureTimes, stageMeasure } from "./measure.ts";
-import { fallHurt, HURT_MOST, MEDICS, stageHurt } from "./hurt.ts";
+import { fallHurt, HURT_MOST, outOfCartWay, stageHurt } from "./hurt.ts";
+import type { Cart } from "./cart.ts";
 import {
 	crewOff,
 	stageChangeEnds,
@@ -239,6 +240,9 @@ export type Play = {
 	// camera on him from when he is down.
 	medics?: CrewPart[];
 	hurt?: { pid: number; from: number };
+	// The cart out for a man hurt badly (see cart.ts) - its driver among the
+	// medics.
+	cart?: Cart;
 	// The coin toss (see toss.ts): the captains out to the middle and back;
 	// where, when the coin goes up, and when the picture cuts to the kick.
 	toss?: { men: CrewPart[]; at: Pt; flip: number; cut: number };
@@ -2400,7 +2404,9 @@ class Director {
 				);
 			}
 		}
-		for (let i = i0; i < i1 && medics.length < HURT_MOST * MEDICS; i++) {
+		let staged = 0;
+		let cart: Cart | undefined;
+		for (let i = i0; i < i1 && staged < HURT_MOST; i++) {
 			const e = events[i];
 			if (e?.type !== "injury" || typeof e.injuredPID !== "number") {
 				continue;
@@ -2408,7 +2414,8 @@ class Director {
 			const pid = e.injuredPID;
 			const h = stageHurt({
 				pid,
-				n: medics.length / MEDICS,
+				n: staged,
+				...(cart ? { noCart: true } : {}),
 				parts,
 				whistle,
 				t0,
@@ -2424,7 +2431,9 @@ class Director {
 				r: this.rng(i, "hurt"),
 			});
 			if (h) {
-				medics.push(...h.medics);
+				staged += 1;
+				medics.push(...h.medics, ...(h.driver ? [h.driver] : []));
+				cart ??= h.cart;
 				t1 = h.t1;
 				hurt ??= { pid: e.injuredPID, down: h.down, tending: h.tending };
 			}
@@ -2730,6 +2739,12 @@ class Director {
 		}
 		if (timeout) {
 			crewClear(crew.parts, timeout, t1);
+		}
+		// (Officials stood about in the way of a cart out for a man hurt:
+		// over out of it.)
+		const lying = hurt && parts.find((p) => p.pid === hurt.pid);
+		if (cart && hurt && lying) {
+			outOfCartWay(cart, crew.parts, posOf(lying.legs, hurt.down), t1);
 		}
 		const refCall = (() => {
 			const ref = crew.parts.find((p) => p.pid === officialId("R"));
@@ -3260,6 +3275,7 @@ class Director {
 			down: chains.spots.down,
 			tv,
 			...(medics.length > 0 ? { medics } : {}),
+			...(cart ? { cart } : {}),
 			...(hurt ? { hurt: { pid: hurt.pid, from: hurt.down } } : {}),
 			...(runOut ? { runOut } : {}),
 			...(toss
