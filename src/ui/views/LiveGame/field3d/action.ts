@@ -740,6 +740,51 @@ const closest = (men: Actor[], p: Pt, t?: number): Actor | undefined => {
 	return best;
 };
 
+// The men up front with nobody over them each up onto a linebacker who
+// `fits` him, as many of them as can be: the pairs that between them go
+// the least way to where the backers are at `t` - so no two of them
+// crossing each other's way up.
+const climbPairs = (
+	men: Actor[],
+	backers: Actor[],
+	t: number,
+	fits: (b: Actor, m: Actor) => boolean,
+): Map<Actor, Actor> => {
+	const at = new Map(backers.map((m) => [m, m.posAt(t)]));
+	const ok = new Map(
+		men.map((b) => [b, new Set(backers.filter((m) => fits(b, m)))]),
+	);
+	let best: { n: number; cost: number; pairs: [Actor, Actor][] } = {
+		n: 0,
+		cost: 0,
+		pairs: [],
+	};
+	const cur: [Actor, Actor][] = [];
+	const used = new Set<Actor>();
+	const go = (i: number, cost: number) => {
+		if (i >= men.length) {
+			if (cur.length > best.n || (cur.length === best.n && cost < best.cost)) {
+				best = { n: cur.length, cost, pairs: [...cur] };
+			}
+			return;
+		}
+		const b = men[i]!;
+		for (const m of backers) {
+			if (used.has(m) || !ok.get(b)!.has(m)) {
+				continue;
+			}
+			used.add(m);
+			cur.push([b, m]);
+			go(i + 1, cost + dist(b.at, at.get(m)!));
+			cur.pop();
+			used.delete(m);
+		}
+		go(i + 1, cost);
+	};
+	go(0, 0);
+	return new Map(best.pairs);
+};
+
 // ---- one man's part, a stretch at a time ------------------------------------
 
 class Actor {
@@ -4547,6 +4592,7 @@ const CLIMB_OFF = [2, -2, 3, -3, 4, -4] as const;
 const CLIMB_ROUND_MORE = 1.1;
 const CLIMB_ROUND_LEAST_FT = 10;
 const CLIMB_ROUND_SLACK_FT = 0.3;
+const CLIMB_INTO_FT = 1.2;
 const SHED_MS = 550;
 const SHED_SPREAD = 350;
 const OFF_SPREAD = 350;
@@ -18753,14 +18799,38 @@ class Action {
 			this.blockOn(b, pick(holePt), beat(b), offAt, until, carrier, through);
 		}
 		// Nobody over him: up onto a linebacker - or, none left, in beside
-		// the man on the nearest one, on him too.
+		// the man on the nearest one, on him too. (The pairs that go the
+		// least way between them - see climbPairs - not each in turn onto
+		// the nearest left, a guard sent across behind the center to the
+		// far one through the blocks there.)
+		const ups = climbPairs(
+			front.filter((b) => !on.has(b)),
+			backers.filter((x) => !taken.has(x)),
+			filled,
+			(b, m) => this.climbClear(b, m, until),
+		);
+		const spare = backers.some(
+			(x) => !taken.has(x) && ![...ups.values()].includes(x),
+		);
 		for (const b of front) {
 			if (on.has(b)) {
 				continue;
 			}
-			const m = pick(b.at);
+			const m = ups.get(b);
 			if (m) {
+				taken.add(m);
 				this.blockOn(b, m, beat(b), offAt, until, carrier, through);
+				continue;
+			}
+			// (A backer left, but no way to him clear of the blocks between
+			// them: up to the next level on his own side all the same, if
+			// that is clear - not across through the blocks to him.)
+			const up = this.w({ ...this.of(b.at), d: this.of(b.at).d + 9 });
+			if (
+				spare &&
+				this.blocksIn(b, b, b.at, [up], b.t, b.t + 900).worst <= CLIMB_INTO_FT
+			) {
+				this.blockOn(b, undefined, beat(b), offAt, until, carrier, through);
 				continue;
 			}
 			const near = (x: Actor) => dist(x.posAt(snap + 800), b.at);
@@ -19055,6 +19125,81 @@ class Action {
 		}
 	}
 
+	// How far into the men in blocks (see CLIMB_CLEAR_FT) a man - not
+	// `him` - goes at the worst on his way from `from` through `pts`, at an
+	// even pace from t0 to t1; and how far that is.
+	private blocksIn(
+		b: Actor,
+		him: Actor,
+		from: Pt,
+		pts: Pt[],
+		t0: number,
+		t1: number,
+	): { worst: number; L: number } {
+		const all = [from, ...pts];
+		const lens: number[] = [];
+		let L = 0;
+		for (let i = 1; i < all.length; i++) {
+			L += dist(all[i - 1]!, all[i]!);
+			lens.push(L);
+		}
+		let worst = 0;
+		for (let c = t0 + CLIMB_LOOK_MS; c < t1; c += CLIMB_LOOK_MS) {
+			const d = (L * (c - t0)) / (t1 - t0);
+			const k = Math.max(
+				0,
+				lens.findIndex((g) => g >= d),
+			);
+			const g0 = k > 0 ? lens[k - 1]! : 0;
+			const p0 = all[k]!;
+			const p1 = all[k + 1] ?? p0;
+			const u = lens[k]! > g0 ? (d - g0) / (lens[k]! - g0) : 1;
+			const p = {
+				x: p0.x + (p1.x - p0.x) * u,
+				y: p0.y + (p1.y - p0.y) * u,
+			};
+			for (const x of this.men) {
+				if (x !== b && x !== him && LINE_PLAY.has(legAt(x, c).move)) {
+					worst = Math.max(worst, CLIMB_CLEAR_FT - dist(x.posAt(c), p));
+				}
+			}
+		}
+		return { worst, L };
+	}
+
+	// Up to `m` straight from where he is, at a climb's pace (met as in
+	// blockOn), no deeper into the men in blocks on the way than
+	// CLIMB_INTO_FT (see CLIMB_CLEAR_FT).
+	private climbClear(b: Actor, m: Actor, until: number): boolean {
+		const from = b.at;
+		const fps = b.top * CLIMB_PACE;
+		let to: Pt | undefined;
+		let ms = 0;
+		for (let c = b.t + 100; c <= until; c += 50) {
+			const p = this.of(m.posAt(c));
+			const at = this.w({ d: p.d - BLOCK_GAP, a: p.a });
+			const need = rampedMs(dist(from, at), fps, paceOn(b.last, from, at));
+			if (need <= c - b.t) {
+				to = at;
+				ms = c - b.t;
+				break;
+			}
+		}
+		if (!to) {
+			return true;
+		}
+		// (Or round them - see roundBlocks - if there is a way.)
+		const t1 = b.t + ms;
+		if (this.blocksIn(b, m, from, [to], b.t, t1).worst <= CLIMB_INTO_FT) {
+			return true;
+		}
+		const round = this.roundBlocks(b, to, t1, m);
+		return (
+			round !== undefined &&
+			this.blocksIn(b, m, from, round, b.t, t1).worst <= CLIMB_INTO_FT
+		);
+	}
+
 	// The way round the men in blocks between him and `to` (see
 	// CLIMB_CLEAR_FT), there by t1: the points to go through, on to `to` -
 	// or none, straight there clear of them already (or no way round any
@@ -19071,39 +19216,7 @@ class Action {
 		if (t1 <= t0 || D < CLIMB_ROUND_LEAST_FT) {
 			return undefined;
 		}
-		const others = this.men.filter((x) => x !== b && x !== him);
-		// (How far into them at the worst, along `pts` at an even pace.)
-		const into = (pts: Pt[]) => {
-			const all = [from, ...pts];
-			const lens: number[] = [];
-			let L = 0;
-			for (let i = 1; i < all.length; i++) {
-				L += dist(all[i - 1]!, all[i]!);
-				lens.push(L);
-			}
-			let worst = 0;
-			for (let c = t0 + CLIMB_LOOK_MS; c < t1; c += CLIMB_LOOK_MS) {
-				const d = (L * (c - t0)) / (t1 - t0);
-				const k = Math.max(
-					0,
-					lens.findIndex((g) => g >= d),
-				);
-				const g0 = k > 0 ? lens[k - 1]! : 0;
-				const p0 = all[k]!;
-				const p1 = all[k + 1] ?? p0;
-				const u = lens[k]! > g0 ? (d - g0) / (lens[k]! - g0) : 1;
-				const p = {
-					x: p0.x + (p1.x - p0.x) * u,
-					y: p0.y + (p1.y - p0.y) * u,
-				};
-				for (const x of others) {
-					if (LINE_PLAY.has(legAt(x, c).move)) {
-						worst = Math.max(worst, CLIMB_CLEAR_FT - dist(x.posAt(c), p));
-					}
-				}
-			}
-			return { worst, L };
-		};
+		const into = (pts: Pt[]) => this.blocksIn(b, him, from, pts, t0, t1);
 		const straight = into([to]).worst;
 		if (straight <= CLIMB_ROUND_SLACK_FT) {
 			return undefined;
