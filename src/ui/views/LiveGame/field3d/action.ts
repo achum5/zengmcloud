@@ -4585,6 +4585,11 @@ const FILL_ROOM_EVERY_MS = 100;
 const FILL_BACK_STEP_MS = 50;
 const FILL_BACK_MOST_MS = 800;
 const CLIMB_PACE = 0.85;
+// (Come up past the man he is to block on the run: looked back for a
+// way into him that has him in front of him, this far (ms) at the most,
+// a step at a time - see blockOn.)
+const PAST_BACK_STEP_MS = 50;
+const PAST_BACK_MOST_MS = 600;
 // (Up to a man past others in blocks - over the line to the next level, say
 // - not straight through them: no nearer a man in one than CLIMB_CLEAR_FT,
 // looked at every CLIMB_LOOK_MS on his way, as near as it gets him - round
@@ -19643,11 +19648,55 @@ class Action {
 			const q = this.of(m.posAt(meet.t));
 			meet = { t: meet.t, at: this.w({ d: q.d - BLOCK_GAP, a: q.a }) };
 		}
+		// (Come up past him on the run, with only a step or so back into
+		// him: from as far back on his way as has him still in front of him
+		// - not run on past him and stepped back into him off it in a
+		// stride.)
+		const nearOf = (to: { at: Pt; t: number }) =>
+			(dist(b.at, to.at) / Math.max(0.001, to.t - b.t)) * 1000 < WALK_MOST_FPS;
+		const ran = b.last;
+		if (
+			RAMPS.has(ran.move) &&
+			legPace(ran) >= STOP_LEAST &&
+			nearOf(meet) &&
+			angleAt(ran.from, ran.to, meet.at) > PLANT_TURN
+		) {
+			const was = b.legs.map((l) => ({ ...l }));
+			const { yaw, pinned } = b;
+			let found = false;
+			for (
+				let tc = b.t - PAST_BACK_STEP_MS;
+				tc >= b.t - PAST_BACK_MOST_MS && tc > b.pinned;
+				tc -= PAST_BACK_STEP_MS
+			) {
+				if (!RAMPS.has(legAt(b, tc).move)) {
+					break;
+				}
+				b.legs.splice(0, b.legs.length, ...was.map((l) => ({ ...l })));
+				b.yaw = yaw;
+				b.pinned = pinned;
+				b.cut(tc);
+				const again = meetOf();
+				const l = b.last;
+				if (
+					again &&
+					dist(l.from, l.to) > 0 &&
+					angleAt(l.from, l.to, again.at) <= PLANT_TURN
+				) {
+					meet = again;
+					found = true;
+					break;
+				}
+			}
+			if (!found) {
+				b.legs.splice(0, b.legs.length, ...was);
+				b.yaw = yaw;
+				b.pinned = pinned;
+			}
+		}
 		// (Only a step or so to square up to him: in his drive steps, facing
 		// up the field - not turned round and walked back there.)
-		const near =
-			(dist(b.at, meet.at) / Math.max(0.001, meet.t - b.t)) * 1000 <
-			WALK_MOST_FPS;
+		const near = nearOf(meet);
 		let round = near ? undefined : this.roundBlocks(b, meet.at, meet.t, m);
 		// (Turned off the way he was going for it - round them from a stand,
 		// or back for him, past bending round to him: planted for it first
