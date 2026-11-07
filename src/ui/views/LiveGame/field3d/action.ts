@@ -4627,6 +4627,11 @@ const RELEASE_INTO_FT = 0.6;
 const RELEASE_MORE = 1.1;
 // (Thrown to: all of it this long before the ball gets to him, at least.)
 const RELEASE_CATCH_MS = 300;
+// (A man off downfield with nobody near to block on a run: his spot moved
+// over this far, feet, either way - the least first - to keep him clear of
+// the men in blocks on his way there, and this long, ms, after.)
+const RELEASE_CLEAR_OFF = [0, 3, -3, 6, -6, 9, -9] as const;
+const RELEASE_CLEAR_MS = 300;
 const SHED_MS = 550;
 const SHED_SPREAD = 350;
 const OFF_SPREAD = 350;
@@ -6047,6 +6052,7 @@ const JAW_BACK_MS = 350;
 const WITH_IT_LEAST_MS = 400;
 const WITH_IT_PACE = 0.7;
 const WITH_IT_FT = [9, 8] as const;
+const WITH_IT_APART = 4;
 // The ball out of his hands this long after the hit that knocks it loose;
 // and what a man is doing on the turf, down.
 const POP_MS = 120;
@@ -14772,6 +14778,9 @@ class Action {
 		this.seen = (bat ? gotAt : catchAt) + BREAK_MS;
 		// (And his own side, through with what they were doing, after it
 		// with him at an easy run - not stood where the pass left them.)
+		// (Each to a spot of his own by it - see WITH_IT_APART - not two
+		// from the one place on into each other there.)
+		const taken: Pt[] = [];
 		for (const m of this.men) {
 			if (
 				m.team === picker.team &&
@@ -14804,10 +14813,20 @@ class Action {
 						t - 300,
 					);
 				} else if (far > ring + 2) {
-					const to = {
-						x: pt.x + ((m.at.x - pt.x) / far) * ring,
-						y: pt.y + ((m.at.y - pt.y) / far) * ring,
-					};
+					const a0 = Math.atan2(m.at.y - pt.y, m.at.x - pt.x);
+					const spot = (a: number) => ({
+						x: pt.x + Math.cos(a) * ring,
+						y: pt.y + Math.sin(a) * ring,
+					});
+					const step = WITH_IT_APART / ring;
+					let to = spot(a0);
+					for (let k = 1; k <= 6; k++) {
+						if (taken.every((q) => dist(q, to) >= WITH_IT_APART)) {
+							break;
+						}
+						to = spot(a0 + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * step);
+					}
+					taken.push(to);
 					// (Round to it easing off toward the pace that has him there,
 					// if he can be - see Actor.turnFor - not round it flat out
 					// and pulled up hard after.)
@@ -19310,7 +19329,35 @@ class Action {
 				);
 			if (!db || dist(db.at, m.at) > STALK_FAR) {
 				const went = m.t;
-				release(this.w({ d: s.d + 9 + r() * 8, a: s.a * 0.92 }), snap + 1300);
+				// (Off to a spot clear of the men in blocks on his way there -
+				// see RELEASE_CLEAR_OFF - not on through them.)
+				const d = s.d + 9 + r() * 8;
+				const by = snap + 1300;
+				const tries = RELEASE_CLEAR_OFF.map((off) =>
+					this.w({ d, a: s.a * 0.92 + off }),
+				);
+				const into = (to: Pt) => {
+					const t1 = Math.max(
+						by,
+						m.t +
+							rampedMs(dist(m.at, to), m.top * CLIMB_PACE, 0, RELEASE_ACCEL),
+					);
+					return this.blocksIn(m, m, m.at, [to], m.t, t1 + RELEASE_CLEAR_MS)
+						.worst;
+				};
+				let to = tries[0]!;
+				let worst = into(to);
+				for (const p of tries.slice(1)) {
+					if (worst <= CHASE_CLEAR_SLACK_FT) {
+						break;
+					}
+					const w = into(p);
+					if (w < worst - CHASE_CLEAR_SLACK_FT) {
+						to = p;
+						worst = w;
+					}
+				}
+				release(to, by);
 				// (Pulled up there, a step or two on - short of the men in blocks,
 				// if that has him in them - and in toward it at a jog, not stood
 				// out there till the whistle.)
