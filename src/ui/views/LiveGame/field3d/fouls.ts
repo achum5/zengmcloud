@@ -343,6 +343,32 @@ export const foulsOf = (input: FoulInput): Foul[] => {
 		if (when !== "pre" && when !== "after") {
 			t = Math.max(snap + 100, Math.min(t, whistle - 100));
 		}
+		// (A hold, a block in the back, acted out where the field has him
+		// at a man (see actFouls): then - when he is nearest one in the
+		// stretch it could be, if not at the moment drawn.)
+		if (
+			man &&
+			FOUL_ARMS[name] &&
+			(when === "line" || when === "return") &&
+			reachOf(man, parts, t, name) > FOUL_NEAR
+		) {
+			const t0 =
+				when === "return" && fielded
+					? fielded.t0 + RETURN_LOOK * (whistle - fielded.t0)
+					: snap + LINE_LOOK[0];
+			const t1 = Math.min(
+				whistle - 100,
+				when === "line" ? snap + LINE_LOOK[1] : whistle,
+			);
+			let near = FOUL_NEAR;
+			for (let s = t0; s <= t1; s += LOOK_STEP_MS) {
+				const d = reachOf(man, parts, s, name);
+				if (d <= near) {
+					near = d;
+					t = s;
+				}
+			}
+		}
 		// Where: the man who did it, then - or wherever that kind happens.
 		let at: Pt | undefined = man ? posOf(man, t) : undefined;
 		if (!at) {
@@ -427,6 +453,41 @@ const FOUL_NEAR = 6;
 const FOUL_FACING = (5 * Math.PI) / 12;
 // (On a man running a route: beside him too, an arm grabbed as they go.)
 const COVER_FACING = (7 * Math.PI) / 12;
+// (Not at anybody when drawn: looked for, every this long, over this
+// stretch of the play (ms from the snap) - or of a return, from this far
+// into it.)
+const LINE_LOOK = [500, 2500] as const;
+const RETURN_LOOK = 0.2;
+const LOOK_STEP_MS = 100;
+
+// How near the man he does it to is at t: the nearest of the other side
+// (the passer, roughed), in front of him, his arms free for it. (None:
+// Infinity.)
+const reachOf = (man: Part, parts: Part[], t: number, name: string): number => {
+	const at = man.legs.find((l) => l.t0 <= t && t < l.t1);
+	const way = at && freeArms(at) ? facingOf(at) : undefined;
+	if (way === undefined) {
+		return Infinity;
+	}
+	const me = posOf(man, t);
+	const foe = parts
+		.filter(
+			(p) =>
+				p.team !== man.team &&
+				(name !== "Roughing the passer" || p.role === "QB"),
+		)
+		.map((p) => ({ p, d: dist(posOf(p, t), me) }))
+		.sort((a, b) => a.d - b.d)[0];
+	if (!foe) {
+		return Infinity;
+	}
+	const to = posOf(foe.p, t);
+	let off = Math.atan2(to.y - me.y, to.x - me.x) - way;
+	off = Math.atan2(Math.sin(off), Math.cos(off));
+	return Math.abs(off) > (WHEN[name] === "cover" ? COVER_FACING : FOUL_FACING)
+		? Infinity
+		: foe.d;
+};
 
 // The legs his arms can do it over: running, blocking, stood.
 const freeArms = (l: Leg) =>
@@ -543,31 +604,9 @@ export const actFouls = (fouls: Foul[], parts: Part[], whistle: number) => {
 		}
 		const legs = man.legs;
 		const k = legs.findIndex((l) => l.t0 <= f.t && f.t < l.t1);
-		const at = legs[k];
-		if (!at || !freeArms(at)) {
-			continue;
-		}
 		// (Who he did it to: the nearest of the other side, in front of him -
 		// the passer, roughed.)
-		const me = posOf(man, f.t);
-		const way = facingOf(at);
-		const foe = parts
-			.filter(
-				(p) =>
-					p.team !== man.team &&
-					(f.name !== "Roughing the passer" || p.role === "QB"),
-			)
-			.map((p) => ({ p, d: dist(posOf(p, f.t), me) }))
-			.sort((a, b) => a.d - b.d)[0];
-		if (!foe || foe.d > FOUL_NEAR || way === undefined) {
-			continue;
-		}
-		const to = posOf(foe.p, f.t);
-		let off = Math.atan2(to.y - me.y, to.x - me.x) - way;
-		off = Math.atan2(Math.sin(off), Math.cos(off));
-		if (
-			Math.abs(off) > (WHEN[f.name] === "cover" ? COVER_FACING : FOUL_FACING)
-		) {
+		if (k < 0 || reachOf(man, parts, f.t, f.name) > FOUL_NEAR) {
 			continue;
 		}
 		// (Over the legs either side of it his arms are free in.)
