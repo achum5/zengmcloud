@@ -2294,19 +2294,42 @@ class Actor {
 	// Turned toward `to`, to go on at `w` ft/s: bent round into it, if he
 	// can be (see bendInto) - or planted for it (see plantFor).
 	turnFor(to: Pt, w: number) {
-		if (!this.bendInto(to, w)) {
+		if (!(w < BEND_PACE ? this.bendSlow(to, w) : this.bendInto(to, w))) {
 			this.plantFor(to, undefined, undefined, w);
 		}
+	}
+
+	// Turning toward `to`, to go on slower than he can bend round at
+	// (BEND_PACE) - pulling up on the way to it, say: bent round it all
+	// the same, easing off toward `w` as he goes - see bendInto - not on
+	// at full tilt and turned in a stride. If that leaves him the room
+	// after it to get down to it (see slowOn) - not round it near flat
+	// out and braked to it in a stride after. (Whether he was.)
+	private bendSlow(to: Pt, w: number): boolean {
+		const was = this.part.legs.map((l) => ({ ...l }));
+		const { yaw, pinned } = this;
+		if (!this.bendInto(to, BEND_PACE, w)) {
+			return false;
+		}
+		const ve = legPace(this.last);
+		const rem = Math.max(dist(this.at, to), 0.01);
+		if ((ve * ve - w * w) / (2 * rem) <= STOP_ACCEL * STOP_HARD) {
+			return true;
+		}
+		this.part.legs.splice(0, this.part.legs.length, ...was);
+		this.yaw = yaw;
+		this.pinned = pinned;
+		return false;
 	}
 
 	// Toward `to` by t1: bent round into it only, if he can be (see
 	// bendInto) - eased off round it toward the pace that has him there
 	// then, or, that leaving him late, round it at his pace - there by
 	// then at no more than a little quicker than he comes out of it, or
-	// at that, no more than BEND_LATE_MS late for it: not the rest of the
-	// way in a blink, the time gone on the way round. (When he is there,
-	// if he was.)
-	bendFor(to: Pt, t1: number): number | undefined {
+	// at that, no more than `late` ms late for it (BEND_LATE_MS): not the
+	// rest of the way in a blink, the time gone on the way round. (When he
+	// is there, if he was.)
+	bendFor(to: Pt, t1: number, late = BEND_LATE_MS): number | undefined {
 		const was = this.part.legs.map((l) => ({ ...l }));
 		const { yaw, pinned } = this;
 		const v = legPace(this.last);
@@ -2321,7 +2344,7 @@ class Actor {
 				return t1;
 			}
 			const at = this.t + (far / out) * 1000;
-			if (at <= t1 + BEND_LATE_MS) {
+			if (at <= t1 + late) {
 				return at;
 			}
 			this.part.legs.splice(
@@ -2784,7 +2807,7 @@ class Actor {
 	run(to: Pt, fps: number, move?: Move, yaw?: number): number {
 		const p = onField(to, this.roam);
 		if (move === undefined || RAMPS.has(move)) {
-			if (!this.bendInto(p, fps)) {
+			if (!(fps < BEND_PACE ? this.bendSlow(p, fps) : this.bendInto(p, fps))) {
 				this.bendOut(p);
 			}
 			// (Too sharp a turn to bend round: planted for it first - not
@@ -11833,6 +11856,10 @@ class Action {
 				const tw = l.t0 + ((t1 - l.t0) * a) / all;
 				l.to = w;
 				l.t1 = tw;
+				// (Round the far end of it at his pace, if he can be, there no
+				// later for it - see Actor.bendFor - not cut round it in a
+				// stride at full tilt.)
+				m.bendFor(end, t1, 0);
 				m.go(end, t1, l.move);
 				if (rest > 1) {
 					this.slow(m, rest, false, true);
