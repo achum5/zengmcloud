@@ -361,12 +361,27 @@ export const foulsOf = (input: FoulInput): Foul[] => {
 				when === "line" ? snap + LINE_LOOK[1] : whistle,
 			);
 			let near = FOUL_NEAR;
-			for (let s = t0; s <= t1; s += LOOK_STEP_MS) {
-				const d = reachOf(man, parts, s, name);
-				if (d <= near) {
-					near = d;
-					t = s;
+			let got = false;
+			const look = (from: number, to: number) => {
+				for (let s = from; s <= to; s += LOOK_STEP_MS) {
+					const d = reachOf(man, parts, s, name);
+					if (d <= near) {
+						near = d;
+						t = s;
+						got = true;
+					}
 				}
+			};
+			look(t0, t1);
+			// (On a punt, nobody near him on the return: at the line, as it
+			// is kicked - a hold on the rush, or by it.)
+			if (
+				!got &&
+				when === "return" &&
+				input.kind === "punt" &&
+				name !== "Illegal block in the back"
+			) {
+				look(snap + LINE_LOOK[0], Math.min(whistle - 100, snap + LINE_LOOK[1]));
 			}
 		}
 		// Where: the man who did it, then - or wherever that kind happens.

@@ -209,6 +209,12 @@ A man made to miss in the return can come while he is still getting up to
 speed, and one grabbing at him from the side is spun out of (as on an
 interception return).
 
+The wall set up for the return goes up to meet a cover man who would
+otherwise get there only as it ends, so its blocks happen (in games 1-3,
+75 of 104 wall pairs met, from 45). A hold by the punting team or by the
+rush, with nobody near the man in the return, is acted at the line as it is
+kicked.
+
 Now (86 punts): 71 different combinations. Out toward the numbers or the
 sideline 42, end over end 19. Set under it 56 (in a basket 26), going back
 4, coming up at a run or on the move 12, juggled 4. A man made to miss on 10

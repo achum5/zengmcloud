@@ -4244,6 +4244,9 @@ const FAIR_SET_LEAST_MS = 400;
 // On a return, a jammer within this far (feet) of a gunner on him again,
 // going in at this pace (feet a second).
 const JAM_AGAIN_FT = 25;
+// (The wall, waiting for a cover man who would not get to him in time: up
+// to meet him at no more than this much of his pace - see lockUp.)
+const WALL_UP_PACE = 0.7;
 const JAM_AGAIN_FPS = 8;
 // (Down there with him, squared up to him at least this long, ms.)
 const JAM_SET_MS = 300;
@@ -4349,6 +4352,10 @@ const LOCK_SHIFTS = new Set<Move>(["backerReady", "safetyReady"]);
 // still on his way in when it is over - and the two locked up drifting
 // with the return no quicker than this, ft/s.)
 const LOCK_LEAST_MS = 600;
+// (Waiting for him, not met till it is all but over: up to meet him as he
+// comes, there no later than this long before it would be too late - off
+// as late as that has him, at no more than the pace he is given.)
+const LOCK_UP_SPARE_MS = 500;
 const LOCK_DRIFT_FPS = 4;
 // (How closely lockUp works out where the two meet.)
 const LOCK_MEET_TRIES = 20;
@@ -19814,6 +19821,56 @@ class Action {
 		return out;
 	}
 
+	// Where and when b, waiting for a man coming from `cAt` (off at `cGo`,
+	// at `vc` up from `cV0` at `cA`) who would not get to him in time, meets
+	// him instead - gone up to him, off as late as has them met by
+	// LOCK_UP_SPARE_MS before it is too late (or as soon as they can be),
+	// at no more than `fps`. (Not in time even so: undefined.)
+	private upToMeet(
+		b: Actor,
+		cAt: Pt,
+		cGo: number,
+		vc: number,
+		cV0: number,
+		cA: number,
+		fps: number,
+		until: number,
+	): { meet: Pt; tm: number } | undefined {
+		const bAt = b.at;
+		const D = dist(cAt, bAt);
+		const last = until - LOCK_LEAST_MS;
+		const by = last - LOCK_UP_SPARE_MS;
+		const cTo = (u: number) => cGo + rampedMs(u * D, vc, cV0, cA);
+		const bTo = (u: number) =>
+			b.t + rampedMs((1 - u) * D, fps, 0, RELEASE_ACCEL);
+		const split = (sooner: (u: number) => boolean) => {
+			let lo = 0;
+			let hi = 1;
+			for (let i = 0; i < LOCK_MEET_TRIES; i++) {
+				const mid = (lo + hi) / 2;
+				if (sooner(mid)) {
+					lo = mid;
+				} else {
+					hi = mid;
+				}
+			}
+			return (lo + hi) / 2;
+		};
+		let u = split((x) => cTo(x) < by);
+		let tm = by;
+		if (bTo(u) > by) {
+			u = split((x) => cTo(x) < bTo(x));
+			tm = Math.max(cTo(u), bTo(u));
+		}
+		if (tm > last || D <= LOCK_APART * 2) {
+			return undefined;
+		}
+		return {
+			meet: { x: cAt.x + (bAt.x - cAt.x) * u, y: cAt.y + (bAt.y - cAt.y) * u },
+			tm,
+		};
+	}
+
 	// A blocker and a cover man at each other from `go` - the cover man all
 	// but flat out, the blocker at `bv` feet a second (or, 0, waiting for
 	// him where he is) - squared up where they meet, and locked up there,
@@ -19826,6 +19883,7 @@ class Action {
 		endPt: Pt,
 		until: number,
 		carrier?: Actor,
+		upTo?: number,
 	): Lock {
 		// (Each at his own pace, and off on his own count - see countOf -
 		// not two blocks met on the same step.)
@@ -19842,6 +19900,7 @@ class Action {
 		const cA = cInto === undefined ? RELEASE_ACCEL : RAMP_ACCEL;
 		let meet: Pt;
 		let tm: number;
+		let moved = false;
 		if (bv <= 0) {
 			// (On his way to where he waits still, at a run: pulled up there
 			// over a few strides - see STOP_ACCEL - not stopped dead on it
@@ -19861,6 +19920,14 @@ class Action {
 						}
 					: b.at;
 			tm = Math.max(b.t, cGo + rampedMs(dist(cAt, meet), vc, cV0, cA));
+			if (upTo !== undefined && tm > until - LOCK_LEAST_MS) {
+				const up = this.upToMeet(b, cAt, cGo, vc, cV0, cA, upTo, until);
+				if (up) {
+					meet = up.meet;
+					tm = up.tm;
+					moved = true;
+				}
+			}
 		} else {
 			b.hold(go + LOCK_REACT_SPREAD_MS * countOf(b, this.input.key, 7));
 			const bAt = b.at;
@@ -19918,7 +19985,7 @@ class Action {
 			const run = c.last;
 			return { b, c, go: cGo, run, lock: run };
 		}
-		if (bv <= 0) {
+		if (bv <= 0 && !moved) {
 			// (A long wait: up watching it first, and down into his stance
 			// as the man comes - not crouched there the whole time; alive in
 			// it either way, not stood like a statue.)
@@ -21884,6 +21951,7 @@ class Action {
 					? b.t + 1200 + r() * 600
 					: t,
 				pr,
+				b.top * WALL_UP_PACE,
 			),
 		);
 		// (The jammers, down the field with the gunners, on them again as
