@@ -13630,6 +13630,51 @@ class Action {
 		}
 	}
 
+	// Through `pts` from where he is at `fps` - up to it first off v0, at A,
+	// a stride at a time (as rampInto has it, but up to it all the way,
+	// however short the first of them).
+	private alongAt(m: Actor, pts: Pt[], fps: number, v0: number, A: number) {
+		const t0 = m.t;
+		const all = [m.at, ...pts];
+		const lens = [0];
+		for (let i = 1; i < all.length; i++) {
+			lens.push(lens[i - 1]! + dist(all[i - 1]!, all[i]!));
+		}
+		const L = lens.at(-1)!;
+		const on = (d: number): Pt => {
+			const k = Math.max(
+				0,
+				lens.findIndex((g) => g >= d),
+			);
+			if (k === 0) {
+				return all[0]!;
+			}
+			const g0 = lens[k - 1]!;
+			const u = lens[k]! > g0 ? (d - g0) / (lens[k]! - g0) : 1;
+			return {
+				x: all[k - 1]!.x + (all[k]!.x - all[k - 1]!.x) * u,
+				y: all[k - 1]!.y + (all[k]!.y - all[k - 1]!.y) * u,
+			};
+		};
+		const ta = v0 < fps ? (fps - v0) / A : 0;
+		const n = Math.max(1, Math.round((ta * 1000) / RAMP_STEP_MS));
+		let up = 0;
+		for (let i = 1; i <= n && ta > 0; i++) {
+			const t = (ta * i) / n;
+			const d = v0 * t + (A * t * t) / 2;
+			if (d >= L) {
+				break;
+			}
+			m.go(on(d), t0 + t * 1000);
+			up = d;
+		}
+		lens.forEach((g, i) => {
+			if (i > 0 && g > up) {
+				m.go(all[i]!, t0 + rampedMs(g, fps, v0, A));
+			}
+		});
+	}
+
 	// A score: after him till he is in, and then given up - on a few
 	// strides, slowing, and stood looking at him (not all in the end zone
 	// round him).
@@ -23981,7 +24026,34 @@ class Action {
 						t - FOLLOW_UP_SPREAD_MS * countOf(m, this.input.key, 9),
 					);
 					m.hold(go);
-					m.chase(to, by, fps, gait(fps));
+					// (Round the men still in blocks on the way, if there are
+					// any in it - not on through them.)
+					// (As far as he gets on the way by then - up to speed
+					// as he gets going: see rampInto.)
+					const set = SET.has(m.last.move);
+					const v0 = set ? 0 : paceOn(m.last, m.at, to);
+					const A = set ? RELEASE_ACCEL : RAMP_ACCEL;
+					const all = rampedMs(dist(m.at, to), fps, v0, A);
+					const u = all > by - m.t ? (by - m.t) / all : 1;
+					const gets = {
+						x: m.at.x + (to.x - m.at.x) * u,
+						y: m.at.y + (to.y - m.at.y) * u,
+					};
+					const there = Math.min(by, m.t + all);
+					const round =
+						there > m.t
+							? this.roundBlocks(m, gets, there, m, fps / m.top)
+							: undefined;
+					if (round) {
+						// (At his pace round it, no quicker: as far round as
+						// that gets him by then.)
+						this.alongAt(m, round, fps, v0, A);
+						if (m.t > by) {
+							m.cut(by);
+						}
+					} else {
+						m.chase(to, by, fps, gait(fps));
+					}
 				}
 			}
 			if (m.t > t + 400 && m !== out) {
