@@ -81,6 +81,9 @@ const CART_LEAD_S = 0.6;
 // it is his; the man it leaves, until this long after.
 const GATHER_MS = 400;
 const LET_GO_MS = 200;
+// The man brought down, from this long (ms) before the hit: not kept off
+// the men on each other with him - his tacklers, coming in on him.
+const HIT_MS = 300;
 
 // On each other, meant to be.
 const TOUCH = new Set<Move>([
@@ -365,6 +368,17 @@ export const keepApart = (play: Play): Map<number, Sep[]> => {
 		const hi = Math.min(n - 1, Math.ceil((to - t0) / SEP_MS));
 		free[i]!.fill(0, lo, hi + 1);
 	};
+	const struck = men.map((man) => {
+		const out = new Uint8Array(n);
+		for (const l of man.legs) {
+			if (l.move === "tackled" || l.move === "tackledBack") {
+				const lo = Math.max(0, Math.floor((l.t0 - HIT_MS - t0) / SEP_MS));
+				const hi = Math.min(n - 1, Math.ceil((l.t0 - t0) / SEP_MS));
+				out.fill(1, lo, hi + 1);
+			}
+		}
+		return out;
+	});
 	let holder: number | undefined;
 	for (const s of play.ball) {
 		if (s.kind === "held") {
@@ -394,6 +408,7 @@ export const keepApart = (play: Play): Map<number, Sep[]> => {
 			bx,
 			by,
 			free,
+			struck,
 			official,
 			lie,
 			{ x: ballX, y: ballY, r: ballR, on: ballOn, of: ballOf, to: ballTo },
@@ -494,6 +509,7 @@ const pushed = (
 	xs: Float32Array[],
 	ys: Float32Array[],
 	free: Uint8Array[],
+	struck: Uint8Array[],
 	official: boolean[],
 	lie: Float32Array[],
 	ball: Ball,
@@ -582,6 +598,10 @@ const pushed = (
 				for (let j = i + 1; j < m; j++) {
 					const fj = fr[j]!;
 					if (!fi && !fj) {
+						continue;
+					}
+					// (Nor the man about to be brought down off those on him.)
+					if ((!fi && struck[j]![s]) || (!fj && struck[i]![s])) {
 						continue;
 					}
 					if (round > 0 && !was[i] && !was[j] && !now[i] && !now[j]) {
