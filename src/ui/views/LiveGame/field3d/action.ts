@@ -2338,6 +2338,22 @@ class Actor {
 		return false;
 	}
 
+	// What he is doing as it stands, to go back to - see
+	// Action.incomplete.
+	saved(): () => void {
+		const legs = this.part.legs.map((l) => ({ ...l }));
+		const { yaw, pinned } = this;
+		return () => {
+			this.part.legs.splice(
+				0,
+				this.part.legs.length,
+				...legs.map((l) => ({ ...l })),
+			);
+			this.yaw = yaw;
+			this.pinned = pinned;
+		};
+	}
+
 	// Toward `to` by t1: bent round into it only, if he can be (see
 	// bendInto) - eased off round it toward the pace that has him there
 	// then, or, that leaving him late, round it at his pace - there by
@@ -4080,6 +4096,8 @@ const SWAT_ON_MOST = 4;
 // carriedTo - no further than this, feet.)
 const SWAT_CARRY = 1.5;
 const SWAT_CARRY_MOST = 8;
+// (Swatting at it only from this near (feet) where he breaks on it from.)
+const SWAT_REACH_FT = 5;
 // (Off the edge at a kick, slowed to this, ft/s, to go up for it.)
 const SWAT_IN_FPS = 11;
 // (No quicker about it than this, ms.)
@@ -13426,6 +13444,29 @@ class Action {
 			) as Sign;
 			return { hx, hy, side };
 		})();
+		// (The man the sim says got a hand on it - if he gets near enough to
+		// by then: not a deep man a long way off swatting at the air yards
+		// from it, but on with what he was doing, and it falls incomplete
+		// some other way.)
+		const swatter = (() => {
+			if (
+				(bat && thrown?.kind === "fly") ||
+				!breakup ||
+				!coverage.includes(breakup)
+			) {
+				return undefined;
+			}
+			const back = breakup.saved();
+			this.breakOn(breakup, catchPt, catchAt, BREAK_UP_EARLY_MS, true);
+			if (
+				dist(breakup.at, this.breakSpot(breakup, catchPt, true)) <=
+				SWAT_REACH_FT
+			) {
+				return breakup;
+			}
+			back();
+			return undefined;
+		})();
 		// (Knocked down at the line: when it went up off his hands, give or
 		// take, for all of them - see LINE_BAT_SEEN_MS.)
 		let batSeen: number | undefined;
@@ -13467,10 +13508,10 @@ class Action {
 			if (countOf(m, this.input.key, 122) < WAVE_OFF) {
 				m.act("sigWave", m.t + WAVE_MS, this.toward(m.at, qb.at));
 			}
-		} else if (breakup && coverage.includes(breakup)) {
+		} else if (swatter) {
 			// Got a hand on it: knocked away. (In at his shoulder, the side he
 			// came from - not stood in the way of it.)
-			this.breakOn(breakup, catchPt, catchAt, BREAK_UP_EARLY_MS, true);
+			const breakup = swatter;
 			// (Carried on a step or so with it, off his last stride - by the
 			// ball, not through the man it was for, nor on through it as he
 			// gets a hand to it.)
