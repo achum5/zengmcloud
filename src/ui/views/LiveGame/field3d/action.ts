@@ -5308,6 +5308,9 @@ const PA_ACROSS = 0.75;
 // mesh the way he came, and on into the line from there, in so many
 // steps.)
 const PA_ROUND = 0.8;
+// (No further up than this (feet) off the ball, though: round along
+// behind the line instead - as a back sets, see BACK_OFF_LINE.)
+const PA_LINE_OFF = 9;
 const PA_PACE_MS = 40;
 const PA_ROUND_STEPS = 8;
 const PA_BITE = 4;
@@ -9838,16 +9841,33 @@ class Action {
 				// full tilt and stopped dead in his set. Stepped off at even
 				// times along it, as far each time as his pace then takes
 				// him.)
-				const via = {
+				let via = {
 					x: meshPt.x + ((into.to.x - into.from.x) / inFt) * far * PA_ROUND,
 					y: meshPt.y + ((into.to.y - into.from.y) / inFt) * far * PA_ROUND,
 				};
 				// (Round a quarter turn into the line off it, as wide as he
 				// takes at his pace - not hooked back the way he came.)
-				const end = {
+				let end = {
 					x: onTo.x + via.x - meshPt.x,
 					y: onTo.y + via.y - meshPt.y,
 				};
+				// (But not on into the line itself, in among the men on it:
+				// round along behind it instead, no further up than
+				// PA_LINE_OFF off the ball - as far round as he pulls up in.)
+				const m0 = this.of(meshPt);
+				const up = -PA_LINE_OFF - m0.d;
+				if (this.of(end).d > -PA_LINE_OFF && up > 0) {
+					const sa =
+						Math.sign(this.of(into.to).a - this.of(into.from).a) || side;
+					const fwd = Math.min(up, far);
+					const across = Math.sqrt(Math.max(0, far * far - fwd * fwd));
+					end = this.w({ d: m0.d + fwd, a: m0.a + sa * across });
+					const v0 = this.of(via);
+					via = this.w({
+						d: Math.min(v0.d, m0.d + fwd),
+						a: m0.a + clamp(v0.a - m0.a, -across, across),
+					});
+				}
 				const fine = [meshPt, ...this.curve(meshPt, via, end, 32)];
 				const at = [0];
 				for (let k = 1; k < fine.length; k++) {
