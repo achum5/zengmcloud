@@ -4520,6 +4520,11 @@ const FILL_SET_LEAST = 150;
 // (Over to fill from well across, no nearer the line than this, feet: run
 // over behind the men up front and the blocks on them, not through them.)
 const FILL_SCRAPE_FT = 6;
+// (A linebacker over to fill no nearer one already there than this, feet:
+// pulled up this much of the way back short of it instead, the first that
+// will do.)
+const FILL_APART_FT = 4;
+const FILL_SHORT = [0.3, 0.55, 0.8] as const;
 // (Nor pulled up on into a block - a man in one this near (feet) where he
 // would pull up, from when he is to be there to this long after (ms),
 // looked at every FILL_ROOM_EVERY_MS: pulled up into the spot instead.)
@@ -18544,6 +18549,7 @@ class Action {
 		const backers = this.d.filter((m) => LB.has(m.role) && free(m));
 		// (On a draw, back in their drops first, as on a pass.)
 		const filled = snap + FILL_MS + (draw ? DRAW_LB_MS : 0);
+		const fills: Pt[] = [];
 		for (const m of backers) {
 			const s = this.of(m.at);
 			const fill = {
@@ -18591,30 +18597,52 @@ class Action {
 				);
 			}
 			const by = filled + late + r() * 250;
-			// (Not far to go, across: set reading it a moment longer, and
-			// over at a pace - not walked into the hole. Set for more than a
-			// blink of it, between his read step and going.)
-			const far = dist(m.at, this.w(fill));
-			const set = by - (far / FILL_LEAST_FPS) * 1000;
-			if (across > 5 && set > m.t) {
-				m.hold(Math.max(set, m.t + FILL_SET_LEAST), "backerReady", this.behind);
+			const n0 = m.legs.length;
+			const from = m.at;
+			const lay = (to: Pt) => {
+				// (Not far to go, across: set reading it a moment longer, and
+				// over at a pace - not walked into the hole. Set for more than
+				// a blink of it, between his read step and going.)
+				const far = dist(m.at, to);
+				const set = by - (far / FILL_LEAST_FPS) * 1000;
+				if (across > 5 && set > m.t) {
+					m.hold(
+						Math.max(set, m.t + FILL_SET_LEAST),
+						"backerReady",
+						this.behind,
+					);
+				}
+				const went = m.t;
+				m.chase(
+					to,
+					by,
+					m.top * FILL_PACE,
+					across > 5 ? "run" : "slide",
+					across > 5 ? undefined : this.behind,
+				);
+				// (Pulled up there, nobody on him yet - see STALK_EASE_FT. In
+				// his low steps too, if he comes up quick in them.)
+				if (across > 5) {
+					this.shortOfBlocks(m, went);
+				}
+				if (across > 5 || legPace(m.last) >= STOP_LEAST) {
+					m.easeOff(STALK_EASE_FT);
+				}
+			};
+			// (Not filled where another of them already has: pulled up short
+			// of him on his own side of it - see FILL_APART_FT - not run into
+			// him and shoved off him.)
+			const crowded = () => fills.some((p) => dist(p, m.at) < FILL_APART_FT);
+			const to = this.w(fill);
+			lay(to);
+			for (const k of FILL_SHORT) {
+				if (!crowded()) {
+					break;
+				}
+				m.legs.splice(n0);
+				lay({ x: to.x + (from.x - to.x) * k, y: to.y + (from.y - to.y) * k });
 			}
-			const went = m.t;
-			m.chase(
-				this.w(fill),
-				by,
-				m.top * FILL_PACE,
-				across > 5 ? "run" : "slide",
-				across > 5 ? undefined : this.behind,
-			);
-			// (Pulled up there, nobody on him yet - see STALK_EASE_FT. In his
-			// low steps too, if he comes up quick in them.)
-			if (across > 5) {
-				this.shortOfBlocks(m, went);
-			}
-			if (across > 5 || legPace(m.last) >= STOP_LEAST) {
-				m.easeOff(STALK_EASE_FT);
-			}
+			fills.push(m.at);
 		}
 		const taken = new Set<Actor>();
 		const pick = (from: Pt) => {

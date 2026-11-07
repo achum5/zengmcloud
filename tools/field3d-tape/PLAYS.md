@@ -60,6 +60,10 @@ tackle, round and up through the hole onto the men filling it. A man up
 front the tackle has left with nobody near enough to block him comes up
 the field after it from the back side.
 
+Linebackers over to fill don't fill on top of each other: one coming to a
+spot another already has pulls up short of him on his own side (their
+shoves off each other in three games down by about a quarter).
+
 A man up front off the ball into the man blocking him gathers into him -
 slowed over his last strides to about 7 feet a second, harder and a
 little quicker if he is short of time - not into him at all he got up to
