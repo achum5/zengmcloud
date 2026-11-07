@@ -18754,6 +18754,7 @@ class Action {
 				on.set(b, [...(on.get(b) ?? []), m]);
 			}
 		}
+		const offLater: Actor[] = [];
 		for (const [b, men] of on) {
 			const s = { ...this.of(b.at), t: b.t };
 			const wins = beat(b);
@@ -18888,9 +18889,11 @@ class Action {
 			// (Nobody left on him well before it is over: up out of it, and
 			// after the ball at a jog, kept off it, on his own count - not
 			// stood where he lost him till the whistle.)
+			// (Laid once all the blocks are, below - for him to go round those
+			// still going on: see alongWith.)
 			if (freed < till - FREED_MS) {
 				b.cut(freed + FREED_REACT);
-				this.offBlock(b, until, 0);
+				offLater.push(b);
 			}
 		}
 
@@ -19321,6 +19324,10 @@ class Action {
 			release(this.w({ d: s.d + 4, a: s.a + (c.a - s.a) * 0.3 }), snap + 650);
 			this.blockOn(m, db, r() < STALK_WON, offAt, until, carrier, through);
 			stalks.push(m);
+		}
+		// (The men up front whose man got off them, after it - see above.)
+		for (const b of offLater) {
+			this.offBlock(b, until, 0);
 		}
 		return { men: [...blockers, ...stalks], until };
 	}
@@ -20190,6 +20197,7 @@ class Action {
 			return;
 		}
 		b.hold(b.t + react);
+		const went = b.t;
 		this.alongWith(
 			b,
 			FREED_FPS[0] +
@@ -20197,6 +20205,9 @@ class Action {
 			FREED_KEEP_FT[0] + FREED_KEEP_FT[1] * countOf(b, this.input.key, 35),
 			by,
 		);
+		// (Pulled up clear of the blocks still going on when he stops - see
+		// easeShort - not on into them.)
+		this.easeShort(b, went, EASE_OFF_FT);
 	}
 
 	// A blocker locked up with the man in front of him (BLOCK_GAP on) from
@@ -21118,17 +21129,27 @@ class Action {
 				// along with it in the man with it.)
 				const out = clamp(ALONG_NEAREST_FT - near, 0, ALONG_OUT_FT);
 				m.chaseUp(
-					{
-						x: m.at.x + ball.x - now.x + Math.cos(a) * out,
-						y: m.at.y + ball.y - now.y + Math.sin(a) * out,
-					},
+					this.wayClear(
+						m,
+						{
+							x: m.at.x + ball.x - now.x + Math.cos(a) * out,
+							y: m.at.y + ball.y - now.y + Math.sin(a) * out,
+						},
+						c,
+					),
 					c,
 					fps,
 				);
 				continue;
 			}
+			// (Round the men still in blocks, not on through them - see
+			// wayClear.)
 			m.chaseUp(
-				{ x: ball.x + Math.cos(a) * keep, y: ball.y + Math.sin(a) * keep },
+				this.wayClear(
+					m,
+					{ x: ball.x + Math.cos(a) * keep, y: ball.y + Math.sin(a) * keep },
+					c,
+				),
 				c,
 				fps,
 			);
@@ -24445,6 +24466,11 @@ class Action {
 				continue;
 			}
 			this.roundBegun(m);
+			// (Pulled up clear of the blocks and tackles still going on -
+			// see easeShort - not on into them.)
+			if (GAITS.has(m.last.move)) {
+				this.easeShort(m, m.t - FILL_BACK_MOST_MS, EASE_OFF_FT);
+			}
 			const l = m.last;
 			const moving = l.from.x !== l.to.x || l.from.y !== l.to.y;
 			if (moving) {
