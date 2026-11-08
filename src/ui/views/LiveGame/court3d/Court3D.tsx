@@ -9,11 +9,7 @@ import {
 	type ReactNode,
 } from "react";
 import { useLocal } from "../../../util/local.ts";
-import type {
-	ArenaLooks,
-	ReplayLooks,
-	ScoreBugStyle,
-} from "../../../../common/types.ts";
+import type { ArenaLooks, ReplayLooks } from "../../../../common/types.ts";
 import LiveCourt from "../LiveCourt.tsx";
 import {
 	paintBench,
@@ -38,7 +34,6 @@ import {
 	type Rig,
 } from "./camera.ts";
 import { courtTexture, edgeColor } from "./courtTexture.ts";
-import { FaceLoader } from "./FaceLoader.tsx";
 import { adjust, artFor, makeResolution } from "./resolution.ts";
 import { FAST, makePace } from "./pace.ts";
 import { makeFarm } from "./farm.ts";
@@ -60,6 +55,7 @@ import { logoPicture } from "./logoPicture.ts";
 import { COURT_W, type Side } from "./geometry.ts";
 import { eventsMatchRoster } from "./rosterMatch.ts";
 import { Caption, Overlays } from "./Overlays.tsx";
+import { bugTeamOf, GameBug, PictureBox, PictureCanvas } from "./Picture.tsx";
 import {
 	boxOf,
 	type Box,
@@ -124,14 +120,10 @@ import {
 	SHOT_LOW,
 	shotClockText,
 } from "./scoreBug.ts";
-import { ScoreBug } from "./ScoreBug.tsx";
 import { seriesLine } from "../gamecast/seriesLine.ts";
 import { bugShown, useBugRefs, writeBug } from "./bugWriter.ts";
-import { CustomScoreBug } from "./CustomScoreBug.tsx";
 import { IntroCard, IntroTitle } from "./IntroCard.tsx";
 import { callAt } from "./intro.ts";
-import { STARTING_NUM_TIMEOUTS } from "../../../../common/constants.ts";
-import { helpers } from "../../../util/helpers.ts";
 import {
 	aimFor,
 	arenaAim,
@@ -1553,34 +1545,15 @@ const Court3D = ({
 	const captionTeam = captionT === undefined ? undefined : raw[captionT];
 
 	return (
-		<div
-			ref={wrapRef}
-			className="mb-3"
-			style={{
-				position: "relative",
-				width: "100%",
-				aspectRatio: narrow ? "4 / 3" : "16 / 9",
-				background: "#040406",
-				borderRadius: 6,
-				overflow: "hidden",
-				containerType: "inline-size",
-				isolation: "isolate",
-			}}
+		<PictureBox
+			wrapRef={wrapRef}
+			narrow={narrow}
+			roster={roster}
+			looksThen={looksThen}
+			season={season}
+			lid={lid}
+			onFace={onFace}
 		>
-			{roster
-				.filter((p) => !looksThen?.players[p.pid])
-				.map((p) => (
-					<FaceLoader
-						key={p.pid}
-						pid={p.pid}
-						season={season}
-						lid={lid}
-						onFace={onFace}
-					/>
-				))}
-			<style>
-				{".court3d-caption .text-body-secondary { color: #c9c3d3 !important; }"}
-			</style>
 			{/* The home floor as the 2D court draws it, out of sight: the 3D court
 			    makes its picture of the floor from it (see courtTexture). */}
 			<div
@@ -1604,18 +1577,7 @@ const Court3D = ({
 					sceneMs={undefined}
 				/>
 			</div>
-			<canvas
-				ref={canvasRef}
-				role="img"
-				aria-label="Live court"
-				style={{
-					position: "absolute",
-					inset: 0,
-					width: "100%",
-					height: "100%",
-					imageRendering: "pixelated",
-				}}
-			/>
+			<PictureCanvas canvasRef={canvasRef} label="Live court" />
 			<Overlays
 				dipRef={dipRef}
 				flashRef={flashRef}
@@ -1651,61 +1613,25 @@ const Court3D = ({
 					Skip intro ›
 				</button>
 			) : null}
-			{(() => {
-				// (Its record, where the game keeps one.)
-				const recordOf = (t: any): string | undefined =>
-					typeof t?.won === "number" && typeof t?.lost === "number"
-						? helpers.formatRecord(t)
-						: undefined;
-				const bug = {
-					hidden: intro.on || preview,
-					away: away && {
-						abbrev: away.abbrev,
-						region: away.region,
-						name: away.name,
-						colors: away.colors,
-						imgURL: away.imgURL,
-						imgURLSmall: away.imgURLSmall,
-						pts: awayPts,
-						timeouts: boxScore?.teams?.[1]?.timeouts,
-						record: recordOf(boxScore?.teams?.[1]),
-					},
-					home: home && {
-						abbrev: home.abbrev,
-						region: home.region,
-						name: home.name,
-						colors: home.colors,
-						imgURL: home.imgURL,
-						imgURLSmall: home.imgURLSmall,
-						pts: homePts,
-						timeouts: boxScore?.teams?.[0]?.timeouts,
-						record: recordOf(boxScore?.teams?.[0]),
-					},
-					quarter,
-					totalTimeouts: STARTING_NUM_TIMEOUTS,
-					series:
-						boxScore?.teams?.[0] && boxScore?.teams?.[1]
-							? seriesLine(boxScore.gamecast, !!boxScore.playoffs, [
-									boxScore.teams[1],
-									boxScore.teams[0],
-								])
-							: undefined,
-					refs: bugRefs,
-				};
-				// The league's own bug, if it has one (see ScoreBugStyle).
-				const own: ScoreBugStyle | null | undefined = boxScore?.scoreBug;
-				return (
-					<div ref={bugRef} style={{ display: "contents" }}>
-						{own ? (
-							<CustomScoreBug style={own} {...bug} />
-						) : (
-							<ScoreBug {...bug} />
-						)}
-					</div>
-				);
-			})()}
+			<GameBug
+				bugRef={bugRef}
+				own={boxScore?.scoreBug}
+				hidden={intro.on || preview}
+				away={bugTeamOf(away, awayPts, boxScore?.teams?.[1])}
+				home={bugTeamOf(home, homePts, boxScore?.teams?.[0])}
+				quarter={quarter}
+				series={
+					boxScore?.teams?.[0] && boxScore?.teams?.[1]
+						? seriesLine(boxScore.gamecast, !!boxScore.playoffs, [
+								boxScore.teams[1],
+								boxScore.teams[0],
+							])
+						: undefined
+				}
+				refs={bugRefs}
+			/>
 			<Caption caption={caption} team={captionTeam} home={home} />
-		</div>
+		</PictureBox>
 	);
 };
 

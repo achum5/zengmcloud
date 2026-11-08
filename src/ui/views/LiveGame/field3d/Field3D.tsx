@@ -1,16 +1,19 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocal } from "../../../util/local.ts";
-import { STARTING_NUM_TIMEOUTS } from "../../../../common/constants.ts";
-import { helpers } from "../../../util/helpers.ts";
 import { depthOf, follow, project } from "../court3d/camera.ts";
 import type { FaceConfig } from "facesjs";
-import { FaceLoader } from "../court3d/FaceLoader.tsx";
 import { headColors, profileOf } from "../court3d/faces.ts";
 import { logoPicture } from "../court3d/logoPicture.ts";
 import { adsFor } from "../court3d/arenaAds.ts";
 import { FAST, makePace } from "../court3d/pace.ts";
 import { adjust, artFor, makeResolution } from "../court3d/resolution.ts";
 import { Caption, Overlays } from "../court3d/Overlays.tsx";
+import {
+	bugTeamOf,
+	GameBug,
+	PictureBox,
+	PictureCanvas,
+} from "../court3d/Picture.tsx";
 import {
 	boxOf,
 	captionOf,
@@ -29,7 +32,6 @@ import {
 	useStakes,
 	useViewSize,
 } from "../court3d/broadcast.ts";
-import { ScoreBug } from "../court3d/ScoreBug.tsx";
 import { SHOT_LOW } from "../court3d/scoreBug.ts";
 import {
 	bugShown,
@@ -37,11 +39,9 @@ import {
 	writeBug,
 	writePageClock,
 } from "../court3d/bugWriter.ts";
-import { CustomScoreBug } from "../court3d/CustomScoreBug.tsx";
 import type {
 	CourtDecalPlaced,
 	ReplayLooks,
-	ScoreBugStyle,
 	StadiumLook,
 } from "../../../../common/types.ts";
 import {
@@ -1495,73 +1495,18 @@ const Field3D = ({
 	const homePts: number = boxScore?.teams?.[0]?.pts ?? 0;
 	const quarter = ended ? "" : (boxScore?.quarterShort ?? "");
 	const captionTeam = captionT === undefined ? undefined : raw[captionT];
-	const recordOf = (t: any): string | undefined =>
-		typeof t?.won === "number" && typeof t?.lost === "number"
-			? helpers.formatRecord(t)
-			: undefined;
-	const bugTeam = (t: any, pts: number, i: 0 | 1) =>
-		t && {
-			abbrev: t.abbrev,
-			region: t.region,
-			name: t.name,
-			colors: t.colors,
-			imgURL: t.imgURL,
-			imgURLSmall: t.imgURLSmall,
-			pts,
-			timeouts: boxScore?.teams?.[i]?.timeouts,
-			record: recordOf(boxScore?.teams?.[i]),
-		};
-	const bug = {
-		away: bugTeam(away, awayPts, 1),
-		home: bugTeam(home, homePts, 0),
-		quarter,
-		totalTimeouts: STARTING_NUM_TIMEOUTS,
-		refs: bugRefs,
-	};
-	// The league's own bug, if it has one (see ScoreBugStyle).
-	const own: ScoreBugStyle | null | undefined = boxScore?.scoreBug;
 
 	return (
-		<div
-			ref={wrapRef}
-			className="mb-3"
-			style={{
-				position: "relative",
-				width: "100%",
-				aspectRatio: narrow ? "4 / 3" : "16 / 9",
-				background: "#040406",
-				borderRadius: 6,
-				overflow: "hidden",
-				containerType: "inline-size",
-				isolation: "isolate",
-			}}
+		<PictureBox
+			wrapRef={wrapRef}
+			narrow={narrow}
+			roster={roster}
+			looksThen={looksThen}
+			season={season}
+			lid={lid}
+			onFace={onFace}
 		>
-			{roster
-				.filter((p) => !looksThen?.players[p.pid])
-				.map((p) => (
-					<FaceLoader
-						key={p.pid}
-						pid={p.pid}
-						season={season}
-						lid={lid}
-						onFace={onFace}
-					/>
-				))}
-			<style>
-				{".court3d-caption .text-body-secondary { color: #c9c3d3 !important; }"}
-			</style>
-			<canvas
-				ref={canvasRef}
-				role="img"
-				aria-label="Live field"
-				style={{
-					position: "absolute",
-					inset: 0,
-					width: "100%",
-					height: "100%",
-					imageRendering: "pixelated",
-				}}
-			/>
+			<PictureCanvas canvasRef={canvasRef} label="Live field" />
 			<Overlays
 				dipRef={dipRef}
 				flashRef={flashRef}
@@ -1571,15 +1516,17 @@ const Field3D = ({
 				logos={[awayLogo, homeLogo]}
 				staging={!shownTl && !!events && events.length > 0}
 			/>
-			<div ref={bugRef} style={{ display: "contents" }}>
-				{own ? (
-					<CustomScoreBug style={own} {...bug} />
-				) : (
-					<ScoreBug {...bug} shotTitle="Play clock" />
-				)}
-			</div>
+			<GameBug
+				bugRef={bugRef}
+				own={boxScore?.scoreBug}
+				away={bugTeamOf(away, awayPts, boxScore?.teams?.[1])}
+				home={bugTeamOf(home, homePts, boxScore?.teams?.[0])}
+				quarter={quarter}
+				refs={bugRefs}
+				shotTitle="Play clock"
+			/>
 			<Caption caption={caption} team={captionTeam} home={home} />
-		</div>
+		</PictureBox>
 	);
 };
 
