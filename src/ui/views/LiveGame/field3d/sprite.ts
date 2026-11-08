@@ -21,6 +21,7 @@ import type { BallHold } from "./director.ts";
 import {
 	actFrames,
 	gripsOf,
+	tuckBent,
 	heldBall,
 	holding,
 	moveKind,
@@ -395,7 +396,7 @@ const wholePose = (
 			mirrored,
 		);
 	}
-	return holding(pose, ball);
+	return holding(pose, ball, tuckBent(arms?.move));
 };
 
 // A step's lift: degrees at the hip and knee (see court3d's PIVOT_HIP).
@@ -666,7 +667,14 @@ const figureOf = (st: FieldPlayerState, body: Body, s: Stepped): Figure => {
 		z: 0,
 		yaw: s.yaw,
 		pose,
-		grips: gripsOf(st.move, st.ball, s.arms?.move, st.mirrored),
+		grips: gripsOf(
+			st.move,
+			st.ball,
+			s.arms?.move,
+			st.mirrored,
+			s.phase,
+			s.arms?.phase,
+		),
 		...(st.ball ? { ball: ballFor(st, body, pose, s, st.ball) } : {}),
 		...(whistle
 			? { whistle: true as const }

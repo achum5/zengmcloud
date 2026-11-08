@@ -1047,6 +1047,27 @@ const GRIDDY_KEYS: [number, Pose][] = Array.from({ length: 17 }, (_, k) => [
 	k === 0 || k === 16 ? BASE : GRIDDY_STEP(k % 4),
 ]);
 
+// A man pulled up off the turf by the hand (see helpUp, takeHand): how far
+// into his getting up he has hold of it, and how far into the other's
+// helping him up - who stands where his hand meets the other's then (see
+// handWith).
+export const CLASP_UP_AT = 0.38;
+export const CLASP_HELP_AT = 0.43;
+// (Bent over to him, his hand held out, by this far in.)
+const HELP_REACH_AT = 0.28;
+const HELP_DOWN = pose({
+	hipN: 24,
+	kneeN: 34,
+	hipF: 28,
+	kneeF: 38,
+	lean: 22,
+	shN: 12,
+	elN: 90,
+	abN: 6,
+	shF: 20,
+	elF: 30,
+});
+
 // Getting up (see FIELD_ANIMS) - off the top of a pile too.
 const GET_UP_KEYS: [number, Pose][] = [
 	[0, PRONE],
@@ -1103,6 +1124,29 @@ const GET_UP_KEYS: [number, Pose][] = [
 	],
 	[1, BASE],
 ];
+
+// (See takeHand.)
+const TAKE_HAND: [number, Pose][] = [
+	[0, PRONE],
+	[0.18, GET_UP_KEYS[1]![1]],
+	[CLASP_UP_AT, pose({ shN: 144, elN: 81, abN: 30 })],
+	[0.53, pose({ shN: 122, elN: 90, abN: 34 })],
+	[0.68, pose({ shN: 96, elN: 90, abN: 36 })],
+	[0.84, pose({ shN: 40, elN: 24, abN: 26 })],
+	[1, BASE],
+];
+const TAKE_HAND_BACK: [number, Pose][] = [
+	[0, SUPINE],
+	[0.18, pose({ shN: 80, elN: 20, abN: 56 })],
+	[CLASP_UP_AT, pose({ shN: 108, elN: 81, abN: 34 })],
+	[0.53, pose({ shN: 148, elN: 90, abN: 30 })],
+	[0.68, pose({ shN: 166, elN: 72, abN: 30 })],
+	[0.84, pose({ shN: 100, elN: 40, abN: 30 })],
+	[1, BASE],
+];
+// (His left the same - from his arm as he lies, as it is.)
+const leftOf = (keys: [number, Pose][]): [number, Pose][] =>
+	keys.map(([k, q]) => [k, k === 0 ? q : mirror(q)]);
 
 // A hand in at the ball as it gets to the man he is on: his right arm up
 // off his stride and in at it, raked down through it, and back to his
@@ -3669,44 +3713,72 @@ const FIELD_ANIMS = {
 			wide: 0.5,
 		}),
 	},
-	// A hand down to a man on the turf, and him pulled up by it.
+	// A hand down to a man on the turf - bent over to him, his right held
+	// out - taken (see takeHand), and him pulled up by it: straightened up
+	// under it, his hand coming up with him, and let go.
 	helpUp: {
 		kind: "act",
 		keys: [
 			[0, BASE],
+			[HELP_REACH_AT, HELP_DOWN],
+			[CLASP_HELP_AT, HELP_DOWN],
 			[
-				0.3,
+				0.57,
 				pose({
-					hipN: 22,
-					kneeN: 30,
-					hipF: 26,
-					kneeF: 32,
-					lean: 38,
-					shN: 58,
-					elN: 8,
-					abN: 8,
-					shF: 14,
+					hipN: 14,
+					kneeN: 20,
+					hipF: 16,
+					kneeF: 22,
+					lean: 16,
+					shN: 22,
+					elN: 87,
+					abN: 6,
+					shF: 16,
 					elF: 30,
 				}),
 			],
 			[
-				0.65,
+				0.7,
 				pose({
-					hipN: 10,
-					kneeN: 18,
-					hipF: 12,
-					kneeF: 18,
-					lean: 18,
-					shN: 46,
-					elN: 36,
+					hipN: 6,
+					kneeN: 10,
+					hipF: 8,
+					kneeF: 12,
+					lean: 10,
+					shN: 34,
+					elN: 81,
+					abN: 6,
+					shF: 12,
+					elF: 28,
+				}),
+			],
+			[
+				0.85,
+				pose({
+					hipN: 4,
+					kneeN: 6,
+					hipF: 6,
+					kneeF: 8,
+					lean: 8,
+					shN: 24,
+					elN: 30,
 					abN: 6,
 					shF: 10,
-					elF: 26,
+					elF: 24,
 				}),
 			],
 			[1, BASE],
 		],
 	},
+	// The hand he holds up to the man helping him up (see helpUp): off the
+	// turf as he gets a knee under him, up and out to him, taken, and held
+	// as he is pulled up, then let go - his right, or his left. (An arm
+	// only - see ONE_ARM; over getUp, the way it has him.)
+	takeHand: { kind: "act", keys: TAKE_HAND },
+	takeHandL: { kind: "act", keys: leftOf(TAKE_HAND) },
+	// The same up off his back (over getUpBack): up to him as he sits up.
+	takeHandBack: { kind: "act", keys: TAKE_HAND_BACK },
+	takeHandBackL: { kind: "act", keys: leftOf(TAKE_HAND_BACK) },
 	// The men round him on a knee, waiting.
 	takeKnee: {
 		kind: "still",
@@ -4767,6 +4839,17 @@ export const handOf = (
 ): { f: number; s: number; u: number } =>
 	skeleton(b, poseOfMove(m, phase)).armR.end;
 
+// Where his right hand is partway through a move with his arms through
+// another over it (see withArms), in his own frame.
+export const handWith = (
+	b: Body,
+	m: Move,
+	arms: Move,
+	phase: number,
+): { f: number; s: number; u: number } =>
+	skeleton(b, withArms(poseOfMove(m, phase), poseOfMove(arms, phase), arms))
+		.armR.end;
+
 // How far off the turf his strides take him partway through a move (feet,
 // as the court has it): running, between one foot and the next; walking,
 // up on his toes.
@@ -4876,6 +4959,8 @@ const SIGNAL_GRIPS: Partial<Record<Move, Grip>> = {
 // (One arm only: the other hand as the rest of him has it.)
 const ONE_ARM = new Set<Move>([
 	"reachBack",
+	"takeHand",
+	"takeHandBack",
 	"handsFace",
 	"sigSide",
 	"sigContact",
@@ -4887,24 +4972,51 @@ const ONE_ARM = new Set<Move>([
 	"blowWhistle",
 ]);
 // (One arm only, his left.)
-const LEFT_ARM = new Set<Move>(["playBallL", "reachBackL"]);
+const LEFT_ARM = new Set<Move>([
+	"playBallL",
+	"reachBackL",
+	"takeHandL",
+	"takeHandBackL",
+]);
+// (A hand taken, man to man - see helpUp, takeHand: gripped while it is
+// held, his right, or mirrored his left.)
+const CLASP: Partial<Record<Move, [number, number]>> = {
+	helpUp: [0.42, 0.79],
+	takeHand: [0.37, 0.76],
+	takeHandL: [0.37, 0.76],
+	takeHandBack: [0.37, 0.76],
+	takeHandBackL: [0.37, 0.76],
+};
+const clasped = (m: Move | undefined, phase: number) => {
+	const w = m === undefined ? undefined : CLASP[m];
+	return w !== undefined && phase >= w[0] && phase <= w[1];
+};
 export const gripsOf = (
 	m: Move,
 	hold?: BallHold,
 	arms?: Move,
 	mirrored?: boolean,
+	phase = 0,
+	armsPhase = 0,
 ): [Grip, Grip] => {
 	const g: Grip = FISTS.has(m) ? "fist" : RELAXED.has(m) ? "relaxed" : "open";
 	const sig = arms === undefined ? undefined : SIGNAL_GRIPS[arms];
 	const one = arms !== undefined && ONE_ARM.has(arms);
 	const lefty = arms !== undefined && LEFT_ARM.has(arms);
-	const [right, left]: [Grip, Grip] = !sig
+	let [right, left]: [Grip, Grip] = !sig
 		? [g, g]
 		: !one && !lefty
 			? [sig, sig]
 			: mirrored !== lefty
 				? [g, sig]
 				: [sig, g];
+	if (clasped(m, phase) || clasped(arms, armsPhase)) {
+		if (mirrored !== (clasped(arms, armsPhase) && lefty)) {
+			left = "fist";
+		} else {
+			right = "fist";
+		}
+	}
 	if (hold === "carry" || hold === "throw") {
 		return ["ball", left];
 	}
@@ -5028,16 +5140,33 @@ const LEFT_HOLDS = new Set<BallHold>(["carryL", "coverL"]);
 // (Covered up: the other hand across over the front of it.)
 const TUCK = { sh: 24, el: 104, ab: 8, wr: 4, flex: 0 };
 const OVER = { sh: 10, el: 100, ab: -30, wr: 10, flex: 0 };
-export const holding = (q: Pose, hold: BallHold | undefined): Pose => {
+// (Bent well over with it, getting up with a hand held up to be pulled up
+// by - see takeHand: tucked in to him the way he is bent, past this, not
+// held up at his face.)
+const TUCK_BENT_FROM = 15;
+const TAKE_HANDS = new Set<Move>([
+	"takeHand",
+	"takeHandL",
+	"takeHandBack",
+	"takeHandBackL",
+]);
+export const tuckBent = (arms: Move | undefined): boolean =>
+	arms !== undefined && TAKE_HANDS.has(arms);
+export const holding = (
+	q: Pose,
+	hold: BallHold | undefined,
+	bent = false,
+): Pose => {
 	if (!tucked(hold)) {
 		return q;
 	}
 	const left = LEFT_HOLDS.has(hold!);
 	const out = { ...q };
+	const over = bent ? Math.max(0, q.lean - TUCK_BENT_FROM) : 0;
 	const set = (n: boolean, a: typeof TUCK) => {
 		if (n) {
 			Object.assign(out, {
-				shN: a.sh,
+				shN: a.sh - over,
 				elN: a.el,
 				abN: a.ab,
 				wrN: a.wr,
@@ -5045,7 +5174,7 @@ export const holding = (q: Pose, hold: BallHold | undefined): Pose => {
 			});
 		} else {
 			Object.assign(out, {
-				shF: a.sh,
+				shF: a.sh - over,
 				elF: a.el,
 				abF: a.ab,
 				wrF: a.wr,

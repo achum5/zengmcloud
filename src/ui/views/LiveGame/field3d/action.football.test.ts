@@ -464,7 +464,8 @@ describe("the plays acted out", () => {
 				`play ${play.i}`,
 			);
 			// (A hand up, now and then - from one of his own, or the man who
-			// hit him: there beside him as he gets up.)
+			// hit him: there beside him as he gets up, an arm's length out
+			// from the hand he holds up to him - see handUp.)
 			const up = qb.legs[k + 2]!;
 			for (const p of play.parts) {
 				const l = p.legs.find(
@@ -479,7 +480,7 @@ describe("the plays acted out", () => {
 				assert.isTrue(p.team === play.offense || p === by[0], `play ${play.i}`);
 				assert.isBelow(
 					dist(posAt(p, up.t0), posAt(qb, up.t0)),
-					4,
+					6,
 					`play ${play.i}`,
 				);
 			}

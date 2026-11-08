@@ -33,10 +33,13 @@ import { drawnBody, footballBody } from "./body.ts";
 import { touching } from "./apart.ts";
 import { fallHurt, HURT_MOST, offHurt } from "./hurt.ts";
 import {
+	CLASP_HELP_AT,
+	CLASP_UP_AT,
 	HIGH_FIVE_AT,
 	PAT_AT,
 	REACH_BACK_AT,
 	handOf,
+	handWith,
 	handsMeet,
 	heldBall,
 	liftOf,
@@ -4143,6 +4146,13 @@ const HELD_UP = new Set<Move>(["back", "slide", "shuffle", "walk", "stand"]);
 const TUCKED_MS = 250;
 // (His free arm out at a man: the ball still tucked away under the other.)
 const ARMS_TUCKED = new Set<Move>(["stiffArm"]);
+// (Pulled up by the hand - see takeHand: the ball under the other arm.)
+const TAKE_HAND_BALL = new Map<Move, BallHold>([
+	["takeHand", "carryL"],
+	["takeHandBack", "carryL"],
+	["takeHandL", "carry"],
+	["takeHandBackL", "carry"],
+]);
 // Which arm (see carryArm): from the middle of the field this far up it
 // ahead of him (feet); over to the other arm only off a stretch of at
 // least this long (feet) with them that plainly on the other side (the
@@ -6896,6 +6906,37 @@ class Action {
 	toward(from: Pt, to: Pt) {
 		return Math.atan2(to.y - from.y, to.x - from.x);
 	}
+	// A man down at `down` facing `yaw` (on his back, or his front) pulled
+	// up by the hand by a man come to about `by` (see takeHand): where his
+	// hand held up meets the other's, out to his left or his right; and
+	// where the other stands to meet it there, out from it the way `by` is
+	// from his chest, and the way he faces.
+	private handUp(down: Pt, yaw: number, back: boolean, by: Pt, left: boolean) {
+		const u = { x: Math.cos(yaw), y: Math.sin(yaw) };
+		// (His right this way; the hand's `s` to his left.)
+		const n = { x: -u.y, y: u.x };
+		const h = back ? TAKE_HAND_BACK : TAKE_HAND;
+		const out = left ? h.s : -h.s;
+		const meet = {
+			x: down.x + u.x * h.f + n.x * out,
+			y: down.y + u.y * h.f + n.y * out,
+		};
+		const head = back ? -HELP_CHEST : HELP_CHEST;
+		const chest = { x: down.x + u.x * head, y: down.y + u.y * head };
+		const from =
+			dist(by, chest) > HAND_UP_LEAST_FT
+				? this.toward(chest, by)
+				: Math.atan2(n.y * Math.sign(out), n.x * Math.sign(out));
+		return {
+			at: {
+				x: meet.x + Math.cos(from) * HELP_HAND_FT,
+				y: meet.y + Math.sin(from) * HELP_HAND_FT,
+			},
+			face: from + Math.PI - HELP_HAND_TURN,
+			left,
+			from,
+		};
+	}
 	// How near a man comes to `q` at t: to where he stands, or, down on the
 	// turf, to the length of him (see LIE_BACK - or `legs` behind his hips,
 	// his legs and all).
@@ -9569,11 +9610,12 @@ class Action {
 			for (const l of m.legs) {
 				if (l.t0 >= s.t0 && l.t0 < until) {
 					l.ball = l.arms
-						? IN_HAND.has(l.arms)
-							? "throw"
-							: ARMS_TUCKED.has(l.arms)
-								? "carry"
-								: "hands"
+						? (TAKE_HAND_BALL.get(l.arms) ??
+							(IN_HAND.has(l.arms)
+								? "throw"
+								: ARMS_TUCKED.has(l.arms)
+									? "carry"
+									: "hands"))
 						: holdFor(l.move);
 					// (On his feet with it in both hands: up at his chest,
 					// not swinging.)
@@ -9656,6 +9698,11 @@ class Action {
 		let since = -Infinity;
 		for (const [k, l] of legs.entries()) {
 			const w = wants[k];
+			// (The ball under the arm he is not holding up to be pulled up
+			// by - see takeHand.)
+			if (l.arms !== undefined && TAKE_HAND_BALL.has(l.arms)) {
+				continue;
+			}
 			if (
 				w &&
 				w.left !== left &&
@@ -16648,8 +16695,6 @@ class Action {
 			x: chest.x - uy * side * HELP_BESIDE,
 			y: chest.y + ux * side * HELP_BESIDE,
 		});
-		// (The side he is on of him - or, a man stood there, the other, if
-		// that is clearer: not over onto him to do it.)
 		const roomAt = (q: Pt) =>
 			Math.min(
 				...this.men
@@ -16657,19 +16702,45 @@ class Action {
 					.map((x) => dist(x.posAt(leave + QB_HAND_WAIT_MS / 2), q)),
 			);
 		const own = (was.x - chest.x) * -uy + (was.y - chest.y) * ux >= 0 ? 1 : -1;
+		// (Where his hand held up meets the other's - see handUp - from the
+		// side he is on of him, or the other, a man stood there; no room
+		// for that, just over beside his chest, his hand down to him: the
+		// side he is on, or, a man stood there, the other, if that is
+		// clearer - not over onto him to do it.)
+		const lies = back ? into + Math.PI : into;
+		const handAt = (sd: number) => {
+			const b = near(sd);
+			const left =
+				(b.x - down.x) * -Math.sin(lies) + (b.y - down.y) * Math.cos(lies) < 0;
+			return { ...this.handUp(down, lies, back, b, left), side: sd };
+		};
+		const hand = [handAt(own), handAt(-own)].find(
+			(h) => roomAt(h.at) >= HELP_ROOM,
+		);
 		const side =
-			roomAt(near(own)) < HELP_ROOM && roomAt(near(-own)) > roomAt(near(own))
+			hand?.side ??
+			(roomAt(near(own)) < HELP_ROOM && roomAt(near(-own)) > roomAt(near(own))
 				? -own
-				: own;
+				: own);
 		const by = (p: Pt) => ({
 			x: p.x - uy * side * HELP_BESIDE,
 			y: p.y + ux * side * HELP_BESIDE,
 		});
-		const spot = by(chest);
-		// (Out round his feet first, if he comes from past them.)
+		const spot = hand?.at ?? by(chest);
+		const handFace = hand?.face ?? this.toward(spot, chest);
+		// (Out round his feet first, if he comes from past them - out past
+		// where he stands for it, to come in to it facing the hand.)
 		const route =
 			(was.x - down.x) * ux + (was.y - down.y) * uy < 0
-				? [by(down), spot]
+				? [
+						hand
+							? {
+									x: spot.x + Math.cos(hand.from) * HELP_CHEST,
+									y: spot.y + Math.sin(hand.from) * HELP_CHEST,
+								}
+							: by(down),
+						spot,
+					]
 				: [spot];
 		let far = 0;
 		let p = was;
@@ -16706,7 +16777,7 @@ class Action {
 			t += ((arrive - leave - pivot) * dist(p, x)) / Math.max(0.01, far);
 			// (Turned to him on his way over - or, him behind the way he
 			// goes, the way he goes: not walked over backward.)
-			const face = this.toward(x, chest);
+			const face = x === spot ? handFace : this.toward(x, chest);
 			const way = Math.atan2(x.y - p.y, x.x - p.x);
 			helper.go(
 				x,
@@ -16719,7 +16790,10 @@ class Action {
 			p = x;
 		}
 		helper.hold(upAt - 80);
-		helper.act("helpUp", upAt + GET_UP_MS, this.toward(spot, chest));
+		helper.act("helpUp", upAt + GET_UP_MS, handFace);
+		if (hand) {
+			qb.arms(handUpOf(back, hand.left), upAt, upAt + GET_UP_MS);
+		}
 	}
 
 	scramble(i: number, qb: Actor, go: number, runners: Actor[] = []) {
@@ -26797,28 +26871,56 @@ class Action {
 					}
 					return true;
 				};
-				const by = [
-					spot(HELP_CHEST, near * HELP_BESIDE),
-					spot(0, near * HELP_BESIDE),
-					spot(HELP_HEAD, 0),
-					spot(HELP_CHEST, -near * HELP_BESIDE),
-					spot(0, -near * HELP_BESIDE),
-				].find((p) => roomAt(p) && wayClear(p));
-				// (A step or so over taken, not hopped.)
-				const need = by
-					? Math.max(HELP_STEP_MS, (dist(from, by) / HELP_FPS) * 1000)
-					: 0;
-				const leave = up.t0 - 80 - need;
-				if (
-					by &&
-					dist(from, at) < HELP_FROM &&
-					leave >= free.get(helper.pid)!
-				) {
+				// (Where he stands for it: where his hand meets the one held
+				// up to him - see handUp - or, no room there, just over beside
+				// him with it held down to him. A step or so over taken, not
+				// hopped.)
+				const back = up.move === "getUpBack";
+				const sides = [
+					[HELP_CHEST, near],
+					[0, near],
+					[HELP_HEAD, 0],
+					[HELP_CHEST, -near],
+					[0, -near],
+				] as const;
+				const ways: { at: Pt; face: number; left?: boolean }[] = [
+					...sides.map(([along, side]) =>
+						this.handUp(
+							at,
+							yaw,
+							back,
+							spot(along, side * HELP_BESIDE),
+							(side || near) < 0,
+						),
+					),
+					...sides.map(([along, side]) => {
+						const p = spot(along, side * HELP_BESIDE);
+						return { at: p, face: this.toward(p, chest) };
+					}),
+				];
+				const leaveFor = (p: Pt) =>
+					up.t0 -
+					80 -
+					Math.max(HELP_STEP_MS, (dist(from, p) / HELP_FPS) * 1000);
+				const by =
+					dist(from, at) < HELP_FROM
+						? ways.find(
+								(h) =>
+									roomAt(h.at) &&
+									wayClear(h.at) &&
+									leaveFor(h.at) >= free.get(helper.pid)!,
+							)
+						: undefined;
+				if (by) {
+					const leave = leaveFor(by.at);
 					helper.cut(leave);
 					helper.hold(leave);
-					helper.go(by, up.t0 - 80, undefined, this.toward(by, chest));
-					helper.act("helpUp", up.t1, this.toward(by, chest));
+					helper.go(by.at, up.t0 - 80, undefined, by.face);
+					helper.act("helpUp", up.t1, by.face);
 					free.set(helper.pid, helper.t);
+					if (by.left !== undefined) {
+						down.arms(handUpOf(back, by.left), up.t0, up.t1);
+					}
 				}
 			}
 		}
@@ -27842,6 +27944,37 @@ const PAT_MS = 1400;
 const PAT_AFTER_MS = 400;
 // (Where his hand is on him, out on the shoulder: see PAT.)
 const PAT_HAND = handOf(drawnBody(footballBody()), "pat", PAT_AT);
+// (A man pulled up by the hand - see handUp: his hand held up, on his
+// front or his back, and the one held down to him, where they meet - in
+// each one's own frame; how far out in front of him the one helping him
+// has it, and turned how far to his right.)
+const TAKE_HAND = handWith(
+	drawnBody(footballBody()),
+	"getUp",
+	"takeHand",
+	CLASP_UP_AT,
+);
+const TAKE_HAND_BACK = handWith(
+	drawnBody(footballBody()),
+	"getUpBack",
+	"takeHandBack",
+	CLASP_UP_AT,
+);
+const HELP_HAND = handOf(drawnBody(footballBody()), "helpUp", CLASP_HELP_AT);
+const HELP_HAND_FT = Math.hypot(HELP_HAND.f, HELP_HAND.s);
+const HELP_HAND_TURN = Math.atan2(-HELP_HAND.s, HELP_HAND.f);
+// (Come from right at it: out from it to the side of him it is on.)
+const HAND_UP_LEAST_FT = 0.1;
+// (The hand he holds up: his right or his left, up off his front or his
+// back.)
+const handUpOf = (back: boolean, left: boolean): Move =>
+	back
+		? left
+			? "takeHandBackL"
+			: "takeHandBack"
+		: left
+			? "takeHandL"
+			: "takeHand";
 const FIVE_MS = 800;
 // (Squared up to each other this long first, the later there of the two -
 // not into it off his last step.)
