@@ -7,9 +7,11 @@ import {
 	type V3,
 } from "../court3d/poses.ts";
 import {
+	castShadows,
 	keepPixels,
 	rim,
 	stamp,
+	type Cast,
 	type Kept,
 	type Scratch,
 	type SpriteCache,
@@ -1137,102 +1139,12 @@ export const prepareFieldSprites = (
 // across, how much of his height it runs out over the turf - toward the
 // camera +, away -; how dark.) Off the turf, they come away from his feet
 // and fade.
-export type Cast = { lean: number; run: number; alpha: number };
-export const LIGHT_CASTS: Cast[] = [
-	{ lean: -0.55, run: 0.2, alpha: 0.13 },
-	{ lean: 0.55, run: 0.2, alpha: 0.13 },
-];
+// His shadows: the lights' (see court3d/sprite.ts), or the sun's - one,
+// longer and darker, thrown off to the side.
+export { LIGHT_CASTS, type Cast } from "../court3d/sprite.ts";
 export const sunCasts = (lean: number): Cast[] => [
 	{ lean, run: -0.5, alpha: 0.24 },
 ];
-// His shape all in black, a third the size of his picture, drawn back up
-// soft-edged: kept in his picture's own canvas, under it (see court3d's
-// keepPixels) - or, for a picture kept without it, made the first time it
-// is wanted and let go with his picture.
-const DARK_SCALE = 3;
-const darks = new WeakMap<HTMLCanvasElement, HTMLCanvasElement>();
-const darkOf = (
-	k: Kept,
-):
-	| { img: HTMLCanvasElement; sx: number; sy: number; sw: number; sh: number }
-	| undefined => {
-	if (k.dark) {
-		return { img: k.canvas, sx: 0, sy: k.h, sw: k.dark.w, sh: k.dark.h };
-	}
-	const own = darkCanvasOf(k);
-	return own
-		? { img: own, sx: 0, sy: 0, sw: own.width, sh: own.height }
-		: undefined;
-};
-const darkCanvasOf = (k: Kept): HTMLCanvasElement | undefined => {
-	let d = darks.get(k.canvas);
-	if (d) {
-		return d;
-	}
-	if (typeof document === "undefined") {
-		return undefined;
-	}
-	d = document.createElement("canvas");
-	d.width = Math.max(1, Math.ceil(k.canvas.width / DARK_SCALE));
-	d.height = Math.max(1, Math.ceil(k.canvas.height / DARK_SCALE));
-	const g = d.getContext("2d");
-	if (!g) {
-		return undefined;
-	}
-	g.drawImage(k.canvas, 0, 0, d.width, d.height);
-	g.globalCompositeOperation = "source-in";
-	g.fillStyle = "#000";
-	g.fillRect(0, 0, d.width, d.height);
-	darks.set(k.canvas, d);
-	return d;
-};
-const castShadows = (
-	ctx: CanvasRenderingContext2D,
-	k: Kept,
-	x: number,
-	y: number,
-	px: number,
-	floorY: number,
-	casts: Cast[],
-) => {
-	const dark = k.canvas.width > 0 ? darkOf(k) : undefined;
-	if (!dark) {
-		return;
-	}
-	const alpha = ctx.globalAlpha;
-	const smoothing = ctx.imageSmoothingEnabled;
-	const m = ctx.getTransform();
-	const floor = Math.round(floorY);
-	const X = Math.round(x + k.dx);
-	const Y = Math.round(y + k.dy);
-	// (Up off the turf, fading: gone by his own height up.)
-	const up = Math.max(0, floor - (Y + k.h * px));
-	const fade = Math.max(0, 1 - up / (k.h * px));
-	if (fade <= 0) {
-		return;
-	}
-	ctx.imageSmoothingEnabled = true;
-	for (const { lean, run, alpha: dark0 } of casts) {
-		ctx.globalAlpha = alpha * dark0 * fade;
-		// From where he is drawn, upright, to where it falls: as far out
-		// over the turf from his feet as he is up over them, by `run`.
-		ctx.transform(1, 0, -lean, -run, lean * floor, floor * (1 + run));
-		ctx.drawImage(
-			dark.img,
-			dark.sx,
-			dark.sy,
-			dark.sw,
-			dark.sh,
-			X,
-			Y,
-			k.w * px,
-			k.h * px,
-		);
-		ctx.setTransform(m);
-	}
-	ctx.imageSmoothingEnabled = smoothing;
-	ctx.globalAlpha = alpha;
-};
 
 export const drawFieldPlayer = (
 	ctx: CanvasRenderingContext2D,
