@@ -526,6 +526,16 @@ const clamp = (x: number, lo: number, hi: number) =>
 	Math.min(hi, Math.max(lo, x));
 // An angle (radians) the short way round: -PI to PI.
 const angleOff = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+// Along the sideline from x, the nearest no nearer than OFF_APART_FT to
+// any of `taken` (and taken too, now).
+const offSpot = (taken: number[], x: number): number => {
+	let best = x;
+	for (let k = 1; taken.some((t) => Math.abs(t - best) < OFF_APART_FT); k++) {
+		best = x + (k % 2 === 1 ? 1 : -1) * Math.ceil(k / 2) * OFF_APART_FT * 0.5;
+	}
+	taken.push(best);
+	return best;
+};
 // Whether the line from a to b and the one from c to e cross.
 const linesCross = (a: Pt, b: Pt, c: Pt, e: Pt): boolean => {
 	const side = (p: Pt, q: Pt, o: Pt) =>
@@ -4700,6 +4710,9 @@ const STALK_SET_MS = 1200;
 const PURSUIT_PACE = 0.85;
 const PURSUIT_URGE = 1.2;
 const PURSUIT_STEP = 350;
+// (Off the field after a kick, along the sideline from the others off, at
+// least, feet - see offSpot.)
+const OFF_APART_FT = 3;
 // (At most this many stretches of a lane run - see laneRun.)
 const LANE_RUN_STEPS = 24;
 const PURSUIT_LEAD = 300;
@@ -20357,6 +20370,24 @@ class Action {
 		m.run(to, fps, move);
 	}
 
+	// As chase, to `to` by `by` - but in stretches round the blocks going
+	// on in his way and the men stood in it (see wayClear), at the pace that
+	// has him there by then: not on through them in the one straight run.
+	private chaseClear(m: Actor, to: Pt, by: number, fps: number) {
+		const pace = Math.min(fps, (dist(m.at, to) * 1000) / Math.max(1, by - m.t));
+		for (
+			let k = 0;
+			k < LANE_RUN_STEPS &&
+			by - m.t > PURSUIT_STEP * 2 &&
+			dist(m.at, to) > (pace * PURSUIT_STEP * 2) / 1000;
+			k++
+		) {
+			const c = m.t + PURSUIT_STEP;
+			m.chaseUp(this.wayClear(m, to, c, pace), c, pace);
+		}
+		m.chase(to, by, fps);
+	}
+
 	// Up to `m` straight from where he is, at a climb's pace (met as in
 	// blockOn), no deeper into the men in blocks on the way than
 	// CLIMB_INTO_FT (see CLIMB_CLEAR_FT).
@@ -21856,7 +21887,7 @@ class Action {
 			}
 			return;
 		}
-		m.chase(to, by, m.top * 0.7);
+		this.chaseClear(m, to, by, m.top * 0.7);
 	}
 
 	// Stood where he is till `until` - but back off a step or two first if
@@ -23648,7 +23679,7 @@ class Action {
 			lanes.forEach((m, k) => {
 				if (!this.done.has(m.pid)) {
 					const to = this.w(laneEnd(k));
-					m.chase(to, coverBy(m, to), m.top * 0.85);
+					this.chaseClear(m, to, coverBy(m, to), m.top * 0.85);
 				}
 			});
 			this.downfield(inside);
@@ -23731,7 +23762,7 @@ class Action {
 			this.done.add(pr.pid);
 			lanes.forEach((m, k) => {
 				const to = this.w(laneEnd(k));
-				m.chase(to, coverBy(m, to), m.top * 0.85);
+				this.chaseClear(m, to, coverBy(m, to), m.top * 0.85);
 			});
 			// (The rush held up at the line off down the field after it at a
 			// jog - not stood where it was kicked from.)
@@ -25997,6 +26028,8 @@ class Action {
 			this.find("interception") >= 0
 				? this.o.find((m) => m.role === "QB")
 				: undefined;
+		// (Where along his sideline each of those off so far goes.)
+		const offXs: number[][] = [[], []];
 		for (const m of this.men) {
 			if (this.mob.has(m.pid)) {
 				continue;
@@ -26029,10 +26062,15 @@ class Action {
 			if (bent) {
 				m.hold(m.t + WINDED_BENT_MS + r() * 800, "winded");
 			}
-			// (Off toward his own bench, back up the field if it is past it.)
+			// (Off toward his own bench, back up the field if it is past it -
+			// OFF_APART_FT along from any of the others off there: not on to
+			// a man stood on the spot.)
 			const going = off
 				? {
-						x: clamp(m.at.x, TEAM_AREA[0], TEAM_AREA[1]) + (r() - 0.5) * 24,
+						x: offSpot(
+							offXs[m.team]!,
+							clamp(m.at.x, TEAM_AREA[0], TEAM_AREA[1]) + (r() - 0.5) * 24,
+						),
 						y: sidelineOf(m.team) === 0 ? 3 : FIELD_W - 3,
 					}
 				: huddle(m.team);
