@@ -24,6 +24,7 @@ import {
 	pictureFromFile,
 } from "../components/CourtImageField.tsx";
 import { keepCourtPictures, parseCourt, PICTURE_KEYS } from "./courtFile.ts";
+import { withArenaAdPictures } from "../../common/arenaAdPictures.ts";
 import {
 	FLOOR_TEMPLATE_H,
 	FLOOR_TEMPLATE_W,
@@ -61,6 +62,9 @@ const withPictures = (
 	}
 	if (out.versions) {
 		out.versions = withVersionPictures(out.versions, pictures);
+	}
+	if (out.arenaAds) {
+		out.arenaAds = withArenaAdPictures(out.arenaAds, pictures);
 	}
 	return out;
 };
@@ -449,6 +453,39 @@ const EditTeamCourt = ({
 		});
 	};
 
+	// One of the arena ads changed: blank fields dropped, and blank ads off
+	// the end of the list.
+	const setAd = (
+		i: number,
+		patch: Partial<NonNullable<CourtStyle["arenaAds"]>[number]>,
+	) => {
+		setStyle((s) => {
+			const ads = [...(s.arenaAds ?? [])];
+			while (ads.length <= i) {
+				ads.push({});
+			}
+			const next: Record<string, string | undefined> = {
+				...ads[i],
+				...patch,
+			};
+			for (const k of Object.keys(next)) {
+				if (next[k] === undefined || next[k] === "") {
+					delete next[k];
+				}
+			}
+			ads[i] = next;
+			while (ads.length > 0 && Object.keys(ads.at(-1)!).length === 0) {
+				ads.pop();
+			}
+			const out = { ...s };
+			if (ads.length > 0) {
+				out.arenaAds = ads;
+			} else {
+				delete out.arenaAds;
+			}
+			return out;
+		});
+	};
 	const set = <K extends keyof CourtStyle>(key: K, value: CourtStyle[K]) => {
 		setStyle((s) => {
 			const next = { ...s };
@@ -896,6 +933,51 @@ const EditTeamCourt = ({
 						colorFallback={style.apronText ?? colors[1]}
 						onColorChange={(v) => set("benchTextColor", v)}
 					/>
+
+					<hr />
+					<h3 className="h6 text-body-secondary">Arena ads</h3>
+					{Array.from(
+						{ length: Math.min(4, (style.arenaAds?.length ?? 0) + 1) },
+						(_, i) => {
+							const ad = style.arenaAds?.[i] ?? {};
+							return (
+								<div key={i} className="mb-3">
+									<TextField
+										label={`Ad ${i + 1}`}
+										value={ad.text ?? ""}
+										placeholder="Made-up sponsor"
+										onChange={(v) => setAd(i, { text: v })}
+										colorValue={ad.fg}
+										colorFallback={colors[1]}
+										onColorChange={(v) => setAd(i, { fg: v })}
+									/>
+									<TextField
+										label="Line under it"
+										value={ad.sub ?? ""}
+										onChange={(v) => setAd(i, { sub: v })}
+									/>
+									<ColorField
+										label="Background"
+										value={ad.bg ?? colors[0]}
+										fallback={colors[0]}
+										onChange={(v) => setAd(i, { bg: v })}
+										onClear={() => setAd(i, { bg: undefined })}
+										cleared={ad.bg === undefined}
+									/>
+									<ImageField
+										label="Picture"
+										slot={`ad${i}`}
+										url={ad.imageURL ?? ""}
+										onURL={(v) => setAd(i, { imageURL: v })}
+										adjust={undefined}
+										onAdjust={() => {}}
+										{...picture}
+										defaultFit="contain"
+									/>
+								</div>
+							);
+						},
+					)}
 
 					<hr />
 					<button

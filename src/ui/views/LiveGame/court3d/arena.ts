@@ -1,3 +1,4 @@
+import { type ArenaAd, paintAd } from "./arenaAds.ts";
 import { makeCourtRng } from "../courtRng.ts";
 import type { CrowdFace } from "./crowdFaces.ts";
 import { arenaSpecFor, type ArenaSpec } from "./arenaSpec.ts";
@@ -187,6 +188,8 @@ export const TABLE_TOP = plane(
 	TABLE_D,
 	12,
 );
+// (Its face lit up with the sponsors: finer than the floor, for the
+// lettering.)
 export const TABLE_FRONT = plane(
 	"tableFront",
 	{ x: TABLE_X0, y: TABLE_Y, z: TABLE_H },
@@ -194,7 +197,7 @@ export const TABLE_FRONT = plane(
 	{ x: 0, y: 0, z: -1 },
 	TABLE_X1 - TABLE_X0,
 	TABLE_H,
-	12,
+	24,
 );
 // Each team's bench: a row of high-backed padded chairs beside the table,
 // the backs up to a sitting man's shoulders - just behind where each sits
@@ -1406,8 +1409,17 @@ export const BOARD_SCREENS = [
 	"dunk",
 	"andOne",
 	"block",
+	// The building's sponsors (see arenaAds), ADS_SHOWN of them.
+	"ad0",
+	"ad1",
+	"ad2",
+	"ad3",
 ] as const;
 export type BoardScreen = (typeof BOARD_SCREENS)[number];
+const adOf = (screen: BoardScreen, ads: ArenaAd[] | undefined) => {
+	const m = /^ad(\d)$/.exec(screen);
+	return m ? ads?.[Number(m[1])] : undefined;
+};
 
 const luminance = (c: string): number => {
 	const m = /^#?([\da-f]{6})$/i.exec(c.trim());
@@ -1430,6 +1442,9 @@ const paintScreen = (
 	px: number,
 	screen: BoardScreen,
 	home: ArenaTeam | undefined,
+	ads?: ArenaAd[],
+	// How long (feet) an ad runs before it starts again along the board.
+	adFt = 24,
 ): HTMLCanvasElement => {
 	const canvas = document.createElement("canvas");
 	canvas.width = w;
@@ -1467,6 +1482,18 @@ const paintScreen = (
 		ctx.fillStyle = color;
 		ctx.fillText(t, x, h * 0.53);
 	};
+	const ad = adOf(screen, ads);
+	if (screen.startsWith("ad")) {
+		panels(adFt, (_i, x, sw) => {
+			if (ad) {
+				paintAd(ctx, x + 2, h * 0.08, sw - 4, h * 0.84, ad);
+			} else {
+				block(x, sw, c0);
+				text(name, x + sw / 2, inkOn(c0));
+			}
+		});
+		return canvas;
+	}
 	switch (screen) {
 		case "name":
 			panels(22, (i, x, sw) => {
@@ -1538,6 +1565,7 @@ export type BoardSet = "wall" | "ribbon" | "end" | "table" | "jumbo";
 export const paintBoards = (
 	home: ArenaTeam | undefined,
 	away?: ArenaTeam,
+	ads?: ArenaAd[],
 ): Record<BoardSet, Record<BoardScreen, HTMLCanvasElement>> => {
 	const out = { wall: {}, ribbon: {}, end: {}, table: {}, jumbo: {} } as Record<
 		BoardSet,
@@ -1551,15 +1579,19 @@ export const paintBoards = (
 			END_WALL[0].w / (END_Y1 - END_Y0),
 			screen,
 			home,
+			ads,
 		);
 		// The scorer's table is one long LED board too, with a strip of the
 		// team's color along its top edge.
+		// (An ad the length of the table, as one is on a real one.)
 		const table = paintScreen(
 			TABLE_FRONT.w,
 			TABLE_FRONT.h,
 			TABLE_FRONT.w / (TABLE_X1 - TABLE_X0),
 			screen,
 			home,
+			ads,
+			TABLE_X1 - TABLE_X0,
 		);
 		const tctx = table.getContext("2d")!;
 		const edge = Math.max(2, Math.round(TABLE_FRONT.h * 0.09));
@@ -1568,13 +1600,14 @@ export const paintBoards = (
 		tctx.fillStyle = trim;
 		tctx.fillRect(0, edge * 0.6, table.width, edge);
 		out.table[screen] = table;
-		out.jumbo[screen] = paintJumbo(screen, home, away);
+		out.jumbo[screen] = paintJumbo(screen, home, away, adOf(screen, ads));
 		out.wall[screen] = paintScreen(
 			LED_WALL.w,
 			LED_WALL.h,
 			LED_WALL.w / (X1 - X0),
 			screen,
 			home,
+			ads,
 		);
 		out.ribbon[screen] = paintScreen(
 			RIBBON.w,
@@ -1582,6 +1615,7 @@ export const paintBoards = (
 			RIBBON.w / (X1 - X0),
 			screen,
 			home,
+			ads,
 		);
 	}
 	return out;
@@ -1594,6 +1628,7 @@ const paintJumbo = (
 	screen: BoardScreen,
 	home: ArenaTeam | undefined,
 	away: ArenaTeam | undefined,
+	ad?: ArenaAd,
 ): HTMLCanvasElement => {
 	const { w, h } = JUMBO_FRONT;
 	const px = w / JUMBO_W;
@@ -1621,6 +1656,10 @@ const paintJumbo = (
 		dunk: ["SLAM", "DUNK!"],
 		andOne: ["AND ONE!"],
 		block: ["REJECTED!"],
+		ad0: [name],
+		ad1: [name],
+		ad2: [name],
+		ad3: [name],
 	};
 	const inverted = screen === "defense2";
 	const sx = edge;
@@ -1632,7 +1671,10 @@ const paintJumbo = (
 	g.addColorStop(1, inverted ? "#16171c" : shade(c0, -0.3));
 	ctx.fillStyle = g;
 	ctx.fillRect(sx, sy, sw, sh);
-	const words = lines[screen];
+	if (ad) {
+		paintAd(ctx, sx, sy, sw, sh, ad);
+	}
+	const words = ad ? [] : lines[screen];
 	const lh = sh / (words.length + 0.4);
 	ctx.textAlign = "center";
 	ctx.textBaseline = "middle";
@@ -2118,6 +2160,22 @@ export const paintBench = (team: ArenaTeam | undefined): HTMLCanvasElement => {
 		ctx.fill();
 		ctx.fillStyle = trim;
 		ctx.fillRect(x + 0.25 * px, 0.35 * px, w - 0.5 * px, 0.16 * px);
+		// A towel over the back of most of them, white, a stripe of the
+		// team's color near its hem - and a fold where it goes over.
+		if ((i * 7 + 3) % 10 < 7) {
+			const tw = w - 0.36 * px;
+			const tx = x + 0.18 * px;
+			const th = (0.85 + ((i * 5) % 3) * 0.12) * px;
+			ctx.fillStyle = "#f2f2ef";
+			ctx.beginPath();
+			ctx.roundRect(tx, 0.05 * px, tw, th, 0.1 * px);
+			ctx.fill();
+			ctx.fillStyle = "#d9d9d4";
+			ctx.fillRect(tx, 0.05 * px, tw, 0.12 * px);
+			ctx.fillRect(tx, 0.05 * px + th - 0.1 * px, tw, 0.1 * px);
+			ctx.fillStyle = c;
+			ctx.fillRect(tx, 0.05 * px + th - 0.3 * px, tw, 0.09 * px);
+		}
 	}
 	return canvas;
 };
@@ -2316,6 +2374,20 @@ export const paintStanchionPanel = (
 		ctx.font = `900 ${size}px sans-serif`;
 	}
 	ctx.fillText(name, canvas.width / 2, canvas.height / 2 + 1);
+	return canvas;
+};
+
+// The same panel with one of the building's sponsors on it, as its boards
+// show that sponsor (see boardAt).
+export const paintStanchionAd = (ad: ArenaAd): HTMLCanvasElement => {
+	const canvas = document.createElement("canvas");
+	canvas.width = 160;
+	canvas.height = 52;
+	const ctx = canvas.getContext("2d")!;
+	paintAd(ctx, 0, 0, canvas.width, canvas.height, ad);
+	ctx.fillStyle = "rgba(255,255,255,0.35)";
+	ctx.fillRect(0, 0, canvas.width, 2);
+	ctx.fillRect(0, canvas.height - 2, canvas.width, 2);
 	return canvas;
 };
 

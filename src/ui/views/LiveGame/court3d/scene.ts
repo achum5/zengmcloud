@@ -424,8 +424,10 @@ export type ArenaPaint = {
 	// The seats on the floor behind each basket and in the far corners (see
 	// paintCourtside).
 	courtside?: Courtside;
-	// The lit panel on the faces of the baskets' bases.
+	// The lit panel on the faces of the baskets' bases - and the same with
+	// each of the building's sponsors on it, shown as the boards show it.
 	stanchion?: HTMLCanvasElement;
+	stanchionAds?: HTMLCanvasElement[];
 	// Every screen the LED boards can show (see boardAt).
 	boards: Record<"wall" | "ribbon", Record<BoardScreen, HTMLCanvasElement>> &
 		Partial<
@@ -2131,7 +2133,9 @@ export const drawFrame = (f: Frame) => {
 								});
 							}
 						: undefined,
-					f.arena.stanchion,
+					(screen.startsWith("ad")
+						? f.arena.stanchionAds?.[Number(screen.slice(2))]
+						: undefined) ?? f.arena.stanchion,
 				);
 			},
 		});
@@ -2651,7 +2655,17 @@ export const replayAim = (
 // (blinking) while the road team has the ball in play, otherwise the team
 // and the chants in turn - over a break, the team and the chants, and once
 // the game is over, the team alone.
-const AMBIENT: BoardScreen[] = ["name", "letsGo", "name", "noise"];
+// (Its sponsors in turn with them, as a building's boards run.)
+const AMBIENT: BoardScreen[] = [
+	"name",
+	"ad0",
+	"letsGo",
+	"ad1",
+	"name",
+	"ad2",
+	"noise",
+	"ad3",
+];
 export const boardAt = (tl: CourtTimeline, t: number): BoardScreen => {
 	const roar = recentFx(tl, t, ["roar"], 3200);
 	if (roar?.team === 1 && roar.what) {

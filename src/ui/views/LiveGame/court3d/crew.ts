@@ -152,6 +152,12 @@ const REF_STRIPES = dress("#f2f2ef", "#16161a", {
 	stripes: "#16161a",
 });
 const SUITS = ["#1d2333", "#24262c", "#151517", "#3a3f4a", "#2f2924"];
+// Where along each baseline a photographer can be (feet across the floor),
+// how many of those places are taken, and how many there are at most (their
+// pids, -21 on down, stop short of the table's).
+const PHOTO_ROW = [3.5, 6, 8.5, 11, 13.5, 36.5, 39, 41.5, 44, 46.5];
+const PHOTO_FILL = 0.8;
+const PHOTO_MOST = 20;
 const PHOTO_TOPS = ["#18181c", "#262a33", "#3a3a3d", "#1f2a24", "#2d2230"];
 const PHOTO_PANTS = ["#18181a", "#4b4334", "#2b2e35", "#3c3f46"];
 
@@ -228,11 +234,13 @@ export const crewFor = (
 			dress: clothes,
 		});
 	});
+	// A row of them along each baseline either side of the basket, shoulder
+	// to shoulder - a gap here and there - just off the floor.
 	const pr = makeCourtRng(`photo|${teamKey(home)}|${gid}`);
 	let n = 0;
 	for (const end of [0, 1] as const) {
-		for (const y of [5.5, 9.5, 13.5, 36.5, 40.5, 44.5]) {
-			if (pr() > 0.72) {
+		for (const y of PHOTO_ROW) {
+			if (pr() > PHOTO_FILL || n >= PHOTO_MOST) {
 				continue;
 			}
 			const seed = `photo|${teamKey(home)}|${gid}|${n}`;
@@ -242,8 +250,8 @@ export const crewFor = (
 				role: "photo",
 				team: end,
 				spot: {
-					x: end === 0 ? -3.1 - r() * 0.8 : COURT_W + 3.1 + r() * 0.8,
-					y: y + (r() - 0.5) * 1.2,
+					x: end === 0 ? -3 - r() * 0.3 : COURT_W + 3 + r() * 0.3,
+					y: y + (r() - 0.5) * 0.5,
 				},
 				hgt: 66 + r() * 8,
 				weight: 150 + r() * 70,

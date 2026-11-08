@@ -88,6 +88,23 @@ export const parseCourt = (text: string): CourtStyle | string => {
 			if (typeof value !== "boolean") {
 				return `"hideRailText" should be true or false.`;
 			}
+		} else if (key === "arenaAds") {
+			if (!Array.isArray(value) || value.length > 4) {
+				return `"arenaAds" should be a list of up to four ads.`;
+			}
+			for (const ad of value) {
+				if (typeof ad !== "object" || ad === null || Array.isArray(ad)) {
+					return `Each of "arenaAds" should be an object.`;
+				}
+				for (const [k, v] of Object.entries(ad)) {
+					if (!["text", "sub", "bg", "fg", "imageURL"].includes(k)) {
+						return `Unknown field "${k}" in "arenaAds".`;
+					}
+					if (typeof v !== "string") {
+						return `"arenaAds.${k}" should be text.`;
+					}
+				}
+			}
 		} else if (key === "versions") {
 			const versions = parseVersions(value);
 			if (typeof versions === "string") {
@@ -162,6 +179,13 @@ export const keepCourtPictures = async (
 		if (typeof url === "string") {
 			out[key] = await keep(url);
 		}
+	}
+	if (out.arenaAds) {
+		out.arenaAds = await Promise.all(
+			out.arenaAds.map(async (a) =>
+				a.imageURL ? { ...a, imageURL: await keep(a.imageURL) } : a,
+			),
+		);
 	}
 	if (out.versions) {
 		const versions: NonNullable<CourtStyle["versions"]> = {};

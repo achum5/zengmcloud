@@ -1,3 +1,5 @@
+import type { CourtStyle } from "../../../../common/types.ts";
+import { adsFor } from "./arenaAds.ts";
 import {
 	useCallback,
 	useEffect,
@@ -21,6 +23,7 @@ import {
 	paintBench,
 	paintBoards,
 	courtsideFor,
+	paintStanchionAd,
 	paintStanchionPanel,
 	paintRafters,
 	paintStands,
@@ -585,6 +588,37 @@ const Court3D = ({
 		};
 	}, [awayLogo, homeLogo]);
 
+	// The team's own pictures for its arena ads, once loaded (see adsFor).
+	const ownAds: CourtStyle["arenaAds"] = home?.court?.arenaAds;
+	const adURLs = (ownAds ?? [])
+		.map((a) => a.imageURL)
+		.filter((u): u is string => !!u)
+		.join("\n");
+	const [adPictures, setAdPictures] = useState<Map<string, HTMLCanvasElement>>(
+		() => new Map(),
+	);
+	useEffect(() => {
+		const urls = adURLs ? adURLs.split("\n") : [];
+		if (urls.length === 0) {
+			return;
+		}
+		let alive = true;
+		void Promise.all(urls.map((u: string) => logoPicture(u))).then((made) => {
+			if (alive) {
+				const got = new Map<string, HTMLCanvasElement>();
+				made.forEach((c, i) => {
+					if (c) {
+						got.set(urls[i]!, c);
+					}
+				});
+				setAdPictures(got);
+			}
+		});
+		return () => {
+			alive = false;
+		};
+	}, [adURLs]);
+
 	// The building, painted once a game.
 	// Faces for the crowd, made in the background (see crowdFaces): the stands
 	// painted again once they are ready, the same fans with faces now.
@@ -615,6 +649,13 @@ const Court3D = ({
 			colors: home?.colors,
 		};
 		const table = paintTable(h, a);
+		// The building's sponsors (see adsFor).
+		const ads = adsFor(
+			home?.abbrev ?? home?.name ?? "",
+			home?.colors,
+			ownAds,
+			(url) => adPictures.get(url),
+		);
 		// The home building that night: as full as the gate says, its banners
 		// in the rafters.
 		const building: ArenaLooks | undefined = boxScore?.arena;
@@ -652,14 +693,15 @@ const Court3D = ({
 				HTMLCanvasElement,
 				HTMLCanvasElement,
 			],
-			boards: paintBoards(h, a),
+			boards: paintBoards(h, a, ads),
+			stanchionAds: ads.map((ad) => paintStanchionAd(ad)),
 			tableTop: table.top,
 			tableFront: table.front,
 			bench0: paintBench(a),
 			bench1: paintBench(h),
 		};
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [gid, fans]);
+	}, [gid, fans, adPictures]);
 
 	// The banners in the rafters - each title's in the team's colors and logo
 	// that season - painted again once the logos are in.
@@ -1614,6 +1656,7 @@ const Court3D = ({
 					endStands: pt.endStands,
 					courtside: pt.courtside,
 					stanchion: pt.stanchion,
+					stanchionAds: pt.stanchionAds,
 					boards: pt.boards,
 					rafters: pt.rafters,
 					tableTop: pt.tableTop,

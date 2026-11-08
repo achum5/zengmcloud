@@ -3107,6 +3107,17 @@ export type CourtStyle = {
 	baselineImageURL?: string; // logo/script in each backcourt, behind the baseline
 	cornerLogoURL?: string; // logo repeated in the four quarter-court corners
 	benchImageURL?: string; // banner along the bench (bottom) sideline only
+	// The building's sponsors on its LED boards - the scorer's table, along
+	// the stands, behind the baskets, the board over center court - in turn
+	// with the team's own screens: up to four, each its words (and a line
+	// under them), colors, or a picture. Left out, made-up sponsors.
+	arenaAds?: {
+		text?: string;
+		sub?: string;
+		bg?: string;
+		fg?: string;
+		imageURL?: string;
+	}[];
 	benchText?: string; // sponsor text along the bench sideline (e.g. "celtics.com")
 	benchTextColor?: string; // bench text color (hex); default rail text color
 	// An image on the raised strip behind each baseline - the place the team

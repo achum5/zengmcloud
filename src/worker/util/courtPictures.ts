@@ -11,6 +11,10 @@ import type {
 import { scoreBugPictureIds } from "../../common/scoreBug.ts";
 import { STADIUM_PICTURE_KEYS } from "../../common/stadiumLook.ts";
 import {
+	arenaAdPictureIds,
+	withArenaAdPictures,
+} from "../../common/arenaAdPictures.ts";
+import {
 	allVersionPictures,
 	versionOfGame,
 	versionPictures,
@@ -83,6 +87,7 @@ export const courtPictureIds = (court: CourtStyle | undefined): string[] => {
 			ids.push(p.image.slice(PIC.length));
 		}
 	}
+	ids.push(...arenaAdPictureIds(court));
 	return ids;
 };
 
@@ -127,6 +132,9 @@ export const resolveCourt = async (
 	}
 	if (out.versions) {
 		out.versions = withVersionPictures(out.versions, pictures);
+	}
+	if (out.arenaAds) {
+		out.arenaAds = withArenaAdPictures(out.arenaAds, pictures);
 	}
 	return out;
 };
