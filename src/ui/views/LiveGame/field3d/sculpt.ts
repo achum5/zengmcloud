@@ -8,6 +8,7 @@ import {
 	cross,
 	dotV,
 	frameOf,
+	handMasses,
 	massesFor,
 	seerOf,
 	torsoOf,
@@ -27,6 +28,7 @@ import {
 	v3,
 	type ArmBuild,
 	type Frame,
+	type HandBuild,
 	type Ink,
 	type Mass,
 	type RGB,
@@ -728,6 +730,15 @@ export const helmetAt = (body: Body, q: Pose): V3 => {
 	return q.twist !== 0 || q.tilt !== 0 ? turnUpper(q, sk.pelvis)(c) : c;
 };
 
+// His hand: the court's (see handMasses), a glove on it - a touch fuller,
+// no nails, his fingers a little closer together on the ball.
+const HAND_BUILD: HandBuild = {
+	halfW: 0.0136,
+	palmR: 0.0157,
+	fingerR: 0.0067,
+	thumb: [0.0078, 0.0086],
+	ballSpread: 0.16,
+};
 // His arm: the court's (see armMasses), a touch thicker all down it.
 const ARM: ArmBuild = {
 	delt: [1.12, 0.94, 0.88],
@@ -1150,15 +1161,10 @@ const build = (
 		const ts = v3(thumbSide.f * sgn, thumbSide.s * sgn, thumbSide.u * sgn);
 		const g = G_HAND + side;
 		pn[side] = palmN;
-		// (As a real hand is - a glove on it, a touch over life so it reads:
-		// as long as a ninth of him, the fingers slim enough to stand apart.
-		// The court's: see court3d/sculpt.ts.)
-		const L = H * 0.118;
-		const halfW = H * 0.0136;
-		const palmR = H * 0.0157;
-		const knuckles = addV(wrist, h, L * 0.5);
 		if (cheer) {
 			// A pom-pom, all round her hand.
+			const L = H * 0.118;
+			const knuckles = addV(wrist, h, L * 0.5);
 			knuckleAt[side] = knuckles;
 			thumbAt[side] = knuckles;
 			add(
@@ -1175,52 +1181,27 @@ const build = (
 			);
 			return;
 		}
-		for (const o of [-1, 1]) {
-			add(
-				addV(addV(wrist, h, L * 0.1), ts, o * halfW * 0.8),
-				addV(knuckles, ts, o * halfW),
-				[
-					[0, palmR * 0.92],
-					[1, palmR],
-				],
-				HAND,
-				g,
-				side,
-			);
-		}
-		// Each finger three bones, each joint bent the way the grip calls for
-		// (the court's: see court3d/sculpt.ts): nearly straight and fanned
-		// (open), curling more to the little finger (relaxed), folded into
-		// the palm (a fist) - or on the ball, each joint bent just as far as
-		// lays the next bone on it.
+		// (See handMasses: on the ball, each finger laid along it - see
+		// bendOnto.)
 		const onBall = ball && grip === "ball" ? ball : undefined;
-		const fingerR = H * 0.0067;
-		const lens = [0.4, 0.44, 0.41, 0.33];
-		const restOf = (i: number): number[] =>
-			grip === "fist"
-				? [1.45, 1.75, 1.05]
-				: grip === "relaxed"
-					? [0.24 + 0.06 * i, 0.5 + 0.08 * i, 0.32 + 0.05 * i]
-					: grip === "ball"
-						? [0.2, 0.35, 0.25]
-						: [0.04 + 0.02 * i, 0.08, 0.05];
-		// The joints of a finger (or the thumb) from its base, set off along
-		// d, curling toward his palm: each bone's length, and its bend at rest
-		// - on the ball, as far as lays it on it instead (see bendOnto).
-		const lay = (
-			base: V3,
-			d: V3,
-			bones: number[],
-			rest: number[],
-			r: number,
-		) => {
-			const pts = [base];
-			let x = 0;
-			let y = 0;
-			let phi = 0;
-			bones.forEach((l, k) => {
-				const a = onBall
-					? bendOnto(
+		const made = handMasses({
+			add,
+			H,
+			kMid,
+			wrist,
+			h,
+			palmN,
+			ts,
+			side,
+			group: g,
+			fingers: G_FINGER + side * 5,
+			kind: HAND,
+			nail: undefined,
+			grip,
+			b: HAND_BUILD,
+			onto: onBall
+				? (base, d, r) => (x, y, phi, l, k, rest) =>
+						bendOnto(
 							(t, v) => addV(addV(base, d, t), palmN, v),
 							onBall,
 							r,
@@ -1229,115 +1210,12 @@ const build = (
 							phi,
 							l,
 							k,
-							rest[k]!,
+							rest,
 						)
-					: rest[k]!;
-				phi += a;
-				x += l * Math.cos(phi);
-				y += l * Math.sin(phi);
-				pts.push(addV(addV(base, d, x), palmN, y));
-			});
-			return pts;
-		};
-		// Bone by bone, each a little slimmer than the last, melted into one.
-		const bones = (pts: V3[], r: number, group: number) => {
-			for (let k = 1; k < pts.length; k++) {
-				const r0 = r * (1 - 0.07 * (k - 1));
-				add(
-					pts[k - 1]!,
-					pts[k]!,
-					[
-						[0, r0],
-						[1, r0 * (k === pts.length - 1 ? 0.84 : 0.95)],
-					],
-					HAND,
-					group,
-					side,
-				);
-			}
-		};
-		if (fingerR * kMid < 0.9 && !onBall) {
-			// Too small to tell apart: the four as one, flat like the palm,
-			// bent as the middle two are (the court's - but on the ball, each
-			// finger of his own, laid on it).
-			for (const o of [-1, 1]) {
-				const pts = lay(
-					addV(knuckles, ts, o * halfW * 0.85),
-					h,
-					[0.47, 0.3, 0.23].map((k) => k * L * 0.42),
-					restOf(1),
-					palmR * 0.8,
-				);
-				bones(pts, palmR * 0.88, G_FINGER + side * 5);
-			}
-		} else {
-			const spread =
-				grip === "ball"
-					? 0.16
-					: grip === "open"
-						? 0.1
-						: grip === "relaxed"
-							? 0.05
-							: 0.02;
-			for (let i = 0; i < 4; i++) {
-				const across = (1.5 - i) / 1.5;
-				// (The knuckles in an arc: the middle one furthest out.)
-				const base = addV(
-					addV(knuckles, ts, across * halfW * 1.2),
-					h,
-					L * [0.0, 0.025, 0.005, -0.04][i]!,
-				);
-				const len = L * lens[i]!;
-				const pts = lay(
-					base,
-					unit(addV(h, ts, across * spread)),
-					[0.47, 0.3, 0.23].map((k) => k * len),
-					restOf(i),
-					fingerR,
-				);
-				bones(pts, fingerR, G_FINGER + side * 5 + i);
-			}
-		}
-		// The thumb: out from the heel of the palm on its side, two bones -
-		// across the fingers in a fist, round the side of the ball on it.
-		const tBase = addV(addV(wrist, h, L * 0.16), ts, halfW * 1.05);
-		knuckleAt[side] = knuckles;
-		thumbAt[side] = tBase;
-		const tLen = L * 0.36;
-		const thumb =
-			grip === "fist"
-				? (() => {
-						const tip = addV(addV(knuckles, palmN, H * 0.016), ts, halfW * 0.1);
-						const mid = addV(lerpV(tBase, tip, 0.5), palmN, H * 0.006);
-						return [tBase, mid, tip];
-					})()
-				: lay(
-						tBase,
-						unit(
-							addV(h, ts, grip === "ball" ? 1.1 : grip === "open" ? 0.85 : 0.6),
-						),
-						[tLen * 0.55, tLen * 0.45],
-						grip === "relaxed"
-							? [0.3, 0.35]
-							: grip === "ball"
-								? [0.2, 0.2]
-								: [0.1, 0.12],
-						H * 0.0078,
-					);
-		bones(thumb, H * 0.0086, G_FINGER + side * 5 + 4);
-		// The ball of his thumb: the muscle of the palm on its side, swelling
-		// out to where the thumb leaves it.
-		add(
-			addV(addV(wrist, h, L * 0.1), ts, halfW * 0.55),
-			addV(addV(wrist, h, L * 0.3), ts, halfW * 0.95),
-			[
-				[0, palmR * 0.72],
-				[1, palmR * 0.66],
-			],
-			HAND,
-			g,
-			side,
-		);
+				: undefined,
+		});
+		knuckleAt[side] = made.knuckles;
+		thumbAt[side] = made.thumb;
 	};
 	arm(sk.armR, 0);
 	arm(sk.armL, 1);
