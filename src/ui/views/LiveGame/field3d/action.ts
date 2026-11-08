@@ -5577,6 +5577,20 @@ const LET_UP_FROM_MS = 550;
 const FREED_FPS = [7, 10] as const;
 const FREED_KEEP_FT = [9, 6] as const;
 const FREED_AFTER_LEAST_MS = 700;
+// (Without that long - his man off him a beat before the man with the
+// ball is down, say - up out of it all the same, turned to the ball and a
+// step or two toward it (ft, fewest, most), no nearer it than
+// LOOK_AFTER_KEEP_FT, at no more than LOOK_AFTER_FPS, pulled up there
+// LOOK_AFTER_SPARE_MS before the whistle: if there is LOOK_AFTER_LEAST_MS
+// for it and nobody in his way (LOOK_AFTER_CLEAR_FT). If not, turned to
+// it where he is, over LOOK_TURN_MS.)
+const LOOK_AFTER_LEAST_MS = 500;
+const LOOK_AFTER_FT = [2.5, 5] as const;
+const LOOK_AFTER_KEEP_FT = 9;
+const LOOK_AFTER_FPS = 7;
+const LOOK_AFTER_SPARE_MS = 100;
+const LOOK_AFTER_CLEAR_FT = 2.5;
+const LOOK_TURN_MS = 350;
 // The men who bring him down down no nearer one another than this.
 const LANDED_APART = 2.4;
 // Met head on, another man in on it by then (as late as this after, ms):
@@ -20768,6 +20782,63 @@ class Action {
 			}
 			b.cut(off);
 			this.offBlock(b, until, 0);
+		}
+		this.lookAfter(men);
+	}
+
+	// Men let up out of a block with no time to go after the ball before
+	// the whistle (see offBlock - and so left in their block, then stood):
+	// up out of it a beat after, turned to it and a step or two toward it -
+	// not stood frozen where the block left them till the whistle.
+	private lookAfter(men: Actor[]) {
+		const upTo = this.whistle - LOOK_AFTER_SPARE_MS;
+		for (const b of men) {
+			const l = b.legs.findLast((x) => x.move !== "stand");
+			if (
+				!l ||
+				this.done.has(b.pid) ||
+				(l.move !== "drive" && l.move !== "engage") ||
+				l.arms ||
+				l.turn ||
+				upTo - (l.t1 + FREED_REACT) < LOOK_AFTER_LEAST_MS
+			) {
+				continue;
+			}
+			const ball = this.ballAt(upTo);
+			if (!ball) {
+				continue;
+			}
+			b.cut(l.t1);
+			b.hold(l.t1 + FREED_REACT);
+			const t0 = b.t;
+			const at = b.at;
+			const far = dist(at, ball);
+			const face = this.toward(at, ball);
+			const ft = Math.min(
+				LOOK_AFTER_FT[0] +
+					(LOOK_AFTER_FT[1] - LOOK_AFTER_FT[0]) *
+						countOf(b, this.input.key, 154),
+				far - LOOK_AFTER_KEEP_FT,
+			);
+			const to = {
+				x: at.x + ((ball.x - at.x) / Math.max(0.1, far)) * ft,
+				y: at.y + ((ball.y - at.y) / Math.max(0.1, far)) * ft,
+			};
+			const clear =
+				ft >= STEP_TO_LEAST_FT &&
+				[0.5, 1, 1.4].every((u) => {
+					const c = t0 + (upTo - t0) * u;
+					const p = {
+						x: at.x + (to.x - at.x) * Math.min(1, u),
+						y: at.y + (to.y - at.y) * Math.min(1, u),
+					};
+					return this.men.every(
+						(x) => x === b || dist(x.posAt(c), p) >= LOOK_AFTER_CLEAR_FT,
+					);
+				});
+			if (!clear || !b.stepTo(to, upTo, LOOK_AFTER_FPS, undefined, face)) {
+				b.hold(Math.min(upTo, t0 + LOOK_TURN_MS), "stand", face);
+			}
 		}
 	}
 
