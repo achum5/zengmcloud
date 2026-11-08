@@ -6827,6 +6827,11 @@ const KICKER_JOG_LEAST = 7;
 // have to be there.
 const ONSIDE_GO_MS = 250;
 const ONSIDE_GO_PACE = 0.6;
+// (Late for it - this quick (ft/s) or more to be there: at it flat out,
+// and fielded in his stride, his body this far (feet) short of it as his
+// hands take it - see handsOn.)
+const ONSIDE_STRIDE_FPS = 15;
+const ONSIDE_STRIDE_FT = 1.5;
 // The ball on its tee (its middle, off the turf).
 const TEE_Z = 0.8;
 // How high over the straight line a kick gets that is in the air `ms`.
@@ -23995,6 +24000,40 @@ class Action {
 				y: at.y + Math.sin(yaw) * 1.5,
 			};
 			offFor(m, to, t - 250);
+			// (Late for it, a long way off: at it flat out, and fielded on
+			// the run, his hands down for it as he comes, on through it - not
+			// stopped dead on it from a sprint.)
+			const far = dist(m.at, at);
+			if (
+				far > ONSIDE_STRIDE_FT &&
+				t > m.t &&
+				(far / (t - m.t)) * 1000 >= ONSIDE_STRIDE_FPS
+			) {
+				const way = this.toward(m.at, at);
+				const was = m.saved();
+				m.press(
+					{
+						x: at.x - Math.cos(way) * ONSIDE_STRIDE_FT,
+						y: at.y - Math.sin(way) * ONSIDE_STRIDE_FT,
+					},
+					t,
+					m.top * 0.9,
+				);
+				if (
+					Math.abs(m.t - t) < 5 &&
+					GAITS.has(m.last.move) &&
+					legPace(m.last) >= STOP_LEAST
+				) {
+					this.reaches.push({
+						m,
+						move: "catch",
+						t0: t - CATCH_REACH_MS,
+						t1: t + CATCH_IN_MS,
+					});
+					return;
+				}
+				was();
+			}
 			m.press(to, t - 250, m.top * 0.9);
 			m.hold(t - CATCH_REACH_MS, "stand", yaw);
 			m.catchOn(t, yaw, at);
