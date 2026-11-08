@@ -12653,7 +12653,7 @@ class Action {
 				const face = this.toward(hit, at);
 				this.closeOn(m, hit, tc - 300, face, carrier, true);
 				const land = diveBy(tc + 250);
-				m.lunge("dive", land, face, reach(beside(at, face, 1.2)));
+				m.lunge("dive", land, face, reach(beside(at, face, 1.2)), true);
 				m.hold(land + 700, "prone");
 				m.act("getUp", land + 700 + GET_UP_MS);
 				this.done.add(m.pid);
@@ -12678,7 +12678,7 @@ class Action {
 				const face = this.toward(hit, there);
 				this.closeOn(m, hit, tc + 60, face, carrier, true);
 				const land = diveBy(tc + 520);
-				m.lunge("dive", land, face, reach(beside(there, face, 0.2)));
+				m.lunge("dive", land, face, reach(beside(there, face, 0.2)), true);
 				m.hold(land + 600, "prone");
 				m.act("getUp", land + 600 + GET_UP_MS);
 				this.done.add(m.pid);
@@ -12725,6 +12725,7 @@ class Action {
 						JUKE_OVER * (1 - into),
 					),
 				),
+				true,
 			);
 			m.hold(land + 700, "prone");
 			m.act("getUp", land + 700 + GET_UP_MS);
@@ -16222,6 +16223,14 @@ class Action {
 		m.arms(swim ? (left ? "swimL" : "swimR") : left ? "ripL" : "ripR", t0, t1);
 	}
 
+	// (How long it takes him to pull up hard - see STOP_HARD - off the run
+	// he is on at t: none off a block, or at no more than a jog.)
+	private brakeMs(m: Actor, t: number): number {
+		const l = legAt(m, t);
+		const v = RAMPS.has(l.move) && !l.arms && !l.turn ? legPace(l) : 0;
+		return v < STOP_LEAST ? 0 : (v / (STOP_ACCEL * STOP_HARD)) * 1000;
+	}
+
 	// KNOCKED DOWN AT THE LINE: the man in the rush the sim says got to the
 	// pass (or, now and then with nobody named on it, one in the way of it
 	// anyway) off his block as the quarterback winds up - a step across
@@ -16303,7 +16312,12 @@ class Action {
 		};
 		const most = named ? LINE_BAT_STEP_FT : LINE_BAT_LANE_FT;
 		let best:
-			| { m: Actor; shed: number; x: ReturnType<typeof lane> }
+			| {
+					m: Actor;
+					shed: number;
+					x: ReturnType<typeof lane>;
+					brakeFt: number;
+			  }
 			| undefined;
 		for (const m of named ? [named] : rushers.filter((o) => o !== pick)) {
 			if (
@@ -16315,12 +16329,33 @@ class Action {
 			}
 			// (Read where he is as he comes off it - a second look from there.)
 			const guess = lane(m, throwAt);
-			const shed0 = guess.leap - guess.stepMs;
-			const x = lane(m, shed0);
-			const shed = x.leap - x.stepMs;
+			let x = lane(m, guess.leap - guess.stepMs);
+			let shed = x.leap - x.stepMs;
+			let brakeFt = 0;
+			// (Coming in at a run - free on a blitz, say: pulled up hard on
+			// the way he goes first (see brakeMs), read where that stops him
+			// - where the run on at that pace has him half the time it takes
+			// - and back a look at a time (see LINE_BAT_SEEK_MS) till he is
+			// stopped in time to step across and go up: not cut from flat out
+			// to a step across in a stride, nor stopped past it and stepped
+			// back to it. No further from it than the stop takes him. Slowing
+			// into it already - too much so for a stop back along it to have
+			// him there in time: as he was, off it as he gets there.)
+			if (this.brakeMs(m, shed) > 0) {
+				for (let t = shed; t >= snap + RUSH_MOVE_LEAST; t -= LINE_BAT_SEEK_MS) {
+					const brake = this.brakeMs(m, t);
+					const y = lane(m, t + brake / 2);
+					if (t + brake + y.stepMs <= y.leap) {
+						x = y;
+						shed = t;
+						brakeFt = (legPace(legAt(m, t)) * brake) / 2000;
+						break;
+					}
+				}
+			}
 			if (
 				x.along < LINE_BAT_ALONG[0] ||
-				x.along > LINE_BAT_ALONG[1] ||
+				x.along > LINE_BAT_ALONG[1] + brakeFt ||
 				Math.abs(x.side) > most ||
 				x.z > LINE_BAT_TOP_Z ||
 				shed < snap + RUSH_MOVE_LEAST ||
@@ -16329,7 +16364,7 @@ class Action {
 			) {
 				continue;
 			}
-			best = { m, shed, x };
+			best = { m, shed, x, brakeFt };
 		}
 		if (!best) {
 			return undefined;
@@ -16338,7 +16373,7 @@ class Action {
 		if (!named && !pick && countOf(qb, this.input.key, 117) >= LINE_BAT) {
 			return undefined;
 		}
-		const { m, shed, x } = best;
+		const { m, shed, x, brakeFt } = best;
 		// (Stood in the lane, his hands just to his side of it.)
 		const off =
 			Math.sign(x.side) * Math.min(Math.abs(x.side), LINE_BAT_SIDE_FT);
@@ -16371,8 +16406,20 @@ class Action {
 			return undefined;
 		}
 		const face = this.toward(spot, fly.from);
+		const braking = brakeFt > 0;
 		m.cut(off0);
-		if (x.stepFt > 0) {
+		// (No further than takes him to a stop in the time there is before
+		// he goes up.)
+		const v = braking ? legPace(m.last) : 0;
+		if (v > 0) {
+			m.easeOff(
+				Math.min(
+					(v * v) / (2 * STOP_ACCEL * STOP_HARD),
+					(v * Math.max(0, x.leap - m.t)) / 2000,
+				),
+			);
+		}
+		if (x.stepFt > 0 && m.t < x.leap - LINE_BAT_STEP_LEAST_MS) {
 			m.go(spot, x.leap, "shuffle", face);
 		} else {
 			m.hold(x.leap, "stand", face);
@@ -27622,6 +27669,11 @@ const LINE_BAT_STEP_FT = 4;
 const LINE_BAT_SIDE_FT = 0.5;
 const LINE_BAT_STEP_FPS = 9;
 const LINE_BAT_STEP_MS = 250;
+// (Less time than this left, pulled up, to step across into the lane: up
+// from where he stops.)
+const LINE_BAT_STEP_LEAST_MS = 120;
+// (Pulled up for it: how much sooner each look back - see batAt.)
+const LINE_BAT_SEEK_MS = 20;
 const LINE_BAT_TOP_Z = 9.8;
 const LINE_BAT_HANDS_Z = 8.3;
 const LEAP_UP = 1.7;
