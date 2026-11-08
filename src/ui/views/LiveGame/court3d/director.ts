@@ -47,6 +47,7 @@ import {
 	type Pt3,
 	type Side,
 } from "./geometry.ts";
+import type { Beat } from "./timeline.ts";
 import {
 	BURST,
 	HARDEST_PULL_UP,
@@ -513,13 +514,13 @@ const blocksShownAgain = (fx: Fx[]) => {
 // seats looking up at the crowd and the rafters. The picture cuts in and out
 // of it.
 export type ArenaShot = { t0: number; t1: number; kind: "wide" | "crowd" };
-export type Beat = {
-	i: number;
-	type: string;
-	preStart: number;
-	actionStart: number;
-	end: number;
-};
+// (Each line's beat, and reading the page's cursor: see timeline.ts.)
+export {
+	linesBetween,
+	snapForCursor,
+	targetForCursor,
+	type Beat,
+} from "./timeline.ts";
 // (From `cam`, on `aim`.)
 export type CloseUp = {
 	t0: number;
@@ -28847,9 +28848,6 @@ export const compileCourt = ({
 	return d.finish();
 };
 
-// Where the animation should stand while the playback cursor (events consumed)
-// is at `cursor`: the moment the next unshown line happens. Past the last line,
-// the end of the game.
 // How dark the picture is at t for a cut between clips of a highlight reel:
 // a quick dip to black and back across each.
 const CLIP_DIP = 170;
@@ -28862,43 +28860,4 @@ export const clipDipAt = (tl: CourtTimeline, t: number): number => {
 		}
 	}
 	return dark;
-};
-
-export const targetForCursor = (tl: CourtTimeline, cursor: number): number => {
-	const beat = tl.beats.find((b) => b.i >= cursor);
-	return beat ? beat.actionStart : tl.end;
-};
-
-// Where to cut to when playback jumps (a rewind, a fast-forward, joining a
-// broadcast late): the end of the last line already shown.
-// How many play-by-play lines the page showed going from one cursor to
-// another. A line can come with events that are not lines - a basket with the
-// points, rebounds and assists it adds up - so this, not how far the cursor
-// moved, says whether the page jumped ahead.
-export const linesBetween = (
-	tl: CourtTimeline,
-	from: number,
-	to: number,
-): number => {
-	let n = 0;
-	for (const b of tl.beats) {
-		if (b.i >= to) {
-			break;
-		}
-		if (b.i >= from) {
-			n += 1;
-		}
-	}
-	return n;
-};
-
-export const snapForCursor = (tl: CourtTimeline, cursor: number): number => {
-	let t = 0;
-	for (const b of tl.beats) {
-		if (b.i >= cursor) {
-			break;
-		}
-		t = b.end;
-	}
-	return t;
 };

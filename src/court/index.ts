@@ -4,34 +4,13 @@
 // a worker of its own (see stageCourt.ts). Other instances of it make the
 // players' new pictures for the page as the game is shown (see farm.ts).
 import "../common/polyfills.ts";
-import {
+import { compileCourt } from "../ui/views/LiveGame/court3d/director.ts";
+import { farmHand } from "../ui/views/LiveGame/court3d/farm.ts";
+import { serveStaging } from "../ui/views/LiveGame/court3d/stager.ts";
+
+serveStaging(
 	compileCourt,
-	type CourtInput,
-} from "../ui/views/LiveGame/court3d/director.ts";
-import { farmHand, type ToHand } from "../ui/views/LiveGame/court3d/farm.ts";
-
-// Up and running (see stageCourt.ts).
-self.postMessage({ ready: true });
-
-const hand = farmHand((msg, transfer) => {
-	self.postMessage(msg, { transfer });
-});
-
-self.onmessage = (
-	event: MessageEvent<{ id: number; input: CourtInput } | { farm: ToHand }>,
-) => {
-	if ("farm" in event.data) {
-		hand(event.data.farm);
-		return;
-	}
-	const { id, input } = event.data;
-	try {
-		self.postMessage({ id, timeline: compileCourt(input) });
-	} catch (error) {
-		self.postMessage({
-			id,
-			error:
-				error instanceof Error ? (error.stack ?? error.message) : String(error),
-		});
-	}
-};
+	farmHand((msg, transfer) => {
+		self.postMessage(msg, { transfer });
+	}),
+);

@@ -13,7 +13,7 @@ import type { PlayerFace } from "../../../util/playerFaces.ts";
 import { TeamLogoInline } from "../../../components/TeamLogoInline.tsx";
 import { STARTING_NUM_TIMEOUTS } from "../../../../common/constants.ts";
 import { helpers } from "../../../util/helpers.ts";
-import { depthOf } from "../court3d/camera.ts";
+import { depthOf, follow } from "../court3d/camera.ts";
 import type { FaceConfig } from "facesjs";
 import { FaceLoader } from "../court3d/FaceLoader.tsx";
 import { headColors, profileOf } from "../court3d/faces.ts";
@@ -249,21 +249,6 @@ const FLAG_BUG_PAD = "0.1em 0.45em";
 const ROSTER_WAIT = 5000;
 // Narrower than this (CSS pixels), the picture is squarer.
 const NARROW_W = 560;
-
-// Critically damped: from where it is and how fast it is going (`v`), on
-// toward `to` - exact, however long the step.
-const follow = (
-	x: number,
-	v: number,
-	to: number,
-	w: number,
-	secs: number,
-): [number, number] => {
-	const y = x - to;
-	const e = Math.exp(-w * secs);
-	const k = (v + w * y) * secs;
-	return [to + (y + k) * e, (v - w * k) * e];
-};
 
 // What goes across the back of his jersey: everything after his first name.
 const lastNameOf = (name: string | undefined): string => {

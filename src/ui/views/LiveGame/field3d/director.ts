@@ -34,6 +34,7 @@ import {
 	type Pt3,
 	type Side,
 } from "./geometry.ts";
+import type { Beat } from "../court3d/timeline.ts";
 import {
 	depthCharts,
 	fillSlots,
@@ -354,13 +355,14 @@ export type Cheer = {
 	what?: Shout;
 };
 
-export type Beat = {
-	i: number;
-	type: string;
-	preStart: number;
-	actionStart: number;
-	end: number;
-};
+// (Each line's beat, and reading the page's cursor: see
+// court3d/timeline.ts.)
+export {
+	linesBetween,
+	snapForCursor,
+	targetForCursor,
+	type Beat,
+} from "../court3d/timeline.ts";
 
 export type FieldTimeline = {
 	plays: Play[];
@@ -4437,45 +4439,3 @@ const standEasy = (plays: Play[]) => {
 
 export const compileField = (input: FieldInput): FieldTimeline =>
 	new Director(input).run();
-
-// ---- playback --------------------------------------------------------------
-
-// Where the animation should stand while the playback cursor (events
-// consumed) is at `cursor`: the moment the next unshown line happens. Past
-// the last line, the end of the game.
-export const targetForCursor = (tl: FieldTimeline, cursor: number): number => {
-	const beat = tl.beats.find((b) => b.i >= cursor);
-	return beat ? beat.actionStart : tl.end;
-};
-
-// Where to cut to when playback jumps (a rewind, a fast-forward, joining a
-// broadcast late): the end of the last line already shown.
-export const snapForCursor = (tl: FieldTimeline, cursor: number): number => {
-	let t = 0;
-	for (const b of tl.beats) {
-		if (b.i >= cursor) {
-			break;
-		}
-		t = b.end;
-	}
-	return t;
-};
-
-// How many play-by-play lines the page showed going from one cursor to
-// another.
-export const linesBetween = (
-	tl: FieldTimeline,
-	from: number,
-	to: number,
-): number => {
-	let n = 0;
-	for (const b of tl.beats) {
-		if (b.i >= to) {
-			break;
-		}
-		if (b.i >= from) {
-			n += 1;
-		}
-	}
-	return n;
-};
