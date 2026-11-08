@@ -5,7 +5,7 @@ import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
 import { createArenaLeague } from "../../../test/arena/runLeague.ts";
 import { currentOutlook, loadTeam, priceFor } from "./market.ts";
-import { placesAfter } from "./outlook.ts";
+import { outlookSettings, placesAfter } from "./outlook.ts";
 
 const importNode = (name: string) => import(/* @vite-ignore */ name);
 
@@ -81,37 +81,46 @@ test(
 	"giving up its star and its own pick costs a team more than the two apart",
 	{ timeout: 120_000 },
 	async () => {
-		const outlook = await currentOutlook();
-		let more = 0;
-		let checked = 0;
-		for (let tid = 0; tid < g.get("numTeams"); tid++) {
-			const t = await loadTeam(outlook, tid);
-			const own = t.picks.find(
-				(dp) =>
-					dp.originalTid === tid &&
-					dp.round === 1 &&
-					dp.season === g.get("season"),
-			);
-			if (!own || outlook.draftPlace.get(tid)![0]! < 5) {
-				continue;
+		// The places a star's going moves his team's pick, not what his salary
+		// costs: at the price of money this league was built at, so the count
+		// tests the crowding rather than where the luxury tax line falls.
+		const perCap = outlookSettings.moneyPerCap;
+		outlookSettings.moneyPerCap = 0.02;
+		try {
+			const outlook = await currentOutlook();
+			let more = 0;
+			let checked = 0;
+			for (let tid = 0; tid < g.get("numTeams"); tid++) {
+				const t = await loadTeam(outlook, tid);
+				const own = t.picks.find(
+					(dp) =>
+						dp.originalTid === tid &&
+						dp.round === 1 &&
+						dp.season === g.get("season"),
+				);
+				if (!own || outlook.draftPlace.get(tid)![0]! < 5) {
+					continue;
+				}
+				const best = [...t.players].sort(
+					(a, b) => b.valueNoPot - a.valueNoPot,
+				)[0]!;
+				const star = { kind: "player" as const, p: best };
+				const pick = { kind: "pick" as const, dp: own };
+				// To a team that gives nothing back, priced in full.
+				const partner = await loadTeam(outlook, (tid + 1) % g.get("numTeams"));
+				const both = -priceFor(outlook, t, [star, pick], [], partner);
+				const apart =
+					-priceFor(outlook, t, [star], [], partner) -
+					priceFor(outlook, t, [pick], [], partner);
+				checked += 1;
+				if (both > apart) {
+					more += 1;
+				}
 			}
-			const best = [...t.players].sort(
-				(a, b) => b.valueNoPot - a.valueNoPot,
-			)[0]!;
-			const star = { kind: "player" as const, p: best };
-			const pick = { kind: "pick" as const, dp: own };
-			// To a team that gives nothing back, priced in full.
-			const partner = await loadTeam(outlook, (tid + 1) % g.get("numTeams"));
-			const both = -priceFor(outlook, t, [star, pick], [], partner);
-			const apart =
-				-priceFor(outlook, t, [star], [], partner) -
-				priceFor(outlook, t, [pick], [], partner);
-			checked += 1;
-			if (both > apart) {
-				more += 1;
-			}
+			assert.isAbove(checked, 5);
+			assert.isAbove(more, checked / 2);
+		} finally {
+			outlookSettings.moneyPerCap = perCap;
 		}
-		assert.isAbove(checked, 5);
-		assert.isAbove(more, checked / 2);
 	},
 );

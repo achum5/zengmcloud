@@ -728,7 +728,13 @@ export const outlookSettings = {
 	letGo: true,
 	// What payroll past the cap costs a team, in titles a season per cap's
 	// worth, and the luxury tax's rate on top past the tax line (payrollCost).
-	moneyPerCap: 0.02,
+	// 0.04, the owner's call after a test against 0.02: half the teams each
+	// way, 2 leagues each way round over 5 seasons: titles 12 to 8, playoff
+	// rounds won 176 to 124, seasons under 20 wins 29 to 22; games won 2.8
+	// points fewer in the first season, 4.9 more in the fifth; less paid to
+	// 55-64s and more of them signed. (A 15-season replay had a team pay
+	// about $670M of luxury tax in four seasons without a title.)
+	moneyPerCap: 0.04,
 	// And payroll under the cap, past the league's minimum, with what the
 	// room is expected to buy; off, money costs only past the cap.
 	moneyUnderCap: true,

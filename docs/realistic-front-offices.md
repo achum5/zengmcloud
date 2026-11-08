@@ -65,8 +65,10 @@ with "the Pistons", not with a named person.
   against.
 - **Money: a small real cost** (owner's call, replacing "the luxury tax and
   profit are ignored"): a team does what is best for the franchise, money
-  included. Each season, payroll past the league's minimum costs 0.02 titles
-  per cap's worth, and the luxury tax's rate on top past the tax line.
+  included. Each season, payroll past the league's minimum costs 0.04 titles
+  per cap's worth, and the luxury tax's rate on top past the tax line
+  (0.02 until the owner doubled it: against 0.02, titles 12 to 8 and playoff
+  rounds 176 to 124 over 5 seasons, a weaker first season).
   Payroll counts the free agents a team's room is expected to buy, at their
   market salaries: room it would spend anyway costs nothing more spent on
   someone else, room it could not spend is money kept. In the season under

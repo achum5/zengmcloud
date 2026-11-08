@@ -4,6 +4,7 @@ import { makeSeededRandom } from "../../../common/random.ts";
 import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
 import { createArenaLeague } from "../../../test/arena/runLeague.ts";
+import { outlookSettings } from "./outlook.ts";
 import {
 	bestDealWith,
 	currentOutlook,
@@ -35,13 +36,17 @@ test(
 	"a team shopping for itself takes the deal that does most for it that the other team would still make",
 	{ timeout: 300_000 },
 	async () => {
-		const outlook = await currentOutlook();
-		const own = (deal: { gains: number[]; margins: number[] }) =>
-			deal.gains[0]! - deal.margins[0]!;
-		// In this league team 13 has a deal with team 21 that both would make.
-		const shopper = await loadTeam(outlook, 13);
-		const partner = await loadTeam(outlook, 21);
+		// The deal below was found at the price of money this league was
+		// built at.
+		const perCap = outlookSettings.moneyPerCap;
+		outlookSettings.moneyPerCap = 0.02;
 		try {
+			const outlook = await currentOutlook();
+			const own = (deal: { gains: number[]; margins: number[] }) =>
+				deal.gains[0]! - deal.margins[0]!;
+			// In this league team 13 has a deal with team 21 that both would make.
+			const shopper = await loadTeam(outlook, 13);
+			const partner = await loadTeam(outlook, 21);
 			const usual = bestDealWith(outlook, shopper, partner, new Map());
 			teamMarketSettings.set(shopper.tid, { selfishShopping: true });
 			const selfish = bestDealWith(outlook, shopper, partner, new Map());
@@ -54,6 +59,7 @@ test(
 			assert.isAtLeast(selfish!.gains[1] - selfish!.margins[1], MIN_GAIN);
 		} finally {
 			teamMarketSettings.clear();
+			outlookSettings.moneyPerCap = perCap;
 		}
 	},
 );

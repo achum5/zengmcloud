@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 212,
+		date: "2026-11-08",
+		text: "Realistic Front Offices: CPU teams treat money as twice as dear as before, so they pay less for middling free agents and run up far less luxury tax without a title to show for it. In tests they won more titles and playoff rounds, though a little less in the first season.",
+	},
+	{
 		n: 211,
 		date: "2026-11-08",
 		text: "3D games: on a missed shot, defenders in close with a man right on their back turn and box him out as the ball comes off the rim, and he fights them for it.",
