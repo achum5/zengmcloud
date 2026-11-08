@@ -342,6 +342,10 @@ const CHASE_SLOW_MOST = 1.5;
 // pace he runs it at or more: eased off over as much of the way as he needs
 // - see closeOn.)
 const RUN_IN_ON = 0.8;
+// (Coming in a good deal quicker than that, no further off the way to him
+// than this, radians: on at the pace he has, eased off it.)
+const RUN_IN_QUICK_TURN = 0.35;
+const RUN_IN_NEAR_FT = 1.5;
 // (Short of where that hard a stop takes him by more than this, feet: on
 // past it - see Actor.pullsPast.)
 const PAST_SLACK_FT = 0.5;
@@ -1129,8 +1133,10 @@ class Actor {
 				return false;
 			}
 		}
-		// (As it was, to go back to - see BEND_TOO_QUICK.)
-		const before = tight ? legs.map((x) => ({ ...x })) : undefined;
+		// (As it was, to go back to - see BEND_TOO_QUICK. The legs themselves
+		// put back as they were, not copies of them: a hold on his last one
+		// - see plantFor - is on it as it was, not on it cut short for this.)
+		const before = tight ? legs.map((x) => [x, { ...x }] as const) : undefined;
 		const was0 = { yaw: this.yaw, pinned: this.pinned };
 		legs.splice(k + 1);
 		lk.to = {
@@ -1192,7 +1198,18 @@ class Actor {
 			}
 			vStart = pace;
 			if (before && pace > most * BEND_TOO_QUICK) {
-				legs.splice(0, legs.length, ...before);
+				legs.splice(
+					0,
+					legs.length,
+					...before.map(([x, was]) => {
+						for (const key of Object.keys(x)) {
+							if (!(key in was)) {
+								delete (x as Record<string, unknown>)[key];
+							}
+						}
+						return Object.assign(x, was);
+					}),
+				);
 				this.yaw = was0.yaw;
 				this.pinned = was0.pinned;
 				return false;
@@ -13811,16 +13828,48 @@ class Action {
 			// the way there as that takes - not on at it and stopped in a
 			// stride or two at the last.)
 			const v0 = GAITS.has(m.last.move) ? legPace(m.last) : 0;
-			const easeAt = Math.min(
-				(far - 5) * (whole && v0 >= fps * RUN_IN_ON ? 1 : 0.5),
-				(fps * fps) / (2 * STOP_ACCEL * STOP_HARD),
-			);
-			const u = (far - 5 - easeAt) / (far - 5);
-			m.run(
-				{ x: m.at.x + (off.x - m.at.x) * u, y: m.at.y + (off.y - m.at.y) * u },
-				fps,
-			);
-			m.easeOff(easeAt);
+			// (A good deal quicker than that, though, on his way at him: on at
+			// the pace he has, eased off it over the last of the way - no
+			// harder than STOP_HARD - and set a step nearer him for it, if
+			// that is where it leaves him (RUN_IN_NEAR_FT at the nearest): not
+			// braked down to the pace of the run in a stride first.)
+			const hard = STOP_ACCEL * STOP_HARD;
+			const stopFt = (v0 * v0) / (2 * hard);
+			const l = m.last;
+			if (
+				v0 - fps >= SLOW_DROP &&
+				!l.arms &&
+				!l.turn &&
+				stopFt <= far - RUN_IN_NEAR_FT &&
+				angleAt(l.from, l.to, hit) <= RUN_IN_QUICK_TURN
+			) {
+				const runFt = far - 5 - stopFt;
+				if (runFt > 0.5) {
+					const u = runFt / (far - 5);
+					m.run(
+						{
+							x: m.at.x + (off.x - m.at.x) * u,
+							y: m.at.y + (off.y - m.at.y) * u,
+						},
+						v0,
+					);
+				}
+				m.easeOff(stopFt);
+			} else {
+				const easeAt = Math.min(
+					(far - 5) * (whole && v0 >= fps * RUN_IN_ON ? 1 : 0.5),
+					(fps * fps) / (2 * hard),
+				);
+				const u = (far - 5 - easeAt) / (far - 5);
+				m.run(
+					{
+						x: m.at.x + (off.x - m.at.x) * u,
+						y: m.at.y + (off.y - m.at.y) * u,
+					},
+					fps,
+				);
+				m.easeOff(easeAt);
+			}
 			if (m.t <= fire) {
 				return true;
 			}
@@ -14710,8 +14759,16 @@ class Action {
 				(l.to.x - l.from.x) * (spot.x - l.to.x) +
 					(l.to.y - l.from.y) * (spot.y - l.to.y) <
 				0;
-			if (away && legPace(l) >= STOP_LEAST) {
-				m.easeOff(BREAK_STOP_FT);
+			const v = legPace(l);
+			if (away && v >= STOP_LEAST) {
+				// (Going to knock it away, flat out: pulled up no harder than a
+				// man can - see STOP_HARD - not stopped dead in a stride; too
+				// far on for it, maybe, then - see Action.incomplete.)
+				m.easeOff(
+					aside
+						? Math.max(BREAK_STOP_FT, (v * v) / (2 * STOP_ACCEL * STOP_HARD))
+						: BREAK_STOP_FT,
+				);
 			}
 		}
 		// (Back up to speed for it no harder than a man can - short of it, if
