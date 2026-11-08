@@ -21738,6 +21738,28 @@ class Action {
 	// has him there by then: not on through them in the one straight run.
 	private chaseClear(m: Actor, to: Pt, by: number, fps: number, move?: Move) {
 		const pace = Math.min(fps, (dist(m.at, to) * 1000) / Math.max(1, by - m.t));
+		// (Coming in a good deal quicker than that, the way clear: eased down
+		// to it on his way there first, at STOP_ACCEL - or as much harder as
+		// the room takes, STOP_HARD at most: see slowOn - not braked to it
+		// over his first stretch of it.)
+		const l0 = m.last;
+		const v0 =
+			RAMPS.has(l0.move) && !l0.arms && !l0.turn && move === undefined
+				? paceOn(l0, m.at, to)
+				: 0;
+		const drop = v0 * v0 - pace * pace;
+		const D = dist(m.at, to);
+		if (
+			v0 - pace >= SLOW_DROP &&
+			drop / (2 * STOP_ACCEL * STOP_HARD) < D - 1 &&
+			this.wayClear(m, to, m.t + PURSUIT_STEP, pace) === to
+		) {
+			const u = Math.min(drop / (2 * STOP_ACCEL), D - 1) / D;
+			m.run(
+				{ x: m.at.x + (to.x - m.at.x) * u, y: m.at.y + (to.y - m.at.y) * u },
+				pace,
+			);
+		}
 		for (
 			let k = 0;
 			k < LANE_RUN_STEPS &&
