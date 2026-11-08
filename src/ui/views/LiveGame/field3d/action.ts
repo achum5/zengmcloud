@@ -5627,12 +5627,25 @@ const STIFF_ARM_CARRY_FT = 1;
 const STIFF_ARM_AT = 0.7;
 // Met head on and driven back, onto his back: how far on (feet) the way he
 // was going - as far back as he was slow, `ft` stood, none at BACK_EVEN_FPS;
-// quicker than that, carried on through it by as much as he was over it.
-// Not stopped dead off a sprint and thrown back.
-const drivenBy = (pace: number, ft: number): number =>
+// quicker than that, carried on through it by as much as he was over it -
+// off a sprint, as far as getting down from what he was over it no harder
+// than TACKLED_DECEL takes him, if that is further (TACKLED_FAST_MOST at
+// most), when `fast` - stiff-armed, say; not in a tackle's own act, which
+// would have him pulled up within it the harder for it. Not stopped dead
+// off a sprint and thrown back.
+const drivenBy = (pace: number, ft: number, fast = false): number =>
 	pace < BACK_EVEN_FPS
 		? -ft * (1 - pace / BACK_EVEN_FPS)
-		: (pace - BACK_EVEN_FPS) * TACKLED_CARRY_S;
+		: Math.max(
+				(pace - BACK_EVEN_FPS) * TACKLED_CARRY_S,
+				fast
+					? Math.min(
+							TACKLED_FAST_MOST,
+							(pace * pace - BACK_EVEN_FPS * BACK_EVEN_FPS) /
+								(2 * TACKLED_DECEL),
+						)
+					: 0,
+			);
 // Brought down off the run, carried on down by it: as far as this long at
 // the pace he was going takes him (feet - TACKLED_LEAST at least, and no
 // more than TACKLED_MOST) - see pace.ts carriedOf - not stopped in a
@@ -12848,8 +12861,8 @@ class Action {
 					: { x: Math.cos(face), y: Math.sin(face) };
 			const into = u.x * Math.cos(face) + u.y * Math.sin(face);
 			const on = Math.min(
-				into > STIFF_ARM_AT ? STIFF_ARM_CARRY_FT : TACKLED_MOST,
-				Math.max(0, drivenBy(v, 0)),
+				into > STIFF_ARM_AT ? STIFF_ARM_CARRY_FT : TACKLED_FAST_MOST,
+				Math.max(0, drivenBy(v, 0, true)),
 			);
 			const back = Math.min(0, drivenBy(v, 1.6));
 			m.act("tackledBack", tc + 520, face, {
