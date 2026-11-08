@@ -1,5 +1,6 @@
 import { assert, describe, test } from "vitest";
 import {
+	bracketAsOf,
 	recentOf,
 	seriesOf,
 	standingsAsOf,
@@ -118,5 +119,79 @@ describe("the gamecast's season series and streaks", () => {
 			[20, 9, 5],
 		);
 		assert.isTrue(final[0]!.now);
+	});
+});
+
+describe("a playoff game's bracket, as it stood", () => {
+	// A four-team bracket: 1 v 4 and 2 v 3, the winners in the final;
+	// best of three (two wins take a series).
+	const ps = {
+		series: [
+			[
+				{
+					home: { tid: 1, seed: 1, cid: 0, won: 2 },
+					away: { tid: 4, seed: 4, cid: 0, won: 0 },
+				},
+				{
+					home: { tid: 2, seed: 2, cid: 0, won: 1 },
+					away: { tid: 3, seed: 3, cid: 0, won: 2 },
+				},
+			],
+			[
+				{
+					home: { tid: 1, seed: 1, cid: 0, won: 0 },
+					away: { tid: 3, seed: 3, cid: 0, won: 0 },
+				},
+			],
+		],
+	} as any;
+	const info = {
+		toWin: () => 2,
+		roundName: (r: number) => (r === 0 ? "1st round" : "Finals"),
+		team: (tid: number) => ({ tid, abbrev: `T${tid}` }),
+	};
+	const played = [
+		game(1, 1, [1, 100], [4, 90], true),
+		game(2, 1, [2, 100], [3, 90], true),
+		game(3, 2, [4, 90], [1, 100], true),
+		game(4, 2, [3, 100], [2, 90], true),
+		game(5, 3, [2, 90], [3, 100], true),
+		game(6, 4, [1, 100], [3, 90], true),
+	];
+
+	test("at the tip: this game and every one after it left out", () => {
+		// Game 5 (2 v 3, the deciding game), watched live: 1-1 going in, and
+		// the final has only the team that had won its way there.
+		const b = bracketAsOf(played[4], played, ps, info, false)!;
+		const [r0, r1] = b;
+		assert.deepEqual(
+			r0!.series.map((s) => s.teams.map((t) => t?.won)),
+			[
+				[2, 0],
+				[1, 1],
+			],
+		);
+		assert.isTrue(r0!.series[1]!.now);
+		assert.deepEqual(
+			r1!.series[0]!.teams.map((t) => t?.tid),
+			[1, undefined],
+		);
+	});
+
+	test("on its box score: this game counted, its winner on through", () => {
+		const b = bracketAsOf(played[4], played, ps, info, true)!;
+		assert.deepEqual(
+			b[0]!.series[1]!.teams.map((t) => t?.won),
+			[1, 2],
+		);
+		assert.deepEqual(
+			b[1]!.series[0]!.teams.map((t) => t?.tid),
+			[1, 3],
+		);
+		// (And not game 6, played after it.)
+		assert.deepEqual(
+			b[1]!.series[0]!.teams.map((t) => t?.won),
+			[0, 0],
+		);
 	});
 });

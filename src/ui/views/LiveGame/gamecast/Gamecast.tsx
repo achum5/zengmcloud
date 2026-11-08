@@ -1318,6 +1318,92 @@ export const Standings = ({
 	);
 };
 
+// A playoff game's bracket, as it stood (by the tip, or that night on its
+// box score): each round's series, the two conferences side by side, each
+// team's seed and wins - the series won in bold, the side out of it faded,
+// and this game's series picked out.
+export const Bracket = ({
+	boxScore,
+	info,
+	final,
+}: {
+	boxScore: any;
+	info: GamecastInfo;
+	final?: boolean;
+}) => {
+	const rounds = info.bracket;
+	if (!rounds || rounds.length === 0) {
+		return null;
+	}
+	return (
+		<Section
+			title="Playoffs"
+			action={
+				<span className="text-body-secondary">
+					{final ? "After this game" : "Before this game"}
+				</span>
+			}
+		>
+			{rounds.map((r) => (
+				<div key={r.name} className="gamecast-bracket-round">
+					<div className="gamecast-bracket-name">{r.name}</div>
+					<div
+						className={clsx("gamecast-bracket-grid", {
+							"gamecast-bracket-one": r.series.length === 1,
+						})}
+						style={{
+							gridTemplateRows: `repeat(${Math.ceil(r.series.length / 2)}, auto)`,
+						}}
+					>
+						{r.series.map((s, i) => {
+							const done = s.teams.some((t) => t && t.won >= r.toWin);
+							return (
+								<div
+									key={i}
+									className={clsx("gamecast-bracket-series", {
+										"table-warning": s.now,
+									})}
+								>
+									{s.teams.map((t, k) =>
+										t ? (
+											<div
+												key={k}
+												className={clsx("gamecast-bracket-team", {
+													"fw-bold": t.won >= r.toWin,
+													"text-body-secondary": done && t.won < r.toWin,
+												})}
+											>
+												<span className="gamecast-rank">{t.seed}</span>
+												<Logo t={t} size={18} />
+												<span className="flex-grow-1 text-truncate">
+													{t.abbrev}
+												</span>
+												<span>{t.won}</span>
+											</div>
+										) : (
+											<div
+												key={k}
+												className="gamecast-bracket-team text-body-secondary"
+											>
+												TBD
+											</div>
+										),
+									)}
+								</div>
+							);
+						})}
+					</div>
+				</div>
+			))}
+			<div className="text-center">
+				<a href={helpers.leagueUrl(["playoffs", boxScore.season])}>
+					Full bracket
+				</a>
+			</div>
+		</Section>
+	);
+};
+
 // Each team's last few games: who against, the result, each a link to its
 // box score.
 export const RecentGames = ({
@@ -1642,7 +1728,11 @@ export const LiveGamecast = ({
 								{info ? (
 									<>
 										<Series boxScore={boxScore} info={info} />
-										<Standings boxScore={boxScore} info={info} />
+										{info.bracket ? (
+											<Bracket boxScore={boxScore} info={info} />
+										) : (
+											<Standings boxScore={boxScore} info={info} />
+										)}
 									</>
 								) : null}
 							</div>

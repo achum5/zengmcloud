@@ -40,6 +40,7 @@ import {
 	Section,
 	Series,
 	Standings,
+	Bracket,
 	TeamStatBars,
 } from "./Gamecast.tsx";
 import { FlowCharts } from "./FlowCharts.tsx";
@@ -596,7 +597,11 @@ export const GameRecap = ({
 									{info ? (
 										<>
 											<Series boxScore={boxScore} info={info} />
-											<Standings boxScore={boxScore} info={info} final />
+											{info.bracket ? (
+												<Bracket boxScore={boxScore} info={info} final />
+											) : (
+												<Standings boxScore={boxScore} info={info} final />
+											)}
 											<RecentGames boxScore={boxScore} info={info} />
 										</>
 									) : null}

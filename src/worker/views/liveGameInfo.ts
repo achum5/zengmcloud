@@ -9,8 +9,9 @@
 // records and streaks are taken back to before it.
 
 import { idb } from "../db/index.ts";
+import { season as seasonCore } from "../core/index.ts";
 import { g, helpers } from "../util/index.ts";
-import type { Game } from "../../common/types.ts";
+import type { Game, PlayoffSeries } from "../../common/types.ts";
 
 export type SeriesGame = {
 	gid: number;
@@ -53,8 +54,34 @@ export type RecentGame = {
 	now?: boolean;
 };
 
+// A playoff game's bracket, as it stood: each round's series, each team's
+// seed and its wins in that series so far - by the tip at a live game (this
+// one not counted), that night on its box score. A later round's team only
+// once it had won its way there by then.
+export type BracketTeam = {
+	tid: number;
+	seed: number;
+	abbrev: string;
+	imgURL?: string;
+	imgURLSmall?: string;
+	won: number;
+};
+export type BracketSeries = {
+	teams: [BracketTeam | undefined, BracketTeam | undefined];
+	cid?: number;
+	// The series this game is in.
+	now?: boolean;
+};
+export type BracketRound = {
+	name: string;
+	// Wins that take a series.
+	toWin: number;
+	series: BracketSeries[];
+};
+
 export type GamecastInfo = {
 	series: SeriesGame[];
+	bracket?: BracketRound[];
 	// The two teams' conferences (one, when they share it), as they stood.
 	standings: { name: string; teams: StandingsTeam[] }[];
 	// Each team's last few games, latest first.
@@ -240,6 +267,80 @@ export const recentOf = (
 			};
 		});
 
+// The bracket as it stood (see BracketRound), from the playoff series and
+// the season's games: each series' wins counted from the games themselves,
+// so an old game's page, or a live one, shows that night's - not today's.
+export const bracketAsOf = (
+	game: Played,
+	played: readonly Played[],
+	ps: Pick<PlayoffSeries, "series">,
+	info: {
+		toWin: (round: number) => number;
+		roundName: (round: number) => string;
+		team: (tid: number) => Omit<BracketTeam, "seed" | "won">;
+	},
+	final: boolean,
+): BracketRound[] | undefined => {
+	const tids = [game.teams[0].tid, game.teams[1].tid];
+	const counted = played.filter(
+		(p) => p.playoffs && (before(p, game) || (final && p.gid === game.gid)),
+	);
+	const winsOver = (a: number, b: number) =>
+		counted.filter((p) => {
+			const [h, v] = p.teams;
+			return (
+				(h.tid === a && v.tid === b && h.pts > v.pts) ||
+				(v.tid === a && h.tid === b && v.pts > h.pts)
+			);
+		}).length;
+	const rounds: BracketRound[] = [];
+	// Who had won their way into each round by then.
+	let through: Set<number> | undefined;
+	ps.series.forEach((matchups, r) => {
+		const toWin = info.toWin(r);
+		const next = new Set<number>();
+		const series: BracketSeries[] = [];
+		for (const m of matchups) {
+			const side = (
+				x: typeof m.home | undefined,
+				y: typeof m.home | undefined,
+			) =>
+				x && (through === undefined || through.has(x.tid))
+					? {
+							...info.team(x.tid),
+							tid: x.tid,
+							seed: x.seed,
+							won: y ? winsOver(x.tid, y.tid) : 0,
+						}
+					: undefined;
+			const home = side(m.home, m.away);
+			const away = side(m.away, m.home);
+			if (!home && !away) {
+				continue;
+			}
+			for (const t of [home, away]) {
+				if (t && (t.won >= toWin || (m.away === undefined && t === home))) {
+					next.add(t.tid);
+				}
+			}
+			const now =
+				m.away !== undefined &&
+				tids.includes(m.home.tid) &&
+				tids.includes(m.away.tid);
+			series.push({
+				teams: [home, away],
+				cid: m.home.cid,
+				...(now ? { now: true } : {}),
+			});
+		}
+		through = next;
+		if (series.length > 0) {
+			rounds.push({ name: info.roundName(r), toWin, series });
+		}
+	});
+	return rounds.length > 0 ? rounds : undefined;
+};
+
 export const gamecastInfo = async (
 	game: Game,
 	// The box score's: the meetings with their scores, and the standings as
@@ -319,5 +420,38 @@ export const gamecastInfo = async (
 		})),
 	}));
 
-	return { series, standings, recent };
+	// A playoff game: the bracket, not the standings.
+	let bracket: BracketRound[] | undefined;
+	if (game.playoffs) {
+		const ps = await idb.merged.playoffSeries.get(season);
+		if (ps) {
+			const numRounds = g.get("numGamesPlayoffSeries", season).length;
+			const byConf = await seasonCore.getPlayoffsByConf(season);
+			bracket = bracketAsOf(
+				game,
+				played,
+				ps,
+				{
+					toWin: (r) => helpers.numGamesToWinRound(r, season),
+					roundName: (r) =>
+						helpers.upperCaseFirstLetter(
+							helpers.playoffRoundName(r, numRounds, byConf),
+						),
+					team: (tid) => {
+						const ts = teamSeasons.find((x) => x.tid === tid);
+						const t = teams.find((x) => x.tid === tid);
+						return {
+							tid,
+							abbrev: ts?.abbrev ?? t?.abbrev ?? "",
+							imgURL: ts?.imgURL ?? t?.imgURL,
+							imgURLSmall: ts?.imgURLSmall ?? t?.imgURLSmall,
+						};
+					},
+				},
+				final,
+			);
+		}
+	}
+
+	return { series, standings, recent, ...(bracket ? { bracket } : {}) };
 };
