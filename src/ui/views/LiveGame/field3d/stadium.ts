@@ -1,4 +1,5 @@
 import type { ArenaLooks } from "../../../../common/types.ts";
+import { type ArenaAd, paintAd } from "../court3d/arenaAds.ts";
 import { makeCourtRng } from "../courtRng.ts";
 import { luminance, shade } from "./color.ts";
 import type { TexturedPlane } from "../court3d/planes.ts";
@@ -621,8 +622,9 @@ const paintSeating = ({
 // strip of its second color top and bottom.
 // WHAT THE BOARDS SHOW (the 3D court's: see court3d/arena.ts paintScreen):
 // the team's name, the chants, DEFENSE (blinking, one screen and the
-// other), and a shout for a big play of the home side's (see crowd.ts
-// boardAt).
+// other), a shout for a big play of the home side's (see crowd.ts
+// boardAt) - and the stadium's sponsors in turn with them (see
+// court3d/arenaAds.ts), ADS_SHOWN of them.
 export const SHOUTS = {
 	touchdown: "TOUCHDOWN!",
 	fieldGoal: "IT'S GOOD!",
@@ -638,7 +640,13 @@ export type BoardScreen =
 	| "noise"
 	| "defense"
 	| "defense2"
+	| AdScreen
 	| Shout;
+type AdScreen = "ad0" | "ad1" | "ad2" | "ad3";
+const isAd = (screen: BoardScreen): screen is AdScreen =>
+	screen.startsWith("ad");
+// (How long an ad runs, feet, before it starts again along a board.)
+const AD_FT = 24;
 // (Lettering that reads on it: white, or near-black on a light one.)
 const inkOn = (bg: string) => (luminance(bg) > 0.62 ? "#111216" : "#f6f6f6");
 
@@ -651,6 +659,8 @@ const paintBoard = (
 	screen: BoardScreen = "name",
 	// A picture of the team's own, in turn with the words (see StadiumLook).
 	picture?: HTMLCanvasElement,
+	// The stadium's sponsors, for the ad screens (see adsFor).
+	ads?: ArenaAd[],
 ) => {
 	const c = canvasOf(w, h);
 	const g = c.getContext("2d")!;
@@ -660,6 +670,19 @@ const paintBoard = (
 	const dark = "#15161b";
 	g.fillStyle = "#0a0b0f";
 	g.fillRect(0, 0, w, h);
+	// (A sponsor's: its ad along it, over and over - or, none to show, the
+	// team's name.)
+	if (isAd(screen)) {
+		const ad = ads?.[Number(screen.slice(2))];
+		if (!ad) {
+			return paintBoard(w, h, ppf, home, words, "name", picture);
+		}
+		const sw = AD_FT * ppf;
+		for (let x = 0; x < w; x += sw) {
+			paintAd(g, x + 2, h * 0.08, sw - 4, h * 0.84, ad);
+		}
+		return c;
+	}
 	// Panel by panel along it: what each says, on what.
 	const name = words.at(-1) ?? "";
 	const chant = screen === "letsGo" || screen === "noise";
@@ -1062,6 +1085,8 @@ export const paintStadium = (
 	arena?: ArenaLooks,
 	// Its picture for the boards (see paintBoard).
 	boardPicture?: HTMLCanvasElement,
+	// Its sponsors on them (see adsFor).
+	ads?: ArenaAd[],
 ): StadiumPaint => {
 	const style = stadiumStyleFor(home, venue);
 	const fill =
@@ -1085,7 +1110,7 @@ export const paintStadium = (
 		say = words,
 	) => {
 		const [w, h, ppf] = sizes[set];
-		return paintBoard(w, h, ppf, home, say, screen, boardPicture);
+		return paintBoard(w, h, ppf, home, say, screen, boardPicture, ads);
 	};
 	const abbrev = (t: FieldTeam | undefined, or: string) =>
 		(t?.abbrev ?? or).toUpperCase();

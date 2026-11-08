@@ -337,7 +337,17 @@ const shotUp = (play: Play | undefined, t: number): number => {
 const SHOUT_MS = 3200;
 const BLINK_MS = 420;
 const CHANT_MS = 2600;
-const AMBIENT: BoardScreen[] = ["name", "letsGo", "name", "noise"];
+// (Its sponsors in turn with them, as a stadium's boards run.)
+const AMBIENT: BoardScreen[] = [
+	"name",
+	"ad0",
+	"letsGo",
+	"ad1",
+	"name",
+	"ad2",
+	"noise",
+	"ad3",
+];
 const AMBIENT_MS = 8000;
 const SCRIMMAGE = new Set(["pass", "run", "none", "kneel"]);
 

@@ -3220,6 +3220,10 @@ export type StadiumLook = {
 	// there in turn with them (the 3D court's rail picture).
 	boardText?: string;
 	boardURL?: string;
+	// The stadium's sponsors on those boards, in turn with the team's own
+	// screens - up to four, as a court's arena ads are (see
+	// CourtStyle.arenaAds). Left out, made-up sponsors.
+	arenaAds?: CourtStyle["arenaAds"];
 	// Its own pictures on the field for its home opener, the playoffs and
 	// the finals (see CourtVersion), laid at midfield and moved from there.
 	// The finals, having none of their own, have the playoffs'.

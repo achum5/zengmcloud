@@ -19,6 +19,7 @@ import { FaceLoader } from "../court3d/FaceLoader.tsx";
 import { headColors, profileOf } from "../court3d/faces.ts";
 import { kitArtOf, loadKitPicture, type KitArt } from "../court3d/kitArt.ts";
 import { logoPicture } from "../court3d/logoPicture.ts";
+import { adsFor } from "../court3d/arenaAds.ts";
 import { drawn, due, FAST, makePace } from "../court3d/pace.ts";
 import { adjust, artFor, makeResolution } from "../court3d/resolution.ts";
 import { eventsMatchRoster } from "../court3d/rosterMatch.ts";
@@ -29,6 +30,7 @@ import type {
 	CourtDecalPlaced,
 	ReplayLooks,
 	ScoreBugStyle,
+	StadiumLook,
 } from "../../../../common/types.ts";
 import {
 	makeScratch,
@@ -679,6 +681,39 @@ const Field3D = ({
 		fieldURL,
 		boardURL,
 	]);
+	// The home team's own pictures for its stadium ads, once loaded (see
+	// adsFor).
+	const ownAds: StadiumLook["arenaAds"] = home?.stadium?.arenaAds;
+	const adURLs = (ownAds ?? [])
+		.map((a) => a.imageURL)
+		.filter((u): u is string => !!u)
+		.join("\n");
+	const [adPictures, setAdPictures] = useState<Map<string, HTMLCanvasElement>>(
+		() => new Map(),
+	);
+	useEffect(() => {
+		const urls = adURLs ? adURLs.split("\n") : [];
+		if (urls.length === 0) {
+			return;
+		}
+		let alive = true;
+		void Promise.all(urls.map((u) => logoPicture(u, END_ZONE_PX))).then(
+			(made) => {
+				if (alive) {
+					const got = new Map<string, HTMLCanvasElement>();
+					made.forEach((c, i) => {
+						if (c) {
+							got.set(urls[i]!, c);
+						}
+					});
+					setAdPictures(got);
+				}
+			},
+		);
+		return () => {
+			alive = false;
+		};
+	}, [adURLs]);
 	// The league's decals for the game on the home field (see CourtDecal).
 	const decals: CourtDecalPlaced[] | undefined = home?.stadium?.decals;
 	const decalsKey = JSON.stringify(decals ?? null);
@@ -777,10 +812,14 @@ const Field3D = ({
 				venue,
 				boxScore?.arena,
 				logos[8],
+				// (The building's sponsors: see adsFor.)
+				adsFor(h.abbrev ?? h.name ?? "", h.colors, h.stadium?.arenaAds, (url) =>
+					adPictures.get(url),
+				),
 			),
 		};
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [gid, logos, decalPictures]);
+	}, [gid, logos, decalPictures, adPictures]);
 	// (The seats kept as the stadium is painted again - see paintStadium -
 	// let go of with the game.)
 	useEffect(

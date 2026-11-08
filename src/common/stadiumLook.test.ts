@@ -158,3 +158,33 @@ test("a helmet's colors kept to colors, a stripe to a color or none", () => {
 	assert.isUndefined(cleanHelmet({ shell: "", logo: true }));
 	assert.isUndefined(cleanHelmet(null));
 });
+
+test("a stadium's sponsors kept to what they can be, four at the most", () => {
+	assert.deepEqual(
+		cleanStadium({
+			arenaAds: [
+				{ text: " Acme Bank ", sub: "", bg: "#112233", fg: "blue" },
+				{ imageURL: "pic:0123456789abcdef0123", extra: 1 },
+				{ text: " " },
+				"nope",
+				{ text: "THIRD" },
+				{ text: "FOURTH" },
+				{ text: "FIFTH" },
+			],
+		}),
+		{
+			arenaAds: [
+				{ text: "Acme Bank", bg: "#112233" },
+				{ imageURL: "pic:0123456789abcdef0123" },
+			],
+		},
+	);
+	assert.deepEqual(
+		cleanStadium({
+			arenaAds: [{ text: "A" }, { text: "B" }, { text: "C" }, { text: "D" }],
+		})?.arenaAds?.length,
+		4,
+	);
+	assert.isUndefined(cleanStadium({ arenaAds: [{}, { bg: "red" }] }));
+	assert.isUndefined(cleanStadium({ arenaAds: "Acme" }));
+});

@@ -198,6 +198,7 @@ export const stadiumPictureIds = (
 			ids.push(p.image.slice(PIC.length));
 		}
 	}
+	ids.push(...arenaAdPictureIds(stadium));
 	return ids;
 };
 
@@ -239,6 +240,9 @@ export const resolveStadium = async (
 	}
 	if (out.versions) {
 		out.versions = withVersionPictures(out.versions, pictures);
+	}
+	if (out.arenaAds) {
+		out.arenaAds = withArenaAdPictures(out.arenaAds, pictures);
 	}
 	return out;
 };

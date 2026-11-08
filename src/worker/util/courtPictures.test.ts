@@ -162,6 +162,33 @@ describe("court pictures", () => {
 		assert.strictEqual(withDecals(stadium, []), stadium);
 	});
 
+	test("a football stadium's sponsors' pictures: filled back in, kept while they are up", async () => {
+		await setup();
+		const ad = await storePicture(PNG(8));
+		const old = await storePicture(PNG(9));
+		const stadium: StadiumLook = {
+			arenaAds: [
+				{ text: "ACME", bg: "#112233" },
+				{ imageURL: `${PIC}${ad}` },
+				{ text: "LOST", imageURL: `${PIC}gone` },
+			],
+		};
+		assert.deepStrictEqual(stadiumPictureIds(stadium), [ad, "gone"]);
+		assert.deepStrictEqual(await resolveStadium(stadium), {
+			arenaAds: [
+				{ text: "ACME", bg: "#112233" },
+				{ imageURL: PNG(8) },
+				{ text: "LOST" },
+			],
+		});
+		const t0 = (await idb.cache.teams.get(0))!;
+		t0.stadium = stadium;
+		await idb.cache.teams.put(t0);
+		await prunePictures([ad, old]);
+		assert.ok(await idb.cache.jerseySkins.get(ad));
+		assert.strictEqual(await idb.cache.jerseySkins.get(old), undefined);
+	});
+
 	test("a jersey linked from elsewhere is left alone: nothing to keep, nothing to remove", async () => {
 		await setup();
 		const link = "https://cdn.example.com/kits/BOS-home.png";

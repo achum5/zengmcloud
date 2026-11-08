@@ -24,6 +24,7 @@ import {
 	cleanHelmet,
 	cleanStadium,
 	END_ZONE_TEXT_MAX,
+	STADIUM_ADS_MOST,
 	STADIUM_PICTURE_KEYS,
 } from "../../common/stadiumLook.ts";
 import { toHex } from "./LiveGame/field3d/color.ts";
@@ -471,6 +472,39 @@ const EditTeamStadium = ({
 			return next;
 		});
 	};
+	// One of the stadium's ads changed: blank fields dropped, and blank ads
+	// off the end of the list.
+	const setAd = (
+		i: number,
+		patch: Partial<NonNullable<StadiumLook["arenaAds"]>[number]>,
+	) => {
+		setStadium((s) => {
+			const ads = [...(s.arenaAds ?? [])];
+			while (ads.length <= i) {
+				ads.push({});
+			}
+			const next: Record<string, string | undefined> = {
+				...ads[i],
+				...patch,
+			};
+			for (const k of Object.keys(next)) {
+				if (next[k] === undefined || next[k] === "") {
+					delete next[k];
+				}
+			}
+			ads[i] = next;
+			while (ads.length > 0 && Object.keys(ads.at(-1)!).length === 0) {
+				ads.pop();
+			}
+			const out = { ...s };
+			if (ads.length > 0) {
+				out.arenaAds = ads;
+			} else {
+				delete out.arenaAds;
+			}
+			return out;
+		});
+	};
 	const setAdjust = (
 		slot: keyof NonNullable<StadiumLook["adjust"]>,
 		value: CourtImageAdjust | undefined,
@@ -715,6 +749,62 @@ const EditTeamStadium = ({
 					onUpload={upload}
 					clear="None"
 				/>
+				{Array.from(
+					{
+						length: Math.min(
+							STADIUM_ADS_MOST,
+							(stadium.arenaAds?.length ?? 0) + 1,
+						),
+					},
+					(_, i) => {
+						const ad = stadium.arenaAds?.[i] ?? {};
+						return (
+							<div key={i} className="mb-3">
+								<label className="form-label mb-1" htmlFor={`ad-${i}`}>
+									{`Ad ${i + 1}`}
+								</label>
+								<input
+									id={`ad-${i}`}
+									type="text"
+									className="form-control mb-2"
+									maxLength={BOARD_TEXT_MAX}
+									placeholder="Made-up sponsor"
+									value={ad.text ?? ""}
+									onChange={(e) => setAd(i, { text: e.target.value })}
+								/>
+								<input
+									type="text"
+									className="form-control mb-2"
+									maxLength={BOARD_TEXT_MAX}
+									placeholder="Line under it"
+									aria-label={`Ad ${i + 1} line under it`}
+									value={ad.sub ?? ""}
+									onChange={(e) => setAd(i, { sub: e.target.value })}
+								/>
+								<HelmetColor
+									label="Background"
+									value={ad.bg}
+									fallback={colors[0]}
+									onChange={(v) => setAd(i, { bg: v })}
+								/>
+								<HelmetColor
+									label="Lettering"
+									value={ad.fg}
+									fallback={colors[1]}
+									onChange={(v) => setAd(i, { fg: v })}
+								/>
+								<PictureField
+									label="Picture"
+									url={ad.imageURL}
+									pictures={pictures}
+									onChange={(v) => setAd(i, { imageURL: v })}
+									onUpload={upload}
+									clear="None"
+								/>
+							</div>
+						);
+					},
+				)}
 				<Choice<"turf">
 					label="Field"
 					value={stadium.turf}

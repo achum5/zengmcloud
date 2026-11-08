@@ -1,11 +1,14 @@
 import type { CourtStyle } from "./types.ts";
 
-// A court's arena ads' pictures (see CourtStyle.arenaAds): the ones uploaded
-// to the league, by id - and the ads with each of those filled in from
-// `pictures` (one not there left without its picture).
+// A court's arena ads' pictures (see CourtStyle.arenaAds) - or a football
+// stadium's (StadiumLook.arenaAds): the ones uploaded to the league, by id -
+// and the ads with each of those filled in from `pictures` (one not there
+// left without its picture).
 const PIC = "pic:";
 
-export const arenaAdPictureIds = (court: CourtStyle | undefined): string[] =>
+export const arenaAdPictureIds = (
+	court: Pick<CourtStyle, "arenaAds"> | undefined,
+): string[] =>
 	(court?.arenaAds ?? [])
 		.map((a) => a.imageURL)
 		.filter((u): u is string => typeof u === "string" && u.startsWith(PIC))

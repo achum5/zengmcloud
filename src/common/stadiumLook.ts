@@ -21,6 +21,8 @@ const SKIES = new Set(["day", "night"]);
 const LETTERINGS = new Set(["block", "serif", "italic"]);
 export const END_ZONE_TEXT_MAX = 24;
 export const BOARD_TEXT_MAX = 24;
+// The stadium's sponsors (see StadiumLook.arenaAds): this many at the most.
+export const STADIUM_ADS_MOST = 4;
 // A picture: a link to one, or one uploaded to the league.
 const PICTURE = /^(https?:\/\/\S{1,2000}|pic:[\da-f]{20})$/;
 // The settings that are pictures.
@@ -82,6 +84,10 @@ export const cleanStadium = (raw: unknown): StadiumLook | undefined => {
 			out[key] = v;
 		}
 	}
+	const ads = cleanAds(r.arenaAds);
+	if (ads) {
+		out.arenaAds = ads;
+	}
 	if (r.midLogo === false) {
 		out.midLogo = false;
 	}
@@ -106,6 +112,42 @@ export const cleanStadium = (raw: unknown): StadiumLook | undefined => {
 		out.versions = versions;
 	}
 	return Object.keys(out).length > 0 ? out : undefined;
+};
+
+// Its sponsors (see StadiumLook.arenaAds): each its words and the line
+// under them, colors and picture, if they are any - one with none of them
+// dropped.
+const cleanAds = (raw: unknown): StadiumLook["arenaAds"] => {
+	if (!Array.isArray(raw)) {
+		return undefined;
+	}
+	const out: NonNullable<StadiumLook["arenaAds"]> = [];
+	for (const a of raw.slice(0, STADIUM_ADS_MOST)) {
+		if (!a || typeof a !== "object" || Array.isArray(a)) {
+			continue;
+		}
+		const r = a as Record<string, unknown>;
+		const ad: NonNullable<StadiumLook["arenaAds"]>[number] = {};
+		for (const key of ["text", "sub"] as const) {
+			const v = r[key];
+			if (typeof v === "string" && v.trim() !== "") {
+				ad[key] = v.trim().slice(0, BOARD_TEXT_MAX);
+			}
+		}
+		for (const key of ["bg", "fg"] as const) {
+			const v = r[key];
+			if (typeof v === "string" && HEX.test(v)) {
+				ad[key] = v;
+			}
+		}
+		if (typeof r.imageURL === "string" && PICTURE.test(r.imageURL)) {
+			ad.imageURL = r.imageURL;
+		}
+		if (Object.keys(ad).length > 0) {
+			out.push(ad);
+		}
+	}
+	return out.length > 0 ? out : undefined;
 };
 
 // Its versions (see StadiumLook.versions): each picture a link or an
