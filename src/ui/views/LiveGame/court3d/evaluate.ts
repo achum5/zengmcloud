@@ -6047,8 +6047,8 @@ const PIVOT_MS = 160;
 const PIVOT_STEP_MS = 110;
 // A step's lift (degrees at the hip and knee, a full step of the turn), and
 // how far round a step is a full one (radians).
-const PIVOT_HIP = 16;
-const PIVOT_KNEE = 34;
+export const PIVOT_HIP = 16;
+export const PIVOT_KNEE = 34;
 const PIVOT_FULL = 0.35;
 const PIVOTS = new Set<AnimName>([
 	"ready",
@@ -6571,7 +6571,7 @@ const DRIVE_LEAN = 14;
 const BRACE_LEAN = 9;
 const DRIVE_PUMP = 0.45;
 const DRIVE_ELBOW = 12;
-const driven = (p: Pose, d: number, arms: boolean): Pose => {
+export const driven = (p: Pose, d: number, arms: boolean): Pose => {
 	if (d < 0) {
 		return { ...p, lean: p.lean + BRACE_LEAN * d };
 	}

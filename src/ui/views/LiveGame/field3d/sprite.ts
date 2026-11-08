@@ -1,4 +1,5 @@
 import { depthOf, project, type Camera } from "../court3d/camera.ts";
+import { driven, PIVOT_HIP, PIVOT_KNEE } from "../court3d/evaluate.ts";
 import {
 	lerpPose,
 	skeleton,
@@ -405,35 +406,10 @@ const wholePose = (
 	return holding(pose, ball, tuckBent(arms?.move));
 };
 
-// A step's lift: degrees at the hip and knee (see court3d's PIVOT_HIP).
-const STEP_HIP = 16;
-const STEP_KNEE = 34;
-// Getting going hard he drives into it - leaning on into his first steps,
-// his arms pumping - and pulling up hard he sits back against it. (His arms
-// left be with the ball in them, or doing anything else.) (See court3d's
-// driven.)
-const DRIVE_LEAN = 14;
-const BRACE_LEAN = 9;
-const DRIVE_PUMP = 0.45;
-const DRIVE_ELBOW = 12;
-const driven = (p: Pose, d: number, arms: boolean): Pose => {
-	if (d < 0) {
-		return { ...p, lean: p.lean + BRACE_LEAN * d };
-	}
-	if (!arms) {
-		return { ...p, lean: p.lean + DRIVE_LEAN * d };
-	}
-	const mid = (p.shN + p.shF) / 2;
-	const k = 1 + DRIVE_PUMP * d;
-	return {
-		...p,
-		lean: p.lean + DRIVE_LEAN * d,
-		shN: mid + (p.shN - mid) * k,
-		shF: mid + (p.shF - mid) * k,
-		elN: p.elN + DRIVE_ELBOW * d,
-		elF: p.elF + DRIVE_ELBOW * d,
-	};
-};
+// A step's lift: degrees at the hip and knee (the court's PIVOT_HIP). And
+// getting going hard, he drives into it (the court's driven).
+const STEP_HIP = PIVOT_HIP;
+const STEP_KNEE = PIVOT_KNEE;
 const poseFor = (st: FieldPlayerState, s: Stepped): Pose => {
 	const d = s.drive;
 	const p = d
