@@ -45,26 +45,29 @@ sport's play-by-play, line by line, as it already exists.
 
 Shared now (each in court3d/, football's copy deleted):
 
-| What                                                                                                                                                                   | Where                               |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
-| Camera: `cameraAt` with a sport's framing                                                                                                                              | camera.ts                           |
-| Staging off the page: `makeStager`, `serveStaging`                                                                                                                     | stager.ts                           |
-| Timeline: `Beat`, the cursor helpers, `clockAt`                                                                                                                        | timeline.ts                         |
-| The show's clock: playback, replays, the key-plays reel, following another device                                                                                      | show.ts (a sport hands it a `Show`) |
-| The key-plays fill: `fillReel`, `reelCursors`                                                                                                                          | keyPlays.ts                         |
-| The page's side: stakes, uniform and ad pictures, a replay's faces, size, the frame loop, the dip, the wipe, the caption's fade                                        | broadcast.ts                        |
-| What lies over the picture: vignette, dip, flash, wipe, REPLAY, the caption                                                                                            | Overlays.tsx                        |
-| Sprites: shadows (`castShadows`), the plan (`SpritePlan`), reuse and budget (`pickSprite`), the hands' pictures (`takeFarmed`), the frame's new pictures (`prepareOf`) | sprite.ts                           |
-| The sculpting farm (a sport hands it a `FarmCodec`)                                                                                                                    | farm.ts                             |
-| The sculptor's groundwork and its per-pixel loop (`shade`; a sport hands it its `paint`)                                                                               | sculpt.ts                           |
-| Moves: `MoveDef`, `moveAt` (straight or smooth keys), `driven`                                                                                                         | poses.ts, evaluate.ts               |
+| What                                                                                                                                                                          | Where                               |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| Camera: `cameraAt` with a sport's framing                                                                                                                                     | camera.ts                           |
+| Staging off the page: `makeStager`, `serveStaging`                                                                                                                            | stager.ts                           |
+| Timeline: `Beat`, the cursor helpers, `clockAt`                                                                                                                               | timeline.ts                         |
+| The show's clock: playback, replays, the key-plays reel, following another device                                                                                             | show.ts (a sport hands it a `Show`) |
+| The key-plays fill: `fillReel`, `reelCursors`                                                                                                                                 | keyPlays.ts                         |
+| The page's side: stakes, uniform and ad pictures, staging and the roster check (`useStaged`), faces (`useFaces`), size, the frame loop, the dip, the wipe, the caption's fade | broadcast.ts                        |
+| What lies over the picture: vignette, dip, flash, wipe, REPLAY, the caption                                                                                                   | Overlays.tsx                        |
+| The picture on the page: its box and face loaders, the canvas, the score bug (`PictureBox`, `PictureCanvas`, `GameBug`)                                                       | Picture.tsx                         |
+| The score bug kept up frame by frame (`writeBug`)                                                                                                                             | bugWriter.ts                        |
+| The canvas sized to the picture (`sizeCanvas`), finer poses (`fineNow`)                                                                                                       | resolution.ts                       |
+| Sprites: shadows (`castShadows`), the plan (`SpritePlan`), reuse and budget (`pickSprite`), the hands' pictures (`takeFarmed`), the frame's new pictures (`prepareOf`)        | sprite.ts                           |
+| The sculpting farm (a sport hands it a `FarmCodec`)                                                                                                                           | farm.ts                             |
+| The sculptor's groundwork and its per-pixel loop (`shade`; a sport hands it its `paint`)                                                                                      | sculpt.ts                           |
+| Moves: `MoveDef`, `moveAt` (straight or smooth keys), `driven`                                                                                                                | poses.ts, evaluate.ts               |
 
 Still each sport's own, and next to be brought together:
 
-1. **The page component.** What is left duplicated in Court3D.tsx and
-   Field3D.tsx: staging and the roster check, faces, the score bug's
-   wiring, and the frame's own steps (the clock, the canvas, the
-   resolution). The goal is one `Broadcast3D` with a sport adapter.
+1. **The page component.** Court3D.tsx and Field3D.tsx now share their
+   pieces but are still two components, each with its own frame loop
+   wiring them together. The goal is one `Broadcast3D` with a sport
+   adapter.
 2. **Building the figure** (`build` in each sculpt.ts): the masses along
    the skeleton. The torso, the head, the legs and what is held differ by
    sport; the way masses are laid and joined does not.
