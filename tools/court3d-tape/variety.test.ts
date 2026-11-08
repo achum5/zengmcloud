@@ -206,6 +206,46 @@ const jumperParts = (tl: CourtTimeline, shot: BallSeg & { kind: "fly" }) => {
 		(Math.abs(Math.atan2(Math.sin(da), Math.cos(da))) * 180) / Math.PI;
 	const turn =
 		turned < 20 ? "squared" : turned < 60 ? "turning" : "turning right round";
+	// His way to the spot, off a pass: how far he went in the seconds
+	// before it came - out from the rim, in at it, along the arc, down to
+	// the corner, or nowhere - and how long he had been there.
+	let way = "off the dribble";
+	if (dribbled < 600 && passer !== undefined) {
+		let L = 0;
+		let still = got;
+		let prevP = evalPlayer(tl, pid, got - 2500);
+		for (let t = got - 2400; t <= got; t += 100) {
+			const Q = evalPlayer(tl, pid, t);
+			const step = dist(prevP, Q);
+			L += step;
+			if (step * 10 >= 1.5) {
+				still = t;
+			}
+			prevP = Q;
+		}
+		const A = evalPlayer(tl, pid, got - 2500);
+		const N = { x: P.x - A.x, y: P.y - A.y };
+		const n = Math.hypot(N.x, N.y);
+		const ux = (rim.x - P.x) / (dist2 || 1);
+		const uy = (rim.y - P.y) / (dist2 || 1);
+		const along = n > 0 ? (N.x * ux + N.y * uy) / n : 0;
+		const corner = Math.abs(P.y - 25) > 20 && Math.abs(P.x - rim.x) < 14;
+		const kind =
+			L < 1.5
+				? "stood there"
+				: along < -0.5
+					? "lifting out"
+					: along > 0.5
+						? "coming in"
+						: corner
+							? "drifting to the corner"
+							: "along the arc";
+		const there = got - still;
+		way =
+			L < 1.5
+				? kind
+				: `${kind}, ${there < 150 ? "on the move" : there < 700 ? "just there" : "set a while"}`;
+	}
 	// (Off a pass, that is: off the dribble, his feet are his move's.)
 	const footwork =
 		dribbled >= 600 || passer === undefined
@@ -378,6 +418,88 @@ const jumperParts = (tl: CourtTimeline, shot: BallSeg & { kind: "fly" }) => {
 						? "late closeout"
 						: "contested";
 
+	// The shooter after it, till it comes off the rim and a moment on: held
+	// his follow-through, back on defense, in after it - and anything he
+	// did with it (a reaction).
+	let shooterAfter = "?";
+	{
+		const S0 = evalPlayer(tl, pid, release + 300);
+		const S1 = evalPlayer(tl, pid, release + 1800);
+		const moved = dist(S0, S1);
+		const towardRim = dist(S1, rim) < dist(S0, rim) - 2;
+		const did = tr.acts
+			.filter((a) => a.t0 > release + 200 && a.t0 < release + 2500)
+			.map((a) => a.anim);
+		const kind =
+			moved < 1.5
+				? "stays where he landed"
+				: towardRim
+					? "follows his shot"
+					: "gets back";
+		shooterAfter =
+			did.length > 0 ? `${kind}, ${[...new Set(did)].join("+")}` : kind;
+	}
+	// Everyone else, from it going up to it coming off the rim: on his
+	// side, how many went in after it and how many got back; on theirs,
+	// how many boxed somebody out or went to the glass - and, of all of
+	// them, how many just stood there.
+	let everyone = "?";
+	{
+		const offAt = tl.ball[k + 1]?.t0 ?? release + 1100;
+		let crash = 0;
+		let back = 0;
+		let boxing = 0;
+		let glass = 0;
+		let still = 0;
+		const stillWho: string[] = [];
+		for (const o of tl.tracks.values()) {
+			if (o.pid < 0 || o.pid === pid) {
+				continue;
+			}
+			const A = evalPlayer(tl, o.pid, release);
+			const B = evalPlayer(tl, o.pid, offAt);
+			if (!A.shown || !B.shown) {
+				continue;
+			}
+			const went = dist(A, B);
+			const inward = dist(A, rim) - dist(B, rim);
+			if (o.team === team) {
+				if (inward > 2) {
+					crash += 1;
+				} else if (inward < -2) {
+					back += 1;
+				} else if (went < 1) {
+					still += 1;
+					stillWho.push(
+						`off ${dist(A, rim) < 12 ? "in close" : dist(A, rim) < 20 ? "mid" : "out"}`,
+					);
+				}
+			} else {
+				const boxed = o.acts.some(
+					(a) =>
+						(a.anim === "boxOut" || a.anim === "fight") &&
+						a.t1 > release &&
+						a.t0 < offAt + 200,
+				);
+				if (boxed) {
+					boxing += 1;
+				} else if (inward > 2) {
+					glass += 1;
+				} else if (went < 1) {
+					still += 1;
+					const busy = o.acts.find((a) => a.t1 > release && a.t0 < offAt)?.anim;
+					stillWho.push(
+						`def ${dist(A, rim) < 12 ? "in close" : dist(A, rim) < 20 ? "mid" : "out"}${busy ? " " + busy : ""}`,
+					);
+				}
+			}
+		}
+		everyone = `${crash} in, ${back} back; ${boxing} boxing out, ${glass} to the glass; ${still} still`;
+		(globalThis as { __still?: string[] }).__still = [
+			...((globalThis as { __still?: string[] }).__still ?? []),
+			...stillWho,
+		];
+	}
 	// How it ended: what it hit first, and how it came off. (Its flight ends
 	// above the rim; the bounce off it is the path that comes after.)
 	const after = tl.ball[k + 1];
@@ -430,11 +552,14 @@ const jumperParts = (tl: CourtTimeline, shot: BallSeg & { kind: "fly" }) => {
 			spot: `${spot}, ${depth}`,
 			form: form ?? "?",
 			footwork,
+			way,
 			pass: passKind,
 			defense,
 			closeout,
 			arrives,
 			"after it": afterIt,
+			"shooter after": shooterAfter,
+			everyone,
 			ending,
 			rebound,
 		},
@@ -686,6 +811,16 @@ test.skipIf(games.length === 0)(
 		}
 		out.push(
 			`\nsame player, same setup + spot + form as one of his before: ${repeats} of ${pairs}`,
+		);
+		const sw = new Map<string, number>();
+		for (const w of (globalThis as { __still?: string[] }).__still ?? []) {
+			sw.set(w, (sw.get(w) ?? 0) + 1);
+		}
+		out.push(
+			`\nstill, who: ${[...sw]
+				.sort((a, b) => b[1] - a[1])
+				.map(([w, n]) => `${n} ${w}`)
+				.join("; ")}`,
 		);
 		writeFileSync(process.env.VARIETY_OUT!, out.join("\n") + "\n");
 	},

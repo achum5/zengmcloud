@@ -1004,6 +1004,27 @@ const ON_FOOT = new Set<AnimName>(["run", "sprint", "jog", "walk"]);
 // Off following his man into a run of his own (a closeout, crashing the
 // glass) this soon after (ms): straight on into it, not stopped between.
 const INTO_GAP = 120;
+// After his miss from out on the floor (see afterTheMiss): from this long
+// after he comes down (ms), this share of men back off this far (feet)
+// toward their own end, and this share of bigs in after it this far - over
+// this long at the least (ms).
+const MISS_AFTER_MS = 250;
+const MISS_BACK = 0.65;
+const MISS_BACK_FT = 3.5;
+const MISS_IN_BIG = 0.45;
+const MISS_IN_FT = 2.5;
+const MISS_LEAST_MS = 700;
+// A jumper from out on the floor in the air (see allPlayIt): from this long
+// after it goes (ms, and up to a quarter second more), over this long at
+// the least (ms); this share of men of his out on the floor back off.
+const PLAY_IT_FROM = 200;
+const PLAY_IT_MS = 600;
+const PLAY_IT_BACK = 0.4;
+// ...and a run of his own he sets off on no later than this (ms) after it
+// is off the rim, he sets off on as he reads it - taking at most this many
+// times as long over it.
+const PLAY_IT_LATE = 400;
+const PLAY_IT_STRETCH = 2.5;
 // Set on his spot for a catch-and-shoot, this share of men step into it as
 // it comes - a good shooter more (this much more at the best, less at the
 // worst), a big this much less (see stepIntoSet).
@@ -2643,6 +2664,14 @@ class Director {
 	// Up off his feet at a shot fake and on by the shooter: till when (see
 	// fakeByHim).
 	private readonly flyBy = new Map<number, number>();
+	// Jumpers from out on the floor that missed: who, when he came down, and
+	// when it came off the rim (see afterTheMiss).
+	private readonly missed: {
+		shooter: number;
+		landed: number;
+		off: number;
+		release: number;
+	}[] = [];
 	// Shots in close, for whoever of theirs is right there to go up with his
 	// arms high (see wallUp).
 	private readonly walls: { shooter: number; release: number }[] = [];
@@ -3386,6 +3415,209 @@ class Director {
 				{ t0: in0, t1: in1, from: { ...into.Q }, to: { ...P }, anim: "run" },
 			);
 			tr.moves.sort((a, b) => a.t0 - b.t0);
+		}
+	}
+
+	// AFTER HIS MISS. Come down off a jumper from out on the floor that is
+	// off the rim, the shooter isn't stood stock still where he landed till
+	// somebody has it: most back off a few steps toward their own end,
+	// still holding the follow-through, eyes on it - a big now and then
+	// in after it a couple of steps - his own way of it, the same for him
+	// every time; and some just stand and watch it.
+	private afterTheMiss() {
+		for (const { shooter, landed, off } of this.missed) {
+			const tr = this.track(shooter);
+			if (!tr) {
+				continue;
+			}
+			const big = (this.rank.get(shooter) ?? 4) >= 6;
+			const r = hash01(shooter, 5113);
+			const way = big
+				? r < MISS_IN_BIG
+					? "in"
+					: undefined
+				: r < MISS_BACK
+					? "back"
+					: undefined;
+			if (!way) {
+				continue;
+			}
+			const t0 = landed + MISS_AFTER_MS;
+			// (Nothing else of his till then - nor a cut of the picture.)
+			const at = tr.moves.findIndex((m) => m.t1 > landed);
+			const next = at < 0 ? undefined : tr.moves[at];
+			if (
+				(next && next.t0 < t0 + MISS_LEAST_MS) ||
+				tr.acts.some(
+					(a) =>
+						a.t1 > t0 &&
+						a.t0 < t0 + MISS_LEAST_MS &&
+						!a.anim.startsWith("shoot"),
+				) ||
+				this.cuts.some((c) => c > t0 - 1 && c < Math.max(off, t0) + 400)
+			) {
+				continue;
+			}
+			const P = this.posAt(shooter, t0);
+			const dir = attackDir(tr.team);
+			const rim = rimPt(tr.team);
+			const Q = inPlay(
+				way === "back"
+					? {
+							x: P.x - dir * MISS_BACK_FT,
+							y: P.y + (COURT_H / 2 - P.y) * 0.12,
+						}
+					: (() => {
+							const u = unitVec(P, rim);
+							return { x: P.x + u.x * MISS_IN_FT, y: P.y + u.y * MISS_IN_FT };
+						})(),
+			);
+			const d = dist(P, Q);
+			if (d < 1) {
+				continue;
+			}
+			const t1 = Math.min(
+				t0 + Math.max(MISS_LEAST_MS, runMs(d, way === "back" ? 5 : 8)),
+				(next?.t0 ?? Infinity) - 100,
+			);
+			if (t1 - t0 < MISS_LEAST_MS - 1) {
+				continue;
+			}
+			// (Into nobody.)
+			let clear = true;
+			for (let t = t0; t <= t1 && clear; t += 100) {
+				const k = (t - t0) / (t1 - t0);
+				const S = { x: P.x + (Q.x - P.x) * k, y: P.y + (Q.y - P.y) * k };
+				clear = [...this.tracks.values()].every(
+					(o) => o === tr || o.pid < 0 || dist(this.posAt(o.pid, t), S) >= 2.2,
+				);
+			}
+			if (!clear) {
+				continue;
+			}
+			tr.moves.splice(at < 0 ? tr.moves.length : at, 0, {
+				t0,
+				t1,
+				from: { ...P },
+				to: { ...Q },
+				anim: way === "back" ? "back" : "jog",
+				v0: 0,
+				v1: 0,
+			});
+			if (next) {
+				next.from = { ...Q };
+			}
+		}
+	}
+
+	// EVERYBODY PLAYS IT. A jumper from out on the floor in the air, nobody
+	// with nothing to do about it stands stock still till it comes off the
+	// rim: a defender turns to it and sinks a step toward the glass, a man
+	// of theirs in close a step in for position, and now and then one out on
+	// the floor backs off a step or two toward his own end - each when he
+	// reads it (see stepFor), not all at once.
+	private allPlayIt() {
+		for (const { shooter, release, off } of this.missed) {
+			const team = this.teamOf(shooter);
+			const rim = rimPt(team);
+			const dir = attackDir(team);
+			for (const tr of this.tracks.values()) {
+				if (tr.pid < 0 || tr.pid === shooter) {
+					continue;
+				}
+				const t0 =
+					release + PLAY_IT_FROM + hash01(tr.pid, Math.round(release)) * 250;
+				// (Stood there till then, or till he goes off on whatever he
+				// does next - and nothing else of his meanwhile, nor a cut of
+				// the picture.)
+				const at = tr.moves.findIndex((m) => m.t1 > t0 - 300);
+				const next = at < 0 ? undefined : tr.moves[at];
+				const end = Math.min(off + 100, (next?.t0 ?? Infinity) - 50);
+				// (Off on his way in to the glass, or back, only once it is
+				// coming off the rim: on his way as he reads it instead - there
+				// when he would have been, getting there the easier for it.)
+				if (
+					next &&
+					end - t0 < PLAY_IT_MS &&
+					next.t0 > t0 &&
+					next.t0 < off + PLAY_IT_LATE &&
+					next.t1 - t0 <= (next.t1 - next.t0) * PLAY_IT_STRETCH &&
+					!this.marking.has(next) &&
+					(ON_FOOT.has(next.anim) ||
+						next.anim === "back" ||
+						next.anim === "shuffle") &&
+					next.v0 === undefined &&
+					dist(next.from, next.to) > 1 &&
+					(at === 0 || tr.moves[at - 1]!.t1 < t0 - 200) &&
+					!tr.acts.some((a) => a.t1 > t0 - 300 && a.t0 < next.t0) &&
+					!this.cuts.some((c) => c > t0 - 300 && c < next.t0 + 300)
+				) {
+					next.t0 = t0;
+					continue;
+				}
+				if (
+					end - t0 < PLAY_IT_MS ||
+					tr.acts.some((a) => a.t1 > t0 - 300 && a.t0 < end) ||
+					this.cuts.some((c) => c > t0 - 300 && c < end + 300) ||
+					!(lastBy(tr.shown, t0, (x) => x[0]) >= 0
+						? tr.shown[lastBy(tr.shown, t0, (x) => x[0])]![1]
+						: false)
+				) {
+					continue;
+				}
+				const P = this.posAt(tr.pid, t0);
+				const far = dist(P, rim);
+				const ours = tr.team === team;
+				const r = hash01(tr.pid * 13 + 7, Math.round(release));
+				let Q: Pt | undefined;
+				if (!ours && far < 26) {
+					// Turned to it, a step in toward the glass.
+					const u = unitVec(P, rim);
+					const k = far < 8 ? 0.8 : far < 20 ? 1.6 : 2.2;
+					Q = { x: P.x + u.x * k, y: P.y + u.y * k };
+				} else if (ours && far < 12) {
+					const u = unitVec(P, rim);
+					Q = { x: P.x + u.x * 0.9, y: P.y + u.y * 0.9 };
+				} else if (ours && far < 30 && r < PLAY_IT_BACK) {
+					Q = { x: P.x - dir * 2.5, y: P.y + (COURT_H / 2 - P.y) * 0.1 };
+				}
+				if (!Q) {
+					continue;
+				}
+				Q = inPlay(Q);
+				const d = dist(P, Q);
+				if (d < 0.5) {
+					continue;
+				}
+				const t1 = Math.min(end, t0 + Math.max(PLAY_IT_MS, runMs(d, 4)));
+				// (Into nobody.)
+				let clear = true;
+				for (let t = t0; t <= t1 && clear; t += 100) {
+					const k = (t - t0) / (t1 - t0);
+					const S = { x: P.x + (Q.x - P.x) * k, y: P.y + (Q.y - P.y) * k };
+					clear = [...this.tracks.values()].every(
+						(o) =>
+							o === tr || o.pid < 0 || dist(this.posAt(o.pid, t), S) >= 2.2,
+					);
+				}
+				if (!clear) {
+					continue;
+				}
+				const back = ours && far >= 12;
+				tr.moves.splice(at < 0 ? tr.moves.length : at, 0, {
+					t0,
+					t1,
+					from: { ...P },
+					to: { ...Q },
+					anim: back ? "back" : "shuffle",
+					...(back ? {} : { face: (rim.x >= P.x ? 1 : -1) as 1 | -1 }),
+					v0: 0,
+					v1: 0,
+				});
+				if (next) {
+					next.from = { ...Q };
+				}
+			}
 		}
 	}
 
@@ -13565,6 +13797,23 @@ class Director {
 				1,
 				this.offHisLeft(shooter),
 			);
+		}
+		// (A jumper from out on the floor off the rim: what he does after it
+		// - see afterTheMiss.)
+		if (plan.kind === "miss" && !close && landed !== undefined) {
+			const shot = this.ball.findLast(
+				(b) =>
+					b.kind === "fly" &&
+					"pid" in b.from &&
+					b.from.pid === shooter &&
+					!("pid" in b.to),
+			);
+			this.missed.push({
+				shooter,
+				landed,
+				off: arrive,
+				release: shot?.t0 ?? gather,
+			});
 		}
 		if (!dunk && !putback && plan.kind !== "block") {
 			const reads =
@@ -28171,6 +28420,8 @@ class Director {
 		}
 		this.ball.sort(byT0);
 		this.stepIntoShots();
+		this.afterTheMiss();
+		this.allPlayIt();
 		this.pace();
 		this.liveHands();
 		this.keepDribbling();
