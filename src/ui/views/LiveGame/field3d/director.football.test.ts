@@ -6,10 +6,7 @@ import processLiveGameEvents, {
 import { EASE_END_FT, HERO_CAM_FT } from "./action.ts";
 import { aimFor, glideAim, leadAim, type Glide, type Lead } from "./aim.ts";
 import { FIGURE_SCALE } from "./body.ts";
-import { BACK_AT, CART_L, CART_W, cartAt, onCart } from "./cart.ts";
-import { posOf } from "./crew.ts";
 import { GREET_CAM_FT } from "./greet.ts";
-import { driverId } from "./hurt.ts";
 import {
 	compileField,
 	isLineItem,
@@ -996,7 +993,7 @@ describe("a long drive", () => {
 							(l) => l.move === "winded" && l.t0 >= p.whistle && l.t0 < p.t1,
 						),
 				).length;
-				if (!p.timeout && !p.measure && drive && p.kind !== "none") {
+				if (!p.timeout && drive && p.kind !== "none") {
 					if (drive.snaps >= 11) {
 						worn += bent;
 					} else if (drive.snaps <= 5) {
@@ -1323,7 +1320,7 @@ describe("a man hurt, as badly as the game says", () => {
 					)!;
 					assert.strictEqual(down.arms, held, `play ${play.i}`);
 				}
-				// (Off on his feet - or to the cart, and onto it.)
+				// (Off on his feet.)
 				const off = him.legs.findLast(
 					(l) => l.move === "walk" || l.move === "jog",
 				)!;
@@ -1340,112 +1337,12 @@ describe("a man hurt, as badly as the game says", () => {
 				// maybe.)
 				const least = games >= 8 ? 5400 : games >= 2 ? 3600 : 2700;
 				assert.isAtLeast(long, least - 1, `play ${play.i}`);
-				// (Or, out of a long one, with him till the cart is there.)
-				const cart = play.cart?.legs[0];
-				if (cart) {
-					assert.isAtLeast(tend.t1, cart.t1 + 499, `play ${play.i}`);
-				} else {
-					assert.isBelow(long, least + 1500, `play ${play.i}`);
-				}
+				assert.isBelow(long, least + 1500, `play ${play.i}`);
 			}
 		}
 		assert.isAbove(seen.size, 1);
 		assert.isAbove(holds.size, 1);
 	}, 20_000);
-});
-
-describe("the cart, for a man hurt badly", () => {
-	// Out of the game a long while: the cart out for him (see cart.ts) - not
-	// seen till it is called for, round to park beside him, him helped
-	// round behind it and sat on the back of it, and away with him on it, a
-	// trainer driving; nobody stood in its way, nor it on him.
-	test("out to him, him on the back of it, off with him - nobody in its way", () => {
-		let carts = 0;
-		for (const game of games) {
-			const hurt = new Set(
-				game.events.flatMap((e) =>
-					e?.type === "injury" && typeof e.injuredPID === "number"
-						? [e.injuredPID]
-						: [],
-				),
-			);
-			const tl = stage({
-				events: game.events,
-				roster: game.roster.map((p) =>
-					hurt.has(p.pid)
-						? { ...p, injury: { type: "Sprained Knee", games: 12 } }
-						: p,
-				),
-			});
-			for (const play of tl.plays) {
-				if (!play.hurt) {
-					continue;
-				}
-				const cart = play.cart;
-				assert.isDefined(cart, `play ${play.i}`);
-				carts += 1;
-				const him = play.parts.find((p) => p.pid === play.hurt!.pid)!;
-				assert.strictEqual(cart!.team, him.team, `play ${play.i}`);
-				const [inLeg, outLeg] = cart!.legs;
-				// (Called for once the trainers are with him.)
-				const tend = play
-					.medics!.find((m) => m.team === him.team)!
-					.legs.find((l) => l.move === "tend")!;
-				assert.isAtLeast(inLeg!.t0, tend.t0, `play ${play.i}`);
-				// (Driven: on it from when it is called for, never off it.)
-				const driver = play.medics!.find(
-					(m) => m.pid === driverId(him.team, 0),
-				)!;
-				assert.strictEqual(driver.legs[0]!.t0, inLeg!.t0, `play ${play.i}`);
-				assert.isTrue(
-					driver.legs.every((l) => l.move === "cartDrive"),
-					`play ${play.i}`,
-				);
-				// (Parked beside him, not on him.)
-				const lies = him.legs.find(
-					(l) => l.move === "hurt" || l.move === "hurtProne",
-				)!.to;
-				const gap = (q: { x: number; y: number }, t: number) => {
-					const c = cartAt(cart!, t);
-					const dx = q.x - c.x;
-					const dy = q.y - c.y;
-					return Math.max(
-						Math.abs(dx * Math.cos(c.yaw) + dy * Math.sin(c.yaw)) - CART_L / 2,
-						Math.abs(dy * Math.cos(c.yaw) - dx * Math.sin(c.yaw)) - CART_W / 2,
-					);
-				};
-				assert.isAtLeast(gap(lies, inLeg!.t1), 3, `play ${play.i}`);
-				// (Sat on the back of it, the way it goes, to the end.)
-				const ride = him.legs.filter((l) => l.move === "ride");
-				assert.isAbove(ride.length, 2, `play ${play.i}`);
-				assert.isAtMost(ride[0]!.t1, outLeg!.t0, `play ${play.i}`);
-				assert.strictEqual(him.legs.at(-1)!.move, "ride", `play ${play.i}`);
-				for (const t of [outLeg!.t0, (outLeg!.t0 + play.t1) / 2, play.t1 - 1]) {
-					const seat = onCart(cart!, t, BACK_AT);
-					const at = posOf(him.legs, t);
-					assert.isBelow(
-						Math.hypot(at.x - seat.x, at.y - seat.y),
-						0.5,
-						`play ${play.i}`,
-					);
-				}
-				// (Nobody in its way, as drawn - eased round it, if need be.)
-				for (let t = inLeg!.t0; t < play.t1; t += 100) {
-					for (const st of momentAt(tl, t).players) {
-						if (st.id === him.pid || st.id === driver.pid) {
-							continue;
-						}
-						assert.isAtLeast(
-							gap(st, t),
-							0.6,
-							`play ${play.i} pid ${st.id} at ${t - play.snap}`,
-						);
-					}
-				}
-			}
-		}
-		assert.isAbove(carts, 2);
-	}, 30_000);
 });
 
 describe("a man hurt, the trainers waved out", () => {
@@ -1879,7 +1776,7 @@ describe("the game over", () => {
 					assert.isDefined(other, `${part.pid}'s hand shaken by nobody`);
 				}
 			}
-			// (The head coaches - and, under the cooler, the two men with it.)
+			// (The head coaches.)
 			const coaches = (play.coaches ?? []).filter((c) => c.pid < 0);
 			assert.lengthOf(coaches, 2);
 			const [a, b] = coaches.map((c) => legAt(c, post.shake + 200));
@@ -1949,41 +1846,6 @@ describe("the game over", () => {
 		}
 		assert.isAbove(clinched, 0);
 	}, 60_000);
-
-	test("the winners' head coach under the cooler, the game won: two of his men off the field with it, after the whistle", () => {
-		let showers = 0;
-		for (const [k, game] of games.entries()) {
-			for (const gid of [1, 2, 3, 4, 5, 6]) {
-				const tl = stage(game, gid);
-				const play = tl.plays.at(-1)!;
-				const post = play.postgame!;
-				const sh = post.shower;
-				if (!sh) {
-					continue;
-				}
-				showers += 1;
-				const at = `game ${k} (${gid})`;
-				assert.equal(sh.team, post.winner, at);
-				assert.isAbove(sh.dump, play.whistle, at);
-				const men = (play.coaches ?? []).filter((c) => sh.men.includes(c.pid));
-				assert.lengthOf(men, 2, at);
-				for (const m of men) {
-					assert.equal(m.team, sh.team, at);
-					assert.isUndefined(
-						play.parts.find((p) => p.pid === m.pid),
-						`${at}: ${m.pid} on the field`,
-					);
-					assert.equal(legAt(m, sh.dump + 500).move, "coolerDump", at);
-				}
-				const coach = (play.coaches ?? []).find((c) => c.pid === sh.coach)!;
-				const doused = coach.legs.find((l) => l.move === "doused");
-				assert.isDefined(doused, at);
-				assert.isAbove(doused!.t0, sh.dump, at);
-				assert.isBelow(doused!.t1, post.shake, at);
-			}
-		}
-		assert.isAbove(showers, 0);
-	}, 120_000);
 });
 
 describe("the head coach", () => {

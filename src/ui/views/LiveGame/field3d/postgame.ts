@@ -14,7 +14,6 @@ import {
 } from "./geometry.ts";
 import type { Stakes } from "../court3d/director.ts";
 import { HIGH_FIVE_AT, handsMeet, moveKind, type Move } from "./poses.ts";
-import { stageShower, type Shower } from "./shower.ts";
 import { coachId, headCoachAt, sidelineOf } from "./sideline.ts";
 
 // THE GAME OVER. The winners' moment where the end of it finds them - up
@@ -236,8 +235,6 @@ export type Postgame = {
 	// Won on the last play: where they are all over the man who won it, and
 	// until when.
 	mob?: { at: Pt; until: number };
-	// The winners' head coach under the cooler (see shower.ts).
-	shower?: Shower;
 	// When the picture cuts to the last look.
 	look: number;
 	interview?: Interview;
@@ -586,9 +583,6 @@ export const stagePostgame = (input: {
 	t1: number;
 	playI: number;
 	ball: BallSeg[];
-	// The two of the winners' men off the field with the cooler, if they
-	// have it ready.
-	shower?: { men: [number, number]; r: () => number };
 	// A playoff game's, as they stood going into it.
 	stakes?: Stakes;
 	r: () => number;
@@ -811,12 +805,9 @@ export const stagePostgame = (input: {
 		);
 	}
 
-	// The head coaches: out from their sidelines to each other - the
-	// winners' under the cooler first, if his men have it ready.
+	// The head coaches: out from their sidelines to each other.
 	const coaches: CrewPart[] = [];
 	const bosses: Man[] = [];
-	const dumpers: CrewPart[] = [];
-	let shower: Shower | undefined;
 	for (const team of [0, 1] as Side[]) {
 		const from = headCoachAt(team, input.playI);
 		const toField = sidelineOf(team) === 0 ? Math.PI / 2 : -Math.PI / 2;
@@ -830,22 +821,6 @@ export const stagePostgame = (input: {
 				yaw: toField,
 			},
 		];
-		if (input.shower && team === winner && !mob) {
-			const s = stageShower({
-				men: input.shower.men,
-				team,
-				coach: coachId(team, 0),
-				legs,
-				at: from,
-				yaw: toField,
-				t0: input.t0,
-				whistle: input.whistle,
-				from: go,
-				r: input.shower.r,
-			});
-			dumpers.push(...s.parts);
-			shower = s.shower;
-		}
 		coaches.push({ pid: coachId(team, 0), team, legs });
 		bosses.push(new Man(team, legs, COACH_FPS));
 	}
@@ -857,7 +832,6 @@ export const stagePostgame = (input: {
 	far.walk({ x: at.x - half - 1.5, y: at.y });
 	near.walk({ x: at.x + half + 1.5, y: at.y });
 	const { shake, end } = meet(far, near, r, at, COACH_HUG);
-	const others = dumpers.map((p) => new Man(p.team, p.legs, PACE[0]));
 
 	// The interview, the head coaches done.
 	const star = freed.find((f) => f.p.pid === input.star)?.man;
@@ -865,7 +839,7 @@ export const stagePostgame = (input: {
 		star && winner !== undefined && star.team === winner
 			? interviewOf(
 					star,
-					[...men, ...bosses, ...others].filter((m) => m !== star),
+					[...men, ...bosses].filter((m) => m !== star),
 					go,
 					end + INTERVIEW_AFTER,
 					done + 800,
@@ -882,18 +856,17 @@ export const stagePostgame = (input: {
 		const l = her.at(-1)!;
 		her.push({ ...l, t0: l.t1, t1, from: l.to });
 	}
-	for (const m of [...men, ...bosses, ...others]) {
+	for (const m of [...men, ...bosses]) {
 		const l = m.legs.at(-1)!;
 		m.hold(t1, moveKind(l.move) === "still" ? l.move : "stand");
 	}
 	return {
-		coaches: [...coaches, ...dumpers],
+		coaches,
 		from: go,
 		shake,
 		at,
 		winner,
 		...(mob ? { mob } : {}),
-		...(shower ? { shower } : {}),
 		look,
 		...(clinch ? { clinch } : {}),
 		...(interview ? { interview } : {}),

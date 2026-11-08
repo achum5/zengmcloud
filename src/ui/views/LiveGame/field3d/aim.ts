@@ -14,7 +14,6 @@ import {
 import { officialId, REF_CAM_FT } from "./crew.ts";
 import { INTERVIEW_CAM_FT } from "./postgame.ts";
 import { GREET_CAM_FT } from "./greet.ts";
-import { runOutShot } from "./tunnel.ts";
 
 // WHERE THE CAMERA LOOKS: the way a game is shot from the press box - on the
 // line before the snap, the offense's backfield on one side of the picture
@@ -128,22 +127,12 @@ const RUE = { width: 15, z: 4 };
 // heroClose): all of him, and room over him for the ball held up, a leap
 // (the men drawn bigger than they are - see body.ts FIGURE_SCALE).
 const HERO_CLOSE = { width: 20, z: 5, camFt: HERO_CAM_FT, camZ: 5.6 };
-// The winners' head coach under the cooler: in on him, this wide, the
-// picture's middle this far toward the near side of him (on the far
-// sideline, this far).
-const SHOWER_WIDTH = 32;
-const SHOWER_UP = -3;
-const SHOWER_UP_FAR = -6;
 // Won on the last play: on them all over the man who won it.
 const MOB_WIDTH = 96;
 // A big play's moment after it - a score, a stop, a takeaway: in on it,
 // this wide, until this long after it.
 const PARTY_WIDTH = 62;
 const PARTY_AFTER = 600;
-// The coin toss: in on the captains as they come out, from this wide to
-// this, by the time the coin goes up.
-const TOSS_WIDE = 84;
-const TOSS_TIGHT = 52;
 // A timeout: in close on the side that called it, at its sideline (the 3D
 // court's huddle shot: see court3d/scene.ts arenaAim) - from down low on
 // the near side, pushing slowly in from this wide to this, this high.
@@ -176,9 +165,6 @@ const CROWD_SHOT = { width: 150, y: -80, z: 22, pan: 30 };
 // Between quarters: the whole stadium from the press box, panning slowly
 // along it from this far one side of the middle to as far the other.
 const BETWEEN = { width: 360, y: 44, z: 11, pan: 30 };
-// A measurement: in on the ball and the front rod, this wide.
-const MEASURE_WIDTH = 46;
-const MEASURE_UP = -8;
 
 export const aimFor = (m: FieldMoment): Shot => {
 	const { play, t, focus } = m;
@@ -195,21 +181,6 @@ export const aimFor = (m: FieldMoment): Shot => {
 				? setY(play)
 				: MID_Y + (play.ballY - MID_Y) * 0.35,
 	};
-	// The home team out of its tunnel: after them (see tunnel.ts).
-	if (play.runOut && t < play.runOut.cut) {
-		return runOutShot(play.runOut, t);
-	}
-	// The coin toss: in on them in the middle of the field.
-	const toss = play.toss;
-	if (toss && t < toss.cut) {
-		const u = Math.min(1, Math.max(0, (t - play.t0) / (toss.flip - play.t0)));
-		const e = u * u * (3 - 2 * u);
-		return {
-			x: toss.at.x,
-			width: TOSS_WIDE + (TOSS_TIGHT - TOSS_WIDE) * e,
-			y: across(toss.at.y),
-		};
-	}
 	// On the man who scored, greeted on his sideline.
 	const greet = greetOf(m);
 	if (greet) {
@@ -290,15 +261,6 @@ export const aimFor = (m: FieldMoment): Shot => {
 		const { width, y, z, pan } = BETWEEN;
 		return { x: MID_X + pan * (2 * u - 1), width, y, z };
 	}
-	// A measurement: on the ball, the chain out beside it.
-	const measure = play.measure;
-	if (measure && t >= measure.cut) {
-		return {
-			x: inBounds(measure.at.x - play.dir * 6, MEASURE_WIDTH),
-			width: MEASURE_WIDTH,
-			y: measure.at.y + MEASURE_UP,
-		};
-	}
 	// A man hurt: on him, and the trainers round him, and with him off.
 	const hurt = play.hurt;
 	if (hurt && t >= hurt.from) {
@@ -334,15 +296,6 @@ export const aimFor = (m: FieldMoment): Shot => {
 			x: inBounds(post.mob.at.x, MOB_WIDTH),
 			width: MOB_WIDTH,
 			y: across(post.mob.at.y),
-		};
-	}
-	// (The winners' head coach under the cooler first.)
-	const shower = post?.shower;
-	if (shower && t >= post.from && t < shower.until) {
-		return {
-			x: shower.at.x,
-			width: SHOWER_WIDTH,
-			y: shower.at.y + (shower.at.y < MID_Y ? SHOWER_UP_FAR : SHOWER_UP),
 		};
 	}
 	if (post && t >= post.from) {

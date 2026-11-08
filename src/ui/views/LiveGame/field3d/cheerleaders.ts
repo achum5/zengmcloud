@@ -11,9 +11,8 @@ import type { FieldPlayerState } from "./sprite.ts";
 // by the wall at either end of it - half of them either side of the way out
 // of the tunnel, opening out toward the field from it, the rest in two rows
 // down at the other end - each in her place all game, a pom-pom in each
-// hand. Turned in to the way out as the team runs out of the tunnel, the
-// poms going. Facing the
-// field, hands on hips, watching while the ball is live; between plays the
+// hand. Facing the field, hands on hips, watching while the ball is live;
+// between plays the
 // poms going, each half of them as one; at a timeout, and at the end of a
 // quarter, the routine, all of them as one (the court's dance team's: see
 // court3d/poses.ts); up and jumping, poms in the air, for a big play of the
@@ -42,8 +41,6 @@ const FLANK_FROM = 9;
 const FLANK_OUT = 6;
 const FLANK_ON = 3;
 const FLANK_N = 3;
-// (Turned in to it, half way round toward the field.)
-const LANE_TURN = Math.PI / 4;
 // At the other end: the middle of the rows (as far along as the tunnel is
 // at its end), this far off the wall; their places in them.
 export const ROWS_X = FIELD_L - TUNNEL_X;
@@ -95,8 +92,6 @@ type Doing = {
 	from: number;
 };
 
-// Turned in to the way out from this long before the first of them is out.
-const LANE_EARLY = 2500;
 // Watching from this long before the snap to this long after the whistle -
 // turned after the ball, as far round as this.
 const LIVE_BEFORE = 1500;
@@ -154,17 +149,10 @@ const doingAt = (
 	if (!play) {
 		return still("onHips", -Infinity);
 	}
-	const ro = play.runOut;
 	const poms = (from: number, yaw = FACING_FIELD): Doing => ({
 		...still("poms", from, yaw),
 		phase: (t / 1000) * POMS_RATE + c.group * 0.5,
 	});
-	if (c.group === 0 && ro && t < ro.cut) {
-		const lane = ro.out - LANE_EARLY;
-		return t >= lane
-			? poms(lane, c.flank < 0 ? LANE_TURN : Math.PI - LANE_TURN)
-			: poms(play.t0);
-	}
 	const cheer = cheerAt(tl, t);
 	if (cheer && cheer.side === 1 && cheer.level > UP_LEVEL) {
 		const e = cheer.since - c.delay;

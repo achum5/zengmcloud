@@ -33,12 +33,7 @@ export const cheerAt = (
 	const play = playAt(tl, t);
 	const k = play ? tl.plays.indexOf(play) : -1;
 	let out: ReturnType<typeof cheerAt>;
-	// (The home team out of its tunnel too: see tunnel.ts.)
-	for (const c of [
-		tl.plays[k]?.cheer,
-		tl.plays[k]?.runOut?.cheer,
-		tl.plays[k - 1]?.cheer,
-	]) {
+	for (const c of [tl.plays[k]?.cheer, tl.plays[k - 1]?.cheer]) {
 		if (!c || c.t > t) {
 			continue;
 		}
@@ -70,11 +65,7 @@ export const upSpansAt = (
 	const play = playAt(tl, t);
 	const k = play ? tl.plays.indexOf(play) : -1;
 	const out: { side: Side; from: number; to: number }[] = [];
-	for (const c of [
-		tl.plays[k - 1]?.cheer,
-		tl.plays[k]?.cheer,
-		tl.plays[k]?.runOut?.cheer,
-	]) {
+	for (const c of [tl.plays[k - 1]?.cheer, tl.plays[k]?.cheer]) {
 		if (c) {
 			const hold = c.hold ?? (c.big ? HOLD_BIG : HOLD);
 			out.push({

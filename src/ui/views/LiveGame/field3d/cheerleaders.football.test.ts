@@ -42,30 +42,6 @@ test("the cheerleaders in their places by the wall across the field, clear of ea
 	}
 });
 
-test("the team runs out of the tunnel between them - they turned in to it, the poms going", () => {
-	for (const tl of tls) {
-		const play = tl.plays[0]!;
-		const ro = play.runOut!;
-		assert.isDefined(ro);
-		const squad = cheerleadersFor(1);
-		const lane = squad.filter((c) => c.group === 0);
-		let closest = Infinity;
-		for (let t = ro.out; t < ro.cut; t += 50) {
-			const m = momentAt(tl, t);
-			for (const st of m.players) {
-				for (const c of lane) {
-					closest = Math.min(closest, Math.hypot(st.x - c.at.x, st.y - c.at.y));
-				}
-			}
-			for (const st of cheerleadersAt(lane, tl, m)) {
-				assert.strictEqual(st.move, "poms");
-				assert.isAbove(Math.cos(st.yaw - Math.PI / 2), 0.5);
-			}
-		}
-		assert.isAbove(closest, 3);
-	}
-});
-
 test("watching while the ball is live; the routine at a timeout; up and jumping for a big play of the home team's, never the visitors'", () => {
 	const squad = cheerleadersFor(2);
 	let danced = 0;

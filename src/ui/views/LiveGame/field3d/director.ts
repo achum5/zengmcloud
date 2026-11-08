@@ -62,9 +62,7 @@ import { crewClear, stageTimeout } from "./timeout.ts";
 import { cheerShotFor, type CheerShot } from "./cheerleaders.ts";
 import { crowdShotFor, type CrowdShot } from "./crowd.ts";
 import type { Shout } from "./stadium.ts";
-import { measureTimes, stageMeasure } from "./measure.ts";
-import { fallHurt, HURT_MOST, outOfCartWay, stageHurt } from "./hurt.ts";
-import type { Cart } from "./cart.ts";
+import { fallHurt, HURT_MOST, stageHurt } from "./hurt.ts";
 import {
 	crewOff,
 	stageChangeEnds,
@@ -74,10 +72,7 @@ import {
 	type Clinch,
 	type Stakes,
 } from "./postgame.ts";
-import { SHOWER, SHOWER_MARGIN, type Shower } from "./shower.ts";
 import { stageTv } from "./tv.ts";
-import { stageToss, tossCrew } from "./toss.ts";
-import { runOutCrew, stageRunOut, type RunOut } from "./tunnel.ts";
 import { coordinatorAt, headCoachAt, sidelineOf } from "./sideline.ts";
 import { stageGreet, type Greet } from "./greet.ts";
 
@@ -241,15 +236,6 @@ export type Play = {
 	// camera on him from when he is down.
 	medics?: CrewPart[];
 	hurt?: { pid: number; from: number };
-	// The cart out for a man hurt badly (see cart.ts) - its driver among the
-	// medics.
-	cart?: Cart;
-	// The coin toss (see toss.ts): the captains out to the middle and back;
-	// where, when the coin goes up, and when the picture cuts to the kick.
-	toss?: { men: CrewPart[]; at: Pt; flip: number; cut: number };
-	// The home team out of its tunnel before the opening kickoff, in place of
-	// the coin toss (see tunnel.ts).
-	runOut?: RunOut;
 	// The game over (see postgame.ts): the head coaches out to shake hands;
 	// from when it is, when they do, and where. (A timeout: the head coach
 	// of the side that called it out at the sideline.)
@@ -266,9 +252,6 @@ export type Play = {
 		cheer?: CheerShot;
 		crowd?: CrowdShot;
 	};
-	// A measurement (see measure.ts): when the picture cuts to the chain out
-	// on the field, and where it looks.
-	measure?: { cut: number; at: Pt };
 	// In close on the kicker through his routine before the snap (see
 	// kickerRoutine): from when, until when, and where he sets.
 	closeUp?: { t0: number; t1: number; pid: number; at: Pt };
@@ -333,8 +316,6 @@ export type Play = {
 		winner?: Side;
 		// Won on it: all over the man who did it, there, until then.
 		mob?: { at: Pt; until: number };
-		// The winners' head coach under the cooler (see shower.ts).
-		shower?: Shower;
 		// The last look, the hands all shaken: when the picture cuts to the
 		// whole stadium (see aim.ts).
 		look: number;
@@ -1078,30 +1059,6 @@ const DL_ROLES = new Set<Role>(["DE", "DT", "NT"]);
 const KICK_AT = 2600;
 const KICK_HAND_UP = 1900;
 const KICK_HAND_DOWN = 350;
-// The coin toss: this many captains a side, from these groups in turn. The
-// men for the kick waiting for it on their sidelines in two rows - this
-// far off the field, rows this far apart, men this far apart along them -
-// this far along from midfield.
-const SHOWER_GROUPS: Group[] = ["OL", "DL", "LB", "TE", "RB", "S", "WR", "CB"];
-const CAPTAINS = 3;
-const CAPTAIN_GROUPS: Group[] = ["QB", "OL", "DL", "LB", "S", "WR", "RB"];
-const WAIT_OFF = 2;
-const WAIT_ROW = 2.6;
-const WAIT_COL = 2.9;
-const WAIT_ALONG = 32;
-const waitingAt = (team: Side, k: number, r: () => number): Pt => {
-	const line = sidelineOf(team);
-	const lean = line === 0 ? 1 : -1;
-	const off = WAIT_OFF + (k % 2) * WAIT_ROW + r() * 0.6;
-	return {
-		x:
-			MID_X -
-			lean * WAIT_ALONG +
-			(Math.floor(k / 2) - 2.5 + (k % 2) * 0.5) * WAIT_COL +
-			(r() - 0.5) * 0.8,
-		y: line === 0 ? -off : FIELD_W + off,
-	};
-};
 // The plays acted out from the snap (see action.ts), and how long after
 // the whistle the picture stays on one - men getting up, walking off.
 const ACTED = new Set<PlayKind>([
@@ -1184,21 +1141,6 @@ const BALL_SIGNAL_AT = 700;
 const TOUCHBACK_AT = 250;
 const OUT_SIGNAL_AT = 150;
 const OUT_FIRST_AT = 1700;
-// A first down on third or fourth down made by no more than this (feet
-// past the line to gain): this often the chain out to measure it (see
-// measure.ts), the picture on it this long after the play is over.
-const MEASURE_NEAR = 1.5;
-const MEASURE = 0.5;
-const MEASURE_AFTER = 2400;
-// (Not with any of these on the play: the scene is the measurement's.)
-const NO_MEASURE = new Set([
-	"injury",
-	"timeout",
-	"twoMinuteWarning",
-	"quarter",
-	"overtime",
-	"gameOver",
-]);
 
 // The first thing said of a play after the snap: when it happened, by what
 // it was. (For a play that is not acted out - a kick, so far - a fair
@@ -1463,10 +1405,6 @@ class Director {
 	lastLine = -Infinity;
 	// Where the chain crew left off.
 	chainSpots: ChainSpots | undefined;
-	// The home team out of its tunnel before the game's first kickoff; a coin
-	// toss before overtime's.
-	runOutNext = true;
-	tossNext = false;
 	// The snaps in a row the defense has been out there for against this
 	// offense, since the last break - a timeout, a quarter over.
 	drive: { offense: Side; snaps: number } | undefined;
@@ -1871,10 +1809,6 @@ class Director {
 		const t0 = this.T;
 		this.cuts.push(t0);
 		const r = this.rng(i0, "play");
-		const tossed = kick && this.tossNext;
-		this.tossNext = false;
-		const runningOut = kick && this.runOutNext;
-		this.runOutNext = false;
 
 		// Who is on, and where each lines up.
 		const stats = this.statsOf(i0, i1);
@@ -1920,63 +1854,15 @@ class Director {
 			r,
 		);
 
-		// The coin toss first, at the start of overtime - the men for the kick
-		// waiting on their sidelines until the picture cuts to it (see
-		// toss.ts).
-		const toss = tossed
-			? stageToss({
-					captains: [0, 1].map((team) =>
-						this.captainsOf(team as Side, new Set(placed.map((p) => p.pid))),
-					) as [number[], number[]],
-					t0,
-					r: this.rng(i0, "toss"),
-				})
-			: undefined;
-		// Or, before the game's first, the home team out of its tunnel - the
-		// visitors out already (see tunnel.ts).
-		const runOut = runningOut
-			? stageRunOut({
-					team: 1,
-					pids: this.roster[1].filter((pid) => !this.out.has(pid)),
-					t0,
-					r: this.rng(i0, "runOut"),
-				})
-			: undefined;
-		const base = toss ? toss.cut : runOut ? runOut.cut : t0;
-		if (toss || runOut) {
-			this.cuts.push(base);
-		}
+		const base = t0;
 
 		// Up to the line, set, and the snap.
 		const parts: Part[] = [];
 		let set = base + KICK_AT;
 		let hurried = false;
 		if (kick) {
-			const waiting = [0, 0];
 			for (const p of placed) {
 				const legs: Leg[] = [];
-				if (runOut?.team === p.team) {
-					// (Out of the tunnel with the rest of them, until the cut.)
-					legs.push({
-						t0,
-						t1: base,
-						from: p.at,
-						to: p.at,
-						move: p.move,
-						yaw: p.yaw,
-						...(p.mirrored ? { mirrored: true } : {}),
-					});
-				} else if (toss || runOut) {
-					const at = waitingAt(p.team, waiting[p.team]!++, r);
-					legs.push({
-						t0,
-						t1: base,
-						from: at,
-						to: at,
-						move: "stand",
-						yaw: Math.atan2(MID_Y - at.y, MID_X - at.x),
-					});
-				}
 				legs.push({
 					t0: base,
 					t1: base,
@@ -2239,7 +2125,6 @@ class Director {
 			} else if (e.type === "overtime") {
 				this.quarter =
 					this.numPeriods + (typeof e.overtimes === "number" ? e.overtimes : 1);
-				this.tossNext = true;
 			} else if (e.type === "injury" && typeof e.injuredPID === "number") {
 				this.out.add(e.injuredPID);
 			}
@@ -2344,18 +2229,7 @@ class Director {
 			next.down === 1 &&
 			next.t === clock.t &&
 			!events.slice(i0, i1).some((e) => e?.type === "interception" || e?.lost);
-		// (Made by the nose of it, late in the downs: measured, some of the
-		// time - the signal the referee's, then.)
-		const measuring =
-			made &&
-			gainX !== undefined &&
-			typeof clock.down === "number" &&
-			clock.down >= 3 &&
-			!acted?.out &&
-			Math.abs(spotAt(whistle).x - gainX) <= MEASURE_NEAR &&
-			!events.slice(i0, i1).some((e) => NO_MEASURE.has(e?.type)) &&
-			this.rng(i0, "measure")() < MEASURE;
-		if (made && !measuring) {
+		if (made) {
 			signals.push({
 				what: "first",
 				t: whistle + (acted?.out ? OUT_FIRST_AT : FIRST_DOWN_AT),
@@ -2440,7 +2314,6 @@ class Director {
 			}
 		}
 		let staged = 0;
-		let cart: Cart | undefined;
 		for (let i = i0; i < i1 && staged < HURT_MOST; i++) {
 			const e = events[i];
 			if (e?.type !== "injury" || typeof e.injuredPID !== "number") {
@@ -2450,7 +2323,6 @@ class Director {
 			const h = stageHurt({
 				pid,
 				n: staged,
-				...(cart ? { noCart: true } : {}),
 				parts,
 				whistle,
 				t0,
@@ -2467,8 +2339,7 @@ class Director {
 			});
 			if (h) {
 				staged += 1;
-				medics.push(...h.medics, ...(h.driver ? [h.driver] : []));
-				cart ??= h.cart;
+				medics.push(...h.medics);
 				t1 = h.t1;
 				hurt ??= { pid: e.injuredPID, down: h.down, tending: h.tending };
 			}
@@ -2481,10 +2352,6 @@ class Director {
 			? this.wonIt(kind, i0, i1, parts, ball, whistle)
 			: undefined;
 		const pts = this.pointsTo(i1);
-		const showerMen =
-			ended && hero === undefined
-				? this.showerOf(kind, pts, parts, i0)
-				: undefined;
 		const star = ended ? this.starOf(parts, pts, i1) : undefined;
 		const postgame = ended
 			? stagePostgame({
@@ -2500,9 +2367,6 @@ class Director {
 					t1,
 					playI: i0,
 					ball,
-					...(showerMen
-						? { shower: { men: showerMen, r: this.rng(i0, "showered") } }
-						: {}),
 					...(this.stakes ? { stakes: this.stakes } : {}),
 					r: this.rng(i0, "postgame"),
 				})
@@ -2634,22 +2498,11 @@ class Director {
 			this.cuts.push(called.cut);
 			this.drive = undefined;
 		}
-		// The measurement: the picture on it once the play is over.
-		const measureAt =
-			measuring && !called && !hurt && !half && !ended
-				? measureTimes(offAt + MEASURE_AFTER)
-				: undefined;
-		if (measureAt) {
-			t1 = Math.max(t1, measureAt.t1);
-			this.cuts.push(measureAt.cut);
-			cheer = { t: measureAt.call + 450, side: offense, big: false };
-		}
 		// (After any replay.)
 		const between =
 			!ended &&
 			!hurt &&
 			!called &&
-			!measureAt &&
 			events.slice(i0, i1).some((e) => e?.type === "quarter")
 				? Math.max(
 						offAt + (half ? HALF_BETWEEN_AFTER : BETWEEN_AFTER),
@@ -2722,7 +2575,7 @@ class Director {
 		// (The picture on the play after the whistle till the first cut away
 		// from it - the officials left as they are to the end of it.)
 		const ballBack =
-			timeout || postgame || half || measureAt || toss || runOut
+			timeout || postgame || half
 				? undefined
 				: Math.min(
 						t1,
@@ -2763,32 +2616,15 @@ class Director {
 		if (postgame) {
 			crewOff(crew.parts, postgame.from, t1, this.rng(i0, "crewOff"));
 		}
-		if (toss) {
-			tossCrew(toss, crew.parts);
-		}
-		if (runOut) {
-			runOutCrew(runOut, crew.parts);
-		}
 		if (half) {
 			crewOff(crew.parts, offAt, t1, this.rng(i0, "crewOff"));
 		}
 		if (timeout) {
 			crewClear(crew.parts, timeout, t1);
 		}
-		// (Anybody about in the way of a cart out for a man hurt - players,
-		// officials - out of it, or waiting for it to go by: see hurt.ts.)
-		const lying = hurt && parts.find((p) => p.pid === hurt.pid);
-		if (cart && hurt && lying) {
-			outOfCartWay(
-				cart,
-				[...parts.filter((p) => p !== lying), ...crew.parts],
-				posOf(lying.legs, hurt.down),
-				t1,
-			);
-		}
 		const refCall = (() => {
 			const ref = crew.parts.find((p) => p.pid === officialId("R"));
-			if (!ref || calls.length === 0 || postgame || half || measureAt) {
+			if (!ref || calls.length === 0 || postgame || half) {
 				return undefined;
 			}
 			const first = Math.min(...calls.map((c) => c.t));
@@ -2857,7 +2693,6 @@ class Director {
 				half ||
 				hurt ||
 				timeout ||
-				measureAt ||
 				between !== undefined ||
 				refCall ||
 				this.rng(i0, "qbRue")() >= QB_RUE_SHARE
@@ -2914,7 +2749,6 @@ class Director {
 				half ||
 				hurt ||
 				timeout ||
-				measureAt ||
 				between !== undefined ||
 				refCall
 			) {
@@ -3006,7 +2840,6 @@ class Director {
 				!acted?.until ||
 				postgame ||
 				half ||
-				measureAt ||
 				this.rng(i0, "heroClose")() >= HERO_CLOSE_SHARE
 			) {
 				return undefined;
@@ -3088,7 +2921,6 @@ class Director {
 				half ||
 				hurt ||
 				timeout ||
-				measureAt ||
 				between !== undefined ||
 				replay ||
 				refCall ||
@@ -3133,22 +2965,6 @@ class Director {
 			before: this.chainSpots,
 		});
 		this.chainSpots = chains.spots;
-		const measure =
-			measureAt && gainX !== undefined
-				? stageMeasure({
-						parts,
-						crew: crew.parts,
-						chains: chains.parts,
-						ball,
-						cut: measureAt.cut,
-						spot: spotAt(whistle),
-						gainX,
-						dir,
-						offense,
-						side: chains.spots.side,
-						r: this.rng(i0, "measured"),
-					})
-				: undefined;
 		// The home side's quarterback over the tablet as the visitors' drive
 		// starts - the camera on him clear of everybody else.
 		const tablet = (() => {
@@ -3219,10 +3035,6 @@ class Director {
 			crew: crew.parts,
 			r: this.rng(i0, "tv"),
 		});
-		// (The TV men on the sideline too, out of a cart's way.)
-		if (cart && hurt && lying) {
-			outOfCartWay(cart, tv, posOf(lying.legs, hurt.down), t1);
-		}
 		// The home side's man who scored, back to his sideline as the try is
 		// set up - greeted there, the camera on it clear of the field.
 		const greeted = (() => {
@@ -3319,19 +3131,7 @@ class Director {
 			down: chains.spots.down,
 			tv,
 			...(medics.length > 0 ? { medics } : {}),
-			...(cart ? { cart } : {}),
 			...(hurt ? { hurt: { pid: hurt.pid, from: hurt.down } } : {}),
-			...(runOut ? { runOut } : {}),
-			...(toss
-				? {
-						toss: {
-							men: toss.men,
-							at: toss.at,
-							flip: toss.flip,
-							cut: toss.cut,
-						},
-					}
-				: {}),
 			...(timeout
 				? {
 						coaches: timeout.coaches,
@@ -3344,7 +3144,6 @@ class Director {
 						},
 					}
 				: {}),
-			...(measure ? { measure: { cut: measure.cut, at: measure.at } } : {}),
 			...(routine?.closeUp ? { closeUp: routine.closeUp } : {}),
 			...(qbCloseUp ? { qbClose: qbCloseUp } : {}),
 			...(tablet ? { tablet } : {}),
@@ -3371,7 +3170,6 @@ class Director {
 								? { winner: postgame.winner }
 								: {}),
 							...(postgame.mob ? { mob: postgame.mob } : {}),
-							...(postgame.shower ? { shower: postgame.shower } : {}),
 							look: postgame.look,
 							...(postgame.clinch ? { clinch: postgame.clinch } : {}),
 							...(postgame.interview ? { interview: postgame.interview } : {}),
@@ -3423,70 +3221,6 @@ class Director {
 				0.45 * Math.min(1, gone / (len * 0.6)) * Math.min(1, (down - 14) / 14);
 		}
 		return Math.round(full * 20) / 20;
-	}
-
-	// The two men off the field with the cooler for the winners' head coach
-	// (see shower.ts), if they have it ready - the game won by enough, or
-	// knelt out, and not on its last play: big men first.
-	showerOf(
-		kind: PlayKind,
-		pts: [number, number],
-		parts: Part[],
-		i0: number,
-	): [number, number] | undefined {
-		const winner: Side | undefined =
-			pts[0] > pts[1] ? 0 : pts[1] > pts[0] ? 1 : undefined;
-		if (winner === undefined) {
-			return undefined;
-		}
-		const r = this.rng(i0, "shower");
-		const won = Math.abs(pts[0] - pts[1]) >= SHOWER_MARGIN || kind === "kneel";
-		if (!won || r() >= SHOWER) {
-			return undefined;
-		}
-		const busy = new Set(parts.map((p) => p.pid));
-		const roster = new Set(this.roster[winner]);
-		const pool: number[] = [];
-		for (const g of SHOWER_GROUPS) {
-			for (const pid of this.depth[winner][g] ?? []) {
-				if (
-					roster.has(pid) &&
-					!busy.has(pid) &&
-					!this.out.has(pid) &&
-					!pool.includes(pid)
-				) {
-					pool.push(pid);
-				}
-			}
-		}
-		if (pool.length < 2) {
-			return undefined;
-		}
-		const first = pool.splice(
-			Math.floor(r() * Math.min(5, pool.length)),
-			1,
-		)[0]!;
-		const second = pool[Math.floor(r() * Math.min(5, pool.length))]!;
-		return [first, second];
-	}
-
-	// A side's captains for the coin toss: its quarterback, and a lineman
-	// each side of the ball (or the next best) - none out for the kick.
-	captainsOf(team: Side, busy: Set<number>): number[] {
-		const depth = this.depth[team];
-		const out: number[] = [];
-		for (const g of CAPTAIN_GROUPS) {
-			const pid = (depth[g] ?? []).find(
-				(p) => !busy.has(p) && !this.out.has(p) && !out.includes(p),
-			);
-			if (pid !== undefined) {
-				out.push(pid);
-			}
-			if (out.length === CAPTAINS) {
-				break;
-			}
-		}
-		return out;
 	}
 
 	// What brings the crowd up in a play: a score, the ball taken away, a

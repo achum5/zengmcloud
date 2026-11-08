@@ -149,14 +149,12 @@ import { drawFieldFrame, type FieldPaint } from "./scene.ts";
 import {
 	coachId,
 	COACHES,
-	netBallsAt,
 	sidelineAt,
 	sidelineFor,
 	STAFF,
 	staffId,
 } from "./sideline.ts";
-import { driverId, HURT_MOST, MEDICS, medicId } from "./hurt.ts";
-import { cartGear } from "./cart.ts";
+import { HURT_MOST, MEDICS, medicId } from "./hurt.ts";
 import {
 	cameraGear,
 	flashesAt,
@@ -168,7 +166,6 @@ import {
 	tvCameraGear,
 } from "./media.ts";
 import { tvCrewFor } from "./tv.ts";
-import { runOutGear } from "./tunnel.ts";
 import { makeFieldFarm, spawnFieldWorker } from "./farm.ts";
 import {
 	drawFieldPlayer,
@@ -180,7 +177,6 @@ import {
 	sunCasts,
 } from "./sprite.ts";
 import { drawTags, type TagCover } from "./tags.ts";
-import { showerGear } from "./shower.ts";
 import { chainGear } from "./sticks.ts";
 import { waterGear } from "./water.ts";
 import { forgetSeats, paintStadium } from "./stadium.ts";
@@ -1004,10 +1000,6 @@ const Field3D = ({
 					looks.set(id, trainerLook(kits[team], `${gid}|${id}`));
 					bodies.set(id, drawnOfficialBody(68 + ((k * 3) % 5), 180 + k * 14));
 				}
-				// (And the cart's driver.)
-				const id = driverId(team, n);
-				looks.set(id, trainerLook(kits[team], `${gid}|${id}`));
-				bodies.set(id, drawnOfficialBody(69, 195));
 			}
 		}
 		for (const o of tvCrewFor(gid ?? 0)) {
@@ -1521,26 +1513,6 @@ const Field3D = ({
 					},
 				});
 			}
-			for (const b of netBallsAt(sidelineRef.current, moment)) {
-				const axis = b.axis;
-				items.push({
-					depth: depthOf(view, { ...b.at, z: 0 }),
-					draw: () => {
-						if (axis) {
-							drawFlyingBall(ctx, view, drawnUp(b.at), axis);
-						} else {
-							drawLooseBall(
-								ctx,
-								view,
-								drawnUp(b.at),
-								b.stood,
-								undefined,
-								b.lies,
-							);
-						}
-					},
-				});
-			}
 			items.push(
 				...chainGear(ctx, view, moment, body),
 				...sidelineGear(ctx, view, sideColors.current),
@@ -1557,9 +1529,6 @@ const Field3D = ({
 				...waterGear(ctx, view, moment.players, body),
 				...sheetGear(ctx, view, standing, body, sprites.fine === true),
 				...tabletGear(ctx, view, standing, body, sprites.fine === true),
-				...showerGear(ctx, view, moment, body, sprites.fine === true),
-				...runOutGear(ctx, view, moment.play?.runOut, moment.t),
-				...cartGear(ctx, view, moment.play, moment.t, sideColors.current),
 			);
 			for (const f of moment.flags ?? []) {
 				items.push({

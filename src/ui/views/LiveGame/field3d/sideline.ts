@@ -11,11 +11,9 @@ import {
 	MID_X,
 	TEAM_AREA,
 	type Pt,
-	type Pt3,
 	type Side,
 } from "./geometry.ts";
 import type { RosterMan } from "./personnel.ts";
-import { netBallAt, netKickAt, netKickOf, type NetKick } from "./netKicks.ts";
 import { liftOf, mouthOf, strideOf, type Move } from "./poses.ts";
 import type { FieldPlayerState } from "./sprite.ts";
 
@@ -77,8 +75,6 @@ export type SidelineMan = {
 	// How ready he is to have his helmet off (0 to 1: the lower, the
 	// sooner).
 	bare?: number;
-	// A kicker: what he kicks into the net, when he does (see netKicks.ts).
-	kicks?: "place" | "punt";
 };
 type Unit = "offense" | "defense" | "kicker" | "coach" | "staff";
 
@@ -103,9 +99,6 @@ const ROWS = 4;
 const FRONT = COACH_LINE + 1.6;
 const ROW_WORTH = 24;
 const JITTER = 0.5;
-// Nobody this near the head coach along the field, under the cooler at the
-// end (see shower.ts).
-const LANE = 4.4;
 // The unit just off the field: this share of it sit down.
 const SITS = 0.7;
 const SEAT = 2.6;
@@ -163,9 +156,6 @@ export const sidelineFor = (
 								x: netX(line) + lean * (NET_W / 2 + 3 + kickers++ * 3.5),
 								y: yOf(line, FRONT + 2 + r() * 2),
 							},
-							...(p.pos === "K" || p.pos === "P"
-								? { kicks: p.pos === "K" ? "place" : "punt" }
-								: {}),
 						}
 					: {}),
 				move:
@@ -547,16 +537,9 @@ const lay = (men: SidelineMan[], play: Play): Map<number, Spot> => {
 				});
 			}
 		}
-		// (A lane left through them for the men with the cooler for the
-		// head coach: see shower.ts.)
-		const shower = play.postgame?.shower;
-		const lane =
-			shower?.team === team
-				? slots.filter((p) => Math.abs(p.x - shower.at.x) >= LANE)
-				: slots;
-		lane.sort((a, b) => a.cost - b.cost);
+		slots.sort((a, b) => a.cost - b.cost);
 		standing.forEach((s, k) => {
-			const slot = lane[k];
+			const slot = slots[k];
 			if (!slot) {
 				return;
 			}
@@ -580,18 +563,8 @@ const lay = (men: SidelineMan[], play: Play): Map<number, Spot> => {
 	return out;
 };
 
-// The home team's players out of their tunnel before the game, not yet on
-// their sideline (see tunnel.ts).
-const runningOut = (s: SidelineMan, play: Play, t: number) =>
-	play.runOut !== undefined &&
-	t < play.runOut.cut &&
-	s.team === play.runOut.team &&
-	s.unit !== "coach" &&
-	s.unit !== "staff";
-
 // Who is on the field for a play (a head coach out to shake hands too):
-// everyone else is on his sideline - but for the captains out for the coin
-// toss, until it is done.
+// everyone else is on his sideline.
 const inFor = new WeakMap<Play, Set<number>>();
 const onField = (play: Play) => {
 	let s = inFor.get(play);
@@ -983,11 +956,7 @@ const outOf = (s: SidelineMan, spot: Spot, play: Play, at: Pt): Out | null => {
 					OUT_AFTER +
 					r() * OUT_SPREAD +
 					(spot.seated || s.unit === "kicker" ? OUT_LATE : 0) +
-					(mob ? BEATEN_LATE : 0) +
-					// (Watching the head coach under the cooler first.)
-					(post.shower && s.team === post.shower.team
-						? post.shower.until - post.from
-						: 0);
+					(mob ? BEATEN_LATE : 0);
 			let along = (spot.at.x - MID_X) * OUT_ALONG + (r() - 0.5) * 2 * OUT_WIDE;
 			if (near) {
 				along = (along < 0 ? -1 : 1) * (OUT_CLEAR + Math.abs(along));
@@ -1080,59 +1049,6 @@ const outAt = (
 	};
 };
 
-// A kicker's kick into his net on a play, if he takes one.
-const netKicks = new WeakMap<Play, Map<number, NetKick | null>>();
-const netKickFor = (s: SidelineMan, spot: Spot, play: Play): NetKick | null => {
-	if (!s.kicks || !s.at || spot.at !== s.at) {
-		return null;
-	}
-	let byMan = netKicks.get(play);
-	if (!byMan) {
-		byMan = new Map();
-		netKicks.set(play, byMan);
-	}
-	let k = byMan.get(s.id);
-	if (k === undefined) {
-		const line = sidelineOf(s.team);
-		k =
-			play.offense === s.team
-				? netKickOf(
-						s.kicks,
-						s.id,
-						play,
-						{ x: netX(line), y: yOf(line, NET_OFF) },
-						{ x: 0, y: line === 0 ? -1 : 1 },
-						s.at,
-					)
-				: null;
-		byMan.set(s.id, k);
-	}
-	return k;
-};
-
-// The balls kicked into the nets at t.
-export const netBallsAt = (
-	men: SidelineMan[],
-	m: FieldMoment,
-): { at: Pt3; axis?: Pt3; stood?: "tee"; lies?: Pt3 }[] => {
-	const play = m.play;
-	if (!play) {
-		return [];
-	}
-	const spots = layoutFor(men, play);
-	const out: { at: Pt3; axis?: Pt3; stood?: "tee"; lies?: Pt3 }[] = [];
-	for (const s of men) {
-		const spot =
-			s.kicks && !runningOut(s, play, m.t) ? spots.get(s.id) : undefined;
-		const k = spot ? netKickFor(s, spot, play) : null;
-		const b = k ? netBallAt(k, m.t) : null;
-		if (b) {
-			out.push(b);
-		}
-	}
-	return out;
-};
-
 export const sidelineAt = (
 	men: SidelineMan[],
 	tl: FieldTimeline,
@@ -1148,22 +1064,14 @@ export const sidelineAt = (
 	const spans = upSpansAt(tl, m.t, UP_LEVEL);
 	const ball = m.focus;
 	const post = play.postgame;
-	const toss = play.toss && m.t < play.toss.cut ? play.toss.men : [];
 	for (const s of men) {
 		const spot = spots.get(s.id);
-		if (!spot || toss.some((p) => p.pid === s.id) || runningOut(s, play, m.t)) {
+		if (!spot) {
 			continue;
 		}
 		const o = post ? outOf(s, spot, play, post.at) : null;
 		if (o && post && m.t >= o.leave) {
 			out.push(outAt(s, spot, o, m.t));
-			continue;
-		}
-		// (A kicker out to his net has his helmet on, all that play.)
-		const kick = netKickFor(s, spot, play);
-		const kicking = kick ? netKickAt(kick, s.id, m.t) : null;
-		if (kicking) {
-			out.push({ id: s.id, team: s.team, ...kicking });
 			continue;
 		}
 		// (Out of the way of a man run out of bounds into them.)
@@ -1282,7 +1190,7 @@ export const sidelineAt = (
 			phase,
 			...(from ? { from } : {}),
 			...(arms ? { arms } : {}),
-			...(spot.bare && !kick ? { bare: true as const } : {}),
+			...(spot.bare ? { bare: true as const } : {}),
 			...(mouth > 0 ? { mouth } : {}),
 		});
 	}
