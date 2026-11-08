@@ -10526,7 +10526,7 @@ class Action {
 		// The quarterback: set, through his progressions, and the throw.
 		if (thrown && catchPt) {
 			if (bootSide) {
-				this.onTheRun(qb, bootSide, catchPt, throwAt);
+				this.onTheRun(qb, bootSide, catchPt, throwAt, catchAt);
 			} else {
 				this.reads(
 					qb,
@@ -11125,30 +11125,41 @@ class Action {
 		);
 		qb.turn(PAST_IT - RELEASE_OPEN);
 		qb.go(ahead(WEIGHT_ON + WATCH_FT), qb.t + WATCH_MS, "walk", way);
-		// (A long one still up there: a look, and a few more steps on
-		// after it as it comes down - not stood like a statue the whole
-		// way.)
-		if (catchAt - qb.t >= WATCH_LONG_MS) {
-			qb.hold(
-				qb.t +
-					WATCH_PAUSE_MS[0] +
-					WATCH_PAUSE_MS[1] * countOf(qb, this.input.key, 160),
-				"stand",
-				way,
-			);
-			const on = WATCH_ON_FT * (0.6 + 0.4 * countOf(qb, this.input.key, 161));
-			qb.go(
-				{ x: qb.at.x + Math.cos(way) * on, y: qb.at.y + Math.sin(way) * on },
-				qb.t + WATCH_ON_MS,
-				"walk",
-				way,
-			);
+		this.watchOn(qb, way, catchAt);
+	}
+
+	// A long one still up there once he has let it go: a look, and a few
+	// more steps on after it as it comes down - not stood like a statue the
+	// whole way.
+	private watchOn(qb: Actor, way: number, catchAt: number) {
+		if (catchAt - qb.t < WATCH_LONG_MS) {
+			return;
 		}
+		qb.hold(
+			qb.t +
+				WATCH_PAUSE_MS[0] +
+				WATCH_PAUSE_MS[1] * countOf(qb, this.input.key, 160),
+			"stand",
+			way,
+		);
+		const on = WATCH_ON_FT * (0.6 + 0.4 * countOf(qb, this.input.key, 161));
+		qb.go(
+			{ x: qb.at.x + Math.cos(way) * on, y: qb.at.y + Math.sin(way) * on },
+			qb.t + WATCH_ON_MS,
+			"walk",
+			way,
+		);
 	}
 
 	// Rolled out round the edge, on at an easy run - the ball up in both
 	// hands, then cocked and let go, still going - and slowing up after.
-	onTheRun(qb: Actor, side: number, catchPt: Pt, throwAt: number) {
+	onTheRun(
+		qb: Actor,
+		side: number,
+		catchPt: Pt,
+		throwAt: number,
+		catchAt = throwAt,
+	) {
 		const end = throwAt + 500;
 		// (On at a quicker run than that already: on at it - not dropped
 		// to it in a stride.)
@@ -11175,19 +11186,18 @@ class Action {
 		if (GAITS.has(l.move) && legPace(l) >= STOP_LEAST) {
 			qb.easeOff(Infinity);
 			qb.hold(Math.max(qb.t, end) + 450, "stand", this.toward(qb.at, catchPt));
-			return;
-		}
-		if (end + 450 - qb.t < ONRUN_WALK_LEAST_MS) {
+		} else if (end + 450 - qb.t < ONRUN_WALK_LEAST_MS) {
 			qb.hold(end + 450, "stand", this.toward(qb.at, catchPt));
-			return;
+		} else {
+			const q = this.of(qb.at);
+			qb.go(
+				this.w({ d: q.d + 1, a: q.a + side * 2 }),
+				end + 450,
+				"walk",
+				this.toward(qb.at, catchPt),
+			);
 		}
-		const q = this.of(qb.at);
-		qb.go(
-			this.w({ d: q.d + 1, a: q.a + side * 2 }),
-			end + 450,
-			"walk",
-			this.toward(qb.at, catchPt),
-		);
+		this.watchOn(qb, this.toward(qb.at, catchPt), catchAt);
 	}
 
 	// A screen out wide: the receivers on his side off their routes and out
