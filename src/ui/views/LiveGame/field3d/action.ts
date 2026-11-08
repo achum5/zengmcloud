@@ -3900,8 +3900,15 @@ class Actor {
 			j--;
 		}
 		const t1 = l.t1;
+		// (Set that way as he came - round no more than TURN_SETTLE_INTO
+		// into it: round off it from the first of it, if it takes that - a
+		// short lock, beaten - not a blink of it left to come round in.)
+		const settle =
+			Math.abs(angleOff(yawThen(this, legs[j]!.t0) - l.yaw)) > TURN_SETTLE_INTO
+				? TURN_SETTLE_MS
+				: 0;
 		const t0 = Math.max(
-			legs[j]!.t0 + TURN_SETTLE_MS,
+			legs[j]!.t0 + settle,
 			t1 - (Math.abs(off) / PICK_TURN_RATE) * 1000,
 		);
 		const yaw = l.yaw;
@@ -5138,6 +5145,8 @@ const TURN_INTO_LEAST = 1.2;
 // of it to come round in: round all the way before he goes, not half way
 // and spun the rest as he goes.)
 const TURN_SETTLE_MS = 200;
+// (Unless he came into it round from it no more than this, radians.)
+const TURN_SETTLE_INTO = 0.5;
 // (Round from it more than this, radians - near enough right round to go
 // either way: round the way he goes on round to, over his first strides,
 // this long, ms.)
