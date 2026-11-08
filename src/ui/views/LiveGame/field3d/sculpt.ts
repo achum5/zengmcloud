@@ -9,6 +9,8 @@ import {
 	dotV,
 	frameOf,
 	handMasses,
+	joinBody,
+	joinsFor,
 	legMasses,
 	massesFor,
 	seerOf,
@@ -1317,29 +1319,29 @@ const build = (
 		);
 	}
 
-	const joins: Built["joins"] = [];
-	const join = (a: number, b: number, at: V3, reachFt: number) => {
-		const p = P(at);
-		joins.push({ a, b, x: p.x, y: p.y, reach: reachFt * p.k });
-	};
-	join(G_TORSO, G_ARM, sk.armR.root, body.upperR * 3.2);
-	join(G_TORSO, G_ARM + 1, sk.armL.root, body.upperR * 3.2);
-	join(G_TORSO, G_LEG, sk.legR.root, body.thighR * 2.8);
-	join(G_TORSO, G_LEG + 1, sk.legL.root, body.thighR * 2.8);
-	join(G_LEG, G_LEG + 1, up(-0.1, 0), body.thighR * 2.2);
-	join(G_TORSO, G_NECK, up(0.95, 0), sw * 0.8);
-	for (const side of [0, 1]) {
-		for (let i = 0; i < 4; i++) {
-			join(G_HAND + side, G_FINGER + side * 5 + i, knuckleAt[side]!, H * 0.04);
-		}
-		join(G_HAND + side, G_FINGER + side * 5 + 4, thumbAt[side]!, H * 0.035);
-		join(
-			G_ARM + side,
-			G_HAND + side,
-			side === 0 ? sk.armR.end : sk.armL.end,
-			H * 0.03,
-		);
-	}
+	// (See joinBody: his torso into his pants at his hips, and his gloves onto
+	// his forearms.)
+	const { joins, join } = joinsFor(P);
+	joinBody(
+		join,
+		{
+			torso: G_TORSO,
+			neck: G_NECK,
+			arm: G_ARM,
+			leg: G_LEG,
+			hand: G_HAND,
+			finger: G_FINGER,
+			shoulder: 3.2,
+			hip: 2.8,
+			neckReach: 0.8,
+			wrists: true,
+		},
+		sk,
+		body,
+		up,
+		knuckleAt,
+		thumbAt,
+	);
 
 	// The camera's frame, in his.
 	const frame = frameOf(cam, fig.yaw);

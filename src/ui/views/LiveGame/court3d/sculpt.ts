@@ -36,6 +36,7 @@ import {
 	type Body,
 	type Limb,
 	type Pose,
+	type Skeleton,
 	type V3,
 } from "./poses.ts";
 
@@ -1515,6 +1516,68 @@ export const legMasses = (
 	);
 };
 
+// WHERE HIS MASSES MELT INTO ONE ANOTHER, any sport's: two groups (`a`,
+// `b`) at `at`, as far round it as `reachFt` (see shade) - his own at his
+// shoulders, his hips, between his legs, his neck, and each finger and his
+// thumb into his palm, as each sport has his groups and their reach; and,
+// `wrists`, his hands onto his forearms.
+export type BodyJoins = {
+	torso: number;
+	neck: number;
+	// The first of each side's two (his right, his left).
+	arm: number;
+	leg: number;
+	hand: number;
+	// The first of his right hand's five (four fingers, then his thumb), his
+	// left's after them.
+	finger: number;
+	// The reach at his shoulders (of his upper arm's radius), his hips (of
+	// his thigh's) and his neck (of his shoulders' width).
+	shoulder: number;
+	hip: number;
+	neckReach: number;
+	wrists: boolean;
+};
+export const joinsFor = (P: (v: V3) => Seen) => {
+	const joins: Join[] = [];
+	const join = (a: number, b: number, at: V3, reachFt: number) => {
+		const p = P(at);
+		joins.push({ a, b, x: p.x, y: p.y, reach: reachFt * p.k });
+	};
+	return { joins, join };
+};
+export const joinBody = (
+	join: (a: number, b: number, at: V3, reachFt: number) => void,
+	g: BodyJoins,
+	sk: Skeleton,
+	body: Body,
+	up: (t: number, s: number, f?: number) => V3,
+	knuckleAt: V3[],
+	thumbAt: V3[],
+) => {
+	const H = body.H;
+	join(g.torso, g.arm, sk.armR.root, body.upperR * g.shoulder);
+	join(g.torso, g.arm + 1, sk.armL.root, body.upperR * g.shoulder);
+	join(g.torso, g.leg, sk.legR.root, body.thighR * g.hip);
+	join(g.torso, g.leg + 1, sk.legL.root, body.thighR * g.hip);
+	join(g.leg, g.leg + 1, up(-0.1, 0), body.thighR * 2.2);
+	join(g.torso, g.neck, up(0.95, 0), body.shoulderW * g.neckReach);
+	for (const side of [0, 1]) {
+		for (let i = 0; i < 4; i++) {
+			join(g.hand + side, g.finger + side * 5 + i, knuckleAt[side]!, H * 0.04);
+		}
+		join(g.hand + side, g.finger + side * 5 + 4, thumbAt[side]!, H * 0.035);
+		if (g.wrists) {
+			join(
+				g.arm + side,
+				g.hand + side,
+				side === 0 ? sk.armR.end : sk.armL.end,
+				H * 0.03,
+			);
+		}
+	}
+};
+
 // A microphone this far from his own mouth (feet) is held out to somebody
 // else's.
 const MIC_OWN = 1.1;
@@ -1941,23 +2004,28 @@ const build = (
 		add(top, addV(top, toward, 0.12), [[0, 0.13]], CAM_LENS, G_CAMERA);
 	}
 
-	const joins: Built["joins"] = [];
-	const join = (a: number, b: number, at: V3, reachFt: number) => {
-		const p = P(at);
-		joins.push({ a, b, x: p.x, y: p.y, reach: reachFt * p.k });
-	};
-	join(G_TORSO, G_ARM, sk.armR.root, body.upperR * 3);
-	join(G_TORSO, G_ARM + 1, sk.armL.root, body.upperR * 3);
-	join(G_TORSO, G_SHORTS, sk.legR.root, body.thighR * 2.6);
-	join(G_TORSO, G_SHORTS + 1, sk.legL.root, body.thighR * 2.6);
-	join(G_SHORTS, G_SHORTS + 1, up(-0.1, 0), body.thighR * 2.2);
-	join(G_TORSO, G_NECK, up(0.95, 0), sw * 0.9);
-	for (const side of [0, 1]) {
-		for (let i = 0; i < 4; i++) {
-			join(G_HAND + side, G_FINGER + side * 5 + i, knuckleAt[side]!, H * 0.04);
-		}
-		join(G_HAND + side, G_FINGER + side * 5 + 4, thumbAt[side]!, H * 0.035);
-	}
+	// (See joinBody: his torso into his shorts at his hips.)
+	const { joins, join } = joinsFor(P);
+	joinBody(
+		join,
+		{
+			torso: G_TORSO,
+			neck: G_NECK,
+			arm: G_ARM,
+			leg: G_SHORTS,
+			hand: G_HAND,
+			finger: G_FINGER,
+			shoulder: 3,
+			hip: 2.6,
+			neckReach: 0.9,
+			wrists: false,
+		},
+		sk,
+		body,
+		up,
+		knuckleAt,
+		thumbAt,
+	);
 
 	// The camera's frame, in his.
 	const frame = frameOf(cam, st.yaw);
