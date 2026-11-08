@@ -50,7 +50,8 @@ export type FieldMoment = {
 	// The ball when it is on its own (spotted, stood on end, in the air):
 	// drawn by itself, its points along `axis` if it is flying. Unset while
 	// a man has it - he is drawn with it.
-	ball?: { at: Pt3; stood?: "tee" | "hold"; axis?: Pt3 };
+	// (On the turf on its side: the way it lies - see ballAt.)
+	ball?: { at: Pt3; stood?: "tee" | "hold"; axis?: Pt3; lies?: Pt3 };
 	// Where the ball is, wherever it is, and the side with it if a man has
 	// it: for the camera to follow.
 	focus?: Pt3;
@@ -750,12 +751,19 @@ const armsPhaseOf = (l: Leg, t: number): number => {
 	return p0 + (p1 - p0) * along(l, t);
 };
 
+// The ball on the turf on its side, put down where it was: up and down the
+// field; on end, straight up.
+const ALONG: Pt3 = { x: 1, y: 0, z: 0 };
+const UPRIGHT: Pt3 = { x: 0, y: 0, z: 1 };
+
 // The ball in the air: along the straight line, up over it in a parabola.
 // (End over end, turned so far over through it - see tumble.)
 const flying = (
 	s: Extract<BallSeg, { kind: "fly" }>,
 	t: number,
 	spin?: Spin,
+	// (Dropped straight down, the way it was going before.)
+	way: Pt3 = ALONG,
 ): { at: Pt3; axis: Pt3 } => {
 	const u = s.t1 > s.t0 ? clamp01((t - s.t0) / (s.t1 - s.t0)) : 1;
 	// (Bent off the line, if it is - see bend: out to its left.)
@@ -781,14 +789,68 @@ const flying = (
 		const turn = spin
 			? spin.from + (spin.to - spin.from) * u
 			: ((t - s.t0) / 1000) * TUMBLE;
-		const flat = Math.hypot(axis.x, axis.y) || 1;
+		const flat = Math.hypot(axis.x, axis.y);
+		const fx = flat > 0.01 ? axis.x / flat : way.x;
+		const fy = flat > 0.01 ? axis.y / flat : way.y;
 		axis = {
-			x: (axis.x / flat) * Math.cos(turn),
-			y: (axis.y / flat) * Math.cos(turn),
+			x: fx * Math.cos(turn),
+			y: fy * Math.cos(turn),
 			z: Math.sin(turn),
 		};
 	}
 	return { at, axis };
+};
+// The way the ball was last going across the field before segs[k], back
+// over its flights (flat, a unit long) - if it was.
+const wayBefore = (segs: BallSeg[], k: number): Pt3 | undefined => {
+	for (let j = k - 1; j >= 0; j--) {
+		const f = segs[j]!;
+		if (f.kind !== "fly") {
+			return undefined;
+		}
+		const x = f.to.x - f.from.x;
+		const y = f.to.y - f.from.y;
+		const flat = Math.hypot(x, y);
+		if (flat > REST_WAY_LEAST) {
+			return { x: x / flat, y: y / flat, z: 0 };
+		}
+	}
+	return undefined;
+};
+// The ball in flight k, as it goes (see flying).
+const flightOf = (play: Play, k: number, t: number) => {
+	const s = play.ball[k] as Fly;
+	return flying(
+		s,
+		t,
+		s.spiral ? undefined : tumble(play, k),
+		wayBefore(play.ball, k),
+	);
+};
+
+// A ball let go turns from the way it was in his hands into the way it goes
+// over this long (ms) - and, caught, into the way it will be in the other
+// man's over the last so long of its flight (no farther out than a stride
+// or so from his hands, at a pass's pace).
+const TURN_OUT_MS = 120;
+const TURN_IN_MS = 80;
+// The way `axis` points, turned so far (0 to 1, eased) to the way `to` does
+// - whichever end of it is nearer the way it points at the end of the turn,
+// `by` (the same end all the way, not first one and then the other).
+const turnedTo = (axis: Pt3, to: Pt3, w: number, by: Pt3): Pt3 => {
+	if (w <= 0) {
+		return axis;
+	}
+	const v = Math.min(1, w);
+	const e = v * v * (3 - 2 * v);
+	const la = Math.hypot(axis.x, axis.y, axis.z) || 1;
+	const lt = Math.hypot(to.x, to.y, to.z) || 1;
+	const n = by.x * to.x + by.y * to.y + by.z * to.z < 0 ? -1 : 1;
+	return {
+		x: axis.x / la + ((n * to.x) / lt - axis.x / la) * e,
+		y: axis.y / la + ((n * to.y) / lt - axis.y / la) * e,
+		z: axis.z / la + ((n * to.z) / lt - axis.z / la) * e,
+	};
 };
 
 // END OVER END, off the turf: how far over it has turned (radians) as a
@@ -806,10 +868,13 @@ const tumble = (play: Play, k: number): Spin => {
 		return had;
 	}
 	const prev = play.ball[k - 1];
+	// (Off its tee, or the holder's finger: up on end as it goes.)
 	const from =
 		prev?.kind === "fly" && !prev.spiral && Math.abs(prev.t1 - s.t0) < 2
 			? tumble(play, k - 1).to
-			: 0;
+			: prev?.kind === "spot" && prev.stood
+				? Math.PI / 2
+				: 0;
 	let to = from + ((s.t1 - s.t0) / 1000) * TUMBLE;
 	const next = play.ball[k + 1];
 	if (next?.kind === "spot" && !next.stood && Math.abs(next.t0 - s.t1) < 2) {
@@ -823,20 +888,25 @@ const tumble = (play: Play, k: number): Spin => {
 
 // Where the ball he has is drawn, his hands on it (the field's own
 // coordinates, as the ball's flight is - see drawnUp): for a ball thrown,
-// pitched or snapped to leave his hands, and get to the hands catching it.
-export type HandsOf = (st: FieldPlayerState) => Pt3 | undefined;
+// pitched or snapped to leave his hands, and get to the hands catching it;
+// and the way its points run there, as it is drawn (up drawn up).
+export type HandsOf = (
+	st: FieldPlayerState,
+) => (Pt3 & { axis?: Pt3 }) | undefined;
 
 type Fly = Extract<BallSeg, { kind: "fly" }>;
-const metBy = new WeakMap<Fly, { off: Pt3; on: Pt3 }>();
+type Met = { off: Pt3; on: Pt3; offWay?: Pt3; onWay?: Pt3 };
+const metBy = new WeakMap<Fly, Met>();
 const NONE: Pt3 = { x: 0, y: 0, z: 0 };
 
-// How far the flight's ends are from the hands it leaves and gets to.
+// How far the flight's ends are from the hands it leaves and gets to - and
+// the way it is turned in them.
 const handsMet = (
 	play: Play,
 	k: number,
 	apart: Map<number, Sep[]>,
 	handsOf: HandsOf,
-): { off: Pt3; on: Pt3 } => {
+): Met => {
 	const s = play.ball[k] as Fly;
 	let met = metBy.get(s);
 	if (met) {
@@ -847,21 +917,30 @@ const handsMet = (
 		t: number,
 		end: Pt3,
 		thrown: boolean,
-	): Pt3 => {
+	): { by: Pt3; way?: Pt3 } => {
 		const part = seg?.kind === "held" ? holderOf(play, seg.pid) : undefined;
 		const st = part ? stateOf(part, t, apart, play) : undefined;
 		const hold =
 			seg?.kind === "held" ? holdNear(play, seg.pid, t, thrown) : undefined;
 		const at = st && hold ? handsOf({ ...st, ball: hold }) : undefined;
-		return at ? { x: at.x - end.x, y: at.y - end.y, z: at.z - end.z } : NONE;
+		return at
+			? {
+					by: { x: at.x - end.x, y: at.y - end.y, z: at.z - end.z },
+					...(at.axis ? { way: at.axis } : {}),
+				}
+			: { by: NONE };
 	};
 	const next = play.ball[k + 1];
+	const off = gap(play.ball[k - 1], s.t0 - 1, s.from, true);
+	const on =
+		next && Math.abs(next.t0 - s.t1) < 2
+			? gap(next, s.t1 + 1, s.to, false)
+			: { by: NONE };
 	met = {
-		off: gap(play.ball[k - 1], s.t0 - 1, s.from, true),
-		on:
-			next && Math.abs(next.t0 - s.t1) < 2
-				? gap(next, s.t1 + 1, s.to, false)
-				: NONE,
+		off: off.by,
+		on: on.by,
+		...(off.way ? { offWay: off.way } : {}),
+		...(on.way ? { onWay: on.way } : {}),
 	};
 	metBy.set(s, met);
 	return met;
@@ -869,7 +948,7 @@ const handsMet = (
 
 // The way a ball come to rest at segs[k] went, the last of its way there
 // (back over its last bounces as far as it takes to have gone this far,
-// feet) - or, put down where it was, none: lying across the picture.
+// feet) - or, put down where it was, none: lying up and down the field.
 const REST_WAY_LEAST = 0.3;
 const restWay = (segs: BallSeg[], k: number): Pt3 | undefined => {
 	const at = (segs[k] as Extract<BallSeg, { kind: "spot" }>).at;
@@ -888,6 +967,13 @@ const restWay = (segs: BallSeg[], k: number): Pt3 | undefined => {
 	}
 	return undefined;
 };
+// The way a ball on its side on the turf at segs[k] lies (flat, a unit
+// long): as it came to rest, or put down up and down the field.
+const lyingWay = (segs: BallSeg[], k: number): Pt3 => {
+	const w = restWay(segs, k);
+	const flat = w ? Math.hypot(w.x, w.y) : 0;
+	return w && flat > 0 ? { x: w.x / flat, y: w.y / flat, z: 0 } : ALONG;
+};
 const ballAt = (
 	play: Play,
 	t: number,
@@ -903,31 +989,53 @@ const ballAt = (
 	}
 	if (s.kind === "spot") {
 		// (Come to rest off the turf, or tossed down onto it: on its side,
-		// the way it was going.)
+		// the way it was going - put down, up and down the field.)
 		const way = s.stood ? undefined : restWay(segs, k);
-		if (way) {
-			return {
-				ball: { at: { ...s.at, z: restingZ(undefined) }, axis: way },
-				focus: s.at,
-			};
-		}
 		return {
-			ball: { at: s.at, ...(s.stood ? { stood: s.stood } : {}) },
+			ball: {
+				at: s.at,
+				...(s.stood ? { stood: s.stood } : {}),
+				...(way ? { lies: way } : {}),
+			},
 			focus: s.at,
 		};
 	}
 	if (s.kind === "fly") {
-		const f = flying(s, t, s.spiral ? undefined : tumble(play, k));
+		const f = flightOf(play, k, t);
+		let met: Met | undefined;
 		if (handsOf) {
 			// (Out of his hands and into the other man's, the whole way
 			// eased from the one to the other.)
-			const { off, on } = handsMet(play, k, apart, handsOf);
+			met = handsMet(play, k, apart, handsOf);
+			const { off, on } = met;
 			const u = s.t1 > s.t0 ? clamp01((t - s.t0) / (s.t1 - s.t0)) : 1;
 			f.at = {
 				x: f.at.x + off.x * (1 - u) + on.x * u,
 				y: f.at.y + off.y * (1 - u) + on.y * u,
 				z: f.at.z + off.z * (1 - u) + on.z * u,
 			};
+		}
+		// (And turned out of the way it was - in his hands, or as it went
+		// before it bounced or was knocked away - into the way it goes, and
+		// into the way it will be in the other man's hands, over the first
+		// and the last of its flight: not all at once.)
+		const ease = Math.min(TURN_OUT_MS, (s.t1 - s.t0) / 2);
+		const easeIn = Math.min(TURN_IN_MS, (s.t1 - s.t0) / 2);
+		if (ease > 0 && t - s.t0 < ease) {
+			const prev = segs[k - 1];
+			const before =
+				met?.offWay ??
+				(prev?.kind === "fly" && Math.abs(prev.t1 - s.t0) < 2
+					? flightOf(play, k - 1, prev.t1).axis
+					: undefined);
+			if (before) {
+				const w = 1 - (t - s.t0) / ease;
+				f.axis = turnedTo(f.axis, before, w, flightOf(play, k, s.t0).axis);
+			}
+		}
+		if (easeIn > 0 && s.t1 - t < easeIn && met?.onWay) {
+			const w = 1 - (s.t1 - t) / easeIn;
+			f.axis = turnedTo(f.axis, met.onWay, w, flightOf(play, k, s.t1).axis);
 		}
 		// (Off a man's hands: the eye from him onto it - not to where it
 		// was, out in front of him, from where he stood, in a frame.)
@@ -1033,12 +1141,16 @@ const holdNear = (
 	return l && l.t0 < t + HOLD_NEAR_MS ? l.ball : undefined;
 };
 
+// Which end of the ball goes first into the hands taking it (see passing),
+// for each handover - by the piece of its timeline it is handed into.
+const endFirst = new WeakMap<BallSeg, 1 | -1>();
 const passing = (
 	play: Play,
 	t: number,
 	players: FieldPlayerState[],
 	handsOf: HandsOf,
 	cuts: readonly number[],
+	apart: Map<number, Sep[]>,
 ):
 	| {
 			at: Pt3;
@@ -1081,43 +1193,74 @@ const passing = (
 		}
 		// (Each end where the ball is drawn at t: in a man's hands, the way he
 		// has it just before or just after it changes hands - or on the turf.)
-		const end = (seg: BallSeg, giving: boolean): Pt3 | undefined => {
+		const end = (
+			seg: BallSeg,
+			i: number,
+			giving: boolean,
+			when?: number,
+		): { at: Pt3; axis?: Pt3 } | undefined => {
 			if (seg.kind === "spot") {
-				return { ...seg.at, z: seg.at.z + restingZ(seg.stood) };
+				return {
+					at: { ...seg.at, z: seg.at.z + restingZ(seg.stood) },
+					axis: seg.stood ? UPRIGHT : lyingWay(segs, i),
+				};
 			}
 			if (seg.kind !== "held") {
 				return undefined;
 			}
-			const st = players.find((p) => p.id === seg.pid);
+			const part = when === undefined ? undefined : holderOf(play, seg.pid);
+			const st =
+				when === undefined
+					? players.find((p) => p.id === seg.pid)
+					: part && stateOf(part, when, apart, play);
 			const hold = holdNear(play, seg.pid, t0, giving);
-			return st && hold ? handsOf({ ...st, ball: hold }) : undefined;
+			const at = st && hold ? handsOf({ ...st, ball: hold }) : undefined;
+			return at ? { at, axis: at.axis } : undefined;
 		};
-		const from = end(a, true);
-		const to = end(b, false);
-		if (!from || !to) {
+		const giving = end(a, j - 1, true);
+		const taking = end(b, j, false);
+		if (!giving || !taking) {
 			return undefined;
 		}
+		// (The end of it nearer the way it will be in the other man's hands
+		// as the two of them have it either side of the handover - the same
+		// end all the way through, not first one and then the other.)
+		let first = endFirst.get(b);
+		if (first === undefined) {
+			const w0 = end(a, j - 1, true, t0 - half)?.axis;
+			const w1 = end(b, j, false, t0 + half)?.axis;
+			first = w0 && w1 && w0.x * w1.x + w0.y * w1.y + w0.z * w1.z < 0 ? -1 : 1;
+			endFirst.set(b, first);
+		}
+		const from = giving.at;
+		const to = taking.at;
 		const u = (t - (t0 - half)) / (half * 2);
 		const e = u * u * (3 - 2 * u);
 		const flat = Math.hypot(to.x - from.x, to.y - from.y);
 		const rise = Math.min(PASS_RISE_MOST, PASS_RISE * flat);
-		const ax =
+		// (Turned from the way it was in the one man's hands, or on the
+		// turf - stood up on end, or on its side - to the way it will be in
+		// the other's, whichever of its ends is nearer: not swung round to
+		// point the way it goes between them.)
+		const ax: Pt3 =
 			flat > 0.01
 				? { x: (to.x - from.x) / flat, y: (to.y - from.y) / flat, z: 0.3 }
 				: { x: 1, y: 0, z: 0.3 };
-		// (Set down on end, stood up as it goes.)
-		const up = b.kind === "spot" && b.stood ? e : 0;
+		const a0 = giving.axis ?? ax;
+		const a1 = taking.axis ?? ax;
+		const n = giving.axis && taking.axis ? first : 1;
+		const axis = {
+			x: a0.x + (n * a1.x - a0.x) * e,
+			y: a0.y + (n * a1.y - a0.y) * e,
+			z: a0.z + (n * a1.z - a0.z) * e,
+		};
 		return {
 			at: {
 				x: from.x + (to.x - from.x) * e,
 				y: from.y + (to.y - from.y) * e,
 				z: from.z + (to.z - from.z) * e + 4 * rise * e * (1 - e),
 			},
-			axis: {
-				x: ax.x * (1 - up),
-				y: ax.y * (1 - up),
-				z: ax.z + (1 - ax.z) * up,
-			},
+			axis,
 			unseen: [a, b].flatMap((x) => (x.kind === "held" ? [x.pid] : [])),
 			since: t - (t0 - half),
 			// (Not off the center: it was where it sits on the line already.)
@@ -1575,7 +1718,7 @@ export const momentAt = (
 			}
 		}
 	}
-	const over = handsOf && passing(play, t, players, handsOf, tl.cuts);
+	const over = handsOf && passing(play, t, players, handsOf, tl.cuts, apart);
 	if (over) {
 		for (const st of players) {
 			if (over.unseen.includes(st.id) && st.ball) {

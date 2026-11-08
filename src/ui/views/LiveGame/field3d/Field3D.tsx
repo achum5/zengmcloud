@@ -291,16 +291,25 @@ const handsOfFor =
 		if (!drawn) {
 			return undefined;
 		}
-		const at = bodyPoint(
-			{
-				x: st.x + drawn.shift.x,
-				y: st.y + drawn.shift.y,
-				z: drawnLift(st, fine()),
-				yaw: drawn.yaw,
-			},
-			drawn.ball.at,
-		);
-		return { x: at.x, y: at.y, z: at.z / FIGURE_SCALE };
+		const placed = {
+			x: st.x + drawn.shift.x,
+			y: st.y + drawn.shift.y,
+			z: drawnLift(st, fine()),
+			yaw: drawn.yaw,
+		};
+		const at = bodyPoint(placed, drawn.ball.at);
+		const { at: mid, axis } = drawn.ball;
+		const tip = bodyPoint(placed, {
+			f: mid.f + axis.f,
+			s: mid.s + axis.s,
+			u: mid.u + axis.u,
+		});
+		return {
+			x: at.x,
+			y: at.y,
+			z: at.z / FIGURE_SCALE,
+			axis: { x: tip.x - at.x, y: tip.y - at.y, z: tip.z - at.z },
+		};
 	};
 
 // Where the score bug and the line over it sit in the picture: what the
@@ -1461,7 +1470,14 @@ const Field3D = ({
 						if (axis) {
 							drawFlyingBall(ctx, view, drawnUp(ball.at), axis, casts);
 						} else {
-							drawLooseBall(ctx, view, drawnUp(ball.at), ball.stood, casts);
+							drawLooseBall(
+								ctx,
+								view,
+								drawnUp(ball.at),
+								ball.stood,
+								casts,
+								ball.lies,
+							);
 						}
 					},
 				});
@@ -1474,7 +1490,14 @@ const Field3D = ({
 						if (axis) {
 							drawFlyingBall(ctx, view, drawnUp(b.at), axis);
 						} else {
-							drawLooseBall(ctx, view, drawnUp(b.at), b.stood);
+							drawLooseBall(
+								ctx,
+								view,
+								drawnUp(b.at),
+								b.stood,
+								undefined,
+								b.lies,
+							);
 						}
 					},
 				});

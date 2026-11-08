@@ -87,12 +87,17 @@ export const drawTee = (
 	ctx.restore();
 };
 
+// Spotted, put down where it was: its points up and down the field.
+const ALONG: Pt3 = { x: 1, y: 0, z: 0 };
+
 export const drawLooseBall = (
 	ctx: CanvasRenderingContext2D,
 	cam: Camera,
 	at: Pt3,
 	stood: "tee" | "hold" | undefined,
 	casts?: Cast[],
+	// On its side, the way it lies (spotted - see ALONG - if not given).
+	lies?: Pt3,
 ) => {
 	const base = project(cam, { ...at, z: 0 });
 	const k = base.k;
@@ -104,16 +109,66 @@ export const drawLooseBall = (
 	) {
 		return;
 	}
-	// On end (on its tee, a little up off the turf); spotted, on its side.
+	// On end (on its tee, a little up off the turf); on its side, its points
+	// the way it lies as the camera has them - end on to it from behind.
 	const tee = stood === "tee";
-	const rx = Math.max(1, (stood ? BALL_R : BALL_LEN / 2) * k);
-	const ry = Math.max(0.8, (stood ? BALL_LEN / 2 : BALL_R * 0.8) * k);
 	const lift = tee ? TEE_H * k : 0;
-	const cx = base.x;
-	const cy = base.y - lift - ry;
+	let rx = Math.max(1, BALL_R * k);
+	let ry = Math.max(0.8, (BALL_LEN / 2) * k);
+	let turn = 0;
+	let cx = base.x;
+	let cy = base.y - lift - ry;
+	// (Its shadow on the turf, the two ways across it - see below.)
+	let along = { x: rx * 1.05, y: 0 };
+	let aside = { x: 0, y: Math.max(0.6, ry * 0.4) };
+	if (!stood) {
+		const w = lies ?? ALONG;
+		const flat = Math.hypot(w.x, w.y) || 1;
+		const wx = w.x / flat;
+		const wy = w.y / flat;
+		const half = BALL_LEN / 2;
+		// (Its middle as high off the turf as it lies - see restingZ.)
+		const up = BALL_R * 0.8;
+		const mid = project(cam, { x: at.x, y: at.y, z: up });
+		const tip = project(cam, {
+			x: at.x + wx * half,
+			y: at.y + wy * half,
+			z: up,
+		});
+		const dx = tip.x - mid.x;
+		const dy = tip.y - mid.y;
+		turn = Math.atan2(dy, dx);
+		// (Seen across its middle, as wide as it is; from over it, a
+		// little less.)
+		ry = Math.max(0.8, BALL_R * (0.8 + 0.2 * Math.abs(Math.sin(turn))) * k);
+		rx = Math.max(1, ry, Math.hypot(dx, dy));
+		cx = mid.x;
+		cy = mid.y;
+		const end = project(cam, {
+			x: at.x + wx * half,
+			y: at.y + wy * half,
+			z: 0,
+		});
+		const side = project(cam, {
+			x: at.x - wy * BALL_R,
+			y: at.y + wx * BALL_R,
+			z: 0,
+		});
+		along = { x: (end.x - base.x) * 1.05, y: (end.y - base.y) * 1.05 };
+		aside = { x: (side.x - base.x) * 0.8, y: (side.y - base.y) * 0.8 };
+		const thin = Math.hypot(aside.x, aside.y);
+		if (thin < 0.6) {
+			aside =
+				thin > 0
+					? { x: (aside.x / thin) * 0.6, y: (aside.y / thin) * 0.6 }
+					: { x: 0, y: 0.6 };
+		}
+	}
+	const high = Math.hypot(rx * Math.sin(turn), ry * Math.cos(turn));
+	const wide = Math.hypot(rx * Math.cos(turn), ry * Math.sin(turn));
 	ctx.save();
 	castBall(ctx, casts, at.z, base.y, () => {
-		ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+		ctx.ellipse(cx, cy, rx, ry, turn, 0, Math.PI * 2);
 	});
 	if (tee) {
 		ctx.fillStyle = TEE_ORANGE;
@@ -135,36 +190,31 @@ export const drawLooseBall = (
 			lift,
 		);
 	} else {
-		// Its shadow.
+		// Its shadow, laid flat on the turf under it the way it lies.
 		ctx.fillStyle = "rgba(0, 0, 0, 0.28)";
 		ctx.beginPath();
-		ctx.ellipse(
-			cx,
-			base.y,
-			rx * 1.05,
-			Math.max(0.6, ry * 0.4),
-			0,
-			0,
-			Math.PI * 2,
-		);
+		const m = ctx.getTransform();
+		ctx.transform(along.x, along.y, aside.x, aside.y, base.x, base.y);
+		ctx.arc(0, 0, 1, 0, Math.PI * 2);
+		ctx.setTransform(m);
 		ctx.fill();
 	}
 	ctx.fillStyle = BALL_BROWN;
 	ctx.strokeStyle = "rgba(20, 8, 2, 0.85)";
 	ctx.lineWidth = Math.max(0.6, k * 0.06);
 	ctx.beginPath();
-	ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+	ctx.ellipse(cx, cy, rx, ry, turn, 0, Math.PI * 2);
 	ctx.fill();
 	ctx.stroke();
 	// The light on it, and its laces.
 	ctx.fillStyle = "rgba(255, 220, 180, 0.28)";
 	ctx.beginPath();
 	ctx.ellipse(
-		cx - rx * 0.2,
-		cy - ry * 0.35,
+		cx - wide * 0.2,
+		cy - high * 0.35,
 		rx * 0.5,
 		ry * 0.32,
-		0,
+		turn,
 		0,
 		Math.PI * 2,
 	);
@@ -176,8 +226,11 @@ export const drawLooseBall = (
 		ctx.moveTo(cx, cy - ry * 0.45);
 		ctx.lineTo(cx, cy + ry * 0.35);
 	} else {
-		ctx.moveTo(cx - rx * 0.35, cy - ry * 0.3);
-		ctx.lineTo(cx + rx * 0.35, cy - ry * 0.3);
+		// (Along it, on top.)
+		const ux = Math.cos(turn) * rx * 0.35;
+		const uy = Math.sin(turn) * rx * 0.35;
+		ctx.moveTo(cx - ux, cy - ry * 0.3 - uy);
+		ctx.lineTo(cx + ux, cy - ry * 0.3 + uy);
 	}
 	ctx.stroke();
 	ctx.restore();

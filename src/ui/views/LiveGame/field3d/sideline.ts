@@ -1114,13 +1114,13 @@ const netKickFor = (s: SidelineMan, spot: Spot, play: Play): NetKick | null => {
 export const netBallsAt = (
 	men: SidelineMan[],
 	m: FieldMoment,
-): { at: Pt3; axis?: Pt3; stood?: "tee" }[] => {
+): { at: Pt3; axis?: Pt3; stood?: "tee"; lies?: Pt3 }[] => {
 	const play = m.play;
 	if (!play) {
 		return [];
 	}
 	const spots = layoutFor(men, play);
-	const out: { at: Pt3; axis?: Pt3; stood?: "tee" }[] = [];
+	const out: { at: Pt3; axis?: Pt3; stood?: "tee"; lies?: Pt3 }[] = [];
 	for (const s of men) {
 		const spot =
 			s.kicks && !runningOut(s, play, m.t) ? spots.get(s.id) : undefined;

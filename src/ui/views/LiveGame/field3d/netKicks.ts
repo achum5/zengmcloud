@@ -228,13 +228,19 @@ export const netKickAt = (
 export const netBallAt = (
 	k: NetKick,
 	t: number,
-): { at: Pt3; axis?: Pt3; stood?: "tee" } | null => {
+): { at: Pt3; axis?: Pt3; stood?: "tee"; lies?: Pt3 } | null => {
 	const place = k.kind === "place";
 	const { begin } = timesOf(k);
 	const into = k.contact + INTO_MS;
 	const fall = Math.sqrt((2 * k.net.z) / G) * 1000;
-	const tumble = (since: number, a: Pt3) => {
-		const turn = (since / 1000) * 9;
+	// (End over end from the way it was as he got his foot into it - up on
+	// end on its tee, nose up off his hands - and on, slower, down off the
+	// net.)
+	const tumble = (a: Pt3) => {
+		const turn =
+			(place ? Math.PI / 2 : Math.atan2(0.8, 0.6)) +
+			((Math.min(t, into) - k.contact) / 1000) * 9 +
+			(Math.max(0, t - into) / 1000) * 9 * 0.4;
 		const flat = Math.hypot(a.x, a.y) || 1;
 		return {
 			x: (a.x / flat) * Math.cos(turn),
@@ -266,7 +272,7 @@ export const netBallAt = (
 				y: from.y + (k.net.y - from.y) * u,
 				z: from.z + (k.net.z - from.z) * u,
 			},
-			axis: tumble(t - k.contact, {
+			axis: tumble({
 				x: k.net.x - from.x,
 				y: k.net.y - from.y,
 				z: 0,
@@ -282,8 +288,9 @@ export const netBallAt = (
 				y: k.net.y + (k.rest.y - k.net.y) * u,
 				z: Math.max(0, k.net.z - 0.5 * G * s * s),
 			},
-			axis: tumble((t - into) * 0.4, { ...k.fwd, z: 0 }),
+			axis: tumble({ ...k.fwd, z: 0 }),
 		};
 	}
-	return { at: { ...k.rest, z: 0 } };
+	// (Lying the way it fell.)
+	return { at: { ...k.rest, z: 0 }, lies: { ...k.fwd, z: 0 } };
 };
