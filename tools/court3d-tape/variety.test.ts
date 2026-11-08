@@ -446,6 +446,10 @@ const jumperParts = (tl: CourtTimeline, shot: BallSeg & { kind: "fly" }) => {
 	let everyone = "?";
 	{
 		const offAt = tl.ball[k + 1]?.t0 ?? release + 1100;
+		// (Boxing out, till it is off the rim.)
+		const offSeg = tl.ball[k + 1];
+		const offEnd =
+			offSeg && "t1" in offSeg ? (offSeg.t1 as number) : offAt + 600;
 		let crash = 0;
 		let back = 0;
 		let boxing = 0;
@@ -479,7 +483,7 @@ const jumperParts = (tl: CourtTimeline, shot: BallSeg & { kind: "fly" }) => {
 					(a) =>
 						(a.anim === "boxOut" || a.anim === "fight") &&
 						a.t1 > release &&
-						a.t0 < offAt + 200,
+						a.t0 < offEnd,
 				);
 				if (boxed) {
 					boxing += 1;

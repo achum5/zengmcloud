@@ -1024,6 +1024,17 @@ const PLAY_IT_BACK = 0.4;
 // is off the rim, he sets off on as he reads it - taking at most this many
 // times as long over it.
 const PLAY_IT_LATE = 400;
+// Boxed in (see boxIn): a man of theirs within this far of the rim (feet),
+// with one of ours this near on his back, neither going faster than this
+// (feet a second; ours, coming in, nearly twice it) - from this long before
+// it comes off till this long
+// after (ms), this share of men (by how good a rebounder he is).
+const BOX_IN_FT = 14;
+const BOX_IN_NEAR = 4.2;
+const BOX_IN_PACE = 5;
+const BOX_IN_BEFORE = 450;
+const BOX_IN_AFTER = 300;
+const BOX_IN_SHARE = 0.8;
 const PLAY_IT_STRETCH = 2.5;
 // Set on his spot for a catch-and-shoot, this share of men step into it as
 // it comes - a good shooter more (this much more at the best, less at the
@@ -3618,6 +3629,70 @@ class Director {
 					next.from = { ...Q };
 				}
 			}
+			this.boxIn(team, shooter, off);
+		}
+	}
+
+	// BOXED IN AS IT COMES OFF. A man of theirs in close with one of ours
+	// right on his back as it comes off the rim, both of them stood there
+	// with nothing else on, turns and sits on him - backside into him, arms
+	// out - and our man fights him for it; a sharp rebounder all but always,
+	// a poor one now and then just watching it.
+	private boxIn(team: Side, shooter: number, off: number) {
+		const rim = rimPt(team);
+		const t0 = off - BOX_IN_BEFORE;
+		const t1 = off + BOX_IN_AFTER;
+		const shown = (o: Track) => {
+			const k = lastBy(o.shown, t0, (x) => x[0]);
+			return k >= 0 && o.shown[k]![1];
+		};
+		const pace = (pid: number) =>
+			dist(this.posAt(pid, t0 - 100), this.posAt(pid, t0 + 100)) * 5;
+		const free = (o: Track) =>
+			!o.acts.some((a) => a.t1 > t0 - 300 && a.t0 < t1) &&
+			!this.cuts.some((c) => c > t0 - 300 && c < t1 + 100);
+		const all = [...this.tracks.values()].filter(
+			(o) => o.pid >= 0 && o.pid !== shooter && shown(o),
+		);
+		const taken = new Set<number>();
+		for (const d of all) {
+			if (d.team === team || !free(d) || pace(d.pid) > BOX_IN_PACE) {
+				continue;
+			}
+			const D = this.posAt(d.pid, t0);
+			if (dist(D, rim) > BOX_IN_FT) {
+				continue;
+			}
+			let man: Track | undefined;
+			let near = BOX_IN_NEAR;
+			for (const o of all) {
+				if (o.team !== team || taken.has(o.pid) || !free(o)) {
+					continue;
+				}
+				const O = this.posAt(o.pid, t0);
+				const g = dist(O, D);
+				if (
+					g < near &&
+					dist(O, rim) > dist(D, rim) + 0.5 &&
+					pace(o.pid) <= BOX_IN_PACE * 1.8
+				) {
+					near = g;
+					man = o;
+				}
+			}
+			if (
+				!man ||
+				(this.rated.has(d.pid) &&
+					hash01(d.pid * 5 + 1, Math.round(off)) >=
+						this.rebOdds(d.pid, BOX_IN_SHARE, [0.5, 0.97]))
+			) {
+				continue;
+			}
+			taken.add(man.pid);
+			d.acts.push({ t0, t1, anim: "boxOut", look: { ...rim } });
+			man.acts.push({ t0: t0 + 80, t1, anim: "fight", look: { ...rim } });
+			d.acts.sort((a, b) => a.t0 - b.t0);
+			man.acts.sort((a, b) => a.t0 - b.t0);
 		}
 	}
 
@@ -6980,6 +7055,10 @@ class Director {
 		shooter?: number,
 		// A trip that ends in a turnover: who loses it.
 		loser?: number,
+		// A trip that ends in a foul on purpose, late, to stop the clock: the
+		// man they foul - the ball in to him, not the point guard, so it is
+		// him they go after with it.
+		fouled?: number,
 	): { t: number; run?: Running } {
 		const phase = this.phase;
 		const changed = this.offense !== team;
@@ -7020,7 +7099,7 @@ class Director {
 				team,
 				t,
 				transition || (heave && resultOf(last)?.kind === "make"),
-				heave ? shooter : undefined,
+				heave ? shooter : fouled,
 			);
 			into = "flow";
 		} else if (phase === "loose" || phase === "tip" || phase === "set") {
@@ -7058,7 +7137,10 @@ class Director {
 					gap < QUICK_IN
 						? shooter
 						: undefined;
-				run = quickTo === undefined ? call?.("inbound") : undefined;
+				run =
+					quickTo === undefined && fouled === undefined
+						? call?.("inbound")
+						: undefined;
 				if (run && (run.play.cat === "blob" || run.play.cat === "slob")) {
 					t = this.inboundPlay(run, t);
 				} else {
@@ -7066,12 +7148,20 @@ class Director {
 						team,
 						t,
 						at,
-						quickTo === undefined
-							? undefined
-							: {
+						quickTo !== undefined
+							? {
 									pid: quickTo,
 									at: this.quickSpot(team, shot ?? "three", at),
-								},
+								}
+							: fouled !== undefined
+								? {
+										pid: fouled,
+										at: clampPt({
+											x: at.x + attackDir(team) * 6,
+											y: at.y < COURT_H / 2 ? 9 : COURT_H - 9,
+										}),
+									}
+								: undefined,
 					);
 					if (run) {
 						t = this.flowToPlay(run, t);
@@ -7083,10 +7173,11 @@ class Director {
 				// (At the buzzer, in to the man who lets it go, a few strides up
 				// the floor from it.)
 				const baseline = at !== undefined && (at.x < 0 || at.x > COURT_W);
+				const inTo = heave ? shooter : fouled;
 				const to =
-					at && heave && shooter !== undefined
+					at && inTo !== undefined
 						? {
-								pid: shooter,
+								pid: inTo,
 								at: clampPt({
 									x: at.x + attackDir(team) * (baseline ? 12 : 6),
 									y: baseline
@@ -16551,14 +16642,29 @@ class Director {
 			case "pfBonus": {
 				const fouler = e.pid as number;
 				const team = other(this.teamOf(fouler));
+				const victim =
+					typeof e.pidShooting === "number" ? e.pidShooting : undefined;
+				// Fouled on purpose, late, to stop the clock: the man who goes
+				// to the line is the one they go after - the ball in to him.
+				const deliberate =
+					gap !== undefined && gap < 4 && this.foulingToStopClock(fouler, e);
 				// Some of a set, then the whistle.
-				const dev = this.develop(team, T, gap, (entry) =>
-					this.callForAny(
-						entry,
-						team,
-						gap,
-						typeof e.clock === "number" ? e.clock : undefined,
-					),
+				const dev = this.develop(
+					team,
+					T,
+					gap,
+					(entry) =>
+						this.callForAny(
+							entry,
+							team,
+							gap,
+							typeof e.clock === "number" ? e.clock : undefined,
+						),
+					undefined,
+					false,
+					undefined,
+					undefined,
+					deliberate ? victim : undefined,
 				);
 				let t = dev.t;
 				if (dev.run) {
@@ -16586,13 +16692,7 @@ class Director {
 					hit,
 					at: vp,
 					how,
-				} = this.stageFoul(
-					fouler,
-					team,
-					t,
-					typeof e.pidShooting === "number" ? e.pidShooting : undefined,
-					gap !== undefined && gap < 4 && this.foulingToStopClock(fouler, e),
-				);
+				} = this.stageFoul(fouler, team, t, victim, deliberate);
 				this.effect("whistle", hit, { call: "foul", at: vp, team, how });
 				if (this.rng() < 0.3) {
 					this.react(fouler, "protest", hit + 420, 950);
@@ -18222,10 +18322,14 @@ class Director {
 		const far =
 			dist(this.posOf(fouler), this.posOf(handler)) > 20 &&
 			this.defenderOf(handler) !== fouler;
+		// (On purpose, though, it is the man with the ball - the one they
+		// foul gets it first: grabbed off the ball, it would be his team's
+		// ball again as well.)
 		const offBall =
 			manOf !== undefined &&
 			manOf !== handler &&
-			(victim === undefined ? far || this.rng() < 0.4 : victim === manOf);
+			(victim === undefined ? far || this.rng() < 0.4 : victim === manOf) &&
+			!deliberate;
 		const fouled = offBall ? manOf : (victim ?? handler);
 		if (!offBall && fouled !== handler) {
 			t = this.passTo(handler, fouled, t);

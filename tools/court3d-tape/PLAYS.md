@@ -206,10 +206,13 @@ the easier for it - and a man with nothing laid for him plays it anyway:
 a defender turned to it and a step in toward the glass, a man in close a
 step in for position, now and then one out on the floor backing off
 toward his own end (`allPlayIt`; laid into the finished picture, so
-nothing else about the game moves). Still few box-outs: one in three
-misses (`boxOut` only goes on a man with somebody coming in on him).
+nothing else about the game moves). And a man of theirs in close with one
+of ours right on his back as it comes off, both stood there, turns and
+sits on him - our man fighting him for it (`boxIn`; a sharp rebounder all
+but always): box-outs 0.37 a miss → 0.85. (Few still: only so many of ours
+are in there - 1.8 a miss.)
 
-Next, in order: boxing out on a miss; his catch.
+Next, in order: his catch; then item 2's parts.
 
 Blocking how it misses - glitches the reshuffled test games turn up, each
 to be fixed for itself (they would turn up in real games too):

@@ -12,6 +12,16 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 211,
+		date: "2026-11-08",
+		text: "3D games: on a missed shot, defenders in close with a man right on their back turn and box him out as the ball comes off the rim, and he fights them for it.",
+	},
+	{
+		n: 210,
+		date: "2026-11-08",
+		text: "3D games: when a team fouls on purpose late to stop the clock, the man they go after is the one who goes to the line - the ball gets to him first - not whoever was bringing it up.",
+	},
+	{
 		n: 209,
 		date: "2026-11-08",
 		text: "A playoff game's page shows the playoff bracket instead of the standings - every round's series and wins as they stood at that game.",
