@@ -24410,6 +24410,9 @@ class Action {
 			) {
 				this.closeOn(m, hit, lead, inward);
 			} else if (n < 3 && dist(m.at, hit) > TURN_IN_FT) {
+				// (Going the other way: planted for it first - see plantFor -
+				// not turned round on the spot off a sprint.)
+				m.plantFor(hit);
 				m.chase(
 					hit,
 					lead,
