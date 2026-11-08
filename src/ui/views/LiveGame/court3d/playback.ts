@@ -10,6 +10,7 @@ import {
 	type PlayClock as ShowClock,
 	type PlayInput,
 	type Replay as ShowReplay,
+	nearestCut,
 	type Show,
 	type Wipe,
 } from "./show.ts";
@@ -176,26 +177,6 @@ export const courtShow = (tl: CourtTimeline): Show<Replay> => {
 };
 
 export type PlayClock = ShowClock<Replay>;
-
-// The cut nearest to t, by binary search.
-const nearestCut = (cuts: number[], t: number): number | undefined => {
-	let lo = 0;
-	let hi = cuts.length - 1;
-	while (lo < hi) {
-		const mid = (lo + hi) >> 1;
-		if (cuts[mid]! < t) {
-			lo = mid + 1;
-		} else {
-			hi = mid;
-		}
-	}
-	const a = cuts[lo];
-	const b = cuts[lo - 1];
-	if (a === undefined) {
-		return b;
-	}
-	return b !== undefined && t - b < a - t ? b : a;
-};
 
 // A CLIP'S END (a highlight played on its own - see Court3D's `until`): a
 // moment past the end of the last line before `cursor` - and if it is a dunk

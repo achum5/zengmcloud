@@ -208,6 +208,26 @@ export const wipeAt = (
 	return u;
 };
 
+// The cut nearest to t (for the dip to black across it), by binary search.
+export const nearestCut = (cuts: number[], t: number): number | undefined => {
+	let lo = 0;
+	let hi = cuts.length - 1;
+	while (lo < hi) {
+		const mid = (lo + hi) >> 1;
+		if (cuts[mid]! < t) {
+			lo = mid + 1;
+		} else {
+			hi = mid;
+		}
+	}
+	const a = cuts[lo];
+	const b = cuts[lo - 1];
+	if (a === undefined) {
+		return b;
+	}
+	return b !== undefined && t - b < a - t ? b : a;
+};
+
 // Whether the picture went through a cut between `before` (not) and `t`.
 const cutIn = (cuts: number[], before: number, t: number): boolean => {
 	let lo = 0;

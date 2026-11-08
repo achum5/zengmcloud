@@ -241,3 +241,95 @@ export const runFrames = ({
 		clearInterval(interval);
 	};
 };
+
+// THE PICTURE DIPPED, FLASHED, WIPED (see Overlays).
+// How long the picture dips to black either side of a cut (timeline ms).
+export const DIP_MS = 130;
+// Up out of black onto the next of the key plays (ms).
+export const KEY_DIP_MS = 320;
+// A replay cut from one of its cameras to the next: a flash of white, this
+// long (ms).
+export const FLASH_MS = 260;
+// The wipe into a replay and out of it (see show.ts wipeAt): a band in the
+// colors of the team whose play it is, this wide (a share of the picture's
+// width, %) and slanted this much (degrees).
+export const STING_W = 140;
+export const STING_SLANT = 18;
+
+// How dark the picture is (0 to 1): dipped to black either side of a cut
+// (`near`, timeline ms off the nearest), coming up out of it onto the next
+// of the key plays (`keyDip`, when it went on to it - or held black there
+// till then: see show.ts keyHold), going down into it at the end of one
+// (`keyOut` - see keyPlays.ts keyOutAt) - and anything else a sport dips to
+// black for (`also`). A replay only comes up out of black.
+export const dipOf = ({
+	replay,
+	near,
+	keyDip,
+	now,
+	keyOut = 0,
+	also = 0,
+}: {
+	replay: boolean;
+	near: number;
+	keyDip: number;
+	now: number;
+	keyOut?: number;
+	also?: number;
+}): number => {
+	const keyDark = 1 - (now - keyDip) / KEY_DIP_MS;
+	return replay
+		? Math.max(0, keyDark)
+		: Math.max(0, 1 - near / DIP_MS, also, keyDark, keyOut);
+};
+
+// The wipe this frame: the band in the colors of the side whose play it is
+// (`side`) across the picture by `sting` (0 to 1; undefined, off it) - from
+// all the way off its left to all the way off its right, the slant and all
+// - and the REPLAY tag up while a replay shows, once the wipe is most of the
+// way across. (`w`, `h`: the picture's size, CSS px.)
+export const showWipe = (
+	bands: [HTMLDivElement | null, HTMLDivElement | null],
+	tag: HTMLDivElement | null,
+	sting: number | undefined,
+	side: 0 | 1,
+	replay: boolean,
+	w: number,
+	h: number,
+) => {
+	for (const s of [0, 1] as const) {
+		const band = bands[s];
+		if (!band) {
+			continue;
+		}
+		const on = sting !== undefined && s === side;
+		const show = on ? "flex" : "none";
+		if (band.style.display !== show) {
+			band.style.display = show;
+		}
+		if (on && sting !== undefined) {
+			const off = (50 * h * Math.tan((STING_SLANT * Math.PI) / 180)) / w;
+			const from = -STING_W - off;
+			const to = 100 + off;
+			const x = ((from + (to - from) * sting) * w) / 100;
+			const tr = `translate3d(${x.toFixed(1)}px,0,0) skewX(${-STING_SLANT}deg)`;
+			if (band.style.transform !== tr) {
+				band.style.transform = tr;
+			}
+		}
+	}
+	if (tag) {
+		const show =
+			replay && (sting === undefined || sting > 0.75) ? "block" : "none";
+		if (tag.style.display !== show) {
+			tag.style.display = show;
+		}
+	}
+};
+
+// An element's opacity, set only when it is not that already.
+export const setOpacity = (el: HTMLElement | null, o: number | string) => {
+	if (el && el.style.opacity !== String(o)) {
+		el.style.opacity = String(o);
+	}
+};

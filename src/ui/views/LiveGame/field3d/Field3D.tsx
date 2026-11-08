@@ -20,9 +20,14 @@ import { adsFor } from "../court3d/arenaAds.ts";
 import { FAST, makePace } from "../court3d/pace.ts";
 import { adjust, artFor, makeResolution } from "../court3d/resolution.ts";
 import { eventsMatchRoster } from "../court3d/rosterMatch.ts";
+import { Overlays } from "../court3d/Overlays.tsx";
 import {
+	dipOf,
+	FLASH_MS,
 	NARROW_W,
 	runFrames,
+	setOpacity,
+	showWipe,
 	useAdPictures,
 	useFacesThen,
 	useKitArts,
@@ -197,23 +202,12 @@ import { inShadow, venueFor } from "./venue.ts";
 // line when its moment comes (onReady) - so every line appears as its play
 // happens on screen.
 
-// How long the picture dips to black either side of a cut (timeline ms).
 // In close on a man, the stadium behind him this far out of focus (picture
 // pixels - see scene.ts).
 const CLOSE_SOFT = 1.1;
 // (And behind a kick shown again from behind the kicker, the ball against
 // it: see replays.ts.)
 const KICK_SOFT = 1.6;
-const DIP_MS = 150;
-// A replay cut from one of its cameras to the other (see replays.ts): a
-// flash of white, and the new angle up out of it over this long (ms).
-const FLASH_MS = 260;
-// THE WIPE into a replay and out of it (see playback's wipeAt): the 3D
-// court's band in the colors of the team whose play it is, its logo in the
-// middle, slanting, sweeping across the picture - this much wider than it
-// (%), slanting this far (deg).
-const STING_W = 140;
-const STING_SLANT = 18;
 // In the sun, the players' shadows thrown off to the side this much (see
 // sprite.ts Cast).
 const SUN_LEAN = 0.4;
@@ -223,9 +217,6 @@ const END_ZONE_PX = 512;
 // And a decal (see paintDecals), and a picture of the whole field.
 const DECAL_PX = 512;
 const FIELD_PX = 2400;
-// Screen ms the picture takes to come up out of black into the next of the
-// key plays (see keyPlays.ts).
-const KEY_DIP_MS = 320;
 // How quickly the camera pans and zooms after what it follows (per second).
 const CAM_PAN = 3.2;
 const CAM_ZOOM = 2.4;
@@ -1298,13 +1289,10 @@ const Field3D = ({
 										: (rigFor(moment) ??
 												(fromLow(moment) ? REPLAY_RIG : MAIN_RIG)),
 								);
-			const white = flashRef.current;
-			if (white) {
-				const o = replay ? Math.max(0, 1 - (now - flashAt) / FLASH_MS) : 0;
-				if (white.style.opacity !== String(o)) {
-					white.style.opacity = String(o);
-				}
-			}
+			setOpacity(
+				flashRef.current,
+				replay ? Math.max(0, 1 - (now - flashAt) / FLASH_MS) : 0,
+			);
 			const look = (pid: number) => looks.current.get(pid);
 			const body = (pid: number) => bodies.current.get(pid) ?? DRAWN_DEFAULT;
 			const items: { depth: number; draw: () => void }[] = [];
@@ -1506,29 +1494,21 @@ const Field3D = ({
 				sprites.fine = false;
 				fineOffAt = now;
 			}
-			// Into and out of black across a cut.
-			const dip = dipRef.current;
-			if (dip) {
-				const near = tl.cuts.reduce(
-					(m, x) => Math.min(m, Math.abs(s.t - x)),
-					Infinity,
-				);
-				// (And between the key plays: down to black out of one, up out
-				// of it into the next.)
-				const keyOut =
-					p.keyPlan && !p.follower && !p.paused
-						? keyOutAt(p.keyPlan, s.t, Math.max(1e-6, p.rate))
-						: 0;
-				const keyUp = 1 - (now - s.keyDip) / KEY_DIP_MS;
-				const o = replay
-					? 0
-					: cut
-						? 1
-						: Math.max(0, 1 - near / DIP_MS, keyOut, keyUp);
-				if (dip.style.opacity !== String(o)) {
-					dip.style.opacity = String(o);
-				}
-			}
+			// Into and out of black across a cut - and between the key plays,
+			// down to black out of one, up out of it into the next.
+			setOpacity(
+				dipRef.current,
+				dipOf({
+					replay: !!replay,
+					near: cut === undefined ? Infinity : Math.abs(s.t - cut),
+					keyDip: s.keyDip,
+					now,
+					keyOut:
+						p.keyPlan && !p.follower && !p.paused
+							? keyOutAt(p.keyPlan, s.t, s.pace)
+							: 0,
+				}),
+			);
 			// The wipe: in over the picture to the cut into a replay or out of
 			// it, then on off it - in the colors of whoever made the play.
 			const sting = wipeAt(wipe, s, p, now);
@@ -1539,37 +1519,15 @@ const Field3D = ({
 					wipeSide = team;
 				}
 			}
-			for (const side of [0, 1] as const) {
-				const band = stingRefs.current[side];
-				if (!band) {
-					continue;
-				}
-				const on = sting !== undefined && side === wipeSide;
-				const show = on ? "flex" : "none";
-				if (band.style.display !== show) {
-					band.style.display = show;
-				}
-				if (on && sting !== undefined) {
-					// From all the way off the picture to its left to all the
-					// way off it to its right, the slant and all.
-					const off = (50 * h * Math.tan((STING_SLANT * Math.PI) / 180)) / w;
-					const from = -STING_W - off;
-					const to = 100 + off;
-					const x = ((from + (to - from) * sting) * w) / 100;
-					const tr = `translate3d(${x.toFixed(1)}px,0,0) skewX(${-STING_SLANT}deg)`;
-					if (band.style.transform !== tr) {
-						band.style.transform = tr;
-					}
-				}
-			}
-			const tag = replayRef.current;
-			if (tag) {
-				const show =
-					replay && (sting === undefined || sting > 0.75) ? "block" : "none";
-				if (tag.style.display !== show) {
-					tag.style.display = show;
-				}
-			}
+			showWipe(
+				stingRefs.current,
+				replayRef.current,
+				sting,
+				wipeSide,
+				!!replay,
+				w,
+				h,
+			);
 			// The line over the bug off the picture through a replay, the way a
 			// broadcast shows one clean but for its REPLAY tag (the 3D court's:
 			// see court3d/Court3D.tsx).
@@ -1715,117 +1673,15 @@ const Field3D = ({
 					imageRendering: "pixelated",
 				}}
 			/>
-			<div
-				aria-hidden
-				style={{
-					position: "absolute",
-					inset: 0,
-					pointerEvents: "none",
-					background:
-						"radial-gradient(ellipse at 50% 55%, transparent 58%, rgba(0,0,0,0.32) 100%)",
-				}}
+			<Overlays
+				dipRef={dipRef}
+				flashRef={flashRef}
+				stingRefs={stingRefs}
+				replayRef={replayRef}
+				teams={[away, home]}
+				logos={[awayLogo, homeLogo]}
+				staging={!shownTl && !!events && events.length > 0}
 			/>
-			<div
-				ref={dipRef}
-				aria-hidden
-				style={{
-					position: "absolute",
-					inset: 0,
-					background: "#000",
-					opacity: 0,
-					pointerEvents: "none",
-				}}
-			/>
-			<div
-				ref={flashRef}
-				aria-hidden
-				style={{
-					position: "absolute",
-					inset: 0,
-					background: "#fff",
-					opacity: 0,
-					pointerEvents: "none",
-				}}
-			/>
-			{([away, home] as const).map((team, side) => {
-				const logo = side === 0 ? awayLogo : homeLogo;
-				const main = team?.colors?.[0] ?? "#8c1d40";
-				const accent = team?.colors?.[1] ?? "#f2c14e";
-				return (
-					<div
-						key={side}
-						ref={(el) => {
-							stingRefs.current[side] = el;
-						}}
-						aria-hidden
-						style={{
-							display: "none",
-							position: "absolute",
-							top: 0,
-							left: 0,
-							width: `${STING_W}%`,
-							height: "100%",
-							alignItems: "center",
-							justifyContent: "center",
-							pointerEvents: "none",
-							willChange: "transform",
-							// (Lit from above, a little.)
-							background: `linear-gradient(180deg, rgba(255,255,255,0.16), rgba(0,0,0,0.22)), linear-gradient(90deg, #fff 0 2%, ${accent} 2% 7%, ${main} 7% 93%, ${accent} 93% 98%, #fff 98% 100%)`,
-						}}
-					>
-						{logo ? (
-							<img
-								alt=""
-								src={logo}
-								style={{
-									height: "34%",
-									maxWidth: "24%",
-									objectFit: "contain",
-									transform: `skewX(${STING_SLANT}deg)`,
-									filter: "drop-shadow(0 0.4cqw 0.6cqw rgba(0,0,0,0.35))",
-								}}
-							/>
-						) : null}
-					</div>
-				);
-			})}
-			<div
-				ref={replayRef}
-				style={{
-					display: "none",
-					position: "absolute",
-					right: "2cqw",
-					top: "2cqw",
-					padding: "0.35em 0.7em",
-					fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
-					fontWeight: 800,
-					fontSize: "clamp(10px, 1.7cqw, 14px)",
-					letterSpacing: "0.08em",
-					color: "#fff",
-					background: "rgba(10, 10, 14, 0.85)",
-					borderLeft: `3px solid ${home?.colors?.[0] ?? "#888"}`,
-					borderRadius: 3,
-					pointerEvents: "none",
-				}}
-			>
-				REPLAY
-			</div>
-			{!shownTl && events && events.length > 0 ? (
-				<div
-					className="spinner-border text-light"
-					role="status"
-					aria-label="Loading"
-					style={{
-						position: "absolute",
-						left: "50%",
-						top: "50%",
-						marginLeft: "-1rem",
-						marginTop: "-1rem",
-						opacity: 0.7,
-						pointerEvents: "none",
-					}}
-				/>
-			) : null}
 			<div ref={bugRef} style={{ display: "contents" }}>
 				{own ? (
 					<CustomScoreBug style={own} {...bug} />

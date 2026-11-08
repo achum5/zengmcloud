@@ -4,6 +4,7 @@ import { makeFollow, type Follow, type Shown } from "../court3d/follow.ts";
 import {
 	makePlayClock,
 	makeWipe,
+	nearestCut,
 	onCursor,
 	stepShow,
 	wipeAt as showWipeAt,
@@ -111,8 +112,8 @@ export type FieldPlayInput = {
 const ALONE = makeFollow();
 
 // One frame: the clock run on to `now` (ms; `wall`, Date.now() - for
-// playing along, `f`). How long the frame was, and whether it went through
-// a cut.
+// playing along, `f`). How long the frame was, and the cut nearest where it
+// got to (for the dip to black across it).
 export const stepField = (
 	s: FieldClock,
 	p: FieldPlayInput,
@@ -120,8 +121,9 @@ export const stepField = (
 	now: number,
 	f?: Follow,
 	wall = now,
-): { dt: number; cut: boolean } => {
-	const { dt, cut } = stepShow(
+): { dt: number; cut: number | undefined } => {
+	const show = fieldShow(tl);
+	const { dt, ran } = stepShow(
 		s,
 		{
 			...p,
@@ -131,12 +133,12 @@ export const stepField = (
 		},
 		f ?? ALONE,
 		tl,
-		fieldShow(tl),
+		show,
 		undefined,
 		now,
 		wall,
 	);
-	return { dt, cut };
+	return { dt, cut: nearestCut(show.cuts, ran) };
 };
 
 // The next replay to come after t, if any.

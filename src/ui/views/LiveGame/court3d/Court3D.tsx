@@ -61,9 +61,14 @@ import { dressKit } from "./kitArt.ts";
 import { logoPicture } from "./logoPicture.ts";
 import { COURT_W, type Side } from "./geometry.ts";
 import { eventsMatchRoster } from "./rosterMatch.ts";
+import { Overlays } from "./Overlays.tsx";
 import {
+	dipOf,
+	FLASH_MS,
 	NARROW_W,
 	runFrames,
+	setOpacity,
+	showWipe,
 	useStakes,
 	useAdPictures,
 	useFacesThen,
@@ -149,24 +154,10 @@ import {
 // In close on a man, the building behind him this far out of focus
 // (picture pixels - see drawFrame).
 const CLOSE_SOFT = 1.1;
-// How long the picture dips to black either side of a cut (timeline ms).
-const DIP_MS = 130;
-// Up out of black onto the next of the key plays (ms).
-const KEY_DIP_MS = 320;
-// The longest it is held black for the picture to be ready (ms).
+// The longest it is held black for the picture to be ready (ms) - and, at
+// a replay's flash between angles (see replayRig and broadcast.ts FLASH_MS),
+// white, while the men in it are made ready at their new size.
 const KEY_HOLD_MS = 900;
-// A replay cut from one of its cameras to the next (see replayRig): a
-// flash of white, and the new angle up out of it over this long (ms) - held
-// white, as black is, while the men in it are made ready at their new size.
-const FLASH_MS = 260;
-// THE WIPE into a replay and out of it (see playback's wipeAt): a band in
-// the colors of the team whose play it is, its logo in the middle, slanting,
-// sweeping across
-// the picture - this much wider than it (%: wide enough to cover all of it,
-// the slant and all, while it is near halfway across - see STING_COVERS),
-// slanting this far (deg).
-const STING_W = 140;
-const STING_SLANT = 18;
 // WHAT IS OVER THE PICTURE: the score bug along its foot and the line of
 // play-by-play across its top, each's box as shares of the picture (see
 // camera.ts's dodgeFor).
@@ -1388,20 +1379,19 @@ const Court3D = ({
 					s.wipeSide = team;
 				}
 			}
-			const keyDark = 1 - (now - Math.max(s.keyDip, s.keyHold)) / KEY_DIP_MS;
-			let o: number;
-			if (replay) {
-				o = Math.max(0, keyDark);
-			} else {
-				const near = cut === undefined ? Infinity : Math.abs(s.t - cut);
-				// (And between clips of a highlight reel, and the key plays:
-				// down to black out of one, up out of it into the next.)
-				const keyOut =
+			// (And between clips of a highlight reel, and the key plays: down
+			// to black out of one, up out of it into the next.)
+			const o = dipOf({
+				replay: !!replay,
+				near: cut === undefined ? Infinity : Math.abs(s.t - cut),
+				keyDip: Math.max(s.keyDip, s.keyHold),
+				now,
+				keyOut:
 					p.keyPlan && !p.follower && !p.paused
 						? keyOutAt(p.keyPlan, s.t, s.pace)
-						: 0;
-				o = Math.max(0, 1 - near / DIP_MS, clipDipAt(tl, s.t), keyDark, keyOut);
-			}
+						: 0,
+				also: clipDipAt(tl, s.t),
+			});
 			const dark = o >= 0.75 || flash >= 0.75 || s.wipe.covered;
 			if (dark && !sprites.dark) {
 				s.darkFrom = now;
@@ -1415,14 +1405,8 @@ const Court3D = ({
 			// (Stood still, or jumped back to a replay: as at real speed.)
 			sprites.pace = pace > 0 ? pace : 1;
 			s.drawnAt = drawnAt;
-			const dip = dipRef.current;
-			if (dip && dip.style.opacity !== String(o)) {
-				dip.style.opacity = String(o);
-			}
-			const white = flashRef.current;
-			if (white && white.style.opacity !== String(flash)) {
-				white.style.opacity = String(flash);
-			}
+			setOpacity(dipRef.current, o);
+			setOpacity(flashRef.current, flash);
 			const capEl =
 				wrapRef.current?.querySelector<HTMLElement>(".court3d-caption");
 			if (capEl) {
@@ -1435,37 +1419,15 @@ const Court3D = ({
 					capEl.style.opacity = o;
 				}
 			}
-			for (const side of [0, 1] as const) {
-				const band = stingRefs.current[side];
-				if (!band) {
-					continue;
-				}
-				const on = sting !== undefined && side === s.wipeSide;
-				const show = on ? "flex" : "none";
-				if (band.style.display !== show) {
-					band.style.display = show;
-				}
-				if (on && sting !== undefined) {
-					// From all the way off the picture to its left to all the
-					// way off it to its right, the slant and all.
-					const off = (50 * h * Math.tan((STING_SLANT * Math.PI) / 180)) / w;
-					const from = -STING_W - off;
-					const to = 100 + off;
-					const x = ((from + (to - from) * sting) * w) / 100;
-					const tr = `translate3d(${x.toFixed(1)}px,0,0) skewX(${-STING_SLANT}deg)`;
-					if (band.style.transform !== tr) {
-						band.style.transform = tr;
-					}
-				}
-			}
-			const tag = replayRef.current;
-			if (tag) {
-				const show =
-					replay && (sting === undefined || sting > 0.75) ? "block" : "none";
-				if (tag.style.display !== show) {
-					tag.style.display = show;
-				}
-			}
+			showWipe(
+				stingRefs.current,
+				replayRef.current,
+				sting,
+				s.wipeSide,
+				!!replay,
+				w,
+				h,
+			);
 			// The crowd on its feet after a big play, arms going up and out -
 			// and the whole way through a tight finish.
 			const crowd = crowdAt(tl, moment.t, now);
@@ -1768,118 +1730,16 @@ const Court3D = ({
 					imageRendering: "pixelated",
 				}}
 			/>
-			<div
-				aria-hidden
-				style={{
-					position: "absolute",
-					inset: 0,
-					pointerEvents: "none",
-					background:
-						"radial-gradient(ellipse at 50% 55%, transparent 58%, rgba(0,0,0,0.32) 100%)",
-				}}
+			<Overlays
+				dipRef={dipRef}
+				flashRef={flashRef}
+				stingRefs={stingRefs}
+				replayRef={replayRef}
+				teams={[away, home]}
+				logos={[awayLogo, homeLogo]}
+				// (Still being staged - see stageCourt.ts: not stuck.)
+				staging={!timeline && !!events && events.length > 0}
 			/>
-			<div
-				ref={dipRef}
-				aria-hidden
-				style={{
-					position: "absolute",
-					inset: 0,
-					background: "#000",
-					opacity: 0,
-					pointerEvents: "none",
-				}}
-			/>
-			<div
-				ref={flashRef}
-				aria-hidden
-				style={{
-					position: "absolute",
-					inset: 0,
-					background: "#fff",
-					opacity: 0,
-					pointerEvents: "none",
-				}}
-			/>
-			{([away, home] as const).map((team, side) => {
-				const logo = side === 0 ? awayLogo : homeLogo;
-				const main = team?.colors?.[0] ?? "#8c1d40";
-				const accent = team?.colors?.[1] ?? "#f2c14e";
-				return (
-					<div
-						key={side}
-						ref={(el) => {
-							stingRefs.current[side] = el;
-						}}
-						aria-hidden
-						style={{
-							display: "none",
-							position: "absolute",
-							top: 0,
-							left: 0,
-							width: `${STING_W}%`,
-							height: "100%",
-							alignItems: "center",
-							justifyContent: "center",
-							pointerEvents: "none",
-							willChange: "transform",
-							// (Lit from above, a little.)
-							background: `linear-gradient(180deg, rgba(255,255,255,0.16), rgba(0,0,0,0.22)), linear-gradient(90deg, #fff 0 2%, ${accent} 2% 7%, ${main} 7% 93%, ${accent} 93% 98%, #fff 98% 100%)`,
-						}}
-					>
-						{logo ? (
-							<img
-								alt=""
-								src={logo}
-								style={{
-									height: "34%",
-									maxWidth: "24%",
-									objectFit: "contain",
-									transform: `skewX(${STING_SLANT}deg)`,
-									filter: "drop-shadow(0 0.4cqw 0.6cqw rgba(0,0,0,0.35))",
-								}}
-							/>
-						) : null}
-					</div>
-				);
-			})}
-			<div
-				ref={replayRef}
-				style={{
-					display: "none",
-					position: "absolute",
-					// (Up in the corner the page's controls are not in.)
-					left: "2cqw",
-					top: "2cqw",
-					padding: "0.35em 0.7em",
-					fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
-					fontWeight: 800,
-					fontSize: "clamp(10px, 1.7cqw, 14px)",
-					letterSpacing: "0.08em",
-					color: "#fff",
-					background: "rgba(10, 10, 14, 0.85)",
-					borderLeft: `3px solid ${home?.colors?.[0] ?? "#888"}`,
-					borderRadius: 3,
-				}}
-			>
-				REPLAY
-			</div>
-			{/* Still being staged (see stageCourt.ts): not stuck. */}
-			{!timeline && events && events.length > 0 ? (
-				<div
-					className="spinner-border text-light"
-					role="status"
-					aria-label="Loading"
-					style={{
-						position: "absolute",
-						left: "50%",
-						top: "50%",
-						marginLeft: "-1rem",
-						marginTop: "-1rem",
-						opacity: 0.7,
-						pointerEvents: "none",
-					}}
-				/>
-			) : null}
 			{introCard ? <IntroCard info={introCard} callKey={intro.call} /> : null}
 			{intro.title ? <IntroTitle playoffs={!!timeline?.intro?.big} /> : null}
 			{intro.on && !follower && !along ? (
