@@ -130,11 +130,26 @@ export const buildClocks = (tl: CourtTimeline, events: RawEvent[]): Clocks => {
 		// unless the clock went up, which is a new period starting.
 		if (last !== undefined && e.clock <= last) {
 			// (What the clock read at the last line.)
-			const was = last - lead;
+			let was = last - lead;
 			let from = Math.max(
 				Math.min(live ?? b.preStart, b.preStart),
 				marks.at(-1)?.t ?? -Infinity,
 			);
+			// Cut past the time between - a highlight cut to from the start of
+			// its period, say: the clock jumps with the picture, at the cut, to
+			// what it reads there - the line's, and the time the ball is live
+			// from there to it - not run down to the play from the quarter's
+			// start.
+			const jump = lastCutIn(tl.cuts, from, at);
+			if (jump !== undefined) {
+				const goes =
+					live === undefined
+						? (inboundCaught(tl.ball, jump, b.actionStart) ?? jump)
+						: jump;
+				marks.push({ t: Math.max(from, jump - 1), clock: was, period });
+				was = Math.min(was, e.clock + Math.max(0, (at - goes) / 1000));
+				from = jump;
+			}
 			if (live === undefined) {
 				// A dead ball: the clock waits for it to be put back in play -
 				// the inbound caught.
@@ -152,7 +167,7 @@ export const buildClocks = (tl: CourtTimeline, events: RawEvent[]): Clocks => {
 			// what leads straight into the line - still runs true, and the
 			// clock takes less of the time before it (waiting, if it must).
 			const fast = fastIn(tl.fast, from, at);
-			const cut = lastCutIn(tl.cuts, from, at);
+			const cut = jump === undefined ? lastCutIn(tl.cuts, from, at) : undefined;
 			const shown = (at - from) / 1000;
 			// Ahead of the sim's: no less than it was (it never goes back up),
 			// and - the ball live all the while, the picture taking longer

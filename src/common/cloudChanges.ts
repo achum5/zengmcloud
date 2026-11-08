@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 216,
+		date: "2026-11-08",
+		text: "3D highlights: a play opened on its own now starts as the play does - the clock at its time instead of running down from the start of the quarter, and both benches and coaches already in their places instead of walking back from the break.",
+	},
+	{
 		n: 215,
 		date: "2026-11-08",
 		text: 'Game recaps read more like a writer\'s: "tied at 78 going into the fourth" instead of "78-78", "trailed by a point" instead of "were 1 down", "They" instead of a team\'s name three sentences running, and no "went in front for good in the third" after a comeback that became a rout.',

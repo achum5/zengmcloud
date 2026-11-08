@@ -959,8 +959,14 @@ const ringState = (
 ): PlayerState | undefined => {
 	const tl = f.tl;
 	const now = f.now ?? t;
+	// (A highlight cut to since it was called: none of it is in the picture -
+	// they are sat in their places as it opens, not still on their way back.)
 	const h = (tl.huddles ?? []).find(
-		(x) => x.team === team && t >= x.called && t < x.t1 + RING_KEEP,
+		(x) =>
+			x.team === team &&
+			t >= x.called &&
+			t < x.t1 + RING_KEEP &&
+			!(tl.clips ?? []).some((c) => c > x.called && c <= t),
 	);
 	const spot = h && ringOf(f, h).get(pid);
 	if (!h || !spot) {

@@ -8,7 +8,10 @@ import {
 import { clipDipAt, compileCourt, snapForCursor } from "./director.ts";
 import { clipStopAt } from "./playback.ts";
 import { buildFouls, foulsAt } from "./scoreBug.ts";
-import { evalBall, evalPlayer, fastAt } from "./evaluate.ts";
+import { evalBall, evalPlayer, fastAt, shownAt } from "./evaluate.ts";
+import { buildClocks, gameClockAt } from "./clock.ts";
+import { benchStates } from "./scene.ts";
+import { crewAt, crewFor } from "./crew.ts";
 import { COURT_W } from "./geometry.ts";
 import { bodyOf } from "./poses.ts";
 import { fakeGame, gidOf } from "./testGame.ts";
@@ -133,6 +136,55 @@ describe("3D highlight reels", () => {
 		}
 		assert.isAbove(shots, 10);
 		assert.isAbove(clips, 100);
+	}, 120_000);
+	// Cut to from the start of the period (the last line kept before it), it
+	// starts as the play does: the clock at the play's time, not run down to
+	// it from the start of the quarter - and both benches sat in their
+	// places, not still walking back from the break.
+	test("a play shown on its own starts from the cut: its clock, the benches sat", () => {
+		const { events, players } = fakeGame("hl1", 120);
+		const roster = players.map((p) => ({ pid: p.pid, team: p.team }));
+		const coaches = crewFor(gidOf("hl1"), undefined, undefined).filter(
+			(m) => m.role === "coach",
+		);
+		let checked = 0;
+		for (let i = 0; i < events.length; i++) {
+			const e = events[i]!;
+			if (e.type !== "tp" && e.type !== "fgAtRim") {
+				continue;
+			}
+			const clip = clipOfPlay(events, i, i + 1);
+			const tl = compileCourt({ events: clip.events, players, gid: 1 });
+			const cut = tl.clips?.[0];
+			const first = clip.events.find((x) => x.clipStart === true);
+			if (cut === undefined || typeof first?.clock !== "number") {
+				continue;
+			}
+			const clocks = buildClocks(tl, clip.events);
+			for (const dt of [50, 1000, 3000]) {
+				const shown = gameClockAt(clocks, cut + dt);
+				assert.isDefined(shown, `${i}`);
+				assert.isAtMost(shown!, first.clock + 30, `${i} at cut + ${dt}`);
+			}
+			for (let t = cut + 50; t < cut + 4000; t += 250) {
+				const onFloor = new Set(
+					roster.filter((p) => shownAt(tl, p.pid, t)).map((p) => p.pid),
+				);
+				for (const x of benchStates(
+					{ tl, roster, now: t, moment: { t } },
+					onFloor,
+				)) {
+					assert.notStrictEqual(x.st.anim, "walk", `${i}: ${x.st.pid} at ${t}`);
+				}
+				// (Nor either coach out on the floor, on his way back from it:
+				// in his box, off it.)
+				for (const st of crewAt(tl, t, coaches).states) {
+					assert.isBelow(st.y, 0, `${i}: coach at ${t}`);
+				}
+			}
+			checked += 1;
+		}
+		assert.isAbove(checked, 10);
 	}, 120_000);
 	// And its score bug has the period's team fouls before it, not none.
 	test("a play shown on its own has the period's fouls so far", () => {
