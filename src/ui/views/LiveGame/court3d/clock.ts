@@ -1,4 +1,5 @@
 import type { CourtTimeline, RawEvent } from "./director.ts";
+import { clockAt } from "./timeline.ts";
 
 // THE CLOCKS ON SCREEN.
 //
@@ -434,19 +435,8 @@ const lastAt = <T extends { t: number }>(list: T[], t: number): number => {
 
 // The game clock (seconds left in the period) at time t, or undefined before
 // the first line with a clock.
-export const gameClockAt = (c: Clocks, t: number): number | undefined => {
-	const i = lastAt(c.marks, t);
-	if (i < 0) {
-		return c.marks[0]?.clock;
-	}
-	const a = c.marks[i]!;
-	const b = c.marks[i + 1];
-	if (!b || b.period !== a.period || b.clock > a.clock || b.t <= a.t) {
-		return a.clock;
-	}
-	const u = Math.min(1, (t - a.t) / (b.t - a.t));
-	return a.clock + (b.clock - a.clock) * u;
-};
+export const gameClockAt = (c: Clocks, t: number): number | undefined =>
+	clockAt(c.marks, t);
 
 export const shotClockAt = (c: Clocks, t: number): number | undefined => {
 	const game = gameClockAt(c, t);

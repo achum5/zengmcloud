@@ -1,5 +1,6 @@
 import { safeLocalStorage } from "../../../util/safeLocalStorage.ts";
 import type { Beat, CourtTimeline } from "./director.ts";
+import type { Beats } from "./timeline.ts";
 import { fastAt } from "./evaluate.ts";
 import { momentsOf } from "../winProb.ts";
 
@@ -152,8 +153,8 @@ const TAIL_MS = 900;
 const NET_MS = 700;
 // A play that moves the chance of winning by this much (0-1) makes the reel
 // on that alone, weighed at this much a whole game's worth.
-const SWING_MIN = 0.04;
-const SWING_W = 40;
+export const SWING_MIN = 0.04;
+export const SWING_W = 40;
 // Each play of a kind already in the reel counts for this much less than the
 // last; one from a period with none in it yet, this much more.
 const SAME_KIND = 0.82;
@@ -470,27 +471,77 @@ export const planKeyPlays = (
 		candidates.push({ k, w, t0, t1, kind, period: st.period });
 	});
 
-	const budget = settings.minutes * 60_000 * Math.max(0.25, rate);
+	return reelCursors(
+		merge(
+			// (Never left with the ball in the air: on till it comes down.)
+			fillReel({
+				picked,
+				candidates,
+				rest,
+				costOf: (t0, t1) => costOf(tl, t0, t1),
+				budget: settings.minutes * 60_000 * Math.max(0.25, rate),
+				closeOnTop: settings.closeOnTop,
+			}).map((p) => ({
+				...p,
+				t1: ball.inAir(p.t1) ? ball.settle(p.t1).t + 300 : p.t1,
+			})),
+		),
+		tl,
+		events.length,
+	);
+};
+
+// THE REEL FILLED, any sport's: what has to be in it (`picked` - the start,
+// the end, a close finish), then the best of the big plays (`candidates`,
+// weighed `w`) one at a time to the length asked (`budget`, ms of watching:
+// see `costOf`), then - with time left over - the rest, the ones that
+// matter most (`w`) first. Merged into the stretches shown.
+export type ReelCandidate = {
+	// Its place in the game (for spreading equals out).
+	k: number;
+	w: number;
+	t0: number;
+	t1: number;
+	kind: string;
+	period: number;
+};
+export const fillReel = ({
+	picked,
+	candidates,
+	rest,
+	costOf,
+	budget,
+	closeOnTop,
+}: {
+	picked: { t0: number; t1: number; close: boolean }[];
+	candidates: ReelCandidate[];
+	rest: { k: number; w: number; t0: number; t1: number }[];
+	costOf: (t0: number, t1: number) => number;
+	budget: number;
+	// A close finish shown on top of the budget, not out of it.
+	closeOnTop: boolean;
+}): { t0: number; t1: number; close: boolean }[] => {
+	const shown = [...picked];
 	let spent = 0;
-	for (const p of merge(picked)) {
-		spent += costOf(tl, p.t0, p.t1);
+	for (const p of merge(shown)) {
+		spent += costOf(p.t0, p.t1);
 	}
 	// (On top of it, a close finish: what it takes, the rest of the game
 	// still has.)
-	if (settings.closeOnTop) {
-		for (const p of merge(picked.filter((x) => x.close))) {
-			spent -= costOf(tl, p.t0, p.t1);
+	if (closeOnTop) {
+		for (const p of merge(shown.filter((x) => x.close))) {
+			spent -= costOf(p.t0, p.t1);
 		}
 	}
 	// (Among equals, spread through the game rather than bunched.)
-	candidates.sort(
+	const sorted = [...candidates].sort(
 		(a, b) => b.w - a.w || ((a.k * 7919) % 101) - ((b.k * 7919) % 101),
 	);
 	// The best of them one at a time: the more of a kind already in it, the
 	// less the next of that kind counts, and a play from a period not yet
 	// shown counts for more - the whole game in it, not five dunks from the
 	// second quarter.
-	const pool = candidates.map((c) => ({ ...c, cost: costOf(tl, c.t0, c.t1) }));
+	const pool = sorted.map((c) => ({ ...c, cost: costOf(c.t0, c.t1) }));
 	const kinds = new Map<string, number>();
 	const periods = new Set<number>();
 	for (;;) {
@@ -514,38 +565,38 @@ export const planKeyPlays = (
 		}
 		const c = pool.splice(best, 1)[0]!;
 		spent += c.cost;
-		picked.push({ t0: c.t0, t1: c.t1, close: false });
+		shown.push({ t0: c.t0, t1: c.t1, close: false });
 		kinds.set(c.kind, (kinds.get(c.kind) ?? 0) + 1);
 		periods.add(c.period);
 	}
-	rest.sort((a, b) => b.w - a.w || a.k - b.k);
-	for (const c of rest) {
-		const cost = costOf(tl, c.t0, c.t1);
+	for (const c of [...rest].sort((a, b) => b.w - a.w || a.k - b.k)) {
+		const cost = costOf(c.t0, c.t1);
 		if (spent + cost > budget) {
 			continue;
 		}
 		spent += cost;
-		picked.push({ t0: c.t0, t1: c.t1, close: false });
+		shown.push({ t0: c.t0, t1: c.t1, close: false });
 	}
+	return merge(shown);
+};
 
-	return merge(
-		// (Never left with the ball in the air: on till it comes down.)
-		merge(picked).map((p) => ({
-			...p,
-			t1: ball.inAir(p.t1) ? ball.settle(p.t1).t + 300 : p.t1,
-		})),
-	).map((p) => {
-		// The page caught up to the last line before the stretch - and no
-		// further: the stats after that line go in with the next one, the
-		// key play's own, which would be up on the page before it happens.
-		const k = beats.findIndex((b) => b.actionStart >= p.t0);
+// The stretches shown, each with the cursor the page is caught up to as it
+// starts: the last line before the stretch - and no further, the stats
+// after that line going in with the next one, the key play's own, which
+// would be up on the page before it happens.
+export const reelCursors = (
+	list: { t0: number; t1: number; close: boolean }[],
+	tl: Beats,
+	eventsLength: number,
+): KeySegment[] =>
+	list.map((p) => {
+		const k = tl.beats.findIndex((b) => b.actionStart >= p.t0);
 		return {
 			...p,
 			t1: Math.min(p.t1, tl.end),
-			cursor: k < 0 ? events.length : k === 0 ? 0 : beats[k - 1]!.i + 1,
+			cursor: k < 0 ? eventsLength : k === 0 ? 0 : tl.beats[k - 1]!.i + 1,
 		};
 	});
-};
 
 const merge = <T extends { t0: number; t1: number; close: boolean }>(
 	list: T[],

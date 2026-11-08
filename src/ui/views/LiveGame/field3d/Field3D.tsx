@@ -1642,7 +1642,7 @@ const Field3D = ({
 			}
 			// The wipe: in over the picture to the cut into a replay or out of
 			// it, then on off it - in the colors of whoever made the play.
-			const sting = wipeAt(wipe, s, p, tl, now);
+			const sting = wipeAt(wipe, s, p, now);
 			if (sting !== undefined) {
 				const pid = (replay ?? nextReplay(tl, s.t))?.pid;
 				const team = pid === undefined ? undefined : sideOf.current.get(pid);

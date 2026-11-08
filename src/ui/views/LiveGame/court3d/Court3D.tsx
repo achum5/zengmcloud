@@ -1079,7 +1079,7 @@ const Court3D = ({
 		ballSide: -1,
 		// The dunk replay showing now, and the next dunk that would get one.
 		replay: undefined as Replay | undefined,
-		nextDunk: 0,
+		nextReplay: 0,
 		replayDue: undefined as number | undefined,
 		// The wipe into a replay and out of it, and whose play it is.
 		wipe: makeWipe(),

@@ -53,3 +53,33 @@ export const linesBetween = (tl: Beats, from: number, to: number): number => {
 	}
 	return n;
 };
+
+// A clock read off readings of it laid along the timeline (ascending `t`):
+// at t, run straight on from one reading to the next - down, never up, and
+// not on into the next period - and held at the last; before the first, the
+// first.
+export type ClockMark = { t: number; clock: number; period?: number };
+export const clockAt = (marks: ClockMark[], t: number): number | undefined => {
+	let lo = 0;
+	let hi = marks.length - 1;
+	let i = -1;
+	while (lo <= hi) {
+		const mid = (lo + hi) >> 1;
+		if (marks[mid]!.t <= t) {
+			i = mid;
+			lo = mid + 1;
+		} else {
+			hi = mid - 1;
+		}
+	}
+	if (i < 0) {
+		return marks[0]?.clock;
+	}
+	const a = marks[i]!;
+	const b = marks[i + 1];
+	if (!b || b.period !== a.period || b.clock > a.clock || b.t <= a.t) {
+		return a.clock;
+	}
+	const u = Math.min(1, (t - a.t) / (b.t - a.t));
+	return a.clock + (b.clock - a.clock) * u;
+};
