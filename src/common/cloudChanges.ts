@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 205,
+		date: "2026-11-08",
+		text: "3D games: a defender closing out late on a shooter pulls up once the shot is away, instead of still chop-stepping in at him a second after it - and one still sprinting at him as it goes up sometimes leaps and flies on past. Also fixed: a defender pushed through a screener, a post-up with nobody guarding it, and coaches snapping between poses.",
+	},
+	{
 		n: 204,
 		date: "2026-11-08",
 		text: "3D games: a good passer now and then swings the ball on with one hand straight off his catch, instead of always a two-handed chest pass.",

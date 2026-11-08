@@ -206,7 +206,11 @@ const jumperParts = (tl: CourtTimeline, shot: BallSeg & { kind: "fly" }) => {
 		(Math.abs(Math.atan2(Math.sin(da), Math.cos(da))) * 180) / Math.PI;
 	const turn =
 		turned < 20 ? "squared" : turned < 60 ? "turning" : "turning right round";
-	const footwork = `${arrived}, ${into}, ${turn}`;
+	// (Off a pass, that is: off the dribble, his feet are his move's.)
+	const footwork =
+		dribbled >= 600 || passer === undefined
+			? "off the dribble"
+			: `${arrived}, ${into}, ${turn}`;
 
 	// The pass, as it is drawn: the kind he threw it with, how far, and
 	// whether it led a man on the move or went to a man stood there.
@@ -251,6 +255,114 @@ const jumperParts = (tl: CourtTimeline, shot: BallSeg & { kind: "fly" }) => {
 		if (c) {
 			contested = true;
 			late ||= c.t0 > release - 80;
+		}
+	}
+	// His man, closing out: the one up at it, or the nearest of them - how
+	// far he came from as it was caught, how he came in, what hand he got
+	// up; and after it (the next second and a bit), what he did.
+	let closeout = "nobody";
+	let afterIt = "-";
+	let arrives = "-";
+	{
+		let man: number | undefined;
+		let hand:
+			| { anim: string; t0: number; jump?: [number, number, number] }
+			| undefined;
+		let best = Infinity;
+		for (const o of tl.tracks.values()) {
+			if (o.team === team || o.pid < 0) {
+				continue;
+			}
+			const D = evalPlayer(tl, o.pid, release);
+			if (!D.shown) {
+				continue;
+			}
+			const c = o.acts.find(
+				(a) =>
+					(a.anim === "contest" || a.anim === "block") &&
+					a.t0 < release + 400 &&
+					a.t1 > release - 300,
+			);
+			const score = dist(D, P) - (c ? 6 : 0);
+			if (score < best) {
+				best = score;
+				man = o.pid;
+				hand = c;
+			}
+		}
+		if (man !== undefined && dist(evalPlayer(tl, man, release), P) < 12) {
+			const D0 = evalPlayer(tl, man, got - 200);
+			const D1 = evalPlayer(tl, man, release);
+			const from = dist(D0, P);
+			const covered = from - dist(D1, P);
+			const approach =
+				from < 6 || covered < 3
+					? "on him"
+					: from < 14
+						? "a few steps"
+						: "flat out from the help";
+			const mtr = tl.tracks.get(man)!;
+			const chop = mtr.acts.some(
+				(a) => a.anim === "closeout" && a.t1 > got && a.t0 < release + 100,
+			);
+			const moves = mtr.moves.filter(
+				(m) => m.t1 > got - 200 && m.t0 < release + 1500,
+			);
+			const how =
+				approach === "on him"
+					? ""
+					: chop || moves.some((m) => m.anim === "closeout")
+						? ", chopping in"
+						: ", running in";
+			const peak = hand?.jump?.[2] ?? 0;
+			const up = !hand
+				? "no hand"
+				: hand.anim === "block"
+					? "a block try"
+					: peak < 0.7
+						? "a hand up"
+						: peak < 1.5
+							? "a hop at it"
+							: "a leap at it";
+			const lateHand = hand && hand.t0 > release - 80 ? " late" : "";
+			closeout = `${approach}${how}, ${up}${lateHand}`;
+			// When he got there: the end of his last move in at him.
+			const inAt = moves
+				.filter((m) => dist(m.to, P) < dist(m.from, P) - 0.5)
+				.reduce((t, m) => Math.max(t, m.t1), -Infinity);
+			const lag = inAt - release;
+			arrives =
+				inAt === -Infinity
+					? "-"
+					: lag < 0
+						? "before it goes"
+						: lag < 300
+							? "as it goes"
+							: lag < 700
+								? "after, by 0.3-0.7 s"
+								: "after, by 0.7 s+";
+			// After it.
+			const E = evalPlayer(tl, man, release + 1300);
+			const S = evalPlayer(tl, pid, release + 1300);
+			const boxed = mtr.acts.some(
+				(a) =>
+					(a.anim === "boxOut" || a.anim === "fight") &&
+					a.t1 > release &&
+					a.t0 < release + 1500,
+			);
+			const passed =
+				dist(E, rim) > dist(S, rim) + 1 && dist(D1, rim) < dist(P, rim);
+			afterIt = boxed
+				? dist(E, S) < 5
+					? "boxes the shooter out"
+					: "boxes out another"
+				: passed
+					? "runs on by"
+					: dist(E, rim) < dist(D1, rim) - 4
+						? "to the glass"
+						: dist(E, D1) < 1.5
+							? "stays, watching"
+							: "drifts";
 		}
 	}
 	const defense =
@@ -320,6 +432,9 @@ const jumperParts = (tl: CourtTimeline, shot: BallSeg & { kind: "fly" }) => {
 			footwork,
 			pass: passKind,
 			defense,
+			closeout,
+			arrives,
+			"after it": afterIt,
 			ending,
 			rebound,
 		},

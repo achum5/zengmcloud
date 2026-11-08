@@ -2406,7 +2406,9 @@ const coachState = (
 	const team = m.team;
 	const call = calling ? timeoutCallAt(tl, t, team) : undefined;
 	if (call !== undefined) {
-		const st = coachState(tl, t, m, ball, paced, false);
+		// (Out of all of how he was: easing out of one thing into another
+		// as it came, that too - and not that left in once he is into it.)
+		const { from: inner, ...st } = coachState(tl, t, m, ball, paced, false);
 		const t0 = call - T_BEFORE;
 		const w = 1 - smooth01((t - t0) / T_EASE);
 		return {
@@ -2414,7 +2416,16 @@ const coachState = (
 			anim: "timeoutT",
 			phase: Math.min(1, (t - t0) / (T_BEFORE + T_AFTER)),
 			moving: false,
-			...(w > 0 ? { from: { anim: st.anim, phase: st.phase, w } } : {}),
+			...(w > 0
+				? {
+						from: {
+							anim: st.anim,
+							phase: st.phase,
+							w,
+							...(inner ? { from: inner } : {}),
+						},
+					}
+				: {}),
 		};
 	}
 	const home = benchX(team);
@@ -2505,7 +2516,15 @@ const coachState = (
 		let rel = toPlay - yaw;
 		rel -= Math.round(rel / (Math.PI * 2)) * Math.PI * 2;
 		const look = clamp((rel * 180) / Math.PI, -LOOK_MOST, LOOK_MOST);
-		const was = standing(j * PACE_MS - 1);
+		// (Out of all of how he was as he set off - still easing out of
+		// something himself, that too.)
+		const prev = coachState(tl, j * PACE_MS - 1, m, ball, paced, calling);
+		const was: Blend = {
+			anim: prev.anim,
+			phase: prev.phase,
+			w: 1,
+			...(prev.from ? { from: prev.from } : {}),
+		};
 		const fw = 1 - smooth01(since / COACH_EASE);
 		return {
 			...base,
@@ -2662,10 +2681,13 @@ const huddleWalk = (
 	const kneelPhase = loopPhase("coachKneel", t, team * 0.5);
 	const toK = heading(to, pathLength(to) - TURN_AHEAD);
 	if (t < there) {
+		// (Out of all of how he was: still easing out of something as he
+		// set off, that too.)
 		return walking(to, set, was.yaw, {
 			anim: was.anim,
 			phase: was.phase,
 			w: 1 - smooth01((t - set) / COACH_EASE),
+			...(was.from ? { from: was.from } : {}),
 		});
 	}
 	if (t < off) {

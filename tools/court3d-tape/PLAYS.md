@@ -105,17 +105,19 @@ What can be different about it, and each needs to look right on its own:
 Measured with `variety.test.ts` over three real-sim games (116 missed
 threes at real speed):
 
-| Part                                     |             Ways now | Notes                                                                                                                                                  |
-| ---------------------------------------- | -------------------: | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| How he got it                            |                   18 | swing 31%, skip, kick-out, handoff, pull-up, step-back, hesitation; + screen, + fake, + transition                                                     |
-| Where from                               |                    8 | corners, wings, top; on the line / a step off / deep                                                                                                   |
-| His form                                 |                   10 | his own jumper: shoot, quick, push, split, kick, high kick, lean, high                                                                                 |
-| His footwork into it                     |              10 → 11 | measured 2026-11-08: on the move into the catch 53% (lifting out to the line, mostly) → 58%, set 47% → 42%; arriving squared to the rim 19 → 26 of 116 |
-| The defense                              |                    6 | wide open, open, contested, late closeout, hand in his face, late hand                                                                                 |
-| How it misses                            |                6 → 9 | was 70% front rim, nothing long, no air balls; now front 58%, back 26% (half in and out), side 13%, air balls and the glass now and then               |
-| After it                                 |                   11 | rebound by whom, short / mid / long, off the floor                                                                                                     |
-| Whole combination                        | 116 of 116 different |                                                                                                                                                        |
-| Same man, same setup + spot + form again |              8 of 72 |                                                                                                                                                        |
+| Part                                     |             Ways now | Notes                                                                                                                                                                                            |
+| ---------------------------------------- | -------------------: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| How he got it                            |                   18 | swing 31%, skip, kick-out, handoff, pull-up, step-back, hesitation; + screen, + fake, + transition                                                                                               |
+| Where from                               |                    8 | corners, wings, top; on the line / a step off / deep                                                                                                                                             |
+| His form                                 |                   10 | his own jumper: shoot, quick, push, split, kick, high kick, lean, high                                                                                                                           |
+| His footwork into it                     |              10 → 11 | measured 2026-11-08: on the move into the catch 53% (lifting out to the line, mostly) → 58%, set 47% → 42%; arriving squared to the rim 19 → 26 of 116                                           |
+| The defense                              |                    6 | wide open, open, contested, late closeout, hand in his face, late hand                                                                                                                           |
+| His man closing out                      |              23 → 21 | measured 2026-11-08: from on him, a few steps or flat out from the help, running or chopping in, the hand he gets up; still coming in at the shooter 0.7 s and more after the shot 25 → 0 of 116 |
+| His man after it                         |                6 → 4 | drifts in 67 → 61, stays watching 23 → 28, to the glass 21 → 24, runs on by 3                                                                                                                    |
+| How it misses                            |                6 → 9 | was 70% front rim, nothing long, no air balls; now front 58%, back 26% (half in and out), side 13%, air balls and the glass now and then                                                         |
+| After it                                 |                   11 | rebound by whom, short / mid / long, off the floor                                                                                                                                               |
+| Whole combination                        | 116 of 116 different |                                                                                                                                                                                                  |
+| Same man, same setup + spot + form again |              8 of 72 |                                                                                                                                                                                                  |
 
 How it misses (aimed short / long / off the side / air / glass by his
 shooting, distance and where the rebound goes) is in, 2026-11-06, with the
@@ -134,7 +136,14 @@ to it, his feet to the rim as for a man stood waiting on it
 round on it off the catch; and one come in across the floor or at the rim
 carries on into the catch, planted a step after it, rather than stopping to
 wait on it (few: 5 in three games). A man stood there a while steps off his
-spot and back into it (rarer still).
+spot and back into it (rarer still) - and one of those who wait set, stood
+there a beat at least, now and then steps into it as it comes: his own hop
+in at the rim from a step behind his spot, or a 1-2 in off the passer's
+side, along the line in the corner (`stepIntoSet`, `SET_STEP`; once a game
+or so - of the 26 set for a missed three in three games nearly all only
+pulled up on the spot lifting out to it as the ball came). (The tool's
+footwork now counts only a catch off a pass: 39 of the 116 came off the
+dribble.)
 
 How he got it - the pass (measured from 2026-11-08: the kind he threw,
 how far, whether it led a man on the move): 17 ways, the chest pass 61%,
@@ -144,10 +153,33 @@ the better a passer the more often: `SWING_PUSH`); only 7% lead a man on
 the move. (A bounce pass was counted as a pull-up until then: the tool
 followed only its last flight, up off the floor.)
 
-Next, in order: his footwork stepping in at it (a hop, a 1-2 in from the
-side, off a man stood there longer); how he got it (the pass, his way to
-the spot, his catch); the defense (closeout kinds, the man's reaction
-after); everyone after it.
+The defense - his man closing out (measured from 2026-11-08: how far he
+came, running or chopping in, the hand he got up, when he got there; and
+what he did the next second or so). A man still coming in at the shooter
+long after the shot went - chopping in on him a second and more after it,
+a quarter of them - pulls up short of him instead, stopped by 0.65 s after
+it (`CLOSE_QUIT_BY`), and plays the shot from there. And a man still flat
+out at him as it goes up, a stride off him, now and then flies at it - up
+off his feet a stride off, a hand high, and on by past his shoulder
+(`flyAtShot`; a few a game, the less disciplined the more often). The hand
+most get up is still a little late one: "a hand up late" on 64 of 116.
+
+The games those reshuffled turned up, each fixed for itself: a man
+following his man into a run of his own a moment later (crashing the
+glass) stopped dead from a run and off again from standing, his feet
+flung - on into it now, as one laid from a mark already was; a defender
+caught on a screen shoved back through the screener by the room kept in
+front of the man with the ball (`SCREEN_PINCH`); the help stepping up to
+stop the ball being the man on the one a bounce pass went to (read as a
+shot), held off him as he backed down in the post (`STOP_ON_HIM`); a
+contest kept in sight read off where the director thought a man was, not
+where the picture had him; a step aside into a man going up with a shot
+in close; and coaches easing out of one thing into the next losing what
+they were still easing out of - a frame's snap.
+
+Next, in order: how he got it (his way to the spot - nearly every
+catch-and-shoot three is a man lifting out to the line; few stand waiting,
+slide along the arc or step in); his catch; everyone after it.
 
 Blocking how it misses - glitches the reshuffled test games turn up, each
 to be fixed for itself (they would turn up in real games too):
@@ -155,7 +187,6 @@ to be fixed for itself (they would turn up in real games too):
 - a man jumps 4.9 ft in a tenth of a second (a run set to start where a
   drift off the ball took him, with 28 ms to get back)
 - a loose ball bouncing through a man stood there (4 where 1 is allowed)
-- a man backing down in the post with nobody to back into
 - the help on a kick-out not closing back out often enough (79%, 85% wanted)
 - sliding, the foot he is down on turning (0.39, under 0.3 wanted)
 - a man sat on his chair too near the coach in a huddle

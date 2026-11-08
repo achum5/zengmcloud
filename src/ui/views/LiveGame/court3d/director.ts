@@ -1001,6 +1001,13 @@ const CARRY_DIP = 0.75;
 const CARRY_LEAST = 200;
 // Runs a man makes on his own feet (not dribbling, not sliding).
 const ON_FOOT = new Set<AnimName>(["run", "sprint", "jog", "walk"]);
+// Off following his man into a run of his own (a closeout, crashing the
+// glass) this soon after (ms): straight on into it, not stopped between.
+const INTO_GAP = 120;
+// Set on his spot for a catch-and-shoot, this share of men step into it as
+// it comes - a good shooter more (this much more at the best, less at the
+// worst), a big this much less (see stepIntoSet).
+const SET_STEP: [number, number, number] = [0.55, 0.3, 0.2];
 // Going this fast (feet a second) or faster - running, driving - a quick man
 // goes quicker and a slow one slower (see quick).
 const QUICK_FROM = 12;
@@ -1812,6 +1819,23 @@ const OPEN_LATE = 300;
 const ALONE_FT = 9;
 // A hand up at the shot from no farther off than this (feet).
 const CONTEST_FT = 6;
+// A closeout late enough to still be coming in at him this long after it
+// goes (ms) pulls up short of him instead, stopped by then...
+const CLOSE_QUIT_BY = 650;
+// ...and with less time than this (ms) left to, he doesn't set off at all.
+const CLOSE_QUIT_LEAST = 550;
+// Too late to break down in front of a shooter, still flat out at him as it
+// goes up (his arrival at a stride off him this long before it goes, ms, to
+// this long after - or, leaving him all alone, this long), from this far off
+// him at the least (feet): this share
+// of men fly at it - and this much more of a poor defender's - leaving
+// their feet a stride off him at this pace (feet a second) for a leap like
+// a man's this high (feet), and on by him past his shoulder.
+const FLY_SHOT_WHEN: [number, number, number] = [-220, 300, 500];
+const FLY_SHOT_FROM = 9;
+const FLY_SHOT_SHARE: [number, number] = [0.3, 0.4];
+const FLY_SHOT_ON = 12;
+const FLY_SHOT_UP = 1.3;
 // A hop of `ms` (off the floor `share` of it), as high as gravity has a
 // man go in that long - a skip, not a pop up off the floor.
 const hopFor = (ms: number, share: number): number =>
@@ -1870,6 +1894,9 @@ const STOP_REACH = 20;
 const STOP_FTPS = 10;
 const STOP_RAMP: [number, number] = [320, 2000];
 const STOP_DRIFT = 2.5;
+// The man on whoever a pass out of it goes to (this near him as it gets
+// there, feet) is not the one who steps up.
+const STOP_ON_HIM = 4;
 // Pulling up off a drive: going this fast (ft/s), up to this long (ms)
 // before it goes - but not the step or hop he goes up off, this long (ms)
 // before it.
@@ -3258,21 +3285,17 @@ class Director {
 			const caught = pass.t1;
 			const P = this.posAt(pid, caught);
 			const rim = { x: rimX(tr.team), y: COURT_H / 2 };
-			const into = this.footworkIn(
-				pid,
-				P,
-				rim,
-				this.posAt(pass.from.pid, pass.t0),
-				caught,
-			);
-			if (!into) {
-				continue;
-			}
+			const H = this.posAt(pass.from.pid, pass.t0);
 			// Planted a step after it comes into his hands - the 1-2, the hop,
 			// as it does - and before he goes up.
 			const in1 = Math.min(caught + CATCH_PLANT_MS, shot.t0 - 20);
 			// (Nothing of his between the catch and the shot to work round.)
 			if (tr.moves.some((m) => m.t1 > caught + 1 && m.t0 < s.t0)) {
+				continue;
+			}
+			const into = this.footworkIn(pid, P, rim, H, caught);
+			if (!into) {
+				this.stepIntoSet(tr, P, rim, H, caught, in1, shot);
 				continue;
 			}
 			// Just got to his spot, running, as it comes: on into the catch
@@ -3364,6 +3387,89 @@ class Director {
 			);
 			tr.moves.sort((a, b) => a.t0 - b.t0);
 		}
+	}
+
+	// Set on his spot and waiting on it, a beat at least: as it comes, his
+	// own step into it (see SET_STEP) - a hop in at the rim from a step
+	// behind his spot, or a 1-2 in off the side of the passer - planted as
+	// it comes into his hands. Not caught flat-footed every time.
+	private stepIntoSet(
+		tr: Track,
+		P: Pt,
+		rim: Pt,
+		H: Pt,
+		caught: number,
+		in1: number,
+		shot: Act,
+	) {
+		const pid = tr.pid;
+		const at = tr.moves.findLastIndex((m) => m.t1 <= caught + 1);
+		const came = tr.moves[at];
+		if (!came || !ON_FOOT.has(came.anim) || dist(came.to, P) > 0.3) {
+			return;
+		}
+		const shooter = this.level(pid, "tp") ?? 0.5;
+		const big = (this.rank.get(pid) ?? 4) >= 6;
+		if (
+			hash01(pid, Math.round(caught / 11) + 29) >=
+			SET_STEP[0] + SET_STEP[1] * (shooter - 0.5) - (big ? SET_STEP[2] : 0)
+		) {
+			return;
+		}
+		const u = unitVec(P, rim);
+		const lat = { x: -u.y, y: u.x };
+		const toH = unitVec(P, H);
+		const side = lat.x * toH.x + lat.y * toH.y >= 0 ? 1 : -1;
+		// (His own way of it, the same every time.)
+		const oneTwo = hash01(pid, 3301) < 0.5;
+		const [back, across, speed] = oneTwo ? [0.55, 0.7 * side, 6] : [0.8, 0, 7];
+		const off = (b: number, a: number) =>
+			inPlay(
+				clampPt({
+					x: P.x - u.x * b + lat.x * a,
+					y: P.y - u.y * b + lat.y * a,
+				}),
+			);
+		let Q = off(back, across);
+		// (In the corner, his back to the sideline: in along the line.)
+		if (dist(Q, P) < 0.4) {
+			Q = off(0, 0.8 * side);
+			if (dist(Q, P) < 0.4) {
+				return;
+			}
+		}
+		const in0 = in1 - Math.max(200, runMs(dist(Q, P), speed));
+		// (Stood there a beat first - or, only just there lifting out to the
+		// line, on out a step past it and back in - doing nothing else, nor
+		// a cut of the picture; and nobody right where he stands off it.)
+		const L = dist(came.from, came.to);
+		const out =
+			L > 1 &&
+			((came.to.x - came.from.x) * u.x + (came.to.y - came.from.y) * u.y) / L <
+				LIFTING_OUT &&
+			dist(Q, came.from) > L;
+		if (
+			in0 < came.t1 + (out ? 30 : 150) ||
+			tr.acts.some(
+				(a) => a !== shot && a.anim !== "catch" && a.t1 > came.t1 && a.t0 < in1,
+			) ||
+			this.cuts.some((c) => c > came.t1 - 1 && c < in1) ||
+			[...this.tracks.values()].some(
+				(o) => o !== tr && o.pid >= 0 && dist(this.posAt(o.pid, in0), Q) < 2,
+			)
+		) {
+			return;
+		}
+		came.to = { ...Q };
+		tr.moves.splice(at + 1, 0, {
+			t0: in0,
+			t1: in1,
+			from: { ...Q },
+			to: { ...P },
+			anim: "run",
+			v0: 0,
+			v1: 0,
+		});
 	}
 
 	// HIS FEET INTO A CATCH-AND-SHOOT (from his spot P, at the rim `rim`, the
@@ -13977,15 +14083,78 @@ class Director {
 			return;
 		}
 		const brk = breakFrom(G);
+		if (this.flyAtShot(d, shooter, G, sees, pace, release, iq, outAt, down)) {
+			return;
+		}
 		// Flat out to a few feet off him, then choppy steps the rest of the
 		// way in - straight on from the one into the other.
-		const broke = this.go(d, brk, sees, pace, "run", undefined, {
+		const tr = this.track(d)!;
+		const was = {
+			moves: tr.moves.length,
+			faces: tr.faces.length,
+			face: this.face.get(d),
+			free: this.free.get(d),
+		};
+		let broke = this.go(d, brk, sees, pace, "run", undefined, {
 			effort: BURST,
 			onto: CLOSE_CHOP,
 		});
-		const there = this.go(d, C, broke, CLOSE_CHOP, "closeout", face, {
+		let there = this.go(d, C, broke, CLOSE_CHOP, "closeout", face, {
 			effort: BURST,
 		});
+		// Still coming in at him with it long gone, he isn't: he pulls up
+		// short of him, done by then - flat out still, as soon as that has
+		// him stopped; breaking down, where his steps in have got him - and
+		// plays the shot from there (see crashTheGlass).
+		const by = release + CLOSE_QUIT_BY;
+		if (there > by + 50) {
+			tr.moves.length = was.moves;
+			tr.faces.length = was.faces;
+			this.pos.set(d, G);
+			if (was.face !== undefined) {
+				this.face.set(d, was.face);
+			}
+			if (was.free !== undefined) {
+				this.free.set(d, was.free);
+			} else {
+				this.free.delete(d);
+			}
+			const start = Math.max(sees, this.free.get(d) ?? 0);
+			// (Only free to go once it is all but gone: he doesn't - he plays
+			// the shot from where he is.)
+			if (by - start < CLOSE_QUIT_LEAST) {
+				return;
+			}
+			const runIn = runMs(dist(G, brk), pace, 0, BURST, CLOSE_CHOP);
+			let to: Pt;
+			if (start + runIn <= by - 200) {
+				broke = this.go(d, brk, sees, pace, "run", undefined, {
+					effort: BURST,
+					onto: CLOSE_CHOP,
+				});
+				const k = reachIn(by - broke, CLOSE_CHOP, BURST, CLOSE_CHOP, 0);
+				const u = unitVec(brk, C);
+				to = clampPt({ x: brk.x + u.x * k, y: brk.y + u.y * k });
+				there = this.go(d, to, broke, CLOSE_CHOP, "closeout", face, {
+					effort: BURST,
+				});
+			} else {
+				const v0 = this.carried(d, brk, start, pace);
+				const k = Math.min(
+					dist(G, brk),
+					reachIn(by - start, pace, BURST, v0, 0),
+				);
+				const u = unitVec(G, brk);
+				to = clampPt({ x: G.x + u.x * k, y: G.y + u.y * k });
+				broke = this.go(d, to, sees, pace, "run", undefined, {
+					effort: BURST,
+				});
+				there = broke;
+			}
+			C = to;
+			face = (P.x >= C.x ? 1 : -1) as 1 | -1;
+			left = this.leftToBall(C, shooter, P);
+		}
 		if (outAt !== undefined) {
 			// Leaving him all alone: a hand flying up at it as it goes over,
 			// on his way in - if he is out there in time even for that.
@@ -13998,6 +14167,123 @@ class Director {
 			// Late: a hand in his face as it goes up over him.
 			contest(there - 120, 0.5);
 		}
+	}
+
+	// Too late to break down in front of him - still flat out at him as it
+	// goes up - a man now and then (the less disciplined, the more often)
+	// flies at the shot instead: up off his feet at it a stride off him, a
+	// hand high, and carried on by him past his shoulder (by him, not
+	// through him), down behind him - and from there back in to the glass.
+	private flyAtShot(
+		d: number,
+		shooter: number,
+		G: Pt,
+		sees: number,
+		pace: number,
+		release: number,
+		iq: number | undefined,
+		// Leaving him all alone: still ROOM_FT[3] off him as it goes up.
+		outAt?: number,
+		down?: Pt,
+	): boolean {
+		const P = this.posOf(shooter);
+		if (
+			dist(G, P) < FLY_SHOT_FROM ||
+			(down !== undefined && dist(down, P) > 1) ||
+			hash01(d * 31 + 5, Math.floor(release)) >=
+				FLY_SHOT_SHARE[0] + FLY_SHOT_SHARE[1] * (1 - (iq ?? 0.5))
+		) {
+			return false;
+		}
+		const team = this.teamOf(shooter);
+		const u = unitVec(G, P);
+		const lat = { x: -u.y, y: u.x };
+		const rim = rimPt(team);
+		// By him on the side he comes from, off the line out from the rim
+		// through him - or the other, if that is out of bounds.
+		const r = unitVec(rim, P);
+		const side =
+			((G.x - P.x) * -r.y + (G.y - P.y) * r.x) * (lat.x * -r.y + lat.y * r.x);
+		const by = (s: number, a: number, b: number): Pt => ({
+			x: P.x + u.x * a + lat.x * s * b,
+			y: P.y + u.y * a + lat.y * s * b,
+		});
+		const fits = (s: number) =>
+			[by(s, -2.4, 2.4), by(s, 1.6, 3), by(s, 0, 2.7)].every(
+				(q) => dist(inPlay(q), q) < 0.01,
+			);
+		let s = side > 0.5 ? 1 : side < -0.5 ? -1 : hash01(d, 6121) < 0.5 ? 1 : -1;
+		if (!fits(s)) {
+			s = -s;
+			if (!fits(s)) {
+				return false;
+			}
+		}
+		const A = by(s, -2.4, 2.4);
+		const B = by(s, 1.6, 3);
+		const est =
+			Math.max(sees, this.free.get(d) ?? 0) +
+			runMs(dist(G, A), pace, 0, BURST, FLY_SHOT_ON);
+		if (
+			est < release + FLY_SHOT_WHEN[0] ||
+			est > release + FLY_SHOT_WHEN[outAt === undefined ? 1 : 2]
+		) {
+			return false;
+		}
+		// (Not down on top of anybody else there.)
+		for (const o of [...this.slots(team), ...this.slots(other(team))]) {
+			if (o !== d && o !== shooter && dist(this.posAt(o, est + 400), B) < 3) {
+				return false;
+			}
+		}
+		const tr = this.track(d)!;
+		const was = {
+			moves: tr.moves.length,
+			faces: tr.faces.length,
+			face: this.face.get(d),
+			free: this.free.get(d),
+		};
+		const at = this.go(d, A, sees, pace, "run", undefined, {
+			effort: BURST,
+			onto: FLY_SHOT_ON,
+		});
+		// (Left all alone, he is: no nearer him than that as it goes.)
+		if (
+			outAt !== undefined &&
+			dist(this.posAt(d, release, false, true), P) < ROOM_FT[3] - 0.2
+		) {
+			tr.moves.length = was.moves;
+			tr.faces.length = was.faces;
+			this.pos.set(d, G);
+			if (was.face !== undefined) {
+				this.face.set(d, was.face);
+			}
+			if (was.free !== undefined) {
+				this.free.set(d, was.free);
+			} else {
+				this.free.delete(d);
+			}
+			return false;
+		}
+		// (Out to one side of him on purpose: not a corner to cut - see
+		// mark's straighten.)
+		const leg = this.track(d)?.moves.at(-1);
+		if (leg) {
+			this.detours.add(leg);
+		}
+		const peak = this.leap(d, FLY_SHOT_UP);
+		const half = Math.sqrt((2 * peak) / GRAVITY) * 1000;
+		const D = Math.max(620, half / 0.43);
+		// Off his feet as he gets there.
+		const t0 = at - 0.525 * D + half;
+		this.act(d, "contest", t0, t0 + D, {
+			look: { ...P },
+			jump: [0.525 - half / D, 0.525 + half / D, peak],
+			...(this.leftToBall(A, shooter, P) ? { mirror: true as const } : {}),
+		});
+		const by2 = this.go(d, B, at, FLY_SHOT_ON * 0.7, "run");
+		this.free.set(d, Math.max(by2, t0 + D));
+		return true;
 	}
 
 	// The shot goes up and everybody plays it. The bigs crash the glass, and
@@ -23034,6 +23320,37 @@ class Director {
 					} else {
 						lastRun.v1 = 0;
 					}
+				} else if (
+					!end &&
+					nextUp &&
+					lastRun?.v1 &&
+					Math.abs(lastRun.t1 - fin.t) < 1 &&
+					!this.marking.has(nextUp) &&
+					ON_FOOT.has(nextUp.anim) &&
+					nextUp.t0 >= fin.t - 1 &&
+					nextUp.t0 - fin.t <= INTO_GAP &&
+					dist(fin.p, nextUp.to) > 1 &&
+					!cuts.some((c) => c > fin.t - 2 && c < nextUp.t0 + 2) &&
+					!acts.some((x) => x >= fin.t - 1 && x <= nextUp.t0 + 1)
+				) {
+					// Followed his man till he goes off on a run of his own a
+					// moment later (crashing the glass, say), wherever that had
+					// him: on into it, as for one laid from a mark - not
+					// stopped dead between, and off again from standing.
+					const nd = dist(fin.p, nextUp.to);
+					const lx = dist(lastRun.from, lastRun.to);
+					const cos =
+						lx > 0.05
+							? ((lastRun.to.x - lastRun.from.x) * (nextUp.to.x - fin.p.x) +
+									(lastRun.to.y - lastRun.from.y) * (nextUp.to.y - fin.p.y)) /
+								(lx * nd)
+							: 1;
+					const pace = nd / Math.max(0.2, (nextUp.t1 - fin.t) / 1000);
+					const v = Math.min(lastRun.v1 * keepThrough(cos), pace * 1.5);
+					lastRun.v1 = slowestEnd(lastRun, v);
+					nextUp.v0 = v;
+					nextUp.t0 = fin.t;
+					nextUp.from = { ...fin.p };
 				}
 				const gone = end ? dist(fin.p, end) : 0;
 				// (Not time to get there before his next run sets off from
@@ -25242,6 +25559,32 @@ class Director {
 						continue;
 					}
 				}
+				// (Nor, all the while he is over, into a man of theirs going up
+				// with a shot in close - who comes on into where he steps.)
+				{
+					const ramp = Math.min(r.par ? easeMs : RAMP, (n1 - n0) / 2);
+					let up = false;
+					for (let t = n0; t < n1 && !up; t += 100) {
+						const u1 = Math.min(1, (t - n0) / ramp, (n1 - t) / ramp);
+						const w = u1 * u1 * (3 - 2 * u1);
+						const P = posAt(r.a, t);
+						const Q = { x: P.x + ux * k * w, y: P.y + uy * k * w };
+						up = tracks.some((o) => {
+							if (o.team === r.a.team || !shownAtT(o, t)) {
+								return false;
+							}
+							const act = actAt(o, t);
+							if (!act || !UP_IN_CLOSE.has(act.anim)) {
+								return false;
+							}
+							const O = posAt(o, t);
+							return dist(O, Q) < OPPS && dist(O, Q) < dist(O, P) - 0.01;
+						});
+					}
+					if (up) {
+						continue;
+					}
+				}
 				(r.a.nudges ??= []).push({
 					t0: n0,
 					t1: n1,
@@ -25287,6 +25630,9 @@ class Director {
 		// (And a man in front of the one with the ball, further: the ball is
 		// out in front of him, not in the other man's chest.)
 		const HOLD_APART = 2.7;
+		// (Not caught on a screen, though: within this much more than
+		// BY_SCREEN of the man set in it.)
+		const SCREEN_PINCH = 1.6;
 		// (Two of a side running the same way abreast - both going faster
 		// than this, feet a second, within this of the same way, cosine -
 		// a stride or so apart: not shoulder to shoulder the length of the
@@ -26134,6 +26480,26 @@ class Director {
 										v > MOVING
 											? 0
 											: Math.min(1, Math.max(0, (cos - 0.2) / 0.5));
+									// (Caught on a screen, up against the man set in it:
+									// no further off the man with it than any man - not
+									// shoved back through the screen.)
+									if (inFront > 0) {
+										for (let k = 0; k < tracks.length; k++) {
+											if (
+												k !== o &&
+												tracks[k]!.team !== tracks[o]!.team &&
+												actOf(k, s) === "screen" &&
+												Math.hypot(
+													xs[k]![s]! - xs[o]![s]!,
+													ys[k]![s]! - ys[o]![s]!,
+												) <
+													BY_SCREEN + SCREEN_PINCH
+											) {
+												inFront = 0;
+												break;
+											}
+										}
+									}
 								}
 							}
 							if (
@@ -26831,12 +27197,13 @@ class Director {
 				if (shooter === undefined) {
 					continue;
 				}
-				const P = this.posAt(tr.pid, mid, false, true);
-				const n = this.nudgeAt(tr, mid);
-				const D = { x: P.x + n.x, y: P.y + n.y };
-				const S0 = this.posAt(shooter, mid, false, true);
-				const sn = this.nudgeAt(this.track(shooter)!, mid);
-				const S = { x: S0.x + sn.x, y: S0.y + sn.y };
+				// (Where the picture has them: on their runs as it runs them,
+				// stepped aside, kept off anybody they would be in.)
+				const D = floorSpotOf(tr, mid);
+				const S = floorSpotOf(this.track(shooter)!, mid);
+				if (!D || !S) {
+					continue;
+				}
 				const off = D.x - S.x;
 				if (D.y <= S.y || Math.abs(off) >= WALL_SIGHT) {
 					continue;
@@ -27135,16 +27502,30 @@ class Director {
 			}
 			return since;
 		};
-		for (const b of this.ball) {
+		for (const [k, b] of this.ball.entries()) {
 			if (b.kind !== "fly" || !("pid" in b.from) || b.from.pid < 0) {
 				continue;
 			}
 			const h = b.from.pid;
 			const team = this.teamOf(h);
 			const release = b.t0;
-			const pass =
-				"pid" in b.to && b.to.pid !== h && this.teamOf(b.to.pid) === team;
-			const shot = !("pid" in b.to);
+			// (A bounce pass is two flights: to the floor, and up off it to
+			// the man it goes to - not a shot.)
+			const up = this.ball[k + 1];
+			const bounced =
+				!("pid" in b.to) &&
+				up?.kind === "fly" &&
+				!("pid" in up.from) &&
+				"pid" in up.to &&
+				Math.abs(up.t0 - b.t1) < 1;
+			const to = bounced
+				? (up.to as { pid: number }).pid
+				: "pid" in b.to
+					? b.to.pid
+					: undefined;
+			const caught = bounced ? up.t1 : b.t1;
+			const pass = to !== undefined && to !== h && this.teamOf(to) === team;
+			const shot = !("pid" in b.to) && !bounced;
 			if (!pass && !shot) {
 				continue;
 			}
@@ -27248,6 +27629,17 @@ class Director {
 				const D0 = this.posAt(tr.pid, decided, false, true);
 				const cost = dist(D0, S);
 				if (cost >= bestCost || cost > STOP_REACH) {
+					continue;
+				}
+				// (Nor the man on the one it is thrown to: he is on him as it
+				// gets there, not stepped up on the passer still.)
+				if (
+					pass &&
+					dist(
+						this.posAt(tr.pid, caught, false, true),
+						this.posAt(to!, caught, false, true),
+					) < STOP_ON_HIM
+				) {
 					continue;
 				}
 				// He stays put there: where he would have been anyway mustn't run
