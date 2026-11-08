@@ -3106,10 +3106,16 @@ class Actor {
 	private chaseOn(to: Pt, t1: number, fps: number, move?: Move, yaw?: number) {
 		const p = onField(to, this.roam, this.endRoam);
 		if (move === undefined || RAMPS.has(move)) {
+			const was = this.t;
 			this.bendInto(
 				p,
 				Math.min(fps, dist(this.at, p) / Math.max(0.001, (t1 - this.t) / 1000)),
 			);
+			// (Bent round into it past then: left at that - not a sliver of a
+			// stand after it, taken for where he is stopped.)
+			if (was < t1 && this.t >= t1) {
+				return;
+			}
 		}
 		const from = this.at;
 		const far = dist(from, p);
