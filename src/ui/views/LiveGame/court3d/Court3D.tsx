@@ -16,7 +16,6 @@ import type {
 	ScoreBugStyle,
 } from "../../../../common/types.ts";
 import LiveCourt from "../LiveCourt.tsx";
-import { TeamLogoInline } from "../../../components/TeamLogoInline.tsx";
 import {
 	paintBench,
 	paintBoards,
@@ -61,13 +60,17 @@ import { dressKit } from "./kitArt.ts";
 import { logoPicture } from "./logoPicture.ts";
 import { COURT_W, type Side } from "./geometry.ts";
 import { eventsMatchRoster } from "./rosterMatch.ts";
-import { Overlays } from "./Overlays.tsx";
+import { Caption, Overlays } from "./Overlays.tsx";
 import {
+	boxOf,
+	type Box,
+	captionOf,
 	dipOf,
 	FLASH_MS,
 	NARROW_W,
 	runFrames,
 	setOpacity,
+	showCaption,
 	showWipe,
 	useStakes,
 	useAdPictures,
@@ -158,41 +161,8 @@ const CLOSE_SOFT = 1.1;
 // a replay's flash between angles (see replayRig and broadcast.ts FLASH_MS),
 // white, while the men in it are made ready at their new size.
 const KEY_HOLD_MS = 900;
-// WHAT IS OVER THE PICTURE: the score bug along its foot and the line of
-// play-by-play across its top, each's box as shares of the picture (see
+// WHAT IS OVER THE PICTURE: the score bug along its foot (see boxOf, and
 // camera.ts's dodgeFor).
-const boxOf = (
-	wrap: HTMLElement | null,
-	el: Element | null | undefined,
-): (Cover & { y1: number }) | undefined => {
-	if (!wrap || !el) {
-		return undefined;
-	}
-	const w = wrap.getBoundingClientRect();
-	const b = el.getBoundingClientRect();
-	if (w.width <= 0 || w.height <= 0 || b.width <= 0 || b.height <= 0) {
-		return undefined;
-	}
-	return {
-		x0: (b.left - w.left) / w.width,
-		x1: (b.right - w.left) / w.width,
-		y0: (b.top - w.top) / w.height,
-		y1: (b.bottom - w.top) / w.height,
-	};
-};
-// The line across the top goes faint while the ball is behind it - a shot
-// arcing up from the far side of the floor - and comes back as it drops;
-// and is off the picture through a replay, the way a broadcast shows one
-// clean but for its REPLAY tag (the rim, seen from under it, is up there).
-const CAPTION_FAINT = 0.18;
-const captionOver = (
-	cap: Cover & { y1: number },
-	at: { x: number; y: number },
-): boolean =>
-	at.x > cap.x0 - 0.02 &&
-	at.x < cap.x1 + 0.02 &&
-	at.y > cap.y0 - 0.02 &&
-	at.y < cap.y1 + 0.03;
 const bugBoxOf = (wrap: HTMLElement | null, holder: HTMLElement | null) =>
 	boxOf(wrap, holder?.firstElementChild);
 // The score bug: what the camera keeps the man with the ball out from
@@ -904,7 +874,7 @@ const Court3D = ({
 		dodgeSide: 0,
 		covers: [] as Cover[],
 		coversAt: -Infinity,
-		caption: undefined as (Cover & { y1: number }) | undefined,
+		caption: undefined as Box | undefined,
 		heldBy: undefined as number | undefined,
 		heldAt: -Infinity,
 		last: undefined as number | undefined,
@@ -1294,10 +1264,7 @@ const Court3D = ({
 			if (now - s.coversAt > 500) {
 				s.coversAt = now;
 				s.covers = coversOf(wrapRef.current, bugRef.current);
-				s.caption = boxOf(
-					wrapRef.current,
-					wrapRef.current?.querySelector(".court3d-caption"),
-				);
+				s.caption = boxOf(wrapRef.current, captionOf(wrapRef.current));
 			}
 			// The man with the ball (or the ball, loose or in the air) never
 			// left behind the score bug: the camera eased over off him.
@@ -1407,18 +1374,13 @@ const Court3D = ({
 			s.drawnAt = drawnAt;
 			setOpacity(dipRef.current, o);
 			setOpacity(flashRef.current, flash);
-			const capEl =
-				wrapRef.current?.querySelector<HTMLElement>(".court3d-caption");
-			if (capEl) {
-				const b = project(cam, moment.ball);
-				const faint =
-					s.caption !== undefined &&
-					captionOver(s.caption, { x: b.x / fw, y: b.y / fh });
-				const o = replay ? "0" : faint ? String(CAPTION_FAINT) : "";
-				if (capEl.style.opacity !== o) {
-					capEl.style.opacity = o;
-				}
-			}
+			const ballAt = project(cam, moment.ball);
+			showCaption(
+				captionOf(wrapRef.current),
+				s.caption,
+				{ x: ballAt.x / fw, y: ballAt.y / fh },
+				!!replay,
+			);
 			showWipe(
 				stingRefs.current,
 				replayRef.current,
@@ -1816,48 +1778,7 @@ const Court3D = ({
 					</div>
 				);
 			})()}
-			{caption ? (
-				<div
-					className="court3d-caption"
-					style={{
-						position: "absolute",
-						left: "50%",
-						// Up top, over the crowd - never over the floor, where it hid
-						// the play along the near sideline (the score bug alone is
-						// down there, and the camera keeps the ball clear of it).
-						top: "1.6cqw",
-						transform: "translateX(-50%)",
-						width: "max-content",
-						// (Clear of the REPLAY tag in the corner.)
-						maxWidth: "70%",
-						transition: "opacity 0.15s",
-						textAlign: "center",
-						fontSize: "clamp(10px, 1.85cqw, 16px)",
-						lineHeight: 1.35,
-						padding: "0.45em 1em",
-						background: "rgba(8, 8, 12, 0.84)",
-						color: "#f1ede6",
-						borderLeft: `4px solid ${
-							(captionTeam ?? home)?.colors?.[0] ?? "#888"
-						}`,
-						borderRadius: 3,
-						display: "flex",
-						alignItems: "center",
-						gap: "0.6em",
-					}}
-				>
-					{captionTeam ? (
-						<TeamLogoInline
-							alt={captionTeam.abbrev}
-							className="flex-shrink-0"
-							imgURL={captionTeam.imgURL}
-							imgURLSmall={captionTeam.imgURLSmall}
-							includePlaceholderIfNoLogo
-						/>
-					) : null}
-					<div>{caption}</div>
-				</div>
-			) : null}
+			<Caption caption={caption} team={captionTeam} home={home} />
 		</div>
 	);
 };

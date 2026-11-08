@@ -333,3 +333,56 @@ export const setOpacity = (el: HTMLElement | null, o: number | string) => {
 		el.style.opacity = String(o);
 	}
 };
+
+// WHERE SOMETHING OVER THE PICTURE IS (the score bug, the caption): its box
+// as shares of the picture - or nothing, not laid out.
+export type Box = { x0: number; x1: number; y0: number; y1: number };
+export const boxOf = (
+	wrap: HTMLElement | null,
+	el: Element | null | undefined,
+): Box | undefined => {
+	if (!wrap || !el) {
+		return undefined;
+	}
+	const w = wrap.getBoundingClientRect();
+	const b = el.getBoundingClientRect();
+	if (w.width <= 0 || w.height <= 0 || b.width <= 0 || b.height <= 0) {
+		return undefined;
+	}
+	return {
+		x0: (b.left - w.left) / w.width,
+		x1: (b.right - w.left) / w.width,
+		y0: (b.top - w.top) / w.height,
+		y1: (b.bottom - w.top) / w.height,
+	};
+};
+export const captionOf = (wrap: HTMLElement | null) =>
+	wrap?.querySelector<HTMLElement>(".court3d-caption") ?? null;
+
+// The line across the top (see Overlays' Caption) goes faint while the ball
+// is behind it (`ball`, on the picture as shares of it - a shot or a kick
+// arcing up from the far side) and comes back as it drops; and is off the
+// picture through a replay, the way a broadcast shows one clean but for
+// its REPLAY tag. (`box`: where it is - see boxOf.)
+const CAPTION_FAINT = 0.18;
+export const showCaption = (
+	el: HTMLElement | null,
+	box: Box | undefined,
+	ball: { x: number; y: number } | undefined,
+	replay: boolean,
+) => {
+	if (!el) {
+		return;
+	}
+	const faint =
+		box !== undefined &&
+		ball !== undefined &&
+		ball.x > box.x0 - 0.02 &&
+		ball.x < box.x1 + 0.02 &&
+		ball.y > box.y0 - 0.02 &&
+		ball.y < box.y1 + 0.03;
+	const o = replay ? "0" : faint ? String(CAPTION_FAINT) : "";
+	if (el.style.opacity !== o) {
+		el.style.opacity = o;
+	}
+};

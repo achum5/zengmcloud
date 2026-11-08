@@ -8,10 +8,9 @@ import {
 } from "react";
 import { useLocal } from "../../../util/local.ts";
 import type { PlayerFace } from "../../../util/playerFaces.ts";
-import { TeamLogoInline } from "../../../components/TeamLogoInline.tsx";
 import { STARTING_NUM_TIMEOUTS } from "../../../../common/constants.ts";
 import { helpers } from "../../../util/helpers.ts";
-import { depthOf, follow } from "../court3d/camera.ts";
+import { depthOf, follow, project } from "../court3d/camera.ts";
 import type { FaceConfig } from "facesjs";
 import { FaceLoader } from "../court3d/FaceLoader.tsx";
 import { headColors, profileOf } from "../court3d/faces.ts";
@@ -20,13 +19,17 @@ import { adsFor } from "../court3d/arenaAds.ts";
 import { FAST, makePace } from "../court3d/pace.ts";
 import { adjust, artFor, makeResolution } from "../court3d/resolution.ts";
 import { eventsMatchRoster } from "../court3d/rosterMatch.ts";
-import { Overlays } from "../court3d/Overlays.tsx";
+import { Caption, Overlays } from "../court3d/Overlays.tsx";
 import {
+	boxOf,
+	captionOf,
 	dipOf,
+	type Box,
 	FLASH_MS,
 	NARROW_W,
 	runFrames,
 	setOpacity,
+	showCaption,
 	showWipe,
 	useAdPictures,
 	useFacesThen,
@@ -290,31 +293,12 @@ const handsOfFor =
 		};
 	};
 
-// Where the score bug and the line over it sit in the picture: what the
-// tags keep out from behind (see tags.ts).
-const coverOf = (
-	wrap: HTMLElement | null,
-	el: Element | null | undefined,
-): TagCover | undefined => {
-	if (!wrap || !el) {
-		return undefined;
-	}
-	const w = wrap.getBoundingClientRect();
-	const b = el.getBoundingClientRect();
-	if (w.width <= 0 || w.height <= 0 || b.width <= 0 || b.height <= 0) {
-		return undefined;
-	}
-	return {
-		x0: (b.left - w.left) / w.width,
-		x1: (b.right - w.left) / w.width,
-		y0: (b.top - w.top) / w.height,
-	};
-};
+// Where the score bug and the line of play-by-play sit in the picture:
+// what the tags keep out from behind (see tags.ts).
 const coversOf = (wrap: HTMLElement | null, bug: HTMLElement | null) =>
-	[
-		coverOf(wrap, bug?.firstElementChild),
-		coverOf(wrap, wrap?.querySelector(".court3d-caption")),
-	].filter((b) => b !== undefined);
+	[boxOf(wrap, bug?.firstElementChild), boxOf(wrap, captionOf(wrap))].filter(
+		(b) => b !== undefined,
+	);
 const drawnUp = <T extends { z: number }>(p: T): T =>
 	p.z === 0 ? p : { ...p, z: p.z * FIGURE_SCALE };
 
@@ -953,7 +937,11 @@ const Field3D = ({
 	const narrow = size.w < NARROW_W;
 
 	const bugRef = useRef<HTMLDivElement | null>(null);
-	const covers = useRef({ at: -Infinity, boxes: [] as TagCover[] });
+	const covers = useRef({
+		at: -Infinity,
+		boxes: [] as TagCover[],
+		caption: undefined as Box | undefined,
+	});
 	const tagsOver = useRef(new Map<number, { over: boolean; y: number }>());
 	const dipRef = useRef<HTMLDivElement | null>(null);
 	const flashRef = useRef<HTMLDivElement | null>(null);
@@ -1443,6 +1431,7 @@ const Field3D = ({
 				covers.current = {
 					at: now,
 					boxes: coversOf(wrapRef.current, bugRef.current),
+					caption: boxOf(wrapRef.current, captionOf(wrapRef.current)),
 				};
 			}
 			// (In close on a man: no name under anybody.)
@@ -1528,17 +1517,17 @@ const Field3D = ({
 				w,
 				h,
 			);
-			// The line over the bug off the picture through a replay, the way a
-			// broadcast shows one clean but for its REPLAY tag (the 3D court's:
-			// see court3d/Court3D.tsx).
-			const capEl =
-				wrapRef.current?.querySelector<HTMLElement>(".court3d-caption");
-			if (capEl) {
-				const o = replay ? "0" : "";
-				if (capEl.style.opacity !== o) {
-					capEl.style.opacity = o;
-				}
-			}
+			// The line of play-by-play faint while the ball is up behind it, and
+			// off the picture through a replay (see showCaption).
+			const ballAt = moment.ball
+				? project(view, drawnUp(moment.ball.at))
+				: undefined;
+			showCaption(
+				captionOf(wrapRef.current),
+				covers.current.caption,
+				ballAt && { x: ballAt.x / view.viewW, y: ballAt.y / view.viewH },
+				!!replay,
+			);
 			// The down and distance, and which side has the ball - a flag out on
 			// the play, in its place, a yellow FLAG until the next.
 			const play = playAt(tl, s.t);
@@ -1689,46 +1678,7 @@ const Field3D = ({
 					<ScoreBug {...bug} shotTitle="Play clock" />
 				)}
 			</div>
-			{caption ? (
-				<div
-					className="court3d-caption"
-					style={{
-						position: "absolute",
-						left: "50%",
-						// Just over the score bug.
-						bottom: own
-							? `calc(2.4cqw + ${((own.span ?? 0.6) * 100 * own.height) / own.width}cqw)`
-							: "calc(2.4cqw + clamp(10px, 1.75cqw, 16px) * 3.3)",
-						transform: "translateX(-50%)",
-						width: "max-content",
-						maxWidth: "92%",
-						textAlign: "center",
-						fontSize: "clamp(10px, 1.85cqw, 16px)",
-						lineHeight: 1.35,
-						padding: "0.45em 1em",
-						background: "rgba(8, 8, 12, 0.84)",
-						color: "#f1ede6",
-						borderLeft: `4px solid ${
-							(captionTeam ?? home)?.colors?.[0] ?? "#888"
-						}`,
-						borderRadius: 3,
-						display: "flex",
-						alignItems: "center",
-						gap: "0.6em",
-					}}
-				>
-					{captionTeam ? (
-						<TeamLogoInline
-							alt={captionTeam.abbrev}
-							className="flex-shrink-0"
-							imgURL={captionTeam.imgURL}
-							imgURLSmall={captionTeam.imgURLSmall}
-							includePlaceholderIfNoLogo
-						/>
-					) : null}
-					<div>{caption}</div>
-				</div>
-			) : null}
+			<Caption caption={caption} team={captionTeam} home={home} />
 		</div>
 	);
 };

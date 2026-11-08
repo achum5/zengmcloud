@@ -1,4 +1,5 @@
-import type { RefObject } from "react";
+import type { ReactNode, RefObject } from "react";
+import { TeamLogoInline } from "../../../components/TeamLogoInline.tsx";
 import { STING_SLANT, STING_W } from "./broadcast.ts";
 
 // WHAT IS LAID OVER THE PICTURE, any sport's (see broadcast.ts showWipe,
@@ -139,3 +140,55 @@ export const Overlays = ({
 		) : null}
 	</>
 );
+
+// THE LINE OF PLAY-BY-PLAY over the picture, any sport's: up top, over the
+// crowd - never down over the near side of the field of play, where it hid
+// the play there (the score bug alone is down there, and the camera keeps
+// the ball clear of it) - in the colors of the team whose play it is, its
+// logo in front (see broadcast.ts showCaption for its fading).
+export const Caption = ({
+	caption,
+	team,
+	home,
+}: {
+	caption: ReactNode;
+	team: any;
+	home: any;
+}) =>
+	caption ? (
+		<div
+			className="court3d-caption"
+			style={{
+				position: "absolute",
+				left: "50%",
+				top: "1.6cqw",
+				transform: "translateX(-50%)",
+				width: "max-content",
+				// (Clear of the REPLAY tag in the corner.)
+				maxWidth: "70%",
+				transition: "opacity 0.15s",
+				textAlign: "center",
+				fontSize: "clamp(10px, 1.85cqw, 16px)",
+				lineHeight: 1.35,
+				padding: "0.45em 1em",
+				background: "rgba(8, 8, 12, 0.84)",
+				color: "#f1ede6",
+				borderLeft: `4px solid ${(team ?? home)?.colors?.[0] ?? "#888"}`,
+				borderRadius: 3,
+				display: "flex",
+				alignItems: "center",
+				gap: "0.6em",
+			}}
+		>
+			{team ? (
+				<TeamLogoInline
+					alt={team.abbrev}
+					className="flex-shrink-0"
+					imgURL={team.imgURL}
+					imgURLSmall={team.imgURLSmall}
+					includePlaceholderIfNoLogo
+				/>
+			) : null}
+			<div>{caption}</div>
+		</div>
+	) : null;
