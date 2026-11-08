@@ -526,6 +526,12 @@ const clamp = (x: number, lo: number, hi: number) =>
 	Math.min(hi, Math.max(lo, x));
 // An angle (radians) the short way round: -PI to PI.
 const angleOff = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+// Whether the line from a to b and the one from c to e cross.
+const linesCross = (a: Pt, b: Pt, c: Pt, e: Pt): boolean => {
+	const side = (p: Pt, q: Pt, o: Pt) =>
+		Math.sign((q.x - p.x) * (o.y - p.y) - (q.y - p.y) * (o.x - p.x));
+	return side(a, b, c) * side(a, b, e) < 0 && side(c, e, a) * side(c, e, b) < 0;
+};
 // How far round (radians) going a to b and on to c turns him at b.
 const angleAt = (a: Pt, b: Pt, c: Pt): number => {
 	const t = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(b.y - a.y, b.x - a.x);
@@ -4694,6 +4700,8 @@ const STALK_SET_MS = 1200;
 const PURSUIT_PACE = 0.85;
 const PURSUIT_URGE = 1.2;
 const PURSUIT_STEP = 350;
+// (At most this many stretches of a lane run - see laneRun.)
+const LANE_RUN_STEPS = 24;
 const PURSUIT_LEAD = 300;
 const PURSUIT_RING = 10;
 // (In nearer him than that already, closing in this much a step, no nearer
@@ -20334,6 +20342,21 @@ class Action {
 		};
 	}
 
+	// Down his lane to `to` at `fps`, in stretches round the blocks going
+	// on in it and the men stood in it (see wayClear) - not on through them
+	// in the one straight run.
+	private laneRun(m: Actor, to: Pt, fps: number, move?: Move) {
+		for (
+			let k = 0;
+			k < LANE_RUN_STEPS && dist(m.at, to) > (fps * PURSUIT_STEP) / 1000;
+			k++
+		) {
+			const c = m.t + PURSUIT_STEP;
+			m.chaseUp(this.wayClear(m, to, c, fps), c, fps, move);
+		}
+		m.run(to, fps, move);
+	}
+
 	// Up to `m` straight from where he is, at a climb's pace (met as in
 	// blockOn), no deeper into the men in blocks on the way than
 	// CLIMB_INTO_FT (see CLIMB_CLEAR_FT).
@@ -21505,6 +21528,25 @@ class Action {
 				used.add(b);
 				used.add(c);
 				out.push([b, c]);
+			}
+		}
+		// (No two of them across each other's way to their men - swapped,
+		// each on the other's: not run through each other to get to them.)
+		for (let n = 0; n < out.length * out.length; n++) {
+			let swapped = false;
+			for (let i = 0; i < out.length; i++) {
+				for (let j = i + 1; j < out.length; j++) {
+					const [b1, c1] = out[i]!;
+					const [b2, c2] = out[j]!;
+					if (linesCross(b1.at, c1.at, b2.at, c2.at)) {
+						out[i] = [b1, c2];
+						out[j] = [b2, c1];
+						swapped = true;
+					}
+				}
+			}
+			if (!swapped) {
+				break;
 			}
 		}
 		return out;
@@ -23744,7 +23786,12 @@ class Action {
 		}
 		lanes.forEach((m, k) => {
 			if (!pairs.some(([, c]) => c === m)) {
-				m.run(this.w(laneEnd(k)), m.top * (0.8 + r() * 0.12), "sprint");
+				this.laneRun(
+					m,
+					this.w(laneEnd(k)),
+					m.top * (0.8 + r() * 0.12),
+					"sprint",
+				);
 			}
 		});
 		this.endReturn(retI, pr, endPt, t, td, this.o);
