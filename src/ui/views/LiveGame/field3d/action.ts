@@ -342,6 +342,16 @@ const CHASE_SLOW_MOST = 1.5;
 // pace he runs it at or more: eased off over as much of the way as he needs
 // - see closeOn.)
 const RUN_IN_ON = 0.8;
+// (Locked up this long, ms, or more - the two of them no further apart
+// than this, feet - a surge or a give and a lean every so long, ms, this
+// far either way, feet - not into a man this near either of them, feet:
+// see Action.blockBattles.)
+const BATTLE_LEAST_MS = 1300;
+const BATTLE_PAIR_FT = 3.5;
+const BATTLE_MS = [450, 800] as const;
+const BATTLE_LEAN_FT = 0.7;
+const BATTLE_PUSH_FT = 0.5;
+const BATTLE_CLEAR_FT = 2.5;
 // (Coming in a good deal quicker than that, no further off the way to him
 // than this, radians: on at the pace he has, eased off it.)
 const RUN_IN_QUICK_TURN = 0.35;
@@ -7186,6 +7196,7 @@ class Action {
 		this.regroup();
 		this.hurtDown();
 		this.noAirBlocks();
+		this.blockBattles();
 		this.noTwins();
 		this.offMenDown();
 		this.readyUp();
@@ -7764,6 +7775,132 @@ class Action {
 	// driving into a man who has gone - the one he was on away after the
 	// carrier, or gone down to the turf; the man he went out to never there
 	// - eases up instead, on at a walk or stood watching it.
+	// LOCKED UP A LONG WHILE (BATTLE_LEAST_MS or more), the blocker driving
+	// and the man on him: not slid along together stock steady the whole
+	// of it, one piece, but every BATTLE_MS or so a surge or a give and a
+	// lean off to one side or the other - the two of them together, the one
+	// still on the other - and back on their way by the end of it. Not into
+	// anybody else, though (see BATTLE_CLEAR_FT): steady there instead.
+	blockBattles() {
+		const key = this.input.key;
+		for (const b of this.men) {
+			for (let i = 0; i < b.legs.length; i++) {
+				const l = b.legs[i]!;
+				if (
+					l.move !== "drive" ||
+					l.arms ||
+					l.turn ||
+					l.span ||
+					l.t1 - l.t0 < BATTLE_LEAST_MS
+				) {
+					continue;
+				}
+				const mid = (l.t0 + l.t1) / 2;
+				const m = this.men.find(
+					(x) =>
+						x.team !== b.team &&
+						legAt(x, mid).move === "engage" &&
+						dist(x.posAt(mid), b.posAt(mid)) <= BATTLE_PAIR_FT,
+				);
+				if (!m) {
+					continue;
+				}
+				const k = legIndexAt(m.legs, mid);
+				const ml = m.legs[k]!;
+				const t0 = Math.max(l.t0, ml.t0);
+				const t1 = Math.min(l.t1, ml.t1);
+				if (
+					ml.arms ||
+					ml.turn ||
+					ml.span ||
+					t1 - t0 < BATTLE_LEAST_MS ||
+					dist(m.posAt(t0), b.posAt(t0)) > BATTLE_PAIR_FT ||
+					dist(m.posAt(t1), b.posAt(t1)) > BATTLE_PAIR_FT
+				) {
+					continue;
+				}
+				// (Which way he drives him, and across it.)
+				const bp = b.posAt(mid);
+				const mp = m.posAt(mid);
+				const far = Math.max(dist(bp, mp), 0.1);
+				const ux = (mp.x - bp.x) / far;
+				const uy = (mp.y - bp.y) / far;
+				const knots: { t: number; ox: number; oy: number }[] = [
+					{ t: t0, ox: 0, oy: 0 },
+				];
+				let j = 0;
+				let t = t0;
+				for (;;) {
+					t +=
+						BATTLE_MS[0] +
+						(BATTLE_MS[1] - BATTLE_MS[0]) * countOf(b, key, 1000 + j);
+					if (t > t1 - BATTLE_MS[0] / 2) {
+						break;
+					}
+					const lean = BATTLE_LEAN_FT * (2 * countOf(b, key, 1100 + j) - 1);
+					const push = BATTLE_PUSH_FT * (2 * countOf(b, key, 1200 + j) - 1);
+					let ox = ux * push - uy * lean;
+					let oy = uy * push + ux * lean;
+					const nb = b.posAt(t);
+					const nm = m.posAt(t);
+					const crowded = this.men.some(
+						(x) =>
+							x !== b &&
+							x !== m &&
+							Math.min(
+								dist(x.posAt(t), { x: nb.x + ox, y: nb.y + oy }),
+								dist(x.posAt(t), { x: nm.x + ox, y: nm.y + oy }),
+							) < BATTLE_CLEAR_FT,
+					);
+					if (crowded) {
+						ox = 0;
+						oy = 0;
+					}
+					knots.push({ t, ox, oy });
+					j++;
+				}
+				knots.push({ t: t1, ox: 0, oy: 0 });
+				if (knots.length < 3) {
+					continue;
+				}
+				const pieces = (x: Leg) => {
+					const along = (c: number) => {
+						const u = (c - x.t0) / Math.max(1e-6, x.t1 - x.t0);
+						return {
+							x: x.from.x + (x.to.x - x.from.x) * u,
+							y: x.from.y + (x.to.y - x.from.y) * u,
+						};
+					};
+					const out: Leg[] = [];
+					if (x.t0 < t0) {
+						out.push({ ...x, t1: t0, to: along(t0) });
+					}
+					for (let q = 1; q < knots.length; q++) {
+						const a = knots[q - 1]!;
+						const c = knots[q]!;
+						const pa = along(a.t);
+						const pc = along(c.t);
+						out.push({
+							...x,
+							t0: a.t,
+							t1: c.t,
+							from: { x: pa.x + a.ox, y: pa.y + a.oy },
+							to: { x: pc.x + c.ox, y: pc.y + c.oy },
+						});
+					}
+					if (x.t1 > t1) {
+						out.push({ ...x, t0: t1, from: along(t1) });
+					}
+					return out;
+				};
+				const mine = pieces(l);
+				b.legs.splice(i, 1, ...mine);
+				m.legs.splice(k, 1, ...pieces(ml));
+				i += mine.length - 1;
+			}
+		}
+	}
+
 	noAirBlocks() {
 		for (const m of this.men) {
 			const them = m.team === this.input.offense ? this.d : this.o;

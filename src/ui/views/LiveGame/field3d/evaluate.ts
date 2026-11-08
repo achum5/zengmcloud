@@ -650,6 +650,10 @@ const LEN_RATE = 6;
 // kick-sliding back - round no quicker than this a second: on into one
 // still at a run, his feet not a blur, but sliding the last of it.)
 const SHUFFLE_MOST = 3.5;
+// (In a block his feet keep going under him even when the two of them get
+// nowhere - no slower round than this a second.)
+const CHOP_LEAST = 1.4;
+const CHOPS: ReadonlySet<Move> = new Set<Move>(["drive", "engage"]);
 type Strides = { t0: number; ph: Float32Array; len: Float32Array };
 const strided = new WeakMap<
 	Leg[],
@@ -676,6 +680,7 @@ const stridesOf = (legs: Leg[], t0: number, n: number): Strides | undefined => {
 	const tr = trackOf(legs, t0, n);
 	const strideOn = legs.map((l) => (cycles(l) ? strideOf(l.move) : 0));
 	const beatOn = legs.map((l) => beatOf(l.move));
+	const chopOn = legs.map((l) => (CHOPS.has(l.move as Move) ? CHOP_LEAST : 0));
 	const gaitAt = (i: number) => {
 		const k = tr.late[i]!;
 		const on = tr.on[i]!;
@@ -693,6 +698,7 @@ const stridesOf = (legs: Leg[], t0: number, n: number): Strides | undefined => {
 	const first = strideOn.findIndex((x) => x > 0);
 	let stride = first >= 0 ? strideOn[first]! : 1;
 	let beat = first >= 0 ? beatOn[first]! : 0;
+	let least = first >= 0 ? chopOn[first]! : 0;
 	let p = 0;
 	let l = LEN_MIN;
 	const dt = TRACK_MS / 1000;
@@ -704,6 +710,7 @@ const stridesOf = (legs: Leg[], t0: number, n: number): Strides | undefined => {
 		if (j >= 0) {
 			stride = strideOn[j]!;
 			beat = beatOn[j]!;
+			least = chopOn[j]!;
 		}
 		const lo = Math.max(0, i - w);
 		const hi = Math.min(n - 1, i + w);
@@ -723,7 +730,7 @@ const stridesOf = (legs: Leg[], t0: number, n: number): Strides | undefined => {
 				}
 				p += d / (stride * l);
 			} else {
-				p += Math.min(d / stride, SHUFFLE_MOST * dt);
+				p += Math.min(Math.max(d / stride, least * dt), SHUFFLE_MOST * dt);
 			}
 		}
 		ph[i] = p;
