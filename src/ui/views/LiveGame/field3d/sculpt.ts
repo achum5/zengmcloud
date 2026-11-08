@@ -2,6 +2,7 @@ import type { Camera } from "../court3d/camera.ts";
 import { bodyPoint, type Placed } from "../court3d/evaluate.ts";
 import {
 	addV,
+	armMasses,
 	BEND_HI,
 	BEND_LO,
 	cross,
@@ -24,6 +25,7 @@ import {
 	unit,
 	untwistTable,
 	v3,
+	type ArmBuild,
 	type Frame,
 	type Ink,
 	type Mass,
@@ -726,6 +728,14 @@ export const helmetAt = (body: Body, q: Pose): V3 => {
 	return q.twist !== 0 || q.tilt !== 0 ? turnUpper(q, sk.pelvis)(c) : c;
 };
 
+// His arm: the court's (see armMasses), a touch thicker all down it.
+const ARM: ArmBuild = {
+	delt: [1.12, 0.94, 0.88],
+	biceps: [0.64, 0.76, 0.58],
+	elbow: 0.64,
+	fore: [0.92, 1.06, 0.8, 0.6],
+};
+
 const build = (
 	cam: Camera,
 	fig: Figure,
@@ -1100,78 +1110,16 @@ const build = (
 	}
 
 	const fwd = v3(1, 0, 0);
-	const upV = v3(0, 0, 1);
 	const kMid = P(pel).k;
 	const pn: [V3, V3] = [v3(0, 1, 0), v3(0, -1, 0)];
 	const knuckleAt: V3[] = [];
 	const thumbAt: V3[] = [];
 	const arm = (limb: Limb, side: 0 | 1) => {
-		const g = G_ARM + side;
-		const a = unit(subV(limb.mid, limb.root));
-		const cc = unit(subV(limb.end, limb.mid));
-		const bend = square(cc, a);
-		const inside = lenV(bend) > 0.08 ? unit(bend) : unit(square(fwd, a), upV);
-		add(
-			limb.root,
-			limb.mid,
-			[
-				[0, body.upperR * 1.2],
-				[0.2, body.upperR * 1.12],
-				[0.5, body.upperR * 0.94],
-				[1, body.foreR * 0.88],
-			],
-			UPPER,
-			g,
+		hand(
+			limb,
 			side,
+			armMasses(add, body, limb, side, G_ARM + side, UPPER, FORE, ARM),
 		);
-		// (As the elbow bends, the biceps bunch up: thicker, shorter, gathered
-		// toward the middle of the upper arm - straight, long and flat to it.
-		// The court's: see court3d/sculpt.ts.)
-		const flexed = Math.acos(Math.max(-1, Math.min(1, dotV(a, cc))));
-		const bunch = Math.max(0, Math.min(1, (flexed - 0.5) / 1.4));
-		const bulge = bunch * bunch * (3 - 2 * bunch);
-		add(
-			addV(
-				lerpV(limb.root, limb.mid, 0.36 + 0.06 * bulge),
-				inside,
-				body.upperR * (0.32 + 0.1 * bulge),
-			),
-			addV(
-				lerpV(limb.root, limb.mid, 0.78 - 0.1 * bulge),
-				inside,
-				body.upperR * (0.28 + 0.08 * bulge),
-			),
-			[
-				[0, body.upperR * (0.64 + 0.06 * bulge)],
-				[0.5, body.upperR * (0.76 + 0.22 * bulge)],
-				[1, body.upperR * (0.58 + 0.04 * bulge)],
-			],
-			UPPER,
-			g,
-			side,
-		);
-		add(
-			addV(limb.mid, inside, -body.foreR * 0.36),
-			addV(limb.mid, inside, -body.foreR * 0.36),
-			[[0, body.foreR * 0.64]],
-			FORE,
-			g,
-			side,
-		);
-		add(
-			limb.mid,
-			limb.end,
-			[
-				[0, body.foreR * 0.92],
-				[0.22, body.foreR * 1.06],
-				[0.7, body.foreR * 0.8],
-				[1, body.foreR * 0.6],
-			],
-			FORE,
-			g,
-			side,
-		);
-		hand(limb, side, cc);
 	};
 
 	// The hand: a palm out of the wrist, four fingers and a thumb - a

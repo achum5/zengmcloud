@@ -1012,6 +1012,107 @@ export const frameOf = (cam: Camera, yaw: number): Frame => {
 	};
 };
 
+// HIS ARM, any sport's: the deltoid, narrowing to the elbow; the biceps in
+// front of it, bunching up as the elbow bends; the point of the elbow
+// behind; the forearm, swelling below the elbow and slimming to the wrist -
+// as thick along it as a sport builds them (`b`), of its `upper` and `fore`
+// kinds, in `group`. The way the forearm points, for the hand.
+export type ArmBuild = {
+	// The deltoid, of the upper arm's radius, a fifth and half way down it -
+	// and of the forearm's at the elbow.
+	delt: [number, number, number];
+	// The biceps at its ends and middle, straight (of the upper arm's).
+	biceps: [number, number, number];
+	// The point of the elbow, and the forearm down from it (of its own).
+	elbow: number;
+	fore: [number, number, number, number];
+};
+export const ARM: ArmBuild = {
+	delt: [1.1, 0.9, 0.86],
+	biceps: [0.62, 0.74, 0.56],
+	elbow: 0.62,
+	fore: [0.9, 1.04, 0.76, 0.54],
+};
+const FWD = v3(1, 0, 0);
+const UP_V = v3(0, 0, 1);
+export const armMasses = (
+	add: AddMass,
+	body: Body,
+	limb: Limb,
+	side: 0 | 1,
+	group: number,
+	upper: number,
+	fore: number,
+	b: ArmBuild,
+): V3 => {
+	const a = unit(subV(limb.mid, limb.root));
+	const c = unit(subV(limb.end, limb.mid));
+	// The inside of the elbow: the way the forearm bends from the upper arm
+	// (forward, for an arm hanging straight).
+	const bend = square(c, a);
+	const inside = lenV(bend) > 0.08 ? unit(bend) : unit(square(FWD, a), UP_V);
+	add(
+		limb.root,
+		limb.mid,
+		[
+			[0, body.upperR * 1.2],
+			[0.2, body.upperR * b.delt[0]],
+			[0.5, body.upperR * b.delt[1]],
+			[1, body.foreR * b.delt[2]],
+		],
+		upper,
+		group,
+		side,
+	);
+	// (As the elbow bends, the biceps bunch up: thicker, shorter, gathered
+	// toward the middle of the upper arm - straight, long and flat to it.)
+	const flexed = Math.acos(Math.max(-1, Math.min(1, dotV(a, c))));
+	const bunch = Math.max(0, Math.min(1, (flexed - 0.5) / 1.4));
+	const bulge = bunch * bunch * (3 - 2 * bunch);
+	add(
+		addV(
+			lerpV(limb.root, limb.mid, 0.36 + 0.06 * bulge),
+			inside,
+			body.upperR * (0.32 + 0.1 * bulge),
+		),
+		addV(
+			lerpV(limb.root, limb.mid, 0.78 - 0.1 * bulge),
+			inside,
+			body.upperR * (0.28 + 0.08 * bulge),
+		),
+		[
+			[0, body.upperR * (b.biceps[0] + 0.06 * bulge)],
+			[0.5, body.upperR * (b.biceps[1] + 0.22 * bulge)],
+			[1, body.upperR * (b.biceps[2] + 0.04 * bulge)],
+		],
+		upper,
+		group,
+		side,
+	);
+	add(
+		addV(limb.mid, inside, -body.foreR * 0.36),
+		addV(limb.mid, inside, -body.foreR * 0.36),
+		[[0, body.foreR * b.elbow]],
+		fore,
+		group,
+		side,
+	);
+	add(
+		limb.mid,
+		limb.end,
+		[
+			[0, body.foreR * b.fore[0]],
+			[0.22, body.foreR * b.fore[1]],
+			[0.7, body.foreR * b.fore[2]],
+			[1, body.foreR * b.fore[3]],
+		],
+		fore,
+		group,
+		side,
+	);
+	return c;
+};
+
 // A microphone this far from his own mouth (feet) is held out to somebody
 // else's.
 const MIC_OWN = 1.1;
@@ -1112,76 +1213,11 @@ const build = (
 	const knuckleAt: V3[] = [];
 	const thumbAt: V3[] = [];
 	const arm = (limb: Limb, side: 0 | 1) => {
-		const g = G_ARM + side;
-		const a = unit(subV(limb.mid, limb.root));
-		const c = unit(subV(limb.end, limb.mid));
-		// The inside of the elbow: the way the forearm bends from the upper
-		// arm (forward, for an arm hanging straight).
-		const bend = square(c, a);
-		const inside = lenV(bend) > 0.08 ? unit(bend) : unit(square(fwd, a), upV);
-		// The deltoid, narrowing to the elbow; the biceps in front of it, the
-		// point of the elbow behind.
-		add(
-			limb.root,
-			limb.mid,
-			[
-				[0, body.upperR * 1.2],
-				[0.2, body.upperR * 1.1],
-				[0.5, body.upperR * 0.9],
-				[1, body.foreR * 0.86],
-			],
-			UPPER,
-			g,
+		hand(
+			limb,
 			side,
+			armMasses(add, body, limb, side, G_ARM + side, UPPER, FORE, ARM),
 		);
-		// (As the elbow bends, the biceps bunch up: thicker, shorter, gathered
-		// toward the middle of the upper arm - straight, long and flat to it.)
-		const flexed = Math.acos(Math.max(-1, Math.min(1, dotV(a, c))));
-		const bunch = Math.max(0, Math.min(1, (flexed - 0.5) / 1.4));
-		const bulge = bunch * bunch * (3 - 2 * bunch);
-		add(
-			addV(
-				lerpV(limb.root, limb.mid, 0.36 + 0.06 * bulge),
-				inside,
-				body.upperR * (0.32 + 0.1 * bulge),
-			),
-			addV(
-				lerpV(limb.root, limb.mid, 0.78 - 0.1 * bulge),
-				inside,
-				body.upperR * (0.28 + 0.08 * bulge),
-			),
-			[
-				[0, body.upperR * (0.62 + 0.06 * bulge)],
-				[0.5, body.upperR * (0.74 + 0.22 * bulge)],
-				[1, body.upperR * (0.56 + 0.04 * bulge)],
-			],
-			UPPER,
-			g,
-			side,
-		);
-		add(
-			addV(limb.mid, inside, -body.foreR * 0.36),
-			addV(limb.mid, inside, -body.foreR * 0.36),
-			[[0, body.foreR * 0.62]],
-			FORE,
-			g,
-			side,
-		);
-		// The forearm, swelling below the elbow and slimming to the wrist.
-		add(
-			limb.mid,
-			limb.end,
-			[
-				[0, body.foreR * 0.9],
-				[0.22, body.foreR * 1.04],
-				[0.7, body.foreR * 0.76],
-				[1, body.foreR * 0.54],
-			],
-			FORE,
-			g,
-			side,
-		);
-		hand(limb, side, c);
 	};
 
 	// The hand: a palm out of the wrist, four fingers and a thumb, held the
