@@ -5357,6 +5357,29 @@ const BACK_SET_MS = 150;
 // turned this far round (radians) - if he stands set no further than this
 // (feet) all of it.
 const SCAN_OUT_FT: [number, number] = [0.4, 0.9];
+// A back kept in with nobody to block (see checkRelease): this share of
+// them out into the flat, this long after the snap (ms), with this long
+// at least till the line lets up (ms); round this far up and this far
+// behind the last man on the line (or this far), where he is this long
+// (ms) after it, this far outside him, out to this far
+// past the line and this far outside him (feet), at this much of his top
+// speed; sat there this long at least (ms), pulled up over this long (ms),
+// nobody nearer the way than this (feet) - a man of his own set in the
+// line, this.
+const CHECK_OUT = 0.7;
+const CHECK_MS = [1300, 1900] as const;
+const CHECK_LEAST_MS = 900;
+const CHECK_UP_FT = 2;
+const CHECK_BEHIND_FT = [3, 6] as const;
+const CHECK_NEAR_MS = 500;
+const CHECK_WIDE_FT = 4;
+const CHECK_FLAT_D = 9;
+const CHECK_FLAT_OUT = 10;
+const CHECK_PACE = 0.6;
+const CHECK_SIT_MS = 500;
+const CHECK_EASE_MS = 300;
+const CHECK_CLEAR_FT = 2.5;
+const CHECK_BY_OWN_FT = 1.8;
 const SCAN_STEP_MS: [number, number] = [750, 1150];
 const SCAN_FIRST_MS = 350;
 const SCAN_GO_MS = 280;
@@ -18037,12 +18060,116 @@ class Action {
 				f.go(p, ts[k]!, "passSet", this.facing(p, lock.m.posAt(ts[k]!)));
 			}
 		}
+		for (const b of blockers) {
+			if (!busy.has(b)) {
+				this.checkRelease(b, blockers, qb, endFor(b));
+			}
+		}
 		for (const m of rushers) {
 			if (!engaged.has(m) && !this.done.has(m.pid)) {
 				m.hold(snap + 60);
 				m.run(qb.posAt(snap + 1800), m.top * 0.7);
 			}
 		}
+	}
+
+	// CHECK AND RELEASE. A back kept in to block with nobody coming at him
+	// (most of them): a look for a man coming, and then out into the flat
+	// on his side of the pocket - round outside the last man on the line,
+	// up past it - and sat there turned to the quarterback, a man to dump
+	// it to, not stood in the pocket the while. Only with the time to get
+	// there and be sat there a while, and nobody in his way.
+	private checkRelease(b: Actor, blockers: Actor[], qb: Actor, end: number) {
+		const { snap } = this.input;
+		if (
+			(b.role !== "RB" && b.role !== "FB") ||
+			this.done.has(b.pid) ||
+			countOf(b, this.input.key, 149) >= CHECK_OUT
+		) {
+			return;
+		}
+		const go =
+			snap +
+			CHECK_MS[0] +
+			(CHECK_MS[1] - CHECK_MS[0]) * countOf(b, this.input.key, 150);
+		if (
+			end - go < CHECK_LEAST_MS ||
+			b.t < end - 1 ||
+			legAt(b, go).move !== "passSet"
+		) {
+			return;
+		}
+		const at = b.posAt(go);
+		const s = this.of(at);
+		const q = this.of(qb.posAt(go));
+		const own =
+			Math.sign(s.a - q.a) || (countOf(b, this.input.key, 151) < 0.5 ? -1 : 1);
+		const fps = b.top * CHECK_PACE;
+		// (Outside the last man on the line on his side - round behind him,
+		// as deep as he is set as he gets there, or deeper - or the other
+		// side, if that is the way that is clear.)
+		const tryWay = (side: number, behind: number) => {
+			const near = go + CHECK_NEAR_MS;
+			let edge = 0;
+			let deep = 0;
+			for (const x of blockers) {
+				if (x !== b && (OL.has(x.role) || x.role === "TE")) {
+					const e = this.of(x.posAt(near));
+					if (side * e.a > edge) {
+						edge = side * e.a;
+						deep = e.d;
+					}
+				}
+			}
+			const round = this.w({
+				d: Math.min(s.d + CHECK_UP_FT, deep - behind),
+				a: side * Math.max(edge + CHECK_WIDE_FT, side * s.a),
+			});
+			const flat = this.w({
+				d: CHECK_FLAT_D,
+				a: side * (edge + CHECK_FLAT_OUT),
+			});
+			const first = dist(at, round);
+			const L = first + dist(round, flat);
+			const there = go + rampedMs(L, fps, 0, RELEASE_ACCEL) + CHECK_EASE_MS;
+			// (Into nobody on the way, nor anybody where he sits.)
+			for (let t = go; t <= there + CHECK_SIT_MS; t += 50) {
+				const u = clamp((t - go) / (there - go), 0, 1) * L;
+				const [a, z, g] =
+					u <= first ? [at, round, u] : [round, flat, u - first];
+				const k = dist(a, z) > 0 ? g / dist(a, z) : 0;
+				const p = { x: a.x + (z.x - a.x) * k, y: a.y + (z.y - a.y) * k };
+				for (const x of this.men) {
+					// (A man of his own set in the line: behind him at a step.)
+					const room =
+						x.team === b.team && legAt(x, t).move === "passSet"
+							? CHECK_BY_OWN_FT
+							: CHECK_CLEAR_FT;
+					if (x !== b && dist(x.posAt(t), p) < room) {
+						return undefined;
+					}
+				}
+			}
+			return { round, flat };
+		};
+		let way: { round: Pt; flat: Pt } | undefined;
+		for (const side of [own, -own]) {
+			for (const behind of CHECK_BEHIND_FT) {
+				way ??= tryWay(side, behind);
+			}
+		}
+		if (!way) {
+			return;
+		}
+		const { round, flat } = way;
+		b.cut(go);
+		b.run(round, fps);
+		b.runUp(flat, fps);
+		b.hold(
+			Math.max(end, b.t + CHECK_SIT_MS),
+			"settle",
+			this.toward(b.at, qb.posAt(b.t)),
+		);
 	}
 
 	// The coverage until `until`: each man on a receiver going out - a
