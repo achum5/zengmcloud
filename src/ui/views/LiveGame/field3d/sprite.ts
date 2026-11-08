@@ -565,6 +565,11 @@ const facing = (st: FieldPlayerState) => st.faces ?? st.yaw;
 // How he is drawn, the way the sprite has him: his pose and the way he
 // faces (to the nearest of its turns) - in the finer steps, if he is drawn
 // in them.
+// His pose in the sprite's steps (coarse, or `fine`) - as his picture is
+// made from it (see FieldJob).
+export const stepOf = (st: FieldPlayerState, fine = false): Stepped =>
+	stepped(st, fine ? FINE : COARSE);
+
 export const drawnPose = (
 	st: FieldPlayerState,
 	fine = false,

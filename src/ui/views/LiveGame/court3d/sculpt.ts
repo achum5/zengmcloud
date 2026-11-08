@@ -57,9 +57,9 @@ import {
 
 // ---- colors -----------------------------------------------------------------
 
-type RGB = [number, number, number];
+export type RGB = [number, number, number];
 const rgbs = new Map<string, RGB>();
-const rgb = (c: string): RGB => {
+export const rgb = (c: string): RGB => {
 	let out = rgbs.get(c);
 	if (!out) {
 		const m = /^#?([\da-f]{6})$/i.exec(c.trim());
@@ -76,7 +76,11 @@ const rgb = (c: string): RGB => {
 	}
 	return out;
 };
-const scaled = (c: RGB, f: number): RGB => [c[0] * f, c[1] * f, c[2] * f];
+export const scaled = (c: RGB, f: number): RGB => [
+	c[0] * f,
+	c[1] * f,
+	c[2] * f,
+];
 
 // ---- the masses -------------------------------------------------------------
 
@@ -141,9 +145,9 @@ type Mass = {
 	y1: number;
 };
 
-const RS = 24;
-type Station = [t: number, r: number];
-const radiusAt = (prof: Station[], t: number): number => {
+export const RS = 24;
+export type Station = [t: number, r: number];
+export const radiusAt = (prof: Station[], t: number): number => {
 	if (t <= prof[0]![0]) {
 		return prof[0]![1];
 	}
@@ -158,23 +162,23 @@ const radiusAt = (prof: Station[], t: number): number => {
 	return prof.at(-1)![1];
 };
 
-const v3 = (f: number, s: number, u: number): V3 => ({ f, s, u });
-const lerpV = (a: V3, b: V3, t: number): V3 =>
+export const v3 = (f: number, s: number, u: number): V3 => ({ f, s, u });
+export const lerpV = (a: V3, b: V3, t: number): V3 =>
 	v3(a.f + (b.f - a.f) * t, a.s + (b.s - a.s) * t, a.u + (b.u - a.u) * t);
-const addV = (a: V3, b: V3, k = 1): V3 =>
+export const addV = (a: V3, b: V3, k = 1): V3 =>
 	v3(a.f + b.f * k, a.s + b.s * k, a.u + b.u * k);
-const subV = (a: V3, b: V3): V3 => v3(a.f - b.f, a.s - b.s, a.u - b.u);
-const dotV = (a: V3, b: V3) => a.f * b.f + a.s * b.s + a.u * b.u;
-const lenV = (a: V3) => Math.hypot(a.f, a.s, a.u);
-const unit = (a: V3, or: V3 = v3(1, 0, 0)): V3 => {
+export const subV = (a: V3, b: V3): V3 => v3(a.f - b.f, a.s - b.s, a.u - b.u);
+export const dotV = (a: V3, b: V3) => a.f * b.f + a.s * b.s + a.u * b.u;
+export const lenV = (a: V3) => Math.hypot(a.f, a.s, a.u);
+export const unit = (a: V3, or: V3 = v3(1, 0, 0)): V3 => {
 	const l = lenV(a);
 	return l > 1e-6 ? v3(a.f / l, a.s / l, a.u / l) : or;
 };
 // f, s, u turn the right way round: forward x left is up.
-const cross = (a: V3, b: V3): V3 =>
+export const cross = (a: V3, b: V3): V3 =>
 	v3(a.s * b.u - a.u * b.s, a.u * b.f - a.f * b.u, a.f * b.s - a.s * b.f);
 // The part of `a` square to the unit `d`.
-const square = (a: V3, d: V3): V3 => addV(a, d, -dotV(a, d));
+export const square = (a: V3, d: V3): V3 => addV(a, d, -dotV(a, d));
 
 // ---- his clothes, on him ----------------------------------------------------
 
@@ -780,15 +784,15 @@ const gripFor = (st: PlayerState, which: "R" | "L", holding: boolean): Grip => {
 
 // How much of his upper body's turn a point of his torso t up his spine
 // (0 his hips, 1 his chest) takes.
-const turnShare = (t: number): number => {
+export const turnShare = (t: number): number => {
 	const u = Math.min(1, Math.max(0, t));
 	return u * u * (3 - 2 * u);
 };
 
 // The turn undone, a matrix about his hips for each of these steps up his
 // torso (for painting what he wears where it was made to sit).
-const TURN_STEPS = 16;
-const untwistTable = (q: Pose, pel: V3): Float64Array => {
+export const TURN_STEPS = 16;
+export const untwistTable = (q: Pose, pel: V3): Float64Array => {
 	const out = new Float64Array((TURN_STEPS + 1) * 9);
 	for (let i = 0; i <= TURN_STEPS; i++) {
 		const back = turnUpper(q, pel, turnShare(i / TURN_STEPS), true);
@@ -807,7 +811,7 @@ const untwistTable = (q: Pose, pel: V3): Float64Array => {
 const HELD_BALL_R = 0.39;
 // How far each joint of a finger bends (radians) - the knuckle, the middle
 // joint, the end one - back (a little past straight) and forward.
-const BEND_LO = [-0.3, 0, -0.15];
+export const BEND_LO = [-0.3, 0, -0.15];
 // The share of a bounce, at its top, the ball is in his hand on his dribble
 // - from as it comes up into it to as it leaves.
 const DRIBBLE_TOUCH = 0.12;
@@ -816,7 +820,7 @@ const DRIBBLE_TOUCH = 0.12;
 const MEET_REACH = 0.05;
 // Fingertips this wide (pixels, the radius) and more show their nails.
 const NAIL_PX = 2.2;
-const BEND_HI = [1.6, 1.9, 1.3];
+export const BEND_HI = [1.6, 1.9, 1.3];
 
 // A finger on a ball: the bend at a joint - at (x, y) in the finger's plane,
 // heading phi - that first brings the end of the next bone (l long) round
@@ -825,7 +829,7 @@ const BEND_HI = [1.6, 1.9, 1.3];
 // back - a fingertip pressed flat on the ball - as far as keeps it on the
 // surface (PRESS_MOST past its stop at the most); out of its reach, as it
 // rests.
-const PRESS_MOST = 0.35;
+export const PRESS_MOST = 0.35;
 export const wrapBend = (
 	x: number,
 	y: number,
@@ -1897,7 +1901,7 @@ const TOWEL_RGB: RGB = [238, 238, 232];
 
 // The light, from up and to the left and toward the camera (on the sprite:
 // right, down, out of the picture).
-const LIGHT = (() => {
+export const LIGHT = (() => {
 	const l = [-0.45, -0.7, 0.55];
 	const n = Math.hypot(l[0]!, l[1]!, l[2]!);
 	return [l[0]! / n, l[1]! / n, l[2]! / n] as const;
@@ -1905,11 +1909,11 @@ const LIGHT = (() => {
 
 // Lengths, for every pixel: Math.hypot's care over huge and tiny numbers
 // is slow, and nothing here is either.
-const len2 = (a: number, b: number) => Math.sqrt(a * a + b * b);
-const len3 = (a: number, b: number, c: number) =>
+export const len2 = (a: number, b: number) => Math.sqrt(a * a + b * b);
+export const len3 = (a: number, b: number, c: number) =>
 	Math.sqrt(a * a + b * b + c * c);
 
-const smin = (a: number, b: number, k: number) => {
+export const smin = (a: number, b: number, k: number) => {
 	const h = Math.max(k - Math.abs(a - b), 0) / k;
 	return Math.min(a, b) - (h * h * k) / 4;
 };
@@ -1925,7 +1929,7 @@ export type Sculpted = {
 	box: { x0: number; y0: number; x1: number; y1: number };
 };
 
-const RUN = 8;
+export const RUN = 8;
 
 // His sprite, w x h of its pixels, each px screen pixels, its top left at
 // (ox, oy) on the screen. Given `seen` (ART_W x ART_H), a uniform drawn

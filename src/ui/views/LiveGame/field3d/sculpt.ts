@@ -1,5 +1,33 @@
 import { project, type Camera } from "../court3d/camera.ts";
 import {
+	addV,
+	BEND_HI,
+	BEND_LO,
+	cross,
+	dotV,
+	len2,
+	len3,
+	lenV,
+	lerpV,
+	LIGHT,
+	PRESS_MOST,
+	radiusAt,
+	rgb,
+	RS,
+	RUN,
+	scaled,
+	smin,
+	square,
+	subV,
+	TURN_STEPS,
+	turnShare,
+	unit,
+	untwistTable,
+	v3,
+	type RGB,
+	type Station,
+} from "../court3d/sculpt.ts";
+import {
 	skeleton,
 	turnUpper,
 	type Body,
@@ -41,26 +69,6 @@ import type { BareHead, FieldLook } from "./kit.ts";
 
 // ---- colors -----------------------------------------------------------------
 
-type RGB = [number, number, number];
-const rgbs = new Map<string, RGB>();
-const rgb = (c: string): RGB => {
-	let out = rgbs.get(c);
-	if (!out) {
-		const m = /^#?([\da-f]{6})$/i.exec(c.trim());
-		const r = /rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/i.exec(c);
-		if (m) {
-			const n = Number.parseInt(m[1]!, 16);
-			out = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-		} else if (r) {
-			out = [Number(r[1]), Number(r[2]), Number(r[3])];
-		} else {
-			out = [128, 128, 128];
-		}
-		rgbs.set(c, out);
-	}
-	return out;
-};
-const scaled = (c: RGB, f: number): RGB => [c[0] * f, c[1] * f, c[2] * f];
 const clamp = (v: number, lo: number, hi: number) =>
 	Math.min(hi, Math.max(lo, v));
 const toward = (c: RGB, to: RGB, f: number): RGB => [
@@ -141,41 +149,6 @@ type Mass = {
 	y1: number;
 };
 
-const RS = 24;
-type Station = [t: number, r: number];
-const radiusAt = (prof: Station[], t: number): number => {
-	if (t <= prof[0]![0]) {
-		return prof[0]![1];
-	}
-	for (let i = 1; i < prof.length; i++) {
-		const [t1, r1] = prof[i]!;
-		const [t0, r0] = prof[i - 1]!;
-		if (t <= t1) {
-			const u = (t - t0) / Math.max(1e-6, t1 - t0);
-			return r0 + (r1 - r0) * u * u * (3 - 2 * u);
-		}
-	}
-	return prof.at(-1)![1];
-};
-
-const v3 = (f: number, s: number, u: number): V3 => ({ f, s, u });
-const lerpV = (a: V3, b: V3, t: number): V3 =>
-	v3(a.f + (b.f - a.f) * t, a.s + (b.s - a.s) * t, a.u + (b.u - a.u) * t);
-const addV = (a: V3, b: V3, k = 1): V3 =>
-	v3(a.f + b.f * k, a.s + b.s * k, a.u + b.u * k);
-const subV = (a: V3, b: V3): V3 => v3(a.f - b.f, a.s - b.s, a.u - b.u);
-const dotV = (a: V3, b: V3) => a.f * b.f + a.s * b.s + a.u * b.u;
-const lenV = (a: V3) => Math.hypot(a.f, a.s, a.u);
-const unit = (a: V3, or: V3 = v3(1, 0, 0)): V3 => {
-	const l = lenV(a);
-	return l > 1e-6 ? v3(a.f / l, a.s / l, a.u / l) : or;
-};
-// f, s, u turn the right way round: forward x left is up.
-const cross = (a: V3, b: V3): V3 =>
-	v3(a.s * b.u - a.u * b.s, a.u * b.f - a.f * b.u, a.f * b.s - a.s * b.f);
-// The part of `a` square to the unit `d`.
-const square = (a: V3, d: V3): V3 => addV(a, d, -dotV(a, d));
-
 // A point on him (his frame, feet) on the field: forward is (cos, sin) of
 // the way he faces, his left (sin, -cos) - the field's y runs toward the
 // camera, as the court's does.
@@ -224,9 +197,6 @@ export const BALL_R = 0.31;
 // (its own thickness, r, off it), and no further. Already into it without
 // bending, bent back, a fingertip pressed flat on it, as far as keeps it on
 // it (PRESS_MOST at the most); out of its reach, as it rests.
-const BEND_LO = [-0.3, 0, -0.15];
-const BEND_HI = [1.6, 1.9, 1.3];
-const PRESS_MOST = 0.35;
 const BEND_STEP = 0.12;
 const bendOnto = (
 	at: (t: number, v: number) => V3,
@@ -674,32 +644,6 @@ type Built = {
 	untwist?: Float64Array;
 	// Sprite pixels to a foot, at his middle.
 	k: number;
-};
-
-// How much of his upper body's turn a point of his torso t up his spine
-// (0 his hips, 1 his chest) takes.
-const turnShare = (t: number): number => {
-	const u = Math.min(1, Math.max(0, t));
-	return u * u * (3 - 2 * u);
-};
-
-// The turn undone, a matrix about his hips for each of these steps up his
-// torso (for painting what he wears where it was made to sit).
-const TURN_STEPS = 16;
-const untwistTable = (q: Pose, pel: V3): Float64Array => {
-	const out = new Float64Array((TURN_STEPS + 1) * 9);
-	for (let i = 0; i <= TURN_STEPS; i++) {
-		const back = turnUpper(q, pel, turnShare(i / TURN_STEPS), true);
-		const cols = [v3(1, 0, 0), v3(0, 1, 0), v3(0, 0, 1)].map((e) =>
-			subV(back(addV(pel, e)), pel),
-		);
-		for (let c = 0; c < 3; c++) {
-			out[i * 9 + c] = cols[c]!.f;
-			out[i * 9 + 3 + c] = cols[c]!.s;
-			out[i * 9 + 6 + c] = cols[c]!.u;
-		}
-	}
-	return out;
 };
 
 // His helmet, as big round his head as it is (head radii) - a little over
@@ -2022,31 +1966,12 @@ const paletteOf = (look: FieldLook): Palette => {
 	return p;
 };
 
-// The light, from up and to the left and toward the camera (on the sprite:
-// right, down, out of the picture) - the court's.
-const LIGHT = (() => {
-	const l = [-0.45, -0.7, 0.55];
-	const n = Math.hypot(l[0]!, l[1]!, l[2]!);
-	return [l[0]! / n, l[1]! / n, l[2]! / n] as const;
-})();
-
-const len2 = (a: number, b: number) => Math.sqrt(a * a + b * b);
-const len3 = (a: number, b: number, c: number) =>
-	Math.sqrt(a * a + b * b + c * c);
-
-const smin = (a: number, b: number, k: number) => {
-	const h = Math.max(k - Math.abs(a - b), 0) / k;
-	return Math.min(a, b) - (h * h * k) / 4;
-};
-
 export type Sculpted = {
 	img: ImageData;
 	// The box round everything drawn (sprite pixels, ends included); empty
 	// (x0 > x1) if nothing was.
 	box: { x0: number; y0: number; x1: number; y1: number };
 };
-
-const RUN = 8;
 
 // His sprite, w x h of its pixels, each px screen pixels, its top left at
 // (ox, oy) on the screen. (And, for the template a uniform's picture is
