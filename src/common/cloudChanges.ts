@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 203,
+		date: "2026-11-08",
+		text: "3D games: a shooter coming to his spot for a catch-and-shoot comes into the catch still on the move and plants as the ball arrives, instead of stopping and standing to wait for it. Coming across the floor he opens up to the rim on his last steps. A big or a slow man still waits set more often.",
+	},
+	{
 		n: 202,
 		date: "2026-11-07",
 		text: "3D games: a man called for traveling on a drive along the baseline takes his extra steps facing where he is going, instead of jogging sideways and backward, and a run bent round another man no longer darts round him in a blink.",

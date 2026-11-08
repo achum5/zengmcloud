@@ -959,6 +959,20 @@ const STAGGER_PACE = 1.15;
 // How long a pause (ms) a man's last stride up at the rim can follow on
 // from the end of his drive without his pulling up for it (see carry).
 const ON_FROM_MS = 700;
+// A man just got to his spot this long (ms) or less before a pass he
+// shoots straight off comes to him runs on into the catch (see
+// stepIntoShots).
+const CATCH_ON_MS = 1500;
+// ...and plants this long (ms) after the ball comes into his hands, at the
+// most (before he goes up for the shot).
+const CATCH_PLANT_MS = 220;
+// ...unless his run there goes away from the rim this much (the cosine):
+// lifting out to the line, he opens up to it on the way.
+const LIFTING_OUT = -0.3;
+// Coming in across the floor to it (the cosine of his run with the way to
+// the rim under this), his last steps (feet) open up to it.
+const OPEN_UP_BELOW = 0.5;
+const OPEN_UP_FT = 2.5;
 // A man trailing up the floor short of time (see liven) goes as far up as
 // he gets - so long as that is this far (feet) at the least.
 const TRAIL_LEAST = 8;
@@ -3194,6 +3208,206 @@ class Director {
 			this.goBy(m.pid, W, start, mid, "run");
 			this.goBy(m.pid, m.to, mid, at, "run");
 		}
+	}
+
+	// INTO THE CATCH, FOR THE SHOT. A jumper caught and let go off the pass -
+	// no dribble - by a man who was stood on his spot for it: his feet into
+	// the catch (see footworkIn) - off his spot a step as the ball is worked
+	// round, and back into it as it comes to him, planted as it does - not
+	// stood stock still for it, every time.
+	private stepIntoShots() {
+		for (let k = 1; k < this.ball.length; k++) {
+			const s = this.ball[k]!;
+			if (s.kind !== "fly" || !("pid" in s.from) || "pid" in s.to) {
+				continue;
+			}
+			const pid = s.from.pid;
+			const tr = this.tracks.get(pid);
+			// (A jumper, in whatever form his is.)
+			const shot = tr?.acts.find(
+				(a) => a.anim.startsWith("shoot") && a.t0 <= s.t0 && a.t1 >= s.t0,
+			);
+			if (!tr || !shot) {
+				continue;
+			}
+			// (Off the pass, held - not off a dribble.)
+			let j = k - 1;
+			while (j > 0) {
+				const h = this.ball[j]!;
+				if (h.kind !== "hold" || h.pid !== pid || h.style !== "hold") {
+					break;
+				}
+				j -= 1;
+			}
+			const pass = this.ball[j]!;
+			if (
+				pass.kind !== "fly" ||
+				!("pid" in pass.to) ||
+				pass.to.pid !== pid ||
+				!("pid" in pass.from) ||
+				s.t0 - pass.t1 > 1500
+			) {
+				continue;
+			}
+			const caught = pass.t1;
+			const P = this.posAt(pid, caught);
+			const rim = { x: rimX(tr.team), y: COURT_H / 2 };
+			const into = this.footworkIn(
+				pid,
+				P,
+				rim,
+				this.posAt(pass.from.pid, pass.t0),
+				caught,
+			);
+			if (!into) {
+				continue;
+			}
+			// Planted a step after it comes into his hands - the 1-2, the hop,
+			// as it does - and before he goes up.
+			const in1 = Math.min(caught + CATCH_PLANT_MS, shot.t0 - 20);
+			// (Nothing of his between the catch and the shot to work round.)
+			if (tr.moves.some((m) => m.t1 > caught + 1 && m.t0 < s.t0)) {
+				continue;
+			}
+			// Just got to his spot, running, as it comes: on into the catch
+			// still coming, not pulled up and stood a beat waiting on it - the
+			// run carried on later into it (as much as there is room before
+			// it), planted as it comes into his hands.
+			const came = tr.moves.findLast((m) => m.t1 <= caught + 1);
+			if (
+				came &&
+				ON_FOOT.has(came.anim) &&
+				caught - came.t1 < CATCH_ON_MS &&
+				dist(came.to, P) < 0.3 &&
+				dist(came.from, came.to) > 1 &&
+				// (Not lifting out away from the rim, though: coming that way
+				// he gets there a beat early and opens up to it - not swung
+				// right round on it off the catch.)
+				((came.to.x - came.from.x) * (rim.x - P.x) +
+					(came.to.y - came.from.y) * (rim.y - P.y)) /
+					(dist(came.from, came.to) * (dist(P, rim) || 1)) >
+					LIFTING_OUT &&
+				!this.cuts.some((c) => c > came.t0 - 1 && c < in1)
+			) {
+				const at = tr.moves.indexOf(came);
+				const prev = tr.moves[at - 1];
+				const shift = Math.min(
+					in1 - came.t1,
+					came.t0 - (prev?.t1 ?? -Infinity) - 1,
+				);
+				if (shift > 0) {
+					came.t0 += shift;
+				}
+				came.t1 = in1;
+				came.v1 = 0;
+				// Come across to it, not in at the rim: his last steps a 1-2
+				// opening up to it, shuffled in facing that end - turned into
+				// the catch, not swung right round on it after.
+				const L = dist(came.from, came.to);
+				const cos =
+					((came.to.x - came.from.x) * (rim.x - P.x) +
+						(came.to.y - came.from.y) * (rim.y - P.y)) /
+					(L * (dist(P, rim) || 1));
+				if (cos < OPEN_UP_BELOW) {
+					const last = Math.min(OPEN_UP_FT, L * 0.45);
+					const k = (L - last) / L;
+					const S = {
+						x: came.from.x + (came.to.x - came.from.x) * k,
+						y: came.from.y + (came.to.y - came.from.y) * k,
+					};
+					// (Slowing into the plant, the last of it takes longer.)
+					const T = came.t1 - came.t0;
+					const tS = came.t1 - Math.min(T * 0.6, T * (last / L) * 1.6);
+					tr.moves.splice(at + 1, 0, {
+						t0: tS,
+						t1: came.t1,
+						from: { ...S },
+						to: { ...came.to },
+						anim: "shuffle",
+						face: rim.x >= P.x ? 1 : -1,
+						v1: 0,
+					});
+					came.to = S;
+					came.t1 = tS;
+					came.v1 = undefined;
+				}
+				continue;
+			}
+			const in0 = in1 - runMs(dist(into.Q, P), into.speed);
+			const out1 = in0 - into.wait;
+			const out0 = out1 - runMs(dist(P, into.Q), WALK);
+			// (Stood there all that while - nothing else of his then, nor a
+			// cut of the picture - and the step off his spot clear of anybody.)
+			const busy =
+				tr.moves.some((m) => m.t1 > out0 - 150 && m.t0 < s.t0) ||
+				tr.acts.some(
+					(a) =>
+						a !== shot &&
+						a.anim !== "catch" &&
+						a.t1 > out0 - 150 &&
+						a.t0 < s.t0,
+				) ||
+				this.cuts.some((c) => c > out0 - 300 && c < s.t0) ||
+				[...this.tracks.values()].some(
+					(o) =>
+						o !== tr && o.pid >= 0 && dist(this.posAt(o.pid, out1), into.Q) < 3,
+				);
+			if (busy || out0 <= caught - 2500) {
+				continue;
+			}
+			tr.moves.push(
+				{ t0: out0, t1: out1, from: { ...P }, to: into.Q, anim: "back" },
+				{ t0: in0, t1: in1, from: { ...into.Q }, to: { ...P }, anim: "run" },
+			);
+			tr.moves.sort((a, b) => a.t0 - b.t0);
+		}
+	}
+
+	// HIS FEET INTO A CATCH-AND-SHOOT (from his spot P, at the rim `rim`, the
+	// pass to come from H): set and waiting for it - more so a big, or a man
+	// slow on his feet - or a step off his spot as the ball is worked round
+	// and back into it as it comes: straight in at the rim, a 1-2 in from
+	// the side of the passer, turning into it, or a quick hop. Where he steps
+	// off to (inside the lines), how long he waits there (ms), how fast he
+	// comes back into it; nothing when he waits on it set.
+	private footworkIn(
+		pid: number,
+		P: Pt,
+		rim: Pt,
+		H: Pt,
+		t: number,
+	): { Q: Pt; wait: number; speed: number } | undefined {
+		const quick = this.level(pid, "spd") ?? 0.5;
+		const shooter = this.level(pid, "tp") ?? 0.5;
+		const big = (this.rank.get(pid) ?? 4) >= 6;
+		// (Set: a third of the time for most, more for a big or a slow man.)
+		const set = Math.min(0.8, 0.3 + (big ? 0.25 : 0) + (0.5 - quick) * 0.4);
+		const r = hash01(pid, Math.round(t / 7) + 17);
+		if (r < set) {
+			return undefined;
+		}
+		const u = unitVec(P, rim);
+		// (Across, the side of the ball: he turns in to it off the pass.)
+		const toH = unitVec(P, H);
+		const lat = { x: -u.y, y: u.x };
+		const side = lat.x * toH.x + lat.y * toH.y >= 0 ? 1 : -1;
+		const s = (r - set) / (1 - set);
+		// (A good shooter the more often in rhythm off a 1-2; a quick man a
+		// hop.)
+		const oneTwo = 0.4 + 0.2 * (shooter - 0.5);
+		const hop = oneTwo + 0.2 + 0.2 * (quick - 0.5);
+		const [back, across, speed] =
+			s < oneTwo ? [1.1, 1.3 * side, 9] : s < hop ? [0.9, 0, 12] : [1.4, 0, 8];
+		const Q = inPlay(
+			clampPt({
+				x: P.x - u.x * back + lat.x * across,
+				y: P.y - u.y * back + lat.y * across,
+			}),
+		);
+		if (dist(Q, P) < 0.6) {
+			return undefined;
+		}
+		return { Q, wait: 150 + Math.round(hash01(pid, t + 5) * 250), speed };
 	}
 
 	// Carried somewhere as part of something he does - the gather and leap
@@ -27539,6 +27753,7 @@ class Director {
 			tr.shown.sort((a, b) => a[0] - b[0]);
 		}
 		this.ball.sort(byT0);
+		this.stepIntoShots();
 		this.pace();
 		this.liveHands();
 		this.keepDribbling();

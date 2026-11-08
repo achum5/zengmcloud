@@ -161,6 +161,42 @@ const jumperParts = (tl: CourtTimeline, shot: BallSeg & { kind: "fly" }) => {
 	// His form, as it is drawn.
 	const form = evalPlayer(tl, pid, release).anim;
 
+	// His footwork into it, as it is drawn: how he was when it came to him
+	// (or he picked his dribble up), which way his last steps took him, and
+	// how far round he came to it.
+	const got = tl.ball[j + 1]?.t0 ?? release;
+	const pace = (t: number) => {
+		const a = evalPlayer(tl, pid, t - 50);
+		const b = evalPlayer(tl, pid, t + 50);
+		return Math.hypot(b.x - a.x, b.y - a.y) * 10;
+	};
+	// (Coming into the catch: a beat before it, not as he plants.)
+	const came = pace(got - 150);
+	const arrived = came < 1.5 ? "set" : came < 7 ? "on the move" : "running";
+	// (From a beat before the catch to his feet set under him for it.)
+	const A0 = evalPlayer(tl, pid, got - 300);
+	const A1 = evalPlayer(tl, pid, Math.min(release - 100, got + 250));
+	const step = dist(A0, A1);
+	let into = "feet set";
+	if (step > 0.6) {
+		const ux = (rim.x - P.x) / (dist2 || 1);
+		const uy = (rim.y - P.y) / (dist2 || 1);
+		const along = ((A1.x - A0.x) * ux + (A1.y - A0.y) * uy) / step;
+		into =
+			along > 0.6
+				? "stepping in"
+				: along < -0.6
+					? "drifting back"
+					: "sliding across";
+	}
+	const yawAt = (t: number) => evalPlayer(tl, pid, t).yaw;
+	const da = yawAt(release) - yawAt(got);
+	const turned =
+		(Math.abs(Math.atan2(Math.sin(da), Math.cos(da))) * 180) / Math.PI;
+	const turn =
+		turned < 20 ? "squared" : turned < 60 ? "turning" : "turning right round";
+	const footwork = `${arrived}, ${into}, ${turn}`;
+
 	// The defense.
 	let near = Infinity;
 	let contested = false;
@@ -250,6 +286,7 @@ const jumperParts = (tl: CourtTimeline, shot: BallSeg & { kind: "fly" }) => {
 			setup: [setup, ...tags].join(" + "),
 			spot: `${spot}, ${depth}`,
 			form: form ?? "?",
+			footwork,
 			defense,
 			ending,
 			rebound,

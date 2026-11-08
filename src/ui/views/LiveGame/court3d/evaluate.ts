@@ -1678,7 +1678,14 @@ const plannedYaw = (tl: CourtTimeline, tr: Track, t: number): number => {
 	// turned to the rim, only his hands and eyes to the man throwing it -
 	// not square to the passer, and swung right round on it once it is in
 	// his hands.
-	if (!here.moving && (!act || act.anim === "catch")) {
+	// (Or shuffled in to it on his last steps, opening up to it - see
+	// stepIntoShots.)
+	const stepping =
+		here.moving &&
+		here.moveIndex >= 0 &&
+		tr.moves[here.moveIndex]!.anim === "shuffle" &&
+		tr.moves[here.moveIndex]!.face !== undefined;
+	if ((!here.moving || stepping) && (!act || act.anim === "catch")) {
 		const set = catchToShoot(tl, tr, t);
 		if (set) {
 			const base = angleTo(here, set.from, fallback);

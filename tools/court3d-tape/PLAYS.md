@@ -105,24 +105,37 @@ What can be different about it, and each needs to look right on its own:
 Measured with `variety.test.ts` over three real-sim games (116 missed
 threes at real speed):
 
-| Part                                     |             Ways now | Notes                                                                                                                                    |
-| ---------------------------------------- | -------------------: | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| How he got it                            |                   18 | swing 31%, skip, kick-out, handoff, pull-up, step-back, hesitation; + screen, + fake, + transition                                       |
-| Where from                               |                    8 | corners, wings, top; on the line / a step off / deep                                                                                     |
-| His form                                 |                   10 | his own jumper: shoot, quick, push, split, kick, high kick, lean, high                                                                   |
-| His footwork into it                     |                    - | not measured yet                                                                                                                         |
-| The defense                              |                    6 | wide open, open, contested, late closeout, hand in his face, late hand                                                                   |
-| How it misses                            |                6 → 9 | was 70% front rim, nothing long, no air balls; now front 58%, back 26% (half in and out), side 13%, air balls and the glass now and then |
-| After it                                 |                   11 | rebound by whom, short / mid / long, off the floor                                                                                       |
-| Whole combination                        | 116 of 116 different |                                                                                                                                          |
-| Same man, same setup + spot + form again |              8 of 72 |                                                                                                                                          |
+| Part                                     |             Ways now | Notes                                                                                                                                        |
+| ---------------------------------------- | -------------------: | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| How he got it                            |                   18 | swing 31%, skip, kick-out, handoff, pull-up, step-back, hesitation; + screen, + fake, + transition                                           |
+| Where from                               |                    8 | corners, wings, top; on the line / a step off / deep                                                                                         |
+| His form                                 |                   10 | his own jumper: shoot, quick, push, split, kick, high kick, lean, high                                                                       |
+| His footwork into it                     |               8 → 12 | was set at the catch, feet set, 93%; now coming into it on the move 52% (on his run to the spot), set 42%, running 6% - and how far he turns |
+| The defense                              |                    6 | wide open, open, contested, late closeout, hand in his face, late hand                                                                       |
+| How it misses                            |                6 → 9 | was 70% front rim, nothing long, no air balls; now front 58%, back 26% (half in and out), side 13%, air balls and the glass now and then     |
+| After it                                 |                   11 | rebound by whom, short / mid / long, off the floor                                                                                           |
+| Whole combination                        | 116 of 116 different |                                                                                                                                              |
+| Same man, same setup + spot + form again |              8 of 72 |                                                                                                                                              |
 
 How it misses (aimed short / long / off the side / air / glass by his
 shooting, distance and where the rebound goes) is in, 2026-11-06, with the
 ball off a dunk going down away from the dunker - once the glitches the
 games it reshuffles turned up were fixed (see "Blocking" below).
 
-Next, in order: his footwork into it (measure first); how he got it (the pass, his way to
+His footwork into it (measured from 2026-11-08: how he came into the
+catch, which way his steps took him round it, how far he turned): a man
+just got to his spot as a pass he shoots straight off comes on into the
+catch, planted a step after it (`stepIntoShots`), unless he is one to wait
+set - a third of the time, more for a big or a slow man (`footworkIn`);
+one stood there a while steps off his spot and back into it. Come across
+the floor to it, his last steps are a 1-2 shuffle opening up to the rim
+(`OPEN_UP_FT`, his feet turned to it as for a man stood waiting on it -
+see evaluate's catchToShoot); lifting out away from it, he gets there a
+beat early and opens up. Most come into it lifting out to the line; few
+yet step in at it.
+
+Next, in order: his footwork stepping in at it (a hop, a 1-2 in from the
+side, off a man stood there longer); how he got it (the pass, his way to
 the spot, his catch); the defense (closeout kinds, the man's reaction
 after); everyone after it.
 
