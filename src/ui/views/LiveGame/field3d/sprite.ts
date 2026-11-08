@@ -561,6 +561,18 @@ export const drawnPose = (
 	const s = stepped(st, fine ? FINE : COARSE);
 	return { pose: poseFor(st, s), yaw: s.yaw };
 };
+// His pose as the moment has him, not stepped for a picture (as finely as
+// makes no difference) - the court's poseOf.
+const EXACT: Steps = {
+	cycle: 1e5,
+	act: 1e5,
+	actDeg: 1e-3,
+	turns: 1e6,
+	blend: 1e5,
+	drive: 1e5,
+};
+export const poseOf = (st: FieldPlayerState): Pose =>
+	poseFor(st, stepped(st, EXACT));
 
 // How high he is drawn off the turf (feet): up as the play has him (in a
 // leap, on a pile), and off it between strides as his frame has him - his
