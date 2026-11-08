@@ -3291,7 +3291,7 @@ class Actor {
 	// (Only if that is `least` ft/s or more slower than he comes in at.)
 	slowAlong(to: Pt, t1: number, least = RAMP_LEAST): boolean {
 		const legs = this.part.legs;
-		const l = this.last;
+		let l = this.last;
 		const okLeg = (x: Leg) =>
 			RAMPS.has(x.move) &&
 			!x.arms &&
@@ -3303,6 +3303,12 @@ class Actor {
 			x.ball === l.ball &&
 			x.mirrored === l.mirrored;
 		const from = Math.max(t1 - SLOW_ALONG_MS, this.pinned);
+		// (One long stride of a run since before then: from then on of it -
+		// not dropped to his pace in a stride after it.)
+		if (okLeg(l) && l.t0 < from && from < l.t1 && legPace(l) >= STOP_LEAST) {
+			this.split(from);
+			l = this.last;
+		}
 		if (!okLeg(l) || l.t0 < from || legPace(l) < STOP_LEAST) {
 			return false;
 		}
