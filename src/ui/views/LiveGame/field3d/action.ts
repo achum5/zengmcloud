@@ -26421,6 +26421,61 @@ class Action {
 		}
 	}
 
+	// Stood where his part left him a long while, the play still going
+	// till `until`: turned to the ball as it goes - see WATCH_IDLE_LEAST_MS.
+	private watchIdle(m: Actor, until: number) {
+		const legs = m.legs;
+		const still = (l: Leg) =>
+			l.move === "stand" &&
+			!l.arms &&
+			!l.ball &&
+			!l.turn &&
+			l.from.x === l.to.x &&
+			l.from.y === l.to.y;
+		let k = legs.length;
+		while (k > 1 && still(legs[k - 1]!)) {
+			k--;
+		}
+		const first = legs[k];
+		if (!first || first.t0 < this.input.snap) {
+			return;
+		}
+		const end = legs.at(-1)!.t1;
+		if (Math.min(end, until) - first.t0 < WATCH_IDLE_LEAST_MS) {
+			return;
+		}
+		const at = first.from;
+		let yaw = first.yaw ?? m.yaw;
+		const out: Leg[] = [];
+		let t0 = first.t0;
+		let c = t0;
+		for (let j = 0; ; j++) {
+			c +=
+				WATCH_IDLE_EVERY_MS[0] +
+				WATCH_IDLE_EVERY_MS[1] * countOf(m, this.input.key, 165 + (j % 8));
+			if (c >= Math.min(end, until) - 200) {
+				break;
+			}
+			const ball = this.ballAt(c);
+			if (!ball || dist(ball, at) < 1) {
+				continue;
+			}
+			const off = angleOff(this.toward(at, ball) - yaw);
+			if (Math.abs(off) < WATCH_IDLE_LEAST) {
+				continue;
+			}
+			out.push({ ...first, t0, t1: c, yaw });
+			yaw += clamp(off, -WATCH_IDLE_MOST, WATCH_IDLE_MOST);
+			t0 = c;
+		}
+		if (out.length === 0) {
+			return;
+		}
+		out.push({ ...first, t0, t1: end, yaw });
+		legs.splice(k, legs.length - k, ...out);
+		m.yaw = yaw;
+	}
+
 	// Everyone not already given his part to the end: pulled up where the
 	// whistle finds him - a few steps on the way he was going, slowing -
 	// and stood there.
@@ -26660,6 +26715,9 @@ class Action {
 				);
 			}
 			m.hold(Math.max(m.t, t) + 600, "stand");
+			if ((kind === "pass" || kind === "run") && m !== carrier) {
+				this.watchIdle(m, t);
+			}
 		}
 	}
 
@@ -27877,6 +27935,16 @@ const FOLLOW_FPS = { line: 8, qb: 6.5, other: 12, after: 3 };
 // No two of them nearer than this (feet) when it is over: one in from a
 // little to the side (radians), if so.
 const FOLLOW_APART = 3.5;
+// (Stood this long (ms) or more with the play still going: turned to the
+// ball as it goes, a look every so often (WATCH_IDLE_EVERY_MS, from the
+// least to that much more, his own count) - round as far as
+// WATCH_IDLE_MOST at a time, if it is WATCH_IDLE_LEAST or more off the way
+// he faces - not stood the while like a statue faced where his last step
+// left him.)
+const WATCH_IDLE_LEAST_MS = 2500;
+const WATCH_IDLE_EVERY_MS = [700, 800] as const;
+const WATCH_IDLE_LEAST = 0.35;
+const WATCH_IDLE_MOST = 1.4;
 const FOLLOW_TURNS = [0, 0.45, -0.45, 0.9, -0.9];
 // (Nor to, or by, a man down then any nearer than this, feet.)
 const FOLLOW_DOWN_CLEAR = 2.5;
