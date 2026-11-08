@@ -4921,6 +4921,10 @@ const CARRY_MOST_MS = 500;
 const BREAK_DOWN_MS = 450;
 // (Not broken down at all with less than this long, ms, to be set in it.)
 const BREAK_SET_MS = 150;
+// (A back out in front of the quarterback keeping it: up to the hole at
+// this pace at least (ft/s), well ahead of him - not timed to be there just
+// before him at a jog, and run up the back of on the way through it.)
+const KEEP_LEAD_FPS = 13;
 // (A long ball still up there, more time than this to spare, ms, on the
 // break for it at full tilt: at a pace that has him there this long before
 // it instead (no slower than UNDER_LEAST_FPS), slowed to it off his run as
@@ -20882,9 +20886,20 @@ class Action {
 		}
 		for (const b of backs) {
 			b.hold(snap + 40);
+			const lead = this.w({ d: -1, a: holeA - side });
+			const fps = Math.min(b.top * 0.85, KEEP_LEAD_FPS);
 			b.chase(
-				this.w({ d: -1, a: holeA - side }),
-				Math.max(atHole - 300, snap + 500),
+				lead,
+				Math.max(
+					carrier.role === "QB"
+						? Math.min(
+								atHole - 300,
+								b.t +
+									rampedMs(dist(b.at, lead), fps, paceOn(b.last, b.at, lead)),
+							)
+						: atHole - 300,
+					snap + 500,
+				),
 				b.top * 0.85,
 				"run",
 			);
