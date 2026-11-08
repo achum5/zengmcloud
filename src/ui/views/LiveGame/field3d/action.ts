@@ -5567,6 +5567,11 @@ const LEAP_MS = 760;
 const LEAP_Z = 8.4;
 // (Down from it to go back the other way: slowing over this many legs.)
 const LEAP_LAND_STEPS = 4;
+// (Off from where he comes down further round than this - its cosine -
+// from the way he went up: down slowing for it, to LEAP_TURN_FPS - and,
+// back the other way, to a stop.)
+const LEAP_ON_COS = 0.7;
+const LEAP_TURN_FPS = 7;
 // (A leap going further round than this from the quarterback - cos, ~100
 // deg - faced the way he goes; see leapFor.)
 const LEAP_AWAY_COS = -0.17;
@@ -11384,17 +11389,21 @@ class Action {
 		const ang = Math.atan2(catchPt.y - from.y, catchPt.x - from.x);
 		// (To go back the other way once he is down: come down slowing to a
 		// stop - not carried on at the pace he went up at and turned round
-		// on the spot.)
+		// on the spot; off well round from it, see LEAP_ON_COS, slowing to
+		// LEAP_TURN_FPS.)
 		const down = {
 			x: catchPt.x + Math.cos(ang) * far * 0.9,
 			y: catchPt.y + Math.sin(ang) * far * 0.9,
 		};
-		const back =
-			far > 1 &&
-			next !== undefined &&
-			dist(down, next) > 1 &&
-			Math.cos(Math.atan2(next.y - down.y, next.x - down.x) - ang) < 0;
-		const on = back ? 0.5 : 0.9;
+		const offCos =
+			far > 1 && next !== undefined && dist(down, next) > 1
+				? Math.cos(Math.atan2(next.y - down.y, next.x - down.x) - ang)
+				: 1;
+		const back = offCos < LEAP_ON_COS;
+		const T = LEAP_MS / 2;
+		const v = far / T;
+		const vEnd = offCos < 0 ? 0 : Math.min(v, LEAP_TURN_FPS / 1000);
+		const on = back ? 0.5 * (1 + vEnd / v) : 0.9;
 		const to =
 			far > 1
 				? {
@@ -11414,10 +11423,8 @@ class Action {
 		);
 		if (back) {
 			// (Up to it at his pace, and down from it in LEAP_LAND_STEPS
-			// legs slowing evenly from that to nothing.)
-			const T = LEAP_MS / 2;
-			const v = far / T;
-			const along = (ms: number) => v * (ms - (ms * ms) / (2 * T));
+			// legs slowing evenly from that to vEnd.)
+			const along = (ms: number) => v * ms - ((v - vEnd) * ms * ms) / (2 * T);
 			const ts = [catchAt];
 			for (let k = 1; k < LEAP_LAND_STEPS; k++) {
 				ts.push(catchAt + (T * k) / LEAP_LAND_STEPS);
