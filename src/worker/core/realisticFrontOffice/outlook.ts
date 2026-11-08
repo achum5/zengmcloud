@@ -733,7 +733,11 @@ export const outlookSettings = {
 	// rounds won 176 to 124, seasons under 20 wins 29 to 22; games won 2.8
 	// points fewer in the first season, 4.9 more in the fifth; less paid to
 	// 55-64s and more of them signed. (A 15-season replay had a team pay
-	// about $670M of luxury tax in four seasons without a title.)
+	// about $670M of luxury tax in four seasons without a title.) Again on
+	// 2 more leagues with floorNow and freeDisposal: titles 13 to 7, playoff
+	// rounds 164 to 136, but seasons under 20 wins 51 to 17 and under
+	// 12 32 to 6 - bad teams left room unspent - and games won 2 to 9 points
+	// fewer each season.
 	moneyPerCap: 0.04,
 	// And payroll under the cap, past the league's minimum, with what the
 	// room is expected to buy; off, money costs only past the cap.
