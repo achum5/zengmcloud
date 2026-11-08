@@ -121,6 +121,9 @@ export type Pace = {
 	// (Or, on into something slower after it, slowing evenly from it down
 	// to this share of its own pace by its end - see carriedTo.)
 	carryTo?: number;
+	// (A piece of an act cut up - see wholeOf: the act's own pace over all
+	// of it, from t0 to t1, this piece from d0 to d1 of the way.)
+	whole?: { t0: number; t1: number; d0: number; d1: number; p: Pace };
 };
 const EVEN: Pace = { g: 0, early: 0, a: 0, top: 1, h: 0, stop: 0 };
 
@@ -186,9 +189,84 @@ const carriedOf = (legs: Leg[], k: number): Pace | undefined => {
 		: undefined;
 };
 
+// (Leg `next` the same act on from `l`, cut off it - see action.ts
+// split, the ball out of his hands as he goes down, say: on from where it
+// was, the way it went.)
+const PIECE_FT = 0.05;
+const PIECE_PACE = 0.05;
+const piece = (l: Leg, next: Leg) =>
+	next.move === l.move &&
+	moveKind(l.move) === "act" &&
+	goes(l) &&
+	goes(next) &&
+	l.span !== undefined &&
+	next.span !== undefined &&
+	l.span[1] === next.span[0] &&
+	Math.abs(l.t1 - next.t0) <= 1 &&
+	Math.hypot(next.from.x - l.to.x, next.from.y - l.to.y) <= PIECE_FT;
+// AN ACT CUT INTO PIECES, carried into off a quicker stretch (see
+// carriedOf): each piece of it as the whole act would have him there -
+// slowing all the way through it from the pace he came into it at, not
+// each at its own even pace and cut down from a sprint in a stride at
+// the first. (Only pieces along the one straight way.)
+const wholeOf = (legs: Leg[], k: number): Pace | undefined => {
+	let a = k;
+	while (a > 0 && piece(legs[a - 1]!, legs[a]!)) {
+		a--;
+	}
+	let b = k;
+	while (b + 1 < legs.length && piece(legs[b]!, legs[b + 1]!)) {
+		b++;
+	}
+	if (a === b) {
+		return undefined;
+	}
+	const first = legs[a]!;
+	const all: Leg = { ...first, t1: legs[b]!.t1, to: legs[b]!.to };
+	const D = Math.hypot(all.to.x - all.from.x, all.to.y - all.from.y);
+	if (!(D > 0)) {
+		return undefined;
+	}
+	const ux = (all.to.x - all.from.x) / D;
+	const uy = (all.to.y - all.from.y) / D;
+	const off = (q: { x: number; y: number }) =>
+		Math.abs((q.x - all.from.x) * uy - (q.y - all.from.y) * ux);
+	// (Cut, not laid out over again: each piece at the pace of all of it.)
+	const pace = paceIn(all);
+	for (let j = a; j <= b; j++) {
+		if (
+			off(legs[j]!.to) > PIECE_FT ||
+			Math.abs(paceIn(legs[j]!) - pace) > pace * PIECE_PACE
+		) {
+			return undefined;
+		}
+	}
+	// (Only come into it twice as quick as it goes or more - stopped in
+	// it from there, not cut down to its pace at its first: see easedAlong.)
+	const near = [
+		...(a > 0 ? [legs[a - 1]!] : []),
+		all,
+		...legs.slice(b + 1, b + 2),
+	];
+	const p = carriedOf(near, a > 0 ? 1 : 0);
+	if (!p || !((p.carry ?? 0) >= 2)) {
+		return undefined;
+	}
+	const l = legs[k]!;
+	const d0 = ((l.from.x - all.from.x) * ux + (l.from.y - all.from.y) * uy) / D;
+	const d1 = ((l.to.x - all.from.x) * ux + (l.to.y - all.from.y) * uy) / D;
+	return d1 > d0
+		? { ...EVEN, whole: { t0: all.t0, t1: all.t1, d0, d1, p } }
+		: undefined;
+};
+
 export const paceOf = (legs: Leg[], k: number): Pace => {
 	const l = legs[k];
 	if (!l || !eases(l)) {
+		const whole = l ? wholeOf(legs, k) : undefined;
+		if (whole) {
+			return whole;
+		}
 		const carried = l ? carriedOf(legs, k) : undefined;
 		if (carried) {
 			return carried;
@@ -234,6 +312,10 @@ export const paceOf = (legs: Leg[], k: number): Pace => {
 const easedAlong = (l: Leg, t: number, p: Pace): number => {
 	if (p === EVEN) {
 		return along(l, t);
+	}
+	if (p.whole) {
+		const { t0, t1, d0, d1 } = p.whole;
+		return (easedAlong({ ...l, t0, t1 }, t, p.whole.p) - d0) / (d1 - d0);
 	}
 	if (p.carry && p.carryTo !== undefined) {
 		const u = along(l, t);
@@ -396,12 +478,21 @@ export const placeAt = (
 		on,
 		u,
 	};
+	// (Not between pieces of one act - see wholeOf: on through from the
+	// one into the next as it was.)
 	if (on === k) {
-		if (t - legs[k]!.t0 < CORNER_MOST_MS) {
+		if (
+			t - legs[k]!.t0 < CORNER_MOST_MS &&
+			!(pace.whole && k > 0 && piece(legs[k - 1]!, legs[k]!))
+		) {
 			rounded(legs, k, before.top, t, at);
 		}
 		const next = legs[k + 1];
-		if (next && next.t0 - t < CORNER_MOST_MS) {
+		if (
+			next &&
+			next.t0 - t < CORNER_MOST_MS &&
+			!(pace.whole && piece(legs[k]!, next))
+		) {
 			rounded(legs, k + 1, pace.top, t, at);
 		}
 	}
