@@ -23,11 +23,13 @@ import {
 import {
 	boxOf,
 	captionOf,
+	darkAndPace,
 	dipOf,
 	type Box,
-	FLASH_MS,
 	NARROW_W,
 	runFrames,
+	holdReady,
+	makeHeld,
 	setOpacity,
 	showCaption,
 	showWipe,
@@ -1050,6 +1052,10 @@ const Field3D = ({
 		let replayWas: unknown;
 		let closeWas = false;
 		let flashAt = -Infinity;
+		// Held black (or white) till everybody is ready (see holdReady) - and
+		// the timeline last shown, to come up out of black onto a new one.
+		const held = makeHeld();
+		let shownWas: unknown;
 
 		const tick = (now: number, draw: boolean, still: boolean) => {
 			const p = live.current;
@@ -1058,6 +1064,13 @@ const Field3D = ({
 				return;
 			}
 			const s = clock.current;
+			// Up out of black onto the first picture, and onto the game from
+			// the opening - from this frame, before anybody in it is drawn.
+			if (shownWas !== tl) {
+				shownWas = tl;
+				s.keyDip = now;
+				held.keyHold = -Infinity;
+			}
 			const { dt, cut } = stepField(
 				s,
 				p,
@@ -1131,6 +1144,7 @@ const Field3D = ({
 				if (replay && replayWas === replay) {
 					s.snapCam = true;
 					flashAt = now;
+					held.flashHold = -Infinity;
 				}
 				replayAngle = angle;
 			}
@@ -1209,10 +1223,6 @@ const Field3D = ({
 										: (rigFor(moment) ??
 												(fromLow(moment) ? REPLAY_RIG : MAIN_RIG)),
 								);
-			setOpacity(
-				flashRef.current,
-				replay ? Math.max(0, 1 - (now - flashAt) / FLASH_MS) : 0,
-			);
 			const look = (pid: number) => looks.current.get(pid);
 			const body = (pid: number) => bodies.current.get(pid) ?? DRAWN_DEFAULT;
 			const items: { depth: number; draw: () => void }[] = [];
@@ -1402,23 +1412,15 @@ const Field3D = ({
 				now,
 				FINE_ON_MS,
 			);
-			// Into and out of black across a cut - and between the key plays,
-			// down to black out of one, up out of it into the next.
-			setOpacity(
-				dipRef.current,
-				dipOf({
-					replay: !!replay,
-					near: cut === undefined ? Infinity : Math.abs(s.t - cut),
-					keyDip: s.keyDip,
-					now,
-					keyOut:
-						p.keyPlan && !p.follower && !p.paused
-							? keyOutAt(p.keyPlan, s.t, s.pace)
-							: 0,
-				}),
-			);
+			// While the picture is as good as black - dipped at a cut, into a
+			// replay or out of it, onto the next of the key plays - whoever has
+			// no picture yet is left out of it, and it is held there until
+			// everybody in it is ready to be drawn (see holdReady). (Or white,
+			// at a flash between a replay's angles.)
+			const flash = holdReady(held, sprites, wipe, !!replay, flashAt, now);
 			// The wipe: in over the picture to the cut into a replay or out of
-			// it, then on off it - in the colors of whoever made the play.
+			// it, held there while need be, then on off it - in the colors of
+			// whoever made the play.
 			const sting = wipeAt(wipe, s, p, now);
 			if (sting !== undefined) {
 				const pid = (replay ?? nextReplay(tl, s.t))?.pid;
@@ -1427,6 +1429,30 @@ const Field3D = ({
 					wipeSide = team;
 				}
 			}
+			// Into and out of black across a cut - and between the key plays,
+			// down to black out of one, up out of it into the next.
+			const o = dipOf({
+				replay: !!replay,
+				near: cut === undefined ? Infinity : Math.abs(s.t - cut),
+				keyDip: Math.max(s.keyDip, held.keyHold),
+				now,
+				keyOut:
+					p.keyPlan && !p.follower && !p.paused
+						? keyOutAt(p.keyPlan, s.t, s.pace)
+						: 0,
+			});
+			darkAndPace(
+				held,
+				sprites,
+				o,
+				flash,
+				wipe,
+				replay ? replay.at : s.t,
+				dt,
+				now,
+			);
+			setOpacity(dipRef.current, o);
+			setOpacity(flashRef.current, flash);
 			showWipe(
 				stingRefs.current,
 				replayRef.current,

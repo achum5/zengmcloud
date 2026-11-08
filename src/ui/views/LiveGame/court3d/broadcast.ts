@@ -15,6 +15,7 @@ import { logoPicture } from "./logoPicture.ts";
 import type { Stakes } from "./director.ts";
 import { drawn, due, type Pace } from "./pace.ts";
 import { eventsMatchRoster } from "./rosterMatch.ts";
+import type { Wipe } from "./show.ts";
 
 // THE PAGE'S SIDE OF A 3D GAME, for any sport (see Court3D, Field3D): what
 // every sport's picture does the same way round the picture itself - the
@@ -376,6 +377,78 @@ export const dipOf = ({
 	return replay
 		? Math.max(0, keyDark)
 		: Math.max(0, 1 - near / DIP_MS, also, keyDark, keyOut);
+};
+
+// HELD THERE TILL EVERYBODY IS READY, any sport's. A frame that comes out
+// of a cut with men left out of it for want of their new pictures (see
+// SpriteCache.dark) is held where it is - the wipe over all of the picture,
+// a replay's flash between its angles white, a dip black - for up to
+// KEY_HOLD_MS while they are made ready: a moment more of it, not a freeze
+// halfway out of it. When the picture last went dark (and made new pictures
+// as fast as it could - see sprite.ts), when it was last held black or
+// white, and the moment last drawn.
+export const KEY_HOLD_MS = 900;
+export type Held = {
+	darkFrom: number;
+	keyHold: number;
+	flashHold: number;
+	drawnAt: number | undefined;
+};
+export const makeHeld = (): Held => ({
+	darkFrom: -Infinity,
+	keyHold: -Infinity,
+	flashHold: -Infinity,
+	drawnAt: undefined,
+});
+// Held where it is, if need be - and how white the flash is now (a replay's
+// cut from one of its cameras to the next at `flashAt`).
+export const holdReady = (
+	h: Held,
+	sprites: { skipped: number; dark?: boolean },
+	wipe: Wipe,
+	replay: boolean,
+	flashAt: number,
+	now: number,
+): number => {
+	const flashing =
+		1 - (now - Math.max(flashAt, h.flashHold)) / FLASH_MS >= 0.75;
+	if (sprites.skipped > 0 && sprites.dark && now - h.darkFrom < KEY_HOLD_MS) {
+		if (wipe.covered) {
+			wipe.hold = now;
+		} else if (flashing && replay) {
+			h.flashHold = now;
+		} else {
+			h.keyHold = now;
+		}
+	}
+	return replay
+		? Math.max(0, 1 - (now - Math.max(flashAt, h.flashHold)) / FLASH_MS)
+		: 0;
+};
+// The sprites told whether the picture is dark now (dipped `o`, flashed,
+// wiped over), and how fast the moment drawn (`drawnAt`, `dt` ms of the
+// wall clock on) moves on: in slow motion a man may be drawn as he was for
+// that many more frames - stood still, or jumped back to a replay, as at
+// real speed.
+export const darkAndPace = (
+	h: Held,
+	sprites: { dark?: boolean; pace?: number },
+	o: number,
+	flash: number,
+	wipe: Wipe,
+	drawnAt: number,
+	dt: number,
+	now: number,
+) => {
+	const dark = o >= 0.75 || flash >= 0.75 || wipe.covered;
+	if (dark && !sprites.dark) {
+		h.darkFrom = now;
+	}
+	sprites.dark = dark;
+	const pace =
+		h.drawnAt === undefined || dt <= 0 ? 1 : (drawnAt - h.drawnAt) / dt;
+	sprites.pace = pace > 0 ? pace : 1;
+	h.drawnAt = drawnAt;
 };
 
 // The wipe this frame: the band in the colors of the side whose play it is

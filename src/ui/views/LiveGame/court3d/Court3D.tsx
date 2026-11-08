@@ -66,10 +66,11 @@ import {
 	boxOf,
 	type Box,
 	captionOf,
+	darkAndPace,
 	dipOf,
-	FLASH_MS,
 	NARROW_W,
 	runFrames,
+	holdReady,
 	setOpacity,
 	showCaption,
 	showWipe,
@@ -156,10 +157,6 @@ import {
 // In close on a man, the building behind him this far out of focus
 // (picture pixels - see drawFrame).
 const CLOSE_SOFT = 1.1;
-// The longest it is held black for the picture to be ready (ms) - and, at
-// a replay's flash between angles (see replayRig and broadcast.ts FLASH_MS),
-// white, while the men in it are made ready at their new size.
-const KEY_HOLD_MS = 900;
 // WHAT IS OVER THE PICTURE: the score bug along its foot (see boxOf, and
 // camera.ts's dodgeFor).
 const bugBoxOf = (wrap: HTMLElement | null, holder: HTMLElement | null) =>
@@ -1230,24 +1227,7 @@ const Court3D = ({
 			// moment more of black, not a freeze halfway out of it.
 			// (Behind the wipe: the wipe held over all of the picture.)
 			// (Or white, at a flash between a replay's angles.)
-			const flashing =
-				1 - (now - Math.max(s.flashAt, s.flashHold)) / FLASH_MS >= 0.75;
-			if (
-				sprites.skipped > 0 &&
-				sprites.dark &&
-				now - s.darkFrom < KEY_HOLD_MS
-			) {
-				if (s.wipe.covered) {
-					s.wipe.hold = now;
-				} else if (flashing && replay) {
-					s.flashHold = now;
-				} else {
-					s.keyHold = now;
-				}
-			}
-			const flash = replay
-				? Math.max(0, 1 - (now - Math.max(s.flashAt, s.flashHold)) / FLASH_MS)
-				: 0;
+			const flash = holdReady(s, sprites, s.wipe, !!replay, s.flashAt, now);
 			// The wipe: in over the picture to the cut into a replay or out of
 			// it, held there while need be, then on off it.
 			const sting = wipeAt(s.wipe, s, now, p.rate, rate);
@@ -1280,19 +1260,16 @@ const Court3D = ({
 						: 0,
 				also: clipDipAt(tl, s.t),
 			});
-			const dark = o >= 0.75 || flash >= 0.75 || s.wipe.covered;
-			if (dark && !sprites.dark) {
-				s.darkFrom = now;
-			}
-			sprites.dark = dark;
-			// Poses come round as slowly as the moment shown moves on: in slow
-			// motion a man may be drawn as he was for that many more frames.
-			const drawnAt = replay ? replay.at : s.t;
-			const pace =
-				s.drawnAt === undefined || dt <= 0 ? 1 : (drawnAt - s.drawnAt) / dt;
-			// (Stood still, or jumped back to a replay: as at real speed.)
-			sprites.pace = pace > 0 ? pace : 1;
-			s.drawnAt = drawnAt;
+			darkAndPace(
+				s,
+				sprites,
+				o,
+				flash,
+				s.wipe,
+				replay ? replay.at : s.t,
+				dt,
+				now,
+			);
 			setOpacity(dipRef.current, o);
 			setOpacity(flashRef.current, flash);
 			const ballAt = project(cam, moment.ball);
