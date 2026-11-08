@@ -279,6 +279,9 @@ const CUT_LAT = 50;
 // (Easing down to steps this much slower, ft/s, or more - or for a turn
 // sharper than this, radians, that he plants for: see slowFor.)
 const SLOW_DROP = 6;
+// (A chase slowed down to the pace it goes on at - see chaseOn - and less
+// of it left than this share of that pace would cover: not gone on with.)
+const SLIVER_SHARE = 0.5;
 const PLANT_TURN = 1.75;
 // (Planted on past the turn, no time for it before: if it leaves him to go
 // on no more than this many times as quick as he would have.)
@@ -3165,9 +3168,13 @@ class Actor {
 			T * 1000 >= RAMP_LEG_MS &&
 			this.slows(move)
 		) {
-			const { gone } = this.slowOn(p, S, T, into, move, yaw, true);
+			const { gone, on } = this.slowOn(p, S, T, into, move, yaw, true);
 			const u = S / far;
-			if (S - gone > 0.01 && t1 > this.t) {
+			// (The rest of it at about the pace he is down to - not a sliver
+			// left over, crept over at a walk, there too soon at that pace:
+			// left be, on from where he is.)
+			const rest = (t1 - this.t) / 1000;
+			if (S - gone > 0.01 && rest > 0 && S - gone >= on * rest * SLIVER_SHARE) {
 				this.go(
 					{ x: from.x + (p.x - from.x) * u, y: from.y + (p.y - from.y) * u },
 					t1,
