@@ -4226,6 +4226,13 @@ const WEIGHT_ON = 0.5;
 const FOLLOW_MS = 450;
 const WATCH_FT = 2.5;
 const WATCH_MS = 1100;
+// (Still up there this long (ms) after he has walked off his throw: a
+// look - WATCH_PAUSE_MS, ms, from and spread - and WATCH_ON_FT more on
+// over WATCH_ON_MS.)
+const WATCH_LONG_MS = 1800;
+const WATCH_PAUSE_MS = [300, 500] as const;
+const WATCH_ON_FT = 3;
+const WATCH_ON_MS = 1000;
 const CATCH_Z = 4.3;
 // (A pass over a man in its way: over this high (ft) where it passes him,
 // no nearer him than this (ft) - looked at every so often (ms), not right
@@ -10489,7 +10496,7 @@ class Action {
 						},
 					},
 				);
-				this.pocketThrow(qb, catchPt, throwAt);
+				this.pocketThrow(qb, catchPt, throwAt, catchAt);
 			}
 			const at = this.of(qb.posAt(throwAt));
 			const release: Pt3 = {
@@ -10949,7 +10956,7 @@ class Action {
 	// as the ball goes back by his ear, his hips and shoulders coming round
 	// through it as it goes, and his weight on over his front foot after it,
 	// turned on past it.
-	pocketThrow(qb: Actor, catchPt: Pt, throwAt: number) {
+	pocketThrow(qb: Actor, catchPt: Pt, throwAt: number, catchAt = throwAt) {
 		const way = this.toward(qb.at, catchPt);
 		const ahead = (ft: number) => ({
 			x: qb.at.x + Math.cos(way) * ft,
@@ -10972,6 +10979,25 @@ class Action {
 		);
 		qb.turn(PAST_IT - RELEASE_OPEN);
 		qb.go(ahead(WEIGHT_ON + WATCH_FT), qb.t + WATCH_MS, "walk", way);
+		// (A long one still up there: a look, and a few more steps on
+		// after it as it comes down - not stood like a statue the whole
+		// way.)
+		if (catchAt - qb.t >= WATCH_LONG_MS) {
+			qb.hold(
+				qb.t +
+					WATCH_PAUSE_MS[0] +
+					WATCH_PAUSE_MS[1] * countOf(qb, this.input.key, 160),
+				"stand",
+				way,
+			);
+			const on = WATCH_ON_FT * (0.6 + 0.4 * countOf(qb, this.input.key, 161));
+			qb.go(
+				{ x: qb.at.x + Math.cos(way) * on, y: qb.at.y + Math.sin(way) * on },
+				qb.t + WATCH_ON_MS,
+				"walk",
+				way,
+			);
+		}
 	}
 
 	// Rolled out round the edge, on at an easy run - the ball up in both
