@@ -4925,6 +4925,10 @@ const CARRY_MOST_MS = 500;
 const BREAK_DOWN_MS = 450;
 // (Not broken down at all with less than this long, ms, to be set in it.)
 const BREAK_SET_MS = 150;
+// (Set a way off him, and off at him from there: off at him as soon as
+// takes him there no quicker than this (ft/s), up to it and held - not off
+// late at it, flat out the whole way, and into him like a missile.)
+const SET_FIRE_FPS = 20;
 // (A back out in front of the quarterback keeping it: up to the hole at
 // this pace at least (ft/s), well ahead of him - not timed to be there just
 // before him at a jog, and run up the back of on the way through it.)
@@ -14597,7 +14601,12 @@ class Action {
 		} else {
 			// (A step or two off him, time over to walk it: set where he is,
 			// and in at him off it - not walked in on him.)
-			const fireMs = rampedMs(far, m.top * FLAT_OUT, 0, GET_OFF_ACCEL);
+			const fireMs = rampedMs(
+				far,
+				Math.min(m.top * FLAT_OUT, SET_FIRE_FPS),
+				0,
+				GET_OFF_ACCEL,
+			);
 			const set = lead - fireMs - m.t >= BREAK_SET_MS;
 			if (
 				!gives &&
