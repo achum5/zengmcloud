@@ -1,5 +1,10 @@
 import { depthOf, project, type Camera } from "../court3d/camera.ts";
-import { driven, PIVOT_HIP, PIVOT_KNEE } from "../court3d/evaluate.ts";
+import {
+	driven,
+	PIVOT_HIP,
+	PIVOT_KNEE,
+	settleStep,
+} from "../court3d/evaluate.ts";
 import {
 	lerpPose,
 	skeleton,
@@ -34,7 +39,6 @@ import {
 	moveKind,
 	MOUTH_STEPS,
 	poseOfMove,
-	settleStep,
 	strideLift,
 	withArms,
 	type Move,
@@ -114,7 +118,7 @@ type Blend = {
 	// as it changed (as pivot).
 	feet?: [number, number, number, number];
 	// From one way of standing into another, not turning: stepped over a
-	// foot at a time (see poses.ts settleStep).
+	// foot at a time (see court3d's settleStep).
 	steps?: true;
 };
 type Under = {

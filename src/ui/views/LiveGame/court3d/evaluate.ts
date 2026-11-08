@@ -6490,7 +6490,7 @@ const settleLegs = (
 		f: leg(df, first * (1 - SETTLE_STEP)),
 	};
 };
-const settleStep = (
+export const settleStep = (
 	p: Pose,
 	to: Pose,
 	was: Pose,
