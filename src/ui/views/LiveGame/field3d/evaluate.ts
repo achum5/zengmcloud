@@ -651,9 +651,13 @@ const LEN_RATE = 6;
 // still at a run, his feet not a blur, but sliding the last of it.)
 const SHUFFLE_MOST = 3.5;
 // (In a block his feet keep going under him even when the two of them get
-// nowhere - no slower round than this a second.)
-const CHOP_LEAST = 1.4;
-const CHOPS: ReadonlySet<Move> = new Set<Move>(["drive", "engage"]);
+// nowhere - and sat in his set in pass protection, light on them - no
+// slower round than this a second.)
+const CHOPS = new Map<Move, number>([
+	["drive", 1.4],
+	["engage", 1.4],
+	["passSet", 0.9],
+]);
 type Strides = { t0: number; ph: Float32Array; len: Float32Array };
 const strided = new WeakMap<
 	Leg[],
@@ -680,7 +684,7 @@ const stridesOf = (legs: Leg[], t0: number, n: number): Strides | undefined => {
 	const tr = trackOf(legs, t0, n);
 	const strideOn = legs.map((l) => (cycles(l) ? strideOf(l.move) : 0));
 	const beatOn = legs.map((l) => beatOf(l.move));
-	const chopOn = legs.map((l) => (CHOPS.has(l.move as Move) ? CHOP_LEAST : 0));
+	const chopOn = legs.map((l) => CHOPS.get(l.move as Move) ?? 0);
 	const gaitAt = (i: number) => {
 		const k = tr.late[i]!;
 		const on = tr.on[i]!;
