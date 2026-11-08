@@ -1308,37 +1308,19 @@ const build = (
 				);
 			}
 		};
-		if (fingerR * kMid < 1.4) {
-			// Too small to tell apart: the four as one, flat like the palm.
-			const curl =
-				grip === "fist"
-					? 1.95
-					: grip === "relaxed"
-						? 0.6
-						: grip === "ball"
-							? 0.5
-							: 0.15;
-			const dir = unit(
-				addV(
-					v3(h.f * Math.cos(curl), h.s * Math.cos(curl), h.u * Math.cos(curl)),
-					palmN,
-					Math.sin(curl),
-				),
-			);
-			const len = L * 0.4 * (curl > 1.2 ? 0.55 : 1);
+		if (fingerR * kMid < 0.9 && !onBall) {
+			// Too small to tell apart: the four as one, flat like the palm,
+			// bent as the middle two are (the court's - but on the ball, each
+			// finger of his own, laid on it).
 			for (const o of [-1, 1]) {
-				const base = addV(knuckles, ts, o * halfW * 0.85);
-				add(
-					base,
-					addV(base, dir, len),
-					[
-						[0, palmR * 0.95],
-						[1, palmR * 0.8],
-					],
-					HAND,
-					G_FINGER + side * 5,
-					side,
+				const pts = lay(
+					addV(knuckles, ts, o * halfW * 0.85),
+					h,
+					[0.47, 0.3, 0.23].map((k) => k * L * 0.42),
+					restOf(1),
+					palmR * 0.8,
 				);
+				bones(pts, palmR * 0.88, G_FINGER + side * 5);
 			}
 		} else {
 			const spread =
@@ -1353,7 +1335,7 @@ const build = (
 				const across = (1.5 - i) / 1.5;
 				// (The knuckles in an arc: the middle one furthest out.)
 				const base = addV(
-					addV(knuckles, ts, across * halfW * 1.25),
+					addV(knuckles, ts, across * halfW * 1.2),
 					h,
 					L * [0.0, 0.025, 0.005, -0.04][i]!,
 				);
