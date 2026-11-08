@@ -9,7 +9,7 @@ import {
 	type Pt3,
 	type Side,
 } from "./geometry.ts";
-import { drawStandingCooler } from "./shower.ts";
+import { drawStandingCooler } from "./cooler.ts";
 import { BENCHES, NET_OFF, NET_W, netX, sidelineOf } from "./sideline.ts";
 
 // WHAT STANDS ON THE SIDELINES: each team's benches - long, dark, a seat in

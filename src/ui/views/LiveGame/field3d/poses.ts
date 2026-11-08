@@ -899,22 +899,6 @@ const CLAP_TOGETHER: Partial<Pose> = {
 // far (feet).
 export const HIGH_FIVE_AT = 0.5;
 const HIGH_FIVE_HOP = 0.3;
-// The cooler's handle in his right hand, hung at his side; the cooler over
-// him (hunched, his arms up and out).
-const COOLER_CARRY: Partial<Pose> = { shN: 10, elN: 8, abN: 8, abF: 20 };
-const DOUSED: Partial<Pose> = {
-	shN: 60,
-	elN: 100,
-	abN: 46,
-	shF: 60,
-	elF: 100,
-	abF: 46,
-	hipN: 30,
-	kneeN: 24,
-	hipF: 30,
-	kneeF: 24,
-	lean: 26,
-};
 const over = (a: Partial<Pose>, b: Partial<Pose>): FieldAnim => ({
 	kind: "act",
 	keys: [
@@ -1158,20 +1142,6 @@ const PLAY_BALL: [number, Pose][] = [
 	[1, pose({ shN: 28, elN: 90, abN: 8 })],
 ];
 
-const RIDE = pose({
-	hipN: 84,
-	kneeN: 38,
-	hipF: 80,
-	kneeF: 30,
-	lean: -6,
-	shN: -14,
-	elN: 8,
-	abN: 18,
-	shF: -14,
-	elF: 8,
-	abF: 18,
-	wide: 0.7,
-});
 const FIELD_ANIMS = {
 	// Standing easy: between plays, on the sideline.
 	stand: { kind: "still", pose: BASE },
@@ -3600,29 +3570,6 @@ const FIELD_ANIMS = {
 			wide: 0.9,
 		}),
 	},
-	// On the back of the cart, a man hurt (see cart.ts): sat on the end of
-	// it, his legs hanging down over it, a hand on the deck either side of
-	// him (up off the turf: see liftOf) - and sitting down onto it.
-	ride: { kind: "still", pose: RIDE },
-	rideOn: { kind: "still", pose: RIDE },
-	// Driving it: sat up, both hands out on the wheel.
-	cartDrive: {
-		kind: "still",
-		pose: pose({
-			hipN: 86,
-			kneeN: 84,
-			hipF: 86,
-			kneeF: 84,
-			lean: 4,
-			shN: 52,
-			elN: 58,
-			abN: -6,
-			shF: 52,
-			elF: 58,
-			abF: -6,
-			wide: 0.6,
-		}),
-	},
 	// ---- a man hurt ----
 	// Down on his back on the turf, one knee drawn up, a hand to it.
 	hurt: {
@@ -4114,97 +4061,6 @@ const FIELD_ANIMS = {
 			[1, BASE],
 		],
 	},
-	// The cooler (see shower.ts) carried between two men, a handle each: in
-	// his right hand, hung at his side; and, the two of them, up to their
-	// chests with it, over their heads, tipped forward over the man in front
-	// of them - and let go.
-	coolerCarry: { kind: "still", pose: pose(COOLER_CARRY) },
-	coolerDump: {
-		kind: "act",
-		keys: [
-			[0, pose(COOLER_CARRY)],
-			[
-				0.28,
-				pose({
-					shN: 75,
-					elN: 70,
-					abN: 8,
-					shF: 80,
-					elF: 80,
-					abF: -34,
-					hipN: 14,
-					kneeN: 20,
-					hipF: 14,
-					kneeF: 20,
-				}),
-			],
-			[
-				0.5,
-				pose({
-					shN: 162,
-					elN: 22,
-					abN: 8,
-					shF: 155,
-					elF: 36,
-					abF: -22,
-					lean: -6,
-					tuck: 1,
-				}),
-			],
-			[
-				0.64,
-				pose({
-					shN: 142,
-					elN: 8,
-					abN: 8,
-					shF: 136,
-					elF: 14,
-					abF: -20,
-					lean: 6,
-					tuck: 1,
-				}),
-			],
-			[
-				0.86,
-				pose({
-					shN: 136,
-					elN: 6,
-					abN: 8,
-					shF: 130,
-					elF: 12,
-					abF: -20,
-					lean: 9,
-					tuck: 1,
-				}),
-			],
-			[1, BASE],
-		],
-	},
-	// Caught by it from behind: hunched, his arms up and out, then his hands
-	// to his face and head to wipe it off - and his arms out, laughing.
-	doused: {
-		kind: "act",
-		keys: [
-			[0, BASE],
-			[0.08, pose(DOUSED)],
-			[0.3, pose({ ...DOUSED, lean: 30, shN: 66, shF: 66 })],
-			[0.46, pose({ ...HANDS_ON_HEAD, lean: 16 })],
-			[0.62, pose({ ...HANDS_ON_HEAD, onHeadN: 0.7, onHeadF: 0.8, lean: 12 })],
-			[
-				0.82,
-				pose({
-					shN: 40,
-					elN: 30,
-					abN: 50,
-					shF: 40,
-					elF: 30,
-					abF: 50,
-					lean: -4,
-				}),
-			],
-			[1, BASE],
-		],
-	},
 	// His right fist pumped up over his head, again and again.
 	fistPump: over(
 		{ shN: 132, elN: 96, abN: 24, shF: 10, elF: 70, abF: 16, lean: -2 },
@@ -4571,15 +4427,14 @@ export const mouthAt = (id: number, t: number, most: number): number => {
 		Math.round(open * Math.sin(Math.PI * (s - j)) * MOUTH_STEPS) / MOUTH_STEPS
 	);
 };
-// And yelling as he does it - up in the air, pumping his fist, flexing,
-// soaked from behind - from this far through it to this far, his mouth
+// And yelling as he does it - up in the air, pumping his fist, flexing -
+// from this far through it to this far, his mouth
 // this far open: eased in and out (see the 3D court's figure.ts YELLS).
 const YELLS: Partial<Record<Move, [number, number, number]>> = {
 	leap: [0.2, 0.85, 0.9],
 	fistPump: [0.1, 0.9, 0.85],
 	flex: [0.08, 0.92, 1],
 	chestBump: [0.15, 0.85, 0.8],
-	doused: [0.06, 0.5, 0.9],
 };
 const YELL_EASE = 0.08;
 // His mouth (0 to 1) doing `move`: talking or yelling, if it has him at
@@ -4864,9 +4719,6 @@ export const strideLift = (m: Move, phase: number, len = 1): number =>
 // feet in a leap, a chest bump - laid out on top of a pile, this high.
 const PILE_TOP = 1.2;
 const GRIDDY_HOP = 0.22;
-// (Sat on the back of the cart, his feet hanging: his hips as high as its
-// deck - eased up onto it as he sits.)
-const RIDE_UP = 0.45;
 export const liftOf = (m: Move, phase: number): number => {
 	const arc = (lo: number, hi: number, up: number) =>
 		phase > lo && phase < hi
@@ -4896,10 +4748,6 @@ export const liftOf = (m: Move, phase: number): number => {
 			);
 		case "pileTop":
 			return PILE_TOP;
-		case "ride":
-			return RIDE_UP;
-		case "rideOn":
-			return RIDE_UP * smooth01(phase);
 		case "offTop":
 			return PILE_TOP * (1 - Math.min(1, phase / 0.45));
 		default:
@@ -4913,8 +4761,6 @@ const FISTS = new Set<Move>([
 	"run",
 	"sprint",
 	"holdPole",
-	"coolerCarry",
-	"coolerDump",
 	// (The play sheet pinched in the one.)
 	"callIn",
 ]);

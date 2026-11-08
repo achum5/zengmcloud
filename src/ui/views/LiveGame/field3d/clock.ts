@@ -46,7 +46,7 @@ const periodOf = (quarter: number, numPeriods: number): string => {
 // Where the picture stops the clock for something after the play, if it
 // does.
 const stopOf = (play: Play): number | undefined =>
-	play.timeout?.cut ?? play.hurt?.from ?? play.measure?.cut;
+	play.timeout?.cut ?? play.hurt?.from;
 
 export const buildFieldClocks = (
 	tl: FieldTimeline,
