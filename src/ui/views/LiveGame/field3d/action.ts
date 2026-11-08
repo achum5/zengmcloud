@@ -8554,14 +8554,25 @@ class Action {
 				if (m === c || m.team !== c.team) {
 					continue;
 				}
+				// (To the one side - the one he is on as the man with the ball
+				// comes nearest - if the man with the ball comes through him:
+				// not eased on along his way, the sides he is on as he comes and
+				// as he goes on taken out by each other.)
 				let spell:
-					| { a: number; b: number; nx: number; ny: number; need: number }
+					| {
+							a: number;
+							b: number;
+							nx: number;
+							ny: number;
+							need: number;
+							side: number;
+					  }
 					| undefined;
 				const eased = () => {
 					if (spell && spell.b > spell.a) {
 						const len = Math.hypot(spell.nx, spell.ny);
 						if (len > 0) {
-							const h = Math.min(CARRY_CLEAR_MOST, spell.need);
+							const h = Math.min(CARRY_CLEAR_MOST, spell.need) * spell.side;
 							ease(m, spell.a, spell.b, {
 								x: (spell.nx / len) * h,
 								y: (spell.ny / len) * h,
@@ -8609,11 +8620,14 @@ class Action {
 					}
 					if (spell) {
 						spell.b = t;
-						spell.nx += -uy * sign;
-						spell.ny += ux * sign;
-						spell.need = Math.max(spell.need, need);
+						spell.nx += -uy;
+						spell.ny += ux;
+						if (need > spell.need) {
+							spell.need = need;
+							spell.side = sign;
+						}
 					} else {
-						spell = { a: t, b: t, nx: -uy * sign, ny: ux * sign, need };
+						spell = { a: t, b: t, nx: -uy, ny: ux, need, side: sign };
 					}
 				}
 				eased();
