@@ -99,6 +99,10 @@ const SET_UP_MS = 300;
 // dragging his toes in - round off it the same, into a run at least
 // FLIP_SAME nearer the way he was going than he was faced.)
 const FLIP_LEAD_MS = 130;
+// (Off from a stand more than this round from the way he stood, radians:
+// round on his feet first, this share of it at most - see facingOf.)
+const ROUND_OFF = 2;
+const ROUND_OFF_LEAD = 0.75;
 const FLIP_SAME = Math.PI / 4;
 const FLIP_AWAY = Math.PI / 2;
 const turnMost = (l: Leg) => (l.move === "walk" ? TURN_WALK_MOST : TURN_MOST);
@@ -299,8 +303,22 @@ const facingOf = (legs: Leg[]): Facing => {
 			!lp.turn &&
 			(goes(lp) || PIVOTS.has(lp.move));
 		const stood = kneels && !goes(lp);
-		lead[j] =
-			startsOff && !SET.has(lp.move)
+		// (Off from a stand well round from the way he stood - back the way
+		// he came, say: round on his feet as he stands first (see pivotOf),
+		// near STAND_TURN - the rest as he gets going - not spun round as
+		// he steps off.)
+		const roundOff =
+			startsOff &&
+			!SET.has(lp.move) &&
+			PIVOTS.has(lp.move) &&
+			Math.abs(wrapAngle(was(0) - aim)) > ROUND_OFF;
+		const roundMs = (Math.abs(wrapAngle(was(0) - aim)) / STAND_TURN) * 1000;
+		lead[j] = roundOff
+			? Math.max(
+					paceOf(legs, j).early,
+					Math.min(roundMs * ROUND_OFF_LEAD, (lp.t1 - lp.t0) * 0.9),
+				)
+			: startsOff && !SET.has(lp.move)
 				? paceOf(legs, j).early
 				: flips
 					? Math.min(FLIP_LEAD_MS, (lp.t1 - lp.t0) * 0.9)
@@ -336,8 +354,10 @@ const facingOf = (legs: Leg[]): Facing => {
 		}
 		off[j] = by;
 		turns[j] = lj.turn || Math.abs(by) > 1e-6 || corner[j]! > 0 ? 1 : 0;
-		ms[j] =
-			(PIVOTS.has(lj.move) && !goes(lj)) || stood
+		const goMs = Math.max(TURN_GO_MS, (Math.abs(by) / turnMost(lj)) * 1000);
+		ms[j] = roundOff
+			? Math.max(goMs, Math.min(roundMs, lead[j]! + goMs))
+			: (PIVOTS.has(lj.move) && !goes(lj)) || stood
 				? Math.max(TURN_MS, (Math.abs(by) / STAND_TURN) * 1000)
 				: snap[j] || near
 					? Math.max(
