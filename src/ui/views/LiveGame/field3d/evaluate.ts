@@ -1,3 +1,4 @@
+import { PIVOT_MS, pivotFeet } from "../court3d/evaluate.ts";
 import { apartAt, apartOf, type Sep } from "./apart.ts";
 import { restingZ } from "./ball.ts";
 import type {
@@ -486,17 +487,11 @@ const yawAt = (legs: Leg[], t: number): number => {
 	return c + off / TURN_EASE_SUM;
 };
 
-// TURNING WHERE HE STANDS (the way the court has it - see court3d's
-// pivotOf): his feet don't spin under him with the rest of him. One stays
-// where it was, turned on, while the other steps round after him - every
-// PIVOT_MS the other way about, a PIVOT_STEP_MS step up off the turf to
-// where he will be facing by the end of it. Which way each foot points on
-// the turf, and how far up off it (a full step 1): drawn turned under him
-// as far as hips turn (see sprite.ts).
-const PIVOT_MS = 160;
-const PIVOT_STEP_MS = 110;
-// (How far round a step is a full one, radians.)
-const PIVOT_FULL = 0.35;
+// TURNING WHERE HE STANDS (the court's way - see court3d's pivotFeet): his
+// feet don't spin under him with the rest of him. One stays where it was,
+// turned on, while the other steps round after him. Which way each foot
+// points on the turf, and how far up off it (a full step 1): drawn turned
+// under him as far as hips turn (see sprite.ts).
 const PIVOTS = new Set<Move>([
 	"stand",
 	"easy",
@@ -539,26 +534,8 @@ const PLANTS = new Map<Move, number>([
 	["throwWind", 0.55],
 	["throwFollow", 0],
 ]);
-const pivotOf = (legs: Leg[], t: number): Feet => {
-	const k = Math.floor(t / PIVOT_MS);
-	const g = k * PIVOT_MS;
-	// (Right steps round on even beats, left on odd.)
-	const foot = (even: boolean): [number, number] => {
-		if ((k % 2 === 0) !== even) {
-			return [yawAt(legs, g), 0];
-		}
-		const a = yawAt(legs, g - PIVOT_MS);
-		const d = wrapAngle(yawAt(legs, g + PIVOT_MS) - a);
-		const u = clamp01((t - (g + PIVOT_MS - PIVOT_STEP_MS)) / PIVOT_STEP_MS);
-		return [
-			a + d * u * u * (3 - 2 * u),
-			Math.sin(Math.PI * u) * Math.min(1, Math.abs(d) / PIVOT_FULL),
-		];
-	};
-	const [r, rl] = foot(true);
-	const [l, ll] = foot(false);
-	return [r, l, rl, ll];
-};
+const pivotOf = (legs: Leg[], t: number): Feet =>
+	pivotFeet((at) => yawAt(legs, at), t);
 // (Nothing to show: both feet where he faces, neither up.)
 const square = (p: Feet, yaw: number) =>
 	Math.abs(wrapAngle(p[0] - yaw)) < 0.01 &&

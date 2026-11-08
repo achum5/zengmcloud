@@ -6043,7 +6043,7 @@ const footTurn = (deg: number) => {
 // him - every PIVOT_MS the other way about, a PIVOT_STEP_MS step up off the
 // floor to where he will be facing by the end of it. (Only as far as hips
 // turn: past that, the planted foot goes round with him.)
-const PIVOT_MS = 160;
+export const PIVOT_MS = 160;
 const PIVOT_STEP_MS = 110;
 // A step's lift (degrees at the hip and knee, a full step of the turn), and
 // how far round a step is a full one (radians).
@@ -6136,6 +6136,32 @@ export const legTurnFrom = (
 				? 0
 				: (wrapAngle(yaw - f.facing) * 180) / Math.PI),
 	);
+// Which way each foot points on the floor, and how far up off it (a full
+// step 1), any sport's: [right, left, right's lift, left's lift] - for a man
+// facing `yawAt` (radians) over time.
+export const pivotFeet = (
+	yawAt: (t: number) => number,
+	t: number,
+): [number, number, number, number] => {
+	const k = Math.floor(t / PIVOT_MS);
+	const g = k * PIVOT_MS;
+	// (Right steps round on even beats, left on odd.)
+	const leg = (even: boolean): [number, number] => {
+		if ((k % 2 === 0) !== even) {
+			return [yawAt(g), 0];
+		}
+		const a = yawAt(g - PIVOT_MS);
+		const d = wrapAngle(yawAt(g + PIVOT_MS) - a);
+		const u = clamp01((t - (g + PIVOT_MS - PIVOT_STEP_MS)) / PIVOT_STEP_MS);
+		return [
+			a + d * smooth01(u),
+			Math.sin(Math.PI * u) * Math.min(1, Math.abs(d) / PIVOT_FULL),
+		];
+	};
+	const [r, rl] = leg(true);
+	const [l, ll] = leg(false);
+	return [r, l, rl, ll];
+};
 const pivotOf = (
 	tl: CourtTimeline,
 	tr: Track,
@@ -6150,23 +6176,7 @@ const pivotOf = (
 	if (ground <= 0 || !PIVOTS.has(now.anim)) {
 		return undefined;
 	}
-	const k = Math.floor(t / PIVOT_MS);
-	const g = k * PIVOT_MS;
-	// (Right steps round on even beats, left on odd.)
-	const leg = (even: boolean): [number, number] => {
-		if ((k % 2 === 0) !== even) {
-			return [yawAt(tl, tr, g), 0];
-		}
-		const a = yawAt(tl, tr, g - PIVOT_MS);
-		const d = wrapAngle(yawAt(tl, tr, g + PIVOT_MS) - a);
-		const u = clamp01((t - (g + PIVOT_MS - PIVOT_STEP_MS)) / PIVOT_STEP_MS);
-		return [
-			a + d * smooth01(u),
-			Math.sin(Math.PI * u) * Math.min(1, Math.abs(d) / PIVOT_FULL),
-		];
-	};
-	const [rf, rl] = leg(true);
-	const [lf, ll] = leg(false);
+	const [rf, lf, rl, ll] = pivotFeet((at) => yawAt(tl, tr, at), t);
 	// (As far as hips turn - and further round than that, back with him by
 	// the time he is facing the other way. His left is the floor's
 	// clockwise.)
