@@ -5184,6 +5184,10 @@ const PICK_DIVE_YDS = 6;
 const PICK_DIVE_PER = 0.6;
 const PICK_DIVE_LEAST = 6;
 const PICK_DIVE_MOST = 13;
+// (No nearer than this (feet) to the man it was meant for, stood there
+// for it, as he lands: short of him - or, not room enough for the
+// shortest dive short of him, taken on his feet instead.)
+const PICK_DIVE_CLEAR_FT = 3;
 // (Laid out for it off a run no more than this far round from the way he
 // goes, radians - judged over the last this long, ms.)
 const PICK_DIVE_TURN = 0.6;
@@ -15484,7 +15488,7 @@ class Action {
 			u < PICK_TIP &&
 			dist(recAt, catchPt) < PICK_TIP_NEAR;
 		let leap = !bat && !tip && long >= PICK_LEAP_FT && u < PICK_TIP + PICK_LEAP;
-		const dive =
+		let dive =
 			!bat &&
 			!tip &&
 			!leap &&
@@ -15605,6 +15609,51 @@ class Action {
 		}
 		const ball = this.ball.at(-1);
 		const fly = ball?.kind === "fly" ? ball : undefined;
+		// (Laid out for it: from where he is as he leaves his feet, toward
+		// it, no further than he could - the ball to his hands out there.
+		// Going at a run: the way he goes, no more than PICK_DIVE_TURN round
+		// from it - not launched off sideways from a sprint, or back the
+		// way he came. Short of the man it was meant for, if he is in the
+		// way of it - see PICK_DIVE_CLEAR_FT.)
+		let laid: { face: number; to: Pt } | undefined;
+		if (dive) {
+			const from = picker.posAt(gotAt - DIVE_BEFORE);
+			let face = this.toward(from, gotPt);
+			const was = picker.posAt(gotAt - DIVE_BEFORE - PICK_DIVE_LOOK_MS);
+			if ((dist(was, from) * 1000) / PICK_DIVE_LOOK_MS >= LUNGE_LEAST_FPS) {
+				const runs = Math.atan2(from.y - was.y, from.x - was.x);
+				face =
+					runs + clamp(angleOff(face - runs), -PICK_DIVE_TURN, PICK_DIVE_TURN);
+			}
+			let far = clamp(
+				legPace(legAt(picker, gotAt - DIVE_BEFORE)) * PICK_DIVE_PER,
+				PICK_DIVE_LEAST,
+				PICK_DIVE_MOST,
+			);
+			const him = rec.posAt(gotAt);
+			const along =
+				(him.x - from.x) * Math.cos(face) + (him.y - from.y) * Math.sin(face);
+			const across = Math.abs(
+				(him.x - from.x) * Math.sin(face) - (him.y - from.y) * Math.cos(face),
+			);
+			if (across < PICK_DIVE_CLEAR_FT && along > 0) {
+				far = Math.min(
+					far,
+					along - Math.sqrt(PICK_DIVE_CLEAR_FT ** 2 - across ** 2),
+				);
+			}
+			if (far >= PICK_DIVE_LEAST) {
+				laid = {
+					face,
+					to: {
+						x: from.x + Math.cos(face) * far,
+						y: from.y + Math.sin(face) * far,
+					},
+				};
+			} else {
+				dive = false;
+			}
+		}
 		const onRun =
 			!leap &&
 			!dive &&
@@ -15620,36 +15669,8 @@ class Action {
 				qb,
 				this.w({ d: got.d - 10, a: got.a }),
 			);
-		} else if (dive) {
-			// (From where he is as he leaves his feet, toward it: no further
-			// than he could - the ball to his hands out there.)
-			const t0 = gotAt - DIVE_BEFORE;
-			const from = picker.posAt(t0);
-			let face = this.toward(from, gotPt);
-			// (Going at a run: laid out the way he goes, no more than
-			// PICK_DIVE_TURN round from it - not launched off sideways from a
-			// sprint, or back the way he came; the ball to his hands, out
-			// there.)
-			const was = picker.posAt(t0 - PICK_DIVE_LOOK_MS);
-			if ((dist(was, from) * 1000) / PICK_DIVE_LOOK_MS >= LUNGE_LEAST_FPS) {
-				const runs = Math.atan2(from.y - was.y, from.x - was.x);
-				face =
-					runs + clamp(angleOff(face - runs), -PICK_DIVE_TURN, PICK_DIVE_TURN);
-			}
-			const far = clamp(
-				legPace(legAt(picker, t0)) * PICK_DIVE_PER,
-				PICK_DIVE_LEAST,
-				PICK_DIVE_MOST,
-			);
-			this.diveFor(
-				picker,
-				{
-					x: from.x + Math.cos(face) * far,
-					y: from.y + Math.sin(face) * far,
-				},
-				gotAt,
-				face,
-			);
+		} else if (laid) {
+			this.diveFor(picker, laid.to, gotAt, laid.face);
 			picker.act("getUp", picker.t + GET_UP_MS);
 		} else if ((onRun || tip || bat) && !self) {
 			// (Off a tip: his hands up for it as it comes off the other
