@@ -1578,6 +1578,75 @@ export const joinBody = (
 	}
 };
 
+// HIS TORSO, any sport's: belly and back; the chest out in front; the lats,
+// widening a little up to his armpits; across the top of him, his
+// shoulders (`shoulders`: each sport's - its pads, say); hips and seat - as
+// a sport builds them (`b`: how far up him, how wide - of his shoulders' -
+// and how far forward, and how thick, of his depth), on `up` (see torsoOf).
+export type TorsoBuild = {
+	// The belly's top, and how thick it is up it.
+	belly: number;
+	bellyR: [number, number, number];
+	// How far up his chest is, how wide, how far forward, how thick.
+	chest: [number, number, number];
+	chestR: [number, number, number];
+	// The lats: how wide at his waist, how far up to his armpits and how
+	// wide there, and how thick.
+	lats: [number, number, number];
+	latsR: [number, number];
+};
+export const TORSO_BUILD: TorsoBuild = {
+	belly: 0.9,
+	bellyR: [0.42, 0.42, 0.47],
+	chest: [0.66, 0.4, 0.05],
+	chestR: [0.36, 0.38, 0.36],
+	lats: [0.4, 0.74, 0.55],
+	latsR: [0.34, 0.36],
+};
+export const torsoMasses = (
+	torso: (A: V3, B: V3, prof: Station[]) => void,
+	up: (t: number, s: number, f?: number) => V3,
+	body: Body,
+	b: TorsoBuild,
+	shoulders: () => void,
+) => {
+	const sw = body.shoulderW;
+	const dp = body.depth;
+	torso(up(0.04, 0), up(b.belly, 0, -dp * 0.04), [
+		[0, dp * b.bellyR[0]],
+		[0.45, dp * b.bellyR[1]],
+		[1, dp * b.bellyR[2]],
+	]);
+	torso(
+		up(b.chest[0], -sw * b.chest[1], dp * b.chest[2]),
+		up(b.chest[0], sw * b.chest[1], dp * b.chest[2]),
+		[
+			[0, dp * b.chestR[0]],
+			[0.5, dp * b.chestR[1]],
+			[1, dp * b.chestR[2]],
+		],
+	);
+	for (const sd of [-1, 1]) {
+		torso(up(0.2, sd * sw * b.lats[0]), up(b.lats[1], sd * sw * b.lats[2]), [
+			[0, dp * b.latsR[0]],
+			[1, dp * b.latsR[1]],
+		]);
+	}
+	shoulders();
+	torso(up(0, -body.hipW), up(0, body.hipW), [
+		[0, body.thighR * 1.15],
+		[1, body.thighR * 1.15],
+	]);
+	torso(
+		up(0.1, -body.hipW * 0.55, -dp * 0.1),
+		up(0.1, body.hipW * 0.55, -dp * 0.1),
+		[
+			[0, body.thighR * 1.08],
+			[1, body.thighR * 1.08],
+		],
+	);
+};
+
 // A microphone this far from his own mouth (feet) is held out to somebody
 // else's.
 const MIC_OWN = 1.1;
@@ -1612,39 +1681,13 @@ const build = (
 	// seat.
 	const torso = (A: V3, B: V3, prof: Station[]) =>
 		add(A, B, prof, TORSO, G_TORSO);
-	torso(up(0.04, 0), up(0.9, 0, -dp * 0.04), [
-		[0, dp * 0.42],
-		[0.45, dp * 0.42],
-		[1, dp * 0.47],
-	]);
-	torso(up(0.66, -sw * 0.4, dp * 0.05), up(0.66, sw * 0.4, dp * 0.05), [
-		[0, dp * 0.36],
-		[0.5, dp * 0.38],
-		[1, dp * 0.36],
-	]);
-	for (const sd of [-1, 1]) {
-		torso(up(0.2, sd * sw * 0.4), up(0.74, sd * sw * 0.55), [
-			[0, dp * 0.34],
-			[1, dp * 0.36],
+	torsoMasses(torso, up, body, TORSO_BUILD, () => {
+		torso(up(0.86, -sw * 0.6), up(0.86, sw * 0.6), [
+			[0, dp * 0.38],
+			[0.5, dp * 0.42],
+			[1, dp * 0.38],
 		]);
-	}
-	torso(up(0.86, -sw * 0.6), up(0.86, sw * 0.6), [
-		[0, dp * 0.38],
-		[0.5, dp * 0.42],
-		[1, dp * 0.38],
-	]);
-	torso(up(0, -body.hipW), up(0, body.hipW), [
-		[0, body.thighR * 1.15],
-		[1, body.thighR * 1.15],
-	]);
-	torso(
-		up(0.1, -body.hipW * 0.55, -dp * 0.1),
-		up(0.1, body.hipW * 0.55, -dp * 0.1),
-		[
-			[0, body.thighR * 1.08],
-			[1, body.thighR * 1.08],
-		],
-	);
+	});
 	// The neck, thick at the base, up into his head; the traps sloping up
 	// either side of it from his shoulders.
 	add(

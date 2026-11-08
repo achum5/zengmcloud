@@ -13,6 +13,7 @@ import {
 	joinsFor,
 	legMasses,
 	massesFor,
+	torsoMasses,
 	seerOf,
 	torsoOf,
 	len2,
@@ -33,6 +34,7 @@ import {
 	type Frame,
 	type HandBuild,
 	type LegBuild,
+	type TorsoBuild,
 	type Ink,
 	type Mass,
 	type RGB,
@@ -756,6 +758,15 @@ const LEG: LegBuild = {
 	shoe: [1.24, 1.3, 1.05],
 	collar: [1.1, 1.16],
 };
+// His torso: the court's (see torsoMasses), deeper through the chest.
+const TORSO_BUILD: TorsoBuild = {
+	belly: 0.86,
+	bellyR: [0.44, 0.45, 0.5],
+	chest: [0.64, 0.45, 0.06],
+	chestR: [0.4, 0.42, 0.4],
+	lats: [0.42, 0.72, 0.62],
+	latsR: [0.36, 0.4],
+};
 // His arm: the court's (see armMasses), a touch thicker all down it.
 const ARM: ArmBuild = {
 	delt: [1.12, 0.94, 0.88],
@@ -789,65 +800,39 @@ const build = (
 	// over each shoulder; hips and seat.
 	const torso = (A: V3, B: V3, prof: Station[]) =>
 		add(A, B, prof, TORSO, G_TORSO);
-	torso(up(0.04, 0), up(0.86, 0, -dp * 0.04), [
-		[0, dp * 0.44],
-		[0.45, dp * 0.45],
-		[1, dp * 0.5],
-	]);
-	torso(up(0.64, -sw * 0.45, dp * 0.06), up(0.64, sw * 0.45, dp * 0.06), [
-		[0, dp * 0.4],
-		[0.5, dp * 0.42],
-		[1, dp * 0.4],
-	]);
-	for (const sd of [-1, 1]) {
-		torso(up(0.2, sd * sw * 0.42), up(0.72, sd * sw * 0.62), [
-			[0, dp * 0.36],
-			[1, dp * 0.4],
-		]);
-	}
 	const official = look.official === true;
 	const cheer = look.cheer !== undefined;
-	if (official || cheer || look.reporter) {
-		// (An official: no pads - just his shoulders under his shirt.)
-		torso(up(0.88, -sw * 0.72), up(0.88, sw * 0.72), [
-			[0, dp * 0.36],
-			[0.5, dp * 0.44],
-			[1, dp * 0.36],
-		]);
-	} else {
-		torso(up(0.9, -sw * 0.86), up(0.9, sw * 0.86), [
-			[0, dp * 0.42],
-			[0.5, dp * 0.55],
-			[1, dp * 0.42],
-		]);
-		// (The pads' plates stand out over his chest and his shoulder blades.)
-		torso(up(0.76, -sw * 0.55, dp * 0.24), up(0.76, sw * 0.55, dp * 0.24), [
-			[0, dp * 0.38],
-			[0.5, dp * 0.44],
-			[1, dp * 0.38],
-		]);
-		torso(up(0.8, -sw * 0.5, -dp * 0.2), up(0.8, sw * 0.5, -dp * 0.2), [
-			[0, dp * 0.38],
-			[0.5, dp * 0.42],
-			[1, dp * 0.38],
-		]);
-		for (const sd of [-1, 1]) {
-			const cap = up(0.94, sd * (sw + body.upperR * 0.4), -dp * 0.02);
-			torso(cap, cap, [[0, body.upperR * 1.7]]);
+	torsoMasses(torso, up, body, TORSO_BUILD, () => {
+		if (official || cheer || look.reporter) {
+			// (An official: no pads - just his shoulders under his shirt.)
+			torso(up(0.88, -sw * 0.72), up(0.88, sw * 0.72), [
+				[0, dp * 0.36],
+				[0.5, dp * 0.44],
+				[1, dp * 0.36],
+			]);
+		} else {
+			torso(up(0.9, -sw * 0.86), up(0.9, sw * 0.86), [
+				[0, dp * 0.42],
+				[0.5, dp * 0.55],
+				[1, dp * 0.42],
+			]);
+			// (The pads' plates stand out over his chest and his shoulder blades.)
+			torso(up(0.76, -sw * 0.55, dp * 0.24), up(0.76, sw * 0.55, dp * 0.24), [
+				[0, dp * 0.38],
+				[0.5, dp * 0.44],
+				[1, dp * 0.38],
+			]);
+			torso(up(0.8, -sw * 0.5, -dp * 0.2), up(0.8, sw * 0.5, -dp * 0.2), [
+				[0, dp * 0.38],
+				[0.5, dp * 0.42],
+				[1, dp * 0.38],
+			]);
+			for (const sd of [-1, 1]) {
+				const cap = up(0.94, sd * (sw + body.upperR * 0.4), -dp * 0.02);
+				torso(cap, cap, [[0, body.upperR * 1.7]]);
+			}
 		}
-	}
-	torso(up(0, -body.hipW), up(0, body.hipW), [
-		[0, body.thighR * 1.15],
-		[1, body.thighR * 1.15],
-	]);
-	torso(
-		up(0.1, -body.hipW * 0.55, -dp * 0.1),
-		up(0.1, body.hipW * 0.55, -dp * 0.1),
-		[
-			[0, body.thighR * 1.08],
-			[1, body.thighR * 1.08],
-		],
-	);
+	});
 	if (cheer) {
 		// Her skirt, flared out from her hips.
 		torso(up(0.08, 0), up(-0.2, 0), [
