@@ -15231,6 +15231,142 @@ class Action {
 		return this.ahead + y + SET_OPEN;
 	}
 
+	// The way from `from` to `hit` round the shoulder of a man at B, if he is
+	// in it (see QB_HIT_ROUND_FT) - the side of him he is on already: its
+	// bend (see curve) and how far it is. (Straight, round undefined, if he
+	// is not in it; far Infinity if there is no room round him.)
+	private roundShoulder(
+		from: Pt,
+		hit: Pt,
+		B: Pt,
+	): { far: number; round: Pt | undefined } {
+		const D = dist(from, hit);
+		if (D <= 0) {
+			return { far: D, round: undefined };
+		}
+		const ux = (hit.x - from.x) / D;
+		const uy = (hit.y - from.y) / D;
+		const along = (B.x - from.x) * ux + (B.y - from.y) * uy;
+		const across = (B.y - from.y) * ux - (B.x - from.x) * uy;
+		if (!(along > 0 && along < D && Math.abs(across) < QB_HIT_ROUND_FT)) {
+			return { far: D, round: undefined };
+		}
+		// (No further out than has him come in onto the quarterback near
+		// enough the way he would have straight - see QB_HIT_ROUND_END -
+		// not swung back in across him at the last.)
+		const side = across >= 0 ? -1 : 1;
+		const out = Math.min(
+			QB_HIT_ROUND_FT - Math.abs(across),
+			(Math.tan(QB_HIT_ROUND_END) * (1.5 * D - 2 * along)) / 2,
+		);
+		// (No room round him: no way in - not through him.)
+		if (!(out >= QB_HIT_ROUND_LEAST)) {
+			return { far: Infinity, round: undefined };
+		}
+		const via = {
+			x: from.x + ux * along - uy * side * out,
+			y: from.y + uy * along + ux * side * out,
+		};
+		const round = {
+			x: 2 * via.x - (from.x + hit.x) / 2,
+			y: 2 * via.y - (from.y + hit.y) / 2,
+		};
+		let far = 0;
+		let was = from;
+		for (const p of this.curve(from, round, hit, QB_HIT_ROUND_PTS)) {
+			far += dist(was, p);
+			was = p;
+		}
+		return { far, round };
+	}
+
+	// Off his block round `round` (see curve) to `hit` by t1, as getOff
+	// would take him straight: up from QB_HIT_FROM_FPS at GET_OFF_ACCEL, as
+	// quick as gets him there then - along the way round.
+	private getOffRound(
+		m: Actor,
+		from: Pt,
+		round: Pt,
+		hit: Pt,
+		t0: number,
+		t1: number,
+		move?: Move,
+	) {
+		const path = [from, ...this.curve(from, round, hit, QB_HIT_ROUND_PTS)];
+		const lens = [0];
+		for (let i = 1; i < path.length; i++) {
+			lens.push(lens[i - 1]! + dist(path[i - 1]!, path[i]!));
+		}
+		const L = lens.at(-1)!;
+		const T = (t1 - t0) / 1000;
+		const v0 = QB_HIT_FROM_FPS;
+		const room = T * T - (2 * (L - v0 * T)) / GET_OFF_ACCEL;
+		const a =
+			room >= 0 ? GET_OFF_ACCEL : (2 * (L - v0 * T)) / Math.max(T * T, 1e-6);
+		const ta = room >= 0 ? T - Math.sqrt(room) : T;
+		const gone = (t: number) =>
+			L <= v0 * T
+				? (L * t) / T
+				: t <= ta
+					? v0 * t + (a * t * t) / 2
+					: v0 * ta + (a * ta * ta) / 2 + (v0 + a * ta) * (t - ta);
+		const along = (g: number): Pt => {
+			const k = Math.max(
+				1,
+				lens.findIndex((x) => x >= g),
+			);
+			const p = path[k - 1]!;
+			const q = path[k] ?? p;
+			const g0 = lens[k - 1]!;
+			const u = lens[k]! > g0 ? clamp((g - g0) / (lens[k]! - g0), 0, 1) : 1;
+			return { x: p.x + (q.x - p.x) * u, y: p.y + (q.y - p.y) * u };
+		};
+		const n = Math.max(2, Math.round((T * 1000) / RAMP_STEP_MS));
+		for (let i = 1; i <= n; i++) {
+			const t = (T * i) / n;
+			m.go(i === n ? hit : along(gone(t)), t0 + t * 1000, move);
+		}
+	}
+
+	// Whether the way in from `from` (at t0) to `hit` (at t1) - round
+	// `round`, if there is one (see curve) - at an even pace, keeps
+	// QB_HIT_CLEAR_FT off each of the quarterback's men as he gets to each
+	// spot on it, past the first QB_HIT_CLEAR_FROM of it, off the man he
+	// was on.
+	private clearIn(
+		qb: Actor,
+		from: Pt,
+		t0: number,
+		hit: Pt,
+		t1: number,
+		round: Pt | undefined,
+	): boolean {
+		const men = this.men.filter((x) => x.team === qb.team && x !== qb);
+		const pts = round
+			? this.curve(from, round, hit, QB_HIT_ROUND_PTS)
+			: Array.from({ length: QB_HIT_ROUND_PTS }, (_, k) => {
+					const u = (k + 1) / QB_HIT_ROUND_PTS;
+					return {
+						x: from.x + (hit.x - from.x) * u,
+						y: from.y + (hit.y - from.y) * u,
+					};
+				});
+		let L = 0;
+		let was = from;
+		const lens = pts.map((p) => {
+			L += dist(was, p);
+			was = p;
+			return L;
+		});
+		return pts.every((p, k) => {
+			if (lens[k]! < QB_HIT_CLEAR_FROM || !(L > 0)) {
+				return true;
+			}
+			const t = t0 + ((t1 - t0) * lens[k]!) / L;
+			return !men.some((x) => dist(x.posAt(t), p) < QB_HIT_CLEAR_FT);
+		});
+	}
+
 	// THE SACK, ANOTHER OF THEM SLIPPED FIRST: now and then (on his own
 	// count, with the time for it) one more of the rush off his block and at
 	// the quarterback a moment before the man the sim has get him - him out
@@ -15343,15 +15479,48 @@ class Action {
 			// Him: off his block, in, and off his feet at where the
 			// quarterback was.
 			const hit = by(beside(p0, face, -SLIP_HIT_FT));
-			const fast = dist(from, hit) / ((tm - shed) / 1000) >= QB_HIT_RUN_FPS;
+			// (In round the shoulder of the man he was on, if he is in the
+			// way - not through him, nor any other of them: another of the
+			// rush, if one has a way in clear.)
+			const mine = this.men
+				.filter(
+					(x) =>
+						x.team === qb.team && x !== qb && legAt(x, shed).move !== "stand",
+				)
+				.sort(
+					(x, y) => dist(x.posAt(shed), from) - dist(y.posAt(shed), from),
+				)[0];
+			const inWay =
+				mine && dist(mine.posAt(shed), from) <= QB_HIT_BLOCKER_FT
+					? this.roundShoulder(from, hit, mine.posAt(shed))
+					: { far: dist(from, hit), round: undefined };
+			if (
+				!Number.isFinite(inWay.far) ||
+				!this.clearIn(qb, from, shed, hit, tm + SLIP_DIVE_AFTER, inWay.round)
+			) {
+				continue;
+			}
+			const fast = inWay.far / ((tm - shed) / 1000) >= QB_HIT_RUN_FPS;
 			m.cut(shed);
-			m.getOff(
-				hit,
-				tm + SLIP_DIVE_AFTER,
-				QB_HIT_FROM_FPS,
-				GET_OFF_ACCEL,
-				fast ? "run" : undefined,
-			);
+			if (inWay.round) {
+				this.getOffRound(
+					m,
+					from,
+					inWay.round,
+					hit,
+					shed,
+					tm + SLIP_DIVE_AFTER,
+					fast ? "run" : undefined,
+				);
+			} else {
+				m.getOff(
+					hit,
+					tm + SLIP_DIVE_AFTER,
+					QB_HIT_FROM_FPS,
+					GET_OFF_ACCEL,
+					fast ? "run" : undefined,
+				);
+			}
 			m.lunge(
 				"dive",
 				tm + SLIP_DIVE_MS,
@@ -15740,41 +15909,7 @@ class Action {
 			) {
 				return { hit, far: D, round: undefined };
 			}
-			const B = b.posAt(shed);
-			const ux = (hit.x - from.x) / D;
-			const uy = (hit.y - from.y) / D;
-			const along = (B.x - from.x) * ux + (B.y - from.y) * uy;
-			const across = (B.y - from.y) * ux - (B.x - from.x) * uy;
-			if (!(along > 0 && along < D && Math.abs(across) < QB_HIT_ROUND_FT)) {
-				return { hit, far: D, round: undefined };
-			}
-			// (No further out than has him come in onto the quarterback near
-			// enough the way he would have straight - see QB_HIT_ROUND_END -
-			// not swung back in across him at the last.)
-			const side = across >= 0 ? -1 : 1;
-			const out = Math.min(
-				QB_HIT_ROUND_FT - Math.abs(across),
-				(Math.tan(QB_HIT_ROUND_END) * (1.5 * D - 2 * along)) / 2,
-			);
-			// (No room round him: no way in - not through him.)
-			if (!(out >= QB_HIT_ROUND_LEAST)) {
-				return { hit, far: Infinity, round: undefined };
-			}
-			const via = {
-				x: from.x + ux * along - uy * side * out,
-				y: from.y + uy * along + ux * side * out,
-			};
-			const round = {
-				x: 2 * via.x - (from.x + hit.x) / 2,
-				y: 2 * via.y - (from.y + hit.y) / 2,
-			};
-			let far = 0;
-			let was = from;
-			for (const p of this.curve(from, round, hit, QB_HIT_ROUND_PTS)) {
-				far += dist(was, p);
-				was = p;
-			}
-			return { hit, far, round };
+			return { hit, ...this.roundShoulder(from, hit, b.posAt(shed)) };
 		};
 		// (Nobody else blocking on the way in, as he gets to each spot on it
 		// - past the first of it, off his own man: not in through the
@@ -15876,47 +16011,15 @@ class Action {
 		const fast = way.far / ((hitT - shed) / 1000) >= QB_HIT_RUN_FPS;
 		m.cut(shed);
 		if (round) {
-			// (Round it as getOff would take him straight: up from what he
-			// has on at GET_OFF_ACCEL, as quick as gets him there at hitT -
-			// along the way round.)
-			const path = [from, ...this.curve(from, round, hit, QB_HIT_ROUND_PTS)];
-			const lens = [0];
-			for (let i = 1; i < path.length; i++) {
-				lens.push(lens[i - 1]! + dist(path[i - 1]!, path[i]!));
-			}
-			const L = lens.at(-1)!;
-			const T = (hitT - shed) / 1000;
-			const v0 = QB_HIT_FROM_FPS;
-			const room = T * T - (2 * (L - v0 * T)) / GET_OFF_ACCEL;
-			const a =
-				room >= 0 ? GET_OFF_ACCEL : (2 * (L - v0 * T)) / Math.max(T * T, 1e-6);
-			const ta = room >= 0 ? T - Math.sqrt(room) : T;
-			const gone = (t: number) =>
-				L <= v0 * T
-					? (L * t) / T
-					: t <= ta
-						? v0 * t + (a * t * t) / 2
-						: v0 * ta + (a * ta * ta) / 2 + (v0 + a * ta) * (t - ta);
-			const along = (g: number): Pt => {
-				const k = Math.max(
-					1,
-					lens.findIndex((x) => x >= g),
-				);
-				const p = path[k - 1]!;
-				const q = path[k] ?? p;
-				const g0 = lens[k - 1]!;
-				const u = lens[k]! > g0 ? clamp((g - g0) / (lens[k]! - g0), 0, 1) : 1;
-				return { x: p.x + (q.x - p.x) * u, y: p.y + (q.y - p.y) * u };
-			};
-			const n = Math.max(2, Math.round((T * 1000) / RAMP_STEP_MS));
-			for (let i = 1; i <= n; i++) {
-				const t = (T * i) / n;
-				m.go(
-					i === n ? hit : along(gone(t)),
-					shed + t * 1000,
-					fast ? "run" : undefined,
-				);
-			}
+			this.getOffRound(
+				m,
+				from,
+				round,
+				hit,
+				shed,
+				hitT,
+				fast ? "run" : undefined,
+			);
 		} else {
 			m.getOff(
 				hit,
