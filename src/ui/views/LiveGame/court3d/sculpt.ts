@@ -1393,6 +1393,128 @@ export const handMasses = ({
 	return { knuckles, thumb: tBase };
 };
 
+// HIS LEG, any sport's: the thigh down to the knee; the shin, the calf
+// swelling behind it; the shoe, heel to toe along the ground, and a collar
+// round the ankle - as thick along it as a sport builds them (`b`, of the
+// body's own radii there), of its kinds and groups. Whatever a sport has
+// on it besides, laid in their places: at the knee (`knee`, with which way
+// is in front of it) and over the thigh after the calf (`over`).
+export type LegBuild = {
+	// How far down from his hip the thigh starts, and its profile.
+	thighFrom: number;
+	thigh: [number, number, number];
+	shin: [number, number, number, number];
+	calf: [number, number, number];
+	// How far out past the toe of his foot the shoe goes; the heel's and the
+	// toe's height off the ground (of the ankle's radius) - at least, and
+	// below the bone; and how thick it is along it, and its collar.
+	toe: number;
+	heel: [number, number];
+	toeUp: [number, number];
+	shoe: [number, number, number];
+	collar: [number, number];
+};
+export const LEG: LegBuild = {
+	thighFrom: 0.35,
+	thigh: [0.96, 0.9, 0.96],
+	shin: [0.94, 0.92, 1.08, 1.02],
+	calf: [0.8, 0.88, 0.62],
+	toe: 1.04,
+	heel: [1.05, 0.15],
+	toeUp: [0.9, 0.25],
+	shoe: [1.3, 1.38, 1.12],
+	collar: [1.12, 1.2],
+};
+export const legMasses = (
+	add: AddMass,
+	body: Body,
+	limb: Limb,
+	side: 0 | 1,
+	{ thigh, shin, shoe }: { thigh: number; shin: number; shoe: number },
+	group: number,
+	shoeGroup: number,
+	b: LegBuild,
+	knee?: (front: V3) => void,
+	over?: () => void,
+) => {
+	add(
+		lerpV(limb.root, limb.mid, b.thighFrom),
+		limb.mid,
+		[
+			[0, body.thighR * b.thigh[0]],
+			[0.4, body.thighR * b.thigh[1]],
+			[1, body.kneeR * b.thigh[2]],
+		],
+		thigh,
+		group,
+		side,
+	);
+	const shinDir = unit(subV(limb.end, limb.mid));
+	const front = unit(square(FWD, shinDir), v3(1, 0, 0));
+	knee?.(front);
+	add(
+		limb.mid,
+		limb.end,
+		[
+			[0, body.kneeR * b.shin[0]],
+			[0.3, body.calfR * b.shin[1]],
+			[0.8, body.ankleR * b.shin[2]],
+			[1, body.ankleR * b.shin[3]],
+		],
+		shin,
+		group,
+		side,
+	);
+	add(
+		addV(lerpV(limb.mid, limb.end, 0.12), front, -body.calfR * 0.3),
+		addV(lerpV(limb.mid, limb.end, 0.56), front, -body.calfR * 0.16),
+		[
+			[0, body.calfR * b.calf[0]],
+			[0.4, body.calfR * b.calf[1]],
+			[1, body.calfR * b.calf[2]],
+		],
+		shin,
+		group,
+		side,
+	);
+	over?.();
+	const tip = limb.tip ?? limb.end;
+	const heel = lerpV(limb.end, tip, -0.32);
+	const toe = lerpV(limb.end, tip, b.toe);
+	add(
+		v3(
+			heel.f,
+			heel.s,
+			Math.max(body.ankleR * b.heel[0], heel.u - body.ankleR * b.heel[1]),
+		),
+		v3(
+			toe.f,
+			toe.s,
+			Math.max(body.ankleR * b.toeUp[0], toe.u - body.ankleR * b.toeUp[1]),
+		),
+		[
+			[0, body.ankleR * b.shoe[0]],
+			[0.5, body.ankleR * b.shoe[1]],
+			[1, body.ankleR * b.shoe[2]],
+		],
+		shoe,
+		shoeGroup,
+		side,
+	);
+	const collar = lerpV(limb.end, tip, 0.25);
+	add(
+		lerpV(limb.end, tip, -0.12),
+		v3(collar.f, collar.s, limb.end.u - body.ankleR * 0.2),
+		[
+			[0, body.ankleR * b.collar[0]],
+			[1, body.ankleR * b.collar[1]],
+		],
+		shoe,
+		shoeGroup,
+		side,
+	);
+};
+
 // A microphone this far from his own mouth (feet) is held out to somebody
 // else's.
 const MIC_OWN = 1.1;
@@ -1667,120 +1789,63 @@ const build = (
 	arm(sk.armR, 0);
 	arm(sk.armL, 1);
 
+	// His legs (see legMasses): the kneecap in front of the knee, and over
+	// the thigh his shorts' leg - loose, flaring a little, cut square above
+	// the knee.
 	const leg = (limb: Limb, side: 0 | 1) => {
 		const gl = G_LEG + side;
-		// The thigh, from inside his shorts down to the knee; the kneecap in
-		// front of the knee; the shin, with the calf swelling behind it.
-		add(
-			lerpV(limb.root, limb.mid, 0.35),
-			limb.mid,
-			[
-				[0, body.thighR * 0.96],
-				[0.4, body.thighR * 0.9],
-				[1, body.kneeR * 0.96],
-			],
-			THIGH,
+		legMasses(
+			add,
+			body,
+			limb,
+			side,
+			{ thigh: THIGH, shin: SHIN, shoe: SHOE },
 			gl,
-			side,
-		);
-		const shinDir = unit(subV(limb.end, limb.mid));
-		const front = unit(square(fwd, shinDir), v3(1, 0, 0));
-		add(
-			addV(limb.mid, front, body.kneeR * 0.42),
-			addV(limb.mid, front, body.kneeR * 0.42),
-			[[0, body.kneeR * 0.6]],
-			SHIN,
-			gl,
-			side,
-		);
-		add(
-			limb.mid,
-			limb.end,
-			[
-				[0, body.kneeR * 0.94],
-				[0.3, body.calfR * 0.92],
-				[0.8, body.ankleR * 1.08],
-				[1, body.ankleR * 1.02],
-			],
-			SHIN,
-			gl,
-			side,
-		);
-		add(
-			addV(lerpV(limb.mid, limb.end, 0.12), front, -body.calfR * 0.3),
-			addV(lerpV(limb.mid, limb.end, 0.56), front, -body.calfR * 0.16),
-			[
-				[0, body.calfR * 0.8],
-				[0.4, body.calfR * 0.88],
-				[1, body.calfR * 0.62],
-			],
-			SHIN,
-			gl,
-			side,
-		);
-		// His shorts' leg: loose, flaring a little, cut square above the knee.
-		add(
-			lerpV(limb.root, limb.mid, 0.16),
-			lerpV(limb.root, limb.mid, 0.84),
-			[
-				[0, body.thighR * 1.2],
-				[1, body.thighR * 1.28],
-			],
-			SHORTS,
-			G_SHORTS + side,
-			side,
-			true,
-		);
-		// The thigh up (a knee driven up, sat down): the loose leg of his
-		// shorts hangs down off it, not wrapped round it.
-		const thighDir = unit(subV(limb.mid, limb.root));
-		const level = 1 - Math.abs(thighDir.u);
-		if (level > SAG_FROM) {
-			const sag = v3(0, 0, -body.thighR * SAG * (level - SAG_FROM));
-			add(
-				addV(lerpV(limb.root, limb.mid, 0.4), sag, 0.5),
-				addV(lerpV(limb.root, limb.mid, 0.82), sag, 1),
-				[
-					[0, body.thighR * 1.05],
-					[1, body.thighR * 1.15],
-				],
-				SHORTS,
-				G_SHORTS + side,
-				side,
-				true,
-			);
-		}
-		// The sneaker: heel to toe along the floor, a collar round the ankle.
-		const tip = limb.tip ?? limb.end;
-		const heel = lerpV(limb.end, tip, -0.32);
-		const toe = lerpV(limb.end, tip, 1.04);
-		add(
-			v3(
-				heel.f,
-				heel.s,
-				Math.max(body.ankleR * 1.05, heel.u - body.ankleR * 0.15),
-			),
-			v3(toe.f, toe.s, Math.max(body.ankleR * 0.9, toe.u - body.ankleR * 0.25)),
-			[
-				[0, body.ankleR * 1.3],
-				[0.5, body.ankleR * 1.38],
-				[1, body.ankleR * 1.12],
-			],
-			SHOE,
 			G_SHOE + side,
-			side,
-		);
-		const collar = lerpV(limb.end, tip, 0.25);
-		add(
-			lerpV(limb.end, tip, -0.12),
-			v3(collar.f, collar.s, limb.end.u - body.ankleR * 0.2),
-			[
-				[0, body.ankleR * 1.12],
-				[1, body.ankleR * 1.2],
-			],
-			SHOE,
-			G_SHOE + side,
-			side,
+			LEG,
+			(front) => {
+				add(
+					addV(limb.mid, front, body.kneeR * 0.42),
+					addV(limb.mid, front, body.kneeR * 0.42),
+					[[0, body.kneeR * 0.6]],
+					SHIN,
+					gl,
+					side,
+				);
+			},
+			() => {
+				add(
+					lerpV(limb.root, limb.mid, 0.16),
+					lerpV(limb.root, limb.mid, 0.84),
+					[
+						[0, body.thighR * 1.2],
+						[1, body.thighR * 1.28],
+					],
+					SHORTS,
+					G_SHORTS + side,
+					side,
+					true,
+				);
+				// The thigh up (a knee driven up, sat down): the loose leg of
+				// his shorts hangs down off it, not wrapped round it.
+				const thighDir = unit(subV(limb.mid, limb.root));
+				const level = 1 - Math.abs(thighDir.u);
+				if (level > SAG_FROM) {
+					const sag = v3(0, 0, -body.thighR * SAG * (level - SAG_FROM));
+					add(
+						addV(lerpV(limb.root, limb.mid, 0.4), sag, 0.5),
+						addV(lerpV(limb.root, limb.mid, 0.82), sag, 1),
+						[
+							[0, body.thighR * 1.05],
+							[1, body.thighR * 1.15],
+						],
+						SHORTS,
+						G_SHORTS + side,
+						side,
+						true,
+					);
+				}
+			},
 		);
 	};
 	leg(sk.legR, 0);

@@ -9,6 +9,7 @@ import {
 	dotV,
 	frameOf,
 	handMasses,
+	legMasses,
 	massesFor,
 	seerOf,
 	torsoOf,
@@ -29,6 +30,7 @@ import {
 	type ArmBuild,
 	type Frame,
 	type HandBuild,
+	type LegBuild,
 	type Ink,
 	type Mass,
 	type RGB,
@@ -739,6 +741,19 @@ const HAND_BUILD: HandBuild = {
 	thumb: [0.0078, 0.0086],
 	ballSpread: 0.16,
 };
+// His leg: the court's (see legMasses), padded under his pants - and a cleat,
+// lower than a sneaker.
+const LEG: LegBuild = {
+	thighFrom: 0.3,
+	thigh: [1.02, 0.98, 1.04],
+	shin: [0.98, 0.96, 1.12, 1.06],
+	calf: [0.82, 0.9, 0.64],
+	toe: 1.06,
+	heel: [1.0, 0.2],
+	toeUp: [0.85, 0.3],
+	shoe: [1.24, 1.3, 1.05],
+	collar: [1.1, 1.16],
+};
 // His arm: the court's (see armMasses), a touch thicker all down it.
 const ARM: ArmBuild = {
 	delt: [1.12, 0.94, 0.88],
@@ -1220,104 +1235,52 @@ const build = (
 	arm(sk.armR, 0);
 	arm(sk.armL, 1);
 
+	// His legs (see legMasses): in his pants, the pad in the front of his
+	// thigh and the knee pad; cleats, lower than a sneaker.
 	const leg = (limb: Limb, side: 0 | 1) => {
 		const gl = G_LEG + side;
-		const thighDir = unit(subV(limb.mid, limb.root));
-		const thighFront = unit(square(fwd, thighDir), v3(0, 0, -1));
-		// The thigh, in his pants from his hip down, the pad in the front of
-		// it; the knee pad; the shin, with the calf swelling behind it.
-		add(
-			lerpV(limb.root, limb.mid, 0.3),
-			limb.mid,
-			[
-				[0, body.thighR * 1.02],
-				[0.4, body.thighR * 0.98],
-				[1, body.kneeR * 1.04],
-			],
-			THIGH,
-			gl,
+		legMasses(
+			add,
+			body,
+			limb,
 			side,
-		);
-		const shinDir = unit(subV(limb.end, limb.mid));
-		const front = unit(square(fwd, shinDir), v3(1, 0, 0));
-		if (!cheer) {
-			add(
-				addV(lerpV(limb.root, limb.mid, 0.38), thighFront, body.thighR * 0.32),
-				addV(lerpV(limb.root, limb.mid, 0.74), thighFront, body.thighR * 0.3),
-				[
-					[0, body.thighR * 0.78],
-					[1, body.thighR * 0.7],
-				],
-				THIGH,
-				gl,
-				side,
-			);
-			add(
-				addV(limb.mid, front, body.kneeR * 0.45),
-				addV(limb.mid, front, body.kneeR * 0.45),
-				[[0, body.kneeR * 0.82]],
-				THIGH,
-				gl,
-				side,
-			);
-		}
-		add(
-			limb.mid,
-			limb.end,
-			[
-				[0, body.kneeR * 0.98],
-				[0.3, body.calfR * 0.96],
-				[0.8, body.ankleR * 1.12],
-				[1, body.ankleR * 1.06],
-			],
-			SHIN,
+			{ thigh: THIGH, shin: SHIN, shoe: SHOE },
 			gl,
-			side,
-		);
-		add(
-			addV(lerpV(limb.mid, limb.end, 0.12), front, -body.calfR * 0.3),
-			addV(lerpV(limb.mid, limb.end, 0.56), front, -body.calfR * 0.16),
-			[
-				[0, body.calfR * 0.82],
-				[0.4, body.calfR * 0.9],
-				[1, body.calfR * 0.64],
-			],
-			SHIN,
-			gl,
-			side,
-		);
-		// The cleat: heel to toe along the turf, lower than a sneaker, a
-		// collar round the ankle.
-		const tip = limb.tip ?? limb.end;
-		const heel = lerpV(limb.end, tip, -0.32);
-		const toe = lerpV(limb.end, tip, 1.06);
-		add(
-			v3(
-				heel.f,
-				heel.s,
-				Math.max(body.ankleR * 1.0, heel.u - body.ankleR * 0.2),
-			),
-			v3(toe.f, toe.s, Math.max(body.ankleR * 0.85, toe.u - body.ankleR * 0.3)),
-			[
-				[0, body.ankleR * 1.24],
-				[0.5, body.ankleR * 1.3],
-				[1, body.ankleR * 1.05],
-			],
-			SHOE,
 			G_SHOE + side,
-			side,
-		);
-		const collar = lerpV(limb.end, tip, 0.25);
-		add(
-			lerpV(limb.end, tip, -0.12),
-			v3(collar.f, collar.s, limb.end.u - body.ankleR * 0.2),
-			[
-				[0, body.ankleR * 1.1],
-				[1, body.ankleR * 1.16],
-			],
-			SHOE,
-			G_SHOE + side,
-			side,
+			LEG,
+			cheer
+				? undefined
+				: (front) => {
+						const thighDir = unit(subV(limb.mid, limb.root));
+						const thighFront = unit(square(fwd, thighDir), v3(0, 0, -1));
+						add(
+							addV(
+								lerpV(limb.root, limb.mid, 0.38),
+								thighFront,
+								body.thighR * 0.32,
+							),
+							addV(
+								lerpV(limb.root, limb.mid, 0.74),
+								thighFront,
+								body.thighR * 0.3,
+							),
+							[
+								[0, body.thighR * 0.78],
+								[1, body.thighR * 0.7],
+							],
+							THIGH,
+							gl,
+							side,
+						);
+						add(
+							addV(limb.mid, front, body.kneeR * 0.45),
+							addV(limb.mid, front, body.kneeR * 0.45),
+							[[0, body.kneeR * 0.82]],
+							THIGH,
+							gl,
+							side,
+						);
+					},
 		);
 	};
 	leg(sk.legR, 0);
