@@ -5625,6 +5625,12 @@ const drivenBy = (pace: number, ft: number): number =>
 const TACKLED_CARRY_S = 0.15;
 const TACKLED_LEAST = 2.5;
 const TACKLED_MOST = 4.5;
+// (Off a sprint: brought down from it no harder than this, ft/s/s - carried
+// that much further on down, as much as TACKLED_FAST_MOST feet - not
+// stopped short in a stride or two off full tilt. Not out over a sideline
+// for it.)
+const TACKLED_DECEL = 75;
+const TACKLED_FAST_MOST = 7;
 // A safety: brought down this far (feet) into his own end zone, and as
 // much as this more - the ball still in it as he goes down forward with
 // it, carried on (see TACKLED_MOST).
@@ -13284,7 +13290,17 @@ class Action {
 		});
 		const l = carrier.last;
 		const pace = GAITS.has(l.move) ? legPace(l) : 0;
-		const carried = clamp(pace * TACKLED_CARRY_S, TACKLED_LEAST, TACKLED_MOST);
+		let carried = clamp(pace * TACKLED_CARRY_S, TACKLED_LEAST, TACKLED_MOST);
+		const fast = Math.min(
+			TACKLED_FAST_MOST,
+			(pace * pace) / (2 * TACKLED_DECEL),
+		);
+		if (fast > carried) {
+			const a = this.of(along(pt, fast, 0)).a;
+			if (a > this.bounds.left && a < this.bounds.right) {
+				carried = fast;
+			}
+		}
 		const downAt = lying
 			? carrier.at
 			: swing
