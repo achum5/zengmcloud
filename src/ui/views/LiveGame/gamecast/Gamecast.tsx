@@ -1592,16 +1592,9 @@ export const LiveGamecast = ({
 						<div className="gamecast-grid">
 							<div>
 								{/* (On a phone, up top: its size never changes, so the plays coming in
-								    below it never push it out of sight.) */}
-								<Section
-									title="On the Court"
-									className="d-lg-none"
-									action={
-										<LinkButton onClick={() => toTab("box")}>
-											Box score
-										</LinkButton>
-									}
-								>
+								    below it never push it out of sight. No heading: straight under
+								    the tabs.) */}
+								<Section className="d-lg-none">
 									<Linescore boxScore={boxScore} />
 									<OnCourt boxScore={boxScore} />
 								</Section>

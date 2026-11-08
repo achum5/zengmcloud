@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 207,
+		date: "2026-11-08",
+		text: 'Live game on phones: the "On the Court" heading is gone - the score by quarter and the players on the floor sit straight under the tabs.',
+	},
+	{
 		n: 206,
 		date: "2026-11-08",
 		text: "3D games: while a jumper is in the air everybody plays it - defenders turn and sink toward the glass, and the men going in for the rebound or getting back set off as they read the shot instead of standing still until it hits the rim. And the shooter no longer stands frozen where he landed: most back off a few steps still holding the follow-through, and a big sometimes follows his shot in.",
