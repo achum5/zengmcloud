@@ -14911,7 +14911,10 @@ class Action {
 					((far - ring) / Math.max(0.001, by - m.t)) * 1000 < WALK_MOST_FPS
 				) {
 					// (Time enough to walk it: a look, and after it at a jog,
-					// kept off it - not walked there while it is still going.)
+					// kept off it - not walked there while it is still going.
+					// Pulled up for the look off his pace, not stopped from it
+					// in a stride.)
+					m.easeOff(EASE_OFF_FT);
 					m.hold(
 						m.t +
 							TRAIL_LOOK_MS[0] +
@@ -14955,6 +14958,7 @@ class Action {
 				} else if (t - 300 - m.t >= ROUTE_AFTER_LEAST_MS) {
 					// (Where it ends up already: out to meet it, and back with
 					// it as it comes - kept off it - not stood waiting for it.)
+					m.easeOff(EASE_OFF_FT);
 					m.hold(
 						m.t +
 							TRAIL_LOOK_MS[0] +
