@@ -1,13 +1,5 @@
-import {
-	useCallback,
-	useEffect,
-	useMemo,
-	useRef,
-	useState,
-	type ReactNode,
-} from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocal } from "../../../util/local.ts";
-import type { PlayerFace } from "../../../util/playerFaces.ts";
 import { STARTING_NUM_TIMEOUTS } from "../../../../common/constants.ts";
 import { helpers } from "../../../util/helpers.ts";
 import { depthOf, follow, project } from "../court3d/camera.ts";
@@ -31,14 +23,20 @@ import {
 	showCaption,
 	showWipe,
 	useAdPictures,
-	useFacesThen,
+	useFaces,
 	useKitArts,
 	useStaged,
 	useStakes,
 	useViewSize,
 } from "../court3d/broadcast.ts";
-import { ScoreBug, type BugRefs } from "../court3d/ScoreBug.tsx";
-import { SHOT_LOW, SHOT_LOW_INK } from "../court3d/scoreBug.ts";
+import { ScoreBug } from "../court3d/ScoreBug.tsx";
+import { SHOT_LOW } from "../court3d/scoreBug.ts";
+import {
+	bugShown,
+	useBugRefs,
+	writeBug,
+	writePageClock,
+} from "../court3d/bugWriter.ts";
 import { CustomScoreBug } from "../court3d/CustomScoreBug.tsx";
 import type {
 	CourtDecalPlaced,
@@ -240,9 +238,6 @@ const FINE_SETTLE_MS = 3000;
 // A flag out on a play: the bug's down and distance a yellow FLAG from this
 // long after it is thrown (ms) until the next play.
 const FLAG_BUG_AFTER = 600;
-const FLAG_BUG_BG = "#f4cb16";
-const FLAG_BUG_INK = "#141414";
-const FLAG_BUG_PAD = "0.1em 0.45em";
 
 // What goes across the back of his jersey: everything after his first name.
 const lastNameOf = (name: string | undefined): string => {
@@ -701,19 +696,8 @@ const Field3D = ({
 		[],
 	);
 
-	// Faces arrive asynchronously; until then a player has a plain skin tone
-	// and an average build.
-	const faces = useRef(new Map<number, PlayerFace | null>());
-	const [facesVersion, setFacesVersion] = useState(0);
-	const onFace = useCallback((pid: number, face: PlayerFace | null) => {
-		if (faces.current.get(pid) === face) {
-			return;
-		}
-		faces.current.set(pid, face);
-		setFacesVersion((v) => v + 1);
-	}, []);
-
-	useFacesThen(looksThen, roster, onFace);
+	// The players' faces (see useFaces).
+	const { faces, facesVersion, onFace } = useFaces(looksThen, roster);
 
 	const kits = useMemo(
 		() =>
@@ -916,13 +900,9 @@ const Field3D = ({
 	const sideOf = useRef(new Map<number, Side>());
 	sideOf.current = new Map(roster.map((r) => [r.pid, r.team]));
 	const replayRef = useRef<HTMLDivElement | null>(null);
-	const clockRef = useRef<HTMLSpanElement | null>(null);
-	const shotRef = useRef<HTMLSpanElement | null>(null);
-	const downRef = useRef<HTMLSpanElement | null>(null);
-	const foulsAwayRef = useRef<HTMLSpanElement | null>(null);
-	const foulsHomeRef = useRef<HTMLSpanElement | null>(null);
-	const ballAwayRef = useRef<HTMLSpanElement | null>(null);
-	const ballHomeRef = useRef<HTMLSpanElement | null>(null);
+	// The score bug's clocks, down and distance and possession marker (see
+	// writeBug).
+	const bugRefs = useBugRefs(true);
 
 	const clock = useRef(makeFieldClock(paused, skips));
 	const cam = useRef({
@@ -941,7 +921,6 @@ const Field3D = ({
 	const turns = useRef(
 		new Map<number, { n: number; turn: number; at: number }>(),
 	);
-	const shown = useRef({ down: "", ball: -1 });
 	useEffect(() => {
 		if (shownTl) {
 			onFieldCursor(clock.current, shownTl, {
@@ -1062,8 +1041,7 @@ const Field3D = ({
 		const wipe = makeFieldWipe();
 		let wipeSide: Side = 1;
 		let shownOver = false;
-		// (The play clock's own color on the bug, kept while it shows red.)
-		let shownInk: string | undefined;
+		const bugWas = bugShown();
 		// The replay's camera, and the flash at a cut from one to the other.
 		let replayAngle: string | undefined;
 		let replayWas: unknown;
@@ -1092,30 +1070,25 @@ const Field3D = ({
 			if (!draw) {
 				return;
 			}
-			// The game clock on the bug, as the picture has it - the page's,
-			// where it has none.
+			// The bug: the game clock as the picture has it (the page's, where
+			// it has none), the play clock; the down and distance - a flag out
+			// on the play, in its place, a yellow FLAG until the next - and
+			// which side has the ball.
 			const reading = p.clocks ? fieldClockAt(p.clocks, s.t) : undefined;
-			const clockEl = clockRef.current;
-			const clockText = reading?.text ?? p.pageTime;
-			if (clockEl && clockEl.textContent !== clockText) {
-				clockEl.textContent = clockText;
-			}
 			const left =
 				p.playClocks && !reading?.ended && !s.replay
 					? playClockAt(p.playClocks, s.t)
 					: undefined;
 			const leftText = left === undefined ? "" : String(Math.ceil(left - 1e-6));
-			const shotEl = shotRef.current;
-			if (shotEl && shotEl.textContent !== leftText) {
-				shotEl.textContent = leftText;
-				shotEl.style.display = leftText ? "flex" : "none";
-				// (Red in its last seconds - and back to its own color after.)
-				shownInk ??= shotEl.style.color;
-				shotEl.style.color =
-					leftText !== "" && Number(leftText) <= SHOT_LOW
-						? SHOT_LOW_INK
-						: shownInk;
-			}
+			const play = playAt(tl, s.t);
+			writeBug(bugRefs, bugWas, {
+				clock: reading?.text ?? p.pageTime,
+				shot: leftText,
+				low: leftText !== "" && Number(leftText) <= SHOT_LOW,
+				ball: play ? play.offense : -1,
+				down: play?.situation ?? "",
+				flag: play?.flags.some((f) => s.t >= f.t0 + FLAG_BUG_AFTER) === true,
+			});
 			const over = reading?.ended ?? false;
 			if (over !== shownOver) {
 				shownOver = over;
@@ -1491,35 +1464,6 @@ const Field3D = ({
 				ballAt && { x: ballAt.x / view.viewW, y: ballAt.y / view.viewH },
 				!!replay,
 			);
-			// The down and distance, and which side has the ball - a flag out on
-			// the play, in its place, a yellow FLAG until the next.
-			const play = playAt(tl, s.t);
-			const flagged =
-				play?.flags.some((f) => s.t >= f.t0 + FLAG_BUG_AFTER) === true;
-			const down = flagged ? "FLAG" : (play?.situation ?? "");
-			const downEl = downRef.current;
-			if (down !== shown.current.down && downEl) {
-				shown.current.down = down;
-				downEl.textContent = down;
-				// (A league's own bug's bare text given a box of its own.)
-				const st = downEl.style;
-				downEl.dataset.was ??= [st.background, st.color, st.padding].join("|");
-				const [bg, ink, pad] = downEl.dataset.was.split("|");
-				st.background = flagged ? FLAG_BUG_BG : (bg ?? "");
-				st.color = flagged ? FLAG_BUG_INK : (ink ?? "");
-				st.fontWeight = flagged ? "700" : "";
-				st.padding = flagged && !pad ? FLAG_BUG_PAD : (pad ?? "");
-				st.borderRadius = flagged && !pad ? "0.15em" : "";
-			}
-			const side = play ? play.offense : -1;
-			if (side !== shown.current.ball) {
-				shown.current.ball = side;
-				[ballAwayRef, ballHomeRef].forEach((ref, i) => {
-					if (ref.current) {
-						ref.current.style.visibility = i === side ? "visible" : "hidden";
-					}
-				});
-			}
 		};
 
 		const stop = runFrames({
@@ -1536,16 +1480,16 @@ const Field3D = ({
 			releaseSprites(sprites);
 			farm?.stop();
 		};
-	}, []);
+	}, [bugRefs]);
 
 	// The game clock, as the page keeps it (it moves on with each line),
 	// until the picture has its own.
 	const time: string = boxScore?.time ?? "";
 	useEffect(() => {
-		if (!clocks && clockRef.current) {
-			clockRef.current.textContent = time;
+		if (!clocks) {
+			writePageClock(bugRefs, time);
 		}
-	}, [time, clocks]);
+	}, [time, clocks, bugRefs]);
 
 	const awayPts: number = boxScore?.teams?.[1]?.pts ?? 0;
 	const homePts: number = boxScore?.teams?.[0]?.pts ?? 0;
@@ -1567,19 +1511,12 @@ const Field3D = ({
 			timeouts: boxScore?.teams?.[i]?.timeouts,
 			record: recordOf(boxScore?.teams?.[i]),
 		};
-	const refs: BugRefs = {
-		clock: clockRef,
-		shot: shotRef,
-		fouls: [foulsAwayRef, foulsHomeRef],
-		ball: [ballAwayRef, ballHomeRef],
-		down: downRef,
-	};
 	const bug = {
 		away: bugTeam(away, awayPts, 1),
 		home: bugTeam(home, homePts, 0),
 		quarter,
 		totalTimeouts: STARTING_NUM_TIMEOUTS,
-		refs,
+		refs: bugRefs,
 	};
 	// The league's own bug, if it has one (see ScoreBugStyle).
 	const own: ScoreBugStyle | null | undefined = boxScore?.scoreBug;

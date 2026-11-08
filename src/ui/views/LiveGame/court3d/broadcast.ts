@@ -1,4 +1,5 @@
 import {
+	useCallback,
 	useEffect,
 	useLayoutEffect,
 	useMemo,
@@ -209,13 +210,40 @@ export const useAdPictures = (
 	return pictures;
 };
 
-// A replay's faces are already here (the looks of that night): no need to
-// ask for today's.
-export const useFacesThen = (
+// THE PLAYERS' FACES, as they come in (see FaceLoader) - or, a replay, the
+// faces of that night, here already. Till his is in, a player has a plain
+// head and an average build. `also`: whatever more a sport makes of a face
+// once it is in (the court draws his head from it) - `current` saying it
+// is still the one he has, `bump` that there is something new to draw.
+export const useFaces = (
 	looksThen: ReplayLooks | undefined,
 	roster: { pid: number }[],
-	onFace: (pid: number, face: PlayerFace | null) => void,
-) => {
+	also?: (
+		pid: number,
+		face: PlayerFace | null,
+		current: () => boolean,
+		bump: () => void,
+	) => void,
+): {
+	faces: RefObject<Map<number, PlayerFace | null>>;
+	facesVersion: number;
+	onFace: (pid: number, face: PlayerFace | null) => void;
+} => {
+	const faces = useRef(new Map<number, PlayerFace | null>());
+	const [facesVersion, setFacesVersion] = useState(0);
+	const alsoRef = useRef(also);
+	alsoRef.current = also;
+	const onFace = useCallback((pid: number, face: PlayerFace | null) => {
+		if (faces.current.get(pid) === face) {
+			return;
+		}
+		faces.current.set(pid, face);
+		const bump = () => {
+			setFacesVersion((v) => v + 1);
+		};
+		bump();
+		alsoRef.current?.(pid, face, () => faces.current.get(pid) === face, bump);
+	}, []);
 	useEffect(() => {
 		if (!looksThen) {
 			return;
@@ -227,6 +255,7 @@ export const useFacesThen = (
 			}
 		}
 	}, [looksThen, roster, onFace]);
+	return { faces, facesVersion, onFace };
 };
 
 // The picture's size, as laid out on the page (CSS px) - and kept up with.

@@ -9,7 +9,6 @@ import {
 	type ReactNode,
 } from "react";
 import { useLocal } from "../../../util/local.ts";
-import type { PlayerFace } from "../../../util/playerFaces.ts";
 import type {
 	ArenaLooks,
 	ReplayLooks,
@@ -75,7 +74,7 @@ import {
 	useStaged,
 	useStakes,
 	useAdPictures,
-	useFacesThen,
+	useFaces,
 	useKitArts,
 	useViewSize,
 } from "./broadcast.ts";
@@ -123,11 +122,11 @@ import {
 	isBreak,
 	isFinal,
 	SHOT_LOW,
-	SHOT_LOW_INK,
 	shotClockText,
 } from "./scoreBug.ts";
-import { ScoreBug, type BugRefs } from "./ScoreBug.tsx";
+import { ScoreBug } from "./ScoreBug.tsx";
 import { seriesLine } from "../gamecast/seriesLine.ts";
+import { bugShown, useBugRefs, writeBug } from "./bugWriter.ts";
 import { CustomScoreBug } from "./CustomScoreBug.tsx";
 import { IntroCard, IntroTitle } from "./IntroCard.tsx";
 import { callAt } from "./intro.ts";
@@ -599,20 +598,14 @@ const Court3D = ({
 	const paintRef = useRef(painted);
 	paintRef.current = painted;
 
-	// Faces arrive asynchronously; until then a player has a plain head and an
-	// average build.
-	const faces = useRef(new Map<number, PlayerFace | null>());
+	// The players' faces (see useFaces) - and each one's head drawn from his.
 	const heads = useRef(
 		new Map<number, { sprite?: HeadSprite; skin?: string }>(),
 	);
-	const [facesVersion, setFacesVersion] = useState(0);
-	const onFace = useCallback(
-		(pid: number, face: PlayerFace | null) => {
-			if (faces.current.get(pid) === face) {
-				return;
-			}
-			faces.current.set(pid, face);
-			setFacesVersion((v) => v + 1);
+	const { faces, facesVersion, onFace } = useFaces(
+		looksThen,
+		roster,
+		(pid, face, current, bump) => {
 			// A photo face is drawn as a silhouette - no head to load.
 			if (face?.imgURL) {
 				heads.current.delete(pid);
@@ -621,17 +614,13 @@ const Court3D = ({
 			const team = roster.find((p) => p.pid === pid)?.team;
 			const colors = team === 0 ? away?.colors : home?.colors;
 			void loadHead(face?.face, face?.colors ?? colors).then((head) => {
-				if (faces.current.get(pid) === face) {
+				if (current()) {
 					heads.current.set(pid, head);
-					setFacesVersion((v) => v + 1);
+					bump();
 				}
 			});
 		},
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-		[roster],
 	);
-
-	useFacesThen(looksThen, roster, onFace);
 
 	// (Each man's look kept from one time to the next unless what makes it
 	// has changed: his pictures are kept by his look, and a new one for
@@ -778,6 +767,8 @@ const Court3D = ({
 	// The picture's size: 16:9, or 4:3 on a phone so the players stay big.
 	const wrapRef = useRef<HTMLDivElement | null>(null);
 	const bugRef = useRef<HTMLDivElement | null>(null);
+	// The score bug's clocks, fouls and possession marker (see writeBug).
+	const bugRefs = useBugRefs();
 	const canvasRef = useRef<HTMLCanvasElement | null>(null);
 	const size = useViewSize(wrapRef);
 	const narrow = size.w < NARROW_W;
@@ -806,7 +797,6 @@ const Court3D = ({
 			alive = false;
 		};
 	}, [gid, home?.court, home?.colors, home?.imgURL, boxScore?.finals]);
-	const clockRef = useRef<HTMLSpanElement | null>(null);
 	const dipRef = useRef<HTMLDivElement | null>(null);
 	const flashRef = useRef<HTMLDivElement | null>(null);
 	const replayRef = useRef<HTMLDivElement | null>(null);
@@ -815,12 +805,6 @@ const Court3D = ({
 		null,
 		null,
 	]);
-	const shotRef = useRef<HTMLSpanElement | null>(null);
-	// The score bug's fouls and possession marker, per side [visitors, home].
-	const foulsAwayRef = useRef<HTMLSpanElement | null>(null);
-	const foulsHomeRef = useRef<HTMLSpanElement | null>(null);
-	const ballAwayRef = useRef<HTMLSpanElement | null>(null);
-	const ballHomeRef = useRef<HTMLSpanElement | null>(null);
 
 	const play = useRef({
 		t: 0,
@@ -879,18 +863,14 @@ const Court3D = ({
 		w: 0,
 		pace: 1,
 		paceAt: -1,
-		clockText: "",
-		shotText: "",
-		// The shot clock's own color on the bug, kept while it shows red.
-		shotInk: undefined as string | undefined,
+		// What the bug was last written (see writeBug).
+		bug: bugShown(),
 		// Which of its cameras the replay showing is seen from (see
 		// replayRig): a cut to the other is straight there, through a flash
 		// (when it went off, and when it was last held).
 		replayRig: undefined as Rig | undefined,
 		flashAt: -Infinity,
 		flashHold: -Infinity,
-		foulsText: ["", ""] as [string, string],
-		ballSide: -1,
 		// The dunk replay showing now, and the next dunk that would get one.
 		replay: undefined as Replay | undefined,
 		nextReplay: 0,
@@ -1496,46 +1476,20 @@ const Court3D = ({
 				fineOffAt = now;
 			}
 
-			if (clockText !== s.clockText && clockRef.current) {
-				s.clockText = clockText;
-				clockRef.current.textContent = clockText;
-			}
-			if (bugShot !== s.shotText && shotRef.current) {
-				const el = shotRef.current;
-				s.shotText = bugShot;
-				el.textContent = bugShot;
-				// (Off once the game clock is shorter: gone from the bug.)
-				el.style.display = bugShot ? "flex" : "none";
-				// Red in its last seconds - and back to its own color after.
-				s.shotInk ??= el.style.color;
-				const low = bugShot !== "" && Number(bugShot) < SHOT_LOW;
-				el.style.color = low ? SHOT_LOW_INK : s.shotInk;
-			}
 			// Each side's fouls this period - or BONUS - in the bug's order,
 			// visitors first (the marks are in box score order, home first).
-			if (p.fouls) {
-				const f = foulsAt(p.fouls, s.t);
-				const text = ([1, 0] as const).map((k) =>
-					f.bonus[k] ? "BONUS" : `FOULS ${f.fouls[k]}`,
-				);
-				[foulsAwayRef, foulsHomeRef].forEach((ref, i) => {
-					const el = ref.current;
-					if (el && text[i] !== s.foulsText[i]) {
-						s.foulsText[i] = text[i]!;
-						el.textContent = text[i]!;
-						el.style.color = text[i] === "BONUS" ? "#f2c14e" : "";
-					}
-				});
-			}
-			const ball = offenseAt(tl, s.t);
-			if (ball !== s.ballSide) {
-				s.ballSide = ball;
-				[ballAwayRef, ballHomeRef].forEach((ref, i) => {
-					if (ref.current) {
-						ref.current.style.visibility = i === ball ? "visible" : "hidden";
-					}
-				});
-			}
+			const f = p.fouls ? foulsAt(p.fouls, s.t) : undefined;
+			writeBug(bugRefs, s.bug, {
+				clock: clockText,
+				shot: bugShot,
+				low: bugShot !== "" && Number(bugShot) < SHOT_LOW,
+				fouls:
+					f &&
+					(([1, 0] as const).map((k) =>
+						f.bonus[k] ? "BONUS" : `FOULS ${f.fouls[k]}`,
+					) as [string, string]),
+				ball: offenseAt(tl, s.t),
+			});
 		};
 
 		const stop = runFrames({
@@ -1552,7 +1506,7 @@ const Court3D = ({
 			releaseSprites(sprites);
 			farm?.stop();
 		};
-	}, []);
+	}, [bugRefs]);
 
 	// The score off the live box score, never off `away`/`home`: on a replay
 	// those are copies (that night's looks laid over each team), made once when
@@ -1736,12 +1690,7 @@ const Court3D = ({
 									boxScore.teams[0],
 								])
 							: undefined,
-					refs: {
-						clock: clockRef,
-						shot: shotRef,
-						fouls: [foulsAwayRef, foulsHomeRef] as BugRefs["fouls"],
-						ball: [ballAwayRef, ballHomeRef] as BugRefs["ball"],
-					},
+					refs: bugRefs,
 				};
 				// The league's own bug, if it has one (see ScoreBugStyle).
 				const own: ScoreBugStyle | null | undefined = boxScore?.scoreBug;
