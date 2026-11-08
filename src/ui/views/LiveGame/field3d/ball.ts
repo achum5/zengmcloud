@@ -90,6 +90,44 @@ export const drawTee = (
 // Spotted, put down where it was: its points up and down the field.
 const ALONG: Pt3 = { x: 1, y: 0, z: 0 };
 
+// A shadow on the turf from its middle there, `mid`, and where the turf a
+// way along it and a way across it are in the picture: the two ways of the
+// ellipse (along stretched so far; across no thinner than a pixel or so).
+type V2 = { x: number; y: number };
+const shadowAxes = (mid: V2, end: V2, side: V2, stretch = 1): [V2, V2] => {
+	const along = { x: (end.x - mid.x) * stretch, y: (end.y - mid.y) * stretch };
+	let aside = { x: (side.x - mid.x) * 0.8, y: (side.y - mid.y) * 0.8 };
+	const thin = Math.hypot(aside.x, aside.y);
+	if (thin < 0.6) {
+		aside =
+			thin > 0
+				? { x: (aside.x / thin) * 0.6, y: (aside.y / thin) * 0.6 }
+				: { x: 0, y: 0.6 };
+	}
+	return [along, aside];
+};
+// The ellipse round `mid` with those two ways (as a path).
+const ellipseBy = (
+	ctx: CanvasRenderingContext2D,
+	mid: V2,
+	along: V2,
+	aside: V2,
+) => {
+	const m = ctx.getTransform();
+	ctx.transform(along.x, along.y, aside.x, aside.y, mid.x, mid.y);
+	ctx.arc(0, 0, 1, 0, Math.PI * 2);
+	ctx.setTransform(m);
+};
+const shadowOn = (
+	ctx: CanvasRenderingContext2D,
+	mid: V2,
+	end: V2,
+	side: V2,
+) => {
+	const [along, aside] = shadowAxes(mid, end, side);
+	ellipseBy(ctx, mid, along, aside);
+};
+
 export const drawLooseBall = (
 	ctx: CanvasRenderingContext2D,
 	cam: Camera,
@@ -154,15 +192,7 @@ export const drawLooseBall = (
 			y: at.y + wx * BALL_R,
 			z: 0,
 		});
-		along = { x: (end.x - base.x) * 1.05, y: (end.y - base.y) * 1.05 };
-		aside = { x: (side.x - base.x) * 0.8, y: (side.y - base.y) * 0.8 };
-		const thin = Math.hypot(aside.x, aside.y);
-		if (thin < 0.6) {
-			aside =
-				thin > 0
-					? { x: (aside.x / thin) * 0.6, y: (aside.y / thin) * 0.6 }
-					: { x: 0, y: 0.6 };
-		}
+		[along, aside] = shadowAxes(base, end, side, 1.05);
 	}
 	const high = Math.hypot(rx * Math.sin(turn), ry * Math.cos(turn));
 	const wide = Math.hypot(rx * Math.cos(turn), ry * Math.sin(turn));
@@ -193,10 +223,7 @@ export const drawLooseBall = (
 		// Its shadow, laid flat on the turf under it the way it lies.
 		ctx.fillStyle = "rgba(0, 0, 0, 0.28)";
 		ctx.beginPath();
-		const m = ctx.getTransform();
-		ctx.transform(along.x, along.y, aside.x, aside.y, base.x, base.y);
-		ctx.arc(0, 0, 1, 0, Math.PI * 2);
-		ctx.setTransform(m);
+		ellipseBy(ctx, base, along, aside);
 		ctx.fill();
 	}
 	ctx.fillStyle = BALL_BROWN;
@@ -266,15 +293,19 @@ export const drawFlyingBall = (
 	ctx.save();
 	ctx.fillStyle = `rgba(0, 0, 0, ${Math.max(0.08, 0.28 - at.z * 0.006)})`;
 	ctx.beginPath();
-	ctx.ellipse(
-		ground.x,
-		ground.y,
-		Math.max(1, half * ground.k),
-		Math.max(0.6, BALL_R * 0.4 * ground.k),
-		0,
-		0,
-		Math.PI * 2,
-	);
+	// (Its shadow laid along the turf the way it points across it - as long
+	// as it shows from straight over it, no shorter than it is wide.)
+	const flat = Math.hypot(axis.x, axis.y);
+	const wx = flat > 0 ? axis.x / flat : 1;
+	const wy = flat > 0 ? axis.y / flat : 0;
+	const long = Math.max(BALL_R, (half * flat) / len);
+	const end = project(cam, { x: at.x + wx * long, y: at.y + wy * long, z: 0 });
+	const side = project(cam, {
+		x: at.x - wy * BALL_R,
+		y: at.y + wx * BALL_R,
+		z: 0,
+	});
+	shadowOn(ctx, ground, end, side);
 	ctx.fill();
 	const turn = Math.atan2(dy, dx);
 	castBall(ctx, casts, at.z, ground.y, () => {
