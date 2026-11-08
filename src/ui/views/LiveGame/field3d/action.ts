@@ -20476,7 +20476,7 @@ class Action {
 	// As chase, to `to` by `by` - but in stretches round the blocks going
 	// on in his way and the men stood in it (see wayClear), at the pace that
 	// has him there by then: not on through them in the one straight run.
-	private chaseClear(m: Actor, to: Pt, by: number, fps: number) {
+	private chaseClear(m: Actor, to: Pt, by: number, fps: number, move?: Move) {
 		const pace = Math.min(fps, (dist(m.at, to) * 1000) / Math.max(1, by - m.t));
 		for (
 			let k = 0;
@@ -20486,9 +20486,17 @@ class Action {
 			k++
 		) {
 			const c = m.t + PURSUIT_STEP;
-			m.chaseUp(this.wayClear(m, to, c, pace), c, pace);
+			// (Clear ahead, and going: on at it as chase has him - bent round
+			// to it, not planted for it. From a stand, turned to it first.)
+			const way = this.wayClear(m, to, c, pace);
+			const l = m.last;
+			if (way === to && RAMPS.has(l.move) && legPace(l) >= STOP_LEAST) {
+				m.chase(to, c, pace, move);
+			} else {
+				m.chaseUp(way, c, pace, move);
+			}
 		}
-		m.chase(to, by, fps);
+		m.chase(to, by, fps, move);
 	}
 
 	// Up to `m` straight from where he is, at a climb's pace (met as in
@@ -20933,7 +20941,7 @@ class Action {
 					}
 				}
 			}
-			b.chase(to(over), t1, b.top * 0.6, "run");
+			this.chaseClear(b, to(over), t1, b.top * 0.6, "run");
 			this.offBlock(b, until);
 			this.giveWay(b, until);
 			return;
