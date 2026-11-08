@@ -13,6 +13,7 @@ import {
 } from "./kitArt.ts";
 import {
 	bodyPoint,
+	type Placed,
 	gripped,
 	holdOf,
 	onRim,
@@ -886,27 +887,17 @@ const T_ZIP = 0.22;
 // figure.ts).
 const FACE_LIFT = 0.15;
 
-// A microphone this far from his own mouth (feet) is held out to somebody
-// else's.
-const MIC_OWN = 1.1;
-const build = (
-	cam: Camera,
-	st: PlayerState,
-	body: Body,
-	look: Look,
-	px: number,
-	ox: number,
-	oy: number,
-): Built => {
-	const q = poseOf(st);
-	// (Just let go of it, his hands come off where it was.)
-	const held =
-		st.holding || st.grip !== undefined ? holdOf(st, body, q) : undefined;
-	const sk = held
-		? gripped(held.sk, st, body, q)
-		: onRim(skeleton(body, q), st, body);
-	const P = (v: V3) => {
-		const p = project(cam, bodyPoint(st, v));
+// THE GROUNDWORK OF A FIGURE, any sport's (see each sport's build).
+
+// Where a point on him (his own frame, feet - see bodyPoint) lands in his
+// sprite, seen by `cam` from where he stands: in the sprite's pixels (`px`
+// screen pixels each, from `ox`, `oy`), how far off, and how many of the
+// sprite's pixels a foot is there.
+export type Seen = { x: number; y: number; depth: number; k: number };
+export const seerOf =
+	(cam: Camera, at: Placed, px: number, ox: number, oy: number) =>
+	(v: V3): Seen => {
+		const p = project(cam, bodyPoint(at, v));
 		return {
 			x: (p.x - ox) / px,
 			y: (p.y - oy) / px,
@@ -914,15 +905,36 @@ const build = (
 			k: p.k / px,
 		};
 	};
+
+// The masses he is sculpted from, laid one at a time (`add`): from A to B,
+// as thick along it as `prof` has it (feet), of a `kind` and in a `group`
+// (each sport's own), on a `side` (0 his right, 1 his left); `flat`, cloth
+// lying flat on him (see shade); `least`, the thinnest it may be drawn
+// (sprite pixels) - a facemask's bars still there from up in the stands.
+// (In the order laid: the first of two as near wins a pixel.)
+export type AddMass = (
+	A: V3,
+	B: V3,
+	prof: Station[],
+	kind: number,
+	group: number,
+	side?: number,
+	flat?: boolean,
+	least?: number,
+) => void;
+export const massesFor = (
+	P: (v: V3) => Seen,
+): { masses: Mass[]; add: AddMass } => {
 	const masses: Mass[] = [];
-	const add = (
-		A: V3,
-		B: V3,
-		prof: Station[],
-		kind: number,
-		group: number,
+	const add: AddMass = (
+		A,
+		B,
+		prof,
+		kind,
+		group,
 		side = 0,
 		flat = false,
+		least = 0,
 	) => {
 		const a = P(A);
 		const b = P(B);
@@ -930,7 +942,8 @@ const build = (
 		const rad = new Float32Array(RS + 1);
 		let rmax = 0;
 		for (let i = 0; i <= RS; i++) {
-			rad[i] = radiusAt(prof, i / RS) * k;
+			const r = radiusAt(prof, i / RS) * k;
+			rad[i] = least > 0 ? Math.max(least, r) : r;
 			rmax = Math.max(rmax, rad[i]!);
 		}
 		const dx = b.x - a.x;
@@ -959,19 +972,19 @@ const build = (
 			y1: Math.max(a.y, b.y) + rmax,
 		});
 	};
-	const sw = body.shoulderW;
-	const dp = body.depth;
-	const H = body.H;
-	const pel = sk.pelvis;
-	// His torso as it would stand untwisted (see turnUpper): up his spine
-	// from his hips at his lean.
+	return { masses, add };
+};
+
+// His torso's own frame: up his spine from his hips (`pel`) at his lean,
+// and forward of it - and `up`, a point on his torso, t up the spine, s to
+// his left, f forward, turned on his hips as far up him as it is (see
+// turnUpper).
+export const torsoOf = (body: Body, q: Pose, pel: V3) => {
 	const T = body.torso;
 	const lean = (q.lean * Math.PI) / 180;
 	const spine = v3(Math.sin(lean), 0, Math.cos(lean));
 	const fwdT = v3(spine.u, 0, -spine.f);
 	const turned = q.twist !== 0 || q.tilt !== 0;
-	// A point on his torso: t up the spine, s to his left, f forward - turned
-	// on his hips as far up him as it is.
 	const up = (t: number, s: number, f = 0): V3 => {
 		const p = v3(
 			pel.f + spine.f * T * t + fwdT.f * f,
@@ -980,6 +993,53 @@ const build = (
 		);
 		return turned ? turnUpper(q, pel, turnShare(t))(p) : p;
 	};
+	return { T, spine, fwdT, turned, up };
+};
+
+// The camera's frame, in his - for a man facing `yaw`.
+export const frameOf = (cam: Camera, yaw: number): Frame => {
+	const cy = Math.cos(yaw);
+	const sy = Math.sin(yaw);
+	const toBody = (wx: number, wy: number): V3 =>
+		v3(wx * cy + wy * sy, wx * sy - wy * cy, 0);
+	const fh = Math.hypot(cam.fwd.x, cam.fwd.y) || 1;
+	return {
+		rt: toBody(cam.right.x, cam.right.y),
+		dn: v3(0, 0, -1),
+		tw: toBody(-cam.fwd.x / fh, -cam.fwd.y / fh),
+		zs: fh,
+		kap: (cam.fwd.x * cam.up.x + cam.fwd.y * cam.up.y) / fh,
+	};
+};
+
+// A microphone this far from his own mouth (feet) is held out to somebody
+// else's.
+const MIC_OWN = 1.1;
+const build = (
+	cam: Camera,
+	st: PlayerState,
+	body: Body,
+	look: Look,
+	px: number,
+	ox: number,
+	oy: number,
+): Built => {
+	const q = poseOf(st);
+	// (Just let go of it, his hands come off where it was.)
+	const held =
+		st.holding || st.grip !== undefined ? holdOf(st, body, q) : undefined;
+	const sk = held
+		? gripped(held.sk, st, body, q)
+		: onRim(skeleton(body, q), st, body);
+	const P = seerOf(cam, st, px, ox, oy);
+	const { masses, add } = massesFor(P);
+	const sw = body.shoulderW;
+	const dp = body.depth;
+	const H = body.H;
+	const pel = sk.pelvis;
+	// His torso as it would stand untwisted, up his spine from his hips (see
+	// torsoOf).
+	const { T, spine, fwdT, turned, up } = torsoOf(body, q, pel);
 
 	// The torso: belly and back, the chest out in front, the lats widening a
 	// little up to his armpits, across the tops of his shoulders; hips and
@@ -1707,18 +1767,7 @@ const build = (
 	}
 
 	// The camera's frame, in his.
-	const cy = Math.cos(st.yaw);
-	const sy = Math.sin(st.yaw);
-	const toBody = (wx: number, wy: number): V3 =>
-		v3(wx * cy + wy * sy, wx * sy - wy * cy, 0);
-	const fh = Math.hypot(cam.fwd.x, cam.fwd.y) || 1;
-	const frame: Frame = {
-		rt: toBody(cam.right.x, cam.right.y),
-		dn: v3(0, 0, -1),
-		tw: toBody(-cam.fwd.x / fh, -cam.fwd.y / fh),
-		zs: fh,
-		kap: (cam.fwd.x * cam.up.x + cam.fwd.y * cam.up.y) / fh,
-	};
+	const frame = frameOf(cam, st.yaw);
 	const cut: Cut = {
 		waist: T * 0.2,
 		band: H * 0.016,

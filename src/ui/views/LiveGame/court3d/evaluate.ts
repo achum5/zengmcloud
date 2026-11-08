@@ -7180,7 +7180,9 @@ export const onRim = (sk: Skeleton, st: PlayerState, body: Body): Skeleton => {
 };
 
 // A point on his body, in world feet.
-export const bodyPoint = (st: PlayerState, v: V3): Pt3 => {
+// Where he stands, and the way he faces - any sport's man.
+export type Placed = { x: number; y: number; z: number; yaw: number };
+export const bodyPoint = (st: Placed, v: V3): Pt3 => {
 	const c = Math.cos(st.yaw);
 	const s = Math.sin(st.yaw);
 	// Forward is (c, s); his left is (s, -c) - the floor's y runs toward the

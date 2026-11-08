@@ -1,24 +1,26 @@
-import { project, type Camera } from "../court3d/camera.ts";
+import type { Camera } from "../court3d/camera.ts";
+import { bodyPoint, type Placed } from "../court3d/evaluate.ts";
 import {
 	addV,
 	BEND_HI,
 	BEND_LO,
 	cross,
 	dotV,
+	frameOf,
+	massesFor,
+	seerOf,
+	torsoOf,
 	len2,
 	len3,
 	lenV,
 	lerpV,
 	PRESS_MOST,
-	radiusAt,
 	rgb,
-	RS,
 	scaled,
 	shade,
 	square,
 	subV,
 	TURN_STEPS,
-	turnShare,
 	unit,
 	untwistTable,
 	v3,
@@ -48,7 +50,6 @@ import {
 	type ArtWrap,
 	type KitArt,
 } from "../court3d/kitArt.ts";
-import type { Pt3 } from "./geometry.ts";
 import type { BareHead, FieldLook } from "./kit.ts";
 
 // ONE FOOTBALL PLAYER, SCULPTED - the body of his sprite (see sprite.ts).
@@ -121,19 +122,10 @@ const G_HAND = 12; // + side
 const G_FINGER = 14; // + side * 5 + finger (4 the thumb)
 const GROUPS = 24;
 
-// A point on him (his frame, feet) on the field: forward is (cos, sin) of
-// the way he faces, his left (sin, -cos) - the field's y runs toward the
-// camera, as the court's does.
-export type Placed = { x: number; y: number; z: number; yaw: number };
-export const bodyPoint = (at: Placed, v: V3): Pt3 => {
-	const c = Math.cos(at.yaw);
-	const s = Math.sin(at.yaw);
-	return {
-		x: at.x + v.f * c + v.s * s,
-		y: at.y + v.f * s - v.s * c,
-		z: at.z + v.u,
-	};
-};
+// A point on him (his frame, feet) on the field: the court's (see
+// court3d's bodyPoint) - the field's y runs toward the camera, as the
+// court's does.
+export { bodyPoint, type Placed };
 
 // ---- what he is doing, for sculpting ----------------------------------------
 
@@ -745,80 +737,14 @@ const build = (
 ): Built => {
 	const q = fig.pose;
 	const sk = skeleton(body, q);
-	const P = (v: V3) => {
-		const p = project(cam, bodyPoint(fig, v));
-		return {
-			x: (p.x - ox) / px,
-			y: (p.y - oy) / px,
-			depth: p.depth,
-			k: p.k / px,
-		};
-	};
-	const masses: Mass[] = [];
-	const add = (
-		A: V3,
-		B: V3,
-		prof: Station[],
-		kind: number,
-		group: number,
-		side = 0,
-		// The thinnest it may be drawn, in sprite pixels: a facemask's bars
-		// still there from up in the stands.
-		least = 0,
-	) => {
-		const a = P(A);
-		const b = P(B);
-		const k = (a.k + b.k) / 2;
-		const rad = new Float32Array(RS + 1);
-		let rmax = 0;
-		for (let i = 0; i <= RS; i++) {
-			rad[i] = Math.max(least, radiusAt(prof, i / RS) * k);
-			rmax = Math.max(rmax, rad[i]!);
-		}
-		const dx = b.x - a.x;
-		const dy = b.y - a.y;
-		masses.push({
-			ax: a.x,
-			ay: a.y,
-			dx,
-			dy,
-			l2: dx * dx + dy * dy,
-			len: Math.hypot(dx, dy),
-			za: a.depth,
-			zb: b.depth,
-			k,
-			rad,
-			rmax,
-			A,
-			B,
-			group,
-			kind,
-			side,
-			x0: Math.min(a.x, b.x) - rmax,
-			x1: Math.max(a.x, b.x) + rmax,
-			y0: Math.min(a.y, b.y) - rmax,
-			y1: Math.max(a.y, b.y) + rmax,
-		});
-	};
+	const P = seerOf(cam, fig, px, ox, oy);
+	const { masses, add } = massesFor(P);
 	const sw = body.shoulderW;
 	const dp = body.depth;
 	const H = body.H;
 	const pel = sk.pelvis;
-	const T = body.torso;
-	const lean = (q.lean * Math.PI) / 180;
-	const spine = v3(Math.sin(lean), 0, Math.cos(lean));
-	const fwdT = v3(spine.u, 0, -spine.f);
-	const turned = q.twist !== 0 || q.tilt !== 0;
-	// A point on his torso: t up the spine, s to his left, f forward - turned
-	// on his hips as far up him as it is.
-	const up = (t: number, s: number, f = 0): V3 => {
-		const p = v3(
-			pel.f + spine.f * T * t + fwdT.f * f,
-			s,
-			pel.u + spine.u * T * t + fwdT.u * f,
-		);
-		return turned ? turnUpper(q, pel, turnShare(t))(p) : p;
-	};
+	// (See torsoOf.)
+	const { spine, fwdT, turned, up } = torsoOf(body, q, pel);
 
 	// The torso: belly and back, the chest out in front, the lats; across
 	// the top of him, his shoulder pads under the jersey - broad, and a cap
@@ -1042,7 +968,16 @@ const build = (
 			for (let i = 0; i < BAND_STEPS; i++) {
 				const a0 = -BAND_ARC + (2 * BAND_ARC * i) / BAND_STEPS;
 				const a1 = -BAND_ARC + (2 * BAND_ARC * (i + 1)) / BAND_STEPS;
-				add(band(a0), band(a1), [[0, R * 0.07]], HEADSET, G_MASK, 0, 0.42);
+				add(
+					band(a0),
+					band(a1),
+					[[0, R * 0.07]],
+					HEADSET,
+					G_MASK,
+					0,
+					false,
+					0.42,
+				);
 			}
 			add(
 				at(0.12, -0.96, -0.2),
@@ -1055,6 +990,7 @@ const build = (
 				HEADSET,
 				G_MASK,
 				0,
+				false,
 				0.42,
 			);
 		}
@@ -1155,6 +1091,7 @@ const build = (
 					MASK,
 					G_MASK,
 					0,
+					false,
 					barLeast,
 				);
 			}
@@ -1634,18 +1571,7 @@ const build = (
 	}
 
 	// The camera's frame, in his.
-	const cy = Math.cos(fig.yaw);
-	const sy = Math.sin(fig.yaw);
-	const toBody = (wx: number, wy: number): V3 =>
-		v3(wx * cy + wy * sy, wx * sy - wy * cy, 0);
-	const fh = Math.hypot(cam.fwd.x, cam.fwd.y) || 1;
-	const frame: Frame = {
-		rt: toBody(cam.right.x, cam.right.y),
-		dn: v3(0, 0, -1),
-		tw: toBody(-cam.fwd.x / fh, -cam.fwd.y / fh),
-		zs: fh,
-		kap: (cam.fwd.x * cam.up.x + cam.fwd.y * cam.up.y) / fh,
-	};
+	const frame = frameOf(cam, fig.yaw);
 	const cut: Cut = {
 		waist: tuckOf(body),
 		belt: H * 0.014,
