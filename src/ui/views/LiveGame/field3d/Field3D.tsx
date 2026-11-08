@@ -18,7 +18,6 @@ import { logoPicture } from "../court3d/logoPicture.ts";
 import { adsFor } from "../court3d/arenaAds.ts";
 import { FAST, makePace } from "../court3d/pace.ts";
 import { adjust, artFor, makeResolution } from "../court3d/resolution.ts";
-import { eventsMatchRoster } from "../court3d/rosterMatch.ts";
 import { Caption, Overlays } from "../court3d/Overlays.tsx";
 import {
 	boxOf,
@@ -34,6 +33,7 @@ import {
 	useAdPictures,
 	useFacesThen,
 	useKitArts,
+	useStaged,
 	useStakes,
 	useViewSize,
 } from "../court3d/broadcast.ts";
@@ -84,7 +84,6 @@ import {
 	MAIN_RIG,
 	REPLAY_RIG,
 } from "./camera.ts";
-import type { FieldTimeline } from "./director.ts";
 import { stageField, stageOpening } from "./stageField.ts";
 import { coverMidfield, midCover } from "./coverMid.ts";
 import { momentAt, playAt, type HandsOf } from "./evaluate.ts";
@@ -244,9 +243,6 @@ const FLAG_BUG_AFTER = 600;
 const FLAG_BUG_BG = "#f4cb16";
 const FLAG_BUG_INK = "#141414";
 const FLAG_BUG_PAD = "0.1em 0.45em";
-// How long the play-by-play may disagree with the roster before the field
-// gives up on the game (ms).
-const ROSTER_WAIT = 5000;
 
 // What goes across the back of his jersey: everything after his first name.
 const lastNameOf = (name: string | undefined): string => {
@@ -437,22 +433,6 @@ const Field3D = ({
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [gid]);
 
-	const onFailRef = useRef(onFail);
-	onFailRef.current = onFail;
-	const [matched, setMatched] = useState(false);
-	useEffect(() => {
-		setMatched(false);
-		if (!events || events.length === 0) {
-			return;
-		}
-		// THE EVENTS HAVE TO BE THIS GAME'S (see Court3D): wait for the two to
-		// agree, and if they never do, give the game back to the page.
-		if (!eventsMatchRoster(events, roster)) {
-			const id = setTimeout(() => onFailRef.current?.(), ROSTER_WAIT);
-			return () => clearTimeout(id);
-		}
-		setMatched(true);
-	}, [events, roster]);
 	// A playoff game's stakes, as they stood going into it (see the
 	// engine's useStakes).
 	const stakes = useStakes(gid, {
@@ -463,9 +443,24 @@ const Field3D = ({
 		won: boxScore?.won,
 		teams: boxScore?.teams,
 	});
-	// Staged off the page (see stageField.ts) - its first play shown in the
-	// meantime (see stageOpening), from the start.
-	const [timeline, setTimeline] = useState<FieldTimeline | undefined>();
+	// Staged off the page (see stageField.ts and the engine's useStaged) -
+	// its first play shown in the meantime (see stageOpening), from the
+	// start.
+	const { timeline, matched } = useStaged(
+		events,
+		roster,
+		String(gid),
+		() =>
+			stageField({
+				events: events!,
+				players: roster,
+				gid,
+				numPeriods: boxScore?.numPeriods,
+				...(stakes ? { stakes } : {}),
+			}),
+		"field",
+		onFail,
+	);
 	const opening = useMemo(() => {
 		if (!matched || !events) {
 			return undefined;
@@ -485,38 +480,6 @@ const Field3D = ({
 	}, [matched, events, roster, gid]);
 	const shownTl =
 		timeline ?? (opening && cursor <= opening.upTo ? opening.tl : undefined);
-	useEffect(() => {
-		setTimeline(undefined);
-		if (!matched || !events) {
-			return;
-		}
-		let alive = true;
-		stageField({
-			events,
-			players: roster,
-			gid,
-			numPeriods: boxScore?.numPeriods,
-			...(stakes ? { stakes } : {}),
-		}).then(
-			(tl) => {
-				if (alive) {
-					setTimeline(tl);
-				}
-			},
-			(error: unknown) => {
-				// A broken staging must not take the whole page down with it, or
-				// leave it waiting on a field that will never play.
-				console.error("3D field failed to compile", error);
-				if (alive) {
-					onFailRef.current?.();
-				}
-			},
-		);
-		return () => {
-			alive = false;
-		};
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [matched, events, roster, gid]);
 	// Key plays only: the stretches of the game shown.
 	const numPeriods: number = boxScore?.numPeriods ?? 4;
 	// The game clock on the bug, running with the picture (see clock.ts).

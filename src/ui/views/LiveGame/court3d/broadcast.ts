@@ -2,6 +2,7 @@ import {
 	useEffect,
 	useLayoutEffect,
 	useMemo,
+	useRef,
 	useState,
 	type RefObject,
 } from "react";
@@ -12,6 +13,7 @@ import { kitArtOf, loadKitPicture, type KitArt } from "./kitArt.ts";
 import { logoPicture } from "./logoPicture.ts";
 import type { Stakes } from "./director.ts";
 import { drawn, due, type Pace } from "./pace.ts";
+import { eventsMatchRoster } from "./rosterMatch.ts";
 
 // THE PAGE'S SIDE OF A 3D GAME, for any sport (see Court3D, Field3D): what
 // every sport's picture does the same way round the picture itself - the
@@ -54,6 +56,70 @@ export const useStakes = (
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 		[gid],
 	);
+
+// THE GAME STAGED, off the page's thread (see stager.ts) - the picture dark
+// (or on whatever is shown meanwhile) till it is. THE EVENTS HAVE TO BE
+// THIS GAME'S. When the game on the page changes under it - a league-mate
+// starts another game while this device is following one - the new game's
+// events can arrive a render ahead of its box score, and staging them
+// against the previous game's roster puts men on the floor the picture has
+// never heard of (the court's field report: a crash in the free throw
+// lineup). So it waits for the two to agree (`matched`) - and if they never
+// do, gives the game back to the page (`onFail`). Staged again whenever the
+// events, the roster or `key` (whatever else it is staged from) change; a
+// staging that breaks gives the game back to the page too, rather than
+// leaving it waiting on a picture that will never play. `onStaged`: the
+// moment it is.
+const ROSTER_WAIT = 5000;
+export const useStaged = <T>(
+	events: any[] | undefined,
+	roster: { pid: number }[],
+	key: string,
+	stage: () => Promise<T>,
+	what: string,
+	onFail: (() => void) | undefined,
+	onStaged?: (tl: T) => void,
+): { timeline: T | undefined; matched: boolean } => {
+	const [timeline, setTimeline] = useState<T>();
+	const [matched, setMatched] = useState(false);
+	const onFailRef = useRef(onFail);
+	onFailRef.current = onFail;
+	const stageRef = useRef(stage);
+	stageRef.current = stage;
+	const onStagedRef = useRef(onStaged);
+	onStagedRef.current = onStaged;
+	useEffect(() => {
+		setTimeline(undefined);
+		setMatched(false);
+		if (!events || events.length === 0) {
+			return;
+		}
+		if (!eventsMatchRoster(events, roster)) {
+			const id = setTimeout(() => onFailRef.current?.(), ROSTER_WAIT);
+			return () => clearTimeout(id);
+		}
+		setMatched(true);
+		let alive = true;
+		stageRef.current().then(
+			(tl) => {
+				if (alive) {
+					setTimeline(tl);
+					onStagedRef.current?.(tl);
+				}
+			},
+			(error: unknown) => {
+				console.error(`3D ${what} failed to compile`, error);
+				if (alive) {
+					onFailRef.current?.();
+				}
+			},
+		);
+		return () => {
+			alive = false;
+		};
+	}, [events, roster, key, what]);
+	return { timeline, matched };
+};
 
 // Each side's uniform drawn from a picture, if its team has one: the
 // visitors' away one, the home team's home one. A replay wears the ones worn

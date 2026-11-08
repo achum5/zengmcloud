@@ -72,6 +72,7 @@ import {
 	setOpacity,
 	showCaption,
 	showWipe,
+	useStaged,
 	useStakes,
 	useAdPictures,
 	useFacesThen,
@@ -175,9 +176,6 @@ const coversOf = (
 // Whether a game opens with its starting lineups (see intro.ts).
 const LINEUP_INTROS = false;
 
-// How long the play-by-play may disagree with the roster before the court
-// gives up on the game (ms).
-const ROSTER_WAIT = 5000;
 // Drawing a frame in under this long (ms, smoothed), there is time for his
 // poses in finer steps (see sprite.ts); over that, back to the usual ones -
 // and not tried again for a while.
@@ -339,60 +337,31 @@ const Court3D = ({
 			? "playoffs"
 			: "regular"
 		: undefined;
-	// The game staged, off the page's thread (see stageCourt.ts) - the court
-	// stays dark until it is.
-	const [timeline, setTimeline] = useState<CourtTimeline | undefined>();
-	const onFailRef = useRef(onFail);
-	onFailRef.current = onFail;
-	useEffect(() => {
-		setTimeline(undefined);
-		if (!events || events.length === 0) {
-			return;
-		}
-		// THE EVENTS HAVE TO BE THIS GAME'S. When the game on this page changes
-		// under it - a league-mate starts another game while this device is
-		// following one - the new game's events can arrive a render ahead of its
-		// box score, and staging them against the previous game's roster puts
-		// players on the floor that the court has never heard of (the field
-		// report: a crash in the free throw lineup). Wait for the two to agree -
-		// and if they never do, give the game back to the page.
-		if (!eventsMatchRoster(events, roster)) {
-			const id = setTimeout(() => onFailRef.current?.(), ROSTER_WAIT);
-			return () => clearTimeout(id);
-		}
-		let alive = true;
-		stageCourt({
-			events,
-			players: roster,
-			gid,
-			gender,
-			intro: introKind,
-			stakes,
-		}).then(
-			(tl) => {
-				if (alive) {
-					setTimeline(tl);
-					try {
-						onShotsRef.current?.(shotSpots(tl));
-					} catch {
-						// The chart just doesn't show.
-					}
-				}
-			},
-			(error: unknown) => {
-				// A broken staging must not take the whole page down with it, or
-				// leave it waiting on a court that will never play: the
-				// play-by-play and box score go on without it.
-				console.error("3D court failed to compile", error);
-				if (alive) {
-					onFailRef.current?.();
-				}
-			},
-		);
-		return () => {
-			alive = false;
-		};
-	}, [events, roster, gid, gender, introKind, stakes]);
+	// The game staged, off the page's thread (see stageCourt.ts and the
+	// engine's useStaged) - the court on the warm-ups until it is.
+	const { timeline } = useStaged(
+		events,
+		roster,
+		`${gid}|${gender}|${introKind}|${JSON.stringify(stakes ?? null)}`,
+		() =>
+			stageCourt({
+				events: events!,
+				players: roster,
+				gid,
+				gender,
+				intro: introKind,
+				stakes,
+			}),
+		"court",
+		onFail,
+		(tl) => {
+			try {
+				onShotsRef.current?.(shotSpots(tl));
+			} catch {
+				// The chart just doesn't show.
+			}
+		},
+	);
 	// While it is: the two teams out warming up at their baskets - not a
 	// black screen. (Staged here: it takes no time at all.)
 	const pregame = useMemo((): Warmup | undefined => {
