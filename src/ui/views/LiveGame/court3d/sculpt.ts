@@ -114,7 +114,7 @@ const G_FINGER = 12; // + side * 5 + finger (4 the thumb)
 const G_HAND = 22; // + side
 const GROUPS = 24;
 
-type Mass = {
+export type Mass = {
 	// On the sprite (its pixels): from a, along d.
 	ax: number;
 	ay: number;
@@ -138,7 +138,7 @@ type Mass = {
 	// His right (0) or left (1).
 	side: number;
 	// Cut square at B, rather than rounded: a hem.
-	flat: boolean;
+	flat?: boolean;
 	x0: number;
 	y0: number;
 	x1: number;
@@ -620,7 +620,7 @@ type Cut = {
 // His frame as the camera sees it: which way on him the sprite's right, down
 // and toward the camera are - and, the floor being seen from above, how much
 // higher a point nearer the camera must be to stay on the same pixel.
-type Frame = { rt: V3; dn: V3; tw: V3; zs: number; kap: number };
+export type Frame = { rt: V3; dn: V3; tw: V3; zs: number; kap: number };
 
 type Built = {
 	masses: Mass[];
@@ -1931,45 +1931,66 @@ export type Sculpted = {
 
 export const RUN = 8;
 
-// His sprite, w x h of its pixels, each px screen pixels, its top left at
-// (ox, oy) on the screen. Given `seen` (ART_W x ART_H), a uniform drawn
-// from a picture also marks which of the picture's pixels show on him: 1
-// where his jersey or shorts are, 2 where the trim goes over it.
-export const sculpt = (
-	cam: Camera,
-	st: PlayerState,
-	body: Body,
-	look: Look,
-	px: number,
-	ox: number,
-	oy: number,
+// What a sport paints at a point of him (see shade): the color, whether it
+// is cloth (it hangs smoother over him than skin does, and takes the light
+// flatter), and how glossy it is (a helmet's shell: a hard glint where it
+// faces the lights).
+export type Ink = {
+	r: number;
+	g: number;
+	b: number;
+	cloth: boolean;
+	gloss: number;
+};
+// Two of his parts (groups) that melt into each other round where they meet
+// (sprite pixels), this far round it.
+export type Join = {
+	a: number;
+	b: number;
+	x: number;
+	y: number;
+	reach: number;
+};
+
+// HIM, SHADED - any sport's (see sculpt, and field3d/sculpt.ts): every pixel
+// of the w x h sheet `d` finds the mass nearest the camera there, masses
+// that meet at a joint melting into one another near it; the point on him
+// the pixel shows is worked out (feet, his frame) and `paint` says what he
+// wears there, into `ink`; and it is lit, two tones the cartoon way, with a
+// fine dark line where he passes in front of himself and round what
+// `outlined` says. `owner`, if given, takes each pixel's group. The box
+// round everything drawn (empty, x0 > x1, if nothing was).
+export const shade = (
+	b: { masses: Mass[]; joins: Join[]; frame: Frame; k: number },
+	groups: number,
+	d: Uint8ClampedArray,
 	w: number,
 	h: number,
-	seen?: Uint8Array,
-): Sculpted => {
-	const b = build(cam, st, body, look, px, ox, oy);
-	const pal = paletteOf(look);
-	// The ball in his hands faces round from him as it came to him (see
-	// facesTo in evaluate.ts): turned so from the way HELD has it, square
-	// on to the camera.
-	const heldTurn = st.yaw + (st.ballFace ?? 0) - facingCamera(cam.right);
-	const heldCos = Math.cos(heldTurn);
-	const heldSin = Math.sin(heldTurn);
+	paint: (
+		fc: Mass,
+		t: number,
+		nx: number,
+		ny: number,
+		nz: number,
+		r: number,
+		Pf: number,
+		Ps: number,
+		Pu: number,
+	) => void,
+	ink: Ink,
+	outlined: (kind: number) => boolean,
+	owner?: Int8Array,
+): { x0: number; y0: number; x1: number; y1: number } => {
 	const masses = b.masses;
 	const n = masses.length;
-	const img = new ImageData(w, h);
-	const d = img.data;
 	const lineW = Math.max(0.7, 0.028 * b.k);
 	const margin = lineW * 3.5 + 1;
 	// Which joint, if any, melts two groups together.
-	const joinOf = new Int16Array(GROUPS * GROUPS).fill(-1);
+	const joinOf = new Int16Array(groups * groups).fill(-1);
 	b.joins.forEach((j, i) => {
-		joinOf[j.a * GROUPS + j.b] = i;
-		joinOf[j.b * GROUPS + j.a] = i;
+		joinOf[j.a * groups + j.b] = i;
+		joinOf[j.b * groups + j.a] = i;
 	});
-	const lateAny = b.late.some(Boolean);
-	const owner = lateAny ? new Int8Array(w * h).fill(-1) : undefined;
-
 	const hs = new Float64Array(n);
 	const hz = new Float64Array(n);
 	const hx = new Float64Array(n);
@@ -1980,212 +2001,10 @@ export const sculpt = (
 	const hi = new Int32Array(n);
 	const ZT = 0.9;
 	const { rt, dn, tw: tw3, zs, kap } = b.frame;
-	const cut = b.cut;
-	const pel = b.pel;
-	const spine = b.spine;
-	const fw = b.fwd;
-	const sheet = b.sheet;
-	const wraps = b.wraps;
-	const art = look.kitArt;
-	// (The trim round his neck and armholes the picture's own, not painted on.)
-	const trimFromArt = art?.fit?.trim === "picture" && wraps !== undefined;
-	const artXY = new Float64Array(2);
-	const artPx = new Float64Array(3);
-	const artRGB: RGB = [0, 0, 0];
-	const mark = (v: number) => {
-		const i = Math.round(artXY[1]!) * ART_W + Math.round(artXY[0]!);
-		if (seen && i >= 0 && i < ART_W * ART_H && seen[i]! < v) {
-			seen[i] = v;
-		}
-	};
-	// The team's picture at a point on his jersey or shorts, over the plain
-	// color c where the picture is clear.
-	const artOver = (
-		wrap: ArtWrap,
-		U: number,
-		S: number,
-		F: number,
-		notSide: boolean,
-		c: RGB,
-	): RGB => {
-		artAt(wrap, U, S, F, notSide, artXY);
-		mark(1);
-		const a = artColor(art!, artXY[0]!, artXY[1]!, artPx);
-		if (a <= 0) {
-			return c;
-		}
-		artRGB[0] = c[0] + (artPx[0]! - c[0]) * a;
-		artRGB[1] = c[1] + (artPx[1]! - c[1]) * a;
-		artRGB[2] = c[2] + (artPx[2]! - c[2]) * a;
-		return artRGB;
-	};
-	let cr = 0;
-	let cg = 0;
-	let cb = 0;
-	let cloth = false;
 	let bx0 = w;
 	let by0 = h;
 	let bx1 = -1;
 	let by1 = -1;
-
-	// The jersey, shirt or jacket at a point on his torso (U, S, F): sets
-	// cr, cg, cb.
-	const torsoAt = (U: number, S: number, F: number) => {
-		cloth = true;
-		const outfit = look.outfit;
-		let c: RGB;
-		// A suit's jacket hangs on over his hips; anything else is tucked in.
-		const hem = pal.shirt ? -cut.waist : cut.waist;
-		if (U < hem) {
-			c = pal.shorts;
-			if (wraps) {
-				c = artOver(wraps.shorts, U, S, F, false, c);
-			} else if (!outfit && Math.abs(F) < 0.08 && Math.abs(S) > cut.hipStripe) {
-				c = pal.stripe;
-			}
-		} else if (U < cut.waist + cut.band && !pal.shirt) {
-			c = wraps ? artOver(wraps.shorts, U, S, F, false, pal.band) : pal.band;
-		} else {
-			const aS = Math.abs(S);
-			// The neck: a V in front, a scoop behind.
-			const wN = Math.min(1, aS / cut.neckIn);
-			const front = F >= 0;
-			const neckDrop = outfit
-				? (front ? cut.backAt * 1.2 : cut.backAt * 0.6) * (1 - wN * wN)
-				: front
-					? cut.vAt * (1 - wN)
-					: cut.backAt * (1 - wN * wN);
-			const slope =
-				front && !outfit
-					? cut.vAt / cut.neckIn
-					: (2 * cut.backAt * wN) / cut.neckIn;
-			const below = (cut.top - neckDrop - U) / len2(1, slope);
-			const dNeck =
-				aS >= cut.neckIn
-					? Math.max(aS - cut.neckIn, below)
-					: below > 0
-						? below
-						: Math.max(below, aS - cut.neckIn);
-			let dArm = Infinity;
-			if (!outfit) {
-				// The armholes.
-				const sx = Math.min(aS, cut.side);
-				const uy = Math.min(U, cut.top);
-				const ea = cut.side - cut.strap;
-				const eb = cut.top - cut.pit;
-				const gx = (sx - cut.side) / ea;
-				const gy = (uy - cut.top) / eb;
-				const g = gx * gx + gy * gy - 1;
-				dArm = g / (2 * len2(gx / ea, gy / eb) || 1);
-			}
-			const edge = Math.min(dArm, dNeck);
-			if (edge < 0) {
-				c = pal.skin;
-				cloth = false;
-			} else if (edge < cut.trim && !outfit && !trimFromArt) {
-				c = pal.trim;
-				if (seen && wraps) {
-					artAt(wraps.jersey, U, S, F, false, artXY);
-					mark(2);
-				}
-			} else {
-				c = pal.jersey;
-				if (outfit?.stripes && pal.stripes) {
-					const th = Math.atan2(S / (cut.side * 0.8), F / (cut.side * 0.4));
-					if (Math.floor((th * cut.side * 0.8) / 0.17 + 100) % 2 === 0) {
-						c = pal.stripes;
-					}
-					// (A panel down each side, under the arm.)
-					if (pal.sides && Math.abs(Math.abs(th) - Math.PI / 2) < 0.32) {
-						c = pal.sides;
-					}
-				}
-				if (pal.shirt && front) {
-					// A suit: his shirt in the open front, his tie down it.
-					const depth = cut.top - U;
-					const halfOpen = cut.neckIn * Math.max(0, 1 - depth / cut.open);
-					if (aS < halfOpen) {
-						c =
-							aS < cut.neckIn * 0.16 + depth * 0.06 && pal.tie
-								? pal.tie
-								: pal.shirt;
-					} else if (aS < halfOpen + cut.trim * 1.6) {
-						c = pal.lapel!;
-					}
-				} else if (
-					outfit &&
-					!outfit.shirt &&
-					!outfit.plain &&
-					outfit.sleeves === "long" &&
-					front &&
-					aS < cut.trim * 0.6 &&
-					U > cut.top - T_ZIP * cut.top
-				) {
-					// A quarter-zip's zip.
-					c = pal.trim;
-				}
-				if (wraps && c === pal.jersey) {
-					c = artOver(wraps.jersey, U, S, F, false, c);
-				}
-				if (sheet && (c === pal.jersey || c === artRGB)) {
-					// His number and lettering.
-					// Round his torso by how far across it the point is, not by how
-					// far forward his chest stands there - which would bend the
-					// uprights of his lettering over the curve of his chest.
-					const across = Math.max(-1, Math.min(1, S / sheet.aS));
-					const th =
-						F >= 0
-							? Math.asin(across)
-							: (across < 0 ? -Math.PI : Math.PI) - Math.asin(across);
-					let x = sheet.w / 2 + th * sheet.aS * sheet.ppf;
-					x = ((x % sheet.w) + sheet.w) % sheet.w;
-					const y = (sheet.u0 - U) * sheet.ppf;
-					if (y >= 0 && y < sheet.h - 1) {
-						const x0 = Math.floor(x);
-						const y0 = Math.floor(y);
-						const fx = x - x0;
-						const fy = y - y0;
-						const x1 = (x0 + 1) % sheet.w;
-						const sd = sheet.data;
-						const sw4 = sheet.w * 4;
-						const o00 = y0 * sw4 + x0 * 4;
-						const o10 = y0 * sw4 + x1 * 4;
-						const o01 = o00 + sw4;
-						const o11 = o10 + sw4;
-						const w00 = ((1 - fx) * (1 - fy) * sd[o00 + 3]!) / 255;
-						const w10 = (fx * (1 - fy) * sd[o10 + 3]!) / 255;
-						const w01 = ((1 - fx) * fy * sd[o01 + 3]!) / 255;
-						const w11 = (fx * fy * sd[o11 + 3]!) / 255;
-						const a = w00 + w10 + w01 + w11;
-						if (a > 0.004) {
-							const r =
-								sd[o00]! * w00 +
-								sd[o10]! * w10 +
-								sd[o01]! * w01 +
-								sd[o11]! * w11;
-							const gg =
-								sd[o00 + 1]! * w00 +
-								sd[o10 + 1]! * w10 +
-								sd[o01 + 1]! * w01 +
-								sd[o11 + 1]! * w11;
-							const bb =
-								sd[o00 + 2]! * w00 +
-								sd[o10 + 2]! * w10 +
-								sd[o01 + 2]! * w01 +
-								sd[o11 + 2]! * w11;
-							cr = c[0] + (r / a - c[0]) * a;
-							cg = c[1] + (gg / a - c[1]) * a;
-							cb = c[2] + (bb / a - c[2]) * a;
-							return;
-						}
-					}
-				}
-			}
-		}
-		cr = c[0];
-		cg = c[1];
-		cb = c[2];
-	};
 
 	// Row by row, each mass is asked about only along the stretch of the
 	// row it can reach - no further off its axis than its widest and the
@@ -2337,7 +2156,7 @@ export const sculpt = (
 					if (c.group === fc.group) {
 						K = Math.min(hr[j]!, hr[f]!) * 0.8;
 					} else {
-						const ji = joinOf[fc.group * GROUPS + c.group]!;
+						const ji = joinOf[fc.group * groups + c.group]!;
 						if (ji >= 0) {
 							const jn = b.joins[ji]!;
 							const dj = len2(pxx - jn.x, py - jn.y);
@@ -2397,244 +2216,14 @@ export const sculpt = (
 					ox3 * rt.u +
 					oy3 * dn.u +
 					oz3 * (tw3.u + kap);
-				cloth = false;
-				const side = fc.side;
-				switch (fc.kind) {
-					case TORSO: {
-						let rf0 = Pf - pel.f;
-						let rs0 = Ps - pel.s;
-						let ru0 = Pu - pel.u;
-						const ut = b.untwist;
-						if (ut) {
-							// Where it sat before he turned.
-							const up0 = (rf0 * spine.f + ru0 * spine.u) / body.torso;
-							const k =
-								Math.min(
-									TURN_STEPS,
-									Math.max(0, Math.round(up0 * TURN_STEPS)),
-								) * 9;
-							const nf = ut[k]! * rf0 + ut[k + 1]! * rs0 + ut[k + 2]! * ru0;
-							const ns = ut[k + 3]! * rf0 + ut[k + 4]! * rs0 + ut[k + 5]! * ru0;
-							const nu = ut[k + 6]! * rf0 + ut[k + 7]! * rs0 + ut[k + 8]! * ru0;
-							rf0 = nf;
-							rs0 = ns;
-							ru0 = nu;
-						}
-						torsoAt(
-							rf0 * spine.f + ru0 * spine.u,
-							rs0,
-							rf0 * fw.f + ru0 * fw.u,
-						);
-						break;
-					}
-					case SHORTS: {
-						cloth = true;
-						// The stripe down the outside of the leg: where the
-						// surface faces out from his side.
-						const lf = fc.B.f - fc.A.f;
-						const ls = fc.B.s - fc.A.s;
-						const lu = fc.B.u - fc.A.u;
-						const ll = len3(lf, ls, lu) || 1;
-						let of = Pf - fc.A.f - lf * t;
-						let os = Ps - fc.A.s - ls * t;
-						let ou = Pu - fc.A.u - lu * t;
-						const along = (of * lf + os * ls + ou * lu) / (ll * ll);
-						of -= lf * along;
-						os -= ls * along;
-						ou -= lu * along;
-						const ol = len3(of, os, ou) || 1;
-						let c =
-							!look.outfit && (os * (side === 0 ? -1 : 1)) / ol > 0.95
-								? pal.stripe
-								: pal.shorts;
-						if (wraps) {
-							// Where this would be on him standing straight: how
-							// far across him (square to his thigh) and ahead.
-							const ax = lf / ll;
-							const ay = ls / ll;
-							const az = lu / ll;
-							let xf = -ax * ay;
-							let xs = 1 - ay * ay;
-							let xu = -az * ay;
-							const xl = len3(xf, xs, xu) || 1;
-							xf /= xl;
-							xs /= xl;
-							xu /= xl;
-							const across = of * xf + os * xs + ou * xu;
-							const ahead =
-								of * (ay * xu - az * xs) +
-								os * (az * xf - ax * xu) +
-								ou * (ax * xs - ay * xf);
-							const out = side === 0 ? -1 : 1;
-							c = artOver(
-								wraps.shorts,
-								-(0.16 + 0.68 * (t + along)) * body.thigh,
-								out * body.hipW + across,
-								ahead,
-								// The inside of his leg faces the other one, not
-								// out to his side.
-								across * out < 0,
-								pal.shorts,
-							);
-						}
-						cr = c[0];
-						cg = c[1];
-						cb = c[2];
-						break;
-					}
-					case UPPER:
-					case FORE: {
-						let c = fc.kind === UPPER ? pal.upper[side]! : pal.fore[side]!;
-						const band = pal.wrist[side];
-						if (
-							fc.kind === FORE &&
-							band &&
-							t > 0.76 &&
-							t < 0.97 &&
-							fc.len > 0
-						) {
-							c = band;
-						}
-						if (
-							look.outfit?.sleeves === "short" &&
-							fc.kind === UPPER &&
-							t > 0.55
-						) {
-							c = pal.skin;
-						}
-						cloth = c !== pal.skin;
-						cr = c[0];
-						cg = c[1];
-						cb = c[2];
-						break;
-					}
-					case THIGH:
-					case SHIN: {
-						let c = pal.legs[side]!;
-						if (fc.kind === SHIN && Pu < cut.sockTop) {
-							c = pal.sock;
-						}
-						// A pad round the knee.
-						const pad = pal.knee[side];
-						if (
-							pad &&
-							((fc.kind === THIGH && t > 0.82) || (fc.kind === SHIN && t < 0.2))
-						) {
-							c = pad;
-						}
-						cloth = c !== pal.skin;
-						cr = c[0];
-						cg = c[1];
-						cb = c[2];
-						break;
-					}
-					case SHOE: {
-						let c = Pu < cut.sole ? pal.sole : pal.shoe;
-						if (Pu < cut.sole * 0.35) {
-							c = pal.tread;
-						} else if (c === pal.shoe) {
-							// Round the shoe from its axis: up its side, or
-							// over the top of it - on the shoe itself, heel to
-							// toe, not the collar round his ankle.
-							const lf = fc.B.f - fc.A.f;
-							const ls = fc.B.s - fc.A.s;
-							const lu = fc.B.u - fc.A.u;
-							const ll = len3(lf, ls, lu) || 1;
-							if (ll > body.ankleR * 4) {
-								const of = Pf - fc.A.f - lf * t;
-								const os = Ps - fc.A.s - ls * t;
-								const ou = Pu - fc.A.u - lu * t;
-								const ol = len3(of, os, ou) || 1;
-								const up = ou / ol;
-								const out = Math.abs(of * ls - os * lf) / (ll * ol);
-								// The stripe sweeps up from the toe to the heel,
-								// widest in the middle.
-								const mid = 0.42 - (0.5 * (t - 0.15)) / 0.7;
-								const wide = 0.28 * (1 - Math.abs(t - 0.5) * 1.6);
-								if (
-									out > 0.5 &&
-									t > 0.15 &&
-									t < 0.85 &&
-									Math.abs(up - mid) < wide
-								) {
-									c = pal.accent;
-								} else if (up > 0.78 && t > 0.38 && t < 0.72) {
-									c = pal.laces;
-								}
-							}
-						}
-						cloth = true;
-						cr = c[0];
-						cg = c[1];
-						cb = c[2];
-						break;
-					}
-					case BALL: {
-						// The game ball, as it sits in his hands - its
-						// channels and its print (see gameBall.ts).
-						// (Turned round with him, the way it faces.)
-						const nz = hn[f]!;
-						const nx = hx[f]! * heldCos - nz * heldSin;
-						const ny = -hy[f]!;
-						const nt = nz * heldCos + hx[f]! * heldSin;
-						const rad = hr[f]!;
-						ballSurface(
-							heldSurface(rad),
-							nx * HELD[0][0] + ny * HELD[0][1] + nt * HELD[0][2],
-							nx * HELD[1][0] + ny * HELD[1][1] + nt * HELD[1][2],
-							nx * HELD[2][0] + ny * HELD[2][1] + nt * HELD[2][2],
-							1 / (rad * Math.max(0.3, Math.sqrt(nz))),
-							heldPx,
-						);
-						cr = heldPx[0]!;
-						cg = heldPx[1]!;
-						cb = heldPx[2]!;
-						break;
-					}
-					case CAM_BODY:
-					case CAM_LENS:
-					case TOWEL: {
-						const c =
-							fc.kind === CAM_BODY
-								? CAM_BODY_RGB
-								: fc.kind === TOWEL
-									? TOWEL_RGB
-									: CAM_LENS_RGB;
-						cr = c[0];
-						cg = c[1];
-						cb = c[2];
-						break;
-					}
-					case NAIL: {
-						// Paler than his skin, a little pink.
-						const c = pal.skin;
-						cr = c[0] + (pal.palm[0] - c[0]) * 0.62 + 6;
-						cg = c[1] + (pal.palm[1] - c[1]) * 0.62;
-						cb = c[2] + (pal.palm[2] - c[2]) * 0.62;
-						break;
-					}
-					case HAND: {
-						// His palm, and the inside of his fingers, paler
-						// than the back of his hand.
-						const p = b.pn[side]!;
-						const nbf = hx[f]! * rt.f + hy[f]! * dn.f + hn[f]! * tw3.f;
-						const nbs = hx[f]! * rt.s + hy[f]! * dn.s + hn[f]! * tw3.s;
-						const nbu = hx[f]! * rt.u + hy[f]! * dn.u + hn[f]! * tw3.u;
-						const inPalm = nbf * p.f + nbs * p.s + nbu * p.u;
-						const c = pal.skin;
-						const e =
-							inPalm > 0.15 ? Math.min(1, (inPalm - 0.15) / 0.25) * 0.42 : 0;
-						cr = c[0] + (pal.palm[0] - c[0]) * e;
-						cg = c[1] + (pal.palm[1] - c[1]) * e;
-						cb = c[2] + (pal.palm[2] - c[2]) * e;
-						break;
-					}
-					default: {
-						cr = pal.skin[0];
-						cg = pal.skin[1];
-						cb = pal.skin[2];
-					}
-				}
+				ink.cloth = false;
+				ink.gloss = 0;
+				paint(fc, t, hx[f]!, hy[f]!, hn[f]!, hr[f]!, Pf, Ps, Pu);
+				const cloth = ink.cloth;
+				const gloss = ink.gloss;
+				const cr = ink.r;
+				const cg = ink.g;
+				const cb = ink.b;
 				// Cloth hangs smoother over him than skin does.
 				if (cloth) {
 					sz += 0.35;
@@ -2651,7 +2240,7 @@ export const sculpt = (
 				let r: number;
 				let g: number;
 				let bb: number;
-				if (cloth) {
+				if (cloth || gloss > 0) {
 					const k = (0.79 + 0.21 * lit) * dark;
 					r = cr * k;
 					g = cg * k;
@@ -2663,9 +2252,17 @@ export const sculpt = (
 					g = cg * (0.74 + 0.26 * lit) * k;
 					bb = cb * (0.72 + 0.28 * lit) * k;
 				}
+				if (gloss > 0 && lam > 0.86) {
+					// A shine (a helmet's): a hard white glint where it faces the
+					// lights.
+					const s = Math.min(1, (lam - 0.86) / 0.06) * 0.55 * gloss;
+					r += (255 - r) * s;
+					g += (255 - g) * s;
+					bb += (255 - bb) * s;
+				}
 				// A fine line where he passes in front of himself - and
 				// all round his hands, so they read.
-				if ((behind || fc.kind === HAND || fc.kind === NAIL) && S > -lineW) {
+				if ((behind || outlined(fc.kind)) && S > -lineW) {
 					const e = Math.min(1, (S + lineW) / lineW);
 					r += (cr * 0.38 - r) * e;
 					g += (cg * 0.38 - g) * e;
@@ -2694,6 +2291,488 @@ export const sculpt = (
 			}
 		}
 	}
+
+	return { x0: bx0, y0: by0, x1: bx1, y1: by1 };
+};
+
+// His sprite, w x h of its pixels, each px screen pixels, its top left at
+// (ox, oy) on the screen. Given `seen` (ART_W x ART_H), a uniform drawn
+// from a picture also marks which of the picture's pixels show on him: 1
+// where his jersey or shorts are, 2 where the trim goes over it.
+export const sculpt = (
+	cam: Camera,
+	st: PlayerState,
+	body: Body,
+	look: Look,
+	px: number,
+	ox: number,
+	oy: number,
+	w: number,
+	h: number,
+	seen?: Uint8Array,
+): Sculpted => {
+	const b = build(cam, st, body, look, px, ox, oy);
+	const pal = paletteOf(look);
+	// The ball in his hands faces round from him as it came to him (see
+	// facesTo in evaluate.ts): turned so from the way HELD has it, square
+	// on to the camera.
+	const heldTurn = st.yaw + (st.ballFace ?? 0) - facingCamera(cam.right);
+	const heldCos = Math.cos(heldTurn);
+	const heldSin = Math.sin(heldTurn);
+	const img = new ImageData(w, h);
+	const d = img.data;
+	const lateAny = b.late.some(Boolean);
+	const owner = lateAny ? new Int8Array(w * h).fill(-1) : undefined;
+
+	const { rt, dn, tw: tw3 } = b.frame;
+	const cut = b.cut;
+	const pel = b.pel;
+	const spine = b.spine;
+	const fw = b.fwd;
+	const sheet = b.sheet;
+	const wraps = b.wraps;
+	const art = look.kitArt;
+	// (The trim round his neck and armholes the picture's own, not painted on.)
+	const trimFromArt = art?.fit?.trim === "picture" && wraps !== undefined;
+	const artXY = new Float64Array(2);
+	const artPx = new Float64Array(3);
+	const artRGB: RGB = [0, 0, 0];
+	const mark = (v: number) => {
+		const i = Math.round(artXY[1]!) * ART_W + Math.round(artXY[0]!);
+		if (seen && i >= 0 && i < ART_W * ART_H && seen[i]! < v) {
+			seen[i] = v;
+		}
+	};
+	// The team's picture at a point on his jersey or shorts, over the plain
+	// color c where the picture is clear.
+	const artOver = (
+		wrap: ArtWrap,
+		U: number,
+		S: number,
+		F: number,
+		notSide: boolean,
+		c: RGB,
+	): RGB => {
+		artAt(wrap, U, S, F, notSide, artXY);
+		mark(1);
+		const a = artColor(art!, artXY[0]!, artXY[1]!, artPx);
+		if (a <= 0) {
+			return c;
+		}
+		artRGB[0] = c[0] + (artPx[0]! - c[0]) * a;
+		artRGB[1] = c[1] + (artPx[1]! - c[1]) * a;
+		artRGB[2] = c[2] + (artPx[2]! - c[2]) * a;
+		return artRGB;
+	};
+	const ink: Ink = { r: 0, g: 0, b: 0, cloth: false, gloss: 0 };
+
+	// The jersey, shirt or jacket at a point on his torso (U, S, F): sets
+	// the ink.
+	const torsoAt = (U: number, S: number, F: number) => {
+		ink.cloth = true;
+		const outfit = look.outfit;
+		let c: RGB;
+		// A suit's jacket hangs on over his hips; anything else is tucked in.
+		const hem = pal.shirt ? -cut.waist : cut.waist;
+		if (U < hem) {
+			c = pal.shorts;
+			if (wraps) {
+				c = artOver(wraps.shorts, U, S, F, false, c);
+			} else if (!outfit && Math.abs(F) < 0.08 && Math.abs(S) > cut.hipStripe) {
+				c = pal.stripe;
+			}
+		} else if (U < cut.waist + cut.band && !pal.shirt) {
+			c = wraps ? artOver(wraps.shorts, U, S, F, false, pal.band) : pal.band;
+		} else {
+			const aS = Math.abs(S);
+			// The neck: a V in front, a scoop behind.
+			const wN = Math.min(1, aS / cut.neckIn);
+			const front = F >= 0;
+			const neckDrop = outfit
+				? (front ? cut.backAt * 1.2 : cut.backAt * 0.6) * (1 - wN * wN)
+				: front
+					? cut.vAt * (1 - wN)
+					: cut.backAt * (1 - wN * wN);
+			const slope =
+				front && !outfit
+					? cut.vAt / cut.neckIn
+					: (2 * cut.backAt * wN) / cut.neckIn;
+			const below = (cut.top - neckDrop - U) / len2(1, slope);
+			const dNeck =
+				aS >= cut.neckIn
+					? Math.max(aS - cut.neckIn, below)
+					: below > 0
+						? below
+						: Math.max(below, aS - cut.neckIn);
+			let dArm = Infinity;
+			if (!outfit) {
+				// The armholes.
+				const sx = Math.min(aS, cut.side);
+				const uy = Math.min(U, cut.top);
+				const ea = cut.side - cut.strap;
+				const eb = cut.top - cut.pit;
+				const gx = (sx - cut.side) / ea;
+				const gy = (uy - cut.top) / eb;
+				const g = gx * gx + gy * gy - 1;
+				dArm = g / (2 * len2(gx / ea, gy / eb) || 1);
+			}
+			const edge = Math.min(dArm, dNeck);
+			if (edge < 0) {
+				c = pal.skin;
+				ink.cloth = false;
+			} else if (edge < cut.trim && !outfit && !trimFromArt) {
+				c = pal.trim;
+				if (seen && wraps) {
+					artAt(wraps.jersey, U, S, F, false, artXY);
+					mark(2);
+				}
+			} else {
+				c = pal.jersey;
+				if (outfit?.stripes && pal.stripes) {
+					const th = Math.atan2(S / (cut.side * 0.8), F / (cut.side * 0.4));
+					if (Math.floor((th * cut.side * 0.8) / 0.17 + 100) % 2 === 0) {
+						c = pal.stripes;
+					}
+					// (A panel down each side, under the arm.)
+					if (pal.sides && Math.abs(Math.abs(th) - Math.PI / 2) < 0.32) {
+						c = pal.sides;
+					}
+				}
+				if (pal.shirt && front) {
+					// A suit: his shirt in the open front, his tie down it.
+					const depth = cut.top - U;
+					const halfOpen = cut.neckIn * Math.max(0, 1 - depth / cut.open);
+					if (aS < halfOpen) {
+						c =
+							aS < cut.neckIn * 0.16 + depth * 0.06 && pal.tie
+								? pal.tie
+								: pal.shirt;
+					} else if (aS < halfOpen + cut.trim * 1.6) {
+						c = pal.lapel!;
+					}
+				} else if (
+					outfit &&
+					!outfit.shirt &&
+					!outfit.plain &&
+					outfit.sleeves === "long" &&
+					front &&
+					aS < cut.trim * 0.6 &&
+					U > cut.top - T_ZIP * cut.top
+				) {
+					// A quarter-zip's zip.
+					c = pal.trim;
+				}
+				if (wraps && c === pal.jersey) {
+					c = artOver(wraps.jersey, U, S, F, false, c);
+				}
+				if (sheet && (c === pal.jersey || c === artRGB)) {
+					// His number and lettering.
+					// Round his torso by how far across it the point is, not by how
+					// far forward his chest stands there - which would bend the
+					// uprights of his lettering over the curve of his chest.
+					const across = Math.max(-1, Math.min(1, S / sheet.aS));
+					const th =
+						F >= 0
+							? Math.asin(across)
+							: (across < 0 ? -Math.PI : Math.PI) - Math.asin(across);
+					let x = sheet.w / 2 + th * sheet.aS * sheet.ppf;
+					x = ((x % sheet.w) + sheet.w) % sheet.w;
+					const y = (sheet.u0 - U) * sheet.ppf;
+					if (y >= 0 && y < sheet.h - 1) {
+						const x0 = Math.floor(x);
+						const y0 = Math.floor(y);
+						const fx = x - x0;
+						const fy = y - y0;
+						const x1 = (x0 + 1) % sheet.w;
+						const sd = sheet.data;
+						const sw4 = sheet.w * 4;
+						const o00 = y0 * sw4 + x0 * 4;
+						const o10 = y0 * sw4 + x1 * 4;
+						const o01 = o00 + sw4;
+						const o11 = o10 + sw4;
+						const w00 = ((1 - fx) * (1 - fy) * sd[o00 + 3]!) / 255;
+						const w10 = (fx * (1 - fy) * sd[o10 + 3]!) / 255;
+						const w01 = ((1 - fx) * fy * sd[o01 + 3]!) / 255;
+						const w11 = (fx * fy * sd[o11 + 3]!) / 255;
+						const a = w00 + w10 + w01 + w11;
+						if (a > 0.004) {
+							const r =
+								sd[o00]! * w00 +
+								sd[o10]! * w10 +
+								sd[o01]! * w01 +
+								sd[o11]! * w11;
+							const gg =
+								sd[o00 + 1]! * w00 +
+								sd[o10 + 1]! * w10 +
+								sd[o01 + 1]! * w01 +
+								sd[o11 + 1]! * w11;
+							const bb =
+								sd[o00 + 2]! * w00 +
+								sd[o10 + 2]! * w10 +
+								sd[o01 + 2]! * w01 +
+								sd[o11 + 2]! * w11;
+							ink.r = c[0] + (r / a - c[0]) * a;
+							ink.g = c[1] + (gg / a - c[1]) * a;
+							ink.b = c[2] + (bb / a - c[2]) * a;
+							return;
+						}
+					}
+				}
+			}
+		}
+		ink.r = c[0];
+		ink.g = c[1];
+		ink.b = c[2];
+	};
+
+	// What he wears at a point of him (see shade): the mass `fc`, t along it;
+	// the surface's way there (nx, ny toward the camera's right and down, nz
+	// toward it) and the mass's radius there (sprite pixels); the point (feet,
+	// his frame).
+	const paint = (
+		fc: Mass,
+		t: number,
+		hxf: number,
+		hyf: number,
+		hnf: number,
+		hrf: number,
+		Pf: number,
+		Ps: number,
+		Pu: number,
+	) => {
+		const side = fc.side;
+		switch (fc.kind) {
+			case TORSO: {
+				let rf0 = Pf - pel.f;
+				let rs0 = Ps - pel.s;
+				let ru0 = Pu - pel.u;
+				const ut = b.untwist;
+				if (ut) {
+					// Where it sat before he turned.
+					const up0 = (rf0 * spine.f + ru0 * spine.u) / body.torso;
+					const k =
+						Math.min(TURN_STEPS, Math.max(0, Math.round(up0 * TURN_STEPS))) * 9;
+					const nf = ut[k]! * rf0 + ut[k + 1]! * rs0 + ut[k + 2]! * ru0;
+					const ns = ut[k + 3]! * rf0 + ut[k + 4]! * rs0 + ut[k + 5]! * ru0;
+					const nu = ut[k + 6]! * rf0 + ut[k + 7]! * rs0 + ut[k + 8]! * ru0;
+					rf0 = nf;
+					rs0 = ns;
+					ru0 = nu;
+				}
+				torsoAt(rf0 * spine.f + ru0 * spine.u, rs0, rf0 * fw.f + ru0 * fw.u);
+				break;
+			}
+			case SHORTS: {
+				ink.cloth = true;
+				// The stripe down the outside of the leg: where the
+				// surface faces out from his side.
+				const lf = fc.B.f - fc.A.f;
+				const ls = fc.B.s - fc.A.s;
+				const lu = fc.B.u - fc.A.u;
+				const ll = len3(lf, ls, lu) || 1;
+				let of = Pf - fc.A.f - lf * t;
+				let os = Ps - fc.A.s - ls * t;
+				let ou = Pu - fc.A.u - lu * t;
+				const along = (of * lf + os * ls + ou * lu) / (ll * ll);
+				of -= lf * along;
+				os -= ls * along;
+				ou -= lu * along;
+				const ol = len3(of, os, ou) || 1;
+				let c =
+					!look.outfit && (os * (side === 0 ? -1 : 1)) / ol > 0.95
+						? pal.stripe
+						: pal.shorts;
+				if (wraps) {
+					// Where this would be on him standing straight: how
+					// far across him (square to his thigh) and ahead.
+					const ax = lf / ll;
+					const ay = ls / ll;
+					const az = lu / ll;
+					let xf = -ax * ay;
+					let xs = 1 - ay * ay;
+					let xu = -az * ay;
+					const xl = len3(xf, xs, xu) || 1;
+					xf /= xl;
+					xs /= xl;
+					xu /= xl;
+					const across = of * xf + os * xs + ou * xu;
+					const ahead =
+						of * (ay * xu - az * xs) +
+						os * (az * xf - ax * xu) +
+						ou * (ax * xs - ay * xf);
+					const out = side === 0 ? -1 : 1;
+					c = artOver(
+						wraps.shorts,
+						-(0.16 + 0.68 * (t + along)) * body.thigh,
+						out * body.hipW + across,
+						ahead,
+						// The inside of his leg faces the other one, not
+						// out to his side.
+						across * out < 0,
+						pal.shorts,
+					);
+				}
+				ink.r = c[0];
+				ink.g = c[1];
+				ink.b = c[2];
+				break;
+			}
+			case UPPER:
+			case FORE: {
+				let c = fc.kind === UPPER ? pal.upper[side]! : pal.fore[side]!;
+				const band = pal.wrist[side];
+				if (fc.kind === FORE && band && t > 0.76 && t < 0.97 && fc.len > 0) {
+					c = band;
+				}
+				if (look.outfit?.sleeves === "short" && fc.kind === UPPER && t > 0.55) {
+					c = pal.skin;
+				}
+				ink.cloth = c !== pal.skin;
+				ink.r = c[0];
+				ink.g = c[1];
+				ink.b = c[2];
+				break;
+			}
+			case THIGH:
+			case SHIN: {
+				let c = pal.legs[side]!;
+				if (fc.kind === SHIN && Pu < cut.sockTop) {
+					c = pal.sock;
+				}
+				// A pad round the knee.
+				const pad = pal.knee[side];
+				if (
+					pad &&
+					((fc.kind === THIGH && t > 0.82) || (fc.kind === SHIN && t < 0.2))
+				) {
+					c = pad;
+				}
+				ink.cloth = c !== pal.skin;
+				ink.r = c[0];
+				ink.g = c[1];
+				ink.b = c[2];
+				break;
+			}
+			case SHOE: {
+				let c = Pu < cut.sole ? pal.sole : pal.shoe;
+				if (Pu < cut.sole * 0.35) {
+					c = pal.tread;
+				} else if (c === pal.shoe) {
+					// Round the shoe from its axis: up its side, or
+					// over the top of it - on the shoe itself, heel to
+					// toe, not the collar round his ankle.
+					const lf = fc.B.f - fc.A.f;
+					const ls = fc.B.s - fc.A.s;
+					const lu = fc.B.u - fc.A.u;
+					const ll = len3(lf, ls, lu) || 1;
+					if (ll > body.ankleR * 4) {
+						const of = Pf - fc.A.f - lf * t;
+						const os = Ps - fc.A.s - ls * t;
+						const ou = Pu - fc.A.u - lu * t;
+						const ol = len3(of, os, ou) || 1;
+						const up = ou / ol;
+						const out = Math.abs(of * ls - os * lf) / (ll * ol);
+						// The stripe sweeps up from the toe to the heel,
+						// widest in the middle.
+						const mid = 0.42 - (0.5 * (t - 0.15)) / 0.7;
+						const wide = 0.28 * (1 - Math.abs(t - 0.5) * 1.6);
+						if (
+							out > 0.5 &&
+							t > 0.15 &&
+							t < 0.85 &&
+							Math.abs(up - mid) < wide
+						) {
+							c = pal.accent;
+						} else if (up > 0.78 && t > 0.38 && t < 0.72) {
+							c = pal.laces;
+						}
+					}
+				}
+				ink.cloth = true;
+				ink.r = c[0];
+				ink.g = c[1];
+				ink.b = c[2];
+				break;
+			}
+			case BALL: {
+				// The game ball, as it sits in his hands - its
+				// channels and its print (see gameBall.ts).
+				// (Turned round with him, the way it faces.)
+				const nz = hnf;
+				const nx = hxf * heldCos - nz * heldSin;
+				const ny = -hyf;
+				const nt = nz * heldCos + hxf * heldSin;
+				const rad = hrf;
+				ballSurface(
+					heldSurface(rad),
+					nx * HELD[0][0] + ny * HELD[0][1] + nt * HELD[0][2],
+					nx * HELD[1][0] + ny * HELD[1][1] + nt * HELD[1][2],
+					nx * HELD[2][0] + ny * HELD[2][1] + nt * HELD[2][2],
+					1 / (rad * Math.max(0.3, Math.sqrt(nz))),
+					heldPx,
+				);
+				ink.r = heldPx[0]!;
+				ink.g = heldPx[1]!;
+				ink.b = heldPx[2]!;
+				break;
+			}
+			case CAM_BODY:
+			case CAM_LENS:
+			case TOWEL: {
+				const c =
+					fc.kind === CAM_BODY
+						? CAM_BODY_RGB
+						: fc.kind === TOWEL
+							? TOWEL_RGB
+							: CAM_LENS_RGB;
+				ink.r = c[0];
+				ink.g = c[1];
+				ink.b = c[2];
+				break;
+			}
+			case NAIL: {
+				// Paler than his skin, a little pink.
+				const c = pal.skin;
+				ink.r = c[0] + (pal.palm[0] - c[0]) * 0.62 + 6;
+				ink.g = c[1] + (pal.palm[1] - c[1]) * 0.62;
+				ink.b = c[2] + (pal.palm[2] - c[2]) * 0.62;
+				break;
+			}
+			case HAND: {
+				// His palm, and the inside of his fingers, paler
+				// than the back of his hand.
+				const p = b.pn[side]!;
+				const nbf = hxf * rt.f + hyf * dn.f + hnf * tw3.f;
+				const nbs = hxf * rt.s + hyf * dn.s + hnf * tw3.s;
+				const nbu = hxf * rt.u + hyf * dn.u + hnf * tw3.u;
+				const inPalm = nbf * p.f + nbs * p.s + nbu * p.u;
+				const c = pal.skin;
+				const e =
+					inPalm > 0.15 ? Math.min(1, (inPalm - 0.15) / 0.25) * 0.42 : 0;
+				ink.r = c[0] + (pal.palm[0] - c[0]) * e;
+				ink.g = c[1] + (pal.palm[1] - c[1]) * e;
+				ink.b = c[2] + (pal.palm[2] - c[2]) * e;
+				break;
+			}
+			default: {
+				ink.r = pal.skin[0];
+				ink.g = pal.skin[1];
+				ink.b = pal.skin[2];
+			}
+		}
+	};
+
+	const box = shade(
+		b,
+		GROUPS,
+		d,
+		w,
+		h,
+		paint,
+		ink,
+		(kind) => kind === HAND || kind === NAIL,
+		owner,
+	);
 
 	let over: ImageData | undefined;
 	if (owner) {
@@ -2729,6 +2808,6 @@ export const sculpt = (
 		img,
 		...(over ? { over } : {}),
 		head: b.head,
-		box: { x0: bx0, y0: by0, x1: bx1, y1: by1 },
+		box,
 	};
 };

@@ -9,14 +9,12 @@ import {
 	len3,
 	lenV,
 	lerpV,
-	LIGHT,
 	PRESS_MOST,
 	radiusAt,
 	rgb,
 	RS,
-	RUN,
 	scaled,
-	smin,
+	shade,
 	square,
 	subV,
 	TURN_STEPS,
@@ -24,6 +22,9 @@ import {
 	unit,
 	untwistTable,
 	v3,
+	type Frame,
+	type Ink,
+	type Mass,
 	type RGB,
 	type Station,
 } from "../court3d/sculpt.ts";
@@ -119,35 +120,6 @@ const G_TOWEL = 11;
 const G_HAND = 12; // + side
 const G_FINGER = 14; // + side * 5 + finger (4 the thumb)
 const GROUPS = 24;
-
-type Mass = {
-	// On the sprite (its pixels): from a, along d.
-	ax: number;
-	ay: number;
-	dx: number;
-	dy: number;
-	l2: number;
-	len: number;
-	// How far from the camera each end is (feet), and the sprite's pixels to
-	// a foot there.
-	za: number;
-	zb: number;
-	k: number;
-	// Its radius along it (sprite pixels), sampled.
-	rad: Float32Array;
-	rmax: number;
-	// The same, on him (feet): from A to B.
-	A: V3;
-	B: V3;
-	group: number;
-	kind: number;
-	// His right (0) or left (1).
-	side: number;
-	x0: number;
-	y0: number;
-	x1: number;
-	y1: number;
-};
 
 // A point on him (his frame, feet) on the field: forward is (cos, sin) of
 // the way he faces, his left (sin, -cos) - the field's y runs toward the
@@ -615,7 +587,6 @@ type Cut = {
 // His frame as the camera sees it: which way on him the sprite's right, down
 // and toward the camera are - and, the field being seen from above, how much
 // higher a point nearer the camera must be to stay on the same pixel.
-type Frame = { rt: V3; dn: V3; tw: V3; zs: number; kap: number };
 
 type Built = {
 	masses: Mass[];
@@ -1994,28 +1965,9 @@ export const sculptFigure = (
 	const official = look.official === true;
 	const open = fig.mouth ?? 0;
 	const eyesSeen = b.k >= EYE_SEEN_K;
-	const masses = b.masses;
-	const n = masses.length;
 	const img = new ImageData(w, h);
 	const d = img.data;
-	const lineW = Math.max(0.7, 0.028 * b.k);
-	const margin = lineW * 3.5 + 1;
-	const joinOf = new Int16Array(GROUPS * GROUPS).fill(-1);
-	b.joins.forEach((j, i) => {
-		joinOf[j.a * GROUPS + j.b] = i;
-		joinOf[j.b * GROUPS + j.a] = i;
-	});
-
-	const hs = new Float64Array(n);
-	const hz = new Float64Array(n);
-	const hx = new Float64Array(n);
-	const hy = new Float64Array(n);
-	const hn = new Float64Array(n);
-	const ht = new Float64Array(n);
-	const hr = new Float64Array(n);
-	const hi = new Int32Array(n);
-	const ZT = 0.9;
-	const { rt, dn, tw: tw3, zs, kap } = b.frame;
+	const { rt, dn, tw: tw3 } = b.frame;
 	const cut = b.cut;
 	const pel = b.pel;
 	const spine = b.spine;
@@ -2113,10 +2065,6 @@ export const sculptFigure = (
 	let cloth = false;
 	// Shiny: the helmet, its mask.
 	let gloss = 0;
-	let bx0 = w;
-	let by0 = h;
-	let bx1 = -1;
-	let by1 = -1;
 	const set = (c: RGB) => {
 		cr = c[0];
 		cg = c[1];
@@ -2293,709 +2241,461 @@ export const sculptFigure = (
 		return f < 0.62 ? bands[i] : undefined;
 	};
 
-	const rowMass = new Int32Array(n);
-	const rowLo = new Float64Array(n);
-	const rowHi = new Float64Array(n);
-	const rowDot = new Float64Array(n);
-	const runMass = new Int32Array(n);
-	const runLo = new Float64Array(n);
-	const runHi = new Float64Array(n);
-	const runDot = new Float64Array(n);
-	for (let y = 0; y < h; y++) {
-		const py = y + 0.5;
-		let na = 0;
-		let rowL = Infinity;
-		let rowR = -Infinity;
-		for (let i = 0; i < n; i++) {
-			const c = masses[i]!;
-			if (py < c.y0 - margin || py > c.y1 + margin) {
-				continue;
-			}
-			let lo = c.x0 - margin;
-			let hi = c.x1 + margin;
-			if (c.dy > 1e-6 || c.dy < -1e-6) {
-				const mid = c.ax + ((py - c.ay) * c.dx) / c.dy;
-				const half = ((c.rmax + margin) * c.len) / Math.abs(c.dy) + 0.01;
-				lo = Math.max(lo, mid - half);
-				hi = Math.min(hi, mid + half);
-			}
-			if (lo > w || hi < 0 || lo > hi) {
-				continue;
-			}
-			rowMass[na] = i;
-			rowLo[na] = lo;
-			rowHi[na] = hi;
-			rowDot[na] = (py - c.ay) * c.dy;
-			na++;
-			rowL = Math.min(rowL, lo);
-			rowR = Math.max(rowR, hi);
-		}
-		if (na === 0) {
-			continue;
-		}
-		const rowTo = Math.min(w - 1, Math.floor(rowR - 0.5));
-		for (
-			let xStart = Math.max(0, Math.ceil(rowL - 0.5));
-			xStart <= rowTo;
-			xStart += RUN
-		) {
-			const xEnd = Math.min(rowTo + 1, xStart + RUN);
-			let nb = 0;
-			let runL = Infinity;
-			let runR = -Infinity;
-			for (let k = 0; k < na; k++) {
-				const lo = rowLo[k]!;
-				const hi = rowHi[k]!;
-				if (lo > xEnd || hi < xStart) {
-					continue;
+	// What he wears at a point of him (see court3d/sculpt.ts shade): the
+	// mass `fc`, t along it; the surface's way there (toward the camera's
+	// right and down, and toward it) and the mass's radius there (sprite
+	// pixels); the point (feet, his frame).
+	const ink: Ink = { r: 0, g: 0, b: 0, cloth: false, gloss: 0 };
+	const paint = (
+		fc: Mass,
+		t: number,
+		hxf: number,
+		hyf: number,
+		hnf: number,
+		hrf: number,
+		Pf: number,
+		Ps: number,
+		Pu: number,
+	) => {
+		cloth = false;
+		gloss = 0;
+		const side = fc.side;
+		switch (fc.kind) {
+			case TORSO: {
+				let rf0 = Pf - pel.f;
+				let rs0 = Ps - pel.s;
+				let ru0 = Pu - pel.u;
+				const ut = b.untwist;
+				if (ut) {
+					const up0 = (rf0 * spine.f + ru0 * spine.u) / body.torso;
+					const k =
+						Math.min(TURN_STEPS, Math.max(0, Math.round(up0 * TURN_STEPS))) * 9;
+					const nf = ut[k]! * rf0 + ut[k + 1]! * rs0 + ut[k + 2]! * ru0;
+					const ns = ut[k + 3]! * rf0 + ut[k + 4]! * rs0 + ut[k + 5]! * ru0;
+					const nu = ut[k + 6]! * rf0 + ut[k + 7]! * rs0 + ut[k + 8]! * ru0;
+					rf0 = nf;
+					rs0 = ns;
+					ru0 = nu;
 				}
-				runMass[nb] = rowMass[k]!;
-				runLo[nb] = lo;
-				runHi[nb] = hi;
-				runDot[nb] = rowDot[k]!;
-				nb++;
-				runL = Math.min(runL, lo);
-				runR = Math.max(runR, hi);
+				torsoAt(rf0 * spine.f + ru0 * spine.u, rs0, rf0 * fw.f + ru0 * fw.u);
+				break;
 			}
-			if (nb === 0) {
-				continue;
-			}
-			const xTo = Math.min(xEnd - 1, Math.floor(runR - 0.5));
-			for (let x = Math.max(xStart, Math.ceil(runL - 0.5)); x <= xTo; x++) {
-				const pxx = x + 0.5;
-				let m = 0;
-				let best = -1;
-				let bestZ = Infinity;
-				let least = -1;
-				let leastS = Infinity;
-				for (let k = 0; k < nb; k++) {
-					if (pxx < runLo[k]! || pxx > runHi[k]!) {
-						continue;
+			case UPPER:
+			case FORE: {
+				const limb = b.arms[side]!;
+				const a = fc.kind === UPPER ? alongOf(limb, Pf, Ps, Pu) : 1;
+				let c: RGB;
+				if (a < SLEEVE && !pal.poms) {
+					// His jersey's sleeve, banded near its hem - or, an
+					// official's, striped down the arm.
+					c =
+						bandOf(pal.sleeveStripes, (a - (SLEEVE - 0.17)) / 0.13) ??
+						pal.jersey;
+					if (pal.stripes && roundArm(limb, Pf, Ps, Pu, a) === 1) {
+						c = pal.stripes;
 					}
-					const i = runMass[k]!;
-					const c = masses[i]!;
-					const raw =
-						c.l2 > 1e-6 ? ((pxx - c.ax) * c.dx + runDot[k]!) / c.l2 : 0;
-					const t = raw < 0 ? 0 : raw > 1 ? 1 : raw;
-					const ex = pxx - (c.ax + c.dx * t);
-					const ey = py - (c.ay + c.dy * t);
-					const dist = Math.sqrt(ex * ex + ey * ey);
-					const fi = t * RS;
-					const i0 = fi | 0;
-					const r =
-						i0 >= RS
-							? c.rad[RS]!
-							: c.rad[i0]! + (c.rad[i0 + 1]! - c.rad[i0]!) * (fi - i0);
-					const s = dist - r;
-					if (s > margin) {
-						continue;
-					}
-					const qn = dist < r ? dist / r : 1;
-					const nz = Math.sqrt(1 - qn * qn);
-					const z = c.za + (c.zb - c.za) * t - (nz * r * zs) / c.k;
-					const inv = dist > 1e-6 ? qn / dist : 0;
-					hs[m] = s;
-					hz[m] = z;
-					hx[m] = ex * inv;
-					hy[m] = ey * inv;
-					hn[m] = nz;
-					ht[m] = t;
-					hr[m] = r;
-					hi[m] = i;
-					if (s <= 0 && z < bestZ) {
-						bestZ = z;
-						best = m;
-					}
-					if (s < leastS) {
-						leastS = s;
-						least = m;
-					}
-					m++;
-				}
-				if (m === 0 || leastS > 0.5 + margin) {
-					continue;
-				}
-				const f = best >= 0 ? best : least;
-				const fc = masses[hi[f]!]!;
-				let S = hs[f]!;
-				let nx = hx[f]!;
-				let ny = hy[f]!;
-				let nzs = hn[f]!;
-				let behind = false;
-				let shadow = 0;
-				for (let j = 0; j < m; j++) {
-					if (j === f) {
-						continue;
-					}
-					const c = masses[hi[j]!]!;
-					const dz = hz[j]! - hz[f]!;
-					let K = 0;
-					if (c.group === fc.group) {
-						K = Math.min(hr[j]!, hr[f]!) * 0.8;
-					} else {
-						const ji = joinOf[fc.group * GROUPS + c.group]!;
-						if (ji >= 0) {
-							const jn = b.joins[ji]!;
-							const dj = len2(pxx - jn.x, py - jn.y);
-							K = jn.reach * 0.45 * Math.max(0, 1 - dj / jn.reach);
-						}
-					}
-					if (K > 0 && dz < ZT && dz > -ZT) {
-						K *= 1 - Math.abs(dz) / ZT;
-						const before = S;
-						S = smin(S, hs[j]!, K);
-						const wgt = 1 - Math.abs(hs[j]! - before) / K;
-						if (wgt > 0) {
-							nx += hx[j]! * wgt;
-							ny += hy[j]! * wgt;
-							nzs += hn[j]! * wgt;
-						}
-					} else if (hs[j]! < 0 && dz > 0.05) {
-						behind = true;
-					} else if (dz < -0.05 && hs[j]! > 0) {
-						const sw = lineW * 3.5;
-						if (hs[j]! < sw) {
-							shadow = Math.max(shadow, 1 - hs[j]! / sw);
-						}
-					}
-				}
-				const cover = 0.5 - S;
-				if (cover <= 0) {
-					continue;
-				}
-				const nl = len3(nx, ny, nzs) || 1;
-				let sx = nx / nl;
-				let sy = ny / nl;
-				let sz = nzs / nl;
-				// The point on him this pixel shows (feet, his frame).
-				const t = ht[f]!;
-				const rf = hr[f]! / fc.k;
-				const ox3 = hx[f]! * rf;
-				const oy3 = hy[f]! * rf;
-				const oz3 = hn[f]! * rf;
-				const Pf =
-					fc.A.f +
-					(fc.B.f - fc.A.f) * t +
-					ox3 * rt.f +
-					oy3 * dn.f +
-					oz3 * tw3.f;
-				const Ps =
-					fc.A.s +
-					(fc.B.s - fc.A.s) * t +
-					ox3 * rt.s +
-					oy3 * dn.s +
-					oz3 * tw3.s;
-				const Pu =
-					fc.A.u +
-					(fc.B.u - fc.A.u) * t +
-					ox3 * rt.u +
-					oy3 * dn.u +
-					oz3 * (tw3.u + kap);
-				cloth = false;
-				gloss = 0;
-				const side = fc.side;
-				switch (fc.kind) {
-					case TORSO: {
-						let rf0 = Pf - pel.f;
-						let rs0 = Ps - pel.s;
-						let ru0 = Pu - pel.u;
-						const ut = b.untwist;
-						if (ut) {
-							const up0 = (rf0 * spine.f + ru0 * spine.u) / body.torso;
-							const k =
-								Math.min(
-									TURN_STEPS,
-									Math.max(0, Math.round(up0 * TURN_STEPS)),
-								) * 9;
-							const nf = ut[k]! * rf0 + ut[k + 1]! * rs0 + ut[k + 2]! * ru0;
-							const ns = ut[k + 3]! * rf0 + ut[k + 4]! * rs0 + ut[k + 5]! * ru0;
-							const nu = ut[k + 6]! * rf0 + ut[k + 7]! * rs0 + ut[k + 8]! * ru0;
-							rf0 = nf;
-							rs0 = ns;
-							ru0 = nu;
-						}
-						torsoAt(
-							rf0 * spine.f + ru0 * spine.u,
-							rs0,
-							rf0 * fw.f + ru0 * fw.u,
+					if (wraps && c === pal.jersey) {
+						// The picture's side of the jersey, down from his
+						// shoulder - as if over his side, his arm down: its
+						// front edge on the front of the sleeve.
+						const j = wraps.jersey;
+						const lf = limb.mid.f - limb.root.f;
+						const ls = limb.mid.s - limb.root.s;
+						const lu = limb.mid.u - limb.root.u;
+						const ahead =
+							(Pf - limb.root.f - lf * a) * fw.f +
+							(Pu - limb.root.u - lu * a) * fw.u;
+						c = artOver(
+							j,
+							body.torso - a * len3(lf, ls, lu),
+							(side === 0 ? -1 : 1) * j.a,
+							Math.max(-1, Math.min(1, ahead / SLEEVE_R)) * j.sideF,
+							false,
+							c,
 						);
-						break;
 					}
-					case UPPER:
-					case FORE: {
-						const limb = b.arms[side]!;
-						const a = fc.kind === UPPER ? alongOf(limb, Pf, Ps, Pu) : 1;
-						let c: RGB;
-						if (a < SLEEVE && !pal.poms) {
-							// His jersey's sleeve, banded near its hem - or, an
-							// official's, striped down the arm.
-							c =
-								bandOf(pal.sleeveStripes, (a - (SLEEVE - 0.17)) / 0.13) ??
-								pal.jersey;
-							if (pal.stripes && roundArm(limb, Pf, Ps, Pu, a) === 1) {
-								c = pal.stripes;
-							}
-							if (wraps && c === pal.jersey) {
-								// The picture's side of the jersey, down from his
-								// shoulder - as if over his side, his arm down: its
-								// front edge on the front of the sleeve.
-								const j = wraps.jersey;
-								const lf = limb.mid.f - limb.root.f;
-								const ls = limb.mid.s - limb.root.s;
-								const lu = limb.mid.u - limb.root.u;
-								const ahead =
-									(Pf - limb.root.f - lf * a) * fw.f +
-									(Pu - limb.root.u - lu * a) * fw.u;
-								c = artOver(
-									j,
-									body.torso - a * len3(lf, ls, lu),
-									(side === 0 ? -1 : 1) * j.a,
-									Math.max(-1, Math.min(1, ahead / SLEEVE_R)) * j.sideF,
-									false,
-									c,
-								);
-							}
-							cloth = true;
-						} else {
-							c = pal.sleeve[side] ?? pal.skin;
-							const bl = fc.kind === FORE ? belowOf(limb, Pf, Ps, Pu) : 0;
-							const band = pal.wrist[side];
-							if (band && bl > 0.8) {
-								c = band;
-							}
-							cloth = c !== pal.skin;
-						}
-						set(c);
-						break;
-					}
-					case THIGH: {
-						cloth = true;
-						const limb = b.legs[side]!;
-						// The stripes down the outside of the leg.
-						const a = alongOf(limb, Pf, Ps, Pu);
-						if (pal.poms) {
-							// (Under her skirt, bare.)
-							cloth = a < SKIRT;
-							set(cloth ? pal.pants : pal.skin);
-							break;
-						}
-						const of = Pf - limb.root.f - (limb.mid.f - limb.root.f) * a;
-						const os = Ps - limb.root.s - (limb.mid.s - limb.root.s) * a;
-						const ou = Pu - limb.root.u - (limb.mid.u - limb.root.u) * a;
-						const outward =
-							(os * (side === 0 ? -1 : 1)) / (len3(of, os, ou) || 1);
-						let c = pal.pants;
-						const st = pal.pantsStripes;
-						if (wraps) {
-							c = pantsOver(
-								limb.root,
-								limb.mid,
-								Pf,
-								Ps,
-								Pu,
-								-(THIGH_TOP + THIGH_DOWN * a) * body.thigh,
-								side,
-								c,
-							);
-						} else if (st.length > 0 && outward > 0.92) {
-							c = st.length > 1 && outward < 0.975 ? st[1]! : st[0]!;
-						}
-						set(c);
-						break;
-					}
-					case SHIN: {
-						cloth = true;
-						const limb = b.legs[side]!;
-						const bl = belowOf(limb, Pf, Ps, Pu);
-						if (pal.poms) {
-							// (Bare down to her socks.)
-							cloth = bl > SOCK_TOP;
-							set(cloth ? pal.sock : pal.skin);
-							break;
-						}
-						if (bl >= PANTS_HEM) {
-							set(pal.sock);
-						} else if (wraps) {
-							set(
-								pantsOver(
-									limb.mid,
-									limb.end,
-									Pf,
-									Ps,
-									Pu,
-									-(
-										(THIGH_TOP + THIGH_DOWN) * body.thigh +
-										Math.max(0, bl) * body.shin
-									),
-									side,
-									pal.pants,
-								),
-							);
-						} else {
-							set(pal.pants);
-						}
-						break;
-					}
-					case SHOE: {
-						cloth = true;
-						let c = Pu < body.ankleR * 0.5 ? pal.sole : pal.cleat;
-						if (c === pal.cleat) {
-							const lf = fc.B.f - fc.A.f;
-							const ls = fc.B.s - fc.A.s;
-							const lu = fc.B.u - fc.A.u;
-							const ll = len3(lf, ls, lu) || 1;
-							if (ll > body.ankleR * 4) {
-								const of = Pf - fc.A.f - lf * t;
-								const os = Ps - fc.A.s - ls * t;
-								const ou = Pu - fc.A.u - lu * t;
-								const ol = len3(of, os, ou) || 1;
-								const upn = ou / ol;
-								const out = Math.abs(of * ls - os * lf) / (ll * ol);
-								const mid = 0.38 - (0.5 * (t - 0.15)) / 0.7;
-								const wide = 0.26 * (1 - Math.abs(t - 0.5) * 1.6);
-								if (
-									out > 0.5 &&
-									t > 0.15 &&
-									t < 0.85 &&
-									Math.abs(upn - mid) < wide
-								) {
-									c = pal.accent;
-								}
-							}
-						}
-						set(c);
-						break;
-					}
-					case NECK: {
-						set(pal.skin);
-						break;
-					}
-					case SHELL: {
-						// On the helmet, in its own frame (helmet radii).
-						const qf = Pf - helm.c.f;
-						const qs = Ps - helm.c.s;
-						const qu = Pu - helm.c.u;
-						const R = helm.R;
-						const lf = (qf * helm.f.f + qs * helm.f.s + qu * helm.f.u) / R;
-						const ls = (qf * helm.s.f + qs * helm.s.s + qu * helm.s.u) / R;
-						const lu = (qf * helm.u.f + qs * helm.u.s + qu * helm.u.u) / R;
-						gloss = 1;
-						let c = pal.helmet;
-						if (pal.mascot) {
-							gloss = 0;
-							set(mascotFace(pal, pal.mascot, lf, ls, lu));
-							break;
-						}
-						if (look.bare || pal.poms || look.reporter) {
-							// His face - his eyes, his brows over them, his
-							// mouth; his hair over the top and round the back,
-							// his ears either side a shade darker.
-							gloss = 0;
-							const as = Math.abs(ls);
-							const hd = look.head;
-							const said = lf > 0.5 ? mouthOn(lu, as, -0.41, open) : 0;
-							if (said >= 2) {
-								c = said === 3 ? TEETH_RGB : MOUTH_RGB;
-							} else if (hd && beardAt(hd, lf, as, lu)) {
-								c = pal.whiskers;
-							} else if (lf > 0.3 && lu < 0.42) {
-								const eyed = eyesSeen ? eyeOn(as, lu, BARE_EYE) : 0;
-								const eye =
-									!eyesSeen &&
-									lu > -0.02 &&
-									lu < 0.16 &&
-									as > 0.12 &&
-									as < 0.42;
-								const smear =
-									pal.eyeBlack &&
-									lf > 0.5 &&
-									lu > -0.12 &&
-									lu < -0.06 &&
-									as > 0.16 &&
-									as < 0.36;
-								const brow =
-									lf > 0.5 && lu > 0.21 && lu < 0.28 && as > 0.1 && as < 0.44;
-								const mouth = said === 1;
-								c = brow
-									? pal.whiskers
-									: smear
-										? EYE_BLACK_RGB
-										: eyed === 3
-											? IRIS_RGB
-											: eyed === 2
-												? EYE_WHITE
-												: scaled(
-														pal.skin,
-														eye || eyed === 1 ? 0.34 : mouth ? 0.66 : 0.96,
-													);
-							} else {
-								c = scalpAt(pal, hd, lf, ls, lu);
-							}
-							set(c);
-							break;
-						}
-						if (official) {
-							// His cap, and its brim; under it his face, his
-							// eyes in its shadow; his hair round the back.
-							gloss = 0;
-							cloth = true;
-							if (lu > 0.22 || (lf > 0.96 && lu > 0.05)) {
-								set(c);
-								break;
-							}
-							cloth = false;
-							if (lf > 0.3) {
-								const eyed = eyesSeen
-									? eyeOn(Math.abs(ls), lu, OFFICIAL_EYE)
-									: 0;
-								const eye =
-									eyed === 1 ||
-									(!eyesSeen &&
-										lu > -0.06 &&
-										lu < 0.05 &&
-										Math.abs(ls) > 0.16 &&
-										Math.abs(ls) < 0.36);
-								const said =
-									lf > 0.5 ? mouthOn(lu, Math.abs(ls), -0.33, open) : 0;
-								c =
-									said === 3
-										? TEETH_RGB
-										: said === 2
-											? MOUTH_RGB
-											: eyed === 3
-												? IRIS_RGB
-												: eyed === 2
-													? scaled(EYE_WHITE, SHADED_WHITE)
-													: scaled(
-															pal.skin,
-															eye
-																? 0.34
-																: lu > 0.06
-																	? 0.8
-																	: said === 1
-																		? 0.66
-																		: 0.96,
-														);
-							} else {
-								c = lf < -0.2 || lu > 0.05 ? pal.hair : pal.skin;
-							}
-							set(c);
-							break;
-						}
-						if (lf > 0.42 && Math.abs(ls) < 0.62 && lu < 0.2 && lu > -0.9) {
-							// His face, in the shadow of the helmet - his eyes
-							// darker still under the brow, behind a dark visor if
-							// he wears one.
-							gloss = 0;
-							const eyes = lu > -0.12 && lu < 0.12;
-							const smear =
-								pal.eyeBlack &&
-								lu > -0.26 &&
-								lu < -0.16 &&
-								Math.abs(ls) > 0.16 &&
-								Math.abs(ls) < 0.34;
-							if (eyes && pal.visor) {
-								c = pal.visor;
-								gloss = 1;
-							} else {
-								c = smear
-									? EYE_BLACK_RGB
-									: scaled(pal.skin, eyes ? 0.42 : 0.72);
-							}
-						} else if (
-							pal.stripe &&
-							Math.abs(ls) < 0.14 &&
-							lu > -0.15 &&
-							lf < 0.5
-						) {
-							c =
-								Math.abs(ls) > 0.1 && pal.stripeEdge
-									? pal.stripeEdge
-									: pal.stripe;
-						} else if (decal && Math.abs(ls) > 0.45) {
-							// The logo on each side, facing forward on both.
-							// (Seen from his right, forward is to the right of the
-							// picture; from his left, to its left.)
-							const half = 0.5;
-							const xx = ((lf + 0.06) / half + 1) / 2;
-							const yy = (1 - (lu - 0.02) / half) / 2;
-							const fx = ls < 0 ? xx : 1 - xx;
-							if (fx >= 0 && fx < 1 && yy >= 0 && yy < 1) {
-								const ix = Math.floor(fx * decal.w);
-								const iy = Math.floor(yy * decal.h);
-								const o = (iy * decal.w + ix) * 4;
-								const al = decal.data[o + 3]! / 255;
-								if (al > 0.02) {
-									c = toward(
-										c,
-										[decal.data[o]!, decal.data[o + 1]!, decal.data[o + 2]!],
-										al,
-									);
-								}
-							}
-						}
-						set(c);
-						break;
-					}
-					case MASK: {
-						gloss = 0.7;
-						set(pal.mask);
-						break;
-					}
-					case POM: {
-						// Her pom-pom: its strands, in the two colors.
-						const [c0, c1] = pal.poms!;
-						const n =
-							Math.sin(Pf * 31 + Ps * 19) * Math.sin(Ps * 27 - Pu * 35) +
-							0.6 * Math.sin(Pu * 23 + Pf * 13);
-						cloth = true;
-						gloss = 0.5;
-						set(
-							scaled(n > 0 ? c0 : c1, 0.86 + 0.14 * Math.abs(Math.sin(n * 5))),
-						);
-						break;
-					}
-					case HEADSET: {
-						gloss = 0.4;
-						set(HEADSET_RGB);
-						break;
-					}
-					case HAIR: {
-						set(scaled(pal.hair, 0.94));
-						break;
-					}
-					case CHIN:
-					case TOWEL: {
-						cloth = true;
-						set(WHITE_RGB);
-						break;
-					}
-					case HELD: {
-						// The helmet in his hand, hung by its facemask: the
-						// stripe down over its crown, the bars of the mask up
-						// round his fingers, the dark of it inside.
-						const h = b.held!;
-						const r = helm.R * HELD_R;
-						const hs = (Ps - h.s) / r;
-						const hu = (Pu - h.u) / r;
-						let c = pal.helmet;
-						gloss = 1;
-						if (hu > 0.4) {
-							const bar =
-								Math.abs(hu - 0.55) < 0.08 || Math.abs(hu - 0.82) < 0.08;
-							c = bar ? pal.mask : scaled(pal.helmet, 0.3);
-							gloss = bar ? 0.6 : 0;
-						} else if (pal.stripe && Math.abs(hs) < 0.13) {
-							c = pal.stripe;
-						}
-						set(c);
-						break;
-					}
-					case BALL: {
-						const ball = b.ball!;
-						const of = Pf - ball.at.f;
-						const os = Ps - ball.at.s;
-						const ou = Pu - ball.at.u;
-						const al = of * ball.axis.f + os * ball.axis.s + ou * ball.axis.u;
-						const rf2 = of - ball.axis.f * al;
-						const rs2 = os - ball.axis.s * al;
-						const ru2 = ou - ball.axis.u * al;
-						const rl = len3(rf2, rs2, ru2) || 1;
-						const facing =
-							(rf2 * ball.laces.f + rs2 * ball.laces.s + ru2 * ball.laces.u) /
-							rl;
-						const along = al / BALL_LEN + 0.5;
-						let c = BALL_RGB;
-						if (along > 0.3 && along < 0.7) {
-							if (facing > 0.985) {
-								c = LACE_RGB;
-							} else if (facing > 0.93 && (along * 22) % 1 < 0.5) {
-								c = LACE_RGB;
-							}
-						}
-						gloss = 0.35;
-						set(c);
-						break;
-					}
-					case HAND: {
-						// The back of his glove, its palm a shade of its own.
-						const p = b.pn[side]!;
-						const nbf = hx[f]! * rt.f + hy[f]! * dn.f + hn[f]! * tw3.f;
-						const nbs = hx[f]! * rt.s + hy[f]! * dn.s + hn[f]! * tw3.s;
-						const nbu = hx[f]! * rt.u + hy[f]! * dn.u + hn[f]! * tw3.u;
-						const inPalm = nbf * p.f + nbs * p.s + nbu * p.u;
-						const c = pal.hands[side]!;
-						const e = inPalm > 0.15 ? Math.min(1, (inPalm - 0.15) / 0.25) : 0;
-						const pc = pal.palms[side]!;
-						cr = c[0] + (pc[0] - c[0]) * e;
-						cg = c[1] + (pc[1] - c[1]) * e;
-						cb = c[2] + (pc[2] - c[2]) * e;
-						cloth = c !== pal.skin;
-						break;
-					}
-					default: {
-						set(pal.skin);
-					}
-				}
-				// Cloth hangs smoother over him than skin does.
-				if (cloth) {
-					sz += 0.35;
-					const mm = len3(sx, sy, sz);
-					sx /= mm;
-					sy /= mm;
-					sz /= mm;
-				}
-				const lam = sx * LIGHT[0] + sy * LIGHT[1] + sz * LIGHT[2];
-				const e = Math.min(1, Math.max(0, (lam - 0.34) / 0.16));
-				const lit = e * e * (3 - 2 * e);
-				const dark = 1 - 0.22 * shadow;
-				let r: number;
-				let g: number;
-				let bb: number;
-				if (cloth || gloss > 0) {
-					const k = (0.79 + 0.21 * lit) * dark;
-					r = cr * k;
-					g = cg * k;
-					bb = cb * k;
+					cloth = true;
 				} else {
-					const k = dark;
-					r = cr * (0.84 + 0.16 * lit) * k;
-					g = cg * (0.74 + 0.26 * lit) * k;
-					bb = cb * (0.72 + 0.28 * lit) * k;
+					c = pal.sleeve[side] ?? pal.skin;
+					const bl = fc.kind === FORE ? belowOf(limb, Pf, Ps, Pu) : 0;
+					const band = pal.wrist[side];
+					if (band && bl > 0.8) {
+						c = band;
+					}
+					cloth = c !== pal.skin;
 				}
-				if (gloss > 0 && lam > 0.86) {
-					// The shine on a helmet: a hard white glint where it
-					// faces the lights.
-					const s = Math.min(1, (lam - 0.86) / 0.06) * 0.55 * gloss;
-					r += (255 - r) * s;
-					g += (255 - g) * s;
-					bb += (255 - bb) * s;
+				set(c);
+				break;
+			}
+			case THIGH: {
+				cloth = true;
+				const limb = b.legs[side]!;
+				// The stripes down the outside of the leg.
+				const a = alongOf(limb, Pf, Ps, Pu);
+				if (pal.poms) {
+					// (Under her skirt, bare.)
+					cloth = a < SKIRT;
+					set(cloth ? pal.pants : pal.skin);
+					break;
 				}
-				if ((behind || fc.kind === HAND || fc.kind === MASK) && S > -lineW) {
-					const e2 = Math.min(1, (S + lineW) / lineW);
-					r += (cr * 0.38 - r) * e2;
-					g += (cg * 0.38 - g) * e2;
-					bb += (cb * 0.38 - bb) * e2;
+				const of = Pf - limb.root.f - (limb.mid.f - limb.root.f) * a;
+				const os = Ps - limb.root.s - (limb.mid.s - limb.root.s) * a;
+				const ou = Pu - limb.root.u - (limb.mid.u - limb.root.u) * a;
+				const outward = (os * (side === 0 ? -1 : 1)) / (len3(of, os, ou) || 1);
+				let c = pal.pants;
+				const st = pal.pantsStripes;
+				if (wraps) {
+					c = pantsOver(
+						limb.root,
+						limb.mid,
+						Pf,
+						Ps,
+						Pu,
+						-(THIGH_TOP + THIGH_DOWN * a) * body.thigh,
+						side,
+						c,
+					);
+				} else if (st.length > 0 && outward > 0.92) {
+					c = st.length > 1 && outward < 0.975 ? st[1]! : st[0]!;
 				}
-				const o = (y * w + x) * 4;
-				if (x < bx0) {
-					bx0 = x;
+				set(c);
+				break;
+			}
+			case SHIN: {
+				cloth = true;
+				const limb = b.legs[side]!;
+				const bl = belowOf(limb, Pf, Ps, Pu);
+				if (pal.poms) {
+					// (Bare down to her socks.)
+					cloth = bl > SOCK_TOP;
+					set(cloth ? pal.sock : pal.skin);
+					break;
 				}
-				if (x > bx1) {
-					bx1 = x;
+				if (bl >= PANTS_HEM) {
+					set(pal.sock);
+				} else if (wraps) {
+					set(
+						pantsOver(
+							limb.mid,
+							limb.end,
+							Pf,
+							Ps,
+							Pu,
+							-(
+								(THIGH_TOP + THIGH_DOWN) * body.thigh +
+								Math.max(0, bl) * body.shin
+							),
+							side,
+							pal.pants,
+						),
+					);
+				} else {
+					set(pal.pants);
 				}
-				if (y < by0) {
-					by0 = y;
+				break;
+			}
+			case SHOE: {
+				cloth = true;
+				let c = Pu < body.ankleR * 0.5 ? pal.sole : pal.cleat;
+				if (c === pal.cleat) {
+					const lf = fc.B.f - fc.A.f;
+					const ls = fc.B.s - fc.A.s;
+					const lu = fc.B.u - fc.A.u;
+					const ll = len3(lf, ls, lu) || 1;
+					if (ll > body.ankleR * 4) {
+						const of = Pf - fc.A.f - lf * t;
+						const os = Ps - fc.A.s - ls * t;
+						const ou = Pu - fc.A.u - lu * t;
+						const ol = len3(of, os, ou) || 1;
+						const upn = ou / ol;
+						const out = Math.abs(of * ls - os * lf) / (ll * ol);
+						const mid = 0.38 - (0.5 * (t - 0.15)) / 0.7;
+						const wide = 0.26 * (1 - Math.abs(t - 0.5) * 1.6);
+						if (
+							out > 0.5 &&
+							t > 0.15 &&
+							t < 0.85 &&
+							Math.abs(upn - mid) < wide
+						) {
+							c = pal.accent;
+						}
+					}
 				}
-				if (y > by1) {
-					by1 = y;
+				set(c);
+				break;
+			}
+			case NECK: {
+				set(pal.skin);
+				break;
+			}
+			case SHELL: {
+				// On the helmet, in its own frame (helmet radii).
+				const qf = Pf - helm.c.f;
+				const qs = Ps - helm.c.s;
+				const qu = Pu - helm.c.u;
+				const R = helm.R;
+				const lf = (qf * helm.f.f + qs * helm.f.s + qu * helm.f.u) / R;
+				const ls = (qf * helm.s.f + qs * helm.s.s + qu * helm.s.u) / R;
+				const lu = (qf * helm.u.f + qs * helm.u.s + qu * helm.u.u) / R;
+				gloss = 1;
+				let c = pal.helmet;
+				if (pal.mascot) {
+					gloss = 0;
+					set(mascotFace(pal, pal.mascot, lf, ls, lu));
+					break;
 				}
-				d[o] = r;
-				d[o + 1] = g;
-				d[o + 2] = bb;
-				d[o + 3] = cover >= 1 ? 255 : 255 * cover;
+				if (look.bare || pal.poms || look.reporter) {
+					// His face - his eyes, his brows over them, his
+					// mouth; his hair over the top and round the back,
+					// his ears either side a shade darker.
+					gloss = 0;
+					const as = Math.abs(ls);
+					const hd = look.head;
+					const said = lf > 0.5 ? mouthOn(lu, as, -0.41, open) : 0;
+					if (said >= 2) {
+						c = said === 3 ? TEETH_RGB : MOUTH_RGB;
+					} else if (hd && beardAt(hd, lf, as, lu)) {
+						c = pal.whiskers;
+					} else if (lf > 0.3 && lu < 0.42) {
+						const eyed = eyesSeen ? eyeOn(as, lu, BARE_EYE) : 0;
+						const eye =
+							!eyesSeen && lu > -0.02 && lu < 0.16 && as > 0.12 && as < 0.42;
+						const smear =
+							pal.eyeBlack &&
+							lf > 0.5 &&
+							lu > -0.12 &&
+							lu < -0.06 &&
+							as > 0.16 &&
+							as < 0.36;
+						const brow =
+							lf > 0.5 && lu > 0.21 && lu < 0.28 && as > 0.1 && as < 0.44;
+						const mouth = said === 1;
+						c = brow
+							? pal.whiskers
+							: smear
+								? EYE_BLACK_RGB
+								: eyed === 3
+									? IRIS_RGB
+									: eyed === 2
+										? EYE_WHITE
+										: scaled(
+												pal.skin,
+												eye || eyed === 1 ? 0.34 : mouth ? 0.66 : 0.96,
+											);
+					} else {
+						c = scalpAt(pal, hd, lf, ls, lu);
+					}
+					set(c);
+					break;
+				}
+				if (official) {
+					// His cap, and its brim; under it his face, his
+					// eyes in its shadow; his hair round the back.
+					gloss = 0;
+					cloth = true;
+					if (lu > 0.22 || (lf > 0.96 && lu > 0.05)) {
+						set(c);
+						break;
+					}
+					cloth = false;
+					if (lf > 0.3) {
+						const eyed = eyesSeen ? eyeOn(Math.abs(ls), lu, OFFICIAL_EYE) : 0;
+						const eye =
+							eyed === 1 ||
+							(!eyesSeen &&
+								lu > -0.06 &&
+								lu < 0.05 &&
+								Math.abs(ls) > 0.16 &&
+								Math.abs(ls) < 0.36);
+						const said = lf > 0.5 ? mouthOn(lu, Math.abs(ls), -0.33, open) : 0;
+						c =
+							said === 3
+								? TEETH_RGB
+								: said === 2
+									? MOUTH_RGB
+									: eyed === 3
+										? IRIS_RGB
+										: eyed === 2
+											? scaled(EYE_WHITE, SHADED_WHITE)
+											: scaled(
+													pal.skin,
+													eye
+														? 0.34
+														: lu > 0.06
+															? 0.8
+															: said === 1
+																? 0.66
+																: 0.96,
+												);
+					} else {
+						c = lf < -0.2 || lu > 0.05 ? pal.hair : pal.skin;
+					}
+					set(c);
+					break;
+				}
+				if (lf > 0.42 && Math.abs(ls) < 0.62 && lu < 0.2 && lu > -0.9) {
+					// His face, in the shadow of the helmet - his eyes
+					// darker still under the brow, behind a dark visor if
+					// he wears one.
+					gloss = 0;
+					const eyes = lu > -0.12 && lu < 0.12;
+					const smear =
+						pal.eyeBlack &&
+						lu > -0.26 &&
+						lu < -0.16 &&
+						Math.abs(ls) > 0.16 &&
+						Math.abs(ls) < 0.34;
+					if (eyes && pal.visor) {
+						c = pal.visor;
+						gloss = 1;
+					} else {
+						c = smear ? EYE_BLACK_RGB : scaled(pal.skin, eyes ? 0.42 : 0.72);
+					}
+				} else if (
+					pal.stripe &&
+					Math.abs(ls) < 0.14 &&
+					lu > -0.15 &&
+					lf < 0.5
+				) {
+					c =
+						Math.abs(ls) > 0.1 && pal.stripeEdge ? pal.stripeEdge : pal.stripe;
+				} else if (decal && Math.abs(ls) > 0.45) {
+					// The logo on each side, facing forward on both.
+					// (Seen from his right, forward is to the right of the
+					// picture; from his left, to its left.)
+					const half = 0.5;
+					const xx = ((lf + 0.06) / half + 1) / 2;
+					const yy = (1 - (lu - 0.02) / half) / 2;
+					const fx = ls < 0 ? xx : 1 - xx;
+					if (fx >= 0 && fx < 1 && yy >= 0 && yy < 1) {
+						const ix = Math.floor(fx * decal.w);
+						const iy = Math.floor(yy * decal.h);
+						const o = (iy * decal.w + ix) * 4;
+						const al = decal.data[o + 3]! / 255;
+						if (al > 0.02) {
+							c = toward(
+								c,
+								[decal.data[o]!, decal.data[o + 1]!, decal.data[o + 2]!],
+								al,
+							);
+						}
+					}
+				}
+				set(c);
+				break;
+			}
+			case MASK: {
+				gloss = 0.7;
+				set(pal.mask);
+				break;
+			}
+			case POM: {
+				// Her pom-pom: its strands, in the two colors.
+				const [c0, c1] = pal.poms!;
+				const n =
+					Math.sin(Pf * 31 + Ps * 19) * Math.sin(Ps * 27 - Pu * 35) +
+					0.6 * Math.sin(Pu * 23 + Pf * 13);
+				cloth = true;
+				gloss = 0.5;
+				set(scaled(n > 0 ? c0 : c1, 0.86 + 0.14 * Math.abs(Math.sin(n * 5))));
+				break;
+			}
+			case HEADSET: {
+				gloss = 0.4;
+				set(HEADSET_RGB);
+				break;
+			}
+			case HAIR: {
+				set(scaled(pal.hair, 0.94));
+				break;
+			}
+			case CHIN:
+			case TOWEL: {
+				cloth = true;
+				set(WHITE_RGB);
+				break;
+			}
+			case HELD: {
+				// The helmet in his hand, hung by its facemask: the
+				// stripe down over its crown, the bars of the mask up
+				// round his fingers, the dark of it inside.
+				const h = b.held!;
+				const r = helm.R * HELD_R;
+				const hs = (Ps - h.s) / r;
+				const hu = (Pu - h.u) / r;
+				let c = pal.helmet;
+				gloss = 1;
+				if (hu > 0.4) {
+					const bar = Math.abs(hu - 0.55) < 0.08 || Math.abs(hu - 0.82) < 0.08;
+					c = bar ? pal.mask : scaled(pal.helmet, 0.3);
+					gloss = bar ? 0.6 : 0;
+				} else if (pal.stripe && Math.abs(hs) < 0.13) {
+					c = pal.stripe;
+				}
+				set(c);
+				break;
+			}
+			case BALL: {
+				const ball = b.ball!;
+				const of = Pf - ball.at.f;
+				const os = Ps - ball.at.s;
+				const ou = Pu - ball.at.u;
+				const al = of * ball.axis.f + os * ball.axis.s + ou * ball.axis.u;
+				const rf2 = of - ball.axis.f * al;
+				const rs2 = os - ball.axis.s * al;
+				const ru2 = ou - ball.axis.u * al;
+				const rl = len3(rf2, rs2, ru2) || 1;
+				const facing =
+					(rf2 * ball.laces.f + rs2 * ball.laces.s + ru2 * ball.laces.u) / rl;
+				const along = al / BALL_LEN + 0.5;
+				let c = BALL_RGB;
+				if (along > 0.3 && along < 0.7) {
+					if (facing > 0.985) {
+						c = LACE_RGB;
+					} else if (facing > 0.93 && (along * 22) % 1 < 0.5) {
+						c = LACE_RGB;
+					}
+				}
+				gloss = 0.35;
+				set(c);
+				break;
+			}
+			case HAND: {
+				// The back of his glove, its palm a shade of its own.
+				const p = b.pn[side]!;
+				const nbf = hxf * rt.f + hyf * dn.f + hnf * tw3.f;
+				const nbs = hxf * rt.s + hyf * dn.s + hnf * tw3.s;
+				const nbu = hxf * rt.u + hyf * dn.u + hnf * tw3.u;
+				const inPalm = nbf * p.f + nbs * p.s + nbu * p.u;
+				const c = pal.hands[side]!;
+				const e = inPalm > 0.15 ? Math.min(1, (inPalm - 0.15) / 0.25) : 0;
+				const pc = pal.palms[side]!;
+				cr = c[0] + (pc[0] - c[0]) * e;
+				cg = c[1] + (pc[1] - c[1]) * e;
+				cb = c[2] + (pc[2] - c[2]) * e;
+				cloth = c !== pal.skin;
+				break;
+			}
+			default: {
+				set(pal.skin);
 			}
 		}
-	}
-	return { img, box: { x0: bx0, y0: by0, x1: bx1, y1: by1 } };
+		ink.r = cr;
+		ink.g = cg;
+		ink.b = cb;
+		ink.cloth = cloth;
+		ink.gloss = gloss;
+	};
+
+	const box = shade(
+		b,
+		GROUPS,
+		d,
+		w,
+		h,
+		paint,
+		ink,
+		(kind) => kind === HAND || kind === MASK,
+	);
+	return { img, box };
 };
