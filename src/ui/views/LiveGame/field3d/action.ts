@@ -3503,6 +3503,28 @@ class Actor {
 	// or as far as that gets him.
 	chaseUp(to: Pt, t1: number, fps: number, move?: Move) {
 		const p = onField(to, this.roam, this.endRoam);
+		// (After it out over a line, as far as he may go over it (see roam),
+		// going at it too quick to pull up short of that: eased off into it,
+		// turned along it as he slows - see easeOff - not on at it flat out
+		// and stopped dead against it.)
+		if (dist(p, to) > EDGE_CLAMP_FT) {
+			const l = this.last;
+			const v = legPace(l);
+			const stopFt = (v * v) / (2 * STOP_ACCEL * STOP_HARD);
+			if (
+				RAMPS.has(l.move) &&
+				!l.arms &&
+				!l.turn &&
+				!l.span &&
+				v >= STOP_LEAST &&
+				dist(this.at, p) < stopFt &&
+				angleAt(l.from, l.to, p) <= EDGE_EASE_TURN
+			) {
+				this.easeOff(stopFt);
+				this.hold(t1);
+				return;
+			}
+		}
 		// (Planted first, well round from the way he is going - all the
 		// time there is, maybe - and down to no quicker than he goes on at
 		// after it: not planted at a run and off at a walk.)
@@ -4824,6 +4846,11 @@ const EASE_EDGE_TIE = 0.2;
 // coaches' line - see chains.ts, geometry.ts.)
 export const EASE_END_FT = 4;
 const EASE_SIDE_FT = 4;
+// (A man chasing a spot past where he may go (see chaseUp) - further over
+// than this, ft - eased off into the edge going at it within this of
+// straight, radians.)
+const EDGE_CLAMP_FT = 0.5;
+const EDGE_EASE_TURN = 1.1;
 // (Carrying on the way he was going, before he eases off, ms - see carryOn.)
 const CARRY_MOST_MS = 500;
 // (Broken down a few steps off a man to hit, this long at least - see
