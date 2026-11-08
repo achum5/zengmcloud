@@ -5528,6 +5528,10 @@ const STOOD_IN_FT = 1.2;
 // (Further off where the drive takes him than this, feet, when he gets
 // there: late to it, in at a run - see standUp.)
 const STOOD_GAP_FT = 5;
+// Not stood up and driven back where a man not in it is stood (or still
+// going) by then, nearer than this (feet) to where it ends up - the man
+// with the ball, or one of those driving him: on down instead.
+const STOOD_CLEAR_FT = 2;
 // A cover man into the blocker he meets (or a lead blocker into his man):
 // down to this much of his pace as they meet (see breakDown).
 const LOCK_KEEP = 0.5;
@@ -12813,12 +12817,6 @@ class Action {
 			x: -Math.cos(fall) * STOOD_BACK,
 			y: -Math.sin(fall) * STOOD_BACK,
 		};
-		this.downer = by[0]!;
-		// (Braced for it - see STOOD_FPS - not into them flat out.)
-		carrier.gatherTo(pt, STOOD_FPS, STOOD_GATHER, STOOD_PRESS_MS, "drive");
-		carrier.go({ x: pt.x + back.x, y: pt.y + back.y }, end, "drive", fall);
-		carrier.hold(end + 500, "stand", fall);
-		this.done.add(carrier.pid);
 		const men = [{ m: by[0]!, at: lead }, ...more];
 		// (Each in from the way he comes - no two in the same place.)
 		const angs: number[] = [];
@@ -12839,6 +12837,32 @@ class Action {
 			}
 			angs.push(ang);
 		}
+		// (Nobody else stood where it all ends up.)
+		const scrum = new Set<Actor>([carrier, ...men.map((x) => x.m)]);
+		const ends = [
+			{ x: pt.x + back.x, y: pt.y + back.y },
+			...angs.map((a) => ({
+				x: pt.x + Math.cos(a) * 2.3 + back.x,
+				y: pt.y + Math.sin(a) * 2.3 + back.y,
+			})),
+		];
+		if (
+			this.men.some(
+				(o) =>
+					!scrum.has(o) &&
+					ends.some(
+						(p) => dist(o.posAt(Math.min(o.t, end)), p) < STOOD_CLEAR_FT,
+					),
+			)
+		) {
+			return false;
+		}
+		this.downer = by[0]!;
+		// (Braced for it - see STOOD_FPS - not into them flat out.)
+		carrier.gatherTo(pt, STOOD_FPS, STOOD_GATHER, STOOD_PRESS_MS, "drive");
+		carrier.go({ x: pt.x + back.x, y: pt.y + back.y }, end, "drive", fall);
+		carrier.hold(end + 500, "stand", fall);
+		this.done.add(carrier.pid);
 		men.forEach(({ m, at }, k) => {
 			const ang = angs[k]!;
 			const hit = {
