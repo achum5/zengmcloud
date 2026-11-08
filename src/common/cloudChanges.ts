@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 214,
+		date: "2026-11-08",
+		text: 'Player Stats for one playoff series ("R1 vs DET"): its advanced stats - BPM, win shares, PER - are now measured against the whole playoffs, the same as the Playoffs view, so with only the first round played the two match.',
+	},
+	{
 		n: 213,
 		date: "2026-11-08",
 		text: "3D arena: the scorer's table is now a lit LED board running sponsor ads, as are the boards round the floor and the panels on the basket stanchions - made-up sponsors, or your own (the team court editor has a new Arena ads section: words, colors or a picture). Photographers sit in a row along each baseline, and the bench chairs have towels over them.",

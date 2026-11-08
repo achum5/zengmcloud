@@ -4,8 +4,10 @@
 // the games against that one opponent. Nothing stores stats that finely, so
 // they are added up here from the series' box scores - the same lines the
 // season rows are built from, game by game - and the advanced stats are worked
-// out the same way the season's are, with the series as the whole league: its
-// two teams, everyone who played in it.
+// out the same way the season's are, against the whole playoffs: every other
+// series' box scores added up too, the two teams in this one counted for it
+// alone. (Against just the two teams, a first round's numbers came out
+// different from the playoffs' with no other round played yet.)
 
 import { idb } from "../db/index.ts";
 import { g, helpers } from "../util/index.ts";
@@ -180,10 +182,22 @@ export const seriesStatsRows = async ({
 				)
 	).sort((a, b) => a.gid - b.gid);
 
+	// The rest of the playoffs, for the league the advanced stats are measured
+	// against: every other series' games (not the two teams' in another).
+	const rest = await idb.merged.games.getAll(
+		{ season: seasonNum },
+		{
+			filter: (game: Game) =>
+				!!game.playoffs &&
+				sideOf(game, tid) === undefined &&
+				sideOf(game, series.oppTid) === undefined,
+		},
+	);
+
 	const rowsByPid = new Map<number, any>();
 	const tidOf = new Map<number, number>();
 	const teamRows = new Map<number, Record<string, number>>();
-	for (const game of games) {
+	for (const game of [...games, ...rest]) {
 		for (const side of [0, 1] as const) {
 			const t: any = game.teams[side];
 			const o: any = game.teams[side === 0 ? 1 : 0];
@@ -227,9 +241,10 @@ export const seriesStatsRows = async ({
 		}
 	}
 
-	// Advanced: everyone in the series, the series as the league.
+	// Advanced: everyone in the playoffs, the series' two teams for the series
+	// alone - the same as the playoffs' own, with no other round played.
 	const pids = [...rowsByPid.keys()].filter((pid) => rowsByPid.get(pid).gp > 0);
-	if (pids.length > 0 && teamRows.size === 2) {
+	if (pids.length > 0 && teamRows.has(tid) && teamRows.has(series.oppTid)) {
 		const playersRaw = await idb.merged.players.getAll({ pids });
 		const posOf = new Map<number, string>();
 		for (const p of playersRaw as Player[]) {
