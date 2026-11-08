@@ -5840,6 +5840,10 @@ const HELP_REACT_SPREAD = 200;
 const HELP_ON_FPS = 6;
 const HELP_OUT = 2.4;
 const HELP_BACK = 0.5;
+// (No further than this off his spot by the man he helps, feet, as he goes
+// - not back across the pocket, round or through the rusher, to a back
+// picking one up deep in it.)
+const HELP_FAR_FT = 6;
 const JOLT_MOST = 1.1;
 const JOLT_MS = 250;
 // (A rusher met by a blocker still on the move - a back through a fake:
@@ -15731,8 +15735,9 @@ class Action {
 				QB_HIT_ROUND_FT - Math.abs(across),
 				(Math.tan(QB_HIT_ROUND_END) * (1.5 * D - 2 * along)) / 2,
 			);
+			// (No room round him: no way in - not through him.)
 			if (!(out >= QB_HIT_ROUND_LEAST)) {
-				return { hit, far: D, round: undefined };
+				return { hit, far: Infinity, round: undefined };
 			}
 			const via = {
 				x: from.x + ux * along - uy * side * out,
@@ -15751,9 +15756,13 @@ class Action {
 			return { hit, far, round };
 		};
 		// (Straight in through him only if nobody can get round him in time
-		// - the man the sim flags for roughing the passer, say.)
+		// - the man the sim flags for roughing the passer, say, or the hit
+		// that hurts him. A hit of our own, nobody - not through the man in
+		// the way.)
 		let best: { m: Actor; shed: number; from: Pt; rounds: boolean } | undefined;
-		for (const rounds of [true, false]) {
+		for (const rounds of (flagged && pool[0] === flagged) || hurt
+			? [true, false]
+			: [true]) {
 			for (const m of pool) {
 				if (this.done.has(m.pid) || lame.has(m.pid)) {
 					continue;
@@ -17658,6 +17667,9 @@ class Action {
 			};
 			// (Over there no quicker than HELP_ON_FPS - or not at all.)
 			const from = f.posAt(go);
+			if (dist(from, spot(go)) > HELP_FAR_FT) {
+				continue;
+			}
 			let k = ts.findIndex(
 				(t) => dist(from, spot(t)) <= (HELP_ON_FPS * (t - go)) / 1000,
 			);
