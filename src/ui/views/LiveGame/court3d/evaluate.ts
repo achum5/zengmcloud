@@ -15,6 +15,16 @@ import { COURT_H, rimX, type Pt, type Pt3, type Side } from "./geometry.ts";
 import { alongShape, keepThrough, runShape, type RunShape } from "./motion.ts";
 import { playAt } from "./physics.ts";
 import {
+	freshStart,
+	LEN_MIN,
+	stepThrough,
+	strideOf,
+	stridesThen,
+	type StepLeg,
+	type Stepping,
+	type Stretch,
+} from "./stepping.ts";
+import {
 	ANIMS,
 	armReaching,
 	mixArm,
@@ -50,8 +60,6 @@ import {
 	skeleton,
 	SLIDE_NARROW,
 	standingReach,
-	stepBeat,
-	stepLength,
 	underPalm,
 	type AnimName,
 	type Body,
@@ -907,10 +915,6 @@ const runAnim = (tr: Track, run: Run): AnimName => {
 			return anim;
 	}
 };
-const strideOf = (anim: AnimName): number => {
-	const a = ANIMS[anim];
-	return a.kind === "cycle" ? a.stride : 5;
-};
 
 // Whether a run goes the way his back faces, slowly enough to backpedal:
 // asked halfway along it, once a run.
@@ -1175,16 +1179,7 @@ const stridesAt = (
 	run: Run,
 	t: number,
 ): { ph: number; len: [number, number] } => {
-	const st = steppingOf(tl, tr, k, run);
-	const n = st.ph.length - 1;
-	const f =
-		st.s1 > st.s0
-			? ((Math.min(st.s1, Math.max(st.s0, t)) - st.s0) * n) / (st.s1 - st.s0)
-			: n;
-	const i = Math.max(0, Math.min(n - 1, Math.floor(f)));
-	const u = n > 0 ? f - i : 0;
-	const at = (a: number[]) => (n > 0 ? a[i]! + (a[i + 1]! - a[i]!) * u : a[0]!);
-	return { ph: at(st.ph), len: [at(st.r), at(st.l)] };
+	return stridesThen(steppingOf(tl, tr, k, run), t);
 };
 
 // How fast a run has him going at t (feet a second).
@@ -1194,56 +1189,8 @@ const paceOn = (run: Run, t: number): number => {
 	const b = Math.min(run.s1, u + 4);
 	return b > a ? ((alongRun(run, b) - alongRun(run, a)) * 1000) / (b - a) : 0;
 };
-// HIS STRIDES THROUGH A RUN, worked out step by step along it (every
-// STEP_MS), once a run: how far round them he is, and how long each leg's
-// stride is (see shortSteps). A foot down keeps the stride it came down on,
-// so it stays where it is on the floor as he picks up pace or slows; his
-// strides go round as fast as that foot goes back under him; and a foot up
-// goes over to a stride for the pace he will be going as it comes down -
-// looking ahead to it, so pulling up his last steps come down short, not
-// long and then stuck under him while he slows; and getting going, each
-// step a little longer than the last. (Both feet off the floor, his strides
-// go round as they did - or, slowing, at the beat.) Carried on from the run
-// before, where he goes straight on from it.
-const STEP_MS = 10;
-// The shortest stride he takes (of a full one), and the quickest his
-// strides go round (a second).
-const LEN_MIN = 0.1;
-const BEAT_MOST = 2.6;
-// (Looking no further ahead than this, ms.)
-const LAND_AHEAD_MS = 300;
-// (Getting going, each step no more than this much longer than the other
-// foot's - his strides lengthen a step at a time, quicker meanwhile.)
-const STEP_GROW = 2.5;
-// (A foot's stride changes no quicker than this - so many full ones a
-// second.)
-const LEN_RATE = 10;
-// A slide's push steps go round no quicker as he goes faster than
-// REACH_FROM (feet a second): each one spreads his feet further instead, up
-// to REACH_MOST times as far. (His stride's that long then - its "length",
-// though more than a full one.)
-const REACH_FROM = 6.5;
-const REACH_MOST = 1.45;
-const reachOf = (v: number) =>
-	Math.min(REACH_MOST, Math.max(1, v / REACH_FROM));
-// (And goes over to a new spread no quicker than this - so many full
-// strides' worth a second: going on into a run at another pace, his feet
-// spread wider or closer over a step, not in a frame.)
-const REACH_RATE = 2;
-type Stepping = {
-	s0: number;
-	s1: number;
-	ph: number[];
-	r: number[];
-	l: number[];
-	// Each leg at the end: its stride, and whether its foot is up.
-	legR: StepLeg;
-	legL: StepLeg;
-};
-// (Up, the stride it goes over from toward the next - the one it left the
-// floor on - and from how far through its swing: from the start of it, or
-// from where it was as the run before ended.)
-type StepLeg = { len: number; up?: number; from?: number };
+// HIS STRIDES THROUGH A RUN (see stepping.ts), once a run - carried on
+// from the run before, where he goes straight on from it.
 const steppings = new WeakMap<Track, Map<Move, Stepping>>();
 const steppingOf = (
 	tl: CourtTimeline,
@@ -1263,41 +1210,16 @@ const steppingOf = (
 	const anim = stepsOf(tl, tr, run);
 	const S = strideOf(anim);
 	const L0 = lenOf(run.mv);
-	// How far along he is at t - on past the end at the pace he ends on.
-	const along = (t: number) =>
-		t <= run.s1 ? alongRun(run, t) : L0 + (run.v1 * (t - run.s1)) / 1000;
-	// The stride for a foot coming down at t: for his pace over the time it
-	// will be down (at the beat) - so pulling up he steps short and his
-	// strides keep the beat as he slows. (Setting off, the one he pushes off
-	// on, for his pace while it is still down.)
-	const beat = stepBeat(anim);
-	const duty = legPhases(anim, 0)?.duty ?? 0.5;
-	const DOWN_MS = beat > 0 ? (duty * 1000) / beat : 0;
-	const over = (t: number, ms = DOWN_MS) =>
-		ms > 0 ? ((along(t + ms) - along(t)) * 1000) / ms : paceOn(run, t);
-	const lenAt = (t: number) => Math.max(LEN_MIN, stepLength(anim, over(t)));
-	let ph = STRIDE_START;
-	// (Setting off, the foot he pushes off on is only down a moment more.)
-	const first = legPhases(anim, ph);
-	const firstMs =
-		first && beat > 0
-			? (Math.max(
-					0,
-					...[first.r, first.l]
-						.filter((phi) => phi < first.duty)
-						.map((phi) => (first.back ? phi : first.duty - phi)),
-				) *
-					1000) /
-				beat
-			: 0;
-	// (Steps that keep no beat - a shuffle, say - full ones throughout. A
-	// foot up as he sets off goes over from there, from where it is through
-	// its swing.)
-	let R: StepLeg = {
-		len: first ? Math.max(LEN_MIN, stepLength(anim, over(run.s0, firstMs))) : 1,
-		from: -1,
+	const stretch: Stretch = {
+		s0: run.s0,
+		s1: run.s1,
+		// How far along he is at t - on past the end at the pace he ends on.
+		along: (t: number) =>
+			t <= run.s1 ? alongRun(run, t) : L0 + (run.v1 * (t - run.s1)) / 1000,
+		pace: (t: number) => paceOn(run, t),
 	};
-	let L: StepLeg = { ...R };
+	let { ph, R, L } = freshStart(anim, stretch);
+	const first = legPhases(anim, ph);
 	if (
 		k > 0 &&
 		(run.v0 > 0 || tr.moves[k]!.t0 - tr.moves[k - 1]!.t1 <= STRIDE_ON_MS)
@@ -1329,115 +1251,10 @@ const steppingOf = (
 			L = { ...R };
 		}
 	}
-	if (anim === "shuffle" && R.from === -1) {
-		R = { len: reachOf(paceOn(run, run.s0)) };
-		L = { ...R };
-	}
-	const n = Math.max(1, Math.ceil((run.s1 - run.s0) / STEP_MS));
-	const dt = (run.s1 - run.s0) / n;
-	const out: Stepping = {
-		s0: run.s0,
-		s1: run.s1,
-		ph: [ph],
-		r: [R.len],
-		l: [L.len],
-		legR: R,
-		legL: L,
-	};
-	for (let i = 1; i <= n; i++) {
-		const u = run.s0 + (i - 0.5) * dt;
-		const v = paceOn(run, u);
-		const was = legPhases(anim, ph);
-		if (anim === "shuffle") {
-			// (Through the push, the foot he pushes off stays where it is as
-			// his feet spread further, and the other through the close - so
-			// his strides go round that much slower or quicker for it.)
-			const most = (REACH_RATE * dt) / 1000;
-			const reach = R.len + Math.max(-most, Math.min(most, reachOf(v) - R.len));
-			const f = frac(ph);
-			const spread = f < 0.5 ? 2 * f : 2 - 2 * f;
-			const grew = (reach - R.len) * (f < 0.5 ? 1 : -1);
-			ph += Math.max(
-				0,
-				((v / (S * reach)) * dt) / 1000 - (grew * spread) / (2 * reach),
-			);
-			R = { len: reach };
-			L = R;
-		} else if (!was) {
-			ph += ((v / S) * dt) / 1000;
-		} else {
-			// (Both feet up, at the stride of the one that left the floor last
-			// - or, slowing, his pace's.)
-			const down =
-				R.up === undefined && L.up === undefined
-					? (R.len + L.len) / 2
-					: R.up === undefined
-						? R.len
-						: L.up === undefined
-							? L.len
-							: Math.min(
-									(was.back ? was.r > was.l : was.r < was.l) ? R.up : L.up,
-									lenAt(u),
-								);
-			const rate = Math.min(BEAT_MOST, v / (S * down));
-			ph += (rate * dt) / 1000;
-			const now = legPhases(anim, ph)!;
-			// Each foot: up off the floor once it is through its time down;
-			// then over from the stride it left the floor on to the one for
-			// when it comes down - so far ahead as it has yet to swing, at the
-			// rate it is swinging. (Never more than so much longer than the
-			// other foot's stride, as it is now - not as it was as that foot
-			// left the floor, or the cap would jump as it came down.)
-			const step = (leg: StepLeg, phi: number, other: StepLeg): StepLeg => {
-				if (phi < now.duty) {
-					return leg.up === undefined ? leg : { len: leg.len };
-				}
-				const through = Math.min(
-					1,
-					(now.back ? 1 - phi : phi - now.duty) / Math.max(1e-6, 1 - now.duty),
-				);
-				const up = leg.up ?? leg.len;
-				const from =
-					leg.from === -1
-						? through
-						: leg.up === undefined
-							? 0
-							: (leg.from ?? 0);
-				const ahead = Math.min(
-					LAND_AHEAD_MS,
-					((1 - through) * (1 - now.duty) * 1000) / Math.max(rate, 0.5),
-				);
-				const to = Math.min(lenAt(u + ahead), other.len * STEP_GROW);
-				const s0 = smooth01(from);
-				const share =
-					s0 >= 1 ? 1 : clamp01((smooth01(through) - s0) / (1 - s0));
-				// (And no quicker than LEN_RATE: pulling up late in a swing,
-				// the step it comes down on shortened over the last of it, not
-				// snapped short in a frame.)
-				const most = (LEN_RATE * dt) / 1000;
-				const len =
-					leg.len +
-					Math.max(-most, Math.min(most, up + (to - up) * share - leg.len));
-				return { len, up, from };
-			};
-			const r = step(R, now.r, L);
-			L = step(L, now.l, R);
-			R = r;
-		}
-		out.ph.push(ph);
-		out.r.push(R.len);
-		out.l.push(L.len);
-	}
-	out.legR = R;
-	out.legL = L;
+	const out = stepThrough(anim, stretch, ph, R, L);
 	byMove.set(run.mv, out);
 	return out;
 };
-// Setting off, he is a quarter of a stride in: over the foot he pushes off
-// with, the other coming through under him - nearest how he stood, so his
-// legs ease out of that into the stride with his feet staying where they
-// are, not splayed apart across the floor in a frame or two.
-const STRIDE_START = 0.25;
 
 // Hands up for the ball: from a moment before it leaves the passer (or
 // comes off the floor on its way) until it gets to him.
