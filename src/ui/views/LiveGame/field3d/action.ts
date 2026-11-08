@@ -4470,6 +4470,10 @@ const COVER_LEAST_FPS = 10;
 type RunScheme = "zone" | "stretch" | "power" | "sneak";
 const POWER = 0.35;
 const BLOCK_GAP = 2.6;
+// (Across the man on him, to where he is at the end of it: no quicker than
+// this, ft/s - not jumped over in the last blink of it, and off from that
+// as if it was the pace he was going.)
+const ENGAGE_SHIFT_FPS = 2;
 // (A man blocked off the ball with the carrier coming by him while he is
 // still on it - or no later than this after - driven over to no nearer his
 // way than this (feet), at no more than this (ft/s) across.)
@@ -20840,7 +20844,14 @@ class Action {
 				if (way.over !== 0 && m.t < way.by && way.by < end) {
 					m.go(at(way.by, lat), way.by, "engage", this.behind);
 				}
-				m.go(at(end, (r() - 0.5) * 0.6), end, "engage", this.behind);
+				const shift = (r() - 0.5) * 0.6;
+				const most = (ENGAGE_SHIFT_FPS * Math.max(0, end - m.t)) / 1000;
+				m.go(
+					at(end, lat + clamp(shift - lat, -most, most)),
+					end,
+					"engage",
+					this.behind,
+				);
 				locked = Math.min(locked, end);
 				freed = Math.max(freed, end);
 				// (Driven off his feet: see PANCAKE.)
