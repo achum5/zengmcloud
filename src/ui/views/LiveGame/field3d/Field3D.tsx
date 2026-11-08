@@ -1,14 +1,12 @@
 import {
 	useCallback,
 	useEffect,
-	useLayoutEffect,
 	useMemo,
 	useRef,
 	useState,
 	type ReactNode,
 } from "react";
 import { useLocal } from "../../../util/local.ts";
-import { toWorker } from "../../../util/toWorker.ts";
 import type { PlayerFace } from "../../../util/playerFaces.ts";
 import { TeamLogoInline } from "../../../components/TeamLogoInline.tsx";
 import { STARTING_NUM_TIMEOUTS } from "../../../../common/constants.ts";
@@ -17,12 +15,20 @@ import { depthOf, follow } from "../court3d/camera.ts";
 import type { FaceConfig } from "facesjs";
 import { FaceLoader } from "../court3d/FaceLoader.tsx";
 import { headColors, profileOf } from "../court3d/faces.ts";
-import { kitArtOf, loadKitPicture, type KitArt } from "../court3d/kitArt.ts";
 import { logoPicture } from "../court3d/logoPicture.ts";
 import { adsFor } from "../court3d/arenaAds.ts";
-import { drawn, due, FAST, makePace } from "../court3d/pace.ts";
+import { FAST, makePace } from "../court3d/pace.ts";
 import { adjust, artFor, makeResolution } from "../court3d/resolution.ts";
 import { eventsMatchRoster } from "../court3d/rosterMatch.ts";
+import {
+	NARROW_W,
+	runFrames,
+	useAdPictures,
+	useFacesThen,
+	useKitArts,
+	useStakes,
+	useViewSize,
+} from "../court3d/broadcast.ts";
 import { ScoreBug, type BugRefs } from "../court3d/ScoreBug.tsx";
 import { SHOT_LOW, SHOT_LOW_INK } from "../court3d/scoreBug.ts";
 import { CustomScoreBug } from "../court3d/CustomScoreBug.tsx";
@@ -144,7 +150,7 @@ import {
 import { planFieldKeyPlays } from "./keyPlays.ts";
 import { replayAim, replayEnd, replayGoal, replaySky } from "./replays.ts";
 import { poolsOf } from "./pools.ts";
-import { REPORTER_ID, type Stakes } from "./postgame.ts";
+import { REPORTER_ID } from "./postgame.ts";
 import { drawFieldFrame, type FieldPaint } from "./scene.ts";
 import {
 	coachId,
@@ -247,8 +253,6 @@ const FLAG_BUG_PAD = "0.1em 0.45em";
 // How long the play-by-play may disagree with the roster before the field
 // gives up on the game (ms).
 const ROSTER_WAIT = 5000;
-// Narrower than this (CSS pixels), the picture is squarer.
-const NARROW_W = 560;
 
 // What goes across the back of his jersey: everything after his first name.
 const lastNameOf = (name: string | undefined): string => {
@@ -474,37 +478,16 @@ const Field3D = ({
 		}
 		setMatched(true);
 	}, [events, roster]);
-	// A playoff game's stakes, as they stood going into it (the 3D court's:
-	// see court3d/Court3D.tsx) - the box score's series records take this
-	// game in once it is over, so they are read once, and one won by now is
-	// taken back out.
-	const stakes = useMemo((): Stakes | undefined => {
-		const bs = boxScore as
-			| {
-					playoffs?: boolean;
-					finals?: boolean;
-					numGamesToWinSeries?: number;
-					gameOver?: boolean;
-					won?: { tid?: number };
-					teams?: { tid?: number; playoffs?: { won?: number } }[];
-			  }
-			| undefined;
-		if (!bs?.playoffs || typeof bs.numGamesToWinSeries !== "number") {
-			return undefined;
-		}
-		const won = (raw: 0 | 1) => {
-			const t = bs.teams?.[raw];
-			const w = Number(t?.playoffs?.won ?? 0);
-			return bs.gameOver && bs.won?.tid === t?.tid ? w - 1 : w;
-		};
-		// (Raw team 0 is home, side 1.)
-		return {
-			won: [won(1), won(0)],
-			toWin: bs.numGamesToWinSeries,
-			finals: !!bs.finals,
-		};
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [gid]);
+	// A playoff game's stakes, as they stood going into it (see the
+	// engine's useStakes).
+	const stakes = useStakes(gid, {
+		playoffs: boxScore?.playoffs,
+		finals: boxScore?.finals,
+		numGamesToWinSeries: boxScore?.numGamesToWinSeries,
+		gameOver: boxScore?.gameOver,
+		won: boxScore?.won,
+		teams: boxScore?.teams,
+	});
 	// Staged off the page (see stageField.ts) - its first play shown in the
 	// meantime (see stageOpening), from the start.
 	const [timeline, setTimeline] = useState<FieldTimeline | undefined>();
@@ -576,6 +559,7 @@ const Field3D = ({
 	);
 	// (Between quarters and the game over: no quarter on the bug.)
 	const [ended, setEnded] = useState(false);
+	const spread: unknown = boxScore?.spread;
 	const keyPlan = useMemo(
 		(): KeySegment[] | undefined =>
 			timeline && events && keyPlays?.settings.on
@@ -583,12 +567,10 @@ const Field3D = ({
 						rate,
 						numPeriods,
 						...(keyPlays.mine === undefined ? {} : { mine: keyPlays.mine }),
-						...(typeof boxScore?.spread === "number"
-							? { spread: boxScore.spread }
-							: {}),
+						...(typeof spread === "number" ? { spread } : {}),
 					})
 				: undefined,
-		[timeline, events, keyPlays, rate, numPeriods, boxScore?.spread],
+		[timeline, events, keyPlays, rate, numPeriods, spread],
 	);
 
 	// The stadium and the field, painted once a game.
@@ -665,36 +647,7 @@ const Field3D = ({
 	// The home team's own pictures for its stadium ads, once loaded (see
 	// adsFor).
 	const ownAds: StadiumLook["arenaAds"] = home?.stadium?.arenaAds;
-	const adURLs = (ownAds ?? [])
-		.map((a) => a.imageURL)
-		.filter((u): u is string => !!u)
-		.join("\n");
-	const [adPictures, setAdPictures] = useState<Map<string, HTMLCanvasElement>>(
-		() => new Map(),
-	);
-	useEffect(() => {
-		const urls = adURLs ? adURLs.split("\n") : [];
-		if (urls.length === 0) {
-			return;
-		}
-		let alive = true;
-		void Promise.all(urls.map((u) => logoPicture(u, END_ZONE_PX))).then(
-			(made) => {
-				if (alive) {
-					const got = new Map<string, HTMLCanvasElement>();
-					made.forEach((c, i) => {
-						if (c) {
-							got.set(urls[i]!, c);
-						}
-					});
-					setAdPictures(got);
-				}
-			},
-		);
-		return () => {
-			alive = false;
-		};
-	}, [adURLs]);
+	const adPictures = useAdPictures(ownAds, END_ZONE_PX);
 	// The league's decals for the game on the home field (see CourtDecal).
 	const decals: CourtDecalPlaced[] | undefined = home?.stadium?.decals;
 	const decalsKey = JSON.stringify(decals ?? null);
@@ -822,18 +775,7 @@ const Field3D = ({
 		setFacesVersion((v) => v + 1);
 	}, []);
 
-	// A replay's faces are already here: no need to ask for today's.
-	useEffect(() => {
-		if (!looksThen) {
-			return;
-		}
-		for (const p of roster) {
-			const then = looksThen.players[p.pid];
-			if (then) {
-				onFace(p.pid, then);
-			}
-		}
-	}, [looksThen, roster, onFace]);
+	useFacesThen(looksThen, roster, onFace);
 
 	const kits = useMemo(
 		() =>
@@ -842,46 +784,8 @@ const Field3D = ({
 		[gid],
 	);
 	// Each side's uniform drawn from a picture, if its team has one (see
-	// Court3D): the visitors' away one, the home team's home one - on a
-	// replay the ones worn that night, or the team's own now where one of
-	// those has since been replaced.
-	const [arts, setArts] = useState<[KitArt?, KitArt?]>([]);
-	useEffect(() => {
-		const now: any[] = Array.isArray(boxScore?.teams) ? boxScore.teams : [];
-		const choices = [
-			[away?.jerseySkins?.away, now[1]?.jerseySkins?.away],
-			[home?.jerseySkins?.home, now[0]?.jerseySkins?.home],
-		].map((ids) => ids.filter((id): id is string => typeof id === "string"));
-		const ids = [...new Set(choices.flat())];
-		if (ids.length === 0) {
-			setArts([]);
-			return;
-		}
-		let alive = true;
-		void (async () => {
-			const urls = await toWorker("main", "getJerseySkins", ids);
-			const made = await Promise.all(
-				choices.map(async (side) => {
-					const id = side.find((choice) => urls?.[choice] !== undefined);
-					if (id === undefined) {
-						return undefined;
-					}
-					try {
-						return kitArtOf(await loadKitPicture(urls[id]!), id);
-					} catch {
-						return undefined;
-					}
-				}),
-			);
-			if (alive) {
-				setArts([made[0], made[1]]);
-			}
-		})();
-		return () => {
-			alive = false;
-		};
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [gid]);
+	// useKitArts).
+	const arts = useKitArts(gid, boxScore?.teams, away, home);
 	const dressed = useMemo(
 		() => [dressFieldKit(kits[0], arts[0]), dressFieldKit(kits[1], arts[1])],
 		[kits, arts],
@@ -1054,21 +958,7 @@ const Field3D = ({
 
 	const wrapRef = useRef<HTMLDivElement | null>(null);
 	const canvasRef = useRef<HTMLCanvasElement | null>(null);
-	const [size, setSize] = useState({ w: 640, h: 360 });
-	useLayoutEffect(() => {
-		const el = wrapRef.current;
-		if (!el) {
-			return;
-		}
-		const measure = () => {
-			const r = el.getBoundingClientRect();
-			setSize({ w: r.width, h: r.height });
-		};
-		measure();
-		const observer = new ResizeObserver(measure);
-		observer.observe(el);
-		return () => observer.disconnect();
-	}, []);
+	const size = useViewSize(wrapRef);
 	const narrow = size.w < NARROW_W;
 
 	const bugRef = useRef<HTMLDivElement | null>(null);
@@ -1227,7 +1117,6 @@ const Field3D = ({
 		// How often it is drawn (see court3d/pace.ts) - and whether this frame
 		// says anything about how fast the device draws (not paused).
 		const pacing = makePace(performance.now() + 1500);
-		let judging = true;
 		const wipe = makeFieldWipe();
 		let wipeSide: Side = 1;
 		let shownOver = false;
@@ -1239,7 +1128,7 @@ const Field3D = ({
 		let closeWas = false;
 		let flashAt = -Infinity;
 
-		const tick = (now: number, draw: boolean) => {
+		const tick = (now: number, draw: boolean, still: boolean) => {
 			const p = live.current;
 			const tl = p.timeline;
 			if (!tl) {
@@ -1581,7 +1470,7 @@ const Field3D = ({
 				tagsOver.current,
 			);
 			if (
-				judging &&
+				!still &&
 				adjust(
 					res,
 					h * dpr,
@@ -1723,44 +1612,17 @@ const Field3D = ({
 			}
 		};
 
-		// Off the screen - scrolled away to the box score - nothing to draw.
-		let onScreen = true;
-		const seen =
-			typeof IntersectionObserver === "undefined"
-				? undefined
-				: new IntersectionObserver((entries) => {
-						onScreen = entries.some((entry) => entry.isIntersecting);
-					});
-		if (canvasRef.current) {
-			seen?.observe(canvasRef.current);
-		}
-		let raf = requestAnimationFrame(function frame(now) {
-			raf = requestAnimationFrame(frame);
-			if (!onScreen) {
-				tick(now, false);
-				return;
-			}
-			const s = clock.current;
-			const paused = live.current.paused && !s.stepping && !s.replay;
-			if (!due(pacing, now, paused)) {
-				return;
-			}
-			judging = !paused;
-			const began = performance.now();
-			tick(now, true);
-			drawn(pacing, now, performance.now() - began, paused);
+		const stop = runFrames({
+			canvas: canvasRef.current,
+			pacing,
+			still: () => {
+				const s = clock.current;
+				return live.current.paused && !s.stepping && !s.replay;
+			},
+			tick,
 		});
-		// A background tab gets no animation frames. Keep the game moving anyway
-		// (nothing to draw), or a hidden tab would hold up everyone watching.
-		const interval = setInterval(() => {
-			if (document.hidden) {
-				tick(performance.now(), false);
-			}
-		}, 250);
 		return () => {
-			cancelAnimationFrame(raf);
-			clearInterval(interval);
-			seen?.disconnect();
+			stop();
 			releaseSprites(sprites);
 			farm?.stop();
 		};

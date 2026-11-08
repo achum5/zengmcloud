@@ -3,14 +3,12 @@ import { adsFor } from "./arenaAds.ts";
 import {
 	useCallback,
 	useEffect,
-	useLayoutEffect,
 	useMemo,
 	useRef,
 	useState,
 	type ReactNode,
 } from "react";
 import { useLocal } from "../../../util/local.ts";
-import { toWorker } from "../../../util/toWorker.ts";
 import type { PlayerFace } from "../../../util/playerFaces.ts";
 import type {
 	ArenaLooks,
@@ -44,7 +42,7 @@ import {
 import { courtTexture, edgeColor } from "./courtTexture.ts";
 import { FaceLoader } from "./FaceLoader.tsx";
 import { adjust, artFor, makeResolution } from "./resolution.ts";
-import { drawn, due, FAST, makePace } from "./pace.ts";
+import { FAST, makePace } from "./pace.ts";
 import { makeFarm } from "./farm.ts";
 import { makeScratch, makeSpriteCache, releaseSprites } from "./sprite.ts";
 import {
@@ -53,21 +51,25 @@ import {
 	gameClockAt,
 	shotClockAt,
 } from "./clock.ts";
-import {
-	clipDipAt,
-	type CourtPlayer,
-	type CourtTimeline,
-	type Stakes,
-} from "./director.ts";
+import { clipDipAt, type CourtPlayer, type CourtTimeline } from "./director.ts";
 import { crewAt, crewFor } from "./crew.ts";
 import { headColors, loadHead, profileOf, type HeadSprite } from "./faces.ts";
 import { arenaSpecFor } from "./arenaSpec.ts";
 import { crowdFaces, type CrowdFace } from "./crowdFaces.ts";
 import { gearFor, kitsFor, shade, type Look } from "./figure.ts";
-import { dressKit, kitArtOf, loadKitPicture, type KitArt } from "./kitArt.ts";
+import { dressKit } from "./kitArt.ts";
 import { logoPicture } from "./logoPicture.ts";
 import { COURT_W, type Side } from "./geometry.ts";
 import { eventsMatchRoster } from "./rosterMatch.ts";
+import {
+	NARROW_W,
+	runFrames,
+	useStakes,
+	useAdPictures,
+	useFacesThen,
+	useKitArts,
+	useViewSize,
+} from "./broadcast.ts";
 import { spawnCourtWorker, stageCourt } from "./stageCourt.ts";
 import {
 	stageWarmup,
@@ -314,13 +316,14 @@ const Court3D = ({
 	const season: number | undefined = boxScore?.season;
 	// A saved replay remembers how everyone looked that night.
 	const looksThen: ReplayLooks | undefined = boxScore?.replayLooks;
+	const teamsNow: unknown = boxScore?.teams;
 	const raw: any[] = useMemo(() => {
-		const teams: any[] = Array.isArray(boxScore?.teams) ? boxScore.teams : [];
+		const teams: any[] = Array.isArray(teamsNow) ? teamsNow : [];
 		return teams.map((t) => {
 			const then = looksThen?.teams[t?.tid];
 			return then ? { ...t, ...then, court: then.court } : t;
 		});
-	}, [boxScore?.teams, looksThen]);
+	}, [teamsNow, looksThen]);
 	// Display order, same as the 2D court: [away (attacks left), home].
 	const away = raw[1];
 	const home = raw[0];
@@ -360,36 +363,15 @@ const Court3D = ({
 
 	// The starting lineups called out before the opening tip (see intro.ts):
 	// off for now, kept to come back to.
-	// A playoff game's stakes, as they stood going into it - the box score's
-	// series records take this game in once it is over, so they are read
-	// once, and one won by now is taken back out.
-	const stakes = useMemo((): Stakes | undefined => {
-		const bs = boxScore as
-			| {
-					playoffs?: boolean;
-					finals?: boolean;
-					numGamesToWinSeries?: number;
-					gameOver?: boolean;
-					won?: { tid?: number };
-					teams?: { tid?: number; playoffs?: { won?: number } }[];
-			  }
-			| undefined;
-		if (!bs?.playoffs || typeof bs.numGamesToWinSeries !== "number") {
-			return undefined;
-		}
-		const won = (raw: 0 | 1) => {
-			const t = bs.teams?.[raw];
-			const w = Number(t?.playoffs?.won ?? 0);
-			return bs.gameOver && bs.won?.tid === t?.tid ? w - 1 : w;
-		};
-		// (Raw team 0 is home, side 1.)
-		return {
-			won: [won(1), won(0)],
-			toWin: bs.numGamesToWinSeries,
-			finals: !!bs.finals,
-		};
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [gid]);
+	// A playoff game's stakes, as they stood going into it (see stakesOf).
+	const stakes = useStakes(gid, {
+		playoffs: boxScore?.playoffs,
+		finals: boxScore?.finals,
+		numGamesToWinSeries: boxScore?.numGamesToWinSeries,
+		gameOver: boxScore?.gameOver,
+		won: boxScore?.won,
+		teams: boxScore?.teams,
+	});
 	const introKind: "playoffs" | "regular" | undefined = LINEUP_INTROS
 		? boxScore?.playoffs
 			? "playoffs"
@@ -470,6 +452,8 @@ const Court3D = ({
 	);
 	// Key plays only: the stretches of the game shown.
 	const numPeriods: number = boxScore?.numPeriods ?? 4;
+	const spread: unknown = boxScore?.spread;
+	const neutralSite = !!boxScore?.neutralSite;
 	const keyPlan = useMemo(
 		(): KeySegment[] | undefined =>
 			timeline && events && keyPlays?.settings.on
@@ -479,21 +463,11 @@ const Court3D = ({
 						mine: keyPlays.mine,
 						// (Who was expected to win, by how much - see winProb.ts. No
 						// home team on a neutral floor.)
-						...(typeof boxScore?.spread === "number"
-							? { spread: boxScore.spread }
-							: {}),
-						...(boxScore?.neutralSite ? { edge: 0 } : {}),
+						...(typeof spread === "number" ? { spread } : {}),
+						...(neutralSite ? { edge: 0 } : {}),
 					})
 				: undefined,
-		[
-			timeline,
-			events,
-			keyPlays,
-			rate,
-			numPeriods,
-			boxScore?.spread,
-			boxScore?.neutralSite,
-		],
+		[timeline, events, keyPlays, rate, numPeriods, spread, neutralSite],
 	);
 	// What this court staged, for whoever plays along with it to check
 	// against their own (see stagedAs).
@@ -522,47 +496,9 @@ const Court3D = ({
 		[gid],
 	);
 
-	// Each side's uniform drawn from a picture, if its team has one: the
-	// visitors' away one, the home team's home one. A replay wears the ones
-	// worn that night - or, where one of those has since been replaced, the
-	// team's own now.
-	const [arts, setArts] = useState<[KitArt?, KitArt?]>([]);
-	useEffect(() => {
-		const now: any[] = Array.isArray(boxScore?.teams) ? boxScore.teams : [];
-		const choices = [
-			[away?.jerseySkins?.away, now[1]?.jerseySkins?.away],
-			[home?.jerseySkins?.home, now[0]?.jerseySkins?.home],
-		].map((ids) => ids.filter((id): id is string => typeof id === "string"));
-		const ids = [...new Set(choices.flat())];
-		if (ids.length === 0) {
-			setArts([]);
-			return;
-		}
-		let alive = true;
-		void (async () => {
-			const urls = await toWorker("main", "getJerseySkins", ids);
-			const made = await Promise.all(
-				choices.map(async (side) => {
-					const id = side.find((choice) => urls?.[choice] !== undefined);
-					if (id === undefined) {
-						return undefined;
-					}
-					try {
-						return kitArtOf(await loadKitPicture(urls[id]!), id);
-					} catch {
-						return undefined;
-					}
-				}),
-			);
-			if (alive) {
-				setArts([made[0], made[1]]);
-			}
-		})();
-		return () => {
-			alive = false;
-		};
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [gid]);
+	// Each side's uniform drawn from a picture, if its team has one (see
+	// useKitArts).
+	const arts = useKitArts(gid, boxScore?.teams, away, home);
 	const dressed = useMemo(
 		() => [dressKit(kits[0], arts[0]), dressKit(kits[1], arts[1])] as const,
 		[kits, arts],
@@ -590,34 +526,7 @@ const Court3D = ({
 
 	// The team's own pictures for its arena ads, once loaded (see adsFor).
 	const ownAds: CourtStyle["arenaAds"] = home?.court?.arenaAds;
-	const adURLs = (ownAds ?? [])
-		.map((a) => a.imageURL)
-		.filter((u): u is string => !!u)
-		.join("\n");
-	const [adPictures, setAdPictures] = useState<Map<string, HTMLCanvasElement>>(
-		() => new Map(),
-	);
-	useEffect(() => {
-		const urls = adURLs ? adURLs.split("\n") : [];
-		if (urls.length === 0) {
-			return;
-		}
-		let alive = true;
-		void Promise.all(urls.map((u: string) => logoPicture(u))).then((made) => {
-			if (alive) {
-				const got = new Map<string, HTMLCanvasElement>();
-				made.forEach((c, i) => {
-					if (c) {
-						got.set(urls[i]!, c);
-					}
-				});
-				setAdPictures(got);
-			}
-		});
-		return () => {
-			alive = false;
-		};
-	}, [adURLs]);
+	const adPictures = useAdPictures(ownAds);
 
 	// The building, painted once a game.
 	// Faces for the crowd, made in the background (see crowdFaces): the stands
@@ -791,18 +700,7 @@ const Court3D = ({
 		[roster],
 	);
 
-	// A replay's faces are already here: no need to ask for today's.
-	useEffect(() => {
-		if (!looksThen) {
-			return;
-		}
-		for (const p of roster) {
-			const then = looksThen.players[p.pid];
-			if (then) {
-				onFace(p.pid, then);
-			}
-		}
-	}, [looksThen, roster, onFace]);
+	useFacesThen(looksThen, roster, onFace);
 
 	// (Each man's look kept from one time to the next unless what makes it
 	// has changed: his pictures are kept by his look, and a new one for
@@ -950,23 +848,8 @@ const Court3D = ({
 	const wrapRef = useRef<HTMLDivElement | null>(null);
 	const bugRef = useRef<HTMLDivElement | null>(null);
 	const canvasRef = useRef<HTMLCanvasElement | null>(null);
-	const [size, setSize] = useState({ w: 640, h: 360 });
-	useLayoutEffect(() => {
-		const el = wrapRef.current;
-		if (!el) {
-			return;
-		}
-		const measure = () => {
-			setSize({ w: el.clientWidth, h: el.clientHeight });
-		};
-		measure();
-		const observer = new ResizeObserver(measure);
-		observer.observe(el);
-		return () => {
-			observer.disconnect();
-		};
-	}, []);
-	const narrow = size.w < 560;
+	const size = useViewSize(wrapRef);
+	const narrow = size.w < NARROW_W;
 
 	// The home floor as a picture, made from the 2D court's drawing of it.
 	const floorRef = useRef<HTMLDivElement | null>(null);
@@ -1281,14 +1164,13 @@ const Court3D = ({
 		// How often it is drawn (see pace.ts) - and whether this frame says
 		// anything about how fast the device draws (not held back, paused).
 		const pacing = makePace(performance.now() + 1500);
-		let judging = true;
 		// The size the canvas is laid on the page at (CSS px).
 		let laidW = 0;
 		let laidH = 0;
 		const lookOf = (pid: number) => looks.current.get(pid)!;
 		const bodyOfPid = (pid: number) => bodies.current.get(pid) ?? bodyOf();
 
-		const tick = (now: number, draw: boolean) => {
+		const tick = (now: number, draw: boolean, still: boolean) => {
 			const p = live.current;
 			// (Still being staged: the building in the meantime - see pregame.)
 			const staging = !p.timeline;
@@ -1680,7 +1562,7 @@ const Court3D = ({
 				black: o >= 0.999 || flash >= 0.999 || s.wipe.hold === now,
 			});
 			if (
-				judging &&
+				!still &&
 				adjust(
 					res,
 					h * dpr,
@@ -1762,44 +1644,17 @@ const Court3D = ({
 			}
 		};
 
-		// Off the screen - scrolled away to the box score - nothing to draw.
-		let onScreen = true;
-		const seen =
-			typeof IntersectionObserver === "undefined"
-				? undefined
-				: new IntersectionObserver((entries) => {
-						onScreen = entries.some((entry) => entry.isIntersecting);
-					});
-		if (canvasRef.current) {
-			seen?.observe(canvasRef.current);
-		}
-		let raf = requestAnimationFrame(function frame(now) {
-			raf = requestAnimationFrame(frame);
-			if (!onScreen) {
-				tick(now, false);
-				return;
-			}
-			const s = play.current;
-			const paused = live.current.paused && !s.stepping && !s.replay;
-			if (!due(pacing, now, paused)) {
-				return;
-			}
-			judging = !paused;
-			const began = performance.now();
-			tick(now, true);
-			drawn(pacing, now, performance.now() - began, paused);
+		const stop = runFrames({
+			canvas: canvasRef.current,
+			pacing,
+			still: () => {
+				const s = play.current;
+				return live.current.paused && !s.stepping && !s.replay;
+			},
+			tick,
 		});
-		// A background tab gets no animation frames. Keep the game moving anyway
-		// (nothing to draw), or a hidden tab would hold up everyone watching.
-		const interval = setInterval(() => {
-			if (document.hidden) {
-				tick(performance.now(), false);
-			}
-		}, 250);
 		return () => {
-			cancelAnimationFrame(raf);
-			seen?.disconnect();
-			clearInterval(interval);
+			stop();
 			releaseSprites(sprites);
 			farm?.stop();
 		};
