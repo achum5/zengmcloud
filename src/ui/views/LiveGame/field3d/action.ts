@@ -4517,6 +4517,19 @@ const RUSH_SEES_MS = 500;
 const LINE_TURN_MS = [150, 350] as const;
 const LINE_GO_LEAST_MS = 900;
 const LINE_AFTER_IT_MS = [100, 450] as const;
+// Out on a route it did not go to, his route run with this long (ms) or
+// more still to go before it comes down: off after it at a jog, as far as
+// this far (feet) from where it comes down, and this much further on his
+// own count - see othersAfterIt. (Stood at the end of his route as it goes:
+// off after it as he sees it go - see RUSH_SEES_MS. No slower than this
+// (ft/s): as slow as gets him there as it comes down - not there with time
+// to stand about. On the move, and that would have him crawl: on at it at
+// that, as far as that takes him as it comes down - no nearer it than this
+// (feet) - not pulled up short of it with time to stand about.)
+const AIR_ON_LEAST_MS = 1500;
+const AIR_ON_KEEP_FT = [15, 15] as const;
+const AIR_ON_FPS_LEAST = 3;
+const AIR_ON_NEAR_FT = 8;
 // (A rusher this near a blocker as it goes (feet): on him, the two of them
 // letting go of each other at once.)
 const LINE_PAIR_FT = 4;
@@ -10490,6 +10503,15 @@ class Action {
 			);
 		}
 
+		if (thrown && target && catchPt) {
+			this.othersAfterIt(
+				runners.filter((m) => m !== target),
+				throwAt,
+				catchPt,
+				catchAt,
+			);
+		}
+
 		// The quarterback: set, through his progressions, and the throw.
 		if (thrown && catchPt) {
 			if (bootSide) {
@@ -10740,6 +10762,105 @@ class Action {
 				b.run(p, fps);
 			}
 			b.runUp(to, fps);
+		}
+	}
+
+	// THE OTHERS ONCE IT IS AWAY: thrown a long way, the men out on routes
+	// it did not go to, their routes run, turned to it and off after it at
+	// a jog as it comes down, each at his own pace, as far as his own count
+	// keeps him off where it comes down - not stood where their routes left
+	// them till it does.
+	private othersAfterIt(
+		men: Actor[],
+		throwAt: number,
+		catchPt: Pt,
+		catchAt: number,
+	) {
+		const still = (l: Leg) =>
+			l.from.x === l.to.x && l.from.y === l.to.y && !GAITS.has(l.move);
+		for (const m of men) {
+			if (this.done.has(m.pid) || DOWN.has(m.last.move)) {
+				continue;
+			}
+			const seen =
+				throwAt +
+				RUSH_SEES_MS +
+				PASS_END_SPREAD_MS * countOf(m, this.input.key, 164);
+			if (
+				m.t > seen &&
+				m.legs.every((l) => l.t1 <= seen || still(l)) &&
+				catchAt - seen >= AIR_ON_LEAST_MS
+			) {
+				m.cut(seen);
+			}
+			const far = dist(m.at, catchPt);
+			const keep =
+				AIR_ON_KEEP_FT[0] + AIR_ON_KEEP_FT[1] * countOf(m, this.input.key, 162);
+			const fps =
+				DOWNFIELD_FPS[0] +
+				(DOWNFIELD_FPS[1] - DOWNFIELD_FPS[0]) * countOf(m, this.input.key, 163);
+			if (catchAt - m.t < AIR_ON_LEAST_MS || far - keep < DOWNFIELD_LEAST_FT) {
+				continue;
+			}
+			const toward = (go: number) => ({
+				x:
+					m.at.x +
+					((catchPt.x - m.at.x) / Math.max(dist(m.at, catchPt), 1e-6)) * go,
+				y:
+					m.at.y +
+					((catchPt.y - m.at.y) / Math.max(dist(m.at, catchPt), 1e-6)) * go,
+			});
+			// (On the move: round to it as he slows - see rally - and on at
+			// it at the pace that has him there as it comes down.)
+			const l = m.last;
+			if (STEPS.has(l.move) && legPace(l) >= STOP_LEAST) {
+				m.plantFor(toward(far - keep), RALLY_TURN_FPS);
+				const T = (catchAt - m.t) / 1000;
+				const near = dist(m.at, catchPt);
+				if (T * 1000 < LINE_GO_LEAST_MS || near - keep < DOWNFIELD_LEAST_FT) {
+					m.easeOff(EASE_OFF_FT);
+					continue;
+				}
+				// (As far as slowing to it from the pace he is going and on
+				// at it takes him - not slowed to a crawl short of it.)
+				const v = legPace(m.last);
+				const pace = clamp((near - keep) / T, AIR_ON_FPS_LEAST, fps);
+				const slow = v > pace ? (v - pace) / STOP_ACCEL : 0;
+				const on =
+					((v * v - pace * pace) / (2 * STOP_ACCEL)) * (slow > 0 ? 1 : 0) +
+					pace * Math.max(0, T - slow);
+				m.chase(
+					toward(Math.min(near - AIR_ON_NEAR_FT, Math.max(near - keep, on))),
+					catchAt,
+					fps,
+				);
+				continue;
+			}
+			// (Stood: turned to it first, watching it, and off at the pace
+			// that has him there as it comes down.)
+			m.hold(
+				m.t +
+					LINE_TURN_MS[0] +
+					(LINE_TURN_MS[1] - LINE_TURN_MS[0]) * countOf(m, this.input.key, 148),
+				undefined,
+				this.toward(m.at, catchPt),
+			);
+			const ms = catchAt - m.t;
+			const pace = clamp(
+				((far - keep) / Math.max(ms, 1)) * 1000,
+				AIR_ON_FPS_LEAST,
+				fps,
+			);
+			const go = Math.min(far - keep, (pace * ms) / 1000);
+			if (ms < LINE_GO_LEAST_MS || go < DOWNFIELD_LEAST_FT) {
+				continue;
+			}
+			// (Round any man down on the way - not over him.)
+			const to = toward(go);
+			for (const q of this.wayRound(m.at, to, m.t).slice(0, -1)) {
+				m.run(q, pace);
+			}
+			m.runUp(to, pace);
 		}
 	}
 
