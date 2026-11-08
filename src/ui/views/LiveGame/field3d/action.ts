@@ -4413,9 +4413,36 @@ const PANCAKE_ROOM_FT = 2;
 // Let up after a pass is away on his own count too, up to this much later
 // (ms) - and a block on a run once the man with the ball is down.
 const PASS_END_SPREAD_MS = 450;
+// A pass in the air longer than this (ms): the rush and the line on it
+// let up this long after it goes (and up to PASS_END_SPREAD_MS later, each
+// pair on its own count), not when it comes down - see lineAfterIt; turned
+// to it over this long (ms); with this long (ms) still to go before it
+// comes down, off up the field after it. Incomplete, off after it this
+// long (ms) after letting up, if they have not gone already.
+const RUSH_LONG_MS = 800;
+const RUSH_SEES_MS = 500;
+const LINE_TURN_MS = [150, 350] as const;
+const LINE_GO_LEAST_MS = 900;
+const LINE_AFTER_IT_MS = [100, 450] as const;
+// (A rusher this near a blocker as it goes (feet): on him, the two of them
+// letting go of each other at once.)
+const LINE_PAIR_FT = 4;
 // (Off his man or his zone for the ball, once it is thrown, up to this much
 // later than the first of them, ms.)
 const COVER_BREAK_SPREAD_MS = 220;
+// (Further off where it goes than the men breaking on it, on his way over
+// to it all the same as he reads it - see rally: at this much of his speed,
+// at this much further than RALLY_FAR_FT off; aiming this far in front of
+// where it comes down, toward his own goal line (feet), and on at it this
+// long after it does (ms); not with less than this long to go (ms); round
+// into it from no quicker than this (ft/s).)
+const RALLY_PACE = 0.7;
+const RALLY_FAR_PACE = 0.6;
+const RALLY_FAR_FT = 100;
+const RALLY_AHEAD_FT = 15;
+const RALLY_ON_MS = 150;
+const RALLY_LEAST_MS = 400;
+const RALLY_TURN_FPS = 6;
 // (Down at a blocker on a return at this much of his speed, give or take
 // half of this; the blocker off at him up to this much later, ms.)
 const LOCK_PACE = 0.85;
@@ -10297,6 +10324,10 @@ class Action {
 			);
 		}
 
+		if (thrown && catchPt && catchAt - throwAt > RUSH_LONG_MS) {
+			this.lineAfterIt(rushers, blockers, throwAt, catchPt, catchAt);
+		}
+
 		// And what came of it.
 		if (first === cmpI && thrown && target && catchPt) {
 			this.complete(cmpI, qb, target, catchPt, catchAt, gain);
@@ -10309,7 +10340,13 @@ class Action {
 			}
 			this.withIt([qb], catchAt, QB_AFTER_KEEP_FT, QB_AFTER_FPS, false);
 		} else if (first === incI && thrown && target && catchPt) {
-			this.incomplete(incI, qb, target, catchPt, catchAt, coverage, bat);
+			// (The line and the rush, let up as it went: off up the field
+			// after it as it comes down, not stood where they let go of each
+			// other - thrown away, nobody going for it.)
+			if (!this.incomplete(incI, qb, target, catchPt, catchAt, coverage, bat)) {
+				this.downfield(blockers, LINE_AFTER_IT_MS);
+				this.downfield(rushers, LINE_AFTER_IT_MS);
+			}
 		} else if (first === intI && thrown && target && catchPt) {
 			this.intercepted(intI, qb, target, catchPt, catchAt, coverage, bat);
 		} else if (sacked) {
@@ -10331,7 +10368,10 @@ class Action {
 	// each on his own count and at his own pace - not stood where he set
 	// till the whistle. (The punt rush the same, once it is kicked and
 	// nobody is bringing it back.)
-	downfield(blockers: Actor[]) {
+	downfield(
+		blockers: Actor[],
+		react: readonly [number, number] = DOWNFIELD_REACT_MS,
+	) {
 		const end = this.ballAt(this.whistle);
 		const men = blockers.filter((b) => !this.done.has(b.pid));
 		if (!end || men.length === 0) {
@@ -10351,10 +10391,7 @@ class Action {
 		const uy = (end.y - mid.y) / far;
 		for (const b of men) {
 			const from =
-				b.t +
-				DOWNFIELD_REACT_MS[0] +
-				(DOWNFIELD_REACT_MS[1] - DOWNFIELD_REACT_MS[0]) *
-					countOf(b, this.input.key, 23);
+				b.t + react[0] + (react[1] - react[0]) * countOf(b, this.input.key, 23);
 			const fps =
 				DOWNFIELD_FPS[0] +
 				(DOWNFIELD_FPS[1] - DOWNFIELD_FPS[0]) * countOf(b, this.input.key, 24);
@@ -10365,13 +10402,99 @@ class Action {
 			if (go < DOWNFIELD_LEAST_FT) {
 				continue;
 			}
-			b.hold(from);
+			// (Turned to it the while, watching it.)
+			b.hold(from, undefined, this.toward(b.at, end));
 			// (Round any man down on the way - not over him.)
 			const to = { x: b.at.x + ux * go, y: b.at.y + uy * go };
 			for (const p of this.wayRound(b.at, to, b.t).slice(0, -1)) {
 				b.run(p, fps);
 			}
 			b.runUp(to, fps);
+		}
+	}
+
+	// THE LINE ONCE IT IS AWAY: thrown a long way, the rush and the men on
+	// them let go of each other as they see it go - not still hand fighting
+	// with it long gone - each pair on its own count (see RUSH_SEES_MS); a
+	// man not on anybody the same. Each turned to watch it, and with time
+	// enough before it comes down, off up the field after it at a jog, all
+	// the same way keeping their places (as downfield) - not stood where
+	// they let go.
+	private lineAfterIt(
+		rushers: Actor[],
+		blockers: Actor[],
+		throwAt: number,
+		catchPt: Pt,
+		catchAt: number,
+	) {
+		const off = (b: Actor) =>
+			throwAt +
+			RUSH_SEES_MS +
+			PASS_END_SPREAD_MS * countOf(b, this.input.key, 3);
+		const seen = throwAt + RUSH_SEES_MS;
+		const live = (m: Actor) => {
+			const l = legAt(m, seen);
+			return (
+				!this.done.has(m.pid) &&
+				(l.move === "engage" || l.move === "passSet") &&
+				m.t > seen + LINE_TURN_MS[1]
+			);
+		};
+		const line = blockers.filter(live);
+		const rush = rushers.filter(live);
+		const men: Actor[] = [];
+		for (const m of [...line, ...rush]) {
+			// (A rusher with the man on him: let go at once, the two of them.)
+			const at = m.posAt(seen);
+			const mate = line.includes(m)
+				? m
+				: (line
+						.filter((b) => dist(b.posAt(seen), at) < LINE_PAIR_FT)
+						.sort(
+							(x, y) => dist(x.posAt(seen), at) - dist(y.posAt(seen), at),
+						)[0] ?? m);
+			const t = off(mate);
+			if (t > catchAt - LINE_TURN_MS[1]) {
+				continue;
+			}
+			m.cut(t);
+			men.push(m);
+		}
+		if (men.length === 0) {
+			return;
+		}
+		const mid = {
+			x: men.reduce((a, b) => a + b.at.x, 0) / men.length,
+			y: men.reduce((a, b) => a + b.at.y, 0) / men.length,
+		};
+		const far = dist(mid, catchPt);
+		const ux = far > 0 ? (catchPt.x - mid.x) / far : 0;
+		const uy = far > 0 ? (catchPt.y - mid.y) / far : 0;
+		for (const m of men) {
+			m.hold(
+				m.t +
+					LINE_TURN_MS[0] +
+					(LINE_TURN_MS[1] - LINE_TURN_MS[0]) * countOf(m, this.input.key, 148),
+				undefined,
+				this.toward(m.at, catchPt),
+			);
+			const left = catchAt - m.t;
+			if (left < LINE_GO_LEAST_MS) {
+				continue;
+			}
+			const fps =
+				DOWNFIELD_FPS[0] +
+				(DOWNFIELD_FPS[1] - DOWNFIELD_FPS[0]) * countOf(m, this.input.key, 24);
+			const go = Math.min(far - DOWNFIELD_SHORT_FT, (fps * left) / 1000);
+			if (go < DOWNFIELD_LEAST_FT) {
+				continue;
+			}
+			// (Round any man down on the way - not over him.)
+			const to = { x: m.at.x + ux * go, y: m.at.y + uy * go };
+			for (const p of this.wayRound(m.at, to, m.t).slice(0, -1)) {
+				m.run(p, fps);
+			}
+			m.runUp(to, fps);
 		}
 	}
 
@@ -14002,6 +14125,7 @@ class Action {
 
 	// ---- a ball that is not caught -------------------------------------------------
 
+	// (Whether it was thrown away.)
 	incomplete(
 		i: number,
 		qb: Actor,
@@ -14010,7 +14134,7 @@ class Action {
 		catchAt: number,
 		coverage: Actor[],
 		bat?: Bat,
-	) {
+	): boolean {
 		const r = this.r;
 		const breakup = this.man(this.statPids("defPssDef")[0]);
 		const ground = catchAt + INC_DROP_MS;
@@ -14480,7 +14604,7 @@ class Action {
 		this.at.set(i, groundAt);
 		this.whistle = groundAt;
 		if (away) {
-			return;
+			return true;
 		}
 		if (batSeen === undefined) {
 			this.pursue(coverage, catchPt, catchAt + 200, []);
@@ -14504,6 +14628,7 @@ class Action {
 			m.cut(seen);
 			m.easeOff(EASE_OFF_FT, lands);
 		}
+		return false;
 	}
 
 	// A defender breaking on the ball: from his coverage for where it comes
@@ -18517,9 +18642,37 @@ class Action {
 								: undefined,
 						);
 					}
+				} else {
+					this.rally(m, to, catchAt);
 				}
 			}
 		}
+	}
+
+	// RUNNING TO THE BALL. Thrown a long way from him, he isn't stood
+	// watching it in the air from where his part of the coverage left him:
+	// on his way over to it as he reads it, at a run, to cut it off in front
+	// of where it comes down - as far as that gets him by then (see
+	// RALLY_PACE).
+	private rally(m: Actor, to: Pt, catchAt: number) {
+		const due = catchAt + RALLY_ON_MS;
+		if (due - m.t < RALLY_LEAST_MS || DOWN.has(m.last.move)) {
+			return;
+		}
+		const c = this.of(to);
+		const aim = this.w({ d: c.d + RALLY_AHEAD_FT, a: c.a });
+		const fps =
+			m.top * (dist(m.at, aim) > RALLY_FAR_FT ? RALLY_FAR_PACE : RALLY_PACE);
+		// (Planted down to RALLY_TURN_FPS for it, at the most, and round -
+		// not cut at speed: there is no hurry, it is a long way off.)
+		m.plantFor(aim, RALLY_TURN_FPS);
+		// (Pulled up for it as it comes down, no time to be off to it after
+		// all: eased off there - not left going at it to stop dead.)
+		if (due - m.t < RALLY_LEAST_MS / 2) {
+			m.easeOff(EASE_OFF_FT);
+			return;
+		}
+		m.chase(aim, due, fps);
 	}
 
 	// ---- a run ------------------------------------------------------------------
