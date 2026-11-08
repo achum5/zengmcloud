@@ -9,12 +9,16 @@ import {
 import {
 	castShadows,
 	keepPixels,
+	pickSprite,
+	prepareOf,
 	rim,
 	stamp,
+	takeFarmed,
 	type Cast,
 	type Kept,
 	type Scratch,
 	type SpriteCache,
+	type SpritePlan,
 } from "../court3d/sprite.ts";
 import { FIGURE_SCALE } from "./body.ts";
 import type { Side } from "./geometry.ts";
@@ -701,23 +705,13 @@ const SHADED = 0.66;
 // the box round him there, his pose in the sprite's steps, his size in
 // steps of 4%, whether the ball is drawn with him, and his picture's key in
 // the cache (with one).
-type Plan = {
-	base: ReturnType<typeof project>;
-	lift: number;
+type Plan = SpritePlan & {
 	left: number;
 	right: number;
 	upper: number;
 	lower: number;
 	step: Stepped;
-	scale: number;
-	held: boolean;
 	shaded: boolean;
-	key?: string;
-	// His new picture being made off the page's thread (see farm.ts): drawn
-	// as he was meanwhile.
-	farmed?: boolean;
-	// Off the field - on the sideline, at the back of the picture.
-	off?: boolean;
 };
 // The nearest a man is drawn in front of the camera (feet; the 3D court's -
 // see court3d/sprite.ts): any nearer, or behind it - a camera down on the
@@ -782,6 +776,7 @@ const planOf = (
 		step,
 		scale,
 		held: st.ball !== undefined && !st.unseen,
+		who: st.id,
 		shaded,
 	};
 	if (cache) {
@@ -814,28 +809,11 @@ const plansOf = (cache: SpriteCache) => {
 	return p.plans;
 };
 
-// Whether he may be drawn this frame in the picture he had last frame (out
-// of time for a new one): if he had one a frame ago, not for too many frames
-// already, not much bigger or smaller since, and never with the ball in it
-// when he has let it go, or without it once he has it (see court3d's
-// asWas). Who he is, by his id: two men may look alike. (Off the field, a
-// few frames more: small, at the back, and seldom on the move - his new
-// picture made in his turn after the men in the play, not on the page's
-// thread ahead of them.)
-const MAX_BEHIND = 3;
-const MAX_BEHIND_OFF = 6;
-const asWas = (cache: SpriteCache, plan: Plan, who: number) => {
-	const was = cache.last.get(who);
-	return was &&
-		was.behind < (plan.off ? MAX_BEHIND_OFF : MAX_BEHIND) &&
-		was.frame === cache.frame - 1 &&
-		Math.abs(was.scale - plan.scale) <= 1 &&
-		(was.held ?? false) === plan.held
-		? was
-		: undefined;
-};
-const overBudget = (cache: SpriteCache) =>
-	cache.budget !== undefined && cache.spent >= cache.budget;
+// Off the field, drawn as he was a few frames more than the men in the
+// play (see court3d/sprite.ts SpritePlan): small, at the back, and seldom on
+// the move - his new picture made in his turn after theirs, not on the
+// page's thread ahead of them.
+const PATIENCE_OFF = 6;
 
 // HOW HE IS MADE, in plain numbers - the camera, him and his pose in the
 // sprite's steps, his build, the box on the picture he is drawn in and where
@@ -1010,62 +988,6 @@ const make = (
 // Which picture he is drawn in this frame: his own for this pose, kept;
 // the one he had, if he may be drawn as he was, out of time for a new one;
 // or none yet, to be made now - and the books kept on it.
-const pick = (cache: SpriteCache, plan: Plan, who: number): Kept | "make" => {
-	const kept = plan.key === undefined ? undefined : cache.kept.get(plan.key);
-	if (kept && plan.key !== undefined) {
-		// Kept longest are the ones still in use: to the back of the line.
-		cache.kept.delete(plan.key);
-		cache.kept.set(plan.key, kept);
-		cache.last.set(who, {
-			kept,
-			frame: cache.frame,
-			behind: 0,
-			scale: plan.scale,
-			held: plan.held,
-		});
-		return kept;
-	}
-	if (plan.farmed || overBudget(cache)) {
-		const was = asWas(cache, plan, who);
-		if (was) {
-			was.frame = cache.frame;
-			was.behind += 1;
-			return was.kept;
-		}
-	}
-	return "make";
-};
-
-// The men sculpted off the page's thread since the last frame, kept - and
-// each the picture a man is drawn in meanwhile, if it is of a later pose of
-// his than the one he has: he is then that much less behind.
-const took = (cache: SpriteCache, farm: FieldFarm) => {
-	const began = performance.now();
-	for (const m of farm.take(cache)) {
-		if (cache.kept.has(m.key)) {
-			continue;
-		}
-		const { pixels, dx, dy, anchor } = m.shaped;
-		const kept = keepPixels(cache, m.key, pixels, dx, dy);
-		anchors.set(kept, anchor);
-		const was = cache.last.get(m.id);
-		if (
-			m.frame < cache.frame &&
-			(!was ||
-				(was.frame === cache.frame - 1 && was.frame - was.behind < m.frame))
-		) {
-			cache.last.set(m.id, {
-				kept,
-				frame: cache.frame - 1,
-				behind: cache.frame - 1 - m.frame,
-				scale: m.scale,
-				held: m.held,
-			});
-		}
-	}
-	cache.spent += performance.now() - began;
-};
-
 // THE NEW PICTURES A FRAME NEEDS, MADE FIRST - the men on the field before
 // anyone off it, and of them the nearest the camera first: drawn back to
 // front, a frame out of time ran out on the men in the play and nearest,
@@ -1090,51 +1012,49 @@ export const prepareFieldSprites = (
 	farm?: FieldFarm,
 ) => {
 	if (farm) {
-		took(cache, farm);
+		takeFarmed(cache, farm.take(cache), (m) => {
+			const { pixels, dx, dy, anchor } = m.shaped;
+			const kept = keepPixels(cache, m.key, pixels, dx, dy);
+			anchors.set(kept, anchor);
+			return kept;
+		});
 	}
 	const plans = plansOf(cache);
-	const todo: { man: (typeof men)[number]; plan: Plan; wait: boolean }[] = [];
+	const planned: { man: (typeof men)[number]; plan: Plan }[] = [];
 	for (const man of men) {
 		const plan = planOf(cam, man.st, man.body, man.look, px, cache, man.shaded);
 		if (plan?.key === undefined) {
 			continue;
 		}
-		plan.off = man.off;
+		if (man.off) {
+			plan.off = true;
+			plan.patience = PATIENCE_OFF;
+		}
 		plans.set(man.st, plan);
-		if (!cache.kept.has(plan.key)) {
-			todo.push({
-				man,
-				plan,
-				wait: asWas(cache, plan, man.st.id) !== undefined,
-			});
-		}
+		planned.push({ man, plan });
 	}
-	todo.sort(
-		(a, b) =>
-			(a.man.off ? 1 : 0) - (b.man.off ? 1 : 0) ||
-			b.plan.base.k - a.plan.base.k,
+	prepareOf(
+		cache,
+		planned,
+		farm &&
+			((man, plan) =>
+				farm.busy(cache, plan.key!) ||
+				farm.ask(
+					cache,
+					plan.key!,
+					jobOf(plan, cam, man.st, man.body, px),
+					man.look,
+					{
+						id: plan.who,
+						frame: cache.frame,
+						scale: plan.scale,
+						held: plan.held,
+					},
+				)),
+		(man, plan) => {
+			make(plan, scratch, cam, man.st, man.body, man.look, px, cache);
+		},
 	);
-	for (const { man, plan, wait } of todo) {
-		const key = plan.key!;
-		if (
-			wait &&
-			farm &&
-			(farm.busy(cache, key) ||
-				farm.ask(cache, key, jobOf(plan, cam, man.st, man.body, px), man.look, {
-					id: man.st.id,
-					frame: cache.frame,
-					scale: plan.scale,
-					held: plan.held,
-				}))
-		) {
-			plan.farmed = true;
-			continue;
-		}
-		if (wait && overBudget(cache)) {
-			continue;
-		}
-		make(plan, scratch, cam, man.st, man.body, man.look, px, cache);
-	}
 };
 
 // HIS SHADOWS ON THE TURF (the 3D court's: see court3d/sprite.ts stamp): his
@@ -1144,8 +1064,6 @@ export const prepareFieldSprites = (
 // across, how much of his height it runs out over the turf - toward the
 // camera +, away -; how dark.) Off the turf, they come away from his feet
 // and fade.
-// His shadows: the lights' (see court3d/sprite.ts), or the sun's - one,
-// longer and darker, thrown off to the side.
 export { LIGHT_CASTS, type Cast } from "../court3d/sprite.ts";
 export const sunCasts = (lean: number): Cast[] => [
 	{ lean, run: -0.5, alpha: 0.24 },
@@ -1173,7 +1091,10 @@ export const drawFieldPlayer = (
 	}
 	const { base, lift } = plan;
 	if (cache && plan.key !== undefined) {
-		const was = pick(cache, plan, st.id);
+		const was = pickSprite(cache, plan);
+		if (was === "out") {
+			return;
+		}
 		if (was !== "make") {
 			const on = shiftedOn(cam, st, base, anchors.get(was));
 			if (casts && casts.length > 0) {
