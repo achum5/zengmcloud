@@ -4662,6 +4662,10 @@ const TRAIL_APART_FT = 4;
 // (Along with the ball, kept off it - see alongWith - no nearer it than
 // this (feet), out off it no more than ALONG_OUT_FT a step.)
 const ALONG_NEAREST_FT = 3.5;
+// (Along with it no nearer than this (feet) to any other man up on his
+// feet then - two going its way on near the one line kept off each other,
+// not run together into the one spot.)
+const ALONG_APART_FT = 3.5;
 const ALONG_OUT_FT = 1.2;
 // (The others out on routes once it is caught - see withIt: off after it
 // so long after they see it (soonest, latest), ms, at a jog (ft/s), kept
@@ -23196,6 +23200,36 @@ class Action {
 	// After the ball at `fps` till `until`, a leg at a time (as pursue) -
 	// kept `keep` off it, and with it as it comes his way, not in on it.
 	alongWith(m: Actor, fps: number, keep: number, until: number) {
+		// (Off the others there then, the man with it aside - see
+		// ALONG_APART_FT.)
+		const apart = (p: Pt, c: number): Pt => {
+			let q = p;
+			for (const x of this.men) {
+				if (x === m || x.t < c) {
+					continue;
+				}
+				const l = legAt(x, c);
+				if (l.ball || DOWN.has(l.move)) {
+					continue;
+				}
+				const o = x.posAt(c);
+				const d = dist(o, q);
+				if (d >= ALONG_APART_FT) {
+					continue;
+				}
+				// (Right on him: out to the side of the way he goes.)
+				const wx =
+					d > 0.01
+						? (q.x - o.x) / d
+						: -(q.y - m.at.y) / Math.max(0.01, dist(m.at, q));
+				const wy =
+					d > 0.01
+						? (q.y - o.y) / d
+						: (q.x - m.at.x) / Math.max(0.01, dist(m.at, q));
+				q = { x: o.x + wx * ALONG_APART_FT, y: o.y + wy * ALONG_APART_FT };
+			}
+			return q;
+		};
 		while (m.t + PURSUIT_STEP < until) {
 			const c = m.t + PURSUIT_STEP;
 			const ball = this.ballAt(c + PURSUIT_LEAD);
@@ -23212,10 +23246,13 @@ class Action {
 				m.chaseUp(
 					this.wayClear(
 						m,
-						{
-							x: m.at.x + ball.x - now.x + Math.cos(a) * out,
-							y: m.at.y + ball.y - now.y + Math.sin(a) * out,
-						},
+						apart(
+							{
+								x: m.at.x + ball.x - now.x + Math.cos(a) * out,
+								y: m.at.y + ball.y - now.y + Math.sin(a) * out,
+							},
+							c,
+						),
 						c,
 						fps,
 					),
@@ -23229,7 +23266,10 @@ class Action {
 			m.chaseUp(
 				this.wayClear(
 					m,
-					{ x: ball.x + Math.cos(a) * keep, y: ball.y + Math.sin(a) * keep },
+					apart(
+						{ x: ball.x + Math.cos(a) * keep, y: ball.y + Math.sin(a) * keep },
+						c,
+					),
 					c,
 					fps,
 				),
