@@ -5891,6 +5891,13 @@ const CONTEST_UP_SPREAD_MS = 60;
 const CONTEST_UP_CARRY = 0.35;
 const CONTEST_UP_MOST_FT = 4;
 const CONTEST_UP_APART = 2.2;
+// (Off a run quicker than this, ft/s: gathered for it first, down to it on
+// the way he goes - see brakeBy - not off a sprint into the air at a
+// walk. And carried on through the air off that, slowing evenly to a
+// stop as he comes down - in this many pieces - not at an even crawl
+// from the moment he goes up.)
+const CONTEST_UP_GATHER_FPS = 12;
+const CONTEST_UP_STEPS = 8;
 // (On his feet: in his stride, or sat in his stance reading it.)
 const ON_FEET = new Set<Move>([
 	...GAITS,
@@ -12018,6 +12025,11 @@ class Action {
 						y: catchPt.y + (catchPt.y - rFrom.y) * 0.9,
 					}
 				: rFrom;
+		const keep = m.part.legs.map((l) => ({ ...l }));
+		const keepYaw = m.yaw;
+		const gathered =
+			dist(m.posAt(t0), m.posAt(t0 - 100)) * 10 > CONTEST_UP_GATHER_FPS &&
+			m.brakeBy(t0 - 1, CONTEST_UP_GATHER_FPS, STOP_ACCEL * STOP_HARD);
 		const from = m.posAt(t0);
 		const was = m.posAt(t0 - 100);
 		const v = dist(from, was) * 10;
@@ -12057,7 +12069,33 @@ class Action {
 			}
 			m.cut(t0);
 			m.act("leap", t0 + CONTEST_UP_MS, way, to);
+			const T = CONTEST_UP_MS / 1000;
+			if (go > 0 && v > go / T + 0.5) {
+				const Ts = Math.min(T, (2 * go) / v);
+				const a = (v - Math.max(0, (2 * go) / Ts - v)) / Ts;
+				const along = (s: number) => {
+					const x = Math.min(s, Ts);
+					const d = v * x - (a * x * x) / 2;
+					return {
+						x: from.x + Math.cos(way) * d,
+						y: from.y + Math.sin(way) * d,
+					};
+				};
+				const n = CONTEST_UP_STEPS;
+				for (let k = 1; k < n; k++) {
+					m.split(t0 + (CONTEST_UP_MS * k) / n);
+				}
+				const pieces = m.part.legs.slice(-n);
+				pieces.forEach((l, k) => {
+					l.from = along((T * k) / n);
+					l.to = k === n - 1 ? to : along((T * (k + 1)) / n);
+				});
+			}
 			return true;
+		}
+		if (gathered) {
+			m.part.legs.splice(0, m.part.legs.length, ...keep);
+			m.yaw = keepYaw;
 		}
 		return false;
 	}
