@@ -200,10 +200,14 @@ export const ScoreBug = ({
 	refs,
 	hidden,
 	shotTitle = "Shot clock",
+	series,
 }: {
 	away: BugTeam | undefined;
 	home: BugTeam | undefined;
 	quarter: string;
+	// A playoff game's round and series, in a strip across its top (see
+	// seriesLine).
+	series?: string;
 	// How many timeouts each side started the period's stretch with, for the
 	// pips.
 	totalTimeouts: number | undefined;
@@ -216,11 +220,11 @@ export const ScoreBug = ({
 	<div
 		style={{
 			display: hidden ? "none" : "flex",
+			flexDirection: "column",
 			position: "absolute",
 			left: "50%",
 			bottom: "1.6cqw",
 			transform: "translateX(-50%)",
-			alignItems: "stretch",
 			fontFamily: FONT,
 			fontWeight: 700,
 			fontSize: "clamp(10px, 1.75cqw, 16px)",
@@ -231,63 +235,81 @@ export const ScoreBug = ({
 			whiteSpace: "nowrap",
 		}}
 	>
-		<Side
-			team={away}
-			foulsRef={refs.fouls[0]}
-			ballRef={refs.ball[0]}
-			totalTimeouts={totalTimeouts}
-		/>
-		<Side
-			team={home}
-			foulsRef={refs.fouls[1]}
-			ballRef={refs.ball[1]}
-			totalTimeouts={totalTimeouts}
-		/>
-		<div
-			style={{
-				display: "flex",
-				alignItems: "center",
-				gap: "0.7em",
-				padding: "0 0.8em",
-				background: "rgba(10, 10, 14, 0.94)",
-				color: "#f4f4f4",
-				fontVariantNumeric: "tabular-nums",
-				fontSize: "1.1em",
-			}}
-		>
-			<span style={{ color: "#bdb8c6", fontSize: "0.85em" }}>{quarter}</span>
-			<span ref={refs.clock} style={{ minWidth: "2.6em" }} />
-		</div>
-		<span
-			ref={refs.shot}
-			title={shotTitle}
-			style={{
-				// Shown by the frame loop while the shot clock runs.
-				display: "none",
-				alignItems: "center",
-				justifyContent: "center",
-				minWidth: "1.9em",
-				padding: "0 0.35em",
-				background: "#1c1408",
-				color: "#ffb547",
-				fontVariantNumeric: "tabular-nums",
-				fontSize: "1.1em",
-			}}
-		/>
-		{refs.down ? (
-			<span
-				ref={refs.down}
-				title="Down and distance"
+		{series ? (
+			<div
+				style={{
+					padding: "0.3em 0.8em",
+					background: "rgba(10, 10, 14, 0.94)",
+					borderBottom: "1px solid rgba(255,255,255,.12)",
+					color: "#d8d4de",
+					fontSize: "max(7.5px, 0.66em)",
+					letterSpacing: "0.08em",
+					textAlign: "center",
+					textTransform: "uppercase",
+				}}
+			>
+				{series}
+			</div>
+		) : null}
+		<div style={{ display: "flex", alignItems: "stretch" }}>
+			<Side
+				team={away}
+				foulsRef={refs.fouls[0]}
+				ballRef={refs.ball[0]}
+				totalTimeouts={totalTimeouts}
+			/>
+			<Side
+				team={home}
+				foulsRef={refs.fouls[1]}
+				ballRef={refs.ball[1]}
+				totalTimeouts={totalTimeouts}
+			/>
+			<div
 				style={{
 					display: "flex",
 					alignItems: "center",
+					gap: "0.7em",
+					padding: "0 0.8em",
+					background: "rgba(10, 10, 14, 0.94)",
+					color: "#f4f4f4",
+					fontVariantNumeric: "tabular-nums",
+					fontSize: "1.1em",
+				}}
+			>
+				<span style={{ color: "#bdb8c6", fontSize: "0.85em" }}>{quarter}</span>
+				<span ref={refs.clock} style={{ minWidth: "2.6em" }} />
+			</div>
+			<span
+				ref={refs.shot}
+				title={shotTitle}
+				style={{
+					// Shown by the frame loop while the shot clock runs.
+					display: "none",
+					alignItems: "center",
 					justifyContent: "center",
-					padding: "0 0.7em",
+					minWidth: "1.9em",
+					padding: "0 0.35em",
 					background: "#1c1408",
 					color: "#ffb547",
 					fontVariantNumeric: "tabular-nums",
+					fontSize: "1.1em",
 				}}
 			/>
-		) : null}
+			{refs.down ? (
+				<span
+					ref={refs.down}
+					title="Down and distance"
+					style={{
+						display: "flex",
+						alignItems: "center",
+						justifyContent: "center",
+						padding: "0 0.7em",
+						background: "#1c1408",
+						color: "#ffb547",
+						fontVariantNumeric: "tabular-nums",
+					}}
+				/>
+			) : null}
+		</div>
 	</div>
 );

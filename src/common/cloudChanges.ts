@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 217,
+		date: "2026-11-08",
+		text: '3D playoff games: the score bug has a strip across its top with the round, which game of the series it is and how the series stands going into it ("1st round · Game 4 · BOS leads 2-1"). The Series section says "wins" once a team has taken the series.',
+	},
+	{
 		n: 216,
 		date: "2026-11-08",
 		text: "3D highlights: a play opened on its own now starts as the play does - the clock at its time instead of running down from the start of the quarter, and both benches and coaches already in their places instead of walking back from the break.",

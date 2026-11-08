@@ -126,6 +126,7 @@ import {
 	shotClockText,
 } from "./scoreBug.ts";
 import { ScoreBug, type BugRefs } from "./ScoreBug.tsx";
+import { seriesLine } from "../gamecast/seriesLine.ts";
 import { CustomScoreBug } from "./CustomScoreBug.tsx";
 import { IntroCard, IntroTitle } from "./IntroCard.tsx";
 import { callAt } from "./intro.ts";
@@ -1759,6 +1760,13 @@ const Court3D = ({
 					},
 					quarter,
 					totalTimeouts: STARTING_NUM_TIMEOUTS,
+					series:
+						boxScore?.teams?.[0] && boxScore?.teams?.[1]
+							? seriesLine(boxScore.gamecast, !!boxScore.playoffs, [
+									boxScore.teams[1],
+									boxScore.teams[0],
+								])
+							: undefined,
 					refs: {
 						clock: clockRef,
 						shot: shotRef,
