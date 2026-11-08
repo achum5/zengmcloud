@@ -392,6 +392,7 @@ const DIVE_STILL_FT = 4;
 const DIVE_LEAST_MS = 380;
 const CUT_MERGE_MS = 60;
 const GAITS = new Set<Move>(["walk", "jog", "run", "sprint"]);
+const GAIT_ORDER: Move[] = ["walk", "jog", "run", "sprint"];
 const STEPS = new Set<Move>([...GAITS, "back", "slide", "shuffle"]);
 // (Stood in it, or sat in it on the spot, alive under him - a receiver
 // sat down for the ball, a man lined up for a kickoff.)
@@ -1411,6 +1412,16 @@ class Actor {
 		}
 		const n = Math.max(1, Math.round((ta * 1000) / RAMP_STEP_MS));
 		const dt = ta / n;
+		// (In the gait he gets up to, if that is a quicker one than the
+		// pace it averages takes - see RAMPS: not walking at a jog's pace.)
+		const up = gait(v0 + a * ta);
+		if (
+			move === undefined &&
+			GAITS.has(leg.move) &&
+			GAIT_ORDER.indexOf(up) > GAIT_ORDER.indexOf(leg.move)
+		) {
+			leg.move = up;
+		}
 		// (Hardly any of it at the one pace: the last step up on to the end.)
 		const steps = T - ta < RAMP_STEP_MS / 2000 ? n - 1 : n;
 		let from = leg.from;
@@ -9772,29 +9783,38 @@ class Action {
 						: -1
 					: (gun ? -1 : 1) * Math.sign(fs.a);
 			// (Where and when a handoff would be: see runPlay.)
-			const meshPt = this.w(
+			const lane = this.w(
 				gun
 					? { d: qbStart.d + 0.5, a: side * 2.5 }
 					: underMesh(qbStart, fs, side),
 			);
-			const qbMesh = this.w({
-				d: this.of(meshPt).d,
-				a: this.of(meshPt).a - side * MESH_APART,
+			// (In the gun, from the far side of him: across in front of him
+			// to it - see GUN_CROSS_UP - the quarterback stood where he is,
+			// not through him to it out the other side; when, and the way on
+			// from it, as from beside him.)
+			const cross = gun && (fs.a - qbStart.a) * side < 0;
+			const meshPt = cross
+				? this.w({
+						d: qbStart.d + GUN_CROSS_UP,
+						a: qbStart.a + side * GUN_CROSS_ALONG,
+					})
+				: lane;
+			const beside = this.w({
+				d: this.of(lane).d,
+				a: this.of(lane).a - side * MESH_APART,
 			});
+			const qbMesh = cross ? qb.at : beside;
 			// (Out of his stance to it, up to speed - see the rider in runPlay
 			// - not there flat out off his first step.)
-			const reach = rampedMs(
-				dist(faker.at, meshPt),
-				faker.top * 0.75,
-				0,
-				RELEASE_ACCEL,
-			);
+			const reachOf = (p: Pt) =>
+				rampedMs(dist(faker.at, p), faker.top * 0.75, 0, RELEASE_ACCEL);
+			const reach = reachOf(meshPt);
 			fakeT = Math.max(
 				Math.max(has, qb.t) +
 					PA_MS / 2 +
-					qbStepMs(dist(qb.at, qbMesh)) +
+					qbStepMs(dist(qb.at, beside)) +
 					r() * 150,
-				snap + 150 + reach,
+				snap + 150 + reachOf(lane),
 			);
 			qb.go(qbMesh, fakeT - PA_MS / 2, "slide", this.toward(qbMesh, meshPt));
 			qb.act("handOff", fakeT + PA_MS / 2, this.toward(qbMesh, meshPt));
@@ -9809,7 +9829,7 @@ class Action {
 				bootReady = qb.t - ms * 0.4;
 			} else {
 				setAt = this.w({
-					d: Math.min(qbStart.d - dropD, this.of(qbMesh).d - (gun ? 4 : 7)),
+					d: Math.min(qbStart.d - dropD, this.of(beside).d - (gun ? 4 : 7)),
 					a: qbStart.a,
 				});
 				// (Back off the fake no quicker than on any drop - see
@@ -9823,6 +9843,7 @@ class Action {
 					this.ahead,
 				);
 			}
+			const fakeFrom = faker.at;
 			faker.hold(fakeT - reach);
 			faker.getOff(
 				meshPt,
@@ -9842,8 +9863,8 @@ class Action {
 			const far = Math.max(PA_PAST, (v * v) / (2 * STOP_ACCEL * STOP_HARD));
 			const past = (on > 0 ? PA_PAST : far) / Math.hypot(1, on);
 			const onTo = this.w({
-				d: this.of(meshPt).d + past,
-				a: this.of(meshPt).a + side * on * past,
+				d: this.of(lane).d + past,
+				a: this.of(lane).a + side * on * past,
 			});
 			const inFt = dist(into.from, into.to);
 			if (on > 0) {
@@ -9858,20 +9879,29 @@ class Action {
 				// full tilt and stopped dead in his set. Stepped off at even
 				// times along it, as far each time as his pace then takes
 				// him.)
+				// (Across in front of the quarterback: on the way he would
+				// have gone through it beside him.)
+				const laneFt = dist(fakeFrom, lane);
+				const ux = cross
+					? (lane.x - fakeFrom.x) / Math.max(laneFt, 0.01)
+					: (into.to.x - into.from.x) / inFt;
+				const uy = cross
+					? (lane.y - fakeFrom.y) / Math.max(laneFt, 0.01)
+					: (into.to.y - into.from.y) / inFt;
 				let via = {
-					x: meshPt.x + ((into.to.x - into.from.x) / inFt) * far * PA_ROUND,
-					y: meshPt.y + ((into.to.y - into.from.y) / inFt) * far * PA_ROUND,
+					x: meshPt.x + ux * far * PA_ROUND,
+					y: meshPt.y + uy * far * PA_ROUND,
 				};
 				// (Round a quarter turn into the line off it, as wide as he
 				// takes at his pace - not hooked back the way he came.)
 				let end = {
-					x: onTo.x + via.x - meshPt.x,
-					y: onTo.y + via.y - meshPt.y,
+					x: onTo.x + ux * far * PA_ROUND,
+					y: onTo.y + uy * far * PA_ROUND,
 				};
 				// (But not on into the line itself, in among the men on it:
 				// round along behind it instead, no further up than
 				// PA_LINE_OFF off the ball - as far round as he pulls up in.)
-				const m0 = this.of(meshPt);
+				const m0 = this.of(lane);
 				const up = -PA_LINE_OFF - m0.d;
 				if (this.of(end).d > -PA_LINE_OFF && up > 0) {
 					const sa =
@@ -18746,26 +18776,33 @@ class Action {
 
 		if (rider) {
 			const way = -strong;
-			const riderMesh = this.w(
+			const lane = this.w(
 				gun ? { d: qs.d + 0.5, a: way * 2.5 } : { d: qs.d - 7, a: way * 3 },
 			);
-			const qbRide = this.w({
-				...this.of(riderMesh),
-				a: this.of(riderMesh).a - way * MESH_APART,
+			// (In the gun, from the far side of him: across in front of him
+			// to it, the quarterback stood where he is - see GUN_CROSS_UP -
+			// not through him to a mesh out the other side of him; and on
+			// from there to where he would have gone.)
+			const rideCross = gun && (this.of(rider.at).a - qs.a) * way < 0;
+			const riderMesh = rideCross
+				? this.w({ d: qs.d + GUN_CROSS_UP, a: qs.a + way * GUN_CROSS_ALONG })
+				: lane;
+			const besideRide = this.w({
+				...this.of(lane),
+				a: this.of(lane).a - way * MESH_APART,
 			});
-			// (Out of his stance to it, up to speed: see the back below.)
-			const reach = rampedMs(
-				dist(rider.at, riderMesh),
-				rider.top * 0.75,
-				0,
-				RELEASE_ACCEL,
-			);
+			const qbRide = rideCross ? qb.at : besideRide;
+			// (Out of his stance to it, up to speed: see the back below. When
+			// as if beside him - across in front of him, the same.)
+			const reachOf = (p: Pt) =>
+				rampedMs(dist(rider.at, p), rider.top * 0.75, 0, RELEASE_ACCEL);
+			const reach = reachOf(riderMesh);
 			const rideT = Math.max(
 				Math.max(has, qb.t) +
 					RIDE_MS / 2 +
-					qbStepMs(dist(qb.at, qbRide)) +
+					qbStepMs(dist(qb.at, besideRide)) +
 					r() * 150,
-				snap + 150 + reach,
+				snap + 150 + reachOf(lane),
 			);
 			qb.go(
 				qbRide,
@@ -18781,7 +18818,7 @@ class Action {
 			rider.getOff(riderMesh, rideT, 0, RELEASE_ACCEL, "run");
 			// (Pulled up behind his line, though - not on into the backs of
 			// the men blocking for it.)
-			const rm = this.of(riderMesh);
+			const rm = this.of(lane);
 			rider.runUp(
 				this.w({
 					d: Math.min(rm.d + RIDE_PAST, -RIDE_SHORT_FT),
