@@ -12,9 +12,14 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 204,
+		date: "2026-11-08",
+		text: "3D games: a good passer now and then swings the ball on with one hand straight off his catch, instead of always a two-handed chest pass.",
+	},
+	{
 		n: 203,
 		date: "2026-11-08",
-		text: "3D games: a shooter coming to his spot for a catch-and-shoot comes into the catch still on the move and plants as the ball arrives, instead of stopping and standing to wait for it. Coming across the floor he opens up to the rim on his last steps. A big or a slow man still waits set more often.",
+		text: "3D games: a shooter getting to his spot just as a catch-and-shoot pass comes opens up to the rim on his last steps, instead of swinging right round after he catches it - and coming in across the floor he carries on into the catch rather than stopping to wait for it.",
 	},
 	{
 		n: 202,

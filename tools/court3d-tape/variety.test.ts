@@ -85,9 +85,20 @@ const jumperParts = (tl: CourtTimeline, shot: BallSeg & { kind: "fly" }) => {
 		j -= 1;
 	}
 	const had = release - (tl.ball[j + 1]?.t0 ?? release);
-	const pass = tl.ball[j];
+	// (A bounce pass is two flights - to the floor, and up off it to him:
+	// the man who threw it is at the start of the first.)
+	const last = tl.ball[j];
+	const first = tl.ball[j - 1];
+	const bounced =
+		last?.kind === "fly" &&
+		!("pid" in last.from) &&
+		"pid" in last.to &&
+		first?.kind === "fly" &&
+		"pid" in first.from &&
+		!("pid" in first.to);
+	const pass = bounced ? first : last;
 	const passer =
-		pass?.kind === "fly" && "pid" in pass.from && "pid" in pass.to
+		pass?.kind === "fly" && "pid" in pass.from && (bounced || "pid" in pass.to)
 			? pass.from.pid
 			: undefined;
 	const acts = tr.acts.filter(
@@ -197,6 +208,26 @@ const jumperParts = (tl: CourtTimeline, shot: BallSeg & { kind: "fly" }) => {
 		turned < 20 ? "squared" : turned < 60 ? "turning" : "turning right round";
 	const footwork = `${arrived}, ${into}, ${turn}`;
 
+	// The pass, as it is drawn: the kind he threw it with, how far, and
+	// whether it led a man on the move or went to a man stood there.
+	let passKind = "none";
+	if (passer !== undefined && pass?.kind === "fly") {
+		const ptr = tl.tracks.get(passer);
+		const how =
+			ptr?.acts.find(
+				(a) =>
+					a.anim.startsWith("pass") &&
+					a.t0 <= pass.t0 + 50 &&
+					a.t1 >= pass.t0 - 300,
+			)?.anim ?? "?";
+		const at = last?.kind === "fly" ? last.t1 : pass.t1;
+		const F = evalPlayer(tl, passer, pass.t0);
+		const L = dist(F, evalPlayer(tl, pid, at));
+		const far = L < 12 ? "short" : L < 25 ? "mid" : "long";
+		const led = pace(at - 150) > 4 ? "led" : "to him";
+		passKind = `${how}, ${far}, ${led}`;
+	}
+
 	// The defense.
 	let near = Infinity;
 	let contested = false;
@@ -287,6 +318,7 @@ const jumperParts = (tl: CourtTimeline, shot: BallSeg & { kind: "fly" }) => {
 			spot: `${spot}, ${depth}`,
 			form: form ?? "?",
 			footwork,
+			pass: passKind,
 			defense,
 			ending,
 			rebound,

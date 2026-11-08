@@ -959,6 +959,12 @@ const STAGGER_PACE = 1.15;
 // How long a pause (ms) a man's last stride up at the rim can follow on
 // from the end of his drive without his pulling up for it (see carry).
 const ON_FROM_MS = 700;
+// Swung on straight off the catch (see passTo): how often one-handed for
+// an ordinary passer, how far it goes for that (feet), and how soon off
+// the catch (ms).
+const SWING_PUSH = 0.25;
+const SWING_PUSH_FT = [10, 30] as const;
+const SWING_PUSH_MS = 400;
 // A man just got to his spot this long (ms) or less before a pass he
 // shoots straight off comes to him runs on into the catch (see
 // stepIntoShots).
@@ -3280,34 +3286,31 @@ class Director {
 				caught - came.t1 < CATCH_ON_MS &&
 				dist(came.to, P) < 0.3 &&
 				dist(came.from, came.to) > 1 &&
-				// (Not lifting out away from the rim, though: coming that way
-				// he gets there a beat early and opens up to it - not swung
-				// right round on it off the catch.)
-				((came.to.x - came.from.x) * (rim.x - P.x) +
-					(came.to.y - came.from.y) * (rim.y - P.y)) /
-					(dist(came.from, came.to) * (dist(P, rim) || 1)) >
-					LIFTING_OUT &&
 				!this.cuts.some((c) => c > came.t0 - 1 && c < in1)
 			) {
-				const at = tr.moves.indexOf(came);
-				const prev = tr.moves[at - 1];
-				const shift = Math.min(
-					in1 - came.t1,
-					came.t0 - (prev?.t1 ?? -Infinity) - 1,
-				);
-				if (shift > 0) {
-					came.t0 += shift;
-				}
-				came.t1 = in1;
-				came.v1 = 0;
-				// Come across to it, not in at the rim: his last steps a 1-2
-				// opening up to it, shuffled in facing that end - turned into
-				// the catch, not swung right round on it after.
 				const L = dist(came.from, came.to);
 				const cos =
 					((came.to.x - came.from.x) * (rim.x - P.x) +
 						(came.to.y - came.from.y) * (rim.y - P.y)) /
 					(L * (dist(P, rim) || 1));
+				const at = tr.moves.indexOf(came);
+				// (Lifting out away from the rim to the line, though, he gets
+				// there a beat early, as he did - opened up to it on the way.)
+				if (cos > LIFTING_OUT) {
+					const prev = tr.moves[at - 1];
+					const shift = Math.min(
+						in1 - came.t1,
+						came.t0 - (prev?.t1 ?? -Infinity) - 1,
+					);
+					if (shift > 0) {
+						came.t0 += shift;
+					}
+					came.t1 = in1;
+				}
+				came.v1 = 0;
+				// Come across to it or out to it, not in at the rim: his last
+				// steps a 1-2 opening up to it, shuffled in facing that end -
+				// turned into the catch, not swung right round on it after.
 				if (cos < OPEN_UP_BELOW) {
 					const last = Math.min(OPEN_UP_FT, L * 0.45);
 					const k = (L - last) / L;
@@ -5994,10 +5997,30 @@ class Director {
 		}
 		// (Only straight off the bounce: not once he has held it a while in
 		// both hands.)
-		const push =
+		const pushOff =
 			pushHand !== undefined &&
 			start - got <= PUSH_OFF_MS &&
 			hash01(from * 13 + 5, Math.floor(ready)) < PUSH_SHARE[onTheMove ? 0 : 1];
+		// Or straight off the catch, swinging it on round the floor: now and
+		// then one-handed, pushed on out of the hand on the side it goes - a
+		// quick swing, the better a passer the more often.
+		const swingHand: "L" | "R" | undefined =
+			!pushOff &&
+			!handOff &&
+			kind === "chest" &&
+			caught?.look &&
+			d >= SWING_PUSH_FT[0] &&
+			d <= SWING_PUSH_FT[1] &&
+			start - caught.t0 <= SWING_PUSH_MS &&
+			hash01(from * 17 + 9, Math.floor(ready)) <
+				this.byPassing(from, SWING_PUSH, SWING_PUSH * 0.5, SWING_PUSH * 1.5)
+				? (b.x - a.x) * (caught.look.y - a.y) -
+						(b.y - a.y) * (caught.look.x - a.x) >
+					0
+					? "L"
+					: "R"
+				: undefined;
+		const push = pushOff || swingHand !== undefined;
 		// Now and then, on the move to a man out the side of his other hand -
 		// ahead of him, or square to him - behind his back: flipped round
 		// behind him with him going on the way he goes, his eyes up the floor.
@@ -6123,7 +6146,9 @@ class Director {
 			{
 				face: behind && g ? (g.x >= 0 ? 1 : -1) : toward,
 				look: behind && g ? { x: a.x + g.x * 12, y: a.y + g.y * 12 } : { ...b },
-				...(push && pushHand === "L" ? { mirror: true as const } : {}),
+				...(push && (pushHand ?? swingHand) === "L"
+					? { mirror: true as const }
+					: {}),
 			},
 		);
 		const release = start + wind;
