@@ -4921,6 +4921,13 @@ const CARRY_MOST_MS = 500;
 const BREAK_DOWN_MS = 450;
 // (Not broken down at all with less than this long, ms, to be set in it.)
 const BREAK_SET_MS = 150;
+// (A long ball still up there, more time than this to spare, ms, on the
+// break for it at full tilt: at a pace that has him there this long before
+// it instead (no slower than UNDER_LEAST_FPS), slowed to it off his run as
+// he goes - not there flat out and stood set under it the while.)
+const UNDER_SPARE_MS = 1200;
+const UNDER_SET_MS = 600;
+const UNDER_LEAST_FPS = 4;
 // (No quicker than a walk, ft/s - see gait: going in on a man, or for the
 // ball, not walked there.)
 const WALK_MOST_FPS = 6.5;
@@ -19452,12 +19459,22 @@ class Action {
 					} else if (fps > 0 && due >= quick) {
 						// (Up to it on the break, pulled up there, and set square
 						// to it the while - or, only a moment over, there that
-						// much later, on his feet: see hold.)
-						m.runUp(spot, fps);
+						// much later, on his feet: see hold. A long time to spare:
+						// in at the pace that has him there UNDER_SET_MS before it
+						// - see UNDER_SPARE_MS.)
+						const pace =
+							due - quick > UNDER_SPARE_MS
+								? this.underPace(D, (due - UNDER_SET_MS - m.t) / 1000, fps)
+								: fps;
+						m.runUp(spot, pace);
+						const set =
+							pace < fps
+								? due - m.t >= BREAK_SET_MS
+								: due - quick >= BREAK_SET_MS;
 						m.hold(
 							due,
-							due - quick >= BREAK_SET_MS ? "backerStance" : undefined,
-							due - quick >= BREAK_SET_MS ? this.toward(spot, to) : undefined,
+							set ? "backerStance" : undefined,
+							set ? this.toward(spot, to) : undefined,
 						);
 					} else {
 						// (A step or two, no time to spare: quick steps, up to
@@ -21440,6 +21457,23 @@ class Action {
 			}
 		}
 		return { worst, L };
+	}
+
+	// The pace (no more than `fps`, nor less than UNDER_LEAST_FPS) that has
+	// him `D` feet on in T seconds and pulled up there - see runUp: slowed
+	// down off a quicker one as he goes to be there as soon as at that pace
+	// all the way (see run), and eased off over the last of it. (`fps`, if
+	// even that gets him there no sooner.)
+	private underPace(D: number, T: number, fps: number): number {
+		if (!(T > 0)) {
+			return fps;
+		}
+		let p = fps;
+		for (let i = 0; i < 4; i++) {
+			const ease = Math.min(D * 0.5, (p * p) / (2 * STOP_ACCEL * STOP_HARD));
+			p = clamp((D + ease) / T, Math.min(UNDER_LEAST_FPS, fps), fps);
+		}
+		return p;
 	}
 
 	// The next stretch of a chase, to `to` by t1 at `fps`: turned a little
