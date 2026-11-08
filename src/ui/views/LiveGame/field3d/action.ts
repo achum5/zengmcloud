@@ -4517,6 +4517,9 @@ const TRAIL_JOG_LEAST_FT = 5;
 // it all the same, not stood there through it.)
 const TRAIL_IDLE_MS = 1500;
 const TRAIL_KEEP_FT = 12;
+// Each trailer's place round where it ends no nearer another's than this
+// (feet): round the ring from where he comes, not all in on the one spot.
+const TRAIL_APART_FT = 4;
 // (Along with the ball, kept off it - see alongWith - no nearer it than
 // this (feet), out off it no more than ALONG_OUT_FT a step.)
 const ALONG_NEAREST_FT = 3.5;
@@ -6692,6 +6695,9 @@ class Action {
 	// The men in a moment of their own after it (see celebrate), and where
 	// they crowd round the man who made it.
 	readonly mob = new Set<number>();
+	// Where the men trailing the play are each going round where it ends
+	// (see trail).
+	readonly trailing: Pt[] = [];
 	mobAt?: Pt;
 	// Men kept where they are after it till then (see taunt): not off with
 	// the rest before.
@@ -21937,10 +21943,22 @@ class Action {
 		const r = this.r;
 		const ang = Math.atan2(m.at.y - pt.y, m.at.x - pt.x) + (r() - 0.5) * 0.6;
 		const ring = 9 + r() * 8;
-		const to = {
-			x: pt.x + Math.cos(ang) * ring,
-			y: pt.y + Math.sin(ang) * ring,
-		};
+		const spotAt = (a: number) => ({
+			x: pt.x + Math.cos(a) * ring,
+			y: pt.y + Math.sin(a) * ring,
+		});
+		// (Not where another trailer is going: on round the ring a little,
+		// one way or the other, from where he comes.)
+		let to = spotAt(ang);
+		const step = TRAIL_APART_FT / ring;
+		for (
+			let k = 1;
+			k <= 6 && this.trailing.some((q) => dist(q, to) < TRAIL_APART_FT);
+			k++
+		) {
+			to = spotAt(ang + (k % 2 === 1 ? 1 : -1) * Math.ceil(k / 2) * step);
+		}
+		this.trailing.push(to);
 		// (Well round from the way he was going: planted first - see
 		// plantFor - not turned at full speed; and down in it to the pace
 		// he goes on at, not out of it at full tilt and into a jog.)
