@@ -23260,6 +23260,27 @@ class Action {
 			dist(m.at, to) < (v * v) / (2 * STOP_ACCEL * STOP_HARD)
 		) {
 			m.easeOff((v * v) / (2 * STOP_ACCEL));
+			// (And a long while yet till the whistle: a look, and along after
+			// it at a jog, kept off it - as below - not stood where he pulled
+			// up the rest of it.)
+			if (this.whistle - 300 - m.t > TRAIL_IDLE_MS) {
+				m.hold(
+					m.stoppedBy(
+						m.t +
+							TRAIL_LOOK_MS[0] +
+							(TRAIL_LOOK_MS[1] - TRAIL_LOOK_MS[0]) *
+								countOf(m, this.input.key, 29),
+					),
+				);
+				this.alongWith(
+					m,
+					TRAIL_JOG_FPS[0] +
+						(TRAIL_JOG_FPS[1] - TRAIL_JOG_FPS[0]) *
+							countOf(m, this.input.key, 30),
+					Math.max(ring, TRAIL_KEEP_FT),
+					this.whistle - 300,
+				);
+			}
 			return;
 		}
 		const by = Math.max(
