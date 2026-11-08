@@ -6498,6 +6498,17 @@ const FLAT_OUT = 0.97;
 // the end of it for the ball, up for it this long before it comes.
 const ROUTE_PACE = 0.76;
 const CATCH_LEAD_MS = 380;
+// (Sat down waiting on it, this often a step or two up into it as it
+// comes, this far, feet, over the last this long, ms, of its way to him -
+// sat this long first, ms, and the step no shorter than this, ms (shorter
+// in proportion): not with a man this near him on the way there, though,
+// feet - on him, or breaking on it in front of him.)
+const STEP_IN = 0.5;
+const STEP_IN_FT = [1.2, 2.4] as const;
+const STEP_IN_MS = 450;
+const STEP_IN_SAT_MS = 120;
+const STEP_IN_LEAST_MS = 300;
+const STEP_IN_CLEAR_FT = 3.5;
 // Thrown to, slowed to no less than this much of that pace to come open on
 // time (see runRoute).
 const ROUTE_PACE_LEAST = 0.6;
@@ -11352,7 +11363,8 @@ class Action {
 			rec.roam = OUT_MOST + 1;
 		}
 		rec.pin(catchAt);
-		const inStride = !leap && !dive && !toe && this.reachFor(rec, catchAt, qb);
+		const inStride =
+			!leap && !dive && !toe && this.reachFor(rec, catchAt, qb, false, true);
 		// (Met in his stride, on past where it was thrown to: thrown to where
 		// he is as it gets there - not in behind him.)
 		const fly = this.ball.findLast((b) => b.kind === "fly");
@@ -11726,15 +11738,76 @@ class Action {
 		this.reaches.push({ m: rec, move: "callFor", t0, t1 });
 	}
 
+	// Sat down in his route waiting on it, on his own count now and then
+	// (see STEP_IN): a step or two up into it as it comes, toward the
+	// quarterback, his hands out for it on the way - caught on the move, not
+	// stood stock still for it to get to him. Not into a man on him, nor
+	// off a run he is still pulling up out of. (Whether he did.)
+	private stepIn(rec: Actor, catchAt: number, face: number): boolean {
+		const l = rec.last;
+		const t0 = Math.max(catchAt - STEP_IN_MS, l.t0 + STEP_IN_SAT_MS);
+		if (
+			!sits(l.move) ||
+			l.arms ||
+			l.turn ||
+			l.from.x !== l.to.x ||
+			l.from.y !== l.to.y ||
+			catchAt - t0 < STEP_IN_LEAST_MS ||
+			rec.t > catchAt ||
+			countOf(rec, this.input.key, 152) >= STEP_IN
+		) {
+			return false;
+		}
+		const ft =
+			((STEP_IN_FT[0] +
+				(STEP_IN_FT[1] - STEP_IN_FT[0]) * countOf(rec, this.input.key, 153)) *
+				(catchAt - t0)) /
+			STEP_IN_MS;
+		const to = {
+			x: rec.at.x + Math.cos(face) * ft,
+			y: rec.at.y + Math.sin(face) * ft,
+		};
+		if (
+			this.men.some(
+				(x) =>
+					x !== rec &&
+					[0.5, 1, 1.4].some(
+						(u) =>
+							dist(x.posAt(t0 + (catchAt - t0) * u), {
+								x: rec.at.x + (to.x - rec.at.x) * Math.min(1, u),
+								y: rec.at.y + (to.y - rec.at.y) * Math.min(1, u),
+							}) < STEP_IN_CLEAR_FT,
+					),
+			)
+		) {
+			return false;
+		}
+		if (rec.t > t0) {
+			rec.cut(t0);
+		}
+		rec.hold(t0, undefined, face);
+		rec.go(to, catchAt, "walk", face);
+		this.reaches.push({
+			m: rec,
+			move: "catch",
+			t0: catchAt - CATCH_REACH_MS,
+			t1: catchAt + CATCH_IN_MS,
+		});
+		return true;
+	}
+
 	// Reaching for it as it comes - in stride, his arms up for it as he
 	// runs on, or sat down in his route waiting on it, and in to his chest.
 	// Whether in stride.
 	// (`up`: going on over his hands - up at it, and not in to him.)
+	// (`step`: sat down waiting on it, now and then stepping up into it as
+	// it comes - see STEP_IN.)
 	reachFor(
 		rec: Actor,
 		catchAt: number,
 		qb: Actor | undefined,
 		up = false,
+		step = false,
 	): boolean {
 		const reach = catchAt - CATCH_REACH_MS;
 		// (On past it already, on the move - it taken in front of him,
@@ -11771,6 +11844,9 @@ class Action {
 			return true;
 		}
 		const face = qb ? this.toward(rec.at, qb.at) : rec.yaw;
+		if (step && qb && !up && this.stepIn(rec, catchAt, face)) {
+			return true;
+		}
 		// (Getting there as he reaches for it, or no more than a moment
 		// before - see hold: pulled up into it, not stopped dead. Sat down
 		// waiting on it, reaching as it comes - not once it is there.)
@@ -12343,7 +12419,7 @@ class Action {
 				on();
 				const hit = beside(at, toHim, out(2.6));
 				const face = this.toward(hit, at);
-				this.closeOn(m, hit, tc - 300, face, carrier);
+				this.closeOn(m, hit, tc - 300, face, carrier, true);
 				const land = diveBy(tc + 250);
 				m.lunge("dive", land, face, reach(beside(at, face, 1.2)));
 				m.hold(land + 700, "prone");
@@ -12368,7 +12444,7 @@ class Action {
 				on();
 				const hit = beside(there, toHim, out(2.2));
 				const face = this.toward(hit, there);
-				this.closeOn(m, hit, tc + 60, face, carrier);
+				this.closeOn(m, hit, tc + 60, face, carrier, true);
 				const land = diveBy(tc + 520);
 				m.lunge("dive", land, face, reach(beside(there, face, 0.2)));
 				m.hold(land + 600, "prone");
@@ -12404,7 +12480,7 @@ class Action {
 			// him.)
 			const hit = beside(at, toHim, out(3.5));
 			const face = this.toward(hit, at);
-			this.closeOn(m, hit, tc - 100, face, carrier);
+			this.closeOn(m, hit, tc - 100, face, carrier, true);
 			const land = diveBy(tc + 380);
 			m.lunge(
 				"dive",
@@ -13529,7 +13605,14 @@ class Action {
 	// doing as late as he can and still get there at most of his speed (or
 	// whenever gets him there easiest) - with time to spare, up to a few
 	// steps off to break down, and in from there.
-	closeOn(m: Actor, hit: Pt, lead: number, face: number, watch?: Actor) {
+	closeOn(
+		m: Actor,
+		hit: Pt,
+		lead: number,
+		face: number,
+		watch?: Actor,
+		overrun = false,
+	) {
 		let { c } = this.closeFrom(m, hit, lead);
 		// (Not a step or two into something new first - a backpedal just
 		// begun: off from before it. Or, begun before he could know to,
@@ -13575,6 +13658,23 @@ class Action {
 		// then, at the pace he was - see carryOn - not pulled up dead short
 		// of it in a stride.)
 		m.carryOn(c);
+		// (Made to miss, and on his way at it too quick to pull up short of
+		// it: on past it, pulled up as hard as a man can - see STOP_HARD -
+		// and back at him from there - not stopped dead on the spot in a
+		// stride. Off to the side of it, he bends round to it instead - see
+		// turnFor.)
+		if (overrun) {
+			const l = m.last;
+			const v = RAMPS.has(l.move) && !l.arms && !l.turn ? legPace(l) : 0;
+			const stopFt = (v * v) / (2 * STOP_ACCEL * STOP_HARD);
+			if (
+				v >= STOP_LEAST &&
+				stopFt > dist(m.at, hit) - RUN_IN_NEAR_FT &&
+				angleAt(l.from, l.to, hit) <= CUT_LEAST
+			) {
+				m.easeOff(stopFt);
+			}
+		}
 		// (Deep, set, and a long while before it gets to him: a read step or
 		// two back first, his depth kept till he knows - not stood stock
 		// still where he lined up till it comes.)
