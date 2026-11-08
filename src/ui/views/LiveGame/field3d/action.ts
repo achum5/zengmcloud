@@ -5768,10 +5768,11 @@ const STOOD_BACK = 2.6;
 const STOOD_MS = 1100;
 const STOOD_APART = 1;
 // (Into them braced, at this, ft/s - pulled up to it at this, ft/s/s, and
-// on into them over this long, ms.)
+// on into them over this long, ms: the rest of it taken out of him over a
+// stride or two, not stopped dead in one.)
 const STOOD_FPS = 10;
 const STOOD_GATHER = 50;
-const STOOD_PRESS_MS = 150;
+const STOOD_PRESS_MS = 250;
 // (In on him off a run this quick or more, ft/s: the last of it eased off
 // over twice this far, feet.)
 const STOOD_IN_LEAST = 8;
