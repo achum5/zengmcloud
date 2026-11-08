@@ -410,6 +410,10 @@ const LUNGE_ROUND_FT = 0.5;
 // than DIVE_LEAST_MS.)
 const DIVE_STILL_FT = 4;
 const DIVE_LEAST_MS = 380;
+// (Turned round for a dive from near a stand - see diveIn: past this much
+// round, at this rate, radians a second - evaluate.ts STAND_TURN.)
+const DIVE_ROUND_LEAST = 1.5;
+const DIVE_ROUND_RATE = 5;
 const CUT_MERGE_MS = 60;
 const GAITS = new Set<Move>(["walk", "jog", "run", "sprint"]);
 const GAIT_ORDER: Move[] = ["walk", "jog", "run", "sprint"];
@@ -3787,6 +3791,15 @@ class Actor {
 		);
 		const far = dist(this.at, to);
 		if (far > reach + PAST_SLACK_FT) {
+			// (Pulled up near enough to a stand, and it back the way he came
+			// - more than DIVE_ROUND_LEAST round: round on his feet to it
+			// first (see evaluate.ts STAND_TURN) - not spun round in a stride
+			// as he sets off.)
+			const way = Math.atan2(to.y - this.at.y, to.x - this.at.x);
+			const round = Math.abs(angleOff(way - this.yaw));
+			if (v < STOP_LEAST && round > DIVE_ROUND_LEAST) {
+				this.hold(this.t + (round / DIVE_ROUND_RATE) * 1000, "stand", way);
+			}
 			const u = (far - reach) / far;
 			this.run(
 				{
@@ -5136,6 +5149,10 @@ const PICK_DIVE_YDS = 6;
 const PICK_DIVE_PER = 0.6;
 const PICK_DIVE_LEAST = 6;
 const PICK_DIVE_MOST = 13;
+// (Laid out for it off a run no more than this far round from the way he
+// goes, radians - judged over the last this long, ms.)
+const PICK_DIVE_TURN = 0.6;
+const PICK_DIVE_LOOK_MS = 100;
 // Picked off right at the line - no more than this many yards past it -
 // on the man's own count, this often: knocked up there by one of the rush
 // (see batAt) - him, if he is one of the front, or one no further than
@@ -15417,7 +15434,17 @@ class Action {
 			// than he could - the ball to his hands out there.)
 			const t0 = gotAt - DIVE_BEFORE;
 			const from = picker.posAt(t0);
-			const face = this.toward(from, gotPt);
+			let face = this.toward(from, gotPt);
+			// (Going at a run: laid out the way he goes, no more than
+			// PICK_DIVE_TURN round from it - not launched off sideways from a
+			// sprint, or back the way he came; the ball to his hands, out
+			// there.)
+			const was = picker.posAt(t0 - PICK_DIVE_LOOK_MS);
+			if ((dist(was, from) * 1000) / PICK_DIVE_LOOK_MS >= LUNGE_LEAST_FPS) {
+				const runs = Math.atan2(from.y - was.y, from.x - was.x);
+				face =
+					runs + clamp(angleOff(face - runs), -PICK_DIVE_TURN, PICK_DIVE_TURN);
+			}
 			const far = clamp(
 				legPace(legAt(picker, t0)) * PICK_DIVE_PER,
 				PICK_DIVE_LEAST,

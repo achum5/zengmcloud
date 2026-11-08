@@ -239,6 +239,17 @@ const easedAlong = (l: Leg, t: number, p: Pace): number => {
 		const u = along(l, t);
 		return p.carry * u + ((p.carryTo - p.carry) * u * u) / 2;
 	}
+	// (Coming into it less than twice as quick as it goes, slowing evenly
+	// to a stop would have him short of its end: on through it a little
+	// quicker first - thrown into it - and down evenly to a stop at its
+	// end, not still going near flat out a blink before it and stopped
+	// dead.)
+	if (p.carry && p.carry < 2) {
+		const u = along(l, t);
+		const c = p.carry;
+		const k = 6 - 3 * c;
+		return c * u + ((k - c) * u * u) / 2 - (k * u * u * u) / 3;
+	}
 	if (p.carry) {
 		return 1 - (1 - along(l, t)) ** p.carry;
 	}
