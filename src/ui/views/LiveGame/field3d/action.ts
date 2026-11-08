@@ -4965,6 +4965,13 @@ const BREAK_FIRE_MS = 300;
 const SLOW_RELABEL = 1.3;
 // (Slowed the more the further along he is: in pieces this long, ms.)
 const SLOW_PIECE_MS = 200;
+// (Or, so near where he goes that even pulled up evenly over the rest of it
+// he would be stopped there this long (ms) or more before he has to be:
+// pulled up so, and stood there the rest of it.)
+const SLOW_STOP_LEAST_MS = 150;
+// (Only on a way no more than this (radians) round from the one he took it
+// on, all of it: not over a cut, where he is slowed for it and up again.)
+const SLOW_STOP_TURN = 0.8;
 // After a man gone for a score, losing ground on him this far back (feet):
 // given up, now and then.
 const GIVE_UP_FT = 24;
@@ -13143,6 +13150,55 @@ class Action {
 			// down: not slowed the whole way, nor all of it in the last stretch.
 			// A stride at a time - see SLOW_PIECE_MS.)
 			const t0 = run[0]!.t0;
+			// (Too near the end of it for that - the ball taken on the run a
+			// few feet from where he is brought down, say: pulled up over it
+			// as evenly as stops him there, a stride at a time (see
+			// STOP_STEP_MS), and stood there till they get to him - see
+			// SLOW_STOP_LEAST_MS - not crawled the last of it.)
+			const v0 = before && !ramp ? legPace(before) : 0;
+			const T = l.t1 - t0 + ms;
+			const stopMs = v0 > 0 ? ((2 * span) / v0) * 1000 : Infinity;
+			const way = (x: Leg) => Math.atan2(x.to.y - x.from.y, x.to.x - x.from.x);
+			if (
+				T - stopMs >= SLOW_STOP_LEAST_MS &&
+				run.every(
+					(x) => Math.abs(angleOff(way(x) - way(before!))) < SLOW_STOP_TURN,
+				)
+			) {
+				const a = (v0 * v0) / (2 * span);
+				const n = Math.max(1, Math.round(stopMs / STOP_STEP_MS));
+				const marks: number[] = [];
+				for (let k = 1; k < n; k++) {
+					const tau = (stopMs * k) / n / 1000;
+					const sd = v0 * tau - (a * tau * tau) / 2;
+					let acc = 0;
+					for (const x of run) {
+						const d = dist(x.from, x.to);
+						if (acc + d >= sd) {
+							marks.push(x.t0 + ((sd - acc) / d) * (x.t1 - x.t0));
+							break;
+						}
+						acc += d;
+					}
+				}
+				for (const c of marks) {
+					m.split(c);
+				}
+				const tAt = (d: number) =>
+					((v0 - Math.sqrt(Math.max(0, v0 * v0 - 2 * a * d))) / a) * 1000;
+				let along = 0;
+				let t = t0;
+				for (const x of m.legs.filter((x) => x.t0 >= t0)) {
+					along = Math.min(span, along + dist(x.from, x.to));
+					const t1 = Math.max(t + 1, t0 + tAt(along));
+					x.t0 = t;
+					x.t1 = t1;
+					t = t1;
+					x.move = gait(legPace(x));
+				}
+				m.hold(t0 + T, "stand", m.yaw);
+				return;
+			}
 			for (const x of run) {
 				for (
 					let t = x.t0 + SLOW_PIECE_MS;
