@@ -5178,6 +5178,21 @@ const PICK_LEAP_STILL_FT = 4;
 // this (radians) - at this many radians a second at the most.)
 const PICK_TURN_LEAST = 0.6;
 const PICK_TURN_RATE = 9;
+// (Picked off going flat out with where he goes down right on ahead of
+// him (no more than PICK_PAST_OFF radians off the way he goes), nearer by
+// PICK_PAST_LEAST_FT feet or more than he can pull up in: on past it as he
+// pulls up, stood a moment (ms) as he turns round, and back to it - not
+// run into it and crawled the last of it waiting for the man who brings
+// him down.)
+const PICK_PAST_OFF = 0.8;
+const PICK_PAST_LEAST_FT = 3;
+const PICK_PAST_TURN_MS = 300;
+// (A touchback: pulled up in the end zone and down on a knee in it, this
+// long (ms) after he has pulled up, from the least to the most on his own
+// count - there on it this long (ms) - not run on to be brought down in
+// it.)
+const PICK_KNEE_MS = [150, 600] as const;
+const PICK_KNEEL_MS = 1150;
 // (Locked up with a man, facing him, round from the way he goes off after
 // more than this, radians: turned onto it over the last of it - see
 // turnInto, turnsOffBlocks.)
@@ -15774,8 +15789,40 @@ class Action {
 			),
 		});
 		let t = picker.t;
-		if (dist(picker.at, pt) > 2) {
-			t = picker.run(pt, picker.top * 0.9, "sprint");
+		const pace = (l: Leg) => (GAITS.has(l.move) && !l.arms ? legPace(l) : 0);
+		const stopIn = (l: Leg) => pace(l) ** 2 / (2 * STOP_ACCEL * STOP_HARD);
+		const knee = !td && ret?.touchback === true;
+		if (knee) {
+			if (this.of(picker.at).d < this.of(pt).d - 2) {
+				picker.run(pt, picker.top * 0.9, "sprint");
+			}
+			picker.easeOff(stopIn(picker.last));
+			t =
+				picker.t +
+				PICK_KNEE_MS[0] +
+				(PICK_KNEE_MS[1] - PICK_KNEE_MS[0]) *
+					countOf(picker, this.input.key, 173);
+			picker.hold(t);
+			picker.hold(t + PICK_KNEEL_MS, "kneelDown", picker.yaw);
+			t += 50;
+			this.done.add(picker.pid);
+		} else if (dist(picker.at, pt) > 2) {
+			const l = picker.last;
+			const way = Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x);
+			const stop = stopIn(l);
+			if (
+				!td &&
+				Math.abs(angleOff(this.toward(picker.at, pt) - way)) < PICK_PAST_OFF &&
+				stop - dist(picker.at, pt) >= PICK_PAST_LEAST_FT
+			) {
+				picker.easeOff(stop);
+				picker.hold(picker.t + PICK_PAST_TURN_MS, "stand", picker.yaw);
+				const k = picker.legs.length - 1;
+				t = picker.run(pt, picker.top * 0.9, "sprint");
+				picker.turnInto(k);
+			} else {
+				t = picker.run(pt, picker.top * 0.9, "sprint");
+			}
 		}
 		// (Caught on the run, or off a tip: where he was as it got to him.)
 		if ((onRun || tip || (bat && !self)) && fly) {
@@ -15864,8 +15911,14 @@ class Action {
 		}
 		// (The man it was meant for, as often as not right there, among them.)
 		const others = this.o.filter((m) => !this.done.has(m.pid));
-		if (retI < 0) {
+		if (retI < 0 || knee) {
 			this.whistle = t;
+			if (retI >= 0) {
+				this.at.set(retI, t);
+			}
+			if (knee) {
+				this.pullUp(others, picker, t);
+			}
 		} else {
 			this.endReturn(retI, picker, pt, t, td, others);
 		}
