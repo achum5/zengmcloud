@@ -17611,12 +17611,31 @@ class Action {
 				continue;
 			}
 			const fa = aAt(f);
+			// (Where the man he would help is as the rush gets to him - a
+			// back picking a man up well off from where he lined up, say -
+			// and nobody else on the line between them there: not across
+			// behind the man beside him to it.)
+			const offAt = (k: (typeof locks)[number]) => {
+				const ka = this.of(k.b.posAt(k.hitT)).a;
+				const own = this.of(f.posAt(k.hitT)).a;
+				const lo = Math.min(ka, own);
+				const hi = Math.max(ka, own);
+				const between = blockers.some((x) => {
+					if (x === f || x === k.b || x.role === "RB" || x.role === "FB") {
+						return false;
+					}
+					const xa = this.of(x.posAt(k.hitT)).a;
+					return xa > lo + 0.5 && xa < hi - 0.5;
+				});
+				return between ? Infinity : Math.abs(ka - own);
+			};
 			const lock = locks
 				.filter(
 					(k) =>
 						!helped.has(k.m) &&
 						k.m !== pair?.[0] &&
-						Math.abs(aAt(k.b) - fa) <= HELP_A,
+						Math.abs(aAt(k.b) - fa) <= HELP_A &&
+						offAt(k) <= HELP_A,
 				)
 				.sort((x, y) => Math.abs(aAt(x.b) - fa) - Math.abs(aAt(y.b) - fa))[0];
 			if (!lock) {
