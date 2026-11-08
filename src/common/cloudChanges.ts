@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 215,
+		date: "2026-11-08",
+		text: 'Game recaps read more like a writer\'s: "tied at 78 going into the fourth" instead of "78-78", "trailed by a point" instead of "were 1 down", "They" instead of a team\'s name three sentences running, and no "went in front for good in the third" after a comeback that became a rout.',
+	},
+	{
 		n: 214,
 		date: "2026-11-08",
 		text: 'Player Stats for one playoff series ("R1 vs DET"): its advanced stats - BPM, win shares, PER - are now measured against the whole playoffs, the same as the Playoffs view, so with only the first round played the two match.',

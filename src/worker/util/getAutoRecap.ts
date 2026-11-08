@@ -4617,7 +4617,7 @@ const gameStory = (
 				const ran = `${W} ran off ${lateRun.pts} straight points ${runAt(lateRun)}`;
 				return wIn === lIn
 					? `${ran}, and it was ${wIn}-${lIn} going into the ${last}.`
-					: `${ran} but were still ${lIn - wIn} down going into the ${last}.`;
+					: `${ran} but still trailed ${lIn}-${wIn} going into the ${last}.`;
 			}
 			return wIn === lIn
 				? `It was ${wIn}-${lIn} going into the ${last}${lastRun ? `, and ${w} ran off ${lastRun.pts} straight points` : ""}.`
@@ -4627,7 +4627,7 @@ const gameStory = (
 			const ran = `${W} ran off ${lateRun.pts} straight points ${runAt(lateRun)}`;
 			return wIn === lIn
 				? `${ran}, and it was ${wIn}-${lIn} going into the ${last} before they won the ${last} quarter ${q}.`
-				: `${ran} but were still ${lIn - wIn} down going into the ${last}, then won the ${last} quarter ${q}.`;
+				: `${ran} but still trailed ${lIn}-${wIn} going into the ${last}, then won the ${last} quarter ${q}.`;
 		}
 		if (wIn === lIn) {
 			return lastRun
@@ -4650,7 +4650,10 @@ const gameStory = (
 						// into halftime ahead 57-43. The Magic were still up 82-80".
 						`${L} were ${lh > wh ? "still " : ""}up ${lIn}-${wIn} going into the ${last}, and ${w} won the ${last} quarter ${q}.`,
 						`${W} trailed ${lIn}-${wIn} going into the ${last}, then took the ${last} quarter ${q}.`,
-						`${W} were ${lIn - wIn} down going into the ${last} and won the ${last} quarter ${q}.`,
+						// "The Bucks were 1 down" is no one's sentence.
+						lIn - wIn >= 3
+							? `${W} were ${lIn - wIn} down going into the ${last} and won the ${last} quarter ${q}.`
+							: `${W} trailed by ${lIn - wIn === 1 ? "a point" : "two"} going into the ${last} and won the ${last} quarter ${q}.`,
 					],
 					"story:lastTurn",
 				);
@@ -7133,7 +7136,11 @@ const runSpan = (start: number, end: number, regPeriods: number): string =>
 				: "across the end of regulation and overtime"
 			: start === regPeriods / 2 && end === start + 1
 				? "spanning halftime"
-				: `across the ${ordinal(start)} and ${ordinal(end)}`;
+				: regPeriods !== 4
+					? `across the ${ordinal(start)} and ${ordinal(end)}`
+					: end === start + 1
+						? `spanning the ${ordinal(start)} and ${ordinal(end)} quarters`
+						: `from the ${ordinal(start)} into the ${ordinal(end)}`;
 
 // How a close game finished. The go-ahead score that held, or failing that
 // the last tie, and the count of lead changes when there were a lot of them.
@@ -7181,12 +7188,16 @@ const finishNote = (
 
 	const last = flow.lastLead;
 	// In a tight game the lead for good is a fourth-quarter fact. In a
-	// comeback it is the turn of the game, wherever it came after halftime.
+	// comeback it is the turn of the game, wherever it came after halftime -
+	// unless the comeback turned into a rout: "outscored the Bulls 71-44 and
+	// pushed the lead to 33. The Spurs went in front for good with 2:57 left
+	// in the third" ran the clock backward to a moment that no longer mattered.
 	const halfway = Math.ceil(shape.regPeriods / 2);
 	if (
 		last &&
 		last.side === wSide &&
-		(inFinal(last.period) || (comeback && last.period > halfway)) &&
+		(inFinal(last.period) ||
+			(comeback && last.period > halfway && shape.margin <= 15)) &&
 		!(shotTold && last.clock <= 30)
 	) {
 		const when = clockLeft(last.clock);
@@ -9056,16 +9067,92 @@ export const varyRuns = (text: string, seed: number): string => {
 	return text.slice(0, cut) + body;
 };
 
+// "It was 78-78 going into the fourth" is a box score talking; a writer says
+// "tied at 78". Only where the checker reads a tie the same way: at the
+// half, going into a quarter, and on the clock late.
+export const tiedScores = (text: string): string => {
+	const cut = text.indexOf("\n\n");
+	if (cut < 0) {
+		return text;
+	}
+	const body = text
+		.slice(cut)
+		.split(/(?<=[!.?])(?=\s)/)
+		.map((sentence) => {
+			let out = sentence.replaceAll(
+				/\b([Ii]t was) (\d{2,3})-\2(?= (?:at halftime|at the break|at the half\b|going into the|with (?:two minutes|\d)))/g,
+				"$1 tied at $2",
+			);
+			if (
+				/seconds? (?:left|to go|to play)|\d:\d\d (?:left|to go|to play)|two minutes/.test(
+					out,
+				)
+			) {
+				out = out
+					.replace(
+						/^(\s*With two minutes (?:to play|left), it was) (\d{2,3})-\2\./,
+						"$1 tied at $2.",
+					)
+					.replaceAll(/\bmade it (\d{2,3})-\1\b/g, "tied it at $1");
+			}
+			return out;
+		})
+		.join("");
+	return text.slice(0, cut) + body;
+};
+
+// "The Thunder were held to 77. The Thunder's Corey Gilmore left with a
+// concussion. The Thunder play the Suns next" - the second time running that
+// a team opens a sentence, a writer says "They". Not when the sentence before
+// names the other team too, and not across a paragraph break.
+export const teamOpeners = (
+	text: string,
+	teams: readonly ReferenceTeam[],
+): string => {
+	const cut = text.indexOf("\n\n");
+	const nicks = teams.map((t) => t.name.trim()).filter(Boolean);
+	if (cut < 0 || nicks.length === 0) {
+		return text;
+	}
+	const opener = (sentence: string): string | undefined => {
+		const t = sentence.trimStart();
+		return nicks.find((n) =>
+			[" ", ", ", "' ", "'s "].some((end) => t.startsWith(`The ${n}${end}`)),
+		);
+	};
+	const parts = text.slice(cut).split(/(?<=[!.?])(?=\s)/);
+	for (let i = 1; i < parts.length; i++) {
+		const prev = parts[i - 1]!;
+		const cur = parts[i]!;
+		const team = opener(prev);
+		if (
+			!team ||
+			/^\s*\n/.test(cur) ||
+			!cur.trimStart().startsWith(`The ${team} `) ||
+			nicks.some((n) => n !== team && prev.includes(n))
+		) {
+			continue;
+		}
+		parts[i] = cur.replace(`The ${team} `, "They ");
+	}
+	return text.slice(0, cut) + parts.join("");
+};
+
 export const getAutoRecap = (game: RecapGame): string => {
 	const text = fixArticles(
-		varyRuns(buildGameRecap(withSettledLead(game)), game.gid + 1),
+		tiedScores(varyRuns(buildGameRecap(withSettledLead(game)), game.gid + 1)),
 	);
 	const names = peopleIn([game]);
 	const teams = teamsIn([game]);
 	const referenced = secondReferences(
 		game.allStar
 			? text
-			: cityReferences(text, teams, names, (game.gid + 1) * 7919 + 17),
+			: cityReferences(
+					teamOpeners(text, teams),
+					teams,
+					names,
+					(game.gid + 1) * 7919 + 17,
+				),
 		names,
 		teams,
 	);

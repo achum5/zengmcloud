@@ -1204,11 +1204,11 @@ export const scoringNormBeat = (
 			pick(
 				rng,
 				[
-					`${W} held an offense averaging ${fmtAvg(lNorm.pts)} a game to ${ctx.loser.pts}.`,
+					`${W} held an offense averaging ${fmtAvg(lNorm.pts)} points a game to ${ctx.loser.pts}.`,
 					// Not "Holding the Knicks to 93 was 13 below what they
 					// usually get."
-					`${cap(ln)}, who average ${fmtAvg(lNorm.pts)} a game, were held to ${ctx.loser.pts}.`,
-					`${cap(ln)} were kept well under their ${fmtAvg(lNorm.pts)} a game.`,
+					`${cap(ln)}, who average ${fmtAvg(lNorm.pts)} points a game, were held to ${ctx.loser.pts}.`,
+					`${cap(ln)} were kept well under their ${fmtAvg(lNorm.pts)} points a game.`,
 				],
 				"normDefense",
 			),

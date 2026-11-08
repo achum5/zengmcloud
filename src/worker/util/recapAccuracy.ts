@@ -86,6 +86,11 @@ const splitSentences = (text: string): string[] =>
 		.map((s) => s.trim())
 		.filter(Boolean);
 
+// A sentence on the clock - "with 47.7 seconds left", "with two minutes to
+// play" - is about the closing stretch, and its scores are held to that.
+const FINISH_CLOCK =
+	/seconds? (?:left|to go|to play)|\d:\d\d (?:left|to go|to play)|at the buzzer|no time left|two minutes/;
+
 const teamTotal = (t: RecapTeam, key: keyof RecapPlayer): number => {
 	let sum = 0;
 	for (const p of t.players) {
@@ -230,8 +235,12 @@ export const verifyRecap = (
 			)) {
 				const n = Number(m[1]);
 				const before = sentence.slice(0, m.index);
-				// "came in averaging 12 points a game" is his season line.
-				if (/averag\w*\s*$/i.test(before)) {
+				// "came in averaging 12 points a game" is his season line, and
+				// "kept well under their 105 points a game" a team's.
+				if (
+					/averag\w*\s*$/i.test(before) ||
+					/^ (?:a|per) game\b/.test(sentence.slice(m.index + m[0].length))
+				) {
 					continue;
 				}
 				// "scored the next 10 points" is a stretch of the finish, and "the
@@ -480,7 +489,9 @@ export const verifyRecap = (
 		// a 36-22 first quarter and put together a 12-0 run in the second"
 		// was read as a 12-0 first quarter.
 		for (const m of sentence.matchAll(
-			/(?:(\d+)-(\d+) )?(first|second|third|fourth) quarter(?:[^,.;]{0,25}?(\d+)-(\d+))?/g,
+			// Not "quarters": "a 19-0 run spanning the first and second quarters
+			// and led 49-41 at halftime" names no one quarter's score.
+			/(?:(\d+)-(\d+) )?(first|second|third|fourth) quarter(?!s)(?:[^,.;]{0,25}?(\d+)-(\d+))?/g,
 		)) {
 			const said1 = m[1] ?? m[4];
 			const said2 = m[2] ?? m[5];
@@ -577,10 +588,15 @@ export const verifyRecap = (
 		// entering the fourth", "took a 10-point lead into the fourth":
 		// told as a margin, held to the quarters all the same.
 		for (const m of sentence.matchAll(
-			/(\d+) (?:up|down) going into the (second|third|fourth)\b|an? (\d+)-point (?:game|lead) (?:entering|going into|into) the (second|third|fourth)\b|[Gg]oing into the (second|third|fourth), the [A-Z][\w ]*? were (?:up|down) (\d+)\b|(?:lead was|[Ii]t was|That was) down to (\d+) going into the (second|third|fourth)\b|lead (?:had grown|was out) to (\d+) going into the (second|third|fourth)\b|\bwas still (\d+) going into the (second|third|fourth)\b/g,
+			/(\d+) (?:up|down) going into the (second|third|fourth)\b|an? (\d+)-point (?:game|lead) (?:entering|going into|into) the (second|third|fourth)\b|[Gg]oing into the (second|third|fourth), the [A-Z][\w ]*? were (?:up|down) (\d+)\b|(?:lead was|[Ii]t was|That was) down to (\d+) going into the (second|third|fourth)\b|lead (?:had grown|was out) to (\d+) going into the (second|third|fourth)\b|\bwas still (\d+) going into the (second|third|fourth)\b|trailed by (a point|two) going into the (second|third|fourth)\b/g,
 		)) {
-			const said = Number(m[1] ?? m[3] ?? m[6] ?? m[7] ?? m[9] ?? m[11]);
-			const word = (m[2] ?? m[4] ?? m[5] ?? m[8] ?? m[10] ?? m[12]) as
+			const said =
+				m[13] === "a point"
+					? 1
+					: m[13] === "two"
+						? 2
+						: Number(m[1] ?? m[3] ?? m[6] ?? m[7] ?? m[9] ?? m[11]);
+			const word = (m[2] ?? m[4] ?? m[5] ?? m[8] ?? m[10] ?? m[12] ?? m[14]) as
 				| "second"
 				| "third"
 				| "fourth";
@@ -712,12 +728,21 @@ export const verifyRecap = (
 				add("biggest lead", `said ${n} in period ${period}`, m[0]);
 			}
 		}
-		// "Tied at 61 at the break" is the halftime score, checked above.
-		claim(
-			/(?<!regulation ended )tied at (\d+)\b(?! (?:at (?:the break|halftime|the half\b)|going into))/g,
-			(n) => n === flow.lastTie?.pts,
-			"last tie",
-		);
+		// "Tied at 61 at the break" is the halftime score, checked above, and
+		// "tied at 110 with two minutes to play" is a score on the clock,
+		// checked with the finish below.
+		for (const sentence of splitSentences(text)) {
+			if (FINISH_CLOCK.test(sentence)) {
+				continue;
+			}
+			for (const m of sentence.matchAll(
+				/(?<!regulation ended )tied at (\d+)\b(?! (?:at (?:the break|halftime|the half\b)|going into))/g,
+			)) {
+				if (Number(m[1]) !== flow.lastTie?.pts) {
+					add("last tie", `said ${m[1]}`, m[0]);
+				}
+			}
+		}
 		claim(
 			/last tie came at (\d+)/g,
 			(n) => n === flow.lastTie?.pts,
@@ -730,10 +755,8 @@ export const verifyRecap = (
 		// closing stretch actually reached - either order, since the sentence
 		// puts whichever side it is about first.
 		const { pairs, ties } = finishScores(game);
-		const CLOCK =
-			/seconds? (?:left|to go|to play)|\d:\d\d (?:left|to go|to play)|at the buzzer|no time left|two minutes/;
 		for (const sentence of splitSentences(recap)) {
-			if (!CLOCK.test(sentence)) {
+			if (!FINISH_CLOCK.test(sentence)) {
 				continue;
 			}
 			for (const m of sentence.matchAll(/\b(\d{1,3})-(\d{1,3})\b/g)) {
@@ -788,7 +811,7 @@ export const verifyRecap = (
 					add("finish run", `said the next ${n} points`, sentence);
 				}
 			}
-			for (const m of sentence.matchAll(/tied it at (\d+)/g)) {
+			for (const m of sentence.matchAll(/tied (?:it )?at (\d+)/g)) {
 				const n = Number(m[1]);
 				if (!ties.has(n)) {
 					add("finish tie", `said tied at ${n}`, sentence);

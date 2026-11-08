@@ -8990,7 +8990,7 @@ describe("the story goes past halftime, in order", () => {
 				/14 (?:straight points|unanswered) in the|14-0 (?:run|burst) in the/,
 				recap,
 			);
-			if (/across the first and second/.test(recap)) {
+			if (/spanning the first and second quarters/.test(recap)) {
 				seen += 1;
 			}
 			assert.deepEqual(verifyRecap(recap, g), [], recap);
