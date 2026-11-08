@@ -15755,6 +15755,41 @@ class Action {
 			}
 			return { hit, far, round };
 		};
+		// (Nobody else blocking on the way in, as he gets to each spot on it
+		// - past the first of it, off his own man: not in through the
+		// center beside him, say. See QB_HIT_CLEAR_FT.)
+		const clearOf = (
+			from: Pt,
+			shed: number,
+			way: { hit: Pt; far: number; round: Pt | undefined },
+		): boolean => {
+			if (!Number.isFinite(way.far) || way.far <= 0) {
+				return Number.isFinite(way.far);
+			}
+			const pts = way.round
+				? this.curve(from, way.round, way.hit, QB_HIT_ROUND_PTS)
+				: Array.from({ length: QB_HIT_ROUND_PTS }, (_, k) => {
+						const u = (k + 1) / QB_HIT_ROUND_PTS;
+						return {
+							x: from.x + (way.hit.x - from.x) * u,
+							y: from.y + (way.hit.y - from.y) * u,
+						};
+					});
+			let gone = 0;
+			let was = from;
+			for (const p of pts) {
+				gone += dist(was, p);
+				was = p;
+				if (gone < QB_HIT_CLEAR_FROM) {
+					continue;
+				}
+				const t = shed + (hitT - shed) * Math.min(1, gone / way.far);
+				if (blockers.some((x) => dist(x.posAt(t), p) < QB_HIT_CLEAR_FT)) {
+					return false;
+				}
+			}
+			return true;
+		};
 		// (Straight in through him only if nobody can get round him in time
 		// - the man the sim flags for roughing the passer, say, or the hit
 		// that hurts him. A hit of our own, nobody - not through the man in
@@ -15782,7 +15817,11 @@ class Action {
 					) {
 						break;
 					}
-					const { far } = wayIn(from, shed, rounds);
+					const way = wayIn(from, shed, rounds);
+					const { far } = way;
+					if (rounds && !clearOf(from, shed, way)) {
+						continue;
+					}
 					if (
 						rampedMs(
 							Math.max(0, far),
@@ -15968,7 +16007,23 @@ class Action {
 					? m
 					: mate;
 		const was = helper?.posAt(leave) ?? chest;
-		const side = (was.x - chest.x) * -uy + (was.y - chest.y) * ux >= 0 ? 1 : -1;
+		const near = (side: number) => ({
+			x: chest.x - uy * side * HELP_BESIDE,
+			y: chest.y + ux * side * HELP_BESIDE,
+		});
+		// (The side he is on of him - or, a man stood there, the other, if
+		// that is clearer: not over onto him to do it.)
+		const roomAt = (q: Pt) =>
+			Math.min(
+				...this.men
+					.filter((x) => x !== qb && x !== helper)
+					.map((x) => dist(x.posAt(leave + QB_HAND_WAIT_MS / 2), q)),
+			);
+		const own = (was.x - chest.x) * -uy + (was.y - chest.y) * ux >= 0 ? 1 : -1;
+		const side =
+			roomAt(near(own)) < HELP_ROOM && roomAt(near(-own)) > roomAt(near(own))
+				? -own
+				: own;
 		const by = (p: Pt) => ({
 			x: p.x - uy * side * HELP_BESIDE,
 			y: p.y + ux * side * HELP_BESIDE,
@@ -26522,6 +26577,10 @@ const QB_HIT_ROUND_PTS = 12;
 // far (feet) out to the side to go.)
 const QB_HIT_ROUND_END = 0.7;
 const QB_HIT_ROUND_LEAST = 0.4;
+// (His way in to the quarterback no nearer than this to any other man
+// blocking (feet), past the first QB_HIT_CLEAR_FROM of it.)
+const QB_HIT_CLEAR_FT = 1.6;
+const QB_HIT_CLEAR_FROM = 1.5;
 const QB_HIT_SEE_MS = 200;
 // A pass knocked down at the line (see batAt): by the man in the rush the
 // sim says got to it - or, this often with nobody named on it, one in the
