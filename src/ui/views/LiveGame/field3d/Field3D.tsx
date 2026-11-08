@@ -6,7 +6,13 @@ import { headColors, profileOf } from "../court3d/faces.ts";
 import { logoPicture } from "../court3d/logoPicture.ts";
 import { adsFor } from "../court3d/arenaAds.ts";
 import { FAST, makePace } from "../court3d/pace.ts";
-import { adjust, artFor, makeResolution } from "../court3d/resolution.ts";
+import {
+	adjust,
+	fineNow,
+	makeFine,
+	makeResolution,
+	sizeCanvas,
+} from "../court3d/resolution.ts";
 import { Caption, Overlays } from "../court3d/Overlays.tsx";
 import {
 	bugTeamOf,
@@ -227,14 +233,10 @@ const CAM_PAN_END = 9;
 // before; over that, a man waits a frame for his new one (see sprite.ts).
 const SPRITE_BUDGET_MS = 6;
 // Drawing a frame in under this long (ms, smoothed), there is time for the
-// men's poses in finer steps (see sprite.ts); over that, back to the usual
-// ones - and not tried again for a while. (A little sooner than
-// basketball's: most of the new poses are made off the page - see farm.ts -
-// and finer ones cost the page little more.)
+// men's poses in finer steps (see fineNow) - a little sooner than
+// basketball's: most of the new poses are made off the page (see farm.ts),
+// and finer ones cost the page little more.
 const FINE_ON_MS = 7;
-const FINE_OFF_MS = 11;
-const FINE_RETRY_MS = 20_000;
-const FINE_SETTLE_MS = 3000;
 // A flag out on a play: the bug's down and distance a yellow FLAG from this
 // long after it is thrown (ms) until the next play.
 const FLAG_BUG_AFTER = 600;
@@ -1028,13 +1030,14 @@ const Field3D = ({
 		sprites.budget = SPRITE_BUDGET_MS;
 		// When finer poses were last taken up, and last given up for want of
 		// time.
-		let fineOnAt = -Infinity;
-		let fineOffAt = -Infinity;
+		const fine = makeFine();
 		const handsOf = handsOfFor(
 			(pid) => bodies.current.get(pid) ?? DRAWN_DEFAULT,
 			() => sprites.fine === true,
 		);
 		const res = makeResolution(performance.now() + 1500);
+		// The size the canvas is laid on the page at (CSS px).
+		const laid = { w: 0, h: 0 };
 		// How often it is drawn (see court3d/pace.ts) - and whether this frame
 		// says anything about how fast the device draws (not paused).
 		const pacing = makePace(performance.now() + 1500);
@@ -1100,14 +1103,7 @@ const Field3D = ({
 			if (!canvas || !ctx || w <= 0 || h <= 0) {
 				return;
 			}
-			const dpr = Math.min(3, window.devicePixelRatio || 1);
-			const art = artFor(h * dpr, res);
-			const fw = Math.ceil((w * dpr) / art);
-			const fh = Math.ceil((h * dpr) / art);
-			if (canvas.width !== fw || canvas.height !== fh) {
-				canvas.width = fw;
-				canvas.height = fh;
-			}
+			const { art, dpr, fw, fh } = sizeCanvas(canvas, p.size, res, laid);
 			const replay = s.replay;
 			const moment = momentAt(tl, replay ? replay.at : s.t, handsOf);
 			const aim = replay ? replayAim(moment, replay) : aimFor(moment);
@@ -1397,28 +1393,15 @@ const Field3D = ({
 				sprites = makeSpriteCache();
 				sprites.budget = SPRITE_BUDGET_MS;
 			}
-			// Time to spare, at the finest picture: poses in finer steps - and
-			// back to the usual ones well before that costs a size.
-			const spare = res.drawMs;
-			if (res.coarser > 0 || spare === undefined || pacing.fps !== FAST) {
-				sprites.fine = false;
-			} else if (
-				!sprites.fine &&
-				spare < FINE_ON_MS &&
-				now - fineOffAt > FINE_RETRY_MS
-			) {
-				sprites.fine = true;
-				fineOnAt = now;
-			} else if (
-				sprites.fine &&
-				spare > FINE_OFF_MS &&
-				// (Not over the first few seconds of them: every pose is new then,
-				// and drawn for the first time.)
-				now - fineOnAt > FINE_SETTLE_MS
-			) {
-				sprites.fine = false;
-				fineOffAt = now;
-			}
+			// Time to spare, at the finest picture: poses in finer steps.
+			sprites.fine = fineNow(
+				sprites.fine === true,
+				fine,
+				res,
+				pacing.fps === FAST,
+				now,
+				FINE_ON_MS,
+			);
 			// Into and out of black across a cut - and between the key plays,
 			// down to black out of one, up out of it into the next.
 			setOpacity(

@@ -34,7 +34,13 @@ import {
 	type Rig,
 } from "./camera.ts";
 import { courtTexture, edgeColor } from "./courtTexture.ts";
-import { adjust, artFor, makeResolution } from "./resolution.ts";
+import {
+	adjust,
+	fineNow,
+	makeFine,
+	makeResolution,
+	sizeCanvas,
+} from "./resolution.ts";
 import { FAST, makePace } from "./pace.ts";
 import { makeFarm } from "./farm.ts";
 import { makeScratch, makeSpriteCache, releaseSprites } from "./sprite.ts";
@@ -168,12 +174,8 @@ const coversOf = (
 const LINEUP_INTROS = false;
 
 // Drawing a frame in under this long (ms, smoothed), there is time for his
-// poses in finer steps (see sprite.ts); over that, back to the usual ones -
-// and not tried again for a while.
+// poses in finer steps (see fineNow).
 const FINE_ON_MS = 5;
-const FINE_OFF_MS = 11;
-const FINE_RETRY_MS = 20_000;
-const FINE_SETTLE_MS = 3000;
 // The most of a frame (ms) given to drawing players in poses not drawn
 // before; over that, a man waits a frame for his new one (see sprite.ts).
 const SPRITE_BUDGET_MS = 6;
@@ -1060,16 +1062,14 @@ const Court3D = ({
 		sprites.farm = farm;
 		// When finer poses were last taken up, and last given up for want of
 		// time.
-		let fineOnAt = -Infinity;
-		let fineOffAt = -Infinity;
+		const fine = makeFine();
 		// How fine the picture is: as fine as this device can draw it.
 		const res = makeResolution(performance.now() + 1500);
 		// How often it is drawn (see pace.ts) - and whether this frame says
 		// anything about how fast the device draws (not held back, paused).
 		const pacing = makePace(performance.now() + 1500);
 		// The size the canvas is laid on the page at (CSS px).
-		let laidW = 0;
-		let laidH = 0;
+		const laid = { w: 0, h: 0 };
 		const lookOf = (pid: number) => looks.current.get(pid)!;
 		const bodyOfPid = (pid: number) => bodies.current.get(pid) ?? bodyOf();
 
@@ -1118,33 +1118,12 @@ const Court3D = ({
 				return;
 			}
 			const { w, h } = p.size;
-			const dpr = Math.min(3, window.devicePixelRatio || 1);
 			if (w <= 0 || h <= 0) {
 				return;
 			}
 			// The picture: fine (see resolution.ts), each of its pixels a whole
 			// number of the screen's.
-			const art = artFor(h * dpr, res);
-			const fw = Math.ceil((w * dpr) / art);
-			const fh = Math.ceil((h * dpr) / art);
-			if (canvas.width !== fw || canvas.height !== fh) {
-				canvas.width = fw;
-				canvas.height = fh;
-			}
-			// Laid on the page that many screen pixels to each of its pixels
-			// exactly - not stretched to the box it is in, which is a fraction
-			// of a pixel off that (831.5 x 467.7, say): stretched, a column and
-			// a row of the picture came out a screen pixel narrower than the
-			// rest, a seam everything crawled across as the camera moved. (The
-			// sliver past the box's edge is cut off by it.)
-			const cssW = (fw * art) / dpr;
-			const cssH = (fh * art) / dpr;
-			if (cssW !== laidW || cssH !== laidH) {
-				laidW = cssW;
-				laidH = cssH;
-				canvas.style.width = `${cssW}px`;
-				canvas.style.height = `${cssH}px`;
-			}
+			const { art, dpr, fw, fh } = sizeCanvas(canvas, p.size, res, laid);
 
 			const replay = s.replay;
 			const moment =
@@ -1445,28 +1424,15 @@ const Court3D = ({
 				sprites.budget = SPRITE_BUDGET_MS;
 				sprites.farm = farm;
 			}
-			// Time to spare, at the finest picture: poses in finer steps - and
-			// back to the usual ones well before that costs a size.
-			const spare = res.drawMs;
-			if (res.coarser > 0 || spare === undefined || pacing.fps !== FAST) {
-				sprites.fine = false;
-			} else if (
-				!sprites.fine &&
-				spare < FINE_ON_MS &&
-				now - fineOffAt > FINE_RETRY_MS
-			) {
-				sprites.fine = true;
-				fineOnAt = now;
-			} else if (
-				sprites.fine &&
-				spare > FINE_OFF_MS &&
-				// (Not over the first few seconds of them: every pose is new then,
-				// and drawn for the first time.)
-				now - fineOnAt > FINE_SETTLE_MS
-			) {
-				sprites.fine = false;
-				fineOffAt = now;
-			}
+			// Time to spare, at the finest picture: poses in finer steps.
+			sprites.fine = fineNow(
+				sprites.fine === true,
+				fine,
+				res,
+				pacing.fps === FAST,
+				now,
+				FINE_ON_MS,
+			);
 
 			// Each side's fouls this period - or BONUS - in the bug's order,
 			// visitors first (the marks are in box score order, home first).

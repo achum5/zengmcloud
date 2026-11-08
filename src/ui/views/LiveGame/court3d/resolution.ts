@@ -139,3 +139,71 @@ export const adjust = (
 	res.drawMs = undefined;
 	return true;
 };
+
+// THE CANVAS, SIZED TO THE PICTURE, any sport's: as fine as `res` has it,
+// each of its pixels a whole number (`art`) of the screen's, for a picture
+// laid on the page `size` (CSS px). And laid there that many screen pixels
+// to each of its own exactly - not stretched to the box it is in, which is
+// a fraction of a pixel off that (831.5 x 467.7, say): stretched, a column
+// and a row of the picture came out a screen pixel narrower than the rest,
+// a seam everything crawled across as the camera moved. (The sliver past
+// the box's edge is cut off by it.) `laid`: the size it was last laid at.
+// The picture's size (`fw` x `fh`), and how fine it is.
+export const sizeCanvas = (
+	canvas: HTMLCanvasElement,
+	size: { w: number; h: number },
+	res: Resolution,
+	laid: { w: number; h: number },
+): { art: number; dpr: number; fw: number; fh: number } => {
+	const dpr = Math.min(3, window.devicePixelRatio || 1);
+	const art = artFor(size.h * dpr, res);
+	const fw = Math.ceil((size.w * dpr) / art);
+	const fh = Math.ceil((size.h * dpr) / art);
+	if (canvas.width !== fw || canvas.height !== fh) {
+		canvas.width = fw;
+		canvas.height = fh;
+	}
+	const cssW = (fw * art) / dpr;
+	const cssH = (fh * art) / dpr;
+	if (cssW !== laid.w || cssH !== laid.h) {
+		laid.w = cssW;
+		laid.h = cssH;
+		canvas.style.width = `${cssW}px`;
+		canvas.style.height = `${cssH}px`;
+	}
+	return { art, dpr, fw, fh };
+};
+
+// FINER POSES, any sport's: drawing a frame in under `onMs` (smoothed), at
+// the finest picture and the fastest pace, there is time for the players'
+// poses in finer steps (see sprite.ts); over OFF_MS, back to the usual ones
+// - well before that costs a size - and not tried again for a while.
+const FINE_OFF_MS = 11;
+const FINE_RETRY_MS = 20_000;
+// (Not given up over the first few seconds of them: every pose is new then,
+// and drawn for the first time.)
+const FINE_SETTLE_MS = 3000;
+export type Fine = { onAt: number; offAt: number };
+export const makeFine = (): Fine => ({ onAt: -Infinity, offAt: -Infinity });
+export const fineNow = (
+	fine: boolean,
+	f: Fine,
+	res: Resolution,
+	fastest: boolean,
+	now: number,
+	onMs: number,
+): boolean => {
+	const spare = res.drawMs;
+	if (res.coarser > 0 || spare === undefined || !fastest) {
+		return false;
+	}
+	if (!fine && spare < onMs && now - f.offAt > FINE_RETRY_MS) {
+		f.onAt = now;
+		return true;
+	}
+	if (fine && spare > FINE_OFF_MS && now - f.onAt > FINE_SETTLE_MS) {
+		f.offAt = now;
+		return false;
+	}
+	return fine;
+};
