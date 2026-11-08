@@ -1711,6 +1711,10 @@ export type LocalStateUI = {
 	};
 	lid?: number;
 	liveGameInProgress: boolean;
+	// A live sim of THIS device's own game is playing here (the worker's
+	// liveSimGid). liveGameInProgress is also held for a league-mate's
+	// broadcast being watched or offered, which blocks nothing of yours.
+	ownLiveSim: boolean;
 	socialFeed: boolean;
 	// True while connected to a multiplayer sync session - used to hide the
 	// multi-team switcher so it feels like single-player.

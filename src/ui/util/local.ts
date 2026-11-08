@@ -95,6 +95,7 @@ const useLocalRaw = createWithEqualityFn<LocalStateWithActions>(
 		keyboardShortcuts: undefined,
 		lid: undefined,
 		liveGameInProgress: false,
+		ownLiveSim: false,
 		mpSyncActive: false,
 		mpSyncIsHost: false,
 		mpSyncHostName: undefined,
@@ -217,6 +218,7 @@ const useLocalRaw = createWithEqualityFn<LocalStateWithActions>(
 					// Controller.tsx relies on this being undefined (or at least different than the new lid) to trigger calling beforeView.league
 					lid: undefined,
 					liveGameInProgress: false,
+					ownLiveSim: false,
 					mpSyncActive: false,
 					mpSyncIsHost: false,
 					mpSyncHostName: undefined,

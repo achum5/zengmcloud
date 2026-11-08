@@ -2420,6 +2420,11 @@ $small-scrollbar-thumb-hover-color: darken($gray-500, 10%) !default;
 	.btn:not(:first-child) {
 		border-top: 1px solid $gray-300;
 	}
+
+	// Greyed out, still tappable to say why (see ScoreBox).
+	.btn.score-box-action-off {
+		opacity: var(--bs-btn-disabled-opacity);
+	}
 }
 
 .score-box-left-wrapper {

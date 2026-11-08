@@ -55,7 +55,7 @@ const DailySchedule = ({
 
 	const {
 		gameSimInProgress,
-		liveGameInProgress,
+		ownLiveSim,
 		mpAutoPlay,
 		mpLiveBroadcast,
 		mpSyncActive,
@@ -68,7 +68,7 @@ const DailySchedule = ({
 		userTid,
 	} = useLocal([
 		"gameSimInProgress",
-		"liveGameInProgress",
+		"ownLiveSim",
 		"mpAutoPlay",
 		"mpLiveBroadcast",
 		"mpSyncActive",
@@ -112,10 +112,12 @@ const DailySchedule = ({
 			isAuthority: !mpSyncActive || !!mpSyncIsHost,
 			connectedAndReady:
 				!mpSyncActive || (!!mpSyncReady && !mpSyncReconnecting),
-			// Only a live sim playing on THIS device (e.g. in another tab). A
-			// league-mate's broadcast no longer blocks - your game and theirs run
-			// side by side, yours watched here, theirs still a pill away.
-			simInFlight: !!liveGameInProgress,
+			// Only a live sim of this device's own game (e.g. in another tab) -
+			// the worker's own test (liveSimGid). Not liveGameInProgress: that is
+			// also held while a league-mate's broadcast is watched or offered,
+			// which greyed out your game for no reason you could see. Their
+			// game and yours run side by side.
+			simInFlight: !!ownLiveSim,
 			msUntilAutoSim:
 				typeof autoPlayNextRunAt === "number"
 					? autoPlayNextRunAt - now

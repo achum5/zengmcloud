@@ -5565,6 +5565,9 @@ const onLiveSimOver = async (gid?: number) => {
 	// liveSpoilers.ts - so its final is put in now, changed set or not.)
 	const ownLiveSimOver = local.liveSimGid !== undefined;
 	local.liveSimGid = undefined;
+	// (Whatever else still holds the header, nothing of this device's own is
+	// playing now - see ownLiveSim.)
+	await toUI("updateLocal", [{ ownLiveSim: false }]);
 
 	local.liveSimRatingsStatsPopoverPlayers = undefined;
 

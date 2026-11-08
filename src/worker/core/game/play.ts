@@ -301,7 +301,9 @@ const play = async (
 			// hitting its final play - would clear the flag mid-playback and un-hide
 			// everything it exists to hide (phase text, ready-up, the score ticker).
 			local.liveSimGid = gidOneGame;
-			await toUI("updateLocal", [{ liveGameInProgress: true }]);
+			await toUI("updateLocal", [
+				{ liveGameInProgress: true, ownLiveSim: true },
+			]);
 
 			// The replay row, stamped live, goes in BEFORE the result: it is how
 			// every other device in the room knows this result is to be watched,

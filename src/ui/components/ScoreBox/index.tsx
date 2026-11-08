@@ -11,6 +11,7 @@ import getWinner from "../../../common/getWinner.ts";
 import { getCol } from "../../../common/getCol.ts";
 import { getBestPlayerBoxScore } from "../../../common/getBestPlayerBoxScore.ts";
 import { bySport } from "../../../common/sportFunctions.ts";
+import { showNotification } from "../../util/showNotification.ts";
 
 type Team = {
 	// pts/players are undefined for upcoming games. Others are undefined only for legacy objects
@@ -594,13 +595,30 @@ export const ScoreBox = memo(
 									action.highlight ? "btn-success" : "btn-light-bordered-2",
 								);
 
+								// (Greyed out for a reason: a tap says it - a phone has no
+								// tooltip to hover.)
+								const explain =
+									action.disabled === true && action.title !== undefined;
 								return action.onClick ? (
 									<button
 										key={i}
-										className={classNameAction}
-										disabled={action.disabled}
+										className={clsx(
+											classNameAction,
+											explain && "score-box-action-off",
+										)}
+										disabled={action.disabled && !explain}
+										aria-disabled={action.disabled || undefined}
 										title={action.title}
-										onClick={action.onClick}
+										onClick={
+											explain
+												? () => {
+														showNotification({
+															type: "info",
+															text: action.title,
+														});
+													}
+												: action.onClick
+										}
 									>
 										{action.text}
 									</button>

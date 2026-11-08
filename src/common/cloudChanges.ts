@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 208,
+		date: "2026-11-08",
+		text: "Multiplayer: your own game's Watch and Sim buttons no longer grey out while a league-mate's live game is on (\"Live game in progress\" up top). When they are greyed out for a real reason - the scheduled sim is about to run - tapping one tells you why.",
+	},
+	{
 		n: 207,
 		date: "2026-11-08",
 		text: 'Live game on phones: the "On the Court" heading is gone - the score by quarter and the players on the floor sit straight under the tabs.',
