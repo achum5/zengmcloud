@@ -993,6 +993,10 @@ const FOULER_HIPS = 0.2;
 const FOULER_HEAD = 0.12;
 const DREW_MS = 900;
 const DREW_LEAST = 550;
+// The ball taken off him (see lostIt): how often the man who lost it has an
+// arm up at the official, and how often his hands on his head.
+const LOST_IT_CALL = 0.2;
+const LOST_IT_HEAD = 0.14;
 // A free throw routine's pieces (see ftRoutine): how often a man flips it
 // up to himself, and sits down into his legs for a breath; how long each
 // takes (ms); his beat bouncing it, from this to this many times the usual;
@@ -28971,6 +28975,50 @@ class Director {
 		}
 	}
 
+	// THE BALL TAKEN OFF HIM, the man who lost it now and then has an arm up
+	// at the official as it goes - he was hit - or, on his way back after
+	// it, his hands up on his head; thrown away out of bounds, his hands on
+	// his head now and then too. With his arms only, and only with nothing
+	// else on them: nothing else changes for it.
+	private lostIt() {
+		const say = (
+			pid: number,
+			kind: Gesture["kind"],
+			t0: number,
+			t1: number,
+			at?: Pt,
+		) => {
+			const tr = this.track(pid);
+			if (
+				!tr ||
+				tr.arms.some((g) => g.t1 > t0 - 100 && g.t0 < t1 + 100) ||
+				tr.shown.findLast(([ts]) => ts <= t0)?.[1] !== true
+			) {
+				return false;
+			}
+			tr.arms.push({ t0, t1, kind, ...(at ? { at } : {}) });
+			tr.arms.sort((a, b) => a.t0 - b.t0);
+			return true;
+		};
+		for (const b of this.beats) {
+			const e = this.events[b.i];
+			if (b.type !== "stl" && !(b.type === "tov" && e?.outOfBounds)) {
+				continue;
+			}
+			const victim = b.type === "stl" ? e?.pidTov : e?.pid;
+			if (typeof victim !== "number" || !this.team.has(victim)) {
+				continue;
+			}
+			const t = b.actionStart;
+			const h = hash01(victim * 7 + 1, Math.round(t));
+			if (b.type === "stl" && h < LOST_IT_CALL) {
+				say(victim, "hand", t + 250, t + 1100);
+			} else if (h < LOST_IT_CALL + LOST_IT_HEAD) {
+				say(victim, "head", t + 600, t + 1900);
+			}
+		}
+	}
+
 	finish(): CourtTimeline {
 		const byT0 = (a: { t0: number }, b: { t0: number }) => a.t0 - b.t0;
 		for (const tr of this.tracks.values()) {
@@ -29064,6 +29112,7 @@ class Director {
 		this.contestsInSight();
 		this.easeNudges();
 		this.drewTheFoul();
+		this.lostIt();
 		// A look round the building runs on to the picture's next cut when
 		// that comes soon after (the substitutions over a timeout, the walk
 		// out for the next period), so the game picks up at a cut.

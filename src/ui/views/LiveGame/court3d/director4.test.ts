@@ -332,6 +332,37 @@ describe("3D director", () => {
 		assert.isAtLeast(reacted, 3);
 	}, 480_000);
 
+	// The ball taken off him, the man who lost it now and then has an arm
+	// up at the official, or his hands on his head on his way back.
+	test("a steal: the man who lost it now and then wants the call, or holds his head", () => {
+		let steals = 0;
+		const said: string[] = [];
+		for (const seed of ["a", "b"]) {
+			const { tl, events } = compile(seed, 140);
+			for (const b of tl.beats) {
+				const victim = events[b.i]?.pidTov;
+				if (b.type !== "stl" || typeof victim !== "number") {
+					continue;
+				}
+				steals += 1;
+				const g = tl.tracks
+					.get(victim)!
+					.arms.find(
+						(x) =>
+							(x.kind === "hand" || x.kind === "head") &&
+							x.t0 >= b.actionStart &&
+							x.t0 < b.actionStart + 1000,
+					);
+				if (g) {
+					said.push(g.kind);
+				}
+			}
+		}
+		assert.isAbove(steals, 10);
+		assert.isAtLeast(said.length, 3);
+		assert.includeMembers(said, ["hand", "head"]);
+	}, 480_000);
+
 	// From one move into the next - pulling up from a run, down into his
 	// stance, up for a catch - his body eases over rather than snapping
 	// there between one frame and the next.

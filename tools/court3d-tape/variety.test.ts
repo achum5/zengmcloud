@@ -1452,6 +1452,120 @@ const shootingFoulParts = (
 	};
 };
 
+// A turnover: how it was lost (a pass picked off, the ball poked away, a
+// whistle for a travel or a charge, thrown out of bounds), where, the man
+// who lost it after (back after the man who took it, a reaction), the man
+// who took it (off up the floor with it, or held), the officials' signals,
+// and what came of it next.
+const tovParts = (
+	tl: CourtTimeline,
+	events: { type: string; pid?: number; pidTov?: number }[],
+	b: CourtTimeline["beats"][number],
+): { pid: number; parts: Record<string, string> } | undefined => {
+	const e = events[b.i]!;
+	const stl = e.type === "stl";
+	const victim = stl ? e.pidTov : e.pid;
+	if (typeof victim !== "number") {
+		return undefined;
+	}
+	const vtr = tl.tracks.get(victim)!;
+	const team = vtr.team;
+	const rim = { x: rimX(team), y: 25 };
+	const T = b.actionStart;
+	const whistle = tl.fx.find(
+		(f) =>
+			f.kind === "whistle" && f.call !== undefined && Math.abs(f.t - T) < 1500,
+	);
+	let how: string;
+	if (stl) {
+		const taker = e.pid as number;
+		const got = tl.ball.find(
+			(z) => z.kind === "hold" && z.pid === taker && z.t0 >= T - 1500,
+		);
+		const k = got ? tl.ball.indexOf(got) : -1;
+		const before = k > 0 ? tl.ball[k - 1] : undefined;
+		how =
+			before?.kind === "fly" &&
+			"pid" in before.from &&
+			before.from.pid === victim
+				? "pass picked off"
+				: before?.kind === "fly" || before?.kind === "bounce"
+					? "poked loose, picked up"
+					: "stripped";
+	} else {
+		how = whistle?.call ?? "no whistle";
+	}
+	const V = evalPlayer(tl, victim, T);
+	const where =
+		dist(V, rim) < 10
+			? "at the rim"
+			: dist(V, rim) < 24
+				? "in the half court"
+				: (V.x - 47) * (rim.x - 47) > 0
+					? "out top"
+					: "in the backcourt";
+	const acts = (pid: number, from: number, to: number) => {
+		const tr = tl.tracks.get(pid)!;
+		const all = [
+			...tr.acts
+				.filter((a) => a.t0 >= from && a.t0 < to)
+				.map((a) => a.anim as string),
+			...(tr.arms ?? [])
+				.filter((g) => g.t0 >= from && g.t0 < to)
+				.map((g) => `arm ${g.kind}`),
+		];
+		return all.length > 0 ? [...new Set(all)].join("+") : "nothing";
+	};
+	// After it: the man who lost it - back the other way, or stood.
+	const V1 = evalPlayer(tl, victim, T + 1500);
+	const back = (V1.x - V.x) * (rim.x - 47) < -3 ? "got back" : "stayed";
+	let taker = "-";
+	if (stl) {
+		const S0 = evalPlayer(tl, e.pid as number, T + 300);
+		const S1 = evalPlayer(tl, e.pid as number, T + 1800);
+		taker =
+			(S1.x - S0.x) * (47 - rim.x) > 6
+				? "off up the floor"
+				: dist(S0, S1) > 3
+					? "on the move"
+					: "held";
+	}
+	const team0 = { region: "", name: "", colors: ["#000", "#fff", "#888"] } as {
+		region: string;
+		name: string;
+		colors: [string, string, string];
+	};
+	const crew = crewFor(1, team0, team0);
+	const seen: string[] = [];
+	for (let t = T; t < T + 4000; t += 100) {
+		for (const r of crewAt(tl, t, crew).states) {
+			if (
+				r.pid < 0 &&
+				r.pid >= -3 &&
+				/^(signal|report|travel)/.test(r.anim) &&
+				seen.at(-1) !== r.anim
+			) {
+				seen.push(r.anim);
+			}
+		}
+	}
+	const k = tl.beats.indexOf(b);
+	const next = tl.beats.slice(k + 1).find((x) => x.type !== "sub");
+	return {
+		pid: victim,
+		parts: {
+			how,
+			where,
+			lost: `${acts(victim, T - 200, T + 2500)}, ${back}`,
+			taker,
+			signals: seen.join(" > ") || "none",
+			next: next
+				? `${next.type} in ${Math.round((next.actionStart - T) / 1000)}s`
+				: "-",
+		},
+	};
+};
+
 test.skipIf(games.length === 0)(
 	"variety of one line",
 	() => {
@@ -1473,6 +1587,17 @@ test.skipIf(games.length === 0)(
 			}));
 			for (const b of tl.beats) {
 				if (b.type !== line) {
+					continue;
+				}
+				if (line === "tov" || line === "stl") {
+					if (fastAt(tl, b.actionStart) > 1.2) {
+						fastOnes += 1;
+						continue;
+					}
+					const got = tovParts(tl, events, b);
+					if (got) {
+						all.push({ pid: `${tag}:${got.pid}`, parts: got.parts });
+					}
 					continue;
 				}
 				if (line === "pfFG" || line === "pfTP") {

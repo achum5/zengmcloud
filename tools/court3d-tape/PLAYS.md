@@ -56,7 +56,7 @@ each part, so the table below can say how far along each part is.
 | 9   | Offensive rebound (`orb`), putback and tip-in (`fgaPutBack`, `fgaTipIn` and results)          |       25 | working |
 | 10  | Non-shooting foul, in the bonus (`pfNonShooting`, `pfBonus`)                                  |       19 | working |
 | 11  | Shooting foul (`pfFG`, `pfTP`)                                                                |       13 | working |
-| 12  | Turnover (`tov`: bad pass, lost ball, travel, offensive foul, shot clock, 5 seconds)          |       15 | todo    |
+| 12  | Turnover (`tov`: bad pass, lost ball, travel, offensive foul, shot clock, 5 seconds)          |       15 | working |
 | 13  | Steal (`stl`)                                                                                 |       13 | todo    |
 | 14  | Out of bounds (`outOfBounds`, `tov`/`stl` out of bounds)                                      |       20 | todo    |
 | 15  | Blocks (`blkTp`, `blkMidRange`, `blkLowPost`, `blkAtRim`, `blkTipIn`, `blkPutBack`)           |        9 | todo    |
@@ -627,3 +627,21 @@ now and then his hands on his hips or on his head. Only in a moment each
 has to himself, stood there: 11 and 14 of 34 now. Not yet: other contact
 than the hack (a body at the rim, a hand on the wrist), a shooter knocked
 down, the number of shots signaled, the call reported to the table.
+
+## 12. Turnover, steal
+
+Measured 2026-11-09 (57 turnovers and 47 steals at real speed; the variety
+tool's `tov` and `stl` lines): how it was lost - a whistle for an
+offensive foul 34 (a moving screen 11 of them), out of bounds 13, a
+travel 10; a pass picked off 26, poked loose 14, stripped 7 - where, the
+man who lost it after it, the man who took it (off up the floor 24, held
+22), the officials' signals, and what came next. Offensive fouls are more
+of the whistles than the NBA's (about half): the set's risk steps and
+the shares in beatTurnover, left as they are for now. The man who lost it
+did nothing about it after 39 of the 47 steals.
+
+Now (2026-11-09): the ball taken off him, the man who lost it now and then
+has an arm up at the official as it goes - he was hit - or, on his way
+back, his hands on his head (and, thrown away out of bounds, his hands on
+his head now and then): 17 of the 47 steals. Arms only, so nothing else
+changes.
