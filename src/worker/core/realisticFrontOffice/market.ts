@@ -112,10 +112,8 @@ const netOf = (deal: Pick<Deal, "gains" | "margins">) =>
 // deal does least for.
 const shopperNetOf = (
 	deal: Pick<Deal, "gains" | "margins"> & { tids: readonly [number, number] },
-) =>
-	settingFor(deal.tids[0], "selfishShopping")
-		? deal.gains[0] - deal.margins[0]
-		: netOf(deal);
+	selfish = settingFor(deal.tids[0], "selfishShopping"),
+) => (selfish ? deal.gains[0] - deal.margins[0] : netOf(deal));
 
 // For the arena, to measure what a behaviour is worth by turning it off.
 export const marketSettings = {
@@ -223,6 +221,12 @@ export const marketSettings = {
 	// 2 leagues each way round over 5 seasons: titles 14 to 6, playoff rounds
 	// won 169 to 131, seasons under 20 wins 20 to 23, games won about even.
 	movingDown: true,
+	// A team about to give up one of the league's best players - the top two
+	// a team by value - and get none back hears every other team first and
+	// takes the deal that does the most for itself (auction): a rebuilding
+	// team sent a 69 aged 27 and two 23-year-olds rated 60 for three bench
+	// players, the first offer it heard. Off while it is measured.
+	auction: false,
 };
 
 // For the arena's version-against-version leagues: settings for some teams'
@@ -245,6 +249,8 @@ export const marketClock = {
 	outlooks: 0,
 	outlookMs: 0,
 	trades: 0,
+	// Deals a team selling a star swapped for a better one it heard (auction).
+	auctions: 0,
 	// Deals both teams wanted, put off because one would rather decide at the
 	// deadline.
 	deferred: 0,
@@ -1170,6 +1176,9 @@ export const bestDealWith = (
 	a: TeamState,
 	b: TeamState,
 	single: Map<string, number>,
+	// A team shopping for itself ranks the deals both would make by what they
+	// do for it.
+	selfish = settingFor(a.tid, "selfishShopping"),
 ): Deal | undefined => {
 	const assetsA = tableAssets(a);
 	const assetsB = tableAssets(b);
@@ -1205,9 +1214,6 @@ export const bestDealWith = (
 			: -single.get(key(giver, "-", x))!;
 	const packagesA = summarize(a, b, packages(assetsA, order(a, b)));
 	const packagesB = summarize(b, a, packages(assetsB, order(b, a)));
-	// A team shopping for itself ranks the deals both would make by what they
-	// do for it.
-	const selfish = settingFor(a.tid, "selfishShopping");
 	const candidates: { giveA: Asset[]; giveB: Asset[]; screen: number }[] = [];
 	for (const pa of packagesA) {
 		for (const pb of packagesB) {
@@ -1279,7 +1285,7 @@ export const bestDealWith = (
 		if (
 			gains[0] - margins[0] >= MIN_GAIN &&
 			gains[1] - margins[1] >= MIN_GAIN &&
-			(!best || shopperNetOf(candidate) > shopperNetOf(best))
+			(!best || shopperNetOf(candidate, selfish) > shopperNetOf(best, selfish))
 		) {
 			best = {
 				tids: [a.tid, b.tid],
@@ -1668,6 +1674,7 @@ export const findBestDeal = async (
 	a: TeamState,
 	partners: readonly number[],
 	single: Map<string, number>,
+	selfish = settingFor(a.tid, "selfishShopping"),
 ) => {
 	let best: { deal: Deal; b: TeamState } | undefined;
 	for (const otherTid of partners) {
@@ -1675,8 +1682,11 @@ export const findBestDeal = async (
 		// How each side's players would feel about re-signing with the other.
 		await ensureRetention(outlook, b.tradablePlayers, a.tid);
 		await ensureRetention(outlook, a.tradablePlayers, b.tid);
-		const deal = bestDealWith(outlook, a, b, single);
-		if (deal && (!best || shopperNetOf(deal) > shopperNetOf(best.deal))) {
+		const deal = bestDealWith(outlook, a, b, single, selfish);
+		if (
+			deal &&
+			(!best || shopperNetOf(deal, selfish) > shopperNetOf(best.deal, selfish))
+		) {
 			best = { deal, b };
 		}
 	}
@@ -1917,6 +1927,25 @@ export const makeDeal = async (
 	return true;
 };
 
+// The side of a deal that gives one of the league's best players and gets
+// none back, if it sells by auction.
+const starSeller = async (deal: Deal, starsOf: () => Promise<Set<number>>) => {
+	if (!deal.tids.some((tid) => settingFor(tid, "auction"))) {
+		return undefined;
+	}
+	const stars = await starsOf();
+	for (const k of [0, 1] as const) {
+		if (
+			settingFor(deal.tids[k], "auction") &&
+			deal.give[k].pids.some((pid) => stars.has(pid)) &&
+			!deal.give[1 - k]!.pids.some((pid) => stars.has(pid))
+		) {
+			return k;
+		}
+	}
+	return undefined;
+};
+
 const shop = async (numShoppers: number) => {
 	const phase = g.get("phase");
 	const tids = await aiTids();
@@ -1936,6 +1965,22 @@ const shop = async (numShoppers: number) => {
 	}
 
 	const single = screensOf(outlook);
+	let stars: Set<number> | undefined;
+	const starsOf = async () => {
+		if (!stars) {
+			const players = await idb.cache.players.indexGetAll("playersByTid", [
+				0,
+				Infinity,
+			]);
+			stars = new Set(
+				players
+					.sort((x, y) => y.valueNoPot - x.valueNoPot)
+					.slice(0, 2 * g.get("numTeams"))
+					.map((p) => p.pid),
+			);
+		}
+		return stars;
+	};
 	for (const tid of shoppers) {
 		const a = await loadTeam(outlook, tid);
 		const others = tids.filter((x) => x !== tid);
@@ -1946,9 +1991,30 @@ const shop = async (numShoppers: number) => {
 		) {
 			partners.push(others.splice(Math.floor(random() * others.length), 1)[0]!);
 		}
-		const best = await findBestDeal(outlook, a, partners, single);
+		let best = await findBestDeal(outlook, a, partners, single);
 		if (!best) {
 			continue;
+		}
+		let initiator = tid;
+		const seller = await starSeller(best, starsOf);
+		if (seller !== undefined) {
+			const s = await loadTeam(outlook, best.tids[seller]);
+			const alt = await findBestDeal(
+				outlook,
+				s,
+				tids.filter((x) => x !== s.tid),
+				single,
+				true,
+			);
+			if (
+				alt &&
+				alt.gains[0] - alt.margins[0] >
+					best.gains[seller] - best.margins[seller]
+			) {
+				marketClock.auctions += 1;
+				best = alt;
+				initiator = s.tid;
+			}
 		}
 		const sides = [
 			await loadTeam(outlook, best.tids[0]),
@@ -1972,6 +2038,6 @@ const shop = async (numShoppers: number) => {
 			}
 			continue;
 		}
-		await makeDeal(outlook, best, tid, sides, waiting);
+		await makeDeal(outlook, best, initiator, sides, waiting);
 	}
 };
