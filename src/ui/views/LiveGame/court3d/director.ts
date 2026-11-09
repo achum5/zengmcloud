@@ -1094,6 +1094,18 @@ const MISS_BACK_FT = 3.5;
 const MISS_IN_BIG = 0.45;
 const MISS_IN_FT = 2.5;
 const MISS_LEAST_MS = 700;
+// After his miss in close - at the rim, in the post (see afterTheCloseMiss):
+// from this long after he comes down (ms), this share follow it in, this far
+// (feet) toward the rim, over this long at the least (ms); the rest back out
+// this far. Somebody in his way in - a man of theirs this near, between him
+// and the rim - and he fights him for it where he is, this long (ms).
+const CLOSE_MISS_AFTER = 120;
+const CLOSE_MISS_IN = 0.7;
+const CLOSE_MISS_IN_FT = 2.5;
+const CLOSE_MISS_BACK_FT = 3;
+const CLOSE_MISS_LEAST = 600;
+const CLOSE_MISS_WAY = 3.5;
+const CLOSE_MISS_FIGHT_MS = 750;
 // A jumper from out on the floor in the air (see allPlayIt): from this long
 // after it goes (ms, and up to a quarter second more), over this long at
 // the least (ms); this share of men of his out on the floor back off.
@@ -2785,6 +2797,14 @@ class Director {
 		off: number;
 		release: number;
 	}[] = [];
+	// And in close: who, when it left his hands, when it was off the rim, and
+	// who gets it (see afterTheCloseMiss).
+	private readonly closeMissed: {
+		shooter: number;
+		release: number;
+		off: number;
+		rebounder: number | undefined;
+	}[] = [];
 	// Shots in close, for whoever of theirs is right there to go up with his
 	// arms high (see wallUp).
 	private readonly walls: { shooter: number; release: number }[] = [];
@@ -3619,6 +3639,107 @@ class Director {
 			});
 			if (next) {
 				next.from = { ...Q };
+			}
+		}
+	}
+
+	// AFTER HIS MISS IN CLOSE - at the rim, in the post - the shooter, down
+	// from it and not the man who gets it, isn't stood where he landed: most
+	// follow it in a step or two toward the rim - or, a man of theirs in the
+	// way, fight him for it where they are - and the rest back out of the
+	// crowd. His own way of it, the same for him every time.
+	private afterTheCloseMiss() {
+		for (const { shooter, release, off, rebounder } of this.closeMissed) {
+			const tr = this.track(shooter);
+			if (!tr || shooter === rebounder) {
+				continue;
+			}
+			// (Down from it: the end of the shot he went up with.)
+			const shot = tr.acts.findLast(
+				(a) => a.t0 <= release + 50 && a.t1 > release,
+			);
+			const t0 = (shot?.t1 ?? release + 400) + CLOSE_MISS_AFTER;
+			// (Nothing else of his till then - nor a cut of the picture.)
+			const at = tr.moves.findIndex((m) => m.t1 > t0 - 50);
+			const next = at < 0 ? undefined : tr.moves[at];
+			if (
+				(next && next.t0 < t0 + CLOSE_MISS_LEAST) ||
+				tr.acts.some(
+					(a) => a !== shot && a.t1 > t0 && a.t0 < t0 + CLOSE_MISS_LEAST,
+				) ||
+				this.cuts.some((c) => c > release && c < Math.max(off, t0) + 400) ||
+				tr.shown.findLast(([ts]) => ts <= t0)?.[1] !== true
+			) {
+				continue;
+			}
+			const P = this.posAt(shooter, t0);
+			const rim = rimPt(tr.team);
+			const into = hash01(shooter, 5233) < CLOSE_MISS_IN;
+			const u = unitVec(P, rim);
+			const Q = inPlay(
+				into
+					? { x: P.x + u.x * CLOSE_MISS_IN_FT, y: P.y + u.y * CLOSE_MISS_IN_FT }
+					: {
+							x: P.x - u.x * CLOSE_MISS_BACK_FT,
+							y: P.y - u.y * CLOSE_MISS_BACK_FT,
+						},
+			);
+			const d = dist(P, Q);
+			const t1 = Math.min(
+				t0 + Math.max(CLOSE_MISS_LEAST, runMs(d, into ? 8 : 5)),
+				(next?.t0 ?? Infinity) - 100,
+			);
+			// (Into nobody.)
+			let clear = d >= 1 && t1 - t0 >= CLOSE_MISS_LEAST - 1;
+			for (let t = t0; t <= t1 && clear; t += 100) {
+				const k = (t - t0) / (t1 - t0);
+				const S = { x: P.x + (Q.x - P.x) * k, y: P.y + (Q.y - P.y) * k };
+				clear = [...this.tracks.values()].every(
+					(o) => o === tr || o.pid < 0 || dist(this.posAt(o.pid, t), S) >= 2.2,
+				);
+			}
+			if (clear) {
+				tr.moves.splice(at < 0 ? tr.moves.length : at, 0, {
+					t0,
+					t1,
+					from: { ...P },
+					to: { ...Q },
+					anim: into ? "jog" : "back",
+					v0: 0,
+					v1: 0,
+				});
+				if (next) {
+					next.from = { ...Q };
+				}
+				continue;
+			}
+			// In the way of it: a man of theirs between him and the rim, up on
+			// him - he fights him for it, where they are.
+			if (!into) {
+				continue;
+			}
+			const him = [...this.tracks.values()].find((o) => {
+				if (o.pid < 0 || o.team === tr.team) {
+					return false;
+				}
+				const O = this.posAt(o.pid, t0);
+				return (
+					dist(O, P) < CLOSE_MISS_WAY &&
+					(O.x - P.x) * u.x + (O.y - P.y) * u.y > 0
+				);
+			});
+			const end = Math.min(
+				t0 + CLOSE_MISS_FIGHT_MS,
+				(next?.t0 ?? Infinity) - 100,
+			);
+			if (him && end - t0 >= CLOSE_MISS_LEAST - 1) {
+				tr.acts.push({
+					t0,
+					t1: end,
+					anim: "fight",
+					look: { x: rim.x, y: rim.y },
+				});
+				tr.acts.sort((a, b) => a.t0 - b.t0);
 			}
 		}
 	}
@@ -14095,6 +14216,21 @@ class Director {
 				landed,
 				off: arrive,
 				release: shot?.t0 ?? gather,
+			});
+		} else if (plan.kind === "miss" && !dunk) {
+			// (In close, or a hook or a floater: no jumper's landing to go by.)
+			const shot = this.ball.findLast(
+				(b) =>
+					b.kind === "fly" &&
+					"pid" in b.from &&
+					b.from.pid === shooter &&
+					!("pid" in b.to),
+			);
+			this.closeMissed.push({
+				shooter,
+				release: shot?.t0 ?? gather,
+				off: arrive,
+				rebounder: plan.rebounder,
 			});
 		}
 		if (!dunk && !putback && plan.kind !== "block") {
@@ -29101,6 +29237,7 @@ class Director {
 		this.ball.sort(byT0);
 		this.stepIntoShots();
 		this.afterTheMiss();
+		this.afterTheCloseMiss();
 		this.allPlayIt();
 		this.pace();
 		this.liveHands();

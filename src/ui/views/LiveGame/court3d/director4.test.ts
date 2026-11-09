@@ -400,6 +400,59 @@ describe("3D director", () => {
 		assert.isAtLeast(claims, outs * 0.3);
 	}, 480_000);
 
+	// Missed in close - at the rim, a hook, a floater - and not the man who
+	// gets it, the shooter isn't left stood where he landed: he follows it in,
+	// fights a man of theirs for it, or backs out.
+	test("after his miss in close the shooter plays it, not stood where he landed", () => {
+		let misses = 0;
+		let stood = 0;
+		for (const seed of ["a", "b", "c"]) {
+			const { tl, events } = compile(seed, 140);
+			tl.beats.forEach((b, k) => {
+				if (
+					!/^miss(AtRim|LowPost)$/.test(b.type) ||
+					fastAt(tl, b.actionStart) > 1.001
+				) {
+					return;
+				}
+				const fga = tl.beats.slice(0, k).findLast((x) => /^fga/.test(x.type));
+				const shooter = fga && events[fga.i]?.pid;
+				const next = tl.beats[k + 1];
+				if (
+					typeof shooter !== "number" ||
+					(next && events[next.i]?.pid === shooter)
+				) {
+					return;
+				}
+				const tr = tl.tracks.get(shooter)!;
+				const shot = tl.ball.findLast(
+					(z) =>
+						z.kind === "fly" &&
+						"pid" in z.from &&
+						z.from.pid === shooter &&
+						!("pid" in z.to) &&
+						z.t0 <= b.actionStart,
+				);
+				if (shot?.kind !== "fly") {
+					return;
+				}
+				const up = tr.acts.findLast(
+					(a) => a.t0 <= shot.t0 + 50 && a.t1 > shot.t0,
+				);
+				const t0 = (up?.t1 ?? shot.t0 + 400) + 150;
+				misses += 1;
+				const A = evalPlayer(tl, shooter, t0);
+				const B = evalPlayer(tl, shooter, t0 + 900);
+				const busy = tr.acts.some((a) => a.t1 > t0 && a.t0 < t0 + 900);
+				if (Math.hypot(B.x - A.x, B.y - A.y) < 1 && !busy) {
+					stood += 1;
+				}
+			});
+		}
+		assert.isAbove(misses, 10);
+		assert.isAtMost(stood, misses * 0.15);
+	}, 480_000);
+
 	// From one move into the next - pulling up from a run, down into his
 	// stance, up for a catch - his body eases over rather than snapping
 	// there between one frame and the next.
