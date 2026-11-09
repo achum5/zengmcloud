@@ -978,11 +978,14 @@ export const QB_CAM_FT = 34;
 const QB_CAM_ALONG = 7;
 const QB_CLEAR = 2.5;
 const QB_BEHIND = 8;
-// Pre-snap motion: on this share of pass plays, a man off the line (the
+// Pre-snap motion: on this share of pass plays (and of runs - motion gives
+// nothing away), a man off the line (the
 // flanker, a slot) this far across (feet) at this pace - never in closer
 // to the ball than this, nor nearer a sideline. In man coverage, his man
 // goes with him.
 const MOTION = 0.38;
+const MOTION_RUN = 0.3;
+const WIDE_ROLES = new Set<Role>(["X", "Z", "SL", "SL2"]);
 const MOTION_ROLES = new Set<Role>(["Z", "SL", "SL2"]);
 const MOTION_FT = [12, 24] as const;
 const MOTION_FPS = [9, 13] as const;
@@ -1924,8 +1927,25 @@ class Director {
 			);
 		}
 		const flagged = events.slice(i0, i1).some((e) => e?.type === "flag");
-		if (kind === "pass" && !flagged) {
-			snap = this.motion(parts, offense, dir, losX, ballY, set, snap, i0);
+		// (Not on a run to a receiver: he is the one going round for it.)
+		const rusher = stats.find((x) => x.s === "rus")?.pid;
+		const sweep =
+			kind === "run" &&
+			parts.some(
+				(p) => p.pid === rusher && p.team === offense && WIDE_ROLES.has(p.role),
+			);
+		if ((kind === "pass" || (kind === "run" && !sweep)) && !flagged) {
+			snap = this.motion(
+				parts,
+				offense,
+				dir,
+				losX,
+				ballY,
+				set,
+				snap,
+				i0,
+				kind === "run" ? MOTION_RUN : MOTION,
+			);
 		}
 		this.cadence(parts, offense, snap, i0, qbClose);
 		const routine =
@@ -4021,9 +4041,10 @@ class Director {
 		set: number,
 		snap: number,
 		i0: number,
+		often: number,
 	): number {
 		const r = this.rng(i0, "motion");
-		if (r() >= MOTION) {
+		if (r() >= often) {
 			return snap;
 		}
 		const depthOf = (p: Pt) => (losX - p.x) * dir;

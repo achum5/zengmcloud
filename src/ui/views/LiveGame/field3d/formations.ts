@@ -374,31 +374,41 @@ export const chooseOffenseSet = (
 	if (toGo <= 2) {
 		return r < 0.4 ? "heavy" : r < 0.7 ? "iForm" : "ace";
 	}
+	// (Not the way the play goes, by the look of it: a run out of three
+	// receivers as often as not, a throw out of two backs now and then.)
+	const by = (ws: [OffenseSetName, number][]): OffenseSetName => {
+		const total = ws.reduce((t, [, w]) => t + w, 0);
+		let x = r * total;
+		for (const [name, w] of ws) {
+			x -= w;
+			if (x < 0) {
+				return name;
+			}
+		}
+		return ws.at(-1)![0];
+	};
 	if (running) {
-		return r < 0.3
-			? "singleback"
-			: r < 0.55
-				? "shotgun"
-				: r < 0.7
-					? "pistol"
-					: r < 0.85
-						? "iForm"
-						: "ace";
+		return by([
+			["singleback", 22],
+			["shotgun", 25],
+			["trips", 13],
+			["pistol", 13],
+			["iForm", 15],
+			["ace", 12],
+		]);
 	}
 	if (down >= 3 && toGo >= 7) {
 		return r < 0.3 ? "empty" : r < 0.6 ? "trips" : "shotgun";
 	}
-	return r < 0.45
-		? "shotgun"
-		: r < 0.62
-			? "trips"
-			: r < 0.74
-				? "singleback"
-				: r < 0.86
-					? "pistol"
-					: r < 0.94
-						? "ace"
-						: "empty";
+	return by([
+		["shotgun", 36],
+		["trips", 17],
+		["singleback", 12],
+		["pistol", 10],
+		["ace", 8],
+		["iForm", 9],
+		["empty", 8],
+	]);
 };
 
 // ---- the defense -----------------------------------------------------------
@@ -688,14 +698,16 @@ const KICK_LINE_POS: Group[] = [
 ];
 export const KICKOFF_COVER = (lineAt: number): Align[] => [
 	{ role: "K", pos: "K", depth: 24, across: -6, move: "stand" },
-	...KICK_LINE.map((across, i): Align => ({
-		role: "COVER",
-		pos: KICK_LINE_POS[i]!,
-		depth: -lineAt,
-		across,
-		move: "receiverReady",
-		...(across < 0 ? { mirrored: true } : {}),
-	})),
+	...KICK_LINE.map(
+		(across, i): Align => ({
+			role: "COVER",
+			pos: KICK_LINE_POS[i]!,
+			depth: -lineAt,
+			across,
+			move: "receiverReady",
+			...(across < 0 ? { mirrored: true } : {}),
+		}),
+	),
 ];
 // The receiving team (its depths, like any defense's, off the ball on its
 // own side): its setup zone `zone` feet off the ball's yard line, the
@@ -704,13 +716,15 @@ export const KICKOFF_COVER = (lineAt: number): Align[] => [
 const SETUP = [-60, -45, -30, -15, 0, 15, 30, 45, 60];
 const SETUP_POS: Group[] = ["S", "S", "LB", "LB", "LB", "LB", "LB", "S", "S"];
 export const KICKOFF_RECEIVE = (zone: number, back: number): Align[] => [
-	...SETUP.map((across, i): Align => ({
-		role: "FRONT",
-		pos: SETUP_POS[i]!,
-		depth: zone + (i % 2) * 6,
-		across,
-		move: "backerReady",
-	})),
+	...SETUP.map(
+		(across, i): Align => ({
+			role: "FRONT",
+			pos: SETUP_POS[i]!,
+			depth: zone + (i % 2) * 6,
+			across,
+			move: "backerReady",
+		}),
+	),
 	{ role: "KR", pos: "KR", depth: back, across: -12, move: "safetyReady" },
 	{ role: "KR", pos: "KR", depth: back + 9, across: 10, move: "safetyReady" },
 ];
@@ -729,13 +743,15 @@ const HANDS: [number, number][] = [
 	[38, 51],
 ];
 export const ONSIDE_RECEIVE: Align[] = [
-	...HANDS.map(([across, depth], i): Align => ({
-		role: "FRONT",
-		pos: SETUP_POS[i]!,
-		depth,
-		across,
-		move: "backerReady",
-	})),
+	...HANDS.map(
+		([across, depth], i): Align => ({
+			role: "FRONT",
+			pos: SETUP_POS[i]!,
+			depth,
+			across,
+			move: "backerReady",
+		}),
+	),
 	{ role: "KR", pos: "KR", depth: 90, across: -15, move: "safetyReady" },
 	{ role: "KR", pos: "KR", depth: 90, across: 15, move: "safetyReady" },
 ];
@@ -782,14 +798,16 @@ export const PUNT_TEAM: Align[] = [
 // behind them, the returner where the punt will come down (`back` feet).
 // (The sim's: six linemen, four safeties, the returner.)
 export const PUNT_RETURN = (back: number): Align[] => [
-	...[-14, -7, -2, 2, 7, 14].map((across): Align => ({
-		role: "RUSH",
-		pos: "DL",
-		depth: DL_DEPTH,
-		across,
-		move: Math.abs(across) < 5 ? "dlThree" : "backerReady",
-		...(across < 0 ? { mirrored: true } : {}),
-	})),
+	...[-14, -7, -2, 2, 7, 14].map(
+		(across): Align => ({
+			role: "RUSH",
+			pos: "DL",
+			depth: DL_DEPTH,
+			across,
+			move: Math.abs(across) < 5 ? "dlThree" : "backerReady",
+			...(across < 0 ? { mirrored: true } : {}),
+		}),
+	),
 	{
 		role: "JAMMER",
 		pos: "S",
@@ -815,14 +833,16 @@ export const PUNT_RETURN = (back: number): Align[] => [
 // punter holding, the kicker.)
 export const KICK_TEAM: Align[] = [
 	{ role: "LS", pos: "OL", depth: C_DEPTH, across: 0, move: "center" },
-	...[-3.6, 3.6, -7.2, 7.2, -10.8, 10.8].map((across): Align => ({
-		role: "FRONT",
-		pos: "OL",
-		depth: 2.4,
-		across,
-		move: "threePoint",
-		...(across < 0 ? { mirrored: true } : {}),
-	})),
+	...[-3.6, 3.6, -7.2, 7.2, -10.8, 10.8].map(
+		(across): Align => ({
+			role: "FRONT",
+			pos: "OL",
+			depth: 2.4,
+			across,
+			move: "threePoint",
+			...(across < 0 ? { mirrored: true } : {}),
+		}),
+	),
 	{ role: "WING", pos: "OL", depth: 4.2, across: -13.6, move: "backerStance" },
 	{ role: "WING", pos: "OL", depth: 4.2, across: 13.6, move: "backerStance" },
 	{ role: "H", pos: "P", depth: 21, across: 0, move: "holdKneel" },
@@ -832,14 +852,16 @@ export const KICK_TEAM: Align[] = [
 // middle to leap at it. (The sim's: six linemen, three linebackers, two
 // safeties.)
 export const KICK_BLOCK: Align[] = [
-	...[-14, -10, -6, -2, 2, 6, 10, 14].map((across): Align => ({
-		role: "RUSH",
-		pos: Math.abs(across) < 12 ? "DL" : "LB",
-		depth: DL_DEPTH,
-		across,
-		move: "dlThree",
-		...(across < 0 ? { mirrored: true } : {}),
-	})),
+	...[-14, -10, -6, -2, 2, 6, 10, 14].map(
+		(across): Align => ({
+			role: "RUSH",
+			pos: Math.abs(across) < 12 ? "DL" : "LB",
+			depth: DL_DEPTH,
+			across,
+			move: "dlThree",
+			...(across < 0 ? { mirrored: true } : {}),
+		}),
+	),
 	{ role: "CB", pos: "S", depth: 3.4, across: -20, move: "cornerStance" },
 	{ role: "CB", pos: "S", depth: 3.4, across: 20, move: "cornerStance" },
 	{ role: "MIKE", pos: "LB", depth: 10, across: 0, move: "backerReady" },
