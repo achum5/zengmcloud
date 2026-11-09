@@ -116,6 +116,9 @@ export type PlayerState = {
 	// How hard he is getting going (up to 1, all he has) or pulling up (down
 	// to -1): he drives into it, or sits back against it (see driven).
 	drive?: number;
+	// How hard he is turning as he runs (to 1, all a man can; round to his
+	// left positive): he leans into the turn (see banked).
+	bank?: number;
 	// Pulled up mid-stride: his foot up off the floor come down this far (0
 	// to 1 - see footDown).
 	down?: number;
@@ -2941,6 +2944,7 @@ const doingNow = (
 	let down = 0;
 	let stepLen: [number, number] | undefined;
 	let drive = 0;
+	let bank = 0;
 	if (act) {
 		mirrored = act.mirror === true || act.oneHand === "L";
 		const u = (t - act.t0) / (act.t1 - act.t0);
@@ -3001,6 +3005,7 @@ const doingNow = (
 		gait = { k: here.moveIndex, at: t };
 		z = liftOf(anim, phase, stepLen);
 		drive = driveOf(tr, anim, t);
+		bank = bankOf(tr, anim, t);
 		const k = here.moveIndex;
 		down = footDownAt(
 			here.run,
@@ -3162,6 +3167,7 @@ const doingNow = (
 		...(down > 0 ? { down } : {}),
 		...(stepLen ? { stepLen } : {}),
 		...(drive !== 0 ? { drive } : {}),
+		...(bank !== 0 ? { bank } : {}),
 		...(gait ? { gait } : {}),
 		target: act || has ? undefined : targetAt(tl, pid, t) || undefined,
 	};
@@ -3213,6 +3219,53 @@ export const driveFrom = (
 };
 const driveOf = (tr: Track, anim: AnimName, t: number): number =>
 	DRIVES.has(anim) ? driveFrom((u) => paceAt(tr, u), t) : 0;
+
+// HOW HARD HE IS TURNING on the run (see PlayerState's bank): a man coming
+// round a corner at speed is pushed out of it, and leans into it to stay on
+// his feet - the faster and the tighter, the further. As hard as his way
+// has come round over the last BANK_MS at the speed he is going (feet a
+// second, a second, sideways) against all a man's feet will hold - round to
+// his left positive - a moment behind, as his lean into a start is, and
+// nothing to speak of left out: the wobble of a stride is not a turn.
+const BANK_FULL = 34;
+const BANK_MIN = 0.12;
+const BANK_MS = 130;
+const BANK_LAGS = [0, 65, 130];
+// (Slower than this, feet a second, he is not running through a turn - he
+// is stepping round.)
+const BANK_PACE = 5;
+export const bankFrom = (
+	spot: (t: number) => Pt,
+	t: number,
+	ms = BANK_MS,
+	lags = BANK_LAGS,
+): number => {
+	const dt = ms / 1000;
+	let sum = 0;
+	for (const lag of lags) {
+		const a = spot(t - lag - 2 * ms);
+		const b = spot(t - lag - ms);
+		const c = spot(t - lag);
+		const ux = (b.x - a.x) / dt;
+		const uy = (b.y - a.y) / dt;
+		const vx = (c.x - b.x) / dt;
+		const vy = (c.y - b.y) / dt;
+		const pace = (Math.hypot(ux, uy) + Math.hypot(vx, vy)) / 2;
+		if (pace < BANK_PACE) {
+			continue;
+		}
+		// (His left is (sin, -cos) of the way he goes: sideways to it, the
+		// change in his way.)
+		const left = -(ux * vy - uy * vx) / pace / dt;
+		sum += Math.max(-1, Math.min(1, left / BANK_FULL));
+	}
+	const d = sum / lags.length;
+	return (
+		(Math.sign(d) * Math.max(0, Math.abs(d) - BANK_MIN)) / (1 - BANK_MIN) || 0
+	);
+};
+const bankOf = (tr: Track, anim: AnimName, t: number): number =>
+	DRIVES.has(anim) ? bankFrom((u) => spotAt(tr, u), t) : 0;
 // How far off the floor his stride takes him (short steps: see shortLift).
 const liftOf = (
 	anim: AnimName,
@@ -6471,6 +6524,17 @@ export const driven = (p: Pose, d: number, arms: boolean): Pose => {
 	};
 };
 
+// Coming round a corner on the run he leans into it (see bankFrom): his
+// shoulders tipped over to the inside of the turn, and turned a little
+// into it.
+const BANK_TILT = 13;
+const BANK_TWIST = 5;
+export const banked = (p: Pose, b: number): Pose => ({
+	...p,
+	tilt: p.tilt + BANK_TILT * b,
+	twist: p.twist + BANK_TWIST * b,
+});
+
 // STEPPING OVER, A FOOT DOWN STAYS DOWN. Going on out of one move into
 // another a foot at a time (see settleStep), the foot still waiting its
 // turn is where it was on the floor as the move changed: his leg reaching
@@ -6639,6 +6703,9 @@ const poseFor = (st: PlayerState): Pose => {
 			drive,
 			st.dribble === undefined && !st.holding && st.grip === undefined,
 		);
+	}
+	if (st.bank) {
+		p = banked(p, st.bank);
 	}
 	// His legs turned under him - and turning on the spot, a leg each (see
 	// pivotOf). Easing out of the last move, each foot points where it
