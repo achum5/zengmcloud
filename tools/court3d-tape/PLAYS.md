@@ -57,9 +57,9 @@ each part, so the table below can say how far along each part is.
 | 10  | Non-shooting foul, in the bonus (`pfNonShooting`, `pfBonus`)                                  |       19 | working |
 | 11  | Shooting foul (`pfFG`, `pfTP`)                                                                |       13 | working |
 | 12  | Turnover (`tov`: bad pass, lost ball, travel, offensive foul, shot clock, 5 seconds)          |       15 | working |
-| 13  | Steal (`stl`)                                                                                 |       13 | todo    |
+| 13  | Steal (`stl`)                                                                                 |       13 | working |
 | 14  | Out of bounds (`outOfBounds`, `tov`/`stl` out of bounds)                                      |       20 | todo    |
-| 15  | Blocks (`blkTp`, `blkMidRange`, `blkLowPost`, `blkAtRim`, `blkTipIn`, `blkPutBack`)           |        9 | todo    |
+| 15  | Blocks (`blkTp`, `blkMidRange`, `blkLowPost`, `blkAtRim`, `blkTipIn`, `blkPutBack`)           |        9 | working |
 | 16  | And-ones (`fgAtRimAndOne`, `fgLowPostAndOne`, `fgMidRangeAndOne`, `tpAndOne`, putback/tip-in) |        4 | todo    |
 | 17  | Timeouts (`timeout`, `timeouts`)                                                              |        5 | todo    |
 | 18  | Start and end of a period, overtime (`period`, `endOfPeriod`, `overtime`)                     |        6 | todo    |
@@ -645,3 +645,19 @@ has an arm up at the official as it goes - he was hit - or, on his way
 back, his hands on his head (and, thrown away out of bounds, his hands on
 his head now and then): 17 of the 47 steals. Arms only, so nothing else
 changes.
+
+(13. Steal: measured with the turnovers, above.)
+
+## 15. Blocks
+
+Measured 2026-11-09 (26 at real speed over the three games; the variety
+tool's `blk*` lines): the shot (at the rim 6, in the post 8, mid-range 5,
+a three 7), the block (from in front 22, run down from behind 3; off the
+hand on the ball's side - for most shooters, right-handed, the blocker's
+left), where the ball went (the defense's 19, back to the offense 6, out
+of bounds 1), the blocker and the shooter after it (on with the play,
+mostly), and the building - sat for all but one.
+
+Now (2026-11-09): a block brings the building up - the home crowd on its
+feet for a home one (nearly as much as for a dunk or a three), the road
+fans for theirs less so - and the blocker's bench up off its chairs.

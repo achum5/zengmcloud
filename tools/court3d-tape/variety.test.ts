@@ -21,7 +21,10 @@ import {
 	evalPlayer,
 	fastAt,
 } from "../../src/ui/views/LiveGame/court3d/evaluate.ts";
-import { greetsFor } from "../../src/ui/views/LiveGame/court3d/scene.ts";
+import {
+	crowdUp,
+	greetsFor,
+} from "../../src/ui/views/LiveGame/court3d/scene.ts";
 import { crewAt, crewFor } from "../../src/ui/views/LiveGame/court3d/crew.ts";
 import {
 	RIM_R,
@@ -1566,6 +1569,76 @@ const tovParts = (
 	};
 };
 
+// A block: the shot it was, how it was blocked (from in front or chased
+// down from behind, which hand), where the ball went (kept in, out of
+// bounds, his own), the blocker and the shooter after it, the building,
+// and what came next.
+const blkParts = (
+	tl: CourtTimeline,
+	events: { type: string; pid?: number }[],
+	b: CourtTimeline["beats"][number],
+): { pid: number; parts: Record<string, string> } | undefined => {
+	const blocker = events[b.i]!.pid;
+	if (typeof blocker !== "number") {
+		return undefined;
+	}
+	const k = tl.beats.indexOf(b);
+	const fga = tl.beats.slice(0, k).findLast((x) => /^fga/.test(x.type));
+	const shooter = fga ? events[fga.i]?.pid : undefined;
+	if (typeof shooter !== "number") {
+		return undefined;
+	}
+	const btr = tl.tracks.get(blocker)!;
+	const act = btr.acts.findLast(
+		(a) => a.anim === "block" && a.t0 <= b.actionStart + 400,
+	);
+	// (The shot off his hand into the blocker's.)
+	const hit = tl.ball.findLast(
+		(z) =>
+			z.kind === "fly" &&
+			"pid" in z.from &&
+			z.from.pid === shooter &&
+			"pid" in z.to &&
+			z.to.pid === blocker &&
+			z.t0 <= b.actionStart + 300,
+	);
+	const T = hit?.kind === "fly" ? hit.t1 : b.actionStart;
+	const team = tl.tracks.get(shooter)!.team;
+	const rim = { x: rimX(team), y: 25 };
+	const S = evalPlayer(tl, shooter, hit?.kind === "fly" ? hit.t0 : T);
+	const B0 = evalPlayer(tl, blocker, T - 600);
+	const from =
+		(B0.x - S.x) * (rim.x - S.x) + (B0.y - S.y) * (rim.y - S.y) > 0
+			? "from in front"
+			: "chased down";
+	const next = tl.beats.slice(k + 1).find((x) => x.type !== "sub");
+	const acts = (pid: number, t0: number, t1: number) => {
+		const tr = tl.tracks.get(pid)!;
+		const all = [
+			...tr.acts
+				.filter((a) => a.t0 >= t0 && a.t0 < t1)
+				.map((a) => a.anim as string),
+			...(tr.arms ?? [])
+				.filter((g) => g.t0 >= t0 && g.t0 < t1)
+				.map((g) => `arm ${g.kind}`),
+		];
+		return all.length > 0 ? [...new Set(all)].join("+") : "nothing";
+	};
+	// (The crowd a moment after it, on its feet or not.)
+	const up = crowdUp(tl, T + 800);
+	return {
+		pid: blocker,
+		parts: {
+			shot: `${fga!.type.replace(/^fga/, "")}, ${Math.round(dist(S, rim))} ft`,
+			block: `${from}${act?.mirror ? ", left hand" : ""}`,
+			ball: next ? next.type : "-",
+			blocker: acts(blocker, T + 200, T + 3000),
+			shooter: acts(shooter, T + 200, T + 3000),
+			building: up >= 0.6 ? "on its feet" : up > 0.1 ? "some up" : "sat",
+		},
+	};
+};
+
 test.skipIf(games.length === 0)(
 	"variety of one line",
 	() => {
@@ -1587,6 +1660,17 @@ test.skipIf(games.length === 0)(
 			}));
 			for (const b of tl.beats) {
 				if (b.type !== line) {
+					continue;
+				}
+				if (/^blk/.test(line)) {
+					if (fastAt(tl, b.actionStart) > 1.2) {
+						fastOnes += 1;
+						continue;
+					}
+					const got = blkParts(tl, events, b);
+					if (got) {
+						all.push({ pid: `${tag}:${got.pid}`, parts: got.parts });
+					}
 					continue;
 				}
 				if (line === "tov" || line === "stl") {

@@ -599,13 +599,18 @@ const drawFlashes = (
 };
 
 // How much of the crowd is on its feet (0..1): the home crowd erupts at a
-// big play of its team's, the road fans less so.
+// big play of its team's - a block, nearly as much - the road fans less so.
+const BLOCK_UP = 0.8;
 export const crowdUp = (tl: CourtTimeline, t: number): number => {
-	const fx = recentFx(tl, t, ["roar"], 2700);
+	const fx = recentFx(tl, t, ["roar", "block"], 2700);
 	if (!fx) {
 		return 0;
 	}
-	return crowdLevel(t - fx.t) * (fx.team === 1 ? 1 : 0.4);
+	return (
+		crowdLevel(t - fx.t) *
+		(fx.team === 1 ? 1 : 0.4) *
+		(fx.kind === "block" ? BLOCK_UP : 1)
+	);
 };
 // Up, a moment on its feet, and down: how much of it, `e` ms after.
 const crowdLevel = (e: number): number =>
@@ -1032,9 +1037,9 @@ const ringState = (
 // How a bench is at t: up cheering, on its feet, or sat.
 export type BenchMood = "up" | "stood" | "sat";
 const benchMood = (tl: CourtTimeline, t: number, team: Side): BenchMood => {
-	// A big play brings the bench to its feet for a moment - and so does
-	// each of its starters called out.
-	const roar = recentFx(tl, t, ["roar"], 1800);
+	// A big play brings the bench to its feet for a moment - a block too -
+	// and so does each of its starters called out.
+	const roar = recentFx(tl, t, ["roar", "block"], 1800);
 	// At the final horn, the winners' bench up and going, then on its feet;
 	// the losers' sat where they are.
 	const horn = finalHorn(tl, t);
