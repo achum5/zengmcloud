@@ -5,6 +5,7 @@ import {
 	decideFollowAction,
 	followGivenUp,
 	MAX_JOIN_ATTEMPTS,
+	mateLiveCall,
 	QUIET_WATCH_MS,
 	shouldServeFollowedPayload,
 	type FollowerHoldPatch,
@@ -388,5 +389,46 @@ describe("a quiet broadcast", () => {
 		now += 2_000;
 		clock.woke();
 		assert.strictEqual(clock.wokeAt(), 3_000);
+	});
+});
+
+// Two of the room's teams playing each other: one simmed it and broadcast it,
+// the other tapped Watch on the same game on their schedule - and got their
+// own playback of it at their own pace, a quarter ahead.
+describe("mateLiveCall", () => {
+	const now = 1_000_000;
+	const on = { active: true, gameOver: false, gid: 7, expiresAt: now + 5000 };
+
+	test("Watch on the game a league-mate is simming joins theirs; Sim is refused", () => {
+		assert.strictEqual(mateLiveCall("liveGame", 7, on, now), "join");
+		assert.strictEqual(mateLiveCall("simGame", 7, on, now), "refuse");
+	});
+
+	test("any other game, or no broadcast, is left alone", () => {
+		assert.isUndefined(mateLiveCall("liveGame", 8, on, now));
+		assert.isUndefined(mateLiveCall("liveGame", 7, undefined, now));
+		assert.isUndefined(mateLiveCall("simToGame", 7, on, now));
+	});
+
+	test("nor once it is over, stopped, or gone quiet for good", () => {
+		assert.isUndefined(
+			mateLiveCall("liveGame", 7, { ...on, gameOver: true }, now),
+		);
+		assert.isUndefined(
+			mateLiveCall("liveGame", 7, { ...on, active: false }, now),
+		);
+		assert.isUndefined(
+			mateLiveCall(
+				"liveGame",
+				7,
+				{ ...on, expiresAt: now - QUIET_WATCH_MS - 1 },
+				now,
+			),
+		);
+		// (Only a little quiet - their phone in the background: still theirs.)
+		assert.strictEqual(
+			mateLiveCall("liveGame", 7, { ...on, expiresAt: now - 30_000 }, now),
+			"join",
+		);
 	});
 });

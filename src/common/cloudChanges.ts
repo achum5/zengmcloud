@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 218,
+		date: "2026-11-09",
+		text: "Multiplayer: when a league-mate is simming the game between your two teams, Watch on it (on the schedule, or anywhere else) now joins their live game in step with them, instead of starting your own copy of it at your own pace. Sim is turned down for that game while it's live.",
+	},
+	{
 		n: 217,
 		date: "2026-11-08",
 		text: '3D playoff games: the score bug has a strip across its top with the round, which game of the series it is and how the series stands going into it ("1st round · Game 4 · BOS leads 2-1"). The Series section says "wins" once a team has taken the series.',

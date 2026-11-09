@@ -77,6 +77,38 @@ export const shouldServeFollowedPayload = (
 // as not being there at all.
 export const MAX_JOIN_ATTEMPTS = 3;
 
+// A Watch or Sim of one game on this device, while a league-mate's broadcast
+// is live: of that very game - both teams the room's, so this device's own
+// game too - Watch joins their broadcast and Sim is refused. Playing it a
+// second time here ran on at this device's own pace, out of step with them
+// (the room's two players a quarter apart in the same game). Anything else:
+// undefined, carry on.
+export const mateLiveCall = (
+	name: string,
+	gid: unknown,
+	broadcast:
+		| {
+				active: boolean;
+				gameOver: boolean;
+				gid: number;
+				expiresAt: number;
+		  }
+		| undefined,
+	now: number,
+): "join" | "refuse" | undefined => {
+	if (
+		(name !== "liveGame" && name !== "simGame") ||
+		!broadcast ||
+		!broadcast.active ||
+		broadcast.gameOver ||
+		now - broadcast.expiresAt >= QUIET_WATCH_MS ||
+		gid !== broadcast.gid
+	) {
+		return undefined;
+	}
+	return name === "liveGame" ? "join" : "refuse";
+};
+
 export const decideFollowAction = (
 	broadcast: { startedAt: number; gameOver: boolean },
 	followed: FollowRecord,
