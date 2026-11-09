@@ -1,4 +1,8 @@
 import {
+	BLEND_MS,
+	blendEase,
+	blendEaseRate,
+	blendMsOf,
 	driveFrom,
 	footTurn,
 	hipsTurn,
@@ -6,6 +10,8 @@ import {
 	legsTurned,
 	PIVOT_MS,
 	pivotFeet,
+	SETTLE_MS,
+	STOOD_MS,
 } from "../court3d/evaluate.ts";
 import { legPhases, type AnimName } from "../court3d/poses.ts";
 import {
@@ -85,9 +91,8 @@ export type FieldMoment = {
 	tee?: Pt3;
 };
 
-// From one move into the next, his pose eased over this long; and his
-// turn, from the way he was facing to the way he faces now.
-const BLEND_MS = 260;
+// From one way of facing to the next, his turn eased over this long. (His
+// pose, the court's way: see blendOf.)
 const TURN_MS = 380;
 // (Turning where he stands, no quicker round than STAND_TURN a second: his
 // feet stepping round after him - see pivotOf.)
@@ -1462,11 +1467,8 @@ const passing = (
 // How long he is eased into a leg over: into an act, over no more than this
 // share of it (or the first of it is gone by before he is into it).
 const ACT_BLEND = 0.5;
-// (From one way of standing into another, a step with each foot - see
-// stepsOver: longer. Down into his stance on the line from on his feet:
-// longer still, not dropped into it.)
-const SETTLE_MS = 380;
-const GET_DOWN_MS = 480;
+// (Down into his stance on the line from on his feet, and up out of it
+// slowly, the court's STOOD_MS: not dropped into it.)
 const DOWN = new Set<Move>(["threePoint", "dlThree", "center"]);
 // (Down on a knee the same: into it and up out of it no quicker.)
 const LOW = new Set<Move>([
@@ -1482,7 +1484,7 @@ const LOW = new Set<Move>([
 	"kneelPoint",
 	"hurtKnee",
 ]);
-const BLEND_MOST_MS = Math.max(SETTLE_MS, GET_DOWN_MS);
+const BLEND_MOST_MS = Math.max(SETTLE_MS, STOOD_MS);
 // (Down to a loose ball on the run: quickly into the scoop, the bend down
 // its own - not drawn out under his strides and all at the last.)
 const SCOOP_IN_MS = 100;
@@ -1504,21 +1506,14 @@ const upSlowly = (l: Leg, prev: Leg | undefined) =>
 	moveKind(l.move) !== "act" &&
 	!offTheSnap(l, prev);
 // How far he is into a leg, so far through his blend into it (and how
-// fast he is going into it, per ms): down into his stance, or up out of
-// it slowly, eased in and settled at the last - not at an even rate,
-// dropped into it. Up out of it at the snap: off at once, and settled into
-// his stride at the last - not still coming up as fast as ever as he gets
-// there. (The play is only getting going for him then anyway - see
-// lagged.)
-const eases = (l: Leg, prev: Leg | undefined) =>
-	LOW.has(l.move as Move) || upSlowly(l, prev);
+// fast he is going into it, per ms): eased in and settled at the last, the
+// court's way (see its blendEase) - not at an even rate. Up out of his
+// stance at the snap: off at once, and settled into his stride at the last
+// - not still coming up as fast as ever as he gets there. (The play is only
+// getting going for him then anyway - see lagged.)
 const intoOf = (l: Leg, prev: Leg | undefined, u: number): number => {
 	const v = clamp01(u);
-	return eases(l, prev)
-		? v * v * (3 - 2 * v)
-		: offTheSnap(l, prev)
-			? 1 - (1 - v) * (1 - v)
-			: v;
+	return offTheSnap(l, prev) ? 1 - (1 - v) * (1 - v) : 1 - blendEase(v, 1);
 };
 const intoRate = (
 	l: Leg,
@@ -1527,26 +1522,31 @@ const intoRate = (
 	ms: number,
 ): number => {
 	const v = clamp01(u);
-	return (
-		(eases(l, prev) ? 6 * v * (1 - v) : offTheSnap(l, prev) ? 2 * (1 - v) : 1) /
-		ms
-	);
+	return offTheSnap(l, prev) ? (2 * (1 - v)) / ms : blendEaseRate(v * ms, ms);
 };
+// (Setting off from where he stood, a step each foot; pulled up out of his
+// strides into where he stands, a step with each foot, the court's way -
+// see its blendMsOf.)
+const setsOff = (l: Leg, prev: Leg) =>
+	PIVOTS.has(prev.move as Move) && gaitOf(l.move as Move) !== undefined;
+const pullsUp = (l: Leg, prev: Leg) =>
+	gaitOf(prev.move as Move) !== undefined && PIVOTS.has(l.move as Move);
 const blendOf = (l: Leg, prev?: Leg): number => {
 	if (moveKind(l.move) !== "act") {
 		return !prev
 			? BLEND_MS
 			: offTheSnap(l, prev)
 				? UP_MS
-				: upSlowly(l, prev)
-					? GET_DOWN_MS
-					: LOW.has(l.move as Move) &&
-						  !LOW.has(prev.move as Move) &&
-						  moveKind(prev.move) !== "act"
-						? GET_DOWN_MS
-						: stepsOver(prev.move as Move, l.move as Move)
-							? SETTLE_MS
-							: BLEND_MS;
+				: upSlowly(l, prev) ||
+					  (LOW.has(l.move as Move) &&
+							!LOW.has(prev.move as Move) &&
+							moveKind(prev.move) !== "act")
+					? STOOD_MS
+					: blendMsOf(
+							setsOff(l, prev),
+							stepsOver(prev.move as Move, l.move as Move) || pullsUp(l, prev),
+							false,
+						);
 	}
 	if (l.move === "scoop") {
 		return SCOOP_IN_MS;
