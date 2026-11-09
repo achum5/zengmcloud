@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 246,
+		date: "2026-11-09",
+		text: "Realistic Front Offices: CPU teams trading with each other now follow the same draft rule as with you - no giving up an earlier pick for later ones in the same draft unless the rest of the deal pays for it. In test leagues teams playing by it won more titles.",
+	},
+	{
 		n: 245,
 		date: "2026-11-09",
 		text: "3D games: uniforms hang like cloth - folds fall down the jersey and gather at the waist, and the shorts hang in folds toward the hem - and skin has more to it: shadow in the creases between muscles, darker elbows and knees, and the neck shaded under the jaw. Best seen in replays and close-ups.",

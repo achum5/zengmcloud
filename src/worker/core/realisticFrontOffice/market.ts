@@ -219,8 +219,10 @@ export const marketSettings = {
 	// about four times a season).
 	noCheapFirsts: false,
 	// CPU teams with each other: moving down in this draft is worth nothing in
-	// itself, as in a human's deal (pickDowngrades) - off while it is measured.
-	movingDown: false,
+	// itself, as in a human's deal (pickDowngrades). Half the teams each way,
+	// 2 leagues each way round over 5 seasons: titles 14 to 6, playoff rounds
+	// won 169 to 131, seasons under 20 wins 20 to 23, games won about even.
+	movingDown: true,
 };
 
 // For the arena's version-against-version leagues: settings for some teams'
