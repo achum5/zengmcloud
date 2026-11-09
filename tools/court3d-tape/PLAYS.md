@@ -66,7 +66,7 @@ each part, so the table below can say how far along each part is.
 | 19  | Jump ball (`jumpBall`)                                                                        |        1 | working |
 | 20  | Game over (`gameOver`)                                                                        |        1 | todo    |
 | 21  | Injury, fouling out (`injury`, `foulOut`)                                                     |     rare | working |
-| 22  | Heaves and the clock running out (`noShot`, `runOutClock`, `fgaTpFake`)                       |     rare | todo    |
+| 22  | Heaves and the clock running out (`noShot`, `runOutClock`, `fgaTpFake`)                       |     rare | working |
 | 23  | Intentional foul (`intentionalFoul`)                                                          |     rare | todo    |
 | 24  | Elam ending, shootout (`elamActive`, `shootout*`)                                             |  setting | todo    |
 
@@ -714,3 +714,21 @@ Measured 2026-11-09: neither came up in nine real games. Hurt in a game, a
 man goes down (or grabs at it), a teammate or two come over and crouch
 by him, and his trainer comes out; the man out hurt from before the game
 sits on the bench in his street clothes (see the side notes).
+
+## 22. Heaves and the clock running out
+
+Measured 2026-11-09 (16 period endings with no shot over nine real
+games, `VARIETY_LINE=endOfPeriod`): half of them (8) had the horn go the
+moment the line before ended - with a second or so left after a basket,
+a free throw or the ball out of bounds, the horn went with the ball still
+on the floor, nobody taking it in. Now, with half a second or more left
+and the ball dead, it comes in to the man who brings it up, the clock
+from his catch: a dribble or two up the floor if he is back in his own
+half, turned to the basket if not, as the horn goes - and more often than
+not a heave or a jumper a beat too late, waved off.
+
+Running out the clock at the end of a game they have won, the man on the
+ball stayed up on the dribbler (inside 4 feet in 3 of 5), and the
+dribbler jabbed and hesitated at him - one jab after the horn. Now his
+man backs off a step or two (7 feet) and stands, the dribbler just
+dribbles it out, and nobody fakes at anybody once the horn has gone.

@@ -344,6 +344,8 @@ export type ShotCall = {
 	assist?: number;
 	// A make the sim credited to nobody: he got it himself.
 	unassisted?: boolean;
+	// Off a pass, whoever threw it (a miss staged the way his makes come).
+	assisted?: boolean;
 	// Whoever has the ball, when the set must start from him (a break).
 	holder?: number;
 	five: Cast[];
@@ -404,6 +406,9 @@ export const callShot = (
 			if (call.unassisted && o.assist !== undefined) {
 				continue;
 			}
+			if (call.assisted && o.assist === undefined) {
+				continue;
+			}
 			const pinned = new Map<number, Role>([[call.shooter, o.shooter]]);
 			if (call.assist !== undefined && o.assist !== undefined) {
 				if (o.assist === o.shooter || call.assist === call.shooter) {
@@ -444,7 +449,11 @@ export const callShot = (
 	// an early look before the defense is set, unless that is what this is;
 	// not a putback, which is its own line.
 	const assisted =
-		call.assist !== undefined ? true : call.unassisted ? false : undefined;
+		call.assist !== undefined || call.assisted
+			? true
+			: call.unassisted
+				? false
+				: undefined;
 	const rank = call.five.find((c) => c.pid === call.shooter)?.rank ?? 4;
 	const types = [...new Set(cands.map((c) => c.pick.playType))];
 	const type = choose(

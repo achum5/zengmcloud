@@ -12,6 +12,16 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 237,
+		date: "2026-11-09",
+		text: "3D games: with a second or so left in a quarter after a basket, a free throw or the ball going out, the ball is now inbounded before the horn - often with a heave just too late - instead of the horn going with the ball on the floor. And a team running out the clock at the end of a game it has won dribbles it out with the defense standing off.",
+	},
+	{
+		n: 236,
+		date: "2026-11-09",
+		text: "3D games: a missed shot is now set up the way that player's made shots are - off the dribble or off a pass - so corner threes no longer miss far more often than threes from above the break; and a player crashing the glass now meets a box-out more often.",
+	},
+	{
 		n: 235,
 		date: "2026-11-09",
 		text: "Realistic Front Offices: CPU teams count money spent past the cap as a little cheaper than before, so bad teams use their cap room instead of sitting on it. In test leagues they bottomed out about half as often and won more titles. And a CPU team no longer takes your later pick in the same draft for its earlier one (picks 30 and 58 for 15) unless the rest of the deal pays for it.",

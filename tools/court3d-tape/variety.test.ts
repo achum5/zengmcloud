@@ -1738,6 +1738,109 @@ const oobParts = (
 	};
 };
 
+// The last of a period played out with no shot to end it: how long, the
+// man with it at the horn (doing what, where), his man, everybody else -
+// and a shot let go too late.
+const clockParts = (
+	tl: CourtTimeline,
+	events: { type: string; reason?: string; clock?: number }[],
+	b: CourtTimeline["beats"][number],
+): { pid: number; parts: Record<string, string> } | undefined => {
+	const e = events[b.i]!;
+	const H = b.actionStart;
+	const left = (H - b.preStart) / 1000;
+	const seg = tl.ball.findLast((z) => z.t0 <= H);
+	const pid = seg?.kind === "hold" ? seg.pid : undefined;
+	const team = pid === undefined ? undefined : tl.tracks.get(pid)?.team;
+	const parts: Record<string, string> = {
+		reason: e.reason ?? "?",
+		played:
+			left < 2
+				? "under 2 s"
+				: left < 6
+					? "2-6 s"
+					: left < 12
+						? "6-12 s"
+						: "12 s and more",
+	};
+	if (pid === undefined || team === undefined) {
+		parts.holder = seg ? `ball ${seg.kind}` : "?";
+		for (const k of ["where", "defense", "others", "himself", "late"]) {
+			parts[k] = "-";
+		}
+		return { pid: 0, parts };
+	}
+	const st = evalPlayer(tl, pid, H);
+	parts.holder = st.anim;
+	const rim = { x: rimX(team as 0 | 1), y: 25 };
+	const d = dist(st, rim);
+	const back = team === 0 ? st.x > 47 : st.x < 47;
+	parts.where = back
+		? "his own half"
+		: d > 30
+			? "way out (30+ ft)"
+			: d > 23.75
+				? "outside the arc"
+				: d > 10
+					? "inside the arc"
+					: "in close";
+	// His man: the nearest of the other side over the last 2 s.
+	let near = Infinity;
+	for (let t = H - 2000; t <= H; t += 200) {
+		const P = evalPlayer(tl, pid, t);
+		for (const tr of tl.tracks.values()) {
+			if (tr.pid < 0 || tr.team === team) {
+				continue;
+			}
+			const Q = evalPlayer(tl, tr.pid, t);
+			if (Q.x < 0 || Q.x > 94 || Q.y < 0 || Q.y > 50) {
+				continue;
+			}
+			near = Math.min(near, dist(P, Q));
+		}
+	}
+	parts.defense = near < 4 ? "on him" : near < 8 ? "near him" : "off him";
+	// Everybody else on the floor the last 2 s: stood stock still.
+	let still = 0;
+	let on = 0;
+	for (const tr of tl.tracks.values()) {
+		if (tr.pid < 0 || tr.pid === pid) {
+			continue;
+		}
+		const A = evalPlayer(tl, tr.pid, H - 2000);
+		const B = evalPlayer(tl, tr.pid, H);
+		if (B.x < 0 || B.x > 94 || B.y < 0 || B.y > 50) {
+			continue;
+		}
+		on += 1;
+		let moved = 0;
+		let prev = A;
+		for (let t = H - 1800; t <= H; t += 200) {
+			const C = evalPlayer(tl, tr.pid, t);
+			moved += dist(prev, C);
+			prev = C;
+		}
+		if (moved < 0.5) {
+			still += 1;
+		}
+	}
+	parts.others = `${still} of ${on} stock still`;
+	// Moving the last 2 s himself.
+	const P0 = evalPlayer(tl, pid, H - 2000);
+	parts.himself = dist(P0, st) < 0.5 ? "stood still" : "on the move";
+	// A shot after the horn.
+	const late = tl.ball.find(
+		(z) =>
+			z.kind === "fly" &&
+			"pid" in z.from &&
+			z.t0 >= H - 300 &&
+			z.t0 < H + 2500 &&
+			!("pid" in z.to),
+	);
+	parts.late = late ? "a shot let go too late" : "no shot";
+	return { pid, parts };
+};
+
 test.skipIf(games.length === 0)(
 	"variety of one line",
 	() => {
@@ -1759,6 +1862,13 @@ test.skipIf(games.length === 0)(
 			}));
 			for (const b of tl.beats) {
 				if (b.type !== line) {
+					continue;
+				}
+				if (line === "endOfPeriod") {
+					const got = clockParts(tl, events, b);
+					if (got) {
+						all.push({ pid: `${tag}:${got.pid}`, parts: got.parts });
+					}
 					continue;
 				}
 				if (line === "outOfBounds") {
