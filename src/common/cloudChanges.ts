@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 242,
+		date: "2026-11-09",
+		text: "3D games: players' legs are shaped like legs - the thigh runs into the knee and the calf swells below it, instead of two rods with a ball between them - and their shorts hang looser.",
+	},
+	{
 		n: 241,
 		date: "2026-11-09",
 		text: "3D games: the new player bodies were too bulky - shoulders, arms, necks and ankles are now sized to real measurements, so players look like athletes rather than bodybuilders. Also fixed: hands not quite meeting when one player helps another up off the floor.",

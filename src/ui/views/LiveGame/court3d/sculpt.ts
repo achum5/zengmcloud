@@ -1490,9 +1490,11 @@ export type LegBuild = {
 };
 export const LEG: LegBuild = {
 	thighFrom: 0.35,
-	thigh: [1, 0.98, 0.98],
-	shin: [0.94, 0.92, 1.08, 1.02],
-	calf: [0.84, 0.96, 0.6],
+	// (Into the knee as wide as the knee is, and the calf out wider than it
+	// below: a leg, not two rods and a ball between them.)
+	thigh: [1, 1.02, 1.12],
+	shin: [1.02, 1.08, 1.1, 1],
+	calf: [0.86, 1, 0.6],
 	toe: 1.04,
 	heel: [1.05, 0.15],
 	toeUp: [0.9, 0.25],
@@ -1501,13 +1503,15 @@ export const LEG: LegBuild = {
 };
 const LEG_LEAN: LegBuild = {
 	...LEG,
-	thigh: [0.96, 0.92, 0.98],
-	calf: [0.8, 0.88, 0.6],
+	thigh: [0.96, 0.96, 1.1],
+	shin: [1.02, 1.02, 1.1, 1],
+	calf: [0.82, 0.92, 0.6],
 };
 const LEG_STRONG: LegBuild = {
 	...LEG,
-	thigh: [1.04, 1.04, 0.98],
-	calf: [0.88, 1.04, 0.6],
+	thigh: [1.04, 1.08, 1.14],
+	shin: [1.02, 1.14, 1.1, 1],
+	calf: [0.9, 1.08, 0.6],
 };
 export const legMasses = (
 	add: AddMass,
@@ -2052,9 +2056,9 @@ export const build = (
 			mine.leg,
 			(front) => {
 				add(
-					addV(limb.mid, front, body.kneeR * 0.42),
-					addV(limb.mid, front, body.kneeR * 0.42),
-					[[0, body.kneeR * 0.6]],
+					addV(limb.mid, front, body.kneeR * 0.56),
+					addV(limb.mid, front, body.kneeR * 0.56),
+					[[0, body.kneeR * 0.5]],
 					SHIN,
 					gl,
 					side,
@@ -2065,8 +2069,8 @@ export const build = (
 					lerpV(limb.root, limb.mid, 0.16),
 					lerpV(limb.root, limb.mid, 0.84),
 					[
-						[0, body.thighR * 1.2],
-						[1, body.thighR * 1.28],
+						[0, body.thighR * 1.22],
+						[1, body.thighR * 1.4],
 					],
 					SHORTS,
 					G_SHORTS + side,
@@ -2083,8 +2087,8 @@ export const build = (
 						addV(lerpV(limb.root, limb.mid, 0.4), sag, 0.5),
 						addV(lerpV(limb.root, limb.mid, 0.82), sag, 1),
 						[
-							[0, body.thighR * 1.05],
-							[1, body.thighR * 1.15],
+							[0, body.thighR * 1.1],
+							[1, body.thighR * 1.26],
 						],
 						SHORTS,
 						G_SHORTS + side,
