@@ -580,10 +580,18 @@ describe("watching another device's 3D sim", () => {
 				// quarter's end.)
 				const told = at + 2000;
 				const missed = [...run.seenB].filter(([i]) => !run.seenF.has(i));
-				const late = missed.filter(([, when]) => when > told).length;
+				// (Counted in plays: the lines of one - a shot, the block, the
+				// board - one after another.)
+				const plays = (after: boolean) =>
+					missed
+						.filter(([, when]) => when > told === after)
+						.map(([i]) => i)
+						.sort((x, y) => x - y)
+						.filter((i, k, all) => k === 0 || i - all[k - 1]! > 2).length;
+				const late = plays(true);
 				assert.isAtMost(late, 3, `${label} ${JSON.stringify(m)}`);
 				assert.isAtMost(
-					missed.length - late,
+					plays(false),
 					unsaid ? 3 : 0,
 					`${label} ${JSON.stringify(m)}`,
 				);

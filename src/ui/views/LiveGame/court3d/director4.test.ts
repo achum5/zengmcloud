@@ -214,6 +214,245 @@ describe("3D director", () => {
 		assert.isTrue(losers.every((tr) => tr.team !== winners[0]!.team));
 	}, 240_000);
 
+	// A change with his side to defend: the man going off points out the man
+	// he had for the man coming on (and the man coming on, now and then, at
+	// him too) - never with his side to attack.
+	test("a man going off on defense points out his man for the man coming on", () => {
+		let defending = 0;
+		let told = 0;
+		let got = 0;
+		const wrong: string[] = [];
+		for (const seed of ["a", "b"]) {
+			const { tl, events } = compile(seed, 140);
+			for (const b of tl.beats) {
+				if (b.type !== "sub" || fastAt(tl, b.actionStart) > 1.001) {
+					continue;
+				}
+				const e = events[b.i]!;
+				// (Who has it when play goes on: the side of the next man to
+				// shoot it or lose it - or not of the next to take it off them,
+				// or to foul.)
+				let attack: number | undefined;
+				for (const x of events.slice(b.i + 1)) {
+					const tr =
+						typeof x.pid === "number" ? tl.tracks.get(x.pid) : undefined;
+					if (!tr) {
+						if (
+							/^(period|overtime|endOfPeriod|gameOver|jumpBall)$/.test(x.type)
+						) {
+							break;
+						}
+						continue;
+					}
+					if (/^(fga|ft$|missFt$|tov$)/.test(x.type)) {
+						attack = tr.team;
+						break;
+					}
+					if (/^(stl$|pf)/.test(x.type)) {
+						attack = 1 - tr.team;
+						break;
+					}
+				}
+				const on = (e.pids ?? []) as number[];
+				((e.pidsOff ?? []) as number[]).forEach((off, j) => {
+					const tr = tl.tracks.get(off)!;
+					const at = (pid: number | undefined) =>
+						(pid === undefined ? undefined : tl.tracks.get(pid))?.arms.filter(
+							(g) =>
+								g.kind === "point" &&
+								typeof g.at === "number" &&
+								tl.tracks.get(g.at)?.team !== tr.team &&
+								g.t0 >= b.actionStart &&
+								g.t0 < b.actionStart + 6000,
+						) ?? [];
+					const pts = at(off);
+					if (attack === undefined) {
+						return;
+					}
+					if (tr.team === attack) {
+						if (pts.length > 0) {
+							wrong.push(`${seed}: ${off} at ${Math.round(b.actionStart)}`);
+						}
+						return;
+					}
+					defending += 1;
+					told += pts.length > 0 ? 1 : 0;
+					got += at(on[j]).length > 0 ? 1 : 0;
+				});
+			}
+		}
+		assert.isAbove(defending, 15);
+		assert.isAtLeast(told, defending * 0.35);
+		assert.isAbove(got, 3);
+		assert.deepEqual(wrong, []);
+	}, 480_000);
+
+	// Fouled on his shot, he now and then claps it (and, at the rim, has a
+	// word about it); the man who fouled him, his hands on his hips or his
+	// head - stood there for it, never on the move.
+	test("a shooting foul: the man fouled claps it now and then, stood there for it", () => {
+		const REACT = new Set(["clap", "hips", "headHands"]);
+		let fouls = 0;
+		let reacted = 0;
+		for (const seed of ["a", "b", "c", "d"]) {
+			const { tl, events } = compile(seed, 140);
+			tl.beats.forEach((b, k) => {
+				if (b.type !== "pfFG" && b.type !== "pfTP") {
+					return;
+				}
+				const fga = tl.beats.slice(0, k).findLast((x) => /^fga/.test(x.type));
+				const shooter = fga && events[fga.i]?.pid;
+				const fouler = events[b.i]?.pid;
+				if (typeof shooter !== "number" || typeof fouler !== "number") {
+					return;
+				}
+				fouls += 1;
+				for (const pid of [shooter, fouler]) {
+					const tr = tl.tracks.get(pid)!;
+					for (const a of tr.acts) {
+						if (
+							!REACT.has(a.anim) ||
+							a.t0 < b.actionStart ||
+							a.t0 > b.actionStart + 2500
+						) {
+							continue;
+						}
+						reacted += 1;
+						assert.isFalse(
+							tr.moves.some((m) => m.t1 > a.t0 && m.t0 < a.t1),
+							`${seed} ${pid} ${a.anim} at ${Math.round(a.t0)}`,
+						);
+						const mid = evalPlayer(tl, pid, (a.t0 + a.t1) / 2);
+						assert.strictEqual(mid.anim, a.anim, `${seed} ${pid}`);
+					}
+				}
+			});
+		}
+		assert.isAbove(fouls, 10);
+		assert.isAtLeast(reacted, 3);
+	}, 480_000);
+
+	// The ball taken off him, the man who lost it now and then has an arm
+	// up at the official, or his hands on his head on his way back.
+	test("a steal: the man who lost it now and then wants the call, or holds his head", () => {
+		let steals = 0;
+		const said: string[] = [];
+		for (const seed of ["a", "b"]) {
+			const { tl, events } = compile(seed, 140);
+			for (const b of tl.beats) {
+				const victim = events[b.i]?.pidTov;
+				if (b.type !== "stl" || typeof victim !== "number") {
+					continue;
+				}
+				steals += 1;
+				const g = tl.tracks
+					.get(victim)!
+					.arms.find(
+						(x) =>
+							(x.kind === "hand" || x.kind === "head") &&
+							x.t0 >= b.actionStart &&
+							x.t0 < b.actionStart + 1000,
+					);
+				if (g) {
+					said.push(g.kind);
+				}
+			}
+		}
+		assert.isAbove(steals, 10);
+		assert.isAtLeast(said.length, 3);
+		assert.includeMembers(said, ["hand", "head"]);
+	}, 480_000);
+
+	// Out of bounds, whose ball: the men nearest it now and then point the
+	// way they say it goes - their own way.
+	test("the ball out of bounds: the men nearest point their own way, now and then", () => {
+		let outs = 0;
+		let claims = 0;
+		for (const seed of ["a", "b"]) {
+			const { tl } = compile(seed, 140);
+			for (const f of tl.fx) {
+				if (f.kind !== "whistle" || f.call !== "out") {
+					continue;
+				}
+				outs += 1;
+				for (const tr of tl.tracks.values()) {
+					for (const g of tr.arms) {
+						if (
+							g.kind !== "point" ||
+							typeof g.at !== "object" ||
+							g.t0 < f.t ||
+							g.t0 > f.t + 1500
+						) {
+							continue;
+						}
+						claims += 1;
+						const P = evalPlayer(tl, tr.pid, g.t0);
+						assert.strictEqual(
+							Math.sign(g.at.x - P.x),
+							attackDir(tr.team),
+							`${seed} ${tr.pid} at ${Math.round(g.t0)}`,
+						);
+					}
+				}
+			}
+		}
+		assert.isAbove(outs, 8);
+		assert.isAtLeast(claims, outs * 0.3);
+	}, 480_000);
+
+	// Missed in close - at the rim, a hook, a floater - and not the man who
+	// gets it, the shooter isn't left stood where he landed: he follows it in,
+	// fights a man of theirs for it, or backs out.
+	test("after his miss in close the shooter plays it, not stood where he landed", () => {
+		let misses = 0;
+		let stood = 0;
+		for (const seed of ["a", "b", "c"]) {
+			const { tl, events } = compile(seed, 140);
+			tl.beats.forEach((b, k) => {
+				if (
+					!/^miss(AtRim|LowPost)$/.test(b.type) ||
+					fastAt(tl, b.actionStart) > 1.001
+				) {
+					return;
+				}
+				const fga = tl.beats.slice(0, k).findLast((x) => /^fga/.test(x.type));
+				const shooter = fga && events[fga.i]?.pid;
+				const next = tl.beats[k + 1];
+				if (
+					typeof shooter !== "number" ||
+					(next && events[next.i]?.pid === shooter)
+				) {
+					return;
+				}
+				const tr = tl.tracks.get(shooter)!;
+				const shot = tl.ball.findLast(
+					(z) =>
+						z.kind === "fly" &&
+						"pid" in z.from &&
+						z.from.pid === shooter &&
+						!("pid" in z.to) &&
+						z.t0 <= b.actionStart,
+				);
+				if (shot?.kind !== "fly") {
+					return;
+				}
+				const up = tr.acts.findLast(
+					(a) => a.t0 <= shot.t0 + 50 && a.t1 > shot.t0,
+				);
+				const t0 = (up?.t1 ?? shot.t0 + 400) + 150;
+				misses += 1;
+				const A = evalPlayer(tl, shooter, t0);
+				const B = evalPlayer(tl, shooter, t0 + 900);
+				const busy = tr.acts.some((a) => a.t1 > t0 && a.t0 < t0 + 900);
+				if (Math.hypot(B.x - A.x, B.y - A.y) < 1 && !busy) {
+					stood += 1;
+				}
+			});
+		}
+		assert.isAbove(misses, 10);
+		assert.isAtMost(stood, misses * 0.15);
+	}, 480_000);
+
 	// From one move into the next - pulling up from a run, down into his
 	// stance, up for a catch - his body eases over rather than snapping
 	// there between one frame and the next.

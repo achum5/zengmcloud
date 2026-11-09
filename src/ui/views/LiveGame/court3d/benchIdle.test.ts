@@ -8,6 +8,7 @@ import {
 import {
 	benchMoodAt,
 	benchPhase,
+	crowdUp,
 	benchShare,
 	benchStates,
 	greetsFor,
@@ -59,6 +60,29 @@ test("the bench gets up and sits back down over a moment, not in a frame", () =>
 		assert.isAbove(changes, 4);
 	}
 }, 60_000);
+
+// A block brings the building up: the home crowd on its feet for a home
+// one (the road fans, for theirs, less so), and the blocker's bench up.
+test("a block brings the crowd and the blocker's bench up", () => {
+	let blocks = 0;
+	for (const seed of ["a", "b"]) {
+		const { tl } = compile(seed, 140);
+		for (const f of tl.fx) {
+			if (f.kind !== "block" || f.team === undefined) {
+				continue;
+			}
+			// (Not another play's reaction on top of it.)
+			if (tl.fx.some((g) => g.kind === "roar" && Math.abs(g.t - f.t) < 3000)) {
+				continue;
+			}
+			blocks += 1;
+			const up = crowdUp(tl, f.t + 800);
+			assert.isAtLeast(up, f.team === 1 ? 0.7 : 0.3, `${seed} ${f.t}`);
+			assert.strictEqual(benchMoodAt(tl, f.t + 800, f.team).now, "up");
+		}
+	}
+	assert.isAbove(blocks, 3);
+}, 240_000);
 
 // Back at his chair after he comes off, a man is greeted: the man sat
 // nearest it either side up out of his, over beside him, the two of them

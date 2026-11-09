@@ -595,7 +595,7 @@ const stillUp = (tr: Track, act: Act, t: number): number => {
 	const ai = lastIndex(tr.acts, act.t0, (a) => a.t0);
 	for (let k = ai; k >= 0 && k >= ai - 4; k--) {
 		const a = tr.acts[k]!;
-		if (a === act || a.flash || t >= a.t1 || (!a.jump && !a.zKeys)) {
+		if (a === act || a.flash || a.quiet || t >= a.t1 || (!a.jump && !a.zKeys)) {
 			continue;
 		}
 		const span = a.t1 - a.t0;
@@ -1329,7 +1329,7 @@ const actAt = (tr: Track, t: number): Act | undefined => {
 	const ai = lastIndex(tr.acts, t, (a) => a.t0);
 	for (let k = ai; k >= 0 && k >= ai - 3; k--) {
 		const a = tr.acts[k]!;
-		if (t < a.t1 && !a.flash) {
+		if (t < a.t1 && !(a.flash || a.quiet)) {
 			return a;
 		}
 	}
@@ -1399,6 +1399,7 @@ const PASSES = new Set<AnimName>([
 	"pass",
 	"passBounce",
 	"passOverhead",
+	"passOutlet",
 	"passPush",
 	"passBouncePush",
 	"passBehind",
@@ -1513,7 +1514,12 @@ const plannedYaw = (tl: CourtTimeline, tr: Track, t: number): number => {
 		}
 	}
 	if (act?.look) {
-		const to = angleTo(here, act.look, fallback);
+		// (Turned away first, a shoulder into a man right up on him.)
+		const to = angleTo(
+			here,
+			act.turnFrom && t < act.turnFrom.until ? act.turnFrom.look : act.look,
+			fallback,
+		);
 		// Caught on the run, he opens up to it only as far as running on lets
 		// him - not turned right round on it, carried on backward at a run.
 		if (
@@ -2936,7 +2942,7 @@ const doingNow = (
 	let stepLen: [number, number] | undefined;
 	let drive = 0;
 	if (act) {
-		mirrored = act.mirror === true;
+		mirrored = act.mirror === true || act.oneHand === "L";
 		const u = (t - act.t0) / (act.t1 - act.t0);
 		// (A jumper, each man his own way of it.)
 		anim =
@@ -2948,7 +2954,15 @@ const doingNow = (
 							? "shootLeanL"
 							: "shootLeanR"
 						: shotWith(pid, act.arms)
-				: act.anim;
+				: act.anim === "catch" && act.catchAt
+					? act.catchAt === "high"
+						? "catchHigh"
+						: "catchLow"
+					: act.anim === "pass" && act.outlet
+						? "passOutlet"
+						: act.anim === "board" && act.oneHand
+							? "boardOne"
+							: act.anim;
 		const a = ANIMS[anim];
 		// (A loop on the same beat as when he does it standing of his own
 		// accord - so one held for a while and then just stood in, a
@@ -3211,21 +3225,42 @@ const liftOf = (
 // not snapped there between one frame and the next. Into a dribble move his
 // hands and shoulders get there quicker than his feet: a bounce is over in a
 // third of a second, and the ball has to go where they take it.
-const BLEND_MS = 160;
+export const BLEND_MS = 160;
 // (Pulled up out of a run into where he stands, a step with each foot:
 // longer.)
-const SETTLE_MS = 300;
+export const SETTLE_MS = 300;
 // (Setting off from where he stands, a step each foot - see startsOff.)
-const START_MS = 220;
+export const START_MS = 220;
 // (Stood easy, standing up out of his stance or bending over onto his
 // knees and back: in no hurry.)
-const STOOD_MS = 500;
+export const STOOD_MS = 500;
 const MOVE_ARMS_MS = 60;
 // (Behind his back, the move starts with his hand out in front where the
 // ball comes up into it, and sweeps it back from there: no time to hold it
 // where it was.)
 const BACK_ARMS_MS = 25;
-const BLEND_DEPTH = 8;
+export const BLEND_DEPTH = 8;
+// HOW ONE MOVE EASES INTO THE NEXT, any sport's: how much of the last is
+// left `since` ms into a change that takes `ms` - eased in and out.
+export const blendEase = (since: number, ms: number): number => {
+	const u = Math.min(1, since / ms);
+	return 1 - u * u * (3 - 2 * u);
+};
+// (And how fast that goes, a ms.)
+export const blendEaseRate = (since: number, ms: number): number => {
+	const u = Math.min(1, Math.max(0, since / ms));
+	return (6 * u * (1 - u)) / ms;
+};
+// How long a change takes: setting off from where he stands, a step each
+// foot (`stepOff`); a slow one (`slow` - from one way of standing into
+// another, or pulled up out of a run into where he stands, a step with each
+// foot), and, stood easy, in no hurry (`stood`); otherwise the usual.
+export const blendMsOf = (
+	stepOff: boolean,
+	slow: boolean,
+	stood: boolean,
+): number =>
+	stepOff ? START_MS : !slow ? BLEND_MS : stood ? STOOD_MS : SETTLE_MS;
 const FLICK_MS = 40;
 // An arm thrown up - fighting for the ball, contesting, reaching - comes
 // back down on its own time, not snapped to his side with the rest of him
@@ -3260,7 +3295,7 @@ const armsDown = (
 	const i = lastIndex(tr.acts, t, (a) => a.t0);
 	for (let k = i; k >= 0 && k >= i - 3; k--) {
 		const a = tr.acts[k]!;
-		if (a.t1 > t || t - a.t1 >= ARMS_DOWN_MS || a.flash) {
+		if (a.t1 > t || t - a.t1 >= ARMS_DOWN_MS || a.flash || a.quiet) {
 			continue;
 		}
 		if (!armsComeDown(tr, t, a.anim, now.anim)) {
@@ -3430,7 +3465,7 @@ const blendInto = (
 				a.t1 <= hi &&
 				hi - a.t1 < SLIVER_MS &&
 				ARMS_UP.has(a.anim) &&
-				!a.flash
+				!(a.flash || a.quiet)
 			) {
 				hi = a.t1;
 				lo = hi - 1;
@@ -3439,10 +3474,7 @@ const blendInto = (
 			}
 		}
 	}
-	const ease = (ms: number) => {
-		const u = Math.min(1, (t - hi) / ms);
-		return 1 - u * u * (3 - 2 * u);
-	};
+	const ease = (ms: number) => blendEase(t - hi, ms);
 	// (Out of strides that had all but stopped into another way of
 	// going - a jog pulled up and then a backpedal, say - he steps off
 	// into it as from standing.)
@@ -3450,13 +3482,11 @@ const blendInto = (
 		startsOff(before.anim, anim) ||
 		(crossesOver(before.anim, anim) && paceAt(tr, lo) < STEP_OFF_PACE);
 	const w = ease(
-		stepOff
-			? START_MS
-			: !slowOver(before.anim, anim)
-				? BLEND_MS
-				: STOOD.has(anim) && PIVOTS.has(before.anim)
-					? STOOD_MS
-					: SETTLE_MS,
+		blendMsOf(
+			stepOff,
+			slowOver(before.anim, anim),
+			STOOD.has(anim) && PIVOTS.has(before.anim),
+		),
 	);
 	const slowArms = armsComeDown(tr, t, before.anim, anim);
 	if (w <= 0.02 && !(slowArms && ease(ARMS_DOWN_MS) > 0.02)) {
@@ -5908,9 +5938,12 @@ const PIVOTS = new Set<AnimName>([
 	"fight",
 	"bump",
 	"catch",
+	"catchHigh",
+	"catchLow",
 	"pass",
 	"passBounce",
 	"passOverhead",
+	"passOutlet",
 	"passPush",
 	"passBouncePush",
 	"shotFake",
@@ -6023,7 +6056,7 @@ const pivotOf = (
 
 // The arms and the turn of his shoulders, which can ease into a move on
 // their own time (see blendInto).
-const UPPER: (keyof Pose)[] = [
+export const UPPER: (keyof Pose)[] = [
 	"shN",
 	"elN",
 	"abN",
@@ -6055,9 +6088,12 @@ const UPPER: (keyof Pose)[] = [
 const STRIDE_FTPS = 3;
 const STRIDE_ACTS = new Set<AnimName>([
 	"catch",
+	"catchHigh",
+	"catchLow",
 	"pass",
 	"passBounce",
 	"passOverhead",
+	"passOutlet",
 	"passPush",
 	"passBouncePush",
 	"passBehind",
@@ -6145,16 +6181,25 @@ const blendPose = (f: Blend, style?: RunStyle): Pose => {
 	}
 	return eased;
 };
-const blendFrom = (q: Pose, f: Blend, style?: RunStyle): Pose => {
-	const was = blendPose(f, style);
-	const p = lerpPose(q, was, f.w);
-	if (f.arms !== undefined) {
+// A pose `q` part the way back to what he was (`was`): `w` of the way - his
+// arms and shoulders, `arms` of it, if they go on their own time. Any
+// sport's.
+export const easedFrom = (
+	q: Pose,
+	was: Pose,
+	w: number,
+	arms?: number,
+): Pose => {
+	const p = lerpPose(q, was, w);
+	if (arms !== undefined) {
 		for (const key of UPPER) {
-			p[key] = q[key] + (was[key] - q[key]) * f.arms;
+			p[key] = q[key] + (was[key] - q[key]) * arms;
 		}
 	}
 	return p;
 };
+const blendFrom = (q: Pose, f: Blend, style?: RunStyle): Pose =>
+	easedFrom(q, blendPose(f, style), f.w, f.arms);
 
 // Where he stands, as it starts: its pose at the top of its cycle.
 const standRef = (x: {

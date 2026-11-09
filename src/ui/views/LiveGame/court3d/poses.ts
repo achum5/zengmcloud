@@ -600,6 +600,30 @@ const P = {
 		elF: 30,
 		lean: 6,
 	}),
+	// Up high for one thrown over the top: both hands up over his head.
+	catchHigh: pose({
+		hipN: -6,
+		kneeN: 14,
+		hipF: 8,
+		kneeF: 16,
+		shN: 150,
+		elN: 22,
+		shF: 146,
+		elF: 26,
+		lean: -2,
+	}),
+	// Down for one bounced to him: knees bent, hands out low in front.
+	catchLow: pose({
+		hipN: -14,
+		kneeN: 40,
+		hipF: 16,
+		kneeF: 42,
+		shN: 42,
+		elN: 18,
+		shF: 38,
+		elF: 22,
+		lean: 16,
+	}),
 	// Stepping into it: the left foot out toward him, the right behind.
 	passOut: pose({
 		hipN: -24,
@@ -5446,6 +5470,20 @@ export const ANIMS = {
 			[1, P.ready],
 		],
 	},
+	// The outlet off his own board: up over his head out of the chin and
+	// flicked out with both hands - the ball up there already, so let go as
+	// soon as a chest pass would be (see Act.outlet).
+	passOutlet: {
+		kind: "act",
+		n: 6,
+		keys: [
+			[0, P.hold],
+			[0.24, P.overheadUp],
+			[0.42, P.overheadOut],
+			[0.7, P.overheadOut],
+			[1, P.ready],
+		],
+	},
 	// A HEAVE from way out - farther than any jumper - as time runs out: a
 	// two-handed floater from deep. On the last stride the ball brought up
 	// in both hands from down at his waist, his legs under him, and pushed
@@ -5581,6 +5619,24 @@ export const ANIMS = {
 			[1, P.hold],
 		],
 	},
+	// The same, taken up high or down low where the pass comes (see
+	// Act.catchAt).
+	catchHigh: {
+		kind: "act",
+		n: 3,
+		keys: [
+			[0, P.catchHigh],
+			[1, P.hold],
+		],
+	},
+	catchLow: {
+		kind: "act",
+		n: 3,
+		keys: [
+			[0, P.catchLow],
+			[1, P.hold],
+		],
+	},
 	// Going up and coming down with it: pulled in and chinned once he lands.
 	board: {
 		kind: "act",
@@ -5598,6 +5654,48 @@ export const ANIMS = {
 					elN: 4,
 					shF: 168,
 					elF: 8,
+					lean: 0,
+					toe: 1,
+				}),
+			],
+			[
+				0.5,
+				pose({
+					hipN: -6,
+					kneeN: 24,
+					hipF: 10,
+					kneeF: 42,
+					shN: 150,
+					elN: 50,
+					shF: 145,
+					elF: 55,
+					lean: 2,
+					toe: 0.6,
+				}),
+			],
+			[0.66, P.chin],
+			[1, P.chin],
+		],
+	},
+	// The same ripped down one-handed: the near arm all the way up for it as
+	// for two, the other out at his chest - in to it on the way down (the
+	// "rip" grip), and chinned. (See Act.oneHand.)
+	boardOne: {
+		kind: "act",
+		n: 9,
+		keys: [
+			[0, P.gather],
+			[
+				0.26,
+				pose({
+					hipN: -4,
+					kneeN: 20,
+					hipF: 10,
+					kneeF: 40,
+					shN: 172,
+					elN: 4,
+					shF: 92,
+					elF: 70,
 					lean: 0,
 					toe: 1,
 				}),
@@ -6175,6 +6273,39 @@ export const ANIMS = {
 				lean: 4,
 			});
 		},
+	},
+	// Come on in: a man waiting at the table to come on waved on - an arm
+	// out to him low, palm up, the hand brought in toward himself, twice.
+	beckon: {
+		kind: "act",
+		n: 8,
+		keys: [
+			[0, P.ready],
+			[0.18, pose({ shN: 66, elN: 18, abN: 34, wrN: -20, lean: -2 })],
+			[0.36, pose({ shN: 74, elN: 92, abN: 28, wrN: 10, lean: -2 })],
+			[0.54, pose({ shN: 66, elN: 22, abN: 34, wrN: -20, lean: -2 })],
+			[0.72, pose({ shN: 74, elN: 92, abN: 28, wrN: 10, lean: -2 })],
+			[0.86, pose({ shN: 62, elN: 30, abN: 32, wrN: -10, lean: -1 })],
+			[1, P.ready],
+		],
+	},
+	// Reporting a foul to the table: who - his hands up in front of his
+	// chest, fingers out, one and then the other - and what, a hand chopped
+	// at his other wrist.
+	report: {
+		kind: "act",
+		n: 9,
+		keys: [
+			[0, P.ready],
+			[0.14, pose({ shN: 112, elN: 74, abN: 8, shF: 36, elF: 34, lean: -1 })],
+			[0.34, pose({ shN: 112, elN: 74, abN: 8, shF: 36, elF: 34, lean: -1 })],
+			[0.44, pose({ shN: 40, elN: 34, shF: 112, elF: 74, abF: 8, lean: -1 })],
+			[0.62, pose({ shN: 40, elN: 34, shF: 112, elF: 74, abF: 8, lean: -1 })],
+			[0.72, pose({ shN: 106, elN: 80, abN: -10, shF: 58, elF: 84, abF: -8 })],
+			[0.8, pose({ shN: 64, elN: 56, abN: -22, shF: 58, elF: 84, abF: -8 })],
+			[0.88, pose({ shN: 106, elN: 80, abN: -10, shF: 58, elF: 84, abF: -8 })],
+			[1, P.ready],
+		],
 	},
 	// Traveling: the fists rolling over each other in front of him.
 	travel: {
@@ -7976,7 +8107,7 @@ const TEE = { f: 0.85, barS: 0.3, barU: 0.82, stemS: 0.02, stemU: 0.2 };
 // the shooting hand with the other guiding it; palmed in one hand; pushed
 // out of one; pulled along low under one; or cupped in one the whole way
 // round.
-export type Grip = "two" | "shot" | "palm" | "push" | "pull" | "cup";
+export type Grip = "two" | "shot" | "palm" | "push" | "pull" | "cup" | "rip";
 const GRIPS: Partial<Record<AnimName, Grip>> = {
 	shoot: "shot",
 	shootKick: "shot",
@@ -8003,6 +8134,7 @@ const GRIPS: Partial<Record<AnimName, Grip>> = {
 	windmill: "cup",
 	hook: "palm",
 	reverseLayup: "palm",
+	boardOne: "rip",
 	passPush: "push",
 	passBouncePush: "push",
 	passBehind: "pull",
@@ -8190,6 +8322,35 @@ export const holdBall = (
 		((r.end.s + l.end.s) / 2) * 0.5,
 		(r.end.u + l.end.u) / 2,
 	);
+	// Up for a board with the one hand: the ball just where both hands would
+	// have it (see boardOne - his near arm as it is for two), in the near
+	// hand alone - the other off it, coming in to it as he rips it down.
+	if (grip === "rip") {
+		const ball = v3(Math.max(r.end.f + 0.3, sk.chest.f + R + 0.22), 0, r.end.u);
+		const far = side(ball, 1);
+		const off = Math.hypot(l.end.f - far.f, l.end.s - far.s, l.end.u - far.u);
+		const x = Math.min(1, Math.max(0, (0.9 - off) / 0.6));
+		const w = x * x * (3 - 2 * x);
+		return {
+			sk: {
+				...sk,
+				armR: flared(
+					armTo(b, sk.chest, side(ball, -1), q.wrN, -1),
+					q.flare,
+					-1,
+				),
+				armL:
+					w > 0
+						? flared(
+								armTo(b, sk.chest, mix(l.end, far, w), q.wrF, 1),
+								q.flare * w,
+								1,
+							)
+						: l,
+			},
+			ball,
+		};
+	}
 	if (grip === "two") {
 		return {
 			sk: {

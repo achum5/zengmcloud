@@ -92,6 +92,7 @@ export const PLAYBOOK: PlaySource[] = [
 			"1 dribble R_elbow attack; 5 move rim roll; 4 move L_slot lift",
 		],
 		options: [
+			"2 mid catch_and_shoot R_short_corner 1 1 kickout Spotup 2 | 2 move R_short_corner relocate",
 			"5 rim dunk rim 1 1 lob PRRollMan 3",
 			"1 mid pull_up R_elbow 1 - - PRBallHandler 3",
 			"1 three pull_up top 0 - - PRBallHandler 2",
@@ -160,6 +161,7 @@ export const PLAYBOOK: PlaySource[] = [
 			"1 dribble high_post drive_middle; 5 move rim roll; 4 move top lift",
 		],
 		options: [
+			"1 mid pull_up R_short_corner 1 - - PRBallHandler 2 | 1 dribble R_short_corner drive_baseline",
 			"5 rim dunk rim 1 1 pocket PRRollMan 3",
 			"1 mid pull_up high_post 1 - - PRBallHandler 3",
 			"1 post floater R_lane 1 - - PRBallHandler 2 | 1 dribble R_lane attack",
@@ -546,6 +548,7 @@ export const PLAYBOOK: PlaySource[] = [
 			"1 dribble R_elbow attack; 5 move rim roll; 4 move L_slot pop",
 		],
 		options: [
+			"2 mid catch_and_shoot R_short_corner 1 1 kickout Spotup 2 | 2 move R_short_corner relocate",
 			"5 rim dunk rim 1 1 pocket PRRollMan 3",
 			"4 three catch_and_shoot L_slot 1 1 skip Spotup 2",
 			"1 mid pull_up R_elbow 1 - - PRBallHandler 2",
@@ -1629,6 +1632,7 @@ export const PLAYBOOK: PlaySource[] = [
 		needs: "ballHandler slasher | shooter | shooter | shooter | big rimRunner",
 		steps: ["1 dribble R_lane drive_middle; 3 move top lift"],
 		options: [
+			"4 mid catch_and_shoot R_short_corner 1 1 kickout Spotup 2 | 4 move R_short_corner relocate",
 			"1 post floater R_lane 0 - - Isolation 2",
 			"1 rim layup rim 0 - - Isolation 2 | 1 dribble rim attack",
 			"2 three catch_and_shoot R_wing 0 1 kickout Spotup 2",
@@ -1997,6 +2001,7 @@ export const PLAYBOOK: PlaySource[] = [
 			"isoScorer ballHandler | shooter spacer | shooter spacer | shooter spacer | big rimRunner",
 		steps: ["1 dribble top hesitation", "1 dribble R_elbow crossover"],
 		options: [
+			"1 mid pull_up R_short_corner 1 - - Isolation 2 | 1 dribble R_short_corner drive_baseline",
 			"1 three step_back top 0 - - Isolation 3 | 1 dribble top step_back",
 			"1 mid pull_up R_elbow 1 - - Isolation 3",
 			"1 rim layup rim 1 - - Isolation 2 | 1 dribble rim attack",

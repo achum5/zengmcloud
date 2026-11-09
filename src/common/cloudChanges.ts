@@ -12,9 +12,89 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
-		n: 219,
+		n: 235,
 		date: "2026-11-09",
 		text: "Realistic Front Offices: CPU teams count money spent past the cap as a little cheaper than before, so bad teams use their cap room instead of sitting on it. In test leagues they bottomed out about half as often and won more titles. And a CPU team no longer takes your later pick in the same draft for its earlier one (picks 30 and 58 for 15) unless the rest of the deal pays for it.",
+	},
+	{
+		n: 234,
+		date: "2026-11-09",
+		text: "Shot chart: tapping a shot now plays it from the spot shown on the chart, and a game's chart on its box score is updated each time you watch it in 3D, so the dots match where the shots were taken.",
+	},
+	{
+		n: 233,
+		date: "2026-11-09",
+		text: "3D games: fewer offensive-foul whistles - moving screens about once a game instead of four or so, and travels as common as charges.",
+	},
+	{
+		n: 232,
+		date: "2026-11-09",
+		text: "3D games: after missing a shot in close - a layup, a hook, a floater - the shooter now follows it in, fights his man for position or backs out, instead of standing where he landed.",
+	},
+	{
+		n: 231,
+		date: "2026-11-09",
+		text: "3D games: players out injured now sit on the bench in street clothes (a suit) instead of their uniform, and don't take part in the warm-ups.",
+	},
+	{
+		n: 230,
+		date: "2026-11-09",
+		text: "3D games: when the ball goes out of bounds, the players nearest it now and then point the way they think it should go.",
+	},
+	{
+		n: 229,
+		date: "2026-11-09",
+		text: "3D games: a blocked shot now brings the crowd up (the home fans most of all for a home block) and the blocker's bench up off its chairs.",
+	},
+	{
+		n: 228,
+		date: "2026-11-09",
+		text: "3D games: when the ball is stolen from a player he now and then puts an arm up at the official as if he was fouled, or runs back with his hands on his head.",
+	},
+	{
+		n: 227,
+		date: "2026-11-09",
+		text: "3D games: after a shooting foul the shooter now and then claps it (he drew it) or has a word with the official, and the man who fouled him sometimes stands with his hands on his hips or on his head.",
+	},
+	{
+		n: 226,
+		date: "2026-11-09",
+		text: "3D games: after a foul with the ball to be taken out, the official who called it runs over to the scorer's table and reports it before getting back to his spot.",
+	},
+	{
+		n: 225,
+		date: "2026-11-09",
+		text: "3D games: free throw routines vary much more from player to player - how many bounces and how quick, a backspin flip first or after, a breath before - and each player keeps his own every trip to the line.",
+	},
+	{
+		n: 224,
+		date: "2026-11-09",
+		text: "3D games: on a substitution an official now waves the man at the scorer's table on, and a player going off on defense points out the man he was guarding for the one taking his place.",
+	},
+	{
+		n: 223,
+		date: "2026-11-09",
+		text: "3D games: mid-range jumpers now and then come from along the baseline - a corner shooter drifting up for a kick-out, or a ball handler taking it baseline to pull up - not only from the elbows and the top.",
+	},
+	{
+		n: 222,
+		date: "2026-11-09",
+		text: "3D games: a missed layup or shot in the paint no longer always comes off the front of the rim - now and then it's off the side, or too hard off the glass. And a man backing down in the post has his defender on his back the whole way, giving ground at his pace instead of backing off ahead of him.",
+	},
+	{
+		n: 221,
+		date: "2026-11-09",
+		text: "3D games: on an and-one jumper, the man who fouls the shooter is right up on him as he lets it go, not a few feet short of him.",
+	},
+	{
+		n: 220,
+		date: "2026-11-09",
+		text: "3D games: as a defensive rebound comes down, only the nearest man of the other team swipes at it now - the rest still crowd in but keep their hands to themselves - and the man who goes up with the rebounder does so less often, more for a good rebounder.",
+	},
+	{
+		n: 219,
+		date: "2026-11-09",
+		text: "3D games, defensive rebounds: a good rebounder now and then rips one down with one hand, the other coming in to it on the way down; the man who comes down with a board mostly throws the outlet up over his head (bigs more than guards); and with a man right on him he turns a shoulder into him before he throws it. A pass thrown over the top is caught up high and a bounce pass down low, and after a three the passer now and then points back at the shooter while the man who was guarding him puts his hands on his head.",
 	},
 	{
 		n: 218,

@@ -1541,8 +1541,8 @@ export const LiveGamecast = ({
 	const canReplay = onReplay !== undefined;
 	// A play opened under its row (see HighlightClip): the game as far as it
 	// has got when it is opened.
-	const clipRef = useRef({ clipGame, cursor, entries });
-	clipRef.current = { clipGame, cursor, entries };
+	const clipRef = useRef({ clipGame, cursor, entries, shots });
+	clipRef.current = { clipGame, cursor, entries, shots };
 	const canClip = clipGame !== undefined;
 	const names = useMemo(() => {
 		const m = new Map<number, string>();
@@ -1592,10 +1592,11 @@ export const LiveGamecast = ({
 							clipGame: game,
 							cursor: upTo,
 							entries: lines,
+							shots: spots,
 						} = clipRef.current;
 						return game ? (
 							<HighlightClip
-								game={{ ...game, upTo }}
+								game={{ ...game, upTo, shots: spots }}
 								first={lines.find((e) => e.key === row.key - 1)?.cursor ?? 0}
 								last={row.cursor!}
 							/>

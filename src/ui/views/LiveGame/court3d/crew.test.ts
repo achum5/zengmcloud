@@ -291,7 +291,7 @@ describe("3D crew", () => {
 	test("a shot let go after the horn is waved off", () => {
 		let ends = 0;
 		let late = 0;
-		for (const seed of ["a", "b"]) {
+		for (const seed of ["a", "b", "c", "d"]) {
 			const { events, players } = fakeGame(seed, 150);
 			// (Every period run out with five seconds left after its last line.)
 			events.forEach((e, end) => {
@@ -362,6 +362,84 @@ describe("3D crew", () => {
 		}
 		assert.isAtLeast(late, 3);
 		assert.isAtLeast(late, ends * 0.3);
+	}, 480_000);
+
+	test("a man waiting at the table is waved on by the official nearest, turned to the table", () => {
+		const { tl, crew } = working("a");
+		let waits = 0;
+		let waved = 0;
+		let last = -Infinity;
+		for (const c of [...(tl.checkIns ?? [])].sort((x, y) => x.t1 - y.t1)) {
+			// (Once for all of them going on at once; at real speed.)
+			if (c.t1 - last < 400 || fastAt(tl, c.t1) > 1.01) {
+				last = c.t1;
+				continue;
+			}
+			last = c.t1;
+			waits += 1;
+			const refs = crewAt(tl, c.t1 + 150, crew).states.filter((s) =>
+				isRef(s.pid),
+			);
+			const r = refs.find((s) => s.anim === "beckon");
+			if (r) {
+				waved += 1;
+				let d = r.yaw + Math.PI / 2;
+				d -= Math.round(d / (Math.PI * 2)) * Math.PI * 2;
+				assert.isBelow(Math.abs(d), Math.PI / 4, `${Math.round(c.t1)}`);
+			}
+		}
+		assert.isAtLeast(waits, 5);
+		assert.isAtLeast(waved, waits * 0.7);
+	}, 240_000);
+
+	test("a foul away from a shot is reported to the table by the official who called it", () => {
+		let fouls = 0;
+		let reported = 0;
+		for (const seed of ["a", "b"]) {
+			const { tl, crew, events } = working(seed);
+			const refs = (t: number) =>
+				crewAt(tl, t, crew).states.filter((s) => isRef(s.pid));
+			for (const b of tl.beats) {
+				if (
+					events[b.i]?.type !== "pfNonShooting" ||
+					fastAt(tl, b.actionStart) > 1.01
+				) {
+					continue;
+				}
+				const f = tl.fx.find(
+					(x) =>
+						x.kind === "whistle" &&
+						x.call === "foul" &&
+						Math.abs(x.t - b.actionStart) < 50,
+				);
+				const caller = f && refs(f.t + 350).find((r) => r.anim === "signalUp");
+				if (!f || !caller) {
+					continue;
+				}
+				fouls += 1;
+				for (let t = f.t + 2000; t < f.t + 9000; t += 100) {
+					// (Turned to it once he is into it.)
+					const r = refs(t + 700).find((x) => x.pid === caller.pid);
+					if (
+						refs(t).find((x) => x.pid === caller.pid)?.anim === "report" &&
+						r
+					) {
+						reported += 1;
+						assert.isBelow(r.y, 8, `${seed} ${Math.round(f.t)}`);
+						let d = r.yaw + Math.PI / 2;
+						d -= Math.round(d / (Math.PI * 2)) * Math.PI * 2;
+						assert.isBelow(
+							Math.abs(d),
+							Math.PI / 4,
+							`${seed} ${Math.round(t)}`,
+						);
+						break;
+					}
+				}
+			}
+		}
+		assert.isAtLeast(fouls, 4);
+		assert.isAtLeast(reported, fouls * 0.7);
 	}, 240_000);
 
 	test("at the line, the official under the basket bounces the shooter the ball", () => {

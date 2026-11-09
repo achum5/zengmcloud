@@ -8118,7 +8118,8 @@ const getReplayFeed = async (gid: number) => {
 
 // The shots of a game watched in 3D, where the court had them (see
 // LiveGame/gamecast/shots.ts), kept with its saved replay for the shot chart
-// on its box score - once: the court stages a game the same every time.
+// on its box score - the last time it was watched: the court stages a game
+// the same every time, but a newer version of it can stage it differently.
 const saveReplayShots = async ({
 	gid,
 	shots,
@@ -8143,7 +8144,12 @@ const saveReplayShots = async ({
 			return;
 		}
 	}
-	if (!row || (Array.isArray(row.shots) && row.shots.length > 0)) {
+	if (
+		!row ||
+		(Array.isArray(row.shots) &&
+			row.shots.length === shots.length &&
+			row.shots.every((x: number, i: number) => x === shots[i]))
+	) {
 		return;
 	}
 	await idb.cache.liveGamePlayByPlay.put({ ...row, shots });

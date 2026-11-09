@@ -51,7 +51,16 @@ import {
 import { carriedIn, carriedTo, SET } from "./pace.ts";
 import { sidelineOf } from "./sideline.ts";
 import {
+	callCoverage,
+	deepInMan,
+	dropTo,
+	isZone,
+	zoneSpots,
+	type Coverage,
+} from "./coverage.ts";
+import {
 	alongRoute,
+	conceptRoutes,
 	decoyRoute,
 	layRoute,
 	targetRoute,
@@ -164,6 +173,9 @@ const RECEIVERS = new Set<Role>([
 	"SL2",
 ]);
 
+// A back lined up further out than this (feet across from the ball) is
+// flexed out to a side: a receiver of that side's, in its concept.
+const BACK_FLEXED_FT = 12;
 const spotOf = (role: Role): Spot =>
 	role === "X" || role === "Z"
 		? "wide"
@@ -5290,7 +5302,7 @@ const COVER_MIN = 2.5;
 const COVER_SOFT = 3;
 // (A cover man against the others at his position: sat this much tighter
 // on his man - or looser - at the most.)
-const COVER_TIGHT = 0.3;
+const COVER_TIGHT = 0.35;
 const COVER_FRONT = 1;
 // (On a man thrown to on his back shoulder: carried on up the field past
 // him as he pulls up for it, this long (ms) - going this fast at least
@@ -5298,18 +5310,33 @@ const COVER_FRONT = 1;
 const COVER_LATE_MS = 600;
 const COVER_LATE_LEAST = 10;
 const COVER_LATE_KEEP = 0.9;
-// Zone behind it, this often - two safeties deep (the strong safety this
-// deep at the snap at least, feet), or one - the rest man; never with a
-// corner pressed (this near the line, feet). Two deep, the safeties each
-// take a half (out toward this share of the way to the sideline) and the
-// corners sit in the flats - or, man under it, the safeties are the only
-// two not on a man. One deep, the free safety the middle and the corners a
-// deep third each, the strong safety and the rest under them.
-const ZONE_TWO = 0.7;
-const ZONE_ONE = 0.55;
+// Play action sold up front: each lineman a step at the man across from him
+// (feet), over this long (ms), before he sets.
+const PA_FIRE_FT = 1.6;
+const PA_FIRE_MS = 300;
+// The rush beyond the front (see pass): a linebacker stood up on the line
+// (no further off it than this, feet) outside the tackles (this far out at
+// least, feet) off the edge this often; and a blitz, by the coverage behind
+// it, this often - a defensive back with the linebacker this share of
+// those, over Cover 1 - the middle linebacker first.
+const EDGE_FT = 7;
+const EDGE_OUT_FT = 9;
+const EDGE_RUSH = 0.7;
+const BLITZ: Record<Coverage, number> = {
+	c1: 0.4,
+	c2man: 0.15,
+	c3: 0.2,
+	c2: 0.08,
+	tampa2: 0.05,
+	c4: 0.08,
+};
+const DB_BLITZ = 0.3;
+const BLITZ_FIRST: Role[] = ["MIKE", "WILL", "BUCK", "SAM"];
+// The look the defense showed (see coverage.ts): two safeties deep - the
+// strong safety this deep at the snap at least (feet) - or one; a corner
+// pressed, this near the line (feet).
 const TWO_HIGH_FT = 33;
 const PRESSED_FT = 8;
-const HALF_OUT = 0.45;
 // Back into his zone at this pace (ft/s), this far back at least (feet) -
 // settling into it over as much as this (feet), and turned and run there
 // if it takes him any quicker than this (ft/s) over this long (ms) at least
@@ -5334,6 +5361,12 @@ const ZONE_REACH_FT = 8;
 // way to him, and further, at the most - or less.)
 const ZONE_TIGHT = 0.5;
 const ZONE_DRIFT_FPS = 6;
+// (A corner in a deep third or quarter, matched on the man coming into it
+// - Cover 3 and quarters as they are played: carried up the field with
+// him, this much of the way and this far, as quick as he must.)
+const MATCH_LEAN = 0.6;
+const MATCH_REACH_FT = 18;
+const MATCH_PACE = 0.85;
 const ZONE_STIR_FT = 1.5;
 const ZONE_SIT_MS = 300;
 const ZONE_EASE_LEAST_MS = 200;
@@ -7702,7 +7735,7 @@ class Action {
 			const legs = m.legs;
 			let yaw = legs[0]?.yaw ?? 0;
 			const faced = legs.map((l) => (yaw = yawOf(l, yaw)));
-			for (let i = 0; i < legs.length;) {
+			for (let i = 0; i < legs.length; ) {
 				if (!still(legs[i]!)) {
 					i++;
 					continue;
@@ -8247,7 +8280,7 @@ class Action {
 			// (A run of them together the one way, at the one pace: not
 			// swaying on with the push he had into nobody, a step a walk and
 			// the next a jog.)
-			for (let i = 0; i < m.legs.length;) {
+			for (let i = 0; i < m.legs.length; ) {
 				let j = i + 1;
 				while (
 					air[i] &&
@@ -9026,7 +9059,7 @@ class Action {
 					fixed.push(b.t0, this.ball[k + 1]?.t0 ?? Infinity);
 				}
 			});
-			for (let i = 0; i < m.legs.length;) {
+			for (let i = 0; i < m.legs.length; ) {
 				if (!free(m, m.legs[i]!)) {
 					i++;
 					continue;
@@ -10100,17 +10133,69 @@ class Action {
 			typeof pickYds === "number" &&
 			pickYds <= PICK_BAT_YDS &&
 			countOf(picker, this.input.key, 137) < PICK_BAT;
+		// The coverage behind it, by the look the defense showed (see
+		// coverage.ts) - two deep or one, a corner pressed - and the down
+		// and the distance.
+		const ss = this.d.find((m) => m.role === "SS");
+		const twoHigh =
+			ss !== undefined && this.of(ss.posAt(snap)).d >= TWO_HIGH_FT;
+		const pressed = this.d.some(
+			(m) => m.role === "CB" && this.of(m.posAt(snap)).d <= PRESSED_FT,
+		);
+		const call = callCoverage({
+			twoHigh,
+			pressed,
+			down: this.input.down,
+			toGo: this.input.toGo,
+			toGoal: this.goalD / YD,
+			u: countOf(qb, this.input.key, 147),
+		});
 		const rushers = this.d.filter(
 			(m) =>
 				(DL.has(m.role) || m === sacker) &&
 				(m !== picker || (pickBat && DL.has(m.role))),
 		);
-		if (!sacker && r() < 0.22) {
-			const lb = this.d.find(
-				(m) => LB.has(m.role) && !rushers.includes(m) && m !== picker,
-			);
+		// (Never a man the sim has make a play in coverage.)
+		const covering = new Set(
+			this.statPids("defPssDef", "defInt", "defTckSolo", "defTckAst"),
+		);
+		const mayRush = (m: Actor) =>
+			!rushers.includes(m) && m !== picker && !covering.has(m.pid);
+		// A linebacker stood up on the line outside the tackles - a 3-4's
+		// outside backers, an edge: off the edge after him, mostly.
+		for (const m of this.d) {
+			const at = this.of(m.posAt(snap));
+			if (
+				LB.has(m.role) &&
+				mayRush(m) &&
+				at.d <= EDGE_FT &&
+				Math.abs(at.a) >= EDGE_OUT_FT &&
+				countOf(m, this.input.key, 152) < EDGE_RUSH
+			) {
+				rushers.push(m);
+			}
+		}
+		// And a blitz now and then, by the coverage behind it: a linebacker
+		// most often over Cover 1 - and with him, now and then, a defensive
+		// back off the slot or down from safety.
+		const blitzU = countOf(qb, this.input.key, 151);
+		const blitz = BLITZ[call];
+		if (blitzU < blitz) {
+			const lb = this.d
+				.filter((m) => LB.has(m.role) && mayRush(m))
+				.sort(
+					(a, b) => BLITZ_FIRST.indexOf(a.role) - BLITZ_FIRST.indexOf(b.role),
+				)[0];
 			if (lb) {
 				rushers.push(lb);
+			}
+			if (call === "c1" && blitzU < blitz * DB_BLITZ) {
+				const db = this.d.find(
+					(m) => (m.role === "NB" || m.role === "SS") && mayRush(m),
+				);
+				if (db) {
+					rushers.push(db);
+				}
 			}
 		}
 		const coverage = this.d.filter((m) => !rushers.includes(m));
@@ -10207,6 +10292,35 @@ class Action {
 		const targetLaid =
 			target && targetName && !slip ? layTarget(target, targetName) : undefined;
 
+		// The play's routes (see routes.ts conceptRoutes): called now, for the
+		// quarterback's drop to go with them.
+		const called = conceptRoutes(
+			runners.map((m) => {
+				const start = this.of(m.at);
+				const spot = spotOf(m.role);
+				// (A back in the backfield: out of it, his own.)
+				const side =
+					spot === "back" && Math.abs(start.a) < BACK_FLEXED_FT
+						? 0
+						: start.a < 0
+							? -1
+							: 1;
+				return { side, out: Math.abs(start.a), spot };
+			}),
+			thrown && target && targetName ? runners.indexOf(target) : -1,
+			thrown ? targetName : undefined,
+			r,
+		);
+		// (Deep routes called - fifteen yards and more - and the ball to a man
+		// sat down underneath them: the drop for the deep ones, looked off
+		// and checked down to him.)
+		const deepCalled = called.some((c) => c !== undefined && c.depth >= 45);
+		const checkedDown =
+			thrown &&
+			airYds > 0 &&
+			airYds <= 8 &&
+			deepCalled &&
+			targetLaid?.settles === true;
 		// The quarterback's drop: none for a screen, three steps for the
 		// short game, five or seven going deep (in the gun, a step or two) -
 		// sacked, to a few steps short of where they get him; drifting back
@@ -10235,12 +10349,12 @@ class Action {
 					: gun
 						? airYds <= 0
 							? 0
-							: airYds <= 8
+							: airYds <= 8 && !checkedDown
 								? 4
 								: 8
 						: airYds <= 0
 							? 3
-							: airYds <= 8
+							: airYds <= 8 && !checkedDown
 								? 11
 								: airYds <= 18
 									? 18
@@ -10494,15 +10608,18 @@ class Action {
 			target!.hold(snap + SLIP_WAIT, "passSet", this.ahead);
 		}
 
-		// The routes, each man off the line a moment after the snap.
+		// The routes, each man off the line a moment after the snap: the
+		// play's concepts, a side of the field at a time - the one the ball
+		// goes to his (see routes.ts conceptRoutes).
 		const routes = new Map<number, Route>();
-		for (const m of runners) {
+		for (const [i, m] of runners.entries()) {
 			const start = this.of(m.at);
 			const inSign = inSignOf(start);
 			if (m === target && thrown && targetName) {
 				routes.set(m.pid, targetLaid ?? layTarget(m, targetName));
 			} else {
-				const { name, depth } = decoyRoute(spotOf(m.role), r(), r());
+				const { name, depth } =
+					called[i] ?? decoyRoute(spotOf(m.role), r(), r());
 				routes.set(
 					m.pid,
 					layRoute(name, start, inSign, depth, this.bounds, r(), r()),
@@ -10673,20 +10790,10 @@ class Action {
 			? (this.man(this.statPids(first === intI ? "defInt" : "defPssDef")[0]) ??
 				(first === intI ? undefined : this.interferer(coverage)))
 			: undefined;
-		// (Zone or man behind it, by the look the defense showed - see
-		// ZONE_ONE: man on a back-shoulder throw or a double move, which are
-		// thrown at the man on him.)
-		const ss = coverage.find((m) => m.role === "SS");
-		const twoHigh =
-			ss !== undefined && this.of(ss.posAt(snap)).d >= TWO_HIGH_FT;
-		const pressed = coverage.some(
-			(m) => m.role === "CB" && this.of(m.posAt(snap)).d <= PRESSED_FT,
-		);
-		const zone =
-			!pressed &&
-			tr?.name !== "backShoulder" &&
-			!jab &&
-			countOf(qb, this.input.key, 147) < (twoHigh ? ZONE_TWO : ZONE_ONE);
+		// (The call - but man on a back-shoulder throw or a double move,
+		// which are thrown at the man on him.)
+		const covers: Coverage =
+			tr?.name === "backShoulder" || jab ? (twoHigh ? "c2man" : "c1") : call;
 		this.cover(
 			coverage,
 			runners,
@@ -10698,7 +10805,7 @@ class Action {
 			first === cmpI ? Math.max(0, (gain - airYds) * YD) : 0,
 			tr?.name === "backShoulder" ? target : undefined,
 			jab && target ? { m: target, ...jab } : undefined,
-			{ zone, twoHigh },
+			covers,
 			this.flaggedFor("Holding", coverage),
 		);
 		const beaten = sacker ? this.man(this.statPids("skAlw")[0]) : undefined;
@@ -10708,6 +10815,7 @@ class Action {
 			qb,
 			(thrown ? catchAt : outT) + 300,
 			sacker && beaten ? [sacker, beaten] : undefined,
+			fakeT,
 		);
 		// (The backs out of the backfield on their routes round the line,
 		// not through it - see releaseRound.)
@@ -12089,9 +12197,13 @@ class Action {
 				for (let k = 1; k < n; k++) {
 					m.split(t0 + (CONTEST_UP_MS * k) / n);
 				}
+				// (The first from where he is: on from the last of his stride
+				// as it was cut there - not where he was before it was.)
 				const pieces = m.part.legs.slice(-n);
 				pieces.forEach((l, k) => {
-					l.from = along((T * k) / n);
+					if (k > 0) {
+						l.from = along((T * k) / n);
+					}
 					l.to = k === n - 1 ? to : along((T * (k + 1)) / n);
 				});
 			}
@@ -18239,6 +18351,8 @@ class Action {
 		qb: Actor,
 		end: number,
 		pair?: [Actor, Actor],
+		// A play fake: the line selling it (see PA_FIRE_FT).
+		fake?: number,
 	) {
 		const { snap } = this.input;
 		const r = this.r;
@@ -18428,6 +18542,16 @@ class Action {
 				}
 			}
 			this.offSnap(b, GET_OFF_MS, GET_OFF_SPREAD_MS);
+			// (Off a play fake, a lineman fired out a step at the man across
+			// from him as if it were a run - and then set.)
+			if (fake !== undefined && OL.has(b.role)) {
+				b.go(
+					this.w({ d: s.d + PA_FIRE_FT, a: s.a }),
+					b.t + PA_FIRE_MS,
+					"drive",
+					this.ahead,
+				);
+			}
 			// (A back through a fake already: set where it left him.)
 			const setPt =
 				b.t > snap + 300
@@ -19111,7 +19235,7 @@ class Action {
 		yac = 0,
 		late?: Actor,
 		fooled?: { m: Actor; at: number; top: Pt; stem: Pt },
-		call: { zone: boolean; twoHigh: boolean } = { zone: false, twoHigh: false },
+		call: Coverage = "c1",
 		holding?: Actor,
 	) {
 		const { snap } = this.input;
@@ -19147,15 +19271,14 @@ class Action {
 				pairs.set(holding, rec);
 			}
 		}
-		const order = call.zone
+		const order = isZone(call)
 			? []
 			: runners
 					.filter((m) => !held(m))
 					.sort((a, b) => Math.abs(set(b).a) - Math.abs(set(a).a));
 		// (The safeties deep, two of them, the free safety alone: not on a
 		// man.)
-		const deep = (m: Actor) =>
-			m.role === "FS" || (call.twoHigh && m.role === "SS");
+		const deep = (m: Actor) => deepInMan(call, m.role);
 		for (const rec of order) {
 			const ra = set(rec);
 			let best: Actor | undefined;
@@ -19177,6 +19300,24 @@ class Action {
 				pairs.set(best, rec);
 			}
 		}
+		// Everybody not on a man, his spot: his zone's - or, in man, the deep
+		// safeties' halves or middle, and anybody left over a hook in the
+		// middle (see coverage.ts).
+		const mid = (this.bounds.left + this.bounds.right) / 2;
+		const half = (this.bounds.right - this.bounds.left) / 2;
+		const drops = dropTo(
+			free
+				.filter((m) => !pairs.has(m))
+				.map((m) => ({ m, role: m.role, at: set(m) })),
+			isZone(call)
+				? zoneSpots(call, mid, half, r)
+				: call === "c2man"
+					? zoneSpots("c2", mid, half, r).filter((z) => z.deep)
+					: zoneSpots("c3", mid, half, r).filter(
+							(z) => z.deep && z.at.a === mid,
+						),
+			mid,
+		);
 		const closing: Pt[] = [];
 		for (const m of free) {
 			const rec = pairs.get(m);
@@ -19344,30 +19485,15 @@ class Action {
 					);
 				}
 			} else {
-				// Back into his zone: deep middle, a deep half or third, a
-				// flat, under the routes over the middle - see ZONE_TWO.
-				const mid = (this.bounds.left + this.bounds.right) / 2;
-				const outward = Math.sign(start.a - mid) || 1;
-				const zone =
-					call.twoHigh && deep(m)
-						? {
-								d: Math.max(start.d, 38 + r() * 10),
-								a:
-									mid +
-									outward *
-										(this.bounds.right - this.bounds.left) *
-										HALF_OUT *
-										0.5,
-							}
-						: m.role === "FS"
-							? { d: Math.max(start.d, 42 + r() * 12), a: start.a * 0.4 }
-							: m.role === "CB" && call.zone && call.twoHigh
-								? { d: 16 + r() * 6, a: start.a + outward * 3 }
-								: (m.role === "SS" && !call.zone) || m.role === "CB"
-									? { d: Math.max(start.d, 36 + r() * 10), a: start.a * 0.9 }
-									: m.role === "SS"
-										? { d: 15 + r() * 8, a: start.a * 1.2 }
-										: { d: 18 + r() * 10, a: start.a * 0.8 };
+				// Back into his zone: deep middle, a deep half, third or quarter,
+				// a flat, a curl, a hook - see coverage.ts. (A deep man aligned
+				// deeper than his spot: not up to it.)
+				const dropped = drops.get(m) ?? { d: 24, a: start.a * 0.8 };
+				const zone = {
+					d: dropped.d >= 30 ? Math.max(start.d, dropped.d) : dropped.d,
+					a: dropped.a,
+				};
+				const matching = m.role === "CB" && dropped.d >= 30;
 				this.offSnap(m, ZONE_OFF_MS, ZONE_OFF_SPREAD_MS);
 				// (Up a step or two to the fake first, a linebacker, and stood
 				// reading it.)
@@ -19549,9 +19675,11 @@ class Action {
 						}
 					}
 					const tight = 1 + ZONE_TIGHT * (m.flair.cover ?? 0);
+					const lean = matching ? MATCH_LEAN : ZONE_LEAN;
+					const reachFt = matching ? MATCH_REACH_FT : ZONE_REACH_FT;
 					const u =
 						near && nd < ZONE_SEE_FT
-							? Math.min(ZONE_REACH_FT * tight, nd * ZONE_LEAN * tight) / nd
+							? Math.min(reachFt * tight, nd * lean * tight) / nd
 							: 0;
 					const to = near
 						? {
@@ -19561,6 +19689,23 @@ class Action {
 						: spot;
 					if (dist(to, m.at) < ZONE_STIR_FT) {
 						sit(t);
+					} else if (
+						matching &&
+						dist(to, m.at) / (ZONE_STEP_MS / 1000) > ZONE_DRIFT_FPS
+					) {
+						// (Carried with him: turned and run, as quick as that
+						// takes - or a backpedal, if that is quick enough.)
+						const fps = Math.min(
+							m.top * MATCH_PACE,
+							dist(to, m.at) / (ZONE_STEP_MS / 1000),
+						);
+						m.chase(
+							to,
+							t,
+							fps,
+							fps <= BACK_TOP ? "back" : undefined,
+							fps <= BACK_TOP ? this.behind : undefined,
+						);
 					} else {
 						// (In his low steps, his eyes on the ball - across or
 						// back, shuffling or backpedaling: see faced - not

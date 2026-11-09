@@ -48,24 +48,24 @@ each part, so the table below can say how far along each part is.
 | 1   | Three pointer, no good (`fgaTp` → `missTp`)                                                   |       39 | working |
 | 2   | Defensive rebound (`drb`)                                                                     |       74 | working |
 | 3   | Three pointer, made (`tp`)                                                                    |       25 | working |
-| 4   | Post shot, made or missed (`fgaLowPost` → `fgLowPost` / `missLowPost`)                        |       49 | todo    |
-| 5   | Shot at the rim, made or missed (`fgaAtRim` → `fgAtRim` / `missAtRim`)                        |       47 | todo    |
-| 6   | Mid-range jumper, made or missed (`fgaMidRange` → `fgMidRange` / `missMidRange`)              |       34 | todo    |
-| 7   | Substitution (`sub`)                                                                          |       55 | todo    |
-| 8   | Free throws (`ft` / `missFt`)                                                                 |       38 | todo    |
-| 9   | Offensive rebound (`orb`), putback and tip-in (`fgaPutBack`, `fgaTipIn` and results)          |       25 | todo    |
-| 10  | Non-shooting foul, in the bonus (`pfNonShooting`, `pfBonus`)                                  |       19 | todo    |
-| 11  | Shooting foul (`pfFG`, `pfTP`)                                                                |       13 | todo    |
-| 12  | Turnover (`tov`: bad pass, lost ball, travel, offensive foul, shot clock, 5 seconds)          |       15 | todo    |
-| 13  | Steal (`stl`)                                                                                 |       13 | todo    |
-| 14  | Out of bounds (`outOfBounds`, `tov`/`stl` out of bounds)                                      |       20 | todo    |
-| 15  | Blocks (`blkTp`, `blkMidRange`, `blkLowPost`, `blkAtRim`, `blkTipIn`, `blkPutBack`)           |        9 | todo    |
-| 16  | And-ones (`fgAtRimAndOne`, `fgLowPostAndOne`, `fgMidRangeAndOne`, `tpAndOne`, putback/tip-in) |        4 | todo    |
-| 17  | Timeouts (`timeout`, `timeouts`)                                                              |        5 | todo    |
+| 4   | Post shot, made or missed (`fgaLowPost` → `fgLowPost` / `missLowPost`)                        |       49 | working |
+| 5   | Shot at the rim, made or missed (`fgaAtRim` → `fgAtRim` / `missAtRim`)                        |       47 | working |
+| 6   | Mid-range jumper, made or missed (`fgaMidRange` → `fgMidRange` / `missMidRange`)              |       34 | working |
+| 7   | Substitution (`sub`)                                                                          |       55 | working |
+| 8   | Free throws (`ft` / `missFt`)                                                                 |       38 | working |
+| 9   | Offensive rebound (`orb`), putback and tip-in (`fgaPutBack`, `fgaTipIn` and results)          |       25 | working |
+| 10  | Non-shooting foul, in the bonus (`pfNonShooting`, `pfBonus`)                                  |       19 | working |
+| 11  | Shooting foul (`pfFG`, `pfTP`)                                                                |       13 | working |
+| 12  | Turnover (`tov`: bad pass, lost ball, travel, offensive foul, shot clock, 5 seconds)          |       15 | working |
+| 13  | Steal (`stl`)                                                                                 |       13 | working |
+| 14  | Out of bounds (`outOfBounds`, `tov`/`stl` out of bounds)                                      |       20 | working |
+| 15  | Blocks (`blkTp`, `blkMidRange`, `blkLowPost`, `blkAtRim`, `blkTipIn`, `blkPutBack`)           |        9 | working |
+| 16  | And-ones (`fgAtRimAndOne`, `fgLowPostAndOne`, `fgMidRangeAndOne`, `tpAndOne`, putback/tip-in) |        4 | working |
+| 17  | Timeouts (`timeout`, `timeouts`)                                                              |        5 | working |
 | 18  | Start and end of a period, overtime (`period`, `endOfPeriod`, `overtime`)                     |        6 | todo    |
-| 19  | Jump ball (`jumpBall`)                                                                        |        1 | todo    |
+| 19  | Jump ball (`jumpBall`)                                                                        |        1 | working |
 | 20  | Game over (`gameOver`)                                                                        |        1 | todo    |
-| 21  | Injury, fouling out (`injury`, `foulOut`)                                                     |     rare | todo    |
+| 21  | Injury, fouling out (`injury`, `foulOut`)                                                     |     rare | working |
 | 22  | Heaves and the clock running out (`noShot`, `runOutClock`, `fgaTpFake`)                       |     rare | todo    |
 | 23  | Intentional foul (`intentionalFoul`)                                                          |     rare | todo    |
 | 24  | Elam ending, shootout (`elamActive`, `shootout*`)                                             |  setting | todo    |
@@ -77,10 +77,16 @@ each part, so the table below can say how far along each part is.
   court. The pass can stay - the way into it should look like a man reading
   the floor: easing off as the defense gets back, picking his dribble up, a
   look, then the pass.
-- **Injured men on the bench in street clothes**, not in uniform.
+- **Injured men on the bench in street clothes**, not in uniform. Done
+  2026-11-09: a man out hurt from before the game (not hurt in it, not
+  playing through it) sits with his team in a suit, a shirt open at the
+  neck, his own every game - no number, no name - and never warms up.
 - **The opening tip** (a clip, 2026-11-04): the two bigs should step up into
   the circle and go up for it like men jumping, not stand there; and off the
   tip, men of the team that won it ran the wrong way. (See #19.)
+  Checked 2026-11-09 over nine real games: both jumpers set and go up for
+  it (about a second off the floor), and all of the winners' men go the
+  right way off it, every tip.
 
 ## 1. Three pointer, no good
 
@@ -212,7 +218,16 @@ sits on him - our man fighting him for it (`boxIn`; a sharp rebounder all
 but always): box-outs 0.37 a miss → 0.85. (Few still: only so many of ours
 are in there - 1.8 a miss.)
 
-Next, in order: his catch; then item 2's parts.
+His catch (2026-11-09): every pass was taken the one way, hands out at
+his chest - a skip thrown up over the top and a bounce pass alike. Now
+one thrown over the top is taken up high, both hands over his head, and
+one bounced to him down low, knees bent and hands out in front
+(`catchHigh`, `catchLow`): the picture only - the catch act marked
+(`Act.catchAt`), the pass flying to his hands wherever they are - so
+nothing else in the game moves. (Of the passes into a missed three, over
+the top 20%, bounced 9%.)
+
+Next: item 2's parts.
 
 Blocking how it misses - glitches the reshuffled test games turn up, each
 to be fixed for itself (they would turn up in real games too):
@@ -374,16 +389,15 @@ Measured over the same three games (223 at real speed):
 | Whole combination      | 195 of 223 different |                                                                                                                                                                                                                             |
 
 The grab (2026-11-08): up high with two hands two boards in three, the rest
-at chest height - every man alike. Built and held back: a man who goes up
-and gets it ripping it down one-handed now and then - taken in the one
-hand up over his shoulder, out to that side, either hand (`mirror`), the
-other hand coming in to it on the way down, then chinned (`boardOne`, a
-`palm` grip; decided in `reboundOff` before he goes, so he stands off it
-to the side of that hand and the ball comes off the rim into it with no
-swerve; 19 of 223 in three games). It moved where every rebounder stood
-by a step and a half, enough to tip three of the suite's tests that sit
-on their line (the shooter's man off him and back, a post-up's man, a
-second device's catch-up) - in again once those are looked at.
+at chest height - every man alike. Now (2026-11-09) a man who goes up and
+gets it rips it down one-handed now and then, either hand (the better a
+rebounder the more often - `ONE_HAND_BOARD`): the picture only - the
+board act marked (`Act.oneHand`) and drawn as `boardOne`, its near arm as
+for two and the ball just where two hands would have it, held in the one
+(the `rip` grip), the other hand out at his chest till it comes in to it
+on the way down - so nothing else in the game moves (first built moving
+him over to the side of that hand, which moved where every rebounder
+stood and tipped tests on their line; see HELD).
 
 The pile round him a moment after he has it (measured 2026-11-08: men
 within 5 ft of him 0.9 s on, and those of them stood still): 1.3 a board,
@@ -392,8 +406,13 @@ or five round him).
 
 The outlet (measured 2026-11-08, the pass kind of every outlet over 12
 ft): a chest pass every time but the long skips - overhead 4 of 120.
-Built and held back (see HELD below): the man who came down with it
-himself, still with it in his hands, mostly throwing it up over his head - a big 70%, a ball handler 35% (`OUTLET_OVER`,
+Now (2026-11-09) the man who came down with it himself, still with it in
+his hands, mostly throws it up over his head - only the picture of it:
+the director lays the same chest pass at the same moments and marks it
+(`Act.outlet`), and the picture draws it as `passOutlet`, up out of the
+chin and away when the chest pass would have gone - so nothing else in
+the game moves (65 of 121 overhead). As first built, mostly throwing it
+up over his head - a big 70%, a ball handler 35% (`OUTLET_OVER`,
 within 2.5 s of the board, not under 8 ft; `passTo`'s `overTop` - the
 kind's draw still made, so the rest of the game runs the same): overhead
 87 of 147, chest 60. Up out of the chin, the windup starts that much
@@ -402,7 +421,8 @@ the overhead's extra windup on top, every outlet off a board went 140 ms
 later, the defense back more often, and kick-outs found the help left on
 the shooter less (over 16 test games, 0.67 of them → 0.59; with it, 0.69).
 
-The pivot (built and held back): a man of theirs within 3 ft of him as he
+The pivot (2026-11-09, the picture only - `Act.turnFrom` on the one hold
+act, read where his yaw is): a man of theirs within 3 ft of him as he
 comes down with it (`OUTLET_PRESS`), he turns a shoulder into him first - round 1.6 rad off
 the man coming for it, to the side away from him, 450 ms - then round to
 throw (only with 700 ms or more to throw it in): 58 of the 155 outlets
@@ -411,16 +431,16 @@ off a board, the rest come round to the man at once.
 Two men up for it (measured 2026-11-08, a man of theirs up with him or a
 hand at it as he takes it): 153 of 223 - most of them a hand from every
 man of theirs within 8 ft of it as it came down (`scramble`), where in
-the league most defensive boards nobody of theirs is near. Built and held
-back: only the nearest of theirs swiping at it, and only from within 3.5
-ft (`SCRAMBLE_SWIPE`), and the man who goes up with him doing so 65% of
-the time from within 4 ft, 35% from further (`RIVAL_GOES`, more for a
-good man on the glass): 93 of 223 - up with him 26, a hand at it 67 (40
-of those a loose one off the floor). It moves men about after every
-board, so the games after play out otherwise, and the suite's tests that
-sit on their line tip (a referee's walk round a corner at a quarter
-break, a man along the half-court line, a footwork share) - in again
-with those seen to.
+the league most defensive boards nobody of theirs is near. Now
+(2026-11-09) only the nearest of theirs swipes at it, and only from
+within 3.5 ft (`SCRAMBLE_SWIPE`), and the man who goes up with him does
+so 65% of the time from within 4 ft, 35% from further (`RIVAL_GOES`, more
+for a good man on the glass): 92 of 223 - up with him 16, a hand at it 76
+(many a loose one off the floor). The picture only: the rest still step
+in, their swipe or jump laid as before and left out of the picture
+(`Act.quiet`, as `flash` is) - so nothing else in the game moves. (First
+built taking them out of the game, which moved men about after every
+board and tipped tests that sit on their line - see HELD.)
 
 Long off a three (measured 2026-11-08, where boards off threes were
 taken): under the rim 26 of 96, in the lane 57, out a way 7, long 6 - a
@@ -432,26 +452,23 @@ stood out past 31 ft as the ball was played in close (the half-court test:
 5 in its six games, master 2; 9 to 5 over twelve), the man who pitched it
 ahead from out there trailing late. Backed out till the trailers come on.
 
-HELD (2026-11-09): the one-handed board, the overhead outlet and the
-pivot, the one swipe at a board and the and-one fouler's own run are in
-`held/drb.patch` (made against 9f0c44580). Each changes where men are or
-when, so every game after plays out otherwise - and each time, some few
-of the suite's tests that sit right on their line tipped over, different
-ones each run (a kick-out's help 0.59 for 0.6, a footwork share 0.304 for
-0.3, a referee's walk round a corner at a quarter break, a man on the
-half-court line, a post-up's man, a heave at the buzzer). In again once
-those tests stand clear of their lines: the edge cases they catch fixed
-where they are real, more games where they are only a count.
+HELD (2026-11-09) and now all in: each piece of this item first built
+changed where men are or when, so the games after played out otherwise
+and some few of the suite's tests that sit right on their line tipped
+over, different ones each run. Done over as the picture only - the
+one-handed board, the outlet and pivot, the one swipe - nothing else in
+the game moves; and the and-one fouler's own run, a fix where the game
+does move, went in on its own once the suite stood clean with it.
 
 Next: a baseball outlet up the floor wants a man out ahead to throw it to,
 the hit-ahead on a break (long outlets now: 1 in three games). A bobble is
 the tip to himself, there already.
 
-Seen along the way (2026-11-08), held back with the above: the man who
-fouls a jump shooter (an and-one) is planned off from where shadowing his
-own man has him, then that is reworked to follow the man (see mark) and
-the run at the shooter can be left 5.5 ft short - `ownRun` in foulHim
-fixes it (in the held-back patch).
+Seen along the way (2026-11-08), in 2026-11-09: the man who fouls a jump
+shooter (an and-one) was planned off from where shadowing his own man had
+him, then that was reworked to follow the man (see mark) and the run at
+the shooter could be left 5.5 ft short - now his own run (`ownRun` in
+foulHim).
 
 ## 3. Three pointer, made
 
@@ -468,6 +485,232 @@ variety tool's make parts - `jumperParts(..., made)`):
 | Shooter after  |       12 | back down the floor 71 of 76; holds his follow-through most; a finger at the bench 19, three fingers up 25; a shimmy 1, thanks to the passer 2 |
 | Taken out      |       12 | under the rim 63, off the floor 12; in again 4.5-5.5 s after the release nearly every time                                                     |
 
-Next: the taking out - in again sooner, and not the same pace every time
-(a team that pushes has it out and in at once); then his teammates on the
-make.
+The taking out after a make runs fast in the picture unless the team
+pushes it (`inboundAfterMake`'s `hurry`), so its slow even pace is little
+seen - left.
+
+The rest of them on the make (measured 2026-11-09, what the other nine
+did with an arm or more in the 3.5 s after it): his mates mostly pointing
+out who they have on the way back, theirs fetching it out of the net -
+nobody about the shot itself. Now, off a pass, the man who found him now
+and then points back at him on his own way back (`PASSER_POINTS`, 40%);
+and the man who had him, now and then, hands up on his head on his way
+(`BEATEN_HEAD`; 5 of 76) - arms only, nothing else in the game moves.
+
+## 4. Post shot, made or missed
+
+Measured 2026-11-09 over the same three games (the variety tool's `post`
+part: his back-down, his moves, his man): 46 made, 69 missed at real
+speed. Most come straight off a drive - a floater (58 of 115) or a hook
+(46), a fade now and then (6) - not a back-down: 4 of 115 backed his man
+down first. His man rim side of him at the release 35 of 46 makes. After
+a miss in there he stood where he landed 23 of 69 - the paint crowded,
+afterTheMiss's step back or in too often into somebody (left).
+
+## 5. Shot at the rim, made or missed
+
+Measured 2026-11-09 (61 made, 56 missed at real speed). Made: a dunk 35
+(two hands 13, one 16, tomahawk 6), a power layup 8, a layup 7, a finger
+roll 7, a reverse 3, a scoop 1; in clean 46, off the glass 9, off the
+front of the rim 6. Missed: a power layup or a layup 32, a finger roll
+11, a scoop 10, a reverse 3 - and off the front of the rim 45 of 56, the
+rest rattled round (7), off the side or the glass (4). Now (2026-11-09) a
+miss in close is aimed the way it misses as a jumper's is: off the front,
+long, off a side, or too hard off the glass from an angle to it
+(`closeMissStyleFor`, `CLOSE_MISS`): off the front 44 of 56, off the side
+6, off the glass 6 (long off the back from that close mostly drops in, so
+few). It moves the ball, so the games after play out otherwise; what the
+reshuffled games turned up, fixed where it comes from:
+
+- a post man's man giving ground ahead of him - at a jog, there before
+  him, a gap opening - and nudged off him by keepApart for a teammate's
+  sake: now he gets up on him quickly if he is not, then gives ground at
+  his pace (`BACK_DOWN_CLOSE`), and holds his ground there as a man set in
+  a screen does (keepApart's `backing`).
+- (The loose-ball test now leaves out the man at the ball himself - the
+  one who knocked it loose, a dunker coming down under his own dunk: the
+  ball does come down on them.)
+- a man over half court with it, sent to a spot back over it, dribbled
+  along the line across the floor to it (kept from going back over, but
+  not from going across): now he holds where he is across the floor, up
+  off the line a step if he is not already (playDribble).
+- (The half-court test now leaves out the walk over to shake hands after
+  the game - no run for a spot.)
+
+## 6. Mid-range jumper, made or missed
+
+Measured 2026-11-09 (43 made, 50 missed at real speed; the variety tool's
+spot inside the arc: along the baseline, the elbow or wing, straight on -
+and short, mid or a long two): off the elbows and wings 67 of 93, straight
+on 17, along the baseline 2 - the sets' mid-range reads all go to the
+elbows, the high post and the mid wings (a pull-up to the short corner in
+three of them). Now (2026-11-09) a corner man drifts up to the short
+corner for a kick-out jumper in the high pick-and-roll, Horns and
+drive-and-kick, and the ball handler takes it baseline to pull up there
+off a side pick-and-roll or an isolation (the playbook's new
+`R_short_corner` reads): along the baseline 7 of 93.
+
+## 7. Substitution
+
+Measured 2026-11-09 (185 men coming on at real speed, 58 more run through
+fast; the variety tool's `sub` line): what stopped play (a free throw 61,
+a foul 55, the ball out 36), how long he waited at the table (4-8 s, all of
+them), his way out to his spot, the man going off to his chair (at a run,
+nearly all), greeted there (134 of 185, by one or two), a slap of hands
+on the way by (112), how long it held the game up (1.5-7 s), and how many
+at once (1 to 5). Never: the man going off telling the man coming on who
+he had, or an official waving the man at the table on.
+
+Now (2026-11-09): with his side to defend when play goes on, the man going
+off points out the man he had as the two come together (and the man
+coming on, now and then, points at him too: got him) - 86 of 185; and the
+official nearest the table, turned to it, waves the men waiting there on
+(173 of 185; not one still signaling a call, or on his way back from one).
+
+## 8. Free throws
+
+Measured 2026-11-09 (92 made, 21 missed at real speed; the variety tool's
+`ft` and `missFt` lines): which of his trip it is, his routine from the
+official's bounce pass to the shot, how long that takes (1.5-2.5 s, then
+the stroke, about a second), how it went (made: off the rim 40, clean 39;
+missed: rimmed out, off, the odd brick or airball), the men on the lane
+with it in the air (at ease - hands on hips, on their knees - with another
+to come, set and in to box out on the last), the low fives after (on 32 of
+the 45 with another to come), and who gets the last one missed (the
+defense 10 of 13). Lane spots as the NBA has them: three of the defense,
+two of the offense. The routine was one of four, every man's the same as a
+quarter of the league's.
+
+Now (2026-11-09): every man's routine is put together from pieces, his
+own every trip - one to four bounces at his own beat (slow or quick), a
+flip with backspin first or after them, a breath down in his legs, a beat
+with it eyes on the rim - in the time his used to take: 15 ways over the
+three games (4 before).
+
+## 9. Offensive rebound, putback, tip-in
+
+Measured 2026-11-09 (74 offensive boards at real speed; the variety tool's
+`orb` line, off the shooter's own rim): how he got it (up high, two hands
+36, ripped down one-handed 6; at chest height 22; off the floor 10), where
+(under it 40, in the lane 27, further out 7), what it came off (a jumper or
+one at the rim mostly under it, a three in the lane), the traffic (in a
+crowd 41, one of theirs up with him or a hand at it 34), and what he did
+with it - back up with it 24 (at once, after a gather, off a dribble), out
+of it 50 (kicked out to the arc 37). 73 different of 74. Putbacks and
+tip-ins as lines of their own are rare in the sim (one in three games).
+Not yet: a tap out to a mate, the ball kept alive without being caught.
+
+## 10. Non-shooting foul, in the bonus
+
+Measured 2026-11-09 (46 away from a shot at real speed; the variety
+tool's `pfNonShooting` and `pfBonus` lines): the call (held 25, hit on the
+arm 11, a help man blocking the drive 10), on the ball or off it (a cutter
+held up), where (the half court 28, at the rim 18), the man fouled (looks
+for the call, jolted, knocked off balance - or nothing), the man who
+fouled him (a reach or a hack, protesting it now and then), the officials'
+signals, and the others with the whistle gone. Never: the official who
+called it reporting it to the table.
+
+Now (2026-11-09): through with the signal, the official who called it runs
+over in front of the table and reports it, turned to it - who (fingers up,
+one hand and the other) and what - then back to his place: all 46. Not yet
+on a foul with free throws to come (the official at the line has the
+ball), nor the ball handed to an official for the inbound.
+
+## 11. Shooting foul
+
+Measured 2026-11-09 (34 on a two at real speed, 4 on a three; the variety
+tool's `pfFG` and `pfTP` lines): the shot (at the rim 13, in the post 20,
+mid-range 2), the contact (a hack at his arms, every time), the man fouled
+after it (nothing 26, picked up the ball 8), the man who fouled him (a
+word about it 11), the official's signals (the fist, then the hit), and
+the walk to the line (9-11 s to the first free throw).
+
+Now (2026-11-09): down from it, the man fouled now and then claps it - he
+drew it - more often off a three, and at the rim the odd word with the
+official instead; the man who fouled him, with nothing to say about it,
+now and then his hands on his hips or on his head. Only in a moment each
+has to himself, stood there: 11 and 14 of 34 now. Not yet: other contact
+than the hack (a body at the rim, a hand on the wrist), a shooter knocked
+down, the number of shots signaled, the call reported to the table.
+
+## 12. Turnover, steal
+
+Measured 2026-11-09 (57 turnovers and 47 steals at real speed; the variety
+tool's `tov` and `stl` lines): how it was lost - a whistle for an
+offensive foul 34 (a moving screen 11 of them), out of bounds 13, a
+travel 10; a pass picked off 26, poked loose 14, stripped 7 - where, the
+man who lost it after it, the man who took it (off up the floor 24, held
+22), the officials' signals, and what came next. Offensive fouls were more
+of the whistles than the NBA's (about half) - a moving screen nearly four
+times a game. Rebalanced (2026-11-09, over nine games): a charge and a
+travel about as often as each other, a moving screen about once a game;
+offensive-foul whistles from about 11 a game to 7. The man who lost it
+did nothing about it after 39 of the 47 steals.
+
+Now (2026-11-09): the ball taken off him, the man who lost it now and then
+has an arm up at the official as it goes - he was hit - or, on his way
+back, his hands on his head (and, thrown away out of bounds, his hands on
+his head now and then): 17 of the 47 steals. Arms only, so nothing else
+changes.
+
+(13. Steal: measured with the turnovers, above.)
+
+## 15. Blocks
+
+Measured 2026-11-09 (26 at real speed over the three games; the variety
+tool's `blk*` lines): the shot (at the rim 6, in the post 8, mid-range 5,
+a three 7), the block (from in front 22, run down from behind 3; off the
+hand on the ball's side - for most shooters, right-handed, the blocker's
+left), where the ball went (the defense's 19, back to the offense 6, out
+of bounds 1), the blocker and the shooter after it (on with the play,
+mostly), and the building - sat for all but one.
+
+Now (2026-11-09): a block brings the building up - the home crowd on its
+feet for a home one (nearly as much as for a dunk or a three), the road
+fans for theirs less so - and the blocker's bench up off its chairs.
+
+## 14. Out of bounds
+
+Measured 2026-11-09 (39 at real speed; the variety tool's `outOfBounds`
+line): what it came off (a miss knocked out going for it, mostly: off a
+three 15, in the post 9), where it went out (the sideline at the corner
+end 25, the baseline 11, the sideline at mid-court 3), the ball after it
+(to an official 24, picked up by a player 15), the official's signal (the
+way it goes, every time), and the ball back in. Never: anybody having a
+say about whose ball it is.
+
+Now (2026-11-09): as the whistle goes, the man of each side nearest where
+it went out now and then points the way he says it goes - his own way:
+19 of the 39, both sides at once in 4. Arms only, so nothing else
+changes.
+
+## 16. And-ones
+
+Measured 2026-11-09 over nine real games (27 at the rim, 15 in the post at
+real speed; the variety tool's `*AndOne` lines): the man who scored it
+lets it out - a chest bump with a mate, a flex, a roar, his chest
+pounded, both arms up - and points at the man who found him; theirs
+protest, put their hands on their hips, box out for the free throw.
+Nothing to add for now.
+
+## 17. Timeouts
+
+Measured 2026-11-09 (16 over nine real games): the whistle and the
+signal, the walk to the benches run through fast, the huddle round the
+chairs, a look round the building at real speed (the crowd, the dance
+team, the moppers), and the walk back out. Nothing to add for now.
+
+## 19. Jump ball
+
+Measured 2026-11-09 (10 tips over nine real games): the two jumpers set
+in the circle and go up for it, the winner a touch higher; the rest round
+the circle, the smallest man back; off the tip, the winners' men all go
+the right way, and the losers' get back.
+
+## 21. Injury, fouling out
+
+Measured 2026-11-09: neither came up in nine real games. Hurt in a game, a
+man goes down (or grabs at it), a teammate or two come over and crouch
+by him, and his trainer comes out; the man out hurt from before the game
+sits on the bench in his street clothes (see the side notes).
