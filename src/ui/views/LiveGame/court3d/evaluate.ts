@@ -595,7 +595,7 @@ const stillUp = (tr: Track, act: Act, t: number): number => {
 	const ai = lastIndex(tr.acts, act.t0, (a) => a.t0);
 	for (let k = ai; k >= 0 && k >= ai - 4; k--) {
 		const a = tr.acts[k]!;
-		if (a === act || a.flash || t >= a.t1 || (!a.jump && !a.zKeys)) {
+		if (a === act || a.flash || a.quiet || t >= a.t1 || (!a.jump && !a.zKeys)) {
 			continue;
 		}
 		const span = a.t1 - a.t0;
@@ -1329,7 +1329,7 @@ const actAt = (tr: Track, t: number): Act | undefined => {
 	const ai = lastIndex(tr.acts, t, (a) => a.t0);
 	for (let k = ai; k >= 0 && k >= ai - 3; k--) {
 		const a = tr.acts[k]!;
-		if (t < a.t1 && !a.flash) {
+		if (t < a.t1 && !(a.flash || a.quiet)) {
 			return a;
 		}
 	}
@@ -3295,7 +3295,7 @@ const armsDown = (
 	const i = lastIndex(tr.acts, t, (a) => a.t0);
 	for (let k = i; k >= 0 && k >= i - 3; k--) {
 		const a = tr.acts[k]!;
-		if (a.t1 > t || t - a.t1 >= ARMS_DOWN_MS || a.flash) {
+		if (a.t1 > t || t - a.t1 >= ARMS_DOWN_MS || a.flash || a.quiet) {
 			continue;
 		}
 		if (!armsComeDown(tr, t, a.anim, now.anim)) {
@@ -3465,7 +3465,7 @@ const blendInto = (
 				a.t1 <= hi &&
 				hi - a.t1 < SLIVER_MS &&
 				ARMS_UP.has(a.anim) &&
-				!a.flash
+				!(a.flash || a.quiet)
 			) {
 				hi = a.t1;
 				lo = hi - 1;

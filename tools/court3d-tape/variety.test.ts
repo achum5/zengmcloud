@@ -68,6 +68,8 @@ const jumperParts = (
 	// It went in: how it went in, and what came after a make, in place of
 	// the miss's.
 	made = false,
+	// A shot in the post: how he got there - the back-down, his moves.
+	post = false,
 ) => {
 	const k = tl.ball.indexOf(shot);
 	const pid = (shot.from as { pid: number }).pid;
@@ -177,6 +179,42 @@ const jumperParts = (
 
 	// His form, as it is drawn.
 	const form = evalPlayer(tl, pid, release).anim;
+	// In the post: how many steps backing his man down (his "post" runs),
+	// and what he did with it there - a spin, a fake, a jab - before it went
+	// up; and whether a man of theirs was on him, rim side, as it did.
+	let postPart = "?";
+	if (post) {
+		const backs = tr.moves.filter(
+			(m) => m.anim === "post" && m.t0 > release - 5000 && m.t0 < release,
+		).length;
+		const did = [
+			...new Set(
+				tr.acts
+					.filter(
+						(a) =>
+							a.t0 > release - 3000 &&
+							a.t0 < release - 100 &&
+							a.anim !== "catch" &&
+							a.anim !== "hold",
+					)
+					.map((a) => a.anim as string),
+			),
+		];
+		let on = "nobody on him";
+		for (const o of tl.tracks.values()) {
+			if (o.team === team || o.pid < 0) {
+				continue;
+			}
+			const q = evalPlayer(tl, o.pid, release);
+			const d = dist(q, P);
+			if (d < 4) {
+				const front = (q.x - P.x) * (rim.x - P.x) + (q.y - P.y) * (rim.y - P.y);
+				on = front > 0 ? "his man rim side" : "his man beside or behind";
+				break;
+			}
+		}
+		postPart = `${backs === 0 ? "no back-down" : backs < 3 ? "a short back-down" : "a long back-down"}${did.length ? `, ${did.sort().join("+")}` : ""}; ${on}`;
+	}
 
 	// His footwork into it, as it is drawn: how he was when it came to him
 	// (or he picked his dribble up), which way his last steps took him, and
@@ -637,6 +675,7 @@ const jumperParts = (
 			"after it": afterIt,
 			"shooter after": shooterAfter,
 			everyone: made ? madeEveryone : everyone,
+			...(post ? { post: postPart } : {}),
 			ending,
 			...(made ? { "taken out": takenOut } : { rebound }),
 		},
@@ -747,11 +786,24 @@ const reboundParts = (
 			o.acts.some(
 				(a) =>
 					(a.anim === "rebound" || a.anim === "reach") &&
+					!a.quiet &&
 					a.t0 < t + 200 &&
 					a.t1 > t - 400,
 			),
 	);
-	const traffic = `${near === 0 ? "alone" : near === 1 ? "one man near" : "in a crowd"}${self ? ", boxed his man out" : boxed ? ", mates boxed out" : ""}${rival ? `, one of theirs up too (${rival.acts.find((a) => (a.anim === "rebound" || a.anim === "reach") && a.t0 < t + 200 && a.t1 > t - 400)!.anim})` : ""}`;
+	const traffic = `${near === 0 ? "alone" : near === 1 ? "one man near" : "in a crowd"}${self ? ", boxed his man out" : boxed ? ", mates boxed out" : ""}${
+		rival
+			? `, one of theirs up too (${
+					rival.acts.find(
+						(a) =>
+							(a.anim === "rebound" || a.anim === "reach") &&
+							!a.quiet &&
+							a.t0 < t + 200 &&
+							a.t1 > t - 400,
+					)!.anim
+				})`
+			: ""
+	}`;
 	// What he did with it.
 	let j = k;
 	while (j + 1 < tl.ball.length) {
@@ -894,7 +946,12 @@ test.skipIf(games.length === 0)(
 					fastOnes += 1;
 					continue;
 				}
-				const got = jumperParts(tl, shot, /^(fg|tp)/.test(line));
+				const got = jumperParts(
+					tl,
+					shot,
+					/^(fg|tp)/.test(line),
+					/LowPost/.test(line),
+				);
 				all.push({ pid: `${tag}:${got.pid}`, parts: got.parts });
 			}
 		}

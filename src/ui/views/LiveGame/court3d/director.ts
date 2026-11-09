@@ -264,6 +264,10 @@ export type Act = {
 	// see more than a frame or two of it: left out of the picture (see
 	// flashes).
 	flash?: true;
+	// Laid in the game, left out of the picture: a man of theirs in the pile
+	// round a board who isn't the one to swipe at it, say (see scramble) -
+	// he is still there, stepped in; he only doesn't do it.
+	quiet?: true;
 };
 // Something he says with an arm while the rest of him goes on with whatever
 // it is doing - running, sliding, dribbling: a point (at the man he has, or
@@ -934,6 +938,9 @@ const TIP_TAP: [number, number][] = [
 const RIVAL_UP = 4;
 const RIVAL_IN = 9;
 const RIVAL_STEP_MS = 450;
+// How often he does (in the picture - see Act.quiet), from RIVAL_UP and
+// from further off, for an average man on the glass.
+const RIVAL_GOES: [number, number] = [0.65, 0.35];
 // A defender whose man stays out goes in to the glass and puts a body on the
 // nearest man coming in that nobody else has - from this far off (feet).
 const GLASS_FIND = 10;
@@ -950,6 +957,9 @@ const SCRAMBLE_MS = 450;
 const SCRAMBLE_MAX = 1400;
 const SCRAMBLE_STEP = 4;
 const SCRAMBLE_NEAR = 2.6;
+// Of theirs, only the nearest within this (feet) swipes at it in the
+// picture (see scramble).
+const SCRAMBLE_SWIPE = 3.5;
 // Men going in to the glass end up at least this far apart (feet) - each
 // tried this much further round the rim (radians) till he is.
 const GLASS_APART = 3;
@@ -16045,6 +16055,15 @@ class Director {
 		if (rival === undefined) {
 			return;
 		}
+		// (Not every time in the picture: most boards nobody of theirs gets up
+		// with him - less often from further off, more for a good man on the
+		// glass. He still gets in there; he only doesn't go up.)
+		const goes =
+			hash01(rival * 7 + 3, Math.round(up)) <
+			(far(rival) > RIVAL_UP
+				? this.rebOdds(rival, RIVAL_GOES[1], [0.15, 0.55])
+				: this.rebOdds(rival, RIVAL_GOES[0], [0.35, 0.9]));
+		const quiet = goes ? {} : { quiet: true as const };
 		let t = up;
 		if (far(rival) > RIVAL_UP) {
 			this.letGo(rival, sees, true);
@@ -16066,6 +16085,7 @@ class Director {
 				// Too late to go up for it: a hand at it as he gets there.
 				this.act(rival, "reach", there - 150, there + 320, {
 					look: { x: at.x, y: at.y },
+					...quiet,
 				});
 				return;
 			}
@@ -16076,6 +16096,7 @@ class Director {
 		this.act(rival, "rebound", t, t + 700, {
 			look: { x: rim.x, y: rim.y },
 			jump: [0.12, 0.93, hopFor(700, 0.81)],
+			...quiet,
 		});
 	}
 
@@ -16258,6 +16279,13 @@ class Director {
 			Math.max(tc - SCRAMBLE_MAX, loose + READ_MS),
 		);
 		const mine = this.teamOf(r);
+		// (A hand at it in the picture from only the nearest of theirs, and
+		// only one near enough to get it there - not every one of them in
+		// the lane swiping at it: the rest step in, no more. See Act.quiet.)
+		const near = (p: number) => dist(this.posAt(p, t0), at);
+		const swiper = this.slots(other(mine))
+			.filter((p) => near(p) <= SCRAMBLE_SWIPE)
+			.sort((a, b) => near(a) - near(b))[0];
 		for (const p of [...this.slots(0), ...this.slots(1)]) {
 			const tr = this.track(p);
 			if (
@@ -16302,6 +16330,7 @@ class Director {
 				this.act(p, "reach", tc - 220, tc + 260, {
 					face,
 					look: { x: at.x, y: at.y },
+					...(p === swiper ? {} : { quiet: true as const }),
 				});
 			}
 		}

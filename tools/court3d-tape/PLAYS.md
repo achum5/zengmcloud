@@ -425,16 +425,16 @@ off a board, the rest come round to the man at once.
 Two men up for it (measured 2026-11-08, a man of theirs up with him or a
 hand at it as he takes it): 153 of 223 - most of them a hand from every
 man of theirs within 8 ft of it as it came down (`scramble`), where in
-the league most defensive boards nobody of theirs is near. Built and held
-back: only the nearest of theirs swiping at it, and only from within 3.5
-ft (`SCRAMBLE_SWIPE`), and the man who goes up with him doing so 65% of
-the time from within 4 ft, 35% from further (`RIVAL_GOES`, more for a
-good man on the glass): 93 of 223 - up with him 26, a hand at it 67 (40
-of those a loose one off the floor). It moves men about after every
-board, so the games after play out otherwise, and the suite's tests that
-sit on their line tip (a referee's walk round a corner at a quarter
-break, a man along the half-court line, a footwork share) - in again
-with those seen to.
+the league most defensive boards nobody of theirs is near. Now
+(2026-11-09) only the nearest of theirs swipes at it, and only from
+within 3.5 ft (`SCRAMBLE_SWIPE`), and the man who goes up with him does
+so 65% of the time from within 4 ft, 35% from further (`RIVAL_GOES`, more
+for a good man on the glass): 92 of 223 - up with him 16, a hand at it 76
+(many a loose one off the floor). The picture only: the rest still step
+in, their swipe or jump laid as before and left out of the picture
+(`Act.quiet`, as `flash` is) - so nothing else in the game moves. (First
+built taking them out of the game, which moved men about after every
+board and tipped tests that sit on their line - see HELD.)
 
 Long off a three (measured 2026-11-08, where boards off threes were
 taken): under the rim 26 of 96, in the lane 57, out a way 7, long 6 - a
@@ -446,9 +446,9 @@ stood out past 31 ft as the ball was played in close (the half-court test:
 5 in its six games, master 2; 9 to 5 over twelve), the man who pitched it
 ahead from out there trailing late. Backed out till the trailers come on.
 
-HELD (2026-11-09): the one swipe at a board and the and-one fouler's own
-run are in `held/drb.patch` (made against 9f0c44580; its one-handed
-board, outlet and pivot are in, done over as the picture only). Each changes where men are or
+HELD (2026-11-09): the and-one fouler's own run is in `held/drb.patch`
+(made against 9f0c44580; its one-handed board, outlet, pivot and one
+swipe at a board are in, done over as the picture only). Each changes where men are or
 when, so every game after plays out otherwise - and each time, some few
 of the suite's tests that sit right on their line tipped over, different
 ones each run (a kick-out's help 0.59 for 0.6, a footwork share 0.304 for
