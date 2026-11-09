@@ -983,6 +983,18 @@ const PASSER_POINTS = 0.4;
 const BEATEN_HEAD = 0.12;
 // (And as long letting it out with an arm, on his way back after a basket.)
 const CHEER_MS = 1000;
+// A free throw routine's pieces (see ftRoutine): how often a man flips it
+// up to himself, and sits down into his legs for a breath; how long each
+// takes (ms); his beat bouncing it, from this to this many times the usual;
+// and at most this long (ms) stood holding it before he goes up.
+const FT_FLIPS = 0.35;
+const FT_SITS = 0.3;
+const FT_FLIP_MS = 720;
+const FT_SIT_MS = 800;
+const FT_PACE: [number, number] = [0.8, 1.3];
+const FT_HOLD_MOST = 450;
+// (How many bounces he would have, room for them: two or three, mostly.)
+const FT_BOUNCES = [1, 2, 2, 2, 3, 3, 3, 4];
 // A man going off with his side to defend: a finger at the man he had for
 // the man coming on in his place, about this much of the time, as they
 // come together (ms before they meet, the most of it) - and the man coming
@@ -18116,23 +18128,67 @@ class Director {
 
 	// HIS ROUTINE AT THE LINE.
 	//
-	// Every man has his own, the same every trip: bounces it two or three
-	// times; flips it up to himself with backspin first; sits down into his
-	// legs, ball on his hip, and breathes before he bounces it; or one quick
-	// bounce and the flip. Quick, all of them. Returns when he is done with
-	// it, the ball in his hands.
+	// Every man has his own, the same every trip, put together from the
+	// pieces of one: so many bounces (one to four) at his own beat, slow or
+	// quick; the ball flipped up to himself with backspin, first or after
+	// the bounces; down into his legs, ball on his hip, for a breath; and a
+	// beat with it, eyes on the rim, before he goes up. Quick, all of them.
+	// Returns when he is done with it, the ball in his hands.
 	private ftRoutine(shooter: number, t: number, S: Pt, rim: Pt): number {
+		const start = t;
+		const beat = 1000 / DRIBBLE_RATE;
+		// How long he takes, his own: one of four lengths - two or three
+		// bounces; one and a flip; a breath and one or two.
 		const kind = Math.floor(hash01(shooter * 13 + 5, 7) * 4);
 		const many = 2 + Math.floor(hash01(shooter * 5 + 1, 11) * 2);
-		// (At the usual beat - said, so it isn't his own on the floor.)
-		const rate = DRIBBLE_RATE;
-		const dribble = (n: number) => {
+		const takes =
+			kind === 0
+				? many * beat + 120
+				: kind === 2
+					? 800 + (many - 1) * beat + 120
+					: FT_FLIP_MS + beat + 120;
+		// His pieces.
+		const his = (k: number) => hash01(shooter * 7 + k, 23);
+		let flip: "first" | "after" | undefined =
+			his(1) < FT_FLIPS ? (his(2) < 0.5 ? "first" : "after") : undefined;
+		let sits = his(3) < FT_SITS;
+		let rate = DRIBBLE_RATE * (FT_PACE[0] + (FT_PACE[1] - FT_PACE[0]) * his(4));
+		let n = FT_BOUNCES[Math.floor(his(5) * FT_BOUNCES.length)]!;
+		// (What there is room for: no breath, then no flip, before not one
+		// bounce at the quickest.)
+		const room = () =>
+			takes - 120 - (flip ? FT_FLIP_MS : 0) - (sits ? FT_SIT_MS : 0);
+		const least = 1000 / (DRIBBLE_RATE * FT_PACE[1]);
+		if (room() < least) {
+			sits = false;
+		}
+		if (room() < least) {
+			flip = undefined;
+		}
+		const bounces = room();
+		n = Math.max(1, Math.min(n, Math.floor((bounces * rate) / 1000)));
+		if ((n * 1000) / rate > bounces) {
+			rate = (n * 1000) / bounces;
+		}
+		// (Not stood holding it long: a bounce more, or slower ones.)
+		while (bounces - (n * 1000) / rate > FT_HOLD_MOST) {
+			if (((n + 1) * 1000) / rate <= bounces) {
+				n += 1;
+			} else {
+				rate = Math.max(
+					DRIBBLE_RATE * FT_PACE[0],
+					(n * 1000) / (bounces - FT_HOLD_MOST),
+				);
+				break;
+			}
+		}
+		const dribble = () => {
 			this.hold(shooter, t, "dribble", undefined, undefined, rate);
 			t += (n * 1000) / rate;
 			this.hold(shooter, t, "hold");
 			t += 120;
 		};
-		const flip = () => {
+		const flipIt = () => {
 			// Up off his fingertips a foot or so, spinning back, and into his
 			// hands again.
 			const u = unitVec(S, rim);
@@ -18146,23 +18202,22 @@ class Director {
 			this.fly(t + 300, t + 600, up, { pid: shooter });
 			this.act(shooter, "catch", t + 510, t + 710, { look: rim });
 			this.hold(shooter, t + 600, "hold");
-			t += 720;
+			t += FT_FLIP_MS;
 		};
-		if (kind === 0) {
-			dribble(many);
-		} else if (kind === 1) {
-			flip();
-			dribble(1);
-		} else if (kind === 2) {
+		if (flip === "first") {
+			flipIt();
+		}
+		if (sits) {
 			// Down into his legs, a breath, and up.
 			this.act(shooter, "triple", t, t + 750, { look: rim });
-			t += 800;
-			dribble(many - 1);
-		} else {
-			dribble(1);
-			flip();
+			t += FT_SIT_MS;
 		}
-		return t;
+		dribble();
+		if (flip === "after") {
+			flipIt();
+		}
+		// (And the rest of it a beat with it, eyes on the rim.)
+		return start + takes;
 	}
 
 	private beatFreeThrow(e: RawEvent, i: number, made: boolean) {

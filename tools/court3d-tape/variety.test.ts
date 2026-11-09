@@ -29,6 +29,7 @@ import {
 	rimX,
 } from "../../src/ui/views/LiveGame/court3d/geometry.ts";
 import {
+	kindOf,
 	playShot,
 	type ShotPlay,
 } from "../../src/ui/views/LiveGame/court3d/physics.ts";
@@ -1061,6 +1062,154 @@ const subParts = (
 	return out;
 };
 
+// A free throw: which of his trip it is, his routine (the dribbles, the
+// flip, the breath), how long he takes, how it went, what the men on the
+// lane do with it in the air, the fives after - and, the last one missed,
+// who gets it.
+const ftParts = (
+	tl: CourtTimeline,
+	events: { type: string; pid?: number }[],
+	b: CourtTimeline["beats"][number],
+): { pid: number; parts: Record<string, string> } | undefined => {
+	const pid = events[b.i]!.pid;
+	if (typeof pid !== "number") {
+		return undefined;
+	}
+	const tr = tl.tracks.get(pid)!;
+	const team = tr.team;
+	const rim = { x: rimX(team), y: 25 };
+	// (His trip: the run of his free throws this one is in.)
+	const isHis = (x: CourtTimeline["beats"][number]) =>
+		(x.type === "ft" || x.type === "missFt") && events[x.i]?.pid === pid;
+	const k = tl.beats.indexOf(b);
+	let a = k;
+	while (
+		a > 0 &&
+		(isHis(tl.beats[a - 1]!) || /^(sub|timeout)$/.test(tl.beats[a - 1]!.type))
+	) {
+		a -= 1;
+	}
+	let z = k;
+	while (
+		z + 1 < tl.beats.length &&
+		(isHis(tl.beats[z + 1]!) || /^(sub|timeout)$/.test(tl.beats[z + 1]!.type))
+	) {
+		z += 1;
+	}
+	const trip = tl.beats.slice(a, z + 1).filter(isHis);
+	const nth = trip.indexOf(b) + 1;
+	const last = nth === trip.length;
+	// Off his hand: the shot, and the catch from the official before it.
+	const shot = tl.ball.find(
+		(s) =>
+			s.t0 >= b.preStart &&
+			s.kind === "fly" &&
+			"pid" in s.from &&
+			s.from.pid === pid &&
+			!("pid" in s.to) &&
+			dist(s.to as Pt, rim) < 3,
+	) as (BallSeg & { kind: "fly" }) | undefined;
+	const set = tr.acts.find(
+		(x) => x.anim === "setShot" && x.t0 >= b.preStart - 50,
+	);
+	if (!set) {
+		return undefined;
+	}
+	const release = shot?.t0 ?? set.t0 + 400;
+	// (The official's bounce pass in to him - not his own flip coming back
+	// down to him.)
+	const caughtSeg = tl.ball.find(
+		(s) =>
+			s.kind === "fly" &&
+			s.t0 >= b.preStart &&
+			s.t1 <= set.t0 &&
+			"pid" in s.to &&
+			s.to.pid === pid &&
+			!("pid" in s.from),
+	) as (BallSeg & { kind: "fly" }) | undefined;
+	const caught = caughtSeg?.t1 ?? b.actionStart;
+	// His routine: what the ball did between the catch and the shot.
+	const steps: string[] = [];
+	for (const s of tl.ball) {
+		if (s.t0 < caught + 20 || s.t0 >= set.t0) {
+			continue;
+		}
+		if (s.kind === "hold" && s.pid === pid && s.style !== "hold") {
+			// (How many bounces, at what beat.)
+			const end = tl.ball.find((x) => x.t0 > s.t0 && x !== s)?.t0 ?? set.t0;
+			const rate = s.rate ?? 2.1;
+			const n = Math.round(((end - s.t0) * rate) / 1000);
+			steps.push(
+				`${n} bounce${n === 1 ? "" : "s"}${rate < 1.95 ? " slow" : rate > 2.35 ? " quick" : ""}`,
+			);
+		} else if (s.kind === "fly" && "pid" in s.from && s.from.pid === pid) {
+			steps.push("flip");
+		}
+	}
+	if (
+		tr.acts.some((x) => x.anim === "triple" && x.t0 >= caught && x.t0 < set.t0)
+	) {
+		steps.unshift("sits");
+	}
+	const routine = steps.length > 0 ? steps.join("+") : "straight up";
+	const took = `${Math.round((set.t0 - caught) / 500) / 2}s`;
+	// How it went.
+	const path = tl.ball.find(
+		(s) => s.kind === "path" && s.t0 >= release - 5 && s.t0 < release + 2500,
+	);
+	let ending = b.type === "ft" ? "in" : "out";
+	if (path?.kind === "path") {
+		const p0 = { x: path.pts[0]!, y: path.pts[1]!, z: path.pts[2]! };
+		const side = Math.abs(p0.x - rimX(0)) < Math.abs(p0.x - rimX(1)) ? 0 : 1;
+		ending = kindOf(playShot(side, p0, path.v0));
+	}
+	// The men on the lane, the ball in the air.
+	const lane = new Map<string, number>();
+	for (const o of tl.tracks.values()) {
+		if (o.pid < 0 || o.pid === pid) {
+			continue;
+		}
+		const O = evalPlayer(tl, o.pid, release + 300);
+		if (!O.shown || dist(O, rim) > 14) {
+			continue;
+		}
+		const what = O.anim === "run" || O.anim === "walk" ? "on the move" : O.anim;
+		lane.set(what, (lane.get(what) ?? 0) + 1);
+	}
+	const laneText = [...lane]
+		.sort((x, y) => y[1] - x[1])
+		.map(([w, n]) => `${n} ${w}`)
+		.join(", ");
+	const fives = tr.acts.filter(
+		(x) => x.anim === "lowFive" && x.t0 > release && x.t0 < release + 4000,
+	).length;
+	// The last one missed: who gets it.
+	let after = "-";
+	if (last && b.type === "missFt") {
+		const got = tl.ball.find(
+			(s) => s.kind === "hold" && s.t0 > release && s.pid >= 0,
+		) as (BallSeg & { kind: "hold" }) | undefined;
+		after = got
+			? tl.tracks.get(got.pid)?.team === team
+				? "offense"
+				: "defense"
+			: "?";
+	}
+	return {
+		pid,
+		parts: {
+			which: `${nth} of ${trip.length}`,
+			routine,
+			took,
+			stroke: `${Math.round((set.t1 - set.t0) / 100) / 10}s`,
+			ending,
+			lane: laneText || "nobody",
+			fives: `${fives} fives`,
+			after,
+		},
+	};
+};
+
 test.skipIf(games.length === 0)(
 	"variety of one line",
 	() => {
@@ -1082,6 +1231,17 @@ test.skipIf(games.length === 0)(
 			}));
 			for (const b of tl.beats) {
 				if (b.type !== line) {
+					continue;
+				}
+				if (line === "ft" || line === "missFt") {
+					if (fastAt(tl, b.actionStart) > 1.2) {
+						fastOnes += 1;
+						continue;
+					}
+					const got = ftParts(tl, events, b);
+					if (got) {
+						all.push({ pid: `${tag}:${got.pid}`, parts: got.parts });
+					}
 					continue;
 				}
 				if (line === "sub") {

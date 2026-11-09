@@ -258,4 +258,74 @@ describe("3D free throws", () => {
 			}
 		},
 	);
+
+	// Every man his own routine, the same every trip - and one man's not
+	// the next man's: how many bounces, at what beat, a flip first or after,
+	// a breath down in his legs.
+	test(
+		"each shooter has his own routine, the same every time",
+		{ timeout: 120_000 },
+		() => {
+			const { tl, events } = compile("ftfeet", 160);
+			const his = new Map<number, Set<string>>();
+			for (const b of tl.beats) {
+				const e = events[b.i]!;
+				if (e.type !== "ft" && e.type !== "missFt") {
+					continue;
+				}
+				const pid = e.pid as number;
+				const tr = tl.tracks.get(pid)!;
+				const set = tr.acts.find(
+					(a) => a.anim === "setShot" && a.t0 >= b.preStart - 50,
+				)!;
+				// (From the official's bounce pass in to him.)
+				const caught = tl.ball.find(
+					(g) =>
+						g.kind === "fly" &&
+						g.t0 >= b.preStart &&
+						g.t1 <= set.t0 &&
+						"pid" in g.to &&
+						g.to.pid === pid &&
+						!("pid" in g.from),
+				);
+				if (caught?.kind !== "fly") {
+					continue;
+				}
+				const steps: string[] = [];
+				if (
+					tr.acts.some(
+						(a) => a.anim === "triple" && a.t0 >= caught.t1 && a.t0 < set.t0,
+					)
+				) {
+					steps.push("sits");
+				}
+				const segs = tl.ball.filter(
+					(g) => g.t0 >= caught.t1 + 20 && g.t0 < set.t0,
+				);
+				segs.forEach((g, k) => {
+					if (g.kind === "hold" && g.pid === pid && g.style === "dribble") {
+						const end = segs[k + 1]?.t0 ?? set.t0;
+						steps.push(
+							`${Math.round(((end - g.t0) * (g.rate ?? 2.1)) / 1000)} at ${(g.rate ?? 2.1).toFixed(2)}`,
+						);
+					} else if (
+						g.kind === "fly" &&
+						"pid" in g.from &&
+						g.from.pid === pid
+					) {
+						steps.push("flip");
+					}
+				});
+				const list = his.get(pid) ?? new Set<string>();
+				list.add(steps.join(" "));
+				his.set(pid, list);
+			}
+			assert.isAbove(his.size, 8);
+			for (const [pid, ways] of his) {
+				assert.strictEqual(ways.size, 1, `${pid}: ${[...ways].join(" | ")}`);
+			}
+			const all = new Set([...his.values()].map((w) => [...w][0]));
+			assert.isAtLeast(all.size, his.size * 0.5);
+		},
+	);
 });

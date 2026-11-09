@@ -52,7 +52,7 @@ each part, so the table below can say how far along each part is.
 | 5   | Shot at the rim, made or missed (`fgaAtRim` → `fgAtRim` / `missAtRim`)                        |       47 | todo    |
 | 6   | Mid-range jumper, made or missed (`fgaMidRange` → `fgMidRange` / `missMidRange`)              |       34 | todo    |
 | 7   | Substitution (`sub`)                                                                          |       55 | working |
-| 8   | Free throws (`ft` / `missFt`)                                                                 |       38 | todo    |
+| 8   | Free throws (`ft` / `missFt`)                                                                 |       38 | working |
 | 9   | Offensive rebound (`orb`), putback and tip-in (`fgaPutBack`, `fgaTipIn` and results)          |       25 | todo    |
 | 10  | Non-shooting foul, in the bonus (`pfNonShooting`, `pfBonus`)                                  |       19 | todo    |
 | 11  | Shooting foul (`pfFG`, `pfTP`)                                                                |       13 | todo    |
@@ -560,3 +560,23 @@ off points out the man he had as the two come together (and the man
 coming on, now and then, points at him too: got him) - 86 of 185; and the
 official nearest the table, turned to it, waves the men waiting there on
 (173 of 185; not one still signaling a call, or on his way back from one).
+
+## 8. Free throws
+
+Measured 2026-11-09 (92 made, 21 missed at real speed; the variety tool's
+`ft` and `missFt` lines): which of his trip it is, his routine from the
+official's bounce pass to the shot, how long that takes (1.5-2.5 s, then
+the stroke, about a second), how it went (made: off the rim 40, clean 39;
+missed: rimmed out, off, the odd brick or airball), the men on the lane
+with it in the air (at ease - hands on hips, on their knees - with another
+to come, set and in to box out on the last), the low fives after (on 32 of
+the 45 with another to come), and who gets the last one missed (the
+defense 10 of 13). Lane spots as the NBA has them: three of the defense,
+two of the offense. The routine was one of four, every man's the same as a
+quarter of the league's.
+
+Now (2026-11-09): every man's routine is put together from pieces, his
+own every trip - one to four bounces at his own beat (slow or quick), a
+flip with backspin first or after them, a breath down in his legs, a beat
+with it eyes on the rim - in the time his used to take: 15 ways over the
+three games (4 before).
