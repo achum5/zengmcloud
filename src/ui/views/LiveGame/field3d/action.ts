@@ -10292,6 +10292,35 @@ class Action {
 		const targetLaid =
 			target && targetName && !slip ? layTarget(target, targetName) : undefined;
 
+		// The play's routes (see routes.ts conceptRoutes): called now, for the
+		// quarterback's drop to go with them.
+		const called = conceptRoutes(
+			runners.map((m) => {
+				const start = this.of(m.at);
+				const spot = spotOf(m.role);
+				// (A back in the backfield: out of it, his own.)
+				const side =
+					spot === "back" && Math.abs(start.a) < BACK_FLEXED_FT
+						? 0
+						: start.a < 0
+							? -1
+							: 1;
+				return { side, out: Math.abs(start.a), spot };
+			}),
+			thrown && target && targetName ? runners.indexOf(target) : -1,
+			thrown ? targetName : undefined,
+			r,
+		);
+		// (Deep routes called - fifteen yards and more - and the ball to a man
+		// sat down underneath them: the drop for the deep ones, looked off
+		// and checked down to him.)
+		const deepCalled = called.some((c) => c !== undefined && c.depth >= 45);
+		const checkedDown =
+			thrown &&
+			airYds > 0 &&
+			airYds <= 8 &&
+			deepCalled &&
+			targetLaid?.settles === true;
 		// The quarterback's drop: none for a screen, three steps for the
 		// short game, five or seven going deep (in the gun, a step or two) -
 		// sacked, to a few steps short of where they get him; drifting back
@@ -10320,12 +10349,12 @@ class Action {
 					: gun
 						? airYds <= 0
 							? 0
-							: airYds <= 8
+							: airYds <= 8 && !checkedDown
 								? 4
 								: 8
 						: airYds <= 0
 							? 3
-							: airYds <= 8
+							: airYds <= 8 && !checkedDown
 								? 11
 								: airYds <= 18
 									? 18
@@ -10583,23 +10612,6 @@ class Action {
 		// play's concepts, a side of the field at a time - the one the ball
 		// goes to his (see routes.ts conceptRoutes).
 		const routes = new Map<number, Route>();
-		const called = conceptRoutes(
-			runners.map((m) => {
-				const start = this.of(m.at);
-				const spot = spotOf(m.role);
-				// (A back in the backfield: out of it, his own.)
-				const side =
-					spot === "back" && Math.abs(start.a) < BACK_FLEXED_FT
-						? 0
-						: start.a < 0
-							? -1
-							: 1;
-				return { side, out: Math.abs(start.a), spot };
-			}),
-			thrown && target && targetName ? runners.indexOf(target) : -1,
-			thrown ? targetName : undefined,
-			r,
-		);
 		for (const [i, m] of runners.entries()) {
 			const start = this.of(m.at);
 			const inSign = inSignOf(start);
