@@ -1399,6 +1399,7 @@ const PASSES = new Set<AnimName>([
 	"pass",
 	"passBounce",
 	"passOverhead",
+	"passOutlet",
 	"passPush",
 	"passBouncePush",
 	"passBehind",
@@ -1513,7 +1514,12 @@ const plannedYaw = (tl: CourtTimeline, tr: Track, t: number): number => {
 		}
 	}
 	if (act?.look) {
-		const to = angleTo(here, act.look, fallback);
+		// (Turned away first, a shoulder into a man right up on him.)
+		const to = angleTo(
+			here,
+			act.turnFrom && t < act.turnFrom.until ? act.turnFrom.look : act.look,
+			fallback,
+		);
 		// Caught on the run, he opens up to it only as far as running on lets
 		// him - not turned right round on it, carried on backward at a run.
 		if (
@@ -2936,7 +2942,7 @@ const doingNow = (
 	let stepLen: [number, number] | undefined;
 	let drive = 0;
 	if (act) {
-		mirrored = act.mirror === true;
+		mirrored = act.mirror === true || act.oneHand === "L";
 		const u = (t - act.t0) / (act.t1 - act.t0);
 		// (A jumper, each man his own way of it.)
 		anim =
@@ -2948,7 +2954,15 @@ const doingNow = (
 							? "shootLeanL"
 							: "shootLeanR"
 						: shotWith(pid, act.arms)
-				: act.anim;
+				: act.anim === "catch" && act.catchAt
+					? act.catchAt === "high"
+						? "catchHigh"
+						: "catchLow"
+					: act.anim === "pass" && act.outlet
+						? "passOutlet"
+						: act.anim === "board" && act.oneHand
+							? "boardOne"
+							: act.anim;
 		const a = ANIMS[anim];
 		// (A loop on the same beat as when he does it standing of his own
 		// accord - so one held for a while and then just stood in, a
@@ -5924,9 +5938,12 @@ const PIVOTS = new Set<AnimName>([
 	"fight",
 	"bump",
 	"catch",
+	"catchHigh",
+	"catchLow",
 	"pass",
 	"passBounce",
 	"passOverhead",
+	"passOutlet",
 	"passPush",
 	"passBouncePush",
 	"shotFake",
@@ -6071,9 +6088,12 @@ export const UPPER: (keyof Pose)[] = [
 const STRIDE_FTPS = 3;
 const STRIDE_ACTS = new Set<AnimName>([
 	"catch",
+	"catchHigh",
+	"catchLow",
 	"pass",
 	"passBounce",
 	"passOverhead",
+	"passOutlet",
 	"passPush",
 	"passBouncePush",
 	"passBehind",

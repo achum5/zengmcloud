@@ -212,7 +212,16 @@ sits on him - our man fighting him for it (`boxIn`; a sharp rebounder all
 but always): box-outs 0.37 a miss → 0.85. (Few still: only so many of ours
 are in there - 1.8 a miss.)
 
-Next, in order: his catch; then item 2's parts.
+His catch (2026-11-09): every pass was taken the one way, hands out at
+his chest - a skip thrown up over the top and a bounce pass alike. Now
+one thrown over the top is taken up high, both hands over his head, and
+one bounced to him down low, knees bent and hands out in front
+(`catchHigh`, `catchLow`): the picture only - the catch act marked
+(`Act.catchAt`), the pass flying to his hands wherever they are - so
+nothing else in the game moves. (Of the passes into a missed three, over
+the top 20%, bounced 9%.)
+
+Next: item 2's parts.
 
 Blocking how it misses - glitches the reshuffled test games turn up, each
 to be fixed for itself (they would turn up in real games too):
@@ -374,16 +383,15 @@ Measured over the same three games (223 at real speed):
 | Whole combination      | 195 of 223 different |                                                                                                                                                                                                                             |
 
 The grab (2026-11-08): up high with two hands two boards in three, the rest
-at chest height - every man alike. Built and held back: a man who goes up
-and gets it ripping it down one-handed now and then - taken in the one
-hand up over his shoulder, out to that side, either hand (`mirror`), the
-other hand coming in to it on the way down, then chinned (`boardOne`, a
-`palm` grip; decided in `reboundOff` before he goes, so he stands off it
-to the side of that hand and the ball comes off the rim into it with no
-swerve; 19 of 223 in three games). It moved where every rebounder stood
-by a step and a half, enough to tip three of the suite's tests that sit
-on their line (the shooter's man off him and back, a post-up's man, a
-second device's catch-up) - in again once those are looked at.
+at chest height - every man alike. Now (2026-11-09) a man who goes up and
+gets it rips it down one-handed now and then, either hand (the better a
+rebounder the more often - `ONE_HAND_BOARD`): the picture only - the
+board act marked (`Act.oneHand`) and drawn as `boardOne`, its near arm as
+for two and the ball just where two hands would have it, held in the one
+(the `rip` grip), the other hand out at his chest till it comes in to it
+on the way down - so nothing else in the game moves (first built moving
+him over to the side of that hand, which moved where every rebounder
+stood and tipped tests on their line; see HELD).
 
 The pile round him a moment after he has it (measured 2026-11-08: men
 within 5 ft of him 0.9 s on, and those of them stood still): 1.3 a board,
@@ -392,8 +400,13 @@ or five round him).
 
 The outlet (measured 2026-11-08, the pass kind of every outlet over 12
 ft): a chest pass every time but the long skips - overhead 4 of 120.
-Built and held back (see HELD below): the man who came down with it
-himself, still with it in his hands, mostly throwing it up over his head - a big 70%, a ball handler 35% (`OUTLET_OVER`,
+Now (2026-11-09) the man who came down with it himself, still with it in
+his hands, mostly throws it up over his head - only the picture of it:
+the director lays the same chest pass at the same moments and marks it
+(`Act.outlet`), and the picture draws it as `passOutlet`, up out of the
+chin and away when the chest pass would have gone - so nothing else in
+the game moves (65 of 121 overhead). As first built, mostly throwing it
+up over his head - a big 70%, a ball handler 35% (`OUTLET_OVER`,
 within 2.5 s of the board, not under 8 ft; `passTo`'s `overTop` - the
 kind's draw still made, so the rest of the game runs the same): overhead
 87 of 147, chest 60. Up out of the chin, the windup starts that much
@@ -402,7 +415,8 @@ the overhead's extra windup on top, every outlet off a board went 140 ms
 later, the defense back more often, and kick-outs found the help left on
 the shooter less (over 16 test games, 0.67 of them → 0.59; with it, 0.69).
 
-The pivot (built and held back): a man of theirs within 3 ft of him as he
+The pivot (2026-11-09, the picture only - `Act.turnFrom` on the one hold
+act, read where his yaw is): a man of theirs within 3 ft of him as he
 comes down with it (`OUTLET_PRESS`), he turns a shoulder into him first - round 1.6 rad off
 the man coming for it, to the side away from him, 450 ms - then round to
 throw (only with 700 ms or more to throw it in): 58 of the 155 outlets
@@ -432,9 +446,9 @@ stood out past 31 ft as the ball was played in close (the half-court test:
 5 in its six games, master 2; 9 to 5 over twelve), the man who pitched it
 ahead from out there trailing late. Backed out till the trailers come on.
 
-HELD (2026-11-09): the one-handed board, the overhead outlet and the
-pivot, the one swipe at a board and the and-one fouler's own run are in
-`held/drb.patch` (made against 9f0c44580). Each changes where men are or
+HELD (2026-11-09): the one swipe at a board and the and-one fouler's own
+run are in `held/drb.patch` (made against 9f0c44580; its one-handed
+board, outlet and pivot are in, done over as the picture only). Each changes where men are or
 when, so every game after plays out otherwise - and each time, some few
 of the suite's tests that sit right on their line tipped over, different
 ones each run (a kick-out's help 0.59 for 0.6, a footwork share 0.304 for
@@ -468,6 +482,14 @@ variety tool's make parts - `jumperParts(..., made)`):
 | Shooter after  |       12 | back down the floor 71 of 76; holds his follow-through most; a finger at the bench 19, three fingers up 25; a shimmy 1, thanks to the passer 2 |
 | Taken out      |       12 | under the rim 63, off the floor 12; in again 4.5-5.5 s after the release nearly every time                                                     |
 
-Next: the taking out - in again sooner, and not the same pace every time
-(a team that pushes has it out and in at once); then his teammates on the
-make.
+The taking out after a make runs fast in the picture unless the team
+pushes it (`inboundAfterMake`'s `hurry`), so its slow even pace is little
+seen - left.
+
+The rest of them on the make (measured 2026-11-09, what the other nine
+did with an arm or more in the 3.5 s after it): his mates mostly pointing
+out who they have on the way back, theirs fetching it out of the net -
+nobody about the shot itself. Now, off a pass, the man who found him now
+and then points back at him on his own way back (`PASSER_POINTS`, 40%);
+and the man who had him, now and then, hands up on his head on his way
+(`BEATEN_HEAD`; 5 of 76) - arms only, nothing else in the game moves.

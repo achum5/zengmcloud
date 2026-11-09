@@ -692,7 +692,7 @@ const splayed = (st: PlayerState, which: "R" | "L", h: V3) =>
 		st.phase > LOW_FIVE[0] &&
 		st.phase < LOW_FIVE[1]);
 // Up for a board: both hands spread and cupped for the ball.
-const REACH = new Set<string>(["board", "rebound"]);
+const REACH = new Set<string>(["board", "boardOne", "rebound"]);
 const REACH_UP = 0.3;
 // AN OFFICIAL'S HANDS, as the signal has them: the whistle a fist straight
 // up; a charge a fist punched out; a travel the fists rolled; a three

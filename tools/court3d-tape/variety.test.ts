@@ -467,6 +467,32 @@ const jumperParts = (
 	// side, how many went in after it and how many got back; on theirs,
 	// how many boxed somebody out or went to the glass - and, of all of
 	// them, how many just stood there.
+	// A make: what the other nine do over the few seconds after it - with
+	// their arms (a gesture) or more (an act) - his mates and theirs.
+	let madeEveryone = "?";
+	if (made) {
+		const did = (mine: boolean) => {
+			const kinds = new Set<string>();
+			let n = 0;
+			for (const o of tl.tracks.values()) {
+				if (o.pid < 0 || o.pid === pid || (o.team === team) !== mine) {
+					continue;
+				}
+				const acts = o.acts
+					.filter((a) => a.t0 > release + 300 && a.t0 < release + 3500)
+					.map((a) => a.anim as string);
+				const arms = (o.arms ?? [])
+					.filter((g) => g.t0 > release + 300 && g.t0 < release + 3500)
+					.map((g) => `arm ${g.kind}`);
+				if (acts.length + arms.length > 0) {
+					n += 1;
+					[...acts, ...arms].forEach((x) => kinds.add(x));
+				}
+			}
+			return `${n}${kinds.size ? ` (${[...kinds].sort().join("+")})` : ""}`;
+		};
+		madeEveryone = `mates ${did(true)}; theirs ${did(false)}`;
+	}
 	let everyone = "?";
 	{
 		const offAt = tl.ball[k + 1]?.t0 ?? release + 1100;
@@ -610,7 +636,7 @@ const jumperParts = (
 			arrives,
 			"after it": afterIt,
 			"shooter after": shooterAfter,
-			everyone,
+			everyone: made ? madeEveryone : everyone,
 			ending,
 			...(made ? { "taken out": takenOut } : { rebound }),
 		},
@@ -747,16 +773,15 @@ const reboundParts = (
 			evalPlayer(tl, next.to.pid, next.t1),
 		);
 		// (Thrown how: the pass he threw it with.)
-		const how2 =
-			tr.acts
-				.find(
-					(a) =>
-						a.anim.startsWith("pass") &&
-						a.t0 <= next.t0 + 50 &&
-						a.t1 >= next.t0 - 300,
-				)
-				?.anim.replace(/^pass/, "")
-				.toLowerCase() || "chest";
+		const threw = tr.acts.find(
+			(a) =>
+				a.anim.startsWith("pass") &&
+				a.t0 <= next.t0 + 50 &&
+				a.t1 >= next.t0 - 300,
+		);
+		const how2 = threw?.outlet
+			? "overhead"
+			: threw?.anim.replace(/^pass/, "").toLowerCase() || "chest";
 		// (Turned away first - a pivot off a man up on him: his body round
 		// more than a right angle off the way it goes, before it goes.)
 		const goes = Math.atan2(

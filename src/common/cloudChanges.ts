@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 219,
+		date: "2026-11-09",
+		text: "3D games, defensive rebounds: a good rebounder now and then rips one down with one hand, the other coming in to it on the way down; the man who comes down with a board mostly throws the outlet up over his head (bigs more than guards); and with a man right on him he turns a shoulder into him before he throws it. A pass thrown over the top is caught up high and a bounce pass down low, and after a three the passer now and then points back at the shooter while the man who was guarding him puts his hands on his head.",
+	},
+	{
 		n: 218,
 		date: "2026-11-09",
 		text: "Multiplayer: when a league-mate is simming the game between your two teams, Watch on it (on the schedule, or anywhere else) now joins their live game in step with them, instead of starting your own copy of it at your own pace. Sim is turned down for that game while it's live.",

@@ -1279,7 +1279,7 @@ describe("3D director", () => {
 					// Down with it in both hands, not yet dribbling or passing.
 					for (const t of [a.t1 - 300, a.t1 - 20]) {
 						const st = evalPlayer(tl, pid, t);
-						assert.strictEqual(st.anim, "board", `${seed} ${t}`);
+						assert.include(["board", "boardOne"], st.anim, `${seed} ${t}`);
 						assert.isTrue(st.holding, `${seed} ${pid} at ${t}`);
 						assert.strictEqual(st.z, 0, `${seed} ${t}`);
 					}

@@ -245,6 +245,21 @@ export type Act = {
 	// Or leaning off balance to his left or right, away from a hand right up
 	// at it.
 	lean?: "L" | "R";
+	// A chest pass thrown instead up over his head off the chin, as the man
+	// who came down with a board throws the outlet (see passOutlet) - the
+	// same act, at the same moments: only the picture of it differs.
+	outlet?: true;
+	// Turned this way first, till then - a shoulder into a man right up on
+	// him - before round to `look` (see outlet).
+	turnFrom?: { look: Pt; until: number };
+	// A pass taken where it comes: up high (one thrown over the top) or down
+	// low (one bounced to him) - the same catch, only the picture differs
+	// (see catchHigh, catchLow).
+	catchAt?: "high" | "low";
+	// A board taken up there in the one hand, his left or his right, the
+	// other coming in to it as he rips it down (see boardOne) - the same
+	// act, the ball just where it would be: only the picture differs.
+	oneHand?: "L" | "R";
 	// Only for show, and in a stretch the picture runs through too fast to
 	// see more than a frame or two of it: left out of the picture (see
 	// flashes).
@@ -951,6 +966,11 @@ const BACK_REACT = 250;
 // Off an assist, how long he points back at the man who found him on his
 // way down the floor (ms).
 const THANKS_MS = 1200;
+// After a jumper off his pass, how often the passer points back at the
+// shooter; after a three, how often the man who had him puts his hands on
+// his head.
+const PASSER_POINTS = 0.4;
+const BEATEN_HEAD = 0.12;
 // (And as long letting it out with an arm, on his way back after a basket.)
 const CHEER_MS = 1000;
 // A man off the mark late among others (see stagger) still gets there in
@@ -1248,6 +1268,22 @@ const SNATCH_OUT = SNATCH_AT.f;
 // - a typical player's hands are this high over his feet (feet), and this far
 // out in front of him.
 const BOARD_TOP = 400;
+// The outlet off his own board up over his head: how often, for a ball
+// handler and for anyone else; only within this long of coming down with
+// it (ms), and not a short one (ft).
+const OUTLET_OVER: [number, number] = [0.35, 0.7];
+// Of the boards a man goes up and gets, this share ripped down one-handed
+// (for a man the game has no ratings for - see goUpFor).
+const ONE_HAND_BOARD = 0.2;
+const OUTLET_OVER_MS = 2500;
+const OUTLET_OVER_LEAST = 8;
+// Off his board with a man of theirs this near him (ft), he turns away -
+// this far off the man he looks for (radians), this long (ms) - if he has
+// this long before he throws it (ms).
+const OUTLET_PRESS = 3;
+const OUTLET_PIVOT_TURN = 1.6;
+const OUTLET_PIVOT_MS = 450;
+const OUTLET_PIVOT_LEAST = 700;
 const BOARD_AT = releaseAt("board", BOARD_TOP / REBOUND_MS);
 const BOARD_HANDS = BOARD_AT.u;
 const BOARD_OUT = BOARD_AT.f;
@@ -6583,6 +6619,13 @@ class Director {
 		this.act(to, "catch", arrive - 90, arrive + 110, {
 			face: -toward as 1 | -1,
 			look: { ...this.posOf(from) },
+			// (Taken where it comes: one thrown up over the top, up high; one
+			// bounced to him, down low - only the picture: see catchHigh.)
+			...(kind === "overhead"
+				? { catchAt: "high" as const }
+				: kind === "bounce"
+					? { catchAt: "low" as const }
+					: {}),
 		});
 		this.hold(to, arrive, "hold");
 		this.free.set(from, Math.max(this.free.get(from) ?? 0, start + wind + 180));
@@ -6728,18 +6771,58 @@ class Director {
 		const pass = Math.max(t + 150, there - 450);
 		const still = Math.max(t, this.free.get(from) ?? 0);
 		const look = Math.min(pass, still + 800);
+		const seg = this.ball.findLast((s) => s.t0 <= still);
+		const onDribble =
+			seg?.kind === "hold" && seg.pid === from && seg.style !== "hold";
+		// Come down with it himself, and still with it in his hands, he
+		// mostly throws it out up over his head - a big more than a guard.
+		// (Only the picture of it: see Act.outlet.)
+		const board = this.track(from)?.acts.findLast(
+			(x) => x.anim === "board" && x.t0 < still + 100,
+		);
+		let overTop =
+			!onDribble &&
+			board !== undefined &&
+			still - board.t1 < OUTLET_OVER_MS &&
+			hash01(from * 13 + 7, Math.round(board.t0)) <
+				(this.handles(from) ? OUTLET_OVER[0] : OUTLET_OVER[1]);
 		if (look - still > 200) {
 			// Looking up the floor for him - with it in his hands, or still on
 			// his dribble if he is (not holding it with the ball bouncing on
 			// under him).
-			const seg = this.ball.findLast((s) => s.t0 <= still);
-			if (seg?.kind === "hold" && seg.pid === from && seg.style !== "hold") {
+			if (onDribble) {
 				this.turn(from, still, attackDir(team));
 				this.lookAt(from, still, { ...meet });
 			} else {
+				// A man of theirs right up on him as he comes down with it, he
+				// pivots away from him first - a shoulder into him, the ball
+				// chinned on the far side - then round to the man coming for
+				// it. (Only the picture: see Act.turnFrom.)
+				const A = this.posAt(from, still);
+				const press = board
+					? this.slots(other(this.teamOf(from)))
+							.map((pid) => this.posAt(pid, still))
+							.filter((D) => dist(D, A) < OUTLET_PRESS)
+							.sort((x, y) => dist(x, A) - dist(y, A))[0]
+					: undefined;
+				let turnFrom: Act["turnFrom"];
+				if (press && look - still >= OUTLET_PIVOT_LEAST) {
+					const toward = Math.atan2(meet.y - A.y, meet.x - A.x);
+					let rel = Math.atan2(press.y - A.y, press.x - A.x) - toward;
+					rel -= Math.round(rel / (2 * Math.PI)) * 2 * Math.PI;
+					const yaw = toward - Math.sign(rel || 1) * OUTLET_PIVOT_TURN;
+					turnFrom = {
+						look: {
+							x: A.x + Math.cos(yaw) * 10,
+							y: A.y + Math.sin(yaw) * 10,
+						},
+						until: still + OUTLET_PIVOT_MS,
+					};
+				}
 				this.act(from, "hold", still, look, {
 					face: attackDir(team),
 					look: { ...meet },
+					...(turnFrom ? { turnFrom } : {}),
 				});
 			}
 		}
@@ -6749,6 +6832,7 @@ class Director {
 			const u = unitVec(h, meet);
 			const k = Math.min(dist(h, meet) - 6, ((pass - look) / 1000) * 8);
 			if (k > 1) {
+				overTop = false;
 				this.hold(from, look, "dribble");
 				this.go(
 					from,
@@ -6760,7 +6844,19 @@ class Director {
 				);
 			}
 		}
-		return this.passTo(from, to, pass);
+		const caught = this.passTo(from, to, pass);
+		// (A chest pass - not one pushed off a dribble, bounced, or already
+		// up over the top - only the picture of it changed.)
+		const thrown = this.track(from)?.acts.findLast((x) => x.anim === "pass");
+		if (
+			overTop &&
+			thrown &&
+			thrown.t0 >= look - 1 &&
+			dist(h, meet) >= OUTLET_OVER_LEAST
+		) {
+			thrown.outlet = true;
+		}
+		return caught;
 	}
 
 	private inBackcourt(team: Side, p: Pt): boolean {
@@ -15843,6 +15939,17 @@ class Director {
 			BOARD_TOP - 40,
 			Math.sqrt((2 * peak) / GRAVITY) * 1000,
 		);
+		// (Now and then - the better a rebounder, the more often - ripped
+		// down one-handed, either hand: only the picture of it, see
+		// Act.oneHand.)
+		const oneHand: Act["oneHand"] =
+			anim === "board" &&
+			hash01(r * 11 + 5, Math.round(t)) <
+				this.rebOdds(r, ONE_HAND_BOARD, [0.03, 0.3])
+				? hash01(r * 17 + 9, Math.round(t)) < 0.5
+					? "L"
+					: "R"
+				: undefined;
 		this.act(r, anim, t, t + REBOUND_MS, {
 			face: (rim.x >= at.x ? 1 : -1) as 1 | -1,
 			look: { x: rim.x, y: rim.y },
@@ -15852,6 +15959,7 @@ class Director {
 				peak,
 			],
 			reach: true,
+			...(oneHand ? { oneHand } : {}),
 		});
 		this.free.set(r, Math.max(this.free.get(r) ?? 0, t + REBOUND_MS));
 		if (contested) {
@@ -17737,6 +17845,31 @@ class Director {
 					false,
 					true,
 				);
+				// And the man who found him, a jumper gone down: a finger back at
+				// him now and then, on his own way back.
+				if (!shot.dunk && !andOne && !dead) {
+					const back = Math.max(at + 300, (this.free.get(assist) ?? 0) + 100);
+					this.gesture(
+						assist,
+						"point",
+						back,
+						back + THANKS_MS,
+						shot.pid,
+						PASSER_POINTS,
+						false,
+						true,
+					);
+				}
+			}
+			// A three down in his face: the man who had him, now and then, hands
+			// up on his head on his way to take it out or back up the floor.
+			const beaten =
+				shot.zone === "three" && !andOne && !dead
+					? this.defenderOf(shot.pid)
+					: undefined;
+			if (beaten !== undefined) {
+				const from = Math.max(at + 400, (this.free.get(beaten) ?? 0) + 100);
+				this.gesture(beaten, "head", from, from + 1000, undefined, BEATEN_HEAD);
 			}
 			// The man who fouled him wants to know what for; the man he dunked
 			// on stands there, hands on his hips.
