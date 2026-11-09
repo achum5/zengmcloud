@@ -1656,7 +1656,9 @@ export const glReady = (): boolean => {
 		}
 		glChecked = said.ok || glForced();
 		if (!glChecked) {
-			glOff();
+			glOff(
+				`not the page's man: shape ${said.shape.toFixed(3)}, tone ${said.tone.toFixed(1)}`,
+			);
 		}
 	}
 	return glChecked;

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 246,
+		date: "2026-11-09",
+		text: "3D games on phones: the picture could drop to a blocky, low-detail size and stay there whenever the game was running at 30 frames a second (as phones often do, always in Low Power Mode). It now stays as sharp as the phone can draw in time.",
+	},
+	{
 		n: 245,
 		date: "2026-11-09",
 		text: "3D games: uniforms hang like cloth - folds fall down the jersey and gather at the waist, and the shorts hang in folds toward the hem - and skin has more to it: shadow in the creases between muscles, darker elbows and knees, and the neck shaded under the jaw. Best seen in replays and close-ups.",

@@ -46,6 +46,51 @@ describe("3D picture resolution", () => {
 		assert.isAtMost(res.changes, 6);
 	});
 
+	// A device held to thirty frames a second (see pace.ts) is not falling
+	// behind: its picture stays as fine as it draws in time.
+	test("held to thirty frames a second, the picture is not made coarser for it", () => {
+		const paced = (
+			res: ReturnType<typeof makeResolution>,
+			from: number,
+			ms: number,
+			frameMs: number,
+			drawMs: number,
+			spriteMs = 0,
+		) => {
+			let t = from;
+			for (; t < from + ms; t += frameMs) {
+				adjust(res, 960, frameMs, drawMs, t, spriteMs, 1000 / 30);
+			}
+			return t;
+		};
+		// A phone's picture, 960 screen rows: two screen pixels each at its
+		// finest. Drawn in 18 ms, every thirtieth of a second: on time.
+		const res = makeResolution(0);
+		let t = paced(res, 0, 30_000, 33.3, 18);
+		assert.strictEqual(artFor(960, res), 2);
+		// (Taken for a device at sixty, the same frames are a slow one's.)
+		const mistaken = makeResolution(0);
+		run(mistaken, 960, 0, 30_000, 33.3, 18);
+		assert.strictEqual(artFor(960, mistaken), 3);
+		// Not holding even thirty: coarser.
+		t = paced(res, t, 20_000, 60, 40);
+		assert.strictEqual(artFor(960, res), 3);
+		// And back, once a frame at thirty leaves room to spare.
+		paced(res, t, 20_000, 33.3, 6, 2);
+		assert.strictEqual(artFor(960, res), 2);
+	});
+
+	test("a screen that refreshes thirty times a second is no reason to stay coarse", () => {
+		// Gone coarse over a heavy stretch...
+		const res = makeResolution(0);
+		let t = run(res, 960, 0, 20_000, 45, 30);
+		assert.strictEqual(artFor(960, res), 3);
+		// ...then drawing in next to no time, its frames still a thirtieth of
+		// a second apart (the screen's doing, not the drawing's): finer again.
+		t = run(res, 960, t, 20_000, 33.3, 3, 1);
+		assert.strictEqual(artFor(960, res), 2);
+	});
+
 	test("as coarse as it gets, never fewer than 300 rows - not blocks for players", () => {
 		for (const rows of [675, 936, 1124, 1350, 1620, 2160]) {
 			const res = makeResolution(0);

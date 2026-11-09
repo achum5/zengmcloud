@@ -116,6 +116,8 @@ import {
 } from "./keyPlays.ts";
 import { bodyOf, type Body } from "./poses.ts";
 import { physiqueOf } from "./ratings.ts";
+import { glReport } from "./sculptGl.ts";
+import { registerCaptureExtra } from "../../../util/syncDebugStore.ts";
 import { offenseAt } from "./evaluate.ts";
 import { shotSpots } from "./shotSpots.ts";
 import type { ShotSpot } from "../gamecast/shots.ts";
@@ -169,6 +171,30 @@ const coversOf = (
 	wrap: HTMLElement | null,
 	holder: HTMLElement | null,
 ): Cover[] => [bugBoxOf(wrap, holder)].filter((b) => b !== undefined);
+// WHAT THE COURT IS DOING ON THIS DEVICE, in a line of a capture of the log
+// (see syncDebugStore): how fine the picture is - its rows, the screen
+// pixels to each of its own, and how many sizes coarser than the finest it
+// has had to go - how long a frame takes to draw, whether poses are in
+// finer steps, the pace, the pictures kept, and what became of the graphics
+// card (see sculptGl.ts). A picture that looks blocky on somebody's phone
+// can then be told from here: gone coarse, and why.
+const doing: {
+	rows?: number;
+	art?: number;
+	dpr?: number;
+	coarser?: number;
+	changes?: number;
+	drawMs?: number;
+	fine?: boolean;
+	fps?: number;
+	kept?: number;
+} = {};
+registerCaptureExtra(() =>
+	doing.rows === undefined
+		? `court3d: not drawn yet; card ${glReport()}`
+		: `court3d: rows=${doing.rows} art=${doing.art} dpr=${doing.dpr} coarser=${doing.coarser} (changes ${doing.changes}) drawMs=${doing.drawMs?.toFixed(1) ?? "-"} fine=${doing.fine} fps=${doing.fps} kept=${doing.kept}; card ${glReport()}; cores=${navigator.hardwareConcurrency ?? "?"}`,
+);
+
 // Whether a game opens with its starting lineups (see intro.ts).
 const LINEUP_INTROS = false;
 
@@ -1423,6 +1449,7 @@ const Court3D = ({
 					performance.now() - drawStart,
 					now,
 					sprites.spent,
+					1000 / pacing.fps,
 				)
 			) {
 				// Sprites drawn for the old size are no use at the new one - let
@@ -1432,6 +1459,17 @@ const Court3D = ({
 				sprites.budget = SPRITE_BUDGET_MS;
 				sprites.farm = farm;
 			}
+			// (What the court is doing on this device, for a capture of the
+			// log - see court3dReport.)
+			doing.rows = fh;
+			doing.art = art;
+			doing.dpr = dpr;
+			doing.coarser = res.coarser;
+			doing.changes = res.changes;
+			doing.drawMs = res.drawMs;
+			doing.fine = sprites.fine === true;
+			doing.fps = pacing.fps;
+			doing.kept = sprites.kept.size;
 			// Time to spare, at the finest picture: poses in finer steps.
 			sprites.fine = fineNow(
 				sprites.fine === true,
