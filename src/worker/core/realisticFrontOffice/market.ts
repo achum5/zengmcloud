@@ -56,8 +56,6 @@ import type { TradedAway } from "./tradePenalty.ts";
 // also gets to shop in a few windows (tradeWindow).
 
 // Teams looking for a deal each day, and how many other teams each one calls.
-const SHOPPERS_PER_DAY = 2;
-const PARTNERS_PER_SHOPPER = 6;
 
 // The smallest gain, in titles, that makes a trade worth making for either
 // side. Stops teams churning their rosters over rounding.
@@ -127,6 +125,11 @@ export const marketSettings = {
 	offseasonWindows: true,
 	// Teams shopping each day of free agency.
 	freeAgencyShoppers: 4,
+	// Teams shopping each day of the season, before the deadline's last
+	// days (deadlineWindow).
+	shoppersPerDay: 2,
+	// How many other teams each team out shopping talks to.
+	partnersPerShopper: 6,
 	// One side may give nothing.
 	oneSided: true,
 	// Picks for picks, no player moving.
@@ -1764,7 +1767,7 @@ export const tradeDay = async () => {
 	if (phase === PHASE.REGULAR_SEASON) {
 		const deadline = await inDeadlineWindow();
 		await timed(deadline ? "deadline" : "day", () =>
-			shop(deadline ? Infinity : SHOPPERS_PER_DAY),
+			shop(deadline ? Infinity : marketSettings.shoppersPerDay),
 		);
 	} else if (phase === PHASE.FREE_AGENCY) {
 		await timed("freeAgency", () => shop(marketSettings.freeAgencyShoppers));
@@ -1935,7 +1938,10 @@ const shop = async (numShoppers: number) => {
 		const a = await loadTeam(outlook, tid);
 		const others = tids.filter((x) => x !== tid);
 		const partners: number[] = [];
-		while (partners.length < PARTNERS_PER_SHOPPER && others.length > 0) {
+		while (
+			partners.length < marketSettings.partnersPerShopper &&
+			others.length > 0
+		) {
 			partners.push(others.splice(Math.floor(random() * others.length), 1)[0]!);
 		}
 		const best = await findBestDeal(outlook, a, partners, single);

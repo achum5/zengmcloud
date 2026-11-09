@@ -726,6 +726,9 @@ export const outlookSettings = {
 	// as room (letGo). Other players' chance of staying already counts the
 	// times their teams let them go (KEPT).
 	letGo: true,
+	// A deal that changes a team's room the season it decides on a player by
+	// more than this share of the cap has it decide again (letGo).
+	letGoRoomTolerance: 0.1,
 	// What payroll past the cap costs a team, in titles a season per cap's
 	// worth, and the luxury tax's rate on top past the tax line (payrollCost).
 	// 0.04, the owner's call after a test against 0.02: half the teams each
@@ -881,6 +884,7 @@ const outlookSettingFor = <
 		| "retentionFit"
 		| "costsOfLosing"
 		| "letGo"
+		| "letGoRoomTolerance"
 		| "moneyPerCap"
 		| "moneyUnderCap"
 		| "knownClasses"
@@ -2197,6 +2201,7 @@ export const teamPoints = (
 	}
 	if (known !== false && outlookSettingFor(tid, "letGo")) {
 		letGo(
+			tid,
 			seasons,
 			(all) => expectedRosterPoints(asPlayed(tid, all), injuryFactor(tid)),
 			known,
@@ -2299,10 +2304,6 @@ export type LetGoDecisions = {
 	record: boolean;
 };
 
-// A deal that changes a team's room the season it decides on a player by
-// more than this share of the cap has it decide again.
-const LET_GO_ROOM_TOLERANCE = 0.1;
-
 // One season of a team's outlook, as teamPoints works it out: its roster, and
 // from the first season it refills, its cap room and what that room buys.
 type SeasonState = {
@@ -2345,6 +2346,7 @@ const rosterOnlyPoints = (
 // one's second contract ate room that buys better, so a bad team was worse
 // off for a second first-round pick.
 const letGo = (
+	tid: number,
 	seasons: readonly SeasonState[],
 	points: (lines: readonly SeasonLine[]) => number,
 	known?: LetGoDecisions,
@@ -2356,7 +2358,8 @@ const letGo = (
 	) => number,
 ) => {
 	const minContract = g.get("minContract");
-	const tolerance = LET_GO_ROOM_TOLERANCE * g.get("salaryCap");
+	const tolerance =
+		outlookSettingFor(tid, "letGoRoomTolerance") * g.get("salaryCap");
 	const pointsOf = (s: SeasonState) =>
 		(s.points ??= points([...s.lines, ...s.signingsAt!(s.room!)]));
 	// The same player in each season from y on.
