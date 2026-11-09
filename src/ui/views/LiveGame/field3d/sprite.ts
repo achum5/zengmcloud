@@ -1,17 +1,12 @@
 import { depthOf, project, type Camera } from "../court3d/camera.ts";
 import {
 	driven,
+	easedFrom,
 	PIVOT_HIP,
 	PIVOT_KNEE,
 	settleStep,
 } from "../court3d/evaluate.ts";
-import {
-	lerpPose,
-	skeleton,
-	type Body,
-	type Pose,
-	type V3,
-} from "../court3d/poses.ts";
+import { skeleton, type Body, type Pose, type V3 } from "../court3d/poses.ts";
 import {
 	castShadows,
 	keepPixels,
@@ -483,7 +478,7 @@ const poseFor = (st: FieldPlayerState, s: Stepped): Pose => {
 };
 const underPose = (u: Under, ball: BallHold | undefined): Pose => {
 	const pose = wholePose(u.move, u.phase, u.mirrored === true, u.arms, ball);
-	return u.under ? lerpPose(pose, underPose(u.under, ball), u.under.w) : pose;
+	return u.under ? easedFrom(pose, underPose(u.under, ball), u.under.w) : pose;
 };
 const blendedPose = (st: FieldPlayerState, s: Stepped): Pose => {
 	const { phase, from, arms, len } = s;
@@ -508,9 +503,10 @@ const blendedPose = (st: FieldPlayerState, s: Stepped): Pose => {
 	);
 	const u = from.under;
 	if (u) {
-		was = lerpPose(was, underPose(u, from.ball), u.w);
+		was = easedFrom(was, underPose(u, from.ball), u.w);
 	}
-	const eased = lerpPose(pose, was, from.w);
+	// (The court's way - see its easedFrom.)
+	const eased = easedFrom(pose, was, from.w);
 	return from.steps && !u ? settleStep(eased, pose, was, 1 - from.w) : eased;
 };
 
