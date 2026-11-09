@@ -5302,7 +5302,7 @@ const COVER_MIN = 2.5;
 const COVER_SOFT = 3;
 // (A cover man against the others at his position: sat this much tighter
 // on his man - or looser - at the most.)
-const COVER_TIGHT = 0.3;
+const COVER_TIGHT = 0.35;
 const COVER_FRONT = 1;
 // (On a man thrown to on his back shoulder: carried on up the field past
 // him as he pulls up for it, this long (ms) - going this fast at least
@@ -5310,6 +5310,24 @@ const COVER_FRONT = 1;
 const COVER_LATE_MS = 600;
 const COVER_LATE_LEAST = 10;
 const COVER_LATE_KEEP = 0.9;
+// The rush beyond the front (see pass): a linebacker stood up on the line
+// (no further off it than this, feet) outside the tackles (this far out at
+// least, feet) off the edge this often; and a blitz, by the coverage behind
+// it, this often - a defensive back with the linebacker this share of
+// those, over Cover 1 - the middle linebacker first.
+const EDGE_FT = 7;
+const EDGE_OUT_FT = 9;
+const EDGE_RUSH = 0.7;
+const BLITZ: Record<Coverage, number> = {
+	c1: 0.4,
+	c2man: 0.15,
+	c3: 0.2,
+	c2: 0.08,
+	tampa2: 0.05,
+	c4: 0.08,
+};
+const DB_BLITZ = 0.3;
+const BLITZ_FIRST: Role[] = ["MIKE", "WILL", "BUCK", "SAM"];
 // The look the defense showed (see coverage.ts): two safeties deep - the
 // strong safety this deep at the snap at least (feet) - or one; a corner
 // pressed, this near the line (feet).
@@ -10111,17 +10129,69 @@ class Action {
 			typeof pickYds === "number" &&
 			pickYds <= PICK_BAT_YDS &&
 			countOf(picker, this.input.key, 137) < PICK_BAT;
+		// The coverage behind it, by the look the defense showed (see
+		// coverage.ts) - two deep or one, a corner pressed - and the down
+		// and the distance.
+		const ss = this.d.find((m) => m.role === "SS");
+		const twoHigh =
+			ss !== undefined && this.of(ss.posAt(snap)).d >= TWO_HIGH_FT;
+		const pressed = this.d.some(
+			(m) => m.role === "CB" && this.of(m.posAt(snap)).d <= PRESSED_FT,
+		);
+		const call = callCoverage({
+			twoHigh,
+			pressed,
+			down: this.input.down,
+			toGo: this.input.toGo,
+			toGoal: this.goalD / YD,
+			u: countOf(qb, this.input.key, 147),
+		});
 		const rushers = this.d.filter(
 			(m) =>
 				(DL.has(m.role) || m === sacker) &&
 				(m !== picker || (pickBat && DL.has(m.role))),
 		);
-		if (!sacker && r() < 0.22) {
-			const lb = this.d.find(
-				(m) => LB.has(m.role) && !rushers.includes(m) && m !== picker,
-			);
+		// (Never a man the sim has make a play in coverage.)
+		const covering = new Set(
+			this.statPids("defPssDef", "defInt", "defTckSolo", "defTckAst"),
+		);
+		const mayRush = (m: Actor) =>
+			!rushers.includes(m) && m !== picker && !covering.has(m.pid);
+		// A linebacker stood up on the line outside the tackles - a 3-4's
+		// outside backers, an edge: off the edge after him, mostly.
+		for (const m of this.d) {
+			const at = this.of(m.posAt(snap));
+			if (
+				LB.has(m.role) &&
+				mayRush(m) &&
+				at.d <= EDGE_FT &&
+				Math.abs(at.a) >= EDGE_OUT_FT &&
+				countOf(m, this.input.key, 152) < EDGE_RUSH
+			) {
+				rushers.push(m);
+			}
+		}
+		// And a blitz now and then, by the coverage behind it: a linebacker
+		// most often over Cover 1 - and with him, now and then, a defensive
+		// back off the slot or down from safety.
+		const blitzU = countOf(qb, this.input.key, 151);
+		const blitz = BLITZ[call];
+		if (blitzU < blitz) {
+			const lb = this.d
+				.filter((m) => LB.has(m.role) && mayRush(m))
+				.sort(
+					(a, b) => BLITZ_FIRST.indexOf(a.role) - BLITZ_FIRST.indexOf(b.role),
+				)[0];
 			if (lb) {
 				rushers.push(lb);
+			}
+			if (call === "c1" && blitzU < blitz * DB_BLITZ) {
+				const db = this.d.find(
+					(m) => (m.role === "NB" || m.role === "SS") && mayRush(m),
+				);
+				if (db) {
+					rushers.push(db);
+				}
 			}
 		}
 		const coverage = this.d.filter((m) => !rushers.includes(m));
@@ -10704,30 +10774,10 @@ class Action {
 			? (this.man(this.statPids(first === intI ? "defInt" : "defPssDef")[0]) ??
 				(first === intI ? undefined : this.interferer(coverage)))
 			: undefined;
-		// (Zone or man behind it, by the look the defense showed - see
-		// ZONE_ONE: man on a back-shoulder throw or a double move, which are
-		// thrown at the man on him.)
-		const ss = coverage.find((m) => m.role === "SS");
-		const twoHigh =
-			ss !== undefined && this.of(ss.posAt(snap)).d >= TWO_HIGH_FT;
-		const pressed = coverage.some(
-			(m) => m.role === "CB" && this.of(m.posAt(snap)).d <= PRESSED_FT,
-		);
-		// (Man on a back-shoulder throw or a double move, which are thrown
-		// at the man on him - see coverage.ts.)
+		// (The call - but man on a back-shoulder throw or a double move,
+		// which are thrown at the man on him.)
 		const covers: Coverage =
-			tr?.name === "backShoulder" || jab
-				? twoHigh
-					? "c2man"
-					: "c1"
-				: callCoverage({
-						twoHigh,
-						pressed,
-						down: this.input.down,
-						toGo: this.input.toGo,
-						toGoal: this.goalD / YD,
-						u: countOf(qb, this.input.key, 147),
-					});
+			tr?.name === "backShoulder" || jab ? (twoHigh ? "c2man" : "c1") : call;
 		this.cover(
 			coverage,
 			runners,
