@@ -851,6 +851,9 @@ const RUN_THROUGH = 1.5;
 // A blocker meets a finish at the rim at least this far off the way the
 // finisher goes in (feet).
 const BLOCK_CLEAR = 1.6;
+// (And off where a finish in close carries him on to after, toward the rim:
+// feet.)
+const BLOCK_CARRY = 4;
 // Going up for a finish beside the rim, he is at least this far (feet) out
 // in front of the middle of it: his hand, reaching out to the side with the
 // ball, still in front of the glass - not round behind it, where the ball can
@@ -1010,6 +1013,25 @@ const OUR_BALL_MS = 900;
 // arm up at the official, and how often his hands on his head.
 const LOST_IT_CALL = 0.2;
 const LOST_IT_HEAD = 0.14;
+// Where a shot is to be taken from, if its line says (`at`, feet on the
+// court: see the gamecast's withShotSpots) - a clip of a shot on the shot
+// chart taken where the chart has it - and it is a spot on his own end.
+const shotAtOf = (e: RawEvent, team: Side): Pt | undefined => {
+	const at = (e as { at?: unknown }).at as { x?: unknown; y?: unknown };
+	if (
+		!at ||
+		typeof at.x !== "number" ||
+		typeof at.y !== "number" ||
+		!Number.isFinite(at.x) ||
+		!Number.isFinite(at.y) ||
+		at.y < 0 ||
+		at.y > COURT_H ||
+		Math.abs(at.x - rimX(team)) > COURT_W / 2
+	) {
+		return undefined;
+	}
+	return { x: at.x, y: at.y };
+};
 // A free throw routine's pieces (see ftRoutine): how often a man flips it
 // up to himself, and sits down into his legs for a breath; how long each
 // takes (ms); his beat bouncing it, from this to this many times the usual;
@@ -12742,6 +12764,9 @@ class Director {
 		gap: number | undefined,
 		heaveSecs: number | undefined,
 		clock?: number,
+		// Where it is to be taken from, if that is known already (a clip of a
+		// shot on the shot chart: see shotAtOf).
+		at?: Pt,
 	): {
 		gather: number;
 		decided: number;
@@ -12759,26 +12784,28 @@ class Director {
 		const from = this.holder === shooter ? this.posOf(shooter) : undefined;
 		// (A jump shot's spot is worked out once he gets the ball - see
 		// shotSpotNear.)
-		let P: Pt | undefined = putback
-			? from && dist(from, rim) > 1
-				? (() => {
-						const u = unitVec(rim, from);
-						// (Never from behind the backboard.)
-						const ux = -dir * Math.max(0.35, -dir * u.x);
-						const L = Math.hypot(ux, u.y);
-						const r = Math.min(dist(from, rim), this.rand(2.5, 4.5));
-						return clampPt({
-							x: rim.x + (ux / L) * r,
-							y: rim.y + (u.y / L) * r,
-						});
-					})()
-				: clampPt({
-						x: rim.x - dir * this.rand(2, 4),
-						y: 25 + this.rand(-3, 3),
-					})
-			: heaveSecs !== undefined
-				? this.shotSpot(team, zone, heaveSecs)
-				: undefined;
+		let P: Pt | undefined = at
+			? clampPt(at)
+			: putback
+				? from && dist(from, rim) > 1
+					? (() => {
+							const u = unitVec(rim, from);
+							// (Never from behind the backboard.)
+							const ux = -dir * Math.max(0.35, -dir * u.x);
+							const L = Math.hypot(ux, u.y);
+							const r = Math.min(dist(from, rim), this.rand(2.5, 4.5));
+							return clampPt({
+								x: rim.x + (ux / L) * r,
+								y: rim.y + (u.y / L) * r,
+							});
+						})()
+					: clampPt({
+							x: rim.x - dir * this.rand(2, 4),
+							y: 25 + this.rand(-3, 3),
+						})
+				: heaveSecs !== undefined
+					? this.shotSpot(team, zone, heaveSecs)
+					: undefined;
 		const spotNow = (): Pt =>
 			(P ??= this.shotSpotNear(team, zone, this.posOf(shooter)));
 
@@ -12802,11 +12829,13 @@ class Director {
 		} else if (!putback || this.holder !== shooter) {
 			let run: Running | undefined;
 			if (!putback) {
+				// (Where it is to be taken from known already, no set of the
+				// playbook's, whose own spot it would be: the ball to him there.)
 				const dev = this.develop(
 					team,
 					t,
 					gap,
-					heaveSecs === undefined
+					heaveSecs === undefined && !at
 						? (entry) =>
 								this.callForShot(entry, team, shooter, zone, plan, gap, clock)
 						: undefined,
@@ -12921,14 +12950,21 @@ class Director {
 						.map((m) => this.posOf(m));
 					const cost = (X: Pt) =>
 						dist(X, S0) + Math.max(0, dist(X, M) - KICK_BACK) * 0.8;
-					const Q =
-						(zone === "three"
-							? RESPACE_SPOTS
-							: ["L_elbow", "R_elbow", "L_mid_wing", "R_mid_wing", "high_post"]
-						)
-							.map((name) => this.spotFor(team, 1, name))
-							.filter((X) => others.every((m) => dist(m, X) >= 10))
-							.sort((a, b) => cost(a) - cost(b))[0] ?? spotNow();
+					const Q = at
+						? spotNow()
+						: ((zone === "three"
+								? RESPACE_SPOTS
+								: [
+										"L_elbow",
+										"R_elbow",
+										"L_mid_wing",
+										"R_mid_wing",
+										"high_post",
+									]
+							)
+								.map((name) => this.spotFor(team, 1, name))
+								.filter((X) => others.every((m) => dist(m, X) >= 10))
+								.sort((a, b) => cost(a) - cost(b))[0] ?? spotNow());
 					P = Q;
 					const arrive = this.go(shooter, Q, t, RUN, "run");
 					const g = this.defenderOf(shooter);
@@ -13975,12 +14011,21 @@ class Director {
 						})
 					: ahead(Math.min(2.6, Math.max(1.4, len - 1 - on)) + on);
 				// (Beside the way he goes on in, not on it: his way in bends
-				// off the straight line to the rim, round the front of it.)
+				// off the straight line to the rim, round the front of it - and
+				// in close, on in under it after, carried on by his going up.)
 				if (!chase) {
+					const carried = close
+						? [
+								{
+									x: P1.x + (toRim.x / len) * Math.min(len, BLOCK_CARRY),
+									y: P1.y + (toRim.y / len) * Math.min(len, BLOCK_CARRY),
+								},
+							]
+						: [];
 					B = clampPt(
 						clearOfPath(
 							B,
-							[P1, this.posOf(shooter), ...(drift ? [drift] : [])],
+							[P1, this.posOf(shooter), ...(drift ? [drift] : []), ...carried],
 							BLOCK_CLEAR,
 							// (sideOf is 1 with him off to the right of it.)
 							-sideOf,
@@ -16917,6 +16962,7 @@ class Director {
 				gap,
 				heave,
 				typeof e.clock === "number" ? e.clock : undefined,
+				shotAtOf(e, d),
 			);
 			this.pending = {
 				pid: e.pid,
@@ -18985,7 +19031,8 @@ class Director {
 		const oob = e.outOfBounds === true;
 		// How it gets lost, in the shares the NBA loses it: a steal is a pass
 		// picked off or the ball stripped; without one, it goes out of bounds
-		// or a whistle stops it - an offensive foul, a travel, the shot clock.
+		// or a whistle stops it - a travel, an offensive foul (a charge, now
+		// and then a moving screen: about one a game), the shot clock.
 		const kinds: Partial<Record<TurnoverKind, number>> = stl
 			? oob
 				? { lost: 0.6, pass: 0.4 }
@@ -18993,10 +19040,10 @@ class Director {
 			: oob
 				? { pass: 0.59, lost: 0.41 }
 				: {
-						screen: 0.4,
-						charge: 0.25,
-						travel: 0.25,
-						fiveSeconds: 0.05,
+						screen: 0.3,
+						charge: 0.15,
+						travel: 0.35,
+						fiveSeconds: 0.03,
 						shotClock: gap !== undefined && gap >= 20 ? 2 : 0,
 					};
 		const dev = this.develop(

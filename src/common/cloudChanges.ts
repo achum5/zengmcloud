@@ -12,6 +12,16 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 234,
+		date: "2026-11-09",
+		text: "Shot chart: tapping a shot now plays it from the spot shown on the chart, and a game's chart on its box score is updated each time you watch it in 3D, so the dots match where the shots were taken.",
+	},
+	{
+		n: 233,
+		date: "2026-11-09",
+		text: "3D games: fewer offensive-foul whistles - moving screens about once a game instead of four or so, and travels as common as charges.",
+	},
+	{
 		n: 232,
 		date: "2026-11-09",
 		text: "3D games: after missing a shot in close - a layup, a hook, a floater - the shooter now follows it in, fights his man for position or backs out, instead of standing where he landed.",

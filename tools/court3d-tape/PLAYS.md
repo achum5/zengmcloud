@@ -641,9 +641,11 @@ tool's `tov` and `stl` lines): how it was lost - a whistle for an
 offensive foul 34 (a moving screen 11 of them), out of bounds 13, a
 travel 10; a pass picked off 26, poked loose 14, stripped 7 - where, the
 man who lost it after it, the man who took it (off up the floor 24, held
-22), the officials' signals, and what came next. Offensive fouls are more
-of the whistles than the NBA's (about half): the set's risk steps and
-the shares in beatTurnover, left as they are for now. The man who lost it
+22), the officials' signals, and what came next. Offensive fouls were more
+of the whistles than the NBA's (about half) - a moving screen nearly four
+times a game. Rebalanced (2026-11-09, over nine games): a charge and a
+travel about as often as each other, a moving screen about once a game;
+offensive-foul whistles from about 11 a game to 7. The man who lost it
 did nothing about it after 39 of the 47 steals.
 
 Now (2026-11-09): the ball taken off him, the man who lost it now and then

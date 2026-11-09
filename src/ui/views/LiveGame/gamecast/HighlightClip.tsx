@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useMemo, useState } from "react";
 import { clipOfPlay, isLine } from "../../../util/filterPlayerHighlights.ts";
 import { helpers } from "../../../util/helpers.ts";
 import processLiveGameEventsBasketball from "../../../util/processLiveGameEvents.basketball.tsx";
+import type { ShotSpot } from "./shots.ts";
 
 const Court3D = lazy(() => import("../court3d/Court3D.tsx"));
 
@@ -12,6 +13,37 @@ export type ClipGame = {
 	events: any[];
 	initialBoxScore: any;
 	upTo?: number;
+	// Where the game's shots were taken in 3D (see shotSpots), as its shot
+	// chart has them: a shot in the clip is taken from there too.
+	shots?: readonly ShotSpot[];
+};
+
+// The game's lines with each shot that has a spot on the chart marked with
+// it (`at`, see the director's stageShot): staged on its own, a clip has
+// the shot taken where the chart shows it - not wherever the clip's own
+// staging of the trip would have had him.
+export const withShotSpots = (
+	events: any[],
+	shots: readonly ShotSpot[] | undefined,
+): any[] => {
+	if (!shots || shots.length === 0) {
+		return events;
+	}
+	const out = events.slice();
+	for (const s of shots) {
+		// (Its result is the line before the cursor; the shot, the last
+		// attempt before that.)
+		for (let i = s.cursor - 2; i >= 0 && i >= s.cursor - 8; i--) {
+			const e = out[i];
+			if (typeof e?.type === "string" && e.type.startsWith("fga")) {
+				if (e.pid === s.pid) {
+					out[i] = { ...e, at: { x: s.x, y: s.y } };
+				}
+				break;
+			}
+		}
+	}
+	return out;
 };
 
 // Where the court is while it stages.
@@ -140,7 +172,13 @@ export const HighlightClip = ({
 	// does not stage it again.)
 	const [opened] = useState(game);
 	const clip = useMemo(
-		() => clipOfPlay(opened.events, first, last, opened.upTo),
+		() =>
+			clipOfPlay(
+				withShotSpots(opened.events, opened.shots),
+				first,
+				last,
+				opened.upTo,
+			),
 		[opened, first, last],
 	);
 	const [take, setTake] = useState(0);
