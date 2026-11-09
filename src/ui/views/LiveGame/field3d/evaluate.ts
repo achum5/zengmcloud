@@ -1,4 +1,14 @@
 import { PIVOT_MS, pivotFeet } from "../court3d/evaluate.ts";
+import type { AnimName } from "../court3d/poses.ts";
+import {
+	freshStart,
+	LEN_MIN,
+	stepThrough,
+	STRIDE_START,
+	stridesThen,
+	type StepLeg,
+	type Stretch,
+} from "../court3d/stepping.ts";
 import { apartAt, apartOf, type Sep } from "./apart.ts";
 import { restingZ } from "./ball.ts";
 import type {
@@ -27,6 +37,7 @@ import {
 } from "./pace.ts";
 import {
 	beatOf,
+	gaitOf,
 	liftOf,
 	loopRate,
 	moveKind,
@@ -624,27 +635,32 @@ const phaseOf = (l: Leg, t: number, offset: number, strides = 0): number => {
 	if (kind === "loop") {
 		return (t / 1000) * loopRate(l.move) + offset;
 	}
-	return strides + offset;
+	// (A gait of the court's, from the quarter of a stride in it sets off
+	// from - see stridesOf.)
+	return strides + (gaitOf(l.move) ? 0 : offset);
 };
 
-// HIS STRIDES, worked out step by step through the play (every TRACK_MS,
-// once for his legs as they are - see trackOf): how far round them he is -
-// by the ground he covers, carried on from one stretch to the next so his
-// feet keep their rhythm, held while he does anything else - and how long
-// they are, as a share of a full one. Getting going, or pulling up, short
-// quick steps (see court3d/poses.ts shortSteps): below the pace a full
-// stride makes at its gait's beat, each that much shorter (no shorter than
-// LEN_MIN, and no quicker round than BEAT_MOST a second), by his pace over
-// PACE_MS either side, changing no quicker than LEN_RATE a second.
-const LEN_MIN = 0.1;
+// HIS STRIDES, worked out through the play (every TRACK_MS, once for his
+// legs as they are - see trackOf): how far round them he is, and how long
+// each leg's stride is, as a share of a full one. On a gait of the court's
+// - walking, jogging, running, sprinting, backpedaling, sliding, shuffling
+// - the court's strides (see court3d/stepping.ts): a foot down keeps the
+// stride it came down on, so it stays put on the turf as he picks up pace
+// or slows, and pulling up his last steps come down short; carried on from
+// one gait into the next, each foot's stride as long in feet as it was.
+// Setting off from where he stood, a quarter of a stride in or three
+// quarters - whichever comes next from where his strides last were - over
+// the foot he pushes off with, nearest how he stood. In a block, his feet
+// going under him by the ground he covers, at least so fast (CHOPS); held
+// while he does anything else - and his strides back to full ones.
 // (As good as a full one.)
 const LEN_FULL = 0.98;
-const BEAT_MOST = 2.6;
+// (His pace, over this long either side.)
 const PACE_MS = 100;
 const LEN_RATE = 6;
-// (Steps that keep no beat - his feet going under him in a block, or
-// kick-sliding back - round no quicker than this a second: on into one
-// still at a run, his feet not a blur, but sliding the last of it.)
+// (Steps that keep no beat - his feet going under him in a block - round no
+// quicker than this a second: on into one still at a run, his feet not a
+// blur, but sliding the last of it.)
 const SHUFFLE_MOST = 3.5;
 // (In a block his feet keep going under him even when the two of them get
 // nowhere - and sat in his set in pass protection, light on them - no
@@ -654,7 +670,12 @@ const CHOPS = new Map<Move, number>([
 	["engage", 1.4],
 	["passSet", 0.9],
 ]);
-type Strides = { t0: number; ph: Float32Array; len: Float32Array };
+type Strides = {
+	t0: number;
+	ph: Float32Array;
+	r: Float32Array;
+	l: Float32Array;
+};
 const strided = new WeakMap<
 	Leg[],
 	{ n: number; t0: number; s: Strides | undefined }
@@ -679,7 +700,6 @@ const stridesOf = (legs: Leg[], t0: number, n: number): Strides | undefined => {
 	// getting going on the next.)
 	const tr = trackOf(legs, t0, n);
 	const strideOn = legs.map((l) => (cycles(l) ? strideOf(l.move) : 0));
-	const beatOn = legs.map((l) => beatOf(l.move));
 	const chopOn = legs.map((l) => CHOPS.get(l.move as Move) ?? 0);
 	const gaitAt = (i: number) => {
 		const k = tr.late[i]!;
@@ -693,63 +713,114 @@ const stridesOf = (legs: Leg[], t0: number, n: number): Strides | undefined => {
 		const dy = tr.ys[i]! - tr.ys[i - 1]!;
 		gone[i] = gone[i - 1]! + (tr.cut[i] ? 0 : Math.sqrt(dx * dx + dy * dy));
 	}
-	const ph = new Float32Array(n);
-	const len = new Float32Array(n);
-	const first = strideOn.findIndex((x) => x > 0);
-	let stride = first >= 0 ? strideOn[first]! : 1;
-	let beat = first >= 0 ? beatOn[first]! : 0;
-	let least = first >= 0 ? chopOn[first]! : 0;
-	let p = 0;
-	let l = LEN_MIN;
-	const dt = TRACK_MS / 1000;
-	const w = Math.max(1, Math.round(PACE_MS / TRACK_MS));
+	const along = (t: number) => {
+		const f = Math.min(n - 1, Math.max(0, (t - t0) / TRACK_MS));
+		const i = Math.min(n - 2, Math.floor(f));
+		return gone[i]! + (gone[i + 1]! - gone[i]!) * (f - i);
+	};
+	const pace = (t: number) =>
+		((along(t + PACE_MS) - along(t - PACE_MS)) * 1000) / (2 * PACE_MS);
+	// The leg he strides on at each step (striding at either end of it).
+	const on = new Int32Array(n);
 	for (let i = 0; i < n; i++) {
-		// (Striding at either end of the step, on it.)
 		const g = gaitAt(i);
-		const j = g >= 0 || i === 0 ? g : gaitAt(i - 1);
-		if (j >= 0) {
-			stride = strideOn[j]!;
-			beat = beatOn[j]!;
-			least = chopOn[j]!;
-		}
-		const lo = Math.max(0, i - w);
-		const hi = Math.min(n - 1, i + w);
-		const v = hi > lo ? (gone[hi]! - gone[lo]!) / ((hi - lo) * dt) : 0;
-		const want =
-			beat > 0 ? Math.min(1, Math.max(LEN_MIN, v / (beat * stride))) : 1;
-		l =
-			i === 0
-				? want
-				: l + Math.min(LEN_RATE * dt, Math.max(-LEN_RATE * dt, want - l));
-		if (i > 0 && j >= 0) {
-			const d = gone[i]! - gone[i - 1]!;
-			if (beat > 0) {
-				const most = Math.max(BEAT_MOST * dt, d / stride);
-				if (d / (stride * l) > most) {
-					l = d / (stride * most);
-				}
-				p += d / (stride * l);
-			} else {
-				p += Math.min(Math.max(d / stride, least * dt), SHUFFLE_MOST * dt);
-			}
-		}
-		ph[i] = p;
-		len[i] = l;
+		on[i] = g >= 0 || i === 0 ? g : gaitAt(i - 1);
 	}
-	const s = { t0, ph, len };
+	const gait = (i: number) =>
+		on[i]! >= 0 ? gaitOf(legs[on[i]!]!.move) : undefined;
+	const ph = new Float32Array(n);
+	const r = new Float32Array(n);
+	const l = new Float32Array(n);
+	const dt = TRACK_MS / 1000;
+	let p = 0;
+	let lr = 1;
+	let ll = 1;
+	// (The gait he was just on, and each foot as it ended.)
+	let was: { anim: AnimName; R: StepLeg; L: StepLeg } | undefined;
+	let i = 0;
+	while (i < n) {
+		const j = on[i]!;
+		const anim = gait(i);
+		if (anim === undefined) {
+			if (i > 0 && j >= 0) {
+				const d = gone[i]! - gone[i - 1]!;
+				p += Math.min(
+					Math.max(d / strideOn[j]!, chopOn[j]! * dt),
+					SHUFFLE_MOST * dt,
+				);
+			}
+			const most = LEN_RATE * dt;
+			lr += Math.min(most, 1 - lr);
+			ll += Math.min(most, 1 - ll);
+			ph[i] = p;
+			r[i] = lr;
+			l[i] = ll;
+			was = undefined;
+			i++;
+			continue;
+		}
+		// On to the last step of it - the same gait, with nowhere he is put.
+		let i1 = i;
+		while (i1 + 1 < n && !tr.cut[i1 + 1] && gait(i1 + 1) === anim) {
+			i1++;
+		}
+		// (From the step before, where his strides were.)
+		const i0 = i > 0 && !tr.cut[i] ? i - 1 : i;
+		const stretch: Stretch = {
+			s0: t0 + i0 * TRACK_MS,
+			s1: t0 + i1 * TRACK_MS,
+			along,
+			pace,
+		};
+		let start: { ph: number; R: StepLeg; L: StepLeg };
+		if (was && i0 === i - 1) {
+			const S0 = strideOf(was.anim as Move);
+			const S = strideOf(anim as Move);
+			const as = (len: number) =>
+				Math.min(1, Math.max(LEN_MIN, (len * S0) / S));
+			const carry = (leg: StepLeg): StepLeg => ({
+				len: as(leg.len),
+				...(leg.up === undefined ? {} : { up: as(leg.len), from: -1 }),
+			});
+			start = { ph: p, R: carry(was.R), L: carry(was.L) };
+		} else {
+			// (Out of a block, on in step with it; from where he stood, from
+			// over the foot he pushes off with.)
+			const chopped = i0 === i - 1 && on[i0]! >= 0;
+			const phStart = chopped
+				? p
+				: p + ((((STRIDE_START - p) % 0.5) + 0.5) % 0.5);
+			start = freshStart(anim, stretch, phStart);
+		}
+		const steps = stepThrough(anim, stretch, start.ph, start.R, start.L);
+		ph[i0] = start.ph;
+		for (let k = i; k <= i1; k++) {
+			const at = stridesThen(steps, t0 + k * TRACK_MS);
+			ph[k] = at.ph;
+			r[k] = at.len[0];
+			l[k] = at.len[1];
+		}
+		p = ph[i1]!;
+		lr = r[i1]!;
+		ll = l[i1]!;
+		was = { anim, R: steps.legR, L: steps.legL };
+		i = i1 + 1;
+	}
+	const s = { t0, ph, r, l };
 	strided.set(legs, { n: legs.length, t0, s });
 	return s;
 };
-// How far round his strides he is at t, and how long they are.
-const strideAt = (s: Strides, t: number): { ph: number; len: number } => {
+// How far round his strides he is at t, and how long each leg's are.
+const strideAt = (
+	s: Strides,
+	t: number,
+): { ph: number; len: [number, number] } => {
 	const n = s.ph.length;
 	const f = Math.min(n - 1, Math.max(0, (t - s.t0) / TRACK_MS));
 	const i = Math.min(n - 2, Math.floor(f));
 	const u = f - i;
-	return {
-		ph: s.ph[i]! + (s.ph[i + 1]! - s.ph[i]!) * u,
-		len: s.len[i]! + (s.len[i + 1]! - s.len[i]!) * u,
-	};
+	const at = (a: Float32Array) => a[i]! + (a[i + 1]! - a[i]!) * u;
+	return { ph: at(s.ph), len: [at(s.r), at(s.l)] };
 };
 
 // How far his arms are through an act of their own (see Leg.arms).
@@ -1450,7 +1521,9 @@ const stateOf = (
 	}
 	// How far round his strides he is, and a moment on.
 	const strides = stridesOf(legs, play.t0, trackLength(play.t0, play.t1));
-	const stride = strides ? strideAt(strides, now) : { ph: 0, len: 1 };
+	const stride = strides
+		? strideAt(strides, now)
+		: { ph: 0, len: [1, 1] as [number, number] };
 	const ahead = strides ? strideAt(strides, now + RATE_MS).ph : 0;
 	// The leg he last changed what he was doing at (on through any more of
 	// it since), for him to be eased out of what he was before it - and, that
@@ -1656,7 +1729,7 @@ const stateOf = (
 	}
 	// (Short steps, if he is striding - or just was.)
 	const short =
-		stride.len < LEN_FULL &&
+		Math.min(stride.len[0], stride.len[1]) < LEN_FULL &&
 		(beatOf(l.move) > 0 || (from !== undefined && beatOf(from.move) > 0));
 	return {
 		id: part.pid,

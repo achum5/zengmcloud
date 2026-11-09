@@ -4421,17 +4421,22 @@ export const loopRate = (m: Move): number => {
 	return a?.kind === "loop" ? a.fps / a.n : 0;
 };
 
-// How long a stride of a cycle is (feet). (The court's, a little longer
-// for a man drawn bigger - his foot down staying put on the turf.)
-const COURT_STRIDE = 1.1;
+// How long a stride of a cycle is (feet) - a gait of the court's, its own
+// (see court3d/stepping.ts: his foot down staying put on the turf).
 export const strideOf = (m: Move): number => {
 	if (isCourtMove(m)) {
 		const a = ANIMS[m as AnimName];
-		return a.kind === "cycle" ? a.stride * COURT_STRIDE : 5;
+		return a.kind === "cycle" ? a.stride : 5;
 	}
 	const a = FIELD_ANIMS[m] as FieldAnim;
 	return a.kind === "cycle" ? a.stride : 5;
 };
+
+// The court's gait a move is, if it is one (see court3d/stepping.ts).
+export const gaitOf = (m: Move): AnimName | undefined =>
+	isCourtMove(m) && ANIMS[m as AnimName].kind === "cycle"
+		? (m as AnimName)
+		: undefined;
 
 // The beat a gait's strides keep going slowly (strides a second - see
 // court3d/poses.ts shortSteps); none, for steps that keep none.
@@ -4440,18 +4445,19 @@ export const beatOf = (m: Move): number =>
 
 // The pose partway through a move: an act from start (0) to finish (1), a
 // loop or a cycle through one turn - mirrored, if he does it left-handed.
-// (A gait's strides `len` of a full one: short steps.)
+// (A gait's strides `len` of a full one, each leg's - his right, his left:
+// short steps.)
 export const poseOfMove = (
 	m: Move,
 	phase: number,
 	mirrored = false,
-	len = 1,
+	len?: [number, number],
 ): Pose => {
 	let q: Pose;
 	if (isCourtMove(m)) {
 		q = poseAt(m as AnimName, phase);
-		if (len < 1) {
-			q = shortSteps(q, m as AnimName, [len, len], phase);
+		if (len && (len[0] < 1 || len[1] < 1)) {
+			q = shortSteps(q, m as AnimName, len, phase);
 		}
 	} else {
 		// (Football's acts on smooth curves, its cycles' frames blended.)
@@ -4621,11 +4627,15 @@ export const handWith = (
 // How far off the turf his strides take him partway through a move (feet,
 // as the court has it): running, between one foot and the next; walking,
 // up on his toes.
-export const strideLift = (m: Move, phase: number, len = 1): number =>
+export const strideLift = (
+	m: Move,
+	phase: number,
+	len?: [number, number],
+): number =>
 	!isCourtMove(m)
 		? 0
-		: len < 1
-			? shortLift(m as AnimName, [len, len], phase)
+		: len && (len[0] < 1 || len[1] < 1)
+			? shortLift(m as AnimName, len, phase)
 			: bounceAt(m as AnimName, phase);
 
 // How far off the turf he is partway through a move (feet): up off both

@@ -74,8 +74,8 @@ export type FieldPlayerState = {
 	// Done the other way round: his left doing what his right does.
 	mirrored?: boolean;
 	// Short steps: his strides (and the ones he was taking, just after a
-	// change) this share of full ones.
-	len?: number;
+	// change) this share of full ones - his right leg's, his left's.
+	len?: [number, number];
 	// Getting going on his strides (up to 1), or pulling up on them (down
 	// to -1): how hard (see evaluate.ts driveOf).
 	drive?: number;
@@ -272,7 +272,7 @@ const weightOf = (st: FieldPlayerState, f: Blend, k: Steps): number => {
 // what he just was.
 type Stepped = {
 	phase: number;
-	len: number | undefined;
+	len: [number, number] | undefined;
 	turn: number;
 	yaw: number;
 	from: Blend | undefined;
@@ -305,14 +305,16 @@ const underKey = (u: Under | undefined): string =>
 	u
 		? `^${u.move}${u.mirrored ? "m" : ""}${u.phase}~${u.w}${u.arms ? `+${u.arms.move}${u.arms.phase}` : ""}${underKey(u.under)}`
 		: "";
-// (Short steps, to the nearest of so many.)
+// (Short steps, to the nearest of so many - each leg's.)
 const LENS = 8;
-const lenIn = (len: number | undefined): number | undefined => {
+const lenIn = (
+	len: [number, number] | undefined,
+): [number, number] | undefined => {
 	if (len === undefined) {
 		return undefined;
 	}
-	const q = Math.max(1, Math.round(len * LENS)) / LENS;
-	return q < 1 ? q : undefined;
+	const [r, l] = len.map((x) => Math.max(1, Math.round(x * LENS)) / LENS);
+	return r! < 1 || l! < 1 ? [Math.min(1, r!), Math.min(1, l!)] : undefined;
 };
 // A foot pointing `to` on the turf, turned under him from the way he is
 // drawn facing (in his turns, so it stays put on the turf as he turns
@@ -396,7 +398,7 @@ const wholePose = (
 	mirrored: boolean,
 	arms: { move: Move; phase: number } | undefined,
 	ball: BallHold | undefined,
-	len = 1,
+	len?: [number, number],
 ): Pose => {
 	let pose = poseOfMove(move, phase, mirrored, len);
 	if (arms) {
@@ -578,7 +580,7 @@ export const poseOf = (st: FieldPlayerState): Pose =>
 // leap, on a pile), and off it between strides as his frame has him - his
 // lower foot on the turf, landing.
 // (What he was is still partly what he was before that, as in his pose.)
-const wasLift = (u: Under, len: number | undefined): number => {
+const wasLift = (u: Under, len: [number, number] | undefined): number => {
 	const up = strideLift(u.move, u.phase, len);
 	return u.under ? up + (wasLift(u.under, len) - up) * u.under.w : up;
 };

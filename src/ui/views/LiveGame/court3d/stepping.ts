@@ -101,17 +101,17 @@ const pacing = (anim: AnimName, st: Stretch) => {
 	return { beat, over, lenAt };
 };
 
-// Setting off fresh: a quarter of a stride in, each foot's stride for his
-// pace while the foot he pushes off on is still down - only a moment more.
-// (Steps that keep no beat - a shuffle, say - full ones throughout. A foot
-// up as he sets off goes over from there, from where it is through its
-// swing.)
+// Setting off fresh: a quarter of a stride in (or `ph`), each foot's stride
+// for his pace while the foot he pushes off on is still down - only a
+// moment more. (Steps that keep no beat - a shuffle, say - full ones
+// throughout. A foot up as he sets off goes over from there, from where it
+// is through its swing.)
 export const freshStart = (
 	anim: AnimName,
 	st: Stretch,
+	ph = STRIDE_START,
 ): { ph: number; R: StepLeg; L: StepLeg } => {
 	const { beat, over } = pacing(anim, st);
-	const ph = STRIDE_START;
 	const first = legPhases(anim, ph);
 	const firstMs =
 		first && beat > 0
