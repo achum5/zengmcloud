@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 223,
+		date: "2026-11-09",
+		text: "3D games: mid-range jumpers now and then come from along the baseline - a corner shooter drifting up for a kick-out, or a ball handler taking it baseline to pull up - not only from the elbows and the top.",
+	},
+	{
 		n: 222,
 		date: "2026-11-09",
 		text: "3D games: a missed layup or shot in the paint no longer always comes off the front of the rim - now and then it's off the side, or too hard off the glass. And a man backing down in the post has his defender on his back the whole way, giving ground at his pace instead of backing off ahead of him.",

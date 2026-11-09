@@ -530,3 +530,16 @@ reshuffled games turned up, fixed where it comes from:
   off the line a step if he is not already (playDribble).
 - (The half-court test now leaves out the walk over to shake hands after
   the game - no run for a spot.)
+
+## 6. Mid-range jumper, made or missed
+
+Measured 2026-11-09 (43 made, 50 missed at real speed; the variety tool's
+spot inside the arc: along the baseline, the elbow or wing, straight on -
+and short, mid or a long two): off the elbows and wings 67 of 93, straight
+on 17, along the baseline 2 - the sets' mid-range reads all go to the
+elbows, the high post and the mid wings (a pull-up to the short corner in
+three of them). Now (2026-11-09) a corner man drifts up to the short
+corner for a kick-out jumper in the high pick-and-roll, Horns and
+drive-and-kick, and the ball handler takes it baseline to pull up there
+off a side pick-and-roll or an isolation (the playbook's new
+`R_short_corner` reads): along the baseline 7 of 93.

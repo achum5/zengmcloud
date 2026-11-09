@@ -26439,11 +26439,18 @@ class Director {
 				backing.set(tr.pid, w);
 			}
 		}
-		const backsDown = (pid: number, t: number) =>
-			backing.get(pid)?.some(([a, b]) => a <= t && t <= b) ?? false;
 		// Over a few steps either side of him, as far as the most he needs
 		// to be over - and smoothly.
 		const R = 3 * SOFT;
+		// (And from as far either side of it as being kept off him is eased
+		// over: not kept off him just before he starts in, or as he turns
+		// after, and eased off his back during it for that.)
+		const BACKING_EASE = (AHEAD + R) * DT;
+		const backsDown = (pid: number, t: number) =>
+			backing
+				.get(pid)
+				?.some(([a, b]) => a - BACKING_EASE <= t && t <= b + BACKING_EASE) ??
+			false;
 		const K: number[] = [];
 		for (let d = -R; d <= R; d++) {
 			K.push(Math.exp(-(d * d) / (2 * SOFT * SOFT)));

@@ -176,6 +176,17 @@ const jumperParts = (
 				? `wing ${side}`
 				: "top";
 	const depth = deep < 1.2 ? "on the line" : deep < 3.5 ? "a step off" : "deep";
+	// Inside the arc: by its angle to the rim - along the baseline, the
+	// elbow or wing, straight on - and how far out.
+	const twoSpot = (() => {
+		const dx = Math.abs(P.x - rim.x);
+		const dy = P.y - 25;
+		const ang = (Math.atan2(Math.abs(dy), dx) * 180) / Math.PI;
+		const far = dist(P, rim);
+		const where =
+			ang > 62 ? `baseline ${side}` : ang > 25 ? `elbow/wing ${side}` : "top";
+		return `${where}, ${far < 14 ? "short" : far < 19 ? "mid" : "long two"}`;
+	})();
 
 	// His form, as it is drawn.
 	const form = evalPlayer(tl, pid, release).anim;
@@ -664,7 +675,8 @@ const jumperParts = (
 		pid,
 		parts: {
 			setup: [setup, ...tags].join(" + "),
-			spot: `${spot}, ${depth}`,
+			spot:
+				deep < -1 && Math.abs(P.y - 25) < 21.5 ? twoSpot : `${spot}, ${depth}`,
 			form: form ?? "?",
 			footwork,
 			way,

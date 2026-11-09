@@ -291,7 +291,7 @@ describe("3D crew", () => {
 	test("a shot let go after the horn is waved off", () => {
 		let ends = 0;
 		let late = 0;
-		for (const seed of ["a", "b"]) {
+		for (const seed of ["a", "b", "c", "d"]) {
 			const { events, players } = fakeGame(seed, 150);
 			// (Every period run out with five seconds left after its last line.)
 			events.forEach((e, end) => {
@@ -362,7 +362,7 @@ describe("3D crew", () => {
 		}
 		assert.isAtLeast(late, 3);
 		assert.isAtLeast(late, ends * 0.3);
-	}, 240_000);
+	}, 480_000);
 
 	test("at the line, the official under the basket bounces the shooter the ball", () => {
 		const { tl, crew } = working("a");
