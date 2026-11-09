@@ -523,11 +523,12 @@ describe("the plays acted out", () => {
 			}
 			acted += 1;
 			assert.isAtMost(l.t0, play.whistle + 2300, `play ${play.i}`);
-			// (Him right there, at it.)
+			// (Him right there, at it - by a man lying there, as far off where
+			// he is counted from, his hips, as his upper body is.)
 			const mid = (l.t0 + l.t1) / 2;
 			assert.isTrue(
 				play.parts.some(
-					(p) => p.team !== him.team && dist(posAt(p, mid), l.to) < 4,
+					(p) => p.team !== him.team && dist(posAt(p, mid), l.to) < 5,
 				),
 				`play ${play.i}`,
 			);

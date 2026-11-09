@@ -52,6 +52,7 @@ import { carriedIn, carriedTo, SET } from "./pace.ts";
 import { sidelineOf } from "./sideline.ts";
 import {
 	alongRoute,
+	conceptRoutes,
 	decoyRoute,
 	layRoute,
 	targetRoute,
@@ -164,6 +165,9 @@ const RECEIVERS = new Set<Role>([
 	"SL2",
 ]);
 
+// A back lined up further out than this (feet across from the ball) is
+// flexed out to a side: a receiver of that side's, in its concept.
+const BACK_FLEXED_FT = 12;
 const spotOf = (role: Role): Spot =>
 	role === "X" || role === "Z"
 		? "wide"
@@ -7702,7 +7706,7 @@ class Action {
 			const legs = m.legs;
 			let yaw = legs[0]?.yaw ?? 0;
 			const faced = legs.map((l) => (yaw = yawOf(l, yaw)));
-			for (let i = 0; i < legs.length;) {
+			for (let i = 0; i < legs.length; ) {
 				if (!still(legs[i]!)) {
 					i++;
 					continue;
@@ -8247,7 +8251,7 @@ class Action {
 			// (A run of them together the one way, at the one pace: not
 			// swaying on with the push he had into nobody, a step a walk and
 			// the next a jog.)
-			for (let i = 0; i < m.legs.length;) {
+			for (let i = 0; i < m.legs.length; ) {
 				let j = i + 1;
 				while (
 					air[i] &&
@@ -9026,7 +9030,7 @@ class Action {
 					fixed.push(b.t0, this.ball[k + 1]?.t0 ?? Infinity);
 				}
 			});
-			for (let i = 0; i < m.legs.length;) {
+			for (let i = 0; i < m.legs.length; ) {
 				if (!free(m, m.legs[i]!)) {
 					i++;
 					continue;
@@ -10494,15 +10498,35 @@ class Action {
 			target!.hold(snap + SLIP_WAIT, "passSet", this.ahead);
 		}
 
-		// The routes, each man off the line a moment after the snap.
+		// The routes, each man off the line a moment after the snap: the
+		// play's concepts, a side of the field at a time - the one the ball
+		// goes to his (see routes.ts conceptRoutes).
 		const routes = new Map<number, Route>();
-		for (const m of runners) {
+		const called = conceptRoutes(
+			runners.map((m) => {
+				const start = this.of(m.at);
+				const spot = spotOf(m.role);
+				// (A back in the backfield: out of it, his own.)
+				const side =
+					spot === "back" && Math.abs(start.a) < BACK_FLEXED_FT
+						? 0
+						: start.a < 0
+							? -1
+							: 1;
+				return { side, out: Math.abs(start.a), spot };
+			}),
+			thrown && target && targetName ? runners.indexOf(target) : -1,
+			thrown ? targetName : undefined,
+			r,
+		);
+		for (const [i, m] of runners.entries()) {
 			const start = this.of(m.at);
 			const inSign = inSignOf(start);
 			if (m === target && thrown && targetName) {
 				routes.set(m.pid, targetLaid ?? layTarget(m, targetName));
 			} else {
-				const { name, depth } = decoyRoute(spotOf(m.role), r(), r());
+				const { name, depth } =
+					called[i] ?? decoyRoute(spotOf(m.role), r(), r());
 				routes.set(
 					m.pid,
 					layRoute(name, start, inSign, depth, this.bounds, r(), r()),

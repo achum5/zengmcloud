@@ -614,3 +614,327 @@ export const alongRoute = (route: Route, along: number): OPt => {
 	}
 	return p[0]!;
 };
+
+// CONCEPTS: the routes called together on a side of the field, as a pass
+// play is drawn up - each man's route set off his teammates' so they
+// stretch a defender between them (high and low, inside and out) rather
+// than run anywhere. On each side, from the man split widest in: a route
+// and how deep (yards). The ball goes to the man the sim says - his route
+// one of his side's concept's - and every other man runs his concept's.
+export type ConceptLeg = [RouteName, number, number];
+export type Concept = { legs: ConceptLeg[]; w: number };
+export const SIDE_CONCEPTS: Concept[][] = [
+	[],
+	// A man alone on his side: his route on its own.
+	[
+		{ legs: [["go", 25, 30]], w: 4 },
+		{ legs: [["slant", 5, 7]], w: 2 },
+		{ legs: [["hitch", 5, 6]], w: 2 },
+		{ legs: [["curl", 10, 12]], w: 2 },
+		{ legs: [["dig", 12, 15]], w: 2 },
+		{ legs: [["out", 8, 12]], w: 2 },
+		{ legs: [["comeback", 12, 15]], w: 1 },
+		{ legs: [["post", 16, 20]], w: 1 },
+		{ legs: [["fade", 20, 25]], w: 1 },
+	],
+	// Two: the outside man, and the one inside him.
+	[
+		// Smash: the hitch under the corner, the corner over it.
+		{
+			legs: [
+				["hitch", 5, 6],
+				["corner", 12, 15],
+			],
+			w: 3,
+		},
+		// Slant-flat: the slant over the top of the flat.
+		{
+			legs: [
+				["slant", 5, 6],
+				["flat", 1, 3],
+			],
+			w: 3,
+		},
+		// Curl-flat.
+		{
+			legs: [
+				["curl", 10, 12],
+				["flat", 1, 3],
+			],
+			w: 3,
+		},
+		// Dagger: the seam clearing out the middle for the dig under it.
+		{
+			legs: [
+				["dig", 15, 18],
+				["seam", 20, 25],
+			],
+			w: 2,
+		},
+		// Sail: the go clearing the corner off the out under it.
+		{
+			legs: [
+				["go", 25, 30],
+				["out", 10, 12],
+			],
+			w: 2,
+		},
+		// Verticals.
+		{
+			legs: [
+				["go", 25, 30],
+				["seam", 20, 25],
+			],
+			w: 2,
+		},
+		// Levels: the dig over the shallow cross.
+		{
+			legs: [
+				["dig", 12, 15],
+				["drag", 4, 6],
+			],
+			w: 2,
+		},
+		// Mills: the post over the dig.
+		{
+			legs: [
+				["post", 16, 20],
+				["dig", 12, 15],
+			],
+			w: 1,
+		},
+		// Double slants.
+		{
+			legs: [
+				["slant", 5, 6],
+				["slant", 5, 7],
+			],
+			w: 2,
+		},
+		// The hitch outside, the seam up over the hook defender inside.
+		{
+			legs: [
+				["hitch", 5, 6],
+				["seam", 20, 25],
+			],
+			w: 2,
+		},
+		// The out under the corner's go.
+		{
+			legs: [
+				["out", 6, 8],
+				["go", 25, 30],
+			],
+			w: 1,
+		},
+	],
+	// Three: trips - the outside man, the middle one, the one inside.
+	[
+		// Flood: high, middle and low on the same side.
+		{
+			legs: [
+				["go", 25, 30],
+				["out", 10, 12],
+				["flat", 1, 3],
+			],
+			w: 3,
+		},
+		// Stick: the clear-out, the stick sat down at the sticks, the flat.
+		{
+			legs: [
+				["go", 25, 30],
+				["hitch", 5, 6],
+				["flat", 1, 3],
+			],
+			w: 3,
+		},
+		// Smash from trips, the flat under them.
+		{
+			legs: [
+				["hitch", 5, 6],
+				["corner", 12, 15],
+				["flat", 1, 3],
+			],
+			w: 2,
+		},
+		// Verticals.
+		{
+			legs: [
+				["go", 25, 30],
+				["seam", 20, 25],
+				["seam", 18, 22],
+			],
+			w: 2,
+		},
+		// Levels: the clear-out, the dig, the shallow cross under it.
+		{
+			legs: [
+				["go", 25, 30],
+				["dig", 12, 15],
+				["drag", 4, 6],
+			],
+			w: 2,
+		},
+		// The deep cross and the post over it, behind the go.
+		{
+			legs: [
+				["go", 25, 30],
+				["post", 16, 20],
+				["dig", 15, 18],
+			],
+			w: 1,
+		},
+		// Spacing: three sat down across the field at the same depth.
+		{
+			legs: [
+				["hitch", 5, 6],
+				["hitch", 5, 6],
+				["flat", 1, 3],
+			],
+			w: 1,
+		},
+	],
+];
+// A back out of the backfield, his own: underneath it all.
+const BACK_ROUTES: Choice = [
+	["checkdown", 4],
+	["flat", 3],
+	["swing", 1],
+	["wheel", 1],
+];
+// (A route as the kind of man running it runs it: a tight end's go is a
+// seam up the middle of his side.)
+const asRun = (name: RouteName, spot: Spot): RouteName =>
+	spot === "te" && (name === "go" || name === "fade")
+		? "seam"
+		: spot === "te" && name === "comeback"
+			? "curl"
+			: name;
+// (Routes alike enough to stand in for one another in a concept: the ball
+// thrown on one where the concept calls for the other.)
+const FAMILY: Record<RouteName, string> = {
+	go: "vert",
+	fade: "vert",
+	seam: "vert",
+	sluggo: "vert",
+	backShoulder: "vert",
+	post: "post",
+	corner: "corner",
+	dig: "dig",
+	out: "out",
+	comeback: "sit",
+	hitch: "sit",
+	curl: "sit",
+	slant: "slant",
+	drag: "under",
+	flat: "flat",
+	swing: "back",
+	screen: "back",
+	slip: "back",
+	checkdown: "back",
+	wheel: "back",
+};
+
+// A receiver going out on the play: which side of the ball (-1 his left,
+// 1 his right - the offense's - 0 a back behind the quarterback), how far
+// out he is lined up (feet across), and what kind of receiver.
+export type Runner = { side: -1 | 0 | 1; out: number; spot: Spot };
+
+// The routes the play calls for every man going out but the one the ball
+// goes to (`target`, his index, running `targetName`): each a route and how
+// deep (feet downfield of the line) - none for him. (`r`: the play's own
+// random numbers.)
+export const conceptRoutes = (
+	runners: Runner[],
+	target: number,
+	targetName: RouteName | undefined,
+	r: () => number,
+): ({ name: RouteName; depth: number } | undefined)[] => {
+	const out: ({ name: RouteName; depth: number } | undefined)[] = runners.map(
+		() => undefined,
+	);
+	const leg = (i: number, [name, lo, hi]: ConceptLeg) => {
+		out[i] = {
+			name: asRun(name, runners[i]!.spot),
+			depth: (lo + (hi - lo) * r()) * 3,
+		};
+	};
+	for (const side of [-1, 1] as const) {
+		// From the widest in.
+		const men = runners
+			.map((m, i) => ({ m, i }))
+			.filter(({ m }) => m.side === side)
+			.sort((a, b) => b.m.out - a.m.out);
+		if (men.length === 0) {
+			continue;
+		}
+		// (More than three on a side: the three widest run the concept, any
+		// more underneath it.)
+		const called = men.slice(0, 3);
+		const all = SIDE_CONCEPTS[called.length]!;
+		const at = called.findIndex(({ i }) => i === target);
+		const thrownOn = (c: Concept, exact: boolean) => {
+			const want = c.legs[at]![0];
+			return exact
+				? asRun(want, runners[target]!.spot) === targetName
+				: FAMILY[want] === FAMILY[targetName!];
+		};
+		const exact = all.filter((c) => at >= 0 && thrownOn(c, true));
+		const fits =
+			at < 0 || targetName === undefined
+				? all
+				: exact.length > 0
+					? exact
+					: all.filter((c) => thrownOn(c, false));
+		if (fits.length > 0) {
+			const c = pickConcept(fits, r());
+			called.forEach(({ i }, k) => {
+				if (i !== target) {
+					leg(i, c.legs[k]!);
+				}
+			});
+		} else {
+			// (Nothing drawn up with his route in it: the others clear out
+			// over it, or sit down under it - not run into where it goes.)
+			const deep = DECOY_DEPTH[targetName!][1] >= 15;
+			called.forEach(({ i }, k) => {
+				if (i !== target) {
+					leg(
+						i,
+						deep
+							? k === called.length - 1
+								? ["flat", 1, 3]
+								: ["hitch", 5, 6]
+							: k === 0
+								? ["go", 25, 30]
+								: ["seam", 18, 25],
+					);
+				}
+			});
+		}
+		for (const { i } of men.slice(3)) {
+			if (i !== target) {
+				leg(i, ["drag", 2, 5]);
+			}
+		}
+	}
+	for (const [i, m] of runners.entries()) {
+		if (m.side === 0 && i !== target) {
+			const name = pick(BACK_ROUTES, r());
+			const [lo, hi] = DECOY_DEPTH[name];
+			out[i] = { name, depth: (lo + (hi - lo) * r()) * 3 };
+		}
+	}
+	return out;
+};
+const pickConcept = (cs: Concept[], u: number): Concept => {
+	const total = cs.reduce((s, c) => s + c.w, 0);
+	let x = u * total;
+	for (const c of cs) {
+		x -= c.w;
+		if (x < 0) {
+			return c;
+		}
+	}
+	return cs.at(-1)!;
+};
