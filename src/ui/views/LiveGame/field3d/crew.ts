@@ -504,6 +504,14 @@ const splitAt = (legs: Leg[], t: number) => {
 	}
 };
 
+// The way a leg has him facing: the way it says, or the way he goes.
+const legYaw = (l: Leg): number =>
+	l.yaw ?? Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x);
+// (A point the way given no further off from the way he should face than
+// this - its cosine - and showing for this long at least, ms.)
+const POINT_FACES = Math.cos(Math.PI / 6);
+const POINT_LEAST_MS = 300;
+
 // His arms through `move` over t0..t1, whatever the rest of him is doing -
 // with his left arm, `mirrored`.
 const armsOver = (
@@ -999,6 +1007,8 @@ export const stageCrew = (
 		t0: number;
 		t1: number;
 		left?: boolean;
+		// (A point the way, given facing this way: see POINT_FACES.)
+		faces?: number;
 	}[] = [];
 	for (const c of input.calls) {
 		const { foul } = c;
@@ -1022,6 +1032,7 @@ export const stageCrew = (
 			t0: c.t + CALL_SIGNAL_MS,
 			t1: c.t + CALL_SIGNAL_MS + CALL_SIDE_MS,
 			left: foul.accepted && leftArm(FACING_US, way),
+			...(foul.accepted ? { faces: FACING_US } : {}),
 		});
 	}
 	for (const sg of input.signals) {
@@ -1140,6 +1151,7 @@ export const stageCrew = (
 				left:
 					(sg.what === "first" || sg.what === "ball") &&
 					leftArm(yaw, sg.way ?? dir),
+				...(sg.what === "first" || sg.what === "ball" ? { faces: yaw } : {}),
 			});
 		}
 	}
@@ -1670,7 +1682,24 @@ export const stageCrew = (
 		}
 	}
 	for (const a of arms) {
-		armsOver(legsOf.get(a.o)!, a.move, a.t0, a.t1, a.left);
+		const legs = legsOf.get(a.o)!;
+		let t0 = a.t0;
+		if (a.faces !== undefined) {
+			// (Pointing the way once he faces where it is given from - not
+			// run on through it, pulling up turned the way he goes: across
+			// the field, it points no way at all.)
+			const turned = legs.find(
+				(l) =>
+					l.t1 > a.t0 &&
+					l.t0 < a.t1 &&
+					Math.cos(legYaw(l) - a.faces!) > POINT_FACES,
+			);
+			if (!turned || Math.max(a.t0, turned.t0) > a.t1 - POINT_LEAST_MS) {
+				continue;
+			}
+			t0 = Math.max(a.t0, turned.t0);
+		}
+		armsOver(legs, a.move, t0, a.t1, a.left);
 	}
 	// (The referee giving each call over his microphone as he signals it.)
 	for (const c of input.calls) {
