@@ -1939,7 +1939,7 @@ const shop = async (numShoppers: number) => {
 		const others = tids.filter((x) => x !== tid);
 		const partners: number[] = [];
 		while (
-			partners.length < marketSettings.partnersPerShopper &&
+			partners.length < settingFor(tid, "partnersPerShopper") &&
 			others.length > 0
 		) {
 			partners.push(others.splice(Math.floor(random() * others.length), 1)[0]!);
