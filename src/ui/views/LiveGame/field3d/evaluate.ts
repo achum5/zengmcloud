@@ -1,4 +1,5 @@
 import {
+	BLEND_DEPTH,
 	BLEND_MS,
 	blendEase,
 	blendEaseRate,
@@ -1648,11 +1649,32 @@ const stateOf = (
 					(legs[j]!.t0 - legs[j2]!.t0) / blendOf(legs[j2]!, legs[j2 - 1]),
 				)
 			: 0;
-	const c2 = c > 1 ? changedAt(c - 1, legs[c]!.t0) : 0;
-	const left = leftOf(c, c2);
-	// (And that one, then, itself still partly what he was before it.)
-	const c3 = left > 0 && c2 > 1 ? changedAt(c2 - 1, legs[c2]!.t0) : 0;
-	const left2 = left > 0 ? leftOf(c2, c3) : 0;
+	// (And that one, then, itself still partly what he was before it - and
+	// so on back, as far as the court's go: see its BLEND_DEPTH. Each the leg
+	// it changed into, and how much of what he was before it was left.)
+	const chain: { j: number; left: number }[] = [];
+	for (let j = c; chain.length < BLEND_DEPTH - 1; ) {
+		const next = j > 1 ? changedAt(j - 1, legs[j]!.t0) : 0;
+		const left = leftOf(j, next);
+		if (left <= 0) {
+			break;
+		}
+		chain.push({ j: next, left });
+		j = next;
+	}
+	// (What he was under all that, outermost first.)
+	type Under = NonNullable<NonNullable<FieldPlayerState["from"]>["under"]>;
+	const underFrom = (i: number): Under | undefined => {
+		const at = chain[i];
+		if (!at) {
+			return undefined;
+		}
+		const deeper = underFrom(i + 1);
+		return {
+			...underOf(legs[at.j - 1]!, at.left),
+			...(deeper ? { under: deeper } : {}),
+		};
+	};
 	const yaw = yawAt(legs, t);
 	// Stood turning, a foot at a time (or not yet - or no longer - turning,
 	// each foot where he faced as he stood, or as it stood on the turf).
@@ -1755,14 +1777,7 @@ const stateOf = (
 				? { arms: { move: prior.arms, phase: armsPhaseOf(prior, prior.t1) } }
 				: {}),
 			...(prior.ball ? { ball: prior.ball } : {}),
-			...(left > 0
-				? {
-						under: {
-							...underOf(legs[c2 - 1]!, left),
-							...(left2 > 0 ? { under: underOf(legs[c3 - 1]!, left2) } : {}),
-						},
-					}
-				: {}),
+			...(chain.length > 0 ? { under: underFrom(0) } : {}),
 			...(stepsOver(prior.move as Move, l.move as Move) &&
 			steady(legs, legs[c]!.t0 - reach, legs[c]!.t0 + blending + reach)
 				? { steps: true as const }
@@ -1796,26 +1811,18 @@ const stateOf = (
 	let drive = 0;
 	let share = 1;
 	let off = now;
-	const shows = [
-		{ move: l.move, w: from?.w ?? 0, at: t },
-		...(from
-			? [
-					{ move: from.move, w: from.under?.w ?? 0, at: legs[c]!.t0 },
-					...(from.under
-						? [
-								{
-									move: from.under.move,
-									w: from.under.under?.w ?? 0,
-									at: legs[c2]!.t0,
-								},
-								...(from.under.under
-									? [{ move: from.under.under.move, w: 0, at: legs[c3]!.t0 }]
-									: []),
-							]
-						: []),
-				]
-			: []),
-	];
+	const shows = [{ move: l.move as Move, w: from?.w ?? 0, at: t }];
+	if (from) {
+		shows.push({ move: from.move, w: from.under?.w ?? 0, at: legs[c]!.t0 });
+		let u = from.under;
+		for (const at of chain) {
+			if (!u) {
+				break;
+			}
+			shows.push({ move: u.move, w: u.under?.w ?? 0, at: legs[at.j]!.t0 });
+			u = u.under;
+		}
+	}
 	for (const [i, u] of shows.entries()) {
 		const striding = DRIVES.has(u.move as Move);
 		if (!striding || i === 0 || !DRIVES.has(shows[i - 1]!.move as Move)) {
