@@ -77,7 +77,10 @@ each part, so the table below can say how far along each part is.
   court. The pass can stay - the way into it should look like a man reading
   the floor: easing off as the defense gets back, picking his dribble up, a
   look, then the pass.
-- **Injured men on the bench in street clothes**, not in uniform.
+- **Injured men on the bench in street clothes**, not in uniform. Done
+  2026-11-09: a man out hurt from before the game (not hurt in it, not
+  playing through it) sits with his team in a suit, a shirt open at the
+  neck, his own every game - no number, no name - and never warms up.
 - **The opening tip** (a clip, 2026-11-04): the two bigs should step up into
   the circle and go up for it like men jumping, not stand there; and off the
   tip, men of the team that won it ran the wrong way. (See #19.)

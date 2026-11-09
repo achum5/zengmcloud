@@ -522,6 +522,9 @@ const fxLevel = (
 // uniform's own picture.
 const warmups = new WeakMap<Look, Look>();
 const warmupLook = (look: Look, top: string): Look => {
+	if (look.street) {
+		return look;
+	}
 	let out = warmups.get(look);
 	if (!out || out.kit.jersey !== top) {
 		const k = look.kit;

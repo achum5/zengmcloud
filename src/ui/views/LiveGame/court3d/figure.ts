@@ -106,6 +106,9 @@ export type Look = {
 	// The team's logo, drawn: on the front of his warm-up top.
 	crest?: HTMLCanvasElement;
 	head?: HeadSprite;
+	// In his street clothes, not his uniform - out hurt (see streetClothes):
+	// never put into a warm-up top.
+	street?: true;
 };
 
 type P2 = { x: number; y: number };
@@ -1297,6 +1300,43 @@ export const kitsFor = (
 	kitOf(away, ["#1d3461", "#f28c28", "#ffffff"], "road"),
 	kitOf(home, ["#8c1d40", "#f2c14e", "#ffffff"], "home"),
 ];
+
+// OUT HURT, on the bench in his street clothes: a suit - the jacket and
+// trousers in the same color - and a shirt open at the neck, his own every
+// game (decided by who he is). No number, no name, no team on him.
+const STREET_SUITS = [
+	"#1d2333",
+	"#24262c",
+	"#151517",
+	"#3a3f4a",
+	"#2f2924",
+	"#41352a",
+];
+const STREET_SHIRTS = ["#eceae4", "#d9e3ee", "#1a1a1c", "#f4f4f4"];
+export const streetClothes = (
+	pid: number,
+): Pick<Look, "kit" | "gear" | "outfit"> => {
+	const rng = makeCourtRng(`street|${pid}`);
+	const suit = STREET_SUITS[Math.floor(rng() * STREET_SUITS.length)]!;
+	const shirt = STREET_SHIRTS[Math.floor(rng() * STREET_SHIRTS.length)]!;
+	const shoe = rng() < 0.7 ? "#141416" : "#f2f2f0";
+	const sole = shoe === "#141416" ? "#2a2a2c" : "#d8d8d4";
+	return {
+		kit: {
+			jersey: suit,
+			trim: suit,
+			number: suit,
+			numberEdge: suit,
+			shorts: suit,
+			stripe: suit,
+			sock: suit,
+			shoe,
+			sole,
+		},
+		gear: { tights: { legs: "RL", color: suit }, shoe, sole, sock: suit },
+		outfit: { sleeves: "long", shirt },
+	};
+};
 
 // A player's own gear, the same every game he plays: decided by who he is,
 // in the colors of whatever his team wears tonight.

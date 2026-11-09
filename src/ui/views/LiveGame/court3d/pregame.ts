@@ -444,7 +444,9 @@ export const stageWarmup = (players: CourtPlayer[], seed: number): Warmup => {
 	const parts: CourtTimeline[] = [];
 	for (const team of [0, 1] as const) {
 		const mine = players
-			.filter((p) => p.team === team && !(p.injury && p.injury.games > 0))
+			.filter(
+				(p) => p.team === team && !p.out && !(p.injury && p.injury.games > 0),
+			)
 			.slice(0, 9);
 		const bigs = [...mine]
 			.sort((a, b) => rank(BIG, a.pos) - rank(BIG, b.pos))

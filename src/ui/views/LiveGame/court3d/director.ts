@@ -195,6 +195,9 @@ export type CourtPlayer = {
 	skills?: string[];
 	// Hurt in this game: what it is, and how many games it keeps him out.
 	injury?: { type: string; games: number };
+	// Out hurt from before the game: on the bench in his street clothes,
+	// never in it (nor out warming up).
+	out?: boolean;
 	// His ratings, where they are known (see ratings.ts).
 	ratings?: CourtRatings;
 };

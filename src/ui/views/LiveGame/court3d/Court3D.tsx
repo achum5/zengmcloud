@@ -55,7 +55,8 @@ import { crewAt, crewFor } from "./crew.ts";
 import { headColors, loadHead, profileOf, type HeadSprite } from "./faces.ts";
 import { arenaSpecFor } from "./arenaSpec.ts";
 import { crowdFaces, type CrowdFace } from "./crowdFaces.ts";
-import { gearFor, kitsFor, shade, type Look } from "./figure.ts";
+import { gearFor, kitsFor, shade, streetClothes, type Look } from "./figure.ts";
+import { outHurt } from "./outHurt.ts";
 import { dressKit } from "./kitArt.ts";
 import { logoPicture } from "./logoPicture.ts";
 import { COURT_W, type Side } from "./geometry.ts";
@@ -301,6 +302,7 @@ const Court3D = ({
 										games: p.injury.gamesRemaining ?? 0,
 									}
 								: undefined,
+						...(outHurt(p) ? { out: true } : {}),
 						name: p.name,
 						jerseyNumber: p.jerseyNumber,
 					});
@@ -631,7 +633,17 @@ const Court3D = ({
 			const kit = dressed[p.team as Side];
 			const art = arts[p.team as Side];
 			const crest = crests[p.team as Side];
-			const made = [f, head, kit, art, crest, team, p.name, p.jerseyNumber];
+			const made = [
+				f,
+				head,
+				kit,
+				art,
+				crest,
+				team,
+				p.name,
+				p.jerseyNumber,
+				p.out,
+			];
 			const was = kept.current.get(p.pid);
 			if (was && was.made.every((x, i) => x === made[i])) {
 				looks.set(p.pid, was.look);
@@ -671,6 +683,20 @@ const Court3D = ({
 					"",
 				head: head?.sprite,
 			});
+			// Out hurt: in his street clothes - nothing of the uniform on him.
+			if (p.out) {
+				const look = looks.get(p.pid)!;
+				delete look.kitArt;
+				delete look.crest;
+				looks.set(p.pid, {
+					...look,
+					...streetClothes(p.pid),
+					jerseyNumber: "",
+					lastName: "",
+					wordmark: "",
+					street: true,
+				});
+			}
 			bodies.set(p.pid, bodyOf(f?.hgt, f?.weight));
 			kept.current.set(p.pid, {
 				made,

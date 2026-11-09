@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 231,
+		date: "2026-11-09",
+		text: "3D games: players out injured now sit on the bench in street clothes (a suit) instead of their uniform, and don't take part in the warm-ups.",
+	},
+	{
 		n: 230,
 		date: "2026-11-09",
 		text: "3D games: when the ball goes out of bounds, the players nearest it now and then point the way they think it should go.",
