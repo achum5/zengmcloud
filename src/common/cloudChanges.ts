@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 243,
+		date: "2026-11-09",
+		text: "Watching a replay no longer uploads anything to the league. (Since the shot chart update, re-watching a game in 3D could send that game's whole play-by-play back up to the cloud.)",
+	},
+	{
 		n: 242,
 		date: "2026-11-09",
 		text: "3D games: players' legs are shaped like legs - the thigh runs into the knee and the calf swells below it, instead of two rods with a ball between them - and their shorts hang looser.",

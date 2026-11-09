@@ -8093,7 +8093,9 @@ const getReplayFeed = async (gid: number) => {
 		const row =
 			(await idb.cache.liveGamePlayByPlay.get(gid)) ??
 			(await (idb.league as any).get("liveGamePlayByPlay", gid));
-		shots = row?.shots;
+		// (As this device last watched it again, if it has - see
+		// saveReplayShots.)
+		shots = replayShotsHere.get(gid) ?? row?.shots;
 	} catch {
 		// No chart.
 	}
@@ -8118,14 +8120,23 @@ const getReplayFeed = async (gid: number) => {
 
 // The shots of a game watched in 3D, where the court had them (see
 // LiveGame/gamecast/shots.ts), kept with its saved replay for the shot chart
-// on its box score - the last time it was watched: the court stages a game
-// the same every time, but a newer version of it can stage it differently.
+// on its box score. The court stages a game the same every time, but a newer
+// version of it can stage it differently - so a game watched AGAIN keeps
+// where this watching had them too, for the chart to match what was just
+// seen. But only here, and only till the page is closed (`replay`): the
+// replay's row is shared, and writing it sent the whole of it - the game's
+// play-by-play - up to the league again, for every game anyone watched
+// again after any change to the court. Watching a replay uploads nothing.
+const replayShotsHere = new Map<number, number[]>();
+const REPLAY_SHOTS_KEPT = 50;
 const saveReplayShots = async ({
 	gid,
 	shots,
+	replay,
 }: {
 	gid: number;
 	shots: number[];
+	replay?: boolean;
 }) => {
 	if (
 		typeof gid !== "number" ||
@@ -8134,6 +8145,17 @@ const saveReplayShots = async ({
 		shots.length > 20000 ||
 		!shots.every((x) => Number.isInteger(x))
 	) {
+		return;
+	}
+	if (replay) {
+		replayShotsHere.delete(gid);
+		replayShotsHere.set(gid, shots);
+		for (const old of replayShotsHere.keys()) {
+			if (replayShotsHere.size <= REPLAY_SHOTS_KEPT) {
+				break;
+			}
+			replayShotsHere.delete(old);
+		}
 		return;
 	}
 	let row = await idb.cache.liveGamePlayByPlay.get(gid);

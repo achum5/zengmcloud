@@ -3069,13 +3069,16 @@ export const LiveGame = (props: View<"liveGame">) => {
 			setShots(spots);
 			// (Not on a court following another device's: that one keeps them.)
 			if (!isFollower && spots.length > 0) {
+				// (A game watched again keeps them on this device only: a
+				// replay uploads nothing - see saveReplayShots.)
 				toWorker("main", "saveReplayShots", {
 					gid: shotsGid,
 					shots: packShots(spots),
+					replay: isReplay,
 				}).catch(() => {});
 			}
 		},
-		[isFollower, shotsGid],
+		[isFollower, shotsGid, isReplay],
 	);
 
 	// A replay opened at a play (tapped on its box score - see GameRecap):
