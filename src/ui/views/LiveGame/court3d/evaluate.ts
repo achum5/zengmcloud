@@ -3172,29 +3172,33 @@ const paceAt = (tr: Track, t: number): number => {
 	const s = spotAt(tr, t);
 	return s.moving && s.run ? paceOn(s.run, t) : 0;
 };
-const driveOf = (tr: Track, anim: AnimName, t: number): number => {
-	if (!DRIVES.has(anim)) {
-		return 0;
-	}
+// (Any sport's man, going at `pace` (feet a second) at t: over `ms`, its
+// windows `lags` further back.)
+export const driveFrom = (
+	pace: (t: number) => number,
+	t: number,
+	ms = DRIVE_MS,
+	lags = DRIVE_LAGS,
+): number => {
 	const d =
-		DRIVE_LAGS.reduce(
+		lags.reduce(
 			(sum, lag) =>
 				sum +
 				Math.max(
 					-1,
 					Math.min(
 						1,
-						((paceAt(tr, t - lag) - paceAt(tr, t - lag - DRIVE_MS)) * 1000) /
-							DRIVE_MS /
-							DRIVE_FULL,
+						((pace(t - lag) - pace(t - lag - ms)) * 1000) / ms / DRIVE_FULL,
 					),
 				),
 			0,
-		) / DRIVE_LAGS.length;
+		) / lags.length;
 	return (
 		(Math.sign(d) * Math.max(0, Math.abs(d) - DRIVE_MIN)) / (1 - DRIVE_MIN)
 	);
 };
+const driveOf = (tr: Track, anim: AnimName, t: number): number =>
+	DRIVES.has(anim) ? driveFrom((u) => paceAt(tr, u), t) : 0;
 // How far off the floor his stride takes him (short steps: see shortLift).
 const liftOf = (
 	anim: AnimName,

@@ -1,4 +1,5 @@
 import {
+	driveFrom,
 	footTurn,
 	hipsTurn,
 	LEGS_FTPS,
@@ -1571,25 +1572,14 @@ const changed = (a: Leg, b: Leg) =>
 	!a.mirrored !== !b.mirrored;
 
 // HOW HARD HE IS GOING AT IT on his strides, getting going or pulling up
-// (see sprite.ts driven): as hard as he has sped up or slowed down over the
-// last DRIVE_MS, against all he has (feet a second, a second) - his body
-// leaning into it a moment behind, not flicked from the one way to the
-// other - and nothing to speak of left out (see court3d's driveOf).
-const DRIVE_FULL = 28;
-const DRIVE_MIN = 0.08;
+// (see sprite.ts driven): the court's (see its driveFrom) - over a longer
+// window, his pace off the play's track a rougher thing than the court's.
 const DRIVE_MS = 300;
 const DRIVES = new Set<Move>(["jog", "run", "sprint"]);
-const driveOf = (tr: Track, t: number): number => {
-	const a = speedAt(tr, t);
-	const b = speedAt(tr, t - DRIVE_MS);
-	if (a === undefined || b === undefined) {
-		return 0;
-	}
-	const d = Math.max(-1, Math.min(1, ((a - b) * 1000) / DRIVE_MS / DRIVE_FULL));
-	return (
-		(Math.sign(d) * Math.max(0, Math.abs(d) - DRIVE_MIN)) / (1 - DRIVE_MIN)
-	);
-};
+const driveOf = (tr: Track, t: number): number =>
+	speedAt(tr, t) === undefined || speedAt(tr, t - DRIVE_MS) === undefined
+		? 0
+		: driveFrom((u) => speedAt(tr, u)!, t, DRIVE_MS, [0]);
 
 // (How wide the referee's mouth opens giving a call over his microphone:
 // see poses.ts TALKS.)
