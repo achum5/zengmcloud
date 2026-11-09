@@ -1,6 +1,8 @@
 import {
 	footTurn,
 	hipsTurn,
+	LEGS_FTPS,
+	legsTurned,
 	PIVOT_MS,
 	pivotFeet,
 } from "../court3d/evaluate.ts";
@@ -845,39 +847,76 @@ const strideTime = (s: Strides, ph: number): number | undefined => {
 // the time it comes down. Each foot's turn (degrees, his right then his
 // left - see Pose's footN), or nothing - both as he faces.
 const strideLock = (
-	legs: Leg[],
 	s: Strides,
 	gait: AnimName,
 	ph: number,
-	yaw: number,
+	// Which way his feet point at t, as his legs have them (radians) - and
+	// his legs turned under him now (see legsUnder).
+	footAt: (t: number) => number,
+	now: number,
+	under: number,
 ): [number, number] | undefined => {
 	const g = legPhases(gait, ph);
 	if (!g) {
 		return undefined;
 	}
-	const facing = (at: number) => yawAt(legs, lagged(legs, at));
-	// (A foot pointing `foot`, under a man facing `body`. His left is the
+	// (A foot pointing `foot`, its leg pointing `leg`. His left is the
 	// turf's clockwise.)
-	const turned = (foot: number, body: number) =>
-		footTurn(hipsTurn((wrapAngle(body - foot) * 180) / Math.PI));
+	const turned = (foot: number, leg: number) =>
+		footTurn(hipsTurn(under + (wrapAngle(leg - foot) * 180) / Math.PI) - under);
+	const to = footAt(now);
 	const foot = (phi: number): number => {
 		const c = g.back ? frac(g.duty - phi) : phi;
 		const fell = strideTime(s, ph - c);
 		if (fell === undefined) {
 			return 0;
 		}
-		const down = facing(fell);
+		const down = footAt(fell);
 		if (c < g.duty) {
-			return turned(down, yaw);
+			return turned(down, to);
 		}
 		const rose = strideTime(s, ph - c + g.duty) ?? fell;
 		const u = (c - g.duty) / (1 - g.duty);
 		const v = Math.min(1, Math.max(0, u));
-		return turned(down, facing(rose)) * (1 - v * v * (3 - 2 * v));
+		return turned(down, footAt(rose)) * (1 - v * v * (3 - 2 * v));
 	};
 	const r = foot(g.r);
 	const l = foot(g.l);
 	return Math.abs(r) < 0.5 && Math.abs(l) < 0.5 ? undefined : [r, l];
+};
+
+// GOING ONE WAY WHILE HE LOOKS ANOTHER - his eyes back on the ball, say -
+// his legs go the way he goes, his hips turned under him (the court's
+// legsTurned: as far as hips turn, and right round, backing off, not at
+// all). Backpedaling, his legs go back the way he goes. Eased in as he gets
+// going and out as he pulls up, so he is square again when he stops. (Not
+// shuffling across: his feet step out the way he faces.)
+const legsUnder = (
+	track: ReturnType<typeof trackOf>,
+	now: number,
+	gait: AnimName,
+	yaw: number,
+): number => {
+	if (gait === "shuffle") {
+		return 0;
+	}
+	const n = track.xs.length;
+	const i = Math.round((now - track.t0) / TRACK_MS);
+	if (i < 1 || i + 1 >= n || track.cut[i] || track.cut[i + 1]) {
+		return 0;
+	}
+	const hx = track.xs[i + 1]! - track.xs[i - 1]!;
+	const hy = track.ys[i + 1]! - track.ys[i - 1]!;
+	const v = (Math.hypot(hx, hy) * 1000) / (2 * TRACK_MS);
+	if (v < LEGS_FTPS) {
+		return 0;
+	}
+	const off =
+		(wrapAngle(Math.atan2(hy, hx) - yaw + (gait === "back" ? Math.PI : 0)) *
+			180) /
+		Math.PI;
+	const e = Math.min(1, (v - LEGS_FTPS) / LEGS_FTPS);
+	return legsTurned(off) * e * e * (3 - 2 * e);
 };
 // How far round his strides he is at t, and how long each leg's are.
 const strideAt = (
@@ -1799,10 +1838,20 @@ const stateOf = (
 	}
 	// Each foot down on his strides pointing where it came down - or on the
 	// ones he is just easing out of.
-	const gait = gaitOf(l.move as Move) ?? (from && gaitOf(from.move));
+	const own = gaitOf(l.move as Move);
+	const under = own && !pivot && z <= 0 ? legsUnder(track, now, own, yaw) : 0;
+	const gait = own ?? (from && gaitOf(from.move));
+	// (Which way his feet point at a moment of his strides: the way he faces
+	// then, his legs turned under him.)
+	const footAt = (u: number) => {
+		const faced = yawAt(legs, lagged(legs, u));
+		return gait
+			? faced - (legsUnder(track, u, gait, faced) * Math.PI) / 180
+			: faced;
+	};
 	const lock =
 		!pivot && z <= 0 && gait && strides
-			? strideLock(legs, strides, gait, stride.ph, yaw)
+			? strideLock(strides, gait, stride.ph, footAt, now, under)
 			: undefined;
 	// (Short steps, if he is striding - or just was.)
 	const short =
@@ -1822,6 +1871,7 @@ const stateOf = (
 		...(drive ? { drive } : {}),
 		...(pivot ? { pivot } : {}),
 		...(lock ? { lock } : {}),
+		...(under ? { legs: under } : {}),
 		...(from ? { from } : {}),
 		...(l.ball ? { ball: l.ball } : {}),
 		...(l.arms ? { arms: { move: l.arms, phase: armsPhaseOf(l, t) } } : {}),

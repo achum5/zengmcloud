@@ -116,17 +116,17 @@ describe("footwork", () => {
 	// (Before football's strides were the court's: 0.14.)
 	test("running, a foot down stays put", () => {
 		assert.isAbove(got.went, 3000);
-		assert.isBelow(got.slid / got.went, 0.08);
+		assert.isBelow(got.slid / got.went, 0.05);
 	});
 
 	// (Before: all the way round with him, 1.)
 	test("cutting, a foot down stays pointed where it came down - mostly", () => {
 		assert.isAbove(got.turned, 50);
-		assert.isBelow(got.spun / got.turned, 0.6);
+		assert.isBelow(got.spun / got.turned, 0.45);
 	});
 
 	test("getting going and pulling up, short steps - his feet not skated", () => {
 		assert.isAbove(got.shortWent, 1000);
-		assert.isBelow(got.shortSlid / got.shortWent, 0.3);
+		assert.isBelow(got.shortSlid / got.shortWent, 0.22);
 	});
 });

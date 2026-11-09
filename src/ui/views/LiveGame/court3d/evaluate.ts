@@ -5382,7 +5382,17 @@ const LEGS_EASE_MS = 220;
 const LEGS_GIVE = 40;
 // (Into or out of a run he joins at hardly more than a standstill, the same:
 // at that pace which way it heads is no way to turn his hips.)
-const LEGS_FTPS = 2;
+export const LEGS_FTPS = 2;
+// (His legs turned under him for going `off` degrees from the way he faces
+// - any sport's man. His left is the floor's clockwise.)
+export const legsTurned = (off: number): number => {
+	const a = Math.abs(off);
+	const turn =
+		a <= LEGS_TURN
+			? a
+			: LEGS_TURN * Math.max(0, 1 - (a - LEGS_TURN) / LEGS_GIVE);
+	return turn < 0.5 ? 0 : -Math.sign(off) * turn;
+};
 const legsOf = (here: Spot, yaw: number, anim: AnimName, t: number): number => {
 	const run = here.run;
 	// (Backpedalling, his legs go back the way he goes; closing out, his
@@ -5402,12 +5412,8 @@ const legsOf = (here: Spot, yaw: number, anim: AnimName, t: number): number => {
 		(wrapAngle(Math.atan2(here.hy, here.hx) - yaw + (back ? Math.PI : 0)) *
 			180) /
 		Math.PI;
-	const a = Math.abs(off);
-	const turn =
-		a <= LEGS_TURN
-			? a
-			: LEGS_TURN * Math.max(0, 1 - (a - LEGS_TURN) / LEGS_GIVE);
-	if (turn < 0.5) {
+	const turned = legsTurned(off);
+	if (turned === 0) {
 		return 0;
 	}
 	// Into it as he gets going from a standstill, out of it as he pulls up
@@ -5426,8 +5432,7 @@ const legsOf = (here: Spot, yaw: number, anim: AnimName, t: number): number => {
 			? 1
 			: smooth01((run.s1 - t) / LEGS_EASE_MS)) *
 		(here.round === undefined ? 1 : smooth01(here.round / LEGS_FTPS));
-	// (His left is the floor's clockwise.)
-	return -Math.sign(off) * turn * ease;
+	return turned * ease;
 };
 // (Stood where a run he pulled up from left him, still in its strides, the
 // turn it had them at as he stopped - till he settles out of them; or, off

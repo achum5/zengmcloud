@@ -88,6 +88,9 @@ export type FieldPlayerState = {
 	// (degrees, right then left - see evaluate.ts strideLock): down, it
 	// points where it came down.
 	lock?: [number, number];
+	// His legs turned under him from the way he faces (degrees - see
+	// evaluate.ts legsUnder): going one way, looking another.
+	legs?: number;
 	// Just after a change - of move, of what his arms are doing, of how he
 	// has the ball: the last as it was when it changed, and how much of his
 	// pose is still that (1 all, 0 none).
@@ -283,8 +286,10 @@ type Stepped = {
 	from: Blend | undefined;
 	arms: { move: Move; phase: number } | undefined;
 	feet: Feet | undefined;
-	// (Each foot turned at the ankle - see FieldPlayerState.lock.)
+	// (Each foot turned at the ankle - see FieldPlayerState.lock - and both
+	// legs under him.)
 	lock: [number, number] | undefined;
+	legs: number | undefined;
 	drive: number | undefined;
 	// His mouth open (see FieldPlayerState.mouth), where it shows.
 	mouth?: number;
@@ -392,6 +397,9 @@ const stepped = (st: FieldPlayerState, k: Steps): Stepped => {
 	return {
 		feet: feetIn(st, turn, fw, k),
 		lock: lockIn(st, fw),
+		legs: st.legs
+			? Math.round(st.legs / FEET_DEG) * FEET_DEG || undefined
+			: undefined,
 		phase: frameOf(st.move, st.phase, k),
 		len: lenIn(st.len),
 		drive: st.drive
@@ -450,7 +458,17 @@ const poseFor = (st: FieldPlayerState, s: Stepped): Pose => {
 		: blendedPose(st, s);
 	const f = s.feet;
 	const lk = s.lock;
-	const q = lk ? { ...p, footN: p.footN + lk[0], footF: p.footF + lk[1] } : p;
+	const lg = s.legs ?? 0;
+	const q =
+		lk || lg
+			? {
+					...p,
+					spinN: p.spinN + lg,
+					spinF: p.spinF + lg,
+					footN: p.footN + (lk?.[0] ?? 0),
+					footF: p.footF + (lk?.[1] ?? 0),
+				}
+			: p;
 	return f
 		? {
 				...q,
@@ -799,13 +817,14 @@ const planOf = (
 		shaded,
 	};
 	if (cache) {
-		const { phase, turn, from, arms, len, feet, lock, drive, mouth } = step;
+		const { phase, turn, from, arms, len, feet, lock, legs, drive, mouth } =
+			step;
 		const known = cache.ids.get(look);
 		const id = known ?? cache.next++;
 		if (known === undefined) {
 			cache.ids.set(look, id);
 		}
-		plan.key = `${fine ? "f" : ""}fb${id}|${st.move}${st.mirrored ? "m" : ""}|${phase}${len ? `s${len}` : ""}${drive ? `r${drive}` : ""}${feet ? `v${feet.join(",")}` : ""}${lock ? `k${lock.join(",")}` : ""}|${((turn % steps.turns) + steps.turns) % steps.turns}|${scale}|${px}|${st.ball ?? ""}${st.unseen ? "~" : ""}${arms ? `|${arms.move}${arms.phase}` : ""}${
+		plan.key = `${fine ? "f" : ""}fb${id}|${st.move}${st.mirrored ? "m" : ""}|${phase}${len ? `s${len}` : ""}${drive ? `r${drive}` : ""}${feet ? `v${feet.join(",")}` : ""}${lock ? `k${lock.join(",")}` : ""}${legs ? `g${legs}` : ""}|${((turn % steps.turns) + steps.turns) % steps.turns}|${scale}|${px}|${st.ball ?? ""}${st.unseen ? "~" : ""}${arms ? `|${arms.move}${arms.phase}` : ""}${
 			from
 				? `|${from.move}${from.mirrored ? "m" : ""}${from.steps ? "!" : ""}${from.phase}~${from.w}${from.arms ? `+${from.arms.move}${from.arms.phase}` : ""}${from.ball ? `@${from.ball}` : ""}${underKey(from.under)}`
 				: ""
