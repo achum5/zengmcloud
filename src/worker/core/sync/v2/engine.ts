@@ -1,5 +1,6 @@
 import { g, local, lock, logEvent, toUI } from "../../../util/index.ts";
 import { idb } from "../../../db/index.ts";
+import { mergeOfferBoards } from "./offerBoardMerge.ts";
 import { outbox } from "../outbox.ts";
 import {
 	compressSerialized,
@@ -2358,6 +2359,15 @@ export class SyncEngineV2 {
 				const caught = await this.doCatchUpInline();
 				if (!caught) {
 					return false;
+				}
+				// A team record this entry carries may now be older than the
+				// one just applied: merge human offers (offerBoardMerge.ts).
+				const merged = await mergeOfferBoards(entry.changeset, entry.action);
+				if (merged > 0) {
+					syncDebugLog("v2:offer-boards-merged", {
+						action: entry.action,
+						teams: merged,
+					});
 				}
 			}
 

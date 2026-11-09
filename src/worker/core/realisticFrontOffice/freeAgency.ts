@@ -846,13 +846,20 @@ export const freeAgencyDay = async () => {
 	).sort((a, b) => b.valueNoPot - a.valueNoPot || a.pid - b.pid);
 	const teams = (await idb.cache.teams.getAll()).filter((t) => !t.disabled);
 	const poolPids = new Set(pool.map((p) => p.pid));
-	// Offers for players no longer free agents are gone.
-	for (const t of teams) {
-		if (t.offerBoard?.some((x) => !poolPids.has(x.pid))) {
-			t.offerBoard = t.offerBoard.filter((x) => poolPids.has(x.pid));
-			await idb.cache.teams.put(t);
+	// Offers for players no longer free agents are gone. Each team is read
+	// again before it is written, here and below: in multiplayer an offer
+	// can land on this device while the day runs, as a new copy of the team,
+	// and writing back the copy read at the start would erase it.
+	const pruneOffers = async (keep: (pid: number) => boolean) => {
+		for (const { tid } of teams) {
+			const t = await idb.cache.teams.get(tid);
+			if (t?.offerBoard?.some((x) => !keep(x.pid))) {
+				t.offerBoard = t.offerBoard.filter((x) => keep(x.pid));
+				await idb.cache.teams.put(t);
+			}
 		}
-	}
+	};
+	await pruneOffers((pid) => poolPids.has(pid));
 	if (pool.length === 0) {
 		return;
 	}
@@ -1102,12 +1109,7 @@ export const freeAgencyDay = async () => {
 	}
 
 	// Signed players' offers are gone from every board.
-	for (const t of teams) {
-		if (t.offerBoard?.some((x) => !remaining.has(x.pid))) {
-			t.offerBoard = t.offerBoard.filter((x) => remaining.has(x.pid));
-			await idb.cache.teams.put(t);
-		}
-	}
+	await pruneOffers((pid) => remaining.has(pid));
 	if (results.length > 0) {
 		const season = g.get("season");
 		const daysLeft = g.get("daysLeft");
@@ -1238,7 +1240,6 @@ export const decideReSignings = async (tid: number) => {
 			await idb.cache.players.put(p);
 		}
 		await contractNegotiation.cancel(p.pid);
-		t.offerBoard = t.offerBoard.filter((x) => x.pid !== p.pid);
 		decided.push({
 			pid: p.pid,
 			name: `${p.firstName} ${p.lastName}`,
@@ -1248,7 +1249,13 @@ export const decideReSignings = async (tid: number) => {
 			exp: offer.exp,
 		});
 	}
-	await idb.cache.teams.put(t);
+	// Read again, as in freeAgencyDay: an offer made meanwhile stays.
+	const now = await idb.cache.teams.get(tid);
+	if (now?.offerBoard) {
+		const gone = new Set(decided.map((x) => x.pid));
+		now.offerBoard = now.offerBoard.filter((x) => !gone.has(x.pid));
+		await idb.cache.teams.put(now);
+	}
 	return decided;
 };
 
