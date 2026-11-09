@@ -1078,10 +1078,23 @@ export type ArmBuild = {
 	fore: [number, number, number, number];
 };
 export const ARM: ArmBuild = {
-	delt: [1.1, 0.9, 0.86],
-	biceps: [0.62, 0.74, 0.56],
+	delt: [1.28, 1, 0.9],
+	biceps: [0.66, 0.82, 0.58],
 	elbow: 0.62,
-	fore: [0.9, 1.04, 0.76, 0.54],
+	fore: [0.92, 1.1, 0.74, 0.52],
+};
+// (A lean man's, and a strong one's - see buildsOf.)
+const ARM_LEAN: ArmBuild = {
+	delt: [1.14, 0.94, 0.88],
+	biceps: [0.6, 0.72, 0.56],
+	elbow: 0.62,
+	fore: [0.9, 1.02, 0.74, 0.52],
+};
+const ARM_STRONG: ArmBuild = {
+	delt: [1.37, 1.05, 0.92],
+	biceps: [0.72, 0.92, 0.6],
+	elbow: 0.62,
+	fore: [0.94, 1.18, 0.74, 0.52],
 };
 const FWD = v3(1, 0, 0);
 const UP_V = v3(0, 0, 1);
@@ -1477,14 +1490,24 @@ export type LegBuild = {
 };
 export const LEG: LegBuild = {
 	thighFrom: 0.35,
-	thigh: [0.96, 0.9, 0.96],
+	thigh: [1, 0.98, 0.98],
 	shin: [0.94, 0.92, 1.08, 1.02],
-	calf: [0.8, 0.88, 0.62],
+	calf: [0.84, 0.96, 0.6],
 	toe: 1.04,
 	heel: [1.05, 0.15],
 	toeUp: [0.9, 0.25],
 	shoe: [1.3, 1.38, 1.12],
 	collar: [1.12, 1.2],
+};
+const LEG_LEAN: LegBuild = {
+	...LEG,
+	thigh: [0.96, 0.92, 0.98],
+	calf: [0.8, 0.88, 0.6],
+};
+const LEG_STRONG: LegBuild = {
+	...LEG,
+	thigh: [1.04, 1.04, 0.98],
+	calf: [0.88, 1.04, 0.6],
 };
 export const legMasses = (
 	add: AddMass,
@@ -1657,11 +1680,63 @@ export type TorsoBuild = {
 };
 export const TORSO_BUILD: TorsoBuild = {
 	belly: 0.9,
-	bellyR: [0.42, 0.42, 0.47],
-	chest: [0.66, 0.4, 0.05],
-	chestR: [0.36, 0.38, 0.36],
-	lats: [0.4, 0.74, 0.55],
-	latsR: [0.34, 0.36],
+	bellyR: [0.41, 0.4, 0.46],
+	chest: [0.68, 0.42, 0.075],
+	chestR: [0.37, 0.4, 0.37],
+	lats: [0.38, 0.76, 0.6],
+	latsR: [0.34, 0.37],
+};
+const TORSO_LEAN: TorsoBuild = {
+	...TORSO_BUILD,
+	chest: [0.68, 0.42, 0.05],
+	chestR: [0.355, 0.38, 0.355],
+	lats: [0.38, 0.76, 0.55],
+};
+const TORSO_STRONG: TorsoBuild = {
+	...TORSO_BUILD,
+	chest: [0.68, 0.42, 0.1],
+	chestR: [0.385, 0.42, 0.385],
+	lats: [0.38, 0.76, 0.65],
+};
+
+// HIS OWN ARMS, LEGS AND TORSO: built for the muscle on him (see Body's
+// `muscle`) - between a lean man's and a strong one's, the ordinary man's
+// half way - where it is known; the ordinary man's where it is not.
+type Builds = { arm: ArmBuild; leg: LegBuild; torso: TorsoBuild };
+const ORDINARY: Builds = { arm: ARM, leg: LEG, torso: TORSO_BUILD };
+const between = <T>(lo: T, hi: T, t: number): T => {
+	if (typeof lo === "number" && typeof hi === "number") {
+		return (lo + (hi - lo) * t) as T;
+	}
+	if (Array.isArray(lo) && Array.isArray(hi)) {
+		return lo.map((x, i) => between(x, hi[i], t)) as T;
+	}
+	const out: Record<string, unknown> = {};
+	for (const k of Object.keys(lo as object)) {
+		out[k] = between(
+			(lo as Record<string, unknown>)[k],
+			(hi as Record<string, unknown>)[k],
+			t,
+		);
+	}
+	return out as T;
+};
+const builds = new WeakMap<Body, Builds>();
+const buildsOf = (body: Body): Builds => {
+	if (body.muscle === undefined) {
+		return ORDINARY;
+	}
+	let b = builds.get(body);
+	if (!b) {
+		const t = Math.min(1, Math.max(0, body.muscle));
+		b = {
+			arm: between(ARM_LEAN, ARM_STRONG, t),
+			leg: between(LEG_LEAN, LEG_STRONG, t),
+			torso: between(TORSO_LEAN, TORSO_STRONG, t),
+		};
+		builds.set(body, b);
+	}
+	return b;
 };
 export const torsoMasses = (
 	torso: (A: V3, B: V3, prof: Station[]) => void,
@@ -1672,10 +1747,12 @@ export const torsoMasses = (
 ) => {
 	const sw = body.shoulderW;
 	const dp = body.depth;
+	// (His middle as thick for his chest as his own build has it.)
+	const mid = body.belly ?? 1;
 	torso(up(0.04, 0), up(b.belly, 0, -dp * 0.04), [
-		[0, dp * b.bellyR[0]],
-		[0.45, dp * b.bellyR[1]],
-		[1, dp * b.bellyR[2]],
+		[0, dp * b.bellyR[0] * mid],
+		[0.45, dp * b.bellyR[1] * mid],
+		[1, dp * b.bellyR[2] * Math.sqrt(mid)],
 	]);
 	torso(
 		up(b.chest[0], -sw * b.chest[1], dp * b.chest[2]),
@@ -1744,7 +1821,8 @@ export const build = (
 	// seat.
 	const torso = (A: V3, B: V3, prof: Station[]) =>
 		add(A, B, prof, TORSO, G_TORSO);
-	torsoMasses(torso, up, body, TORSO_BUILD, () => {
+	const mine = buildsOf(body);
+	torsoMasses(torso, up, body, mine.torso, () => {
 		torso(up(0.86, -sw * 0.6), up(0.86, sw * 0.6), [
 			[0, dp * 0.38],
 			[0.5, dp * 0.42],
@@ -1787,7 +1865,7 @@ export const build = (
 		hand(
 			limb,
 			side,
-			armMasses(add, body, limb, side, G_ARM + side, UPPER, FORE, ARM),
+			armMasses(add, body, limb, side, G_ARM + side, UPPER, FORE, mine.arm),
 		);
 	};
 
@@ -1971,7 +2049,7 @@ export const build = (
 			{ thigh: THIGH, shin: SHIN, shoe: SHOE },
 			gl,
 			G_SHOE + side,
-			LEG,
+			mine.leg,
 			(front) => {
 				add(
 					addV(limb.mid, front, body.kneeR * 0.42),
@@ -2325,6 +2403,32 @@ export const LIGHT = (() => {
 	return [l[0]! / n, l[1]! / n, l[2]! / n] as const;
 })();
 
+// THE REST OF THE BUILDING'S LIGHT (a sport that asks for it - see shade's
+// `rich`): a second bank of lights behind him and over the camera's right,
+// catching the edge of him that is turned from the first; and, half way
+// between the first and the camera, where his skin shines back at it.
+const norm3 = (l: readonly number[]) => {
+	const n = Math.hypot(l[0]!, l[1]!, l[2]!);
+	return [l[0]! / n, l[1]! / n, l[2]! / n] as const;
+};
+export const BACK_LIGHT = norm3([0.75, -0.45, -0.2]);
+export const SHINE_AT = norm3([LIGHT[0], LIGHT[1], LIGHT[2] + 1]);
+// What it does (see shade): how far a surface turned well away from the
+// lights darkens (cloth, then skin's red, green and blue); how much the
+// light from behind lifts cloth and skin toward white; and the shine on
+// skin.
+export const RICH = {
+	deepFrom: -0.3,
+	deepOver: 0.32,
+	deep: [0.09, 0.08, 0.1, 0.1],
+	backFrom: 0.55,
+	backOver: 0.4,
+	back: [0.16, 0.22],
+	shineFrom: 0.9,
+	shineOver: 0.085,
+	shine: 0.14,
+} as const;
+
 // Lengths, for every pixel: Math.hypot's care over huge and tiny numbers
 // is slow, and nothing here is either.
 export const len2 = (a: number, b: number) => Math.sqrt(a * a + b * b);
@@ -2398,6 +2502,8 @@ export const shade = (
 	ink: Ink,
 	outlined: (kind: number) => boolean,
 	owner?: Int8Array,
+	// The rest of the building's light on him too (see RICH).
+	rich = false,
 ): { x0: number; y0: number; x1: number; y1: number } => {
 	const masses = b.masses;
 	const n = masses.length;
@@ -2655,20 +2761,62 @@ export const shade = (
 				const e = Math.min(1, Math.max(0, (lam - 0.34) / 0.16));
 				const lit = e * e * (3 - 2 * e);
 				const dark = 1 - 0.22 * shadow;
+				// Turned well away from the lights, darker still; the edge of
+				// him the lights behind catch; his skin shining.
+				let deep = 0;
+				let lift = 0;
+				if (rich) {
+					const e2 = Math.min(
+						1,
+						Math.max(0, (lam - RICH.deepFrom) / RICH.deepOver),
+					);
+					deep = 1 - e2 * e2 * (3 - 2 * e2);
+					const e3 = Math.min(
+						1,
+						Math.max(
+							0,
+							(sx * BACK_LIGHT[0] +
+								sy * BACK_LIGHT[1] +
+								sz * BACK_LIGHT[2] -
+								RICH.backFrom) /
+								RICH.backOver,
+						),
+					);
+					lift = e3 * e3 * (3 - 2 * e3) * (1 - lit) * RICH.back[cloth ? 0 : 1];
+					if (!cloth) {
+						const e4 = Math.min(
+							1,
+							Math.max(
+								0,
+								(sx * SHINE_AT[0] +
+									sy * SHINE_AT[1] +
+									sz * SHINE_AT[2] -
+									RICH.shineFrom) /
+									RICH.shineOver,
+							),
+						);
+						lift += e4 * e4 * (3 - 2 * e4) * RICH.shine;
+					}
+				}
 				let r: number;
 				let g: number;
 				let bb: number;
 				if (cloth || gloss > 0) {
-					const k = (0.79 + 0.21 * lit) * dark;
+					const k = (0.79 + 0.21 * lit - RICH.deep[0] * deep) * dark;
 					r = cr * k;
 					g = cg * k;
 					bb = cb * k;
 				} else {
 					// Skin in shadow warms.
 					const k = dark;
-					r = cr * (0.84 + 0.16 * lit) * k;
-					g = cg * (0.74 + 0.26 * lit) * k;
-					bb = cb * (0.72 + 0.28 * lit) * k;
+					r = cr * (0.84 + 0.16 * lit - RICH.deep[1] * deep) * k;
+					g = cg * (0.74 + 0.26 * lit - RICH.deep[2] * deep) * k;
+					bb = cb * (0.72 + 0.28 * lit - RICH.deep[3] * deep) * k;
+				}
+				if (lift > 0) {
+					r += (255 - r) * lift;
+					g += (255 - g) * lift;
+					bb += (255 - bb) * lift;
 				}
 				if (gloss > 0 && lam > 0.86) {
 					// A shine (a helmet's): a hard white glint where it faces the
@@ -3190,6 +3338,7 @@ export const sculpt = (
 		ink,
 		(kind) => kind === HAND || kind === NAIL,
 		owner,
+		true,
 	);
 
 	let over: ImageData | undefined;

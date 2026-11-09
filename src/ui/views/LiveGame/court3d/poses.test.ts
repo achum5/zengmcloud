@@ -1,4 +1,5 @@
 import { assert, describe, test } from "vitest";
+import { physiqueOf } from "./ratings.ts";
 import {
 	BALL_R,
 	holdOf,
@@ -231,9 +232,65 @@ describe("3D poses", () => {
 			assert.isAbove(side * arm.mid.s, side * arm.end.s + 0.2);
 			assert.isBelow(Math.abs(arm.mid.u - arm.root.u), 0.45);
 		}
+		// (His hands on his knees: within under a fifth of his leg's length
+		// of the middle of them - half a foot, on the man this was first
+		// drawn as.)
 		const bent = skeleton(b, poseAt("crouch", 0));
-		assert.isBelow(gap(bent.armR.end, bent.legR.mid), 0.5);
-		assert.isBelow(gap(bent.armL.end, bent.legL.mid), 0.5);
+		const near = (b.thigh + b.shin) * 0.183;
+		assert.isBelow(gap(bent.armR.end, bent.legR.mid), near);
+		assert.isBelow(gap(bent.armL.end, bent.legL.mid), near);
+	});
+
+	// Two men the same height and weight are not the same man: what he is
+	// good at says what his weight is made of (see Physique).
+	test("his own build: strength, spring and reach", () => {
+		const plain = bodyOf(79, 220);
+		const strong = bodyOf(79, 220, undefined, { strength: 1 });
+		const weak = bodyOf(79, 220, undefined, { strength: 0 });
+		// As tall, the same skeleton...
+		assert.strictEqual(strong.H, weak.H);
+		assert.strictEqual(strong.thigh, weak.thigh);
+		// ...the stronger wider across the shoulders and deeper in the chest,
+		// thicker in the arm and leg, trimmer round the middle.
+		assert.isAbove(strong.shoulderW, plain.shoulderW);
+		assert.isAbove(plain.shoulderW, weak.shoulderW);
+		assert.isAbove(strong.upperR, weak.upperR * 1.15);
+		assert.isAbove(strong.thighR, weak.thighR);
+		assert.isAbove(strong.depth, weak.depth);
+		assert.isBelow(strong.belly!, 1);
+		assert.isAbove(weak.belly!, 1);
+		// A heavy man's weight is muscle or it is his middle.
+		const big = bodyOf(82, 290, undefined, { strength: 0 });
+		assert.isAbove(big.belly!, weak.belly!);
+		// An athlete: more leg under him, less waist.
+		const spry = bodyOf(79, 220, undefined, { athletic: 1 });
+		const slow = bodyOf(79, 220, undefined, { athletic: 0 });
+		assert.isAbove(spry.calfR, slow.calfR);
+		assert.isBelow(spry.belly!, slow.belly!);
+		// Long arms: longer, by no more than a couple of inches' worth.
+		const long = bodyOf(79, 220, undefined, { reach: 2 });
+		const longer = bodyOf(79, 220, undefined, { reach: 9 });
+		assert.isAbove(long.upper, plain.upper);
+		assert.strictEqual(long.upper, longer.upper);
+		assert.isBelow(long.upper + long.fore, (plain.upper + plain.fore) * 1.04);
+		// An ordinary man in everything is the man with nothing known of him.
+		const mid = bodyOf(79, 220, undefined, { strength: 0.5, athletic: 0.5 });
+		for (const k of Object.keys(plain) as (keyof typeof plain)[]) {
+			assert.closeTo(mid[k]!, plain[k]!, 1e-9);
+		}
+		assert.closeTo(mid.belly!, 1, 1e-9);
+	});
+
+	test("his build read off his ratings", () => {
+		assert.isUndefined(physiqueOf(undefined, 79));
+		const ph = physiqueOf({ stre: 80, jmp: 35, spd: 35, hgt: 50 }, 79)!;
+		assert.strictEqual(ph.strength, 1);
+		assert.strictEqual(ph.athletic, 0);
+		// (A 50 for height is 6'7.5": half an inch more than he is listed.)
+		assert.closeTo(ph.reach!, 0.5, 1e-9);
+		// (No listed height, no rating: nothing said of it.)
+		assert.isUndefined(physiqueOf({ stre: 60 }, undefined)!.reach);
+		assert.isUndefined(physiqueOf({ stre: 60 }, 79)!.athletic);
 	});
 
 	test("a seven-footer stands taller than a six-footer", () => {

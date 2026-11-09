@@ -21,6 +21,7 @@ import {
 } from "./kitArt.ts";
 import type { Body } from "./poses.ts";
 import {
+	BACK_LIGHT,
 	BALL,
 	bigSheet,
 	build,
@@ -39,8 +40,10 @@ import {
 	LIGHT,
 	NAIL,
 	paletteOf,
+	RICH,
 	RS,
 	SHIN,
+	SHINE_AT,
 	SHOE,
 	SHORTS,
 	T_ZIP,
@@ -780,10 +783,31 @@ void main() {
 	float e = clamp((lam - 0.34) / 0.16, 0.0, 1.0);
 	float lit = e * e * (3.0 - 2.0 * e);
 	float dark = 1.0 - 0.22 * shadow;
+	// Turned well away from the lights, darker still; the edge of him the
+	// lights behind catch; his skin shining (see sculpt.ts RICH).
+	float e2 = clamp((lam - ${f1(RICH.deepFrom)}) / ${f1(RICH.deepOver)}, 0.0, 1.0);
+	float deep = 1.0 - e2 * e2 * (3.0 - 2.0 * e2);
+	float e3 = clamp(
+		(dot(sn, ${v3(BACK_LIGHT)}) - ${f1(RICH.backFrom)}) / ${f1(RICH.backOver)},
+		0.0,
+		1.0
+	);
+	float lift = e3 * e3 * (3.0 - 2.0 * e3) * (1.0 - lit)
+		* (cloth ? ${f1(RICH.back[0])} : ${f1(RICH.back[1])});
+	if (!cloth) {
+		float e4 = clamp(
+			(dot(sn, ${v3(SHINE_AT)}) - ${f1(RICH.shineFrom)}) / ${f1(RICH.shineOver)},
+			0.0,
+			1.0
+		);
+		lift += e4 * e4 * (3.0 - 2.0 * e4) * ${f1(RICH.shine)};
+	}
 	vec3 c = cloth
-		? ink * ((0.79 + 0.21 * lit) * dark)
+		? ink * ((0.79 + 0.21 * lit - ${f1(RICH.deep[0])} * deep) * dark)
 		// Skin in shadow warms.
-		: ink * (vec3(0.84, 0.74, 0.72) + vec3(0.16, 0.26, 0.28) * lit) * dark;
+		: ink * (vec3(0.84, 0.74, 0.72) + vec3(0.16, 0.26, 0.28) * lit
+			- ${v3(RICH.deep.slice(1))} * deep) * dark;
+	c += (255.0 - c) * lift;
 	// A fine line where he passes in front of himself - and all round his
 	// hands, so they read.
 	int kind = int(mf.z + 0.5);

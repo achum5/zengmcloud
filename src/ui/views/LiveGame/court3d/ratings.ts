@@ -1,3 +1,5 @@
+import type { Physique } from "./poses.ts";
+
 // HOW GOOD HE IS AT IT. The ratings the 3D game plays a man by, as the live
 // box score carries them (see courtRatings.ts in worker/util) - and, from them,
 // how much of a thing he has: 0 next to none, 1 as good as they come. In this
@@ -51,4 +53,29 @@ export const levelOf = (
 		return undefined;
 	}
 	return Math.min(1, Math.max(0, (sum / n - LOW) / (HIGH - LOW)));
+};
+
+// HIS BUILD, FROM WHAT HE IS (see poses.ts Physique): how strong he is; how
+// quick and springy; and how much more reach his height rating says he has
+// than his listed height (inches - that rating is his listed height's,
+// give or take, so a man whose rating runs ahead of his height plays
+// longer than he stands). Nothing, without ratings: the ordinary man's.
+const HGT_RATING_0 = 66;
+const HGT_RATING_INCH = (93 - 66) / 100;
+export const physiqueOf = (
+	r: CourtRatings | undefined,
+	hgt: number | undefined,
+): Physique | undefined => {
+	if (!r) {
+		return undefined;
+	}
+	const strength = levelOf(r, ["stre"]);
+	const athletic = levelOf(r, ["jmp", "spd"]);
+	return {
+		...(strength === undefined ? {} : { strength }),
+		...(athletic === undefined ? {} : { athletic }),
+		...(typeof r.hgt === "number" && typeof hgt === "number"
+			? { reach: HGT_RATING_0 + HGT_RATING_INCH * r.hgt - hgt }
+			: {}),
+	};
 };

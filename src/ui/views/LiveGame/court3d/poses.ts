@@ -7310,6 +7310,12 @@ export type Body = {
 	upperR: number;
 	foreR: number;
 	handR: number;
+	// HIS OWN BUILD, where it is known (see Physique): how much muscle is on
+	// him (0 lean, 1 as strong as they come - his arms, legs, chest and
+	// shoulders shaped by it, see sculpt.ts buildsOf), and how thick his
+	// middle is for his chest (1 as his girth has it).
+	muscle?: number;
+	belly?: number;
 };
 
 export const DEFAULT_HGT = 78;
@@ -7323,37 +7329,151 @@ export const girthOf = (hgt: number, weight: number): number => {
 	return Math.min(1.28, Math.max(0.84, (bmi / DEFAULT_BMI) ** 0.9));
 };
 
+// HOW HE IS PROPORTIONED: each part as a share of his height (the widths
+// and thicknesses of them times his girth too).
+export type Proportions = {
+	ankle: number;
+	thigh: number;
+	shin: number;
+	foot: number;
+	torso: number;
+	neck: number;
+	head: number;
+	upper: number;
+	fore: number;
+	shoulderW: number;
+	hipW: number;
+	depth: number;
+	thighR: number;
+	kneeR: number;
+	calfR: number;
+	ankleR: number;
+	upperR: number;
+	foreR: number;
+	hand: number;
+};
 // A cartoon athlete: a big head - a fifth of him - on a short neck, over a
-// lean athlete's body, his arms in proportion to it (elbows at his waist,
-// wrists at his hips, fingertips halfway down his thighs). His height and
-// build still tell: a center towers over a point guard, a big man is broad.
-// (His face is drawn a little bigger than headR: crown to chin is 2.45
-// headR.)
-export const bodyOf = (hgt = DEFAULT_HGT, weight = DEFAULT_WEIGHT): Body => {
+// lean body. (What every sport's men were to begin with; football's are
+// built from it still - see field3d/body.ts.)
+export const CARTOON: Proportions = {
+	ankle: 0.03,
+	thigh: 0.215,
+	shin: 0.205,
+	foot: 0.15,
+	torso: 0.27,
+	neck: 0.05,
+	head: 0.1,
+	upper: 0.14,
+	fore: 0.115,
+	shoulderW: 0.1,
+	hipW: 0.054,
+	depth: 0.104,
+	thighR: 0.043,
+	kneeR: 0.03,
+	calfR: 0.033,
+	ankleR: 0.025,
+	upperR: 0.032,
+	foreR: 0.027,
+	hand: 0.036,
+};
+// A BASKETBALL PLAYER: nearer a real one's build - his head a sixth of him,
+// not a fifth (still bigger than life, so his face reads from up in the
+// stands), and the rest of him that much longer: legs, torso, neck and arms
+// all by the same share, so every pose still puts his hands where it put
+// them - on his knees, on his hips, together. Shoulders well wider than his
+// hips, and some muscle on his arms and legs. His arms in proportion
+// (elbows at his waist, wrists at his hips, fingertips halfway down his
+// thighs). His height and build still tell: a center towers over a point
+// guard, a big man is broad. (His face is drawn a little bigger than headR:
+// crown to chin is 2.45 headR.)
+const HEAD = 0.082;
+// (What his head gave up, shared out over the rest of him.)
+const LONGER = (0.97 - 2 * HEAD) / (0.97 - 2 * CARTOON.head);
+export const ATHLETE: Proportions = {
+	ankle: CARTOON.ankle * LONGER,
+	thigh: CARTOON.thigh * LONGER,
+	shin: CARTOON.shin * LONGER,
+	foot: CARTOON.foot,
+	torso: CARTOON.torso * LONGER,
+	neck: CARTOON.neck * LONGER,
+	head: HEAD,
+	upper: CARTOON.upper * LONGER,
+	fore: CARTOON.fore * LONGER,
+	shoulderW: 0.113,
+	hipW: CARTOON.hipW * LONGER,
+	depth: 0.108,
+	thighR: 0.048,
+	kneeR: 0.031,
+	calfR: 0.036,
+	ankleR: 0.024,
+	upperR: 0.036,
+	foreR: 0.029,
+	hand: CARTOON.hand,
+};
+// WHAT ELSE IS KNOWN OF HIM, beyond how tall he is and what he weighs (see
+// ratings.ts physiqueOf) - each 0 to 1, a half the league's ordinary man:
+// how strong he is, and how quick and springy; and how much longer (inches)
+// his reach is than his listed height says.
+//
+// His height sets how tall he stands and his weight how thick he is for it
+// (see girthOf). These say what that weight is made of. Two men the same
+// height and weight: the stronger carries it across his shoulders and
+// chest and in his arms and legs, over a trimmer middle; the weaker, round
+// his middle. An athlete's legs have more on them and his waist less. And
+// the long-armed man's arms are longer.
+export type Physique = {
+	strength?: number;
+	athletic?: number;
+	reach?: number;
+};
+const half = (x: number | undefined) =>
+	Math.min(1, Math.max(0, x ?? 0.5)) - 0.5;
+// The most his reach makes of his arms, either way (inches), and how much
+// longer an arm each inch makes.
+const REACH_MOST = 2;
+const REACH_ARM = 0.015;
+export const bodyOf = (
+	hgt = DEFAULT_HGT,
+	weight = DEFAULT_WEIGHT,
+	p: Proportions = ATHLETE,
+	ph?: Physique,
+): Body => {
 	const H = (DEFAULT_HGT * (hgt / DEFAULT_HGT) ** 1.25) / 12;
 	const g = girthOf(hgt, weight);
+	const m = half(ph?.strength);
+	const a = half(ph?.athletic);
+	const arm =
+		1 + Math.min(REACH_MOST, Math.max(-REACH_MOST, ph?.reach ?? 0)) * REACH_ARM;
 	return {
 		H,
-		hipH: H * 0.45,
-		ankleH: H * 0.03,
-		thigh: H * 0.215,
-		shin: H * 0.205,
-		foot: H * 0.15,
-		torso: H * 0.27,
-		neck: H * 0.05,
-		headR: H * 0.1,
-		upper: H * 0.14,
-		fore: H * 0.115,
-		shoulderW: H * 0.1 * g,
-		hipW: H * 0.054 * g,
-		depth: H * 0.104 * g,
-		thighR: H * 0.043 * g,
-		kneeR: H * 0.03 * g,
-		calfR: H * 0.033 * g,
-		ankleR: H * 0.025,
-		upperR: H * 0.032 * g,
-		foreR: H * 0.027 * g,
-		handR: H * 0.036,
+		hipH: H * (p.ankle + p.thigh + p.shin),
+		ankleH: H * p.ankle,
+		thigh: H * p.thigh,
+		shin: H * p.shin,
+		foot: H * p.foot,
+		torso: H * p.torso,
+		neck: H * p.neck,
+		headR: H * p.head,
+		upper: H * p.upper * arm,
+		fore: H * p.fore * arm,
+		shoulderW: H * p.shoulderW * g * (1 + 0.1 * m),
+		hipW: H * p.hipW * g * (1 - 0.06 * m),
+		depth: H * p.depth * g * (1 + 0.1 * m),
+		thighR: H * p.thighR * g * (1 + 0.14 * m + 0.05 * a),
+		kneeR: H * p.kneeR * g,
+		calfR: H * p.calfR * g * (1 + 0.12 * m + 0.07 * a),
+		ankleR: H * p.ankleR,
+		upperR: H * p.upperR * g * (1 + 0.22 * m),
+		foreR: H * p.foreR * g * (1 + 0.14 * m),
+		handR: H * p.hand,
+		...(ph
+			? {
+					muscle: m + 0.5,
+					// (A heavy man's middle most of all: his weight is there, or
+					// it is not.)
+					belly: 1 - 0.2 * m - 0.08 * a - 0.5 * Math.max(0, g - 1) * m,
+				}
+			: {}),
 	};
 };
 

@@ -1,4 +1,4 @@
-import { bodyOf, girthOf, type Body } from "../court3d/poses.ts";
+import { bodyOf, CARTOON, girthOf, type Body } from "../court3d/poses.ts";
 
 // A FOOTBALL PLAYER'S BUILD: a grown man, not the court's cartoon athlete
 // (see court3d/poses.ts) - his height the same way, but a man's
@@ -36,7 +36,7 @@ export const footballBody = (
 	hgt = DEFAULT_FOOTBALL_HGT,
 	weight = DEFAULT_FOOTBALL_WEIGHT,
 ): Body => {
-	const b = bodyOf(hgt, weight);
+	const b = bodyOf(hgt, weight, CARTOON);
 	const k = footballGirth(hgt, weight) / girthOf(hgt, weight);
 	const { H } = b;
 	return {
@@ -101,7 +101,11 @@ export const FIGURE_SCALE = 1.2;
 export const drawnBody = (b: Body): Body => {
 	const out = { ...b };
 	for (const k of Object.keys(out) as (keyof Body)[]) {
-		out[k] = b[k] * FIGURE_SCALE;
+		// (Its lengths: a football body has none of basketball's own build.)
+		const v = b[k];
+		if (v !== undefined && k !== "muscle" && k !== "belly") {
+			out[k] = v * FIGURE_SCALE;
+		}
 	}
 	return out;
 };

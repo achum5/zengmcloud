@@ -115,6 +115,7 @@ import {
 	type KeySegment,
 } from "./keyPlays.ts";
 import { bodyOf, type Body } from "./poses.ts";
+import { physiqueOf } from "./ratings.ts";
 import { offenseAt } from "./evaluate.ts";
 import { shotSpots } from "./shotSpots.ts";
 import type { ShotSpot } from "../gamecast/shots.ts";
@@ -643,6 +644,7 @@ const Court3D = ({
 				p.name,
 				p.jerseyNumber,
 				p.out,
+				p.ratings,
 			];
 			const was = kept.current.get(p.pid);
 			if (was && was.made.every((x, i) => x === made[i])) {
@@ -697,7 +699,10 @@ const Court3D = ({
 					street: true,
 				});
 			}
-			bodies.set(p.pid, bodyOf(f?.hgt, f?.weight));
+			bodies.set(
+				p.pid,
+				bodyOf(f?.hgt, f?.weight, undefined, physiqueOf(p.ratings, f?.hgt)),
+			);
 			kept.current.set(p.pid, {
 				made,
 				look: looks.get(p.pid)!,
