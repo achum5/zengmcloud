@@ -363,6 +363,43 @@ describe("3D director", () => {
 		assert.includeMembers(said, ["hand", "head"]);
 	}, 480_000);
 
+	// Out of bounds, whose ball: the men nearest it now and then point the
+	// way they say it goes - their own way.
+	test("the ball out of bounds: the men nearest point their own way, now and then", () => {
+		let outs = 0;
+		let claims = 0;
+		for (const seed of ["a", "b"]) {
+			const { tl } = compile(seed, 140);
+			for (const f of tl.fx) {
+				if (f.kind !== "whistle" || f.call !== "out") {
+					continue;
+				}
+				outs += 1;
+				for (const tr of tl.tracks.values()) {
+					for (const g of tr.arms) {
+						if (
+							g.kind !== "point" ||
+							typeof g.at !== "object" ||
+							g.t0 < f.t ||
+							g.t0 > f.t + 1500
+						) {
+							continue;
+						}
+						claims += 1;
+						const P = evalPlayer(tl, tr.pid, g.t0);
+						assert.strictEqual(
+							Math.sign(g.at.x - P.x),
+							attackDir(tr.team),
+							`${seed} ${tr.pid} at ${Math.round(g.t0)}`,
+						);
+					}
+				}
+			}
+		}
+		assert.isAbove(outs, 8);
+		assert.isAtLeast(claims, outs * 0.3);
+	}, 480_000);
+
 	// From one move into the next - pulling up from a run, down into his
 	// stance, up for a catch - his body eases over rather than snapping
 	// there between one frame and the next.

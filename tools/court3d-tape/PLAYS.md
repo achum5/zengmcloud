@@ -58,7 +58,7 @@ each part, so the table below can say how far along each part is.
 | 11  | Shooting foul (`pfFG`, `pfTP`)                                                                |       13 | working |
 | 12  | Turnover (`tov`: bad pass, lost ball, travel, offensive foul, shot clock, 5 seconds)          |       15 | working |
 | 13  | Steal (`stl`)                                                                                 |       13 | working |
-| 14  | Out of bounds (`outOfBounds`, `tov`/`stl` out of bounds)                                      |       20 | todo    |
+| 14  | Out of bounds (`outOfBounds`, `tov`/`stl` out of bounds)                                      |       20 | working |
 | 15  | Blocks (`blkTp`, `blkMidRange`, `blkLowPost`, `blkAtRim`, `blkTipIn`, `blkPutBack`)           |        9 | working |
 | 16  | And-ones (`fgAtRimAndOne`, `fgLowPostAndOne`, `fgMidRangeAndOne`, `tpAndOne`, putback/tip-in) |        4 | todo    |
 | 17  | Timeouts (`timeout`, `timeouts`)                                                              |        5 | todo    |
@@ -661,3 +661,18 @@ mostly), and the building - sat for all but one.
 Now (2026-11-09): a block brings the building up - the home crowd on its
 feet for a home one (nearly as much as for a dunk or a three), the road
 fans for theirs less so - and the blocker's bench up off its chairs.
+
+## 14. Out of bounds
+
+Measured 2026-11-09 (39 at real speed; the variety tool's `outOfBounds`
+line): what it came off (a miss knocked out going for it, mostly: off a
+three 15, in the post 9), where it went out (the sideline at the corner
+end 25, the baseline 11, the sideline at mid-court 3), the ball after it
+(to an official 24, picked up by a player 15), the official's signal (the
+way it goes, every time), and the ball back in. Never: anybody having a
+say about whose ball it is.
+
+Now (2026-11-09): as the whistle goes, the man of each side nearest where
+it went out now and then points the way he says it goes - his own way:
+19 of the 39, both sides at once in 4. Arms only, so nothing else
+changes.

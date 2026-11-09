@@ -993,6 +993,12 @@ const FOULER_HIPS = 0.2;
 const FOULER_HEAD = 0.12;
 const DREW_MS = 900;
 const DREW_LEAST = 550;
+// Out of bounds (see ourBall): how near where it went out (feet) the man of
+// each side nearest it is to have a say about it, how often he points the
+// way he says it goes, and for how long (ms).
+const OUR_BALL_NEAR = 16;
+const OUR_BALL = 0.5;
+const OUR_BALL_MS = 900;
 // The ball taken off him (see lostIt): how often the man who lost it has an
 // arm up at the official, and how often his hands on his head.
 const LOST_IT_CALL = 0.2;
@@ -29019,6 +29025,49 @@ class Director {
 		}
 	}
 
+	// OUT OF BOUNDS, whose ball: the men nearest where it went out now and
+	// then point the way they say it goes - their own way - as the whistle
+	// goes, a man of each side as often as not. Arms only, with nothing else
+	// on them: nothing else changes for it.
+	private ourBall() {
+		for (const f of this.fx) {
+			if (f.kind !== "whistle" || f.call !== "out" || !f.at) {
+				continue;
+			}
+			const at = f.at;
+			const near = [...this.tracks.values()]
+				.filter(
+					(tr) =>
+						tr.pid >= 0 &&
+						tr.shown.findLast(([ts]) => ts <= f.t)?.[1] === true &&
+						dist(this.posAt(tr.pid, f.t), at) < OUR_BALL_NEAR,
+				)
+				.sort(
+					(a, b) =>
+						dist(this.posAt(a.pid, f.t), at) - dist(this.posAt(b.pid, f.t), at),
+				);
+			for (const side of [0, 1] as const) {
+				const tr = near.find((x) => x.team === side);
+				if (!tr || hash01(tr.pid * 13 + 3, Math.round(f.t)) >= OUR_BALL) {
+					continue;
+				}
+				const t0 = f.t + 180;
+				const t1 = t0 + OUR_BALL_MS;
+				if (tr.arms.some((g) => g.t1 > t0 - 100 && g.t0 < t1 + 100)) {
+					continue;
+				}
+				const P = this.posAt(tr.pid, t0);
+				tr.arms.push({
+					t0,
+					t1,
+					kind: "point",
+					at: { x: P.x + attackDir(side) * 12, y: P.y },
+				});
+				tr.arms.sort((a, b) => a.t0 - b.t0);
+			}
+		}
+	}
+
 	finish(): CourtTimeline {
 		const byT0 = (a: { t0: number }, b: { t0: number }) => a.t0 - b.t0;
 		for (const tr of this.tracks.values()) {
@@ -29113,6 +29162,7 @@ class Director {
 		this.easeNudges();
 		this.drewTheFoul();
 		this.lostIt();
+		this.ourBall();
 		// A look round the building runs on to the picture's next cut when
 		// that comes soon after (the substitutions over a timeout, the walk
 		// out for the next period), so the game picks up at a cut.

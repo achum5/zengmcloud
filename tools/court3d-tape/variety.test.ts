@@ -18,9 +18,11 @@ import {
 	type CourtTimeline,
 } from "../../src/ui/views/LiveGame/court3d/director.ts";
 import {
+	evalBall,
 	evalPlayer,
 	fastAt,
 } from "../../src/ui/views/LiveGame/court3d/evaluate.ts";
+import { bodyOf } from "../../src/ui/views/LiveGame/court3d/poses.ts";
 import {
 	crowdUp,
 	greetsFor,
@@ -1639,6 +1641,103 @@ const blkParts = (
 	};
 };
 
+// The ball out of bounds: off what (a miss, knocked out, thrown away),
+// where it went out, the ball after it (rolled away, into the seats, caught
+// by somebody), the official's signal, who goes after it, how long till
+// it is back in, and from where.
+const oobParts = (
+	tl: CourtTimeline,
+	b: CourtTimeline["beats"][number],
+): { pid: number; parts: Record<string, string> } | undefined => {
+	const T = b.actionStart;
+	const k = tl.beats.indexOf(b);
+	const prev = tl.beats
+		.slice(0, k)
+		.findLast((x) => x.type !== "sub" && x.type !== "timeout");
+	// Where it crossed the line: the first point of the ball off the floor's
+	// edges before the whistle.
+	let out: { x: number; y: number } | undefined;
+	for (let t = b.preStart; t <= T + 100; t += 20) {
+		const B = evalBall(tl, t, () => bodyOf());
+		if (B.x < 0 || B.x > 94 || B.y < 0 || B.y > 50) {
+			out = { x: B.x, y: B.y };
+			break;
+		}
+	}
+	const where = out
+		? out.x < 0 || out.x > 94
+			? "over the baseline"
+			: out.x > 28 && out.x < 66
+				? "over the sideline, mid-court"
+				: "over the sideline, in the corner end"
+		: "?";
+	// The ball a few seconds on: rolling, at rest, in a man's hands.
+	const later = tl.ball.filter((z) => z.t0 > T && z.t0 < T + 4000);
+	const to = later.find((z) => z.kind === "hold");
+	const after =
+		to?.kind === "hold" ? "picked up by a player" : "to an official";
+	const team0 = { region: "", name: "", colors: ["#000", "#fff", "#888"] } as {
+		region: string;
+		name: string;
+		colors: [string, string, string];
+	};
+	const crew = crewFor(1, team0, team0);
+	const seen: string[] = [];
+	for (let t = T; t < T + 3000; t += 100) {
+		for (const r of crewAt(tl, t, crew).states) {
+			if (
+				r.pid < 0 &&
+				r.pid >= -3 &&
+				/^(signal|report)/.test(r.anim) &&
+				seen.at(-1) !== r.anim
+			) {
+				seen.push(r.anim);
+			}
+		}
+	}
+	const inbound = tl.ball.find(
+		(z) =>
+			z.kind === "fly" &&
+			z.t0 > T &&
+			"pid" in z.from &&
+			"pid" in z.to &&
+			!z.dead,
+	);
+	const from =
+		inbound?.kind === "fly" && "pid" in inbound.from
+			? evalPlayer(tl, inbound.from.pid, inbound.t0)
+			: undefined;
+	// Whose ball: men pointing their way as the whistle goes.
+	const claims = [0, 1].map(
+		(side) =>
+			[...tl.tracks.values()].filter(
+				(tr) =>
+					tr.pid >= 0 &&
+					tr.team === side &&
+					tr.arms.some(
+						(g) =>
+							g.kind === "point" &&
+							typeof g.at === "object" &&
+							g.t0 >= T &&
+							g.t0 < T + 1500,
+					),
+			).length,
+	);
+	return {
+		pid: 0,
+		parts: {
+			claims: `${claims[0]! + claims[1]!} pointing${claims[0]! > 0 && claims[1]! > 0 ? ", both sides" : ""}`,
+			off: prev ? prev.type : "?",
+			where,
+			after,
+			signals: seen.join(" > ") || "none",
+			back: inbound
+				? `in ${Math.round((inbound.t0 - T) / 1000)}s from ${from && (from.x < 0 || from.x > 94) ? "the baseline" : "the sideline"}`
+				: "-",
+		},
+	};
+};
+
 test.skipIf(games.length === 0)(
 	"variety of one line",
 	() => {
@@ -1660,6 +1759,17 @@ test.skipIf(games.length === 0)(
 			}));
 			for (const b of tl.beats) {
 				if (b.type !== line) {
+					continue;
+				}
+				if (line === "outOfBounds") {
+					if (fastAt(tl, b.actionStart) > 1.2) {
+						fastOnes += 1;
+						continue;
+					}
+					const got = oobParts(tl, b);
+					if (got) {
+						all.push({ pid: `${tag}:${got.pid}`, parts: got.parts });
+					}
 					continue;
 				}
 				if (/^blk/.test(line)) {
