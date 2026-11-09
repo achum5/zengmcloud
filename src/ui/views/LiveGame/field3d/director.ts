@@ -1505,6 +1505,7 @@ class Director {
 	finish(): FieldTimeline {
 		const end = Math.max(this.T, this.lastLine + TAIL);
 		standEasy(this.plays);
+		pullUps(this.plays, new Set(this.cuts));
 		return {
 			plays: this.plays,
 			beats: this.beats,
@@ -4384,6 +4385,75 @@ const EASY_OF = new Map<Move, Move>([
 // (The ball in both hands at his chest - a scorer stood with it - easy all
 // the same: his arms as they are, his legs under him alive.)
 const EASY_ARMS = new Set<Move>(["qbSet"]);
+// PULLED UP, NOT STOOD STILL OUT OF A RUN: after the whistle, a man left
+// going this fast (ft/s) at the end of a stride straight into standing -
+// whatever left him so - slowed into the spot he stops on, over three
+// steps, at this rate (ft/s a second), the stand that much later. (Not
+// where the picture cuts away there: nobody sees him stop.)
+const PULL_UP_FPS = 10;
+const PULL_UP_ACCEL = 18;
+const PULLED_FROM = new Set<Move>(["jog", "run", "sprint"]);
+const PULLED_TO = new Set<Move>(["stand", "easy"]);
+const pullUps = (plays: Play[], cuts: Set<number>) => {
+	for (const play of plays) {
+		for (const part of play.parts) {
+			const legs = part.legs;
+			for (let k = 0; k + 1 < legs.length; k++) {
+				const a = legs[k]!;
+				const b = legs[k + 1]!;
+				const secs = (a.t1 - a.t0) / 1000;
+				const far = dist(a.from, a.to);
+				const v = secs > 0 ? far / secs : 0;
+				if (
+					a.t1 < play.whistle ||
+					!PULLED_FROM.has(a.move as Move) ||
+					!PULLED_TO.has(b.move as Move) ||
+					b.t0 !== a.t1 ||
+					cuts.has(b.t0) ||
+					v < PULL_UP_FPS
+				) {
+					continue;
+				}
+				const d = Math.min((v * v) / (2 * PULL_UP_ACCEL), far * 0.6);
+				const later = (d / v) * 1000;
+				if (b.t1 - b.t0 < later + 200) {
+					continue;
+				}
+				const ux = (a.to.x - a.from.x) / far;
+				const uy = (a.to.y - a.from.y) / far;
+				const end = a.to;
+				const mid = { x: end.x - ux * d, y: end.y - uy * d };
+				a.to = mid;
+				a.t1 = a.t0 + ((far - d) / v) * 1000;
+				const T = (2 * d) / v;
+				// (His arms' own act, if any, not over again in these.)
+				const { arms: _arms, armsSpan: _armsSpan, ...rest } = a;
+				const steps: Leg[] = [];
+				let at = mid;
+				let t = a.t1;
+				for (let i = 0; i < 3; i++) {
+					const pace = v * (1 - (i + 0.5) / 3);
+					const go = (pace * T) / 3;
+					const to = i === 2 ? end : { x: at.x + ux * go, y: at.y + uy * go };
+					steps.push({
+						...rest,
+						t0: t,
+						t1: t + (T * 1000) / 3,
+						from: at,
+						to,
+						move: pace > 13 ? "run" : pace > 7 ? "jog" : "walk",
+					});
+					at = to;
+					t += (T * 1000) / 3;
+				}
+				b.t0 = t;
+				legs.splice(k + 1, 0, ...steps);
+				k += 3;
+			}
+		}
+	}
+};
+
 const standEasy = (plays: Play[]) => {
 	for (const p of plays) {
 		for (const part of p.parts) {

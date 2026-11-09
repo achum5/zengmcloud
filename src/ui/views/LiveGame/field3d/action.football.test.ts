@@ -726,7 +726,11 @@ describe("the plays acted out", () => {
 		let home = 0;
 		let alone = 0;
 		eachPlay((play, seg, tl) => {
-			if (!ACTED.has(play.kind) || seg.some((e) => e.type === "flag")) {
+			// (Nor a man hurt on it: they are off to him.)
+			if (
+				!ACTED.has(play.kind) ||
+				seg.some((e) => e.type === "flag" || e.type === "injury")
+			) {
 				return;
 			}
 			const k = seg.findIndex(
