@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 222,
+		date: "2026-11-09",
+		text: "3D games: a missed layup or shot in the paint no longer always comes off the front of the rim - now and then it's off the side, or too hard off the glass. And a man backing down in the post has his defender on his back the whole way, giving ground at his pace instead of backing off ahead of him.",
+	},
+	{
 		n: 221,
 		date: "2026-11-09",
 		text: "3D games: on an and-one jumper, the man who fouls the shooter is right up on him as he lets it go, not a few feet short of him.",

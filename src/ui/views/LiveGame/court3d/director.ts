@@ -1765,6 +1765,9 @@ const MISS_STYLE: Record<MissStyle, number> = {
 	glass: 0.02,
 };
 const MISS_TOWARD = 1.7;
+// And one in close: off the front, off the back, off a side, too hard off
+// the glass (from an angle to it).
+const CLOSE_MISS = { short: 0.38, long: 0.24, side: 0.24, glass: 0.14 };
 // (A switch, to see the old misses again: on since 2026-11-06, once the
 // glitches the test games it reshuffled turned up were fixed - see
 // tools/court3d-tape/PLAYS.md, "Blocking".)
@@ -2000,6 +2003,9 @@ const STOP_BUSY = new Set<string>([
 // A hack on a man going up (see poses): this long (ms), off the floor for
 // the middle of it - as high as that long in the air takes him.
 const HACK_MS = 670;
+// A post man's man not up on him as he starts backing him down gets up on
+// him this quick (feet a second) - then gives ground at his pace.
+const BACK_DOWN_CLOSE = 7;
 const HACK_JUMP: [number, number, number] = [0.12, 0.8, hopFor(HACK_MS, 0.68)];
 // A leap at the ball (a block), meeting it `contact` (ms) as he gets to the
 // top - off the floor as long as gravity keeps a man up that high: the act
@@ -9080,11 +9086,17 @@ class Director {
 		}
 		// Over half court with it, he never takes it back over - not to the
 		// spot a break has him bringing it up to, from farther up already.
+		// (Nor along the line to it, across the floor: he holds where he is
+		// across it, up off the line a step if he is not already.)
 		if (
 			(this.posOf(pid).x - COURT_W / 2) * dir > 2 &&
 			(P.x - COURT_W / 2) * dir < 3
 		) {
-			P = { x: COURT_W / 2 + dir * 3.5, y: P.y };
+			const H = this.posOf(pid);
+			P = {
+				x: (H.x - COURT_W / 2) * dir >= 3.5 ? H.x : COURT_W / 2 + dir * 3.5,
+				y: H.y,
+			};
 		}
 		// Nor, on the break, back up the floor at all to bring it up: ahead of
 		// it already - the ball won up the floor - he goes on from where he is.
@@ -11391,14 +11403,34 @@ class Director {
 		// a gap opening up between them.)
 		if (guard !== undefined && dist(this.posOf(guard), at) < 5) {
 			const into = m?.anim === "post" && m.t1 === done ? m.t0 : t + 60;
-			this.goBy(
-				guard,
-				clampPt({ x: to.x + u.x * BODY, y: to.y + u.y * BODY }),
-				into,
-				done,
-				"back",
-				-dir as 1 | -1,
-			);
+			// (Up on him first, if he is not - quickly - then back at his pace:
+			// not a jog's, there before him with a gap opening between them.)
+			const S0 = clampPt({ x: at.x + u.x * BODY, y: at.y + u.y * BODY });
+			const G = clampPt({ x: to.x + u.x * BODY, y: to.y + u.y * BODY });
+			let from = Math.max(into, this.free.get(guard) ?? 0);
+			if (dist(this.posOf(guard), S0) > 0.6) {
+				from = this.go(
+					guard,
+					S0,
+					into,
+					BACK_DOWN_CLOSE,
+					"back",
+					-dir as 1 | -1,
+				);
+			}
+			if (from < done - 100) {
+				this.go(
+					guard,
+					G,
+					from,
+					Math.max(
+						0.5,
+						(dist(this.posOf(guard), G) * 1000) / Math.max(150, done - from),
+					),
+					"back",
+					-dir as 1 | -1,
+				);
+			}
 		}
 		return Math.max(done, this.hold(pid, done, "hold"));
 	}
@@ -14113,7 +14145,12 @@ class Director {
 						release,
 						side > 0.35 && side < 0.95,
 					)
-				: undefined;
+				: MISS_STYLES &&
+					  plan.kind === "miss" &&
+					  plain &&
+					  (zone === "atRim" || zone === "lowPost")
+					? this.closeMissStyleFor(shooter, release, side > 0.35 && side < 0.95)
+					: undefined;
 		// (A brick is off the front or the back of the iron, hard.)
 		const miss =
 			plan.finish === "brick" && style !== "short" && style !== "long"
@@ -14132,6 +14169,32 @@ class Director {
 						toward: this.towardOf(team, plan.rebounder, dist(P, rim)),
 					}),
 		});
+	}
+
+	// How one in close misses: off the front of the rim mostly, long off the
+	// back of it, off a side - or too hard off the glass, from an angle to
+	// it - not off the front every time.
+	private closeMissStyleFor(
+		shooter: number,
+		release: number,
+		glass: boolean,
+	): MissStyle {
+		const w: [MissStyle, number][] = [
+			["short", CLOSE_MISS.short],
+			["long", CLOSE_MISS.long],
+			["side", CLOSE_MISS.side],
+			["glass", glass ? CLOSE_MISS.glass : 0],
+		];
+		let x =
+			hash01(shooter * 37 + 3, Math.round(release)) *
+			w.reduce((a, [, v]) => a + v, 0);
+		for (const [k, v] of w) {
+			x -= v;
+			if (x < 0) {
+				return k;
+			}
+		}
+		return "short";
 	}
 
 	private missStyleFor(
@@ -25436,6 +25499,16 @@ class Director {
 		// Set - in a screen, sealing in the post - he is a wall: whoever
 		// comes by him, his own man off it included, goes round.
 		const SET = new Set<AnimName>(["screen", "postUp"]);
+		// So, giving ground to a man backing him down in the post, is his man
+		// - on his back, not eased off it for somebody else's sake.
+		const backing = new Map<number, [number, number][]>();
+		for (const [m, { guard }] of this.backingDown) {
+			if (guard !== undefined) {
+				const list = backing.get(guard) ?? [];
+				list.push([m.t0, m.t1]);
+				backing.set(guard, list);
+			}
+		}
 		const tracks = [...this.tracks.values()];
 		// Read off in time order: where each list is up to (the last of it
 		// begun by t), never going back.
@@ -25732,7 +25805,8 @@ class Director {
 									? 3
 									: act !== undefined && ON_BALL.has(act)
 										? 2
-										: act !== undefined && (HOLDS.has(act) || SET.has(act))
+										: (act !== undefined && (HOLDS.has(act) || SET.has(act))) ||
+											  backing.get(pid)?.some(([a, b]) => t >= a && t <= b)
 											? 1.5
 											: pid === holder
 												? 1

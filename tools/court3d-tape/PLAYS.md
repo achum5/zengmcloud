@@ -508,7 +508,25 @@ Measured 2026-11-09 (61 made, 56 missed at real speed). Made: a dunk 35
 roll 7, a reverse 3, a scoop 1; in clean 46, off the glass 9, off the
 front of the rim 6. Missed: a power layup or a layup 32, a finger roll
 11, a scoop 10, a reverse 3 - and off the front of the rim 45 of 56, the
-rest rattled round (7), off the side or the glass (4). Next: misses at
-the rim as varied as they are - too hard off the glass, round the rim and
-out, off the back - which moves the ball, so the games after play out
-otherwise: it waits on the tests that sit on their line.
+rest rattled round (7), off the side or the glass (4). Now (2026-11-09) a
+miss in close is aimed the way it misses as a jumper's is: off the front,
+long, off a side, or too hard off the glass from an angle to it
+(`closeMissStyleFor`, `CLOSE_MISS`): off the front 44 of 56, off the side
+6, off the glass 6 (long off the back from that close mostly drops in, so
+few). It moves the ball, so the games after play out otherwise; what the
+reshuffled games turned up, fixed where it comes from:
+
+- a post man's man giving ground ahead of him - at a jog, there before
+  him, a gap opening - and nudged off him by keepApart for a teammate's
+  sake: now he gets up on him quickly if he is not, then gives ground at
+  his pace (`BACK_DOWN_CLOSE`), and holds his ground there as a man set in
+  a screen does (keepApart's `backing`).
+- (The loose-ball test now leaves out the man at the ball himself - the
+  one who knocked it loose, a dunker coming down under his own dunk: the
+  ball does come down on them.)
+- a man over half court with it, sent to a spot back over it, dribbled
+  along the line across the floor to it (kept from going back over, but
+  not from going across): now he holds where he is across the floor, up
+  off the line a step if he is not already (playDribble).
+- (The half-court test now leaves out the walk over to shake hands after
+  the game - no run for a spot.)

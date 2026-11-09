@@ -267,11 +267,17 @@ describe("3D director", () => {
 		const along: string[] = [];
 		for (const seed of ["a", "b", "c", "d"]) {
 			const { tl } = compile(seed, 140);
+			// (Over once the game is: walking over to shake hands is no run for
+			// a spot.)
+			const over =
+				tl.beats.findLast((b) => b.type === "gameOver")?.actionStart ??
+				Infinity;
 			for (const [pid, tr] of tl.tracks) {
 				for (const m of tr.moves) {
 					const x0 = m.from.x - COURT_W / 2;
 					const x1 = m.to.x - COURT_W / 2;
 					if (
+						m.t0 < over &&
 						Math.abs(Math.abs(x1) - 3.5) < 0.05 &&
 						Math.abs(x0) >= 3 &&
 						Math.sign(x0) === Math.sign(x1) &&
@@ -1051,6 +1057,16 @@ describe("3D director", () => {
 	// out from under the rim, a man having words holds his ground - not on
 	// through him while he stands there.
 	test("a ball bouncing loose at a stop goes round a man stood there, not through him", () => {
+		const AT_IT = new Set([
+			"poke",
+			"strip",
+			"dunk",
+			"dunk1",
+			"tomahawk",
+			"windmill",
+			"pickup",
+			"snatch",
+		]);
 		const through: string[] = [];
 		let loose = 0;
 		for (const seed of ["a", "b", "c"]) {
@@ -1072,7 +1088,14 @@ describe("3D director", () => {
 				loose += high ? 1 : 0;
 				for (const tr of tracks) {
 					const p = high ? floorSpotOf(tr, t) : undefined;
-					if (p && Math.hypot(p.x - B!.x, p.y - B!.y) < 0.75) {
+					if (
+						p &&
+						Math.hypot(p.x - B!.x, p.y - B!.y) < 0.75 &&
+						// (Stood there - not the man at it himself: knocking it
+						// loose, coming down from his own dunk under it, picking
+						// it up.)
+						!AT_IT.has(evalPlayer(tl, tr.pid, t).anim)
+					) {
 						const t0 = since.get(tr.pid) ?? t;
 						since.set(tr.pid, t0);
 						if (t - t0 === 150) {
