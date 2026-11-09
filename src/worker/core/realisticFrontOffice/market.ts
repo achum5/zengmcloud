@@ -215,6 +215,9 @@ export const marketSettings = {
 	// the owner's league from 2005, contenders gave far-future firsts for 48s
 	// about four times a season).
 	noCheapFirsts: false,
+	// CPU teams with each other: moving down in this draft is worth nothing in
+	// itself, as in a human's deal (pickDowngrades) - off while it is measured.
+	movingDown: false,
 };
 
 // For the arena's version-against-version leagues: settings for some teams'
@@ -872,8 +875,38 @@ const overRelease = (
 			return;
 		}
 		// Deal fatigue: each trade it has made this season raises the bar.
-		out[k] -=
-			floor + settingFor(teams[k].tid, "tradeFatigue") * teams[k].trades;
+		const fatigue = settingFor(teams[k].tid, "tradeFatigue") * teams[k].trades;
+		out[k] -= floor + fatigue;
+		// Moving down in this draft is worth nothing in itself (pickDowngrades).
+		const down = settingFor(teams[k].tid, "movingDown")
+			? pickDowngrades(outlook, gives[k], gives[1 - k]!)
+			: undefined;
+		if (down && down.pairs > 0) {
+			const restFloor =
+				down.restOut.length + down.restIn.length === 0
+					? 0
+					: releaseAlternative(
+							outlook,
+							teams[k],
+							down.restOut,
+							down.restIn,
+							single,
+						);
+			if (restFloor === undefined) {
+				return;
+			}
+			const rest =
+				down.restOut.length + down.restIn.length === 0
+					? 0
+					: priceFor(
+							outlook,
+							teams[k],
+							down.restOut,
+							down.restIn,
+							teams[1 - k],
+						);
+			out[k] = Math.min(out[k], rest - restFloor - fatigue);
+		}
 	}
 	return out;
 };
@@ -1294,9 +1327,26 @@ export const pickUpgrades = (
 	};
 };
 
+// The other way round: a pick a team gives and a later one it gets in the same
+// draft, one for one. At the earlier pick it could have taken whoever it
+// would take at the later one, so the pair is worth nothing to it - however
+// the class board ranks the two players (picks 30 and 58 for 15 read as a
+// gain to a team that liked the 30th prospect better than the 15th, and the
+// 15th pick could have had him). The deal is worth no more than its other
+// assets.
+export const pickDowngrades = (
+	outlook: LeagueOutlook,
+	outgoing: readonly Asset[],
+	incoming: readonly Asset[],
+) => {
+	const { pairs, restOut, restIn } = pickUpgrades(outlook, incoming, outgoing);
+	return { pairs, restOut: restIn, restIn: restOut };
+};
+
 // What a CPU team clears with a human's deal: past releasing what it gives
 // instead, and past its margin of error counted `factor` times - and at least
-// what the deal clears without the picks it moves up with (pickUpgrades).
+// what the deal clears without the picks it moves up with (pickUpgrades), at
+// most what it clears without those it moves down with (pickDowngrades).
 // Undefined if it could not make the deal at all.
 export const humanDealNet = (
 	outlook: LeagueOutlook,
@@ -1317,17 +1367,27 @@ export const humanDealNet = (
 			factor * marginOf(outlook, a, out, inc)
 		);
 	};
-	const net = netFor(giving, getting);
-	const { pairs, restOut, restIn } = pickUpgrades(outlook, giving, getting);
-	if (pairs === 0) {
-		return net;
+	const without = (rest: {
+		restOut: readonly Asset[];
+		restIn: readonly Asset[];
+	}) =>
+		rest.restOut.length + rest.restIn.length === 0
+			? 0
+			: netFor(rest.restOut, rest.restIn);
+	let net = netFor(giving, getting);
+	const up = pickUpgrades(outlook, giving, getting);
+	if (up.pairs > 0) {
+		const rest = without(up);
+		if (rest !== undefined) {
+			net = net === undefined ? rest : Math.max(net, rest);
+		}
 	}
-	const without =
-		restOut.length + restIn.length === 0 ? 0 : netFor(restOut, restIn);
-	if (without === undefined) {
-		return net;
+	const down = pickDowngrades(outlook, giving, getting);
+	if (down.pairs > 0 && net !== undefined) {
+		const rest = without(down);
+		net = rest === undefined ? undefined : Math.min(net, rest);
 	}
-	return net === undefined ? without : Math.max(net, without);
+	return net;
 };
 
 export const marginOf = (

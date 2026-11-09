@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 219,
+		date: "2026-11-09",
+		text: "Realistic Front Offices: CPU teams count money spent past the cap as a little cheaper than before, so bad teams use their cap room instead of sitting on it. In test leagues they bottomed out about half as often and won more titles. And a CPU team no longer takes your later pick in the same draft for its earlier one (picks 30 and 58 for 15) unless the rest of the deal pays for it.",
+	},
+	{
 		n: 218,
 		date: "2026-11-09",
 		text: "Multiplayer: when a league-mate is simming the game between your two teams, Watch on it (on the schedule, or anywhere else) now joins their live game in step with them, instead of starting your own copy of it at your own pace. Sim is turned down for that game while it's live.",

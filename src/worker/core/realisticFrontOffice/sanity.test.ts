@@ -9,6 +9,7 @@ import {
 	currentOutlook,
 	loadTeam,
 	marginOf,
+	MIN_GAIN,
 	priceFor,
 	type Asset,
 	type TeamState,
@@ -226,11 +227,14 @@ test(
 		for (const { t } of await teams()) {
 			for (const dp of t.picks) {
 				checked += 1;
-				// Within the margin's smallest gain: a pick's player who is not
-				// worth his place is cut straight after the draft, for nothing.
-				assert.isAtMost(
+				// Within the smallest gain a team acts on: a pick's player who is
+				// not worth his place is cut straight after the draft, for
+				// nothing. (A few later picks read a thousandth of a title below
+				// nothing - at 0.04 a first, at 0.03 a second - and giving picks
+				// away for nothing is never made: noPickGifts.)
+				assert.isBelow(
 					priceFor(outlook, t, [{ kind: "pick", dp }], []),
-					0.001,
+					MIN_GAIN,
 					`team ${t.tid}, ${dp.season} round ${dp.round}`,
 				);
 			}

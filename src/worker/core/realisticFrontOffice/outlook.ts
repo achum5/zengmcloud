@@ -737,8 +737,12 @@ export const outlookSettings = {
 	// 2 more leagues with floorNow and freeDisposal: titles 13 to 7, playoff
 	// rounds 164 to 136, but seasons under 20 wins 51 to 17 and under
 	// 12 32 to 6 - bad teams left room unspent - and games won 2 to 9 points
-	// fewer each season.
-	moneyPerCap: 0.04,
+	// fewer each season. So 0.03 against 0.04, the owner's call after it, 4
+	// leagues over 5 seasons: titles 25 to 15, playoff rounds 339 to 261,
+	// seasons under 20 wins 49 to 103 and under 12 19 to 46, games won more
+	// in every league (about 7 points more by the fifth season), FA prices
+	// about the same.
+	moneyPerCap: 0.03,
 	// And payroll under the cap, past the league's minimum, with what the
 	// room is expected to buy; off, money costs only past the cap.
 	moneyUnderCap: true,

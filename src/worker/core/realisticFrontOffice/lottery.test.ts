@@ -9,10 +9,10 @@ import { humanMarginFactor, judgeHumanOffer } from "./humanTrades.ts";
 import { counterOffer } from "./proposals.ts";
 import {
 	currentOutlook,
+	humanDealNet,
 	loadTeam,
 	marginOf,
 	MIN_GAIN,
-	priceFor,
 } from "./market.ts";
 import {
 	buildOutlook,
@@ -175,7 +175,9 @@ test(
 				0,
 			);
 
-			// Picks 30 and 58 for pick 15 (owner's exploit list).
+			// Picks 30 and 58 for pick 15 (owner's exploit list), as a human's
+			// offer is judged: at pick 15 it could take whoever it would at 30
+			// (pickDowngrades), so it is paid only by the 58th.
 			const want = at(15);
 			const other = (want.tid + 1) % g.get("numTeams");
 			const give = [at(30), at(58)];
@@ -188,8 +190,14 @@ test(
 			const outgoing = [{ kind: "pick" as const, dp: want }];
 			const incoming = give.map((dp) => ({ kind: "pick" as const, dp }));
 			assert.isBelow(
-				priceFor(outlook, seller, outgoing, incoming, buyer) -
-					humanMarginFactor() * marginOf(outlook, seller, outgoing, incoming),
+				humanDealNet(
+					outlook,
+					seller,
+					buyer,
+					outgoing,
+					incoming,
+					humanMarginFactor(),
+				) ?? -1,
 				MIN_GAIN,
 			);
 		} finally {
