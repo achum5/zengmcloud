@@ -12,6 +12,21 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 218,
+		date: "2026-11-09",
+		text: "Multiplayer: when a league-mate is simming the game between your two teams, Watch on it (on the schedule, or anywhere else) now joins their live game in step with them, instead of starting your own copy of it at your own pace. Sim is turned down for that game while it's live.",
+	},
+	{
+		n: 217,
+		date: "2026-11-08",
+		text: '3D playoff games: the score bug has a strip across its top with the round, which game of the series it is and how the series stands going into it ("1st round · Game 4 · BOS leads 2-1"). The Series section says "wins" once a team has taken the series.',
+	},
+	{
+		n: 216,
+		date: "2026-11-08",
+		text: "3D highlights: a play opened on its own now starts as the play does - the clock at its time instead of running down from the start of the quarter, and both benches and coaches already in their places instead of walking back from the break.",
+	},
+	{
 		n: 215,
 		date: "2026-11-08",
 		text: 'Game recaps read more like a writer\'s: "tied at 78 going into the fourth" instead of "78-78", "trailed by a point" instead of "were 1 down", "They" instead of a team\'s name three sentences running, and no "went in front for good in the third" after a comeback that became a rout.',

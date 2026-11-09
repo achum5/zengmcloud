@@ -254,6 +254,11 @@ export const decalPictureIds = (decals: readonly CourtDecal[]): string[] =>
 		.filter((u) => u.startsWith(PIC))
 		.map((u) => u.slice(PIC.length));
 
+// The league's decals - none in an exhibition game, which has only the
+// settings it sets itself (see api/exhibitionGame.ts).
+const leagueDecals = (): CourtDecal[] =>
+	Object.hasOwn(g, "courtDecals") ? (g.get("courtDecals") ?? []) : [];
+
 // THE LEAGUE'S DECALS FOR A GAME: those laid down on its occasion - every
 // game, opening night (the first day of the regular season), the playoffs,
 // the finals - in its season, their pictures filled in.
@@ -263,7 +268,7 @@ export const decalsForGame = async (game: {
 	playoffs?: boolean;
 	finals?: boolean;
 }): Promise<CourtDecalPlaced[]> => {
-	const all = g.get("courtDecals") ?? [];
+	const all = leagueDecals();
 	const on = all.filter(
 		(d) =>
 			(d.from === undefined || game.season >= d.from) &&
@@ -365,7 +370,7 @@ export const homeCourtForGame = async <T extends CourtStyle | StadiumLook>(
 export const prunePictures = async (ids: Iterable<string>) => {
 	const teams = await idb.cache.teams.getAll();
 	const used = new Set<string>([
-		...decalPictureIds(g.get("courtDecals") ?? []),
+		...decalPictureIds(leagueDecals()),
 		...scoreBugPictureIds(g.get("scoreBug")),
 	]);
 	for (const t of teams) {

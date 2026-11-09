@@ -6,44 +6,13 @@
 // players' new pictures for the page as the game is shown (see
 // field3d/farm.ts).
 import "../common/polyfills.ts";
-import {
+import { serveStaging } from "../ui/views/LiveGame/court3d/stager.ts";
+import { compileField } from "../ui/views/LiveGame/field3d/director.ts";
+import { fieldFarmHand } from "../ui/views/LiveGame/field3d/farm.ts";
+
+serveStaging(
 	compileField,
-	type FieldInput,
-} from "../ui/views/LiveGame/field3d/director.ts";
-import {
-	fieldFarmHand,
-	type ToFieldHand,
-} from "../ui/views/LiveGame/field3d/farm.ts";
-
-// Up and running (see stageField.ts).
-self.postMessage({ ready: true });
-
-const hand = fieldFarmHand((msg, transfer) => {
-	self.postMessage(msg, { transfer });
-});
-
-self.onmessage = (
-	event: MessageEvent<
-		{ id: number; input: FieldInput } | { farm?: ToFieldHand }
-	>,
-) => {
-	if ("farm" in event.data) {
-		if (event.data.farm) {
-			hand(event.data.farm);
-		}
-		return;
-	}
-	if (!("input" in event.data)) {
-		return;
-	}
-	const { id, input } = event.data;
-	try {
-		self.postMessage({ id, timeline: compileField(input) });
-	} catch (error) {
-		self.postMessage({
-			id,
-			error:
-				error instanceof Error ? (error.stack ?? error.message) : String(error),
-		});
-	}
-};
+	fieldFarmHand((msg, transfer) => {
+		self.postMessage(msg, { transfer });
+	}),
+);

@@ -13,6 +13,7 @@ import {
 } from "./kitArt.ts";
 import {
 	bodyPoint,
+	type Placed,
 	gripped,
 	holdOf,
 	onRim,
@@ -35,6 +36,7 @@ import {
 	type Body,
 	type Limb,
 	type Pose,
+	type Skeleton,
 	type V3,
 } from "./poses.ts";
 
@@ -57,9 +59,9 @@ import {
 
 // ---- colors -----------------------------------------------------------------
 
-type RGB = [number, number, number];
+export type RGB = [number, number, number];
 const rgbs = new Map<string, RGB>();
-const rgb = (c: string): RGB => {
+export const rgb = (c: string): RGB => {
 	let out = rgbs.get(c);
 	if (!out) {
 		const m = /^#?([\da-f]{6})$/i.exec(c.trim());
@@ -76,7 +78,11 @@ const rgb = (c: string): RGB => {
 	}
 	return out;
 };
-const scaled = (c: RGB, f: number): RGB => [c[0] * f, c[1] * f, c[2] * f];
+export const scaled = (c: RGB, f: number): RGB => [
+	c[0] * f,
+	c[1] * f,
+	c[2] * f,
+];
 
 // ---- the masses -------------------------------------------------------------
 
@@ -110,7 +116,7 @@ const G_FINGER = 12; // + side * 5 + finger (4 the thumb)
 const G_HAND = 22; // + side
 const GROUPS = 24;
 
-type Mass = {
+export type Mass = {
 	// On the sprite (its pixels): from a, along d.
 	ax: number;
 	ay: number;
@@ -134,16 +140,16 @@ type Mass = {
 	// His right (0) or left (1).
 	side: number;
 	// Cut square at B, rather than rounded: a hem.
-	flat: boolean;
+	flat?: boolean;
 	x0: number;
 	y0: number;
 	x1: number;
 	y1: number;
 };
 
-const RS = 24;
-type Station = [t: number, r: number];
-const radiusAt = (prof: Station[], t: number): number => {
+export const RS = 24;
+export type Station = [t: number, r: number];
+export const radiusAt = (prof: Station[], t: number): number => {
 	if (t <= prof[0]![0]) {
 		return prof[0]![1];
 	}
@@ -158,23 +164,23 @@ const radiusAt = (prof: Station[], t: number): number => {
 	return prof.at(-1)![1];
 };
 
-const v3 = (f: number, s: number, u: number): V3 => ({ f, s, u });
-const lerpV = (a: V3, b: V3, t: number): V3 =>
+export const v3 = (f: number, s: number, u: number): V3 => ({ f, s, u });
+export const lerpV = (a: V3, b: V3, t: number): V3 =>
 	v3(a.f + (b.f - a.f) * t, a.s + (b.s - a.s) * t, a.u + (b.u - a.u) * t);
-const addV = (a: V3, b: V3, k = 1): V3 =>
+export const addV = (a: V3, b: V3, k = 1): V3 =>
 	v3(a.f + b.f * k, a.s + b.s * k, a.u + b.u * k);
-const subV = (a: V3, b: V3): V3 => v3(a.f - b.f, a.s - b.s, a.u - b.u);
-const dotV = (a: V3, b: V3) => a.f * b.f + a.s * b.s + a.u * b.u;
-const lenV = (a: V3) => Math.hypot(a.f, a.s, a.u);
-const unit = (a: V3, or: V3 = v3(1, 0, 0)): V3 => {
+export const subV = (a: V3, b: V3): V3 => v3(a.f - b.f, a.s - b.s, a.u - b.u);
+export const dotV = (a: V3, b: V3) => a.f * b.f + a.s * b.s + a.u * b.u;
+export const lenV = (a: V3) => Math.hypot(a.f, a.s, a.u);
+export const unit = (a: V3, or: V3 = v3(1, 0, 0)): V3 => {
 	const l = lenV(a);
 	return l > 1e-6 ? v3(a.f / l, a.s / l, a.u / l) : or;
 };
 // f, s, u turn the right way round: forward x left is up.
-const cross = (a: V3, b: V3): V3 =>
+export const cross = (a: V3, b: V3): V3 =>
 	v3(a.s * b.u - a.u * b.s, a.u * b.f - a.f * b.u, a.f * b.s - a.s * b.f);
 // The part of `a` square to the unit `d`.
-const square = (a: V3, d: V3): V3 => addV(a, d, -dotV(a, d));
+export const square = (a: V3, d: V3): V3 => addV(a, d, -dotV(a, d));
 
 // ---- his clothes, on him ----------------------------------------------------
 
@@ -616,7 +622,7 @@ type Cut = {
 // His frame as the camera sees it: which way on him the sprite's right, down
 // and toward the camera are - and, the floor being seen from above, how much
 // higher a point nearer the camera must be to stay on the same pixel.
-type Frame = { rt: V3; dn: V3; tw: V3; zs: number; kap: number };
+export type Frame = { rt: V3; dn: V3; tw: V3; zs: number; kap: number };
 
 type Built = {
 	masses: Mass[];
@@ -643,19 +649,8 @@ type Built = {
 	k: number;
 };
 
-// How his hands are held.
-type Grip =
-	| "open"
-	| "relaxed"
-	| "fist"
-	| "point"
-	| "ball"
-	| "target"
-	| "dribble"
-	| "splay"
-	| "clasp"
-	| "hook"
-	| "three";
+// How his hands are held (see handMasses).
+type Grip = HandGrip;
 
 // Running, his hands are loose fists; with the ball, spread on it; pointing,
 // a finger out; strolling or standing about, relaxed, fingers a little
@@ -780,15 +775,15 @@ const gripFor = (st: PlayerState, which: "R" | "L", holding: boolean): Grip => {
 
 // How much of his upper body's turn a point of his torso t up his spine
 // (0 his hips, 1 his chest) takes.
-const turnShare = (t: number): number => {
+export const turnShare = (t: number): number => {
 	const u = Math.min(1, Math.max(0, t));
 	return u * u * (3 - 2 * u);
 };
 
 // The turn undone, a matrix about his hips for each of these steps up his
 // torso (for painting what he wears where it was made to sit).
-const TURN_STEPS = 16;
-const untwistTable = (q: Pose, pel: V3): Float64Array => {
+export const TURN_STEPS = 16;
+export const untwistTable = (q: Pose, pel: V3): Float64Array => {
 	const out = new Float64Array((TURN_STEPS + 1) * 9);
 	for (let i = 0; i <= TURN_STEPS; i++) {
 		const back = turnUpper(q, pel, turnShare(i / TURN_STEPS), true);
@@ -807,7 +802,7 @@ const untwistTable = (q: Pose, pel: V3): Float64Array => {
 const HELD_BALL_R = 0.39;
 // How far each joint of a finger bends (radians) - the knuckle, the middle
 // joint, the end one - back (a little past straight) and forward.
-const BEND_LO = [-0.3, 0, -0.15];
+export const BEND_LO = [-0.3, 0, -0.15];
 // The share of a bounce, at its top, the ball is in his hand on his dribble
 // - from as it comes up into it to as it leaves.
 const DRIBBLE_TOUCH = 0.12;
@@ -816,7 +811,7 @@ const DRIBBLE_TOUCH = 0.12;
 const MEET_REACH = 0.05;
 // Fingertips this wide (pixels, the radius) and more show their nails.
 const NAIL_PX = 2.2;
-const BEND_HI = [1.6, 1.9, 1.3];
+export const BEND_HI = [1.6, 1.9, 1.3];
 
 // A finger on a ball: the bend at a joint - at (x, y) in the finger's plane,
 // heading phi - that first brings the end of the next bone (l long) round
@@ -825,7 +820,7 @@ const BEND_HI = [1.6, 1.9, 1.3];
 // back - a fingertip pressed flat on the ball - as far as keeps it on the
 // surface (PRESS_MOST past its stop at the most); out of its reach, as it
 // rests.
-const PRESS_MOST = 0.35;
+export const PRESS_MOST = 0.35;
 export const wrapBend = (
 	x: number,
 	y: number,
@@ -882,27 +877,17 @@ const T_ZIP = 0.22;
 // figure.ts).
 const FACE_LIFT = 0.15;
 
-// A microphone this far from his own mouth (feet) is held out to somebody
-// else's.
-const MIC_OWN = 1.1;
-const build = (
-	cam: Camera,
-	st: PlayerState,
-	body: Body,
-	look: Look,
-	px: number,
-	ox: number,
-	oy: number,
-): Built => {
-	const q = poseOf(st);
-	// (Just let go of it, his hands come off where it was.)
-	const held =
-		st.holding || st.grip !== undefined ? holdOf(st, body, q) : undefined;
-	const sk = held
-		? gripped(held.sk, st, body, q)
-		: onRim(skeleton(body, q), st, body);
-	const P = (v: V3) => {
-		const p = project(cam, bodyPoint(st, v));
+// THE GROUNDWORK OF A FIGURE, any sport's (see each sport's build).
+
+// Where a point on him (his own frame, feet - see bodyPoint) lands in his
+// sprite, seen by `cam` from where he stands: in the sprite's pixels (`px`
+// screen pixels each, from `ox`, `oy`), how far off, and how many of the
+// sprite's pixels a foot is there.
+export type Seen = { x: number; y: number; depth: number; k: number };
+export const seerOf =
+	(cam: Camera, at: Placed, px: number, ox: number, oy: number) =>
+	(v: V3): Seen => {
+		const p = project(cam, bodyPoint(at, v));
 		return {
 			x: (p.x - ox) / px,
 			y: (p.y - oy) / px,
@@ -910,15 +895,36 @@ const build = (
 			k: p.k / px,
 		};
 	};
+
+// The masses he is sculpted from, laid one at a time (`add`): from A to B,
+// as thick along it as `prof` has it (feet), of a `kind` and in a `group`
+// (each sport's own), on a `side` (0 his right, 1 his left); `flat`, cloth
+// lying flat on him (see shade); `least`, the thinnest it may be drawn
+// (sprite pixels) - a facemask's bars still there from up in the stands.
+// (In the order laid: the first of two as near wins a pixel.)
+export type AddMass = (
+	A: V3,
+	B: V3,
+	prof: Station[],
+	kind: number,
+	group: number,
+	side?: number,
+	flat?: boolean,
+	least?: number,
+) => void;
+export const massesFor = (
+	P: (v: V3) => Seen,
+): { masses: Mass[]; add: AddMass } => {
 	const masses: Mass[] = [];
-	const add = (
-		A: V3,
-		B: V3,
-		prof: Station[],
-		kind: number,
-		group: number,
+	const add: AddMass = (
+		A,
+		B,
+		prof,
+		kind,
+		group,
 		side = 0,
 		flat = false,
+		least = 0,
 	) => {
 		const a = P(A);
 		const b = P(B);
@@ -926,7 +932,8 @@ const build = (
 		const rad = new Float32Array(RS + 1);
 		let rmax = 0;
 		for (let i = 0; i <= RS; i++) {
-			rad[i] = radiusAt(prof, i / RS) * k;
+			const r = radiusAt(prof, i / RS) * k;
+			rad[i] = least > 0 ? Math.max(least, r) : r;
 			rmax = Math.max(rmax, rad[i]!);
 		}
 		const dx = b.x - a.x;
@@ -955,19 +962,19 @@ const build = (
 			y1: Math.max(a.y, b.y) + rmax,
 		});
 	};
-	const sw = body.shoulderW;
-	const dp = body.depth;
-	const H = body.H;
-	const pel = sk.pelvis;
-	// His torso as it would stand untwisted (see turnUpper): up his spine
-	// from his hips at his lean.
+	return { masses, add };
+};
+
+// His torso's own frame: up his spine from his hips (`pel`) at his lean,
+// and forward of it - and `up`, a point on his torso, t up the spine, s to
+// his left, f forward, turned on his hips as far up him as it is (see
+// turnUpper).
+export const torsoOf = (body: Body, q: Pose, pel: V3) => {
 	const T = body.torso;
 	const lean = (q.lean * Math.PI) / 180;
 	const spine = v3(Math.sin(lean), 0, Math.cos(lean));
 	const fwdT = v3(spine.u, 0, -spine.f);
 	const turned = q.twist !== 0 || q.tilt !== 0;
-	// A point on his torso: t up the spine, s to his left, f forward - turned
-	// on his hips as far up him as it is.
 	const up = (t: number, s: number, f = 0): V3 => {
 		const p = v3(
 			pel.f + spine.f * T * t + fwdT.f * f,
@@ -976,33 +983,656 @@ const build = (
 		);
 		return turned ? turnUpper(q, pel, turnShare(t))(p) : p;
 	};
+	return { T, spine, fwdT, turned, up };
+};
 
-	// The torso: belly and back, the chest out in front, the lats widening a
-	// little up to his armpits, across the tops of his shoulders; hips and
-	// seat.
-	const torso = (A: V3, B: V3, prof: Station[]) =>
-		add(A, B, prof, TORSO, G_TORSO);
-	torso(up(0.04, 0), up(0.9, 0, -dp * 0.04), [
-		[0, dp * 0.42],
-		[0.45, dp * 0.42],
-		[1, dp * 0.47],
+// The camera's frame, in his - for a man facing `yaw`.
+export const frameOf = (cam: Camera, yaw: number): Frame => {
+	const cy = Math.cos(yaw);
+	const sy = Math.sin(yaw);
+	const toBody = (wx: number, wy: number): V3 =>
+		v3(wx * cy + wy * sy, wx * sy - wy * cy, 0);
+	const fh = Math.hypot(cam.fwd.x, cam.fwd.y) || 1;
+	return {
+		rt: toBody(cam.right.x, cam.right.y),
+		dn: v3(0, 0, -1),
+		tw: toBody(-cam.fwd.x / fh, -cam.fwd.y / fh),
+		zs: fh,
+		kap: (cam.fwd.x * cam.up.x + cam.fwd.y * cam.up.y) / fh,
+	};
+};
+
+// HIS ARM, any sport's: the deltoid, narrowing to the elbow; the biceps in
+// front of it, bunching up as the elbow bends; the point of the elbow
+// behind; the forearm, swelling below the elbow and slimming to the wrist -
+// as thick along it as a sport builds them (`b`), of its `upper` and `fore`
+// kinds, in `group`. The way the forearm points, for the hand.
+export type ArmBuild = {
+	// The deltoid, of the upper arm's radius, a fifth and half way down it -
+	// and of the forearm's at the elbow.
+	delt: [number, number, number];
+	// The biceps at its ends and middle, straight (of the upper arm's).
+	biceps: [number, number, number];
+	// The point of the elbow, and the forearm down from it (of its own).
+	elbow: number;
+	fore: [number, number, number, number];
+};
+export const ARM: ArmBuild = {
+	delt: [1.1, 0.9, 0.86],
+	biceps: [0.62, 0.74, 0.56],
+	elbow: 0.62,
+	fore: [0.9, 1.04, 0.76, 0.54],
+};
+const FWD = v3(1, 0, 0);
+const UP_V = v3(0, 0, 1);
+export const armMasses = (
+	add: AddMass,
+	body: Body,
+	limb: Limb,
+	side: 0 | 1,
+	group: number,
+	upper: number,
+	fore: number,
+	b: ArmBuild,
+): V3 => {
+	const a = unit(subV(limb.mid, limb.root));
+	const c = unit(subV(limb.end, limb.mid));
+	// The inside of the elbow: the way the forearm bends from the upper arm
+	// (forward, for an arm hanging straight).
+	const bend = square(c, a);
+	const inside = lenV(bend) > 0.08 ? unit(bend) : unit(square(FWD, a), UP_V);
+	add(
+		limb.root,
+		limb.mid,
+		[
+			[0, body.upperR * 1.2],
+			[0.2, body.upperR * b.delt[0]],
+			[0.5, body.upperR * b.delt[1]],
+			[1, body.foreR * b.delt[2]],
+		],
+		upper,
+		group,
+		side,
+	);
+	// (As the elbow bends, the biceps bunch up: thicker, shorter, gathered
+	// toward the middle of the upper arm - straight, long and flat to it.)
+	const flexed = Math.acos(Math.max(-1, Math.min(1, dotV(a, c))));
+	const bunch = Math.max(0, Math.min(1, (flexed - 0.5) / 1.4));
+	const bulge = bunch * bunch * (3 - 2 * bunch);
+	add(
+		addV(
+			lerpV(limb.root, limb.mid, 0.36 + 0.06 * bulge),
+			inside,
+			body.upperR * (0.32 + 0.1 * bulge),
+		),
+		addV(
+			lerpV(limb.root, limb.mid, 0.78 - 0.1 * bulge),
+			inside,
+			body.upperR * (0.28 + 0.08 * bulge),
+		),
+		[
+			[0, body.upperR * (b.biceps[0] + 0.06 * bulge)],
+			[0.5, body.upperR * (b.biceps[1] + 0.22 * bulge)],
+			[1, body.upperR * (b.biceps[2] + 0.04 * bulge)],
+		],
+		upper,
+		group,
+		side,
+	);
+	add(
+		addV(limb.mid, inside, -body.foreR * 0.36),
+		addV(limb.mid, inside, -body.foreR * 0.36),
+		[[0, body.foreR * b.elbow]],
+		fore,
+		group,
+		side,
+	);
+	add(
+		limb.mid,
+		limb.end,
+		[
+			[0, body.foreR * b.fore[0]],
+			[0.22, body.foreR * b.fore[1]],
+			[0.7, body.foreR * b.fore[2]],
+			[1, body.foreR * b.fore[3]],
+		],
+		fore,
+		group,
+		side,
+	);
+	return c;
+};
+
+// HIS HAND, any sport's: the palm out of the wrist (along `h`, facing
+// `palmN`, his thumb's side `ts`), broad across and thin through; four
+// fingers of three bones each, each joint bent the way the grip calls for -
+// nearly straight (open), curled a little, the little finger most
+// (relaxed), folded into the palm (a fist) - or, `onto` a ball, each joint
+// bent just as far as keeps the next bone on its surface, the pads of his
+// fingers on it, spread wide; the thumb, out from the heel of the palm on
+// its side, two bones - across the fingers in a fist, round the side of
+// the ball on it; and the ball of his thumb. As a real hand is, a touch over
+// life so it reads: as long as a ninth of him, its palm about as wide as
+// half its length, the fingers slim enough to stand apart - as each sport
+// builds it (`b`, shares of his height). `nail`: the kind of the nails on
+// the backs of his fingertips, where they are big enough to see (none, a
+// glove on). Where his knuckles and his thumb grow from.
+export type HandGrip =
+	| "open"
+	| "relaxed"
+	| "fist"
+	| "point"
+	| "ball"
+	| "target"
+	| "dribble"
+	| "splay"
+	| "clasp"
+	| "hook"
+	| "three";
+export type HandBuild = {
+	halfW: number;
+	palmR: number;
+	fingerR: number;
+	// The thumb's, as laid and as drawn.
+	thumb: [number, number];
+	// How far apart his fingers are on the ball.
+	ballSpread: number;
+};
+export const HAND_BUILD: HandBuild = {
+	halfW: 0.0125,
+	palmR: 0.0148,
+	fingerR: 0.006,
+	thumb: [0.0076, 0.0084],
+	ballSpread: 0.22,
+};
+// A joint's bend (k, the bone out from it), the finger so far `x` along and
+// `y` in toward the palm at `phi`, the next bone `l` long - instead of
+// `rest`, its bend at rest.
+export type Bend = (
+	x: number,
+	y: number,
+	phi: number,
+	l: number,
+	k: number,
+	rest: number,
+) => number;
+export const handMasses = ({
+	add,
+	H,
+	kMid,
+	wrist,
+	h,
+	palmN,
+	ts,
+	side,
+	group,
+	fingers,
+	kind,
+	nail,
+	grip,
+	b,
+	onto,
+}: {
+	add: AddMass;
+	H: number;
+	// Sprite pixels to a foot, about him.
+	kMid: number;
+	wrist: V3;
+	h: V3;
+	palmN: V3;
+	ts: V3;
+	side: 0 | 1;
+	// The hand's group, and the first of its fingers' five.
+	group: number;
+	fingers: number;
+	kind: number;
+	nail: number | undefined;
+	grip: HandGrip;
+	b: HandBuild;
+	// Laid on a ball: the bend that keeps a finger from `base`, along `d`,
+	// `r` thick, on it (none, it does not reach).
+	onto?: (base: V3, d: V3, r: number) => Bend | undefined;
+}): { knuckles: V3; thumb: V3 } => {
+	const L = H * 0.118;
+	const halfW = H * b.halfW;
+	const palmR = H * b.palmR;
+	// The palm: two masses side by side.
+	const knuckles = addV(wrist, h, L * 0.5);
+	for (const o of [-1, 1]) {
+		add(
+			addV(addV(wrist, h, L * 0.1), ts, o * halfW * 0.8),
+			addV(knuckles, ts, o * halfW),
+			[
+				[0, palmR * 0.92],
+				[1, palmR],
+			],
+			kind,
+			group,
+			side,
+		);
+	}
+	const fingerR = H * b.fingerR;
+	const lens = [0.4, 0.44, 0.41, 0.33];
+	// The joints of a finger (or the thumb) from base, set off along d: each
+	// bone's length, its bend at rest, and how far it bends back and forward
+	// - on the ball, as far as lays it on the ball instead.
+	const lay = (
+		base: V3,
+		d: V3,
+		bones: number[],
+		rest: number[],
+		r: number,
+	): V3[] => {
+		const pts = [base];
+		const bend = onto?.(base, d, r);
+		let x = 0;
+		let y = 0;
+		let phi = 0;
+		bones.forEach((l, k) => {
+			const a = bend ? bend(x, y, phi, l, k, rest[k]!) : rest[k]!;
+			phi += a;
+			x += l * Math.cos(phi);
+			y += l * Math.sin(phi);
+			pts.push(addV(addV(base, d, x), palmN, y));
+		});
+		return pts;
+	};
+	// Bone by bone, each a little slimmer than the last, melted into one.
+	const bones = (pts: V3[], r: number, g: number) => {
+		for (let k = 1; k < pts.length; k++) {
+			const r0 = r * (1 - 0.07 * (k - 1));
+			add(
+				pts[k - 1]!,
+				pts[k]!,
+				[
+					[0, r0],
+					[1, r0 * (k === pts.length - 1 ? 0.84 : 0.95)],
+				],
+				kind,
+				g,
+				side,
+			);
+			// Big enough to see: the nail on the back of its tip.
+			if (k === pts.length - 1 && r0 * kMid >= NAIL_PX && nail !== undefined) {
+				const u = unit(subV(pts[k]!, pts[k - 1]!), h);
+				const back = unit(square(palmN, u), palmN);
+				const out = (t: number, o: number) =>
+					addV(lerpV(pts[k - 1]!, pts[k]!, t), back, -r0 * o);
+				add(
+					out(0.48, 0.42),
+					out(0.9, 0.36),
+					[
+						[0, r0 * 0.52],
+						[1, r0 * 0.5],
+					],
+					nail,
+					g,
+					side,
+				);
+			}
+		}
+	};
+	const restOf = (i: number): number[] =>
+		grip === "fist" ||
+		(grip === "point" && i > 0) ||
+		(grip === "three" && i > 2)
+			? [1.45, 1.75, 1.05]
+			: grip === "point" || grip === "three"
+				? [0.02, 0.04, 0.02]
+				: grip === "relaxed"
+					? [0.24 + 0.06 * i, 0.5 + 0.08 * i, 0.32 + 0.05 * i]
+					: grip === "ball"
+						? [0.2, 0.35, 0.25]
+						: grip === "target"
+							? [0.14, 0.26, 0.16]
+							: grip === "dribble"
+								? [0.18, 0.3, 0.2]
+								: grip === "splay"
+									? [-0.08, 0.03, 0.02]
+									: grip === "clasp"
+										? [0.5 + 0.05 * i, 0.8, 0.55]
+										: grip === "hook"
+											? [0.75, 1.05, 0.7]
+											: [0.04 + 0.02 * i, 0.08, 0.05];
+	const spread =
+		grip === "ball"
+			? b.ballSpread
+			: grip === "target"
+				? 0.22
+				: grip === "dribble"
+					? 0.17
+					: grip === "splay"
+						? 0.5
+						: grip === "open"
+							? 0.1
+							: grip === "relaxed"
+								? 0.05
+								: 0.02;
+	if (fingerR * kMid < 0.9 && grip !== "point" && grip !== "three" && !onto) {
+		// Too small to tell apart: the four as one, flat like the palm, bent
+		// as the middle two are.
+		for (const o of [-1, 1]) {
+			const pts = lay(
+				addV(knuckles, ts, o * halfW * 0.85),
+				h,
+				[0.47, 0.3, 0.23].map((k) => k * L * 0.42),
+				restOf(1),
+				palmR * 0.8,
+			);
+			bones(pts, palmR * 0.88, fingers);
+		}
+	} else {
+		for (let i = 0; i < 4; i++) {
+			const across = (1.5 - i) / 1.5;
+			// (The knuckles in an arc: the middle one furthest out.)
+			const base = addV(
+				addV(knuckles, ts, across * halfW * 1.2),
+				h,
+				L * [0.0, 0.025, 0.005, -0.04][i]!,
+			);
+			const len = L * lens[i]!;
+			const pts = lay(
+				base,
+				unit(addV(h, ts, across * spread)),
+				[0.47, 0.3, 0.23].map((k) => k * len),
+				restOf(i),
+				fingerR,
+			);
+			bones(pts, fingerR, fingers + i);
+		}
+	}
+	const tBase = addV(addV(wrist, h, L * 0.16), ts, halfW * 1.05);
+	const tLen = L * 0.36;
+	const thumb =
+		grip === "fist" ||
+		grip === "point" ||
+		grip === "three" ||
+		grip === "clasp" ||
+		grip === "hook"
+			? (() => {
+					const tip = addV(addV(knuckles, palmN, H * 0.016), ts, halfW * 0.1);
+					const mid = addV(lerpV(tBase, tip, 0.5), palmN, H * 0.006);
+					return [tBase, mid, tip];
+				})()
+			: lay(
+					tBase,
+					unit(
+						addV(
+							h,
+							ts,
+							grip === "splay"
+								? 1.35
+								: grip === "ball" || grip === "target"
+									? 1.1
+									: grip === "open"
+										? 0.85
+										: 0.6,
+						),
+					),
+					[tLen * 0.55, tLen * 0.45],
+					grip === "relaxed"
+						? [0.3, 0.35]
+						: grip === "ball"
+							? [0.2, 0.2]
+							: [0.1, 0.12],
+					H * b.thumb[0],
+				);
+	bones(thumb, H * b.thumb[1], fingers + 4);
+	// The ball of his thumb: the muscle of the palm on its side, swelling out
+	// to where the thumb leaves it.
+	add(
+		addV(addV(wrist, h, L * 0.1), ts, halfW * 0.55),
+		addV(addV(wrist, h, L * 0.3), ts, halfW * 0.95),
+		[
+			[0, palmR * 0.72],
+			[1, palmR * 0.66],
+		],
+		kind,
+		group,
+		side,
+	);
+	return { knuckles, thumb: tBase };
+};
+
+// HIS LEG, any sport's: the thigh down to the knee; the shin, the calf
+// swelling behind it; the shoe, heel to toe along the ground, and a collar
+// round the ankle - as thick along it as a sport builds them (`b`, of the
+// body's own radii there), of its kinds and groups. Whatever a sport has
+// on it besides, laid in their places: at the knee (`knee`, with which way
+// is in front of it) and over the thigh after the calf (`over`).
+export type LegBuild = {
+	// How far down from his hip the thigh starts, and its profile.
+	thighFrom: number;
+	thigh: [number, number, number];
+	shin: [number, number, number, number];
+	calf: [number, number, number];
+	// How far out past the toe of his foot the shoe goes; the heel's and the
+	// toe's height off the ground (of the ankle's radius) - at least, and
+	// below the bone; and how thick it is along it, and its collar.
+	toe: number;
+	heel: [number, number];
+	toeUp: [number, number];
+	shoe: [number, number, number];
+	collar: [number, number];
+};
+export const LEG: LegBuild = {
+	thighFrom: 0.35,
+	thigh: [0.96, 0.9, 0.96],
+	shin: [0.94, 0.92, 1.08, 1.02],
+	calf: [0.8, 0.88, 0.62],
+	toe: 1.04,
+	heel: [1.05, 0.15],
+	toeUp: [0.9, 0.25],
+	shoe: [1.3, 1.38, 1.12],
+	collar: [1.12, 1.2],
+};
+export const legMasses = (
+	add: AddMass,
+	body: Body,
+	limb: Limb,
+	side: 0 | 1,
+	{ thigh, shin, shoe }: { thigh: number; shin: number; shoe: number },
+	group: number,
+	shoeGroup: number,
+	b: LegBuild,
+	knee?: (front: V3) => void,
+	over?: () => void,
+) => {
+	add(
+		lerpV(limb.root, limb.mid, b.thighFrom),
+		limb.mid,
+		[
+			[0, body.thighR * b.thigh[0]],
+			[0.4, body.thighR * b.thigh[1]],
+			[1, body.kneeR * b.thigh[2]],
+		],
+		thigh,
+		group,
+		side,
+	);
+	const shinDir = unit(subV(limb.end, limb.mid));
+	const front = unit(square(FWD, shinDir), v3(1, 0, 0));
+	knee?.(front);
+	add(
+		limb.mid,
+		limb.end,
+		[
+			[0, body.kneeR * b.shin[0]],
+			[0.3, body.calfR * b.shin[1]],
+			[0.8, body.ankleR * b.shin[2]],
+			[1, body.ankleR * b.shin[3]],
+		],
+		shin,
+		group,
+		side,
+	);
+	add(
+		addV(lerpV(limb.mid, limb.end, 0.12), front, -body.calfR * 0.3),
+		addV(lerpV(limb.mid, limb.end, 0.56), front, -body.calfR * 0.16),
+		[
+			[0, body.calfR * b.calf[0]],
+			[0.4, body.calfR * b.calf[1]],
+			[1, body.calfR * b.calf[2]],
+		],
+		shin,
+		group,
+		side,
+	);
+	over?.();
+	const tip = limb.tip ?? limb.end;
+	const heel = lerpV(limb.end, tip, -0.32);
+	const toe = lerpV(limb.end, tip, b.toe);
+	add(
+		v3(
+			heel.f,
+			heel.s,
+			Math.max(body.ankleR * b.heel[0], heel.u - body.ankleR * b.heel[1]),
+		),
+		v3(
+			toe.f,
+			toe.s,
+			Math.max(body.ankleR * b.toeUp[0], toe.u - body.ankleR * b.toeUp[1]),
+		),
+		[
+			[0, body.ankleR * b.shoe[0]],
+			[0.5, body.ankleR * b.shoe[1]],
+			[1, body.ankleR * b.shoe[2]],
+		],
+		shoe,
+		shoeGroup,
+		side,
+	);
+	const collar = lerpV(limb.end, tip, 0.25);
+	add(
+		lerpV(limb.end, tip, -0.12),
+		v3(collar.f, collar.s, limb.end.u - body.ankleR * 0.2),
+		[
+			[0, body.ankleR * b.collar[0]],
+			[1, body.ankleR * b.collar[1]],
+		],
+		shoe,
+		shoeGroup,
+		side,
+	);
+};
+
+// WHERE HIS MASSES MELT INTO ONE ANOTHER, any sport's: two groups (`a`,
+// `b`) at `at`, as far round it as `reachFt` (see shade) - his own at his
+// shoulders, his hips, between his legs, his neck, and each finger and his
+// thumb into his palm, as each sport has his groups and their reach; and,
+// `wrists`, his hands onto his forearms.
+export type BodyJoins = {
+	torso: number;
+	neck: number;
+	// The first of each side's two (his right, his left).
+	arm: number;
+	leg: number;
+	hand: number;
+	// The first of his right hand's five (four fingers, then his thumb), his
+	// left's after them.
+	finger: number;
+	// The reach at his shoulders (of his upper arm's radius), his hips (of
+	// his thigh's) and his neck (of his shoulders' width).
+	shoulder: number;
+	hip: number;
+	neckReach: number;
+	wrists: boolean;
+};
+export const joinsFor = (P: (v: V3) => Seen) => {
+	const joins: Join[] = [];
+	const join = (a: number, b: number, at: V3, reachFt: number) => {
+		const p = P(at);
+		joins.push({ a, b, x: p.x, y: p.y, reach: reachFt * p.k });
+	};
+	return { joins, join };
+};
+export const joinBody = (
+	join: (a: number, b: number, at: V3, reachFt: number) => void,
+	g: BodyJoins,
+	sk: Skeleton,
+	body: Body,
+	up: (t: number, s: number, f?: number) => V3,
+	knuckleAt: V3[],
+	thumbAt: V3[],
+) => {
+	const H = body.H;
+	join(g.torso, g.arm, sk.armR.root, body.upperR * g.shoulder);
+	join(g.torso, g.arm + 1, sk.armL.root, body.upperR * g.shoulder);
+	join(g.torso, g.leg, sk.legR.root, body.thighR * g.hip);
+	join(g.torso, g.leg + 1, sk.legL.root, body.thighR * g.hip);
+	join(g.leg, g.leg + 1, up(-0.1, 0), body.thighR * 2.2);
+	join(g.torso, g.neck, up(0.95, 0), body.shoulderW * g.neckReach);
+	for (const side of [0, 1]) {
+		for (let i = 0; i < 4; i++) {
+			join(g.hand + side, g.finger + side * 5 + i, knuckleAt[side]!, H * 0.04);
+		}
+		join(g.hand + side, g.finger + side * 5 + 4, thumbAt[side]!, H * 0.035);
+		if (g.wrists) {
+			join(
+				g.arm + side,
+				g.hand + side,
+				side === 0 ? sk.armR.end : sk.armL.end,
+				H * 0.03,
+			);
+		}
+	}
+};
+
+// HIS TORSO, any sport's: belly and back; the chest out in front; the lats,
+// widening a little up to his armpits; across the top of him, his
+// shoulders (`shoulders`: each sport's - its pads, say); hips and seat - as
+// a sport builds them (`b`: how far up him, how wide - of his shoulders' -
+// and how far forward, and how thick, of his depth), on `up` (see torsoOf).
+export type TorsoBuild = {
+	// The belly's top, and how thick it is up it.
+	belly: number;
+	bellyR: [number, number, number];
+	// How far up his chest is, how wide, how far forward, how thick.
+	chest: [number, number, number];
+	chestR: [number, number, number];
+	// The lats: how wide at his waist, how far up to his armpits and how
+	// wide there, and how thick.
+	lats: [number, number, number];
+	latsR: [number, number];
+};
+export const TORSO_BUILD: TorsoBuild = {
+	belly: 0.9,
+	bellyR: [0.42, 0.42, 0.47],
+	chest: [0.66, 0.4, 0.05],
+	chestR: [0.36, 0.38, 0.36],
+	lats: [0.4, 0.74, 0.55],
+	latsR: [0.34, 0.36],
+};
+export const torsoMasses = (
+	torso: (A: V3, B: V3, prof: Station[]) => void,
+	up: (t: number, s: number, f?: number) => V3,
+	body: Body,
+	b: TorsoBuild,
+	shoulders: () => void,
+) => {
+	const sw = body.shoulderW;
+	const dp = body.depth;
+	torso(up(0.04, 0), up(b.belly, 0, -dp * 0.04), [
+		[0, dp * b.bellyR[0]],
+		[0.45, dp * b.bellyR[1]],
+		[1, dp * b.bellyR[2]],
 	]);
-	torso(up(0.66, -sw * 0.4, dp * 0.05), up(0.66, sw * 0.4, dp * 0.05), [
-		[0, dp * 0.36],
-		[0.5, dp * 0.38],
-		[1, dp * 0.36],
-	]);
+	torso(
+		up(b.chest[0], -sw * b.chest[1], dp * b.chest[2]),
+		up(b.chest[0], sw * b.chest[1], dp * b.chest[2]),
+		[
+			[0, dp * b.chestR[0]],
+			[0.5, dp * b.chestR[1]],
+			[1, dp * b.chestR[2]],
+		],
+	);
 	for (const sd of [-1, 1]) {
-		torso(up(0.2, sd * sw * 0.4), up(0.74, sd * sw * 0.55), [
-			[0, dp * 0.34],
-			[1, dp * 0.36],
+		torso(up(0.2, sd * sw * b.lats[0]), up(b.lats[1], sd * sw * b.lats[2]), [
+			[0, dp * b.latsR[0]],
+			[1, dp * b.latsR[1]],
 		]);
 	}
-	torso(up(0.86, -sw * 0.6), up(0.86, sw * 0.6), [
-		[0, dp * 0.38],
-		[0.5, dp * 0.42],
-		[1, dp * 0.38],
-	]);
+	shoulders();
 	torso(up(0, -body.hipW), up(0, body.hipW), [
 		[0, body.thighR * 1.15],
 		[1, body.thighR * 1.15],
@@ -1015,6 +1645,49 @@ const build = (
 			[1, body.thighR * 1.08],
 		],
 	);
+};
+
+// A microphone this far from his own mouth (feet) is held out to somebody
+// else's.
+const MIC_OWN = 1.1;
+const build = (
+	cam: Camera,
+	st: PlayerState,
+	body: Body,
+	look: Look,
+	px: number,
+	ox: number,
+	oy: number,
+): Built => {
+	const q = poseOf(st);
+	// (Just let go of it, his hands come off where it was.)
+	const held =
+		st.holding || st.grip !== undefined ? holdOf(st, body, q) : undefined;
+	const sk = held
+		? gripped(held.sk, st, body, q)
+		: onRim(skeleton(body, q), st, body);
+	const P = seerOf(cam, st, px, ox, oy);
+	const { masses, add } = massesFor(P);
+	const sw = body.shoulderW;
+	const dp = body.depth;
+	const H = body.H;
+	const pel = sk.pelvis;
+	// His torso as it would stand untwisted, up his spine from his hips (see
+	// torsoOf).
+	const { T, spine, fwdT, turned, up } = torsoOf(body, q, pel);
+
+	// The torso: belly and back, the chest out in front, the lats widening a
+	// little up to his armpits, across the tops of his shoulders; hips and
+	// seat.
+	const torso = (A: V3, B: V3, prof: Station[]) =>
+		add(A, B, prof, TORSO, G_TORSO);
+	torsoMasses(torso, up, body, TORSO_BUILD, () => {
+		torso(up(0.86, -sw * 0.6), up(0.86, sw * 0.6), [
+			[0, dp * 0.38],
+			[0.5, dp * 0.42],
+			[1, dp * 0.38],
+		]);
+	});
 	// The neck, thick at the base, up into his head; the traps sloping up
 	// either side of it from his shoulders.
 	add(
@@ -1048,76 +1721,11 @@ const build = (
 	const knuckleAt: V3[] = [];
 	const thumbAt: V3[] = [];
 	const arm = (limb: Limb, side: 0 | 1) => {
-		const g = G_ARM + side;
-		const a = unit(subV(limb.mid, limb.root));
-		const c = unit(subV(limb.end, limb.mid));
-		// The inside of the elbow: the way the forearm bends from the upper
-		// arm (forward, for an arm hanging straight).
-		const bend = square(c, a);
-		const inside = lenV(bend) > 0.08 ? unit(bend) : unit(square(fwd, a), upV);
-		// The deltoid, narrowing to the elbow; the biceps in front of it, the
-		// point of the elbow behind.
-		add(
-			limb.root,
-			limb.mid,
-			[
-				[0, body.upperR * 1.2],
-				[0.2, body.upperR * 1.1],
-				[0.5, body.upperR * 0.9],
-				[1, body.foreR * 0.86],
-			],
-			UPPER,
-			g,
+		hand(
+			limb,
 			side,
+			armMasses(add, body, limb, side, G_ARM + side, UPPER, FORE, ARM),
 		);
-		// (As the elbow bends, the biceps bunch up: thicker, shorter, gathered
-		// toward the middle of the upper arm - straight, long and flat to it.)
-		const flexed = Math.acos(Math.max(-1, Math.min(1, dotV(a, c))));
-		const bunch = Math.max(0, Math.min(1, (flexed - 0.5) / 1.4));
-		const bulge = bunch * bunch * (3 - 2 * bunch);
-		add(
-			addV(
-				lerpV(limb.root, limb.mid, 0.36 + 0.06 * bulge),
-				inside,
-				body.upperR * (0.32 + 0.1 * bulge),
-			),
-			addV(
-				lerpV(limb.root, limb.mid, 0.78 - 0.1 * bulge),
-				inside,
-				body.upperR * (0.28 + 0.08 * bulge),
-			),
-			[
-				[0, body.upperR * (0.62 + 0.06 * bulge)],
-				[0.5, body.upperR * (0.74 + 0.22 * bulge)],
-				[1, body.upperR * (0.56 + 0.04 * bulge)],
-			],
-			UPPER,
-			g,
-			side,
-		);
-		add(
-			addV(limb.mid, inside, -body.foreR * 0.36),
-			addV(limb.mid, inside, -body.foreR * 0.36),
-			[[0, body.foreR * 0.62]],
-			FORE,
-			g,
-			side,
-		);
-		// The forearm, swelling below the elbow and slimming to the wrist.
-		add(
-			limb.mid,
-			limb.end,
-			[
-				[0, body.foreR * 0.9],
-				[0.22, body.foreR * 1.04],
-				[0.7, body.foreR * 0.76],
-				[1, body.foreR * 0.54],
-			],
-			FORE,
-			g,
-			side,
-		);
-		hand(limb, side, c);
 	};
 
 	// The hand: a palm out of the wrist, four fingers and a thumb, held the
@@ -1238,357 +1846,112 @@ const build = (
 		const ts = v3(thumbSide.f * sgn, thumbSide.s * sgn, thumbSide.u * sgn);
 		const g = G_HAND + side;
 		pn[side] = palmN;
-		// (As a real hand is, a touch over life so it reads: as long as a
-		// ninth of him, its palm about as wide as half its length, the fingers
-		// slim enough to stand apart.)
-		const L = H * 0.118;
-		const halfW = H * 0.0125;
-		const palmR = H * 0.0148;
-		// The palm: broad across, thin through - two masses side by side.
-		const knuckles = addV(wrist, h, L * 0.5);
-		for (const o of [-1, 1]) {
-			add(
-				addV(addV(wrist, h, L * 0.1), ts, o * halfW * 0.8),
-				addV(knuckles, ts, o * halfW),
-				[
-					[0, palmR * 0.92],
-					[1, palmR],
-				],
-				HAND,
-				g,
-				side,
-			);
-		}
-		// Each finger three bones, each joint bent the way the moment calls
-		// for: nearly straight (open); curled a little, the little finger
-		// most (relaxed); folded into the palm (a fist) - or laid round the
-		// ball, each joint bent just as far as keeps the next bone on its
-		// surface, the pads of his fingers on it, spread wide.
+		// (See handMasses: on the ball, each finger laid round it.)
 		const ball = cup;
-		const fingerR = H * 0.006;
-		const lens = [0.4, 0.44, 0.41, 0.33];
-		// The joints of a finger (or the thumb) from base, set off along d:
-		// each bone's length, its bend at rest, and how far it bends back
-		// and forward - on the ball, as far as lays it on the ball instead.
-		const lay = (
-			base: V3,
-			d: V3,
-			bones: number[],
-			rest: number[],
-			r: number,
-		): V3[] => {
-			const pts = [base];
-			let rho = 0;
-			let cu = 0;
-			let cv = 0;
-			if (ball) {
-				const c = subV(ball, base);
-				const off = dotV(c, unit(cross(d, palmN)));
-				const R = HELD_BALL_R + r;
-				rho = R * R > off * off ? Math.sqrt(R * R - off * off) : 0;
-				cu = dotV(c, d);
-				cv = dotV(c, palmN);
-			}
-			let x = 0;
-			let y = 0;
-			let phi = 0;
-			bones.forEach((l, k) => {
-				const a =
-					rho > 0
-						? wrapBend(
-								x,
-								y,
-								phi,
-								l,
-								cu,
-								cv,
-								rho,
-								BEND_LO[k]!,
-								BEND_HI[k]!,
-								rest[k]!,
-							)
-						: rest[k]!;
-				phi += a;
-				x += l * Math.cos(phi);
-				y += l * Math.sin(phi);
-				pts.push(addV(addV(base, d, x), palmN, y));
-			});
-			return pts;
-		};
-		// Bone by bone, each a little slimmer than the last, melted into one.
-		const bones = (pts: V3[], r: number, group: number) => {
-			for (let k = 1; k < pts.length; k++) {
-				const r0 = r * (1 - 0.07 * (k - 1));
-				add(
-					pts[k - 1]!,
-					pts[k]!,
-					[
-						[0, r0],
-						[1, r0 * (k === pts.length - 1 ? 0.84 : 0.95)],
-					],
-					HAND,
-					group,
-					side,
-				);
-				// Big enough to see: the nail on the back of its tip.
-				if (k === pts.length - 1 && r0 * kMid >= NAIL_PX && !look.silhouette) {
-					const u = unit(subV(pts[k]!, pts[k - 1]!), h);
-					const back = unit(square(palmN, u), palmN);
-					const out = (t: number, o: number) =>
-						addV(lerpV(pts[k - 1]!, pts[k]!, t), back, -r0 * o);
-					add(
-						out(0.48, 0.42),
-						out(0.9, 0.36),
-						[
-							[0, r0 * 0.52],
-							[1, r0 * 0.5],
-						],
-						NAIL,
-						group,
-						side,
-					);
-				}
-			}
-		};
-		const restOf = (i: number): number[] =>
-			grip === "fist" ||
-			(grip === "point" && i > 0) ||
-			(grip === "three" && i > 2)
-				? [1.45, 1.75, 1.05]
-				: grip === "point" || grip === "three"
-					? [0.02, 0.04, 0.02]
-					: grip === "relaxed"
-						? [0.24 + 0.06 * i, 0.5 + 0.08 * i, 0.32 + 0.05 * i]
-						: grip === "ball"
-							? [0.2, 0.35, 0.25]
-							: grip === "target"
-								? [0.14, 0.26, 0.16]
-								: grip === "dribble"
-									? [0.18, 0.3, 0.2]
-									: grip === "splay"
-										? [-0.08, 0.03, 0.02]
-										: grip === "clasp"
-											? [0.5 + 0.05 * i, 0.8, 0.55]
-											: grip === "hook"
-												? [0.75, 1.05, 0.7]
-												: [0.04 + 0.02 * i, 0.08, 0.05];
-		const spread =
-			grip === "ball" || grip === "target"
-				? 0.22
-				: grip === "dribble"
-					? 0.17
-					: grip === "splay"
-						? 0.5
-						: grip === "open"
-							? 0.1
-							: grip === "relaxed"
-								? 0.05
-								: 0.02;
-		if (fingerR * kMid < 0.9 && grip !== "point" && grip !== "three" && !ball) {
-			// Too small to tell apart: the four as one, flat like the palm,
-			// bent as the middle two are.
-			for (const o of [-1, 1]) {
-				const pts = lay(
-					addV(knuckles, ts, o * halfW * 0.85),
-					h,
-					[0.47, 0.3, 0.23].map((k) => k * L * 0.42),
-					restOf(1),
-					palmR * 0.8,
-				);
-				bones(pts, palmR * 0.88, G_FINGER + side * 5);
-			}
-		} else {
-			for (let i = 0; i < 4; i++) {
-				const across = (1.5 - i) / 1.5;
-				// (The knuckles in an arc: the middle one furthest out.)
-				const base = addV(
-					addV(knuckles, ts, across * halfW * 1.2),
-					h,
-					L * [0.0, 0.025, 0.005, -0.04][i]!,
-				);
-				const len = L * lens[i]!;
-				const pts = lay(
-					base,
-					unit(addV(h, ts, across * spread)),
-					[0.47, 0.3, 0.23].map((k) => k * len),
-					restOf(i),
-					fingerR,
-				);
-				bones(pts, fingerR, G_FINGER + side * 5 + i);
-			}
-		}
-		// The thumb: out from the heel of the palm on its side, two bones -
-		// across the fingers in a fist, round the side of the ball on it.
-		const tBase = addV(addV(wrist, h, L * 0.16), ts, halfW * 1.05);
-		knuckleAt[side] = knuckles;
-		thumbAt[side] = tBase;
-		const tLen = L * 0.36;
-		const thumb =
-			grip === "fist" ||
-			grip === "point" ||
-			grip === "three" ||
-			grip === "clasp" ||
-			grip === "hook"
-				? (() => {
-						const tip = addV(addV(knuckles, palmN, H * 0.016), ts, halfW * 0.1);
-						const mid = addV(lerpV(tBase, tip, 0.5), palmN, H * 0.006);
-						return [tBase, mid, tip];
-					})()
-				: lay(
-						tBase,
-						unit(
-							addV(
-								h,
-								ts,
-								grip === "splay"
-									? 1.35
-									: grip === "ball" || grip === "target"
-										? 1.1
-										: grip === "open"
-											? 0.85
-											: 0.6,
-							),
-						),
-						[tLen * 0.55, tLen * 0.45],
-						grip === "relaxed"
-							? [0.3, 0.35]
-							: grip === "ball"
-								? [0.2, 0.2]
-								: [0.1, 0.12],
-						H * 0.0076,
-					);
-		bones(thumb, H * 0.0084, G_FINGER + side * 5 + 4);
-		// The ball of his thumb: the muscle of the palm on its side, swelling
-		// out to where the thumb leaves it.
-		add(
-			addV(addV(wrist, h, L * 0.1), ts, halfW * 0.55),
-			addV(addV(wrist, h, L * 0.3), ts, halfW * 0.95),
-			[
-				[0, palmR * 0.72],
-				[1, palmR * 0.66],
-			],
-			HAND,
-			g,
+		const made = handMasses({
+			add,
+			H,
+			kMid,
+			wrist,
+			h,
+			palmN,
+			ts,
 			side,
-		);
+			group: g,
+			fingers: G_FINGER + side * 5,
+			kind: HAND,
+			nail: look.silhouette ? undefined : NAIL,
+			grip,
+			b: HAND_BUILD,
+			onto: ball
+				? (base, d, r) => {
+						const c = subV(ball, base);
+						const off = dotV(c, unit(cross(d, palmN)));
+						const R = HELD_BALL_R + r;
+						const rho = R * R > off * off ? Math.sqrt(R * R - off * off) : 0;
+						const cu = dotV(c, d);
+						const cv = dotV(c, palmN);
+						return rho > 0
+							? (x, y, phi, l, k, rest) =>
+									wrapBend(
+										x,
+										y,
+										phi,
+										l,
+										cu,
+										cv,
+										rho,
+										BEND_LO[k]!,
+										BEND_HI[k]!,
+										rest,
+									)
+							: undefined;
+					}
+				: undefined,
+		});
+		knuckleAt[side] = made.knuckles;
+		thumbAt[side] = made.thumb;
 	};
 	arm(sk.armR, 0);
 	arm(sk.armL, 1);
 
+	// His legs (see legMasses): the kneecap in front of the knee, and over
+	// the thigh his shorts' leg - loose, flaring a little, cut square above
+	// the knee.
 	const leg = (limb: Limb, side: 0 | 1) => {
 		const gl = G_LEG + side;
-		// The thigh, from inside his shorts down to the knee; the kneecap in
-		// front of the knee; the shin, with the calf swelling behind it.
-		add(
-			lerpV(limb.root, limb.mid, 0.35),
-			limb.mid,
-			[
-				[0, body.thighR * 0.96],
-				[0.4, body.thighR * 0.9],
-				[1, body.kneeR * 0.96],
-			],
-			THIGH,
+		legMasses(
+			add,
+			body,
+			limb,
+			side,
+			{ thigh: THIGH, shin: SHIN, shoe: SHOE },
 			gl,
-			side,
-		);
-		const shinDir = unit(subV(limb.end, limb.mid));
-		const front = unit(square(fwd, shinDir), v3(1, 0, 0));
-		add(
-			addV(limb.mid, front, body.kneeR * 0.42),
-			addV(limb.mid, front, body.kneeR * 0.42),
-			[[0, body.kneeR * 0.6]],
-			SHIN,
-			gl,
-			side,
-		);
-		add(
-			limb.mid,
-			limb.end,
-			[
-				[0, body.kneeR * 0.94],
-				[0.3, body.calfR * 0.92],
-				[0.8, body.ankleR * 1.08],
-				[1, body.ankleR * 1.02],
-			],
-			SHIN,
-			gl,
-			side,
-		);
-		add(
-			addV(lerpV(limb.mid, limb.end, 0.12), front, -body.calfR * 0.3),
-			addV(lerpV(limb.mid, limb.end, 0.56), front, -body.calfR * 0.16),
-			[
-				[0, body.calfR * 0.8],
-				[0.4, body.calfR * 0.88],
-				[1, body.calfR * 0.62],
-			],
-			SHIN,
-			gl,
-			side,
-		);
-		// His shorts' leg: loose, flaring a little, cut square above the knee.
-		add(
-			lerpV(limb.root, limb.mid, 0.16),
-			lerpV(limb.root, limb.mid, 0.84),
-			[
-				[0, body.thighR * 1.2],
-				[1, body.thighR * 1.28],
-			],
-			SHORTS,
-			G_SHORTS + side,
-			side,
-			true,
-		);
-		// The thigh up (a knee driven up, sat down): the loose leg of his
-		// shorts hangs down off it, not wrapped round it.
-		const thighDir = unit(subV(limb.mid, limb.root));
-		const level = 1 - Math.abs(thighDir.u);
-		if (level > SAG_FROM) {
-			const sag = v3(0, 0, -body.thighR * SAG * (level - SAG_FROM));
-			add(
-				addV(lerpV(limb.root, limb.mid, 0.4), sag, 0.5),
-				addV(lerpV(limb.root, limb.mid, 0.82), sag, 1),
-				[
-					[0, body.thighR * 1.05],
-					[1, body.thighR * 1.15],
-				],
-				SHORTS,
-				G_SHORTS + side,
-				side,
-				true,
-			);
-		}
-		// The sneaker: heel to toe along the floor, a collar round the ankle.
-		const tip = limb.tip ?? limb.end;
-		const heel = lerpV(limb.end, tip, -0.32);
-		const toe = lerpV(limb.end, tip, 1.04);
-		add(
-			v3(
-				heel.f,
-				heel.s,
-				Math.max(body.ankleR * 1.05, heel.u - body.ankleR * 0.15),
-			),
-			v3(toe.f, toe.s, Math.max(body.ankleR * 0.9, toe.u - body.ankleR * 0.25)),
-			[
-				[0, body.ankleR * 1.3],
-				[0.5, body.ankleR * 1.38],
-				[1, body.ankleR * 1.12],
-			],
-			SHOE,
 			G_SHOE + side,
-			side,
-		);
-		const collar = lerpV(limb.end, tip, 0.25);
-		add(
-			lerpV(limb.end, tip, -0.12),
-			v3(collar.f, collar.s, limb.end.u - body.ankleR * 0.2),
-			[
-				[0, body.ankleR * 1.12],
-				[1, body.ankleR * 1.2],
-			],
-			SHOE,
-			G_SHOE + side,
-			side,
+			LEG,
+			(front) => {
+				add(
+					addV(limb.mid, front, body.kneeR * 0.42),
+					addV(limb.mid, front, body.kneeR * 0.42),
+					[[0, body.kneeR * 0.6]],
+					SHIN,
+					gl,
+					side,
+				);
+			},
+			() => {
+				add(
+					lerpV(limb.root, limb.mid, 0.16),
+					lerpV(limb.root, limb.mid, 0.84),
+					[
+						[0, body.thighR * 1.2],
+						[1, body.thighR * 1.28],
+					],
+					SHORTS,
+					G_SHORTS + side,
+					side,
+					true,
+				);
+				// The thigh up (a knee driven up, sat down): the loose leg of
+				// his shorts hangs down off it, not wrapped round it.
+				const thighDir = unit(subV(limb.mid, limb.root));
+				const level = 1 - Math.abs(thighDir.u);
+				if (level > SAG_FROM) {
+					const sag = v3(0, 0, -body.thighR * SAG * (level - SAG_FROM));
+					add(
+						addV(lerpV(limb.root, limb.mid, 0.4), sag, 0.5),
+						addV(lerpV(limb.root, limb.mid, 0.82), sag, 1),
+						[
+							[0, body.thighR * 1.05],
+							[1, body.thighR * 1.15],
+						],
+						SHORTS,
+						G_SHORTS + side,
+						side,
+						true,
+					);
+				}
+			},
 		);
 	};
 	leg(sk.legR, 0);
@@ -1684,37 +2047,31 @@ const build = (
 		add(top, addV(top, toward, 0.12), [[0, 0.13]], CAM_LENS, G_CAMERA);
 	}
 
-	const joins: Built["joins"] = [];
-	const join = (a: number, b: number, at: V3, reachFt: number) => {
-		const p = P(at);
-		joins.push({ a, b, x: p.x, y: p.y, reach: reachFt * p.k });
-	};
-	join(G_TORSO, G_ARM, sk.armR.root, body.upperR * 3);
-	join(G_TORSO, G_ARM + 1, sk.armL.root, body.upperR * 3);
-	join(G_TORSO, G_SHORTS, sk.legR.root, body.thighR * 2.6);
-	join(G_TORSO, G_SHORTS + 1, sk.legL.root, body.thighR * 2.6);
-	join(G_SHORTS, G_SHORTS + 1, up(-0.1, 0), body.thighR * 2.2);
-	join(G_TORSO, G_NECK, up(0.95, 0), sw * 0.9);
-	for (const side of [0, 1]) {
-		for (let i = 0; i < 4; i++) {
-			join(G_HAND + side, G_FINGER + side * 5 + i, knuckleAt[side]!, H * 0.04);
-		}
-		join(G_HAND + side, G_FINGER + side * 5 + 4, thumbAt[side]!, H * 0.035);
-	}
+	// (See joinBody: his torso into his shorts at his hips.)
+	const { joins, join } = joinsFor(P);
+	joinBody(
+		join,
+		{
+			torso: G_TORSO,
+			neck: G_NECK,
+			arm: G_ARM,
+			leg: G_SHORTS,
+			hand: G_HAND,
+			finger: G_FINGER,
+			shoulder: 3,
+			hip: 2.6,
+			neckReach: 0.9,
+			wrists: false,
+		},
+		sk,
+		body,
+		up,
+		knuckleAt,
+		thumbAt,
+	);
 
 	// The camera's frame, in his.
-	const cy = Math.cos(st.yaw);
-	const sy = Math.sin(st.yaw);
-	const toBody = (wx: number, wy: number): V3 =>
-		v3(wx * cy + wy * sy, wx * sy - wy * cy, 0);
-	const fh = Math.hypot(cam.fwd.x, cam.fwd.y) || 1;
-	const frame: Frame = {
-		rt: toBody(cam.right.x, cam.right.y),
-		dn: v3(0, 0, -1),
-		tw: toBody(-cam.fwd.x / fh, -cam.fwd.y / fh),
-		zs: fh,
-		kap: (cam.fwd.x * cam.up.x + cam.fwd.y * cam.up.y) / fh,
-	};
+	const frame = frameOf(cam, st.yaw);
 	const cut: Cut = {
 		waist: T * 0.2,
 		band: H * 0.016,
@@ -1897,7 +2254,7 @@ const TOWEL_RGB: RGB = [238, 238, 232];
 
 // The light, from up and to the left and toward the camera (on the sprite:
 // right, down, out of the picture).
-const LIGHT = (() => {
+export const LIGHT = (() => {
 	const l = [-0.45, -0.7, 0.55];
 	const n = Math.hypot(l[0]!, l[1]!, l[2]!);
 	return [l[0]! / n, l[1]! / n, l[2]! / n] as const;
@@ -1905,11 +2262,11 @@ const LIGHT = (() => {
 
 // Lengths, for every pixel: Math.hypot's care over huge and tiny numbers
 // is slow, and nothing here is either.
-const len2 = (a: number, b: number) => Math.sqrt(a * a + b * b);
-const len3 = (a: number, b: number, c: number) =>
+export const len2 = (a: number, b: number) => Math.sqrt(a * a + b * b);
+export const len3 = (a: number, b: number, c: number) =>
 	Math.sqrt(a * a + b * b + c * c);
 
-const smin = (a: number, b: number, k: number) => {
+export const smin = (a: number, b: number, k: number) => {
 	const h = Math.max(k - Math.abs(a - b), 0) / k;
 	return Math.min(a, b) - (h * h * k) / 4;
 };
@@ -1925,47 +2282,68 @@ export type Sculpted = {
 	box: { x0: number; y0: number; x1: number; y1: number };
 };
 
-const RUN = 8;
+export const RUN = 8;
 
-// His sprite, w x h of its pixels, each px screen pixels, its top left at
-// (ox, oy) on the screen. Given `seen` (ART_W x ART_H), a uniform drawn
-// from a picture also marks which of the picture's pixels show on him: 1
-// where his jersey or shorts are, 2 where the trim goes over it.
-export const sculpt = (
-	cam: Camera,
-	st: PlayerState,
-	body: Body,
-	look: Look,
-	px: number,
-	ox: number,
-	oy: number,
+// What a sport paints at a point of him (see shade): the color, whether it
+// is cloth (it hangs smoother over him than skin does, and takes the light
+// flatter), and how glossy it is (a helmet's shell: a hard glint where it
+// faces the lights).
+export type Ink = {
+	r: number;
+	g: number;
+	b: number;
+	cloth: boolean;
+	gloss: number;
+};
+// Two of his parts (groups) that melt into each other round where they meet
+// (sprite pixels), this far round it.
+export type Join = {
+	a: number;
+	b: number;
+	x: number;
+	y: number;
+	reach: number;
+};
+
+// HIM, SHADED - any sport's (see sculpt, and field3d/sculpt.ts): every pixel
+// of the w x h sheet `d` finds the mass nearest the camera there, masses
+// that meet at a joint melting into one another near it; the point on him
+// the pixel shows is worked out (feet, his frame) and `paint` says what he
+// wears there, into `ink`; and it is lit, two tones the cartoon way, with a
+// fine dark line where he passes in front of himself and round what
+// `outlined` says. `owner`, if given, takes each pixel's group. The box
+// round everything drawn (empty, x0 > x1, if nothing was).
+export const shade = (
+	b: { masses: Mass[]; joins: Join[]; frame: Frame; k: number },
+	groups: number,
+	d: Uint8ClampedArray,
 	w: number,
 	h: number,
-	seen?: Uint8Array,
-): Sculpted => {
-	const b = build(cam, st, body, look, px, ox, oy);
-	const pal = paletteOf(look);
-	// The ball in his hands faces round from him as it came to him (see
-	// facesTo in evaluate.ts): turned so from the way HELD has it, square
-	// on to the camera.
-	const heldTurn = st.yaw + (st.ballFace ?? 0) - facingCamera(cam.right);
-	const heldCos = Math.cos(heldTurn);
-	const heldSin = Math.sin(heldTurn);
+	paint: (
+		fc: Mass,
+		t: number,
+		nx: number,
+		ny: number,
+		nz: number,
+		r: number,
+		Pf: number,
+		Ps: number,
+		Pu: number,
+	) => void,
+	ink: Ink,
+	outlined: (kind: number) => boolean,
+	owner?: Int8Array,
+): { x0: number; y0: number; x1: number; y1: number } => {
 	const masses = b.masses;
 	const n = masses.length;
-	const img = new ImageData(w, h);
-	const d = img.data;
 	const lineW = Math.max(0.7, 0.028 * b.k);
 	const margin = lineW * 3.5 + 1;
 	// Which joint, if any, melts two groups together.
-	const joinOf = new Int16Array(GROUPS * GROUPS).fill(-1);
+	const joinOf = new Int16Array(groups * groups).fill(-1);
 	b.joins.forEach((j, i) => {
-		joinOf[j.a * GROUPS + j.b] = i;
-		joinOf[j.b * GROUPS + j.a] = i;
+		joinOf[j.a * groups + j.b] = i;
+		joinOf[j.b * groups + j.a] = i;
 	});
-	const lateAny = b.late.some(Boolean);
-	const owner = lateAny ? new Int8Array(w * h).fill(-1) : undefined;
-
 	const hs = new Float64Array(n);
 	const hz = new Float64Array(n);
 	const hx = new Float64Array(n);
@@ -1976,212 +2354,10 @@ export const sculpt = (
 	const hi = new Int32Array(n);
 	const ZT = 0.9;
 	const { rt, dn, tw: tw3, zs, kap } = b.frame;
-	const cut = b.cut;
-	const pel = b.pel;
-	const spine = b.spine;
-	const fw = b.fwd;
-	const sheet = b.sheet;
-	const wraps = b.wraps;
-	const art = look.kitArt;
-	// (The trim round his neck and armholes the picture's own, not painted on.)
-	const trimFromArt = art?.fit?.trim === "picture" && wraps !== undefined;
-	const artXY = new Float64Array(2);
-	const artPx = new Float64Array(3);
-	const artRGB: RGB = [0, 0, 0];
-	const mark = (v: number) => {
-		const i = Math.round(artXY[1]!) * ART_W + Math.round(artXY[0]!);
-		if (seen && i >= 0 && i < ART_W * ART_H && seen[i]! < v) {
-			seen[i] = v;
-		}
-	};
-	// The team's picture at a point on his jersey or shorts, over the plain
-	// color c where the picture is clear.
-	const artOver = (
-		wrap: ArtWrap,
-		U: number,
-		S: number,
-		F: number,
-		notSide: boolean,
-		c: RGB,
-	): RGB => {
-		artAt(wrap, U, S, F, notSide, artXY);
-		mark(1);
-		const a = artColor(art!, artXY[0]!, artXY[1]!, artPx);
-		if (a <= 0) {
-			return c;
-		}
-		artRGB[0] = c[0] + (artPx[0]! - c[0]) * a;
-		artRGB[1] = c[1] + (artPx[1]! - c[1]) * a;
-		artRGB[2] = c[2] + (artPx[2]! - c[2]) * a;
-		return artRGB;
-	};
-	let cr = 0;
-	let cg = 0;
-	let cb = 0;
-	let cloth = false;
 	let bx0 = w;
 	let by0 = h;
 	let bx1 = -1;
 	let by1 = -1;
-
-	// The jersey, shirt or jacket at a point on his torso (U, S, F): sets
-	// cr, cg, cb.
-	const torsoAt = (U: number, S: number, F: number) => {
-		cloth = true;
-		const outfit = look.outfit;
-		let c: RGB;
-		// A suit's jacket hangs on over his hips; anything else is tucked in.
-		const hem = pal.shirt ? -cut.waist : cut.waist;
-		if (U < hem) {
-			c = pal.shorts;
-			if (wraps) {
-				c = artOver(wraps.shorts, U, S, F, false, c);
-			} else if (!outfit && Math.abs(F) < 0.08 && Math.abs(S) > cut.hipStripe) {
-				c = pal.stripe;
-			}
-		} else if (U < cut.waist + cut.band && !pal.shirt) {
-			c = wraps ? artOver(wraps.shorts, U, S, F, false, pal.band) : pal.band;
-		} else {
-			const aS = Math.abs(S);
-			// The neck: a V in front, a scoop behind.
-			const wN = Math.min(1, aS / cut.neckIn);
-			const front = F >= 0;
-			const neckDrop = outfit
-				? (front ? cut.backAt * 1.2 : cut.backAt * 0.6) * (1 - wN * wN)
-				: front
-					? cut.vAt * (1 - wN)
-					: cut.backAt * (1 - wN * wN);
-			const slope =
-				front && !outfit
-					? cut.vAt / cut.neckIn
-					: (2 * cut.backAt * wN) / cut.neckIn;
-			const below = (cut.top - neckDrop - U) / len2(1, slope);
-			const dNeck =
-				aS >= cut.neckIn
-					? Math.max(aS - cut.neckIn, below)
-					: below > 0
-						? below
-						: Math.max(below, aS - cut.neckIn);
-			let dArm = Infinity;
-			if (!outfit) {
-				// The armholes.
-				const sx = Math.min(aS, cut.side);
-				const uy = Math.min(U, cut.top);
-				const ea = cut.side - cut.strap;
-				const eb = cut.top - cut.pit;
-				const gx = (sx - cut.side) / ea;
-				const gy = (uy - cut.top) / eb;
-				const g = gx * gx + gy * gy - 1;
-				dArm = g / (2 * len2(gx / ea, gy / eb) || 1);
-			}
-			const edge = Math.min(dArm, dNeck);
-			if (edge < 0) {
-				c = pal.skin;
-				cloth = false;
-			} else if (edge < cut.trim && !outfit && !trimFromArt) {
-				c = pal.trim;
-				if (seen && wraps) {
-					artAt(wraps.jersey, U, S, F, false, artXY);
-					mark(2);
-				}
-			} else {
-				c = pal.jersey;
-				if (outfit?.stripes && pal.stripes) {
-					const th = Math.atan2(S / (cut.side * 0.8), F / (cut.side * 0.4));
-					if (Math.floor((th * cut.side * 0.8) / 0.17 + 100) % 2 === 0) {
-						c = pal.stripes;
-					}
-					// (A panel down each side, under the arm.)
-					if (pal.sides && Math.abs(Math.abs(th) - Math.PI / 2) < 0.32) {
-						c = pal.sides;
-					}
-				}
-				if (pal.shirt && front) {
-					// A suit: his shirt in the open front, his tie down it.
-					const depth = cut.top - U;
-					const halfOpen = cut.neckIn * Math.max(0, 1 - depth / cut.open);
-					if (aS < halfOpen) {
-						c =
-							aS < cut.neckIn * 0.16 + depth * 0.06 && pal.tie
-								? pal.tie
-								: pal.shirt;
-					} else if (aS < halfOpen + cut.trim * 1.6) {
-						c = pal.lapel!;
-					}
-				} else if (
-					outfit &&
-					!outfit.shirt &&
-					!outfit.plain &&
-					outfit.sleeves === "long" &&
-					front &&
-					aS < cut.trim * 0.6 &&
-					U > cut.top - T_ZIP * cut.top
-				) {
-					// A quarter-zip's zip.
-					c = pal.trim;
-				}
-				if (wraps && c === pal.jersey) {
-					c = artOver(wraps.jersey, U, S, F, false, c);
-				}
-				if (sheet && (c === pal.jersey || c === artRGB)) {
-					// His number and lettering.
-					// Round his torso by how far across it the point is, not by how
-					// far forward his chest stands there - which would bend the
-					// uprights of his lettering over the curve of his chest.
-					const across = Math.max(-1, Math.min(1, S / sheet.aS));
-					const th =
-						F >= 0
-							? Math.asin(across)
-							: (across < 0 ? -Math.PI : Math.PI) - Math.asin(across);
-					let x = sheet.w / 2 + th * sheet.aS * sheet.ppf;
-					x = ((x % sheet.w) + sheet.w) % sheet.w;
-					const y = (sheet.u0 - U) * sheet.ppf;
-					if (y >= 0 && y < sheet.h - 1) {
-						const x0 = Math.floor(x);
-						const y0 = Math.floor(y);
-						const fx = x - x0;
-						const fy = y - y0;
-						const x1 = (x0 + 1) % sheet.w;
-						const sd = sheet.data;
-						const sw4 = sheet.w * 4;
-						const o00 = y0 * sw4 + x0 * 4;
-						const o10 = y0 * sw4 + x1 * 4;
-						const o01 = o00 + sw4;
-						const o11 = o10 + sw4;
-						const w00 = ((1 - fx) * (1 - fy) * sd[o00 + 3]!) / 255;
-						const w10 = (fx * (1 - fy) * sd[o10 + 3]!) / 255;
-						const w01 = ((1 - fx) * fy * sd[o01 + 3]!) / 255;
-						const w11 = (fx * fy * sd[o11 + 3]!) / 255;
-						const a = w00 + w10 + w01 + w11;
-						if (a > 0.004) {
-							const r =
-								sd[o00]! * w00 +
-								sd[o10]! * w10 +
-								sd[o01]! * w01 +
-								sd[o11]! * w11;
-							const gg =
-								sd[o00 + 1]! * w00 +
-								sd[o10 + 1]! * w10 +
-								sd[o01 + 1]! * w01 +
-								sd[o11 + 1]! * w11;
-							const bb =
-								sd[o00 + 2]! * w00 +
-								sd[o10 + 2]! * w10 +
-								sd[o01 + 2]! * w01 +
-								sd[o11 + 2]! * w11;
-							cr = c[0] + (r / a - c[0]) * a;
-							cg = c[1] + (gg / a - c[1]) * a;
-							cb = c[2] + (bb / a - c[2]) * a;
-							return;
-						}
-					}
-				}
-			}
-		}
-		cr = c[0];
-		cg = c[1];
-		cb = c[2];
-	};
 
 	// Row by row, each mass is asked about only along the stretch of the
 	// row it can reach - no further off its axis than its widest and the
@@ -2333,7 +2509,7 @@ export const sculpt = (
 					if (c.group === fc.group) {
 						K = Math.min(hr[j]!, hr[f]!) * 0.8;
 					} else {
-						const ji = joinOf[fc.group * GROUPS + c.group]!;
+						const ji = joinOf[fc.group * groups + c.group]!;
 						if (ji >= 0) {
 							const jn = b.joins[ji]!;
 							const dj = len2(pxx - jn.x, py - jn.y);
@@ -2393,244 +2569,14 @@ export const sculpt = (
 					ox3 * rt.u +
 					oy3 * dn.u +
 					oz3 * (tw3.u + kap);
-				cloth = false;
-				const side = fc.side;
-				switch (fc.kind) {
-					case TORSO: {
-						let rf0 = Pf - pel.f;
-						let rs0 = Ps - pel.s;
-						let ru0 = Pu - pel.u;
-						const ut = b.untwist;
-						if (ut) {
-							// Where it sat before he turned.
-							const up0 = (rf0 * spine.f + ru0 * spine.u) / body.torso;
-							const k =
-								Math.min(
-									TURN_STEPS,
-									Math.max(0, Math.round(up0 * TURN_STEPS)),
-								) * 9;
-							const nf = ut[k]! * rf0 + ut[k + 1]! * rs0 + ut[k + 2]! * ru0;
-							const ns = ut[k + 3]! * rf0 + ut[k + 4]! * rs0 + ut[k + 5]! * ru0;
-							const nu = ut[k + 6]! * rf0 + ut[k + 7]! * rs0 + ut[k + 8]! * ru0;
-							rf0 = nf;
-							rs0 = ns;
-							ru0 = nu;
-						}
-						torsoAt(
-							rf0 * spine.f + ru0 * spine.u,
-							rs0,
-							rf0 * fw.f + ru0 * fw.u,
-						);
-						break;
-					}
-					case SHORTS: {
-						cloth = true;
-						// The stripe down the outside of the leg: where the
-						// surface faces out from his side.
-						const lf = fc.B.f - fc.A.f;
-						const ls = fc.B.s - fc.A.s;
-						const lu = fc.B.u - fc.A.u;
-						const ll = len3(lf, ls, lu) || 1;
-						let of = Pf - fc.A.f - lf * t;
-						let os = Ps - fc.A.s - ls * t;
-						let ou = Pu - fc.A.u - lu * t;
-						const along = (of * lf + os * ls + ou * lu) / (ll * ll);
-						of -= lf * along;
-						os -= ls * along;
-						ou -= lu * along;
-						const ol = len3(of, os, ou) || 1;
-						let c =
-							!look.outfit && (os * (side === 0 ? -1 : 1)) / ol > 0.95
-								? pal.stripe
-								: pal.shorts;
-						if (wraps) {
-							// Where this would be on him standing straight: how
-							// far across him (square to his thigh) and ahead.
-							const ax = lf / ll;
-							const ay = ls / ll;
-							const az = lu / ll;
-							let xf = -ax * ay;
-							let xs = 1 - ay * ay;
-							let xu = -az * ay;
-							const xl = len3(xf, xs, xu) || 1;
-							xf /= xl;
-							xs /= xl;
-							xu /= xl;
-							const across = of * xf + os * xs + ou * xu;
-							const ahead =
-								of * (ay * xu - az * xs) +
-								os * (az * xf - ax * xu) +
-								ou * (ax * xs - ay * xf);
-							const out = side === 0 ? -1 : 1;
-							c = artOver(
-								wraps.shorts,
-								-(0.16 + 0.68 * (t + along)) * body.thigh,
-								out * body.hipW + across,
-								ahead,
-								// The inside of his leg faces the other one, not
-								// out to his side.
-								across * out < 0,
-								pal.shorts,
-							);
-						}
-						cr = c[0];
-						cg = c[1];
-						cb = c[2];
-						break;
-					}
-					case UPPER:
-					case FORE: {
-						let c = fc.kind === UPPER ? pal.upper[side]! : pal.fore[side]!;
-						const band = pal.wrist[side];
-						if (
-							fc.kind === FORE &&
-							band &&
-							t > 0.76 &&
-							t < 0.97 &&
-							fc.len > 0
-						) {
-							c = band;
-						}
-						if (
-							look.outfit?.sleeves === "short" &&
-							fc.kind === UPPER &&
-							t > 0.55
-						) {
-							c = pal.skin;
-						}
-						cloth = c !== pal.skin;
-						cr = c[0];
-						cg = c[1];
-						cb = c[2];
-						break;
-					}
-					case THIGH:
-					case SHIN: {
-						let c = pal.legs[side]!;
-						if (fc.kind === SHIN && Pu < cut.sockTop) {
-							c = pal.sock;
-						}
-						// A pad round the knee.
-						const pad = pal.knee[side];
-						if (
-							pad &&
-							((fc.kind === THIGH && t > 0.82) || (fc.kind === SHIN && t < 0.2))
-						) {
-							c = pad;
-						}
-						cloth = c !== pal.skin;
-						cr = c[0];
-						cg = c[1];
-						cb = c[2];
-						break;
-					}
-					case SHOE: {
-						let c = Pu < cut.sole ? pal.sole : pal.shoe;
-						if (Pu < cut.sole * 0.35) {
-							c = pal.tread;
-						} else if (c === pal.shoe) {
-							// Round the shoe from its axis: up its side, or
-							// over the top of it - on the shoe itself, heel to
-							// toe, not the collar round his ankle.
-							const lf = fc.B.f - fc.A.f;
-							const ls = fc.B.s - fc.A.s;
-							const lu = fc.B.u - fc.A.u;
-							const ll = len3(lf, ls, lu) || 1;
-							if (ll > body.ankleR * 4) {
-								const of = Pf - fc.A.f - lf * t;
-								const os = Ps - fc.A.s - ls * t;
-								const ou = Pu - fc.A.u - lu * t;
-								const ol = len3(of, os, ou) || 1;
-								const up = ou / ol;
-								const out = Math.abs(of * ls - os * lf) / (ll * ol);
-								// The stripe sweeps up from the toe to the heel,
-								// widest in the middle.
-								const mid = 0.42 - (0.5 * (t - 0.15)) / 0.7;
-								const wide = 0.28 * (1 - Math.abs(t - 0.5) * 1.6);
-								if (
-									out > 0.5 &&
-									t > 0.15 &&
-									t < 0.85 &&
-									Math.abs(up - mid) < wide
-								) {
-									c = pal.accent;
-								} else if (up > 0.78 && t > 0.38 && t < 0.72) {
-									c = pal.laces;
-								}
-							}
-						}
-						cloth = true;
-						cr = c[0];
-						cg = c[1];
-						cb = c[2];
-						break;
-					}
-					case BALL: {
-						// The game ball, as it sits in his hands - its
-						// channels and its print (see gameBall.ts).
-						// (Turned round with him, the way it faces.)
-						const nz = hn[f]!;
-						const nx = hx[f]! * heldCos - nz * heldSin;
-						const ny = -hy[f]!;
-						const nt = nz * heldCos + hx[f]! * heldSin;
-						const rad = hr[f]!;
-						ballSurface(
-							heldSurface(rad),
-							nx * HELD[0][0] + ny * HELD[0][1] + nt * HELD[0][2],
-							nx * HELD[1][0] + ny * HELD[1][1] + nt * HELD[1][2],
-							nx * HELD[2][0] + ny * HELD[2][1] + nt * HELD[2][2],
-							1 / (rad * Math.max(0.3, Math.sqrt(nz))),
-							heldPx,
-						);
-						cr = heldPx[0]!;
-						cg = heldPx[1]!;
-						cb = heldPx[2]!;
-						break;
-					}
-					case CAM_BODY:
-					case CAM_LENS:
-					case TOWEL: {
-						const c =
-							fc.kind === CAM_BODY
-								? CAM_BODY_RGB
-								: fc.kind === TOWEL
-									? TOWEL_RGB
-									: CAM_LENS_RGB;
-						cr = c[0];
-						cg = c[1];
-						cb = c[2];
-						break;
-					}
-					case NAIL: {
-						// Paler than his skin, a little pink.
-						const c = pal.skin;
-						cr = c[0] + (pal.palm[0] - c[0]) * 0.62 + 6;
-						cg = c[1] + (pal.palm[1] - c[1]) * 0.62;
-						cb = c[2] + (pal.palm[2] - c[2]) * 0.62;
-						break;
-					}
-					case HAND: {
-						// His palm, and the inside of his fingers, paler
-						// than the back of his hand.
-						const p = b.pn[side]!;
-						const nbf = hx[f]! * rt.f + hy[f]! * dn.f + hn[f]! * tw3.f;
-						const nbs = hx[f]! * rt.s + hy[f]! * dn.s + hn[f]! * tw3.s;
-						const nbu = hx[f]! * rt.u + hy[f]! * dn.u + hn[f]! * tw3.u;
-						const inPalm = nbf * p.f + nbs * p.s + nbu * p.u;
-						const c = pal.skin;
-						const e =
-							inPalm > 0.15 ? Math.min(1, (inPalm - 0.15) / 0.25) * 0.42 : 0;
-						cr = c[0] + (pal.palm[0] - c[0]) * e;
-						cg = c[1] + (pal.palm[1] - c[1]) * e;
-						cb = c[2] + (pal.palm[2] - c[2]) * e;
-						break;
-					}
-					default: {
-						cr = pal.skin[0];
-						cg = pal.skin[1];
-						cb = pal.skin[2];
-					}
-				}
+				ink.cloth = false;
+				ink.gloss = 0;
+				paint(fc, t, hx[f]!, hy[f]!, hn[f]!, hr[f]!, Pf, Ps, Pu);
+				const cloth = ink.cloth;
+				const gloss = ink.gloss;
+				const cr = ink.r;
+				const cg = ink.g;
+				const cb = ink.b;
 				// Cloth hangs smoother over him than skin does.
 				if (cloth) {
 					sz += 0.35;
@@ -2647,7 +2593,7 @@ export const sculpt = (
 				let r: number;
 				let g: number;
 				let bb: number;
-				if (cloth) {
+				if (cloth || gloss > 0) {
 					const k = (0.79 + 0.21 * lit) * dark;
 					r = cr * k;
 					g = cg * k;
@@ -2659,9 +2605,17 @@ export const sculpt = (
 					g = cg * (0.74 + 0.26 * lit) * k;
 					bb = cb * (0.72 + 0.28 * lit) * k;
 				}
+				if (gloss > 0 && lam > 0.86) {
+					// A shine (a helmet's): a hard white glint where it faces the
+					// lights.
+					const s = Math.min(1, (lam - 0.86) / 0.06) * 0.55 * gloss;
+					r += (255 - r) * s;
+					g += (255 - g) * s;
+					bb += (255 - bb) * s;
+				}
 				// A fine line where he passes in front of himself - and
 				// all round his hands, so they read.
-				if ((behind || fc.kind === HAND || fc.kind === NAIL) && S > -lineW) {
+				if ((behind || outlined(fc.kind)) && S > -lineW) {
 					const e = Math.min(1, (S + lineW) / lineW);
 					r += (cr * 0.38 - r) * e;
 					g += (cg * 0.38 - g) * e;
@@ -2690,6 +2644,488 @@ export const sculpt = (
 			}
 		}
 	}
+
+	return { x0: bx0, y0: by0, x1: bx1, y1: by1 };
+};
+
+// His sprite, w x h of its pixels, each px screen pixels, its top left at
+// (ox, oy) on the screen. Given `seen` (ART_W x ART_H), a uniform drawn
+// from a picture also marks which of the picture's pixels show on him: 1
+// where his jersey or shorts are, 2 where the trim goes over it.
+export const sculpt = (
+	cam: Camera,
+	st: PlayerState,
+	body: Body,
+	look: Look,
+	px: number,
+	ox: number,
+	oy: number,
+	w: number,
+	h: number,
+	seen?: Uint8Array,
+): Sculpted => {
+	const b = build(cam, st, body, look, px, ox, oy);
+	const pal = paletteOf(look);
+	// The ball in his hands faces round from him as it came to him (see
+	// facesTo in evaluate.ts): turned so from the way HELD has it, square
+	// on to the camera.
+	const heldTurn = st.yaw + (st.ballFace ?? 0) - facingCamera(cam.right);
+	const heldCos = Math.cos(heldTurn);
+	const heldSin = Math.sin(heldTurn);
+	const img = new ImageData(w, h);
+	const d = img.data;
+	const lateAny = b.late.some(Boolean);
+	const owner = lateAny ? new Int8Array(w * h).fill(-1) : undefined;
+
+	const { rt, dn, tw: tw3 } = b.frame;
+	const cut = b.cut;
+	const pel = b.pel;
+	const spine = b.spine;
+	const fw = b.fwd;
+	const sheet = b.sheet;
+	const wraps = b.wraps;
+	const art = look.kitArt;
+	// (The trim round his neck and armholes the picture's own, not painted on.)
+	const trimFromArt = art?.fit?.trim === "picture" && wraps !== undefined;
+	const artXY = new Float64Array(2);
+	const artPx = new Float64Array(3);
+	const artRGB: RGB = [0, 0, 0];
+	const mark = (v: number) => {
+		const i = Math.round(artXY[1]!) * ART_W + Math.round(artXY[0]!);
+		if (seen && i >= 0 && i < ART_W * ART_H && seen[i]! < v) {
+			seen[i] = v;
+		}
+	};
+	// The team's picture at a point on his jersey or shorts, over the plain
+	// color c where the picture is clear.
+	const artOver = (
+		wrap: ArtWrap,
+		U: number,
+		S: number,
+		F: number,
+		notSide: boolean,
+		c: RGB,
+	): RGB => {
+		artAt(wrap, U, S, F, notSide, artXY);
+		mark(1);
+		const a = artColor(art!, artXY[0]!, artXY[1]!, artPx);
+		if (a <= 0) {
+			return c;
+		}
+		artRGB[0] = c[0] + (artPx[0]! - c[0]) * a;
+		artRGB[1] = c[1] + (artPx[1]! - c[1]) * a;
+		artRGB[2] = c[2] + (artPx[2]! - c[2]) * a;
+		return artRGB;
+	};
+	const ink: Ink = { r: 0, g: 0, b: 0, cloth: false, gloss: 0 };
+
+	// The jersey, shirt or jacket at a point on his torso (U, S, F): sets
+	// the ink.
+	const torsoAt = (U: number, S: number, F: number) => {
+		ink.cloth = true;
+		const outfit = look.outfit;
+		let c: RGB;
+		// A suit's jacket hangs on over his hips; anything else is tucked in.
+		const hem = pal.shirt ? -cut.waist : cut.waist;
+		if (U < hem) {
+			c = pal.shorts;
+			if (wraps) {
+				c = artOver(wraps.shorts, U, S, F, false, c);
+			} else if (!outfit && Math.abs(F) < 0.08 && Math.abs(S) > cut.hipStripe) {
+				c = pal.stripe;
+			}
+		} else if (U < cut.waist + cut.band && !pal.shirt) {
+			c = wraps ? artOver(wraps.shorts, U, S, F, false, pal.band) : pal.band;
+		} else {
+			const aS = Math.abs(S);
+			// The neck: a V in front, a scoop behind.
+			const wN = Math.min(1, aS / cut.neckIn);
+			const front = F >= 0;
+			const neckDrop = outfit
+				? (front ? cut.backAt * 1.2 : cut.backAt * 0.6) * (1 - wN * wN)
+				: front
+					? cut.vAt * (1 - wN)
+					: cut.backAt * (1 - wN * wN);
+			const slope =
+				front && !outfit
+					? cut.vAt / cut.neckIn
+					: (2 * cut.backAt * wN) / cut.neckIn;
+			const below = (cut.top - neckDrop - U) / len2(1, slope);
+			const dNeck =
+				aS >= cut.neckIn
+					? Math.max(aS - cut.neckIn, below)
+					: below > 0
+						? below
+						: Math.max(below, aS - cut.neckIn);
+			let dArm = Infinity;
+			if (!outfit) {
+				// The armholes.
+				const sx = Math.min(aS, cut.side);
+				const uy = Math.min(U, cut.top);
+				const ea = cut.side - cut.strap;
+				const eb = cut.top - cut.pit;
+				const gx = (sx - cut.side) / ea;
+				const gy = (uy - cut.top) / eb;
+				const g = gx * gx + gy * gy - 1;
+				dArm = g / (2 * len2(gx / ea, gy / eb) || 1);
+			}
+			const edge = Math.min(dArm, dNeck);
+			if (edge < 0) {
+				c = pal.skin;
+				ink.cloth = false;
+			} else if (edge < cut.trim && !outfit && !trimFromArt) {
+				c = pal.trim;
+				if (seen && wraps) {
+					artAt(wraps.jersey, U, S, F, false, artXY);
+					mark(2);
+				}
+			} else {
+				c = pal.jersey;
+				if (outfit?.stripes && pal.stripes) {
+					const th = Math.atan2(S / (cut.side * 0.8), F / (cut.side * 0.4));
+					if (Math.floor((th * cut.side * 0.8) / 0.17 + 100) % 2 === 0) {
+						c = pal.stripes;
+					}
+					// (A panel down each side, under the arm.)
+					if (pal.sides && Math.abs(Math.abs(th) - Math.PI / 2) < 0.32) {
+						c = pal.sides;
+					}
+				}
+				if (pal.shirt && front) {
+					// A suit: his shirt in the open front, his tie down it.
+					const depth = cut.top - U;
+					const halfOpen = cut.neckIn * Math.max(0, 1 - depth / cut.open);
+					if (aS < halfOpen) {
+						c =
+							aS < cut.neckIn * 0.16 + depth * 0.06 && pal.tie
+								? pal.tie
+								: pal.shirt;
+					} else if (aS < halfOpen + cut.trim * 1.6) {
+						c = pal.lapel!;
+					}
+				} else if (
+					outfit &&
+					!outfit.shirt &&
+					!outfit.plain &&
+					outfit.sleeves === "long" &&
+					front &&
+					aS < cut.trim * 0.6 &&
+					U > cut.top - T_ZIP * cut.top
+				) {
+					// A quarter-zip's zip.
+					c = pal.trim;
+				}
+				if (wraps && c === pal.jersey) {
+					c = artOver(wraps.jersey, U, S, F, false, c);
+				}
+				if (sheet && (c === pal.jersey || c === artRGB)) {
+					// His number and lettering.
+					// Round his torso by how far across it the point is, not by how
+					// far forward his chest stands there - which would bend the
+					// uprights of his lettering over the curve of his chest.
+					const across = Math.max(-1, Math.min(1, S / sheet.aS));
+					const th =
+						F >= 0
+							? Math.asin(across)
+							: (across < 0 ? -Math.PI : Math.PI) - Math.asin(across);
+					let x = sheet.w / 2 + th * sheet.aS * sheet.ppf;
+					x = ((x % sheet.w) + sheet.w) % sheet.w;
+					const y = (sheet.u0 - U) * sheet.ppf;
+					if (y >= 0 && y < sheet.h - 1) {
+						const x0 = Math.floor(x);
+						const y0 = Math.floor(y);
+						const fx = x - x0;
+						const fy = y - y0;
+						const x1 = (x0 + 1) % sheet.w;
+						const sd = sheet.data;
+						const sw4 = sheet.w * 4;
+						const o00 = y0 * sw4 + x0 * 4;
+						const o10 = y0 * sw4 + x1 * 4;
+						const o01 = o00 + sw4;
+						const o11 = o10 + sw4;
+						const w00 = ((1 - fx) * (1 - fy) * sd[o00 + 3]!) / 255;
+						const w10 = (fx * (1 - fy) * sd[o10 + 3]!) / 255;
+						const w01 = ((1 - fx) * fy * sd[o01 + 3]!) / 255;
+						const w11 = (fx * fy * sd[o11 + 3]!) / 255;
+						const a = w00 + w10 + w01 + w11;
+						if (a > 0.004) {
+							const r =
+								sd[o00]! * w00 +
+								sd[o10]! * w10 +
+								sd[o01]! * w01 +
+								sd[o11]! * w11;
+							const gg =
+								sd[o00 + 1]! * w00 +
+								sd[o10 + 1]! * w10 +
+								sd[o01 + 1]! * w01 +
+								sd[o11 + 1]! * w11;
+							const bb =
+								sd[o00 + 2]! * w00 +
+								sd[o10 + 2]! * w10 +
+								sd[o01 + 2]! * w01 +
+								sd[o11 + 2]! * w11;
+							ink.r = c[0] + (r / a - c[0]) * a;
+							ink.g = c[1] + (gg / a - c[1]) * a;
+							ink.b = c[2] + (bb / a - c[2]) * a;
+							return;
+						}
+					}
+				}
+			}
+		}
+		ink.r = c[0];
+		ink.g = c[1];
+		ink.b = c[2];
+	};
+
+	// What he wears at a point of him (see shade): the mass `fc`, t along it;
+	// the surface's way there (nx, ny toward the camera's right and down, nz
+	// toward it) and the mass's radius there (sprite pixels); the point (feet,
+	// his frame).
+	const paint = (
+		fc: Mass,
+		t: number,
+		hxf: number,
+		hyf: number,
+		hnf: number,
+		hrf: number,
+		Pf: number,
+		Ps: number,
+		Pu: number,
+	) => {
+		const side = fc.side;
+		switch (fc.kind) {
+			case TORSO: {
+				let rf0 = Pf - pel.f;
+				let rs0 = Ps - pel.s;
+				let ru0 = Pu - pel.u;
+				const ut = b.untwist;
+				if (ut) {
+					// Where it sat before he turned.
+					const up0 = (rf0 * spine.f + ru0 * spine.u) / body.torso;
+					const k =
+						Math.min(TURN_STEPS, Math.max(0, Math.round(up0 * TURN_STEPS))) * 9;
+					const nf = ut[k]! * rf0 + ut[k + 1]! * rs0 + ut[k + 2]! * ru0;
+					const ns = ut[k + 3]! * rf0 + ut[k + 4]! * rs0 + ut[k + 5]! * ru0;
+					const nu = ut[k + 6]! * rf0 + ut[k + 7]! * rs0 + ut[k + 8]! * ru0;
+					rf0 = nf;
+					rs0 = ns;
+					ru0 = nu;
+				}
+				torsoAt(rf0 * spine.f + ru0 * spine.u, rs0, rf0 * fw.f + ru0 * fw.u);
+				break;
+			}
+			case SHORTS: {
+				ink.cloth = true;
+				// The stripe down the outside of the leg: where the
+				// surface faces out from his side.
+				const lf = fc.B.f - fc.A.f;
+				const ls = fc.B.s - fc.A.s;
+				const lu = fc.B.u - fc.A.u;
+				const ll = len3(lf, ls, lu) || 1;
+				let of = Pf - fc.A.f - lf * t;
+				let os = Ps - fc.A.s - ls * t;
+				let ou = Pu - fc.A.u - lu * t;
+				const along = (of * lf + os * ls + ou * lu) / (ll * ll);
+				of -= lf * along;
+				os -= ls * along;
+				ou -= lu * along;
+				const ol = len3(of, os, ou) || 1;
+				let c =
+					!look.outfit && (os * (side === 0 ? -1 : 1)) / ol > 0.95
+						? pal.stripe
+						: pal.shorts;
+				if (wraps) {
+					// Where this would be on him standing straight: how
+					// far across him (square to his thigh) and ahead.
+					const ax = lf / ll;
+					const ay = ls / ll;
+					const az = lu / ll;
+					let xf = -ax * ay;
+					let xs = 1 - ay * ay;
+					let xu = -az * ay;
+					const xl = len3(xf, xs, xu) || 1;
+					xf /= xl;
+					xs /= xl;
+					xu /= xl;
+					const across = of * xf + os * xs + ou * xu;
+					const ahead =
+						of * (ay * xu - az * xs) +
+						os * (az * xf - ax * xu) +
+						ou * (ax * xs - ay * xf);
+					const out = side === 0 ? -1 : 1;
+					c = artOver(
+						wraps.shorts,
+						-(0.16 + 0.68 * (t + along)) * body.thigh,
+						out * body.hipW + across,
+						ahead,
+						// The inside of his leg faces the other one, not
+						// out to his side.
+						across * out < 0,
+						pal.shorts,
+					);
+				}
+				ink.r = c[0];
+				ink.g = c[1];
+				ink.b = c[2];
+				break;
+			}
+			case UPPER:
+			case FORE: {
+				let c = fc.kind === UPPER ? pal.upper[side]! : pal.fore[side]!;
+				const band = pal.wrist[side];
+				if (fc.kind === FORE && band && t > 0.76 && t < 0.97 && fc.len > 0) {
+					c = band;
+				}
+				if (look.outfit?.sleeves === "short" && fc.kind === UPPER && t > 0.55) {
+					c = pal.skin;
+				}
+				ink.cloth = c !== pal.skin;
+				ink.r = c[0];
+				ink.g = c[1];
+				ink.b = c[2];
+				break;
+			}
+			case THIGH:
+			case SHIN: {
+				let c = pal.legs[side]!;
+				if (fc.kind === SHIN && Pu < cut.sockTop) {
+					c = pal.sock;
+				}
+				// A pad round the knee.
+				const pad = pal.knee[side];
+				if (
+					pad &&
+					((fc.kind === THIGH && t > 0.82) || (fc.kind === SHIN && t < 0.2))
+				) {
+					c = pad;
+				}
+				ink.cloth = c !== pal.skin;
+				ink.r = c[0];
+				ink.g = c[1];
+				ink.b = c[2];
+				break;
+			}
+			case SHOE: {
+				let c = Pu < cut.sole ? pal.sole : pal.shoe;
+				if (Pu < cut.sole * 0.35) {
+					c = pal.tread;
+				} else if (c === pal.shoe) {
+					// Round the shoe from its axis: up its side, or
+					// over the top of it - on the shoe itself, heel to
+					// toe, not the collar round his ankle.
+					const lf = fc.B.f - fc.A.f;
+					const ls = fc.B.s - fc.A.s;
+					const lu = fc.B.u - fc.A.u;
+					const ll = len3(lf, ls, lu) || 1;
+					if (ll > body.ankleR * 4) {
+						const of = Pf - fc.A.f - lf * t;
+						const os = Ps - fc.A.s - ls * t;
+						const ou = Pu - fc.A.u - lu * t;
+						const ol = len3(of, os, ou) || 1;
+						const up = ou / ol;
+						const out = Math.abs(of * ls - os * lf) / (ll * ol);
+						// The stripe sweeps up from the toe to the heel,
+						// widest in the middle.
+						const mid = 0.42 - (0.5 * (t - 0.15)) / 0.7;
+						const wide = 0.28 * (1 - Math.abs(t - 0.5) * 1.6);
+						if (
+							out > 0.5 &&
+							t > 0.15 &&
+							t < 0.85 &&
+							Math.abs(up - mid) < wide
+						) {
+							c = pal.accent;
+						} else if (up > 0.78 && t > 0.38 && t < 0.72) {
+							c = pal.laces;
+						}
+					}
+				}
+				ink.cloth = true;
+				ink.r = c[0];
+				ink.g = c[1];
+				ink.b = c[2];
+				break;
+			}
+			case BALL: {
+				// The game ball, as it sits in his hands - its
+				// channels and its print (see gameBall.ts).
+				// (Turned round with him, the way it faces.)
+				const nz = hnf;
+				const nx = hxf * heldCos - nz * heldSin;
+				const ny = -hyf;
+				const nt = nz * heldCos + hxf * heldSin;
+				const rad = hrf;
+				ballSurface(
+					heldSurface(rad),
+					nx * HELD[0][0] + ny * HELD[0][1] + nt * HELD[0][2],
+					nx * HELD[1][0] + ny * HELD[1][1] + nt * HELD[1][2],
+					nx * HELD[2][0] + ny * HELD[2][1] + nt * HELD[2][2],
+					1 / (rad * Math.max(0.3, Math.sqrt(nz))),
+					heldPx,
+				);
+				ink.r = heldPx[0]!;
+				ink.g = heldPx[1]!;
+				ink.b = heldPx[2]!;
+				break;
+			}
+			case CAM_BODY:
+			case CAM_LENS:
+			case TOWEL: {
+				const c =
+					fc.kind === CAM_BODY
+						? CAM_BODY_RGB
+						: fc.kind === TOWEL
+							? TOWEL_RGB
+							: CAM_LENS_RGB;
+				ink.r = c[0];
+				ink.g = c[1];
+				ink.b = c[2];
+				break;
+			}
+			case NAIL: {
+				// Paler than his skin, a little pink.
+				const c = pal.skin;
+				ink.r = c[0] + (pal.palm[0] - c[0]) * 0.62 + 6;
+				ink.g = c[1] + (pal.palm[1] - c[1]) * 0.62;
+				ink.b = c[2] + (pal.palm[2] - c[2]) * 0.62;
+				break;
+			}
+			case HAND: {
+				// His palm, and the inside of his fingers, paler
+				// than the back of his hand.
+				const p = b.pn[side]!;
+				const nbf = hxf * rt.f + hyf * dn.f + hnf * tw3.f;
+				const nbs = hxf * rt.s + hyf * dn.s + hnf * tw3.s;
+				const nbu = hxf * rt.u + hyf * dn.u + hnf * tw3.u;
+				const inPalm = nbf * p.f + nbs * p.s + nbu * p.u;
+				const c = pal.skin;
+				const e =
+					inPalm > 0.15 ? Math.min(1, (inPalm - 0.15) / 0.25) * 0.42 : 0;
+				ink.r = c[0] + (pal.palm[0] - c[0]) * e;
+				ink.g = c[1] + (pal.palm[1] - c[1]) * e;
+				ink.b = c[2] + (pal.palm[2] - c[2]) * e;
+				break;
+			}
+			default: {
+				ink.r = pal.skin[0];
+				ink.g = pal.skin[1];
+				ink.b = pal.skin[2];
+			}
+		}
+	};
+
+	const box = shade(
+		b,
+		GROUPS,
+		d,
+		w,
+		h,
+		paint,
+		ink,
+		(kind) => kind === HAND || kind === NAIL,
+		owner,
+	);
 
 	let over: ImageData | undefined;
 	if (owner) {
@@ -2725,6 +3161,6 @@ export const sculpt = (
 		img,
 		...(over ? { over } : {}),
 		head: b.head,
-		box: { x0: bx0, y0: by0, x1: bx1, y1: by1 },
+		box,
 	};
 };

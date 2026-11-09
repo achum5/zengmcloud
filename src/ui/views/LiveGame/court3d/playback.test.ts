@@ -14,8 +14,10 @@ import {
 	type FollowReport,
 } from "./follow.ts";
 import {
+	courtShow,
 	makeWipe,
 	onCursor,
+	REPLAY_AFTER,
 	replayed,
 	STING_IN,
 	stepPlay,
@@ -56,7 +58,7 @@ const device = (along: boolean): Device => ({
 		lead: 0,
 		last: undefined,
 		replay: undefined,
-		nextDunk: 0,
+		nextReplay: 0,
 		snapCam: true,
 		jumpTo: -1,
 		keyDip: -Infinity,
@@ -666,7 +668,9 @@ describe("the wipe into a replay and out of it", () => {
 			const s = device(false).s;
 			s.t = dunk.t - 4000;
 			s.prevCursor = events.length;
-			s.nextDunk = tl.fx.indexOf(dunk);
+			s.nextReplay = courtShow(tl).replays.findIndex(
+				(x) => x.cue === dunk.t + REPLAY_AFTER,
+			);
 			const w = makeWipe();
 			const f = makeFollow();
 			const frames: {
@@ -760,7 +764,7 @@ const shownAgain = (
 	s.t = from;
 	s.prevCursor = cursor;
 	s.snapCam = false;
-	s.nextDunk = tl.fx.findIndex((x) => replayed(x) && x.t + 1150 > from);
+	s.nextReplay = courtShow(tl).replays.findIndex((x) => x.cue > from);
 	const f = makeFollow();
 	let shown = false;
 	for (let now = 16; now < ms; now += 1000 / 60) {

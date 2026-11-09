@@ -1,5 +1,11 @@
 import { depthOf, project, type Camera } from "../court3d/camera.ts";
 import {
+	driven,
+	PIVOT_HIP,
+	PIVOT_KNEE,
+	settleStep,
+} from "../court3d/evaluate.ts";
+import {
 	lerpPose,
 	skeleton,
 	type Body,
@@ -7,12 +13,18 @@ import {
 	type V3,
 } from "../court3d/poses.ts";
 import {
+	castShadows,
 	keepPixels,
+	pickSprite,
+	prepareOf,
 	rim,
 	stamp,
+	takeFarmed,
+	type Cast,
 	type Kept,
 	type Scratch,
 	type SpriteCache,
+	type SpritePlan,
 } from "../court3d/sprite.ts";
 import { FIGURE_SCALE } from "./body.ts";
 import type { Side } from "./geometry.ts";
@@ -26,8 +38,8 @@ import {
 	holding,
 	moveKind,
 	MOUTH_STEPS,
+	gaitOf,
 	poseOfMove,
-	settleStep,
 	strideLift,
 	withArms,
 	type Move,
@@ -63,8 +75,8 @@ export type FieldPlayerState = {
 	// Done the other way round: his left doing what his right does.
 	mirrored?: boolean;
 	// Short steps: his strides (and the ones he was taking, just after a
-	// change) this share of full ones.
-	len?: number;
+	// change) this share of full ones - his right leg's, his left's.
+	len?: [number, number];
 	// Getting going on his strides (up to 1), or pulling up on them (down
 	// to -1): how hard (see evaluate.ts driveOf).
 	drive?: number;
@@ -72,6 +84,13 @@ export type FieldPlayerState = {
 	// on the turf, right and left, and how far up off it each is (a full
 	// step 1 - see evaluate.ts pivotOf).
 	pivot?: [number, number, number, number];
+	// On his strides, each foot turned at the ankle from where his leg points
+	// (degrees, right then left - see evaluate.ts strideLock): down, it
+	// points where it came down.
+	lock?: [number, number];
+	// His legs turned under him from the way he faces (degrees - see
+	// evaluate.ts legsUnder): going one way, looking another.
+	legs?: number;
 	// Just after a change - of move, of what his arms are doing, of how he
 	// has the ball: the last as it was when it changed, and how much of his
 	// pose is still that (1 all, 0 none).
@@ -107,7 +126,7 @@ type Blend = {
 	// as it changed (as pivot).
 	feet?: [number, number, number, number];
 	// From one way of standing into another, not turning: stepped over a
-	// foot at a time (see poses.ts settleStep).
+	// foot at a time (see court3d's settleStep).
 	steps?: true;
 };
 type Under = {
@@ -261,12 +280,16 @@ const weightOf = (st: FieldPlayerState, f: Blend, k: Steps): number => {
 // what he just was.
 type Stepped = {
 	phase: number;
-	len: number | undefined;
+	len: [number, number] | undefined;
 	turn: number;
 	yaw: number;
 	from: Blend | undefined;
 	arms: { move: Move; phase: number } | undefined;
 	feet: Feet | undefined;
+	// (Each foot turned at the ankle - see FieldPlayerState.lock - and both
+	// legs under him.)
+	lock: [number, number] | undefined;
+	legs: number | undefined;
 	drive: number | undefined;
 	// His mouth open (see FieldPlayerState.mouth), where it shows.
 	mouth?: number;
@@ -294,14 +317,16 @@ const underKey = (u: Under | undefined): string =>
 	u
 		? `^${u.move}${u.mirrored ? "m" : ""}${u.phase}~${u.w}${u.arms ? `+${u.arms.move}${u.arms.phase}` : ""}${underKey(u.under)}`
 		: "";
-// (Short steps, to the nearest of so many.)
+// (Short steps, to the nearest of so many - each leg's.)
 const LENS = 8;
-const lenIn = (len: number | undefined): number | undefined => {
+const lenIn = (
+	len: [number, number] | undefined,
+): [number, number] | undefined => {
 	if (len === undefined) {
 		return undefined;
 	}
-	const q = Math.max(1, Math.round(len * LENS)) / LENS;
-	return q < 1 ? q : undefined;
+	const [r, l] = len.map((x) => Math.max(1, Math.round(x * LENS)) / LENS);
+	return r! < 1 || l! < 1 ? [Math.min(1, r!), Math.min(1, l!)] : undefined;
 };
 // A foot pointing `to` on the turf, turned under him from the way he is
 // drawn facing (in his turns, so it stays put on the turf as he turns
@@ -350,12 +375,31 @@ const feetIn = (
 	];
 	return feet.some((v) => v !== 0) ? feet : undefined;
 };
+// (On the strides he is on, eased in as he gets into them - or the ones he
+// is easing out of, eased out.)
+const lockIn = (
+	st: FieldPlayerState,
+	fw: number,
+): [number, number] | undefined => {
+	const lk = st.lock;
+	if (!lk) {
+		return undefined;
+	}
+	const w = gaitOf(st.move) ? 1 - fw : fw;
+	const r = Math.round((lk[0] * w) / FEET_DEG) * FEET_DEG;
+	const l = Math.round((lk[1] * w) / FEET_DEG) * FEET_DEG;
+	return r !== 0 || l !== 0 ? [r, l] : undefined;
+};
 const stepped = (st: FieldPlayerState, k: Steps): Stepped => {
 	const turn = Math.round(st.yaw / ((Math.PI * 2) / k.turns));
 	const f = st.from;
 	const fw = f ? weightOf(st, f, k) : 0;
 	return {
 		feet: feetIn(st, turn, fw, k),
+		lock: lockIn(st, fw),
+		legs: st.legs
+			? Math.round(st.legs / FEET_DEG) * FEET_DEG || undefined
+			: undefined,
 		phase: frameOf(st.move, st.phase, k),
 		len: lenIn(st.len),
 		drive: st.drive
@@ -385,7 +429,7 @@ const wholePose = (
 	mirrored: boolean,
 	arms: { move: Move; phase: number } | undefined,
 	ball: BallHold | undefined,
-	len = 1,
+	len?: [number, number],
 ): Pose => {
 	let pose = poseOfMove(move, phase, mirrored, len);
 	if (arms) {
@@ -399,35 +443,10 @@ const wholePose = (
 	return holding(pose, ball, tuckBent(arms?.move));
 };
 
-// A step's lift: degrees at the hip and knee (see court3d's PIVOT_HIP).
-const STEP_HIP = 16;
-const STEP_KNEE = 34;
-// Getting going hard he drives into it - leaning on into his first steps,
-// his arms pumping - and pulling up hard he sits back against it. (His arms
-// left be with the ball in them, or doing anything else.) (See court3d's
-// driven.)
-const DRIVE_LEAN = 14;
-const BRACE_LEAN = 9;
-const DRIVE_PUMP = 0.45;
-const DRIVE_ELBOW = 12;
-const driven = (p: Pose, d: number, arms: boolean): Pose => {
-	if (d < 0) {
-		return { ...p, lean: p.lean + BRACE_LEAN * d };
-	}
-	if (!arms) {
-		return { ...p, lean: p.lean + DRIVE_LEAN * d };
-	}
-	const mid = (p.shN + p.shF) / 2;
-	const k = 1 + DRIVE_PUMP * d;
-	return {
-		...p,
-		lean: p.lean + DRIVE_LEAN * d,
-		shN: mid + (p.shN - mid) * k,
-		shF: mid + (p.shF - mid) * k,
-		elN: p.elN + DRIVE_ELBOW * d,
-		elF: p.elF + DRIVE_ELBOW * d,
-	};
-};
+// A step's lift: degrees at the hip and knee (the court's PIVOT_HIP). And
+// getting going hard, he drives into it (the court's driven).
+const STEP_HIP = PIVOT_HIP;
+const STEP_KNEE = PIVOT_KNEE;
 const poseFor = (st: FieldPlayerState, s: Stepped): Pose => {
 	const d = s.drive;
 	const p = d
@@ -438,17 +457,29 @@ const poseFor = (st: FieldPlayerState, s: Stepped): Pose => {
 			)
 		: blendedPose(st, s);
 	const f = s.feet;
+	const lk = s.lock;
+	const lg = s.legs ?? 0;
+	const q =
+		lk || lg
+			? {
+					...p,
+					spinN: p.spinN + lg,
+					spinF: p.spinF + lg,
+					footN: p.footN + (lk?.[0] ?? 0),
+					footF: p.footF + (lk?.[1] ?? 0),
+				}
+			: p;
 	return f
 		? {
-				...p,
-				spinN: p.spinN + f[0],
-				spinF: p.spinF + f[1],
-				hipN: p.hipN + STEP_HIP * f[2],
-				kneeN: p.kneeN + STEP_KNEE * f[2],
-				hipF: p.hipF + STEP_HIP * f[3],
-				kneeF: p.kneeF + STEP_KNEE * f[3],
+				...q,
+				spinN: q.spinN + f[0],
+				spinF: q.spinF + f[1],
+				hipN: q.hipN + STEP_HIP * f[2],
+				kneeN: q.kneeN + STEP_KNEE * f[2],
+				hipF: q.hipF + STEP_HIP * f[3],
+				kneeF: q.kneeF + STEP_KNEE * f[3],
 			}
-		: p;
+		: q;
 };
 const underPose = (u: Under, ball: BallHold | undefined): Pose => {
 	const pose = wholePose(u.move, u.phase, u.mirrored === true, u.arms, ball);
@@ -563,6 +594,11 @@ const facing = (st: FieldPlayerState) => st.faces ?? st.yaw;
 // How he is drawn, the way the sprite has him: his pose and the way he
 // faces (to the nearest of its turns) - in the finer steps, if he is drawn
 // in them.
+// His pose in the sprite's steps (coarse, or `fine`) - as his picture is
+// made from it (see FieldJob).
+export const stepOf = (st: FieldPlayerState, fine = false): Stepped =>
+	stepped(st, fine ? FINE : COARSE);
+
 export const drawnPose = (
 	st: FieldPlayerState,
 	fine = false,
@@ -570,12 +606,24 @@ export const drawnPose = (
 	const s = stepped(st, fine ? FINE : COARSE);
 	return { pose: poseFor(st, s), yaw: s.yaw };
 };
+// His pose as the moment has him, not stepped for a picture (as finely as
+// makes no difference) - the court's poseOf.
+const EXACT: Steps = {
+	cycle: 1e5,
+	act: 1e5,
+	actDeg: 1e-3,
+	turns: 1e6,
+	blend: 1e5,
+	drive: 1e5,
+};
+export const poseOf = (st: FieldPlayerState): Pose =>
+	poseFor(st, stepped(st, EXACT));
 
 // How high he is drawn off the turf (feet): up as the play has him (in a
 // leap, on a pile), and off it between strides as his frame has him - his
 // lower foot on the turf, landing.
 // (What he was is still partly what he was before that, as in his pose.)
-const wasLift = (u: Under, len: number | undefined): number => {
+const wasLift = (u: Under, len: [number, number] | undefined): number => {
 	const up = strideLift(u.move, u.phase, len);
 	return u.under ? up + (wasLift(u.under, len) - up) * u.under.w : up;
 };
@@ -694,23 +742,13 @@ const SHADED = 0.66;
 // the box round him there, his pose in the sprite's steps, his size in
 // steps of 4%, whether the ball is drawn with him, and his picture's key in
 // the cache (with one).
-type Plan = {
-	base: ReturnType<typeof project>;
-	lift: number;
+type Plan = SpritePlan & {
 	left: number;
 	right: number;
 	upper: number;
 	lower: number;
 	step: Stepped;
-	scale: number;
-	held: boolean;
 	shaded: boolean;
-	key?: string;
-	// His new picture being made off the page's thread (see farm.ts): drawn
-	// as he was meanwhile.
-	farmed?: boolean;
-	// Off the field - on the sideline, at the back of the picture.
-	off?: boolean;
 };
 // The nearest a man is drawn in front of the camera (feet; the 3D court's -
 // see court3d/sprite.ts): any nearer, or behind it - a camera down on the
@@ -775,16 +813,18 @@ const planOf = (
 		step,
 		scale,
 		held: st.ball !== undefined && !st.unseen,
+		who: st.id,
 		shaded,
 	};
 	if (cache) {
-		const { phase, turn, from, arms, len, feet, drive, mouth } = step;
+		const { phase, turn, from, arms, len, feet, lock, legs, drive, mouth } =
+			step;
 		const known = cache.ids.get(look);
 		const id = known ?? cache.next++;
 		if (known === undefined) {
 			cache.ids.set(look, id);
 		}
-		plan.key = `${fine ? "f" : ""}fb${id}|${st.move}${st.mirrored ? "m" : ""}|${phase}${len ? `s${len}` : ""}${drive ? `r${drive}` : ""}${feet ? `v${feet.join(",")}` : ""}|${((turn % steps.turns) + steps.turns) % steps.turns}|${scale}|${px}|${st.ball ?? ""}${st.unseen ? "~" : ""}${arms ? `|${arms.move}${arms.phase}` : ""}${
+		plan.key = `${fine ? "f" : ""}fb${id}|${st.move}${st.mirrored ? "m" : ""}|${phase}${len ? `s${len}` : ""}${drive ? `r${drive}` : ""}${feet ? `v${feet.join(",")}` : ""}${lock ? `k${lock.join(",")}` : ""}${legs ? `g${legs}` : ""}|${((turn % steps.turns) + steps.turns) % steps.turns}|${scale}|${px}|${st.ball ?? ""}${st.unseen ? "~" : ""}${arms ? `|${arms.move}${arms.phase}` : ""}${
 			from
 				? `|${from.move}${from.mirrored ? "m" : ""}${from.steps ? "!" : ""}${from.phase}~${from.w}${from.arms ? `+${from.arms.move}${from.arms.phase}` : ""}${from.ball ? `@${from.ball}` : ""}${underKey(from.under)}`
 				: ""
@@ -807,28 +847,11 @@ const plansOf = (cache: SpriteCache) => {
 	return p.plans;
 };
 
-// Whether he may be drawn this frame in the picture he had last frame (out
-// of time for a new one): if he had one a frame ago, not for too many frames
-// already, not much bigger or smaller since, and never with the ball in it
-// when he has let it go, or without it once he has it (see court3d's
-// asWas). Who he is, by his id: two men may look alike. (Off the field, a
-// few frames more: small, at the back, and seldom on the move - his new
-// picture made in his turn after the men in the play, not on the page's
-// thread ahead of them.)
-const MAX_BEHIND = 3;
-const MAX_BEHIND_OFF = 6;
-const asWas = (cache: SpriteCache, plan: Plan, who: number) => {
-	const was = cache.last.get(who);
-	return was &&
-		was.behind < (plan.off ? MAX_BEHIND_OFF : MAX_BEHIND) &&
-		was.frame === cache.frame - 1 &&
-		Math.abs(was.scale - plan.scale) <= 1 &&
-		(was.held ?? false) === plan.held
-		? was
-		: undefined;
-};
-const overBudget = (cache: SpriteCache) =>
-	cache.budget !== undefined && cache.spent >= cache.budget;
+// Off the field, drawn as he was a few frames more than the men in the
+// play (see court3d/sprite.ts SpritePlan): small, at the back, and seldom on
+// the move - his new picture made in his turn after theirs, not on the
+// page's thread ahead of them.
+const PATIENCE_OFF = 6;
 
 // HOW HE IS MADE, in plain numbers - the camera, him and his pose in the
 // sprite's steps, his build, the box on the picture he is drawn in and where
@@ -1003,62 +1026,6 @@ const make = (
 // Which picture he is drawn in this frame: his own for this pose, kept;
 // the one he had, if he may be drawn as he was, out of time for a new one;
 // or none yet, to be made now - and the books kept on it.
-const pick = (cache: SpriteCache, plan: Plan, who: number): Kept | "make" => {
-	const kept = plan.key === undefined ? undefined : cache.kept.get(plan.key);
-	if (kept && plan.key !== undefined) {
-		// Kept longest are the ones still in use: to the back of the line.
-		cache.kept.delete(plan.key);
-		cache.kept.set(plan.key, kept);
-		cache.last.set(who, {
-			kept,
-			frame: cache.frame,
-			behind: 0,
-			scale: plan.scale,
-			held: plan.held,
-		});
-		return kept;
-	}
-	if (plan.farmed || overBudget(cache)) {
-		const was = asWas(cache, plan, who);
-		if (was) {
-			was.frame = cache.frame;
-			was.behind += 1;
-			return was.kept;
-		}
-	}
-	return "make";
-};
-
-// The men sculpted off the page's thread since the last frame, kept - and
-// each the picture a man is drawn in meanwhile, if it is of a later pose of
-// his than the one he has: he is then that much less behind.
-const took = (cache: SpriteCache, farm: FieldFarm) => {
-	const began = performance.now();
-	for (const m of farm.take(cache)) {
-		if (cache.kept.has(m.key)) {
-			continue;
-		}
-		const { pixels, dx, dy, anchor } = m.shaped;
-		const kept = keepPixels(cache, m.key, pixels, dx, dy);
-		anchors.set(kept, anchor);
-		const was = cache.last.get(m.id);
-		if (
-			m.frame < cache.frame &&
-			(!was ||
-				(was.frame === cache.frame - 1 && was.frame - was.behind < m.frame))
-		) {
-			cache.last.set(m.id, {
-				kept,
-				frame: cache.frame - 1,
-				behind: cache.frame - 1 - m.frame,
-				scale: m.scale,
-				held: m.held,
-			});
-		}
-	}
-	cache.spent += performance.now() - began;
-};
-
 // THE NEW PICTURES A FRAME NEEDS, MADE FIRST - the men on the field before
 // anyone off it, and of them the nearest the camera first: drawn back to
 // front, a frame out of time ran out on the men in the play and nearest,
@@ -1083,51 +1050,49 @@ export const prepareFieldSprites = (
 	farm?: FieldFarm,
 ) => {
 	if (farm) {
-		took(cache, farm);
+		takeFarmed(cache, farm.take(cache), (m) => {
+			const { pixels, dx, dy, anchor } = m.shaped;
+			const kept = keepPixels(cache, m.key, pixels, dx, dy);
+			anchors.set(kept, anchor);
+			return kept;
+		});
 	}
 	const plans = plansOf(cache);
-	const todo: { man: (typeof men)[number]; plan: Plan; wait: boolean }[] = [];
+	const planned: { man: (typeof men)[number]; plan: Plan }[] = [];
 	for (const man of men) {
 		const plan = planOf(cam, man.st, man.body, man.look, px, cache, man.shaded);
 		if (plan?.key === undefined) {
 			continue;
 		}
-		plan.off = man.off;
+		if (man.off) {
+			plan.off = true;
+			plan.patience = PATIENCE_OFF;
+		}
 		plans.set(man.st, plan);
-		if (!cache.kept.has(plan.key)) {
-			todo.push({
-				man,
-				plan,
-				wait: asWas(cache, plan, man.st.id) !== undefined,
-			});
-		}
+		planned.push({ man, plan });
 	}
-	todo.sort(
-		(a, b) =>
-			(a.man.off ? 1 : 0) - (b.man.off ? 1 : 0) ||
-			b.plan.base.k - a.plan.base.k,
+	prepareOf(
+		cache,
+		planned,
+		farm &&
+			((man, plan) =>
+				farm.busy(cache, plan.key!) ||
+				farm.ask(
+					cache,
+					plan.key!,
+					jobOf(plan, cam, man.st, man.body, px),
+					man.look,
+					{
+						id: plan.who,
+						frame: cache.frame,
+						scale: plan.scale,
+						held: plan.held,
+					},
+				)),
+		(man, plan) => {
+			make(plan, scratch, cam, man.st, man.body, man.look, px, cache);
+		},
 	);
-	for (const { man, plan, wait } of todo) {
-		const key = plan.key!;
-		if (
-			wait &&
-			farm &&
-			(farm.busy(cache, key) ||
-				farm.ask(cache, key, jobOf(plan, cam, man.st, man.body, px), man.look, {
-					id: man.st.id,
-					frame: cache.frame,
-					scale: plan.scale,
-					held: plan.held,
-				}))
-		) {
-			plan.farmed = true;
-			continue;
-		}
-		if (wait && overBudget(cache)) {
-			continue;
-		}
-		make(plan, scratch, cam, man.st, man.body, man.look, px, cache);
-	}
 };
 
 // HIS SHADOWS ON THE TURF (the 3D court's: see court3d/sprite.ts stamp): his
@@ -1137,102 +1102,10 @@ export const prepareFieldSprites = (
 // across, how much of his height it runs out over the turf - toward the
 // camera +, away -; how dark.) Off the turf, they come away from his feet
 // and fade.
-export type Cast = { lean: number; run: number; alpha: number };
-export const LIGHT_CASTS: Cast[] = [
-	{ lean: -0.55, run: 0.2, alpha: 0.13 },
-	{ lean: 0.55, run: 0.2, alpha: 0.13 },
-];
+export { LIGHT_CASTS, type Cast } from "../court3d/sprite.ts";
 export const sunCasts = (lean: number): Cast[] => [
 	{ lean, run: -0.5, alpha: 0.24 },
 ];
-// His shape all in black, a third the size of his picture, drawn back up
-// soft-edged: kept in his picture's own canvas, under it (see court3d's
-// keepPixels) - or, for a picture kept without it, made the first time it
-// is wanted and let go with his picture.
-const DARK_SCALE = 3;
-const darks = new WeakMap<HTMLCanvasElement, HTMLCanvasElement>();
-const darkOf = (
-	k: Kept,
-):
-	| { img: HTMLCanvasElement; sx: number; sy: number; sw: number; sh: number }
-	| undefined => {
-	if (k.dark) {
-		return { img: k.canvas, sx: 0, sy: k.h, sw: k.dark.w, sh: k.dark.h };
-	}
-	const own = darkCanvasOf(k);
-	return own
-		? { img: own, sx: 0, sy: 0, sw: own.width, sh: own.height }
-		: undefined;
-};
-const darkCanvasOf = (k: Kept): HTMLCanvasElement | undefined => {
-	let d = darks.get(k.canvas);
-	if (d) {
-		return d;
-	}
-	if (typeof document === "undefined") {
-		return undefined;
-	}
-	d = document.createElement("canvas");
-	d.width = Math.max(1, Math.ceil(k.canvas.width / DARK_SCALE));
-	d.height = Math.max(1, Math.ceil(k.canvas.height / DARK_SCALE));
-	const g = d.getContext("2d");
-	if (!g) {
-		return undefined;
-	}
-	g.drawImage(k.canvas, 0, 0, d.width, d.height);
-	g.globalCompositeOperation = "source-in";
-	g.fillStyle = "#000";
-	g.fillRect(0, 0, d.width, d.height);
-	darks.set(k.canvas, d);
-	return d;
-};
-const castShadows = (
-	ctx: CanvasRenderingContext2D,
-	k: Kept,
-	x: number,
-	y: number,
-	px: number,
-	floorY: number,
-	casts: Cast[],
-) => {
-	const dark = k.canvas.width > 0 ? darkOf(k) : undefined;
-	if (!dark) {
-		return;
-	}
-	const alpha = ctx.globalAlpha;
-	const smoothing = ctx.imageSmoothingEnabled;
-	const m = ctx.getTransform();
-	const floor = Math.round(floorY);
-	const X = Math.round(x + k.dx);
-	const Y = Math.round(y + k.dy);
-	// (Up off the turf, fading: gone by his own height up.)
-	const up = Math.max(0, floor - (Y + k.h * px));
-	const fade = Math.max(0, 1 - up / (k.h * px));
-	if (fade <= 0) {
-		return;
-	}
-	ctx.imageSmoothingEnabled = true;
-	for (const { lean, run, alpha: dark0 } of casts) {
-		ctx.globalAlpha = alpha * dark0 * fade;
-		// From where he is drawn, upright, to where it falls: as far out
-		// over the turf from his feet as he is up over them, by `run`.
-		ctx.transform(1, 0, -lean, -run, lean * floor, floor * (1 + run));
-		ctx.drawImage(
-			dark.img,
-			dark.sx,
-			dark.sy,
-			dark.sw,
-			dark.sh,
-			X,
-			Y,
-			k.w * px,
-			k.h * px,
-		);
-		ctx.setTransform(m);
-	}
-	ctx.imageSmoothingEnabled = smoothing;
-	ctx.globalAlpha = alpha;
-};
 
 export const drawFieldPlayer = (
 	ctx: CanvasRenderingContext2D,
@@ -1256,7 +1129,10 @@ export const drawFieldPlayer = (
 	}
 	const { base, lift } = plan;
 	if (cache && plan.key !== undefined) {
-		const was = pick(cache, plan, st.id);
+		const was = pickSprite(cache, plan);
+		if (was === "out") {
+			return;
+		}
 		if (was !== "make") {
 			const on = shiftedOn(cam, st, base, anchors.get(was));
 			if (casts && casts.length > 0) {

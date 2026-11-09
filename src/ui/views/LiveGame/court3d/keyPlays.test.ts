@@ -106,7 +106,7 @@ describe("3D key plays", () => {
 			lead: 0,
 			last: undefined,
 			replay: undefined,
-			nextDunk: 0,
+			nextReplay: 0,
 			snapCam: true,
 			jumpTo: -1,
 			keyDip: -Infinity,

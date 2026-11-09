@@ -192,6 +192,7 @@ export type Made = {
 	id: number;
 	frame: number;
 	scale: number;
+	held: boolean;
 };
 // Workers that sculpt men for the page (see farm.ts).
 export type Farm = {
@@ -202,7 +203,7 @@ export type Farm = {
 		key: string,
 		job: Job,
 		look: Look,
-		whose: { id: number; frame: number; scale: number },
+		whose: { id: number; frame: number; scale: number; held: boolean },
 	) => boolean;
 	// Whether it is still being made.
 	busy: (cache: SpriteCache, key: string) => boolean;
@@ -374,6 +375,14 @@ export const CASTS: [number, number][] = [
 	[0.55, 0.2],
 ];
 export const CAST_ALPHA = 0.13;
+// Any one shadow: its lean, its run and how dark it is - the lights' (see
+// CASTS), or a low sun's (see field3d's sunCasts).
+export type Cast = { lean: number; run: number; alpha: number };
+export const LIGHT_CASTS: Cast[] = CASTS.map(([lean, run]) => ({
+	lean,
+	run,
+	alpha: CAST_ALPHA,
+}));
 // His shape all in black, for his shadows - a third the size of his
 // picture (a ninth of the memory), and drawn back up soft-edged, as a
 // shadow is: made the first time it is wanted, let go with his picture.
@@ -414,6 +423,57 @@ const darkCanvasOf = (k: Kept): HTMLCanvasElement | undefined => {
 	darks.set(k.canvas, d);
 	return d;
 };
+// His shadows (see Cast), stood where he is drawn at (x, y) with the floor
+// under him at floorY on the picture: his shape laid down from his feet,
+// faint - and, up off the floor, coming away from his feet and fading, gone
+// by his own height up.
+export const castShadows = (
+	ctx: CanvasRenderingContext2D,
+	k: Kept,
+	x: number,
+	y: number,
+	px: number,
+	floorY: number,
+	casts: Cast[],
+) => {
+	const dark = k.canvas.width > 0 ? darkOf(k) : undefined;
+	if (!dark) {
+		return;
+	}
+	const alpha = ctx.globalAlpha;
+	const smoothing = ctx.imageSmoothingEnabled;
+	const m = ctx.getTransform();
+	const floor = Math.round(floorY);
+	const X = Math.round(x + k.dx);
+	const Y = Math.round(y + k.dy);
+	const up = Math.max(0, floor - (Y + k.h * px));
+	const fade = Math.max(0, 1 - up / (k.h * px));
+	if (fade <= 0) {
+		return;
+	}
+	ctx.imageSmoothingEnabled = true;
+	for (const { lean, run, alpha: dark0 } of casts) {
+		ctx.globalAlpha = alpha * dark0 * fade;
+		// From where he is drawn, upright, to where it falls: as far out over
+		// the floor below his feet as he is up over them, by `run`.
+		ctx.transform(1, 0, -lean, -run, lean * floor, floor * (1 + run));
+		ctx.drawImage(
+			dark.img,
+			dark.sx,
+			dark.sy,
+			dark.sw,
+			dark.sh,
+			X,
+			Y,
+			k.w * px,
+			k.h * px,
+		);
+		ctx.setTransform(m);
+	}
+	ctx.imageSmoothingEnabled = smoothing;
+	ctx.globalAlpha = alpha;
+};
+
 export const stamp = (
 	ctx: CanvasRenderingContext2D,
 	k: Kept,
@@ -429,37 +489,8 @@ export const stamp = (
 	}
 	const smoothing = ctx.imageSmoothingEnabled;
 	ctx.imageSmoothingEnabled = false;
-	const dark = shine ? darkOf(k) : undefined;
-	if (shine && dark) {
-		const alpha = ctx.globalAlpha;
-		const m = ctx.getTransform();
-		const floor = Math.round(shine.floorY);
-		const X = Math.round(x + k.dx);
-		const Y = Math.round(y + k.dy);
-		// (Up off the floor, fading: gone by his own height up.)
-		const up = Math.max(0, floor - (Y + k.h * px));
-		const fade = Math.max(0, 1 - up / (k.h * px));
-		ctx.imageSmoothingEnabled = true;
-		for (const [lean, run] of CASTS) {
-			ctx.globalAlpha = alpha * CAST_ALPHA * fade;
-			// From where he is drawn, upright, to where it falls: as far out
-			// over the floor below his feet as he is up over them.
-			ctx.transform(1, 0, -lean, -run, lean * floor, floor * (1 + run));
-			ctx.drawImage(
-				dark.img,
-				dark.sx,
-				dark.sy,
-				dark.sw,
-				dark.sh,
-				X,
-				Y,
-				k.w * px,
-				k.h * px,
-			);
-			ctx.setTransform(m);
-		}
-		ctx.imageSmoothingEnabled = false;
-		ctx.globalAlpha = alpha;
+	if (shine) {
+		castShadows(ctx, k, x, y, px, shine.floorY, LIGHT_CASTS);
 	}
 	if (shine) {
 		// Upside down from the floor under him - as far under it as he is
@@ -797,30 +828,38 @@ const stepped = (st: PlayerState, k: Steps) => {
 
 // Where he is drawn this frame and in which picture: worked out once a
 // frame (see prepareSprites), used again when he is drawn.
-type Plan = {
+// What drawing a man takes this frame, any sport's (see each sport's
+// planOf): where he stands on the picture and how high off it he is drawn,
+// his size on it in steps of 4%, whether the ball is drawn with him, who he
+// is, and his picture's key in the cache (with one). And how it went: his
+// new picture being made off the page's thread (drawn as he was
+// meanwhile), or him left out of a black frame. Off where the eye is (on a
+// bench, a sideline): made after the men in the play - and, `patience`,
+// drawn as he was for so many frames at the most (MAX_BEHIND if not said).
+export type SpritePlan = {
 	base: Projected;
 	lift: number;
+	scale: number;
+	held: boolean;
+	who: number;
+	key?: string;
+	farmed?: boolean;
+	leftOut?: boolean;
+	off?: boolean;
+	patience?: number;
+};
+type Plan = SpritePlan & {
 	left: number;
 	right: number;
 	upper: number;
 	lower: number;
 	pose: ReturnType<typeof stepped>;
-	// His size on the picture, in steps of 4%.
-	scale: number;
-	// The ball in his hands (drawn with him, not on its own - see scene.ts).
-	held: boolean;
-	// His look's number in the cache (in his pictures' keys), and who he is
-	// (his pid): the picture he was last drawn in is his whatever he looked
-	// like in it - so a new look (his face come in, the warm-up top off) is
-	// made as any new pose of his is, not all at once on the page.
+	// His look's number in the cache (in his pictures' keys). (Who he is -
+	// `who`, his pid - is what the picture he was last drawn in is kept by,
+	// whatever he looked like in it: so a new look - his face come in, the
+	// warm-up top off - is made as any new pose of his is, not all at once
+	// on the page.)
 	id: number;
-	who: number;
-	key?: string;
-	// Left out of this frame: the picture black, and no time to make his.
-	leftOut?: boolean;
-	// His new picture being made off the page's thread: drawn as he was
-	// meanwhile.
-	farmed?: boolean;
 };
 
 // The nearest a man is drawn in front of the camera (feet): any nearer - or
@@ -895,11 +934,14 @@ const planOf = (
 // Court3D - so it comes up with everybody the size he is.) And never with
 // the ball in his hands in it when he has let it go, or without it once he
 // has it: the ball would be on the picture twice, or not at all.
-const asWas = (cache: SpriteCache, plan: Plan) => {
+const asWas = (cache: SpriteCache, plan: SpritePlan) => {
 	const was = cache.last.get(plan.who);
 	return was &&
 		was.behind <
-			Math.round(MAX_BEHIND / Math.min(1, Math.max(0.35, cache.pace ?? 1))) &&
+			Math.round(
+				(plan.patience ?? MAX_BEHIND) /
+					Math.min(1, Math.max(0.35, cache.pace ?? 1)),
+			) &&
 		was.frame === cache.frame - 1 &&
 		Math.abs(was.scale - plan.scale) <= 1 &&
 		(was.held ?? false) === plan.held
@@ -1307,7 +1349,10 @@ const make = (
 // the one he had, if he may be drawn as he was; or none yet (to be made
 // now - or, black and out of time, left out) - and the books kept on it as
 // if he were drawn.
-const pick = (cache: SpriteCache, plan: Plan): Kept | "make" | "out" => {
+export const pickSprite = (
+	cache: SpriteCache,
+	plan: SpritePlan,
+): Kept | "make" | "out" => {
 	const kept = plan.key === undefined ? undefined : cache.kept.get(plan.key);
 	if (kept && plan.key !== undefined) {
 		// Kept longest are the ones still in use: to the back of the line.
@@ -1347,14 +1392,27 @@ const pick = (cache: SpriteCache, plan: Plan): Kept | "make" | "out" => {
 // and kept - and each the picture a man is drawn in meanwhile, if it is of
 // a later pose of his than the one he has: he is then that much less
 // behind.
-const took = (cache: SpriteCache, farm: Farm, scratch: Scratch) => {
+export const takeFarmed = <
+	M extends {
+		key: string;
+		id: number;
+		frame: number;
+		scale: number;
+		held: boolean;
+	},
+>(
+	cache: SpriteCache,
+	made: M[],
+	// (Kept - finished, if it is to be - or nothing, if it can't be.)
+	keepOf: (m: M) => Kept | undefined,
+) => {
 	const began = performance.now();
-	for (const m of farm.take(cache)) {
+	for (const m of made) {
 		if (cache.kept.has(m.key)) {
 			continue;
 		}
-		const kept = keepMade(cache, m.key, scratch, m.shaped, m.job, m.look);
-		if (!("canvas" in kept)) {
+		const kept = keepOf(m);
+		if (!kept) {
 			continue;
 		}
 		const was = cache.last.get(m.id);
@@ -1368,11 +1426,71 @@ const took = (cache: SpriteCache, farm: Farm, scratch: Scratch) => {
 				frame: cache.frame - 1,
 				behind: cache.frame - 1 - m.frame,
 				scale: m.scale,
-				held: m.job.st.holding === true,
+				held: m.held,
 			});
 		}
 	}
 	cache.spent += performance.now() - began;
+};
+const took = (cache: SpriteCache, farm: Farm, scratch: Scratch) => {
+	takeFarmed(cache, farm.take(cache), (m) => {
+		const kept = keepMade(cache, m.key, scratch, m.shaped, m.job, m.look);
+		return "canvas" in kept ? kept : undefined;
+	});
+};
+
+// THE NEW PICTURES A FRAME NEEDS, MADE FIRST - any sport's men, each
+// planned (see prepareSprites, and field3d's prepareFieldSprites). Short
+// of time, the men in the play first - their strides and moves are what
+// the eye is on; a man sat on a bench or a photographer crouched at the
+// end line barely moves, and is none the worse drawn as he was a frame or
+// two longer (see asWas) - and of each, the nearest the camera. Whoever
+// may be drawn as he was is made off the page's thread, if he can be
+// (`farmed`: asked of a hand, or being made by one already - whether he
+// is), and drawn as he was till it comes; out of time, drawn as he was -
+// or, the picture black, left out of the frame (and the picture held
+// black for him) till it is made, here or off the page's thread. The
+// rest made here (`make`).
+export const prepareOf = <M, P extends SpritePlan>(
+	cache: SpriteCache,
+	planned: { man: M; plan: P }[],
+	farmed: ((man: M, plan: P) => boolean) | undefined,
+	make: (man: M, plan: P) => void,
+) => {
+	const todo: { man: M; plan: P; wait: boolean }[] = [];
+	for (const it of planned) {
+		if (it.plan.key !== undefined && !cache.kept.has(it.plan.key)) {
+			todo.push({ ...it, wait: asWas(cache, it.plan) !== undefined });
+		}
+	}
+	todo.sort(
+		(a, b) =>
+			Number(a.plan.off === true) - Number(b.plan.off === true) ||
+			b.plan.base.k - a.plan.base.k,
+	);
+	for (const { man, plan, wait } of todo) {
+		const ask = () => farmed !== undefined && farmed(man, plan);
+		if (wait && ask()) {
+			plan.farmed = true;
+			continue;
+		}
+		if (overBudget(cache) && (wait || cache.dark)) {
+			if (!wait) {
+				ask();
+			}
+			continue;
+		}
+		make(man, plan);
+	}
+	// All black, nobody is drawn - but the books are kept as if they were,
+	// so a man made a frame ago may be drawn as he was the next, as in any
+	// other frame, rather than made again for each new pose while it stays
+	// black.
+	if (cache.black) {
+		for (const { plan } of planned) {
+			pickSprite(cache, plan);
+		}
+	}
 };
 
 export const prepareSprites = (
@@ -1387,65 +1505,38 @@ export const prepareSprites = (
 	if (farm) {
 		took(cache, farm, scratch);
 	}
-	const all: { man: (typeof men)[number]; plan: Plan }[] = [];
-	const todo: { man: (typeof men)[number]; plan: Plan; wait: boolean }[] = [];
+	const planned: { man: (typeof men)[number]; plan: Plan }[] = [];
 	for (const man of men) {
 		const plan = planOf(cam, man.st, man.body, man.look, px, cache);
 		if (plan?.key === undefined) {
 			continue;
 		}
+		plan.off = man.inPlay !== true;
 		cache.plans.set(man.st, plan);
-		all.push({ man, plan });
-		if (!cache.kept.has(plan.key)) {
-			todo.push({ man, plan, wait: asWas(cache, plan) !== undefined });
-		}
+		planned.push({ man, plan });
 	}
-	// Short of time, the men in the game first - their strides and moves
-	// are what the eye is on; a man sat on the bench or a photographer
-	// crouched at the baseline barely moves, and is none the worse drawn
-	// as he was a frame or two longer (see asWas) - and of each, the
-	// nearest the camera.
-	todo.sort(
-		(a, b) =>
-			Number(b.man.inPlay === true) - Number(a.man.inPlay === true) ||
-			b.plan.base.k - a.plan.base.k,
+	prepareOf(
+		cache,
+		planned,
+		farm &&
+			((man, plan) =>
+				farm.busy(cache, plan.key!) ||
+				farm.ask(
+					cache,
+					plan.key!,
+					jobOf(plan, cam, man.st, man.body, px),
+					man.look,
+					{
+						id: plan.who,
+						frame: cache.frame,
+						scale: plan.scale,
+						held: plan.held,
+					},
+				)),
+		(man, plan) => {
+			make(plan, scratch, cam, man.st, man.body, man.look, px, cache);
+		},
 	);
-	for (const { man, plan, wait } of todo) {
-		const key = plan.key!;
-		// Made off the page's thread, if it can be, and drawn as he was till
-		// it comes.
-		const farmed = () =>
-			farm !== undefined &&
-			(farm.busy(cache, key) ||
-				farm.ask(cache, key, jobOf(plan, cam, man.st, man.body, px), man.look, {
-					id: plan.who,
-					frame: cache.frame,
-					scale: plan.scale,
-				}));
-		if (wait && farmed()) {
-			plan.farmed = true;
-			continue;
-		}
-		// Out of time: drawn as he was - or, the picture black, left out of
-		// the frame (and the picture held black for him: see Court3D) till
-		// it is made, here or off the page's thread.
-		if (overBudget(cache) && (wait || cache.dark)) {
-			if (!wait) {
-				farmed();
-			}
-			continue;
-		}
-		make(plan, scratch, cam, man.st, man.body, man.look, px, cache);
-	}
-	// All black, nobody is drawn - but the books are kept as if they were,
-	// so a man made a frame ago may be drawn as he was the next, as in any
-	// other frame, rather than made again for each new pose while it stays
-	// black.
-	if (cache.black) {
-		for (const { plan } of all) {
-			pick(cache, plan);
-		}
-	}
 };
 
 export const drawSprite = (
@@ -1468,7 +1559,7 @@ export const drawSprite = (
 	const { base, lift } = plan;
 	const shine = reflect > 0 ? { alpha: reflect, floorY: base.y } : undefined;
 	if (cache && plan.key !== undefined) {
-		const was = pick(cache, plan);
+		const was = pickSprite(cache, plan);
 		if (was === "out") {
 			return;
 		}

@@ -31,58 +31,55 @@ sport's play-by-play, line by line, as it already exists.
 
 ## The layers
 
-| Layer | Shared (engine) | Per sport |
-|---|---|---|
+| Layer          | Shared (engine)                                                                                                                                                                                                                                                     | Per sport                                                                                                      |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | Page component | the props, staging promise and its failure path, roster check, kit and ad pictures, faces, the frame loop (rAF, visibility, hidden-tab interval), resolution and frame pacing, the sprite cache and farm, dips / flashes / replay wipes, caption, score-bug wrapper | venue paint, logos, what everybody looks like, the moment / aim / camera / draw of one frame, the bug's extras |
-| Timeline | `Beat`, cuts, clips, fast stretches, `end`; reading the page's cursor (`targetForCursor`, `snapForCursor`, `linesBetween`) | the director that stages the game; its payload (tracks and ball, or plays) |
-| Playback | the clock along the timeline, waiting at the cursor and asking for the next line, replays, the key-plays reel, following another device | which plays are shown again and how slowly; what is a key play |
-| Staging | the worker queue that stages a game off the page's thread | the compile function |
-| Camera | projection, `cameraAt`, the critically damped follow | rigs, framing, where it looks |
-| Renderer | sculpting a figure from masses along its skeleton, per-pixel nearest mass, joints melting, two-tone light, clothes painted in body coordinates, the sprite cache, stamping, shadows, outline, the sculpting farm | the uniform and gear (`Dress`), body proportions, held objects |
-| Body | the skeleton, the `Pose` type, gaits (walk, jog, run, sprint, backpedal, slide, shuffle), the move-table mechanism, blending, foot planting, the motion model | each sport's own moves |
+| Timeline       | `Beat`, cuts, clips, fast stretches, `end`; reading the page's cursor (`targetForCursor`, `snapForCursor`, `linesBetween`)                                                                                                                                          | the director that stages the game; its payload (tracks and ball, or plays)                                     |
+| Playback       | the clock along the timeline, waiting at the cursor and asking for the next line, replays, the key-plays reel, following another device                                                                                                                             | which plays are shown again and how slowly; what is a key play                                                 |
+| Staging        | the worker queue that stages a game off the page's thread                                                                                                                                                                                                           | the compile function                                                                                           |
+| Camera         | projection, `cameraAt`, the critically damped follow                                                                                                                                                                                                                | rigs, framing, where it looks                                                                                  |
+| Renderer       | sculpting a figure from masses along its skeleton, per-pixel nearest mass, joints melting, two-tone light, clothes painted in body coordinates, the sprite cache, stamping, shadows, outline, the sculpting farm                                                    | the uniform and gear (`Dress`), body proportions, held objects                                                 |
+| Body           | the skeleton, the `Pose` type, gaits (walk, jog, run, sprint, backpedal, slide, shuffle), the move-table mechanism, blending, foot planting, the motion model                                                                                                       | each sport's own moves                                                                                         |
 
-## Where football forked the engine (and the order it is undone)
+## Where it stands
 
-Low-traffic modules first; the files basketball is busiest in last.
+Shared now (each in court3d/, football's copy deleted):
 
-1. **Camera.** `field3d/camera.ts` copies the vector helpers and the body
-   of `makeCamera` because court3d's has the court's size built in. The
-   engine exports `cameraAt(pos, shot, w, h, upright, framing)`; football's
-   rigs (press box, end zone, Skycam, goal line) stay football's.
-2. **Staging worker.** `stageField.ts` is a line-for-line copy of
-   `stageCourt.ts`'s queue: one `makeStager({ compile, spawn })`.
-3. **Timeline helpers.** `Beat`, `targetForCursor`, `snapForCursor`,
-   `linesBetween` are identical in both directors.
-4. **Playback.** `field3d/playback.ts` is an adapted copy (wipe and sting,
-   `stepTarget`, `alignTo`, the lost-sync constants, the clock state). One
-   playback with a sport adapter: `replayCues(tl)`, replay speed, the sting's
-   lead. Basketball keeps its 8 ms integration through fast stretches, its
-   asked replays, its wipe hold and its fingerprint.
-5. **Key plays.** The same skeleton in both (forced picks, weighted
-   candidates, the budgeted fill, merging, the cursor mapping, the same
-   constants); each sport picks its own candidates and clip windows.
-6. **Game clock marks.** The mark lookup and lerp are shared; how each
-   sport's clocks run is its own.
-7. **Sprites and farm.** `field3d/sprite.ts` copies the dark-frame,
-   budget and pick logic and the shadow half of `stamp`; `field3d/farm.ts`
-   is a type-substituted copy. One sprite pipeline with a per-sport
-   `SpriteSport`, one farm with a per-sport codec.
-8. **Page component.** `Court3D.tsx` and `Field3D.tsx` share their props
-   and most of their lifecycle line for line. One `Broadcast3D` shell with
-   a sport adapter (stage, placeholder, fingerprint, key plays, clock,
-   assets, appearance, frame, bug).
-9. **Sculptor.** `field3d/sculpt.ts` is a fork of `court3d/sculpt.ts` (the
-   per-pixel loop, the vector maths, lettering, untwisting, lighting are
-   copies). One sculptor taking a `Figure` (pose, skeleton, hands, held
-   object) and a per-sport `Dress` (torso top, head, legs, held objects,
-   joins, cut, palette, paint hooks). Basketball's head stays drawn on top
-   from its faces.js face; football's helmet is sculpted.
-10. **Body.** Football already uses court3d's skeleton and gaits; it
-    re-implements key interpolation, settling into a stand, stride
-    counting, drive and blending. One body core, each sport with its own
-    move table built from the shared gaits plus its own moves (seventeen
-    move names mean different things in the two sports, so the tables stay
-    separate).
+| What                                                                                                                                                                                                                                                                                                                                          | Where                               |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| Camera: `cameraAt` with a sport's framing                                                                                                                                                                                                                                                                                                     | camera.ts                           |
+| Staging off the page: `makeStager`, `serveStaging`                                                                                                                                                                                                                                                                                            | stager.ts                           |
+| Timeline: `Beat`, the cursor helpers, `clockAt`                                                                                                                                                                                                                                                                                               | timeline.ts                         |
+| The show's clock: playback, replays, the key-plays reel, following another device                                                                                                                                                                                                                                                             | show.ts (a sport hands it a `Show`) |
+| The key-plays fill: `fillReel`, `reelCursors`                                                                                                                                                                                                                                                                                                 | keyPlays.ts                         |
+| The page's side: stakes, uniform and ad pictures, staging and the roster check (`useStaged`), faces (`useFaces`), size, the frame loop, the dip, the wipe, the caption's fade                                                                                                                                                                 | broadcast.ts                        |
+| What lies over the picture: vignette, dip, flash, wipe, REPLAY, the caption                                                                                                                                                                                                                                                                   | Overlays.tsx                        |
+| The picture on the page: its box and face loaders, the canvas, the score bug (`PictureBox`, `PictureCanvas`, `GameBug`)                                                                                                                                                                                                                       | Picture.tsx                         |
+| The score bug kept up frame by frame (`writeBug`)                                                                                                                                                                                                                                                                                             | bugWriter.ts                        |
+| The canvas sized to the picture (`sizeCanvas`), finer poses (`fineNow`)                                                                                                                                                                                                                                                                       | resolution.ts                       |
+| Sprites: shadows (`castShadows`), the plan (`SpritePlan`), reuse and budget (`pickSprite`), the hands' pictures (`takeFarmed`), the frame's new pictures (`prepareOf`)                                                                                                                                                                        | sprite.ts                           |
+| The sculpting farm (a sport hands it a `FarmCodec`)                                                                                                                                                                                                                                                                                           | farm.ts                             |
+| The sculptor's groundwork and its per-pixel loop (`shade`; a sport hands it its `paint`)                                                                                                                                                                                                                                                      | sculpt.ts                           |
+| Building a figure: where a point on him lands (`seerOf`), laying masses (`massesFor`), the torso's frame (`torsoOf`), torso, arm, hand, leg, joins (`torsoMasses`, `armMasses`, `handMasses`, `legMasses`, `joinBody`), the camera's frame (`frameOf`) - a sport hands each its build                                                         | sculpt.ts                           |
+| Moving: strides worked out foot by foot (`freshStart`, `stepThrough`), turning on the spot (`pivotFeet`), stepping from one stand into another (`settleStep`), a foot down held where it landed (`footTurn`, `hipsTurn`), legs turned under a man going one way and facing another (`legsTurned`) - held to it by each sport's footwork tests | stepping.ts, evaluate.ts            |
+| Moves: `MoveDef`, `moveAt` (straight or smooth keys), `driven`                                                                                                                                                                                                                                                                                | poses.ts, evaluate.ts               |
+
+Still each sport's own, and next to be brought together:
+
+1. **The page component.** Court3D.tsx and Field3D.tsx now share their
+   pieces but are still two components, each with its own frame loop
+   wiring them together. The goal is one `Broadcast3D` with a sport
+   adapter.
+2. **Blending one move into the next** (evaluate.ts / football's sprite.ts):
+   the two sports blend by their own designs of the same idea, and
+   football's drive into a run is a slimmed copy of the court's
+   (`driveOf`). Facing - which way a man looks - stays each sport's, as
+   reading a moment does.
+
+What stays each sport's: the director (play-by-play into a timeline),
+reading a moment off it, where the camera looks, the venue and its
+markings, uniforms, the sport's own moves, its crew, the score bug's
+extras.
 
 ## A sport, plugged in
 

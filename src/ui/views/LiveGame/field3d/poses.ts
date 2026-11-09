@@ -1,9 +1,10 @@
 import {
 	ANIMS,
 	bounceAt,
-	flexOf,
+	keyedSmooth,
 	lerpPose,
 	mirror,
+	moveAt,
 	poseAt,
 	shortLift,
 	shortSteps,
@@ -11,6 +12,7 @@ import {
 	stepBeat,
 	type AnimName,
 	type Body,
+	type MoveDef,
 	type Pose,
 	type V3,
 } from "../court3d/poses.ts";
@@ -29,11 +31,8 @@ import { BALL_LEN, BALL_R } from "./sculpt.ts";
 // thighs; a receiver split out, staggered, leaning; a linebacker square and
 // ready; a corner low over his man - and how each holds his hands.
 
-type FieldAnim =
-	| { kind: "still"; pose: Pose }
-	| { kind: "loop"; n: number; fps: number; pose: (i: number) => Pose }
-	| { kind: "cycle"; n: number; stride: number; pose: (i: number) => Pose }
-	| { kind: "act"; keys: [number, Pose][] };
+// (A move of football's own: the engine's - see court3d/poses.ts MoveDef.)
+type FieldAnim = MoveDef;
 
 // Every angle the court's skeleton takes, from standing easy - so a new one
 // it learns starts here as it does there.
@@ -69,84 +68,6 @@ const BASE: Pose = {
 	tilt: 0,
 };
 const pose = (o: Partial<Pose>): Pose => ({ ...BASE, ...o });
-
-// Through an act's keys on a smooth curve, not straight from one to the
-// next: each angle coming into a key and on out of it at one speed, never
-// past it (a monotone cubic - see slopesOf).
-const keyed = (keys: [number, Pose][], u: number): Pose => {
-	for (let i = 1; i < keys.length; i++) {
-		const [u1, p1] = keys[i]!;
-		if (u <= u1) {
-			const [u0, p0] = keys[i - 1]!;
-			if (u1 === u0) {
-				return p1;
-			}
-			const h = u1 - u0;
-			const t = (u - u0) / h;
-			const m = slopesOf(keys);
-			const m0 = m[i - 1]!;
-			const m1 = m[i]!;
-			const a = (2 * t - 3) * t * t + 1;
-			const b = ((t - 2) * t + 1) * t * h;
-			const c = (3 - 2 * t) * t * t;
-			const d = (t - 1) * t * t * h;
-			const out = { ...p0 };
-			for (const k of Object.keys(p0) as (keyof Pose)[]) {
-				out[k] = a * p0[k] + b * m0[k] + c * p1[k] + d * m1[k];
-			}
-			return out;
-		}
-	}
-	return keys.at(-1)![1];
-};
-// How fast each angle goes through each key (a unit of phase): where it
-// turns back, or holds, none; otherwise a mean of the way in and the way
-// out weighted to the shorter (Fritsch-Carlson, as PCHIP has it - the
-// ends from the two ways next to them, no faster than three times the
-// one).
-const slopes = new WeakMap<[number, Pose][], Pose[]>();
-const slopesOf = (keys: [number, Pose][]): Pose[] => {
-	const had = slopes.get(keys);
-	if (had) {
-		return had;
-	}
-	const n = keys.length;
-	const out = keys.map(() => ({ ...BASE }));
-	for (const k of Object.keys(BASE) as (keyof Pose)[]) {
-		const h: number[] = [];
-		const d: number[] = [];
-		for (let i = 0; i + 1 < n; i++) {
-			h.push(keys[i + 1]![0] - keys[i]![0]);
-			d.push(h[i]! > 0 ? (keys[i + 1]![1][k] - keys[i]![1][k]) / h[i]! : 0);
-		}
-		for (let i = 1; i + 1 < n; i++) {
-			const d0 = d[i - 1]!;
-			const d1 = d[i]!;
-			const w0 = 2 * h[i]! + h[i - 1]!;
-			const w1 = h[i]! + 2 * h[i - 1]!;
-			out[i]![k] =
-				d0 * d1 <= 0 || h[i - 1]! <= 0 || h[i]! <= 0
-					? 0
-					: (w0 + w1) / (w0 / d0 + w1 / d1);
-		}
-		const end = (h0: number, h1: number, d0: number, d1: number) => {
-			if (n < 3 || h0 + h1 <= 0) {
-				return d0;
-			}
-			const m = ((2 * h0 + h1) * d0 - h0 * d1) / (h0 + h1);
-			return m * d0 <= 0
-				? 0
-				: d0 * d1 < 0 && Math.abs(m) > 3 * Math.abs(d0)
-					? 3 * d0
-					: m;
-		};
-		out[0]![k] = end(h[0]!, h[1] ?? 0, d[0] ?? 0, d[1] ?? 0);
-		out[n - 1]![k] =
-			n < 2 ? 0 : end(h[n - 2]!, h[n - 3] ?? 0, d[n - 2]!, d[n - 3] ?? 0);
-	}
-	slopes.set(keys, out);
-	return out;
-};
 
 // A lineman down in his stance: feet a little wider than his shoulders, his
 // right foot back (toe to the other's instep), thighs low, back flat, head
@@ -4500,17 +4421,22 @@ export const loopRate = (m: Move): number => {
 	return a?.kind === "loop" ? a.fps / a.n : 0;
 };
 
-// How long a stride of a cycle is (feet). (The court's, a little longer
-// for a man drawn bigger - his foot down staying put on the turf.)
-const COURT_STRIDE = 1.1;
+// How long a stride of a cycle is (feet) - a gait of the court's, its own
+// (see court3d/stepping.ts: his foot down staying put on the turf).
 export const strideOf = (m: Move): number => {
 	if (isCourtMove(m)) {
 		const a = ANIMS[m as AnimName];
-		return a.kind === "cycle" ? a.stride * COURT_STRIDE : 5;
+		return a.kind === "cycle" ? a.stride : 5;
 	}
 	const a = FIELD_ANIMS[m] as FieldAnim;
 	return a.kind === "cycle" ? a.stride : 5;
 };
+
+// The court's gait a move is, if it is one (see court3d/stepping.ts).
+export const gaitOf = (m: Move): AnimName | undefined =>
+	isCourtMove(m) && ANIMS[m as AnimName].kind === "cycle"
+		? (m as AnimName)
+		: undefined;
 
 // The beat a gait's strides keep going slowly (strides a second - see
 // court3d/poses.ts shortSteps); none, for steps that keep none.
@@ -4519,30 +4445,23 @@ export const beatOf = (m: Move): number =>
 
 // The pose partway through a move: an act from start (0) to finish (1), a
 // loop or a cycle through one turn - mirrored, if he does it left-handed.
-// (A gait's strides `len` of a full one: short steps.)
+// (A gait's strides `len` of a full one, each leg's - his right, his left:
+// short steps.)
 export const poseOfMove = (
 	m: Move,
 	phase: number,
 	mirrored = false,
-	len = 1,
+	len?: [number, number],
 ): Pose => {
 	let q: Pose;
 	if (isCourtMove(m)) {
 		q = poseAt(m as AnimName, phase);
-		if (len < 1) {
-			q = shortSteps(q, m as AnimName, [len, len], phase);
+		if (len && (len[0] < 1 || len[1] < 1)) {
+			q = shortSteps(q, m as AnimName, len, phase);
 		}
 	} else {
-		const a = FIELD_ANIMS[m] as FieldAnim;
-		if (a.kind === "still") {
-			q = a.pose;
-		} else if (a.kind === "act") {
-			q = keyed(a.keys, Math.min(1, Math.max(0, phase)));
-		} else {
-			const p = (((phase % 1) + 1) % 1) * a.n;
-			const i0 = Math.floor(p);
-			q = lerpPose(a.pose(i0), a.pose((i0 + 1) % a.n), p - i0);
-		}
+		// (Football's acts on smooth curves, its cycles' frames blended.)
+		q = moveAt(FIELD_ANIMS[m] as FieldAnim, phase, true, true);
 	}
 	return mirrored ? mirror(q) : q;
 };
@@ -4627,7 +4546,7 @@ export const actFrames = (m: Move, least: number, most: number): number[] => {
 				let was = p0;
 				let wasAt = framePoints(p0);
 				for (let j = 1; j <= FRAME_SAMPLES; j++) {
-					const q = keyed(a.keys, u0 + ((u1 - u0) * j) / FRAME_SAMPLES);
+					const q = keyedSmooth(a.keys, u0 + ((u1 - u0) * j) / FRAME_SAMPLES);
 					const at = framePoints(q);
 					let moved = 0;
 					for (let k = 0; k < at.length; k++) {
@@ -4708,11 +4627,15 @@ export const handWith = (
 // How far off the turf his strides take him partway through a move (feet,
 // as the court has it): running, between one foot and the next; walking,
 // up on his toes.
-export const strideLift = (m: Move, phase: number, len = 1): number =>
+export const strideLift = (
+	m: Move,
+	phase: number,
+	len?: [number, number],
+): number =>
 	!isCourtMove(m)
 		? 0
-		: len < 1
-			? shortLift(m as AnimName, [len, len], phase)
+		: len && (len[0] < 1 || len[1] < 1)
+			? shortLift(m as AnimName, len, phase)
 			: bounceAt(m as AnimName, phase);
 
 // How far off the turf he is partway through a move (feet): up off both
@@ -4881,11 +4804,8 @@ export const gripsOf = (
 	return [right, left];
 };
 
-// FROM ONE WAY OF STANDING INTO ANOTHER (the way the court has it - see
-// court3d's settleStep): his feet stepped over, not slid. One foot at a
-// time - the one already up first, or the one with furthest to go - each
-// up off the turf as it goes and down again where the next one has it,
-// the other where it was till its turn.
+// FROM ONE WAY OF STANDING INTO ANOTHER (court3d's settleStep, which steps
+// it): his feet stepped over, not slid - between these.
 const STANDS = new Set<Move>([
 	"stand",
 	"easy",
@@ -4913,68 +4833,6 @@ const STANDS = new Set<Move>([
 ]);
 export const stepsOver = (from: Move, to: Move) =>
 	from !== to && STANDS.has(from) && STANDS.has(to);
-// A step's lift (degrees at the hip and knee); a full one for a leg this
-// far from where it is going (degrees at the hip, half that again of its
-// knee, and his feet's spread at so many a foot); each step's share of the
-// way, overlapping; legs this near to as far to go swapping over which goes
-// first gradually; one foot this much higher than the other up off the
-// turf.
-const SETTLE_HIP = 14;
-const SETTLE_KNEE = 30;
-const SETTLE_FULL = 30;
-const SETTLE_SPREAD = 40;
-const SETTLE_STEP = 0.6;
-const SETTLE_TIE = 6;
-const SETTLE_UP = 0.12;
-const smooth01 = (u: number) => {
-	const v = Math.min(1, Math.max(0, u));
-	return v * v * (3 - 2 * v);
-};
-// `p` the two eased together the usual way, u of the way from `was` to
-// `to`.
-export const settleStep = (p: Pose, to: Pose, was: Pose, u: number): Pose => {
-	const away = (a: Pose, b: Pose) => {
-		const spread = Math.abs(a.wide - b.wide) * SETTLE_SPREAD;
-		return [
-			Math.abs(a.hipN - b.hipN) + 0.5 * Math.abs(a.kneeN - b.kneeN) + spread,
-			Math.abs(a.hipF - b.hipF) + 0.5 * Math.abs(a.kneeF - b.kneeF) + spread,
-		] as const;
-	};
-	const [dn, df] = away(was, to);
-	const leg = (d: number, from: number) => {
-		const v = Math.min(1, Math.max(0, (u - from) / SETTLE_STEP));
-		return {
-			on: smooth01(v),
-			up: Math.sin(Math.PI * v) * Math.min(1, d / SETTLE_FULL),
-		};
-	};
-	const wasFlex = flexOf(was);
-	const toFlex = flexOf(to);
-	const RAD = Math.PI / 180;
-	const lift = (hip: number, knee: number) =>
-		-Math.cos((hip + wasFlex) * RAD) - Math.cos((hip + wasFlex - knee) * RAD);
-	const high = lift(was.hipN, was.kneeN) - lift(was.hipF, was.kneeF);
-	const byFar = smooth01((dn - df) / SETTLE_TIE + 0.5);
-	const lifted = Math.min(1, Math.abs(high) / SETTLE_UP);
-	const first = byFar + ((high > 0 ? 1 : 0) - byFar) * lifted;
-	const n = leg(dn, (1 - first) * (1 - SETTLE_STEP));
-	const f = leg(df, first * (1 - SETTLE_STEP));
-	const at = (a: number, b: number, w: number) => a + (b - a) * w;
-	// (His hips' bend over his feet goes with each leg as it steps, not with
-	// both at once - which would slide the one still down.)
-	return {
-		...p,
-		plant: 0,
-		hipN: at(was.hipN + wasFlex, to.hipN + toFlex, n.on) + SETTLE_HIP * n.up,
-		kneeN: at(was.kneeN, to.kneeN, n.on) + SETTLE_KNEE * n.up,
-		toeN: at(was.toeN, to.toeN, n.on),
-		wideN: at(was.wide + was.wideN, to.wide + to.wideN, n.on) - p.wide,
-		hipF: at(was.hipF + wasFlex, to.hipF + toFlex, f.on) + SETTLE_HIP * f.up,
-		kneeF: at(was.kneeF, to.kneeF, f.on) + SETTLE_KNEE * f.up,
-		toeF: at(was.toeF, to.toeF, f.on),
-		wideF: at(was.wide + was.wideF, to.wide + to.wideF, f.on) - p.wide,
-	};
-};
 
 // (Tucked away under one arm or the other.)
 export const tucked = (h: BallHold | undefined): boolean =>

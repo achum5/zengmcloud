@@ -194,6 +194,85 @@ const keyed = (keys: [number, Pose][], u: number): Pose => {
 	return keys.at(-1)![1];
 };
 
+// Or on a smooth curve through them, not straight from one to the next:
+// each angle coming into a key and on out of it at one speed, never past
+// it (a monotone cubic - see slopesOf). (Football's acts.)
+export const keyedSmooth = (keys: [number, Pose][], u: number): Pose => {
+	for (let i = 1; i < keys.length; i++) {
+		const [u1, p1] = keys[i]!;
+		if (u <= u1) {
+			const [u0, p0] = keys[i - 1]!;
+			if (u1 === u0) {
+				return p1;
+			}
+			const h = u1 - u0;
+			const t = (u - u0) / h;
+			const m = slopesOf(keys);
+			const m0 = m[i - 1]!;
+			const m1 = m[i]!;
+			const a = (2 * t - 3) * t * t + 1;
+			const b = ((t - 2) * t + 1) * t * h;
+			const c = (3 - 2 * t) * t * t;
+			const d = (t - 1) * t * t * h;
+			const out = { ...p0 };
+			for (const k of Object.keys(p0) as (keyof Pose)[]) {
+				out[k] = a * p0[k] + b * m0[k] + c * p1[k] + d * m1[k];
+			}
+			return out;
+		}
+	}
+	return keys.at(-1)![1];
+};
+// How fast each angle goes through each key (a unit of phase): where it
+// turns back, or holds, none; otherwise a mean of the way in and the way
+// out weighted to the shorter (Fritsch-Carlson, as PCHIP has it - the
+// ends from the two ways next to them, no faster than three times the
+// one).
+const slopes = new WeakMap<[number, Pose][], Pose[]>();
+const slopesOf = (keys: [number, Pose][]): Pose[] => {
+	const had = slopes.get(keys);
+	if (had) {
+		return had;
+	}
+	const n = keys.length;
+	const first = keys[0]![1];
+	const out = keys.map(() => ({ ...first }));
+	for (const k of Object.keys(first) as (keyof Pose)[]) {
+		const h: number[] = [];
+		const d: number[] = [];
+		for (let i = 0; i + 1 < n; i++) {
+			h.push(keys[i + 1]![0] - keys[i]![0]);
+			d.push(h[i]! > 0 ? (keys[i + 1]![1][k] - keys[i]![1][k]) / h[i]! : 0);
+		}
+		for (let i = 1; i + 1 < n; i++) {
+			const d0 = d[i - 1]!;
+			const d1 = d[i]!;
+			const w0 = 2 * h[i]! + h[i - 1]!;
+			const w1 = h[i]! + 2 * h[i - 1]!;
+			out[i]![k] =
+				d0 * d1 <= 0 || h[i - 1]! <= 0 || h[i]! <= 0
+					? 0
+					: (w0 + w1) / (w0 / d0 + w1 / d1);
+		}
+		const end = (h0: number, h1: number, d0: number, d1: number) => {
+			if (n < 3 || h0 + h1 <= 0) {
+				return d0;
+			}
+			const m = ((2 * h0 + h1) * d0 - h0 * d1) / (h0 + h1);
+			return m * d0 <= 0
+				? 0
+				: d0 * d1 < 0 && Math.abs(m) > 3 * Math.abs(d0)
+					? 3 * d0
+					: m;
+		};
+		out[0]![k] = end(h[0]!, h[1] ?? 0, d[0] ?? 0, d[1] ?? 0);
+		out[n - 1]![k] =
+			n < 2 ? 0 : end(h[n - 2]!, h[n - 3] ?? 0, d[n - 2]!, d[n - 3] ?? 0);
+	}
+	slopes.set(keys, out);
+	return out;
+};
+
 // Sat down on the floor: legs out in front of him, leaning back on his
 // hands. (His ankles lowest, at the floor, sit him on it.)
 const SAT_DOWN = pose({
@@ -2214,6 +2293,12 @@ type Anim =
 	| { kind: "loop"; n: number; fps: number; pose: (i: number) => Pose }
 	| { kind: "cycle"; n: number; stride: number; pose: (i: number) => Pose }
 	| { kind: "act"; n: number; keys: [number, Pose][] };
+// A MOVE, ANY SPORT'S: a basketball move (an Anim), or another sport's -
+// which may also stand still, and need not say how many frames an act is.
+export type MoveDef =
+	| Anim
+	| { kind: "still"; pose: Pose }
+	| { kind: "act"; keys: [number, Pose][] };
 
 // Down for a ball on the floor: knees bent deep, hands either side of it
 // where it lies (see PICKUP_REACH - his lean sets how far out that is).
@@ -6836,13 +6921,29 @@ export const bounceAt = (anim: AnimName, phase: number): number =>
 // The pose partway through an animation - an act from start (0) to finish
 // (1), a cycle or loop through one turn - blended between its key frames, so
 // a body moves smoothly instead of stepping frame to frame.
-export const poseAt = (anim: AnimName, phase: number): Pose => {
-	const a: Anim = ANIMS[anim];
+export const poseAt = (anim: AnimName, phase: number): Pose =>
+	moveAt(ANIMS[anim], phase);
+
+// Any sport's move partway through: an act's keys run through straight from
+// one to the next, or (`smooth`) on a smooth curve (see keyedSmooth); a
+// cycle's frames written as continuous strides (the court's), or not
+// (`frames`: blended one to the next, as a loop's are); a still one as it
+// is.
+export const moveAt = (
+	a: MoveDef,
+	phase: number,
+	smooth = false,
+	frames = false,
+): Pose => {
+	if (a.kind === "still") {
+		return a.pose;
+	}
 	if (a.kind === "act") {
-		return keyed(a.keys, Math.min(1, Math.max(0, phase)));
+		const u = Math.min(1, Math.max(0, phase));
+		return smooth ? keyedSmooth(a.keys, u) : keyed(a.keys, u);
 	}
 	const p = (((phase % 1) + 1) % 1) * a.n;
-	if (a.kind === "cycle") {
+	if (a.kind === "cycle" && !frames) {
 		// Cycles are written as continuous strides.
 		return a.pose(p);
 	}

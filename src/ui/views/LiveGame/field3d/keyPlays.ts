@@ -1,4 +1,12 @@
-import type { KeyPlaySettings, KeySegment } from "../court3d/keyPlays.ts";
+import {
+	fillReel,
+	reelCursors,
+	SWING_MIN,
+	SWING_W,
+	type KeyPlaySettings,
+	type KeySegment,
+	type ReelCandidate,
+} from "../court3d/keyPlays.ts";
 import { winProb } from "../winProb.ts";
 import type { FieldTimeline, Play, RawEvent } from "./director.ts";
 
@@ -14,15 +22,6 @@ import type { FieldTimeline, Play, RawEvent } from "./director.ts";
 // scorer's moment, the end zone and all).
 const LEAD_MS = 3000;
 const TAIL_MS = 1500;
-// The plays that swing who is likely to win the most (see winProb.ts).
-const SWING_MIN = 0.04;
-const SWING_W = 40;
-// The more of a kind already in the reel, the less the next of it counts;
-// a play from a quarter not yet shown, the more.
-const SAME_KIND = 0.82;
-const NEW_PERIOD = 1.35;
-// Stretches closer together than this (ms) are shown as one.
-const JOIN_MS = 1500;
 // A play from scrimmage with this little left in a quarter (seconds): the
 // last of a half, or of the game - shown, whatever it comes to.
 const LAST_PLAY_S = 5;
@@ -165,7 +164,7 @@ export const planFieldKeyPlays = (
 	};
 
 	const picked: { t0: number; t1: number; close: boolean }[] = [];
-	// The run out and the opening kickoff, and the end of the game.
+	// The opening kickoff, and the end of the game.
 	picked.push({ t0: 0, t1: clipOf(plays[0]!).t1, close: false });
 	const last = plays.at(-1)!;
 	picked.push({ t0: clipOf(last).t0, t1: tl.end, close: false });
@@ -183,14 +182,7 @@ export const planFieldKeyPlays = (
 	});
 
 	// The rest of the time, the best of the big plays.
-	const candidates: {
-		k: number;
-		w: number;
-		t0: number;
-		t1: number;
-		kind: string;
-		period: number;
-	}[] = [];
+	const candidates: ReelCandidate[] = [];
 	// (And, should there be time for more than the big plays, the rest - the
 	// ones that matter most first.)
 	const rest: { k: number; w: number; t0: number; t1: number }[] = [];
@@ -285,84 +277,17 @@ export const planFieldKeyPlays = (
 		candidates.push({ k, w, t0, t1, kind, period: st.period });
 	});
 
-	const budget = settings.minutes * 60_000 * Math.max(0.25, rate);
-	let spent = 0;
-	for (const p of merge(picked)) {
-		spent += p.t1 - p.t0;
-	}
-	// (On top of it, a close finish: what it takes, the rest of the game
-	// still has.)
-	if (settings.closeOnTop) {
-		for (const p of merge(picked.filter((x) => x.close))) {
-			spent -= p.t1 - p.t0;
-		}
-	}
-	// (Among equals, spread through the game rather than bunched.)
-	candidates.sort(
-		(a, b) => b.w - a.w || ((a.k * 7919) % 101) - ((b.k * 7919) % 101),
+	// (Every stretch watched at the pace it was staged at.)
+	return reelCursors(
+		fillReel({
+			picked,
+			candidates,
+			rest,
+			costOf: (t0, t1) => t1 - t0,
+			budget: settings.minutes * 60_000 * Math.max(0.25, rate),
+			closeOnTop: settings.closeOnTop,
+		}),
+		tl,
+		events.length,
 	);
-	const pool = candidates.map((c) => ({ ...c, cost: c.t1 - c.t0 }));
-	const kinds = new Map<string, number>();
-	const periods = new Set<number>();
-	for (;;) {
-		let best = -1;
-		let value = -Infinity;
-		pool.forEach((c, i) => {
-			if (spent + c.cost > budget) {
-				return;
-			}
-			const v =
-				c.w *
-				SAME_KIND ** (kinds.get(c.kind) ?? 0) *
-				(periods.has(c.period) ? 1 : NEW_PERIOD);
-			if (v > value) {
-				value = v;
-				best = i;
-			}
-		});
-		if (best < 0) {
-			break;
-		}
-		const c = pool.splice(best, 1)[0]!;
-		spent += c.cost;
-		picked.push({ t0: c.t0, t1: c.t1, close: false });
-		kinds.set(c.kind, (kinds.get(c.kind) ?? 0) + 1);
-		periods.add(c.period);
-	}
-	rest.sort((a, b) => b.w - a.w || a.k - b.k);
-	for (const c of rest) {
-		const cost = c.t1 - c.t0;
-		if (spent + cost > budget) {
-			continue;
-		}
-		spent += cost;
-		picked.push({ t0: c.t0, t1: c.t1, close: false });
-	}
-
-	return merge(picked).map((p) => {
-		// The page caught up to the last line before the stretch - and no
-		// further: the line of the play's own would be up before it happens.
-		const k = beats.findIndex((b) => b.actionStart >= p.t0);
-		return {
-			...p,
-			t1: Math.min(p.t1, tl.end),
-			cursor: k < 0 ? events.length : k === 0 ? 0 : beats[k - 1]!.i + 1,
-		};
-	});
-};
-
-const merge = (
-	list: { t0: number; t1: number; close: boolean }[],
-): { t0: number; t1: number; close: boolean }[] => {
-	const out: { t0: number; t1: number; close: boolean }[] = [];
-	for (const p of [...list].sort((a, b) => a.t0 - b.t0)) {
-		const prev = out.at(-1);
-		if (prev && p.t0 <= prev.t1 + JOIN_MS) {
-			prev.t1 = Math.max(prev.t1, p.t1);
-			prev.close ||= p.close;
-		} else {
-			out.push({ t0: p.t0, t1: p.t1, close: p.close });
-		}
-	}
-	return out;
 };

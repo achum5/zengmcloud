@@ -16,7 +16,7 @@ beforeAll(async () => {
 const on = { ...KEY_PLAY_DEFAULTS, on: true };
 
 describe("3D field key plays", () => {
-	test("a reel in order: the run out, the plays, the finish, to about the length asked", () => {
+	test("a reel in order: the opening kickoff, the plays, the finish, to about the length asked", () => {
 		for (const minutes of [2, 5]) {
 			const plan = planFieldKeyPlays(
 				tl,

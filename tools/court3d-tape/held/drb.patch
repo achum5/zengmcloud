@@ -1,0 +1,422 @@
+diff --git a/src/ui/views/LiveGame/court3d/director.ts b/src/ui/views/LiveGame/court3d/director.ts
+index 6b417b35b..2a27c549d 100644
+--- a/src/ui/views/LiveGame/court3d/director.ts
++++ b/src/ui/views/LiveGame/court3d/director.ts
+@@ -245,6 +245,8 @@ export type Act = {
+ 	// Or leaning off balance to his left or right, away from a hand right up
+ 	// at it.
+ 	lean?: "L" | "R";
++	// A rebound ripped down one-handed (see boardOne).
++	oneHand?: true;
+ 	// Only for show, and in a stretch the picture runs through too fast to
+ 	// see more than a frame or two of it: left out of the picture (see
+ 	// flashes).
+@@ -919,6 +921,9 @@ const TIP_TAP: [number, number][] = [
+ const RIVAL_UP = 4;
+ const RIVAL_IN = 9;
+ const RIVAL_STEP_MS = 450;
++// How often he does, from RIVAL_UP and from further off (an average man on
++// the glass).
++const RIVAL_GOES: [number, number] = [0.65, 0.35];
+ // A defender whose man stays out goes in to the glass and puts a body on the
+ // nearest man coming in that nobody else has - from this far off (feet).
+ const GLASS_FIND = 10;
+@@ -935,6 +940,7 @@ const SCRAMBLE_MS = 450;
+ const SCRAMBLE_MAX = 1400;
+ const SCRAMBLE_STEP = 4;
+ const SCRAMBLE_NEAR = 2.6;
++const SCRAMBLE_SWIPE = 3.5;
+ // Men going in to the glass end up at least this far apart (feet) - each
+ // tried this much further round the rim (radians) till he is.
+ const GLASS_APART = 3;
+@@ -1248,7 +1254,24 @@ const SNATCH_OUT = SNATCH_AT.f;
+ // - a typical player's hands are this high over his feet (feet), and this far
+ // out in front of him.
+ const BOARD_TOP = 400;
++// Of the boards a man goes up and gets, this share ripped down one-handed - for a man the game has no ratings for (see
++// goUpFor: a good rebounder more, a poor one less).
++const ONE_HAND_BOARD = 0.2;
++// The outlet off his own board up over his head: how often, for a ball
++// handler and for anyone else; only within this long of coming down with
++// it (ms), and not a short one (ft).
++const OUTLET_OVER: [number, number] = [0.35, 0.7];
++const OUTLET_OVER_MS = 2500;
++const OUTLET_OVER_LEAST = 8;
++// Off his board with a man of theirs this near him (ft), he pivots away -
++// turned this far off the man he looks for (radians), this long (ms) - if
++// he has this long before he throws it (ms).
++const OUTLET_PRESS = 3;
++const OUTLET_PIVOT_TURN = 1.6;
++const OUTLET_PIVOT_MS = 450;
++const OUTLET_PIVOT_LEAST = 700;
+ const BOARD_AT = releaseAt("board", BOARD_TOP / REBOUND_MS);
++const BOARD_ONE_AT = releaseAt("boardOne", BOARD_TOP / REBOUND_MS);
+ const BOARD_HANDS = BOARD_AT.u;
+ const BOARD_OUT = BOARD_AT.f;
+ // Up for one he only gets a hand to - knocked away, not taken in: the same
+@@ -6306,6 +6329,10 @@ class Director {
+ 		style?: PassStyle,
+ 		// Handed over at a dead ball - not a pass in play.
+ 		handOff = false,
++		// Up over the top unless it is a lob or a short one (see outlet) -
++		// the draw for the kind still made, so the rest of the game runs on
++		// the same.
++		overTop = false,
+ 	): number {
+ 		// Never back over half court: a man left back there comes up over it
+ 		// for the ball first.
+@@ -6329,7 +6356,7 @@ class Director {
+ 		const b = this.posOf(to);
+ 		const d = dist(a, b);
+ 		const toward = b.x >= a.x ? 1 : -1;
+-		const kind: PassStyle =
++		const drawn: PassStyle =
+ 			style ??
+ 			// (Up over the top mostly to skip it across the floor.)
+ 			(d >= 22 && this.rng() < (d >= 28 ? 0.55 : 0.2)
+@@ -6337,6 +6364,8 @@ class Director {
+ 				: d >= 9 && d < 22 && this.rng() < 0.3
+ 					? "bounce"
+ 					: "chest");
++		const kind: PassStyle =
++			overTop && drawn !== "lob" && d >= OUTLET_OVER_LEAST ? "overhead" : drawn;
+ 		// (A good passer puts zip on it; a poor one floats it.)
+ 		const zip = this.byPassing(from, 1, 1.15, 0.9);
+ 		const flight =
+@@ -6727,17 +6756,61 @@ class Director {
+ 		const there = this.go(to, meet, t, speed, "run");
+ 		const pass = Math.max(t + 150, there - 450);
+ 		const still = Math.max(t, this.free.get(from) ?? 0);
+-		const look = Math.min(pass, still + 800);
++		const seg = this.ball.findLast((s) => s.t0 <= still);
++		const onDribble =
++			seg?.kind === "hold" && seg.pid === from && seg.style !== "hold";
++		// Come down with it himself, and still with it in his hands, he
++		// mostly throws it out up over his head - a big more than a guard -
++		// not a chest pass out of the crowd under the rim.
++		const board = this.track(from)?.acts.findLast(
++			(x) => x.anim === "board" && x.t0 < still + 100,
++		);
++		let overTop =
++			!onDribble &&
++			board !== undefined &&
++			still - board.t1 < OUTLET_OVER_MS &&
++			hash01(from * 13 + 7, Math.round(board.t0)) <
++				(this.handles(from) ? OUTLET_OVER[0] : OUTLET_OVER[1]);
++		// (Up out of the chin, the ball is up already: up over his head and
++		// away no later than a chest pass would be - the windup started that
++		// much sooner.)
++		const throwAt = overTop ? Math.max(still, pass - OVERHEAD_WIND) : pass;
++		const look = Math.min(throwAt, still + 800);
+ 		if (look - still > 200) {
+ 			// Looking up the floor for him - with it in his hands, or still on
+ 			// his dribble if he is (not holding it with the ball bouncing on
+ 			// under him).
+-			const seg = this.ball.findLast((s) => s.t0 <= still);
+-			if (seg?.kind === "hold" && seg.pid === from && seg.style !== "hold") {
++			if (onDribble) {
+ 				this.turn(from, still, attackDir(team));
+ 				this.lookAt(from, still, { ...meet });
+ 			} else {
+-				this.act(from, "hold", still, look, {
++				// A man of theirs right up on him as he comes down with it, he
++				// pivots away from him first - a shoulder into him, the ball
++				// chinned on the far side - then round to the man coming for
++				// it.
++				const A = this.posAt(from, still);
++				const press = board
++					? this.slots(other(this.teamOf(from)))
++							.map((pid) => this.posAt(pid, still))
++							.filter((D) => dist(D, A) < OUTLET_PRESS)
++							.sort((x, y) => dist(x, A) - dist(y, A))[0]
++					: undefined;
++				let from0 = still;
++				if (press && look - still >= OUTLET_PIVOT_LEAST) {
++					const toward = Math.atan2(meet.y - A.y, meet.x - A.x);
++					let rel = Math.atan2(press.y - A.y, press.x - A.x) - toward;
++					rel -= Math.round(rel / (2 * Math.PI)) * 2 * Math.PI;
++					const yaw = toward - Math.sign(rel || 1) * OUTLET_PIVOT_TURN;
++					from0 = still + OUTLET_PIVOT_MS;
++					this.act(from, "hold", still, from0, {
++						face: attackDir(team),
++						look: {
++							x: A.x + Math.cos(yaw) * 10,
++							y: A.y + Math.sin(yaw) * 10,
++						},
++					});
++				}
++				this.act(from, "hold", from0, look, {
+ 					face: attackDir(team),
+ 					look: { ...meet },
+ 				});
+@@ -6749,6 +6822,7 @@ class Director {
+ 			const u = unitVec(h, meet);
+ 			const k = Math.min(dist(h, meet) - 6, ((pass - look) / 1000) * 8);
+ 			if (k > 1) {
++				overTop = false;
+ 				this.hold(from, look, "dribble");
+ 				this.go(
+ 					from,
+@@ -6760,7 +6834,14 @@ class Director {
+ 				);
+ 			}
+ 		}
+-		return this.passTo(from, to, pass);
++		return this.passTo(
++			from,
++			to,
++			overTop ? throwAt : pass,
++			undefined,
++			false,
++			overTop,
++		);
+ 	}
+ 
+ 	private inBackcourt(team: Side, p: Pt): boolean {
+@@ -13621,6 +13702,9 @@ class Director {
+ 				} else {
+ 					this.goBy(f, F, from, by, "run", -faceRim as 1 | -1, BURST);
+ 				}
++				// (His own run at him, and the way there - not reworked later to
++				// follow his man, and left short of him.)
++				this.ownRun(f, by, from - 1500);
+ 				this.act(f, "hack", release - 250, release - 250 + HACK_MS, {
+ 					face: -faceRim as 1 | -1,
+ 					look: { ...P1 },
+@@ -15813,6 +15897,9 @@ class Director {
+ 		contested: boolean,
+ 		// Only a hand to it ("rebound"), not taken in.
+ 		anim: "board" | "rebound" = "board",
++		// Ripped down one-handed - with his left, or his right (see
++		// reboundOff).
++		oneHand?: "L" | "R",
+ 	) {
+ 		const rim = rimPt(team);
+ 		// Back to him off his own shot that quickly, he goes up for it again
+@@ -15852,6 +15939,8 @@ class Director {
+ 				peak,
+ 			],
+ 			reach: true,
++			...(anim === "board" && oneHand ? { oneHand: true as const } : {}),
++			...(anim === "board" && oneHand === "L" ? { mirror: true as const } : {}),
+ 		});
+ 		this.free.set(r, Math.max(this.free.get(r) ?? 0, t + REBOUND_MS));
+ 		if (contested) {
+@@ -15934,7 +16023,16 @@ class Director {
+ 		const rival = this.slots(other(this.teamOf(r)))
+ 			.filter((p) => !busy(p) && far(p) <= RIVAL_IN)
+ 			.sort((a, b) => far(a) - far(b))[0];
+-		if (rival === undefined) {
++		// (Not every time: most boards nobody of theirs gets up with him -
++		// less often from further off, and the better a man on the glass,
++		// the more often he does.)
++		if (
++			rival === undefined ||
++			hash01(rival * 7 + 3, Math.round(up)) >=
++				(far(rival) > RIVAL_UP
++					? this.rebOdds(rival, RIVAL_GOES[1], [0.15, 0.55])
++					: this.rebOdds(rival, RIVAL_GOES[0], [0.35, 0.9]))
++		) {
+ 			return;
+ 		}
+ 		let t = up;
+@@ -15994,7 +16092,19 @@ class Director {
+ 		out?: (at: Pt3, t: number) => number,
+ 	): number {
+ 		const rim = rimPt(team);
+-		const hands = out ? TIP_AT : BOARD_AT;
++		// (A man who goes and gets it rips it down one-handed now and then -
++		// the better a rebounder, the more often - with either hand: taken
++		// in it up over his shoulder, out to that side of him.)
++		const oneHand: "L" | "R" | undefined =
++			!out &&
++			hash01(r * 11 + 5, Math.round(t)) <
++				this.rebOdds(r, ONE_HAND_BOARD, [0.03, 0.3])
++				? hash01(r * 17 + 9, Math.round(t)) < 0.5
++					? "L"
++					: "R"
++				: undefined;
++		const hands = out ? TIP_AT : oneHand ? BOARD_ONE_AT : BOARD_AT;
++		const aside = oneHand === "L" ? -hands.s : hands.s;
+ 		// He reads where it is coming down off the shot, and goes - once he
+ 		// is done with what he was doing (up contesting it, say, or up with
+ 		// the shot himself; out of a box-out he just comes), off any run he
+@@ -16045,10 +16155,34 @@ class Director {
+ 			}
+ 			const top = t + ms;
+ 			const up = top - BOARD_TOP;
+-			const spot = this.boardSpot(r, c, unitVec(rim, c), hands.f, up, top, ms);
++			// (In the one hand, out to that side of him: he stands off it
++			// that much the other way.)
++			const F = unitVec(c, rim);
++			let spot = this.boardSpot(
++				r,
++				{ x: c.x - F.y * aside, y: c.y + F.x * aside },
++				unitVec(rim, c),
++				hands.f,
++				up,
++				top,
++				ms,
++			);
+ 			if (!spot) {
+ 				continue;
+ 			}
++			// (Facing the rim from there, his hand just where it comes down -
++			// not swung off it, stood off to the side of it.)
++			for (let k = 0; aside !== 0 && k < 3; k++) {
++				const G = unitVec(spot, rim);
++				const hand = {
++					x: spot.x + G.x * hands.f + G.y * aside,
++					y: spot.y + G.y * hands.f - G.x * aside,
++				};
++				spot = clampPt({
++					x: spot.x + c.x - hand.x,
++					y: spot.y + c.y - hand.y,
++				});
++			}
+ 			const f = (rim.x >= spot.x ? 1 : -1) as 1 | -1;
+ 			// Off the floor in time to be at the top of his jump as it gets
+ 			// there - and there by just before then: the last stride of his
+@@ -16087,6 +16221,7 @@ class Director {
+ 				h - hands.u,
+ 				!blocked,
+ 				out ? "rebound" : "board",
++				oneHand,
+ 			);
+ 			if (out) {
+ 				const at = { ...c, z: h };
+@@ -16150,6 +16285,14 @@ class Director {
+ 			Math.max(tc - SCRAMBLE_MAX, loose + READ_MS),
+ 		);
+ 		const mine = this.teamOf(r);
++		// (A hand at it from only the nearest of theirs, and only one near
++		// enough to get it there - not every one of them in the lane
++		// swiping at it.)
++		const near = (p: number) => dist(this.posAt(p, t0), at);
++		const swipes = this.slots(other(mine))
++			.filter((p) => near(p) <= SCRAMBLE_SWIPE)
++			.sort((a, b) => near(a) - near(b));
++		let swiped = false;
+ 		for (const p of [...this.slots(0), ...this.slots(1)]) {
+ 			const tr = this.track(p);
+ 			if (
+@@ -16190,7 +16333,8 @@ class Director {
+ 					BURST,
+ 				);
+ 			}
+-			if (this.teamOf(p) !== mine) {
++			if (this.teamOf(p) !== mine && !swiped && swipes[0] === p) {
++				swiped = true;
+ 				this.act(p, "reach", tc - 220, tc + 260, {
+ 					face,
+ 					look: { x: at.x, y: at.y },
+@@ -27431,7 +27575,7 @@ class Director {
+ 		}
+ 		const t0Of = (x: { tr: Track; k: number }) => x.tr.moves[x.k]!.t0;
+ 		starts.sort((a, b) => t0Of(a) - t0Of(b));
+-		for (let i = 0; i < starts.length;) {
++		for (let i = 0; i < starts.length; ) {
+ 			let n = 1;
+ 			while (
+ 				i + n < starts.length &&
+diff --git a/src/ui/views/LiveGame/court3d/director2.test.ts b/src/ui/views/LiveGame/court3d/director2.test.ts
+index 3b6e53ad3..d8ad0ba63 100644
+--- a/src/ui/views/LiveGame/court3d/director2.test.ts
++++ b/src/ui/views/LiveGame/court3d/director2.test.ts
+@@ -1279,7 +1279,7 @@ describe("3D director", () => {
+ 					// Down with it in both hands, not yet dribbling or passing.
+ 					for (const t of [a.t1 - 300, a.t1 - 20]) {
+ 						const st = evalPlayer(tl, pid, t);
+-						assert.strictEqual(st.anim, "board", `${seed} ${t}`);
++						assert.include(["board", "boardOne"], st.anim, `${seed} ${t}`);
+ 						assert.isTrue(st.holding, `${seed} ${pid} at ${t}`);
+ 						assert.strictEqual(st.z, 0, `${seed} ${t}`);
+ 					}
+diff --git a/src/ui/views/LiveGame/court3d/evaluate.ts b/src/ui/views/LiveGame/court3d/evaluate.ts
+index 2aa01939b..a4250b73e 100644
+--- a/src/ui/views/LiveGame/court3d/evaluate.ts
++++ b/src/ui/views/LiveGame/court3d/evaluate.ts
+@@ -3131,7 +3131,9 @@ const doingNow = (
+ 							? "shootLeanL"
+ 							: "shootLeanR"
+ 						: shotWith(pid, act.arms)
+-				: act.anim;
++				: act.anim === "board" && act.oneHand
++					? "boardOne"
++					: act.anim;
+ 		const a = ANIMS[anim];
+ 		// (A loop on the same beat as when he does it standing of his own
+ 		// accord - so one held for a while and then just stood in, a
+diff --git a/src/ui/views/LiveGame/court3d/poses.ts b/src/ui/views/LiveGame/court3d/poses.ts
+index 7a60e661d..606a613cd 100644
+--- a/src/ui/views/LiveGame/court3d/poses.ts
++++ b/src/ui/views/LiveGame/court3d/poses.ts
+@@ -5621,6 +5621,47 @@ export const ANIMS = {
+ 			[1, P.chin],
+ 		],
+ 	},
++	// The same ripped down one-handed - the near arm all the way up for it,
++	// the other coming in to it on the way down - and chinned.
++	boardOne: {
++		kind: "act",
++		n: 9,
++		keys: [
++			[0, P.gather],
++			[
++				0.26,
++				pose({
++					hipN: -4,
++					kneeN: 20,
++					hipF: 10,
++					kneeF: 40,
++					shN: 176,
++					elN: 2,
++					shF: 96,
++					elF: 64,
++					lean: 0,
++					toe: 1,
++				}),
++			],
++			[
++				0.5,
++				pose({
++					hipN: -6,
++					kneeN: 24,
++					hipF: 10,
++					kneeF: 42,
++					shN: 138,
++					elN: 48,
++					shF: 118,
++					elF: 66,
++					lean: 3,
++					toe: 0.6,
++				}),
++			],
++			[0.66, P.chin],
++			[1, P.chin],
++		],
++	},
+ 	// A loose ball taken out of the air on the hop: down to it, reaching
+ 	// out with both hands - and chinned.
+ 	snatch: {
+@@ -8003,6 +8044,7 @@ const GRIPS: Partial<Record<AnimName, Grip>> = {
+ 	windmill: "cup",
+ 	hook: "palm",
+ 	reverseLayup: "palm",
++	boardOne: "palm",
+ 	passPush: "push",
+ 	passBouncePush: "push",
+ 	passBehind: "pull",
+diff --git a/src/ui/views/LiveGame/court3d/sculpt.ts b/src/ui/views/LiveGame/court3d/sculpt.ts
+index caa63043f..674fcba73 100644
+--- a/src/ui/views/LiveGame/court3d/sculpt.ts
++++ b/src/ui/views/LiveGame/court3d/sculpt.ts
+@@ -701,7 +701,7 @@ const splayed = (st: PlayerState, which: "R" | "L", h: V3) =>
+ 		st.phase > LOW_FIVE[0] &&
+ 		st.phase < LOW_FIVE[1]);
+ // Up for a board: both hands spread and cupped for the ball.
+-const REACH = new Set<string>(["board", "rebound"]);
++const REACH = new Set<string>(["board", "boardOne", "rebound"]);
+ const REACH_UP = 0.3;
+ // AN OFFICIAL'S HANDS, as the signal has them: the whistle a fist straight
+ // up; a charge a fist punched out; a travel the fists rolled; a three

@@ -3,22 +3,14 @@ import { adsFor } from "./arenaAds.ts";
 import {
 	useCallback,
 	useEffect,
-	useLayoutEffect,
 	useMemo,
 	useRef,
 	useState,
 	type ReactNode,
 } from "react";
 import { useLocal } from "../../../util/local.ts";
-import { toWorker } from "../../../util/toWorker.ts";
-import type { PlayerFace } from "../../../util/playerFaces.ts";
-import type {
-	ArenaLooks,
-	ReplayLooks,
-	ScoreBugStyle,
-} from "../../../../common/types.ts";
+import type { ArenaLooks, ReplayLooks } from "../../../../common/types.ts";
 import LiveCourt from "../LiveCourt.tsx";
-import { TeamLogoInline } from "../../../components/TeamLogoInline.tsx";
 import {
 	paintBench,
 	paintBoards,
@@ -42,9 +34,14 @@ import {
 	type Rig,
 } from "./camera.ts";
 import { courtTexture, edgeColor } from "./courtTexture.ts";
-import { FaceLoader } from "./FaceLoader.tsx";
-import { adjust, artFor, makeResolution } from "./resolution.ts";
-import { drawn, due, FAST, makePace } from "./pace.ts";
+import {
+	adjust,
+	fineNow,
+	makeFine,
+	makeResolution,
+	sizeCanvas,
+} from "./resolution.ts";
+import { FAST, makePace } from "./pace.ts";
 import { makeFarm } from "./farm.ts";
 import { makeScratch, makeSpriteCache, releaseSprites } from "./sprite.ts";
 import {
@@ -53,21 +50,37 @@ import {
 	gameClockAt,
 	shotClockAt,
 } from "./clock.ts";
-import {
-	clipDipAt,
-	type CourtPlayer,
-	type CourtTimeline,
-	type Stakes,
-} from "./director.ts";
+import { clipDipAt, type CourtPlayer, type CourtTimeline } from "./director.ts";
 import { crewAt, crewFor } from "./crew.ts";
 import { headColors, loadHead, profileOf, type HeadSprite } from "./faces.ts";
 import { arenaSpecFor } from "./arenaSpec.ts";
 import { crowdFaces, type CrowdFace } from "./crowdFaces.ts";
 import { gearFor, kitsFor, shade, type Look } from "./figure.ts";
-import { dressKit, kitArtOf, loadKitPicture, type KitArt } from "./kitArt.ts";
+import { dressKit } from "./kitArt.ts";
 import { logoPicture } from "./logoPicture.ts";
 import { COURT_W, type Side } from "./geometry.ts";
 import { eventsMatchRoster } from "./rosterMatch.ts";
+import { Caption, Overlays } from "./Overlays.tsx";
+import { bugTeamOf, GameBug, PictureBox, PictureCanvas } from "./Picture.tsx";
+import {
+	boxOf,
+	type Box,
+	captionOf,
+	darkAndPace,
+	dipOf,
+	NARROW_W,
+	runFrames,
+	holdReady,
+	setOpacity,
+	showCaption,
+	showWipe,
+	useStaged,
+	useStakes,
+	useAdPictures,
+	useFaces,
+	useKitArts,
+	useViewSize,
+} from "./broadcast.ts";
 import { spawnCourtWorker, stageCourt } from "./stageCourt.ts";
 import {
 	stageWarmup,
@@ -112,15 +125,12 @@ import {
 	isBreak,
 	isFinal,
 	SHOT_LOW,
-	SHOT_LOW_INK,
 	shotClockText,
 } from "./scoreBug.ts";
-import { ScoreBug, type BugRefs } from "./ScoreBug.tsx";
-import { CustomScoreBug } from "./CustomScoreBug.tsx";
+import { seriesLine } from "../gamecast/seriesLine.ts";
+import { bugShown, useBugRefs, writeBug } from "./bugWriter.ts";
 import { IntroCard, IntroTitle } from "./IntroCard.tsx";
 import { callAt } from "./intro.ts";
-import { STARTING_NUM_TIMEOUTS } from "../../../../common/constants.ts";
-import { helpers } from "../../../util/helpers.ts";
 import {
 	aimFor,
 	arenaAim,
@@ -147,59 +157,8 @@ import {
 // In close on a man, the building behind him this far out of focus
 // (picture pixels - see drawFrame).
 const CLOSE_SOFT = 1.1;
-// How long the picture dips to black either side of a cut (timeline ms).
-const DIP_MS = 130;
-// Up out of black onto the next of the key plays (ms).
-const KEY_DIP_MS = 320;
-// The longest it is held black for the picture to be ready (ms).
-const KEY_HOLD_MS = 900;
-// A replay cut from one of its cameras to the next (see replayRig): a
-// flash of white, and the new angle up out of it over this long (ms) - held
-// white, as black is, while the men in it are made ready at their new size.
-const FLASH_MS = 260;
-// THE WIPE into a replay and out of it (see playback's wipeAt): a band in
-// the colors of the team whose play it is, its logo in the middle, slanting,
-// sweeping across
-// the picture - this much wider than it (%: wide enough to cover all of it,
-// the slant and all, while it is near halfway across - see STING_COVERS),
-// slanting this far (deg).
-const STING_W = 140;
-const STING_SLANT = 18;
-// WHAT IS OVER THE PICTURE: the score bug along its foot and the line of
-// play-by-play across its top, each's box as shares of the picture (see
+// WHAT IS OVER THE PICTURE: the score bug along its foot (see boxOf, and
 // camera.ts's dodgeFor).
-const boxOf = (
-	wrap: HTMLElement | null,
-	el: Element | null | undefined,
-): (Cover & { y1: number }) | undefined => {
-	if (!wrap || !el) {
-		return undefined;
-	}
-	const w = wrap.getBoundingClientRect();
-	const b = el.getBoundingClientRect();
-	if (w.width <= 0 || w.height <= 0 || b.width <= 0 || b.height <= 0) {
-		return undefined;
-	}
-	return {
-		x0: (b.left - w.left) / w.width,
-		x1: (b.right - w.left) / w.width,
-		y0: (b.top - w.top) / w.height,
-		y1: (b.bottom - w.top) / w.height,
-	};
-};
-// The line across the top goes faint while the ball is behind it - a shot
-// arcing up from the far side of the floor - and comes back as it drops;
-// and is off the picture through a replay, the way a broadcast shows one
-// clean but for its REPLAY tag (the rim, seen from under it, is up there).
-const CAPTION_FAINT = 0.18;
-const captionOver = (
-	cap: Cover & { y1: number },
-	at: { x: number; y: number },
-): boolean =>
-	at.x > cap.x0 - 0.02 &&
-	at.x < cap.x1 + 0.02 &&
-	at.y > cap.y0 - 0.02 &&
-	at.y < cap.y1 + 0.03;
 const bugBoxOf = (wrap: HTMLElement | null, holder: HTMLElement | null) =>
 	boxOf(wrap, holder?.firstElementChild);
 // The score bug: what the camera keeps the man with the ball out from
@@ -211,16 +170,9 @@ const coversOf = (
 // Whether a game opens with its starting lineups (see intro.ts).
 const LINEUP_INTROS = false;
 
-// How long the play-by-play may disagree with the roster before the court
-// gives up on the game (ms).
-const ROSTER_WAIT = 5000;
 // Drawing a frame in under this long (ms, smoothed), there is time for his
-// poses in finer steps (see sprite.ts); over that, back to the usual ones -
-// and not tried again for a while.
+// poses in finer steps (see fineNow).
 const FINE_ON_MS = 5;
-const FINE_OFF_MS = 11;
-const FINE_RETRY_MS = 20_000;
-const FINE_SETTLE_MS = 3000;
 // The most of a frame (ms) given to drawing players in poses not drawn
 // before; over that, a man waits a frame for his new one (see sprite.ts).
 const SPRITE_BUDGET_MS = 6;
@@ -314,13 +266,14 @@ const Court3D = ({
 	const season: number | undefined = boxScore?.season;
 	// A saved replay remembers how everyone looked that night.
 	const looksThen: ReplayLooks | undefined = boxScore?.replayLooks;
+	const teamsNow: unknown = boxScore?.teams;
 	const raw: any[] = useMemo(() => {
-		const teams: any[] = Array.isArray(boxScore?.teams) ? boxScore.teams : [];
+		const teams: any[] = Array.isArray(teamsNow) ? teamsNow : [];
 		return teams.map((t) => {
 			const then = looksThen?.teams[t?.tid];
 			return then ? { ...t, ...then, court: then.court } : t;
 		});
-	}, [boxScore?.teams, looksThen]);
+	}, [teamsNow, looksThen]);
 	// Display order, same as the 2D court: [away (attacks left), home].
 	const away = raw[1];
 	const home = raw[0];
@@ -360,95 +313,45 @@ const Court3D = ({
 
 	// The starting lineups called out before the opening tip (see intro.ts):
 	// off for now, kept to come back to.
-	// A playoff game's stakes, as they stood going into it - the box score's
-	// series records take this game in once it is over, so they are read
-	// once, and one won by now is taken back out.
-	const stakes = useMemo((): Stakes | undefined => {
-		const bs = boxScore as
-			| {
-					playoffs?: boolean;
-					finals?: boolean;
-					numGamesToWinSeries?: number;
-					gameOver?: boolean;
-					won?: { tid?: number };
-					teams?: { tid?: number; playoffs?: { won?: number } }[];
-			  }
-			| undefined;
-		if (!bs?.playoffs || typeof bs.numGamesToWinSeries !== "number") {
-			return undefined;
-		}
-		const won = (raw: 0 | 1) => {
-			const t = bs.teams?.[raw];
-			const w = Number(t?.playoffs?.won ?? 0);
-			return bs.gameOver && bs.won?.tid === t?.tid ? w - 1 : w;
-		};
-		// (Raw team 0 is home, side 1.)
-		return {
-			won: [won(1), won(0)],
-			toWin: bs.numGamesToWinSeries,
-			finals: !!bs.finals,
-		};
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [gid]);
+	// A playoff game's stakes, as they stood going into it (see stakesOf).
+	const stakes = useStakes(gid, {
+		playoffs: boxScore?.playoffs,
+		finals: boxScore?.finals,
+		numGamesToWinSeries: boxScore?.numGamesToWinSeries,
+		gameOver: boxScore?.gameOver,
+		won: boxScore?.won,
+		teams: boxScore?.teams,
+	});
 	const introKind: "playoffs" | "regular" | undefined = LINEUP_INTROS
 		? boxScore?.playoffs
 			? "playoffs"
 			: "regular"
 		: undefined;
-	// The game staged, off the page's thread (see stageCourt.ts) - the court
-	// stays dark until it is.
-	const [timeline, setTimeline] = useState<CourtTimeline | undefined>();
-	const onFailRef = useRef(onFail);
-	onFailRef.current = onFail;
-	useEffect(() => {
-		setTimeline(undefined);
-		if (!events || events.length === 0) {
-			return;
-		}
-		// THE EVENTS HAVE TO BE THIS GAME'S. When the game on this page changes
-		// under it - a league-mate starts another game while this device is
-		// following one - the new game's events can arrive a render ahead of its
-		// box score, and staging them against the previous game's roster puts
-		// players on the floor that the court has never heard of (the field
-		// report: a crash in the free throw lineup). Wait for the two to agree -
-		// and if they never do, give the game back to the page.
-		if (!eventsMatchRoster(events, roster)) {
-			const id = setTimeout(() => onFailRef.current?.(), ROSTER_WAIT);
-			return () => clearTimeout(id);
-		}
-		let alive = true;
-		stageCourt({
-			events,
-			players: roster,
-			gid,
-			gender,
-			intro: introKind,
-			stakes,
-		}).then(
-			(tl) => {
-				if (alive) {
-					setTimeline(tl);
-					try {
-						onShotsRef.current?.(shotSpots(tl));
-					} catch {
-						// The chart just doesn't show.
-					}
-				}
-			},
-			(error: unknown) => {
-				// A broken staging must not take the whole page down with it, or
-				// leave it waiting on a court that will never play: the
-				// play-by-play and box score go on without it.
-				console.error("3D court failed to compile", error);
-				if (alive) {
-					onFailRef.current?.();
-				}
-			},
-		);
-		return () => {
-			alive = false;
-		};
-	}, [events, roster, gid, gender, introKind, stakes]);
+	// The game staged, off the page's thread (see stageCourt.ts and the
+	// engine's useStaged) - the court on the warm-ups until it is.
+	const { timeline } = useStaged(
+		events,
+		roster,
+		`${gid}|${gender}|${introKind}|${JSON.stringify(stakes ?? null)}`,
+		() =>
+			stageCourt({
+				events: events!,
+				players: roster,
+				gid,
+				gender,
+				intro: introKind,
+				stakes,
+			}),
+		"court",
+		onFail,
+		(tl) => {
+			try {
+				onShotsRef.current?.(shotSpots(tl));
+			} catch {
+				// The chart just doesn't show.
+			}
+		},
+	);
 	// While it is: the two teams out warming up at their baskets - not a
 	// black screen. (Staged here: it takes no time at all.)
 	const pregame = useMemo((): Warmup | undefined => {
@@ -470,6 +373,8 @@ const Court3D = ({
 	);
 	// Key plays only: the stretches of the game shown.
 	const numPeriods: number = boxScore?.numPeriods ?? 4;
+	const spread: unknown = boxScore?.spread;
+	const neutralSite = !!boxScore?.neutralSite;
 	const keyPlan = useMemo(
 		(): KeySegment[] | undefined =>
 			timeline && events && keyPlays?.settings.on
@@ -479,21 +384,11 @@ const Court3D = ({
 						mine: keyPlays.mine,
 						// (Who was expected to win, by how much - see winProb.ts. No
 						// home team on a neutral floor.)
-						...(typeof boxScore?.spread === "number"
-							? { spread: boxScore.spread }
-							: {}),
-						...(boxScore?.neutralSite ? { edge: 0 } : {}),
+						...(typeof spread === "number" ? { spread } : {}),
+						...(neutralSite ? { edge: 0 } : {}),
 					})
 				: undefined,
-		[
-			timeline,
-			events,
-			keyPlays,
-			rate,
-			numPeriods,
-			boxScore?.spread,
-			boxScore?.neutralSite,
-		],
+		[timeline, events, keyPlays, rate, numPeriods, spread, neutralSite],
 	);
 	// What this court staged, for whoever plays along with it to check
 	// against their own (see stagedAs).
@@ -522,47 +417,9 @@ const Court3D = ({
 		[gid],
 	);
 
-	// Each side's uniform drawn from a picture, if its team has one: the
-	// visitors' away one, the home team's home one. A replay wears the ones
-	// worn that night - or, where one of those has since been replaced, the
-	// team's own now.
-	const [arts, setArts] = useState<[KitArt?, KitArt?]>([]);
-	useEffect(() => {
-		const now: any[] = Array.isArray(boxScore?.teams) ? boxScore.teams : [];
-		const choices = [
-			[away?.jerseySkins?.away, now[1]?.jerseySkins?.away],
-			[home?.jerseySkins?.home, now[0]?.jerseySkins?.home],
-		].map((ids) => ids.filter((id): id is string => typeof id === "string"));
-		const ids = [...new Set(choices.flat())];
-		if (ids.length === 0) {
-			setArts([]);
-			return;
-		}
-		let alive = true;
-		void (async () => {
-			const urls = await toWorker("main", "getJerseySkins", ids);
-			const made = await Promise.all(
-				choices.map(async (side) => {
-					const id = side.find((choice) => urls?.[choice] !== undefined);
-					if (id === undefined) {
-						return undefined;
-					}
-					try {
-						return kitArtOf(await loadKitPicture(urls[id]!), id);
-					} catch {
-						return undefined;
-					}
-				}),
-			);
-			if (alive) {
-				setArts([made[0], made[1]]);
-			}
-		})();
-		return () => {
-			alive = false;
-		};
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [gid]);
+	// Each side's uniform drawn from a picture, if its team has one (see
+	// useKitArts).
+	const arts = useKitArts(gid, boxScore?.teams, away, home);
 	const dressed = useMemo(
 		() => [dressKit(kits[0], arts[0]), dressKit(kits[1], arts[1])] as const,
 		[kits, arts],
@@ -590,34 +447,7 @@ const Court3D = ({
 
 	// The team's own pictures for its arena ads, once loaded (see adsFor).
 	const ownAds: CourtStyle["arenaAds"] = home?.court?.arenaAds;
-	const adURLs = (ownAds ?? [])
-		.map((a) => a.imageURL)
-		.filter((u): u is string => !!u)
-		.join("\n");
-	const [adPictures, setAdPictures] = useState<Map<string, HTMLCanvasElement>>(
-		() => new Map(),
-	);
-	useEffect(() => {
-		const urls = adURLs ? adURLs.split("\n") : [];
-		if (urls.length === 0) {
-			return;
-		}
-		let alive = true;
-		void Promise.all(urls.map((u: string) => logoPicture(u))).then((made) => {
-			if (alive) {
-				const got = new Map<string, HTMLCanvasElement>();
-				made.forEach((c, i) => {
-					if (c) {
-						got.set(urls[i]!, c);
-					}
-				});
-				setAdPictures(got);
-			}
-		});
-		return () => {
-			alive = false;
-		};
-	}, [adURLs]);
+	const adPictures = useAdPictures(ownAds);
 
 	// The building, painted once a game.
 	// Faces for the crowd, made in the background (see crowdFaces): the stands
@@ -759,20 +589,14 @@ const Court3D = ({
 	const paintRef = useRef(painted);
 	paintRef.current = painted;
 
-	// Faces arrive asynchronously; until then a player has a plain head and an
-	// average build.
-	const faces = useRef(new Map<number, PlayerFace | null>());
+	// The players' faces (see useFaces) - and each one's head drawn from his.
 	const heads = useRef(
 		new Map<number, { sprite?: HeadSprite; skin?: string }>(),
 	);
-	const [facesVersion, setFacesVersion] = useState(0);
-	const onFace = useCallback(
-		(pid: number, face: PlayerFace | null) => {
-			if (faces.current.get(pid) === face) {
-				return;
-			}
-			faces.current.set(pid, face);
-			setFacesVersion((v) => v + 1);
+	const { faces, facesVersion, onFace } = useFaces(
+		looksThen,
+		roster,
+		(pid, face, current, bump) => {
 			// A photo face is drawn as a silhouette - no head to load.
 			if (face?.imgURL) {
 				heads.current.delete(pid);
@@ -781,28 +605,13 @@ const Court3D = ({
 			const team = roster.find((p) => p.pid === pid)?.team;
 			const colors = team === 0 ? away?.colors : home?.colors;
 			void loadHead(face?.face, face?.colors ?? colors).then((head) => {
-				if (faces.current.get(pid) === face) {
+				if (current()) {
 					heads.current.set(pid, head);
-					setFacesVersion((v) => v + 1);
+					bump();
 				}
 			});
 		},
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-		[roster],
 	);
-
-	// A replay's faces are already here: no need to ask for today's.
-	useEffect(() => {
-		if (!looksThen) {
-			return;
-		}
-		for (const p of roster) {
-			const then = looksThen.players[p.pid];
-			if (then) {
-				onFace(p.pid, then);
-			}
-		}
-	}, [looksThen, roster, onFace]);
 
 	// (Each man's look kept from one time to the next unless what makes it
 	// has changed: his pictures are kept by his look, and a new one for
@@ -949,24 +758,11 @@ const Court3D = ({
 	// The picture's size: 16:9, or 4:3 on a phone so the players stay big.
 	const wrapRef = useRef<HTMLDivElement | null>(null);
 	const bugRef = useRef<HTMLDivElement | null>(null);
+	// The score bug's clocks, fouls and possession marker (see writeBug).
+	const bugRefs = useBugRefs();
 	const canvasRef = useRef<HTMLCanvasElement | null>(null);
-	const [size, setSize] = useState({ w: 640, h: 360 });
-	useLayoutEffect(() => {
-		const el = wrapRef.current;
-		if (!el) {
-			return;
-		}
-		const measure = () => {
-			setSize({ w: el.clientWidth, h: el.clientHeight });
-		};
-		measure();
-		const observer = new ResizeObserver(measure);
-		observer.observe(el);
-		return () => {
-			observer.disconnect();
-		};
-	}, []);
-	const narrow = size.w < 560;
+	const size = useViewSize(wrapRef);
+	const narrow = size.w < NARROW_W;
 
 	// The home floor as a picture, made from the 2D court's drawing of it.
 	const floorRef = useRef<HTMLDivElement | null>(null);
@@ -992,7 +788,6 @@ const Court3D = ({
 			alive = false;
 		};
 	}, [gid, home?.court, home?.colors, home?.imgURL, boxScore?.finals]);
-	const clockRef = useRef<HTMLSpanElement | null>(null);
 	const dipRef = useRef<HTMLDivElement | null>(null);
 	const flashRef = useRef<HTMLDivElement | null>(null);
 	const replayRef = useRef<HTMLDivElement | null>(null);
@@ -1001,12 +796,6 @@ const Court3D = ({
 		null,
 		null,
 	]);
-	const shotRef = useRef<HTMLSpanElement | null>(null);
-	// The score bug's fouls and possession marker, per side [visitors, home].
-	const foulsAwayRef = useRef<HTMLSpanElement | null>(null);
-	const foulsHomeRef = useRef<HTMLSpanElement | null>(null);
-	const ballAwayRef = useRef<HTMLSpanElement | null>(null);
-	const ballHomeRef = useRef<HTMLSpanElement | null>(null);
 
 	const play = useRef({
 		t: 0,
@@ -1030,7 +819,7 @@ const Court3D = ({
 		dodgeSide: 0,
 		covers: [] as Cover[],
 		coversAt: -Infinity,
-		caption: undefined as (Cover & { y1: number }) | undefined,
+		caption: undefined as Box | undefined,
 		heldBy: undefined as number | undefined,
 		heldAt: -Infinity,
 		last: undefined as number | undefined,
@@ -1065,21 +854,17 @@ const Court3D = ({
 		w: 0,
 		pace: 1,
 		paceAt: -1,
-		clockText: "",
-		shotText: "",
-		// The shot clock's own color on the bug, kept while it shows red.
-		shotInk: undefined as string | undefined,
+		// What the bug was last written (see writeBug).
+		bug: bugShown(),
 		// Which of its cameras the replay showing is seen from (see
 		// replayRig): a cut to the other is straight there, through a flash
 		// (when it went off, and when it was last held).
 		replayRig: undefined as Rig | undefined,
 		flashAt: -Infinity,
 		flashHold: -Infinity,
-		foulsText: ["", ""] as [string, string],
-		ballSide: -1,
 		// The dunk replay showing now, and the next dunk that would get one.
 		replay: undefined as Replay | undefined,
-		nextDunk: 0,
+		nextReplay: 0,
 		replayDue: undefined as number | undefined,
 		// The wipe into a replay and out of it, and whose play it is.
 		wipe: makeWipe(),
@@ -1274,21 +1059,18 @@ const Court3D = ({
 		sprites.farm = farm;
 		// When finer poses were last taken up, and last given up for want of
 		// time.
-		let fineOnAt = -Infinity;
-		let fineOffAt = -Infinity;
+		const fine = makeFine();
 		// How fine the picture is: as fine as this device can draw it.
 		const res = makeResolution(performance.now() + 1500);
 		// How often it is drawn (see pace.ts) - and whether this frame says
 		// anything about how fast the device draws (not held back, paused).
 		const pacing = makePace(performance.now() + 1500);
-		let judging = true;
 		// The size the canvas is laid on the page at (CSS px).
-		let laidW = 0;
-		let laidH = 0;
+		const laid = { w: 0, h: 0 };
 		const lookOf = (pid: number) => looks.current.get(pid)!;
 		const bodyOfPid = (pid: number) => bodies.current.get(pid) ?? bodyOf();
 
-		const tick = (now: number, draw: boolean) => {
+		const tick = (now: number, draw: boolean, still: boolean) => {
 			const p = live.current;
 			// (Still being staged: the building in the meantime - see pregame.)
 			const staging = !p.timeline;
@@ -1333,33 +1115,12 @@ const Court3D = ({
 				return;
 			}
 			const { w, h } = p.size;
-			const dpr = Math.min(3, window.devicePixelRatio || 1);
 			if (w <= 0 || h <= 0) {
 				return;
 			}
 			// The picture: fine (see resolution.ts), each of its pixels a whole
 			// number of the screen's.
-			const art = artFor(h * dpr, res);
-			const fw = Math.ceil((w * dpr) / art);
-			const fh = Math.ceil((h * dpr) / art);
-			if (canvas.width !== fw || canvas.height !== fh) {
-				canvas.width = fw;
-				canvas.height = fh;
-			}
-			// Laid on the page that many screen pixels to each of its pixels
-			// exactly - not stretched to the box it is in, which is a fraction
-			// of a pixel off that (831.5 x 467.7, say): stretched, a column and
-			// a row of the picture came out a screen pixel narrower than the
-			// rest, a seam everything crawled across as the camera moved. (The
-			// sliver past the box's edge is cut off by it.)
-			const cssW = (fw * art) / dpr;
-			const cssH = (fh * art) / dpr;
-			if (cssW !== laidW || cssH !== laidH) {
-				laidW = cssW;
-				laidH = cssH;
-				canvas.style.width = `${cssW}px`;
-				canvas.style.height = `${cssH}px`;
-			}
+			const { art, dpr, fw, fh } = sizeCanvas(canvas, p.size, res, laid);
 
 			const replay = s.replay;
 			const moment =
@@ -1421,10 +1182,7 @@ const Court3D = ({
 			if (now - s.coversAt > 500) {
 				s.coversAt = now;
 				s.covers = coversOf(wrapRef.current, bugRef.current);
-				s.caption = boxOf(
-					wrapRef.current,
-					wrapRef.current?.querySelector(".court3d-caption"),
-				);
+				s.caption = boxOf(wrapRef.current, captionOf(wrapRef.current));
 			}
 			// The man with the ball (or the ball, loose or in the air) never
 			// left behind the score bug: the camera eased over off him.
@@ -1469,24 +1227,7 @@ const Court3D = ({
 			// moment more of black, not a freeze halfway out of it.
 			// (Behind the wipe: the wipe held over all of the picture.)
 			// (Or white, at a flash between a replay's angles.)
-			const flashing =
-				1 - (now - Math.max(s.flashAt, s.flashHold)) / FLASH_MS >= 0.75;
-			if (
-				sprites.skipped > 0 &&
-				sprites.dark &&
-				now - s.darkFrom < KEY_HOLD_MS
-			) {
-				if (s.wipe.covered) {
-					s.wipe.hold = now;
-				} else if (flashing && replay) {
-					s.flashHold = now;
-				} else {
-					s.keyHold = now;
-				}
-			}
-			const flash = replay
-				? Math.max(0, 1 - (now - Math.max(s.flashAt, s.flashHold)) / FLASH_MS)
-				: 0;
+			const flash = holdReady(s, sprites, s.wipe, !!replay, s.flashAt, now);
 			// The wipe: in over the picture to the cut into a replay or out of
 			// it, held there while need be, then on off it.
 			const sting = wipeAt(s.wipe, s, now, p.rate, rate);
@@ -1506,84 +1247,47 @@ const Court3D = ({
 					s.wipeSide = team;
 				}
 			}
-			const keyDark = 1 - (now - Math.max(s.keyDip, s.keyHold)) / KEY_DIP_MS;
-			let o: number;
-			if (replay) {
-				o = Math.max(0, keyDark);
-			} else {
-				const near = cut === undefined ? Infinity : Math.abs(s.t - cut);
-				// (And between clips of a highlight reel, and the key plays:
-				// down to black out of one, up out of it into the next.)
-				const keyOut =
+			// (And between clips of a highlight reel, and the key plays: down
+			// to black out of one, up out of it into the next.)
+			const o = dipOf({
+				replay: !!replay,
+				near: cut === undefined ? Infinity : Math.abs(s.t - cut),
+				keyDip: Math.max(s.keyDip, s.keyHold),
+				now,
+				keyOut:
 					p.keyPlan && !p.follower && !p.paused
 						? keyOutAt(p.keyPlan, s.t, s.pace)
-						: 0;
-				o = Math.max(0, 1 - near / DIP_MS, clipDipAt(tl, s.t), keyDark, keyOut);
-			}
-			const dark = o >= 0.75 || flash >= 0.75 || s.wipe.covered;
-			if (dark && !sprites.dark) {
-				s.darkFrom = now;
-			}
-			sprites.dark = dark;
-			// Poses come round as slowly as the moment shown moves on: in slow
-			// motion a man may be drawn as he was for that many more frames.
-			const drawnAt = replay ? replay.at : s.t;
-			const pace =
-				s.drawnAt === undefined || dt <= 0 ? 1 : (drawnAt - s.drawnAt) / dt;
-			// (Stood still, or jumped back to a replay: as at real speed.)
-			sprites.pace = pace > 0 ? pace : 1;
-			s.drawnAt = drawnAt;
-			const dip = dipRef.current;
-			if (dip && dip.style.opacity !== String(o)) {
-				dip.style.opacity = String(o);
-			}
-			const white = flashRef.current;
-			if (white && white.style.opacity !== String(flash)) {
-				white.style.opacity = String(flash);
-			}
-			const capEl =
-				wrapRef.current?.querySelector<HTMLElement>(".court3d-caption");
-			if (capEl) {
-				const b = project(cam, moment.ball);
-				const faint =
-					s.caption !== undefined &&
-					captionOver(s.caption, { x: b.x / fw, y: b.y / fh });
-				const o = replay ? "0" : faint ? String(CAPTION_FAINT) : "";
-				if (capEl.style.opacity !== o) {
-					capEl.style.opacity = o;
-				}
-			}
-			for (const side of [0, 1] as const) {
-				const band = stingRefs.current[side];
-				if (!band) {
-					continue;
-				}
-				const on = sting !== undefined && side === s.wipeSide;
-				const show = on ? "flex" : "none";
-				if (band.style.display !== show) {
-					band.style.display = show;
-				}
-				if (on && sting !== undefined) {
-					// From all the way off the picture to its left to all the
-					// way off it to its right, the slant and all.
-					const off = (50 * h * Math.tan((STING_SLANT * Math.PI) / 180)) / w;
-					const from = -STING_W - off;
-					const to = 100 + off;
-					const x = ((from + (to - from) * sting) * w) / 100;
-					const tr = `translate3d(${x.toFixed(1)}px,0,0) skewX(${-STING_SLANT}deg)`;
-					if (band.style.transform !== tr) {
-						band.style.transform = tr;
-					}
-				}
-			}
-			const tag = replayRef.current;
-			if (tag) {
-				const show =
-					replay && (sting === undefined || sting > 0.75) ? "block" : "none";
-				if (tag.style.display !== show) {
-					tag.style.display = show;
-				}
-			}
+						: 0,
+				also: clipDipAt(tl, s.t),
+			});
+			darkAndPace(
+				s,
+				sprites,
+				o,
+				flash,
+				s.wipe,
+				replay ? replay.at : s.t,
+				dt,
+				now,
+			);
+			setOpacity(dipRef.current, o);
+			setOpacity(flashRef.current, flash);
+			const ballAt = project(cam, moment.ball);
+			showCaption(
+				captionOf(wrapRef.current),
+				s.caption,
+				{ x: ballAt.x / fw, y: ballAt.y / fh },
+				!!replay,
+			);
+			showWipe(
+				stingRefs.current,
+				replayRef.current,
+				sting,
+				s.wipeSide,
+				!!replay,
+				w,
+				h,
+			);
 			// The crowd on its feet after a big play, arms going up and out -
 			// and the whole way through a tight finish.
 			const crowd = crowdAt(tl, moment.t, now);
@@ -1680,7 +1384,7 @@ const Court3D = ({
 				black: o >= 0.999 || flash >= 0.999 || s.wipe.hold === now,
 			});
 			if (
-				judging &&
+				!still &&
 				adjust(
 					res,
 					h * dpr,
@@ -1697,113 +1401,47 @@ const Court3D = ({
 				sprites.budget = SPRITE_BUDGET_MS;
 				sprites.farm = farm;
 			}
-			// Time to spare, at the finest picture: poses in finer steps - and
-			// back to the usual ones well before that costs a size.
-			const spare = res.drawMs;
-			if (res.coarser > 0 || spare === undefined || pacing.fps !== FAST) {
-				sprites.fine = false;
-			} else if (
-				!sprites.fine &&
-				spare < FINE_ON_MS &&
-				now - fineOffAt > FINE_RETRY_MS
-			) {
-				sprites.fine = true;
-				fineOnAt = now;
-			} else if (
-				sprites.fine &&
-				spare > FINE_OFF_MS &&
-				// (Not over the first few seconds of them: every pose is new then,
-				// and drawn for the first time.)
-				now - fineOnAt > FINE_SETTLE_MS
-			) {
-				sprites.fine = false;
-				fineOffAt = now;
-			}
+			// Time to spare, at the finest picture: poses in finer steps.
+			sprites.fine = fineNow(
+				sprites.fine === true,
+				fine,
+				res,
+				pacing.fps === FAST,
+				now,
+				FINE_ON_MS,
+			);
 
-			if (clockText !== s.clockText && clockRef.current) {
-				s.clockText = clockText;
-				clockRef.current.textContent = clockText;
-			}
-			if (bugShot !== s.shotText && shotRef.current) {
-				const el = shotRef.current;
-				s.shotText = bugShot;
-				el.textContent = bugShot;
-				// (Off once the game clock is shorter: gone from the bug.)
-				el.style.display = bugShot ? "flex" : "none";
-				// Red in its last seconds - and back to its own color after.
-				s.shotInk ??= el.style.color;
-				const low = bugShot !== "" && Number(bugShot) < SHOT_LOW;
-				el.style.color = low ? SHOT_LOW_INK : s.shotInk;
-			}
 			// Each side's fouls this period - or BONUS - in the bug's order,
 			// visitors first (the marks are in box score order, home first).
-			if (p.fouls) {
-				const f = foulsAt(p.fouls, s.t);
-				const text = ([1, 0] as const).map((k) =>
-					f.bonus[k] ? "BONUS" : `FOULS ${f.fouls[k]}`,
-				);
-				[foulsAwayRef, foulsHomeRef].forEach((ref, i) => {
-					const el = ref.current;
-					if (el && text[i] !== s.foulsText[i]) {
-						s.foulsText[i] = text[i]!;
-						el.textContent = text[i]!;
-						el.style.color = text[i] === "BONUS" ? "#f2c14e" : "";
-					}
-				});
-			}
-			const ball = offenseAt(tl, s.t);
-			if (ball !== s.ballSide) {
-				s.ballSide = ball;
-				[ballAwayRef, ballHomeRef].forEach((ref, i) => {
-					if (ref.current) {
-						ref.current.style.visibility = i === ball ? "visible" : "hidden";
-					}
-				});
-			}
+			const f = p.fouls ? foulsAt(p.fouls, s.t) : undefined;
+			writeBug(bugRefs, s.bug, {
+				clock: clockText,
+				shot: bugShot,
+				low: bugShot !== "" && Number(bugShot) < SHOT_LOW,
+				fouls:
+					f &&
+					(([1, 0] as const).map((k) =>
+						f.bonus[k] ? "BONUS" : `FOULS ${f.fouls[k]}`,
+					) as [string, string]),
+				ball: offenseAt(tl, s.t),
+			});
 		};
 
-		// Off the screen - scrolled away to the box score - nothing to draw.
-		let onScreen = true;
-		const seen =
-			typeof IntersectionObserver === "undefined"
-				? undefined
-				: new IntersectionObserver((entries) => {
-						onScreen = entries.some((entry) => entry.isIntersecting);
-					});
-		if (canvasRef.current) {
-			seen?.observe(canvasRef.current);
-		}
-		let raf = requestAnimationFrame(function frame(now) {
-			raf = requestAnimationFrame(frame);
-			if (!onScreen) {
-				tick(now, false);
-				return;
-			}
-			const s = play.current;
-			const paused = live.current.paused && !s.stepping && !s.replay;
-			if (!due(pacing, now, paused)) {
-				return;
-			}
-			judging = !paused;
-			const began = performance.now();
-			tick(now, true);
-			drawn(pacing, now, performance.now() - began, paused);
+		const stop = runFrames({
+			canvas: canvasRef.current,
+			pacing,
+			still: () => {
+				const s = play.current;
+				return live.current.paused && !s.stepping && !s.replay;
+			},
+			tick,
 		});
-		// A background tab gets no animation frames. Keep the game moving anyway
-		// (nothing to draw), or a hidden tab would hold up everyone watching.
-		const interval = setInterval(() => {
-			if (document.hidden) {
-				tick(performance.now(), false);
-			}
-		}, 250);
 		return () => {
-			cancelAnimationFrame(raf);
-			seen?.disconnect();
-			clearInterval(interval);
+			stop();
 			releaseSprites(sprites);
 			farm?.stop();
 		};
-	}, []);
+	}, [bugRefs]);
 
 	// The score off the live box score, never off `away`/`home`: on a replay
 	// those are copies (that night's looks laid over each team), made once when
@@ -1850,34 +1488,15 @@ const Court3D = ({
 	const captionTeam = captionT === undefined ? undefined : raw[captionT];
 
 	return (
-		<div
-			ref={wrapRef}
-			className="mb-3"
-			style={{
-				position: "relative",
-				width: "100%",
-				aspectRatio: narrow ? "4 / 3" : "16 / 9",
-				background: "#040406",
-				borderRadius: 6,
-				overflow: "hidden",
-				containerType: "inline-size",
-				isolation: "isolate",
-			}}
+		<PictureBox
+			wrapRef={wrapRef}
+			narrow={narrow}
+			roster={roster}
+			looksThen={looksThen}
+			season={season}
+			lid={lid}
+			onFace={onFace}
 		>
-			{roster
-				.filter((p) => !looksThen?.players[p.pid])
-				.map((p) => (
-					<FaceLoader
-						key={p.pid}
-						pid={p.pid}
-						season={season}
-						lid={lid}
-						onFace={onFace}
-					/>
-				))}
-			<style>
-				{".court3d-caption .text-body-secondary { color: #c9c3d3 !important; }"}
-			</style>
 			{/* The home floor as the 2D court draws it, out of sight: the 3D court
 			    makes its picture of the floor from it (see courtTexture). */}
 			<div
@@ -1901,130 +1520,17 @@ const Court3D = ({
 					sceneMs={undefined}
 				/>
 			</div>
-			<canvas
-				ref={canvasRef}
-				role="img"
-				aria-label="Live court"
-				style={{
-					position: "absolute",
-					inset: 0,
-					width: "100%",
-					height: "100%",
-					imageRendering: "pixelated",
-				}}
+			<PictureCanvas canvasRef={canvasRef} label="Live court" />
+			<Overlays
+				dipRef={dipRef}
+				flashRef={flashRef}
+				stingRefs={stingRefs}
+				replayRef={replayRef}
+				teams={[away, home]}
+				logos={[awayLogo, homeLogo]}
+				// (Still being staged - see stageCourt.ts: not stuck.)
+				staging={!timeline && !!events && events.length > 0}
 			/>
-			<div
-				aria-hidden
-				style={{
-					position: "absolute",
-					inset: 0,
-					pointerEvents: "none",
-					background:
-						"radial-gradient(ellipse at 50% 55%, transparent 58%, rgba(0,0,0,0.32) 100%)",
-				}}
-			/>
-			<div
-				ref={dipRef}
-				aria-hidden
-				style={{
-					position: "absolute",
-					inset: 0,
-					background: "#000",
-					opacity: 0,
-					pointerEvents: "none",
-				}}
-			/>
-			<div
-				ref={flashRef}
-				aria-hidden
-				style={{
-					position: "absolute",
-					inset: 0,
-					background: "#fff",
-					opacity: 0,
-					pointerEvents: "none",
-				}}
-			/>
-			{([away, home] as const).map((team, side) => {
-				const logo = side === 0 ? awayLogo : homeLogo;
-				const main = team?.colors?.[0] ?? "#8c1d40";
-				const accent = team?.colors?.[1] ?? "#f2c14e";
-				return (
-					<div
-						key={side}
-						ref={(el) => {
-							stingRefs.current[side] = el;
-						}}
-						aria-hidden
-						style={{
-							display: "none",
-							position: "absolute",
-							top: 0,
-							left: 0,
-							width: `${STING_W}%`,
-							height: "100%",
-							alignItems: "center",
-							justifyContent: "center",
-							pointerEvents: "none",
-							willChange: "transform",
-							// (Lit from above, a little.)
-							background: `linear-gradient(180deg, rgba(255,255,255,0.16), rgba(0,0,0,0.22)), linear-gradient(90deg, #fff 0 2%, ${accent} 2% 7%, ${main} 7% 93%, ${accent} 93% 98%, #fff 98% 100%)`,
-						}}
-					>
-						{logo ? (
-							<img
-								alt=""
-								src={logo}
-								style={{
-									height: "34%",
-									maxWidth: "24%",
-									objectFit: "contain",
-									transform: `skewX(${STING_SLANT}deg)`,
-									filter: "drop-shadow(0 0.4cqw 0.6cqw rgba(0,0,0,0.35))",
-								}}
-							/>
-						) : null}
-					</div>
-				);
-			})}
-			<div
-				ref={replayRef}
-				style={{
-					display: "none",
-					position: "absolute",
-					// (Up in the corner the page's controls are not in.)
-					left: "2cqw",
-					top: "2cqw",
-					padding: "0.35em 0.7em",
-					fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
-					fontWeight: 800,
-					fontSize: "clamp(10px, 1.7cqw, 14px)",
-					letterSpacing: "0.08em",
-					color: "#fff",
-					background: "rgba(10, 10, 14, 0.85)",
-					borderLeft: `3px solid ${home?.colors?.[0] ?? "#888"}`,
-					borderRadius: 3,
-				}}
-			>
-				REPLAY
-			</div>
-			{/* Still being staged (see stageCourt.ts): not stuck. */}
-			{!timeline && events && events.length > 0 ? (
-				<div
-					className="spinner-border text-light"
-					role="status"
-					aria-label="Loading"
-					style={{
-						position: "absolute",
-						left: "50%",
-						top: "50%",
-						marginLeft: "-1rem",
-						marginTop: "-1rem",
-						opacity: 0.7,
-						pointerEvents: "none",
-					}}
-				/>
-			) : null}
 			{introCard ? <IntroCard info={introCard} callKey={intro.call} /> : null}
 			{intro.title ? <IntroTitle playoffs={!!timeline?.intro?.big} /> : null}
 			{intro.on && !follower && !along ? (
@@ -2050,100 +1556,25 @@ const Court3D = ({
 					Skip intro ›
 				</button>
 			) : null}
-			{(() => {
-				// (Its record, where the game keeps one.)
-				const recordOf = (t: any): string | undefined =>
-					typeof t?.won === "number" && typeof t?.lost === "number"
-						? helpers.formatRecord(t)
-						: undefined;
-				const bug = {
-					hidden: intro.on || preview,
-					away: away && {
-						abbrev: away.abbrev,
-						region: away.region,
-						name: away.name,
-						colors: away.colors,
-						imgURL: away.imgURL,
-						imgURLSmall: away.imgURLSmall,
-						pts: awayPts,
-						timeouts: boxScore?.teams?.[1]?.timeouts,
-						record: recordOf(boxScore?.teams?.[1]),
-					},
-					home: home && {
-						abbrev: home.abbrev,
-						region: home.region,
-						name: home.name,
-						colors: home.colors,
-						imgURL: home.imgURL,
-						imgURLSmall: home.imgURLSmall,
-						pts: homePts,
-						timeouts: boxScore?.teams?.[0]?.timeouts,
-						record: recordOf(boxScore?.teams?.[0]),
-					},
-					quarter,
-					totalTimeouts: STARTING_NUM_TIMEOUTS,
-					refs: {
-						clock: clockRef,
-						shot: shotRef,
-						fouls: [foulsAwayRef, foulsHomeRef] as BugRefs["fouls"],
-						ball: [ballAwayRef, ballHomeRef] as BugRefs["ball"],
-					},
-				};
-				// The league's own bug, if it has one (see ScoreBugStyle).
-				const own: ScoreBugStyle | null | undefined = boxScore?.scoreBug;
-				return (
-					<div ref={bugRef} style={{ display: "contents" }}>
-						{own ? (
-							<CustomScoreBug style={own} {...bug} />
-						) : (
-							<ScoreBug {...bug} />
-						)}
-					</div>
-				);
-			})()}
-			{caption ? (
-				<div
-					className="court3d-caption"
-					style={{
-						position: "absolute",
-						left: "50%",
-						// Up top, over the crowd - never over the floor, where it hid
-						// the play along the near sideline (the score bug alone is
-						// down there, and the camera keeps the ball clear of it).
-						top: "1.6cqw",
-						transform: "translateX(-50%)",
-						width: "max-content",
-						// (Clear of the REPLAY tag in the corner.)
-						maxWidth: "70%",
-						transition: "opacity 0.15s",
-						textAlign: "center",
-						fontSize: "clamp(10px, 1.85cqw, 16px)",
-						lineHeight: 1.35,
-						padding: "0.45em 1em",
-						background: "rgba(8, 8, 12, 0.84)",
-						color: "#f1ede6",
-						borderLeft: `4px solid ${
-							(captionTeam ?? home)?.colors?.[0] ?? "#888"
-						}`,
-						borderRadius: 3,
-						display: "flex",
-						alignItems: "center",
-						gap: "0.6em",
-					}}
-				>
-					{captionTeam ? (
-						<TeamLogoInline
-							alt={captionTeam.abbrev}
-							className="flex-shrink-0"
-							imgURL={captionTeam.imgURL}
-							imgURLSmall={captionTeam.imgURLSmall}
-							includePlaceholderIfNoLogo
-						/>
-					) : null}
-					<div>{caption}</div>
-				</div>
-			) : null}
-		</div>
+			<GameBug
+				bugRef={bugRef}
+				own={boxScore?.scoreBug}
+				hidden={intro.on || preview}
+				away={bugTeamOf(away, awayPts, boxScore?.teams?.[1])}
+				home={bugTeamOf(home, homePts, boxScore?.teams?.[0])}
+				quarter={quarter}
+				series={
+					boxScore?.teams?.[0] && boxScore?.teams?.[1]
+						? seriesLine(boxScore.gamecast, !!boxScore.playoffs, [
+								boxScore.teams[1],
+								boxScore.teams[0],
+							])
+						: undefined
+				}
+				refs={bugRefs}
+			/>
+			<Caption caption={caption} team={captionTeam} home={home} />
+		</PictureBox>
 	);
 };
 

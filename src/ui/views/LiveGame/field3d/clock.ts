@@ -1,6 +1,7 @@
 import { formatClock } from "../../../../common/formatClock.ts";
 import { getPeriodName } from "../../../../common/getPeriodName.ts";
 import { breakText, finalText } from "../court3d/scoreBug.ts";
+import { clockAt } from "../court3d/timeline.ts";
 import type { FieldTimeline, Play, RawEvent } from "./director.ts";
 
 // THE GAME CLOCK ON THE BUG (the 3D court's, for football: see
@@ -11,7 +12,7 @@ import type { FieldTimeline, Play, RawEvent } from "./director.ts";
 // incomplete, out of bounds: stopped there) - and what is left of that
 // time runs off after the whistle, at real speed too where the picture
 // has the room for it, quicker where it has not: by the next snap, or by
-// the picture cutting to a timeout, a man down, the chain out. The last
+// the picture cutting to a timeout, a man down. The last
 // play of a quarter runs it out to 0:00 - and from then the bug says so
 // where the clock was, END Q1, HALF, END Q3, and FINAL at the end.
 
@@ -122,27 +123,8 @@ export const fieldClockAt = (
 	if (s) {
 		return { text: s.text, ended: true };
 	}
-	const { marks } = c;
-	let lo = 0;
-	let hi = marks.length - 1;
-	let k = -1;
-	while (lo <= hi) {
-		const mid = (lo + hi) >> 1;
-		if (marks[mid]!.t <= t) {
-			k = mid;
-			lo = mid + 1;
-		} else {
-			hi = mid - 1;
-		}
-	}
-	const a = marks[k] ?? marks[0];
-	if (!a) {
-		return undefined;
-	}
-	const b = marks[k + 1];
-	let clock = a.clock;
-	if (k >= 0 && b && b.t > a.t && b.clock <= a.clock) {
-		clock += (b.clock - a.clock) * Math.min(1, (t - a.t) / (b.t - a.t));
-	}
-	return { text: formatClock(Math.max(0, clock)), ended: false };
+	const clock = clockAt(c.marks, t);
+	return clock === undefined
+		? undefined
+		: { text: formatClock(Math.max(0, clock)), ended: false };
 };

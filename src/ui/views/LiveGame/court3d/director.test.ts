@@ -11,6 +11,7 @@ import {
 import { crowdAt } from "./scene.ts";
 import { COURT_H, COURT_W, FT_LINE_DEPTH, rimX } from "./geometry.ts";
 import { LAYUPS } from "./poses.ts";
+import { kindOf, playShot } from "./physics.ts";
 import { compile, fakeGame } from "./testGame.ts";
 import { finishOf } from "../../../util/liveGameWording.basketball.ts";
 import {
@@ -569,6 +570,21 @@ describe("3D director", () => {
 				assert.isTrue(near("swish"), `${b.type} at ${b.actionStart}`);
 			}
 			if (b.type.startsWith("miss") && b.type !== "missFt") {
+				// (Not an air ball: nothing there to rattle.)
+				const path = tl.ball.find(
+					(s) =>
+						s.kind === "path" &&
+						s.t0 < b.actionStart &&
+						s.t1 >= b.actionStart - 5,
+				);
+				if (path?.kind === "path") {
+					const p0 = { x: path.pts[0]!, y: path.pts[1]!, z: path.pts[2]! };
+					const side =
+						Math.abs(p0.x - rimX(0)) < Math.abs(p0.x - rimX(1)) ? 0 : 1;
+					if (kindOf(playShot(side, p0, path.v0)) === "air") {
+						continue;
+					}
+				}
 				assert.isTrue(near("clank"), `${b.type} at ${b.actionStart}`);
 			}
 		}

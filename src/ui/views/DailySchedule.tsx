@@ -58,6 +58,8 @@ const DailySchedule = ({
 		ownLiveSim,
 		mpAutoPlay,
 		mpLiveBroadcast,
+		mpLiveOffer,
+		mpLiveWatchable,
 		mpSyncActive,
 		mpSyncIsHost,
 		mpSyncReady,
@@ -71,6 +73,8 @@ const DailySchedule = ({
 		"ownLiveSim",
 		"mpAutoPlay",
 		"mpLiveBroadcast",
+		"mpLiveOffer",
+		"mpLiveWatchable",
 		"mpSyncActive",
 		"mpSyncIsHost",
 		"mpSyncReady",
@@ -129,6 +133,13 @@ const DailySchedule = ({
 		mpLiveBroadcast?.active && !mpLiveBroadcast.isBroadcaster
 			? mpLiveBroadcast.gid
 			: undefined;
+	// The game a league-mate is simming live right now - watched here or not
+	// (yet). Still upcoming here till their result lands, it is watched with
+	// them: never played a second time on this device, at its own pace.
+	const mateLive =
+		liveBroadcastGid !== undefined
+			? { gid: liveBroadcastGid, byName: mpLiveBroadcast?.byName }
+			: (mpLiveWatchable ?? mpLiveOffer);
 
 	// Can't sim/watch games from here unless this device is in charge of simming.
 	const { locked: simAuthorityLocked } = useSimAuthorityLocked();
@@ -225,60 +236,76 @@ const DailySchedule = ({
 							<div className="d-flex flex-wrap" style={{ gap: "1rem 2rem" }}>
 								{upcoming.map((game) => {
 									const actions =
-										isToday && !tradeDeadline
-											? (() => {
-													// Your own game stays available even when someone
-													// else is in charge of simming: one gid is a
-													// disjoint slice and the sim-day fence refuses any
-													// overlap. The worker owns the full rule (cutoff
-													// window, a sim already running) and names the
-													// reason when it refuses, so this only has to stop
-													// greying out the button.
-													const isOwnGame =
-														game.teams[0].tid === userTid ||
-														game.teams[1].tid === userTid;
-													const decision = ownGameSim(isOwnGame);
-													const blocked =
-														gameSimInProgress ||
-														(simAuthorityLocked && !decision.allow);
-													return [
-														{
-															disabled: blocked,
-															highlight: isOwnGame,
-															title:
-																blocked && !decision.allow
-																	? decision.reason
-																	: undefined,
-															text: (
-																<>
-																	Watch
-																	<br />
-																	game
-																</>
-															),
-															onClick: () =>
-																toWorker("actions", "liveGame", game.gid),
-														},
-														{
-															disabled: blocked,
-															highlight: isOwnGame,
-															title:
-																blocked && !decision.allow
-																	? decision.reason
-																	: undefined,
-															text: (
-																<>
-																	Sim
-																	<br />
-																	game
-																</>
-															),
-															onClick: () =>
-																toWorker("actions", "simGame", game.gid),
-														},
-													];
-												})()
-											: undefined;
+										mateLive?.gid === game.gid
+											? [
+													{
+														highlight: true,
+														title: `${mateLive.byName ?? "A league-mate"} is simming this game live`,
+														text: (
+															<>
+																Watch
+																<br />
+																live
+															</>
+														),
+														onClick: () =>
+															toWorker("main", "watchLiveBroadcast", undefined),
+													},
+												]
+											: isToday && !tradeDeadline
+												? (() => {
+														// Your own game stays available even when someone
+														// else is in charge of simming: one gid is a
+														// disjoint slice and the sim-day fence refuses any
+														// overlap. The worker owns the full rule (cutoff
+														// window, a sim already running) and names the
+														// reason when it refuses, so this only has to stop
+														// greying out the button.
+														const isOwnGame =
+															game.teams[0].tid === userTid ||
+															game.teams[1].tid === userTid;
+														const decision = ownGameSim(isOwnGame);
+														const blocked =
+															gameSimInProgress ||
+															(simAuthorityLocked && !decision.allow);
+														return [
+															{
+																disabled: blocked,
+																highlight: isOwnGame,
+																title:
+																	blocked && !decision.allow
+																		? decision.reason
+																		: undefined,
+																text: (
+																	<>
+																		Watch
+																		<br />
+																		game
+																	</>
+																),
+																onClick: () =>
+																	toWorker("actions", "liveGame", game.gid),
+															},
+															{
+																disabled: blocked,
+																highlight: isOwnGame,
+																title:
+																	blocked && !decision.allow
+																		? decision.reason
+																		: undefined,
+																text: (
+																	<>
+																		Sim
+																		<br />
+																		game
+																	</>
+																),
+																onClick: () =>
+																	toWorker("actions", "simGame", game.gid),
+															},
+														];
+													})()
+												: undefined;
 
 									const allowTie = allowForceTie({
 										homeTid: game.teams[0].tid,

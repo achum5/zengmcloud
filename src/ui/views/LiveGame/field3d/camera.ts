@@ -1,10 +1,14 @@
-import type { Camera } from "../court3d/camera.ts";
+import {
+	cameraAt,
+	type Camera,
+	type Framing,
+	type Shot,
+} from "../court3d/camera.ts";
 import {
 	FIELD_L,
 	FIELD_W,
 	MID_X,
 	MID_Y,
-	type Pt3,
 	type Side,
 } from "./geometry.ts";
 
@@ -44,19 +48,13 @@ export const REPLAY_RIG: FieldRig = {
 };
 
 // Where it looks: a point on the field (x, y), how wide a slice of the field
-// fits across the picture there (feet), and how high (z, the turf if unset).
-export type Shot = { x: number; width: number; y: number; z?: number };
+// fits across the picture there (feet), and how high (z, the turf if unset)
+// - the court's Shot.
+export type { Shot };
 
-const sub = (a: Pt3, b: Pt3): Pt3 => ({
-	x: a.x - b.x,
-	y: a.y - b.y,
-	z: a.z - b.z,
-});
-const dot = (a: Pt3, b: Pt3) => a.x * b.x + a.y * b.y + a.z * b.z;
-const norm = (a: Pt3): Pt3 => {
-	const l = Math.hypot(a.x, a.y, a.z) || 1;
-	return { x: a.x / l, y: a.y / l, z: a.z / l };
-};
+// The point it looks at a little below the middle, leaving room above for
+// the far side's heads and a strip of the stands.
+const FIELD_FRAMING: Framing = { narrow: 0.5, wide: 0.55 };
 
 export const makeFieldCamera = (
 	shot: Shot,
@@ -74,6 +72,7 @@ export const makeFieldCamera = (
 		viewW,
 		viewH,
 		rig.upright,
+		FIELD_FRAMING,
 	);
 
 // The replay's second angle, a score's (the 3D court's from behind the
@@ -101,6 +100,7 @@ export const makeEndZoneCamera = (
 		viewW,
 		viewH,
 		false,
+		FIELD_FRAMING,
 	);
 
 // The Skycam: hung over the field on its wires behind the play, looking
@@ -130,6 +130,7 @@ export const makeSkyCamera = (
 		viewW,
 		viewH,
 		false,
+		FIELD_FRAMING,
 	);
 
 // The goal line's: up in the stands on the near side level with the line
@@ -149,43 +150,5 @@ export const makeGoalLineCamera = (
 		viewW,
 		viewH,
 		false,
+		FIELD_FRAMING,
 	);
-
-const cameraAt = (
-	pos: Pt3,
-	shot: Shot,
-	viewW: number,
-	viewH: number,
-	upright: boolean,
-): Camera => {
-	const lift = shot.z ?? 2;
-	const target = { x: shot.x, y: shot.y, z: upright ? 0 : lift };
-	const fwd = norm(sub(target, pos));
-	const right = norm({ x: -fwd.y, y: fwd.x, z: 0 });
-	let up = {
-		x: fwd.y * right.z - fwd.z * right.y,
-		y: fwd.z * right.x - fwd.x * right.z,
-		z: fwd.x * right.y - fwd.y * right.x,
-	};
-	if (up.z < 0) {
-		up = { x: -up.x, y: -up.y, z: -up.z };
-	}
-	const depth = dot(sub(target, pos), fwd);
-	const f = (viewW * depth) / shot.width;
-	return {
-		pos,
-		right,
-		up: norm(up),
-		fwd,
-		f,
-		cx: viewW / 2,
-		// The point it looks at a little below the middle, leaving room above
-		// for the far side's heads and a strip of the stands.
-		cy:
-			viewH * (viewW / viewH < 1.5 ? 0.5 : 0.55) +
-			(upright ? (lift * f) / depth : 0),
-		viewW,
-		viewH,
-		upright,
-	};
-};

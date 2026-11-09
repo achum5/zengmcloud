@@ -81,23 +81,27 @@ export const BASELINE_RIG: Rig = {
 // middle of the picture is (y), and how high (z, the floor if unset).
 export type Shot = { x: number; width: number; y: number; z?: number };
 
-export const makeCamera = (
+// Where the point it looks at sits down the picture (a share of its
+// height), on a squarer (phone) picture and on a wider one: a little below
+// the middle, leaving room above for the rims and the stands - less so on a
+// squarer picture, which would otherwise be mostly crowd. (Each sport frames
+// its own: see field3d/camera.ts.)
+export type Framing = { narrow: number; wide: number };
+const COURT_FRAMING: Framing = { narrow: 0.47, wide: 0.56 };
+
+// A camera stood at `pos`, looking at `shot` - any sport's, from anywhere.
+export const cameraAt = (
+	pos: Pt3,
 	shot: Shot,
 	viewW: number,
 	viewH: number,
-	rig: Rig = MAIN_RIG,
+	upright: boolean,
+	framing: Framing = COURT_FRAMING,
 ): Camera => {
-	// It slides along the sideline as well as panning, so the far end of the
-	// floor is never seen at too steep an angle.
-	const pos = rig.at ?? {
-		x: COURT_W / 2 + (shot.x - COURT_W / 2) * rig.slide,
-		y: COURT_H + rig.back,
-		z: rig.high,
-	};
 	// Upright, the camera aims at the floor under the point it looks at, and
 	// the picture is moved down to bring the point itself to the middle.
 	const lift = shot.z ?? 2;
-	const target = { x: shot.x, y: shot.y, z: rig.upright ? 0 : lift };
+	const target = { x: shot.x, y: shot.y, z: upright ? 0 : lift };
 	const fwd = norm(sub(target, pos));
 	// Level: right is horizontal, up is square to both.
 	const right = norm({ x: -fwd.y, y: fwd.x, z: 0 });
@@ -118,17 +122,34 @@ export const makeCamera = (
 		fwd,
 		f,
 		cx: viewW / 2,
-		// The point it looks at sits a little below the middle of the picture,
-		// leaving room above for the rims and the stands - less so on a squarer
-		// (phone) picture, which would otherwise be mostly crowd.
 		cy:
-			viewH * (viewW / viewH < 1.5 ? 0.47 : 0.56) +
-			(rig.upright ? (lift * f) / depth : 0),
+			viewH * (viewW / viewH < 1.5 ? framing.narrow : framing.wide) +
+			(upright ? (lift * f) / depth : 0),
 		viewW,
 		viewH,
-		upright: rig.upright,
+		upright,
 	};
 };
+
+export const makeCamera = (
+	shot: Shot,
+	viewW: number,
+	viewH: number,
+	rig: Rig = MAIN_RIG,
+): Camera =>
+	cameraAt(
+		// It slides along the sideline as well as panning, so the far end of
+		// the floor is never seen at too steep an angle.
+		rig.at ?? {
+			x: COURT_W / 2 + (shot.x - COURT_W / 2) * rig.slide,
+			y: COURT_H + rig.back,
+			z: rig.high,
+		},
+		shot,
+		viewW,
+		viewH,
+		rig.upright,
+	);
 
 export type Projected = {
 	x: number;

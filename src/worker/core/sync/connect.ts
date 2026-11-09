@@ -47,6 +47,7 @@ import {
 	createWakeClock,
 	decideFollowAction,
 	followGivenUp,
+	mateLiveCall,
 	QUIET_WATCH_MS,
 	shouldServeFollowedPayload,
 } from "./liveBroadcastFollow.ts";
@@ -1482,6 +1483,19 @@ export const beginOwnLiveSimRequest = (): (() => void) => {
 // The header pill was clicked: (re)join the broadcast currently live. Rejoining
 // after walking out reuses the cached payload and drops straight back in at the
 // simmer's current spot.
+// A Watch or Sim of the very game a league-mate is simming live right now
+// (never this device's own broadcast - see handleLiveBroadcastMeta): see
+// mateLiveCall.
+export const mateLiveCallFor = (
+	name: string,
+	gid: unknown,
+): { action: "join" | "refuse"; byName: string } | undefined => {
+	const action = mateLiveCall(name, gid, roomBroadcastMeta, Date.now());
+	return action && roomBroadcastMeta
+		? { action, byName: roomBroadcastMeta.byName }
+		: undefined;
+};
+
 export const watchLiveBroadcast = async (): Promise<boolean> => {
 	const transport = currentTransport;
 	const meta = roomBroadcastMeta;

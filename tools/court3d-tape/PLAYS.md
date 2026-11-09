@@ -47,7 +47,7 @@ each part, so the table below can say how far along each part is.
 | --- | --------------------------------------------------------------------------------------------- | -------: | ------- |
 | 1   | Three pointer, no good (`fgaTp` → `missTp`)                                                   |       39 | working |
 | 2   | Defensive rebound (`drb`)                                                                     |       74 | working |
-| 3   | Three pointer, made (`tp`)                                                                    |       25 | todo    |
+| 3   | Three pointer, made (`tp`)                                                                    |       25 | working |
 | 4   | Post shot, made or missed (`fgaLowPost` → `fgLowPost` / `missLowPost`)                        |       49 | todo    |
 | 5   | Shot at the rim, made or missed (`fgaAtRim` → `fgAtRim` / `missAtRim`)                        |       47 | todo    |
 | 6   | Mid-range jumper, made or missed (`fgaMidRange` → `fgMidRange` / `missMidRange`)              |       34 | todo    |
@@ -373,7 +373,101 @@ Measured over the same three games (223 at real speed):
 | What he did with it    |                   13 | outlet (long or not), handed off, brought it up himself, held it; pushed or walked up                                                                                                                                       |
 | Whole combination      | 195 of 223 different |                                                                                                                                                                                                                             |
 
-Next: rebounds coming off long (the ball off the rim decides where it
-goes, and the man goes and gets it), the grab (a one-handed snatch, two
-men up for it, a bobble), the landing (chinned, a pivot away from
-pressure), the outlet (overhead, baseball, a dribble out of traffic first).
+The grab (2026-11-08): up high with two hands two boards in three, the rest
+at chest height - every man alike. Built and held back: a man who goes up
+and gets it ripping it down one-handed now and then - taken in the one
+hand up over his shoulder, out to that side, either hand (`mirror`), the
+other hand coming in to it on the way down, then chinned (`boardOne`, a
+`palm` grip; decided in `reboundOff` before he goes, so he stands off it
+to the side of that hand and the ball comes off the rim into it with no
+swerve; 19 of 223 in three games). It moved where every rebounder stood
+by a step and a half, enough to tip three of the suite's tests that sit
+on their line (the shooter's man off him and back, a post-up's man, a
+second device's catch-up) - in again once those are looked at.
+
+The pile round him a moment after he has it (measured 2026-11-08: men
+within 5 ft of him 0.9 s on, and those of them stood still): 1.3 a board,
+0.3 stood - a scrum that stays put only now and then (6 of 223 with four
+or five round him).
+
+The outlet (measured 2026-11-08, the pass kind of every outlet over 12
+ft): a chest pass every time but the long skips - overhead 4 of 120.
+Built and held back (see HELD below): the man who came down with it
+himself, still with it in his hands, mostly throwing it up over his head - a big 70%, a ball handler 35% (`OUTLET_OVER`,
+within 2.5 s of the board, not under 8 ft; `passTo`'s `overTop` - the
+kind's draw still made, so the rest of the game runs the same): overhead
+87 of 147, chest 60. Up out of the chin, the windup starts that much
+sooner (`throwAt`): the ball away when a chest pass would have been - with
+the overhead's extra windup on top, every outlet off a board went 140 ms
+later, the defense back more often, and kick-outs found the help left on
+the shooter less (over 16 test games, 0.67 of them → 0.59; with it, 0.69).
+
+The pivot (built and held back): a man of theirs within 3 ft of him as he
+comes down with it (`OUTLET_PRESS`), he turns a shoulder into him first - round 1.6 rad off
+the man coming for it, to the side away from him, 450 ms - then round to
+throw (only with 700 ms or more to throw it in): 58 of the 155 outlets
+off a board, the rest come round to the man at once.
+
+Two men up for it (measured 2026-11-08, a man of theirs up with him or a
+hand at it as he takes it): 153 of 223 - most of them a hand from every
+man of theirs within 8 ft of it as it came down (`scramble`), where in
+the league most defensive boards nobody of theirs is near. Built and held
+back: only the nearest of theirs swiping at it, and only from within 3.5
+ft (`SCRAMBLE_SWIPE`), and the man who goes up with him doing so 65% of
+the time from within 4 ft, 35% from further (`RIVAL_GOES`, more for a
+good man on the glass): 93 of 223 - up with him 26, a hand at it 67 (40
+of those a loose one off the floor). It moves men about after every
+board, so the games after play out otherwise, and the suite's tests that
+sit on their line tip (a referee's walk round a corner at a quarter
+break, a man along the half-court line, a footwork share) - in again
+with those seen to.
+
+Long off a three (measured 2026-11-08, where boards off threes were
+taken): under the rim 26 of 96, in the lane 57, out a way 7, long 6 - a
+miss is sent off the rim toward the man who gets it but never further out
+than 11 ft (`towardOf`), so a man out there comes in to it. Tried: as far
+as 6 ft and 0.4 of the shot's length toward a man out there - under 16 of
+98, the lane 60, out a way 18, long 4 - but with it more men were left
+stood out past 31 ft as the ball was played in close (the half-court test:
+5 in its six games, master 2; 9 to 5 over twelve), the man who pitched it
+ahead from out there trailing late. Backed out till the trailers come on.
+
+HELD (2026-11-09): the one-handed board, the overhead outlet and the
+pivot, the one swipe at a board and the and-one fouler's own run are in
+`held/drb.patch` (made against 9f0c44580). Each changes where men are or
+when, so every game after plays out otherwise - and each time, some few
+of the suite's tests that sit right on their line tipped over, different
+ones each run (a kick-out's help 0.59 for 0.6, a footwork share 0.304 for
+0.3, a referee's walk round a corner at a quarter break, a man on the
+half-court line, a post-up's man, a heave at the buzzer). In again once
+those tests stand clear of their lines: the edge cases they catch fixed
+where they are real, more games where they are only a count.
+
+Next: a baseball outlet up the floor wants a man out ahead to throw it to,
+the hit-ahead on a break (long outlets now: 1 in three games). A bobble is
+the tip to himself, there already.
+
+Seen along the way (2026-11-08), held back with the above: the man who
+fouls a jump shooter (an and-one) is planned off from where shadowing his
+own man has him, then that is reworked to follow the man (see mark) and
+the run at the shooter can be left 5.5 ft short - `ownRun` in foulHim
+fixes it (in the held-back patch).
+
+## 3. Three pointer, made
+
+The way into it is item 1's (the setup, the spot, his form, the footwork,
+the closeout). What is its own: how it goes in, the shooter after it, his
+teammates, and the other five taking it out.
+
+Measured over the same three games (76 at real speed, 2026-11-08; the
+variety tool's make parts - `jumperParts(..., made)`):
+
+| Part           | Ways now | Notes                                                                                                                                          |
+| -------------- | -------: | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| How it went in |        4 | swish 38, back rim and in 34, front rim and in 2, rattled in 2                                                                                 |
+| Shooter after  |       12 | back down the floor 71 of 76; holds his follow-through most; a finger at the bench 19, three fingers up 25; a shimmy 1, thanks to the passer 2 |
+| Taken out      |       12 | under the rim 63, off the floor 12; in again 4.5-5.5 s after the release nearly every time                                                     |
+
+Next: the taking out - in again sooner, and not the same pace every time
+(a team that pushes has it out and in at once); then his teammates on the
+make.

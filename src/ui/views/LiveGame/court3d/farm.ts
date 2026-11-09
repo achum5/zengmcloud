@@ -4,12 +4,13 @@ import {
 	shape,
 	type Farm,
 	type Job,
-	type Made,
 	type Shaped,
 	type SpriteCache,
 } from "./sprite.ts";
 
-// NEW PICTURES SCULPTED OFF THE PAGE'S THREAD.
+// NEW PICTURES SCULPTED OFF THE PAGE'S THREAD - any sport's (the court's
+// below, field3d/farm.ts football's: each says how its men go and come
+// back - see FarmCodec).
 //
 // Sculpting a man's new pose (see sculpt.ts) is most of what a frame costs:
 // a few new ones a frame, every frame the play goes on, a millisecond or two
@@ -29,28 +30,58 @@ import {
 // only the job: the camera, his pose, his build and the box he is drawn in
 // (see Job).
 
-// What a look is sent as: no head (the page draws that), its pictures by
-// number, each sent once.
-type SentLook = Omit<Look, "kitArt" | "crest" | "head"> & {
-	kitArt?: number;
-	crest?: number;
+// HOW A SPORT'S MEN GO TO A HAND AND COME BACK. A look is sent once, its
+// pictures taken off it to go as pictures of their own - its uniform's
+// (`art`) and one more (`pic`: a crest, a helmet's logo) - and put back
+// together there; he is sculpted there as on the page (`shape` - nothing,
+// if nothing of him shows), and what comes of it goes back as plain arrays
+// (`pack`, its buffers in `transfer`) and is taken back (`unpack`).
+export type FarmCodec<L extends object, J, Sh, Sent> = {
+	split: (look: L) => {
+		rest: object;
+		art?: KitArt;
+		pic?: HTMLCanvasElement;
+	};
+	join: (rest: object, art?: KitArt, pic?: HTMLCanvasElement) => L;
+	shape: (job: J, look: L) => Sh | undefined;
+	pack: (sh: Sh, transfer: ArrayBuffer[]) => Sent;
+	unpack: (sent: Sent) => Sh;
 };
-// The page to a hand: each job in its lane (one a man - see makeFarm)...
-type JobMsg = { job: number; look: number; work: Job; lane: string };
-export type ToHand =
+
+// A man sculpted off the page's thread, for the page to keep (or finish):
+// the job and look it was for, and whose it is (`W`: who he is, the frame it
+// was asked for in, his size then...).
+export type MadeOf<L, J, Sh, W> = {
+	key: string;
+	shaped: Sh;
+	job: J;
+	look: L;
+} & W;
+export type FarmOf<L, J, Sh, W> = {
+	// Takes on sculpting this picture for the cache, if it can now (false:
+	// it can't - it is made here or not at all).
+	ask: (cache: SpriteCache, key: string, job: J, look: L, whose: W) => boolean;
+	// Whether it is still being made.
+	busy: (cache: SpriteCache, key: string) => boolean;
+	// The pictures made for the cache since last asked.
+	take: (cache: SpriteCache) => MadeOf<L, J, Sh, W>[];
+	stop: () => void;
+};
+
+// What a look is sent as: its pictures by number, each sent once.
+type SentLook = { rest: object; art?: number; pic?: number };
+// The page to a hand: each job in its lane (one a man - see makeFarmOf)...
+type JobMsg<J> = { job: number; look: number; work: J; lane: string };
+export type ToHandOf<J> =
 	| { hello: true }
 	| { asset: number; art: KitArt }
 	| { asset: number; pic: ImageData }
 	| { look: number; value: SentLook }
-	| JobMsg;
-// ... and back: whether it can sculpt at all, and each man sculpted (his
-// pixels as plain arrays; nothing if he could not be).
-type SentShape = Omit<Shaped, "img" | "over"> & {
-	img: [Uint8ClampedArray<ArrayBuffer>, number, number];
-	over?: [Uint8ClampedArray<ArrayBuffer>, number, number];
-};
-type Back = { job: number; shaped?: SentShape };
-export type FromHand = { ready: boolean } | Back;
+	| JobMsg<J>;
+// ... and back: whether it can sculpt at all, and each man sculpted
+// (nothing if he could not be, or nothing of him shows).
+type Back<Sent> = { job: number; shaped?: Sent };
+export type FromHandOf<Sent> = { ready: boolean } | Back<Sent>;
 
 // The most jobs a hand is given at once: as many as it has done in about
 // two frames lately (and never fewer than a few, or more than a dozen) -
@@ -81,19 +112,20 @@ const outFor = (hand: Hand, now: number) => {
 		Math.max(MIN_OUT, Math.ceil((hand.done.length * OUT_MS) / PACE_MS)),
 	);
 };
-type Ticket = {
-	cache: SpriteCache;
-	key: string;
-	hand: Hand;
-	job: Job;
-	look: Look;
-	whose: { id: number; frame: number; scale: number };
-};
 
-export const makeFarm = (
+export const makeFarmOf = <L extends object, J, Sh, Sent, W>(
 	spawn: () => Worker,
 	hands: number,
-): Farm & { stop: () => void } => {
+	codec: FarmCodec<L, J, Sh, Sent>,
+): FarmOf<L, J, Sh, W> => {
+	type Ticket = {
+		cache: SpriteCache;
+		key: string;
+		hand: Hand;
+		job: J;
+		look: L;
+		whose: W;
+	};
 	let next = 1;
 	const numbers = new WeakMap<object, number>();
 	const numberOf = (o: object) => {
@@ -108,32 +140,30 @@ export const makeFarm = (
 	// - a picture on it that may not be read - and is made on the page).
 	type Asset = { art: KitArt } | { pic: ImageData };
 	const sent = new WeakMap<
-		Look,
+		L,
 		{ value: SentLook; assets: [number, Asset][] } | null
 	>();
-	const sendable = (look: Look) => {
+	const sendable = (look: L) => {
 		let s = sent.get(look);
 		if (s === undefined) {
 			const assets: [number, Asset][] = [];
-			const { kitArt, crest, head: _head, ...rest } = look;
-			const value: SentLook = { ...rest };
+			const { rest, art, pic } = codec.split(look);
+			const value: SentLook = { rest };
 			s = { value, assets };
-			if (kitArt) {
-				value.kitArt = numberOf(kitArt);
-				assets.push([value.kitArt, { art: kitArt }]);
+			if (art) {
+				value.art = numberOf(art);
+				assets.push([value.art, { art }]);
 			}
-			if (crest) {
-				let pic: ImageData | undefined;
+			if (pic && pic.width > 0 && pic.height > 0) {
+				let px: ImageData | undefined;
 				try {
-					pic = crest
-						.getContext("2d")!
-						.getImageData(0, 0, crest.width, crest.height);
+					px = pic.getContext("2d")!.getImageData(0, 0, pic.width, pic.height);
 				} catch {
-					pic = undefined;
+					px = undefined;
 				}
-				if (pic) {
-					value.crest = numberOf(crest);
-					assets.push([value.crest, { pic }]);
+				if (px) {
+					value.pic = numberOf(pic);
+					assets.push([value.pic, { pic: px }]);
 				} else {
 					s = null;
 				}
@@ -145,9 +175,9 @@ export const makeFarm = (
 
 	const tickets = new Map<number, Ticket>();
 	const busy = new WeakMap<SpriteCache, Set<string>>();
-	const made = new WeakMap<SpriteCache, Made[]>();
+	const made = new WeakMap<SpriteCache, MadeOf<L, J, Sh, W>[]>();
 	let jobs = 0;
-	const settle = (n: number, shaped?: SentShape) => {
+	const settle = (n: number, shaped?: Sent) => {
 		const t = tickets.get(n);
 		if (!t) {
 			return;
@@ -168,19 +198,9 @@ export const makeFarm = (
 			list = [];
 			made.set(t.cache, list);
 		}
-		const image = ([data, w, h]: [
-			Uint8ClampedArray<ArrayBuffer>,
-			number,
-			number,
-		]) => new ImageData(data, w, h);
-		const { img, over, ...rest } = shaped;
 		list.push({
 			key: t.key,
-			shaped: {
-				...rest,
-				img: image(img),
-				...(over ? { over: image(over) } : {}),
-			},
+			shaped: codec.unpack(shaped),
 			job: t.job,
 			look: t.look,
 			...t.whose,
@@ -213,7 +233,7 @@ export const makeFarm = (
 			out: 0,
 			done: [],
 		};
-		worker.onmessage = (event: MessageEvent<{ farm?: FromHand }>) => {
+		worker.onmessage = (event: MessageEvent<{ farm?: FromHandOf<Sent> }>) => {
 			const msg = event.data?.farm;
 			if (!msg) {
 				return;
@@ -232,7 +252,7 @@ export const makeFarm = (
 			event.preventDefault();
 			lose(hand);
 		};
-		worker.postMessage({ farm: { hello: true } satisfies ToHand });
+		worker.postMessage({ farm: { hello: true } satisfies ToHandOf<J> });
 		all.push(hand);
 	}
 
@@ -257,24 +277,24 @@ export const makeFarm = (
 			const n = ++jobs;
 			// (One lane a man: a newer pose of his takes the place of one the
 			// hand has not got to yet.)
-			const lane = `${numberOf(cache)}/${whose.id}`;
+			const lane = `${numberOf(cache)}/${(whose as { id: number }).id}`;
 			// (Anything that can't be sent - it never should be - is made on
 			// the page.)
 			try {
 				for (const [an, a] of s.assets) {
 					if (!hand.assets.has(an)) {
-						w.postMessage({ farm: { asset: an, ...a } satisfies ToHand });
+						w.postMessage({ farm: { asset: an, ...a } satisfies ToHandOf<J> });
 						hand.assets.add(an);
 					}
 				}
 				if (!hand.looks.has(ln)) {
 					w.postMessage({
-						farm: { look: ln, value: s.value } satisfies ToHand,
+						farm: { look: ln, value: s.value } satisfies ToHandOf<J>,
 					});
 					hand.looks.add(ln);
 				}
 				w.postMessage({
-					farm: { job: n, look: ln, work, lane } satisfies ToHand,
+					farm: { job: n, look: ln, work, lane } satisfies ToHandOf<J>,
 				});
 			} catch {
 				sent.set(look, null);
@@ -307,13 +327,15 @@ export const makeFarm = (
 };
 
 // THE HAND, in the worker: given looks, it sculpts the men asked of it
-// exactly as the page would (see shape), and sends back their pixels.
-export const farmHand = (
-	post: (msg: { farm: FromHand }, transfer?: ArrayBuffer[]) => void,
+// exactly as the page would (see the codec's shape), and sends back their
+// pixels.
+export const farmHandOf = <L extends object, J, Sh, Sent>(
+	post: (msg: { farm: FromHandOf<Sent> }, transfer?: ArrayBuffer[]) => void,
+	codec: FarmCodec<L, J, Sh, Sent>,
 ) => {
 	const arts = new Map<number, KitArt>();
 	const pics = new Map<number, HTMLCanvasElement>();
-	const looks = new Map<number, Look>();
+	const looks = new Map<number, L>();
 	// A picture sent as pixels, on a canvas of its own to be drawn from (by
 	// his lettering's sheet, read back - so kept in plain memory).
 	const canvasOf = (img: ImageData) => {
@@ -321,39 +343,24 @@ export const farmHand = (
 		cv.getContext("2d", { willReadFrequently: true })!.putImageData(img, 0, 0);
 		return cv as unknown as HTMLCanvasElement;
 	};
-	const sculpted = (msg: JobMsg) => {
+	const sculpted = (msg: JobMsg<J>) => {
 		const look = looks.get(msg.look);
-		let back: Back = { job: msg.job };
+		let back: Back<Sent> = { job: msg.job };
 		const transfer: ArrayBuffer[] = [];
 		try {
-			if (look) {
-				const { img, over, ...sh } = shape(msg.work, look, true);
-				const send = (img: ImageData) => {
-					const data = img.data as Uint8ClampedArray<ArrayBuffer>;
-					transfer.push(data.buffer);
-					return [data, img.width, img.height] as [
-						Uint8ClampedArray<ArrayBuffer>,
-						number,
-						number,
-					];
-				};
-				back = {
-					job: msg.job,
-					shaped: {
-						...sh,
-						img: send(img),
-						...(over ? { over: send(over) } : {}),
-					},
-				};
+			const sh = look ? codec.shape(msg.work, look) : undefined;
+			if (sh) {
+				back = { job: msg.job, shaped: codec.pack(sh, transfer) };
 			}
 		} catch {
 			back = { job: msg.job };
+			transfer.length = 0;
 		}
 		post({ farm: back }, transfer);
 	};
 	// The jobs waiting, a man's newest in his place in the line; done one a
 	// turn, so a newer one can come in between.
-	const waiting = new Map<string, JobMsg>();
+	const waiting = new Map<string, JobMsg<J>>();
 	let due = false;
 	const tick = new MessageChannel();
 	tick.port1.onmessage = () => {
@@ -370,7 +377,7 @@ export const farmHand = (
 			tick.port2.postMessage(0);
 		}
 	};
-	return (msg: ToHand) => {
+	return (msg: ToHandOf<J>) => {
 		if ("hello" in msg) {
 			// (No canvas to be had off the page - an older browser's worker -
 			// for his lettering, and it can do nothing.)
@@ -397,14 +404,63 @@ export const farmHand = (
 				tick.port2.postMessage(0);
 			}
 		} else {
-			const { kitArt, crest, ...rest } = msg.value;
-			const art = kitArt === undefined ? undefined : arts.get(kitArt);
-			const pic = crest === undefined ? undefined : pics.get(crest);
-			looks.set(msg.look, {
-				...rest,
-				...(art ? { kitArt: art } : {}),
-				...(pic ? { crest: pic } : {}),
-			});
+			const { rest, art, pic } = msg.value;
+			looks.set(
+				msg.look,
+				codec.join(
+					rest,
+					art === undefined ? undefined : arts.get(art),
+					pic === undefined ? undefined : pics.get(pic),
+				),
+			);
 		}
 	};
 };
+
+// THE COURT'S: no head (the page draws that on - a worker's canvas draws
+// its edges a little rougher than the page's), the crest on his warm-up
+// top as its picture; his body back as pixels, and what goes over his head
+// (see Shaped).
+export type Pixels = [Uint8ClampedArray<ArrayBuffer>, number, number];
+type SentShape = Omit<Shaped, "img" | "over"> & {
+	img: Pixels;
+	over?: Pixels;
+};
+export const sendPixels = (img: ImageData, transfer: ArrayBuffer[]): Pixels => {
+	const data = img.data as Uint8ClampedArray<ArrayBuffer>;
+	transfer.push(data.buffer);
+	return [data, img.width, img.height];
+};
+const COURT: FarmCodec<Look, Job, Shaped, SentShape> = {
+	split: ({ kitArt, crest, head: _head, ...rest }) => ({
+		rest,
+		...(kitArt ? { art: kitArt } : {}),
+		...(crest ? { pic: crest } : {}),
+	}),
+	join: (rest, art, pic) => ({
+		...(rest as Omit<Look, "kitArt" | "crest" | "head">),
+		...(art ? { kitArt: art } : {}),
+		...(pic ? { crest: pic } : {}),
+	}),
+	shape: (job, look) => shape(job, look, true),
+	pack: ({ img, over, ...sh }, transfer) => ({
+		...sh,
+		img: sendPixels(img, transfer),
+		...(over ? { over: sendPixels(over, transfer) } : {}),
+	}),
+	unpack: ({ img, over, ...sh }) => ({
+		...sh,
+		img: new ImageData(...img),
+		...(over ? { over: new ImageData(...over) } : {}),
+	}),
+};
+
+export type ToHand = ToHandOf<Job>;
+export type FromHand = FromHandOf<SentShape>;
+export const makeFarm = (
+	spawn: () => Worker,
+	hands: number,
+): Farm & { stop: () => void } => makeFarmOf(spawn, hands, COURT);
+export const farmHand = (
+	post: (msg: { farm: FromHand }, transfer?: ArrayBuffer[]) => void,
+) => farmHandOf(post, COURT);

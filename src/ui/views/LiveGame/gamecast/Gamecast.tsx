@@ -36,6 +36,7 @@ import {
 	type FeedRow,
 } from "./playFeed.ts";
 import type { GamecastInfo } from "../../../../worker/views/liveGameInfo.ts";
+import { recordText, seriesWins } from "./seriesLine.ts";
 import { FlowCharts } from "./FlowCharts.tsx";
 import { playSentence } from "./sentence.ts";
 import { ShotChart } from "./ShotChart.tsx";
@@ -1159,19 +1160,13 @@ export const Series = ({
 	}
 	// The record so far, away team first as everywhere here.
 	const [away, home] = TEAM_NUMS_DISPLAY_ORDER.map((ti) => boxScore.teams[ti]);
-	const wins = (tid: number) =>
-		info.series.filter((s) => {
-			if (!s.pts) {
-				return false;
-			}
-			const i = s.tids[0] === tid ? 0 : 1;
-			return s.pts[i] > s.pts[i === 0 ? 1 : 0];
-		}).length;
-	const w: [number, number] = [wins(away.tid), wins(home.tid)];
-	const summary =
-		w[0] === w[1]
-			? `Tied ${w[0]}-${w[1]}`
-			: `${w[0] > w[1] ? away.abbrev : home.abbrev} leads ${Math.max(w[0], w[1])}-${Math.min(w[0], w[1])}`;
+	const summary = recordText(
+		seriesWins(info, away.tid, home.tid),
+		[away, home],
+		boxScore.playoffs
+			? info.bracket?.find((r) => r.series.some((x) => x.now))?.toWin
+			: undefined,
+	);
 	return (
 		<Section
 			title={boxScore.playoffs ? "Series" : "Season Series"}

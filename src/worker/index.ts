@@ -27,8 +27,10 @@ import {
 	beginOwnLiveSimRequest,
 	getSimSafety,
 	getSyncRequired,
+	mateLiveCallFor,
 	restoreSyncRequiredFromMeta,
 	startLiveBroadcast,
+	watchLiveBroadcast,
 } from "./core/sync/connect.ts";
 
 // Let the game engine trigger a publish when a multi-day (fire-and-forget) sim
@@ -318,6 +320,29 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 			return undefined;
 		}
 		if (syncEngine) {
+			// The very game a league-mate is simming live right now (both teams
+			// the room's, so it is this device's own game too): Watch joins
+			// their broadcast, in step with them, and Sim is refused - never a
+			// second playback here at this device's own pace.
+			const mateLive = isOwnGameSimCall(type, name)
+				? mateLiveCallFor(name, param)
+				: undefined;
+			if (mateLive) {
+				syncDebugLog("api:guard-refused", { type, name, step: "mate-live" });
+				if (mateLive.action === "join") {
+					await watchLiveBroadcast();
+				} else {
+					util.logEvent(
+						{
+							type: "error",
+							text: `${mateLive.byName} is simming this game live. Watch it with them instead.`,
+							persistent: true,
+						},
+						conditions,
+					);
+				}
+				return undefined;
+			}
 			// One carve-out: your OWN team's single game. A one-gid sim is a
 			// disjoint slice of the day and simDayClaimPolicy's fence refuses any
 			// overlapping claim atomically, so this cannot double-sim a game

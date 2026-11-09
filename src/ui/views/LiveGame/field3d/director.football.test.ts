@@ -541,6 +541,8 @@ describe("replays", () => {
 		const run = (rate: number) => {
 			const s = makeFieldClock(false, 0);
 			s.t = r.cue - 500;
+			// (The page's cursor already where it is: see court3d/show.ts.)
+			s.prevCursor = input.cursor;
 			let now = 0;
 			stepField(s, { ...input, rate }, tl, now);
 			const seen: { t: number; at?: number }[] = [];

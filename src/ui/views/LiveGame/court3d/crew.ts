@@ -2470,8 +2470,14 @@ const coachState = (
 	}
 	// A break: in the huddle with his five (see huddleWalk).
 	if (!paced) {
+		// (Not one called before a highlight cut to since: he is in his box
+		// as it opens - see ringState.)
 		const h = (tl.huddles ?? []).find(
-			(x) => x.team === team && t >= x.called && t < x.t1 + HUDDLE_BACK_MOST,
+			(x) =>
+				x.team === team &&
+				t >= x.called &&
+				t < x.t1 + HUDDLE_BACK_MOST &&
+				!(tl.clips ?? []).some((c) => c > x.called && c <= t),
 		);
 		const st = h && huddleWalk(tl, t, m, ball, h);
 		if (st) {
