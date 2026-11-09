@@ -74,6 +74,10 @@ export const artFor = (deviceRows: number, res: Resolution): number => {
 	return Math.min(coarsest, finest + res.coarser);
 };
 
+// A frame drawn in under this (ms, typically) is not what keeps frames
+// apart.
+const SPARE_DRAW_MS = 6;
+
 const median = (xs: number[]) => {
 	const s = [...xs].sort((a, b) => a - b);
 	return s[s.length >> 1] ?? 0;
@@ -82,6 +86,14 @@ const median = (xs: number[]) => {
 // A frame took `drawMs` to draw - `spriteMs` of it on new pictures of the
 // players - and came `frameMs` after the last: true if the picture should
 // now change size.
+// (`paceMs`: how far apart its frames are meant to come - a sixtieth of a
+// second, or a thirtieth on a device held to that, see pace.ts. A frame
+// every thirtieth of a second by choice is not a device falling behind: it
+// is too slow only if it can't hold that, and it has time to spare if a
+// frame leaves room in that. Read as falling behind, every device held to
+// thirty went a size coarser - a phone's picture to blocks - and, its
+// frames never again under a fiftieth of a second apart, stayed there.)
+const FAST_MS = 1000 / 60;
 export const adjust = (
 	res: Resolution,
 	deviceRows: number,
@@ -89,6 +101,7 @@ export const adjust = (
 	drawMs: number,
 	now: number,
 	spriteMs = 0,
+	paceMs = FAST_MS,
 ): boolean => {
 	res.drawMs =
 		res.drawMs === undefined ? drawMs : res.drawMs * 0.94 + drawMs * 0.06;
@@ -109,8 +122,9 @@ export const adjust = (
 	res.stretch = freshStretch(now);
 	const art = artFor(deviceRows, res);
 	const { finest, coarsest } = bounds(deviceRows);
+	const held = Math.max(1, paceMs / FAST_MS);
 	let verdict = 0;
-	if (frame > 26 && draw > 12 && art < coarsest) {
+	if (frame > 26 * held && draw > 12 * held && art < coarsest) {
 		// Under about 40 frames a second - and the picture the reason: if
 		// drawing it is not what takes the time (something else on the page,
 		// the browser cleaning up after itself), a coarser one would only look
@@ -118,12 +132,14 @@ export const adjust = (
 		verdict = 1;
 	} else if (
 		art > finest &&
-		frame < 18.5 &&
+		// (On time - or late for no fault of the drawing, which takes next to
+		// nothing: a screen that only refreshes thirty times a second.)
+		(frame < 18.5 * held || draw < SPARE_DRAW_MS) &&
 		// A size finer, the players' new pictures have that many more pixels
 		// to them; the rest of the drawing - working out where everyone is,
 		// handing the floor and the stands to the graphics card - hardly
 		// changes.
-		draw - sprite + sprite * (art / (art - 1)) ** 2 < 11
+		draw - sprite + sprite * (art / (art - 1)) ** 2 < (held > 1 ? 14 : 11)
 	) {
 		verdict = -1;
 	}

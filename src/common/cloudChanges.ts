@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 247,
+		date: "2026-11-09",
+		text: "3D games on phones: the picture could drop to a blocky, low-detail size and stay there whenever the game was running at 30 frames a second (as phones often do, always in Low Power Mode). It now stays as sharp as the phone can draw in time.",
+	},
+	{
 		n: 246,
 		date: "2026-11-09",
 		text: "Realistic Front Offices: CPU teams trading with each other now follow the same draft rule as with you - no giving up an earlier pick for later ones in the same draft unless the rest of the deal pays for it. In test leagues teams playing by it won more titles.",

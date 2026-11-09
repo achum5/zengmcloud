@@ -1019,8 +1019,12 @@ const texture = (gl: WebGL2RenderingContext, filter: number): WebGLTexture => {
 	return t;
 };
 
+// WHAT BECAME OF IT on this device, for whoever is sent a capture of the
+// log (see glReport): why there is no card, or why it was given up.
+let why = "";
 const start = (): Gl | null => {
 	if (typeof document === "undefined" || asked() === "0") {
+		why = asked() === "0" ? "turned off" : "no page";
 		return null;
 	}
 	const canvas = document.createElement("canvas");
@@ -1037,15 +1041,18 @@ const start = (): Gl | null => {
 		failIfMajorPerformanceCaveat: !glForced(),
 	});
 	if (!gl) {
+		why = "no webgl2";
 		return null;
 	}
 	const shade = compile(gl, VERT, FRAG);
 	const rim = compile(gl, VERT, FRAG_RIM);
 	if (!shade || !rim) {
+		why = "shader would not build";
 		return null;
 	}
 	canvas.addEventListener("webglcontextlost", () => {
 		off = true;
+		why = "context lost";
 	});
 	gl.disable(gl.BLEND);
 	gl.disable(gl.DEPTH_TEST);
@@ -1114,14 +1121,16 @@ export const glCard = (): Gl | undefined => {
 			card = start();
 		} catch {
 			card = null;
+			why = "threw starting";
 		}
 	}
 	return card ?? undefined;
 };
 // No more of it this visit (see sprite.ts: it drew him wrong, or no
 // faster).
-export const glOff = () => {
+export const glOff = (reason = "given up") => {
 	off = true;
+	why = reason;
 };
 
 // Room on the sheet for a sprite w x h and what goes over his head beside
@@ -1212,6 +1221,7 @@ export const glSculpt = (
 	}
 	if (g.gl.isContextLost()) {
 		off = true;
+		why = "context lost";
 		return undefined;
 	}
 	const b = build(cam, st, body, look, px, ox, oy, true);
@@ -1553,6 +1563,7 @@ export const glSculpt = (
 	}
 	if (gl.isContextLost()) {
 		off = true;
+		why = "context lost";
 		return undefined;
 	}
 
@@ -1590,6 +1601,18 @@ const EVERY = 5;
 // (Far slower than the page a third of the way in: no need of the rest.)
 const EARLY = 10;
 const FAR = 2;
+let timed = "";
+// What became of the card on this device, in a line (see broadcast's
+// capture of it): in use, never there, or given up - and why - and how it
+// timed against the page.
+export const glReport = (): string =>
+	`${card === undefined ? "not tried" : card === null ? `none (${why})` : off ? `off (${why})` : "on"}${
+		timed
+			? `, timed ${timed}`
+			: took.n >= 0 && card
+				? `, timing (${took.n})`
+				: ""
+	}${asked() === null ? "" : `, asked ${asked()}`}`;
 // Whether the card is still being timed: its work is waited for then,
 // here and in the picture kept (see sprite.ts glKeep) - a card only looks
 // quick if what it is asked is not waited for.
@@ -1611,8 +1634,11 @@ export const glTook = (ms: number, page: () => number) => {
 	const slower = (by: number) =>
 		took.pages > 0 && took.ms / judged > (took.page / took.pages) * by;
 	if (judged === EARLY ? slower(FAR) : judged >= JUDGED) {
+		timed = `${(took.ms / judged).toFixed(2)}ms a man, the page ${
+			took.pages > 0 ? (took.page / took.pages).toFixed(2) : "?"
+		}ms`;
 		if (slower(judged >= JUDGED ? 1 : FAR)) {
-			glOff();
+			glOff("no quicker than the page");
 		}
 		took.n = -1;
 	}
