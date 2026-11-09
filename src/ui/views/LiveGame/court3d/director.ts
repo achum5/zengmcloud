@@ -996,6 +996,10 @@ const FOULER_HIPS = 0.2;
 const FOULER_HEAD = 0.12;
 const DREW_MS = 900;
 const DREW_LEAST = 550;
+// (Not while being eased over off a man: a nudge's ramp if unsaid - see
+// NUDGE_RAMP in evaluate.ts - and no more than this far kept off one, feet.)
+const DREW_NUDGE_RAMP = 450;
+const DREW_SEP_MOST = 0.3;
 // Out of bounds (see ourBall): how near where it went out (feet) the man of
 // each side nearest it is to have a say about it, how often he points the
 // way he says it goes, and for how long (ms).
@@ -28917,10 +28921,24 @@ class Director {
 	// head. Only in a moment each has to himself, stood there, once all
 	// else is laid: nothing else changes for it.
 	private drewTheFoul() {
+		// (Not eased over off a man meanwhile, either: stood still in it - see
+		// Track.nudges, and keepOff's.)
+		const still = (tr: Track, t0: number, t1: number) =>
+			!(tr.nudges ?? []).some((n) => {
+				const r = Math.min(n.ramp ?? DREW_NUDGE_RAMP, (n.t1 - n.t0) / 2);
+				return (n.t0 < t1 && n.t0 + r > t0) || (n.t1 - r < t1 && n.t1 > t0);
+			}) &&
+			!(tr.sep ?? []).some(
+				(sp) =>
+					sp.t0 < t1 &&
+					sp.t0 + sp.dx.length * SEP_MS > t0 &&
+					sp.dl.at(-1)! > DREW_SEP_MOST,
+			);
 		const clear = (pid: number, t0: number, t1: number) => {
 			const tr = this.track(pid);
 			return (
 				tr !== undefined &&
+				still(tr, t0, t1) &&
 				!tr.acts.some((a) => a.t1 > t0 - 60 && a.t0 < t1 + 60) &&
 				!tr.moves.some((m) => m.t1 > t0 - 60 && m.t0 < t1 + 60) &&
 				tr.shown.findLast(([ts]) => ts <= t0)?.[1] === true &&

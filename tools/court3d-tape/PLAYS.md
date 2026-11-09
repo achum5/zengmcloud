@@ -48,9 +48,9 @@ each part, so the table below can say how far along each part is.
 | 1   | Three pointer, no good (`fgaTp` → `missTp`)                                                   |       39 | working |
 | 2   | Defensive rebound (`drb`)                                                                     |       74 | working |
 | 3   | Three pointer, made (`tp`)                                                                    |       25 | working |
-| 4   | Post shot, made or missed (`fgaLowPost` → `fgLowPost` / `missLowPost`)                        |       49 | todo    |
-| 5   | Shot at the rim, made or missed (`fgaAtRim` → `fgAtRim` / `missAtRim`)                        |       47 | todo    |
-| 6   | Mid-range jumper, made or missed (`fgaMidRange` → `fgMidRange` / `missMidRange`)              |       34 | todo    |
+| 4   | Post shot, made or missed (`fgaLowPost` → `fgLowPost` / `missLowPost`)                        |       49 | working |
+| 5   | Shot at the rim, made or missed (`fgaAtRim` → `fgAtRim` / `missAtRim`)                        |       47 | working |
+| 6   | Mid-range jumper, made or missed (`fgaMidRange` → `fgMidRange` / `missMidRange`)              |       34 | working |
 | 7   | Substitution (`sub`)                                                                          |       55 | working |
 | 8   | Free throws (`ft` / `missFt`)                                                                 |       38 | working |
 | 9   | Offensive rebound (`orb`), putback and tip-in (`fgaPutBack`, `fgaTipIn` and results)          |       25 | working |
@@ -65,7 +65,7 @@ each part, so the table below can say how far along each part is.
 | 18  | Start and end of a period, overtime (`period`, `endOfPeriod`, `overtime`)                     |        6 | todo    |
 | 19  | Jump ball (`jumpBall`)                                                                        |        1 | working |
 | 20  | Game over (`gameOver`)                                                                        |        1 | todo    |
-| 21  | Injury, fouling out (`injury`, `foulOut`)                                                     |     rare | todo    |
+| 21  | Injury, fouling out (`injury`, `foulOut`)                                                     |     rare | working |
 | 22  | Heaves and the clock running out (`noShot`, `runOutClock`, `fgaTpFake`)                       |     rare | todo    |
 | 23  | Intentional foul (`intentionalFoul`)                                                          |     rare | todo    |
 | 24  | Elam ending, shootout (`elamActive`, `shootout*`)                                             |  setting | todo    |
@@ -705,3 +705,10 @@ Measured 2026-11-09 (10 tips over nine real games): the two jumpers set
 in the circle and go up for it, the winner a touch higher; the rest round
 the circle, the smallest man back; off the tip, the winners' men all go
 the right way, and the losers' get back.
+
+## 21. Injury, fouling out
+
+Measured 2026-11-09: neither came up in nine real games. Hurt in a game, a
+man goes down (or grabs at it), a teammate or two come over and crouch
+by him, and his trainer comes out; the man out hurt from before the game
+sits on the bench in his street clothes (see the side notes).
