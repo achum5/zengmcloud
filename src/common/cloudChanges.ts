@@ -14,7 +14,7 @@ export const CLOUD_CHANGES: CloudChange[] = [
 	{
 		n: 244,
 		date: "2026-11-09",
-		text: "3D games: players wear proper basketball shoes - high-tops with a laced, sloped instep and a lower toe, instead of a rounded slipper - and their arms and legs read as one limb rather than muscles laid on top.",
+		text: "3D games: players wear proper basketball shoes - high-tops with a laced, sloped instep and a lower toe, instead of a rounded slipper - their arms and legs read as one limb rather than muscles laid on top, and their wrists are as wide as a wrist is.",
 	},
 	{
 		n: 243,

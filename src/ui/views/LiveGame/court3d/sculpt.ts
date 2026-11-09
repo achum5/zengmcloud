@@ -1085,20 +1085,22 @@ export const ARM: ArmBuild = {
 	delt: [1.16, 0.96, 0.9],
 	biceps: [0.62, 0.76, 0.56],
 	elbow: 0.62,
-	fore: [0.92, 1.08, 0.74, 0.56],
+	// (Down to a wrist as wide as a wrist is: his hand is on the end of
+	// his arm, not a mitten on a stick.)
+	fore: [0.92, 1.08, 0.78, 0.68],
 };
 // (A lean man's, and a strong one's - see buildsOf.)
 const ARM_LEAN: ArmBuild = {
 	delt: [1.06, 0.9, 0.88],
 	biceps: [0.58, 0.68, 0.54],
 	elbow: 0.62,
-	fore: [0.9, 1, 0.74, 0.56],
+	fore: [0.9, 1, 0.78, 0.68],
 };
 const ARM_STRONG: ArmBuild = {
 	delt: [1.26, 1.02, 0.92],
 	biceps: [0.66, 0.86, 0.58],
 	elbow: 0.62,
-	fore: [0.94, 1.16, 0.74, 0.56],
+	fore: [0.94, 1.16, 0.78, 0.68],
 };
 const FWD = v3(1, 0, 0);
 const UP_V = v3(0, 0, 1);
