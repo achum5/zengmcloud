@@ -53,8 +53,8 @@ each part, so the table below can say how far along each part is.
 | 6   | Mid-range jumper, made or missed (`fgaMidRange` → `fgMidRange` / `missMidRange`)              |       34 | todo    |
 | 7   | Substitution (`sub`)                                                                          |       55 | working |
 | 8   | Free throws (`ft` / `missFt`)                                                                 |       38 | working |
-| 9   | Offensive rebound (`orb`), putback and tip-in (`fgaPutBack`, `fgaTipIn` and results)          |       25 | todo    |
-| 10  | Non-shooting foul, in the bonus (`pfNonShooting`, `pfBonus`)                                  |       19 | todo    |
+| 9   | Offensive rebound (`orb`), putback and tip-in (`fgaPutBack`, `fgaTipIn` and results)          |       25 | working |
+| 10  | Non-shooting foul, in the bonus (`pfNonShooting`, `pfBonus`)                                  |       19 | working |
 | 11  | Shooting foul (`pfFG`, `pfTP`)                                                                |       13 | todo    |
 | 12  | Turnover (`tov`: bad pass, lost ball, travel, offensive foul, shot clock, 5 seconds)          |       15 | todo    |
 | 13  | Steal (`stl`)                                                                                 |       13 | todo    |
@@ -580,3 +580,33 @@ own every trip - one to four bounces at his own beat (slow or quick), a
 flip with backspin first or after them, a breath down in his legs, a beat
 with it eyes on the rim - in the time his used to take: 15 ways over the
 three games (4 before).
+
+## 9. Offensive rebound, putback, tip-in
+
+Measured 2026-11-09 (74 offensive boards at real speed; the variety tool's
+`orb` line, off the shooter's own rim): how he got it (up high, two hands
+36, ripped down one-handed 6; at chest height 22; off the floor 10), where
+(under it 40, in the lane 27, further out 7), what it came off (a jumper or
+one at the rim mostly under it, a three in the lane), the traffic (in a
+crowd 41, one of theirs up with him or a hand at it 34), and what he did
+with it - back up with it 24 (at once, after a gather, off a dribble), out
+of it 50 (kicked out to the arc 37). 73 different of 74. Putbacks and
+tip-ins as lines of their own are rare in the sim (one in three games).
+Not yet: a tap out to a mate, the ball kept alive without being caught.
+
+## 10. Non-shooting foul, in the bonus
+
+Measured 2026-11-09 (46 away from a shot at real speed; the variety
+tool's `pfNonShooting` and `pfBonus` lines): the call (held 25, hit on the
+arm 11, a help man blocking the drive 10), on the ball or off it (a cutter
+held up), where (the half court 28, at the rim 18), the man fouled (looks
+for the call, jolted, knocked off balance - or nothing), the man who
+fouled him (a reach or a hack, protesting it now and then), the officials'
+signals, and the others with the whistle gone. Never: the official who
+called it reporting it to the table.
+
+Now (2026-11-09): through with the signal, the official who called it runs
+over in front of the table and reports it, turned to it - who (fingers up,
+one hand and the other) and what - then back to his place: all 46. Not yet
+on a foul with free throws to come (the official at the line has the
+ball), nor the ball handed to an official for the inbound.

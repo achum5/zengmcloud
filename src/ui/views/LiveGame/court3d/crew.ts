@@ -1547,6 +1547,10 @@ type Cue = {
 	pair?: boolean;
 	// (Only an official through with whatever he was signaling.)
 	idle?: boolean;
+	// (The official who made the cue begun then, and only him.)
+	by?: number;
+	// (Run in to this far short of it, feet: WAVE_SHORT if unsaid.)
+	short?: number;
 };
 // A shot after the horn waved off: run in at it - no nearer it than this
 // (feet), as quick as this (feet a second) - waving it off this long (ms).
@@ -1562,6 +1566,21 @@ const CUE_MS = 11000;
 const BECKON_LEAD = 350;
 const BECKON_MS = 1100;
 const TO_TABLE = -Math.PI / 2;
+// A foul away from a shot, the ball to be taken out: the official who
+// called it, through with the signal, runs over to the table - to a beat
+// after it, as far as this (feet) - and reports it, turned to it: who, and
+// what. Where he goes: this far (feet) along from the middle, on the side
+// it was called, and this far in off the sideline in front of the table.
+const REPORT_AFTER = 150;
+const REPORT_RUN = 60;
+const REPORT_MS = 1700;
+const REPORT_ALONG = 3;
+const REPORT_AT_Y = 2.5;
+// (The longest it can be after the call till he has reported it: ms.)
+const REPORT_LONGEST =
+	3000 + REPORT_AFTER + (REPORT_RUN / WAVE_PACE) * 1000 + REPORT_MS;
+const reported = (tl: CourtTimeline, t: number): boolean =>
+	beatAt(tl, t)?.type === "pfNonShooting";
 const checkInsOf = new WeakMap<CourtTimeline, { at: Pt; t: number }[]>();
 const beckons = (tl: CourtTimeline): { at: Pt; t: number }[] => {
 	let list = checkInsOf.get(tl);
@@ -1596,8 +1615,14 @@ const cuesBefore = (tl: CourtTimeline, t: number): Cue[] => {
 	}
 	for (let i = lastIndex(tl.fx, t, (f) => f.t); i >= 0; i--) {
 		const f = tl.fx[i]!;
-		if (t - f.t > CUE_MS) {
+		if (t - f.t > CUE_MS + REPORT_LONGEST) {
 			break;
+		}
+		// (Long after the call, it is only its report there might still be
+		// to see through.)
+		const reports = f.call === "foul" && reported(tl, f.t);
+		if (t - f.t > CUE_MS && !reports) {
+			continue;
 		}
 		if (f.kind === "whistle" && f.call === "noBasket") {
 			// The one nearest the man who let it go runs in at him, another
@@ -1662,8 +1687,9 @@ const cuesBefore = (tl: CourtTimeline, t: number): Cue[] => {
 											[side, 950],
 										];
 			let t0 = f.t;
+			const P = f.at ?? ballSpot(tl, f.t);
 			out.push({
-				at: f.at ?? ballSpot(tl, f.t),
+				at: P,
 				t0: f.t,
 				moves: plan.map(([m, ms]) => {
 					const move = { ...m, t0, t1: t0 + ms };
@@ -1671,6 +1697,23 @@ const cuesBefore = (tl: CourtTimeline, t: number): Cue[] => {
 					return move;
 				}),
 			});
+			// (And reported to the table.)
+			const r0 = t0 + REPORT_AFTER;
+			if (reports && r0 <= t) {
+				out.push({
+					at: {
+						x: COURT_W / 2 + (P.x < COURT_W / 2 ? -1 : 1) * REPORT_ALONG,
+						y: REPORT_AT_Y,
+					},
+					t0: r0,
+					moves: [
+						{ anim: "report", t0: r0, t1: r0 + REPORT_MS, yaw: TO_TABLE },
+					],
+					onto: REPORT_RUN,
+					short: 0.3,
+					by: f.t,
+				});
+			}
 		} else if (f.kind === "roar" && f.what === "three") {
 			const from = shotFrom(tl, f.t);
 			if (from) {
@@ -1718,6 +1761,8 @@ const signalsAt = (
 	// A cut settles everyone where the play has them.
 	const cut = lastCut(tl, t);
 	let last = -1;
+	// (Who made each, by when it was begun.)
+	const made = new Map<number, number>();
 	for (const cue of cuesBefore(tl, t)) {
 		if (cue.t0 < cut) {
 			continue;
@@ -1738,25 +1783,30 @@ const signalsAt = (
 			);
 		};
 		let ref = -1;
-		for (let i = 0; i < 3; i++) {
-			if (
-				i !== taken &&
-				!busy(i) &&
-				(ref < 0 || dist(pos[i]!, cue.at) < dist(pos[ref]!, cue.at))
-			) {
-				ref = i;
+		if (cue.by !== undefined) {
+			ref = made.get(cue.by) ?? -1;
+		} else {
+			for (let i = 0; i < 3; i++) {
+				if (
+					i !== taken &&
+					!busy(i) &&
+					(ref < 0 || dist(pos[i]!, cue.at) < dist(pos[ref]!, cue.at))
+				) {
+					ref = i;
+				}
 			}
 		}
 		if (ref < 0) {
 			continue;
 		}
+		made.set(cue.t0, ref);
 		last = ref;
 		let still = pos[ref]!;
 		let moves = cue.moves;
 		let from: Pt | undefined;
 		// (Running in to make it: the signal once he is there.)
 		const onto = cue.onto
-			? Math.min(cue.onto, dist(still, cue.at) - WAVE_SHORT)
+			? Math.min(cue.onto, dist(still, cue.at) - (cue.short ?? WAVE_SHORT))
 			: 0;
 		if (onto > 0.5) {
 			const k = onto / dist(still, cue.at);

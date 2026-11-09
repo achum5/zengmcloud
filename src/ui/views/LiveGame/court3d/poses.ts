@@ -6289,6 +6289,24 @@ export const ANIMS = {
 			[1, P.ready],
 		],
 	},
+	// Reporting a foul to the table: who - his hands up in front of his
+	// chest, fingers out, one and then the other - and what, a hand chopped
+	// at his other wrist.
+	report: {
+		kind: "act",
+		n: 9,
+		keys: [
+			[0, P.ready],
+			[0.14, pose({ shN: 112, elN: 74, abN: 8, shF: 36, elF: 34, lean: -1 })],
+			[0.34, pose({ shN: 112, elN: 74, abN: 8, shF: 36, elF: 34, lean: -1 })],
+			[0.44, pose({ shN: 40, elN: 34, shF: 112, elF: 74, abF: 8, lean: -1 })],
+			[0.62, pose({ shN: 40, elN: 34, shF: 112, elF: 74, abF: 8, lean: -1 })],
+			[0.72, pose({ shN: 106, elN: 80, abN: -10, shF: 58, elF: 84, abF: -8 })],
+			[0.8, pose({ shN: 64, elN: 56, abN: -22, shF: 58, elF: 84, abF: -8 })],
+			[0.88, pose({ shN: 106, elN: 80, abN: -10, shF: 58, elF: 84, abF: -8 })],
+			[1, P.ready],
+		],
+	},
 	// Traveling: the fists rolling over each other in front of him.
 	travel: {
 		kind: "loop",

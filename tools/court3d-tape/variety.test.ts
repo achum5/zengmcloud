@@ -705,6 +705,7 @@ const reboundParts = (
 	from: number,
 	until: number,
 	pos: string,
+	offensive = false,
 ) => {
 	const k = tl.ball.findIndex(
 		(s) => s.kind === "hold" && s.pid === pid && s.t0 >= from && s.t0 <= until,
@@ -716,8 +717,9 @@ const reboundParts = (
 	const t = h.t0;
 	const tr = tl.tracks.get(pid)!;
 	const team = tr.team;
-	// The rim the shot was at: the other side's, off a defensive board.
-	const shotTeam = tl.tracks.get(pid)!.team === 0 ? 1 : 0;
+	// The rim the shot was at: the other side's, off a defensive board -
+	// his own, off an offensive one.
+	const shotTeam = offensive ? team : team === 0 ? 1 : 0;
 	const prev = tl.ball[k - 1]!;
 	const R = evalPlayer(tl, pid, t);
 	const act = tr.acts.find((a) => a.t0 <= t + 30 && a.t1 >= t - 30);
@@ -745,7 +747,7 @@ const reboundParts = (
 	if (act?.anim === "rebound") {
 		how += ", one hand";
 	} else if (act?.anim === "board") {
-		how += ", two hands";
+		how += act.oneHand ? ", ripped down one-handed" : ", two hands";
 	}
 	// Where: how far out, and which side.
 	const rimAt = { x: rimX(shotTeam as 0 | 1), y: 25 };
@@ -833,7 +835,28 @@ const reboundParts = (
 	const next = tl.ball[j + 1];
 	const heldFor = (next?.t0 ?? t) - t;
 	let after: string;
-	if (next?.kind === "fly" && "pid" in next.to && "pid" in next.from) {
+	if (
+		offensive &&
+		next?.kind === "fly" &&
+		"pid" in next.from &&
+		!("pid" in next.to)
+	) {
+		// Back up with it: how quick, and from how far.
+		const U = evalPlayer(tl, pid, next.t0);
+		after = `back up${dribbled ? " off a dribble" : ""} ${heldFor < 700 ? "at once" : heldFor < 1500 ? "after a gather" : "after a while"}, ${dist(U, rimAt) < 6 ? "under it" : "from out"}`;
+	} else if (
+		offensive &&
+		next?.kind === "fly" &&
+		"pid" in next.to &&
+		"pid" in next.from
+	) {
+		const to = tl.tracks.get(next.to.pid);
+		const C = evalPlayer(tl, next.to.pid, next.t1);
+		after =
+			to?.team === team
+				? `${dribbled ? "dribbled, then " : ""}${dist(C, rimAt) > 22 ? "kicked out to the arc" : "passed out"}${heldFor < 900 ? " at once" : ""}`
+				: "lost it";
+	} else if (next?.kind === "fly" && "pid" in next.to && "pid" in next.from) {
 		const to = tl.tracks.get(next.to.pid);
 		const L = dist(
 			evalPlayer(tl, pid, next.t0),
@@ -1210,6 +1233,142 @@ const ftParts = (
 	};
 };
 
+// A foul away from a shot: how it came about (the call), on the ball or
+// off it, where on the floor, what the man fouled and the man who fouled
+// him do then, what the officials signal, what the others do with the
+// whistle gone, the ball after it, and how long till play goes on.
+const foulParts = (
+	tl: CourtTimeline,
+	events: { type: string; pid?: number }[],
+	b: CourtTimeline["beats"][number],
+): { pid: number; parts: Record<string, string> } | undefined => {
+	const fouler = events[b.i]!.pid;
+	if (typeof fouler !== "number") {
+		return undefined;
+	}
+	const ftr = tl.tracks.get(fouler)!;
+	const whistle = tl.fx.find(
+		(f) =>
+			f.kind === "whistle" &&
+			f.call === "foul" &&
+			Math.abs(f.t - b.actionStart) < 50,
+	);
+	if (!whistle) {
+		return undefined;
+	}
+	const hit = whistle.t;
+	const team = ftr.team === 0 ? 1 : 0;
+	const rim = { x: rimX(team), y: 25 };
+	// Who he fouled: the man of theirs nearest where it was called.
+	let victim: number | undefined;
+	let best = Infinity;
+	for (const o of tl.tracks.values()) {
+		if (o.pid < 0 || o.team !== team) {
+			continue;
+		}
+		const O = evalPlayer(tl, o.pid, hit);
+		const d = whistle.at ? dist(O, whistle.at) : Infinity;
+		if (O.shown && d < best) {
+			best = d;
+			victim = o.pid;
+		}
+	}
+	const holderSeg = tl.ball.findLast((s) => s.t0 <= hit);
+	const onBall =
+		holderSeg?.kind === "hold" && holderSeg.pid === victim
+			? "on the ball"
+			: "off the ball";
+	const V = victim === undefined ? undefined : evalPlayer(tl, victim, hit);
+	const where = V
+		? dist(V, rim) < 10
+			? "at the rim"
+			: dist(V, rim) < 22
+				? "in the half court"
+				: (V.x - 47) * (rim.x - 47) > 0
+					? "out top"
+					: "in the backcourt"
+		: "?";
+	const did = (pid: number | undefined) => {
+		if (pid === undefined) {
+			return "?";
+		}
+		const tr = tl.tracks.get(pid)!;
+		const acts = tr.acts
+			.filter((a) => a.t0 >= hit - 300 && a.t0 < hit + 2500)
+			.map((a) => a.anim as string);
+		const arms = (tr.arms ?? [])
+			.filter((g) => g.t0 >= hit - 300 && g.t0 < hit + 2500)
+			.map((g) => `arm ${g.kind}`);
+		const all = [...new Set([...acts, ...arms])];
+		return all.length > 0 ? all.join("+") : "nothing";
+	};
+	// The others, a moment after the whistle: still going, or stopped.
+	let going = 0;
+	let stopped = 0;
+	for (const o of tl.tracks.values()) {
+		if (o.pid < 0 || o.pid === fouler || o.pid === victim) {
+			continue;
+		}
+		const A = evalPlayer(tl, o.pid, hit + 1200);
+		const B = evalPlayer(tl, o.pid, hit + 1500);
+		if (!A.shown) {
+			continue;
+		}
+		if (dist(A, B) / 0.3 > 4) {
+			going += 1;
+		} else {
+			stopped += 1;
+		}
+	}
+	// The ball after it: where it goes.
+	const after = tl.ball.filter((s) => s.t0 > hit && s.t0 < hit + 4000);
+	const firstAway = after.find(
+		(s) => s.kind === "fly" || s.kind === "bounce" || s.kind === "rest",
+	);
+	const ball =
+		firstAway === undefined
+			? "kept"
+			: firstAway.kind === "fly"
+				? "pid" in firstAway.to
+					? firstAway.to.pid < 0
+						? "to an official"
+						: "to a player"
+					: "tossed down"
+				: "dropped";
+	const k = tl.beats.indexOf(b);
+	const next = tl.beats.slice(k + 1).find((x) => x.type !== "sub");
+	// Reported to the table by an official: within a few seconds of it.
+	const team0 = { region: "", name: "", colors: ["#000", "#fff", "#888"] } as {
+		region: string;
+		name: string;
+		colors: [string, string, string];
+	};
+	const crew = crewFor(1, team0, team0);
+	let report = "not reported";
+	for (let t = hit + 2000; t < hit + 9000; t += 250) {
+		if (crewAt(tl, t, crew).states.some((x) => x.anim === "report")) {
+			report = `reported in ${Math.round((t - hit) / 1000)}s`;
+			break;
+		}
+	}
+	return {
+		pid: fouler,
+		parts: {
+			call: whistle.how ?? "?",
+			ball: onBall,
+			where,
+			fouled: did(victim),
+			fouler: did(fouler),
+			others: `${going} going, ${stopped} stopped`,
+			official: report,
+			after: ball,
+			next: next
+				? `${next.type} in ${Math.round((next.actionStart - hit) / 1000)}s`
+				: "-",
+		},
+	};
+};
+
 test.skipIf(games.length === 0)(
 	"variety of one line",
 	() => {
@@ -1231,6 +1390,17 @@ test.skipIf(games.length === 0)(
 			}));
 			for (const b of tl.beats) {
 				if (b.type !== line) {
+					continue;
+				}
+				if (line === "pfNonShooting" || line === "pfBonus") {
+					if (fastAt(tl, b.actionStart) > 1.2) {
+						fastOnes += 1;
+						continue;
+					}
+					const got = foulParts(tl, events, b);
+					if (got) {
+						all.push({ pid: `${tag}:${got.pid}`, parts: got.parts });
+					}
 					continue;
 				}
 				if (line === "ft" || line === "missFt") {
@@ -1265,6 +1435,7 @@ test.skipIf(games.length === 0)(
 						b.preStart - 3000,
 						b.end + 1500,
 						posOf.get(rpid) ?? "",
+						line === "orb",
 					);
 					if (!got) {
 						continue;

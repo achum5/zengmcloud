@@ -392,6 +392,56 @@ describe("3D crew", () => {
 		assert.isAtLeast(waved, waits * 0.7);
 	}, 240_000);
 
+	test("a foul away from a shot is reported to the table by the official who called it", () => {
+		let fouls = 0;
+		let reported = 0;
+		for (const seed of ["a", "b"]) {
+			const { tl, crew, events } = working(seed);
+			const refs = (t: number) =>
+				crewAt(tl, t, crew).states.filter((s) => isRef(s.pid));
+			for (const b of tl.beats) {
+				if (
+					events[b.i]?.type !== "pfNonShooting" ||
+					fastAt(tl, b.actionStart) > 1.01
+				) {
+					continue;
+				}
+				const f = tl.fx.find(
+					(x) =>
+						x.kind === "whistle" &&
+						x.call === "foul" &&
+						Math.abs(x.t - b.actionStart) < 50,
+				);
+				const caller = f && refs(f.t + 350).find((r) => r.anim === "signalUp");
+				if (!f || !caller) {
+					continue;
+				}
+				fouls += 1;
+				for (let t = f.t + 2000; t < f.t + 9000; t += 100) {
+					// (Turned to it once he is into it.)
+					const r = refs(t + 700).find((x) => x.pid === caller.pid);
+					if (
+						refs(t).find((x) => x.pid === caller.pid)?.anim === "report" &&
+						r
+					) {
+						reported += 1;
+						assert.isBelow(r.y, 8, `${seed} ${Math.round(f.t)}`);
+						let d = r.yaw + Math.PI / 2;
+						d -= Math.round(d / (Math.PI * 2)) * Math.PI * 2;
+						assert.isBelow(
+							Math.abs(d),
+							Math.PI / 4,
+							`${seed} ${Math.round(t)}`,
+						);
+						break;
+					}
+				}
+			}
+		}
+		assert.isAtLeast(fouls, 4);
+		assert.isAtLeast(reported, fouls * 0.7);
+	}, 240_000);
+
 	test("at the line, the official under the basket bounces the shooter the ball", () => {
 		const { tl, crew } = working("a");
 		let checked = 0;
