@@ -5310,6 +5310,10 @@ const COVER_FRONT = 1;
 const COVER_LATE_MS = 600;
 const COVER_LATE_LEAST = 10;
 const COVER_LATE_KEEP = 0.9;
+// Play action sold up front: each lineman a step at the man across from him
+// (feet), over this long (ms), before he sets.
+const PA_FIRE_FT = 1.6;
+const PA_FIRE_MS = 300;
 // The rush beyond the front (see pass): a linebacker stood up on the line
 // (no further off it than this, feet) outside the tackles (this far out at
 // least, feet) off the edge this often; and a blitz, by the coverage behind
@@ -10799,6 +10803,7 @@ class Action {
 			qb,
 			(thrown ? catchAt : outT) + 300,
 			sacker && beaten ? [sacker, beaten] : undefined,
+			fakeT,
 		);
 		// (The backs out of the backfield on their routes round the line,
 		// not through it - see releaseRound.)
@@ -18334,6 +18339,8 @@ class Action {
 		qb: Actor,
 		end: number,
 		pair?: [Actor, Actor],
+		// A play fake: the line selling it (see PA_FIRE_FT).
+		fake?: number,
 	) {
 		const { snap } = this.input;
 		const r = this.r;
@@ -18523,6 +18530,16 @@ class Action {
 				}
 			}
 			this.offSnap(b, GET_OFF_MS, GET_OFF_SPREAD_MS);
+			// (Off a play fake, a lineman fired out a step at the man across
+			// from him as if it were a run - and then set.)
+			if (fake !== undefined && OL.has(b.role)) {
+				b.go(
+					this.w({ d: s.d + PA_FIRE_FT, a: s.a }),
+					b.t + PA_FIRE_MS,
+					"drive",
+					this.ahead,
+				);
+			}
 			// (A back through a fake already: set where it left him.)
 			const setPt =
 				b.t > snap + 300
