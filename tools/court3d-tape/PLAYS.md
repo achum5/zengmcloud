@@ -600,6 +600,16 @@ of it 50 (kicked out to the arc 37). 73 different of 74. Putbacks and
 tip-ins as lines of their own are rare in the sim (one in three games).
 Not yet: a tap out to a mate, the ball kept alive without being caught.
 
+Box-outs, measured 2026-11-09 over missed jumpers in the nine games (468
+at real speed): 0.81 of theirs boxing out a miss on average, none at all
+on 40% of misses, and two in three of the box-outs begun only after it was
+off the rim. Of the men really crashing (in 2 feet and more since it went
+up, inside 12 feet as it comes off; 253), 36% had a body put on them;
+the nearest of theirs to most of the rest was already boxing out somebody
+else. Now (meetTheCrash) the nearest of theirs still free steps into a
+crasher with nobody on him and boxes out before it is off the rim: 40%,
+the box-out about 2.4 feet off him.
+
 ## 10. Non-shooting foul, in the bonus
 
 Measured 2026-11-09 (46 away from a shot at real speed; the variety
@@ -631,8 +641,15 @@ drew it - more often off a three, and at the rim the odd word with the
 official instead; the man who fouled him, with nothing to say about it,
 now and then his hands on his hips or on his head. Only in a moment each
 has to himself, stood there: 11 and 14 of 34 now. Not yet: other contact
-than the hack (a body at the rim, a hand on the wrist), a shooter knocked
-down, the number of shots signaled, the call reported to the table.
+than the hack (a body at the rim, a hand on the wrist), the number of shots
+signaled, the call reported to the table.
+
+Now (2026-11-09): fouled going up in close, now and then he comes down on
+the floor with it (at the rim 30%, a putback 25%, a tip-in 20%, in the
+post 12%): sat there till a teammate comes over and pulls him up by the
+hands, or up on his own, and only then off to the line - 14 of 117 over
+the nine games, 5 of them pulled up. The same on an and-one (not a dunk):
+his flex or the chest bump once he is up.
 
 ## 12. Turnover, steal
 
@@ -700,6 +717,16 @@ Measured 2026-11-09 (16 over nine real games): the whistle and the
 signal, the walk to the benches run through fast, the huddle round the
 chairs, a look round the building at real speed (the crowd, the dance
 team, the moppers), and the walk back out. Nothing to add for now.
+
+## 18. Start and end of a period
+
+Not yet: quarters after the first start with the inbound at half court;
+the NBA puts it in from the end line in the backcourt of the side that
+has it (Rule 6-I). Tried 2026-11-09 - the spot is easy, but the ball has
+to get there: whoever carried it into the huddle (often subbed off by
+then, or on the other side) threw it 40-65 feet from the bench, and the
+officials (crew.ts) only hold it at the table or the free-throw line. It
+wants an official who walks it to the end line and hands it in.
 
 ## 19. Jump ball
 

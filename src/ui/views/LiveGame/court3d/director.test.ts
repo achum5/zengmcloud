@@ -104,9 +104,10 @@ describe("3D director", () => {
 		let onHim = 0;
 		let passers = 0;
 		let backOut = 0;
-		// (Three games: in two, up on him is 3-4 of ~24 - right on the line,
-		// either side of it as the games come out.)
-		for (const seed of ["a", "kick", "b"]) {
+		// (Five games: in two, up on him is 3-4 of ~24 - right on the line,
+		// either side of it as the games come out; and in three, a corner
+		// left open now and then tips closing back out under its line.)
+		for (const seed of ["a", "kick", "b", "c", "d"]) {
 			const { tl, players } = compile(seed, 140);
 			const big = new Set(
 				players
@@ -686,7 +687,9 @@ describe("3D director", () => {
 		]);
 		let shots = 0;
 		const into: string[] = [];
-		for (const seed of ["a", "b", "c", "d", "e", "f", "g", "h"]) {
+		// (Twelve games: one in two hundred is one or two of the ~300 in
+		// eight, either side of the line as the games come out.)
+		for (const seed of "abcdefghijkl") {
 			const { tl } = compile(seed, 150);
 			const tracks = [...tl.tracks.values()];
 			for (const tr of tracks) {

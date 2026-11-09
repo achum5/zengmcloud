@@ -1597,13 +1597,16 @@ const beckons = (tl: CourtTimeline): { at: Pt; t: number }[] => {
 	}
 	return list;
 };
-const cuesBefore = (tl: CourtTimeline, t: number): Cue[] => {
+// (Looking back `span`: further than any one stays to be seen, so that one
+// going out of it never changes who made one still being seen - see
+// signalsAt.)
+const cuesBefore = (tl: CourtTimeline, t: number, span = CUE_MS): Cue[] => {
 	const out: Cue[] = [];
 	const waiting = beckons(tl);
 	for (let i = lastIndex(waiting, t + BECKON_LEAD, (c) => c.t); i >= 0; i--) {
 		const c = waiting[i]!;
 		const t0 = c.t - BECKON_LEAD;
-		if (t - t0 > CUE_MS) {
+		if (t - t0 > span) {
 			break;
 		}
 		out.push({
@@ -1615,13 +1618,13 @@ const cuesBefore = (tl: CourtTimeline, t: number): Cue[] => {
 	}
 	for (let i = lastIndex(tl.fx, t, (f) => f.t); i >= 0; i--) {
 		const f = tl.fx[i]!;
-		if (t - f.t > CUE_MS + REPORT_LONGEST) {
+		if (t - f.t > span + REPORT_LONGEST) {
 			break;
 		}
 		// (Long after the call, it is only its report there might still be
 		// to see through.)
 		const reports = f.call === "foul" && reported(tl, f.t);
-		if (t - f.t > CUE_MS && !reports) {
+		if (t - f.t > span && !reports) {
 			continue;
 		}
 		if (f.kind === "whistle" && f.call === "noBasket") {
@@ -1727,7 +1730,7 @@ const cuesBefore = (tl: CourtTimeline, t: number): Cue[] => {
 	}
 	for (let i = lastIndex(tl.beats, t, (b) => b.actionStart); i >= 0; i--) {
 		const b = tl.beats[i]!;
-		if (t - b.actionStart > CUE_MS) {
+		if (t - b.actionStart > span) {
 			break;
 		}
 		if (b.type === "fgaTp" || b.type === "fgaTpFake") {
@@ -1763,7 +1766,9 @@ const signalsAt = (
 	let last = -1;
 	// (Who made each, by when it was begun.)
 	const made = new Map<number, number>();
-	for (const cue of cuesBefore(tl, t)) {
+	// (Back further than any is seen: who made each one still to be seen
+	// is settled by those before it, gone or not.)
+	for (const cue of cuesBefore(tl, t, CUE_MS * 2)) {
 		if (cue.t0 < cut) {
 			continue;
 		}

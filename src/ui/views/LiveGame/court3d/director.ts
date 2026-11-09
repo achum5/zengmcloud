@@ -765,6 +765,14 @@ const RELEASE_MS = 120;
 // help him up from this long after it, if no further off than so far
 // (feet), and there in time for it.
 const CHARGE_DOWN_MS = 2400;
+// How often a man fouled going up for a shot comes down on the floor with
+// it, by where it was from (see knockedDown).
+const KNOCKED_DOWN: Partial<Record<Zone, number>> = {
+	atRim: 0.3,
+	putBack: 0.25,
+	tipIn: 0.2,
+	lowPost: 0.12,
+};
 const CHARGE_FALL_MS = 630;
 const HELP_UP_AT = 1100;
 const HELP_UP_FROM = 18;
@@ -1196,6 +1204,21 @@ const HIT_FIRST_NEAR = 4.5;
 const HIT_FIRST_PACE = 8;
 const HIT_FIRST_FROM = 6;
 const HIT_FIRST_LEAST = 350;
+// Meeting the crash (see meetTheCrash): a body on him this long before it
+// is off the rim, till this long after (ms) - a man come in at least this
+// far (feet) since it went up, and no further out than this, the nearest of
+// theirs no further off him than this; stepped in to this far in front of
+// him (feet), at this pace (feet a second, average) over this long (ms),
+// and not before this long after it is up (ms).
+const MEET_BEFORE = 150;
+const MEET_AFTER = 450;
+const MEET_IN = 2;
+const MEET_FT = 12;
+const MEET_NEAR = 6.5;
+const MEET_AT = 1.9;
+const MEET_FTPS = 9;
+const MEET_RAMP: [number, number] = [300, 700];
+const MEET_TURN = 250;
 const PLAY_IT_STRETCH = 2.5;
 // Set on his spot for a catch-and-shoot, this share of men step into it as
 // it comes - a good shooter more (this much more at the best, less at the
@@ -3947,6 +3970,115 @@ class Director {
 		}
 	}
 
+	// MEETING THE CRASH. A man in to the glass as a miss comes down, nobody
+	// on him - his own man a few steps off, or somebody else's nearer - and
+	// whoever of theirs is nearest and free steps into him and puts a body on
+	// him before it is off the rim, and he fights him for it: not let in to
+	// stand at the rim beside a man watching it. (Here, with everybody where
+	// they really are by now - see mark - and only the step in: nudged over
+	// to him, see easeNudges.)
+	private meetTheCrash() {
+		for (const m of [...this.missed, ...this.closeMissed]) {
+			const team = this.teamOf(m.shooter);
+			const rim = rimPt(team);
+			const tm = m.off - MEET_BEFORE;
+			const t1 = m.off + MEET_AFTER;
+			const at = (tr: Track, t: number): Pt => {
+				const P = this.posAt(tr.pid, t, false, true);
+				const n = this.nudgeAt(tr, t);
+				return { x: P.x + n.x, y: P.y + n.y };
+			};
+			const shown = (o: Track, t: number) => {
+				const k = lastBy(o.shown, t, (x) => x[0]);
+				return k >= 0 && o.shown[k]![1];
+			};
+			const busy = (o: Track, t0: number) =>
+				o.acts.some((a) => a.t1 > t0 - 200 && a.t0 < t1) ||
+				(o.nudges ?? []).some((n) => n.t1 > t0 && n.t0 < t1);
+			if (this.cuts.some((c) => c > m.release && c < t1 + 100)) {
+				continue;
+			}
+			const all = [...this.tracks.values()].filter(
+				(o) => o.pid >= 0 && o.pid !== m.shooter && shown(o, tm),
+			);
+			const taken = new Set<number>();
+			for (const o of all) {
+				if (o.team !== team || busy(o, tm - 300)) {
+					continue;
+				}
+				// In to it: on his way in since it went up, in close as it
+				// comes down.
+				const O0 = at(o, m.release);
+				const O = at(o, tm);
+				if (dist(O0, rim) - dist(O, rim) < MEET_IN || dist(O, rim) > MEET_FT) {
+					continue;
+				}
+				let d: Track | undefined;
+				let near = MEET_NEAR;
+				for (const x of all) {
+					if (x.team === team || taken.has(x.pid) || busy(x, tm - 900)) {
+						continue;
+					}
+					const D = at(x, tm);
+					const g = dist(D, O);
+					// (Not from out behind him: he has gone by that man.)
+					if (g < near && dist(D, rim) <= dist(O, rim) + 1.5) {
+						near = g;
+						d = x;
+					}
+				}
+				if (!d) {
+					continue;
+				}
+				// A sharp rebounder all but always; a poor one now and then
+				// just watches it.
+				if (
+					this.rated.has(d.pid) &&
+					hash01(d.pid * 11 + 5, Math.round(m.off)) >=
+						this.rebOdds(d.pid, BOX_IN_SHARE, [0.55, 0.97])
+				) {
+					continue;
+				}
+				// The step in: to a stride in front of him, between him and
+				// the rim, as fast as a man turns and gets there - begun once
+				// it is up.
+				const D = at(d, tm);
+				const u = unitVec(O, rim);
+				const S = inPlay({
+					x: O.x + u.x * MEET_AT,
+					y: O.y + u.y * MEET_AT,
+				});
+				const dx = S.x - D.x;
+				const dy = S.y - D.y;
+				const ramp = Math.max(
+					MEET_RAMP[0],
+					Math.min(
+						MEET_RAMP[1],
+						((1.5 * Math.hypot(dx, dy)) / MEET_FTPS) * 1000,
+					),
+				);
+				if (tm - ramp < m.release + MEET_TURN) {
+					continue;
+				}
+				taken.add(d.pid);
+				if (Math.hypot(dx, dy) > 0.3) {
+					(d.nudges ??= []).push({
+						t0: tm - ramp,
+						t1: t1 + ramp,
+						dx,
+						dy,
+						ramp,
+					});
+					d.nudges.sort((a, b) => a.t0 - b.t0);
+				}
+				d.acts.push({ t0: tm - 120, t1, anim: "boxOut", look: { ...rim } });
+				o.acts.push({ t0: tm - 40, t1, anim: "fight", look: { ...rim } });
+				d.acts.sort((a, b) => a.t0 - b.t0);
+				o.acts.sort((a, b) => a.t0 - b.t0);
+			}
+		}
+	}
+
 	// HIT FIRST. A man of ours crashing the glass, coming in on one of theirs
 	// as it comes off the rim, isn't let by to stand beside him: they meet -
 	// whichever is nearer the rim turns and puts a body on the other, and the
@@ -4990,6 +5122,36 @@ class Director {
 	// Something to say about what just happened - at the official (out
 	// toward the sideline nearer him), or at whoever he means - for a moment
 	// before he goes on: he does not set off until he has said it.
+	// Fouled hard going up, down on the floor as he comes down - knocked
+	// back onto it, sat there till a teammate comes to pull him up (see
+	// helpUp), or, nobody coming, up on his own - and only then off to the
+	// line.
+	private knockedDown(pid: number, fouler: number, T: number) {
+		// (Once he is down from it: through with the shot.)
+		let hit = Math.max(T - 300, this.free.get(pid) ?? T);
+		for (const a of this.track(pid)?.acts ?? []) {
+			if (a.t1 > hit - 60 && a.t0 < hit) {
+				hit = a.t1 + 60;
+			}
+		}
+		const F = this.posOf(pid);
+		const B = this.posOf(fouler);
+		const A = dist(B, F) > 0.5 ? B : rimPt(this.teamOf(fouler));
+		const pull = this.helpUp(pid, F, A, hit, B, fouler);
+		let up: number;
+		if (pull === undefined) {
+			up = hit + CHARGE_DOWN_MS;
+			this.act(pid, "takeCharge", hit - 60, up, { look: A });
+		} else {
+			const sat = hit - 60 + CHARGE_FALL_MS;
+			up = pull + HELP_UP_MS;
+			this.act(pid, "chargeDown", hit - 60, sat, { look: A });
+			this.act(pid, "sitFloor", sat, pull, { look: A });
+			this.act(pid, "pulledUp", pull, up, { look: A });
+		}
+		this.free.set(pid, Math.max(this.free.get(pid) ?? 0, up));
+	}
+
 	// A man down on the floor at F, facing A: the nearest of his teammates,
 	// if one can get there in time, comes over to stand at his feet in front
 	// of him - round his side if he comes from behind him - leans in, takes
@@ -17375,6 +17537,14 @@ class Director {
 						t: T,
 						zone: inAir.zone,
 					});
+					// Hit going up in close, now and then he comes down on the
+					// floor with it.
+					if (
+						hash01(inAir.pid * 23 + 9, Math.round(T)) <
+						(KNOCKED_DOWN[inAir.zone] ?? 0)
+					) {
+						this.knockedDown(inAir.pid, e.pid, T);
+					}
 				}
 				this.beat(i, type, T, T + 1100);
 				this.phase = "ft";
@@ -18333,6 +18503,17 @@ class Director {
 					team,
 					what: shot.dunk ? "dunk" : shot.zone === "three" ? "three" : "andOne",
 				});
+			}
+			// Hit going up in close and in anyway, now and then he comes down
+			// on the floor with it - whatever he does about it, he does once
+			// he is up.
+			if (
+				andOne &&
+				!shot.dunk &&
+				hash01(shot.pid * 23 + 9, Math.round(at)) <
+					(shot.zone ? (KNOCKED_DOWN[shot.zone] ?? 0) : 0)
+			) {
+				this.knockedDown(shot.pid, e.pidFoul as number, at);
 			}
 			const free = Math.max(at + 450, this.free.get(shot.pid) ?? 0);
 			const assist =
@@ -29753,6 +29934,7 @@ class Director {
 		this.workHisMan();
 		this.joinUp();
 		this.onHisBack();
+		this.meetTheCrash();
 		// A fight for position or a box-out cut to a moment by what came
 		// after it never really shows - and left in, an arm thrown up for a
 		// frame is all it adds.

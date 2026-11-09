@@ -141,7 +141,6 @@ describe("keeping bodies apart", () => {
 					if (a.anim !== "takeCharge" && a.anim !== "chargeDown") {
 						continue;
 					}
-					charges += 1;
 					// (Till he is up: on his own, or pulled up.)
 					const pulled = tr.acts.find(
 						(x) => x.anim === "pulledUp" && x.t0 >= a.t1 && x.t0 < a.t1 + 4000,
@@ -151,7 +150,13 @@ describe("keeping bodies apart", () => {
 						(s) => s.kind === "hold" && s.t0 <= a.t0 + 300,
 					);
 					const by = seg?.kind === "hold" ? tl.tracks.get(seg.pid) : undefined;
+					// (Not a shooter knocked down by a foul going up: the ball his,
+					// or his side's - see knockedDown.)
+					if (by && by.team === tr.team) {
+						continue;
+					}
 					assert.isDefined(by);
+					charges += 1;
 					const helpers = [...tl.tracks.values()].filter((o) =>
 						o.acts.some(
 							(x) => x.anim === "helpUp" && x.t1 > a.t0 && x.t0 < end,

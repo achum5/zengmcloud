@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 249,
+		date: "2026-11-09",
+		text: "3D games: defenders now step into a player crashing the glass and box him out before the ball is off the rim, and a player fouled hard going up at the rim is sometimes knocked to the floor - a teammate comes over to pull him up before he goes to the line.",
+	},
+	{
 		n: 248,
 		date: "2026-11-10",
 		text: "Realistic Front Offices: faster sims - CPU teams spend about 60% less time looking for trades each day, so a season with the mode on goes noticeably quicker. In test leagues teams did as well as before.",
