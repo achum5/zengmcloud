@@ -101,6 +101,7 @@ export const CAM_BODY = 10;
 export const CAM_LENS = 11;
 export const TOWEL = 12;
 export const NAIL = 13;
+export const TONGUE = 14;
 
 // What melts into what: masses in one group melt together everywhere, two
 // groups only where a joint joins them.
@@ -933,6 +934,9 @@ export const wrapBend = (
 // How far down from the top of his shoulders a quarter-zip's zip runs, as a
 // share of the torso.
 export const T_ZIP = 0.22;
+// How far up the surface of his shoe's instep faces (0 level, 1 straight
+// up) where its laces run.
+export const TONGUE_UP = 0.62;
 // Where his face is drawn, a little above the true middle of his head (see
 // figure.ts).
 const FACE_LIFT = 0.15;
@@ -1487,6 +1491,14 @@ export type LegBuild = {
 	toeUp: [number, number];
 	shoe: [number, number, number];
 	collar: [number, number];
+	// A HIGH-TOP, where a sport's shoe is one: the instep, sloping from the
+	// front of his ankle down to the toe box - where along his foot it
+	// starts and stops, how high over the toe it ends (of the ankle's
+	// radius) and how thick it is at each end - laced; and the collar on up
+	// his ankle - how far (of the ankle's radius), how thick at the bottom
+	// and the top.
+	instep?: [number, number, number, number, number];
+	high?: [number, number, number];
 };
 export const LEG: LegBuild = {
 	thighFrom: 0.35,
@@ -1495,11 +1507,15 @@ export const LEG: LegBuild = {
 	thigh: [1, 1.02, 1.12],
 	shin: [1.02, 1.08, 1.1, 1],
 	calf: [0.86, 1, 0.6],
-	toe: 1.04,
-	heel: [1.05, 0.15],
-	toeUp: [0.9, 0.25],
-	shoe: [1.3, 1.38, 1.12],
+	// (A basketball shoe: low and narrow at the toe, built up over the
+	// instep, and on up round the ankle.)
+	toe: 1.02,
+	heel: [1, 0.15],
+	toeUp: [0.8, 0.25],
+	shoe: [1.2, 1.3, 0.98],
 	collar: [1.12, 1.2],
+	instep: [0.06, 0.6, 0.45, 1.18, 0.82],
+	high: [2, 1.3, 1.2],
 };
 const LEG_LEAN: LegBuild = {
 	...LEG,
@@ -1518,7 +1534,12 @@ export const legMasses = (
 	body: Body,
 	limb: Limb,
 	side: 0 | 1,
-	{ thigh, shin, shoe }: { thigh: number; shin: number; shoe: number },
+	{
+		thigh,
+		shin,
+		shoe,
+		tongue = shoe,
+	}: { thigh: number; shin: number; shoe: number; tongue?: number },
 	group: number,
 	shoeGroup: number,
 	b: LegBuild,
@@ -1601,6 +1622,43 @@ export const legMasses = (
 		shoeGroup,
 		side,
 	);
+	if (b.instep) {
+		const [from, to, over, r0, r1] = b.instep;
+		const A = lerpV(limb.end, tip, from);
+		const B = lerpV(limb.end, tip, to);
+		add(
+			v3(A.f, A.s, limb.end.u + body.ankleR * 0.1),
+			v3(
+				B.f,
+				B.s,
+				Math.max(body.ankleR * b.toeUp[0], toe.u - body.ankleR * b.toeUp[1]) +
+					body.ankleR * over,
+			),
+			[
+				[0, body.ankleR * r0],
+				[1, body.ankleR * r1],
+			],
+			tongue,
+			shoeGroup,
+			side,
+		);
+	}
+	if (b.high) {
+		const [up, r0, r1] = b.high;
+		const shinLen = lenV(subV(limb.mid, limb.end)) || 1;
+		add(
+			limb.end,
+			lerpV(limb.end, limb.mid, Math.min(0.45, (body.ankleR * up) / shinLen)),
+			[
+				[0, body.ankleR * r0],
+				[1, body.ankleR * r1],
+			],
+			shoe,
+			shoeGroup,
+			side,
+			true,
+		);
+	}
 };
 
 // WHERE HIS MASSES MELT INTO ONE ANOTHER, any sport's: two groups (`a`,
@@ -2050,7 +2108,7 @@ export const build = (
 			body,
 			limb,
 			side,
-			{ thigh: THIGH, shin: SHIN, shoe: SHOE },
+			{ thigh: THIGH, shin: SHIN, shoe: SHOE, tongue: TONGUE },
 			gl,
 			G_SHOE + side,
 			mine.leg,
@@ -2431,6 +2489,9 @@ export const RICH = {
 	shineFrom: 0.9,
 	shineOver: 0.085,
 	shine: 0.14,
+	// (And the masses of one part of him - his arm's, his leg's - run
+	// further into each other: one limb, not its muscles laid on it.)
+	melt: 1.1,
 } as const;
 
 // Lengths, for every pixel: Math.hypot's care over huge and tiny numbers
@@ -2513,6 +2574,8 @@ export const shade = (
 	const n = masses.length;
 	const lineW = Math.max(0.7, 0.028 * b.k);
 	const margin = lineW * 3.5 + 1;
+	// How far the masses of one part of him run into each other.
+	const melt = rich ? RICH.melt : 0.8;
 	// Which joint, if any, melts two groups together.
 	const joinOf = new Int16Array(groups * groups).fill(-1);
 	b.joins.forEach((j, i) => {
@@ -2682,7 +2745,7 @@ export const shade = (
 					const dz = hz[j]! - hz[f]!;
 					let K = 0;
 					if (c.group === fc.group) {
-						K = Math.min(hr[j]!, hr[f]!) * 0.8;
+						K = Math.min(hr[j]!, hr[f]!) * melt;
 					} else {
 						const ji = joinOf[fc.group * groups + c.group]!;
 						if (ji >= 0) {
@@ -3258,6 +3321,23 @@ export const sculpt = (
 						}
 					}
 				}
+				ink.cloth = true;
+				ink.r = c[0];
+				ink.g = c[1];
+				ink.b = c[2];
+				break;
+			}
+			case TONGUE: {
+				// The instep of his shoe: laced up the top of it.
+				const lf = fc.B.f - fc.A.f;
+				const ls = fc.B.s - fc.A.s;
+				const lu = fc.B.u - fc.A.u;
+				const of = Pf - fc.A.f - lf * t;
+				const os = Ps - fc.A.s - ls * t;
+				const ou = Pu - fc.A.u - lu * t;
+				const ol = len3(of, os, ou) || 1;
+				const c =
+					ou / ol > TONGUE_UP && t > 0.12 && t < 0.92 ? pal.laces : pal.shoe;
 				ink.cloth = true;
 				ink.r = c[0];
 				ink.g = c[1];

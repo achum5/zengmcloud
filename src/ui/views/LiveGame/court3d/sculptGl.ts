@@ -48,6 +48,8 @@ import {
 	SHORTS,
 	T_ZIP,
 	THIGH,
+	TONGUE,
+	TONGUE_UP,
 	TORSO,
 	TOWEL,
 	TOWEL_RGB,
@@ -640,6 +642,14 @@ void paint(vec4 m2, Hit h, vec3 P, vec3 A, vec3 B, float len) {
 		}
 		cloth = true;
 		ink = c;
+	} else if (kind == ${TONGUE}) {
+		vec3 o = P - A - (B - A) * t;
+		float ol = length(o);
+		if (ol == 0.0) { ol = 1.0; }
+		ink = o.z / ol > ${f1(TONGUE_UP)} && t > 0.12 && t < 0.92
+			? uP[C_LACES].rgb
+			: uP[C_SHOE].rgb;
+		cloth = true;
 	} else if (kind == ${BALL}) {
 		float hc = uP[HELD0].x;
 		float hs = uP[HELD0].y;
@@ -724,7 +734,7 @@ void main() {
 		float K = 0.0;
 		int gj = int(m2.y + 0.5);
 		if (gj == gf) {
-			K = min(h.r, hf.r) * 0.8;
+			K = min(h.r, hf.r) * ${f1(RICH.melt)};
 		} else {
 			float ji = texelFetch(uM, ivec2(gj >> 2, ${JOIN_OF_ROW} + gf), 0)[gj & 3];
 			if (ji >= 0.0) {
