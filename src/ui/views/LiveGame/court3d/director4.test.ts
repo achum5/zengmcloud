@@ -287,6 +287,51 @@ describe("3D director", () => {
 		assert.deepEqual(wrong, []);
 	}, 480_000);
 
+	// Fouled on his shot, he now and then claps it (and, at the rim, has a
+	// word about it); the man who fouled him, his hands on his hips or his
+	// head - stood there for it, never on the move.
+	test("a shooting foul: the man fouled claps it now and then, stood there for it", () => {
+		const REACT = new Set(["clap", "hips", "headHands"]);
+		let fouls = 0;
+		let reacted = 0;
+		for (const seed of ["a", "b", "c", "d"]) {
+			const { tl, events } = compile(seed, 140);
+			tl.beats.forEach((b, k) => {
+				if (b.type !== "pfFG" && b.type !== "pfTP") {
+					return;
+				}
+				const fga = tl.beats.slice(0, k).findLast((x) => /^fga/.test(x.type));
+				const shooter = fga && events[fga.i]?.pid;
+				const fouler = events[b.i]?.pid;
+				if (typeof shooter !== "number" || typeof fouler !== "number") {
+					return;
+				}
+				fouls += 1;
+				for (const pid of [shooter, fouler]) {
+					const tr = tl.tracks.get(pid)!;
+					for (const a of tr.acts) {
+						if (
+							!REACT.has(a.anim) ||
+							a.t0 < b.actionStart ||
+							a.t0 > b.actionStart + 2500
+						) {
+							continue;
+						}
+						reacted += 1;
+						assert.isFalse(
+							tr.moves.some((m) => m.t1 > a.t0 && m.t0 < a.t1),
+							`${seed} ${pid} ${a.anim} at ${Math.round(a.t0)}`,
+						);
+						const mid = evalPlayer(tl, pid, (a.t0 + a.t1) / 2);
+						assert.strictEqual(mid.anim, a.anim, `${seed} ${pid}`);
+					}
+				}
+			});
+		}
+		assert.isAbove(fouls, 10);
+		assert.isAtLeast(reacted, 3);
+	}, 480_000);
+
 	// From one move into the next - pulling up from a run, down into his
 	// stance, up for a catch - his body eases over rather than snapping
 	// there between one frame and the next.

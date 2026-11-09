@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 227,
+		date: "2026-11-09",
+		text: "3D games: after a shooting foul the shooter now and then claps it (he drew it) or has a word with the official, and the man who fouled him sometimes stands with his hands on his hips or on his head.",
+	},
+	{
 		n: 226,
 		date: "2026-11-09",
 		text: "3D games: after a foul with the ball to be taken out, the official who called it runs over to the scorer's table and reports it before getting back to his spot.",

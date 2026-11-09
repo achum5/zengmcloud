@@ -55,7 +55,7 @@ each part, so the table below can say how far along each part is.
 | 8   | Free throws (`ft` / `missFt`)                                                                 |       38 | working |
 | 9   | Offensive rebound (`orb`), putback and tip-in (`fgaPutBack`, `fgaTipIn` and results)          |       25 | working |
 | 10  | Non-shooting foul, in the bonus (`pfNonShooting`, `pfBonus`)                                  |       19 | working |
-| 11  | Shooting foul (`pfFG`, `pfTP`)                                                                |       13 | todo    |
+| 11  | Shooting foul (`pfFG`, `pfTP`)                                                                |       13 | working |
 | 12  | Turnover (`tov`: bad pass, lost ball, travel, offensive foul, shot clock, 5 seconds)          |       15 | todo    |
 | 13  | Steal (`stl`)                                                                                 |       13 | todo    |
 | 14  | Out of bounds (`outOfBounds`, `tov`/`stl` out of bounds)                                      |       20 | todo    |
@@ -610,3 +610,20 @@ over in front of the table and reports it, turned to it - who (fingers up,
 one hand and the other) and what - then back to his place: all 46. Not yet
 on a foul with free throws to come (the official at the line has the
 ball), nor the ball handed to an official for the inbound.
+
+## 11. Shooting foul
+
+Measured 2026-11-09 (34 on a two at real speed, 4 on a three; the variety
+tool's `pfFG` and `pfTP` lines): the shot (at the rim 13, in the post 20,
+mid-range 2), the contact (a hack at his arms, every time), the man fouled
+after it (nothing 26, picked up the ball 8), the man who fouled him (a
+word about it 11), the official's signals (the fist, then the hit), and
+the walk to the line (9-11 s to the first free throw).
+
+Now (2026-11-09): down from it, the man fouled now and then claps it - he
+drew it - more often off a three, and at the rim the odd word with the
+official instead; the man who fouled him, with nothing to say about it,
+now and then his hands on his hips or on his head. Only in a moment each
+has to himself, stood there: 11 and 14 of 34 now. Not yet: other contact
+than the hack (a body at the rim, a hand on the wrist), a shooter knocked
+down, the number of shots signaled, the call reported to the table.

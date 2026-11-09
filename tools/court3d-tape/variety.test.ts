@@ -1369,6 +1369,89 @@ const foulParts = (
 	};
 };
 
+// A shooting foul: the shot he was fouled on, the contact, the shooter
+// and the man who fouled him after it, the officials' signals, and the
+// time till the first free throw.
+const shootingFoulParts = (
+	tl: CourtTimeline,
+	events: { type: string; pid?: number; pidShooting?: number }[],
+	b: CourtTimeline["beats"][number],
+): { pid: number; parts: Record<string, string> } | undefined => {
+	const fouler = events[b.i]!.pid;
+	if (typeof fouler !== "number") {
+		return undefined;
+	}
+	const k = tl.beats.indexOf(b);
+	const fga = tl.beats.slice(0, k).findLast((x) => /^fga/.test(x.type));
+	const shooter = fga ? events[fga.i]?.pid : undefined;
+	if (typeof shooter !== "number") {
+		return undefined;
+	}
+	const shot = tl.ball.findLast(
+		(z) =>
+			z.kind === "fly" &&
+			"pid" in z.from &&
+			z.from.pid === shooter &&
+			!("pid" in z.to) &&
+			z.t0 <= b.actionStart + 50,
+	);
+	if (shot?.kind !== "fly") {
+		return undefined;
+	}
+	const release = shot.t0;
+	const acts = (pid: number, from: number, to: number) => {
+		const tr = tl.tracks.get(pid)!;
+		const all = [
+			...tr.acts
+				.filter((a) => a.t0 >= from && a.t0 < to)
+				.map((a) => a.anim as string),
+			...(tr.arms ?? [])
+				.filter((g) => g.t0 >= from && g.t0 < to)
+				.map((g) => `arm ${g.kind}`),
+		];
+		return all.length > 0 ? [...new Set(all)].join("+") : "nothing";
+	};
+	const team0 = { region: "", name: "", colors: ["#000", "#fff", "#888"] } as {
+		region: string;
+		name: string;
+		colors: [string, string, string];
+	};
+	const crew = crewFor(1, team0, team0);
+	// The calling official's signals, in order.
+	const seen: string[] = [];
+	for (let t = b.actionStart; t < b.actionStart + 6000; t += 100) {
+		for (const r of crewAt(tl, t, crew).states) {
+			if (
+				r.pid < 0 &&
+				r.pid >= -3 &&
+				/^(signal|report|threeUp|beckon)/.test(r.anim) &&
+				seen.at(-1) !== r.anim
+			) {
+				seen.push(r.anim);
+			}
+		}
+	}
+	const firstFt = tl.beats
+		.slice(k + 1)
+		.find((x) => x.type === "ft" || x.type === "missFt");
+	const S = evalPlayer(tl, shooter, release);
+	const team = tl.tracks.get(shooter)!.team;
+	const rim = { x: rimX(team), y: 25 };
+	return {
+		pid: shooter,
+		parts: {
+			shot: `${fga!.type.replace(/^fga/, "")}, ${Math.round(dist(S, rim))} ft`,
+			contact: acts(fouler, release - 600, release + 300),
+			shooter: acts(shooter, release + 100, release + 3000),
+			fouler: acts(fouler, release + 300, release + 3000),
+			signals: seen.join(" > ") || "none",
+			line: firstFt
+				? `to the line in ${Math.round((firstFt.actionStart - b.actionStart) / 1000)}s`
+				: "-",
+		},
+	};
+};
+
 test.skipIf(games.length === 0)(
 	"variety of one line",
 	() => {
@@ -1390,6 +1473,17 @@ test.skipIf(games.length === 0)(
 			}));
 			for (const b of tl.beats) {
 				if (b.type !== line) {
+					continue;
+				}
+				if (line === "pfFG" || line === "pfTP") {
+					if (fastAt(tl, b.actionStart) > 1.2) {
+						fastOnes += 1;
+						continue;
+					}
+					const got = shootingFoulParts(tl, events, b);
+					if (got) {
+						all.push({ pid: `${tag}:${got.pid}`, parts: got.parts });
+					}
 					continue;
 				}
 				if (line === "pfNonShooting" || line === "pfBonus") {

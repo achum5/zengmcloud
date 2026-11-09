@@ -983,6 +983,16 @@ const PASSER_POINTS = 0.4;
 const BEATEN_HEAD = 0.12;
 // (And as long letting it out with an arm, on his way back after a basket.)
 const CHEER_MS = 1000;
+// Fouled on his shot (see drewTheFoul): how often the man fouled claps it
+// (at the rim or in the post, from mid-range, off a three), and, at the rim,
+// has a word with the official instead; how often the man who fouled him
+// has his hands on his hips, or on his head; and for how long (ms).
+const DREW_CLAP: [number, number, number] = [0.3, 0.25, 0.4];
+const DREW_WORD = 0.12;
+const FOULER_HIPS = 0.2;
+const FOULER_HEAD = 0.12;
+const DREW_MS = 900;
+const DREW_LEAST = 550;
 // A free throw routine's pieces (see ftRoutine): how often a man flips it
 // up to himself, and sits down into his legs for a breath; how long each
 // takes (ms); his beat bouncing it, from this to this many times the usual;
@@ -16960,6 +16970,14 @@ class Director {
 						950,
 					);
 				}
+				if (inAir) {
+					this.shotFouls.push({
+						shooter: inAir.pid,
+						fouler: e.pid,
+						t: T,
+						zone: inAir.zone,
+					});
+				}
 				this.beat(i, type, T, T + 1100);
 				this.phase = "ft";
 				break;
@@ -18793,6 +18811,14 @@ class Director {
 	private readonly closeUps: CloseUp[] = [];
 	private interview: Interview | undefined;
 	private readonly hurts: Hurt[] = [];
+	// Every shooting foul: who was fouled, who fouled him, the whistle, and
+	// the shot (see drewTheFoul).
+	private readonly shotFouls: {
+		shooter: number;
+		fouler: number;
+		t: number;
+		zone: Zone | undefined;
+	}[] = [];
 	// The ball sent out of bounds off a miss already (see missOut): the
 	// out-of-bounds line after it needs only the whistle.
 	private outOffMiss = false;
@@ -28871,6 +28897,80 @@ class Director {
 		}
 	}
 
+	// FOULED ON HIS SHOT, the man down from it now and then claps it - he
+	// drew it - more often off a three; at the rim, the odd word with the
+	// official, hit on the way up; and the man who fouled him, if he has
+	// nothing to say about it, now and then his hands on his hips or on his
+	// head. Only in a moment each has to himself, stood there, once all
+	// else is laid: nothing else changes for it.
+	private drewTheFoul() {
+		const clear = (pid: number, t0: number, t1: number) => {
+			const tr = this.track(pid);
+			return (
+				tr !== undefined &&
+				!tr.acts.some((a) => a.t1 > t0 - 60 && a.t0 < t1 + 60) &&
+				!tr.moves.some((m) => m.t1 > t0 - 60 && m.t0 < t1 + 60) &&
+				tr.shown.findLast(([ts]) => ts <= t0)?.[1] === true &&
+				!tr.shown.some(([ts]) => ts > t0 && ts < t1)
+			);
+		};
+		// (As long as he has, up to `ms`: no shorter than DREW_LEAST.)
+		const put = (pid: number, anim: AnimName, t0: number, ms: number) => {
+			const tr = this.track(pid);
+			if (!tr) {
+				return;
+			}
+			const next = Math.min(
+				...tr.acts.filter((a) => a.t0 >= t0).map((a) => a.t0),
+				...tr.moves.filter((m) => m.t0 >= t0).map((m) => m.t0),
+			);
+			const t1 = Math.min(t0 + ms, next - 70);
+			if (t1 - t0 < DREW_LEAST || !clear(pid, t0, t1)) {
+				return;
+			}
+			tr.acts.push({ t0, t1, anim });
+			tr.acts.sort((a, b) => a.t0 - b.t0);
+		};
+		for (const f of this.shotFouls) {
+			const near = f.zone === "atRim" || f.zone === "lowPost";
+			const h = hash01(f.shooter * 3 + 7, Math.round(f.t));
+			// (Once he is down from it.)
+			const down =
+				this.track(f.shooter)
+					?.acts.filter((a) => a.t0 < f.t + 200 && a.t1 > f.t - 2000)
+					.reduce((m, a) => Math.max(m, a.t1), f.t) ?? f.t;
+			const from = Math.max(down + 120, f.t + 250);
+			const clap =
+				f.zone === "three" ? DREW_CLAP[2] : near ? DREW_CLAP[0] : DREW_CLAP[1];
+			if (h < clap) {
+				put(f.shooter, "clap", from, DREW_MS);
+			} else if (near && h < clap + DREW_WORD) {
+				put(f.shooter, "protest", from, DREW_MS);
+			}
+			const fr = this.track(f.fouler);
+			if (
+				!fr ||
+				fr.acts.some(
+					(a) => a.anim === "protest" && a.t0 >= f.t && a.t0 < f.t + 3000,
+				)
+			) {
+				continue;
+			}
+			const g = hash01(f.fouler * 5 + 3, Math.round(f.t));
+			const after = Math.max(
+				f.t + 300,
+				fr.acts
+					.filter((a) => a.t0 < f.t + 200 && a.t1 > f.t - 2000)
+					.reduce((m, a) => Math.max(m, a.t1), f.t) + 120,
+			);
+			if (g < FOULER_HIPS) {
+				put(f.fouler, "hips", after, DREW_MS);
+			} else if (g < FOULER_HIPS + FOULER_HEAD) {
+				put(f.fouler, "headHands", after, DREW_MS);
+			}
+		}
+	}
+
 	finish(): CourtTimeline {
 		const byT0 = (a: { t0: number }, b: { t0: number }) => a.t0 - b.t0;
 		for (const tr of this.tracks.values()) {
@@ -28963,6 +29063,7 @@ class Director {
 		this.pickUpWhereItIs();
 		this.contestsInSight();
 		this.easeNudges();
+		this.drewTheFoul();
 		// A look round the building runs on to the picture's next cut when
 		// that comes soon after (the substitutions over a timeout, the walk
 		// out for the next period), so the game picks up at a cut.
