@@ -7376,62 +7376,49 @@ export const CARTOON: Proportions = {
 	foreR: 0.027,
 	hand: 0.036,
 };
-// A BASKETBALL PLAYER: nearer a real one's build - his head a sixth of him,
-// not a fifth (still bigger than life, so his face reads from up in the
-// stands), and the rest of him that much longer: legs, torso, neck and arms
-// all by the same share, so every pose still puts his hands where it put
-// them - on his knees, on his hips, together. Shoulders well wider than his
-// hips, and some muscle on his arms and legs. His arms in proportion
-// (elbows at his waist, wrists at his hips, fingertips halfway down his
-// thighs). His height and build still tell: a center towers over a point
-// guard, a big man is broad. (His face is drawn a little bigger than headR:
-// crown to chin is 2.45 headR.)
-const HEAD = 0.082;
-// (What his head gave up, shared out over the rest of him.)
-const LONGER = (0.97 - 2 * HEAD) / (0.97 - 2 * CARTOON.head);
+// A BASKETBALL PLAYER: nearer a real one's build. His head is a sixth of
+// him, not a fifth - still bigger than life, so his face reads from up in
+// the stands. Every length of him below it is the cartoon's, to the inch:
+// where two men's hands meet, how far he reaches for the rim, where his
+// hands come down on his knees are all set in feet on the floor, and go on
+// being right. Across and through he is as a man measures: about 27% of
+// his height across the shoulders, arms and all; an upper arm 14 inches
+// round on a man six and a half feet tall, a forearm 11.5, a thigh 24, a
+// calf 16, an ankle 9. His height and build still tell: a center towers
+// over a point guard, a big man is broad. (His face is drawn a little
+// bigger than headR: crown to chin is 2.45 headR.)
 export const ATHLETE: Proportions = {
-	ankle: CARTOON.ankle * LONGER,
-	thigh: CARTOON.thigh * LONGER,
-	shin: CARTOON.shin * LONGER,
-	foot: CARTOON.foot,
-	torso: CARTOON.torso * LONGER,
-	neck: CARTOON.neck * LONGER,
-	head: HEAD,
-	upper: CARTOON.upper * LONGER,
-	fore: CARTOON.fore * LONGER,
-	shoulderW: 0.113,
-	hipW: CARTOON.hipW * LONGER,
-	depth: 0.108,
-	thighR: 0.048,
-	kneeR: 0.031,
-	calfR: 0.036,
-	ankleR: 0.024,
-	upperR: 0.036,
-	foreR: 0.029,
-	hand: CARTOON.hand,
+	...CARTOON,
+	// (His neck a little longer under the smaller head - and he stands a
+	// couple of inches under his listed height for it: nothing else of him
+	// is any longer.)
+	neck: 0.056,
+	head: 0.084,
+	shoulderW: 0.101,
+	depth: 0.104,
+	thighR: 0.047,
+	kneeR: 0.029,
+	calfR: 0.033,
+	ankleR: 0.0215,
+	upperR: 0.0295,
+	foreR: 0.0245,
 };
 // WHAT ELSE IS KNOWN OF HIM, beyond how tall he is and what he weighs (see
 // ratings.ts physiqueOf) - each 0 to 1, a half the league's ordinary man:
-// how strong he is, and how quick and springy; and how much longer (inches)
-// his reach is than his listed height says.
+// how strong he is, and how quick and springy.
 //
 // His height sets how tall he stands and his weight how thick he is for it
 // (see girthOf). These say what that weight is made of. Two men the same
 // height and weight: the stronger carries it across his shoulders and
 // chest and in his arms and legs, over a trimmer middle; the weaker, round
-// his middle. An athlete's legs have more on them and his waist less. And
-// the long-armed man's arms are longer.
+// his middle. An athlete's legs have more on them and his waist less.
+// (Never how long any of him is: see ATHLETE.)
 export type Physique = {
 	strength?: number;
 	athletic?: number;
-	reach?: number;
 };
 const half = (x: number | undefined) =>
 	Math.min(1, Math.max(0, x ?? 0.5)) - 0.5;
-// The most his reach makes of his arms, either way (inches), and how much
-// longer an arm each inch makes.
-const REACH_MOST = 2;
-const REACH_ARM = 0.015;
 export const bodyOf = (
 	hgt = DEFAULT_HGT,
 	weight = DEFAULT_WEIGHT,
@@ -7442,8 +7429,6 @@ export const bodyOf = (
 	const g = girthOf(hgt, weight);
 	const m = half(ph?.strength);
 	const a = half(ph?.athletic);
-	const arm =
-		1 + Math.min(REACH_MOST, Math.max(-REACH_MOST, ph?.reach ?? 0)) * REACH_ARM;
 	return {
 		H,
 		hipH: H * (p.ankle + p.thigh + p.shin),
@@ -7454,17 +7439,17 @@ export const bodyOf = (
 		torso: H * p.torso,
 		neck: H * p.neck,
 		headR: H * p.head,
-		upper: H * p.upper * arm,
-		fore: H * p.fore * arm,
-		shoulderW: H * p.shoulderW * g * (1 + 0.1 * m),
+		upper: H * p.upper,
+		fore: H * p.fore,
+		shoulderW: H * p.shoulderW * g * (1 + 0.06 * m),
 		hipW: H * p.hipW * g * (1 - 0.06 * m),
-		depth: H * p.depth * g * (1 + 0.1 * m),
+		depth: H * p.depth * g * (1 + 0.08 * m),
 		thighR: H * p.thighR * g * (1 + 0.14 * m + 0.05 * a),
 		kneeR: H * p.kneeR * g,
 		calfR: H * p.calfR * g * (1 + 0.12 * m + 0.07 * a),
 		ankleR: H * p.ankleR,
-		upperR: H * p.upperR * g * (1 + 0.22 * m),
-		foreR: H * p.foreR * g * (1 + 0.14 * m),
+		upperR: H * p.upperR * g * (1 + 0.18 * m),
+		foreR: H * p.foreR * g * (1 + 0.12 * m),
 		handR: H * p.hand,
 		...(ph
 			? {

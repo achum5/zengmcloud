@@ -55,16 +55,10 @@ export const levelOf = (
 	return Math.min(1, Math.max(0, (sum / n - LOW) / (HIGH - LOW)));
 };
 
-// HIS BUILD, FROM WHAT HE IS (see poses.ts Physique): how strong he is; how
-// quick and springy; and how much more reach his height rating says he has
-// than his listed height (inches - that rating is his listed height's,
-// give or take, so a man whose rating runs ahead of his height plays
-// longer than he stands). Nothing, without ratings: the ordinary man's.
-const HGT_RATING_0 = 66;
-const HGT_RATING_INCH = (93 - 66) / 100;
+// HIS BUILD, FROM WHAT HE IS (see poses.ts Physique): how strong he is, and
+// how quick and springy. Nothing, without ratings: the ordinary man's.
 export const physiqueOf = (
 	r: CourtRatings | undefined,
-	hgt: number | undefined,
 ): Physique | undefined => {
 	if (!r) {
 		return undefined;
@@ -74,8 +68,5 @@ export const physiqueOf = (
 	return {
 		...(strength === undefined ? {} : { strength }),
 		...(athletic === undefined ? {} : { athletic }),
-		...(typeof r.hgt === "number" && typeof hgt === "number"
-			? { reach: HGT_RATING_0 + HGT_RATING_INCH * r.hgt - hgt }
-			: {}),
 	};
 };

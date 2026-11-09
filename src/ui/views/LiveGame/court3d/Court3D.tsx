@@ -701,7 +701,7 @@ const Court3D = ({
 			}
 			bodies.set(
 				p.pid,
-				bodyOf(f?.hgt, f?.weight, undefined, physiqueOf(p.ratings, f?.hgt)),
+				bodyOf(f?.hgt, f?.weight, undefined, physiqueOf(p.ratings)),
 			);
 			kept.current.set(p.pid, {
 				made,

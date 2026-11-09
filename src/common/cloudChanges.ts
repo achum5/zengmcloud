@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 241,
+		date: "2026-11-09",
+		text: "3D games: the new player bodies were too bulky - shoulders, arms, necks and ankles are now sized to real measurements, so players look like athletes rather than bodybuilders. Also fixed: hands not quite meeting when one player helps another up off the floor.",
+	},
+	{
 		n: 240,
 		date: "2026-11-09",
 		text: "3D games: a player running through a turn - a cut, a curl, coming round a screen - now leans into it, the harder the turn the further, instead of running it bolt upright.",
@@ -19,7 +24,7 @@ export const CLOUD_CHANGES: CloudChange[] = [
 	{
 		n: 239,
 		date: "2026-11-09",
-		text: "3D games: players have new bodies - smaller heads, longer legs, broad shoulders, muscle on their arms and legs, and fuller lighting. And each player's build is now his own: his listed height and weight set his size, his strength rating says how much of it is muscle (a strong player is wide across the shoulders with thick arms and a trim waist; a weak, heavy one carries it round his middle), good jumpers and runners are leaner in the leg and waist, and long players get longer arms.",
+		text: "3D games: players have new bodies - smaller heads, muscle on their arms and legs, and fuller lighting. And each player's build is now his own: his listed height and weight set his size, his strength rating says how much of it is muscle (a strong player is wider across the shoulders with thicker arms and a trim waist; a weak, heavy one carries it round his middle), and good jumpers and runners are leaner in the leg and waist.",
 	},
 	{
 		n: 238,

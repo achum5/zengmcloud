@@ -232,18 +232,14 @@ describe("3D poses", () => {
 			assert.isAbove(side * arm.mid.s, side * arm.end.s + 0.2);
 			assert.isBelow(Math.abs(arm.mid.u - arm.root.u), 0.45);
 		}
-		// (His hands on his knees: within under a fifth of his leg's length
-		// of the middle of them - half a foot, on the man this was first
-		// drawn as.)
 		const bent = skeleton(b, poseAt("crouch", 0));
-		const near = (b.thigh + b.shin) * 0.183;
-		assert.isBelow(gap(bent.armR.end, bent.legR.mid), near);
-		assert.isBelow(gap(bent.armL.end, bent.legL.mid), near);
+		assert.isBelow(gap(bent.armR.end, bent.legR.mid), 0.5);
+		assert.isBelow(gap(bent.armL.end, bent.legL.mid), 0.5);
 	});
 
 	// Two men the same height and weight are not the same man: what he is
 	// good at says what his weight is made of (see Physique).
-	test("his own build: strength, spring and reach", () => {
+	test("his own build: strength and spring", () => {
 		const plain = bodyOf(79, 220);
 		const strong = bodyOf(79, 220, undefined, { strength: 1 });
 		const weak = bodyOf(79, 220, undefined, { strength: 0 });
@@ -267,12 +263,12 @@ describe("3D poses", () => {
 		const slow = bodyOf(79, 220, undefined, { athletic: 0 });
 		assert.isAbove(spry.calfR, slow.calfR);
 		assert.isBelow(spry.belly!, slow.belly!);
-		// Long arms: longer, by no more than a couple of inches' worth.
-		const long = bodyOf(79, 220, undefined, { reach: 2 });
-		const longer = bodyOf(79, 220, undefined, { reach: 9 });
-		assert.isAbove(long.upper, plain.upper);
-		assert.strictEqual(long.upper, longer.upper);
-		assert.isBelow(long.upper + long.fore, (plain.upper + plain.fore) * 1.04);
+		// (And never longer or shorter in any of him: where his hands meet
+		// another man's, and the rim, are set in feet.)
+		for (const k of ["upper", "fore", "thigh", "shin", "torso"] as const) {
+			assert.strictEqual(strong[k], plain[k]);
+			assert.strictEqual(spry[k], plain[k]);
+		}
 		// An ordinary man in everything is the man with nothing known of him.
 		const mid = bodyOf(79, 220, undefined, { strength: 0.5, athletic: 0.5 });
 		for (const k of Object.keys(plain) as (keyof typeof plain)[]) {
@@ -282,24 +278,23 @@ describe("3D poses", () => {
 	});
 
 	test("his build read off his ratings", () => {
-		assert.isUndefined(physiqueOf(undefined, 79));
-		const ph = physiqueOf({ stre: 80, jmp: 35, spd: 35, hgt: 50 }, 79)!;
+		assert.isUndefined(physiqueOf(undefined));
+		const ph = physiqueOf({ stre: 80, jmp: 35, spd: 35, hgt: 50 })!;
 		assert.strictEqual(ph.strength, 1);
 		assert.strictEqual(ph.athletic, 0);
-		// (A 50 for height is 6'7.5": half an inch more than he is listed.)
-		assert.closeTo(ph.reach!, 0.5, 1e-9);
-		// (No listed height, no rating: nothing said of it.)
-		assert.isUndefined(physiqueOf({ stre: 60 }, undefined)!.reach);
-		assert.isUndefined(physiqueOf({ stre: 60 }, 79)!.athletic);
+		assert.isUndefined(physiqueOf({ stre: 60 })!.athletic);
 	});
 
 	test("a seven-footer stands taller than a six-footer", () => {
 		const tall = skeleton(bodyOf(84), poseAt("ready", 0));
 		const short = skeleton(bodyOf(72), poseAt("ready", 0));
 		assert.isAbove(tall.head.u, short.head.u);
-		// And about as tall as he is.
+		// And about as tall as he is, settled into his knees - a couple of
+		// inches under it: his head is smaller than the cartoon's was, and
+		// nothing else of him any longer (see ATHLETE).
 		const top = tall.head.u + bodyOf(84).headR;
-		assert.closeTo(top, 7, 0.35);
+		assert.closeTo(top, 7, 0.5);
+		assert.isAbove(top, 6.5);
 	});
 
 	// Each move's hands are placed round where it lets the ball go and where

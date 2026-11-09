@@ -1078,23 +1078,23 @@ export type ArmBuild = {
 	fore: [number, number, number, number];
 };
 export const ARM: ArmBuild = {
-	delt: [1.28, 1, 0.9],
-	biceps: [0.66, 0.82, 0.58],
+	delt: [1.16, 0.96, 0.9],
+	biceps: [0.62, 0.76, 0.56],
 	elbow: 0.62,
-	fore: [0.92, 1.1, 0.74, 0.52],
+	fore: [0.92, 1.08, 0.74, 0.56],
 };
 // (A lean man's, and a strong one's - see buildsOf.)
 const ARM_LEAN: ArmBuild = {
-	delt: [1.14, 0.94, 0.88],
-	biceps: [0.6, 0.72, 0.56],
+	delt: [1.06, 0.9, 0.88],
+	biceps: [0.58, 0.68, 0.54],
 	elbow: 0.62,
-	fore: [0.9, 1.02, 0.74, 0.52],
+	fore: [0.9, 1, 0.74, 0.56],
 };
 const ARM_STRONG: ArmBuild = {
-	delt: [1.37, 1.05, 0.92],
-	biceps: [0.72, 0.92, 0.6],
+	delt: [1.26, 1.02, 0.92],
+	biceps: [0.66, 0.86, 0.58],
 	elbow: 0.62,
-	fore: [0.94, 1.18, 0.74, 0.52],
+	fore: [0.94, 1.16, 0.74, 0.56],
 };
 const FWD = v3(1, 0, 0);
 const UP_V = v3(0, 0, 1);
@@ -1681,22 +1681,22 @@ export type TorsoBuild = {
 export const TORSO_BUILD: TorsoBuild = {
 	belly: 0.9,
 	bellyR: [0.41, 0.4, 0.46],
-	chest: [0.68, 0.42, 0.075],
+	chest: [0.68, 0.42, 0.062],
 	chestR: [0.37, 0.4, 0.37],
-	lats: [0.38, 0.76, 0.6],
+	lats: [0.38, 0.76, 0.58],
 	latsR: [0.34, 0.37],
 };
 const TORSO_LEAN: TorsoBuild = {
 	...TORSO_BUILD,
 	chest: [0.68, 0.42, 0.05],
 	chestR: [0.355, 0.38, 0.355],
-	lats: [0.38, 0.76, 0.55],
+	lats: [0.38, 0.76, 0.54],
 };
 const TORSO_STRONG: TorsoBuild = {
 	...TORSO_BUILD,
-	chest: [0.68, 0.42, 0.1],
+	chest: [0.68, 0.42, 0.075],
 	chestR: [0.385, 0.42, 0.385],
-	lats: [0.38, 0.76, 0.65],
+	lats: [0.38, 0.76, 0.62],
 };
 
 // HIS OWN ARMS, LEGS AND TORSO: built for the muscle on him (see Body's
@@ -1835,9 +1835,9 @@ export const build = (
 		up(0.9, 0, -dp * 0.05),
 		v3(sk.head.f, 0, sk.head.u - body.headR * 0.6),
 		[
-			[0, sw * 0.45],
-			[0.5, sw * 0.39],
-			[1, sw * 0.37],
+			[0, sw * 0.43],
+			[0.5, sw * 0.35],
+			[1, sw * 0.33],
 		],
 		NECK,
 		G_NECK,
