@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 245,
+		date: "2026-11-09",
+		text: "3D games: uniforms hang like cloth - folds fall down the jersey and gather at the waist, and the shorts hang in folds toward the hem - and skin has more to it: shadow in the creases between muscles, darker elbows and knees, and the neck shaded under the jaw. Best seen in replays and close-ups.",
+	},
+	{
 		n: 244,
 		date: "2026-11-09",
 		text: "3D games: players wear proper basketball shoes - high-tops with a laced, sloped instep and a lower toe, instead of a rounded slipper - their arms and legs read as one limb rather than muscles laid on top, and their wrists are as wide as a wrist is.",

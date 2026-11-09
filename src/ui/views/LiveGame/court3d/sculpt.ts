@@ -2494,6 +2494,35 @@ export const RICH = {
 	// (And the masses of one part of him - his arm's, his leg's - run
 	// further into each other: one limb, not its muscles laid on it.)
 	melt: 1.1,
+	// Where two of his masses meet at an angle - round a muscle, in at a
+	// joint - the crease between them is that much darker (cloth, skin), the
+	// sharper the angle the more (`bend`: how sharp is all of it).
+	groove: [0.1, 0.2],
+	bend: 1.5,
+} as const;
+
+// HOW WHAT HE WEARS HANGS, AND HIS SKIN'S OWN TONES (a sport's `paint` says,
+// in its ink's `tone`: so much lighter or darker there). His jersey falls
+// in long folds from his chest and shoulder blades, more of them and deeper
+// toward his waist and under his arms, and gathers where it tucks in; his
+// shorts hang in folds down each leg, deeper toward the hem. His elbows and
+// knees are a shade darker than the rest of him, and his neck in the shadow
+// of his jaw.
+export const CLOTH = {
+	jersey: 0.15,
+	// (So many folds round him, and how they wander down him.)
+	drape: [6, 2.2, 2.3],
+	// (Gathered into his waistband: so many round him, up so much of his
+	// torso from it.)
+	gather: [14, 9, 0.22],
+	shorts: 0.14,
+	legs: [5, 3, 2.1],
+	seat: [7, 5],
+	joint: 0.09,
+	// (Over the last of a thigh or an upper arm into the joint, and the
+	// first of the shin or forearm out of it.)
+	jointSpan: 0.1,
+	jaw: [0.14, 0.3, 0.95],
 } as const;
 
 // Lengths, for every pixel: Math.hypot's care over huge and tiny numbers
@@ -2530,6 +2559,9 @@ export type Ink = {
 	b: number;
 	cloth: boolean;
 	gloss: number;
+	// So much lighter (or, below 0, darker) there: a fold of his clothes, a
+	// darker patch of skin (see CLOTH) - where the sport says.
+	tone?: number;
 };
 // Two of his parts (groups) that melt into each other round where they meet
 // (sprite pixels), this far round it.
@@ -2739,6 +2771,7 @@ export const shade = (
 				let nzs = hn[f]!;
 				let behind = false;
 				let shadow = 0;
+				let groove = 0;
 				for (let j = 0; j < m; j++) {
 					if (j === f) {
 						continue;
@@ -2765,6 +2798,13 @@ export const shade = (
 							nx += hx[j]! * wgt;
 							ny += hy[j]! * wgt;
 							nzs += hn[j]! * wgt;
+							// (The crease where the two meet at an angle.)
+							const bend =
+								1 - (hx[j]! * hx[f]! + hy[j]! * hy[f]! + hn[j]! * hn[f]!);
+							const gr = wgt * Math.min(1, bend * RICH.bend);
+							if (gr > groove) {
+								groove = gr;
+							}
 						}
 					} else if (hs[j]! < 0 && dz > 0.05) {
 						behind = true;
@@ -2811,6 +2851,7 @@ export const shade = (
 					oz3 * (tw3.u + kap);
 				ink.cloth = false;
 				ink.gloss = 0;
+				ink.tone = 0;
 				paint(fc, t, hx[f]!, hy[f]!, hn[f]!, hr[f]!, Pf, Ps, Pu);
 				const cloth = ink.cloth;
 				const gloss = ink.gloss;
@@ -2881,6 +2922,15 @@ export const shade = (
 					r = cr * (0.84 + 0.16 * lit - RICH.deep[1] * deep) * k;
 					g = cg * (0.74 + 0.26 * lit - RICH.deep[2] * deep) * k;
 					bb = cb * (0.72 + 0.28 * lit - RICH.deep[3] * deep) * k;
+				}
+				if (rich) {
+					// The fold or the patch of skin there, and the crease between
+					// two of his masses.
+					const tone =
+						1 + (ink.tone ?? 0) - groove * RICH.groove[cloth ? 0 : 1];
+					r *= tone;
+					g *= tone;
+					bb *= tone;
 				}
 				if (lift > 0) {
 					r += (255 - r) * lift;
@@ -3009,7 +3059,14 @@ export const sculpt = (
 		let c: RGB;
 		// A suit's jacket hangs on over his hips; anything else is tucked in.
 		const hem = pal.shirt ? -cut.waist : cut.waist;
+		// (Round him from the middle of his chest.)
+		const round = Math.atan2(S, F);
 		if (U < hem) {
+			// The seat of his shorts, in folds.
+			ink.tone =
+				CLOTH.shorts *
+				0.6 *
+				Math.sin(round * CLOTH.seat[0] + U * CLOTH.seat[1]);
 			c = pal.shorts;
 			if (wraps) {
 				c = artOver(wraps.shorts, U, S, F, false, c);
@@ -3052,6 +3109,30 @@ export const sculpt = (
 				dArm = g / (2 * len2(gx / ea, gy / eb) || 1);
 			}
 			const edge = Math.min(dArm, dNeck);
+			if (edge >= 0) {
+				// His top, hanging: long folds, and gathered at his waist.
+				const low = Math.min(
+					1,
+					Math.max(0, (cut.top - U) / (cut.top - cut.waist)),
+				);
+				const drape =
+					Math.sin(
+						round * CLOTH.drape[0] +
+							CLOTH.drape[1] * Math.sin(U * CLOTH.drape[2] + 0.7),
+					) *
+					(0.25 + 0.75 * low) *
+					(0.45 + 0.55 * Math.abs(Math.sin(round)));
+				const tuck = Math.min(
+					1,
+					Math.max(0, 1 - (U - cut.waist) / (CLOTH.gather[2] * body.torso)),
+				);
+				ink.tone =
+					CLOTH.jersey *
+					(0.7 * drape +
+						0.5 *
+							tuck *
+							Math.sin(round * CLOTH.gather[0] + U * CLOTH.gather[1]));
+			}
 			if (edge < 0) {
 				c = pal.skin;
 				ink.cloth = false;
@@ -3213,6 +3294,15 @@ export const sculpt = (
 				os -= ls * along;
 				ou -= lu * along;
 				const ol = len3(of, os, ou) || 1;
+				// (Hanging in folds down his leg, deeper toward the hem.)
+				ink.tone =
+					CLOTH.shorts *
+					Math.sin(
+						Math.atan2(os, of) * CLOTH.legs[0] +
+							t * CLOTH.legs[1] +
+							side * CLOTH.legs[2],
+					) *
+					(0.35 + 0.65 * t);
 				let c =
 					!look.outfit && (os * (side === 0 ? -1 : 1)) / ol > 0.95
 						? pal.stripe
@@ -3263,6 +3353,13 @@ export const sculpt = (
 					c = pal.skin;
 				}
 				ink.cloth = c !== pal.skin;
+				if (!ink.cloth) {
+					// (His elbow, a shade darker.)
+					const into = fc.kind === UPPER ? 1 - t : t;
+					if (into < CLOTH.jointSpan) {
+						ink.tone = -CLOTH.joint * (1 - into / CLOTH.jointSpan);
+					}
+				}
 				ink.r = c[0];
 				ink.g = c[1];
 				ink.b = c[2];
@@ -3283,6 +3380,13 @@ export const sculpt = (
 					c = pad;
 				}
 				ink.cloth = c !== pal.skin;
+				if (!ink.cloth) {
+					// (His knee, a shade darker.)
+					const into = fc.kind === THIGH ? 1 - t : t;
+					if (into < CLOTH.jointSpan) {
+						ink.tone = -CLOTH.joint * (1 - into / CLOTH.jointSpan);
+					}
+				}
 				ink.r = c[0];
 				ink.g = c[1];
 				ink.b = c[2];
@@ -3407,6 +3511,14 @@ export const sculpt = (
 				break;
 			}
 			default: {
+				if (fc.kind === NECK) {
+					// (His neck, in the shadow of his jaw.)
+					const e = Math.min(
+						1,
+						Math.max(0, (t - CLOTH.jaw[1]) / (CLOTH.jaw[2] - CLOTH.jaw[1])),
+					);
+					ink.tone = -CLOTH.jaw[0] * e * e * (3 - 2 * e);
+				}
 				ink.r = pal.skin[0];
 				ink.g = pal.skin[1];
 				ink.b = pal.skin[2];

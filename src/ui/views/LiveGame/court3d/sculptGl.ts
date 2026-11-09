@@ -29,6 +29,7 @@ import {
 	CAM_BODY_RGB,
 	CAM_LENS,
 	CAM_LENS_RGB,
+	CLOTH,
 	FORE,
 	G_ARM,
 	G_BALL,
@@ -39,6 +40,7 @@ import {
 	heldSurface,
 	LIGHT,
 	NAIL,
+	NECK,
 	paletteOf,
 	RICH,
 	RS,
@@ -408,6 +410,8 @@ vec3 ballSurface(vec3 p, float pixel) {
 
 vec3 ink;
 bool cloth;
+// (So much lighter or darker there: see sculpt.ts CLOTH.)
+float tone;
 
 // The jersey, shirt or jacket at a point on his torso.
 void torsoAt(float U_, float S, float F) {
@@ -427,7 +431,10 @@ void torsoAt(float U_, float S, float F) {
 	float trim = uP[CUT2].y;
 	vec3 c;
 	float hem = shirt ? -waist : waist;
+	float round = atan2s(S, F);
 	if (U_ < hem) {
+		tone = ${f1(CLOTH.shorts * 0.6)}
+			* sin(round * ${f1(CLOTH.seat[0])} + U_ * ${f1(CLOTH.seat[1])});
 		c = uP[C_SHORTS].rgb;
 		if (wraps) {
 			c = artOver(WS0, U_, S, F, false, c);
@@ -469,6 +476,25 @@ void torsoAt(float U_, float S, float F) {
 			dArm = g / (gl == 0.0 ? 1.0 : gl);
 		}
 		float edge = min(dArm, dNeck);
+		if (edge >= 0.0) {
+			float low = clamp((top - U_) / (top - waist), 0.0, 1.0);
+			float drape = sin(
+					round * ${f1(CLOTH.drape[0])}
+						+ ${f1(CLOTH.drape[1])} * sin(U_ * ${f1(CLOTH.drape[2])} + 0.7)
+				)
+				* (0.25 + 0.75 * low)
+				* (0.45 + 0.55 * abs(sin(round)));
+			float tuck = clamp(
+				1.0 - (U_ - waist) / (${f1(CLOTH.gather[2])} * uP[CUT3].z),
+				0.0,
+				1.0
+			);
+			tone = ${f1(CLOTH.jersey)} * (
+				0.7 * drape
+				+ 0.5 * tuck
+					* sin(round * ${f1(CLOTH.gather[0])} + U_ * ${f1(CLOTH.gather[1])})
+			);
+		}
 		if (edge < 0.0) {
 			c = uP[C_SKIN].rgb;
 			cloth = false;
@@ -564,6 +590,13 @@ void paint(vec4 m2, Hit h, vec3 P, vec3 A, vec3 B, float len) {
 		float ol = length(o);
 		if (ol == 0.0) { ol = 1.0; }
 		bool outfit = uP[FLAG0].x > 0.5;
+		tone = ${f1(CLOTH.shorts)}
+			* sin(
+				atan2s(o.y, o.x) * ${f1(CLOTH.legs[0])}
+					+ t * ${f1(CLOTH.legs[1])}
+					+ float(side) * ${f1(CLOTH.legs[2])}
+			)
+			* (0.35 + 0.65 * t);
 		vec3 c = !outfit && (o.y * (side == 0 ? -1.0 : 1.0)) / ol > 0.95
 			? uP[C_STRIPE].rgb
 			: uP[C_SHORTS].rgb;
@@ -601,6 +634,12 @@ void paint(vec4 m2, Hit h, vec3 P, vec3 A, vec3 B, float len) {
 			skin = true;
 		}
 		cloth = !skin;
+		if (skin) {
+			float into = upper ? 1.0 - t : t;
+			if (into < ${f1(CLOTH.jointSpan)}) {
+				tone = -${f1(CLOTH.joint)} * (1.0 - into / ${f1(CLOTH.jointSpan)});
+			}
+		}
 		ink = c;
 	} else if (kind == ${THIGH} || kind == ${SHIN}) {
 		vec3 c = side == 0 ? uP[C_LEGS_R].rgb : uP[C_LEGS_L].rgb;
@@ -615,6 +654,12 @@ void paint(vec4 m2, Hit h, vec3 P, vec3 A, vec3 B, float len) {
 			skin = (side == 0 ? uP[PADS].x : uP[PADS].y) > 0.5;
 		}
 		cloth = !skin;
+		if (skin) {
+			float into = kind == ${THIGH} ? 1.0 - t : t;
+			if (into < ${f1(CLOTH.jointSpan)}) {
+				tone = -${f1(CLOTH.joint)} * (1.0 - into / ${f1(CLOTH.jointSpan)});
+			}
+		}
 		ink = c;
 	} else if (kind == ${SHOE}) {
 		float sole = uP[CUT2].w;
@@ -675,6 +720,14 @@ void paint(vec4 m2, Hit h, vec3 P, vec3 A, vec3 B, float len) {
 	} else if (kind == ${CAM_LENS}) {
 		ink = ${v3(CAM_LENS_RGB)};
 	} else {
+		if (kind == ${NECK}) {
+			float e = clamp(
+				(t - ${f1(CLOTH.jaw[1])}) / ${f1(CLOTH.jaw[2] - CLOTH.jaw[1])},
+				0.0,
+				1.0
+			);
+			tone = -${f1(CLOTH.jaw[0])} * e * e * (3.0 - 2.0 * e);
+		}
 		ink = uP[C_SKIN].rgb;
 	}
 }
@@ -726,6 +779,7 @@ void main() {
 	vec3 nrm = vec3(hf.hx, hf.hy, hf.hn);
 	bool behind = false;
 	float shadow = 0.0;
+	float groove = 0.0;
 	for (int j = 0; j < uN; j++) {
 		if (j == f || !hit(j, p, margin, zs, h, m2)) {
 			continue;
@@ -755,6 +809,8 @@ void main() {
 			float wgt = 1.0 - abs(h.s - before) / K;
 			if (wgt > 0.0) {
 				nrm += vec3(h.hx, h.hy, h.hn) * wgt;
+				float bend = 1.0 - dot(vec3(h.hx, h.hy, h.hn), vec3(hf.hx, hf.hy, hf.hn));
+				groove = max(groove, wgt * min(1.0, bend * ${f1(RICH.bend)}));
 			}
 		} else if (h.s < 0.0 && dz > 0.05) {
 			behind = true;
@@ -783,6 +839,7 @@ void main() {
 		+ hf.hy * rf * uP[DN].xyz
 		+ hf.hn * rf * vec3(tw.x, tw.y, tw.z + uP[TW].w);
 	cloth = false;
+	tone = 0.0;
 	paint(mf, hf, P, A, B, M(1, f).y);
 	// Cloth hangs smoother over him than skin does.
 	if (cloth) {
@@ -817,6 +874,8 @@ void main() {
 		// Skin in shadow warms.
 		: ink * (vec3(0.84, 0.74, 0.72) + vec3(0.16, 0.26, 0.28) * lit
 			- ${v3(RICH.deep.slice(1))} * deep) * dark;
+	c *= 1.0 + tone
+		- groove * (cloth ? ${f1(RICH.groove[0])} : ${f1(RICH.groove[1])});
 	c += (255.0 - c) * lift;
 	// A fine line where he passes in front of himself - and all round his
 	// hands, so they read.
