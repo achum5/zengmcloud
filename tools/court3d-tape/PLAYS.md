@@ -60,10 +60,10 @@ each part, so the table below can say how far along each part is.
 | 13  | Steal (`stl`)                                                                                 |       13 | working |
 | 14  | Out of bounds (`outOfBounds`, `tov`/`stl` out of bounds)                                      |       20 | working |
 | 15  | Blocks (`blkTp`, `blkMidRange`, `blkLowPost`, `blkAtRim`, `blkTipIn`, `blkPutBack`)           |        9 | working |
-| 16  | And-ones (`fgAtRimAndOne`, `fgLowPostAndOne`, `fgMidRangeAndOne`, `tpAndOne`, putback/tip-in) |        4 | todo    |
-| 17  | Timeouts (`timeout`, `timeouts`)                                                              |        5 | todo    |
+| 16  | And-ones (`fgAtRimAndOne`, `fgLowPostAndOne`, `fgMidRangeAndOne`, `tpAndOne`, putback/tip-in) |        4 | working |
+| 17  | Timeouts (`timeout`, `timeouts`)                                                              |        5 | working |
 | 18  | Start and end of a period, overtime (`period`, `endOfPeriod`, `overtime`)                     |        6 | todo    |
-| 19  | Jump ball (`jumpBall`)                                                                        |        1 | todo    |
+| 19  | Jump ball (`jumpBall`)                                                                        |        1 | working |
 | 20  | Game over (`gameOver`)                                                                        |        1 | todo    |
 | 21  | Injury, fouling out (`injury`, `foulOut`)                                                     |     rare | todo    |
 | 22  | Heaves and the clock running out (`noShot`, `runOutClock`, `fgaTpFake`)                       |     rare | todo    |
@@ -81,6 +81,9 @@ each part, so the table below can say how far along each part is.
 - **The opening tip** (a clip, 2026-11-04): the two bigs should step up into
   the circle and go up for it like men jumping, not stand there; and off the
   tip, men of the team that won it ran the wrong way. (See #19.)
+  Checked 2026-11-09 over nine real games: both jumpers set and go up for
+  it (about a second off the floor), and all of the winners' men go the
+  right way off it, every tip.
 
 ## 1. Three pointer, no good
 
@@ -676,3 +679,26 @@ Now (2026-11-09): as the whistle goes, the man of each side nearest where
 it went out now and then points the way he says it goes - his own way:
 19 of the 39, both sides at once in 4. Arms only, so nothing else
 changes.
+
+## 16. And-ones
+
+Measured 2026-11-09 over nine real games (27 at the rim, 15 in the post at
+real speed; the variety tool's `*AndOne` lines): the man who scored it
+lets it out - a chest bump with a mate, a flex, a roar, his chest
+pounded, both arms up - and points at the man who found him; theirs
+protest, put their hands on their hips, box out for the free throw.
+Nothing to add for now.
+
+## 17. Timeouts
+
+Measured 2026-11-09 (16 over nine real games): the whistle and the
+signal, the walk to the benches run through fast, the huddle round the
+chairs, a look round the building at real speed (the crowd, the dance
+team, the moppers), and the walk back out. Nothing to add for now.
+
+## 19. Jump ball
+
+Measured 2026-11-09 (10 tips over nine real games): the two jumpers set
+in the circle and go up for it, the winner a touch higher; the rest round
+the circle, the smallest man back; off the tip, the winners' men all go
+the right way, and the losers' get back.
