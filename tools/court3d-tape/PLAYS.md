@@ -446,26 +446,23 @@ stood out past 31 ft as the ball was played in close (the half-court test:
 5 in its six games, master 2; 9 to 5 over twelve), the man who pitched it
 ahead from out there trailing late. Backed out till the trailers come on.
 
-HELD (2026-11-09): the and-one fouler's own run is in `held/drb.patch`
-(made against 9f0c44580; its one-handed board, outlet, pivot and one
-swipe at a board are in, done over as the picture only). Each changes where men are or
-when, so every game after plays out otherwise - and each time, some few
-of the suite's tests that sit right on their line tipped over, different
-ones each run (a kick-out's help 0.59 for 0.6, a footwork share 0.304 for
-0.3, a referee's walk round a corner at a quarter break, a man on the
-half-court line, a post-up's man, a heave at the buzzer). In again once
-those tests stand clear of their lines: the edge cases they catch fixed
-where they are real, more games where they are only a count.
+HELD (2026-11-09) and now all in: each piece of this item first built
+changed where men are or when, so the games after played out otherwise
+and some few of the suite's tests that sit right on their line tipped
+over, different ones each run. Done over as the picture only - the
+one-handed board, the outlet and pivot, the one swipe - nothing else in
+the game moves; and the and-one fouler's own run, a fix where the game
+does move, went in on its own once the suite stood clean with it.
 
 Next: a baseball outlet up the floor wants a man out ahead to throw it to,
 the hit-ahead on a break (long outlets now: 1 in three games). A bobble is
 the tip to himself, there already.
 
-Seen along the way (2026-11-08), held back with the above: the man who
-fouls a jump shooter (an and-one) is planned off from where shadowing his
-own man has him, then that is reworked to follow the man (see mark) and
-the run at the shooter can be left 5.5 ft short - `ownRun` in foulHim
-fixes it (in the held-back patch).
+Seen along the way (2026-11-08), in 2026-11-09: the man who fouls a jump
+shooter (an and-one) was planned off from where shadowing his own man had
+him, then that was reworked to follow the man (see mark) and the run at
+the shooter could be left 5.5 ft short - now his own run (`ownRun` in
+foulHim).
 
 ## 3. Three pointer, made
 
@@ -493,3 +490,25 @@ nobody about the shot itself. Now, off a pass, the man who found him now
 and then points back at him on his own way back (`PASSER_POINTS`, 40%);
 and the man who had him, now and then, hands up on his head on his way
 (`BEATEN_HEAD`; 5 of 76) - arms only, nothing else in the game moves.
+
+## 4. Post shot, made or missed
+
+Measured 2026-11-09 over the same three games (the variety tool's `post`
+part: his back-down, his moves, his man): 46 made, 69 missed at real
+speed. Most come straight off a drive - a floater (58 of 115) or a hook
+(46), a fade now and then (6) - not a back-down: 4 of 115 backed his man
+down first. His man rim side of him at the release 35 of 46 makes. After
+a miss in there he stood where he landed 23 of 69 - the paint crowded,
+afterTheMiss's step back or in too often into somebody (left).
+
+## 5. Shot at the rim, made or missed
+
+Measured 2026-11-09 (61 made, 56 missed at real speed). Made: a dunk 35
+(two hands 13, one 16, tomahawk 6), a power layup 8, a layup 7, a finger
+roll 7, a reverse 3, a scoop 1; in clean 46, off the glass 9, off the
+front of the rim 6. Missed: a power layup or a layup 32, a finger roll
+11, a scoop 10, a reverse 3 - and off the front of the rim 45 of 56, the
+rest rattled round (7), off the side or the glass (4). Next: misses at
+the rim as varied as they are - too hard off the glass, round the rim and
+out, off the back - which moves the ball, so the games after play out
+otherwise: it waits on the tests that sit on their line.

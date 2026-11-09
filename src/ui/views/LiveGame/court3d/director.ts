@@ -13727,6 +13727,9 @@ class Director {
 				} else {
 					this.goBy(f, F, from, by, "run", -faceRim as 1 | -1, BURST);
 				}
+				// (His own run at him, and the way there - not reworked later to
+				// follow his own man, and left short of the shooter: see mark.)
+				this.ownRun(f, by, from - 1500);
 				this.act(f, "hack", release - 250, release - 250 + HACK_MS, {
 					face: -faceRim as 1 | -1,
 					look: { ...P1 },
