@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 238,
+		date: "2026-11-09",
+		text: "3D games: players are now drawn by your device's graphics card when that is faster (the game checks for itself, and keeps the old way where it isn't). They look the same as before - games should just run smoother, with fewer hitches at replays and camera cuts.",
+	},
+	{
 		n: 237,
 		date: "2026-11-09",
 		text: "3D games: with a second or so left in a quarter after a basket, a free throw or the ball going out, the ball is now inbounded before the horn - often with a heave just too late - instead of the horn going with the ball on the floor. And a team running out the clock at the end of a game it has won dribbles it out with the defense standing off.",

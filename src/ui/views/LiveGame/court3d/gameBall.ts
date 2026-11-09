@@ -19,15 +19,15 @@ export type RGB = [number, number, number];
 
 export const LEATHER: RGB = [188, 100, 55];
 export const CHANNEL: RGB = [27, 21, 18];
-const PRINT_INK: RGB = [33, 26, 23];
-const PRINT_EDGE: RGB = [201, 186, 160];
+export const PRINT_INK: RGB = [33, 26, 23];
+export const PRINT_EDGE: RGB = [201, 186, 160];
 
 // The curved channel's angle off the x axis, by how far round the axis it is
 // from the middle channel: nearest it (48 degrees) over the middle of the
 // print, out to within 12 degrees of the channel at right angles where it
 // crosses the middle one.
-const CURVE_NEAR = 0.84;
-const CURVE_OUT = 0.52;
+export const CURVE_NEAR = 0.84;
+export const CURVE_OUT = 0.52;
 
 // How far, in radians over the ball, a point on it is from the nearest
 // channel.
@@ -75,7 +75,7 @@ export const CHANNEL_LINES: [number, number, number][][] = (() => {
 // and its black alone (the rest is its pale edging) - and kept at a few sizes,
 // halving, so a small ball reads the print at about its own size.
 
-type PrintLevel = { n: number; all: Uint8Array; ink: Uint8Array };
+export type PrintLevel = { n: number; all: Uint8Array; ink: Uint8Array };
 
 const PRINT_N = 512;
 

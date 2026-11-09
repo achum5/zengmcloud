@@ -1,4 +1,11 @@
-import { depthOf, project, type Camera, type Projected } from "./camera.ts";
+import {
+	depthOf,
+	makeCamera,
+	MAIN_RIG,
+	project,
+	type Camera,
+	type Projected,
+} from "./camera.ts";
 import {
 	legTurnFrom,
 	type Blend,
@@ -6,8 +13,17 @@ import {
 	type Stride,
 } from "./evaluate.ts";
 import { drawHeadAt, headOf, type Look } from "./figure.ts";
-import { ANIMS, type AnimName, type Body, type V3 } from "./poses.ts";
+import { ANIMS, bodyOf, type AnimName, type Body, type V3 } from "./poses.ts";
 import { sculpt } from "./sculpt.ts";
+import {
+	glCard,
+	glForced,
+	glOff,
+	glPixels,
+	glSculpt,
+	glTimed,
+	glTook,
+} from "./sculptGl.ts";
 
 // THE PLAYERS, DRAWN.
 //
@@ -1083,7 +1099,7 @@ export const shape = (job: Job, look: Look, cut = false): Shaped => {
 
 // Where his head is drawn on the sheet: round it, his face and hair are
 // drawn and rimmed (see finish).
-const headBox = (sh: Shaped): Box => {
+const headBox = (sh: Pick<Shaped, "w" | "h" | "head">): Box => {
 	const { w, h, head } = sh;
 	const hr = head.r;
 	return {
@@ -1096,7 +1112,11 @@ const headBox = (sh: Shaped): Box => {
 // What is kept of the sheet: just what is drawn of him (the rim round it,
 // his head and all) - x0, y0 to x1, y1 (nothing, if x1 <= x0) - and where
 // that sits from where he stands (dx, dy).
-const keptBox = (sh: Shaped, hb: Box, job: Job) => {
+const keptBox = (
+	sh: Pick<Shaped, "w" | "h" | "ox" | "oy" | "box">,
+	hb: Box,
+	job: Job,
+) => {
 	const { w, h, ox, oy, box } = sh;
 	const x0 = Math.max(0, Math.min(box.x0 - 1, hb.x0));
 	const y0 = Math.max(0, Math.min(box.y0 - 1, hb.y0));
@@ -1120,7 +1140,7 @@ const keptBox = (sh: Shaped, hb: Box, job: Job) => {
 // whoever was drawn on the sheet before him.)
 const drawHeadOn = (
 	s: CanvasRenderingContext2D,
-	sh: Shaped,
+	sh: Pick<Shaped, "ox" | "oy" | "headAt">,
 	job: Job,
 	look: Look,
 	fx: number,
@@ -1314,6 +1334,329 @@ const keepMade = (
 		: p;
 };
 
+// HIS PICTURE, MADE ON THE GRAPHICS CARD (see sculptGl.ts) and kept: his
+// body drawn from the card's sheet straight into the picture kept - no
+// pixel of him read back, or handled on the page - his head drawn over it,
+// then whatever goes over his head, and under it all his shadow's shape (as
+// keepPixels lays it). Nothing, if he can't be made there: made on the page.
+//
+// His head is drawn on a sheet of its own (the page's, as ever - so his
+// face is the same face), and its rim worked out there from its own pixels
+// (see rim): laid under his body, so it shows only where his body isn't,
+// and his head over it.
+let headSheet: Scratch | undefined;
+let rimSheet: Scratch | undefined;
+const sheetOf = (s: Scratch | undefined, w: number, h: number): Scratch => {
+	const out = s ?? makeScratch();
+	if (out.canvas.width < w || out.canvas.height < h) {
+		out.canvas.width = Math.max(out.canvas.width, w);
+		out.canvas.height = Math.max(out.canvas.height, h);
+	}
+	out.ctx.setTransform(1, 0, 0, 1, 0, 0);
+	out.ctx.globalCompositeOperation = "source-over";
+	out.ctx.clearRect(0, 0, w, h);
+	return out;
+};
+const glKeep = (
+	cache: SpriteCache,
+	key: string,
+	job: Job,
+	look: Look,
+): Kept | undefined => {
+	if (!glReady()) {
+		return undefined;
+	}
+	const { cam, st: posed, body, px, left, right, upper, lower, lift } = job;
+	const w = Math.max(4, Math.ceil((right - left) / px) + 2);
+	const h = Math.max(4, Math.ceil((lower - upper) / px) + 2);
+	const ox = left - px;
+	const oy = upper + lift - px;
+	const made = glSculpt(cam, posed, body, look, px, ox, oy, w, h);
+	if (!made) {
+		return undefined;
+	}
+	const sh = {
+		w,
+		h,
+		ox,
+		oy,
+		box: made.box,
+		head: made.head,
+		headAt: headOf(posed, body),
+	};
+	const hb = headBox(sh);
+	const k = keptBox(sh, hb, job);
+	const ow = k.x1 - k.x0;
+	const oh = k.y1 - k.y0;
+	if (ow <= 0 || oh <= 0) {
+		return undefined;
+	}
+	const dw = Math.max(1, Math.ceil(ow / DARK_SCALE));
+	const dh = Math.max(1, Math.ceil(oh / DARK_SCALE));
+	const canvas = document.createElement("canvas");
+	canvas.width = ow;
+	canvas.height = oh + dh;
+	const g = canvas.getContext("2d")!;
+	g.imageSmoothingEnabled = false;
+	g.drawImage(made.canvas, k.x0, k.y0, ow, oh, 0, 0, ow, oh);
+	const fw = hb.x1 - hb.x0;
+	const fh = hb.y1 - hb.y0;
+	if (fw > 0 && fh > 0) {
+		headSheet = sheetOf(headSheet, fw, fh);
+		drawHeadOn(headSheet.ctx, sh, job, look, hb.x0, hb.y0);
+		// (Never let a picture we may not read stop the game: no rim then.)
+		let face: ImageData | undefined;
+		try {
+			face = headSheet.ctx.getImageData(0, 0, fw, fh);
+		} catch {
+			face = undefined;
+		}
+		g.save();
+		g.beginPath();
+		g.rect(0, 0, ow, oh);
+		g.clip();
+		if (face) {
+			const d = face.data;
+			const ring = new ImageData(fw, fh);
+			const o = ring.data;
+			const solidAt = (x: number, y: number) =>
+				x >= 0 &&
+				y >= 0 &&
+				x < fw &&
+				y < fh &&
+				d[(y * fw + x) * 4 + 3]! >= SOLID;
+			for (let y = 0; y < fh; y++) {
+				for (let x = 0; x < fw; x++) {
+					if (
+						!solidAt(x, y) &&
+						(solidAt(x - 1, y) ||
+							solidAt(x + 1, y) ||
+							solidAt(x, y - 1) ||
+							solidAt(x, y + 1))
+					) {
+						const i = (y * fw + x) * 4;
+						o[i] = OUTLINE[0];
+						o[i + 1] = OUTLINE[1];
+						o[i + 2] = OUTLINE[2];
+						o[i + 3] = 255 * RIM_ALPHA;
+					}
+				}
+			}
+			rimSheet = sheetOf(rimSheet, fw, fh);
+			rimSheet.ctx.putImageData(ring, 0, 0);
+			g.globalCompositeOperation = "destination-over";
+			g.drawImage(
+				rimSheet.canvas,
+				0,
+				0,
+				fw,
+				fh,
+				hb.x0 - k.x0,
+				hb.y0 - k.y0,
+				fw,
+				fh,
+			);
+			g.globalCompositeOperation = "source-over";
+		}
+		g.drawImage(
+			headSheet.canvas,
+			0,
+			0,
+			fw,
+			fh,
+			hb.x0 - k.x0,
+			hb.y0 - k.y0,
+			fw,
+			fh,
+		);
+		g.restore();
+	}
+	if (made.over) {
+		g.drawImage(made.canvas, w + k.x0, k.y0, ow, oh, 0, 0, ow, oh);
+	}
+	// His shadow's shape under his picture: him, a third the size, in black.
+	g.imageSmoothingEnabled = true;
+	g.drawImage(canvas, 0, 0, ow, oh, 0, oh, dw, dh);
+	g.globalCompositeOperation = "source-atop";
+	g.fillStyle = "#000";
+	g.fillRect(0, oh, dw, dh);
+	if (glTimed()) {
+		// (His picture waited for - see glTimed.)
+		g.getImageData(0, 0, 1, 1);
+	}
+	return remember(cache, key, {
+		canvas,
+		w: ow,
+		h: oh,
+		dx: k.dx,
+		dy: k.dy,
+		dark: { w: dw, h: dh },
+	});
+};
+
+// THE CARD HELD TO THE PAGE'S OWN SCULPTOR, once a visit, before it is
+// trusted with anybody: one man made both ways, and the two pictures laid
+// over each other. A card whose man is not the page's - a driver that
+// works its sums out otherwise - is not used (see glOff): he is sculpted on
+// the page, as he always was.
+const AGREE_SHAPE = 0.02;
+const AGREE_TONE = 6;
+// One man's body made both ways: how many of his pixels there are, how
+// many of them are there one way and not the other, and how far apart the
+// rest are in color (a channel, 0-255, summed over them) - and how many are
+// not there once the card's sheet is drawn from, as his picture is kept
+// (see glKeep). Nothing, if the card made none.
+export const glAgainstPage = (
+	cam: Camera,
+	st: PlayerState,
+	body: Body,
+	look: Look,
+):
+	| { drawn: number; off: number; tone: number; toned: number; lost: number }
+	| undefined => {
+	const plan = planOf(cam, st, body, look, 1);
+	if (!plan) {
+		return undefined;
+	}
+	const job = jobOf(plan, cam, st, body, 1);
+	const sh = shape(job, look);
+	const made = glSculpt(cam, job.st, body, look, 1, sh.ox, sh.oy, sh.w, sh.h);
+	const got = made ? glPixels(sh.w, sh.h) : undefined;
+	if (!got) {
+		return undefined;
+	}
+	const want = sh.img.data;
+	let off = 0;
+	let drawn = 0;
+	let tone = 0;
+	let toned = 0;
+	for (let i = 0; i < sh.w * sh.h; i++) {
+		const a = want[i * 4 + 3]!;
+		const b = got[i * 4 + 3]!;
+		if (a === 0 && b === 0) {
+			continue;
+		}
+		drawn += 1;
+		if (Math.abs(a - b) > 64) {
+			off += 1;
+		} else if (a === 255 && b === 255) {
+			toned += 1;
+			tone +=
+				(Math.abs(want[i * 4]! - got[i * 4]!) +
+					Math.abs(want[i * 4 + 1]! - got[i * 4 + 1]!) +
+					Math.abs(want[i * 4 + 2]! - got[i * 4 + 2]!)) /
+				3;
+		}
+	}
+	// Drawn from, the sheet is what was made on it.
+	let lost = drawn;
+	const copy = sheetOf(undefined, sh.w, sh.h);
+	copy.ctx.drawImage(made!.canvas, 0, 0, sh.w, sh.h, 0, 0, sh.w, sh.h);
+	try {
+		const seen = copy.ctx.getImageData(0, 0, sh.w, sh.h).data;
+		lost = 0;
+		for (let i = 0; i < sh.w * sh.h; i++) {
+			if (Math.abs(seen[i * 4 + 3]! - got[i * 4 + 3]!) > 64) {
+				lost += 1;
+			}
+		}
+	} catch {
+		// (Not to be read: not to be trusted.)
+	}
+	copy.canvas.width = 0;
+	copy.canvas.height = 0;
+	return { drawn, off, tone, toned, lost };
+};
+export const glAgrees = (): { ok: boolean; shape: number; tone: number } => {
+	const body = bodyOf();
+	const cw = 150;
+	const ch = 240;
+	const k = ch / (body.H * 1.3);
+	const cam = makeCamera(
+		{ x: 47, width: cw / k, y: 25, z: body.H * 0.5 },
+		cw,
+		ch,
+		MAIN_RIG,
+	);
+	const look: Look = {
+		kit: {
+			jersey: "#1d428a",
+			trim: "#ffc72c",
+			number: "#ffffff",
+			numberEdge: "#000000",
+			shorts: "#1d428a",
+			stripe: "#ffc72c",
+			sock: "#ffffff",
+			shoe: "#f4f4f4",
+			sole: "#22252c",
+		},
+		skin: "#8d5524",
+		hair: "#1f1612",
+		jerseyNumber: "",
+		name: "",
+		lastName: "",
+		wordmark: "",
+	};
+	const all = { drawn: 0, off: 0, tone: 0, toned: 0, lost: 0 };
+	for (const yaw of [Math.PI / 2, -2.2]) {
+		const one = glAgainstPage(
+			cam,
+			{
+				pid: 0,
+				team: 0,
+				shown: true,
+				x: 47,
+				y: 25,
+				z: 0,
+				yaw,
+				anim: "ready",
+				phase: 0.3,
+				moving: false,
+				holding: false,
+			} as PlayerState,
+			body,
+			look,
+		);
+		if (!one) {
+			return { ok: false, shape: 1, tone: 255 };
+		}
+		all.drawn += one.drawn;
+		all.off += one.off;
+		all.tone += one.tone;
+		all.toned += one.toned;
+		all.lost += one.lost;
+	}
+	const shapeOff = all.drawn > 0 ? Math.max(all.off, all.lost) / all.drawn : 1;
+	const toneOff = all.toned > 0 ? all.tone / all.toned : 255;
+	return {
+		ok: all.drawn > 500 && shapeOff < AGREE_SHAPE && toneOff < AGREE_TONE,
+		shape: shapeOff,
+		tone: toneOff,
+	};
+};
+let glChecked: boolean | undefined;
+export const glReady = (): boolean => {
+	if (typeof document === "undefined" || !glCard()) {
+		return false;
+	}
+	if (glChecked === undefined) {
+		let said: ReturnType<typeof glAgrees>;
+		try {
+			said = glAgrees();
+		} catch {
+			said = { ok: false, shape: 1, tone: 255 };
+		}
+		if (glForced()) {
+			console.info("court3d gl", said);
+		}
+		glChecked = said.ok || glForced();
+		if (!glChecked) {
+			glOff();
+		}
+	}
+	return glChecked;
+};
+
 // His picture for the plan, made: kept, with a cache - or, without, left on
 // the scratch sheet to be drawn from.
 const make = (
@@ -1328,6 +1671,37 @@ const make = (
 ): Kept | { w: number; h: number; ox: number; oy: number } => {
 	const began = cache ? performance.now() : 0;
 	const job = jobOf(plan, cam, st, body, px);
+	if (cache && plan.key) {
+		const kept = glKeep(cache, plan.key, job, look);
+		if (kept) {
+			const ms = performance.now() - began;
+			glTook(ms, () => {
+				// The same man made on the page - waited for, as the card's
+				// is while it is timed - and thrown away. (Twice, the second
+				// time timed: the first may be laying out his lettering.)
+				let from = 0;
+				for (let i = 0; i < 2; i++) {
+					from = performance.now();
+					const spare = makeSpriteCache();
+					const made = keepMade(
+						spare,
+						"",
+						scratch,
+						shape(job, look),
+						job,
+						look,
+					);
+					if ("canvas" in made) {
+						made.canvas.getContext("2d")?.getImageData(0, 0, 1, 1);
+					}
+					releaseSprites(spare);
+				}
+				return performance.now() - from;
+			});
+			cache.spent += performance.now() - began;
+			return kept;
+		}
+	}
 	const sh = shape(job, look);
 	if (!cache || !plan.key) {
 		return finish(sh, job, look, scratch);
@@ -1501,7 +1875,9 @@ export const prepareSprites = (
 	px: number,
 	cache: SpriteCache,
 ) => {
-	const farm = cache.farm;
+	// (Made on the graphics card, a new picture is quicker made here and now
+	// than asked of a hand and waited for.)
+	const farm = glReady() ? undefined : cache.farm;
 	if (farm) {
 		took(cache, farm, scratch);
 	}

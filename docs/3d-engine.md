@@ -78,6 +78,27 @@ Still each sport's own, and next to be brought together:
    standing. Facing - which way a man looks - stays each sport's, as
    reading a moment does.
 
+## The graphics card
+
+Sculpting a man's new pose is most of what a frame costs. Basketball's is
+done on the graphics card where there is one (`sculptGl.ts`): his masses,
+built as ever in `sculpt.ts`, are handed to a fragment shader that does
+`shade`'s work and basketball's `paint` for all his pixels at once, and his
+picture is drawn from its sheet straight into the one kept (`glKeep` in
+`sprite.ts`). The page's sculptor stays the word on what he looks like:
+
+- once a visit, one man is made both ways and the pictures compared
+  (`glAgrees`); a card whose man is not the page's is not used;
+- its first men are timed against the page making some of the same
+  (`glTook`); a card no quicker than the page is not used;
+- `sculptGl.test.browser.ts` holds the two to each other across uniforms,
+  gear, outfits and poses. A change to `shade` or to basketball's `paint`
+  is made in both, and that suite says whether it was.
+
+`localStorage.court3dGl` set to `"0"` turns it off on a device, `"1"` on
+whatever the card. Football's men are still sculpted on the page: its
+`paint` has no shader yet.
+
 What stays each sport's: the director (play-by-play into a timeline),
 reading a moment off it, where the camera looks, the venue and its
 markings, uniforms, the sport's own moves, its crew, the score bug's

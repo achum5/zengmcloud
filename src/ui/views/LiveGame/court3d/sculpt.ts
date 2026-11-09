@@ -87,34 +87,34 @@ export const scaled = (c: RGB, f: number): RGB => [
 // ---- the masses -------------------------------------------------------------
 
 // What a mass is, for painting it.
-const TORSO = 0;
-const SHORTS = 1;
-const UPPER = 2;
-const FORE = 3;
-const HAND = 4;
-const THIGH = 5;
-const SHIN = 6;
-const SHOE = 7;
-const NECK = 8;
-const BALL = 9;
-const CAM_BODY = 10;
-const CAM_LENS = 11;
-const TOWEL = 12;
-const NAIL = 13;
+export const TORSO = 0;
+export const SHORTS = 1;
+export const UPPER = 2;
+export const FORE = 3;
+export const HAND = 4;
+export const THIGH = 5;
+export const SHIN = 6;
+export const SHOE = 7;
+export const NECK = 8;
+export const BALL = 9;
+export const CAM_BODY = 10;
+export const CAM_LENS = 11;
+export const TOWEL = 12;
+export const NAIL = 13;
 
 // What melts into what: masses in one group melt together everywhere, two
 // groups only where a joint joins them.
 const G_TORSO = 0;
 const G_NECK = 1;
-const G_ARM = 2; // + side (0 his right, 1 his left)
+export const G_ARM = 2; // + side (0 his right, 1 his left)
 const G_SHORTS = 4;
 const G_LEG = 6;
 const G_SHOE = 8;
-const G_BALL = 10;
+export const G_BALL = 10;
 const G_CAMERA = 11;
-const G_FINGER = 12; // + side * 5 + finger (4 the thumb)
-const G_HAND = 22; // + side
-const GROUPS = 24;
+export const G_FINGER = 12; // + side * 5 + finger (4 the thumb)
+export const G_HAND = 22; // + side
+export const GROUPS = 24;
 
 export type Mass = {
 	// On the sprite (its pixels): from a, along d.
@@ -378,6 +378,66 @@ const jerseySheet = (
 	return sheet;
 };
 
+// THE BIG SHEET ITSELF (see SHEET_BIG) and what a sheet made for a man
+// drawn `ppf0` sheet pixels to a foot would be shrunk from it to - for the
+// graphics card, which shrinks it itself (see sculptGl.ts). Nothing, where
+// jerseySheet has none.
+export type BigSheet = {
+	big: HTMLCanvasElement;
+	// The sheet jerseySheet would make: its size, its pixels to a foot.
+	w: number;
+	h: number;
+	ppf: number;
+	bigPpf: number;
+	aS: number;
+	u0: number;
+};
+export const bigSheet = (
+	look: Look,
+	body: Body,
+	ppf0: number,
+	waist: number,
+): BigSheet | undefined => {
+	const warmup = look.outfit?.plain === true;
+	if (
+		(!look.jerseyNumber && !(warmup && (look.wordmark || look.crest))) ||
+		(look.outfit && !warmup) ||
+		(typeof document === "undefined" && typeof OffscreenCanvas === "undefined")
+	) {
+		return undefined;
+	}
+	let mine = sheets.get(look);
+	if (!mine) {
+		mine = { byStep: new Map() };
+		sheets.set(look, mine);
+	}
+	const aS = body.shoulderW * 1.1;
+	const u0 = body.torso + body.H * 0.08;
+	const sizeOf = (s: number) => {
+		const ppf = 1.25 ** s;
+		return {
+			ppf,
+			w: Math.max(8, Math.round(2 * Math.PI * aS * ppf)),
+			h: Math.max(8, Math.round((u0 - waist) * ppf) + 2),
+		};
+	};
+	if (!mine.big) {
+		const cv = letterSheet(look, body, sizeOf(SHEET_BIG), aS, u0, warmup);
+		if (!cv) {
+			return undefined;
+		}
+		mine.big = cv;
+	}
+	const step = Math.round(Math.log(Math.max(6, ppf0)) / Math.log(1.25));
+	return {
+		big: mine.big,
+		...sizeOf(step),
+		bigPpf: 1.25 ** SHEET_BIG,
+		aS,
+		u0,
+	};
+};
+
 // His number and lettering laid out on a new sheet this size.
 const letterSheet = (
 	look: Look,
@@ -595,7 +655,7 @@ const letterSheet = (
 
 // Where the parts of his uniform start and stop, in feet on his torso: U up
 // his spine from his hips, S to his left, F forward.
-type Cut = {
+export type Cut = {
 	waist: number;
 	band: number;
 	// The armholes: an ellipse round the top of each side, from the strap's
@@ -624,7 +684,7 @@ type Cut = {
 // higher a point nearer the camera must be to stay on the same pixel.
 export type Frame = { rt: V3; dn: V3; tw: V3; zs: number; kap: number };
 
-type Built = {
+export type Built = {
 	masses: Mass[];
 	joins: { a: number; b: number; x: number; y: number; reach: number }[];
 	frame: Frame;
@@ -872,7 +932,7 @@ export const wrapBend = (
 };
 // How far down from the top of his shoulders a quarter-zip's zip runs, as a
 // share of the torso.
-const T_ZIP = 0.22;
+export const T_ZIP = 0.22;
 // Where his face is drawn, a little above the true middle of his head (see
 // figure.ts).
 const FACE_LIFT = 0.15;
@@ -1650,7 +1710,9 @@ export const torsoMasses = (
 // A microphone this far from his own mouth (feet) is held out to somebody
 // else's.
 const MIC_OWN = 1.1;
-const build = (
+// (`noSheet`: his lettering not laid out as pixels - whoever asked paints it
+// from the big sheet itself, see bigSheet.)
+export const build = (
 	cam: Camera,
 	st: PlayerState,
 	body: Body,
@@ -1658,6 +1720,7 @@ const build = (
 	px: number,
 	ox: number,
 	oy: number,
+	noSheet = false,
 ): Built => {
 	const q = poseOf(st);
 	// (Just let go of it, his hands come off where it was.)
@@ -2113,7 +2176,9 @@ const build = (
 		pel,
 		spine,
 		fwd: fwdT,
-		sheet: jerseySheet(look, body, kMid * 1.2, cut.waist),
+		...(noSheet
+			? {}
+			: { sheet: jerseySheet(look, body, kMid * 1.2, cut.waist) }),
 		...(look.kitArt && !look.outfit ? { wraps: wrapsFor(body) } : {}),
 		late,
 		headDepth: headC.depth - body.headR * 0.4,
@@ -2131,7 +2196,7 @@ const build = (
 // ---- painting him -------------------------------------------------------------
 
 // What he is made of, by part, in this light.
-type Palette = {
+export type Palette = {
 	jersey: RGB;
 	trim: RGB;
 	shorts: RGB;
@@ -2169,7 +2234,7 @@ const lacesOn = (shoe: RGB): RGB =>
 			];
 
 const palettes = new WeakMap<Look, Palette>();
-const paletteOf = (look: Look): Palette => {
+export const paletteOf = (look: Look): Palette => {
 	let p = palettes.get(look);
 	if (p) {
 		return p;
@@ -2238,7 +2303,7 @@ const paletteOf = (look: Look): Palette => {
 const PALM: RGB = [232, 186, 166];
 // The ball in his hands (see gameBall.ts), at the size it is drawn.
 const heldSurfaces = new Map<number, BallSurface>();
-const heldSurface = (radius: number): BallSurface => {
+export const heldSurface = (radius: number): BallSurface => {
 	const key = Math.round(radius * 2) / 2;
 	let s = heldSurfaces.get(key);
 	if (!s) {
@@ -2248,9 +2313,9 @@ const heldSurface = (radius: number): BallSurface => {
 	return s;
 };
 const heldPx = new Float64Array(3);
-const CAM_BODY_RGB = rgb(CAMERA_BODY);
-const CAM_LENS_RGB = rgb(CAMERA_LENS);
-const TOWEL_RGB: RGB = [238, 238, 232];
+export const CAM_BODY_RGB = rgb(CAMERA_BODY);
+export const CAM_LENS_RGB = rgb(CAMERA_LENS);
+export const TOWEL_RGB: RGB = [238, 238, 232];
 
 // The light, from up and to the left and toward the camera (on the sprite:
 // right, down, out of the picture).
