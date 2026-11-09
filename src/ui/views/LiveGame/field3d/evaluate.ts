@@ -1,5 +1,10 @@
-import { PIVOT_MS, pivotFeet } from "../court3d/evaluate.ts";
-import type { AnimName } from "../court3d/poses.ts";
+import {
+	footTurn,
+	hipsTurn,
+	PIVOT_MS,
+	pivotFeet,
+} from "../court3d/evaluate.ts";
+import { legPhases, type AnimName } from "../court3d/poses.ts";
 import {
 	freshStart,
 	LEN_MIN,
@@ -122,6 +127,7 @@ const turnMost = (l: Leg) => (l.move === "walk" ? TURN_WALK_MOST : TURN_MOST);
 const RATE_MS = 5;
 
 const clamp01 = (u: number) => Math.min(1, Math.max(0, u));
+const frac = (x: number) => x - Math.floor(x);
 
 const wrapAngle = (a: number) => {
 	const d = (a + Math.PI) % (Math.PI * 2);
@@ -809,6 +815,69 @@ const stridesOf = (legs: Leg[], t0: number, n: number): Strides | undefined => {
 	const s = { t0, ph, r, l };
 	strided.set(legs, { n: legs.length, t0, s });
 	return s;
+};
+// When his strides were `ph` round (or nothing, before the play).
+const strideTime = (s: Strides, ph: number): number | undefined => {
+	const a = s.ph;
+	if (!(ph >= a[0]!)) {
+		return undefined;
+	}
+	let lo = 0;
+	let hi = a.length - 1;
+	if (ph >= a[hi]!) {
+		return s.t0 + hi * TRACK_MS;
+	}
+	while (hi - lo > 1) {
+		const m = (lo + hi) >> 1;
+		if (a[m]! <= ph) {
+			lo = m;
+		} else {
+			hi = m;
+		}
+	}
+	const d = a[hi]! - a[lo]!;
+	return s.t0 + (lo + (d > 0 ? (ph - a[lo]!) / d : 0)) * TRACK_MS;
+};
+// A FOOT DOWN ON HIS STRIDES stays pointed where it came down (the court's
+// footLock), cutting, say: turned at the ankle from the way he faces now
+// as far as hips turn, and no further than a foot turns (see court3d's
+// footTurn) - and a foot up eases round from there to where he faces by
+// the time it comes down. Each foot's turn (degrees, his right then his
+// left - see Pose's footN), or nothing - both as he faces.
+const strideLock = (
+	legs: Leg[],
+	s: Strides,
+	gait: AnimName,
+	ph: number,
+	yaw: number,
+): [number, number] | undefined => {
+	const g = legPhases(gait, ph);
+	if (!g) {
+		return undefined;
+	}
+	const facing = (at: number) => yawAt(legs, lagged(legs, at));
+	// (A foot pointing `foot`, under a man facing `body`. His left is the
+	// turf's clockwise.)
+	const turned = (foot: number, body: number) =>
+		footTurn(hipsTurn((wrapAngle(body - foot) * 180) / Math.PI));
+	const foot = (phi: number): number => {
+		const c = g.back ? frac(g.duty - phi) : phi;
+		const fell = strideTime(s, ph - c);
+		if (fell === undefined) {
+			return 0;
+		}
+		const down = facing(fell);
+		if (c < g.duty) {
+			return turned(down, yaw);
+		}
+		const rose = strideTime(s, ph - c + g.duty) ?? fell;
+		const u = (c - g.duty) / (1 - g.duty);
+		const v = Math.min(1, Math.max(0, u));
+		return turned(down, facing(rose)) * (1 - v * v * (3 - 2 * v));
+	};
+	const r = foot(g.r);
+	const l = foot(g.l);
+	return Math.abs(r) < 0.5 && Math.abs(l) < 0.5 ? undefined : [r, l];
 };
 // How far round his strides he is at t, and how long each leg's are.
 const strideAt = (
@@ -1611,6 +1680,7 @@ const stateOf = (
 		(aside?.up && z <= 0 && PIVOTS.has(l.move as Move)
 			? [yaw, yaw, aside.up[0], aside.up[1]]
 			: undefined);
+
 	// (Just changed what he is doing, his arms, or how he has the ball:
 	// eased out of what he was - his strides, if it was a stride, going on
 	// round in step with these; anything else, as it was when it ended.)
@@ -1727,6 +1797,13 @@ const stateOf = (
 		}
 		share *= u.w;
 	}
+	// Each foot down on his strides pointing where it came down - or on the
+	// ones he is just easing out of.
+	const gait = gaitOf(l.move as Move) ?? (from && gaitOf(from.move));
+	const lock =
+		!pivot && z <= 0 && gait && strides
+			? strideLock(legs, strides, gait, stride.ph, yaw)
+			: undefined;
 	// (Short steps, if he is striding - or just was.)
 	const short =
 		Math.min(stride.len[0], stride.len[1]) < LEN_FULL &&
@@ -1744,6 +1821,7 @@ const stateOf = (
 		...(short ? { len: stride.len } : {}),
 		...(drive ? { drive } : {}),
 		...(pivot ? { pivot } : {}),
+		...(lock ? { lock } : {}),
 		...(from ? { from } : {}),
 		...(l.ball ? { ball: l.ball } : {}),
 		...(l.arms ? { arms: { move: l.arms, phase: armsPhaseOf(l, t) } } : {}),

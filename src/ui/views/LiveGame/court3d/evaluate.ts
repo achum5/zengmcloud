@@ -5841,7 +5841,7 @@ const footLock = (
 // so the pivot doesn't start with a jolt.)
 const FOOT_TURN = 48;
 const FOOT_EASE = 16;
-const footTurn = (deg: number) => {
+export const footTurn = (deg: number) => {
 	const a = Math.abs(deg);
 	if (a <= FOOT_TURN - FOOT_EASE) {
 		return deg;
@@ -5928,7 +5928,7 @@ const PIVOTS = new Set<AnimName>([
 // A leg turned under him from the way he faces (degrees): as far as hips
 // turn - and further round than that, back with him by the time he is
 // facing the other way.
-const hipsTurn = (d: number) => {
+export const hipsTurn = (d: number) => {
 	const w = ((((d + 180) % 360) + 360) % 360) - 180;
 	const a = Math.abs(w);
 	return (

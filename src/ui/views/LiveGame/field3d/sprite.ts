@@ -38,6 +38,7 @@ import {
 	holding,
 	moveKind,
 	MOUTH_STEPS,
+	gaitOf,
 	poseOfMove,
 	strideLift,
 	withArms,
@@ -83,6 +84,10 @@ export type FieldPlayerState = {
 	// on the turf, right and left, and how far up off it each is (a full
 	// step 1 - see evaluate.ts pivotOf).
 	pivot?: [number, number, number, number];
+	// On his strides, each foot turned at the ankle from where his leg points
+	// (degrees, right then left - see evaluate.ts strideLock): down, it
+	// points where it came down.
+	lock?: [number, number];
 	// Just after a change - of move, of what his arms are doing, of how he
 	// has the ball: the last as it was when it changed, and how much of his
 	// pose is still that (1 all, 0 none).
@@ -278,6 +283,8 @@ type Stepped = {
 	from: Blend | undefined;
 	arms: { move: Move; phase: number } | undefined;
 	feet: Feet | undefined;
+	// (Each foot turned at the ankle - see FieldPlayerState.lock.)
+	lock: [number, number] | undefined;
 	drive: number | undefined;
 	// His mouth open (see FieldPlayerState.mouth), where it shows.
 	mouth?: number;
@@ -363,12 +370,28 @@ const feetIn = (
 	];
 	return feet.some((v) => v !== 0) ? feet : undefined;
 };
+// (On the strides he is on, eased in as he gets into them - or the ones he
+// is easing out of, eased out.)
+const lockIn = (
+	st: FieldPlayerState,
+	fw: number,
+): [number, number] | undefined => {
+	const lk = st.lock;
+	if (!lk) {
+		return undefined;
+	}
+	const w = gaitOf(st.move) ? 1 - fw : fw;
+	const r = Math.round((lk[0] * w) / FEET_DEG) * FEET_DEG;
+	const l = Math.round((lk[1] * w) / FEET_DEG) * FEET_DEG;
+	return r !== 0 || l !== 0 ? [r, l] : undefined;
+};
 const stepped = (st: FieldPlayerState, k: Steps): Stepped => {
 	const turn = Math.round(st.yaw / ((Math.PI * 2) / k.turns));
 	const f = st.from;
 	const fw = f ? weightOf(st, f, k) : 0;
 	return {
 		feet: feetIn(st, turn, fw, k),
+		lock: lockIn(st, fw),
 		phase: frameOf(st.move, st.phase, k),
 		len: lenIn(st.len),
 		drive: st.drive
@@ -426,17 +449,19 @@ const poseFor = (st: FieldPlayerState, s: Stepped): Pose => {
 			)
 		: blendedPose(st, s);
 	const f = s.feet;
+	const lk = s.lock;
+	const q = lk ? { ...p, footN: p.footN + lk[0], footF: p.footF + lk[1] } : p;
 	return f
 		? {
-				...p,
-				spinN: p.spinN + f[0],
-				spinF: p.spinF + f[1],
-				hipN: p.hipN + STEP_HIP * f[2],
-				kneeN: p.kneeN + STEP_KNEE * f[2],
-				hipF: p.hipF + STEP_HIP * f[3],
-				kneeF: p.kneeF + STEP_KNEE * f[3],
+				...q,
+				spinN: q.spinN + f[0],
+				spinF: q.spinF + f[1],
+				hipN: q.hipN + STEP_HIP * f[2],
+				kneeN: q.kneeN + STEP_KNEE * f[2],
+				hipF: q.hipF + STEP_HIP * f[3],
+				kneeF: q.kneeF + STEP_KNEE * f[3],
 			}
-		: p;
+		: q;
 };
 const underPose = (u: Under, ball: BallHold | undefined): Pose => {
 	const pose = wholePose(u.move, u.phase, u.mirrored === true, u.arms, ball);
@@ -774,13 +799,13 @@ const planOf = (
 		shaded,
 	};
 	if (cache) {
-		const { phase, turn, from, arms, len, feet, drive, mouth } = step;
+		const { phase, turn, from, arms, len, feet, lock, drive, mouth } = step;
 		const known = cache.ids.get(look);
 		const id = known ?? cache.next++;
 		if (known === undefined) {
 			cache.ids.set(look, id);
 		}
-		plan.key = `${fine ? "f" : ""}fb${id}|${st.move}${st.mirrored ? "m" : ""}|${phase}${len ? `s${len}` : ""}${drive ? `r${drive}` : ""}${feet ? `v${feet.join(",")}` : ""}|${((turn % steps.turns) + steps.turns) % steps.turns}|${scale}|${px}|${st.ball ?? ""}${st.unseen ? "~" : ""}${arms ? `|${arms.move}${arms.phase}` : ""}${
+		plan.key = `${fine ? "f" : ""}fb${id}|${st.move}${st.mirrored ? "m" : ""}|${phase}${len ? `s${len}` : ""}${drive ? `r${drive}` : ""}${feet ? `v${feet.join(",")}` : ""}${lock ? `k${lock.join(",")}` : ""}|${((turn % steps.turns) + steps.turns) % steps.turns}|${scale}|${px}|${st.ball ?? ""}${st.unseen ? "~" : ""}${arms ? `|${arms.move}${arms.phase}` : ""}${
 			from
 				? `|${from.move}${from.mirrored ? "m" : ""}${from.steps ? "!" : ""}${from.phase}~${from.w}${from.arms ? `+${from.arms.move}${from.arms.phase}` : ""}${from.ball ? `@${from.ball}` : ""}${underKey(from.under)}`
 				: ""

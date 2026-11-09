@@ -14,11 +14,20 @@ import { simGames } from "./testGames.ts";
 // a game, every man on the field.
 const STEP = 32;
 type Feet = { x: number; y: number }[];
+const wrap = (a: number) => a - Math.round(a / (2 * Math.PI)) * 2 * Math.PI;
 const measure = (tl: FieldTimeline, pids: Set<number>) => {
 	const body = drawnBody(footballBody());
 	const prev = new Map<
 		number,
-		{ t: number; x: number; y: number; feet: Feet; down: boolean[] }
+		{
+			t: number;
+			x: number;
+			y: number;
+			yaw: number;
+			feet: Feet;
+			heads: number[];
+			down: boolean[];
+		}
 	>();
 	// Running: how far each foot down (the middle of its time down) goes,
 	// against how far he does.
@@ -28,6 +37,10 @@ const measure = (tl: FieldTimeline, pids: Set<number>) => {
 	// his feet goes, against how far he does.
 	let shortWent = 0;
 	let shortSlid = 0;
+	// Turning as he runs: how far round each foot down goes, against how far
+	// he does.
+	let turned = 0;
+	let spun = 0;
 	for (let t = 60_000; t < 240_000; t += STEP) {
 		for (const st of momentAt(tl, t).players) {
 			if (!pids.has(st.id)) {
@@ -41,11 +54,16 @@ const measure = (tl: FieldTimeline, pids: Set<number>) => {
 			}
 			const sk = skeleton(body, poseOf(st));
 			const feet = [bodyPoint(st, sk.legR.end), bodyPoint(st, sk.legL.end)];
+			// (Which way each points: heel to toe.)
+			const heads = [sk.legR, sk.legL].map((l, i) => {
+				const toe = bodyPoint(st, l.tip ?? l.end);
+				return Math.atan2(toe.y - feet[i]!.y, toe.x - feet[i]!.x);
+			});
 			const down = [legs.r, legs.l].map(
 				(f) => f > legs.duty * 0.1 && f < legs.duty * 0.9,
 			);
 			const p = prev.get(st.id);
-			prev.set(st.id, { t, x: st.x, y: st.y, feet, down });
+			prev.set(st.id, { t, x: st.x, y: st.y, yaw: st.yaw, feet, heads, down });
 			if (!p || p.t !== t - STEP) {
 				continue;
 			}
@@ -58,10 +76,15 @@ const measure = (tl: FieldTimeline, pids: Set<number>) => {
 				Math.hypot(f.x - p.feet[i]!.x, f.y - p.feet[i]!.y),
 			);
 			if (gait === "run" || gait === "jog" || gait === "sprint") {
+				const turn = Math.abs(wrap(st.yaw - p.yaw));
 				for (const i of [0, 1]) {
 					if (down[i] && p.down[i]) {
 						went += d;
 						slid += moved[i]!;
+						if (turn > 0.01) {
+							turned += turn;
+							spun += Math.abs(wrap(heads[i]! - p.heads[i]!));
+						}
 					}
 				}
 			}
@@ -75,7 +98,7 @@ const measure = (tl: FieldTimeline, pids: Set<number>) => {
 			}
 		}
 	}
-	return { went, slid, shortWent, shortSlid };
+	return { went, slid, shortWent, shortSlid, turned, spun };
 };
 
 describe("footwork", () => {
@@ -94,6 +117,12 @@ describe("footwork", () => {
 	test("running, a foot down stays put", () => {
 		assert.isAbove(got.went, 3000);
 		assert.isBelow(got.slid / got.went, 0.08);
+	});
+
+	// (Before: all the way round with him, 1.)
+	test("cutting, a foot down stays pointed where it came down - mostly", () => {
+		assert.isAbove(got.turned, 50);
+		assert.isBelow(got.spun / got.turned, 0.6);
 	});
 
 	test("getting going and pulling up, short steps - his feet not skated", () => {
