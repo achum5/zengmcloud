@@ -214,6 +214,79 @@ describe("3D director", () => {
 		assert.isTrue(losers.every((tr) => tr.team !== winners[0]!.team));
 	}, 240_000);
 
+	// A change with his side to defend: the man going off points out the man
+	// he had for the man coming on (and the man coming on, now and then, at
+	// him too) - never with his side to attack.
+	test("a man going off on defense points out his man for the man coming on", () => {
+		let defending = 0;
+		let told = 0;
+		let got = 0;
+		const wrong: string[] = [];
+		for (const seed of ["a", "b"]) {
+			const { tl, events } = compile(seed, 140);
+			for (const b of tl.beats) {
+				if (b.type !== "sub" || fastAt(tl, b.actionStart) > 1.001) {
+					continue;
+				}
+				const e = events[b.i]!;
+				// (Who has it when play goes on: the side of the next man to
+				// shoot it or lose it - or not of the next to take it off them,
+				// or to foul.)
+				let attack: number | undefined;
+				for (const x of events.slice(b.i + 1)) {
+					const tr =
+						typeof x.pid === "number" ? tl.tracks.get(x.pid) : undefined;
+					if (!tr) {
+						if (
+							/^(period|overtime|endOfPeriod|gameOver|jumpBall)$/.test(x.type)
+						) {
+							break;
+						}
+						continue;
+					}
+					if (/^(fga|ft$|missFt$|tov$)/.test(x.type)) {
+						attack = tr.team;
+						break;
+					}
+					if (/^(stl$|pf)/.test(x.type)) {
+						attack = 1 - tr.team;
+						break;
+					}
+				}
+				const on = (e.pids ?? []) as number[];
+				((e.pidsOff ?? []) as number[]).forEach((off, j) => {
+					const tr = tl.tracks.get(off)!;
+					const at = (pid: number | undefined) =>
+						(pid === undefined ? undefined : tl.tracks.get(pid))?.arms.filter(
+							(g) =>
+								g.kind === "point" &&
+								typeof g.at === "number" &&
+								tl.tracks.get(g.at)?.team !== tr.team &&
+								g.t0 >= b.actionStart &&
+								g.t0 < b.actionStart + 6000,
+						) ?? [];
+					const pts = at(off);
+					if (attack === undefined) {
+						return;
+					}
+					if (tr.team === attack) {
+						if (pts.length > 0) {
+							wrong.push(`${seed}: ${off} at ${Math.round(b.actionStart)}`);
+						}
+						return;
+					}
+					defending += 1;
+					told += pts.length > 0 ? 1 : 0;
+					got += at(on[j]).length > 0 ? 1 : 0;
+				});
+			}
+		}
+		assert.isAbove(defending, 15);
+		assert.isAtLeast(told, defending * 0.35);
+		assert.isAbove(got, 3);
+		assert.deepEqual(wrong, []);
+	}, 480_000);
+
 	// From one move into the next - pulling up from a run, down into his
 	// stance, up for a catch - his body eases over rather than snapping
 	// there between one frame and the next.

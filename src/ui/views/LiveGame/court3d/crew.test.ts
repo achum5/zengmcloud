@@ -364,6 +364,34 @@ describe("3D crew", () => {
 		assert.isAtLeast(late, ends * 0.3);
 	}, 480_000);
 
+	test("a man waiting at the table is waved on by the official nearest, turned to the table", () => {
+		const { tl, crew } = working("a");
+		let waits = 0;
+		let waved = 0;
+		let last = -Infinity;
+		for (const c of [...(tl.checkIns ?? [])].sort((x, y) => x.t1 - y.t1)) {
+			// (Once for all of them going on at once; at real speed.)
+			if (c.t1 - last < 400 || fastAt(tl, c.t1) > 1.01) {
+				last = c.t1;
+				continue;
+			}
+			last = c.t1;
+			waits += 1;
+			const refs = crewAt(tl, c.t1 + 150, crew).states.filter((s) =>
+				isRef(s.pid),
+			);
+			const r = refs.find((s) => s.anim === "beckon");
+			if (r) {
+				waved += 1;
+				let d = r.yaw + Math.PI / 2;
+				d -= Math.round(d / (Math.PI * 2)) * Math.PI * 2;
+				assert.isBelow(Math.abs(d), Math.PI / 4, `${Math.round(c.t1)}`);
+			}
+		}
+		assert.isAtLeast(waits, 5);
+		assert.isAtLeast(waved, waits * 0.7);
+	}, 240_000);
+
 	test("at the line, the official under the basket bounces the shooter the ball", () => {
 		const { tl, crew } = working("a");
 		let checked = 0;

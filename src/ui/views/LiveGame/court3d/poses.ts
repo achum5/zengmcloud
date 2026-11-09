@@ -6274,6 +6274,21 @@ export const ANIMS = {
 			});
 		},
 	},
+	// Come on in: a man waiting at the table to come on waved on - an arm
+	// out to him low, palm up, the hand brought in toward himself, twice.
+	beckon: {
+		kind: "act",
+		n: 8,
+		keys: [
+			[0, P.ready],
+			[0.18, pose({ shN: 66, elN: 18, abN: 34, wrN: -20, lean: -2 })],
+			[0.36, pose({ shN: 74, elN: 92, abN: 28, wrN: 10, lean: -2 })],
+			[0.54, pose({ shN: 66, elN: 22, abN: 34, wrN: -20, lean: -2 })],
+			[0.72, pose({ shN: 74, elN: 92, abN: 28, wrN: 10, lean: -2 })],
+			[0.86, pose({ shN: 62, elN: 30, abN: 32, wrN: -10, lean: -1 })],
+			[1, P.ready],
+		],
+	},
 	// Traveling: the fists rolling over each other in front of him.
 	travel: {
 		kind: "loop",

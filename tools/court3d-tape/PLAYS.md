@@ -51,7 +51,7 @@ each part, so the table below can say how far along each part is.
 | 4   | Post shot, made or missed (`fgaLowPost` → `fgLowPost` / `missLowPost`)                        |       49 | todo    |
 | 5   | Shot at the rim, made or missed (`fgaAtRim` → `fgAtRim` / `missAtRim`)                        |       47 | todo    |
 | 6   | Mid-range jumper, made or missed (`fgaMidRange` → `fgMidRange` / `missMidRange`)              |       34 | todo    |
-| 7   | Substitution (`sub`)                                                                          |       55 | todo    |
+| 7   | Substitution (`sub`)                                                                          |       55 | working |
 | 8   | Free throws (`ft` / `missFt`)                                                                 |       38 | todo    |
 | 9   | Offensive rebound (`orb`), putback and tip-in (`fgaPutBack`, `fgaTipIn` and results)          |       25 | todo    |
 | 10  | Non-shooting foul, in the bonus (`pfNonShooting`, `pfBonus`)                                  |       19 | todo    |
@@ -543,3 +543,20 @@ corner for a kick-out jumper in the high pick-and-roll, Horns and
 drive-and-kick, and the ball handler takes it baseline to pull up there
 off a side pick-and-roll or an isolation (the playbook's new
 `R_short_corner` reads): along the baseline 7 of 93.
+
+## 7. Substitution
+
+Measured 2026-11-09 (185 men coming on at real speed, 58 more run through
+fast; the variety tool's `sub` line): what stopped play (a free throw 61,
+a foul 55, the ball out 36), how long he waited at the table (4-8 s, all of
+them), his way out to his spot, the man going off to his chair (at a run,
+nearly all), greeted there (134 of 185, by one or two), a slap of hands
+on the way by (112), how long it held the game up (1.5-7 s), and how many
+at once (1 to 5). Never: the man going off telling the man coming on who
+he had, or an official waving the man at the table on.
+
+Now (2026-11-09): with his side to defend when play goes on, the man going
+off points out the man he had as the two come together (and the man
+coming on, now and then, points at him too: got him) - 86 of 185; and the
+official nearest the table, turned to it, waves the men waiting there on
+(173 of 185; not one still signaling a call, or on his way back from one).

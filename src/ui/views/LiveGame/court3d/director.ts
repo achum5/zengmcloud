@@ -983,6 +983,16 @@ const PASSER_POINTS = 0.4;
 const BEATEN_HEAD = 0.12;
 // (And as long letting it out with an arm, on his way back after a basket.)
 const CHEER_MS = 1000;
+// A man going off with his side to defend: a finger at the man he had for
+// the man coming on in his place, about this much of the time, as they
+// come together (ms before they meet, the most of it) - and the man coming
+// on, now and then, a finger at him too on his way out: got him.
+const WHO_HE_HAD = 0.75;
+const WHO_HE_HAD_MS = 1100;
+// (Near enough to tell him, at the nearest they come: feet.)
+const WHO_HE_HAD_NEAR = 25;
+const GOT_HIM = 0.45;
+const GOT_HIM_MS = 800;
 // A man off the mark late among others (see stagger) still gets there in
 // time, so long as that is no quicker than this many times the quickest he
 // could - a run back after a steal, flat out already, too.
@@ -20356,6 +20366,26 @@ class Director {
 		if (this.holder !== undefined && off.includes(this.holder)) {
 			this.deadBall(T);
 		}
+		// Who has it when play goes on: the side of the next man to shoot
+		// it, or to lose it - or not the side of the next man to take it
+		// off them, or to foul.
+		let attack: Side | undefined;
+		for (const { e: x } of this.peek(i, 6)) {
+			if (typeof x.pid !== "number" || !this.team.has(x.pid)) {
+				if (/^(period|overtime|endOfPeriod|gameOver|jumpBall)$/.test(x.type)) {
+					break;
+				}
+				continue;
+			}
+			if (/^(fga|ft$|missFt$|tov$)/.test(x.type)) {
+				attack = this.teamOf(x.pid);
+				break;
+			}
+			if (/^(stl$|pf)/.test(x.type)) {
+				attack = other(this.teamOf(x.pid));
+				break;
+			}
+		}
 		// Play goes on once the men going off are off the floor and the men
 		// coming on are out there.
 		let ready = T + 1300;
@@ -20468,6 +20498,32 @@ class Director {
 					if (close < 4.5) {
 						this.gesture(pid, "slap", meet - 260, meet + 260, incoming);
 						this.gesture(incoming, "slap", meet - 260, meet + 260, pid);
+					}
+					// Their side to defend: who he had.
+					const side = this.teamOf(pid);
+					const his =
+						attack !== undefined && side !== attack
+							? this.slots(attack).find((m) => this.defenderOf(m) === pid)
+							: undefined;
+					if (his !== undefined && close < WHO_HE_HAD_NEAR) {
+						const by = close < 4.5 ? meet - 320 : meet;
+						this.gesture(
+							pid,
+							"point",
+							Math.max(t0 + 200, by - WHO_HE_HAD_MS),
+							by,
+							his,
+							WHO_HE_HAD,
+						);
+						const from = close < 4.5 ? meet + 320 : meet + 100;
+						this.gesture(
+							incoming,
+							"point",
+							from,
+							Math.min(from + GOT_HIM_MS, there),
+							his,
+							GOT_HIM,
+						);
 					}
 				}
 			}

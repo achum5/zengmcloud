@@ -1545,6 +1545,8 @@ type Cue = {
 	moves: Signal["moves"];
 	onto?: number;
 	pair?: boolean;
+	// (Only an official through with whatever he was signaling.)
+	idle?: boolean;
 };
 // A shot after the horn waved off: run in at it - no nearer it than this
 // (feet), as quick as this (feet a second) - waving it off this long (ms).
@@ -1554,8 +1556,44 @@ const WAVE_PACE = 11;
 const WAVE_MS = 1600;
 // (Long enough for the signal and the jog back to his place after it.)
 const CUE_MS = 11000;
+// A man waiting at the table to come on: the official nearest him waves him
+// on, turned to the table - from this long (ms) before he steps on, for
+// this long - once for all of them going on at once.
+const BECKON_LEAD = 350;
+const BECKON_MS = 1100;
+const TO_TABLE = -Math.PI / 2;
+const checkInsOf = new WeakMap<CourtTimeline, { at: Pt; t: number }[]>();
+const beckons = (tl: CourtTimeline): { at: Pt; t: number }[] => {
+	let list = checkInsOf.get(tl);
+	if (!list) {
+		list = [];
+		for (const c of [...(tl.checkIns ?? [])].sort((a, b) => a.t1 - b.t1)) {
+			const last = list.at(-1);
+			if (last && c.t1 - last.t < 400) {
+				continue;
+			}
+			list.push({ at: c.path.at(-1)!, t: c.t1 });
+		}
+		checkInsOf.set(tl, list);
+	}
+	return list;
+};
 const cuesBefore = (tl: CourtTimeline, t: number): Cue[] => {
 	const out: Cue[] = [];
+	const waiting = beckons(tl);
+	for (let i = lastIndex(waiting, t + BECKON_LEAD, (c) => c.t); i >= 0; i--) {
+		const c = waiting[i]!;
+		const t0 = c.t - BECKON_LEAD;
+		if (t - t0 > CUE_MS) {
+			break;
+		}
+		out.push({
+			at: c.at,
+			t0,
+			moves: [{ anim: "beckon", t0, t1: t0 + BECKON_MS, yaw: TO_TABLE }],
+			idle: true,
+		});
+	}
 	for (let i = lastIndex(tl.fx, t, (f) => f.t); i >= 0; i--) {
 		const f = tl.fx[i]!;
 		if (t - f.t > CUE_MS) {
@@ -1690,11 +1728,27 @@ const signalsAt = (
 			return s ? signalPos(s, cue.t0, (when) => refPlaces(tl, when).at[i]!) : p;
 		});
 		const taken = cue.pair ? last : -1;
-		let ref = taken === 0 ? 1 : 0;
-		for (let i = ref + 1; i < 3; i++) {
-			if (i !== taken && dist(pos[i]!, cue.at) < dist(pos[ref]!, cue.at)) {
+		// (Still at another, or on his way back from it.)
+		const busy = (i: number) => {
+			const s = per[i];
+			return (
+				cue.idle === true &&
+				s !== undefined &&
+				cue.t0 < s.moves.at(-1)!.t1 + s.back
+			);
+		};
+		let ref = -1;
+		for (let i = 0; i < 3; i++) {
+			if (
+				i !== taken &&
+				!busy(i) &&
+				(ref < 0 || dist(pos[i]!, cue.at) < dist(pos[ref]!, cue.at))
+			) {
 				ref = i;
 			}
+		}
+		if (ref < 0) {
+			continue;
 		}
 		last = ref;
 		let still = pos[ref]!;

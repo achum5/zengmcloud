@@ -21,6 +21,8 @@ import {
 	evalPlayer,
 	fastAt,
 } from "../../src/ui/views/LiveGame/court3d/evaluate.ts";
+import { greetsFor } from "../../src/ui/views/LiveGame/court3d/scene.ts";
+import { crewAt, crewFor } from "../../src/ui/views/LiveGame/court3d/crew.ts";
 import {
 	RIM_R,
 	RIM_Z,
@@ -902,6 +904,163 @@ const reboundParts = (
 	};
 };
 
+// A substitution: each man coming on - what stopped play, how long he had
+// been down at the table, how he got out there, the man going off (to his
+// chair, how quick, greeted there), whether they slapped hands or said who
+// to take, and how long it all held the game up.
+const subParts = (
+	tl: CourtTimeline,
+	events: {
+		type: string;
+		pid?: number;
+		pids?: number[];
+		pidsOff?: number[];
+	}[],
+	b: CourtTimeline["beats"][number],
+	roster: { pid: number; team: 0 | 1 }[],
+): { pid: number; parts: Record<string, string> }[] => {
+	const e = events[b.i]!;
+	const on = e.pids ?? [];
+	const offs = e.pidsOff ?? [];
+	const k = tl.beats.indexOf(b);
+	let prev = "?";
+	for (let q = k - 1; q >= 0; q--) {
+		const x = tl.beats[q]!;
+		if (x.type !== "sub") {
+			prev = x.type;
+			break;
+		}
+	}
+	let next = "?";
+	for (let q = k + 1; q < tl.beats.length; q++) {
+		const x = tl.beats[q]!;
+		if (x.type !== "sub") {
+			next = x.type;
+			break;
+		}
+	}
+	const greets = greetsFor(tl, roster);
+	const team = { region: "", name: "", colors: ["#000", "#fff", "#888"] } as {
+		region: string;
+		name: string;
+		colors: [string, string, string];
+	};
+	const crew = crewFor(1, team, team);
+	const out: { pid: number; parts: Record<string, string> }[] = [];
+	on.forEach((pid, j) => {
+		const tr = tl.tracks.get(pid);
+		const off = offs[j];
+		const otr = off === undefined ? undefined : tl.tracks.get(off);
+		if (!tr) {
+			return;
+		}
+		const ci = (tl.checkIns ?? []).find(
+			(c) => c.pid === pid && Math.abs(c.t1 - b.actionStart) < 400,
+		);
+		const table = ci
+			? `at the table ${Math.round((ci.t1 - ci.kneel) / 1000)}s`
+			: "not at the table";
+		const m = tr.moves.find((x) => x.t0 >= b.actionStart - 50);
+		const run = m
+			? `${Math.round(dist(m.from, m.to))} ft in ${Math.round((m.t1 - m.t0) / 500) / 2}s`
+			: "-";
+		let leave = "-";
+		let greeted = "-";
+		let slap = "no slap";
+		let told = "nobody pointed out";
+		if (otr && off !== undefined) {
+			// (To his chair: from where he was to where he sat down.)
+			const sd = (tl.sitDowns ?? []).find(
+				(x) =>
+					x.pid === off && x.t > b.actionStart && x.t < b.actionStart + 15000,
+			);
+			const O = evalPlayer(tl, off, b.actionStart);
+			const S = sd ? evalPlayer(tl, off, sd.t - 20) : undefined;
+			const ft = S ? dist(O, S) : 0;
+			const sec = sd ? (sd.t - b.actionStart) / 1000 : 0;
+			leave = sd
+				? `${Math.round(ft)} ft at ${ft / sec > 9 ? "a run" : ft / sec > 5 ? "a jog" : "a walk"}`
+				: "-";
+			const g = greets.find(
+				(x) => x.pid === off && sd !== undefined && Math.abs(x.t - sd.t) < 200,
+			);
+			greeted = g ? `greeted by ${g.greeters.length}` : "not greeted";
+			const arms = (otr.arms ?? []).filter(
+				(a) => a.t0 >= b.actionStart - 500 && a.t0 < b.actionStart + 6000,
+			);
+			if (arms.some((a) => a.kind === "slap" && a.at === pid)) {
+				slap = "slap";
+			}
+			if (
+				arms.some(
+					(a) =>
+						a.kind === "point" &&
+						typeof a.at === "number" &&
+						tl.tracks.get(a.at)?.team !== otr.team,
+				)
+			) {
+				// (Their side to defend, as play goes on - or not: the side of
+				// the next man to shoot it or lose it has it, not the side of
+				// the next to take it off them, or to foul.)
+				let attack: number | undefined;
+				for (const x of events.slice(b.i + 1)) {
+					const xt =
+						typeof x.pid === "number" ? tl.tracks.get(x.pid)?.team : undefined;
+					if (xt === undefined) {
+						if (
+							/^(period|overtime|endOfPeriod|gameOver|jumpBall)$/.test(x.type)
+						) {
+							break;
+						}
+						continue;
+					}
+					if (/^(fga|ft$|missFt$|tov$)/.test(x.type)) {
+						attack = xt;
+						break;
+					}
+					if (/^(stl$|pf)/.test(x.type)) {
+						attack = 1 - xt;
+						break;
+					}
+				}
+				const def = attack !== otr.team;
+				told = `pointed out his man${def ? "" : " - on offense!"}`;
+				if (
+					(tr.arms ?? []).some(
+						(a) =>
+							a.kind === "point" &&
+							a.t0 >= b.actionStart &&
+							a.t0 < b.actionStart + 6000,
+					)
+				) {
+					told += ", got him";
+				}
+			}
+		}
+		const held = b.end - b.actionStart;
+		const waved =
+			ci !== undefined &&
+			crewAt(tl, ci.t1 + 150, crew).states.some((x) => x.anim === "beckon");
+		out.push({
+			pid,
+			parts: {
+				after: prev,
+				before: next,
+				table,
+				on: run,
+				off: leave,
+				bench: greeted,
+				hands: slap,
+				who: told,
+				official: waved ? "waved on" : "not waved on",
+				held: `${Math.round(held / 500) / 2}s`,
+				many: `${on.length} on`,
+			},
+		});
+	});
+	return out;
+};
+
 test.skipIf(games.length === 0)(
 	"variety of one line",
 	() => {
@@ -917,8 +1076,22 @@ test.skipIf(games.length === 0)(
 			const posOf = new Map<number, string>(
 				players.map((p: { pid: number; pos?: string }) => [p.pid, p.pos ?? ""]),
 			);
+			const roster = players.map((p: { pid: number; tid: number }) => ({
+				pid: p.pid,
+				team: tl.tracks.get(p.pid)?.team ?? 0,
+			}));
 			for (const b of tl.beats) {
 				if (b.type !== line) {
+					continue;
+				}
+				if (line === "sub") {
+					if (fastAt(tl, b.actionStart) > 1.2) {
+						fastOnes += 1;
+						continue;
+					}
+					for (const got of subParts(tl, events, b, roster)) {
+						all.push({ pid: `${tag}:${got.pid}`, parts: got.parts });
+					}
 					continue;
 				}
 				if (line === "drb" || line === "orb") {

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 224,
+		date: "2026-11-09",
+		text: "3D games: on a substitution an official now waves the man at the scorer's table on, and a player going off on defense points out the man he was guarding for the one taking his place.",
+	},
+	{
 		n: 223,
 		date: "2026-11-09",
 		text: "3D games: mid-range jumpers now and then come from along the baseline - a corner shooter drifting up for a kick-out, or a ball handler taking it baseline to pull up - not only from the elbows and the top.",
