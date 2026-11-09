@@ -62,6 +62,7 @@ Shared now (each in court3d/, football's copy deleted):
 | The sculptor's groundwork and its per-pixel loop (`shade`; a sport hands it its `paint`)                                                                                                                                                                                                                                                      | sculpt.ts                           |
 | Building a figure: where a point on him lands (`seerOf`), laying masses (`massesFor`), the torso's frame (`torsoOf`), torso, arm, hand, leg, joins (`torsoMasses`, `armMasses`, `handMasses`, `legMasses`, `joinBody`), the camera's frame (`frameOf`) - a sport hands each its build                                                         | sculpt.ts                           |
 | Moving: strides worked out foot by foot (`freshStart`, `stepThrough`), turning on the spot (`pivotFeet`), stepping from one stand into another (`settleStep`), a foot down held where it landed (`footTurn`, `hipsTurn`), legs turned under a man going one way and facing another (`legsTurned`) - held to it by each sport's footwork tests | stepping.ts, evaluate.ts            |
+| Blending one move into the next: how long each kind of change takes (`blendMsOf`), its curve (`blendEase`), a pose eased back into what he was (`easedFrom`), as many changes back as `BLEND_DEPTH` - each sport finding its own changes                                                                                                      | evaluate.ts                         |
 | Moves: `MoveDef`, `moveAt` (straight or smooth keys), `driven`                                                                                                                                                                                                                                                                                | poses.ts, evaluate.ts               |
 
 Still each sport's own, and next to be brought together:
@@ -70,10 +71,11 @@ Still each sport's own, and next to be brought together:
    pieces but are still two components, each with its own frame loop
    wiring them together. The goal is one `Broadcast3D` with a sport
    adapter.
-2. **Blending one move into the next** (evaluate.ts / football's sprite.ts):
-   the two sports blend by their own designs of the same idea, and
-   football's drive into a run is a slimmed copy of the court's
-   (`driveOf`). Facing - which way a man looks - stays each sport's, as
+2. **What is left of blending**: basketball's arms and shoulders easing
+   on their own time (into a dribble, down from an arm thrown up), and
+   stepping a foot at a time deeper in a chain of changes - football
+   eases its arms with the rest of him, and steps only between two ways of
+   standing. Facing - which way a man looks - stays each sport's, as
    reading a moment does.
 
 What stays each sport's: the director (play-by-play into a timeline),
