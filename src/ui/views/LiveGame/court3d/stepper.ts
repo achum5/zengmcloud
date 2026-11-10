@@ -422,9 +422,6 @@ export const follow = (
 // - otherwise i.
 const WHOLE_ALONG = 0.4;
 const WHOLE_MOST = 3000;
-// (Tried only from near standing, or this close to where he stands.)
-const WHOLE_FROM = 3;
-const WHOLE_NEAR = 20;
 const wholeRun = (
 	s: Sample[],
 	i: number,
@@ -438,8 +435,7 @@ const wholeRun = (
 		e >= s.length ||
 		e - i < 3 ||
 		s[e]!.t - a.t > WHOLE_MOST ||
-		s[e]!.t - s[e - 1]!.t > STEP_MS + 1 ||
-		(Math.hypot(a.vx, a.vy) >= WHOLE_FROM && e - i > WHOLE_NEAR)
+		s[e]!.t - s[e - 1]!.t > STEP_MS + 1
 	) {
 		return i;
 	}
@@ -621,7 +617,44 @@ export const toMoves = (
 		}
 		i = j;
 	}
-	return moves;
+	return pullUpsIn(moves, pinned);
+};
+
+// A short run pulling up to all but stand, going on the way the run before
+// it went: run together with that one - one run that pulls up at the end of
+// it, his strides shortening into the stop over it (not short all at once
+// where the second began: see shortSteps in evaluate.ts).
+const PULL_UP_TURN = Math.cos((25 * Math.PI) / 180);
+const PULL_UP_LONGEST = 4;
+const pullUpsIn = (moves: Move[], pinned: Spans): Move[] => {
+	const out: Move[] = [];
+	for (const m of moves) {
+		const a = out.at(-1);
+		const v0 = m.v0 ?? 0;
+		const v1 = m.v1 ?? 0;
+		const L = Math.hypot(m.to.x - m.from.x, m.to.y - m.from.y);
+		const La = a ? Math.hypot(a.to.x - a.from.x, a.to.y - a.from.y) : 0;
+		if (
+			a &&
+			a.t1 === m.t0 &&
+			L > 0.05 &&
+			La > 0.05 &&
+			L <= PULL_UP_LONGEST &&
+			v0 >= 4 &&
+			v1 < v0 * 0.6 &&
+			(a.v1 ?? 0) > 0 &&
+			!pinned.hit(a.t0, m.t1) &&
+			((a.to.x - a.from.x) * (m.to.x - m.from.x) +
+				(a.to.y - a.from.y) * (m.to.y - m.from.y)) /
+				(L * La) >
+				PULL_UP_TURN
+		) {
+			out[out.length - 1] = { ...a, t1: m.t1, to: m.to, v1: m.v1 };
+			continue;
+		}
+		out.push(m);
+	}
+	return out;
 };
 
 // Where a man is, step by step over a stretch of time: as a lookup between
