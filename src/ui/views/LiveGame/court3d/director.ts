@@ -30389,6 +30389,8 @@ export type CourtInput = {
 	// stood, who boxed out) and picks the play-by-play's wording.
 	gid: number | undefined;
 	gender?: "female" | "male";
+	// Every man then moved a step at a time (see stepper.ts, stageGame).
+	step?: boolean;
 };
 
 export const compileCourt = ({

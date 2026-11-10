@@ -96,7 +96,7 @@ moves these the right way and the suite (old or rewritten) is clean.
 ## Where it stands
 
 **Step 1, the stepper** (src/ui/views/LiveGame/court3d/stepper.ts,
-`stepTimeline` / `compileStepped`; not switched on). Each man steps every
+`stepTimeline` / `stageGame`; not switched on). Each man steps every
 50 ms after where the play has him, steering at where it will have him a
 moment from now (as far ahead as it takes him to pull up), never faster
 than a little quicker than the play, getting going, turning and pulling
@@ -113,20 +113,41 @@ another 58% -> 35%; acts where the play has them (within 0.05 feet); off
 the play under 2 feet 99% of the time. It costs about 2.7 s on a game that
 takes 12 s to stage, and lays down 1.7 times the runs.
 
-**Step 4 begun: the man with the ball, and his man with him.** Stood on
-his dribble 1.2 s or more within 30 feet of the rim with nothing of his
-on, he works his man where he stands (probesOf): sways across him, jabs
-a step in and back, gives a step and comes again, 0.7-1.1 s a move, eased
-back to where the play has him for what comes next. The defender nearest
-him goes the same way (all of it within 7 feet, none past 12) 160-280 ms
-behind him - the first of the defense taken from what a man really does
-rather than from the runs.
+**Steps 2-4 begun: what each man does of his own.** (2026-11-10)
+
+- _The man with the ball_ (probesOf): on his dribble 1.2 s or more within
+  40 feet of the rim with nothing of his on, he works his man. Stood, he
+  sways across him, jabs a step in and back, gives a step and comes again
+  (0.7-1.1 s a move). Going somewhere, he gets there his own way: crosses
+  from one side of his line to the other (1-2.2 feet, switching sides two
+  times in three), hesitates a beat and bursts (0.55-0.9 s a move). Eased
+  back to where the play has him for whatever comes next.
+- _Off the ball_ (openingsOf): stood 3 s or more within 30 feet with
+  nothing of his coming, a man relocates a step - along the arc, in, out -
+  then sets his feet 2.4-4 s (so the court's off-ball life, spotting up and
+  calling for it, still plays); behind the line if he was, never off the
+  floor.
+- _His man_: the defender nearest a man goes with whatever that man does
+  of his own here, all of it within 7 feet, none past 12, his own 90-200
+  ms late; none of it into anything of his own (his acts, the ball
+  changing hands). Otherwise he goes where the play has him _now_, seeing
+  none of it ahead: the play has him reacting to his man already (mark,
+  160-240 ms), and looking ahead undid it.
+- _Cuts_: a man coming to a corner in his way (turning more than 60
+  degrees) runs to it, plants and goes, instead of rounding it off.
 
 Measured, real games 11 and 22 (as staged -> stepped): the man with the
-ball standing 29% / 28% -> 22% / 21% of his dribbling; men setting off
-within a tenth of a second of another 58% -> 39-40%; his man turning with
-him 350-450 ms after him (as staged: at once, or 600 ms late). Against
-it: changes of direction on the move 1.1 / 1.7 a minute -> 0.8 / 1.2 -
-stepping rounds every corner, crisp cuts and crosses included. Next: let
-a man plant and cut (a turn harder than TURN when he means it: a cross, a
-cut, a jab), then the rest of the defense.
+ball standing 29% / 28% -> 15% / 12% of his dribbling; changing direction
+on the move 1.1 / 1.7 -> 3.0 / 3.4 a minute; men off the ball standing
+50% / 46% -> 44% / 40%; men setting off within a tenth of a second of
+another 58% -> 35%; defenders matching their man's changes of direction
+best 250-300 ms after him as staged, 200-300 stepped.
+
+**The switch** (stageCourt.ts): `court3dStep` = "1" in a device's local
+storage stages its games stepped (stageGame). COURT3D_STEP=1 steps every
+test game (testGame.ts compile) - the suite run that way is the list of
+what stepping still breaks.
+
+Next: what the suite run stepped says (the strides on stepped runs first:
+footwork, sprint and short-run checks), the rest of the defense (help,
+rotations), then the cost (stepping adds about a third to staging).

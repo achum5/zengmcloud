@@ -4,12 +4,12 @@
 // a worker of its own (see stageCourt.ts). Other instances of it make the
 // players' new pictures for the page as the game is shown (see farm.ts).
 import "../common/polyfills.ts";
-import { compileCourt } from "../ui/views/LiveGame/court3d/director.ts";
 import { farmHand } from "../ui/views/LiveGame/court3d/farm.ts";
 import { serveStaging } from "../ui/views/LiveGame/court3d/stager.ts";
+import { stageGame } from "../ui/views/LiveGame/court3d/stepper.ts";
 
 serveStaging(
-	compileCourt,
+	stageGame,
 	farmHand((msg, transfer) => {
 		self.postMessage(msg, { transfer });
 	}),

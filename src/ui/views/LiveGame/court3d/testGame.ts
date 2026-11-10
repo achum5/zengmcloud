@@ -1,5 +1,6 @@
 import { makeCourtRng } from "../courtRng.ts";
 import { compileCourt, type CourtPlayer, type RawEvent } from "./director.ts";
+import { stepTimeline } from "./stepper.ts";
 
 // FOR THE TESTS: a small stand-in for GameSim.basketball's play-by-play,
 // made up from a seed. The same event shapes, in the same orders the sim
@@ -279,8 +280,14 @@ export const fakeGame = (seed: string, possessions: number) => {
 export const gidOf = (seed: string) =>
 	[...seed].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 100_000, 7);
 
+// (COURT3D_STEP=1: every test game stepped - see stepper.ts.)
+const stepped = !!(
+	globalThis as { process?: { env?: Record<string, string | undefined> } }
+).process?.env?.COURT3D_STEP;
+
 export const compile = (seed: string, possessions = 120) => {
 	const { events, players } = fakeGame(seed, possessions);
-	const tl = compileCourt({ events, players, gid: gidOf(seed) });
+	const laid = compileCourt({ events, players, gid: gidOf(seed) });
+	const tl = stepped ? stepTimeline(laid) : laid;
 	return { events, players, tl };
 };

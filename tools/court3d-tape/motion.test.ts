@@ -6,7 +6,10 @@
 // - lockstep: how often two or more men set off within a tenth of a second
 //   of each other;
 // - reaction: how long after the man with the ball changes direction the
-//   man nearest him does.
+//   man nearest him does;
+// - shadowing: how long after any man near the rim goes, the man on him
+//   goes the same way;
+// - cuts: how often anybody on the move turns hard.
 //
 //   MOTION_GAMES=/tmp/games/real_11.json,... MOTION_OUT=/tmp/motion.txt \
 //     npx vitest run --project basketball tools/court3d-tape/motion.test.ts
@@ -166,6 +169,116 @@ export const measure = (tl: CourtTimeline) => {
 		}
 	}
 	lags.sort((a, b) => a - b);
+	// Shadowing: how long after a man goes his man goes the same way - the
+	// delay his man's going matches his best at (negative: ahead of him).
+	const SHADOW = [
+		-400, -300, -200, -100, -50, 0, 50, 100, 150, 200, 250, 300, 400, 500, 600,
+	];
+	const sums = SHADOW.map(() => 0);
+	let mm = 0;
+	let dd = 0;
+	const vel = (pid: number, t: number) => {
+		const a = evalPlayer(tl, pid, t - 50);
+		const b = evalPlayer(tl, pid, t + 50);
+		return {
+			x: (b.x - a.x) * 10,
+			y: (b.y - a.y) * 10,
+			shown: a.shown && b.shown,
+		};
+	};
+	for (let t = 1000; t < tl.end - 1000; t += 200) {
+		if (fastAt(tl, t) > 1.01) {
+			continue;
+		}
+		const ball = tl.ball.findLast((s) => s.t0 <= t);
+		if (ball?.kind !== "hold") {
+			continue;
+		}
+		const holder = tl.tracks.get(ball.pid);
+		if (!holder) {
+			continue;
+		}
+		for (const o of tl.tracks.values()) {
+			if (o.pid < 0 || o.team !== holder.team) {
+				continue;
+			}
+			const P = evalPlayer(tl, o.pid, t);
+			if (!P.shown || dist(P, { x: rimX(o.team), y: 25 }) > 30) {
+				continue;
+			}
+			let near: number | undefined;
+			let nd = 6;
+			for (const d of tl.tracks.values()) {
+				if (d.pid < 0 || d.team === o.team) {
+					continue;
+				}
+				const Q = evalPlayer(tl, d.pid, t);
+				if (Q.shown && dist(P, Q) < nd) {
+					nd = dist(P, Q);
+					near = d.pid;
+				}
+			}
+			const vm = vel(o.pid, t);
+			if (near === undefined || Math.hypot(vm.x, vm.y) < 2) {
+				continue;
+			}
+			mm += vm.x * vm.x + vm.y * vm.y;
+			SHADOW.forEach((L, k) => {
+				const vd = vel(near!, t + L);
+				sums[k]! += vm.x * vd.x + vm.y * vd.y;
+				if (L === 0) {
+					dd += vd.x * vd.x + vd.y * vd.y;
+				}
+			});
+		}
+	}
+	let best = 0;
+	SHADOW.forEach((_, k) => {
+		if (sums[k]! > sums[best]!) {
+			best = k;
+		}
+	});
+	// Cuts: how often anybody moving in the half court turns hard - more
+	// than 60 degrees between the 0.3 s before and the 0.3 s after, a foot
+	// and a half each way - a minute of moving.
+	let moving = 0;
+	let cuts = 0;
+	for (const tr of tl.tracks.values()) {
+		if (tr.pid < 0) {
+			continue;
+		}
+		let last = -Infinity;
+		for (let t = 1000; t < tl.end - 1000; t += 100) {
+			if (fastAt(tl, t) > 1.01) {
+				continue;
+			}
+			const A = evalPlayer(tl, tr.pid, t - 300);
+			const P = evalPlayer(tl, tr.pid, t);
+			const B = evalPlayer(tl, tr.pid, t + 300);
+			if (
+				!A.shown ||
+				!P.shown ||
+				!B.shown ||
+				dist(P, { x: rimX(tr.team), y: 25 }) > 47
+			) {
+				continue;
+			}
+			const li = dist(A, P);
+			const lo = dist(P, B);
+			if (li + lo > 1.2) {
+				moving += 100;
+			}
+			if (li < 1.5 || lo < 1.5) {
+				continue;
+			}
+			const c =
+				((P.x - A.x) * (B.x - P.x) + (P.y - A.y) * (B.y - P.y)) / (li * lo);
+			if (c < 0.5 && t - last > 600) {
+				cuts += 1;
+				last = t;
+			}
+		}
+	}
 	const minutes = dribbling / 60000;
 	return {
 		dribblingMin: +minutes.toFixed(1),
@@ -175,6 +288,9 @@ export const measure = (tl: CourtTimeline) => {
 		offBallStill: +(offStill / Math.max(1, offBall)).toFixed(3),
 		lockstep: +(together / Math.max(1, starts.length)).toFixed(3),
 		reactionMs: lags.length ? lags[Math.floor(lags.length / 2)]! : undefined,
+		cutsPerMin: +(cuts / Math.max(0.01, moving / 60000)).toFixed(2),
+		shadowMs: SHADOW[best],
+		shadowFit: +(sums[best]! / Math.max(1e-9, Math.sqrt(mm * dd))).toFixed(2),
 	};
 };
 

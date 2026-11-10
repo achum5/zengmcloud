@@ -12,9 +12,15 @@
 // one it laid out, less what no man could do (a lurch, a corner turned on
 // the spot at a run). What each man wants comes next, a part at a time.
 
-import { compileCourt, type CourtTimeline, type Move } from "./director.ts";
+import {
+	compileCourt,
+	type CourtInput,
+	type CourtTimeline,
+	type Move,
+} from "./director.ts";
 import { floorSpotOf } from "./evaluate.ts";
-import { rimX, type Pt } from "./geometry.ts";
+import { COURT_W, inPlay, rimX, type Pt } from "./geometry.ts";
+import { RIM_INSET } from "../courtSpots.ts";
 import { pushFrom } from "./motion.ts";
 
 export const STEP_MS = 50;
@@ -71,6 +77,19 @@ const RUN_MOST = 1500;
 const PACE_NOISE = 0.25;
 // Under this pace (feet a second) he is stood.
 const STILL = 0.2;
+// A corner in his way: the way in and the way out over this long (ms)
+// either side, each at least this far (feet), turned through more than
+// this (the cosine between them) - a cut, not a bend: he runs it to the
+// corner, plants, and goes, no faster through it than CORNER_PACE (feet a
+// second) times how little it turns (see cornersOf).
+const CORNER_MS = 300;
+const CORNER_LEAST = 1.5;
+const CORNER_COS = 0.5;
+const CORNER_PACE = 12;
+// (At the corner, within this (feet), or this long (ms) after the play
+// was there, he is round it.)
+const CORNER_AT = 0.6;
+const CORNER_LATE = 400;
 
 type Sample = { t: number; x: number; y: number; vx: number; vy: number };
 
@@ -81,6 +100,8 @@ type Spans = {
 	hit: (t0: number, t1: number) => boolean;
 	// When the next one begins, from t on.
 	next: (t: number) => number;
+	// When the last one before t was over (t, in one).
+	last: (t: number) => number;
 };
 const spansAt = (list: (readonly [number, number])[]): Spans => {
 	// (One list of stretches, run together where they meet - each found by
@@ -114,7 +135,58 @@ const spansAt = (list: (readonly [number, number])[]): Spans => {
 			return k >= 0 && spans[k]![1] > t0;
 		},
 		next: (t) => spans[from(t)]?.[0] ?? Infinity,
+		last: (t) => {
+			const k = from(t) - 1;
+			return k < 0 ? -Infinity : Math.min(t, spans[k]![1]);
+		},
 	};
+};
+
+// Where a way turns hard - a cut - between t0 and t1: when the play has
+// him at the corner, where it is, and how hard it turns (the cosine).
+type Corner = { t: number; at: Pt; cos: number };
+const cornersOf = (
+	want: (t: number) => Pt | undefined,
+	t0: number,
+	t1: number,
+): Corner[] => {
+	const k = Math.round(CORNER_MS / STEP_MS);
+	const from = t0 - CORNER_MS;
+	const spots: (Pt | undefined)[] = [];
+	for (let t = from; t <= t1 + CORNER_MS; t += STEP_MS) {
+		spots.push(want(t));
+	}
+	const out: Corner[] = [];
+	let best: Corner | undefined;
+	for (let i = k; i + k < spots.length; i++) {
+		const A = spots[i - k];
+		const P = spots[i];
+		const B = spots[i + k];
+		let cos = 1;
+		if (A && P && B) {
+			const ix = P.x - A.x;
+			const iy = P.y - A.y;
+			const ox = B.x - P.x;
+			const oy = B.y - P.y;
+			const li = Math.hypot(ix, iy);
+			const lo = Math.hypot(ox, oy);
+			if (li >= CORNER_LEAST && lo >= CORNER_LEAST) {
+				cos = (ix * ox + iy * oy) / (li * lo);
+			}
+		}
+		if (cos < CORNER_COS) {
+			if (!best || cos < best.cos) {
+				best = { t: from + i * STEP_MS, at: P!, cos };
+			}
+		} else if (best) {
+			out.push(best);
+			best = undefined;
+		}
+	}
+	if (best) {
+		out.push(best);
+	}
+	return out;
 };
 
 // One man, stepped: where he is every STEP_MS from t0 to t1, following
@@ -131,6 +203,10 @@ export const follow = (
 	// How long he takes to react (ms), setting off from standing at t: each
 	// man in his own time, not all of them at once.
 	lagAt: (t: number) => number = () => 0,
+	// How far ahead (s) he can see where the play has him at t: none, for
+	// a man reacting to another (he goes where the play has him now - it has
+	// him reacting already: see mark in director.ts).
+	seeAt: (t: number) => number = () => LOOK_MOST,
 ): Sample[] => {
 	const out: Sample[] = [];
 	let p: Pt | undefined;
@@ -143,6 +219,9 @@ export const follow = (
 	const dt = STEP_MS / 1000;
 	// (Where he is wanted next step, kept for the step after.)
 	let ahead: Pt | undefined = want(t0);
+	// (The cuts in his way, and the next he is coming to.)
+	const corners = cornersOf(want, t0, t1);
+	let ci = 0;
 	for (let t = t0; t <= t1; t += STEP_MS) {
 		const W = ahead;
 		ahead = want(t + STEP_MS);
@@ -176,18 +255,39 @@ export const follow = (
 		const v0 = Math.hypot(vx, vy);
 		// (Stood, and the play not yet sending him anywhere, he waits for it:
 		// no setting off ahead of it.)
+		const see = seeAt(t);
 		const look =
-			v0 < 1 && Math.hypot(wx, wy) < 0.5
+			see <= 0 || (v0 < 1 && Math.hypot(wx, wy) < 0.5)
 				? 0
-				: Math.max(LOOK_LEAST, Math.min(LOOK_MOST, (v0 / BRAKE) * 0.9));
-		const L = look > 0 ? (want(t + look * 1000) ?? W) : W;
-		const L1 = look > 0 ? (want(t + look * 1000 + STEP_MS) ?? L) : (ahead ?? W);
-		const reach = Math.max(look, LOOK_LEAST);
+				: Math.max(LOOK_LEAST, Math.min(LOOK_MOST, see, (v0 / BRAKE) * 0.9));
+		let L = look > 0 ? (want(t + look * 1000) ?? W) : W;
+		let L1 = look > 0 ? (want(t + look * 1000 + STEP_MS) ?? L) : (ahead ?? W);
+		let reach = Math.max(look, LOOK_LEAST);
+		// A cut coming up in that: not round it - to the corner, and through
+		// it no faster than he can turn it.
+		while (
+			ci < corners.length &&
+			(Math.hypot(corners[ci]!.at.x - p.x, corners[ci]!.at.y - p.y) <
+				CORNER_AT ||
+				t > corners[ci]!.t + CORNER_LATE)
+		) {
+			ci += 1;
+		}
+		let plant = TOP;
+		const C = corners[ci];
+		if (C && look > 0 && C.t < t + look * 1000) {
+			L = C.at;
+			L1 = C.at;
+			reach = Math.max(LOOK_LEAST, (C.t - t) / 1000);
+			plant =
+				Math.max(2, CORNER_PACE * (0.5 + C.cos)) +
+				Math.sqrt(2 * BRAKE * Math.hypot(C.at.x - p.x, C.at.y - p.y));
+		}
 		let cx = (L.x - p.x) / reach + (look > 0 ? 0 : wx);
 		let cy = (L.y - p.y) / reach + (look > 0 ? 0 : wy);
 		{
 			const lv = Math.hypot(L1.x - L.x, L1.y - L.y) / dt;
-			const most = Math.max(lv, Math.hypot(wx, wy)) + CATCH_UP;
+			const most = Math.min(plant, Math.max(lv, Math.hypot(wx, wy)) + CATCH_UP);
 			const cv = Math.hypot(cx, cy);
 			if (cv > most) {
 				cx *= most / cv;
@@ -411,12 +511,15 @@ const pathOf = (from: number, spots: (Pt | undefined)[]): Path => ({
 	},
 });
 
-// THE MAN WITH THE BALL, WORKING HIS MAN. Stood on his dribble out on the
-// floor a while with nothing of his to do - waiting on a screen, on the set
-// - he is never planted: he sways across his man, jabs a step in at him and
-// back, gives ground a step and comes again - each move his own, a beat
-// each - eased in and out of, so he is back where the play wants him for
-// whatever comes next. (His man goes with him: see guardOf.)
+// THE MAN WITH THE BALL, WORKING HIS MAN. On his dribble out on the floor
+// a while with nothing of his to do, he is never just carried from one
+// spot to the next. Stood - waiting on a screen, on the set - he sways
+// across his man, jabs a step in at him and back, gives ground a step and
+// comes again. Going somewhere, he gets there his own way: crosses over
+// from one side of his line to the other, hesitates and goes. Each move
+// his own, a beat each, eased in and out of, so he is back where the play
+// wants him for whatever comes next. (His man goes with him, a beat late:
+// see stepTimeline.)
 const PROBE_LEAST = 1200;
 const PROBE_EASE = 400;
 const PROBE_BEAT: [number, number] = [700, 1100];
@@ -430,6 +533,18 @@ const PROBE_MOVES: [number, number][] = [
 	[0.9, 0.7],
 	[-0.9, 0.7],
 ];
+// Going (faster than this, feet a second, no faster than ROUTE_FASTEST):
+// across his line (feet, to one side or the other - crossing over from
+// one to the other, as often as not) and along it (behind it a beat: a
+// hesitation; ahead of it: the burst after) - a beat each.
+const ROUTE_PACE = 1.5;
+const ROUTE_FASTEST = 18;
+const ROUTE_BEAT: [number, number] = [550, 900];
+const ROUTE_ACROSS: [number, number] = [1, 2.2];
+const ROUTE_ALONG = [0, 0, -1.1, 0.6];
+const ROUTE_CROSS = 0.65;
+// (All of it within this far of the rim, feet.)
+const WORK_NEAR = 40;
 const probesOf = (
 	tl: CourtTimeline,
 	pid: number,
@@ -446,64 +561,97 @@ const probesOf = (
 		}
 	});
 	const on = spansAt(dribbling);
-	// Each stretch of it he stands, nothing of his on: his moves through it.
-	const stretches: { a: number; b: number; keys: [number, Pt][]; u: Pt }[] = [];
+	// Each stretch of it with nothing of his on: his moves through it.
+	const stretches: Keyed[] = [];
+	const begin = laid.from;
+	// (Where the play has him going at t, feet a second.)
+	const goingAt = (t: number): Pt => {
+		const P = laid.at(t - 150);
+		const Q = laid.at(t + 150);
+		return P && Q
+			? { x: (Q.x - P.x) / 0.3, y: (Q.y - P.y) / 0.3 }
+			: { x: 0, y: 0 };
+	};
 	let a = -1;
 	const close = (b: number) => {
 		if (a >= 0 && b - a >= PROBE_LEAST) {
-			const P = laid.at(a)!;
-			const u = unitVec(P, rim);
 			const keys: [number, Pt][] = [[a, { x: 0, y: 0 }]];
 			let t = a + PROBE_EASE;
 			let n = 0;
+			let side = hash01(pid * 5 + 1, Math.round(a)) < 0.5 ? -1 : 1;
 			while (t < b - PROBE_EASE - 500) {
 				const r = hash01(pid * 31 + n, Math.round(t / 50));
-				const beat = PROBE_BEAT[0] + (PROBE_BEAT[1] - PROBE_BEAT[0]) * r;
-				const [across, inAt] =
-					PROBE_MOVES[
-						Math.floor(hash01(pid * 7 + n, Math.round(a)) * PROBE_MOVES.length)
-					]!;
-				keys.push([
-					t,
-					{
-						x: -u.y * across + u.x * inAt,
-						y: u.x * across + u.y * inAt,
-					},
-				]);
-				t += beat;
+				const pick = hash01(pid * 7 + n, Math.round(a));
+				const v = goingAt(t);
+				const pace = Math.hypot(v.x, v.y);
+				if (pace < ROUTE_PACE) {
+					// Stood: at his man.
+					const u = unitVec(laid.at(t) ?? rim, rim);
+					const [across, inAt] =
+						PROBE_MOVES[Math.floor(pick * PROBE_MOVES.length)]!;
+					keys.push([
+						t,
+						{
+							x: -u.y * across + u.x * inAt,
+							y: u.x * across + u.y * inAt,
+						},
+					]);
+					t += PROBE_BEAT[0] + (PROBE_BEAT[1] - PROBE_BEAT[0]) * r;
+				} else {
+					// Going: his own way along his line.
+					const u = { x: v.x / pace, y: v.y / pace };
+					if (hash01(pid * 11 + n, Math.round(a)) < ROUTE_CROSS) {
+						side = -side;
+					}
+					const across =
+						side *
+						(ROUTE_ACROSS[0] + (ROUTE_ACROSS[1] - ROUTE_ACROSS[0]) * pick);
+					const along = ROUTE_ALONG[Math.floor(r * ROUTE_ALONG.length)]!;
+					keys.push([
+						t,
+						{
+							x: -u.y * across + u.x * along,
+							y: u.x * across + u.y * along,
+						},
+					]);
+					t += ROUTE_BEAT[0] + (ROUTE_BEAT[1] - ROUTE_BEAT[0]) * r;
+				}
 				n += 1;
 			}
 			keys.push([b, { x: 0, y: 0 }]);
 			if (keys.length > 2) {
-				stretches.push({ a, b, keys, u });
+				stretches.push({ a, b, keys });
 			}
 		}
 		a = -1;
 	};
-	const begin = laid.from;
 	for (let k = 0; k + 1 < laid.spots.length; k++) {
 		const t = begin + k * STEP_MS;
 		const P = laid.spots[k];
 		const Q = laid.spots[k + 1];
-		const still =
+		const ok =
 			P !== undefined &&
 			Q !== undefined &&
-			Math.hypot(Q.x - P.x, Q.y - P.y) / (STEP_MS / 1000) < 0.7 &&
+			Math.hypot(Q.x - P.x, Q.y - P.y) / (STEP_MS / 1000) < ROUTE_FASTEST &&
 			on.hit(t, t + STEP_MS) &&
 			!held.hit(t - 300, t + STEP_MS + 300) &&
-			Math.hypot(P.x - rim.x, P.y - rim.y) < 30;
-		if (still && a < 0) {
+			Math.hypot(P.x - rim.x, P.y - rim.y) < WORK_NEAR;
+		if (ok && a < 0) {
 			a = t;
-		} else if (!still) {
+		} else if (!ok) {
 			close(t);
 		}
 	}
 	close(begin + laid.spots.length * STEP_MS);
-	const spans = spansAt(stretches.map((x) => [x.a, x.b] as const));
+	return keyed(stretches);
+};
+
+// Moves a man makes off where the play has him, stretch by stretch: from
+// each key (when, how far off it) to the next, eased.
+type Keyed = { a: number; b: number; keys: [number, Pt][] };
+const keyed = (stretches: Keyed[]): ((t: number) => Pt) => {
+	const none = { x: 0, y: 0 };
 	return (t) => {
-		if (!spans.hit(t, t + 1)) {
-			return { x: 0, y: 0 };
-		}
 		let lo = 0;
 		let hi = stretches.length;
 		while (lo < hi) {
@@ -515,19 +663,143 @@ const probesOf = (
 			}
 		}
 		const st = stretches[lo - 1];
-		if (st && !(t < st.b)) {
-			return { x: 0, y: 0 };
-		}
-		if (!st) {
-			return { x: 0, y: 0 };
+		if (!st || !(t < st.b)) {
+			return none;
 		}
 		const k = st.keys.findIndex(([at]) => at > t);
+		if (k < 1) {
+			return none;
+		}
 		const [t0, A] = st.keys[k - 1]!;
 		const [t1, B] = st.keys[k]!;
-		const u = (t - t0) / (t1 - t0);
+		const u = t1 > t0 ? (t - t0) / (t1 - t0) : 1;
 		const e = u * u * (3 - 2 * u);
 		return { x: A.x + (B.x - A.x) * e, y: A.y + (B.y - A.y) * e };
 	};
+};
+
+// OFF THE BALL, GETTING OPEN. Stood a while off the ball with nothing of
+// his coming, a man does not wait where the play put him like a cone: now
+// and then he relocates a step - along the arc, a step in, a step out -
+// and sets his feet there a while (long enough to spot up, to call for it:
+// see offBall in evaluate.ts). Back where the play wants him as he next
+// goes. (His man goes with him, a beat late: see stepTimeline.)
+const OPEN_LEAST = 3000;
+const OPEN_FIRST: [number, number] = [600, 1800];
+const OPEN_MOVE: [number, number] = [700, 1100];
+const OPEN_HOLD: [number, number] = [2400, 4000];
+const OPEN_NEAR = 30;
+const OPEN_OUT = 500;
+// (Along the arc, in toward the rim - feet.)
+const OPEN_SPOTS: [number, number][] = [
+	[1.6, 0],
+	[-1.6, 0],
+	[0.8, 1],
+	[-0.8, 1],
+	[0.9, -0.8],
+	[-0.9, -0.8],
+	[0, 1.3],
+];
+const openingsOf = (
+	tl: CourtTimeline,
+	pid: number,
+	laid: Path,
+	held: Spans,
+	team: 0 | 1,
+	offenseAt: (t: number) => 0 | 1,
+): ((t: number) => Pt) => {
+	const rim = { x: rimX(team), y: 25 };
+	// (How far behind the three-point line, feet.)
+	const beyond = (p: Pt) => {
+		const depth = team === 0 ? p.x : COURT_W - p.x;
+		return depth < 14
+			? Math.abs(p.y - 25) - 22
+			: Math.hypot(depth - RIM_INSET, p.y - 25) - 23.75;
+	};
+	const mine = spansAt(
+		tl.ball.flatMap((s, k) =>
+			s.kind === "hold" && s.pid === pid
+				? [[s.t0, tl.ball[k + 1]?.t0 ?? s.t0] as const]
+				: [],
+		),
+	);
+	const stretches: Keyed[] = [];
+	let a = -1;
+	const close = (b: number) => {
+		if (a < 0) {
+			return;
+		}
+		// (Not till he is back from the last.)
+		a = Math.max(a, stretches.at(-1)?.b ?? -Infinity);
+		if (b - a >= OPEN_LEAST) {
+			const keys: [number, Pt][] = [[a, { x: 0, y: 0 }]];
+			let at = { x: 0, y: 0 };
+			let n = 0;
+			let t =
+				a +
+				OPEN_FIRST[0] +
+				(OPEN_FIRST[1] - OPEN_FIRST[0]) * hash01(pid * 3 + 7, Math.round(a));
+			for (;;) {
+				const r = hash01(pid * 29 + n, Math.round(t / 50));
+				const move = OPEN_MOVE[0] + (OPEN_MOVE[1] - OPEN_MOVE[0]) * r;
+				if (t + move > b - 300) {
+					break;
+				}
+				const P = laid.at(t) ?? rim;
+				const u = unitVec(P, rim);
+				const [across, inAt] =
+					OPEN_SPOTS[
+						Math.floor(hash01(pid * 19 + n, Math.round(a)) * OPEN_SPOTS.length)
+					]!;
+				let o = {
+					x: -u.y * across + u.x * inAt,
+					y: u.x * across + u.y * inAt,
+				};
+				const Q = { x: P.x + o.x, y: P.y + o.y };
+				const kept = inPlay(Q);
+				// (On the floor, and behind the line if he was.)
+				if (
+					Math.hypot(kept.x - Q.x, kept.y - Q.y) > 0.01 ||
+					(beyond(P) > 0.3 && beyond(Q) < 0.5)
+				) {
+					o = { x: 0, y: 0 };
+				}
+				keys.push([t, at], [t + move, o]);
+				at = o;
+				t +=
+					move +
+					OPEN_HOLD[0] +
+					(OPEN_HOLD[1] - OPEN_HOLD[0]) * hash01(pid * 23 + n, Math.round(a));
+				n += 1;
+			}
+			keys.push([b, at], [b + OPEN_OUT, { x: 0, y: 0 }]);
+			if (keys.length > 3) {
+				stretches.push({ a, b: b + OPEN_OUT, keys });
+			}
+		}
+		a = -1;
+	};
+	const begin = laid.from;
+	for (let k = 0; k + 1 < laid.spots.length; k++) {
+		const t = begin + k * STEP_MS;
+		const P = laid.spots[k];
+		const Q = laid.spots[k + 1];
+		const ok =
+			P !== undefined &&
+			Q !== undefined &&
+			Math.hypot(Q.x - P.x, Q.y - P.y) / (STEP_MS / 1000) < 0.7 &&
+			offenseAt(t) === team &&
+			!mine.hit(t - 300, t + STEP_MS + 300) &&
+			!held.hit(t - 600, t + STEP_MS + 600) &&
+			Math.hypot(P.x - rim.x, P.y - rim.y) < OPEN_NEAR;
+		if (ok && a < 0) {
+			a = t;
+		} else if (!ok) {
+			close(t);
+		}
+	}
+	close(begin + laid.spots.length * STEP_MS);
+	return keyed(stretches);
 };
 
 // HIS MAN WITH HIM. A defender up on a man goes where that man really goes
@@ -537,7 +809,16 @@ const probesOf = (
 // him).
 const GUARD_FULL = 7;
 const GUARD_NONE = 12;
-const GUARD_LAG: [number, number] = [160, 280];
+// (His own beat, ms - on top of the moment his legs take to answer it.)
+const GUARD_LAG: [number, number] = [90, 200];
+// On defense a man goes where the play has him now, seeing nothing of it
+// ahead: the play has him reacting to his man already (see mark in
+// director.ts) - here he doesn't get ahead of that. What his man does of
+// his own here (see probesOf, openingsOf) he answers his own beat late
+// (GUARD_LAG). Into anything he has to be there for on time (his acts, the
+// picture's cuts, the ball changing hands) he sees it coming again and
+// leaves his man's moves be - all of it this long (ms) off one.
+const REACT_RAMP = 600;
 
 // The whole game stepped: every man's tracks re-laid as he would really
 // move them. (In place.)
@@ -577,6 +858,7 @@ export const stepTimeline = (tl: CourtTimeline): CourtTimeline => {
 	const step = (
 		tr: (typeof men)[number],
 		want: (t: number) => Pt | undefined,
+		seeAt?: (t: number) => number,
 	) => {
 		const L = laid.get(tr.pid)!;
 		const held = helds.get(tr.pid)!;
@@ -599,34 +881,72 @@ export const stepTimeline = (tl: CourtTimeline): CourtTimeline => {
 					REACT_MS[0] +
 					(REACT_MS[1] - REACT_MS[0]) *
 						hash01(tr.pid * 17 + 3, Math.round(t / 100)),
+				seeAt,
 			)) {
 				samples.push(q);
 			}
 		});
 		return samples;
 	};
-	// Each with the ball working his own way (see probesOf).
+	// Each with the ball working his own way (see probesOf), and each off
+	// it getting open (openingsOf).
 	const probes = new Map<number, (t: number) => Pt>();
 	for (const tr of men) {
-		probes.set(
-			tr.pid,
-			probesOf(tl, tr.pid, laid.get(tr.pid)!, helds.get(tr.pid)!, tr.team),
-		);
+		const L = laid.get(tr.pid)!;
+		const held = helds.get(tr.pid)!;
+		const probe = probesOf(tl, tr.pid, L, held, tr.team);
+		const open = openingsOf(tl, tr.pid, L, held, tr.team, offenseAt);
+		probes.set(tr.pid, (t) => {
+			const a = probe(t);
+			const b = open(t);
+			return { x: a.x + b.x, y: a.y + b.y };
+		});
 	}
-	// And on defense, each with his man as his man really goes.
+	// And on defense, each with his man as his man really goes, a beat
+	// behind him.
 	for (const tr of men) {
 		const L = laid.get(tr.pid)!;
 		const probe = probes.get(tr.pid)!;
 		const lag =
 			GUARD_LAG[0] + (GUARD_LAG[1] - GUARD_LAG[0]) * hash01(tr.pid * 13 + 5, 1);
+		const onTime = spansAt([
+			...tr.acts.map((x) => [x.t0, x.t1] as const),
+			...tl.cuts.map((c) => [c - STEP_MS, c] as const),
+			...tl.poss.map(([at]) => [at, at] as const),
+			...tr.shown.map(([at]) => [at, at] as const),
+		]);
+		// (How much of his beat behind he is, at t.)
+		const behind = (t: number) =>
+			offenseAt(t) === tr.team
+				? 0
+				: Math.max(
+						0,
+						Math.min(
+							1,
+							(t - onTime.last(t)) / REACT_RAMP,
+							(onTime.next(t) - t) / REACT_RAMP,
+						),
+					);
 		const wantNow = (t: number) => {
+			if (offenseAt(t) === tr.team) {
+				const P = L.at(t);
+				if (!P) {
+					return P;
+				}
+				const o = probe(t);
+				if (o.x === 0 && o.y === 0) {
+					return P;
+				}
+				// (Never off the floor for it, if the play has him on it.)
+				const Q = { x: P.x + o.x, y: P.y + o.y };
+				const inP = inPlay(P);
+				return inP.x === P.x && inP.y === P.y ? inPlay(Q) : Q;
+			}
+			const r = behind(t);
+			const at = t - lag * r;
 			const P = L.at(t);
 			if (!P) {
 				return P;
-			}
-			if (offenseAt(t) === tr.team) {
-				const o = probe(t);
-				return { x: P.x + o.x, y: P.y + o.y };
 			}
 			let man: number | undefined;
 			let d = GUARD_NONE;
@@ -644,18 +964,19 @@ export const stepTimeline = (tl: CourtTimeline): CourtTimeline => {
 			if (man === undefined) {
 				return P;
 			}
-			const went = probes.get(man)!(t - lag);
-			const w = Math.min(
-				1,
-				Math.max(0, (GUARD_NONE - d) / (GUARD_NONE - GUARD_FULL)),
-			);
+			const went = probes.get(man)!(at);
+			// (None of it into anything of his own: on time, where the play
+			// has him for it.)
+			const w =
+				r *
+				Math.min(1, Math.max(0, (GUARD_NONE - d) / (GUARD_NONE - GUARD_FULL)));
 			return { x: P.x + went.x * w, y: P.y + went.y * w };
 		};
 		const want = pathOf(
 			L.from,
 			L.spots.map((_, k) => wantNow(L.from + k * STEP_MS)),
 		).at;
-		const samples = step(tr, want);
+		const samples = step(tr, want, (t) => (behind(t) > 0 ? 0 : LOOK_MOST));
 		const old = tr.moves;
 		const animAt = (t: number) => {
 			let lo = 0;
@@ -684,7 +1005,8 @@ export const stepTimeline = (tl: CourtTimeline): CourtTimeline => {
 	return tl;
 };
 
-// A game staged, then stepped.
-export const compileStepped = (
-	...args: Parameters<typeof compileCourt>
-): CourtTimeline => stepTimeline(compileCourt(...args));
+// A game staged - and stepped, if it says so.
+export const stageGame = (input: CourtInput): CourtTimeline => {
+	const tl = compileCourt(input);
+	return input.step ? stepTimeline(tl) : tl;
+};

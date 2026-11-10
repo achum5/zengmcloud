@@ -1,7 +1,37 @@
 import { assert, describe, test } from "vitest";
 import { evalPlayer, fastAt, floorSpotOf } from "./evaluate.ts";
-import { stepTimeline } from "./stepper.ts";
+import { rimX } from "./geometry.ts";
+import { follow, stepTimeline } from "./stepper.ts";
 import { compile } from "./testGame.ts";
+
+describe("3D: a man stepped", () => {
+	test("a cut is run to the corner, planted and gone - not rounded off", () => {
+		// (15 feet a second up the floor, then across it.)
+		const want = (t: number) =>
+			t < 2000
+				? { x: 10 + (15 * t) / 1000, y: 10 }
+				: { x: 40, y: 10 + (15 * (t - 2000)) / 1000 };
+		const none = {
+			hit: () => false,
+			next: () => Infinity,
+			last: () => -Infinity,
+		};
+		const s = follow(want, 0, 4000, none);
+		let near = Infinity;
+		let least = Infinity;
+		for (const q of s) {
+			if (q.t > 1500 && q.t < 2500) {
+				near = Math.min(near, Math.hypot(q.x - 40, q.y - 10));
+				least = Math.min(least, Math.hypot(q.vx, q.vy));
+			}
+		}
+		assert.isBelow(near, 1);
+		assert.isBelow(least, 9);
+		const end = s.at(-1)!;
+		assert.isBelow(Math.abs(end.x - 40), 0.5);
+		assert.isAbove(end.vy, 12);
+	});
+});
 
 describe("3D: the ten stepped", () => {
 	// (One game, laid out twice: as the director has it, and stepped.)
@@ -157,5 +187,72 @@ describe("3D: the ten stepped", () => {
 		}
 		assert.isAbove(probes, 30);
 		assert.isAbove(followed / probes, 0.5);
+	});
+
+	test("on defense a man goes a beat after his man - not with him, nor ahead of him", () => {
+		// (How well his going matches his man's, a given time after.)
+		// (How his going changes, a tenth of a second either side.)
+		const vel = (pid: number, t: number) => {
+			const a = evalPlayer(stepped, pid, t - 150);
+			const b = evalPlayer(stepped, pid, t - 50);
+			const c = evalPlayer(stepped, pid, t + 50);
+			const d = evalPlayer(stepped, pid, t + 150);
+			return {
+				x: (d.x - c.x - (b.x - a.x)) * 10,
+				y: (d.y - c.y - (b.y - a.y)) * 10,
+			};
+		};
+		const LAGS = [-200, -100, 0, 50, 100, 150, 200, 250, 300, 400, 500];
+		const sums = LAGS.map(() => 0);
+		let n = 0;
+		for (let t = 1000; t < stepped.end - 1000; t += 100) {
+			if (fastAt(stepped, t) > 1.01) {
+				continue;
+			}
+			const ball = stepped.ball.findLast((s) => s.t0 <= t);
+			const holder =
+				ball?.kind === "hold" ? stepped.tracks.get(ball.pid) : undefined;
+			if (!holder) {
+				continue;
+			}
+			for (const o of stepped.tracks.values()) {
+				if (o.pid < 0 || o.team !== holder.team) {
+					continue;
+				}
+				const P = evalPlayer(stepped, o.pid, t);
+				const vm = vel(o.pid, t);
+				if (
+					!P.shown ||
+					Math.hypot(vm.x, vm.y) < 0.5 ||
+					Math.hypot(P.x - rimX(o.team), P.y - 25) > 30
+				) {
+					continue;
+				}
+				let near: number | undefined;
+				let nd = 6;
+				for (const d of stepped.tracks.values()) {
+					if (d.pid < 0 || d.team === o.team) {
+						continue;
+					}
+					const Q = evalPlayer(stepped, d.pid, t);
+					if (Q.shown && Math.hypot(Q.x - P.x, Q.y - P.y) < nd) {
+						nd = Math.hypot(Q.x - P.x, Q.y - P.y);
+						near = d.pid;
+					}
+				}
+				if (near === undefined) {
+					continue;
+				}
+				n += 1;
+				LAGS.forEach((L, k) => {
+					const vd = vel(near!, t + L);
+					sums[k]! += vm.x * vd.x + vm.y * vd.y;
+				});
+			}
+		}
+		assert.isAbove(n, 200);
+		const best = LAGS[sums.indexOf(Math.max(...sums))]!;
+		assert.isAtLeast(best, 100);
+		assert.isAtMost(best, 300);
 	});
 });
