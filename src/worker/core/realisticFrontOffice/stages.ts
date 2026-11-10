@@ -24,8 +24,12 @@ import { realisticFreeAgencyOn } from "./isOn.ts";
 // - the leading offer's money and length, not who made it - and makes a final
 // offer, sealed. The cap rules are CBA-lite's (cba.ts).
 export const stageSettings = {
-	// Off until it is built out and measured.
-	on: false,
+	// On (owner's call, 2026-11-10). League test, 2 leagues each way over 5
+	// seasons against the daily market: good players signed for under 3% of
+	// the cap 1 vs 23 (all of the 23 on deals of 3+ years), prices for 55-64s
+	// up, contracts shorter, sims about 29% faster; about 2-3 good players a
+	// summer still unsigned at camp (they sign in the season, one-year deals).
+	on: true,
 	// How many free agents, best first as free agency opens, decide on the
 	// first decision day, and how many more on the second.
 	tier1: 15,
