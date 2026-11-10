@@ -27,6 +27,7 @@ import { NegotiateButtons } from "../components/NegotiateButtons.tsx";
 import { RosterComposition } from "../components/RosterComposition.tsx";
 import { SalaryCapInfo } from "../components/SalaryCapInfo.tsx";
 import { RosterSalarySummary } from "../components/RosterSalarySummary.tsx";
+import { CapStatus } from "../components/CapStatus.tsx";
 import {
 	NegotiationModal,
 	useNegotiaionModal,
@@ -334,15 +335,80 @@ const ChoiceItem = ({
 	);
 };
 
+type HistoryProps = NonNullable<View<"freeAgents">["history"]>;
+
+// Contract rules: every stage's signings this free agency, one at a time.
+const StageResults = ({ history }: { history: HistoryProps }) => {
+	const { userTid } = useLocal(["userTid"]);
+	const lastKey = history.at(-1)?.key;
+	const [key, setKey] = useState(lastKey);
+	useEffect(() => {
+		setKey(lastKey);
+	}, [lastKey]);
+	const shown = history.find((row) => row.key === key) ?? history.at(-1);
+	if (!shown) {
+		return null;
+	}
+	return (
+		<>
+			<div className="d-flex align-items-center gap-2 mb-2">
+				<h3 className="mb-0">Signed</h3>
+				<select
+					className="form-select form-select-sm w-auto"
+					value={shown.key}
+					onChange={(event) => setKey(event.target.value)}
+				>
+					{history.map((row) => (
+						<option key={row.key} value={row.key}>
+							{row.label}
+						</option>
+					))}
+				</select>
+			</div>
+			<div style={{ maxHeight: 320, overflowY: "auto" }}>
+				{shown.items.map((item) => (
+					<ChoiceItem key={item.pid} item={item} userTid={userTid} />
+				))}
+			</div>
+		</>
+	);
+};
+
+// Free agency in stages: the five stages, the current one highlighted.
+const StageTimeline = ({
+	timeline,
+}: {
+	timeline: NonNullable<View<"freeAgents">["timeline"]>;
+}) => (
+	<div className="d-flex flex-wrap gap-1 mb-3">
+		{timeline.names.map((name, i) => (
+			<span
+				key={name}
+				className={`badge fs-6 ${
+					i === timeline.current
+						? "text-bg-primary"
+						: i < timeline.current
+							? "text-bg-light border text-body-secondary"
+							: "text-bg-light border"
+				}`}
+			>
+				{i + 1}. {name}
+			</span>
+		))}
+	</div>
+);
+
 // Realistic front offices: the team's offers in priority order (if two are
 // accepted the same day and both don't fit, the higher one signs), with each
 // one's odds today, and the last day's signings.
 const OffersPanel = ({
 	disabled,
+	history,
 	offers,
 	onEdit,
 }: {
 	disabled: boolean;
+	history?: HistoryProps;
 	offers: OffersProps;
 	onEdit: (pid: number) => void;
 }) => {
@@ -438,7 +504,11 @@ const OffersPanel = ({
 					</ul>
 				)}
 			</div>
-			{offers.results ? (
+			{history && history.length > 0 ? (
+				<div className="col-md-6">
+					<StageResults history={history} />
+				</div>
+			) : !history && offers.results ? (
 				<div className="col-md-6">
 					{offers.results.stage ? (
 						<h3>
@@ -514,9 +584,12 @@ const stageCells = (p: View<"freeAgents">["players"][number]) => {
 };
 
 const FreeAgents = ({
+	cap,
 	capSpace,
 	challengeNoFreeAgents,
 	faBoard,
+	history,
+	timeline,
 	offers,
 	freeAgencySeason,
 	numRosterSpots,
@@ -848,6 +921,8 @@ const FreeAgents = ({
 				<RosterComposition className="float-end mb-3" players={userPlayers} />
 			) : null}
 			<MoreLinks type="freeAgents" page="free_agents" />
+			{timeline ? <StageTimeline timeline={timeline} /> : null}
+			{cap ? <CapStatus cap={cap} className="mb-3" /> : null}
 			{season === "current" ? (
 				<>
 					<RosterSalarySummary
@@ -884,11 +959,18 @@ const FreeAgents = ({
 			{offers && !spectator ? (
 				<OffersPanel
 					disabled={gameSimInProgress}
+					history={history}
 					offers={offers}
 					onEdit={async (pid) => {
 						await negotiationModal.negotiate(pid);
 					}}
 				/>
+			) : null}
+
+			{season !== "current" && history && history.length > 0 ? (
+				<div className="mb-3">
+					<StageResults history={history} />
+				</div>
 			) : null}
 
 			{faBoard ? (

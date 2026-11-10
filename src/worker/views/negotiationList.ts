@@ -7,6 +7,7 @@ import { addMood, FREE_AGENT_STATS } from "./freeAgents.ts";
 import { defineView } from "../util/defineView.ts";
 import { realisticFreeAgencyOn } from "../core/realisticFrontOffice/isOn.ts";
 import { reSigningOffers } from "../core/realisticFrontOffice/offerScreen.ts";
+import { teamCapStatus } from "../core/realisticFrontOffice/capSheet.ts";
 
 export const getNegotiationPids = async (tid: number) => {
 	const negotiations = await idb.cache.negotiations.getAll();
@@ -93,6 +94,7 @@ export default defineView({
 		});
 
 		return {
+			cap: await teamCapStatus(userTid),
 			capSpace,
 			draftPickAutoContract: g.get("draftPickAutoContract"),
 			numRosterSpots: g.get("maxRosterSize") - userPlayersAll.length,

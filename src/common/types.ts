@@ -3724,6 +3724,9 @@ export type TradePickValues = {
 };
 type TradeSummaryTeam = {
 	name: string;
+	// Realistic front offices' contract rules: where the trade leaves its
+	// payroll (Under the cap, Over the apron, ...).
+	capStatus?: "under" | "over" | "apron" | "hardCap";
 	ovrAfter: number;
 	ovrBefore: number;
 	payrollAfterTrade: number;

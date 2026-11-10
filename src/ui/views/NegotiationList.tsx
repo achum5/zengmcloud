@@ -14,6 +14,7 @@ import { NegotiateButtons } from "../components/NegotiateButtons.tsx";
 import { RosterComposition } from "../components/RosterComposition.tsx";
 import { RosterSalarySummary } from "../components/RosterSalarySummary.tsx";
 import { SalaryCapInfo } from "../components/SalaryCapInfo.tsx";
+import { CapStatus } from "../components/CapStatus.tsx";
 import { confirm } from "../util/confirm.tsx";
 import {
 	NegotiationModal,
@@ -300,6 +301,7 @@ const DecidedPanel = ({
 };
 
 const NegotiationList = ({
+	cap,
 	capSpace,
 	draftPickAutoContract,
 	numRosterSpots,
@@ -639,6 +641,8 @@ const NegotiationList = ({
 					be able to go over the salary cap to sign them.
 				</p>
 			) : null}
+
+			{cap ? <CapStatus cap={cap} className="mb-3" /> : null}
 
 			<RosterSalarySummary
 				capSpace={capSpace}

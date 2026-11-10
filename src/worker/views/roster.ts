@@ -1,3 +1,4 @@
+import { teamCapStatus } from "../core/realisticFrontOffice/capSheet.ts";
 import { confByCid } from "../../common/confs.ts";
 import { PHASE, POSITIONS } from "../../common/constants.ts";
 import { finances, player, season, team } from "../core/index.ts";
@@ -448,7 +449,14 @@ export default defineView({
 
 			const moreInfo = await getMoreTeamInfo(inputs.season, inputs.tid);
 
+			// Realistic front offices' contract rules: where the payroll stands.
+			const capStatus =
+				inputs.season === g.get("season")
+					? (await teamCapStatus(inputs.tid))?.status
+					: undefined;
+
 			return {
+				capStatus,
 				collegeInfo,
 				conf,
 				editable,

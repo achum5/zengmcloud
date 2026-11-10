@@ -40,6 +40,8 @@ import { HelpPopover } from "../../components/HelpPopover.tsx";
 import { SalaryCapInfo } from "../../components/SalaryCapInfo.tsx";
 import { getAdjustedTicketPrice } from "../../../common/getAdjustedTicketPrice.ts";
 import { contractValueCell } from "../../util/contractValueCell.tsx";
+import { CapStatus } from "../../components/CapStatus.tsx";
+import { ABBREVS, optionAbbrev } from "../../../common/signingHow.ts";
 
 const paddingLeft85 = { paddingLeft: 85 };
 
@@ -743,9 +745,24 @@ const highlightZeroNegative = (amount: number) => {
 	return formattedValue;
 };
 
+// Contract rules: a small marker in a cap sheet cell, spelled out on hover.
+const Mark = ({
+	className = "text-bg-light border",
+	k,
+}: {
+	className?: string;
+	k: keyof typeof ABBREVS;
+}) => (
+	<span className={`badge ${className} ms-1`} title={ABBREVS[k]}>
+		{k}
+	</span>
+);
+
 const TeamFinances = ({
 	autoTicketPrice,
 	barData,
+	cap,
+	cbaSheet,
 	contractTotals,
 	contracts,
 	draftPicks,
@@ -1065,6 +1082,7 @@ const TeamFinances = ({
 		// Loop through the salaries for the next five years for this player.
 		for (let j = 0; j < salariesSeasons.length; j++) {
 			const amount = p.amounts[j];
+			const marks = p.marks;
 			if (amount !== undefined) {
 				const formattedAmount = helpers.formatCurrency(amount, "M");
 				// Struck through when he's unchecked, so a total that no longer adds
@@ -1073,7 +1091,26 @@ const TeamFinances = ({
 					? undefined
 					: "text-body-secondary text-decoration-line-through";
 
-				if (p.released) {
+				// Contract rules: his option on the final season, a prove-it deal.
+				const finalSeason = j === p.amounts.length - 1;
+				if (marks && ((finalSeason && marks.option) || marks.proveIt)) {
+					data.push({
+						classNames,
+						value: (
+							<span className="text-nowrap">
+								{formattedAmount}
+								{finalSeason && marks.option ? (
+									<Mark k={optionAbbrev(marks.option)} />
+								) : null}
+								{marks.proveIt ? (
+									<Mark className="text-bg-warning" k="Prove-it" />
+								) : null}
+							</span>
+						),
+						sortValue: amount,
+						searchValue: formattedAmount,
+					});
+				} else if (p.released) {
 					data.push({
 						classNames,
 						value: <i>{formattedAmount}</i>,
@@ -1094,11 +1131,31 @@ const TeamFinances = ({
 				// he's checked in, when it stops being hypothetical and starts being
 				// the plan, and reads like the rest of the money on the books.
 				const projected = p.amountsProjected?.[j];
-				if (projected !== undefined) {
+				// Contract rules: the season after his deal, what he'll be - a
+				// restricted or unrestricted free agent, with Bird rights or not.
+				const after =
+					marks && j === p.amounts.length ? (
+						<>
+							<Mark k={marks.restricted ? "RFA" : "UFA"} />
+							{marks.bird ? <Mark k="Bird" /> : null}
+						</>
+					) : null;
+				if (after && projected === undefined) {
+					data.push({
+						value: <span className="text-nowrap">{after}</span>,
+						searchValue: marks?.restricted ? "RFA" : "UFA",
+					});
+				} else if (projected !== undefined) {
 					const formattedAmount = helpers.formatCurrency(projected, "M");
 					data.push({
 						classNames: projectedCounts ? "fw-bold" : "text-body-secondary",
-						value: `${formattedAmount}*`,
+						value: after ? (
+							<span className="text-nowrap">
+								{formattedAmount}*{after}
+							</span>
+						) : (
+							`${formattedAmount}*`
+						),
 						sortValue: projected,
 						searchValue: formattedAmount,
 						title: projectedCounts
@@ -1204,7 +1261,64 @@ const TeamFinances = ({
 		return { key, data: dropPlanCols(data) };
 	});
 
-	const rows = [...playerRows, ...pickRows];
+	// Contract rules: the team's own unsigned free agents, at their holds.
+	const holdRows = (cap?.holds ?? []).map((hold, j) => {
+		const data: DataTableRow["data"] = [
+			null,
+			null,
+			{
+				value: <span className="text-body-secondary">HOLD</span>,
+				sortValue: "HOLD",
+				searchValue: "HOLD",
+			},
+			{
+				value: (
+					<span className="text-nowrap">
+						<a href={helpers.leagueUrl(["player", hold.pid])}>{hold.name}</a>
+						{hold.restricted ? <Mark k="RFA" /> : null}
+						{cap?.canRenounce && tid === userTid && !spectator ? (
+							<button
+								className="btn btn-xs btn-light-bordered ms-2"
+								onClick={async () => {
+									const error = await toWorker(
+										"main",
+										"renounceFreeAgent",
+										hold.pid,
+									);
+									if (error) {
+										showNotification({ type: "error", text: error } as any);
+									}
+								}}
+								title="Give up his Bird rights and cap hold"
+							>
+								Renounce
+							</button>
+						) : null}
+					</span>
+				),
+				sortValue: hold.name,
+				searchValue: hold.name,
+			},
+			{
+				value: ((100 * hold.amount) / salaryCap).toFixed(1),
+				sortValue: (100 * hold.amount) / salaryCap,
+			},
+			null,
+			...salariesSeasons.map((_, i) =>
+				i === 0
+					? {
+							classNames: "text-body-secondary",
+							value: helpers.formatCurrency(hold.amount / 1000, "M"),
+							sortValue: hold.amount / 1000,
+							title: "Cap hold",
+						}
+					: null,
+			),
+		];
+		return { key: `hold-${j}`, data: dropPlanCols(data) };
+	});
+
+	const rows = [...playerRows, ...pickRows, ...holdRows];
 
 	// Projected salaries live alongside the committed ones rather than replacing
 	// them, so checking a player adds his to the totals without the table having
@@ -1271,7 +1385,61 @@ const TeamFinances = ({
 	const footerLead = (label: string) =>
 		dropPlanCols(["", "", "", label, "", ""]);
 
-	const footer = [
+	// Contract rules: room under the cap (after holds), the apron and the hard
+	// cap, each season.
+	const holdsTotal = (cap?.holdsTotal ?? 0) / 1000;
+	const cbaFooter = cbaSheet
+		? [
+				{
+					data: footerLead(`Totals${star}`).concat(
+						// @ts-expect-error
+						totals.map((amount) => highlightZeroNegative(amount)),
+					),
+				},
+				...(holdsTotal > 0
+					? [
+							{
+								data: footerLead("Cap Holds").concat(
+									// @ts-expect-error
+									totals.map((_, i) =>
+										i === 0 ? highlightZeroNegative(holdsTotal) : null,
+									),
+								),
+							},
+						]
+					: []),
+				{
+					data: footerLead(`Cap Space${star}`).concat(
+						// @ts-expect-error
+						totals.map((amount, i) =>
+							highlightZeroNegative(
+								capsFor(i).salaryCap / 1000 -
+									amount -
+									(i === 0 ? holdsTotal : 0),
+							),
+						),
+					),
+				},
+				{
+					data: footerLead(`Room Under Apron${star}`).concat(
+						// @ts-expect-error
+						totals.map((amount, i) =>
+							highlightZeroNegative((cbaSheet.apron[i] ?? 0) - amount),
+						),
+					),
+				},
+				{
+					data: footerLead(`Room Under Hard Cap${star}`).concat(
+						// @ts-expect-error
+						totals.map((amount, i) =>
+							highlightZeroNegative((cbaSheet.hardCap[i] ?? 0) - amount),
+						),
+					),
+				},
+			]
+		: undefined;
+
+	const footer = cbaFooter ?? [
 		{
 			data: footerLead(`Totals${star}`).concat(
 				// @ts-expect-error
@@ -1323,6 +1491,8 @@ const TeamFinances = ({
 		<>
 			<MoreLinks type="team" page="team_finances" tid={tid} />
 
+			{cap ? <CapStatus cap={cap} className="mb-3" holds={false} /> : null}
+
 			<PayrollInfo
 				luxuryTaxAmount={luxuryTaxAmount}
 				minPayrollAmount={minPayrollAmount}
@@ -1344,6 +1514,17 @@ const TeamFinances = ({
 					? " The first column counts signed salary in the totals, the second counts projected."
 					: null}
 			</p>
+
+			{cbaSheet ? (
+				<div className="mb-2 small">
+					<Mark k="PO" /> <Mark k="TO" />{" "}
+					<Mark className="text-bg-warning" k="Prove-it" /> <Mark k="UFA" />{" "}
+					<Mark k="RFA" /> <Mark k="Bird" />{" "}
+					<span className="ms-1">
+						<i>Italics</i>: dead money
+					</span>
+				</div>
+			) : null}
 
 			<DataTable
 				cols={cols}

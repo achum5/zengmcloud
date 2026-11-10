@@ -1,4 +1,11 @@
-import { getContractAmount } from "../../common/contracts.ts";
+import {
+	getContractAmount,
+	getCurrentContract,
+} from "../../common/contracts.ts";
+import { hardCapForTid } from "../../common/getHardCap.ts";
+import { cbaSettings } from "../core/realisticFrontOffice/cba.ts";
+import { teamCapStatus } from "../core/realisticFrontOffice/capSheet.ts";
+import { stagesOn } from "../core/realisticFrontOffice/stages.ts";
 import { capsForSeasons, salaryInSeason } from "../util/capsForSeasons.ts";
 import { draft, finances, team } from "../core/index.ts";
 import { idb } from "../db/index.ts";
@@ -135,6 +142,10 @@ const updateTeamFinances = async ({
 			);
 		};
 
+		// Realistic front offices' contract rules: options, prove-it deals, and
+		// what each player will be when his deal is up (cap sheet markers).
+		const rules = stagesOn();
+
 		// Convert contract objects into table rows
 		const contractTotals = Array(numSeasons).fill(0);
 		const contracts = addFirstNameShort(
@@ -173,7 +184,21 @@ const updateTeamFinances = async ({
 					}
 				}
 
+				const current =
+					rules && p && !contract.released ? getCurrentContract(p) : undefined;
+				const marks = current
+					? {
+							option: current.option,
+							proveIt: !!current.discount,
+							// The season after his deal: restricted off a rookie deal, and
+							// whether the team will hold his Bird rights.
+							restricted: current.type === "rookie",
+							bird: !current.discount,
+						}
+					: undefined;
+
 				return {
+					marks,
 					pid: contract.pid,
 					firstName: contract.firstName,
 					lastName: contract.lastName,
@@ -408,8 +433,25 @@ const updateTeamFinances = async ({
 		}
 		otherTeamTicketPrices.sort((a, b) => b - a);
 
+		// The apron and the hard cap for each column, by its season's cap.
+		const cbaSheet = rules
+			? {
+					apron: capsBySeason.map((caps) => caps.luxuryPayroll / 1000),
+					hardCap: capsBySeason.map(
+						(caps) =>
+							Math.min(
+								hardCapForTid(inputs.tid, caps),
+								caps.luxuryPayroll +
+									cbaSettings.hardCapOverTax * caps.salaryCap,
+							) / 1000,
+					),
+				}
+			: undefined;
+
 		return {
 			autoTicketPrice,
+			cap: await teamCapStatus(inputs.tid),
+			cbaSheet,
 			tid: inputs.tid,
 			show: inputs.show,
 			minPayrollAmount,

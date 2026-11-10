@@ -321,3 +321,57 @@ export const lastChoices = async () => {
 		),
 	};
 };
+
+// Every day or stage of a free agency's signings, oldest first, labeled by
+// stage - the history the Free Agents page browses. A free agency runs from
+// the end of `season` through the next regular season.
+export const choiceHistory = async (season: number) => {
+	const byKey = new Map<string, FaDayResults>();
+	try {
+		for (const row of ((await (idb.league as any).getAll("faDayResults")) ??
+			[]) as FaDayResults[]) {
+			byKey.set(row.key, row);
+		}
+	} catch {
+		// Not in the database yet.
+	}
+	for (const row of await idb.cache.faDayResults.getAll()) {
+		byKey.set(row.key, row);
+	}
+	const out: {
+		key: string;
+		label: string;
+		at: number;
+		items: Extract<FaDayResultItem, { type: "choice" }>[];
+	}[] = [];
+	for (const row of byKey.values()) {
+		const parts = row.key.split("-");
+		if (parts.length !== 3) {
+			continue;
+		}
+		const phase = Number(parts[1]);
+		const offseason = phase > PHASE.PLAYOFFS;
+		if (offseason ? row.season !== season : row.season !== season + 1) {
+			continue;
+		}
+		const items = row.items.filter(
+			(item): item is Extract<FaDayResultItem, { type: "choice" }> =>
+				item.type === "choice",
+		);
+		if (items.length === 0) {
+			continue;
+		}
+		out.push({
+			key: row.key,
+			label:
+				row.stage !== undefined
+					? STAGES[row.stage]!
+					: offseason
+						? `${row.daysLeft} ${helpers.plural("day", row.daysLeft)} left`
+						: "Season",
+			at: row.at,
+			items,
+		});
+	}
+	return out.sort((a, b) => a.at - b.at);
+};

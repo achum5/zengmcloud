@@ -19,7 +19,14 @@ import {
 	offersList,
 	stageOf,
 } from "../core/realisticFrontOffice/offerScreen.ts";
-import { inStages } from "../core/realisticFrontOffice/stages.ts";
+import {
+	inStages,
+	stageIndex,
+	STAGES,
+	stagesOn,
+} from "../core/realisticFrontOffice/stages.ts";
+import { teamCapStatus } from "../core/realisticFrontOffice/capSheet.ts";
+import { choiceHistory } from "../core/realisticFrontOffice/offerScreen.ts";
 
 const processInputs = (params: RouteParams<"freeAgents">) => {
 	if (g.get("phase") === PHASE.RESIGN_PLAYERS) {
@@ -372,9 +379,24 @@ export default defineView({
 				};
 			}
 
+			// Realistic front offices' contract rules: the team's cap status, the
+			// stages with the current one, and every stage's signings, by season.
+			const rules = stagesOn();
+			const cap =
+				rules && season === "current"
+					? await teamCapStatus(userTid)
+					: undefined;
+			const timeline = stages
+				? { names: [...STAGES], current: stageIndex() }
+				: undefined;
+			const history = rules ? await choiceHistory(freeAgencySeason) : undefined;
+
 			return {
+				cap,
 				capSpace,
 				challengeNoFreeAgents: g.get("challengeNoFreeAgents"),
+				history,
+				timeline,
 				faBoard,
 				offers,
 				freeAgencySeason,

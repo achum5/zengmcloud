@@ -13,6 +13,7 @@ import { defineView } from "../util/defineView.ts";
 const getSummaryTeam = (summary: TradeSummary, i: 0 | 1) => {
 	return {
 		name: summary.teams[i].name,
+		capStatus: summary.teams[i].capStatus,
 		ovrAfter: summary.teams[i].ovrAfter,
 		ovrBefore: summary.teams[i].ovrBefore,
 		payrollAfterTrade: summary.teams[i].payrollAfterTrade,
