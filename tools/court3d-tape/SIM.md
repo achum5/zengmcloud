@@ -112,3 +112,21 @@ own runs: hard starts, turns and stops (over 40 feet a second, a second)
 another 58% -> 35%; acts where the play has them (within 0.05 feet); off
 the play under 2 feet 99% of the time. It costs about 2.7 s on a game that
 takes 12 s to stage, and lays down 1.7 times the runs.
+
+**Step 4 begun: the man with the ball, and his man with him.** Stood on
+his dribble 1.2 s or more within 30 feet of the rim with nothing of his
+on, he works his man where he stands (probesOf): sways across him, jabs
+a step in and back, gives a step and comes again, 0.7-1.1 s a move, eased
+back to where the play has him for what comes next. The defender nearest
+him goes the same way (all of it within 7 feet, none past 12) 160-280 ms
+behind him - the first of the defense taken from what a man really does
+rather than from the runs.
+
+Measured, real games 11 and 22 (as staged -> stepped): the man with the
+ball standing 29% / 28% -> 22% / 21% of his dribbling; men setting off
+within a tenth of a second of another 58% -> 39-40%; his man turning with
+him 350-450 ms after him (as staged: at once, or 600 ms late). Against
+it: changes of direction on the move 1.1 / 1.7 a minute -> 0.8 / 1.2 -
+stepping rounds every corner, crisp cuts and crosses included. Next: let
+a man plant and cut (a turn harder than TURN when he means it: a cross, a
+cut, a jab), then the rest of the defense.

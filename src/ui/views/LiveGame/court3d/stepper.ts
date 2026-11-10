@@ -14,10 +14,15 @@
 
 import { compileCourt, type CourtTimeline, type Move } from "./director.ts";
 import { floorSpotOf } from "./evaluate.ts";
-import type { Pt } from "./geometry.ts";
+import { rimX, type Pt } from "./geometry.ts";
 import { pushFrom } from "./motion.ts";
 
 export const STEP_MS = 50;
+
+const unitVec = (a: Pt, b: Pt): Pt => {
+	const d = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+	return { x: (b.x - a.x) / d, y: (b.y - a.y) / d };
+};
 
 // A number from 0 to 1 from two others, the same every time (every device
 // stepping the same game the same way).
@@ -383,18 +388,200 @@ export const toMoves = (
 	return moves;
 };
 
+// Where a man is, step by step over a stretch of time: as a lookup between
+// the steps.
+type Path = {
+	from: number;
+	spots: (Pt | undefined)[];
+	at: (t: number) => Pt | undefined;
+};
+const pathOf = (from: number, spots: (Pt | undefined)[]): Path => ({
+	from,
+	spots,
+	at: (t) => {
+		const f = (t - from) / STEP_MS;
+		const k = Math.floor(f);
+		const a = spots[k];
+		const b = spots[k + 1];
+		if (!a || !b) {
+			return a;
+		}
+		const u = f - k;
+		return { x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u };
+	},
+});
+
+// THE MAN WITH THE BALL, WORKING HIS MAN. Stood on his dribble out on the
+// floor a while with nothing of his to do - waiting on a screen, on the set
+// - he is never planted: he sways across his man, jabs a step in at him and
+// back, gives ground a step and comes again - each move his own, a beat
+// each - eased in and out of, so he is back where the play wants him for
+// whatever comes next. (His man goes with him: see guardOf.)
+const PROBE_LEAST = 1200;
+const PROBE_EASE = 400;
+const PROBE_BEAT: [number, number] = [700, 1100];
+// (Across his man, in at him and back - feet, his own way of it.)
+const PROBE_MOVES: [number, number][] = [
+	[1.2, 0],
+	[-1.2, 0],
+	[0.3, 1.4],
+	[-0.3, 1.4],
+	[0, -1.2],
+	[0.9, 0.7],
+	[-0.9, 0.7],
+];
+const probesOf = (
+	tl: CourtTimeline,
+	pid: number,
+	laid: Path,
+	held: Spans,
+	team: 0 | 1,
+): ((t: number) => Pt) => {
+	const rim = { x: rimX(team), y: 25 };
+	// When he has it on his dribble.
+	const dribbling: [number, number][] = [];
+	tl.ball.forEach((s, k) => {
+		if (s.kind === "hold" && s.pid === pid && s.style !== "hold") {
+			dribbling.push([s.t0, tl.ball[k + 1]?.t0 ?? s.t0]);
+		}
+	});
+	const on = spansAt(dribbling);
+	// Each stretch of it he stands, nothing of his on: his moves through it.
+	const stretches: { a: number; b: number; keys: [number, Pt][]; u: Pt }[] = [];
+	let a = -1;
+	const close = (b: number) => {
+		if (a >= 0 && b - a >= PROBE_LEAST) {
+			const P = laid.at(a)!;
+			const u = unitVec(P, rim);
+			const keys: [number, Pt][] = [[a, { x: 0, y: 0 }]];
+			let t = a + PROBE_EASE;
+			let n = 0;
+			while (t < b - PROBE_EASE - 500) {
+				const r = hash01(pid * 31 + n, Math.round(t / 50));
+				const beat = PROBE_BEAT[0] + (PROBE_BEAT[1] - PROBE_BEAT[0]) * r;
+				const [across, inAt] =
+					PROBE_MOVES[
+						Math.floor(hash01(pid * 7 + n, Math.round(a)) * PROBE_MOVES.length)
+					]!;
+				keys.push([
+					t,
+					{
+						x: -u.y * across + u.x * inAt,
+						y: u.x * across + u.y * inAt,
+					},
+				]);
+				t += beat;
+				n += 1;
+			}
+			keys.push([b, { x: 0, y: 0 }]);
+			if (keys.length > 2) {
+				stretches.push({ a, b, keys, u });
+			}
+		}
+		a = -1;
+	};
+	const begin = laid.from;
+	for (let k = 0; k + 1 < laid.spots.length; k++) {
+		const t = begin + k * STEP_MS;
+		const P = laid.spots[k];
+		const Q = laid.spots[k + 1];
+		const still =
+			P !== undefined &&
+			Q !== undefined &&
+			Math.hypot(Q.x - P.x, Q.y - P.y) / (STEP_MS / 1000) < 0.7 &&
+			on.hit(t, t + STEP_MS) &&
+			!held.hit(t - 300, t + STEP_MS + 300) &&
+			Math.hypot(P.x - rim.x, P.y - rim.y) < 30;
+		if (still && a < 0) {
+			a = t;
+		} else if (!still) {
+			close(t);
+		}
+	}
+	close(begin + laid.spots.length * STEP_MS);
+	const spans = spansAt(stretches.map((x) => [x.a, x.b] as const));
+	return (t) => {
+		if (!spans.hit(t, t + 1)) {
+			return { x: 0, y: 0 };
+		}
+		let lo = 0;
+		let hi = stretches.length;
+		while (lo < hi) {
+			const mid = (lo + hi) >> 1;
+			if (stretches[mid]!.a <= t) {
+				lo = mid + 1;
+			} else {
+				hi = mid;
+			}
+		}
+		const st = stretches[lo - 1];
+		if (st && !(t < st.b)) {
+			return { x: 0, y: 0 };
+		}
+		if (!st) {
+			return { x: 0, y: 0 };
+		}
+		const k = st.keys.findIndex(([at]) => at > t);
+		const [t0, A] = st.keys[k - 1]!;
+		const [t1, B] = st.keys[k]!;
+		const u = (t - t0) / (t1 - t0);
+		const e = u * u * (3 - 2 * u);
+		return { x: A.x + (B.x - A.x) * e, y: A.y + (B.y - A.y) * e };
+	};
+};
+
+// HIS MAN WITH HIM. A defender up on a man goes where that man really goes
+// - not only where the play laid him out - a beat behind him: the man
+// he guards the nearest of the other side to where the play has him, all
+// of it the nearer they are (a step back from it in help, none of it off
+// him).
+const GUARD_FULL = 7;
+const GUARD_NONE = 12;
+const GUARD_LAG: [number, number] = [160, 280];
+
 // The whole game stepped: every man's tracks re-laid as he would really
 // move them. (In place.)
 export const stepTimeline = (tl: CourtTimeline): CourtTimeline => {
-	for (const tr of tl.tracks.values()) {
-		if (tr.pid < 0 || tr.moves.length === 0) {
-			continue;
+	const cut = spansAt(tl.cuts.map((c) => [c - STEP_MS, c] as const));
+	const men = [...tl.tracks.values()].filter(
+		(tr) => tr.pid >= 0 && tr.moves.length > 0,
+	);
+	// Where the play has each man, step by step.
+	const laid = new Map<number, Path>();
+	const helds = new Map<number, Spans>();
+	for (const tr of men) {
+		const from = Math.max(0, tr.moves[0]!.t0 - 1000);
+		const until = tr.moves.at(-1)!.t1 + 1000 + LOOK_MOST * 1000;
+		const spots: (Pt | undefined)[] = [];
+		for (let t = from; t <= until; t += STEP_MS) {
+			spots.push(floorSpotOf(tr, t));
 		}
-		const held = spansAt(tr.acts.map((x) => [x.t0, x.t1] as const));
-		const cut = spansAt(tl.cuts.map((c) => [c - STEP_MS, c] as const));
-		// (Only while he is out on the floor.)
+		laid.set(tr.pid, pathOf(from, spots));
+		helds.set(tr.pid, spansAt(tr.acts.map((x) => [x.t0, x.t1] as const)));
+	}
+	// Who has the ball, from when.
+	const offenseAt = (t: number): 0 | 1 => {
+		let lo = 0;
+		let hi = tl.poss.length;
+		while (lo < hi) {
+			const mid = (lo + hi) >> 1;
+			if (tl.poss[mid]![0] <= t) {
+				lo = mid + 1;
+			} else {
+				hi = mid;
+			}
+		}
+		return lo > 0 ? tl.poss[lo - 1]![1] : 1;
+	};
+	// Each man stepped after what he wants, over his stretches on the floor.
+	const step = (
+		tr: (typeof men)[number],
+		want: (t: number) => Pt | undefined,
+	) => {
+		const L = laid.get(tr.pid)!;
+		const held = helds.get(tr.pid)!;
 		const samples: Sample[] = [];
-		const begin = Math.max(0, tr.moves[0]!.t0 - 1000);
+		const begin = L.from;
 		const end = tr.moves.at(-1)!.t1 + 1000;
 		tr.shown.forEach(([at, on], k) => {
 			const from = Math.max(begin, at);
@@ -402,28 +589,8 @@ export const stepTimeline = (tl: CourtTimeline): CourtTimeline => {
 			if (!on || !(until > from)) {
 				return;
 			}
-			// (Where the play has him, worked out once a step - and between
-			// two steps, a straight line.)
-			const n = Math.ceil(
-				(until - from + LOOK_MOST * 1000 + 2 * STEP_MS) / STEP_MS,
-			);
-			const spots: (Pt | undefined)[] = [];
-			for (let k = 0; k <= n; k++) {
-				spots.push(floorSpotOf(tr, from + k * STEP_MS));
-			}
-			const wantAt = (t: number): Pt | undefined => {
-				const f = (t - from) / STEP_MS;
-				const k = Math.floor(f);
-				const a = spots[k];
-				const b = spots[k + 1];
-				if (!a || !b) {
-					return a ?? (k >= 0 ? floorSpotOf(tr, t) : undefined);
-				}
-				const u = f - k;
-				return { x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u };
-			};
 			for (const q of follow(
-				wantAt,
+				want,
 				from,
 				until - 1,
 				held,
@@ -436,6 +603,59 @@ export const stepTimeline = (tl: CourtTimeline): CourtTimeline => {
 				samples.push(q);
 			}
 		});
+		return samples;
+	};
+	// Each with the ball working his own way (see probesOf).
+	const probes = new Map<number, (t: number) => Pt>();
+	for (const tr of men) {
+		probes.set(
+			tr.pid,
+			probesOf(tl, tr.pid, laid.get(tr.pid)!, helds.get(tr.pid)!, tr.team),
+		);
+	}
+	// And on defense, each with his man as his man really goes.
+	for (const tr of men) {
+		const L = laid.get(tr.pid)!;
+		const probe = probes.get(tr.pid)!;
+		const lag =
+			GUARD_LAG[0] + (GUARD_LAG[1] - GUARD_LAG[0]) * hash01(tr.pid * 13 + 5, 1);
+		const wantNow = (t: number) => {
+			const P = L.at(t);
+			if (!P) {
+				return P;
+			}
+			if (offenseAt(t) === tr.team) {
+				const o = probe(t);
+				return { x: P.x + o.x, y: P.y + o.y };
+			}
+			let man: number | undefined;
+			let d = GUARD_NONE;
+			for (const o of men) {
+				if (o.team === tr.team) {
+					continue;
+				}
+				const Q = laid.get(o.pid)!.at(t);
+				const g = Q ? Math.hypot(Q.x - P.x, Q.y - P.y) : Infinity;
+				if (g < d) {
+					d = g;
+					man = o.pid;
+				}
+			}
+			if (man === undefined) {
+				return P;
+			}
+			const went = probes.get(man)!(t - lag);
+			const w = Math.min(
+				1,
+				Math.max(0, (GUARD_NONE - d) / (GUARD_NONE - GUARD_FULL)),
+			);
+			return { x: P.x + went.x * w, y: P.y + went.y * w };
+		};
+		const want = pathOf(
+			L.from,
+			L.spots.map((_, k) => wantNow(L.from + k * STEP_MS)),
+		).at;
+		const samples = step(tr, want);
 		const old = tr.moves;
 		const animAt = (t: number) => {
 			let lo = 0;
@@ -453,9 +673,11 @@ export const stepTimeline = (tl: CourtTimeline): CourtTimeline => {
 		};
 		// (Off the floor, where it had him: the runs it laid there stay.)
 		const off = old.filter((m) => !floorSpotOf(tr, (m.t0 + m.t1) / 2));
-		tr.moves = [...toMoves(samples, animAt, held), ...off].sort(
+		tr.moves = [...toMoves(samples, animAt, helds.get(tr.pid)!), ...off].sort(
 			(a, b) => a.t0 - b.t0,
 		);
+	}
+	for (const tr of men) {
 		delete tr.nudges;
 		delete tr.sep;
 	}

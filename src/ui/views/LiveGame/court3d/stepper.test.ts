@@ -96,4 +96,66 @@ describe("3D: the ten stepped", () => {
 		assert.isAbove(n, 1000);
 		assert.isBelow(hard / n, 0.01);
 	});
+
+	test("the man with the ball works his man where he stands - and his man goes with him", () => {
+		let probes = 0;
+		let followed = 0;
+		for (const tr of laid.tracks.values()) {
+			if (tr.pid < 0) {
+				continue;
+			}
+			const st = stepped.tracks.get(tr.pid)!;
+			for (let t = 0; t < laid.end; t += 200) {
+				const A = floorSpotOf(tr, t);
+				const B = floorSpotOf(st, t);
+				const A0 = floorSpotOf(tr, t - 300);
+				const A1 = floorSpotOf(tr, t + 300);
+				const ball = laid.ball.findLast((s) => s.t0 <= t);
+				if (
+					!A ||
+					!B ||
+					!A0 ||
+					!A1 ||
+					ball?.kind !== "hold" ||
+					ball.pid !== tr.pid ||
+					// (Where the play has him standing.)
+					Math.hypot(A1.x - A0.x, A1.y - A0.y) > 0.3 ||
+					Math.hypot(B.x - A.x, B.y - A.y) < 0.8
+				) {
+					continue;
+				}
+				// Off where the play had him, working his man: the nearest of
+				// theirs off where the play had him the same way, a beat on.
+				probes += 1;
+				const dx = B.x - A.x;
+				const dy = B.y - A.y;
+				let near: number | undefined;
+				let nd = 7;
+				for (const o of laid.tracks.values()) {
+					if (o.pid < 0 || o.team === tr.team) {
+						continue;
+					}
+					const Q = floorSpotOf(o, t);
+					if (Q && Math.hypot(Q.x - A.x, Q.y - A.y) < nd) {
+						nd = Math.hypot(Q.x - A.x, Q.y - A.y);
+						near = o.pid;
+					}
+				}
+				if (near === undefined) {
+					continue;
+				}
+				const C = floorSpotOf(laid.tracks.get(near)!, t + 300);
+				const D = floorSpotOf(stepped.tracks.get(near)!, t + 300);
+				if (
+					C &&
+					D &&
+					((D.x - C.x) * dx + (D.y - C.y) * dy) / Math.hypot(dx, dy) > 0.3
+				) {
+					followed += 1;
+				}
+			}
+		}
+		assert.isAbove(probes, 30);
+		assert.isAbove(followed / probes, 0.5);
+	});
 });
