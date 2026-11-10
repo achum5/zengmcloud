@@ -1243,7 +1243,7 @@ const STEP = 250;
 // How hard he goes after his place (a second), how fast he can run (feet a
 // second) and how quickly he gets going (feet a second, a second).
 const REF_GAIN = 1.8;
-const REF_RUN = 24;
+const REF_RUN = 22;
 const REF_ACCEL = 20;
 type Places = { at: Pt[] };
 // Round the edge of the floor, not across it: from the sideline down to the

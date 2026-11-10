@@ -1,6 +1,9 @@
-import type { CourtInput, CourtTimeline } from "./director.ts";
+import {
+	compileCourt,
+	type CourtInput,
+	type CourtTimeline,
+} from "./director.ts";
 import { makeStager } from "./stager.ts";
-import { stageGame } from "./stepper.ts";
 
 // The game staged in a worker of its own (src/court) - see stager.ts.
 
@@ -14,7 +17,7 @@ export const spawnCourtWorker = () =>
 	);
 
 const staged: (input: CourtInput) => Promise<CourtTimeline> = makeStager({
-	compile: stageGame,
+	compile: compileCourt,
 	spawn: spawnCourtWorker,
 	what: "court",
 });

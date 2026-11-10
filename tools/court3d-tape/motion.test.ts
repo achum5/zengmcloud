@@ -28,7 +28,6 @@ import {
 	fastAt,
 } from "../../src/ui/views/LiveGame/court3d/evaluate.ts";
 import { rimX } from "../../src/ui/views/LiveGame/court3d/geometry.ts";
-import { stepTimeline } from "../../src/ui/views/LiveGame/court3d/stepper.ts";
 
 const games = (process.env.MOTION_GAMES ?? "").split(",").filter(Boolean);
 type Pt = { x: number; y: number };
@@ -143,18 +142,32 @@ export const measure = (tl: CourtTimeline) => {
 		}
 	}
 	// Lockstep: moments two or more men set off from standing within a tenth
-	// of a second of each other, out of all setting off.
+	// of a second of each other, out of all setting off - each read off
+	// where he is (stood a third of a second, then going), however his runs
+	// are laid down.
 	const starts: number[] = [];
 	for (const tr of tl.tracks.values()) {
 		if (tr.pid < 0) {
 			continue;
 		}
-		for (const m of tr.moves) {
-			if (m.v0 === 0 || m.v0 === undefined) {
-				const before = tr.moves.find((x) => x.t1 > m.t0 - 300 && x.t1 <= m.t0);
-				if (!before && fastAt(tl, m.t0) <= 1.01 && dist(m.from, m.to) > 2) {
-					starts.push(m.t0);
+		let still = 0;
+		let prev: { x: number; y: number; shown: boolean } | undefined;
+		for (let t = 0; t < tl.end; t += 50) {
+			const P = evalPlayer(tl, tr.pid, t);
+			if (!P.shown || fastAt(tl, t) > 1.01 || !prev?.shown) {
+				still = 0;
+				prev = P;
+				continue;
+			}
+			const v = dist(P, prev) * 20;
+			prev = P;
+			if (v < 0.6) {
+				still += 50;
+			} else {
+				if (still >= 300 && v > 1.5) {
+					starts.push(t);
 				}
+				still = 0;
 			}
 		}
 	}
@@ -300,8 +313,12 @@ test.skipIf(games.length === 0)(
 		const rows: string[] = [];
 		for (const g of games) {
 			const { events, players } = JSON.parse(readFileSync(g, "utf8"));
-			const laid = compileCourt({ events, players, gid: 1 });
-			const tl = process.env.MOTION_STEP ? stepTimeline(laid) : laid;
+			const tl = compileCourt({
+				events,
+				players,
+				gid: 1,
+				step: !!process.env.MOTION_STEP,
+			});
 			rows.push(`${g.split("/").at(-1)} ${JSON.stringify(measure(tl))}`);
 		}
 		const out = rows.join("\n");

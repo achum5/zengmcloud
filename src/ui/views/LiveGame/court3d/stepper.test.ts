@@ -1,8 +1,9 @@
 import { assert, describe, test } from "vitest";
 import { evalPlayer, fastAt, floorSpotOf } from "./evaluate.ts";
 import { rimX } from "./geometry.ts";
-import { follow, stepTimeline } from "./stepper.ts";
-import { compile } from "./testGame.ts";
+import { compileCourt } from "./director.ts";
+import { follow } from "./stepper.ts";
+import { fakeGame, gidOf } from "./testGame.ts";
 
 describe("3D: a man stepped", () => {
 	test("a cut is run to the corner, planted and gone - not rounded off", () => {
@@ -35,8 +36,9 @@ describe("3D: a man stepped", () => {
 
 describe("3D: the ten stepped", () => {
 	// (One game, laid out twice: as the director has it, and stepped.)
-	const laid = compile("a", 60).tl;
-	const stepped = stepTimeline(compile("a", 60).tl);
+	const game = fakeGame("a", 60);
+	const laid = compileCourt({ ...game, gid: gidOf("a") });
+	const stepped = compileCourt({ ...game, gid: gidOf("a"), step: true });
 
 	test("the play is where and when it was: every act where the director has it", () => {
 		let acts = 0;
@@ -60,9 +62,11 @@ describe("3D: the ten stepped", () => {
 		assert.isAbove(acts, 500);
 		errs.sort((x, y) => x - y);
 		// (To a hair: the runs it is laid down as bend a little less than the
-		// steps do - see KNOT_PINNED.)
+		// steps do - see KNOT_PINNED. Up against a man, though - a contest,
+		// a box-out, a screen, a foul - he is kept off that man where that
+		// man really is, after: a foot or so off, now and then.)
 		assert.isBelow(errs[Math.floor(errs.length * 0.95)]!, 0.05);
-		assert.isBelow(errs.at(-1)!, 0.1);
+		assert.isBelow(errs[Math.floor(errs.length * 0.99)]!, 1);
 		assert.deepEqual(
 			stepped.beats.map((b) => [b.i, b.actionStart]),
 			laid.beats.map((b) => [b.i, b.actionStart]),
@@ -71,7 +75,8 @@ describe("3D: the ten stepped", () => {
 
 	test("stepped, a man is never far off where the play wants him", () => {
 		// (Off it while he takes a beat to react, and catches up: a step or
-		// two at most.)
+		// two at most - and the moves of his own it has him make on top of
+		// it, round the arc, a crossover, his man's with him: a few feet.)
 		const off: number[] = [];
 		for (const tr of laid.tracks.values()) {
 			if (tr.pid < 0) {
@@ -89,7 +94,7 @@ describe("3D: the ten stepped", () => {
 		off.sort((a, b) => a - b);
 		assert.isAbove(off.length, 1000);
 		assert.isBelow(off[Math.floor(off.length * 0.5)]!, 0.4);
-		assert.isBelow(off[Math.floor(off.length * 0.99)]!, 3);
+		assert.isBelow(off[Math.floor(off.length * 0.99)]!, 4);
 	});
 
 	test("stepped, nobody gets going, turns or pulls up harder than a man can", () => {

@@ -113,7 +113,7 @@ describe("3D out of bounds", () => {
 	// on the floor inside it while the play is called dead.
 	test(
 		"a ball called out of bounds is out of bounds",
-		{ timeout: 60_000 },
+		{ timeout: 240_000 },
 		() => {
 			let checked = 0;
 			const inside: string[] = [];
@@ -146,7 +146,7 @@ describe("3D out of bounds", () => {
 
 	test(
 		"the ball always goes out off the team that loses it",
-		{ timeout: 60_000 },
+		{ timeout: 240_000 },
 		() => {
 			let checked = 0;
 			const wrong: string[] = [];

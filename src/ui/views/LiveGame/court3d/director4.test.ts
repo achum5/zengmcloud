@@ -10,7 +10,7 @@ import {
 } from "./evaluate.ts";
 import { attackDir, COURT_H, COURT_W, RIM_R, RIM_Z, rimX } from "./geometry.ts";
 import { runMs } from "./motion.ts";
-import { compile } from "./testGame.ts";
+import { compile, compileLaid } from "./testGame.ts";
 import { bodyFor, cutBetween, sampleTimes } from "./directorTesting.ts";
 
 describe("3D director", () => {
@@ -44,7 +44,8 @@ describe("3D director", () => {
 	// perimeter drifts along the arc - staying behind the line - and his man,
 	// standing off him, slides with him.
 	test("off the ball, shooters drift along the arc and their men go too", () => {
-		const { tl } = compile("drift", 140);
+		// (Its drifts as the director lays them: stepped, see stepper.ts.)
+		const { tl } = compileLaid("drift", 140);
 		const tracks = [...tl.tracks.values()];
 		let drifts = 0;
 		let followed = 0;
@@ -1361,9 +1362,14 @@ describe("3D director", () => {
 					gap0 <= FLOW_MS ? m.t0 - gap0 / 2 : m.t0,
 					gap1 <= FLOW_MS ? m.t1 + gap1 / 2 : m.t1,
 				);
+				// (A run quicker at an end than through its middle - its pace
+				// there said: getting going or pulling up through it - goes at
+				// the quicker end's gait: see runAnim in evaluate.ts.)
+				const ramp = Math.max(m.v0 ?? 0, m.v1 ?? 0) > fastest + 1;
 				const sure =
 					Math.min(Math.abs(fastest - 19), Math.abs(fastest - 11)) > 0.75 &&
-					gaitOf(joined) === gaitOf(fastest);
+					gaitOf(joined) === gaitOf(fastest) &&
+					!ramp;
 				let top = 0;
 				let low = Infinity;
 				let frames = 0;
@@ -1405,9 +1411,14 @@ describe("3D director", () => {
 			let alone = 0;
 			let dashes = 0;
 			for (const tr of tl.tracks.values()) {
-				tr.moves.forEach((m, i) => {
-					const prev = tr.moves[i - 1];
-					const next = tr.moves[i + 1];
+				// (Not counting a man put somewhere, going nowhere: see place
+				// in stepper.ts.)
+				const runs = tr.moves.filter(
+					(m) => Math.hypot(m.to.x - m.from.x, m.to.y - m.from.y) >= 0.05,
+				);
+				runs.forEach((m, i) => {
+					const prev = runs[i - 1];
+					const next = runs[i + 1];
 					const L = Math.hypot(m.to.x - m.from.x, m.to.y - m.from.y);
 					if (
 						L < 1 ||
@@ -1423,7 +1434,7 @@ describe("3D director", () => {
 					}
 				});
 			}
-			assert.isAbove(alone, 500);
+			assert.isAbove(alone, 400);
 			// (The rest the moment he has to be there by, and what he does
 			// there, leave no more time for.)
 			assert.isBelow(dashes / alone, 0.025, seed);

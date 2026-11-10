@@ -143,11 +143,30 @@ on the move 1.1 / 1.7 -> 3.0 / 3.4 a minute; men off the ball standing
 another 58% -> 35%; defenders matching their man's changes of direction
 best 250-300 ms after him as staged, 200-300 stepped.
 
-**The switch** (stageCourt.ts): `court3dStep` = "1" in a device's local
-storage stages its games stepped (stageGame). COURT3D_STEP=1 steps every
-test game (testGame.ts compile) - the suite run that way is the list of
-what stepping still breaks.
+**Where it runs** (2026-11-10): inside the director, last thing before
+men are kept off each other (`compileCourt({ ..., step: true })`: see
+finish in director.ts). Everything the director lays out first is what the
+stepper follows; then keepApart, passBy, aroundTheMan and keepOff keep the
+stepped men off each other, round screens and out of the ball's way, and the
+passes after them (contests in sight, the foul drawn...) see where the
+stepped men are. (Run on a finished game instead, as at first, it left men
+through screens and in each other.)
 
-Next: what the suite run stepped says (the strides on stepped runs first:
-footwork, sprint and short-run checks), the rest of the defense (help,
-rotations), then the cost (stepping adds about a third to staging).
+Also since: stops set crisply (not crept up on); a man late for an act of
+his eased onto it over as long as it takes at 8 feet a second quicker, not
+lunged at; nobody laid down a run across a gap off the floor; men kept
+inside the lines wherever the play has them inside; getting open only with
+the ball live in a man's hands (not on the lane at a free throw); his beat
+to react taken from the first moment the play moves him (no creep and
+stop); runs laid as straight as 0.4 feet allows, a short pull-up laid as the
+end of the run before it - so the court shortens his strides into a stop
+over a stride, not in a frame.
+
+**The switch** (stageCourt.ts): `court3dStep` = "1" in a device's local
+storage stages its games stepped. COURT3D_STEP=1 steps every test game
+(testGame.ts compile; compileLaid is the director's alone, for the tests
+of what it decides itself) - the suite run that way is the list of what
+stepping still breaks.
+
+Next: switch it on for everybody; then what it costs (about a third more
+staging time), and the rest of the defense (help, rotations).

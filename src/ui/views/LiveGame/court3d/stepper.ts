@@ -12,14 +12,9 @@
 // one it laid out, less what no man could do (a lurch, a corner turned on
 // the spot at a run). What each man wants comes next, a part at a time.
 
-import {
-	compileCourt,
-	type CourtInput,
-	type CourtTimeline,
-	type Move,
-} from "./director.ts";
+import type { CourtTimeline, Move } from "./director.ts";
 import { floorSpotOf } from "./evaluate.ts";
-import { COURT_W, inPlay, rimX, type Pt } from "./geometry.ts";
+import { COURT_H, COURT_W, inPlay, rimX, type Pt } from "./geometry.ts";
 import { RIM_INSET } from "../courtSpots.ts";
 import { alongShape, pushFrom, runShape } from "./motion.ts";
 
@@ -66,6 +61,8 @@ const REACT_ROOM = 1500;
 // other, his own each time.
 const REACT_MS: [number, number] = [60, 320];
 const REACT_PACE = 8;
+// (Seeing it this far (ms) ahead.)
+const REACT_SEE = 150;
 // Fastest anybody goes (feet a second).
 const TOP = 30;
 // Further off where the play wants him than this (feet), something has
@@ -102,6 +99,12 @@ const CORNER_AT = 0.6;
 const CORNER_LATE = 400;
 
 type Sample = { t: number; x: number; y: number; vx: number; vy: number };
+
+// (Of the game, what stepping it goes by.)
+type Stepped = Pick<
+	CourtTimeline,
+	"tracks" | "ball" | "poss" | "cuts" | "beats" | "end"
+>;
 
 // When something of his is going on - his acts, the picture's cuts - as
 // stretches of time.
@@ -323,14 +326,27 @@ export const follow = (
 		// - unless something of his is coming up soon that he has to be in
 		// time for.
 		const due0 = held.next(t);
-		if (Math.hypot(vx, vy) < 1 && Math.hypot(wx, wy) > 2) {
+		// (How fast the play has him going over the moment to come: setting
+		// off, it eases him in - the first step of it is not yet going.)
+		const soon = want(t + REACT_SEE) ?? W;
+		const going = Math.max(
+			Math.hypot(wx, wy),
+			(Math.hypot(soon.x - W.x, soon.y - W.y) * 1000) / REACT_SEE,
+		);
+		if (Math.hypot(vx, vy) < 1 && going > 0.5) {
 			if (!off) {
 				// (Sent off flat out, he goes the quicker: his beat to react
 				// shorter the faster the play has him going.)
-				const lag = lagAt(t) * Math.min(1, REACT_PACE / Math.hypot(wx, wy));
-				off = due0 - t > lag + REACT_ROOM ? { t, lag } : { t, lag: 0 };
+				const lag = lagAt(t) * Math.min(1, REACT_PACE / Math.max(going, 2));
+				// (Counted from when the play really has him going - seen
+				// coming, he is stood still till then all the same.)
+				const from = Math.hypot(wx, wy) > 0.5 ? t : t + REACT_SEE;
+				off =
+					due0 - from > lag + REACT_ROOM
+						? { t: from, lag }
+						: { t: from, lag: 0 };
 			}
-		} else if (Math.hypot(wx, wy) < 0.5) {
+		} else if (going < 0.5) {
 			off = undefined;
 		}
 		if (off && t - off.t < off.lag) {
@@ -516,11 +532,13 @@ export const toMoves = (
 		// than a hair off it, his pace only getting quicker or only slower
 		// along it (how the court lays a run out - see runShape), and none
 		// too long.
-		// (Not across a jump - the picture cutting: he is just there.)
+		// (Not across a jump - the picture cutting: he is just there - nor
+		// a gap, off the floor between: he is back, there.)
 		if (
+			s[i + 1]!.t - s[i]!.t > STEP_MS + 1 ||
 			Math.hypot(s[i + 1]!.x - s[i]!.x, s[i + 1]!.y - s[i]!.y) /
 				((s[i + 1]!.t - s[i]!.t) / 1000) >
-			TOP * 1.2
+				TOP * 1.2
 		) {
 			i += 1;
 			place(s[i]!);
@@ -717,7 +735,7 @@ const ROUTE_CROSS = 0.65;
 // (All of it within this far of the rim, feet.)
 const WORK_NEAR = 40;
 const probesOf = (
-	tl: CourtTimeline,
+	tl: Stepped,
 	pid: number,
 	laid: Path,
 	held: Spans,
@@ -888,7 +906,7 @@ const ARC_LEAST = 6;
 const ARC_DEEPEST = 4;
 const arcsOf = (
 	tr: { moves: Move[]; team: 0 | 1; pid: number },
-	tl: CourtTimeline,
+	tl: Stepped,
 	laid: Path,
 	held: Spans,
 	offenseAt: (t: number) => 0 | 1,
@@ -971,12 +989,15 @@ const OPEN_SPOTS: [number, number][] = [
 	[0, 1.3],
 ];
 const openingsOf = (
-	tl: CourtTimeline,
+	tl: Stepped,
 	pid: number,
 	laid: Path,
 	held: Spans,
 	team: 0 | 1,
 	offenseAt: (t: number) => 0 | 1,
+	// (When the ball is in play: in a man's hands on the floor, not at a
+	// free throw.)
+	live: Spans,
 ): Offsets => {
 	const rim = { x: rimX(team), y: 25 };
 	const beyond = (p: Pt) => beyondArc(team, p);
@@ -1053,6 +1074,7 @@ const openingsOf = (
 			Q !== undefined &&
 			Math.hypot(Q.x - P.x, Q.y - P.y) / (STEP_MS / 1000) < 0.7 &&
 			offenseAt(t) === team &&
+			live.hit(t, t + STEP_MS) &&
 			!mine.hit(t - 300, t + STEP_MS + 300) &&
 			!held.hit(t - 600, t + STEP_MS + 600) &&
 			Math.hypot(P.x - rim.x, P.y - rim.y) < OPEN_NEAR;
@@ -1086,7 +1108,7 @@ const REACT_RAMP = 600;
 
 // The whole game stepped: every man's tracks re-laid as he would really
 // move them. (In place.)
-export const stepTimeline = (tl: CourtTimeline): CourtTimeline => {
+export const stepTimeline = <T extends Stepped>(tl: T): T => {
 	const cut = spansAt(tl.cuts.map((c) => [c - STEP_MS, c] as const));
 	const men = [...tl.tracks.values()].filter(
 		(tr) => tr.pid >= 0 && tr.moves.length > 0,
@@ -1152,6 +1174,32 @@ export const stepTimeline = (tl: CourtTimeline): CourtTimeline => {
 		});
 		return samples;
 	};
+	// When the ball is in play: in a man's hands on the floor (not taking
+	// it in from out of bounds), not at a free throw.
+	const ft = spansAt(
+		tl.beats.flatMap((b, k) =>
+			b.type === "ft" || b.type === "missFt"
+				? [[b.preStart, tl.beats[k + 1]?.preStart ?? tl.end] as const]
+				: [],
+		),
+	);
+	const live = spansAt(
+		tl.ball.flatMap((s, k) => {
+			if (s.kind !== "hold") {
+				return [];
+			}
+			const end = tl.ball[k + 1]?.t0 ?? s.t0;
+			const P = laid.get(s.pid)?.at(s.t0);
+			return P &&
+				P.x > 0 &&
+				P.x < COURT_W &&
+				P.y > 0 &&
+				P.y < COURT_H &&
+				!ft.hit(s.t0, end)
+				? [[s.t0, end] as const]
+				: [];
+		}),
+	);
 	// Each with the ball working his own way (see probesOf), and each off
 	// it getting open (openingsOf).
 	const probes = new Map<number, (t: number) => Pt>();
@@ -1162,7 +1210,7 @@ export const stepTimeline = (tl: CourtTimeline): CourtTimeline => {
 		const L = laid.get(tr.pid)!;
 		const held = helds.get(tr.pid)!;
 		const probe = probesOf(tl, tr.pid, L, held, tr.team);
-		const open = openingsOf(tl, tr.pid, L, held, tr.team, offenseAt);
+		const open = openingsOf(tl, tr.pid, L, held, tr.team, offenseAt, live);
 		const arc = arcsOf(tr, tl, L, held, offenseAt);
 		probes.set(tr.pid, (t) => {
 			const a = probe(t);
@@ -1249,7 +1297,20 @@ export const stepTimeline = (tl: CourtTimeline): CourtTimeline => {
 			L.from,
 			L.spots.map((_, k) => wantNow(L.from + k * STEP_MS)),
 		).at;
-		const samples = step(tr, want, (t) => (behind(t) > 0 ? 0 : LOOK_MOST));
+		const samples: Sample[] = step(tr, want, (t) =>
+			behind(t) > 0 ? 0 : LOOK_MOST,
+		);
+		// (Inside the lines wherever the play has him inside them - and on
+		// the floor of the place, out by the benches, wherever.)
+		for (const q of samples) {
+			q.x = Math.min(COURT_W + 3.9, Math.max(-3.9, q.x));
+			q.y = Math.min(COURT_H + 3.9, Math.max(-8.4, q.y));
+			const P = L.at(q.t);
+			if (P && P.x >= 0 && P.x <= COURT_W && P.y >= 0 && P.y <= COURT_H) {
+				q.x = Math.min(COURT_W, Math.max(0, q.x));
+				q.y = Math.min(COURT_H, Math.max(0, q.y));
+			}
+		}
 		const old = tr.moves;
 		const animAt = (t: number) => {
 			let lo = 0;
@@ -1276,10 +1337,4 @@ export const stepTimeline = (tl: CourtTimeline): CourtTimeline => {
 		delete tr.sep;
 	}
 	return tl;
-};
-
-// A game staged - and stepped, if it says so.
-export const stageGame = (input: CourtInput): CourtTimeline => {
-	const tl = compileCourt(input);
-	return input.step ? stepTimeline(tl) : tl;
 };

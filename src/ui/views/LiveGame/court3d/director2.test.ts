@@ -24,8 +24,7 @@ import {
 	runsOn,
 } from "./clock.ts";
 import { attackDir, COURT_H, COURT_W, rimX } from "./geometry.ts";
-import { stageGame } from "./stepper.ts";
-import { compile, fakeGame, gidOf, stepped } from "./testGame.ts";
+import { compile, compileLaid, fakeGame, gidOf, stepped } from "./testGame.ts";
 import { finishOf } from "../../../util/liveGameWording.basketball.ts";
 import { bodyFor, cutBetween, sampleTimes } from "./directorTesting.ts";
 
@@ -37,7 +36,7 @@ describe("3D director", () => {
 		compile("another game in between");
 		// (IndexedDB stores a structured clone.)
 		const saved = structuredClone(live.events);
-		const again = stageGame({
+		const again = compileCourt({
 			events: saved,
 			players: live.players,
 			gid: gidOf("replay"),
@@ -951,7 +950,8 @@ describe("3D director", () => {
 		let drives = 0;
 		const along: string[] = [];
 		for (const seed of ["a", "b", "c", "d"]) {
-			const { tl } = compile(seed, 150);
+			// (Its drives as the director lays them.)
+			const { tl } = compileLaid(seed, 150);
 			const tracks = [...tl.tracks.values()];
 			for (const tr of tracks) {
 				const mates = tracks.filter((o) => o !== tr && o.team === tr.team);

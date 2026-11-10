@@ -132,6 +132,7 @@ import {
 	spotXY,
 } from "./plays.ts";
 import { BREAK_SHARE } from "./nbaRates.ts";
+import { stepTimeline } from "./stepper.ts";
 import {
 	callOrder,
 	INTRO_CALL,
@@ -2961,6 +2962,9 @@ class Director {
 	private readonly events: RawEvent[];
 	private readonly gid: number | undefined;
 	private readonly gender: "female" | "male";
+	// Every man moved a step at a time before he is kept off the rest (see
+	// stepper.ts).
+	private readonly step: boolean;
 
 	constructor(
 		events: RawEvent[],
@@ -2969,7 +2973,9 @@ class Director {
 		gender: "female" | "male",
 		intro?: "regular" | "playoffs",
 		stakes?: Stakes,
+		step = false,
 	) {
+		this.step = step;
 		this.events = events;
 		this.gid = gid;
 		this.gender = gender;
@@ -30164,6 +30170,19 @@ class Director {
 		this.ease();
 		this.clearTheWayIn();
 		const fast = hurried(this.fast, this.beats);
+		// Every man moved the way a man moves, a step at a time, following
+		// all that - then kept off each other, the ball's way kept clear and
+		// the rest, as he goes.
+		if (this.step) {
+			stepTimeline({
+				tracks: this.tracks,
+				ball: this.ball,
+				poss: this.poss,
+				cuts: this.cuts,
+				beats: this.beats,
+				end: this.T,
+			});
+		}
 		this.keepApart(fast);
 		this.passBy(fast);
 		this.aroundTheMan(fast);
@@ -30389,7 +30408,7 @@ export type CourtInput = {
 	// stood, who boxed out) and picks the play-by-play's wording.
 	gid: number | undefined;
 	gender?: "female" | "male";
-	// Every man then moved a step at a time (see stepper.ts, stageGame).
+	// Every man moved a step at a time (see stepper.ts).
 	step?: boolean;
 };
 
@@ -30400,8 +30419,9 @@ export const compileCourt = ({
 	gender = "male",
 	intro,
 	stakes,
+	step,
 }: CourtInput): CourtTimeline => {
-	const d = new Director(events, players, gid, gender, intro, stakes);
+	const d = new Director(events, players, gid, gender, intro, stakes, step);
 	for (let i = 0; i < events.length; i++) {
 		const e = events[i];
 		if (!e || typeof e.type !== "string") {
