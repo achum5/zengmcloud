@@ -1,6 +1,7 @@
 import clsx from "clsx";
 import { useEffect, useRef, useState } from "react";
 import { roundContract } from "../../common/roundContract.ts";
+import { chancePercent } from "../../common/signingHow.ts";
 import type api from "../../worker/api/index.ts";
 import { helpers } from "../util/helpers.ts";
 import { useLocal } from "../util/local.ts";
@@ -30,9 +31,7 @@ export const formatOfferAmount = (amount: number) =>
 	helpers.formatCurrency(amount / 1000, "M");
 
 export const formatChance = (chance: number | undefined) =>
-	chance === undefined
-		? "…"
-		: `${chance > 0 && chance < 0.01 ? "<1" : Math.round(chance * 100)}%`;
+	chance === undefined ? "…" : chancePercent(chance);
 
 // One step of the - and + buttons: 5% of his ask for the length.
 export const offerStep = (ask: number, minContract: number) =>

@@ -2891,6 +2891,41 @@ const decideReSigningOffers = async () => {
 	return decided;
 };
 
+// Submit the user's offer to one of his own players: one chance, decided at
+// once on the odds shown.
+const submitReSigningOffer = async ({
+	pid,
+	amount,
+	exp,
+}: {
+	pid: number;
+	amount: number;
+	exp: number;
+}) => {
+	if (!realisticFreeAgencyOn()) {
+		return "Not available in this league.";
+	}
+	if (lock.get("gameSim")) {
+		return "Stop game simulation first.";
+	}
+	const userTid = g.get("userTid");
+	const error = await realisticFrontOfficeMakeOffer(userTid, {
+		pid,
+		amount: helpers.roundContract(amount),
+		exp,
+	});
+	if (error !== undefined) {
+		return error;
+	}
+	const decided = await realisticFrontOfficeDecideReSignings(userTid, pid);
+	if (decided.some((row) => row.signed)) {
+		await contractNegotiation.afterAccept(userTid);
+	} else {
+		await toUI("realtimeUpdate", [["playerMovement"]]);
+	}
+	return decided;
+};
+
 const getNegotiationProps = async (pid: number) => {
 	const userTid = g.get("userTid");
 
@@ -8549,6 +8584,7 @@ const api = {
 		beforeView,
 		cancelContractNegotiation,
 		decideReSigningOffers,
+		submitReSigningOffer,
 		checkAccount: checkAccount2,
 		checkSyncReady,
 		checkParticipationAchievement,

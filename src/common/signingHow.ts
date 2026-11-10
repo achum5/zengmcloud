@@ -70,8 +70,15 @@ export const howPhrases = (how: SigningHow | undefined) => {
 	if (how.proveIt) {
 		out.push("prove-it deal");
 	}
+	if (how.chance !== undefined) {
+		out.push(`${chancePercent(how.chance)} odds`);
+	}
 	return out;
 };
+
+// "64%", "<1%".
+export const chancePercent = (chance: number) =>
+	`${chance > 0 && chance < 0.01 ? "<1" : Math.round(chance * 100)}%`;
 
 // One short method for a table: "MLE", "Bird", "Ext", "RFA match".
 export const howMethod = (how: SigningHow | undefined) => {

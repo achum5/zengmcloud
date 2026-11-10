@@ -1,7 +1,7 @@
 import { afterAll, assert, beforeAll, beforeEach, test } from "vitest";
 import { PHASE, PLAYER } from "../../../common/constants.ts";
 import { getCurrentContract } from "../../../common/contracts.ts";
-import { makeSeededRandom } from "../../../common/random.ts";
+import { makeSeededRandom, uniformSeed } from "../../../common/random.ts";
 import { howMethod, howPhrases } from "../../../common/signingHow.ts";
 import type { EventBBGM } from "../../../common/types.ts";
 import { idb } from "../../db/index.ts";
@@ -18,7 +18,14 @@ import {
 	signingsLog,
 	teamCapStatus,
 } from "./capSheet.ts";
-import { decideOptions, renounce, sign } from "./freeAgency.ts";
+import {
+	decideOptions,
+	decideReSignings,
+	makeOffer,
+	renounce,
+	sign,
+} from "./freeAgency.ts";
+import { contractOf } from "./contractOf.ts";
 import { stageSettings } from "./stages.ts";
 
 const importNode = (name: string) => import(/* @vite-ignore */ name);
@@ -170,6 +177,67 @@ test("options decided and rights renounced are events", async () => {
 		assert.isFalse(after.holds.some((row) => row.pid === own.pid));
 		assert.isAbove(after.capSpace, before.capSpace);
 	}
+});
+
+test("a re-signing offer submitted is decided at once, and the log has it with the odds", async () => {
+	g.setWithoutSavingToDB("phase", PHASE.RESIGN_PLAYERS);
+	const season = g.get("season");
+	const roll = (pid: number) => uniformSeed(pid * 7_919 + season);
+	const pool = (
+		await idb.cache.players.indexGetAll("playersByTid", PLAYER.FREE_AGENT)
+	)
+		.filter((p) => !p.contracts.at(-1)?.discount)
+		.sort((a, b) => b.value - a.value || a.pid - b.pid);
+	// One whose roll is high, offered the minimum: he says no. One whose roll
+	// is low, offered his ask: he signs.
+	const refuses = pool.find((p) => roll(p.pid) > 0.95)!;
+	const signs = pool.find((p) => p !== refuses && roll(p.pid) < 0.05)!;
+	for (const p of [refuses, signs]) {
+		await idb.cache.negotiations.add({ pid: p.pid, tid, resigning: true });
+	}
+	const t = (await idb.cache.teams.get(tid))!;
+	t.offerBoard = [];
+	await idb.cache.teams.put(t);
+	assert.isUndefined(
+		await makeOffer(tid, {
+			pid: refuses.pid,
+			amount: g.get("minContract"),
+			exp: season + 1,
+		}),
+	);
+	const ask = contractOf(signs);
+	assert.isUndefined(
+		await makeOffer(tid, {
+			pid: signs.pid,
+			amount: Math.min(ask.amount, maxFor(0)),
+			exp: season + 1,
+		}),
+	);
+
+	// Only his.
+	const [no] = await decideReSignings(tid, refuses.pid);
+	assert.strictEqual(no?.pid, refuses.pid);
+	assert.isFalse(no!.signed);
+	const board = (await idb.cache.teams.get(tid))!.offerBoard!;
+	assert.deepEqual(
+		board.map((x) => x.pid),
+		[signs.pid],
+	);
+	const refused = await lastEvent(refuses.pid);
+	assert.strictEqual(refused.type, "contract");
+	const text = await formatEventText(refused);
+	assert.include(text, "turned down an offer from the");
+	assert.match(text, /\(\d+% odds\)\.$/);
+	assert.deepEqual(refused.tids, [tid]);
+	// One chance: decided, he is off the re-sign list.
+	assert.isUndefined(await idb.cache.negotiations.get(refuses.pid));
+
+	const [yes] = await decideReSignings(tid, signs.pid);
+	assert.isTrue(yes!.signed);
+	const signed = await lastEvent(signs.pid);
+	assert.strictEqual(signed.type, "reSigned");
+	assert.closeTo((signed as any).how.chance, yes!.chance, 1e-9);
+	assert.match(await formatEventText(signed), /\d+% odds\)\.$/);
 });
 
 test("the rules page has this league's numbers", () => {

@@ -1,4 +1,5 @@
 import { PLAYER } from "../../../common/constants.ts";
+import { chancePercent } from "../../../common/signingHow.ts";
 import type { Player, SigningHow } from "../../../common/types.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers, logEvent } from "../../util/index.ts";
@@ -95,6 +96,36 @@ export const logOption = async ({
 	await logEvent({
 		type: "contract",
 		text,
+		showNotification: false,
+		pids: [p.pid],
+		tids: [tid],
+		score: scoreOf(p),
+	});
+};
+
+// A human team's re-signing offer he turned down, to test free agency - or
+// that no longer fit the cap rules when it was decided.
+export const logReSignRefused = async ({
+	p,
+	tid,
+	amount,
+	exp,
+	chance,
+	fits,
+}: {
+	p: Player;
+	tid: number;
+	amount: number;
+	exp: number;
+	chance: number;
+	fits: boolean;
+}) => {
+	const money = `${helpers.formatCurrency(amount / 1000, "M")}/year through ${exp}`;
+	await logEvent({
+		type: "contract",
+		text: fits
+			? `${playerLink(p)} turned down an offer from the ${teamLink(tid)}: ${money} (${chancePercent(chance)} odds).`
+			: `${playerLink(p)} became a free agent: an offer from the ${teamLink(tid)} (${money}) did not fit the cap rules.`,
 		showNotification: false,
 		pids: [p.pid],
 		tids: [tid],

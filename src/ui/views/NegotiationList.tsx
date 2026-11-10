@@ -63,7 +63,10 @@ const useReSignEdits = (
 	const requests = useRef(new Map<number, number>());
 	const chanceTimers = useRef(new Map<number, number>());
 	const saves = useRef(
-		new Map<number, { timer: number; run: () => void; started?: boolean }>(),
+		new Map<
+			number,
+			{ timer: number; run: () => Promise<void>; started?: Promise<void> }
+		>(),
 	);
 
 	const drop = (pid: number) => {
@@ -116,10 +119,6 @@ const useReSignEdits = (
 			clearTimeout(prevSave.timer);
 		}
 		const run = async () => {
-			const entry = saves.current.get(pid);
-			if (entry?.run === run) {
-				entry.started = true;
-			}
 			const error = await toWorker("main", "makeFreeAgentOffer", {
 				pid,
 				amount: edit.amount,
@@ -135,7 +134,28 @@ const useReSignEdits = (
 				}
 			}
 		};
-		saves.current.set(pid, { timer: window.setTimeout(run, 600), run });
+		const entry: {
+			timer: number;
+			run: () => Promise<void>;
+			started?: Promise<void>;
+		} = {
+			timer: window.setTimeout(() => {
+				entry.started = run();
+			}, 600),
+			run,
+		};
+		saves.current.set(pid, entry);
+	};
+
+	// Before submitting an offer: no save after it, and none still on its way.
+	const settle = async (pid: number) => {
+		clearTimeout(chanceTimers.current.get(pid));
+		const save = saves.current.get(pid);
+		if (save) {
+			clearTimeout(save.timer);
+			saves.current.delete(pid);
+			await save.started;
+		}
 	};
 
 	// Leaving the page saves what is waiting to be saved.
@@ -145,7 +165,7 @@ const useReSignEdits = (
 			for (const save of pending.values()) {
 				clearTimeout(save.timer);
 				if (!save.started) {
-					save.run();
+					void save.run();
 				}
 			}
 		};
@@ -178,7 +198,7 @@ const useReSignEdits = (
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [serverKey]);
 
-	return { change, drop, edits };
+	return { change, drop, edits, settle };
 };
 
 const ReSignOfferCell = ({
@@ -340,7 +360,7 @@ const NegotiationList = ({
 	// Realistic front offices: each player has an offer and his chance of
 	// taking it, instead of contracts to sign.
 	const realistic = useRealisticFreeAgency();
-	const { change, drop, edits } = useReSignEdits(players);
+	const { change, drop, edits, settle } = useReSignEdits(players);
 	const [decided, setDecided] =
 		useState<
 			Exclude<
@@ -424,22 +444,77 @@ const NegotiationList = ({
 		];
 	};
 
-	const offerActions = (pid: number, offer: ReSignOffer) => {
+	// One chance: he signs or tests free agency, on the odds shown.
+	const submit = async (
+		p: (typeof players)[number],
+		offer: ReSignOffer,
+		current: { amount: number; years: number },
+		chance: number,
+	) => {
+		const term = offer.terms.find((term) => term.years === current.years);
+		if (!term) {
+			return;
+		}
+		const proceed = await confirm(
+			`Submit ${formatOfferAmount(current.amount)} thru ${term.exp} to ${p.firstName} ${p.lastName}? ${formatChance(chance)} he signs.`,
+			{
+				okText: "Submit",
+			},
+		);
+		if (!proceed) {
+			return;
+		}
+		await settle(p.pid);
+		const response = await toWorker("main", "submitReSigningOffer", {
+			pid: p.pid,
+			amount: current.amount,
+			exp: term.exp,
+		});
+		if (typeof response === "string") {
+			showNotification({
+				type: "error",
+				text: response,
+			});
+			return;
+		}
+		drop(p.pid);
+		setDecided((prev) => [...(prev ?? []), ...response]);
+	};
+
+	const offerActions = (p: (typeof players)[number], offer: ReSignOffer) => {
+		const pid = p.pid;
 		const current = offerOf(pid, offer);
+		const edit = edits[pid];
+		const chance = edit ? edit.chance : offer.chance;
 		return {
 			value: current ? (
-				<button
-					type="button"
-					className="btn btn-light-bordered btn-xs"
-					disabled={gameSimInProgress}
-					onClick={async () => {
-						drop(pid);
-						await toWorker("main", "withdrawFreeAgentOffer", pid);
-					}}
-					title="Withdraw your offer"
-				>
-					Let go
-				</button>
+				<>
+					<button
+						type="button"
+						className="btn btn-primary btn-xs"
+						disabled={gameSimInProgress || chance === undefined}
+						onClick={async () => {
+							if (chance !== undefined) {
+								await submit(p, offer, current, chance);
+							}
+						}}
+						title="One chance, at these odds"
+					>
+						Submit
+					</button>
+					<button
+						type="button"
+						className="btn btn-light-bordered btn-xs"
+						disabled={gameSimInProgress}
+						onClick={async () => {
+							drop(pid);
+							await toWorker("main", "withdrawFreeAgentOffer", pid);
+						}}
+						title="Withdraw your offer"
+					>
+						Let go
+					</button>
+				</>
 			) : (
 				<button
 					type="button"
@@ -455,7 +530,8 @@ const NegotiationList = ({
 					Offer
 				</button>
 			),
-			searchValue: current ? "Let go" : "Offer",
+			classNames: "d-flex align-items-center gap-1",
+			searchValue: current ? "Submit Let go" : "Offer",
 		};
 	};
 
@@ -525,7 +601,7 @@ const NegotiationList = ({
 							p.contract.exp,
 						]),
 				realistic && p.reSignOffer
-					? offerActions(p.pid, p.reSignOffer)
+					? offerActions(p, p.reSignOffer)
 					: {
 							value: (
 								<>
@@ -701,7 +777,7 @@ const NegotiationList = ({
 								text: response,
 							});
 						} else {
-							setDecided(response);
+							setDecided((prev) => [...(prev ?? []), ...response]);
 						}
 					}}
 				>

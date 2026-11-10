@@ -56,6 +56,11 @@ Existing contracts stay as they are (flat, no options).
   negotiation: decide options (player and team), renounce restricted rights,
   last chance for extensions. Unsigned expiring players then become free
   agents; their teams keep Bird rights (and match rights if restricted).
+- **Re-signing is one chance per player** (owner's call, 2026-11-10): set the
+  offer, see his chance of taking it, Submit, and he signs or tests free
+  agency on that roll at once (fixed for him for the season). Offers not
+  submitted are decided as free agency opens. Each decision is logged for
+  the player and the team - a refusal too - with the offer and the odds.
 - **Free agency phase, in stages** (each is one Play; the header shows the
   stage, not days left):
   1. _Negotiation window_ - every team makes offers; players answer

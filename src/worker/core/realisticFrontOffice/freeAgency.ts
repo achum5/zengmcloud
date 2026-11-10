@@ -12,7 +12,13 @@ import { uniformSeed } from "../../../common/random.ts";
 import { revertBefore } from "../player/revertSnapshot.ts";
 import { getContractDemand } from "../contract/index.ts";
 import { getContractStartSeason } from "../../util/getContractStartSeason.ts";
-import { howFor, logOption, logRenounced, ownPath } from "./history.ts";
+import {
+	howFor,
+	logOption,
+	logReSignRefused,
+	logRenounced,
+	ownPath,
+} from "./history.ts";
 import { contractOf } from "./contractOf.ts";
 import {
 	getContractExp,
@@ -1868,11 +1874,13 @@ export const extensionDecision = async (
 	return best;
 };
 
-// A human team's re-signing offers, decided now: each of its players whose
-// contract ran out takes its offer or tests the market, on a roll fixed for
-// him for the season - so deciding again changes nothing. Offers not decided
-// by the end of the phase are decided as free agency opens.
-export const decideReSignings = async (tid: number) => {
+// A human team's re-signing offers, decided now (or only his, `pid`: one
+// submitted offer): each of its players whose contract ran out takes its
+// offer or tests the market, on a roll fixed for him for the season - so
+// deciding again changes nothing. One chance: once decided he is off the
+// re-sign list. Offers not decided by the end of the phase are decided as
+// free agency opens.
+export const decideReSignings = async (tid: number, pid?: number) => {
 	const decided: {
 		pid: number;
 		name: string;
@@ -1886,7 +1894,10 @@ export const decideReSignings = async (tid: number) => {
 		return decided;
 	}
 	for (const offer of t.offerBoard) {
-		if (!(await reSigningWith(tid, offer.pid))) {
+		if (
+			(pid !== undefined && offer.pid !== pid) ||
+			!(await reSigningWith(tid, offer.pid))
+		) {
 			continue;
 		}
 		const p = await idb.cache.players.get(offer.pid);
@@ -1913,15 +1924,20 @@ export const decideReSignings = async (tid: number) => {
 			if (contractOf(p).rookie) {
 				contract.rookie = true;
 			}
-			await player.sign(
+			await player.sign(p, tid, contract, PHASE.RESIGN_PLAYERS, undefined, {
+				...(await howFor(p, tid, offer.amount)),
+				chance,
+			});
+			await idb.cache.players.put(p);
+		} else {
+			await logReSignRefused({
 				p,
 				tid,
-				contract,
-				PHASE.RESIGN_PLAYERS,
-				undefined,
-				await howFor(p, tid, offer.amount),
-			);
-			await idb.cache.players.put(p);
+				amount: offer.amount,
+				exp: offer.exp,
+				chance,
+				fits,
+			});
 		}
 		await contractNegotiation.cancel(p.pid);
 		decided.push({

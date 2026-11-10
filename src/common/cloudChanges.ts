@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 256,
+		date: "2026-11-10",
+		text: "Realistic Front Offices: re-signing is one shot per player. Set your offer, see his chance of taking it, and press Submit - he signs or heads to free agency right then, with no second try (offers you don't submit are decided when free agency opens). Every re-signing decision now goes in the transaction log on the player's and the team's pages, refusals too, with the offer and the odds.",
+	},
+	{
 		n: 255,
 		date: "2026-11-10",
 		text: "Realistic Front Offices: a new free agency and NBA-style contract rules, starting with each league's next offseason. Free agency now runs in 5 stages instead of 30 days - Negotiation window, Decision day 1 (the best free agents decide), Decision day 2, Open market, Training camp - and on a decision day everyone sees the offer to beat. Teams over the cap keep their own players with Bird rights and get one mid-level exception a summer; there's an apron and a hard cap; max contracts depend on years in the league; offers can have raises and player or team options; and players coming off rookie deals are restricted (their team can match). Re-signing stays in the Re-sign Players phase, and a team keeps its Bird rights into free agency. The new Contract Rules page (Team menu) has your league's numbers, every team's cap status and every signing.",

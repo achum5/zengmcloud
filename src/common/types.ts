@@ -1875,6 +1875,8 @@ export type SigningHow = {
 	// Seasons and total money (thousands) - with raises, not amount x years.
 	years?: number;
 	total?: number;
+	// A human team's re-signing offer: the chance he had of taking it.
+	chance?: number;
 };
 
 export type FlatContractInfo = {
