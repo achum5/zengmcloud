@@ -77,6 +77,17 @@ export const stageName = () => STAGES[stageIndex()]!;
 
 helpers.setFreeAgencyStageName(() => (inStages() ? stageName() : undefined));
 
+// The team holding his Bird rights this summer, unless it renounced them.
+export const ownTid = (p: Pick<Player, "stats" | "faRenounced">) =>
+	p.faRenounced ? undefined : birdTid(p, g.get("season"));
+
+// The team that may match another team's offer for him: his own, while he is
+// restricted - not at camp, with no stage left to match in.
+export const matchingTid = (
+	p: Pick<Player, "stats" | "faRenounced" | "faRestricted">,
+) =>
+	p.faRestricted && stageIndex() < STAGES.length - 1 ? ownTid(p) : undefined;
+
 // Whether he decides at the end of this stage.
 export const decidesNow = (p: Pick<Player, "faDecides">) =>
 	stageIndex() >= (p.faDecides ?? OPEN_MARKET);
@@ -96,6 +107,15 @@ export const openStages = async () => {
 					: OPEN_MARKET;
 		delete p.faOpenAsk;
 		delete p.faLead;
+		delete p.faRenounced;
+		delete p.faOfferSheet;
+		delete p.faMatch;
+		// Restricted, coming off a rookie deal.
+		if (p.contracts.at(-1)?.type === "rookie") {
+			p.faRestricted = true;
+		} else {
+			delete p.faRestricted;
+		}
 		await idb.cache.players.put(p);
 	}
 	return STAGES.length;
@@ -117,11 +137,7 @@ export const capHolds = (
 ) => {
 	let holds = 0;
 	for (const p of pool) {
-		if (
-			p.pid !== except &&
-			p.tid === PLAYER.FREE_AGENT &&
-			birdTid(p, g.get("season")) === tid
-		) {
+		if (p.pid !== except && p.tid === PLAYER.FREE_AGENT && ownTid(p) === tid) {
 			holds += contractOf(p).amount;
 		}
 	}
@@ -145,7 +161,7 @@ export const checkFor = ({
 	amount: number;
 	rosterSize: number;
 }): SigningCheck => {
-	const own = birdTid(p, g.get("season")) === t.tid;
+	const own = ownTid(p) === t.tid;
 	const service = serviceYears(p);
 	const args = {
 		tid: t.tid,
@@ -184,7 +200,7 @@ export const mostFor = ({
 	if (!may(minContract)) {
 		return undefined;
 	}
-	const own = birdTid(p, g.get("season")) === t.tid;
+	const own = ownTid(p) === t.tid;
 	const candidates = [
 		minContract,
 		maxFor(serviceYears(p)),

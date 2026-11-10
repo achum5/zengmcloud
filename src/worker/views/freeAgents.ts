@@ -229,7 +229,7 @@ export default defineView({
 			).map((p) => ({
 				...p,
 				freeAgentType: "available" as const,
-				stage: stages ? stageOf(availableByPid[p.pid]!) : undefined,
+				stage: stages ? stageOf(availableByPid[p.pid]!, userTid) : undefined,
 			}));
 
 			const signedByPid = groupByUnique(

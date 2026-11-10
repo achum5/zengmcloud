@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { dropdownOptions } from "../hooks/useDropdownOptions.tsx";
 import { PHASE, PHASE_TEXT } from "../../common/constants.ts";
 import { DataTable } from "../components/DataTable/index.tsx";
@@ -6,6 +6,7 @@ import { MoreLinks } from "../components/MoreLinks.tsx";
 import useTitleBar from "../hooks/useTitleBar.tsx";
 import { helpers } from "../util/helpers.ts";
 import { toWorker } from "../util/toWorker.ts";
+import { showNotification } from "../util/showNotification.ts";
 import { getCols } from "../../common/getCols.ts";
 import { useLocal } from "../util/local.ts";
 import type { Col, Phase, View } from "../../common/types.ts";
@@ -467,9 +468,47 @@ const stageCells = (p: View<"freeAgents">["players"][number]) => {
 	const toBeat = stage?.toBeat
 		? `${formatOfferAmount(stage.toBeat.amount)} × ${stage.toBeat.years}`
 		: "";
+	const act = async (
+		name: "renounceFreeAgent" | "answerOfferSheet",
+		arg: any,
+	) => {
+		const error = await toWorker("main", name, arg);
+		if (error) {
+			showNotification({ text: error, type: "error" } as any);
+		}
+	};
+	let rights: ReactNode = "";
+	if (stage?.sheet) {
+		const { sheet } = stage;
+		rights = (
+			<span className="text-nowrap">
+				{sheet.abbrev} {formatOfferAmount(sheet.amount)} × {sheet.years}{" "}
+				<button
+					className={`btn btn-xs ${stage.match ? "btn-primary" : "btn-light-bordered"}`}
+					onClick={() =>
+						act("answerOfferSheet", { pid: p.pid, match: !stage.match })
+					}
+					title="Match the offer sheet by the end of this stage"
+				>
+					{stage.match ? "Matching" : "Match"}
+				</button>
+			</span>
+		);
+	} else if (stage?.own) {
+		rights = (
+			<button
+				className="btn btn-xs btn-light-bordered"
+				onClick={() => act("renounceFreeAgent", p.pid)}
+				title="Give up his Bird rights and cap hold"
+			>
+				Renounce{stage.restricted ? " (RFA)" : ""}
+			</button>
+		);
+	}
 	return [
 		{ value: toBeat, sortValue: stage?.toBeat?.amount ?? null },
 		{ value: stage?.decidesLabel ?? "", sortValue: stage?.decides ?? null },
+		{ value: rights, sortValue: stage?.own ? 1 : 0 },
 	];
 };
 
@@ -580,6 +619,7 @@ const FreeAgents = ({
 					sortType: "number",
 				},
 				{ title: "Decides", sortType: "number" },
+				{ title: "Rights", sortType: "number" },
 			]
 		: [];
 	const colKeys = [

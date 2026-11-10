@@ -11,7 +11,6 @@ import { uniformSeed } from "../../../common/random.ts";
 import { revertBefore } from "../player/revertSnapshot.ts";
 import { getContractDemand } from "../contract/index.ts";
 import { contractOf } from "./contractOf.ts";
-import { birdTid } from "./cba.ts";
 import {
 	askFloor,
 	capHolds,
@@ -20,7 +19,10 @@ import {
 	decidesNow,
 	inStages,
 	mostFor,
+	matchingTid,
 	noteSigning,
+	ownTid,
+	stageIndex,
 	stageSettings,
 	stagesOn,
 } from "./stages.ts";
@@ -756,7 +758,7 @@ export const priceMarket = async (
 		}
 		const t = teams.find((x) => x.tid === tid)!;
 		const state = states.get(tid)!;
-		const own = birdTid(p, g.get("season")) === tid;
+		const own = ownTid(p) === tid;
 		return mostFor({
 			t,
 			p,
@@ -953,13 +955,109 @@ export const openStageMarket = async () => {
 		p.faOpenAsk = contractOf(p).amount;
 		await idb.cache.players.put(p);
 	}
+	// A CPU team renounces its free agents it would not pay their asks: their
+	// cap holds would only keep it from using its room.
+	const outlook = await currentOutlook();
+	for (const tid of await aiTids()) {
+		const own = pool.filter((p) => ownTid(p) === tid);
+		if (own.length === 0) {
+			continue;
+		}
+		const state = await loadTeam(outlook, tid);
+		for (const p of own) {
+			const most = mostWorthPaying(outlook, state, p, wantedYears(p));
+			if (most === undefined || most < contractOf(p).amount) {
+				p.faRenounced = true;
+				delete p.faRestricted;
+				await idb.cache.players.put(p);
+			}
+		}
+	}
+};
+
+// A human team gives up a free agent's Bird rights, and his cap hold.
+export const renounce = async (tid: number, pid: number) => {
+	const p = await idb.cache.players.get(pid);
+	if (!p || p.tid !== PLAYER.FREE_AGENT || ownTid(p) !== tid) {
+		return "He is not your free agent.";
+	}
+	p.faRenounced = true;
+	delete p.faRestricted;
+	delete p.faMatch;
+	await idb.cache.players.put(p);
+};
+
+// A human team's answer to an offer sheet for its restricted free agent,
+// carried out at the end of the stage.
+export const answerOfferSheet = async (
+	tid: number,
+	pid: number,
+	match: boolean,
+) => {
+	const p = await idb.cache.players.get(pid);
+	if (!p || !p.faOfferSheet || ownTid(p) !== tid) {
+		return "No offer sheet to match.";
+	}
+	if (match) {
+		p.faMatch = true;
+	} else {
+		delete p.faMatch;
+	}
+	await idb.cache.players.put(p);
 };
 
 // A day of free agency, or of the season.
+// Offer sheets a human team had a stage to match: matched, he stays with it;
+// not, he goes to the team that made the offer - if it still fits.
+const resolveOfferSheets = async () => {
+	const pool = await idb.cache.players.indexGetAll(
+		"playersByTid",
+		PLAYER.FREE_AGENT,
+	);
+	for (const p of pool) {
+		const sheet = p.faOfferSheet;
+		if (!sheet || sheet.stage >= stageIndex()) {
+			continue;
+		}
+		const tryTeam = async (tid: number) => {
+			const t = await idb.cache.teams.get(tid);
+			if (!t || p.tid !== PLAYER.FREE_AGENT) {
+				return false;
+			}
+			const roster = await idb.cache.players.indexGetAll("playersByTid", tid);
+			const check = checkFor({
+				t,
+				p,
+				payroll: await team.getPayroll(tid),
+				holds: capHolds(tid, pool, p.pid),
+				amount: sheet.amount,
+				rosterSize: roster.length,
+			});
+			if (!check.ok) {
+				return false;
+			}
+			await sign(p, tid, { amount: sheet.amount, exp: sheet.exp });
+			await noteSigning(tid, check);
+			return true;
+		};
+		const own = ownTid(p);
+		const matched = !!p.faMatch && own !== undefined && (await tryTeam(own));
+		if (!matched) {
+			await tryTeam(sheet.tid);
+		}
+		delete p.faOfferSheet;
+		delete p.faMatch;
+		await idb.cache.players.put(p);
+	}
+};
+
 export const freeAgencyDay = async () => {
 	const phase = g.get("phase");
 	const inSeason =
 		phase === PHASE.REGULAR_SEASON || phase === PHASE.AFTER_TRADE_DEADLINE;
+	if (inStages()) {
+		await resolveOfferSheets();
+	}
 	const pool = (
 		await idb.cache.players.indexGetAll("playersByTid", PLAYER.FREE_AGENT)
 	).sort((a, b) => b.valueNoPot - a.valueNoPot || a.pid - b.pid);
@@ -984,6 +1082,7 @@ export const freeAgencyDay = async () => {
 	}
 
 	const {
+		outlook,
 		cpu,
 		rankOf,
 		rosters: rostersAtOpen,
@@ -1148,7 +1247,7 @@ export const freeAgencyDay = async () => {
 	const chosen = new Map<number, Offer>();
 	const choose = async (p: Player) => {
 		const offers = remaining.get(p.pid) ?? [];
-		if (offers.length === 0 || (stages && !decidesNow(p))) {
+		if (offers.length === 0 || (stages && (!decidesNow(p) || p.faOfferSheet))) {
 			return;
 		}
 		const utilities: number[] = [];
@@ -1257,6 +1356,50 @@ export const freeAgencyDay = async () => {
 								exp: offer.exp,
 							},
 						})));
+				// Restricted: his team may match. A CPU team decides now, by
+				// what he is worth to it on these terms; a human team has until
+				// the end of the next stage (resolveOfferSheets).
+				const matching = stages ? matchingTid(p) : undefined;
+				if (fits && matching !== undefined && matching !== tid) {
+					if (!cpu.has(matching)) {
+						p.faOfferSheet = {
+							tid,
+							amount: offer.amount,
+							exp: offer.exp,
+							stage: stageIndex(),
+						};
+						await idb.cache.players.put(p);
+						remaining.delete(p.pid);
+						continue;
+					}
+					const ownState = states.get(matching);
+					const ownTeam = await idb.cache.teams.get(matching);
+					const ownCheck =
+						ownTeam &&
+						checkFor({
+							t: ownTeam,
+							p,
+							payroll: await team.getPayroll(matching),
+							holds: capHolds(matching, pool, p.pid),
+							amount: offer.amount,
+							rosterSize: (
+								await idb.cache.players.indexGetAll("playersByTid", matching)
+							).length,
+						});
+					if (
+						ownState &&
+						ownCheck?.ok &&
+						priceSigning(outlook, ownState, p, {
+							amount: offer.amount,
+							exp: offer.exp,
+						}).net > 0
+					) {
+						await sign(p, matching, { amount: offer.amount, exp: offer.exp });
+						await noteSigning(matching, ownCheck);
+						remaining.delete(p.pid);
+						continue;
+					}
+				}
 				if (fits) {
 					await sign(p, tid, { amount: offer.amount, exp: offer.exp });
 					if (check) {

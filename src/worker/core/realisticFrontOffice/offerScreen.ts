@@ -17,7 +17,7 @@ import {
 import { realisticFreeAgencyOn } from "./isOn.ts";
 import { askFor, offerYears, wantedYears } from "./offers.ts";
 import type { ContractHolder } from "./contractOf.ts";
-import { inStages, stageIndex, STAGES } from "./stages.ts";
+import { inStages, ownTid, stageIndex, STAGES } from "./stages.ts";
 
 // WHAT A HUMAN TEAM SEES OF THE OFFER MARKET (owner's calls: no instant
 // signing - a human's offer waits for the player's decision like anyone's;
@@ -122,10 +122,26 @@ export const liveOffers = async (tid: number) => {
 // Free agency in stages: the stage he decides in, short ("Day 1", "Open
 // market"), and the number to beat - the leading offer's money and years,
 // never who made it. Undefined when free agency is not in stages.
-export const stageOf = (p: Pick<Player, "faDecides" | "faLead">) => {
+export const stageOf = (
+	p: Pick<
+		Player,
+		| "faDecides"
+		| "faLead"
+		| "stats"
+		| "faRenounced"
+		| "faRestricted"
+		| "faOfferSheet"
+		| "faMatch"
+	>,
+	userTid?: number,
+) => {
 	if (!inStages()) {
 		return undefined;
 	}
+	// The user's own free agent (Bird rights, cap hold), and any offer sheet
+	// for him to match - its team public, as in the NBA.
+	const own = userTid !== undefined && ownTid(p) === userTid;
+	const sheet = own ? p.faOfferSheet : undefined;
 	// Once his stage has passed, he decides in each one after it.
 	const decides = Math.max(
 		p.faDecides ?? STAGES.indexOf("Open market"),
@@ -137,6 +153,16 @@ export const stageOf = (p: Pick<Player, "faDecides" | "faLead">) => {
 		toBeat: p.faLead
 			? { amount: p.faLead.amount, years: offerYears(p.faLead.exp) }
 			: undefined,
+		own,
+		restricted: own && !!p.faRestricted,
+		sheet: sheet
+			? {
+					amount: sheet.amount,
+					years: offerYears(sheet.exp),
+					abbrev: g.get("teamInfoCache")[sheet.tid]?.abbrev ?? "",
+				}
+			: undefined,
+		match: own && !!p.faMatch,
 	};
 };
 

@@ -289,6 +289,10 @@ test("in stages, a free agent shows when he decides and the number to beat, not 
 			decides: 2,
 			decidesLabel: "Day 2",
 			toBeat: { amount: 9000, years: 3 },
+			own: false,
+			restricted: false,
+			sheet: undefined,
+			match: false,
 		};
 		assert.deepEqual(stageOf(p!), expected);
 		const screen = await offerScreen(userTid, p!.pid);

@@ -341,6 +341,8 @@ import { tradingBlockTeams } from "../core/realisticFrontOffice/proposals.ts";
 import {
 	decideReSignings as realisticFrontOfficeDecideReSignings,
 	makeOffer as realisticFrontOfficeMakeOffer,
+	renounce as realisticFrontOfficeRenounce,
+	answerOfferSheet as realisticFrontOfficeAnswerOfferSheet,
 	rankOffers as realisticFrontOfficeRankOffers,
 	withdrawOffer as realisticFrontOfficeWithdrawOffer,
 } from "../core/realisticFrontOffice/freeAgency.ts";
@@ -2761,6 +2763,40 @@ const makeFreeAgentOffer = async ({
 	});
 	if (error === undefined) {
 		await toUI("realtimeUpdate", [["team"]]);
+	}
+	return error;
+};
+
+// Free agency in stages: give up a free agent's Bird rights and cap hold, or
+// answer an offer sheet for a restricted one.
+const renounceFreeAgent = async (pid: number) => {
+	if (!realisticFreeAgencyOn() || lock.get("gameSim")) {
+		return "Not now.";
+	}
+	const error = await realisticFrontOfficeRenounce(g.get("userTid"), pid);
+	if (error === undefined) {
+		await toUI("realtimeUpdate", [["playerMovement"]]);
+	}
+	return error;
+};
+
+const answerOfferSheet = async ({
+	pid,
+	match,
+}: {
+	pid: number;
+	match: boolean;
+}) => {
+	if (!realisticFreeAgencyOn() || lock.get("gameSim")) {
+		return "Not now.";
+	}
+	const error = await realisticFrontOfficeAnswerOfferSheet(
+		g.get("userTid"),
+		pid,
+		match,
+	);
+	if (error === undefined) {
+		await toUI("realtimeUpdate", [["playerMovement"]]);
 	}
 	return error;
 };
@@ -8612,6 +8648,8 @@ const api = {
 		reSignAll,
 		realtimeUpdate,
 		withdrawFreeAgentOffer,
+		renounceFreeAgent,
+		answerOfferSheet,
 		refreshSyncUIState,
 		syncNudge,
 		regenerateDraftClass,
