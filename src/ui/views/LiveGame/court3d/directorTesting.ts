@@ -13,6 +13,7 @@ export const SHOOTING = new Set<string>([
 	"layup",
 	"fingerRoll",
 	"layupClutch",
+	"layupHop",
 	"powerLayup",
 	"scoop",
 	"dunk",

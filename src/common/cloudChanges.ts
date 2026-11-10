@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 259,
+		date: "2026-11-10",
+		text: "3D games: more ways for players to be themselves. Hop-step layups and a deep-dip free throw stroke; rebounds kept high overhead and two-handed blocks; new celebrations (a fist pump, arms spread wide, both arms up to the sky); a hand on the head or bent over with hands on knees after a blown chance; each player's own way of posting up and of waiting on the lane at the line; and off-ball defenders who deny the pass or slap the floor.",
+	},
+	{
 		n: 258,
 		date: "2026-11-10",
 		text: "Realistic Front Offices: team options are now yours to decide. A contract you gave a team option shows up on the Re-sign Players page the summer before its last season - Pick up, or Decline and he joins your players to re-sign. Any you leave are picked up when free agency opens.",

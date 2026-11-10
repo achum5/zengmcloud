@@ -187,3 +187,29 @@ play outright, is the next saving.
 Next: that saving; then the rest of the defense (help, rotations), and
 how men react (a wider spread of when, lockstep measured off where men
 are: 39% laid, 42% stepped).
+
+## Animations: each man his own way
+
+Most new moves are drawn on top of what the director stages, never staged
+themselves (`ownWay` in poses.ts): the director lays a `poke`, a `contest`,
+a `layup`, a `board`; the picture draws that man's own way of it (a swipe,
+both hands up, a double clutch, the ball kept high). Two rules keep that
+safe:
+
+- Picking one must not change the staging. A choice made while the game is
+  laid out (the layup a man goes up with, say) changes the ball's flight and
+  so everything after it - the test games play out differently, and the
+  strict tests (a defender off the shooter, a post-up with nobody on him)
+  turn up new cases. Draw-time picks change nothing but the picture.
+- Where the director has a hand meet the ball (from the plain move's pose:
+  `releaseAt`, `pokeHand`, `BOARD_AT`), every way of the move has its hand
+  there too (poses.test.ts checks it). A pose is grounded by its lowest
+  foot, so changing only the legs moves the hands as well: keep the keys
+  around the contact the same as the plain move's.
+
+Moves that are the director's (the dribble combos in `comboAt`, the rocker,
+the shake, the no-look pass) are picked by hash, never the game's random
+draws, and the combos come back onto the dribble's beat (a crossover's
+bounce off it would put a pickup timed to it mid-bounce). The crossovers on
+cuts and walking it up are the stepper's (`crossOnCuts`, `switchesOf`): the
+ball only, in plain one-hand stretches, back in the hand it started in.

@@ -1924,6 +1924,16 @@ const SET_SHOT = jumper([
 	[0.75, { kneeN: 6, kneeF: 8, lean: 0, wide: 0.24 }],
 	[1, { kneeN: 10, kneeF: 12, lean: 1, wide: 0.24 }],
 ]);
+// The same, a man who sits down deep into it first (the same as it goes:
+// see ownWay).
+const SET_SHOT_DEEP = jumper([
+	[0, { kneeN: 26, kneeF: 28, lean: 6, wide: 0.26 }],
+	[0.14, { kneeN: 62, kneeF: 64, hipN: 10, hipF: 10, lean: 15, wide: 0.28 }],
+	[0.3, { kneeN: 22, kneeF: 24, lean: 5, wide: 0.25 }],
+	[0.42, { kneeN: 4, kneeF: 6, lean: 0, wide: 0.24 }],
+	[0.75, { kneeN: 6, kneeF: 8, lean: 0, wide: 0.24 }],
+	[1, { kneeN: 10, kneeF: 12, lean: 1, wide: 0.24 }],
+]);
 
 // DRIBBLE MOVES - one bounce each, keyed through it: 0 the ball in the hand
 // it leaves, about 0.42 on the floor, 1 up in the other hand. Written for the
@@ -2679,6 +2689,89 @@ export const ANIMS = {
 			[0, P.easy],
 			[0.3, P.laneWait],
 			[0.72, { ...P.laneWait, kneeN: 50, kneeF: 54, lean: 36 }],
+			[1, P.laneGo],
+		],
+	},
+	// His own ways of waiting on the lane for it (see ownWay) - up into
+	// the same as it goes: taller, his hands up in front of him ready...
+	laneSetUp: {
+		kind: "act",
+		n: 6,
+		keys: [
+			[0, P.easy],
+			[
+				0.3,
+				pose({
+					hipN: 18,
+					kneeN: 34,
+					hipF: 22,
+					kneeF: 38,
+					lean: 16,
+					shN: 30,
+					elN: 96,
+					abN: 20,
+					wrN: 16,
+					shF: 30,
+					elF: 96,
+					abF: 20,
+					wrF: 16,
+					wide: 0.55,
+				}),
+			],
+			[
+				0.72,
+				pose({
+					hipN: 22,
+					kneeN: 44,
+					hipF: 26,
+					kneeF: 48,
+					lean: 20,
+					shN: 26,
+					elN: 100,
+					abN: 22,
+					wrN: 18,
+					shF: 26,
+					elF: 100,
+					abF: 22,
+					wrF: 18,
+					wide: 0.58,
+				}),
+			],
+			[1, P.laneGo],
+		],
+	},
+	// ...or stood with his hands on his hips till it goes up.
+	laneSetHips: {
+		kind: "act",
+		n: 6,
+		keys: [
+			[0, P.easy],
+			[
+				0.3,
+				pose({
+					hipN: 6,
+					kneeN: 18,
+					hipF: 10,
+					kneeF: 20,
+					lean: 6,
+					onHipN: 1,
+					onHipF: 1,
+					wide: 0.45,
+				}),
+			],
+			[
+				0.72,
+				pose({
+					hipN: 16,
+					kneeN: 36,
+					hipF: 20,
+					kneeF: 40,
+					lean: 14,
+					onHipN: 0.6,
+					onHipF: 0.6,
+					wide: 0.5,
+				}),
+			],
 			[1, P.laneGo],
 		],
 	},
@@ -3646,6 +3739,51 @@ export const ANIMS = {
 				wide: 0.75,
 			}),
 	},
+	// His own ways of it (see ownWay): sealed with both arms out wide and
+	// his seat into his man...
+	postUpSeal: {
+		kind: "loop",
+		n: 2,
+		fps: 1.4,
+		pose: (i) =>
+			pose({
+				hipN: 24,
+				kneeN: 58,
+				hipF: 28,
+				kneeF: 60,
+				lean: 18,
+				shN: 60 + i * 6,
+				elN: 70,
+				abN: 58,
+				shF: 60 - i * 6,
+				elF: 70,
+				abF: 58,
+				wide: 0.85,
+			}),
+	},
+	// ...or a hand held out to the side, a target for the pass, the other
+	// arm into his man.
+	postUpTarget: {
+		kind: "loop",
+		n: 2,
+		fps: 1.4,
+		pose: (i) =>
+			pose({
+				hipN: 20,
+				kneeN: 52,
+				hipF: 24,
+				kneeF: 54,
+				lean: 14,
+				shN: 70 + i * 6,
+				elN: 18,
+				abN: 62,
+				wrN: 30,
+				shF: 66,
+				elF: 40,
+				abF: 46,
+				wide: 0.75,
+			}),
+	},
 	walk: {
 		kind: "cycle",
 		n: 6,
@@ -3699,6 +3837,7 @@ export const ANIMS = {
 	shootQuickKick: { kind: "act", n: 12, keys: QUICK_KICK_SHOT },
 	shootQuickSplit: { kind: "act", n: 12, keys: QUICK_SPLIT_SHOT },
 	setShot: { kind: "act", n: 12, keys: SET_SHOT },
+	setShotDeep: { kind: "act", n: 12, keys: SET_SHOT_DEEP },
 	layup: {
 		kind: "act",
 		n: 10,
@@ -3918,6 +4057,83 @@ export const ANIMS = {
 			],
 			// (Let go just as the plain layup is - so the play has the ball
 			// leave his hand where it does either way: see clutchWith.)
+			[
+				0.6,
+				pose({
+					hipN: 88,
+					kneeN: 106,
+					hipF: -10,
+					kneeF: 26,
+					shN: 150,
+					elN: 2,
+					abN: 4,
+					tuck: 1,
+					shF: 70,
+					elF: 60,
+					lean: 0,
+					wrN: 0,
+					toe: 1,
+				}),
+			],
+			[
+				0.72,
+				pose({
+					hipN: 84,
+					kneeN: 104,
+					hipF: -10,
+					kneeF: 26,
+					shN: 152,
+					elN: 2,
+					abN: 4,
+					tuck: 1,
+					shF: 66,
+					elF: 60,
+					lean: 0,
+					wrN: -40,
+					toe: 1,
+				}),
+			],
+			...LAYUP_DOWN,
+		],
+	},
+	// A hop into it: a jump stop on both feet, the ball in both hands at his
+	// chest, and up off the two of them - let go just as the plain layup is.
+	layupHop: {
+		kind: "act",
+		n: 10,
+		keys: [
+			[0, LAYUP_START],
+			[
+				0.16,
+				pose({
+					hipN: 34,
+					kneeN: 74,
+					hipF: 36,
+					kneeF: 76,
+					shN: 46,
+					elN: 104,
+					shF: 42,
+					elF: 106,
+					lean: 22,
+					wide: 0.4,
+				}),
+			],
+			[
+				0.3,
+				pose({
+					hipN: 18,
+					kneeN: 30,
+					hipF: 14,
+					kneeF: 26,
+					shN: 118,
+					elN: 56,
+					shF: 96,
+					elF: 66,
+					lean: 6,
+					wrN: 30,
+					toe: 1,
+				}),
+			],
 			[
 				0.6,
 				pose({
@@ -5342,6 +5558,100 @@ export const ANIMS = {
 			[1, P.stance],
 		],
 	},
+	// Denying the pass to his man: an arm straight out into the way of it,
+	// his palm out, his head round to the ball.
+	stanceDeny: {
+		kind: "act",
+		n: 5,
+		keys: [
+			[0, P.stance],
+			[
+				0.3,
+				{
+					...P.stance,
+					shN: 70,
+					elN: 6,
+					abN: 70,
+					wrN: 40,
+					twist: -10,
+				},
+			],
+			[
+				0.8,
+				{
+					...P.stance,
+					shN: 72,
+					elN: 8,
+					abN: 66,
+					wrN: 40,
+					twist: -8,
+				},
+			],
+			[1, P.stance],
+		],
+	},
+	// Slapping the floor with both hands - down in it, locked in.
+	floorSlap: {
+		kind: "act",
+		n: 6,
+		keys: [
+			[0, P.stance],
+			[
+				0.28,
+				pose({
+					hipN: 68,
+					kneeN: 94,
+					hipF: 72,
+					kneeF: 98,
+					lean: 56,
+					shN: 40,
+					elN: 20,
+					abN: 18,
+					shF: 40,
+					elF: 20,
+					abF: 18,
+					wide: 0.95,
+				}),
+			],
+			[
+				0.45,
+				pose({
+					hipN: 84,
+					kneeN: 116,
+					hipF: 88,
+					kneeF: 120,
+					lean: 70,
+					shN: 0,
+					elN: 4,
+					abN: 14,
+					wrN: 30,
+					shF: 0,
+					elF: 4,
+					abF: 14,
+					wrF: 30,
+					wide: 0.95,
+				}),
+			],
+			[
+				0.62,
+				pose({
+					hipN: 68,
+					kneeN: 94,
+					hipF: 72,
+					kneeF: 98,
+					lean: 56,
+					shN: 40,
+					elN: 20,
+					abN: 18,
+					shF: 40,
+					elF: 20,
+					abF: 18,
+					wide: 0.95,
+				}),
+			],
+			[1, P.stance],
+		],
+	},
 	// Calling out his man - or the screen coming - pointing.
 	stancePoint: {
 		kind: "act",
@@ -5651,6 +5961,61 @@ export const ANIMS = {
 					elN: 32,
 					shF: 66,
 					elF: 38,
+					lean: 6,
+					toe: 0.4,
+				}),
+			],
+			[1, P.land],
+		],
+	},
+	// Both hands up at it, the one that gets there the same.
+	blockTwo: {
+		kind: "act",
+		n: 8,
+		keys: [
+			[0, P.gather],
+			[
+				0.4,
+				pose({
+					hipN: 0,
+					kneeN: 18,
+					hipF: 14,
+					kneeF: 40,
+					shN: 165,
+					elN: 0,
+					shF: 165,
+					elF: 0,
+					lean: 0,
+					toe: 1,
+				}),
+			],
+			[
+				0.6,
+				pose({
+					hipN: 0,
+					kneeN: 20,
+					hipF: 14,
+					kneeF: 40,
+					shN: 130,
+					elN: 0,
+					shF: 130,
+					elF: 0,
+					lean: 8,
+					toe: 1,
+				}),
+			],
+			// Coming down, the arms with him.
+			[
+				0.82,
+				pose({
+					hipN: -2,
+					kneeN: 18,
+					hipF: 12,
+					kneeF: 30,
+					shN: 88,
+					elN: 32,
+					shF: 88,
+					elF: 32,
 					lean: 6,
 					toe: 0.4,
 				}),
@@ -7195,6 +7560,62 @@ export const ANIMS = {
 			[1, P.chin],
 		],
 	},
+	// ...or the ball kept high over his head as he comes down with it, out
+	// of reach of the hands round him.
+	boardHigh: {
+		kind: "act",
+		n: 9,
+		keys: [
+			[0, P.gather],
+			[0.26, BOARD_UP],
+			[0.37, BOARD_AT_IT],
+			[
+				0.5,
+				pose({
+					hipN: -4,
+					kneeN: 24,
+					hipF: 10,
+					kneeF: 30,
+					shN: 166,
+					elN: 26,
+					shF: 162,
+					elF: 30,
+					lean: 2,
+					toe: 0.6,
+				}),
+			],
+			[
+				0.66,
+				pose({
+					hipN: -8,
+					kneeN: 38,
+					hipF: 12,
+					kneeF: 40,
+					shN: 164,
+					elN: 34,
+					shF: 160,
+					elF: 38,
+					lean: 6,
+					wide: 0.5,
+				}),
+			],
+			[
+				1,
+				pose({
+					hipN: -8,
+					kneeN: 40,
+					hipF: 12,
+					kneeF: 42,
+					shN: 162,
+					elN: 38,
+					shF: 158,
+					elF: 42,
+					lean: 7,
+					wide: 0.52,
+				}),
+			],
+		],
+	},
 	// The same ripped down one-handed: the near arm all the way up for it as
 	// for two, the other out at his chest - in to it on the way down (the
 	// "rip" grip), and chinned. (See Act.oneHand.)
@@ -7359,6 +7780,170 @@ export const ANIMS = {
 				kneeF: i ? 12 : 24,
 				lean: 2,
 			}),
+	},
+	// His own ways of letting it out (see ownWay): a fist pumped down hard,
+	// twice...
+	fistPump: {
+		kind: "act",
+		n: 8,
+		keys: [
+			[0, P.land],
+			[
+				0.18,
+				pose({
+					hipN: -8,
+					kneeN: 30,
+					hipF: 14,
+					kneeF: 34,
+					shN: 120,
+					elN: 120,
+					abN: 20,
+					shF: 20,
+					elF: 40,
+					abF: 24,
+					lean: -4,
+					wide: 0.45,
+				}),
+			],
+			[
+				0.34,
+				pose({
+					hipN: -4,
+					kneeN: 40,
+					hipF: 18,
+					kneeF: 44,
+					shN: 34,
+					elN: 100,
+					abN: 16,
+					shF: 20,
+					elF: 40,
+					abF: 24,
+					lean: 10,
+					wide: 0.45,
+				}),
+			],
+			[
+				0.5,
+				pose({
+					hipN: -8,
+					kneeN: 30,
+					hipF: 14,
+					kneeF: 34,
+					shN: 120,
+					elN: 120,
+					abN: 20,
+					shF: 20,
+					elF: 40,
+					abF: 24,
+					lean: -4,
+					wide: 0.45,
+				}),
+			],
+			[
+				0.66,
+				pose({
+					hipN: -4,
+					kneeN: 40,
+					hipF: 18,
+					kneeF: 44,
+					shN: 34,
+					elN: 100,
+					abN: 16,
+					shF: 20,
+					elF: 40,
+					abF: 24,
+					lean: 10,
+					wide: 0.45,
+				}),
+			],
+			[1, P.ready],
+		],
+	},
+	// ...his arms out wide, his chest out...
+	armsWide: {
+		kind: "act",
+		n: 6,
+		keys: [
+			[0, P.land],
+			[
+				0.3,
+				pose({
+					hipN: -10,
+					kneeN: 22,
+					hipF: 14,
+					kneeF: 26,
+					shN: 40,
+					elN: 8,
+					abN: 82,
+					shF: 40,
+					elF: 8,
+					abF: 82,
+					lean: -10,
+					wide: 0.5,
+				}),
+			],
+			[
+				0.75,
+				pose({
+					hipN: -10,
+					kneeN: 20,
+					hipF: 14,
+					kneeF: 24,
+					shN: 46,
+					elN: 6,
+					abN: 84,
+					shF: 46,
+					elF: 6,
+					abF: 84,
+					lean: -12,
+					wide: 0.5,
+				}),
+			],
+			[1, P.ready],
+		],
+	},
+	// ...or both arms straight up at the sky.
+	skyPoint: {
+		kind: "act",
+		n: 6,
+		keys: [
+			[0, P.land],
+			[
+				0.3,
+				pose({
+					hipN: -6,
+					kneeN: 16,
+					hipF: 10,
+					kneeF: 20,
+					shN: 168,
+					elN: 6,
+					abN: 8,
+					shF: 168,
+					elF: 6,
+					abF: 8,
+					lean: -6,
+					wide: 0.3,
+				}),
+			],
+			[
+				0.75,
+				pose({
+					hipN: -6,
+					kneeN: 14,
+					hipF: 10,
+					kneeF: 18,
+					shN: 172,
+					elN: 4,
+					abN: 6,
+					shF: 172,
+					elF: 4,
+					abF: 6,
+					lean: -8,
+					wide: 0.3,
+				}),
+			],
+			[1, P.ready],
+		],
 	},
 	// The dance team's routine at a timeout, eight counts: down on the beat,
 	// an arm up and the other on the hip, out wide, up in a V, crossed in
@@ -7571,6 +8156,53 @@ export const ANIMS = {
 			[0, P.ready],
 			[0.25, pose({ onHeadN: 1, onHeadF: 1, lean: -6 })],
 			[0.8, pose({ onHeadN: 1, onHeadF: 1, lean: -4 })],
+			[1, P.ready],
+		],
+	},
+	// His own ways of rueing one (see ownWay): a hand on his head, the
+	// other on his hip...
+	headHip: {
+		kind: "act",
+		n: 5,
+		keys: [
+			[0, P.ready],
+			[0.25, pose({ onHeadN: 1, onHipF: 1, lean: -4, tilt: 3 })],
+			[0.8, pose({ onHeadN: 1, onHipF: 1, lean: -3, tilt: 2 })],
+			[1, P.ready],
+		],
+	},
+	// ...or bent over, his hands on his knees.
+	headDown: {
+		kind: "act",
+		n: 5,
+		keys: [
+			[0, P.ready],
+			[
+				0.3,
+				pose({
+					hipN: 30,
+					kneeN: 40,
+					hipF: 32,
+					kneeF: 42,
+					lean: 34,
+					wide: 0.4,
+					onKneeN: 1,
+					onKneeF: 1,
+				}),
+			],
+			[
+				0.8,
+				pose({
+					hipN: 30,
+					kneeN: 40,
+					hipF: 32,
+					kneeF: 42,
+					lean: 32,
+					wide: 0.4,
+					onKneeN: 1,
+					onKneeF: 1,
+				}),
+			],
 			[1, P.ready],
 		],
 	},
@@ -9824,6 +10456,7 @@ const GRIPS: Partial<Record<AnimName, Grip>> = {
 	shootQuickKick: "shot",
 	shootQuickSplit: "shot",
 	setShot: "shot",
+	setShotDeep: "shot",
 	fade: "shot",
 	fadeOne: "shot",
 	shotFake: "shot",
@@ -9831,6 +10464,7 @@ const GRIPS: Partial<Record<AnimName, Grip>> = {
 	layup: "palm",
 	fingerRoll: "palm",
 	layupClutch: "palm",
+	layupHop: "palm",
 	floater: "palm",
 	scoop: "palm",
 	dunk: "palm",
@@ -9916,7 +10550,7 @@ const CLOSE_TWO = {
 	wrF: 0,
 };
 export const styledStance = (q0: Pose, anim: AnimName, s: RunStyle): Pose => {
-	const q = guardHandsOwn(q0, anim, s);
+	const q = readyOwn(guardHandsOwn(q0, anim, s), anim, s);
 	return STANCES.has(anim)
 		? {
 				...q,
@@ -9935,6 +10569,20 @@ export const styledStance = (q0: Pose, anim: AnimName, s: RunStyle): Pose => {
 // at about their chest - the high one brought down that much of the way.)
 const GUARD_HANDS = 0.35;
 const GUARD_DOWN = 0.45;
+// (Off the ball on offense, ready for it: each his own way - sat lower or
+// stood taller. Only his legs: his hands are the pass's, on its way to
+// him - see posed.)
+const readyOwn = (q: Pose, anim: AnimName, s: RunStyle): Pose =>
+	anim !== "ready"
+		? q
+		: {
+				...q,
+				kneeN: q.kneeN + 8 * s.low,
+				kneeF: q.kneeF + 8 * s.low,
+				hipN: q.hipN + 4 * s.low,
+				hipF: q.hipF + 4 * s.low,
+				lean: q.lean + 3 * s.low,
+			};
 const guardHandsOwn = (q: Pose, anim: AnimName, s: RunStyle): Pose =>
 	anim === "guard" && s.hands < GUARD_HANDS
 		? {
@@ -10003,19 +10651,57 @@ export const hesiWith = (pid: number): AnimName =>
 	styleUnit(pid, 20) < 0.3 ? "dribbleHesiBack" : "dribbleHesi";
 export const dribbleJabWith = (pid: number): AnimName =>
 	styleUnit(pid, 21) < 0.3 ? "dribbleJabDeep" : "dribbleJab";
-// Now and then, laying it up, a double clutch (see layupClutch) - some men
-// more than others.
+// Now and then, laying it up, a double clutch (see layupClutch) or a hop
+// into it on both feet (layupHop) - some men more than others.
 export const clutchWith = (pid: number, t0: number): AnimName => {
 	const x = Math.sin(pid * 23.3 + Math.round(t0) * 0.0093) * 43758.5453;
 	const r = x - Math.floor(x);
-	return r < 0.03 + 0.14 * styleUnit(pid, 22) ? "layupClutch" : "layup";
+	const clutch = 0.03 + 0.14 * styleUnit(pid, 22);
+	return r < clutch
+		? "layupClutch"
+		: r < clutch + 0.04 + 0.16 * styleUnit(pid, 29)
+			? "layupHop"
+			: "layup";
 };
+// Each man's own way of going up to block it: the one hand, or both.
+export const blockWith = (pid: number): AnimName =>
+	styleUnit(pid, 24) < 0.35 ? "blockTwo" : "block";
+// And his own way of letting it out after a big one - for a flex, the
+// same man the same way.
+export const flexWith = (pid: number): AnimName => {
+	const r = styleUnit(pid, 25);
+	return r < 0.45
+		? "flex"
+		: r < 0.65
+			? "fistPump"
+			: r < 0.82
+				? "armsWide"
+				: "skyPoint";
+};
+// And his own way of rueing one he should have had.
+export const rueWith = (pid: number): AnimName => {
+	const r = styleUnit(pid, 26);
+	return r < 0.5 ? "headHands" : r < 0.75 ? "headHip" : "headDown";
+};
+// And his own way of posting up, the same every game.
+export const postUpWith = (pid: number): AnimName => {
+	const r = styleUnit(pid, 27);
+	return r < 0.5 ? "postUp" : r < 0.75 ? "postUpSeal" : "postUpTarget";
+};
+// And his own way of waiting on the lane, the same every game.
+export const laneWith = (pid: number): AnimName => {
+	const r = styleUnit(pid, 28);
+	return r < 0.5 ? "laneSet" : r < 0.78 ? "laneSetUp" : "laneSetHips";
+};
+// And his own stroke at the line: some sit down deep into it.
+export const setShotWith = (pid: number): AnimName =>
+	styleUnit(pid, 30) < 0.35 ? "setShotDeep" : "setShot";
 // HIS OWN WAY of a move the play has him make (at t0): which of the ways
 // of it above is his.
 // (And the other way round: the move the play had him make, for any of
 // his own ways of it.)
 const WAYS: Partial<Record<AnimName, AnimName[]>> = {
-	board: ["boardTuck", "boardSplit"],
+	board: ["boardTuck", "boardSplit", "boardHigh"],
 	poke: ["pokeSwipe", "pokeChop"],
 	protest: ["protestUp", "protestShrug"],
 	contest: ["contestTwo", "contestFace"],
@@ -10025,10 +10711,16 @@ const WAYS: Partial<Record<AnimName, AnimName[]>> = {
 	shotFake: ["shotFakeBig"],
 	triple: ["tripleHigh", "tripleSweep"],
 	hack: ["hackTwo", "hackBody"],
-	layup: ["layupClutch"],
+	layup: ["layupClutch", "layupHop"],
 	boxOut: ["boxOutHigh", "boxOutWide"],
 	dribbleHesi: ["dribbleHesiBack"],
 	dribbleJab: ["dribbleJabDeep"],
+	block: ["blockTwo"],
+	flex: ["fistPump", "armsWide", "skyPoint"],
+	headHands: ["headHip", "headDown"],
+	postUp: ["postUpSeal", "postUpTarget"],
+	laneSet: ["laneSetUp", "laneSetHips"],
+	setShot: ["setShotDeep"],
 };
 const BASES = new Map<AnimName, AnimName>(
 	(Object.entries(WAYS) as [AnimName, AnimName[]][]).flatMap(([base, ways]) =>
@@ -10061,6 +10753,18 @@ export const ownWay = (anim: AnimName, pid: number, t0: number): AnimName => {
 			return hackWith(pid, t0);
 		case "layup":
 			return clutchWith(pid, t0);
+		case "block":
+			return blockWith(pid);
+		case "flex":
+			return flexWith(pid);
+		case "headHands":
+			return rueWith(pid);
+		case "postUp":
+			return postUpWith(pid);
+		case "laneSet":
+			return laneWith(pid);
+		case "setShot":
+			return setShotWith(pid);
 		case "boxOut":
 			return boxOutWith(pid);
 		case "dribbleHesi":
@@ -10074,7 +10778,13 @@ export const ownWay = (anim: AnimName, pid: number, t0: number): AnimName => {
 // Each man's own way up for a board with both hands, the same every game.
 export const boardWith = (pid: number): AnimName => {
 	const r = styleUnit(pid, 17);
-	return r < 0.5 ? "board" : r < 0.75 ? "boardTuck" : "boardSplit";
+	return r < 0.4
+		? "board"
+		: r < 0.6
+			? "boardTuck"
+			: r < 0.8
+				? "boardSplit"
+				: "boardHigh";
 };
 // Each man's own jab and shot fake, the same every game: some rip the
 // ball through on the jab, some sell the fake right up on their toes.

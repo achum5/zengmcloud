@@ -403,6 +403,12 @@ describe("3D poses", () => {
 			"boxOut",
 			"dribbleHesi",
 			"dribbleJab",
+			"block",
+			"flex",
+			"headHands",
+			"postUp",
+			"laneSet",
+			"setShot",
 		] as AnimName[]) {
 			const seen = new Set<string>();
 			for (let pid = 0; pid < 400; pid++) {
@@ -426,10 +432,11 @@ describe("3D poses", () => {
 	test("a man's own way of a move meets the ball where the move does", () => {
 		const meets: [AnimName, AnimName[], number[]][] = [
 			["poke", ["pokeSwipe", "pokeChop"], [0.38, 0.42, 0.46]],
-			["board", ["boardTuck", "boardSplit"], [0.26, 400 / 1100]],
+			["board", ["boardTuck", "boardSplit", "boardHigh"], [0.26, 400 / 1100]],
 			["dunk", ["dunkPump"], [0.4, 0.445, 0.5, 0.66]],
 			["dunk1", ["dunkPump1"], [0.4, 0.445, 0.5, 0.66]],
-			["layup", ["layupClutch"], [0.6, 0.65, 0.72]],
+			["layup", ["layupClutch", "layupHop"], [0.6, 0.65, 0.72]],
+			["setShot", ["setShotDeep"], [0.45, 0.55, 0.6]],
 		];
 		for (const [base, ways, ats] of meets) {
 			for (const way of ways) {
@@ -443,6 +450,21 @@ describe("3D poses", () => {
 					);
 				}
 			}
+		}
+	});
+
+	// And going up for a block with both hands, the one at the ball is
+	// where it is going up with the one.
+	test("a block with both hands has the hand at the ball where the one hand's is", () => {
+		const body = bodyOf();
+		for (const at of [0.3, 0.4, 0.5, 0.6]) {
+			const a = skeleton(body, poseAt("block", at)).armR.end;
+			const b = skeleton(body, poseAt("blockTwo", at)).armR.end;
+			assert.isBelow(
+				Math.hypot(a.f - b.f, a.s - b.s, a.u - b.u),
+				1e-6,
+				`${at}`,
+			);
 		}
 	});
 

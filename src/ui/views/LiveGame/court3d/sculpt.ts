@@ -748,6 +748,7 @@ const SPLAY = new Set<string>([
 	"contestTwo",
 	"contestFace",
 	"block",
+	"blockTwo",
 	"highFive",
 ]);
 const SPLAY_UP = 0.5;
@@ -763,6 +764,7 @@ const REACH = new Set<string>([
 	"board",
 	"boardTuck",
 	"boardSplit",
+	"boardHigh",
 	"boardOne",
 	"rebound",
 ]);
@@ -838,6 +840,7 @@ const gripFor = (st: PlayerState, which: "R" | "L", holding: boolean): Grip => {
 		st.anim === "run" ||
 		st.anim === "sprint" ||
 		st.anim === "flex" ||
+		st.anim === "fistPump" ||
 		st.anim === "roar" ||
 		st.anim === "chestPound"
 	) {
