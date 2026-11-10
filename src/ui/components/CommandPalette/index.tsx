@@ -133,6 +133,10 @@ const getResultsGroupedDefault = ({
 			return false;
 		}
 
+		if (menuItem.contractRules && !local.getState().contractRules) {
+			return false;
+		}
+
 		if (menuItem.godMode && !godMode) {
 			return false;
 		}

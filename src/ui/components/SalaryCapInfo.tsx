@@ -22,6 +22,7 @@ export const SalaryCapInfo = ({
 	tid?: number;
 }) => {
 	const {
+		contractRules,
 		hardCapAmount,
 		hardCapTids,
 		hardCapUseLuxuryTax,
@@ -34,6 +35,7 @@ export const SalaryCapInfo = ({
 		salaryCapType,
 		userTid,
 	} = useLocal([
+		"contractRules",
 		"hardCapAmount",
 		"hardCapTids",
 		"hardCapUseLuxuryTax",
@@ -87,31 +89,34 @@ export const SalaryCapInfo = ({
 					<div className="fw-bold">{item.value}</div>
 				</div>
 			))}
-			<HelpPopover title="Salary cap rules">
-				{salaryCapType === "none" ? (
-					<p>There is no salary cap in this league.</p>
-				) : (
+			{/* Realistic front offices' contract rules have their own page. */}
+			{contractRules ? null : (
+				<HelpPopover title="Salary cap rules">
+					{salaryCapType === "none" ? (
+						<p>There is no salary cap in this league.</p>
+					) : (
+						<p>
+							A team over the salary cap can only sign{" "}
+							{salaryCapType === "hard" ? "players" : "free agents"} to minimum
+							contracts
+							{salaryCapType === "soft"
+								? ", though it can go over the cap to re-sign its own players and to make certain trades"
+								: null}
+							.
+						</p>
+					)}
 					<p>
-						A team over the salary cap can only sign{" "}
-						{salaryCapType === "hard" ? "players" : "free agents"} to minimum
-						contracts
-						{salaryCapType === "soft"
-							? ", though it can go over the cap to re-sign its own players and to make certain trades"
-							: null}
-						.
+						A team below the minimum payroll is fined the difference at the end
+						of the season.
 					</p>
-				)}
-				<p>
-					A team below the minimum payroll is fined the difference at the end of
-					the season.
-				</p>
-				{luxuryTax === 0 ? null : (
-					<p>
-						A team above the luxury tax limit is fined {luxuryTax} times the
-						difference at the end of the season.
-					</p>
-				)}
-			</HelpPopover>
+					{luxuryTax === 0 ? null : (
+						<p>
+							A team above the luxury tax limit is fined {luxuryTax} times the
+							difference at the end of the season.
+						</p>
+					)}
+				</HelpPopover>
+			)}
 		</div>
 	);
 };

@@ -1492,6 +1492,8 @@ export type MenuItemLink = {
 	socialFeed?: true;
 	// Hidden unless the league runs rotation plans, for the same reason.
 	rotationPlans?: true;
+	// Hidden unless the league runs realistic front offices' contract rules.
+	contractRules?: true;
 	// Pro leagues only (contracts, trades, the draft) / college leagues only.
 	pro?: true;
 	college?: true;
@@ -1695,6 +1697,10 @@ export type MpPhaseReady = {
 };
 
 export type LocalStateUI = {
+	// Realistic front offices' contract rules (CBA-lite, free agency in
+	// stages) are on in this league: the Contract Rules page and the cap status
+	// on the money pages.
+	contractRules: boolean;
 	customMenu?: MenuItemHeader;
 	email?: string;
 	flagOverrides: Record<string, string>;

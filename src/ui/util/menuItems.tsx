@@ -373,6 +373,16 @@ export const menuItems: (MenuItemLink | MenuItemHeader)[] = [
 			},
 			{
 				type: "link",
+				active: (pageID) => pageID === "contractRules",
+				league: true,
+				commandPalette: true,
+				pro: true,
+				contractRules: true,
+				path: ["contract_rules"],
+				text: "Contract Rules",
+			},
+			{
+				type: "link",
 				active: (pageID) => pageID === "teamHistory",
 				league: true,
 				commandPalette: true,
