@@ -10,6 +10,8 @@
 //
 //   MOTION_GAMES=/tmp/games/real_11.json,... MOTION_OUT=/tmp/motion.txt \
 //     npx vitest run --project basketball tools/court3d-tape/motion.test.ts
+//
+// MOTION_STEP=1 measures the games stepped (see stepper.ts).
 
 import { readFileSync, writeFileSync } from "node:fs";
 import process from "node:process";
@@ -23,6 +25,7 @@ import {
 	fastAt,
 } from "../../src/ui/views/LiveGame/court3d/evaluate.ts";
 import { rimX } from "../../src/ui/views/LiveGame/court3d/geometry.ts";
+import { stepTimeline } from "../../src/ui/views/LiveGame/court3d/stepper.ts";
 
 const games = (process.env.MOTION_GAMES ?? "").split(",").filter(Boolean);
 type Pt = { x: number; y: number };
@@ -181,7 +184,8 @@ test.skipIf(games.length === 0)(
 		const rows: string[] = [];
 		for (const g of games) {
 			const { events, players } = JSON.parse(readFileSync(g, "utf8"));
-			const tl = compileCourt({ events, players, gid: 1 });
+			const laid = compileCourt({ events, players, gid: 1 });
+			const tl = process.env.MOTION_STEP ? stepTimeline(laid) : laid;
 			rows.push(`${g.split("/").at(-1)} ${JSON.stringify(measure(tl))}`);
 		}
 		const out = rows.join("\n");

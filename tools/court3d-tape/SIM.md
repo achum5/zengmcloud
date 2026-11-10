@@ -92,3 +92,23 @@ a tenth of a second of each other (lockstep), how long after the man with
 the ball changes direction his man does (reaction), how much paths bend,
 and every existing "nobody through anybody" check. A step is in when it
 moves these the right way and the suite (old or rewritten) is clean.
+
+## Where it stands
+
+**Step 1, the stepper** (src/ui/views/LiveGame/court3d/stepper.ts,
+`stepTimeline` / `compileStepped`; not switched on). Each man steps every
+50 ms after where the play has him, steering at where it will have him a
+moment from now (as far ahead as it takes him to pull up), never faster
+than a little quicker than the play, getting going, turning and pulling
+up no harder than a man can; easing up into anything of his coming up so
+he is there for it without a dead stop; a beat to react (his own, 60-320
+ms) setting off from standing, unless something of his is close; on the
+play exactly through his acts and at the picture's cuts. Laid back down as
+runs (with his pace at each end) where the way bends or his pace turns.
+
+Measured on test game "a" and real games 11 and 22, against the director's
+own runs: hard starts, turns and stops (over 40 feet a second, a second)
+0.57% -> 0.04% of moments; men setting off within a tenth of a second of
+another 58% -> 35%; acts where the play has them (within 0.05 feet); off
+the play under 2 feet 99% of the time. It costs about 2.7 s on a game that
+takes 12 s to stage, and lays down 1.7 times the runs.
