@@ -340,6 +340,7 @@ import { afterPick as realisticFrontOfficeAfterPick } from "../core/realisticFro
 import { tradingBlockTeams } from "../core/realisticFrontOffice/proposals.ts";
 import {
 	decideReSignings as realisticFrontOfficeDecideReSignings,
+	decideTeamOption as realisticFrontOfficeDecideTeamOption,
 	makeOffer as realisticFrontOfficeMakeOffer,
 	renounce as realisticFrontOfficeRenounce,
 	answerOfferSheet as realisticFrontOfficeAnswerOfferSheet,
@@ -2924,6 +2925,28 @@ const submitReSigningOffer = async ({
 		await toUI("realtimeUpdate", [["playerMovement"]]);
 	}
 	return decided;
+};
+
+// Pick up or decline a team option, in the re-signing phase.
+const decideTeamOption = async ({
+	pid,
+	pickUp,
+}: {
+	pid: number;
+	pickUp: boolean;
+}) => {
+	if (lock.get("gameSim")) {
+		return "Stop game simulation first.";
+	}
+	const error = await realisticFrontOfficeDecideTeamOption(
+		g.get("userTid"),
+		pid,
+		pickUp,
+	);
+	if (error === undefined) {
+		await toUI("realtimeUpdate", [["playerMovement"]]);
+	}
+	return error;
 };
 
 const getNegotiationProps = async (pid: number) => {
@@ -8585,6 +8608,7 @@ const api = {
 		cancelContractNegotiation,
 		decideReSigningOffers,
 		submitReSigningOffer,
+		decideTeamOption,
 		checkAccount: checkAccount2,
 		checkSyncReady,
 		checkParticipationAchievement,

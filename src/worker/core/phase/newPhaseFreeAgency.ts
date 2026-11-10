@@ -7,7 +7,10 @@ import { idb } from "../../db/index.ts";
 import { PLAYER } from "../../../common/constants.ts";
 import { getNumPlayersTradedAwayNormalizedAll } from "../player/getNumPlayersTradedAwayNormalized.ts";
 import { realisticFreeAgencyOn } from "../realisticFrontOffice/isOn.ts";
-import { decideReSignings as realisticFrontOfficeDecideReSignings } from "../realisticFrontOffice/freeAgency.ts";
+import {
+	decideReSignings as realisticFrontOfficeDecideReSignings,
+	pickUpTeamOptions,
+} from "../realisticFrontOffice/freeAgency.ts";
 
 const newPhaseFreeAgency = async (
 	conditions: Conditions,
@@ -21,6 +24,10 @@ const newPhaseFreeAgency = async (
 		for (const tid of g.get("userTids")) {
 			await realisticFrontOfficeDecideReSignings(tid);
 		}
+	}
+	// And their team options not yet decided are picked up.
+	if (stagesOn()) {
+		await pickUpTeamOptions();
 	}
 
 	// Delete all current negotiations to resign players

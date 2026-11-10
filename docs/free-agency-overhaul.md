@@ -34,7 +34,9 @@ All amounts scale with the league's settings: the top max tier is
    the roster.
 7. **Contract shape.** Up to 5 years with an own player, 4 otherwise. Yearly
    raise (or cut) up to 8% of the first year with Bird rights, 5% without.
-   Optional player or team option on the final year.
+   Optional player or team option on the final year. A human team decides
+   its team options in the re-signing phase (declined, the player joins its
+   players to re-sign); undecided ones are picked up as free agency opens.
 8. **Restricted free agency.** A player finishing a rookie contract is
    restricted unless his team renounces him: he takes offers, and his team
    may match the winning one on the same terms.

@@ -21,6 +21,9 @@ import {
 import {
 	decideOptions,
 	decideReSignings,
+	decideTeamOption,
+	pendingTeamOptions,
+	pickUpTeamOptions,
 	makeOffer,
 	renounce,
 	sign,
@@ -238,6 +241,61 @@ test("a re-signing offer submitted is decided at once, and the log has it with t
 	assert.strictEqual(signed.type, "reSigned");
 	assert.closeTo((signed as any).how.chance, yes!.chance, 1e-9);
 	assert.match(await formatEventText(signed), /\d+% odds\)\.$/);
+});
+
+test("a human team decides its own team options; those it leaves are picked up", async () => {
+	g.setWithoutSavingToDB("phase", PHASE.RESIGN_PLAYERS);
+	const season = g.get("season");
+	const userTid = 8;
+	const userTids = g.get("userTids");
+	const spectator = g.get("spectator");
+	g.setWithoutSavingToDB("userTids", [userTid]);
+	g.setWithoutSavingToDB("userTid", userTid);
+	g.setWithoutSavingToDB("spectator", false);
+	try {
+		const [a, b] = await idb.cache.players.indexGetAll("playersByTid", userTid);
+		for (const p of [a!, b!]) {
+			setTestContract(p, { exp: season + 1 });
+			getCurrentContract(p)!.option = "team";
+			await idb.cache.players.put(p);
+		}
+		// Not decided for it as the phase opens.
+		await decideOptions();
+		assert.sameMembers(
+			(await pendingTeamOptions(userTid)).map((p) => p.pid),
+			[a!.pid, b!.pid],
+		);
+
+		// Declined: his contract ends now, and he is one of its players to
+		// re-sign.
+		assert.isUndefined(await decideTeamOption(userTid, a!.pid, false));
+		const declined = (await idb.cache.players.get(a!.pid))!;
+		assert.strictEqual(declined.tid, PLAYER.FREE_AGENT);
+		assert.strictEqual(
+			(await idb.cache.negotiations.get(a!.pid))?.tid,
+			userTid,
+		);
+		assert.include(
+			await formatEventText(await lastEvent(a!.pid)),
+			"declined their team option on",
+		);
+		assert.isString(await decideTeamOption(userTid, a!.pid, true));
+
+		// Left undecided: picked up as free agency opens.
+		await pickUpTeamOptions();
+		const kept = (await idb.cache.players.get(b!.pid))!;
+		assert.strictEqual(kept.tid, userTid);
+		assert.isUndefined(getCurrentContract(kept)!.option);
+		assert.include(
+			await formatEventText(await lastEvent(b!.pid)),
+			"picked up their team option on",
+		);
+	} finally {
+		g.setWithoutSavingToDB("userTids", userTids);
+		g.setWithoutSavingToDB("userTid", userTids[0]!);
+		g.setWithoutSavingToDB("spectator", spectator);
+		await idb.cache.negotiations.clear();
+	}
 });
 
 test("the rules page has this league's numbers", () => {

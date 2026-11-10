@@ -320,6 +320,52 @@ const DecidedPanel = ({
 	);
 };
 
+// CBA-lite: the user's team options on next season, to pick up or decline.
+const TeamOptions = ({
+	disabled,
+	options,
+}: {
+	disabled: boolean;
+	options: View<"negotiationList">["teamOptions"];
+}) => {
+	const decide = async (pid: number, pickUp: boolean) => {
+		const error = await toWorker("main", "decideTeamOption", { pid, pickUp });
+		if (typeof error === "string") {
+			showNotification({ type: "error", text: error });
+		}
+	};
+	return (
+		<div className="mb-3">
+			<h3>Team options</h3>
+			{options.map((row) => (
+				<div key={row.pid} className="d-flex align-items-center gap-2 mb-1">
+					<a href={helpers.leagueUrl(["player", row.pid])}>{row.name}</a>
+					<span>
+						{helpers.formatCurrency(row.amount / 1000, "M")} for {row.season}
+					</span>
+					<button
+						type="button"
+						className="btn btn-light-bordered btn-xs"
+						disabled={disabled}
+						onClick={() => decide(row.pid, true)}
+					>
+						Pick up
+					</button>
+					<button
+						type="button"
+						className="btn btn-light-bordered btn-xs"
+						disabled={disabled}
+						onClick={() => decide(row.pid, false)}
+						title="He joins your players to re-sign"
+					>
+						Decline
+					</button>
+				</div>
+			))}
+		</div>
+	);
+};
+
 const NegotiationList = ({
 	cap,
 	capSpace,
@@ -329,6 +375,7 @@ const NegotiationList = ({
 	players,
 	stats,
 	sumContracts,
+	teamOptions,
 	userPlayers,
 }: View<"negotiationList">) => {
 	const {
@@ -747,6 +794,10 @@ const NegotiationList = ({
 					</>
 				) : null}
 			</p>
+
+			{teamOptions.length > 0 ? (
+				<TeamOptions disabled={gameSimInProgress} options={teamOptions} />
+			) : null}
 
 			{decided && decided.length > 0 ? (
 				<DecidedPanel decided={decided} onClose={() => setDecided(undefined)} />

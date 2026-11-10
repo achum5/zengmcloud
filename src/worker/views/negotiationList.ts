@@ -7,6 +7,8 @@ import { addMood, FREE_AGENT_STATS } from "./freeAgents.ts";
 import { defineView } from "../util/defineView.ts";
 import { realisticFreeAgencyOn } from "../core/realisticFrontOffice/isOn.ts";
 import { reSigningOffers } from "../core/realisticFrontOffice/offerScreen.ts";
+import { pendingTeamOptions } from "../core/realisticFrontOffice/freeAgency.ts";
+import { getCurrentContract } from "../../common/contracts.ts";
 import { teamCapStatus } from "../core/realisticFrontOffice/capSheet.ts";
 
 export const getNegotiationPids = async (tid: number) => {
@@ -81,6 +83,14 @@ export default defineView({
 		}
 		sumContracts /= 1000;
 
+		// Team options on next season still to decide.
+		const teamOptions = (await pendingTeamOptions(userTid)).map((p) => ({
+			pid: p.pid,
+			name: `${p.firstName} ${p.lastName}`,
+			amount: getCurrentContract(p)!.amounts.at(-1)!,
+			season: g.get("season") + 1,
+		}));
+
 		const payroll = await team.getPayroll(userTid);
 		const capSpace = (g.get("salaryCap") - payroll) / 1000;
 
@@ -102,6 +112,7 @@ export default defineView({
 			players,
 			stats,
 			sumContracts,
+			teamOptions,
 			userPlayers,
 		};
 	},

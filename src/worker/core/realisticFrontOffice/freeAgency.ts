@@ -10,6 +10,7 @@ import { idb } from "../../db/index.ts";
 import { g, helpers } from "../../util/index.ts";
 import { uniformSeed } from "../../../common/random.ts";
 import { revertBefore } from "../player/revertSnapshot.ts";
+import { getNumPlayersTradedAwayNormalizedAll } from "../player/getNumPlayersTradedAwayNormalized.ts";
 import { getContractDemand } from "../contract/index.ts";
 import { getContractStartSeason } from "../../util/getContractStartSeason.ts";
 import {
@@ -1178,8 +1179,10 @@ export const openStageMarket = async () => {
 
 // CBA-lite: options on contracts' final seasons, decided as the re-signing
 // phase opens. A player opts out when the market would pay him clearly more;
-// a CPU team declines when he is no longer worth it; a human team's option is
-// picked up. Declined, the season is gone and his contract runs out now.
+// a CPU team declines when he is no longer worth it; a human team decides its
+// own in the re-signing phase (decideTeamOption), and what it leaves is picked
+// up as free agency opens. Declined, the season is gone and his contract runs
+// out now.
 export const decideOptions = async () => {
 	const season = g.get("season");
 	const cpu = new Set(await aiTids());
@@ -1194,6 +1197,9 @@ export const decideOptions = async () => {
 		const final = c.amounts.at(-1)!;
 		const worth = marketSalary(p.value);
 		const option = c.option;
+		if (option === "team" && !cpu.has(p.tid)) {
+			continue;
+		}
 		const out =
 			option === "player"
 				? worth > OPTION_OUT * final
@@ -1215,6 +1221,87 @@ export const decideOptions = async () => {
 };
 const OPTION_OUT = 1.1;
 const OPTION_DECLINE = 0.8;
+
+// A human team's team options still to decide: its players whose contracts'
+// final season, next season, is a team option.
+export const pendingTeamOptions = async (tid: number) => {
+	const season = g.get("season");
+	if (g.get("phase") !== PHASE.RESIGN_PLAYERS || !stagesOn()) {
+		return [];
+	}
+	return (await idb.cache.players.indexGetAll("playersByTid", tid)).filter(
+		(p) => {
+			const c = getCurrentContract(p);
+			return c?.option === "team" && getContractExp(c) === season + 1;
+		},
+	);
+};
+
+// A human team picks up or declines its option on one of its players, in the
+// re-signing phase. Declined, his contract ends now and he joins its players
+// to re-sign, Bird rights and all.
+export const decideTeamOption = async (
+	tid: number,
+	pid: number,
+	pickUp: boolean,
+) => {
+	const p = (await pendingTeamOptions(tid)).find((x) => x.pid === pid);
+	const c = p ? getCurrentContract(p) : undefined;
+	if (!p || !c) {
+		return "No team option to decide.";
+	}
+	const final = c.amounts.at(-1)!;
+	delete c.option;
+	if (!pickUp) {
+		c.amounts.pop();
+	}
+	await idb.cache.players.put(p);
+	await logOption({
+		p,
+		tid,
+		option: "team",
+		exercised: pickUp,
+		amount: final,
+		season: g.get("season") + 1,
+	});
+	if (!pickUp) {
+		player.addToFreeAgents(
+			p,
+			await getNumPlayersTradedAwayNormalizedAll(),
+			null,
+		);
+		await idb.cache.players.put(p);
+		const info = await contractNegotiation.create(p.pid, true, tid);
+		if (typeof info !== "string") {
+			await idb.cache.negotiations.add(info);
+			await defaultReSignOffer(tid, p);
+		}
+	}
+};
+
+// As free agency opens: human teams' team options left undecided are picked
+// up.
+export const pickUpTeamOptions = async () => {
+	const season = g.get("season");
+	for (const tid of g.get("userTids")) {
+		for (const p of await idb.cache.players.indexGetAll("playersByTid", tid)) {
+			const c = getCurrentContract(p);
+			if (c?.option !== "team" || getContractExp(c) !== season + 1) {
+				continue;
+			}
+			delete c.option;
+			await idb.cache.players.put(p);
+			await logOption({
+				p,
+				tid,
+				option: "team",
+				exercised: true,
+				amount: c.amounts.at(-1)!,
+				season: season + 1,
+			});
+		}
+	}
+};
 
 // A human team gives up a free agent's Bird rights, and his cap hold.
 export const renounce = async (tid: number, pid: number) => {
