@@ -151,8 +151,10 @@ export const applyExtension = (contract: Contract, offer: ExtensionOffer) => {
 
 const extend = async (p: Player, tid: number, offer: ExtensionOffer) => {
 	const contract = getCurrentContract(p)!;
+	const before = contract.amounts.length;
 	applyExtension(contract, offer);
 	await idb.cache.players.put(p);
+	const added = contract.amounts.slice(before);
 	await logEvent({
 		type: "reSigned",
 		showNotification: false,
@@ -160,6 +162,14 @@ const extend = async (p: Player, tid: number, offer: ExtensionOffer) => {
 		tids: [tid],
 		score: Math.round(helpers.bound(p.valueFuzz - 45, 0, Infinity)),
 		contract: { amount: offer.amount, exp: getContractExp(contract) },
+		// An extension is by his Bird rights (extensionError checked the rest).
+		how: {
+			extension: true,
+			path: "bird",
+			...(contract.option ? { option: contract.option } : {}),
+			years: added.length,
+			total: added.reduce((sum, amount) => sum + amount, 0),
+		},
 	});
 };
 

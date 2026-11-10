@@ -3,6 +3,7 @@ import type {
 	FaDayResultItem,
 	FlatContractInfo,
 	Player,
+	SigningHow,
 	Team,
 } from "../../../common/types.ts";
 import { idb } from "../../db/index.ts";
@@ -10,6 +11,8 @@ import { g, helpers } from "../../util/index.ts";
 import { uniformSeed } from "../../../common/random.ts";
 import { revertBefore } from "../player/revertSnapshot.ts";
 import { getContractDemand } from "../contract/index.ts";
+import { getContractStartSeason } from "../../util/getContractStartSeason.ts";
+import { howFor, logOption, logRenounced, ownPath } from "./history.ts";
 import { contractOf } from "./contractOf.ts";
 import {
 	getContractExp,
@@ -459,35 +462,53 @@ export const sign = async (
 	tid: number,
 	contract: FlatContractInfo,
 	shape?: { raise?: number; option?: "player" | "team" },
+	// The contract rules' check it passed, and an offer sheet's outcome: how
+	// it was signed, for the history (history.ts).
+	how?: Pick<SigningHow, "path" | "offerSheet">,
 ) => {
 	// Him as he was before signing, so reverting the signing hands back the
 	// free agent he was.
 	const before = revertBefore(p);
-	await player.sign(p, tid, contract, g.get("phase"), before);
 	// CBA-lite: a yearly raise from the first season's amount, and an option
 	// on the last.
-	const signed = p.contracts.at(-1);
-	if (signed && (shape?.raise || shape?.option)) {
-		if (shape.raise) {
-			signed.amounts = amountsWithRaise(
-				signed.amounts[0]!,
-				signed.amounts.length,
-				shape.raise,
-			).map((amount) => helpers.roundContract(amount));
-		}
-		if (shape.option && signed.amounts.length >= 2) {
-			signed.option = shape.option;
-		}
-	}
+	const years = Math.max(1, contract.exp - getContractStartSeason() + 1);
+	const amounts = shape?.raise
+		? amountsWithRaise(contract.amount, years, shape.raise).map((amount) =>
+				helpers.roundContract(amount),
+			)
+		: undefined;
+	const option = shape?.option && years >= 2 ? shape.option : undefined;
 	// A deal well under what he asked as free agency opened is a discount
 	// deal: no Bird rights from it.
-	if (
-		signed &&
+	const discount =
 		stagesOn() &&
 		p.faOpenAsk !== undefined &&
-		contract.amount < stageSettings.discountShare * p.faOpenAsk
-	) {
-		signed.discount = true;
+		contract.amount < stageSettings.discountShare * p.faOpenAsk;
+	const history: SigningHow | undefined = stagesOn()
+		? {
+				...how,
+				...(how?.path ? { path: ownPath(how.path, ownTid(p) === tid) } : {}),
+				...(option ? { option } : {}),
+				...(discount ? { proveIt: true } : {}),
+				...(inStages() ? { stage: stageIndex() } : {}),
+				years,
+				total: amounts
+					? amounts.reduce((sum, amount) => sum + amount, 0)
+					: contract.amount * years,
+			}
+		: undefined;
+	await player.sign(p, tid, contract, g.get("phase"), before, history);
+	const signed = p.contracts.at(-1);
+	if (signed) {
+		if (amounts && amounts.length === signed.amounts.length) {
+			signed.amounts = amounts;
+		}
+		if (option && signed.amounts.length >= 2) {
+			signed.option = option;
+		}
+		if (discount) {
+			signed.discount = true;
+		}
 	}
 	await idb.cache.players.put(p);
 	await team.rosterAutoSort(tid);
@@ -1132,14 +1153,17 @@ export const openStageMarket = async () => {
 			continue;
 		}
 		const state = await loadTeam(outlook, tid);
+		const renounced: Player[] = [];
 		for (const p of own) {
 			const most = mostWorthPaying(outlook, state, p, wantedYears(p));
 			if (most === undefined || most < contractOf(p).amount) {
 				p.faRenounced = true;
 				delete p.faRestricted;
 				await idb.cache.players.put(p);
+				renounced.push(p);
 			}
 		}
+		await logRenounced(tid, renounced);
 	}
 };
 
@@ -1160,8 +1184,9 @@ export const decideOptions = async () => {
 		}
 		const final = c.amounts.at(-1)!;
 		const worth = marketSalary(p.value);
+		const option = c.option;
 		const out =
-			c.option === "player"
+			option === "player"
 				? worth > OPTION_OUT * final
 				: cpu.has(p.tid) && worth < OPTION_DECLINE * final;
 		delete c.option;
@@ -1169,6 +1194,14 @@ export const decideOptions = async () => {
 			c.amounts.pop();
 		}
 		await idb.cache.players.put(p);
+		await logOption({
+			p,
+			tid: p.tid,
+			option,
+			exercised: !out,
+			amount: final,
+			season: season + 1,
+		});
 	}
 };
 const OPTION_OUT = 1.1;
@@ -1184,6 +1217,7 @@ export const renounce = async (tid: number, pid: number) => {
 	delete p.faRestricted;
 	delete p.faMatch;
 	await idb.cache.players.put(p);
+	await logRenounced(tid, [p]);
 };
 
 // A human team's answer to an offer sheet for its restricted free agent,
@@ -1218,7 +1252,7 @@ const resolveOfferSheets = async () => {
 		if (!sheet || sheet.stage >= stageIndex()) {
 			continue;
 		}
-		const tryTeam = async (tid: number) => {
+		const tryTeam = async (tid: number, matched: boolean) => {
 			const t = await idb.cache.teams.get(tid);
 			if (!t || p.tid !== PLAYER.FREE_AGENT) {
 				return false;
@@ -1235,14 +1269,18 @@ const resolveOfferSheets = async () => {
 			if (!check.ok) {
 				return false;
 			}
-			await sign(p, tid, { amount: sheet.amount, exp: sheet.exp });
+			await sign(p, tid, { amount: sheet.amount, exp: sheet.exp }, undefined, {
+				path: check.path,
+				offerSheet: matched ? "matched" : "notMatched",
+			});
 			await noteSigning(tid, check);
 			return true;
 		};
 		const own = ownTid(p);
-		const matched = !!p.faMatch && own !== undefined && (await tryTeam(own));
+		const matched =
+			!!p.faMatch && own !== undefined && (await tryTeam(own, true));
 		if (!matched) {
-			await tryTeam(sheet.tid);
+			await tryTeam(sheet.tid, false);
 		}
 		delete p.faOfferSheet;
 		delete p.faMatch;
@@ -1595,7 +1633,13 @@ export const freeAgencyDay = async () => {
 							exp: offer.exp,
 						}).net > 0
 					) {
-						await sign(p, matching, { amount: offer.amount, exp: offer.exp });
+						await sign(
+							p,
+							matching,
+							{ amount: offer.amount, exp: offer.exp },
+							undefined,
+							{ path: ownCheck.path, offerSheet: "matched" },
+						);
 						await noteSigning(matching, ownCheck);
 						remaining.delete(p.pid);
 						continue;
@@ -1607,6 +1651,14 @@ export const freeAgencyDay = async () => {
 						tid,
 						{ amount: offer.amount, exp: offer.exp },
 						{ raise: offer.raise, option: offer.option },
+						check?.ok
+							? {
+									path: check.path,
+									...(matching !== undefined && matching !== tid
+										? { offerSheet: "notMatched" as const }
+										: {}),
+								}
+							: undefined,
 					);
 					if (check) {
 						await noteSigning(tid, check);
@@ -1675,6 +1727,7 @@ export const freeAgencyDay = async () => {
 			key: `${season}-${phase}-${daysLeft}`,
 			season,
 			daysLeft,
+			...(stages ? { stage: stageIndex() } : {}),
 			items: results,
 			boards: [],
 			at: Date.now(),
@@ -1850,7 +1903,14 @@ export const decideReSignings = async (tid: number) => {
 			if (contractOf(p).rookie) {
 				contract.rookie = true;
 			}
-			await player.sign(p, tid, contract, PHASE.RESIGN_PLAYERS);
+			await player.sign(
+				p,
+				tid,
+				contract,
+				PHASE.RESIGN_PLAYERS,
+				undefined,
+				await howFor(p, tid, offer.amount),
+			);
 			await idb.cache.players.put(p);
 		}
 		await contractNegotiation.cancel(p.pid);

@@ -80,6 +80,10 @@ export const types: Partial<
 		text: "Released",
 		category: "transaction",
 	},
+	contract: {
+		text: "Contract",
+		category: "transaction",
+	},
 	retired: {
 		text: "Retirement",
 		category: "transaction",
