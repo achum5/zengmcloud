@@ -126,8 +126,9 @@ export const marketSettings = {
 	// Teams shopping each day of the season, before the deadline's last
 	// days (deadlineWindow).
 	shoppersPerDay: 2,
-	// How many other teams each team out shopping talks to.
-	partnersPerShopper: 6,
+	// How many other teams each team out shopping talks to - 3, not 6, with
+	// letGoRoomTolerance (outlook.ts), for speed.
+	partnersPerShopper: 3,
 	// One side may give nothing.
 	oneSided: true,
 	// Picks for picks, no player moving.

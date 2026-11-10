@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 248,
+		date: "2026-11-10",
+		text: "Realistic Front Offices: faster sims - CPU teams spend about 60% less time looking for trades each day, so a season with the mode on goes noticeably quicker. In test leagues teams did as well as before.",
+	},
+	{
 		n: 247,
 		date: "2026-11-09",
 		text: "3D games on phones: the picture could drop to a blocky, low-detail size and stay there whenever the game was running at 30 frames a second (as phones often do, always in Low Power Mode). It now stays as sharp as the phone can draw in time.",

@@ -727,8 +727,13 @@ export const outlookSettings = {
 	// times their teams let them go (KEPT).
 	letGo: true,
 	// A deal that changes a team's room the season it decides on a player by
-	// more than this share of the cap has it decide again (letGo).
-	letGoRoomTolerance: 0.1,
+	// more than this share of the cap has it decide again (letGo). At 1 it
+	// keeps what it decided on its own roster: with 3 partners a shopper
+	// against 0.1 and 6, half the teams each way, 2 leagues each way round
+	// over 5 seasons: titles 9 to 11, playoff rounds 151 to 149, games won a
+	// little more in four seasons of five, seasons under 20 wins 30 to 39 -
+	// and in the owner's league about 60% less time trading in the season.
+	letGoRoomTolerance: 1,
 	// What payroll past the cap costs a team, in titles a season per cap's
 	// worth, and the luxury tax's rate on top past the tax line (payrollCost).
 	// 0.04, the owner's call after a test against 0.02: half the teams each
