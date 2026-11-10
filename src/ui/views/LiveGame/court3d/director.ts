@@ -756,6 +756,29 @@ const BALL_R = 0.39;
 // One bounce of a crossover, from one hand to the other, and one of a
 // dribble (see evaluate.ts).
 const CROSS_MS = 1000 / CROSS_RATE;
+// On his way with it (see dribbleThrough): a pause between two runs of his
+// dribble longer than this (ms) and no longer than this is taken up in the
+// running - all but this much of it, for the turn - out on the floor no
+// further than this (feet) from the rim.
+// A run of dribble moves where he stands: his weight with each, a step
+// this far (feet) the way the ball goes.
+const COMBO_SHIFT = 1.1;
+const THROUGH_LEAST = 300;
+const THROUGH_MOST = 1400;
+const THROUGH_BEAT = 150;
+const THROUGH_FROM = 47;
+// ... and only with the ball still on his dribble this long (ms) after.
+const THROUGH_KEEP = 600;
+// (Runs of his on foot, the ball on his dribble all of them.)
+const THROUGH_LEGS = new Set<AnimName>([
+	"dribble",
+	"run",
+	"jog",
+	"walk",
+	"back",
+	"shuffle",
+	"slide",
+]);
 // A pass over the top goes up over his head first: this much longer from
 // the start of his throw to the ball leaving his hands.
 const OVERHEAD_WIND = 140;
@@ -22961,6 +22984,91 @@ class Director {
 		guard.nudges.sort((a, b) => a.t0 - b.t0);
 	}
 
+	// ON HIS WAY WITH IT. A man with the ball on his dribble, at one spot
+	// the set sent him to and off again for the next a moment later, does
+	// not pull up dead there and stand bouncing it, then burst off again:
+	// he eases into the turn and comes out of it on his way - the moment
+	// spent there taken up in getting there and leaving. (Only with nothing
+	// else of his there: no move of his, no ball out of his hands.)
+	private dribbleThrough() {
+		const dribbling = new Map<number, [number, number][]>();
+		this.ball.forEach((s, k) => {
+			if (s.kind === "hold" && s.style !== "hold") {
+				const list = dribbling.get(s.pid) ?? [];
+				list.push([s.t0, this.ball[k + 1]?.t0 ?? Infinity]);
+				dribbling.set(s.pid, list);
+			}
+		});
+		const on = (pid: number, t0: number, t1: number) => {
+			// (Joined pieces of one dribble.)
+			let at = t0;
+			for (const [a, b] of dribbling.get(pid) ?? []) {
+				if (a <= at + 1 && b > at) {
+					at = b;
+				}
+				if (at >= t1) {
+					return true;
+				}
+			}
+			return false;
+		};
+		for (const tr of this.tracks.values()) {
+			const rim = { x: rimX(tr.team), y: COURT_H / 2 };
+			for (let i = 0; i + 1 < tr.moves.length; i++) {
+				const a = tr.moves[i]!;
+				const b = tr.moves[i + 1]!;
+				const gap = b.t0 - a.t1;
+				if (
+					!THROUGH_LEGS.has(a.anim) ||
+					!THROUGH_LEGS.has(b.anim) ||
+					gap <= THROUGH_LEAST ||
+					gap > THROUGH_MOST ||
+					(a.v1 !== undefined && a.v1 !== 0) ||
+					(b.v0 !== undefined && b.v0 !== 0) ||
+					dist(a.to, b.from) > 0.05 ||
+					dist(a.to, rim) > THROUGH_FROM ||
+					// (Not the run into a shot or a pass, though: where he lets
+					// it go from, and when, is as it was laid out.)
+					!on(tr.pid, a.t0, b.t1 + THROUGH_KEEP) ||
+					tr.acts.some((x) => x.t1 > a.t1 - 100 && x.t0 < b.t0 + 100) ||
+					this.cuts.some((c) => c > a.t1 - 300 && c < b.t0 + 300)
+				) {
+					continue;
+				}
+				// (Half the moment each: into the turn later, out of it
+				// sooner - and a beat there still, for the turn, if it is a
+				// sharp one: see FLOW_MS in evaluate.ts.)
+				const share = (gap - THROUGH_BEAT) / 2;
+				a.t1 += share;
+				b.t0 -= share;
+				// (Not planted at the turn: on through it.)
+				delete a.v1;
+				delete b.v0;
+			}
+		}
+	}
+
+	// Put on the floor out of his hands, the first bounce is a plain one -
+	// or across in front of him: never behind his back or between his legs
+	// straight out of holding it, his hands and legs nowhere set for it.
+	private plainFirst() {
+		const ball = this.ball;
+		for (let i = 1; i < ball.length; i++) {
+			const s = ball[i]!;
+			const was = ball[i - 1]!;
+			if (
+				s.kind === "hold" &&
+				s.style === "cross" &&
+				(s.move === "back" || s.move === "legs") &&
+				was.kind === "hold" &&
+				was.pid === s.pid &&
+				was.style === "hold"
+			) {
+				s.move = "front";
+			}
+		}
+	}
+
 	private keepDribbling() {
 		const ball = this.ball;
 		const added: [Track, Move][] = [];
@@ -23117,6 +23225,40 @@ class Director {
 					// simple: his dribble, no show of moves where he stands.)
 					if (!this.plainHandle(s.pid, tc)) {
 						this.giveWith(tr, here, tc, n3, inHand, ms);
+						// His weight with the ball: a short step the way each
+						// move takes it, and back - not stood there planted while
+						// it goes from hand to hand. (Back on his spot as the last
+						// comes up.)
+						const G = [...this.tracks.values()]
+							.filter((o) => o.team !== tr.team && o.pid >= 0)
+							.map((o) => this.posAt(o.pid, tc))
+							.sort((a, b) => dist(a, here) - dist(b, here))[0];
+						const toward = G && dist(G, here) > 0.5 ? unitVec(here, G) : u;
+						const across = { x: -toward.y, y: toward.x };
+						let way = inHand === "R" ? 1 : -1;
+						let from = { ...here };
+						for (let k = 0; k < n3; k++) {
+							const last = k === n3 - 1;
+							const to = last
+								? { ...here }
+								: clampPt({
+										x: here.x + across.x * way * COMBO_SHIFT,
+										y: here.y + across.y * way * COMBO_SHIFT,
+									});
+							added.push([
+								tr,
+								{
+									t0: tc + k * ms,
+									t1: tc + (k + 1) * ms,
+									from,
+									to,
+									anim: "dribble",
+									face,
+								},
+							]);
+							from = to;
+							way = -way;
+						}
 						segs.push(...made.segs, {
 							kind: "hold",
 							t0: tc + n3 * ms,
@@ -29951,7 +30093,9 @@ class Director {
 		this.allPlayIt();
 		this.pace();
 		this.liveHands();
+		this.dribbleThrough();
 		this.keepDribbling();
+		this.plainFirst();
 		this.flowOn();
 		this.liven();
 		this.clearTheLane();

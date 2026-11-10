@@ -12,9 +12,14 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
-		n: 251,
+		n: 252,
 		date: "2026-11-10",
 		text: "Contracts now keep their whole history: a player's Salaries table shows which team paid each season, including a team still paying a player it released, and the first load of each league converts it (a big league can take a moment). In a shared league, everyone should reload to update before the next sim.",
+	},
+	{
+		n: 251,
+		date: "2026-11-10",
+		text: "3D games: ball handlers move with the ball more - no more pulling up dead between dribbling from one spot to the next, and when a player works his man with dribble moves where he stands, his weight goes with the ball instead of standing planted.",
 	},
 	{
 		n: 250,
