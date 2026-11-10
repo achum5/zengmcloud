@@ -16,7 +16,9 @@ import { realisticFreeAgencyOn } from "../core/realisticFrontOffice/isOn.ts";
 import {
 	lastChoices,
 	offersList,
+	stageOf,
 } from "../core/realisticFrontOffice/offerScreen.ts";
+import { inStages } from "../core/realisticFrontOffice/stages.ts";
 
 const processInputs = (params: RouteParams<"freeAgents">) => {
 	if (g.get("phase") === PHASE.RESIGN_PLAYERS) {
@@ -215,6 +217,10 @@ export default defineView({
 					mergeStats: "totOnly",
 				});
 
+			// Free agency in stages: when each decides, and the number to beat.
+			const stages = season === "current" && inStages();
+			const availableByPid = groupByUnique(playersByType.available, "pid");
+
 			const availablePlayers = (
 				await addMood(
 					await getPlayersFiltered(playersByType.available),
@@ -223,6 +229,7 @@ export default defineView({
 			).map((p) => ({
 				...p,
 				freeAgentType: "available" as const,
+				stage: stages ? stageOf(availableByPid[p.pid]!) : undefined,
 			}));
 
 			const signedByPid = groupByUnique(
@@ -366,6 +373,7 @@ export default defineView({
 				payroll: payroll / 1000,
 				players,
 				season,
+				stages,
 				stats: FREE_AGENT_STATS,
 				type,
 				userPlayers,

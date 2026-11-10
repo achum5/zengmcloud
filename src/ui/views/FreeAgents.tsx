@@ -8,7 +8,7 @@ import { helpers } from "../util/helpers.ts";
 import { toWorker } from "../util/toWorker.ts";
 import { getCols } from "../../common/getCols.ts";
 import { useLocal } from "../util/local.ts";
-import type { Phase, View } from "../../common/types.ts";
+import type { Col, Phase, View } from "../../common/types.ts";
 import { wrappedMood } from "../components/Mood.tsx";
 import {
 	wrappedContractAmount,
@@ -439,7 +439,16 @@ const OffersPanel = ({
 			</div>
 			{offers.results ? (
 				<div className="col-md-6">
-					<h3>Last day</h3>
+					{offers.results.stage ? (
+						<h3>
+							Last stage{" "}
+							<span className="text-body-secondary fs-6">
+								({offers.results.stage})
+							</span>
+						</h3>
+					) : (
+						<h3>Last day</h3>
+					)}
 					<div style={{ maxHeight: 320, overflowY: "auto" }}>
 						{offers.results.items.map((item) => (
 							<ChoiceItem key={item.pid} item={item} userTid={userTid} />
@@ -449,6 +458,19 @@ const OffersPanel = ({
 			) : null}
 		</div>
 	);
+};
+
+// Free agency in stages: his leading offer's money and years, and when he
+// decides.
+const stageCells = (p: View<"freeAgents">["players"][number]) => {
+	const stage = p.freeAgentType === "available" ? p.stage : undefined;
+	const toBeat = stage?.toBeat
+		? `${formatOfferAmount(stage.toBeat.amount)} × ${stage.toBeat.years}`
+		: "";
+	return [
+		{ value: toBeat, sortValue: stage?.toBeat?.amount ?? null },
+		{ value: stage?.decidesLabel ?? "", sortValue: stage?.decides ?? null },
+	];
 };
 
 const FreeAgents = ({
@@ -461,6 +483,7 @@ const FreeAgents = ({
 	payroll,
 	players,
 	season,
+	stages,
 	stats,
 	type,
 	userPlayers,
@@ -547,6 +570,18 @@ const FreeAgents = ({
 	}
 
 	const askingForText = "Asking For";
+	// Free agency in stages: the leading offer, and when he decides.
+	const stageCols: Col[] = stages
+		? [
+				{
+					title: "To beat",
+					desc: "Leading offer",
+					sortSequence: ["desc", "asc"],
+					sortType: "number",
+				},
+				{ title: "Decides", sortType: "number" },
+			]
+		: [];
 	const colKeys = [
 		"Name",
 		"Pos",
@@ -557,6 +592,7 @@ const FreeAgents = ({
 		"Mood",
 		askingForText,
 		"Exp",
+		...stageCols,
 		"Actions",
 	];
 	const cols = getCols(colKeys, {
@@ -661,6 +697,7 @@ const FreeAgents = ({
 					: undefined,
 				wrappedContractAmount(p, p.contract.amount),
 				wrappedContractExp(p),
+				...(stages ? stageCells(p) : []),
 				p.freeAgentType === "available"
 					? spectator
 						? null
@@ -850,7 +887,7 @@ const FreeAgents = ({
 
 			<DataTable
 				cols={cols}
-				defaultSort={[cols.length - 3, "desc"]}
+				defaultSort={[colKeys.indexOf(askingForText), "desc"]}
 				defaultStickyCols={window.mobile ? 0 : 1}
 				name="FreeAgents"
 				pagination

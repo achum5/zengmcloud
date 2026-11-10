@@ -15,9 +15,11 @@ import {
 	offerTerms,
 	offersList,
 	reSigningOffers,
+	stageOf,
 	wantedTerm,
 } from "./offerScreen.ts";
 import { wantedYears } from "./offers.ts";
+import { stageSettings } from "./stages.ts";
 
 const importNode = (name: string) => import(/* @vite-ignore */ name);
 
@@ -267,4 +269,64 @@ test("the last day's signings are the most recent ones recorded", async () => {
 		results?.items.map((x) => x.pid),
 		[1],
 	);
+});
+
+test("in stages, a free agent shows when he decides and the number to beat, not who made it", async () => {
+	const [p] = await freeAgents();
+	const season = g.get("season");
+	const { faDecides, faLead } = p!;
+	p!.faDecides = 2;
+	p!.faLead = { amount: 9000, exp: season + 3, tid: 5 };
+	await idb.cache.players.put(p!);
+	assert.isUndefined(stageOf(p!), "not in stages");
+
+	stageSettings.on = true;
+	g.setWithoutSavingToDB("phase", PHASE.FREE_AGENCY);
+	try {
+		// Decision day 1.
+		g.setWithoutSavingToDB("daysLeft", 4);
+		const expected = {
+			decides: 2,
+			decidesLabel: "Day 2",
+			toBeat: { amount: 9000, years: 3 },
+		};
+		assert.deepEqual(stageOf(p!), expected);
+		const screen = await offerScreen(userTid, p!.pid);
+		if (typeof screen === "string") {
+			throw new Error(screen);
+		}
+		assert.deepEqual(screen.stage, expected);
+
+		// Past his decision day, he decides in the stage the market is in.
+		g.setWithoutSavingToDB("daysLeft", 2);
+		assert.strictEqual(stageOf(p!)?.decidesLabel, "Open market");
+
+		await idb.cache.faDayResults.put({
+			key: "stage",
+			season,
+			daysLeft: 4,
+			items: [
+				{
+					type: "choice",
+					pid: p!.pid,
+					name: "A B",
+					offers: [],
+					waitPct: 0,
+					roll: 1,
+					winnerTid: 3,
+					amount: 5000,
+					exp: season + 2,
+				},
+			],
+			boards: [],
+			at: 3,
+		});
+		assert.strictEqual((await lastChoices())?.stage, "Decision day 1");
+	} finally {
+		stageSettings.on = false;
+		g.setWithoutSavingToDB("daysLeft", 0);
+		p!.faDecides = faDecides;
+		p!.faLead = faLead;
+		await idb.cache.players.put(p!);
+	}
 });

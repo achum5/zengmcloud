@@ -14,6 +14,7 @@ import type { Option } from "../../common/types.ts";
 import { idb } from "../db/index.ts";
 import { bySport } from "../../common/sportFunctions.ts";
 import { isAllStarGame, isTradeDeadline } from "../../common/specialGames.ts";
+import { inStages } from "../core/realisticFrontOffice/stages.ts";
 
 const updatePlayMenu = async () => {
 	if (__NODE_ENV === "test") {
@@ -24,12 +25,15 @@ const updatePlayMenu = async () => {
 		? local.autoPlayUntil.season - g.get("season")
 		: 0;
 
+	// Realistic front offices' free agency in stages: a stage at a time.
+	const stages = inStages();
+
 	const allOptions = {
 		stop: {
 			label: "Stop",
 		},
 		day: {
-			label: "One day",
+			label: stages ? "Next stage" : "One day",
 			keyboardShortcut: "secondary",
 		},
 		week: {
@@ -317,8 +321,10 @@ const updatePlayMenu = async () => {
 			? ["untilFreeAgency"]
 			: ["contractNegotiationList", "untilFreeAgency"];
 	} else if (g.get("phase") === PHASE.FREE_AGENCY) {
-		// Offseason - free agency
-		keys = ["day", "week", "untilPreseason"];
+		// Offseason - free agency (in stages, a week would skip stages)
+		keys = stages
+			? ["day", "untilPreseason"]
+			: ["day", "week", "untilPreseason"];
 	}
 
 	const unreadMessage = await lock.unreadMessage();
