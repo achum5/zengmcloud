@@ -35,7 +35,10 @@ export const stageSettings = {
 	decisionTemperature: 0.05,
 	// His ask never falls below this share of what it was as free agency
 	// opened, by stage: it holds through the decision days, then eases.
-	floorByStage: [1, 1, 1, 0.75, 0.5],
+	floorByStage: [1, 0.9, 0.8, 0.6, 0],
+	// At camp, waiting is worth this much less to him (offers.ts's units):
+	// the season is about to start, and he wants a team.
+	campWait: -0.15,
 	// A deal for less than this share of his opening ask is short - no more
 	// than discountYears: a "prove it" deal, not years of a bargain.
 	discountShare: 0.6,
@@ -235,6 +238,14 @@ export const mostFor = ({
 	}
 	return most;
 };
+
+// Training camp, the last stage: asks go all the way to what the market
+// pays.
+export const atCamp = () => stageIndex() === STAGES.length - 1;
+
+// What waiting for more is worth to a free agent this stage.
+export const stageWait = (wait: number) =>
+	stageIndex() === STAGES.length - 1 ? wait + stageSettings.campWait : wait;
 
 // The least he asks for this stage.
 // At camp, no more than the mid-level: a team over the cap can still sign

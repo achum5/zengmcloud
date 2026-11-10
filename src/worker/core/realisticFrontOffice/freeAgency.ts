@@ -18,6 +18,7 @@ import {
 import { amountsWithRaise, maxFor, serviceYears, shapeLimits } from "./cba.ts";
 import {
 	askFloor,
+	atCamp,
 	capHolds,
 	checkFor,
 	leastForLength,
@@ -30,6 +31,7 @@ import {
 	stageIndex,
 	stageSettings,
 	stagesOn,
+	stageWait,
 } from "./stages.ts";
 import { contractNegotiation, player, team } from "../index.ts";
 import { mayPay } from "./contracts.ts";
@@ -1031,7 +1033,9 @@ export const priceMarket = async (
 		const to = helpers.bound(
 			helpers.roundContract(
 				Math.max(
-					from + (once ? 1 : freeAgencySettings.priceSpeed) * (market - from),
+					from +
+						(once || (stages && atCamp()) ? 1 : freeAgencySettings.priceSpeed) *
+							(market - from),
 					stages ? askFloor(p) : 0,
 				),
 			),
@@ -1302,7 +1306,8 @@ export const freeAgencyDay = async () => {
 		const j = Math.floor(Math.random() * (i + 1));
 		[order[i], order[j]] = [order[j]!, order[i]!];
 	}
-	const waitWeight = Math.exp(waitUtility() / temperature);
+	const wait = stages ? stageWait(waitUtility()) : waitUtility();
+	const waitWeight = Math.exp(wait / temperature);
 	for (const t of order) {
 		const state = states.get(t.tid)!;
 		const spots = g.get("maxRosterSize") - state.players.length;
@@ -1431,7 +1436,7 @@ export const freeAgencyDay = async () => {
 		for (const offer of offers) {
 			utilities.push(await utilityOf(p, offer, rankOf(p), rosters));
 		}
-		const odds = choiceOdds(utilities, waitUtility(), temperature);
+		const odds = choiceOdds(utilities, wait, temperature);
 		const roll = Math.random();
 		let k = 0;
 		let acc = odds[0]!;
