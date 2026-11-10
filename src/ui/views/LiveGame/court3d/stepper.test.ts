@@ -358,4 +358,82 @@ describe("3D: the ten stepped", () => {
 		assert.isAbove(n, 20);
 		assert.isAbove(went / n, 0.5);
 	});
+
+	test("going from one side of his line to the other, the man with the ball takes it across with him - and has it back for what comes next", () => {
+		// The crossovers the stepping puts in: on the move, not the
+		// director's.
+		const had = new Set(laid.ball.map((s) => `${s.kind} ${s.t0}`));
+		const crosses = stepped.ball.filter(
+			(s) =>
+				s.kind === "hold" &&
+				s.style === "cross" &&
+				!s.still &&
+				!had.has(`${s.kind} ${s.t0}`),
+		);
+		assert.isAbove(crosses.length, 5);
+		// Each into the hand on the side he heads off to: off where the play
+		// has him, more to that side of his way a beat on. (In at his man:
+		// way out, bringing it up, he switches hands now and then whichever
+		// way he goes - some of those too.)
+		let n = 0;
+		let goes = 0;
+		let up = 0;
+		for (const c of crosses) {
+			if (c.kind !== "hold") {
+				continue;
+			}
+			const lt = laid.tracks.get(c.pid)!;
+			const st = stepped.tracks.get(c.pid)!;
+			const at = floorSpotOf(lt, c.t0);
+			if (at && Math.hypot(at.x - rimX(lt.team), at.y - 25) >= 40) {
+				up += 1;
+				continue;
+			}
+			const A0 = floorSpotOf(lt, c.t0 - 150);
+			const A1 = floorSpotOf(lt, c.t0 + 450);
+			const B0 = floorSpotOf(st, c.t0 - 150);
+			const B1 = floorSpotOf(st, c.t0 + 450);
+			if (!A0 || !A1 || !B0 || !B1) {
+				continue;
+			}
+			const L = Math.hypot(A1.x - A0.x, A1.y - A0.y);
+			if (L < 0.5) {
+				continue;
+			}
+			// (His left, going the way he goes.)
+			const lx = -(A1.y - A0.y) / L;
+			const ly = (A1.x - A0.x) / L;
+			const off0 = (B0.x - A0.x) * lx + (B0.y - A0.y) * ly;
+			const off1 = (B1.x - A1.x) * lx + (B1.y - A1.y) * ly;
+			n += 1;
+			// (Out of his right hand into his left: off to his left.)
+			if ((c.hand === "R") === off1 > off0) {
+				goes += 1;
+			}
+		}
+		assert.isAbove(n, 5);
+		assert.isAbove(goes / n, 0.8, `${goes}/${n}`);
+		assert.isAbove(up, 0);
+		// And whatever he does next with it - a pass, a shot, picked up - it
+		// is in the hand it was always going to be in.
+		const handBefore = (ball: typeof laid.ball, t: number) => {
+			const s = ball.findLast((x) => x.t0 < t);
+			return s?.kind === "hold" && s.style === "dribble"
+				? (s.hand ?? "R")
+				: undefined;
+		};
+		let ends = 0;
+		for (const s of laid.ball) {
+			if (s.kind === "hold" && s.style !== "hold") {
+				continue;
+			}
+			const was = handBefore(laid.ball, s.t0);
+			if (was === undefined) {
+				continue;
+			}
+			ends += 1;
+			assert.strictEqual(handBefore(stepped.ball, s.t0), was, `${s.t0}`);
+		}
+		assert.isAbove(ends, 50);
+	});
 });

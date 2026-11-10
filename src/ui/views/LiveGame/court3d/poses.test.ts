@@ -14,10 +14,14 @@ import {
 	holdBall,
 	MOVE_BALL,
 	moveAnim,
+	baseOf,
 	moveFloor,
+	ownWay,
 	poseAt,
+	releaseAt,
 	skeleton,
 	underPalm,
+	waysOf,
 	type AnimName,
 	type Hand,
 	type V3,
@@ -379,6 +383,64 @@ describe("3D poses", () => {
 							);
 						}
 					}
+				}
+			}
+		}
+	});
+
+	// Each man's own way of a move the play has him make (see ownWay) is
+	// his every time - and every way of it is somebody's.
+	test("each man his own way of a move, the same every time", () => {
+		for (const anim of [
+			"board",
+			"poke",
+			"contest",
+			"screen",
+			"fade",
+			"jab",
+			"shotFake",
+			"triple",
+			"boxOut",
+			"dribbleHesi",
+			"dribbleJab",
+		] as AnimName[]) {
+			const seen = new Set<string>();
+			for (let pid = 0; pid < 400; pid++) {
+				const own = ownWay(anim, pid, 0);
+				assert.strictEqual(ownWay(anim, pid, 7000), own, `${anim} ${pid}`);
+				assert.strictEqual(baseOf(own), anim, `${anim} ${pid}`);
+				seen.add(own);
+			}
+			assert.isTrue(seen.has(anim), anim);
+			assert.isAbove(seen.size, 1, anim);
+			// (Every way of it somebody's, and known for what it is.)
+			for (const way of waysOf(anim)) {
+				assert.isTrue(seen.has(way), `${anim}: ${way}`);
+			}
+		}
+	});
+
+	// Where the play has the ball meet his hand - worked out from the plain
+	// move (a poke's hit, a board's catch, a dunk thrown down) - his own way
+	// of it has his hand there too.
+	test("a man's own way of a move meets the ball where the move does", () => {
+		const meets: [AnimName, AnimName[], number[]][] = [
+			["poke", ["pokeSwipe", "pokeChop"], [0.38, 0.42, 0.46]],
+			["board", ["boardTuck", "boardSplit"], [0.26, 400 / 1100]],
+			["dunk", ["dunkPump"], [0.4, 0.445, 0.5, 0.66]],
+			["dunk1", ["dunkPump1"], [0.4, 0.445, 0.5, 0.66]],
+			["layup", ["layupClutch"], [0.6, 0.65, 0.72]],
+		];
+		for (const [base, ways, ats] of meets) {
+			for (const way of ways) {
+				for (const at of ats) {
+					const a = releaseAt(base, at);
+					const b = releaseAt(way, at);
+					assert.isBelow(
+						Math.hypot(a.f - b.f, a.s - b.s, a.u - b.u),
+						0.02,
+						`${way} ${at}`,
+					);
 				}
 			}
 		}

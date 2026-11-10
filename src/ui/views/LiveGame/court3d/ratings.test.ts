@@ -54,7 +54,12 @@ describe("3D: players play like their ratings", () => {
 		const lo = count(seeds, all(30));
 		const show = (n: Record<string, number>) => {
 			const dunks =
-				(n.dunk ?? 0) + (n.dunk1 ?? 0) + (n.tomahawk ?? 0) + (n.windmill ?? 0);
+				(n.dunk ?? 0) +
+				(n.dunk1 ?? 0) +
+				(n.dunkPump ?? 0) +
+				(n.dunkPump1 ?? 0) +
+				(n.tomahawk ?? 0) +
+				(n.windmill ?? 0);
 			return { dunks, share: ((n.tomahawk ?? 0) + (n.windmill ?? 0)) / dunks };
 		};
 		const h = show(hi);

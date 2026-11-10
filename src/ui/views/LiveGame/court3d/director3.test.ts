@@ -331,6 +331,8 @@ describe("3D director", () => {
 			"block",
 			"dunk",
 			"dunk1",
+			"dunkPump",
+			"dunkPump1",
 			"tomahawk",
 			"windmill",
 			"fall",
@@ -346,6 +348,7 @@ describe("3D director", () => {
 			"hook",
 			"layup",
 			"fingerRoll",
+			"layupClutch",
 			"powerLayup",
 			"scoop",
 			"catch",
@@ -757,6 +760,8 @@ describe("3D director", () => {
 		const FINISH = new Set<string>([
 			"dunk",
 			"dunk1",
+			"dunkPump",
+			"dunkPump1",
 			"tomahawk",
 			"windmill",
 			...LAYUPS,
@@ -1007,6 +1012,7 @@ describe("3D director", () => {
 			"passPush",
 			"passBouncePush",
 			"passBehind",
+			"passNoLook",
 		]);
 		let passes = 0;
 		let stood = 0;

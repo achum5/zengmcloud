@@ -743,7 +743,13 @@ const SAG_FROM = 0.35;
 const SAG = 0.9;
 // A hand up at a shot or a block, or slapping a teammate's: its fingers
 // spread wide, palm to it. (A low five's swung down to it.)
-const SPLAY = new Set<string>(["contest", "block", "highFive"]);
+const SPLAY = new Set<string>([
+	"contest",
+	"contestTwo",
+	"contestFace",
+	"block",
+	"highFive",
+]);
 const SPLAY_UP = 0.5;
 const LOW_FIVE = [0.12, 0.62] as const;
 const splayed = (st: PlayerState, which: "R" | "L", h: V3) =>
@@ -753,7 +759,13 @@ const splayed = (st: PlayerState, which: "R" | "L", h: V3) =>
 		st.phase > LOW_FIVE[0] &&
 		st.phase < LOW_FIVE[1]);
 // Up for a board: both hands spread and cupped for the ball.
-const REACH = new Set<string>(["board", "boardOne", "rebound"]);
+const REACH = new Set<string>([
+	"board",
+	"boardTuck",
+	"boardSplit",
+	"boardOne",
+	"rebound",
+]);
 const REACH_UP = 0.3;
 // AN OFFICIAL'S HANDS, as the signal has them: the whistle a fist straight
 // up; a charge a fist punched out; a travel the fists rolled; a three

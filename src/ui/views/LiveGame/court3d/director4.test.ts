@@ -1089,7 +1089,14 @@ describe("3D director", () => {
 	test("a layup leaves his hand in front of the glass", () => {
 		// (The glass is this far behind the middle of the rim, feet.)
 		const GLASS = 1.25;
-		const DUNKS = new Set(["dunk", "dunk1", "tomahawk", "windmill"]);
+		const DUNKS = new Set([
+			"dunk",
+			"dunk1",
+			"dunkPump",
+			"dunkPump1",
+			"tomahawk",
+			"windmill",
+		]);
 		let checked = 0;
 		for (const seed of ["a", "b", "c", "d"]) {
 			const { tl } = compile(seed, 150);

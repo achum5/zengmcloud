@@ -12,8 +12,9 @@
 // one it laid out, less what no man could do (a lurch, a corner turned on
 // the spot at a run). What each man wants comes next, a part at a time.
 
-import type { CourtTimeline, Move } from "./director.ts";
-import { floorSpotOf } from "./evaluate.ts";
+import type { BallSeg, CourtTimeline, Move } from "./director.ts";
+import { beatsAt, beatTime, dribbleStart, floorSpotOf } from "./evaluate.ts";
+import type { Hand } from "./poses.ts";
 import { COURT_H, COURT_W, inPlay, rimX, type Pt } from "./geometry.ts";
 import { RIM_INSET } from "../courtSpots.ts";
 import { alongShape, pushFrom, runShape } from "./motion.ts";
@@ -782,6 +783,146 @@ const ROUTE_ALONG = [0, 0, -1.1, 0.6];
 const ROUTE_CROSS = 0.65;
 // (All of it within this far of the rim, feet.)
 const WORK_NEAR = 40;
+// THE BALL GOES WITH HIM. Going one way and then the other across his
+// line (see probesOf), a man takes the ball across into the hand on the
+// side he heads for - a crossover in front, on the next top of his dribble
+// as he sets off that way (CROSS_ON_CUT of the time: now and then he just
+// keeps it where it is) - and has it back in the hand he started in by the
+// time he is done (the last of them left out if not), whatever comes next
+// of his finding it where it was.
+// (Only through a stretch of nothing but his plain dribble, in the one
+// hand.)
+const CROSS_ON_CUT = 0.75;
+// (A move that takes him this far across his line, at the least, feet.)
+const CUT_ACROSS = 0.8;
+// The crossover done this long (ms) before his next piece of the ball, and
+// the stretch, at the least.
+const CROSS_CLEAR = 150;
+type Crossed = { at: number; pieces: BallSeg[]; was: [BallSeg, Hand][] };
+type Cut = { t0: number; t1: number; to: Hand };
+const crossOnCuts = (
+	tl: Stepped,
+	pid: number,
+	a: number,
+	b: number,
+	cuts: Cut[],
+) => {
+	const ball = tl.ball;
+	const indexAt = (t: number): number => {
+		let lo = 0;
+		let hi = ball.length;
+		while (lo < hi) {
+			const mid = (lo + hi) >> 1;
+			if (ball[mid]!.t0 <= t) {
+				lo = mid + 1;
+			} else {
+				hi = mid;
+			}
+		}
+		return lo - 1;
+	};
+	const plain = (s: BallSeg | undefined) =>
+		s?.kind === "hold" && s.pid === pid && s.style === "dribble";
+	const first = indexAt(a);
+	if (first < 0) {
+		return;
+	}
+	// (His dribble all the one hand through it, too: not taken across to
+	// the other already somewhere in it.)
+	const h0 = (ball[first] as { hand?: Hand }).hand ?? "R";
+	for (let k = first; k < ball.length && ball[k]!.t0 < b; k++) {
+		const s = ball[k];
+		if (!plain(s) || ((s as { hand?: Hand }).hand ?? "R") !== h0) {
+			return;
+		}
+	}
+	let h = h0;
+	const done: Crossed[] = [];
+	// Across from `h`, the first top of his dribble from t on - done by
+	// `until`, and clear of the next piece of the ball.
+	const cross = (
+		t: number,
+		latest: number,
+		until: number,
+	): Crossed | undefined => {
+		const j = indexAt(t);
+		if (!plain(ball[j])) {
+			return undefined;
+		}
+		const start = dribbleStart(ball, j);
+		const n = Math.ceil(beatsAt(ball, start, t) - 1e-6);
+		const T = beatTime(ball, start, n);
+		if (T > latest) {
+			return undefined;
+		}
+		const jj = indexAt(T);
+		const seg = ball[jj];
+		if (!plain(seg) || seg!.kind !== "hold" || T - seg!.t0 < 1) {
+			return undefined;
+		}
+		// (A bounce of his dribble's beat - so it comes up on the beat it
+		// was always going to, whatever was timed to it after.)
+		const end = beatTime(ball, start, n + 1);
+		if (end > until || (ball[jj + 1]?.t0 ?? Infinity) < end + CROSS_CLEAR) {
+			return undefined;
+		}
+		const to: Hand = h === "R" ? "L" : "R";
+		const pieces: BallSeg[] = [
+			{
+				kind: "hold",
+				t0: T,
+				pid,
+				style: "cross",
+				hand: h,
+				move: "front",
+				rate: 1000 / (end - T),
+			},
+			{
+				kind: "hold",
+				t0: end,
+				pid,
+				style: "dribble",
+				hand: to,
+				...(seg.rate !== undefined ? { rate: seg.rate } : {}),
+			},
+		];
+		ball.splice(jj + 1, 0, ...pieces);
+		// (The rest of his dribble through the stretch in that hand now.)
+		const was: [BallSeg, Hand][] = [];
+		for (let k = jj + 3; k < ball.length && ball[k]!.t0 < b; k++) {
+			const s = ball[k]!;
+			if (s.kind === "hold") {
+				was.push([s, s.hand ?? "R"]);
+				s.hand = to;
+			}
+		}
+		return { at: T, pieces, was };
+	};
+	for (const cut of cuts) {
+		if (
+			cut.to === h ||
+			hash01(pid * 13 + 7, Math.round(cut.t0 / 50)) >= CROSS_ON_CUT
+		) {
+			continue;
+		}
+		// (As he sets off that way: by halfway there.)
+		const c = cross(cut.t0, (cut.t0 + cut.t1) / 2, b - CROSS_CLEAR);
+		if (c) {
+			done.push(c);
+			h = cut.to;
+		}
+	}
+	if (h !== h0) {
+		// (Not back in the hand he started in: not taken across the last
+		// time.)
+		const c0 = done.pop()!;
+		for (const [s, hand] of c0.was) {
+			(s as { hand?: Hand }).hand = hand;
+		}
+		ball.splice(ball.indexOf(c0.pieces[0]!), 2);
+	}
+};
+
 const probesOf = (
 	tl: Stepped,
 	pid: number,
@@ -790,10 +931,10 @@ const probesOf = (
 	team: 0 | 1,
 ): Offsets => {
 	const rim = { x: rimX(team), y: 25 };
-	// When he has it on his dribble.
+	// When he has it on his dribble - not stood through a move.
 	const dribbling: [number, number][] = [];
 	tl.ball.forEach((s, k) => {
-		if (s.kind === "hold" && s.pid === pid && s.style !== "hold") {
+		if (s.kind === "hold" && s.pid === pid && s.style !== "hold" && !s.still) {
 			dribbling.push([s.t0, tl.ball[k + 1]?.t0 ?? s.t0]);
 		}
 	});
@@ -858,6 +999,24 @@ const probesOf = (
 			keys.push([b, { x: 0, y: 0 }]);
 			if (keys.length > 2) {
 				stretches.push({ a, b, keys });
+				// Each move from one key to the next that takes him a good way
+				// across his line, going: which way, and from when to when.
+				const cuts: Cut[] = [];
+				for (let k = 1; k < keys.length; k++) {
+					const [t0, A] = keys[k - 1]!;
+					const [t1, B] = keys[k]!;
+					const v = goingAt(t0 + 100);
+					const pace = Math.hypot(v.x, v.y);
+					if (pace < ROUTE_PACE) {
+						continue;
+					}
+					// (His left, going the way he goes.)
+					const d = ((B.x - A.x) * -v.y + (B.y - A.y) * v.x) / pace;
+					if (Math.abs(d) >= CUT_ACROSS) {
+						cuts.push({ t0, t1, to: d > 0 ? "L" : "R" });
+					}
+				}
+				crossOnCuts(tl, pid, a, b, cuts);
 			}
 		}
 		a = -1;
@@ -881,6 +1040,72 @@ const probesOf = (
 	}
 	close(begin + laid.spots.length * STEP_MS);
 	return keyed(stretches);
+};
+
+// BRINGING IT UP. Out past where he works his man (WORK_NEAR), on his way
+// up the floor with it, a man doesn't carry it all the way in the one hand:
+// every few seconds he takes it across to the other (see crossOnCuts) -
+// and back, by the time he gets where he is going.
+const SWITCH_EVERY: [number, number] = [2200, 4200];
+// (On his way at this pace at least, feet a second; for this long at least,
+// ms.)
+const SWITCH_PACE = 3;
+const SWITCH_LEAST = 2600;
+const switchesOf = (
+	tl: Stepped,
+	pid: number,
+	laid: Path,
+	held: Spans,
+	team: 0 | 1,
+) => {
+	const rim = { x: rimX(team), y: 25 };
+	const dribbling: [number, number][] = [];
+	tl.ball.forEach((s, k) => {
+		if (s.kind === "hold" && s.pid === pid && s.style === "dribble") {
+			dribbling.push([s.t0, tl.ball[k + 1]?.t0 ?? s.t0]);
+		}
+	});
+	const on = spansAt(dribbling);
+	const stretches: [number, number][] = [];
+	let a = -1;
+	for (let k = 0; k + 1 < laid.spots.length; k++) {
+		const t = laid.from + k * STEP_MS;
+		const P = laid.spots[k];
+		const Q = laid.spots[k + 1];
+		const ok =
+			P !== undefined &&
+			Q !== undefined &&
+			Math.hypot(Q.x - P.x, Q.y - P.y) / (STEP_MS / 1000) >= SWITCH_PACE &&
+			on.hit(t, t + STEP_MS) &&
+			!held.hit(t - 300, t + STEP_MS + 300) &&
+			Math.hypot(P.x - rim.x, P.y - rim.y) >= WORK_NEAR;
+		if (ok && a < 0) {
+			a = t;
+		} else if (!ok && a >= 0) {
+			if (t - a >= SWITCH_LEAST) {
+				stretches.push([a, t]);
+			}
+			a = -1;
+		}
+	}
+	for (const [a0, b0] of stretches) {
+		const cuts: Cut[] = [];
+		let at = a0 + 500 + 700 * hash01(pid * 3 + 1, Math.round(a0));
+		let to: Hand =
+			((tl.ball.findLast((s) => s.t0 <= a0) as { hand?: Hand } | undefined)
+				?.hand ?? "R") === "R"
+				? "L"
+				: "R";
+		for (let n = 0; at < b0 - 600; n++) {
+			cuts.push({ t0: at, t1: at + 700, to });
+			to = to === "R" ? "L" : "R";
+			at +=
+				SWITCH_EVERY[0] +
+				(SWITCH_EVERY[1] - SWITCH_EVERY[0]) *
+					hash01(pid * 7 + n, Math.round(a0));
+		}
+		crossOnCuts(tl, pid, a0, b0, cuts);
+	}
 };
 
 // Moves a man makes off where the play has him, stretch by stretch: from
@@ -1143,6 +1368,7 @@ const openingsOf = (
 // him).
 const GUARD_FULL = 7;
 const GUARD_NONE = 12;
+const GUARD_TIE = 1;
 // The help: a man of theirs off the man with the ball goes this share of
 // what that man does of his own - all of it within HELP_NEAR of him (feet),
 // none of it past HELP_FAR.
@@ -1288,6 +1514,7 @@ export const stepTimeline = <T extends Stepped>(tl: T): T => {
 	for (const tr of men) {
 		const L = laid.get(tr.pid)!;
 		const held = helds.get(tr.pid)!;
+		switchesOf(tl, tr.pid, L, held, tr.team);
 		const probe = probesOf(tl, tr.pid, L, held, tr.team);
 		const open = openingsOf(tl, tr.pid, L, held, tr.team, offenseAt, live);
 		const arc = arcsOf(tr, tl, L, held, offenseAt);
@@ -1365,6 +1592,11 @@ export const stepTimeline = <T extends Stepped>(tl: T): T => {
 			}
 			let man: number | undefined;
 			let d = GUARD_NONE;
+			// (And the next nearest: as near as him, or all but, a share of
+			// what that one does too - so his man changing from one to the
+			// other, what he goes with doesn't jump in a step.)
+			let next: number | undefined;
+			let d2 = GUARD_NONE;
 			for (const o of men) {
 				if (o.team === tr.team) {
 					continue;
@@ -1372,11 +1604,23 @@ export const stepTimeline = <T extends Stepped>(tl: T): T => {
 				const Q = laid.get(o.pid)!.at(t);
 				const g = Q ? Math.hypot(Q.x - P.x, Q.y - P.y) : Infinity;
 				if (g < d) {
+					next = man;
+					d2 = d;
 					d = g;
 					man = o.pid;
+				} else if (g < d2) {
+					next = o.pid;
+					d2 = g;
 				}
 			}
-			const went = man === undefined ? { x: 0, y: 0 } : probes.get(man)!(at);
+			const tie =
+				next === undefined ? 0 : Math.max(0, 1 - (d2 - d) / GUARD_TIE);
+			const mine = man === undefined ? { x: 0, y: 0 } : probes.get(man)!(at);
+			const theirs = tie > 0 ? probes.get(next!)!(at) : { x: 0, y: 0 };
+			const went = {
+				x: (mine.x + theirs.x * tie) / (1 + tie),
+				y: (mine.y + theirs.y * tie) / (1 + tie),
+			};
 			// (None of it into anything of his own: on time, where the play
 			// has him for it.)
 			const w =

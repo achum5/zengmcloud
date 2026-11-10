@@ -15,7 +15,7 @@ import {
 	LANE_SPACES,
 	type Side,
 } from "./geometry.ts";
-import { bodyOf, skeleton } from "./poses.ts";
+import { baseOf, bodyOf, skeleton } from "./poses.ts";
 import { compile } from "./testGame.ts";
 
 const body = bodyOf();
@@ -60,7 +60,7 @@ describe("3D free throws", () => {
 						Math.abs(depthOf(st0.x) - FT_SHOOTER_DEPTH) > 1.2 ||
 						Math.abs(st0.y - 25) > 2 ||
 						(ball.holder !== pid &&
-							st0.anim !== "setShot" &&
+							baseOf(st0.anim) !== "setShot" &&
 							st0.anim !== "hold" &&
 							st0.anim !== "catch")
 					) {
@@ -76,7 +76,7 @@ describe("3D free throws", () => {
 							`${pid} at ${Math.round(t)} (${st0.anim})`,
 						);
 					}
-					if (st0.anim === "triple") {
+					if (baseOf(st0.anim) === "triple") {
 						dips += 1;
 					}
 					if (ball.holder === undefined && st0.anim === "hold") {
@@ -170,7 +170,7 @@ describe("3D free throws", () => {
 						easy += 1;
 					}
 					if (last) {
-						set += st0.anim === "laneSet" ? 1 : 0;
+						set += baseOf(st0.anim) === "laneSet" ? 1 : 0;
 						lastOnes += 1;
 					}
 					if (last) {

@@ -680,6 +680,7 @@ describe("3D director", () => {
 		const CLOSE = new Set([
 			"layup",
 			"fingerRoll",
+			"layupClutch",
 			"powerLayup",
 			"scoop",
 			"reverseLayup",
@@ -744,7 +745,14 @@ describe("3D director", () => {
 					.get(e.pid)!
 					.acts.filter((x) => x.t0 >= from && x.t0 <= to);
 				const dunked = acts.some((x) =>
-					["dunk", "dunk1", "tomahawk", "windmill"].includes(x.anim),
+					[
+						"dunk",
+						"dunk1",
+						"dunkPump",
+						"dunkPump1",
+						"tomahawk",
+						"windmill",
+					].includes(x.anim),
 				);
 				const finish = finishOf(e, gid, gender);
 				assert.strictEqual(
@@ -778,6 +786,8 @@ describe("3D director", () => {
 		const FINISH = new Set<string>([
 			"dunk",
 			"dunk1",
+			"dunkPump",
+			"dunkPump1",
 			"tomahawk",
 			"windmill",
 			...LAYUPS,

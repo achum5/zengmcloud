@@ -190,11 +190,14 @@ describe("3D court, a real game", () => {
 const AT_RIM = new Set([
 	"dunk",
 	"dunk1",
+	"dunkPump",
+	"dunkPump1",
 	"tomahawk",
 	"windmill",
 	"layup",
 	"powerLayup",
 	"reverseLayup",
 	"fingerRoll",
+	"layupClutch",
 	"scoop",
 ]);

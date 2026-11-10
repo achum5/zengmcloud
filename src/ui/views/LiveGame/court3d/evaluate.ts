@@ -54,6 +54,7 @@ import {
 	shortSteps,
 	runStyleOf,
 	type RunStyle,
+	ownWay,
 	shotWith,
 	styledRun,
 	styledStance,
@@ -1406,6 +1407,7 @@ const PASSES = new Set<AnimName>([
 	"passPush",
 	"passBouncePush",
 	"passBehind",
+	"passNoLook",
 ]);
 export const PASS_TURN = 250;
 export const PASS_PICK_UP = new Set<AnimName>([
@@ -1778,6 +1780,7 @@ const PULLUP_SHOTS = new Set<AnimName>([
 	"shootQuickKick",
 	"shootQuickSplit",
 	"fade",
+	"fadeOne",
 ]);
 // Carried by an offset (see yawTarget): how fast (feet a second), read over
 // this long either side (ms).
@@ -2406,7 +2409,7 @@ const swipeAt = (
 		return undefined;
 	}
 	return {
-		anim: "poke",
+		anim: ownWay("poke", tr.pid, start),
 		phase: (t - start) / SWIPE_MS,
 		mirror: ballHand(tl, man, start) === "R",
 	};
@@ -2496,6 +2499,8 @@ const STANDING = new Set<AnimName>([
 	"chestPound",
 	"celebrate",
 	"protest",
+	"protestUp",
+	"protestShrug",
 	"point",
 	"thanks",
 	"clap",
@@ -2966,7 +2971,7 @@ const doingNow = (
 						? "passOutlet"
 						: act.anim === "board" && act.oneHand
 							? "boardOne"
-							: act.anim;
+							: ownWay(act.anim, pid, act.t0);
 		const a = ANIMS[anim];
 		// (A loop on the same beat as when he does it standing of his own
 		// accord - so one held for a while and then just stood in, a
@@ -3321,11 +3326,15 @@ const FLICK_MS = 40;
 const ARMS_UP = new Set<AnimName>([
 	"fight",
 	"contest",
+	"contestTwo",
+	"contestFace",
 	"block",
 	"tip",
 	"rebound",
 	"reach",
 	"hack",
+	"hackTwo",
+	"hackBody",
 	"threeUp",
 	"goggles",
 	"signalUp",
@@ -4944,6 +4953,8 @@ const FREE_HEAD = new Set<AnimName>([
 	"easy",
 	"laneSet",
 	"boxOut",
+	"boxOutHigh",
+	"boxOutWide",
 	"back",
 	"slide",
 	"shuffle",
@@ -5968,8 +5979,12 @@ const PIVOTS = new Set<AnimName>([
 	"guard",
 	"hold",
 	"triple",
+	"tripleHigh",
+	"tripleSweep",
 	"dribbleIdle",
 	"boxOut",
+	"boxOutHigh",
+	"boxOutWide",
 	"callPlay",
 	"spotUp",
 	"callBall",
@@ -5983,11 +5998,19 @@ const PIVOTS = new Set<AnimName>([
 	"hips",
 	"talk",
 	"protest",
+	"protestUp",
+	"protestShrug",
 	// (Hands at work, feet where they are.)
 	"contest",
+	"contestTwo",
+	"contestFace",
 	"reach",
 	"hack",
+	"hackTwo",
+	"hackBody",
 	"poke",
+	"pokeSwipe",
+	"pokeChop",
 	"fight",
 	"bump",
 	"catch",
@@ -6000,9 +6023,13 @@ const PIVOTS = new Set<AnimName>([
 	"passPush",
 	"passBouncePush",
 	"shotFake",
+	"shotFakeBig",
 	"jab",
+	"jabRip",
 	"strip",
 	"screen",
+	"screenChest",
+	"screenWide",
 	"highFive",
 	"lowFive",
 	"waitFive",
@@ -6150,17 +6177,26 @@ const STRIDE_ACTS = new Set<AnimName>([
 	"passPush",
 	"passBouncePush",
 	"passBehind",
+	"passNoLook",
 	"reach",
 	"poke",
+	"pokeSwipe",
+	"pokeChop",
 	"callBall",
 	"contest",
+	"contestTwo",
+	"contestFace",
 	"boxOut",
+	"boxOutHigh",
+	"boxOutWide",
 	"fight",
 	"bump",
 	// (A swipe at the ball chasing a man down, a hand going up at his shot
 	// on the way to it: his legs run on under it, not slid along the floor
 	// in the lunge.)
 	"hack",
+	"hackTwo",
+	"hackBody",
 	"block",
 ]);
 const STRIDE_LEGS: (keyof Pose)[] = [

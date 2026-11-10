@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 257,
+		date: "2026-11-10",
+		text: "3D games: lots of new animations. Ball handlers sizing up their man now mix in between-the-legs and behind-the-back combos, rocker steps and shoulder shakes, and cross the ball over into the hand on the side they cut to. You'll also see no-look passes, double-clutch layups, pump dunks and one-legged fadeaways, and each player now has his own way of contesting shots, boxing out, setting screens, reaching for steals and arguing calls.",
+	},
+	{
 		n: 256,
 		date: "2026-11-10",
 		text: "Realistic Front Offices: re-signing is one shot per player. Set your offer, see his chance of taking it, and press Submit - he signs or heads to free agency right then, with no second try (offers you don't submit are decided when free agency opens). Every re-signing decision now goes in the transaction log on the player's and the team's pages, refusals too, with the offer and the odds.",

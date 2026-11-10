@@ -27,6 +27,7 @@ import { attackDir, COURT_H, COURT_W, rimX } from "./geometry.ts";
 import { compile, compileLaid, fakeGame, gidOf, stepped } from "./testGame.ts";
 import { finishOf } from "../../../util/liveGameWording.basketball.ts";
 import { bodyFor, cutBetween, sampleTimes } from "./directorTesting.ts";
+import { baseOf } from "./poses.ts";
 
 describe("3D director", () => {
 	// A saved replay is the play-by-play read back out of the database and
@@ -685,6 +686,7 @@ describe("3D director", () => {
 		const CLOSE = new Set([
 			"layup",
 			"fingerRoll",
+			"layupClutch",
 			"powerLayup",
 			"scoop",
 			"reverseLayup",
@@ -1064,6 +1066,8 @@ describe("3D director", () => {
 			"strip",
 			"dunk",
 			"dunk1",
+			"dunkPump",
+			"dunkPump1",
 			"tomahawk",
 			"windmill",
 			"pickup",
@@ -1304,7 +1308,11 @@ describe("3D director", () => {
 					// Down with it in both hands, not yet dribbling or passing.
 					for (const t of [a.t1 - 300, a.t1 - 20]) {
 						const st = evalPlayer(tl, pid, t);
-						assert.include(["board", "boardOne"], st.anim, `${seed} ${t}`);
+						assert.include(
+							["board", "boardOne"],
+							baseOf(st.anim),
+							`${seed} ${t}`,
+						);
 						assert.isTrue(st.holding, `${seed} ${pid} at ${t}`);
 						assert.strictEqual(st.z, 0, `${seed} ${t}`);
 					}

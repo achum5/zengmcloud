@@ -10,6 +10,8 @@ const SHOTS = new Set([
 	"floater",
 	"dunk",
 	"dunk1",
+	"dunkPump",
+	"dunkPump1",
 	"tomahawk",
 	"windmill",
 	"block",

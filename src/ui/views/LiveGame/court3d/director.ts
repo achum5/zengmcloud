@@ -422,6 +422,9 @@ export type BallSeg =
 			// A dribble's bounces a second, from the next top of it on (see
 			// beatsAt): DRIBBLE_RATE if unsaid. A move's: CROSS_RATE.
 			rate?: number;
+			// A move put through where he stands (see comboAt): him stood
+			// through it.
+			still?: true;
 	  }
 	| {
 			kind: "fly";
@@ -862,6 +865,12 @@ const BEHIND_AHEAD: [number, number] = [-0.45, 0.85];
 // this before it goes, ms.)
 const BEHIND_FTPS = 7;
 const BEHIND_STILL_MS = 150;
+// And of those on the move to a man out the side of the hand it is in,
+// this far off (feet), square to him, how many - a typical passer's - go
+// with no look.
+const NO_LOOK_SHARE = 0.4;
+const NO_LOOK_FT: [number, number] = [8, 26];
+const NO_LOOK_AHEAD: [number, number] = [-0.35, 0.75];
 // A three let go with no more than this left (seconds): at the buzzer.
 const BUZZER_SECS = 1.5;
 // The last look round the building once the game is over (see gameOver),
@@ -1276,6 +1285,38 @@ const WALL_FLAT = 0.2;
 const HESI_RUN = 5;
 const HESI_ON = 2.5;
 const HESI_MS = 420;
+// A COMBO WHERE HE STANDS sizing his man up (see comboAt): how often one
+// of his moves at his man is one (and that much more often a fine
+// handler's), for a handler at least this good; his man a step off it
+// (feet); and a fine handler's that much quicker. Each a bounce a move,
+// always an even number of them - the ball back in the hand it left. The
+// long ones only a fine handler's.
+const COMBO_HANDLE = 0.55;
+const COMBO_ODDS = 0.22;
+const COMBO_SLICK = 0.2;
+const COMBO_GIVE = 0.5;
+const COMBO_QUICK = 0.12;
+// Of men going up for a plain dunk, how many pump it first: of those who
+// do it their way (this share of men), and of the rest.
+const PUMPER = 0.3;
+const PUMP_OWN = 0.55;
+const PUMP_ANY = 0.08;
+// His rocker step for a jab at his man, this often (and that much more
+// often a fine handler's), that much longer than the jab; a shake of his
+// shoulders for an in-and-out, this often.
+const ROCKER_ODDS = 0.3;
+const ROCKER_SLICK = 0.25;
+const ROCKER_LONGER = 1.35;
+const SHAKE_ODDS = 0.3;
+const COMBOS: DribbleMove[][] = [
+	["legs", "legs"],
+	["front", "front"],
+	["legs", "back"],
+	["front", "legs"],
+	["legs", "legs", "legs", "legs"],
+	["front", "front", "legs", "back"],
+	["legs", "legs", "front", "front"],
+];
 const HESI_CLOSEST = 10;
 // A travel: how far on he goes with it in his hands after the gather
 // (feet) - steps enough to see.
@@ -1580,6 +1621,8 @@ const FOR_SHOW = new Set<AnimName>([
 	"shotFake",
 	"dribbleHesi",
 	"dribbleJab",
+	"dribbleRocker",
+	"dribbleShake",
 	"triple",
 	"callPlay",
 	"guard",
@@ -1702,6 +1745,7 @@ const PASS_ACTS = new Set<AnimName>([
 	"passPush",
 	"passBouncePush",
 	"passBehind",
+	"passNoLook",
 ]);
 
 // A step aside eases over and back this fast (ms each way) unless it says.
@@ -2126,6 +2170,7 @@ const hopFor = (ms: number, share: number): number =>
 const CLOSE_FINISHES = new Set<AnimName>([
 	"layup",
 	"fingerRoll",
+	"layupClutch",
 	"powerLayup",
 	"scoop",
 	"reverseLayup",
@@ -2585,10 +2630,17 @@ const OWN_HAND = new Set<AnimName>([
 	"hook",
 	"floater",
 	"dunk1",
+	"dunkPump",
+	"dunkPump1",
 	"tomahawk",
 	"windmill",
 ]);
-const OUTSIDE_HAND = new Set<AnimName>(["layup", "fingerRoll", "scoop"]);
+const OUTSIDE_HAND = new Set<AnimName>([
+	"layup",
+	"fingerRoll",
+	"layupClutch",
+	"scoop",
+]);
 // Up with his own shot, coming down: nobody goes up for the rebound off it
 // on top of him.
 const UP_WITH_SHOT = new Set<AnimName>([
@@ -2600,11 +2652,14 @@ const UP_WITH_SHOT = new Set<AnimName>([
 	"floater",
 	"layup",
 	"fingerRoll",
+	"layupClutch",
 	"powerLayup",
 	"scoop",
 	"reverseLayup",
 	"dunk",
 	"dunk1",
+	"dunkPump",
+	"dunkPump1",
 	"tomahawk",
 	"windmill",
 ]);
@@ -2621,6 +2676,7 @@ const GIVE_WAY_MS = 300;
 const UP_IN_CLOSE = new Set<AnimName>([
 	"layup",
 	"fingerRoll",
+	"layupClutch",
 	"powerLayup",
 	"scoop",
 	"reverseLayup",
@@ -4911,10 +4967,19 @@ class Director {
 						? 0.3
 						: 0.03) * own;
 		const x = r * (two + one + over + mill);
+		// (Some pump it, now and then - each his own way, the same every
+		// game: one more than most.)
+		const pump =
+			hash01(pid * 3 + 1, Math.round(r * 997)) <
+			(hash01(pid, 9137) < PUMPER ? PUMP_OWN : PUMP_ANY);
 		return x < two
-			? "dunk"
+			? pump
+				? "dunkPump"
+				: "dunk"
 			: x < two + one
-				? "dunk1"
+				? pump
+					? "dunkPump1"
+					: "dunk1"
 				: x < two + one + over
 					? "tomahawk"
 					: "windmill";
@@ -5117,6 +5182,7 @@ class Director {
 					OWN_HAND.has(a.anim) ||
 					OUTSIDE_HAND.has(a.anim) ||
 					a.anim === "dunk" ||
+					a.anim === "dunkPump" ||
 					a.anim === "powerLayup",
 			)?.mirror === true
 		);
@@ -7088,6 +7154,26 @@ class Director {
 					BEHIND_SHARE * 0.1,
 					BEHIND_SHARE * 1.6,
 				);
+		// Or, a fine passer, to a man out the side of the hand it is in,
+		// square to him: no look - his eyes on up the floor, the ball flicked
+		// out to his side.
+		const noLook =
+			!behind &&
+			pushOff &&
+			kind === "chest" &&
+			g !== undefined &&
+			d >= NO_LOOK_FT[0] &&
+			d <= NO_LOOK_FT[1] &&
+			ahead > NO_LOOK_AHEAD[0] &&
+			ahead < NO_LOOK_AHEAD[1] &&
+			onLeft === (pushHand === "L") &&
+			hash01(from * 23 + 7, Math.floor(ready)) <
+				this.byPassing(
+					from,
+					NO_LOOK_SHARE,
+					NO_LOOK_SHARE * 0.1,
+					NO_LOOK_SHARE * 1.6,
+				);
 		// Open, he calls for it: a hand up (cutting to get open for it, as
 		// he plants to come back out).
 		let callAt = start - 700;
@@ -7168,20 +7254,25 @@ class Director {
 			from,
 			behind
 				? "passBehind"
-				: over
-					? "passOverhead"
-					: kind === "bounce"
-						? push
-							? "passBouncePush"
-							: "passBounce"
-						: push
-							? "passPush"
-							: "pass",
+				: noLook
+					? "passNoLook"
+					: over
+						? "passOverhead"
+						: kind === "bounce"
+							? push
+								? "passBouncePush"
+								: "passBounce"
+							: push
+								? "passPush"
+								: "pass",
 			start,
 			start + wind + 180,
 			{
-				face: behind && g ? (g.x >= 0 ? 1 : -1) : toward,
-				look: behind && g ? { x: a.x + g.x * 12, y: a.y + g.y * 12 } : { ...b },
+				face: (behind || noLook) && g ? (g.x >= 0 ? 1 : -1) : toward,
+				look:
+					(behind || noLook) && g
+						? { x: a.x + g.x * 12, y: a.y + g.y * 12 }
+						: { ...b },
 				...(push && (pushHand ?? swingHand) === "L"
 					? { mirror: true as const }
 					: {}),
@@ -13665,7 +13756,11 @@ class Director {
 			this.dunkTurns.set(shooter, turn + 1);
 			const own = this.dunkFor(shooter, turnOf(shooter * 5 + 3, turn));
 			const anim: AnimName =
-				plan.finish === "poster" && own === "dunk" ? "dunk1" : own;
+				plan.finish === "poster" && own === "dunk"
+					? "dunk1"
+					: plan.finish === "poster" && own === "dunkPump"
+						? "dunkPump1"
+						: own;
 			// He goes up in front of the rim, on the side he comes from, close
 			// enough that his hand goes over the front of it - and a make, he
 			// hangs there by both hands.
@@ -21761,12 +21856,15 @@ class Director {
 			"hook",
 			"layup",
 			"fingerRoll",
+			"layupClutch",
 			"floater",
 			"powerLayup",
 			"scoop",
 			"reverseLayup",
 			"dunk",
 			"dunk1",
+			"dunkPump",
+			"dunkPump1",
 			"tomahawk",
 			"windmill",
 			"contest",
@@ -25593,6 +25691,7 @@ class Director {
 			"passPush",
 			"passBouncePush",
 			"passBehind",
+			"passNoLook",
 		]);
 		const busy = (tr: Track, t: number) =>
 			tr.acts.some(
@@ -26550,6 +26649,8 @@ class Director {
 			"tip",
 			"dunk",
 			"dunk1",
+			"dunkPump",
+			"dunkPump1",
 			"tomahawk",
 			"windmill",
 			"fall",
@@ -26600,6 +26701,7 @@ class Director {
 			"hook",
 			"layup",
 			"fingerRoll",
+			"layupClutch",
 			"floater",
 			"powerLayup",
 			"scoop",
@@ -26611,6 +26713,7 @@ class Director {
 			"passPush",
 			"passBouncePush",
 			"passBehind",
+			"passNoLook",
 			"contest",
 			"triple",
 			"jab",
@@ -27409,6 +27512,7 @@ class Director {
 			"hook",
 			"layup",
 			"fingerRoll",
+			"layupClutch",
 			"floater",
 			"powerLayup",
 			"scoop",
@@ -27418,6 +27522,8 @@ class Director {
 			"stepBack",
 			"dunk",
 			"dunk1",
+			"dunkPump",
+			"dunkPump1",
 			"tomahawk",
 			"windmill",
 			"catch",
@@ -27427,6 +27533,7 @@ class Director {
 			"passPush",
 			"passBouncePush",
 			"passBehind",
+			"passNoLook",
 			"triple",
 			"jab",
 			"shotFake",
@@ -29794,6 +29901,8 @@ class Director {
 				handle === undefined
 					? 0
 					: Math.max(0, Math.min(1, (handle - 0.55) / 0.4));
+			// (Pieces of the ball put in for his combos, this run.)
+			let grew = 0;
 			for (const [g0, g1] of gaps) {
 				// His own jumper right after: a fine handler sets it up with a
 				// hesitation, the last thing before he rises.
@@ -29847,45 +29956,165 @@ class Director {
 					// out, more than the jab.)
 					const pick = hash01(s.pid, t + 2);
 					const lastOne = pullUp && t + ms + 350 + 760 > g1;
+					// Or he puts it through a combo where he stands, on the beat of
+					// his dribble - back in the hand it started in.
+					const combo =
+						lastOne ||
+						handle === undefined ||
+						handle < COMBO_HANDLE ||
+						hash01(s.pid, t + 4) >= COMBO_ODDS + COMBO_SLICK * slick
+							? undefined
+							: this.comboAt(s.pid, t, g1 - 200, slick);
+					if (combo) {
+						grew += combo.added;
+						// (His man down in his stance a step off it.)
+						const u = unitVec(P, G);
+						(guard.nudges ??= []).push({
+							t0: combo.t0 + 80,
+							t1: combo.t1 + 200,
+							dx: u.x * COMBO_GIVE,
+							dy: u.y * COMBO_GIVE,
+						});
+						added.push(guard, tr);
+						t =
+							combo.t1 +
+							(350 + 550 * hash01(s.pid, t + 3)) * (1 - 0.45 * slick);
+						continue;
+					}
 					const hesi = lastOne || pick < 0.35 + 0.05 * slick;
 					const inOut = !hesi && pick < 0.6 + 0.2 * slick;
+					// (Now and then his rocker step for the jab - a fine handler's
+					// more often - and a shake of his shoulders for the in-and-out.)
+					const alt = hash01(s.pid, t + 6);
+					const long = ms * ROCKER_LONGER;
+					const rocker =
+						!hesi &&
+						!inOut &&
+						alt < ROCKER_ODDS + ROCKER_SLICK * slick &&
+						t + long + 200 <= g1;
+					const shake = inOut && alt < SHAKE_ODDS;
+					const took = rocker ? long : ms;
 					// (The hand it is in then.)
 					const hand =
 						(own.findLast((x) => x.t0 <= t) as { hand?: Hand } | undefined)
 							?.hand ?? "R";
 					tr.acts.push({
 						t0: t,
-						t1: t + ms,
+						t1: t + took,
 						anim: hesi
 							? "dribbleHesi"
-							: inOut
-								? hand === "L"
-									? "dribbleInOutL"
-									: "dribbleInOutR"
-								: "dribbleJab",
+							: shake
+								? "dribbleShake"
+								: inOut
+									? hand === "L"
+										? "dribbleInOutL"
+										: "dribbleInOutR"
+									: rocker
+										? "dribbleRocker"
+										: "dribbleJab",
 						look: { ...G },
 					});
 					// Off him on the jab; up at him on the hesitation; across with
 					// the ball on the in-and-out, to his left as it goes in from his
-					// right hand.
+					// right hand; off him a little on the rocker (it has him back on
+					// his heels, then up as he rocks back) and the shake.
 					const u = unitVec(P, G);
-					const k = hesi ? -0.6 : inOut ? 0 : 1.1;
-					const side = inOut ? (hand === "L" ? -0.9 : 0.9) : 0;
+					const k = hesi ? -0.6 : shake ? 0.3 : inOut ? 0 : rocker ? 0.7 : 1.1;
+					const side = inOut && !shake ? (hand === "L" ? -0.9 : 0.9) : 0;
 					(guard.nudges ??= []).push({
 						t0: t + 120,
-						t1: t + ms + 240,
+						t1: t + took + 240,
 						dx: u.x * k + u.y * side,
 						dy: u.y * k - u.x * side,
 					});
 					added.push(guard, tr);
-					t += ms + (350 + 550 * hash01(s.pid, t + 3)) * (1 - 0.45 * slick);
+					t += took + (350 + 550 * hash01(s.pid, t + 3)) * (1 - 0.45 * slick);
 				}
 			}
+			i += grew;
 		}
 		for (const tr of new Set(added)) {
 			tr.acts.sort((a, b) => a.t0 - b.t0);
 			tr.nudges?.sort((a, b) => a.t0 - b.t0);
 		}
+	}
+
+	// A COMBO WHERE HE STANDS, from the first top of his dribble at or after
+	// t, done by `until`: his own pick of them (see COMBOS), the ball back in
+	// the hand it started in. Put in as the ball's pieces - the move's, then
+	// his dribble on from it - or nothing, if it doesn't fit.
+	private comboAt(
+		pid: number,
+		t: number,
+		until: number,
+		slick: number,
+	): { t0: number; t1: number; added: number } | undefined {
+		const t0 = this.nextTop(pid, t);
+		if (t0 === undefined) {
+			return undefined;
+		}
+		const j = this.segAt(t0);
+		const seg = this.ball[j];
+		if (
+			seg?.kind !== "hold" ||
+			seg.pid !== pid ||
+			seg.style !== "dribble" ||
+			t0 - seg.t0 < 1
+		) {
+			return undefined;
+		}
+		// (A fine handler's, his own few of them.)
+		const own = COMBOS.filter((c) => c.length <= 2 || slick > 0.4);
+		const moves = own[Math.floor(hash01(pid, t0 + 5) * own.length)]!;
+		// As quick as a crossover's bounces (quicker in a fine handler's
+		// hands) - but done on a top of his dribble's beat, so what was timed
+		// to that beat after it (his picking it up, say) still is.
+		const b = this.beatOf(pid, t0);
+		if (!b) {
+			return undefined;
+		}
+		const n0 = Math.round(b.n);
+		const quick = moves.length * CROSS_MS * (1 - COMBO_QUICK * slick);
+		let n1 = n0 + 1;
+		while (beatTime(this.ball, b.start, n1) - t0 < quick - 1) {
+			n1++;
+		}
+		const t1 = beatTime(this.ball, b.start, n1);
+		const ms = (t1 - t0) / moves.length;
+		if (t1 > until) {
+			return undefined;
+		}
+		// The ball in his hand then, through the move, a bounce each and each
+		// into the other hand - the same move again one piece.
+		const hand = seg.hand ?? "R";
+		const pieces: BallSeg[] = [];
+		let h: Hand = hand;
+		moves.forEach((move, k) => {
+			const last = pieces.at(-1);
+			if (!(last?.kind === "hold" && last.move === move)) {
+				pieces.push({
+					kind: "hold",
+					t0: t0 + k * ms,
+					pid,
+					style: "cross",
+					hand: h,
+					move,
+					still: true,
+					rate: 1000 / ms,
+				});
+			}
+			h = h === "R" ? "L" : "R";
+		});
+		pieces.push({
+			kind: "hold",
+			t0: t1,
+			pid,
+			style: "dribble",
+			hand,
+			...(seg.rate !== undefined ? { rate: seg.rate } : {}),
+		});
+		this.ball.splice(j + 1, 0, ...pieces);
+		return { t0, t1, added: pieces.length };
 	}
 
 	// A move only for show - a jab at his man, a fake, the call of a set,
