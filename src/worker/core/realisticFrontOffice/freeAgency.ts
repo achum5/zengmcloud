@@ -13,13 +13,16 @@ import { getContractDemand } from "../contract/index.ts";
 import { contractOf } from "./contractOf.ts";
 import { birdTid } from "./cba.ts";
 import {
+	askFloor,
 	capHolds,
 	checkFor,
+	leastForLength,
 	decidesNow,
 	inStages,
 	mostFor,
 	noteSigning,
 	stageSettings,
+	stagesOn,
 } from "./stages.ts";
 import { contractNegotiation, player, team } from "../index.ts";
 import { mayPay } from "./contracts.ts";
@@ -366,6 +369,8 @@ const bestBid = (
 	rivals: number,
 	cap: number,
 	temperature = offerSettings.temperature,
+	// The least he would take for this length.
+	least = 0,
 ) => {
 	const minContract = g.get("minContract");
 	const most = mostUpTo(line, cap);
@@ -380,7 +385,7 @@ const bestBid = (
 			minContract + ((most - minContract) * i) / STEPS,
 		);
 		const net = netAt(line, amount);
-		if (net <= 0 || amount > most) {
+		if (net <= 0 || amount > most || amount < least) {
 			continue;
 		}
 		const weight = Math.exp(
@@ -514,6 +519,9 @@ export const makeOffer = async (
 		!mayPay({ tid, payroll, amount: offer.amount, resigning, rosterSize })
 	) {
 		return "Your cap room does not allow that offer.";
+	}
+	if (stagesOn() && offer.amount < leastForLength(p, years)) {
+		return `For that little he signs for ${stageSettings.discountYears} years at most.`;
 	}
 	const board = [...(t.offerBoard ?? [])];
 	const i = board.findIndex((x) => x.pid === offer.pid);
@@ -892,7 +900,7 @@ export const priceMarket = async (
 			helpers.roundContract(
 				Math.max(
 					from + (once ? 1 : freeAgencySettings.priceSpeed) * (market - from),
-					stages ? (p.faFloor ?? 0) : 0,
+					stages ? askFloor(p) : 0,
 				),
 			),
 			minContract,
@@ -916,6 +924,35 @@ export const priceMarket = async (
 		lineOf,
 		priced,
 	};
+};
+
+// As free agency in stages opens: each free agent's ask is what the market
+// would pay him - not stock's demand - and the least he asks later is
+// measured from it.
+export const openStageMarket = async () => {
+	const pool = (
+		await idb.cache.players.indexGetAll("playersByTid", PLAYER.FREE_AGENT)
+	).sort((a, b) => b.valueNoPot - a.valueNoPot || a.pid - b.pid);
+	const teams = (await idb.cache.teams.getAll()).filter((t) => !t.disabled);
+	const stock = new Map(pool.map((p) => [p.pid, contractOf(p).amount]));
+	if (pool.length > 0) {
+		await priceMarket(pool, teams, {
+			once: true,
+			numCandidates: stageSettings.candidates,
+		});
+	}
+	// Never below a share of stock's demand for him: the market's read as it
+	// opens can miss a player every team would want later.
+	for (const p of pool) {
+		const least = helpers.roundContract(
+			stageSettings.openAskFloor * stock.get(p.pid)!,
+		);
+		if (contractOf(p).amount < least) {
+			getContractDemand(p).amount = least;
+		}
+		p.faOpenAsk = contractOf(p).amount;
+		await idb.cache.players.put(p);
+	}
 };
 
 // A day of free agency, or of the season.
@@ -956,7 +993,11 @@ export const freeAgencyDay = async () => {
 		capOf,
 		lineOf,
 		priced,
-	} = await priceMarket(pool, teams);
+	} = await priceMarket(
+		pool,
+		teams,
+		inStages() ? { numCandidates: stageSettings.candidates } : {},
+	);
 	let rosters = rostersAtOpen;
 	const stages = inStages();
 	const temperature = stages
@@ -1034,6 +1075,7 @@ export const freeAgencyDay = async () => {
 					rivals,
 					capFor(p),
 					temperature,
+					stagesOn() ? leastForLength(p, years) : 0,
 				);
 				if (bid && (ev === undefined || bid.ev > ev)) {
 					ev = bid.ev;
@@ -1043,7 +1085,9 @@ export const freeAgencyDay = async () => {
 				first.push({ p, ev });
 			}
 		}
-		for (const { p } of first.sort((a, b) => b.ev - a.ev).slice(0, SHORTLIST)) {
+		for (const { p } of first
+			.sort((a, b) => b.ev - a.ev)
+			.slice(0, stages ? stageSettings.shortlist : SHORTLIST)) {
 			const appeal = await appealFor(p, t.tid, rankOf(p), rosters);
 			const rivals = await rivalsOf(p);
 			let best: (Offer & { ev: number }) | undefined;
@@ -1055,6 +1099,7 @@ export const freeAgencyDay = async () => {
 					rivals,
 					capFor(p),
 					temperature,
+					stagesOn() ? leastForLength(p, years) : 0,
 				);
 				if (bid && (!best || bid.ev > best.ev)) {
 					best = {
@@ -1074,7 +1119,12 @@ export const freeAgencyDay = async () => {
 			.sort((a, b) => b.ev - a.ev)
 			// One more than it has places, so the next best are in play if a
 			// first choice holds out.
-			.slice(0, Math.max(2, spots + 1))
+			.slice(
+				0,
+				stages
+					? Math.max(2, spots + stageSettings.extraOffers)
+					: Math.max(2, spots + 1),
+			)
 			.map(({ ev: _ev, ...offer }) => offer);
 		for (const offer of board) {
 			addStanding(offer);

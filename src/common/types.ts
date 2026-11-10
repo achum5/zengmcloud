@@ -2038,8 +2038,8 @@ export type PlayerWithoutKey<PlayerRatings = MinimalPlayerRatings> = {
 	// length, not who made it).
 	faDecides?: number;
 	faLead?: { amount: number; exp: number; tid: number };
-	// The least he asks for in free agency in stages.
-	faFloor?: number;
+	// What he asked for as free agency in stages opened.
+	faOpenAsk?: number;
 
 	// Teams that released this player and still owe him money, from endedEarly.tid of his contracts. This is only so the database can index players who are still owed, since IndexedDB can't index inside p.contracts. Missing if nobody owes him. Update with updateOwedByTids whenever endedEarly.tid changes.
 	owedByTids?: number[];

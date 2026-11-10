@@ -34,8 +34,22 @@ export const stageSettings = {
 	// offer wins about 85-90% of the time (owner's call).
 	decisionTemperature: 0.05,
 	// His ask never falls below this share of what it was as free agency
-	// opened.
-	askFloor: 0.5,
+	// opened, by stage: it holds through the decision days, then eases.
+	floorByStage: [1, 1, 1, 0.75, 0.5],
+	// A deal for less than this share of his opening ask is short - no more
+	// than discountYears: a "prove it" deal, not years of a bargain.
+	discountShare: 0.6,
+	discountYears: 2,
+	// How many free agents a CPU team prices at every length each stage, and
+	// how many more offers than it has places it may have out.
+	shortlist: 8,
+	extraOffers: 3,
+	// How many free agents, best first, the market prices and CPU teams look
+	// at each stage (the daily market: 20).
+	candidates: 60,
+	// As free agency opens his ask is the market's, but never below this
+	// share of stock's demand for him.
+	openAskFloor: 0.5,
 };
 
 export const STAGES = [
@@ -67,8 +81,8 @@ helpers.setFreeAgencyStageName(() => (inStages() ? stageName() : undefined));
 export const decidesNow = (p: Pick<Player, "faDecides">) =>
 	stageIndex() >= (p.faDecides ?? OPEN_MARKET);
 
-// As free agency opens: the stages to come, when each free agent decides,
-// and the least he will ask.
+// As free agency opens: the stages to come, and when each free agent
+// decides (his ask is set once the phase is on: openStageMarket).
 export const openStages = async () => {
 	const pool = (
 		await idb.cache.players.indexGetAll("playersByTid", PLAYER.FREE_AGENT)
@@ -80,7 +94,7 @@ export const openStages = async () => {
 				: i < stageSettings.tier1 + stageSettings.tier2
 					? 2
 					: OPEN_MARKET;
-		p.faFloor = stageSettings.askFloor * contractOf(p).amount;
+		delete p.faOpenAsk;
 		delete p.faLead;
 		await idb.cache.players.put(p);
 	}
@@ -201,6 +215,22 @@ export const mostFor = ({
 	}
 	return most;
 };
+
+// The least he asks for this stage.
+// At camp, no more than the mid-level: a team over the cap can still sign
+// him.
+export const askFloor = (p: Pick<Player, "faOpenAsk">) => {
+	const floor = (p.faOpenAsk ?? 0) * stageSettings.floorByStage[stageIndex()]!;
+	return stageIndex() === STAGES.length - 1
+		? Math.min(floor, midLevelAmount())
+		: floor;
+};
+
+// The least he takes for a deal this long: a long deal only near his value.
+export const leastForLength = (p: Pick<Player, "faOpenAsk">, years: number) =>
+	years > stageSettings.discountYears
+		? stageSettings.discountShare * (p.faOpenAsk ?? 0)
+		: 0;
 
 // After a signing by the mid-level exception, the team has used it.
 export const noteSigning = async (

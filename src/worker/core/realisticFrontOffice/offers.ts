@@ -5,6 +5,7 @@ import { idb } from "../../db/index.ts";
 import { g, helpers } from "../../util/index.ts";
 import moodComponents from "../player/moodComponents.ts";
 import { SLOT_MINUTES } from "./strength.ts";
+import { stagesOn } from "./stages.ts";
 import { contractOf, type ContractHolder } from "./contractOf.ts";
 
 // HOW A PLAYER CHOOSES BETWEEN OFFERS (owner's call: an offer market, every
@@ -39,6 +40,11 @@ export const offerSettings = {
 	// offering less costs a lot. At his ask, nothing changes.
 	overAsk: 0.5,
 	underAsk: 2,
+	// With free agency in stages: past this much over his ask, more money
+	// barely moves him (farOverAsk of its log) - he has what he wants, and a
+	// team with room to burn does not win him by doubling it.
+	overAskKnee: 1.25,
+	farOverAsk: 0.1,
 };
 
 export type Offer = {
@@ -80,7 +86,14 @@ export const askFor = (
 // What the money in an offer is worth to him, against his ask for that length.
 export const moneyUtility = (amount: number, ask: number) => {
 	const x = Math.log(amount / ask);
-	return x * (x >= 0 ? offerSettings.overAsk : offerSettings.underAsk);
+	if (x < 0) {
+		return x * offerSettings.underAsk;
+	}
+	const knee = Math.log(offerSettings.overAskKnee);
+	if (x <= knee || !stagesOn()) {
+		return x * offerSettings.overAsk;
+	}
+	return knee * offerSettings.overAsk + (x - knee) * offerSettings.farOverAsk;
 };
 
 // What an offer is worth to him: the money against his ask for that length,
