@@ -57,6 +57,7 @@ import {
 	type SimStopPoint,
 } from "./tradeDeadlineGate.ts";
 import type { DraftReadyEntry, SyncTransport } from "./types.ts";
+import { inStages, STAGES } from "../realisticFrontOffice/stages.ts";
 import type { MpPhaseReady, Phase } from "../../../common/types.ts";
 
 const EVALUATE_INTERVAL_MS = 2000;
@@ -385,6 +386,11 @@ const getStageInfo = async (): Promise<StageInfo | undefined> => {
 		// Step for simming the NEXT day. "Ready through X days left" = the step
 		// of the day whose sim lands on X.
 		const nextStep = FA_STEP_BASE - daysLeft + 1;
+		// Realistic front offices' free agency in stages: daysLeft counts the
+		// stages down, so a step is a stage, named for the one it lands on.
+		const stages = inStages();
+		const stageAt = (target: number) =>
+			STAGES[Math.max(0, STAGES.length - target)]!;
 		const options: { step: number; label: string }[] = [];
 		for (let target = daysLeft - 1; target >= 0; target--) {
 			options.push({
@@ -392,7 +398,9 @@ const getStageInfo = async (): Promise<StageInfo | undefined> => {
 				label:
 					target === 0
 						? "End of free agency"
-						: `${target} ${target === 1 ? "day" : "days"} left`,
+						: stages
+							? stageAt(target)
+							: `${target} ${target === 1 ? "day" : "days"} left`,
 			});
 		}
 
@@ -400,8 +408,13 @@ const getStageInfo = async (): Promise<StageInfo | undefined> => {
 			nextStep,
 			// Label with the days left AFTER this day sims, so it reads continuously
 			// with the "ready through…" list below it (28 left, 27 left, …).
-			nextLabel:
-				daysLeft - 1 === 0 ? "Final day" : `Next day (${daysLeft - 1} left)`,
+			nextLabel: stages
+				? daysLeft - 1 === 0
+					? "End of free agency"
+					: stageAt(daysLeft - 1)
+				: daysLeft - 1 === 0
+					? "Final day"
+					: `Next day (${daysLeft - 1} left)`,
 			onClockUser: false,
 			waypoints: [],
 			options,

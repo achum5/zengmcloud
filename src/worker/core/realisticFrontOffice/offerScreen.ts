@@ -17,6 +17,7 @@ import {
 import { realisticFreeAgencyOn } from "./isOn.ts";
 import { askFor, offerYears, wantedYears } from "./offers.ts";
 import type { ContractHolder } from "./contractOf.ts";
+import { inStages, stageIndex, STAGES } from "./stages.ts";
 
 // WHAT A HUMAN TEAM SEES OF THE OFFER MARKET (owner's calls: no instant
 // signing - a human's offer waits for the player's decision like anyone's;
@@ -118,6 +119,27 @@ export const liveOffers = async (tid: number) => {
 	return out;
 };
 
+// Free agency in stages: the stage he decides in, short ("Day 1", "Open
+// market"), and the number to beat - the leading offer's money and years,
+// never who made it. Undefined when free agency is not in stages.
+export const stageOf = (p: Pick<Player, "faDecides" | "faLead">) => {
+	if (!inStages()) {
+		return undefined;
+	}
+	// Once his stage has passed, he decides in each one after it.
+	const decides = Math.max(
+		p.faDecides ?? STAGES.indexOf("Open market"),
+		stageIndex(),
+	);
+	return {
+		decides,
+		decidesLabel: STAGES[decides]!.replace("Decision day", "Day"),
+		toBeat: p.faLead
+			? { amount: p.faLead.amount, years: offerYears(p.faLead.exp) }
+			: undefined,
+	};
+};
+
 // The offer screen for one player: his asking price at each length, the
 // team's offer standing (if any) and its place among the team's offers, and
 // the chance of the offer shown - the standing one, or his ask for the length
@@ -158,6 +180,7 @@ export const offerScreen = async (tid: number, pid: number) => {
 		minContract: g.get("minContract"),
 		maxContract: g.get("maxContract"),
 		chance: await chanceOfOffer(tid, { pid, ...shown }),
+		stage: stageOf(p),
 	};
 };
 
@@ -247,8 +270,17 @@ export const lastChoices = async () => {
 	if (!latest) {
 		return undefined;
 	}
+	// In stages, the stage they came in (daysLeft counts the stages down).
+	const stage =
+		inStages() &&
+		latest.season === season &&
+		latest.daysLeft >= 1 &&
+		latest.daysLeft <= STAGES.length
+			? STAGES[STAGES.length - latest.daysLeft]
+			: undefined;
 	return {
 		daysLeft: latest.daysLeft,
+		stage,
 		at: latest.at,
 		items: latest.items.filter(
 			(item): item is Extract<FaDayResultItem, { type: "choice" }> =>

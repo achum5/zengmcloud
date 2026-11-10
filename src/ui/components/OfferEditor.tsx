@@ -296,6 +296,22 @@ export const OfferEditor = ({
 				</div>
 			</div>
 
+			{offer.stage ? (
+				<div className="mb-3" data-testid="offer-stage">
+					{offer.stage.toBeat ? (
+						<>
+							To beat{" "}
+							<b>
+								{formatOfferAmount(offer.stage.toBeat.amount)} ×{" "}
+								{offer.stage.toBeat.years}
+							</b>
+							{" · "}
+						</>
+					) : null}
+					Decides <b>{offer.stage.decidesLabel}</b>
+				</div>
+			) : null}
+
 			<div className="d-flex flex-wrap align-items-center gap-2">
 				<div className="me-auto">
 					Your odds{" "}
