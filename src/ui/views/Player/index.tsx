@@ -28,6 +28,11 @@ import { buildPlayerNoteLinks } from "../../util/linkifyRecap.ts";
 import { TradingCardGallery } from "../../components/TradingCardGallery.tsx";
 import { wrappedSeasonAwards } from "./SeasonAwards.tsx";
 import Impact from "./Impact.tsx";
+import {
+	ContractHistory,
+	ContractSummary,
+	SalaryMarks,
+} from "./ContractCard.tsx";
 import { last, orderBy } from "../../../common/utils.ts";
 
 const Player2 = ({
@@ -35,6 +40,7 @@ const Player2 = ({
 	appearanceTeams,
 	bestPos,
 	social,
+	contractCard,
 	contractValues,
 	customMenu,
 	events,
@@ -331,8 +337,9 @@ const Player2 = ({
 						{awardsGrouped.length === 0 ? <p>None</p> : null}
 					</HideableSection>
 				</div>
-				<div className="col-6 col-md-3">
+				<div className={contractCard ? "col-md-6" : "col-6 col-md-3"}>
 					<HideableSection title="Salaries">
+						{contractCard ? <ContractSummary card={contractCard} /> : null}
 						<DataTable
 							className="datatable-negative-margin-top mb-3"
 							cols={getCols(
@@ -369,7 +376,20 @@ const Player2 = ({
 											),
 										},
 										wrappedSalaryPayers(s),
-										wrappedCurrency(s.amount, "M"),
+										contractCard
+											? {
+													value: (
+														<span className="text-nowrap">
+															{helpers.formatCurrency(s.amount, "M")}
+															<SalaryMarks
+																marks={contractCard.marks[s.season]}
+															/>
+														</span>
+													),
+													sortValue: s.amount,
+													searchValue: helpers.formatCurrency(s.amount, "M"),
+												}
+											: wrappedCurrency(s.amount, "M"),
 										...(showContractValue
 											? [contractValueCell(contractValueBySeason.get(s.season))]
 											: []),
@@ -383,6 +403,7 @@ const Player2 = ({
 								};
 							})}
 						/>
+						{contractCard ? <ContractHistory card={contractCard} /> : null}
 					</HideableSection>
 				</div>
 				<div className="col-md-6">
