@@ -12,13 +12,14 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 251,
+		date: "2026-11-10",
+		text: "3D games: ball handlers move with the ball more - no more pulling up dead between dribbling from one spot to the next, and when a player works his man with dribble moves where he stands, his weight goes with the ball instead of standing planted.",
+	},
+	{
 		n: 250,
 		date: "2026-11-10",
-<<<<<<< HEAD
 		text: "Contract offers with Realistic Front Offices: paying a player more than he asks now raises your odds less than before, and offering less than he asks lowers them much more. Odds at his asking price are the same.",
-=======
-		text: "3D games: ball handlers move with the ball more - no more pulling up dead between dribbling from one spot to the next, and when a player works his man with dribble moves where he stands, his weight goes with the ball instead of standing planted.",
->>>>>>> d8e614bf4 (3D: the man with the ball on his way through his spots; weight with his moves)
 	},
 	{
 		n: 249,
