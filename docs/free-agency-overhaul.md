@@ -9,6 +9,9 @@ its complexity, and a 2K-style free agency in stages instead of 30 days.
 
 ## Contract rules
 
+A league's own hard cap (League Settings) stays, where lower - the owner's
+league caps the human teams at the tax line.
+
 All amounts scale with the league's settings: the top max tier is
 `maxContract`, the others are that times 25/35 and 30/35; the apron is
 `luxuryPayroll`; the hard cap is `luxuryPayroll + 0.10 * salaryCap`.
@@ -38,6 +41,11 @@ All amounts scale with the league's settings: the top max tier is
 9. **Extensions.** In the last year of a contract, during the season or
    before free agency, a team may extend a player, under rules 1-7.
 10. **Luxury tax** as BBGM has it.
+
+11. **Cap holds.** A team's own unsigned free agents count against its cap
+    room at their asking price until it renounces them or they sign
+    elsewhere - so room is not spent on outsiders first and the team's own
+    players re-signed over the cap after.
 
 Existing contracts stay as they are (flat, no options).
 
