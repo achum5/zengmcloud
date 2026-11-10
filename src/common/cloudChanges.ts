@@ -13,8 +13,8 @@ export type CloudChange = {
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
 		n: 249,
-		date: "2026-11-09",
-		text: "3D games: defenders now step into a player crashing the glass and box him out before the ball is off the rim, and a player fouled hard going up at the rim is sometimes knocked to the floor - a teammate comes over to pull him up before he goes to the line.",
+		date: "2026-11-10",
+		text: "3D games: defenders now step into a player crashing the glass and box him out before the ball is off the rim. And a shooter fouled hard - going up at the rim, or by a closeout landing under him on a jumper - is sometimes knocked to the floor: the man who fouled him steps off, and a teammate comes over to pull him up before he goes to the line.",
 	},
 	{
 		n: 248,

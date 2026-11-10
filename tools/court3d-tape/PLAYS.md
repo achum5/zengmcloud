@@ -649,7 +649,11 @@ the floor with it (at the rim 30%, a putback 25%, a tip-in 20%, in the
 post 12%): sat there till a teammate comes over and pulls him up by the
 hands, or up on his own, and only then off to the line - 14 of 117 over
 the nine games, 5 of them pulled up. The same on an and-one (not a dunk):
-his flex or the chest bump once he is up.
+his flex or the chest bump once he is up. And out on the floor, a closeout
+landing under or into a shooter (a three 12%, a jumper 8%) - with the man
+who fouled him stepping back off him, not stood over him (he was, and the
+spacing passes slid the man on the floor out from under him instead): 23
+of 123 now, 18 of them pulled up.
 
 ## 12. Turnover, steal
 

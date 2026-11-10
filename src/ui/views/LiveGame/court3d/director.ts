@@ -767,11 +767,21 @@ const RELEASE_MS = 120;
 const CHARGE_DOWN_MS = 2400;
 // How often a man fouled going up for a shot comes down on the floor with
 // it, by where it was from (see knockedDown).
+// (Out on the floor, a closeout landing under him or into him as he comes
+// down.)
+// ... and the man who fouled him no nearer him than this (feet) while he
+// is down.
+const KNOCK_CLEAR = 3;
+// Fouled on his way up to dunk it: the man who fouls him is beside him this
+// share of the way from where he goes up to the rim.
+const AND_ONE_IN = 0.85;
 const KNOCKED_DOWN: Partial<Record<Zone, number>> = {
 	atRim: 0.3,
 	putBack: 0.25,
 	tipIn: 0.2,
 	lowPost: 0.12,
+	three: 0.12,
+	midRange: 0.08,
 };
 const CHARGE_FALL_MS = 630;
 const HELP_UP_AT = 1100;
@@ -5150,6 +5160,24 @@ class Director {
 			this.act(pid, "pulledUp", pull, up, { look: A });
 		}
 		this.free.set(pid, Math.max(this.free.get(pid) ?? 0, up));
+		// The man who put him there steps back off him - not stood over him
+		// while he is down.
+		const off = dist(B, F);
+		if (off < KNOCK_CLEAR) {
+			const u = off > 0.3 ? unitVec(F, B) : unitVec(rimPt(this.teamOf(pid)), F);
+			const V = clampPt({
+				x: F.x + u.x * KNOCK_CLEAR,
+				y: F.y + u.y * KNOCK_CLEAR,
+			});
+			this.go(
+				fouler,
+				V,
+				Math.max(hit + 120, this.free.get(fouler) ?? 0),
+				4.5,
+				"back",
+				(F.x >= V.x ? 1 : -1) as 1 | -1,
+			);
+		}
 	}
 
 	// A man down on the floor at F, facing A: the nearest of his teammates,
@@ -13731,7 +13759,16 @@ class Director {
 					const w = { x: away.x + back.x, y: away.y + back.y };
 					const L = Math.hypot(w.x, w.y);
 					const u = L > 0.5 ? { x: w.x / L, y: w.y / L } : away;
-					const B = clampPt({ x: under.x + u.x * 2.6, y: under.y + u.y * 2.6 });
+					// (The man who fouls him is on him through the contact - by
+					// where he is most of the way from going up to the rim, not left back
+					// where he took off.)
+					const at = andOne
+						? {
+								x: under.x + (rim.x - under.x) * AND_ONE_IN,
+								y: under.y + (rim.y - under.y) * AND_ONE_IN,
+							}
+						: under;
+					const B = clampPt({ x: at.x + u.x * 2.6, y: at.y + u.y * 2.6 });
 					// (The man who fouls him gets there, from wherever he is -
 					// setting off in time to.)
 					let from = gather - 300;
@@ -17522,6 +17559,16 @@ class Director {
 				this.effect("clank", hits, { rim: rimTeam });
 				// (Down off the rim from up there: as long as that takes.)
 				this.bounce(hits, hits + 2000, target, land, 2, 2.5);
+				// Hit going up, now and then he comes down on the floor with it
+				// (the man who fouled him stepping off him first, then wanting
+				// to know what for).
+				if (
+					inAir &&
+					hash01(inAir.pid * 23 + 9, Math.round(T)) <
+						(KNOCKED_DOWN[inAir.zone] ?? 0)
+				) {
+					this.knockedDown(inAir.pid, e.pid, T);
+				}
 				if (this.rng() < 0.4) {
 					this.react(
 						e.pid,
@@ -17537,14 +17584,6 @@ class Director {
 						t: T,
 						zone: inAir.zone,
 					});
-					// Hit going up in close, now and then he comes down on the
-					// floor with it.
-					if (
-						hash01(inAir.pid * 23 + 9, Math.round(T)) <
-						(KNOCKED_DOWN[inAir.zone] ?? 0)
-					) {
-						this.knockedDown(inAir.pid, e.pid, T);
-					}
 				}
 				this.beat(i, type, T, T + 1100);
 				this.phase = "ft";
@@ -18507,12 +18546,12 @@ class Director {
 			// Hit going up in close and in anyway, now and then he comes down
 			// on the floor with it - whatever he does about it, he does once
 			// he is up.
-			if (
+			const downed =
 				andOne &&
 				!shot.dunk &&
 				hash01(shot.pid * 23 + 9, Math.round(at)) <
-					(shot.zone ? (KNOCKED_DOWN[shot.zone] ?? 0) : 0)
-			) {
+					(shot.zone ? (KNOCKED_DOWN[shot.zone] ?? 0) : 0);
+			if (downed) {
 				this.knockedDown(shot.pid, e.pidFoul as number, at);
 			}
 			const free = Math.max(at + 450, this.free.get(shot.pid) ?? 0);
@@ -18646,7 +18685,12 @@ class Director {
 			// The man who fouled him wants to know what for; the man he dunked
 			// on stands there, hands on his hips.
 			if (andOne && this.rng() < 0.5) {
-				this.react(e.pidFoul, "protest", at + 450, 1000);
+				this.react(
+					e.pidFoul,
+					"protest",
+					downed ? Math.max(at + 450, this.free.get(e.pidFoul) ?? 0) : at + 450,
+					1000,
+				);
 			}
 			const victim =
 				shot.finish === "poster" && typeof e.pidDefense === "number"

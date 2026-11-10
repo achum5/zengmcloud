@@ -575,7 +575,9 @@ describe("3D director", () => {
 	test("the man guarding the shooter is not off away from him and back before the shot", () => {
 		let shots = 0;
 		const back: string[] = [];
-		for (const seed of ["a", "b", "c", "d", "e", "f"]) {
+		// (Ten games: about one shot in twelve, and in six games one either
+		// side of the line as they come out.)
+		for (const seed of "abcdefghij") {
 			const { tl } = compile(seed, 140);
 			for (const s of tl.ball) {
 				if (s.kind !== "fly" || !("pid" in s.from) || "pid" in s.to) {
@@ -646,7 +648,7 @@ describe("3D director", () => {
 		}
 		assert.isAbove(shots, 400);
 		assert.isAtMost(back.length / shots, 1 / 11, back.join("; "));
-	}, 600_000);
+	}, 900_000);
 
 	// Out on the floor with it, a man does not get by the man guarding him
 	// - the nearest of theirs to him - for nothing: level with him or past
