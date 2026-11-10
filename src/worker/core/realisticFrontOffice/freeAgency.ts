@@ -604,6 +604,9 @@ export const makeOffer = async (
 	) {
 		return "That is not a contract the league allows.";
 	}
+	if (stagesOn() && offer.amount > maxFor(serviceYears(p)) + 1) {
+		return "More than his max contract.";
+	}
 	if (stagesOn()) {
 		const check = checkFor({
 			t,
@@ -1760,7 +1763,12 @@ export const reSignDecision = async (p: Player, payroll: number) => {
 	const rosters = await rostersByTid();
 	const market = await marketUtility(p, p.tid);
 	const appeal = await appealFor(p, p.tid, rankOf(p), rosters);
-	const cap = mostAllowed(t, !hadDiscount(p));
+	const allowedCap = mostAllowed(t, !hadDiscount(p));
+	// CBA-lite: never past the max for his seasons played.
+	const cap =
+		allowedCap !== undefined && stagesOn()
+			? Math.min(allowedCap, maxFor(serviceYears(p)))
+			: allowedCap;
 	if (cap === undefined) {
 		return undefined;
 	}
@@ -1886,13 +1894,15 @@ export const decideReSignings = async (tid: number) => {
 			continue;
 		}
 		const roster = await idb.cache.players.indexGetAll("playersByTid", tid);
-		const fits = mayPay({
-			tid,
-			payroll: await team.getPayroll(tid),
-			amount: offer.amount,
-			resigning: !hadDiscount(p),
-			rosterSize: roster.length,
-		});
+		const fits =
+			(!stagesOn() || offer.amount <= maxFor(serviceYears(p)) + 1) &&
+			mayPay({
+				tid,
+				payroll: await team.getPayroll(tid),
+				amount: offer.amount,
+				resigning: !hadDiscount(p),
+				rosterSize: roster.length,
+			});
 		const chance = fits ? await reSignChance(p, tid, offer) : 0;
 		const signed = uniformSeed(p.pid * 7_919 + g.get("season")) < chance;
 		if (signed) {
