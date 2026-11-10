@@ -12,7 +12,7 @@
 // one it laid out, less what no man could do (a lurch, a corner turned on
 // the spot at a run). What each man wants comes next, a part at a time.
 
-import type { CourtTimeline, Move } from "./director.ts";
+import type { BallSeg, CourtTimeline, Move } from "./director.ts";
 import { floorSpotOf } from "./evaluate.ts";
 import { COURT_H, COURT_W, inPlay, rimX, type Pt } from "./geometry.ts";
 import { RIM_INSET } from "../courtSpots.ts";
@@ -63,6 +63,13 @@ const REACT_MS: [number, number] = [60, 320];
 const REACT_PACE = 8;
 // (Seeing it this far (ms) ahead.)
 const REACT_SEE = 150;
+// (From this long before a shot leaves his hand (ms) to this long after it
+// comes down off the rim, no beat to it: see stepTimeline.)
+const SHOT_BEFORE = 300;
+const SHOT_AFTER = 1500;
+// (The ball in the air within this far (feet) of where the play has a man:
+// see stepTimeline.)
+const BALL_NEAR = 3;
 // Fastest anybody goes (feet a second).
 const TOP = 30;
 // Further off where the play wants him than this (feet), something has
@@ -78,6 +85,13 @@ const RUN_MOST = 1500;
 const PACE_NOISE = 0.25;
 // Under this pace (feet a second) he is stood.
 const STILL = 0.2;
+// Seeing nothing ahead, he still sees where he will be stood this long
+// (ms) from now - and pulls up for it at this share of all he has.
+const STOP_SEE = 500;
+const STOP_SHARE = 0.8;
+// Over a line the play has him inside, drawn back in no faster than this
+// (feet a second).
+const LINE_PULL = 4;
 // Pulling up to stand somewhere: as evenly as this (feet a second, a
 // second), and set there within this far of it (feet) going no faster than
 // this (feet a second).
@@ -220,6 +234,9 @@ export const follow = (
 	// a man reacting to another (he goes where the play has him now - it has
 	// him reacting already: see mark in director.ts).
 	seeAt: (t: number) => number = () => LOOK_MOST,
+	// When there is no beat to it: everybody going for the shot as the play
+	// has them going (see stepTimeline).
+	sharp: Spans = spansAt([]),
 ): Sample[] => {
 	const out: Sample[] = [];
 	let p: Pt | undefined;
@@ -337,7 +354,13 @@ export const follow = (
 			if (!off) {
 				// (Sent off flat out, he goes the quicker: his beat to react
 				// shorter the faster the play has him going.)
-				const lag = lagAt(t) * Math.min(1, REACT_PACE / Math.max(going, 2));
+				// (Stood out of bounds - he has just taken it in, or is coming
+				// on: nothing to react to - he goes with the play.)
+				const out = p.x < 0 || p.x > COURT_W || p.y < 0 || p.y > COURT_H;
+				const lag =
+					out || sharp.hit(t, t + 1)
+						? 0
+						: lagAt(t) * Math.min(1, REACT_PACE / Math.max(going, 2));
 				// (Counted from when the play really has him going - seen
 				// coming, he is stood still till then all the same.)
 				const from = Math.hypot(wx, wy) > 0.5 ? t : t + REACT_SEE;
@@ -366,6 +389,20 @@ export const follow = (
 				cap = Math.min(
 					cap,
 					qv + Math.sqrt(2 * EASE_UP * Math.hypot(Q.x - p.x, Q.y - p.y)),
+				);
+			}
+		}
+		// Going where the play has him now, seeing none of it ahead (see
+		// seeAt) - but where it stands him a moment from now, he sees that
+		// coming: no faster than he can pull up there (a closeout, chopping
+		// his feet - not run past it and back).
+		if (see <= 0) {
+			const F = want(t + STOP_SEE);
+			const F1 = want(t + STOP_SEE + STEP_MS);
+			if (F && F1 && Math.hypot(F1.x - F.x, F1.y - F.y) / dt < STILL) {
+				cap = Math.min(
+					cap,
+					Math.sqrt(2 * BRAKE * STOP_SHARE * Math.hypot(F.x - p.x, F.y - p.y)),
 				);
 			}
 		}
@@ -417,6 +454,17 @@ export const follow = (
 			vy += ((Q.y - p.y) / rem - vy) * k;
 		}
 		p = { x: p.x + vx * dt, y: p.y + vy * dt };
+		// Wanted inside the lines and over one: drawn back in, a step at a
+		// time - never put there.
+		if (W.x >= 0 && W.x <= COURT_W && W.y >= 0 && W.y <= COURT_H) {
+			const ix = Math.min(COURT_W, Math.max(0, p.x));
+			const iy = Math.min(COURT_H, Math.max(0, p.y));
+			const over = Math.hypot(ix - p.x, iy - p.y);
+			if (over > 0) {
+				const k = Math.min(1, (LINE_PULL * dt) / over);
+				p = { x: p.x + (ix - p.x) * k, y: p.y + (iy - p.y) * k };
+			}
+		}
 		if (
 			stop &&
 			Math.hypot(L.x - p.x, L.y - p.y) < SET_AT &&
@@ -1124,7 +1172,70 @@ export const stepTimeline = <T extends Stepped>(tl: T): T => {
 			spots.push(floorSpotOf(tr, t));
 		}
 		laid.set(tr.pid, pathOf(from, spots));
-		helds.set(tr.pid, spansAt(tr.acts.map((x) => [x.t0, x.t1] as const)));
+	}
+	// The ball in the air near where the play has a man - a pass by him, the
+	// ball down through the net at his feet: the play has cleared its way
+	// past him there, so there he is (see keepOff in director.ts).
+	const nearBall = new Map<number, [number, number][]>();
+	{
+		const endAt = (e: BallSeg & { kind: "fly" }, which: "from" | "to") => {
+			const end = e[which];
+			return "pid" in end
+				? laid.get(end.pid)?.at(which === "from" ? e.t0 : e.t1)
+				: { x: end.x, y: end.y };
+		};
+		for (const seg of tl.ball) {
+			if (seg.kind !== "fly") {
+				continue;
+			}
+			const A = endAt(seg, "from");
+			const B = endAt(seg, "to");
+			if (!A || !B) {
+				continue;
+			}
+			for (const tr of men) {
+				if (
+					("pid" in seg.from && seg.from.pid === tr.pid) ||
+					("pid" in seg.to && seg.to.pid === tr.pid)
+				) {
+					continue;
+				}
+				const L = laid.get(tr.pid)!;
+				for (let t = seg.t0; t <= seg.t1; t += 100) {
+					const u = seg.t1 > seg.t0 ? (t - seg.t0) / (seg.t1 - seg.t0) : 0;
+					const P = L.at(t);
+					if (
+						P &&
+						Math.hypot(
+							P.x - (A.x + (B.x - A.x) * u),
+							P.y - (A.y + (B.y - A.y) * u),
+						) < BALL_NEAR
+					) {
+						const list = nearBall.get(tr.pid) ?? [];
+						list.push([seg.t0, seg.t1]);
+						nearBall.set(tr.pid, list);
+						break;
+					}
+				}
+			}
+		}
+	}
+	for (const tr of men) {
+		// (His acts - and the moment he goes off the floor: there for it, as
+		// for one, where whatever takes him from there has him - and the
+		// ball by him in the air.)
+		helds.set(
+			tr.pid,
+			spansAt([
+				...tr.acts.map((x) => [x.t0, x.t1] as const),
+				...tr.shown.flatMap(([at, on], k) =>
+					!on && k > 0 && tr.shown[k - 1]![1]
+						? [[at - STEP_MS, at] as const]
+						: [],
+				),
+				...(nearBall.get(tr.pid) ?? []),
+			]),
+		);
 	}
 	// Who has the ball, from when.
 	const offenseAt = (t: number): 0 | 1 => {
@@ -1140,6 +1251,16 @@ export const stepTimeline = <T extends Stepped>(tl: T): T => {
 		}
 		return lo > 0 ? tl.poss[lo - 1]![1] : 1;
 	};
+	// A shot up, till it is rebounded: every man going for it - to the glass,
+	// boxing out - when the play has him go, no beat to it (who goes when is
+	// the play's: see crash and boxOut in director.ts).
+	const sharp = spansAt(
+		tl.ball.flatMap((s) =>
+			s.kind === "fly" && "pid" in s.from && !("pid" in s.to)
+				? [[s.t0 - SHOT_BEFORE, s.t1 + SHOT_AFTER] as const]
+				: [],
+		),
+	);
 	// Each man stepped after what he wants, over his stretches on the floor.
 	const step = (
 		tr: (typeof men)[number],
@@ -1168,6 +1289,7 @@ export const stepTimeline = <T extends Stepped>(tl: T): T => {
 					(REACT_MS[1] - REACT_MS[0]) *
 						hash01(tr.pid * 17 + 3, Math.round(t / 100)),
 				seeAt,
+				sharp,
 			)) {
 				samples.push(q);
 			}
@@ -1291,7 +1413,10 @@ export const stepTimeline = <T extends Stepped>(tl: T): T => {
 			const w =
 				r *
 				Math.min(1, Math.max(0, (GUARD_NONE - d) / (GUARD_NONE - GUARD_FULL)));
-			return { x: P.x + went.x * w, y: P.y + went.y * w };
+			// (Never off the floor for it, if the play has him on it.)
+			const Q = { x: P.x + went.x * w, y: P.y + went.y * w };
+			const inP = inPlay(P);
+			return inP.x === P.x && inP.y === P.y ? inPlay(Q) : Q;
 		};
 		const want = pathOf(
 			L.from,
@@ -1300,16 +1425,11 @@ export const stepTimeline = <T extends Stepped>(tl: T): T => {
 		const samples: Sample[] = step(tr, want, (t) =>
 			behind(t) > 0 ? 0 : LOOK_MOST,
 		);
-		// (Inside the lines wherever the play has him inside them - and on
-		// the floor of the place, out by the benches, wherever.)
+		// (On the floor of the place, out by the benches, wherever: see
+		// LINE_PULL for the lines themselves.)
 		for (const q of samples) {
 			q.x = Math.min(COURT_W + 3.9, Math.max(-3.9, q.x));
 			q.y = Math.min(COURT_H + 3.9, Math.max(-8.4, q.y));
-			const P = L.at(q.t);
-			if (P && P.x >= 0 && P.x <= COURT_W && P.y >= 0 && P.y <= COURT_H) {
-				q.x = Math.min(COURT_W, Math.max(0, q.x));
-				q.y = Math.min(COURT_H, Math.max(0, q.y));
-			}
 		}
 		const old = tr.moves;
 		const animAt = (t: number) => {
