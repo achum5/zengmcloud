@@ -17,8 +17,9 @@ import {
 } from "../../../common/contracts.ts";
 import { amountsWithRaise, maxFor, serviceYears, shapeLimits } from "./cba.ts";
 import {
-	askFloor,
 	atCamp,
+	hadDiscount,
+	reservation,
 	capHolds,
 	checkFor,
 	leastForLength,
@@ -477,6 +478,16 @@ export const sign = async (
 		if (shape.option && signed.amounts.length >= 2) {
 			signed.option = shape.option;
 		}
+	}
+	// A deal well under what he asked as free agency opened is a discount
+	// deal: no Bird rights from it.
+	if (
+		signed &&
+		stagesOn() &&
+		p.faOpenAsk !== undefined &&
+		contract.amount < stageSettings.discountShare * p.faOpenAsk
+	) {
+		signed.discount = true;
 	}
 	await idb.cache.players.put(p);
 	await team.rosterAutoSort(tid);
@@ -1036,7 +1047,7 @@ export const priceMarket = async (
 					from +
 						(once || (stages && atCamp()) ? 1 : freeAgencySettings.priceSpeed) *
 							(market - from),
-					stages ? askFloor(p) : 0,
+					reservation(p, outlook.progress),
 				),
 			),
 			minContract,
@@ -1688,7 +1699,7 @@ export const reSignDecision = async (p: Player, payroll: number) => {
 	const rosters = await rostersByTid();
 	const market = await marketUtility(p, p.tid);
 	const appeal = await appealFor(p, p.tid, rankOf(p), rosters);
-	const cap = mostAllowed(t, true);
+	const cap = mostAllowed(t, !hadDiscount(p));
 	if (cap === undefined) {
 		return undefined;
 	}
@@ -1818,7 +1829,7 @@ export const decideReSignings = async (tid: number) => {
 			tid,
 			payroll: await team.getPayroll(tid),
 			amount: offer.amount,
-			resigning: true,
+			resigning: !hadDiscount(p),
 			rosterSize: roster.length,
 		});
 		const chance = fits ? await reSignChance(p, tid, offer) : 0;

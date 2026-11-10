@@ -1885,6 +1885,9 @@ export type Contract = {
 	// Realistic front offices (CBA-lite): an option on the final season, the
 	// player's or the team's, decided as the re-signing phase opens.
 	option?: "player" | "team";
+	// Signed well under his value (a "prove it" deal): one season, and no Bird
+	// rights from it.
+	discount?: true;
 };
 
 export type PlayerFeatWithoutKey = {

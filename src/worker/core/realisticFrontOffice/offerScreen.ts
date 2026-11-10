@@ -138,6 +138,7 @@ export const stageOf = (
 		| "faRestricted"
 		| "faOfferSheet"
 		| "faMatch"
+		| "contracts"
 	>,
 	userTid?: number,
 ) => {

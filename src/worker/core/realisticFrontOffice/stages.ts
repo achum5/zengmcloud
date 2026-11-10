@@ -35,14 +35,14 @@ export const stageSettings = {
 	decisionTemperature: 0.05,
 	// His ask never falls below this share of what it was as free agency
 	// opened, by stage: it holds through the decision days, then eases.
-	floorByStage: [1, 0.9, 0.8, 0.6, 0],
+	floorByStage: [1, 0.9, 0.8, 0.6, 0.5],
 	// At camp, waiting is worth this much less to him (offers.ts's units):
 	// the season is about to start, and he wants a team.
 	campWait: -0.15,
 	// A deal for less than this share of his opening ask is short - no more
 	// than discountYears: a "prove it" deal, not years of a bargain.
 	discountShare: 0.6,
-	discountYears: 2,
+	discountYears: 1,
 	// How many free agents a CPU team prices at every length each stage, and
 	// how many more offers than it has places it may have out.
 	shortlist: 8,
@@ -85,13 +85,20 @@ export const stageName = () => STAGES[stageIndex()]!;
 helpers.setFreeAgencyStageName(() => (inStages() ? stageName() : undefined));
 
 // The team holding his Bird rights this summer, unless it renounced them.
-export const ownTid = (p: Pick<Player, "stats" | "faRenounced">) =>
-	p.faRenounced ? undefined : birdTid(p, g.get("season"));
+// No Bird rights from a discount deal (owner's call: no signing a player
+// cheap and then re-signing him over the cap).
+export const hadDiscount = (p: Pick<Player, "contracts">) =>
+	stagesOn() && !!p.contracts.at(-1)?.discount;
+
+export const ownTid = (
+	p: Pick<Player, "stats" | "faRenounced" | "contracts">,
+) =>
+	p.faRenounced || hadDiscount(p) ? undefined : birdTid(p, g.get("season"));
 
 // The team that may match another team's offer for him: his own, while he is
 // restricted - not at camp, with no stage left to match in.
 export const matchingTid = (
-	p: Pick<Player, "stats" | "faRenounced" | "faRestricted">,
+	p: Pick<Player, "stats" | "faRenounced" | "faRestricted" | "contracts">,
 ) =>
 	p.faRestricted && stageIndex() < STAGES.length - 1 ? ownTid(p) : undefined;
 
@@ -255,6 +262,33 @@ export const askFloor = (p: Pick<Player, "faOpenAsk">) => {
 	return stageIndex() === STAGES.length - 1
 		? Math.min(floor, midLevelAmount())
 		: floor;
+};
+
+// The least he takes once the season is on, unsigned through camp: camp's
+// floor, easing to nothing as the season goes - a team that waits for him
+// gets him for fewer games (owner's call: no meta of stacking cheap players
+// by waiting).
+export const reservation = (
+	p: Pick<Player, "faOpenAsk">,
+	seasonPlayed: number,
+) => {
+	if (inStages()) {
+		return askFloor(p);
+	}
+	const phase = g.get("phase");
+	if (
+		!stagesOn() ||
+		p.faOpenAsk === undefined ||
+		phase < PHASE.REGULAR_SEASON ||
+		phase > PHASE.AFTER_TRADE_DEADLINE
+	) {
+		return 0;
+	}
+	const camp = Math.min(
+		p.faOpenAsk * stageSettings.floorByStage[STAGES.length - 1]!,
+		midLevelAmount(),
+	);
+	return camp * Math.max(0, 1 - seasonPlayed);
 };
 
 // The least he takes for a deal this long: a long deal only near his value.
