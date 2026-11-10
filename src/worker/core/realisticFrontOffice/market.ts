@@ -1,3 +1,5 @@
+import { checkTradeSalary } from "./cba.ts";
+import { stagesOn } from "./stages.ts";
 import { PHASE } from "../../../common/constants.ts";
 import { makeSeededRandom } from "../../../common/random.ts";
 import type {
@@ -460,6 +462,18 @@ export const salariesWork = (
 	const out = salaryOf(outgoing);
 	const inc = salaryOf(incoming);
 	const after = t.payroll + inc - out;
+	// CBA-lite: the apron and the hard cap, before the league's own rules.
+	if (
+		stagesOn() &&
+		!checkTradeSalary({
+			tid: t.tid,
+			payrollAfter: after,
+			incoming: inc,
+			outgoing: out,
+		}).ok
+	) {
+		return false;
+	}
 	if (g.get("salaryCapType") === "none" || after <= g.get("salaryCap")) {
 		return true;
 	}

@@ -1,3 +1,5 @@
+import { checkTradeSalary } from "../realisticFrontOffice/cba.ts";
+import { stagesOn } from "../realisticFrontOffice/stages.ts";
 import { player, team } from "../index.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers } from "../../util/index.ts";
@@ -176,7 +178,29 @@ const summary = async (teams: TradeTeams): Promise<TradeSummary> => {
 		}
 	}
 
-	if (hardCapCeiling) {
+	// Realistic front offices (CBA-lite): past the apron a team may not take in
+	// more salary than it sends out, and no trade takes it past the hard cap.
+	let cbaBlock: { j: 0 | 1; reason: string } | undefined;
+	if (stagesOn()) {
+		for (const j of [0, 1] as const) {
+			const k = j === 0 ? 1 : 0;
+			const check = checkTradeSalary({
+				tid: tids[j],
+				payrollAfter: s.teams[j].payrollAfterTrade * 1000,
+				incoming: s.teams[k].total * 1000,
+				outgoing: s.teams[j].total * 1000,
+			});
+			if (!check.ok) {
+				cbaBlock = { j, reason: check.reason };
+				break;
+			}
+		}
+	}
+
+	if (cbaBlock) {
+		s.warning = `The ${s.teams[cbaBlock.j].name}: ${cbaBlock.reason}.`;
+		s.warningAmount = 1;
+	} else if (hardCapCeiling) {
 		s.warning = `This trade is not allowed because it adds ${helpers.formatCurrency(
 			hardCapCeiling.added,
 			"M",
