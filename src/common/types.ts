@@ -2033,6 +2033,14 @@ export type PlayerWithoutKey<PlayerRatings = MinimalPlayerRatings> = {
 	noteBool?: 1; // Keep in sync with note - for indexing
 	numDaysFreeAgent: number;
 
+	// Realistic front offices, free agency in stages (stages.ts): the stage he
+	// decides in, and the leading offer every team has to beat (money and
+	// length, not who made it).
+	faDecides?: number;
+	faLead?: { amount: number; exp: number; tid: number };
+	// The least he asks for in free agency in stages.
+	faFloor?: number;
+
 	// Teams that released this player and still owe him money, from endedEarly.tid of his contracts. This is only so the database can index players who are still owed, since IndexedDB can't index inside p.contracts. Missing if nobody owes him. Update with updateOwedByTids whenever endedEarly.tid changes.
 	owedByTids?: number[];
 
@@ -2937,6 +2945,10 @@ export type Team = {
 	// Realistic front offices: the team's standing offers to free agents, best
 	// first (realisticFrontOffice/freeAgency.ts).
 	offerBoard?: { pid: number; amount: number; exp: number }[];
+
+	// Realistic front offices, free agency in stages: the season this team
+	// used its mid-level exception (cba.ts).
+	midLevelSeason?: number;
 
 	// Its home and away uniforms for the 3D live game, drawn from pictures:
 	// ids of JerseySkin rows. Optional (no upgrade).

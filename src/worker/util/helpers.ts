@@ -401,7 +401,20 @@ const gameAndSeasonLengthScaleFactor = () => {
 	);
 };
 
+// Realistic front offices' free agency in stages names the stage instead
+// (realisticFrontOffice/stages.ts).
+let freeAgencyStageName: (() => string | undefined) | undefined;
+const setFreeAgencyStageName = (f: () => string | undefined) => {
+	freeAgencyStageName = f;
+};
+
 const daysLeft = (freeAgents: boolean, days?: number) => {
+	if (freeAgents && days === undefined) {
+		const stage = freeAgencyStageName?.();
+		if (stage !== undefined) {
+			return stage;
+		}
+	}
 	const actualDays = days ?? g.get("daysLeft");
 
 	let dayWeek;
@@ -563,6 +576,7 @@ const helpers = {
 	roundContract,
 	sigmoid,
 	daysLeft,
+	setFreeAgencyStageName,
 	gameAndSeasonLengthScaleFactor,
 	stripBbcode,
 	roundsWonText,

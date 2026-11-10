@@ -103,12 +103,14 @@ export const waitUtility = () =>
 
 // The chance of each choice, given what each is worth to him: the offers in
 // order, then waiting (if `wait` is given). They add up to 1.
-export const choiceOdds = (utilities: readonly number[], wait?: number) => {
+export const choiceOdds = (
+	utilities: readonly number[],
+	wait?: number,
+	temperature = offerSettings.temperature,
+) => {
 	const all = wait === undefined ? [...utilities] : [...utilities, wait];
 	const top = Math.max(...all);
-	const weights = all.map((u) =>
-		Math.exp((u - top) / offerSettings.temperature),
-	);
+	const weights = all.map((u) => Math.exp((u - top) / temperature));
 	const total = weights.reduce((a, w) => a + w, 0);
 	return weights.map((w) => w / total);
 };

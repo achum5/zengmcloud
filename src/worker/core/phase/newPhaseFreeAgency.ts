@@ -1,4 +1,5 @@
-import { contractNegotiation, freeAgents, player } from "../index.ts";
+import { contractNegotiation, freeAgents, league, player } from "../index.ts";
+import { openStages, stagesOn } from "../realisticFrontOffice/stages.ts";
 import { g, helpers } from "../../util/index.ts";
 import type { Conditions, PhaseReturn } from "../../../common/types.ts";
 import { collegeOpenPortal } from "../college/portal.ts";
@@ -39,6 +40,11 @@ const newPhaseFreeAgency = async (
 	await freeAgents.ensureEnoughPlayers();
 
 	await freeAgents.normalizeContractDemands({ type: "freeAgentsOnly" });
+
+	// Realistic front offices: free agency in stages, not days.
+	if (stagesOn()) {
+		await league.setGameAttributes({ daysLeft: await openStages() });
+	}
 
 	// For any players who were free agents last year too, reset numPlayersTradedAwayNormalized
 	const numPlayersTradedAwayNormalized =

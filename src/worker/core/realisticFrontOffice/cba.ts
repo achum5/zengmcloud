@@ -38,7 +38,7 @@ export const cbaSettings = {
 export const serviceYears = (p: Pick<Player, "stats">) =>
 	new Set(
 		p.stats
-			.filter((row) => !row.playoffs && row.gp > 0)
+			.filter((row) => !row.playoffs && (row.gp ?? 0) > 0)
 			.map((row) => row.season),
 	).size;
 

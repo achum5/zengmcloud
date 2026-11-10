@@ -23,6 +23,7 @@ import {
 	freeAgencyWatchers,
 } from "../../worker/core/realisticFrontOffice/freeAgency.ts";
 import { offerSettings } from "../../worker/core/realisticFrontOffice/offers.ts";
+import { stageSettings } from "../../worker/core/realisticFrontOffice/stages.ts";
 import { draftSettings } from "../../worker/core/realisticFrontOffice/draft.ts";
 import {
 	curveAt,
@@ -151,6 +152,8 @@ test.runIf(env.ARENA_RUN === "1")(
 					JSON.parse(env.ARENA_FREE_AGENCY ?? "{}"),
 				);
 				Object.assign(offerSettings, JSON.parse(env.ARENA_OFFERS ?? "{}"));
+				// ARENA_STAGES='{"on":true}': free agency in stages (stages.ts).
+				Object.assign(stageSettings, JSON.parse(env.ARENA_STAGES ?? "{}"));
 				Object.assign(draftSettings, JSON.parse(env.ARENA_DRAFT ?? "{}"));
 				Object.assign(strengthSettings, JSON.parse(env.ARENA_STRENGTH ?? "{}"));
 			}

@@ -11,6 +11,16 @@ import { uniformSeed } from "../../../common/random.ts";
 import { revertBefore } from "../player/revertSnapshot.ts";
 import { getContractDemand } from "../contract/index.ts";
 import { contractOf } from "./contractOf.ts";
+import { birdTid } from "./cba.ts";
+import {
+	capHolds,
+	checkFor,
+	decidesNow,
+	inStages,
+	mostFor,
+	noteSigning,
+	stageSettings,
+} from "./stages.ts";
 import { contractNegotiation, player, team } from "../index.ts";
 import { mayPay } from "./contracts.ts";
 import { frontOfficeCuts, worthSigningAtLimit } from "./cuts.ts";
@@ -355,6 +365,7 @@ const bestBid = (
 	appeal: number,
 	rivals: number,
 	cap: number,
+	temperature = offerSettings.temperature,
 ) => {
 	const minContract = g.get("minContract");
 	const most = mostUpTo(line, cap);
@@ -373,7 +384,7 @@ const bestBid = (
 			continue;
 		}
 		const weight = Math.exp(
-			offerUtility({ amount, ask, appeal }) / offerSettings.temperature,
+			offerUtility({ amount, ask, appeal }) / temperature,
 		);
 		const chance = weight / (weight + rivals);
 		// The margin of error is a bar to clear, not a cost: of the offers that
@@ -483,7 +494,25 @@ export const makeOffer = async (
 	) {
 		return "That is not a contract the league allows.";
 	}
-	if (!mayPay({ tid, payroll, amount: offer.amount, resigning, rosterSize })) {
+	if (inStages()) {
+		const check = checkFor({
+			t,
+			p,
+			payroll,
+			holds: capHolds(
+				tid,
+				await idb.cache.players.indexGetAll("playersByTid", PLAYER.FREE_AGENT),
+				p.pid,
+			),
+			amount: offer.amount,
+			rosterSize,
+		});
+		if (!check.ok) {
+			return `${check.reason}.`;
+		}
+	} else if (
+		!mayPay({ tid, payroll, amount: offer.amount, resigning, rosterSize })
+	) {
 		return "Your cap room does not allow that offer.";
 	}
 	const board = [...(t.offerBoard ?? [])];
@@ -687,6 +716,27 @@ export const priceMarket = async (
 	const allowed = new Map(
 		signing.map((t) => [t.tid, mostAllowed(states.get(t.tid)!, false)]),
 	);
+	// In stages, the most each team may pay each player by CBA-lite's rules:
+	// room after its cap holds, Bird rights for its own, the mid-level.
+	const stages = inStages();
+	const holdsOf = new Map(
+		teams.map((t) => [t.tid, stages ? capHolds(t.tid, pool) : 0]),
+	);
+	const capOf = (tid: number, p: Player) => {
+		if (!stages) {
+			return allowed.get(tid);
+		}
+		const t = teams.find((x) => x.tid === tid)!;
+		const state = states.get(tid)!;
+		const own = birdTid(p, g.get("season")) === tid;
+		return mostFor({
+			t,
+			p,
+			payroll: state.payroll,
+			holds: holdsOf.get(tid)! - (own ? contractOf(p).amount : 0),
+			rosterSize: state.players.length,
+		});
+	};
 
 	// What each team would pay each of the best free agents, by length -
 	// remembered while its roster and payroll stand.
@@ -739,7 +789,9 @@ export const priceMarket = async (
 		for (const t of signing) {
 			const cap = Math.min(
 				maxContract,
-				(once && p.tid === t.tid ? allowedOwn : allowed).get(t.tid) ??
+				(stages
+					? capOf(t.tid, p)
+					: (once && p.tid === t.tid ? allowedOwn : allowed).get(t.tid)) ??
 					-Infinity,
 			);
 			if (!(cap >= minContract)) {
@@ -818,7 +870,10 @@ export const priceMarket = async (
 		const from = contractOf(p).amount;
 		const to = helpers.bound(
 			helpers.roundContract(
-				from + (once ? 1 : freeAgencySettings.priceSpeed) * (market - from),
+				Math.max(
+					from + (once ? 1 : freeAgencySettings.priceSpeed) * (market - from),
+					stages ? (p.faFloor ?? 0) : 0,
+				),
 			),
 			minContract,
 			maxContract,
@@ -837,6 +892,7 @@ export const priceMarket = async (
 		states,
 		candidates,
 		allowed,
+		capOf,
 		lineOf,
 		priced,
 	};
@@ -877,10 +933,15 @@ export const freeAgencyDay = async () => {
 		states,
 		candidates,
 		allowed,
+		capOf,
 		lineOf,
 		priced,
 	} = await priceMarket(pool, teams);
 	let rosters = rostersAtOpen;
+	const stages = inStages();
+	const temperature = stages
+		? stageSettings.decisionTemperature
+		: offerSettings.temperature;
 
 	// Every offer standing, by player: humans' and yesterday's CPU teams'.
 	const standing = new Map<number, Offer[]>();
@@ -904,22 +965,36 @@ export const freeAgencyDay = async () => {
 		const j = Math.floor(Math.random() * (i + 1));
 		[order[i], order[j]] = [order[j]!, order[i]!];
 	}
-	const waitWeight = Math.exp(waitUtility() / offerSettings.temperature);
+	const waitWeight = Math.exp(waitUtility() / temperature);
 	for (const t of order) {
 		const state = states.get(t.tid)!;
 		const spots = g.get("maxRosterSize") - state.players.length;
 		const cap = allowed.get(t.tid);
-		if (cap === undefined) {
+		if (!stages && cap === undefined) {
 			await setBoard(t, []);
 			continue;
 		}
+		const capFor = (p: Player) => (stages ? capOf(t.tid, p) : cap) ?? -Infinity;
 		const rivalsOf = async (p: Player) => {
 			let weight = waitWeight;
+			// Deciding today, sealed: every team knows only the number to beat.
+			if (stages && decidesNow(p)) {
+				const lead = p.faLead;
+				if (lead && lead.tid !== t.tid) {
+					weight += Math.exp(
+						offerUtility({
+							amount: lead.amount,
+							ask: askFor(p, yearsFor(lead.exp)),
+							appeal: 0,
+						}) / temperature,
+					);
+				}
+				return weight;
+			}
 			for (const offer of standing.get(p.pid) ?? []) {
 				if (offer.tid !== t.tid) {
 					weight += Math.exp(
-						(await utilityOf(p, offer, rankOf(p), rosters)) /
-							offerSettings.temperature,
+						(await utilityOf(p, offer, rankOf(p), rosters)) / temperature,
 					);
 				}
 			}
@@ -932,7 +1007,14 @@ export const freeAgencyDay = async () => {
 			const rivals = await rivalsOf(p);
 			let ev: number | undefined;
 			for (const years of firstLengths(p)) {
-				const bid = bestBid(p, lineOf(t.tid, p, years), appeal, rivals, cap);
+				const bid = bestBid(
+					p,
+					lineOf(t.tid, p, years),
+					appeal,
+					rivals,
+					capFor(p),
+					temperature,
+				);
 				if (bid && (ev === undefined || bid.ev > ev)) {
 					ev = bid.ev;
 				}
@@ -946,7 +1028,14 @@ export const freeAgencyDay = async () => {
 			const rivals = await rivalsOf(p);
 			let best: (Offer & { ev: number }) | undefined;
 			for (const years of lengths()) {
-				const bid = bestBid(p, lineOf(t.tid, p, years), appeal, rivals, cap);
+				const bid = bestBid(
+					p,
+					lineOf(t.tid, p, years),
+					appeal,
+					rivals,
+					capFor(p),
+					temperature,
+				);
 				if (bid && (!best || bid.ev > best.ev)) {
 					best = {
 						tid: t.tid,
@@ -989,14 +1078,14 @@ export const freeAgencyDay = async () => {
 	const chosen = new Map<number, Offer>();
 	const choose = async (p: Player) => {
 		const offers = remaining.get(p.pid) ?? [];
-		if (offers.length === 0) {
+		if (offers.length === 0 || (stages && !decidesNow(p))) {
 			return;
 		}
 		const utilities: number[] = [];
 		for (const offer of offers) {
 			utilities.push(await utilityOf(p, offer, rankOf(p), rosters));
 		}
-		const odds = choiceOdds(utilities, waitUtility());
+		const odds = choiceOdds(utilities, waitUtility(), temperature);
 		const roll = Math.random();
 		let k = 0;
 		let acc = odds[0]!;
@@ -1062,14 +1151,27 @@ export const freeAgencyDay = async () => {
 				const roster = await idb.cache.players.indexGetAll("playersByTid", tid);
 				const atLimit =
 					inSeason && cpu.has(tid) && roster.length === g.get("maxRosterSize");
+				const payroll = await team.getPayroll(tid);
+				const check = stages
+					? checkFor({
+							t: (await idb.cache.teams.get(tid))!,
+							p,
+							payroll,
+							holds: capHolds(tid, pool, p.pid),
+							amount: offer.amount,
+							rosterSize: roster.length,
+						})
+					: undefined;
 				const fits =
-					mayPay({
-						tid,
-						payroll: await team.getPayroll(tid),
-						amount: offer.amount,
-						resigning: false,
-						rosterSize: roster.length,
-					}) &&
+					(check
+						? check.ok
+						: mayPay({
+								tid,
+								payroll,
+								amount: offer.amount,
+								resigning: false,
+								rosterSize: roster.length,
+							})) &&
 					(!inSeason ||
 						(cpu.has(tid)
 							? roster.length <= g.get("maxRosterSize") &&
@@ -1087,6 +1189,9 @@ export const freeAgencyDay = async () => {
 						})));
 				if (fits) {
 					await sign(p, tid, { amount: offer.amount, exp: offer.exp });
+					if (check) {
+						await noteSigning(tid, check);
+					}
 					remaining.delete(p.pid);
 					signedToday.set(tid, (signedToday.get(tid) ?? 0) + 1);
 					if (inSeason && roster.length === g.get("maxRosterSize")) {
@@ -1120,6 +1225,30 @@ export const freeAgencyDay = async () => {
 
 	// Signed players' offers are gone from every board.
 	await pruneOffers((pid) => remaining.has(pid));
+
+	// In stages, each player still out there shows the offer to beat.
+	if (stages) {
+		for (const p of pool) {
+			if (p.tid !== PLAYER.FREE_AGENT) {
+				continue;
+			}
+			let lead: { amount: number; exp: number; tid: number } | undefined;
+			let top = -Infinity;
+			for (const offer of standing.get(p.pid) ?? []) {
+				const u = await utilityOf(p, offer, rankOf(p), rosters);
+				if (u > top) {
+					top = u;
+					lead = { amount: offer.amount, exp: offer.exp, tid: offer.tid };
+				}
+			}
+			if (lead) {
+				p.faLead = lead;
+			} else {
+				delete p.faLead;
+			}
+			await idb.cache.players.put(p);
+		}
+	}
 	if (results.length > 0) {
 		const season = g.get("season");
 		const daysLeft = g.get("daysLeft");

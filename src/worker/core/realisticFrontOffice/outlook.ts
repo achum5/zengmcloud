@@ -866,6 +866,7 @@ export const teamOutlookSettings = new Map<
 			| "costsOfLosing"
 			| "roomByRecord"
 			| "letGo"
+			| "letGoRoomTolerance"
 			| "moneyPerCap"
 			| "moneyUnderCap"
 			| "knownClasses"
