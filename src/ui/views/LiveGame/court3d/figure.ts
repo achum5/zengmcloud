@@ -827,6 +827,7 @@ const YELLS: Partial<Record<string, [number, number, number?]>> = {
 	boxOutWide: [0, 1, 0.3],
 	dunk: [0.35, 0.95],
 	dunk1: [0.35, 0.95],
+	dunk1Wing: [0.35, 0.95],
 	dunkPump: [0.35, 0.95],
 	dunkPump1: [0.35, 0.95],
 	tomahawk: [0.35, 0.95],

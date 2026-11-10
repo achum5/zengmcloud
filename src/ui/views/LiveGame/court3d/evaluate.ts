@@ -54,6 +54,7 @@ import {
 	shortSteps,
 	runStyleOf,
 	type RunStyle,
+	guideHand,
 	ownWay,
 	shotWith,
 	styledRun,
@@ -1991,7 +1992,8 @@ const OFF_BALL: Record<"ready" | "stance", [AnimName, number][]> = {
 		["callBall", 1100],
 		["clapCall", 900],
 		["spotUp", 1800],
-		["point", 1000],
+		["direct", 1000],
+		["waveBall", 1300],
 	],
 	stance: [
 		["stanceHands", 1100],
@@ -2286,7 +2288,16 @@ const stoppedLife = (
 		return undefined;
 	}
 	const bent = hash01(tr.pid + 2.5, since / 1000 + k) < 0.2 + 0.45 * tired;
-	const anim: AnimName = bent ? "crouch" : "hips";
+	// (Up, not tired: now and then stretching it out, or shaking his arms
+	// loose, instead of his hands on his hips.)
+	const loose = bent ? 1 : hash01(tr.pid + 3.5, since / 1000 + k) / (1 - tired);
+	const anim: AnimName = bent
+		? "crouch"
+		: loose < 0.16
+			? "stretch"
+			: loose < 0.3
+				? "shakeOut"
+				: "hips";
 	const dur = (bent ? 1900 : 2600) + 1000 * tired + 800 * (h - 0.5);
 	const start =
 		since +
@@ -2496,6 +2507,8 @@ const steppingAt = (tr: Track, t: number): boolean => {
 const STANDING = new Set<AnimName>([
 	"crossed",
 	"hips",
+	"stretch",
+	"shakeOut",
 	"crouch",
 	"laneSet",
 	"laneSetUp",
@@ -2512,6 +2525,9 @@ const STANDING = new Set<AnimName>([
 	"protestShrug",
 	"point",
 	"thanks",
+	"thanksBoth",
+	"direct",
+	"waveBall",
 	"clap",
 	"talk",
 ]);
@@ -4982,6 +4998,8 @@ const FREE_HEAD = new Set<AnimName>([
 	"stanceDeny",
 	"floorSlap",
 	"hips",
+	"stretch",
+	"shakeOut",
 	"crouch",
 ]);
 const lookAt = (
@@ -6013,9 +6031,14 @@ const PIVOTS = new Set<AnimName>([
 	"floorSlap",
 	"point",
 	"thanks",
+	"thanksBoth",
+	"direct",
+	"waveBall",
 	"crossed",
 	"clap",
 	"hips",
+	"stretch",
+	"shakeOut",
 	"talk",
 	"protest",
 	"protestUp",
@@ -6366,7 +6389,13 @@ const SETTLE_FROM = new Set<AnimName>([
 const FOOTWORK = new Set<AnimName>(["shuffle", "back", "slide"]);
 // (And standing up out of his stance to stand easy, or back down into it:
 // his feet stepped in under him and out again, not slid.)
-const STOOD = new Set<AnimName>(["easy", "hips", "crouch"]);
+const STOOD = new Set<AnimName>([
+	"easy",
+	"hips",
+	"stretch",
+	"shakeOut",
+	"crouch",
+]);
 // (And setting off from where he stands: his feet step off into his
 // strides one and then the other, not both swept round under him - as
 // quick as he goes, though, not a settle's slow step.)
@@ -6699,17 +6728,23 @@ const humane = (p: Pose): Pose =>
 				shF: softMin(p.shF, SHOULDER_BACK),
 			};
 const poseFor = (st: PlayerState): Pose => {
-	const own = posed(
+	const style = runStyleOf(st.pid);
+	const own = guideHand(
+		posed(
+			st.anim,
+			st.phase,
+			st.dribble,
+			st.dribbleHand,
+			st.target,
+			st.dribbleFrom,
+			st.tight,
+			st.low,
+			st.calm,
+			st.flair,
+		),
 		st.anim,
 		st.phase,
-		st.dribble,
-		st.dribbleHand,
-		st.target,
-		st.dribbleFrom,
-		st.tight,
-		st.low,
-		st.calm,
-		st.flair,
+		st.pid,
 	);
 	const short = shortSteps(
 		st.z > 0 ? own : legsKept(own, st),
@@ -6717,7 +6752,6 @@ const poseFor = (st: PlayerState): Pose => {
 		st.stepLen,
 		st.phase,
 	);
-	const style = runStyleOf(st.pid);
 	const m = styledRun(
 		strode(st.mirror ? mirror(short) : short, st.stride),
 		st.anim,

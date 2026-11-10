@@ -2349,6 +2349,7 @@ const SHOOTING = new Set([
 	"reverseLayup",
 	"dunk",
 	"dunk1",
+	"dunk1Wing",
 	"dunkPump",
 	"dunkPump1",
 	"tomahawk",

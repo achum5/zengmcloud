@@ -165,6 +165,8 @@ describe("3D free throws", () => {
 						!last &&
 						(st0.anim === "easy" ||
 							st0.anim === "hips" ||
+							st0.anim === "stretch" ||
+							st0.anim === "shakeOut" ||
 							st0.anim === "crouch")
 					) {
 						easy += 1;

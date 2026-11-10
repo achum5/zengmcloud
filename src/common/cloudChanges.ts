@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 260,
+		date: "2026-11-10",
+		text: "3D games: each shooter now has his own guide hand after a jumper or free throw - kept up a beat, dropped straight to his side, or both hands held up through the landing. Some one-hand dunkers fling the free arm up, players off the ball wave for it or point teammates where to go, some thank the passer with both hands, and at dead balls players now and then stretch or shake their arms loose.",
+	},
+	{
 		n: 259,
 		date: "2026-11-10",
 		text: "3D games: more ways for players to be themselves. Hop-step layups and a deep-dip free throw stroke; rebounds kept high overhead and two-handed blocks; new celebrations (a fist pump, arms spread wide, both arms up to the sky); a hand on the head or bent over with hands on knees after a blown chance; each player's own way of posting up and of waiting on the lane at the line; and off-ball defenders who deny the pass or slap the floor.",

@@ -4653,6 +4653,138 @@ export const ANIMS = {
 			[1, P.land],
 		],
 	},
+	// The same with the free arm flung up and out, not held at his side.
+	dunk1Wing: {
+		kind: "act",
+		n: 12,
+		keys: [
+			[
+				0,
+				pose({
+					hipN: -20,
+					kneeN: 70,
+					hipF: 18,
+					kneeF: 72,
+					shN: 40,
+					elN: 95,
+					shF: 36,
+					elF: 98,
+					lean: 18,
+				}),
+			],
+			[
+				0.16,
+				pose({
+					hipN: -10,
+					kneeN: 30,
+					hipF: 30,
+					kneeF: 50,
+					shN: 120,
+					elN: 60,
+					shF: 120,
+					elF: 20,
+					abF: 48,
+					lean: 8,
+				}),
+			],
+			[
+				0.304,
+				pose({
+					hipN: 12,
+					kneeN: 34,
+					hipF: 46,
+					kneeF: 84,
+					shN: 170,
+					elN: 30,
+					shF: 150,
+					elF: 20,
+					abF: 48,
+					lean: 2,
+					toe: 0.8,
+				}),
+			],
+			[
+				0.4,
+				pose({
+					hipN: 6,
+					kneeN: 40,
+					hipF: 30,
+					kneeF: 70,
+					shN: 186,
+					elN: 34,
+					shF: 160,
+					elF: 20,
+					abF: 48,
+					lean: -4,
+					toe: 1,
+				}),
+			],
+			[
+				0.446,
+				pose({
+					hipN: 10,
+					kneeN: 30,
+					hipF: 20,
+					kneeF: 50,
+					shN: 148,
+					elN: 4,
+					shF: 150,
+					elF: 20,
+					abF: 48,
+					wrN: -70,
+					lean: 12,
+					toe: 1,
+				}),
+			],
+			[
+				0.502,
+				pose({
+					hipN: 4,
+					kneeN: 24,
+					hipF: 10,
+					kneeF: 36,
+					shN: 172,
+					elN: 6,
+					shF: 170,
+					elF: 8,
+					lean: 6,
+					toe: 1,
+				}),
+			],
+			[
+				0.66,
+				pose({
+					hipN: -2,
+					kneeN: 20,
+					hipF: 8,
+					kneeF: 30,
+					shN: 174,
+					elN: 4,
+					shF: 172,
+					elF: 6,
+					lean: 2,
+					toe: 1,
+				}),
+			],
+			[
+				0.78,
+				pose({
+					hipN: 0,
+					kneeN: 28,
+					hipF: 12,
+					kneeF: 34,
+					shN: 120,
+					elN: 30,
+					shF: 116,
+					elF: 34,
+					lean: 4,
+					toe: 0.5,
+				}),
+			],
+			[0.914, P.land],
+			[1, P.land],
+		],
+	},
 	// A double pump: up with it in both hands, pumped down to his chest in
 	// the air, back up over his head - and thrown down like any other.
 	dunkPump: {
@@ -5682,6 +5814,139 @@ export const ANIMS = {
 			[
 				0.74,
 				pose({ shN: 78, elN: 34, abN: 8, wrN: 4, shF: 10, elF: 24, lean: 1 }),
+			],
+			[1, P.ready],
+		],
+	},
+	// The same with both hands, his own way of it (see ownWay).
+	thanksBoth: {
+		kind: "act",
+		n: 6,
+		keys: [
+			[0, P.ready],
+			[
+				0.28,
+				pose({
+					shN: 76,
+					elN: 34,
+					abN: 10,
+					wrN: 8,
+					shF: 74,
+					elF: 36,
+					abF: 10,
+					wrF: 8,
+					lean: 1,
+				}),
+			],
+			[
+				0.46,
+				pose({
+					shN: 84,
+					elN: 24,
+					abN: 10,
+					wrN: -6,
+					shF: 82,
+					elF: 26,
+					abF: 10,
+					wrF: -6,
+					lean: 1,
+				}),
+			],
+			[
+				0.74,
+				pose({
+					shN: 78,
+					elN: 32,
+					abN: 10,
+					wrN: 4,
+					shF: 76,
+					elF: 34,
+					abF: 10,
+					wrF: 4,
+					lean: 1,
+				}),
+			],
+			[1, P.ready],
+		],
+	},
+	// Directing a teammate: an arm out at shoulder height at where he
+	// wants him, a flick of it, and down.
+	direct: {
+		kind: "act",
+		n: 6,
+		keys: [
+			[0, P.ready],
+			[
+				0.3,
+				pose({ shN: 82, elN: 8, abN: 34, wrN: 10, shF: 14, elF: 28, lean: 3 }),
+			],
+			[
+				0.5,
+				pose({ shN: 88, elN: 4, abN: 40, wrN: -4, shF: 14, elF: 28, lean: 3 }),
+			],
+			[
+				0.75,
+				pose({ shN: 84, elN: 6, abN: 36, wrN: 6, shF: 14, elF: 28, lean: 3 }),
+			],
+			[1, P.ready],
+		],
+	},
+	// Waving for it: an arm up over his head, waved side to side.
+	waveBall: {
+		kind: "act",
+		n: 8,
+		keys: [
+			[0, P.ready],
+			[
+				0.2,
+				pose({
+					shN: 160,
+					elN: 16,
+					abN: 10,
+					wrN: 20,
+					shF: 18,
+					elF: 32,
+					lean: 1,
+				}),
+			],
+			[
+				0.4,
+				pose({
+					shN: 160,
+					elN: 14,
+					abN: 42,
+					wrN: 10,
+					shF: 18,
+					elF: 32,
+					lean: 1,
+					tilt: 3,
+				}),
+			],
+			[
+				0.6,
+				pose({
+					shN: 160,
+					elN: 16,
+					abN: 8,
+					wrN: 20,
+					shF: 18,
+					elF: 32,
+					lean: 1,
+					tilt: -2,
+				}),
+			],
+			[
+				0.8,
+				pose({
+					shN: 158,
+					elN: 16,
+					abN: 38,
+					wrN: 10,
+					shF: 18,
+					elF: 32,
+					lean: 1,
+					tilt: 3,
+				}),
 			],
 			[1, P.ready],
 		],
@@ -8526,6 +8791,61 @@ export const ANIMS = {
 	// Hands on his hips, head down: scored on, a call gone against him, the
 	// game lost - blowing, his chest heaving with it, and his weight over
 	// onto the one leg and then the other.
+	// Stretching it out while it is dead: both arms up over his head, over
+	// to one side, the other, and down.
+	stretch: {
+		kind: "loop",
+		n: 4,
+		fps: 0.9,
+		pose: (i) =>
+			pose(
+				[
+					{ shN: 168, elN: 14, shF: 168, elF: 14, abN: 6, abF: 6, lean: -3 },
+					{
+						shN: 172,
+						elN: 10,
+						shF: 160,
+						elF: 22,
+						abN: 4,
+						abF: 8,
+						lean: -2,
+						tilt: 12,
+					},
+					{ shN: 168, elN: 14, shF: 168, elF: 14, abN: 6, abF: 6, lean: -3 },
+					{
+						shN: 160,
+						elN: 22,
+						shF: 172,
+						elF: 10,
+						abN: 8,
+						abF: 4,
+						lean: -2,
+						tilt: -12,
+					},
+				][i]!,
+			),
+	},
+	// Shaking his arms loose, hanging at his sides.
+	shakeOut: {
+		kind: "loop",
+		n: 4,
+		fps: 3,
+		pose: (i) =>
+			pose({
+				shN: [4, 12, 2, 10][i]!,
+				elN: [12, 24, 8, 20][i]!,
+				abN: [12, 20, 14, 22][i]!,
+				shF: [12, 2, 10, 4][i]!,
+				elF: [24, 8, 20, 12][i]!,
+				abF: [20, 12, 22, 14][i]!,
+				wrN: [-10, 20, -16, 14][i]!,
+				wrF: [20, -10, 14, -16][i]!,
+				kneeN: 10,
+				kneeF: 12,
+				lean: 4,
+				wide: 0.3,
+			}),
+	},
 	hips: {
 		kind: "loop",
 		n: 8,
@@ -10469,6 +10789,7 @@ const GRIPS: Partial<Record<AnimName, Grip>> = {
 	scoop: "palm",
 	dunk: "palm",
 	dunk1: "palm",
+	dunk1Wing: "palm",
 	dunkPump: "palm",
 	dunkPump1: "palm",
 	tomahawk: "palm",
@@ -10696,6 +11017,49 @@ export const laneWith = (pid: number): AnimName => {
 // And his own stroke at the line: some sit down deep into it.
 export const setShotWith = (pid: number): AnimName =>
 	styleUnit(pid, 30) < 0.35 ? "setShotDeep" : "setShot";
+// HIS GUIDE HAND, once the ball is gone off the other (a jumper's, at the
+// line's): most keep it up a beat and let it down as they land; some drop
+// it to their side straight off; some hold both up through the landing.
+// (The ball's hand as the shot has it, so the shot goes where it goes.)
+const GUIDE_FROM = 0.62;
+const GUIDE_DOWN = { shF: 24, elF: 34, abF: 22, wrF: 0 };
+const GUIDE_UP = { shF: 142, elF: 22, abF: 10, wrF: -40 };
+const isJumper = (anim: AnimName): boolean =>
+	anim.startsWith("shoot") ||
+	anim === "setShot" ||
+	anim === "setShotDeep" ||
+	anim === "fade" ||
+	anim === "fadeOne";
+export const guideHand = (
+	q: Pose,
+	anim: AnimName,
+	phase: number,
+	pid: number,
+): Pose => {
+	if (phase <= GUIDE_FROM || !isJumper(anim)) {
+		return q;
+	}
+	const r = styleUnit(pid, 31);
+	const to = r < 0.3 ? GUIDE_DOWN : r > 0.8 ? GUIDE_UP : undefined;
+	if (!to) {
+		return q;
+	}
+	const x = Math.min(1, (phase - GUIDE_FROM) / 0.12);
+	const w = x * x * (3 - 2 * x);
+	return {
+		...q,
+		shF: q.shF + (to.shF - q.shF) * w,
+		elF: q.elF + (to.elF - q.elF) * w,
+		abF: q.abF + (to.abF - q.abF) * w,
+		wrF: q.wrF + (to.wrF - q.wrF) * w,
+	};
+};
+// And his own one-handed dunk: some fling the free arm up.
+export const dunk1With = (pid: number): AnimName =>
+	styleUnit(pid, 32) < 0.4 ? "dunk1Wing" : "dunk1";
+// And his own way of pointing out the man who found him.
+export const thanksWith = (pid: number): AnimName =>
+	styleUnit(pid, 33) < 0.3 ? "thanksBoth" : "thanks";
 // HIS OWN WAY of a move the play has him make (at t0): which of the ways
 // of it above is his.
 // (And the other way round: the move the play had him make, for any of
@@ -10721,6 +11085,8 @@ const WAYS: Partial<Record<AnimName, AnimName[]>> = {
 	postUp: ["postUpSeal", "postUpTarget"],
 	laneSet: ["laneSetUp", "laneSetHips"],
 	setShot: ["setShotDeep"],
+	dunk1: ["dunk1Wing"],
+	thanks: ["thanksBoth"],
 };
 const BASES = new Map<AnimName, AnimName>(
 	(Object.entries(WAYS) as [AnimName, AnimName[]][]).flatMap(([base, ways]) =>
@@ -10765,6 +11131,10 @@ export const ownWay = (anim: AnimName, pid: number, t0: number): AnimName => {
 			return laneWith(pid);
 		case "setShot":
 			return setShotWith(pid);
+		case "dunk1":
+			return dunk1With(pid);
+		case "thanks":
+			return thanksWith(pid);
 		case "boxOut":
 			return boxOutWith(pid);
 		case "dribbleHesi":

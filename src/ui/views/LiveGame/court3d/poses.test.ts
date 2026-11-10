@@ -409,6 +409,8 @@ describe("3D poses", () => {
 			"postUp",
 			"laneSet",
 			"setShot",
+			"dunk1",
+			"thanks",
 		] as AnimName[]) {
 			const seen = new Set<string>();
 			for (let pid = 0; pid < 400; pid++) {
@@ -434,7 +436,7 @@ describe("3D poses", () => {
 			["poke", ["pokeSwipe", "pokeChop"], [0.38, 0.42, 0.46]],
 			["board", ["boardTuck", "boardSplit", "boardHigh"], [0.26, 400 / 1100]],
 			["dunk", ["dunkPump"], [0.4, 0.445, 0.5, 0.66]],
-			["dunk1", ["dunkPump1"], [0.4, 0.445, 0.5, 0.66]],
+			["dunk1", ["dunkPump1", "dunk1Wing"], [0.4, 0.445, 0.5, 0.66]],
 			["layup", ["layupClutch", "layupHop"], [0.6, 0.65, 0.72]],
 			["setShot", ["setShotDeep"], [0.45, 0.55, 0.6]],
 		];

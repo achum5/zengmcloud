@@ -1,9 +1,17 @@
 import { assert, describe, test } from "vitest";
 import { deadSpansOf, evalPlayer, fastAt } from "./evaluate.ts";
 import { compile } from "./testGame.ts";
+import { baseOf, type AnimName } from "./poses.ts";
 
 // Stood about with the ball dead, and down in it again with it live.
-const EASY = new Set(["easy", "hips", "crouch", "laneSet"]);
+const EASY = new Set([
+	"easy",
+	"hips",
+	"stretch",
+	"shakeOut",
+	"crouch",
+	"laneSet",
+]);
 const SET = new Set(["stance", "ready", "guard"]);
 
 describe("the ball dead", () => {
@@ -34,7 +42,7 @@ describe("the ball dead", () => {
 						if (!st.shown || st.moving) {
 							continue;
 						}
-						easy += EASY.has(st.anim) ? 1 : 0;
+						easy += EASY.has(baseOf(st.anim as AnimName)) ? 1 : 0;
 						set += SET.has(st.anim) ? 1 : 0;
 					}
 				}
@@ -49,7 +57,13 @@ describe("the ball dead", () => {
 							continue;
 						}
 						after += 1;
-						late += st.anim === "easy" || st.anim === "crouch" ? 1 : 0;
+						late +=
+							st.anim === "easy" ||
+							st.anim === "crouch" ||
+							st.anim === "stretch" ||
+							st.anim === "shakeOut"
+								? 1
+								: 0;
 					}
 				}
 			}
