@@ -15,7 +15,7 @@ import {
 	getContractExp,
 	getCurrentContract,
 } from "../../../common/contracts.ts";
-import { amountsWithRaise, shapeLimits } from "./cba.ts";
+import { amountsWithRaise, maxFor, serviceYears, shapeLimits } from "./cba.ts";
 import {
 	askFloor,
 	capHolds,
@@ -955,7 +955,8 @@ export const priceMarket = async (
 				),
 			),
 			minContract,
-			maxContract,
+			// CBA-lite: no more than the max for his years in the league.
+			stages ? maxFor(serviceYears(p)) : maxContract,
 		);
 		if (to !== from) {
 			getContractDemand(p).amount = to;
@@ -976,6 +977,11 @@ export const priceMarket = async (
 		priced,
 	};
 };
+
+// Before 7 seasons played, near the max (25% of the cap), a star wants 2 years.
+const YOUNG_STAR_SERVICE = 7;
+const YOUNG_STAR_SHARE = 0.8;
+const YOUNG_STAR_YEARS = 2;
 
 // As free agency in stages opens: each free agent's ask is what the market
 // would pay him - not stock's demand - and the least he asks later is
@@ -1000,6 +1006,16 @@ export const openStageMarket = async () => {
 		);
 		if (contractOf(p).amount < least) {
 			getContractDemand(p).amount = least;
+		}
+		// A young star near the max of his tier wants a short deal, to reach
+		// the next tier sooner: a longer one has to pay him for it.
+		const service = serviceYears(p);
+		const tierMax = maxFor(service);
+		if (
+			service < YOUNG_STAR_SERVICE &&
+			contractOf(p).amount >= YOUNG_STAR_SHARE * tierMax
+		) {
+			getContractDemand(p).exp = g.get("season") + YOUNG_STAR_YEARS;
 		}
 		p.faOpenAsk = contractOf(p).amount;
 		await idb.cache.players.put(p);
