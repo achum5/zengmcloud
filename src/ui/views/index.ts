@@ -16,6 +16,7 @@ export { default as AwardSettings } from "./AwardSettings/index.tsx";
 export { default as AwardsRecords } from "./AwardsRecords.tsx";
 export { default as Colleges } from "./Colleges.tsx";
 export { default as ComparePlayers } from "./ComparePlayers/index.tsx";
+export { default as ContractRules } from "./ContractRules.tsx";
 export { default as Countries } from "./Countries.tsx";
 export { default as CustomizePlayer } from "./CustomizePlayer/index.tsx";
 export { default as DailySchedule } from "./DailySchedule.tsx";

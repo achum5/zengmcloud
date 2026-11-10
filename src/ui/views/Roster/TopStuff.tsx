@@ -1,3 +1,4 @@
+import { CapStatusBadge } from "../../components/CapStatus.tsx";
 import { ConfLogoAndName } from "../../components/ConfLogoAndName.tsx";
 import { useState, type CSSProperties, type ReactNode } from "react";
 import { OverlayTrigger, Popover } from "react-bootstrap";
@@ -144,6 +145,7 @@ const PayrollAndPenalties = ({
 };
 
 const TopStuff = ({
+	capStatus,
 	collegeInfo,
 	conf,
 	currentSeason,
@@ -166,6 +168,7 @@ const TopStuff = ({
 	usePts,
 }: Pick<
 	View<"roster">,
+	| "capStatus"
 	| "collegeInfo"
 	| "conf"
 	| "editable"
@@ -368,6 +371,16 @@ const TopStuff = ({
 									}
 									payroll={payroll / 1000}
 								/>
+								{capStatus ? (
+									<a
+										href={helpers.leagueUrl([
+											"team_finances",
+											helpers.getTeamUrlPart(tid),
+										])}
+									>
+										<CapStatusBadge className="ms-2" status={capStatus} />
+									</a>
+								) : null}
 							</div>
 						) : null}
 						{isCurrentSeason && salaryCapType !== "none" ? (

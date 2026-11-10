@@ -13,6 +13,7 @@ import {
 import { bySport } from "../../../common/sportFunctions.ts";
 import { last } from "../../../common/utils.ts";
 import { realisticFrontOfficesOn } from "../realisticFrontOffice/isOn.ts";
+import { howFor } from "../realisticFrontOffice/history.ts";
 import {
 	frontOfficeCuts,
 	frontOfficeFill,
@@ -250,7 +251,14 @@ const checkRosterSizes = async (
 							: await player.genRandomFreeAgent();
 					}
 
-					await player.sign(p, tid, getContractDemand(p), g.get("phase"));
+					await player.sign(
+						p,
+						tid,
+						getContractDemand(p),
+						g.get("phase"),
+						undefined,
+						await howFor(p, tid, getContractDemand(p).amount),
+					);
 					await idb.cache.players.put(p);
 					numPlayersOnRoster += 1;
 				}

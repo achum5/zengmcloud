@@ -5,6 +5,7 @@ import type {
 	FlatContractInfo,
 	Phase,
 	Player,
+	SigningHow,
 	TransactionRevert,
 } from "../../../common/types.ts";
 import fuzzRating from "./fuzzRating.ts";
@@ -66,6 +67,9 @@ const sign = async (
 	// The player as he stood before the caller started on this deal, when the
 	// caller has already changed him (autoSign trims the years he asked for).
 	before?: TransactionRevert["before"],
+	// Realistic front offices' contract rules: how it was signed, for the
+	// history (realisticFrontOffice/history.ts).
+	how?: SigningHow,
 ) => {
 	// Everything this signing changes, so God Mode can take it back.
 	const revert: TransactionRevert = {
@@ -143,6 +147,7 @@ const sign = async (
 		tids: [p.tid],
 		score,
 		contract: contractSummary,
+		...(how ? { how } : {}),
 		// College moves can't be reverted, so they carry nothing to revert with.
 		...(g.get("college") ? {} : { revert }),
 	});

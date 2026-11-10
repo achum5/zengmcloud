@@ -1,4 +1,5 @@
 import { PHASE } from "../../common/constants.ts";
+import { howPhrases } from "../../common/signingHow.ts";
 import type {
 	DraftPickSeason,
 	EventBBGM,
@@ -174,7 +175,11 @@ export const formatEventText = async (event: EventBBGM) => {
 		(event.type === "freeAgent" || event.type === "reSigned") &&
 		event.text === undefined
 	) {
-		const signedOrReSigned = event.type === "reSigned" ? "re-signed" : "signed";
+		const signedOrReSigned = event.how?.extension
+			? "extended"
+			: event.type === "reSigned"
+				? "re-signed"
+				: "signed";
 
 		const tid = event.tids[0];
 
@@ -195,10 +200,13 @@ export const formatEventText = async (event: EventBBGM) => {
 				])}">${p.firstName} ${p.lastName}</a>`
 			: "???";
 
+		// Realistic front offices' contract rules: how, in a few words.
+		const how = howPhrases(event.how);
+
 		return `The ${teamName} ${signedOrReSigned} ${playerName} for ${helpers.formatCurrency(
 			event.contract!.amount / 1000,
 			"M",
-		)}/year through ${event.contract!.exp}.`;
+		)}/year through ${event.contract!.exp}${how.length > 0 ? ` (${how.join(", ")})` : ""}.`;
 	}
 
 	if (event.type === "sisyphus") {

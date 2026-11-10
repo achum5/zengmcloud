@@ -31,6 +31,7 @@ import {
 import { autoPlayStopsAt } from "../league/autoPlay.ts";
 import { decideOptions } from "../realisticFrontOffice/freeAgency.ts";
 import { stagesOn } from "../realisticFrontOffice/stages.ts";
+import { howFor } from "../realisticFrontOffice/history.ts";
 
 export const FREE_AGENCY_DAYS = 30;
 // College: four weeks of offseason recruiting, then signing day.
@@ -304,7 +305,14 @@ const newPhaseResignPlayers = async (
 						payroll ?? 0,
 					);
 					if (offer) {
-						await player.sign(p, p.tid, offer, PHASE.RESIGN_PLAYERS);
+						await player.sign(
+							p,
+							p.tid,
+							offer,
+							PHASE.RESIGN_PLAYERS,
+							undefined,
+							await howFor(p, p.tid, offer.amount),
+						);
 						if (payroll !== undefined) {
 							payrollsByTid.set(p.tid, offer.amount + payroll);
 						}

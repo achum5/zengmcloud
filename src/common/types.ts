@@ -457,6 +457,9 @@ export type EventBBGMWithoutKey =
 			score?: number;
 			contract?: FlatContractInfo;
 
+			// Realistic front offices, free agency in stages: how it was signed.
+			how?: SigningHow;
+
 			revert?: TransactionRevert;
 
 			// Never defined, just for TypeScript
@@ -720,6 +723,8 @@ export type FaDayResults = {
 	key: string; // `${season}-${daysLeft}`
 	season: number;
 	daysLeft: number; // before this day simmed
+	// Free agency in stages: the stage (STAGES index).
+	stage?: number;
 	items: FaDayResultItem[];
 	boards?: {
 		tid: number;
@@ -1406,6 +1411,7 @@ export type LogEventType =
 	| "ageFraud"
 	| "award"
 	| "changes"
+	| "contract"
 	| "draft"
 	| "draftLottery"
 	| "error"
@@ -1486,6 +1492,8 @@ export type MenuItemLink = {
 	socialFeed?: true;
 	// Hidden unless the league runs rotation plans, for the same reason.
 	rotationPlans?: true;
+	// Hidden unless the league runs realistic front offices' contract rules.
+	contractRules?: true;
 	// Pro leagues only (contracts, trades, the draft) / college leagues only.
 	pro?: true;
 	college?: true;
@@ -1689,6 +1697,10 @@ export type MpPhaseReady = {
 };
 
 export type LocalStateUI = {
+	// Realistic front offices' contract rules (CBA-lite, free agency in
+	// stages) are on in this league: the Contract Rules page and the cap status
+	// on the money pages.
+	contractRules: boolean;
 	customMenu?: MenuItemHeader;
 	email?: string;
 	flagOverrides: Record<string, string>;
@@ -1847,6 +1859,24 @@ export type PhaseReturn = {
 };
 
 // A flat contract, the same amount every season through exp. This is used for contract demands (what a player is asking for), and for snapshots of contracts in events and trades. Signed contracts are Contract objects in p.contracts.
+// Realistic front offices (CBA-lite, free agency in stages): how a contract was
+// signed - the rule it fit under, and what was special about it - kept in its
+// event as the league's history.
+export type SigningHow = {
+	path?: "room" | "bird" | "midLevel" | "taxpayerMidLevel" | "minimum";
+	extension?: true;
+	option?: "player" | "team";
+	// A "prove it" deal: one season, no Bird rights.
+	proveIt?: true;
+	// A restricted free agent's offer sheet: matched by his team, or not.
+	offerSheet?: "matched" | "notMatched";
+	// The free agency stage (STAGES index), when signed in one.
+	stage?: number;
+	// Seasons and total money (thousands) - with raises, not amount x years.
+	years?: number;
+	total?: number;
+};
+
 export type FlatContractInfo = {
 	amount: number;
 	exp: number;
@@ -3694,6 +3724,9 @@ export type TradePickValues = {
 };
 type TradeSummaryTeam = {
 	name: string;
+	// Realistic front offices' contract rules: where the trade leaves its
+	// payroll (Under the cap, Over the apron, ...).
+	capStatus?: "under" | "over" | "apron" | "hardCap";
 	ovrAfter: number;
 	ovrBefore: number;
 	payrollAfterTrade: number;

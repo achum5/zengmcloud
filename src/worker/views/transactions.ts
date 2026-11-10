@@ -72,7 +72,8 @@ export default defineView({
 						event.type === "release" ||
 						event.type === "trade" ||
 						event.type === "freeAgent" ||
-						event.type === "draft"
+						event.type === "draft" ||
+						event.type === "contract"
 					);
 				}
 

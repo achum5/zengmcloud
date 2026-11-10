@@ -140,8 +140,9 @@ const MenuItem = ({
 	// Read here rather than threaded down: one leaf needs it, and the flag has
 	// nothing to do with the components in between. Before the early returns,
 	// because it is a hook.
-	const { college, rotationPlans, socialFeed } = useLocal([
+	const { college, contractRules, rotationPlans, socialFeed } = useLocal([
 		"college",
+		"contractRules",
 		"rotationPlans",
 		"socialFeed",
 	]);
@@ -172,6 +173,10 @@ const MenuItem = ({
 		}
 
 		if (menuItem.rotationPlans && !rotationPlans) {
+			return null;
+		}
+
+		if (menuItem.contractRules && !contractRules) {
 			return null;
 		}
 

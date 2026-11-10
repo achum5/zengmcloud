@@ -98,6 +98,7 @@ const handleRelease = async (
 };
 
 const Roster = ({
+	capStatus,
 	collegeInfo,
 	conf,
 	editable,
@@ -537,6 +538,7 @@ const Roster = ({
 			<MoreLinks type="team" page="roster" tid={tid} season={season} />
 
 			<TopStuff
+				capStatus={capStatus}
 				collegeInfo={collegeInfo}
 				conf={conf}
 				currentSeason={currentSeason}

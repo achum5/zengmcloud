@@ -6,6 +6,7 @@ import type {
 } from "../../../common/types.ts";
 import { unwrapGameAttribute } from "../../../common/unwrapGameAttribute.ts";
 import { gameAttributesSyncedToUi } from "../../../common/gameAttributesSyncedToUi.ts";
+import { stageSettings } from "../realisticFrontOffice/stages.ts";
 
 const gameAttributesToUI = async (
 	gameAttributes: GameAttributesLeagueWithHistory,
@@ -36,6 +37,18 @@ const gameAttributesToUI = async (
 
 	if (updated) {
 		await toUI("setGameAttributes", [update, flagOverrides]);
+	}
+
+	// Realistic front offices' contract rules (stagesOn), for the menu.
+	if (Object.hasOwn(gameAttributes, "realisticFrontOffices")) {
+		await toUI("updateLocal", [
+			{
+				contractRules:
+					__SPORT === "basketball" &&
+					!!unwrapGameAttribute(gameAttributes, "realisticFrontOffices") &&
+					stageSettings.on,
+			},
+		]);
 	}
 };
 

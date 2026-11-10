@@ -33,6 +33,7 @@ import type {
 import { defineView, keepType } from "../util/defineView.ts";
 import { last, orderBy } from "../../common/utils.ts";
 import { formatEventText } from "../util/formatEventText.ts";
+import { contractCard } from "../core/realisticFrontOffice/capSheet.ts";
 import { upgradeFace } from "../util/face.ts";
 import { choice } from "../../common/random.ts";
 import { getTeamColors } from "../util/getTeamColors.ts";
@@ -812,6 +813,7 @@ export default defineView({
 
 			return {
 				...topStuff,
+				contractCard: contractCard(topStuff.pRaw, eventsAll),
 				events,
 				feats,
 				impact,

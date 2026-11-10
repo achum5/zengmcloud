@@ -22,6 +22,7 @@ export { default as awardSettings } from "./awardSettings.ts";
 export { default as awardsRecords } from "./awardsRecords.ts";
 export { default as colleges } from "./colleges.ts";
 export { default as comparePlayers } from "./comparePlayers.ts";
+export { default as contractRules } from "./contractRules.ts";
 export { default as countries } from "./countries.ts";
 export { default as customizePlayer } from "./customizePlayer.ts";
 export { default as dailySchedule } from "./dailySchedule.ts";
