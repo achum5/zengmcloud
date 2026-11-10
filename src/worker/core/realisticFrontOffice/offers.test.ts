@@ -42,6 +42,17 @@ test("the odds add up to 1, and more money is more likely to be chosen", () => {
 	assert.closeTo(odds[1]!, odds[2]!, 1e-12);
 });
 
+test("money past his ask buys less than money short of it costs", () => {
+	const ask = 10000;
+	const at = (amount: number) =>
+		choiceOdds([offerUtility({ amount, ask, appeal: 0 })], 0)[0]!;
+	assert.closeTo(at(ask), 0.5, 1e-12);
+	const up = at(11000) - at(ask);
+	const down = at(ask) - at(ask / 1.1);
+	assert.isAbove(up, 0);
+	assert.isAbove(down, 2 * up);
+});
+
 test("an awful team with a low offer has next to no chance", () => {
 	const ask = 10000;
 	const [awful] = choiceOdds(

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 250,
+		date: "2026-11-10",
+		text: "Contract offers with Realistic Front Offices: paying a player more than he asks now raises your odds less than before, and offering less than he asks lowers them much more. Odds at his asking price are the same.",
+	},
+	{
 		n: 249,
 		date: "2026-11-10",
 		text: "3D games: defenders now step into a player crashing the glass and box him out before the ball is off the rim. And a shooter fouled hard - going up at the rim, or by a closeout landing under him on a jumper - is sometimes knocked to the floor: the man who fouled him steps off, and a teammate comes over to pull him up before he goes to the line.",

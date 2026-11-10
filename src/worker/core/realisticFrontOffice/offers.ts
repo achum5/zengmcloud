@@ -33,6 +33,11 @@ export const offerSettings = {
 	// asking price from a team he is neutral on. Tuned in the arena so veterans
 	// re-sign about as often as the NBA's unrestricted free agents (~32%).
 	marketTesting: 0,
+	// Money past his ask counts for this much of its log, and money short of
+	// it this much (owner's call): paying more than he asks buys little, and
+	// offering less costs a lot. At his ask, nothing changes.
+	overAsk: 0.5,
+	underAsk: 2,
 };
 
 export type Offer = {
@@ -70,6 +75,12 @@ export const askFor = (
 	);
 };
 
+// What the money in an offer is worth to him, against his ask for that length.
+export const moneyUtility = (amount: number, ask: number) => {
+	const x = Math.log(amount / ask);
+	return x * (x >= 0 ? offerSettings.overAsk : offerSettings.underAsk);
+};
+
 // What an offer is worth to him: the money against his ask for that length,
 // and his feeling for the team (`appeal`, in points of mood).
 export const offerUtility = ({
@@ -80,7 +91,7 @@ export const offerUtility = ({
 	amount: number;
 	ask: number;
 	appeal: number;
-}) => Math.log(amount / ask) + offerSettings.moodWeight * appeal;
+}) => moneyUtility(amount, ask) + offerSettings.moodWeight * appeal;
 
 export const waitUtility = () =>
 	g.get("phase") === PHASE.FREE_AGENCY ||
