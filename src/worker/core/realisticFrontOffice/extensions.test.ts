@@ -24,6 +24,9 @@ import {
 } from "./extensions.ts";
 import { stageSettings } from "./stages.ts";
 
+const stagesWereOn = stageSettings.on;
+const extensionsWereOn = extensionSettings.on;
+
 const importNode = (name: string) => import(/* @vite-ignore */ name);
 
 const userTid = 0;
@@ -41,11 +44,14 @@ beforeAll(async () => {
 	g.setWithoutSavingToDB("userTids", [userTid]);
 	g.setWithoutSavingToDB("realisticFrontOffices", true);
 	stageSettings.on = true;
+	// Off in the game (owner's call); the engine is still tested.
+	extensionSettings.on = true;
 }, 120_000);
 
 afterAll(() => {
 	Math.random = realRandom;
-	stageSettings.on = false;
+	stageSettings.on = stagesWereOn;
+	extensionSettings.on = extensionsWereOn;
 });
 
 beforeEach(() => {

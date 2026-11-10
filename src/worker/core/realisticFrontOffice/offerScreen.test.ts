@@ -280,6 +280,7 @@ test("in stages, a free agent shows when he decides and the number to beat, not 
 	await idb.cache.players.put(p!);
 	assert.isUndefined(stageOf(p!), "not in stages");
 
+	const stagesWereOn = stageSettings.on;
 	stageSettings.on = true;
 	g.setWithoutSavingToDB("phase", PHASE.FREE_AGENCY);
 	g.setWithoutSavingToDB("faInStages", true);
@@ -328,7 +329,7 @@ test("in stages, a free agent shows when he decides and the number to beat, not 
 		});
 		assert.strictEqual((await lastChoices())?.stage, "Decision day 1");
 	} finally {
-		stageSettings.on = false;
+		stageSettings.on = stagesWereOn;
 		g.setWithoutSavingToDB("daysLeft", 0);
 		p!.faDecides = faDecides;
 		p!.faLead = faLead;

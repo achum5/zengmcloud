@@ -38,8 +38,9 @@ All amounts scale with the league's settings: the top max tier is
 8. **Restricted free agency.** A player finishing a rookie contract is
    restricted unless his team renounces him: he takes offers, and his team
    may match the winning one on the same terms.
-9. **Extensions.** In the last year of a contract, during the season or
-   before free agency, a team may extend a player, under rules 1-7.
+9. **Extensions.** Only in the re-signing phase, before free agency
+   (owner's call, 2026-11-10: not in the season). In-season extensions are
+   built (extensions.ts) but off.
 10. **Luxury tax** as BBGM has it.
 
 11. **Cap holds.** A team's own unsigned free agents count against its cap

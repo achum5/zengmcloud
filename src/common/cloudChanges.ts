@@ -14,7 +14,7 @@ export const CLOUD_CHANGES: CloudChange[] = [
 	{
 		n: 255,
 		date: "2026-11-10",
-		text: "Realistic Front Offices: a new free agency and NBA-style contract rules, starting with each league's next offseason. Free agency now runs in 5 stages instead of 30 days - Negotiation window, Decision day 1 (the best free agents decide), Decision day 2, Open market, Training camp - and on a decision day everyone sees the offer to beat. Teams over the cap keep their own players with Bird rights and get one mid-level exception a summer; there's an apron and a hard cap; max contracts depend on years in the league; offers can have raises and player or team options; players coming off rookie deals are restricted (their team can match); and you can extend a player in his last season. The new Contract Rules page (Team menu) has your league's numbers, every team's cap status and every signing.",
+		text: "Realistic Front Offices: a new free agency and NBA-style contract rules, starting with each league's next offseason. Free agency now runs in 5 stages instead of 30 days - Negotiation window, Decision day 1 (the best free agents decide), Decision day 2, Open market, Training camp - and on a decision day everyone sees the offer to beat. Teams over the cap keep their own players with Bird rights and get one mid-level exception a summer; there's an apron and a hard cap; max contracts depend on years in the league; offers can have raises and player or team options; and players coming off rookie deals are restricted (their team can match). Re-signing stays in the Re-sign Players phase, and a team keeps its Bird rights into free agency. The new Contract Rules page (Team menu) has your league's numbers, every team's cap status and every signing.",
 	},
 	{
 		n: 254,

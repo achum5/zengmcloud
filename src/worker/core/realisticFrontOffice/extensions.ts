@@ -34,6 +34,9 @@ import { stagesOn } from "./stages.ts";
 // same offer again changes nothing, a better one may do it. Turned down this
 // many times in a season, a team gets no more answers until the next.
 export const extensionSettings = {
+	// Off (owner's call, 2026-11-10): a team re-signs its players in the
+	// re-signing phase, as BBGM always has - not in the season too.
+	on: false,
 	patience: 3,
 };
 
@@ -48,6 +51,7 @@ export type ExtensionOffer = {
 export const extensionsOpen = () => {
 	const phase = g.get("phase");
 	return (
+		extensionSettings.on &&
 		stagesOn() &&
 		(phase === PHASE.REGULAR_SEASON || phase === PHASE.AFTER_TRADE_DEADLINE)
 	);

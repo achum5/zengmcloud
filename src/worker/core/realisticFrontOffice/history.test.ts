@@ -37,9 +37,10 @@ beforeAll(async () => {
 	stageSettings.on = true;
 }, 120_000);
 
+const stagesWereOn = stageSettings.on;
 afterAll(() => {
 	Math.random = realRandom;
-	stageSettings.on = false;
+	stageSettings.on = stagesWereOn;
 });
 
 beforeEach(() => {

@@ -148,10 +148,12 @@ const RulesTab = ({ rules }: { rules: Rules }) => {
 						<Abbr key="proveit" k="Prove-it" />,
 						`Under ${rules.proveItPct}% of opening ask: ${years(rules.proveItYears)}`,
 					],
-					[
-						<Abbr key="ext" k="Ext" />,
-						`Final season, in season: up to ${years(rules.extensionYears)} more`,
-					],
+					rules.extensionsOn
+						? [
+								<Abbr key="ext" k="Ext" />,
+								`Final season, in season: up to ${years(rules.extensionYears)} more`,
+							]
+						: ["Re-signing", "Re-sign phase, then Bird rights in free agency"],
 					["Options decided", "Before free agency"],
 				]}
 			/>

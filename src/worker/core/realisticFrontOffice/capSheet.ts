@@ -1,3 +1,4 @@
+import { extensionSettings } from "./extensions.ts";
 import { PHASE, PHASE_TEXT, PLAYER } from "../../../common/constants.ts";
 import { howMethod, howPhrases } from "../../../common/signingHow.ts";
 import type { CapStatusKey } from "../../../common/signingHow.ts";
@@ -229,6 +230,7 @@ export const contractRules = () => {
 		proveItPct: pct(stageSettings.discountShare),
 		proveItYears: stageSettings.discountYears,
 		extensionYears: Math.min(cbaSettings.yearsOwn, maxLength),
+		extensionsOn: extensionSettings.on,
 		tier1: stageSettings.tier1,
 		tier2: stageSettings.tier2,
 		stages: [...STAGES],
