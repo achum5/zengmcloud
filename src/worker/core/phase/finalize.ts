@@ -1,4 +1,5 @@
 import { openStageMarket } from "../realisticFrontOffice/freeAgency.ts";
+import { cpuExtensions } from "../realisticFrontOffice/extensions.ts";
 import { stagesOn } from "../realisticFrontOffice/stages.ts";
 import { PHASE } from "../../../common/constants.ts";
 import { league } from "../index.ts";
@@ -57,6 +58,11 @@ const finalize = async (
 	// them.
 	if (phase === PHASE.FREE_AGENCY && stagesOn()) {
 		await openStageMarket();
+	}
+
+	// CBA-lite: CPU teams' extensions, once a season.
+	if (phase === PHASE.REGULAR_SEASON && stagesOn()) {
+		await cpuExtensions();
 	}
 
 	let saved = false;

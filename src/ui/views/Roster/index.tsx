@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { collegeClassLabel, collegeYear } from "../../../common/college.ts";
 import { Dropdown } from "react-bootstrap";
 import { dropdownOptions } from "../../hooks/useDropdownOptions.tsx";
@@ -16,6 +16,7 @@ import { useLocal } from "../../util/local.ts";
 import PlayingTime, { ptModifiers } from "./PlayingTime.tsx";
 import TopStuff from "./TopStuff.tsx";
 import DepthChart from "./DepthChart.tsx";
+import { ExtendModal, type ExtendTarget } from "./ExtendModal.tsx";
 import type {
 	GameAttributesLeague,
 	Phase,
@@ -100,6 +101,7 @@ const Roster = ({
 	collegeInfo,
 	conf,
 	editable,
+	extendable,
 	luxuryTaxAmount,
 	maxRosterSize,
 	minPayrollAmount,
@@ -123,6 +125,8 @@ const Roster = ({
 }: View<"roster">) => {
 	const [sortedPids, setSortedPids] = useState<number[] | undefined>(undefined);
 	const [prevPlayers, setPrevPlayers] = useState(players);
+	const [extendTarget, setExtendTarget] = useState<ExtendTarget>();
+	const closeExtend = useCallback(() => setExtendTarget(undefined), []);
 	const {
 		challengeNoRatings,
 		college,
@@ -187,6 +191,7 @@ const Roster = ({
 	const showRelease2 = showRelease;
 	const showTradeFor2 = showTradeFor && !college;
 	const showTradingBlock2 = showTradingBlock && !college;
+	const showExtend = extendable.length > 0;
 
 	const cols = getCols(
 		[
@@ -202,6 +207,16 @@ const Roster = ({
 			...(editable ? ["PT"] : []),
 			...(showMood ? ["Mood"] : []),
 			...(showRelease2 ? ["Release"] : []),
+			...(showExtend
+				? [
+						{
+							title: "Extend",
+							desc: "Contract extension",
+							noSearch: true,
+							sortSequence: [],
+						},
+					]
+				: []),
 			...(showTradeFor2 || showTradingBlock2 ? ["Trade"] : []),
 			"Acquired",
 		],
@@ -424,6 +439,23 @@ const Roster = ({
 							</button>,
 						]
 					: []),
+				...(showExtend
+					? [
+							extendable.includes(p.pid) ? (
+								<button
+									className="btn btn-light-bordered btn-xs"
+									onClick={() =>
+										setExtendTarget({
+											pid: p.pid,
+											name: `${p.firstName} ${p.lastName}`,
+										})
+									}
+								>
+									Extend
+								</button>
+							) : null,
+						]
+					: []),
 				...(showTradeFor2
 					? [
 							<button
@@ -535,6 +567,8 @@ const Roster = ({
 				tid={tid}
 				usePts={usePts}
 			/>
+
+			<ExtendModal close={closeExtend} target={extendTarget} />
 
 			{showSpectatorWarning ? (
 				<p className="alert alert-danger d-inline-block">

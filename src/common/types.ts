@@ -2971,6 +2971,8 @@ export type Team = {
 	midLevelSeason?: number;
 	// Lowball offers it made free agents this stage (patience, stages.ts).
 	faStrikes?: { pid: number; season: number; stage: number; strikes: number }[];
+	// Extension offers its players turned down this season (extensions.ts).
+	extensionDeclines?: { pid: number; season: number; count: number }[];
 
 	// Its home and away uniforms for the 3D live game, drawn from pictures:
 	// ids of JerseySkin rows. Optional (no upgrade).

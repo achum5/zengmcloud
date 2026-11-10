@@ -48,6 +48,7 @@ import {
 import {
 	appealOf,
 	askFor,
+	askingAs,
 	choiceOdds,
 	effectiveAmount,
 	marketUtility,
@@ -204,6 +205,43 @@ export const priceSigning = (
 	return { gain, margin, net: gain - margin };
 };
 
+// The same for extending him through `exp`, with `t` his team: him signed on
+// against him as he is, his contract up after this season and then re-signed
+// or not by his chance (the outlook's retention). Both pay him the amount this
+// season, so only the seasons after count. Fresh for each player.
+const extensionPrice = (): typeof priceSigning => {
+	const bases = new Map<number, number>();
+	let asIsMargin: number | undefined;
+	return (outlook, t, p, contract) => {
+		const others = t.players.filter((x) => x.pid !== p.pid);
+		const asIs: Player = {
+			...p,
+			contractDemand: { ...contractOf(p), amount: contract.amount },
+		};
+		const extended: Player = {
+			...p,
+			contractDemand: { amount: contract.amount, exp: contract.exp },
+		};
+		let base = bases.get(contract.amount);
+		if (base === undefined) {
+			base = valueAfterCuts(outlook, t, [...others, asIs]);
+			bases.set(contract.amount, base);
+		}
+		const gain = valueAfterCuts(outlook, t, [...others, extended]) - base;
+		// The error on the seasons it would have him that it might not have:
+		// each alone is one player's, so the difference is the pair's, as
+		// margin.ts sets one against the other.
+		const rest = { ...t, players: others };
+		asIsMargin ??= marginOf(outlook, rest, [], [{ kind: "player", p: asIs }]);
+		const margin = Math.max(
+			0,
+			marginOf(outlook, rest, [], [{ kind: "player", p: extended }]) -
+				asIsMargin,
+		);
+		return { gain, margin, net: gain - margin };
+	};
+};
+
 const firstSeason = () =>
 	g.get("season") + (g.get("phase") <= PHASE.AFTER_TRADE_DEADLINE ? 0 : 1);
 
@@ -243,16 +281,19 @@ export type Line = {
 	margin: number;
 };
 
+// `exp` and `price` for an extension (extensionDecision): the seasons after
+// this one, priced against keeping him as he is.
 const lineFor = (
 	outlook: LeagueOutlook,
 	t: TeamState,
 	p: Player,
 	years: number,
+	exp = expFor(years),
+	price: typeof priceSigning = priceSigning,
 ): Line => {
 	const minContract = g.get("minContract");
 	const maxContract = g.get("maxContract");
-	const exp = expFor(years);
-	const low = priceSigning(outlook, t, p, { amount: minContract, exp });
+	const low = price(outlook, t, p, { amount: minContract, exp });
 	const high = helpers.bound(
 		marketSalary(p.value),
 		2 * minContract,
@@ -266,7 +307,7 @@ const lineFor = (
 		high,
 		slope: () => {
 			if (slope === undefined) {
-				const atHigh = priceSigning(outlook, t, p, { amount: high, exp }).net;
+				const atHigh = price(outlook, t, p, { amount: high, exp }).net;
 				slope = Math.max(1e-9, (low.net - atHigh) / (high - minContract));
 			}
 			return slope;
@@ -277,7 +318,7 @@ const lineFor = (
 					steep = line.slope();
 				} else {
 					const atHigh = low.net - line.slope() * (high - minContract);
-					const atMax = priceSigning(outlook, t, p, {
+					const atMax = price(outlook, t, p, {
 						amount: maxContract,
 						exp,
 					}).net;
@@ -1684,6 +1725,62 @@ export const reSignChance = async (
 		rosters,
 	);
 	return choiceOdds([mine], market)[0]!;
+};
+
+// The same for an offer to extend him (extensions.ts), `years` past this
+// season: against testing the market this summer, where he would ask `ask`.
+export const extensionChance = async (
+	p: Player,
+	ask: { amount: number; years: number },
+	offer: {
+		amount: number;
+		years: number;
+		raise?: number;
+		option?: "player" | "team";
+	},
+) => {
+	const asking = askingAs(p, ask);
+	const rankOf = await leagueRanks();
+	const rosters = await rostersByTid();
+	const mine = offerUtility({
+		amount: effectiveAmount(offer, offer.years),
+		ask: askFor(asking, offer.years),
+		appeal: await appealFor(p, p.tid, rankOf(p), rosters),
+	});
+	return choiceOdds([mine], await marketUtility(asking, p.tid))[0]!;
+};
+
+// A CPU team's offer to extend its player, made as it re-signs one
+// (reSignDecision): the offer worth the most to it, given his chance of
+// taking it - undefined if none is worth making. `t` is his team as it
+// stands (loadTeam), `ask` what he would ask as a free agent, `cap` the most
+// the rules let it pay him.
+export const extensionDecision = async (
+	outlook: LeagueOutlook,
+	t: TeamState,
+	p: Player,
+	ask: { amount: number; years: number },
+	lengths: readonly number[],
+	cap: number,
+) => {
+	const asking = askingAs(p, ask);
+	const rankOf = await leagueRanks();
+	const rosters = await rostersByTid();
+	const market = await marketUtility(asking, p.tid);
+	const appeal = await appealFor(p, p.tid, rankOf(p), rosters);
+	const rivals = Math.exp(market / offerSettings.temperature);
+	const price = extensionPrice();
+	let best:
+		| { amount: number; years: number; chance: number; ev: number }
+		| undefined;
+	for (const years of lengths) {
+		const line = lineFor(outlook, t, p, years, g.get("season") + years, price);
+		const bid = bestBid(asking, line, appeal, rivals, cap);
+		if (bid && (!best || bid.ev > best.ev)) {
+			best = { amount: bid.amount, years, chance: bid.chance, ev: bid.ev };
+		}
+	}
+	return best;
 };
 
 // A human team's re-signing offers, decided now: each of its players whose

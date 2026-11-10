@@ -23,6 +23,7 @@ import { validateSeason } from "../util/processInputs.ts";
 import { validateSeasonType } from "../util/processInputs.ts";
 import { posValue } from "../core/player/pos.basketball.ts";
 import { getMoreTeamInfo } from "./rosterMoreInfo.ts";
+import { canExtend } from "../core/realisticFrontOffice/extensions.ts";
 
 const processInputs = (params: RouteParams<"roster">) => {
 	// Fix broken links
@@ -261,6 +262,8 @@ export default defineView({
 			] as const;
 
 			let players: any[];
+			// CBA-lite: the user's players who may be extended now.
+			let extendable: number[] = [];
 			let payroll: number | undefined;
 			let luxuryTaxAmount: number | undefined;
 			let minPayrollAmount: number | undefined;
@@ -271,6 +274,9 @@ export default defineView({
 					"playersByTid",
 					inputs.tid,
 				);
+				if (showRelease) {
+					extendable = playersAll.filter((p) => canExtend(p)).map((p) => p.pid);
+				}
 				payroll = await team.getPayroll(inputs.tid);
 				luxuryTaxAmount = finances.getLuxuryTaxAmount(payroll);
 				minPayrollAmount = finances.getMinPayrollAmount(payroll);
@@ -446,6 +452,7 @@ export default defineView({
 				collegeInfo,
 				conf,
 				editable,
+				extendable,
 				moreInfo,
 				maxRosterSize: g.get("maxRosterSize"),
 				numPlayersOnCourt: g.get("numPlayersOnCourt"),

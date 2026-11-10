@@ -199,6 +199,89 @@ export const amountForYears = (
 	return !from || from.ask === amount ? to.ask : amount;
 };
 
+// 1 yr 2 yrs ...: the lengths, his ask for each in the title, the one he
+// wants in bold.
+export const TermButtons = ({
+	onPick,
+	terms,
+	wantedYears,
+	years,
+}: {
+	onPick: (years: number) => void;
+	terms: OfferTerm[];
+	wantedYears: number;
+	years: number;
+}) => (
+	<div className="btn-group mb-3 flex-wrap" role="group">
+		{terms.map((option) => (
+			<button
+				key={option.years}
+				type="button"
+				className={clsx(
+					"btn",
+					option.years === years ? "btn-primary" : "btn-light-bordered",
+					option.years === wantedYears && "fw-bold",
+				)}
+				onClick={() => onPick(option.years)}
+				title={`Thru ${option.exp}, asking ${formatOfferAmount(option.ask)}${
+					option.years === wantedYears ? " (the length he wants)" : ""
+				}`}
+			>
+				{option.years} {helpers.plural("yr", option.years)}
+			</button>
+		))}
+	</div>
+);
+
+export type OptionChoice = "" | "player" | "team";
+
+// CBA-lite: a yearly raise (in %, up to maxRaise either way) and an option on
+// the final season.
+export const ShapePickers = ({
+	maxRaise,
+	option,
+	raise,
+	setOption,
+	setRaise,
+	years,
+}: {
+	maxRaise: number;
+	option: OptionChoice;
+	raise: number;
+	setOption: (option: OptionChoice) => void;
+	setRaise: (raise: number) => void;
+	years: number;
+}) => (
+	<div className="d-flex flex-wrap align-items-center gap-2 mb-3">
+		<select
+			className="form-select form-select-sm"
+			style={{ width: "auto" }}
+			value={raise}
+			onChange={(event) => setRaise(Number(event.target.value))}
+			title="Yearly raise"
+		>
+			{[-maxRaise, 0, 2.5, maxRaise].map((x) => (
+				<option key={x} value={x}>
+					{x > 0 ? "+" : ""}
+					{x}% a year
+				</option>
+			))}
+		</select>
+		<select
+			className="form-select form-select-sm"
+			style={{ width: "auto" }}
+			value={option}
+			disabled={years < 2}
+			onChange={(event) => setOption(event.target.value as OptionChoice)}
+			title="Option on the final season"
+		>
+			<option value="">No option</option>
+			<option value="player">Player option</option>
+			<option value="team">Team option</option>
+		</select>
+	</div>
+);
+
 // The offer screen, in place of the list of contracts to sign.
 export const OfferEditor = ({
 	capSpace,
@@ -230,7 +313,7 @@ export const OfferEditor = ({
 	// Free agency in stages (CBA-lite): a yearly raise and an option on the
 	// final season.
 	const [raise, setRaise] = useState(0);
-	const [option, setOption] = useState<"" | "player" | "team">("");
+	const [option, setOption] = useState<OptionChoice>("");
 	const maxRaise = offer.stage?.own ? 8 : 5;
 	const shape = offer.stage
 		? {
@@ -275,30 +358,15 @@ export const OfferEditor = ({
 
 	return (
 		<div style={{ maxWidth: 575 }}>
-			<div className="btn-group mb-3 flex-wrap" role="group">
-				{offer.terms.map((option) => (
-					<button
-						key={option.years}
-						type="button"
-						className={clsx(
-							"btn",
-							option.years === years ? "btn-primary" : "btn-light-bordered",
-							option.years === offer.wantedYears && "fw-bold",
-						)}
-						onClick={() => {
-							setAmount(
-								amountForYears(offer.terms, amount, years, option.years),
-							);
-							setYears(option.years);
-						}}
-						title={`Thru ${option.exp}, asking ${formatOfferAmount(option.ask)}${
-							option.years === offer.wantedYears ? " (the length he wants)" : ""
-						}`}
-					>
-						{option.years} {helpers.plural("yr", option.years)}
-					</button>
-				))}
-			</div>
+			<TermButtons
+				terms={offer.terms}
+				years={years}
+				wantedYears={offer.wantedYears}
+				onPick={(next) => {
+					setAmount(amountForYears(offer.terms, amount, years, next));
+					setYears(next);
+				}}
+			/>
 
 			<div className="d-flex flex-wrap align-items-center gap-3 mb-3">
 				<AmountStepper
@@ -314,36 +382,14 @@ export const OfferEditor = ({
 			</div>
 
 			{offer.stage ? (
-				<div className="d-flex flex-wrap align-items-center gap-2 mb-3">
-					<select
-						className="form-select form-select-sm"
-						style={{ width: "auto" }}
-						value={raise}
-						onChange={(event) => setRaise(Number(event.target.value))}
-						title="Yearly raise"
-					>
-						{[-maxRaise, 0, 2.5, maxRaise].map((x) => (
-							<option key={x} value={x}>
-								{x > 0 ? "+" : ""}
-								{x}% a year
-							</option>
-						))}
-					</select>
-					<select
-						className="form-select form-select-sm"
-						style={{ width: "auto" }}
-						value={option}
-						disabled={years < 2}
-						onChange={(event) =>
-							setOption(event.target.value as "" | "player" | "team")
-						}
-						title="Option on the final season"
-					>
-						<option value="">No option</option>
-						<option value="player">Player option</option>
-						<option value="team">Team option</option>
-					</select>
-				</div>
+				<ShapePickers
+					maxRaise={maxRaise}
+					option={option}
+					raise={raise}
+					setOption={setOption}
+					setRaise={setRaise}
+					years={years}
+				/>
 			) : null}
 			{offer.stage ? (
 				<div className="mb-3" data-testid="offer-stage">

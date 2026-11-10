@@ -80,6 +80,23 @@ export const wantedYears = (p: ContractHolder) => {
 	return Math.max(1, contractOf(p).exp - first + 1);
 };
 
+// Him asking `amount` for a deal of `years`, as askFor and marketUtility
+// read an ask - for a player still under contract (an extension).
+export const askingAs = <T extends ContractHolder>(
+	p: T,
+	ask: { amount: number; years: number },
+): T => ({
+	...p,
+	contractDemand: {
+		amount: ask.amount,
+		exp:
+			g.get("season") +
+			(g.get("phase") <= PHASE.AFTER_TRADE_DEADLINE ? 0 : 1) +
+			ask.years -
+			1,
+	},
+});
+
 export const offerYears = (exp: number) => {
 	const first =
 		g.get("season") + (g.get("phase") <= PHASE.AFTER_TRADE_DEADLINE ? 0 : 1);

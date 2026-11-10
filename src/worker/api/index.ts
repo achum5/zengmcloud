@@ -347,6 +347,11 @@ import {
 	withdrawOffer as realisticFrontOfficeWithdrawOffer,
 } from "../core/realisticFrontOffice/freeAgency.ts";
 import {
+	extensionProps as realisticFrontOfficeExtensionProps,
+	offerExtension as realisticFrontOfficeOfferExtension,
+	type ExtensionOffer,
+} from "../core/realisticFrontOffice/extensions.ts";
+import {
 	chanceOfOffer as realisticFrontOfficeChanceOfOffer,
 	instantSigningRefusal,
 	offerScreen as realisticFrontOfficeOfferScreen,
@@ -2777,6 +2782,42 @@ const makeFreeAgentOffer = async ({
 		await toUI("realtimeUpdate", [["team"]]);
 	}
 	return error;
+};
+
+// CBA-lite: extending one of the user's players in the last season of his
+// contract - his ask at each length and the chance of `offer`, and making it.
+const getExtensionProps = async ({
+	pid,
+	offer,
+}: {
+	pid: number;
+	offer?: ExtensionOffer;
+}) => realisticFrontOfficeExtensionProps(g.get("userTid"), pid, offer);
+
+const offerExtension = async ({
+	pid,
+	amount,
+	years,
+	raise,
+	option,
+}: { pid: number } & ExtensionOffer) => {
+	if (lock.get("gameSim")) {
+		return "Stop game simulation first.";
+	}
+	const result = await realisticFrontOfficeOfferExtension(
+		g.get("userTid"),
+		pid,
+		{
+			amount: helpers.roundContract(amount),
+			years,
+			...(raise ? { raise } : {}),
+			...(option ? { option } : {}),
+		},
+	);
+	if (typeof result !== "string" && result.accepted) {
+		await toUI("realtimeUpdate", [["playerMovement"]]);
+	}
+	return result;
 };
 
 // Free agency in stages: give up a free agent's Bird rights and cap hold, or
@@ -8572,6 +8613,7 @@ const api = {
 		saveReplayShots,
 		liveSimBlocksDaySim,
 		getGoatBreakdown,
+		getExtensionProps,
 		getNegotiationProps,
 		getOfferChance,
 		getNumPlayoffTeams,
@@ -8652,6 +8694,7 @@ const api = {
 		lockSet,
 		makeFreeAgentOffer,
 		markSyncRequired,
+		offerExtension,
 		ovr,
 		proposeTrade,
 		rankFreeAgentOffers,

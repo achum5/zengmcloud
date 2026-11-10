@@ -210,8 +210,9 @@ const SKIP_CHANGESET_CAPTURE = new Set([
 	// Cloud-only write of this team's free-agency board (no league data).
 	"faBoardSet",
 	// Realistic front offices: the live odds on the offer screen, read as the
-	// user changes the offer.
+	// user changes the offer - and on the extension editor.
 	"getOfferChance",
+	"getExtensionProps",
 	// Which of this device's teams it controls (userTid). userTid is per-device
 	// and never synced (see the changeset NEVER_SYNC set), so - unlike the general
 	// updateGameAttributes, which is sim-authority-locked - every league-mate must
@@ -267,6 +268,8 @@ const SIM_CONFLICT_GATED = new Set([
 	"withdrawFreeAgentOffer",
 	"rankFreeAgentOffers",
 	"decideReSigningOffers",
+	// An extension rewrites his contract, which the sim reads.
+	"offerExtension",
 ]);
 
 // API functions should have at most 2 arguments. First argument is passed here from toWorker. If you need to pass multiple variables, use an object/array. Second argument is Conditions.
