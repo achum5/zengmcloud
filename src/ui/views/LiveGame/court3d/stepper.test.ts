@@ -255,4 +255,48 @@ describe("3D: the ten stepped", () => {
 		assert.isAtLeast(best, 100);
 		assert.isAtMost(best, 300);
 	});
+
+	test("off the ball, from one spot behind the line to another, a man goes round it - not across inside it", () => {
+		const beyond = (team: number, p: { x: number; y: number }) => {
+			const depth = team === 0 ? p.x : 94 - p.x;
+			return depth < 14
+				? Math.abs(p.y - 25) - 22
+				: Math.hypot(depth - 5.25, p.y - 25) - 23.75;
+		};
+		let runs = 0;
+		let round = 0;
+		for (const tr of laid.tracks.values()) {
+			if (tr.pid < 0) {
+				continue;
+			}
+			for (const m of tr.moves) {
+				const mid = (m.t0 + m.t1) / 2;
+				const A = floorSpotOf(tr, mid);
+				const B = floorSpotOf(stepped.tracks.get(tr.pid)!, mid);
+				const off = laid.poss.findLast((p) => p[0] <= mid)?.[1];
+				const ball = laid.ball.findLast((s) => s.t0 <= mid);
+				if (
+					!A ||
+					!B ||
+					off !== tr.team ||
+					(ball?.kind === "hold" && ball.pid === tr.pid) ||
+					Math.hypot(m.to.x - m.from.x, m.to.y - m.from.y) < 6 ||
+					beyond(tr.team, m.from) < 0 ||
+					beyond(tr.team, m.to) < 0 ||
+					beyond(tr.team, A) > -0.5 ||
+					beyond(tr.team, A) < -3 ||
+					tr.acts.some((x) => x.t0 < mid + 600 && x.t1 > mid - 600)
+				) {
+					continue;
+				}
+				runs += 1;
+				// (On the line, more or less: see KNOT_TOL.)
+				if (beyond(tr.team, B) > -0.3) {
+					round += 1;
+				}
+			}
+		}
+		assert.isAbove(runs, 10);
+		assert.isAbove(round / runs, 0.7);
+	});
 });

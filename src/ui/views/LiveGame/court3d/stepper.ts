@@ -821,6 +821,100 @@ const keyed = (stretches: Keyed[]): Offsets => {
 	});
 };
 
+// How far behind the three-point line (feet) at the end a team attacks -
+// and the spot this far behind it, straight out from the rim (straight
+// out from the middle of the floor, in the corners).
+const CORNER_DEEP = 14;
+const beyondArc = (team: 0 | 1, p: Pt): number => {
+	const depth = team === 0 ? p.x : COURT_W - p.x;
+	return depth < CORNER_DEEP
+		? Math.abs(p.y - 25) - 22
+		: Math.hypot(depth - RIM_INSET, p.y - 25) - 23.75;
+};
+const ontoArc = (team: 0 | 1, p: Pt, behind: number): Pt => {
+	const depth = team === 0 ? p.x : COURT_W - p.x;
+	if (depth < CORNER_DEEP) {
+		return { x: p.x, y: 25 + Math.sign(p.y - 25 || 1) * (22 + behind) };
+	}
+	const rim = { x: rimX(team), y: 25 };
+	const u = unitVec(rim, p);
+	return {
+		x: rim.x + u.x * (23.75 + behind),
+		y: rim.y + u.y * (23.75 + behind),
+	};
+};
+
+// OFF THE BALL, ROUND THE ARC. Going from one spot behind the line to
+// another, a man off the ball goes round the line, not straight across
+// inside it: kept ARC_BEHIND behind it wherever his way would cut in (on
+// it, more or less, once laid down as runs: see KNOT_TOL).
+const ARC_BEHIND = 1;
+const ARC_LEAST = 6;
+// (Cutting in deeper than this (feet), it is a cut - through the lane,
+// along the baseline - not a way round: left be.)
+const ARC_DEEPEST = 4;
+const arcsOf = (
+	tr: { moves: Move[]; team: 0 | 1; pid: number },
+	tl: CourtTimeline,
+	laid: Path,
+	held: Spans,
+	offenseAt: (t: number) => 0 | 1,
+): Offsets => {
+	const team = tr.team;
+	const isRound = (b: number) => b < ARC_BEHIND && b > -ARC_DEEPEST;
+	// (His own holds of the ball: not with it.)
+	const mine = spansAt(
+		tl.ball.flatMap((s, k) =>
+			s.kind === "hold" && s.pid === tr.pid
+				? [[s.t0, tl.ball[k + 1]?.t0 ?? s.t0] as const]
+				: [],
+		),
+	);
+	// The runs from behind the line to behind it again, cutting in.
+	const runs = tr.moves.filter(
+		(m) =>
+			Math.hypot(m.to.x - m.from.x, m.to.y - m.from.y) >= ARC_LEAST &&
+			beyondArc(team, m.from) > -0.3 &&
+			beyondArc(team, m.to) > -0.3 &&
+			isRound(
+				beyondArc(team, {
+					x: (m.from.x + m.to.x) / 2,
+					y: (m.from.y + m.to.y) / 2,
+				}),
+			) &&
+			offenseAt((m.t0 + m.t1) / 2) === team,
+	);
+	const none = { x: 0, y: 0 };
+	const at = (t: number): Pt => {
+		let lo = 0;
+		let hi = runs.length;
+		while (lo < hi) {
+			const mid = (lo + hi) >> 1;
+			if (runs[mid]!.t0 <= t) {
+				lo = mid + 1;
+			} else {
+				hi = mid;
+			}
+		}
+		const m = runs[lo - 1];
+		if (!m || t >= m.t1) {
+			return none;
+		}
+		const P = laid.at(t);
+		if (!P || beyondArc(team, P) >= ARC_BEHIND || mine.hit(t, t + 1)) {
+			return none;
+		}
+		// (Nothing of his on, or about to be.)
+		const near = Math.min(t - held.last(t), held.next(t) - t);
+		const w = Math.min(1, Math.max(0, near / 300));
+		const Q = ontoArc(team, P, ARC_BEHIND);
+		return { x: (Q.x - P.x) * w, y: (Q.y - P.y) * w };
+	};
+	return Object.assign(at, {
+		spans: runs.map((m) => [m.t0, m.t1] as const),
+	});
+};
+
 // OFF THE BALL, GETTING OPEN. Stood a while off the ball with nothing of
 // his coming, a man does not wait where the play put him like a cone: now
 // and then he relocates a step - along the arc, a step in, a step out -
@@ -852,13 +946,7 @@ const openingsOf = (
 	offenseAt: (t: number) => 0 | 1,
 ): Offsets => {
 	const rim = { x: rimX(team), y: 25 };
-	// (How far behind the three-point line, feet.)
-	const beyond = (p: Pt) => {
-		const depth = team === 0 ? p.x : COURT_W - p.x;
-		return depth < 14
-			? Math.abs(p.y - 25) - 22
-			: Math.hypot(depth - RIM_INSET, p.y - 25) - 23.75;
-	};
+	const beyond = (p: Pt) => beyondArc(team, p);
 	const mine = spansAt(
 		tl.ball.flatMap((s, k) =>
 			s.kind === "hold" && s.pid === pid
@@ -1042,12 +1130,14 @@ export const stepTimeline = (tl: CourtTimeline): CourtTimeline => {
 		const held = helds.get(tr.pid)!;
 		const probe = probesOf(tl, tr.pid, L, held, tr.team);
 		const open = openingsOf(tl, tr.pid, L, held, tr.team, offenseAt);
+		const arc = arcsOf(tr, tl, L, held, offenseAt);
 		probes.set(tr.pid, (t) => {
 			const a = probe(t);
 			const b = open(t);
-			return { x: a.x + b.x, y: a.y + b.y };
+			const c = arc(t);
+			return { x: a.x + b.x + c.x, y: a.y + b.y + c.y };
 		});
-		making[tr.team].push(...probe.spans, ...open.spans);
+		making[tr.team].push(...probe.spans, ...open.spans, ...arc.spans);
 	}
 	const busy = [spansAt(making[0]), spansAt(making[1])] as const;
 	// And on defense, each with his man as his man really goes, a beat
