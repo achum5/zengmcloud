@@ -24,7 +24,8 @@ import {
 	runsOn,
 } from "./clock.ts";
 import { attackDir, COURT_H, COURT_W, rimX } from "./geometry.ts";
-import { compile, fakeGame, gidOf } from "./testGame.ts";
+import { stageGame } from "./stepper.ts";
+import { compile, fakeGame, gidOf, stepped } from "./testGame.ts";
 import { finishOf } from "../../../util/liveGameWording.basketball.ts";
 import { bodyFor, cutBetween, sampleTimes } from "./directorTesting.ts";
 
@@ -36,10 +37,11 @@ describe("3D director", () => {
 		compile("another game in between");
 		// (IndexedDB stores a structured clone.)
 		const saved = structuredClone(live.events);
-		const again = compileCourt({
+		const again = stageGame({
 			events: saved,
 			players: live.players,
 			gid: gidOf("replay"),
+			step: stepped,
 		});
 		const dump = (tl: CourtTimeline) =>
 			JSON.stringify({ ...tl, tracks: [...tl.tracks.entries()] });

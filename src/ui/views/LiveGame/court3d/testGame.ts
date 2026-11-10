@@ -281,7 +281,7 @@ export const gidOf = (seed: string) =>
 	[...seed].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 100_000, 7);
 
 // (COURT3D_STEP=1: every test game stepped - see stepper.ts.)
-const stepped = !!(
+export const stepped = !!(
 	globalThis as { process?: { env?: Record<string, string | undefined> } }
 ).process?.env?.COURT3D_STEP;
 
