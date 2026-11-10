@@ -1,11 +1,13 @@
 import { PLAYER } from "../../../common/constants.ts";
 import { player, team } from "../index.ts";
 import getBest from "./getBest.ts";
+import { getContractDemand } from "../contract/index.ts";
 import { idb } from "../../db/index.ts";
-import { g, local } from "../../util/index.ts";
+import { g } from "../../util/index.ts";
 import { getHardCap } from "../../util/getHardCap.ts";
 import { orderBy } from "../../../common/utils.ts";
 import { shuffle } from "../../../common/random.ts";
+import { userControlsTeam } from "../../util/userControlsTeam.ts";
 import { revertBefore } from "../player/revertSnapshot.ts";
 import { realisticFreeAgencyOn } from "../realisticFrontOffice/isOn.ts";
 import { freeAgencyDay as realisticFrontOfficeFreeAgencyDay } from "../realisticFrontOffice/freeAgency.ts";
@@ -44,11 +46,7 @@ const autoSign = async () => {
 
 	for (const t of teams) {
 		// Skip the user's team
-		if (
-			g.get("userTids").includes(t.tid) &&
-			!local.autoPlayUntil &&
-			!g.get("spectator")
-		) {
+		if (userControlsTeam(t.tid)) {
 			continue;
 		}
 
@@ -97,7 +95,7 @@ const autoSign = async () => {
 			// free agent he was.
 			const before = revertBefore(p);
 
-			await player.sign(p, t.tid, p.contract, g.get("phase"), before);
+			await player.sign(p, t.tid, getContractDemand(p), g.get("phase"), before);
 			await idb.cache.players.put(p);
 			await team.rosterAutoSort(t.tid);
 		}

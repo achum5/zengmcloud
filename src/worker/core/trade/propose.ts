@@ -7,7 +7,7 @@ import summary from "./summary.ts";
 import get from "./get.ts";
 import { idb } from "../../db/index.ts";
 import { hashSavedTrade } from "../../../common/hashSavedTrade.ts";
-import { tradesBlocked } from "../../../common/tradesBlocked.ts";
+import { getTradeBlockedReason } from "../../../common/transactionPhases.ts";
 import { ValueChangeCalculator } from "../team/ValueChangeCalculator.ts";
 import type { TradeTeams } from "../../../common/types.ts";
 import { realisticFrontOfficesOn } from "../realisticFrontOffice/isOn.ts";
@@ -58,10 +58,19 @@ const propose = async (
 	| Awaited<ReturnType<typeof accept>>
 	| { accepted: false; message: string | null; undo?: undefined }
 > => {
-	if (tradesBlocked(g.get("phase"), g.get("tradesAfterDeadline"))) {
+	const tradeBlockedReason = getTradeBlockedReason({
+		challengeNoTrades: g.get("challengeNoTrades"),
+		gameOver: g.get("gameOver"),
+		otherTeamsWantToHire: g.get("otherTeamsWantToHire"),
+		phase: g.get("phase"),
+		spectator: g.get("spectator"),
+		tradesAfterDeadline: g.get("tradesAfterDeadline"),
+	});
+	if (tradeBlockedReason) {
 		return {
 			accepted: false as const,
 			message: `Error! You're not allowed to make trades ${
+				tradeBlockedReason === "phase" &&
 				g.get("phase") === PHASE.AFTER_TRADE_DEADLINE
 					? "after the trade deadline"
 					: "now"

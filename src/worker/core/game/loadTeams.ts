@@ -11,6 +11,10 @@ import {
 import playThroughInjuriesFactor from "../../../common/playThroughInjuriesFactor.ts";
 import { bySport } from "../../../common/sportFunctions.ts";
 import { last, assertDefined } from "../../../common/utils.ts";
+import {
+	ALL_STAR_GAME_TIDS,
+	isAllStarTid,
+} from "../../../common/specialGames.ts";
 
 const MAX_NUM_PLAYERS_PACE = 7;
 
@@ -194,7 +198,7 @@ export const processTeam = async (
 		]);
 	}
 
-	const allStarGame = teamInput.tid === -1 || teamInput.tid === -2;
+	const allStarGame = isAllStarTid(teamInput.tid);
 
 	if (!allStarGame) {
 		players.sort((a, b) => a.rosterOrder - b.rosterOrder);
@@ -429,7 +433,7 @@ const loadTeams = async (tids: number[], conditions: Conditions) => {
 		number,
 		undefined | Awaited<ReturnType<typeof processTeam>>
 	> = {};
-	if (tids.length === 2 && tids.includes(-1) && tids.includes(-2)) {
+	if (tids.length === 2 && tids.every(isAllStarTid)) {
 		// All-Star Game
 		const allStars = await allStar.getOrCreate(g.get("season"));
 		assertDefined(allStars);
@@ -454,7 +458,7 @@ const loadTeams = async (tids: number[], conditions: Conditions) => {
 		}
 
 		for (const tid of tids) {
-			const allStarsTeamInd = tid === -1 ? 0 : 1;
+			const allStarsTeamInd = tid === ALL_STAR_GAME_TIDS[0] ? 0 : 1;
 			const players = [];
 			for (const { pid } of allStars.teams[allStarsTeamInd]) {
 				const p = await idb.cache.players.get(pid);

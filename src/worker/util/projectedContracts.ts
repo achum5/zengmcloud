@@ -3,6 +3,7 @@ import normalizeContractDemands, {
 	getContractYears,
 } from "../core/freeAgents/normalizeContractDemands.ts";
 import genContract from "../core/player/genContract.ts";
+import { getContractSummary } from "../core/contract/index.ts";
 import { idb } from "../db/index.ts";
 import { g } from "./index.ts";
 import type { Player } from "../../common/types.ts";
@@ -47,7 +48,7 @@ const getExpiringPids = async (): Promise<number[]> => {
 			? await idb.merged.players.getAll({ tid: PLAYER.FREE_AGENT })
 			: await idb.merged.players.getAll(
 					{ tid: [0, Infinity] },
-					{ filter: (p) => p.contract.exp === season },
+					{ filter: (p) => getContractSummary(p)?.exp === season },
 				);
 	return players.map((p) => p.pid);
 };
@@ -112,6 +113,9 @@ export const projectNextContract = (
 ): { amount: number; years: number } => ({
 	amount: amounts.get(p.pid) ?? genContract(p, false).amount,
 	years: getContractYears(p, {
-		season: Math.max(g.get("season"), p.contract.exp),
+		season: Math.max(
+			g.get("season"),
+			getContractSummary(p)?.exp ?? g.get("season"),
+		),
 	}),
 });

@@ -7,6 +7,7 @@ import { idb } from "../../db/index.ts";
 import {
 	DEFAULT_PHASE_CHANGE_REDIRECTS,
 	PHASE,
+	PLAYER,
 } from "../../../common/constants.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import {
@@ -26,6 +27,7 @@ import {
 } from "./changeset.ts";
 import { DEFAULT_LEVEL } from "../../../common/budgetLevels.ts";
 import type { Phase } from "../../../common/types.ts";
+import { createContract, getOwedContracts } from "../contract/index.ts";
 
 const genPlayer = () =>
 	player.generate(g.get("userTid"), 30, 2017, true, DEFAULT_LEVEL);
@@ -898,17 +900,105 @@ describe("sync changeset", () => {
 		assert.ok(!ids.includes(4), JSON.stringify(captured.changes));
 	});
 
-	test("a synced releasedPlayers delete removes the row matching the contract, not the author's rid", async () => {
-		// releasedPlayers rids are renumbered by import (expired contracts leave
-		// gaps), so the author's rid addresses a different released contract here.
-		// The delete must match by content (pid, tid, contract).
+	// A league mate on a build from before p.contracts (league DB version 81)
+	// still publishes players with p.contract and p.salaries, and a release as a
+	// releasedPlayers row - a store this build no longer has.
+	const legacyReleasedPlayer = (season: number) => {
+		const p: any = helpers.deepCopy(genPlayer());
+		p.pid = 300;
+		p.tid = PLAYER.FREE_AGENT;
+		delete p.contracts;
+		delete p.contractDemand;
+		p.contract = { amount: 3000, exp: season + 2 };
+		p.salaries = [0, 1, 2].map((i) => ({ season: season + i, amount: 3000 }));
+		return p;
+	};
+
+	test("an older build's released player arrives as a released contract", async () => {
 		resetG();
-		await resetCache({
-			releasedPlayers: [
-				{ rid: 1, pid: 100, tid: 3, contract: { amount: 1000, exp: 2026 } },
-				{ rid: 2, pid: 200, tid: 4, contract: { amount: 2000, exp: 2027 } },
-			],
-		});
+		await resetCache({});
+		changeTracker.disable();
+		const season = g.get("season");
+
+		await applyChangeset(
+			overTheWire({
+				changes: [
+					{
+						store: "players",
+						id: 300,
+						type: "put",
+						value: legacyReleasedPlayer(season),
+					},
+					{
+						store: "releasedPlayers",
+						id: 1,
+						type: "put",
+						value: {
+							rid: 1,
+							pid: 300,
+							tid: 5,
+							contract: { amount: 3000, exp: season + 2 },
+						},
+					},
+				],
+			}),
+			{ refreshUI: false },
+		);
+
+		const p = (await idb.cache.players.get(300))!;
+		assert.ok(p, "the player was not written");
+		assert.isUndefined((p as any).contract);
+		assert.isUndefined((p as any).salaries);
+		assert.ok(p.contractDemand, "a free agent needs a contract demand");
+		assert.deepEqual(p.owedByTids, [5]);
+		const owed = await getOwedContracts(5);
+		assert.lengthOf(owed, 1);
+		assert.strictEqual(owed[0]!.contract.amounts[0], 3000);
+	});
+
+	test("an older build's releasedPlayers row without its player is recorded on this device's copy of him", async () => {
+		resetG();
+		const season = g.get("season");
+		const p: any = genPlayer();
+		p.pid = 300;
+		p.tid = PLAYER.FREE_AGENT;
+		p.contracts = [
+			createContract({
+				contract: { amount: 3000, exp: season + 2 },
+				type: "freeAgent",
+			}),
+		];
+		p.contractDemand = { amount: 2500, exp: season + 1 };
+		await resetCache({ players: [p] });
+		changeTracker.disable();
+
+		const row = {
+			rid: 1,
+			pid: 300,
+			tid: 5,
+			contract: { amount: 3000, exp: season + 2 },
+		};
+		for (let i = 0; i < 2; i++) {
+			// The second time, as a retry or an echo would deliver it
+			await applyChangeset(
+				overTheWire({
+					changes: [
+						{ store: "releasedPlayers", id: 1, type: "put", value: row },
+					],
+				}),
+				{ refreshUI: false },
+			);
+		}
+
+		const after = (await idb.cache.players.get(300))!;
+		assert.lengthOf(after.contracts, 1, JSON.stringify(after.contracts));
+		assert.strictEqual(after.contracts[0]!.endedEarly?.tid, 5);
+		assert.deepEqual(after.owedByTids, [5]);
+	});
+
+	test("an older build's releasedPlayers delete is dropped", async () => {
+		resetG();
+		await resetCache({ players: [genPlayer()] });
 		changeTracker.disable();
 
 		await applyChangeset(
@@ -916,7 +1006,7 @@ describe("sync changeset", () => {
 				changes: [
 					{
 						store: "releasedPlayers",
-						id: 1, // the author's rid for ITS (pid 200) row
+						id: 1,
 						type: "delete",
 						value: {
 							rid: 1,
@@ -930,49 +1020,7 @@ describe("sync changeset", () => {
 			{ refreshUI: false },
 		);
 
-		const rows = await idb.cache.releasedPlayers.getAll();
-		assert.strictEqual(rows.length, 1, JSON.stringify(rows));
-		// The pid-100 row that merely held the author's rid survives.
-		assert.strictEqual(rows[0]!.pid, 100);
-	});
-
-	test("a synced releasedPlayers put never clobbers a different released contract at the author's rid", async () => {
-		resetG();
-		await resetCache({
-			releasedPlayers: [
-				{ rid: 1, pid: 100, tid: 3, contract: { amount: 1000, exp: 2026 } },
-			],
-		});
-		changeTracker.disable();
-
-		// The author released pid 300; its row got rid 1 there.
-		await applyChangeset(
-			overTheWire({
-				changes: [
-					{
-						store: "releasedPlayers",
-						id: 1,
-						type: "put",
-						value: {
-							rid: 1,
-							pid: 300,
-							tid: 5,
-							contract: { amount: 3000, exp: 2028 },
-						},
-					},
-				],
-			}),
-			{ refreshUI: false },
-		);
-
-		const rows = await idb.cache.releasedPlayers.getAll();
-		assert.strictEqual(rows.length, 2, JSON.stringify(rows));
-		const kept = rows.find((row) => row.pid === 100);
-		assert.ok(kept, JSON.stringify(rows));
-		assert.strictEqual(kept!.rid, 1);
-		const added = rows.find((row) => row.pid === 300);
-		assert.ok(added, JSON.stringify(rows));
-		assert.notStrictEqual(added!.rid, 1);
+		assert.lengthOf(await idb.cache.players.getAll(), 1);
 	});
 
 	test("a synced scheduledEvents delete removes the row matching the snapshot's content, not the author's id", async () => {
@@ -1275,10 +1323,19 @@ describe("sync changeset", () => {
 		await resetCache({
 			teamSeasons: [
 				{ rid: 18, tid: 8, season: 2001, won: 58, lost: 24 },
-				{ rid: 88, tid: 8, season: 2001, won: 58, lost: 24 },
 				{ rid: 67, tid: 8, season: 2002, won: 0, lost: 0 },
 			],
 		});
+		// The cache refuses to store a duplicate itself (it would fail every
+		// flush), so the stray one is planted behind its back
+		(idb.cache as any)._data.teamSeasons[88] = {
+			rid: 88,
+			tid: 8,
+			season: 2001,
+			won: 58,
+			lost: 24,
+		};
+		idb.cache._markDirtyIndexes("teamSeasons");
 		changeTracker.disable();
 
 		await applyChangeset(

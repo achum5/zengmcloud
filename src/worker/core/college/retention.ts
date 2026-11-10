@@ -7,6 +7,8 @@ import { idb } from "../../db/index.ts";
 import { g, helpers } from "../../util/index.ts";
 import type { Player } from "../../../common/types.ts";
 import { collegeNilForPercentile } from "./util.ts";
+import { getCurrentContract } from "../../../common/contracts.ts";
+import { nilAmount } from "./util.ts";
 import {
 	nilRange,
 	openTalks,
@@ -27,13 +29,17 @@ import { getTeamCtxs } from "./teams.ts";
 // programs, players on losing teams. Schools get one chance to change their
 // minds - an NIL raise or a playing time promise - and then the portal opens.
 
-// A new NIL deal for next season on: the contract and the salary rows ahead.
+// A new NIL deal for next season on: every season of his contract after this
+// one.
 const setNil = (p: Player, amount: number) => {
 	const season = g.get("season");
-	p.contract.amount = amount;
-	for (const row of p.salaries) {
-		if (row.season > season) {
-			row.amount = amount;
+	const contract = getCurrentContract(p);
+	if (!contract) {
+		return;
+	}
+	for (let i = 0; i < contract.amounts.length; i++) {
+		if (contract.start + i > season) {
+			contract.amounts[i] = amount;
 		}
 	}
 };
@@ -149,7 +155,7 @@ const riskInputFor = async (
 		pct: pctByPid.get(p.pid) ?? 0.5,
 		prestige: t?.prestige ?? 30,
 		winp: games > 0 ? ts!.won / games : 0.5,
-		underpaid: !r.settled && r.demand > p.contract.amount * 1.15,
+		underpaid: !r.settled && r.demand > nilAmount(p) * 1.15,
 		brokenPromise: (p.collegePromises ?? []).some(
 			(promise) => promise.season === season && promise.status === "broken",
 		),
@@ -185,7 +191,7 @@ export const collegeStartRetention = async () => {
 			continue;
 		}
 		const pct = pctByPid.get(p.pid) ?? 0.5;
-		const current = p.contract.amount;
+		const current = nilAmount(p);
 		const fair = roundNil(collegeNilForPercentile(pct) * nilScale);
 		// Paid over his value? He expects raises anyway.
 		const overpaid = current / Math.max(1, fair);
@@ -247,14 +253,14 @@ const aiRetention = async (pctByPid: Map<number, number>) => {
 			const r = p.collegeRetention!;
 			if (!r.settled && i < 10) {
 				const room = ctx.nilBudget - ctx.nilCommitted;
-				const increase = r.demandRange[1] * 1.1 - p.contract.amount;
+				const increase = r.demandRange[1] * 1.1 - nilAmount(p);
 				if (increase <= room) {
 					r.talks ??= openTalks(p.collegeProfile, 70, 0);
 					let amount = roundNil((r.demandRange[0] + r.demandRange[1]) / 2);
 					for (let round = 0; round < 3; round++) {
 						const outcome = respondToOffer(r.talks, r.demand, amount);
 						if (outcome.type === "accepted") {
-							ctx.nilCommitted += outcome.amount - p.contract.amount;
+							ctx.nilCommitted += outcome.amount - nilAmount(p);
 							setNil(p, outcome.amount);
 							r.settled = true;
 							break;
@@ -310,13 +316,13 @@ export const collegeRetentionAction = async (
 		}
 		const ctx = (await getTeamCtxs([])).get(userTid)!;
 		const nil = roundNil(action.nil);
-		const room = ctx.nilBudget - ctx.nilCommitted + p.contract.amount;
+		const room = ctx.nilBudget - ctx.nilCommitted + nilAmount(p);
 		if (nil > room) {
 			return {
 				error: `That's more than the ${helpers.formatCurrency(room / 1000, "M")} left in your NIL budget.`,
 			};
 		}
-		if (nil <= p.contract.amount) {
+		if (nil <= nilAmount(p)) {
 			return { error: "That's no raise." };
 		}
 		r.talks ??= openTalks(p.collegeProfile, 70, 0);

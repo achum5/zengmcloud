@@ -2,6 +2,7 @@ import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocal } from "../../util/local.ts";
 import { helpers } from "../../util/helpers.ts";
 import { ScoreBox } from "../ScoreBox/index.tsx";
+import { isAllStarGame } from "../../../common/specialGames.ts";
 
 // The strip of recent scores under the navbar. Shown or hidden from Global
 // Settings (Scores Bar) rather than by a chevron pinned to its own right edge -
@@ -85,8 +86,7 @@ export const LeagueTopBar = memo(() => {
 	// If you take control of an expansion team after the season, the ASG is the only game, and it looks weird to show just it
 	const onlyAllStarGame =
 		games.length === 1 &&
-		games[0]!.teams[0].tid === -1 &&
-		games[0]!.teams[1].tid === -2;
+		isAllStarGame(games[0]!.teams[0].tid, games[0]!.teams[1].tid);
 
 	// Turned off for this device, or nothing worth showing: keep the spacer so
 	// the page below sits where it always did, and render no strip at all.

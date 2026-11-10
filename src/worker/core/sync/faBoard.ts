@@ -23,6 +23,7 @@ import { changeTracker } from "../../db/changeTracker.ts";
 import { idb } from "../../db/index.ts";
 import { g, toUI } from "../../util/index.ts";
 import { player, team } from "../index.ts";
+import { getContractDemand } from "../contract/index.ts";
 import { realisticFreeAgencyOn } from "../realisticFrontOffice/isOn.ts";
 import { getSyncEngine } from "./engineHolder.ts";
 import { syncDebugLog } from "./debugLog.ts";
@@ -240,7 +241,7 @@ export const resolveFaBoards = async (): Promise<void> => {
 					name,
 					mood: moodSum(mood.components),
 					amount,
-					exp: p.contract.exp,
+					exp: getContractDemand(p).exp,
 				});
 			}
 			effective.set(tid, rows);

@@ -15,6 +15,7 @@ import { roundNil } from "./negotiation.ts";
 import { declareChance, proReadiness } from "./offseason.ts";
 import limitRating from "../player/limitRating.ts";
 import { last } from "../../../common/utils.ts";
+import { addContract, createContract } from "../contract/index.ts";
 
 // Starting rosters for a college league: five classes (freshmen to fifth-year
 // seniors) on every team. Each class is one big pool of players; the best
@@ -113,14 +114,10 @@ export const genCollegeWalkOn = async () => {
 	await player.develop(p, classIndex, true);
 	p.collegeStars = 1;
 	p.collegeProfile = genCollegeProfile(1);
-	player.setContract(
-		p,
-		{
-			amount: g.get("minContract"),
-			exp: p.collegeYear0! + COLLEGE_SEASONS - 1,
-		},
-		false,
-	);
+	player.setContractDemand(p, {
+		amount: g.get("minContract"),
+		exp: p.collegeYear0! + COLLEGE_SEASONS - 1,
+	});
 	const pid = await idb.cache.players.add(p);
 	const added = (await idb.cache.players.get(pid))!;
 	await player.updateValues(added);
@@ -205,13 +202,17 @@ const createCollegePlayers = async ({
 	// scale as recruits' asks. They run through his final season.
 	const ranked = [...players].sort((a, b) => b.value - a.value);
 	for (const [i, p] of ranked.entries()) {
-		player.setContract(
+		addContract(
 			p,
-			{
-				amount: roundNil(collegeNilForPercentile(i / ranked.length) * nilScale),
-				exp: p.collegeYear0! + COLLEGE_SEASONS - 1,
-			},
-			true,
+			createContract({
+				contract: {
+					amount: roundNil(
+						collegeNilForPercentile(i / ranked.length) * nilScale,
+					),
+					exp: p.collegeYear0! + COLLEGE_SEASONS - 1,
+				},
+				type: "unknown",
+			}),
 		);
 	}
 

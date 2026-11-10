@@ -10,13 +10,17 @@ import { helpers } from "../../util/helpers.ts";
 import { showNotification } from "../../util/showNotification.ts";
 import { toWorker } from "../../util/toWorker.ts";
 import AddRemove from "./AddRemove.tsx";
-import type { JerseySkinIds, Phase, View } from "../../../common/types.ts";
-import { PHASE } from "../../../common/constants.ts";
+import type { JerseySkinIds, View } from "../../../common/types.ts";
+import {
+	PHASE,
+	PHASES_WHERE_TEAMS_CAN_BE_DISABLED,
+} from "../../../common/constants.ts";
 import TeamForm, { getNumTeamsByDid } from "./TeamForm.tsx";
 import { useBlocker } from "../../hooks/useBlocker.ts";
 import { useLocal } from "../../util/local.ts";
 import JerseySkins from "./JerseySkins.tsx";
 import ImportTeamLooks from "./ImportTeamLooks.tsx";
+import { setTeamFormValue } from "./teamFormValues.ts";
 
 export const nextSeasonWarning =
 	"Because the regular season is already over, changes will not be fully applied until next season.";
@@ -58,14 +62,17 @@ const reducer = (state: State, action: Action): State => {
 			};
 		case "updateTeam": {
 			const newTeams = state.teams.slice();
-			const t = newTeams.find((t) => t.tid === action.tid);
-			if (!t) {
+			const index = newTeams.findIndex((t) => t.tid === action.tid);
+			if (index < 0) {
 				throw new Error(`No team found with tid ${action.tid}`);
 			}
 
+			// Copy, so the previous state is not mutated
+			const t = { ...newTeams[index]! };
+			newTeams[index] = t;
+
 			if (action.field.startsWith("colors")) {
-				// @ts-expect-error
-				t.colors[action.field.replace("colors", "")] = action.value;
+				t.colors = setTeamFormValue(t, action.field, action.value).colors;
 			} else if (action.field === "did") {
 				t[action.field] = Number.parseInt(action.value);
 			} else if (action.field === "disabled") {
@@ -129,14 +136,6 @@ const getUniqueAbbrevsErrorMessage = (teams: { abbrev: string }[]) => {
 		</>
 	);
 };
-
-export const PHASES_WHERE_TEAMS_CAN_BE_DISABLED = new Set<Phase>([
-	PHASE.PRESEASON,
-	PHASE.DRAFT_LOTTERY,
-	PHASE.AFTER_DRAFT,
-	PHASE.RESIGN_PLAYERS,
-	PHASE.FREE_AGENCY,
-]);
 
 const ManageTeams = (props: View<"manageTeams">) => {
 	const { godMode, phase } = useLocal(["godMode", "phase"]);

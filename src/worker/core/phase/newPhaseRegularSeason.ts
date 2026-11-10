@@ -13,6 +13,7 @@ import {
 } from "../../../common/constants.ts";
 import { getMetaAttribute, putMetaAttribute } from "../../db/metaAttributes.ts";
 import { savePreseasonOdds } from "../sportsbook/savePreseasonOdds.ts";
+import { isAllStarGame } from "../../../common/specialGames.ts";
 
 class GameHasYourTeamCache {
 	cache: Record<number, boolean> = {};
@@ -129,9 +130,7 @@ const deleteOldBoxScores = async () => {
 				}
 			}
 			if (saveIfMeetsConditions("allStar", game)) {
-				const isAllStarGame =
-					game.teams[0].tid === -1 && game.teams[1].tid === -2;
-				if (isAllStarGame) {
+				if (isAllStarGame(game.teams[0].tid, game.teams[1].tid)) {
 					continue;
 				}
 			}

@@ -51,7 +51,7 @@ import { analyticsEventLocal } from "../../../common/analyticsEventLocal.ts";
 import { choice } from "../../../common/random.ts";
 import { generateRoomCode, roomCodeWarning } from "../../../common/roomCode.ts";
 import { realContinents } from "../../../common/geographicCoordinates.ts";
-import type { NewLeagueSettings } from "../../../worker/views/newLeague.ts";
+import type { NewLeagueSettings } from "../../../worker/views/settings.ts";
 import { analyticsEvent } from "../../util/analyticsEvent.ts";
 import { ProgressBarText } from "../../components/ProgressBarText.tsx";
 import { PopText } from "../../components/PopText.tsx";

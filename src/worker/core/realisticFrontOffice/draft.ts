@@ -57,7 +57,7 @@ export const bestProspect = async (
 		const drafted = {
 			...p,
 			tid: dp.tid,
-			contract: { amount, exp, rookie: true },
+			contractDemand: { amount, exp, rookie: true },
 		} as Player;
 		return franchiseValue(
 			outlook,

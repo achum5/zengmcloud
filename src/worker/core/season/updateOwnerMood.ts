@@ -5,6 +5,7 @@ import { bySport } from "../../../common/sportFunctions.ts";
 import { assertDefined } from "../../../common/utils.ts";
 import { collegeMoodDeltas } from "../college/coach.ts";
 import { team } from "../index.ts";
+import { SALARY_CAP_SCALE } from "../../../common/constants.ts";
 
 /**
  * Update teamSeason.ownerMood based on performance this season, only for user's team.
@@ -49,15 +50,7 @@ const updateOwnerMood = async (): Promise<
 		return;
 	}
 
-	const salaryCapFactor =
-		g.get("salaryCap") /
-		bySport({
-			// defaultGameAttributes.salaryCap, but frozen in time because otherwise various coefficients below would need to be updated when it changes
-			baseball: 175000,
-			basketball: 90000,
-			football: 200000,
-			hockey: 80000,
-		});
+	const salaryCapFactor = g.get("salaryCap") / SALARY_CAP_SCALE;
 
 	const expectedProfit = 15 * salaryCapFactor;
 

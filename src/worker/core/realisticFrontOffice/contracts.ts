@@ -1,5 +1,6 @@
 import { PHASE } from "../../../common/constants.ts";
-import type { Player, PlayerContract } from "../../../common/types.ts";
+import type { FlatContractInfo, Player } from "../../../common/types.ts";
+import { contractOf, type ContractHolder } from "./contractOf.ts";
 import { range } from "../../../common/utils.ts";
 import { g, helpers } from "../../util/index.ts";
 import { getHardCap } from "../../util/getHardCap.ts";
@@ -12,9 +13,9 @@ import { getHardCap } from "../../util/getHardCap.ts";
 // (contractNegotiation/generateContractOptions). `amount` is his ask, mood
 // included, for the team asking.
 export const contractOptions = (
-	p: Pick<Player, "contract" | "ratings">,
+	p: ContractHolder & Pick<Player, "ratings">,
 	amount: number,
-): PlayerContract[] => {
+): FlatContractInfo[] => {
 	const ovr = p.ratings.at(-1)!.ovr;
 	const growthFactor = 0.15 + (ovr % 10) * 0.01 - 0.05;
 	let exp = g.get("season");
@@ -25,11 +26,12 @@ export const contractOptions = (
 		g.get("minContractLength"),
 		g.get("maxContractLength") + 1,
 	);
-	let found = lengths.findIndex((length) => exp + length === p.contract.exp);
+	const askedExp = contractOf(p).exp;
+	let found = lengths.findIndex((length) => exp + length === askedExp);
 	if (found < 0) {
 		found = 0;
 	}
-	const out: PlayerContract[] = [];
+	const out: FlatContractInfo[] = [];
 	for (const [i, length] of lengths.entries()) {
 		const asked = helpers.roundContract(
 			amount * (1 + Math.abs(found - i) * growthFactor),

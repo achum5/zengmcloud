@@ -5,7 +5,10 @@ import { DataTable } from "../components/DataTable/index.tsx";
 import type { View } from "../../common/types.ts";
 import { frivolitiesMenu } from "./Frivolities.tsx";
 import { getValue } from "./Most/index.tsx";
-import { wrappedMovOrDiff } from "../components/MovOrDiff.tsx";
+import {
+	teamMovOrDiffStat,
+	wrappedTeamMovOrDiff,
+} from "../components/MovOrDiff.tsx";
 import { TeamLogoInline } from "../components/TeamLogoInline.tsx";
 import { useLocal } from "../util/local.ts";
 import { teamOvrDisplay } from "../../common/teamRatings.ts";
@@ -60,7 +63,7 @@ const FrivolitiesTeamSeasons = ({
 		...(otl ? ["OTL"] : []),
 		...(ties ? ["T"] : []),
 		...(usePts ? ["PTS", "PTS%"] : ["%"]),
-		`stat:${__SPORT === "basketball" ? "mov" : "diff"}`,
+		`stat:${teamMovOrDiffStat}`,
 		...(showOvr ? ["Ovr"] : []),
 		...extraCols.map((x) => x.colName),
 		"Links",
@@ -99,16 +102,7 @@ const FrivolitiesTeamSeasons = ({
 				...(usePts
 					? [Math.round(ts.standingsPts), helpers.roundWinp(ts.ptsPct)]
 					: [helpers.roundWinp(ts.winp)]),
-				wrappedMovOrDiff(
-					__SPORT === "basketball"
-						? {
-								pts: ts.pts * ts.gp,
-								oppPts: ts.oppPts * ts.gp,
-								gp: ts.gp,
-							}
-						: ts,
-					__SPORT === "basketball" ? "mov" : "diff",
-				),
+				wrappedTeamMovOrDiff(ts),
 				...(showOvr ? [ts.ovr] : []),
 				...extraCols.map((x) => {
 					let value = getValue(ts, x.key);

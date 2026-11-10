@@ -5,6 +5,7 @@ import { idb } from "../../db/index.ts";
 import getOrder from "../draft/getOrder.ts";
 import type { Game } from "../../../common/types.ts";
 import type { Changeset } from "./changeset.ts";
+import { contractSummaryOfRecord } from "./normalizeRecords.ts";
 import {
 	coarsenRating,
 	exemptFromCoarseRatings,
@@ -942,11 +943,12 @@ const signingBody = (
 	// contract year, so a 2005-2009 deal re-signed in 2004 pushed as "6-year".
 	const baseSeason =
 		g.get("season") - (g.get("phase") <= PHASE.AFTER_TRADE_DEADLINE ? 1 : 0);
-	const years = Math.max(1, (p.contract?.exp ?? baseSeason + 1) - baseSeason);
+	const contract = contractSummaryOfRecord(p);
+	const years = Math.max(1, (contract?.exp ?? baseSeason + 1) - baseSeason);
 	// Total contract value, formatted so a sub-$1M deal reads as "$350k" instead
 	// of rounding down to "$0M". contract.amount is in thousands, so dividing by
 	// 1000 puts it in the millions that formatCurrencyBase expects.
-	const totalValueM = ((p.contract?.amount ?? 0) * years) / 1000;
+	const totalValueM = ((contract?.amount ?? 0) * years) / 1000;
 	const totalStr = helpers.formatCurrencyBase(
 		g.get("currencyFormat"),
 		totalValueM,
@@ -990,7 +992,7 @@ const describeSigning = (
 	}
 
 	const p = joining[0];
-	if (!p.contract) {
+	if (!contractSummaryOfRecord(p)) {
 		return undefined;
 	}
 	return {
@@ -1035,7 +1037,12 @@ const describeReSignings = (
 	const out: SyncNotification[] = [];
 	for (const pid of pids) {
 		const p = byPid.get(pid);
-		if (!p || typeof p.tid !== "number" || p.tid < 0 || !p.contract) {
+		if (
+			!p ||
+			typeof p.tid !== "number" ||
+			p.tid < 0 ||
+			!contractSummaryOfRecord(p)
+		) {
 			continue;
 		}
 		const pot = currentRating(p)?.pot;

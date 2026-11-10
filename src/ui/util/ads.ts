@@ -123,7 +123,7 @@ class Ads {
 			// Add margin to footer - do this manually rather than using stickyFooterAd so <Footer> does not have to re-render
 			const footer = document.getElementById("main-footer");
 			if (footer) {
-				footer.style.marginBottom = "";
+				footer.style.paddingBottom = "";
 			}
 
 			const logo = document.getElementById("bbgm-ads-logo");

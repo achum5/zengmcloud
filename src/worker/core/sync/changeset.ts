@@ -16,6 +16,7 @@ import {
 } from "../../util/index.ts";
 import { getGlobalSettings } from "../../util/getGlobalSettings.ts";
 import { checkApplyGuard } from "./applyGuard.ts";
+import { upgradeLegacyChanges } from "./normalizeRecords.ts";
 import { syncDebugLog } from "./debugLog.ts";
 import { getSyncEngine } from "./engineHolder.ts";
 import { isWatchingLiveBroadcast, noticeLiveResult } from "./liveWatchGate.ts";
@@ -124,7 +125,7 @@ type IdentityRule = {
 	// (teamSeasons: past 3 seasons; teamStats: current season). A catch-up replay
 	// can carry rows OLDER than the cache window; without checking disk, those
 	// rows would look brand-new and could land next to (or on top of) their real
-	// on-disk selves. Omit for fully-cached stores (draftPicks, releasedPlayers).
+	// on-disk selves. Omit for fully-cached stores (draftPicks).
 	findDisk?: (value: any) => Promise<any | undefined>;
 	// The row's primary key, to delete/forget by (rid, or dpid for draftPicks).
 	pk: (row: any) => number;
@@ -181,34 +182,6 @@ const RECONCILE_BY_IDENTITY: Partial<Record<Store, IdentityRule>> = {
 			a.season === b.season &&
 			a.round === b.round &&
 			a.originalTid === b.originalTid,
-	},
-	// Released-contract rows are immutable once created and their autoincrement
-	// `rid` is renumbered by a league import (rows get deleted as contracts
-	// expire, so the sequence has gaps and the renumbering SHIFTS every key). A
-	// synced put/delete addressed by the author's `rid` would hit a different
-	// released contract here, silently corrupting the receiver's salary-cap math.
-	// The row's true identity is its content: which player, released by which
-	// team, under what contract. (Two identical releases of the same player by
-	// the same team with the same terms would be indistinguishable - matching
-	// either row is harmless precisely because they're identical.)
-	releasedPlayers: {
-		pkField: "rid",
-		find: async (api, v) => {
-			const all = await api.getAll();
-			return all.find(
-				(row: any) =>
-					row.pid === v.pid &&
-					row.tid === v.tid &&
-					row.contract?.amount === v.contract?.amount &&
-					row.contract?.exp === v.contract?.exp,
-			);
-		},
-		pk: (row) => row.rid,
-		sameIdentity: (a, b) =>
-			a.pid === b.pid &&
-			a.tid === b.tid &&
-			a.contract?.amount === b.contract?.amount &&
-			a.contract?.exp === b.contract?.exp,
 	},
 };
 
@@ -1199,12 +1172,19 @@ export const summarizeChangesetForRefresh = (
 // cache flush. Recording is suppressed so we don't re-broadcast what we just
 // received. If gameAttributes changed, the in-memory `g` mirror is refreshed.
 export const applyChangeset = async (
-	changeset: Changeset,
+	changesetInput: Changeset,
 	{ refreshUI = true }: { refreshUI?: boolean } = {},
 ): Promise<void> => {
-	if (changeset.changes.length === 0) {
+	if (changesetInput.changes.length === 0) {
 		return;
 	}
+
+	// Players written by an older build, and its releasedPlayers rows, in the
+	// shape this build stores (see normalizeRecords.ts)
+	const changeset: Changeset = {
+		...changesetInput,
+		changes: await upgradeLegacyChanges(changesetInput.changes),
+	};
 
 	// Refuse to write a remote changeset into a cache that doesn't belong to the
 	// connected league (e.g. a session that outlived a league switch). Throwing

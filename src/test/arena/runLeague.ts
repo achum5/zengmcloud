@@ -33,6 +33,13 @@ import {
 	franchiseValue,
 	teamStrengths,
 } from "../../worker/core/realisticFrontOffice/outlook.ts";
+import {
+	contractOf,
+	draftedAs,
+} from "../../worker/core/realisticFrontOffice/contractOf.ts";
+import { getNearestContractAmount } from "../../common/contracts.ts";
+import { getPayrollSeason } from "../../worker/util/getPayrollSeason.ts";
+import { upgradeLegacySnapshotStores } from "../../worker/core/sync/normalizeRecords.ts";
 
 const conditions = {} as Conditions;
 
@@ -67,12 +74,12 @@ const cutCheck = async () => {
 				.sort((a, b) => a.value - b.value || a.pid - b.pid)
 				.slice(0, 8);
 			for (const p of tried) {
-				const free = helpers.justDrafted(p, phase, season);
+				const free = helpers.justDrafted(draftedAs(p), phase, season);
 				const view = free
 					? dead
 					: new Map(dead).set(tid, [
 							...(dead.get(tid) ?? []),
-							{ amount: p.contract.amount, exp: p.contract.exp },
+							{ amount: contractOf(p).amount, exp: contractOf(p).exp },
 						]);
 				const value = franchiseValue(
 					outlook,
@@ -265,11 +272,20 @@ const payrollsAndDeadMoney = async () => {
 	const deadMoney: number[] = [];
 	for (let tid = 0; tid < g.get("numTeams"); tid++) {
 		payrolls.push(await team.getPayroll(tid));
-		const released = await idb.cache.releasedPlayers.indexGetAll(
-			"releasedPlayersByTid",
+		// Contracts of players the team released, until they're cleared once the
+		// season is over (see clearPaidReleasedContracts)
+		let dead = 0;
+		for (const p of await idb.cache.players.indexGetAll(
+			"playersByOwedByTid",
 			tid,
-		);
-		deadMoney.push(released.reduce((sum, rp) => sum + rp.contract.amount, 0));
+		)) {
+			for (const contract of p.contracts) {
+				if (contract.endedEarly?.tid === tid) {
+					dead += getNearestContractAmount(contract, getPayrollSeason());
+				}
+			}
+		}
+		deadMoney.push(dead);
 	}
 	return { payrolls, deadMoney };
 };
@@ -370,7 +386,7 @@ export const advanceSeasons = async (
 							"playersByTid",
 							[0, Infinity],
 						)) {
-							if (p.contract.exp !== g.get("season")) {
+							if (contractOf(p).exp !== g.get("season")) {
 								continue;
 							}
 							await ensureRetention(view, [p], p.tid);
@@ -381,7 +397,7 @@ export const advanceSeasons = async (
 								stay: await stayChance(p, p.tid),
 								kept: view.retention.get(`${p.pid}:${p.tid}`)!,
 								probWilling: (await player.moodInfo(p, p.tid)).probWilling,
-								rookie: !!p.contract.rookie,
+								rookie: !!contractOf(p).rookie,
 							});
 						}
 					}
@@ -412,7 +428,7 @@ export const advanceSeasons = async (
 					age: g.get("season") - p.born.year,
 					ovr: last(p.ratings).ovr,
 					value: p.value,
-					underContract: p.contract.exp > g.get("season"),
+					underContract: contractOf(p).exp > g.get("season"),
 				});
 			}
 			await game.play(100, conditions);
@@ -443,7 +459,7 @@ export const advanceSeasons = async (
 			]);
 			snapshot!.expiring = [];
 			for (const p of players) {
-				if (p.contract.exp === g.get("season")) {
+				if (contractOf(p).exp === g.get("season")) {
 					snapshot!.expiring.push({
 						pid: p.pid,
 						tid: p.tid,
@@ -451,17 +467,17 @@ export const advanceSeasons = async (
 						probWilling: (await player.moodInfo(p, p.tid)).probWilling,
 						ovr: last(p.ratings).ovr,
 						age: g.get("season") - p.born.year,
-						rookie: !!p.contract.rookie,
+						rookie: !!contractOf(p).rookie,
 					});
 				}
 			}
 			await phase.newPhase(PHASE.RESIGN_PLAYERS, conditions);
 			for (const row of snapshot!.expiring) {
 				const p = await idb.cache.players.get(row.pid);
-				if (p && p.tid === row.tid && p.contract.exp > g.get("season")) {
+				if (p && p.tid === row.tid && contractOf(p).exp > g.get("season")) {
 					row.reSigned = {
-						amount: p.contract.amount / g.get("salaryCap"),
-						years: p.contract.exp - g.get("season"),
+						amount: contractOf(p).amount / g.get("salaryCap"),
+						years: contractOf(p).exp - g.get("season"),
 					};
 				}
 			}
@@ -493,8 +509,8 @@ export const advanceSeasons = async (
 				const p = await idb.cache.players.get(row.pid);
 				if (p && p.tid >= 0) {
 					row.tidAfter = p.tid;
-					row.amount = p.contract.amount / cap;
-					row.years = p.contract.exp - season0;
+					row.amount = contractOf(p).amount / cap;
+					row.years = contractOf(p).exp - season0;
 				}
 			}
 			if (g.get("phase") === PHASE.FREE_AGENCY) {
@@ -552,17 +568,30 @@ export const exportArenaLeague = async (file: string) => {
 export const importArenaLeague = async (file: string) => {
 	const fs = await importNode("node:fs/promises");
 	const lines = (await fs.readFile(file, "utf8")).split("\n");
-	// Nothing the cache holds of the league it replaces may be written back.
-	idb.cache.discardForRestore();
+	const stores: Record<string, unknown[]> = {};
 	for (const line of lines) {
 		if (line === "") {
 			continue;
 		}
 		const { store, records } = JSON.parse(line, reviver);
-		const tx = idb.league.transaction(store, "readwrite");
+		stores[store] = records;
+	}
+
+	// A league carried from before p.contracts (league DB version 81) has
+	// players in the old shape and a releasedPlayers store, converted the way
+	// the database upgrade converts a league
+	upgradeLegacySnapshotStores(stores);
+
+	// Nothing the cache holds of the league it replaces may be written back.
+	idb.cache.discardForRestore();
+	for (const [store, records] of Object.entries(stores)) {
+		if (!idb.league.objectStoreNames.contains(store as any)) {
+			continue;
+		}
+		const tx = idb.league.transaction(store as any, "readwrite");
 		await tx.store.clear();
 		for (const record of records) {
-			tx.store.put(record);
+			tx.store.put(record as any);
 		}
 		await tx.done;
 	}

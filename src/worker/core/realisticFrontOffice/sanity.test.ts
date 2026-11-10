@@ -25,6 +25,8 @@ import {
 	teamStrengths,
 	type LeagueOutlook,
 } from "./outlook.ts";
+import { contractOf } from "./contractOf.ts";
+import { setTestContract } from "../../../test/helpers.ts";
 
 // Moves no good front office makes, checked for every team of a league: a
 // deal that clears a team's margin of error by the minimum gain is one it
@@ -88,7 +90,7 @@ test(
 					season - p.born.year <= 23 &&
 					r.ovr >= 52 &&
 					r.pot >= 60 &&
-					p.contract.amount <= 6000
+					contractOf(p).amount <= 6000
 				) {
 					checked += 1;
 					assert.isFalse(
@@ -336,7 +338,11 @@ test(
 					amount: g.get("minContract"),
 					exp: g.get("season") + 2,
 				};
-				const signed = { ...p, tid, contract: { ...p.contract, ...contract } };
+				const signed = {
+					...p,
+					tid,
+					contractDemand: { ...contractOf(p), ...contract },
+				};
 				const path = teamStrengths(
 					outlook,
 					tid,
@@ -384,11 +390,15 @@ test(
 		for (const p of bench) {
 			p.tid = fill.includes(p) ? tid : PLAYER.FREE_AGENT;
 			// The roster's contracts all run out after next season.
-			p.contract.exp = Math.min(p.contract.exp, g.get("season") + 1);
+			setTestContract(p, {
+				exp: Math.min(contractOf(p).exp, g.get("season") + 1),
+			});
 			await idb.cache.players.put(p);
 		}
 		for (const p of roster) {
-			p.contract.exp = Math.min(p.contract.exp, g.get("season") + 1);
+			setTestContract(p, {
+				exp: Math.min(contractOf(p).exp, g.get("season") + 1),
+			});
 			await idb.cache.players.put(p);
 		}
 		roster = await idb.cache.players.indexGetAll("playersByTid", tid);
@@ -442,7 +452,9 @@ test(
 		}
 		// Everyone under contract next season, when the roster has to fit.
 		for (const p of [...roster, ...bench]) {
-			p.contract.exp = Math.max(p.contract.exp, g.get("season") + 1);
+			setTestContract(p, {
+				exp: Math.max(contractOf(p).exp, g.get("season") + 1),
+			});
 			await idb.cache.players.put(p);
 		}
 		const outlook = await currentOutlook();

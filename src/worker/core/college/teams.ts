@@ -14,6 +14,7 @@ import type { Player, Team } from "../../../common/types.ts";
 import { last } from "../../../common/utils.ts";
 import { userCoachStability } from "./coach.ts";
 import { isAiControlled } from "../../util/isAiControlled.ts";
+import { nilAmount } from "./util.ts";
 
 // What a school offers a player, priority by priority, and the interest that
 // adds up to. Shared by recruiting, the portal and retention.
@@ -95,7 +96,7 @@ export const getTeamCtxs = async (recruits: Player[]) => {
 		});
 		let nilCommitted = 0;
 		for (const p of returningPlayers) {
-			nilCommitted += p.contract.amount;
+			nilCommitted += nilAmount(p);
 		}
 		const conf = confPrestige.get(t.cid) ?? [30];
 		const pros = (t.collegePros ?? []).reduce((a, b) => a + b, 0);

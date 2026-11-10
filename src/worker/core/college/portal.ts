@@ -3,6 +3,8 @@ import { collegeFinalSeason } from "../../../common/college.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers, logEvent } from "../../util/index.ts";
 import { player } from "../index.ts";
+import { getCurrentContract } from "../../../common/contracts.ts";
+import { truncateContractBefore } from "../contract/index.ts";
 import { collegeNilForPercentile, collegeStarsForPercentile } from "./util.ts";
 import { newRecruiting, syncRecruitFuzz } from "./recruiting.ts";
 import { roundNil } from "./negotiation.ts";
@@ -66,8 +68,11 @@ export const collegeOpenPortal = async (conditions: Conditions) => {
 		);
 		p.tid = PLAYER.FREE_AGENT;
 		// His old deal ends with this season.
-		p.salaries = p.salaries.filter((row) => row.season <= season);
-		p.contract = { amount: p.recruiting.ask, exp: season + 1 };
+		const contract = getCurrentContract(p);
+		if (contract && !truncateContractBefore(contract, season + 1)) {
+			p.contracts = p.contracts.filter((row) => row !== contract);
+		}
+		player.setContractDemand(p, { amount: p.recruiting.ask, exp: season + 1 });
 		p.transactions ??= [];
 		await idb.cache.players.put(p);
 

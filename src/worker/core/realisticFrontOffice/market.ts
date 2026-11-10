@@ -41,6 +41,7 @@ import {
 } from "./outlook.ts";
 import { waitingValues } from "./timing.ts";
 import type { TradedAway } from "./tradePenalty.ts";
+import { contractOf, draftedAs } from "./contractOf.ts";
 
 // CPU TEAMS TRADING WITH EACH OTHER. Every day a few teams work the phones:
 // each prices what every other team has, and what it has itself, by what it
@@ -445,7 +446,7 @@ export type Asset =
 
 const salaryOf = (assets: readonly Asset[]) =>
 	assets.reduce(
-		(a, x) => a + (x.kind === "player" ? x.p.contract.amount : 0),
+		(a, x) => a + (x.kind === "player" ? contractOf(x.p).amount : 0),
 		0,
 	);
 
@@ -598,14 +599,18 @@ const cutLoss = (outlook: LeagueOutlook, tid: number, p: Player) => {
 	if (loss === undefined) {
 		const worth = (view: LeagueOutlook, players: readonly Player[]) =>
 			franchiseValue(view, teamStrengths(view, tid, players, ref.picks), tid);
-		const free = helpers.justDrafted(p, g.get("phase"), g.get("season"));
+		const free = helpers.justDrafted(
+			draftedAs(p),
+			g.get("phase"),
+			g.get("season"),
+		);
 		const released = free
 			? outlook
 			: {
 					...outlook,
 					deadMoney: new Map(outlook.deadMoney).set(tid, [
 						...(outlook.deadMoney.get(tid) ?? []),
-						{ amount: p.contract.amount, exp: p.contract.exp },
+						{ amount: contractOf(p).amount, exp: contractOf(p).exp },
 					]),
 				};
 		if (ref.players.some((x) => x.pid === p.pid)) {
@@ -634,7 +639,7 @@ export const afterCuts = (
 	// Only those under contract once games are played: in the offseason a
 	// player whose contract is up leaves or is re-signed, not cut.
 	const first = season + (phase > PHASE.PLAYOFFS ? 1 : 0);
-	const signed = players.filter((p) => p.contract.exp >= first);
+	const signed = players.filter((p) => contractOf(p).exp >= first);
 	const over = signed.length - g.get("maxRosterSize");
 	if (over <= 0) {
 		return { players, deadMoney: outlook.deadMoney };
@@ -653,8 +658,8 @@ export const afterCuts = (
 	}
 	const cut = new Set(chosen);
 	const owed = [...cut]
-		.filter((p) => !helpers.justDrafted(p, phase, season))
-		.map((p) => ({ amount: p.contract.amount, exp: p.contract.exp }));
+		.filter((p) => !helpers.justDrafted(draftedAs(p), phase, season))
+		.map((p) => ({ amount: contractOf(p).amount, exp: contractOf(p).exp }));
 	return {
 		players: players.filter((p) => !cut.has(p)),
 		deadMoney:
@@ -739,11 +744,11 @@ const releaseGain = (
 		const owed = gone
 			.filter(
 				(p) =>
-					!helpers.justDrafted(p, phase, season) &&
-					(p.contract.exp > season ||
-						(p.contract.exp === season && phase < PHASE.PLAYOFFS)),
+					!helpers.justDrafted(draftedAs(p), phase, season) &&
+					(contractOf(p).exp > season ||
+						(contractOf(p).exp === season && phase < PHASE.PLAYOFFS)),
 			)
-			.map((p) => ({ amount: p.contract.amount, exp: p.contract.exp }));
+			.map((p) => ({ amount: contractOf(p).amount, exp: contractOf(p).exp }));
 		const deadMoney =
 			owed.length > 0
 				? new Map(kept.deadMoney).set(t.tid, [

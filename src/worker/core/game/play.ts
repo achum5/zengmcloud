@@ -94,6 +94,7 @@ import { orphanedScheduleGids } from "./orphanedSchedule.ts";
 import { runLiveBroadcastStart } from "../sync/liveBroadcastHook.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { advStats } from "../../util/advStats.ts";
+import { isAllStarGame } from "../../../common/specialGames.ts";
 
 /**
  * Play one or more days of games.
@@ -717,7 +718,7 @@ const play = async (
 		}
 
 		let baseInjuryRate;
-		const allStarGame = teams[0].id === -1 && teams[1].id === -2;
+		const allStarGame = isAllStarGame(teams[0].id, teams[1].id);
 		if (allStarGame) {
 			// Fewer injuries in All-Star Game, and no injuries in playoffs All-Star Game
 			if (g.get("phase") === PHASE.PLAYOFFS) {

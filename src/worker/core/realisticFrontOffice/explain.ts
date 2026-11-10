@@ -24,6 +24,7 @@ import {
 } from "./outlook.ts";
 import { marketSettings, rivalBySeason, settingFor } from "./market.ts";
 import type { TradedAway } from "./tradePenalty.ts";
+import { contractOf } from "./contractOf.ts";
 
 // THE WHOLE CALCULATION behind a deal, for the trade page and the arena's
 // audit: each side's strength and title odds season by season without and
@@ -71,8 +72,8 @@ const playerAsset = (
 		name: `${p.firstName} ${p.lastName}`,
 		age: g.get("season") - p.born.year,
 		ovr: p.ratings.at(-1)!.ovr,
-		amount: p.contract.amount,
-		exp: p.contract.exp,
+		amount: contractOf(p).amount,
+		exp: contractOf(p).exp,
 		ovrBySeason: lines.map((line) => round(line.valueNoPot, 0)),
 		hereBySeason: lines.map((line) => round(line.availability, 2)),
 		reSign,

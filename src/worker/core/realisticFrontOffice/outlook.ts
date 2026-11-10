@@ -49,6 +49,8 @@ import {
 	getNumColaLotteryTeams,
 	PLAYOFF_FACTORS,
 } from "../draft/cola.ts";
+import { contractOf } from "./contractOf.ts";
+import { contractToSummary, getOwedContracts } from "../contract/index.ts";
 
 // WHERE EVERY TEAM IS HEADED, season by season: each roster projected forward
 // with the game's own development, its draft picks turned into the players
@@ -356,7 +358,7 @@ const computeSeasonLine = (
 			1 -
 			retireChance(age + c, p.value + ovr - projection.ovr[0]!, ovr, maxOvr);
 	}
-	if (p.contract.exp < season + index) {
+	if (contractOf(p).exp < season + index) {
 		availability *= retention;
 	}
 	const line = lineFromProjection(projection, index, availability, boom);
@@ -625,7 +627,7 @@ const playerLines = (
 		byRetention.set(retention, list);
 	}
 	const injury = p.injury.gamesRemaining;
-	const exp = p.contract.exp;
+	const exp = contractOf(p).exp;
 	const ovr = last(p.ratings).ovr;
 	const valueNoPot = p.valueNoPot;
 	for (const entry of list) {
@@ -974,14 +976,14 @@ const keptFit = (stay: number, value: number) => {
 // His chance of still being with the team after his contract, from his
 // chance of taking its offer (KEPT, keptByValue), to the thousandth.
 const keptFromStay = (stay: number, p: Player, tid: number) => {
-	if (outlookSettingFor(tid, "retentionFit") === 2 && !p.contract.rookie) {
+	if (outlookSettingFor(tid, "retentionFit") === 2 && !contractOf(p).rookie) {
 		return Math.round(keptFit(stay, p.value) * 1000) / 1000;
 	}
 	let kept = outlookSettingFor(tid, "keptCalibration")
 		? keptChance(stay)
 		: stay;
 	// Players finishing rookie deals are kept as KEPT says.
-	if (outlookSettingFor(tid, "retentionByValue") && !p.contract.rookie) {
+	if (outlookSettingFor(tid, "retentionByValue") && !contractOf(p).rookie) {
 		kept = keptByValue(kept, p.value);
 	}
 	return Math.round(kept * 1000) / 1000;
@@ -1467,7 +1469,7 @@ const asDrafted = (p: Player, round: number, slot: number, season: number) => {
 	const salary = pickSalaries()({ slot, round, years: 1, ovr: 0 });
 	return {
 		...p,
-		contract: {
+		contractDemand: {
 			amount: salary,
 			exp: season + getRookieContractLength(round),
 			rookie: true,
@@ -1949,12 +1951,12 @@ const salaryIn = (
 	marketSalary: (value: number) => number,
 ) => {
 	if (index === 0) {
-		return p.contract.amount;
+		return contractOf(p).amount;
 	}
 	return (
 		line.availability *
-		(p.contract.exp >= season
-			? p.contract.amount
+		(contractOf(p).exp >= season
+			? contractOf(p).amount
 			: marketSalary(line.valueNoPot))
 	);
 };
@@ -2002,7 +2004,7 @@ export const teamPoints = (
 	const retentionFor = (p: Player) => {
 		let r = retentionOf(outlook, p.pid, tid);
 		if (losing) {
-			const e = p.contract.exp - outlookSeason(outlook, 0);
+			const e = contractOf(p).exp - outlookSeason(outlook, 0);
 			const mood = e >= 0 ? (losing.mood[e] ?? 0) : 0;
 			const stay = outlook.stays?.get(retentionKey(p.pid, tid));
 			if (mood !== 0 && stay !== undefined) {
@@ -2018,7 +2020,7 @@ export const teamPoints = (
 						moodShiftFromTrading(
 							trading.tradedAway,
 							trading.extra,
-							p.contract.exp - outlook.season,
+							contractOf(p).exp - outlook.season,
 						),
 					) * 1000,
 				) / 1000
@@ -2059,7 +2061,7 @@ export const teamPoints = (
 				retention[i]!,
 				boom,
 			));
-			if (!wanted || p.contract.exp >= season) {
+			if (!wanted || contractOf(p).exp >= season) {
 				return line;
 			}
 			gone[i] ??= goneOf(line);
@@ -2160,7 +2162,7 @@ export const teamPoints = (
 				// (wantedOnly) - each half on its own, paid as he is.
 				if (
 					wanted &&
-					players[i]!.contract.exp < season &&
+					contractOf(players[i]!).exp < season &&
 					salary > 0 &&
 					lines[i]!.availability >= VETERAN_OPTION_CHANCE
 				) {
@@ -2821,7 +2823,7 @@ export const teamStrengths = (
 	if (outlook.offset === 0 && perCap > 0 && g.get("phase") < PHASE.PLAYOFFS) {
 		let payroll = 0;
 		for (const p of players) {
-			payroll += p.contract.amount;
+			payroll += contractOf(p).amount;
 		}
 		for (const row of outlook.deadMoney.get(tid) ?? []) {
 			if (row.exp >= outlook.season) {
@@ -3092,12 +3094,10 @@ export const buildOutlook = async ({
 	for (const t of teams) {
 		deadMoney.set(
 			t.tid,
-			(
-				await idb.cache.releasedPlayers.indexGetAll(
-					"releasedPlayersByTid",
-					t.tid,
-				)
-			).map((rp) => ({ amount: rp.contract.amount, exp: rp.contract.exp })),
+			(await getOwedContracts(t.tid)).map(({ contract }) => {
+				const { amount, exp } = contractToSummary(contract);
+				return { amount, exp };
+			}),
 		);
 	}
 	const rosters = new Map<number, Player[]>();

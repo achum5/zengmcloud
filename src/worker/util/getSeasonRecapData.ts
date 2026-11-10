@@ -1,3 +1,4 @@
+import { getContractAmount } from "../../common/contracts.ts";
 import { idb } from "../db/index.ts";
 import { legacyAwardsWithNames } from "./legacyAwards.ts";
 import { g, helpers } from "./index.ts";
@@ -687,16 +688,17 @@ export const getSeasonRecapData = async (
 				rawByPid.set(p.pid, p);
 			}
 			const salaryFor = (pid: number): number | undefined => {
-				const salaries = rawByPid.get(pid)?.salaries;
-				if (!Array.isArray(salaries)) {
+				const contracts = rawByPid.get(pid)?.contracts;
+				if (!Array.isArray(contracts)) {
 					return undefined;
 				}
-				// A player can pick up more than one row for a season (signed, then
-				// re-signed); the last one is what they finished the year on.
+				// A player can have more than one contract covering a season (signed,
+				// then re-signed); the last one is what they finished the year on.
 				let amount: number | undefined;
-				for (const row of salaries) {
-					if (row?.season === season && typeof row.amount === "number") {
-						amount = row.amount;
+				for (const contract of contracts) {
+					const contractAmount = getContractAmount(contract, season);
+					if (typeof contractAmount === "number") {
+						amount = contractAmount;
 					}
 				}
 				return amount;

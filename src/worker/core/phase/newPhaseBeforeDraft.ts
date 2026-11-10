@@ -1,3 +1,4 @@
+import { clearPaidReleasedContracts } from "../contract/index.ts";
 import { PLAYER } from "../../../common/constants.ts";
 import { draft, player, season, team, league } from "../index.ts";
 import { idb } from "../../db/index.ts";
@@ -26,7 +27,11 @@ import { randInt, shuffle, truncGauss } from "../../../common/random.ts";
 import { genMessage } from "./genMessage.ts";
 import { defaultGameAttributes } from "../../../common/defaultGameAttributes.ts";
 import { env } from "../../util/env.ts";
-import { orderTeams } from "../../util/orderTeams.ts";
+import {
+	ORDER_TEAMS_SEASON_ATTRS,
+	ORDER_TEAMS_STATS,
+	orderTeams,
+} from "../../util/orderTeams.ts";
 import { collegeDepartures } from "../college/offseason.ts";
 import { collegeJudgePromises } from "../college/retention.ts";
 import { collegeUpdatePrestige } from "../college/prestige.ts";
@@ -129,25 +134,8 @@ const doInflation = async (conditions: Conditions) => {
 const setChampNoPlayoffs = async (conditions: Conditions) => {
 	const teams = await team.getFormattedAll({
 		attrs: ["tid"],
-		seasonAttrs: [
-			"cid",
-			"did",
-			"won",
-			"lost",
-			"tied",
-			"otl",
-			"winp",
-			"pts",
-			"wonDiv",
-			"lostDiv",
-			"tiedDiv",
-			"otlDiv",
-			"wonConf",
-			"lostConf",
-			"tiedConf",
-			"otlConf",
-		],
-		stats: ["pts", "oppPts", "gp"],
+		seasonAttrs: ORDER_TEAMS_SEASON_ATTRS,
+		stats: ORDER_TEAMS_STATS,
 		season: g.get("season"),
 		showNoStats: true,
 	});
@@ -496,13 +484,7 @@ const newPhaseBeforeDraft = async (
 			);
 		}
 
-		const releasedPlayers = await idb.cache.releasedPlayers.getAll();
-
-		for (const rp of releasedPlayers) {
-			if (rp.contract.exp <= g.get("season") && typeof rp.rid === "number") {
-				await idb.cache.releasedPlayers.delete(rp.rid);
-			}
-		}
+		await clearPaidReleasedContracts();
 
 		await team.updateStrategies();
 		await achievement.check("afterAwards", conditions);

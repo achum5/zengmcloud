@@ -26,7 +26,8 @@ const mk = (pid: number, ovr: number, pos: string, amount: number) =>
 	({
 		pid,
 		ratings: [{ ovr, pos, ovrs: { [pos]: ovr } }],
-		contract: { amount, exp: g.get("season") + 2 },
+		contractDemand: { amount, exp: g.get("season") + 2 },
+		contracts: [],
 		injury: { type: "Healthy", gamesRemaining: 0 },
 		value: ovr,
 		valueNoPot: ovr,

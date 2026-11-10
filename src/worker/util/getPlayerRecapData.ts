@@ -1,3 +1,4 @@
+import { getContractSummary } from "../core/contract/index.ts";
 import { idb } from "../db/index.ts";
 import { g, helpers } from "./index.ts";
 import { getPlayoffsByConfBySeason } from "../views/frivolitiesTeamSeasons.ts";
@@ -10,6 +11,13 @@ import {
 } from "../../common/constants.ts";
 import { getGlobalSettings } from "./getGlobalSettings.ts";
 import { hasSeasonNote } from "../../common/seasonNote.ts";
+
+// What he's paid now (or asking for, as a free agent), as amount and exp.
+// Undefined for a retired player.
+const currentContractSummary = (p: any) => {
+	const summary = getContractSummary(p);
+	return summary ? { amount: summary.amount, exp: summary.exp } : undefined;
+};
 import { team } from "../core/index.ts";
 
 // Data for the league-wide "Player Recaps" workflow: a short written recap of
@@ -1309,10 +1317,7 @@ export const getPlayerRecapData = async ({
 			// Induction is an event with a season, so it truncates like the rest -
 			// p.hof would announce a Hall of Fame career decades early.
 			hof: awards.some((a: any) => String(a.type).includes("Hall of Fame")),
-			contract:
-				isCurrentSeason && p.contract
-					? { amount: p.contract.amount, exp: p.contract.exp }
-					: undefined,
+			contract: isCurrentSeason ? currentContractSummary(p) : undefined,
 			injury:
 				isCurrentSeason &&
 				p.injury &&
@@ -1368,7 +1373,9 @@ export const getPlayerRecapData = async ({
 				teamRoster: (abbrev) => seasonRosterByAbbrev.get(abbrev) ?? [],
 				name: `${p.firstName} ${p.lastName}`,
 				leagueRanks: leagueRanksByPid.get(p.pid) ?? [],
-				contractExp: isCurrentSeason && p.contract ? p.contract.exp : undefined,
+				contractExp: isCurrentSeason
+					? currentContractSummary(p)?.exp
+					: undefined,
 				draftYear: p.draft?.year,
 			}),
 			alreadyWritten: hasSeasonNote(p.note, season),

@@ -11,6 +11,7 @@ import { checkApplyGuard } from "./applyGuard.ts";
 import { payloadLeagueId, readLocalLeagueId } from "./leagueIdentity.ts";
 import { findPayloadIntegrityProblems } from "./leagueIntegrity.ts";
 import { syncDebugLog } from "./debugLog.ts";
+import { upgradeLegacySnapshotStores } from "./normalizeRecords.ts";
 // ---------------------------------------------------------------------------
 // ROOM SNAPSHOTS: the checkpoint layer under the delta log.
 //
@@ -148,6 +149,13 @@ export const applyRoomSnapshotPayload = async (
 			`Refusing to restore the room's snapshot: ${problems.join("; ")}. Nothing on this device was changed.`,
 		);
 	}
+
+	// A checkpoint taken by a device that hadn't upgraded to p.contracts yet
+	// (league database version 81) has players in the old shape and a
+	// releasedPlayers store. Converted here, before anything is written, the
+	// way this device's own upgrade converted its league. See
+	// normalizeRecords.ts.
+	upgradeLegacySnapshotStores(payload.stores);
 
 	// PROVENANCE. Once this league carries an identity, only a payload carrying
 	// the SAME identity may replace its database - full stop. This is the check

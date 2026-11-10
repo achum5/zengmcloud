@@ -1,6 +1,4 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { PHASE } from "../../../common/constants.ts";
-import { tradesBlocked } from "../../../common/tradesBlocked.ts";
 import useTitleBar from "../../hooks/useTitleBar.tsx";
 import { helpers } from "../../util/helpers.ts";
 import { toWorker } from "../../util/toWorker.ts";
@@ -14,6 +12,8 @@ import type { TradeTeams, View } from "../../../common/types.ts";
 import clsx from "clsx";
 import { SaveTrade } from "../../components/SaveTrade.tsx";
 import { showUndoNotification } from "../../components/UndoNotification.tsx";
+import { getTradeBlockedReason } from "../../../common/transactionPhases.ts";
+import { TradeBlockedText } from "../../components/TradeNotAllowed.tsx";
 
 export type HandleToggle = (
 	userOrOther: "other" | "user",
@@ -258,7 +258,6 @@ const Trade = (props: View<"trade">) => {
 	};
 
 	const {
-		otherTeamsWantToHire,
 		lost,
 		multiTeamMode,
 		numDraftRounds,
@@ -355,6 +354,7 @@ const Trade = (props: View<"trade">) => {
 		challengeNoRatings,
 		challengeNoTrades,
 		gameOver,
+		otherTeamsWantToHire,
 		phase,
 		spectator,
 		tradesAfterDeadline,
@@ -364,6 +364,7 @@ const Trade = (props: View<"trade">) => {
 		"challengeNoRatings",
 		"challengeNoTrades",
 		"gameOver",
+		"otherTeamsWantToHire",
 		"phase",
 		"spectator",
 		"tradesAfterDeadline",
@@ -405,14 +406,14 @@ const Trade = (props: View<"trade">) => {
 		};
 	}, [updateSummaryHeight]);
 
-	const noTradingAllowed =
-		tradesBlocked(phase, tradesAfterDeadline) ||
-		phase === PHASE.FANTASY_DRAFT ||
-		phase === PHASE.EXPANSION_DRAFT ||
-		gameOver ||
-		otherTeamsWantToHire ||
-		spectator ||
-		challengeNoTrades;
+	const tradeBlockedReason = getTradeBlockedReason({
+		challengeNoTrades,
+		gameOver,
+		otherTeamsWantToHire,
+		phase,
+		spectator,
+		tradesAfterDeadline,
+	});
 
 	const numAssets =
 		summary.teams[0].picks.length +
@@ -571,7 +572,7 @@ const Trade = (props: View<"trade">) => {
 									"mt-3": summary.warning || state.message,
 								})}
 							>
-								{!noTradingAllowed ? (
+								{tradeBlockedReason === undefined ? (
 									<div className="text-center">
 										<Buttons
 											asking={state.asking}
@@ -585,29 +586,9 @@ const Trade = (props: View<"trade">) => {
 											teamNames={teamNames}
 										/>
 									</div>
-								) : challengeNoTrades ? (
-									<p className="alert alert-danger">
-										<b>Challenge Mode:</b> You're not allowed to make trades.
-									</p>
-								) : spectator ? (
-									<p className="alert alert-danger">
-										You're not allowed to make trades in spectator mode.
-									</p>
-								) : otherTeamsWantToHire ? (
-									<p className="alert alert-danger">
-										You're not allowed to make trades while you have{" "}
-										<a href={helpers.leagueUrl(["new_team"])}>
-											open job offers from other teams
-										</a>
-										.
-									</p>
 								) : (
 									<p className="alert alert-danger">
-										You're not allowed to make trades{" "}
-										{phase === PHASE.AFTER_TRADE_DEADLINE
-											? "after the trade deadline"
-											: "now"}
-										.
+										<TradeBlockedText reason={tradeBlockedReason} />
 									</p>
 								)}
 							</div>

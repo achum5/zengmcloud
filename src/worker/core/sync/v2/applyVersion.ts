@@ -18,6 +18,7 @@ import {
 	sweepPhantomScheduleRows,
 } from "../changeset.ts";
 import { noteInjuryApply, recordInjuryForensics } from "../injuryForensics.ts";
+import { upgradeLegacyChanges } from "../normalizeRecords.ts";
 
 // ---------------------------------------------------------------------------
 // The v2 apply: where the version chain touches disk.
@@ -165,7 +166,11 @@ export const applyVersionedChangeset = async (
 	const kept = vcs.changeset.changes.filter(
 		(change) => !isDeviceLocal(change.store, change.id),
 	);
-	const changes = await withoutPlayedSchedule(kept, vcs.version);
+	// Players written by an older build, and its releasedPlayers rows (a store
+	// that no longer exists, so the transaction below couldn't even open with
+	// one), in the shape this build stores. See normalizeRecords.ts.
+	const upgraded = await upgradeLegacyChanges(kept);
+	const changes = await withoutPlayedSchedule(upgraded, vcs.version);
 	for (const change of changes) {
 		if (change.store === "players" && change.type === "put" && change.value) {
 			await preserveLocalWatch(change.value);
@@ -244,11 +249,13 @@ export const applyVersionedChangeset = async (
 // showed it unplayed. No marker write: these records are not a version yet,
 // and the marker stays what the checkpoint made it.
 export const reapplyOwnChangesLocally = async (
-	changes: VersionedChangeset["changeset"]["changes"],
+	changesInput: VersionedChangeset["changeset"]["changes"],
 ): Promise<void> => {
-	if (changes.length === 0) {
+	if (changesInput.length === 0) {
 		return;
 	}
+	// Queued before this device updated, they can be in the old shape too
+	const changes = await upgradeLegacyChanges(changesInput);
 	const stores = [...new Set(changes.map((change) => String(change.store)))];
 	const transaction = (idb.league as any).transaction(stores, "readwrite");
 	for (const change of changes) {

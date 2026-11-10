@@ -24,6 +24,7 @@ import {
 	setDailyScheduleScroll,
 } from "../util/dailyScheduleUiState.ts";
 import { useEffect, useState } from "react";
+import { isTradeDeadline } from "../../common/specialGames.ts";
 
 const DailySchedule = ({
 	cid,
@@ -186,8 +187,7 @@ const DailySchedule = ({
 
 	const tradeDeadline =
 		upcoming.length === 1 &&
-		upcoming[0]!.teams[0].tid === -3 &&
-		upcoming[0]!.teams[1].tid === -3;
+		isTradeDeadline(upcoming[0]!.teams[0].tid, upcoming[0]!.teams[1].tid);
 
 	let noGamesMessage;
 	if (days.length === 0) {

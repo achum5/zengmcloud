@@ -7,6 +7,7 @@ import {
 	teamStrengths,
 	type LeagueOutlook,
 } from "./outlook.ts";
+import { contractOf } from "./contractOf.ts";
 
 // CUTS. A CPU team over the roster limit releases whoever it can best do
 // without: the player whose release leaves its franchise worth the most - his
@@ -29,7 +30,7 @@ const worthWithout = (
 				...outlook,
 				deadMoney: new Map(outlook.deadMoney).set(tid, [
 					...(outlook.deadMoney.get(tid) ?? []),
-					{ amount: p.contract.amount, exp: p.contract.exp },
+					contractOf(p),
 				]),
 			};
 	return franchiseValue(
@@ -65,7 +66,11 @@ const bestCut = (
 		.slice(0, CUT_CANDIDATES)
 		.sort((a, b) => a.pid - b.pid);
 	for (const p of tried) {
-		const free = helpers.justDrafted(p, phase, season);
+		const free = helpers.justDrafted(
+			{ draft: p.draft, contract: contractOf(p) },
+			phase,
+			season,
+		);
 		const value = worthWithout(outlook, tid, players, picks, p, free);
 		if (!best || value > best.value) {
 			best = { p, value, free };

@@ -17,12 +17,13 @@ import { lineupPictures } from "../util/lineupPictures.ts";
 import type { RouteParams } from "../../ui/router/types.ts";
 import { validateTeam } from "../util/processInputs.ts";
 import { validateSeason } from "../util/processInputs.ts";
+import { ALL_STAR_GAME_TIDS, isAllStarTid } from "../../common/specialGames.ts";
 
 const processInputs = (params: RouteParams<"gameLog">) => {
 	const team = validateTeam(params.team, ["special"]);
 
-	// For the All-Star Game, -1 is the tid of the first All-Star team, which is used to load the All-Star games
-	const tid = team === "special" ? -1 : team;
+	// For the All-Star Game, the tid of the first All-Star team is used to load the All-Star games
+	const tid = team === "special" ? ALL_STAR_GAME_TIDS[0] : team;
 
 	return {
 		gid: params.gid !== undefined ? Number.parseInt(params.gid) : -1,
@@ -78,7 +79,7 @@ export const setTeamInfo = async (
 ): Promise<(TeamSeasonOverride & { jersey?: string }) | undefined> => {
 	let used: (TeamSeasonOverride & { jersey?: string }) | undefined;
 	if (allStars) {
-		const ind = t.tid === -1 ? 0 : 1;
+		const ind = t.tid === ALL_STAR_GAME_TIDS[0] ? 0 : 1;
 
 		if (allStars.type === "byConf" || allStars.type === "top") {
 			t.region = "";
@@ -202,7 +203,7 @@ const boxScore = async (gid: number) => {
 	// Copy because team info is added to the game below
 	const game = helpers.deepCopy(gameRaw);
 
-	const allStarGame = game.teams[0].tid === -1 || game.teams[1].tid === -1;
+	const allStarGame = isAllStarTid(game.teams[0].tid);
 	let allStars: AllStars | undefined;
 
 	if (allStarGame) {

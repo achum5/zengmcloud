@@ -6,6 +6,7 @@ import { idb } from "../../db/index.ts";
 import { g, helpers } from "../../util/index.ts";
 import type { PlayerWithoutKey } from "../../../common/types.ts";
 import { DEFAULT_LEVEL } from "../../../common/budgetLevels.ts";
+import { createContract, getOwedContracts } from "../contract/index.ts";
 
 beforeAll(() => {
 	resetG(); // Two teams: user and AI
@@ -23,7 +24,7 @@ const resetCacheWithPlayers = async (info: Map<number, number>) => {
 			const p = player.generate(tid, 30, 2017, true, DEFAULT_LEVEL);
 
 			if (tid === PLAYER.FREE_AGENT) {
-				p.contract.amount = g.get("minContract");
+				p.contractDemand!.amount = g.get("minContract");
 			}
 
 			players.push(p);
@@ -190,11 +191,16 @@ describe("releasing a just-drafted rookie", () => {
 			p.ratings.at(-1).pos = "SF";
 			p.injury = { type: "Healthy", gamesRemaining: 0 };
 			// The worst of them is the one cutOrder will let go.
-			p.contract = { amount: g.get("minContract"), exp: season + 2 };
 			if (i === 3) {
 				p.draft = { ...p.draft, year: season, round: 2, pick: 1, tid: 0 };
-				p.contract.rookie = rookie;
 			}
+			delete p.contractDemand;
+			p.contracts = [
+				createContract({
+					contract: { amount: g.get("minContract"), exp: season + 2 },
+					type: i === 3 && rookie ? "rookie" : "unknown",
+				}),
+			];
 			players.push(p);
 		}
 		await resetCache({
@@ -218,7 +224,7 @@ describe("releasing a just-drafted rookie", () => {
 		await build(true);
 		await team.checkRosterSizes("other");
 		assert.lengthOf(
-			await idb.cache.releasedPlayers.getAll(),
+			await getOwedContracts(0),
 			0,
 			"an AI team paid dead money for a cut the rules make free",
 		);
@@ -230,6 +236,6 @@ describe("releasing a just-drafted rookie", () => {
 	test("but any other contract still does", async () => {
 		await build(false);
 		await team.checkRosterSizes("other");
-		assert.isAbove((await idb.cache.releasedPlayers.getAll()).length, 0);
+		assert.isAbove((await getOwedContracts(0)).length, 0);
 	});
 });

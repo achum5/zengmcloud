@@ -7,7 +7,11 @@ import {
 	getLeagueLeaderAwards,
 	updatePlayerAwards,
 } from "./awardsByPlayer.ts";
-import { orderTeams } from "../../util/orderTeams.ts";
+import {
+	ORDER_TEAMS_SEASON_ATTRS,
+	ORDER_TEAMS_STATS,
+	orderTeams,
+} from "../../util/orderTeams.ts";
 import {
 	keepSeriesWinnersOnly,
 	leaderAwardCategories,
@@ -17,25 +21,8 @@ import { team } from "../index.ts";
 const teamAwards = async (
 	teamsUnsorted: TeamFiltered<
 		["tid"],
-		[
-			"winp",
-			"pts",
-			"won",
-			"lost",
-			"tied",
-			"otl",
-			"wonDiv",
-			"lostDiv",
-			"tiedDiv",
-			"otlDiv",
-			"wonConf",
-			"lostConf",
-			"tiedConf",
-			"otlConf",
-			"cid",
-			"did",
-		],
-		["pts", "oppPts", "gp"],
+		typeof ORDER_TEAMS_SEASON_ATTRS,
+		typeof ORDER_TEAMS_STATS,
 		number
 	>[],
 ) => {
@@ -85,28 +72,13 @@ export const doAwards = async (conditions: Conditions) => {
 	const teams = await team.getFormattedAll({
 		attrs: ["tid"],
 		seasonAttrs: [
-			"won",
-			"lost",
-			"tied",
-			"otl",
-			"wonDiv",
-			"lostDiv",
-			"tiedDiv",
-			"otlDiv",
-			"wonConf",
-			"lostConf",
-			"tiedConf",
-			"otlConf",
-			"winp",
-			"pts",
+			...ORDER_TEAMS_SEASON_ATTRS,
 			"playoffRoundsWon",
 			"abbrev",
 			"region",
 			"name",
-			"cid",
-			"did",
 		],
-		stats: ["pts", "oppPts", "gp"],
+		stats: ORDER_TEAMS_STATS,
 		season,
 		showNoStats: true,
 	});

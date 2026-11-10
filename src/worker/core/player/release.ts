@@ -2,7 +2,8 @@ import addToFreeAgents from "./addToFreeAgents.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers, logEvent } from "../../util/index.ts";
 import type { Player, TransactionRevert } from "../../../common/types.ts";
-import { PHASE } from "../../../common/constants.ts";
+import { getCurrentContract } from "../../../common/contracts.ts";
+import { isContractFullyPaid } from "../contract/index.ts";
 import { getNumPlayersTradedAwayNormalizedAll } from "./getNumPlayersTradedAwayNormalized.ts";
 import { revertBefore } from "./revertSnapshot.ts";
 
@@ -23,36 +24,23 @@ const release = async (p: Player, justDrafted: boolean) => {
 		before: revertBefore(p),
 		numTransactions: p.transactions?.length ?? 0,
 	};
-	const salariesBefore = helpers.deepCopy(p.salaries);
 
-	// College: an NIL deal ends when he leaves.
-	if (g.get("college")) {
-		p.salaries = p.salaries.filter((row) => row.season < g.get("season"));
+	// Just drafted players can be released without paying anything. Otherwise, the team still owes the rest of his contract, see addToFreeAgents.
+	const contract = getCurrentContract(p);
+	if (contract && justDrafted) {
+		p.contracts = p.contracts.filter((row) => row !== contract);
+		revert.droppedContract = helpers.deepCopy(contract);
 	}
 
-	// Keep track of player salary even when he's off the team, but make an exception for players who were just drafted.
-	if (!justDrafted && !g.get("college")) {
-		// ...and of course for players whose contracts have already expired.
-		if (
-			p.contract.exp > g.get("season") ||
-			(p.contract.exp === g.get("season") && g.get("phase") < PHASE.PLAYOFFS)
-		) {
-			await idb.cache.releasedPlayers.add({
-				pid: p.pid,
-				tid: p.tid,
-				contract: helpers.deepCopy(p.contract),
-			});
-			revert.deadMoney = true;
-		}
-	}
-
-	if (justDrafted) {
-		// Clear player salary log if just drafted, because this won't be paid.
-		p.salaries = [];
-	}
-
-	if (p.salaries.length !== salariesBefore.length) {
-		revert.before.salaries = salariesBefore;
+	// College: an NIL deal ends when he leaves, and nobody owes the rest of it.
+	const releasedByTid = g.get("college") ? undefined : p.tid;
+	if (
+		contract &&
+		!justDrafted &&
+		releasedByTid !== undefined &&
+		!isContractFullyPaid(contract)
+	) {
+		revert.deadMoney = true;
 	}
 
 	logEvent({
@@ -72,7 +60,11 @@ const release = async (p: Player, justDrafted: boolean) => {
 		// College moves can't be reverted, so they carry nothing to revert with.
 		...(g.get("college") ? {} : { revert }),
 	});
-	addToFreeAgents(p, await getNumPlayersTradedAwayNormalizedAll());
+	addToFreeAgents(
+		p,
+		await getNumPlayersTradedAwayNormalizedAll(),
+		releasedByTid,
+	);
 	await idb.cache.players.put(p);
 };
 

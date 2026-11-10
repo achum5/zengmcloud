@@ -16,12 +16,12 @@ import connectIndexedDB from "./connectIndexedDB.ts";
 import type {
 	DBSchema,
 	IDBPDatabase,
+	IDBPObjectStore,
 	IDBPTransaction,
 	StoreNames,
 } from "@dumbmatter/idb";
 import type {
 	DraftLotteryResult,
-	ReleasedPlayer,
 	AllStars,
 	EventBBGM,
 	GameAttribute,
@@ -61,6 +61,7 @@ import { unwrapGameAttribute } from "../../common/unwrapGameAttribute.ts";
 import { defaultGameAttributes } from "../../common/defaultGameAttributes.ts";
 import { migrate78 } from "./migrations/78/migrate.ts";
 import { migrate80 } from "./migrations/80/migrate.ts";
+import { migrate81 } from "./migrations/81/migrate.ts";
 
 export interface LeagueDB extends DBSchema {
 	allStars: {
@@ -170,6 +171,7 @@ export interface LeagueDB extends DBSchema {
 			"draft.year, retiredYear": [number, number];
 			hof: 1;
 			noteBool: 1;
+			owedByTids: number;
 			srID: string;
 			statsTids: number;
 			tid: number;
@@ -179,11 +181,6 @@ export interface LeagueDB extends DBSchema {
 	playoffSeries: {
 		key: number;
 		value: PlayoffSeries;
-	};
-	releasedPlayers: {
-		key: number;
-		value: ReleasedPlayer;
-		autoIncrementKeyPath: "rid";
 	};
 	savedTrades: {
 		key: string;
@@ -632,10 +629,6 @@ const create = (db: IDBPDatabase<LeagueDB>) => {
 	db.createObjectStore("playoffSeries", {
 		keyPath: "season",
 	});
-	db.createObjectStore("releasedPlayers", {
-		keyPath: "rid",
-		autoIncrement: true,
-	});
 	db.createObjectStore("schedule", {
 		keyPath: "gid",
 		autoIncrement: true,
@@ -684,6 +677,7 @@ const create = (db: IDBPDatabase<LeagueDB>) => {
 	playerStore.createIndex("noteBool", "noteBool");
 	playerStore.createIndex("srID", "srID");
 	playerStore.createIndex("watch", "watch");
+	createOwedByTidsIndex(playerStore);
 	teamSeasonsStore.createIndex("season, tid", ["season", "tid"], {
 		unique: true,
 	});
@@ -730,6 +724,15 @@ const create = (db: IDBPDatabase<LeagueDB>) => {
 
 	db.createObjectStore("jerseySkins", {
 		keyPath: "id",
+	});
+};
+
+// Only players who are still owed money by a team that released them have owedByTids, so this index is only those, which is what payroll needs
+const createOwedByTidsIndex = (
+	playerStore: IDBPObjectStore<LeagueDB, any, "players", "versionchange">,
+) => {
+	playerStore.createIndex("owedByTids", "owedByTids", {
+		multiEntry: true,
 	});
 };
 
@@ -850,8 +853,13 @@ const migrate = async ({
 			transaction.objectStore("playerFeats").deleteIndex("tid");
 			transaction.objectStore("players").deleteIndex("draft.year");
 			transaction.objectStore("players").deleteIndex("retiredYear");
-			transaction.objectStore("releasedPlayers").deleteIndex("tid");
-			transaction.objectStore("releasedPlayers").deleteIndex("contract.exp");
+			// releasedPlayers no longer exists, but it did when this upgrade ran
+			transaction
+				.objectStore("releasedPlayers" as "players")
+				.deleteIndex("tid" as any);
+			transaction
+				.objectStore("releasedPlayers" as "players")
+				.deleteIndex("contract.exp" as any);
 		}
 
 		if (oldVersion < 22) {
@@ -1854,6 +1862,14 @@ const migrate = async ({
 	// (Upstream's version 74, renumbered: a fork league is past 74 already.)
 	if (oldVersion < 80) {
 		await migrate80(transaction);
+	}
+
+	// (Upstream's version 75, renumbered: a fork league is past 75 already.)
+	if (oldVersion < 81) {
+		slowUpgrade();
+		createOwedByTidsIndex(transaction.objectStore("players"));
+		await migrate81(transaction);
+		db.deleteObjectStore("releasedPlayers" as any);
 	}
 
 	// Next update - do similar to `oldVersion < 71` above for numPlayoffRounds and draftType, from loadGameAttributes

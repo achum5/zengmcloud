@@ -5,6 +5,7 @@ import { g, local } from "../../worker/util/index.ts";
 import { PHASE, PLAYER } from "../../common/constants.ts";
 import { player, team } from "../../worker/core/index.ts";
 import { DEFAULT_LEVEL } from "../../common/budgetLevels.ts";
+import { createContract } from "../../worker/core/contract/index.ts";
 
 // ---------------------------------------------------------------------------
 // A LEAGUE THE TRADE VALUATION CAN BE ASKED QUESTIONS ABOUT.
@@ -71,10 +72,16 @@ const makePlayer = ({
 	const r = p.ratings.at(-1);
 	r.ovr = ovr;
 	r.pot = Math.max(ovr, pot);
-	p.contract = {
-		amount: amount ?? g.get("minContract") * 3,
-		exp: exp ?? season + 2,
-	};
+	delete p.contractDemand;
+	p.contracts = [
+		createContract({
+			contract: {
+				amount: amount ?? g.get("minContract") * 3,
+				exp: exp ?? season + 2,
+			},
+			type: "unknown",
+		}),
+	];
 	p.injury =
 		injuredGames > 0
 			? { type: "Sprained Ankle", gamesRemaining: injuredGames }

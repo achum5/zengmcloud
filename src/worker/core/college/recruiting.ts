@@ -771,7 +771,7 @@ export const collegeSigningDay = async () => {
 	for (const p of recruits) {
 		if (p.tid === PLAYER.UNDRAFTED) {
 			p.tid = PLAYER.FREE_AGENT;
-			p.contract = { amount: 0, exp: season + 1 };
+			player.setContractDemand(p, { amount: 0, exp: season + 1 });
 			delete p.recruiting;
 			await idb.cache.players.put(p);
 		}

@@ -16,6 +16,7 @@ import {
 } from "./freeAgency.ts";
 import { realisticFreeAgencyOn } from "./isOn.ts";
 import { askFor, offerYears, wantedYears } from "./offers.ts";
+import type { ContractHolder } from "./contractOf.ts";
 
 // WHAT A HUMAN TEAM SEES OF THE OFFER MARKET (owner's calls: no instant
 // signing - a human's offer waits for the player's decision like anyone's;
@@ -59,7 +60,7 @@ export type OfferTerm = {
 };
 
 // Every length the league allows, with his asking price for it.
-export const offerTerms = (p: Pick<Player, "contract" | "ratings">) => {
+export const offerTerms = (p: ContractHolder & Pick<Player, "ratings">) => {
 	const minContract = g.get("minContract");
 	const maxContract = g.get("maxContract");
 	return range(g.get("minContractLength"), g.get("maxContractLength") + 1).map(
@@ -76,7 +77,7 @@ export const offerTerms = (p: Pick<Player, "contract" | "ratings">) => {
 };
 
 // The length he wants, within what the league allows.
-export const wantedTerm = (p: Pick<Player, "contract" | "ratings">) => {
+export const wantedTerm = (p: ContractHolder & Pick<Player, "ratings">) => {
 	const terms = offerTerms(p);
 	const years = helpers.bound(
 		wantedYears(p),

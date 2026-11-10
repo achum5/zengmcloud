@@ -48,6 +48,7 @@ import {
 	toSimTeam,
 	type SimTeam,
 } from "../impact/simTools.ts";
+import { contractOf } from "../../worker/core/realisticFrontOffice/contractOf.ts";
 
 // THE SHARK: an expert human hunting for trades the CPU's model misprices,
 // with the game's own sim as ground truth - what tunes how much more the
@@ -183,9 +184,9 @@ const describePlayer = (p: Player) => {
 		pos: r.pos,
 		valueNoPot: round(p.valueNoPot, 1),
 		// As a share of the cap, and seasons after this one.
-		amount: round(p.contract.amount / g.get("salaryCap")),
-		years: p.contract.exp - g.get("season"),
-		rookie: !!p.contract.rookie,
+		amount: round(contractOf(p).amount / g.get("salaryCap")),
+		years: contractOf(p).exp - g.get("season"),
+		rookie: !!contractOf(p).rookie,
 		injury: p.injury.gamesRemaining,
 	};
 };
@@ -277,11 +278,11 @@ test.runIf(env.SHARK_RUN === "1")(
 							PLAYER.FREE_AGENT,
 						)
 					)
-						.filter((p) => p.contract.amount === g.get("minContract"))
+						.filter((p) => contractOf(p).amount === g.get("minContract"))
 						.sort((a, b) => b.value - a.value);
 					while (size < g.get("minRosterSize")) {
 						const p = free.shift() ?? (await player.genRandomFreeAgent());
-						await player.sign(p, sharkTid, p.contract, g.get("phase"));
+						await player.sign(p, sharkTid, contractOf(p), g.get("phase"));
 						await idb.cache.players.put(p);
 						size += 1;
 					}
@@ -702,7 +703,7 @@ test.runIf(env.SHARK_RUN === "1")(
 				for (const p of playersOf(c.give)) {
 					retention.push({
 						pid: p.pid,
-						years: p.contract.exp - g.get("season"),
+						years: contractOf(p).exp - g.get("season"),
 						used: retentionOf(outlook, p.pid, cpu.tid),
 						actual: round(await stayChance(p, cpu.tid)),
 					});

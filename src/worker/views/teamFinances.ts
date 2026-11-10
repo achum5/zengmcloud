@@ -1,8 +1,9 @@
-import { PHASE } from "../../common/constants.ts";
+import { getContractAmount } from "../../common/contracts.ts";
 import { capsForSeasons, salaryInSeason } from "../util/capsForSeasons.ts";
 import { draft, finances, team } from "../core/index.ts";
 import { idb } from "../db/index.ts";
 import { g, helpers } from "../util/index.ts";
+import { getPayrollSeason } from "../util/getPayrollSeason.ts";
 import type { TeamSeason } from "../../common/types.ts";
 import {
 	defineView,
@@ -57,11 +58,8 @@ const updateTeamFinances = async ({
 			showInt = Number.parseInt(inputs.show);
 		}
 
-		let season = g.get("season");
-		if (g.get("phase") >= PHASE.DRAFT) {
-			// After the draft, don't show old contract year
-			season += 1;
-		}
+		// Same season as payroll, so seasons that are already paid are not shown
+		const season = getPayrollSeason();
 
 		// How many seasons into the future are contracts?
 		let maxContractExp = -Infinity;
@@ -144,9 +142,10 @@ const updateTeamFinances = async ({
 				const amounts: number[] = [];
 
 				for (let i = season; i <= contract.exp; i++) {
-					amounts.push(contract.amount / 1000);
+					const amount = (getContractAmount(contract, i) ?? 0) / 1000;
+					amounts.push(amount);
 					if (contractTotals[i - season] !== undefined) {
-						contractTotals[i - season] += contract.amount / 1000;
+						contractTotals[i - season] += amount;
 					}
 				}
 

@@ -8,6 +8,7 @@ import { getCols } from "../../../common/getCols.ts";
 import type { View } from "../../../common/types.ts";
 import { SeasonIcons } from "../../components/SeasonIcons.tsx";
 import TopStuff from "./TopStuff.tsx";
+import { wrappedSalaryPayers } from "./SalaryPayers.tsx";
 import { PLAYER } from "../../../common/constants.ts";
 import HideableSection from "../../components/HideableSection.tsx";
 import { StatsTable } from "./StatsTable.tsx";
@@ -336,13 +337,14 @@ const Player2 = ({
 							className="datatable-negative-margin-top mb-3"
 							cols={getCols(
 								showContractValue
-									? ["Year", "Amount", "Contract Value"]
-									: ["Year", "Amount"],
+									? ["Year", "Team", "Amount", "Contract Value"]
+									: ["Year", "Team", "Amount"],
 							)}
 							defaultSort={[0, "asc"]}
 							footer={{
 								data: [
 									"Total",
+									null,
 									helpers.formatCurrency(player.salariesTotal, "M"),
 									...(showContractValue ? [null] : []),
 								],
@@ -366,6 +368,7 @@ const Player2 = ({
 												</>
 											),
 										},
+										wrappedSalaryPayers(s),
 										wrappedCurrency(s.amount, "M"),
 										...(showContractValue
 											? [contractValueCell(contractValueBySeason.get(s.season))]

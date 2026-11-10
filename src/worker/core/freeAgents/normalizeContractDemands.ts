@@ -2,12 +2,15 @@ import { idb } from "../../db/index.ts";
 import { PLAYER, PHASE } from "../../../common/constants.ts";
 import { team, player, draft } from "../index.ts";
 import { g, helpers } from "../../util/index.ts";
+import { getContractStartSeason } from "../../util/getContractStartSeason.ts";
 import type { Player } from "../../../common/types.ts";
 import { TOO_MANY_TEAMS_TOO_SLOW } from "../season/getInitialNumGamesConfDivSettings.ts";
 import { countBy, last, orderBy } from "../../../common/utils.ts";
 import { bySport } from "../../../common/sportFunctions.ts";
 import { randInt, shuffle, uniform } from "../../../common/random.ts";
 import { getCumulativeWeights } from "./getCumulativeWeights.ts";
+import { getInSeasonContractExp } from "./decreaseDemands.ts";
+import { getContractSummaryOrThrow } from "../contract/index.ts";
 
 const TEMP = 0.35;
 const LEARNING_RATE = 0.5;
@@ -50,17 +53,11 @@ export const getContractYears = (
 const getExpiration = (
 	p: Player,
 	randomizeExp: boolean,
-	nextSeason?: boolean,
+	contractStartSeason: number,
 ) => {
 	const years = getContractYears(p, { randomize: randomizeExp });
 
-	let offset = g.get("phase") <= PHASE.PLAYOFFS ? -1 : 0;
-	if (nextSeason) {
-		// Otherwise the season+phase combo appears off when setting contract expiration in newPhasePreseason
-		offset -= 1;
-	}
-
-	return g.get("season") + years + offset;
+	return contractStartSeason + years - 1;
 };
 
 // "includeExpiringContracts" - use this at the start of re-signing phase
@@ -139,7 +136,9 @@ const normalizeContractDemands = async ({
 		players = playersAll.filter((p) => p.tid === PLAYER.FREE_AGENT);
 	} else {
 		players = playersAll.filter(
-			(p) => p.tid === PLAYER.FREE_AGENT || p.contract.exp === season,
+			(p) =>
+				p.tid === PLAYER.FREE_AGENT ||
+				getContractSummaryOrThrow(p).exp <= season,
 		);
 	}
 
@@ -164,7 +163,7 @@ const normalizeContractDemands = async ({
 			softmaxValue: value * TEMP,
 			numBids: 0,
 			contractAmount: helpers.bound(
-				p.contract.amount,
+				getContractSummaryOrThrow(p).amount,
 				minContract,
 				maxContract,
 			),
@@ -286,10 +285,12 @@ const normalizeContractDemands = async ({
 		rookieSalaries = draft.getRookieSalaries();
 	}
 
+	// For includeExpiringContracts, every player needs a new contract demand, even if his amount didn't change, because his exp is from his expiring contract
 	const playerInfosToUpdate = playerInfos.filter((info) => {
 		return (
 			(type === "freeAgentsOnly" ||
 				type === "newLeague" ||
+				type === "includeExpiringContracts" ||
 				numRounds === 0 ||
 				updatedPIDs.has(info.pid)) &&
 			!info.dummy
@@ -368,13 +369,12 @@ const normalizeContractDemands = async ({
 		}
 	}
 
-	let offset = g.get("phase") <= PHASE.PLAYOFFS ? -1 : 0;
-	if (nextSeason) {
-		// Otherwise the season+phase combo appears off when setting contract expiration in newPhasePreseason
-		offset -= 1;
-	}
+	// nextSeason is for newPhasePreseason, where season has already been incremented but phase has not been updated yet
+	const contractStartSeason = getContractStartSeason(
+		nextSeason ? PHASE.PRESEASON : undefined,
+	);
 	const minNewContractExp =
-		g.get("season") + g.get("minContractLength") + offset;
+		contractStartSeason + g.get("minContractLength") - 1;
 
 	// A dry run stops here: the auction is already complete, and everything it
 	// produced lives on `playerInfos` rather than on the player records (they are
@@ -407,10 +407,18 @@ const normalizeContractDemands = async ({
 	for (const info of playerInfosToUpdate) {
 		const p = info.p;
 
-		const exp =
+		let exp =
 			rookieSalaries && p.draft.year === season
 				? g.get("season") + draft.getRookieContractLength(p.draft.round)
-				: getExpiration(p, type === "newLeague", nextSeason);
+				: getExpiration(p, type === "newLeague", contractStartSeason);
+
+		// During regular season, should only look for short contracts that teams will actually sign
+		const inSeasonShortContract =
+			type === "dummyExpiringContracts" &&
+			info.contractAmount >= maxContract / 4;
+		if (inSeasonShortContract) {
+			info.contractAmount = (info.contractAmount + maxContract / 4) / 2;
+		}
 
 		let amount = info.contractAmount;
 
@@ -429,31 +437,30 @@ const normalizeContractDemands = async ({
 			}
 		}
 
-		// During regular season, should only look for short contracts that teams will actually sign
-		if (type === "dummyExpiringContracts") {
-			if (info.contractAmount >= maxContract / 4) {
-				p.contract.exp = season;
-				info.contractAmount = (info.contractAmount + maxContract / 4) / 2;
-			}
-		}
-
 		amount = helpers.bound(
 			helpers.roundContract(amount),
 			minContract,
 			maxContract,
 		);
 
+		if (inSeasonShortContract) {
+			exp = getInSeasonContractExp(amount, contractStartSeason);
+		}
+
 		// Make sure to remove "temp" flag!
-		p.contract = {
+		p.contractDemand = {
 			amount,
 			exp,
 		};
-		if (p.tid === PLAYER.FREE_AGENT && p.contract.exp < minNewContractExp) {
-			p.contract.exp = minNewContractExp;
+		if (
+			p.tid === PLAYER.FREE_AGENT &&
+			p.contractDemand.exp < minNewContractExp
+		) {
+			p.contractDemand.exp = minNewContractExp;
 		}
 
 		if (labelAsRookieContract) {
-			p.contract.rookie = true;
+			p.contractDemand.rookie = true;
 		}
 	}
 

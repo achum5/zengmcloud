@@ -16,6 +16,7 @@ import formatScoreWithShootout from "../../../common/formatScoreWithShootout.ts"
 import { getBestPlayerBoxScore } from "../../../common/getBestPlayerBoxScore.ts";
 import { encodeOnFloor, encodeShifts } from "../../util/gameShifts.ts";
 import { encodeShiftSecs, encodeTimeline } from "../../util/gameTimeline.ts";
+import { isAllStarGame } from "../../../common/specialGames.ts";
 
 const allStarMVP = async (
 	game: Game,
@@ -259,7 +260,7 @@ export const gameSimToBoxScore = async (results: GameResults, att: number) => {
 		gameStats.playoffs = true;
 	}
 
-	const allStarGame = results.team[0].id === -1 && results.team[1].id === -2;
+	const allStarGame = isAllStarGame(results.team[0].id, results.team[1].id);
 	let allStars;
 
 	// Lineup-level scoring, for lineups in the box score and over a season.
@@ -492,7 +493,7 @@ const writeGameStats = async (
 			},
 			conditions,
 		);
-	} else if (results.team[0].id === -1 && results.team[1].id === -2) {
+	} else if (isAllStarGame(results.team[0].id, results.team[1].id)) {
 		if (allStars) {
 			const text = `${allStars.teamNames[tw]} ${tied ? "tied" : "defeated"} ${
 				allStars.teamNames[tl]

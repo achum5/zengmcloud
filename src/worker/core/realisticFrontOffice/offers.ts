@@ -5,6 +5,7 @@ import { idb } from "../../db/index.ts";
 import { g, helpers } from "../../util/index.ts";
 import moodComponents from "../player/moodComponents.ts";
 import { SLOT_MINUTES } from "./strength.ts";
+import { contractOf, type ContractHolder } from "./contractOf.ts";
 
 // HOW A PLAYER CHOOSES BETWEEN OFFERS (owner's call: an offer market, every
 // team on the same terms). Any team offers whatever money and years it likes;
@@ -48,10 +49,10 @@ export type Offer = {
 };
 
 // The length he wants, in seasons, from the contract he is asking for.
-export const wantedYears = (p: Pick<Player, "contract">) => {
+export const wantedYears = (p: ContractHolder) => {
 	const first =
 		g.get("season") + (g.get("phase") <= PHASE.AFTER_TRADE_DEADLINE ? 0 : 1);
-	return Math.max(1, p.contract.exp - first + 1);
+	return Math.max(1, contractOf(p).exp - first + 1);
 };
 
 export const offerYears = (exp: number) => {
@@ -64,14 +65,15 @@ export const offerYears = (exp: number) => {
 // he wants, and more for each year shorter or longer, as contract negotiation
 // prices it (contractNegotiation/generateContractOptions).
 export const askFor = (
-	p: Pick<Player, "contract" | "ratings">,
+	p: ContractHolder & Pick<Player, "ratings">,
 	years: number,
 ) => {
 	const ovr = last(p.ratings).ovr;
 	const growthFactor = 0.15 + (ovr % 10) * 0.01 - 0.05;
 	const off = Math.abs(years - wantedYears(p));
 	return (
-		Math.max(g.get("minContract"), p.contract.amount) * (1 + off * growthFactor)
+		Math.max(g.get("minContract"), contractOf(p).amount) *
+		(1 + off * growthFactor)
 	);
 };
 
@@ -195,7 +197,9 @@ const NEUTRAL = {
 	stats: [],
 	relatives: [],
 	moodTraits: [],
-	contract: { amount: 0, exp: 0 },
+	draft: { year: 0 },
+	contractDemand: { amount: 0, exp: 0 },
+	contracts: [],
 } as unknown as Player;
 
 const getMarketView = async () => {
@@ -217,8 +221,9 @@ const getMarketView = async () => {
 		])) {
 			rosters.get(p.tid)?.push(p.valueNoPot);
 			values.push(p.valueNoPot);
-			if (p.contract.exp > g.get("season")) {
-				committed.set(p.tid, (committed.get(p.tid) ?? 0) + p.contract.amount);
+			const contract = contractOf(p);
+			if (contract.exp > g.get("season")) {
+				committed.set(p.tid, (committed.get(p.tid) ?? 0) + contract.amount);
 			}
 		}
 		values.sort((a, b) => b - a);
@@ -288,7 +293,7 @@ export const marketUtility = async (p: Player, ownTid: number) => {
 	const view = await getMarketView();
 	const rank = usualPlace(view.values, p.valueNoPot);
 	const minContract = g.get("minContract");
-	const ask = Math.max(minContract, p.contract.amount);
+	const ask = Math.max(minContract, contractOf(p).amount);
 	const { temperature, moodWeight } = offerSettings;
 	const weights: number[] = [];
 	for (const [tid, components] of view.moods) {

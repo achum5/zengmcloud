@@ -2,6 +2,14 @@ import { Cache, idb } from "../worker/db/index.ts";
 import { STORES, type Store } from "../worker/db/Cache.ts";
 import { g, helpers, local } from "../worker/util/index.ts";
 import {
+	getContractExp,
+	getCurrentContract,
+	getNearestContractAmount,
+} from "../common/contracts.ts";
+import type { FlatContractInfo, PlayerWithoutKey } from "../common/types.ts";
+import { getPayrollSeason } from "../worker/util/getPayrollSeason.ts";
+import { addContract, createContract } from "../worker/core/contract/index.ts";
+import {
 	defaultGameAttributes,
 	footballOverrides,
 } from "../common/defaultGameAttributes.ts";
@@ -90,6 +98,25 @@ export const resetCache = async (
 	}
 
 	if (data.players) {
+		// Like at league creation, players on a team sign their contract demands.
+		// A demand that league creation would have normalized first (temp), like
+		// from createRandomPlayers, can have no real expiration yet.
+		for (const p of data.players) {
+			if (p.tid >= 0 && p.contractDemand && !getCurrentContract(p)) {
+				const { amount, exp, rookie } = p.contractDemand;
+				addContract(
+					p,
+					createContract({
+						contract: {
+							amount,
+							exp: Number.isFinite(exp) ? exp : g.get("season"),
+						},
+						type: rookie ? "rookie" : "unknown",
+					}),
+				);
+			}
+		}
+
 		await idb.cache.players.addAll(data.players);
 	}
 
@@ -112,12 +139,6 @@ export const resetCache = async (
 	if (data.draftPicks) {
 		for (const obj of data.draftPicks) {
 			await idb.cache.draftPicks.add(obj);
-		}
-	}
-
-	if (data.releasedPlayers) {
-		for (const obj of data.releasedPlayers) {
-			await idb.cache.releasedPlayers.add(obj);
 		}
 	}
 
@@ -180,4 +201,33 @@ export const setLeagueSize = (numTeams: number) => {
 	g.setWithoutSavingToDB("numGamesPlayoffSeries", Array(rounds).fill(7));
 	g.setWithoutSavingToDB("numPlayoffByes", 0);
 	g.setWithoutSavingToDB("playIn", false);
+};
+
+// Change a test player's contract in place, the way tests changed p.contract
+// before p.contracts: his current contract if he has one, kept flat (same
+// amount every season through exp), otherwise his contract demand.
+export const setTestContract = (
+	p: Pick<PlayerWithoutKey, "contractDemand" | "contracts" | "tid">,
+	{ amount, exp }: Partial<FlatContractInfo>,
+) => {
+	const contract = getCurrentContract(p);
+	if (contract) {
+		const newAmount =
+			amount ?? getNearestContractAmount(contract, getPayrollSeason());
+		const newExp = exp ?? getContractExp(contract);
+		contract.start = Math.min(contract.start, newExp);
+		contract.amounts = Array.from(
+			{ length: newExp - contract.start + 1 },
+			() => newAmount,
+		);
+	} else if (p.contractDemand) {
+		if (amount !== undefined) {
+			p.contractDemand.amount = amount;
+		}
+		if (exp !== undefined) {
+			p.contractDemand.exp = exp;
+		}
+	} else {
+		throw new Error("No contract or contract demand");
+	}
 };

@@ -5,6 +5,7 @@ import {
 import { PHASE } from "../../common/constants.ts";
 import { seasonLine } from "../core/college/retention.ts";
 import { getTeamCtxs } from "../core/college/teams.ts";
+import { nilAmount } from "../core/college/util.ts";
 import { idb } from "../db/index.ts";
 import { g } from "../util/index.ts";
 import { defineView, type ViewArgs } from "../util/defineView.ts";
@@ -53,7 +54,7 @@ const updateRetention = async ({ updateEvents }: ViewArgs) => {
 				priorities: p.collegeProfile
 					? collegeTopPriorities(p.collegeProfile)
 					: [],
-				nil: p.contract.amount,
+				nil: nilAmount(p),
 				demandRange: r.demandRange,
 				settled: r.settled ?? false,
 				counter: r.talks?.counter,

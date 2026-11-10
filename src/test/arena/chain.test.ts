@@ -8,6 +8,8 @@ import {
 	exportArenaLeague,
 	importArenaLeague,
 } from "./runLeague.ts";
+import { contractOf } from "../../worker/core/realisticFrontOffice/contractOf.ts";
+import { setTestContract } from "../helpers.ts";
 
 const importNode = (name: string) => import(/* @vite-ignore */ name);
 
@@ -37,7 +39,7 @@ test(
 			await createArenaLeague(9101);
 			const players = await idb.cache.players.getAll();
 			const p = players[0]!;
-			p.contract.amount = 4321;
+			setTestContract(p, { amount: 4321 });
 			await idb.cache.players.put(p);
 			const season = g.get("season");
 			// Read from the league carried on, not the one replaced.
@@ -52,7 +54,7 @@ test(
 			const after = await idb.cache.players.getAll();
 			assert.strictEqual(after.length, players.length);
 			assert.strictEqual(
-				(await idb.cache.players.get(p.pid))!.contract.amount,
+				contractOf((await idb.cache.players.get(p.pid))!).amount,
 				4321,
 			);
 		} finally {

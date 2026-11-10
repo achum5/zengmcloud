@@ -29,8 +29,6 @@ import type {
 	PlayerFeat,
 	PlayerFeatWithoutKey,
 	PlayoffSeries,
-	ReleasedPlayer,
-	ReleasedPlayerWithoutKey,
 	SavedTrade,
 	ScheduleGame,
 	ScheduleGameWithoutKey,
@@ -79,7 +77,6 @@ export type Store =
 	| "playerFeats"
 	| "players"
 	| "playoffSeries"
-	| "releasedPlayers"
 	| "savedTrades"
 	| "savedTradingBlock"
 	| "schedule"
@@ -93,8 +90,8 @@ export type Index =
 	| "draftPicksBySeason"
 	| "draftPicksByTid"
 	| "playersByDraftYearRetiredYear"
+	| "playersByOwedByTid"
 	| "playersByTid"
-	| "releasedPlayersByTid"
 	| "teamSeasonsBySeasonTid"
 	| "teamSeasonsByTidSeason"
 	| "teamStatsByPlayoffsTid";
@@ -119,7 +116,6 @@ export const STORES: Store[] = [
 	"playerFeats",
 	"players",
 	"playoffSeries",
-	"releasedPlayers",
 	"savedTrades",
 	"savedTradingBlock",
 	"schedule",
@@ -146,12 +142,21 @@ const parseInfinity = (string: string) => {
 		val === null ? Infinity : val,
 	);
 };
-const getIndexKey = (
-	index: {
-		key: NonEmptyArray<string>;
-	},
-	row: any,
-) => {
+type IndexInfo = {
+	name: Index;
+	filter?: (a: any) => boolean;
+	key: NonEmptyArray<string>;
+
+	// Like in IndexedDB, the key is an array and the row is indexed under each value in it. Only for single field keys.
+	multiEntry?: boolean;
+
+	unique?: boolean;
+
+	// The same index in IndexedDB is unique, so a duplicate key would make every flush fail. When this is true, writing a duplicate to the cache throws instead. Not all unique indexes in the cache are like this, because some are only unique because of which rows are in the cache, like teamStatsByPlayoffsTid only having the current season.
+	uniqueInDatabase?: boolean;
+};
+
+const getIndexKey = (index: IndexInfo, row: any) => {
 	if (index.key.length === 1) {
 		return row[index.key[0]];
 	}
@@ -164,6 +169,20 @@ const getIndexKey = (
 	);
 };
 
+// Keys a row is indexed under in a multiEntry index, which is each unique value in the array, or none if it's missing. IndexedDB also skips duplicate values like this.
+const getIndexKeys = (index: IndexInfo, row: any): unknown[] => {
+	if (!index.multiEntry) {
+		throw new Error(`Index ${index.name} is not multiEntry`);
+	}
+
+	const key = getIndexKey(index, row);
+	return Array.isArray(key) ? Array.from(new Set(key)) : [];
+};
+
+const sameKeys = (a: unknown[], b: unknown[]) => {
+	return a.length === b.length && a.every((key, i) => key === b[i]);
+};
+
 type StoreInfo = {
 	pk: string;
 	pkType: "number" | "string";
@@ -172,12 +191,7 @@ type StoreInfo = {
 		tx: IDBPTransaction<LeagueDB>,
 		season: number,
 	) => Promise<any[]> | any[];
-	indexes?: {
-		name: Index;
-		filter?: (a: any) => boolean;
-		key: NonEmptyArray<string>;
-		unique?: boolean;
-	}[];
+	indexes?: IndexInfo[];
 
 	// Should be true if we want to fetch data from getData on a new season, even with autoSave disabled. This happens if you use season in getData such that there are objects for future seasons left out of the cache.
 	getDataWithAutoSaveDisabled?: boolean;
@@ -318,21 +332,36 @@ export const storeInfos: Record<Store, StoreInfo> = {
 		pkType: "number",
 		autoIncrement: true,
 		getData: async (tx) => {
+			const store = tx.objectStore("players");
+
 			// Non-retired players
-			const players1 = await tx
-				.objectStore("players")
+			const players1 = await store
 				.index("tid")
 				.getAll(IDBKeyRange.lowerBound(PLAYER.UNDRAFTED));
-			const players2 = await tx
-				.objectStore("players")
+			const players2 = await store
 				.index("tid")
 				.getAll(PLAYER.UNDRAFTED_FANTASY_TEMP);
-			return players1.concat(players2);
+			const players = players1.concat(players2);
+
+			// Retired players who are still owed money by a team that released them. This index only has players who are still owed, see updateOwedByTids.
+			const pids = new Set(players.map((p) => p.pid));
+			for (const p of await store.index("owedByTids").getAll()) {
+				if (!pids.has(p.pid)) {
+					players.push(p);
+				}
+			}
+
+			return players;
 		},
 		indexes: [
 			{
 				name: "playersByTid",
 				key: ["tid"],
+			},
+			{
+				name: "playersByOwedByTid",
+				key: ["owedByTids"],
+				multiEntry: true,
 			},
 			{
 				name: "playersByDraftYearRetiredYear",
@@ -346,18 +375,6 @@ export const storeInfos: Record<Store, StoreInfo> = {
 		autoIncrement: false,
 		// Current season
 		getData: (tx, season) => tx.objectStore("playoffSeries").getAll(season),
-	},
-	releasedPlayers: {
-		pk: "rid",
-		pkType: "number",
-		autoIncrement: true,
-		getData: (tx) => tx.objectStore("releasedPlayers").getAll(),
-		indexes: [
-			{
-				name: "releasedPlayersByTid",
-				key: ["tid"],
-			},
-		],
 	},
 	savedTrades: {
 		pk: "hash",
@@ -418,11 +435,13 @@ export const storeInfos: Record<Store, StoreInfo> = {
 				name: "teamSeasonsBySeasonTid",
 				key: ["season", "tid"],
 				unique: true,
+				uniqueInDatabase: true,
 			},
 			{
 				name: "teamSeasonsByTidSeason",
 				key: ["tid", "season"],
 				unique: true,
+				uniqueInDatabase: true,
 			},
 		],
 	},
@@ -462,10 +481,12 @@ export const storeInfos: Record<Store, StoreInfo> = {
 };
 
 const index2store = {} as Record<Index, Store>;
+const index2info = {} as Record<Index, IndexInfo>;
 for (const [store, { indexes }] of helpers.entries(storeInfos)) {
 	if (indexes) {
 		for (const index of indexes) {
 			index2store[index.name] = store;
+			index2info[index.name] = index;
 		}
 	}
 }
@@ -563,6 +584,9 @@ class Cache {
 
 	_indexes: Record<Index, any>;
 
+	// For multiEntry indexes, the keys each row was indexed under. Rows are usually mutated in place before being put back in the cache, so this is the only way to tell if a key was removed from a row.
+	_multiEntryKeys: Partial<Record<Index, Map<object, unknown[]>>>;
+
 	_maxIds: Record<Store, number>;
 
 	newLeague: boolean;
@@ -623,17 +647,10 @@ class Cache {
 		PlayerWithoutKey,
 		Player,
 		number,
-		"playersByDraftYearRetiredYear" | "playersByTid"
+		"playersByDraftYearRetiredYear" | "playersByOwedByTid" | "playersByTid"
 	>;
 
 	playoffSeries: StoreAPI<PlayoffSeries, PlayoffSeries, number>;
-
-	releasedPlayers: StoreAPI<
-		ReleasedPlayerWithoutKey,
-		ReleasedPlayer,
-		number,
-		"releasedPlayersByTid"
-	>;
 
 	savedTrades: StoreAPI<SavedTrade, SavedTrade, string>;
 
@@ -671,6 +688,7 @@ class Cache {
 		this._dirtyIndexes = new Set();
 		this._dirtyRecords = {} as Record<Store, Set<number | string>>;
 		this._indexes = {} as Record<Index, any>;
+		this._multiEntryKeys = {};
 		this._maxIds = {} as Record<Store, number>;
 		this.newLeague = false;
 		this._requestQueue = new Map();
@@ -696,7 +714,6 @@ class Cache {
 		this.playerFeats = new StoreAPI(this, "playerFeats");
 		this.players = new StoreAPI(this, "players");
 		this.playoffSeries = new StoreAPI(this, "playoffSeries");
-		this.releasedPlayers = new StoreAPI(this, "releasedPlayers");
 		this.savedTrades = new StoreAPI(this, "savedTrades");
 		this.savedTradingBlock = new StoreAPI(this, "savedTradingBlock");
 		this.schedule = new StoreAPI(this, "schedule");
@@ -754,14 +771,32 @@ class Cache {
 		}
 	}
 
-	_markDirtyIndexes(store: Store, row?: any) {
+	// prevRow is the row that was in the cache with the same primary key before row was stored
+	_markDirtyIndexes(store: Store, row?: any, prevRow?: any) {
 		const indexes = storeInfos[store].indexes;
 		if (!indexes || this._dirtyIndexes.has(store)) {
 			return;
 		}
 
 		if (row) {
+			// Indexes reference the previous object, so they need to be rebuilt no matter what the keys are
+			if (prevRow !== undefined && prevRow !== row) {
+				this._dirtyIndexes.add(store);
+				return;
+			}
+
 			for (const index of indexes) {
+				if (index.multiEntry) {
+					const prevKeys = this._multiEntryKeys[index.name]?.get(row) ?? [];
+					if (!sameKeys(prevKeys, getIndexKeys(index, row))) {
+						this._dirtyIndexes.add(store);
+
+						break;
+					}
+
+					continue;
+				}
+
 				const key = getIndexKey(index, row);
 
 				if (!index.unique) {
@@ -792,6 +827,26 @@ class Cache {
 			for (const index of storeInfo.indexes) {
 				const values: Record<string, any> = {};
 				this._indexes[index.name] = values;
+
+				if (index.multiEntry) {
+					const multiEntryKeys = new Map<object, unknown[]>();
+					this._multiEntryKeys[index.name] = multiEntryKeys;
+
+					for (const row of rows as object[]) {
+						if (index.filter && !index.filter(row)) {
+							continue;
+						}
+
+						const keys = getIndexKeys(index, row);
+						for (const key of keys) {
+							values[key as string] ??= [];
+							values[key as string].push(row);
+						}
+						multiEntryKeys.set(row, keys);
+					}
+
+					continue;
+				}
 
 				for (const row of rows) {
 					if (index.filter && !index.filter(row)) {
@@ -1169,7 +1224,42 @@ class Cache {
 			output = output.concat(this._indexes[index][match.keyString]);
 		}
 
+		// A row in a multiEntry index can be under several keys in the range
+		if (index2info[index].multiEntry) {
+			return Array.from(new Set(output));
+		}
+
 		return output;
+	}
+
+	// Throw if another row already has the same key in an index that is unique in IndexedDB, because otherwise the error would only happen when flushing, and then keep happening on every flush
+	_checkUniqueInDatabase(store: Store, obj: any) {
+		const { indexes, pk } = storeInfos[store];
+		if (!indexes) {
+			return;
+		}
+
+		for (const index of indexes) {
+			if (!index.uniqueInDatabase) {
+				continue;
+			}
+
+			this._checkIndexFreshness(index.name);
+
+			const key = getIndexKey(index, obj);
+			const existing = this._indexes[index.name][key];
+
+			// The getIndexKey check is for a row whose key was changed in place but that hasn't been put back in the cache yet, so it's still indexed under its old key
+			if (
+				existing !== undefined &&
+				existing[pk] !== obj[pk] &&
+				getIndexKey(index, existing) === key
+			) {
+				throw new Error(
+					`Duplicate key ${key} in unique index "${index.name}" of "${store}"`,
+				);
+			}
+		}
 	}
 
 	_storeObj(
@@ -1206,6 +1296,9 @@ class Cache {
 			obj[pk] = this._maxIds[store];
 		}
 
+		this._checkUniqueInDatabase(store, obj);
+
+		const prevObj = this._data[store][obj[pk]];
 		this._data[store][obj[pk]] = obj;
 
 		// Need to have the correct type here for IndexedDB
@@ -1218,7 +1311,7 @@ class Cache {
 
 		this._dirty = true;
 
-		this._markDirtyIndexes(store, obj);
+		this._markDirtyIndexes(store, obj, prevObj);
 
 		changeTracker.record(store, obj[pk], "put");
 

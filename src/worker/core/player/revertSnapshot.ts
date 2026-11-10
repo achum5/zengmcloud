@@ -1,6 +1,6 @@
-import { PHASE } from "../../../common/constants.ts";
 import type { Player, TransactionRevert } from "../../../common/types.ts";
-import { g, helpers } from "../../util/index.ts";
+import { getContractSummary } from "../contract/index.ts";
+import { g } from "../../util/index.ts";
 
 // The player as a signing, release or draft pick found him, for the revert
 // snapshot on its event. Copies, never references: the player record goes on
@@ -11,7 +11,8 @@ export const revertBefore = (
 	p: Pick<
 		Player,
 		| "tid"
-		| "contract"
+		| "contractDemand"
+		| "contracts"
 		| "numDaysFreeAgent"
 		| "gamesUntilTradable"
 		| "ptModifier"
@@ -19,9 +20,15 @@ export const revertBefore = (
 		| "jerseyNumber"
 	>,
 ): TransactionRevert["before"] => {
+	// What he was asking for (a free agent or prospect), or the contract he was
+	// under (a player on a team). getContractSummary returns a fresh object.
+	const contract = getContractSummary(p) ?? {
+		amount: g.get("minContract"),
+		exp: g.get("season"),
+	};
 	const before: TransactionRevert["before"] = {
 		tid: p.tid,
-		contract: helpers.deepCopy(p.contract),
+		contract,
 		numDaysFreeAgent: p.numDaysFreeAgent,
 		gamesUntilTradable: p.gamesUntilTradable,
 		ptModifier: p.ptModifier,
@@ -32,8 +39,3 @@ export const revertBefore = (
 	}
 	return before;
 };
-
-// The first season setContract writes a salary row for, when a contract is
-// signed right now.
-export const salaryStartSeason = () =>
-	g.get("season") + (g.get("phase") > PHASE.AFTER_TRADE_DEADLINE ? 1 : 0);

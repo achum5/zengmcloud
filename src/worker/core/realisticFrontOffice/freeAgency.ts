@@ -1,14 +1,16 @@
 import { PHASE, PLAYER } from "../../../common/constants.ts";
 import type {
 	FaDayResultItem,
+	FlatContractInfo,
 	Player,
-	PlayerContract,
 	Team,
 } from "../../../common/types.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers } from "../../util/index.ts";
 import { uniformSeed } from "../../../common/random.ts";
 import { revertBefore } from "../player/revertSnapshot.ts";
+import { getContractDemand } from "../contract/index.ts";
+import { contractOf } from "./contractOf.ts";
 import { contractNegotiation, player, team } from "../index.ts";
 import { mayPay } from "./contracts.ts";
 import { frontOfficeCuts, worthSigningAtLimit } from "./cuts.ts";
@@ -160,12 +162,16 @@ export const priceSigning = (
 	outlook: LeagueOutlook,
 	t: TeamState,
 	p: Player,
-	contract: PlayerContract,
+	contract: FlatContractInfo,
 ) => {
 	const signed: Player = {
 		...p,
 		tid: t.tid,
-		contract: { ...p.contract, amount: contract.amount, exp: contract.exp },
+		contractDemand: {
+			...contractOf(p),
+			amount: contract.amount,
+			exp: contract.exp,
+		},
 	};
 	let base = baseValues.get(t);
 	if (base === undefined) {
@@ -383,7 +389,7 @@ const bestBid = (
 export const sign = async (
 	p: Player,
 	tid: number,
-	contract: PlayerContract,
+	contract: FlatContractInfo,
 ) => {
 	// Him as he was before signing, so reverting the signing hands back the
 	// free agent he was.
@@ -791,7 +797,7 @@ export const priceMarket = async (
 			.filter((p) => worth.get(p.pid)!.has(t.tid))
 			.map((p) => ({
 				pid: p.pid,
-				surplus: worth.get(p.pid)!.get(t.tid)! - p.contract.amount,
+				surplus: worth.get(p.pid)!.get(t.tid)! - contractOf(p).amount,
 			}))
 			.sort((a, b) => b.surplus - a.surplus)
 			.slice(0, places);
@@ -808,8 +814,8 @@ export const priceMarket = async (
 				? bids[1]!
 				: bids.length === 1
 					? (minContract + bids[0]!) / 2
-					: Math.min(p.contract.amount * (once ? 1 : NOBODY_AFTER), anyone);
-		const from = p.contract.amount;
+					: Math.min(contractOf(p).amount * (once ? 1 : NOBODY_AFTER), anyone);
+		const from = contractOf(p).amount;
 		const to = helpers.bound(
 			helpers.roundContract(
 				from + (once ? 1 : freeAgencySettings.priceSpeed) * (market - from),
@@ -818,7 +824,7 @@ export const priceMarket = async (
 			maxContract,
 		);
 		if (to !== from) {
-			p.contract.amount = to;
+			getContractDemand(p).amount = to;
 			await idb.cache.players.put(p);
 		}
 		priced.push({ pid: p.pid, from, to, teams: bids.length });
@@ -1073,7 +1079,11 @@ export const freeAgencyDay = async () => {
 						(await worthSigningAtLimit(tid, {
 							...p,
 							tid,
-							contract: { ...p.contract, amount: offer.amount, exp: offer.exp },
+							contractDemand: {
+								...contractOf(p),
+								amount: offer.amount,
+								exp: offer.exp,
+							},
 						})));
 				if (fits) {
 					await sign(p, tid, { amount: offer.amount, exp: offer.exp });
@@ -1155,7 +1165,7 @@ export const reSignDecision = async (p: Player, payroll: number) => {
 	}
 	const rivals = Math.exp(market / offerSettings.temperature);
 	let best:
-		| { contract: PlayerContract; chance: number; ev: number }
+		| { contract: FlatContractInfo; chance: number; ev: number }
 		| undefined;
 	for (const years of lengths()) {
 		const bid = bestBid(p, lineFor(outlook, t, p, years), appeal, rivals, cap);
@@ -1229,11 +1239,11 @@ export const decideReSignings = async (tid: number) => {
 		const chance = fits ? await reSignChance(p, tid, offer) : 0;
 		const signed = uniformSeed(p.pid * 7_919 + g.get("season")) < chance;
 		if (signed) {
-			const contract: PlayerContract = {
+			const contract: FlatContractInfo = {
 				amount: offer.amount,
 				exp: offer.exp,
 			};
-			if (p.contract.rookie) {
+			if (contractOf(p).rookie) {
 				contract.rookie = true;
 			}
 			await player.sign(p, tid, contract, PHASE.RESIGN_PLAYERS);
@@ -1268,7 +1278,7 @@ export const defaultReSignOffer = async (tid: number, p: Player) => {
 	}
 	t.offerBoard = [
 		...(t.offerBoard ?? []).filter((x) => x.pid !== p.pid),
-		{ pid: p.pid, amount: p.contract.amount, exp: p.contract.exp },
+		{ pid: p.pid, amount: contractOf(p).amount, exp: contractOf(p).exp },
 	];
 	await idb.cache.teams.put(t);
 };

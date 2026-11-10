@@ -11,7 +11,9 @@ beforeEach(() => {
 });
 
 const wantsThreeYears = {
-	contract: { amount: 10000, exp: 2033 },
+	tid: -1,
+	contractDemand: { amount: 10000, exp: 2033 },
+	contracts: [],
 	ratings: [{ ovr: 60 }],
 } as any;
 

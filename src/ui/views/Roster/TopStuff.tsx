@@ -7,7 +7,6 @@ import { toWorker } from "../../util/toWorker.ts";
 import InstructionsAndSortButtons from "./InstructionsAndSortButtons.tsx";
 import PlayThroughInjurySliders from "./PlayThroughInjuriesSliders.tsx";
 import { type LocalStateUI, type View } from "../../../common/types.ts";
-import { bySport } from "../../../common/sportFunctions.ts";
 import Note from "../Player/Note.tsx";
 import { buildTeamSeasonRecapLinks } from "../../util/linkifyRecap.ts";
 import { RosterComposition } from "../../components/RosterComposition.tsx";
@@ -15,6 +14,7 @@ import { PlusMinus } from "../../components/PlusMinus.tsx";
 import { useLocal } from "../../util/local.ts";
 import { hardCapForTid } from "../../../common/getHardCap.ts";
 import { MoreTeamInfo } from "./MoreTeamInfo.tsx";
+import { getTeamMov } from "../../components/MovOrDiff.tsx";
 
 const fontSizeLarger = { fontSize: "larger" };
 
@@ -249,21 +249,7 @@ const TopStuff = ({
 			"Season not found"
 		);
 
-	let marginOfVictory = 0;
-	if (
-		bySport({
-			baseball: true,
-			basketball: false,
-			football: true,
-			hockey: true,
-		})
-	) {
-		if (t.stats.gp !== 0) {
-			marginOfVictory = (t.stats.pts - t.stats.oppPts) / t.stats.gp;
-		}
-	} else {
-		marginOfVictory = t.stats.pts - t.stats.oppPts;
-	}
+	const marginOfVictory = getTeamMov(t.stats);
 
 	const isCurrentSeason = season === currentSeason;
 

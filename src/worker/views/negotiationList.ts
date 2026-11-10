@@ -3,7 +3,7 @@ import { player, team } from "../core/index.ts";
 import { idb } from "../db/index.ts";
 import { g } from "../util/index.ts";
 import addFirstNameShort from "../util/addFirstNameShort.ts";
-import { addMood, freeAgentStats } from "./freeAgents.ts";
+import { addMood, FREE_AGENT_STATS } from "./freeAgents.ts";
 import { defineView } from "../util/defineView.ts";
 import { realisticFreeAgencyOn } from "../core/realisticFrontOffice/isOn.ts";
 import { reSigningOffers } from "../core/realisticFrontOffice/offerScreen.ts";
@@ -22,7 +22,7 @@ export const getNegotiationPids = async (tid: number) => {
 export default defineView({
 	id: "negotiationList",
 	load: async () => {
-		const stats = ["yearsWithTeam", ...freeAgentStats] as const;
+		const stats = ["yearsWithTeam", ...FREE_AGENT_STATS] as const;
 
 		const userTid = g.get("userTid");
 

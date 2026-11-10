@@ -13,6 +13,7 @@ import {
 } from "../util/liveBoxScoreLayout.ts";
 import { useBoxScoreSortBys } from "./useBoxScoreSortBys.ts";
 import { teamsInDisplayOrder } from "../util/boxScoreDisplayOrder.ts";
+import { isAllStarTid } from "../../common/specialGames.ts";
 
 const StatsTable = ({
 	gid,
@@ -115,7 +116,7 @@ const StatsTable = ({
 		);
 	}
 
-	const allStarGame = t.tid === -1 || t.tid === -2;
+	const allStarGame = isAllStarTid(t.tid);
 	const players = [...playersActiveOrPlayed, ...playersInjuredOrDNP];
 
 	return (

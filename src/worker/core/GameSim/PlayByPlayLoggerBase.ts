@@ -15,7 +15,10 @@ type PlayByPlayEventStat = {
 
 type PlayByPlayEventInit = {
 	type: "init";
-	boxScore: unknown;
+
+	// The sim's two teams, for sports whose live game reads them (the football 3D
+	// field takes its depth charts from here)
+	boxScore?: unknown;
 };
 
 type SportEvent = FootballEvent | BaseballEvent | BasketballEvent | HockeyEvent;
@@ -47,17 +50,18 @@ export abstract class PlayByPlayLoggerBase<T extends SportEvent> {
 		});
 	}
 
-	getPlayByPlay(boxScore: unknown): PlayByPlayEvent<T>[] | undefined {
+	getPlayByPlay(boxScore?: unknown): PlayByPlayEvent<T>[] | undefined {
 		if (!this.active) {
 			return;
 		}
 
-		return [
-			{
-				type: "init",
-				boxScore,
-			},
-			...this.playByPlay,
-		];
+		const init: PlayByPlayEventInit = {
+			type: "init",
+		};
+		if (boxScore !== undefined) {
+			init.boxScore = boxScore;
+		}
+
+		return [init, ...this.playByPlay];
 	}
 }

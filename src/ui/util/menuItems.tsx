@@ -86,14 +86,18 @@ export const menuItems: (MenuItemLink | MenuItemHeader)[] = [
 					path: "/new_league/random",
 					text: "New League > Random Players",
 				},
-				{
-					type: "link",
-					nonLeague: true,
-					commandPalette: true,
-					commandPaletteOnly: true,
-					path: "/new_league/legends",
-					text: "New League > Legends",
-				},
+				...(REAL_PLAYERS_INFO.legends
+					? [
+							{
+								type: "link",
+								nonLeague: true,
+								commandPalette: true,
+								commandPaletteOnly: true,
+								path: "/new_league/legends",
+								text: "New League > Legends",
+							},
+						]
+					: []),
 				{
 					type: "link",
 					nonLeague: true,

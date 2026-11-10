@@ -60,6 +60,7 @@ import {
 } from "./runLeague.ts";
 import { computeMetrics, type LeagueMetrics } from "./metrics.ts";
 import { BENCHMARKS, type Benchmark } from "./benchmarks.ts";
+import { contractOf } from "../../worker/core/realisticFrontOffice/contractOf.ts";
 
 // THE ARENA: whole random-players leagues, every team run by the CPU, played
 // season after season through the real game code, then measured against the
@@ -372,7 +373,8 @@ test.runIf(env.ARENA_RUN === "1")(
 						payroll: deal.rosters.map(
 							(roster) =>
 								Math.round(
-									(1000 * roster.reduce((a, p) => a + p.contract.amount, 0)) /
+									(1000 *
+										roster.reduce((a, p) => a + contractOf(p).amount, 0)) /
 										g.get("salaryCap"),
 								) / 1000,
 						),
@@ -387,8 +389,8 @@ test.runIf(env.ARENA_RUN === "1")(
 										from: deal.tids[k],
 										age: g.get("season") - p.born.year,
 										ovr: last(p.ratings).ovr,
-										exp: p.contract.exp,
-										amount: p.contract.amount,
+										exp: contractOf(p).exp,
+										amount: contractOf(p).amount,
 										// What the buyer expected of him, season by season:
 										// overall, and his chance of still being there.
 										projected: [1, 2, 3].map((y) => {
@@ -497,7 +499,7 @@ test.runIf(env.ARENA_RUN === "1")(
 									pid: p.pid,
 									age: g.get("season") - p.born.year,
 									ovr: last(p.ratings).ovr,
-									exp: p.contract.exp,
+									exp: contractOf(p).exp,
 									lines: lines(p),
 								})),
 							picksMoved: picks

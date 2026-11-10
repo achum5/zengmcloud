@@ -1,3 +1,11 @@
+import {
+	getContractAmount,
+	getCurrentContract,
+} from "../../../common/contracts.ts";
+import type { PlayerWithoutKey } from "../../../common/types.ts";
+import { g } from "../../util/index.ts";
+import { getContractSummary } from "../contract/index.ts";
+
 // Recruiting stars by rank in a class, scaled so a full D1 class has about
 // 30 five-stars and 300 four-stars.
 export const starsForRank = (rank: number, classSize: number) => {
@@ -47,3 +55,19 @@ export const collegeNilForPercentile = (pct: number) => {
 // High school seniors generated each year: more than there are scholarships,
 // so the bottom of every class goes unsigned.
 export const recruitClassSize = (numTeams: number) => Math.round(numTeams * 4);
+
+// His NIL deal from next season on, which is what the retention period
+// renegotiates and what a school has committed for next season. This season's
+// amount if his deal ends now.
+export const nilAmount = (
+	p: Pick<PlayerWithoutKey, "contractDemand" | "contracts" | "tid">,
+) => {
+	const contract = getCurrentContract(p);
+	if (contract) {
+		const next = getContractAmount(contract, g.get("season") + 1);
+		if (next !== undefined) {
+			return next;
+		}
+	}
+	return getContractSummary(p)?.amount ?? 0;
+};

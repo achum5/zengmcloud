@@ -7,6 +7,8 @@ import { createArenaLeague } from "../../../test/arena/runLeague.ts";
 import { mostWorthPaying, priceSigning } from "./freeAgency.ts";
 import { currentOutlook, loadTeam } from "./market.ts";
 import { moneyCost, teamStrengths } from "./outlook.ts";
+import { contractOf } from "./contractOf.ts";
+import { setTestContract } from "../../../test/helpers.ts";
 
 const importNode = (name: string) => import(/* @vite-ignore */ name);
 
@@ -35,12 +37,12 @@ test(
 		const cap = g.get("salaryCap");
 		const tid = 5;
 		const roster = await idb.cache.players.indexGetAll("playersByTid", tid);
-		const amounts = roster.map((p) => p.contract.amount);
+		const amounts = roster.map((p) => contractOf(p).amount);
 		const total = amounts.reduce((a, b) => a + b, 0);
 		try {
 			for (const [i, p] of roster.entries()) {
-				p.contract.amount = (amounts[i]! * 1.2 * cap) / total;
-				p.contract.exp = Math.max(p.contract.exp, season + 3);
+				setTestContract(p, { amount: (amounts[i]! * 1.2 * cap) / total });
+				setTestContract(p, { exp: Math.max(contractOf(p).exp, season + 3) });
 				await idb.cache.players.put(p);
 			}
 			const outlook = await currentOutlook();
@@ -56,7 +58,7 @@ test(
 			);
 		} finally {
 			for (const [i, p] of roster.entries()) {
-				p.contract.amount = amounts[i]!;
+				setTestContract(p, { amount: amounts[i]! });
 				await idb.cache.players.put(p);
 			}
 		}
@@ -71,13 +73,13 @@ test(
 		const tid = 11;
 		g.setWithoutSavingToDB("phase", PHASE.REGULAR_SEASON);
 		const roster = await idb.cache.players.indexGetAll("playersByTid", tid);
-		const was = roster.map((p) => p.contract.amount);
+		const was = roster.map((p) => contractOf(p).amount);
 		const total = was.reduce((a, b) => a + b, 0);
 		try {
 			const outlook = await currentOutlook();
 			const costAt = async (payroll: number) => {
 				for (const [i, p] of roster.entries()) {
-					p.contract.amount = (was[i]! * payroll) / total;
+					setTestContract(p, { amount: (was[i]! * payroll) / total });
 					await idb.cache.players.put(p);
 				}
 				const t = await loadTeam(outlook, tid);
@@ -91,7 +93,7 @@ test(
 			assert.isAbove(over, 0);
 		} finally {
 			for (const [i, p] of roster.entries()) {
-				p.contract.amount = was[i]!;
+				setTestContract(p, { amount: was[i]! });
 				await idb.cache.players.put(p);
 			}
 			g.setWithoutSavingToDB("phase", PHASE.FREE_AGENCY);
@@ -117,12 +119,14 @@ test(
 				await idb.cache.players.put(p);
 			}
 			const kept = roster.slice(0, 1).concat(roster.slice(6));
-			const total = kept.reduce((a, p) => a + p.contract.amount, 0);
+			const total = kept.reduce((a, p) => a + contractOf(p).amount, 0);
 			for (const p of kept) {
-				p.contract.amount = Math.max(
-					g.get("minContract"),
-					(p.contract.amount * 0.4 * cap) / total,
-				);
+				setTestContract(p, {
+					amount: Math.max(
+						g.get("minContract"),
+						(contractOf(p).amount * 0.4 * cap) / total,
+					),
+				});
 				await idb.cache.players.put(p);
 			}
 		}

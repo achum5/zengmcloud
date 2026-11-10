@@ -3,6 +3,7 @@ import { player } from "../index.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers, lock } from "../../util/index.ts";
 import { getSyncEngine } from "../sync/engineHolder.ts";
+import { canSignFreeAgentsInPhase } from "../../../common/transactionPhases.ts";
 
 /**
  * Start a new contract negotiation with a player.
@@ -18,11 +19,7 @@ const create = async (
 	resigning: boolean,
 	tid: number = g.get("userTid"),
 ) => {
-	if (
-		g.get("phase") > PHASE.AFTER_TRADE_DEADLINE &&
-		g.get("phase") <= PHASE.RESIGN_PLAYERS &&
-		!resigning
-	) {
+	if (!resigning && !canSignFreeAgentsInPhase(g.get("phase"))) {
 		return "You're not allowed to sign free agents now.";
 	}
 

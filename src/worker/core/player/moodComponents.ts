@@ -9,6 +9,29 @@ import { getNumPlayersTradedAwayNormalized } from "./getNumPlayersTradedAwayNorm
 import { defaultGameAttributes } from "../../../common/defaultGameAttributes.ts";
 import { signingDifficulty } from "../../util/difficulty.ts";
 import { realisticFrontOfficesOn } from "../realisticFrontOffice/isOn.ts";
+import { getContractExp } from "../../../common/contracts.ts";
+import { getContractSummaryOrThrow } from "../contract/index.ts";
+
+// A player whose rookie contract just expired, while his team can re-sign him. That's during the re-signing phase, or before then for a player still on his team, which includes when AI teams re-sign players in newPhaseResignPlayers before the phase is updated.
+const isResigningAfterRookieContract = (p: Player) => {
+	const season = g.get("season");
+	const phase = g.get("phase");
+	if (
+		phase <= PHASE.PLAYOFFS ||
+		phase > PHASE.RESIGN_PLAYERS ||
+		(phase !== PHASE.RESIGN_PLAYERS && p.tid < 0) ||
+		p.draft.year >= season
+	) {
+		return false;
+	}
+
+	const lastContract = p.contracts.at(-1);
+	return (
+		lastContract?.type === "rookie" &&
+		!lastContract.endedEarly &&
+		getContractExp(lastContract) === season
+	);
+};
 
 const getMinFractionDiff = async (pid: number, tid: number) => {
 	if (__SPORT !== "basketball") {
@@ -311,8 +334,8 @@ const moodComponents = async (
 	{
 		// ROOKIE CONTRACT
 		if (
-			p.contract.rookieResign ||
-			p.contract.rookie ||
+			isResigningAfterRookieContract(p) ||
+			getContractSummaryOrThrow(p).rookie ||
 			p.tid === PLAYER.UNDRAFTED
 		) {
 			components.rookieContract = 8;

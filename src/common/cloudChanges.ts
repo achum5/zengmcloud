@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 251,
+		date: "2026-11-10",
+		text: "Contracts now keep their whole history: a player's Salaries table shows which team paid each season, including a team still paying a player it released, and the first load of each league converts it (a big league can take a moment). In a shared league, everyone should reload to update before the next sim.",
+	},
+	{
 		n: 250,
 		date: "2026-11-10",
 		text: "Contract offers with Realistic Front Offices: paying a player more than he asks now raises your odds less than before, and offering less than he asks lowers them much more. Odds at his asking price are the same.",

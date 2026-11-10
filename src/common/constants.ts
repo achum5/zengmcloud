@@ -1,4 +1,4 @@
-import type { SuperCol } from "../ui/components/DataTable/index.tsx";
+import type { SuperCol } from "./types.ts";
 import { bySport } from "./sportFunctions.ts";
 import * as constantsBaseball from "./constants.baseball.ts";
 import * as constantsBasketball from "./constants.basketball.ts";
@@ -40,7 +40,7 @@ export const DRAFT_BY_TEAM_OVR = bySport({
 	hockey: true,
 });
 
-export const LEAGUE_DATABASE_VERSION = 80;
+export const LEAGUE_DATABASE_VERSION = 81;
 
 // imgbb image-hosting API key, used by the in-app image uploader (see
 // src/ui/util/uploadToImgbb.ts). imgbb keys are client-side upload keys (like
@@ -72,6 +72,14 @@ export const REMAINING_PLAYOFF_TEAMS_PHASES = new Set<Phase>([
 	PHASE.REGULAR_SEASON,
 	PHASE.AFTER_TRADE_DEADLINE,
 	PHASE.PLAYOFFS,
+]);
+
+export const PHASES_WHERE_TEAMS_CAN_BE_DISABLED = new Set<Phase>([
+	PHASE.PRESEASON,
+	PHASE.DRAFT_LOTTERY,
+	PHASE.AFTER_DRAFT,
+	PHASE.RESIGN_PLAYERS,
+	PHASE.FREE_AGENCY,
 ]);
 
 export const PLAYER = {
@@ -219,6 +227,17 @@ export const DEFAULT_DIVS = bySport({
 	football: constantsFootball.DEFAULT_DIVS,
 	hockey: constantsHockey.DEFAULT_DIVS,
 });
+
+// Formulas that scale with the salary cap were tuned for these values, which were defaultGameAttributes.salaryCap at the time. They're frozen, because otherwise those formulas would need to be retuned whenever the default changes.
+export const SALARY_CAP_SCALE = bySport({
+	baseball: 175000,
+	basketball: 90000,
+	football: 200000,
+	hockey: 80000,
+});
+
+// Some older formulas use the basketball value for every sport
+export const SALARY_CAP_SCALE_LEGACY = 90000;
 
 export const DEFAULT_STADIUM_CAPACITY = bySport({
 	baseball: 50000,

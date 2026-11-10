@@ -3,10 +3,19 @@ import { player, league, team } from "../index.ts";
 import getRookieSalaries from "./getRookieSalaries.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers, local, logEvent } from "../../util/index.ts";
-import type { DraftPick, TransactionRevert } from "../../../common/types.ts";
+import type {
+	DraftPick,
+	FlatContractInfo,
+	TransactionRevert,
+} from "../../../common/types.ts";
+import {
+	addContract,
+	createContract,
+	getContractSummary,
+} from "../contract/index.ts";
 import getRookieContractLength from "./getRookieContractLength.ts";
 import { last } from "../../../common/utils.ts";
-import { revertBefore, salaryStartSeason } from "../player/revertSnapshot.ts";
+import { revertBefore } from "../player/revertSnapshot.ts";
 import { canBeDrafted } from "./canBeDrafted.ts";
 
 /**
@@ -50,7 +59,6 @@ const selectPlayer = async (dp: DraftPick, pid: number) => {
 				draft: helpers.deepCopy(p.draft),
 			},
 			numTransactions: p.transactions?.length ?? 0,
-			salaryStart: salaryStartSeason(),
 			dp: helpers.deepCopy(dp),
 		};
 	}
@@ -96,40 +104,54 @@ const selectPlayer = async (dp: DraftPick, pid: number) => {
 	}
 
 	// Contract
-	if (!fantasyOrExpansionDraft) {
-		if (!g.get("draftPickAutoContract")) {
-			// Make it an expiring contract, so player immediately becomes a free agent
-			player.setContract(
+	if (fantasyOrExpansionDraft) {
+		// Players who were free agents before a fantasy draft sign their contract demand. Everyone else keeps his contract.
+		if (p.contractDemand) {
+			addContract(
 				p,
-				{
-					amount: g.get("minContract"),
-					exp: g.get("season"),
-				},
-				true,
+				createContract({
+					contract: p.contractDemand,
+					type: "unknown",
+				}),
 			);
+		}
+	} else {
+		if (!g.get("draftPickAutoContract")) {
+			// No contract yet, just an expiring contract demand, so he will have to sign a contract in the re-signing phase
+			player.setContractDemand(p, {
+				amount: g.get("minContract"),
+				exp: g.get("season"),
+			});
 		} else {
 			const rookieSalaries = getRookieSalaries();
 			const i = dp.pick - 1 + g.get("numActiveTeams") * (dp.round - 1);
 
-			let exp = g.get("season");
-			if (g.get("salaryCapType") !== "hard") {
-				// Auto sign in soft/no cap. Otherwise (hard) leave exp set to current season so player will have to manually sign contract, in case it would go over the cap
-				exp += getRookieContractLength(dp.round);
-			}
+			const contractDemand: FlatContractInfo = {
+				// The rookie scale only covers numDraftRounds full rounds, but some drafts have more picks, like real drafts with extra rounds or picks. The end of the scale is the min contract anyway.
+				amount: rookieSalaries[i] ?? g.get("minContract"),
+				exp: g.get("season"),
+				rookie: true,
+			};
 
-			player.setContract(
-				p,
-				{
-					amount: rookieSalaries[i]!,
-					exp,
-					rookie: true,
-				},
-				true,
-			);
+			if (g.get("salaryCapType") === "hard") {
+				// In a hard cap, he will have to sign a contract in the re-signing phase, in case it would go over the cap
+				player.setContractDemand(p, contractDemand);
+			} else {
+				// Auto sign in soft/no cap
+				contractDemand.exp += getRookieContractLength(dp.round);
+				addContract(
+					p,
+					createContract({
+						contract: contractDemand,
+						type: "rookie",
+					}),
+				);
+			}
 		}
 
 		if (revert) {
-			revert.contract = helpers.deepCopy(p.contract);
+			// His new contract, or the rookie contract demand he'll sign later
+			revert.contract = getContractSummary(p);
 		}
 	}
 

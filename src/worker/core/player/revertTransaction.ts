@@ -3,13 +3,25 @@ import { idb } from "../../db/index.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { g, helpers, lock, toUI, updatePlayMenu } from "../../util/index.ts";
 import type {
+	Contract,
 	EventBBGM,
 	FaDayResultItem,
 	FaDayResults,
+	FlatContractInfo,
 	Player,
-	PlayerContract,
 	TransactionRevert,
 } from "../../../common/types.ts";
+import {
+	getContractExp,
+	getCurrentContract,
+	getNearestContractAmount,
+} from "../../../common/contracts.ts";
+import {
+	createContract,
+	getContractSummary,
+	updateOwedByTids,
+} from "../contract/index.ts";
+import { getPayrollSeason } from "../../util/getPayrollSeason.ts";
 import { freeAgents, player, team } from "../index.ts";
 import { actualPhase } from "../../util/actualPhase.ts";
 import { getNumPlayersTradedAwayNormalizedAll } from "./getNumPlayersTradedAwayNormalized.ts";
@@ -29,25 +41,38 @@ const seasonOver = (season: number) =>
 	season < g.get("season") ||
 	(season === g.get("season") && actualPhase() > PHASE.PLAYOFFS);
 
-// How many rows at the end of his salary log a contract signed with salary
-// rows from `start` added, or undefined if the end of the log is no longer
-// those rows (edited since, in God Mode).
-const contractSalaryRows = (
-	p: Player,
-	start: number,
-	contract: PlayerContract,
-) => {
-	const numRows = Math.max(0, contract.exp - start + 1);
-	if (numRows > p.salaries.length) {
-		return;
+// Whether a contract is the one this signing gave him: the contract records
+// its signing event, or, for one that doesn't (like a contract from before
+// contracts recorded it), it has the event's terms.
+const isSigningContract = (contract: Contract, event: SigningEvent) => {
+	if (contract.eid !== undefined) {
+		return contract.eid === event.eid;
 	}
-	const rows = p.salaries.slice(p.salaries.length - numRows);
-	for (const [i, row] of rows.entries()) {
-		if (row.season !== start + i || row.amount !== contract.amount) {
-			return;
-		}
+	return (
+		event.contract !== undefined &&
+		contract.amounts[0] === event.contract.amount &&
+		getContractExp(contract) === event.contract.exp
+	);
+};
+
+// Still the deal as signed - same amount every season through the same
+// expiration - rather than edited since, in God Mode.
+const isUnedited = (contract: Contract, terms: FlatContractInfo) =>
+	getContractExp(contract) === terms.exp &&
+	contract.amounts.every((amount) => amount === terms.amount);
+
+// A contract demand from the contract summary a move saved, without what only
+// events from before p.contracts carried
+const askingFor = ({
+	amount,
+	exp,
+	rookie,
+}: TransactionRevert["before"]["contract"]): FlatContractInfo => {
+	const contractDemand: FlatContractInfo = { amount, exp };
+	if (rookie) {
+		contractDemand.rookie = true;
 	}
-	return numRows;
+	return contractDemand;
 };
 
 // His transactions log without the entry a signing added, if it added one.
@@ -56,20 +81,9 @@ const transactionsWithout = (p: Player, eid: number) =>
 		(row) => !(row.type === "freeAgent" && row.eid === eid),
 	);
 
-const findReleasedRow = async (
-	pid: number,
-	tid: number,
-	contract: PlayerContract,
-) => {
-	const rows = await idb.cache.releasedPlayers.getAll();
-	return rows.find(
-		(row) =>
-			row.pid === pid &&
-			row.tid === tid &&
-			row.contract.amount === contract.amount &&
-			row.contract.exp === contract.exp,
-	);
-};
+// The contract a release left this team owing him, if it still does
+const owedContracts = (p: Player, tid: number) =>
+	p.contracts.filter((contract) => contract.endedEarly?.tid === tid);
 
 const signingError = (
 	event: SigningEvent,
@@ -78,17 +92,15 @@ const signingError = (
 	name: string,
 	him: string,
 ) => {
-	const contract = event.contract;
-	if (!contract || revert.salaryStart === undefined) {
+	const terms = event.contract;
+	if (!terms) {
 		return NO_DATA;
 	}
 	if (p.tid !== event.tids[0]) {
 		return `${name} is no longer on the team that signed ${him}.`;
 	}
-	if (
-		p.contract.amount !== contract.amount ||
-		p.contract.exp !== contract.exp
-	) {
+	const contract = getCurrentContract(p);
+	if (!contract || !isSigningContract(contract, event)) {
 		return `${name} has signed a new contract since.`;
 	}
 	if (transactionsWithout(p, event.eid).length !== revert.numTransactions) {
@@ -97,10 +109,10 @@ const signingError = (
 
 	// A season of the deal that is over was paid and played under it. Taking
 	// the deal back now would have to unwrite that, which a revert doesn't do.
-	if (seasonOver(revert.salaryStart)) {
+	if (seasonOver(contract.start)) {
 		return `${name} has already played a full season under this contract.`;
 	}
-	if (contractSalaryRows(p, revert.salaryStart, contract) === undefined) {
+	if (!isUnedited(contract, terms)) {
 		return `${name}'s salary history has been edited since.`;
 	}
 };
@@ -140,7 +152,7 @@ const releaseError = async (
 	// have come off them only because the contract's last season ended.
 	if (
 		revert.deadMoney &&
-		!(await findReleasedRow(p.pid, tid, contract)) &&
+		owedContracts(p, tid).length === 0 &&
 		!(contract.exp <= season && phase >= PHASE.DRAFT_LOTTERY)
 	) {
 		return `${name}'s dead money is no longer on the books.`;
@@ -154,8 +166,8 @@ const draftPickError = async (
 	name: string,
 	him: string,
 ) => {
-	const { dp, contract, salaryStart } = revert;
-	if (!dp || !contract || salaryStart === undefined || !revert.before.draft) {
+	const { dp, contract } = revert;
+	if (!dp || !contract || !revert.before.draft) {
 		return NO_DATA;
 	}
 
@@ -170,9 +182,11 @@ const draftPickError = async (
 	if (p.tid !== dp.tid || p.draft.dpid !== dp.dpid) {
 		return `${name} is no longer on the team that drafted ${him}.`;
 	}
+	const summary = getContractSummary(p);
 	if (
-		p.contract.amount !== contract.amount ||
-		p.contract.exp !== contract.exp
+		!summary ||
+		summary.amount !== contract.amount ||
+		summary.exp !== contract.exp
 	) {
 		return `${name} has signed a new contract since.`;
 	}
@@ -185,7 +199,8 @@ const draftPickError = async (
 	) {
 		return `${name} has moved since.`;
 	}
-	if (contractSalaryRows(p, salaryStart, contract) === undefined) {
+	const current = getCurrentContract(p);
+	if (current && !isUnedited(current, contract)) {
 		return `${name}'s salary history has been edited since.`;
 	}
 
@@ -218,7 +233,6 @@ const rebuildRevert = async (
 		}
 
 		let phase;
-		let salaryStart;
 		let numTransactions;
 		const entryIndex = transactions.findIndex(
 			(row) => row.type === "freeAgent" && row.eid === event.eid,
@@ -227,8 +241,6 @@ const rebuildRevert = async (
 			// A free agent signing dates itself with the entry it added.
 			const entry = transactions[entryIndex]!;
 			phase = entry.phase;
-			salaryStart =
-				entry.season + (entry.phase > PHASE.AFTER_TRADE_DEADLINE ? 1 : 0);
 			numTransactions = entryIndex;
 		} else if (
 			event.type === "reSigned" ||
@@ -238,7 +250,6 @@ const rebuildRevert = async (
 			// come after the season, so the deal starts next season. Anything in
 			// his log from that point on means he has moved since.
 			phase = PHASE.RESIGN_PLAYERS;
-			salaryStart = event.season + 1;
 			const movedSince = transactions.some(
 				(row) =>
 					row.season > event.season ||
@@ -265,7 +276,6 @@ const rebuildRevert = async (
 				yearsFreeAgent: p.yearsFreeAgent,
 			},
 			numTransactions,
-			salaryStart,
 		};
 		if (p.jerseyNumber !== undefined) {
 			revert.before.jerseyNumber = p.jerseyNumber;
@@ -277,14 +287,13 @@ const rebuildRevert = async (
 	}
 
 	if (event.type === "release") {
-		// His old contract is the dead money row the release left - which only
-		// a release that cost something did.
-		const rows = (await idb.cache.releasedPlayers.getAll()).filter(
-			(row) => row.pid === p.pid && row.tid === tid,
-		);
-		if (rows.length !== 1) {
+		// His old contract is the one the release left the team owing - which
+		// only a release that cost something did.
+		const owed = owedContracts(p, tid);
+		if (owed.length !== 1) {
 			return;
 		}
+		const owedContract = owed[0]!;
 
 		// The last team his log has him joining must be this one, or he has
 		// been somewhere else since.
@@ -294,8 +303,8 @@ const rebuildRevert = async (
 			before: {
 				tid,
 				contract: {
-					amount: rows[0]!.contract.amount,
-					exp: rows[0]!.contract.exp,
+					amount: getNearestContractAmount(owedContract, getPayrollSeason()),
+					exp: getContractExp(owedContract),
 				},
 				numDaysFreeAgent: 0,
 				gamesUntilTradable: p.gamesUntilTradable,
@@ -330,14 +339,14 @@ const rebuildRevert = async (
 		}
 
 		// The contract the pick gave him, worked out the way the pick did.
-		let contract: PlayerContract;
+		let contract: FlatContractInfo;
 		if (!g.get("draftPickAutoContract")) {
 			contract = { amount: g.get("minContract"), exp: event.season };
 		} else {
 			const i =
 				p.draft.pick - 1 + g.get("numActiveTeams") * (p.draft.round - 1);
 			contract = {
-				amount: getRookieSalaries()[i]!,
+				amount: getRookieSalaries()[i] ?? g.get("minContract"),
 				exp:
 					event.season +
 					(g.get("salaryCapType") !== "hard"
@@ -368,7 +377,6 @@ const rebuildRevert = async (
 				},
 			},
 			numTransactions: entryIndex,
-			salaryStart: event.season + 1,
 			contract,
 			dp: {
 				dpid,
@@ -555,15 +563,13 @@ const revertSigning = async (
 	const stale =
 		event.season !== g.get("season") || revert.phase !== actualPhase();
 
-	const numRows = contractSalaryRows(p, revert.salaryStart!, event.contract!)!;
-	p.salaries = p.salaries.slice(0, p.salaries.length - numRows);
+	// The contract goes, as if never signed - including what was already paid
+	// on it this season, which the team's books keep but his record doesn't
+	const signed = getCurrentContract(p);
+	p.contracts = p.contracts.filter((contract) => contract !== signed);
 
 	p.tid = PLAYER.FREE_AGENT;
-	p.contract = helpers.deepCopy(before.contract);
-	if (!wasFreeAgent) {
-		// Only meaningful during re-signing, where he no longer is.
-		delete p.contract.rookieResign;
-	}
+	p.contractDemand = askingFor(before.contract);
 	p.numDaysFreeAgent = wasFreeAgent ? before.numDaysFreeAgent : 0;
 	p.gamesUntilTradable = before.gamesUntilTradable;
 	p.ptModifier = wasFreeAgent ? before.ptModifier : 1;
@@ -610,18 +616,34 @@ const revertRelease = async (
 ) => {
 	const { before } = revert;
 
-	if (revert.deadMoney) {
-		const row = await findReleasedRow(p.pid, tid, before.contract);
-		if (row) {
-			await idb.cache.releasedPlayers.delete(row.rid);
-		}
+	// His old contract again: the one the release ended, no longer owed by a
+	// team that let him go. A drafted player's release dropped his contract
+	// instead, since nobody paid it, so that one comes back. (A release logged
+	// before contracts were kept this way only remembers its terms.)
+	const last = p.contracts.at(-1);
+	if (
+		last &&
+		getContractExp(last) === before.contract.exp &&
+		(last.endedEarly === undefined ||
+			last.endedEarly.tid === undefined ||
+			last.endedEarly.tid === tid)
+	) {
+		delete last.endedEarly;
+	} else if (revert.droppedContract) {
+		p.contracts.push(helpers.deepCopy(revert.droppedContract));
+	} else {
+		const { amount, exp, rookie } = before.contract;
+		p.contracts.push(
+			createContract({
+				contract: { amount, exp },
+				type: rookie ? "rookie" : "unknown",
+			}),
+		);
 	}
+	updateOwedByTids(p);
+	delete p.contractDemand;
 
 	p.tid = tid;
-	p.contract = helpers.deepCopy(before.contract);
-	if (before.salaries) {
-		p.salaries = helpers.deepCopy(before.salaries);
-	}
 	p.numDaysFreeAgent = before.numDaysFreeAgent;
 	p.gamesUntilTradable = before.gamesUntilTradable;
 	p.ptModifier = before.ptModifier;
@@ -656,12 +678,16 @@ const revertDraftPick = async (revert: TransactionRevert, p: Player) => {
 	const { before } = revert;
 	const dp = revert.dp!;
 
-	const numRows = contractSalaryRows(p, revert.salaryStart!, revert.contract!)!;
-	p.salaries = p.salaries.slice(0, p.salaries.length - numRows);
+	// The rookie contract the pick signed him to, if it did, goes; a contract
+	// demand the pick gave him is replaced below
+	const signed = getCurrentContract(p);
+	if (signed) {
+		p.contracts = p.contracts.filter((contract) => contract !== signed);
+	}
 
 	p.tid = before.tid;
 	p.draft = helpers.deepCopy(before.draft!);
-	p.contract = helpers.deepCopy(before.contract);
+	p.contractDemand = askingFor(before.contract);
 	p.numDaysFreeAgent = before.numDaysFreeAgent;
 	p.gamesUntilTradable = before.gamesUntilTradable;
 	p.ptModifier = before.ptModifier;

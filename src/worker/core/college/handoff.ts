@@ -48,10 +48,11 @@ const toProspect = (p: Player, draftYear: number, collegeSeason: number) => {
 		statsTids: [],
 		transactions: [],
 		awards: [],
-		salaries: [],
 		injury: { type: "Healthy", gamesRemaining: 0 },
 		injuries: [],
-		contract: { amount: 0, exp: draftYear },
+		// His college NIL deals don't come with him
+		contracts: [],
+		contractDemand: { amount: 0, exp: draftYear },
 		yearsFreeAgent: 0,
 		numDaysFreeAgent: 0,
 		gamesUntilTradable: 0,
@@ -68,6 +69,7 @@ const toProspect = (p: Player, draftYear: number, collegeSeason: number) => {
 		"collegeStars",
 		"recruiting",
 		"diedYear",
+		"owedByTids",
 	]) {
 		delete prospect[key];
 	}

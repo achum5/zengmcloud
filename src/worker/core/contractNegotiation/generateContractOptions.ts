@@ -1,23 +1,20 @@
 import { PHASE } from "../../../common/constants.ts";
-import type { Negotiation, PlayerContract } from "../../../common/types.ts";
+import type { Negotiation, FlatContractInfo } from "../../../common/types.ts";
 import { range } from "../../../common/utils.ts";
 import g from "../../util/g.ts";
 import helpers from "../../util/helpers.ts";
+import { getContractStartSeason } from "../../util/getContractStartSeason.ts";
 import accept from "./accept.ts";
 
 // What he asks for each length, from what he asks for the length he wants
 // (amounts in millions) - also how a realistic front office prices a signing
 // under stock's rules.
-export const contractOptionsFor = (contract: PlayerContract, ovr: number) => {
+export const contractOptionsFor = (contract: FlatContractInfo, ovr: number) => {
 	let growthFactor = 0.15;
 
 	// Modulate contract amounts based on last digit of ovr (add some deterministic noise)
 	growthFactor += (ovr % 10) * 0.01 - 0.05;
-	let exp = g.get("season");
-
-	if (g.get("phase") <= PHASE.AFTER_TRADE_DEADLINE) {
-		exp -= 1;
-	}
+	const startSeason = getContractStartSeason();
 	let found: number | undefined;
 
 	const allowedLengths = range(
@@ -33,7 +30,7 @@ export const contractOptionsFor = (contract: PlayerContract, ovr: number) => {
 		disabledReason?: string;
 	}[] = allowedLengths.map((contractLength, i) => {
 		const contractOption = {
-			exp: exp + contractLength,
+			exp: startSeason + contractLength - 1,
 			years: contractLength,
 			amount: 0,
 			smallestAmount: false,
@@ -83,7 +80,7 @@ export const contractOptionsFor = (contract: PlayerContract, ovr: number) => {
 
 export const generateContractOptions = async (
 	negotiation: Negotiation,
-	contract: PlayerContract,
+	contract: FlatContractInfo,
 	ovr: number,
 ) => {
 	const possible = contractOptionsFor(contract, ovr);

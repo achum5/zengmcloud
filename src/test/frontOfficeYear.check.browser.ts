@@ -17,6 +17,7 @@ import { defaultGameAttributes } from "../common/defaultGameAttributes.ts";
 import { idb } from "../worker/db/index.ts";
 import type { Conditions } from "../common/types.ts";
 import { cleanup } from "./smoke-helpers.ts";
+import { contractOf } from "../worker/core/realisticFrontOffice/contractOf.ts";
 
 // A year of a league with Realistic Front Offices on, in a real browser, with
 // one team played by a person: trades offered to CPU teams mid-season, the
@@ -197,7 +198,7 @@ test(
 						const p = await idb.cache.players.get(n.pid);
 						const terms = {
 							pid: n.pid,
-							amount: helpers.roundContract(p!.contract.amount),
+							amount: helpers.roundContract(contractOf(p!).amount),
 							exp: g.get("season") + 3,
 						};
 						const error = await api.main.makeFreeAgentOffer(terms);
@@ -231,7 +232,7 @@ test(
 						const props = await api.main.getNegotiationProps(p.pid);
 						const terms = {
 							pid: p.pid,
-							amount: i < 3 ? p.contract.amount : g.get("minContract"),
+							amount: i < 3 ? contractOf(p).amount : g.get("minContract"),
 							exp: g.get("season") + 2,
 						};
 						const error = await api.main.makeFreeAgentOffer(terms);
@@ -260,7 +261,7 @@ test(
 				for (const pid of offered) {
 					const p = await idb.cache.players.get(pid);
 					log.push(
-						`offered ${pid}: now tid ${p?.tid} ${p?.contract.amount}/${p?.contract.exp}`,
+						`offered ${pid}: now tid ${p?.tid} ${p ? contractOf(p).amount : undefined}/${p ? contractOf(p).exp : undefined}`,
 					);
 				}
 			} else {

@@ -5,6 +5,7 @@ import { g, helpers } from "../../worker/util/index.ts";
 import { getDefaultSettings } from "../../worker/views/newLeague.ts";
 import { last } from "../../common/utils.ts";
 import { currentOutlook } from "../../worker/core/realisticFrontOffice/market.ts";
+import { contractOf } from "../../worker/core/realisticFrontOffice/contractOf.ts";
 
 // OWNER_LEAGUE=<league.json>: the owner's multiplayer league (a BBGM export),
 // loaded with the realistic front offices on, to put the offers its human
@@ -154,7 +155,7 @@ test.skipIf(!env.OWNER_LEAGUE)(
 		const pickLabel = (dp: any) =>
 			`${dp.season} R${dp.round} ${abbrev.get(dp.originalTid)}${dp.pick > 0 ? ` #${dp.pick}` : ""}`;
 		const pLabel = (p: any) =>
-			`${p.firstName[0]}.${p.lastName} ${p.ratings.at(-1).ovr}/${p.ratings.at(-1).pot} ${season - p.born.year}y $${(p.contract.amount / 1000).toFixed(1)}M->${p.contract.exp}`;
+			`${p.firstName[0]}.${p.lastName} ${p.ratings.at(-1).ovr}/${p.ratings.at(-1).pot} ${season - p.born.year}y $${(contractOf(p).amount / 1000).toFixed(1)}M->${contractOf(p).exp}`;
 
 		type S = { tid: number; pids: number[]; dpids: number[] };
 		const legal = async (cpu: S, human: S) => {
@@ -408,8 +409,8 @@ test.skipIf(!env.OWNER_LEAGUE)(
 		for (const h of humans) {
 			const hs = await seconds(h);
 			const dumps = (await players(h))
-				.filter((p) => season - p.born.year >= 30 && p.contract.exp > season)
-				.sort((a, b) => b.contract.amount - a.contract.amount)
+				.filter((p) => season - p.born.year >= 30 && contractOf(p).exp > season)
+				.sort((a, b) => contractOf(b).amount - contractOf(a).amount)
 				.slice(0, 2);
 			for (const p of dumps) {
 				for (const c of cpuTids) {
@@ -485,7 +486,7 @@ test.skipIf(!env.OWNER_LEAGUE || !env.OWNER_SEASONS)(
 				return `pid ${pid}`;
 			}
 			const r = p.ratings.at(-1);
-			return `${p.firstName[0]}.${p.lastName} ${r.ovr}/${r.pot} ${g.get("season") - p.born.year}y $${(p.contract.amount / 1000).toFixed(1)}M->${p.contract.exp}`;
+			return `${p.firstName[0]}.${p.lastName} ${r.ovr}/${r.pot} ${g.get("season") - p.born.year}y $${(contractOf(p).amount / 1000).toFixed(1)}M->${contractOf(p).exp}`;
 		};
 		// Each phase's moves as it ends, so a run cut short keeps what it did.
 		const fs = await importNode("node:fs/promises");
@@ -722,7 +723,7 @@ test.skipIf(!env.OWNER_LEAGUE || !env.OWNER_EXPLAIN)(
 				"roster",
 				players.length,
 				"under contract next season",
-				players.filter((p) => p.contract.exp > g.get("season")).length,
+				players.filter((p) => contractOf(p).exp > g.get("season")).length,
 				"payroll",
 				t.payroll,
 				"pick",

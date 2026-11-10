@@ -290,7 +290,7 @@ const loadGzip = (): boolean => {
 };
 
 const storesByKey = {
-	players: ["players", "releasedPlayers", "awards"],
+	players: ["players", "awards"],
 	teamsBasic: ["teams", "gameAttributes", "jerseySkins"],
 	teams: ["teamSeasons", "teamStats"],
 	headToHead: ["headToHeads"],

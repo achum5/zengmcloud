@@ -1678,7 +1678,10 @@ if (__SPORT === "hockey" || __SPORT === "basketball") {
 					return false;
 				}
 
-				const playersAll = await idb.cache.players.getAll();
+				const playersAll = await idb.cache.players.indexGetAll("playersByTid", [
+					0,
+					Infinity,
+				]);
 				const countUSA = playersAll.filter((p) => {
 					if (__SPORT === "hockey") {
 						return (

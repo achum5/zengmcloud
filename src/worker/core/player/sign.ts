@@ -1,11 +1,10 @@
 import { PHASE } from "../../../common/constants.ts";
-import setContract from "./setContract.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers, logEvent } from "../../util/index.ts";
 import type {
+	FlatContractInfo,
 	Phase,
 	Player,
-	PlayerContract,
 	TransactionRevert,
 } from "../../../common/types.ts";
 import fuzzRating from "./fuzzRating.ts";
@@ -13,7 +12,8 @@ import genJerseyNumber from "./genJerseyNumber.ts";
 import setJerseyNumber from "./setJerseyNumber.ts";
 import { coarsenRating } from "../../../common/coarsenRating.ts";
 import { collegeFinalSeason } from "../../../common/college.ts";
-import { revertBefore, salaryStartSeason } from "./revertSnapshot.ts";
+import { revertBefore } from "./revertSnapshot.ts";
+import { addContract, createContract } from "../contract/index.ts";
 
 // HOW HIGH A POTENTIAL IS WORTH ANNOUNCING, and the number to quote when one
 // is. Undefined means say nothing.
@@ -61,7 +61,7 @@ export const highUpsideSigningPot = (
 const sign = async (
 	p: Player,
 	tid: number,
-	contract: PlayerContract,
+	contractInput: FlatContractInfo,
 	phase: Phase,
 	// The player as he stood before the caller started on this deal, when the
 	// caller has already changed him (autoSign trims the years he asked for).
@@ -72,7 +72,6 @@ const sign = async (
 		phase,
 		before: before ?? revertBefore(p),
 		numTransactions: p.transactions?.length ?? 0,
-		salaryStart: salaryStartSeason(),
 	};
 	const negotiation = await idb.cache.negotiations.get(p.pid);
 	if (negotiation?.resigning) {
@@ -109,34 +108,57 @@ const sign = async (
 	// A college NIL deal runs through his last season of eligibility.
 	const finalSeason = g.get("college") ? collegeFinalSeason(p) : undefined;
 	if (finalSeason !== undefined) {
-		contract = { ...contract, exp: Math.max(finalSeason, g.get("season")) };
+		contractInput = {
+			...contractInput,
+			exp: Math.max(finalSeason, g.get("season")),
+		};
 	}
 
-	setContract(p, contract, true);
+	// Copy so later changes to the contract demand don't affect this
+	const contractSummary: FlatContractInfo = {
+		amount: contractInput.amount,
+		exp: contractInput.exp,
+	};
+	if (contractInput.rookie) {
+		contractSummary.rookie = true;
+	}
+
+	// Sigh, don't know why this is needed, but people tell me that sometimes the #1 pick has a massively negative contract
+	if (contractSummary.amount < 0) {
+		contractSummary.amount = g.get("minContract");
+	}
+
 	const resigning =
 		phase === PHASE.RESIGN_PLAYERS && p.draft.year !== g.get("season");
+
 	const eventType = resigning ? "reSigned" : "freeAgent";
-	// A copy of the contract, not the player's own object: that one gets edited
-	// in place later (the re-signing phase flags it, an AI raises its offer on
-	// it), which would rewrite this event in memory - and a synced event is
-	// deleted on other devices by matching its content.
-	const eventContract: PlayerContract = {
-		amount: p.contract.amount,
-		exp: p.contract.exp,
-	};
-	if (p.contract.rookie) {
-		eventContract.rookie = true;
-	}
+	// contractSummary is a copy, not the player's own object: that one gets
+	// edited in place later (an AI raises its offer on it), which would rewrite
+	// this event in memory - and a synced event is deleted on other devices by
+	// matching its content.
 	const eid = await logEvent({
 		type: eventType,
 		showNotification: false,
 		pids: [p.pid],
 		tids: [p.tid],
 		score,
-		contract: eventContract,
+		contract: contractSummary,
 		// College moves can't be reverted, so they carry nothing to revert with.
 		...(g.get("college") ? {} : { revert }),
 	});
+
+	addContract(
+		p,
+		createContract({
+			contract: contractSummary,
+			eid,
+			type: contractSummary.rookie
+				? "rookie"
+				: resigning
+					? "reSign"
+					: "freeAgent",
+		}),
+	);
 
 	const freeAgent = !resigning && !isRookie;
 	if (freeAgent) {

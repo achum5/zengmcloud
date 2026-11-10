@@ -17,6 +17,7 @@ import {
 	retentionKey,
 	teamStrengths,
 } from "./outlook.ts";
+import { contractOf } from "./contractOf.ts";
 
 const importNode = (name: string) => import(/* @vite-ignore */ name);
 
@@ -49,7 +50,7 @@ test(
 		const size = (await idb.cache.players.indexGetAll("playersByTid", tid))
 			.length;
 		for (const p of freeAgents.slice(0, g.get("maxRosterSize") - size + 2)) {
-			await player.sign(p, tid, p.contract, g.get("phase"));
+			await player.sign(p, tid, contractOf(p), g.get("phase"));
 			await idb.cache.players.put(p);
 		}
 		const players = await idb.cache.players.indexGetAll("playersByTid", tid);
@@ -108,7 +109,7 @@ test(
 		const signed = {
 			...worst,
 			tid,
-			contract: { ...worst.contract, amount: g.get("minContract") },
+			contractDemand: { ...contractOf(worst), amount: g.get("minContract") },
 		};
 		assert.isFalse(await worthSigningAtLimit(tid, signed));
 	},
@@ -133,8 +134,8 @@ test(
 			{
 				...scrub,
 				tid: other,
-				contract: {
-					...scrub.contract,
+				contractDemand: {
+					...contractOf(scrub),
 					amount: g.get("minContract"),
 					exp: season,
 				},

@@ -12,6 +12,10 @@ import { getCol } from "../../../common/getCol.ts";
 import { getBestPlayerBoxScore } from "../../../common/getBestPlayerBoxScore.ts";
 import { bySport } from "../../../common/sportFunctions.ts";
 import { showNotification } from "../../util/showNotification.ts";
+import {
+	isAllStarGame,
+	isTradeDeadline,
+} from "../../../common/specialGames.ts";
 
 type Team = {
 	// pts/players are undefined for upcoming games. Others are undefined only for legacy objects
@@ -204,8 +208,8 @@ export const ScoreBox = memo(
 
 		const gameSeason = game.season ?? season;
 
-		const allStarGame = game.teams[0].tid === -1 && game.teams[1].tid === -2;
-		const tradeDeadline = game.teams[0].tid === -3 && game.teams[1].tid === -3;
+		const allStarGame = isAllStarGame(game.teams[0].tid, game.teams[1].tid);
+		const tradeDeadline = isTradeDeadline(game.teams[0].tid, game.teams[1].tid);
 
 		if (actions.length === 0 && final && !small) {
 			actions = [
