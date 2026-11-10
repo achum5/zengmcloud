@@ -43,7 +43,12 @@ const newPhaseFreeAgency = async (
 
 	// Realistic front offices: free agency in stages, not days.
 	if (stagesOn()) {
-		await league.setGameAttributes({ daysLeft: await openStages() });
+		await league.setGameAttributes({
+			daysLeft: await openStages(),
+			faInStages: true,
+		});
+	} else if (g.get("faInStages")) {
+		await league.setGameAttributes({ faInStages: false });
 	}
 
 	// For any players who were free agents last year too, reset numPlayersTradedAwayNormalized

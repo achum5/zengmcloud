@@ -1015,6 +1015,9 @@ export type GameAttributesLeague = {
 	challengeNoTrades: boolean;
 	// God Mode: trading reopened after the deadline, until the next phase.
 	tradesAfterDeadline: boolean;
+	// Realistic front offices: this summer's free agency opened in stages
+	// (stages.ts) - not one already under way in days when they came in.
+	faInStages: boolean;
 	challengeLoseBestPlayer: boolean;
 	challengeFiredLuxuryTax: boolean;
 	challengeFiredMissPlayoffs: boolean;

@@ -282,6 +282,7 @@ test("in stages, a free agent shows when he decides and the number to beat, not 
 
 	stageSettings.on = true;
 	g.setWithoutSavingToDB("phase", PHASE.FREE_AGENCY);
+	g.setWithoutSavingToDB("faInStages", true);
 	try {
 		// Decision day 1.
 		g.setWithoutSavingToDB("daysLeft", 4);

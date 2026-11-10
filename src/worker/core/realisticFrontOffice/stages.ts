@@ -71,7 +71,7 @@ export const stagesOn = () => realisticFreeAgencyOn() && stageSettings.on;
 
 // Whether free agency is running in stages right now.
 export const inStages = () =>
-	stagesOn() && g.get("phase") === PHASE.FREE_AGENCY;
+	stagesOn() && g.get("phase") === PHASE.FREE_AGENCY && !!g.get("faInStages");
 
 // The stage free agency is in: daysLeft counts the stages down.
 export const stageIndex = () =>

@@ -1,6 +1,6 @@
 import { openStageMarket } from "../realisticFrontOffice/freeAgency.ts";
 import { cpuExtensions } from "../realisticFrontOffice/extensions.ts";
-import { stagesOn } from "../realisticFrontOffice/stages.ts";
+import { inStages, stagesOn } from "../realisticFrontOffice/stages.ts";
 import { PHASE } from "../../../common/constants.ts";
 import { league } from "../index.ts";
 import { idb } from "../../db/index.ts";
@@ -56,7 +56,7 @@ const finalize = async (
 
 	// Realistic front offices, free agency in stages: asks as the market sees
 	// them.
-	if (phase === PHASE.FREE_AGENCY && stagesOn()) {
+	if (phase === PHASE.FREE_AGENCY && inStages()) {
 		await openStageMarket();
 	}
 
