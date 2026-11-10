@@ -54,7 +54,10 @@ export const useOfferChance = (
 	amount: number,
 	exp: number,
 	initial: number | undefined,
+	shape?: { raise?: number; option?: "player" | "team" },
 ) => {
+	const raise = shape?.raise;
+	const option = shape?.option;
 	const [chance, setChance] = useState(initial);
 	const request = useRef(0);
 	const first = useRef(true);
@@ -70,6 +73,8 @@ export const useOfferChance = (
 				pid,
 				amount,
 				exp,
+				raise,
+				option,
 			});
 			if (id === request.current) {
 				setChance(value);
@@ -78,7 +83,7 @@ export const useOfferChance = (
 		return () => {
 			clearTimeout(timer);
 		};
-	}, [pid, amount, exp]);
+	}, [pid, amount, exp, raise, option]);
 	return chance;
 };
 
@@ -222,7 +227,18 @@ export const OfferEditor = ({
 	const [amount, setAmount] = useState(start.amount);
 	const term =
 		offer.terms.find((term) => term.years === years) ?? offer.terms[0]!;
-	const chance = useOfferChance(pid, amount, term.exp, offer.chance);
+	// Free agency in stages (CBA-lite): a yearly raise and an option on the
+	// final season.
+	const [raise, setRaise] = useState(0);
+	const [option, setOption] = useState<"" | "player" | "team">("");
+	const maxRaise = offer.stage?.own ? 8 : 5;
+	const shape = offer.stage
+		? {
+				raise: raise / 100,
+				option: option === "" || years < 2 ? undefined : option,
+			}
+		: undefined;
+	const chance = useOfferChance(pid, amount, term.exp, offer.chance, shape);
 	const [saving, setSaving] = useState(false);
 
 	// The cap rule a signing has to meet, as in stock: under the cap, or a
@@ -245,6 +261,7 @@ export const OfferEditor = ({
 				pid,
 				amount,
 				exp: term.exp,
+				...shape,
 			});
 			if (typeof error === "string") {
 				showNotification({ type: "error", text: error });
@@ -296,6 +313,38 @@ export const OfferEditor = ({
 				</div>
 			</div>
 
+			{offer.stage ? (
+				<div className="d-flex flex-wrap align-items-center gap-2 mb-3">
+					<select
+						className="form-select form-select-sm"
+						style={{ width: "auto" }}
+						value={raise}
+						onChange={(event) => setRaise(Number(event.target.value))}
+						title="Yearly raise"
+					>
+						{[-maxRaise, 0, 2.5, maxRaise].map((x) => (
+							<option key={x} value={x}>
+								{x > 0 ? "+" : ""}
+								{x}% a year
+							</option>
+						))}
+					</select>
+					<select
+						className="form-select form-select-sm"
+						style={{ width: "auto" }}
+						value={option}
+						disabled={years < 2}
+						onChange={(event) =>
+							setOption(event.target.value as "" | "player" | "team")
+						}
+						title="Option on the final season"
+					>
+						<option value="">No option</option>
+						<option value="player">Player option</option>
+						<option value="team">Team option</option>
+					</select>
+				</div>
+			) : null}
 			{offer.stage ? (
 				<div className="mb-3" data-testid="offer-stage">
 					{offer.stage.toBeat ? (

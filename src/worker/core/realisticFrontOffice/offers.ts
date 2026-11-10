@@ -52,7 +52,26 @@ export type Offer = {
 	pid: number;
 	amount: number;
 	exp: number;
+	raise?: number;
+	option?: "player" | "team";
 };
+
+// An option is worth this share of a season's money to the side holding it.
+export const OPTION_VALUE = 0.05;
+
+// What an offer pays a season as a player weighs it: its average over the
+// years, with an option his (worth more) or the team's (worth less).
+export const effectiveAmount = (
+	offer: Pick<Offer, "amount" | "raise" | "option">,
+	years: number,
+) =>
+	offer.amount *
+	(1 + ((offer.raise ?? 0) * (years - 1)) / 2) *
+	(offer.option === "player"
+		? 1 + OPTION_VALUE
+		: offer.option === "team"
+			? 1 - OPTION_VALUE
+			: 1);
 
 // The length he wants, in seasons, from the contract he is asking for.
 export const wantedYears = (p: ContractHolder) => {

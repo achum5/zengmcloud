@@ -92,7 +92,13 @@ export const wantedTerm = (p: ContractHolder & Pick<Player, "ratings">) => {
 // free agency, or against testing the market when his own team re-signs him.
 export const chanceOfOffer = async (
 	tid: number,
-	offer: { pid: number; amount: number; exp: number },
+	offer: {
+		pid: number;
+		amount: number;
+		exp: number;
+		raise?: number;
+		option?: "player" | "team";
+	},
 ) => {
 	const p = await idb.cache.players.get(offer.pid);
 	if (!p || p.tid !== PLAYER.FREE_AGENT) {
@@ -206,7 +212,7 @@ export const offerScreen = async (tid: number, pid: number) => {
 		minContract: g.get("minContract"),
 		maxContract: g.get("maxContract"),
 		chance: await chanceOfOffer(tid, { pid, ...shown }),
-		stage: stageOf(p),
+		stage: stageOf(p, tid),
 	};
 };
 

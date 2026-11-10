@@ -29,6 +29,8 @@ import {
 	reSignDecision as realisticFrontOfficeReSignDecision,
 } from "../realisticFrontOffice/freeAgency.ts";
 import { autoPlayStopsAt } from "../league/autoPlay.ts";
+import { decideOptions } from "../realisticFrontOffice/freeAgency.ts";
+import { stagesOn } from "../realisticFrontOffice/stages.ts";
 
 export const FREE_AGENCY_DAYS = 30;
 // College: four weeks of offseason recruiting, then signing day.
@@ -39,6 +41,12 @@ const newPhaseResignPlayers = async (
 ): Promise<PhaseReturn> => {
 	// In case some weird situation results in games still in the schedule, clear them
 	await idb.cache.schedule.clear();
+
+	// Realistic front offices (CBA-lite): options on final seasons, decided
+	// before the expiring contracts are gathered.
+	if (stagesOn()) {
+		await decideOptions();
+	}
 
 	// Clear any negotiations that still somehow exist, except if it's a re-signing negotiation for the user, because that could be from a prior failed attempt to run this function and we want to keep those guys. (Would rather have phase updates be transactional, but oh well.)
 	const existingNegotiations = await idb.cache.negotiations.getAll();

@@ -12,6 +12,11 @@ import { revertBefore } from "../player/revertSnapshot.ts";
 import { getContractDemand } from "../contract/index.ts";
 import { contractOf } from "./contractOf.ts";
 import {
+	getContractExp,
+	getCurrentContract,
+} from "../../../common/contracts.ts";
+import { amountsWithRaise, shapeLimits } from "./cba.ts";
+import {
 	askFloor,
 	capHolds,
 	checkFor,
@@ -44,6 +49,7 @@ import {
 	appealOf,
 	askFor,
 	choiceOdds,
+	effectiveAmount,
 	marketUtility,
 	offerSettings,
 	offerUtility,
@@ -408,11 +414,27 @@ export const sign = async (
 	p: Player,
 	tid: number,
 	contract: FlatContractInfo,
+	shape?: { raise?: number; option?: "player" | "team" },
 ) => {
 	// Him as he was before signing, so reverting the signing hands back the
 	// free agent he was.
 	const before = revertBefore(p);
 	await player.sign(p, tid, contract, g.get("phase"), before);
+	// CBA-lite: a yearly raise from the first season's amount, and an option
+	// on the last.
+	const signed = p.contracts.at(-1);
+	if (signed && (shape?.raise || shape?.option)) {
+		if (shape.raise) {
+			signed.amounts = amountsWithRaise(
+				signed.amounts[0]!,
+				signed.amounts.length,
+				shape.raise,
+			).map((amount) => helpers.roundContract(amount));
+		}
+		if (shape.option && signed.amounts.length >= 2) {
+			signed.option = shape.option;
+		}
+	}
 	await idb.cache.players.put(p);
 	await team.rosterAutoSort(tid);
 };
@@ -473,7 +495,13 @@ export const offersOpen = () => {
 // rules today. Ranked last on its board unless it replaces one already there.
 export const makeOffer = async (
 	tid: number,
-	offer: { pid: number; amount: number; exp: number },
+	offer: {
+		pid: number;
+		amount: number;
+		exp: number;
+		raise?: number;
+		option?: "player" | "team";
+	},
 ) => {
 	const t = await idb.cache.teams.get(tid);
 	const p = await idb.cache.players.get(offer.pid);
@@ -524,6 +552,21 @@ export const makeOffer = async (
 	}
 	if (stagesOn() && offer.amount < leastForLength(p, years)) {
 		return `For that little he signs for ${stageSettings.discountYears} years at most.`;
+	}
+	// CBA-lite: raises within the limit (with Bird rights, more), an option
+	// only on a deal of two years or more; neither outside stages.
+	if (offer.raise || offer.option) {
+		if (!stagesOn()) {
+			return "Raises and options are not available in this league.";
+		}
+		const own = ownTid(p) === tid;
+		const limit = shapeLimits(own ? "bird" : "room", own).raise;
+		if (Math.abs(offer.raise ?? 0) > limit + 1e-9) {
+			return `Raises are limited to ${Math.round(limit * 100)}% a year.`;
+		}
+		if (offer.option && years < 2) {
+			return "An option needs a deal of two years or more.";
+		}
 	}
 	const board = [...(t.offerBoard ?? [])];
 	const i = board.findIndex((x) => x.pid === offer.pid);
@@ -584,7 +627,7 @@ const utilityOf = async (
 	rosters: Map<number, Player[]>,
 ) =>
 	offerUtility({
-		amount: offer.amount,
+		amount: effectiveAmount(offer, offer.exp - firstSeason() + 1),
 		ask: askFor(p, offer.exp - firstSeason() + 1),
 		appeal: await appealFor(p, offer.tid, rank, rosters),
 	});
@@ -593,7 +636,13 @@ const utilityOf = async (
 // offers he has and waiting - what the offer screen shows.
 export const offerChance = async (
 	tid: number,
-	offer: { pid: number; amount: number; exp: number },
+	offer: {
+		pid: number;
+		amount: number;
+		exp: number;
+		raise?: number;
+		option?: "player" | "team";
+	},
 ) => {
 	const p = await idb.cache.players.get(offer.pid);
 	if (!p || p.tid !== PLAYER.FREE_AGENT) {
@@ -974,6 +1023,37 @@ export const openStageMarket = async () => {
 		}
 	}
 };
+
+// CBA-lite: options on contracts' final seasons, decided as the re-signing
+// phase opens. A player opts out when the market would pay him clearly more;
+// a CPU team declines when he is no longer worth it; a human team's option is
+// picked up. Declined, the season is gone and his contract runs out now.
+export const decideOptions = async () => {
+	const season = g.get("season");
+	const cpu = new Set(await aiTids());
+	for (const p of await idb.cache.players.indexGetAll("playersByTid", [
+		0,
+		Infinity,
+	])) {
+		const c = getCurrentContract(p);
+		if (!c?.option || getContractExp(c) !== season + 1) {
+			continue;
+		}
+		const final = c.amounts.at(-1)!;
+		const worth = marketSalary(p.value);
+		const out =
+			c.option === "player"
+				? worth > OPTION_OUT * final
+				: cpu.has(p.tid) && worth < OPTION_DECLINE * final;
+		delete c.option;
+		if (out) {
+			c.amounts.pop();
+		}
+		await idb.cache.players.put(p);
+	}
+};
+const OPTION_OUT = 1.1;
+const OPTION_DECLINE = 0.8;
 
 // A human team gives up a free agent's Bird rights, and his cap hold.
 export const renounce = async (tid: number, pid: number) => {
@@ -1401,7 +1481,12 @@ export const freeAgencyDay = async () => {
 					}
 				}
 				if (fits) {
-					await sign(p, tid, { amount: offer.amount, exp: offer.exp });
+					await sign(
+						p,
+						tid,
+						{ amount: offer.amount, exp: offer.exp },
+						{ raise: offer.raise, option: offer.option },
+					);
 					if (check) {
 						await noteSigning(tid, check);
 					}

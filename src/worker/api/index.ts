@@ -2724,10 +2724,14 @@ const getOfferChance = async ({
 	pid,
 	amount,
 	exp,
+	raise,
+	option,
 }: {
 	pid: number;
 	amount: number;
 	exp: number;
+	raise?: number;
+	option?: "player" | "team";
 }) => {
 	if (!realisticFreeAgencyOn()) {
 		return undefined;
@@ -2736,6 +2740,8 @@ const getOfferChance = async ({
 		pid,
 		amount,
 		exp,
+		raise,
+		option,
 	});
 };
 
@@ -2745,10 +2751,14 @@ const makeFreeAgentOffer = async ({
 	pid,
 	amount,
 	exp,
+	raise,
+	option,
 }: {
 	pid: number;
 	amount: number;
 	exp: number;
+	raise?: number;
+	option?: "player" | "team";
 }) => {
 	if (!realisticFreeAgencyOn()) {
 		return "Not available in this league.";
@@ -2760,6 +2770,8 @@ const makeFreeAgentOffer = async ({
 		pid,
 		amount: helpers.roundContract(amount),
 		exp,
+		...(raise ? { raise } : {}),
+		...(option ? { option } : {}),
 	});
 	if (error === undefined) {
 		await toUI("realtimeUpdate", [["team"]]);

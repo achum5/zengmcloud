@@ -1878,6 +1878,10 @@ export type Contract = {
 	amounts: number[]; // One per season, so exp = start + amounts.length - 1
 	payments: ContractPayment[]; // Actually paid, added to every game
 	endedEarly?: ContractEndedEarly;
+
+	// Realistic front offices (CBA-lite): an option on the final season, the
+	// player's or the team's, decided as the re-signing phase opens.
+	option?: "player" | "team";
 };
 
 export type PlayerFeatWithoutKey = {
@@ -2952,7 +2956,15 @@ export type Team = {
 
 	// Realistic front offices: the team's standing offers to free agents, best
 	// first (realisticFrontOffice/freeAgency.ts).
-	offerBoard?: { pid: number; amount: number; exp: number }[];
+	offerBoard?: {
+		pid: number;
+		amount: number;
+		exp: number;
+		// CBA-lite (free agency in stages): yearly raise as a share of the
+		// first year, and an option on the final season.
+		raise?: number;
+		option?: "player" | "team";
+	}[];
 
 	// Realistic front offices, free agency in stages: the season this team
 	// used its mid-level exception (cba.ts).
