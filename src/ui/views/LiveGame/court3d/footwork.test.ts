@@ -316,7 +316,9 @@ describe("footwork", () => {
 		let slid = 0;
 		for (const tr of tl.tracks.values()) {
 			let prev: { x: number; y: number; feet: Pt3[] } | undefined;
-			for (let t = 0; t < 600_000; t += STEP) {
+			// (Fifteen minutes of it: in ten, the passes stood still enough to
+			// tell come to 150 or so, either side of the line as the game goes.)
+			for (let t = 0; t < 900_000; t += STEP) {
 				const st = evalPlayer(tl, tr.pid, t);
 				if (fastAt(tl, t) > 1 || !st.shown || st.z > 0.05) {
 					prev = undefined;
