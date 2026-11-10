@@ -506,6 +506,7 @@ const stageCells = (p: View<"freeAgents">["players"][number]) => {
 		);
 	}
 	return [
+		{ value: stage?.interest ?? "", sortValue: stage?.interest ?? null },
 		{ value: toBeat, sortValue: stage?.toBeat?.amount ?? null },
 		{ value: stage?.decidesLabel ?? "", sortValue: stage?.decides ?? null },
 		{ value: rights, sortValue: stage?.own ? 1 : 0 },
@@ -612,6 +613,12 @@ const FreeAgents = ({
 	// Free agency in stages: the leading offer, and when he decides.
 	const stageCols: Col[] = stages
 		? [
+				{
+					title: "Interest",
+					desc: "How much he wants to play for you (50: no feeling either way)",
+					sortSequence: ["desc", "asc"],
+					sortType: "number",
+				},
 				{
 					title: "To beat",
 					desc: "Leading offer",

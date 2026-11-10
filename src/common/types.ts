@@ -2969,6 +2969,8 @@ export type Team = {
 	// Realistic front offices, free agency in stages: the season this team
 	// used its mid-level exception (cba.ts).
 	midLevelSeason?: number;
+	// Lowball offers it made free agents this stage (patience, stages.ts).
+	faStrikes?: { pid: number; season: number; stage: number; strikes: number }[];
 
 	// Its home and away uniforms for the 3D live game, drawn from pictures:
 	// ids of JerseySkin rows. Optional (no upgrade).

@@ -550,6 +550,31 @@ export const makeOffer = async (
 	) {
 		return "Your cap room does not allow that offer.";
 	}
+	// Patience: a lowball insults him; out of patience, he won't talk to the
+	// team again until the next stage.
+	if (inStages() && !reSigning) {
+		const season = g.get("season");
+		const stage = stageIndex();
+		const strikes = (t.faStrikes ?? []).filter(
+			(x) => x.season === season && x.stage === stage,
+		);
+		const mine = strikes.find((x) => x.pid === p.pid);
+		if (mine && mine.strikes >= stageSettings.patience) {
+			return "He won't talk to you again until the next stage.";
+		}
+		const share = effectiveAmount(offer, years) / askFor(p, years);
+		if (share < stageSettings.insultShare) {
+			const count = (mine?.strikes ?? 0) + 1;
+			t.faStrikes = [
+				...strikes.filter((x) => x.pid !== p.pid),
+				{ pid: p.pid, season, stage, strikes: count },
+			];
+			await idb.cache.teams.put(t);
+			return count >= stageSettings.patience
+				? "Insulted. He won't talk to you again until the next stage."
+				: `Insulted - far under his ask (${count} of ${stageSettings.patience}).`;
+		}
+	}
 	if (stagesOn() && offer.amount < leastForLength(p, years)) {
 		return `For that little he signs for ${stageSettings.discountYears} years at most.`;
 	}
@@ -631,6 +656,21 @@ const utilityOf = async (
 		ask: askFor(p, offer.exp - firstSeason() + 1),
 		appeal: await appealFor(p, offer.tid, rank, rosters),
 	});
+
+// How much each player wants to play for a team, 0 to 100: his mood toward
+// it - winning, market, hype, facilities, loyalty, by his traits - and the
+// role he would have there. 50 is a team he feels nothing about.
+const INTEREST_SCALE = 2.5;
+export const interestIn = async (tid: number, players: readonly Player[]) => {
+	const rankOf = await leagueRanks();
+	const rosters = await rostersByTid();
+	const out = new Map<number, number>();
+	for (const p of players) {
+		const appeal = await appealFor(p, tid, rankOf(p), rosters);
+		out.set(p.pid, Math.round(100 / (1 + Math.exp(-appeal / INTEREST_SCALE))));
+	}
+	return out;
+};
 
 // The chance an offer would be chosen if he decided today, against the
 // offers he has and waiting - what the offer screen shows.

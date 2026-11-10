@@ -13,6 +13,7 @@ import type { RouteParams } from "../../ui/router/types.ts";
 import { helpers } from "../util/index.ts";
 import { validateSeason } from "../util/processInputs.ts";
 import { realisticFreeAgencyOn } from "../core/realisticFrontOffice/isOn.ts";
+import { interestIn } from "../core/realisticFrontOffice/freeAgency.ts";
 import {
 	lastChoices,
 	offersList,
@@ -220,6 +221,9 @@ export default defineView({
 			// Free agency in stages: when each decides, and the number to beat.
 			const stages = season === "current" && inStages();
 			const availableByPid = groupByUnique(playersByType.available, "pid");
+			const interest = stages
+				? await interestIn(userTid, playersByType.available)
+				: undefined;
 
 			const availablePlayers = (
 				await addMood(
@@ -229,7 +233,12 @@ export default defineView({
 			).map((p) => ({
 				...p,
 				freeAgentType: "available" as const,
-				stage: stages ? stageOf(availableByPid[p.pid]!, userTid) : undefined,
+				stage: stages
+					? {
+							...stageOf(availableByPid[p.pid]!, userTid)!,
+							interest: interest?.get(p.pid),
+						}
+					: undefined,
 			}));
 
 			const signedByPid = groupByUnique(

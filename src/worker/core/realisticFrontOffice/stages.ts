@@ -50,6 +50,10 @@ export const stageSettings = {
 	// As free agency opens his ask is the market's, but never below this
 	// share of stock's demand for him.
 	openAskFloor: 0.5,
+	// Patience: an offer under this share of his ask insults him, and after
+	// this many in a stage he won't talk to that team until the next.
+	insultShare: 0.8,
+	patience: 3,
 };
 
 export const STAGES = [
