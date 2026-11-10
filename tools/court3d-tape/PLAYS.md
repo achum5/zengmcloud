@@ -763,3 +763,31 @@ ball stayed up on the dribbler (inside 4 feet in 3 of 5), and the
 dribbler jabbed and hesitated at him - one jab after the horn. Now his
 man backs off a step or two (7 feet) and stands, the dribbler just
 dribbles it out, and nobody fakes at anybody once the horn has gone.
+
+## Dribbling: the man with the ball
+
+Measured 2026-11-10 over the nine real games (68 minutes of dribbling in
+the half court, at real speed): he stood 30% of it and went at one steady
+pace another 25%; changed direction by more than 45 degrees, on the move,
+under once a minute; and his teammates off the ball stood 49% of the time
+he had it. He crossed over standing still and only then set off; and
+between one spot of the set and the next he pulled up dead and burst off
+again. (He also faces up - triple threat - some 220 times a game.)
+
+Now: a pause of 0.3-1.4 s between two runs of his dribble is taken up in
+the running (eased into the turn, out of it on his way); a run of dribble
+moves where he stands has his weight going with each, a short step the way
+the ball goes; and a move behind his back or between his legs is never the
+first bounce out of holding the ball. Tried and taken back out: the last
+bounce of a crossover carrying him into the drive - laid out while the
+game is staged, it moved everything staged after it (a dozen tests tipped
+in the reshuffled games); it waits for the stepped simulation (SIM.md).
+
+Next (the plan): a man with the ball who decides - probing, attacking a
+shoulder, retreating, changing pace and direction off his man, his man a
+beat behind him; his body at it (low under pressure, the off arm out,
+head up, looking at the man he throws to); an offense that reads (the
+pick-and-roll's coverage, help and the kick-out, men off the ball moving
+with the ball); and in the long run one step-by-step simulation of all
+ten, steered to the script's moments, in place of the passes that patch
+the moves after they are laid.
