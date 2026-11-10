@@ -591,6 +591,26 @@ export const offerChance = async (
 	}
 	const rankOf = await leagueRanks();
 	const rosters = await rostersByTid();
+	// In stages, against the number to beat: what every team knows.
+	if (inStages()) {
+		const lead = p.faLead;
+		const others =
+			lead && lead.tid !== tid
+				? [
+						offerUtility({
+							amount: lead.amount,
+							ask: askFor(p, yearsFor(lead.exp)),
+							appeal: 0,
+						}),
+					]
+				: [];
+		const mine = await utilityOf(p, { ...offer, tid }, rankOf(p), rosters);
+		return choiceOdds(
+			[mine, ...others],
+			waitUtility(),
+			stageSettings.decisionTemperature,
+		)[0]!;
+	}
 	const others: number[] = [];
 	for (const t of await idb.cache.teams.getAll()) {
 		if (t.tid === tid || t.disabled) {
