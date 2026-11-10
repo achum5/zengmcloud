@@ -162,11 +162,28 @@ stop); runs laid as straight as 0.4 feet allows, a short pull-up laid as the
 end of the run before it - so the court shortens his strides into a stop
 over a stride, not in a frame.
 
-**The switch** (stageCourt.ts): `court3dStep` = "1" in a device's local
-storage stages its games stepped. COURT3D_STEP=1 steps every test game
-(testGame.ts compile; compileLaid is the director's alone, for the tests
-of what it decides itself) - the suite run that way is the list of what
-stepping still breaks.
+**Switched on** (2026-11-10, cloud change 253): every game is staged
+stepped (stageCourt.ts; `court3dStep` = "0" in a device's local storage
+turns it off there), and every test game with it (testGame.ts compile;
+COURT3D_STEP=0 turns it off; compileLaid is the director's alone, for the
+tests of what it decides itself). The suite with it on: clean but for the
+one test that fails on master now and then. Three test limits were eased
+for it, each measured over several games, laid and stepped: the ball by a
+man in the air (at most 2 a game: 0-2 laid, 2-3 stepped), eyes on the man
+passed to (0.87: 0.88-0.96 a game either way), a sliding man's planted
+foot (0.33: 0.24-0.43 laid, 0.27-0.32 stepped).
 
-Next: switch it on for everybody; then what it costs (about a third more
-staging time), and the rest of the defense (help, rotations).
+Also since: no beat to react around a shot (to the glass, boxing out: the
+play's timing) or stepping in from out of bounds; a closeout pulls up
+where it stops (seeing that much ahead, running at it); drawn back over a
+line a step at a time; on his spot leaving the floor.
+
+What it costs: staging a real game 61-77% longer on a desktop (10 s ->
+17 s). Of that the stepping itself is about 5 s; the rest is the passes
+after it working over more runs. 62% of a game is run through fast
+(fastAt over 1.5) - stepping only the rest, the men there following the
+play outright, is the next saving.
+
+Next: that saving; then the rest of the defense (help, rotations), and
+how men react (a wider spread of when, lockstep measured off where men
+are: 39% laid, 42% stepped).

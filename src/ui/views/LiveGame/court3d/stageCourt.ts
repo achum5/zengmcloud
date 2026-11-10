@@ -22,13 +22,13 @@ const staged: (input: CourtInput) => Promise<CourtTimeline> = makeStager({
 	what: "court",
 });
 
-// (Every man stepped - see stepper.ts - only on this device's say-so till
-// it is ready for everybody: court3dStep = "1" in its local storage.)
+// Every man stepped (see stepper.ts) - unless this device says not to:
+// court3dStep = "0" in its local storage.
 const stepHere = () => {
 	try {
-		return localStorage.getItem("court3dStep") === "1";
+		return localStorage.getItem("court3dStep") !== "0";
 	} catch {
-		return false;
+		return true;
 	}
 };
 

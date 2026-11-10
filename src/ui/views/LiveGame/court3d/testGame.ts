@@ -279,10 +279,11 @@ export const fakeGame = (seed: string, possessions: number) => {
 export const gidOf = (seed: string) =>
 	[...seed].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 100_000, 7);
 
-// (COURT3D_STEP=1: every test game stepped - see stepper.ts.)
-export const stepped = !!(
-	globalThis as { process?: { env?: Record<string, string | undefined> } }
-).process?.env?.COURT3D_STEP;
+// (Every test game stepped, as every game is - see stepper.ts - unless
+// COURT3D_STEP=0.)
+export const stepped =
+	(globalThis as { process?: { env?: Record<string, string | undefined> } })
+		.process?.env?.COURT3D_STEP !== "0";
 
 // (As the director stages it, never stepped: for what it decides itself,
 // read off its own runs.)
