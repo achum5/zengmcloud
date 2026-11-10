@@ -1143,6 +1143,12 @@ const openingsOf = (
 // him).
 const GUARD_FULL = 7;
 const GUARD_NONE = 12;
+// The help: a man of theirs off the man with the ball goes this share of
+// what that man does of his own - all of it within HELP_NEAR of him (feet),
+// none of it past HELP_FAR.
+const HELP_SHARE = 0.35;
+const HELP_NEAR = 10;
+const HELP_FAR = 22;
 // (His own beat, ms - on top of the moment his legs take to answer it.)
 const GUARD_LAG: [number, number] = [90, 200];
 // On defense a man goes where the play has him now, seeing nothing of it
@@ -1294,6 +1300,21 @@ export const stepTimeline = <T extends Stepped>(tl: T): T => {
 		making[tr.team].push(...probe.spans, ...open.spans, ...arc.spans);
 	}
 	const busy = [spansAt(making[0]), spansAt(making[1])] as const;
+	// Who has the ball at t, if anybody does.
+	const holderAt = (t: number): number | undefined => {
+		let lo = 0;
+		let hi = tl.ball.length;
+		while (lo < hi) {
+			const mid = (lo + hi) >> 1;
+			if (tl.ball[mid]!.t0 <= t) {
+				lo = mid + 1;
+			} else {
+				hi = mid;
+			}
+		}
+		const seg = tl.ball[lo - 1];
+		return seg?.kind === "hold" ? seg.pid : undefined;
+	};
 	// And on defense, each with his man as his man really goes, a beat
 	// behind him.
 	for (const tr of men) {
@@ -1355,17 +1376,47 @@ export const stepTimeline = <T extends Stepped>(tl: T): T => {
 					man = o.pid;
 				}
 			}
-			if (man === undefined) {
-				return P;
-			}
-			const went = probes.get(man)!(at);
+			const went = man === undefined ? { x: 0, y: 0 } : probes.get(man)!(at);
 			// (None of it into anything of his own: on time, where the play
 			// has him for it.)
 			const w =
 				r *
 				Math.min(1, Math.max(0, (GUARD_NONE - d) / (GUARD_NONE - GUARD_FULL)));
+			// And the man with the ball, if his man is somebody else: a share of
+			// whatever he does of his own - the help going with the ball.
+			let hx = 0;
+			let hy = 0;
+			const holder = holderAt(at);
+			if (holder !== undefined && holder !== man && holder !== tr.pid) {
+				const H = laid.get(holder)?.at(t);
+				const ht = tl.tracks.get(holder);
+				if (H && ht && ht.team !== tr.team) {
+					const wh =
+						r *
+						HELP_SHARE *
+						Math.min(
+							1,
+							Math.max(
+								0,
+								(HELP_FAR - Math.hypot(H.x - P.x, H.y - P.y)) /
+									(HELP_FAR - HELP_NEAR),
+							),
+						);
+					if (wh > 0) {
+						const hp = probes.get(holder)!(at);
+						hx = hp.x * wh;
+						hy = hp.y * wh;
+					}
+				}
+			}
+			if (w === 0 && hx === 0 && hy === 0) {
+				return P;
+			}
 			// (Never off the floor for it, if the play has him on it.)
-			const Q = { x: P.x + went.x * w, y: P.y + went.y * w };
+			const Q = {
+				x: P.x + went.x * w + hx,
+				y: P.y + went.y * w + hy,
+			};
 			const inP = inPlay(P);
 			return inP.x === P.x && inP.y === P.y ? inPlay(Q) : Q;
 		};

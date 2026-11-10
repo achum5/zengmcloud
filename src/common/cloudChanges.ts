@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 254,
+		date: "2026-11-10",
+		text: "3D games: defenders off the ball now shift with the ball. When the man with it works his defender, the help side slides over with him instead of standing still.",
+	},
+	{
 		n: 253,
 		date: "2026-11-10",
 		text: "3D games: players now move like players instead of gliding from spot to spot. The man with the ball works his defender with jabs, crossovers and hesitations, and the defender answers a beat late; players off the ball step to get open and relocate around the three-point line; cuts are planted and stops are crisp. A 3D game takes a few seconds longer to get ready to watch.",
