@@ -12,7 +12,7 @@
 // one it laid out, less what no man could do (a lurch, a corner turned on
 // the spot at a run). What each man wants comes next, a part at a time.
 
-import type { BallSeg, CourtTimeline, Move } from "./director.ts";
+import type { CourtTimeline, Move } from "./director.ts";
 import { floorSpotOf } from "./evaluate.ts";
 import { COURT_H, COURT_W, inPlay, rimX, type Pt } from "./geometry.ts";
 import { RIM_INSET } from "../courtSpots.ts";
@@ -67,9 +67,6 @@ const REACT_SEE = 150;
 // comes down off the rim, no beat to it: see stepTimeline.)
 const SHOT_BEFORE = 300;
 const SHOT_AFTER = 1500;
-// (The ball in the air within this far (feet) of where the play has a man:
-// see stepTimeline.)
-const BALL_NEAR = 3;
 // Fastest anybody goes (feet a second).
 const TOP = 30;
 // Further off where the play wants him than this (feet), something has
@@ -88,7 +85,10 @@ const STILL = 0.2;
 // Seeing nothing ahead, he still sees where he will be stood this long
 // (ms) from now - and pulls up for it at this share of all he has.
 const STOP_SEE = 500;
-const STOP_SHARE = 0.8;
+const STOP_SHARE = 1;
+// (Running at him, that is - going faster than this, feet a second: not
+// sliding with his man.)
+const STOP_FAST = 8;
 // Over a line the play has him inside, drawn back in no faster than this
 // (feet a second).
 const LINE_PULL = 4;
@@ -396,7 +396,7 @@ export const follow = (
 		// seeAt) - but where it stands him a moment from now, he sees that
 		// coming: no faster than he can pull up there (a closeout, chopping
 		// his feet - not run past it and back).
-		if (see <= 0) {
+		if (see <= 0 && v0 > STOP_FAST) {
 			const F = want(t + STOP_SEE);
 			const F1 = want(t + STOP_SEE + STEP_MS);
 			if (F && F1 && Math.hypot(F1.x - F.x, F1.y - F.y) / dt < STILL) {
@@ -1173,57 +1173,9 @@ export const stepTimeline = <T extends Stepped>(tl: T): T => {
 		}
 		laid.set(tr.pid, pathOf(from, spots));
 	}
-	// The ball in the air near where the play has a man - a pass by him, the
-	// ball down through the net at his feet: the play has cleared its way
-	// past him there, so there he is (see keepOff in director.ts).
-	const nearBall = new Map<number, [number, number][]>();
-	{
-		const endAt = (e: BallSeg & { kind: "fly" }, which: "from" | "to") => {
-			const end = e[which];
-			return "pid" in end
-				? laid.get(end.pid)?.at(which === "from" ? e.t0 : e.t1)
-				: { x: end.x, y: end.y };
-		};
-		for (const seg of tl.ball) {
-			if (seg.kind !== "fly") {
-				continue;
-			}
-			const A = endAt(seg, "from");
-			const B = endAt(seg, "to");
-			if (!A || !B) {
-				continue;
-			}
-			for (const tr of men) {
-				if (
-					("pid" in seg.from && seg.from.pid === tr.pid) ||
-					("pid" in seg.to && seg.to.pid === tr.pid)
-				) {
-					continue;
-				}
-				const L = laid.get(tr.pid)!;
-				for (let t = seg.t0; t <= seg.t1; t += 100) {
-					const u = seg.t1 > seg.t0 ? (t - seg.t0) / (seg.t1 - seg.t0) : 0;
-					const P = L.at(t);
-					if (
-						P &&
-						Math.hypot(
-							P.x - (A.x + (B.x - A.x) * u),
-							P.y - (A.y + (B.y - A.y) * u),
-						) < BALL_NEAR
-					) {
-						const list = nearBall.get(tr.pid) ?? [];
-						list.push([seg.t0, seg.t1]);
-						nearBall.set(tr.pid, list);
-						break;
-					}
-				}
-			}
-		}
-	}
 	for (const tr of men) {
 		// (His acts - and the moment he goes off the floor: there for it, as
-		// for one, where whatever takes him from there has him - and the
-		// ball by him in the air.)
+		// for one, where whatever takes him from there has him.)
 		helds.set(
 			tr.pid,
 			spansAt([
@@ -1233,7 +1185,6 @@ export const stepTimeline = <T extends Stepped>(tl: T): T => {
 						? [[at - STEP_MS, at] as const]
 						: [],
 				),
-				...(nearBall.get(tr.pid) ?? []),
 			]),
 		);
 	}
