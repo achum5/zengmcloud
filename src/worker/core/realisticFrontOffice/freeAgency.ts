@@ -583,16 +583,21 @@ export const makeOffer = async (
 	) {
 		return "That is not a contract the league allows.";
 	}
-	if (inStages()) {
+	if (stagesOn()) {
 		const check = checkFor({
 			t,
 			p,
 			payroll,
-			holds: capHolds(
-				tid,
-				await idb.cache.players.indexGetAll("playersByTid", PLAYER.FREE_AGENT),
-				p.pid,
-			),
+			holds: inStages()
+				? capHolds(
+						tid,
+						await idb.cache.players.indexGetAll(
+							"playersByTid",
+							PLAYER.FREE_AGENT,
+						),
+						p.pid,
+					)
+				: 0,
 			amount: offer.amount,
 			rosterSize,
 		});
@@ -889,14 +894,16 @@ export const priceMarket = async (
 	const allowed = new Map(
 		signing.map((t) => [t.tid, mostAllowed(states.get(t.tid)!, false)]),
 	);
-	// In stages, the most each team may pay each player by CBA-lite's rules:
-	// room after its cap holds, Bird rights for its own, the mid-level.
+	// With CBA-lite, all season, the most each team may pay each player:
+	// room after its cap holds (in free agency), Bird rights for its own, the
+	// mid-level or the taxpayer mid-level.
 	const stages = inStages();
+	const cba = stagesOn();
 	const holdsOf = new Map(
 		teams.map((t) => [t.tid, stages ? capHolds(t.tid, pool) : 0]),
 	);
 	const capOf = (tid: number, p: Player) => {
-		if (!stages) {
+		if (!cba) {
 			return allowed.get(tid);
 		}
 		const t = teams.find((x) => x.tid === tid)!;
@@ -962,7 +969,7 @@ export const priceMarket = async (
 		for (const t of signing) {
 			const cap = Math.min(
 				maxContract,
-				(stages
+				(cba
 					? capOf(t.tid, p)
 					: (once && p.tid === t.tid ? allowedOwn : allowed).get(t.tid)) ??
 					-Infinity,
@@ -1291,6 +1298,7 @@ export const freeAgencyDay = async () => {
 	);
 	let rosters = rostersAtOpen;
 	const stages = inStages();
+	const cba = stagesOn();
 	const temperature = stages
 		? stageSettings.decisionTemperature
 		: offerSettings.temperature;
@@ -1323,11 +1331,11 @@ export const freeAgencyDay = async () => {
 		const state = states.get(t.tid)!;
 		const spots = g.get("maxRosterSize") - state.players.length;
 		const cap = allowed.get(t.tid);
-		if (!stages && cap === undefined) {
+		if (!cba && cap === undefined) {
 			await setBoard(t, []);
 			continue;
 		}
-		const capFor = (p: Player) => (stages ? capOf(t.tid, p) : cap) ?? -Infinity;
+		const capFor = (p: Player) => (cba ? capOf(t.tid, p) : cap) ?? -Infinity;
 		const rivalsOf = async (p: Player) => {
 			let weight = waitWeight;
 			// Deciding today, sealed: every team knows only the number to beat.
@@ -1514,12 +1522,12 @@ export const freeAgencyDay = async () => {
 				const atLimit =
 					inSeason && cpu.has(tid) && roster.length === g.get("maxRosterSize");
 				const payroll = await team.getPayroll(tid);
-				const check = stages
+				const check = cba
 					? checkFor({
 							t: (await idb.cache.teams.get(tid))!,
 							p,
 							payroll,
-							holds: capHolds(tid, pool, p.pid),
+							holds: stages ? capHolds(tid, pool, p.pid) : 0,
 							amount: offer.amount,
 							rosterSize: roster.length,
 						})

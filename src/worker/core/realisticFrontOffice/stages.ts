@@ -10,6 +10,7 @@ import {
 	maxFor,
 	midLevelAmount,
 	serviceYears,
+	taxpayerMidLevelAmount,
 	type SigningCheck,
 } from "./cba.ts";
 import { contractOf } from "./contractOf.ts";
@@ -221,6 +222,7 @@ export const mostFor = ({
 		g.get("salaryCap") - payroll - holds,
 		hardCap(t.tid) - payroll,
 		midLevelAmount(),
+		taxpayerMidLevelAmount(),
 		apron() - payroll,
 	];
 	let most = minContract;
@@ -254,13 +256,13 @@ export const atCamp = () => stageIndex() === STAGES.length - 1;
 export const stageWait = (wait: number) =>
 	stageIndex() === STAGES.length - 1 ? wait + stageSettings.campWait : wait;
 
-// The least he asks for this stage.
-// At camp, no more than the mid-level: a team over the cap can still sign
-// him.
+// The least he asks for this stage. At camp, no more than the taxpayer
+// mid-level: nearly every team can still sign him, so the market, not the
+// one team that saved its room, sets his price.
 export const askFloor = (p: Pick<Player, "faOpenAsk">) => {
 	const floor = (p.faOpenAsk ?? 0) * stageSettings.floorByStage[stageIndex()]!;
 	return stageIndex() === STAGES.length - 1
-		? Math.min(floor, midLevelAmount())
+		? Math.min(floor, taxpayerMidLevelAmount())
 		: floor;
 };
 
@@ -286,7 +288,7 @@ export const reservation = (
 	}
 	const camp = Math.min(
 		p.faOpenAsk * stageSettings.floorByStage[STAGES.length - 1]!,
-		midLevelAmount(),
+		taxpayerMidLevelAmount(),
 	);
 	return camp * Math.max(0, 1 - seasonPlayed);
 };
@@ -302,7 +304,10 @@ export const noteSigning = async (
 	tid: number,
 	check: SigningCheck,
 ): Promise<void> => {
-	if (check.ok && check.path === "midLevel") {
+	if (
+		check.ok &&
+		(check.path === "midLevel" || check.path === "taxpayerMidLevel")
+	) {
 		const t = await idb.cache.teams.get(tid);
 		if (t) {
 			t.midLevelSeason = startSeason();

@@ -22,6 +22,12 @@ export const cbaSettings = {
 	// the apron.
 	midLevel: 0.09,
 	midLevelYears: 4,
+	// Past the apron, the taxpayer mid-level instead (as the NBA's): up to
+	// this share of the cap, for up to taxpayerYears, within the hard cap.
+	// Either one a season. With it nearly every team can pay a good free
+	// agent something real every summer, which is how the NBA's market clears.
+	taxpayerMidLevel: 0.05,
+	taxpayerYears: 2,
 	// The hard cap: this share of the cap above the luxury tax line.
 	hardCapOverTax: 0.1,
 	// Yearly raise (or cut), as a share of the first year: with Bird rights,
@@ -61,6 +67,8 @@ export const maxFor = (service: number) => {
 };
 
 export const midLevelAmount = () => cbaSettings.midLevel * g.get("salaryCap");
+export const taxpayerMidLevelAmount = () =>
+	cbaSettings.taxpayerMidLevel * g.get("salaryCap");
 
 // Above the apron a team gets no mid-level, and its trades may not bring in
 // more salary than they send out.
@@ -77,7 +85,12 @@ export const hardCap = (tid: number) =>
 // Contract amounts are in thousands and rounded; a hair over is the same.
 const SLACK = 1;
 
-export type SigningPath = "room" | "bird" | "midLevel" | "minimum";
+export type SigningPath =
+	| "room"
+	| "bird"
+	| "midLevel"
+	| "taxpayerMidLevel"
+	| "minimum";
 
 export type SigningCheck =
 	| { ok: true; path: SigningPath }
@@ -133,12 +146,20 @@ export const checkSigning = ({
 	) {
 		return { ok: true, path: "midLevel" };
 	}
+	// Past the apron (the hard cap checked above): the taxpayer mid-level.
+	if (
+		!midLevelUsed &&
+		amount <= taxpayerMidLevelAmount() + SLACK &&
+		after > apron() + SLACK
+	) {
+		return { ok: true, path: "taxpayerMidLevel" };
+	}
 	return {
 		ok: false,
 		reason: midLevelUsed
 			? "Over the cap, mid-level already used"
 			: after > apron() + SLACK
-				? "Over the apron"
+				? "Over the apron; more than the taxpayer mid-level"
 				: "Over the cap; more than the mid-level",
 	};
 };
@@ -151,9 +172,11 @@ export const shapeLimits = (path: SigningPath, own: boolean) => ({
 			? cbaSettings.yearsMinimum
 			: path === "midLevel"
 				? cbaSettings.midLevelYears
-				: own
-					? cbaSettings.yearsOwn
-					: cbaSettings.yearsOther,
+				: path === "taxpayerMidLevel"
+					? cbaSettings.taxpayerYears
+					: own
+						? cbaSettings.yearsOwn
+						: cbaSettings.yearsOther,
 	raise: own ? cbaSettings.raiseOwn : cbaSettings.raiseOther,
 });
 
