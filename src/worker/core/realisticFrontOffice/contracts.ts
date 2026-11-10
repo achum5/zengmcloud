@@ -4,6 +4,8 @@ import { contractOf, type ContractHolder } from "./contractOf.ts";
 import { range } from "../../../common/utils.ts";
 import { g, helpers } from "../../util/index.ts";
 import { getHardCap } from "../../util/getHardCap.ts";
+import { hardCap as cbaHardCap } from "./cba.ts";
+import { stagesOn } from "./stages.ts";
 
 // CONTRACTS on the same terms a human gets: the lengths a player would sign
 // for and what he asks for each, and whether a team may pay it.
@@ -72,7 +74,9 @@ export const mayPay = ({
 			return false;
 		}
 	}
-	const hardCap = getHardCap(tid);
+	// With CBA-lite (free agency in stages), its hard cap - tax line + 10% of
+	// the cap, or the league's own if lower - re-signing included.
+	const hardCap = stagesOn() ? cbaHardCap(tid) : getHardCap(tid);
 	if (Number.isFinite(hardCap) && payroll + amount - 1 > hardCap) {
 		return amount - 1 <= minContract && rosterSize < g.get("maxRosterSize");
 	}
