@@ -56,8 +56,11 @@ export type Offer = {
 	option?: "player" | "team";
 };
 
-// An option is worth this share of a season's money to the side holding it.
-export const OPTION_VALUE = 0.05;
+// What an option is worth to a player, as a share of a season's money: his
+// own (a player option) a little more, the team's a lot less (owner's call,
+// 2026-11-11: players should really not like a team option).
+export const PLAYER_OPTION_VALUE = 0.05;
+export const TEAM_OPTION_COST = 0.15;
 
 // What an offer pays a season as a player weighs it: its average over the
 // years, with an option his (worth more) or the team's (worth less).
@@ -68,9 +71,9 @@ export const effectiveAmount = (
 	offer.amount *
 	(1 + ((offer.raise ?? 0) * (years - 1)) / 2) *
 	(offer.option === "player"
-		? 1 + OPTION_VALUE
+		? 1 + PLAYER_OPTION_VALUE
 		: offer.option === "team"
-			? 1 - OPTION_VALUE
+			? 1 - TEAM_OPTION_COST
 			: 1);
 
 // The length he wants, in seasons, from the contract he is asking for.

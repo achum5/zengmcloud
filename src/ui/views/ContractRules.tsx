@@ -259,10 +259,12 @@ const GuideTab = ({ rules }: { rules: Rules }) => {
 				</li>
 				<li>
 					<b>Options:</b> on a deal of 2 years or more, the last season can be a
-					player option (<Abbr k="PO" />, he decides whether to stay - worth
-					about {rules.optionPct}% more to him) or a team option (
-					<Abbr k="TO" />, you decide - worth about {rules.optionPct}% less to
-					him).
+					player option (<Abbr k="PO" />, he decides whether to stay) or a team
+					option (<Abbr k="TO" />, you decide). A player option makes an offer
+					worth about {rules.playerOptionPct}% more to him. Players really don't
+					like team options: one makes an offer worth about{" "}
+					{rules.teamOptionPct}% less to him, so his chance of taking it drops a
+					lot.
 				</li>
 				<li>
 					Options are decided before free agency. A player opts out if the

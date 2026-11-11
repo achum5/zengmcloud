@@ -9,7 +9,11 @@ import { g, helpers } from "../../util/index.ts";
 import { getHardCap } from "../../util/getHardCap.ts";
 import { team } from "../index.ts";
 import { cbaSettings, hardCap, maxFor, midLevelAmount } from "./cba.ts";
-import { OPTION_VALUE, offerSettings } from "./offers.ts";
+import {
+	offerSettings,
+	PLAYER_OPTION_VALUE,
+	TEAM_OPTION_COST,
+} from "./offers.ts";
 import {
 	inStages,
 	midLevelUsed,
@@ -154,7 +158,8 @@ export const contractRules = () => {
 		askFloorPcts: stageSettings.floorByStage.map(pct),
 		campAskCap: stageSettings.campAskCap * salaryCap,
 		lateLongPct: pct(stageSettings.lateLongShare),
-		optionPct: pct(OPTION_VALUE),
+		playerOptionPct: pct(PLAYER_OPTION_VALUE),
+		teamOptionPct: pct(TEAM_OPTION_COST),
 		overAskKneePct: pct(offerSettings.overAskKnee - 1),
 		extensionYears: maxLength,
 		extensionsOn: extensionSettings.on,

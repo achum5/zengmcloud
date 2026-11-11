@@ -5,6 +5,7 @@ import { g } from "../../util/index.ts";
 import {
 	askFor,
 	choiceOdds,
+	effectiveAmount,
 	offerSettings,
 	offerUtility,
 	rolePoints,
@@ -96,4 +97,13 @@ test("a starter's place pleases him and the end of the bench does not", () => {
 	const fame = rolePoints({ ...p, moodTraits: ["F"] }, better, 2);
 	const winning = rolePoints({ ...p, moodTraits: ["W"] }, better, 2);
 	assert.isBelow(fame, winning);
+});
+
+test("a team option costs him far more than a player option is worth to him", () => {
+	const plain = effectiveAmount({ amount: 10_000 }, 3);
+	const po = effectiveAmount({ amount: 10_000, option: "player" }, 3);
+	const to = effectiveAmount({ amount: 10_000, option: "team" }, 3);
+	assert.closeTo(po, 10_500, 1e-6);
+	assert.closeTo(to, 8_500, 1e-6);
+	assert.isAbove(plain - to, 2 * (po - plain));
 });
