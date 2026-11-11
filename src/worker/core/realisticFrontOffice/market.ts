@@ -31,6 +31,7 @@ import {
 	franchiseValue,
 	isClassPick,
 	OUTLOOK_YEARS,
+	outlookSeason,
 	PATIENCE,
 	pickLineAt,
 	placesAfter,
@@ -231,6 +232,15 @@ export const marketSettings = {
 	// team sent a 69 aged 27 and two 23-year-olds rated 60 for three bench
 	// players, the first offer it heard. Off while it is measured.
 	auction: false,
+	// MARKET VALUE (owner's call, 2026-11-11: "valuation very broken"). A
+	// team prices each player or pick it gives or gets at no less than this
+	// share of what the rest of the league would pay for him: the second
+	// most any of the teams likeliest to want him gains from him alone
+	// (marketValue). Without, a team out of contention for years valued its
+	// best players and its own firsts at nothing - no player moved its title
+	// odds - and gave them away for the money: Murray, Gordon, a first and a
+	// prospect for Sabonis. 0 is off.
+	marketFloor: 0,
 };
 
 // For the arena's version-against-version leagues: settings for some teams'
@@ -312,6 +322,7 @@ const getOutlook = async (games: number) => {
 			watch(cache.outlook);
 		}
 	}
+	await ensureMarketTeams(cache.outlook);
 	return cache.outlook;
 };
 
@@ -427,7 +438,7 @@ export const loadTeam = async (
 	);
 	letGo.record = false;
 	registerCutRef(outlook, tid, players, picks);
-	return {
+	const t: TeamState = {
 		tid,
 		players,
 		picks,
@@ -443,6 +454,37 @@ export const loadTeam = async (
 			.sort()
 			.join(),
 	};
+	marketTeamsOf(outlook).set(tid, t);
+	return t;
+};
+
+// Every team as last loaded for this outlook, for what the league would pay
+// for an asset (marketValue).
+const marketTeams = new WeakMap<LeagueOutlook, Map<number, TeamState>>();
+const marketTeamsOf = (outlook: LeagueOutlook) => {
+	let map = marketTeams.get(outlook);
+	if (!map) {
+		map = new Map();
+		marketTeams.set(outlook, map);
+	}
+	return map;
+};
+
+const marketFloorOn = () =>
+	marketSettings.marketFloor > 0 ||
+	[...teamMarketSettings.values()].some((x) => (x.marketFloor ?? 0) > 0);
+
+// With market value on, every team loaded once for the outlook.
+const ensureMarketTeams = async (outlook: LeagueOutlook) => {
+	if (!marketFloorOn()) {
+		return;
+	}
+	const map = marketTeamsOf(outlook);
+	for (const t of await idb.cache.teams.getAll()) {
+		if (!t.disabled && !map.has(t.tid)) {
+			await loadTeam(outlook, t.tid);
+		}
+	}
 };
 
 export type Asset =
@@ -958,7 +1000,36 @@ let lastPlaces:
 	  }
 	| undefined;
 
+// What a deal is worth to a team (see rawPriceFor), each asset it gives or
+// gets at no less than its market value (marketFloor).
 export const priceFor = (
+	outlook: LeagueOutlook,
+	t: TeamState,
+	outgoing: readonly Asset[],
+	incoming: readonly Asset[],
+	partner?: TeamState,
+	floor?: number,
+) => {
+	const share = settingFor(t.tid, "marketFloor");
+	if (share <= 0 || outgoing.length + incoming.length === 0) {
+		return rawPriceFor(outlook, t, outgoing, incoming, partner, floor);
+	}
+	const extra = marketExtra(outlook, t, outgoing, incoming, share);
+	return (
+		rawPriceFor(
+			outlook,
+			t,
+			outgoing,
+			incoming,
+			partner,
+			floor === undefined ? undefined : floor - extra,
+		) + extra
+	);
+};
+
+// What a deal is worth to a team by its own use of what moves: the change in
+// its franchise value.
+const rawPriceFor = (
 	outlook: LeagueOutlook,
 	t: TeamState,
 	outgoing: readonly Asset[],
@@ -1192,6 +1263,99 @@ export const singlePrice = (
 		single.set(k, value);
 	}
 	return value;
+};
+
+// One asset alone by a team's own use of it, for market values.
+const rawSingle = (
+	outlook: LeagueOutlook,
+	t: TeamState,
+	sign: "-" | "+",
+	x: Asset,
+) => {
+	const single = screensOf(outlook);
+	const k = `raw:${singleKey(t, sign, x)}`;
+	let value = single.get(k);
+	if (value === undefined) {
+		value =
+			sign === "-"
+				? rawPriceFor(outlook, t, [x], [])
+				: rawPriceFor(outlook, t, [], [x]);
+		single.set(k, value);
+	}
+	return value;
+};
+
+// How many of the teams likeliest to want an asset are asked what it is
+// worth to them.
+const MARKET_BUYERS = 4;
+
+// What the rest of the league would pay for an asset held by `holder`: the
+// second most any of the teams likeliest to want it - those whose title
+// chances turn most on strength in the seasons it counts for - would gain
+// from it alone, by their own use of it (the most, if only one would). A
+// player counts this season and the next three; a pick from the season after
+// its draft for four.
+export const marketValue = (
+	outlook: LeagueOutlook,
+	x: Asset,
+	holder: number,
+) => {
+	const teams = marketTeams.get(outlook);
+	if (!teams) {
+		return 0;
+	}
+	let from = 0;
+	if (x.kind === "pick" && typeof x.dp.season === "number") {
+		from = Math.max(0, x.dp.season - outlookSeason(outlook, 0) + 1);
+	}
+	const to = Math.min(OUTLOOK_YEARS, from + 3);
+	const scored: { t: TeamState; score: number }[] = [];
+	for (const t of teams.values()) {
+		if (t.tid === holder) {
+			continue;
+		}
+		let score = 0;
+		for (let y = Math.min(from, OUTLOOK_YEARS); y <= to; y++) {
+			const curve = outlook.titleCurves[y]!;
+			const q = curveAt(curve, t.path[y] ?? 0);
+			score += PATIENCE ** y * curve.b * q * (1 - q);
+		}
+		scored.push({ t, score });
+	}
+	scored.sort((a, b) => b.score - a.score);
+	const values = scored
+		.slice(0, MARKET_BUYERS)
+		.map(({ t }) => rawSingle(outlook, t, "+", x))
+		.sort((a, b) => b - a);
+	return Math.max(0, values[1] ?? values[0] ?? 0);
+};
+
+// What pricing each asset at its market value at least adds to a deal for a
+// team: for each it gives, what the market would pay past what it is worth
+// to the team; for each it gets, the same.
+const marketExtra = (
+	outlook: LeagueOutlook,
+	t: TeamState,
+	outgoing: readonly Asset[],
+	incoming: readonly Asset[],
+	share: number,
+) => {
+	let extra = 0;
+	for (const x of outgoing) {
+		const use = -rawSingle(outlook, t, "-", x);
+		const market = share * marketValue(outlook, x, t.tid);
+		if (market > use) {
+			extra -= market - use;
+		}
+	}
+	for (const y of incoming) {
+		const use = rawSingle(outlook, t, "+", y);
+		const market = share * marketValue(outlook, y, t.tid);
+		if (market > use) {
+			extra += market - use;
+		}
+	}
+	return extra;
 };
 
 export const bestDealWith = (
