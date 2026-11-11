@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 269,
+		date: "2026-11-11",
+		text: "Realistic Front Offices: players really don't like team options now. A team option makes an offer worth about 15% less to a player (it was 5%), so it cuts his chance of taking it a lot - an offer he'd take 70% of the time drops to under 10% with one, unless you pay more. Player options are unchanged.",
+	},
+	{
 		n: 268,
 		date: "2026-11-11",
 		text: "Realistic Front Offices: the Contract Rules page (Team menu) opens on a new How it works tab that explains every part of the contract rules in plain words with your league's numbers - the cap, luxury tax and hard cap, max and minimum contracts, raises and options, each way to sign a player, re-signing, restricted free agents and offer sheets, each free agency stage, and how a free agent chooses.",
