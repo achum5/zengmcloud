@@ -30,7 +30,6 @@ import { sideColors } from "../../../components/GameCharts.basketball.tsx";
 import { TEAM_NUMS_DISPLAY_ORDER } from "../../../util/boxScoreDisplayOrder.ts";
 import {
 	feedRows,
-	highlightOf,
 	periodLabel,
 	type FeedEntry,
 	type FeedRow,
@@ -505,137 +504,6 @@ export const AllPlays = ({
 				season={season}
 				numPeriods={numPeriods}
 			/>
-		</Section>
-	);
-};
-
-// How big a highlight is, for the few a finished game shows (see Highlights).
-const HIGHLIGHT_WEIGHT: Record<string, number> = {
-	"Poster dunk": 6,
-	"Dunk and the foul": 5,
-	"And-one": 4,
-	Dunk: 3,
-	Block: 2,
-	Three: 2,
-};
-
-// The game's dunks, threes and blocks so far, newest first - each one, opened,
-// played right there under its row (see FeedContext's clip). A game over
-// (`best`): its biggest few, in the order they happened, and all of them in
-// that order.
-export const Highlights = ({
-	rows,
-	teams,
-	season,
-	numPeriods,
-	best,
-}: {
-	rows: FeedRow[];
-	teams: [any, any];
-	season: number;
-	numPeriods: number;
-	best?: boolean;
-}) => {
-	const [all, setAll] = useState(false);
-	const [open, setOpen] = useState<number | undefined>();
-	const { say, clip } = useContext(FeedContext);
-	const newest = rows.filter((row) => highlightOf(row) !== undefined);
-	if (newest.length === 0) {
-		return null;
-	}
-	const SHOWN = 4;
-	const highlights = best ? [...newest].reverse() : newest;
-	let shown = highlights.slice(0, SHOWN);
-	if (best && !all) {
-		// (Late in a close one counts for more.)
-		const late = (row: FeedRow) =>
-			(row.period ?? 0) >= numPeriods &&
-			row.pts !== undefined &&
-			Math.abs(row.pts[0] - row.pts[1]) <= 6
-				? 1
-				: 0;
-		const weight = (row: FeedRow) =>
-			(HIGHLIGHT_WEIGHT[highlightOf(row)!] ?? 1) + late(row);
-		const top = new Set(
-			[...highlights]
-				.sort((a, b) => weight(b) - weight(a))
-				.slice(0, SHOWN)
-				.map((row) => row.key),
-		);
-		shown = highlights.filter((row) => top.has(row.key));
-	} else if (all) {
-		shown = highlights;
-	}
-	return (
-		<Section
-			title="Highlights"
-			action={
-				highlights.length > SHOWN ? (
-					<LinkButton onClick={() => setAll((a) => !a)}>
-						{all ? "Fewer" : `All ${highlights.length}`}
-					</LinkButton>
-				) : null
-			}
-		>
-			<div className="gamecast-plays">
-				{shown.map((row) => {
-					const team = row.t !== undefined ? teams[row.t] : undefined;
-					const when = [
-						row.time,
-						periodLabel(row.period, numPeriods, helpers.ordinal),
-					]
-						.filter(Boolean)
-						.join(" - ");
-					const opens = clip !== undefined && watchable(row);
-					const isOpen = opens && open === row.key;
-					const toggle = () => setOpen(isOpen ? undefined : row.key);
-					return (
-						<div key={row.key} className="gamecast-unit">
-							<div
-								className={clsx("gamecast-play align-items-center", {
-									"gamecast-play-opens": opens,
-								})}
-								{...(opens
-									? {
-											role: "button",
-											tabIndex: 0,
-											"aria-expanded": isOpen,
-											title: isOpen ? "Close" : "Watch it",
-											onClick: toggle,
-											onKeyDown: (e: { key: string }) => {
-												if (e.key === "Enter") {
-													toggle();
-												}
-											},
-										}
-									: {})}
-							>
-								<div className="gamecast-play-picture">
-									<PlayPicture
-										pid={row.pid}
-										team={team}
-										season={season}
-										size={38}
-									/>
-								</div>
-								<div className="flex-grow-1" style={{ minWidth: 0 }}>
-									<div className="gamecast-play-title">
-										{highlightOf(row)}
-										{when ? (
-											<span className="gamecast-play-when">{when}</span>
-										) : null}
-									</div>
-									<div className="gamecast-play-text gamecast-clamp">
-										{say?.(row) ?? textOf(row.texts)}
-									</div>
-								</div>
-								{opens ? <Chevron open={isOpen} /> : null}
-							</div>
-							{isOpen ? <div className="gamecast-clip">{clip(row)}</div> : null}
-						</div>
-					);
-				})}
-			</div>
 		</Section>
 	);
 };
@@ -1695,12 +1563,6 @@ export const LiveGamecast = ({
 										numPeriods={numPeriods}
 									/>
 								</Section>
-								<Highlights
-									rows={rows}
-									teams={teams}
-									season={season}
-									numPeriods={numPeriods}
-								/>
 								<Section title="Game Leaders">
 									<Leaders boxScore={boxScore} />
 								</Section>

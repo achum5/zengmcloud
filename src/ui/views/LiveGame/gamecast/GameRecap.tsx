@@ -31,7 +31,6 @@ import {
 	Leaders,
 	AllPlays,
 	FeedContext,
-	Highlights,
 	Linescore,
 	Logo,
 	LinkButton,
@@ -554,15 +553,6 @@ export const GameRecap = ({
 							<div className="recap-grid">
 								<div className="recap-mid">
 									<RecapStory boxScore={boxScore} />
-									{replay ? (
-										<Highlights
-											rows={replay.rows}
-											teams={boxScore.teams}
-											season={boxScore.season}
-											numPeriods={numPeriods}
-											best
-										/>
-									) : null}
 									{boxScore.charts ? (
 										<Section title="Game Flow">
 											<FlowCharts boxScore={boxScore} colors={colors} />
