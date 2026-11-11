@@ -103,6 +103,20 @@ Existing contracts stay as they are (flat, no options).
   clearly better offer wins about 85-90% of the time, close ones are near
   coin flips. Rolled once per player per stage, so deciding again changes
   nothing. Each team sees its own odds.
+- **On his decision day he signs** with one of the offers at his ask or
+  more, rather than wait; his ask never rises past what he asked as free
+  agency opened. At camp, the last stage, he signs with one at the least he
+  asks for (the floor) or more - the season is about to start. From camp on,
+  a deal for less than his opening ask is for one season only (without,
+  veterans signed at camp for 2% of the cap for four years). The number to beat counts only offers whose teams can still
+  sign him. (2026-11-10, from an audit of the owner's league: its best free
+  agent went unsigned into the season, his ask chasing the offers up.)
+- **Prospects.** CPU teams look at the best free agents by what they are
+  now and, a quarter as many again, by what they may become - without, a
+  20-year-old who might start went unsigned through camp.
+- **Contract lengths are enforced** for every signing: 5 years with Bird
+  rights, 4 in cap room or by the mid-level, 2 by the taxpayer mid-level or
+  the minimum.
 
 ## CPU teams
 

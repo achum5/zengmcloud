@@ -9,7 +9,7 @@ import { g } from "../../util/index.ts";
 import { formatEventText } from "../../util/formatEventText.ts";
 import { createArenaLeague } from "../../../test/arena/runLeague.ts";
 import { setTestContract } from "../../../test/helpers.ts";
-import { cbaSettings, maxFor } from "./cba.ts";
+import { cbaSettings, maxFor, midLevelAmount } from "./cba.ts";
 import {
 	capStatusOf,
 	contractCard,
@@ -29,7 +29,7 @@ import {
 	sign,
 } from "./freeAgency.ts";
 import { contractOf } from "./contractOf.ts";
-import { stageSettings } from "./stages.ts";
+import { checkFor, ownTid, stageSettings } from "./stages.ts";
 
 const importNode = (name: string) => import(/* @vite-ignore */ name);
 
@@ -296,6 +296,28 @@ test("a human team decides its own team options; those it leaves are picked up",
 		g.setWithoutSavingToDB("spectator", spectator);
 		await idb.cache.negotiations.clear();
 	}
+});
+
+test("a signing's length is within its rule's limit", async () => {
+	const p = (
+		await idb.cache.players.indexGetAll("playersByTid", PLAYER.FREE_AGENT)
+	).find((x) => ownTid(x) !== tid)!;
+	const cap = g.get("salaryCap");
+	const args = {
+		t: { tid, midLevelSeason: undefined },
+		p,
+		holds: 0,
+		rosterSize: 12,
+	};
+	// Over the cap, by the mid-level: 4 years at most.
+	const mle = { ...args, payroll: cap, amount: midLevelAmount() };
+	assert.isTrue(checkFor({ ...mle, years: 4 }).ok);
+	assert.isFalse(checkFor({ ...mle, years: 5 }).ok);
+	// The minimum: 2 years, or more in cap room.
+	const min = { ...args, amount: g.get("minContract") };
+	assert.isFalse(checkFor({ ...min, payroll: cap, years: 3 }).ok);
+	assert.isTrue(checkFor({ ...min, payroll: cap, years: 2 }).ok);
+	assert.isTrue(checkFor({ ...min, payroll: cap / 2, years: 3 }).ok);
 });
 
 test("the rules page has this league's numbers", () => {

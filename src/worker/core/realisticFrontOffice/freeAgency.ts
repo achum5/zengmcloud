@@ -27,6 +27,7 @@ import {
 } from "../../../common/contracts.ts";
 import { amountsWithRaise, maxFor, serviceYears, shapeLimits } from "./cba.ts";
 import {
+	askFloor,
 	atCamp,
 	hadDiscount,
 	reservation,
@@ -34,6 +35,7 @@ import {
 	checkFor,
 	leastForLength,
 	decidesNow,
+	decisionDay,
 	inStages,
 	mostFor,
 	matchingTid,
@@ -102,6 +104,11 @@ const NOBODY_AFTER = 0.85;
 export const freeAgencySettings = {
 	// Each day his price moves this share of the way to the market's.
 	priceSpeed: 0.5,
+	// Besides the best free agents by what they are now, teams look at this
+	// many more (as a share of those) by what they may become: without, a
+	// 20-year-old who may be a starter went unsigned through camp, there for
+	// a human to sign for the minimum.
+	prospects: 0.25,
 };
 
 // Called each day with what happened - for the arena.
@@ -433,6 +440,8 @@ const bestBid = (
 	temperature = offerSettings.temperature,
 	// The least he would take for this length.
 	least = 0,
+	// Whether the cap rules allow this amount at this length.
+	allows?: (amount: number) => boolean,
 ) => {
 	const minContract = g.get("minContract");
 	const most = mostUpTo(line, cap);
@@ -447,7 +456,12 @@ const bestBid = (
 			minContract + ((most - minContract) * i) / STEPS,
 		);
 		const net = netAt(line, amount);
-		if (net <= 0 || amount > most || amount < least) {
+		if (
+			net <= 0 ||
+			amount > most ||
+			amount < least ||
+			(allows && !allows(amount))
+		) {
 			continue;
 		}
 		const weight = Math.exp(
@@ -463,6 +477,26 @@ const bestBid = (
 	}
 	return best;
 };
+
+// On his decision day, the least he takes for a deal this long: his ask, but
+// never more than he asked as free agency opened - so the best free agents
+// sign on their day. At camp, the least he asks for at all (askFloor).
+export const acceptAt = (p: Player, years: number) =>
+	askFor(p, years) *
+	Math.min(
+		1,
+		(atCamp() ? askFloor(p) : (p.faOpenAsk ?? Infinity)) /
+			Math.max(g.get("minContract"), contractOf(p).amount),
+	);
+
+// The least a CPU team offers him for a deal this long.
+const leastFor = (p: Player, years: number) =>
+	stagesOn()
+		? Math.max(
+				leastForLength(p, years),
+				decisionDay(p) ? acceptAt(p, years) : 0,
+			)
+		: 0;
 
 export const sign = async (
 	p: Player,
@@ -491,6 +525,8 @@ export const sign = async (
 		stagesOn() &&
 		p.faOpenAsk !== undefined &&
 		contract.amount < stageSettings.discountShare * p.faOpenAsk;
+	// What he asked as free agency opened was for this summer only.
+	delete p.faOpenAsk;
 	const history: SigningHow | undefined = stagesOn()
 		? {
 				...how,
@@ -631,6 +667,7 @@ export const makeOffer = async (
 				: 0,
 			amount: offer.amount,
 			rosterSize,
+			years,
 		});
 		if (!check.ok) {
 			return `${check.reason}.`;
@@ -794,9 +831,25 @@ export const offerChance = async (
 					]
 				: [];
 		const mine = await utilityOf(p, { ...offer, tid }, rankOf(p), rosters);
+		// On his decision day he takes an offer at his ask rather than wait.
+		if (decisionDay(p)) {
+			const takes = (x: { amount: number; exp: number }) =>
+				x.amount >= acceptAt(p, yearsFor(x.exp)) - 1;
+			const leadTakes = !!lead && lead.tid !== tid && takes(lead);
+			if (takes(offer)) {
+				return choiceOdds(
+					leadTakes ? [mine, ...others] : [mine],
+					undefined,
+					stageSettings.decisionTemperature,
+				)[0]!;
+			}
+			if (leadTakes) {
+				return 0;
+			}
+		}
 		return choiceOdds(
 			[mine, ...others],
-			waitUtility(),
+			stageWait(waitUtility()),
 			stageSettings.decisionTemperature,
 		)[0]!;
 	}
@@ -906,7 +959,7 @@ export const priceMarket = async (
 		}
 		states.set(t.tid, state);
 	}
-	const candidates = pool.slice(0, numCandidates);
+	const candidates = withProspects(pool, numCandidates);
 	for (const t of teams) {
 		await ensureRetention(outlook, candidates, t.tid);
 	}
@@ -933,6 +986,21 @@ export const priceMarket = async (
 	const holdsOf = new Map(
 		teams.map((t) => [t.tid, stages ? capHolds(t.tid, pool) : 0]),
 	);
+	const teamOf = new Map(teams.map((t) => [t.tid, t]));
+	// Whether the cap rules let a team sign him for `amount` and `years`.
+	const checkOf = (tid: number, p: Player, amount: number, years: number) => {
+		const state = states.get(tid)!;
+		const own = ownTid(p) === tid;
+		return checkFor({
+			t: teamOf.get(tid)!,
+			p,
+			payroll: state.payroll,
+			holds: holdsOf.get(tid)! - (own ? contractOf(p).amount : 0),
+			amount,
+			rosterSize: state.players.length,
+			years,
+		}).ok;
+	};
 	const capOf = (tid: number, p: Player) => {
 		if (!cba) {
 			return allowed.get(tid);
@@ -1089,8 +1157,13 @@ export const priceMarket = async (
 				),
 			),
 			minContract,
-			// CBA-lite: no more than the max for his years in the league.
-			stages ? maxFor(serviceYears(p)) : maxContract,
+			// CBA-lite: no more than the max for his years in the league -
+			// nor, in stages, than he asked as free agency opened: teams
+			// outbid each other on his decision day, and an ask chasing their
+			// offers up kept the best free agents from signing at all.
+			stages
+				? Math.min(maxFor(serviceYears(p)), p.faOpenAsk ?? Infinity)
+				: maxContract,
 		);
 		if (to !== from) {
 			getContractDemand(p).amount = to;
@@ -1107,9 +1180,25 @@ export const priceMarket = async (
 		candidates,
 		allowed,
 		capOf,
+		checkOf,
 		lineOf,
 		priced,
 	};
+};
+
+// The free agents teams look at: the best by what they are now (the pool is
+// in that order), and the best of the rest by what they may become.
+const withProspects = (pool: readonly Player[], numCandidates: number) => {
+	const now = pool.slice(0, numCandidates);
+	const extra = Math.ceil(numCandidates * freeAgencySettings.prospects);
+	if (extra <= 0) {
+		return now;
+	}
+	const rest = pool
+		.slice(numCandidates)
+		.sort((a, b) => b.value - a.value || a.pid - b.pid)
+		.slice(0, extra);
+	return [...now, ...rest];
 };
 
 // Before 7 seasons played, near the max (25% of the cap), a star wants 2 years.
@@ -1154,12 +1243,17 @@ export const openStageMarket = async () => {
 		p.faOpenAsk = contractOf(p).amount;
 		await idb.cache.players.put(p);
 	}
-	// A CPU team renounces its free agents it would not pay their asks: their
-	// cap holds would only keep it from using its room.
+	// A CPU team with room under the cap renounces its free agents it would
+	// not pay their asks: their cap holds would only keep it from using its
+	// room. Over the cap, renouncing gains nothing, and it keeps his Bird
+	// rights.
 	const outlook = await currentOutlook();
 	for (const tid of await aiTids()) {
 		const own = pool.filter((p) => ownTid(p) === tid);
-		if (own.length === 0) {
+		if (
+			own.length === 0 ||
+			(await team.getPayroll(tid)) >= g.get("salaryCap")
+		) {
 			continue;
 		}
 		const state = await loadTeam(outlook, tid);
@@ -1361,6 +1455,7 @@ const resolveOfferSheets = async () => {
 				holds: capHolds(tid, pool, p.pid),
 				amount: sheet.amount,
 				rosterSize: roster.length,
+				years: yearsFor(sheet.exp),
 			});
 			if (!check.ok) {
 				return false;
@@ -1423,6 +1518,7 @@ export const freeAgencyDay = async () => {
 		candidates,
 		allowed,
 		capOf,
+		checkOf,
 		lineOf,
 		priced,
 	} = await priceMarket(
@@ -1471,7 +1567,9 @@ export const freeAgencyDay = async () => {
 		}
 		const capFor = (p: Player) => (cba ? capOf(t.tid, p) : cap) ?? -Infinity;
 		const rivalsOf = async (p: Player) => {
-			let weight = waitWeight;
+			// On his decision day he signs with the best offer he will take
+			// (acceptAt): waiting is not a rival.
+			let weight = decisionDay(p) ? 0 : waitWeight;
 			// Deciding today, sealed: every team knows only the number to beat.
 			if (stages && decidesNow(p)) {
 				const lead = p.faLead;
@@ -1509,7 +1607,8 @@ export const freeAgencyDay = async () => {
 					rivals,
 					capFor(p),
 					temperature,
-					stagesOn() ? leastForLength(p, years) : 0,
+					leastFor(p, years),
+					cba ? (amount) => checkOf(t.tid, p, amount, years) : undefined,
 				);
 				if (bid && (ev === undefined || bid.ev > ev)) {
 					ev = bid.ev;
@@ -1533,7 +1632,8 @@ export const freeAgencyDay = async () => {
 					rivals,
 					capFor(p),
 					temperature,
-					stagesOn() ? leastForLength(p, years) : 0,
+					leastFor(p, years),
+					cba ? (amount) => checkOf(t.tid, p, amount, years) : undefined,
 				);
 				if (bid && (!best || bid.ev > best.ev)) {
 					best = {
@@ -1581,15 +1681,22 @@ export const freeAgencyDay = async () => {
 	let queue = pool.filter((p) => remaining.has(p.pid));
 	const chosen = new Map<number, Offer>();
 	const choose = async (p: Player) => {
-		const offers = remaining.get(p.pid) ?? [];
-		if (offers.length === 0 || (stages && (!decidesNow(p) || p.faOfferSheet))) {
+		const all = remaining.get(p.pid) ?? [];
+		if (all.length === 0 || (stages && (!decidesNow(p) || p.faOfferSheet))) {
 			return;
 		}
+		// On his decision day, he signs with one of the offers he will take,
+		// if any: he does not wait.
+		const taking = decisionDay(p)
+			? all.filter((x) => x.amount >= acceptAt(p, yearsFor(x.exp)) - 1)
+			: [];
+		const offers = taking.length > 0 ? taking : all;
+		const waits = taking.length === 0;
 		const utilities: number[] = [];
 		for (const offer of offers) {
 			utilities.push(await utilityOf(p, offer, rankOf(p), rosters));
 		}
-		const odds = choiceOdds(utilities, wait, temperature);
+		const odds = choiceOdds(utilities, waits ? wait : undefined, temperature);
 		const roll = Math.random();
 		let k = 0;
 		let acc = odds[0]!;
@@ -1600,7 +1707,7 @@ export const freeAgencyDay = async () => {
 		const decision: FreeAgencyDayLog["decisions"][number] = {
 			pid: p.pid,
 			offers: offers.length,
-			signToday: 1 - odds.at(-1)!,
+			signToday: waits ? 1 - odds.at(-1)! : 1,
 		};
 		if (k < offers.length) {
 			const offer = offers[k]!;
@@ -1620,7 +1727,7 @@ export const freeAgencyDay = async () => {
 					exp: x.exp,
 					oddsPct: Math.round(odds[i]! * 1000) / 10,
 				})),
-				waitPct: Math.round(odds.at(-1)! * 1000) / 10,
+				waitPct: waits ? Math.round(odds.at(-1)! * 1000) / 10 : 0,
 				roll: Math.round(roll * 1000) / 10,
 				winnerTid: offer.tid,
 				amount: offer.amount,
@@ -1664,6 +1771,7 @@ export const freeAgencyDay = async () => {
 							holds: stages ? capHolds(tid, pool, p.pid) : 0,
 							amount: offer.amount,
 							rosterSize: roster.length,
+							years: yearsFor(offer.exp),
 						})
 					: undefined;
 				const fits =
@@ -1720,6 +1828,7 @@ export const freeAgencyDay = async () => {
 							rosterSize: (
 								await idb.cache.players.indexGetAll("playersByTid", matching)
 							).length,
+							years: yearsFor(offer.exp),
 						});
 					if (
 						ownState &&
@@ -1793,8 +1902,33 @@ export const freeAgencyDay = async () => {
 	// Signed players' offers are gone from every board.
 	await pruneOffers((pid) => remaining.has(pid));
 
-	// In stages, each player still out there shows the offer to beat.
+	// In stages, each player still out there shows the offer to beat - of
+	// the offers whose teams can still sign him, after today's signings.
 	if (stages) {
+		const payrolls = new Map<number, number>();
+		const rosterSizes = new Map<number, number>();
+		const live = async (p: Player, offer: Offer) => {
+			const t = teams.find((x) => x.tid === offer.tid);
+			if (!t) {
+				return false;
+			}
+			if (!payrolls.has(t.tid)) {
+				payrolls.set(t.tid, await team.getPayroll(t.tid));
+				rosterSizes.set(
+					t.tid,
+					(await idb.cache.players.indexGetAll("playersByTid", t.tid)).length,
+				);
+			}
+			return checkFor({
+				t: (await idb.cache.teams.get(t.tid)) ?? t,
+				p,
+				payroll: payrolls.get(t.tid)!,
+				holds: capHolds(t.tid, pool, p.pid),
+				amount: offer.amount,
+				rosterSize: rosterSizes.get(t.tid)!,
+				years: yearsFor(offer.exp),
+			}).ok;
+		};
 		for (const p of pool) {
 			if (p.tid !== PLAYER.FREE_AGENT) {
 				continue;
@@ -1802,6 +1936,9 @@ export const freeAgencyDay = async () => {
 			let lead: { amount: number; exp: number; tid: number } | undefined;
 			let top = -Infinity;
 			for (const offer of standing.get(p.pid) ?? []) {
+				if (!(await live(p, offer))) {
+					continue;
+				}
 				const u = await utilityOf(p, offer, rankOf(p), rosters);
 				if (u > top) {
 					top = u;

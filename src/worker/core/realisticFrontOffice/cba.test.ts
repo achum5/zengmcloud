@@ -10,6 +10,7 @@ import {
 	checkSigning,
 	checkTradeSalary,
 	hardCap,
+	longestDeal,
 	maxFor,
 	midLevelAmount,
 	raisesOk,
@@ -160,5 +161,30 @@ test("trades past the apron or the hard cap may not add salary", () => {
 			incoming: 10_000,
 			outgoing: 10_000,
 		}).ok,
+	);
+});
+
+test("the longest deal: Bird rights 5 years, room 4, the mid-level 4, the taxpayer mid-level and the minimum 2", () => {
+	assert.strictEqual(longestDeal({ path: "bird", own: true, room: false }), 5);
+	assert.strictEqual(
+		longestDeal({ path: "minimum", own: true, room: false }),
+		5,
+	);
+	assert.strictEqual(longestDeal({ path: "room", own: false, room: true }), 4);
+	assert.strictEqual(
+		longestDeal({ path: "minimum", own: false, room: true }),
+		4,
+	);
+	assert.strictEqual(
+		longestDeal({ path: "midLevel", own: false, room: false }),
+		4,
+	);
+	assert.strictEqual(
+		longestDeal({ path: "taxpayerMidLevel", own: false, room: false }),
+		2,
+	);
+	assert.strictEqual(
+		longestDeal({ path: "minimum", own: false, room: false }),
+		2,
 	);
 });

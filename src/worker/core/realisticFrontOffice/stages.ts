@@ -7,6 +7,7 @@ import {
 	birdTid,
 	checkSigning,
 	hardCap,
+	longestDeal,
 	maxFor,
 	midLevelAmount,
 	serviceYears,
@@ -48,6 +49,11 @@ export const stageSettings = {
 	// than discountYears: a "prove it" deal, not years of a bargain.
 	discountShare: 0.6,
 	discountYears: 1,
+	// From camp on (and in the season), a deal for less than this share of
+	// his opening ask is no longer than discountYears: he takes less only for
+	// a season. Without, at camp 28-to-32-year-olds rated 58-60 signed for 2%
+	// of the cap for four years.
+	lateLongShare: 1,
 	// How many free agents a CPU team prices at every length each stage, and
 	// how many more offers than it has places it may have out.
 	shortlist: 8,
@@ -111,6 +117,17 @@ export const matchingTid = (
 export const decidesNow = (p: Pick<Player, "faDecides">) =>
 	stageIndex() >= (p.faDecides ?? OPEN_MARKET);
 
+// Whether he signs at the end of this stage with an offer he will take
+// rather than wait: on his decision day (1 or 2), and at camp, the last
+// stage - the season is about to start, and he wants a team (with an offer
+// in hand, a top free agent sat out the season for want of one at his ask).
+export const decisionDay = (p: Pick<Player, "faDecides">) =>
+	inStages() &&
+	((p.faDecides !== undefined &&
+		p.faDecides < OPEN_MARKET &&
+		stageIndex() === p.faDecides) ||
+		stageIndex() === STAGES.length - 1);
+
 // As free agency opens: the stages to come, and when each free agent
 // decides (his ask is set once the phase is on: openStageMarket).
 export const openStages = async () => {
@@ -163,9 +180,37 @@ export const capHolds = (
 	return holds;
 };
 
-// Whether a team may sign him for `amount`, and how, by CBA-lite's rules:
-// its payroll with its cap holds for room, its own player by Bird rights.
+// Whether a team may sign him for `amount` (and `years`, if given), and how,
+// by CBA-lite's rules: its payroll with its cap holds for room, its own
+// player by Bird rights.
 export const checkFor = ({
+	years,
+	...args
+}: {
+	t: Pick<Team, "tid" | "midLevelSeason">;
+	p: Player;
+	payroll: number;
+	holds: number;
+	amount: number;
+	rosterSize: number;
+	years?: number;
+}): SigningCheck => {
+	const check = checkAmount(args);
+	if (!check.ok || years === undefined) {
+		return check;
+	}
+	const { t, p, payroll, holds, amount } = args;
+	const longest = longestDeal({
+		path: check.path,
+		own: ownTid(p) === t.tid,
+		room: payroll + holds + amount <= g.get("salaryCap") + 1,
+	});
+	return years > longest
+		? { ok: false, reason: `No more than ${longest} years for this signing` }
+		: check;
+};
+
+const checkAmount = ({
 	t,
 	p,
 	payroll,
@@ -297,11 +342,24 @@ export const reservation = (
 	return camp * Math.max(0, 1 - seasonPlayed);
 };
 
-// The least he takes for a deal this long: a long deal only near his value.
-export const leastForLength = (p: Pick<Player, "faOpenAsk">, years: number) =>
-	years > stageSettings.discountYears
-		? stageSettings.discountShare * (p.faOpenAsk ?? 0)
+// The least he takes for a deal this long: a long deal only near his value,
+// and from camp on only at his opening ask. Only while he is this summer's
+// free agent (his opening ask is gone once he signs).
+export const leastForLength = (p: Pick<Player, "faOpenAsk">, years: number) => {
+	if (years <= stageSettings.discountYears || p.faOpenAsk === undefined) {
+		return 0;
+	}
+	const phase = g.get("phase");
+	if (inStages()) {
+		return (
+			(atCamp() ? stageSettings.lateLongShare : stageSettings.discountShare) *
+			p.faOpenAsk
+		);
+	}
+	return phase >= PHASE.PRESEASON && phase <= PHASE.AFTER_TRADE_DEADLINE
+		? stageSettings.lateLongShare * p.faOpenAsk
 		: 0;
+};
 
 // After a signing by the mid-level exception, the team has used it.
 export const noteSigning = async (

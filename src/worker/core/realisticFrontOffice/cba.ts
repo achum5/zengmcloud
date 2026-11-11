@@ -180,6 +180,25 @@ export const shapeLimits = (path: SigningPath, own: boolean) => ({
 	raise: own ? cbaSettings.raiseOwn : cbaSettings.raiseOther,
 });
 
+// The longest deal a signing may have: with his Bird rights, the most there
+// is; in cap room, the most for an outside free agent; otherwise the limit
+// of the exception it uses (the mid-level's, the taxpayer mid-level's, the
+// minimum's).
+export const longestDeal = ({
+	path,
+	own,
+	room,
+}: {
+	path: SigningPath;
+	own: boolean;
+	room: boolean;
+}) =>
+	own
+		? cbaSettings.yearsOwn
+		: room
+			? cbaSettings.yearsOther
+			: shapeLimits(path, false).years;
+
 // A contract's seasons with a steady raise (negative for a cut) from the
 // first year's amount.
 export const amountsWithRaise = (first: number, years: number, raise: number) =>

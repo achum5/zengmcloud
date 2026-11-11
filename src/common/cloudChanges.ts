@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 261,
+		date: "2026-11-11",
+		text: 'Realistic Front Offices: free agency fixes. A free agent now signs on his decision day if he has an offer at his asking price, and at training camp he takes the best offer at or above his minimum instead of sitting out the season - in testing, a league\'s best free agent went unsigned into the season. Asking prices no longer climb past what a player asked when free agency opened, "to beat" only counts offers from teams that can still sign him, CPU teams now look at young prospects too, and from camp on a player signs for less than his opening ask only on a one-year deal. Contract lengths now follow the rules for everyone: 5 years with Bird rights, 4 with cap room or the mid-level, 2 with the taxpayer mid-level or a minimum deal.',
+	},
+	{
 		n: 260,
 		date: "2026-11-10",
 		text: "3D games: each shooter now has his own guide hand after a jumper or free throw - kept up a beat, dropped straight to his side, or both hands held up through the landing. Some one-hand dunkers fling the free arm up, players off the ball wave for it or point teammates where to go, some thank the passer with both hands, and at dead balls players now and then stretch or shake their arms loose.",
