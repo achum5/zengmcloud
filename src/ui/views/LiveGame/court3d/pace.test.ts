@@ -65,6 +65,10 @@ describe("3D frame pacing", () => {
 		const easy = makePace(0, true);
 		run(easy, 0, 15_000, 1000 / 60, 5);
 		assert.strictEqual(easy.fps, FAST);
+		// And with a few ms to spare: 60, as fluid as it draws.
+		const some = makePace(0, true);
+		run(some, 0, 15_000, 1000 / 60, 10);
+		assert.strictEqual(some.fps, FAST);
 	});
 
 	test("a device that draws 60 with little to spare keeps 60", () => {

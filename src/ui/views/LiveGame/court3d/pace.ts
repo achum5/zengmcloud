@@ -9,10 +9,12 @@
 // And a device that can't draw 60 - its typical frame, a few seconds at a
 // time, coming slower than 50 a second with the drawing what takes the time -
 // draws a steady 30 instead: half the work, and smoother than an uneven 40
-// with the odd long frame in it. So does a phone that draws 60 only by
-// doing little else, its frames taking over half the time between them:
-// run flat out like that, a phone gets hot - dims its screen, and slows
-// down further the hotter it gets, to well under 30. Back to 60 once a
+// with the odd long frame in it. So does a phone that draws 60 only flat
+// out, its frames taking all but the last few ms between them: run like
+// that, a phone gets hot - dims its screen, and slows down further the
+// hotter it gets, to well under 30. (Held to 30 as soon as its frames took
+// half the time between them, a phone that drew 60 smoothly was held to 30
+// for good - not as fluid as it could be.) Back to 60 once a
 // frame at 30 takes so little that 60 would leave room to spare, and then
 // not again for a while.
 //
@@ -34,7 +36,7 @@ const SLOW_GAP_MS = 20;
 const SLOW_WORK_MS = 10;
 // (A phone: down to SLOW, however often its frames come, once its work takes
 // this much of the time between them.)
-const PHONE_BUSY = 0.5;
+const PHONE_BUSY = 0.75;
 // At SLOW, a frame drawn in under this (typically): up to FAST again - but
 // not within this long of going down to SLOW, and only so many times.
 const FAST_WORK_MS = 6;
