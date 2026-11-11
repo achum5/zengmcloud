@@ -4957,6 +4957,28 @@ const tuckNow = (
 	tr: Track,
 	t: number,
 ): readonly [number, number] => {
+	// The men near him first - where he is drawn is where he stands (see
+	// playerAt) - and nobody near, nothing to tuck from: none of his pose
+	// worked out to find that out. (Most of what a frame costs, worked out
+	// for every man every step whether or not anybody was near him.)
+	const me = spotAt(tr, t, false);
+	const by: Track[] = [];
+	for (const o of tl.tracks.values()) {
+		if (o === tr) {
+			continue;
+		}
+		const si = lastIndex(o.shown, t, (x) => x[0]);
+		if (si < 0 || !o.shown[si]![1]) {
+			continue;
+		}
+		const p = spotAt(o, t, false);
+		if (Math.hypot(p.x - me.x, p.y - me.y) < TUCK_NEAR) {
+			by.push(o);
+		}
+	}
+	if (by.length === 0) {
+		return NO_TUCK;
+	}
 	const bare = bareAtStep(tl, tr, t);
 	const st = bare.st;
 	// (Dribbling, only his other hand - the arm he keeps his man off with.)
@@ -4970,23 +4992,7 @@ const tuckNow = (
 	) {
 		return NO_TUCK;
 	}
-	const near: { hip: Pt3; chest: Pt3; head: Pt3 }[] = [];
-	for (const o of tl.tracks.values()) {
-		if (o === tr) {
-			continue;
-		}
-		const si = lastIndex(o.shown, t, (x) => x[0]);
-		if (si < 0 || !o.shown[si]![1]) {
-			continue;
-		}
-		const p = spotAt(o, t, false);
-		if (Math.hypot(p.x - st.x, p.y - st.y) < TUCK_NEAR) {
-			near.push(bodyAtStep(tl, o, t));
-		}
-	}
-	if (near.length === 0) {
-		return NO_TUCK;
-	}
+	const near = by.map((o) => bodyAtStep(tl, o, t));
 	const sk0 = bareSkeleton(bare);
 	const sk1 = skeleton(TYPICAL, tuckedArms(bare.pose!, [1, 1]));
 	// (How far the hand is into the nearest man's body: its room off the
