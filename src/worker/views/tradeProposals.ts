@@ -6,10 +6,10 @@ import makeItWork from "../core/trade/makeItWork.ts";
 import summary from "../core/trade/summary.ts";
 import { augmentOffers } from "./trade.ts";
 import { shuffle, uniformSeed, choice } from "../../common/random.ts";
-import { ValueChangeCalculator } from "../core/team/ValueChangeCalculator.ts";
+import { tradeValueCalculator } from "../core/vanillaPlus/index.ts";
 import { orderBy } from "../../common/utils.ts";
 import { defineView } from "../util/defineView.ts";
-import { realisticFrontOfficesOn } from "../core/realisticFrontOffice/isOn.ts";
+import { realisticTradesOn } from "../core/realisticFrontOffice/isOn.ts";
 import {
 	proposalStands,
 	proposalTeams as realisticFrontOfficeProposalTeams,
@@ -25,7 +25,7 @@ let smartCache: { key: string; offers: TradeTeams[] } | undefined;
 const getOffers = async (seed: number) => {
 	const NUM_OFFERS = 5;
 	const NUM_TRIES_PER_TEAM = 10;
-	const smart = realisticFrontOfficesOn();
+	const smart = realisticTradesOn();
 	const tries = smart ? SMART_TRIES_PER_TEAM : NUM_TRIES_PER_TEAM;
 
 	const userTid = g.get("userTid");
@@ -66,7 +66,7 @@ const getOffers = async (seed: number) => {
 
 	const offers: TradeTeams[] = [];
 
-	const valueChangeCalculator = new ValueChangeCalculator();
+	const valueChangeCalculator = await tradeValueCalculator();
 
 	for (const t of teams) {
 		for (let i = 0; i < tries; i++) {

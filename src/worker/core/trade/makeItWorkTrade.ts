@@ -3,8 +3,8 @@ import { g, helpers } from "../../util/index.ts";
 import makeItWork from "./makeItWork.ts";
 import summary from "./summary.ts";
 import get from "./get.ts";
-import { ValueChangeCalculator } from "../team/ValueChangeCalculator.ts";
-import { realisticFrontOfficesOn } from "../realisticFrontOffice/isOn.ts";
+import { tradeValueCalculator } from "../vanillaPlus/index.ts";
+import { realisticTradesOn } from "../realisticFrontOffice/isOn.ts";
 import { counterTeams } from "../realisticFrontOffice/proposals.ts";
 
 /**
@@ -21,8 +21,8 @@ const makeItWorkTrade = async () => {
 	// Realistic front offices: a CPU team's own read of the deal
 	// (realisticFrontOffice/proposals.ts).
 	const frontOffice =
-		realisticFrontOfficesOn() && !g.get("userTids").includes(teams0[1].tid);
-	const valueChangeCalculator = new ValueChangeCalculator();
+		realisticTradesOn() && !g.get("userTids").includes(teams0[1].tid);
+	const valueChangeCalculator = await tradeValueCalculator();
 	const teams = frontOffice
 		? await counterTeams(helpers.deepCopy(teams0))
 		: await makeItWork(helpers.deepCopy(teams0), {

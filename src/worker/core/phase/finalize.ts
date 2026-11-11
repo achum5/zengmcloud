@@ -19,7 +19,7 @@ import { getGlobalSettings } from "../../util/getGlobalSettings.ts";
 import { processScheduledEvents } from "./processScheduledEvents.ts";
 import { settleBets } from "../sportsbook/bets.ts";
 import { autoPlayStopsAt, cleanupAutoPlay } from "../league/autoPlay.ts";
-import { realisticFrontOfficesOn } from "../realisticFrontOffice/isOn.ts";
+import { realisticTradesOn } from "../realisticFrontOffice/isOn.ts";
 import { tradeWindow as realisticFrontOfficeTradeWindow } from "../realisticFrontOffice/market.ts";
 
 const save = async () => {
@@ -49,8 +49,8 @@ const finalize = async (
 	});
 
 	// Realistic front offices trade as some offseason phases open, before the
-	// save below.
-	if (realisticFrontOfficesOn()) {
+	// save below (not vanilla+, which trades as stock does).
+	if (realisticTradesOn()) {
 		await realisticFrontOfficeTradeWindow();
 	}
 

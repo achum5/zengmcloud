@@ -6,8 +6,9 @@ import processTrade from "./processTrade.ts";
 import summary from "./summary.ts";
 import type { TradeTeams } from "../../../common/types.ts";
 import { choice } from "../../../common/random.ts";
-import { ValueChangeCalculator } from "../team/ValueChangeCalculator.ts";
-import { realisticFrontOfficesOn } from "../realisticFrontOffice/isOn.ts";
+import type { ValueChangeCalculator } from "../team/ValueChangeCalculator.ts";
+import { tradeValueCalculator } from "../vanillaPlus/index.ts";
+import { realisticTradesOn } from "../realisticFrontOffice/isOn.ts";
 import { tradeDay as realisticFrontOfficeTradeDay } from "../realisticFrontOffice/market.ts";
 
 const getAITids = async () => {
@@ -150,8 +151,9 @@ const betweenAiTeams = async () => {
 	}
 
 	// The new front offices run a market of their own
-	// (docs/realistic-front-offices.md).
-	if (realisticFrontOfficesOn()) {
+	// (docs/realistic-front-offices.md) - not vanilla+, which trades as stock
+	// does on its own values (docs/vanilla-plus.md).
+	if (realisticTradesOn()) {
 		await realisticFrontOfficeTradeDay();
 		return false;
 	}
@@ -174,7 +176,7 @@ const betweenAiTeams = async () => {
 	if (numAttempts > 0) {
 		// Not { quick: true } as upstream has it: this fork's stock path has
 		// run the full pick valuation here, and stock is kept exactly as it was.
-		const valueChangeCalculator = new ValueChangeCalculator();
+		const valueChangeCalculator = await tradeValueCalculator();
 
 		for (let i = 0; i < numAttempts; i++) {
 			const tradeTids = await attempt(valueChangeCalculator);

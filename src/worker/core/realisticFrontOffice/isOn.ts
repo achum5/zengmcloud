@@ -1,9 +1,19 @@
 import { g } from "../../util/index.ts";
+import { vanillaPlusSettings } from "../vanillaPlus/settings.ts";
 
 // Whether this league runs the new front offices (docs/realistic-front-offices.md).
 // Basketball only; every stock code path that behaves differently checks this.
 export const realisticFrontOfficesOn = () =>
 	__SPORT === "basketball" && !!g.get("realisticFrontOffices");
+
+// Whether trades run on the mode's own title-odds engine: not once vanilla+
+// is on (core/vanillaPlus), which trades on vanilla's.
+export const realisticTradesOn = () =>
+	realisticFrontOfficesOn() && !vanillaPlusSettings.on;
+
+// Whether trades run on vanilla+ (docs/vanilla-plus.md).
+export const vanillaPlusOn = () =>
+	realisticFrontOfficesOn() && vanillaPlusSettings.on;
 
 // Whether its free agency and re-signing are the offer market's: whenever the
 // mode is on (owner's call). There was a switch for stock's free agency with

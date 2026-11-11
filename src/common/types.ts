@@ -2893,6 +2893,10 @@ export type Team = {
 		number
 	>;
 	strategy: "contending" | "rebuilding";
+	// Vanilla+ front offices (worker/core/vanillaPlus/lanes.ts): the team's
+	// plan, and the review that set it.
+	lane?: "rebuild" | "retool" | "playoff" | "allIn";
+	laneReview?: string;
 	depth?:
 		| {
 				QB: number[];

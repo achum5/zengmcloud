@@ -14,7 +14,7 @@ import { player, team } from "../index.ts";
 import { last } from "../../../common/utils.ts";
 import { choice } from "../../../common/random.ts";
 import { prepareWholeRoster } from "../team/ovr.ts";
-import { realisticFrontOfficesOn } from "../realisticFrontOffice/isOn.ts";
+import { realisticTradesOn } from "../realisticFrontOffice/isOn.ts";
 import {
 	afterPick as realisticFrontOfficeAfterPick,
 	bestProspect as realisticFrontOfficeBestProspect,
@@ -204,16 +204,16 @@ const runPicks = async (
 			console.log(sum);*/
 
 			// Realistic front offices take the prospect worth the most to them,
-			// in a normal draft.
+			// in a normal draft (vanilla+ drafts as stock does).
 			const selection =
-				(realisticFrontOfficesOn() && g.get("phase") === PHASE.DRAFT
+				(realisticTradesOn() && g.get("phase") === PHASE.DRAFT
 					? await realisticFrontOfficeBestProspect(dp, playersAll)
 					: undefined) ?? choice(playersAll, score);
 
 			const pid = selection.pid;
 			await selectPlayer(dp, pid);
 			pids.push(pid);
-			if (realisticFrontOfficesOn()) {
+			if (realisticTradesOn()) {
 				await realisticFrontOfficeAfterPick();
 			}
 			playersAll = playersAll.filter((p) => p !== selection); // Delete from the list of undrafted players

@@ -63,6 +63,7 @@ import {
 import { computeMetrics, type LeagueMetrics } from "./metrics.ts";
 import { BENCHMARKS, type Benchmark } from "./benchmarks.ts";
 import { contractOf } from "../../worker/core/realisticFrontOffice/contractOf.ts";
+import { vanillaPlusSettings } from "../../worker/core/vanillaPlus/settings.ts";
 
 // THE ARENA: whole random-players leagues, every team run by the CPU, played
 // season after season through the real game code, then measured against the
@@ -138,6 +139,8 @@ test.runIf(env.ARENA_RUN === "1")(
 					}
 				}
 				Object.assign(outlookSettings, JSON.parse(env.ARENA_OUTLOOK ?? "{}"));
+				// ARENA_VPLUS=1: trades on vanilla+ (docs/vanilla-plus.md).
+				vanillaPlusSettings.on = env.ARENA_VPLUS === "1";
 				// ARENA_SPLIT_OUTLOOK: these outlook settings for the odd teams'
 				// own pricing only (teamOutlookSettings), as ARENA_SPLIT.
 				teamOutlookSettings.clear();

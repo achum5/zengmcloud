@@ -31,9 +31,11 @@ import {
 import type { TeamSeasonRecord } from "./getHypotheticalTeam.ts";
 import { tradeDifficulty } from "../../util/difficulty.ts";
 
+export type TradeValueAsset = Asset;
 type Asset =
 	| {
 			type: "player";
+			pid: number;
 			value: number;
 			contractValue: number;
 			injury: PlayerInjury;
@@ -280,6 +282,7 @@ const getPlayers = async ({
 		const contract = getContractForValuation(p);
 		remove.push({
 			type: "player",
+			pid: p.pid,
 			value: fudgedValue,
 			contractValue: getContractValue(contract, value),
 			injury: p.injury,
@@ -301,6 +304,7 @@ const getPlayers = async ({
 			const contract = getContractForValuation(p);
 			add.push({
 				type: "player",
+				pid: p.pid,
 				value,
 				contractValue: getContractValue(contract, value),
 				injury: p.injury,
@@ -896,6 +900,11 @@ const sumValues = (
 	strategy: string,
 	tid: number,
 	includeInjuries = false,
+	// Vanilla+ (core/vanillaPlus): the team's plan in place of its strategy -
+	// a factor for each asset on the strategy's footing, and how much
+	// contracts count - and a multiplier on each asset's trade value.
+	plan?: TradePlan,
+	adjust?: (p: Asset) => number,
 ) => {
 	if (players.length === 0) {
 		return 0;
@@ -919,7 +928,12 @@ const sumValues = (
 			playerValue += Math.abs(playerValue) * (factor - 1);
 		};
 
-		if (strategy === "rebuilding") {
+		if (plan) {
+			const factor = plan.factor(p, treatAsFutureDraftPick);
+			if (factor !== 1) {
+				applyFactor(factor);
+			}
+		} else if (strategy === "rebuilding") {
 			// Value young/cheap players and draft picks more. Penalize expensive/old players
 			if (treatAsFutureDraftPick) {
 				applyFactor(1.1);
@@ -973,7 +987,8 @@ const sumValues = (
 			playerValue /= 20;
 		}
 
-		const contractsFactor = strategy === "rebuilding" ? 2 : 0.5;
+		const contractsFactor =
+			plan?.contractsFactor ?? (strategy === "rebuilding" ? 2 : 0.5);
 		playerValue += contractsFactor * p.contractValue;
 
 		// if a player was just drafted and can be released, they shouldn't have negative value
@@ -981,8 +996,21 @@ const sumValues = (
 			playerValue = Math.max(0, playerValue);
 		}
 
-		return memo + valueToTradeValue(playerValue);
+		let tradeValue = valueToTradeValue(playerValue);
+		if (adjust) {
+			// By its size, as applyFactor: more is more, either way round.
+			tradeValue += Math.abs(tradeValue) * (adjust(p) - 1);
+		}
+
+		return memo + tradeValue;
 	}, 0);
+};
+
+// Vanilla+: how a team's plan (its lane) weighs assets, in place of stock's
+// two strategies.
+export type TradePlan = {
+	factor: (p: Asset, futurePick: boolean) => number;
+	contractsFactor: number;
 };
 
 export const getEstPicks = async (
@@ -1109,8 +1137,28 @@ export class ValueChangeCalculator {
 		teams: "all",
 	};
 
-	constructor({ quick = false }: { quick?: boolean } = {}) {
+	// Vanilla+ (core/vanillaPlus): each team's plan in place of its strategy,
+	// and a multiplier on the trade value of each asset it would get or give.
+	// Unset, stock's.
+	private planOf?: (tid: number) => TradePlan | undefined;
+	private adjust?: (
+		tid: number,
+		asset: Asset,
+		side: "add" | "remove",
+	) => number;
+
+	constructor({
+		quick = false,
+		planOf,
+		adjust,
+	}: {
+		quick?: boolean;
+		planOf?: (tid: number) => TradePlan | undefined;
+		adjust?: (tid: number, asset: Asset, side: "add" | "remove") => number;
+	} = {}) {
 		this.quick = quick;
+		this.planOf = planOf;
+		this.adjust = adjust;
 	}
 
 	private async init() {
@@ -1235,6 +1283,7 @@ export class ValueChangeCalculator {
 		}
 
 		const strategy = t.strategy;
+		const plan = this.planOf?.(tid);
 
 		await getPlayers({
 			add,
@@ -1257,11 +1306,26 @@ export class ValueChangeCalculator {
 		});
 
 		// console.log("ADD");
-		const valuesAdd = sumValues(add, strategy, tid, true);
+		const adjust = this.adjust;
+		const valuesAdd = sumValues(
+			add,
+			strategy,
+			tid,
+			true,
+			plan,
+			adjust && ((p) => adjust(tid, p, "add")),
+		);
 		// console.log("Total", valuesAdd);
 
 		// console.log("REMOVE");
-		const valuesRemove = sumValues(remove, strategy, tid);
+		const valuesRemove = sumValues(
+			remove,
+			strategy,
+			tid,
+			false,
+			plan,
+			adjust && ((p) => adjust(tid, p, "remove")),
+		);
 		// console.log("Total", valuesRemove);
 
 		return valuesAdd - valuesRemove;

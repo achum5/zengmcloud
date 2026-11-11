@@ -334,8 +334,10 @@ import { bySport } from "../../common/sportFunctions.ts";
 import { generateContractOptions } from "../core/contractNegotiation/generateContractOptions.ts";
 import {
 	realisticFreeAgencyOn,
-	realisticFrontOfficesOn,
+	realisticTradesOn,
+	vanillaPlusOn,
 } from "../core/realisticFrontOffice/isOn.ts";
+import { tradeValueCalculator } from "../core/vanillaPlus/index.ts";
 import { afterPick as realisticFrontOfficeAfterPick } from "../core/realisticFrontOffice/draft.ts";
 import { tradingBlockTeams } from "../core/realisticFrontOffice/proposals.ts";
 import {
@@ -384,7 +386,6 @@ import { getNewLeagueLid } from "../util/getNewLeagueLid.ts";
 import { env } from "../util/env.ts";
 import { recomputeLocalUITeamOvrs } from "../util/recomputeLocalUITeamOvrs.ts";
 import { initUILocalGames } from "../util/initUILocalGames.ts";
-import { ValueChangeCalculator } from "../core/team/ValueChangeCalculator.ts";
 import type { GenOrderResult } from "../core/draft/genOrder.ts";
 import { allowCrossingNextSimStop } from "../core/sync/tradeDeadlineGate.ts";
 import { parseSimStopDays, stopsOnDay } from "../../common/simStopDays.ts";
@@ -1605,7 +1606,7 @@ const draftUser = async (pid: number, conditions: Conditions) => {
 	if (dp && g.get("userTids").includes(dp.tid)) {
 		const selected = await draft.selectPlayer(dp, pid);
 		if (selected) {
-			if (realisticFrontOfficesOn()) {
+			if (realisticTradesOn()) {
 				await realisticFrontOfficeAfterPick();
 			}
 			draftPicks.shift();
@@ -3647,7 +3648,9 @@ const getOffers = async (
 	).map((t) => t.tid);
 	const offers = [];
 
-	const valueChangeCalculator = new ValueChangeCalculator();
+	const valueChangeCalculator = await tradeValueCalculator();
+	// Vanilla+: CPU teams only - not a league-mate's team, priced as if CPU.
+	const skip = vanillaPlusOn() ? g.get("userTids") : [g.get("userTid")];
 
 	for (const tid of tids) {
 		const teams: TradeTeams = [
@@ -3667,7 +3670,7 @@ const getOffers = async (
 			},
 		];
 
-		if (tid !== g.get("userTid")) {
+		if (!skip.includes(tid)) {
 			const teams2 = await trade.makeItWork(teams, {
 				holdUserConstant: true,
 				maxAssetsToAdd: 4 + userPids.length + userDpids.length,
@@ -3715,7 +3718,7 @@ const getTradingBlockOffers = async ({
 }) => {
 	// Realistic front offices: each CPU team's own offer
 	// (realisticFrontOffice/proposals.ts).
-	let offers = realisticFrontOfficesOn()
+	let offers = realisticTradesOn()
 		? await tradingBlockTeams(
 				g.get("userTid"),
 				pids,

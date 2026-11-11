@@ -8,9 +8,9 @@ import get from "./get.ts";
 import { idb } from "../../db/index.ts";
 import { hashSavedTrade } from "../../../common/hashSavedTrade.ts";
 import { getTradeBlockedReason } from "../../../common/transactionPhases.ts";
-import { ValueChangeCalculator } from "../team/ValueChangeCalculator.ts";
+import { tradeValueCalculator } from "../vanillaPlus/index.ts";
 import type { TradeTeams } from "../../../common/types.ts";
-import { realisticFrontOfficesOn } from "../realisticFrontOffice/isOn.ts";
+import { realisticTradesOn } from "../realisticFrontOffice/isOn.ts";
 import {
 	judgeHumanOffer as realisticFrontOfficeJudgeOffer,
 	verdictMessage as realisticFrontOfficeVerdictMessage,
@@ -90,9 +90,10 @@ const propose = async (
 		return { accepted: false as const, message: null };
 	}
 
-	// Realistic front offices judge a human's offer by their own valuation.
+	// Realistic front offices judge a human's offer by their own valuation
+	// (vanilla+ by vanilla's, below).
 	if (
-		realisticFrontOfficesOn() &&
+		realisticTradesOn() &&
 		!forceTrade &&
 		!g.get("userTids").includes(teams[1].tid)
 	) {
@@ -106,7 +107,9 @@ const propose = async (
 		return accept(teams, tids);
 	}
 
-	const dv = await new ValueChangeCalculator().evaluate({
+	const dv = await (
+		await tradeValueCalculator()
+	).evaluate({
 		tid: teams[1].tid,
 		pidsAdd: teams[0].pids,
 		pidsRemove: teams[1].pids,
