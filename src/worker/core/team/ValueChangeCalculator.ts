@@ -911,6 +911,8 @@ const sumValues = (
 	// contracts count - and a multiplier on each asset's trade value.
 	plan?: TradePlan,
 	adjust?: (p: Asset) => number,
+	// Which side of the deal these are, for the plan.
+	side: "add" | "remove" = "add",
 ) => {
 	if (players.length === 0) {
 		return 0;
@@ -935,7 +937,7 @@ const sumValues = (
 		};
 
 		if (plan) {
-			const factor = plan.factor(p, treatAsFutureDraftPick);
+			const factor = plan.factor(p, treatAsFutureDraftPick, side);
 			if (factor !== 1) {
 				applyFactor(factor);
 			}
@@ -1015,7 +1017,7 @@ const sumValues = (
 // Vanilla+: how a team's plan (its lane) weighs assets, in place of stock's
 // two strategies.
 export type TradePlan = {
-	factor: (p: Asset, futurePick: boolean) => number;
+	factor: (p: Asset, futurePick: boolean, side: "add" | "remove") => number;
 	contractsFactor: number;
 };
 
@@ -1325,6 +1327,7 @@ export class ValueChangeCalculator {
 			true,
 			plan,
 			adjust && ((p) => adjust(tid, p, "add")),
+			"add",
 		);
 		// console.log("Total", valuesAdd);
 
@@ -1336,6 +1339,7 @@ export class ValueChangeCalculator {
 			false,
 			plan,
 			adjust && ((p) => adjust(tid, p, "remove")),
+			"remove",
 		);
 		// console.log("Total", valuesRemove);
 

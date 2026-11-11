@@ -51,84 +51,36 @@ export const laneSettings = {
 
 // Each lane's weighing of an asset: a factor on vanilla's value, as stock's
 // two strategies have (team/ValueChangeCalculator.ts sumValues), and how much
-// contracts count. All-in is stock's contending with a little more for proven
-// players; rebuild is stock's rebuilding; the two between are milder.
-const PLANS: Record<Lane, TradePlan> = {
-	allIn: {
-		factor: (p, futurePick) =>
-			futurePick
-				? 0.825
-				: p.age <= 19
-					? 0.8
-					: p.age === 20
-						? 0.825
-						: p.age === 21
-							? 0.85
-							: p.age === 22
-								? 0.875
-								: p.age === 23
-									? 0.925
-									: p.age === 24
-										? 0.95
-										: p.age <= 31
-											? 1.02
-											: 1,
-		contractsFactor: 0.25,
-	},
-	playoff: {
-		factor: (p, futurePick) =>
-			futurePick
-				? 0.925
-				: p.age <= 20
-					? 0.925
-					: p.age <= 22
-						? 0.95
-						: p.age === 23
-							? 0.975
-							: 1,
-		contractsFactor: 0.5,
-	},
-	retool: {
-		factor: (p, futurePick) =>
-			futurePick
-				? 1.025
-				: p.age <= 21
-					? 1.025
-					: p.age <= 26
-						? 1.0125
-						: p.age === 29
-							? 0.975
-							: p.age <= 31 && p.age >= 30
-								? 0.95
-								: p.age >= 32
-									? 0.925
-									: 1,
-		contractsFactor: 1.25,
-	},
-	rebuild: {
-		factor: (p, futurePick) =>
-			futurePick
-				? 1.1
-				: p.age <= 19
-					? 1.075
-					: p.age === 20
-						? 1.05
-						: p.age === 21
-							? 1.0375
-							: p.age === 22
-								? 1.025
-								: p.age === 23
-									? 1.0125
-									: p.age === 27
-										? 0.975
-										: p.age === 28
-											? 0.95
-											: p.age >= 29
-												? 0.9
-												: 1,
-		contractsFactor: 2,
-	},
+// contracts count. Players are weighed by when they help (timing.ts, through
+// the tweaks); here only draft picks - a contender's are worth less to it, a
+// rebuilding team's more. Never below vanilla's when giving one away: a team
+// could always sell it for that.
+const PICKS: Record<Lane, number> = {
+	allIn: 0.825,
+	playoff: 0.925,
+	retool: 1.025,
+	rebuild: 1.1,
 };
+const CONTRACTS: Record<Lane, number> = {
+	allIn: 0.25,
+	playoff: 0.5,
+	retool: 1.25,
+	rebuild: 2,
+};
+const PLANS = Object.fromEntries(
+	(Object.keys(PICKS) as Lane[]).map((lane) => [
+		lane,
+		{
+			factor: (_p, futurePick, side) =>
+				futurePick
+					? side === "remove"
+						? Math.max(1, PICKS[lane])
+						: PICKS[lane]
+					: 1,
+			contractsFactor: CONTRACTS[lane],
+		} satisfies TradePlan,
+	]),
+) as Record<Lane, TradePlan>;
 
 export const planFor = (lane: Lane | undefined): TradePlan | undefined =>
 	lane ? PLANS[lane] : undefined;

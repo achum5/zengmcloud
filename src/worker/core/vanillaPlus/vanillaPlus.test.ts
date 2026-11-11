@@ -7,6 +7,7 @@ import { createArenaLeague } from "../../../test/arena/runLeague.ts";
 import { vanillaPlusSettings } from "./settings.ts";
 import { ensureLanes, type Lane } from "./lanes.ts";
 import { tweaksFor } from "./tweaks.ts";
+import { timingFactor } from "./timing.ts";
 import { tradeValueCalculator } from "./index.ts";
 import makeItWork from "../trade/makeItWork.ts";
 
@@ -93,8 +94,11 @@ test("a contender with no big men values a center more than a guard as good", as
 			age: 25,
 			justDrafted: false,
 		}) as const;
-	const center = tweaks(allIn, asset(pair![0]), "add");
-	const guard = tweaks(allIn, asset(pair![1]), "add");
+	// Fit alone: timing (when each helps) taken back out.
+	const center =
+		tweaks(allIn, asset(pair![0]), "add") / timingFactor(pair![0], "allIn");
+	const guard =
+		tweaks(allIn, asset(pair![1]), "add") / timingFactor(pair![1], "allIn");
 	assert.isAbove(center, guard);
 	assert.isAbove(center, 1);
 	assert.isAtMost(center, 1.25);
@@ -153,5 +157,54 @@ test("what would make it work never leaves a roster past the limit", async () =>
 			const after = now - teams[i].pids.length + teams[1 - i]!.pids.length;
 			assert.isAtMost(after, Math.max(maxRosterSize, now));
 		}
+	}
+});
+
+test("contenders weigh now, rebuilders later: teenagers and veterans priced by when they help", async () => {
+	const players = await idb.cache.players.indexGetAll("playersByTid", [
+		0,
+		Infinity,
+	]);
+	const season = g.get("season");
+	const age = (p: (typeof players)[number]) => season - p.born.year;
+	const best = (list: typeof players) =>
+		list.sort((a, b) => b.value - a.value)[0]!;
+	const teen = best(players.filter((p) => age(p) <= 20));
+	const vet = best(players.filter((p) => age(p) >= 30));
+	assert.isBelow(timingFactor(teen, "allIn"), 0.6);
+	assert.isAbove(timingFactor(vet, "allIn"), 1.2);
+	assert.isAbove(timingFactor(teen, "rebuild"), 1.2);
+	assert.isBelow(timingFactor(vet, "rebuild"), 0.9);
+	// In order across the lanes.
+	const lanes = ["allIn", "playoff", "retool", "rebuild"] as const;
+	for (let i = 1; i < lanes.length; i++) {
+		assert.isAbove(
+			timingFactor(teen, lanes[i]!),
+			timingFactor(teen, lanes[i - 1]!),
+		);
+		assert.isBelow(
+			timingFactor(vet, lanes[i]!),
+			timingFactor(vet, lanes[i - 1]!),
+		);
+	}
+});
+
+test("no team counts a player it gives away at less than his market value", async () => {
+	const lanes = await ensureLanes();
+	const tweaks = await tweaksFor(lanes);
+	for (const p of await idb.cache.players.indexGetAll("playersByTid", [
+		0,
+		Infinity,
+	])) {
+		const asset = {
+			type: "player",
+			pid: p.pid,
+			value: 0,
+			contractValue: 0,
+			injury: p.injury,
+			age: g.get("season") - p.born.year,
+			justDrafted: false,
+		} as const;
+		assert.isAtLeast(tweaks(p.tid, asset, "remove"), 1);
 	}
 });
