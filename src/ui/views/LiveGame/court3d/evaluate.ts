@@ -784,13 +784,14 @@ const onRun = (run: Run, t: number): Pt => {
 // times as hard as an even turn; the swing is taken back out, so the way he
 // is going comes round smoothly from the one run's to the other's.)
 const smooth = (u: number) => u * u * (3 - 2 * u);
-const rounded = (a: Run, b: Run, t: number): Pt | undefined => {
-	const tj = a.s1;
+// (How long either side of the join he takes coming round it - none, not
+// handed on through it.)
+const cornerSpan = (a: Run, b: Run): number => {
 	// (Only where the one hands on to the other, going on through it - both
 	// of them: rounded on one side of the join and not the other, he would
 	// jump at it.)
-	if (Math.abs(b.s0 - tj) > 1 || a.v1 <= 0 || b.v0 <= 0) {
-		return undefined;
+	if (Math.abs(b.s0 - a.s1) > 1 || a.v1 <= 0 || b.v0 <= 0) {
+		return 0;
 	}
 	const d = Math.min(
 		ROUND_MS,
@@ -798,7 +799,12 @@ const rounded = (a: Run, b: Run, t: number): Pt | undefined => {
 		(a.s1 - a.s0) * 0.5,
 		(b.s1 - b.s0) * 0.5,
 	);
-	if (d <= 10 || Math.abs(t - tj) >= d) {
+	return d <= 10 ? 0 : d;
+};
+const rounded = (a: Run, b: Run, t: number): Pt | undefined => {
+	const tj = a.s1;
+	const d = cornerSpan(a, b);
+	if (d === 0 || Math.abs(t - tj) >= d) {
 		return undefined;
 	}
 	const u = (t - (tj - d)) / (2 * d);
@@ -954,8 +960,10 @@ type Spot = {
 	run?: Run;
 	hx: number;
 	hy: number;
-	// How fast he is going round a corner, if he is (feet a second).
+	// How fast he is going round a corner, if he is (feet a second) - and
+	// how far into it (0 where he starts round, 1 at the join).
 	round?: number;
+	near?: number;
 };
 
 // Where he is, eased aside off anybody he would be standing on (see
@@ -1164,7 +1172,9 @@ const rawSpotAt = (tr: Track, t: number, heading = true): Spot => {
 			hy = ahead.y - behind.y;
 		}
 		const round = Math.sqrt(dist2(ahead, behind)) / 0.016;
-		return { ...p, moveIndex: k, moving: true, run, hx, hy, round };
+		const d = cornerSpan(pair[0], pair[1]);
+		const near = smooth01(1 - Math.abs(t - pair[0].s1) / d);
+		return { ...p, moveIndex: k, moving: true, run, hx, hy, round, near };
 	}
 	return { ...p, moveIndex: k, moving: true, run, hx, hy };
 };
@@ -2556,6 +2566,7 @@ const FORWARD = new Set<AnimName>([
 const shownSteps = (
 	tl: CourtTimeline,
 	tr: Track,
+	k: number,
 	run: Run,
 	t: number,
 	anim: AnimName,
@@ -2613,6 +2624,7 @@ const endStepsOf = (
 	return (memo[j] ??= shownSteps(
 		tl,
 		tr,
+		j,
 		run,
 		run.mv.t1 - 1,
 		stepsOf(tl, tr, run),
@@ -2627,7 +2639,7 @@ const gaitOf = (
 ): { anim: AnimName; phase: number; len?: [number, number] } => {
 	const anim = stepsOf(tl, tr, run);
 	const { ph: phase, len: own } = stridesAt(tl, tr, k, run, t);
-	const shown = shownSteps(tl, tr, run, t, anim);
+	const shown = shownSteps(tl, tr, k, run, t, anim);
 	// (Short steps, slow - see shortSteps. On the other gait's, each as long
 	// in feet.)
 	const as = (len: number) =>
@@ -2726,7 +2738,7 @@ const bridgeAt = (
 	return ANIMS[g.anim].kind === "cycle"
 		? {
 				...g,
-				down: footDownAt(run, at, k > 0 ? runOf(tr, k - 1) : undefined),
+				down: footDownAt(tr, k, at),
 				gait: { k, at },
 			}
 		: undefined;
@@ -2738,19 +2750,59 @@ const STOP_STEP_MS = 140;
 // (Where one run hands on to the next, as the two of them go through it
 // together: not planted at the end of the one and up in his stride at the
 // start of the other.)
-const footDownAt = (run: Run, t: number, before?: Run, after?: Run): number => {
-	const vIn =
-		before && Math.abs(before.s1 - run.s0) <= 1
-			? Math.max(run.v0, before.v1)
-			: run.v0;
-	const vOut =
-		after && Math.abs(run.s1 - after.s0) <= 1
-			? Math.max(run.v1, after.v0)
-			: run.v1;
+// (And the stop he is pulling up to may be a run or two on: the last of a
+// pull-up is laid as runs of its own, a step's time or less each - taken
+// as it came, his foot would hang up in his stride and then drop to the
+// floor in a frame as the last of them began. The same setting off.)
+const footDownAt = (tr: Track, k: number, t: number): number => {
+	const { stop, start } = stopsAbout(tr, k, t, STOP_STEP_MS);
 	return Math.max(
-		vOut < LEGS_FTPS ? smooth01(1 - (run.s1 - t) / STOP_STEP_MS) : 0,
-		vIn < LEGS_FTPS ? 1 - smooth01((t - run.s0) / STOP_STEP_MS) : 0,
+		stop === undefined ? 0 : smooth01(1 - (stop.s1 - t) / STOP_STEP_MS),
+		start === undefined ? 0 : 1 - smooth01((t - start.s0) / STOP_STEP_MS),
 	);
+};
+// The run he pulls up to a stop at the end of, and the one he set off from
+// a stop at the start of, round t: this run's own ends - or, his pace
+// across a join still a stop's (a run handing on to one going on at more
+// is no stop), on over the runs it hands on through as far as `within` (ms)
+// of t.
+const stopsAbout = (
+	tr: Track,
+	k: number,
+	t: number,
+	within: number,
+): { stop?: Run; start?: Run } => {
+	const near = (a: Run, b: Run) => Math.abs(a.s1 - b.s0) <= 1;
+	let stop: Run | undefined;
+	for (let j = k; ; j++) {
+		const r = runOf(tr, j);
+		const next = j + 1 < tr.moves.length ? runOf(tr, j + 1) : undefined;
+		const on = next !== undefined && near(r, next);
+		if ((on ? Math.max(r.v1, next.v0) : r.v1) < LEGS_FTPS) {
+			stop = r;
+			break;
+		}
+		if (!on || next.s0 - t > within) {
+			break;
+		}
+	}
+	let start: Run | undefined;
+	for (let j = k; ; j--) {
+		const r = runOf(tr, j);
+		const prev = j > 0 ? runOf(tr, j - 1) : undefined;
+		const on = prev !== undefined && near(prev, r);
+		if ((on ? Math.max(r.v0, prev.v1) : r.v0) < LEGS_FTPS) {
+			start = r;
+			break;
+		}
+		if (!on || t - prev.s1 > within) {
+			break;
+		}
+	}
+	return {
+		...(stop ? { stop } : {}),
+		...(start ? { start } : {}),
+	};
 };
 
 // A defender up on the man dribbling, in front of him (feet): from the
@@ -3037,12 +3089,7 @@ const doingNow = (
 		drive = driveOf(tr, anim, t);
 		bank = bankOf(tr, anim, t);
 		const k = here.moveIndex;
-		down = footDownAt(
-			here.run,
-			t,
-			k > 0 ? runOf(tr, k - 1) : undefined,
-			k + 1 < tr.moves.length ? runOf(tr, k + 1) : undefined,
-		);
+		down = footDownAt(tr, k, t);
 	} else if ((bridged = bridgeAt(tl, tr, t))) {
 		({ anim, phase, down, len: stepLen, gait } = bridged);
 		drive = driveOf(tr, anim, t);
@@ -5515,6 +5562,9 @@ const LEGS_GIVE = 40;
 // (Into or out of a run he joins at hardly more than a standstill, the same:
 // at that pace which way it heads is no way to turn his hips.)
 export const LEGS_FTPS = 2;
+// (Round a corner slower than this, they come back under him toward the
+// join - eased in from where he starts round it, not let go of in a frame.)
+const CORNER_FTPS = 5;
 // (His legs turned under him for going `off` degrees from the way he faces
 // - any sport's man. His left is the floor's clockwise.)
 export const legsTurned = (off: number): number => {
@@ -5525,7 +5575,13 @@ export const legsTurned = (off: number): number => {
 			: LEGS_TURN * Math.max(0, 1 - (a - LEGS_TURN) / LEGS_GIVE);
 	return turn < 0.5 ? 0 : -Math.sign(off) * turn;
 };
-const legsOf = (here: Spot, yaw: number, anim: AnimName, t: number): number => {
+const legsOf = (
+	tr: Track,
+	here: Spot,
+	yaw: number,
+	anim: AnimName,
+	t: number,
+): number => {
 	const run = here.run;
 	// (Backpedalling, his legs go back the way he goes; closing out, his
 	// chop steps go the way he goes.)
@@ -5558,12 +5614,17 @@ const legsOf = (here: Spot, yaw: number, anim: AnimName, t: number): number => {
 	// (And round a corner, the pace he goes round it at: turned right back
 	// on himself, all but stood still at the turn, not swung round with
 	// it.)
+	// (The stop he pulls up to, or set off from, a run or two on if that is
+	// where it is: see stopsAbout.)
+	const { stop, start } = stopsAbout(tr, here.moveIndex, t, LEGS_EASE_MS);
 	const ease =
-		(run.v0 > LEGS_FTPS ? 1 : smooth01((t - run.s0) / LEGS_EASE_MS)) *
-		(run.v1 > LEGS_FTPS || run.stands
+		(start === undefined ? 1 : smooth01((t - start.s0) / LEGS_EASE_MS)) *
+		(stop === undefined || stop.stands
 			? 1
-			: smooth01((run.s1 - t) / LEGS_EASE_MS)) *
-		(here.round === undefined ? 1 : smooth01(here.round / LEGS_FTPS));
+			: smooth01((stop.s1 - t) / LEGS_EASE_MS)) *
+		(here.round === undefined
+			? 1
+			: 1 - (here.near ?? 1) * (1 - smooth01(here.round / CORNER_FTPS)));
 	return turned * ease;
 };
 // (Stood where a run he pulled up from left him, still in its strides, the
@@ -5581,13 +5642,15 @@ const legsAt = (
 	const k = here.moveIndex;
 	const held = (run: Run) => {
 		const end = run.s1 - 1;
-		return legsOf(spotAt(tr, end), yawAt(tl, tr, end), anim, end);
+		return legsOf(tr, spotAt(tr, end), yawAt(tl, tr, end), anim, end);
 	};
 	if (!here.moving) {
 		const run = k >= 0 ? runOf(tr, k) : undefined;
-		return run?.stands && t >= run.s1 ? held(run) : legsOf(here, yaw, anim, t);
+		return run?.stands && t >= run.s1
+			? held(run)
+			: legsOf(tr, here, yaw, anim, t);
 	}
-	const own = legsOf(here, yaw, anim, t);
+	const own = legsOf(tr, here, yaw, anim, t);
 	const run = here.run;
 	if (
 		!carried ||
@@ -5641,7 +5704,7 @@ const flippedLegs = (
 			if (doingAt(tl, tr, at - FLICK_MS).anim !== "back") {
 				return own;
 			}
-			const was = legsOf(spotAt(tr, at), yawAt(tl, tr, at), "back", at);
+			const was = legsOf(tr, spotAt(tr, at), yawAt(tl, tr, at), "back", at);
 			return own + (was - own) * (1 - smooth01((t - at) / FLIP_MS));
 		}
 		if (!FLIPS_TO.has(d.anim)) {
@@ -5896,7 +5959,7 @@ const footAt = (
 		return had;
 	}
 	const yaw = yawAt(tl, tr, at);
-	const out = yaw - (legsOf(spotAt(tr, at), yaw, anim, at) * Math.PI) / 180;
+	const out = yaw - (legsOf(tr, spotAt(tr, at), yaw, anim, at) * Math.PI) / 180;
 	memo?.set(key, out);
 	return out;
 };

@@ -418,7 +418,97 @@ describe("footwork", () => {
 		assert.isAbove(frames, 500);
 		assert.isBelow(most, 6);
 	}, 240_000);
+
+	// Pulling up to a stop, the foot up in his stride comes down to the
+	// floor over the last of it - even where the last of the pull-up is laid
+	// as a run or two of its own, a step's time or less each. (Before: the
+	// foot hung up in his stride till the last of them began, then dropped a
+	// foot or more to the floor in a frame - a man's legs seen to jump: in
+	// test game "a", 36 frames, and 19 a foot dropped with him all but still,
+	// 9 now.)
+	// And his legs never flick from one stance to another with the rest of
+	// him all but still: the turn of his hips under him eased out over the
+	// last of a pull-up laid as runs of their own, and in from where he
+	// starts round a corner. (Before: in test game "a", 40 frames a foot went
+	// most of a foot or more with him all but still.)
+	test("pulling up, his foot comes down over the last of it - never dropped in a frame", () => {
+		const { stops, jumps, drops, flicks } = footDrops();
+		assert.isAbove(stops, 200);
+		assert.strictEqual(jumps, 0);
+		assert.isAtMost(drops, 12);
+		assert.isAtMost(flicks, 10);
+	}, 240_000);
 });
+
+// Over a game: how many times a man pulling up has his foot down (some of
+// the way, on his strides); how many frames that jumps by a lot at once;
+// and how many a foot drops half a foot or more to the floor in a frame with
+// the rest of him all but still.
+const footDrops = () => {
+	const body = bodyOf();
+	const STEP = 16;
+	let stops = 0;
+	let jumps = 0;
+	let drops = 0;
+	let flicks = 0;
+	const { tl } = compile("a", 120);
+	for (const tr of tl.tracks.values()) {
+		let prev:
+			| {
+					down: number;
+					moving: boolean;
+					anim: AnimName;
+					pel: Pt3;
+					feet: [Pt3, Pt3];
+					t: number;
+			  }
+			| undefined;
+		for (let t = 0; t < Math.min(tl.end, 900_000); t += STEP) {
+			const st = evalPlayer(tl, tr.pid, t);
+			if (!st.shown || fastAt(tl, t) > 1 || st.z > 0.05) {
+				prev = undefined;
+				continue;
+			}
+			const me = withBody(st, body);
+			const sk = skeleton(body, poseOf(me));
+			const pel = bodyPoint(me, sk.pelvis);
+			const feet: [Pt3, Pt3] = [
+				bodyPoint(me, sk.legR.end),
+				bodyPoint(me, sk.legL.end),
+			];
+			const down = st.down ?? 0;
+			const on =
+				prev !== undefined &&
+				prev.t === t - STEP &&
+				prev.moving &&
+				st.moving &&
+				prev.anim === st.anim;
+			if (prev && prev.t === t - STEP) {
+				if (on && down > 0 && prev.down === 0) {
+					stops++;
+				}
+				if (on && down - prev.down > 0.35) {
+					jumps++;
+				}
+				const still = Math.hypot(pel.x - prev.pel.x, pel.y - prev.pel.y) < 0.15;
+				if (still && feet.some((f, i) => prev!.feet[i]!.z - f.z > 0.5)) {
+					drops++;
+				}
+				if (
+					still &&
+					feet.some((f, i) => {
+						const w = prev!.feet[i]!;
+						return Math.hypot(f.x - w.x, f.y - w.y, f.z - w.z) > 0.9;
+					})
+				) {
+					flicks++;
+				}
+			}
+			prev = { down, moving: st.moving, anim: st.anim, pel, feet, t };
+		}
+	}
+	return { stops, jumps, drops, flicks };
+};
 
 // Shuffling, the frames the way he goes comes round to his other side: how
 // many, and the quickest a knee or a foot goes over one (feet a second).
