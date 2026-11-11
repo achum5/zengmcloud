@@ -21,10 +21,8 @@ import {
 } from "../../../common/contracts.ts";
 import { amountsWithRaise, maxFor, raiseLimit, serviceYears } from "./cba.ts";
 import {
-	askFloor,
 	atCamp,
 	hadDiscount,
-	reservation,
 	checkFor,
 	leastForLength,
 	decidesNow,
@@ -46,13 +44,22 @@ import { marketSalary, setFreeAgentPoolLeft } from "./payroll.ts";
 import { REPLACEMENT_OVR } from "./strength.ts";
 import {
 	aiTids,
+	count,
 	currentOutlook,
 	loadTeam,
 	marginOf,
+	marketClock,
 	settingFor,
 	type TeamState,
 	afterCuts,
 } from "./market.ts";
+import {
+	carryOut,
+	clearRoomSettings,
+	roomClock,
+	roomPlans,
+	type RoomPlan,
+} from "./clearRoom.ts";
 import {
 	appealOf,
 	askFor,
@@ -435,6 +442,9 @@ const bestBid = (
 	least = 0,
 	// Whether the cap rules allow this amount at this length.
 	allows?: (amount: number) => boolean,
+	// A trade that clears the room for him (clearRoom.ts): what it does for
+	// the team, past what it must beat, and its margin of error.
+	trade?: { value: number; margin: number },
 ) => {
 	const minContract = g.get("minContract");
 	const most = mostUpTo(line, cap);
@@ -448,7 +458,7 @@ const bestBid = (
 		const amount = helpers.roundContract(
 			minContract + ((most - minContract) * i) / STEPS,
 		);
-		const net = netAt(line, amount);
+		const net = netAt(line, amount) + (trade ? trade.value - trade.margin : 0);
 		if (
 			net <= 0 ||
 			amount > most ||
@@ -463,7 +473,7 @@ const bestBid = (
 		const chance = weight / (weight + rivals);
 		// The margin of error is a bar to clear, not a cost: of the offers that
 		// clear it, the one expected to help most, given his odds of taking it.
-		const ev = chance * (net + line.margin);
+		const ev = chance * (net + line.margin + (trade?.margin ?? 0));
 		if (!best || ev > best.ev) {
 			best = { amount, chance, ev };
 		}
@@ -471,23 +481,27 @@ const bestBid = (
 	return best;
 };
 
-// On his decision day, the least he takes for a deal this long: his ask, but
-// never more than he asked as free agency opened - so the best free agents
-// sign on their day. At camp, the least he asks for at all (askFloor).
+// On his decision day (and at camp), the least he takes for a deal this
+// long: his ask - what the market says he is worth, no set floor (owner's
+// call, 2026-11-11) - but never more than he asked as free agency opened, so
+// the best free agents sign on their day.
 export const acceptAt = (p: Player, years: number) =>
 	askFor(p, years) *
 	Math.min(
 		1,
-		(atCamp() ? askFloor(p) : (p.faOpenAsk ?? Infinity)) /
+		(p.faOpenAsk ?? Infinity) /
 			Math.max(g.get("minContract"), contractOf(p).amount),
 	);
 
-// The least a CPU team offers him for a deal this long.
+// The least a CPU team offers him for a deal this long: his ask on his
+// decision day. Not at camp: there an offer under his ask is still one he
+// may take rather than wait into the season - without, a player whose ask
+// the market had read too high got no offers at all.
 const leastFor = (p: Player, years: number) =>
 	stagesOn()
 		? Math.max(
 				leastForLength(p, years),
-				decisionDay(p) ? acceptAt(p, years) : 0,
+				decisionDay(p) && !atCamp() ? acceptAt(p, years) : 0,
 			)
 		: 0;
 
@@ -1096,12 +1110,9 @@ export const priceMarket = async (
 		const from = contractOf(p).amount;
 		const to = helpers.bound(
 			helpers.roundContract(
-				Math.max(
-					from +
-						(once || (stages && atCamp()) ? 1 : freeAgencySettings.priceSpeed) *
-							(market - from),
-					reservation(p, outlook.progress),
-				),
+				from +
+					(once || (stages && atCamp()) ? 1 : freeAgencySettings.priceSpeed) *
+						(market - from),
 			),
 			minContract,
 			// CBA-lite: no more than the max for his years in the league -
@@ -1448,6 +1459,9 @@ export const freeAgencyDay = async () => {
 	}
 	const wait = stages ? stageWait(waitUtility()) : waitUtility();
 	const waitWeight = Math.exp(wait / temperature);
+	// Offers that need a trade to clear the room first, by team and player.
+	const roomPlanOf = new Map<string, RoomPlan>();
+	const planKey = (tid: number, pid: number) => `${tid}:${pid}`;
 	for (const t of order) {
 		const state = states.get(t.tid)!;
 		const spots = g.get("maxRosterSize") - state.players.length;
@@ -1459,8 +1473,9 @@ export const freeAgencyDay = async () => {
 		const capFor = (p: Player) => (cba ? capOf(t.tid, p) : cap) ?? -Infinity;
 		const rivalsOf = async (p: Player) => {
 			// On his decision day he signs with the best offer he will take
-			// (acceptAt): waiting is not a rival.
-			let weight = decisionDay(p) ? 0 : waitWeight;
+			// (acceptAt): waiting is not a rival - but at camp an offer may be
+			// under his ask, and then it is.
+			let weight = decisionDay(p) && !atCamp() ? 0 : waitWeight;
 			// Deciding today, sealed: every team knows only the number to beat.
 			if (stages && decidesNow(p)) {
 				const lead = p.faLead;
@@ -1538,6 +1553,91 @@ export const freeAgencyDay = async () => {
 			}
 			if (best) {
 				bids.push(best);
+			}
+		}
+		// Clearing room (clearRoom.ts): of the free agents it would gain from
+		// at their asks but may not pay that much, the best few - and an offer
+		// to one of them, with the trade that clears the room, if that does
+		// more for it than any offer it can make as it stands.
+		if (stages && clearRoomSettings.on) {
+			const bar = bids.reduce((m, x) => Math.max(m, x.ev), 0);
+			const wanted: { p: Player; net: number; ask: number }[] = [];
+			for (const p of candidates) {
+				if (p.faRestricted) {
+					continue;
+				}
+				const years = wantedYears(p);
+				const ask = Math.max(askFor(p, years), leastFor(p, years));
+				if (capFor(p) >= ask) {
+					continue;
+				}
+				const net = netAt(lineOf(t.tid, p, years), ask);
+				if (net > 0) {
+					wanted.push({ p, net, ask });
+				}
+			}
+			wanted.sort((a, b) => b.net - a.net);
+			if (wanted.length > 0) {
+				roomClock.wanted += 1;
+			}
+			let planned: { bid: Offer & { ev: number }; plan: RoomPlan } | undefined;
+			const partners = [...cpu]
+				.filter((tid) => tid !== t.tid && states.has(tid))
+				.map((tid) => states.get(tid)!);
+			for (const { p, ask } of wanted.slice(0, clearRoomSettings.targets)) {
+				const plans = roomPlans(outlook, t, state, p, ask, partners);
+				roomClock.log?.push(
+					`${t.tid} wants ${p.firstName} ${p.lastName} at ${(ask / g.get("salaryCap")).toFixed(3)} (may pay ${(capFor(p) / g.get("salaryCap")).toFixed(3)}): ${plans.length} trades${plans.map((x) => ` [to ${x.partner}, ${x.give.length} assets, freed ${(x.freed / g.get("salaryCap")).toFixed(3)}, value ${x.value.toFixed(4)}]`).join("")}; bar ${bar.toFixed(4)}`,
+				);
+				if (plans.length === 0) {
+					continue;
+				}
+				roomClock.planned += 1;
+				const appeal = await appealFor(p, t.tid, rankOf(p), rosters);
+				const rivals = await rivalsOf(p);
+				for (const plan of plans) {
+					const payroll = plan.state.payroll;
+					const rosterSize = plan.state.players.length;
+					const cap = mostFor({ t, p, payroll, rosterSize }) ?? -Infinity;
+					for (const years of lengths()) {
+						const bid = bestBid(
+							p,
+							lineFor(outlook, plan.state, p, years),
+							appeal,
+							rivals,
+							cap,
+							temperature,
+							leastFor(p, years),
+							(amount) => checkFor({ t, p, payroll, amount, rosterSize }).ok,
+							plan,
+						);
+						if (bid && bid.ev > Math.max(bar, planned?.bid.ev ?? 0)) {
+							planned = {
+								bid: {
+									tid: t.tid,
+									pid: p.pid,
+									amount: bid.amount,
+									exp: expFor(years),
+									ev: bid.ev,
+								},
+								plan,
+							};
+						}
+					}
+				}
+			}
+			if (planned) {
+				const { bid, plan } = planned;
+				roomClock.offered += 1;
+				roomClock.log?.push(
+					`  ${t.tid} offers ${bid.pid} ${(bid.amount / g.get("salaryCap")).toFixed(3)} thru ${bid.exp}, ev ${bid.ev.toFixed(4)}`,
+				);
+				const i = bids.findIndex((x) => x.pid === bid.pid);
+				if (i >= 0) {
+					bids.splice(i, 1);
+				}
+				bids.push(bid);
+				roomPlanOf.set(planKey(t.tid, bid.pid), plan);
 			}
 		}
 		const board = bids
@@ -1654,16 +1754,18 @@ export const freeAgencyDay = async () => {
 				const atLimit =
 					inSeason && cpu.has(tid) && roster.length === g.get("maxRosterSize");
 				const payroll = await team.getPayroll(tid);
+				// With the trade that clears the room, if it needs one.
+				const plan = roomPlanOf.get(planKey(tid, p.pid));
 				const check = cba
 					? checkFor({
 							t: (await idb.cache.teams.get(tid))!,
 							p,
-							payroll,
+							payroll: payroll - (plan?.freed ?? 0),
 							amount: offer.amount,
-							rosterSize: roster.length,
+							rosterSize: roster.length - (plan ? count(plan.give) : 0),
 						})
 					: undefined;
-				const fits =
+				let fits =
 					(check
 						? check.ok
 						: mayPay({
@@ -1737,6 +1839,23 @@ export const freeAgencyDay = async () => {
 						continue;
 					}
 				}
+				if (fits && plan) {
+					roomClock.taken += 1;
+					fits = await carryOut(
+						outlook,
+						plan,
+						p,
+						offer.amount,
+						`${p.firstName} ${p.lastName}`,
+					);
+					roomPlanOf.delete(planKey(tid, p.pid));
+					if (fits) {
+						marketClock.roomTrades += 1;
+						roomClock.made += 1;
+					} else {
+						roomClock.failed += 1;
+					}
+				}
 				if (fits) {
 					await sign(
 						p,
@@ -1806,12 +1925,13 @@ export const freeAgencyDay = async () => {
 					(await idb.cache.players.indexGetAll("playersByTid", t.tid)).length,
 				);
 			}
+			const plan = roomPlanOf.get(planKey(t.tid, p.pid));
 			return checkFor({
 				t: (await idb.cache.teams.get(t.tid)) ?? t,
 				p,
-				payroll: payrolls.get(t.tid)!,
+				payroll: payrolls.get(t.tid)! - (plan?.freed ?? 0),
 				amount: offer.amount,
-				rosterSize: rosterSizes.get(t.tid)!,
+				rosterSize: rosterSizes.get(t.tid)! - (plan ? count(plan.give) : 0),
 			}).ok;
 		};
 		for (const p of pool) {

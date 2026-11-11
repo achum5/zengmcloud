@@ -258,6 +258,9 @@ export const marketClock = {
 	// Deals both teams wanted, put off because one would rather decide at the
 	// deadline.
 	deferred: 0,
+	// Trades made to clear cap room for a free agent who took the offer
+	// (clearRoom.ts).
+	roomTrades: 0,
 	// The time by kind of day: an ordinary one, one in the deadline window,
 	// one of free agency, and an offseason window (every team shops).
 	byKind: {} as Record<string, { days: number; ms: number }>,
@@ -1892,6 +1895,9 @@ export const makeDeal = async (
 	initiatorTid: number,
 	sides: readonly [TeamState, TeamState],
 	waiting?: ReturnType<typeof waitingOf>,
+	// Each side's reason in the trade history, in place of the one the
+	// breakdown gives: a trade made to clear room says so.
+	reasons?: readonly [string | undefined, string | undefined],
 ) => {
 	const teams: TradeTeams = [
 		{
@@ -1922,6 +1928,12 @@ export const makeDeal = async (
 			: "";
 	};
 	const breakdown = breakdownOf(outlook, best, sides);
+	for (const k of [0, 1] as const) {
+		const reason = reasons?.[k];
+		if (reason) {
+			breakdown.sides[k].reason = reason;
+		}
+	}
 	for (const watch of tradeWatchers) {
 		watch({
 			tids: best.tids,
@@ -1939,7 +1951,9 @@ export const makeDeal = async (
 		initiatorTid,
 		tiers: [standing(best.tids[0]), standing(best.tids[1])],
 		dv: Math.round(Math.min(...best.gains) * 10_000) / 10_000,
-		motivation: `both gain: ${best.gains.map((x) => `+${(100 * x).toFixed(2)}`).join(" / ")} title-equivalents x100`,
+		motivation: reasons?.some(Boolean)
+			? reasons.filter(Boolean).join(" ")
+			: `both gain: ${best.gains.map((x) => `+${(100 * x).toFixed(2)}`).join(" / ")} title-equivalents x100`,
 		frontOffice: breakdown,
 	});
 	marketClock.trades += 1;

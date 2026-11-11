@@ -184,7 +184,6 @@ const GuideSection = ({
 
 const GuideTab = ({ rules }: { rules: Rules }) => {
 	const years = (n: number) => `${n} ${helpers.plural("year", n)}`;
-	const floors = rules.askFloorPcts;
 	return (
 		<div className="row" style={{ maxWidth: 1100 }}>
 			<GuideSection title="The salary cap">
@@ -379,21 +378,21 @@ const GuideTab = ({ rules }: { rules: Rules }) => {
 					an offer is good enough, or waits for a better one.
 				</li>
 				<li>
-					<b>{rules.stages[4]}:</b> the last stage. A player takes his best
-					offer if it's at least his lowest price.
+					<b>{rules.stages[4]}:</b> the last stage. A player takes an offer at
+					his asking price or more. One under it, he may still take rather than
+					wait into the season.
 				</li>
 				<li>
-					Anyone still unsigned can be signed during the season. His price keeps
-					falling as the season goes.
+					Anyone still unsigned can be signed during the season, at what teams
+					will pay him then.
 				</li>
 			</GuideSection>
 			<GuideSection title="How a free agent chooses">
 				<li>
 					<b>His asking price</b> is set when free agency opens, from what teams
-					can pay him. During free agency it never goes up. It eases as the
-					stages go, but in the five stages never below {floors.join("%, ")}% of
-					what he first asked. At training camp his lowest price is at most{" "}
-					{money(rules.campAskCap)}.
+					can pay him. During free agency it never goes up. Each stage it moves
+					toward what teams would pay him now - there is no set floor - so as
+					teams use up their cap room, the price of anyone still unsigned falls.
 				</li>
 				<li>
 					<b>Money:</b> more than his ask helps a little (past{" "}
@@ -423,6 +422,11 @@ const GuideTab = ({ rules }: { rules: Rules }) => {
 			</GuideSection>
 			<GuideSection title="Trades">
 				<li>The usual trade rules apply, plus the hard cap rule above.</li>
+				<li>
+					During free agency a CPU team can clear cap room for a free agent by
+					trading players (and picks, if it has to) to a team with room. It only
+					makes the trade if he takes its offer, right before he signs.
+				</li>
 				<li>
 					The Teams tab shows every team's payroll, cap space, room under the
 					hard cap and mid-level left.

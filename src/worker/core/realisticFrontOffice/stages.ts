@@ -35,9 +35,6 @@ export const stageSettings = {
 	// temperature): sharper than the daily market's, so a clearly better
 	// offer wins about 85-90% of the time (owner's call).
 	decisionTemperature: 0.05,
-	// His ask never falls below this share of what it was as free agency
-	// opened, by stage: it holds through the decision days, then eases.
-	floorByStage: [1, 0.9, 0.8, 0.6, 0.5],
 	// At camp, waiting is worth this much less to him (offers.ts's units):
 	// the season is about to start, and he wants a team.
 	campWait: -0.15,
@@ -60,9 +57,6 @@ export const stageSettings = {
 	// As free agency opens his ask is the market's, but never below this
 	// share of stock's demand for him.
 	openAskFloor: 0.5,
-	// At camp his ask comes down no further than this share of the cap: by
-	// then the market, not the one team that saved its room, sets his price.
-	campAskCap: 0.05,
 };
 
 export const STAGES = [
@@ -255,42 +249,6 @@ export const atCamp = () => stageIndex() === STAGES.length - 1;
 // What waiting for more is worth to a free agent this stage.
 export const stageWait = (wait: number) =>
 	stageIndex() === STAGES.length - 1 ? wait + stageSettings.campWait : wait;
-
-// The least he asks for this stage. At camp, no more than campAskCap of the
-// cap: the market, not the one team that saved its room, sets his price.
-export const askFloor = (p: Pick<Player, "faOpenAsk">) => {
-	const floor = (p.faOpenAsk ?? 0) * stageSettings.floorByStage[stageIndex()]!;
-	return stageIndex() === STAGES.length - 1
-		? Math.min(floor, stageSettings.campAskCap * g.get("salaryCap"))
-		: floor;
-};
-
-// The least he takes once the season is on, unsigned through camp: camp's
-// floor, easing to nothing as the season goes - a team that waits for him
-// gets him for fewer games (owner's call: no meta of stacking cheap players
-// by waiting).
-export const reservation = (
-	p: Pick<Player, "faOpenAsk">,
-	seasonPlayed: number,
-) => {
-	if (inStages()) {
-		return askFloor(p);
-	}
-	const phase = g.get("phase");
-	if (
-		!stagesOn() ||
-		p.faOpenAsk === undefined ||
-		phase < PHASE.REGULAR_SEASON ||
-		phase > PHASE.AFTER_TRADE_DEADLINE
-	) {
-		return 0;
-	}
-	const camp = Math.min(
-		p.faOpenAsk * stageSettings.floorByStage[STAGES.length - 1]!,
-		stageSettings.campAskCap * g.get("salaryCap"),
-	);
-	return camp * Math.max(0, 1 - seasonPlayed);
-};
 
 // The least he takes for a deal this long: a long deal only near his value,
 // and from camp on only at his opening ask. Only while he is this summer's

@@ -155,8 +155,6 @@ export const contractRules = () => {
 		luxuryTaxRate: g.get("luxuryTax"),
 		minRosterSize: g.get("minRosterSize"),
 		maxRosterSize: g.get("maxRosterSize"),
-		askFloorPcts: stageSettings.floorByStage.map(pct),
-		campAskCap: stageSettings.campAskCap * salaryCap,
 		lateLongPct: pct(stageSettings.lateLongShare),
 		playerOptionPct: pct(PLAYER_OPTION_VALUE),
 		teamOptionPct: pct(TEAM_OPTION_COST),

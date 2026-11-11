@@ -84,17 +84,19 @@ Existing contracts stay as they are (flat, no options).
   (a player option is worth money to him, a team option costs), plus
   interest.
 - **Ask.** Set when free agency opens from what the market can pay him -
-  cap room, the MLE for teams over the cap, the max - and eased a little
-  each stage he is unsigned, never below half his market value (no more
-  61/71 23-year-olds on six-year minimums).
+  cap room, the MLE for teams over the cap, the max - never below half his
+  market value (no more 61/71 23-year-olds on six-year minimums). Each stage
+  he is unsigned it moves toward what teams would pay him then, with no
+  floor by stage and no cap at camp (owner's call, 2026-11-11: market
+  based, no hard-coded amounts it falls by).
 - **Decision.** Odds by offer score, as now but much sharper (owner): a
   clearly better offer wins about 85-90% of the time, close ones are near
   coin flips. Rolled once per player per stage, so deciding again changes
   nothing. Each team sees its own odds.
 - **On his decision day he signs** with one of the offers at his ask or
   more, rather than wait; his ask never rises past what he asked as free
-  agency opened. At camp, the last stage, he signs with one at the least he
-  asks for (the floor) or more - the season is about to start. From camp on,
+  agency opened. At camp, the last stage, the same - the season is about
+  to start. From camp on,
   a deal for less than his opening ask is for one season only (without,
   veterans signed at camp for 2% of the cap for four years). The number to beat counts only offers whose teams can still
   sign him. (2026-11-10, from an audit of the owner's league: its best free
@@ -107,6 +109,15 @@ Existing contracts stay as they are (flat, no options).
   the minimum.
 
 ## CPU teams
+
+- **Clearing room** (clearRoom.ts; owner's call, 2026-11-11). A CPU team
+  that would gain from a free agent at his ask but may not pay him that
+  much can trade one to three players - and a pick or two if that is what
+  it takes - to a CPU team with room that would take them. It offers him
+  what it would with the room, if the trade and the signing together beat
+  every offer it can make as it stands. The trade is made only if he takes
+  that offer, just before he signs; if the other team would no longer take
+  the players then, the offer falls through.
 
 Everything by the same valuation they trade with: which free agents to
 offer, what shape (years, raise, option), counters, final offers, matching a
