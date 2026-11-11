@@ -51,10 +51,11 @@ export const laneSettings = {
 
 // Each lane's weighing of an asset: a factor on vanilla's value, as stock's
 // two strategies have (team/ValueChangeCalculator.ts sumValues), and how much
-// contracts count. Players are weighed by when they help (timing.ts, through
-// the tweaks); here only draft picks - a contender's are worth less to it, a
+// contracts count. Players are weighed by when they help (worth.ts); here
+// only draft picks - a contender's are worth less to it, a
 // rebuilding team's more. Never below vanilla's when giving one away: a team
-// could always sell it for that.
+// could always sell it for that - and to a human, never below what the
+// keenest lane would pay.
 const PICKS: Record<Lane, number> = {
 	allIn: 0.825,
 	playoff: 0.925,
@@ -71,10 +72,14 @@ const PLANS = Object.fromEntries(
 	(Object.keys(PICKS) as Lane[]).map((lane) => [
 		lane,
 		{
-			factor: (_p, futurePick, side) =>
+			factor: (_p, futurePick, side, vsHuman) =>
 				futurePick
 					? side === "remove"
-						? Math.max(1, PICKS[lane])
+						? // To a human, the best any lane would pay.
+							Math.max(
+								1,
+								vsHuman ? Math.max(...Object.values(PICKS)) : PICKS[lane],
+							)
 						: PICKS[lane]
 					: 1,
 			contractsFactor: CONTRACTS[lane],

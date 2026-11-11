@@ -242,6 +242,7 @@ const getPlayers = async ({
 	tid,
 	tradingPartnerTid,
 	cpuMarkup,
+	playerWorth,
 }: {
 	add: Asset[];
 	remove: Asset[];
@@ -252,6 +253,7 @@ const getPlayers = async ({
 	// Vanilla+: how much a CPU team overvalues its own players in a deal with
 	// another CPU team, in place of stock's 5% and the difficulty's.
 	cpuMarkup?: number;
+	playerWorth?: PlayerWorth;
 }) => {
 	const season = g.get("season");
 	const phase = g.get("phase");
@@ -269,6 +271,11 @@ const getPlayers = async ({
 			? cpuMarkup
 			: (cpuWithCpu ? 1.05 : 1) * difficultyFudgeFactor;
 
+	const vsHuman =
+		tradingPartnerTid !== undefined &&
+		!g.get("spectator") &&
+		g.get("userTids").includes(tradingPartnerTid);
+
 	// Get players to remove
 	const players = await idb.cache.players.indexGetAll("playersByTid", tid);
 
@@ -277,7 +284,9 @@ const getPlayers = async ({
 			continue;
 		}
 
-		const value = zscore(p.value);
+		// Vanilla+: his worth to this team, never less than the market's.
+		const worth = playerWorth?.(tid, p, vsHuman);
+		const value = worth ? Math.max(worth.own, worth.market) : zscore(p.value);
 
 		// Only apply fudge factor to positive assets
 		let fudgedValue = value;
@@ -290,7 +299,7 @@ const getPlayers = async ({
 			type: "player",
 			pid: p.pid,
 			value: fudgedValue,
-			contractValue: getContractValue(contract, value),
+			contractValue: getContractValue(contract, worth?.market ?? value),
 			injury: p.injury,
 			age: g.get("season") - p.born.year,
 			justDrafted: helpers.justDrafted(
@@ -305,14 +314,16 @@ const getPlayers = async ({
 	for (const pid of pidsAdd) {
 		const p = await idb.cache.players.get(pid);
 		if (p) {
-			const value = zscore(p.value);
+			// Vanilla+: his worth to this team.
+			const worth = playerWorth?.(tid, p, vsHuman);
+			const value = worth ? worth.own : zscore(p.value);
 
 			const contract = getContractForValuation(p);
 			add.push({
 				type: "player",
 				pid: p.pid,
 				value,
-				contractValue: getContractValue(contract, value),
+				contractValue: getContractValue(contract, worth?.market ?? value),
 				injury: p.injury,
 				age: g.get("season") - p.born.year,
 				justDrafted: helpers.justDrafted(
@@ -911,8 +922,10 @@ const sumValues = (
 	// contracts count - and a multiplier on each asset's trade value.
 	plan?: TradePlan,
 	adjust?: (p: Asset) => number,
-	// Which side of the deal these are, for the plan.
+	// Which side of the deal these are, and whether it's with a human, for
+	// the plan.
 	side: "add" | "remove" = "add",
+	vsHuman = false,
 ) => {
 	if (players.length === 0) {
 		return 0;
@@ -937,7 +950,7 @@ const sumValues = (
 		};
 
 		if (plan) {
-			const factor = plan.factor(p, treatAsFutureDraftPick, side);
+			const factor = plan.factor(p, treatAsFutureDraftPick, side, vsHuman);
 			if (factor !== 1) {
 				applyFactor(factor);
 			}
@@ -1014,10 +1027,25 @@ const sumValues = (
 	}, 0);
 };
 
+// Vanilla+: a player's worth to a team and to the market, as z-scores in
+// place of his value's (core/vanillaPlus/worth.ts). A contract is judged
+// against the market's.
+export type PlayerWorth = (
+	tid: number,
+	p: Player,
+	// Dealing with a human: the market is the best any other team would pay.
+	vsHuman: boolean,
+) => { own: number; market: number } | undefined;
+
 // Vanilla+: how a team's plan (its lane) weighs assets, in place of stock's
 // two strategies.
 export type TradePlan = {
-	factor: (p: Asset, futurePick: boolean, side: "add" | "remove") => number;
+	factor: (
+		p: Asset,
+		futurePick: boolean,
+		side: "add" | "remove",
+		vsHuman: boolean,
+	) => number;
 	contractsFactor: number;
 };
 
@@ -1150,6 +1178,8 @@ export class ValueChangeCalculator {
 	// Unset, stock's.
 	private planOf?: (tid: number) => TradePlan | undefined;
 	private cpuMarkup?: number;
+	private playerWorth?: PlayerWorth;
+	private pickValues?: () => Promise<TradePickValues>;
 	private adjust?: (
 		tid: number,
 		asset: Asset,
@@ -1161,14 +1191,22 @@ export class ValueChangeCalculator {
 		planOf,
 		adjust,
 		cpuMarkup,
+		playerWorth,
+		pickValues,
 	}: {
 		quick?: boolean;
 		planOf?: (tid: number) => TradePlan | undefined;
 		cpuMarkup?: number;
 		adjust?: (tid: number, asset: Asset, side: "add" | "remove") => number;
+		// Vanilla+: players' worth in place of their values, and the pick table
+		// on the same scale.
+		playerWorth?: PlayerWorth;
+		pickValues?: () => Promise<TradePickValues>;
 	} = {}) {
 		this.quick = quick;
 		this.planOf = planOf;
+		this.playerWorth = playerWorth;
+		this.pickValues = pickValues;
 		this.adjust = adjust;
 		this.cpuMarkup = cpuMarkup;
 	}
@@ -1184,7 +1222,7 @@ export class ValueChangeCalculator {
 
 		const estValues =
 			toUpdate.draft || !this.cache
-				? await trade.getPickValues()
+				? await (this.pickValues ?? trade.getPickValues)()
 				: this.cache.estValues;
 
 		if (toUpdate.teams || !this.cache) {
@@ -1296,6 +1334,10 @@ export class ValueChangeCalculator {
 
 		const strategy = t.strategy;
 		const plan = this.planOf?.(tid);
+		const vsHuman =
+			tradingPartnerTid !== undefined &&
+			!g.get("spectator") &&
+			g.get("userTids").includes(tradingPartnerTid);
 
 		await getPlayers({
 			add,
@@ -1305,6 +1347,7 @@ export class ValueChangeCalculator {
 			tid,
 			tradingPartnerTid,
 			cpuMarkup: this.cpuMarkup,
+			playerWorth: this.playerWorth,
 		});
 		await getPicks({
 			cache: this.cache,
@@ -1328,6 +1371,7 @@ export class ValueChangeCalculator {
 			plan,
 			adjust && ((p) => adjust(tid, p, "add")),
 			"add",
+			vsHuman,
 		);
 		// console.log("Total", valuesAdd);
 
@@ -1340,6 +1384,7 @@ export class ValueChangeCalculator {
 			plan,
 			adjust && ((p) => adjust(tid, p, "remove")),
 			"remove",
+			vsHuman,
 		);
 		// console.log("Total", valuesRemove);
 

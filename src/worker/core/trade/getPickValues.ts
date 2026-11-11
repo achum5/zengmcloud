@@ -2,7 +2,7 @@ import { range } from "../../../common/utils.ts";
 import { PHASE, PLAYER } from "../../../common/constants.ts";
 import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
-import type { TradePickValues } from "../../../common/types.ts";
+import type { Player, TradePickValues } from "../../../common/types.ts";
 
 const PLACEHOLDER_VALUE_ALREADY_PICKED = -1;
 
@@ -23,7 +23,11 @@ export const getNumPicksPerRound = () => {
  * @memberOf core.trade
  * @return {Promise.Object} Resolves to estimated draft pick values.
  */
-const getPickValues = async (): Promise<TradePickValues> => {
+const getPickValues = async (
+	// What a prospect is worth, on the value scale: his value, unless vanilla+
+	// prices him by his seasons (core/vanillaPlus/worth.ts).
+	valueOf: (p: Player) => number = (p) => p.value,
+): Promise<TradePickValues> => {
 	// Use this to ignore draft prospects from any season where there are no draft picks
 	const draftPickSeasons = new Set(
 		(await idb.cache.draftPicks.getAll())
@@ -34,14 +38,15 @@ const getPickValues = async (): Promise<TradePickValues> => {
 	const players = (
 		await idb.cache.players.indexGetAll("playersByTid", PLAYER.UNDRAFTED)
 	).filter((p) => draftPickSeasons.has(p.draft.year));
-	players.sort((a, b) => b.value - a.value);
+	const values = new Map(players.map((p) => [p.pid, valueOf(p)]));
+	players.sort((a, b) => values.get(b.pid)! - values.get(a.pid)!);
 
 	const playersByDraftYear = Map.groupBy(players, (p) => p.draft.year);
 
 	const pickValues: TradePickValues = {} as TradePickValues;
 
 	for (const [season, players] of playersByDraftYear) {
-		pickValues[season] = players.map((p) => p.value);
+		pickValues[season] = players.map((p) => values.get(p.pid)!);
 	}
 
 	const currentSeason = g.get("season");

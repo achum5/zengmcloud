@@ -9,7 +9,6 @@ import {
 	type ValueRatings,
 } from "../realisticFrontOffice/strength.ts";
 import type { Lane } from "./lanes.ts";
-import { timingFactor } from "./timing.ts";
 
 // THE TWEAKS (docs/vanilla-plus.md): small, capped multipliers on a player's
 // trade value by vanilla's reckoning, for what vanilla can't see.
@@ -22,10 +21,9 @@ import { timingFactor } from "./timing.ts";
 // - Production: what his box score says (BPM over the last season and a
 //   half) past or short of what his rating usually brings.
 //
-// All together within totalCap of vanilla's trade value, so vanilla still
-// decides. Then timing (timing.ts) scales it by when he helps, for this
-// team's lane - and a team giving a player away counts him at no less than
-// vanilla's value.
+// All together within totalCap of his trade value (worth.ts), so his worth
+// still decides. A team giving a player away never counts these below 1: it
+// could always sell him to someone else at his price.
 export const tweakSettings = {
 	// Fit: this share of how far his fit ratio is from 1, within the cap.
 	// The ratio counts this many points a game on both sides, so a bench
@@ -192,11 +190,7 @@ export const tweaksFor = async (lanes: Map<number, Lane>): Promise<Tweaks> => {
 				);
 			}
 		}
-		// Timing (timing.ts): what he's worth to a team with this lane's
-		// horizon, against the market's.
-		const own =
-			(p ? timingFactor(p, lanes.get(tid)) : 1) *
-			(1 + clamp(total, s.totalCap));
+		const own = 1 + clamp(total, s.totalCap);
 		// A team never gives a player away for less than the market would pay
 		// for him: it could always shop him instead.
 		const factor = side === "remove" ? Math.max(1, own) : own;

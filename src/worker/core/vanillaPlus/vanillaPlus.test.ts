@@ -2,12 +2,12 @@ import { afterAll, assert, beforeAll, test } from "vitest";
 import { PHASE, PLAYER } from "../../../common/constants.ts";
 import { makeSeededRandom } from "../../../common/random.ts";
 import { idb } from "../../db/index.ts";
-import { g } from "../../util/index.ts";
+import { g, local } from "../../util/index.ts";
 import { createArenaLeague } from "../../../test/arena/runLeague.ts";
 import { vanillaPlusSettings } from "./settings.ts";
 import { ensureLanes, type Lane } from "./lanes.ts";
 import { tweaksFor } from "./tweaks.ts";
-import { timingFactor } from "./timing.ts";
+import { playerWorth, worth, worthSettings } from "./worth.ts";
 import { tradeValueCalculator } from "./index.ts";
 import makeItWork from "../trade/makeItWork.ts";
 
@@ -94,11 +94,8 @@ test("a contender with no big men values a center more than a guard as good", as
 			age: 25,
 			justDrafted: false,
 		}) as const;
-	// Fit alone: timing (when each helps) taken back out.
-	const center =
-		tweaks(allIn, asset(pair![0]), "add") / timingFactor(pair![0], "allIn");
-	const guard =
-		tweaks(allIn, asset(pair![1]), "add") / timingFactor(pair![1], "allIn");
+	const center = tweaks(allIn, asset(pair![0]), "add");
+	const guard = tweaks(allIn, asset(pair![1]), "add");
 	assert.isAbove(center, guard);
 	assert.isAbove(center, 1);
 	assert.isAtMost(center, 1.25);
@@ -171,22 +168,47 @@ test("contenders weigh now, rebuilders later: teenagers and veterans priced by w
 		list.sort((a, b) => b.value - a.value)[0]!;
 	const teen = best(players.filter((p) => age(p) <= 20));
 	const vet = best(players.filter((p) => age(p) >= 30));
-	assert.isBelow(timingFactor(teen, "allIn"), 0.6);
-	assert.isAbove(timingFactor(vet, "allIn"), 1.2);
-	assert.isAbove(timingFactor(teen, "rebuild"), 1.2);
-	assert.isBelow(timingFactor(vet, "rebuild"), 0.9);
+	const t = (lane?: "allIn" | "rebuild") => playerWorth(teen, lane);
+	const v = (lane?: "allIn" | "rebuild") => playerWorth(vet, lane);
+	assert.isBelow(t("allIn").own, t().market);
+	assert.isAbove(t("rebuild").own, t().market);
+	assert.isAbove(v("allIn").own, v().market);
+	assert.isBelow(v("rebuild").own, v().market);
 	// In order across the lanes.
 	const lanes = ["allIn", "playoff", "retool", "rebuild"] as const;
 	for (let i = 1; i < lanes.length; i++) {
 		assert.isAbove(
-			timingFactor(teen, lanes[i]!),
-			timingFactor(teen, lanes[i - 1]!),
+			playerWorth(teen, lanes[i]).own,
+			playerWorth(teen, lanes[i - 1]).own,
 		);
 		assert.isBelow(
-			timingFactor(vet, lanes[i]!),
-			timingFactor(vet, lanes[i - 1]!),
+			playerWorth(vet, lanes[i]).own,
+			playerWorth(vet, lanes[i - 1]).own,
 		);
 	}
+});
+
+// The market's horizon is set so that players in their prime cost about
+// what vanilla says: the scale everything else is measured on.
+test("players in their prime are worth about vanilla's price", async () => {
+	const season = g.get("season");
+	const tv = (value: number) => {
+		const z = (value - local.playerOvrMean) / local.playerOvrStd;
+		return z > 1 ? z ** 7 : z;
+	};
+	const ratios = (
+		await idb.cache.players.indexGetAll("playersByTid", [0, Infinity])
+	)
+		.filter((p) => {
+			const a = season - p.born.year;
+			return a >= 25 && a <= 28 && tv(p.value) > 1;
+		})
+		.map((p) => worth(p, worthSettings.market) / tv(p.value))
+		.sort((a, b) => a - b);
+	assert.isAbove(ratios.length, 10);
+	const median = ratios[Math.floor(ratios.length / 2)]!;
+	assert.isAbove(median, 0.7);
+	assert.isBelow(median, 1.4);
 });
 
 test("no team counts a player it gives away at less than his market value", async () => {
