@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 280,
+		date: "2026-11-11",
+		text: 'Realistic Front Offices: "What would make this work" no longer asks for players or picks you\'ve excluded from the trade.',
+	},
+	{
 		n: 279,
 		date: "2026-11-11",
 		text: 'Realistic Front Offices: the trading block, "What would make this work" and Trade Proposals now work just like the normal game\'s - a team keeps adding its own players and picks until the deal is only just worth it to it, its best offer, and "What would make this work" evens a deal up when you\'re overpaying - only the teams judge every deal with the mode\'s far smarter read. Trading block bids are no longer held to three assets: put a star up and nearly every team bids, often five firsts or a package of young players.',

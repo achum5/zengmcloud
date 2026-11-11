@@ -164,6 +164,66 @@ test(
 );
 
 test(
+	"what would make it work never touches what the human excluded",
+	{ timeout: 300_000 },
+	async () => {
+		const { trade } = await import("../index.ts");
+		const best = async (tid: number) =>
+			(await idb.cache.players.indexGetAll("playersByTid", tid)).sort(
+				(a, b) => b.value - a.value,
+			);
+		const mine = await best(userTid);
+		const picks = await idb.cache.draftPicks.indexGetAll(
+			"draftPicksByTid",
+			userTid,
+		);
+		let asked = 0;
+		for (let tid = 1; tid < g.get("numTeams") && asked < 3; tid++) {
+			const theirs = await best(tid);
+			// Their best player for nothing, the human's best four and his
+			// first two picks off the table, and their second best too.
+			const pidsExcluded = mine.slice(0, 4).map((p) => p.pid);
+			const dpidsExcluded = picks.slice(0, 2).map((dp) => dp.dpid);
+			const otherExcluded = [theirs[1]!.pid];
+			await trade.create([
+				{
+					tid: userTid,
+					pids: [],
+					dpids: [],
+					pidsExcluded,
+					dpidsExcluded,
+				},
+				{
+					tid,
+					pids: [theirs[0]!.pid],
+					dpids: [],
+					pidsExcluded: otherExcluded,
+					dpidsExcluded: [],
+				},
+			]);
+			// The button's own path, through the trade as saved.
+			const { changed } = await trade.makeItWorkTrade();
+			if (!changed) {
+				continue;
+			}
+			asked += 1;
+			const [user, other] = (await trade.get()).teams;
+			for (const pid of pidsExcluded) {
+				assert.notInclude(user.pids, pid);
+			}
+			for (const dpid of dpidsExcluded) {
+				assert.notInclude(user.dpids, dpid);
+			}
+			for (const pid of otherExcluded) {
+				assert.notInclude(other.pids, pid);
+			}
+			assert.include(other.pids, theirs[0]!.pid);
+		}
+		assert.isAbove(asked, 0);
+	},
+);
+
+test(
 	"difficulty: harder, a CPU team wants to be surer of gaining from a human",
 	{ timeout: 300_000 },
 	async () => {
