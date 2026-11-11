@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 278,
+		date: "2026-11-11",
+		text: "Realistic Front Offices: put a star on the trading block and nearly every team now makes an offer. Before, only teams with top draft picks could - a bid had to be worth a third of what the old trade values put on him, and those value a star far beyond any three picks or players, even though almost every team wanted him.",
+	},
+	{
 		n: 277,
 		date: "2026-11-11",
 		text: "Realistic Front Offices: free agency's five stages are now just Phase 1 to Phase 5. And the mode's pages look like the rest of the game again - plain text and tables instead of colored labels: your cap space, the free agency phase, your offers and each phase's signings on Free Agents, contract notes on Team Finances and player pages.",

@@ -71,7 +71,12 @@ const PRICE_CANDIDATES = 30;
 //   valuable first, so many of each kind (players of the kinds asked for,
 //   other players, picks) - a player only if the human would keep him, not
 //   cut him - and worth this share of the price at least (a lowball is no
-//   guide to the market).
+//   guide to the market): of his price or, if nothing it could bid is worth
+//   that much, of the most it could bid. Those values price a star past any
+//   three of a team's assets: held to a share of his price, only teams with
+//   top picks bid for one - in the owner's league, 0 to 3 of 29 for his
+//   84-rated 27-year-old, every one of which would have taken him by its own
+//   read (2026-11-11); now 28. Bids for other players, the same.
 const BID_WANTED = 3;
 const BID_OTHERS = 1;
 const BID_PICKS = 4;
@@ -412,9 +417,12 @@ const bestBid = async (
 	await ensureRetention(outlook, cpu.tradablePlayers, human.tid);
 	// (The less it would gain giving one, the more that one is worth.)
 	const assets: { x: Asset; dv: number }[] = [];
+	// The most a bid of its could be worth by the market (see MIN_SHARE).
+	let most = 0;
 	for (const x of tableAssets(cpu)) {
 		if (allow(x)) {
 			const dv = await marketGain(classic, cpu.tid, human.tid, [x], get);
+			most = Math.max(most, price - dv);
 			if (dv > 0) {
 				assets.push({ x, dv });
 			}
@@ -453,16 +461,18 @@ const bestBid = async (
 			}
 		}
 	}
-	const sized: { give: Asset[]; dv: number }[] = [];
+	const priced: { give: Asset[]; dv: number }[] = [];
 	for (const give of combos) {
 		if (!give.some(wanted)) {
 			continue;
 		}
 		const dv = await marketGain(classic, cpu.tid, human.tid, give, get);
-		if (dv > 0 && price - dv >= MIN_SHARE * price) {
-			sized.push({ give, dv });
-		}
+		priced.push({ give, dv });
+		most = Math.max(most, price - dv);
 	}
+	const sized = priced.filter(
+		({ dv }) => dv > 0 && price - dv >= MIN_SHARE * Math.min(price, most),
+	);
 	sized.sort((x, y) => x.dv - y.dv);
 	const factor = humanMarginFactor();
 	for (const { give } of sized.slice(0, BID_CANDIDATES)) {

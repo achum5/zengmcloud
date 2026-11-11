@@ -256,6 +256,27 @@ test(
 			assert.isTrue(theirs.some((p) => p!.ratings.at(-1)!.pos.includes(pos)));
 		}
 
+		// The league's best player draws bids in picks from all but a few
+		// teams: the stock values price a star past any three of a team's
+		// assets, and with every bid held to a third of his price, 16 of 29
+		// teams bid for this league's (rated 80), none for the owner's 84.
+		const best = (await idb.cache.players.getAll())
+			.filter((p) => p.tid >= 0)
+			.sort((a, b) => b.valueNoPot - a.valueNoPot)[0]!;
+		g.setWithoutSavingToDB("userTid", best.tid);
+		g.setWithoutSavingToDB("userTids", [best.tid]);
+		try {
+			const star = await tradingBlockTeams(best.tid, [best.pid], [], {
+				positions: new Set(),
+				skills: new Set(),
+				draftPicks: true,
+			});
+			assert.isAbove(star.length, 0.75 * (g.get("numTeams") - 1));
+		} finally {
+			g.setWithoutSavingToDB("userTid", userTid);
+			g.setWithoutSavingToDB("userTids", [userTid]);
+		}
+
 		const fs = await importNode("node:fs/promises");
 		if ((globalThis as any).process?.env?.PROPOSALS_TIMING) {
 			await fs.writeFile(
