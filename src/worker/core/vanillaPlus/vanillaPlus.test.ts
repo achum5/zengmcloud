@@ -12,6 +12,7 @@ import makeItWork from "../trade/makeItWork.ts";
 
 const importNode = (name: string) => import(/* @vite-ignore */ name);
 const realRandom = Math.random;
+const wasOn = vanillaPlusSettings.on;
 
 beforeAll(async () => {
 	await importNode("fake-indexeddb/auto");
@@ -27,7 +28,7 @@ beforeAll(async () => {
 }, 120_000);
 
 afterAll(() => {
-	vanillaPlusSettings.on = false;
+	vanillaPlusSettings.on = wasOn;
 	Math.random = realRandom;
 });
 

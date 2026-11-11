@@ -154,6 +154,47 @@ News Feed and a "RUMORS" slot in the bottom ticker. Nothing else added.
   Boston's picks, Mobley-Tatum.
 - **Speed**: no title-odds outlook in trades, so it should be faster.
 
+## What the checks found (2026-11-11)
+
+- **The owner's cases**, replayed in the owner's league (preseason 2027,
+  the owner's ratings and contracts):
+  - Denver turns down Murray + Gordon + two seconds for Sabonis.
+  - Charlotte takes Brown for its first second.
+  - Boston's 2031-33 firsts are each worth something to it (never zero).
+  - Boston takes Tatum for Mobley, by a mile: in vanilla's values, Mobley
+    (70/73, 26) is worth several Tatums (67/69, 29).
+- **"What would make this work"** used to have stock's balancing hand over a
+  whole bench to even out a star deal. Boston offered Tatum, 10 players and
+  every pick for Mobley. Now no deal leaves a roster past the limit, or past
+  where it already is in the offseason.
+- **Lanes in the owner's league**: 6 all-in, 11 playoff, 4 retool, 9
+  rebuild. A team's age is now read from its best eight players now, not by
+  value with potential. The old reading made almost every bad team look young
+  (15 rebuilding).
+- **Exploits**: all of trade/exploits.test.ts passes with vanilla+ on. The
+  owner's fleeces are now tests (vanillaPlus/exploits.test.ts):
+  - an all-in team's aging star isn't sold for three firsts;
+  - no pick is given away for nothing;
+  - no one-for-one swap is taken both ways.
+- **Prospects**: vanilla prices raw teenagers by potential. A top 19-year-old
+  (43/69) buys a contender's fifth to seventh best player. In the owner's
+  league, a 17-year-old 36/76 is worth more than Murray to all-in Denver.
+  This is unchanged; it's the owner's call whether contenders should discount
+  upside.
+- **Test leagues** (2 seeds, 3 seasons):
+  - Trades: 35-37 in season 1, then 10-21 a season.
+  - The CPU markup barely matters: 2% vs 5% gives about the same volume,
+    and 0%/1%/2% in settled leagues all give 7-11 trades in 40 days. What
+    limits deals is vanilla's own search: the team that shops often doesn't
+    want the best price it's quoted.
+  - Haggling (refuse a piece, ask again) changed nothing and was dropped.
+  - Giveaways: 1-2 per 50 trades, all rebuild-lane deals (veterans for young
+    prospects).
+  - Seasons run in ~7.5 minutes against ~14 for the current engine.
+  - Records spread out over the seasons: win SD 13-14, then 16-17, then
+    17-18. The current engine's recent test leagues do the same.
+  - News: about 37 stories a season.
+
 ## Order of work
 
 1. Vanilla+ switch; vanilla values wired into every trade path (human and

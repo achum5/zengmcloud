@@ -139,9 +139,12 @@ test.runIf(env.ARENA_RUN === "1")(
 					}
 				}
 				Object.assign(outlookSettings, JSON.parse(env.ARENA_OUTLOOK ?? "{}"));
-				// ARENA_VPLUS=1: trades on vanilla+ (docs/vanilla-plus.md);
+				// ARENA_VPLUS=0: trades on the old title-odds engine instead of
+				// vanilla+ (docs/vanilla-plus.md);
 				// ARENA_VPLUS_SETTINGS='{"cpuMarkup":1.05}': its other settings.
-				vanillaPlusSettings.on = env.ARENA_VPLUS === "1";
+				if (env.ARENA_VPLUS !== undefined) {
+					vanillaPlusSettings.on = env.ARENA_VPLUS === "1";
+				}
 				Object.assign(
 					vanillaPlusSettings,
 					JSON.parse(env.ARENA_VPLUS_SETTINGS ?? "{}"),
