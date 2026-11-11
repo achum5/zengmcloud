@@ -77,6 +77,12 @@ export const artFor = (deviceRows: number, res: Resolution): number => {
 // A frame drawn in under this (ms, typically) is not what keeps frames
 // apart.
 const SPARE_DRAW_MS = 6;
+// Held to thirty frames a second, too slow once its frames come further
+// apart than this (ms, typically - under about 27 a second) with this much
+// of each spent drawing: a phone held to thirty, drawing its finest picture
+// at 18 frames a second, stayed there, never a size coarser for it.
+const HELD_SLOW_FRAME_MS = 37;
+const HELD_SLOW_DRAW_MS = 16;
 
 const median = (xs: number[]) => {
 	const s = [...xs].sort((a, b) => a - b);
@@ -124,7 +130,9 @@ export const adjust = (
 	const { finest, coarsest } = bounds(deviceRows);
 	const held = Math.max(1, paceMs / FAST_MS);
 	let verdict = 0;
-	if (frame > 26 * held && draw > 12 * held && art < coarsest) {
+	const slowFrame = held > 1 ? HELD_SLOW_FRAME_MS : 26;
+	const slowDraw = held > 1 ? HELD_SLOW_DRAW_MS : 12;
+	if (frame > slowFrame && draw > slowDraw && art < coarsest) {
 		// Under about 40 frames a second - and the picture the reason: if
 		// drawing it is not what takes the time (something else on the page,
 		// the browser cleaning up after itself), a coarser one would only look

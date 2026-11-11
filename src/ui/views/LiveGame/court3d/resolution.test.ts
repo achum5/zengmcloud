@@ -75,6 +75,11 @@ describe("3D picture resolution", () => {
 		// Not holding even thirty: coarser.
 		t = paced(res, t, 20_000, 60, 40);
 		assert.strictEqual(artFor(960, res), 3);
+		// (Nor just short of it - 20 frames a second, most of each drawing,
+		// as a phone held to thirty drew its finest picture: coarser too.)
+		const short = makeResolution(0);
+		paced(short, 0, 20_000, 50, 24, 6);
+		assert.strictEqual(artFor(960, short), 3);
 		// And back, once a frame at thirty leaves room to spare.
 		paced(res, t, 20_000, 33.3, 6, 2);
 		assert.strictEqual(artFor(960, res), 2);
