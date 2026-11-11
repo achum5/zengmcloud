@@ -164,8 +164,14 @@ games 11 and 22, 62 and 65 at first: 52 and 39, then 10 and 9
 (2026-11-11). A straight run the play turns him on to face somebody is
 laid as two, cut where it turns him (a defender sliding in on his man gets
 there facing him - laid as one, he came in facing his run and turned as he
-poked at the ball, and missed it). Nobody laid down a run across a gap off
-the floor; men kept
+poked at the ball, and missed it). A step aside of a man up at somebody's
+shot (a contest, a block) is neither begun nor come back from in the air -
+over before he goes up, back once he is down, at a step's pace (he came
+back over in mid-air) - unless the ball is coming to him or he has words
+with the official then; a man put on a post player's back no longer runs
+on into him after (2026-11-11: lurches stepped, games 11 and 22: 10 and 9
+-> 9 and 6). Nobody laid down a
+run across a gap off the floor; men kept
 inside the lines wherever the play has them inside; getting open only with
 the ball live in a man's hands (not on the lane at a free throw); his beat
 to react taken from the first moment the play moves him (no creep and

@@ -29014,6 +29014,87 @@ class Director {
 		}
 	}
 
+	// NOT STEPPED ASIDE IN THE AIR. A step aside (see easeNudges) is a step,
+	// taken on the floor: never begun, nor come back from, while he is up
+	// off it - up at a shot with a hand, he comes down where he went up
+	// from, not carried back over in the air. All the way over before he
+	// goes up; back once he is down. (Not one of a man the ball comes to
+	// meanwhile, though, nor back into words with the official.)
+	private groundNudges() {
+		const BALL_TO_MS = 1000;
+		// (Up at somebody else's shot - not his own, from where the chart
+		// has it: see shotSpots.)
+		const UP_AT_IT = new Set<AnimName>([
+			"contest",
+			"contestTwo",
+			"contestFace",
+			"block",
+			"blockTwo",
+			"blockSwat",
+		]);
+		for (const tr of this.tracks.values()) {
+			if (!tr.nudges?.length) {
+				continue;
+			}
+			const ups: [number, number][] = [];
+			for (const a of tr.acts) {
+				if (a.jump && UP_AT_IT.has(a.anim)) {
+					const d = a.t1 - a.t0;
+					ups.push([a.t0 + a.jump[0] * d, a.t0 + a.jump[1] * d]);
+				}
+			}
+			if (ups.length === 0) {
+				continue;
+			}
+			const ballTo = (t0: number, t1: number) =>
+				this.ball.some(
+					(b) =>
+						b.kind === "fly" &&
+						"pid" in b.to &&
+						b.to.pid === tr.pid &&
+						b.t1 > t0 &&
+						b.t0 < t1,
+				);
+			for (const n of tr.nudges) {
+				// (The ball coming to him meanwhile - up for a board, say -
+				// where he is for it stays as it is: it comes to his hands.)
+				if (ballTo(n.t0, n.t1 + BALL_TO_MS)) {
+					continue;
+				}
+				let ramp = Math.min(n.ramp ?? NUDGE_RAMP, (n.t1 - n.t0) / 2);
+				// (Back once he is down, a step's pace back - see easeNudges -
+				// and over that much sooner, all the way over by when he was.)
+				const len = Math.hypot(n.dx, n.dy);
+				const back = Math.max(
+					ramp,
+					len <= NUDGE_STEP_MOST ? (1.5 * len * 1000) / NUDGE_FTPS : 0,
+				);
+				for (const [up, down] of ups) {
+					if (n.t1 - ramp < down && n.t1 > up) {
+						// (Not on into words with the official, though - back
+						// before that as it was: then back before he goes up.)
+						const then = tr.acts.some(
+							(x) =>
+								REACTIONS.has(x.anim) && x.t0 >= n.t1 - 1 && x.t0 < down + back,
+						);
+						if (!then) {
+							n.t0 -= back - ramp;
+							n.t1 = down + back;
+							ramp = back;
+						} else if (up - n.t0 >= 2 * ramp) {
+							n.t1 = up;
+						}
+					}
+					if (n.t0 < down && n.t0 + ramp > up) {
+						n.t0 = up - ramp;
+					}
+				}
+				n.ramp = ramp;
+			}
+			tr.nudges.sort((a, b) => a.t0 - b.t0);
+		}
+	}
+
 	// EVERY CONTESTED JUMPER IN SIGHT. Whoever has a hand up at a jump shot -
 	// his own man up on him, the help in late, a man going by - never
 	// square in front of him from the camera's side (across the floor from
@@ -29742,7 +29823,10 @@ class Director {
 				if (x.t1 <= s0 || x.t0 >= end) {
 					return true;
 				}
-				if (x.t1 > end) {
+				// (Not on into him, though: a run of his from before, up on
+				// him where he was then - from there on his back, it would have
+				// him run back into the man he is on.)
+				if (x.t1 > end && dist(x.to, this.posAt(pid, x.t1)) >= BODY) {
 					after.push({
 						...x,
 						t0: end,
@@ -30405,6 +30489,11 @@ class Director {
 		this.noJumps();
 		this.ease();
 		this.clearTheWayIn();
+		// (Stepped, the steps aside so far are walked as he walks the rest: on
+		// the floor, not in the air.)
+		if (this.step) {
+			this.groundNudges();
+		}
 		const fast = hurried(this.fast, this.beats);
 		// Every man moved the way a man moves, a step at a time, following
 		// all that - then kept off each other, the ball's way kept clear and
@@ -30428,6 +30517,7 @@ class Director {
 		this.pickUpWhereItIs();
 		this.contestsInSight();
 		this.easeNudges();
+		this.groundNudges();
 		this.drewTheFoul();
 		this.lostIt();
 		this.ourBall();

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 274,
+		date: "2026-11-11",
+		text: "3D games: fixed two more spots where a player seemed to jump - a post defender no longer darts back through the man he's guarding as he goes up, and a defender contesting a shot no longer changes direction in mid-air.",
+	},
+	{
 		n: 273,
 		date: "2026-11-11",
 		text: "Realistic Front Offices: free agents' asking prices now follow the market. There's no set amount they drop by each stage any more - each stage a player's price moves toward what teams would actually pay him, so it falls as teams use up their cap room. At training camp a team can also offer less than he asks, and he may take it rather than wait into the season. And CPU teams now clear cap room for a free agent when it's worth it to them: they trade players (and a pick if they have to) to a team with room - but only once he takes their offer.",
