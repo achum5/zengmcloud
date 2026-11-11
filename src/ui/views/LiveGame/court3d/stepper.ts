@@ -45,12 +45,17 @@ const LOOK_LEAST = 0.2;
 const LOOK_MOST = 1.2;
 const CATCH_UP = 5;
 // Doing something where the play has him (an act), he is eased onto it
-// over this long before (ms).
-const ONTO_MS = 250;
+// over this long before (ms) ...
+const ONTO_MS = 500;
+// (... the gap to it closed this long (ms) before it starts: on it, going
+// as it goes, for the last of it.)
+const ONTO_SETTLE = 100;
 // (Further off it than that would take, sooner: over as long as it takes
 // at this much quicker than he is going (feet a second), up to this long.)
-const ONTO_PACE = 8;
+const ONTO_PACE = 2;
 const ONTO_MOST = 1200;
+// (Pulling up into it no harder than this, feet a second a second.)
+const ONTO_BRAKE = 40;
 // ... and easing up into it over as long as this before (ms), pulling up
 // no harder than this (feet a second, a second).
 const ARRIVE_MS = 1500;
@@ -436,23 +441,45 @@ export const follow = (
 		// then, more and more of it as it comes. (As much sooner as he is
 		// further off it - no more than ONTO_PACE quicker than he was going
 		// - and once begun for it, kept to.)
+		// (How far off it he is: where the play has him, against where he
+		// would be going on as it goes - the step it takes this step no gap.)
+		const gx = W.x - wx * dt - p.x;
+		const gy = W.y - wy * dt - p.y;
 		if (onto?.due !== due) {
 			const window = Math.min(
 				ONTO_MOST,
-				Math.max(
-					ONTO_MS,
-					(Math.hypot(W.x - p.x, W.y - p.y) / ONTO_PACE) * 1000,
-				),
+				Math.max(ONTO_MS, (Math.hypot(gx, gy) / ONTO_PACE) * 1000),
 			);
 			onto = due - t < window ? { due, window } : undefined;
 		}
 		if (onto) {
-			const Q = want(due) ?? W;
-			const rem = Math.max(0, due - t) / 1000 + dt;
+			const rem = Math.max(0, due - t - ONTO_SETTLE) / 1000 + dt;
 			const u = 1 - Math.max(0, due - t) / onto.window;
 			const k = u * u * (3 - 2 * u);
-			vx += ((Q.x - p.x) / rem - vx) * k;
-			vy += ((Q.y - p.y) / rem - vy) * k;
+			// (Back onto the play's own way there - going as it goes, pulling
+			// up as it does, the gap to it closed by then - not on at
+			// whatever pace gets him to the spot and stopped dead as it
+			// starts.)
+			let tx = wx + (2 * gx) / rem;
+			let ty = wy + (2 * gy) / rem;
+			// (No quicker than he can pull up from to the pace the play has
+			// him going there as it starts: the play pulling up to stand for
+			// it, he is not hurried on past its pace to then stop dead.)
+			const Q = want(due);
+			const Q1 = want(due + STEP_MS);
+			if (Q && Q1) {
+				const qv = Math.hypot(Q1.x - Q.x, Q1.y - Q.y) / dt;
+				const most = Math.sqrt(
+					qv * qv + 2 * ONTO_BRAKE * Math.hypot(Q.x - p.x, Q.y - p.y),
+				);
+				const tv = Math.hypot(tx, ty);
+				if (tv > most) {
+					tx *= most / tv;
+					ty *= most / tv;
+				}
+			}
+			vx += (tx - vx) * k;
+			vy += (ty - vy) * k;
 		}
 		p = { x: p.x + vx * dt, y: p.y + vy * dt };
 		// Wanted inside the lines and over one: drawn back in, a step at a
@@ -598,20 +625,33 @@ export const toMoves = (
 		// pulling up: see runShape), if that has him where the steps do.
 		const whole = wholeRun(s, i, pinned, stand);
 		if (whole > i) {
-			const a = s[i]!;
-			const b = s[whole]!;
-			const mid = animAt((a.t + b.t) / 2);
-			const v = Math.hypot(b.x - a.x, b.y - a.y) / ((b.t - a.t) / 1000);
-			moves.push({
-				t0: a.t,
-				t1: b.t,
-				from: { x: a.x, y: a.y },
-				to: { x: b.x, y: b.y },
-				anim: mid?.anim ?? (v < 5 ? "walk" : v < 10 ? "jog" : "run"),
-				...(mid?.face === undefined ? {} : { face: mid.face }),
-				v0: pace(a) < STILL ? 0 : pace(a),
-				v1: 0,
-			});
+			// (Turned on the way to face somebody - a defender sliding in on
+			// his man - not run over: cut where the play turns him, so he gets
+			// there facing as it has him.)
+			const face = animAt(s[i]!.t)?.face;
+			let turn = i + 1;
+			while (turn < whole && animAt(s[turn]!.t)?.face === face) {
+				turn += 1;
+			}
+			for (const [a, b, last] of turn < whole
+				? ([
+						[s[i]!, s[turn]!, false],
+						[s[turn]!, s[whole]!, true],
+					] as const)
+				: ([[s[i]!, s[whole]!, true]] as const)) {
+				const mid = animAt((a.t + b.t) / 2);
+				const v = Math.hypot(b.x - a.x, b.y - a.y) / ((b.t - a.t) / 1000);
+				moves.push({
+					t0: a.t,
+					t1: b.t,
+					from: { x: a.x, y: a.y },
+					to: { x: b.x, y: b.y },
+					anim: mid?.anim ?? (v < 5 ? "walk" : v < 10 ? "jog" : "run"),
+					...(mid?.face === undefined ? {} : { face: mid.face }),
+					v0: pace(a) < STILL ? 0 : pace(a),
+					v1: last || pace(b) < STILL ? 0 : pace(b),
+				});
+			}
 			i = whole;
 			continue;
 		}
@@ -710,6 +750,7 @@ const pullUpsIn = (moves: Move[], pinned: Spans): Move[] => {
 			v0 >= 4 &&
 			v1 < v0 * 0.6 &&
 			(a.v1 ?? 0) > 0 &&
+			a.face === m.face &&
 			!pinned.hit(a.t0, m.t1) &&
 			((a.to.x - a.from.x) * (m.to.x - m.from.x) +
 				(a.to.y - a.from.y) * (m.to.y - m.from.y)) /

@@ -153,8 +153,19 @@ stepped men are. (Run on a finished game instead, as at first, it left men
 through screens and in each other.)
 
 Also since: stops set crisply (not crept up on); a man late for an act of
-his eased onto it over as long as it takes at 8 feet a second quicker, not
-lunged at; nobody laid down a run across a gap off the floor; men kept
+his eased back onto the play's own way there over as long as it takes at 2
+feet a second quicker (half a second at least), the gap closed a tenth of a
+second before it starts and pulling up as the play does, never quicker
+than he can pull up from (40 feet a second a second) to its pace there -
+not lunged at, nor stopped dead as it starts. (The gap is against where
+the play's own step takes him: counted as one, it had him run past the
+spot and back onto it as it began.) Hard stops into acts in stepped real
+games 11 and 22, 62 and 65 at first: 52 and 39, then 10 and 9
+(2026-11-11). A straight run the play turns him on to face somebody is
+laid as two, cut where it turns him (a defender sliding in on his man gets
+there facing him - laid as one, he came in facing his run and turned as he
+poked at the ball, and missed it). Nobody laid down a run across a gap off
+the floor; men kept
 inside the lines wherever the play has them inside; getting open only with
 the ball live in a man's hands (not on the lane at a free throw); his beat
 to react taken from the first moment the play moves him (no creep and
