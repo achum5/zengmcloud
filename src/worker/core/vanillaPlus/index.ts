@@ -2,6 +2,7 @@ import { ValueChangeCalculator } from "../team/ValueChangeCalculator.ts";
 import { vanillaPlusOn } from "../realisticFrontOffice/isOn.ts";
 import { ensureLanes, planFor } from "./lanes.ts";
 import { tweaksFor } from "./tweaks.ts";
+import { vanillaPlusSettings } from "./settings.ts";
 
 // What prices a trade for a CPU team: with vanilla+ on, vanilla's values
 // weighed by each team's lane, and its small tweaks for fit and production
@@ -18,5 +19,6 @@ export const tradeValueCalculator = async (
 		...opts,
 		planOf: (tid) => planFor(lanes.get(tid)),
 		adjust: tweaks,
+		cpuMarkup: vanillaPlusSettings.cpuMarkup,
 	});
 };

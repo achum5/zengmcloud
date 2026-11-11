@@ -7,6 +7,7 @@ import type {
 	TradeValueAsset,
 } from "../team/ValueChangeCalculator.ts";
 import { ovr as ovrBasketball } from "../team/ovr.basketball.ts";
+import { laneWatchers } from "./events.ts";
 
 // LANES (docs/vanilla-plus.md): every team has a plan, as real front offices
 // do, and it moves what the team pays for what.
@@ -35,12 +36,12 @@ export const laneSettings = {
 	// Shares of the league, best first: all-in, then playoff teams.
 	allInShare: 0.2,
 	playoffShare: 0.5,
-	// Below the playoff teams: the worst this share rebuild; the rest retool
-	// if their core (best eight by value) is this old, else rebuild.
+	// Below the playoff teams: the worst this share rebuild, and any whose
+	// core (best eight by value) is this young; the rest retool if their core
+	// is this old, else try for the playoffs.
 	rebuildShare: 0.25,
-	retoolAge: 26,
-	// A core this old retools even near the top of the bottom half.
-	oldCoreAge: 28,
+	youngCoreAge: 24,
+	retoolAge: 26.5,
 	// In the offseason an all-in team stays all-in while it is in this share.
 	allInStays: 0.3,
 	// How much of a team's standing is its record, at most, once games are
@@ -131,15 +132,6 @@ const PLANS: Record<Lane, TradePlan> = {
 
 export const planFor = (lane: Lane | undefined): TradePlan | undefined =>
 	lane ? PLANS[lane] : undefined;
-
-// A lane changing, for the news (newsEngine).
-export type LaneChange = {
-	tid: number;
-	from: Lane | undefined;
-	to: Lane;
-	review: string;
-};
-export const laneWatchers: ((change: LaneChange) => void)[] = [];
 
 // What a team is, for its lane.
 type Facts = {
@@ -242,13 +234,15 @@ const freshLane = (
 	if (rank <= Math.ceil(s.playoffShare * n)) {
 		return "playoff";
 	}
-	if (f.coreAge >= s.oldCoreAge) {
-		return "retool";
-	}
-	if (rank > n - Math.ceil(s.rebuildShare * n)) {
+	// The bottom half: the worst rebuild, and a young team below the middle;
+	// an old one retools; the rest try for the playoffs.
+	if (rank > n - Math.ceil(s.rebuildShare * n) || f.coreAge <= s.youngCoreAge) {
 		return "rebuild";
 	}
-	return f.coreAge >= s.retoolAge ? "retool" : "rebuild";
+	if (f.coreAge >= s.retoolAge) {
+		return "retool";
+	}
+	return "playoff";
 };
 
 let current: { key: string; lanes: Map<number, Lane> } | undefined;

@@ -241,6 +241,7 @@ const getPlayers = async ({
 	pidsRemove,
 	tid,
 	tradingPartnerTid,
+	cpuMarkup,
 }: {
 	add: Asset[];
 	remove: Asset[];
@@ -248,6 +249,9 @@ const getPlayers = async ({
 	pidsRemove: number[];
 	tid: number;
 	tradingPartnerTid?: number;
+	// Vanilla+: how much a CPU team overvalues its own players in a deal with
+	// another CPU team, in place of stock's 5% and the difficulty's.
+	cpuMarkup?: number;
 }) => {
 	const season = g.get("season");
 	const phase = g.get("phase");
@@ -258,10 +262,12 @@ const getPlayers = async ({
 	); // 2.5% bonus for easy, 2.5% penalty for hard, 10% penalty for insane
 
 	// Fudge factor for AI overvaluing its own players
+	const cpuWithCpu =
+		tid !== g.get("userTid") && tradingPartnerTid !== g.get("userTid");
 	const fudgeFactor =
-		(tid !== g.get("userTid") && tradingPartnerTid !== g.get("userTid")
-			? 1.05
-			: 1) * difficultyFudgeFactor;
+		cpuWithCpu && cpuMarkup !== undefined
+			? cpuMarkup
+			: (cpuWithCpu ? 1.05 : 1) * difficultyFudgeFactor;
 
 	// Get players to remove
 	const players = await idb.cache.players.indexGetAll("playersByTid", tid);
@@ -1141,6 +1147,7 @@ export class ValueChangeCalculator {
 	// and a multiplier on the trade value of each asset it would get or give.
 	// Unset, stock's.
 	private planOf?: (tid: number) => TradePlan | undefined;
+	private cpuMarkup?: number;
 	private adjust?: (
 		tid: number,
 		asset: Asset,
@@ -1151,14 +1158,17 @@ export class ValueChangeCalculator {
 		quick = false,
 		planOf,
 		adjust,
+		cpuMarkup,
 	}: {
 		quick?: boolean;
 		planOf?: (tid: number) => TradePlan | undefined;
+		cpuMarkup?: number;
 		adjust?: (tid: number, asset: Asset, side: "add" | "remove") => number;
 	} = {}) {
 		this.quick = quick;
 		this.planOf = planOf;
 		this.adjust = adjust;
+		this.cpuMarkup = cpuMarkup;
 	}
 
 	private async init() {
@@ -1292,6 +1302,7 @@ export class ValueChangeCalculator {
 			pidsRemove,
 			tid,
 			tradingPartnerTid,
+			cpuMarkup: this.cpuMarkup,
 		});
 		await getPicks({
 			cache: this.cache,

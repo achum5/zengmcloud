@@ -8,7 +8,11 @@ import type { TradeTeams } from "../../../common/types.ts";
 import { choice } from "../../../common/random.ts";
 import type { ValueChangeCalculator } from "../team/ValueChangeCalculator.ts";
 import { tradeValueCalculator } from "../vanillaPlus/index.ts";
-import { realisticTradesOn } from "../realisticFrontOffice/isOn.ts";
+import {
+	realisticTradesOn,
+	vanillaPlusOn,
+} from "../realisticFrontOffice/isOn.ts";
+import { tradeDay as vanillaPlusTradeDay } from "../vanillaPlus/market.ts";
 import { tradeDay as realisticFrontOfficeTradeDay } from "../realisticFrontOffice/market.ts";
 
 const getAITids = async () => {
@@ -155,6 +159,10 @@ const betweenAiTeams = async () => {
 	// does on its own values (docs/vanilla-plus.md).
 	if (realisticTradesOn()) {
 		await realisticFrontOfficeTradeDay();
+		return false;
+	}
+	if (vanillaPlusOn()) {
+		await vanillaPlusTradeDay();
 		return false;
 	}
 

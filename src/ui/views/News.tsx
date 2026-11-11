@@ -32,6 +32,7 @@ const News = ({
 		playoffs: true,
 		rare: true,
 		transaction: true,
+		frontOffice: true,
 		team: true,
 	});
 

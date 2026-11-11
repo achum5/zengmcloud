@@ -33,6 +33,10 @@ export const categories = {
 		text: "Transactions",
 		className: "bg-success",
 	},
+	frontOffice: {
+		text: "Front Office",
+		className: "bg-primary",
+	},
 	team: {
 		text: "Teams",
 		className: "bg-light",
@@ -71,6 +75,10 @@ export const types: Partial<
 	freeAgent: {
 		text: "Free Agent",
 		category: "transaction",
+	},
+	frontOffice: {
+		text: "Front Office",
+		category: "frontOffice",
 	},
 	reSigned: {
 		text: "Re-signing",

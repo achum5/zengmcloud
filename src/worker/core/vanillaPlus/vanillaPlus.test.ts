@@ -37,8 +37,9 @@ test("every team has a lane: a few all-in, the bottom rebuilding or retooling", 
 	const count = (lane: Lane) =>
 		[...lanes.values()].filter((x) => x === lane).length;
 	assert.strictEqual(count("allIn"), Math.ceil(0.2 * n));
-	assert.strictEqual(count("allIn") + count("playoff"), Math.ceil(0.5 * n));
-	assert.isAbove(count("rebuild"), 0);
+	// The top half all-in or playoff teams; the bottom quarter rebuilding.
+	assert.isAtLeast(count("allIn") + count("playoff"), Math.ceil(0.5 * n));
+	assert.isAtLeast(count("rebuild"), Math.ceil(0.25 * n));
 	// Stock's strategy kept in step.
 	for (const t of await idb.cache.teams.getAll()) {
 		assert.strictEqual(

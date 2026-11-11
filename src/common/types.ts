@@ -1416,6 +1416,7 @@ export type LogEventType =
 	| "draftLottery"
 	| "error"
 	| "freeAgent"
+	| "frontOffice"
 	| "gameAttribute"
 	| "gameLost"
 	| "gameTied"
