@@ -139,8 +139,13 @@ test.runIf(env.ARENA_RUN === "1")(
 					}
 				}
 				Object.assign(outlookSettings, JSON.parse(env.ARENA_OUTLOOK ?? "{}"));
-				// ARENA_VPLUS=1: trades on vanilla+ (docs/vanilla-plus.md).
+				// ARENA_VPLUS=1: trades on vanilla+ (docs/vanilla-plus.md);
+				// ARENA_VPLUS_SETTINGS='{"cpuMarkup":1.05}': its other settings.
 				vanillaPlusSettings.on = env.ARENA_VPLUS === "1";
+				Object.assign(
+					vanillaPlusSettings,
+					JSON.parse(env.ARENA_VPLUS_SETTINGS ?? "{}"),
+				);
 				// ARENA_SPLIT_OUTLOOK: these outlook settings for the odd teams'
 				// own pricing only (teamOutlookSettings), as ARENA_SPLIT.
 				teamOutlookSettings.clear();
