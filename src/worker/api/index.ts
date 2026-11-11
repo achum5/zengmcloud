@@ -342,7 +342,6 @@ import {
 	decideReSignings as realisticFrontOfficeDecideReSignings,
 	decideTeamOption as realisticFrontOfficeDecideTeamOption,
 	makeOffer as realisticFrontOfficeMakeOffer,
-	renounce as realisticFrontOfficeRenounce,
 	answerOfferSheet as realisticFrontOfficeAnswerOfferSheet,
 	rankOffers as realisticFrontOfficeRankOffers,
 	withdrawOffer as realisticFrontOfficeWithdrawOffer,
@@ -2821,19 +2820,7 @@ const offerExtension = async ({
 	return result;
 };
 
-// Free agency in stages: give up a free agent's Bird rights and cap hold, or
-// answer an offer sheet for a restricted one.
-const renounceFreeAgent = async (pid: number) => {
-	if (!realisticFreeAgencyOn() || lock.get("gameSim")) {
-		return "Not now.";
-	}
-	const error = await realisticFrontOfficeRenounce(g.get("userTid"), pid);
-	if (error === undefined) {
-		await toUI("realtimeUpdate", [["playerMovement"]]);
-	}
-	return error;
-};
-
+// Free agency in stages: answer an offer sheet for a restricted free agent.
 const answerOfferSheet = async ({
 	pid,
 	match,
@@ -8769,7 +8756,6 @@ const api = {
 		reSignAll,
 		realtimeUpdate,
 		withdrawFreeAgentOffer,
-		renounceFreeAgent,
 		answerOfferSheet,
 		refreshSyncUIState,
 		syncNudge,

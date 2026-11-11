@@ -13,25 +13,18 @@ import { revertBefore } from "../player/revertSnapshot.ts";
 import { getNumPlayersTradedAwayNormalizedAll } from "../player/getNumPlayersTradedAwayNormalized.ts";
 import { getContractDemand } from "../contract/index.ts";
 import { getContractStartSeason } from "../../util/getContractStartSeason.ts";
-import {
-	howFor,
-	logOption,
-	logReSignRefused,
-	logRenounced,
-	ownPath,
-} from "./history.ts";
+import { howFor, logOption, logReSignRefused, ownPath } from "./history.ts";
 import { contractOf } from "./contractOf.ts";
 import {
 	getContractExp,
 	getCurrentContract,
 } from "../../../common/contracts.ts";
-import { amountsWithRaise, maxFor, serviceYears, shapeLimits } from "./cba.ts";
+import { amountsWithRaise, maxFor, raiseLimit, serviceYears } from "./cba.ts";
 import {
 	askFloor,
 	atCamp,
 	hadDiscount,
 	reservation,
-	capHolds,
 	checkFor,
 	leastForLength,
 	decidesNow,
@@ -655,19 +648,8 @@ export const makeOffer = async (
 			t,
 			p,
 			payroll,
-			holds: inStages()
-				? capHolds(
-						tid,
-						await idb.cache.players.indexGetAll(
-							"playersByTid",
-							PLAYER.FREE_AGENT,
-						),
-						p.pid,
-					)
-				: 0,
 			amount: offer.amount,
 			rosterSize,
-			years,
 		});
 		if (!check.ok) {
 			return `${check.reason}.`;
@@ -676,31 +658,6 @@ export const makeOffer = async (
 		!mayPay({ tid, payroll, amount: offer.amount, resigning, rosterSize })
 	) {
 		return "Your cap room does not allow that offer.";
-	}
-	// Patience: a lowball insults him; out of patience, he won't talk to the
-	// team again until the next stage.
-	if (inStages() && !reSigning) {
-		const season = g.get("season");
-		const stage = stageIndex();
-		const strikes = (t.faStrikes ?? []).filter(
-			(x) => x.season === season && x.stage === stage,
-		);
-		const mine = strikes.find((x) => x.pid === p.pid);
-		if (mine && mine.strikes >= stageSettings.patience) {
-			return "He won't talk to you again until the next stage.";
-		}
-		const share = effectiveAmount(offer, years) / askFor(p, years);
-		if (share < stageSettings.insultShare) {
-			const count = (mine?.strikes ?? 0) + 1;
-			t.faStrikes = [
-				...strikes.filter((x) => x.pid !== p.pid),
-				{ pid: p.pid, season, stage, strikes: count },
-			];
-			await idb.cache.teams.put(t);
-			return count >= stageSettings.patience
-				? "Insulted. He won't talk to you again until the next stage."
-				: `Insulted - far under his ask (${count} of ${stageSettings.patience}).`;
-		}
 	}
 	if (stagesOn() && offer.amount < leastForLength(p, years)) {
 		return `For that little he signs for ${stageSettings.discountYears} years at most.`;
@@ -711,8 +668,7 @@ export const makeOffer = async (
 		if (!stagesOn()) {
 			return "Raises and options are not available in this league.";
 		}
-		const own = ownTid(p) === tid;
-		const limit = shapeLimits(own ? "bird" : "room", own).raise;
+		const limit = raiseLimit(ownTid(p) === tid);
 		if (Math.abs(offer.raise ?? 0) > limit + 1e-9) {
 			return `Raises are limited to ${Math.round(limit * 100)}% a year.`;
 		}
@@ -979,40 +935,31 @@ export const priceMarket = async (
 		signing.map((t) => [t.tid, mostAllowed(states.get(t.tid)!, false)]),
 	);
 	// With CBA-lite, all season, the most each team may pay each player:
-	// room after its cap holds (in free agency), Bird rights for its own, the
-	// mid-level or the taxpayer mid-level.
+	// room, Bird rights for its own (re-signing, or matching a restricted free
+	// agent), or the mid-level.
 	const stages = inStages();
 	const cba = stagesOn();
-	const holdsOf = new Map(
-		teams.map((t) => [t.tid, stages ? capHolds(t.tid, pool) : 0]),
-	);
 	const teamOf = new Map(teams.map((t) => [t.tid, t]));
-	// Whether the cap rules let a team sign him for `amount` and `years`.
-	const checkOf = (tid: number, p: Player, amount: number, years: number) => {
+	// Whether the cap rules let a team sign him for `amount`.
+	const checkOf = (tid: number, p: Player, amount: number) => {
 		const state = states.get(tid)!;
-		const own = ownTid(p) === tid;
 		return checkFor({
 			t: teamOf.get(tid)!,
 			p,
 			payroll: state.payroll,
-			holds: holdsOf.get(tid)! - (own ? contractOf(p).amount : 0),
 			amount,
 			rosterSize: state.players.length,
-			years,
 		}).ok;
 	};
 	const capOf = (tid: number, p: Player) => {
 		if (!cba) {
 			return allowed.get(tid);
 		}
-		const t = teams.find((x) => x.tid === tid)!;
 		const state = states.get(tid)!;
-		const own = ownTid(p) === tid;
 		return mostFor({
-			t,
+			t: teamOf.get(tid)!,
 			p,
 			payroll: state.payroll,
-			holds: holdsOf.get(tid)! - (own ? contractOf(p).amount : 0),
 			rosterSize: state.players.length,
 		});
 	};
@@ -1201,11 +1148,6 @@ const withProspects = (pool: readonly Player[], numCandidates: number) => {
 	return [...now, ...rest];
 };
 
-// Before 7 seasons played, near the max (25% of the cap), a star wants 2 years.
-const YOUNG_STAR_SERVICE = 7;
-const YOUNG_STAR_SHARE = 0.8;
-const YOUNG_STAR_YEARS = 2;
-
 // As free agency in stages opens: each free agent's ask is what the market
 // would pay him - not stock's demand - and the least he asks later is
 // measured from it.
@@ -1230,44 +1172,8 @@ export const openStageMarket = async () => {
 		if (contractOf(p).amount < least) {
 			getContractDemand(p).amount = least;
 		}
-		// A young star near the max of his tier wants a short deal, to reach
-		// the next tier sooner: a longer one has to pay him for it.
-		const service = serviceYears(p);
-		const tierMax = maxFor(service);
-		if (
-			service < YOUNG_STAR_SERVICE &&
-			contractOf(p).amount >= YOUNG_STAR_SHARE * tierMax
-		) {
-			getContractDemand(p).exp = g.get("season") + YOUNG_STAR_YEARS;
-		}
 		p.faOpenAsk = contractOf(p).amount;
 		await idb.cache.players.put(p);
-	}
-	// A CPU team with room under the cap renounces its free agents it would
-	// not pay their asks: their cap holds would only keep it from using its
-	// room. Over the cap, renouncing gains nothing, and it keeps his Bird
-	// rights.
-	const outlook = await currentOutlook();
-	for (const tid of await aiTids()) {
-		const own = pool.filter((p) => ownTid(p) === tid);
-		if (
-			own.length === 0 ||
-			(await team.getPayroll(tid)) >= g.get("salaryCap")
-		) {
-			continue;
-		}
-		const state = await loadTeam(outlook, tid);
-		const renounced: Player[] = [];
-		for (const p of own) {
-			const most = mostWorthPaying(outlook, state, p, wantedYears(p));
-			if (most === undefined || most < contractOf(p).amount) {
-				p.faRenounced = true;
-				delete p.faRestricted;
-				await idb.cache.players.put(p);
-				renounced.push(p);
-			}
-		}
-		await logRenounced(tid, renounced);
 	}
 };
 
@@ -1397,19 +1303,6 @@ export const pickUpTeamOptions = async () => {
 	}
 };
 
-// A human team gives up a free agent's Bird rights, and his cap hold.
-export const renounce = async (tid: number, pid: number) => {
-	const p = await idb.cache.players.get(pid);
-	if (!p || p.tid !== PLAYER.FREE_AGENT || ownTid(p) !== tid) {
-		return "He is not your free agent.";
-	}
-	p.faRenounced = true;
-	delete p.faRestricted;
-	delete p.faMatch;
-	await idb.cache.players.put(p);
-	await logRenounced(tid, [p]);
-};
-
 // A human team's answer to an offer sheet for its restricted free agent,
 // carried out at the end of the stage.
 export const answerOfferSheet = async (
@@ -1452,10 +1345,8 @@ const resolveOfferSheets = async () => {
 				t,
 				p,
 				payroll: await team.getPayroll(tid),
-				holds: capHolds(tid, pool, p.pid),
 				amount: sheet.amount,
 				rosterSize: roster.length,
-				years: yearsFor(sheet.exp),
 			});
 			if (!check.ok) {
 				return false;
@@ -1608,7 +1499,7 @@ export const freeAgencyDay = async () => {
 					capFor(p),
 					temperature,
 					leastFor(p, years),
-					cba ? (amount) => checkOf(t.tid, p, amount, years) : undefined,
+					cba ? (amount) => checkOf(t.tid, p, amount) : undefined,
 				);
 				if (bid && (ev === undefined || bid.ev > ev)) {
 					ev = bid.ev;
@@ -1633,7 +1524,7 @@ export const freeAgencyDay = async () => {
 					capFor(p),
 					temperature,
 					leastFor(p, years),
-					cba ? (amount) => checkOf(t.tid, p, amount, years) : undefined,
+					cba ? (amount) => checkOf(t.tid, p, amount) : undefined,
 				);
 				if (bid && (!best || bid.ev > best.ev)) {
 					best = {
@@ -1768,10 +1659,8 @@ export const freeAgencyDay = async () => {
 							t: (await idb.cache.teams.get(tid))!,
 							p,
 							payroll,
-							holds: stages ? capHolds(tid, pool, p.pid) : 0,
 							amount: offer.amount,
 							rosterSize: roster.length,
-							years: yearsFor(offer.exp),
 						})
 					: undefined;
 				const fits =
@@ -1823,12 +1712,10 @@ export const freeAgencyDay = async () => {
 							t: ownTeam,
 							p,
 							payroll: await team.getPayroll(matching),
-							holds: capHolds(matching, pool, p.pid),
 							amount: offer.amount,
 							rosterSize: (
 								await idb.cache.players.indexGetAll("playersByTid", matching)
 							).length,
-							years: yearsFor(offer.exp),
 						});
 					if (
 						ownState &&
@@ -1923,10 +1810,8 @@ export const freeAgencyDay = async () => {
 				t: (await idb.cache.teams.get(t.tid)) ?? t,
 				p,
 				payroll: payrolls.get(t.tid)!,
-				holds: capHolds(t.tid, pool, p.pid),
 				amount: offer.amount,
 				rosterSize: rosterSizes.get(t.tid)!,
-				years: yearsFor(offer.exp),
 			}).ok;
 		};
 		for (const p of pool) {

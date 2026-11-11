@@ -38,7 +38,8 @@ export const CAP_STATUS: Record<
 > = {
 	under: { label: "Under the cap", className: "text-bg-success" },
 	over: { label: "Over the cap", className: "text-bg-secondary" },
-	apron: { label: "Over the apron", className: "text-bg-warning" },
+	// Over the luxury tax line (the key is the old apron's).
+	apron: { label: "Over the tax", className: "text-bg-warning" },
 	hardCap: { label: "At the hard cap", className: "text-bg-danger" },
 };
 

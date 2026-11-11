@@ -9,55 +9,48 @@ its complexity, and a 2K-style free agency in stages instead of 30 days.
 
 ## Contract rules
 
+Simplified (owner's call, 2026-11-11, for a casual league mate): stock BBGM's
+contracts plus the mid-level, a hard cap, raises and options, and restricted
+free agency. Gone: max tiers, cap holds and renouncing, the taxpayer
+mid-level and the apron, insult strikes, per-exception lengths.
+
 A league's own hard cap (League Settings) stays, where lower - the owner's
-league caps the human teams at the tax line.
+league caps the human teams at the tax line. All amounts scale with the
+league's settings; the hard cap is `luxuryPayroll + 0.10 * salaryCap`.
 
-All amounts scale with the league's settings: the top max tier is
-`maxContract`, the others are that times 25/35 and 30/35; the apron is
-`luxuryPayroll`; the hard cap is `luxuryPayroll + 0.10 * salaryCap`.
-
-1. **Bird rights.** Over the cap a team may sign only its own players
-   (re-sign or extend), up to the max. "Own" = played for the team last
-   season or was under contract with it when the season ended.
-2. **Max tiers by service** (seasons played): 0-6 -> 25%, 7-9 -> 30%,
-   10+ -> 35% of the cap (scaled as above).
+1. **Bird rights, re-signing only (as stock).** In the Re-sign Players phase
+   a team may re-sign its own players over the cap, up to the max. Once free
+   agency opens they are anyone's - except a restricted free agent, whose
+   team may match (rule 6).
+2. **One max** for everyone (`maxContract`).
 3. **Mid-level exception (MLE).** Once a season a team over the cap may sign
-   one outside free agent for up to 9% of the cap, up to 4 years, if the
-   signing leaves it under the apron.
-4. **Minimum deals** are always allowed (1-2 years), even past the hard cap
-   while the roster is below the minimum.
-5. **Apron = luxury tax line.** Above it after a move: no MLE, and a trade
-   may not bring in more salary than it sends out.
-6. **Hard cap** (tax line + 10% of the cap). No signing, re-signing,
-   extension, match or trade may take payroll above it. Contracts already
-   signed (raises, player options) may; then only minimum deals to fill
-   the roster.
-7. **Contract shape.** Up to 5 years with an own player, 4 otherwise. Yearly
-   raise (or cut) up to 8% of the first year with Bird rights, 5% without.
+   one outside free agent for up to 9% of the cap, within the hard cap.
+4. **Minimum deals** are always allowed, even past the hard cap while the
+   roster is below the minimum.
+5. **Hard cap** (tax line + 10% of the cap). No signing, re-signing,
+   extension, match or trade may take payroll above it (a trade past it must
+   send out as much salary as it takes in). Contracts already signed
+   (raises, player options) may; then only minimum deals to fill the roster.
+6. **Restricted free agency.** A player finishing a rookie contract is
+   restricted: he takes offers, and his team may match the winning one on
+   the same terms.
+7. **Contract shape.** Any length the league allows. Yearly raise (or cut)
+   up to 8% of the first year re-signing his own player, 5% otherwise.
    Optional player or team option on the final year. A human team decides
    its team options in the re-signing phase (declined, the player joins its
    players to re-sign); undecided ones are picked up as free agency opens.
-8. **Restricted free agency.** A player finishing a rookie contract is
-   restricted unless his team renounces him: he takes offers, and his team
-   may match the winning one on the same terms.
-9. **Extensions.** Only in the re-signing phase, before free agency
-   (owner's call, 2026-11-10: not in the season). In-season extensions are
-   built (extensions.ts) but off.
-10. **Luxury tax** as BBGM has it.
-
-11. **Cap holds.** A team's own unsigned free agents count against its cap
-    room at their asking price until it renounces them or they sign
-    elsewhere - so room is not spent on outsiders first and the team's own
-    players re-signed over the cap after.
+8. **Extensions.** Only in the re-signing phase (owner's call, 2026-11-10).
+   In-season extensions are built (extensions.ts) but off.
+9. **Luxury tax** as BBGM has it.
 
 Existing contracts stay as they are (flat, no options).
 
 ## Calendar
 
-- **Re-sign Players phase -> "Before free agency."** No separate exclusive
-  negotiation: decide options (player and team), renounce restricted rights,
-  last chance for extensions. Unsigned expiring players then become free
-  agents; their teams keep Bird rights (and match rights if restricted).
+- **Re-sign Players phase -> "Before free agency."** Decide options (player
+  and team), re-sign players (one chance each). Unsigned expiring players
+  then become free agents, anyone's - their teams keep only match rights,
+  for restricted ones.
 - **Re-signing is one chance per player** (owner's call, 2026-11-10): set the
   offer, see his chance of taking it, Submit, and he signs or tests free
   agency on that roll at once (fixed for him for the season). Offers not
@@ -91,14 +84,9 @@ Existing contracts stay as they are (flat, no options).
   (a player option is worth money to him, a team option costs), plus
   interest.
 - **Ask.** Set when free agency opens from what the market can pay him -
-  cap room, the MLE for teams over the cap, his tier's max - and eased a
-  little each stage he is unsigned, never below half his market value (no
-  more 61/71 23-year-olds on six-year minimums).
-- **Young stars** in the 25% tier prefer short deals or a player option, to
-  reach 30% sooner; a long deal must pay them for it.
-- **Patience.** Offers far below his ask (under ~80%) use it up; out of
-  patience, he will not talk to that team again until the next stage.
-  Offers between that and his ask get a counter.
+  cap room, the MLE for teams over the cap, the max - and eased a little
+  each stage he is unsigned, never below half his market value (no more
+  61/71 23-year-olds on six-year minimums).
 - **Decision.** Odds by offer score, as now but much sharper (owner): a
   clearly better offer wins about 85-90% of the time, close ones are near
   coin flips. Rolled once per player per stage, so deciding again changes

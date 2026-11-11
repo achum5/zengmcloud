@@ -1,17 +1,16 @@
-import { PLAYER } from "../../../common/constants.ts";
 import { chancePercent } from "../../../common/signingHow.ts";
 import type { Player, SigningHow } from "../../../common/types.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers, logEvent } from "../../util/index.ts";
 import { team } from "../index.ts";
-import { capHolds, checkFor, inStages, ownTid, stagesOn } from "./stages.ts";
+import { checkFor, ownTid, stagesOn } from "./stages.ts";
 
 // THE HISTORY (owner's call, 2026-11-10: "history is saved and users can be
 // very knowledgeable about it"). Under the contract rules every signing's
 // event says how it happened - the rule it fit under (cap room, Bird rights,
 // a mid-level, the minimum), an option, a prove-it deal, an offer sheet
-// matched or not, an extension - and options decided and rights renounced
-// are events of their own ("contract"). Transactions, the news and each
+// matched or not, an extension - and options decided are events of their
+// own ("contract"). Transactions, the news and each
 // player's page show them as they show any event.
 
 // How a team may sign him for `amount` now, by the rules - for a signing that
@@ -29,14 +28,10 @@ export const howFor = async (
 	if (!t) {
 		return undefined;
 	}
-	const pool = inStages()
-		? await idb.cache.players.indexGetAll("playersByTid", PLAYER.FREE_AGENT)
-		: [];
 	const check = checkFor({
 		t,
 		p,
 		payroll: await team.getPayroll(tid),
-		holds: capHolds(tid, pool, p.pid),
 		amount,
 		rosterSize: (await idb.cache.players.indexGetAll("playersByTid", tid))
 			.length,
@@ -130,25 +125,5 @@ export const logReSignRefused = async ({
 		pids: [p.pid],
 		tids: [tid],
 		score: scoreOf(p),
-	});
-};
-
-// A team gives up its Bird rights to its free agents (and his cap holds).
-export const logRenounced = async (tid: number, players: Player[]) => {
-	if (players.length === 0) {
-		return;
-	}
-	const names = players.map(playerLink);
-	const list =
-		names.length <= 2
-			? names.join(" and ")
-			: `${names.slice(0, -1).join(", ")}, and ${names.at(-1)}`;
-	await logEvent({
-		type: "contract",
-		text: `The ${teamLink(tid)} renounced their rights to ${list}.`,
-		showNotification: false,
-		pids: players.map((p) => p.pid),
-		tids: [tid],
-		score: Math.max(...players.map(scoreOf)),
 	});
 };

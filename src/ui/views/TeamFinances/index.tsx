@@ -1261,64 +1261,7 @@ const TeamFinances = ({
 		return { key, data: dropPlanCols(data) };
 	});
 
-	// Contract rules: the team's own unsigned free agents, at their holds.
-	const holdRows = (cap?.holds ?? []).map((hold, j) => {
-		const data: DataTableRow["data"] = [
-			null,
-			null,
-			{
-				value: <span className="text-body-secondary">HOLD</span>,
-				sortValue: "HOLD",
-				searchValue: "HOLD",
-			},
-			{
-				value: (
-					<span className="text-nowrap">
-						<a href={helpers.leagueUrl(["player", hold.pid])}>{hold.name}</a>
-						{hold.restricted ? <Mark k="RFA" /> : null}
-						{cap?.canRenounce && tid === userTid && !spectator ? (
-							<button
-								className="btn btn-xs btn-light-bordered ms-2"
-								onClick={async () => {
-									const error = await toWorker(
-										"main",
-										"renounceFreeAgent",
-										hold.pid,
-									);
-									if (error) {
-										showNotification({ type: "error", text: error } as any);
-									}
-								}}
-								title="Give up his Bird rights and cap hold"
-							>
-								Renounce
-							</button>
-						) : null}
-					</span>
-				),
-				sortValue: hold.name,
-				searchValue: hold.name,
-			},
-			{
-				value: ((100 * hold.amount) / salaryCap).toFixed(1),
-				sortValue: (100 * hold.amount) / salaryCap,
-			},
-			null,
-			...salariesSeasons.map((_, i) =>
-				i === 0
-					? {
-							classNames: "text-body-secondary",
-							value: helpers.formatCurrency(hold.amount / 1000, "M"),
-							sortValue: hold.amount / 1000,
-							title: "Cap hold",
-						}
-					: null,
-			),
-		];
-		return { key: `hold-${j}`, data: dropPlanCols(data) };
-	});
-
-	const rows = [...playerRows, ...pickRows, ...holdRows];
+	const rows = [...playerRows, ...pickRows];
 
 	// Projected salaries live alongside the committed ones rather than replacing
 	// them, so checking a player adds his to the totals without the table having
@@ -1385,9 +1328,8 @@ const TeamFinances = ({
 	const footerLead = (label: string) =>
 		dropPlanCols(["", "", "", label, "", ""]);
 
-	// Contract rules: room under the cap (after holds), the apron and the hard
-	// cap, each season.
-	const holdsTotal = (cap?.holdsTotal ?? 0) / 1000;
+	// Contract rules: room under the cap, the luxury tax and the hard cap, each
+	// season.
 	const cbaFooter = cbaSheet
 		? [
 				{
@@ -1396,32 +1338,16 @@ const TeamFinances = ({
 						totals.map((amount) => highlightZeroNegative(amount)),
 					),
 				},
-				...(holdsTotal > 0
-					? [
-							{
-								data: footerLead("Cap Holds").concat(
-									// @ts-expect-error
-									totals.map((_, i) =>
-										i === 0 ? highlightZeroNegative(holdsTotal) : null,
-									),
-								),
-							},
-						]
-					: []),
 				{
 					data: footerLead(`Cap Space${star}`).concat(
 						// @ts-expect-error
 						totals.map((amount, i) =>
-							highlightZeroNegative(
-								capsFor(i).salaryCap / 1000 -
-									amount -
-									(i === 0 ? holdsTotal : 0),
-							),
+							highlightZeroNegative(capsFor(i).salaryCap / 1000 - amount),
 						),
 					),
 				},
 				{
-					data: footerLead(`Room Under Apron${star}`).concat(
+					data: footerLead(`Under Luxury Tax${star}`).concat(
 						// @ts-expect-error
 						totals.map((amount, i) =>
 							highlightZeroNegative((cbaSheet.apron[i] ?? 0) - amount),
@@ -1491,7 +1417,7 @@ const TeamFinances = ({
 		<>
 			<MoreLinks type="team" page="team_finances" tid={tid} />
 
-			{cap ? <CapStatus cap={cap} className="mb-3" holds={false} /> : null}
+			{cap ? <CapStatus cap={cap} className="mb-3" /> : null}
 
 			<PayrollInfo
 				luxuryTaxAmount={luxuryTaxAmount}

@@ -52,6 +52,51 @@ const gamePut = (
 };
 
 describe("buildNotifications", () => {
+	test("free agency in stages: the stage now under way, and an offer sheet to its team", async () => {
+		const { stageSettings } = await import("../realisticFrontOffice/stages.ts");
+		const on = stageSettings.on;
+		stageSettings.on = true;
+		g.setWithoutSavingToDB("realisticFrontOffices", true);
+		g.setWithoutSavingToDB("phase", PHASE.FREE_AGENCY);
+		g.setWithoutSavingToDB("faInStages", true);
+		// Training camp: the sheet came in the open market, matched now.
+		g.setWithoutSavingToDB("daysLeft", 1);
+		try {
+			const notifs = await buildNotifications(
+				"playMenu.day",
+				{
+					changes: [
+						{
+							store: "players",
+							id: 7,
+							type: "put",
+							value: {
+								pid: 7,
+								tid: -1,
+								firstName: "Rookie",
+								lastName: "Deal",
+								faRestricted: true,
+								stats: [{ season: 2026, tid: 0, playoffs: false, gp: 60 }],
+								contracts: [],
+								faOfferSheet: { tid: 1, amount: 9000, exp: 2029, stage: 3 },
+							},
+						},
+					],
+				},
+				opts,
+			);
+			assert.strictEqual(notifs[0]!.title, "Free agency stage simmed");
+			assert.ok(notifs[0]!.body.startsWith("Now: Training camp."));
+			const sheet = notifs.find((x) => x.title === "Offer sheet");
+			assert.deepEqual(sheet?.targetTids, [0]);
+			assert.ok(sheet?.body.includes("Rookie Deal"));
+			assert.ok(sheet?.body.includes("BOS"));
+		} finally {
+			stageSettings.on = on;
+			g.setWithoutSavingToDB("realisticFrontOffices", false);
+		}
+	});
+
 	beforeEach(async () => {
 		resetG();
 		g.setWithoutSavingToDB("phase", PHASE.REGULAR_SEASON);

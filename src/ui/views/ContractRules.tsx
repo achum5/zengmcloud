@@ -58,9 +58,9 @@ const RulesTab = ({ rules }: { rules: Rules }) => {
 				title="Cap"
 				rows={[
 					["Salary cap", money(rules.salaryCap)],
-					["Apron (luxury tax line)", money(rules.apron)],
+					["Luxury tax line", money(rules.luxuryTax)],
 					[
-						`Hard cap (apron + ${rules.hardCapPct}% of cap)`,
+						`Hard cap (tax line + ${rules.hardCapPct}% of cap)`,
 						money(rules.hardCap),
 					],
 					...rules.ownHardCaps.map((row): [ReactNode, ReactNode] => [
@@ -69,50 +69,22 @@ const RulesTab = ({ rules }: { rules: Rules }) => {
 					]),
 					["Minimum contract", money(rules.minContract)],
 					[
+						`Max contract (${rules.maxContractPct}% of cap)`,
+						money(rules.maxContract),
+					],
+					[
 						<>
 							Mid-level (<Abbr k="MLE" />, {rules.midLevelPct}% of cap)
 						</>,
 						money(rules.midLevel),
 					],
-					[
-						<>
-							Taxpayer mid-level (<Abbr k="TMLE" />, {rules.taxpayerMidLevelPct}
-							% of cap)
-						</>,
-						money(rules.taxpayerMidLevel),
-					],
 				]}
 			/>
-			<div className="col-md-6 col-xl-4 mb-3">
-				<h3>Max contract</h3>
-				<table className="table table-sm table-striped mb-0">
-					<thead>
-						<tr>
-							<th>Seasons played</th>
-							<th className="text-end">Max</th>
-							<th className="text-end">% of cap</th>
-						</tr>
-					</thead>
-					<tbody>
-						{rules.tiers.map((tier) => (
-							<tr key={tier.seasons}>
-								<td>{tier.seasons}</td>
-								<td className="text-end">{money(tier.amount)}</td>
-								<td className="text-end">{tier.pct}%</td>
-							</tr>
-						))}
-					</tbody>
-				</table>
-			</div>
 			<RuleTable
-				title="Contract length and raises"
+				title="Contracts"
 				rows={[
-					["Own player (Bird rights)", years(rules.years.own)],
-					["Other teams' players", years(rules.years.other)],
-					[<Abbr key="mle" k="MLE" />, years(rules.years.midLevel)],
-					[<Abbr key="tmle" k="TMLE" />, years(rules.years.taxpayerMidLevel)],
-					["Minimum", years(rules.years.minimum)],
-					["Raise or cut a year, own player", `${rules.raiseOwn}%`],
+					["Longest deal", years(rules.maxLength)],
+					["Raise or cut a year, re-signing", `${rules.raiseOwn}%`],
 					["Raise or cut a year, others", `${rules.raiseOther}%`],
 					[
 						<>
@@ -120,16 +92,15 @@ const RulesTab = ({ rules }: { rules: Rules }) => {
 						</>,
 						"Final season, 2+ yr deals",
 					],
+					["Options decided", "Before free agency"],
 				]}
 			/>
 			<RuleTable
 				title="Ways to sign a player"
 				rows={[
-					[<Abbr key="room" k="Room" />, "Payroll + holds + deal under cap"],
-					[<Abbr key="bird" k="Bird" />, "Own player, up to his max"],
-					[<Abbr key="mle" k="MLE" />, "Over cap, stays under apron"],
-					[<Abbr key="tmle" k="TMLE" />, "Over apron, under hard cap"],
-					["MLE or TMLE", "One a season"],
+					[<Abbr key="room" k="Room" />, "Payroll + deal under cap"],
+					[<Abbr key="bird" k="Bird" />, "Re-signing your own player"],
+					[<Abbr key="mle" k="MLE" />, "Over cap, one a season"],
 					[
 						<Abbr key="min" k="Min" />,
 						"Always (past hard cap: to fill roster)",
@@ -140,29 +111,22 @@ const RulesTab = ({ rules }: { rules: Rules }) => {
 			<RuleTable
 				title="Rights"
 				rows={[
-					[<Abbr key="bird" k="Bird" />, "Team he played for last season"],
-					["Lost by", "Renouncing, a prove-it deal"],
-					["Cap hold", "Own free agent, at his ask, until signed or renounced"],
-					[<Abbr key="rfa" k="RFA" />, "Off a rookie deal: his team may match"],
-					[
-						<Abbr key="proveit" k="Prove-it" />,
-						`Under ${rules.proveItPct}% of opening ask: ${years(rules.proveItYears)}`,
-					],
 					rules.extensionsOn
 						? [
 								<Abbr key="ext" k="Ext" />,
 								`Final season, in season: up to ${years(rules.extensionYears)} more`,
 							]
-						: ["Re-signing", "Re-sign phase, then Bird rights in free agency"],
-					["Options decided", "Before free agency"],
+						: ["Re-signing", "Re-sign Players phase only"],
+					[<Abbr key="rfa" k="RFA" />, "Off a rookie deal: his team may match"],
+					[
+						<Abbr key="proveit" k="Prove-it" />,
+						`Under ${rules.proveItPct}% of opening ask: ${years(rules.proveItYears)}`,
+					],
 				]}
 			/>
 			<RuleTable
 				title="Trades"
-				rows={[
-					["Over the apron after it", "Salary in ≤ salary out"],
-					["Past the hard cap after it", "Salary in ≤ salary out"],
-				]}
+				rows={[["Past the hard cap after it", "Salary in ≤ salary out"]]}
 			/>
 			<div className="col-md-6 col-xl-4 mb-3">
 				<h3>Free agency stages</h3>
@@ -224,8 +188,7 @@ const TeamsTab = ({
 	const cols = [
 		col("Team", undefined, false),
 		col("Payroll"),
-		col("Cap Space", "After cap holds"),
-		col("Under Apron", "Room under the apron"),
+		col("Cap Space"),
 		col("Under Hard Cap", "Room under the hard cap"),
 		col("Exception", "Mid-level exception left this season"),
 		col("Status", undefined, false),
@@ -237,7 +200,6 @@ const TeamsTab = ({
 			wrappedTeamAbbrevLink({ abbrev: t.abbrev, tid: t.tid }),
 			{ value: money(t.payroll), sortValue: t.payroll },
 			moneyCell(t.capSpace),
-			moneyCell(t.apronRoom),
 			moneyCell(t.hardCapRoom),
 			{
 				value: exceptionText(t.exception),

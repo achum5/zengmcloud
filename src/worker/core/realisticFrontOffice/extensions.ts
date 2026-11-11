@@ -72,7 +72,7 @@ export const canExtend = (
 
 export const extensionLengths = () => {
 	const out: number[] = [];
-	const most = Math.min(cbaSettings.yearsOwn, g.get("maxContractLength"));
+	const most = g.get("maxContractLength");
 	for (let years = 1; years <= most; years++) {
 		out.push(years);
 	}

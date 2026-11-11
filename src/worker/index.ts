@@ -268,6 +268,13 @@ const SIM_CONFLICT_GATED = new Set([
 	"withdrawFreeAgentOffer",
 	"rankFreeAgentOffers",
 	"decideReSigningOffers",
+	// A re-signing offer submitted (he signs or leaves on the spot), a team
+	// option decided (declined, he joins the players to re-sign) and an offer
+	// sheet answered all rewrite his player record, which the phase change and
+	// each free agency stage read and rewrite too.
+	"submitReSigningOffer",
+	"decideTeamOption",
+	"answerOfferSheet",
 	// An extension rewrites his contract, which the sim reads.
 	"offerExtension",
 ]);

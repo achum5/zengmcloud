@@ -3,18 +3,14 @@ import type { Player, Team } from "../../../common/types.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers } from "../../util/index.ts";
 import {
-	apron,
 	birdTid,
 	checkSigning,
 	hardCap,
-	longestDeal,
 	maxFor,
 	midLevelAmount,
 	serviceYears,
-	taxpayerMidLevelAmount,
 	type SigningCheck,
 } from "./cba.ts";
-import { contractOf } from "./contractOf.ts";
 import { realisticFreeAgencyOn } from "./isOn.ts";
 
 // FREE AGENCY IN STAGES (owner's call, 2026-11-10; docs/free-agency-overhaul.md):
@@ -64,10 +60,9 @@ export const stageSettings = {
 	// As free agency opens his ask is the market's, but never below this
 	// share of stock's demand for him.
 	openAskFloor: 0.5,
-	// Patience: an offer under this share of his ask insults him, and after
-	// this many in a stage he won't talk to that team until the next.
-	insultShare: 0.8,
-	patience: 3,
+	// At camp his ask comes down no further than this share of the cap: by
+	// then the market, not the one team that saved its room, sets his price.
+	campAskCap: 0.05,
 };
 
 export const STAGES = [
@@ -95,21 +90,35 @@ export const stageName = () => STAGES[stageIndex()]!;
 
 helpers.setFreeAgencyStageName(() => (inStages() ? stageName() : undefined));
 
-// The team holding his Bird rights this summer, unless it renounced them.
 // No Bird rights from a discount deal (owner's call: no signing a player
 // cheap and then re-signing him over the cap).
 export const hadDiscount = (p: Pick<Player, "contracts">) =>
 	stagesOn() && !!p.contracts.at(-1)?.discount;
 
+// The team holding his Bird rights: the one he played for, while he is its
+// player to re-sign. As in stock, once free agency opens he is anyone's -
+// unless he is restricted: then his team keeps them, to match (owner's call,
+// 2026-11-11: no cap holds, so no Bird rights in free agency).
 export const ownTid = (
-	p: Pick<Player, "stats" | "faRenounced" | "contracts">,
-) =>
-	p.faRenounced || hadDiscount(p) ? undefined : birdTid(p, g.get("season"));
+	p: Pick<Player, "stats" | "contracts" | "tid" | "faRestricted">,
+) => {
+	if (hadDiscount(p)) {
+		return undefined;
+	}
+	if (
+		p.tid === PLAYER.FREE_AGENT &&
+		g.get("phase") !== PHASE.RESIGN_PLAYERS &&
+		!p.faRestricted
+	) {
+		return undefined;
+	}
+	return birdTid(p, g.get("season"));
+};
 
 // The team that may match another team's offer for him: his own, while he is
 // restricted - not at camp, with no stage left to match in.
 export const matchingTid = (
-	p: Pick<Player, "stats" | "faRenounced" | "faRestricted" | "contracts">,
+	p: Pick<Player, "stats" | "faRestricted" | "contracts" | "tid">,
 ) =>
 	p.faRestricted && stageIndex() < STAGES.length - 1 ? ownTid(p) : undefined;
 
@@ -164,103 +173,47 @@ const startSeason = () =>
 export const midLevelUsed = (t: Pick<Team, "midLevelSeason">) =>
 	t.midLevelSeason === startSeason();
 
-// What a team's unsigned free agents it holds Bird rights to count against
-// its cap room: each at his ask (cap holds) - but not `except`.
-export const capHolds = (
-	tid: number,
-	pool: readonly Player[],
-	except?: number,
-) => {
-	let holds = 0;
-	for (const p of pool) {
-		if (p.pid !== except && p.tid === PLAYER.FREE_AGENT && ownTid(p) === tid) {
-			holds += contractOf(p).amount;
-		}
-	}
-	return holds;
-};
-
-// Whether a team may sign him for `amount` (and `years`, if given), and how,
-// by CBA-lite's rules: its payroll with its cap holds for room, its own
-// player by Bird rights.
+// Whether a team may sign him for `amount`, and how, by CBA-lite's rules:
+// room under the cap, its own player by Bird rights, the mid-level, or the
+// minimum.
 export const checkFor = ({
-	years,
-	...args
-}: {
-	t: Pick<Team, "tid" | "midLevelSeason">;
-	p: Player;
-	payroll: number;
-	holds: number;
-	amount: number;
-	rosterSize: number;
-	years?: number;
-}): SigningCheck => {
-	const check = checkAmount(args);
-	if (!check.ok || years === undefined) {
-		return check;
-	}
-	const { t, p, payroll, holds, amount } = args;
-	const longest = longestDeal({
-		path: check.path,
-		own: ownTid(p) === t.tid,
-		room: payroll + holds + amount <= g.get("salaryCap") + 1,
-	});
-	return years > longest
-		? { ok: false, reason: `No more than ${longest} years for this signing` }
-		: check;
-};
-
-const checkAmount = ({
 	t,
 	p,
 	payroll,
-	holds,
 	amount,
 	rosterSize,
 }: {
 	t: Pick<Team, "tid" | "midLevelSeason">;
 	p: Player;
 	payroll: number;
-	holds: number;
 	amount: number;
 	rosterSize: number;
-}): SigningCheck => {
-	const own = ownTid(p) === t.tid;
-	const service = serviceYears(p);
-	const args = {
+}): SigningCheck =>
+	checkSigning({
 		tid: t.tid,
+		payroll,
 		amount,
-		service,
-		own,
+		service: serviceYears(p),
+		own: ownTid(p) === t.tid,
 		midLevelUsed: midLevelUsed(t),
 		rosterSize,
-	};
-	// Room counts the holds; Bird rights and exceptions go by payroll alone.
-	const withHolds = checkSigning({ ...args, payroll: payroll + holds });
-	if (withHolds.ok || holds === 0) {
-		return withHolds;
-	}
-	const without = checkSigning({ ...args, payroll });
-	return without.ok && without.path !== "room" ? without : withHolds;
-};
+	});
 
 // The most a team may pay him a season, if anything.
 export const mostFor = ({
 	t,
 	p,
 	payroll,
-	holds,
 	rosterSize,
 }: {
 	t: Pick<Team, "tid" | "midLevelSeason">;
 	p: Player;
 	payroll: number;
-	holds: number;
 	rosterSize: number;
 }) => {
 	const minContract = g.get("minContract");
 	const may = (amount: number) =>
-		checkFor({ t, p, payroll, holds, amount, rosterSize }).ok;
+		checkFor({ t, p, payroll, amount, rosterSize }).ok;
 	if (!may(minContract)) {
 		return undefined;
 	}
@@ -268,11 +221,9 @@ export const mostFor = ({
 	const candidates = [
 		minContract,
 		maxFor(serviceYears(p)),
-		g.get("salaryCap") - payroll - holds,
+		g.get("salaryCap") - payroll,
 		hardCap(t.tid) - payroll,
 		midLevelAmount(),
-		taxpayerMidLevelAmount(),
-		apron() - payroll,
 	];
 	let most = minContract;
 	for (const amount of candidates) {
@@ -305,13 +256,12 @@ export const atCamp = () => stageIndex() === STAGES.length - 1;
 export const stageWait = (wait: number) =>
 	stageIndex() === STAGES.length - 1 ? wait + stageSettings.campWait : wait;
 
-// The least he asks for this stage. At camp, no more than the taxpayer
-// mid-level: nearly every team can still sign him, so the market, not the
-// one team that saved its room, sets his price.
+// The least he asks for this stage. At camp, no more than campAskCap of the
+// cap: the market, not the one team that saved its room, sets his price.
 export const askFloor = (p: Pick<Player, "faOpenAsk">) => {
 	const floor = (p.faOpenAsk ?? 0) * stageSettings.floorByStage[stageIndex()]!;
 	return stageIndex() === STAGES.length - 1
-		? Math.min(floor, taxpayerMidLevelAmount())
+		? Math.min(floor, stageSettings.campAskCap * g.get("salaryCap"))
 		: floor;
 };
 
@@ -337,7 +287,7 @@ export const reservation = (
 	}
 	const camp = Math.min(
 		p.faOpenAsk * stageSettings.floorByStage[STAGES.length - 1]!,
-		taxpayerMidLevelAmount(),
+		stageSettings.campAskCap * g.get("salaryCap"),
 	);
 	return camp * Math.max(0, 1 - seasonPlayed);
 };
@@ -366,10 +316,7 @@ export const noteSigning = async (
 	tid: number,
 	check: SigningCheck,
 ): Promise<void> => {
-	if (
-		check.ok &&
-		(check.path === "midLevel" || check.path === "taxpayerMidLevel")
-	) {
+	if (check.ok && check.path === "midLevel") {
 		const t = await idb.cache.teams.get(tid);
 		if (t) {
 			t.midLevelSeason = startSeason();

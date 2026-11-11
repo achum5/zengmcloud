@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 267,
+		date: "2026-11-11",
+		text: "Realistic Front Offices: simpler contract rules, closer to regular BBGM. Free agency still runs in stages, but now there's one max contract for everyone, you re-sign your own players in the Re-sign Players phase (once free agency starts they're open to everyone - except restricted players, whose team can still match), and a team over the cap gets one mid-level signing a summer. Gone: cap holds and the Renounce button, the taxpayer mid-level and the apron, insults, and the special contract-length limits. The hard cap, raises and options, and restricted free agency stay. In multiplayer, a team now gets a notification when its restricted free agent signs an offer sheet, and Submit on Re-sign Players, team options and Match wait while a league-mate is simming, like offers do.",
+	},
+	{
 		n: 266,
 		date: "2026-11-11",
 		text: "Clone league has a new option, Clone without box scores: the copy has everything but the box scores and saved replays, so it's smaller and quicker to make.",

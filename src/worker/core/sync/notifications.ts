@@ -15,6 +15,12 @@ import {
 	type RecapNotification,
 } from "../../../common/recapNotification.ts";
 import { getAutoRecapsForDay } from "../../util/getDayGamesForRecap.ts";
+import {
+	inStages,
+	ownTid,
+	stageIndex,
+	stageName,
+} from "../realisticFrontOffice/stages.ts";
 
 // A push notification to fan out to the OTHER devices in the league room. The
 // acting device (the one whose app is open, that just made the change) writes
@@ -630,18 +636,45 @@ const buildSimNotifications = async (
 		}
 		const more = signingEvents.length - lines.length;
 
+		// Realistic front offices' free agency runs in stages, not days.
+		const stages = inStages();
 		const body = [
-			`${daysLeft} ${daysLeft === 1 ? "day" : "days"} of free agency left.`,
+			stages
+				? `Now: ${stageName()}.`
+				: `${daysLeft} ${daysLeft === 1 ? "day" : "days"} of free agency left.`,
 			lines.length > 0 ? lines.join("\n") : "No signings today.",
 			...(more > 0 ? [`+${more} more signings`] : []),
 		].join("\n");
 
 		notifications.push({
-			title: "Free agency day simmed",
+			title: stages ? "Free agency stage simmed" : "Free agency day simmed",
 			body,
 			targetTids: null,
 			path: "free_agents",
 		});
+
+		// An offer sheet for a restricted free agent: his team has this stage
+		// to match it, so it is told now.
+		if (stages) {
+			for (const p of changesToValues(changeset, "players")) {
+				const sheet = p?.faOfferSheet;
+				// His team (it has the stage now under way to match, camp too).
+				const tid = p?.faRestricted ? ownTid(p) : undefined;
+				if (!sheet || tid === undefined || sheet.stage !== stageIndex() - 1) {
+					continue;
+				}
+				notifications.push({
+					title: "Offer sheet",
+					body: `${p.firstName} ${p.lastName} signed an offer sheet with ${teamById.get(sheet.tid)?.abbrev ?? "???"}: ${helpers.formatCurrencyBase(
+						g.get("currencyFormat"),
+						sheet.amount / 1000,
+						"M",
+					)} through ${sheet.exp}. Match it on Free Agents this stage.`,
+					targetTids: [tid],
+					path: "free_agents",
+				});
+			}
+		}
 		return notifications;
 	}
 

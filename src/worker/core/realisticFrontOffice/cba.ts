@@ -6,38 +6,28 @@ import { getHardCap } from "../../util/getHardCap.ts";
 // bargaining agreement does to team-building at about 5% of its complexity.
 // With Realistic Front Offices on only. docs/free-agency-overhaul.md.
 //
-// Amounts scale with the league's settings: the top max tier is maxContract,
-// the apron is the luxury tax line, and the hard cap sits a share of the cap
-// above it (or lower, where the league's own hard cap is lower).
+// Simplified (owner's call, 2026-11-11, for a casual league mate): stock
+// BBGM's contracts plus the mid-level, a hard cap, raises and options, and
+// restricted free agency. No max tiers, cap holds, taxpayer mid-level, apron
+// or per-exception lengths; Bird rights in the re-signing phase only, as in
+// stock (and a restricted free agent's team may match).
+//
+// Amounts scale with the league's settings: the hard cap sits a share of the
+// cap above the luxury tax line (or lower, where the league's own hard cap is
+// lower).
 export const cbaSettings = {
-	// Max contract by seasons played, as a share of maxContract: 25%, 30% and
-	// 35% of the cap in the NBA.
-	maxTiers: [
-		{ service: 0, share: 25 / 35 },
-		{ service: 7, share: 30 / 35 },
-		{ service: 10, share: 1 },
-	],
+	// Max contract by seasons played, as a share of maxContract. One for
+	// everyone (it was 25%, 30% and 35% of the cap by service).
+	maxTiers: [{ service: 0, share: 1 }],
 	// Once a season, a team over the cap may sign one outside free agent for
-	// up to this share of the cap, for up to midLevelYears, if it stays under
-	// the apron.
+	// up to this share of the cap, within the hard cap.
 	midLevel: 0.09,
-	midLevelYears: 4,
-	// Past the apron, the taxpayer mid-level instead (as the NBA's): up to
-	// this share of the cap, for up to taxpayerYears, within the hard cap.
-	// Either one a season. With it nearly every team can pay a good free
-	// agent something real every summer, which is how the NBA's market clears.
-	taxpayerMidLevel: 0.05,
-	taxpayerYears: 2,
 	// The hard cap: this share of the cap above the luxury tax line.
 	hardCapOverTax: 0.1,
-	// Yearly raise (or cut), as a share of the first year: with Bird rights,
-	// and without.
+	// Yearly raise (or cut), as a share of the first year: re-signing his own
+	// player, and any other signing.
 	raiseOwn: 0.08,
 	raiseOther: 0.05,
-	// Longest contract: with Bird rights, without, and for a minimum deal.
-	yearsOwn: 5,
-	yearsOther: 4,
-	yearsMinimum: 2,
 };
 
 // Seasons a player has played in (regular season, any games).
@@ -67,12 +57,6 @@ export const maxFor = (service: number) => {
 };
 
 export const midLevelAmount = () => cbaSettings.midLevel * g.get("salaryCap");
-export const taxpayerMidLevelAmount = () =>
-	cbaSettings.taxpayerMidLevel * g.get("salaryCap");
-
-// Above the apron a team gets no mid-level, and its trades may not bring in
-// more salary than they send out.
-export const apron = () => g.get("luxuryPayroll");
 
 // No transaction may take a team's payroll past this. The league's own hard
 // cap, where it has one for this team, if lower.
@@ -85,12 +69,7 @@ export const hardCap = (tid: number) =>
 // Contract amounts are in thousands and rounded; a hair over is the same.
 const SLACK = 1;
 
-export type SigningPath =
-	| "room"
-	| "bird"
-	| "midLevel"
-	| "taxpayerMidLevel"
-	| "minimum";
+export type SigningPath = "room" | "bird" | "midLevel" | "minimum";
 
 export type SigningCheck =
 	| { ok: true; path: SigningPath }
@@ -139,65 +118,22 @@ export const checkSigning = ({
 	if (own) {
 		return { ok: true, path: "bird" };
 	}
-	if (
-		!midLevelUsed &&
-		amount <= midLevelAmount() + SLACK &&
-		after <= apron() + SLACK
-	) {
+	// Within the hard cap (checked above): the mid-level.
+	if (!midLevelUsed && amount <= midLevelAmount() + SLACK) {
 		return { ok: true, path: "midLevel" };
-	}
-	// Past the apron (the hard cap checked above): the taxpayer mid-level.
-	if (
-		!midLevelUsed &&
-		amount <= taxpayerMidLevelAmount() + SLACK &&
-		after > apron() + SLACK
-	) {
-		return { ok: true, path: "taxpayerMidLevel" };
 	}
 	return {
 		ok: false,
 		reason: midLevelUsed
 			? "Over the cap, mid-level already used"
-			: after > apron() + SLACK
-				? "Over the apron; more than the taxpayer mid-level"
-				: "Over the cap; more than the mid-level",
+			: "Over the cap; more than the mid-level",
 	};
 };
 
-// The longest deal, and the largest yearly raise as a share of the first
-// year, a signing by this path may have.
-export const shapeLimits = (path: SigningPath, own: boolean) => ({
-	years:
-		path === "minimum"
-			? cbaSettings.yearsMinimum
-			: path === "midLevel"
-				? cbaSettings.midLevelYears
-				: path === "taxpayerMidLevel"
-					? cbaSettings.taxpayerYears
-					: own
-						? cbaSettings.yearsOwn
-						: cbaSettings.yearsOther,
-	raise: own ? cbaSettings.raiseOwn : cbaSettings.raiseOther,
-});
-
-// The longest deal a signing may have: with his Bird rights, the most there
-// is; in cap room, the most for an outside free agent; otherwise the limit
-// of the exception it uses (the mid-level's, the taxpayer mid-level's, the
-// minimum's).
-export const longestDeal = ({
-	path,
-	own,
-	room,
-}: {
-	path: SigningPath;
-	own: boolean;
-	room: boolean;
-}) =>
-	own
-		? cbaSettings.yearsOwn
-		: room
-			? cbaSettings.yearsOther
-			: shapeLimits(path, false).years;
+// The largest yearly raise, as a share of the first year: more re-signing
+// his own player. Any signing may run as long as the league allows.
+export const raiseLimit = (own: boolean) =>
+	own ? cbaSettings.raiseOwn : cbaSettings.raiseOther;
 
 // A contract's seasons with a steady raise (negative for a cut) from the
 // first year's amount.
@@ -216,10 +152,8 @@ export const raisesOk = (amounts: readonly number[], raise: number) => {
 	return true;
 };
 
-// Whether a trade's salaries are allowed for one side, by the apron and the
-// hard cap: above the apron after it, a team may not take in more than it
-// sends out; and it may not end past the hard cap unless it takes in no more
-// than it sends out.
+// Whether a trade's salaries are allowed for one side by the hard cap: it may
+// not end past the hard cap unless it takes in no more than it sends out.
 export const checkTradeSalary = ({
 	tid,
 	payrollAfter,
@@ -234,12 +168,6 @@ export const checkTradeSalary = ({
 	const shedding = incoming <= outgoing + SLACK;
 	if (payrollAfter > hardCap(tid) + SLACK && !shedding) {
 		return { ok: false, reason: "Over the hard cap" };
-	}
-	if (payrollAfter > apron() + SLACK && !shedding) {
-		return {
-			ok: false,
-			reason: "Over the apron: must send out as much salary as it takes in",
-		};
 	}
 	return { ok: true };
 };

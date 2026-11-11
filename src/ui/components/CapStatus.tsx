@@ -1,7 +1,5 @@
 import clsx from "clsx";
 import { helpers } from "../util/helpers.ts";
-import { toWorker } from "../util/toWorker.ts";
-import { showNotification } from "../util/showNotification.ts";
 import { ABBREVS, CAP_STATUS, optionAbbrev } from "../../common/signingHow.ts";
 import type { CapStatusKey } from "../../common/signingHow.ts";
 import type {
@@ -10,8 +8,8 @@ import type {
 } from "../../worker/core/realisticFrontOffice/capSheet.ts";
 
 // A TEAM'S CAP STATUS under realistic front offices' contract rules: the
-// badge, the room it has under each line, the exception it has left, and its
-// cap holds. One component, on every page that deals in signing players.
+// badge, the room it has under the cap and the hard cap, and the exception it
+// has left. One component, on every page that deals in signing players.
 
 const money = (amount: number) => helpers.formatCurrency(amount / 1000, "M");
 
@@ -32,10 +30,6 @@ export const exceptionText = (exception: CapException) =>
 		<>
 			<abbr title={ABBREVS.MLE}>MLE</abbr> {money(exception.amount)}
 		</>
-	) : exception.kind === "taxpayerMidLevel" ? (
-		<>
-			<abbr title={ABBREVS.TMLE}>TMLE</abbr> {money(exception.amount)}
-		</>
 	) : exception.kind === "used" ? (
 		"Used"
 	) : (
@@ -48,99 +42,30 @@ export const roomText = (amount: number) => (
 	</span>
 );
 
-const renounce = async (pid: number) => {
-	const error = await toWorker("main", "renounceFreeAgent", pid);
-	if (error) {
-		showNotification({ text: error, type: "error" } as any);
-	}
-};
-
-export const CapHolds = ({ cap }: { cap: TeamCapStatus }) => {
-	if (cap.holds.length === 0) {
-		return null;
-	}
-	return (
-		<table className="table table-sm table-nonfluid mb-0">
-			<thead>
-				<tr>
-					<th title="His ask counts against your cap room until he signs or you renounce him">
-						Cap holds
-					</th>
-					<th className="text-end">{money(cap.holdsTotal)}</th>
-					{cap.canRenounce ? <th /> : null}
-				</tr>
-			</thead>
-			<tbody>
-				{cap.holds.map((row) => (
-					<tr key={row.pid}>
-						<td>
-							<a href={helpers.leagueUrl(["player", row.pid])}>{row.name}</a>
-							{row.restricted ? (
-								<span
-									className="badge text-bg-light border ms-1"
-									title={ABBREVS.RFA}
-								>
-									RFA
-								</span>
-							) : null}
-						</td>
-						<td className="text-end">{money(row.amount)}</td>
-						{cap.canRenounce ? (
-							<td>
-								<button
-									className="btn btn-xs btn-light-bordered"
-									onClick={() => renounce(row.pid)}
-									title="Give up his Bird rights and cap hold"
-								>
-									Renounce
-								</button>
-							</td>
-						) : null}
-					</tr>
-				))}
-			</tbody>
-		</table>
-	);
-};
-
 export const CapStatus = ({
 	cap,
 	className,
-	holds = true,
 }: {
 	cap: TeamCapStatus;
 	className?: string;
-	// Show the cap holds table too.
-	holds?: boolean;
 }) => {
 	const items = [
-		{
-			label: cap.holdsTotal > 0 ? "Cap space after holds" : "Cap space",
-			value: roomText(cap.capSpace),
-		},
-		{ label: "Room under apron", value: roomText(cap.apronRoom) },
+		{ label: "Cap space", value: roomText(cap.capSpace) },
 		{ label: "Room under hard cap", value: roomText(cap.hardCapRoom) },
 		{ label: "Exception", value: exceptionText(cap.exception) },
 	];
 	return (
-		<div className={className}>
-			<div className="d-flex flex-wrap align-items-end gap-3">
-				<div>
-					<CapStatusBadge className="fs-6" status={cap.status} />
-				</div>
-				{items.map((item) => (
-					<div key={item.label}>
-						<div className="text-body-secondary small">{item.label}</div>
-						<div className="fw-bold">{item.value}</div>
-					</div>
-				))}
-				<a href={helpers.leagueUrl(["contract_rules"])}>Contract Rules</a>
+		<div className={clsx("d-flex flex-wrap align-items-end gap-3", className)}>
+			<div>
+				<CapStatusBadge className="fs-6" status={cap.status} />
 			</div>
-			{holds && cap.holds.length > 0 ? (
-				<div className="mt-2">
-					<CapHolds cap={cap} />
+			{items.map((item) => (
+				<div key={item.label}>
+					<div className="text-body-secondary small">{item.label}</div>
+					<div className="fw-bold">{item.value}</div>
 				</div>
-			) : null}
+			))}
+			<a href={helpers.leagueUrl(["contract_rules"])}>Contract Rules</a>
 		</div>
 	);
 };

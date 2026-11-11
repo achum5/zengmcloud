@@ -5,7 +5,7 @@ import { termsBadges } from "../../components/CapStatus.tsx";
 
 // HIS CONTRACT UNDER THE CONTRACT RULES (realistic front offices' CBA-lite):
 // the deal in one line, what he'll be when it's up, who holds his Bird
-// rights, his max tier - above his salaries - and every contract he has signed
+// rights - above his salaries - and every contract he has signed
 // and how, below them.
 
 const money = (amount: number) => helpers.formatCurrency(amount / 1000, "M");
@@ -47,10 +47,6 @@ export const ContractSummary = ({ card }: { card: ContractCardData }) => {
 					</>
 				) : null}
 				<Abbr k="Bird" /> rights: {card.bird ?? "none"}
-			</div>
-			<div className="text-body-secondary">
-				{card.service} {helpers.plural("season", card.service)} · max{" "}
-				{card.maxPct}% of cap ({money(card.max)})
 			</div>
 		</div>
 	);

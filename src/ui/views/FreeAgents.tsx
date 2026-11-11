@@ -538,11 +538,11 @@ const stageCells = (p: View<"freeAgents">["players"][number]) => {
 	const toBeat = stage?.toBeat
 		? `${formatOfferAmount(stage.toBeat.amount)} × ${stage.toBeat.years}`
 		: "";
-	const act = async (
-		name: "renounceFreeAgent" | "answerOfferSheet",
-		arg: any,
-	) => {
-		const error = await toWorker("main", name, arg);
+	const answer = async (match: boolean) => {
+		const error = await toWorker("main", "answerOfferSheet", {
+			pid: p.pid,
+			match,
+		});
 		if (error) {
 			showNotification({ text: error, type: "error" } as any);
 		}
@@ -555,25 +555,15 @@ const stageCells = (p: View<"freeAgents">["players"][number]) => {
 				{sheet.abbrev} {formatOfferAmount(sheet.amount)} × {sheet.years}{" "}
 				<button
 					className={`btn btn-xs ${stage.match ? "btn-primary" : "btn-light-bordered"}`}
-					onClick={() =>
-						act("answerOfferSheet", { pid: p.pid, match: !stage.match })
-					}
+					onClick={() => answer(!stage.match)}
 					title="Match the offer sheet by the end of this stage"
 				>
 					{stage.match ? "Matching" : "Match"}
 				</button>
 			</span>
 		);
-	} else if (stage?.own) {
-		rights = (
-			<button
-				className="btn btn-xs btn-light-bordered"
-				onClick={() => act("renounceFreeAgent", p.pid)}
-				title="Give up his Bird rights and cap hold"
-			>
-				Renounce{stage.restricted ? " (RFA)" : ""}
-			</button>
-		);
+	} else if (stage?.restricted) {
+		rights = <span title="You may match any offer he signs">RFA</span>;
 	}
 	return [
 		{ value: stage?.interest ?? "", sortValue: stage?.interest ?? null },

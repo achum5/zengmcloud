@@ -134,19 +134,19 @@ export const stageOf = (
 		| "faDecides"
 		| "faLead"
 		| "stats"
-		| "faRenounced"
 		| "faRestricted"
 		| "faOfferSheet"
 		| "faMatch"
 		| "contracts"
+		| "tid"
 	>,
 	userTid?: number,
 ) => {
 	if (!inStages()) {
 		return undefined;
 	}
-	// The user's own free agent (Bird rights, cap hold), and any offer sheet
-	// for him to match - its team public, as in the NBA.
+	// The user's own restricted free agent, and any offer sheet for him to
+	// match - its team public, as in the NBA.
 	const own = userTid !== undefined && ownTid(p) === userTid;
 	const sheet = own ? p.faOfferSheet : undefined;
 	// Once his stage has passed, he decides in each one after it.

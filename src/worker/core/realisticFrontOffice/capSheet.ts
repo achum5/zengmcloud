@@ -8,16 +8,7 @@ import { idb } from "../../db/index.ts";
 import { g, helpers } from "../../util/index.ts";
 import { getHardCap } from "../../util/getHardCap.ts";
 import { team } from "../index.ts";
-import {
-	apron,
-	cbaSettings,
-	hardCap,
-	maxFor,
-	midLevelAmount,
-	serviceYears,
-	taxpayerMidLevelAmount,
-} from "./cba.ts";
-import { contractOf } from "./contractOf.ts";
+import { cbaSettings, hardCap, maxFor, midLevelAmount } from "./cba.ts";
 import {
 	inStages,
 	midLevelUsed,
@@ -31,60 +22,43 @@ import {
 // WHAT THE PAGES SHOW OF THE CONTRACT RULES (owner's call, 2026-11-10:
 // "very nicely laid out on every single page involving it ... as little
 // complicated as possible"). A team's cap status - where it stands against
-// the cap, the apron and the hard cap, its exception, its cap holds - and the
+// the cap, the luxury tax and the hard cap, and its exception - and the
 // league's rules as numbers. Everything in thousands, as stored.
 
 export type CapException =
-	| { kind: "midLevel" | "taxpayerMidLevel"; amount: number }
+	| { kind: "midLevel"; amount: number }
 	| { kind: "used" }
 	| { kind: "none" };
-
-export type CapHoldRow = {
-	pid: number;
-	name: string;
-	amount: number;
-	restricted: boolean;
-};
 
 export type TeamCapStatus = {
 	tid: number;
 	abbrev: string;
 	name: string;
 	payroll: number;
-	holds: CapHoldRow[];
-	holdsTotal: number;
-	// Cap space after holds (negative: over the cap).
+	// Negative: over the cap.
 	capSpace: number;
-	apronRoom: number;
 	hardCap: number;
 	hardCapRoom: number;
 	status: CapStatusKey;
 	exception: CapException;
-	// Whether the holds can be renounced now (free agency in stages).
-	canRenounce: boolean;
 };
 
-// Where a payroll stands: under the cap (after holds), over it, over the
-// apron, or at the hard cap (no more than a minimum deal left under it).
-export const capStatusOf = (
-	tid: number,
-	payroll: number,
-	holds = 0,
-): CapStatusKey => {
+// Where a payroll stands: under the cap, over it, over the luxury tax line
+// ("apron"), or at the hard cap (no more than a minimum deal left under it).
+export const capStatusOf = (tid: number, payroll: number): CapStatusKey => {
 	if (hardCap(tid) - payroll < g.get("minContract")) {
 		return "hardCap";
 	}
-	if (payroll > apron()) {
+	if (payroll > g.get("luxuryPayroll")) {
 		return "apron";
 	}
-	if (payroll + holds > g.get("salaryCap")) {
+	if (payroll > g.get("salaryCap")) {
 		return "over";
 	}
 	return "under";
 };
 
-// The exception a team over the cap has left this season: the mid-level
-// while it would stay under the apron, the taxpayer mid-level past it.
+// The mid-level a team has left this season, within its hard cap.
 export const exceptionOf = (
 	t: { tid: number; midLevelSeason?: number },
 	payroll: number,
@@ -92,25 +66,14 @@ export const exceptionOf = (
 	if (midLevelUsed(t)) {
 		return { kind: "used" };
 	}
-	const minContract = g.get("minContract");
-	const mle = Math.min(midLevelAmount(), apron() - payroll);
-	const tmle = Math.min(taxpayerMidLevelAmount(), hardCap(t.tid) - payroll);
-	if (mle >= tmle && mle >= minContract) {
-		return { kind: "midLevel", amount: mle };
-	}
-	if (tmle >= minContract) {
-		return { kind: "taxpayerMidLevel", amount: tmle };
-	}
-	return { kind: "none" };
+	const mle = Math.min(midLevelAmount(), hardCap(t.tid) - payroll);
+	return mle >= g.get("minContract")
+		? { kind: "midLevel", amount: mle }
+		: { kind: "none" };
 };
-
-// Holds count while a team's own players are unsigned: re-signing, and free
-// agency in stages.
-const holdsShown = () => g.get("phase") === PHASE.RESIGN_PLAYERS || inStages();
 
 export const teamCapStatus = async (
 	tid: number,
-	pool?: readonly Player[],
 ): Promise<TeamCapStatus | undefined> => {
 	if (!stagesOn()) {
 		return undefined;
@@ -118,54 +81,28 @@ export const teamCapStatus = async (
 	const t = await idb.cache.teams.get(tid);
 	const info = g.get("teamInfoCache")[tid];
 	const payroll = await team.getPayroll(tid);
-	const holds: CapHoldRow[] = [];
-	if (holdsShown()) {
-		const freeAgents =
-			pool ??
-			(await idb.cache.players.indexGetAll("playersByTid", PLAYER.FREE_AGENT));
-		for (const p of freeAgents) {
-			if (p.tid === PLAYER.FREE_AGENT && ownTid(p) === tid) {
-				holds.push({
-					pid: p.pid,
-					name: `${p.firstName} ${p.lastName}`,
-					amount: contractOf(p).amount,
-					restricted: !!p.faRestricted,
-				});
-			}
-		}
-		holds.sort((a, b) => b.amount - a.amount);
-	}
-	const holdsTotal = holds.reduce((sum, row) => sum + row.amount, 0);
 	const ceiling = hardCap(tid);
 	return {
 		tid,
 		abbrev: info?.abbrev ?? "",
 		name: info ? `${info.region} ${info.name}` : "",
 		payroll,
-		holds,
-		holdsTotal,
-		capSpace: g.get("salaryCap") - payroll - holdsTotal,
-		apronRoom: apron() - payroll,
+		capSpace: g.get("salaryCap") - payroll,
 		hardCap: ceiling,
 		hardCapRoom: ceiling - payroll,
-		status: capStatusOf(tid, payroll, holdsTotal),
+		status: capStatusOf(tid, payroll),
 		exception: exceptionOf(t ?? { tid }, payroll),
-		canRenounce: inStages(),
 	};
 };
 
 // Every active team's cap status, for the league tracker.
 export const leagueCapTracker = async () => {
-	const pool = await idb.cache.players.indexGetAll(
-		"playersByTid",
-		PLAYER.FREE_AGENT,
-	);
 	const out: TeamCapStatus[] = [];
 	for (const t of await idb.cache.teams.getAll()) {
 		if (t.disabled) {
 			continue;
 		}
-		const status = await teamCapStatus(t.tid, pool);
+		const status = await teamCapStatus(t.tid);
 		if (status) {
 			out.push(status);
 		}
@@ -178,7 +115,6 @@ const pct = (share: number) => Math.round(share * 1000) / 10;
 // The league's rules as numbers, for the Contract Rules page.
 export const contractRules = () => {
 	const salaryCap = g.get("salaryCap");
-	const maxContract = g.get("maxContract");
 	const maxLength = g.get("maxContractLength");
 	const defaultHardCap =
 		g.get("luxuryPayroll") + cbaSettings.hardCapOverTax * salaryCap;
@@ -194,42 +130,23 @@ export const contractRules = () => {
 			ownHardCaps.push({ tid, abbrev: info.abbrev, amount });
 		}
 	}
-	const tiers = cbaSettings.maxTiers.map((tier, i) => {
-		const next = cbaSettings.maxTiers[i + 1];
-		return {
-			seasons:
-				next === undefined
-					? `${tier.service}+`
-					: `${tier.service}-${next.service - 1}`,
-			amount: maxFor(tier.service),
-			pct: pct(maxFor(tier.service) / salaryCap),
-		};
-	});
 	return {
 		salaryCap,
-		apron: apron(),
+		luxuryTax: g.get("luxuryPayroll"),
 		hardCap: defaultHardCap,
 		hardCapPct: pct(cbaSettings.hardCapOverTax),
 		ownHardCaps,
 		minContract: g.get("minContract"),
-		maxContract,
+		maxContract: maxFor(0),
+		maxContractPct: pct(maxFor(0) / salaryCap),
 		midLevel: midLevelAmount(),
 		midLevelPct: pct(cbaSettings.midLevel),
-		taxpayerMidLevel: taxpayerMidLevelAmount(),
-		taxpayerMidLevelPct: pct(cbaSettings.taxpayerMidLevel),
-		tiers,
-		years: {
-			own: Math.min(cbaSettings.yearsOwn, maxLength),
-			other: Math.min(cbaSettings.yearsOther, maxLength),
-			minimum: Math.min(cbaSettings.yearsMinimum, maxLength),
-			midLevel: Math.min(cbaSettings.midLevelYears, maxLength),
-			taxpayerMidLevel: Math.min(cbaSettings.taxpayerYears, maxLength),
-		},
+		maxLength,
 		raiseOwn: pct(cbaSettings.raiseOwn),
 		raiseOther: pct(cbaSettings.raiseOther),
 		proveItPct: pct(stageSettings.discountShare),
 		proveItYears: stageSettings.discountYears,
-		extensionYears: Math.min(cbaSettings.yearsOwn, maxLength),
+		extensionYears: maxLength,
 		extensionsOn: extensionSettings.on,
 		tier1: stageSettings.tier1,
 		tier2: stageSettings.tier2,
@@ -436,7 +353,6 @@ export const contractCard = (
 	}
 	history.sort((a, b) => a.season - b.season);
 
-	const service = serviceYears(p);
 	const bird = p.tid === PLAYER.FREE_AGENT ? abbrevOf(ownTid(p)) : deal?.bird;
 	return {
 		deal,
@@ -446,14 +362,10 @@ export const contractCard = (
 						restricted:
 							!!p.faRestricted ||
 							(g.get("phase") === PHASE.RESIGN_PLAYERS &&
-								p.contracts.at(-1)?.type === "rookie" &&
-								!p.faRenounced),
+								p.contracts.at(-1)?.type === "rookie"),
 					}
 				: undefined,
 		bird,
-		service,
-		maxPct: Math.round((100 * maxFor(service)) / g.get("salaryCap")),
-		max: maxFor(service),
 		marks,
 		history,
 	};
@@ -473,9 +385,6 @@ export type ContractCard = {
 	};
 	freeAgent?: { restricted: boolean };
 	bird?: string;
-	service: number;
-	maxPct: number;
-	max: number;
 	marks: Record<number, ("PO" | "TO" | "Prove-it")[]>;
 	history: {
 		season: number;

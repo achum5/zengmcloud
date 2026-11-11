@@ -16,7 +16,6 @@ import {
 	contractRules,
 	exceptionOf,
 	signingsLog,
-	teamCapStatus,
 } from "./capSheet.ts";
 import {
 	decideOptions,
@@ -25,7 +24,6 @@ import {
 	pendingTeamOptions,
 	pickUpTeamOptions,
 	makeOffer,
-	renounce,
 	sign,
 } from "./freeAgency.ts";
 import { contractOf } from "./contractOf.ts";
@@ -45,6 +43,7 @@ beforeAll(async () => {
 	await createArenaLeague(9047);
 	g.setWithoutSavingToDB("realisticFrontOffices", true);
 	stageSettings.on = true;
+	likePlayer = (await idb.cache.players.indexGetAll("playersByTid", tid))[0];
 }, 120_000);
 
 const stagesWereOn = stageSettings.on;
@@ -63,6 +62,9 @@ const lastEvent = async (pid: number) =>
 	(await idb.cache.events.getAll())
 		.filter((event) => event.pids?.includes(pid))
 		.at(-1) as EventBBGM;
+
+let likePlayer: any;
+const freeAgentLike = () => likePlayer;
 
 const freeAgent = async (i = 0) =>
 	(await idb.cache.players.indexGetAll("playersByTid", PLAYER.FREE_AGENT))
@@ -138,7 +140,7 @@ test("with the rules off, a signing's event is as in stock", async () => {
 	}
 });
 
-test("options decided and rights renounced are events", async () => {
+test("options decided are events", async () => {
 	g.setWithoutSavingToDB("phase", PHASE.RESIGN_PLAYERS);
 	const season = g.get("season");
 	const [p] = await idb.cache.players.indexGetAll("playersByTid", tid);
@@ -152,34 +154,6 @@ test("options decided and rights renounced are events", async () => {
 		await formatEventText(event),
 		/(picked up|declined) their team option on/,
 	);
-
-	// Renounced: his Bird rights and cap hold.
-	g.setWithoutSavingToDB("phase", PHASE.FREE_AGENCY);
-	const own = (
-		await idb.cache.players.indexGetAll("playersByTid", PLAYER.FREE_AGENT)
-	).find((x) => !x.contracts.at(-1)?.discount);
-	assert.isDefined(own);
-	if (own) {
-		// His last season was with this team: its Bird rights, and his hold.
-		own.stats.push({
-			season,
-			tid,
-			playoffs: false,
-			gp: 10,
-			yearsWithTeam: 1,
-		} as any);
-		delete own.faRenounced;
-		await idb.cache.players.put(own);
-		const before = (await teamCapStatus(tid))!;
-		assert.isTrue(before.holds.some((row) => row.pid === own.pid));
-		assert.isUndefined(await renounce(tid, own.pid));
-		const renounced = await lastEvent(own.pid);
-		assert.strictEqual(renounced.type, "contract");
-		assert.include(await formatEventText(renounced), "renounced their rights");
-		const after = (await teamCapStatus(tid))!;
-		assert.isFalse(after.holds.some((row) => row.pid === own.pid));
-		assert.isAbove(after.capSpace, before.capSpace);
-	}
 });
 
 test("a re-signing offer submitted is decided at once, and the log has it with the odds", async () => {
@@ -298,58 +272,63 @@ test("a human team decides its own team options; those it leaves are picked up",
 	}
 });
 
-test("a signing's length is within its rule's limit", async () => {
-	const p = (
-		await idb.cache.players.indexGetAll("playersByTid", PLAYER.FREE_AGENT)
-	).find((x) => ownTid(x) !== tid)!;
-	const cap = g.get("salaryCap");
-	const args = {
-		t: { tid, midLevelSeason: undefined },
-		p,
-		holds: 0,
-		rosterSize: 12,
-	};
-	// Over the cap, by the mid-level: 4 years at most.
-	const mle = { ...args, payroll: cap, amount: midLevelAmount() };
-	assert.isTrue(checkFor({ ...mle, years: 4 }).ok);
-	assert.isFalse(checkFor({ ...mle, years: 5 }).ok);
-	// The minimum: 2 years, or more in cap room.
-	const min = { ...args, amount: g.get("minContract") };
-	assert.isFalse(checkFor({ ...min, payroll: cap, years: 3 }).ok);
-	assert.isTrue(checkFor({ ...min, payroll: cap, years: 2 }).ok);
-	assert.isTrue(checkFor({ ...min, payroll: cap / 2, years: 3 }).ok);
+test("no Bird rights in free agency, except to match a restricted free agent", () => {
+	const season = g.get("season");
+	const p = {
+		...freeAgentLike(),
+		tid: PLAYER.FREE_AGENT,
+		stats: [{ season, tid, playoffs: false, gp: 10 }],
+		contracts: [],
+	} as any;
+	try {
+		g.setWithoutSavingToDB("phase", PHASE.RESIGN_PLAYERS);
+		assert.strictEqual(ownTid(p), tid);
+		g.setWithoutSavingToDB("phase", PHASE.FREE_AGENCY);
+		assert.isUndefined(ownTid(p));
+		p.faRestricted = true;
+		assert.strictEqual(ownTid(p), tid);
+		// Over the cap, his own team may pay him past the mid-level only while
+		// he is restricted.
+		delete p.faRestricted;
+		const over = {
+			t: { tid, midLevelSeason: undefined },
+			p,
+			payroll: g.get("salaryCap"),
+			amount: 2 * midLevelAmount(),
+			rosterSize: 12,
+		};
+		assert.isFalse(checkFor(over).ok);
+		p.faRestricted = true;
+		assert.isTrue(checkFor(over).ok);
+	} finally {
+		g.setWithoutSavingToDB("phase", PHASE.FREE_AGENCY);
+	}
 });
 
 test("the rules page has this league's numbers", () => {
 	const salaryCap = g.get("salaryCap");
 	const rules = contractRules();
 	assert.strictEqual(rules.salaryCap, salaryCap);
-	assert.strictEqual(rules.apron, g.get("luxuryPayroll"));
+	assert.strictEqual(rules.luxuryTax, g.get("luxuryPayroll"));
 	assert.strictEqual(
 		rules.hardCap,
 		g.get("luxuryPayroll") + cbaSettings.hardCapOverTax * salaryCap,
 	);
 	assert.strictEqual(rules.midLevel, cbaSettings.midLevel * salaryCap);
 	assert.strictEqual(rules.midLevelPct, 9);
-	assert.strictEqual(rules.taxpayerMidLevelPct, 5);
-	assert.deepEqual(
-		rules.tiers.map((tier) => tier.seasons),
-		["0-6", "7-9", "10+"],
-	);
-	assert.strictEqual(rules.tiers[0]!.amount, maxFor(0));
-	assert.strictEqual(rules.tiers[2]!.amount, g.get("maxContract"));
-	assert.strictEqual(rules.years.own, Math.min(5, g.get("maxContractLength")));
+	assert.strictEqual(rules.maxContract, g.get("maxContract"));
+	assert.strictEqual(rules.maxLength, g.get("maxContractLength"));
 	assert.strictEqual(rules.raiseOwn, 8);
 	assert.strictEqual(rules.raiseOther, 5);
 	assert.strictEqual(rules.stages.length, 5);
 });
 
-test("cap status: under the cap, over it, over the apron, at the hard cap", () => {
+test("cap status: under the cap, over it, over the tax, at the hard cap", () => {
 	const salaryCap = g.get("salaryCap");
 	const apron = g.get("luxuryPayroll");
 	const hardCap = apron + cbaSettings.hardCapOverTax * salaryCap;
 	assert.strictEqual(capStatusOf(tid, salaryCap - 1000), "under");
-	assert.strictEqual(capStatusOf(tid, salaryCap - 1000, 2000), "over");
+	assert.strictEqual(capStatusOf(tid, salaryCap + 1000), "over");
 	assert.strictEqual(capStatusOf(tid, apron + 1000), "apron");
 	assert.strictEqual(capStatusOf(tid, hardCap - 1), "hardCap");
 
@@ -358,7 +337,10 @@ test("cap status: under the cap, over it, over the apron, at the hard cap", () =
 		kind: "midLevel",
 		amount: cbaSettings.midLevel * salaryCap,
 	});
-	assert.strictEqual(exceptionOf(t, apron + 1000).kind, "taxpayerMidLevel");
+	assert.deepEqual(exceptionOf(t, hardCap - 2000), {
+		kind: "midLevel",
+		amount: 2000,
+	});
 	assert.strictEqual(
 		exceptionOf({ tid, midLevelSeason: g.get("season") + 1 }, salaryCap).kind,
 		"used",

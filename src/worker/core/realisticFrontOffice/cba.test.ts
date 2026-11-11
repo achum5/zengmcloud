@@ -4,18 +4,15 @@ import { resetG } from "../../../test/helpers.ts";
 import { g } from "../../util/index.ts";
 import {
 	amountsWithRaise,
-	apron,
 	birdTid,
-	cbaSettings,
 	checkSigning,
 	checkTradeSalary,
 	hardCap,
-	longestDeal,
 	maxFor,
 	midLevelAmount,
+	raiseLimit,
 	raisesOk,
 	serviceYears,
-	shapeLimits,
 } from "./cba.ts";
 
 beforeEach(() => {
@@ -40,10 +37,8 @@ const base = {
 	rosterSize: 12,
 };
 
-test("max tiers by seasons played: 25, 30 and 35% of the cap", () => {
-	assert.closeTo(maxFor(0), 25_000, 1e-6);
-	assert.closeTo(maxFor(6), 25_000, 1e-6);
-	assert.closeTo(maxFor(7), 30_000, 1e-6);
+test("one max contract for everyone", () => {
+	assert.closeTo(maxFor(0), 35_000, 1e-6);
 	assert.closeTo(maxFor(12), 35_000, 1e-6);
 });
 
@@ -93,11 +88,11 @@ test("under the cap, room; over it, only Bird rights, the mid-level or the minim
 	});
 });
 
-test("no mid-level past the apron, and nothing past the hard cap but minimums to fill a roster", () => {
-	assert.strictEqual(apron(), 120_000);
+test("the mid-level up to the hard cap, and nothing past it but minimums to fill a roster", () => {
 	assert.strictEqual(hardCap(1), 130_000);
-	assert.isFalse(
-		checkSigning({ ...base, payroll: 115_000, amount: midLevelAmount() }).ok,
+	assert.deepEqual(
+		checkSigning({ ...base, payroll: 115_000, amount: midLevelAmount() }),
+		{ ok: true, path: "midLevel" },
 	);
 	assert.isFalse(
 		checkSigning({ ...base, payroll: 125_000, amount: 10_000, own: true }).ok,
@@ -111,7 +106,7 @@ test("no mid-level past the apron, and nothing past the hard cap but minimums to
 			.ok,
 	);
 	assert.isFalse(
-		checkSigning({ ...base, payroll: 0, amount: 30_000, service: 3 }).ok,
+		checkSigning({ ...base, payroll: 0, amount: 40_000, service: 3 }).ok,
 	);
 });
 
@@ -122,14 +117,9 @@ test("the league's own hard cap counts where it is lower", () => {
 	assert.strictEqual(hardCap(2), 130_000);
 });
 
-test("contract shapes: lengths and raises", () => {
-	assert.deepEqual(shapeLimits("bird", true), {
-		years: cbaSettings.yearsOwn,
-		raise: cbaSettings.raiseOwn,
-	});
-	assert.strictEqual(shapeLimits("room", false).years, cbaSettings.yearsOther);
-	assert.strictEqual(shapeLimits("midLevel", false).years, 4);
-	assert.strictEqual(shapeLimits("minimum", true).years, 2);
+test("raises: more re-signing his own player", () => {
+	assert.strictEqual(raiseLimit(true), 0.08);
+	assert.strictEqual(raiseLimit(false), 0.05);
 	const amounts = amountsWithRaise(10_000, 4, 0.05);
 	assert.deepEqual(amounts, [10_000, 10_500, 11_000, 11_500]);
 	assert.isTrue(raisesOk(amounts, 0.05));
@@ -137,11 +127,11 @@ test("contract shapes: lengths and raises", () => {
 	assert.isTrue(raisesOk(amountsWithRaise(10_000, 4, -0.05), 0.05));
 });
 
-test("trades past the apron or the hard cap may not add salary", () => {
+test("trades past the hard cap may not add salary", () => {
 	assert.isTrue(
 		checkTradeSalary({
 			tid: 1,
-			payrollAfter: 110_000,
+			payrollAfter: 125_000,
 			incoming: 20_000,
 			outgoing: 10_000,
 		}).ok,
@@ -149,7 +139,7 @@ test("trades past the apron or the hard cap may not add salary", () => {
 	assert.isFalse(
 		checkTradeSalary({
 			tid: 1,
-			payrollAfter: 125_000,
+			payrollAfter: 135_000,
 			incoming: 20_000,
 			outgoing: 10_000,
 		}).ok,
@@ -161,30 +151,5 @@ test("trades past the apron or the hard cap may not add salary", () => {
 			incoming: 10_000,
 			outgoing: 10_000,
 		}).ok,
-	);
-});
-
-test("the longest deal: Bird rights 5 years, room 4, the mid-level 4, the taxpayer mid-level and the minimum 2", () => {
-	assert.strictEqual(longestDeal({ path: "bird", own: true, room: false }), 5);
-	assert.strictEqual(
-		longestDeal({ path: "minimum", own: true, room: false }),
-		5,
-	);
-	assert.strictEqual(longestDeal({ path: "room", own: false, room: true }), 4);
-	assert.strictEqual(
-		longestDeal({ path: "minimum", own: false, room: true }),
-		4,
-	);
-	assert.strictEqual(
-		longestDeal({ path: "midLevel", own: false, room: false }),
-		4,
-	);
-	assert.strictEqual(
-		longestDeal({ path: "taxpayerMidLevel", own: false, room: false }),
-		2,
-	);
-	assert.strictEqual(
-		longestDeal({ path: "minimum", own: false, room: false }),
-		2,
 	);
 });
