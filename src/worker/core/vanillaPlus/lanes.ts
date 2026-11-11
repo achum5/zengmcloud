@@ -37,8 +37,8 @@ export const laneSettings = {
 	allInShare: 0.2,
 	playoffShare: 0.5,
 	// Below the playoff teams: the worst this share rebuild, and any whose
-	// core (best eight by value) is this young; the rest retool if their core
-	// is this old, else try for the playoffs.
+	// core (best eight now) is this young; the rest retool if their core is
+	// this old, else try for the playoffs.
 	rebuildShare: 0.25,
 	youngCoreAge: 24,
 	retoolAge: 26.5,
@@ -167,7 +167,11 @@ const factsOf = async (): Promise<{ facts: Facts[]; progress: number }> => {
 			})),
 			{},
 		);
-		const core = [...roster].sort((a, b) => b.value - a.value).slice(0, 8);
+		// Its best eight now: by value with potential, a team's prospects
+		// would make almost every bad team look young.
+		const core = [...roster]
+			.sort((a, b) => b.valueNoPot - a.valueNoPot)
+			.slice(0, 8);
 		const coreAge =
 			core.length > 0
 				? core.reduce((s, p) => s + (season - p.born.year), 0) / core.length

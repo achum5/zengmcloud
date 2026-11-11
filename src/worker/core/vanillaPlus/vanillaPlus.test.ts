@@ -8,6 +8,7 @@ import { vanillaPlusSettings } from "./settings.ts";
 import { ensureLanes, type Lane } from "./lanes.ts";
 import { tweaksFor } from "./tweaks.ts";
 import { tradeValueCalculator } from "./index.ts";
+import makeItWork from "../trade/makeItWork.ts";
 
 const importNode = (name: string) => import(/* @vite-ignore */ name);
 const realRandom = Math.random;
@@ -117,5 +118,39 @@ test("a rebuilding team won't give its best player away", async () => {
 			tradingPartnerTid: 0,
 		});
 		assert.isBelow(dv, 0);
+	}
+});
+
+test("what would make it work never leaves a roster past the limit", async () => {
+	const lanes = await ensureLanes();
+	const calc = await tradeValueCalculator();
+	const maxRosterSize = g.get("maxRosterSize");
+	const best = (await idb.cache.players.indexGetAll("playersByTid", 0)).sort(
+		(a, b) => b.value - a.value,
+	)[0]!;
+	for (const tid of [...lanes.keys()].filter((tid) => tid !== 0)) {
+		const teams = await makeItWork(
+			[
+				{
+					tid: 0,
+					pids: [best.pid],
+					dpids: [],
+					pidsExcluded: [],
+					dpidsExcluded: [],
+				},
+				{ tid, pids: [], dpids: [], pidsExcluded: [], dpidsExcluded: [] },
+			],
+			{ holdUserConstant: false, valueChangeCalculator: calc },
+		);
+		if (!teams) {
+			continue;
+		}
+		for (const i of [0, 1] as const) {
+			const now = (
+				await idb.cache.players.indexGetAll("playersByTid", teams[i].tid)
+			).length;
+			const after = now - teams[i].pids.length + teams[1 - i]!.pids.length;
+			assert.isAtMost(after, Math.max(maxRosterSize, now));
+		}
 	}
 });

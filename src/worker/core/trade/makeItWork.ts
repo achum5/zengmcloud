@@ -2,10 +2,11 @@ import { player } from "../index.ts";
 import { idb } from "../../db/index.ts";
 import type { DraftPick, Player, TradeTeams } from "../../../common/types.ts";
 import isUntradable from "./isUntradable.ts";
-import { helpers } from "../../util/index.ts";
+import { g, helpers } from "../../util/index.ts";
 import { COMPOSITE_WEIGHTS, POSITIONS } from "../../../common/constants.ts";
 import { last } from "../../../common/utils.ts";
 import type { ValueChangeCalculator } from "../team/ValueChangeCalculator.ts";
+import { vanillaPlusOn } from "../realisticFrontOffice/isOn.ts";
 
 // What prices a deal for the AI team: the stock trade values, or with
 // realistic front offices the team's own read (realisticFrontOffice/
@@ -173,6 +174,27 @@ const tryAddAsset = async (
 				dp,
 			});
 		}
+	}
+
+	// Vanilla+: no player who would take a roster past the limit (or, one
+	// already past it in the offseason, past where it is now). Stock hands over
+	// a whole bench to even out a deal for a star, which the other side would
+	// then have to cut.
+	if (vanillaPlusOn()) {
+		const maxRosterSize = g.get("maxRosterSize");
+		const roomFor = async (i: 0 | 1) => {
+			const now = (
+				await idb.cache.players.indexGetAll("playersByTid", teams[i].tid)
+			).length;
+			const after = now - teams[i].pids.length + teams[1 - i]!.pids.length;
+			return Math.max(maxRosterSize, now) - after;
+		};
+		const room = [await roomFor(0), await roomFor(1)];
+		assets = assets.filter(
+			(asset) =>
+				asset.type !== "player" ||
+				room[asset.tid === teams[0].tid ? 1 : 0]! > 0,
+		);
 	}
 
 	// If there are no more to try, stop
