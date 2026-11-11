@@ -107,6 +107,38 @@ export const pick = <T>(rng: () => number, arr: T[], poolId?: string): T => {
 	return arr[chosenIdx]!;
 };
 
+// pick() for a pool whose MEMBERS change from game to game. pick remembers by
+// index, which means nothing when one game offers shapes [a, b, d] and the
+// next [b, c]: the rotation never engages and a night printed "The Suns also
+// got 16 points from X and 13 points from Y" three times. This remembers by
+// each option's own key, so a shape used once tonight waits its turn whatever
+// else is on offer beside it.
+export const pickKeyed = <T>(
+	rng: () => number,
+	options: { key: string; value: T }[],
+	poolId: string,
+): T => {
+	if (options.length <= 1) {
+		return options[0]!.value;
+	}
+	const id = `keyed|${poolId}`;
+	let used = phraseMemory.get(id);
+	if (!used) {
+		used = new Set<string>();
+		phraseMemory.set(id, used);
+	}
+	let fresh = options.filter((o) => !used!.has(o.key));
+	if (fresh.length === 0) {
+		for (const o of options) {
+			used.delete(o.key);
+		}
+		fresh = options;
+	}
+	const chosen = fresh[Math.floor(rng() * fresh.length)]!;
+	used.add(chosen.key);
+	return chosen.value;
+};
+
 // The day wrap says the same KINDS of things every night - the standings
 // frame, the skid line, tomorrow's schedule - and pick()'s memory resets
 // nightly, so consecutive evenings kept drawing the same variant ("cling to
@@ -452,6 +484,10 @@ export const takeVerb = (
 	usedVerbs.add(verb);
 	return verb;
 };
+
+// Whether a recap has not yet spent a verb: for a builder that writes its
+// own sentence and wants a word nobody above it used.
+export const verbFree = (verb: string): boolean => !usedVerbs.has(verb);
 
 // A verb written into a sentence directly rather than drawn from a pool. Says
 // so, so a later draw does not pick the same word.

@@ -1,5 +1,5 @@
 import { assert, describe, test } from "vitest";
-import { FlowLog, clockLeft } from "./gameFlow.ts";
+import { FlowLog, clockLeft, periodTopOf } from "./gameFlow.ts";
 
 // A game told as a list of scores, and what the summary should say about it.
 const play = (events: [0 | 1, number, number, number][], numPeriods = 4) => {
@@ -54,13 +54,45 @@ describe("FlowLog", () => {
 			[0, 2, 3, 320], // 9 straight from 3:400
 			[1, 2, 3, 300],
 		]);
+		// The play() helper gives every score of a side in a period to one
+		// man (side * 100 + period), so the run's top scorer has all of it.
 		assert.deepStrictEqual(f.run, {
 			side: 0,
 			pts: 9,
 			period: 3,
 			clock: 400,
 			endPeriod: 3,
+			topPid: 3,
+			topPts: 9,
 		});
+	});
+
+	// Whose quarter each one was, and whose run: what lets a recap say
+	// "scored 14 of his 31 in the fourth".
+	test("the top scorer of each period for each side, and of the run", () => {
+		const log = new FlowLog();
+		log.addPoints(0, 2, 1, 700, 11);
+		log.addPoints(0, 3, 1, 650, 12);
+		log.addPoints(1, 2, 1, 600, 21);
+		log.addPoints(0, 2, 1, 500, 11);
+		// Nobody on the road side scores in the second.
+		log.addPoints(0, 3, 2, 400, 12);
+		log.addPoints(0, 2, 2, 380, 12);
+		log.addPoints(0, 2, 2, 300, 11);
+		const f = log.summary(4);
+		assert.deepStrictEqual(periodTopOf(f, 1, 0), { pid: 11, pts: 4 });
+		assert.deepStrictEqual(periodTopOf(f, 1, 1), { pid: 21, pts: 2 });
+		assert.deepStrictEqual(periodTopOf(f, 2, 0), { pid: 12, pts: 5 });
+		assert.strictEqual(periodTopOf(f, 2, 1), undefined);
+		assert.strictEqual(periodTopOf(f, 3, 0), undefined);
+		assert.strictEqual(periodTopOf(undefined, 1, 0), undefined);
+		// The longest run is the home side's last nine; 12 scored five of them.
+		assert.strictEqual(f.run?.pts, 9);
+		assert.strictEqual(f.run?.topPid, 12);
+		assert.strictEqual(f.run?.topPts, 5);
+		// Flat numbers only: nothing a store that rejects nested arrays or
+		// undefined would choke on.
+		assert.ok(f.periodTop?.every((x) => typeof x === "number"));
 	});
 
 	// A 14-0 run that began with no time left in the first was all second
@@ -80,6 +112,9 @@ describe("FlowLog", () => {
 			period: 1,
 			clock: 5,
 			endPeriod: 2,
+			// Three in the first and seven in the second, by play()'s two men.
+			topPid: 2,
+			topPts: 7,
 		});
 	});
 

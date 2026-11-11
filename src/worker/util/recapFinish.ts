@@ -143,6 +143,10 @@ const aShot = (e: FinishEvent): string => {
 	return /free throws$/.test(name) ? name : `a ${name}`;
 };
 
+// "a 100-98", "an 81-80": a score with its article.
+const aScore = (a: number, b: number): string =>
+	/^(?:8|1[18]\b)/.test(String(a)) ? `an ${a}-${b}` : `a ${a}-${b}`;
+
 // "double" in the sim's "to force double overtime": which overtime it was.
 const OT_COUNTER: Record<string, number> = {
 	"": 1,
@@ -455,176 +459,249 @@ export const finishStory = (input: FinishInput, rng: Rng): string[] => {
 	}
 
 	if (goAhead) {
-		if (before?.name) {
-			const [w, l] = scoreOf(before.e, wSide);
-			const shot = shotBy(before.name, before.e, justNamed);
-			// Past perfect when the lede has already jumped ahead to the
-			// winning shot: the tie is being told out of order.
-			const had = shotTold ? "had " : "";
-			if (before.role === "tie" && ot && before.e.period < goAhead.e.period) {
-				// The tie that ended an overtime and forced the next. Told as
-				// any other tie, "Lonnie Ingram's three-pointer with 0.9 seconds
-				// left made it 97-97" sat between the shot that forced the first
-				// overtime and the second overtime's go-ahead basket, and the
-				// reader could not tell there had been a second.
-				say(
-					`${cap(shot)} ${when(before.e, rng)} ${had}tied it at ${w} and forced ${aOrdinal(before.e.period - regPeriods + 1)} overtime.`,
-					before.name,
-				);
-			} else if (before.role === "tie") {
-				const tied = [
-					`${cap(shot)} ${had}tied it at ${w} ${when(before.e, rng)}.`,
-					`${cap(shot)} ${when(before.e, rng)} ${had}made it ${w}-${w}.`,
-				];
-				say(
-					itWas
-						? pick(rng, tied, "finishTieNoIt")
-						: pick(
-								rng,
-								[
-									...tied,
-									`It was ${w}-${w} after ${shot} ${when(before.e, rng)}.`,
-								],
-								"finishTie",
-							),
-					before.name,
-				);
-			} else {
-				say(
-					pick(
-						rng,
-						[
-							`${cap(shot)} ${had}put ${L} up ${l}-${w} ${when(before.e, rng)}.`,
-							`${cap(L)} ${shotTold ? "had " : ""}led ${l}-${w} on ${shot} ${when(before.e, rng)}.`,
-						],
-						"finishLoserLead",
-					),
-					before.name,
-				);
+		// THE TIE AND THE BASKET THAT BROKE IT, IN ONE BREATH. "Quentin King's
+		// jumper tied it at 108 with 1:22 to play. Quentin Thompson's
+		// three-pointer with 1:07 to go put the Magic ahead 111-108 for good."
+		// is two box-score rows; the second is the answer to the first, and a
+		// writer says so: "...tied it at 108 with 1:22 to play, but Quentin
+		// Thompson answered with a three-pointer 15 seconds later to put the
+		// Magic ahead for good."
+		const merged = (() => {
+			if (
+				shotTold ||
+				!before?.name ||
+				!goAhead.name ||
+				before.e.period !== goAhead.e.period ||
+				(before.role === "tie" && ot && before.e.period < goAhead.e.period)
+			) {
+				return undefined;
 			}
-		} else if (!ot && lateRally(moments, goAheadIdx, wSide)) {
-			// The losers were in front all through the window until the
-			// go-ahead score, and by a real margin late: how far back the
-			// winners came, and how late, is the story. "The Jazz were up
-			// 100-91 with two minutes left" and then the winning three said
-			// nothing of the 103-94 with 56.8 seconds to go.
-			const rally = lateRally(moments, goAheadIdx, wSide)!;
-			const [w, l] = scoreOf(rally.peak.e, wSide);
-			const had = shotTold ? "had " : "";
-			const at = when(rally.peak.e, rng);
-			if (rally.unanswered) {
-				say(
-					pick(
-						rng,
-						[
-							`${cap(L)} ${had}led ${l}-${w} ${at} before ${W} scored the next ${rally.pts} points.`,
-							`${cap(W)} ${shotTold ? "had trailed" : "trailed"} ${l}-${w} ${at} and scored the next ${rally.pts} points.`,
-						],
-						"finishRally",
-					),
-				);
-			} else {
-				say(`${cap(L)} ${shotTold ? "had been" : "were"} up ${l}-${w} ${at}.`);
-				const cut = rally.lastCut;
-				if (cut?.name) {
-					const [cw, cl] = scoreOf(cut.e, wSide);
+			const [bw, bl] = scoreOf(before.e, wSide);
+			const [gw, gl] = scoreOf(goAhead.e, wSide);
+			const first = shotBy(before.name, before.e, justNamed);
+			const dt = before.e.clock - goAhead.e.clock;
+			const isLast = goAheadIdx === moments.length - 1;
+			const good = isLast ? "to stay" : "for good";
+			// "15 seconds later" when it was that quick; the clock otherwise.
+			const later =
+				dt >= 4 && dt <= 45
+					? `${Math.round(dt)} seconds later`
+					: when(goAhead.e, rng);
+			const setUp = nameOf(game, goAhead.e.ast);
+			const feed =
+				setUp &&
+				setUp !== goAhead.name &&
+				setUp !== before.name &&
+				goAhead.e.kind !== "ft" &&
+				(goAhead.e.clock <= 60 || isLast)
+					? ` off a pass from ${setUp}`
+					: "";
+			const sameMan = before.name === goAhead.name;
+			const go = sameMan
+				? `his ${shotName(goAhead.e)}`
+				: `${poss(goAhead.name)} ${shotName(goAhead.e)}`;
+			const answered = before.e.side !== wSide;
+			const text =
+				before.role === "tie"
+					? pick(
+							rng,
+							answered
+								? [
+										`${cap(first)} tied it at ${bw} ${when(before.e, rng)}, but ${goAhead.name} answered with ${aShot(goAhead.e)}${feed} ${later} to put ${W} ahead ${good}.`,
+										`${cap(first)} ${when(before.e, rng)} tied it at ${bw} before ${go}${feed} ${later} put ${W} ahead ${good}, ${gw}-${gl}.`,
+										`${cap(first)} tied it at ${bw} ${when(before.e, rng)}, only for ${goAhead.name} to put ${W} back in front ${good} with ${aShot(goAhead.e)}${feed} ${later}.`,
+									]
+								: [
+										`${cap(first)} tied it at ${bw} ${when(before.e, rng)}, and ${go}${feed} ${later} put ${W} in front ${good}.`,
+										`${cap(first)} ${when(before.e, rng)} tied it at ${bw}, and ${W} went ahead ${good} on ${go}${feed} ${later}.`,
+									],
+							answered ? "finishMergedTie" : "finishMergedTieOwn",
+						)
+					: pick(
+							rng,
+							[
+								`${cap(first)} put ${L} up ${bl}-${bw} ${when(before.e, rng)}, but ${goAhead.name} answered with ${aShot(goAhead.e)}${feed} ${later} and ${W} never trailed again.`,
+								`${cap(L)} led ${bl}-${bw} on ${first} ${when(before.e, rng)} before ${go}${feed} ${later} put ${W} ahead ${good}.`,
+								`${cap(first)} ${when(before.e, rng)} gave ${L} ${aScore(bl, bw)} lead, but ${go}${feed} ${later} put ${W} back in front ${good}, ${gw}-${gl}.`,
+							],
+							"finishMergedLead",
+						);
+			return { text, last: feed ? undefined : goAhead.name };
+		})();
+		if (merged) {
+			say(merged.text, merged.last);
+		}
+		if (!merged) {
+			if (before?.name) {
+				const [w, l] = scoreOf(before.e, wSide);
+				const shot = shotBy(before.name, before.e, justNamed);
+				// Past perfect when the lede has already jumped ahead to the
+				// winning shot: the tie is being told out of order.
+				const had = shotTold ? "had " : "";
+				if (before.role === "tie" && ot && before.e.period < goAhead.e.period) {
+					// The tie that ended an overtime and forced the next. Told as
+					// any other tie, "Lonnie Ingram's three-pointer with 0.9 seconds
+					// left made it 97-97" sat between the shot that forced the first
+					// overtime and the second overtime's go-ahead basket, and the
+					// reader could not tell there had been a second.
 					say(
-						`${cap(shotBy(cut.name, cut.e, justNamed))} ${when(cut.e, rng)} ${had}cut it to ${cl}-${cw}.`,
-						cut.name,
+						`${cap(shot)} ${when(before.e, rng)} ${had}tied it at ${w} and forced ${aOrdinal(before.e.period - regPeriods + 1)} overtime.`,
+						before.name,
 					);
-				}
-			}
-		} else if (!ot) {
-			// Nothing in the window before the go-ahead score: the losers were
-			// in front or level at the two-minute mark and did not score
-			// again before it.
-			const two = game.flow?.late?.find((m) => m.clock === 120);
-			if (two) {
-				const l = two.pts[1 - wSide]!;
-				const w = two.pts[wSide]!;
-				// The basket that won it is the lede's, so nothing between the
-				// two-minute score and the last one says how it turned: "The
-				// Spurs were up 120-116 with two minutes left. Darius Webb's
-				// free throw with no time left made the final 129-126." The
-				// two minutes, in two numbers: "The Nuggets outscored them 13-6
-				// from there."
-				const closing =
-					shotTold && l >= w
-						? `${cap(W)} outscored ${l > w ? "them" : L} ${winner.pts - w}-${loser.pts - l} from there.`
-						: undefined;
-				if (l > w) {
+				} else if (before.role === "tie") {
+					const tied = [
+						`${cap(shot)} ${had}tied it at ${w} ${when(before.e, rng)}.`,
+						`${cap(shot)} ${when(before.e, rng)} ${had}made it ${w}-${w}.`,
+					];
+					say(
+						itWas
+							? pick(rng, tied, "finishTieNoIt")
+							: pick(
+									rng,
+									[
+										...tied,
+										`It was ${w}-${w} after ${shot} ${when(before.e, rng)}.`,
+									],
+									"finishTie",
+								),
+						before.name,
+					);
+				} else {
 					say(
 						pick(
 							rng,
 							[
-								`${cap(L)} led ${l}-${w} with two minutes to go.`,
-								`${cap(L)} were up ${l}-${w} with two minutes left.`,
+								`${cap(shot)} ${had}put ${L} up ${l}-${w} ${when(before.e, rng)}.`,
+								`${cap(L)} ${shotTold ? "had " : ""}led ${l}-${w} on ${shot} ${when(before.e, rng)}.`,
 							],
-							"finishTwoMinutes",
+							"finishLoserLead",
+						),
+						before.name,
+					);
+				}
+			} else if (!ot && lateRally(moments, goAheadIdx, wSide)) {
+				// The losers were in front all through the window until the
+				// go-ahead score, and by a real margin late: how far back the
+				// winners came, and how late, is the story. "The Jazz were up
+				// 100-91 with two minutes left" and then the winning three said
+				// nothing of the 103-94 with 56.8 seconds to go.
+				const rally = lateRally(moments, goAheadIdx, wSide)!;
+				const [w, l] = scoreOf(rally.peak.e, wSide);
+				const had = shotTold ? "had " : "";
+				const at = when(rally.peak.e, rng);
+				if (rally.unanswered) {
+					say(
+						pick(
+							rng,
+							[
+								`${cap(L)} ${had}led ${l}-${w} ${at} before ${W} scored the next ${rally.pts} points.`,
+								`${cap(W)} ${shotTold ? "had trailed" : "trailed"} ${l}-${w} ${at} and scored the next ${rally.pts} points.`,
+							],
+							"finishRally",
 						),
 					);
-				} else if (l === w) {
+				} else {
 					say(
-						itWas
-							? `With two minutes to play, it was ${w}-${w}.`
-							: `It was ${w}-${w} with two minutes to play.`,
+						`${cap(L)} ${shotTold ? "had been" : "were"} up ${l}-${w} ${at}.`,
 					);
+					const cut = rally.lastCut;
+					if (cut?.name) {
+						const [cw, cl] = scoreOf(cut.e, wSide);
+						say(
+							`${cap(shotBy(cut.name, cut.e, justNamed))} ${when(cut.e, rng)} ${had}cut it to ${cl}-${cw}.`,
+							cut.name,
+						);
+					}
 				}
-				if (closing) {
-					say(closing);
+			} else if (!ot) {
+				// Nothing in the window before the go-ahead score: the losers were
+				// in front or level at the two-minute mark and did not score
+				// again before it.
+				const two = game.flow?.late?.find((m) => m.clock === 120);
+				if (two) {
+					const l = two.pts[1 - wSide]!;
+					const w = two.pts[wSide]!;
+					// The basket that won it is the lede's, so nothing between the
+					// two-minute score and the last one says how it turned: "The
+					// Spurs were up 120-116 with two minutes left. Darius Webb's
+					// free throw with no time left made the final 129-126." The
+					// two minutes, in two numbers: "The Nuggets outscored them 13-6
+					// from there."
+					const closing =
+						shotTold && l >= w
+							? `${cap(W)} outscored ${l > w ? "them" : L} ${winner.pts - w}-${loser.pts - l} from there.`
+							: undefined;
+					if (l > w) {
+						say(
+							pick(
+								rng,
+								[
+									`${cap(L)} led ${l}-${w} with two minutes to go.`,
+									`${cap(L)} were up ${l}-${w} with two minutes left.`,
+								],
+								"finishTwoMinutes",
+							),
+						);
+					} else if (l === w) {
+						say(
+							itWas
+								? `With two minutes to play, it was ${w}-${w}.`
+								: `It was ${w}-${w} with two minutes to play.`,
+						);
+					}
+					if (closing) {
+						say(closing);
+					}
 				}
 			}
-		}
 
-		// The pass that set up the decisive basket, when the log has it and
-		// the basket was the one that decided it - in the basket's own
-		// sentence. Its own ("Anthony Brooks set it up.") hung between the
-		// go-ahead three and the free throws like a caption.
-		const setUp = nameOf(game, goAhead.e.ast);
-		const feed =
-			!shotTold &&
-			setUp &&
-			setUp !== goAhead.name &&
-			goAhead.e.kind !== "ft" &&
-			(goAhead.e.clock <= 60 || goAheadIdx === moments.length - 1)
-				? ` off a pass from ${setUp}`
-				: "";
-		if (goAhead.name && !shotTold) {
-			const [w, l] = scoreOf(goAhead.e, wSide);
-			const shot = `${shotBy(goAhead.name, goAhead.e, justNamed)}${feed}`;
-			const isLast = goAheadIdx === moments.length - 1;
-			// "Answered" only when the losers had just scored; when the same
-			// side tied it and then went ahead, the second basket followed.
-			const answered = before !== undefined && before.e.side !== wSide;
-			const followed = before !== undefined && before.e.side === wSide;
-			say(
-				pick(
-					rng,
-					[
-						`${cap(shot)} ${when(goAhead.e, rng)} put ${W} ahead ${w}-${l}${isLast ? "" : " for good"}.`,
-						`${cap(W)} went in front ${isLast ? "to stay " : "for good "}on ${shot} ${when(goAhead.e, rng)}, ${w}-${l}.`,
-						...(answered
-							? [
-									`Then ${shot} ${when(goAhead.e, rng)} made it ${w}-${l}.`,
-									`${goAhead.name} answered with ${aShot(goAhead.e)}${feed} ${when(goAhead.e, rng)} that put ${W} up ${w}-${l}.`,
-								]
-							: followed
-								? [
-										`${cap(shot)} ${when(goAhead.e, rng)} then made it ${w}-${l}.`,
-										`${cap(W)} took the lead on ${shot} ${when(goAhead.e, rng)}, ${w}-${l}.`,
-									]
-								: // "Never trailed again" says they had trailed.
-									(game.flow?.maxLead[wSide === 0 ? 1 : 0] ?? 0) > 0
+			// The pass that set up the decisive basket, when the log has it and
+			// the basket was the one that decided it - in the basket's own
+			// sentence. Its own ("Anthony Brooks set it up.") hung between the
+			// go-ahead three and the free throws like a caption.
+			const setUp = nameOf(game, goAhead.e.ast);
+			const feed =
+				!shotTold &&
+				setUp &&
+				setUp !== goAhead.name &&
+				goAhead.e.kind !== "ft" &&
+				(goAhead.e.clock <= 60 || goAheadIdx === moments.length - 1)
+					? ` off a pass from ${setUp}`
+					: "";
+			if (goAhead.name && !shotTold) {
+				const [w, l] = scoreOf(goAhead.e, wSide);
+				const shot = `${shotBy(goAhead.name, goAhead.e, justNamed)}${feed}`;
+				const isLast = goAheadIdx === moments.length - 1;
+				// "Answered" only when the losers had just scored; when the same
+				// side tied it and then went ahead, the second basket followed.
+				const answered = before !== undefined && before.e.side !== wSide;
+				const followed = before !== undefined && before.e.side === wSide;
+				say(
+					pick(
+						rng,
+						[
+							`${cap(shot)} ${when(goAhead.e, rng)} put ${W} ahead ${w}-${l}${isLast ? "" : " for good"}.`,
+							`${cap(W)} went in front ${isLast ? "to stay " : "for good "}on ${shot} ${when(goAhead.e, rng)}, ${w}-${l}.`,
+							...(answered
+								? [`Then ${shot} ${when(goAhead.e, rng)} made it ${w}-${l}.`]
+								: followed
 									? [
-											`${cap(shot)} ${when(goAhead.e, rng)} made it ${w}-${l}, and ${W} never trailed again.`,
+											`${cap(shot)} ${when(goAhead.e, rng)} then made it ${w}-${l}.`,
+											`${cap(W)} took the lead on ${shot} ${when(goAhead.e, rng)}, ${w}-${l}.`,
 										]
-									: []),
-					],
-					"finishGoAhead",
-				),
-				// The passer was named last: a "he" next would be his.
-				feed ? undefined : goAhead.name,
-			);
+									: // "Never trailed again" says they had trailed.
+										(game.flow?.maxLead[wSide === 0 ? 1 : 0] ?? 0) > 0
+										? [
+												`${cap(shot)} ${when(goAhead.e, rng)} made it ${w}-${l}, and ${W} never trailed again.`,
+											]
+										: []),
+						],
+						"finishGoAhead",
+					),
+					// The passer was named last: a "he" next would be his.
+					feed ? undefined : goAhead.name,
+				);
+			}
 		}
 
 		// What followed: the losers getting close, and the winner closing it.
@@ -649,7 +726,7 @@ export const finishStory = (input: FinishInput, rng: Rng): string[] => {
 						[
 							`${shotBy(cut.name!, cut.e, justNamed)} ${when(cut.e, rng)} cut it to ${w}-${l}`,
 							`${shotBy(cut.name!, cut.e, justNamed)} pulled ${L} within ${cut.margin} ${when(cut.e, rng)}`,
-							`${cut.name} got ${L} back to ${w}-${l} with ${aShot(cut.e)} ${when(cut.e, rng)}`,
+							`${cut.name} got ${L} back to ${w}-${l} on ${aShot(cut.e)} ${when(cut.e, rng)}`,
 						],
 						"finishCut",
 					);
@@ -663,7 +740,7 @@ export const finishStory = (input: FinishInput, rng: Rng): string[] => {
 						return pick(
 							rng,
 							[
-								`${seal.name} sealed it with ${fts} ${when(seal.e, rng)}`,
+								`${seal.name} made ${fts} ${when(seal.e, rng)} to seal it`,
 								`${seal.name} made ${fts} ${when(seal.e, rng)} to close it out`,
 								`${poss(seal.name!)} ${bare} ${when(seal.e, rng)} finished it`,
 							],
@@ -726,7 +803,7 @@ export const finishStory = (input: FinishInput, rng: Rng): string[] => {
 			`${cap(cutText)}, but ${pick(
 				rng,
 				[
-					`${seal.name} answered with ${fts} ${when(seal.e, rng)}`,
+					`${seal.name} made ${fts} at the other end ${when(seal.e, rng)}`,
 					`${seal.name} made ${fts} ${when(seal.e, rng)} to put it away`,
 					`${W} closed it out at the line, ${seal.name} making ${fts} ${when(seal.e, rng)}`,
 				],

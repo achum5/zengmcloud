@@ -630,7 +630,7 @@ describe("edge cases", () => {
 				bigLead += 1;
 			}
 			if (
-				/fifth straight loss|lost five in a row|fifth in a row|5 straight losses/.test(
+				/fifth straight loss|lost five in a row|dropped five straight|fifth in a row|5 straight losses/.test(
 					recap,
 				)
 			) {
@@ -664,7 +664,8 @@ describe("edge cases", () => {
 		for (let gid = 1; gid <= 20; gid++) {
 			const recap = getAutoRecap(game([rookie, away], { gid }));
 			clean(recap);
-			if (/Rookie Ace Hawk/.test(recap)) {
+			// "Rookie Ace Hawk scored...", or "...from rookie Ace Hawk".
+			if (/[Rr]ookie Ace Hawk/.test(recap)) {
 				called += 1;
 			}
 			assert.deepEqual(verifyRecap(recap, game([rookie, away], { gid })), []);
@@ -680,7 +681,8 @@ describe("edge cases", () => {
 		for (let gid = 1; gid <= 20; gid++) {
 			const recap = getAutoRecap(game([vet, away], { gid }));
 			clean(recap);
-			if (/Ace Hawk, 36,/.test(recap)) {
+			// "Ace Hawk, 36, scored...", or "...from 36-year-old Ace Hawk".
+			if (/Ace Hawk, 36,|36-year-old Ace Hawk/.test(recap)) {
 				aged += 1;
 			}
 		}
@@ -1595,7 +1597,7 @@ describe("facts told once, in English", () => {
 		clean(recap);
 		// The streak is worth saying once; the form note must then stay quiet.
 		const streakSaid =
-			/straight loss|lost eight in a row|eighth in a row|straight losses/.test(
+			/straight loss|lost eight in a row|dropped eight straight|eighth in a row|straight losses/.test(
 				recap,
 			);
 		const formSaid =
@@ -1840,14 +1842,14 @@ describe("the lead that nearly went", () => {
 			});
 			const recap = getAutoRecap(g);
 			clean(recap);
-			if (/going into the fourth|entering the fourth/.test(recap)) {
-				assert.match(
-					recap,
-					/fourth quarter 29-19|\ba 29-19 fourth quarter/,
-					recap,
-				);
-				told += 1;
-			}
+			// A lead of 21 that ended as a three-point game: the quarter the
+			// losers did it in is told, every time.
+			assert.match(
+				recap,
+				/fourth quarter 29-19|\b[Aa] 29-19 fourth quarter/,
+				recap,
+			);
+			told += 1;
 			assert.notMatch(
 				recap,
 				/\ba (?:8|11|18)-|\ba (?:eight|eleven|eighteen)-/,
@@ -2337,7 +2339,9 @@ describe("a lede with room for the average", () => {
 				const lead = body[0]!;
 				if (threes === 6 || playoffs) {
 					assert.notInclude(lead, "who came in averaging", recap);
-				} else if (lead.includes("who came in averaging")) {
+				} else if (recap.includes("14.7")) {
+					// In the lede's own clause, or in the note on his night
+					// that follows his line.
 					roomy += 1;
 				}
 				assert.isAtMost(recap.match(/14\.7/g)?.length ?? 0, 1, recap);
@@ -2396,10 +2400,27 @@ describe("the fourth told against the half", () => {
 							/\b(?:half|halftime|break)\b/.test(sentences[i - 1]!) &&
 							/Wizards/.test(sentences[i - 1]!)
 						) {
-							told += 1;
 							assert.notMatch(
 								cur,
 								/Wizards were|were \d+ up|were up \d+/,
+								recap,
+							);
+						}
+					}
+					// The half and where it stood after three are one sentence
+					// now, with one subject: "led 60-52 at halftime and 80-78
+					// after three quarters".
+					for (const cur of sentences) {
+						if (
+							/\b(?:half|halftime|break)\b/.test(cur) &&
+							/after three quarters|going into the fourth|end of the third/.test(
+								cur,
+							)
+						) {
+							told += 1;
+							assert.isAtMost(
+								cur.match(/\b(?:The )?Wizards (?:were|led)\b/g)?.length ?? 0,
+								1,
 								recap,
 							);
 						}
@@ -2459,13 +2480,14 @@ describe("not 'led' twice running", () => {
 				for (let i = 1; i < sentences.length; i++) {
 					if (/ led \d+-\d+/.test(sentences[i - 1]!)) {
 						assert.notMatch(sentences[i]!, /\bled by as many as\b/, recap);
-						if (
-							/lead reached|pushed the lead|lead had reached/.test(
-								sentences[i]!,
-							)
-						) {
-							told += 1;
-						}
+					}
+				}
+				// And inside one sentence: "led 60-52 at halftime and by as many
+				// as 20", never "led ... and led by as many as".
+				for (const cur of sentences) {
+					assert.notMatch(cur, / led \d+-\d+[^.]* led by as many as/, recap);
+					if (/ led \d+-\d+ at halftime and /.test(cur)) {
+						told += 1;
 					}
 				}
 			}
@@ -2939,7 +2961,11 @@ describe("an overtime game told in order", () => {
 			});
 			const recap = getAutoRecap(g);
 			clean(recap);
-			assert.match(recap, /took the fourth quarter 34-16|34-16 fourth/, recap);
+			assert.match(
+				recap,
+				/(?:took|won) the fourth quarter 34-16|34-16 fourth/,
+				recap,
+			);
 			for (const para of recap.split("\n\n").slice(1)) {
 				const sentences = para.split(/(?<=\.) (?=[A-Z])/);
 				sentences.forEach((s, i) => {
@@ -3025,8 +3051,12 @@ describe("how it got close", () => {
 		let told = 0;
 		for (let gid = 1; gid <= 12; gid++) {
 			const text = recap(gid);
-			if (/stretched it to 20/.test(text)) {
-				assert.match(text, /Bulls took the fourth quarter 32-20/, text);
+			if (/as many as 20/.test(text)) {
+				assert.match(
+					text,
+					/Bulls (?:took|won) the fourth quarter 32-20|32-20 fourth quarter got the Bulls/,
+					text,
+				);
 				told += 1;
 			}
 		}
@@ -3044,10 +3074,10 @@ describe("how it got close", () => {
 		let told = 0;
 		for (let gid = 1; gid <= 12; gid++) {
 			const text = recap(gid);
-			if (/going into the fourth/.test(text)) {
+			if (/as many as 14/.test(text)) {
 				assert.match(
 					text,
-					/going into the fourth, but the Bulls (?:came back|rallied|fought back|took the fourth quarter 29-20|won the fourth quarter 29-20 to make it close|cut into it with a 29-20 fourth quarter)/,
+					/Bulls (?:took|won) the fourth quarter 29-20|29-20 fourth quarter got the Bulls/,
 					text,
 				);
 				told += 1;
@@ -3073,7 +3103,7 @@ describe("how it got close", () => {
 			const text = recap(gid);
 			assert.match(
 				text,
-				/Bulls took over after (?:the break|halftime), led by as many as 12 in the third and were still up 7 going into the fourth\. (?:The Hawks|They) won the fourth quarter 24-17\./,
+				/Hawks [^.]*58-48[^.]*, but the Bulls were up 7 going into the fourth\. (?:The Hawks|They) (?:won|took) the fourth quarter 24-17\b/,
 				text,
 			);
 		}

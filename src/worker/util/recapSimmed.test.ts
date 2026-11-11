@@ -512,7 +512,7 @@ describe("simmed recaps", () => {
 	// the Suns won by seven. A story that reaches the break goes past it.
 	test("the story never stops at halftime", () => {
 		const after =
-			/second half|after the break|after halftime|going into the|entering the|fourth|third|overtime|extra period|with \d|seconds|for good|ahead for the last time|never|did not trail|pulled away|lead reached|as many as|at their biggest|from there|had led|nearly|let it go|got as close/i;
+			/second half|after the break|after halftime|after three|going into the|entering the|fourth|third|overtime|extra period|with \d|seconds|two minutes|for good|ahead for the last time|never|did not trail|pulled away|lead reached|as many as|at their biggest|from there|had led|nearly|let it go|got as close/i;
 		for (const { gid, recap } of pairs) {
 			const story = recap.split("\n\n").slice(1, 3).join(" ");
 			const sents = story.split(/(?<=[!.?])\s+/);
@@ -651,9 +651,14 @@ describe("simmed recaps", () => {
 			}
 			seen += 1;
 			const q = `${wq[3]}-${lq[3]}`;
+			// However it is said: "a 32-19 fourth quarter", "won the final
+			// quarter 32-19", "...going into the fourth, where the Bucks won
+			// the quarter 32-19", "outscored them 32-19 the rest of the way".
 			assert.isTrue(
 				recap.includes(`${q} fourth quarter`) ||
-					recap.includes(`fourth quarter ${q}`),
+					new RegExp(
+						String.raw`(?:fourth|final|last)(?: quarter)? ${q}|the quarter ${q}|${q} the rest of the way`,
+					).test(recap),
 				`gid ${gid}: no ${q} fourth quarter\n${recap}`,
 			);
 		}
@@ -755,14 +760,21 @@ describe("simmed recaps", () => {
 	// point at.
 	test("a sentence opening on He follows one that names him", () => {
 		for (const { gid, recap, game } of pairs) {
+			// By his whole name, or by his surname on a second reference
+			// ("Iverson led the Nets with 30 points... He has...").
 			const names = game.teams.flatMap((t) => t.players.map((p) => p.name));
 			const body = recap.split("\n\n").slice(1).join(" ");
 			const sentences = body.split(/(?<=[!.?])\s+/);
 			sentences.forEach((x, i) => {
 				if (/^(?:He|His)\b/.test(x)) {
 					const prev = sentences[i - 1] ?? "";
+					const named = names.filter(
+						(n) =>
+							prev.includes(n) ||
+							new RegExp(String.raw`\b${n.split(" ").at(-1)}\b`).test(prev),
+					);
 					assert.ok(
-						names.filter((n) => prev.includes(n)).length === 1,
+						new Set(named.map((n) => n.split(" ").at(-1))).size === 1,
 						`gid ${gid}: ${prev} || ${x}`,
 					);
 				}
@@ -796,8 +808,9 @@ describe("simmed recaps", () => {
 		for (const { gid, recap } of pairs) {
 			const m = / scores (\d+)(?: as |, and )/.exec(recap.split("\n")[0]!);
 			if (m) {
+				// In the lede, or in his own sentence at the head of the cast.
 				assert.include(
-					recap.split("\n\n")[1],
+					recap.split("\n\n").slice(1).join(" "),
 					`${m[1]} points`,
 					`gid ${gid}\n${recap}`,
 				);
@@ -814,9 +827,9 @@ describe("simmed recaps", () => {
 		for (const { gid, recap, game } of pairs) {
 			const { w, l } = sides(game);
 			if (
-				/did them in|proved costly|kept undoing|were far too many|coughed it up \d+|gave it away \d+ times|undone by \d+ turnovers|turnovers that beat|could not hold on to it/.test(
-					recap,
-				)
+				new RegExp(
+					String.raw`${l.name}[^.]*?(?:committed \d+ turnovers|turned the ball over \d+ times)`,
+				).test(recap)
 			) {
 				seen += 1;
 				assert.isAtLeast(
@@ -826,9 +839,9 @@ describe("simmed recaps", () => {
 				);
 			}
 			if (
-				/shot just [\d.]+% as a team|shot [\d.]+% from the floor|% shooting night for the team|they shot [\d.]+% from the floor|never found the range|Shooting [\d.]+% was never/.test(
-					recap,
-				)
+				new RegExp(
+					String.raw`${l.name}[^.]*?(?:shot just [\d.]+%|shot [\d.]+% from the field|made only [\d.]+% of their shots)`,
+				).test(recap)
 			) {
 				const pct = (t: RecapTeam) => (100 * total(t, "fg")) / total(t, "fga");
 				assert.isAtLeast(pct(w) - pct(l), 4.9, `gid ${gid}\n${recap}`);
@@ -986,7 +999,7 @@ describe("simmed recaps", () => {
 	// half. A second half that moved the game is told.
 	test("a second half that moved the game gets told", () => {
 		const LATER =
-			/second half|after the break|after halftime|third|fourth|going into the|entering the|for good|for the last time|with \d+:\d\d|seconds|two minutes|the rest of the way|from there|pushed on|never (?:led|trailed|got back)|as many as \d+\.|lead reached|the final|overtime|stretched|got within|cut it|pulled/i;
+			/second half|after the break|after halftime|after three|third|fourth|going into the|entering the|for good|for the last time|with \d+:\d\d|seconds|two minutes|the rest of the way|from there|pushed on|never (?:led|trailed|got back)|as many as \d+\.|lead reached|the final|overtime|stretched|got within|cut it|pulled/i;
 		for (const { gid, recap, game } of pairs) {
 			const { w, l } = sides(game);
 			const wq = w.ptsQtrs ?? [];

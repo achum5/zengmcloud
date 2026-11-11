@@ -113,11 +113,13 @@ describe("finishStory", () => {
 			// The losers' lead is the thing the go-ahead shot answered.
 			assert.match(text, /Anthony King's jumper/);
 			assert.match(text, /101-99/);
+			// The answer is told in the same breath, by its own clock or as
+			// "15 seconds later" (40 seconds left, less 15, is the 24.9).
 			assert.match(
 				text,
-				/Marcus Nowell's three-pointer .*24\.9 seconds|three-pointer with 24\.9 seconds/,
+				/Marcus Nowell(?:'s three-pointer| answered with a three-pointer)[^.]*(?:24\.9 seconds|15 seconds later)/,
 			);
-			assert.match(text, /102-101/);
+			assert.match(text, /102-101|never trailed again|ahead for good/);
 			assert.match(text, /Tyrese Nowell.*two free throws.*4\.1 seconds/);
 			assert.ok(out.length <= 3, text);
 			// The accuracy reader holds every score against the log.
@@ -194,7 +196,11 @@ describe("finishStory", () => {
 		assert.match(text, /3\.2 seconds/);
 		assert.match(text, /Anthony King's three-pointer/);
 		assert.match(text, /99-98/);
-		assert.match(text, /Tyrese Nowell.*jumper.*100-99/);
+		// The answer, in the same sentence as the lead it took back.
+		assert.match(
+			text,
+			/Tyrese Nowell.*jumper.*(?:100-99|never trailed again|ahead for good)/,
+		);
 		assert.match(text, /Marcus Nowell.*two free throws/);
 		(game.teams[0] as any).ptsQtrs = [36, 22, 24, 22];
 		(game.teams[1] as any).ptsQtrs = [16, 30, 28, 27];
@@ -619,9 +625,11 @@ describe("a late rally", () => {
 		]);
 		for (let seed = 0; seed < 8; seed++) {
 			const text = tell(game, seed).join(" ");
+			// By its own clock, or as "21 seconds later" after the tie it
+			// answered (50 seconds left, less 21, is the 28.8).
 			assert.match(
 				text,
-				/three-pointer off a pass from Tyrese Nowell with 28\.8 seconds/,
+				/three-pointer off a pass from Tyrese Nowell (?:with 28\.8 seconds|21 seconds later)/,
 				text,
 			);
 			assert.notMatch(text, /set it up|had the assist/, text);

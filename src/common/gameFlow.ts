@@ -69,7 +69,17 @@ export type GameFlow = {
 		period: number;
 		clock: number;
 		endPeriod?: number;
+		// The man who scored the most of it, and how many. Absent in games
+		// simmed before it was recorded.
+		topPid?: number;
+		topPts?: number;
 	};
+	// Whose quarter each one was: the top scorer of every period for each
+	// side, flat - four numbers a period (home pid, home pts, away pid, away
+	// pts), -1 and 0 where a side has nobody. Overtimes follow regulation.
+	// What lets a recap say "scored 14 of his 31 in the fourth". Absent in
+	// games simmed before it was recorded. Read it with periodTopOf.
+	periodTop?: number[];
 	// The score with five minutes and with two minutes left in regulation.
 	late?: { clock: number; pts: [number, number] }[];
 	// Every score inside the last two minutes of regulation and all of
@@ -171,6 +181,10 @@ export class FlowLog {
 		let runPts = 0;
 		let runStart = { period: 1, clock: 0 };
 		let bestRun = 0;
+		let runScorers = new Map<number, number>();
+
+		// Points by man, by period, by side.
+		const byPeriod: [Map<number, number>, Map<number, number>][] = [];
 
 		const late = new Map<number, [number, number]>();
 		const finish: FinishEvent[] = [];
@@ -198,20 +212,34 @@ export class FlowLog {
 				});
 			}
 
+			if (e.pid !== undefined && e.period >= 1) {
+				while (byPeriod.length < e.period) {
+					byPeriod.push([new Map(), new Map()]);
+				}
+				const m = byPeriod[e.period - 1]![e.side];
+				m.set(e.pid, (m.get(e.pid) ?? 0) + e.pts);
+			}
+
 			if (runSide === e.side) {
 				runPts += e.pts;
 			} else {
 				runSide = e.side;
 				runPts = e.pts;
 				runStart = { period: e.period, clock: e.clock };
+				runScorers = new Map();
+			}
+			if (e.pid !== undefined) {
+				runScorers.set(e.pid, (runScorers.get(e.pid) ?? 0) + e.pts);
 			}
 			if (runPts > bestRun) {
 				bestRun = runPts;
+				const top = topOf(runScorers);
 				out.run = {
 					side: e.side,
 					pts: runPts,
 					...runStart,
 					endPeriod: e.period,
+					...(top ? { topPid: top[0], topPts: top[1] } : {}),
 				};
 			}
 
@@ -267,6 +295,12 @@ export class FlowLog {
 			}));
 		}
 
+		if (byPeriod.length > 0) {
+			out.periodTop = byPeriod.flatMap((sides) =>
+				sides.flatMap((m) => topOf(m) ?? [-1, 0]),
+			);
+		}
+
 		const wentToOvertime = this.events.some((e) => e.period > numPeriods);
 		if (
 			finish.length > 0 &&
@@ -277,6 +311,31 @@ export class FlowLog {
 		return out;
 	}
 }
+
+// The biggest entry of a pid -> points tally, first to get there on a tie.
+const topOf = (m: Map<number, number>): [number, number] | undefined => {
+	let best: [number, number] | undefined;
+	for (const [pid, pts] of m) {
+		if (!best || pts > best[1]) {
+			best = [pid, pts];
+		}
+	}
+	return best;
+};
+
+// A side's top scorer in a period (1 is the first), from GameFlow.periodTop.
+export const periodTopOf = (
+	flow: Pick<GameFlow, "periodTop"> | undefined,
+	period: number,
+	side: GameFlowSide,
+): { pid: number; pts: number } | undefined => {
+	const at = (period - 1) * 4 + side * 2;
+	const pid = flow?.periodTop?.[at];
+	const pts = flow?.periodTop?.[at + 1];
+	return pid !== undefined && pts !== undefined && pid >= 0 && pts > 0
+		? { pid, pts }
+		: undefined;
+};
 
 // "3:41", or "9.9 seconds" inside the last minute, or nothing for a clock
 // that means nothing (an Elam ending).

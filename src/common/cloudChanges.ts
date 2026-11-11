@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 281,
+		date: "2026-11-11",
+		text: 'Game recaps are rewritten to read as the story of the game instead of a list of numbers: one opening sentence with the result and what made the game, then how it went - who led, when it turned, how it finished - then who did it for each side and why the other side lost. Sentences repeat far less from one game to the next. Games played from now on also say whose quarter or run it was ("scored 14 of his 31 in the fourth").',
+	},
+	{
 		n: 280,
 		date: "2026-11-11",
 		text: 'Realistic Front Offices: "What would make this work" no longer asks for players or picks you\'ve excluded from the trade.',

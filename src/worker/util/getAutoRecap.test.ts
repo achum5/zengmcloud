@@ -186,7 +186,10 @@ describe("getAutoRecap", () => {
 		const headline = recap.split("\n")[0]!;
 		assert.ok(headline.includes("Marcus Ellis"), headline);
 		assert.ok(headline.includes("Yuta Dunn"), headline);
-		assert.match(recap, /Yuta Dunn won it/, recap);
+		// The lede has both men: the night and the shot that won it.
+		const lede = recap.split("\n\n")[1]!;
+		assert.match(lede, /Marcus Ellis had 45 points/, recap);
+		assert.match(lede, /Yuta Dunn made a layup with 1\.5 seconds left/, recap);
 	});
 
 	test("triple-double is stated, never inflated", () => {
@@ -344,7 +347,8 @@ describe("getAutoRecap", () => {
 			overtimes: 1,
 		});
 		const recap = getAutoRecap(g);
-		assert.ok(recap.includes("(OT)"), recap);
+		// As the tag on the score, or in words.
+		assert.ok(/\(OT\)|in overtime/.test(recap), recap);
 		assert.ok(recap.includes("Jahidi White"), recap);
 	});
 
@@ -544,8 +548,8 @@ describe("recap quality (from real Day 1 output)", () => {
 		// game-winner".
 		assert.ok(/game-winner/.test(recap), recap);
 		assert.ok(
-			recap.includes(
-				"Lindsey Hunter won it on a go-ahead basket with 2 seconds left",
+			/Lindsey Hunter (?:won it on|hit) a go-ahead basket with 2 seconds left/.test(
+				recap,
 			),
 			recap,
 		);
@@ -750,7 +754,9 @@ describe("recap quality (from real Day 1 output)", () => {
 		);
 		// His total rides with the winning shot...
 		assert.ok(
-			/Viktor Khryapa won it on .* and finished with 23 points/.test(recap),
+			/Viktor Khryapa (?:won it on|converted) .* and finished with 23 points/.test(
+				recap,
+			),
 			recap,
 		);
 		// ...so the supporting cast must not introduce him a second time. His
@@ -4120,9 +4126,9 @@ describe("copy that only reads wrong in context", () => {
 				}),
 			);
 			if (
-				/led the Grizzlies|paced the Grizzlies|fronted the Grizzlies|headed the Grizzlies|topped the Grizzlies/.test(
-					recap,
-				)
+				// Of a man, not of the winners ("handled the Grizzlies",
+				// "topped the Grizzlies 112-99").
+				/\b(?:led|paced|fronted|headed) the Grizzlies with\b/.test(recap)
 			) {
 				assert.ok(!/Van Horn/.test(recap), recap);
 			}
@@ -6894,32 +6900,25 @@ describe("no branch has only one phrasing", () => {
 	const BRANCHES: [string, RegExp][] = [
 		[
 			"loser turnovers",
-			// The quiet-leader shapes come first now: the team-only ones fire
-			// only when nobody on the losing side reached 12.
-			/led the \w+ with \d+ points, but|Nobody had more than .* for the \w+, but|from anyone, .* leading the way, but|undone by \d+ turnovers|gave the ball away \d+ times|turnovers were what beat|could not hold on to it - \d+ giveaways/,
+			/committed \d+ turnovers|turned the ball over \d+ times/,
 		],
 		[
 			"free-throw edge",
-			/made \d+ free throws to \d+ for|lived at the line, making|made free throws to \d+ in .*favor/,
-		],
-		[
-			"whistle gap",
-			// No trailing "\." on the first alternative: the sentence splitter
-			// above consumes the period, so requiring one meant that phrasing
-			// could only ever match as the last sentence of a paragraph - and
-			// the branch read as though it had one shape when it has four.
-			/shot \d+ free throws to \d+|whistle went one way|got to the line (?:more than twice|far more) often|were beaten at the line/,
+			/went to the line \d+ times to|shot \d+ free throws to/,
 		],
 		[
 			"snapped streak",
 			/snapped .*(?:\d+|[a-z]+)-game winning streak|had won (?:\d+|[a-z]+) in a row until this one|(?:\d+|[a-z]+)-game winning streak is over/,
 		],
 		[
-			"first-quarter run",
-			// Two pools, one angle: the hot start, and the hot start in a game
-			// that then got close. The game story tells it too now, as part of
-			// the half ("won the first quarter 31-21 and led 55-44 at halftime").
-			/jumped out to a \d+-\d+ first quarter|was \d+-\d+ after one|ahead almost immediately|had to hold on|clawing back|very nearly not enough|(?:won|took) the first quarter \d+-\d+|won the quarter \d+-\d+/,
+			// The break, which every story passes through.
+			"the half",
+			/at halftime|at the half\b|into halftime/,
+		],
+		[
+			// The two men behind the star.
+			"the winners' cast",
+			/ for the Team\d+\b|got \d+ points[^.]* from |gave the Team\d+ \d+ points|There were (?:also )?\d+ points/,
 		],
 	];
 
@@ -7652,7 +7651,10 @@ describe("the star's shooting split", () => {
 
 	const splitSentence = (g: RecapGame) => {
 		const recap = getAutoRecap(g);
-		const m = /(?:Vince Dunn|The shooting)[^.]*\d+-of-\d+[^.]*\./.exec(recap);
+		// By his whole name, or by his surname after a lede that named him.
+		const m = /(?:Vince Dunn|\bDunn|The shooting)[^.]*\d+-of-\d+[^.]*\./.exec(
+			recap,
+		);
 		return m ? m[0] : undefined;
 	};
 
@@ -7678,7 +7680,7 @@ describe("the star's shooting split", () => {
 			// man the headline is about.
 			assert.match(
 				text,
-				/the hard way|(?:had|totaled|put together) \d+ points(?: and \d+ \w+)? on \d+-of-\d+ shooting|went \d+-of-\d+ from the floor for/,
+				/the hard way|(?:had|totaled|put together|finished with|led the \w+ with) \d+ points(?: and \d+ \w+)? on \d+-of-\d+ shooting|(?:went|shot) \d+-of-\d+ (?:from the floor for|on the way to)/,
 				text,
 			);
 			assert.doesNotMatch(text, /not pretty/, text);
@@ -7760,8 +7762,16 @@ describe("the second man who outscored the first", () => {
 	// to the scorer - and is still told.
 	test("eleven points more and the scorer leads", () => {
 		const recap = getAutoRecap(twoMen(22, 33));
-		const lede = recap.split("\n\n")[1]!;
-		assert.match(lede, /^Lonnie Green\b|\. Lonnie Green\b/, recap);
+		// The scorer is the story: the headline is his, and he is the first
+		// of the two the body names.
+		const [head, ...rest] = recap.split("\n\n");
+		const body = rest.join(" ");
+		assert.ok(head!.includes("Lonnie Green"), recap);
+		assert.ok(body.includes("Lonnie Green"), recap);
+		assert.ok(
+			body.indexOf("Lonnie Green") < body.indexOf("Keegan Green"),
+			recap,
+		);
 		assert.ok(recap.includes("Keegan Green"), recap);
 	});
 
@@ -7773,9 +7783,14 @@ describe("the second man who outscored the first", () => {
 		const pick = g.teams[0].players[0]!;
 		Object.assign(pick, { ast: 3, reb: 10, stl: 1, fg: 5, fga: 20 });
 		const recap = getAutoRecap(g);
-		const [head, lede] = recap.split("\n\n");
+		const [head, ...rest] = recap.split("\n\n");
+		const body = rest.join(" ");
 		assert.ok(head!.includes("Lonnie Green"), recap);
-		assert.match(lede!, /^Lonnie Green\b|\. Lonnie Green\b/, recap);
+		assert.ok(
+			body.includes("Lonnie Green") &&
+				body.indexOf("Lonnie Green") < body.indexOf("Keegan Green"),
+			recap,
+		);
 		assert.ok(recap.includes("Keegan Green"), recap);
 		// The same line on 10-of-20 keeps it.
 		Object.assign(pick, { fg: 10 });
@@ -8265,13 +8280,17 @@ describe("the wire lede", () => {
 			);
 			const lede = recap.split("\n\n")[1]!;
 			if (
-				/for their sixth (?:straight win|win in a row|consecutive win)/.test(
+				/for their sixth (?:straight win|win in a row|consecutive win)|won their sixth straight|winning streak to six/.test(
 					lede,
 				)
 			) {
 				told += 1;
 				assert.strictEqual(
-					(recap.match(/sixth|6 straight|6 wins|streak to 6/g) ?? []).length,
+					(
+						recap.match(
+							/sixth|six straight|6 straight|6 wins|streak to (?:6|six)/g,
+						) ?? []
+					).length,
 					1,
 					recap,
 				);
@@ -8569,11 +8588,13 @@ describe("the game story", () => {
 		for (let seed = 0; seed < 15; seed++) {
 			const recap = getAutoRecap(build(seed));
 			const half = recap.search(/52-42/);
-			const turn = recap.search(/58-38/);
+			// The turn: the third quarter the run came in, by its score, or
+			// the second half's.
+			const turn = recap.search(/58-38|won the quarter 30-18/);
 			assert.ok(half >= 0 && turn > half, recap);
 			assert.match(
 				recap,
-				/(?:ran off 14 straight points|went on a 14-0 run|scored 14 unanswered points) in the third/,
+				/(?:(?:ran|reeled) off 14 straight points|went on a 14-0 run|scored 14 (?:unanswered|straight) points) in the third/,
 				recap,
 			);
 			assert.deepEqual(verifyRecap(recap, build(seed)), [], recap);
@@ -8787,7 +8808,7 @@ describe("the story goes past halftime, in order", () => {
 			);
 			assert.match(
 				recap,
-				/9 up going into the fourth|9-point game (?:entering|going into) the fourth|fourth, the Suns were up 9|(?:grown|out) to 9 going into the fourth/,
+				/9 up going into the fourth|9-point game (?:entering|going into) the fourth|fourth, the Suns were up 9|(?:grown|out) to 9 going into the fourth|86-77 (?:after three quarters|through three quarters|going into the fourth|with a quarter to play)/,
 				recap,
 			);
 		}
@@ -8812,11 +8833,19 @@ describe("the story goes past halftime, in order", () => {
 					gid,
 				),
 			);
-			// The story paragraph: the lede may name the fourth quarter.
-			const story = recap.split("\n\n")[2] ?? "";
-			const peak = story.search(/Bucks[^.]*(?:as many as|up by|led by) 12/);
+			// The story, after the lede's own sentence (which may name the
+			// fourth quarter): a short one shares the lede's paragraph.
+			const story = recap
+				.split("\n\n")
+				.slice(1, 3)
+				.join(" ")
+				.replace(/^[^.]*\.\s*/, "");
+			// Their lead, by its size or by the halftime score it left them.
+			const peak = story.search(
+				/Bucks[^.]*(?:as many as|up by|led by) 12|56-47 at half/,
+			);
 			const second = story.search(
-				/second half|after the break|after halftime|fourth/i,
+				/second half|after the break|after halftime|third quarter|fourth/i,
 			);
 			if (peak >= 0 && second >= 0) {
 				seen += 1;
@@ -8876,7 +8905,10 @@ describe("the story goes past halftime, in order", () => {
 			);
 			const recap = getAutoRecap(g);
 			const peak = recap.search(/as many as 18 in the second/);
-			const fourth = recap.search(/going into the fourth/);
+			// How it went: the third quarter that took the lead away.
+			const fourth = recap.search(
+				/going into the fourth|took the third quarter 40-22 to go ahead 86-79/,
+			);
 			assert.ok(peak >= 0 && fourth > peak, recap);
 			assert.doesNotMatch(
 				recap,
@@ -8911,7 +8943,7 @@ describe("the story goes past halftime, in order", () => {
 			const recap = getAutoRecap(g);
 			assert.match(
 				recap,
-				/as many as 16 in the third and were still 12 up going into the fourth|lead reached 16 in the third and was still 12 going into the fourth/,
+				/as many as 16 in the third[^.]*\. The Bucks (?:came all the way back to lead in the fourth|took the lead in the fourth)/,
 				recap,
 			);
 			assert.match(recap, /2:51/, recap);
@@ -8961,7 +8993,11 @@ describe("the story goes past halftime, in order", () => {
 				gid,
 			);
 			const recap = getAutoRecap(g);
-			assert.match(recap, /fourth quarter 33-21|33-21 fourth quarter/, recap);
+			assert.match(
+				recap,
+				/fourth quarter 33-21|33-21 fourth quarter|fourth quarter went to the Suns, 33-21|won the fourth 33-21/,
+				recap,
+			);
 			assert.deepEqual(verifyRecap(recap, g), [], recap);
 		}
 	});
@@ -8990,7 +9026,11 @@ describe("the story goes past halftime, in order", () => {
 				/14 (?:straight points|unanswered) in the|14-0 (?:run|burst) in the/,
 				recap,
 			);
-			if (/spanning the first and second quarters/.test(recap)) {
+			if (
+				/spanning the first and second quarters|late in the first quarter and early in the second/.test(
+					recap,
+				)
+			) {
 				seen += 1;
 			}
 			assert.deepEqual(verifyRecap(recap, g), [], recap);
@@ -9016,7 +9056,9 @@ describe("the story goes past halftime, in order", () => {
 			);
 			const recap = getAutoRecap(g);
 			const half = recap.search(/56-49/);
-			const run = recap.search(/spanning halftime/);
+			const run = recap.search(
+				/spanning halftime|either side of (?:halftime|the break)|straddled the break/,
+			);
 			if (run >= 0) {
 				seen += 1;
 				assert.ok(half >= 0 && run > half, recap);
@@ -9171,7 +9213,10 @@ describe("the story goes past halftime, in order", () => {
 			const forced = recap.search(
 				/sent it to overtime|forced overtime|force the extra period/,
 			);
-			const run = recap.search(/last 12 points|12 unanswered|12 straight/);
+			// The extra period's 12 straight, as a run or as its 12-2 score.
+			const run = recap.search(
+				/last 12 points|12 unanswered|12 straight|overtime 12-2|12-2 in overtime/,
+			);
 			if (run >= 0) {
 				seen += 1;
 				assert.ok(forced >= 0 && run > forced, recap);
@@ -9334,7 +9379,11 @@ test("a comeback rout tells the deficit once and the clock forward", () => {
 				);
 			}
 			const peak = recap.search(/as many as 21|lead reached 21|up by 21/);
-			const forGood = recap.search(/for good|for the last time/);
+			// When the lead was taken: by the basket, or by the third quarter
+			// it was taken in.
+			const forGood = recap.search(
+				/for good|for the last time|third quarter 36-16|36-16 third quarter/,
+			);
 			if (peak >= 0 && forGood >= 0) {
 				ordered += 1;
 				assert.ok(forGood < peak, recap);
@@ -9393,7 +9442,7 @@ test("a second-quarter run is not told before the first quarter", () => {
 				}),
 			);
 			const run = recap.search(/15-0|15 straight|15 unanswered/);
-			const first = recap.search(/first quarter 35-20/);
+			const first = recap.search(/first quarter 35-20|35-20 after one quarter/);
 			if (run >= 0 && first >= 0) {
 				both += 1;
 				assert.ok(run > first, recap);
@@ -9526,11 +9575,11 @@ test("a quiet leader's reason is more of the same, not a contrast", () => {
 			);
 			assert.doesNotMatch(
 				recap,
-				/(?:from anyone|Nobody had more than)[^.]*, (?:but|though|on a night)\b/,
+				/(?:from anyone|Nobody (?:had|scored) more than|nobody with more than)[^.]*, (?:but|though|on a night)\b/,
 				recap,
 			);
 			if (
-				/(?:from anyone|Nobody had more than)[^.]*, and they turned it over 21 times/.test(
+				/(?:from anyone|Nobody (?:had|scored) more than|nobody with more than)[^.]*, and they (?:turned (?:it|the ball) over 21 times|committed 21 turnovers)/.test(
 					recap,
 				)
 			) {
@@ -9618,7 +9667,7 @@ test("a lead that came back before the last quarter is the story", () => {
 			);
 			assert.match(
 				recap,
-				/Raptors cut it to 69-68 after three and went up 5 in the fourth/,
+				/Raptors had the lead down to a single point by the end of the third quarter and went ahead by as many as 5 in the fourth/,
 				recap,
 			);
 			assert.doesNotMatch(
@@ -9665,7 +9714,11 @@ test("still up only after a halftime lead", () => {
 				game({ gid, teams: [win, lose], winnerTid: 1 }),
 			);
 			assert.doesNotMatch(recap, /still up 82-80/, recap);
-			if (/Magic were up 82-80 going into the fourth/.test(recap)) {
+			if (
+				/Magic (?:were up 82-80 going into the fourth|took the third quarter 39-23 to go ahead 82-80)/.test(
+					recap,
+				)
+			) {
 				reached += 1;
 			}
 		}

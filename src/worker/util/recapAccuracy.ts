@@ -118,7 +118,7 @@ const COUNTING: [keyof RecapPlayer, string][] = [
 // period, a run, a rebounding edge or a season record. Those all share the
 // shape and none of them is wrong.
 const NOT_A_FINAL =
-	/quarter|after one|at the break|halftime|half|first|second|third|fourth|\brun\b|stretch|outscor|closed|opened|took over|settled it|broke it open|spurt|glass|boards|rebound|free throw|from the line|threes|from deep|assists|pushed|improved|moved|fell to|dropped to|climbed|meeting|season series|this season|at home|on the road|away from home|own building|bench|reserves|to go\b|\bleft\b|to play|lead change|tied at|as many as|straight points|two minutes|for good|ahead for the last time|went in front|ahead \d|up \d+-\d+|within|cut it|back to|as close as|made it \d|buzzer|no time|remaining/i;
+	/quarter|after one|at the break|halftime|half|first|second|third|fourth|\brun\b|stretch|outscor|closed|opened|took over|settled it|broke it open|spurt|glass|boards|rebound|free throw|from the line|threes|from deep|assists|pushed|improved|moved|fell to|dropped to|climbed|meeting|season series|this season|at home|on the road|away from home|own building|bench|reserves|to go\b|\bleft\b|to play|lead change|tied at|as many as|straight points|two minutes|for good|ahead for the last time|went in front|ahead \d|up \d+-\d+|within|cut it|back to|as close as|made it \d|buzzer|no time|remaining|overtime|extra period/i;
 
 // A count in one of these sentences is a season or career total, a season
 // high being quoted, or a bench total - not a line from tonight's box score.
@@ -275,7 +275,11 @@ export const verifyRecap = (
 				const fromMatch = /\b(?:for|from)\s+/.exec(reach);
 				let owner: string | undefined;
 				if (fromMatch) {
-					const tail = after.slice(fromMatch.index + fromMatch[0].length);
+					// "...from rookie Jalen Green", "...from 36-year-old Vince
+					// Carter".
+					const tail = after
+						.slice(fromMatch.index + fromMatch[0].length)
+						.replace(/^(?:rookie |\d+-year-old )/, "");
 					owner = names.find((nm) => tail.startsWith(nm));
 				}
 				if (owner === undefined) {
@@ -488,29 +492,132 @@ export const verifyRecap = (
 		// the nearest one after it, but never across a clause: "jumped out to
 		// a 36-22 first quarter and put together a 12-0 run in the second"
 		// was read as a 12-0 first quarter.
-		for (const m of sentence.matchAll(
-			// Not "quarters": "a 19-0 run spanning the first and second quarters
-			// and led 49-41 at halftime" names no one quarter's score.
-			/(?:(\d+)-(\d+) )?(first|second|third|fourth) quarter(?!s)(?:[^,.;]{0,25}?(\d+)-(\d+))?/g,
-		)) {
-			const said1 = m[1] ?? m[4];
-			const said2 = m[2] ?? m[5];
-			if (said1 === undefined || said2 === undefined) {
-				continue;
-			}
-			const idx = { first: 0, second: 1, third: 2, fourth: 3 }[
-				m[3] as "first" | "second" | "third" | "fourth"
-			];
+		{
 			const hq = home.ptsQtrs ?? [];
 			const aq = away.ptsQtrs ?? [];
-			if (idx < hq.length && idx < aq.length) {
+			const IDX: Record<string, number> = {
+				first: 0,
+				second: 1,
+				third: 2,
+				fourth: 3,
+			};
+			const lastIdx = hq.length - (game.overtimes ?? 0) - 1;
+			const hold = (word: string, said1: string, said2: string) => {
+				const idx = word === "final" || word === "last" ? lastIdx : IDX[word]!;
+				if (idx < 0 || idx >= hq.length || idx >= aq.length) {
+					return;
+				}
 				const said = new Set([Number(said1), Number(said2)]);
 				if (!said.has(hq[idx]!) || !said.has(aq[idx]!)) {
 					add(
 						"quarter score",
-						`${m[3]} said ${said1}-${said2}, real ${hq[idx]}-${aq[idx]}`,
+						`${word} said ${said1}-${said2}, real ${hq[idx]}-${aq[idx]}`,
 						sentence,
 					);
+				}
+			};
+			// "a 36-22 first quarter", or the pair that follows the quarter's
+			// name ("took the fourth quarter 39-27", "The third quarter settled
+			// it: 27-16") - but never one that belongs to something else: "in
+			// the first quarter and still led 67-52 at halftime", "in the fourth
+			// quarter on the way to a 101-94 win", a record in parentheses.
+			for (const m of sentence.matchAll(
+				// Not "quarters": "a 19-0 run spanning the first and second
+				// quarters and led 49-41 at halftime" names no one quarter's score.
+				/(?:(\d+)-(\d+) )?(first|second|third|fourth) quarter(?!s)(?:([^,.;]{0,25}?)(\d+)-(\d+))?/g,
+			)) {
+				const after =
+					m[4] !== undefined &&
+					!/\b(?:led|lead|up|ahead|trailed|halftime|half|win|beat|top|topped|way to|after|going|into|deficit|down|run)\b|\(/.test(
+						m[4],
+					);
+				// The final score is the final score, wherever it sits.
+				const isFinal =
+					m[1] === undefined &&
+					finalPts.has(Number(m[5])) &&
+					finalPts.has(Number(m[6])) &&
+					m[5] !== m[6];
+				const said1 = m[1] ?? (after && !isFinal ? m[5] : undefined);
+				const said2 = m[2] ?? (after && !isFinal ? m[6] : undefined);
+				if (said1 !== undefined && said2 !== undefined) {
+					hold(m[3]!, said1, said2);
+				}
+			}
+			// "outscored the Hawks 33-22 in the third quarter".
+			for (const m of sentence.matchAll(
+				/(\d+)-(\d+) in the (first|second|third|fourth)\b/g,
+			)) {
+				hold(m[3]!, m[1]!, m[2]!);
+			}
+			// "won the second 25-16", "took the final quarter 36-21".
+			for (const m of sentence.matchAll(
+				/\b(?:won|took|take|taking|winning|had) the (first|second|third|fourth|final|last)(?: quarter)?,? (\d+)-(\d+)/g,
+			)) {
+				hold(m[1]!, m[2]!, m[3]!);
+			}
+			// "...going into the fourth, where the Bucks won the quarter 30-19",
+			// and "outscored them 30-19 the rest of the way" after the score
+			// through three: the last quarter of regulation.
+			if ((game.overtimes ?? 0) === 0) {
+				for (const m of sentence.matchAll(
+					/(?:going into the fourth|after three quarters)[^.]*?(?:won the quarter (\d+)-(\d+)|(\d+)-(\d+) the rest of the way)/g,
+				)) {
+					hold("last", m[1] ?? m[3]!, m[2] ?? m[4]!);
+				}
+			}
+			// "led 31-18 after one quarter", "83-75 after three quarters": the
+			// running score when that quarter ended.
+			const AFTER: Record<string, number> = { one: 1, two: 2, three: 3 };
+			for (const m of sentence.matchAll(
+				// "...through three quarters", and "with a quarter to play",
+				// which is three of four.
+				/(\d+)-(\d+)(?: lead)? (?:(?:after|through) (one|two|three) quarters?\b|with a quarter to play|(out of the first quarter))/g,
+			)) {
+				const n = m[4]
+					? 1
+					: m[3] === undefined
+						? hq.length - (game.overtimes ?? 0) - 1
+						: AFTER[m[3]]!;
+				if (n < 1) {
+					continue;
+				}
+				if (n > hq.length || n > aq.length) {
+					continue;
+				}
+				const h = hq.slice(0, n).reduce((x, y) => x + y, 0);
+				const a = aq.slice(0, n).reduce((x, y) => x + y, 0);
+				const said = new Set([Number(m[1]), Number(m[2])]);
+				if (!said.has(h) || !said.has(a)) {
+					add(
+						"score after a quarter",
+						`said ${m[1]}-${m[2]} after ${m[3] ?? "three"}, real ${h}-${a}`,
+						sentence,
+					);
+				}
+			}
+		}
+
+		// --- the extra period's own score -----------------------------------
+		// "The Magic won overtime 18-11", "outscored the Nets 12-2 in
+		// overtime": every overtime period, summed.
+		{
+			const hq = home.ptsQtrs ?? [];
+			const aq = away.ptsQtrs ?? [];
+			const ot = game.overtimes ?? 0;
+			if (ot > 0 && hq.length === aq.length && hq.length > ot) {
+				const sum = (q: number[]) => q.slice(-ot).reduce((x, y) => x + y, 0);
+				for (const m of sentence.matchAll(
+					// Not "beat the Bucks 127-124 in overtime", which is the final.
+					/won (?:overtime|the overtimes) (\d+)-(\d+)|outscored [^.]*? (\d+)-(\d+) in (?:overtime|the overtimes|the extra period)/g,
+				)) {
+					const said = new Set([Number(m[1] ?? m[3]), Number(m[2] ?? m[4])]);
+					if (!said.has(sum(hq)) || !said.has(sum(aq))) {
+						add(
+							"overtime score",
+							`said ${m[1] ?? m[3]}-${m[2] ?? m[4]}, real ${sum(hq)}-${sum(aq)}`,
+							sentence,
+						);
+					}
 				}
 			}
 		}
@@ -560,7 +667,9 @@ export const verifyRecap = (
 
 		// --- the score going into a quarter ----------------------------------
 		for (const m of sentence.matchAll(
-			/(?:(\d+)-(\d+)|(?:[Ll]evel|[Tt]ied) at (\d+)) going into the (second|third|fourth)\b/g,
+			// "80-78 going into the fourth", and "still in front, 80-78, going
+			// into the fourth".
+			/(?:(\d+)-(\d+),?|(?:[Ll]evel|[Tt]ied) at (\d+)) going into the (second|third|fourth)\b/g,
 		)) {
 			const idx = { second: 1, third: 2, fourth: 3 }[
 				m[4] as "second" | "third" | "fourth"
@@ -647,7 +756,7 @@ export const verifyRecap = (
 			"biggest lead",
 		);
 		claim(
-			/stretched it to (\d+)|(?:let|blew) an? (\d+)-point lead/g,
+			/stretched it to (\d+)\b(?!-)|(?:let|blew) an? (\d+)-point lead/g,
 			(n) => flow.maxLead.includes(n),
 			"biggest lead",
 		);
@@ -679,6 +788,52 @@ export const verifyRecap = (
 			}
 		}
 		claim(/ran off (\d+) straight/g, (n) => n === flow.run?.pts, "run");
+		claim(
+			/(?:scored|reeled off) (\d+) straight points/g,
+			(n) => n === flow.run?.pts,
+			"run",
+		);
+		// "...scored 15 straight points, eight of them from Devin Nash": the
+		// run's top scorer and his share of it, as the log has them.
+		for (const m of text.matchAll(
+			/straight points[^.]*?, (all|\w+) of them from ([^,.]+?)[,.]/g,
+		)) {
+			const who = byName.get(m[2]!.trim());
+			const run = flow.run;
+			const said = m[1] === "all" ? run?.pts : wordToNumber(m[1]!);
+			if (
+				!who ||
+				!run ||
+				run.topPid !== who.pid ||
+				run.topPts !== said ||
+				said === undefined
+			) {
+				add(
+					"run scorer",
+					`said ${m[1]} from ${m[2]}, the log has ${run?.topPts} from pid ${run?.topPid}`,
+					m[0],
+				);
+			}
+		}
+		// "...with Zeke Foster scoring 14 of his 25 points in the quarter":
+		// his night, and a quarter in which he led his side with that many.
+		for (const m of text.matchAll(
+			/with ([^,.]+?) scoring (?:(\d+) of his (\d+)|all (\d+) of his points)\b/g,
+		)) {
+			const who = byName.get(m[1]!.trim());
+			const part = Number(m[2] ?? m[4]);
+			const whole = Number(m[3] ?? m[4]);
+			const top = flow.periodTop ?? [];
+			let led = false;
+			for (let i = 0; i + 1 < top.length; i += 2) {
+				if (who && top[i] === who.pid && top[i + 1] === part) {
+					led = true;
+				}
+			}
+			if (!who || who.pts !== whole || !led) {
+				add("quarter scorer", `said ${part} of ${whole} for ${m[1]}`, m[0]);
+			}
+		}
 		claim(
 			/scored (\d+) unanswered|scored the last (\d+) points/g,
 			(n) => n === flow.run?.pts,
@@ -937,6 +1092,20 @@ export const verifyRecap = (
 					if (/^ (?:run|burst)\b/.test(sentence.slice(m.index + m[0].length))) {
 						continue;
 					}
+					// "led 31-18 after one quarter and 51-50 at halftime", "82-79
+					// after three quarters", "won the second 25-16", "outscored
+					// them 20-16 the rest of the way": each is held to its own
+					// quarter above.
+					if (
+						/^(?: lead)?,? (?:(?:after|through) (?:one|two|three) quarters?|with a quarter to play|out of the first quarter|going into|in the (?:first|second|third|fourth)|the rest of the way|(?:first|second|third|fourth) quarter)\b/.test(
+							sentence.slice(m.index + m[0].length),
+						) ||
+						/\b(?:won|took|take|taking|winning|had) the (?:first|second|third|fourth|final|last)(?: quarter)?,? $|\bwon the quarter(?: anyway,)? $/.test(
+							sentence.slice(0, m.index),
+						)
+					) {
+						continue;
+					}
 					const said = `${m[1]}-${m[2]}`;
 					const isFinal =
 						finalPts.has(Number(m[1])) && finalPts.has(Number(m[2]));
@@ -1170,6 +1339,20 @@ export const verifyRecap = (
 					/\bwith (\d+:\d\d|\d+(?:\.\d)? seconds?) (?:left|to go|to play)/g,
 				),
 			].map((m) => m[1]);
+			// "...tied it at 108 with 1:22 to play before Thompson's
+			// three-pointer 15 seconds later put the Magic ahead for good":
+			// the go-ahead is the clock named, less the seconds.
+			const later = /\b(\d+) seconds later\b/.exec(sentence);
+			const first = clocks[0];
+			if (later && first !== undefined && settled) {
+				const secs = first.includes(":")
+					? Number(first.split(":")[0]) * 60 + Number(first.split(":")[1])
+					: Number.parseFloat(first);
+				// The clock is printed to the second above a minute.
+				if (Math.abs(secs - Number(later[1]) - settled.clock) <= 1.6) {
+					continue;
+				}
+			}
 			if (clocks.length > 0 && (at === undefined || !clocks.includes(at))) {
 				add(
 					"go-ahead for good",

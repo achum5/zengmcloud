@@ -23,7 +23,6 @@ import {
 	gbText,
 	injuryPhrase,
 	isInBatch,
-	lineVerb,
 	lowerInjury,
 	naturalList,
 	nick,
@@ -38,7 +37,6 @@ import {
 	poss,
 	resetVerbLedger,
 	rngFromSeed,
-	scoredVerb,
 	seeded,
 	shuffle,
 	spelledNum,
@@ -75,12 +73,13 @@ import {
 	type BeatContext,
 	type DayBeatContext,
 } from "./recapBeats.ts";
+import { shotName, winningShotKind, withSettledLead } from "./recapFinish.ts";
 import {
-	finishStory,
-	shotName,
-	winningShotKind,
-	withSettledLead,
-} from "./recapFinish.ts";
+	composeCast,
+	composeLede,
+	composeStory,
+	type StoryInput,
+} from "./recapStory.ts";
 import {
 	cityReferences,
 	inWomensLeague,
@@ -415,7 +414,7 @@ const fmtPct = (x: number): string =>
 
 // A rough impact score, only ever used to pick which player's night is the story.
 // Never shown to the user.
-const impact = (p: RecapPlayer): number =>
+export const impact = (p: RecapPlayer): number =>
 	p.pts +
 	0.4 * p.reb +
 	0.7 * p.ast +
@@ -483,7 +482,7 @@ const quietLine = (p: RecapPlayer): boolean =>
 	p.stl < 3 &&
 	p.blk < 3;
 
-const bestOf = (players: RecapPlayer[]): RecapPlayer | undefined => {
+export const bestOf = (players: RecapPlayer[]): RecapPlayer | undefined => {
 	let best: RecapPlayer | undefined;
 	let bestScore = -Infinity;
 	for (const p of players) {
@@ -496,7 +495,7 @@ const bestOf = (players: RecapPlayer[]): RecapPlayer | undefined => {
 	return best;
 };
 
-const supportingCast = (
+export const supportingCast = (
 	players: RecapPlayer[],
 	star: RecapPlayer,
 ): RecapPlayer[] =>
@@ -680,7 +679,7 @@ const storyPlayerOf = (
 // A count of threes is something he did, not what the line was made of:
 // "30 points, 8 rebounds, and 7 assists on 4 threes" put the rebounds on
 // the threes too. Said as he did it: "..., hitting 4 threes".
-const shootingFlourish = (p: RecapPlayer): string | undefined => {
+export const shootingFlourish = (p: RecapPlayer): string | undefined => {
 	if (p.tp >= 6) {
 		return `hitting ${p.tp} three-pointers`;
 	}
@@ -735,7 +734,7 @@ const withFlourish = (
 // and they undersold the game's best player ("Pau Gasol added 22" as a lead).
 // "scored" only when the line is points-only ("scored 25 points and 6 assists"
 // is not English).
-const leadVerb = (
+export const leadVerb = (
 	p: RecapPlayer,
 	hasExtras: boolean,
 	rng: () => number,
@@ -795,7 +794,7 @@ const namesIn = (text: string, shape: Shape): Set<string> => {
 
 // --- Game-shape detection ------------------------------------------------------
 
-type Shape = {
+export type Shape = {
 	game: RecapGame;
 	winner: RecapTeam;
 	loser: RecapTeam;
@@ -908,7 +907,9 @@ const analyzeShape = (game: RecapGame): Shape => {
 // 28-19 second quarter that turned an eight-point deficit into a one-point
 // halftime lead broke nothing open (it turned the game, barely), and one
 // that padded a 20-point lead did neither.
-const bigQuarterRole = (shape: Shape): "broke" | "turned" | undefined => {
+export const bigQuarterRole = (
+	shape: Shape,
+): "broke" | "turned" | undefined => {
 	const r = shape.bigRun;
 	if (!r) {
 		return undefined;
@@ -926,7 +927,7 @@ const bigQuarterRole = (shape: Shape): "broke" | "turned" | undefined => {
 // to be a story (undefined otherwise). The 76ers ending an 18-game skid was
 // being written as "it had been a rough stretch for the 76ers, 0-9 in their
 // previous 9" - true, and a tenth of the story.
-const snappedSkid = (shape: Shape): number | undefined => {
+export const snappedSkid = (shape: Shape): number | undefined => {
 	const before = shape.winner.streakBefore;
 	return before && !before.won && before.count >= 5 ? before.count : undefined;
 };
@@ -959,7 +960,7 @@ const firstHomeLoss = (game: RecapGame, shape: Shape): boolean => {
 	);
 };
 
-const isUpset = (game: RecapGame, shape: Shape): boolean => {
+export const isUpset = (game: RecapGame, shape: Shape): boolean => {
 	if (shape.margin === 0) {
 		return false;
 	}
@@ -994,7 +995,7 @@ const isUpset = (game: RecapGame, shape: Shape): boolean => {
 // player, shot type, and timing so it can lead a headline and get its own beat
 // in the body. `shot` is display-ready: the log's generic "basket" becomes
 // "buzzer-beater" / "game-winner", a real shot type ("three-pointer") is kept.
-const clutchShot = (
+export const clutchShot = (
 	game: RecapGame,
 ):
 	| {
@@ -1133,7 +1134,7 @@ const lateGoAhead = (
 // described, without the shooter. Shared by the standalone beat and the
 // merged-into-the-lead form (used when the shooter IS the lead star, so the
 // name isn't repeated in back-to-back sentences).
-const clutchWhat = (
+export const clutchWhat = (
 	shot: NonNullable<ReturnType<typeof clutchShot>>,
 ): string => {
 	const timing = shot.buzzer
@@ -1152,34 +1153,12 @@ const clutchWhat = (
 	return `${what}${timing}`;
 };
 
-// The clutch shot's own beat in the body: who won it, with what, and when.
-// The winning shot, with the hero's full line folded in when it deserves the
-// ink - "Viktor Khryapa won it with a three-point play" hid that he ALSO had 23
-// points, so the supporting-cast sentence re-introduced the headline hero as if
-// he were a bench note. Tells the caller whose line it printed so nothing else
-// prints it again. A modest total stays out - "and finished with 6 points" is
-// an anticlimax stapled to the biggest moment of the game.
-const clutchSentence = (
-	shot: NonNullable<ReturnType<typeof clutchShot>>,
-	shape?: Shape,
-): { text: string; told?: string } => {
-	const hero = shape?.winner.players.find((x) => x.name === shot.name);
-	if (hero && hero.pts >= 15) {
-		return {
-			// "on", not "with": clutchWhat carries its own "with 8.3 seconds
-			// left", and the two together read "won it with a three-pointer
-			// with 8.3 seconds left".
-			text: `${shot.name} won it on ${clutchWhat(shot)} and finished with ${statPhrase(hero, 1)}.`,
-			told: hero.name,
-		};
-	}
-	return { text: `${shot.name} won it on ${clutchWhat(shot)}.` };
-};
+export type ClutchShot = NonNullable<ReturnType<typeof clutchShot>>;
 
 const plainScore = (shape: Shape): string =>
 	`${shape.winner.pts}-${shape.loser.pts}`;
 
-const scoreTag = (shape: Shape): string => {
+export const scoreTag = (shape: Shape): string => {
 	const ot =
 		shape.ot > 0 ? ` (${shape.ot === 1 ? "OT" : `${shape.ot}OT`})` : "";
 	return `${shape.winner.pts}-${shape.loser.pts}${ot}`;
@@ -1654,7 +1633,7 @@ const postseasonContext = (
 // come back" of a game the Lakers trailed by 17, and left a 20-point hole the
 // Magic climbed out of in the first quarter (10 down at the break) out of the
 // headline altogether.
-const comebackSize = (shape: Shape): number =>
+export const comebackSize = (shape: Shape): number =>
 	shape.comebackFrom >= 12 || shape.loserPeak >= 15
 		? Math.max(shape.comebackFrom, shape.loserPeak)
 		: 0;
@@ -1665,7 +1644,7 @@ const comebackSize = (shape: Shape): number =>
 // 15-point lead came down to five. Behind going into the last quarter, they
 // rallied - by five or more - and handled nobody; a big lead mostly let go
 // was held on to, not handled.
-const verbPool = (game: RecapGame, shape: Shape): string[] => {
+export const verbPool = (game: RecapGame, shape: Shape): string[] => {
 	const pool = marginVerbPool(game, shape);
 	const upset = isUpset(game, shape);
 	if (shape.ot === 0 && shape.wq.length >= 2 && shape.marginEnteringLast < 0) {
@@ -1800,7 +1779,7 @@ const IRREGULAR: Record<string, string> = {
 	"knock off": "knocked off",
 };
 
-const pastTense = (verb: string): string => {
+export const pastTense = (verb: string): string => {
 	if (IRREGULAR[verb]) {
 		return IRREGULAR[verb]!;
 	}
@@ -1851,7 +1830,7 @@ const starHeadline = (p: RecapPlayer): { text: string; plural: boolean } => {
 // swapped in - the thing that made a page of recaps read as
 // "X goes for 26 as the Celtics beat the Grizzlies / X scored 26 as the Celtics
 // topped the Grizzlies 115-105."
-type Headline = {
+export type Headline = {
 	text: string;
 	// The headline led with the star (his name, his numbers, or both).
 	spentStar: boolean;
@@ -2890,7 +2869,7 @@ const buildHeadlineText = (
 // Dunn", "...topped the Kings 104-96, snapping a five-game losing streak". The
 // engine had every one of those facts and put each in its own sentence three
 // paragraphs down. One of them, the biggest, rides on the result sentence.
-type LedeTail = {
+export type LedeTail = {
 	text: string;
 	// The tail told a streak, so the stakes sentence must not.
 	streak?: "skid" | "run" | "win";
@@ -2956,501 +2935,12 @@ const ledeTail = (
 };
 
 // "hit a three-pointer", "made a layup", "converted a three-point play".
-const clutchVerb = (what: string): string =>
+export const clutchVerb = (what: string): string =>
 	/three-point play|four-point play/.test(what)
 		? "converted"
 		: /layup|free throw|hook/.test(what)
 			? "made"
 			: "hit";
-
-// The lead: the result carried by the winner's best player, with the line he
-// brought in when it makes the night pop.
-// The result, told first, with the game's own character folded in. Used when the
-// headline already spent the star, so the body does new work instead of
-// restating him. `covers` names the angle it already told, so the flow sentence
-// doesn't say it a second time.
-const resultLead = (
-	game: RecapGame,
-	shape: Shape,
-	rng: () => number,
-	// The headline already printed the score, so this sentence says who beat
-	// whom and leaves the number to it - see Headline.spentScore.
-	scoreTold = false,
-	// The headline already carried the winner's streak ("make it 12 straight"),
-	// so the bare-result fallback below must not lean on it again.
-	streakTold = false,
-	// The clause that closes the sentence - the streak, the skid, the losing
-	// side's big night. See ledeTail.
-	tail = "",
-	// The man the recap is about, for the bare-result case to lean on, and
-	// whether the headline already printed his whole line.
-	star?: RecapPlayer,
-	starLineTold = false,
-	// What the tail is (a streak kept or ended), the headline it sits under,
-	// and whether the star shares top billing with a teammate - which the
-	// other ways of opening the story need to know.
-	more: {
-		tailKind?: LedeTail["streak"];
-		headline?: string;
-		twin?: boolean;
-	} = {},
-): {
-	text: string;
-	covers?: "comeback" | "wire" | "ot" | "run";
-	// The opener carried the star's line, so the body must not.
-	starFolded?: boolean;
-} => {
-	const baseVerb = pick(rng, verbPool(game, shape));
-	const verb = pastTense(baseVerb);
-	const w = theNick(shape.winner);
-	const l = theNick(shape.loser);
-	const score = scoreTold ? "" : ` ${scoreTag(shape)}`;
-
-	if (shape.comebackFrom >= 12 && shape.comebackPeriod > 0) {
-		const down = comebackSize(shape);
-		// A 25-point win that began 14 down is not "erased a deficit to beat":
-		// they fell behind, then ran away.
-		if (shape.margin >= 15) {
-			const at =
-				shape.loserPeak > shape.comebackFrom
-					? (game.flow?.maxLeadAt?.[sideOf(game, shape.loser)] ??
-						shape.comebackPeriod)
-					: shape.comebackPeriod;
-			const early = at <= 2 ? " early" : "";
-			return {
-				text: pick(
-					rng,
-					[
-						`${cap(w)} fell behind by ${down}${early} and still ran away from ${l}${score}${tail}.`,
-						`${cap(w)} spotted ${l} ${aNum(down)}-point lead${early} and won going away${score ? `,${score}` : ""}${tail}.`,
-					],
-					"comebackRout",
-				),
-				covers: "comeback",
-			};
-		}
-		// "to" takes a BARE INFINITIVE, so neither the past-tense verb nor the
-		// comeback pool belongs in this slot - between them they produced "erased
-		// an 18-point deficit to stormed back to beat the Rivers". The sentence is
-		// already the comeback; the verb just has to finish it.
-		return {
-			text: `${cap(w)} erased ${aNum(down)}-point deficit to ${pick(
-				rng,
-				["beat", "top", "take down", "knock off"],
-				"comebackVerb",
-			)} ${l}${score}${tail}.`,
-			covers: "comeback",
-		};
-	}
-	if (shape.loserPeak >= 15) {
-		// Level at every period boundary, 20 down in between: the score log
-		// is the only place this comeback shows, so the lead says it.
-		return {
-			text: pick(
-				rng,
-				[
-					`${cap(w)} came from ${shape.loserPeak} down to ${pick(
-						rng,
-						["beat", "top", "take down", "knock off"],
-						"comebackVerb",
-					)} ${l}${score}${tail}.`,
-					// A plain verb: the pool's own is a comeback verb, and "trailed
-					// by 16 and still came back to top" said it twice.
-					`${cap(w)} trailed by ${shape.loserPeak} and still ${pastTense(
-						pick(rng, ["beat", "top", "take down"], "comebackVerb"),
-					)} ${l}${score}${tail}.`,
-				],
-				"flowComebackLead",
-			),
-			covers: "comeback",
-		};
-	}
-	if (shape.ot > 0) {
-		// Half of all overtime ledes opened "It took an extra period, but...":
-		// the wire mostly just says where it was won, "beat the Rockets
-		// 104-102 in overtime".
-		const extra =
-			shape.ot === 1 ? "an extra period" : `${numWord(shape.ot)} extra periods`;
-		const plain = scoreTold ? "" : ` ${shape.winner.pts}-${shape.loser.pts}`;
-		return {
-			text: pick(
-				rng,
-				[
-					`It took ${extra}, but ${w} ${verb} ${l}${score}${tail}.`,
-					`${cap(w)} ${verb} ${l}${plain} in ${otPhrase(shape.ot)}${tail}.`,
-					`${cap(w)} ${verb} ${l}${plain} in ${otPhrase(shape.ot)}${tail}.`,
-				],
-				"otResultLead",
-			),
-			covers: "ot",
-		};
-	}
-	if (shape.wireToWire && shape.margin >= 10) {
-		return {
-			// The tail closes the sentence, so the shapes that end on a
-			// participle ("...112-99, leading start to finish") cannot take one.
-			text: pick(
-				rng,
-				tail === ""
-					? [
-							`${cap(w)} led wire to wire and ${verb} ${l}${score}.`,
-							`${cap(w)} ${verb} ${l}${score} without ever trailing.`,
-							`${cap(w)} were in front from the opening tip and ${verb} ${l}${score}.`,
-							`${cap(w)} ${verb} ${l}${score}, leading start to finish.`,
-						]
-					: [
-							`${cap(w)} led wire to wire and ${verb} ${l}${score}${tail}.`,
-							`${cap(w)} were in front from the opening tip and ${verb} ${l}${score}${tail}.`,
-							`${cap(w)} never trailed and ${verb} ${l}${score}${tail}.`,
-						],
-				"wireLead",
-			),
-			covers: "wire",
-		};
-	}
-	const quarterRole = bigQuarterRole(shape);
-	// Not when the sentence has a tail to carry: this shape has no room for
-	// one, and "for their fifth straight win" or "despite 46 points from Obi
-	// Brooks" was dropped for "taking over with a 33-19 second quarter".
-	if (
-		tail === "" &&
-		shape.bigRun &&
-		quarterRole &&
-		shape.bigRun.margin >= 9 &&
-		shape.margin >= 8 &&
-		shape.bigRun.period > 1 &&
-		!closeLate(game)
-	) {
-		return {
-			text: `${cap(w)} ${verb} ${l}${score}, ${
-				quarterRole === "broke" ? "breaking it open" : "taking over"
-			} with a ${shape.bigRun.wpts}-${shape.bigRun.lpts} ${ordinal(
-				shape.bigRun.period,
-			)} quarter.`,
-			covers: "run",
-		};
-	}
-	// Nothing about the game's shape to carry, and the headline has the score:
-	// "The Mavericks topped the 76ers." is a sentence with nothing in it. The
-	// streak the win extended or the venue gives it a reason to exist.
-	if (scoreTold && tail === "" && star) {
-		// Failing those, the star's line rides on it - "The Hawks edged the
-		// Bulls behind Ace Hawk's 28 points" - and his own sentence is not
-		// needed. Only when the headline did not already print that line.
-		const streak = shape.winner.streak;
-		const winnerHome = game.teams[0].tid === shape.winner.tid;
-		const hasReason =
-			(streak?.won && streak.count >= 3 && !game.playoffs && !streakTold) ||
-			(!winnerHome && !game.playoffs);
-		if (!hasReason && !starLineTold) {
-			return {
-				text: `${cap(w)} ${verb} ${l} behind ${poss(star.name)} ${statPhrase(star)}.`,
-				starFolded: true,
-			};
-		}
-	}
-	if (scoreTold && tail === "") {
-		const streak = shape.winner.streak;
-		if (streak?.won && streak.count >= 3 && !game.playoffs && !streakTold) {
-			return {
-				text: `${cap(w)} ${verb} ${l} for their ${ordinal(streak.count)} win in a row.`,
-			};
-		}
-		const winnerHome = game.teams[0].tid === shape.winner.tid;
-		if (!winnerHome && !game.playoffs) {
-			return { text: `${cap(w)} went on the road and ${verb} ${l}.` };
-		}
-	}
-	return (
-		otherLede(
-			game,
-			shape,
-			rng,
-			baseVerb,
-			scoreTold,
-			tail,
-			star,
-			starLineTold,
-			more,
-		) ?? { text: `${cap(w)} ${verb} ${l}${score}${tail}.` }
-	);
-};
-
-// "beating", "holding off", "storming back to beat".
-const ING: Record<string, string> = {
-	get: "getting",
-	run: "running",
-	slip: "slipping",
-	stun: "stunning",
-	top: "topping",
-	upset: "upsetting",
-};
-const gerund = (verb: string): string => {
-	const [head, ...rest] = verb.split(" ");
-	const ing =
-		ING[head!] ??
-		(head!.endsWith("e") && !head!.endsWith("ee")
-			? `${head!.slice(0, -1)}ing`
-			: `${head}ing`);
-	return [ing, ...rest].join(" ");
-};
-
-// THE OTHER WAYS INTO A STORY. Three ledes in four opened "The Lakers
-// (10-3) beat the Pacers (5-8) 104-99", whatever else the night held: a
-// writer has more than one way in. The streak first when the win kept one
-// going or ended one - "The Pacers snapped a five-game losing streak with a
-// 104-99 win over the Bulls" - the man first, as the wire does it, or where
-// it was won when the winners were on the road. The plain result stays in
-// the rotation; pick() spreads the rest across a night.
-const otherLede = (
-	game: RecapGame,
-	shape: Shape,
-	rng: () => number,
-	// The pool's verb in its bare form, for "by beating".
-	baseVerb: string,
-	scoreTold: boolean,
-	tail: string,
-	star: RecapPlayer | undefined,
-	starLineTold: boolean,
-	more: { tailKind?: LedeTail["streak"]; headline?: string; twin?: boolean },
-): { text: string; starFolded?: boolean } | undefined => {
-	const w = theNick(shape.winner);
-	const l = theNick(shape.loser);
-	const plain = `${shape.winner.pts}-${shape.loser.pts}`;
-	const verb = pastTense(baseVerb);
-	const kinds: string[] = ["plain"];
-	if (
-		!game.playoffs &&
-		(more.tailKind === "skid" ||
-			more.tailKind === "run" ||
-			more.tailKind === "win")
-	) {
-		kinds.push("context");
-	}
-	const lineFree =
-		star !== undefined &&
-		shape.winner.players.includes(star) &&
-		!starLineTold &&
-		!more.twin &&
-		!(more.headline ?? "").includes(String(star.pts));
-	if (lineFree && !scoreTold) {
-		kinds.push("star");
-	}
-	const home = game.teams[0];
-	const city = placeName(home.region) ?? "";
-	if (
-		!game.playoffs &&
-		!scoreTold &&
-		home.tid === shape.loser.tid &&
-		city !== "" &&
-		city.toLowerCase() !== (home.name ?? "").toLowerCase() &&
-		city.toLowerCase() !== (shape.winner.region ?? "").trim().toLowerCase()
-	) {
-		kinds.push("road");
-	}
-	if (kinds.length === 1) {
-		return undefined;
-	}
-	const kind = pick(rng, kinds, `lede:shape:${kinds.join(",")}`);
-	if (kind === "context") {
-		const winOver = scoreTold
-			? `by ${gerund(baseVerb)} ${l}`
-			: `with ${aFigure(plain)} win over ${l}`;
-		if (more.tailKind === "skid") {
-			const n = snappedSkid(shape)!;
-			return {
-				text: pick(
-					rng,
-					[
-						`${cap(w)} snapped ${aNumWord(n)}-game losing streak ${winOver}.`,
-						`${cap(w)} ended ${aNumWord(n)}-game skid ${winOver}.`,
-					],
-					"lede:skidFirst",
-				),
-			};
-		}
-		if (more.tailKind === "run") {
-			const n = shape.loser.streakBefore!.count;
-			return {
-				text: scoreTold
-					? `${cap(w)} ended ${poss(l)} ${numWord(n)}-game winning streak.`
-					: `${cap(w)} ended ${poss(l)} ${numWord(n)}-game winning streak with ${aFigure(plain)} victory.`,
-			};
-		}
-		const n = shape.winner.streak!.count;
-		return {
-			text: pick(
-				rng,
-				scoreTold
-					? [
-							`${cap(w)} won their ${ordinal(n)} straight game, ${gerund(baseVerb)} ${l}.`,
-							`${cap(w)} made it ${numWord(n)} in a row ${winOver}.`,
-						]
-					: [
-							`${cap(w)} won their ${ordinal(n)} straight game, ${gerund(baseVerb)} ${l} ${plain}.`,
-							`${cap(w)} made it ${numWord(n)} in a row ${winOver}.`,
-						],
-				"lede:streakFirst",
-			),
-		};
-	}
-	if (kind === "star" && star) {
-		// His line first and the result after it, the wire's commonest lede -
-		// with everything the star sentence knows (a triple-double named, the
-		// shooting, the rookie, the age) - or the result carried by his line.
-		const behind =
-			tail === "" && doubleCategories(star).length < 3 && rng() < 0.35;
-		return {
-			text: behind
-				? `${cap(w)} ${verb} ${l} ${plain} behind ${poss(star.name)} ${statPhrase(star)}.`
-				: leadSentence(game, shape, star, rng, false, false, tail),
-			starFolded: true,
-		};
-	}
-	if (kind === "road") {
-		return { text: `${cap(w)} ${verb} ${l} ${plain} in ${city}${tail}.` };
-	}
-	return undefined;
-};
-
-// "the visiting 76ers" - the wire tag for the away side in a result
-// sentence, used now and then so the venue is in the lede without a
-// sentence of its own. Only for the LOSER as object: "the visiting Wizards
-// beat" reads fine too, but the road-win shapes already carry that.
-const loserTag = (game: RecapGame, shape: Shape, rng: () => number): string => {
-	const loserAway = game.teams[1].tid === shape.loser.tid;
-	if (loserAway && !game.playoffs && rng() < 0.3) {
-		return `the visiting ${nick(shape.loser)}`;
-	}
-	return theNick(shape.loser);
-};
-
-const leadSentence = (
-	game: RecapGame,
-	shape: Shape,
-	star: RecapPlayer,
-	rng: () => number,
-	// The result has already been stated (by the headline and the result lead),
-	// so give the star's line on its own rather than tacking the score on again.
-	omitResult = false,
-	// Weaker than omitResult: the result clause stays, only the score goes,
-	// because the headline already printed it.
-	scoreTold = false,
-	// The clause that closes the result. See ledeTail.
-	tail = "",
-): string => {
-	// A plain verb for a comeback: the flow sentence that follows tells the
-	// comeback itself, and "stormed back to beat the Spurs... trailed by 15
-	// and stormed back" was the same verb twice in two sentences.
-	const verb = pastTense(
-		pick(
-			rng,
-			comebackSize(shape) > 0
-				? ["beat", "top", "take down", "knock off"]
-				: verbPool(game, shape),
-			comebackSize(shape) > 0 ? "comebackVerb" : undefined,
-		),
-	);
-
-	// A big blowout with no standout line is a TEAM story - "Brad Miller had 13
-	// points as the Clippers won by 31" makes 13 points sound like the reason.
-	// Not a triple-double, which is a line of its own at any point total.
-	if (
-		star.pts < 15 &&
-		shape.margin >= 20 &&
-		doubleCategories(star).length < 3
-	) {
-		if (omitResult) {
-			return shape.winner.players.some((p) => p.pts > star.pts)
-				? `${star.name} had ${statPhrase(star)}.`
-				: `${star.name} led the way with ${statPhrase(star)}.`;
-		}
-		const ledTeam = !shape.winner.players.some((p) => p.pts > star.pts);
-		return `${cap(theNick(shape.winner))} ${verb} ${theNick(shape.loser)}${
-			scoreTold ? "" : ` ${scoreTag(shape)}`
-		}${tail}, ${ledTeam ? `led by ${poss(star.name)}` : `with ${star.name} putting up`} ${statPhrase(star)}.`;
-	}
-
-	// When the result has already been stated, the star's sentence is the only
-	// place his line lands in the body, so let the shooting split in at a lower
-	// bar - it's what makes restating the headline's numbers worth reading.
-	// In a rout the minutes are the flourish: "28 points in just 26 minutes"
-	// is how the wire says a star was done by the fourth quarter.
-	const flourish =
-		(star.pts >= (omitResult ? 16 : 25) ? shootingFlourish(star) : undefined) ??
-		(shape.margin >= 20 && star.pts >= 20 && star.min > 0 && star.min <= 30
-			? `in just ${star.min} minutes`
-			: undefined);
-	const line = enteringLine(star, game.playoffs);
-
-	let subject = star.name;
-	// Occasionally frame the star against the average he came in with - in a
-	// lede with room for it. Beside a shooting flourish, a streak or a
-	// series, it made the longest ledes on the page: "Evan Foster, who came
-	// in averaging 14.7 points a game, racked up 27 points and 7 assists on
-	// 10-of-15 shooting as the Rockets stunned the Thunder in Game 1 of the
-	// First Round despite 33 points and 12 assists from Darius Jackson" -
-	// 42 words, and the median of the 20 that had it was 31. The body tells
-	// the average then ("Evan Foster nearly doubled his 14.7-point average").
-	const roomy = flourish === undefined && tail === "" && !game.playoffs;
-	if (
-		line &&
-		star.pts >= line.pts + 12 &&
-		star.pts >= 24 &&
-		rng() < 0.6 &&
-		roomy
-	) {
-		subject = `${star.name}, who came in averaging ${line.pts} points a game,`;
-	} else if (star.rookie && star.pts >= 20 && rng() < 0.5) {
-		// "Rookie Jalen Green scored 24" - the word a desk puts on a
-		// first-year man's big night. Not every night: a page where he is
-		// "Rookie" in all twelve of his recaps reads as a label.
-		subject = `Rookie ${star.name}`;
-	} else if (
-		star.age !== undefined &&
-		star.age >= 34 &&
-		star.pts >= 24 &&
-		rng() < 0.35
-	) {
-		subject = `${star.name}, ${star.age},`;
-	}
-
-	// The story pick is made on the whole line, so a 19-point night with 7
-	// rebounds, 5 assists and 3 steals can be the story over a 28-point one.
-	// Printed as "19 points" alone it looks like the wrong man; when he is not
-	// the top scorer and his line would come out points-only, let the
-	// all-round numbers in at a lower bar.
-	const topPts = Math.max(...shape.winner.players.map((p) => p.pts));
-	const plain = statPhrase(star);
-	// A triple-double (or bigger) deserves a strong verb even when the point total
-	// is modest - "chipped in 18, 12 and 12" undersells it. And it is named:
-	// "Grant Jackson produced 16 points, 12 rebounds, and 12 assists" under
-	// "Grant Jackson's triple-double carries the Thunder" never said the word,
-	// in 22 of 36 recaps with one.
-	const doubles = doubleCategories(star).length;
-	const statText =
-		plain === plural(star.pts, "point") && star.pts < topPts
-			? statPhrase(star, 2, true)
-			: doubles >= 3
-				? `${plain} for a ${doubleWord(doubles)!}`
-				: plain;
-	const hasExtras = statText !== plural(star.pts, "point");
-	const actionVerb =
-		doubles >= 3
-			? pick(rng, [
-					"posted",
-					"recorded",
-					"produced",
-					"stuffed the stat sheet with",
-				])
-			: leadVerb(star, hasExtras, rng);
-	if (omitResult) {
-		return `${subject} ${actionVerb} ${withFlourish(statText, flourish)}.`;
-	}
-	return `${subject} ${actionVerb} ${withFlourish(statText, flourish, true)} as ${theNick(
-		shape.winner,
-	)} ${verb} ${loserTag(game, shape, rng)}${scoreTold ? "" : ` ${scoreTag(shape)}`}${tail}.`;
-};
 
 // A NIGHT THAT BELONGED TO THE TEAM. Two men with the same number ("scored
 // 16 apiece"), or six or seven in double figures behind a quiet leader, is a
@@ -3461,7 +2951,10 @@ const leadSentence = (
 // the two are told together ("scored 26 apiece"), never one after the other.
 // Not when his line is more than points: "Franz Foster and Tyrese Foster
 // scored 17 points apiece" dropped the 7 steals he was picked for.
-const twinOf = (shape: Shape, star: RecapPlayer): RecapPlayer | undefined =>
+export const twinOf = (
+	shape: Shape,
+	star: RecapPlayer,
+): RecapPlayer | undefined =>
 	doubleCategories(star).length >= 2 ||
 	statPhrase(star) !== plural(star.pts, "point")
 		? undefined
@@ -3473,91 +2966,11 @@ const twinOf = (shape: Shape, star: RecapPlayer): RecapPlayer | undefined =>
 					doubleCategories(p).length < 2,
 			);
 
-const teamLede = (
-	game: RecapGame,
-	shape: Shape,
-	star: RecapPlayer,
-	rng: () => number,
-	scoreTold: boolean,
-	tail: string,
-): { text: string; twin?: RecapPlayer; dblFig?: boolean } | undefined => {
-	const verb = pastTense(
-		pick(
-			rng,
-			comebackSize(shape) > 0
-				? ["beat", "top", "take down", "knock off"]
-				: verbPool(game, shape),
-			comebackSize(shape) > 0 ? "comebackVerb" : undefined,
-		),
-	);
-	const W = theNick(shape.winner);
-	const L = theNick(shape.loser);
-	const score = scoreTold ? "" : ` ${scoreTag(shape)}`;
-	const dd = doubleCategories(star).length;
-	const twin = twinOf(shape, star);
-	if (twin) {
-		return {
-			text: `${star.name} and ${twin.name} scored ${star.pts} points apiece as ${W} ${verb} ${L}${score}${tail}.`,
-			twin,
-		};
-	}
-	const w = teamStats(shape.winner);
-	// "got seven men into double figures and got past the Nuggets": not on a
-	// verb that says it again.
-	const got = verb.startsWith("got ") ? "put" : "got";
-	if (w.dblFig >= 6 && star.pts < 18 && dd < 3) {
-		// "Led by" and "leading the way" say he led the team, which is false
-		// when a teammate outscored him - "led by Jaden Mathis' 10 points and
-		// 10 assists" over a teammate's 18. Then he is only named.
-		const ledTeam = !shape.winner.players.some((p) => p.pts > star.pts);
-		return {
-			text: pick(
-				rng,
-				ledTeam
-					? [
-							// Not "Six Jazz scored in double figures as the Jazz got
-							// past..., Keegan Mathis' 15 points leading the way": the
-							// team twice in one clause, and the man an afterthought.
-							`${poss(star.name)} ${statPhrase(star)} led ${numWord(w.dblFig)} players in double figures as ${W} ${verb} ${L}${score}${tail}.`,
-							`${cap(W)} ${got} ${numWord(w.dblFig)} men in double figures and ${verb} ${L}${score}${tail}, led by ${poss(star.name)} ${statPhrase(star)}.`,
-						]
-					: [
-							`${star.name} had ${statPhrase(star)}, and ${numWord(w.dblFig)} players reached double figures as ${W} ${verb} ${L}${score}${tail}.`,
-							`${cap(W)} ${got} ${numWord(w.dblFig)} men in double figures and ${verb} ${L}${score}${tail}, with ${star.name} putting up ${statPhrase(star)}.`,
-						],
-				"teamLedeBalance",
-			),
-			dblFig: true,
-		};
-	}
-	return undefined;
-};
-
-// The winner's second-half scoring edge (winner pts - loser pts after halftime),
-// when the quarter data supports it. Shared by the comeback flow line and the
-// standalone second-half note.
-const secondHalfSplit = (
-	shape: Shape,
-): { w: number; l: number } | undefined => {
-	const { wq, lq, regPeriods } = shape;
-	if (regPeriods < 4 || wq.length < regPeriods || lq.length < regPeriods) {
-		return undefined;
-	}
-	const half = Math.floor(regPeriods / 2);
-	let w = 0;
-	let l = 0;
-	for (let i = half; i < regPeriods; i++) {
-		w += wq[i] ?? 0;
-		l += lq[i] ?? 0;
-	}
-	return { w, l };
-};
-
 // "Held off" says the winners were in front and kept the other side off.
 // "The Pistons held off the Kings 119-114" of a game tied at 112 with 1:35
 // left and won on a three with 54 seconds to go was a game they went and
 // took. Without the lead log, nothing says otherwise.
-const heldOn = (game: RecapGame): boolean => {
+export const heldOn = (game: RecapGame): boolean => {
 	const last = game.flow?.lastLead;
 	if (!last) {
 		return true;
@@ -3576,7 +2989,7 @@ const heldOn = (game: RecapGame): boolean => {
 // Was it still a game inside the last two minutes? A quarter that "broke it
 // open" is not the story of a game the losers had within one with 1:15 left
 // - the final margin only says how the free throws went.
-const closeLate = (game: RecapGame): boolean => {
+export const closeLate = (game: RecapGame): boolean => {
 	const flow = game.flow;
 	if (!flow) {
 		return false;
@@ -3588,374 +3001,6 @@ const closeLate = (game: RecapGame): boolean => {
 		(e) => Math.abs(e.score[0] - e.score[1]) <= 3,
 	);
 };
-
-// How the game unfolded, from the quarter-by-quarter scoring.
-type FlowCover = "comeback" | "wire" | "ot" | "run";
-
-const flowSentence = (
-	shape: Shape,
-	rng: () => number,
-): { text: string; covers?: FlowCover } | undefined => {
-	if (shape.comebackFrom >= 12 && shape.comebackPeriod > 0) {
-		// One rich sentence that tells the whole comeback - deficit, when, and the
-		// second-half surge that erased it - instead of two half-sentences spread
-		// across the recap.
-		const half = secondHalfSplit(shape);
-		const surge =
-			half && half.w - half.l >= 8
-				? `, outscoring ${theNick(shape.loser)} ${half.w}-${half.l} after halftime`
-				: "";
-		return {
-			covers: "comeback",
-			text: pick(rng, [
-				`The ${nick(shape.winner)} trailed by ${
-					shape.comebackFrom
-				} after the ${ordinal(shape.comebackPeriod)} and stormed back${surge}.`,
-				`It was ${aNum(shape.comebackFrom)}-point comeback: down that much after the ${ordinal(
-					shape.comebackPeriod,
-				)}, ${theNick(shape.winner)} charged home${surge}.`,
-			]),
-		};
-	}
-	// A specific run that broke the game open beats the generic wire-to-wire
-	// note (which was showing up in most recaps on a chalky night).
-	const quarterRole = bigQuarterRole(shape);
-	if (
-		shape.bigRun &&
-		quarterRole &&
-		shape.bigRun.margin >= 9 &&
-		shape.margin >= 8 &&
-		shape.regPeriods >= 3 &&
-		shape.bigRun.period > 1 &&
-		!closeLate(shape.game)
-	) {
-		const run = `${shape.bigRun.wpts}-${shape.bigRun.lpts}`;
-		const per = ordinal(shape.bigRun.period);
-		return {
-			covers: "run",
-			text: pick(
-				rng,
-				quarterRole === "broke"
-					? [
-							`A ${run} ${per} quarter broke it open.`,
-							`The ${per} quarter settled it: ${run}.`,
-							`${cap(theNick(shape.winner))} took over in the ${per}, ${run}.`,
-							`The game turned on a ${run} ${per} quarter.`,
-						]
-					: [
-							`${cap(theNick(shape.winner))} took over in the ${per}, ${run}.`,
-							`The game turned on a ${run} ${per} quarter.`,
-						],
-				`flowQuarter:${quarterRole}`,
-			),
-		};
-	}
-	if (shape.wireToWire && shape.margin >= 10) {
-		// Varied, and carrying the halftime score when the lead was already big.
-		const half = secondHalfSplit(shape);
-		const wFirst = half ? shape.winner.pts - half.w : undefined;
-		const lFirst = half ? shape.loser.pts - half.l : undefined;
-		const options = [
-			`${cap(theNick(shape.winner))} never trailed.`,
-			`${cap(theNick(shape.winner))} led from start to finish.`,
-		];
-		if (wFirst !== undefined && lFirst !== undefined && wFirst - lFirst >= 10) {
-			options.push(
-				`${cap(theNick(shape.winner))} were in control throughout, up ${wFirst}-${lFirst} at the half.`,
-			);
-		}
-		return { text: pick(rng, options), covers: "wire" };
-	}
-	if (shape.ot > 0) {
-		const extra =
-			shape.ot === 1 ? "an extra period" : `${shape.ot} extra periods`;
-		return {
-			covers: "ot",
-			text: pick(
-				rng,
-				[
-					`Neither side could pull away in regulation, and it took ${extra} to settle it.`,
-					// No fixed minute count here: quarter length and the number of
-					// periods are both league settings.
-					`Regulation settled nothing, and it took ${extra}.`,
-				],
-				"otLede",
-			),
-		};
-	}
-	// Down at the break and won: the story of that game is its second half,
-	// not "led by 3 entering the fourth". This used to surface a paragraph
-	// later, after the injury news, as an afterthought to the weaker line.
-	const half = secondHalfSplit(shape);
-	if (half && shape.comebackFrom < 12) {
-		const n = Math.floor(shape.regPeriods / 2);
-		let wFirst = 0;
-		let lFirst = 0;
-		for (let i = 0; i < n; i++) {
-			wFirst += shape.wq[i] ?? 0;
-			lFirst += shape.lq[i] ?? 0;
-		}
-		const down = lFirst - wFirst;
-		if (down >= 6) {
-			return {
-				covers: "comeback",
-				text: pick(
-					rng,
-					[
-						`Down ${down} at the break, ${theNick(shape.winner)} outscored ${theNick(shape.loser)} ${half.w}-${half.l} after halftime.`,
-						`${cap(theNick(shape.winner))} trailed by ${down} at halftime and won the second half ${half.w}-${half.l}.`,
-						`${cap(aNum(down))}-point halftime deficit turned into a ${half.w}-${half.l} second half.`,
-					],
-					"halfComeback",
-				),
-			};
-		}
-	}
-	if (
-		Math.abs(shape.marginEnteringLast) <= 4 &&
-		shape.margin <= 10 &&
-		shape.regPeriods >= 4
-	) {
-		const m = shape.marginEnteringLast;
-		const last = ordinal(shape.regPeriods);
-		if (m === 0) {
-			return {
-				text: pick(
-					rng,
-					[
-						`The game was tied entering the ${last}.`,
-						`It was tied going into the ${last}.`,
-						...(shape.regPeriods === 4
-							? [`Nothing separated them after three.`]
-							: []),
-					],
-					"tiedEnteringLast",
-				),
-			};
-		}
-		const leader = cap(theNick(m > 0 ? shape.winner : shape.loser));
-		const by = Math.abs(m);
-		return {
-			text: pick(
-				rng,
-				[
-					`${leader} led by ${by} entering the ${last}.`,
-					`${leader} took ${aNum(by)}-point lead into the ${last}.`,
-					`It was ${aNum(by)}-point game going into the ${last}.`,
-					...(shape.regPeriods === 4
-						? [`${leader} were ${by} up with a quarter to play.`]
-						: []),
-				],
-				"leadEnteringLast",
-			),
-		};
-	}
-	return undefined;
-};
-
-// A team-level statistical note: shooting, rebounding, turnovers, or balance.
-// Which team-level fact a note is built on, so two sentences can't both spend
-// it ("The Nets turned 19 Magic turnovers into offense. ... The Magic were
-// undone by 19 turnovers.").
-type StatFact = "loserTov" | "loserFgp" | "loserThrees" | "other";
-
-// What a team-stat sentence is ABOUT, so paragraph three doesn't spend its one
-// three-point observation restating the one paragraph one already made. This
-// was the most common tell in the whole thing: "They knocked down 16 threes."
-// two sentences before "From deep it was no contest - 16 threes to 6."
-type StatTopic = "threes" | "freeThrows";
-
-const statNote = (
-	shape: Shape,
-	rng: () => number,
-	// The opening surge has already been described, so don't offer it again.
-	skipHotStart = false,
-	// The lede already counted the men in double figures.
-	skipDblFig = false,
-): { text: string; fact: StatFact; topic?: StatTopic } | undefined => {
-	const w = teamStats(shape.winner);
-	const l = teamStats(shape.loser);
-	const options: { text: string; fact: StatFact; topic?: StatTopic }[] = [];
-
-	const add = (text: string, fact: StatFact = "other", topic?: StatTopic) => {
-		options.push({ text, fact, topic });
-	};
-	// A team number earns a sentence when it is unusual, roughly one winner
-	// in ten: at 14 threes, 28 assists or 16 forced turnovers - a quarter to
-	// half of all winners - "They racked up 28 assists" sat in the middle of
-	// the story in most recaps and explained nothing.
-
-	if (w.fga >= 20 && w.fgp >= 52) {
-		// One fixed sentence here put "The X shot 52% from the field." in nine
-		// recaps out of twelve on one slate - by far the most repeated line on
-		// the page, and the easiest to vary.
-		add(
-			pick(
-				rng,
-				[
-					`${cap(theNick(shape.winner))} shot ${w.fgp}% from the field.`,
-					`${cap(theNick(shape.winner))} were efficient all night, ${w.fgp}% from the floor.`,
-					`${cap(theNick(shape.winner))} hit ${w.fgp}% of their shots.`,
-					`Shots fell for the ${nick(shape.winner)} - ${w.fgp}% from the field.`,
-					`${cap(theNick(shape.winner))} shot it at a ${w.fgp}% clip.`,
-				],
-				"stat:winner-fgp",
-			),
-		);
-	}
-	if (w.tp >= 16) {
-		add(
-			pick(
-				rng,
-				[
-					`${cap(theNick(shape.winner))} knocked down ${w.tp} threes.`,
-					`${cap(theNick(shape.winner))} hit ${w.tp} from deep.`,
-					`${cap(theNick(shape.winner))} made ${w.tp} three-pointers.`,
-					// Not "got 21 to fall from deep": 21 of what, from how many.
-					`${cap(theNick(shape.winner))} went ${w.tp}-of-${w.tpa} from three.`,
-				],
-				"statThrees",
-			),
-			"other",
-			"threes",
-		);
-	}
-	// Realistic team totals only (a full box score), so partial data can't yield
-	// an absurd "won the glass 22-0".
-	if (w.reb >= 30 && l.reb >= 20 && w.reb - l.reb >= 12) {
-		add(
-			pick(
-				rng,
-				[
-					`${cap(theNick(shape.winner))} won the glass ${w.reb}-${l.reb}.`,
-					`${cap(theNick(shape.winner))} controlled the boards, ${w.reb}-${l.reb}.`,
-					`${cap(theNick(shape.winner))} out-rebounded ${theNick(shape.loser)} ${w.reb}-${l.reb}.`,
-					`The glass belonged to ${theNick(shape.winner)}, ${w.reb}-${l.reb}.`,
-				],
-				"statReb",
-			),
-		);
-	}
-	// Six-plus is a genuinely balanced night; five is routine and was showing up
-	// in half the recaps on a given day.
-	// Seven: in this league six in double figures is a third of all winners,
-	// and "They had six players score in double figures" was the sentence
-	// most often repeated word for word.
-	if (w.dblFig >= 7 && !skipDblFig) {
-		add(
-			pick(
-				rng,
-				[
-					`${cap(theNick(shape.winner))} had ${numWord(w.dblFig)} players score in double figures.`,
-					`${cap(theNick(shape.winner))} got double figures out of ${numWord(w.dblFig)} men.`,
-					`${cap(spelledNum(w.dblFig))} ${nick(shape.winner)} reached double figures.`,
-					`It came from everywhere for ${theNick(shape.winner)} - ${numWord(w.dblFig)} in double figures.`,
-				],
-				"statDblFig",
-			),
-		);
-	}
-	if (w.stl >= 10 && l.tov >= 21 && l.tov - w.tov >= 5) {
-		add(
-			pick(
-				rng,
-				[
-					`${cap(theNick(shape.winner))} forced ${l.tov} turnovers.`,
-					`${cap(theNick(shape.winner))} turned ${l.tov} ${nick(shape.loser)} turnovers into offense.`,
-					`${cap(theNick(shape.winner))} hounded ${theNick(shape.loser)} into ${l.tov} turnovers.`,
-				],
-				"forcedTov",
-			),
-			"loserTov",
-		);
-	}
-	if (w.ast >= 30) {
-		add(
-			pickSentence(
-				rng,
-				[
-					`${cap(theNick(shape.winner))} piled up ${w.ast} assists on the night.`,
-					`${cap(theNick(shape.winner))} finished with ${w.ast} assists.`,
-					// What the wire says of a passing night: how many of the
-					// baskets came off a pass. "Shared it, 31 assists on the
-					// night" was neither a sentence nor news.
-					`${cap(theNick(shape.winner))} assisted on ${w.ast} of their ${w.fg} baskets.`,
-					`${cap(theNick(shape.winner))} racked up ${w.ast} assists.`,
-				],
-				"teamAst",
-			),
-		);
-	}
-	// A hot start: the winner's first-quarter margin.
-	if (
-		!skipHotStart &&
-		shape.bigRun &&
-		shape.bigRun.period === 1 &&
-		shape.bigRun.margin >= 10 &&
-		shape.wq.length > 0
-	) {
-		const q = `${shape.bigRun.wpts}-${shape.bigRun.lpts}`;
-		add(
-			pick(
-				rng,
-				// An 18-point first quarter in a one-point game is not a hot
-				// start, it is a lead that nearly got away - and "jumped out to a
-				// 41-23 first quarter" under "survived the Bucks 115-114" left the
-				// reader to work out for himself that the Bucks came all the way
-				// back.
-				shape.margin <= 5
-					? [
-							`${cap(theNick(shape.winner))} led ${q} after one and then had to hold on.`,
-							`It was ${q} after the first, and ${theNick(shape.loser)} spent the rest of the night clawing back.`,
-							`${cap(aNum(shape.bigRun.margin))}-point first quarter was very nearly not enough.`,
-						]
-					: [
-							`${cap(theNick(shape.winner))} jumped out to a ${q} first quarter.`,
-							`It was ${q} after one.`,
-							`${cap(theNick(shape.winner))} were ahead almost immediately, ${q} after the first.`,
-						],
-				shape.margin <= 5 ? "firstQuarterHeldOn" : "firstQuarterRun",
-			),
-		);
-	}
-	// A big edge at the free-throw line - big: at ten made, one recap in five
-	// carried a free-throw count somewhere.
-	if (w.ft >= 24 && w.ft - l.ft >= 14) {
-		add(
-			pick(
-				rng,
-				[
-					`${cap(theNick(shape.winner))} made ${w.ft} free throws to ${l.ft} for ${theNick(
-						shape.loser,
-					)}.`,
-					`${cap(theNick(shape.winner))} lived at the line, making ${w.ft} free throws to ${poss(theNick(shape.loser))} ${l.ft}.`,
-					`It was ${w.ft} made free throws to ${l.ft} in ${poss(
-						theNick(shape.winner),
-					)} favor.`,
-				],
-				"ledeFreeThrows",
-			),
-			"other",
-			"freeThrows",
-		);
-	}
-	if (options.length === 0) {
-		return undefined;
-	}
-	const chosen = pick(
-		rng,
-		options.map((o) => o.text),
-	);
-	return options.find((o) => o.text === chosen)!;
-};
-
-// The score at the break, stated plainly. Every wire recap has it; this
-// engine only had it when the half was part of a bigger story.
-// A sentence about the second half or the finish: a third or fourth quarter,
-// a run late on, the go-ahead and the clinching free throws, overtime, a lead
-// nearly let go. Anything the halftime score must come BEFORE.
-const SECOND_HALF_OR_FINISH =
-	/\b(?:third|fourth|final) (?:quarter|period)|\bin the (?:third|fourth)\b|\bthe (?:third|fourth)\b|quarter to play|with \d+(?:\.\d+)? seconds|with (?:no time|\d+:\d\d)|for good|sealed it|put it away|finished it|closed it out|down the stretch|second half|had to hold on|let it go\.|won anyway|before winning it|settled it|overtime|got as close as|cut it to|pulled within|was down to \d+ at the end|late run|the last (?:minute|two minutes)/i;
 
 const halftimeNote = (
 	shape: Shape,
@@ -4024,97 +3069,6 @@ const halftimeNote = (
 	);
 };
 
-// The halftime / second-half story, from the quarter scores.
-const secondHalfNote = (
-	shape: Shape,
-	rng: () => number,
-): string | undefined => {
-	const { wq, lq, regPeriods } = shape;
-	if (regPeriods < 4 || wq.length < regPeriods || lq.length < regPeriods) {
-		return undefined;
-	}
-	// A wire-to-wire game is already summarized by the flow line; don't echo it.
-	if (shape.wireToWire) {
-		return undefined;
-	}
-	// A double-digit comeback's flow line already carries the second-half surge
-	// (see flowSentence) - a trailing "pulled away after halftime" would repeat it.
-	if (shape.comebackFrom >= 12) {
-		return undefined;
-	}
-	const half = Math.floor(regPeriods / 2);
-	let wFirst = 0;
-	let lFirst = 0;
-	let wSecond = 0;
-	let lSecond = 0;
-	for (let i = 0; i < regPeriods; i++) {
-		if (i < half) {
-			wFirst += wq[i] ?? 0;
-			lFirst += lq[i] ?? 0;
-		} else {
-			wSecond += wq[i] ?? 0;
-			lSecond += lq[i] ?? 0;
-		}
-	}
-	const halfMargin = wFirst - lFirst;
-	const secondMargin = wSecond - lSecond;
-	// A halftime-deficit comeback (only when the quarter-flow line didn't already
-	// lead with a bigger comeback). Down 1-3 at the break is a coin flip, not a
-	// story - it takes a real deficit to be worth a sentence.
-	// Six, like the lede's own halftime-comeback line: down four at the break
-	// is a coin flip, and a sentence about it after "led by as many as 16" read
-	// as two stories arguing.
-	if (halfMargin <= -6 && shape.margin > 0 && shape.comebackFrom < 12) {
-		return pick(
-			rng,
-			[
-				`Down ${-halfMargin} at the break, ${theNick(
-					shape.winner,
-				)} outscored ${theNick(shape.loser)} ${wSecond}-${lSecond} in the second half.`,
-				`${cap(theNick(shape.winner))} trailed by ${-halfMargin} at halftime and took the second half ${wSecond}-${lSecond}.`,
-				`The second half belonged to ${theNick(
-					shape.winner,
-				)}, ${wSecond}-${lSecond} after going in ${-halfMargin} down.`,
-				`${cap(aNum(-halfMargin))}-point halftime deficit turned into a ${wSecond}-${lSecond} second half.`,
-			],
-			"halfComeback",
-		);
-	}
-	// "Never looked back" and "never troubled again" are claims about the
-	// end of the game, and a 22-point halftime lead that was caught and taken
-	// to overtime is neither.
-	const stayedAway = shape.ot === 0 && !closeLate(shape.game);
-	if (secondMargin >= 12) {
-		return pick(
-			rng,
-			[
-				`${cap(theNick(shape.winner))} pulled away after halftime, taking the second half ${wSecond}-${lSecond}.`,
-				`The game got away from ${theNick(
-					shape.loser,
-				)} after the break - ${wSecond}-${lSecond} over the last two quarters.`,
-				...(stayedAway
-					? [
-							`${cap(theNick(shape.winner))} won the second half ${wSecond}-${lSecond} and were never troubled again.`,
-						]
-					: []),
-			],
-			"secondHalfPull",
-		);
-	}
-	if (halfMargin >= 15 && stayedAway) {
-		return pick(
-			rng,
-			[
-				`${cap(theNick(shape.winner))} led ${wFirst}-${lFirst} at halftime and never looked back.`,
-				`It was ${wFirst}-${lFirst} at the break and the outcome was already clear.`,
-				`${cap(theNick(shape.winner))} built ${aNum(halfMargin)}-point halftime lead and sat on it.`,
-			],
-			"halftimeLead",
-		);
-	}
-	return undefined;
-};
-
 // A player who controlled the game by plus-minus (when it's tracked and big).
 const plusMinusNote = (
 	shape: Shape,
@@ -4159,1746 +3113,6 @@ const plusMinusNote = (
 		],
 		"plusMinus",
 	);
-};
-
-// THE GAME, TOLD IN ORDER.
-//
-// Every fact about how a game went used to arrive as its own sentence from
-// its own generator - the halftime score, the longest run, the biggest lead,
-// the second-half split - and the recap read like a list of them: "The Heat
-// won the glass 57-43. They led by 29 at the break, 59-30. They put
-// together a 12-0 run in the third. The Heat led by as many as 43." A
-// reporter tells the same facts as one story in the order they happened,
-// with the joins a story has: "and", "but", "after the break".
-//
-// So this reads the half, the run, both sides' biggest leads and when they
-// came, and the score entering the last period, and writes one or two
-// sentences that walk through them. Every figure in it is one the accuracy
-// reader already checks (halftime scores, second-half splits, "ran off N
-// straight", "as many as N", "led by more than N").
-type StoryCover =
-	| "firstQuarter"
-	| "half"
-	| "secondHalf"
-	| "run"
-	| "winnerPeak"
-	| "loserPeak"
-	| "entering"
-	| "lastQuarter"
-	| "comeback";
-
-const gameStory = (
-	game: RecapGame,
-	shape: Shape,
-	rng: () => number,
-	opts: {
-		// The lede already said the winners came from behind.
-		comebackTold: boolean;
-		// The lede already said the winners never trailed.
-		wireTold?: boolean;
-		// The lede already gave the last quarter's score ("taking over with a
-		// 34-25 fourth quarter").
-		lastQuarterTold?: boolean;
-	},
-): { sentences: string[]; covers: Set<StoryCover> } | undefined => {
-	const { wq, lq, regPeriods } = shape;
-	if (
-		regPeriods < 4 ||
-		regPeriods % 2 !== 0 ||
-		wq.length < regPeriods ||
-		lq.length < regPeriods
-	) {
-		return undefined;
-	}
-	const halfN = regPeriods / 2;
-	let wh = 0;
-	let lh = 0;
-	let w2 = 0;
-	let l2 = 0;
-	for (let i = 0; i < regPeriods; i++) {
-		if (i < halfN) {
-			wh += wq[i] ?? 0;
-			lh += lq[i] ?? 0;
-		} else {
-			w2 += wq[i] ?? 0;
-			l2 += lq[i] ?? 0;
-		}
-	}
-	const W = cap(theNick(shape.winner));
-	const w = theNick(shape.winner);
-	const L = cap(theNick(shape.loser));
-	const l = theNick(shape.loser);
-	const flow = game.flow;
-	const wSide = sideOf(game, shape.winner);
-	const lSide: GameFlowSide = wSide === 0 ? 1 : 0;
-	const wMax = flow?.maxLead[wSide] ?? 0;
-	const lMax = flow?.maxLead[lSide] ?? 0;
-	const wMaxAt = flow?.maxLeadAt?.[wSide];
-	const lMaxAt = flow?.maxLeadAt?.[lSide];
-	const raw = flow?.run;
-	// A run across halftime belongs to neither half the story tells, so it
-	// is left to the run note, which goes after the halftime score.
-	const rawEnd = raw?.endPeriod ?? raw?.period ?? 0;
-	const run =
-		raw &&
-		raw.period <= regPeriods &&
-		!(raw.period <= halfN && rawEnd > halfN) &&
-		(raw.side === wSide ? winnersRunIsNews(shape, raw) : raw.pts >= 12)
-			? {
-					winner: raw.side === wSide,
-					pts: raw.pts,
-					period: raw.period,
-					end: rawEnd,
-				}
-			: undefined;
-	// "in the second", or "across the third and fourth" for a run that
-	// began in one quarter and ended in the next.
-	const runAt = (r: { period: number; end: number }) =>
-		runSpan(r.period, r.end, regPeriods);
-	const when = (period: number) => periodTag(period, regPeriods);
-	const lastLead = flow?.lastLead;
-	// The winners were in front for good by the break.
-	const aheadForGoodByHalf =
-		!!lastLead && lastLead.side === wSide && lastLead.period <= halfN;
-	const close = shape.margin <= 6 || shape.ot > 0 || closeLate(game);
-	// The first quarter, when the winners made it one: "won the first
-	// quarter 31-21" is checked against the box score like any quarter.
-	const w1 = wq[0] ?? 0;
-	const l1 = lq[0] ?? 0;
-	const hot = w1 - l1 >= 8;
-	// Ahead at the break, the first quarter is told when it was big or built
-	// the whole halftime lead: "won the first quarter 34-26 and led 61-46 at
-	// halftime" opened a fifth of all recaps and said no more than the half.
-	const hotStart = w1 - l1 >= 12 || (hot && w1 - l1 >= wh - lh);
-	const covers = new Set<StoryCover>();
-	const out: string[] = [];
-	// THE LEAD THAT GOT AWAY - up 18, home by seven - is told where it was
-	// built, and the scores after it show where it went. A closing "They let
-	// an 18-point lead get away and still won" landed after the quarter that
-	// won it back: "They trailed 86-79 going into the fourth, then took the
-	// fourth quarter 37-23. They let an 18-point lead get away..."
-	const bigGone =
-		!!flow && shape.margin <= 8 && wMax >= 15 && wMax >= shape.margin + 9;
-	// The biggest lead a sentence of the story has already shown. A peak no
-	// more than a basket or so past it is that lead: "won the first quarter
-	// 33-17" has said "led by 16".
-	let toldLead = 0;
-	const peakShown = (): boolean => {
-		if (bigGone && wMax <= toldLead + 3) {
-			covers.add("winnerPeak");
-		}
-		return covers.has("winnerPeak");
-	};
-	// Gone before the last quarter that won it back, it is told before that
-	// quarter: "They let an 18-point lead get away. It was 88-88 going into
-	// the fourth, and the Bucks won the fourth quarter 22-18."
-	const gotAway = (): string[] => {
-		if (!bigGone || peakShown()) {
-			return [];
-		}
-		covers.add("winnerPeak");
-		return [`${W} let ${aNum(wMax)}-point lead get away.`];
-	};
-
-	// "a, b and c".
-	const series = (parts: string[]) =>
-		parts.length <= 1
-			? (parts[0] ?? "")
-			: `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}`;
-
-	// The halftime score as a sentence. One shared pool, and a wide one:
-	// this line is in nearly every recap on a page, and three recaps saying
-	// "led 55-50 at halftime" the same way is what makes a slate read as a
-	// form.
-	const halfLine = (leader: RecapTeam, a: number, b: number): string => {
-		const T = cap(theNick(leader));
-		const t = theNick(leader);
-		return pick(
-			rng,
-			[
-				`${T} led ${a}-${b} at halftime.`,
-				`${T} took a ${a}-${b} lead into the break.`,
-				`${T} were ahead ${a}-${b} at the half.`,
-				`${T} were up ${a - b} at the half, ${a}-${b}.`,
-				`${T} went into halftime ahead ${a}-${b}.`,
-				`${T} had a ${a}-${b} lead at the break.`,
-				`By halftime ${t} were in front ${a}-${b}.`,
-				`${T} carried a ${a}-${b} lead into the second half.`,
-			],
-			"story:half",
-		);
-	};
-
-	// The score going into the last period, for a game still in doubt then.
-	// `anyLead`: in a game that was close at the end, the winners' lead
-	// going into the last period is told whatever its size - "The Suns were
-	// up 1 at the half" and then nothing at all, in a game the Bucks got
-	// back into late, stopped the story at halftime.
-	const entering = (anyLead = false): string | undefined => {
-		const m = shape.marginEnteringLast;
-		const last = ordinal(regPeriods);
-		// A lead mostly lost before the fourth goes with the score it fell
-		// to: "They led by as many as 16 in the third and were still 12 up
-		// going into the fourth." One from before the break the half has not
-		// shown is told looking back - "had led by as many as 24 in the
-		// second" - and one built in the last quarter after its score.
-		if (m > 0 && (m <= 6 || anyLead)) {
-			toldLead = Math.max(toldLead, m);
-		}
-		// Not "led" twice running: "The Wizards led 48-39 at halftime. They
-		// led by as many as 15 in the third".
-		const ledPrev = / led\b/.test(out.at(-1) ?? "");
-		const peak =
-			bigGone &&
-			m > 0 &&
-			!peakShown() &&
-			wMaxAt !== undefined &&
-			wMax >= toldLead + 4
-				? wMaxAt > halfN && wMaxAt < regPeriods
-					? ledPrev
-						? `The lead reached ${wMax} in ${when(wMaxAt)}`
-						: `${W} led by as many as ${wMax} in ${when(wMaxAt)}`
-					: wMaxAt <= halfN
-						? ledPrev
-							? `The lead had reached ${wMax} in ${when(wMaxAt)}`
-							: `${W} had led by as many as ${wMax} in ${when(wMaxAt)}`
-						: undefined
-				: undefined;
-		const stretched =
-			bigGone &&
-			m > 0 &&
-			!peakShown() &&
-			wMaxAt === regPeriods &&
-			wMax >= toldLead + 4
-				? `${W} took ${aNum(m)}-point lead into the ${last} and stretched it to ${wMax}`
-				: undefined;
-		if (peak || stretched) {
-			covers.add("winnerPeak");
-		}
-		// THE LEAD THAT NEARLY WENT. Up 13 going into the last quarter, won by
-		// 3: the losers took that quarter by 10 or more, and the recap went
-		// straight from "It was a 13-point game entering the fourth" to a
-		// three-pointer that cut it to one with 8 seconds left - in all 16
-		// such games of a 953-game corpus, the quarter that made it close was
-		// never told.
-		const lLast = lq[regPeriods - 1] ?? 0;
-		const wLast = wq[regPeriods - 1] ?? 0;
-		// How much of a lead the losers have to take back in the last quarter
-		// for it to be the story: "were still 11 up going into the fourth"
-		// over a 4-point final had to say who closed the gap.
-		const PUSH = 7;
-		if (stretched) {
-			covers.add("entering");
-			// Stretched to 20 and won by 3: the quarter that made it close is
-			// the part a reader needs. "They took a 15-point lead into the
-			// fourth and stretched it to 20" went straight to a three at the
-			// buzzer that cut it to 115-112.
-			if (
-				(shape.ot > 0 || shape.margin <= 6) &&
-				wMax - shape.margin >= 10 &&
-				lLast > wLast
-			) {
-				covers.add("lastQuarter");
-				return `${stretched}, but ${l} took the ${last} quarter ${lLast}-${wLast}${shape.ot > 0 ? "" : " to make a game of it"}.`;
-			}
-			// Stretched to 15 and won by 5 without the losers winning the
-			// quarter: the gap they closed, all the same.
-			if (shape.ot === 0 && shape.margin <= 6 && wMax - shape.margin >= 10) {
-				return `${stretched}, though ${l} cut it to ${shape.margin} by the end.`;
-			}
-			return `${stretched}.`;
-		}
-		// AGAINST THE HALF. Right after a halftime line that put the same
-		// side in front, the score going into the last quarter is told
-		// against it: "The Wizards were up 8 at the half, 60-52. Going into
-		// the fourth, the Wizards were up 2." was one form filled in twice,
-		// and "The lead was down to 2 going into the fourth" says what
-		// happened in between.
-		const halfM = wh - lh;
-		const prevLine = out.at(-1) ?? "";
-		const againstHalf =
-			m !== 0 &&
-			Math.sign(m) === Math.sign(halfM) &&
-			/\b(?:half|halftime|break)\b/.test(prevLine) &&
-			!/\b(?:going into|entering) the\b/.test(prevLine)
-				? Math.abs(m) < Math.abs(halfM)
-					? pick(
-							rng,
-							[
-								`The lead was down to ${Math.abs(m)} going into the ${last}`,
-								`That was down to ${Math.abs(m)} going into the ${last}`,
-							],
-							"story:enteringDownTo",
-						)
-					: Math.abs(m) > Math.abs(halfM)
-						? pick(
-								rng,
-								[
-									`The lead had grown to ${Math.abs(m)} going into the ${last}`,
-									`The lead was out to ${Math.abs(m)} going into the ${last}`,
-								],
-								"story:enteringGrown",
-							)
-						: `It was still ${aNum(Math.abs(m))}-point game going into the ${last}`
-				: undefined;
-		// Up 12 going into the fourth, in front for good only late in it: the
-		// losers caught them in between. "The lead had grown to 12 going into
-		// the fourth. The Grizzlies led 101-100 with two minutes left" left
-		// the reader to work out how.
-		// The losers did not win the quarter by much, but they caught up in it
-		// - a tie in the last quarter is as much a comeback as the lead.
-		const caughtLate =
-			m >= 8 &&
-			shape.ot === 0 &&
-			shape.margin <= 6 &&
-			lLast - wLast < PUSH &&
-			((lastLead?.side === wSide && lastLead.period === regPeriods) ||
-				flow?.lastTie?.period === regPeriods);
-		const cameBack = () =>
-			pick(rng, ["came back", "rallied", "fought back"], "story:caughtLate");
-		if (caughtLate && peak) {
-			covers.add("entering");
-			out.push(`${peak}.`);
-			return `It was ${aNum(m)}-point game going into the ${last}, but ${l} ${cameBack()}.`;
-		}
-		if (caughtLate) {
-			covers.add("entering");
-			return `${
-				againstHalf ??
-				pick(
-					rng,
-					[
-						`${W} were ${m} up going into the ${last}`,
-						`It was ${aNum(m)}-point game entering the ${last}`,
-						`Going into the ${last}, ${w} were up ${m}`,
-					],
-					"story:enteringUp",
-				)
-			}, but ${l} ${cameBack()}.`;
-		}
-		// In overtime too: "They were still 18 up going into the fourth. The
-		// Pelicans' Quentin Ingram forced overtime on a three-pointer at the
-		// buzzer" skipped the quarter the Pelicans won 30-12 to get there.
-		if (m > 0 && (shape.ot > 0 || shape.margin <= 6) && lLast - wLast >= PUSH) {
-			covers.add("entering").add("lastQuarter");
-			// The quarter that made it close, in more than one shape: lowered
-			// to a 7-point push, it is a few games a night.
-			const q = `${lLast}-${wLast}`;
-			const pushed =
-				shape.ot > 0
-					? `, but ${l} took the ${last} quarter ${q}`
-					: pick(
-							rng,
-							[
-								`, but ${l} took the ${last} quarter ${q}`,
-								`, but ${l} won the ${last} quarter ${q} to make it close`,
-								`, but ${l} cut into it with ${aFigure(q)} ${last} quarter`,
-							],
-							"story:nearlyWent",
-						);
-			if (peak) {
-				// Two sentences, not one of 140 characters that named the
-				// winners twice running: the lead, then where it stood.
-				out.push(`${peak}.`);
-				return `It was ${aNum(m)}-point game going into the ${last}${pushed}.`;
-			}
-			return `${
-				againstHalf ??
-				pick(
-					rng,
-					[
-						`${W} were ${m} up going into the ${last}`,
-						`It was ${aNum(m)}-point game entering the ${last}`,
-						`Going into the ${last}, ${w} were up ${m}`,
-					],
-					"story:enteringUp",
-				)
-			}${pushed}.`;
-		}
-		if (peak) {
-			covers.add("entering");
-			return m * 3 <= wMax
-				? `${peak}, but it was ${aNum(m)}-point game going into the ${last}.`
-				: peak.startsWith("The lead")
-					? `${peak} and was still ${m} going into the ${last}.`
-					: `${peak} and were still ${m} up going into the ${last}.`;
-		}
-		if (Math.abs(m) > 6 && !(anyLead && m > 0)) {
-			return undefined;
-		}
-		covers.add("entering");
-		// Close going into the last quarter and not at the end: the quarter
-		// that decided it is the story's last word. "It was a 2-point game
-		// entering the fourth." closed a 120-106 game.
-		const pulledAway =
-			m >= 0 &&
-			shape.ot === 0 &&
-			shape.margin - m >= 8 &&
-			!opts.lastQuarterTold;
-		const decided = (s: string) => {
-			if (!pulledAway) {
-				return s;
-			}
-			covers.add("lastQuarter");
-			const who = s.includes(w) || s.startsWith(W) ? "they" : w;
-			return `${s.slice(0, -1)}, and ${who} won the ${last} quarter ${wLast}-${lLast}.`;
-		};
-		if (m === 0) {
-			return decided(
-				pick(
-					rng,
-					[
-						`It was tied going into the ${last}.`,
-						`Nothing separated them going into the ${last}.`,
-					],
-					"story:enteringTied",
-				),
-			);
-		}
-		if (againstHalf) {
-			return m > 0 ? decided(`${againstHalf}.`) : `${againstHalf}.`;
-		}
-		if (m > 0) {
-			return decided(
-				pick(
-					rng,
-					[
-						`${W} were ${m} up going into the ${last}.`,
-						`It was ${aNum(m)}-point game entering the ${last}.`,
-						`Going into the ${last}, ${w} were up ${m}.`,
-					],
-					"story:enteringUp",
-				),
-			);
-		}
-		return pick(
-			rng,
-			[
-				`${L} were ${-m} up going into the ${last}.`,
-				`${L} took ${aNum(-m)}-point lead into the ${last}.`,
-				`Going into the ${last}, ${l} were up ${-m}.`,
-			],
-			"story:enteringDown",
-		);
-	};
-
-	// THE LAST QUARTER, when that is where it was won: behind or level going
-	// into it, winners at the end. "The second half belonged to the Nuggets,
-	// 64-50" was all one recap said of a game the Nuggets trailed by nine
-	// after three and took 38-21 in the fourth.
-	const lastIdx = regPeriods - 1;
-	const sum = (q: number[]) =>
-		q.slice(0, lastIdx).reduce((a, b) => a + (b ?? 0), 0);
-	const wIn = sum(wq);
-	const lIn = sum(lq);
-	const wLast = wq[lastIdx] ?? 0;
-	const lLast = lq[lastIdx] ?? 0;
-	const wonInLast = shape.ot === 0 && wIn <= lIn;
-	const lastQuarterTurn = (): string => {
-		covers.add("entering").add("lastQuarter").add("secondHalf");
-		const last = ordinal(regPeriods);
-		const q = `${wLast}-${lLast}`;
-		const lastRun =
-			run && run.winner && run.period === regPeriods ? run : undefined;
-		// A run in the quarter before, which got them back in it: told first,
-		// so the clock runs forward.
-		const lateRun =
-			run && run.winner && run.period > halfN && run.end < regPeriods
-				? run
-				: undefined;
-		if (lastRun || lateRun) {
-			covers.add("run");
-		}
-		// The lede gave the quarter's score, so the story gives where it
-		// stood going into it: "taking over with a 34-25 fourth quarter" and
-		// then "the Warriors won the fourth quarter 34-25" was one fact twice.
-		if (opts.lastQuarterTold) {
-			if (lateRun) {
-				const ran = `${W} ran off ${lateRun.pts} straight points ${runAt(lateRun)}`;
-				return wIn === lIn
-					? `${ran}, and it was ${wIn}-${lIn} going into the ${last}.`
-					: `${ran} but still trailed ${lIn}-${wIn} going into the ${last}.`;
-			}
-			return wIn === lIn
-				? `It was ${wIn}-${lIn} going into the ${last}${lastRun ? `, and ${w} ran off ${lastRun.pts} straight points` : ""}.`
-				: `${W} trailed ${lIn}-${wIn} going into the ${last}${lastRun ? `, then ran off ${lastRun.pts} straight points` : ""}.`;
-		}
-		if (lateRun) {
-			const ran = `${W} ran off ${lateRun.pts} straight points ${runAt(lateRun)}`;
-			return wIn === lIn
-				? `${ran}, and it was ${wIn}-${lIn} going into the ${last} before they won the ${last} quarter ${q}.`
-				: `${ran} but still trailed ${lIn}-${wIn} going into the ${last}, then won the ${last} quarter ${q}.`;
-		}
-		if (wIn === lIn) {
-			return lastRun
-				? `It was ${wIn}-${lIn} going into the ${last}, and ${w} ran off ${lastRun.pts} straight points on the way to a ${q} ${last} quarter.`
-				: pick(
-						rng,
-						[
-							`It was ${wIn}-${lIn} going into the ${last}, and ${w} won the ${last} quarter ${q}.`,
-							`Tied at ${wIn} going into the ${last}, ${w} took the ${last} quarter ${q}.`,
-						],
-						"story:lastTied",
-					);
-		}
-		return lastRun
-			? `${W} trailed ${lIn}-${wIn} going into the ${last}, then ran off ${lastRun.pts} straight points on the way to a ${q} ${last} quarter.`
-			: pick(
-					rng,
-					[
-						// "Still" only after a halftime they led: "The Cavaliers went
-						// into halftime ahead 57-43. The Magic were still up 82-80".
-						`${L} were ${lh > wh ? "still " : ""}up ${lIn}-${wIn} going into the ${last}, and ${w} won the ${last} quarter ${q}.`,
-						`${W} trailed ${lIn}-${wIn} going into the ${last}, then took the ${last} quarter ${q}.`,
-						// "The Bucks were 1 down" is no one's sentence.
-						lIn - wIn >= 3
-							? `${W} were ${lIn - wIn} down going into the ${last} and won the ${last} quarter ${q}.`
-							: `${W} trailed by ${lIn - wIn === 1 ? "a point" : "two"} going into the ${last} and won the ${last} quarter ${q}.`,
-					],
-					"story:lastTurn",
-				);
-	};
-
-	if (lh > wh) {
-		// --- DOWN AT THE BREAK, AND WON. The story is the turn. ---
-		covers.add("half").add("comeback");
-		const early = run && run.winner && run.period <= halfN ? run : undefined;
-		if (hot || early) {
-			// The winners were the better team early, lost the thread, and
-			// found it again: three acts, and the first one used to be a loose
-			// sentence after the second.
-			covers.add("firstQuarter");
-			if (early) {
-				covers.add("run");
-			}
-			const opener =
-				early && early.end === 1 && hot
-					? `${W} ran off ${early.pts} straight points in the first and won the quarter ${w1}-${l1}`
-					: early
-						? `${W} ran off ${early.pts} straight points ${runAt(early)}`
-						: `${W} won the first quarter ${w1}-${l1}`;
-			if (hot && !(early && early.period > 1)) {
-				toldLead = w1 - l1;
-			}
-			out.push(
-				hot
-					? `${opener}, but ${l} came back to lead ${lh}-${wh} at halftime.`
-					: `${opener}, but ${l} led ${lh}-${wh} at halftime.`,
-			);
-		} else if (run && !run.winner && run.period <= halfN) {
-			covers.add("run");
-			// The deficit the winners came back from, when the run built more
-			// than the halftime score shows: "Lakers rally from 15 down" sat
-			// over "The Pistons were up 58-45 at the break after they ran off
-			// 12 straight points in the second" and never said 15.
-			const peakFirst =
-				!opts.comebackTold &&
-				lMaxAt !== undefined &&
-				lMaxAt <= halfN &&
-				lMax >= 12 &&
-				lMax > lh - wh &&
-				// Fifteen is a comeback the headline can name; under it, only a
-				// peak well past the halftime score is worth the words.
-				(lMax >= 15 || lMax >= lh - wh + 3);
-			if (peakFirst) {
-				covers.add("loserPeak");
-			}
-			out.push(
-				peakFirst
-					? `${L} ran off ${run.pts} straight points ${runAt(run)}, led by as many as ${lMax} and were up ${lh}-${wh} at halftime.`
-					: pick(
-							rng,
-							[
-								`${L} ran off ${run.pts} straight points ${runAt(run)} and led ${lh}-${wh} at halftime.`,
-								`${L} were up ${lh}-${wh} at the break after they ran off ${run.pts} straight points ${runAt(run)}.`,
-							],
-							"story:downRun",
-						),
-			);
-		} else if (
-			!opts.comebackTold &&
-			lMaxAt !== undefined &&
-			lMaxAt <= halfN &&
-			lMax >= lh - wh + 4
-		) {
-			covers.add("loserPeak");
-			out.push(
-				pick(
-					rng,
-					[
-						`${L} led by as many as ${lMax} in ${when(lMaxAt)} and were still up ${lh}-${wh} at halftime.`,
-						`${L} were up by as many as ${lMax} in ${when(lMaxAt)} and took a ${lh}-${wh} lead into the break.`,
-					],
-					"story:downPeak",
-				),
-			);
-		} else {
-			out.push(halfLine(shape.loser, lh, wh));
-		}
-		covers.add("secondHalf");
-		if (shape.ot > 0) {
-			// Their run in the half goes in with it, in order: "...and
-			// regulation ended tied at 93. They ran off 18 straight points in
-			// the third" told the third quarter after the end of the fourth.
-			const halfRun =
-				run && run.winner && run.period > halfN && run.end <= regPeriods
-					? run
-					: undefined;
-			if (halfRun) {
-				covers.add("run");
-			}
-			out.push(
-				// Not "to force overtime": the side that tied it at the end may
-				// have been the other one, and the finish says who. And not "and
-				// it went to overtime" either: the lead has said that, and the
-				// finish says it again with the shot that forced it. The score
-				// it ended at is the fact neither of them has.
-				halfRun
-					? `${W} ran off ${halfRun.pts} straight points ${runAt(halfRun)} on the way to a ${w2}-${l2} second half, and regulation ended tied at ${wh + w2}.`
-					: `${W} won the second half ${w2}-${l2}, and regulation ended tied at ${wh + w2}.`,
-			);
-		} else if (wonInLast) {
-			out.push(...gotAway(), lastQuarterTurn());
-		} else if (run && run.winner && run.period > halfN) {
-			covers.add("run");
-			out.push(
-				pick(
-					rng,
-					[
-						`${W} took over after the break: they ran off ${run.pts} straight points ${runAt(run)} and won the second half ${w2}-${l2}.`,
-						`After halftime it was all ${w}, ${w2}-${l2}, and they ran off ${run.pts} straight points ${runAt(run)}.`,
-					],
-					"story:turnRun",
-				),
-			);
-		} else {
-			// Opened on the winners already ("The Mavericks ran off 12 straight
-			// in the first... but the Hawks came back"), the turn opens on the
-			// clock rather than naming them a second time running.
-			const openedOnWinner = out[0]!.startsWith(W);
-			out.push(
-				pick(
-					rng,
-					openedOnWinner
-						? [
-								`After the break, ${w} outscored ${l} ${w2}-${l2}.`,
-								`After halftime it was ${w} again, ${w2}-${l2} over the second half.`,
-							]
-						: w2 - l2 >= 8
-							? [
-									`${W} took over after the break, winning the second half ${w2}-${l2}.`,
-									`After halftime it was all ${w}, ${w2}-${l2}.`,
-									`The second half belonged to ${w}, ${w2}-${l2}.`,
-								]
-							: [
-									`${W} outscored ${l} ${w2}-${l2} after the break.`,
-									`${W} won the second half ${w2}-${l2}.`,
-								],
-					openedOnWinner ? "story:turnAgain" : "story:turn",
-				),
-			);
-		}
-		return { sentences: out, covers };
-	}
-
-	covers.add("half");
-	if (wh === lh) {
-		// --- TIED AT THE BREAK. ---
-		// A lead from before the break goes with the tie it fell to.
-		const tiedHalf = (): string => {
-			if (bigGone && wMaxAt !== undefined && wMaxAt <= halfN) {
-				covers.add("winnerPeak");
-				return `${W} led by as many as ${wMax} in ${when(wMaxAt)}, but it was ${wh}-${lh} at halftime.`;
-			}
-			// Or the losers' lead, which is the comeback: "The Pistons had a
-			// 19-0 run in the first, and it still was not enough. The teams
-			// were tied at 56 at the break" over "rally from 19 down".
-			if (
-				!opts.comebackTold &&
-				lMax >= 12 &&
-				lMaxAt !== undefined &&
-				lMaxAt <= halfN
-			) {
-				covers.add("loserPeak").add("comeback");
-				if (run && !run.winner && run.end <= halfN) {
-					covers.add("run");
-					return `${L} ran off ${run.pts} straight points ${runAt(run)} and led by as many as ${lMax}, but it was ${wh}-${lh} at halftime.`;
-				}
-				return `${L} led by as many as ${lMax} in ${when(lMaxAt)}, but it was ${wh}-${lh} at halftime.`;
-			}
-			return pick(
-				rng,
-				[
-					`It was ${wh}-${lh} at halftime.`,
-					`The teams were tied at ${wh} at the break.`,
-				],
-				"story:halfTied",
-			);
-		};
-		if (wonInLast) {
-			const half = tiedHalf();
-			out.push(half, ...gotAway(), lastQuarterTurn());
-			return { sentences: out, covers };
-		}
-		const loserPeakFirst =
-			!opts.comebackTold &&
-			lMax >= 12 &&
-			lMaxAt !== undefined &&
-			lMaxAt <= halfN;
-		if (!close && w2 - l2 >= 8) {
-			covers.add("secondHalf");
-			const parts = [`won the second half ${w2}-${l2}`];
-			if (run && run.winner && run.period > halfN) {
-				covers.add("run");
-				parts.push(`ran off ${run.pts} straight points ${runAt(run)}`);
-			}
-			// The losers' early lead first, then the half that won it: "The
-			// Kings ran off 16 straight points in the first and led by as many
-			// as 12, but it was 57-57 at halftime" ended the story there, over
-			// a 54-41 second half.
-			if (loserPeakFirst) {
-				out.push(tiedHalf(), `${W} ${series(parts)}.`);
-			} else {
-				out.push(
-					`It was ${wh}-${lh} at halftime before ${w} ${series(parts)}.`,
-				);
-			}
-			return { sentences: out, covers };
-		}
-		out.push(tiedHalf());
-		const e = entering();
-		if (e) {
-			out.push(e);
-		}
-		return { sentences: out, covers };
-	}
-
-	// --- IN FRONT AT THE BREAK. ---
-	const up = wh - lh;
-	// Where the plain halftime line went, so the lead it grew into can join it.
-	let plainHalfAt = -1;
-	const firstRun = run && run.winner && run.period <= halfN ? run : undefined;
-	// THE HALF THAT WAS NOT THE STORY. A few points up at the break in a game
-	// settled late, with nothing in the first half worth telling: every recap
-	// on a page gave its halftime score, and a writer with a finish to tell
-	// goes straight to the fourth. Not when the first half has something the
-	// story places at the break - a run, a lead built or lost there.
-	const quietHalf =
-		!!flow &&
-		(close || wonInLast) &&
-		up <= 9 &&
-		!(raw && raw.period <= halfN && (raw.endPeriod ?? raw.period) > halfN) &&
-		!(lMaxAt !== undefined && lMaxAt <= halfN && lMax >= 6) &&
-		!(wMaxAt !== undefined && wMaxAt <= halfN && wMax > up + 3) &&
-		rng() < 0.7;
-	if (
-		!opts.comebackTold &&
-		lMaxAt !== undefined &&
-		lMaxAt <= halfN &&
-		lMax >= 10
-	) {
-		// Behind early, in front by the break.
-		covers.add("loserPeak");
-		if (firstRun) {
-			covers.add("run");
-		}
-		out.push(
-			`${L} led by as many as ${lMax} in ${when(lMaxAt)}, but ${w} ${
-				firstRun
-					? `ran off ${firstRun.pts} straight points ${runAt(firstRun)} and `
-					: ""
-			}${pick(rng, [`led ${wh}-${lh} at halftime`, `were in front ${wh}-${lh} by the break`], "story:turnedByHalf")}.`,
-		);
-	} else if (
-		bigGone &&
-		!firstRun &&
-		wMaxAt !== undefined &&
-		wMaxAt <= halfN &&
-		wMax >= up + 4 &&
-		!(hotStart && wMax <= w1 - l1 + 3)
-	) {
-		// The lead that got away outranks the first quarter that built it.
-		covers.add("winnerPeak");
-		out.push(
-			pick(
-				rng,
-				[
-					`${W} led by as many as ${wMax} in ${when(wMaxAt)} and were still up ${wh}-${lh} at halftime.`,
-					`${W} were up by as many as ${wMax} in ${when(wMaxAt)} and took a ${wh}-${lh} lead into the break.`,
-				],
-				"story:upPeak",
-			),
-		);
-	} else if (firstRun && firstRun.end === 1 && hotStart) {
-		covers.add("run").add("firstQuarter");
-		toldLead = w1 - l1;
-		out.push(
-			`${W} ran off ${firstRun.pts} straight points in the first, won the quarter ${w1}-${l1} and led ${wh}-${lh} at halftime.`,
-		);
-	} else if (!firstRun && hotStart) {
-		covers.add("firstQuarter");
-		toldLead = w1 - l1;
-		out.push(
-			pick(
-				rng,
-				[
-					`${W} won the first quarter ${w1}-${l1} and led ${wh}-${lh} at halftime.`,
-					`${W} took the first quarter ${w1}-${l1} and were up ${wh}-${lh} at the break.`,
-				],
-				"story:hotStart",
-			),
-		);
-	} else if (firstRun) {
-		covers.add("run");
-		out.push(
-			pick(
-				rng,
-				[
-					`${W} ran off ${firstRun.pts} straight points ${runAt(firstRun)} and led ${wh}-${lh} at halftime.`,
-					`${W} were up ${wh}-${lh} at the break after they ran off ${firstRun.pts} straight points ${runAt(firstRun)}.`,
-				],
-				"story:upRun",
-			),
-		);
-	} else if (!quietHalf) {
-		out.push(halfLine(shape.winner, wh, lh));
-		plainHalfAt = out.length - 1;
-	}
-	toldLead = Math.max(toldLead, up);
-	peakShown();
-
-	if (wonInLast) {
-		out.push(...gotAway(), lastQuarterTurn());
-		return { sentences: out, covers };
-	}
-
-	if (close) {
-		// Nothing else to tell, and the half was left out: it goes back in
-		// rather than leave the story empty.
-		const story = (): { sentences: string[]; covers: Set<StoryCover> } => {
-			if (out.length === 0) {
-				out.push(halfLine(shape.winner, wh, lh));
-			}
-			return { sentences: out, covers };
-		};
-		// Tight to the end: how tight, going into the last period. The finish
-		// takes it from there.
-		const most = Math.max(wMax, lMax);
-		// THE LEAD THEY CAME BACK FROM. Up at the half, then down 15 in the
-		// fourth, then winners in overtime: "The Bucks carried a 58-48 lead
-		// into the second half. Isaiah Nash forced overtime on a
-		// three-pointer" never said how they came to need one.
-		const lateLoserLead =
-			!covers.has("loserPeak") &&
-			lMaxAt !== undefined &&
-			lMaxAt > halfN &&
-			lMaxAt <= regPeriods &&
-			lMax >= 10;
-		if (lateLoserLead) {
-			covers.add("loserPeak").add("secondHalf");
-			const m = shape.marginEnteringLast;
-			const last = ordinal(regPeriods);
-			if (lMaxAt < regPeriods && m < 0) {
-				covers.add("entering").add("lastQuarter");
-				out.push(
-					`${L} took over after the break, led by as many as ${lMax} in ${when(lMaxAt)} and were still up ${-m} going into the ${last}.`,
-					`${W} won the ${last} quarter ${wLast}-${lLast}.`,
-				);
-			} else {
-				out.push(
-					`${L} took over after the break and led by as many as ${lMax} in ${when(lMaxAt)}.`,
-				);
-				// Back in front by the last quarter: where it stood then.
-				const e = lMaxAt < regPeriods ? entering(true) : undefined;
-				if (e) {
-					out.push(e);
-				}
-			}
-			return story();
-		}
-		if (flow && most > 0 && most <= 8) {
-			out.push(
-				pick(
-					rng,
-					[
-						`Neither side led by more than ${most} all night.`,
-						`It never got away from either team: neither led by more than ${most}.`,
-					],
-					"story:neverApart",
-				),
-			);
-		} else {
-			const e = entering(true);
-			if (e) {
-				out.push(e);
-			}
-		}
-		return story();
-	}
-
-	// DECIDED, BUT NOT AT THE BREAK. "The Hornets led 67-54 at halftime.
-	// They pushed on after the break and led by as many as 20" - of a game
-	// the Clippers took the third quarter 37-27 and were down three going
-	// into the fourth. A lead that came back to a few points before the last
-	// quarter is the second half's story, whatever the final margin.
-	const mIn = shape.marginEnteringLast;
-	if (shape.ot === 0 && mIn > 0 && mIn <= 6 && up - mIn >= 6) {
-		covers.add("entering").add("secondHalf");
-		const last = ordinal(regPeriods);
-		const after = regPeriods === 4 ? "after three" : `going into the ${last}`;
-		// How far they came back: in front in the last quarter, in front
-		// or level before it, or only close. "Cut it to 69-68 after three"
-		// of a game the Raptors then led by five in the fourth told half of
-		// it.
-		const tie = flow?.lastTie;
-		const loserLedAt =
-			lMax > 0 && lMaxAt !== undefined && lMaxAt > halfN ? lMaxAt : undefined;
-		const tiedAt =
-			loserLedAt === undefined && tie && tie.period > halfN
-				? tie.period
-				: undefined;
-		// Their peak and the comeback in one quarter could have come in
-		// either order; "led by 17 in the third, but tied it in the third"
-		// would claim one.
-		const peak =
-			!covers.has("winnerPeak") &&
-			wMaxAt !== undefined &&
-			wMaxAt > halfN &&
-			wMaxAt < regPeriods &&
-			wMax >= up + 4 &&
-			wMaxAt !== loserLedAt &&
-			wMaxAt !== tiedAt;
-		if (peak) {
-			covers.add("winnerPeak");
-		}
-		// How it got away again, unless the lede gave the quarter: with the
-		// run in it when there was one, or the run is told on its own later
-		// as "The game got away in the fourth" after the quarter's score.
-		const lastRun =
-			run && run.winner && run.period === regPeriods ? run : undefined;
-		if (lastRun && !opts.lastQuarterTold) {
-			covers.add("run");
-		}
-		const finish = opts.lastQuarterTold
-			? undefined
-			: lastRun
-				? `${w} ran off ${lastRun.pts} straight points in a ${wLast}-${lLast} ${last}`
-				: `${w} won the ${last} ${wLast}-${lLast}`;
-		if (finish) {
-			covers.add("lastQuarter");
-		}
-		const cut = `cut it to ${wIn}-${lIn} ${after}`;
-		const clause =
-			loserLedAt === regPeriods
-				? `${cut} and went up ${lMax} in the ${last}`
-				: loserLedAt !== undefined
-					? `went up ${lMax} in the ${ordinal(loserLedAt)} but trailed ${wIn}-${lIn} ${after}`
-					: tie && tiedAt !== undefined && tiedAt < regPeriods
-						? `tied it at ${tie.pts} in the ${ordinal(tiedAt)}`
-						: tie && tiedAt === regPeriods
-							? `${cut} and tied it at ${tie.pts} in the ${last}`
-							: cut;
-		// "Went up 5 in the fourth. The Clippers won the fourth 31-25": the
-		// quarter, once it has been named.
-		const fin =
-			finish && clause.includes(` the ${last}`)
-				? finish.replace(` ${last}`, " quarter")
-				: finish;
-		// One "but" to a sentence.
-		const tail =
-			fin && !clause.includes(" but ") && !peak ? `, but ${fin}` : "";
-		const lRun =
-			run && !run.winner && run.period > halfN && run.end < regPeriods
-				? run
-				: undefined;
-		if (peak) {
-			// The halftime line was about them, unless it led with the
-			// losers' early lead.
-			const they = covers.has("loserPeak") ? W : "They";
-			out.push(
-				`${they} led by as many as ${wMax} in ${when(wMaxAt)}, but ${l} ${clause.replace(" but trailed", " and trailed")}.`,
-			);
-		} else if (lRun) {
-			// Their run is how they got back in it.
-			covers.add("run");
-			out.push(
-				`${L} ran off ${lRun.pts} straight points ${runAt(lRun)} and ${clause}${tail}.`,
-			);
-		} else {
-			out.push(`${L} ${clause}${tail}.`);
-		}
-		if (fin && !tail) {
-			out.push(`${cap(fin)}.`);
-		}
-		return { sentences: out, covers };
-	}
-
-	// Decided: what the second half added.
-	const parts: string[] = [];
-	// "The Pelicans led 59-39 at halftime. From there, they led by as many
-	// as 27": "led" twice running, in a hundred recaps of 954. After a
-	// sentence that said it, the peak is the lead's.
-	const ledBefore = / led\b/.test(out.at(-1) ?? "");
-	if (w2 - l2 >= 8) {
-		covers.add("secondHalf");
-		parts.push(`outscored ${l} ${w2}-${l2}`);
-	}
-	if (run && run.winner && run.period > halfN) {
-		covers.add("run");
-		parts.push(`ran off ${run.pts} straight points ${runAt(run)}`);
-	}
-	if (
-		!covers.has("winnerPeak") &&
-		wMaxAt !== undefined &&
-		wMaxAt > halfN &&
-		wMax >= Math.max(up, shape.margin) + 3
-	) {
-		covers.add("winnerPeak");
-		parts.push(
-			ledBefore ? `pushed the lead to ${wMax}` : `led by as many as ${wMax}`,
-		);
-	}
-	if (parts.length > 0) {
-		// The sentence before was about the winners, so they carry on as
-		// "they": "The Lakers were up 56-44 at the break. From there, the
-		// Lakers led by as many as 17" names them twice running.
-		const aboutWinner = !covers.has("loserPeak");
-		const onlyPeak = parts.length === 1 && covers.has("winnerPeak");
-		// The quarter it peaked in, which says more than "the second half":
-		// a lead that reached 20 in the third is a game over early, one
-		// that reached 20 in the fourth may have been close until then.
-		const at = wMaxAt !== undefined ? when(wMaxAt) : "the second half";
-		// A few points at the break and a second half that settled it: the
-		// half is told by what came after it. "By halftime the Lakers were in
-		// front 64-58. After the break, they outscored the Pacers 58-43" is
-		// two checkpoints where a writer says the Lakers pulled away.
-		const pulled = parts[0] === `outscored ${l} ${w2}-${l2}`;
-		const peakToo = parts.length === 2 && covers.has("winnerPeak");
-		if (
-			pulled &&
-			(parts.length === 1 || peakToo) &&
-			plainHalfAt === out.length - 1 &&
-			up <= 9 &&
-			// A run in the first half, or across it, is told against the
-			// halftime score, so that stays.
-			!(raw && raw.period <= halfN) &&
-			rng() < 0.6
-		) {
-			const q = `${w2}-${l2}`;
-			out[plainHalfAt] = pick(
-				rng,
-				[
-					`${W} pulled away in the second half, outscoring ${l} ${q}${peakToo ? ` and leading by as many as ${wMax}` : ""}.`,
-					`${W} broke it open after halftime, outscoring ${l} ${q}${peakToo ? ` and building the lead to ${wMax}` : ""}.`,
-					`${W} were only ${up} up at the break, then won the second half ${q}${peakToo ? ` and led by as many as ${wMax}` : ""}.`,
-					...(up <= 5
-						? [
-								`A close game at halftime got away from ${l}, who were outscored ${q} after the break.${peakToo ? ` ${W} led by as many as ${wMax}.` : ""}`,
-							]
-						: []),
-				],
-				"story:pulledAway",
-			);
-			return { sentences: out, covers };
-		}
-		if (onlyPeak && plainHalfAt === out.length - 1 && rng() < 0.75) {
-			// One sentence for the half and what became of it, as a writer
-			// with a lead and nothing else to say about it puts it.
-			out[plainHalfAt] = pick(
-				rng,
-				[
-					`${W} led ${wh}-${lh} at halftime and pushed the lead to ${wMax} in ${at}.`,
-					`${W} were up ${wh}-${lh} at the break and led by as many as ${wMax} in ${at}.`,
-					`It was ${wh}-${lh} at halftime, and ${w} stretched the lead to ${wMax} in ${at}.`,
-					`${W} took a ${wh}-${lh} lead into the break and built it to ${wMax} in ${at}.`,
-				],
-				"story:halfAndPeak",
-			);
-			return { sentences: out, covers };
-		}
-		out.push(
-			onlyPeak
-				? // The commonest case - nothing to add but how big it got - and
-					// the frame a slate repeated most, so it has shapes of its own.
-					pick(
-						rng,
-						[
-							`${pick(rng, ["After the break", "From there"], "story:after")}, ${aboutWinner ? "they" : w} led by as many as ${wMax}.`,
-							`The lead reached ${wMax} in ${at}.`,
-							`The lead grew to ${wMax} in ${at}.`,
-							`${aboutWinner ? "They" : W} led by as many as ${wMax} in ${at}.`,
-							`${aboutWinner ? "They" : W} pushed on after the break and led by as many as ${wMax}.`,
-						].filter((t) => !ledBefore || !t.includes(" led by ")),
-						"story:peakOnly",
-					)
-				: `${pick(rng, ["After the break", "In the second half", "From there"], "story:after")}, ${aboutWinner ? "they" : w} ${series(parts)}.`,
-		);
-	} else if (l2 - w2 >= 8) {
-		// The lead the second half ate into: "The Magic were ahead 63-39 at
-		// the half" and nothing after it, over a 106-97 final.
-		covers.add("secondHalf");
-		const lateRun =
-			run && !run.winner && run.period > halfN && run.end <= regPeriods
-				? run
-				: undefined;
-		if (lateRun) {
-			covers.add("run");
-		}
-		// The lead's peak after the break, when it outran the halftime one,
-		// goes with it, in order: "The Bulls won the second half 60-40. The
-		// Nuggets led by as many as 35." told the 35 after the half that cut
-		// into it.
-		const peakAfter =
-			!covers.has("winnerPeak") &&
-			wMaxAt !== undefined &&
-			wMaxAt > halfN &&
-			wMax >= up + 3;
-		// A peak a basket past the halftime lead is that lead: "led 61-28 at
-		// halftime... The Nuggets led by as many as 35" said it twice.
-		if (peakAfter || wMax <= up + 2) {
-			covers.add("winnerPeak");
-		}
-		out.push(
-			peakAfter
-				? `${W} led by as many as ${wMax} in ${when(wMaxAt)}, but ${l} won the second half ${l2}-${w2}${lateRun ? ` and ran off ${lateRun.pts} straight points ${runAt(lateRun)}` : ""}.`
-				: lateRun
-					? `${L} won the second half ${l2}-${w2} and ran off ${lateRun.pts} straight points ${runAt(lateRun)}.`
-					: pick(
-							rng,
-							[
-								`${L} won the second half ${l2}-${w2}.`,
-								`${L} outscored ${w} ${l2}-${w2} after the break.`,
-							],
-							"story:loserHalf",
-						),
-		);
-	} else if (aheadForGoodByHalf && shape.margin >= 8) {
-		// "Never got back in front" says they had been; a side that never led
-		// at all gets the plain fact, unless the lede already said it.
-		if (lMax > 0) {
-			out.push(
-				pick(
-					rng,
-					[
-						`${cap(l)} never got back in front.`,
-						`${W} did not trail again.`,
-						`${W} led the rest of the way.`,
-					],
-					"story:held",
-				),
-			);
-		} else if (!opts.wireTold) {
-			out.push(
-				pick(rng, [`${L} never led.`, `${W} never trailed.`], "story:neverLed"),
-			);
-		}
-	} else if (run && !run.winner && run.period > halfN && aheadForGoodByHalf) {
-		// The losers' push that came up short.
-		covers.add("run");
-		out.push(
-			`${L} ran off ${run.pts} straight points ${runAt(run)} but could not get ${
-				lMax > 0 ? "back in front" : "in front"
-			}.`,
-		);
-	}
-	return { sentences: out, covers };
-};
-
-// WHICH RUN OF THE WINNERS' IS NEWS. The game's longest run is 10 or 11
-// points in a typical game, and telling it in every recap made "ran off 11
-// straight points in the second" the commonest sentence on a page. It is
-// told when it is 15 or more; at 12 or more when its quarter broke a close
-// game open or took the winners from behind to in front; and at 10 or more
-// when it came in a last quarter the game was won in.
-const winnersRunIsNews = (
-	shape: Shape,
-	r: { pts: number; period: number; endPeriod?: number },
-): boolean => {
-	const marginAfter = (n: number) =>
-		shape.wq.slice(0, n).reduce((a, b) => a + b, 0) -
-		shape.lq.slice(0, n).reduce((a, b) => a + b, 0);
-	const end = r.endPeriod ?? r.period;
-	const before = marginAfter(r.period - 1);
-	const after = marginAfter(end);
-	return (
-		r.pts >= 15 ||
-		(r.pts >= 12 &&
-			((before <= 4 && after >= 6) || (before < 0 && after > 0))) ||
-		(r.pts >= 10 &&
-			end === shape.regPeriods &&
-			r.period === shape.regPeriods &&
-			shape.ot === 0 &&
-			marginAfter(shape.regPeriods - 1) <= 0)
-	);
-};
-
-// The scoreboard's overall character: a shootout or a defensive grind.
-const combinedNote = (shape: Shape, rng: () => number): string | undefined => {
-	const total = shape.winner.pts + shape.loser.pts;
-	// A game one side pulled away in isn't a grind, whatever the final total -
-	// "a rock fight from the opening tip" next to "pulled away after halftime"
-	// argues with itself.
-	if (shape.margin >= 12) {
-		return undefined;
-	}
-	if (shape.ot === 0 && shape.regPeriods >= 4) {
-		if (total >= 240) {
-			return `The teams combined for ${total} points.`;
-		}
-		// "Neither offense got going" must be true of BOTH offenses. A 94-65
-		// blowout where the winner shot 50%+ is a defensive mauling of one team,
-		// not a grind - so the winner must also have scored low and shot poorly.
-		if (
-			total <= 165 &&
-			shape.winner.pts <= 90 &&
-			teamStats(shape.winner).fgp < 47
-		) {
-			return pick(rng, [
-				`Neither offense could find a rhythm, the teams combining for just ${total} points.`,
-				`Points were hard to come by all night: ${total} of them between the two teams.`,
-				`It was a rock fight from the opening tip.`,
-				`Neither team could get anything going, and it showed on the scoreboard.`,
-			]);
-		}
-	}
-	return undefined;
-};
-
-// The winner's supporting cast - the second (and maybe third) big contributor.
-const supportSentence = (
-	shape: Shape,
-	star: RecapPlayer,
-	rng: () => number,
-	// A clutch hero whose full line the winning-shot sentence already printed.
-	alreadyTold?: string,
-	// A teammate the headline named beside the star. "Evan Hayes and Darius
-	// Hayes post double-doubles" sat over a body whose supporting cast was
-	// the two next scorers, and Darius Hayes was never mentioned.
-	headlined?: RecapPlayer,
-): string | undefined => {
-	const cast = supportingCast(shape.winner.players, star).filter(
-		(p) =>
-			p.name !== alreadyTold &&
-			(p === headlined ||
-				p.pts >= 12 ||
-				doubleCategories(p).length >= 2 ||
-				p.reb >= 12),
-	);
-	if (cast.length === 0) {
-		return undefined;
-	}
-	// The man the box-score card features goes first when the lede went to
-	// somebody else: a 13-13-8 gave the lede to a 22-point scorer and then
-	// vanished from the piece, a fraction of an impact point behind two
-	// teammates in a sentence with room for two.
-	const featured = bestOf(shape.winner.players);
-	const at = featured ? cast.indexOf(featured) : -1;
-	if (featured && at > 0) {
-		cast.splice(at, 1);
-		cast.unshift(featured);
-	}
-	// And the man who outscored the star is never left out for a better
-	// all-round line: "Anthony Jackson chipped in 17 points, and Jaden
-	// Jackson supplied 15" said nothing of Miles Jackson's team-high 18.
-	const scorer = [...shape.winner.players].sort((a, b) => b.pts - a.pts)[0];
-	const scorerAt = scorer ? cast.indexOf(scorer) : -1;
-	if (scorer && scorerAt > 1 && scorer.pts > star.pts) {
-		cast.splice(scorerAt, 1);
-		cast.splice(1, 0, scorer);
-	}
-	// Impact decides WHO is worth a mention, but when the sentence only shows
-	// points, the order has to follow them: "Keegan Mathis threw in 13 points,
-	// and Quentin Mathis posted 18" reads as though the piece cannot count.
-	const [first, next] = cast;
-	if (
-		first &&
-		next &&
-		doubleCategories(first).length < 2 &&
-		doubleCategories(next).length < 2 &&
-		next.pts > first.pts
-	) {
-		cast[0] = next;
-		cast[1] = first;
-	}
-	// The headline's man takes one of the two places - never the one held
-	// by a teammate who outscored the star.
-	const hAt = headlined ? cast.indexOf(headlined) : -1;
-	if (headlined && hAt > 1) {
-		cast.splice(hAt, 1);
-		const slot = cast[1] && cast[1] === scorer && scorer.pts > star.pts ? 0 : 1;
-		const bumped = cast[slot];
-		cast[slot] = headlined;
-		if (bumped) {
-			cast.splice(2, 0, bumped);
-		}
-	}
-	const second = cast[0]!;
-
-	// THE MAN WHO ACTUALLY LED THE SCORING. The story player is chosen on a
-	// whole line - rebounds, assists and steals all count - so the winner's
-	// leading scorer is frequently somebody else, and "chipped in 33" under a
-	// lead of 22 reads as though the piece cannot count. Whoever it is, in
-	// whichever slot, gets a verb that matches his line and the fact is stated.
-	// Measured over 359 engine-simmed recaps this was 24 of them.
-	const topScorer = [...shape.winner.players].sort((a, b) => b.pts - a.pts)[0];
-	const topPts = topScorer?.pts ?? 0;
-	// A team high two men shared is neither's alone: "Anthony Jackson pitched
-	// in with 18 points, and Cade Jackson was the leading scorer with 18
-	// points."
-	const topCount = shape.winner.players.filter((p) => p.pts === topPts).length;
-	const sharedTop = topCount > 1;
-	// Any margin at all: "Keegan Green put up 27... Lonnie Green tacked on 31"
-	// reads as though the piece cannot count, however small the gap. Three or
-	// more level at the top is nobody's lead.
-	const outscoredStar = (p: RecapPlayer) =>
-		p.pts === topPts && topCount <= 2 && p.pts > star.pts && p.pts >= 14;
-
-	const topScorerText = (p: RecapPlayer) =>
-		sharedTop
-			? `${p.name} shared the team high with ${statPhrase(p)}`
-			: pickSentence(
-					rng,
-					[
-						`${p.name} led the scoring with ${statPhrase(p)}`,
-						`${p.name} led the ${nick(shape.winner)} with ${statPhrase(p)}`,
-						// Not "No one scored more than X, who had 16 points, and Y
-						// supplied 14": the long way round to a team high, and it
-						// read as a tie that was not one.
-						`${p.name} had a team-high ${statPhrase(p)}`,
-						`${p.name} was the leading scorer with ${statPhrase(p)}`,
-					],
-					"supportTopScorer",
-				);
-	// Both of them in this sentence: one clause, "apiece".
-	const partner = cast[1];
-	if (
-		sharedTop &&
-		partner &&
-		outscoredStar(second) &&
-		outscoredStar(partner) &&
-		doubleCategories(second).length < 2 &&
-		doubleCategories(partner).length < 2
-	) {
-		return `${second.name} and ${partner.name} led the scoring with ${topPts} points apiece.`;
-	}
-
-	const ddw = doubleWord(doubleCategories(second).length);
-	const secondText = outscoredStar(second)
-		? topScorerText(second)
-		: ddw
-			? pickSentence(
-					rng,
-					[
-						`${second.name} added a ${ddw} with ${statPhrase(second)}`,
-						// "Of his own" says the star had one too: "Evan Hayes had a
-						// double-double of his own" under a 21-point lede had nothing
-						// to be his own beside.
-						...(doubleWord(doubleCategories(star).length) === ddw
-							? [
-									`${second.name} had a ${ddw} of his own, ${statPhrase(second)}`,
-								]
-							: []),
-						// A triple-double is always called one; "went for 15 points,
-						// 10 rebounds, and 10 assists" buried it.
-						...(doubleCategories(second).length >= 3
-							? []
-							: [`${second.name} went for ${statPhrase(second)}`]),
-						`${second.name} ${claimVerb("chipped in")} a ${ddw}, ${statPhrase(second)}`,
-					],
-					"supportDouble",
-				)
-			: `${second.name} ${lineVerb(second, rng)} ${statPhrase(second)}`;
-
-	const third = cast[1];
-	if (third && (third.pts >= 14 || doubleCategories(third).length >= 2)) {
-		const thirdDdw = doubleWord(doubleCategories(third).length);
-		const thirdText = outscoredStar(third)
-			? topScorerText(third)
-			: thirdDdw
-				? // The full line, and named: trimmed to one extra, a 15-10-10
-					// came out as "15 points and 10 rebounds".
-					`${third.name} ${scoredVerb(rng)} a ${thirdDdw}, ${statPhrase(third)}`
-				: `${third.name} ${lineVerb(third, rng)} ${statPhrase(third, 1)}`;
-		// Not always "A verbed X, and B verbed Y": nine straight recaps of one
-		// team used that same two-verb frame, and a beat reader notices the
-		// skeleton before the words. When both are plain scoring lines, the
-		// wire's elided form takes a turn - one verb, the second man's number
-		// riding on it.
-		const plainSecond = statPhrase(second, 1) === plural(second.pts, "point");
-		const plainThird = statPhrase(third, 1) === plural(third.pts, "point");
-		if (
-			!outscoredStar(second) &&
-			!outscoredStar(third) &&
-			!ddw &&
-			!thirdDdw &&
-			plainSecond &&
-			plainThird &&
-			rng() < 0.45
-		) {
-			return `${second.name} ${scoredVerb(rng)} ${second.pts} points and ${third.name} ${third.pts}.`;
-		}
-		// Not the same verb twice in one sentence: "Keegan Ingram had 9
-		// points, 19 rebounds, and 6 steals, and Naji Ingram had a
-		// double-double".
-		const verbOf = (text: string, name: string) =>
-			text.startsWith(`${name} `)
-				? text.slice(name.length + 1).split(" ")[0]
-				: undefined;
-		const v2 = verbOf(secondText, second.name);
-		const v3 = verbOf(thirdText, third.name);
-		if (v2 === "shared" && v3 === "shared") {
-			// "X shared the team high with 23 points..., and Y shared the
-			// team high with 23 points."
-			return `${second.name} and ${third.name} shared the team high with ${second.pts} points apiece.`;
-		}
-		// Only a one-word verb is swapped: "put up", "chipped in" and their
-		// like rotate already, and a particle must not be left behind.
-		const ONE_WORD = [
-			"had",
-			"posted",
-			"scored",
-			"totaled",
-			"delivered",
-			"contributed",
-			"supplied",
-			"provided",
-			"added",
-		];
-		const third2 =
-			v2 !== undefined && v2 === v3 && ONE_WORD.includes(v2)
-				? `${third.name} ${v2 === "added" ? "chipped in" : "added"}${thirdText.slice(third.name.length + 1 + v3.length)}`
-				: thirdText;
-		return `${secondText}, and ${third2}.`;
-	}
-	return `${secondText}.`;
-};
-
-// The losing side: their leader, and (when there's a clear culprit) why it wasn't
-// enough.
-const loserSentence = (
-	shape: Shape,
-	rng: () => number,
-	// Facts the winner's stat note already spent. Saying "the Nets turned 19
-	// Magic turnovers into offense" and then "the Magic were undone by 19
-	// turnovers" is the same fact twice in three sentences.
-	spent: Set<StatFact> = new Set(),
-	// The headline already gave this man's line.
-	skipLeader = false,
-): string | undefined => {
-	const best = bestOf(shape.loser.players);
-
-	// A REASON IS A DIFFERENCE. "But 18 turnovers did them in" of a game the
-	// winners turned it over 16 times blamed the loss on something both teams
-	// did - 225 of the 418 turnover reasons in a corpus run were that. A
-	// number is the reason they lost only when it is well worse than the
-	// winners'.
-	const lossStats = teamStats(shape.loser);
-	const winStats = teamStats(shape.winner);
-	const tovReason =
-		lossStats.tov >= 18 &&
-		lossStats.tov - winStats.tov >= 5 &&
-		!spent.has("loserTov");
-	// Eight points of field-goal percentage, as for threes: five was a
-	// quarter of all games, and "but they shot just 39.6% as a team" closed
-	// the losers' line in one recap in four.
-	const fgpReason =
-		lossStats.fga >= 20 &&
-		lossStats.fgp <= 40 &&
-		winStats.fgp - lossStats.fgp >= 8 &&
-		!spent.has("loserFgp");
-	const threesReason =
-		lossStats.tpa >= 25 &&
-		lossStats.tpp <= 28 &&
-		winStats.tpp - lossStats.tpp >= 8 &&
-		!spent.has("loserThrees");
-
-	// THE HEADLINE SUBJECT HAS TO BE IN THE STORY. Dropping him because the
-	// headline "already said it" produced recaps like "Isaac Adkins' 24 and 11
-	// not enough..." over a body that never mentions Adkins again - the surest
-	// sign in the whole piece that nobody wrote it. Keep him, but with a fact
-	// the headline did NOT print: how he shot. Failing that, hand the sentence
-	// to the next man up, who at least is new information.
-	if (skipLeader && best) {
-		const stats = teamStats(shape.loser);
-		const why = tovReason
-			? `, but ${theNick(shape.loser)} gave it away ${stats.tov} times`
-			: fgpReason
-				? `, but ${theNick(shape.loser)} shot ${stats.fgp}% as a team`
-				: "";
-		// ALWAYS returns a sentence naming him. Returning undefined here is what
-		// left "Marko Jaric headlined but never appears" - the headline subject
-		// dropping out of his own story. Each rung adds something the headline
-		// did not print, so his line is never simply restated.
-		if (best.fga >= 12) {
-			const forTeam = why === "" ? ` for ${theNick(shape.loser)}` : "";
-			const fgp = best.fga > 0 ? (100 * best.fg) / best.fga : 0;
-			return pick(
-				rng,
-				[
-					`${best.name} got his ${best.pts} on ${best.fg}-of-${best.fga} shooting${forTeam}${why}.`,
-					`${best.name} shot ${best.fg}-of-${best.fga} on the way to his ${best.pts}${forTeam}${why}.`,
-					...(fgp <= 40
-						? [
-								`${best.name} needed ${best.fga} shots for his ${best.pts}${forTeam}${why}.`,
-							]
-						: []),
-					...(fgp >= 55
-						? [
-								`${best.name} took just ${best.fga} shots to get his ${best.pts}${forTeam}${why}.`,
-							]
-						: []),
-				],
-				"loserHeadlinedShooting",
-			);
-		}
-		const second = supportingCast(shape.loser.players, best)[0];
-		if (second && (second.pts >= 14 || doubleCategories(second).length >= 2)) {
-			return `${best.name} got what help there was from ${second.name}, who had ${statPhrase(second)}${why}.`;
-		}
-		return `${best.name} led ${theNick(shape.loser)} in scoring${why === "" ? ", to no avail" : why}.`;
-	}
-
-	// The story pick is made on the whole line, so the losing side's "best" can
-	// be a 12-point, 9-rebound, 3-steal night - too quiet for this sentence,
-	// which then said nothing, and the man who actually scored 20 for them
-	// turned up two paragraphs later as an afterthought. When the pick is
-	// quiet, the sentence goes to the scorer.
-	const topScorer = [...shape.loser.players].sort((a, b) => b.pts - a.pts)[0];
-	const quiet = (p: RecapPlayer | undefined) =>
-		!p || (p.pts < 18 && doubleCategories(p).length < 2);
-	const leader = skipLeader
-		? undefined
-		: quiet(best) && topScorer && topScorer.pts >= 18
-			? topScorer
-			: best;
-	const stats = teamStats(shape.loser);
-	// "reason" is appended after "...led the Loser", so it uses a pronoun rather
-	// than repeating the team name.
-	let reason = "";
-	if (tovReason) {
-		reason = pick(
-			rng,
-			[
-				`, but ${stats.tov} turnovers did them in`,
-				`, but they coughed it up ${stats.tov} times`,
-				`, but ${stats.tov} turnovers proved costly`,
-				`, though ${stats.tov} giveaways kept undoing the good work`,
-				`, and ${stats.tov} turnovers were far too many`,
-				`, but they turned it over ${stats.tov} times`,
-			],
-			"loserTov",
-		);
-	} else if (fgpReason) {
-		reason = pick(
-			rng,
-			// Not ", on a 35.9% shooting night for the team" after a man's
-			// line: it hung the team's shooting on him, and ran in one recap in
-			// thirteen.
-			[
-				`, but they shot just ${stats.fgp}% as a team`,
-				`, but the team shot ${stats.fgp}% from the floor`,
-				`, but they made only ${stats.fgp}% of their shots`,
-			],
-			"loserFgp",
-		);
-	} else if (threesReason) {
-		// Why they lost, in the same sentence as who tried hardest to stop it,
-		// instead of a bare "The Nets shot 25% from three on 32 attempts" two
-		// paragraphs away.
-		spent.add("loserThrees");
-		reason = pick(
-			rng,
-			[
-				`, but they went ${stats.tp}-of-${stats.tpa} from three`,
-				`, though the threes would not fall - ${stats.tp}-of-${stats.tpa}`,
-				`, on a night they shot ${stats.tpp}% from deep`,
-			],
-			"loserThrees",
-		);
-	}
-
-	if (leader && (leader.pts >= 18 || doubleCategories(leader).length >= 2)) {
-		// Two verbs a desk would use. "Headed", "fronted" and "was the best of"
-		// were synonyms for their own sake, and a reader notices a thesaurus.
-		const verb = pick(rng, ["led", "paced"], "loserLedVerb");
-		// A 40-point night on the losing side is its own story, not "the best
-		// the Nets could offer".
-		if (leader.pts >= 40) {
-			const them = theNick(shape.loser);
-			return pickSentence(
-				rng,
-				[
-					`${leader.name} poured in ${leader.pts} for ${them}${reason || ", and it still was not enough"}.`,
-					`${cap(them)} got ${plural(leader.pts, "point")} from ${leader.name}${reason || " and lost anyway"}.`,
-					`${leader.name} went for ${statPhrase(leader)} in a losing cause${reason}.`,
-				],
-				"loserBig",
-			);
-		}
-		// A 19-rebound night is not an ordinary double-double, and burying it in
-		// "(19 points and 19 rebounds)" reads like it was.
-		if (leader.reb >= 18) {
-			return `${leader.name} was everywhere on the glass for ${theNick(
-				shape.loser,
-			)}, pulling down ${leader.reb} rebounds to go with ${plural(
-				leader.pts,
-				"point",
-			)}${reason}.`;
-		}
-		const ddw = doubleWord(doubleCategories(leader).length);
-		// The numbers, not a label and the numbers in brackets: "Payton Owens'
-		// double-double (10 points, 15 rebounds and 6 assists) headed the
-		// Bucks" was in more than a quarter of all recaps. The line says what
-		// it was; a triple-double alone is still called one.
-		const triple = doubleCategories(leader).length >= 3;
-		const sp = statPhrase(leader);
-		const leaderLine = `${poss(leader.name)} ${sp}`;
-		const them = theNick(shape.loser);
-		// "Led them with" is the scorer's phrase: only for the man nobody on
-		// his side outscored.
-		const isTop = !shape.loser.players.some((p) => p.pts > leader.pts);
-
-		// SHAPES, not synonyms. Rotating six verbs through one frame - "X's 22
-		// points led/paced/topped/headed the Y" - is the single most obvious tell
-		// that nobody wrote this: every losing team in the league gets the same
-		// sentence with the nouns swapped. These put the player, the team and the
-		// numbers in genuinely different places.
-		// With no reason clause to carry, the losers' second man rides along:
-		// "Obi Brooks' 18 points led the Celtics, and Keegan Brooks had 16"
-		// over two sentences of the same shape in a row.
-		// The next scorer down, never one who outscored the man just called
-		// their leader, and with a verb the ledger has not spent.
-		const second =
-			reason === ""
-				? [...shape.loser.players]
-						.filter((p) => p !== leader && p.pts >= 14 && p.pts <= leader.pts)
-						.sort((a, b) => b.pts - a.pts)[0]
-				: undefined;
-		// The shape is picked WITHOUT the tail: with the second man's verb
-		// baked into every candidate, the ledger saw all four as spent and the
-		// pick could no longer steer away from a "finished with" already used.
-		// The dash form leaves the man dangling after his numbers - "got a
-		// double-double - 14 points and 10 assists from Tyrese Ellis" - so
-		// these frames name him first or bracket the line. A double-double's
-		// numbers say what it was; a triple-double is always called one.
-		// Level with the next man and nothing else to his line: "Scoot Ellis'
-		// 21 points was the best of the Warriors, and Xavier Ellis supplied
-		// 21 points" crowned one of two equals.
-		if (
-			second &&
-			second.pts === leader.pts &&
-			statPhrase(leader) === plural(leader.pts, "point") &&
-			statPhrase(second, 1) === plural(second.pts, "point")
-		) {
-			return `${cap(them)} got ${leader.pts} apiece from ${leader.name} and ${second.name}.`;
-		}
-		const gotLine = `${sp} from ${leader.name}`;
-		const base = pickSentence(
-			rng,
-			triple
-				? [
-						`${leader.name} had a ${ddw} with ${sp} for ${them}`,
-						`${cap(them)} got a ${ddw} from ${leader.name}, who had ${sp}`,
-						`${leader.name} finished with ${sp} for ${them}, a ${ddw}`,
-					]
-				: [
-						`${leaderLine} ${verb} ${them}`,
-						`${cap(them)} got ${gotLine}`,
-						`${leader.name} had ${sp} for ${them}`,
-						`${leader.name} finished with ${sp} for ${them}`,
-						...(isTop ? [`${leader.name} led ${them} with ${sp}`] : []),
-						...(ddw
-							? [`${leader.name} had a ${ddw} with ${sp} for ${them}`]
-							: sp === plural(leader.pts, "point")
-								? [`${leader.name} scored ${sp} for ${them}`]
-								: []),
-						// Not "22 points from X was..." - a sentence does not open
-						// with a numeral, and every one of these lines starts with
-						// one. And only for a modest line: "The best the Pelicans
-						// could offer was 32 points and 11 assists" undersold the
-						// best line on the floor.
-						...(leader.pts < 25
-							? [`The best ${them} could offer was ${sp} from ${leader.name}`]
-							: []),
-						`For ${them}, it was ${leader.name} with ${sp}`,
-						// Leaning on a man is a load he carried: not "The Celtics
-						// leaned on Payton Brooks for 15 points and 12 rebounds",
-						// one recap in six.
-						...(leader.pts >= 25 || leader.pts >= shape.loser.pts * 0.3
-							? [`${cap(them)} leaned on ${leader.name} for ${sp}`]
-							: []),
-					],
-			"loserShape",
-		);
-		const tail =
-			reason ||
-			(second
-				? `, and ${second.name} ${lineVerb(second, rng)} ${statPhrase(second, 1)}`
-				: "");
-		return `${base}${tail}.`;
-	}
-	// No standout to hang it on. The leading scorer still gets his name in -
-	// a recap that never says who led the losers reads as if nobody did -
-	// unless the top line is so quiet it would embarrass him.
-	if (!skipLeader && topScorer && topScorer.pts >= 12) {
-		const them = theNick(shape.loser);
-		// After "got no more than 12 from anyone" the reason is more of the
-		// same, not a contrast: "..., but the team shot 26.7%" set two bad
-		// facts against each other, and "kept undoing the good work" had no
-		// good work to undo.
-		const more = tovReason
-			? `, and they turned it over ${stats.tov} times`
-			: fgpReason
-				? `, and they shot ${stats.fgp}% as a team`
-				: threesReason
-					? `, and they went ${stats.tp}-of-${stats.tpa} from three`
-					: "";
-		// A shared high is not one man's lead: "Nobody had more than Jalen
-		// Hayes' 16 for the Heat... Anthony Hayes was good for 16 points."
-		const level = shape.loser.players.filter(
-			(p) => p !== topScorer && p.pts === topScorer.pts,
-		);
-		if (level.length === 1) {
-			return `${cap(them)} got ${topScorer.pts} apiece from ${topScorer.name} and ${level[0]!.name}${reason}.`;
-		}
-		if (level.length > 1) {
-			return `${cap(them)} got no more than ${topScorer.pts} from anyone${more}.`;
-		}
-		return pickSentence(
-			rng,
-			[
-				`${topScorer.name} led ${them} with ${plural(topScorer.pts, "point")}${reason}.`,
-				`Nobody had more than ${poss(topScorer.name)} ${topScorer.pts} for ${them}${more}.`,
-				`${cap(them)} got no more than ${topScorer.pts} from anyone, ${topScorer.name} leading the way${more}.`,
-			],
-			"loserQuietLeader",
-		);
-	}
-	// Name the team directly.
-	if (tovReason) {
-		return pick(
-			rng,
-			[
-				`${cap(theNick(shape.loser))} were undone by ${stats.tov} turnovers.`,
-				`${cap(theNick(shape.loser))} gave the ball away ${stats.tov} times.`,
-				`It was turnovers that beat ${theNick(shape.loser)} - ${stats.tov} of them.`,
-				`${cap(theNick(shape.loser))} could not hold on to it - ${stats.tov} giveaways.`,
-			],
-			"loserTovAlone",
-		);
-	}
-	if (fgpReason) {
-		return pick(
-			rng,
-			[
-				`${cap(theNick(shape.loser))} shot just ${stats.fgp}% as a team.`,
-				`${cap(theNick(shape.loser))} never found the range - ${stats.fgp}% for the game.`,
-				`Shooting ${stats.fgp}% was never going to win ${theNick(shape.loser)} anything.`,
-			],
-			"loserColdTeam",
-		);
-	}
-	return undefined;
 };
 
 // Stakes and context: streaks, record, standings implication, the spread.
@@ -6483,97 +3697,6 @@ const careerArcNote = (
 	return undefined;
 };
 
-// The three-point battle, when one side clearly won it. Volume from deep is the
-// single biggest swing factor in a modern box score and nothing was reading it
-// except a bare "knocked down 14 threes".
-const threeNote = (
-	shape: Shape,
-	rng: () => number,
-	// Paragraph one already spent the night's three-point line.
-	told = false,
-): string | undefined => {
-	const w = teamStats(shape.winner);
-	const l = teamStats(shape.loser);
-	if (told || w.tpa < 10 || l.tpa < 10) {
-		return undefined;
-	}
-	const diff = w.tp - l.tp;
-	if (diff >= 7) {
-		return pick(
-			rng,
-			[
-				`The difference was behind the arc: ${w.tp}-of-${w.tpa} for ${theNick(
-					shape.winner,
-				)}, ${l.tp}-of-${l.tpa} for ${theNick(shape.loser)}.`,
-				`${cap(theNick(shape.winner))} made ${diff} more threes than ${theNick(
-					shape.loser,
-				)}, ${w.tp} to ${l.tp}.`,
-				`From deep it was no contest - ${w.tp} threes to ${l.tp}.`,
-			],
-			"threeGap",
-		);
-	}
-	if (l.tpa >= 28 && l.tpp <= 26) {
-		return pick(
-			rng,
-			[
-				`${cap(theNick(shape.loser))} went ${l.tp}-of-${l.tpa} from three.`,
-				`${cap(theNick(shape.loser))} missed ${l.tpa - l.tp} of their ${l.tpa} threes.`,
-				`${cap(theNick(shape.loser))} kept firing from outside and kept missing: ${l.tp}-of-${l.tpa}.`,
-			],
-			"loserColdThrees",
-		);
-	}
-	return undefined;
-};
-
-// Who got to the line. A lopsided free-throw night is a real explanation for a
-// close result and it was only ever mentioned from the winner's side.
-const freeThrowNote = (
-	shape: Shape,
-	rng: () => number,
-	// Same for the free-throw disparity: "made 26 free throws to 11" up top and
-	// "shot 31 free throws to 14" down here are one fact with two numbers, which
-	// reads worse than either alone.
-	told = false,
-): string | undefined => {
-	const w = teamStats(shape.winner);
-	const l = teamStats(shape.loser);
-	if (told || w.fta + l.fta < 20) {
-		return undefined;
-	}
-	// Eighteen, not fourteen: a gap of fourteen attempts is one game in five,
-	// and "the whistle went one way" is not said of one game in five.
-	if (w.fta - l.fta >= 18) {
-		return pick(
-			rng,
-			[
-				`${cap(theNick(shape.winner))} shot ${w.fta} free throws to ${l.fta}.`,
-				`The whistle went one way: ${w.fta} attempts from the line for ${theNick(
-					shape.winner,
-				)}, ${l.fta} for ${theNick(shape.loser)}.`,
-				`${cap(theNick(shape.winner))} got to the line ${
-					w.fta >= l.fta * 2 ? "more than twice as often" : "far more often"
-				}, ${w.fta} attempts to ${l.fta}.`,
-				`${cap(theNick(shape.loser))} were beaten at the line, ${l.fta} attempts to ${w.fta}.`,
-			],
-			"ftGap",
-		);
-	}
-	if (l.fta - w.fta >= 18 && shape.margin <= 10) {
-		return pick(
-			rng,
-			[
-				`${cap(theNick(shape.loser))} had the better of the whistle - ${l.fta} free throws to ${w.fta} - and still lost.`,
-				`${cap(theNick(shape.loser))} shot ${l.fta} free throws to ${w.fta} and lost anyway.`,
-				`${cap(theNick(shape.loser))} shot ${l.fta} free throws to ${w.fta} and still lost.`,
-			],
-			"ftGapLoser",
-		);
-	}
-	return undefined;
-};
-
 // Defensive stat lines: blocks and steals, which almost never surfaced because
 // the lead sentence is built around scoring.
 const defensiveNote = (
@@ -6601,7 +3724,9 @@ const defensiveNote = (
 	// "Vince King recorded 5 steals" of a night with 11 rebounds the piece
 	// never told.
 	const more = (p: RecapPlayer) => p.pts >= 15 || p.reb >= 10 || p.ast >= 8;
-	if (w.blk >= 9) {
+	// A real block party only: nine is one winner in eight, and "The Spurs
+	// blocked 9 shots." closed too many paragraphs.
+	if (w.blk >= 12) {
 		options.push(
 			pickSentence(
 				rng,
@@ -6782,52 +3907,6 @@ const formNote = (
 	return `${cap(pick(rng, options))}.`;
 };
 
-// The loser's second man. Only the losing side's single best player ever got
-// named, so a 24-point night from their number two vanished entirely.
-const loserSupportNote = (
-	shape: Shape,
-	rng: () => number,
-	// Anyone the recap has already named. Without this the note kept
-	// re-introducing the losing side's best player, who the loser sentence had
-	// just finished describing.
-	said: Set<string>,
-): string | undefined => {
-	// The losing side's man was named on his overall line, not purely on points,
-	// so the next-best scorer can have MORE points than him. "Odom's 22 led the
-	// Grizzlies... Van Horn added 23 in defeat" is a flat contradiction, so a
-	// candidate who outscored the man already called the leader is skipped.
-	const namedPts = shape.loser.players
-		.filter((p) => said.has(p.name))
-		.map((p) => p.pts);
-	const ceiling = namedPts.length > 0 ? Math.max(...namedPts) : Infinity;
-
-	const second = [...shape.loser.players]
-		.sort((a, b) => b.pts - a.pts)
-		.find(
-			(p) =>
-				!said.has(p.name) &&
-				p.pts <= ceiling &&
-				(p.pts >= 16 || doubleCategories(p).length >= 2),
-		);
-	if (!second) {
-		return undefined;
-	}
-	said.add(second.name);
-	// "in defeat" on its own turned up in most games on a slate, so the tail
-	// rotates too. Deliberately ONE shape: the verb and tail together give this
-	// sentence more distinct forms than a handful of alternative shapes would,
-	// and shapes without that variation collapse to a single frame each.
-	// Mostly the club, as the wire writes it ("for Boston" once the city pass
-	// has been over it): "in defeat", "in the loss", "in a losing cause" and
-	// "for the losing side" closed the losers' line in four recaps in ten.
-	const them = theNick(shape.loser);
-	return `${second.name} ${lineVerb(second, rng)} ${statPhrase(second, 1)} ${pick(
-		rng,
-		[`for ${them}`, "in the loss", `for ${them}`, "in defeat"],
-		"loserTail",
-	)}.`;
-};
-
 // A heavy favorite that barely got out. That is the one thing the line adds
 // to a recap of a game the favorite won: a favorite that beat the number, or
 // fell short of it, is a ledger entry, and "won comfortably enough but fell
@@ -6869,49 +3948,6 @@ const minutesNote = (shape: Shape, said: Set<string>): string | undefined => {
 	said.add(iron.name);
 	const team = shape.winner.players.includes(iron) ? shape.winner : shape.loser;
 	return `${cap(poss(theNick(team)))} ${iron.name} logged ${iron.min} minutes.`;
-};
-
-// How the two benches / rotations compared in depth terms.
-const balanceNote = (
-	shape: Shape,
-	rng: () => number,
-	// Paragraph 2 has its own "N players in double figures" and "piled up N
-	// assists" sentences. Restating either as a comparison two sentences later
-	// is the same number twice, and it reads as though the writer forgot.
-	told: { dblFig: boolean; assists: boolean } = {
-		dblFig: false,
-		assists: false,
-	},
-): string | undefined => {
-	const w = teamStats(shape.winner);
-	const l = teamStats(shape.loser);
-	// Five in double figures is the median winner; six against three is a
-	// difference.
-	if (!told.dblFig && w.dblFig >= 6 && w.dblFig - l.dblFig >= 3) {
-		return pick(
-			rng,
-			[
-				`${cap(theNick(shape.winner))} got double figures out of ${numWord(w.dblFig)} players to ${numWord(l.dblFig)} for ${theNick(
-					shape.loser,
-				)}.`,
-				`The scoring was spread around - ${numWord(w.dblFig)} ${nick(shape.winner)} in double figures.`,
-			],
-			"balance",
-		);
-	}
-	if (!told.assists && w.ast >= 26 && w.ast - l.ast >= 10) {
-		return pick(
-			rng,
-			[
-				`${cap(theNick(shape.winner))} assisted on far more of their baskets, ${w.ast} to ${l.ast}.`,
-				`${cap(theNick(shape.winner))} moved the ball far better, ${w.ast} assists to ${l.ast}.`,
-				`The ball found the open man all night for ${theNick(shape.winner)} - ${w.ast} assists to ${l.ast}.`,
-				`${cap(theNick(shape.winner))} out-assisted ${theNick(shape.loser)} ${w.ast} to ${l.ast}.`,
-			],
-			"balanceAst",
-		);
-	}
-	return undefined;
 };
 
 // --- All-Star Game -------------------------------------------------------------
@@ -7096,10 +4132,10 @@ const buildAllStar = (game: RecapGame, rng: () => number): string => {
 // how many times it changed hands, the run that turned it, the lead the loser
 // let go. Each says nothing on a game from before the log existed.
 
-const sideOf = (game: RecapGame, t: RecapTeam): GameFlowSide =>
+export const sideOf = (game: RecapGame, t: RecapTeam): GameFlowSide =>
 	game.teams[0].tid === t.tid ? 0 : 1;
 
-const nameOfPid = (
+export const nameOfPid = (
 	game: RecapGame,
 	pid: number | undefined,
 ): string | undefined => {
@@ -7124,27 +4160,9 @@ const periodTag = (period: number, regPeriods: number): string =>
 			? "overtime"
 			: `the ${ordinal(period - regPeriods)} overtime`;
 
-// Where a run happened: "in the second", or across the break it spanned -
-// a 14-0 run that began with no time left in the first was all second
-// quarter, and "in the first" was wrong.
-const runSpan = (start: number, end: number, regPeriods: number): string =>
-	end === start
-		? `in ${periodTag(start, regPeriods)}`
-		: end > regPeriods
-			? start > regPeriods
-				? `across ${periodTag(start, regPeriods)} and ${periodTag(end, regPeriods)}`
-				: "across the end of regulation and overtime"
-			: start === regPeriods / 2 && end === start + 1
-				? "spanning halftime"
-				: regPeriods !== 4
-					? `across the ${ordinal(start)} and ${ordinal(end)}`
-					: end === start + 1
-						? `spanning the ${ordinal(start)} and ${ordinal(end)} quarters`
-						: `from the ${ordinal(start)} into the ${ordinal(end)}`;
-
 // How a close game finished. The go-ahead score that held, or failing that
 // the last tie, and the count of lead changes when there were a lot of them.
-const finishNote = (
+export const finishNote = (
 	game: RecapGame,
 	shape: Shape,
 	rng: () => number,
@@ -7301,73 +4319,6 @@ const leadChangesNote = (
 	return out;
 };
 
-// How big the rout got. Every wire recap of a blowout says "led by as many
-// as 31"; the engine had the number and only ever used the losers' side of
-// it. Worth a sentence when the biggest lead outran the final margin, since
-// the final alone says nothing about a lead that was cut in garbage time.
-const bigLeadNote = (
-	game: RecapGame,
-	shape: Shape,
-	rng: () => number,
-): string | undefined => {
-	const flow = game.flow;
-	if (!flow) {
-		return undefined;
-	}
-	const lead = flow.maxLead[sideOf(game, shape.winner)];
-	const W = cap(theNick(shape.winner));
-	// The lead that nearly got away: up 19 at the half, home by six.
-	if (shape.margin <= 8 && lead >= 15 && lead >= shape.margin + 9) {
-		// A lead that was GONE - tied or lost in the final period and won
-		// back - was not held on to. "Led by as many as 15 and had to hold on"
-		// closed a game won by a three at the buzzer after a tie.
-		const last = flow.lastLead;
-		const tie = flow.lastTie;
-		// Any tie, or the winners retaking the lead, in the last period: a
-		// 25-point lead that was level at 102 with 3:39 left was not "held".
-		const lateFinal = (e: { period: number; clock: number } | undefined) =>
-			e !== undefined && e.period >= shape.regPeriods;
-		if (lateFinal(last) || lateFinal(tie) || shape.ot > 0) {
-			return pick(
-				rng,
-				[
-					`${W} let ${aNum(lead)}-point lead get away and still won.`,
-					`${W} blew ${aNum(lead)}-point lead and won anyway.`,
-				],
-				"blownThenWon",
-			);
-		}
-		// "Very nearly let it go" and "had to hold on" are a game that got
-		// within a basket or so; "had led by 28, and very nearly let it go"
-		// closed a seven-point win.
-		return pick(
-			rng,
-			[
-				...(shape.margin <= 4
-					? [
-							`${W} led by as many as ${lead} and had to hold on.`,
-							`${W} had led by ${lead}, and very nearly let it go.`,
-						]
-					: []),
-				`A lead that reached ${lead} was down to ${shape.margin} at the end.`,
-			],
-			"nearlyBlown",
-		);
-	}
-	if (shape.margin < 12 || lead < 20 || lead < shape.margin + 6) {
-		return undefined;
-	}
-	return pick(
-		rng,
-		[
-			`${W} led by as many as ${lead}.`,
-			`The lead reached ${lead} at one point.`,
-			`${W} were up by ${lead} at their biggest.`,
-		],
-		"bigLead",
-	);
-};
-
 // The losers' losing streak, which the body never said: a team that has just
 // dropped its fifth straight is news on its own page, whatever the winner
 // did. The headline's upset branch sometimes carries it; the form note
@@ -7407,215 +4358,6 @@ const loserSkidNote = (
 	);
 };
 
-// The lead the loser let go: the biggest they held, or the one they had with
-// two minutes left.
-const blownLeadNote = (
-	game: RecapGame,
-	shape: Shape,
-	rng: () => number,
-	// The comeback line already told the deficit the winner erased, which IS
-	// the loser's biggest lead.
-	written: string,
-): string | undefined => {
-	const flow = game.flow;
-	if (!flow) {
-		return undefined;
-	}
-	const lSide = sideOf(game, shape.loser);
-	const L = cap(theNick(shape.loser));
-	// "Fell behind by 15 early and still ran away" in the lede, and then
-	// "At one point the Celtics led by 15" three sentences on.
-	const comebackTold =
-		/deficit|erased|comeback|stormed back|charged home|came from \d|trailed by \d+ and still|fell behind by \d|spotted the [a-z][\w ]* an? \d+-point lead|at the break|at halftime|clawing back|hold on|nearly not enough/i.test(
-			written,
-		);
-	const lead = flow.maxLead[lSide];
-	// The story's own first half may have said it already: "The Heat were up
-	// by as many as 14 in the second..." and then, after the rebounding
-	// note, "The Heat led by as many as 14."
-	const peakTold = new RegExp(
-		String.raw`${nick(shape.loser)}[^.]*\b(?:as many as|led by|up by) ${lead}\b`,
-	).test(written);
-	if (lead >= 12 && !comebackTold && !peakTold) {
-		return pick(
-			rng,
-			[
-				`${L} led by as many as ${lead}.`,
-				`${L} had been up by ${lead} at one stage.`,
-				`At one point ${theNick(shape.loser)} led by ${lead}.`,
-			],
-			"blownLead",
-		);
-	}
-	const two = flow.late?.find((m) => m.clock === 120);
-	// Nor when the finish already put them in front later than that.
-	const laterLead =
-		new RegExp(
-			String.raw`${nick(shape.loser)} (?:had )?(?:led|were up|had been up) \d+-\d+ with`,
-		).test(written) ||
-		new RegExp(
-			String.raw`${nick(shape.winner)} (?:had )?trailed \d+-\d+ with`,
-		).test(written);
-	if (two && !laterLead && !/two minutes/.test(written)) {
-		const l = two.pts[lSide];
-		const w = two.pts[1 - lSide];
-		if (l !== undefined && w !== undefined && l > w) {
-			const tail = shape.ot > 0 ? " in regulation" : "";
-			return pick(
-				rng,
-				[
-					`${L} were up ${l}-${w} with two minutes to go${tail}.`,
-					`${L} led ${l}-${w} with two minutes left${tail} and could not close it out.`,
-				],
-				"lateLead",
-			);
-		}
-	}
-	return undefined;
-};
-
-// The run that turned it, or the one that was not enough.
-const runNote = (
-	game: RecapGame,
-	shape: Shape,
-	rng: () => number,
-): string | undefined => {
-	const run = game.flow?.run;
-	if (!run) {
-		return undefined;
-	}
-	const isWinner = run.side === sideOf(game, shape.winner);
-	// A 10-0 run is most games; see winnersRunIsNews.
-	if (isWinner ? !winnersRunIsNews(shape, run) : run.pts < 15) {
-		return undefined;
-	}
-	const team = isWinner ? shape.winner : shape.loser;
-	const T = cap(theNick(team));
-	const end = run.endPeriod ?? run.period;
-	const spans = end !== run.period;
-	const at = runSpan(run.period, end, shape.regPeriods);
-	// "scored 15 unanswered in the first", but "15 unanswered points
-	// across the first and second".
-	const unanswered = spans ? "unanswered points" : "unanswered";
-	// An overtime run nobody answered is how the game ended.
-	const finish = game.flow?.finish ?? [];
-	if (
-		isWinner &&
-		run.period > shape.regPeriods &&
-		finish.some((e) => e.period === run.period) &&
-		!finish.some(
-			(e) =>
-				e.period === run.period && e.side !== run.side && e.clock < run.clock,
-		)
-	) {
-		return `${T} scored the last ${run.pts} points.`;
-	}
-	// "Put them in charge" of a game they won by three is the wrong tone: in
-	// a close one the run built a lead that then had to be kept.
-	const close = shape.margin <= 6 && shape.ot === 0;
-	// "Put them in charge", "settled it", "the game got away" all say the
-	// winners led from there. A 14-0 run in the second by a side still down
-	// a point at halftime did no such thing, so the quarter-end score decides
-	// whether the run gets a verdict or just a count.
-	const cum = (q: unknown) =>
-		(Array.isArray(q) ? (q as number[]) : [])
-			.slice(0, end)
-			.reduce((a, b) => a + b, 0);
-	const qs = shape.winner.ptsQtrs;
-	// And ahead for good: a run in the second does not "settle" a game the
-	// winners only went in front of for the last time in the third.
-	const lastLead = game.flow?.lastLead;
-	const aheadAfter =
-		(Array.isArray(qs) && qs.length >= end
-			? cum(shape.winner.ptsQtrs) > cum(shape.loser.ptsQtrs)
-			: true) &&
-		(lastLead === undefined || lastLead.period <= end);
-	// A run across a break gets the count and no verdict: where the score
-	// stood when it ended is not known, and "An 18-0 burst across the third
-	// and fourth settled it" was said of a side still 10 down going into the
-	// fourth.
-	if (isWinner && (!aheadAfter || spans)) {
-		return pick(
-			rng,
-			[
-				`${T} ran off ${run.pts} straight points ${at}.`,
-				`${T} scored ${run.pts} ${unanswered} ${at}.`,
-			],
-			"runWinnerCount",
-		);
-	}
-	// The losers' run gets "and it still was not enough" only when it was a
-	// late push that fell short. One in the first half built a lead that was
-	// lost later - "The Pistons had a 19-0 run in the first, and it still was
-	// not enough" called a game in the first quarter - and one that put them
-	// in front going into the next quarter turned it, for a while.
-	// Ahead at the end of the quarter it began in or the one it ended in.
-	const aheadAt = (n: number) => {
-		const sum = (q: unknown) =>
-			(Array.isArray(q) ? (q as number[]) : [])
-				.slice(0, n)
-				.reduce((a, b) => a + b, 0);
-		return (
-			Array.isArray(qs) &&
-			qs.length >= n &&
-			sum(shape.loser.ptsQtrs) > sum(shape.winner.ptsQtrs)
-		);
-	};
-	// Or in front at their best inside the run's quarters: an 18-0 run
-	// spanning halftime took a 10-point deficit to an 8-point lead, then
-	// gave it back by the end of the third.
-	const lSide = sideOf(game, shape.loser);
-	const lPeakAt = game.flow?.maxLeadAt?.[lSide];
-	const ledDuring =
-		(game.flow?.maxLead[lSide] ?? 0) > 0 &&
-		lPeakAt !== undefined &&
-		lPeakAt >= run.period &&
-		lPeakAt <= end;
-	const losersAheadAfter = aheadAt(run.period) || aheadAt(end) || ledDuring;
-	// An early run that never even put them in front is a footnote to a game
-	// they lost: "The Knicks ran off 16 straight points in the first. The
-	// Jazz were ahead 65-56 at the half."
-	if (!isWinner && run.period <= shape.regPeriods / 2 && !losersAheadAfter) {
-		return undefined;
-	}
-	if (!isWinner && (run.period <= shape.regPeriods / 2 || losersAheadAfter)) {
-		return pick(
-			rng,
-			[
-				`${T} ran off ${run.pts} straight points ${at}.`,
-				`${T} scored ${run.pts} ${unanswered} ${at}.`,
-			],
-			"runLoserCount",
-		);
-	}
-	return pick(
-		rng,
-		isWinner
-			? close
-				? [
-						`${T} ran off ${run.pts} straight points ${at}, and needed every one of them.`,
-						`${cap(aNum(run.pts))}-0 run ${at} built the lead ${theNick(shape.winner)} spent the rest of the night protecting.`,
-					]
-				: [
-						`${T} ran off ${run.pts} straight points ${at}.`,
-						`${cap(aNum(run.pts))}-0 run ${at} put ${theNick(shape.winner)} in charge.`,
-						`${T} put together ${aNum(run.pts)}-0 run ${at}.`,
-						// Enough shapes that a beat reader following one team does
-						// not meet "put the Hawks in charge" three times in a week:
-						// per-day rotation cannot see across days, so only pool
-						// size spreads a team's own recaps out.
-						`${T} scored ${run.pts} ${unanswered} ${at}.`,
-						`${cap(aNum(run.pts))}-0 burst ${at} settled it.`,
-						`The game got away ${at}, ${run.pts} straight points for ${theNick(shape.winner)}.`,
-					]
-			: [
-					`${T} had ${aNum(run.pts)}-0 run ${at}, and it still was not enough.`,
-					`Even ${aNum(run.pts)}-0 run ${at} could not turn it for ${theNick(shape.loser)}.`,
-				],
-		isWinner ? "runWinner" : "runLoser",
-	);
-};
-
 const buildGameRecap = (game: RecapGame): string => {
 	if (!isInBatch()) {
 		clearPhraseMemory();
@@ -7650,259 +4392,15 @@ const buildGameRecap = (game: RecapGame): string => {
 
 	const headline = buildHeadline(game, shape, star, post, rng);
 	const tail = ledeTail(game, shape, headline, star, rng);
+	const shot = clutchShot(game);
+	const winningShot = shot && !shot.tying ? shot : undefined;
 	// A game decided in its last minute, on the basket that decided it, when
 	// nothing else holds the lede's last slot.
 	const goAhead =
-		tail.text === "" ? lateGoAhead(game, shape, clutchShot(game)) : undefined;
-	if (goAhead) {
-		tail.text = goAhead.text;
-	}
+		tail.text === "" && !winningShot
+			? lateGoAhead(game, shape, shot)
+			: undefined;
 
-	// Paragraph 1: the result and how it happened. A game-winning shot is the
-	// game's defining moment, so it always gets a beat right after the lead -
-	// previously the headline could tout a buzzer-beater the body never
-	// mentioned. When the shooter IS the lead star, the beat merges into the
-	// lead sentence so the name isn't repeated back-to-back ("Hamilton finished
-	// with 20... Hamilton won it...").
-	const para1: string[] = [];
-	const shot = clutchShot(game);
-	let flowCovered: string | undefined;
-	// Set when the clutch sentence printed the hero's full line, so the
-	// supporting cast doesn't introduce him a second time.
-	let heroTold: string | undefined;
-	// The lede said how many reached double figures.
-	let balanceTold = false;
-
-	const monsterLoser = headline.spentLoserStar
-		? bestOf(shape.loser.players)
-		: undefined;
-	if (monsterLoser && monsterLoser.pts >= 40) {
-		// A 50-point night in a loss is the story of the game, and the headline
-		// already said so - the body opening on the winner's 20-and-15 read like
-		// a different story stapled to it. Open on the man himself, then let the
-		// winner's star follow.
-		const verb = pastTense(pick(rng, verbPool(game, shape)));
-		const w = theNick(shape.winner);
-		const l = theNick(shape.loser);
-		para1.push(
-			pick(
-				rng,
-				[
-					`${monsterLoser.name} gave ${l} ${monsterLoser.pts} points, and ${w} beat them anyway, ${scoreTag(shape)}${tail.text}.`,
-					`${monsterLoser.name} scored ${monsterLoser.pts} and it still was not enough - ${w} ${verb} ${l} ${scoreTag(shape)}${tail.text}.`,
-					`On most nights ${poss(monsterLoser.name)} ${monsterLoser.pts} points win the game. On this one ${w} ${verb} ${l} ${scoreTag(shape)}${tail.text}.`,
-				],
-				"lede:monster-loss",
-			),
-			leadSentence(game, shape, star, rng, true),
-		);
-		if (shot && !shot.tying && shot.name !== monsterLoser.name) {
-			const clutch = clutchSentence(shot, shape);
-			para1.push(clutch.text);
-			heroTold = clutch.told;
-		}
-	} else if (headline.spentStar) {
-		// The headline already told the star's story. Open on the RESULT and let
-		// his line follow as its own sentence, rather than writing the headline
-		// again with the verbs swapped.
-		const twin = twinOf(shape, star);
-		const opener = resultLead(
-			game,
-			shape,
-			rng,
-			headline.spentScore,
-			/straight|in a row|skid|losing streak/.test(headline.text),
-			tail.text,
-			star,
-			headline.spentLine,
-			{ tailKind: tail.streak, headline: headline.text, twin: !!twin },
-		);
-		flowCovered = opener.covers;
-		para1.push(opener.text);
-		// The headline may already have printed his whole line ("DerMarr Johnson
-		// goes for 22 points as..."), in which case repeating it as the next
-		// sentence is the same numbers twice. Keep the sentence whenever it
-		// brings anything new - a shooting split, a second category - and drop it
-		// only when every figure in it was in the headline.
-		const starSentence = twin
-			? `${star.name} and ${twin.name} scored ${star.pts} points apiece.`
-			: leadSentence(game, shape, star, rng, true);
-		if (twin) {
-			heroTold = twin.name;
-		}
-		const figures = (t: string) => t.match(/\d+(?:\.\d+)?/g) ?? [];
-		const inHeadline = new Set(figures(headline.text));
-		// He won it, and the winning-shot sentence carries his line: "Walker
-		// Carter exploded for 37 points and 8 assists. Walker Carter won it
-		// on a layup with 2.5 seconds left and finished with 37 points and 8
-		// assists" gave the line twice in two sentences.
-		const starWonIt = !!shot && !shot.tying && shot.name === star.name && !twin;
-		if (opener.starFolded || starWonIt) {
-			// His line is in the opener, or comes with the shot.
-		} else if (
-			!headline.spentLine ||
-			figures(starSentence).some((n) => !inHeadline.has(n))
-		) {
-			para1.push(starSentence);
-		} else if (star.fga >= 10) {
-			// Everything in the sentence was already in the headline, so print
-			// something the headline did NOT have rather than dropping him: with
-			// nothing else to carry his name, the man in the headline disappeared
-			// from his own story.
-			// The phrasing has to match what the split SAYS. "Vince Dunn scored
-			// his 16 on 5-of-15 shooting" states a poor night in the tone of a
-			// good one and reads as though nobody looked at it; a bad line is
-			// worth writing about, but as a bad line.
-			// And with his points: "Ace Hawk finished 12-of-22 from the floor"
-			// under "Ace Hawk turns in 33 points" left a body that never said
-			// what he scored.
-			const pct = star.fga > 0 ? star.fg / star.fga : 0;
-			const pts = plural(star.pts, "point");
-			const his = `his ${pts}`;
-			const split = `${star.fg}-of-${star.fga}`;
-			// More than points, and the whole line goes with the split: "Naji
-			// Foster scored 13 points on 4-of-7 shooting" under "Naji Foster
-			// turns in 13 points and 20 rebounds" lost the 20 rebounds.
-			const line = statPhrase(star);
-			para1.push(
-				line !== pts
-					? pickSentence(
-							rng,
-							[
-								`${star.name} had ${line} on ${split} shooting.`,
-								`${star.name} put together ${line} on ${split} shooting.`,
-							],
-							"starSplitLine",
-						)
-					: pick(
-							rng,
-							pct >= 0.55
-								? [
-										`${star.name} scored ${pts} on ${split} shooting.`,
-										`${star.name} needed only ${star.fga} shots for ${his}.`,
-										`${star.name} made ${star.fg} of ${star.fga} shots on the way to ${pts}.`,
-									]
-								: pct < 0.42
-									? // Plainly, the way the wire puts it: the second sentence of
-										// the winners' story is not the place to editorialize about
-										// the man the headline is about ("The shooting was not
-										// pretty for Cade Hayes" under "Heat ride Cade Hayes' 14
-										// points and 15 rebounds").
-										[
-											`${star.name} had ${pts} on ${split} shooting.`,
-											`${star.name} got ${his} the hard way, ${split} from the floor.`,
-										]
-									: [
-											`${star.name} scored ${pts} on ${split} shooting.`,
-											`${star.name} went ${split} from the floor for ${pts}.`,
-											`${star.name} took ${star.fga} shots and made ${star.fg} of them on the way to ${pts}.`,
-										],
-							pct >= 0.55
-								? "starSplitGood"
-								: pct < 0.42
-									? "starSplitPoor"
-									: "starSplit",
-						),
-			);
-		} else if (star.fga > 0) {
-			// Fewer shots than that still make a split the headline did not
-			// have. With none of this, "Franz Carter goes for 15 points and 10
-			// rebounds as the Hornets take down the Bucks" sat over a body that
-			// never said his name.
-			para1.push(
-				`${star.name} ${claimVerb("had")} ${statPhrase(star)} on ${star.fg}-of-${star.fga} shooting.`,
-			);
-		}
-		// (A headline that printed his whole line, and a line with no split
-		// to add: the sentence is not pushed a third time.)
-		if (shot && !shot.tying) {
-			const clutch =
-				starWonIt && opener.starFolded
-					? {
-							text: `${star.name} won it on ${clutchWhat(shot)}.`,
-							told: star.name,
-						}
-					: clutchSentence(shot, shape);
-			para1.push(clutch.text);
-			heroTold = clutch.told;
-		}
-	} else if (shot && !shot.tying && shot.name !== star.name) {
-		// The headline is the winning shot (buildHeadline always leads with one
-		// when there is one), so the body has to get there immediately. Opening
-		// on someone else's scoring line and reaching the shot a sentence later
-		// made the headline look like it belonged to a different story: "Metta
-		// World Peace's three-point play sinks the Knicks / Ray Allen scored 18
-		// points as...". Result, then the shot, then the leading scorer.
-		const opener = resultLead(
-			game,
-			shape,
-			rng,
-			headline.spentScore,
-			/straight|in a row|skid|losing streak/.test(headline.text),
-			tail.text,
-			undefined,
-			false,
-			{ tailKind: tail.streak, headline: headline.text },
-		);
-		flowCovered = opener.covers;
-		const clutch = clutchSentence(shot, shape);
-		heroTold = clutch.told;
-		para1.push(
-			opener.text,
-			clutch.text,
-			leadSentence(game, shape, star, rng, true),
-		);
-	} else if (shot && !shot.tying) {
-		// The man who won it is the man the lede is about, and the shot comes
-		// before his line: "Nowell hit a three-pointer with 1.8 seconds left
-		// and finished with 20 points" is the order any wire lede puts a game
-		// decided at the end. His line used to come first and the shot arrived
-		// as a trailing clause.
-		const verb = pastTense(pick(rng, verbPool(game, shape)));
-		const what = clutchWhat(shot);
-		para1.push(
-			`${star.name} ${clutchVerb(what)} ${what} and finished with ${statPhrase(
-				star,
-			)} as ${theNick(shape.winner)} ${verb} ${theNick(shape.loser)}${
-				headline.spentScore ? "" : ` ${scoreTag(shape)}`
-			}${tail.text}.`,
-		);
-		heroTold = star.name;
-	} else {
-		const team = teamLede(
-			game,
-			shape,
-			star,
-			rng,
-			!!headline.spentScore,
-			tail.text,
-		);
-		if (team) {
-			para1.push(team.text);
-			if (team.twin) {
-				heroTold = team.twin.name;
-			}
-			if (team.dblFig) {
-				balanceTold = true;
-			}
-		} else {
-			para1.push(
-				leadSentence(
-					game,
-					shape,
-					star,
-					rng,
-					false,
-					headline.spentScore,
-					tail.text,
-				),
-			);
-		}
-	}
-
-	// The headline carried the series score, so the body's series sentence is
-	// dropped below - and the round goes where a wire lead puts it: "beat the
-	// Pistons 104-96 in Game 4 of the First Round".
 	// THE SERIES IT ENDED, in the lede. "Grant Green put up 29 points as the
 	// Lakers took down the Pistons 124-114" was the whole lede of the night
 	// that won the Lakers the title, and not one of 45 series-ending ledes
@@ -7948,210 +4446,28 @@ const buildGameRecap = (game: RecapGame): string => {
 	const where = post.state
 		? ` in Game ${post.state.gameNo} of ${post.state.round}`
 		: (clinchLede?.text ?? post.playInLede);
-	if (where && para1.length > 0) {
-		// The sentence with the result in it: after the score, or after the
-		// losers' name when the headline has the score.
-		// The score as the lede wrote it: "149-146 (3OT)", or "149-146 in
-		// triple overtime" - not "slipped past the Heat in Game 4 of the
-		// First Round 149-146 in triple overtime".
-		const plain = `${shape.winner.pts}-${shape.loser.pts}`;
-		const loserName = theNick(shape.loser);
-		const i = Math.max(
-			0,
-			para1.findIndex((x) => x.includes(plain) || x.includes(loserName)),
-		);
-		const first = para1[i]!;
-		const tag = [
-			scoreTag(shape),
-			`${plain} in ${otPhrase(shape.ot)}`,
-			plain,
-		].find((t) => first.includes(t));
-		// "erased a 23-point deficit to beat the Heat 115-111 to claim the
-		// No. 7 seed": after one infinitive the second becomes a participle.
-		const GERUND: Record<string, string> = {
-			claim: "claiming",
-			end: "ending",
-			close: "closing",
-			win: "winning",
-			finish: "finishing",
-			reach: "reaching",
-		};
-		const stakes =
-			/\bto (?:beat|top|take down|knock off|win|edge|outlast)\b/.test(
-				first.slice(0, tag ? first.indexOf(tag) : first.indexOf(loserName)),
-			)
-				? where.replace(/ to (\w+)/, (m, verb: string) =>
-						GERUND[verb] ? `, ${GERUND[verb]}` : m,
-					)
-				: where;
-		if (
-			!tag &&
-			goAhead &&
-			first.endsWith(`${goAhead.text}.`) &&
-			/^ to (\w+)/.test(where)
-		) {
-			// After the basket that won it, not between the losers and it:
-			// "upset the Pelicans to close out the series 4-2 on Jalen Green's
-			// go-ahead three-pointer" closed the series on the three.
-			para1[i] = `${first.slice(0, -1)},${where.replace(
-				/^ to (\w+)/,
-				(m, verb: string) => (GERUND[verb] ? ` ${GERUND[verb]}` : m),
-			)}.`;
-		} else if (tag) {
-			para1[i] = first.replace(tag, `${tag}${stakes}`);
-		} else {
-			const at = first.indexOf(loserName);
-			para1[i] =
-				at >= 0
-					? `${first.slice(0, at + loserName.length)}${stakes}${first.slice(at + loserName.length)}`
-					: `${first.slice(0, -1)}${stakes}.`;
-		}
-	}
 
-	// THE GAME STORY, as its own paragraph after the lede: the half, the
-	// runs, the leads and the finish told in the order they happened. When
-	// the quarter scores cannot support one, the old single-paragraph path
-	// below is used unchanged.
-	const story = gameStory(game, shape, rng, {
-		comebackTold: flowCovered === "comeback",
-		wireTold: flowCovered === "wire",
-		lastQuarterTold: new RegExp(
-			String.raw`with an? \d+-\d+ ${ordinal(shape.regPeriods)} quarter`,
-		).test(para1.join(" ")),
-	});
-	const storyPara: string[] = [];
-	const body = story ? storyPara : para1;
-	if (story) {
-		storyPara.push(...story.sentences);
-		if (!flowCovered) {
-			flowCovered = story.covers.has("comeback")
-				? "comeback"
-				: story.covers.has("run")
-					? "run"
-					: undefined;
-		}
-	}
-	// The result lead already carried the comeback / wire-to-wire / overtime /
-	// decisive-run angle, so the flow sentence would be saying it twice. With
-	// a story, only the overtime line is still wanted from it.
-	let otFlowAt = -1;
-	// ...unless the lead said it: "It took an extra period, but the Suns
-	// pulled away" was followed by "Regulation settled nothing, and it took
-	// an extra period."
-	if (!flowCovered || (story && shape.ot > 0 && flowCovered !== "ot")) {
-		const flow = flowSentence(shape, rng);
-		if (flow && (!story || flow.covers === "ot")) {
-			if (flow.covers === "ot") {
-				otFlowAt = body.length;
-			}
-			body.push(flow.text);
-			flowCovered = flow.covers;
-		}
-	}
-	// The late go-ahead basket the lede ended on is his own when he is the
-	// lede's subject: "Miles Foster had 23 points as the Pacers beat the
-	// Bulls 110-107 on his go-ahead jumper".
-	const goAheadAt = goAhead
-		? para1.findIndex((t) => t.includes(goAhead.text))
-		: -1;
-	if (goAhead && goAheadAt >= 0) {
-		const t = para1[goAheadAt]!;
-		// Not after two names: "Reggie Carter and Scoot Carter scored 17
-		// points apiece as... on his go-ahead three-pointer".
-		if (
-			(t.startsWith(`${goAhead.name} `) || t.startsWith(`${goAhead.name},`)) &&
-			!t.startsWith(`${goAhead.name} and `)
-		) {
-			para1[goAheadAt] = t.replace(
-				`${poss(goAhead.name)} go-ahead`,
-				"his go-ahead",
-			);
-		}
-	}
-	// How it finished, for a game that was still a game at the end: the
-	// closing scores in order when the sim kept them, the go-ahead basket
-	// and the last tie when it did not.
-	const shotTold = (shot !== undefined && !shot.tying) || goAheadAt >= 0;
-	const lastNamed = body.at(-1)?.includes(star.name)
-		? star.name
-		: heroTold && body.at(-1)?.includes(heroTold)
-			? heroTold
-			: undefined;
-	const sequence = finishStory(
-		{
-			game,
-			winner: shape.winner,
-			loser: shape.loser,
-			regPeriods: shape.regPeriods,
-			shotTold,
-			justNamed: lastNamed,
-			afterItWas: /^It was\b/.test(body.at(-1) ?? ""),
-			// The sentence the finish will follow: not the overtime flow line,
-			// which goes when the finish tells the tie.
-			losersJustNamed: (
-				body.at(otFlowAt >= 0 && otFlowAt === body.length - 1 ? -2 : -1) ?? ""
-			).includes(nick(shape.loser)),
-		},
-		rng,
-	);
-	// "Regulation settled nothing, and it took an extra period" right before
-	// "Bo Bull's jumper with 4 seconds left sent it to overtime" is the same
-	// fact twice, and the second one has the name and the clock.
-	if (otFlowAt >= 0 && sequence.some((s) => /overtime|extra period/.test(s))) {
-		body.splice(otFlowAt, 1);
-	}
-	// In a story, what explains the game goes BEFORE the finish, so the
-	// paragraph ends on the last basket rather than on a rebounding margin.
-	let finishAt = body.length;
-	const beforeFinish = (text: string) => {
-		if (story) {
-			body.splice(finishAt, 0, text);
-			finishAt += 1;
-		} else {
-			body.push(text);
-		}
-	};
-	body.push(
-		...sequence,
-		...finishNote(game, shape, rng, shotTold, lastNamed, sequence.length > 0),
-	);
-	const spentFacts = new Set<StatFact>();
-	const spentTopics = new Set<StatTopic>();
-	// A "jumped out to a 30-20 first quarter" note on top of "led wire to wire"
-	// or "broke it open with a 30-20 first quarter" is the same beat twice.
-	// And a game story has already decided whether the first quarter was
-	// news; its note would land after the second half, out of order.
-	const stat = statNote(
+	// THE ORDER A REPORTER WRITES IN. What happened - one sentence with the
+	// result, the man of the night and what made the game what it was. Then
+	// how it happened, as a story. Then who did it, the winners and then the
+	// losers, each with the reason on it. Last, what it means. See
+	// recapStory.ts, which writes the first three.
+	const input: StoryInput = {
+		game,
 		shape,
+		star,
+		headline,
+		tail,
+		shot: winningShot,
+		goAhead,
+		where,
 		rng,
-		flowCovered === "wire" || flowCovered === "run" || !!story,
-		balanceTold,
-	);
-	// In a story the team's number goes with the team's men, after the
-	// supporting cast: dropped in before the finish it broke the clock -
-	// "They were 14 up going into the fourth. They made 25 free throws to 11
-	// for the Trail Blazers. The Hornets had led by 18, and very nearly let
-	// it go." Without a story it stays with the lede, as before.
-	let storyStat: string | undefined;
-	if (stat && (story ? storyPara.length < 6 : para1.length < 4)) {
-		if (story) {
-			storyStat = stat.text;
-		} else {
-			beforeFinish(stat.text);
-		}
-		spentFacts.add(stat.fact);
-		if (stat.topic) {
-			spentTopics.add(stat.topic);
-		}
-	}
+	};
+	const lede = composeLede(input);
+	const told = lede.told;
+	const para1: string[] = [...lede.sentences];
+	const storyPara: string[] = composeStory(input, told);
 
-	// THE ORDER A REPORTER WRITES IN. What happened (the lede, above), then
-	// how it happened, then who did it - the winner's men, then the losers -
-	// and last what it means. The sentences used to be grouped by where they
-	// came from (star line, supporting cast, whatever extras fired), which
-	// put "an 18-0 run in the first" after the box-score names and a team's
-	// three-point shooting next to its bench scorer, and read as sentences
-	// thrown in at random.
 	const postSentences = headline.spentState
 		? // "The Cavaliers are up 2-1 in the First Round" under "Cavaliers take
 			// a 2-1 series lead" is the same numbers twice; the stakes sentence
@@ -8172,354 +4488,12 @@ const buildGameRecap = (game: RecapGame): string => {
 					...post.sentences.slice(1),
 				]
 			: post.sentences;
-
-	// --- 1. How it happened: the rest of the game story joins the lede. ---
-	//
-	// A "neither offense got going" note and a "pulled away after halftime"
-	// note are two readings of the same game arguing with each other. The
-	// grind is the more distinctive observation, so it wins.
-	const combined = combinedNote(shape, rng);
-	const written1 = [headline.text, ...para1, ...storyPara].join(" ");
-	if (story) {
-		// The character of the night opens the story; the notes the story
-		// did not already tell go in before the finish.
-		if (combined) {
-			storyPara.unshift(combined);
-			finishAt += 1;
-		}
-		const told = storyPara.join(" ");
-		const run =
-			story.covers.has("run") || /straight points|-0 run|unanswered/.test(told)
-				? undefined
-				: runNote(game, shape, rng);
-		// A first-half run goes before the halftime score, not after the
-		// second half: "...before the Lakers won the second half 69-59. The
-		// Lakers ran off 15 straight points in the first."
-		const runPeriod = game.flow?.run?.period ?? 0;
-		const halfAt = storyPara.findIndex((t) =>
-			/halftime|at the half\b|the break|into the second half/.test(t),
-		);
-		const runEnd = game.flow?.run?.endPeriod ?? runPeriod;
-		// Unless that sentence starts further back: "The Hawks had a 15-0
-		// run in the second... The Mavericks took the first quarter 35-20 and
-		// were up 49-43 at the break" told the second quarter first.
-		const halfStartsEarlier =
-			halfAt >= 0 &&
-			runPeriod > 1 &&
-			/first quarter|in the first\b/.test(storyPara[halfAt]!);
-		if (run && runEnd <= shape.regPeriods / 2 && halfAt >= 0) {
-			storyPara.splice(halfStartsEarlier ? halfAt + 1 : halfAt, 0, run);
-			finishAt += 1;
-		} else if (run && runEnd <= shape.regPeriods / 2 && halfAt < 0) {
-			// No halftime line to hang it on (a close game told from the
-			// fourth): the first half's run opens the story, in order.
-			storyPara.splice(combined ? 1 : 0, 0, run);
-			finishAt += 1;
-		} else if (run && runPeriod <= shape.regPeriods / 2 && halfAt >= 0) {
-			// One that spanned halftime comes right after the halftime score.
-			storyPara.splice(halfAt + 1, 0, run);
-			finishAt += 1;
-		}
-		// A third-quarter run goes before the score going into the fourth,
-		// and an overtime one after the finish that got the game there: "They
-		// scored 12 unanswered in overtime. Payton Dunn's three-pointer at
-		// the buzzer sent it to overtime." ran the clock backwards.
-		const enterAt = storyPara
-			.slice(0, finishAt)
-			// Either case: "Going into the fourth, the Suns were up 8" opens on
-			// it, and the run was told after it, in the wrong quarter.
-			.findIndex((t) => /going into the|entering the/i.test(t));
-		if (
-			run &&
-			!storyPara.includes(run) &&
-			runPeriod > shape.regPeriods / 2 &&
-			runPeriod < shape.regPeriods &&
-			enterAt >= 0
-		) {
-			storyPara.splice(enterAt, 0, run);
-			finishAt += 1;
-		}
-		const otRun =
-			run && !storyPara.includes(run) && runEnd > shape.regPeriods
-				? run
-				: undefined;
-		// And the losers' biggest lead, when it came in the first half, goes
-		// right after the halftime score: "...winning the second half 65-43.
-		// They were up by 21 at their biggest. The Celtics led by as many as
-		// 15." told the first half last.
-		let blown = blownLeadNote(game, shape, rng, written1);
-		const loserPeakAt =
-			game.flow?.maxLeadAt?.[sideOf(game, shape.loser)] ?? Infinity;
-		const halfNow = storyPara.findIndex((t) =>
-			/halftime|at the half\b|the break|into the second half/.test(t),
-		);
-		if (
-			blown &&
-			!/two minutes/.test(blown) &&
-			loserPeakAt <= shape.regPeriods / 2 &&
-			halfNow >= 0 &&
-			storyPara.length < 7
-		) {
-			storyPara.splice(halfNow + 1, 0, blown);
-			finishAt += 1;
-			blown = undefined;
-		}
-		// A peak after the break is told in its quarter, in order: "It was
-		// 95-95 going into the fourth. At one point the Magic led by 14." sent
-		// the reader back to a third quarter the story had already left. A
-		// third-quarter peak goes before the score going into the fourth, a
-		// fourth-quarter one before the finish.
-		const lead = game.flow?.maxLead[sideOf(game, shape.loser)] ?? 0;
-		const enterNow = storyPara
-			.slice(0, finishAt)
-			.findIndex((t) => /going into the|entering the|after three\b/i.test(t));
-		if (
-			blown &&
-			/as many as|at one stage|At one point/.test(blown) &&
-			loserPeakAt > shape.regPeriods / 2 &&
-			loserPeakAt <= shape.regPeriods &&
-			storyPara.length < 7
-		) {
-			const L = cap(theNick(shape.loser));
-			const q = ordinal(loserPeakAt);
-			if (loserPeakAt < shape.regPeriods && enterNow >= 0) {
-				storyPara.splice(
-					enterNow,
-					0,
-					pick(
-						rng,
-						[
-							`${L} led by as many as ${lead} in the ${q}.`,
-							`${L} were up by as many as ${lead} in the ${q}.`,
-						],
-						"blownLeadQuarter",
-					),
-				);
-				finishAt += 1;
-				blown = undefined;
-			} else if (enterNow >= 0) {
-				// Told after the quarter's result, so looking back.
-				blown = `${L} had led by as many as ${lead} in the ${q}.`;
-			} else if (loserPeakAt < shape.regPeriods && halfNow >= 0) {
-				// No score going into the last quarter to put it before: right
-				// after the half it grew out of. "The Jazz went into halftime
-				// ahead 57-46. The second half belonged to the Magic, 68-42.
-				// The Jazz led by as many as 13." told the third quarter last.
-				storyPara.splice(
-					halfNow + 1,
-					0,
-					`${L} led by as many as ${lead} in the ${q}.`,
-				);
-				finishAt += 1;
-				blown = undefined;
-			}
-		}
-		const big =
-			story.covers.has("winnerPeak") || /as many as|lead reached/.test(told)
-				? undefined
-				: bigLeadNote(game, shape, rng);
-		// A lead that peaked after it was taken for good is told after the
-		// basket that took it: "They led by as many as 21. They took the lead
-		// for good on Scoot Mathis' basket with 6:43 left in the third" ran
-		// the fourth quarter before the third.
-		const wPeakAt = game.flow?.maxLeadAt?.[sideOf(game, shape.winner)];
-		const forGoodAt = game.flow?.lastLead?.period;
-		const peakLater =
-			wPeakAt !== undefined &&
-			forGoodAt !== undefined &&
-			forGoodAt < wPeakAt &&
-			/for good|for the last time/.test(storyPara.slice(finishAt).join(" "));
-		// The winners' peak in its quarter too: "...but the Mavericks won the
-		// fourth 24-15. The Mavericks led by as many as 20." of a lead that
-		// peaked in the second.
-		let bigText = big;
-		if (
-			big &&
-			!peakLater &&
-			wPeakAt !== undefined &&
-			wPeakAt <= shape.regPeriods &&
-			/as many as \d+\.$|at one point\.$|at their biggest\.$/.test(big) &&
-			storyPara.length < 7
-		) {
-			const wLead = game.flow?.maxLead[sideOf(game, shape.winner)] ?? 0;
-			const W = cap(theNick(shape.winner));
-			const q = ordinal(wPeakAt);
-			const halfAt = storyPara.findIndex((t) =>
-				/halftime|at the half\b|the break|into the second half/.test(t),
-			);
-			const intoLast = storyPara
-				.slice(0, finishAt)
-				.findIndex((t) => /going into the|entering the|after three\b/i.test(t));
-			if (wPeakAt <= shape.regPeriods / 2 && halfAt >= 0) {
-				// After the halftime score, so looking back - and not "led"
-				// twice running: "The Mavericks led 53-40 at halftime. They
-				// had led by as many as 20 in the second."
-				storyPara.splice(
-					halfAt + 1,
-					0,
-					/ led\b/.test(storyPara[halfAt]!)
-						? `The lead had reached ${wLead} in the ${q}.`
-						: `${W} had led by as many as ${wLead} in the ${q}.`,
-				);
-				finishAt += 1;
-				bigText = undefined;
-			} else if (
-				wPeakAt > shape.regPeriods / 2 &&
-				wPeakAt < shape.regPeriods &&
-				intoLast >= 0
-			) {
-				storyPara.splice(
-					intoLast,
-					0,
-					pick(
-						rng,
-						[
-							`${W} led by as many as ${wLead} in the ${q}.`,
-							`The lead reached ${wLead} in the ${q}.`,
-						],
-						"bigLeadQuarter",
-					),
-				);
-				finishAt += 1;
-				bigText = undefined;
-			} else if (wPeakAt === shape.regPeriods) {
-				bigText = `The lead reached ${wLead} in the ${q}.`;
-			}
-		}
-		for (const e of [
-			run && !storyPara.includes(run) && run !== otRun ? run : undefined,
-			bigText,
-			blown,
-		]) {
-			if (e && storyPara.length < 7) {
-				if (e === big && peakLater) {
-					storyPara.push(e);
-				} else {
-					beforeFinish(e);
-				}
-			}
-		}
-		if (otRun && storyPara.length < 7) {
-			storyPara.push(otRun);
-		}
-	}
-	const howItHappened = story
-		? []
-		: [
-				// A "took over in the fourth, 23-11" flow line and a "40-22 over the
-				// last two quarters" note are the same stretch of the game measured
-				// twice, so a run already told stands in for the half.
-				combined || flowCovered === "run" || flowCovered === "comeback"
-					? undefined
-					: secondHalfNote(shape, rng),
-				combined,
-				runNote(game, shape, rng),
-				bigLeadNote(game, shape, rng),
-				blownLeadNote(game, shape, rng, written1),
-			].filter((x): x is string => !!x);
-	for (const e of howItHappened) {
-		if (para1.length >= 5) {
-			break;
-		}
-		para1.push(e);
-	}
-	// The halftime score, as every wire recap carries it, unless something
-	// above already put the reader at the break.
-	if (
-		!story &&
-		para1.length <= 5 &&
-		!/halftime|at the break|the half\b|after the break|second half/.test(
-			para1.join(" "),
-		)
-	) {
-		const half = halftimeNote(
-			shape,
-			rng,
-			// The comeback's own words, not "it came from everywhere".
-			flowCovered === "comeback" ||
-				/trailed by \d|came from \d+ down|erased|-point deficit|-point hole/.test(
-					para1.join(" "),
-				),
-		);
-		if (half) {
-			// IN ORDER. The break comes before anything that happened after
-			// it: "The fourth quarter settled it: 27-16. They took a 57-47 lead
-			// into halftime" and "had led by 29 and very nearly let it go. They
-			// went into the break ahead 69-45" both run the clock backwards. A
-			// first-half run stays ahead of it; the lede is never displaced.
-			const later = para1.findIndex(
-				(t, i) => i > 0 && SECOND_HALF_OR_FINISH.test(t),
-			);
-			if (later > 0) {
-				// Not between a name and the "His basket..." that leans on it:
-				// step back over a sentence that opens on a pronoun.
-				const PRONOUN = /^(?:His|He)\b/;
-				let at = later;
-				while (at > 1 && PRONOUN.test(para1[at]!)) {
-					at -= 1;
-				}
-				para1.splice(PRONOUN.test(para1[at]!) ? at + 1 : at, 0, half);
-			} else {
-				para1.push(half);
-			}
-		}
-	}
-	// A FIRST-HALF RUN AFTER THE FINISH. "Marcus Jackson's three cut it to
-	// 107-106 with 0.7 seconds left. A 13-0 run in the second built the
-	// lead..." walks the clock backwards the same way the halftime score
-	// used to. A sentence pinned to the first or second quarter moves up to
-	// sit before the first thing that happened after the break - unless it
-	// leans on the sentence before it with a pronoun.
-	{
-		const FIRST_HALF =
-			/\bin the (?:first|second)\b(?! half)|\bafter one\b|\b(?:first|second) quarter\b/;
-		// "It was 33-18 after one" is impersonal and moves freely; "They..."
-		// and "His..." lean on the sentence before them.
-		const LEANS = /^(?:He|His|They|Their)\b/;
-		const firstLater = body.findIndex(
-			(t, i) => i > 0 && SECOND_HALF_OR_FINISH.test(t),
-		);
-		if (firstLater > 0) {
-			// Collected first and inserted as one block, in their own order.
-			// Moving them one at a time left the position of "the first
-			// thing after the break" stale, and two first-half sentences could
-			// trade places with each other forever.
-			const moved: string[] = [];
-			const kept: string[] = [];
-			body.forEach((t, i) => {
-				if (
-					i > firstLater &&
-					FIRST_HALF.test(t) &&
-					!SECOND_HALF_OR_FINISH.test(t) &&
-					!LEANS.test(t)
-				) {
-					moved.push(t);
-				} else {
-					kept.push(t);
-				}
-			});
-			if (moved.length > 0) {
-				// Before the halftime score when it sits right there: the run
-				// came before the break. The lede never moves; a story
-				// paragraph has no lede in it.
-				const at =
-					firstLater > (story ? 0 : 1) &&
-					/halftime|at the break|at the half\b|into the break|into halftime/.test(
-						kept[firstLater - 1]!,
-					)
-						? firstLater - 1
-						: firstLater;
-				kept.splice(at, 0, ...moved);
-				body.splice(0, body.length, ...kept);
-			}
-		}
-	}
 	// Where the series stands is part of what happened, and closes the lede.
 	// When the headline already carried it, what is left is the stakes
 	// ("The Raptors can still close it out in Game 5"), which is context.
-	// The lede named the round, so the series score that closes the story
-	// does not name it again: "The Magic lead the series 1-0", not "...are
-	// up 1-0 in the Finals" under "in Game 1 of the Finals".
+	// The lede named the round, so the series score does not name it again:
+	// "The Magic lead the series 1-0", not "...are up 1-0 in the Finals"
+	// under "in Game 1 of the Finals".
 	const rnd = post.state?.round;
 	const seriesState =
 		headline.spentState || postSentences[0] === undefined
@@ -8531,6 +4505,11 @@ const buildGameRecap = (game: RecapGame): string => {
 							(_, w: string) =>
 								`${cap(w)} lead the series ${post.state!.wAfter}-${post.state!.lBefore}.`,
 						)
+						// "...in Game 2 of the First Round. Game 2 went to the
+						// Nuggets, and the series is tied 1-1."
+						.replace(/^Game \d+ went to [^,]+, and (.+)$/, (_, rest: string) =>
+							cap(rest),
+						)
 						.replace(
 							new RegExp(String.raw` are up (\d+-\d+) in ${rnd}\.$`),
 							" lead the series $1.",
@@ -8540,41 +4519,39 @@ const buildGameRecap = (game: RecapGame): string => {
 	const postContext = headline.spentState
 		? postSentences
 		: postSentences.slice(1);
-	if (seriesState && (story || para1.length < 6)) {
-		body.push(seriesState);
+	if (seriesState) {
+		para1.push(seriesState);
 	}
-	const spentThrees = () =>
-		spentTopics.has("threes") || spentFacts.has("loserThrees");
+	// A first title in franchise history, or a repeat, is part of the lede's
+	// news, not the last line of the piece: it goes up with the result.
+	const history = postContext.find((t) =>
+		/championship in franchise history|back-to-back championships/.test(t),
+	);
+	if (history) {
+		para1.push(history);
+	}
 
-	// --- 2. Who did it: the winners. The man in the lede first - what his
-	// night was against his own season - then the men around him. ---
+	const written1 = [headline.text, ...para1, ...storyPara].join(" ");
+	let writtenSoFar = written1;
+
+	// --- Who did it: the winners. The man in the lede first - what his night
+	// was against his own season - then the men around him. ---
 	const winners: string[] = [];
-	let writtenSoFar = [headline.text, ...para1, ...storyPara].join(" ");
-	const addWinner = (beat: () => string | undefined, cap = 5) => {
-		if (winners.length >= cap) {
-			return;
-		}
-		const text = beat();
-		if (text) {
-			winners.push(text);
-			writtenSoFar = `${writtenSoFar} ${text}`;
-		}
-	};
-	// A season high goes into his line when the line is on the page
-	// ("racked up a season-high 32 points"), and is then no note of its own.
 	const everyone = [...shape.winner.players, ...shape.loser.players];
 	const othersOf = (p: RecapPlayer) =>
 		everyone.filter((x) => x !== p).map((x) => x.name);
+	const cast = composeCast(input, told, writtenSoFar);
+	// A season high goes into his line when the line is on the page
+	// ("racked up a season-high 32 points"), and is then no note of its own.
 	const starHighFolded = foldSeasonHigh(
-		[para1, storyPara],
+		[para1, storyPara, cast.winners],
 		star,
 		othersOf(star),
 	);
-	if (starHighFolded) {
-		writtenSoFar = [headline.text, ...para1, ...storyPara].join(" ");
-	}
-	// The career arc first: it is the rarest note and the one a season
-	// high or an against-his-average line would otherwise crowd out.
+	writtenSoFar = [written1, ...cast.winners].join(" ");
+	// What his night was against his season: the career arc first - it is
+	// the rarest note and the one a season high or an against-his-average
+	// line would otherwise crowd out. One note; two for a night that big.
 	const starColour = [
 		() => careerArcNote(star, game.playoffs, rng),
 		() =>
@@ -8592,24 +4569,35 @@ const buildGameRecap = (game: RecapGame): string => {
 			starHighFolded ? undefined : playerHighBeat(star, rng, writtenSoFar),
 		() => vsOpponentBeat(star, nick(shape.loser), rng),
 	];
-	// Two notes on the star at most; the paragraph is about the team.
+	const colour: string[] = [];
 	for (const beat of starColour) {
-		addWinner(beat, 2);
+		if (colour.length >= (star.pts >= 35 ? 2 : 1)) {
+			break;
+		}
+		const text = beat();
+		if (text) {
+			colour.push(text);
+			writtenSoFar = `${writtenSoFar} ${text}`;
+		}
 	}
-	let supportText: string | undefined;
-	addWinner(() => {
-		supportText = supportSentence(
-			shape,
-			star,
-			rng,
-			heroTold,
-			shape.winner.players.find(
-				(p) => p !== star && headline.text.includes(p.name),
-			),
-		);
-		return supportText;
-	});
-	addWinner(() => storyStat, 6);
+	// His notes sit right behind his own sentence when the cast opens on
+	// him, and open the paragraph when the lede was his.
+	const starFirst = cast.starFirst ? 1 : 0;
+	winners.push(
+		...cast.winners.slice(0, starFirst),
+		...colour,
+		...cast.winners.slice(starFirst),
+	);
+	const addWinner = (beat: () => string | undefined, cap = 5) => {
+		if (winners.length >= cap) {
+			return;
+		}
+		const text = beat();
+		if (text) {
+			winners.push(text);
+			writtenSoFar = `${writtenSoFar} ${text}`;
+		}
+	};
 	// A +20 in a 25-point rout is the rout restated. In a game decided by
 	// that much the swing is a note only when it outran the final margin.
 	addWinner(() => {
@@ -8624,18 +4612,11 @@ const buildGameRecap = (game: RecapGame): string => {
 			}
 		}
 		return plusMinusNote(shape, star, rng, namesIn(writtenSoFar, shape));
-	});
-	addWinner(() =>
-		balanceNote(shape, rng, {
-			dblFig: /in double figures|double figures/.test(writtenSoFar),
-			// "assisted on 31 of their 39 baskets" counts too.
-			assists: /assist(?:s|ed)?\b/.test(writtenSoFar),
-		}),
-	);
+	}, 3);
 
-	// --- 3. The losers: their best man and why it was not enough, then the
-	// rest of what they got, then the individual notes. ---
-	const losers: string[] = [];
+	// --- The losers: their best man and why it was not enough. ---
+	const losers: string[] = [...cast.losers];
+	writtenSoFar = [writtenSoFar, ...losers].join(" ");
 	const addLoser = (beat: () => string | undefined, cap = 5) => {
 		if (losers.length >= cap) {
 			return;
@@ -8646,63 +4627,37 @@ const buildGameRecap = (game: RecapGame): string => {
 			writtenSoFar = `${writtenSoFar} ${text}`;
 		}
 	};
-	addLoser(() =>
-		loserSentence(
-			shape,
-			rng,
-			spentFacts,
-			headline.spentLoserStar || tail.loserStar !== undefined,
-		),
-	);
 	const said = namesIn(writtenSoFar, shape);
 	said.add(star.name);
 	const loserBest = bestOf(shape.loser.players);
 	// The losing side's best man had a season high of his own - straight
 	// after his line, and only once the piece has introduced him, so the
 	// sentence has a line to refer to.
-	addLoser(() =>
-		loserBest &&
-		loserBest !== star &&
-		said.has(loserBest.name) &&
-		!foldSeasonHigh([para1, storyPara, losers], loserBest, othersOf(loserBest))
-			? playerHighBeat(loserBest, rng, writtenSoFar)
-			: undefined,
+	addLoser(
+		() =>
+			loserBest &&
+			loserBest !== star &&
+			said.has(loserBest.name) &&
+			!foldSeasonHigh(
+				[para1, storyPara, losers],
+				loserBest,
+				othersOf(loserBest),
+			)
+				? playerHighBeat(loserBest, rng, writtenSoFar)
+				: undefined,
+		3,
 	);
-	// Their second man right after their first - the two men together, then
-	// the team's shooting. Interleaved, the paragraph read "Trey Hayes had 19
-	// for the Bucks... The Suns got to the line more often... Obi Hayes
-	// tacked on 16 in defeat", the losers' men separated by a whistle count.
-	addLoser(() => loserSupportNote(shape, rng, namesIn(writtenSoFar, shape)));
-	// The two sides' shooting, told as the reason the losers lost: the
-	// three-point line and the free-throw line sit with the side they
-	// explain rather than three paragraphs from it.
-	for (const beat of shuffle(rng, [
-		() => threeNote(shape, rng, spentThrees()),
-		() => freeThrowNote(shape, rng, spentTopics.has("freeThrows")),
-	])) {
-		addLoser(beat, 4);
-	}
-	// The defensive note can be either side's man, so it waits until the
-	// losers' best has had his sentence - named first for his steals, he
-	// came back a sentence later as "His 18 points...".
-	// It goes in the paragraph of the side it is about: "Jalen Green
-	// collected 5 steals for the Clippers" closed the losers' paragraph after
-	// their two men and their shooting, a winner's note among the losers.
-	// The men written since the set was taken, the losers' second man among
-	// them: "Payton Brooks turned in 12 points for the losing side. Foul
-	// trouble cost Payton Brooks, who finished with 12 points".
-	for (const name of namesIn(writtenSoFar, shape)) {
-		said.add(name);
-	}
+	// One note of colour from the box score - a block party, a man fouling
+	// out, 48 minutes - in the paragraph of the side it is about.
+	const plusMinusTold = winners.some((t) =>
+		/on the floor|when he sat|minutes by \d+ and lost/.test(t),
+	);
 	for (const beat of shuffle(rng, [
 		() => defensiveNote(shape, rng, said),
 		() => foulOutNote(shape, said, rng),
 		() => minutesNote(shape, said),
 	])) {
-		if (losers.length >= 5) {
-			break;
-		}
-		const text = beat();
+		const text = plusMinusTold ? undefined : beat();
 		if (!text) {
 			continue;
 		}
@@ -8710,10 +4665,11 @@ const buildGameRecap = (game: RecapGame): string => {
 			shape.winner.players.some((p) => text.startsWith(p.name)) ||
 			(text.includes(nick(shape.winner)) && !text.includes(nick(shape.loser)));
 		if (aboutWinner) {
-			addWinner(() => text, 6);
+			addWinner(() => text, 4);
 		} else {
-			addLoser(() => text);
+			addLoser(() => text, 3);
 		}
+		break;
 	}
 
 	// --- 4. What it means: the series, the season, who was missing, and
@@ -8747,14 +4703,6 @@ const buildGameRecap = (game: RecapGame): string => {
 			beatCtx.written = `${beatCtx.written} ${text}`;
 		}
 	};
-	// A first title in franchise history, or a repeat, is part of the lede's
-	// news, not the last line of the piece: it goes up with the result.
-	const history = postContext.find((t) =>
-		/championship in franchise history|back-to-back championships/.test(t),
-	);
-	if (history && para1.length > 0) {
-		para1.push(history);
-	}
 	for (const text of postContext) {
 		if (text !== history) {
 			addContext(() => text);
@@ -8763,7 +4711,7 @@ const buildGameRecap = (game: RecapGame): string => {
 	const seriesCount = context.length;
 	// What the lede and the story told, and the body so far - without the
 	// headline, whose streak is the body's to tell too.
-	const story1 = written1.slice(headline.text.length);
+	const story1 = writtenSoFar.slice(headline.text.length);
 	addContext(() =>
 		stakesSentence(
 			game,
@@ -8847,85 +4795,33 @@ const buildGameRecap = (game: RecapGame): string => {
 		context.push(closer);
 	}
 
-	// Paragraphing. The two people paragraphs are one when together they are
-	// short; a lone sentence is never a paragraph of its own.
-	let para2: string[];
-	let para3: string[];
-	if (winners.length + losers.length <= 4) {
-		para2 = [...winners, ...losers];
-		para3 = context;
-	} else {
-		para2 = winners;
-		para3 = losers;
-	}
-	let para4: string[] = para3 === context ? [] : context;
-	if (para4.length === 1 && para3.length > 0 && para3.length <= 4) {
-		para3.push(para4.pop()!);
-	}
-	if (para3.length === 1 && para2.length > 0 && para2.length <= 4) {
-		para2.push(para3.shift()!);
-		para3 = para4;
-		para4 = [];
-	}
-	// A lede of one bare result sentence happens when the headline already
-	// spent the star's line and the game had no comeback or decisive run to
-	// describe; pull the next beat up rather than leave the opening paragraph
-	// a single clause.
-	//
-	// With a story paragraph the lede may stand alone - one sentence is how
-	// a wire story opens - but a story of one sentence is folded back into
-	// it, and a lone sentence about the players joins the next paragraph.
-	// A short story is part of the lede, not a paragraph of its own.
+	// Paragraphing. The lede stands alone, as a wire story opens, unless the
+	// game story is a single sentence, which then finishes the thought. The
+	// two casts are one paragraph when together they are short, and a lone
+	// closing note joins the paragraph before it.
+	// A lede that could only say who won takes the whole story with it.
 	if (
-		storyPara.length > 0 &&
-		storyPara.length <= 2 &&
-		para1.length + storyPara.length <= 4
+		para1.length === 1 &&
+		(storyPara.length === 1 ||
+			(storyPara.length === 2 && para1[0]!.length < 90))
 	) {
+		// Straight after the lede, the winners are "they".
+		const W = `${cap(theNick(shape.winner))} `;
+		if (storyPara[0]!.startsWith(W) && para1[0]!.startsWith(W)) {
+			storyPara[0] = `They ${storyPara[0]!.slice(W.length)}`;
+		}
 		para1.push(...storyPara.splice(0));
 	}
-	if (storyPara.length > 0) {
-		if (para2.length === 1) {
-			if (para3.length > 0) {
-				para3.unshift(para2.shift()!);
-				para2 = para3;
-				para3 = para4;
-				para4 = [];
-			} else {
-				storyPara.push(para2.shift()!);
-			}
-		}
+	let people: string[][];
+	if (winners.length + losers.length <= 3) {
+		people = [[...winners, ...losers]];
 	} else {
-		if (para1.length === 1 && para2.length > 1) {
-			para1.push(para2.shift()!);
-		}
-		if (para2.length === 1 && para1.length <= 3) {
-			para1.push(para2.shift()!);
-			para2 = para3;
-			para3 = para4;
-			para4 = [];
-		}
+		people = [winners, losers];
 	}
-
-	// A PARAGRAPH SAYS WHOSE IT IS. The supporting cast opening a paragraph
-	// after the game story named two men and no team - "Miles Green added 24
-	// points, and Herb Green chipped in 17" - leaving the reader to work out
-	// which side they played for. The wire's answer is three words on the
-	// first clause.
-	for (const para of [para2, para3, para4]) {
-		const first = para[0];
-		if (
-			first !== undefined &&
-			first === supportText &&
-			!first.includes(nick(shape.winner))
-		) {
-			// The ", and" that starts the next man's clause, never the one
-			// inside a stat list ("18 points, 3 steals, and 2 blocks").
-			const cut = first.search(/, and (?=[A-Z])|\.$/);
-			const clause = first.slice(0, cut);
-			if (cut > 0 && !/ for | of his own/.test(clause)) {
-				para[0] = `${clause} for ${theNick(shape.winner)}${first.slice(cut)}`;
-			}
-		}
+	people = people.filter((p) => p.length > 0);
+	const notes = [...context];
+	if (notes.length === 1 && people.length > 0 && people.at(-1)!.length <= 3) {
+		people.at(-1)!.push(notes.pop()!);
 	}
 
 	const otherNick = nick(shape.loser);
@@ -8934,32 +4830,32 @@ const buildGameRecap = (game: RecapGame): string => {
 	const playerNames = [...shape.winner.players, ...shape.loser.players]
 		.map((p) => p.name)
 		.sort((a, b) => b.length - a.length);
-	const tidy = (para: string[]) =>
+	// The lede, the story and the casts are written whole (recapStory.ts) and
+	// need no stitching. The notes are still one fact to a sentence, chosen
+	// one at a time, and get the passes that make neighbours share a subject.
+	const tidyNotes = (para: string[]) =>
 		joinShortPairs(
-			varyHalfWords(
-				spareDoubleLabels(
-					dedupePlayerSubjects(
-						dedupeSubjects(spareForThe(para), otherNick, nicks),
-						playerNames,
-					),
+			spareDoubleLabels(
+				dedupePlayerSubjects(
+					dedupeSubjects(spareForThe(para), otherNick, nicks),
+					playerNames,
 				),
 			),
 		).join(" ");
-	const paragraphs = [tidy(para1)];
+	const paragraphs = [para1.join(" ")];
 	if (storyPara.length > 0) {
-		paragraphs.push(tidy(storyPara));
+		paragraphs.push(storyPara.join(" "));
 	}
-	if (para2.length > 0) {
-		paragraphs.push(tidy(para2));
+	const settled = new Set<number>();
+	for (const p of people) {
+		settled.add(paragraphs.length);
+		paragraphs.push(dedupePlayerSubjects(p, playerNames).join(" "));
 	}
-	if (para3.length > 0) {
-		paragraphs.push(tidy(para3));
-	}
-	if (para4.length > 0) {
-		paragraphs.push(tidy(para4));
+	if (notes.length > 0) {
+		paragraphs.push(tidyNotes(notes));
 	}
 	return `**${headline.text}**\n\n${withStandingTag(
-		withRecords(teamTheSwitch(paragraphs, shape), game, shape),
+		withRecords(teamTheSwitch(paragraphs, shape, settled), game, shape),
 		game,
 		shape,
 		rng,
@@ -8973,7 +4869,13 @@ const buildGameRecap = (game: RecapGame): string => {
 // the Hawks. He gets his club, as the wire writes it: "The Hawks' Cade
 // Brooks sprained his shoulder". Across paragraphs too: a notes paragraph
 // opens straight after the losers' lines.
-export const teamTheSwitch = (paragraphs: string[], shape: Shape): string[] => {
+export const teamTheSwitch = (
+	paragraphs: string[],
+	shape: Shape,
+	// Paragraphs that say whose men they are in every sentence (the casts):
+	// read for what the next paragraph follows, never rewritten.
+	settled: ReadonlySet<number> = new Set(),
+): string[] => {
 	const sides = [shape.winner, shape.loser];
 	const sideOfName = new Map<string, RecapTeam>();
 	for (const t of sides) {
@@ -8983,8 +4885,12 @@ export const teamTheSwitch = (paragraphs: string[], shape: Shape): string[] => {
 	}
 	const names = [...sideOfName.keys()].sort((a, b) => b.length - a.length);
 	let prev = "";
-	return paragraphs.map((para) => {
+	return paragraphs.map((para, at) => {
 		const sentences = para.split(/(?<=[!.?])\s+(?=[A-Z])/);
+		if (settled.has(at)) {
+			prev = sentences.at(-1) ?? prev;
+			return para;
+		}
 		for (let i = 0; i < sentences.length; i++) {
 			const cur = sentences[i]!;
 			const who = names.find(
