@@ -1,4 +1,3 @@
-import clsx from "clsx";
 import { helpers } from "../util/helpers.ts";
 import { ABBREVS, CAP_STATUS, optionAbbrev } from "../../common/signingHow.ts";
 import type { CapStatusKey } from "../../common/signingHow.ts";
@@ -7,23 +6,38 @@ import type {
 	TeamCapStatus,
 } from "../../worker/core/realisticFrontOffice/capSheet.ts";
 
-// A TEAM'S CAP STATUS under realistic front offices' contract rules: the
-// badge, the room it has under the cap and the hard cap, and the exception it
-// has left. One component, on every page that deals in signing players.
+// A TEAM'S CAP STATUS under realistic front offices' contract rules, in plain
+// words: where its payroll stands, the room it has under the cap and the hard
+// cap, and the exception it has left. One component, on every page that deals
+// in signing players.
 
 const money = (amount: number) => helpers.formatCurrency(amount / 1000, "M");
 
-export const CapStatusBadge = ({
+// "Under the cap", "Over the tax"... as text, red only at the hard cap, where
+// it stops a team signing anyone but minimum players.
+// `inline`: after a payroll, "(under the cap)".
+export const CapStatusText = ({
 	className,
+	inline,
 	status,
 }: {
 	className?: string;
+	inline?: boolean;
 	status: CapStatusKey;
-}) => (
-	<span className={clsx("badge", CAP_STATUS[status].className, className)}>
-		{CAP_STATUS[status].label}
-	</span>
-);
+}) => {
+	const label = CAP_STATUS[status].label;
+	return (
+		<span
+			className={
+				status === "hardCap"
+					? `text-danger${className ? ` ${className}` : ""}`
+					: className
+			}
+		>
+			{inline ? `(${label.toLowerCase()})` : label}
+		</span>
+	);
+};
 
 export const exceptionText = (exception: CapException) =>
 	exception.kind === "midLevel" ? (
@@ -48,46 +62,76 @@ export const CapStatus = ({
 }: {
 	cap: TeamCapStatus;
 	className?: string;
-}) => {
-	const items = [
-		{ label: "Cap space", value: roomText(cap.capSpace) },
-		{ label: "Room under hard cap", value: roomText(cap.hardCapRoom) },
-		{ label: "Exception", value: exceptionText(cap.exception) },
-	];
-	return (
-		<div className={clsx("d-flex flex-wrap align-items-end gap-3", className)}>
-			<div>
-				<CapStatusBadge className="fs-6" status={cap.status} />
-			</div>
-			{items.map((item) => (
-				<div key={item.label}>
-					<div className="text-body-secondary small">{item.label}</div>
-					<div className="fw-bold">{item.value}</div>
-				</div>
-			))}
-			<a href={helpers.leagueUrl(["contract_rules"])}>Contract Rules</a>
-		</div>
-	);
-};
+}) => (
+	<p className={className}>
+		{cap.status === "hardCap" ? (
+			<>
+				<CapStatusText status={cap.status} />.{" "}
+			</>
+		) : null}
+		{cap.capSpace >= 0 ? (
+			<>
+				Cap space: <b>{money(cap.capSpace)}</b> after cap holds.
+			</>
+		) : (
+			<>
+				Over the cap by <b>{money(-cap.capSpace)}</b>
+				{cap.status === "apron" ? ", and over the luxury tax" : null}.
+			</>
+		)}{" "}
+		{Number.isFinite(cap.hardCapRoom) ? (
+			<>
+				Room under the hard cap:{" "}
+				<b className={cap.hardCapRoom < 0 ? "text-danger" : undefined}>
+					{money(cap.hardCapRoom)}
+				</b>
+				.{" "}
+			</>
+		) : null}
+		{cap.exception.kind === "midLevel" ? (
+			<>
+				Mid-level exception: <b>{money(cap.exception.amount)}</b>.{" "}
+			</>
+		) : cap.exception.kind === "used" ? (
+			<>Mid-level exception: used. </>
+		) : null}
+		<a href={helpers.leagueUrl(["contract_rules"])}>Contract rules</a>
+	</p>
+);
 
-// A contract's terms: its option, a prove-it deal.
-export const termsBadges = (how: {
+// A contract's terms: its option, a prove-it deal. Abbreviations in the
+// table's text, spelled out on hover.
+export const termsText = (how: {
 	option?: "player" | "team";
 	proveIt?: true;
-}) => (
-	<>
-		{how.option ? (
-			<span
-				className="badge text-bg-light border me-1"
-				title={ABBREVS[optionAbbrev(how.option)]}
-			>
-				{optionAbbrev(how.option)}
-			</span>
-		) : null}
-		{how.proveIt ? (
-			<span className="badge text-bg-warning me-1" title={ABBREVS["Prove-it"]}>
-				Prove-it
-			</span>
-		) : null}
-	</>
-);
+}) => {
+	const parts = [];
+	if (how.option) {
+		const abbrev = optionAbbrev(how.option);
+		parts.push(
+			<abbr key="option" title={ABBREVS[abbrev]}>
+				{abbrev}
+			</abbr>,
+		);
+	}
+	if (how.proveIt) {
+		parts.push(
+			<abbr key="proveIt" title={ABBREVS["Prove-it"]}>
+				prove-it
+			</abbr>,
+		);
+	}
+	if (parts.length === 0) {
+		return null;
+	}
+	return (
+		<>
+			{parts.map((part, i) => (
+				<span key={i}>
+					{i > 0 ? ", " : null}
+					{part}
+				</span>
+			))}
+		</>
+	);
+};

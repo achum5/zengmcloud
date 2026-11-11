@@ -7,10 +7,10 @@ import { DataTable } from "../components/DataTable/index.tsx";
 import type { DataTableRow } from "../components/DataTable/index.tsx";
 import { wrappedTeamAbbrevLink } from "../components/TeamAbbrevLink.tsx";
 import {
-	CapStatusBadge,
+	CapStatusText,
 	exceptionText,
 	roomText,
-	termsBadges,
+	termsText,
 } from "../components/CapStatus.tsx";
 import { ABBREVS, CAP_STATUS, howMethod } from "../../common/signingHow.ts";
 
@@ -35,7 +35,7 @@ const RuleTable = ({
 }) => (
 	<div className={clsx("col-md-6 col-xl-4 mb-3", className)}>
 		<h3>{title}</h3>
-		<table className="table table-sm table-striped mb-0">
+		<table className="table table-striped table-borderless table-sm mb-0">
 			<tbody>
 				{rows.map(([rule, value], i) => (
 					<tr key={i}>
@@ -129,12 +129,11 @@ const RulesTab = ({ rules }: { rules: Rules }) => {
 				rows={[["Past the hard cap after it", "Salary in ≤ salary out"]]}
 			/>
 			<div className="col-md-6 col-xl-4 mb-3">
-				<h3>Free agency stages</h3>
-				<table className="table table-sm mb-0">
+				<h3>Free agency phases</h3>
+				<table className="table table-striped table-borderless table-sm mb-0">
 					<thead>
 						<tr>
-							<th />
-							<th>Stage</th>
+							<th>Phase</th>
 							<th>Who decides</th>
 						</tr>
 					</thead>
@@ -142,10 +141,9 @@ const RulesTab = ({ rules }: { rules: Rules }) => {
 						{rules.stages.map((name, i) => (
 							<tr
 								key={name}
-								className={i === rules.stage ? "table-primary" : undefined}
+								className={i === rules.stage ? "table-info" : undefined}
 							>
 								<td>{i + 1}</td>
-								<td>{name}</td>
 								<td>
 									{i === 0
 										? "Nobody signs"
@@ -155,7 +153,7 @@ const RulesTab = ({ rules }: { rules: Rules }) => {
 												? `Next ${rules.tier2}`
 												: i === 3
 													? "Everyone else"
-													: "Anyone left; asks drop"}
+													: "Anyone left, before the season"}
 								</td>
 							</tr>
 						))}
@@ -346,18 +344,18 @@ const GuideTab = ({ rules }: { rules: Rules }) => {
 				</li>
 				<li>
 					When he picks another team's offer, it becomes an <b>offer sheet</b>:
-					his old team gets the next stage to match it on the same terms (the
+					his old team gets the next phase to match it on the same terms (the
 					Match button on Free Agents; in multiplayer you also get a
 					notification). Matched, he stays; if not, he goes to the new team.
 				</li>
 				<li>
-					At training camp there's no stage left to match in, so he signs
-					wherever he chooses.
+					In {rules.stages[4]?.toLowerCase()} there's no phase left to match in,
+					so he signs wherever he chooses.
 				</li>
 			</GuideSection>
-			<GuideSection title="Free agency, in 5 stages">
+			<GuideSection title={`Free agency, in ${rules.stages.length} phases`}>
 				<li>
-					Free agency runs in {rules.stages.length} stages instead of 30 days.
+					Free agency runs in {rules.stages.length} phases instead of 30 days.
 					Each Play moves to the next one.
 				</li>
 				<li>
@@ -367,8 +365,8 @@ const GuideTab = ({ rules }: { rules: Rules }) => {
 					<b>{rules.stages[1]}:</b> the top {rules.tier1} free agents decide.
 					Each shows the offer <b>to beat</b>: the money and years of his best
 					offer so far, not the team. Make your final offer. At the end of the
-					stage he signs with an offer at his asking price or more, if he has
-					one; if not, he waits for the next stage.
+					phase he signs with an offer at his asking price or more, if he has
+					one; if not, he waits for the next phase.
 				</li>
 				<li>
 					<b>{rules.stages[2]}:</b> the next {rules.tier2} decide, the same way.
@@ -378,7 +376,7 @@ const GuideTab = ({ rules }: { rules: Rules }) => {
 					an offer is good enough, or waits for a better one.
 				</li>
 				<li>
-					<b>{rules.stages[4]}:</b> the last stage. A player takes an offer at
+					<b>{rules.stages[4]}:</b> the last phase. A player takes an offer at
 					his asking price or more. One under it, he usually takes too: once the
 					season starts, teams have little but the minimum left to offer, so
 					he'd rather sign now than wait.
@@ -391,7 +389,7 @@ const GuideTab = ({ rules }: { rules: Rules }) => {
 			<GuideSection title="How a free agent chooses">
 				<li>
 					<b>His asking price</b> is set when free agency opens, from what teams
-					can pay him. During free agency it never goes up. Each stage it moves
+					can pay him. During free agency it never goes up. Each phase it moves
 					toward what teams would pay him now - there is no set floor - so as
 					teams use up their cap room, the price of anyone still unsigned falls.
 				</li>
@@ -416,7 +414,7 @@ const GuideTab = ({ rules }: { rules: Rules }) => {
 					</b>{" "}
 					for less than {rules.proveItPct}% of his opening ask he signs for{" "}
 					{years(rules.proveItYears)} at most, and that deal gives no Bird
-					rights. From training camp on, any deal under{" "}
+					rights. From {rules.stages[4]?.toLowerCase()} on, any deal under{" "}
 					{rules.lateLongPct === 100 ? "" : `${rules.lateLongPct}% of `}his
 					opening ask is for {years(rules.proveItYears)} at most.
 				</li>
@@ -478,7 +476,7 @@ const TeamsTab = ({
 				searchValue: t.exception.kind,
 			},
 			{
-				value: <CapStatusBadge status={t.status} />,
+				value: <CapStatusText status={t.status} />,
 				sortValue: statusOrder.indexOf(t.status),
 				searchValue: CAP_STATUS[t.status].label,
 			},
@@ -550,7 +548,7 @@ const SigningsTab = ({
 					: null,
 				row.how
 					? {
-							value: termsBadges(row.how),
+							value: termsText(row.how),
 							searchValue: `${row.how.option ?? ""} ${row.how.proveIt ? "prove-it" : ""}`,
 						}
 					: null,

@@ -32,15 +32,12 @@ export const ABBREVS = {
 
 export type CapStatusKey = "under" | "over" | "apron" | "hardCap";
 
-export const CAP_STATUS: Record<
-	CapStatusKey,
-	{ label: string; className: string }
-> = {
-	under: { label: "Under the cap", className: "text-bg-success" },
-	over: { label: "Over the cap", className: "text-bg-secondary" },
+export const CAP_STATUS: Record<CapStatusKey, { label: string }> = {
+	under: { label: "Under the cap" },
+	over: { label: "Over the cap" },
 	// Over the luxury tax line (the key is the old apron's).
-	apron: { label: "Over the tax", className: "text-bg-warning" },
-	hardCap: { label: "At the hard cap", className: "text-bg-danger" },
+	apron: { label: "Over the tax" },
+	hardCap: { label: "At the hard cap" },
 };
 
 // The phrases an event's text ends with: "(mid-level, team option)".

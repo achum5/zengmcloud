@@ -134,8 +134,8 @@ const Editor = ({
 					minContract={props.minContract}
 					onChange={setAmount}
 				/>
-				<div className="text-body-secondary">
-					Ask {formatOfferAmount(term.ask)} thru {term.exp}
+				<div>
+					Asking for {formatOfferAmount(term.ask)} thru {term.exp}
 				</div>
 			</div>
 
@@ -150,10 +150,8 @@ const Editor = ({
 
 			<div className="d-flex flex-wrap align-items-center gap-2">
 				<div className="me-auto">
-					Your odds{" "}
-					<span className="fs-4 fw-bold" data-testid="extension-odds">
-						{formatChance(live.chance)}
-					</span>
+					Your odds:{" "}
+					<b data-testid="extension-odds">{formatChance(live.chance)}</b>
 				</div>
 				{result?.accepted || declined > 0 ? (
 					<span

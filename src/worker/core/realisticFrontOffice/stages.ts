@@ -59,16 +59,19 @@ export const stageSettings = {
 	openAskFloor: 0.5,
 };
 
+// Named Phase 1 to Phase 5 (owner's call, 2026-11-11). In order: offers
+// only; the top free agents decide; the next ones decide; everyone else
+// decides; the last phase, before the season (training camp).
 export const STAGES = [
-	"Negotiation window",
-	"Decision day 1",
-	"Decision day 2",
-	"Open market",
-	"Training camp",
+	"Phase 1",
+	"Phase 2",
+	"Phase 3",
+	"Phase 4",
+	"Phase 5",
 ] as const;
 
 // The stage in which the rest of the free agents decide.
-const OPEN_MARKET = 3;
+export const OPEN_MARKET = 3;
 
 export const stagesOn = () => realisticFreeAgencyOn() && stageSettings.on;
 

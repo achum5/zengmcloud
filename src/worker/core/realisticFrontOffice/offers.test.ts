@@ -122,7 +122,7 @@ test("at camp he takes an offer well under his ask rather than wait into the sea
 			stageSettings.decisionTemperature,
 		)[0]!;
 
-	// Training camp, the last stage.
+	// Phase 5, the last one (training camp).
 	g.setWithoutSavingToDB("daysLeft", 1);
 	assert.isTrue(atCamp());
 	assert.isAbove(takes(), 0.95);

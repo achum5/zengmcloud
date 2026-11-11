@@ -336,32 +336,41 @@ const TeamOptions = ({
 	};
 	return (
 		<div className="mb-3">
-			<h3>Team options</h3>
-			{options.map((row) => (
-				<div key={row.pid} className="d-flex align-items-center gap-2 mb-1">
-					<a href={helpers.leagueUrl(["player", row.pid])}>{row.name}</a>
-					<span>
-						{helpers.formatCurrency(row.amount / 1000, "M")} for {row.season}
-					</span>
-					<button
-						type="button"
-						className="btn btn-light-bordered btn-xs"
-						disabled={disabled}
-						onClick={() => decide(row.pid, true)}
-					>
-						Pick up
-					</button>
-					<button
-						type="button"
-						className="btn btn-light-bordered btn-xs"
-						disabled={disabled}
-						onClick={() => decide(row.pid, false)}
-						title="He joins your players to re-sign"
-					>
-						Decline
-					</button>
-				</div>
-			))}
+			<h2>Team options</h2>
+			<table className="table table-striped table-borderless table-sm table-hover w-auto mb-0">
+				<tbody>
+					{options.map((row) => (
+						<tr key={row.pid}>
+							<td>
+								<a href={helpers.leagueUrl(["player", row.pid])}>{row.name}</a>
+							</td>
+							<td>
+								{helpers.formatCurrency(row.amount / 1000, "M")} for{" "}
+								{row.season}
+							</td>
+							<td className="text-nowrap">
+								<button
+									type="button"
+									className="btn btn-light-bordered btn-xs me-1"
+									disabled={disabled}
+									onClick={() => decide(row.pid, true)}
+								>
+									Pick up
+								</button>
+								<button
+									type="button"
+									className="btn btn-light-bordered btn-xs"
+									disabled={disabled}
+									onClick={() => decide(row.pid, false)}
+									title="He joins your players to re-sign"
+								>
+									Decline
+								</button>
+							</td>
+						</tr>
+					))}
+				</tbody>
+			</table>
 		</div>
 	);
 };
@@ -538,7 +547,7 @@ const NegotiationList = ({
 				<>
 					<button
 						type="button"
-						className="btn btn-primary btn-xs"
+						className="btn btn-light-bordered btn-xs"
 						disabled={gameSimInProgress || chance === undefined}
 						onClick={async () => {
 							if (chance !== undefined) {
@@ -765,13 +774,21 @@ const NegotiationList = ({
 				</p>
 			) : null}
 
-			{cap ? <CapStatus cap={cap} className="mb-3" /> : null}
-
-			<RosterSalarySummary
-				capSpace={capSpace}
-				numRosterSpots={numRosterSpots}
-				payroll={payroll}
-			/>
+			{cap ? (
+				<>
+					<p className="mb-1">
+						You have <b>{numRosterSpots}</b> open roster{" "}
+						{helpers.plural("spot", numRosterSpots)}.
+					</p>
+					<CapStatus cap={cap} className="mb-1" />
+				</>
+			) : (
+				<RosterSalarySummary
+					capSpace={capSpace}
+					numRosterSpots={numRosterSpots}
+					payroll={payroll}
+				/>
+			)}
 
 			<SalaryCapInfo className="mb-3" />
 

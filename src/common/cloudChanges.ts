@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 277,
+		date: "2026-11-11",
+		text: "Realistic Front Offices: free agency's five stages are now just Phase 1 to Phase 5. And the mode's pages look like the rest of the game again - plain text and tables instead of colored labels: your cap space, the free agency phase, your offers and each phase's signings on Free Agents, contract notes on Team Finances and player pages.",
+	},
+	{
 		n: 276,
 		date: "2026-11-11",
 		text: "Realistic Front Offices: free agents still unsigned at training camp now take the best offer they have instead of holding out into the season. Once the season starts, teams can rarely offer more than the minimum, so waiting got them nothing - before, some good players turned down every camp offer and ended up signing for the minimum.",

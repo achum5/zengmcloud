@@ -1,4 +1,3 @@
-import clsx from "clsx";
 import { helpers } from "../util/helpers.ts";
 import { useLocal } from "../util/local.ts";
 import { hardCapForTid } from "../../common/getHardCap.ts";
@@ -59,7 +58,8 @@ export const SalaryCapInfo = ({
 		luxuryPayroll,
 	});
 
-	const items: { label: string; value: string }[] = [];
+	// One line of plain text, as stock's League Finances writes them.
+	const items: { label: string; value: string; note?: string }[] = [];
 
 	if (salaryCapType !== "none") {
 		items.push({ label: "Salary cap", value: money(salaryCap) });
@@ -69,25 +69,26 @@ export const SalaryCapInfo = ({
 	if (Number.isFinite(hardCap) && hardCap !== salaryCap) {
 		items.push({ label: "Hard cap", value: money(hardCap) });
 	}
-	items.push({ label: "Min payroll", value: money(minPayroll) });
+	items.push({ label: "Minimum payroll", value: money(minPayroll) });
 	if (luxuryTax !== 0) {
 		items.push({
-			label: `Luxury tax (${luxuryTax}×)`,
+			label: "Luxury tax",
 			value: money(luxuryPayroll),
+			note: `${luxuryTax}×`,
 		});
 	}
 	items.push(
-		{ label: "Max contract", value: money(maxContract) },
 		{ label: "Min contract", value: money(minContract) },
+		{ label: "Max contract", value: money(maxContract) },
 	);
 
 	return (
-		<div className={clsx("d-flex flex-wrap align-items-end gap-3", className)}>
+		<div className={className}>
 			{items.map((item) => (
-				<div key={item.label}>
-					<div className="text-body-secondary small">{item.label}</div>
-					<div className="fw-bold">{item.value}</div>
-				</div>
+				<span key={item.label}>
+					{item.label}: <b>{item.value}</b>
+					{item.note ? ` (${item.note})` : null}.{" "}
+				</span>
 			))}
 			{/* Realistic front offices' contract rules have their own page. */}
 			{contractRules ? null : (

@@ -109,7 +109,7 @@ test("a signing's event says how it was signed, in a few words", async () => {
 	const log = await signingsLog(season, tid);
 	const row = log.find((x) => x.pid === p.pid)!;
 	assert.strictEqual(row.type, "freeAgent");
-	assert.strictEqual(row.when, "Decision day 2");
+	assert.strictEqual(row.when, "Phase 3");
 	assert.strictEqual(howMethod(row.how)?.short, "MLE");
 	assert.strictEqual(row.total, event.how!.total);
 });

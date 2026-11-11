@@ -289,57 +289,96 @@ const FaBoardPanel = ({
 
 type OffersProps = NonNullable<View<"freeAgents">["offers"]>;
 
-// Realistic front offices: one day's signing - who signed where, every offer
-// he had with its odds, and the roll.
-const ChoiceItem = ({
-	item,
-	userTid,
-}: {
-	item: NonNullable<OffersProps["results"]>["items"][number];
-	userTid: number;
-}) => {
-	const winner = item.offers.find((offer) => offer.tid === item.winnerTid);
-	const mine = item.offers.some((offer) => offer.tid === userTid);
+type ChoiceRow = NonNullable<OffersProps["results"]>["items"][number];
+
+// "75%", "<1%".
+const oddsText = (pct: number) =>
+	pct > 0 && pct < 0.5 ? "<1%" : `${Math.round(pct)}%`;
+
+// Realistic front offices: one phase's signings - who signed where, every
+// offer he had with its odds, and the roll - as a table.
+const SigningsTable = ({ items }: { items: ChoiceRow[] }) => {
+	const { userTid } = useLocal(["userTid"]);
+	if (items.length === 0) {
+		return <p>None.</p>;
+	}
 	return (
-		<div className="mb-2">
-			<div>
-				<a href={helpers.leagueUrl(["player", item.pid])}>{item.name}</a> →{" "}
-				<b
-					className={
-						mine
-							? item.winnerTid === userTid
-								? "text-success"
-								: "text-danger"
-							: undefined
-					}
-				>
-					{winner?.abbrev ?? "???"}
-				</b>
-				, {formatOfferAmount(item.amount)} thru {item.exp} · rolled{" "}
-				<b>{item.roll}</b>
-			</div>
-			<div className="text-body-secondary small">
-				{item.offers.map((offer, i) => (
-					<span
-						key={offer.tid}
-						className={offer.tid === userTid ? "fw-bold" : undefined}
-					>
-						{i > 0 ? " · " : null}
-						{offer.abbrev} {formatOfferAmount(offer.amount)} thru {offer.exp}{" "}
-						{offer.oddsPct}%
-					</span>
-				))}
-				{" · "}wait {item.waitPct}%
-			</div>
+		<div className="table-responsive" style={{ maxHeight: 400 }}>
+			<table className="table table-striped table-borderless table-sm table-hover mb-0">
+				<thead>
+					<tr>
+						<th>Name</th>
+						<th>Team</th>
+						<th>Contract</th>
+						<th title="1-100: each offer's odds take a share of the range">
+							Roll
+						</th>
+						<th title="Each team's odds; hover for its offer">Offers</th>
+					</tr>
+				</thead>
+				<tbody>
+					{items.map((item) => {
+						const winner = item.offers.find(
+							(offer) => offer.tid === item.winnerTid,
+						);
+						const mine = item.offers.some((offer) => offer.tid === userTid);
+						return (
+							<tr key={item.pid}>
+								<td>
+									<a href={helpers.leagueUrl(["player", item.pid])}>
+										{item.name}
+									</a>
+								</td>
+								<td
+									className={
+										mine
+											? item.winnerTid === userTid
+												? "text-success"
+												: "text-danger"
+											: undefined
+									}
+								>
+									{winner?.abbrev ?? "???"}
+								</td>
+								<td className="text-nowrap">
+									{formatOfferAmount(item.amount)} thru {item.exp}
+								</td>
+								<td>{item.roll}</td>
+								<td
+									className="text-body-secondary text-wrap"
+									style={{ minWidth: 200 }}
+								>
+									{[...item.offers]
+										.sort((a, b) => b.oddsPct - a.oddsPct)
+										.map((offer, i) => (
+											<span
+												key={offer.tid}
+												className={
+													offer.tid === userTid ? "fw-bold" : undefined
+												}
+												title={`${formatOfferAmount(offer.amount)} thru ${offer.exp}`}
+											>
+												{i > 0 ? ", " : null}
+												{offer.abbrev} {oddsText(offer.oddsPct)}
+											</span>
+										))}
+									{item.waitPct > 0
+										? `, waiting ${oddsText(item.waitPct)}`
+										: null}
+								</td>
+							</tr>
+						);
+					})}
+				</tbody>
+			</table>
 		</div>
 	);
 };
 
 type HistoryProps = NonNullable<View<"freeAgents">["history"]>;
 
-// Contract rules: every stage's signings this free agency, one at a time.
+// Contract rules: every phase's signings this free agency, one at a time.
 const StageResults = ({ history }: { history: HistoryProps }) => {
-	const { userTid } = useLocal(["userTid"]);
 	const lastKey = history.at(-1)?.key;
 	const [key, setKey] = useState(lastKey);
 	useEffect(() => {
@@ -352,7 +391,7 @@ const StageResults = ({ history }: { history: HistoryProps }) => {
 	return (
 		<>
 			<div className="d-flex align-items-center gap-2 mb-2">
-				<h3 className="mb-0">Signed</h3>
+				<h2 className="mb-0">Signings</h2>
 				<select
 					className="form-select form-select-sm w-auto"
 					value={shown.key}
@@ -365,37 +404,31 @@ const StageResults = ({ history }: { history: HistoryProps }) => {
 					))}
 				</select>
 			</div>
-			<div style={{ maxHeight: 320, overflowY: "auto" }}>
-				{shown.items.map((item) => (
-					<ChoiceItem key={item.pid} item={item} userTid={userTid} />
-				))}
-			</div>
+			<SigningsTable items={shown.items} />
 		</>
 	);
 };
 
-// Free agency in stages: the five stages, the current one highlighted.
-const StageTimeline = ({
+// Free agency in phases: which one this is, and what happens in it.
+const PHASE_WHAT = [
+	"Teams make offers. Nobody signs until phase 2.",
+	"The top free agents decide at the end of this phase.",
+	"The next free agents decide at the end of this phase.",
+	"Everyone else decides.",
+	"The last phase before the season.",
+];
+
+const StageLine = ({
 	timeline,
 }: {
 	timeline: NonNullable<View<"freeAgents">["timeline"]>;
 }) => (
-	<div className="d-flex flex-wrap gap-1 mb-3">
-		{timeline.names.map((name, i) => (
-			<span
-				key={name}
-				className={`badge fs-6 ${
-					i === timeline.current
-						? "text-bg-primary"
-						: i < timeline.current
-							? "text-bg-light border text-body-secondary"
-							: "text-bg-light border"
-				}`}
-			>
-				{i + 1}. {name}
-			</span>
-		))}
-	</div>
+	<p>
+		<b>
+			Free agency phase {timeline.current + 1} of {timeline.names.length}.
+		</b>{" "}
+		{PHASE_WHAT[timeline.current] ?? null}
+	</p>
 );
 
 // Realistic front offices: the team's offers in priority order (if two are
@@ -412,7 +445,6 @@ const OffersPanel = ({
 	offers: OffersProps;
 	onEdit: (pid: number) => void;
 }) => {
-	const { userTid } = useLocal(["userTid"]);
 	const [order, setOrder] = useState(offers.list.map((row) => row.pid));
 	const orderKey = JSON.stringify(offers.list.map((row) => row.pid));
 	useEffect(() => {
@@ -435,96 +467,102 @@ const OffersPanel = ({
 
 	return (
 		<div className="row mb-3">
-			<div className="col-md-6 mb-3 mb-md-0">
-				<h3>Your offers</h3>
+			<div className="col-lg-5 mb-3 mb-lg-0">
+				<h2>Your offers</h2>
 				{rows.length === 0 ? (
-					<p className="text-body-secondary mb-0">No offers.</p>
+					<p className="mb-0">None.</p>
 				) : (
-					<ul className="list-unstyled mb-0" data-testid="offers-list">
-						{rows.map((row, i) => (
-							<li
-								key={row.pid}
-								className="d-flex align-items-center gap-2 mb-1"
-							>
-								<span
-									className="text-body-secondary text-end"
-									style={{ width: 22 }}
-								>
-									{i + 1}.
-								</span>
-								<div className="btn-group">
-									<button
-										type="button"
-										className="btn btn-xs btn-light-bordered"
-										disabled={disabled || i === 0}
-										onClick={() => move(row.pid, -1)}
-										title="Move up"
-									>
-										▲
-									</button>
-									<button
-										type="button"
-										className="btn btn-xs btn-light-bordered"
-										disabled={disabled || i === rows.length - 1}
-										onClick={() => move(row.pid, 1)}
-										title="Move down"
-									>
-										▼
-									</button>
-								</div>
-								<a href={helpers.leagueUrl(["player", row.pid])}>{row.name}</a>
-								<span className="text-body-secondary text-nowrap">
-									{formatOfferAmount(row.amount)}, {row.years}{" "}
-									{helpers.plural("yr", row.years)}
-								</span>
-								<span className="fw-bold" title="Your odds">
-									{formatChance(row.chance)}
-								</span>
-								<button
-									type="button"
-									className="btn btn-xs btn-light-bordered ms-auto"
-									disabled={disabled}
-									onClick={() => onEdit(row.pid)}
-								>
-									Edit
-								</button>
-								<button
-									type="button"
-									className="btn btn-xs btn-light-bordered"
-									disabled={disabled}
-									onClick={() => {
-										void toWorker("main", "withdrawFreeAgentOffer", row.pid);
-									}}
-									title="Withdraw"
-								>
-									✕
-								</button>
-							</li>
-						))}
-					</ul>
+					<table
+						className="table table-striped table-borderless table-sm table-hover mb-0"
+						data-testid="offers-list"
+					>
+						<thead>
+							<tr>
+								<th title="If two accept at once and both don't fit, the higher one signs">
+									#
+								</th>
+								<th>Name</th>
+								<th>Offer</th>
+								<th title="Your odds of signing him">Odds</th>
+								<th />
+							</tr>
+						</thead>
+						<tbody>
+							{rows.map((row, i) => (
+								<tr key={row.pid}>
+									<td className="text-nowrap">
+										{i + 1}{" "}
+										<button
+											type="button"
+											className="btn btn-link p-0 border-0 align-baseline"
+											disabled={disabled || i === 0}
+											onClick={() => move(row.pid, -1)}
+											title="Move up"
+										>
+											↑
+										</button>
+										<button
+											type="button"
+											className="btn btn-link p-0 border-0 align-baseline"
+											disabled={disabled || i === rows.length - 1}
+											onClick={() => move(row.pid, 1)}
+											title="Move down"
+										>
+											↓
+										</button>
+									</td>
+									<td>
+										<a href={helpers.leagueUrl(["player", row.pid])}>
+											{row.name}
+										</a>
+									</td>
+									<td className="text-nowrap">
+										{formatOfferAmount(row.amount)}, {row.years}{" "}
+										{helpers.plural("yr", row.years)}
+									</td>
+									<td>{formatChance(row.chance)}</td>
+									<td className="text-end text-nowrap">
+										<button
+											type="button"
+											className="btn btn-xs btn-light-bordered me-1"
+											disabled={disabled}
+											onClick={() => onEdit(row.pid)}
+										>
+											Edit
+										</button>
+										<button
+											type="button"
+											className="btn btn-xs btn-light-bordered"
+											disabled={disabled}
+											onClick={() => {
+												void toWorker(
+													"main",
+													"withdrawFreeAgentOffer",
+													row.pid,
+												);
+											}}
+										>
+											Withdraw
+										</button>
+									</td>
+								</tr>
+							))}
+						</tbody>
+					</table>
 				)}
 			</div>
 			{history && history.length > 0 ? (
-				<div className="col-md-6">
+				<div className="col-lg-7">
 					<StageResults history={history} />
 				</div>
 			) : !history && offers.results ? (
-				<div className="col-md-6">
-					{offers.results.stage ? (
-						<h3>
-							Last stage{" "}
-							<span className="text-body-secondary fs-6">
-								({offers.results.stage})
-							</span>
-						</h3>
-					) : (
-						<h3>Last day</h3>
-					)}
-					<div style={{ maxHeight: 320, overflowY: "auto" }}>
-						{offers.results.items.map((item) => (
-							<ChoiceItem key={item.pid} item={item} userTid={userTid} />
-						))}
-					</div>
+				<div className="col-lg-7">
+					<h2>
+						{offers.results.stage
+							? `Signings, ${offers.results.stage.toLowerCase()}`
+							: "Signings, last day"}
+					</h2>
+					<SigningsTable items={offers.results.items} />
 				</div>
 			) : null}
 		</div>
@@ -536,7 +574,7 @@ const OffersPanel = ({
 const stageCells = (p: View<"freeAgents">["players"][number]) => {
 	const stage = p.freeAgentType === "available" ? p.stage : undefined;
 	const toBeat = stage?.toBeat
-		? `${formatOfferAmount(stage.toBeat.amount)} × ${stage.toBeat.years}`
+		? `${formatOfferAmount(stage.toBeat.amount)}, ${stage.toBeat.years} ${helpers.plural("yr", stage.toBeat.years)}`
 		: "";
 	const answer = async (match: boolean) => {
 		const error = await toWorker("main", "answerOfferSheet", {
@@ -552,7 +590,8 @@ const stageCells = (p: View<"freeAgents">["players"][number]) => {
 		const { sheet } = stage;
 		rights = (
 			<span className="text-nowrap">
-				{sheet.abbrev} {formatOfferAmount(sheet.amount)} × {sheet.years}{" "}
+				{sheet.abbrev} {formatOfferAmount(sheet.amount)}, {sheet.years}{" "}
+				{helpers.plural("yr", sheet.years)}{" "}
 				<button
 					className={`btn btn-xs ${stage.match ? "btn-primary" : "btn-light-bordered"}`}
 					onClick={() => answer(!stage.match)}
@@ -563,7 +602,11 @@ const stageCells = (p: View<"freeAgents">["players"][number]) => {
 			</span>
 		);
 	} else if (stage?.restricted) {
-		rights = <span title="You may match any offer he signs">RFA</span>;
+		rights = (
+			<abbr title="Restricted free agent: you may match any offer he signs">
+				RFA
+			</abbr>
+		);
 	}
 	return [
 		{ value: stage?.interest ?? "", sortValue: stage?.interest ?? null },
@@ -911,15 +954,24 @@ const FreeAgents = ({
 				<RosterComposition className="float-end mb-3" players={userPlayers} />
 			) : null}
 			<MoreLinks type="freeAgents" page="free_agents" />
-			{timeline ? <StageTimeline timeline={timeline} /> : null}
-			{cap ? <CapStatus cap={cap} className="mb-3" /> : null}
+			{timeline ? <StageLine timeline={timeline} /> : null}
 			{season === "current" ? (
 				<>
-					<RosterSalarySummary
-						capSpace={capSpace}
-						numRosterSpots={numRosterSpots}
-						payroll={payroll}
-					/>
+					{cap ? (
+						<>
+							<p className="mb-1">
+								You have <b>{numRosterSpots}</b> open roster{" "}
+								{helpers.plural("spot", numRosterSpots)}.
+							</p>
+							<CapStatus cap={cap} className="mb-1" />
+						</>
+					) : (
+						<RosterSalarySummary
+							capSpace={capSpace}
+							numRosterSpots={numRosterSpots}
+							payroll={payroll}
+						/>
+					)}
 
 					<SalaryCapInfo className="mb-3" />
 

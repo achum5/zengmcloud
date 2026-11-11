@@ -1,4 +1,4 @@
-import { CapStatusBadge } from "../../components/CapStatus.tsx";
+import { CapStatusText } from "../../components/CapStatus.tsx";
 import { ConfLogoAndName } from "../../components/ConfLogoAndName.tsx";
 import { useState, type CSSProperties, type ReactNode } from "react";
 import { OverlayTrigger, Popover } from "react-bootstrap";
@@ -372,14 +372,17 @@ const TopStuff = ({
 									payroll={payroll / 1000}
 								/>
 								{capStatus ? (
-									<a
-										href={helpers.leagueUrl([
-											"team_finances",
-											helpers.getTeamUrlPart(tid),
-										])}
-									>
-										<CapStatusBadge className="ms-2" status={capStatus} />
-									</a>
+									<>
+										{" "}
+										<a
+											href={helpers.leagueUrl([
+												"team_finances",
+												helpers.getTeamUrlPart(tid),
+											])}
+										>
+											<CapStatusText inline status={capStatus} />
+										</a>
+									</>
 								) : null}
 							</div>
 						) : null}

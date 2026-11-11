@@ -17,7 +17,7 @@ import {
 import { realisticFreeAgencyOn } from "./isOn.ts";
 import { askFor, offerYears, wantedYears } from "./offers.ts";
 import type { ContractHolder } from "./contractOf.ts";
-import { inStages, ownTid, stageIndex, STAGES } from "./stages.ts";
+import { inStages, OPEN_MARKET, ownTid, stageIndex, STAGES } from "./stages.ts";
 
 // WHAT A HUMAN TEAM SEES OF THE OFFER MARKET (owner's calls: no instant
 // signing - a human's offer waits for the player's decision like anyone's;
@@ -150,13 +150,10 @@ export const stageOf = (
 	const own = userTid !== undefined && ownTid(p) === userTid;
 	const sheet = own ? p.faOfferSheet : undefined;
 	// Once his stage has passed, he decides in each one after it.
-	const decides = Math.max(
-		p.faDecides ?? STAGES.indexOf("Open market"),
-		stageIndex(),
-	);
+	const decides = Math.max(p.faDecides ?? OPEN_MARKET, stageIndex());
 	return {
 		decides,
-		decidesLabel: STAGES[decides]!.replace("Decision day", "Day"),
+		decidesLabel: STAGES[decides] as string,
 		toBeat: p.faLead
 			? { amount: p.faLead.amount, years: offerYears(p.faLead.exp) }
 			: undefined,

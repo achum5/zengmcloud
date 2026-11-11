@@ -745,17 +745,11 @@ const highlightZeroNegative = (amount: number) => {
 	return formattedValue;
 };
 
-// Contract rules: a small marker in a cap sheet cell, spelled out on hover.
-const Mark = ({
-	className = "text-bg-light border",
-	k,
-}: {
-	className?: string;
-	k: keyof typeof ABBREVS;
-}) => (
-	<span className={`badge ${className} ms-1`} title={ABBREVS[k]}>
+// Contract rules: a short note in a cap sheet cell, spelled out on hover.
+const Mark = ({ k }: { k: keyof typeof ABBREVS }) => (
+	<abbr className="ms-1 small text-body-secondary" title={ABBREVS[k]}>
 		{k}
-	</span>
+	</abbr>
 );
 
 const TeamFinances = ({
@@ -1102,9 +1096,7 @@ const TeamFinances = ({
 								{finalSeason && marks.option ? (
 									<Mark k={optionAbbrev(marks.option)} />
 								) : null}
-								{marks.proveIt ? (
-									<Mark className="text-bg-warning" k="Prove-it" />
-								) : null}
+								{marks.proveIt ? <Mark k="Prove-it" /> : null}
 							</span>
 						),
 						sortValue: amount,
@@ -1160,7 +1152,7 @@ const TeamFinances = ({
 						searchValue: formattedAmount,
 						title: projectedCounts
 							? `Planning to keep ${p.firstName} ${p.lastName} at this projected price in ${salariesSeasons[j]}`
-							: `Projected — ${p.firstName} ${p.lastName} is not under contract in ${salariesSeasons[j]}`,
+							: `Projected: ${p.firstName} ${p.lastName} is not under contract in ${salariesSeasons[j]}`,
 					});
 				} else {
 					data.push(null);
@@ -1417,14 +1409,14 @@ const TeamFinances = ({
 		<>
 			<MoreLinks type="team" page="team_finances" tid={tid} />
 
-			{cap ? <CapStatus cap={cap} className="mb-3" /> : null}
-
 			<PayrollInfo
 				luxuryTaxAmount={luxuryTaxAmount}
 				minPayrollAmount={minPayrollAmount}
 				payroll={payroll}
 				tid={tid}
 			/>
+
+			{cap ? <CapStatus cap={cap} className="mb-1" /> : null}
 
 			<SalaryCapInfo className="mb-3" tid={tid} />
 
@@ -1435,22 +1427,11 @@ const TeamFinances = ({
 				<a href={helpers.leagueUrl(["roster"])}>your roster</a>. Released
 				players who are still owed money are <i>shown in italics</i>. Salaries
 				marked <span className="text-body-secondary">*</span> are projected, not
-				signed — a player's next contract, or what a draft pick's slot pays.
+				signed: a player's next contract, or what a draft pick's slot pays.
 				{canPlan
 					? " The first column counts signed salary in the totals, the second counts projected."
 					: null}
 			</p>
-
-			{cbaSheet ? (
-				<div className="mb-2 small">
-					<Mark k="PO" /> <Mark k="TO" />{" "}
-					<Mark className="text-bg-warning" k="Prove-it" /> <Mark k="UFA" />{" "}
-					<Mark k="RFA" /> <Mark k="Bird" />{" "}
-					<span className="ms-1">
-						<i>Italics</i>: dead money
-					</span>
-				</div>
-			) : null}
 
 			<DataTable
 				cols={cols}

@@ -10,7 +10,7 @@ import { orderBy } from "../../../common/utils.ts";
 import { SafeHtml } from "../../components/SafeHtml.tsx";
 import { useLocal } from "../../util/local.ts";
 import { HelpPopover } from "../../components/HelpPopover.tsx";
-import { CapStatusBadge } from "../../components/CapStatus.tsx";
+import { CapStatusText } from "../../components/CapStatus.tsx";
 import {
 	MAX_TEAM_OVR_DELTA_SYMBOLS,
 	TEAM_OVR_DELTA_BAND,
@@ -353,7 +353,10 @@ export const SummaryTeam = ({
 								{helpers.formatCurrency(t.payrollAfterTrade, "M")}
 							</span>
 							{t.capStatus ? (
-								<CapStatusBadge className="ms-2" status={t.capStatus} />
+								<>
+									{" "}
+									<CapStatusText inline status={t.capStatus} />
+								</>
 							) : null}
 						</li>
 					) : null}

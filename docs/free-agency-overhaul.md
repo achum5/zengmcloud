@@ -56,18 +56,20 @@ Existing contracts stay as they are (flat, no options).
   agency on that roll at once (fixed for him for the season). Offers not
   submitted are decided as free agency opens. Each decision is logged for
   the player and the team - a refusal too - with the offer and the odds.
-- **Free agency phase, in stages** (each is one Play; the header shows the
-  stage, not days left):
-  1. _Negotiation window_ - every team makes offers; players answer
-     (accept / counter / reject); nobody signs.
-  2. _Decision day 1_ - the top tier decides. Each player shows the number
-     to beat (money and years of his leading offer, not the team); every
-     team submits a final offer, sealed; at the end he signs. Restricted
-     players' teams may then match.
-  3. _Decision day 2_ - the next tier, the same way.
-  4. _Open market_ - everyone left signs as acceptable offers arrive;
-     asks come down.
-  5. _Camp invites_ - minimum deals to fill rosters; then preseason.
+- **Free agency phase, in stages**, shown as Phase 1 to Phase 5 (owner's
+  call, 2026-11-11; each is one Play; the header shows the phase, not days
+  left):
+  1. _Phase 1_ (was "Negotiation window") - every team makes offers;
+     nobody signs.
+  2. _Phase 2_ (was "Decision day 1") - the top tier decides. Each player
+     shows the number to beat (money and years of his leading offer, not
+     the team); every team submits a final offer, sealed; at the end he
+     signs. Restricted players' teams may then match.
+  3. _Phase 3_ (was "Decision day 2") - the next tier, the same way.
+  4. _Phase 4_ (was "Open market") - everyone left signs as acceptable
+     offers arrive; asks follow the market.
+  5. _Phase 5_ (was "Training camp") - the last before the season: anyone
+     left takes the best offer he has.
 - In the season, the remaining free agents sign as now.
 
 ## How a player chooses

@@ -285,11 +285,11 @@ test("in stages, a free agent shows when he decides and the number to beat, not 
 	g.setWithoutSavingToDB("phase", PHASE.FREE_AGENCY);
 	g.setWithoutSavingToDB("faInStages", true);
 	try {
-		// Decision day 1.
+		// Phase 2.
 		g.setWithoutSavingToDB("daysLeft", 4);
 		const expected = {
 			decides: 2,
-			decidesLabel: "Day 2",
+			decidesLabel: "Phase 3",
 			toBeat: { amount: 9000, years: 3 },
 			own: false,
 			restricted: false,
@@ -305,7 +305,7 @@ test("in stages, a free agent shows when he decides and the number to beat, not 
 
 		// Past his decision day, he decides in the stage the market is in.
 		g.setWithoutSavingToDB("daysLeft", 2);
-		assert.strictEqual(stageOf(p!)?.decidesLabel, "Open market");
+		assert.strictEqual(stageOf(p!)?.decidesLabel, "Phase 4");
 
 		await idb.cache.faDayResults.put({
 			key: "stage",
@@ -327,7 +327,7 @@ test("in stages, a free agent shows when he decides and the number to beat, not 
 			boards: [],
 			at: 3,
 		});
-		assert.strictEqual((await lastChoices())?.stage, "Decision day 1");
+		assert.strictEqual((await lastChoices())?.stage, "Phase 2");
 	} finally {
 		stageSettings.on = stagesWereOn;
 		g.setWithoutSavingToDB("daysLeft", 0);

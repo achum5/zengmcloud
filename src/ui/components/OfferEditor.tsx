@@ -375,8 +375,8 @@ export const OfferEditor = ({
 					minContract={offer.minContract}
 					onChange={setAmount}
 				/>
-				<div className="text-body-secondary">
-					Ask {formatOfferAmount(term.ask)} thru {term.exp}
+				<div>
+					Asking for {formatOfferAmount(term.ask)} thru {term.exp}
 				</div>
 			</div>
 
@@ -391,33 +391,29 @@ export const OfferEditor = ({
 				/>
 			) : null}
 			{offer.stage ? (
-				<div className="mb-3" data-testid="offer-stage">
+				<p data-testid="offer-stage">
 					{offer.stage.toBeat ? (
 						<>
-							To beat{" "}
+							Offer to beat:{" "}
 							<b>
-								{formatOfferAmount(offer.stage.toBeat.amount)} ×{" "}
-								{offer.stage.toBeat.years}
+								{formatOfferAmount(offer.stage.toBeat.amount)},{" "}
+								{offer.stage.toBeat.years}{" "}
+								{helpers.plural("yr", offer.stage.toBeat.years)}
 							</b>
-							{" · "}
+							.{" "}
 						</>
 					) : null}
-					Decides <b>{offer.stage.decidesLabel}</b>
-				</div>
+					He decides in <b>{offer.stage.decidesLabel.toLowerCase()}</b>.
+				</p>
 			) : null}
 
 			<div className="d-flex flex-wrap align-items-center gap-2">
 				<div className="me-auto">
-					Your odds{" "}
-					<span className="fs-4 fw-bold" data-testid="offer-odds">
-						{formatChance(chance)}
-					</span>
+					Your odds: <b data-testid="offer-odds">{formatChance(chance)}</b>
 					{offer.rank !== undefined ? (
-						<span
-							className="text-body-secondary ms-2"
-							title="Priority among your offers"
-						>
-							#{offer.rank} of {offer.numOffers}
+						<span className="text-body-secondary">
+							{" "}
+							(priority {offer.rank} of {offer.numOffers})
 						</span>
 					) : null}
 				</div>

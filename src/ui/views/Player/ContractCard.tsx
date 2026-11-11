@@ -1,7 +1,7 @@
 import { helpers } from "../../util/helpers.ts";
 import { ABBREVS } from "../../../common/signingHow.ts";
 import type { ContractCard as ContractCardData } from "../../../worker/core/realisticFrontOffice/capSheet.ts";
-import { termsBadges } from "../../components/CapStatus.tsx";
+import { termsText } from "../../components/CapStatus.tsx";
 
 // HIS CONTRACT UNDER THE CONTRACT RULES (realistic front offices' CBA-lite):
 // the deal in one line, what he'll be when it's up, who holds his Bird
@@ -17,42 +17,37 @@ const Abbr = ({ k }: { k: keyof typeof ABBREVS }) => (
 export const ContractSummary = ({ card }: { card: ContractCardData }) => {
 	const { deal } = card;
 	return (
-		<div className="mb-2">
+		<p className="mb-2">
 			{deal ? (
-				<div>
+				<>
 					<b>
-						{deal.years} {helpers.plural("yr", deal.years)} /{" "}
-						{money(deal.total)}
+						{deal.years} {helpers.plural("yr", deal.years)}, {money(deal.total)}
 					</b>{" "}
 					({money(deal.total / deal.years)}/yr)
 					{deal.signed !== undefined ? (
 						<>
-							{" "}
-							· {deal.verb} {deal.signed} with {deal.abbrev}
+							, {deal.verb} {deal.signed} with {deal.abbrev}
 							{deal.method ? ` via ${deal.method}` : null}
 						</>
 					) : null}
-				</div>
+					.<br />
+					Free agent after {deal.exp} (
+					<Abbr k={deal.restricted ? "RFA" : "UFA"} />
+					).{" "}
+				</>
+			) : card.freeAgent ? (
+				<>
+					Free agent (
+					<Abbr k={card.freeAgent.restricted ? "RFA" : "UFA"} />
+					).{" "}
+				</>
 			) : null}
-			<div>
-				{deal ? (
-					<>
-						FA after {deal.exp} · <Abbr k={deal.restricted ? "RFA" : "UFA"} />{" "}
-						·{" "}
-					</>
-				) : card.freeAgent ? (
-					<>
-						Free agent · <Abbr k={card.freeAgent.restricted ? "RFA" : "UFA"} />{" "}
-						·{" "}
-					</>
-				) : null}
-				<Abbr k="Bird" /> rights: {card.bird ?? "none"}
-			</div>
-		</div>
+			<Abbr k="Bird" /> rights: {card.bird ?? "none"}.
+		</p>
 	);
 };
 
-// A season's markers in his salaries table.
+// A season's notes in his salaries table, spelled out on hover.
 export const SalaryMarks = ({
 	marks,
 }: {
@@ -61,13 +56,13 @@ export const SalaryMarks = ({
 	marks && marks.length > 0 ? (
 		<>
 			{marks.map((mark) => (
-				<span
+				<abbr
 					key={mark}
-					className={`badge ms-1 ${mark === "Prove-it" ? "text-bg-warning" : "text-bg-light border"}`}
+					className="ms-1 small text-body-secondary"
 					title={ABBREVS[mark]}
 				>
 					{mark}
-				</span>
+				</abbr>
 			))}
 		</>
 	) : null;
@@ -77,7 +72,7 @@ export const ContractHistory = ({ card }: { card: ContractCardData }) => {
 		return null;
 	}
 	return (
-		<table className="table table-sm table-striped mb-3">
+		<table className="table table-striped table-borderless table-sm mb-3">
 			<thead>
 				<tr>
 					<th>Signed</th>
@@ -109,7 +104,7 @@ export const ContractHistory = ({ card }: { card: ContractCardData }) => {
 						<td className="text-nowrap">
 							{row.method}
 							{row.how ? (
-								<span className="ms-1">{termsBadges(row.how)}</span>
+								<span className="ms-1">{termsText(row.how)}</span>
 							) : null}
 						</td>
 					</tr>
