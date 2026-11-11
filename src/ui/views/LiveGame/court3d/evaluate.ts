@@ -976,8 +976,39 @@ type Spot = {
 // (Without which way he is heading round a corner, where only where he is
 // is wanted.)
 const spotAt = (tr: Track, t: number, heading = true): Spot => {
+	if (frameSpots) {
+		const kept = frameSpots.get(tr);
+		const was = kept?.get(heading ? t : -1 - t);
+		if (was) {
+			return { ...was };
+		}
+	}
 	const s = nudgedAt(tr, t, heading);
-	return tr.sep ? keptOff(tr.sep, s, t) : s;
+	const out = tr.sep ? keptOff(tr.sep, s, t) : s;
+	if (frameSpots) {
+		let kept = frameSpots.get(tr);
+		if (!kept) {
+			kept = new Map();
+			frameSpots.set(tr, kept);
+		}
+		kept.set(heading ? t : -1 - t, { ...out });
+	}
+	return out;
+};
+// A FRAME'S SPOTS. Where each man is at each moment asked, kept while one
+// frame is worked out (see momentAt): asked the same of the same man again
+// and again in one frame - his lean, his drive, his gait, which way the
+// ball faces, the men about his hands - nearly half the times. Only while a
+// frame is (nothing changes his runs then), and each a copy.
+let frameSpots: WeakMap<Track, Map<number, Spot>> | undefined;
+export const inOneFrame = <T>(f: () => T): T => {
+	const was = frameSpots;
+	frameSpots = new WeakMap();
+	try {
+		return f();
+	} finally {
+		frameSpots = was;
+	}
 };
 
 // Kept off a man: the way over, sampled every SEP_MS, eased through the

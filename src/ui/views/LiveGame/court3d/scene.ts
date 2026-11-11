@@ -56,6 +56,7 @@ import {
 	evalBall,
 	evalPlayer,
 	handWorld,
+	inOneFrame,
 	shownAt,
 	offenseAt,
 	warmBall,
@@ -202,6 +203,13 @@ export const momentAt = (
 	bodyFor: (pid: number) => Body,
 	// How fast it is being shown, and the picture's own clock (ms) - see
 	// fastLegs.
+	look?: { rate: number; wall: number },
+): Moment => inOneFrame(() => momentNow(tl, t, roster, bodyFor, look));
+const momentNow = (
+	tl: CourtTimeline,
+	t: number,
+	roster: { pid: number }[],
+	bodyFor: (pid: number) => Body,
 	look?: { rate: number; wall: number },
 ): Moment => {
 	const players: PlayerState[] = [];
