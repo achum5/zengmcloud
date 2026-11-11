@@ -1,0 +1,178 @@
+# Vanilla+ front offices (plan)
+
+Owner's call, 2026-11-11: scrap the title-odds trade engine as the core and
+build on vanilla's. "Add direction for teams so they're motivated to move in
+a certain direction like irl teams do. Market drives prices of trades but the
+core is the vanilla trade engine dumbmatter built. Tweak it a bit to take
+into account build and production but not a ton." Plus a news engine that
+breaks stories about what teams are really doing. Free agency stays as it is
+for now.
+
+## Why
+
+The realistic engine values every asset by how much it moves the team's own
+title odds. For most teams in most seasons that is almost nothing, so:
+
+- a middling team gave Murray, Gordon, a first and a prospect for Sabonis;
+- Boston threw in all its 2031-33 firsts (worth 0.00 to it, 0.8-1.9% of a
+  title to other teams);
+- Charlotte would not take Jaylen Brown for a late second (he counted as a
+  cost to it);
+- Mobley for Tatum stalled under the margin of error.
+
+Each patch (margin, frictions, market value) fixed one symptom and opened
+another. Vanilla values a player by talent, age and contract, with one star
+worth far more than several good players. It is crude but battle-tested, and
+a vanilla team never hands a star away for nothing.
+
+## What vanilla does today (the base)
+
+- **Value** (team/ValueChangeCalculator.ts): each player's `value` (rating
+  and potential blended by age) as a z-score, raised to the 7th power, so
+  one star outweighs several good players. Picks: the players their likely
+  slots produce. Contracts: a small bonus for a bargain, a penalty for an
+  overpay. Injured players discounted. CPU teams overvalue their own players
+  by 5%.
+- **Direction** (team/updateStrategies.ts): two strategies, contending and
+  rebuilding, from wins, the change in wins and roster age. Rebuilding
+  teams value picks and players 23 and under up to ~10% more and players
+  27+ up to 10% less; contending teams the reverse, more steeply (picks and
+  teenagers 17-20% less). It barely changes behavior.
+- **CPU-to-CPU trades** (trade/betweenAiTeams.ts): random. A random team
+  offers a random asset to a random team, and makeItWork fills in the rest.
+- **No idea of fit**: a team's needs, its positions and its build don't
+  enter at all.
+
+## The plan
+
+### 1. Core: vanilla's values, everywhere trades happen
+
+Vanilla's math, unchanged, behind one valuer: accepting a human's offer,
+"What would make this work", the trading block, Trade Proposals, and every
+CPU-to-CPU trade. The screens already run vanilla's mechanics
+(vanillaTrades.ts); they get vanilla+ values in place of the title-odds
+read. A CPU team takes a deal when it comes out ahead by its values, as in
+vanilla, at the league's trade difficulty.
+
+Kept: the free agency overhaul (phases, cap rules, its screens), the vanilla
+trade screens, multiplayer pieces. Retired from trades: the title-odds
+outlook, the margin of error, trade frictions, the market-value floor.
+
+### 2. Direction: every team has a plan
+
+Each team picks a lane, from the quality of its roster now and next season,
+its core's age, its stars and its contracts:
+
+| Lane         | Who                           | Wants                                        | Pays with                         |
+| ------------ | ----------------------------- | -------------------------------------------- | --------------------------------- |
+| All-in       | a real shot at the title now  | proven players, especially for its weak spot | picks, prospects, taking on money |
+| Playoff team | good, not great               | upgrades that don't cost its future          | depth, seconds                    |
+| Retooling    | aging or stuck in the middle  | younger starters, cap flexibility            | its older starters                |
+| Rebuilding   | bad and young, or bad and old | picks, prospects, expiring deals             | its veterans                      |
+
+- Lanes are sticky: a team changes only on clear evidence (a bad first half
+  turns an all-in team into a seller at the deadline; a young team that
+  breaks out moves up). Reviewed each offseason, at mid-season and before
+  the deadline.
+- A lane moves values by bounded factors on vanilla's own scale: an all-in
+  team pays up to ~15% more for proven players and values picks and
+  teenagers ~20% less; a rebuilding team the reverse, and values veterans
+  30+ less, but never below what they'd fetch elsewhere (no more giveaways:
+  a rebuilding team sells a veteran for picks or young players, it doesn't
+  pay to dump him).
+- The lane also sets how busy a team is: all-in and rebuilding teams shop
+  actively, playoff teams make smaller moves, retooling teams sell selectively.
+
+### 3. Fit and production (small, capped tweaks)
+
+- **Needs**: each team's weak spots from its rotation: no real center, no
+  ball-handler, no shooting, thin defense. The position-aware lineup model
+  the mode already has (strength.ts) measures how much a player would
+  improve this team compared with a typical team.
+- **Fit**: a player who fills a need is worth up to ~15% more to that team;
+  one who duplicates what it has, up to ~15% less.
+- **Aggression**: an all-in team with a glaring hole pays up to ~10% more
+  again for a player who fills it, and goes looking for one (a good team
+  without a center goes shopping for a center).
+- **Production**: a player whose box-score impact over the last season and
+  a half runs ahead of or behind his ratings is worth up to ~10% more or
+  less. Ratings stay the base.
+
+All tweaks together stay within about ±25% of vanilla's value, so the
+vanilla core still decides.
+
+### 4. A market that sets prices
+
+CPU-to-CPU trades stop being random:
+
+- **Buyers and sellers**: all-in and playoff teams with needs are buyers;
+  rebuilding and retooling teams with veterans are sellers.
+- **Targeted shopping**: a buyer asks the sellers who have a player for its
+  need; a seller shops its veterans to the buyers who need them.
+- **Best offer wins**: a team moving a star hears every interested team and
+  takes the best offer by its own values, not the first one.
+- **Timing**: busier before the deadline (sellers emerge from the standings)
+  and in the offseason windows; quiet mid-season otherwise.
+- Prices are vanilla+ values, settled the vanilla way (makeItWork).
+
+### 5. The news engine
+
+Stories come from what the backend really did or considered, never made up:
+
+- **Direction changes**: "The Nuggets are open for business: Denver is
+  listening on Jamal Murray and Aaron Gordon."
+- **Needs**: "Contending Celtics canvassing the league for a starting center."
+- **Talks**: when a seller gets several offers, "At least three teams are in
+  on Murray."
+- **Trades**, with why each side did it: "Why the Suns did it: Phoenix had no
+  one to defend the four..."
+- **Deadline**: buyers and sellers roundups, the market for the top names.
+- **Later**: free-agent targets.
+
+Rules:
+
+- A rumor is only about a talk that really happened in the backend, but not
+  every talk becomes a deal, as in real life.
+- No exact valuations, no hidden ratings.
+- CPU teams' plans only: a human team appears only as a party to a trade.
+- A few stories a day league-wide at most, more around the deadline.
+
+Written in the same AP style as the game recaps (headline plus a short
+paragraph or two, with variety). In the UI: a "Front office" category in the
+News Feed and a "RUMORS" slot in the bottom ticker. Nothing else added.
+
+## How it's checked
+
+- **Test leagues** (arena): trades a season (NBA ~50-60 including small
+  ones), stars moved, giveaways (a 62+ player for no 55+ player and no
+  first), how spread out records get (the current engine pulls the league
+  apart), title concentration, how long rebuilds take, and how often a
+  contender with a hole fills it.
+- **Exploit hunting**: the shark bot against vanilla+, and the owner's known
+  fleeces (aging star for picks, trading up cheaply, trading down) as tests.
+- **The owner's cases as regression tests**: Denver-Murray, Charlotte-Brown,
+  Boston's picks, Mobley-Tatum.
+- **Speed**: no title-odds outlook in trades, so it should be faster.
+
+## Order of work
+
+1. Vanilla+ switch; vanilla values wired into every trade path (human and
+   CPU). Free agency untouched.
+2. Lanes and their effects; deadline buyers and sellers.
+3. Needs, fit and production.
+4. The directed market (buyers, sellers, best offer wins).
+5. The news engine: backend events, stories, News Feed category, ticker.
+6. Test leagues, shark bot, tuning; then the owner's league switches its
+   trades over. Later: free agency's CPU valuations onto vanilla+ values,
+   keeping its phases and screens.
+
+## Open questions for the owner
+
+- Four lanes (above) or three (contend, middle, rebuild)?
+- The tweak caps: fit ±15%, aggression +10%, production ±10%, all together
+  ±25%?
+- Human offers: pure vanilla (accept when ahead, at the trade difficulty),
+  or also turn down a deal when another CPU team would pay more for the
+  same players?
+- Trade volume: NBA-like (~50-60 a season), or vanilla's default pace?
+- News tone: insider style ("sources say...") or straight reporting?
