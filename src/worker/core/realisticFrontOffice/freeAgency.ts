@@ -840,13 +840,13 @@ export const offerChance = async (
 	return choiceOdds([mine, ...others], waitUtility())[0]!;
 };
 
-// What waiting is worth to him today, in stages: at camp, no more than an
-// offer of the minimum - what the season brings (stageWait).
+// What waiting is worth to him today, in stages: at camp, no more than what
+// the season brings (stageWait) - a one-season deal at the minimum, against
+// his ask for one season, as an offer is weighed against his ask for its
+// length. Against his ask for the length he wants, a one-season minimum offer
+// at camp lost to waiting for one.
 const stagedWait = (p: Player) =>
-	stageWait(
-		waitUtility(),
-		moneyUtility(g.get("minContract"), contractOf(p).amount),
-	);
+	stageWait(waitUtility(), moneyUtility(g.get("minContract"), askFor(p, 1)));
 
 const rostersByTid = async () => {
 	const rosters = new Map<number, Player[]>();

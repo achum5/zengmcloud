@@ -132,3 +132,23 @@ test("at camp he takes an offer well under his ask rather than wait into the sea
 	assert.isFalse(atCamp());
 	assert.isBelow(takes(), 0.05);
 });
+
+test("at camp a one-season minimum offer beats waiting for one in the season, whatever length he wants", () => {
+	const p = wantsThreeYears;
+	const minContract = g.get("minContract");
+	g.setWithoutSavingToDB("daysLeft", 1);
+	assert.isTrue(atCamp());
+	const offer = offerUtility({
+		amount: minContract,
+		ask: askFor(p, 1),
+		appeal: 0,
+	});
+	const wait = stageWait(
+		waitUtility(),
+		moneyUtility(minContract, askFor(p, 1)),
+	);
+	assert.isAbove(
+		choiceOdds([offer], wait, stageSettings.decisionTemperature)[0]!,
+		0.9,
+	);
+});
