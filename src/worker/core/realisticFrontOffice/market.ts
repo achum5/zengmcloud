@@ -1292,9 +1292,10 @@ const MARKET_BUYERS = 4;
 // What the rest of the league would pay for an asset held by `holder`: the
 // second most any of the teams likeliest to want it - those whose title
 // chances turn most on strength in the seasons it counts for - would gain
-// from it alone, by their own use of it (the most, if only one would). A
-// player counts this season and the next three; a pick from the season after
-// its draft for four.
+// from it alone, by their own use of it (the most, if only one would). Less
+// than nothing for a contract nobody wants: held at nothing, a bad contract
+// cost a team nothing to take on. A player counts this season and the next
+// three; a pick from the season after its draft for four.
 export const marketValue = (
 	outlook: LeagueOutlook,
 	x: Asset,
@@ -1327,7 +1328,7 @@ export const marketValue = (
 		.slice(0, MARKET_BUYERS)
 		.map(({ t }) => rawSingle(outlook, t, "+", x))
 		.sort((a, b) => b - a);
-	return Math.max(0, values[1] ?? values[0] ?? 0);
+	return values[1] ?? values[0] ?? 0;
 };
 
 // What pricing each asset at its market value at least adds to a deal for a
