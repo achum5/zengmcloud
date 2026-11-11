@@ -1,5 +1,5 @@
 import { assert, describe, test } from "vitest";
-import { getCloneName } from "./clone.ts";
+import { getCloneName, storesToClone } from "./clone.ts";
 
 describe("getCloneName", () => {
 	test("base case", () => {
@@ -38,5 +38,17 @@ describe("getCloneName", () => {
 	test("clone the second clone when the first clone is deleted", () => {
 		const name = getCloneName("test (clone 2)", ["test", "test (clone 2)"]);
 		assert.strictEqual(name, "test (clone 3)");
+	});
+});
+
+describe("storesToClone", () => {
+	const stores = ["games", "liveGamePlayByPlay", "players", "teams"];
+
+	test("everything by default", () => {
+		assert.deepStrictEqual(storesToClone(stores, true), stores);
+	});
+
+	test("without box scores, no box scores or replays", () => {
+		assert.deepStrictEqual(storesToClone(stores, false), ["players", "teams"]);
 	});
 });

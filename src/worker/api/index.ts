@@ -4892,8 +4892,14 @@ const removeLastTeam = async () => {
 	await idb.cache.flush();
 };
 
-const cloneLeague = async (lid: number) => {
-	const name = await league.clone(lid);
+const cloneLeague = async ({
+	lid,
+	boxScores,
+}: {
+	lid: number;
+	boxScores: boolean;
+}) => {
+	const name = await league.clone(lid, { boxScores });
 	await toUI("realtimeUpdate", [["leagues"]]);
 	return name;
 };

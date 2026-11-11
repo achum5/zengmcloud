@@ -243,6 +243,32 @@ const Dashboard = ({ leagues }: View<"dashboard">) => {
 			loadingLID !== undefined ||
 			cloningLID !== undefined;
 		const throbbing = loadingLID === league.lid;
+		const cloneLeague = async (boxScores: boolean) => {
+			try {
+				showNotification({
+					type: "info",
+					text: `Cloning league "${league.name}". This may take a little while if it's a large league.`,
+				});
+
+				setCloningLID(league.lid);
+				const name = await toWorker("main", "cloneLeague", {
+					lid: league.lid,
+					boxScores,
+				});
+
+				showNotification({
+					type: "info",
+					text: `Clone complete! Your new league is named "${name}".`,
+				});
+			} catch (error) {
+				showNotification({
+					type: "error",
+					text: error.message,
+				});
+			} finally {
+				setCloningLID(undefined);
+			}
+		};
 		return {
 			key: league.lid,
 			metadata: {
@@ -350,35 +376,11 @@ const Dashboard = ({ leagues }: View<"dashboard">) => {
 							>
 								Rename
 							</Dropdown.Item>
-							<Dropdown.Item
-								onClick={async () => {
-									try {
-										showNotification({
-											type: "info",
-											text: `Cloning league "${league.name}". This may take a little while if it's a large league.`,
-										});
-
-										setCloningLID(league.lid);
-										const name = await toWorker(
-											"main",
-											"cloneLeague",
-											league.lid,
-										);
-										setCloningLID(undefined);
-
-										showNotification({
-											type: "info",
-											text: `Clone complete! Your new league is named "${name}".`,
-										});
-									} catch (error) {
-										showNotification({
-											type: "error",
-											text: error.message,
-										});
-									}
-								}}
-							>
+							<Dropdown.Item onClick={() => cloneLeague(true)}>
 								Clone
+							</Dropdown.Item>
+							<Dropdown.Item onClick={() => cloneLeague(false)}>
+								Clone without box scores
 							</Dropdown.Item>
 							<Dropdown.Item
 								onClick={async () => {

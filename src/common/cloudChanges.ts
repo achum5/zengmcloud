@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 266,
+		date: "2026-11-11",
+		text: "Clone league has a new option, Clone without box scores: the copy has everything but the box scores and saved replays, so it's smaller and quicker to make.",
+	},
+	{
 		n: 265,
 		date: "2026-11-11",
 		text: "Game flow and win probability charts: tap or click a spot and it stays picked - no more holding it down. Tap the right end of the chart to go back to the final score.",

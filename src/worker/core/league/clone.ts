@@ -73,7 +73,17 @@ export const getCloneName = (nameOld: string, namesOld: string[]) => {
 	}
 };
 
-const clone = async (lidOld: number) => {
+// The stores copied over: everything - or, without box scores, all but the
+// box scores and the saved replays that go with them (as Delete Old Data
+// clears them).
+const BOX_SCORE_STORES = new Set(["games", "liveGamePlayByPlay"]);
+export const storesToClone = <T extends string>(
+	stores: Iterable<T>,
+	boxScores: boolean,
+): T[] =>
+	[...stores].filter((store) => boxScores || !BOX_SCORE_STORES.has(store));
+
+const clone = async (lidOld: number, { boxScores = true } = {}) => {
 	let dbOld;
 	let dbNew;
 	let name = "";
@@ -110,7 +120,7 @@ const clone = async (lidOld: number) => {
 		const lidNew = await idb.meta.add("leagues", leagueNew);
 		dbNew = await connectLeague(lidNew);
 
-		for (const store of dbOld.objectStoreNames) {
+		for (const store of storesToClone(dbOld.objectStoreNames, boxScores)) {
 			console.log("Start", store);
 			const dbStream = makeDBStream(dbOld, store);
 
