@@ -7,7 +7,7 @@ import {
 	poseOf,
 	withBody,
 } from "./evaluate.ts";
-import { type AnimName, bodyOf, legPhases, skeleton } from "./poses.ts";
+import { type AnimName, baseOf, bodyOf, legPhases, skeleton } from "./poses.ts";
 import type { CourtTimeline } from "./director.ts";
 import type { Pt3 } from "./geometry.ts";
 import { compile } from "./testGame.ts";
@@ -328,8 +328,8 @@ describe("footwork", () => {
 				const sk = skeleton(body, poseOf(me));
 				const feet = [sk.legR, sk.legL].map((l) => bodyPoint(me, l.end));
 				const passing =
-					PASSES.has(st.anim) ||
-					(st.from !== undefined && PASSES.has(st.from.anim));
+					PASSES.has(baseOf(st.anim)) ||
+					(st.from !== undefined && PASSES.has(baseOf(st.from.anim)));
 				if (prev && passing) {
 					const v = (Math.hypot(st.x - prev.x, st.y - prev.y) * 1000) / STEP;
 					const down = feet.every(

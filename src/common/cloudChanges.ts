@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 263,
+		date: "2026-11-11",
+		text: "3D games: another big batch of animations. Ball handlers now have their own versions of the crossover (sold harder), between-the-legs (lower), behind-the-back (wrapped tighter), in-and-out, spin and euro step, and some step back with the ball swung low. Passes finish with a snap. There are floaters with a leg kick, sky hooks, dunks with a knee up, swatted blocks and charges taken with arms crossed, and defenders off the ball spread their arms wide. Players throw their hands up after fouling or slap their own arm to argue a call. New celebrations: a finger to the lips, ice in the veins, too small, raise the roof, a jersey tug and night-night. At dead balls players hike their shorts, wipe the soles of their shoes and walk with their hands on their hips.",
+	},
+	{
 		n: 262,
 		date: "2026-11-11",
 		text: "3D games: fixed players looking like they jump or teleport. A player's legs could snap into a new stance in a single frame - mostly as he pulled up to a stop or came round a corner - and now his foot comes down and his hips turn back under him smoothly.",

@@ -10,7 +10,7 @@ import {
 } from "./evaluate.ts";
 import { crowdAt } from "./scene.ts";
 import { COURT_H, COURT_W, FT_LINE_DEPTH, rimX } from "./geometry.ts";
-import { LAYUPS } from "./poses.ts";
+import { baseOf, LAYUPS } from "./poses.ts";
 import { kindOf, playShot } from "./physics.ts";
 import { compile, fakeGame } from "./testGame.ts";
 import { finishOf } from "../../../util/liveGameWording.basketball.ts";
@@ -338,7 +338,8 @@ describe("3D director", () => {
 					d -= Math.round(d / (Math.PI * 2)) * Math.PI * 2;
 					// (A spin move goes right round, quick - but round, all the
 					// same, not in a snap.)
-					const spin = st.anim === "spinMove" || p.anim === "spinMove";
+					const spin =
+						baseOf(st.anim) === "spinMove" || baseOf(p.anim) === "spinMove";
 					assert.isBelow(
 						Math.abs(d),
 						spin ? 0.5 : 0.25,

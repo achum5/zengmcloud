@@ -313,9 +313,17 @@ describe("3D poses", () => {
 		] as const) {
 			const body = bodyOf(hgt, weight);
 			for (const move of ["front", "legs", "back"] as const) {
-				for (const from of ["R", "L"] as const) {
+				for (const [from, own] of [
+					["R", false],
+					["L", false],
+					["R", true],
+					["L", true],
+				] as const) {
 					const to: Hand = from === "R" ? "L" : "R";
-					const anim = moveAnim(move, from);
+					// (And a man's own way of it: see moveWith.)
+					const anim = own
+						? (waysOf(moveAnim(move, from))[0] ?? moveAnim(move, from))
+						: moveAnim(move, from);
 					const under = (at: number, hand: Hand) => {
 						const sk = skeleton(body, poseAt(anim, at));
 						return underPalm(hand === "R" ? sk.armR : sk.armL);
@@ -411,6 +419,26 @@ describe("3D poses", () => {
 			"setShot",
 			"dunk1",
 			"thanks",
+			"tomahawk",
+			"spotUp",
+			"roar",
+			"celebrate",
+			"pass",
+			"passBounce",
+			"floater",
+			"hook",
+			"takeCharge",
+			"chargeDown",
+			"dribbleInOutR",
+			"dribbleInOutL",
+			"spinMove",
+			"reach",
+			"goggles",
+			"shimmy",
+			"chestPound",
+			"stepBack",
+			"dunk",
+			"euroStep",
 		] as AnimName[]) {
 			const seen = new Set<string>();
 			for (let pid = 0; pid < 400; pid++) {
@@ -435,10 +463,17 @@ describe("3D poses", () => {
 		const meets: [AnimName, AnimName[], number[]][] = [
 			["poke", ["pokeSwipe", "pokeChop"], [0.38, 0.42, 0.46]],
 			["board", ["boardTuck", "boardSplit", "boardHigh"], [0.26, 400 / 1100]],
-			["dunk", ["dunkPump"], [0.4, 0.445, 0.5, 0.66]],
+			["dunk", ["dunkPump", "dunkKnee"], [0.4, 0.445, 0.5, 0.66]],
 			["dunk1", ["dunkPump1", "dunk1Wing"], [0.4, 0.445, 0.5, 0.66]],
+			["tomahawk", ["tomahawkTwo"], [0.4, 0.445, 0.5, 0.66]],
 			["layup", ["layupClutch", "layupHop"], [0.6, 0.65, 0.72]],
 			["setShot", ["setShotDeep"], [0.45, 0.55, 0.6]],
+			// (A pass let go as late as six tenths of the way through it.)
+			["pass", ["passSnap"], [0.2, 0.4, 0.5, 0.6]],
+			["passBounce", ["passBounceSnap"], [0.2, 0.4, 0.5, 0.6]],
+			["floater", ["floaterKick"], [0.3, 0.5, 0.6, 0.64]],
+			["hook", ["hookSky"], [0.3, 0.45, 0.55, 0.6]],
+			["hack", ["hackHandsUp"], [0.26, 0.35, 0.44]],
 		];
 		for (const [base, ways, ats] of meets) {
 			for (const way of ways) {
@@ -466,6 +501,28 @@ describe("3D poses", () => {
 				Math.hypot(a.f - b.f, a.s - b.s, a.u - b.u),
 				1e-6,
 				`${at}`,
+			);
+		}
+		// (And a hand reached in for it, his own way, where the plain reach
+		// has it - got to anywhere from three tenths of the way through to
+		// about half.)
+		for (const at of [0.3, 0.4, 0.45, 0.48]) {
+			const a = skeleton(body, poseAt("reach", at)).armR.end;
+			const b = skeleton(body, poseAt("reachSwipe", at)).armR.end;
+			assert.isBelow(
+				Math.hypot(a.f - b.f, a.s - b.s, a.u - b.u),
+				0.02,
+				`reach ${at}`,
+			);
+		}
+		// (And swatted, up at it the same till it is hit and gone.)
+		for (const at of [0.3, 0.4, 0.45, 0.5]) {
+			const a = skeleton(body, poseAt("block", at)).armR.end;
+			const b = skeleton(body, poseAt("blockSwat", at)).armR.end;
+			assert.isBelow(
+				Math.hypot(a.f - b.f, a.s - b.s, a.u - b.u),
+				1e-6,
+				`swat ${at}`,
 			);
 		}
 	});

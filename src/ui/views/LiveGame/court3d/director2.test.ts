@@ -374,7 +374,7 @@ describe("3D director", () => {
 					if (Math.abs(rate) > 6) {
 						quick += 1;
 					}
-					if (p.rate !== undefined && st.anim !== "spinMove") {
+					if (p.rate !== undefined && baseOf(st.anim) !== "spinMove") {
 						frames += 1;
 						if (Math.abs(rate - p.rate) > JERK) {
 							jerks += 1;

@@ -56,7 +56,7 @@ describe("3D free throws", () => {
 					// first: not his routine yet.)
 					if (
 						!st0.shown ||
-						st0.anim === "pass" ||
+						baseOf(st0.anim) === "pass" ||
 						Math.abs(depthOf(st0.x) - FT_SHOOTER_DEPTH) > 1.2 ||
 						Math.abs(st0.y - 25) > 2 ||
 						(ball.holder !== pid &&
@@ -167,6 +167,8 @@ describe("3D free throws", () => {
 							st0.anim === "hips" ||
 							st0.anim === "stretch" ||
 							st0.anim === "shakeOut" ||
+							st0.anim === "shortsTug" ||
+							st0.anim === "soleWipe" ||
 							st0.anim === "crouch")
 					) {
 						easy += 1;

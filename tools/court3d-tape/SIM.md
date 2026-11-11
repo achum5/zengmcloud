@@ -205,7 +205,18 @@ safe:
   `releaseAt`, `pokeHand`, `BOARD_AT`), every way of the move has its hand
   there too (poses.test.ts checks it). A pose is grounded by its lowest
   foot, so changing only the legs moves the hands as well: keep the keys
-  around the contact the same as the plain move's.
+  around the contact the same as the plain move's. (Even a leg that is not
+  the lowest: `flexOf` bends both hips to keep his ankles under him, so a
+  knee lifted on one side tips the other leg too - a knee-up dunk keeps
+  that foot as far in under him as the plain one's, and sits the same.)
+- Where the ball is held, it goes where his hands go (`heldBall`), so a way
+  of holding it can differ (a step-back with the ball swung low) - but the
+  guide hand on a hook or a two-handed hold is part of where the ball is:
+  leave it till the ball is gone. And a move let go at different points
+  (a pass at 0.4 of the way through mostly, as late as 0.6 off a cut, later
+  still on a held-on lane pass) keeps the plain keys until the latest, or
+  falls back to the plain move when it runs long (`PASS_OWN_MS`) or the
+  ball is dead (a hand-off to the official is no time for a snap).
 
 Moves that are the director's (the dribble combos in `comboAt`, the rocker,
 the shake, the no-look pass) are picked by hash, never the game's random

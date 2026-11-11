@@ -26,6 +26,7 @@ import {
 } from "./stepping.ts";
 import {
 	ANIMS,
+	baseOf,
 	armReaching,
 	mixArm,
 	armTo,
@@ -47,6 +48,7 @@ import {
 	mirror,
 	MOVE_BALL,
 	moveAnim,
+	moveWith,
 	moveFloor,
 	poseAt,
 	posed,
@@ -296,6 +298,8 @@ export type ArmPose = {
 	// onHeadN), not where these angles put them.
 	both?: boolean;
 	head?: boolean;
+	// (Or both on his hips, walking: see walkHips.)
+	hips?: boolean;
 };
 
 // Bounces a second on a dribble, unless a piece of it says otherwise (see
@@ -1412,7 +1416,9 @@ const EYES_ON_BALL = new Set<AnimName>([
 
 const PASSES = new Set<AnimName>([
 	"pass",
+	"passSnap",
 	"passBounce",
+	"passBounceSnap",
 	"passOverhead",
 	"passOutlet",
 	"passPush",
@@ -1421,6 +1427,7 @@ const PASSES = new Set<AnimName>([
 	"passNoLook",
 ]);
 export const PASS_TURN = 250;
+const PASS_OWN_MS = 300;
 export const PASS_PICK_UP = new Set<AnimName>([
 	"dribble",
 	"dribbleWalk",
@@ -2011,6 +2018,7 @@ const OFF_BALL: Record<"ready" | "stance", [AnimName, number][]> = {
 		["stanceHands", 1400],
 		["stanceDeny", 1300],
 		["floorSlap", 900],
+		["stanceWide", 1500],
 	],
 };
 // A beat of standing (ms), with at most one of them in it.
@@ -2061,7 +2069,7 @@ const offBall = (
 	if (t < start || t >= start + dur || start + dur > until) {
 		return undefined;
 	}
-	return { anim, phase: (t - start) / dur };
+	return { anim: ownWay(anim, tr.pid, start), phase: (t - start) / dur };
 };
 
 // THE BALL DEAD.
@@ -2307,7 +2315,11 @@ const stoppedLife = (
 			? "stretch"
 			: loose < 0.3
 				? "shakeOut"
-				: "hips";
+				: loose < 0.38
+					? "shortsTug"
+					: loose < 0.45
+						? "soleWipe"
+						: "hips";
 	const dur = (bent ? 1900 : 2600) + 1000 * tired + 800 * (h - 0.5);
 	const start =
 		since +
@@ -2519,6 +2531,8 @@ const STANDING = new Set<AnimName>([
 	"hips",
 	"stretch",
 	"shakeOut",
+	"shortsTug",
+	"soleWipe",
 	"crouch",
 	"laneSet",
 	"laneSetUp",
@@ -2527,12 +2541,18 @@ const STANDING = new Set<AnimName>([
 	"fistPump",
 	"armsWide",
 	"skyPoint",
+	"tooSmall",
+	"raiseRoof",
 	"roar",
+	"roarUp",
 	"chestPound",
+	"jerseyTug",
 	"celebrate",
+	"celebrateBoth",
 	"protest",
 	"protestUp",
 	"protestShrug",
+	"protestArm",
 	"point",
 	"thanks",
 	"thanksBoth",
@@ -3048,7 +3068,14 @@ const doingNow = (
 						? "passOutlet"
 						: act.anim === "board" && act.oneHand
 							? "boardOne"
-							: ownWay(act.anim, pid, act.t0);
+							: // (A pass held on to longer than a quick one is let go
+								// later in it than his own way's snap allows for - and
+								// one handed on with the ball dead is no time for it.)
+								(act.anim === "pass" || act.anim === "passBounce") &&
+								  (act.t1 - act.t0 > PASS_OWN_MS ||
+										stoppageAt(tl, act.t0) !== undefined)
+								? act.anim
+								: ownWay(act.anim, pid, act.t0);
 		const a = ANIMS[anim];
 		// (A loop on the same beat as when he does it standing of his own
 		// accord - so one held for a while and then just stood in, a
@@ -3103,7 +3130,7 @@ const doingNow = (
 		const jump = jumpBallAt(tl, t);
 		const stop = jump ? undefined : stoppageAt(tl, t);
 		if (move) {
-			anim = moveAnim(move.move, move.from);
+			anim = moveWith(moveAnim(move.move, move.from), pid);
 		} else if (seg && seg.kind === "hold" && seg.pid === pid) {
 			anim = seg.style === "hold" ? "hold" : "dribbleIdle";
 		} else if (stop) {
@@ -3402,17 +3429,23 @@ const ARMS_UP = new Set<AnimName>([
 	"contestFace",
 	"block",
 	"blockTwo",
+	"blockSwat",
 	"tip",
 	"rebound",
 	"reach",
+	"reachSwipe",
 	"hack",
 	"hackTwo",
 	"hackBody",
+	"hackHandsUp",
 	"threeUp",
 	"goggles",
+	"shush",
+	"iceVeins",
 	"signalUp",
 	"cheer",
 	"celebrate",
+	"celebrateBoth",
 ]);
 const ARMS_DOWN_MS = 320;
 const SLIVER_MS = 80;
@@ -3713,7 +3746,7 @@ const blendInto = (
 		...(isMove(anim)
 			? {
 					arms: ease(
-						anim === "crossBackR" || anim === "crossBackL"
+						baseOf(anim) === "crossBackR" || baseOf(anim) === "crossBackL"
 							? BACK_ARMS_MS
 							: MOVE_ARMS_MS,
 					),
@@ -3933,6 +3966,7 @@ const DENY_FROM = new Set<AnimName>([
 	"stanceHands",
 	"stancePoint",
 	"stanceDeny",
+	"stanceWide",
 	"floorSlap",
 	"shuffle",
 	"slide",
@@ -4336,8 +4370,35 @@ const armNow = (
 	return (
 		(said ? { ...said, say: true } : undefined) ??
 		denyArm(tl, tr, t, here, yaw, now.anim) ??
-		engageArm(tl, tr, t, here, yaw, now)
+		engageArm(tl, tr, t, here, yaw, now) ??
+		walkHips(tl, tr, t, now)
 	);
+};
+// WALKING IT OFF. With the ball dead, walking where he has to go, some men
+// go with their hands on their hips - the same man all through the one
+// stoppage, and more of them the more worn down they are.
+const WALK_HIPS = 0.2;
+const WALK_HIPS_TIRED = 0.4;
+const walkHips = (
+	tl: CourtTimeline,
+	tr: Track,
+	t: number,
+	now: Doing,
+): ArmPose | undefined => {
+	if (
+		now.anim !== "walk" ||
+		now.holding ||
+		now.dribble !== undefined ||
+		actAt(tr, t)
+	) {
+		return undefined;
+	}
+	const stop = stoppageAt(tl, t);
+	return stop &&
+		hash01(tr.pid + 6.5, stop[0] / 1000) <
+			WALK_HIPS + WALK_HIPS_TIRED * tirednessAt(tl, tr, t)
+		? { hand: "R", sh: -8, el: 58, ab: 30, wr: 0, w: 1, both: true, hips: true }
+		: undefined;
 };
 // Each of those comes and goes on its own reasons - his man close enough,
 // his pace, the ball in a man's hands - and never snaps up or drops in a
@@ -4435,6 +4496,7 @@ const easedArm = (
 		...(mine.some((x) => x.a.yell) ? { yell: mean((a) => a.yell ?? 0) } : {}),
 		...(last.both ? { both: true } : {}),
 		...(last.head ? { head: true } : {}),
+		...(last.hips ? { hips: true } : {}),
 	};
 };
 
@@ -5038,15 +5100,19 @@ const FREE_HEAD = new Set<AnimName>([
 	"sideStep",
 	"closeout",
 	"spotUp",
+	"spotUpLow",
 	"callBall",
 	"clapCall",
 	"stanceHands",
 	"stancePoint",
 	"stanceDeny",
+	"stanceWide",
 	"floorSlap",
 	"hips",
 	"stretch",
 	"shakeOut",
+	"shortsTug",
+	"soleWipe",
 	"crouch",
 ]);
 const lookAt = (
@@ -6086,11 +6152,13 @@ const PIVOTS = new Set<AnimName>([
 	"boxOutWide",
 	"callPlay",
 	"spotUp",
+	"spotUpLow",
 	"callBall",
 	"clapCall",
 	"stanceHands",
 	"stancePoint",
 	"stanceDeny",
+	"stanceWide",
 	"floorSlap",
 	"point",
 	"thanks",
@@ -6102,18 +6170,22 @@ const PIVOTS = new Set<AnimName>([
 	"hips",
 	"stretch",
 	"shakeOut",
+	"shortsTug",
 	"talk",
 	"protest",
 	"protestUp",
 	"protestShrug",
+	"protestArm",
 	// (Hands at work, feet where they are.)
 	"contest",
 	"contestTwo",
 	"contestFace",
 	"reach",
+	"reachSwipe",
 	"hack",
 	"hackTwo",
 	"hackBody",
+	"hackHandsUp",
 	"poke",
 	"pokeSwipe",
 	"pokeChop",
@@ -6123,7 +6195,9 @@ const PIVOTS = new Set<AnimName>([
 	"catchHigh",
 	"catchLow",
 	"pass",
+	"passSnap",
 	"passBounce",
+	"passBounceSnap",
 	"passOverhead",
 	"passOutlet",
 	"passPush",
@@ -6146,15 +6220,22 @@ const PIVOTS = new Set<AnimName>([
 	"signalSide",
 	"threeUp",
 	"goggles",
+	"shush",
+	"iceVeins",
 	"shimmy",
+	"nightNight",
 	"cheer",
 	"crouch",
 	"flex",
 	"fistPump",
 	"armsWide",
 	"skyPoint",
+	"tooSmall",
+	"raiseRoof",
 	"roar",
+	"roarUp",
 	"chestPound",
+	"jerseyTug",
 ]);
 // A leg turned under him from the way he faces (degrees): as far as hips
 // turn - and further round than that, back with him by the time he is
@@ -6280,7 +6361,9 @@ const STRIDE_ACTS = new Set<AnimName>([
 	"catchHigh",
 	"catchLow",
 	"pass",
+	"passSnap",
 	"passBounce",
+	"passBounceSnap",
 	"passOverhead",
 	"passOutlet",
 	"passPush",
@@ -6288,6 +6371,7 @@ const STRIDE_ACTS = new Set<AnimName>([
 	"passBehind",
 	"passNoLook",
 	"reach",
+	"reachSwipe",
 	"poke",
 	"pokeSwipe",
 	"pokeChop",
@@ -6306,8 +6390,10 @@ const STRIDE_ACTS = new Set<AnimName>([
 	"hack",
 	"hackTwo",
 	"hackBody",
+	"hackHandsUp",
 	"block",
 	"blockTwo",
+	"blockSwat",
 ]);
 const STRIDE_LEGS: (keyof Pose)[] = [
 	"hipN",
@@ -6457,6 +6543,8 @@ const STOOD = new Set<AnimName>([
 	"hips",
 	"stretch",
 	"shakeOut",
+	"shortsTug",
+	"soleWipe",
 	"crouch",
 ]);
 // (And setting off from where he stands: his feet step off into his
@@ -6922,6 +7010,24 @@ const poseFor = (st: PlayerState): Pose => {
 			onHeadF: mix(p.onHeadF, 1),
 			onHipN: mix(p.onHipN, 0),
 			onHipF: mix(p.onHipF, 0),
+			foldN: mix(p.foldN, 0),
+			foldF: mix(p.foldF, 0),
+		};
+	}
+	if (a.both && a.hips) {
+		// Both hands on his hips.
+		return {
+			...p,
+			shN: mix(p.shN, a.sh),
+			elN: mix(p.elN, a.el),
+			abN: mix(p.abN, a.ab),
+			shF: mix(p.shF, a.sh),
+			elF: mix(p.elF, a.el),
+			abF: mix(p.abF, a.ab),
+			onHipN: mix(p.onHipN, 1),
+			onHipF: mix(p.onHipF, 1),
+			onHeadN: mix(p.onHeadN, 0),
+			onHeadF: mix(p.onHeadF, 0),
 			foldN: mix(p.foldN, 0),
 			foldF: mix(p.foldF, 0),
 		};

@@ -9,6 +9,8 @@ const EASY = new Set([
 	"hips",
 	"stretch",
 	"shakeOut",
+	"shortsTug",
+	"soleWipe",
 	"crouch",
 	"laneSet",
 ]);
@@ -61,7 +63,9 @@ describe("the ball dead", () => {
 							st.anim === "easy" ||
 							st.anim === "crouch" ||
 							st.anim === "stretch" ||
-							st.anim === "shakeOut"
+							st.anim === "shakeOut" ||
+							st.anim === "shortsTug" ||
+							st.anim === "soleWipe"
 								? 1
 								: 0;
 					}

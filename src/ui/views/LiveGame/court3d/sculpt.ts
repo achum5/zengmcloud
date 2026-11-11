@@ -726,6 +726,8 @@ const RELAXED = new Set<string>([
 	"hips",
 	"stretch",
 	"shakeOut",
+	"shortsTug",
+	"soleWipe",
 	"crossed",
 	"sit",
 	"kneel",
@@ -751,7 +753,9 @@ const SPLAY = new Set<string>([
 	"contestFace",
 	"block",
 	"blockTwo",
+	"blockSwat",
 	"highFive",
+	"hackHandsUp",
 ]);
 const SPLAY_UP = 0.5;
 const LOW_FIVE = [0.12, 0.62] as const;
@@ -823,6 +827,8 @@ const gripFor = (st: PlayerState, which: "R" | "L", holding: boolean): Grip => {
 		(which === "R" &&
 			(st.anim === "point" ||
 				st.anim === "stancePoint" ||
+				st.anim === "shush" ||
+				st.anim === "iceVeins" ||
 				(st.anim === "thanks" && st.phase > 0.15 && st.phase < 0.85)))
 	) {
 		return "point";
@@ -844,7 +850,10 @@ const gripFor = (st: PlayerState, which: "R" | "L", holding: boolean): Grip => {
 		st.anim === "flex" ||
 		st.anim === "fistPump" ||
 		st.anim === "roar" ||
-		st.anim === "chestPound"
+		st.anim === "roarUp" ||
+		st.anim === "celebrateBoth" ||
+		st.anim === "chestPound" ||
+		st.anim === "jerseyTug"
 	) {
 		return "fist";
 	}
@@ -2059,7 +2068,10 @@ export const build = (
 		// A pass let go: palms out, thumbs down.
 		if (
 			!held &&
-			(st.anim === "pass" || st.anim === "passBounce") &&
+			(st.anim === "pass" ||
+				st.anim === "passBounce" ||
+				st.anim === "passSnap" ||
+				st.anim === "passBounceSnap") &&
 			st.phase > 0.38
 		) {
 			palmN = unit(square(v3(0.2, sgn, -0.45), h), palmN);

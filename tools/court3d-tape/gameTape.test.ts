@@ -52,7 +52,8 @@ const SHOT_PLAYS = /^(fg|miss|tp|ast|tov|stl|pf|blk|orb|drb)/;
 const load = (game: string) => {
 	if (game.endsWith(".json")) {
 		const { events, players } = JSON.parse(readFileSync(game, "utf8"));
-		return compileCourt({ events, players, gid: 1 });
+		// (Stepped, as every game the court plays is - see stageCourt.)
+		return compileCourt({ events, players, gid: 1, step: true });
 	}
 	return compileFake(game, 90).tl;
 };
