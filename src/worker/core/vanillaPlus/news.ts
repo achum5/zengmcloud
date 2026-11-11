@@ -1,3 +1,4 @@
+import { PHASE } from "../../../common/constants.ts";
 import type { Player } from "../../../common/types.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers, logEvent } from "../../util/index.ts";
@@ -179,8 +180,13 @@ const tradeStory = async (
 			]),
 		);
 	} else {
+		// In the offseason the record is last season's, and the help is for the
+		// next one.
+		const inSeason = g.get("phase") === PHASE.REGULAR_SEASON;
 		why.push(
-			`${teamLink(buyer, true)}${record ? `, ${record},` : ""} get ${standing(p, rank)} for the stretch ahead.`,
+			inSeason
+				? `${teamLink(buyer, true)}${record ? `, ${record},` : ""} get ${standing(p, rank)} for the stretch ahead.`
+				: `${teamLink(buyer, true)}${record ? `, coming off a ${record} season,` : ""} get ${standing(p, rank)} for next season.`,
 		);
 	}
 	if (event.role === "seller" && event.offers >= 2) {
