@@ -257,7 +257,10 @@ export const atCamp = () => stageIndex() === STAGES.length - 1;
 // a team. As in the NBA, he takes the best offer left before camp ends.
 // Without, waiting was worth nearly an offer at his ask, and a 25-year-old
 // rated 67 turned down offers at camp three summers running, then signed for
-// the minimum each season.
+// the minimum each season. League test, 3 leagues over 5 seasons: rated 60+
+// signing in the season 14 to 1, rated 58+ unsigned when free agency ends 48
+// to 9; the same players paid the same before camp, cheap deals of 3+ years
+// unchanged (10).
 export const stageWait = (wait: number, season = wait) =>
 	atCamp() ? Math.min(wait, season) + stageSettings.campWait : wait;
 

@@ -105,7 +105,10 @@ Existing contracts stay as they are (flat, no options).
   the best offer left before camp ends (2026-11-11: before, waiting was worth
   nearly an offer at his ask, and a 25-year-old rated 67 turned down offers
   at camp three summers running, then signed for the minimum each season).
-  From camp on,
+  Waiting is scored as what the season brings: a one-season minimum deal
+  against his one-season ask. League test, 3 leagues over 5 seasons: rated
+  60+ signing in the season 14 to 1, rated 58+ unsigned when free agency
+  ends 48 to 9; the same players paid the same before camp. From camp on,
   a deal for less than his opening ask is for one season only (without,
   veterans signed at camp for 2% of the cap for four years). The number to beat counts only offers whose teams can still
   sign him. (2026-11-10, from an audit of the owner's league: its best free
