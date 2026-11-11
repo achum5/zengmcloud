@@ -9,10 +9,12 @@
 // And a device that can't draw 60 - its typical frame, a few seconds at a
 // time, coming slower than 50 a second with the drawing what takes the time -
 // draws a steady 30 instead: half the work, and smoother than an uneven 40
-// with the odd long frame in it. A phone too - but one that draws 60 keeps
-// 60, however little room that leaves it. Back to 60 once a frame at 30
-// takes so little that 60 would leave room to spare, and then not again for
-// a while.
+// with the odd long frame in it. So does a phone that draws 60 only by
+// doing little else, its frames taking over half the time between them:
+// run flat out like that, a phone gets hot - dims its screen, and slows
+// down further the hotter it gets, to well under 30. Back to 60 once a
+// frame at 30 takes so little that 60 would leave room to spare, and then
+// not again for a while.
 //
 // Paused, the game holds still - only the crowd and the benches move - and 30
 // is plenty. Off the screen (scrolled away to the box score), nothing is
@@ -30,6 +32,9 @@ const AGREE = 2;
 // spent drawing: down to SLOW.
 const SLOW_GAP_MS = 20;
 const SLOW_WORK_MS = 10;
+// (A phone: down to SLOW, however often its frames come, once its work takes
+// this much of the time between them.)
+const PHONE_BUSY = 0.5;
 // At SLOW, a frame drawn in under this (typically): up to FAST again - but
 // not within this long of going down to SLOW, and only so many times.
 const FAST_WORK_MS = 6;
@@ -52,9 +57,12 @@ export type Pace = {
 	said: number[];
 	droppedAt: number;
 	rises: number;
+	// A phone (see Court3D): kept from running flat out, not just from
+	// falling behind.
+	phone: boolean;
 };
 
-export const makePace = (now: number): Pace => ({
+export const makePace = (now: number, phone = false): Pace => ({
 	fps: FAST,
 	drawnAt: -Infinity,
 	since: now,
@@ -64,6 +72,7 @@ export const makePace = (now: number): Pace => ({
 	said: [],
 	droppedAt: -Infinity,
 	rises: 0,
+	phone,
 });
 
 // The rate frames are drawn at now - paused, no more than SLOW.
@@ -108,7 +117,11 @@ export const drawn = (
 	pace.gaps = [];
 	pace.work = [];
 	let verdict = 0;
-	if (pace.fps === FAST && gapMs > SLOW_GAP_MS && work > SLOW_WORK_MS) {
+	if (
+		pace.fps === FAST &&
+		((gapMs > SLOW_GAP_MS && work > SLOW_WORK_MS) ||
+			(pace.phone && work > gapMs * PHONE_BUSY))
+	) {
 		verdict = -1;
 	} else if (
 		pace.fps === SLOW &&

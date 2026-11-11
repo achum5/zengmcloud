@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 272,
+		date: "2026-11-11",
+		text: "3D games on phones: a phone that has to work flat out to draw 60 frames a second now draws a steady 30 instead, so it doesn't overheat and dim its screen.",
+	},
+	{
 		n: 271,
 		date: "2026-11-11",
 		text: "The Highlights section is gone from the live game page and the box score page.",

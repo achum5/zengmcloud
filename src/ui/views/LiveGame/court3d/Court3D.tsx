@@ -1121,7 +1121,11 @@ const Court3D = ({
 		const res = makeResolution(performance.now() + 1500);
 		// How often it is drawn (see pace.ts) - and whether this frame says
 		// anything about how fast the device draws (not held back, paused).
-		const pacing = makePace(performance.now() + 1500);
+		const pacing = makePace(
+			performance.now() + 1500,
+			typeof matchMedia !== "undefined" &&
+				matchMedia("(pointer: coarse)").matches,
+		);
 		// The size the canvas is laid on the page at (CSS px).
 		const laid = { w: 0, h: 0 };
 		const lookOf = (pid: number) => looks.current.get(pid)!;

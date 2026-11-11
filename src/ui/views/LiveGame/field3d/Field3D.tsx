@@ -1042,7 +1042,11 @@ const Field3D = ({
 		const laid = { w: 0, h: 0 };
 		// How often it is drawn (see court3d/pace.ts) - and whether this frame
 		// says anything about how fast the device draws (not paused).
-		const pacing = makePace(performance.now() + 1500);
+		const pacing = makePace(
+			performance.now() + 1500,
+			typeof matchMedia !== "undefined" &&
+				matchMedia("(pointer: coarse)").matches,
+		);
 		const wipe = makeFieldWipe();
 		let wipeSide: Side = 1;
 		let shownOver = false;
