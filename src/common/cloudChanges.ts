@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 265,
+		date: "2026-11-11",
+		text: "Game flow and win probability charts: tap or click a spot and it stays picked - no more holding it down. Tap the right end of the chart to go back to the final score.",
+	},
+	{
 		n: 264,
 		date: "2026-11-11",
 		text: "3D games: players running in late to catch a pass, box out or contest a shot now slow into it instead of stopping dead the moment it starts, and a defender sliding in to poke at the ball arrives already facing his man.",

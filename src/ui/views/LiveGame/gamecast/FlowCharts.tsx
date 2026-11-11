@@ -1,7 +1,8 @@
 // HOW THE GAME WENT, two ways, as a broadcast's app shows it: the chance
 // each side had of winning at every moment (the line above the middle the
 // visitors', below it the home team's), and the two scores climbing side
-// by side. Touch or point at it for where it stood then.
+// by side. Touch or point at it for where it stood then - tapped or
+// clicked, it stays there.
 
 import clsx from "clsx";
 import { useEffect, useId, useRef, useState, type PointerEvent } from "react";
@@ -55,6 +56,9 @@ const Logo = ({ t }: { t: any }) => (
 	/>
 );
 
+// (Picked this near the end of it, pixels: the end.)
+const END_PX = 6;
+
 const pctText = (p: number) =>
 	`${(100 * p).toFixed(p > 0.995 || p < 0.005 ? 0 : 1)}%`;
 
@@ -69,7 +73,10 @@ export const FlowCharts = ({
 	live?: boolean;
 }) => {
 	const [view, setView] = useState<"win" | "flow">("win");
+	// The moment under the mouse, and the one picked (tapped, clicked or
+	// dragged to): kept once the finger is up or the mouse gone.
 	const [hover, setHover] = useState<number | undefined>();
+	const [pin, setPin] = useState<number | undefined>();
 	const { ref, width } = useWidth();
 	const id = useId().replace(/:/g, "");
 	const flow = flowOf(boxScore, !!live);
@@ -134,7 +141,8 @@ export const FlowCharts = ({
 				? "OT"
 				: `${k - numPeriods + 1}OT`;
 
-	const at = hover ?? upTo;
+	const sel = hover ?? pin;
+	const at = sel ?? upTo;
 	const sNow = scoreAt(at);
 	const pHome = homeChance(at);
 	const period = Math.max(
@@ -200,9 +208,19 @@ export const FlowCharts = ({
 		}
 	}
 
+	const pxAt = (e: PointerEvent<SVGSVGElement>) =>
+		e.clientX - e.currentTarget.getBoundingClientRect().left;
+	// (Picked at the end - or past it, live - back to now.)
+	const pick = (px: number) => {
+		setPin(px >= x(upTo) - END_PX ? undefined : tOf(px));
+		setHover(undefined);
+	};
 	const onMove = (e: PointerEvent<SVGSVGElement>) => {
-		const r = e.currentTarget.getBoundingClientRect();
-		setHover(tOf(e.clientX - r.left));
+		if (e.pointerType === "mouse" && e.buttons === 0) {
+			setHover(tOf(pxAt(e)));
+		} else {
+			pick(pxAt(e));
+		}
 	};
 
 	return (
@@ -256,7 +274,7 @@ export const FlowCharts = ({
 						width={W}
 						height={H}
 						onPointerMove={onMove}
-						onPointerDown={onMove}
+						onPointerDown={(e) => pick(pxAt(e))}
 						onPointerLeave={() => setHover(undefined)}
 						style={{ touchAction: "pan-y", display: "block" }}
 					>
@@ -357,10 +375,10 @@ export const FlowCharts = ({
 								/>
 							</>
 						)}
-						{hover !== undefined ? (
+						{sel !== undefined ? (
 							<line
-								x1={x(hover)}
-								x2={x(hover)}
+								x1={x(sel)}
+								x2={x(sel)}
 								y1={PAD_T}
 								y2={PAD_T + plotH}
 								className="flow-cursor"
@@ -379,10 +397,10 @@ export const FlowCharts = ({
 			) : null}
 			<div
 				className={clsx("flow-moment", {
-					"text-body-secondary": hover === undefined,
+					"text-body-secondary": sel === undefined,
 				})}
 			>
-				<span>{hover === undefined ? (live ? "Now" : "Final") : when}</span>
+				<span>{sel === undefined ? (live ? "Now" : "Final") : when}</span>
 				<span className="ms-auto fw-bold">
 					{away.abbrev} {sNow[2]} - {sNow[1]} {home.abbrev}
 				</span>
