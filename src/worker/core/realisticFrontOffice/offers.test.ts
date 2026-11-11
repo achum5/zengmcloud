@@ -6,11 +6,14 @@ import {
 	askFor,
 	choiceOdds,
 	effectiveAmount,
+	moneyUtility,
 	offerSettings,
 	offerUtility,
 	rolePoints,
+	waitUtility,
 	wantedYears,
 } from "./offers.ts";
+import { atCamp, stageSettings, stageWait } from "./stages.ts";
 
 beforeEach(() => {
 	resetG();
@@ -106,4 +109,26 @@ test("a team option costs him far more than a player option is worth to him", ()
 	assert.closeTo(po, 10_500, 1e-6);
 	assert.closeTo(to, 8_500, 1e-6);
 	assert.isAbove(plain - to, 2 * (po - plain));
+});
+
+test("at camp he takes an offer well under his ask rather than wait into the season, where only the minimum is left", () => {
+	const ask = 10000;
+	const half = offerUtility({ amount: ask / 2, ask, appeal: 0 });
+	const season = moneyUtility(g.get("minContract"), ask);
+	const takes = () =>
+		choiceOdds(
+			[half],
+			stageWait(waitUtility(), season),
+			stageSettings.decisionTemperature,
+		)[0]!;
+
+	// Training camp, the last stage.
+	g.setWithoutSavingToDB("daysLeft", 1);
+	assert.isTrue(atCamp());
+	assert.isAbove(takes(), 0.95);
+
+	// With the market still open, there is more to wait for.
+	g.setWithoutSavingToDB("daysLeft", 2);
+	assert.isFalse(atCamp());
+	assert.isBelow(takes(), 0.05);
 });

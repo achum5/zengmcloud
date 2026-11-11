@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 276,
+		date: "2026-11-11",
+		text: "Realistic Front Offices: free agents still unsigned at training camp now take the best offer they have instead of holding out into the season. Once the season starts, teams can rarely offer more than the minimum, so waiting got them nothing - before, some good players turned down every camp offer and ended up signing for the minimum.",
+	},
+	{
 		n: 275,
 		date: "2026-11-11",
 		text: "3D games on phones: a phone that can draw 60 frames a second with a little room to spare keeps 60 again instead of being held to 30 - only one working flat out drops to 30.",

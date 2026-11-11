@@ -246,9 +246,17 @@ export const mostFor = ({
 // pays.
 export const atCamp = () => stageIndex() === STAGES.length - 1;
 
-// What waiting for more is worth to a free agent this stage.
-export const stageWait = (wait: number) =>
-	stageIndex() === STAGES.length - 1 ? wait + stageSettings.campWait : wait;
+// What waiting for more is worth to a free agent this stage (offers.ts's
+// units). At camp, waiting means the season, and once games are played a
+// free agent gets all but always the minimum (in league tests, 11 of the 15
+// rated 60+ who signed in the season): so waiting is worth no more than an
+// offer of the minimum against his ask (`season`), and less again as he wants
+// a team. As in the NBA, he takes the best offer left before camp ends.
+// Without, waiting was worth nearly an offer at his ask, and a 25-year-old
+// rated 67 turned down offers at camp three summers running, then signed for
+// the minimum each season.
+export const stageWait = (wait: number, season = wait) =>
+	atCamp() ? Math.min(wait, season) + stageSettings.campWait : wait;
 
 // The least he takes for a deal this long: a long deal only near his value,
 // and from camp on only at his opening ask. Only while he is this summer's

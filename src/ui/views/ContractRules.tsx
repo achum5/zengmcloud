@@ -379,8 +379,9 @@ const GuideTab = ({ rules }: { rules: Rules }) => {
 				</li>
 				<li>
 					<b>{rules.stages[4]}:</b> the last stage. A player takes an offer at
-					his asking price or more. One under it, he may still take rather than
-					wait into the season.
+					his asking price or more. One under it, he usually takes too: once the
+					season starts, teams have little but the minimum left to offer, so
+					he'd rather sign now than wait.
 				</li>
 				<li>
 					Anyone still unsigned can be signed during the season, at what teams

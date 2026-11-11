@@ -67,6 +67,7 @@ import {
 	choiceOdds,
 	effectiveAmount,
 	marketUtility,
+	moneyUtility,
 	offerSettings,
 	offerUtility,
 	offerYears,
@@ -819,7 +820,7 @@ export const offerChance = async (
 		}
 		return choiceOdds(
 			[mine, ...others],
-			stageWait(waitUtility()),
+			stagedWait(p),
 			stageSettings.decisionTemperature,
 		)[0]!;
 	}
@@ -838,6 +839,14 @@ export const offerChance = async (
 	const mine = await utilityOf(p, { ...offer, tid }, rankOf(p), rosters);
 	return choiceOdds([mine, ...others], waitUtility())[0]!;
 };
+
+// What waiting is worth to him today, in stages: at camp, no more than an
+// offer of the minimum - what the season brings (stageWait).
+const stagedWait = (p: Player) =>
+	stageWait(
+		waitUtility(),
+		moneyUtility(g.get("minContract"), contractOf(p).amount),
+	);
 
 const rostersByTid = async () => {
 	const rosters = new Map<number, Player[]>();
@@ -1457,8 +1466,7 @@ export const freeAgencyDay = async () => {
 		const j = Math.floor(Math.random() * (i + 1));
 		[order[i], order[j]] = [order[j]!, order[i]!];
 	}
-	const wait = stages ? stageWait(waitUtility()) : waitUtility();
-	const waitWeight = Math.exp(wait / temperature);
+	const waitOf = (p: Player) => (stages ? stagedWait(p) : waitUtility());
 	// Offers that need a trade to clear the room first, by team and player.
 	const roomPlanOf = new Map<string, RoomPlan>();
 	const planKey = (tid: number, pid: number) => `${tid}:${pid}`;
@@ -1475,7 +1483,8 @@ export const freeAgencyDay = async () => {
 			// On his decision day he signs with the best offer he will take
 			// (acceptAt): waiting is not a rival - but at camp an offer may be
 			// under his ask, and then it is.
-			let weight = decisionDay(p) && !atCamp() ? 0 : waitWeight;
+			let weight =
+				decisionDay(p) && !atCamp() ? 0 : Math.exp(waitOf(p) / temperature);
 			// Deciding today, sealed: every team knows only the number to beat.
 			if (stages && decidesNow(p)) {
 				const lead = p.faLead;
@@ -1687,7 +1696,11 @@ export const freeAgencyDay = async () => {
 		for (const offer of offers) {
 			utilities.push(await utilityOf(p, offer, rankOf(p), rosters));
 		}
-		const odds = choiceOdds(utilities, waits ? wait : undefined, temperature);
+		const odds = choiceOdds(
+			utilities,
+			waits ? waitOf(p) : undefined,
+			temperature,
+		);
 		const roll = Math.random();
 		let k = 0;
 		let acc = odds[0]!;

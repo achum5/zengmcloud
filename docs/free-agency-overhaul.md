@@ -96,7 +96,14 @@ Existing contracts stay as they are (flat, no options).
 - **On his decision day he signs** with one of the offers at his ask or
   more, rather than wait; his ask never rises past what he asked as free
   agency opened. At camp, the last stage, the same - the season is about
-  to start. From camp on,
+  to start - and an offer under his ask he weighs against waiting into the
+  season, which is worth no more to him than the minimum: once games are
+  played, that is all but always what a free agent gets (in league tests, 11
+  of the 15 rated 60+ who signed in the season). So, as in the NBA, he takes
+  the best offer left before camp ends (2026-11-11: before, waiting was worth
+  nearly an offer at his ask, and a 25-year-old rated 67 turned down offers
+  at camp three summers running, then signed for the minimum each season).
+  From camp on,
   a deal for less than his opening ask is for one season only (without,
   veterans signed at camp for 2% of the cap for four years). The number to beat counts only offers whose teams can still
   sign him. (2026-11-10, from an audit of the owner's league: its best free
