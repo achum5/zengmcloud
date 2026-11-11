@@ -9,13 +9,13 @@ import {
 } from "../core/realisticFrontOffice/capSheet.ts";
 import { stagesOn } from "../core/realisticFrontOffice/stages.ts";
 
-// The Contract Rules page (realistic front offices' CBA-lite): the rules as
-// this league's numbers, every team's cap status, and the season's signings
-// with how each was made.
-const TABS = ["rules", "teams", "signings"] as const;
+// The Contract Rules page (realistic front offices' CBA-lite): how it all
+// works, the rules as this league's numbers, every team's cap status, and the
+// season's signings with how each was made.
+const TABS = ["guide", "rules", "teams", "signings"] as const;
 
 const processInputs = (params: RouteParams<"contractRules">) => {
-	const tab = TABS.find((x) => x === params.tab) ?? "rules";
+	const tab = TABS.find((x) => x === params.tab) ?? "guide";
 	const team = validateTeam(params.team, ["all"]);
 	const season = params.season
 		? validateSeason(params.season)

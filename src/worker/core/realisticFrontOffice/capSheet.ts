@@ -9,6 +9,7 @@ import { g, helpers } from "../../util/index.ts";
 import { getHardCap } from "../../util/getHardCap.ts";
 import { team } from "../index.ts";
 import { cbaSettings, hardCap, maxFor, midLevelAmount } from "./cba.ts";
+import { OPTION_VALUE, offerSettings } from "./offers.ts";
 import {
 	inStages,
 	midLevelUsed,
@@ -146,6 +147,15 @@ export const contractRules = () => {
 		raiseOther: pct(cbaSettings.raiseOther),
 		proveItPct: pct(stageSettings.discountShare),
 		proveItYears: stageSettings.discountYears,
+		// For the How it works tab.
+		luxuryTaxRate: g.get("luxuryTax"),
+		minRosterSize: g.get("minRosterSize"),
+		maxRosterSize: g.get("maxRosterSize"),
+		askFloorPcts: stageSettings.floorByStage.map(pct),
+		campAskCap: stageSettings.campAskCap * salaryCap,
+		lateLongPct: pct(stageSettings.lateLongShare),
+		optionPct: pct(OPTION_VALUE),
+		overAskKneePct: pct(offerSettings.overAskKnee - 1),
 		extensionYears: maxLength,
 		extensionsOn: extensionSettings.on,
 		tier1: stageSettings.tier1,
