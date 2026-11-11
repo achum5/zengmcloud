@@ -7,6 +7,11 @@ import { COMPOSITE_WEIGHTS, POSITIONS } from "../../../common/constants.ts";
 import { last } from "../../../common/utils.ts";
 import type { ValueChangeCalculator } from "../team/ValueChangeCalculator.ts";
 
+// What prices a deal for the AI team: the stock trade values, or with
+// realistic front offices the team's own read (realisticFrontOffice/
+// vanillaTrades.ts).
+export type TradeValuer = Pick<ValueChangeCalculator, "evaluate">;
+
 export type LookingFor = {
 	positions: Set<string>;
 	skills: Set<string>;
@@ -36,7 +41,7 @@ type Asset = AssetPlayer | AssetPick;
 const tryAddAsset = async (
 	teams: TradeTeams,
 	holdUserConstant: boolean,
-	valueChangeCalculator: ValueChangeCalculator,
+	valueChangeCalculator: TradeValuer,
 	prevDv: number,
 	firstTry: boolean,
 	lookingFor?: LookingFor,
@@ -352,7 +357,7 @@ const makeItWork = async (
 		holdUserConstant: boolean;
 		lookingFor?: LookingFor;
 		maxAssetsToAdd?: number;
-		valueChangeCalculator: ValueChangeCalculator;
+		valueChangeCalculator: TradeValuer;
 	},
 ): Promise<TradeTeams | undefined> => {
 	let initialSign: -1 | 1;

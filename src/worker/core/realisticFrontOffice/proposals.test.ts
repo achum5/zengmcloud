@@ -114,22 +114,34 @@ test(
 );
 
 test(
-	"what would make it work keeps the human's offer",
+	"what would make it work keeps the human's offer and evens it up",
 	{ timeout: 300_000 },
 	async () => {
 		const outlook = await currentOutlook();
 		assert.isDefined(standing);
 		const asked = { tid: proposer!, ...standing!.give };
-		// A deal it would take already is left as it is.
+		// A deal it would take already, as vanilla's: everything in it kept,
+		// anything added only to even it up, and it would take that.
 		const same = await counterOffer(outlook, asked, {
 			tid: userTid,
 			...standing!.get,
 		});
-		assert.deepEqual(side(proposer!, same!.give), asked);
-		assert.deepEqual(side(userTid, same!.get), {
-			tid: userTid,
-			...standing!.get,
-		});
+		assert.isDefined(same);
+		const gives = side(proposer!, same!.give);
+		const gets = side(userTid, same!.get);
+		for (const pid of asked.pids) {
+			assert.include(gives.pids, pid);
+		}
+		for (const dpid of asked.dpids) {
+			assert.include(gives.dpids, dpid);
+		}
+		for (const pid of standing!.get.pids) {
+			assert.include(gets.pids, pid);
+		}
+		for (const dpid of standing!.get.dpids) {
+			assert.include(gets.dpids, dpid);
+		}
+		assert.strictEqual((await judgeHumanOffer(gives, gets)).kind, "yes");
 
 		// The same ask for nothing: whatever it comes back with keeps the ask,
 		// and it would take.
@@ -224,15 +236,18 @@ test(
 			positions: new Set(),
 			skills: new Set(),
 			draftPicks: true,
+			prospects: false,
+			bestCurrentPlayers: false,
 		});
 		const seconds = (Date.now() - started) / 1000;
 		assert.isBelow(seconds, 60);
-		// A good player draws bids, in picks only when only those are asked for.
+		// A good player draws bids, picks first when picks are asked for (as
+		// vanilla's: players after, if it would give no more picks).
 		assert.isAbove(offers.length, 0);
 		for (const [user, cpu] of offers) {
 			assert.deepEqual(user.pids, [pid]);
-			assert.deepEqual(cpu.pids, []);
 			assert.isAbove(cpu.dpids.length, 0);
+			assert.isAtMost(cpu.pids.length + cpu.dpids.length, 5);
 			// One the team would take as offered, before it shops what it gives.
 			const verdict = await judgeHumanOffer(
 				{ tid: cpu.tid, pids: cpu.pids, dpids: cpu.dpids },
@@ -248,6 +263,8 @@ test(
 			positions: new Set([pos]),
 			skills: new Set(),
 			draftPicks: false,
+			prospects: false,
+			bestCurrentPlayers: false,
 		});
 		for (const [, cpu] of guards) {
 			const theirs = await Promise.all(
@@ -270,6 +287,8 @@ test(
 				positions: new Set(),
 				skills: new Set(),
 				draftPicks: true,
+				prospects: false,
+				bestCurrentPlayers: false,
 			});
 			assert.isAbove(star.length, 0.75 * (g.get("numTeams") - 1));
 		} finally {

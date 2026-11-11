@@ -229,11 +229,13 @@ test(
 			const cpu = { tid: mine.tid, pids: [], dpids: [mine.dpid] };
 			const human = { tid: ahead.tid, pids: [], dpids: [ahead.dpid] };
 			assert.strictEqual((await judgeHumanOffer(cpu, human)).kind, "yes");
+			// "What would make this work", as vanilla's: it asks nothing more
+			// to move up, and may add of its own to even the deal up.
 			const counter = await counterOffer(outlook, cpu, human);
 			assert.isDefined(counter);
-			assert.deepEqual(
+			assert.include(
 				counter!.give.map((x) => (x.kind === "pick" ? x.dp.dpid : -1)),
-				[mine.dpid],
+				mine.dpid,
 			);
 			assert.deepEqual(
 				counter!.get.map((x) => (x.kind === "pick" ? x.dp.dpid : -1)),

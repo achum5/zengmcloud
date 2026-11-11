@@ -399,38 +399,41 @@ every team, again whenever a signing changes the pool), memory cleanup 17%.
   human: his offers, "What would make this work", Trade Proposals and the
   trading block.
 - **Human-to-human trades are unchanged** (agreed in chat).
-- **CPU offers to humans** (owner's call: vanilla's mechanics, the mode's
-  valuation). Each names the CPU team's price: of the deals it would take, by
-  its own read over the human bar, the one it gains least from - good for the
-  human or not, he decides.
+- **CPU offers to humans** (owner's call, 2026-11-11: "the same identical
+  mechanics as vanilla, it's just that teams are far far smarter"). Trade
+  Proposals, the trading block and "What would make this work" run vanilla's
+  forward selection (trade/makeItWork.ts, ported in
+  realisticFrontOffice/vanillaTrades.ts): the CPU team adds, or asks for, one
+  asset at a time until the deal is only just good enough for it - its best
+  offer - with its own read over the human bar where vanilla has the stock
+  trade values. Vanilla prices every asset at every step; a deal priced whole
+  takes ~15 ms here, so each step prices whole only the few assets its
+  choice most likely falls on (ranked by what each did to the deal when last
+  priced), the same choice as pricing all in the owner's league (29 of 29
+  bids). Where the team's whole judge would not take the deal it ends on -
+  before the deadline it may rather wait, or what it gives may fetch more
+  from another team, as a deal only just good enough for it can - it is the
+  last deal before that the judge takes.
   - **Trade Proposals** works as in stock: the same teams in the same order,
     the same reroll, one of the human's players or picks picked for each team
-    the same way, and more added to either side as stock adds them. What the
-    team offers for it is its price, adding up to three assets a side, and
-    only if it would not rather give its own up elsewhere. To keep the page quick each team gets one
-    try (stock: ten) and twelve teams at most are asked; the offers are kept
-    until the page would change them anyway (5 offers in about 10 seconds in a
-    test league, instant after).
-  - **The trading block** (owner's call, replacing the fair rule there, which
-    left it empty - a good starter put up for picks drew no offer at all) is
-    where the human sees what the market would pay: each CPU team bids up to
-    three of its assets, one at least of the kinds asked for (picks alone when
-    only picks are), salaries left out - the human makes the money work. The
-    stock trade AI's values size the bid (by its own read a contender's bids
-    in picks all came out as its three best, for anyone): the biggest they
-    call fair for the CPU team, worth a third of their price for what it gets
-    at least, and made only if the team would take the deal by its own read,
-    over the human bar, and would not rather wait for the deadline. A bid is
-    not shopped: whether its assets would fetch more elsewhere is weighed when
-    the human offers the deal (shopping every bid took the block from a second
-    or two to most of a minute).
-  - **"What would make this work"** (owner's call) names the CPU team's
-    price: of the deals it would take that keep everything in the human's
-    offer (the offer itself if it would take that), the one it gains least
-    from, adding at most one asset of its own - good for the human or not,
-    he decides. Held to the fair rule as well, it named a price for one ask
-    in ten (a good player, not a team's best, asked for nothing); naming its
-    price, for seven in ten.
+    the same way, and up to five assets added as stock adds them. To keep the
+    page quick each team gets one try (stock: ten) and twelve teams at most
+    are asked; the offers are kept until the page would change them anyway.
+  - **The trading block**, as vanilla's: each CPU team adds its own assets to
+    what the human puts up, at most four more than he puts up (vanilla's), by
+    the sorts he asks for - picks first if picks, a player at the position
+    first if a position. Salaries left out: the human makes the money work.
+    Before (2026-11-11), each bid was three assets at most, sized by the stock
+    values and held to a third of their price: for an 84-rated 27-year-old in
+    the owner's league no team bid, and with picks no team could offer more
+    than three firsts. Now all 29 bid, most five firsts; with players allowed,
+    packages like Scottie Barnes, Jaden McDaniels, Kai Jones and two firsts.
+    16 seconds for the 29 teams. With no limit on what a team adds, one bid
+    was 7 players and 35 picks: vanilla's limit kept.
+  - **"What would make this work"**, as vanilla's: from a deal the team would
+    not take it asks for the human's assets until it would, then gives back
+    what it can; from one it would, it adds its own until it only just would.
+    Nothing in the offer is taken out. 2-5 seconds a click.
 - **The whole calculation behind each CPU-to-CPU trade** is on its trade
   summary page, with God Mode off too for now (owner's call), though it shows
   true ratings.
