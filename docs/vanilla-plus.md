@@ -456,6 +456,30 @@ lane differences), so a 20% margin stops few of them - next, patience
 measured against each deal's gain (the arena now logs it) and a bigger
 early margin.
 
+Then (with auctions; logged gains): a flat early margin moves deals to the
+deadline only by stopping them - at 50% (I) a third of in-season deals
+came in the final week but half as many happened; at 100% (J) two thirds,
+with 6 a season and no bad team selling. Deals made early gain a lot (0.7
+of what's given to many times it); the deadline's gain 0.1-0.7. So
+patience by team (`patienceSure`): a team sure of its place, in or out,
+has a quarter of it; the bubble all of it; and in the last week a team can
+deal again the next day (`deadlineCoolDownDays`).
+
+Four leagues each (seeds 391-394, seasons 2-3):
+
+|                                    | H: auctions, patience 20% falling | L: by team, 50% held to the last 30%, rush |
+| ---------------------------------- | --------------------------------- | ------------------------------------------ |
+| in-season trades a season          | 17.1                              | 14.6                                       |
+| in the final week                  | 15%                               | 28%                                        |
+| good team vs bad: right way        | 76%                               | 69%                                        |
+| firsts to bad teams                | 51                                | 39                                         |
+| of the 8 best, bought a season     | 3.0                               | 3.1                                        |
+| of the 8 worst, sold a 27+ starter | 1.8                               | 1.2                                        |
+| champion had bought                | 6/8                               | 6/8                                        |
+| market's time a season             | 14-17 s                           | 16-17 s                                    |
+
+The owner's four cases hold under both.
+
 ## Order of work
 
 1. Vanilla+ switch; vanilla values wired into every trade path (human and
