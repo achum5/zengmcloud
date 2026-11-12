@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 300,
+		date: "2026-11-12",
+		text: "3D: players' legs hang loose in the air instead of pointing straight down like a pencil. Knees soften and heels come up on jump shots, dunks, rebounds, blocks and contests, and a jump shooter lands with a deeper bend.",
+	},
+	{
 		n: 299,
 		date: "2026-11-12",
 		text: 'Trading Block: you can now say what kind of player you want back - a PER of at least, a contract that runs through a season, and a salary of at most - and the offers stick to it. The "What are you looking for?" choices also fit on a phone now.',

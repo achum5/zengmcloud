@@ -124,6 +124,10 @@ export type PlayerState = {
 	// How hard he is turning as he runs (to 1, all a man can; round to his
 	// left positive): he leans into the turn (see banked).
 	bank?: number;
+	// How far up off the floor he is for his legs to hang loose under him (0
+	// on it, to 1 - see hanging): worked out from how high he is, if not said
+	// (his picture is made standing on the floor, and told).
+	aloft?: number;
 	// Pulled up mid-stride: his foot up off the floor come down this far (0
 	// to 1 - see footDown).
 	down?: number;
@@ -6885,9 +6889,27 @@ const slipped = (
 // His pose: his move's, eased in from the last one's just after a change -
 // and an arm in whatever it is saying.
 export const poseOf = (st: PlayerState): Pose => {
-	const p = leanRoom(poseFor(st), st.room);
+	const p = hanging(leanRoom(poseFor(st), st.room), st.aloft ?? aloftAt(st.z));
 	return humane(st.armsIn ? tuckedArms(p, st.armsIn) : p);
 };
+
+// HIS LEGS UP IN THE AIR. A move that draws his heels up under him as he
+// hangs (see Pose.curlN) only does it off the floor: all of it this high up
+// (feet), none of it standing - whenever in the move the play has him leave
+// the floor and come back down, which is the play's to say, not the move's.
+export const HANG_Z = 0.4;
+export const aloftAt = (z: number): number =>
+	z <= 0 ? 0 : Math.min(1, z / HANG_Z);
+const hanging = (p: Pose, k: number): Pose =>
+	k >= 1 || !(p.curlN || p.curlF || p.raiseN || p.raiseF)
+		? p
+		: {
+				...p,
+				curlN: p.curlN * k,
+				curlF: p.curlF * k,
+				raiseN: p.raiseN * k,
+				raiseF: p.raiseF * k,
+			};
 
 // WHAT A BODY CAN DO. However his move, his turns and what his arms are
 // saying stack up, no joint goes past where a man's goes: the wrist folded

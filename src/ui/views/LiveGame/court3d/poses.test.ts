@@ -100,9 +100,26 @@ describe("3D poses", () => {
 			const body = bodyOf(hgt, weight);
 			for (const anim of Object.keys(ANIMS) as AnimName[]) {
 				for (let k = 0; k <= 12; k++) {
-					const sk = skeleton(body, poseAt(anim, k / 12));
+					const q = poseAt(anim, k / 12);
+					const sk = skeleton(body, q);
 					const sole = Math.min(sk.legR.end.u, sk.legL.end.u);
-					assert.closeTo(sole, body.ankleH, 1e-9, `${anim} ${k}`);
+					// (Up in a jump his heels are drawn up off it - see
+					// Pose.curlN - from where his legs would have stood him.)
+					const down = skeleton(body, {
+						...q,
+						curlN: 0,
+						curlF: 0,
+						raiseN: 0,
+						raiseF: 0,
+					});
+					assert.closeTo(
+						Math.min(down.legR.end.u, down.legL.end.u),
+						body.ankleH,
+						1e-9,
+						`${anim} ${k}`,
+					);
+					assert.isAtLeast(sole, body.ankleH - 1e-9, `${anim} ${k}`);
+					assert.deepEqual(sk.pelvis, down.pelvis, `${anim} ${k}`);
 					for (const hand of [sk.armR.end, sk.armL.end]) {
 						for (const v of [hand.f, hand.s, hand.u]) {
 							assert.isTrue(Number.isFinite(v), `${anim} ${k}`);

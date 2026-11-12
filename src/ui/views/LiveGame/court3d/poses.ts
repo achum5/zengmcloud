@@ -53,6 +53,16 @@ export type Pose = {
 	// a stride.
 	toeN: number;
 	toeF: number;
+	// Up off the floor, each knee bent that much more (degrees) and each thigh
+	// brought up in front of him that much more (degrees): his heels drawn up
+	// under him as he hangs. On top of his knee's and his hip's own bend, and
+	// not the same thing - bending those brings his hips down over his feet
+	// (see skeleton), where this leaves his hips where they are and lifts his
+	// feet.
+	curlN: number;
+	curlF: number;
+	raiseN: number;
+	raiseF: number;
 	// His hips and legs turned under him from the way he faces (degrees,
 	// round to his left positive): going one way while he looks another.
 	legs: number;
@@ -118,6 +128,10 @@ const BASE: Pose = {
 	toe: 0,
 	toeN: 0,
 	toeF: 0,
+	curlN: 0,
+	curlF: 0,
+	raiseN: 0,
+	raiseF: 0,
 	legs: 0,
 	spinN: 0,
 	spinF: 0,
@@ -149,6 +163,8 @@ const SIDES: [keyof Pose, keyof Pose][] = [
 	["abN", "abF"],
 	["wrN", "wrF"],
 	["toeN", "toeF"],
+	["curlN", "curlF"],
+	["raiseN", "raiseF"],
 	["wideN", "wideF"],
 	["onHipN", "onHipF"],
 	["foldN", "foldF"],
@@ -1784,9 +1800,76 @@ const jumper = (
 		return [u, q];
 	});
 };
+// Up in the air his legs hang loose under him, not held out straight: his
+// heels drawn up (see Pose.curlN) by this much at the most, each leg - as he
+// floats up off the floor, and let back down for it as he comes down.
+const HANG_IN = 0.34;
+const HANG_OUT = 0.28;
+const hung = (
+	keys: [number, Pose][],
+	off: number,
+	land: number,
+	n: number,
+	f: number,
+	raise = 0,
+): [number, Pose][] => {
+	const air = land - off;
+	const full = off + air * HANG_IN;
+	const still = land - air * HANG_OUT;
+	const by = (u: number) =>
+		u <= off || u >= land
+			? 0
+			: u < full
+				? (u - off) / (full - off)
+				: u > still
+					? (land - u) / (land - still)
+					: 1;
+	const at = [...new Set([...keys.map(([u]) => u), full, still])].sort(
+		(a, c) => a - c,
+	);
+	return at.map((u) => {
+		const q = keyed(keys, u);
+		const k = by(u);
+		return [
+			u,
+			{
+				...q,
+				curlN: q.curlN + n * k,
+				curlF: q.curlF + f * k,
+				raiseN: q.raiseN + raise * k,
+				raiseF: q.raiseF + raise * k,
+			},
+		];
+	});
+};
+// The same of any other jump, whose keys say when his toes are pointed (up
+// off the floor): his heels up as far as they are. (And only as far as the
+// play has him off the floor - see hanging in evaluate.ts.)
+const hangs = (
+	keys: [number, Pose][],
+	n: number,
+	f: number,
+	raise = 0,
+): [number, Pose][] =>
+	keys.map(([u, q]) => [
+		u,
+		{
+			...q,
+			curlN: q.curlN + n * q.toe,
+			curlF: q.curlF + f * q.toe,
+			raiseN: q.raiseN + raise * q.toe,
+			raiseF: q.raiseF + raise * q.toe,
+		},
+	]);
 // A jump shot: straight up and straight down, his toes pointed in the air,
 // landing where he took off.
 const AIR = { hipN: 2, hipF: -2, wide: 0.18, toe: 1 };
+const SHOT_HANG = [15, 20] as const;
+const shotHung = (
+	keys: [number, Pose][],
+	n: number = SHOT_HANG[0],
+	f: number = SHOT_HANG[1],
+) => hung(keys, JUMPER.off, JUMPER.land, n, f);
 const JUMP_LEGS: [number, Partial<Pose>][] = [
 	[0, { hipN: -2, kneeN: 34, hipF: 4, kneeF: 36, lean: 8, wide: 0.2 }],
 	[0.1, { hipN: 0, kneeN: 56, hipF: -2, kneeF: 58, lean: 13, wide: 0.22 }],
@@ -1795,10 +1878,10 @@ const JUMP_LEGS: [number, Partial<Pose>][] = [
 	[0.34, { ...AIR, kneeN: 6, kneeF: 8, lean: 1 }],
 	[0.8, { ...AIR, kneeN: 8, kneeF: 11, lean: 1 }],
 	[0.87, { ...AIR, hipN: 1, kneeN: 12, kneeF: 14, lean: 2, toe: 0 }],
-	[0.93, { hipN: 0, kneeN: 32, hipF: -2, kneeF: 34, lean: 6, wide: 0.22 }],
+	[0.93, { hipN: 0, kneeN: 43, hipF: -2, kneeF: 45, lean: 9, wide: 0.22 }],
 	[1, { hipN: -2, kneeN: 26, hipF: 2, kneeF: 28, lean: 5, wide: 0.2 }],
 ];
-const JUMP_SHOT = jumper(JUMP_LEGS);
+const JUMP_SHOT = shotHung(jumper(JUMP_LEGS));
 // The same jumper, each man his own way of it (see shotForm in
 // evaluate.ts): his other leg kicked out in front of him at the top -
 // the leg under the ball straight, so the ball goes up just as high -
@@ -1813,10 +1896,10 @@ const KICK_LEGS: [number, Partial<Pose>][] = [
 	[0.6, { ...AIR, kneeN: 6, hipF: 42, kneeF: 12, lean: -1, wide: 0.26 }],
 	[0.76, { ...AIR, kneeN: 8, hipF: 18, kneeF: 16, lean: 1 }],
 	[0.87, { ...AIR, hipN: 1, kneeN: 12, kneeF: 14, lean: 2, toe: 0 }],
-	[0.93, { hipN: 0, kneeN: 32, hipF: -2, kneeF: 34, lean: 6, wide: 0.22 }],
+	[0.93, { hipN: 0, kneeN: 43, hipF: -2, kneeF: 45, lean: 9, wide: 0.22 }],
 	[1, { hipN: -2, kneeN: 26, hipF: 2, kneeF: 28, lean: 5, wide: 0.2 }],
 ];
-const KICK_SHOT = jumper(KICK_LEGS);
+const KICK_SHOT = shotHung(jumper(KICK_LEGS), 12, 0);
 const SPLIT_LEGS: [number, Partial<Pose>][] = [
 	[0, { hipN: -2, kneeN: 34, hipF: 4, kneeF: 36, lean: 8, wide: 0.2 }],
 	[0.1, { hipN: 0, kneeN: 56, hipF: -2, kneeF: 58, lean: 13, wide: 0.22 }],
@@ -1843,10 +1926,10 @@ const SPLIT_LEGS: [number, Partial<Pose>][] = [
 			toe: 0,
 		},
 	],
-	[0.93, { hipN: -4, kneeN: 34, hipF: 6, kneeF: 36, lean: 6, wide: 0.3 }],
+	[0.93, { hipN: -4, kneeN: 44, hipF: 6, kneeF: 46, lean: 9, wide: 0.3 }],
 	[1, { hipN: -4, kneeN: 28, hipF: 6, kneeF: 30, lean: 5, wide: 0.28 }],
 ];
-const SPLIT_SHOT = jumper(SPLIT_LEGS);
+const SPLIT_SHOT = shotHung(jumper(SPLIT_LEGS), 10, 14);
 // Leaning off balance as he goes up, to his left or his right - away from
 // a hand right up at it: tipped over at the top, and back up as he lands.
 const LEAN_TILT = 14;
@@ -1870,25 +1953,31 @@ const leaning = (keys: [number, Pose][], side: 1 | -1): [number, Pose][] => {
 const LEAN_L_SHOT = leaning(JUMP_SHOT, 1);
 const LEAN_R_SHOT = leaning(JUMP_SHOT, -1);
 // Each with a high release, and each a quick one (see shotWith).
-const HIGH_SHOT = jumper(JUMP_LEGS, HIGH_ARMS);
-const HIGH_KICK_SHOT = jumper(KICK_LEGS, HIGH_ARMS);
-const HIGH_SPLIT_SHOT = jumper(SPLIT_LEGS, HIGH_ARMS);
-const QUICK_SHOT = jumper(JUMP_LEGS, QUICK_ARMS);
-const QUICK_KICK_SHOT = jumper(KICK_LEGS, QUICK_ARMS);
-const QUICK_SPLIT_SHOT = jumper(SPLIT_LEGS, QUICK_ARMS);
-const PUSH_SHOT = jumper(
-	[
-		[0, { hipN: -2, kneeN: 34, hipF: 4, kneeF: 36, lean: 8, wide: 0.22 }],
-		[0.14, { hipN: 0, kneeN: 58, hipF: -2, kneeF: 60, lean: 14, wide: 0.24 }],
-		[0.31, { hipN: 2, kneeN: 18, hipF: -2, kneeF: 20, lean: 5, wide: 0.22 }],
-		[0.36, { ...AIR, kneeN: 8, kneeF: 10, lean: 3, toe: 0 }],
-		[0.42, { ...AIR, kneeN: 7, kneeF: 9, lean: 2 }],
-		[0.78, { ...AIR, kneeN: 9, kneeF: 12, lean: 2 }],
-		[0.84, { ...AIR, hipN: 1, kneeN: 13, kneeF: 15, lean: 3, toe: 0 }],
-		[0.91, { hipN: 0, kneeN: 34, hipF: -2, kneeF: 36, lean: 7, wide: 0.24 }],
-		[1, { hipN: -2, kneeN: 26, hipF: 2, kneeF: 28, lean: 5, wide: 0.22 }],
-	],
-	PUSH_ARMS,
+const HIGH_SHOT = shotHung(jumper(JUMP_LEGS, HIGH_ARMS));
+const HIGH_KICK_SHOT = shotHung(jumper(KICK_LEGS, HIGH_ARMS), 12, 0);
+const HIGH_SPLIT_SHOT = shotHung(jumper(SPLIT_LEGS, HIGH_ARMS), 10, 14);
+const QUICK_SHOT = shotHung(jumper(JUMP_LEGS, QUICK_ARMS));
+const QUICK_KICK_SHOT = shotHung(jumper(KICK_LEGS, QUICK_ARMS), 12, 0);
+const QUICK_SPLIT_SHOT = shotHung(jumper(SPLIT_LEGS, QUICK_ARMS), 10, 14);
+const PUSH_SHOT = hung(
+	jumper(
+		[
+			[0, { hipN: -2, kneeN: 34, hipF: 4, kneeF: 36, lean: 8, wide: 0.22 }],
+			[0.14, { hipN: 0, kneeN: 58, hipF: -2, kneeF: 60, lean: 14, wide: 0.24 }],
+			[0.31, { hipN: 2, kneeN: 18, hipF: -2, kneeF: 20, lean: 5, wide: 0.22 }],
+			[0.36, { ...AIR, kneeN: 8, kneeF: 10, lean: 3, toe: 0 }],
+			[0.42, { ...AIR, kneeN: 7, kneeF: 9, lean: 2 }],
+			[0.78, { ...AIR, kneeN: 9, kneeF: 12, lean: 2 }],
+			[0.84, { ...AIR, hipN: 1, kneeN: 13, kneeF: 15, lean: 3, toe: 0 }],
+			[0.91, { hipN: 0, kneeN: 44, hipF: -2, kneeF: 46, lean: 9, wide: 0.24 }],
+			[1, { hipN: -2, kneeN: 26, hipF: 2, kneeF: 28, lean: 5, wide: 0.22 }],
+		],
+		PUSH_ARMS,
+	),
+	0.36,
+	0.84,
+	12,
+	16,
 );
 // A fadeaway: the same arms, but leaning back away from his man as he
 // rises, his legs out in front of him, landing a step back.
@@ -11528,6 +11617,44 @@ export const moveWith = (anim: AnimName, pid: number): AnimName => {
 
 export type AnimName = keyof typeof ANIMS;
 
+// Up off both feet, his legs hang loose under him - not held out straight
+// down like a pencil: each heel drawn up this much at the most (degrees, his
+// right and his left), and his thighs brought up with them (see hangs). Not
+// in the moves' own keys, whose knees say how high his hips ride and so
+// where his hands are (see skeleton).
+const HANGS: Partial<Record<AnimName, [number, number, number?]>> = {
+	dunk: [22, 30, 4],
+	dunk1: [22, 30, 4],
+	dunk1Wing: [22, 30, 4],
+	dunkPump: [22, 30, 4],
+	dunkPump1: [22, 30, 4],
+	windmill: [22, 30, 4],
+	tomahawk: [22, 30, 4],
+	tomahawkTwo: [22, 30, 4],
+	dunkKnee: [24, 0],
+	powerLayup: [20, 26],
+	rebound: [16, 14],
+	board: [16, 14],
+	boardOne: [16, 14],
+	boardHigh: [16, 14],
+	tip: [18, 12],
+	block: [18, 16],
+	blockSwat: [18, 16],
+	blockTwo: [18, 16],
+	contest: [18, 20],
+	contestTwo: [18, 20],
+	contestFace: [18, 20],
+};
+for (const [name, [n, f, raise]] of Object.entries(HANGS) as [
+	AnimName,
+	[number, number, number?],
+][]) {
+	const a: Anim = ANIMS[name];
+	if (a.kind === "act") {
+		a.keys = hangs(a.keys, n, f, raise);
+	}
+}
+
 export const animFrames = (anim: AnimName): number => ANIMS[anim].n;
 
 export const poseFor = (anim: AnimName, frame: number): Pose => {
@@ -12189,10 +12316,30 @@ export const skeleton = (b: Body, q: Pose): Skeleton => {
 	};
 	const flex = flexOf(q, b);
 	const flex0 = b.H === TYPICAL.H ? flex : flexOf(q, TYPICAL);
-	const legR = leg(q.hipN + flex, q.kneeN, -1, q.hipN + flex0);
-	const legL = leg(q.hipF + flex, q.kneeF, 1, q.hipF + flex0);
+	const downR = leg(q.hipN + flex, q.kneeN, -1, q.hipN + flex0);
+	const downL = leg(q.hipF + flex, q.kneeF, 1, q.hipF + flex0);
 	// Down onto the floor: the lower ankle sits at ankle height.
-	const off = b.ankleH - Math.min(legR.end.u, legL.end.u);
+	const off = b.ankleH - Math.min(downR.end.u, downL.end.u);
+	// (His hips are where his legs put them before his heels come up - so a
+	// man hanging in the air draws his feet up under him, and doesn't sink.)
+	const legR =
+		q.curlN || q.raiseN
+			? leg(
+					q.hipN + flex + q.raiseN,
+					q.kneeN + q.curlN,
+					-1,
+					q.hipN + flex0 + q.raiseN,
+				)
+			: downR;
+	const legL =
+		q.curlF || q.raiseF
+			? leg(
+					q.hipF + flex + q.raiseF,
+					q.kneeF + q.curlF,
+					1,
+					q.hipF + flex0 + q.raiseF,
+				)
+			: downL;
 	// Pointed, a foot hangs from the ankle (only ever up in the air: his
 	// ankles still sit where they would on the floor) - or, up on its toes,
 	// rests on them.

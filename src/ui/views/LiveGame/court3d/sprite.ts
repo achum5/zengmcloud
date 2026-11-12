@@ -7,6 +7,7 @@ import {
 	type Projected,
 } from "./camera.ts";
 import {
+	aloftAt,
 	legTurnFrom,
 	type Blend,
 	type PlayerState,
@@ -800,6 +801,9 @@ const stepped = (st: PlayerState, k: Steps) => {
 		bank: st.bank
 			? Math.round(st.bank * k.arm * 2) / (k.arm * 2) || undefined
 			: undefined,
+		// How far up off the floor he is, for his legs hanging under him: on
+		// it, just off it, or up.
+		aloft: Math.ceil(aloftAt(st.z) * 2) / 2,
 		// Each foot down pointing where it came down, the same.
 		lock: footSteps(st.lock, k),
 		slip: f && w > 0 ? slipStep(st.slip) : undefined,
@@ -939,7 +943,7 @@ const planOf = (
 		const f = pose.from;
 		const a = pose.arm;
 		plan.id = id;
-		plan.key = `${fine ? "f" : ""}${id}|${st.anim}${st.mirror ? "m" : ""}|${pose.phase}${pose.stepLen ? `l${pose.stepLen}` : ""}${pose.drive ? `v${pose.drive}` : ""}${pose.bank ? `z${pose.bank}` : ""}|${pose.turn}|${scale}|${px}|${st.holding ? 1 : 0}${pose.grip ?? ""}|${pose.legs ?? ""}${pose.way === undefined ? "" : `w${pose.way}`}${pose.pivot ? `p${pose.pivot}` : ""}${pose.lock ? `k${pose.lock}` : ""}${pose.slip ? `s${pose.slip}` : ""}${pose.look ? `h${pose.look}` : ""}${pose.down ? `d${pose.down}` : ""}|${pose.dribble ?? ""}${st.dribbleHand ?? ""}${st.dribbleFrom ?? ""}${pose.tight ? `t${pose.tight}` : ""}${pose.low ? `o${pose.low}` : ""}${pose.calm ? `e${pose.calm}` : ""}${pose.room === undefined ? "" : `r${pose.room}`}${pose.armsIn ? `i${pose.armsIn[0]},${pose.armsIn[1]}` : ""}${strideKey(pose.stride)}|${pose.target ?? ""}${pose.face === undefined ? "" : `q${Math.round(pose.face / FACE_STEP)}`}${st.ballBy ? `b${Math.round(st.ballBy.x * 10)},${Math.round(st.ballBy.y * 10)},${Math.round(st.ballBy.z * 10)}${st.ballBy.held ? "h" : ""}` : ""}${st.palmOn ? `n${st.palmOn.R ? "R" : ""}${st.palmOn.L ? "L" : ""}` : ""}${st.tap?.rel ? `a${Math.round(st.tap.rel.f * 5)},${Math.round(st.tap.rel.s * 5)},${Math.round(st.tap.rel.u * 5)},${Math.round(st.tap.w * 8)}` : ""}${
+		plan.key = `${fine ? "f" : ""}${id}|${st.anim}${st.mirror ? "m" : ""}|${pose.phase}${pose.stepLen ? `l${pose.stepLen}` : ""}${pose.drive ? `v${pose.drive}` : ""}${pose.bank ? `z${pose.bank}` : ""}${pose.aloft ? `u${pose.aloft}` : ""}|${pose.turn}|${scale}|${px}|${st.holding ? 1 : 0}${pose.grip ?? ""}|${pose.legs ?? ""}${pose.way === undefined ? "" : `w${pose.way}`}${pose.pivot ? `p${pose.pivot}` : ""}${pose.lock ? `k${pose.lock}` : ""}${pose.slip ? `s${pose.slip}` : ""}${pose.look ? `h${pose.look}` : ""}${pose.down ? `d${pose.down}` : ""}|${pose.dribble ?? ""}${st.dribbleHand ?? ""}${st.dribbleFrom ?? ""}${pose.tight ? `t${pose.tight}` : ""}${pose.low ? `o${pose.low}` : ""}${pose.calm ? `e${pose.calm}` : ""}${pose.room === undefined ? "" : `r${pose.room}`}${pose.armsIn ? `i${pose.armsIn[0]},${pose.armsIn[1]}` : ""}${strideKey(pose.stride)}|${pose.target ?? ""}${pose.face === undefined ? "" : `q${Math.round(pose.face / FACE_STEP)}`}${st.ballBy ? `b${Math.round(st.ballBy.x * 10)},${Math.round(st.ballBy.y * 10)},${Math.round(st.ballBy.z * 10)}${st.ballBy.held ? "h" : ""}` : ""}${st.palmOn ? `n${st.palmOn.R ? "R" : ""}${st.palmOn.L ? "L" : ""}` : ""}${st.tap?.rel ? `a${Math.round(st.tap.rel.f * 5)},${Math.round(st.tap.rel.s * 5)},${Math.round(st.tap.rel.u * 5)},${Math.round(st.tap.w * 8)}` : ""}${
 			f ? `|${blendKey(f)}` : ""
 		}${a ? `|${a.hand}${a.point ? "p" : ""}${a.tuck ? `t${a.tuck}` : ""}${a.grip ?? ""}${a.yell ? `y${a.yell}` : ""}${a.sh},${a.el},${a.ab},${a.wr}~${a.w}` : ""}`;
 	}
@@ -992,6 +996,7 @@ const jobOf = (
 			stepLen: pose.stepLen,
 			drive: pose.drive,
 			bank: pose.bank,
+			aloft: pose.aloft,
 			yaw: pose.yaw,
 			dribble: pose.dribble,
 			tight: pose.tight,
