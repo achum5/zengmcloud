@@ -44,6 +44,9 @@ export const calendarSettings = {
 	patienceEnd: 0.01,
 	patienceCurve: 2,
 	patienceOffseason: 0.06,
+	// It holds at the start's until this share of the way to the deadline is
+	// left, then falls (1: from the start).
+	patienceWindow: 1,
 	// How sure a team's playoff place is, in places of the standings either
 	// side of the cut: this many at the start of the season, shrinking to
 	// `sureAtEnd` by its end.
@@ -127,7 +130,8 @@ export const calendar = async (): Promise<Calendar> => {
 		phase > PHASE.PLAYOFFS
 			? s.patienceOffseason
 			: s.patienceEnd +
-				(s.patienceStart - s.patienceEnd) * (1 - toDeadline) ** s.patienceCurve;
+				(s.patienceStart - s.patienceEnd) *
+					Math.min(1, (1 - toDeadline) / s.patienceWindow) ** s.patienceCurve;
 
 	// Each team now, from the players back for at least half the games left,
 	// and in the playoffs, from those back by then.

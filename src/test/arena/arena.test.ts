@@ -68,6 +68,7 @@ import {
 	marketStats as vplusMarketStats,
 	vplusMarketSettings,
 } from "../../worker/core/vanillaPlus/market.ts";
+import { calendarSettings } from "../../worker/core/vanillaPlus/calendar.ts";
 
 // THE ARENA: whole random-players leagues, every team run by the CPU, played
 // season after season through the real game code, then measured against the
@@ -153,10 +154,15 @@ test.runIf(env.ARENA_RUN === "1")(
 					vanillaPlusSettings,
 					JSON.parse(env.ARENA_VPLUS_SETTINGS ?? "{}"),
 				);
-				// ARENA_VPLUS_MARKET='{"shopDeadline":0.4}': its market's.
+				// ARENA_VPLUS_MARKET='{"shopDeadline":0.4}': its market's;
+				// ARENA_VPLUS_CALENDAR='{"patienceWindow":0.2}': its calendar's.
 				Object.assign(
 					vplusMarketSettings,
 					JSON.parse(env.ARENA_VPLUS_MARKET ?? "{}"),
+				);
+				Object.assign(
+					calendarSettings,
+					JSON.parse(env.ARENA_VPLUS_CALENDAR ?? "{}"),
 				);
 				// ARENA_SPLIT_OUTLOOK: these outlook settings for the odd teams'
 				// own pricing only (teamOutlookSettings), as ARENA_SPLIT.
