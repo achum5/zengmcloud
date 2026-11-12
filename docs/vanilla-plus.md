@@ -279,40 +279,50 @@ Two things worth.ts doesn't count yet, and both are what makes the
 deadline matter:
 
 - **Seasons past his contract** count only by the chance he re-signs (the
-  free agency model's stay chance, which the mode already has). A rental -
-  a veteran on an expiring deal - is worth this season to a contender and
-  next to nothing to a rebuilding team, so the rebuilding team wants him
-  gone before the deadline, as real ones do.
-- **This season counts for what's left of it**, plus the playoffs for a team
-  that will be in them. A player picked up at the deadline helps for a third
-  of the season and the playoffs; in the summer, for all of it.
+  free agency model's stay chance, cached and refreshed every couple of
+  weeks of the season). A rental - a veteran on an expiring deal - is worth
+  this season to a contender and next to nothing to a rebuilding team, so
+  the rebuilding team wants him gone before the deadline, as real ones do.
+- **This season is the rest of the regular season plus the playoffs, and the
+  playoffs count most** (owner: "playoffs are by far most important as long
+  as the team is in a place to make it / have a decent seed"). This season's
+  worth to a team is the regular season still to play (the seed race) plus
+  the playoffs times the team's chance of being there - more for a better
+  seed. A team in position counts the playoffs fully; a team out of it
+  counts only the games left, and those against it once losing helps its own
+  pick (vanilla's pick projection already moves with a roster's strength, so
+  selling a starter raises the value of the seller's own pick). For the
+  market price, the league-average chance, so prime players still cost what
+  vanilla says.
 
-### 2. Patience: what a team needs to gain from a deal shrinks to the deadline
+### 2. Patience: wait only when waiting is worth more than acting
 
-Every CPU decision - a CPU deal, a human's offer, "What would make this
-work", the trading block, Trade Proposals - needs a team to come out ahead
-by a margin, as a share of what it gives up:
+A team doesn't trade just because a deal clears even. It weighs acting now
+against waiting:
 
-- early in the season, a good share (a starting point of about 20%, to be
-  calibrated): a team has time to find a better deal and no reason to take
-  a merely fair one;
-- falling through the season, fastest at the end, to about 1% on deadline
-  day: push comes to shove. Never zero, so no team trades back and forth;
-- after the deadline, no trades until the offseason; then a new, gentler
-  curve through the draft and free agency.
+- **Waiting can find a better deal**: early in the season there's time to
+  shop, so a team asks for a margin (a share of what it gives up, starting
+  around 20%, calibrated to the NBA's timing), falling through the season to
+  about 1% on deadline day - push comes to shove. Never zero, so no team
+  trades back and forth.
+- **Waiting also costs**: part of a deal's value melts as games are played -
+  a seed race, a tank, a rental's remaining games (section 1). That part is
+  set against the margin, so a deal that's worth most done now gets done
+  now: a bad team selling its starter early to tank for a better pick, a good
+  team adding a player early to push for a high seed (owner: "not
+  necessarily never worth it early; sometimes it's necessary to do early").
+- After the deadline, no trades until the offseason; then a gentler curve
+  through the draft and free agency.
 
-Why a share of what's given: a fixed amount would block every small deal
-and barely touch big ones. How fast it falls is the one thing to calibrate:
-against the NBA's timing (most in-season deals in the last week or two).
-
-Teams with something on the clock - a rebuilding team's expiring veteran, an
-all-in team's hole - get impatient sooner without a special rule, because
-the asset or the need loses its worth as the season runs out (section 1).
+Why a share of what's given: a fixed amount would block every small deal and
+barely touch big ones.
 
 ### 3. Everyone shops, all the time
 
-Every team looks at the market regularly instead of a couple a day at
-random: buyers for the players that would help them most, sellers for the
+The point is a market that's really happening (owner: "most important is
+that it actually gets done so the market is active"), at a sim speed that
+stays reasonable. Every team looks at the market regularly instead of a
+couple a day at random: buyers for the players that would help them most, sellers for the
 best home for players they'd sell. Early in the season a team looks every
 week or so, rising to every day in the last weeks. Most looks find nothing
 good enough for the patience of the day, so deals pile up toward the
@@ -320,6 +330,9 @@ deadline by themselves - no deadline rule needed. Speed is budgeted: a look
 reuses the day's prices, about a tenth of a second.
 
 ### 4. The market sets the price: every seller shops an offer around
+
+As any real market works (owner: "I'm not just going to take this smaller
+amount if that team would pay more").
 
 When a team is offered a deal for its player - by a CPU team or a human -
 it asks the other teams that would want him what they'd give (their best
