@@ -12,9 +12,14 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 285,
+		date: "2026-11-12",
+		text: "Realistic Front Offices: CPU teams now pay market prices to each other too. When a team goes after a player, every other team that wants him gets to bid, and the one that would pay most gets him - paying just enough to beat the next best offer. If nobody else bids, the two teams meet in the middle instead of the seller taking the least it would accept. So a bad team's veterans go to whichever contender pays most, not to whoever asks first - the same price you have to beat when you trade for them.",
+	},
+	{
 		n: 284,
 		date: "2026-11-12",
-		text: "Realistic Front Offices fix: a bad team no longer gives away young players for next to nothing just to lose more games. A better draft pick now only makes up for the games a player would win it this season, so tanking teams still sell their veterans cheaply but keep their young core unless someone pays for it.",
+		text: "Realistic Front Offices fix: a bad team no longer gives away young players for next to nothing just to lose more games. A better draft pick now only makes up for the games a player would win it this season, so a tanking team keeps its young core unless someone pays for it.",
 	},
 	{
 		n: 283,
