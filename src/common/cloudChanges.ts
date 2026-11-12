@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 299,
+		date: "2026-11-12",
+		text: 'Trading Block: you can now say what kind of player you want back - a PER of at least, a contract that runs through a season, and a salary of at most - and the offers stick to it. The "What are you looking for?" choices also fit on a phone now.',
+	},
+	{
 		n: 298,
 		date: "2026-11-12",
 		text: "3D: a heave at the buzzer that nobody rebounds now bounces off the rim like a real ball - on the way it came off, each bounce lower, then rolling to a stop.",

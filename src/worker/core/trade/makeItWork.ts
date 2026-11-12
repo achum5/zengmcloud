@@ -7,6 +7,12 @@ import { COMPOSITE_WEIGHTS, POSITIONS } from "../../../common/constants.ts";
 import { last } from "../../../common/utils.ts";
 import type { ValueChangeCalculator } from "../team/ValueChangeCalculator.ts";
 import { vanillaPlusOn } from "../realisticFrontOffice/isOn.ts";
+import {
+	isWanted,
+	paidTooMuch,
+	wantsPlayer,
+	type PlayerWanted,
+} from "./lookingForPlayer.ts";
 
 // What prices a deal for the AI team: the stock trade values, or with
 // realistic front offices the team's own read (realisticFrontOffice/
@@ -19,6 +25,8 @@ export type LookingFor = {
 	draftPicks: boolean;
 	prospects: boolean;
 	bestCurrentPlayers: boolean;
+	// A player of some sort (see lookingForPlayer.ts).
+	player?: PlayerWanted;
 };
 
 type AssetBase = {
@@ -101,6 +109,10 @@ const tryAddAsset = async (
 		}
 	}
 
+	// Looking for a player of some sort, the first asset added is one - and
+	// nobody paid more than he will take on is added at all.
+	const want = lookingFor?.player;
+	const firstPlayer = firstTry && wantsPlayer(want);
 	for (const p of players) {
 		if (
 			teams[1].pids.includes(p.pid) ||
@@ -117,6 +129,10 @@ const tryAddAsset = async (
 			continue;
 		}
 
+		if (paidTooMuch(p, want) || (firstPlayer && !isWanted(p, want))) {
+			continue;
+		}
+
 		assets.push({
 			type: "player",
 			dv: 0,
@@ -126,7 +142,7 @@ const tryAddAsset = async (
 		});
 	}
 
-	if (!lookingForSpecificPositions) {
+	if (!lookingForSpecificPositions && !firstPlayer) {
 		if (!holdUserConstant) {
 			// Get all draft picks not in userDpids
 			const draftPicks = await idb.cache.draftPicks.indexGetAll(

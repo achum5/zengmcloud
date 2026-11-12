@@ -6,6 +6,11 @@ import compositeRating from "../player/compositeRating.ts";
 import isUntradable from "../trade/isUntradable.ts";
 import type { LookingFor } from "../trade/makeItWork.ts";
 import {
+	isWanted,
+	paidTooMuch,
+	wantsPlayer,
+} from "../trade/lookingForPlayer.ts";
+import {
 	assetsFor,
 	humanMarginFactor,
 	load,
@@ -202,6 +207,10 @@ const tryAddAsset = async (
 		);
 	}
 
+	// Looking for a player of some sort, the first asset added is one - and
+	// nobody paid more than he will take on is added at all.
+	const want = lookingFor?.player;
+	const firstPlayer = firstTry && wantsPlayer(want);
 	for (const p of await idb.cache.players.indexGetAll(
 		"playersByTid",
 		teams[1].tid,
@@ -219,6 +228,9 @@ const tryAddAsset = async (
 		) {
 			continue;
 		}
+		if (paidTooMuch(p, want) || (firstPlayer && !isWanted(p, want))) {
+			continue;
+		}
 		const asset = assetsFor(cpu, [p.pid], [])?.[0];
 		if (asset) {
 			candidates.push({
@@ -231,7 +243,7 @@ const tryAddAsset = async (
 		}
 	}
 
-	if (!lookingForSpecificPositions) {
+	if (!lookingForSpecificPositions && !firstPlayer) {
 		const sides = holdUserConstant ? [1 as const] : [0 as const, 1 as const];
 		for (const i of sides) {
 			const t = i === 0 ? user : cpu;

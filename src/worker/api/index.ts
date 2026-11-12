@@ -240,6 +240,12 @@ import formatScoreWithShootout from "../../common/formatScoreWithShootout.ts";
 import { getStats } from "../../common/advancedPlayerSearch.ts";
 import type { LookingFor } from "../core/trade/makeItWork.ts";
 import type { LookingForState } from "../../ui/views/TradingBlock/useLookingForState.ts";
+import {
+	isWanted,
+	paidTooMuch,
+	wantsPlayer,
+	type PlayerWanted,
+} from "../core/trade/lookingForPlayer.ts";
 import { getPlayer } from "../views/player.ts";
 import {
 	placeBet as sportsbookPlaceBetCore,
@@ -3687,13 +3693,39 @@ const getOffers = async (
 	return offers;
 };
 
+// A number typed in, if one was.
+const typedNumber = (text: string | undefined): number | undefined => {
+	const x = Number.parseFloat(text ?? "");
+	return Number.isFinite(x) ? x : undefined;
+};
+
+// The player asked for, as typed: a PER, a season, a salary in millions.
+const playerWantedOf = (
+	lookingForState: LookingForState,
+): PlayerWanted | undefined => {
+	const typed = lookingForState.player;
+	const per = typedNumber(typed?.per);
+	const through = typedNumber(typed?.through);
+	const most = typedNumber(typed?.salaryMost);
+	if (per === undefined && through === undefined && most === undefined) {
+		return undefined;
+	}
+	return {
+		...(per !== undefined ? { per } : {}),
+		...(through !== undefined ? { through: Math.round(through) } : {}),
+		...(most !== undefined ? { salaryMost: most * 1000 } : {}),
+	};
+};
+
 const toConciseLookingFor = (lookingForState: LookingForState) => {
+	const player = playerWantedOf(lookingForState);
 	const output = {
 		positions: new Set<string>(),
 		skills: new Set<string>(),
 		draftPicks: lookingForState.assets.draftPicks!,
 		prospects: lookingForState.assets.prospects!,
 		bestCurrentPlayers: lookingForState.assets.bestCurrentPlayers!,
+		...(player ? { player } : {}),
 	};
 
 	for (const category of ["positions", "skills"] as const) {
@@ -3761,6 +3793,39 @@ const getTradingBlockOffers = async ({
 		offers = offers.filter((offer) => {
 			return offer[1].dpids.length > 0;
 		});
+	}
+
+	// Looking for a player of some sort: only offers with one in them (at a
+	// position asked for, if any was) - and nobody paid more than asked.
+	const want = playerWantedOf(lookingFor);
+	if (want) {
+		const positions = Object.entries(lookingFor.positions)
+			.filter(([, on]) => on)
+			.map(([pos]) => pos);
+		const kept = [];
+		for (const offer of offers) {
+			const theirs = (
+				await Promise.all(
+					offer[1].pids.map((pid) => idb.cache.players.get(pid)),
+				)
+			).filter((p) => p !== undefined);
+			if (theirs.some((p) => paidTooMuch(p, want))) {
+				continue;
+			}
+			if (
+				wantsPlayer(want) &&
+				!theirs.some(
+					(p) =>
+						isWanted(p, want) &&
+						(positions.length === 0 ||
+							positions.some((pos) => p.ratings.at(-1)!.pos.includes(pos))),
+				)
+			) {
+				continue;
+			}
+			kept.push(offer);
+		}
+		offers = kept;
 	}
 
 	const savedTradingBlock = {

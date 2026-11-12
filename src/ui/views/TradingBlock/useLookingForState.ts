@@ -95,14 +95,24 @@ const getInitialState = () => {
 		positions: makeObj(categories.positions),
 		skills: makeObj(categories.skills),
 		assets: makeObj(categories.assets),
+		// A player of some sort, as typed: PER at least, contract through a
+		// season, salary at most (millions). Blank for any.
+		player: { per: "", through: "", salaryMost: "" } as PlayerTyped,
 	};
 };
+
+export type PlayerTyped = { per: string; through: string; salaryMost: string };
 
 export type LookingForState = ReturnType<typeof getInitialState>;
 export type SetLookingForState = Dispatch<SetStateAction<LookingForState>>;
 
 const useLookingForState = (savedLookingFor: LookingForState | undefined) => {
-	const [state, setState] = useState(savedLookingFor ?? getInitialState);
+	// (Saved before there was a player to type in: blank.)
+	const [state, setState] = useState(() =>
+		savedLookingFor
+			? { ...getInitialState(), ...savedLookingFor }
+			: getInitialState(),
+	);
 
 	const resetState = () => {
 		setState(getInitialState());
