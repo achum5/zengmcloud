@@ -416,6 +416,11 @@ export const operate = (
 // picture. A shot already in close (a free throw, the tip) is left be.
 const ZOOM_NARROWEST = 26;
 const ZOOM_EDGE = 6;
+// How far behind the rim (feet, toward the baseline) the picture reaches,
+// for the board and the basket's stand.
+const ZOOM_BOARD = 3;
+// (The rim, in from the baseline.)
+const RIM_INSET = 5.25;
 export const zoomedOn = (
 	shot: Shot,
 	zoom: number,
@@ -428,13 +433,22 @@ export const zoomedOn = (
 	}
 	const width = Math.max(ZOOM_NARROWEST, shot.width / zoom);
 	const room = Math.max(2, width / 2 - ZOOM_EDGE);
-	const x = Math.min(
-		COURT_W + 12 - width / 2,
-		Math.max(
-			width / 2 - 12,
-			Math.min(ball.x + room, Math.max(ball.x - room, shot.x)),
-		),
-	);
+	let along = Math.min(ball.x + room, Math.max(ball.x - room, shot.x));
+	// THE BASKET STAYS IN IT: the play is at a basket, and a picture of it
+	// with the basket off the edge shows men looking at nothing. With the
+	// ball near enough its end's basket for both to fit, the picture holds
+	// the two of them - the basket, the board behind it, and the ball - not
+	// the ball in the middle and the rim out of sight.
+	const left = ball.x < COURT_W / 2;
+	const board = left
+		? RIM_INSET - ZOOM_BOARD
+		: COURT_W - RIM_INSET + ZOOM_BOARD;
+	const lo = Math.max(ball.x, board) - width / 2 + ZOOM_EDGE / 2;
+	const hi = Math.min(ball.x, board) + width / 2 - ZOOM_EDGE / 2;
+	if (lo <= hi) {
+		along = Math.min(hi, Math.max(lo, along));
+	}
+	const x = Math.min(COURT_W + 12 - width / 2, Math.max(width / 2 - 12, along));
 	// How much of the floor's depth is out of the picture, and so how far it
 	// may look off the middle of it.
 	const lost = Math.max(0, 1 - width / fit.min);

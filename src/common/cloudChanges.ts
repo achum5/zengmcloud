@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 296,
+		date: "2026-11-12",
+		text: "3D camera zoom: zoomed in on a half-court play, the camera now keeps the basket in the picture along with the ball, instead of letting it slide off the edge.",
+	},
+	{
 		n: 295,
 		date: "2026-11-12",
 		text: "3D games: a camera zoom. Tap the gear beside the 3D controls and drag Camera zoom, up to 2.5x. Zoomed in, the players are bigger and the camera follows the play across the floor as well as along it. It is saved on your device, and 1x is the camera as it always was.",

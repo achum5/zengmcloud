@@ -58,6 +58,36 @@ describe("3D camera zoom", () => {
 		}
 	});
 
+	// The play is at a basket: zoomed in on a half-court set, the basket is
+	// in the picture with the ball - not off its edge.
+	test("in the half court the basket stays in the picture with the ball", () => {
+		for (const zoom of [1.25, 1.5, 1.8, 2]) {
+			for (const [bx, rim] of [
+				[66, COURT_W - 5.25],
+				[74, COURT_W - 5.25],
+				[84, COURT_W - 5.25],
+				[28, 5.25],
+				[18, 5.25],
+			] as const) {
+				for (const by of [8, 25, 42]) {
+					const z = zoomedOn(wide(bx), zoom, fit, { x: bx, y: by }, 25);
+					const where = `zoom ${zoom} ball ${bx},${by}`;
+					// (Wherever both fit across the picture.)
+					if (Math.abs(bx - rim) + 6 > z.width - 6) {
+						continue;
+					}
+					assert.isAbove(rim, z.x - z.width / 2 + 2, where);
+					assert.isBelow(rim, z.x + z.width / 2 - 2, where);
+					assert.isAbove(bx, z.x - z.width / 2 + 2, where);
+					assert.isBelow(bx, z.x + z.width / 2 - 2, where);
+				}
+			}
+		}
+		// (Up the floor, a long way from either: on the ball, as before.)
+		const mid = zoomedOn(wide(47), 2, fit, { x: 47, y: 25 }, 25);
+		assert.closeTo(mid.x, 47, 1e-9);
+	});
+
 	test("it looks across the floor toward the play", () => {
 		const far = zoomedOn(wide(70), 2, fit, { x: 70, y: 6 }, 14);
 		const mid = zoomedOn(wide(70), 2, fit, { x: 70, y: 25 }, 25);
