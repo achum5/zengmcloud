@@ -20,6 +20,12 @@
   simming", "Sim here"). Do not use driving metaphors or "sim authority" in
   user-facing copy.
 
+## Phone and desktop
+
+- League mates play on phones more than on desktop. Every screen is built
+  for both: check it at 390px wide and at desktop width before pushing.
+  Nothing ships as a desktop page squeezed onto a phone.
+
 ## What's changed
 
 - Every update pushed to `master` that league mates would notice adds an
