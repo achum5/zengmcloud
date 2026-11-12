@@ -17,6 +17,8 @@ import {
 	type Deal,
 	type TeamState,
 } from "./market.ts";
+
+export type { Asset };
 import {
 	franchiseValue,
 	teamStrengths,
@@ -381,6 +383,9 @@ export const carryOut = async (
 	p: Player,
 	amount: number,
 	name: string,
+	// Whether the other team would still take them, if not by the old
+	// engine's values (vanilla+: vanillaPlus/clearRoom.ts).
+	takes?: (give: Asset[]) => Promise<boolean>,
 ): Promise<boolean> => {
 	const t = await loadTeam(outlook, plan.tid);
 	const x = await loadTeam(outlook, plan.partner);
@@ -406,7 +411,7 @@ export const carryOut = async (
 		priceFor(outlook, x, [], give, t) -
 		settingFor(x.tid, "tradeFatigue") * x.trades;
 	const margin = marginOf(outlook, x, [], give);
-	if (gain - margin < MIN_GAIN) {
+	if (takes ? !(await takes(give)) : gain - margin < MIN_GAIN) {
 		return false;
 	}
 	const own = await idb.cache.teams.get(t.tid);

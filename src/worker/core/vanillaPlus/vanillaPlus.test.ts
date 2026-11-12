@@ -12,7 +12,9 @@ import { calendar, calendarSettings, thisSeason } from "./calendar.ts";
 import { tradeValueCalculator } from "./index.ts";
 import makeItWork from "../trade/makeItWork.ts";
 import { contractOf } from "../realisticFrontOffice/contractOf.ts";
-import { marketStats, tradeDay } from "./market.ts";
+import { marketStats, tradeDay, tradeWindow } from "./market.ts";
+import { partnerTakes, roomOnValues } from "./clearRoom.ts";
+import type { RoomPlan } from "../realisticFrontOffice/clearRoom.ts";
 
 const importNode = (name: string) => import(/* @vite-ignore */ name);
 const realRandom = Math.random;
@@ -668,6 +670,77 @@ test(
 					.length;
 				assert.isAtMost(n, maxRosterSize + 2, `team ${tid}`);
 			}
+		} finally {
+			g.setWithoutSavingToDB("phase", phase);
+			vanillaPlusSettings.patience = patienceWas;
+			vanillaPlusSettings.auctions = auctionsWas;
+		}
+	},
+);
+
+// Found in the arena: a 51-31 team gave two firsts and two young players to
+// clear $5.5M for a free agent - room trades ran on the old engine's
+// values. On vanilla+'s: the team taking the players gets no more picks than
+// it takes them with, and a team won't give real value for room to sign a
+// player worth less.
+test("a team clearing cap room pays no more than it must, and only for a player worth it", async () => {
+	const calc = await tradeValueCalculator();
+	const lanes = await ensureLanes();
+	const [tid, partner] = [...lanes.keys()].filter((x) => x !== 0);
+	const roster = (await idb.cache.players.indexGetAll("playersByTid", tid!))
+		.sort((a, b) => b.value - a.value)
+		.slice(4, 6);
+	const picks = (
+		await idb.cache.draftPicks.indexGetAll("draftPicksByTid", tid!)
+	)
+		.filter((dp) => dp.round === 1)
+		.slice(0, 2);
+	const give = [
+		...roster.map((p) => ({ kind: "player" as const, p })),
+		...picks.map((dp) => ({ kind: "pick" as const, dp })),
+	];
+	const plan = { tid: tid!, partner: partner!, give } as unknown as RoomPlan;
+	const others = (
+		await idb.cache.players.indexGetAll("playersByTid", [0, Infinity])
+	)
+		.filter((p) => p.tid !== tid && p.tid !== partner)
+		.sort((a, b) => b.value - a.value);
+	const star = others[0]!;
+	const scrub = others.at(-1)!;
+	const forStar = await roomOnValues(calc, plan, star.pid);
+	assert.isDefined(forStar);
+	assert.isTrue(await partnerTakes(calc, plan, forStar!));
+	const sent = forStar!.filter((a) => a.kind === "pick");
+	// No fewer of the picks would do.
+	if (sent.length > 0) {
+		const players = forStar!.filter((a) => a.kind === "player");
+		assert.isFalse(await partnerTakes(calc, plan, players));
+	}
+	assert.isUndefined(await roomOnValues(calc, plan, scrub.pid));
+});
+
+// The offseason's trading windows: as the draft, the re-signing period and
+// the preseason open, every CPU team gets a look - and only then.
+test(
+	"CPU teams trade as an offseason trading window opens",
+	{ timeout: 600_000 },
+	async () => {
+		vanillaPlusSettings.calendar = true;
+		vanillaPlusSettings.patience = true;
+		vanillaPlusSettings.auctions = true;
+		const phase = g.get("phase");
+		try {
+			g.setWithoutSavingToDB("phase", PHASE.REGULAR_SEASON);
+			const looks = marketStats.looks;
+			await tradeWindow();
+			assert.strictEqual(marketStats.looks, looks);
+			g.setWithoutSavingToDB("phase", PHASE.PRESEASON);
+			const trades = marketStats.trades;
+			for (let window = 0; window < 4; window++) {
+				await tradeWindow();
+			}
+			assert.isAbove(marketStats.looks, looks);
+			assert.isAbove(marketStats.trades, trades);
 		} finally {
 			g.setWithoutSavingToDB("phase", phase);
 			vanillaPlusSettings.patience = patienceWas;

@@ -85,6 +85,8 @@ export const vplusMarketSettings = {
 	// would fit it this well (tweaks' factor) or better.
 	targetAge: 25,
 	targetFit: 1.1,
+	// The offseason's trading windows (tradeWindow).
+	windows: true,
 };
 
 const tell = (event: MarketEvent) => {
@@ -1030,22 +1032,20 @@ const shoppersToday = async (
 	return out;
 };
 
-// One day of the market.
-export const tradeDay = async () => {
-	const phase = g.get("phase");
+// A new day for the market: its count, and the cooldowns, by season.
+const nextDay = () => {
 	if (marketSeason !== g.get("season")) {
 		marketSeason = g.get("season");
 		lastTraded.clear();
 		marketDay = 0;
 	}
 	marketDay += 1;
-	if (phase !== PHASE.REGULAR_SEASON && phase !== PHASE.FREE_AGENCY) {
-		return;
-	}
-	if (phase === PHASE.REGULAR_SEASON) {
-		marketStats.deadlineDay[g.get("season")] = marketDay;
-	}
-	deadlineRush = phase === PHASE.REGULAR_SEASON && (await inDeadlineDays());
+};
+
+// These teams shop, in turn.
+const shop = async (
+	shoppers: (tids: number[], lanes: Map<number, Lane>) => Promise<number[]>,
+) => {
 	const started = performance.now();
 	const tids = await cpuTids();
 	if (tids.length < 2) {
@@ -1058,11 +1058,7 @@ export const tradeDay = async () => {
 		0,
 		Infinity,
 	]);
-	for (const tid of await shoppersToday(
-		tids,
-		lanes,
-		phase === PHASE.FREE_AGENCY,
-	)) {
+	for (const tid of await shoppers(tids, lanes)) {
 		// A trade earlier today may have used it up.
 		if (!canTrade(tid)) {
 			continue;
@@ -1086,4 +1082,47 @@ export const tradeDay = async () => {
 	}
 	await flushNews();
 	marketStats.ms += performance.now() - started;
+};
+
+// One day of the market.
+export const tradeDay = async () => {
+	const phase = g.get("phase");
+	nextDay();
+	if (phase !== PHASE.REGULAR_SEASON && phase !== PHASE.FREE_AGENCY) {
+		return;
+	}
+	if (phase === PHASE.REGULAR_SEASON) {
+		marketStats.deadlineDay[g.get("season")] = marketDay;
+	}
+	deadlineRush = phase === PHASE.REGULAR_SEASON && (await inDeadlineDays());
+	await shop((tids, lanes) =>
+		shoppersToday(tids, lanes, phase === PHASE.FREE_AGENCY),
+	);
+};
+
+// The offseason's trading windows, as these phases open: draft night, after
+// the draft, the re-signing period and the preseason, once ratings have
+// moved. Every CPU team gets a look, in a random order (CPU teams made 0-3
+// trades an offseason, all in free agency, against the NBA's 28-39).
+const WINDOW_PHASES: readonly number[] = [
+	PHASE.DRAFT,
+	PHASE.AFTER_DRAFT,
+	PHASE.RESIGN_PLAYERS,
+	PHASE.PRESEASON,
+];
+
+export const tradeWindow = async () => {
+	if (!vplusMarketSettings.windows || !WINDOW_PHASES.includes(g.get("phase"))) {
+		return;
+	}
+	nextDay();
+	deadlineRush = false;
+	await shop(async (tids) => {
+		const out = tids.filter(canTrade);
+		for (let i = out.length - 1; i > 0; i--) {
+			const j = Math.floor(Math.random() * (i + 1));
+			[out[i], out[j]] = [out[j]!, out[i]!];
+		}
+		return out;
+	});
 };

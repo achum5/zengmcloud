@@ -12,6 +12,16 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 291,
+		date: "2026-11-12",
+		text: "Realistic Front Offices: when a CPU team trades players away to clear cap room for a free agent, it no longer overpays. The team taking the salary gets only the picks it actually needs to take it - one contender had thrown in two first-round picks to clear $5.5M - and a team only clears room for a free agent who's worth more to it than what it gives up.",
+	},
+	{
+		n: 290,
+		date: "2026-11-12",
+		text: "Realistic Front Offices: CPU teams now trade in the offseason too - on draft night, after the draft, during re-signings and in the preseason, not just during the season and free agency.",
+	},
+	{
 		n: 289,
 		date: "2026-11-12",
 		text: "Realistic Front Offices: a CPU team that falls out of the playoff race now stops buying for this season - more than about 4 games behind the last play-in spot in its conference at the deadline, it sells its veterans instead. Teams also rethink their plans earlier, so one that slumps can still sell before the deadline.",

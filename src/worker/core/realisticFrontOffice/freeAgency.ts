@@ -58,8 +58,13 @@ import {
 	clearRoomSettings,
 	roomClock,
 	roomPlans,
+	stateAfter,
 	type RoomPlan,
 } from "./clearRoom.ts";
+import { vanillaPlusOn } from "./isOn.ts";
+import { tradeValueCalculator } from "../vanillaPlus/index.ts";
+import { partnerTakes, roomOnValues } from "../vanillaPlus/clearRoom.ts";
+import type { ValueChangeCalculator } from "../team/ValueChangeCalculator.ts";
 import {
 	appealOf,
 	askFor,
@@ -1469,6 +1474,8 @@ export const freeAgencyDay = async () => {
 	const waitOf = (p: Player) => (stages ? stagedWait(p) : waitUtility());
 	// Offers that need a trade to clear the room first, by team and player.
 	const roomPlanOf = new Map<string, RoomPlan>();
+	// With vanilla+ on, room trades on its values (vanillaPlus/clearRoom.ts).
+	let vplusCalc: ValueChangeCalculator | undefined;
 	const planKey = (tid: number, pid: number) => `${tid}:${pid}`;
 	for (const t of order) {
 		const state = states.get(t.tid)!;
@@ -1604,7 +1611,22 @@ export const freeAgencyDay = async () => {
 				roomClock.planned += 1;
 				const appeal = await appealFor(p, t.tid, rankOf(p), rosters);
 				const rivals = await rivalsOf(p);
-				for (const plan of plans) {
+				for (const found of plans) {
+					let plan = found;
+					if (vanillaPlusOn()) {
+						vplusCalc ??= await tradeValueCalculator();
+						const give = await roomOnValues(vplusCalc, found, p.pid);
+						if (!give) {
+							continue;
+						}
+						if (give.length !== found.give.length) {
+							plan = {
+								...found,
+								give,
+								state: stateAfter(outlook, state, give),
+							};
+						}
+					}
 					const payroll = plan.state.payroll;
 					const rosterSize = plan.state.players.length;
 					const cap = mostFor({ t, p, payroll, rosterSize }) ?? -Infinity;
@@ -1860,6 +1882,10 @@ export const freeAgencyDay = async () => {
 						p,
 						offer.amount,
 						`${p.firstName} ${p.lastName}`,
+						vanillaPlusOn()
+							? async (give) =>
+									partnerTakes(await tradeValueCalculator(), plan, give)
+							: undefined,
 					);
 					roomPlanOf.delete(planKey(tid, p.pid));
 					if (fits) {

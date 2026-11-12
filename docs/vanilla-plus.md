@@ -368,6 +368,23 @@ league's (market.ts `shoppersToday`); a team that traded waits 5 days
 instead of 10. Free agency keeps its 3 shoppers a day. The arena reports
 looks, trades and the market's time per season (`vplusMarket`).
 
+**Offseason windows (2026-11-12):** vanilla+ traded only in the season and
+in free agency - the old engine's windows run only with vanilla+ off - so
+CPU teams made 0-3 trades an offseason, all in free agency (arena P, seeds
+391-394), against the NBA's 28-39. Now every CPU team gets a look, in a
+random order, as the draft, the time after it, the re-signing period and
+the preseason open (market.ts `tradeWindow`, from phase/finalize.ts).
+
+**Clearing cap room on vanilla+'s values (2026-11-12):** free agency's room
+trades (realisticFrontOffice/clearRoom.ts) were found and priced by the old
+engine: a 51-31 team gave two firsts and two young players to clear $5.5M,
+and teams taking salary got picks they'd have done the deal without. With
+vanilla+ on (vanillaPlus/clearRoom.ts) the team taking the players must
+want them as in any trade, with the fewest of the plan's picks that does
+it, and the team clearing room must value the free agent, at his ask,
+above everything it gives; the trade is checked again the same way when he
+signs.
+
 ### 4. The market sets the price: every seller shops an offer around
 
 As any real market works (owner: "I'm not just going to take this smaller
