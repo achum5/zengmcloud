@@ -205,14 +205,21 @@ export const playerWorth = (
 	const own = lane
 		? zOf(worth(p, worthSettings.weights[lane], 0, times))
 		: market;
-	// After this season alone: what the tank effect can't pay for.
+	// After this season alone, as the team would price him (its own or the
+	// market's, whichever more): what the tank effect can't pay for.
 	const later =
 		lane && times
 			? zOf(
-					worth(p, worthSettings.weights[lane], 0, {
-						...times,
-						thisSeason: 0,
-					}),
+					Math.max(
+						worth(p, worthSettings.weights[lane], 0, {
+							...times,
+							thisSeason: 0,
+						}),
+						worth(p, worthSettings.market, 0, {
+							...timesFor(c, p, 1)!,
+							thisSeason: 0,
+						}),
+					),
 				)
 			: undefined;
 	return { own, market, later };

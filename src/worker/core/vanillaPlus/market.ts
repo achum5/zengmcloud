@@ -44,7 +44,7 @@ export const vplusMarketSettings = {
 	>,
 	// A buyer tries this many targets; a seller hears this many buyers.
 	targets: 3,
-	buyers: 4,
+	buyers: 8,
 	// A player worth shopping for: this value or more (stock's player value -
 	// about a rotation player).
 	minValue: 52,
@@ -75,8 +75,12 @@ export const vplusMarketSettings = {
 	// A real offer elsewhere is looked for only from this share of what the
 	// team asks another CPU team for the player.
 	offerNear: 0.9,
-	// With auctions on (settings.ts), the other teams a seller hears from.
-	auctionBidders: 4,
+	// With auctions on (settings.ts), the other teams a seller hears from
+	// (every one that can trade), and with nobody bidding against the buyer,
+	// how far from what the seller would take toward the most the buyer
+	// would give the price lands.
+	auctionBidders: Infinity,
+	bargainShare: 0.5,
 	// A buyer's targets: sellers' players this old or older, or anyone who
 	// would fit it this well (tweaks' factor) or better.
 	targetAge: 25,
@@ -98,8 +102,10 @@ export const marketStats = {
 	initiatorSays: 0,
 	otherSays: 0,
 	trades: 0,
-	// Auctions where another team beat the buyer's first offer.
+	// Auctions where another team beat the buyer's first offer, and where
+	// nobody did and the two met halfway.
 	outbid: 0,
+	bargained: 0,
 	// Teams that shopped, and the time the market took (ms).
 	looks: 0,
 	ms: 0,
@@ -478,11 +484,14 @@ const worthTo = (
 	});
 
 // THE AUCTION (docs/vanilla-plus.md, "A market that never stops", 4;
-// setting `auctions`): before a seller says yes to a buyer, it hears what the
-// teams keenest on the player would give. The team that would pay the most
-// gets him, paying just enough to beat the next best - as a real market
-// settles. Returns the deal that's made, its buyer and how many offers the
-// seller heard.
+// setting `auctions`): before a seller says yes to a buyer, every other team
+// that would want the player bids - its best real offer. The team that would
+// pay the most gets him, paying just enough to beat the next best, as a real
+// market settles: "good teams should be having to bid on that player"
+// (owner). With no other bid that beats the buyer's, the two meet halfway
+// between what the seller would take and the most the buyer would give -
+// not the least the seller would take. Returns the deal that's made, its
+// buyer and how many offers the seller heard.
 const auction = async (
 	calc: ValueChangeCalculator,
 	tweaks: Tweaks,
@@ -510,17 +519,28 @@ const auction = async (
 		.filter((tid) => cpu.includes(tid) && canTrade(tid))
 		.slice(0, s.auctionBidders);
 	const rival = await bestOffer(calc, seller, p.pid, rivals, offered);
-	if (!rival) {
-		return { teams: deal.teams, buyer, offers: 1 };
-	}
-	marketStats.outbid += 1;
-	// The buyer's most, against the best rival's.
+	// The buyer's most.
 	const most = await bestPackage(calc, buyer, seller, [p.pid]);
 	const buyerMost = most ? await worthTo(calc, seller, most[0]) : offered;
-	const [winner, toBeat, fallback] =
-		buyerMost >= rival.gets
-			? [buyer, rival.gets, most]
-			: [rival.buyer, Math.max(offered, buyerMost), rival.teams];
+	let winner: number;
+	let toBeat: number;
+	let fallback: TradeTeams | undefined;
+	if (rival) {
+		marketStats.outbid += 1;
+		[winner, toBeat, fallback] =
+			buyerMost >= rival.gets
+				? [buyer, rival.gets, most]
+				: [rival.buyer, Math.max(offered, buyerMost), rival.teams];
+	} else if (buyerMost > offered) {
+		marketStats.bargained += 1;
+		[winner, toBeat, fallback] = [
+			buyer,
+			offered + s.bargainShare * (buyerMost - offered),
+			deal.teams,
+		];
+	} else {
+		return { teams: deal.teams, buyer, offers: 1 };
+	}
 	// What the player alone is worth to his team: the price to beat is on
 	// top of it.
 	const price = -(await calc.evaluate({
@@ -537,9 +557,9 @@ const auction = async (
 		(made && (await works(calc, made))) ||
 		(fallback && (await works(calc, fallback)));
 	if (!done) {
-		return { teams: deal.teams, buyer, offers: 2 };
+		return { teams: deal.teams, buyer, offers: rival ? 2 : 1 };
 	}
-	return { teams: done.teams, buyer: winner, offers: 2 };
+	return { teams: done.teams, buyer: winner, offers: rival ? 2 : 1 };
 };
 
 const roomFor = async (tid: number, giving: number, getting: number) => {
