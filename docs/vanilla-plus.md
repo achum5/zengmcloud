@@ -435,6 +435,27 @@ So:
 Order: 1, then 2 and 3 together (patience with nobody shopping does
 nothing), then 4, measuring each in test leagues before the next.
 
+**Measured (arena, seeds 391-392, seasons 2-3; E is step 1 with injuries):**
+
+|                                       | E       | F: + patience, all shop | G: F, patience held to the last 20% | H: F + auctions |
+| ------------------------------------- | ------- | ----------------------- | ----------------------------------- | --------------- |
+| in-season trades a season             | 9       | 16                      | 11                                  | 18              |
+| good team vs bad: right way / reverse | 72% / 1 | 82% / 1                 | 82% / 0                             | 81% / 3         |
+| firsts to bad teams                   | 13      | 21                      | 19                                  | 33              |
+| of the 8 best, bought a season        | 3.0     | 3.8                     | 4.2                                 | 3.5             |
+| of the 8 worst, sold a 27+ starter    | 0.5     | 0.5                     | 0.5                                 | 2.0             |
+| champion had bought                   | 2/4     | 2/4                     | 3/4                                 | 4/4             |
+| in-season deals in the last week      | -       | 13%                     | 24%                                 | 13%             |
+| market's time a season                | -       | 10-13 s                 | 14-16 s                             | 14-17 s         |
+
+F's seasons ran faster than E's (344-379 s against 371-463 s, two leagues
+at a time); G and H ran four at a time. Auctions are what get bad teams
+selling: a seller hearing competing bids finds the deal. The deadline rush
+isn't there yet: deals between lanes are lopsided (vanilla's 7th power on
+lane differences), so a 20% margin stops few of them - next, patience
+measured against each deal's gain (the arena now logs it) and a bigger
+early margin.
+
 ## Order of work
 
 1. Vanilla+ switch; vanilla values wired into every trade path (human and
