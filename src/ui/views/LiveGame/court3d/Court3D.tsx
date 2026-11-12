@@ -30,6 +30,7 @@ import {
 	MAIN_RIG,
 	operate,
 	project,
+	zoomedOn,
 	type Cover,
 	type Rig,
 } from "./camera.ts";
@@ -59,7 +60,7 @@ import { gearFor, kitsFor, shade, streetClothes, type Look } from "./figure.ts";
 import { outHurt } from "./outHurt.ts";
 import { dressKit } from "./kitArt.ts";
 import { logoPicture } from "./logoPicture.ts";
-import { COURT_W, type Side } from "./geometry.ts";
+import { COURT_H, COURT_W, type Side } from "./geometry.ts";
 import { eventsMatchRoster } from "./rosterMatch.ts";
 import { Caption, Overlays } from "./Overlays.tsx";
 import { bugTeamOf, GameBug, PictureBox, PictureCanvas } from "./Picture.tsx";
@@ -117,6 +118,7 @@ import {
 import { bodyOf, type Body } from "./poses.ts";
 import { physiqueOf } from "./ratings.ts";
 import { glReport } from "./sculptGl.ts";
+import { getCamera } from "./cameraSetting.ts";
 import { registerCaptureExtra } from "../../../util/syncDebugStore.ts";
 import { offenseAt } from "./evaluate.ts";
 import { shotSpots } from "./shotSpots.ts";
@@ -194,6 +196,20 @@ registerCaptureExtra(() =>
 		? `court3d: not drawn yet; card ${glReport()}`
 		: `court3d: rows=${doing.rows} art=${doing.art} dpr=${doing.dpr} coarser=${doing.coarser} (changes ${doing.changes}) drawMs=${doing.drawMs?.toFixed(1) ?? "-"} fine=${doing.fine} fps=${doing.fps} kept=${doing.kept}; card ${glReport()}; cores=${navigator.hardwareConcurrency ?? "?"}`,
 );
+
+// Where the middle of the men on the floor is, across it (feet) - for a
+// camera in closer than the whole floor (see zoomedOn).
+const midAcross = (players: { y: number }[]): number => {
+	let sum = 0;
+	let n = 0;
+	for (const st of players) {
+		if (st.y > -1.5 && st.y < COURT_H + 1.5) {
+			sum += st.y;
+			n += 1;
+		}
+	}
+	return n > 0 ? sum / n : COURT_H / 2;
+};
 
 // Whether a game opens with its starting lineups (see intro.ts).
 const LINEUP_INTROS = false;
@@ -1221,7 +1237,13 @@ const Court3D = ({
 				: (view?.shot ??
 					(staging
 						? warmupAim(s.t, p.narrow, fit)
-						: aimFor(moment, p.narrow, tl, fit)));
+						: zoomedOn(
+								aimFor(moment, p.narrow, tl, fit),
+								getCamera().zoom,
+								fit,
+								moment.ball,
+								midAcross(moment.players),
+							)));
 			const rigNow = replay ? replayRig(replay) : undefined;
 			if (rigNow !== s.replayRig) {
 				if (replay && s.replayRig) {

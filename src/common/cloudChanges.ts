@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 295,
+		date: "2026-11-12",
+		text: "3D games: a camera zoom. Tap the gear beside the 3D controls and drag Camera zoom, up to 2.5x. Zoomed in, the players are bigger and the camera follows the play across the floor as well as along it. It is saved on your device, and 1x is the camera as it always was.",
+	},
+	{
 		n: 294,
 		date: "2026-11-12",
 		text: "Realistic Front Offices: CPU teams without a real shot at the title no longer spend their future to be a little better this year. A playoff team that isn't a true contender won't trade young players and picks for an aging star - a young team waits until it's within striking distance - so the old stars go to the real contenders.",

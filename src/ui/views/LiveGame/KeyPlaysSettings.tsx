@@ -6,6 +6,7 @@ import {
 	setKeyPlays,
 	type KeyPlaySettings,
 } from "./court3d/keyPlays.ts";
+import { CAMERA_ZOOM, getCamera, setCamera } from "./court3d/cameraSetting.ts";
 
 // WHAT THE KEY PLAYS SHOW, picked beside them: a close finish shown in full
 // (within so many points, so many minutes from the end), and what else
@@ -99,12 +100,15 @@ const KeyPlaysSettings = ({
 		</div>
 	);
 	const football = __SPORT === "football";
+	// How far in the court's camera is (see cameraSetting.ts) - the court
+	// reads it as it draws, so it moves as the slider does.
+	const [zoom, setZoom] = useState(() => getCamera().zoom);
 	return (
 		<>
 			<button
 				type="button"
 				className="btn btn-link p-0 ms-2 border-0 text-body-secondary lh-1 d-inline-flex align-items-center"
-				title="Key plays settings"
+				title="Settings"
 				onClick={() => setShow(true)}
 			>
 				{label}
@@ -122,10 +126,34 @@ const KeyPlaysSettings = ({
 			</button>
 			<Modal show={show} onHide={() => setShow(false)} size="sm">
 				<Modal.Header closeButton>
-					<Modal.Title>Key plays</Modal.Title>
+					<Modal.Title>{football ? "Key plays" : "Settings"}</Modal.Title>
 				</Modal.Header>
 				<Modal.Body>
 					{picker ? <div className="mb-3">{picker}</div> : null}
+					{football ? null : (
+						<div className="mb-3">
+							<label className="fw-bold mb-1" htmlFor="c3d-zoom">
+								Camera zoom{" "}
+								<span className="fw-normal text-body-secondary">
+									{zoom.toFixed(2).replace(/0$/, "")}x
+								</span>
+							</label>
+							<input
+								id="c3d-zoom"
+								type="range"
+								className="form-range"
+								min={CAMERA_ZOOM.min}
+								max={CAMERA_ZOOM.max}
+								step={CAMERA_ZOOM.step}
+								value={zoom}
+								onChange={(e) => {
+									const z = Number(e.target.value);
+									setZoom(z);
+									setCamera({ zoom: z });
+								}}
+							/>
+						</div>
+					)}
 					<div className="fw-bold mb-1">Close game</div>
 					<div className="row g-2 mb-2">
 						{number("closePoints", "Within (pts)", 1)}

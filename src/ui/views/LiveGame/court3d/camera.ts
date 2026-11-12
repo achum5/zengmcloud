@@ -79,7 +79,16 @@ export const BASELINE_RIG: Rig = {
 // Where the camera looks: a point on the court (x), how wide a slice of the
 // floor fits across the screen there (feet), how far across the court the
 // middle of the picture is (y), and how high (z, the floor if unset).
-export type Shot = { x: number; width: number; y: number; z?: number };
+export type Shot = {
+	x: number;
+	width: number;
+	y: number;
+	z?: number;
+	// Following the play in closer than the whole floor (see zoomedOn): it
+	// looks across the floor where this says, not where the whole floor
+	// would have it.
+	loose?: true;
+};
 
 // Where the point it looks at sits down the picture (a share of its
 // height), on a squarer (phone) picture and on a wider one: a little below
@@ -386,13 +395,59 @@ export const operate = (
 			COURT_W + 12 - op.camW / 2,
 			Math.max(op.camW / 2 - 12, op.camX),
 		);
-		// (Where the whole floor has it look, for whatever comes next
-		// without a cut to start from.)
-		op.camY = fit.y(op.camW);
 		op.camZ = aim.z ?? 2;
-		op.camVY = 0;
 		op.camVZ = 0;
+		if (!aim.loose) {
+			// (Where the whole floor has it look, for whatever comes next
+			// without a cut to start from.)
+			op.camY = fit.y(op.camW);
+			op.camVY = 0;
+		}
 	}
+};
+
+// IN CLOSER ON THE PLAY, as whoever is watching has asked (see
+// cameraSetting.ts): `zoom` times in on what the camera would show (`shot`,
+// the whole floor's depth in it). That much of the floor no longer fits, so
+// it follows the play: along the floor it keeps the ball in the picture, and
+// across the floor it looks toward the ball and the men (`mid`, where the
+// middle of them is across it) - as far off the middle of the floor as it
+// has lost sight of the floor's edges, and the ball never out of the
+// picture. A shot already in close (a free throw, the tip) is left be.
+const ZOOM_NARROWEST = 26;
+const ZOOM_EDGE = 6;
+export const zoomedOn = (
+	shot: Shot,
+	zoom: number,
+	fit: CourtFit | undefined,
+	ball: { x: number; y: number },
+	mid: number,
+): Shot => {
+	if (!fit || !(zoom > 1.001) || shot.width < fit.min * 0.98) {
+		return shot;
+	}
+	const width = Math.max(ZOOM_NARROWEST, shot.width / zoom);
+	const room = Math.max(2, width / 2 - ZOOM_EDGE);
+	const x = Math.min(
+		COURT_W + 12 - width / 2,
+		Math.max(
+			width / 2 - 12,
+			Math.min(ball.x + room, Math.max(ball.x - room, shot.x)),
+		),
+	);
+	// How much of the floor's depth is out of the picture, and so how far it
+	// may look off the middle of it.
+	const lost = Math.max(0, 1 - width / fit.min);
+	const want = ball.y * 0.55 + mid * 0.45;
+	const half = (COURT_H / 2 + 5) * (width / fit.min);
+	const off = Math.min(
+		ball.y - COURT_H / 2 + Math.max(2, half - 5),
+		Math.max(
+			ball.y - COURT_H / 2 - Math.max(2, half - 5),
+			(want - COURT_H / 2) * Math.min(1, lost * 1.7),
+		),
+	);
+	return { x, width, y: fit.y(width) + off, loose: true };
 };
 
 // THE SCORE BUG IN THE WAY: its box as shares of the picture (its left and
