@@ -102,7 +102,13 @@ export const marketStats = {
 	ms: 0,
 	// Each trade's day of the market, and each season's last day before the
 	// deadline: how deals spread through the season.
-	tradeDays: [] as { season: number; phase: number; day: number }[],
+	tradeDays: [] as {
+		season: number;
+		phase: number;
+		day: number;
+		// The smaller side's gain, as a share of what it gave (gainOf).
+		gain: number;
+	}[],
 	deadlineDay: {} as Record<number, number>,
 };
 
@@ -806,6 +812,7 @@ const buyerShops = async (
 	if (vanillaPlusSettings.auctions && vanillaPlusSettings.calendar) {
 		const sold = await auction(calc, tweaks, lanes, best, others);
 		await execute(
+			calc,
 			sold.teams,
 			sold.buyer,
 			"buyer",
@@ -819,7 +826,7 @@ const buyerShops = async (
 		);
 		return true;
 	}
-	await execute(best.teams, buyer, "buyer", best.pid, 1, best.fit);
+	await execute(calc, best.teams, buyer, "buyer", best.pid, 1, best.fit);
 	return true;
 };
 
@@ -876,7 +883,7 @@ const sellerShops = async (
 	if (!best) {
 		return false;
 	}
-	await execute(best.teams, seller, "seller", vet.pid, offers, best.fit);
+	await execute(calc, best.teams, seller, "seller", vet.pid, offers, best.fit);
 	return true;
 };
 
@@ -888,7 +895,36 @@ const canTrade = (tid: number) => {
 	return last === undefined || marketDay - last >= days;
 };
 
+// What a deal does for one side, as a share of what it gives: how far past
+// the day's patience it was.
+const gainOf = async (
+	calc: ValueChangeCalculator,
+	teams: TradeTeams,
+	k: 0 | 1,
+) => {
+	const dv = await calc.evaluate({
+		tid: teams[k].tid,
+		pidsAdd: teams[1 - k]!.pids,
+		pidsRemove: teams[k].pids,
+		dpidsAdd: teams[1 - k]!.dpids,
+		dpidsRemove: teams[k].dpids,
+		tradingPartnerTid: teams[1 - k]!.tid,
+		raw: true,
+	});
+	const gives = -(await calc.evaluate({
+		tid: teams[k].tid,
+		pidsAdd: [],
+		pidsRemove: teams[k].pids,
+		dpidsAdd: [],
+		dpidsRemove: teams[k].dpids,
+		tradingPartnerTid: teams[1 - k]!.tid,
+		raw: true,
+	}));
+	return gives > 0 ? dv / gives : 99;
+};
+
 const execute = async (
+	calc: ValueChangeCalculator,
 	teams: TradeTeams,
 	initiator: number,
 	role: "buyer" | "seller",
@@ -896,12 +932,17 @@ const execute = async (
 	offers: number,
 	fit: number,
 ) => {
+	const gain = Math.min(
+		await gainOf(calc, teams, 0),
+		await gainOf(calc, teams, 1),
+	);
 	await processTrade(teams, undefined);
 	marketStats.trades += 1;
 	marketStats.tradeDays.push({
 		season: g.get("season"),
 		phase: g.get("phase"),
 		day: marketDay,
+		gain,
 	});
 	lastTraded.set(teams[0].tid, marketDay);
 	lastTraded.set(teams[1].tid, marketDay);
