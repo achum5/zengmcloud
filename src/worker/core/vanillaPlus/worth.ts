@@ -33,6 +33,9 @@ const geometric = (d: number, n: number) =>
 export const worthSettings = {
 	// Seasons counted, the coming one first.
 	years: 10,
+	// A pick in a later draft is worth this much of the coming draft's at the
+	// same slot, for each year more it waits (pickValues).
+	pickWait: 0.85,
 	// Simulated careers per player.
 	samples: 40,
 	// Each lane's weight on each season, the coming one first.
@@ -233,35 +236,50 @@ export const prospectValue = (p: Player, draftYear = p.draft.year) => {
 	return z * local.playerOvrStd + local.playerOvrMean;
 };
 
+// A pick in a draft `delay` years after the coming one, priced by the coming
+// draft's class: its prospects as they are on their draft day, worth
+// `pickWait` less for each year more of waiting (not the market's discount
+// on a player's seasons, which would put a far pick's whole career past its
+// horizon). Not the prospects already generated for that draft: they're
+// years from it, and the expected worth of a 7th-power value over years of
+// development blows every prospect up - most of all the ones a second-round
+// pick would get, as if the uncertainty were still there once they'd been
+// drafted (it isn't: a pick gets who's left then).
+const delayedProspectValue = (p: Player, delay: number) => {
+	const first = p.draft.year + 1 - g.get("season");
+	const z = zOf(
+		worth(p, worthSettings.market, first) * worthSettings.pickWait ** delay,
+	);
+	return z * local.playerOvrStd + local.playerOvrMean;
+};
+
 // The pick table on the same scale (trade/getPickValues.ts, which values the
-// prospects already in the league). A draft further off than any class yet
-// generated gets the farthest class's prospects, as if drafted then: stock
-// would give it the average of the nearer classes, which counts seasons a
-// pick that far off can't help in.
+// prospects already in the league): the coming draft by its class, every
+// draft after it by the same class, later (delayedProspectValue).
 export const pickValues = async () => {
 	const table = await getPickValues(prospectValue);
-	const classes = Object.keys(table)
-		.filter((key) => key !== "default")
-		.map(Number)
-		.sort((a, b) => a - b);
-	const farthest = classes.at(-1);
-	if (farthest === undefined) {
-		return table;
-	}
+	const phase = g.get("phase");
+	const coming = phase < PHASE.DRAFT ? g.get("season") : g.get("season") + 1;
 	const prospects = (
 		await idb.cache.players.indexGetAll("playersByTid", PLAYER.UNDRAFTED)
-	).filter((p) => p.draft.year === farthest);
+	).filter((p) => p.draft.year === coming);
+	if (prospects.length === 0) {
+		return table;
+	}
 	const seasons = new Set(
 		(await idb.cache.draftPicks.getAll())
 			.map((dp) => dp.season)
 			.filter((season): season is number => typeof season === "number"),
 	);
 	for (const season of seasons) {
-		if (season > farthest && table[season] === undefined) {
+		if (season > coming) {
 			table[season] = prospects
-				.map((p) => prospectValue(p, season))
+				.map((p) => delayedProspectValue(p, season - coming))
 				.sort((a, b) => b - a);
 		}
 	}
+	table.default = prospects
+		.map((p) => delayedProspectValue(p, 1))
+		.sort((a, b) => b - a);
 	return table;
 };

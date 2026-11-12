@@ -520,6 +520,54 @@ test(
 	},
 );
 
+// Found in the owner's league: a rebuilder valued a 2030 second at a third
+// of a first, and a 2033 second took part of the price of a 25-year-old
+// starter. Future drafts are priced by the coming class, on draft day,
+// waiting: a second is worth little in any draft, and a first a few years
+// off nearly what one now is.
+test("a future second is worth little, a future first nearly a first now", async () => {
+	const lanes = await ensureLanes();
+	const [tid] = [...lanes].find(([, lane]) => lane === "rebuild")!;
+	const other = [...lanes.keys()].find((x) => x !== tid)!;
+	const calc = await tradeValueCalculator();
+	const season = g.get("season");
+	const median = async (year: number, round: number) => {
+		const values = [];
+		for (const dp of await idb.cache.draftPicks.getAll()) {
+			if (dp.tid !== tid && dp.season === year && dp.round === round) {
+				values.push(
+					await calc.evaluate({
+						tid,
+						pidsAdd: [],
+						pidsRemove: [],
+						dpidsAdd: [dp.dpid],
+						dpidsRemove: [],
+						tradingPartnerTid: other,
+						raw: true,
+					}),
+				);
+			}
+		}
+		values.sort((a, b) => a - b);
+		return values[Math.floor(values.length / 2)]!;
+	};
+	const firstNow = await median(season, 1);
+	for (const year of [season + 2, season + 3]) {
+		const first = await median(year, 1);
+		const second = await median(year, 2);
+		assert.isBelow(
+			second,
+			first * 0.15,
+			`${year}: second ${second}, first ${first}`,
+		);
+		assert.isAbove(
+			first,
+			firstNow * 0.5,
+			`${year}: first ${first}, now ${firstNow}`,
+		);
+	}
+});
+
 // Last: it trades. The whole market on - calendar, patience, every team
 // shopping, auctions - runs its days, trades, and leaves every roster legal.
 test(

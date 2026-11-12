@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 286,
+		date: "2026-11-12",
+		text: "Realistic Front Offices: draft picks in future drafts are priced sensibly now. A second-round pick a few years out was worth almost a third of a first to a rebuilding team, so CPU teams handed over real players for far-off seconds - a second is now worth about what one this year is, which is very little. A first a few years away is worth a bit less than one this year for the wait, instead of more.",
+	},
+	{
 		n: 285,
 		date: "2026-11-12",
 		text: "Realistic Front Offices: CPU teams now pay market prices to each other too. When a team goes after a player, every other team that wants him gets to bid, and the one that would pay most gets him - paying just enough to beat the next best offer. If nobody else bids, the two teams meet in the middle instead of the seller taking the least it would accept. So a bad team's veterans go to whichever contender pays most, not to whoever asks first - the same price you have to beat when you trade for them.",
