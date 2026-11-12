@@ -22,4 +22,8 @@ export const vanillaPlusSettings = {
 	// market.ts tradeDay): patience to the deadline, every team shopping. Needs
 	// the calendar. Off until measured.
 	patience: false,
+	// "A market that never stops", step 4 (market.ts auction): before a CPU
+	// seller says yes, the keenest other teams bid; the most wins, paying
+	// just enough to beat the next. Needs the calendar. Off until measured.
+	auctions: false,
 };

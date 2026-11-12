@@ -412,6 +412,12 @@ So:
 - **Between CPU teams too:** a buyer's offer gets shopped around to the other
   interested teams before the seller says yes, and the news reports it ("at
   least three teams made offers").
+  **Built (setting `auctions`, off; market.ts `auction`):** when a buyer's
+  shop finds a deal, the seller hears the four teams keenest on the player
+  (their best real offers). If one beats the buyer's offer, the team that
+  would pay most - the buyer at its most, or the rival - gets him, paying
+  just enough to beat the other (second price). Checked: a few market days
+  with everything on trade, outbid buyers and keep rosters legal.
 - Cost: a human's offer to a team prices the alternatives once (a second or
   two); "What would make this work" and the trading block reuse it.
 

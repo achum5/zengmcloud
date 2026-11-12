@@ -11,12 +11,14 @@ import { playerWorth, worth, worthSettings } from "./worth.ts";
 import { calendar, thisSeason } from "./calendar.ts";
 import { tradeValueCalculator } from "./index.ts";
 import makeItWork from "../trade/makeItWork.ts";
+import { marketStats, tradeDay } from "./market.ts";
 
 const importNode = (name: string) => import(/* @vite-ignore */ name);
 const realRandom = Math.random;
 const wasOn = vanillaPlusSettings.on;
 const calendarWas = vanillaPlusSettings.calendar;
 const patienceWas = vanillaPlusSettings.patience;
+const auctionsWas = vanillaPlusSettings.auctions;
 
 beforeAll(async () => {
 	await importNode("fake-indexeddb/auto");
@@ -35,6 +37,7 @@ afterAll(() => {
 	vanillaPlusSettings.on = wasOn;
 	vanillaPlusSettings.calendar = calendarWas;
 	vanillaPlusSettings.patience = patienceWas;
+	vanillaPlusSettings.auctions = auctionsWas;
 	Math.random = realRandom;
 });
 
@@ -422,3 +425,36 @@ test("teams want to come out well ahead early in the season, barely at the deadl
 		vanillaPlusSettings.patience = patienceWas;
 	}
 });
+
+// Last: it trades. The whole market on - calendar, patience, every team
+// shopping, auctions - runs its days, trades, and leaves every roster legal.
+test(
+	"the market that never stops runs, trades and keeps rosters legal",
+	{ timeout: 600_000 },
+	async () => {
+		vanillaPlusSettings.calendar = true;
+		vanillaPlusSettings.patience = true;
+		vanillaPlusSettings.auctions = true;
+		const phase = g.get("phase");
+		const looks = marketStats.looks;
+		const trades = marketStats.trades;
+		try {
+			g.setWithoutSavingToDB("phase", PHASE.REGULAR_SEASON);
+			for (let day = 0; day < 6; day++) {
+				await tradeDay();
+			}
+			assert.isAbove(marketStats.looks, looks);
+			assert.isAbove(marketStats.trades, trades);
+			const maxRosterSize = g.get("maxRosterSize");
+			for (const tid of (await ensureLanes()).keys()) {
+				const n = (await idb.cache.players.indexGetAll("playersByTid", tid))
+					.length;
+				assert.isAtMost(n, maxRosterSize + 2, `team ${tid}`);
+			}
+		} finally {
+			g.setWithoutSavingToDB("phase", phase);
+			vanillaPlusSettings.patience = patienceWas;
+			vanillaPlusSettings.auctions = auctionsWas;
+		}
+	},
+);
