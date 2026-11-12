@@ -28,7 +28,10 @@ export const tradeValueCalculator = async (
 		adjust: tweaks,
 		cpuMarkup: vanillaPlusSettings.cpuMarkup,
 		playerWorth: (tid, p, vsHuman) => {
-			const worth = playerWorth(p, lanes.get(tid), c, playoffsOf(tid));
+			const worth = {
+				...playerWorth(p, lanes.get(tid), c, playoffsOf(tid)),
+				injuryPriced: c !== undefined,
+			};
 			if (!vsHuman) {
 				return worth;
 			}
@@ -53,7 +56,7 @@ export const tradeValueCalculator = async (
 					);
 				}
 			}
-			return { own: worth.own, market: Math.max(worth.market, zOf(best)) };
+			return { ...worth, market: Math.max(worth.market, zOf(best)) };
 		},
 		pickValues,
 		// A team that sells its players is a worse team, and its own pick a

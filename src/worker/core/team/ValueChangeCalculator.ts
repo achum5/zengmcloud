@@ -324,7 +324,9 @@ const getPlayers = async ({
 				pid: p.pid,
 				value,
 				contractValue: getContractValue(contract, worth?.market ?? value),
-				injury: p.injury,
+				injury: worth?.injuryPriced
+					? { type: "Healthy", gamesRemaining: 0 }
+					: p.injury,
 				age: g.get("season") - p.born.year,
 				justDrafted: helpers.justDrafted(
 					{ draft: p.draft, contract },
@@ -1035,7 +1037,14 @@ export type PlayerWorth = (
 	p: Player,
 	// Dealing with a human: the market is the best any other team would pay.
 	vsHuman: boolean,
-) => { own: number; market: number } | undefined;
+) =>
+	| {
+			own: number;
+			market: number;
+			// The injury is in the worth already: no stock discount on top.
+			injuryPriced?: boolean;
+	  }
+	| undefined;
 
 // Vanilla+: how a team's plan (its lane) weighs assets, in place of stock's
 // two strategies.

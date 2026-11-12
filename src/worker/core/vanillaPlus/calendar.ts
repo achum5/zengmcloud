@@ -1,5 +1,7 @@
 import { PHASE } from "../../../common/constants.ts";
+import type { Player } from "../../../common/types.ts";
 import { idb } from "../../db/index.ts";
+import { ovr as ovrBasketball } from "../team/ovr.basketball.ts";
 import { g } from "../../util/index.ts";
 import { contractOf } from "../realisticFrontOffice/contractOf.ts";
 import { stayChance } from "../realisticFrontOffice/offers.ts";
@@ -24,8 +26,15 @@ export const calendarSettings = {
 	// This season's share that is the regular season; the rest is the
 	// playoffs.
 	regularSeason: 0.3,
-	// The best seed's playoffs are worth this much more than the last one's.
-	seedBonus: 0.6,
+	// The playoffs: getting there, and a shot at the title on top of it, by
+	// how strong the team will be in them against the other playoff teams.
+	// `title` weighs the title shot (1: as much as getting there, for an
+	// average playoff team); `titleSharpness` is per point of team rating.
+	title: 1.5,
+	titleSharpness: 0.3,
+	// An injury counts as a long one, for refreshing the standings, from this
+	// many games out.
+	longInjury: 15,
 	// How sure a team's playoff place is, in places of the standings either
 	// side of the cut: this many at the start of the season, shrinking to
 	// `sureAtEnd` by its end.
@@ -38,6 +47,8 @@ export const calendarSettings = {
 export type Calendar = {
 	// Share of the regular season still to play: 1 before it starts.
 	remaining: number;
+	// Games still to play this regular season (the coming one's, out of it).
+	gamesLeft: number;
 	// Each team's playoffs, relative to the league's average (mean 1).
 	playoffs: Map<number, number>;
 	// Each player's chance of staying past his contract.
@@ -50,11 +61,37 @@ let cached: { key: string; calendar: Calendar } | undefined;
 
 const logistic = (x: number) => 1 / (1 + Math.exp(-x));
 
+let retentionCached:
+	| { key: string; retention: Map<number, number>; exp: Map<number, number> }
+	| undefined;
+
+// A team's rating from the players who'll be playing.
+const strength = (roster: Player[], out: (p: Player) => boolean) =>
+	ovrBasketball(
+		roster
+			.filter((p) => !out(p))
+			.map((p) => ({
+				ratings: { ovr: p.ratings.at(-1)!.ovr, pos: p.ratings.at(-1)!.pos },
+			})),
+		{},
+	);
+
 export const calendar = async (): Promise<Calendar> => {
 	const s = calendarSettings;
 	const { facts, progress } = await factsOf();
 	const games = progress * g.get("numGames");
-	const key = `${g.get("lid")}:${g.get("season")}:${g.get("phase")}:${Math.floor(games / s.everyGames)}`;
+	const players = await idb.cache.players.indexGetAll("playersByTid", [
+		0,
+		Infinity,
+	]);
+	// A long injury anywhere changes who's a contender: refreshed then too.
+	const injuries = players
+		.filter((p) => p.injury.gamesRemaining >= s.longInjury)
+		.map((p) => p.pid)
+		.sort((a, b) => a - b)
+		.join(",");
+	const base = `${g.get("lid")}:${g.get("season")}:${g.get("phase")}:${Math.floor(games / s.everyGames)}`;
+	const key = `${base}:${injuries}`;
 	if (cached?.key === key) {
 		return cached.calendar;
 	}
@@ -65,12 +102,30 @@ export const calendar = async (): Promise<Calendar> => {
 			: phase === PHASE.REGULAR_SEASON
 				? 1 - progress
 				: 0;
+	const gamesLeft = Math.round(remaining * g.get("numGames"));
+
+	// Each team now, from the players back for at least half the games left,
+	// and in the playoffs, from those back by then.
+	const rosters = Map.groupBy(players, (p) => p.tid);
+	const now = new Map<number, number>();
+	const inPlayoffs = new Map<number, number>();
+	for (const f of facts) {
+		const roster = rosters.get(f.tid) ?? [];
+		now.set(
+			f.tid,
+			strength(roster, (p) => p.injury.gamesRemaining > gamesLeft / 2),
+		);
+		inPlayoffs.set(
+			f.tid,
+			strength(roster, (p) => p.injury.gamesRemaining > gamesLeft),
+		);
+	}
 
 	// Each team's place: its rating's rank and, once games are played, its
 	// record's - as the lanes read it.
 	const n = facts.length;
 	const w = Math.min(laneSettings.recordWeight, progress);
-	const byOvr = [...facts].sort((a, b) => b.ovr - a.ovr);
+	const byOvr = [...facts].sort((a, b) => now.get(b.tid)! - now.get(a.tid)!);
 	const byRecord = [...facts].sort(
 		(a, b) => (b.winPct ?? 0.5) - (a.winPct ?? 0.5),
 	);
@@ -88,13 +143,24 @@ export const calendar = async (): Promise<Calendar> => {
 		// Not set up for that season yet: half the league.
 	}
 	const spread = s.sureAtEnd + (s.unsure - s.sureAtEnd) * (1 - progress);
+	const chance = new Map(
+		[...place].map(([tid, at]) => [tid, logistic((cut + 0.5 - at) / spread)]),
+	);
+	// The title: each team's shot against the others likely to be there, by
+	// how strong each will be in the playoffs. A rival's star out for the year
+	// raises everyone else's - most for the teams just behind it.
+	const top = Math.max(...inPlayoffs.values());
+	const pull = new Map(
+		[...chance].map(([tid, c]) => [
+			tid,
+			c * Math.exp(s.titleSharpness * (inPlayoffs.get(tid)! - top)),
+		]),
+	);
+	const pullSum = [...pull.values()].reduce((sum, x) => sum + x, 0);
 	const raw = new Map<number, number>();
-	for (const [tid, at] of place) {
-		const chance = logistic((cut + 0.5 - at) / spread);
-		const seed =
-			1 +
-			s.seedBonus * Math.max(0, Math.min(1, (cut - at) / Math.max(1, cut - 1)));
-		raw.set(tid, chance * seed);
+	for (const [tid, c] of chance) {
+		const titleShot = pullSum > 0 ? pull.get(tid)! / pullSum : 0;
+		raw.set(tid, c + s.title * titleShot * cut);
 	}
 	const mean =
 		[...raw.values()].reduce((sum, x) => sum + x, 0) / Math.max(1, raw.size);
@@ -102,32 +168,49 @@ export const calendar = async (): Promise<Calendar> => {
 		[...raw].map(([tid, x]) => [tid, mean > 0 ? x / mean : 1]),
 	);
 
-	// Re-signing: each player with his team.
-	const retention = new Map<number, number>();
-	const exp = new Map<number, number>();
-	for (const p of await idb.cache.players.indexGetAll("playersByTid", [
-		0,
-		Infinity,
-	])) {
-		const contract = contractOf(p);
-		exp.set(p.pid, contract.exp);
-		if (contract.exp < g.get("season") + 10) {
-			try {
-				retention.set(p.pid, await stayChance(p, p.tid));
-			} catch {
-				retention.set(p.pid, 0.5);
+	// Re-signing: each player with his team (refreshed every `everyGames`
+	// only - it's the slow part).
+	if (retentionCached?.key !== base) {
+		const retention = new Map<number, number>();
+		const exp = new Map<number, number>();
+		for (const p of players) {
+			const contract = contractOf(p);
+			exp.set(p.pid, contract.exp);
+			if (contract.exp < g.get("season") + 10) {
+				try {
+					retention.set(p.pid, await stayChance(p, p.tid));
+				} catch {
+					retention.set(p.pid, 0.5);
+				}
 			}
 		}
+		retentionCached = { key: base, retention, exp };
 	}
+	const { retention, exp } = retentionCached;
 
-	const out = { remaining, playoffs, retention, exp };
+	const out = { remaining, gamesLeft, playoffs, retention, exp };
 	cached = { key, calendar: out };
 	return out;
 };
 
 // This season's weight for a team (`playoffs` its relative playoffs; 1 for
-// the market): the games left and the playoffs.
-export const thisSeason = (c: Calendar, playoffs: number) => {
+// the market): the games left and the playoffs - for a player out
+// `injured` games, only those he'll be back for.
+export const thisSeason = (c: Calendar, playoffs: number, injured = 0) => {
 	const s = calendarSettings;
-	return s.regularSeason * c.remaining + (1 - s.regularSeason) * playoffs;
+	const games = c.gamesLeft > 0 ? Math.max(0, 1 - injured / c.gamesLeft) : 1;
+	const backForPlayoffs = injured <= c.gamesLeft ? 1 : 0;
+	return (
+		s.regularSeason * c.remaining * games +
+		(1 - s.regularSeason) * playoffs * backForPlayoffs
+	);
+};
+
+// The coming season after this one, for a player out `injured` games: what's
+// left of his injury past this season's games (and its playoffs, about a
+// tenth of a season) comes out of it.
+export const nextSeason = (c: Calendar, injured: number) => {
+	const numGames = g.get("numGames");
+	const over = injured - c.gamesLeft - numGames / 10;
+	return over > 0 ? Math.max(0, 1 - over / numGames) : 1;
 };

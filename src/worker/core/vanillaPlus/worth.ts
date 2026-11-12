@@ -5,7 +5,7 @@ import { g, local } from "../../util/index.ts";
 import getPickValues from "../trade/getPickValues.ts";
 import { projectRatings } from "../realisticFrontOffice/projection.ts";
 import type { Lane } from "./lanes.ts";
-import { thisSeason, type Calendar } from "./calendar.ts";
+import { nextSeason, thisSeason, type Calendar } from "./calendar.ts";
 
 // WORTH (docs/vanilla-plus.md, "Worth, season by season"): what a player is
 // worth in a trade, on vanilla's scale, counted one season at a time.
@@ -124,10 +124,12 @@ export const seasonValues = (p: Player, years: number) => {
 // nothing.
 //
 // With the calendar (calendar.ts): the coming season counts `thisSeason` of a
-// full one - the games left and the playoffs, for this team - and seasons past
-// his contract by the chance he re-signs.
+// full one - the games left and the playoffs, for this team, and only those
+// he'll be back from injury for - the one after it what an injury leaves of
+// it, and seasons past his contract by the chance he re-signs.
 export type WorthTimes = {
 	thisSeason: number;
+	nextSeason: number;
 	exp: number;
 	retention: number;
 };
@@ -151,6 +153,8 @@ export const worth = (
 			if (times) {
 				if (i === 0) {
 					x *= times.thisSeason;
+				} else if (i === 1) {
+					x *= times.nextSeason;
 				}
 				if (season + t > times.exp) {
 					x *= times.retention;
@@ -171,7 +175,8 @@ export const timesFor = (
 ): WorthTimes | undefined =>
 	c
 		? {
-				thisSeason: thisSeason(c, playoffs),
+				thisSeason: thisSeason(c, playoffs, p.injury.gamesRemaining),
+				nextSeason: nextSeason(c, p.injury.gamesRemaining),
 				exp: c.exp.get(p.pid) ?? Infinity,
 				retention: c.retention.get(p.pid) ?? 1,
 			}

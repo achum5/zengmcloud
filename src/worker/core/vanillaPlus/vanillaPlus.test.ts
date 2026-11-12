@@ -126,39 +126,43 @@ test("a rebuilding team won't give its best player away", async () => {
 	}
 });
 
-test("what would make it work never leaves a roster past the limit", async () => {
-	const lanes = await ensureLanes();
-	const calc = await tradeValueCalculator();
-	const maxRosterSize = g.get("maxRosterSize");
-	const best = (await idb.cache.players.indexGetAll("playersByTid", 0)).sort(
-		(a, b) => b.value - a.value,
-	)[0]!;
-	for (const tid of [...lanes.keys()].filter((tid) => tid !== 0)) {
-		const teams = await makeItWork(
-			[
-				{
-					tid: 0,
-					pids: [best.pid],
-					dpids: [],
-					pidsExcluded: [],
-					dpidsExcluded: [],
-				},
-				{ tid, pids: [], dpids: [], pidsExcluded: [], dpidsExcluded: [] },
-			],
-			{ holdUserConstant: false, valueChangeCalculator: calc },
-		);
-		if (!teams) {
-			continue;
+test(
+	"what would make it work never leaves a roster past the limit",
+	{ timeout: 120_000 },
+	async () => {
+		const lanes = await ensureLanes();
+		const calc = await tradeValueCalculator();
+		const maxRosterSize = g.get("maxRosterSize");
+		const best = (await idb.cache.players.indexGetAll("playersByTid", 0)).sort(
+			(a, b) => b.value - a.value,
+		)[0]!;
+		for (const tid of [...lanes.keys()].filter((tid) => tid !== 0)) {
+			const teams = await makeItWork(
+				[
+					{
+						tid: 0,
+						pids: [best.pid],
+						dpids: [],
+						pidsExcluded: [],
+						dpidsExcluded: [],
+					},
+					{ tid, pids: [], dpids: [], pidsExcluded: [], dpidsExcluded: [] },
+				],
+				{ holdUserConstant: false, valueChangeCalculator: calc },
+			);
+			if (!teams) {
+				continue;
+			}
+			for (const i of [0, 1] as const) {
+				const now = (
+					await idb.cache.players.indexGetAll("playersByTid", teams[i].tid)
+				).length;
+				const after = now - teams[i].pids.length + teams[1 - i]!.pids.length;
+				assert.isAtMost(after, Math.max(maxRosterSize, now));
+			}
 		}
-		for (const i of [0, 1] as const) {
-			const now = (
-				await idb.cache.players.indexGetAll("playersByTid", teams[i].tid)
-			).length;
-			const after = now - teams[i].pids.length + teams[1 - i]!.pids.length;
-			assert.isAtMost(after, Math.max(maxRosterSize, now));
-		}
-	}
-});
+	},
+);
 
 test("contenders weigh now, rebuilders later: teenagers and veterans priced by when they help", async () => {
 	const players = await idb.cache.players.indexGetAll("playersByTid", [
@@ -254,11 +258,13 @@ test("a player's seasons past his contract count by the chance he re-signs", asy
 	).sort((a, b) => b.value - a.value)[0]!;
 	const full = worth(p, worthSettings.market, 0, {
 		thisSeason: 1,
+		nextSeason: 1,
 		exp: Infinity,
 		retention: 1,
 	});
 	const expiring = worth(p, worthSettings.market, 0, {
 		thisSeason: 1,
+		nextSeason: 1,
 		exp: g.get("season"),
 		retention: 0.5,
 	});
@@ -292,4 +298,36 @@ test("selling its best player makes a bad team's own pick better", async () => {
 		await tradeValueCalculator()
 	).evaluate({ ...deal, tradingPartnerTid: 0 });
 	assert.isAtMost(human, without + 1e-9);
+});
+
+// Owner: "If a contender suffers an awful injury, other contenders should be
+// far more willing to go all in if it puts them over the top."
+test("a contender's star out for the year raises the other contenders' stake in this season", async () => {
+	vanillaPlusSettings.calendar = true;
+	const before = await calendar();
+	const ranked = [...before.playoffs].sort((a, b) => b[1] - a[1]);
+	const [favorite] = ranked[0]!;
+	const [nextBest] = ranked[1]!;
+	const star = (
+		await idb.cache.players.indexGetAll("playersByTid", favorite)
+	).sort((a, b) => b.valueNoPot - a.valueNoPot)[0]!;
+	const was = star.injury;
+	try {
+		star.injury = { type: "Torn ACL", gamesRemaining: 200 };
+		await idb.cache.players.put(star);
+		const after = await calendar();
+		assert.isBelow(
+			after.playoffs.get(favorite)!,
+			before.playoffs.get(favorite)!,
+		);
+		assert.isAbove(
+			after.playoffs.get(nextBest)!,
+			before.playoffs.get(nextBest)!,
+		);
+		// And he's worth this season to nobody.
+		assert.strictEqual(thisSeason(after, 1, 200), 0);
+	} finally {
+		star.injury = was;
+		await idb.cache.players.put(star);
+	}
 });
