@@ -295,6 +295,19 @@ deadline matter:
   market price, the league-average chance, so prime players still cost what
   vanilla says.
 
+**Injuries** (owner: "if a contender suffers an awful injury, other
+contenders should be far more willing to go all in if it puts them over the
+top"): a team is rated now from the players back for at least half the
+games left, and in the playoffs from those back by then. Its playoffs are
+getting there plus its title shot against the other likely playoff teams by
+playoff strength, so a rival's star out for the year raises everyone else's
+stake in this season, most for the teams just behind it. An injured player's
+own worth counts only the games he'll be back for, and what's left of the
+injury next season, in place of stock's flat discount (so a star out for the
+season keeps his worth past it: to a contender he's worth little, to a
+rebuilder still a lot - stock's "a season-ending injury costs a good player
+a great deal" holds for contenders only).
+
 ### 2. Patience: wait only when waiting is worth more than acting
 
 A team doesn't trade just because a deal clears even. It weighs acting now
@@ -339,6 +352,13 @@ it asks the other teams that would want him what they'd give (their best
 offers, the value-for-money search that's live now) and takes the best.
 So:
 
+- **Built (with the calendar): a human never gets a player for less than
+  another team's best real offer** (market.ts `bestOfferElsewhere`): the
+  four teams keenest on him each make their best offer, the most that still
+  works for them, from what's worth most to his team for what it costs
+  them; his team won't take less from a human than the best of them, in its
+  own terms and after contracts. No floor where nobody would bid (a bad
+  contract stays a cost). Cached per player per pricing.
 - **A human never gets a package another team would beat.** The CPU team
   compares the human's offer with the best any other CPU team would give for
   the same players, in its own values, and takes the human's only if it's at

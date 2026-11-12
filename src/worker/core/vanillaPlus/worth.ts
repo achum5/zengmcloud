@@ -151,13 +151,19 @@ export const worth = (
 		if (t >= first) {
 			let x = seasons[t] ?? 0;
 			if (times) {
+				// By its size, as stock's applyFactor: less of a season is
+				// always worth less, below average or not - a fringe player is
+				// never more attractive for being hurt.
+				const scale = (f: number) => {
+					x += Math.abs(x) * (f - 1);
+				};
 				if (i === 0) {
-					x *= times.thisSeason;
+					scale(times.thisSeason);
 				} else if (i === 1) {
-					x *= times.nextSeason;
+					scale(times.nextSeason);
 				}
 				if (season + t > times.exp) {
-					x *= times.retention;
+					scale(times.retention);
 				}
 			}
 			sum += w * x;

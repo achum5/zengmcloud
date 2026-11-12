@@ -5,6 +5,8 @@ import { tweaksFor } from "./tweaks.ts";
 import { vanillaPlusSettings } from "./settings.ts";
 import { pickValues, playerWorth, worthFor, zOf } from "./worth.ts";
 import { calendar } from "./calendar.ts";
+import { bestOfferElsewhere, keenestBidders } from "./market.ts";
+import type { Player } from "../../../common/types.ts";
 import { g } from "../../util/index.ts";
 
 // What prices a trade for a CPU team: with vanilla+ on, vanilla's machinery
@@ -22,18 +24,34 @@ export const tradeValueCalculator = async (
 	const c = vanillaPlusSettings.calendar ? await calendar() : undefined;
 	const playoffsOf = (tid: number) => c?.playoffs.get(tid) ?? 1;
 	const humans = new Set(g.get("spectator") ? [] : g.get("userTids"));
-	return new ValueChangeCalculator({
+	const bestOffers = new Map<string, number>();
+	const biddersFor = (tid: number, p: Player) =>
+		keenestBidders({ lanes, tweaks, calendar: c, humans, tid, p });
+	const calc: ValueChangeCalculator = new ValueChangeCalculator({
 		...opts,
 		planOf: (tid) => planFor(lanes.get(tid)),
 		adjust: tweaks,
 		cpuMarkup: vanillaPlusSettings.cpuMarkup,
-		playerWorth: (tid, p, vsHuman) => {
+		playerWorth: async (tid, p, vsHuman) => {
 			const worth = {
 				...playerWorth(p, lanes.get(tid), c, playoffsOf(tid)),
 				injuryPriced: c !== undefined,
 			};
 			if (!vsHuman) {
 				return worth;
+			}
+			if (c) {
+				// A human pays at least what the best real offer elsewhere is
+				// worth to this team (market.ts bestOfferElsewhere).
+				const key = `${tid}:${p.pid}`;
+				let best = bestOffers.get(key);
+				if (best === undefined) {
+					best = await bestOfferElsewhere(calc, tid, p.pid, biddersFor(tid, p));
+					bestOffers.set(key, best);
+				}
+				// Only a real offer sets a floor: nobody bidding for a bad
+				// contract doesn't make it worth nothing instead of less.
+				return { ...worth, floor: best > 0 ? best : undefined };
 			}
 			// A human pays at least what the keenest other team would, its fit
 			// included: no buying cheap here to sell dear there.
@@ -64,4 +82,5 @@ export const tradeValueCalculator = async (
 		// buying gives some of its pick's worth up.
 		ownPicks: vanillaPlusSettings.calendar,
 	});
+	return calc;
 };

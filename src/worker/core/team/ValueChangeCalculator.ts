@@ -41,6 +41,9 @@ type Asset =
 			injury: PlayerInjury;
 			age: number;
 			justDrafted: boolean;
+			// Vanilla+: given away to a human, never for less than this trade
+			// value - the best real offer elsewhere, contract and all.
+			floor?: number;
 	  }
 	| {
 			type: "pick";
@@ -285,7 +288,7 @@ const getPlayers = async ({
 		}
 
 		// Vanilla+: his worth to this team, never less than the market's.
-		const worth = playerWorth?.(tid, p, vsHuman);
+		const worth = await playerWorth?.(tid, p, vsHuman);
 		const value = worth ? Math.max(worth.own, worth.market) : zscore(p.value);
 
 		// Only apply fudge factor to positive assets
@@ -299,6 +302,7 @@ const getPlayers = async ({
 			type: "player",
 			pid: p.pid,
 			value: fudgedValue,
+			floor: worth?.floor,
 			contractValue: getContractValue(contract, worth?.market ?? value),
 			injury: p.injury,
 			age: g.get("season") - p.born.year,
@@ -315,7 +319,7 @@ const getPlayers = async ({
 		const p = await idb.cache.players.get(pid);
 		if (p) {
 			// Vanilla+: his worth to this team.
-			const worth = playerWorth?.(tid, p, vsHuman);
+			const worth = await playerWorth?.(tid, p, vsHuman);
 			const value = worth ? worth.own : zscore(p.value);
 
 			const contract = getContractForValuation(p);
@@ -1024,6 +1028,9 @@ const sumValues = (
 			// By its size, as applyFactor: more is more, either way round.
 			tradeValue += Math.abs(tradeValue) * (adjust(p) - 1);
 		}
+		if (p.type === "player" && p.floor !== undefined) {
+			tradeValue = Math.max(tradeValue, p.floor);
+		}
 
 		return memo + tradeValue;
 	}, 0);
@@ -1032,19 +1039,20 @@ const sumValues = (
 // Vanilla+: a player's worth to a team and to the market, as z-scores in
 // place of his value's (core/vanillaPlus/worth.ts). A contract is judged
 // against the market's.
+type Worth = {
+	own: number;
+	market: number;
+	// The injury is in the worth already: no stock discount on top.
+	injuryPriced?: boolean;
+	// Given away, never for less than this trade value (Asset floor).
+	floor?: number;
+};
 export type PlayerWorth = (
 	tid: number,
 	p: Player,
 	// Dealing with a human: the market is the best any other team would pay.
 	vsHuman: boolean,
-) =>
-	| {
-			own: number;
-			market: number;
-			// The injury is in the worth already: no stock discount on top.
-			injuryPriced?: boolean;
-	  }
-	| undefined;
+) => Worth | undefined | Promise<Worth | undefined>;
 
 // Vanilla+: how a team's plan (its lane) weighs assets, in place of stock's
 // two strategies.

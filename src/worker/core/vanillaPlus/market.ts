@@ -13,6 +13,9 @@ import { ensureLanes, type Lane } from "./lanes.ts";
 import { tweaksFor, type Tweaks } from "./tweaks.ts";
 import { marketWatchers, type MarketEvent } from "./events.ts";
 import { flushNews } from "./news.ts";
+import type { Calendar } from "./calendar.ts";
+import { worthFor } from "./worth.ts";
+import { vanillaPlusSettings } from "./settings.ts";
 
 // THE MARKET (docs/vanilla-plus.md): CPU-to-CPU trades by direction, not at
 // random as stock's. Each day a few teams go shopping, more before the
@@ -254,6 +257,113 @@ const paymentOptions = async (
 	);
 };
 
+// paymentOptions for one calculator, by payer and payee: what a team could
+// pay another with doesn't change while the prices don't.
+const optionsCache = new WeakMap<
+	ValueChangeCalculator,
+	Map<string, Awaited<ReturnType<typeof paymentOptions>>>
+>();
+const cachedOptions = async (
+	calc: ValueChangeCalculator,
+	payer: number,
+	payee: number,
+) => {
+	let byPair = optionsCache.get(calc);
+	if (!byPair) {
+		byPair = new Map();
+		optionsCache.set(calc, byPair);
+	}
+	const key = `${payer}>${payee}`;
+	let options = byPair.get(key);
+	if (!options) {
+		options = await paymentOptions(calc, payer, payee, []);
+		byPair.set(key, options);
+	}
+	return options;
+};
+
+// The teams that would want a player most, other than his own and the
+// humans': by what he's worth to each, fit included.
+export const keenestBidders = ({
+	lanes,
+	tweaks,
+	calendar,
+	humans,
+	tid,
+	p,
+}: {
+	lanes: Map<number, Lane>;
+	tweaks: Tweaks;
+	calendar: Calendar | undefined;
+	humans: Set<number>;
+	tid: number;
+	p: Player;
+}) =>
+	[...lanes]
+		.filter(([other]) => other !== tid && !humans.has(other))
+		.map(([other, lane]) => ({
+			other,
+			want:
+				worthFor(p, lane, calendar, calendar?.playoffs.get(other) ?? 1) *
+				tweaks(other, playerAsset(p), "add"),
+		}))
+		.sort((a, b) => b.want - a.want)
+		.slice(0, vanillaPlusSettings.bidders)
+		.map((x) => x.other);
+
+// THE BEST REAL OFFER ELSEWHERE (docs/vanilla-plus.md, "A market that never
+// stops", 4): what the teams that want a player most would actually give
+// his team for him - each its best offer, as much as still works for it -
+// valued in his team's own terms. What a team won't take less than from a
+// human: "I'm not just going to take this smaller amount if that team would
+// pay more" (owner).
+export const bestOfferElsewhere = async (
+	calc: ValueChangeCalculator,
+	seller: number,
+	pid: number,
+	bidders: number[],
+) => {
+	const s = vplusMarketSettings;
+	let best = 0;
+	for (const buyer of bidders) {
+		const options = await cachedOptions(calc, buyer, seller);
+		const teams: TradeTeams = [
+			{ ...empty(buyer) },
+			{ ...empty(seller), pids: [pid] },
+		];
+		let used = 0;
+		for (const o of options) {
+			if (used >= s.payWith) {
+				break;
+			}
+			const next = helpers.deepCopy(teams);
+			if (o.pid !== undefined) {
+				next[0].pids.push(o.pid);
+			} else {
+				next[0].dpids.push(o.dpid!);
+			}
+			if ((await dvFor(calc, next, 0)) <= 0) {
+				continue;
+			}
+			teams[0] = next[0];
+			used += 1;
+		}
+		if (used === 0) {
+			continue;
+		}
+		const gets = await calc.evaluate({
+			tid: seller,
+			pidsAdd: teams[0].pids,
+			pidsRemove: [],
+			dpidsAdd: teams[0].dpids,
+			dpidsRemove: [],
+			tradingPartnerTid: buyer,
+		});
+		best = Math.max(best, gets);
+	}
+	return best;
+};
+
 const roomFor = async (tid: number, giving: number, getting: number) => {
 	const now = (await idb.cache.players.indexGetAll("playersByTid", tid)).length;
 	return Math.max(g.get("maxRosterSize"), now) - (now - giving + getting);
@@ -273,7 +383,7 @@ const pay = async (
 	bid: boolean,
 ): Promise<TradeTeams | undefined> => {
 	const s = vplusMarketSettings;
-	const options = await paymentOptions(calc, payer, payee, []);
+	const options = await cachedOptions(calc, payer, payee);
 	const teams: TradeTeams = [
 		{ ...empty(payer) },
 		{ ...empty(payee), pids: [...pids] },

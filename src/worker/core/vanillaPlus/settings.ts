@@ -15,4 +15,7 @@ export const vanillaPlusSettings = {
 	// season's games left and playoffs, and the tank effect on a team's own
 	// pick. Off until measured.
 	calendar: false,
+	// Selling to a human, the teams asked what they'd give instead (the
+	// keenest this many).
+	bidders: 4,
 };
