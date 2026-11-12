@@ -5,7 +5,6 @@ import { g, helpers, local } from "../../util/index.ts";
 import { contractOf } from "../realisticFrontOffice/contractOf.ts";
 import getDaysLeftSchedule from "../season/getDaysLeftSchedule.ts";
 import isUntradable from "../trade/isUntradable.ts";
-import makeItWork from "../trade/makeItWork.ts";
 import processTrade from "../trade/processTrade.ts";
 import summary from "../trade/summary.ts";
 import type { ValueChangeCalculator } from "../team/ValueChangeCalculator.ts";
@@ -52,6 +51,8 @@ export const vplusMarketSettings = {
 	coolDownDays: 10,
 	// Contracts a team may add as salary filler to make a deal legal.
 	fillers: 3,
+	// Most players and picks a team pays with in one deal.
+	payWith: 4,
 	// A buyer's targets: sellers' players this old or older, or anyone who
 	// would fit it this well (tweaks' factor) or better.
 	targetAge: 25,
@@ -201,6 +202,144 @@ const works = async (calc: ValueChangeCalculator, made: TradeTeams) => {
 	return { teams, dv0, dv1 };
 };
 
+// What a team could pay with: its players and picks, each with what it is
+// worth to the team getting it and what it costs the team paying.
+const paymentOptions = async (
+	calc: ValueChangeCalculator,
+	payer: number,
+	payee: number,
+	exclude: number[],
+) => {
+	const options: {
+		pid?: number;
+		dpid?: number;
+		gets: number;
+		gives: number;
+	}[] = [];
+	const value = async (pid?: number, dpid?: number) => {
+		const gets = await calc.evaluate({
+			tid: payee,
+			pidsAdd: pid === undefined ? [] : [pid],
+			pidsRemove: [],
+			dpidsAdd: dpid === undefined ? [] : [dpid],
+			dpidsRemove: [],
+			tradingPartnerTid: payer,
+		});
+		const gives = -(await calc.evaluate({
+			tid: payer,
+			pidsAdd: [],
+			pidsRemove: pid === undefined ? [] : [pid],
+			dpidsAdd: [],
+			dpidsRemove: dpid === undefined ? [] : [dpid],
+			tradingPartnerTid: payee,
+		}));
+		if (gets > 0) {
+			options.push({ pid, dpid, gets, gives: Math.max(0, gives) });
+		}
+	};
+	for (const p of await idb.cache.players.indexGetAll("playersByTid", payer)) {
+		if (!exclude.includes(p.pid) && !isUntradable(p).untradable) {
+			await value(p.pid);
+		}
+	}
+	for (const dp of await idb.cache.draftPicks.indexGetAll(
+		"draftPicksByTid",
+		payer,
+	)) {
+		await value(undefined, dp.dpid);
+	}
+	// Best value for money first: what the other team gets, per what it costs.
+	return options.sort(
+		(a, b) => b.gets / (b.gives + 0.05) - a.gets / (a.gives + 0.05),
+	);
+};
+
+const roomFor = async (tid: number, giving: number, getting: number) => {
+	const now = (await idb.cache.players.indexGetAll("playersByTid", tid)).length;
+	return Math.max(g.get("maxRosterSize"), now) - (now - giving + getting);
+};
+
+// The payer pays for the payee's players with its own, picking what's worth
+// most to the payee for what it costs the payer - a contender's picks and
+// prospects, a rebuilder's veterans - not, as stock's makeItWork would, the
+// payee's best read of the payer's roster regardless of what it costs. With
+// `bid`, the payer keeps adding while the deal still works for it: its best
+// offer. Otherwise the least that gets the payee to yes.
+const pay = async (
+	calc: ValueChangeCalculator,
+	payer: number,
+	payee: number,
+	pids: number[],
+	bid: boolean,
+): Promise<TradeTeams | undefined> => {
+	const s = vplusMarketSettings;
+	const options = await paymentOptions(calc, payer, payee, []);
+	const teams: TradeTeams = [
+		{ ...empty(payer) },
+		{ ...empty(payee), pids: [...pids] },
+	];
+	const with_ = (o: (typeof options)[number]) => {
+		const next = helpers.deepCopy(teams);
+		if (o.pid !== undefined) {
+			next[0].pids.push(o.pid);
+		} else {
+			next[0].dpids.push(o.dpid!);
+		}
+		return next;
+	};
+	let payeeDv = await dvFor(calc, teams, 1);
+	let used = 0;
+	for (const o of options) {
+		if (payeeDv > 0 && !bid) {
+			break;
+		}
+		if (used >= s.payWith) {
+			break;
+		}
+		if (
+			o.pid !== undefined &&
+			(await roomFor(payee, pids.length, teams[0].pids.length + 1)) < 0
+		) {
+			continue;
+		}
+		const next = with_(o);
+		if ((await dvFor(calc, next, 0)) <= 0) {
+			// Past what the payer would give: something smaller may still do.
+			continue;
+		}
+		teams[0] = next[0];
+		used += 1;
+		payeeDv = await dvFor(calc, teams, 1);
+	}
+	if (payeeDv <= 0) {
+		return;
+	}
+	// Anything the payee would still say yes without, the payer keeps.
+	if (!bid) {
+		for (const pid of teams[0].pids) {
+			const next = helpers.deepCopy(teams);
+			next[0].pids = next[0].pids.filter((x) => x !== pid);
+			if (
+				next[0].pids.length + next[0].dpids.length > 0 &&
+				(await dvFor(calc, next, 1)) > 0
+			) {
+				teams[0] = next[0];
+			}
+		}
+		for (const dpid of teams[0].dpids) {
+			const next = helpers.deepCopy(teams);
+			next[0].dpids = next[0].dpids.filter((x) => x !== dpid);
+			if (
+				next[0].pids.length + next[0].dpids.length > 0 &&
+				(await dvFor(calc, next, 1)) > 0
+			) {
+				teams[0] = next[0];
+			}
+		}
+	}
+	return teams;
+};
+
 const buyerShops = async (
 	calc: ValueChangeCalculator,
 	tweaks: Tweaks,
@@ -248,16 +387,9 @@ const buyerShops = async (
 		| { teams: TradeTeams; dv0: number; pid: number; fit: number }
 		| undefined;
 	for (const { p, fit } of scored) {
-		// The seller names its price for him (it is the screen's other team).
-		const made = await makeItWork(
-			[empty(buyer), { ...empty(p.tid), pids: [p.pid] }],
-			{
-				holdUserConstant: false,
-				maxAssetsToAdd: 5,
-				valueChangeCalculator: calc,
-			},
-		);
-		if (!made || !made[1].pids.includes(p.pid)) {
+		// The least of what the buyer has that gets the seller to yes.
+		const made = await pay(calc, buyer, p.tid, [p.pid], false);
+		if (!made) {
 			marketStats.noDeal += 1;
 			continue;
 		}
@@ -305,19 +437,14 @@ const sellerShops = async (
 	let offers = 0;
 	let best: { teams: TradeTeams; dv0: number; fit: number } | undefined;
 	for (const { tid, fit } of buyers) {
-		// Each buyer's best offer for him (it is the screen's other team).
-		const made = await makeItWork(
-			[{ ...empty(seller), pids: [vet.pid] }, empty(tid)],
-			{
-				holdUserConstant: true,
-				maxAssetsToAdd: 5,
-				valueChangeCalculator: calc,
-			},
-		);
-		if (!made) {
+		// Each buyer's best offer for him: as much as it would pay.
+		const offer = await pay(calc, tid, seller, [vet.pid], true);
+		if (!offer) {
 			marketStats.noDeal += 1;
 			continue;
 		}
+		// The seller's side first, as the initiator.
+		const made: TradeTeams = [offer[1], offer[0]];
 		const deal = await works(calc, made);
 		if (!deal) {
 			continue;

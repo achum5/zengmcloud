@@ -2,6 +2,7 @@ import { afterAll, assert, beforeAll, test } from "vitest";
 import { PHASE } from "../../../common/constants.ts";
 import { makeSeededRandom } from "../../../common/random.ts";
 import { idb } from "../../db/index.ts";
+import { vanillaPlusSettings } from "../vanillaPlus/settings.ts";
 import { g } from "../../util/index.ts";
 import { tradeDifficulty } from "../../util/difficulty.ts";
 import { createArenaLeague } from "../../../test/arena/runLeague.ts";
@@ -20,7 +21,12 @@ const userTid = 0;
 const cpuTid = 1;
 const realRandom = Math.random;
 
+// These test the title-odds engine's trades, which vanilla+ replaces
+// (docs/vanilla-plus.md): pinned to it whichever is on.
+const vanillaPlusWas = vanillaPlusSettings.on;
+
 beforeAll(async () => {
+	vanillaPlusSettings.on = false;
 	await importNode("fake-indexeddb/auto");
 	Math.random = makeSeededRandom(11);
 	// The test setup shares modules between files, and another may have left a
@@ -35,6 +41,7 @@ beforeAll(async () => {
 }, 120_000);
 
 afterAll(() => {
+	vanillaPlusSettings.on = vanillaPlusWas;
 	Math.random = realRandom;
 });
 
