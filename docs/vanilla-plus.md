@@ -257,6 +257,101 @@ News Feed and a "RUMORS" slot in the bottom ticker. Nothing else added.
   are pinned to it.
 - **Switched on** 2026-11-12 (cloud change 282).
 
+## Next: a market that never stops (plan, 2026-11-12)
+
+The owner: "Teams are just constantly shopping around, and the deadline is
+just when push comes to shove... their patience grows smaller as the
+deadline approaches. And it all based on the market: a CPU team should never
+trade me a package if it could go to some other team and get a higher
+package."
+
+Measured now (test leagues, seasons 2-3): when teams trade, they mostly
+trade the right way (60% of deals between a clearly better and a clearly
+worse team send the better player now to the better team, 10% the other
+way), but too few do it: about 2 of the 8 best teams buy a 60+ player a
+season and 1 of the 8 worst sells a starter, against roughly 4-6 and 5-8
+in an NBA season. The market picks a couple of teams a day at random to
+shop, more in the last week; a contender with a hole may never get a turn.
+
+### 1. What a player is worth knows about his contract and the calendar
+
+Two things worth.ts doesn't count yet, and both are what makes the
+deadline matter:
+
+- **Seasons past his contract** count only by the chance he re-signs (the
+  free agency model's stay chance, which the mode already has). A rental -
+  a veteran on an expiring deal - is worth this season to a contender and
+  next to nothing to a rebuilding team, so the rebuilding team wants him
+  gone before the deadline, as real ones do.
+- **This season counts for what's left of it**, plus the playoffs for a team
+  that will be in them. A player picked up at the deadline helps for a third
+  of the season and the playoffs; in the summer, for all of it.
+
+### 2. Patience: what a team needs to gain from a deal shrinks to the deadline
+
+Every CPU decision - a CPU deal, a human's offer, "What would make this
+work", the trading block, Trade Proposals - needs a team to come out ahead
+by a margin, as a share of what it gives up:
+
+- early in the season, a good share (a starting point of about 20%, to be
+  calibrated): a team has time to find a better deal and no reason to take
+  a merely fair one;
+- falling through the season, fastest at the end, to about 1% on deadline
+  day: push comes to shove. Never zero, so no team trades back and forth;
+- after the deadline, no trades until the offseason; then a new, gentler
+  curve through the draft and free agency.
+
+Why a share of what's given: a fixed amount would block every small deal
+and barely touch big ones. How fast it falls is the one thing to calibrate:
+against the NBA's timing (most in-season deals in the last week or two).
+
+Teams with something on the clock - a rebuilding team's expiring veteran, an
+all-in team's hole - get impatient sooner without a special rule, because
+the asset or the need loses its worth as the season runs out (section 1).
+
+### 3. Everyone shops, all the time
+
+Every team looks at the market regularly instead of a couple a day at
+random: buyers for the players that would help them most, sellers for the
+best home for players they'd sell. Early in the season a team looks every
+week or so, rising to every day in the last weeks. Most looks find nothing
+good enough for the patience of the day, so deals pile up toward the
+deadline by themselves - no deadline rule needed. Speed is budgeted: a look
+reuses the day's prices, about a tenth of a second.
+
+### 4. The market sets the price: every seller shops an offer around
+
+When a team is offered a deal for its player - by a CPU team or a human -
+it asks the other teams that would want him what they'd give (their best
+offers, the value-for-money search that's live now) and takes the best.
+So:
+
+- **A human never gets a package another team would beat.** The CPU team
+  compares the human's offer with the best any other CPU team would give for
+  the same players, in its own values, and takes the human's only if it's at
+  least as good and clears the day's patience. This replaces the current
+  rule (each player priced at the keenest other team's worth): it judges the
+  whole package, picks included, and what other teams could actually pay.
+- **Between CPU teams too:** a buyer's offer gets shopped around to the other
+  interested teams before the seller says yes, and the news reports it ("at
+  least three teams made offers").
+- Cost: a human's offer to a team prices the alternatives once (a second or
+  two); "What would make this work" and the trading block reuse it.
+
+### 5. Then measure
+
+- Trades a season (NBA about 50-60 including the offseason), and the share
+  of in-season deals in the final week or two.
+- Of the 8 best teams, how many add a player; of the 8 worst, how many sell;
+  rentals moved before the deadline.
+- The owner's four cases, both exploit suites (a human can't beat the best
+  CPU offer, can't flip a player for profit, no trade-backs), and speed.
+- Then firsts: whether contenders now pay with them, or their own firsts
+  need to count for less inside their window.
+
+Order: 1, then 2 and 3 together (patience with nobody shopping does
+nothing), then 4, measuring each in test leagues before the next.
+
 ## Order of work
 
 1. Vanilla+ switch; vanilla values wired into every trade path (human and
