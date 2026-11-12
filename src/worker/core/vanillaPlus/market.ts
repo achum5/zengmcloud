@@ -13,7 +13,7 @@ import { ensureLanes, type Lane } from "./lanes.ts";
 import { tweaksFor, type Tweaks } from "./tweaks.ts";
 import { marketWatchers, type MarketEvent } from "./events.ts";
 import { flushNews } from "./news.ts";
-import type { Calendar } from "./calendar.ts";
+import { calendar, type Calendar } from "./calendar.ts";
 import { worthFor } from "./worth.ts";
 import { vanillaPlusSettings } from "./settings.ts";
 
@@ -52,10 +52,26 @@ export const vplusMarketSettings = {
 	sellAge: 27,
 	// A team trades at most once in this many days.
 	coolDownDays: 10,
+	// With patience on (settings.ts), in the regular season every CPU team
+	// shops on a day with this chance - about every ten days early, rising to
+	// every other day at the deadline - times its lane's activity against the
+	// league's average; and waits less after a trade.
+	shopEarly: 0.1,
+	shopDeadline: 0.5,
+	shopCurve: 2,
+	patientCoolDownDays: 5,
 	// Contracts a team may add as salary filler to make a deal legal.
 	fillers: 3,
 	// Most players and picks a team pays with in one deal.
 	payWith: 4,
+	// A best offer (calendar on: bestPackage) is made from the payer's this
+	// many assets worth most to the payee, and the best this many packages by
+	// the sums are checked against the real values.
+	packageFrom: 16,
+	packageChecks: 6,
+	// A real offer elsewhere is looked for only from this share of what the
+	// team asks another CPU team for the player.
+	offerNear: 0.9,
 	// A buyer's targets: sellers' players this old or older, or anyone who
 	// would fit it this well (tweaks' factor) or better.
 	targetAge: 25,
@@ -77,6 +93,9 @@ export const marketStats = {
 	initiatorSays: 0,
 	otherSays: 0,
 	trades: 0,
+	// Teams that shopped, and the time the market took (ms).
+	looks: 0,
+	ms: 0,
 };
 
 // When each team last traded, by day of this season's market.
@@ -205,13 +224,81 @@ const works = async (calc: ValueChangeCalculator, made: TradeTeams) => {
 	return { teams, dv0, dv1 };
 };
 
+// What each asset is worth to each team getting it, and costs the team
+// giving it, in a deal between CPU teams - the pieces every search below adds
+// up - once per calculator.
+const pieces = new WeakMap<ValueChangeCalculator, Map<string, number>>();
+const piece = async (
+	calc: ValueChangeCalculator,
+	key: string,
+	value: () => Promise<number>,
+) => {
+	let known = pieces.get(calc);
+	if (!known) {
+		known = new Map();
+		pieces.set(calc, known);
+	}
+	let x = known.get(key);
+	if (x === undefined) {
+		x = await value();
+		known.set(key, x);
+	}
+	return x;
+};
+const assetKey = (pid: number | undefined, dpid: number | undefined) =>
+	pid !== undefined ? `p${pid}` : `d${dpid}`;
+// Worth to `tid`, getting it from `from` (its worth alone: what a deal does
+// to a team's own pick is left to the check of the whole deal).
+const getsFrom = (
+	calc: ValueChangeCalculator,
+	tid: number,
+	from: number,
+	pid?: number,
+	dpid?: number,
+) =>
+	piece(
+		calc,
+		`+${tid}:${from === g.get("userTid")}:${assetKey(pid, dpid)}`,
+		() =>
+			calc.evaluate({
+				tid,
+				pidsAdd: pid === undefined ? [] : [pid],
+				pidsRemove: [],
+				dpidsAdd: dpid === undefined ? [] : [dpid],
+				dpidsRemove: [],
+				tradingPartnerTid: from,
+				quick: true,
+			}),
+	);
+// What giving it to `to` costs `tid`.
+const givesTo = (
+	calc: ValueChangeCalculator,
+	tid: number,
+	to: number,
+	pid?: number,
+	dpid?: number,
+) =>
+	piece(
+		calc,
+		`-${tid}:${to === g.get("userTid")}:${assetKey(pid, dpid)}`,
+		async () =>
+			-(await calc.evaluate({
+				tid,
+				pidsAdd: [],
+				pidsRemove: pid === undefined ? [] : [pid],
+				dpidsAdd: [],
+				dpidsRemove: dpid === undefined ? [] : [dpid],
+				tradingPartnerTid: to,
+				raw: true,
+			})),
+	);
+
 // What a team could pay with: its players and picks, each with what it is
 // worth to the team getting it and what it costs the team paying.
 const paymentOptions = async (
 	calc: ValueChangeCalculator,
 	payer: number,
 	payee: number,
-	exclude: number[],
 ) => {
 	const options: {
 		pid?: number;
@@ -220,28 +307,14 @@ const paymentOptions = async (
 		gives: number;
 	}[] = [];
 	const value = async (pid?: number, dpid?: number) => {
-		const gets = await calc.evaluate({
-			tid: payee,
-			pidsAdd: pid === undefined ? [] : [pid],
-			pidsRemove: [],
-			dpidsAdd: dpid === undefined ? [] : [dpid],
-			dpidsRemove: [],
-			tradingPartnerTid: payer,
-		});
-		const gives = -(await calc.evaluate({
-			tid: payer,
-			pidsAdd: [],
-			pidsRemove: pid === undefined ? [] : [pid],
-			dpidsAdd: [],
-			dpidsRemove: dpid === undefined ? [] : [dpid],
-			tradingPartnerTid: payee,
-		}));
+		const gets = await getsFrom(calc, payee, payer, pid, dpid);
+		const gives = await givesTo(calc, payer, payee, pid, dpid);
 		if (gets > 0) {
 			options.push({ pid, dpid, gets, gives: Math.max(0, gives) });
 		}
 	};
 	for (const p of await idb.cache.players.indexGetAll("playersByTid", payer)) {
-		if (!exclude.includes(p.pid) && !isUntradable(p).untradable) {
+		if (!isUntradable(p).untradable) {
 			await value(p.pid);
 		}
 	}
@@ -276,7 +349,7 @@ const cachedOptions = async (
 	const key = `${payer}>${payee}`;
 	let options = byPair.get(key);
 	if (!options) {
-		options = await paymentOptions(calc, payer, payee, []);
+		options = await paymentOptions(calc, payer, payee);
 		byPair.set(key, options);
 	}
 	return options;
@@ -312,61 +385,178 @@ export const keenestBidders = ({
 		.map((x) => x.other);
 
 // THE BEST REAL OFFER ELSEWHERE (docs/vanilla-plus.md, "A market that never
-// stops", 4): what the teams that want a player most would actually give
-// his team for him - each its best offer, as much as still works for it -
-// valued in his team's own terms. What a team won't take less than from a
-// human: "I'm not just going to take this smaller amount if that team would
-// pay more" (owner).
+// stops", 4): what other teams would actually give his team for a player -
+// each its best offer, as much as still works for it - valued in his team's
+// own terms, as it values anything it gets. What a team won't take less than
+// from a human: "I'm not just going to take this smaller amount if that team
+// would pay more" (owner). Only an offer near or above what the team asks
+// another CPU team for him counts (0 otherwise): below that it changes
+// nothing.
 export const bestOfferElsewhere = async (
 	calc: ValueChangeCalculator,
 	seller: number,
 	pid: number,
 	bidders: number[],
 ) => {
-	const s = vplusMarketSettings;
-	let best = 0;
+	// Each team's packages by the sums - nearly what they're really worth -
+	// and the teams with the best first: a team that couldn't beat the best
+	// real offer so far isn't asked.
+	const searches = [];
 	for (const buyer of bidders) {
-		const options = await cachedOptions(calc, buyer, seller);
-		const teams: TradeTeams = [
-			{ ...empty(buyer) },
-			{ ...empty(seller), pids: [pid] },
-		];
-		let used = 0;
-		for (const o of options) {
-			if (used >= s.payWith) {
-				break;
-			}
-			const next = helpers.deepCopy(teams);
-			if (o.pid !== undefined) {
-				next[0].pids.push(o.pid);
-			} else {
-				next[0].dpids.push(o.dpid!);
-			}
-			if ((await dvFor(calc, next, 0)) <= 0) {
-				continue;
-			}
-			teams[0] = next[0];
-			used += 1;
+		const search = await packagesFor(calc, buyer, seller, [pid]);
+		if (search && search.found.length > 0) {
+			searches.push({ buyer, search });
 		}
-		if (used === 0) {
+	}
+	searches.sort((a, b) => b.search.found[0]!.gets - a.search.found[0]!.gets);
+	const asks =
+		bidders.length > 0
+			? vplusMarketSettings.offerNear *
+				(await givesTo(calc, seller, bidders[0]!, pid))
+			: 0;
+	let best = Math.max(0, asks);
+	for (const { buyer, search } of searches) {
+		if (search.found[0]!.gets <= best) {
+			break;
+		}
+		const deal = await firstThatWorks(calc, search, best);
+		if (!deal) {
 			continue;
 		}
 		const gets = await calc.evaluate({
 			tid: seller,
-			pidsAdd: teams[0].pids,
+			pidsAdd: deal.teams[0].pids,
 			pidsRemove: [],
-			dpidsAdd: teams[0].dpids,
+			dpidsAdd: deal.teams[0].dpids,
 			dpidsRemove: [],
 			tradingPartnerTid: buyer,
+			raw: true,
 		});
 		best = Math.max(best, gets);
 	}
-	return best;
+	return best > asks ? best : 0;
 };
 
 const roomFor = async (tid: number, giving: number, getting: number) => {
 	const now = (await idb.cache.players.indexGetAll("playersByTid", tid)).length;
 	return Math.max(g.get("maxRosterSize"), now) - (now - giving + getting);
+};
+
+// THE PAYER'S BEST OFFER: of its players and picks, the package (payWith at
+// most, no more players than the payee has room for) worth most to the
+// payee that still leaves the payer ahead - not the first few by value for
+// money, which spends the slots on scraps and leaves a team that would pay
+// a lot offering little. What each asset is worth to each side adds up very
+// nearly (vanilla sums its assets), so the search runs on those and checks
+// its choices against the real values, best first.
+const packagesFor = async (
+	calc: ValueChangeCalculator,
+	payer: number,
+	payee: number,
+	pids: number[],
+) => {
+	const s = vplusMarketSettings;
+	const teams: TradeTeams = [
+		{ ...empty(payer) },
+		{ ...empty(payee), pids: [...pids] },
+	];
+	// What getting them for nothing does for the payer: its budget.
+	const budget =
+		pids.length === 1
+			? await getsFrom(calc, payer, payee, pids[0])
+			: await dvFor(calc, teams, 0);
+	if (budget <= 0) {
+		return;
+	}
+	const maxPlayers = await roomFor(payee, pids.length, 0);
+	const options = (await cachedOptions(calc, payer, payee))
+		.filter((o) => o.gives < budget && !pids.includes(o.pid ?? -1))
+		.sort((a, b) => b.gets - a.gets)
+		.slice(0, s.packageFrom);
+	const found: { at: number[]; gets: number }[] = [];
+	const search = (
+		from: number,
+		at: number[],
+		gets: number,
+		gives: number,
+		players: number,
+	) => {
+		if (at.length > 0) {
+			found.push({ at: [...at], gets });
+		}
+		if (at.length >= s.payWith) {
+			return;
+		}
+		for (let i = from; i < options.length; i++) {
+			const o = options[i]!;
+			const isPlayer = o.pid !== undefined ? 1 : 0;
+			if (gives + o.gives >= budget || players + isPlayer > maxPlayers) {
+				continue;
+			}
+			at.push(i);
+			search(i + 1, at, gets + o.gets, gives + o.gives, players + isPlayer);
+			at.pop();
+		}
+	};
+	search(0, [], 0, 0, 0);
+	found.sort((a, b) => b.gets - a.gets);
+	return { teams, options, found };
+};
+
+// The best few packages by the sums, each checked against the real values;
+// one that's past what the payer would give drops its smallest pieces until
+// it isn't (the sums miss a little, mostly on the small pieces). Only those
+// worth more than `over` by the sums.
+const firstThatWorks = async (
+	calc: ValueChangeCalculator,
+	{
+		teams,
+		options,
+		found,
+	}: NonNullable<Awaited<ReturnType<typeof packagesFor>>>,
+	over = -Infinity,
+) => {
+	const s = vplusMarketSettings;
+	let best: { teams: TradeTeams; gets: number } | undefined;
+	const checked = new Set<string>();
+	for (const candidate of found.slice(0, s.packageChecks)) {
+		const at = [...candidate.at].sort(
+			(a, b) => options[b]!.gets - options[a]!.gets,
+		);
+		while (at.length > 0) {
+			const gets = at.reduce((sum, i) => sum + options[i]!.gets, 0);
+			const key = [...at].sort((a, b) => a - b).join(",");
+			if (gets <= over || checked.has(key) || (best && gets <= best.gets)) {
+				break;
+			}
+			checked.add(key);
+			const next = helpers.deepCopy(teams);
+			for (const i of at) {
+				const o = options[i]!;
+				if (o.pid !== undefined) {
+					next[0].pids.push(o.pid);
+				} else {
+					next[0].dpids.push(o.dpid!);
+				}
+			}
+			if ((await dvFor(calc, next, 0)) > 0) {
+				best = { teams: next, gets };
+				break;
+			}
+			at.pop();
+		}
+	}
+	return best;
+};
+
+const bestPackage = async (
+	calc: ValueChangeCalculator,
+	payer: number,
+	payee: number,
+	pids: number[],
+) => {
+	const search = await packagesFor(calc, payer, payee, pids);
+	return search && (await firstThatWorks(calc, search))?.teams;
 };
 
 // The payer pays for the payee's players with its own, picking what's worth
@@ -383,6 +573,10 @@ const pay = async (
 	bid: boolean,
 ): Promise<TradeTeams | undefined> => {
 	const s = vplusMarketSettings;
+	if (bid && vanillaPlusSettings.calendar) {
+		const best = await bestPackage(calc, payer, payee, pids);
+		return best && (await dvFor(calc, best, 1)) > 0 ? best : undefined;
+	}
 	const options = await cachedOptions(calc, payer, payee);
 	const teams: TradeTeams = [
 		{ ...empty(payer) },
@@ -574,9 +768,10 @@ const sellerShops = async (
 
 const canTrade = (tid: number) => {
 	const last = lastTraded.get(tid);
-	return (
-		last === undefined || marketDay - last >= vplusMarketSettings.coolDownDays
-	);
+	const days = vanillaPlusSettings.patience
+		? vplusMarketSettings.patientCoolDownDays
+		: vplusMarketSettings.coolDownDays;
+	return last === undefined || marketDay - last >= days;
 };
 
 const execute = async (
@@ -605,9 +800,49 @@ const inDeadlineDays = async () => {
 	}
 };
 
+// Who shops today, in order. Stock vanilla+: a few teams a day, more in the
+// last week before the deadline. With patience: every team, by a chance that
+// rises to the deadline.
+const shoppersToday = async (
+	tids: number[],
+	lanes: Map<number, Lane>,
+	freeAgency: boolean,
+) => {
+	const s = vplusMarketSettings;
+	const activity = (tid: number) => s.activity[lanes.get(tid) ?? "playoff"];
+	const pool = tids.filter(canTrade);
+	const out: number[] = [];
+	if (vanillaPlusSettings.patience && !freeAgency) {
+		const { toDeadline } = await calendar();
+		const rate =
+			s.shopEarly + (s.shopDeadline - s.shopEarly) * toDeadline ** s.shopCurve;
+		const total = tids.reduce((sum, tid) => sum + activity(tid), 0);
+		for (const tid of pool) {
+			if (Math.random() < (rate * tids.length * activity(tid)) / total) {
+				out.push(tid);
+			}
+		}
+		for (let i = out.length - 1; i > 0; i--) {
+			const j = Math.floor(Math.random() * (i + 1));
+			[out[i], out[j]] = [out[j]!, out[i]!];
+		}
+		return out;
+	}
+	const shoppers = freeAgency
+		? s.freeAgencyShoppers
+		: (await inDeadlineDays())
+			? s.deadlineShoppers
+			: s.shoppersPerDay;
+	for (let i = 0; i < shoppers && pool.length > 0; i++) {
+		const tid = weighted(pool, activity)!;
+		pool.splice(pool.indexOf(tid), 1);
+		out.push(tid);
+	}
+	return out;
+};
+
 // One day of the market.
 export const tradeDay = async () => {
-	const s = vplusMarketSettings;
 	const phase = g.get("phase");
 	if (marketSeason !== g.get("season")) {
 		marketSeason = g.get("season");
@@ -615,14 +850,10 @@ export const tradeDay = async () => {
 		marketDay = 0;
 	}
 	marketDay += 1;
-	let shoppers: number;
-	if (phase === PHASE.REGULAR_SEASON) {
-		shoppers = (await inDeadlineDays()) ? s.deadlineShoppers : s.shoppersPerDay;
-	} else if (phase === PHASE.FREE_AGENCY) {
-		shoppers = s.freeAgencyShoppers;
-	} else {
+	if (phase !== PHASE.REGULAR_SEASON && phase !== PHASE.FREE_AGENCY) {
 		return;
 	}
+	const started = performance.now();
 	const tids = await cpuTids();
 	if (tids.length < 2) {
 		return;
@@ -634,13 +865,16 @@ export const tradeDay = async () => {
 		0,
 		Infinity,
 	]);
-	const pool = tids.filter(canTrade);
-	for (let i = 0; i < shoppers && pool.length > 0; i++) {
-		const tid = weighted(pool, (x) => s.activity[lanes.get(x) ?? "playoff"])!;
-		pool.splice(pool.indexOf(tid), 1);
+	for (const tid of await shoppersToday(
+		tids,
+		lanes,
+		phase === PHASE.FREE_AGENCY,
+	)) {
+		// A trade earlier today may have used it up.
 		if (!canTrade(tid)) {
 			continue;
 		}
+		marketStats.looks += 1;
 		const lane = lanes.get(tid) ?? "playoff";
 		const others = tids.filter((x) => x !== tid);
 		const traded =
@@ -658,4 +892,5 @@ export const tradeDay = async () => {
 		}
 	}
 	await flushNews();
+	marketStats.ms += performance.now() - started;
 };

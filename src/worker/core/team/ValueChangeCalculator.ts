@@ -1302,6 +1302,7 @@ export class ValueChangeCalculator {
 	private pickValues?: () => Promise<TradePickValues>;
 	private ownPicks: boolean;
 	private ownPicksCache = new Map<string, number>();
+	private margin: number;
 	private adjust?: (
 		tid: number,
 		asset: Asset,
@@ -1316,6 +1317,7 @@ export class ValueChangeCalculator {
 		playerWorth,
 		pickValues,
 		ownPicks = false,
+		margin = 0,
 	}: {
 		quick?: boolean;
 		planOf?: (tid: number) => TradePlan | undefined;
@@ -1327,12 +1329,16 @@ export class ValueChangeCalculator {
 		pickValues?: () => Promise<TradePickValues>;
 		// Vanilla+: count what a trade does to the team's own pick this season.
 		ownPicks?: boolean;
+		// Vanilla+ patience: a deal must clear this share of what the team
+		// gives up (evaluate's `raw` skips it, to measure worth alone).
+		margin?: number;
 	} = {}) {
 		this.quick = quick;
 		this.planOf = planOf;
 		this.playerWorth = playerWorth;
 		this.pickValues = pickValues;
 		this.ownPicks = ownPicks;
+		this.margin = margin;
 		this.adjust = adjust;
 		this.cpuMarkup = cpuMarkup;
 	}
@@ -1436,6 +1442,8 @@ export class ValueChangeCalculator {
 		dpidsAdd,
 		dpidsRemove,
 		tradingPartnerTid,
+		raw = false,
+		quick = false,
 	}: {
 		tid: number;
 		pidsAdd: number[];
@@ -1443,6 +1451,11 @@ export class ValueChangeCalculator {
 		dpidsAdd: number[];
 		dpidsRemove: number[];
 		tradingPartnerTid: number | undefined;
+		// Worth alone, without patience's margin.
+		raw?: boolean;
+		// Worth alone, and without what the deal does to the team's own pick
+		// (a search's pieces; deals are checked in full).
+		quick?: boolean;
 	}): Promise<number> {
 		if (!this.cache) {
 			this.cache = await this.init();
@@ -1519,7 +1532,7 @@ export class ValueChangeCalculator {
 		// better pick whoever buys, so it can't take less from a human than
 		// another team would give.
 		let ownPicksRaw = 0;
-		if (this.ownPicks && pidsAdd.length + pidsRemove.length > 0) {
+		if (this.ownPicks && !quick && pidsAdd.length + pidsRemove.length > 0) {
 			const key = `${tid}|${pidsAdd.toSorted().join(",")}|${pidsRemove.toSorted().join(",")}|${dpidsRemove.toSorted().join(",")}`;
 			const known = this.ownPicksCache.get(key);
 			if (known !== undefined) {
@@ -1538,8 +1551,14 @@ export class ValueChangeCalculator {
 			}
 		}
 		const ownPicks = vsHuman ? Math.min(0, ownPicksRaw) : ownPicksRaw;
+		// Patience: to make a deal now, a team wants to come out ahead by a
+		// share of what it gives up.
+		const margin =
+			raw || quick || this.margin <= 0
+				? 0
+				: this.margin * Math.max(0, valuesRemove);
 
-		return valuesAdd - valuesRemove + ownPicks;
+		return valuesAdd - valuesRemove + ownPicks - margin;
 	}
 }
 

@@ -64,6 +64,10 @@ import { computeMetrics, type LeagueMetrics } from "./metrics.ts";
 import { BENCHMARKS, type Benchmark } from "./benchmarks.ts";
 import { contractOf } from "../../worker/core/realisticFrontOffice/contractOf.ts";
 import { vanillaPlusSettings } from "../../worker/core/vanillaPlus/settings.ts";
+import {
+	marketStats as vplusMarketStats,
+	vplusMarketSettings,
+} from "../../worker/core/vanillaPlus/market.ts";
 
 // THE ARENA: whole random-players leagues, every team run by the CPU, played
 // season after season through the real game code, then measured against the
@@ -148,6 +152,11 @@ test.runIf(env.ARENA_RUN === "1")(
 				Object.assign(
 					vanillaPlusSettings,
 					JSON.parse(env.ARENA_VPLUS_SETTINGS ?? "{}"),
+				);
+				// ARENA_VPLUS_MARKET='{"shopDeadline":0.4}': its market's.
+				Object.assign(
+					vplusMarketSettings,
+					JSON.parse(env.ARENA_VPLUS_MARKET ?? "{}"),
 				);
 				// ARENA_SPLIT_OUTLOOK: these outlook settings for the odd teams'
 				// own pricing only (teamOutlookSettings), as ARENA_SPLIT.
@@ -978,6 +987,8 @@ test.runIf(env.ARENA_RUN === "1")(
 					seed,
 					seconds: (Date.now() - started) / 1000,
 					market: env.ARENA_FO === "1" ? marketClock : undefined,
+					// Vanilla+'s market: teams that shopped, trades, time.
+					vplusMarket: vanillaPlusSettings.on ? vplusMarketStats : undefined,
 					losing: env.ARENA_FO === "1" ? losingClock : undefined,
 					metrics,
 					freeAgents: snapshots.map((s) => ({

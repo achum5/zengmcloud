@@ -330,6 +330,17 @@ against waiting:
 Why a share of what's given: a fixed amount would block every small deal and
 barely touch big ones.
 
+**Built (setting `patience`, off until measured):** calendar.ts `patience`
+is 20% before the season, falling with the square of the distance left to
+the deadline (`tradeDeadline`, the share of the season it falls at) to 1% on
+deadline day; 6% through the draft and free agency. ValueChangeCalculator
+takes it as `margin`: a deal must come out ahead by that share of what the
+team gives (`valuesRemove`). Searches price their pieces without it
+(`raw`), so what a team offers isn't shrunk twice. Checked
+(vanillaPlus.test.ts): of the one-for-ones a CPU team would take on worth
+alone, patience turns many down at the start of the season and few at the
+deadline, and never makes a deal look better.
+
 ### 3. Everyone shops, all the time
 
 The point is a market that's really happening (owner: "most important is
@@ -342,6 +353,13 @@ good enough for the patience of the day, so deals pile up toward the
 deadline by themselves - no deadline rule needed. Speed is budgeted: a look
 reuses the day's prices, about a tenth of a second.
 
+**Built (setting `patience`):** in the regular season every CPU team shops
+on a day with a chance of 10% early, rising with the square of the way to
+the deadline to 50% on deadline day, times its lane's activity against the
+league's (market.ts `shoppersToday`); a team that traded waits 5 days
+instead of 10. Free agency keeps its 3 shoppers a day. The arena reports
+looks, trades and the market's time per season (`vplusMarket`).
+
 ### 4. The market sets the price: every seller shops an offer around
 
 As any real market works (owner: "I'm not just going to take this smaller
@@ -353,12 +371,38 @@ offers, the value-for-money search that's live now) and takes the best.
 So:
 
 - **Built (with the calendar): a human never gets a player for less than
-  another team's best real offer** (market.ts `bestOfferElsewhere`): the
-  four teams keenest on him each make their best offer, the most that still
-  works for them, from what's worth most to his team for what it costs
-  them; his team won't take less from a human than the best of them, in its
-  own terms and after contracts. No floor where nobody would bid (a bad
-  contract stays a cost). Cached per player per pricing.
+  any other team's best real offer** (market.ts `bestOfferElsewhere`).
+  Every other CPU team makes its best offer: the package of up to four of
+  its players and picks worth most to his team that still leaves it ahead
+  (`packagesFor`/`firstThatWorks`: searched on each piece's worth, which
+  adds up very nearly, then checked against the real values, dropping the
+  smallest pieces when the sums miss). His team won't take less from a
+  human than the best of them, in its own terms - as it values anything it
+  gets - after contracts. No floor where nobody would bid (a bad contract
+  stays a cost).
+  - The first version asked only the four keenest teams, and filled their
+    offers by value for money: the slots went on scraps, so a rebuilder
+    worth 23 for a prospect offered 5, and a rebuilder with what a contender
+    wanted most (its veterans, 315 for a star the contender priced at 140)
+    wasn't asked. Every team, best package: a human pays at least every
+    team's real offer, exactly (exploits.test.ts).
+  - The keenest team's own worth for a player (the floor without the
+    calendar) isn't used with it: a contender's worth for a player this
+    season is no price a contender could pay (it put Tatum at 171 against
+    Mobley's 157 for Boston, in the owner's league).
+  - Valuing other teams' packages at what the seller could sell them on for
+    was tried: it would value a rebuilder's picks above a human's, so a
+    human would pay more for being human. Left out.
+  - What's left of the middleman: lanes value things differently, so a
+    human reselling a player to the team that wants him most can make a
+    little - at most about 14% on a real player (exploits.test.ts holds it
+    under 20%), more only on bench players a team values at almost nothing.
+  - Speed: pieces are priced once per pricing and shared; a team that
+    couldn't beat the best offer so far isn't asked. Pricing a team's first
+    player for a human about 0.2 s, each after about 5 ms; the trading block
+    4-5 s (2 s without the calendar).
+  - The same best-package search is a seller's buyers' bids in the CPU
+    market (calendar on).
 - **A human never gets a package another team would beat.** The CPU team
   compares the human's offer with the best any other CPU team would give for
   the same players, in its own values, and takes the human's only if it's at

@@ -42,7 +42,10 @@ export const tradeValueCalculator = async (
 			}
 			if (c) {
 				// A human pays at least what the best real offer elsewhere is
-				// worth to this team (market.ts bestOfferElsewhere).
+				// worth to this team (market.ts bestOfferElsewhere). Not the
+				// keenest team's own worth for him, as without the calendar: a
+				// contender's worth for a player this season is no price a
+				// contender could pay.
 				const key = `${tid}:${p.pid}`;
 				let best = bestOffers.get(key);
 				if (best === undefined) {
@@ -64,23 +67,24 @@ export const tradeValueCalculator = async (
 				age: g.get("season") - p.born.year,
 				justDrafted: false,
 			} as const;
-			let best = 0;
+			let keenest = 0;
 			for (const [other, lane] of lanes) {
 				if (other !== tid && !humans.has(other)) {
-					best = Math.max(
-						best,
+					keenest = Math.max(
+						keenest,
 						worthFor(p, lane, c, playoffsOf(other)) *
 							tweaks(other, asset, "add"),
 					);
 				}
 			}
-			return { ...worth, market: Math.max(worth.market, zOf(best)) };
+			return { ...worth, market: Math.max(worth.market, zOf(keenest)) };
 		},
 		pickValues,
 		// A team that sells its players is a worse team, and its own pick a
 		// better one: a tank counts for what it's worth, and a contender
 		// buying gives some of its pick's worth up.
 		ownPicks: vanillaPlusSettings.calendar,
+		margin: c && vanillaPlusSettings.patience ? c.patience : 0,
 	});
 	return calc;
 };

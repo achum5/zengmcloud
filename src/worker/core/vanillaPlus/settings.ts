@@ -15,7 +15,11 @@ export const vanillaPlusSettings = {
 	// season's games left and playoffs, and the tank effect on a team's own
 	// pick. Off until measured.
 	calendar: false,
-	// Selling to a human, the teams asked what they'd give instead (the
-	// keenest this many).
-	bidders: 4,
+	// Selling to a human (calendar on), the teams asked what they'd give
+	// instead: the keenest this many (every team).
+	bidders: Infinity,
+	// "A market that never stops", steps 2-3 (calendar.ts patience,
+	// market.ts tradeDay): patience to the deadline, every team shopping. Needs
+	// the calendar. Off until measured.
+	patience: false,
 };

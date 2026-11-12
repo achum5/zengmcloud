@@ -16,6 +16,7 @@ const importNode = (name: string) => import(/* @vite-ignore */ name);
 const realRandom = Math.random;
 const wasOn = vanillaPlusSettings.on;
 const calendarWas = vanillaPlusSettings.calendar;
+const patienceWas = vanillaPlusSettings.patience;
 
 beforeAll(async () => {
 	await importNode("fake-indexeddb/auto");
@@ -33,6 +34,7 @@ beforeAll(async () => {
 afterAll(() => {
 	vanillaPlusSettings.on = wasOn;
 	vanillaPlusSettings.calendar = calendarWas;
+	vanillaPlusSettings.patience = patienceWas;
 	Math.random = realRandom;
 });
 
@@ -329,5 +331,94 @@ test("a contender's star out for the year raises the other contenders' stake in 
 	} finally {
 		star.injury = was;
 		await idb.cache.players.put(star);
+	}
+});
+
+// Owner: "teams are just constantly shopping around. And the deadline is just
+// when push comes to shove... their patience grows smaller as the deadline
+// approaches." Early in the season a team turns down deals it comes out only
+// a little ahead on - there's time to find better; at the deadline it takes
+// them.
+test("teams want to come out well ahead early in the season, barely at the deadline", async () => {
+	vanillaPlusSettings.calendar = true;
+	vanillaPlusSettings.patience = true;
+	const season = g.get("season");
+	const phase = g.get("phase");
+	const teamSeasons = await idb.cache.teamSeasons.indexGetAll(
+		"teamSeasonsBySeasonTid",
+		[[season], [season, "Z"]],
+	);
+	const saved = teamSeasons.map((ts) => [ts.won, ts.lost] as const);
+	const play = async (games: number) => {
+		for (const ts of teamSeasons) {
+			ts.won = Math.floor(games / 2);
+			ts.lost = games - ts.won;
+			await idb.cache.teamSeasons.put(ts);
+		}
+	};
+	// Every one-for-one between one CPU team's top six and others': how many
+	// the others would take on worth alone that they turn down for patience.
+	const refused = async () => {
+		const calc = await tradeValueCalculator();
+		const lanes = await ensureLanes();
+		const [partner, ...others] = [...lanes.keys()].filter((x) => x !== 0);
+		const mine = (await idb.cache.players.indexGetAll("playersByTid", partner!))
+			.sort((a, b) => b.value - a.value)
+			.slice(0, 6);
+		let worthIt = 0;
+		let turnedDown = 0;
+		for (const tid of others.slice(0, 10)) {
+			const theirs = (await idb.cache.players.indexGetAll("playersByTid", tid))
+				.sort((a, b) => b.value - a.value)
+				.slice(0, 6);
+			for (const a of mine) {
+				for (const b of theirs) {
+					const deal = {
+						tid,
+						pidsAdd: [a.pid],
+						pidsRemove: [b.pid],
+						dpidsAdd: [],
+						dpidsRemove: [],
+						tradingPartnerTid: partner,
+					};
+					const raw = await calc.evaluate({ ...deal, raw: true });
+					const patient = await calc.evaluate(deal);
+					// Patience only ever asks for more.
+					assert.isAtMost(patient, raw + 1e-9);
+					if (raw > 0) {
+						worthIt += 1;
+						if (patient <= 0) {
+							turnedDown += 1;
+						}
+					}
+				}
+			}
+		}
+		return { worthIt, turnedDown };
+	};
+	try {
+		g.setWithoutSavingToDB("phase", PHASE.REGULAR_SEASON);
+		await play(0);
+		const start = await calendar();
+		const early = await refused();
+		await play(Math.ceil(g.get("numGames") * g.get("tradeDeadline")));
+		const deadline = await calendar();
+		const late = await refused();
+		assert.isAbove(start.patience, 0.15);
+		assert.isBelow(deadline.patience, 0.02);
+		assert.isAbove(early.turnedDown, 0);
+		assert.isBelow(
+			late.turnedDown / Math.max(1, late.worthIt),
+			early.turnedDown / early.worthIt,
+		);
+	} finally {
+		teamSeasons.forEach((ts, i) => {
+			[ts.won, ts.lost] = saved[i]!;
+		});
+		for (const ts of teamSeasons) {
+			await idb.cache.teamSeasons.put(ts);
+		}
+		g.setWithoutSavingToDB("phase", phase);
+		vanillaPlusSettings.patience = patienceWas;
 	}
 });

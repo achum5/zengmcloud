@@ -35,6 +35,15 @@ export const calendarSettings = {
 	// An injury counts as a long one, for refreshing the standings, from this
 	// many games out.
 	longInjury: 15,
+	// PATIENCE ("A market that never stops", 2): what a team needs to come out
+	// ahead by, as a share of what it gives up - a lot at the start of the
+	// season, when there's time to find better, falling to almost nothing at
+	// the deadline, when push comes to shove; less again through the draft and
+	// free agency.
+	patienceStart: 0.2,
+	patienceEnd: 0.01,
+	patienceCurve: 2,
+	patienceOffseason: 0.06,
 	// How sure a team's playoff place is, in places of the standings either
 	// side of the cut: this many at the start of the season, shrinking to
 	// `sureAtEnd` by its end.
@@ -47,6 +56,10 @@ export const calendarSettings = {
 export type Calendar = {
 	// Share of the regular season still to play: 1 before it starts.
 	remaining: number;
+	// Share of the way to the trade deadline: 1 at it and after.
+	toDeadline: number;
+	// What a team needs to come out ahead by, as a share of what it gives.
+	patience: number;
 	// Games still to play this regular season (the coming one's, out of it).
 	gamesLeft: number;
 	// Each team's playoffs, relative to the league's average (mean 1).
@@ -91,7 +104,8 @@ export const calendar = async (): Promise<Calendar> => {
 		.sort((a, b) => a - b)
 		.join(",");
 	const base = `${g.get("lid")}:${g.get("season")}:${g.get("phase")}:${Math.floor(games / s.everyGames)}`;
-	const key = `${base}:${injuries}`;
+	// Patience falls by the day: the rest refreshed every couple of games.
+	const key = `${base}:${Math.floor(games / 2)}:${injuries}`;
 	if (cached?.key === key) {
 		return cached.calendar;
 	}
@@ -99,10 +113,21 @@ export const calendar = async (): Promise<Calendar> => {
 	const remaining =
 		phase < PHASE.REGULAR_SEASON || phase > PHASE.PLAYOFFS
 			? 1
-			: phase === PHASE.REGULAR_SEASON
-				? 1 - progress
-				: 0;
+			: phase === PHASE.PLAYOFFS
+				? 0
+				: 1 - progress;
 	const gamesLeft = Math.round(remaining * g.get("numGames"));
+	const toDeadline =
+		phase === PHASE.REGULAR_SEASON
+			? Math.min(1, progress / Math.max(0.05, g.get("tradeDeadline")))
+			: phase < PHASE.REGULAR_SEASON
+				? 0
+				: 1;
+	const patience =
+		phase > PHASE.PLAYOFFS
+			? s.patienceOffseason
+			: s.patienceEnd +
+				(s.patienceStart - s.patienceEnd) * (1 - toDeadline) ** s.patienceCurve;
 
 	// Each team now, from the players back for at least half the games left,
 	// and in the playoffs, from those back by then.
@@ -188,7 +213,15 @@ export const calendar = async (): Promise<Calendar> => {
 	}
 	const { retention, exp } = retentionCached;
 
-	const out = { remaining, gamesLeft, playoffs, retention, exp };
+	const out = {
+		remaining,
+		toDeadline,
+		patience,
+		gamesLeft,
+		playoffs,
+		retention,
+		exp,
+	};
 	cached = { key, calendar: out };
 	return out;
 };
