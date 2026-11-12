@@ -44,6 +44,9 @@ type Asset =
 			// Vanilla+: given away to a human, never for less than this trade
 			// value - the best real offer elsewhere, contract and all.
 			floor?: number;
+			// Vanilla+: his worth to the team after this season alone (as
+			// `value`), for the tank effect's limit.
+			later?: number;
 	  }
 	| {
 			type: "pick";
@@ -303,6 +306,12 @@ const getPlayers = async ({
 			pid: p.pid,
 			value: fudgedValue,
 			floor: worth?.floor,
+			later:
+				worth?.later === undefined
+					? undefined
+					: worth.later > 0
+						? worth.later * fudgeFactor
+						: worth.later,
 			contractValue: getContractValue(contract, worth?.market ?? value),
 			injury: p.injury,
 			age: g.get("season") - p.born.year,
@@ -1046,6 +1055,8 @@ type Worth = {
 	injuryPriced?: boolean;
 	// Given away, never for less than this trade value (Asset floor).
 	floor?: number;
+	// His worth to the team after this season alone, as a z-score.
+	later?: number;
 };
 export type PlayerWorth = (
 	tid: number,
@@ -1551,7 +1562,30 @@ export class ValueChangeCalculator {
 				this.ownPicksCache.set(key, ownPicksRaw);
 			}
 		}
-		const ownPicks = vsHuman ? Math.min(0, ownPicksRaw) : ownPicksRaw;
+		// A bad team's better pick pays for the games a player it sells would
+		// have won it this season - never for his seasons after: no team gives
+		// away its future to tank.
+		let ownPicks = vsHuman ? Math.min(0, ownPicksRaw) : ownPicksRaw;
+		if (ownPicks > 0) {
+			const valuesRemoveLater = sumValues(
+				remove.map((p) =>
+					p.type === "player" && p.later !== undefined
+						? { ...p, value: p.later, floor: undefined }
+						: p,
+				),
+				strategy,
+				tid,
+				false,
+				plan,
+				adjust && ((p) => adjust(tid, p, "remove")),
+				"remove",
+				vsHuman,
+			);
+			ownPicks = Math.min(
+				ownPicks,
+				Math.max(0, valuesRemove - valuesRemoveLater),
+			);
+		}
 		// Patience: to make a deal now, a team wants to come out ahead by a
 		// share of what it gives up.
 		const share =

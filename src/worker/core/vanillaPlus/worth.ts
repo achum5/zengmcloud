@@ -201,10 +201,21 @@ export const playerWorth = (
 	playoffs = 1,
 ) => {
 	const market = zOf(worth(p, worthSettings.market, 0, timesFor(c, p, 1)));
+	const times = timesFor(c, p, playoffs);
 	const own = lane
-		? zOf(worth(p, worthSettings.weights[lane], 0, timesFor(c, p, playoffs)))
+		? zOf(worth(p, worthSettings.weights[lane], 0, times))
 		: market;
-	return { own, market };
+	// After this season alone: what the tank effect can't pay for.
+	const later =
+		lane && times
+			? zOf(
+					worth(p, worthSettings.weights[lane], 0, {
+						...times,
+						thisSeason: 0,
+					}),
+				)
+			: undefined;
+	return { own, market, later };
 };
 
 // A draft prospect's market worth, on vanilla's value scale (for the pick

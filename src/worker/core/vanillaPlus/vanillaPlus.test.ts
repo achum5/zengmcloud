@@ -457,6 +457,69 @@ test("a team sure of its place is less patient than one on the bubble", async ()
 	}
 });
 
+// Found in the arena: a 16-66 team gave a 24-year-old 60/65 on a cheap deal
+// for three nobodies - its better pick paid for more than his games this
+// season. A bad team's pick pays for a player's games this season only: no
+// young player goes for nothing to tank.
+test(
+	"a bad team doesn't give away a young player for nothing to tank",
+	{ timeout: 120_000 },
+	async () => {
+		vanillaPlusSettings.calendar = true;
+		const season = g.get("season");
+		const phase = g.get("phase");
+		const lanes = await ensureLanes();
+		const teamSeasons = await idb.cache.teamSeasons.indexGetAll(
+			"teamSeasonsBySeasonTid",
+			[[season], [season, "Z"]],
+		);
+		const saved = teamSeasons.map((ts) => [ts.won, ts.lost] as const);
+		try {
+			g.setWithoutSavingToDB("phase", PHASE.REGULAR_SEASON);
+			// A third of the season gone, the rebuilders losing.
+			for (const ts of teamSeasons) {
+				const lane = lanes.get(ts.tid);
+				ts.won = lane === "rebuild" ? 8 : lane === "retool" ? 11 : 16;
+				ts.lost = 27 - ts.won;
+				await idb.cache.teamSeasons.put(ts);
+			}
+			const calc = await tradeValueCalculator();
+			let checked = 0;
+			for (const [tid, lane] of await ensureLanes()) {
+				if (lane !== "rebuild" || tid === 0) {
+					continue;
+				}
+				const other = [...lanes.keys()].find((x) => x !== tid && x !== 0)!;
+				const young = (await idb.cache.players.indexGetAll("playersByTid", tid))
+					.filter((p) => season - p.born.year <= 25 && p.valueNoPot >= 55)
+					.slice(0, 3);
+				for (const p of young) {
+					const dv = await calc.evaluate({
+						tid,
+						pidsAdd: [],
+						pidsRemove: [p.pid],
+						dpidsAdd: [],
+						dpidsRemove: [],
+						tradingPartnerTid: other,
+						raw: true,
+					});
+					assert.isAtMost(dv, 1e-9, `team ${tid} gives away pid ${p.pid}`);
+					checked += 1;
+				}
+			}
+			assert.isAbove(checked, 0);
+		} finally {
+			teamSeasons.forEach((ts, i) => {
+				[ts.won, ts.lost] = saved[i]!;
+			});
+			for (const ts of teamSeasons) {
+				await idb.cache.teamSeasons.put(ts);
+			}
+			g.setWithoutSavingToDB("phase", phase);
+		}
+	},
+);
+
 // Last: it trades. The whole market on - calendar, patience, every team
 // shopping, auctions - runs its days, trades, and leaves every roster legal.
 test(

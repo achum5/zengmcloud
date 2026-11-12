@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 284,
+		date: "2026-11-12",
+		text: "Realistic Front Offices fix: a bad team no longer gives away young players for next to nothing just to lose more games. A better draft pick now only makes up for the games a player would win it this season, so tanking teams still sell their veterans cheaply but keep their young core unless someone pays for it.",
+	},
+	{
 		n: 283,
 		date: "2026-11-12",
 		text: "Realistic Front Offices: the CPU trade market now runs all season. Every team shops, more and more often as the deadline nears, and teams are pickier early in the season - a deal has to be clearly good for them then, and only has to be fair on deadline day. When a team gets an offer for a player, the other interested teams bid too and the best offer wins. Prices know the calendar: a contender pays more for help in a playoff race, an expiring contract is worth less to a team that won't use it this season, a long injury counts for the games it costs, and a bad team counts how much better its own pick gets when it sells. A CPU team never trades you a player for less than any other team would really give for him.",
