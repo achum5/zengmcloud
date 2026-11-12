@@ -241,6 +241,22 @@ News Feed and a "RUMORS" slot in the bottom ticker. Nothing else added.
     vanilla+'s 16-36, and took 10-22 minutes a season.
   - News: about 37 stories a season.
 
+- **Test leagues, worth season by season** (same seeds, 3 seasons):
+  - B (prices by season): 25-33 trades in season 1, then 10-14; 6.2-7.1
+    minutes a season; win SD 14.5-14.7, 15.6-16.7, 16.9-17.2.
+  - C (B with the market paying by value for money, market.ts `pay`):
+    21-30, then 9-17; 5.3-6.3 minutes a season; win SD 15.0, 13.9-15.4,
+    15.5-17.9. About the current engine's volume (10-19) and stock's
+    (10-15), still well short of the NBA's.
+  - What a deal's 62+ player goes for: 3-6 of 42-62 trades give one for no
+    55+ player and no first, nearly all rebuilding or retooling teams selling
+    a starter for a young prospect and seconds. (The trade log lists what
+    each team received; an earlier read of it had the sides backwards.)
+- **With vanilla+ on**, every worker test passes but one that fails on
+  master too (sync/notifications); the title-odds engine's own trade tests
+  are pinned to it.
+- **Switched on** 2026-11-12 (cloud change 282).
+
 ## Order of work
 
 1. Vanilla+ switch; vanilla values wired into every trade path (human and
