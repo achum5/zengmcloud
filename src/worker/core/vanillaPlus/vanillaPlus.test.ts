@@ -624,6 +624,41 @@ test("a future second is worth little, a future first nearly a first now", async
 	}
 });
 
+// The owner, 2026-11-12: CPU teams valued seconds - and with careers capped
+// at potential + 3, firsts from the 5th on too - at about nothing, so they
+// threw them in to move up a spot (#9 for #18, #21, #32 and two seconds).
+// A pick's player who doesn't make it is let go: a pick is a long shot,
+// never a cost, and every one is worth something.
+test("every pick is worth something: a drafted player who busts is let go", async () => {
+	const lanes = await ensureLanes();
+	const [tid] = [...lanes].find(([, lane]) => lane === "rebuild")!;
+	const other = [...lanes.keys()].find((x) => x !== tid)!;
+	const calc = await tradeValueCalculator();
+	const season = g.get("season");
+	const { pickValues } = await import("./worth.ts");
+	const table = await pickValues();
+	for (const [key, values] of Object.entries(table)) {
+		for (const v of values as number[]) {
+			assert.isAtLeast(v, local.playerOvrMean - 1e-9, `table ${key}`);
+		}
+	}
+	for (const dp of await idb.cache.draftPicks.getAll()) {
+		if (dp.tid === tid || dp.season !== season + 1) {
+			continue;
+		}
+		const dv = await calc.evaluate({
+			tid,
+			pidsAdd: [],
+			pidsRemove: [],
+			dpidsAdd: [dp.dpid],
+			dpidsRemove: [],
+			tradingPartnerTid: other,
+			raw: true,
+		});
+		assert.isAbove(dv, 0, `${dp.season} R${dp.round} (${dp.originalTid})`);
+	}
+});
+
 // Found in the owner's league: Memphis put its 18-year-old 49/77's odds of
 // re-signing at 13% - the free agency model's for an unrestricted free agent
 // on a bad team - wrote off his best seasons and would trade him for a worse

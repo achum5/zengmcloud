@@ -38,12 +38,17 @@ export const worthSettings = {
 	pickWait: 0.85,
 	// Simulated careers per player.
 	samples: 40,
-	// No career counts above his potential by more than this: the 7th power
-	// on the spread of a teenager's careers made a 20-year-old 46/65 worth
-	// three times a 22-year-old 59/73 (and a team's 18-year-old 30/60 a main
-	// piece for its 21-year-old 62/74) - a long shot's tail, far past the
-	// ceiling the game shows, priced as a star.
+	// A career above his potential by more than `ceiling` counts only
+	// `aboveCeiling` of the rest. The 7th power on the full spread of a
+	// teenager's careers made a 20-year-old 46/65 worth three times a
+	// 22-year-old 59/73; with no career counting past potential + 3, the
+	// other way, picks from the 5th on were worth a third of what they
+	// became. Measured on 1,440 draftees of eight ten-season leagues, against
+	// what their careers gave: half is right at every draft age (17-19: 1.6
+	// priced, 1.9 became; 20: 7.4, 7.0; 21: 9.4, 8.5), and a class priced
+	// this way sets each slot about where it ends up.
 	ceiling: 3,
+	aboveCeiling: 0.5,
 	// Each lane's weight on each season, the coming one first.
 	weights: {
 		allIn: [1, 0.6, 0.25],
@@ -129,7 +134,10 @@ let cacheFor = "";
 
 // Each season's expected trade value from this one on, by the game's own
 // development; cached for the season.
-export const seasonValues = (p: Player, years: number) => {
+// `cut`: a career's seasons below nothing count as nothing - a drafted
+// player who doesn't make it is let go (a pick's worth: a second-rounder is
+// a long shot, not a cost).
+export const seasonValues = (p: Player, years: number, cut = false) => {
 	const season = g.get("season");
 	const key = `${g.get("lid")}:${season}`;
 	if (key !== cacheFor) {
@@ -137,7 +145,7 @@ export const seasonValues = (p: Player, years: number) => {
 		cacheFor = key;
 	}
 	const r = p.ratings.at(-1)!;
-	const id = `${p.pid}:${r.season}:${r.ovr}:${r.pot}:${years}:${worthSettings.ceiling}`;
+	const id = `${p.pid}:${r.season}:${r.ovr}:${r.pot}:${years}:${worthSettings.ceiling}:${worthSettings.aboveCeiling}:${cut}`;
 	let out = cache.get(id);
 	if (!out) {
 		const proj = projectRatings({
@@ -162,8 +170,12 @@ export const seasonValues = (p: Player, years: number) => {
 		const scale = 10 / local.playerOvrStd;
 		const start = proj.ovr[0]!;
 		const top = r.pot + worthSettings.ceiling;
-		const at = (ovr: number) =>
-			tradeValue(zscore(p.valueNoPot + (Math.min(ovr, top) - start) * scale));
+		const at = (ovr: number) => {
+			const o =
+				ovr > top ? top + worthSettings.aboveCeiling * (ovr - top) : ovr;
+			const x = tradeValue(zscore(p.valueNoPot + (o - start) * scale));
+			return cut ? Math.max(0, x) : x;
+		};
 		out = proj.ovr.map((mean, t) => {
 			const sd = proj.ovrSd[t]!;
 			let sum = 0;
@@ -198,9 +210,10 @@ export const worth = (
 	weights: number[],
 	first = 0,
 	times?: WorthTimes,
+	cut = false,
 ) => {
 	const now = nowIndex();
-	const seasons = seasonValues(p, now + worthSettings.years);
+	const seasons = seasonValues(p, now + worthSettings.years, cut);
 	const season = g.get("season");
 	let sum = 0;
 	let weight = 0;
@@ -296,10 +309,11 @@ export const playerWorth = (
 };
 
 // A draft prospect's market worth, on vanilla's value scale (for the pick
-// table, trade/getPickValues.ts): he plays from the season after his draft.
+// table, trade/getPickValues.ts): he plays from the season after his draft,
+// and is let go if he doesn't make it (seasonValues `cut`).
 export const prospectValue = (p: Player, draftYear = p.draft.year) => {
 	const first = draftYear + 1 - g.get("season");
-	const z = zOf(worth(p, worthSettings.market, first));
+	const z = zOf(worth(p, worthSettings.market, first, undefined, true));
 	return z * local.playerOvrStd + local.playerOvrMean;
 };
 
@@ -315,7 +329,8 @@ export const prospectValue = (p: Player, draftYear = p.draft.year) => {
 const delayedProspectValue = (p: Player, delay: number) => {
 	const first = p.draft.year + 1 - g.get("season");
 	const z = zOf(
-		worth(p, worthSettings.market, first) * worthSettings.pickWait ** delay,
+		worth(p, worthSettings.market, first, undefined, true) *
+			worthSettings.pickWait ** delay,
 	);
 	return z * local.playerOvrStd + local.playerOvrMean;
 };

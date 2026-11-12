@@ -129,16 +129,29 @@ its core's age, its stars and its contracts:
   43-year-old LeBron is worth about 120 to the two favorites and 7 to a
   young playoff team with no shot; an 18-year-old 56/80 about 25 to the
   favorites and 180 to that team.
-- A career counts no higher than his potential plus 3 (worth.ts `ceiling`).
-  Each season's worth is the expectation over the spread of his careers of
-  vanilla's 7th power, and the 7th power on a teenager's wide spread priced
-  long shots far past the ceiling the game shows as stars: a 20-year-old
-  46/65 was worth three times a 22-year-old 59/73, and a rebuilding team
-  took an 18-year-old 30/60 as the main piece for its 21-year-old 62/74. On
-  the market's window the young now rank as vanilla ranks them, those with
-  real potential near the top. Picks, priced by the same prospects, fall to
-  about a rotation player's worth (a rebuilder's median coming first 31 ->
-  6, a first four drafts out 29 -> 9).
+- A career past his potential plus 3 counts half of the rest (worth.ts
+  `ceiling`, `aboveCeiling`). Each season's worth is the expectation over
+  the spread of his careers of vanilla's 7th power, and the 7th power on a
+  teenager's wide spread priced long shots as stars: a 20-year-old 46/65
+  was worth three times a 22-year-old 59/73, and a rebuilding team took an
+  18-year-old 30/60 as the main piece for its 21-year-old 62/74. Counting
+  nothing past potential + 3 (shipped first, 2026-11-12) overcorrected:
+  picks from the 5th on fell to a third or less of what they become, and
+  CPU teams threw late firsts and seconds in to move up a spot (the owner's
+  draft: Memphis would give #18, #21, #32 and two seconds for #9). Measured
+  on 1,440 draftees of eight ten-season leagues against what their careers
+  gave, on the CPU's own scale: half is right at every draft age (17-19:
+  priced 1.6, became 1.9; 20: 7.4, 7.0; 21: 9.4, 8.5 - all of it 5.7,
+  12.4, 13.7; nothing past +3 0.7, 5.8, 7.8), and a class priced this way
+  sets each slot about where it ends up (#1 139/135, #7-10 7.2/5.9, #15-19
+  2.0/2.2, #25-30 0.2/0.4).
+- A pick's player who doesn't make it is let go: picks are priced with each
+  career's seasons below nothing counted as nothing (worth.ts `seasonValues`
+  `cut`). Seconds and late firsts are long shots, not costs - an early
+  second has become about what a late first has (1.1 each, the 7th-10th
+  6.7). In the owner's draft #9 is now worth 2.35 to Memphis, #18 0.67, #21
+  0.42, a future second about 0.5: it would give #18, #21, #32 and a second
+  for #9, not five picks; Chicago gives #10 and a second to move up one.
 - Both measured together (arena X2 against W, seeds 391-394, seasons 2-3):
   trades giving a better, younger player for a worse one 18 -> 9, a 60+
   player for little 10 -> 4, players traded twice in a season 88 -> 64;
