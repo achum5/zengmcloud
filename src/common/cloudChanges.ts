@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 298,
+		date: "2026-11-12",
+		text: "3D: a heave at the buzzer that nobody rebounds now bounces off the rim like a real ball - on the way it came off, each bounce lower, then rolling to a stop.",
+	},
+	{
 		n: 297,
 		date: "2026-11-12",
 		text: "Realistic Front Offices: draft picks are priced by what picks really turn into, measured over 1,400 drafted careers. Today's earlier change left firsts after the top few and all seconds worth about nothing to CPU teams, so they'd throw several in just to move up a spot. Now a late first or a second is a small but real asset: moving up one spot costs about a second, and a pile of picks has to add up to the pick you want.",

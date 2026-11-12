@@ -2378,13 +2378,17 @@ const refStates = (
 				// the play: round a corner of the floor, not swung round it.)
 				const fa = signalPos(signal, t - FACE_SPAN / 2, liveAt);
 				const fb = signalPos(signal, t + FACE_SPAN / 2, liveAt);
+				// (By how quick he goes over that longer moment too: pulling up
+				// sharp, round from the way he ran to the play as he slows - not
+				// in the frame or two he stops in.)
+				const faceSpeed = (dist(fa, fb) * 1000) / FACE_SPAN;
 				const going = turnRound(
 					yaw,
 					dist(fa, fb) > 1e-3
 						? Math.atan2(fb.y - fa.y, fb.x - fa.x)
 						: Math.atan2(b.y - a.y, b.x - a.x),
 					smooth01(
-						(speed - GAIT_BANDS[0]![2]) /
+						(faceSpeed - GAIT_BANDS[0]![2]) /
 							(GAIT_BANDS[0]![3] - GAIT_BANDS[0]![2]),
 					),
 					into,

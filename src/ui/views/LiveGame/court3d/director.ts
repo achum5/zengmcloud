@@ -135,6 +135,12 @@ import { BREAK_SHARE } from "./nbaRates.ts";
 import { stepTimeline } from "./stepper.ts";
 import { sameEverywhere } from "./sameMath.ts";
 import {
+	floorRoll,
+	floorRollSpan,
+	roomOnFloor,
+	type FloorRoll,
+} from "./floorRoll.ts";
+import {
 	callOrder,
 	INTRO_CALL,
 	INTRO_FIRST,
@@ -445,6 +451,10 @@ export type BallSeg =
 			to: Pt;
 			hops: number;
 			h0: number;
+			// Nobody after it: bouncing and rolling the way a ball does, on
+			// from how it came down (see floorRoll) - not hops worked out
+			// from `hops` and `h0`.
+			free?: FloorRoll;
 	  }
 	| { kind: "rest"; t0: number; at: Pt3 }
 	// Off the rim and the glass, down through the net (see physics.ts):
@@ -6001,7 +6011,9 @@ class Director {
 		const n = this.ball.length;
 		const rest = this.ball[n - 1];
 		const drop = this.ball[n - 2];
-		if (rest?.kind !== "rest" || drop?.kind !== "bounce") {
+		// (Nor one on its own off the rim, going as a ball goes: anybody in
+		// its way knocks it - see knockAt.)
+		if (rest?.kind !== "rest" || drop?.kind !== "bounce" || drop.free) {
 			return;
 		}
 		const F = drop.from;
@@ -12033,6 +12045,12 @@ class Director {
 			}
 			const end = p.end;
 			const floor = this.toFloor(play.t0 + end.t, end.p, end.v);
+			if (floor.v) {
+				// (Down off the rim, nobody after it: on the way it came off -
+				// on with the walk off as it rolls on, as above.)
+				this.rollFree(floor.t, floor.at, floor.v, 6000, true);
+				return floor.t + this.bounceSpan(floor.h0, 2, 900);
+			}
 			const v = Math.hypot(end.v.x, end.v.y) || 1;
 			const away = clampPt({
 				x: floor.at.x + (end.v.x / v) * 5,
@@ -16159,10 +16177,31 @@ class Director {
 		const floor = vel ? this.toFloor(t, from, vel, start) : undefined;
 		const t0 = floor?.t ?? t;
 		// The period ran out, or nobody got it yet: it bounces free.
+		// (Where to drawn either way: the rest of the game as it was.)
 		const to = clampPt({
 			x: rim.x - dir * this.rand(5, 10),
 			y: 25 + this.rand(-8, 8),
 		});
+		if (floor?.v) {
+			// On the way it came off, as a ball goes: all the time it likes
+			// with the horn gone - on with the walk off as it rolls on (whoever
+			// takes it waits for it to stop: see pickUp) - a moment with play
+			// still on.
+			const over =
+				!next ||
+				this.events[idx]?.clock === 0 ||
+				["endOfPeriod", "period", "overtime", "gameOver"].includes(
+					next.e.type as string,
+				);
+			const stops = this.rollFree(
+				t0,
+				floor.at,
+				floor.v,
+				over ? 6000 : 2600,
+				over,
+			);
+			return over ? t0 + this.bounceSpan(floor.h0, 3, 1000) - 100 : stops - 100;
+		}
 		const span = floor ? this.bounceSpan(floor.h0, 3, 1000) : 1000;
 		this.bounce(
 			t0,
@@ -16631,7 +16670,7 @@ class Director {
 		from: Pt3,
 		vel: Pt3,
 		start?: BallEnd,
-	): { at: Pt3; t: number; h0: number } {
+	): { at: Pt3; t: number; h0: number; v?: Pt3 } {
 		const fall =
 			(vel.z +
 				Math.sqrt(vel.z * vel.z + 2 * GRAVITY * Math.max(0, from.z - BALL_R))) /
@@ -16675,7 +16714,45 @@ class Director {
 			at,
 			t: t + fall * 1000,
 			h0: Math.max(0.4, Math.min(3.2, (up * up) / (2 * GRAVITY))),
+			// (How it is going as it gets there.)
+			v: { x: vel.x, y: vel.y, z: vel.z - GRAVITY * fall },
 		};
+	}
+
+	// Down on the floor at `at` going `v`, nobody after it: on it goes, the
+	// way it was going, bouncing lower and lower and rolling to a stop (see
+	// floorRoll) - on the floor, or (`past`) up to the front row past a line
+	// - stopped within `most` ms. Returns when it stops.
+	private rollFree(
+		t: number,
+		at: Pt3,
+		v: Pt3,
+		most: number,
+		past = false,
+	): number {
+		const along = Math.hypot(v.x, v.y);
+		const room = roomOnFloor(
+			at,
+			along > 1e-6 ? v.x / along : 1,
+			along > 1e-6 ? v.y / along : 0,
+			past ? -OUT_CAP : 1.5,
+		);
+		const free = floorRoll(v, room, most / 1000, past);
+		const { s, far } = floorRollSpan(free);
+		const to = { x: at.x + free.ux * far, y: at.y + free.uy * far };
+		const t1 = t + Math.max(1, s * 1000);
+		this.pushBall({
+			kind: "bounce",
+			t0: t,
+			t1,
+			from: { ...at, z: BALL_R },
+			to,
+			hops: 2,
+			h0: (free.up * free.up) / (2 * GRAVITY),
+			free,
+		});
+		this.rest(t1, { ...to, z: 0.4 });
+		return t1;
 	}
 
 	// How long a ball takes to bounce `hops` times from `h0` feet - in the

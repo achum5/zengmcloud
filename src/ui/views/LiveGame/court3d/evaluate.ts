@@ -14,6 +14,7 @@ import type {
 import { COURT_H, rimX, type Pt, type Pt3, type Side } from "./geometry.ts";
 import { alongShape, keepThrough, runShape, type RunShape } from "./motion.ts";
 import { playAt } from "./physics.ts";
+import { floorRollAt } from "./floorRoll.ts";
 import {
 	freshStart,
 	LEN_MIN,
@@ -1412,6 +1413,13 @@ const ballNear = (tl: CourtTimeline, t: number): Pt => {
 		return { x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u };
 	}
 	if (seg.kind === "bounce") {
+		if (seg.free) {
+			const { along } = floorRollAt(seg.free, (t - seg.t0) / 1000);
+			return {
+				x: seg.from.x + seg.free.ux * along,
+				y: seg.from.y + seg.free.uy * along,
+			};
+		}
 		const u = clamp01((t - seg.t0) / (seg.t1 - seg.t0));
 		return {
 			x: seg.from.x + (seg.to.x - seg.from.x) * u,
@@ -8448,6 +8456,19 @@ const ballOn = (
 					: Math.abs(b.x - a.x) + Math.abs(b.y - a.y) > 1e-3
 						? Math.atan2(b.y - a.y, b.x - a.x)
 						: 0,
+		};
+	}
+	if (seg.kind === "bounce" && seg.free) {
+		// Nobody after it: on the way it came down, bouncing lower and lower,
+		// then rolling to a stop (see floorRoll).
+		const f = seg.free;
+		const { along, z } = floorRollAt(f, (Math.min(t, seg.t1) - seg.t0) / 1000);
+		return {
+			x: seg.from.x + f.ux * along,
+			y: seg.from.y + f.uy * along,
+			z,
+			roll: along / BALL_R,
+			rollWay: Math.atan2(f.uy, f.ux),
 		};
 	}
 	if (seg.kind === "bounce") {
