@@ -11,6 +11,7 @@ import { playerWorth, worth, worthSettings } from "./worth.ts";
 import { calendar, calendarSettings, thisSeason } from "./calendar.ts";
 import { tradeValueCalculator } from "./index.ts";
 import makeItWork from "../trade/makeItWork.ts";
+import { contractOf } from "../realisticFrontOffice/contractOf.ts";
 import { marketStats, tradeDay } from "./market.ts";
 
 const importNode = (name: string) => import(/* @vite-ignore */ name);
@@ -566,6 +567,27 @@ test("a future second is worth little, a future first nearly a first now", async
 			`${year}: first ${first}, now ${firstNow}`,
 		);
 	}
+});
+
+// Found in the owner's league: Memphis put its 18-year-old 49/77's odds of
+// re-signing at 13% - the free agency model's for an unrestricted free agent
+// on a bad team - wrote off his best seasons and would trade him for a worse
+// prospect. Coming off a rookie deal he's restricted: his team can match.
+test("a player on a rookie deal is counted on to stay: his team can match", async () => {
+	vanillaPlusSettings.calendar = true;
+	const c = await calendar();
+	let checked = 0;
+	for (const p of await idb.cache.players.indexGetAll("playersByTid", [
+		0,
+		Infinity,
+	])) {
+		const retention = c.retention.get(p.pid);
+		if (retention !== undefined && contractOf(p).rookie) {
+			assert.isAtLeast(retention, calendarSettings.restrictedStays - 1e-9);
+			checked += 1;
+		}
+	}
+	assert.isAbove(checked, 0);
 });
 
 // Last: it trades. The whole market on - calendar, patience, every team

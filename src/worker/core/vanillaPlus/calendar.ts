@@ -5,6 +5,8 @@ import { ovr as ovrBasketball } from "../team/ovr.basketball.ts";
 import { g } from "../../util/index.ts";
 import { contractOf } from "../realisticFrontOffice/contractOf.ts";
 import { stayChance } from "../realisticFrontOffice/offers.ts";
+import { stageSettings } from "../realisticFrontOffice/stages.ts";
+import { realisticFreeAgencyOn } from "../realisticFrontOffice/isOn.ts";
 import getNumPlayoffTeams from "../season/getNumPlayoffTeams.ts";
 import { factsOf, laneSettings } from "./lanes.ts";
 
@@ -59,6 +61,9 @@ export const calendarSettings = {
 	sureAtEnd: 0.75,
 	// Refreshed this often, in games played.
 	everyGames: 10,
+	// A player coming off a rookie deal is a restricted free agent his team
+	// can match (realistic free agency): he stays at least this often.
+	restrictedStays: 0.9,
 };
 
 export type Calendar = {
@@ -209,15 +214,23 @@ export const calendar = async (): Promise<Calendar> => {
 	if (retentionCached?.key !== base) {
 		const retention = new Map<number, number>();
 		const exp = new Map<number, number>();
+		const restricted = stageSettings.on && realisticFreeAgencyOn();
 		for (const p of players) {
 			const contract = contractOf(p);
 			exp.set(p.pid, contract.exp);
 			if (contract.exp < g.get("season") + 10) {
+				let stay = 0.5;
 				try {
-					retention.set(p.pid, await stayChance(p, p.tid));
+					stay = await stayChance(p, p.tid);
 				} catch {
-					retention.set(p.pid, 0.5);
+					// Unpriced: even odds.
 				}
+				// The free agency model's odds are an unrestricted free agent's;
+				// a restricted one's team can match whatever he's offered.
+				if (restricted && contract.rookie) {
+					stay = Math.max(stay, s.restrictedStays);
+				}
+				retention.set(p.pid, stay);
 			}
 		}
 		retentionCached = { key: base, retention, exp };

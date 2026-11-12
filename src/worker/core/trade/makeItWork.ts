@@ -368,7 +368,7 @@ const tryAddAsset = async (
  * @param {?Object} estValuesCached Estimated draft pick values from trade.getPickValues, or null. Only pass if you're going to call this repeatedly, then it'll be faster if you cache the values up front.
  * @return {Promise.<?Object>} If it works, resolves to a teams object (similar to first input) with the "made it work" trade info. Otherwise, resolves to undefined
  */
-const makeItWork = async (
+const makeItWorkSearch = async (
 	teams: TradeTeams,
 	{
 		holdUserConstant,
@@ -461,7 +461,7 @@ const makeItWork = async (
 				// Run another round of makeItWork in the opposite direction, which will make the end result of this stable (clicking the "What would make this deal work?" button won't do anything)
 				const newMaxAssetsToAdd = maxAssetsToAdd - added;
 				if (newMaxAssetsToAdd > 0) {
-					return makeItWork(newTeams, {
+					return makeItWorkSearch(newTeams, {
 						holdUserConstant,
 						maxAssetsToAdd: newMaxAssetsToAdd,
 						valueChangeCalculator,
@@ -487,6 +487,68 @@ const makeItWork = async (
 		prevTeams = newTeams;
 		prevDv = dv;
 	}
+};
+
+// Vanilla+: what the search asked of the user, less anything the other team
+// would still say yes without - smallest first. The search adds pieces until
+// the deal works and never takes one back, so it could ask for a whole bench
+// (8 players for a prospect) where two of them carried the deal.
+const trimUserSide = async (
+	original: TradeTeams,
+	found: TradeTeams,
+	valueChangeCalculator: TradeValuer,
+) => {
+	const dvOf = (t: TradeTeams) =>
+		valueChangeCalculator.evaluate({
+			tid: t[1].tid,
+			pidsAdd: t[0].pids,
+			pidsRemove: t[1].pids,
+			dpidsAdd: t[0].dpids,
+			dpidsRemove: t[1].dpids,
+			tradingPartnerTid: t[0].tid,
+		});
+	let teams = found;
+	const added = [
+		...teams[0].pids
+			.filter((pid) => !original[0].pids.includes(pid))
+			.map((pid) => ({ pid })),
+		...teams[0].dpids
+			.filter((dpid) => !original[0].dpids.includes(dpid))
+			.map((dpid) => ({ dpid })),
+	];
+	const without = (t: TradeTeams, x: { pid?: number; dpid?: number }) => {
+		const next = helpers.deepCopy(t);
+		next[0].pids = next[0].pids.filter((pid) => pid !== x.pid);
+		next[0].dpids = next[0].dpids.filter((dpid) => dpid !== x.dpid);
+		return next;
+	};
+	// Least missed first: the deal's worth to the other team without each.
+	const scored = [];
+	for (const x of added) {
+		scored.push({ x, dv: await dvOf(without(teams, x)) });
+	}
+	scored.sort((a, b) => b.dv - a.dv);
+	for (const { x } of scored) {
+		const next = without(teams, x);
+		if (
+			next[0].pids.length + next[0].dpids.length > 0 &&
+			(await dvOf(next)) > 0
+		) {
+			teams = next;
+		}
+	}
+	return teams;
+};
+
+const makeItWork = async (
+	teams: TradeTeams,
+	options: Parameters<typeof makeItWorkSearch>[1],
+): Promise<TradeTeams | undefined> => {
+	const found = await makeItWorkSearch(teams, options);
+	if (!found || !vanillaPlusOn() || options.holdUserConstant) {
+		return found;
+	}
+	return trimUserSide(teams, found, options.valueChangeCalculator);
 };
 
 export default makeItWork;

@@ -12,6 +12,16 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 288,
+		date: "2026-11-12",
+		text: 'Realistic Front Offices: "What would make this work" and Trade Proposals ask for less. Once a deal works, they drop anything of yours the other team would still say yes without - one ask was eight players for a prospect when two of them carried the deal.',
+	},
+	{
+		n: 287,
+		date: "2026-11-12",
+		text: "Realistic Front Offices: CPU teams no longer undervalue their young players on rookie deals. A losing team counted on losing a prospect when his rookie deal ran out - but he becomes a restricted free agent it can match, so it now counts on keeping him and won't trade him away cheaply.",
+	},
+	{
 		n: 286,
 		date: "2026-11-12",
 		text: "Realistic Front Offices: draft picks in future drafts are priced sensibly now. A second-round pick a few years out was worth almost a third of a first to a rebuilding team, so CPU teams handed over real players for far-off seconds - a second is now worth about what one this year is, which is very little. A first a few years away is worth a bit less than one this year for the wait, instead of more.",
