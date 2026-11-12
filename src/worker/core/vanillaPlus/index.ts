@@ -4,6 +4,7 @@ import { ensureLanes, planFor } from "./lanes.ts";
 import { tweaksFor } from "./tweaks.ts";
 import { vanillaPlusSettings } from "./settings.ts";
 import { pickValues, playerWorth, worthFor, zOf } from "./worth.ts";
+import { calendar } from "./calendar.ts";
 import { g } from "../../util/index.ts";
 
 // What prices a trade for a CPU team: with vanilla+ on, vanilla's machinery
@@ -18,6 +19,8 @@ export const tradeValueCalculator = async (
 	}
 	const lanes = await ensureLanes();
 	const tweaks = await tweaksFor(lanes);
+	const c = vanillaPlusSettings.calendar ? await calendar() : undefined;
+	const playoffsOf = (tid: number) => c?.playoffs.get(tid) ?? 1;
 	const humans = new Set(g.get("spectator") ? [] : g.get("userTids"));
 	return new ValueChangeCalculator({
 		...opts,
@@ -25,7 +28,7 @@ export const tradeValueCalculator = async (
 		adjust: tweaks,
 		cpuMarkup: vanillaPlusSettings.cpuMarkup,
 		playerWorth: (tid, p, vsHuman) => {
-			const worth = playerWorth(p, lanes.get(tid));
+			const worth = playerWorth(p, lanes.get(tid), c, playoffsOf(tid));
 			if (!vsHuman) {
 				return worth;
 			}
@@ -45,12 +48,17 @@ export const tradeValueCalculator = async (
 				if (other !== tid && !humans.has(other)) {
 					best = Math.max(
 						best,
-						worthFor(p, lane) * tweaks(other, asset, "add"),
+						worthFor(p, lane, c, playoffsOf(other)) *
+							tweaks(other, asset, "add"),
 					);
 				}
 			}
 			return { own: worth.own, market: Math.max(worth.market, zOf(best)) };
 		},
 		pickValues,
+		// A team that sells its players is a worse team, and its own pick a
+		// better one: a tank counts for what it's worth, and a contender
+		// buying gives some of its pick's worth up.
+		ownPicks: vanillaPlusSettings.calendar,
 	});
 };

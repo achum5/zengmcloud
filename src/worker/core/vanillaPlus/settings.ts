@@ -11,4 +11,8 @@ export const vanillaPlusSettings = {
 	// CPU team (stock: 5%, which after vanilla's 7th power is ~41% of trade
 	// value - CPU teams with each other then almost never deal).
 	cpuMarkup: 1.02,
+	// "A market that never stops", step 1 (calendar.ts): contracts, this
+	// season's games left and playoffs, and the tank effect on a team's own
+	// pick. Off until measured.
+	calendar: false,
 };

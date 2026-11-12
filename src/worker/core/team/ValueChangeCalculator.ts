@@ -1161,6 +1161,109 @@ type ToUpdate = {
 	teams: false | "all" | number[];
 };
 
+// Vanilla+: a trade that makes a team better or worse moves its own pick in
+// this season's draft, the one it isn't trading. Stock only re-projects a
+// team's pick when the pick itself is in a deal with the user (and then with
+// deliberate biases); here, no biases, both ways: a bad team selling its
+// starter gets a better pick for it, a contender buying gives some up.
+const ownPickAsset = async (
+	cache: ValueChangeCache,
+	dp: DraftPick,
+	season: number,
+	slot: number,
+	shift: number,
+): Promise<Asset> => {
+	const numPicksBeforeRound = getNumPicksPerRound() * (dp.round - 1);
+	const probs = await getPickProbs(cache, dp, {
+		type: "projected",
+		futureDraft: false,
+		slot: slot + shift,
+		tradeShift: shift,
+		bias: 0,
+		userTradeShift: 0,
+	});
+	let tradeValue = 0;
+	let pick = 0;
+	for (const [i, prob] of probs.entries()) {
+		if (prob > 0) {
+			tradeValue +=
+				prob * getPickTradeValue(cache, season, numPicksBeforeRound + i + 1);
+			pick += prob * (i + 1);
+		}
+	}
+	return {
+		type: "pick",
+		value: tradeValueToValue(tradeValue),
+		contractValue: 0,
+		injury: { type: "Healthy", gamesRemaining: 0 },
+		dp,
+		age: 20,
+		draftPick: numPicksBeforeRound + Math.round(pick),
+		draftYear: season,
+	};
+};
+
+const ownPicksShift = async ({
+	cache,
+	tid,
+	pidsAdd,
+	pidsRemove,
+	dpidsTraded,
+	strategy,
+	plan,
+}: {
+	cache: ValueChangeCache;
+	tid: number;
+	pidsAdd: number[];
+	pidsRemove: number[];
+	dpidsTraded: number[];
+	strategy: string;
+	plan: TradePlan | undefined;
+}) => {
+	const season = g.get("season");
+	if (
+		g.get("phase") > PHASE.REGULAR_SEASON ||
+		pidsAdd.length + pidsRemove.length === 0
+	) {
+		return 0;
+	}
+	const slot = cache.estPicks[tid];
+	if (slot === undefined) {
+		return 0;
+	}
+	const picks = (
+		await idb.cache.draftPicks.indexGetAll("draftPicksByTid", tid)
+	).filter(
+		(dp) =>
+			dp.season === season &&
+			dp.originalTid === tid &&
+			dp.pick === 0 &&
+			!dpidsTraded.includes(dp.dpid),
+	);
+	if (picks.length === 0) {
+		return 0;
+	}
+	const moved = await getModifiedPickRank(
+		cache,
+		false,
+		tid,
+		pidsAdd,
+		pidsRemove,
+	);
+	if (moved === slot) {
+		return 0;
+	}
+	let shift = 0;
+	for (const dp of picks) {
+		const before = await ownPickAsset(cache, dp, season, slot, 0);
+		const after = await ownPickAsset(cache, dp, season, slot, moved - slot);
+		shift +=
+			sumValues([after], strategy, tid, false, plan, undefined, "add") -
+			sumValues([before], strategy, tid, false, plan, undefined, "add");
+	}
+	return shift;
+};
+
 // tradingPartnerTid is currently just used to determine if this is a trade with the user, so additional fuzz can be applied
 export class ValueChangeCalculator {
 	private cache: ValueChangeCache | undefined;
@@ -1180,6 +1283,8 @@ export class ValueChangeCalculator {
 	private cpuMarkup?: number;
 	private playerWorth?: PlayerWorth;
 	private pickValues?: () => Promise<TradePickValues>;
+	private ownPicks: boolean;
+	private ownPicksCache = new Map<string, number>();
 	private adjust?: (
 		tid: number,
 		asset: Asset,
@@ -1193,6 +1298,7 @@ export class ValueChangeCalculator {
 		cpuMarkup,
 		playerWorth,
 		pickValues,
+		ownPicks = false,
 	}: {
 		quick?: boolean;
 		planOf?: (tid: number) => TradePlan | undefined;
@@ -1202,11 +1308,14 @@ export class ValueChangeCalculator {
 		// on the same scale.
 		playerWorth?: PlayerWorth;
 		pickValues?: () => Promise<TradePickValues>;
+		// Vanilla+: count what a trade does to the team's own pick this season.
+		ownPicks?: boolean;
 	} = {}) {
 		this.quick = quick;
 		this.planOf = planOf;
 		this.playerWorth = playerWorth;
 		this.pickValues = pickValues;
+		this.ownPicks = ownPicks;
 		this.adjust = adjust;
 		this.cpuMarkup = cpuMarkup;
 	}
@@ -1285,6 +1394,7 @@ export class ValueChangeCalculator {
 	}
 
 	invalidateCache(toUpdate: Partial<ToUpdate>) {
+		this.ownPicksCache.clear();
 		// Merge with existing this.toUpdate - probably never matters vs overwriting, but just to be sure
 		if (toUpdate.draft !== undefined) {
 			this.toUpdate.draft = this.toUpdate.draft || toUpdate.draft;
@@ -1388,7 +1498,31 @@ export class ValueChangeCalculator {
 		);
 		// console.log("Total", valuesRemove);
 
-		return valuesAdd - valuesRemove;
+		// With a human, only ever a cost: a team that tanks by selling gets its
+		// better pick whoever buys, so it can't take less from a human than
+		// another team would give.
+		let ownPicksRaw = 0;
+		if (this.ownPicks && pidsAdd.length + pidsRemove.length > 0) {
+			const key = `${tid}|${pidsAdd.toSorted().join(",")}|${pidsRemove.toSorted().join(",")}|${dpidsRemove.toSorted().join(",")}`;
+			const known = this.ownPicksCache.get(key);
+			if (known !== undefined) {
+				ownPicksRaw = known;
+			} else {
+				ownPicksRaw = await ownPicksShift({
+					cache: this.cache,
+					tid,
+					pidsAdd,
+					pidsRemove,
+					dpidsTraded: dpidsRemove,
+					strategy,
+					plan,
+				});
+				this.ownPicksCache.set(key, ownPicksRaw);
+			}
+		}
+		const ownPicks = vsHuman ? Math.min(0, ownPicksRaw) : ownPicksRaw;
+
+		return valuesAdd - valuesRemove + ownPicks;
 	}
 }
 

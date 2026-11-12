@@ -8,12 +8,14 @@ import { vanillaPlusSettings } from "./settings.ts";
 import { ensureLanes, type Lane } from "./lanes.ts";
 import { tweaksFor } from "./tweaks.ts";
 import { playerWorth, worth, worthSettings } from "./worth.ts";
+import { calendar, thisSeason } from "./calendar.ts";
 import { tradeValueCalculator } from "./index.ts";
 import makeItWork from "../trade/makeItWork.ts";
 
 const importNode = (name: string) => import(/* @vite-ignore */ name);
 const realRandom = Math.random;
 const wasOn = vanillaPlusSettings.on;
+const calendarWas = vanillaPlusSettings.calendar;
 
 beforeAll(async () => {
 	await importNode("fake-indexeddb/auto");
@@ -30,6 +32,7 @@ beforeAll(async () => {
 
 afterAll(() => {
 	vanillaPlusSettings.on = wasOn;
+	vanillaPlusSettings.calendar = calendarWas;
 	Math.random = realRandom;
 });
 
@@ -229,4 +232,64 @@ test("no team counts a player it gives away at less than his market value", asyn
 		} as const;
 		assert.isAtLeast(tweaks(p.tid, asset, "remove"), 1);
 	}
+});
+
+test("this season counts most to a team in place for the playoffs", async () => {
+	vanillaPlusSettings.calendar = true;
+	const c = await calendar();
+	const lanes = await ensureLanes();
+	const [best] = [...lanes].find(([, lane]) => lane === "allIn")!;
+	const [worst] = [...lanes].find(([, lane]) => lane === "rebuild")!;
+	assert.isAbove(c.playoffs.get(best)!, 1);
+	assert.isBelow(c.playoffs.get(worst)!, 1);
+	assert.isAbove(thisSeason(c, c.playoffs.get(best)!), thisSeason(c, 1));
+	assert.isBelow(thisSeason(c, c.playoffs.get(worst)!), thisSeason(c, 1));
+	// The market's, before the season: a full season, as vanilla's.
+	assert.closeTo(thisSeason(c, 1), 1, 1e-9);
+});
+
+test("a player's seasons past his contract count by the chance he re-signs", async () => {
+	const p = (
+		await idb.cache.players.indexGetAll("playersByTid", [0, Infinity])
+	).sort((a, b) => b.value - a.value)[0]!;
+	const full = worth(p, worthSettings.market, 0, {
+		thisSeason: 1,
+		exp: Infinity,
+		retention: 1,
+	});
+	const expiring = worth(p, worthSettings.market, 0, {
+		thisSeason: 1,
+		exp: g.get("season"),
+		retention: 0.5,
+	});
+	assert.isBelow(expiring, full);
+	// This season is all his; only what's after is at risk.
+	assert.isAbove(expiring, full * 0.3);
+});
+
+test("selling its best player makes a bad team's own pick better", async () => {
+	const lanes = await ensureLanes();
+	const [worst] = [...lanes].find(([, lane]) => lane === "rebuild")!;
+	const best = (
+		await idb.cache.players.indexGetAll("playersByTid", worst)
+	).sort((a, b) => b.value - a.value)[0]!;
+	const other = [...lanes.keys()].find((tid) => tid !== worst && tid !== 0)!;
+	const deal = {
+		tid: worst,
+		pidsAdd: [],
+		pidsRemove: [best.pid],
+		dpidsAdd: [],
+		dpidsRemove: [],
+		tradingPartnerTid: other,
+	};
+	const withTank = await (await tradeValueCalculator()).evaluate(deal);
+	const calc = await tradeValueCalculator();
+	(calc as any).ownPicks = false;
+	const without = await calc.evaluate(deal);
+	assert.isAbove(withTank, without);
+	// To a human, never cheaper for it.
+	const human = await (
+		await tradeValueCalculator()
+	).evaluate({ ...deal, tradingPartnerTid: 0 });
+	assert.isAtMost(human, without + 1e-9);
 });

@@ -98,7 +98,10 @@ type Facts = {
 	winPct: number | undefined;
 };
 
-const factsOf = async (): Promise<{ facts: Facts[]; progress: number }> => {
+export const factsOf = async (): Promise<{
+	facts: Facts[];
+	progress: number;
+}> => {
 	const season = g.get("season");
 	const players = await idb.cache.players.indexGetAll("playersByTid", [
 		0,

@@ -5,6 +5,7 @@ import { g, local } from "../../util/index.ts";
 import getPickValues from "../trade/getPickValues.ts";
 import { projectRatings } from "../realisticFrontOffice/projection.ts";
 import type { Lane } from "./lanes.ts";
+import { thisSeason, type Calendar } from "./calendar.ts";
 
 // WORTH (docs/vanilla-plus.md, "Worth, season by season"): what a player is
 // worth in a trade, on vanilla's scale, counted one season at a time.
@@ -121,30 +122,77 @@ export const seasonValues = (p: Player, years: number) => {
 // seasons from the coming one, counting only those from `first` on (a draft
 // prospect plays only once drafted) - so seasons he can't play count as
 // nothing.
-export const worth = (p: Player, weights: number[], first = 0) => {
+//
+// With the calendar (calendar.ts): the coming season counts `thisSeason` of a
+// full one - the games left and the playoffs, for this team - and seasons past
+// his contract by the chance he re-signs.
+export type WorthTimes = {
+	thisSeason: number;
+	exp: number;
+	retention: number;
+};
+
+export const worth = (
+	p: Player,
+	weights: number[],
+	first = 0,
+	times?: WorthTimes,
+) => {
 	const now = nowIndex();
 	const seasons = seasonValues(p, now + worthSettings.years);
+	const season = g.get("season");
 	let sum = 0;
 	let weight = 0;
 	for (const [i, w] of weights.entries()) {
 		const t = now + i;
 		weight += w;
 		if (t >= first) {
-			sum += w * (seasons[t] ?? 0);
+			let x = seasons[t] ?? 0;
+			if (times) {
+				if (i === 0) {
+					x *= times.thisSeason;
+				}
+				if (season + t > times.exp) {
+					x *= times.retention;
+				}
+			}
+			sum += w * x;
 		}
 	}
 	return sum / weight;
 };
 
+// The calendar's part for one player and team (`playoffs`: the team's
+// relative playoffs, 1 for the market).
+export const timesFor = (
+	c: Calendar | undefined,
+	p: Player,
+	playoffs: number,
+): WorthTimes | undefined =>
+	c
+		? {
+				thisSeason: thisSeason(c, playoffs),
+				exp: c.exp.get(p.pid) ?? Infinity,
+				retention: c.retention.get(p.pid) ?? 1,
+			}
+		: undefined;
+
 // His worth to a team in this lane, as a trade value.
-export const worthFor = (p: Player, lane: Lane) =>
-	worth(p, worthSettings.weights[lane]);
+export const worthFor = (p: Player, lane: Lane, c?: Calendar, playoffs = 1) =>
+	worth(p, worthSettings.weights[lane], 0, timesFor(c, p, playoffs));
 
 // What a team in this lane would pay for him, and what the market would, as
 // vanilla z-scores (team/ValueChangeCalculator.ts playerWorth).
-export const playerWorth = (p: Player, lane: Lane | undefined) => {
-	const market = zOf(worth(p, worthSettings.market));
-	const own = lane ? zOf(worth(p, worthSettings.weights[lane])) : market;
+export const playerWorth = (
+	p: Player,
+	lane: Lane | undefined,
+	c?: Calendar,
+	playoffs = 1,
+) => {
+	const market = zOf(worth(p, worthSettings.market, 0, timesFor(c, p, 1)));
+	const own = lane
+		? zOf(worth(p, worthSettings.weights[lane], 0, timesFor(c, p, playoffs)))
+		: market;
 	return { own, market };
 };
 
