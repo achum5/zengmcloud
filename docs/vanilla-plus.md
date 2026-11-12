@@ -478,7 +478,16 @@ Four leagues each (seeds 391-394, seasons 2-3):
 | champion had bought                | 6/8                               | 6/8                                        |
 | market's time a season             | 14-17 s                           | 16-17 s                                    |
 
-The owner's four cases hold under both.
+The owner's four cases hold under both. M - H's patience by team, with the
+rush - came out no better than H (14.1 trades a season, 7% in the final
+week, 1.0 of the worst selling), so by-team patience is left off.
+
+**Switched on (2026-11-12, entry 283): H** - calendar, patience and auctions
+on, the settings' defaults (20% patience falling to 1% at the deadline,
+every team alike). With the whole market on, the full suite fails only
+where master does (3D court, notifications) once three tests that price
+for a human are given time (every team is asked its real offer) and the
+middleman test without the calendar is run without it.
 
 ## Order of work
 

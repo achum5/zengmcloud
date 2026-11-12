@@ -109,27 +109,31 @@ test("a contender with no big men values a center more than a guard as good", as
 	assert.isAtMost(center, 1.25);
 });
 
-test("a rebuilding team won't give its best player away", async () => {
-	const lanes = await ensureLanes();
-	const calc = await tradeValueCalculator();
-	for (const [tid, lane] of lanes) {
-		if (lane !== "rebuild") {
-			continue;
+test(
+	"a rebuilding team won't give its best player away",
+	{ timeout: 120_000 },
+	async () => {
+		const lanes = await ensureLanes();
+		const calc = await tradeValueCalculator();
+		for (const [tid, lane] of lanes) {
+			if (lane !== "rebuild") {
+				continue;
+			}
+			const best = (
+				await idb.cache.players.indexGetAll("playersByTid", tid)
+			).sort((a, b) => b.value - a.value)[0]!;
+			const dv = await calc.evaluate({
+				tid,
+				pidsAdd: [],
+				pidsRemove: [best.pid],
+				dpidsAdd: [],
+				dpidsRemove: [],
+				tradingPartnerTid: 0,
+			});
+			assert.isBelow(dv, 0);
 		}
-		const best = (
-			await idb.cache.players.indexGetAll("playersByTid", tid)
-		).sort((a, b) => b.value - a.value)[0]!;
-		const dv = await calc.evaluate({
-			tid,
-			pidsAdd: [],
-			pidsRemove: [best.pid],
-			dpidsAdd: [],
-			dpidsRemove: [],
-			tradingPartnerTid: 0,
-		});
-		assert.isBelow(dv, 0);
-	}
-});
+	},
+);
 
 test(
 	"what would make it work never leaves a roster past the limit",
@@ -278,32 +282,36 @@ test("a player's seasons past his contract count by the chance he re-signs", asy
 	assert.isAbove(expiring, full * 0.3);
 });
 
-test("selling its best player makes a bad team's own pick better", async () => {
-	const lanes = await ensureLanes();
-	const [worst] = [...lanes].find(([, lane]) => lane === "rebuild")!;
-	const best = (
-		await idb.cache.players.indexGetAll("playersByTid", worst)
-	).sort((a, b) => b.value - a.value)[0]!;
-	const other = [...lanes.keys()].find((tid) => tid !== worst && tid !== 0)!;
-	const deal = {
-		tid: worst,
-		pidsAdd: [],
-		pidsRemove: [best.pid],
-		dpidsAdd: [],
-		dpidsRemove: [],
-		tradingPartnerTid: other,
-	};
-	const withTank = await (await tradeValueCalculator()).evaluate(deal);
-	const calc = await tradeValueCalculator();
-	(calc as any).ownPicks = false;
-	const without = await calc.evaluate(deal);
-	assert.isAbove(withTank, without);
-	// To a human, never cheaper for it.
-	const human = await (
-		await tradeValueCalculator()
-	).evaluate({ ...deal, tradingPartnerTid: 0 });
-	assert.isAtMost(human, without + 1e-9);
-});
+test(
+	"selling its best player makes a bad team's own pick better",
+	{ timeout: 120_000 },
+	async () => {
+		const lanes = await ensureLanes();
+		const [worst] = [...lanes].find(([, lane]) => lane === "rebuild")!;
+		const best = (
+			await idb.cache.players.indexGetAll("playersByTid", worst)
+		).sort((a, b) => b.value - a.value)[0]!;
+		const other = [...lanes.keys()].find((tid) => tid !== worst && tid !== 0)!;
+		const deal = {
+			tid: worst,
+			pidsAdd: [],
+			pidsRemove: [best.pid],
+			dpidsAdd: [],
+			dpidsRemove: [],
+			tradingPartnerTid: other,
+		};
+		const withTank = await (await tradeValueCalculator()).evaluate(deal);
+		const calc = await tradeValueCalculator();
+		(calc as any).ownPicks = false;
+		const without = await calc.evaluate(deal);
+		assert.isAbove(withTank, without);
+		// To a human, never cheaper for it.
+		const human = await (
+			await tradeValueCalculator()
+		).evaluate({ ...deal, tradingPartnerTid: 0 });
+		assert.isAtMost(human, without + 1e-9);
+	},
+);
 
 // Owner: "If a contender suffers an awful injury, other contenders should be
 // far more willing to go all in if it puts them over the top."

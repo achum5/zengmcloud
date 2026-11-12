@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 283,
+		date: "2026-11-12",
+		text: "Realistic Front Offices: the CPU trade market now runs all season. Every team shops, more and more often as the deadline nears, and teams are pickier early in the season - a deal has to be clearly good for them then, and only has to be fair on deadline day. When a team gets an offer for a player, the other interested teams bid too and the best offer wins. Prices know the calendar: a contender pays more for help in a playoff race, an expiring contract is worth less to a team that won't use it this season, a long injury counts for the games it costs, and a bad team counts how much better its own pick gets when it sells. A CPU team never trades you a player for less than any other team would really give for him.",
+	},
+	{
 		n: 282,
 		date: "2026-11-12",
 		text: "Realistic Front Offices: trades now run on the normal game's trade engine, made smarter. Players are priced by what they'll be worth in each coming season, so aging stars cost more than before and raw high-potential kids less. Every CPU team has a plan - all-in, playoff team, retooling or rebuilding - and pays for the seasons it cares about: a contender won't swap a starter for a teenager who won't help for years, and a rebuilder sells its veterans for picks and young players. No team sells a player for less than another team would pay for him. \"What would make this work\" no longer offers more players than your roster has room for, and the News Feed has a new Front Office section with the moves and rumors around the league. Free agency is unchanged.",

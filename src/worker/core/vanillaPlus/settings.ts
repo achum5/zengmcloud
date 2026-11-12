@@ -13,17 +13,18 @@ export const vanillaPlusSettings = {
 	cpuMarkup: 1.02,
 	// "A market that never stops", step 1 (calendar.ts): contracts, this
 	// season's games left and playoffs, and the tank effect on a team's own
-	// pick. Off until measured.
-	calendar: false,
+	// pick; selling to a human, never for less than any team's real offer.
+	// On with steps 2-4 (2026-11-12; measured: docs/vanilla-plus.md).
+	calendar: true,
 	// Selling to a human (calendar on), the teams asked what they'd give
 	// instead: the keenest this many (every team).
 	bidders: Infinity,
 	// "A market that never stops", steps 2-3 (calendar.ts patience,
 	// market.ts tradeDay): patience to the deadline, every team shopping. Needs
-	// the calendar. Off until measured.
-	patience: false,
+	// the calendar.
+	patience: true,
 	// "A market that never stops", step 4 (market.ts auction): before a CPU
 	// seller says yes, the keenest other teams bid; the most wins, paying
-	// just enough to beat the next. Needs the calendar. Off until measured.
-	auctions: false,
+	// just enough to beat the next. Needs the calendar.
+	auctions: true,
 };
