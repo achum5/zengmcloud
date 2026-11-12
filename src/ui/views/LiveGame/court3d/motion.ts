@@ -27,7 +27,27 @@ export const pushFrom = (v: number): number =>
 // through the join: all of it straight on, a third of it round a right
 // angle, none turning back.
 export const keepThrough = (cos: number): number =>
-	Math.max(0, cos * 0.5 + 0.5) ** 1.5;
+	Math.pow(Math.max(0, cos * 0.5 + 0.5), 1.5);
+
+// The log of how much nearer his top a pace is than another (see ramp and
+// upTau), the last few kept: the same few asked again and again as a run is
+// fitted to its time (see shapeAt) - and a log is dear, worked out the same
+// on every device (see sameMath).
+const LN_SLOTS = 256;
+const lnA = new Float64Array(LN_SLOTS).fill(Number.NaN);
+const lnB = new Float64Array(LN_SLOTS).fill(Number.NaN);
+const lnV = new Float64Array(LN_SLOTS);
+const lnGap = (a: number, b: number): number => {
+	const i = ((a * 4099 + b * 131) | 0) & (LN_SLOTS - 1);
+	if (lnA[i] === a && lnB[i] === b) {
+		return lnV[i]!;
+	}
+	const v = Math.log((TOP - a) / (TOP - b));
+	lnA[i] = a;
+	lnB[i] = b;
+	lnV[i] = v;
+	return v;
+};
 
 // A ramp from one pace to another: how long it takes (s), at `k` times the
 // usual push.
@@ -37,7 +57,7 @@ const ramp = (from: number, to: number, k: number): number => {
 	}
 	const a = Math.min(from, TOP - 0.5);
 	const b = Math.min(to, TOP - 0.5);
-	return (TAU / k) * Math.log((TOP - a) / (TOP - b)) + Math.max(0, to - b) / 4;
+	return (TAU / k) * lnGap(a, b) + Math.max(0, to - b) / 4;
 };
 
 // An eased ramp from 0 to 1: how hard he pushes (or brakes) builds over
@@ -80,7 +100,7 @@ const easeSteep = (x: number) =>
 const upTau = (from: number, to: number, t: number): number | undefined =>
 	to <= from + 1e-9 || to > TOP - 0.5 || t <= 0
 		? undefined
-		: t / Math.log((TOP - Math.max(0, from)) / (TOP - to));
+		: t / lnGap(Math.max(0, from), to);
 
 // How far (feet) a ramp from one pace to another `t` seconds long takes him,
 // and how far along it he is `s` seconds in.

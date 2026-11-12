@@ -357,7 +357,9 @@ const crossMoveAt = (
 // into the hand.
 const DOWN = 0.42;
 const dribbleDepth = (ph: number): number =>
-	ph < DOWN ? (ph / DOWN) ** 1.55 : (1 - (ph - DOWN) / (1 - DOWN)) ** 1.8;
+	ph < DOWN
+		? Math.pow(ph / DOWN, 1.55)
+		: Math.pow(1 - (ph - DOWN) / (1 - DOWN), 1.8);
 
 export const offenseAt = (tl: CourtTimeline, t: number): Side => {
 	const i = lastIndex(tl.poss, t, (p) => p[0]);
@@ -7383,7 +7385,7 @@ export const swipeOnto = (
 	let z = 0;
 	let c = 0;
 	for (const m of marks) {
-		const k = m.k * m.c ** SWIPE_SHARP;
+		const k = m.k * Math.pow(m.c, SWIPE_SHARP);
 		sum += k;
 		x += m.p.x * k;
 		y += m.p.y * k;
@@ -7515,10 +7517,10 @@ export const moveBallAt = (
 		return mix(
 			under(letGo, from),
 			floor,
-			((ph - letGo) / (down - letGo)) ** 1.35,
+			Math.pow((ph - letGo) / (down - letGo), 1.35),
 		);
 	}
-	return mix(under(ph, to), floor, (1 - (ph - down) / (1 - down)) ** 1.8);
+	return mix(under(ph, to), floor, Math.pow(1 - (ph - down) / (1 - down), 1.8));
 };
 
 // The ball out of a limb of his (from a to b, so thick), across the floor:
@@ -8466,7 +8468,7 @@ const ballOn = (
 		const dropT = drop > 0.005 ? fall(drop) : 0;
 		let hopsT = 0;
 		for (let i = 0; i < seg.hops; i++) {
-			hopsT += 2 * fall(seg.h0 * 0.42 ** i);
+			hopsT += 2 * fall(seg.h0 * Math.pow(0.42, i));
 		}
 		const room = span - dropT;
 		const low =
@@ -8479,7 +8481,7 @@ const ballOn = (
 		const hops = drop > 0.005 ? [dropT] : [];
 		const first = hops.length;
 		for (let i = 0; i < seg.hops; i++) {
-			hops.push(2 * fall(h0 * 0.42 ** i));
+			hops.push(2 * fall(h0 * Math.pow(0.42, i)));
 		}
 		const real = hops.reduce((s, h) => s + h, 0);
 		let w = (u * (seg.t1 - seg.t0) * Math.max(1, real / span)) / 1000;
@@ -8490,12 +8492,12 @@ const ballOn = (
 				z =
 					i < first
 						? drop * (1 - v * v)
-						: 4 * h0 * 0.42 ** (i - first) * v * (1 - v);
+						: 4 * h0 * Math.pow(0.42, i - first) * v * (1 - v);
 				break;
 			}
 			w -= hops[i]!;
 		}
-		const roll = 1 - (1 - Math.min(1, u / 0.85)) ** 1.5;
+		const roll = 1 - Math.pow(1 - Math.min(1, u / 0.85), 1.5);
 		const along = Math.hypot(seg.to.x - from.x, seg.to.y - from.y) * roll;
 		return {
 			x: from.x + (seg.to.x - from.x) * roll,

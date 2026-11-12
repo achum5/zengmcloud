@@ -133,6 +133,7 @@ import {
 } from "./plays.ts";
 import { BREAK_SHARE } from "./nbaRates.ts";
 import { stepTimeline } from "./stepper.ts";
+import { sameEverywhere } from "./sameMath.ts";
 import {
 	callOrder,
 	INTRO_CALL,
@@ -685,39 +686,30 @@ const resultOf = (
 	};
 };
 
-// How a man goes down with what he hurt (the injury's name, as the game
-// gives it): a knee or an ankle bad enough to keep him out has him down on
-// the floor holding it; his face or head, bent over with his hands to it; a
-// hand or an arm, holding it; anything else, doubled over.
-const hurtFor = (
-	injury: { type: string; games: number } | undefined,
-): { anim: AnimName; down: boolean } => {
-	const type = injury?.type.toLowerCase() ?? "";
-	const bad = (injury?.games ?? 0) >= 3;
-	if (/knee|acl|mcl|pcl|menisc|patell/.test(type)) {
-		return bad
-			? { anim: "hurtKnee", down: true }
-			: { anim: "hurt", down: false };
+// How a man goes down hurt: down on the floor holding a knee or an ankle,
+// bent over with his hands to his head, holding a hand or an arm, or doubled
+// over - picked by who he is and when (see hash01), not by what he hurt. What
+// he hurt is only known once the game is over (the injury's line says who,
+// not what), so a game watched live never had it, and one watched again
+// after did - and the two went their own ways from there (down a while on
+// one, up at once on the other). The same game on every device, every time.
+const HURTS: { anim: AnimName; down: boolean; share: number }[] = [
+	{ anim: "hurtKnee", down: true, share: 0.25 },
+	{ anim: "hurtAnkle", down: true, share: 0.25 },
+	{ anim: "hurt", down: false, share: 0.2 },
+	{ anim: "hurtHead", down: false, share: 0.1 },
+	{ anim: "hurtHand", down: false, share: 0.1 },
+	{ anim: "hurtArm", down: false, share: 0.1 },
+];
+const hurtFor = (pid: number, t: number): { anim: AnimName; down: boolean } => {
+	let u = hash01(pid * 37 + 11, Math.round(t));
+	for (const h of HURTS) {
+		if (u < h.share) {
+			return h;
+		}
+		u -= h.share;
 	}
-	if (/ankle|achilles|foot|toe|plantar|calf|leg|peroneal/.test(type)) {
-		return bad
-			? { anim: "hurtAnkle", down: true }
-			: { anim: "hurt", down: false };
-	}
-	if (
-		/head|concussion|orbital|cheek|jaw|nose|eye|face|facial|tooth|neck|whiplash|throat/.test(
-			type,
-		)
-	) {
-		return { anim: "hurtHead", down: false };
-	}
-	if (/hand|finger|thumb|wrist/.test(type)) {
-		return { anim: "hurtHand", down: false };
-	}
-	if (/shoulder|collarbone|bicep|tricep|elbow|arm|rotator/.test(type)) {
-		return { anim: "hurtArm", down: false };
-	}
-	return { anim: "hurt", down: false };
+	return HURTS[0]!;
 };
 
 // Positions in the order a lineup fills its slots: guards out top, bigs low.
@@ -2839,10 +2831,6 @@ class Director {
 	// way out (by when they came) - see turnOf.
 	private dunkTurns = new Map<number, number>();
 	private deepTurns = new Map<number, Map<number, number>>();
-	private readonly injuries = new Map<
-		number,
-		{ type: string; games: number }
-	>();
 	// Where each player's chair is on his bench.
 	private readonly seat = new Map<number, Pt>();
 	private readonly lineup: [number[], number[]] = [[], []];
@@ -3051,9 +3039,6 @@ class Director {
 			}
 			if (p.ratings) {
 				this.rated.set(p.pid, p.ratings);
-			}
-			if (p.injury) {
-				this.injuries.set(p.pid, p.injury);
 			}
 			this.seat.set(p.pid, seatSpot(p.team, seats[p.team]++));
 		}
@@ -16626,7 +16611,7 @@ class Director {
 						Math.max(0, (dist(at, this.outPoint(at, way)) - 1.6) / far),
 					)
 				: 1;
-		return t + 0.85 * (1 - (1 - frac) ** (2 / 3)) * span;
+		return t + 0.85 * (1 - Math.pow(1 - frac, 2 / 3)) * span;
 	}
 
 	// Where a loose ball going from `p` along `u` comes to rest: on over the
@@ -16704,7 +16689,7 @@ class Director {
 	): number {
 		let s = drop > 0.005 ? Math.sqrt((2 * drop) / GRAVITY) : 0;
 		for (let k = 0; k < hops; k++) {
-			s += 2 * Math.sqrt((2 * h0 * 0.42 ** k) / GRAVITY);
+			s += 2 * Math.sqrt((2 * h0 * Math.pow(0.42, k)) / GRAVITY);
 		}
 		return Math.max(least, (s / 0.85) * 1000);
 	}
@@ -17834,7 +17819,7 @@ class Director {
 					call: "stop",
 					at: this.posOf(pid),
 				});
-				const { anim, down } = hurtFor(this.injuries.get(pid));
+				const { anim, down } = hurtFor(pid, T);
 				// (Down, long enough for his team's trainer to get out to him -
 				// from the end of his bench, however far (see crew's
 				// trainerState) - and see to him a moment.)
@@ -27879,7 +27864,7 @@ class Director {
 				handedFrom.set(k, from);
 			}
 			const u = Math.min(1, Math.max(0, (t - seg.t0) / (seg.t1 - seg.t0)));
-			const roll = 1 - (1 - Math.min(1, u / 0.85)) ** 1.5;
+			const roll = 1 - Math.pow(1 - Math.min(1, u / 0.85), 1.5);
 			return {
 				x: from.x + (seg.to.x - from.x) * roll,
 				y: from.y + (seg.to.y - from.y) * roll,
@@ -30738,7 +30723,10 @@ export type CourtInput = {
 	step?: boolean;
 };
 
-export const compileCourt = ({
+// (Staged to the bit the same on every device - see sameMath.)
+export const compileCourt = (input: CourtInput): CourtTimeline =>
+	sameEverywhere(() => compileHere(input));
+const compileHere = ({
 	events,
 	players,
 	gid,

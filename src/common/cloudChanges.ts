@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 292,
+		date: "2026-11-12",
+		text: "3D: every device now plays out exactly the same game - the shot chart, the clips and the 3D match on every phone and computer, for everyone in the league. Games simmed before this update can still be a little off.",
+	},
+	{
 		n: 291,
 		date: "2026-11-12",
 		text: "Realistic Front Offices: when a CPU team trades players away to clear cap room for a free agent, it no longer overpays. The team taking the salary gets only the picks it actually needs to take it - one contender had thrown in two first-round picks to clear $5.5M - and a team only clears room for a free agent who's worth more to it than what it gives up.",

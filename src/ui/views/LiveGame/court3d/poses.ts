@@ -11821,7 +11821,7 @@ const DEFAULT_BMI = 24.6;
 // How thick he is for his height: 1 for a typical build.
 export const girthOf = (hgt: number, weight: number): number => {
 	const bmi = (703 * weight) / (hgt * hgt);
-	return Math.min(1.28, Math.max(0.84, (bmi / DEFAULT_BMI) ** 0.9));
+	return Math.min(1.28, Math.max(0.84, Math.pow(bmi / DEFAULT_BMI, 0.9)));
 };
 
 // HOW HE IS PROPORTIONED: each part as a share of his height (the widths
@@ -11920,7 +11920,7 @@ export const bodyOf = (
 	p: Proportions = ATHLETE,
 	ph?: Physique,
 ): Body => {
-	const H = (DEFAULT_HGT * (hgt / DEFAULT_HGT) ** 1.25) / 12;
+	const H = (DEFAULT_HGT * Math.pow(hgt / DEFAULT_HGT, 1.25)) / 12;
 	const g = girthOf(hgt, weight);
 	const m = half(ph?.strength);
 	const a = half(ph?.athletic);

@@ -1,4 +1,5 @@
 import { display, generate } from "facesjs";
+import { makeCourtRng } from "../courtRng.ts";
 
 // THE CROWD'S FACES. A few dozen faces.js faces - men and women, every kind
 // of face and hair - each drawn once, small, just the head, for the stands to
@@ -45,14 +46,27 @@ const loadImage = (src: string) =>
 		img.src = src;
 	});
 
+// (faces.js draws on Math.random: seeded for each face, so the crowd is
+// the same people on every device, as everything else in the building is.)
+const seededFace = (n: number) => {
+	const real = Math.random;
+	Math.random = makeCourtRng(`crowd|${n}`);
+	try {
+		const face = generate(undefined, {
+			gender: (n * 0.618) % 1 < WOMEN ? "female" : "male",
+		});
+		face.accessories = {
+			id: Math.random() < CAP_SHARE ? pick(CAPS) : "none",
+		};
+		face.teamColors = [pick(CAP_COLORS), pick(CAP_COLORS), pick(CAP_COLORS)];
+		return face;
+	} finally {
+		Math.random = real;
+	}
+};
+
 const faceOf = async (n: number): Promise<CrowdFace | undefined> => {
-	const face = generate(undefined, {
-		gender: (n * 0.618) % 1 < WOMEN ? "female" : "male",
-	});
-	face.accessories = {
-		id: Math.random() < CAP_SHARE ? pick(CAPS) : "none",
-	};
-	face.teamColors = [pick(CAP_COLORS), pick(CAP_COLORS), pick(CAP_COLORS)];
+	const face = seededFace(n);
 	// (faces.js measures its parts as it draws, so it draws into the page, out
 	// of sight, and the result is copied out as an image - as a player's head
 	// is: see faces.ts.)
