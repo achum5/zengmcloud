@@ -60,6 +60,9 @@ export const vplusMarketSettings = {
 	shopDeadline: 0.5,
 	shopCurve: 2,
 	patientCoolDownDays: 5,
+	// ...and in the last `deadlineDays` before the deadline, this many: the
+	// deadline's rush, deal after deal.
+	deadlineCoolDownDays: 5,
 	// Contracts a team may add as salary filler to make a deal legal.
 	fillers: 3,
 	// Most players and picks a team pays with in one deal.
@@ -887,11 +890,17 @@ const sellerShops = async (
 	return true;
 };
 
+// Set each day: the last days before the deadline.
+let deadlineRush = false;
+
 const canTrade = (tid: number) => {
 	const last = lastTraded.get(tid);
-	const days = vanillaPlusSettings.patience
-		? vplusMarketSettings.patientCoolDownDays
-		: vplusMarketSettings.coolDownDays;
+	const s = vplusMarketSettings;
+	const days = !vanillaPlusSettings.patience
+		? s.coolDownDays
+		: deadlineRush
+			? s.deadlineCoolDownDays
+			: s.patientCoolDownDays;
 	return last === undefined || marketDay - last >= days;
 };
 
@@ -1016,6 +1025,7 @@ export const tradeDay = async () => {
 	if (phase === PHASE.REGULAR_SEASON) {
 		marketStats.deadlineDay[g.get("season")] = marketDay;
 	}
+	deadlineRush = phase === PHASE.REGULAR_SEASON && (await inDeadlineDays());
 	const started = performance.now();
 	const tids = await cpuTids();
 	if (tids.length < 2) {

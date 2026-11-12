@@ -8,7 +8,7 @@ import { vanillaPlusSettings } from "./settings.ts";
 import { ensureLanes, type Lane } from "./lanes.ts";
 import { tweaksFor } from "./tweaks.ts";
 import { playerWorth, worth, worthSettings } from "./worth.ts";
-import { calendar, thisSeason } from "./calendar.ts";
+import { calendar, calendarSettings, thisSeason } from "./calendar.ts";
 import { tradeValueCalculator } from "./index.ts";
 import makeItWork from "../trade/makeItWork.ts";
 import { marketStats, tradeDay } from "./market.ts";
@@ -423,6 +423,29 @@ test("teams want to come out well ahead early in the season, barely at the deadl
 		}
 		g.setWithoutSavingToDB("phase", phase);
 		vanillaPlusSettings.patience = patienceWas;
+	}
+});
+
+// Owner: "the value of getting rid of good guys so the team can tank for a
+// pick early in the season or getting a good guy early so the team can push
+// for a high seed... not necessarily never worth it early." A team sure of
+// where it stands is less patient than one on the bubble.
+test("a team sure of its place is less patient than one on the bubble", async () => {
+	vanillaPlusSettings.calendar = true;
+	const was = calendarSettings.patienceSure;
+	try {
+		calendarSettings.patienceSure = 0.25;
+		const lanes = await ensureLanes();
+		const [contender] = [...lanes].find(([, lane]) => lane === "allIn")!;
+		const c = await calendar();
+		const each = [...c.patienceOf.values()];
+		assert.isBelow(c.patienceOf.get(contender)!, Math.max(...each));
+		for (const x of each) {
+			assert.isAtLeast(x, calendarSettings.patienceEnd - 1e-9);
+			assert.isAtMost(x, c.patience + 1e-9);
+		}
+	} finally {
+		calendarSettings.patienceSure = was;
 	}
 });
 

@@ -47,6 +47,11 @@ export const calendarSettings = {
 	// It holds at the start's until this share of the way to the deadline is
 	// left, then falls (1: from the start).
 	patienceWindow: 1,
+	// A team sure of where it stands - in the playoffs, or out of them - has
+	// this share of it: it acts when a deal's worth it, as a contender adding
+	// for a seed or a bad team selling to tank. A team on the bubble waits to
+	// see (1: every team alike).
+	patienceSure: 1,
 	// How sure a team's playoff place is, in places of the standings either
 	// side of the cut: this many at the start of the season, shrinking to
 	// `sureAtEnd` by its end.
@@ -61,8 +66,10 @@ export type Calendar = {
 	remaining: number;
 	// Share of the way to the trade deadline: 1 at it and after.
 	toDeadline: number;
-	// What a team needs to come out ahead by, as a share of what it gives.
+	// What a team needs to come out ahead by, as a share of what it gives:
+	// the league's, and each team's by how sure it is of its place.
 	patience: number;
+	patienceOf: Map<number, number>;
 	// Games still to play this regular season (the coming one's, out of it).
 	gamesLeft: number;
 	// Each team's playoffs, relative to the league's average (mean 1).
@@ -217,10 +224,25 @@ export const calendar = async (): Promise<Calendar> => {
 	}
 	const { retention, exp } = retentionCached;
 
+	// Each team's: how sure it is of its place (a chance near 0 or 1) takes
+	// patience off.
+	const patienceOf = new Map(
+		[...chance].map(([tid, p]) => {
+			const unsure = 4 * p * (1 - p);
+			return [
+				tid,
+				s.patienceEnd +
+					(patience - s.patienceEnd) *
+						(s.patienceSure + (1 - s.patienceSure) * unsure),
+			];
+		}),
+	);
+
 	const out = {
 		remaining,
 		toDeadline,
 		patience,
+		patienceOf,
 		gamesLeft,
 		playoffs,
 		retention,

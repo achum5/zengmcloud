@@ -84,7 +84,10 @@ export const tradeValueCalculator = async (
 		// better one: a tank counts for what it's worth, and a contender
 		// buying gives some of its pick's worth up.
 		ownPicks: vanillaPlusSettings.calendar,
-		margin: c && vanillaPlusSettings.patience ? c.patience : 0,
+		margin:
+			c && vanillaPlusSettings.patience
+				? (tid) => c.patienceOf.get(tid) ?? c.patience
+				: 0,
 	});
 	return calc;
 };

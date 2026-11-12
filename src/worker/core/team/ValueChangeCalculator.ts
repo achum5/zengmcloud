@@ -1302,7 +1302,7 @@ export class ValueChangeCalculator {
 	private pickValues?: () => Promise<TradePickValues>;
 	private ownPicks: boolean;
 	private ownPicksCache = new Map<string, number>();
-	private margin: number;
+	private margin: number | ((tid: number) => number);
 	private adjust?: (
 		tid: number,
 		asset: Asset,
@@ -1330,8 +1330,9 @@ export class ValueChangeCalculator {
 		// Vanilla+: count what a trade does to the team's own pick this season.
 		ownPicks?: boolean;
 		// Vanilla+ patience: a deal must clear this share of what the team
-		// gives up (evaluate's `raw` skips it, to measure worth alone).
-		margin?: number;
+		// gives up (evaluate's `raw` skips it, to measure worth alone) - one
+		// for every team, or each its own.
+		margin?: number | ((tid: number) => number);
 	} = {}) {
 		this.quick = quick;
 		this.planOf = planOf;
@@ -1553,10 +1554,13 @@ export class ValueChangeCalculator {
 		const ownPicks = vsHuman ? Math.min(0, ownPicksRaw) : ownPicksRaw;
 		// Patience: to make a deal now, a team wants to come out ahead by a
 		// share of what it gives up.
-		const margin =
-			raw || quick || this.margin <= 0
+		const share =
+			raw || quick
 				? 0
-				: this.margin * Math.max(0, valuesRemove);
+				: typeof this.margin === "number"
+					? this.margin
+					: this.margin(tid);
+		const margin = share > 0 ? share * Math.max(0, valuesRemove) : 0;
 
 		return valuesAdd - valuesRemove + ownPicks - margin;
 	}
