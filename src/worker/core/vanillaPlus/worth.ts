@@ -38,6 +38,12 @@ export const worthSettings = {
 	pickWait: 0.85,
 	// Simulated careers per player.
 	samples: 40,
+	// No career counts above his potential by more than this: the 7th power
+	// on the spread of a teenager's careers made a 20-year-old 46/65 worth
+	// three times a 22-year-old 59/73 (and a team's 18-year-old 30/60 a main
+	// piece for its 21-year-old 62/74) - a long shot's tail, far past the
+	// ceiling the game shows, priced as a star.
+	ceiling: 3,
 	// Each lane's weight on each season, the coming one first.
 	weights: {
 		allIn: [1, 0.6, 0.25],
@@ -46,6 +52,55 @@ export const worthSettings = {
 		rebuild: [0.5, 0.7, 0.9, 1, 1, 1, 0.9, 0.8, 0.7, 0.6],
 	} as Record<Lane, number[]>,
 	market: geometric(0.65, 10),
+	// A team trying to win now (all-in or playoff) without a real shot at
+	// the title (calendar.ts titleShot, under `realShot` of the league's
+	// chances) doesn't spend its future on this season: its window moves from
+	// its lane's toward a patient one, where this season counts less - and
+	// the next two most if its core is young (it means to strike once it's
+	// improved) - the whole way with no shot at all (owner, 2026-11-12: "you don't want teams
+	// mortgaging their potential future really good years in the current
+	// year if they don't have a real shot at it").
+	realShot: 0.08,
+	// This season counts less, and a young team's next two most - the
+	// seasons it means to strike in - but not the far ones: a player at his
+	// peak now is worth as much to it as to anyone.
+	patientYoung: [0.5, 0.9, 1, 0.8, 0.5, 0.3, 0.15],
+	patientOld: [0.5, 0.75, 0.5, 0.3, 0.15],
+	youngCore: 25,
+	oldCore: 28,
+};
+
+// The window a team prices players by: its lane's, but a team trying to win
+// now by its title shot and core age (worthSettings.realShot).
+export const windowFor = (
+	lane: Lane,
+	titleShot: number | undefined,
+	coreAge: number | undefined,
+): number[] => {
+	const s = worthSettings;
+	const own = s.weights[lane];
+	if (
+		(lane !== "playoff" && lane !== "allIn") ||
+		titleShot === undefined ||
+		coreAge === undefined ||
+		s.realShot <= 0
+	) {
+		return own;
+	}
+	const patient = Math.max(0, 1 - titleShot / s.realShot);
+	if (patient === 0) {
+		return own;
+	}
+	const old = Math.min(
+		1,
+		Math.max(0, (coreAge - s.youngCore) / (s.oldCore - s.youngCore)),
+	);
+	const n = Math.max(own.length, s.patientYoung.length, s.patientOld.length);
+	return Array.from({ length: n }, (_, i) => {
+		const young = s.patientYoung[i] ?? 0;
+		const wait = young + ((s.patientOld[i] ?? 0) - young) * old;
+		return (own[i] ?? 0) + (wait - (own[i] ?? 0)) * patient;
+	});
 };
 
 // Vanilla's (team/ValueChangeCalculator.ts): a value's z-score, and its trade
@@ -82,7 +137,7 @@ export const seasonValues = (p: Player, years: number) => {
 		cacheFor = key;
 	}
 	const r = p.ratings.at(-1)!;
-	const id = `${p.pid}:${r.season}:${r.ovr}:${r.pot}:${years}`;
+	const id = `${p.pid}:${r.season}:${r.ovr}:${r.pot}:${years}:${worthSettings.ceiling}`;
 	let out = cache.get(id);
 	if (!out) {
 		const proj = projectRatings({
@@ -106,8 +161,9 @@ export const seasonValues = (p: Player, years: number) => {
 		// spread (Gauss-Hermite).
 		const scale = 10 / local.playerOvrStd;
 		const start = proj.ovr[0]!;
+		const top = r.pot + worthSettings.ceiling;
 		const at = (ovr: number) =>
-			tradeValue(zscore(p.valueNoPot + (ovr - start) * scale));
+			tradeValue(zscore(p.valueNoPot + (Math.min(ovr, top) - start) * scale));
 		out = proj.ovr.map((mean, t) => {
 			const sd = proj.ovrSd[t]!;
 			let sum = 0;
@@ -191,9 +247,20 @@ export const timesFor = (
 			}
 		: undefined;
 
-// His worth to a team in this lane, as a trade value.
-export const worthFor = (p: Player, lane: Lane, c?: Calendar, playoffs = 1) =>
-	worth(p, worthSettings.weights[lane], 0, timesFor(c, p, playoffs));
+// A team's window, from the calendar if there is one.
+const weightsOf = (lane: Lane, c: Calendar | undefined, tid?: number) =>
+	tid === undefined || !c
+		? worthSettings.weights[lane]
+		: windowFor(lane, c.titleShot.get(tid), c.coreAge.get(tid));
+
+// His worth to a team (tid) in this lane, as a trade value.
+export const worthFor = (
+	p: Player,
+	lane: Lane,
+	c?: Calendar,
+	playoffs = 1,
+	tid?: number,
+) => worth(p, weightsOf(lane, c, tid), 0, timesFor(c, p, playoffs));
 
 // What a team in this lane would pay for him, and what the market would, as
 // vanilla z-scores (team/ValueChangeCalculator.ts playerWorth).
@@ -202,19 +269,19 @@ export const playerWorth = (
 	lane: Lane | undefined,
 	c?: Calendar,
 	playoffs = 1,
+	tid?: number,
 ) => {
 	const market = zOf(worth(p, worthSettings.market, 0, timesFor(c, p, 1)));
 	const times = timesFor(c, p, playoffs);
-	const own = lane
-		? zOf(worth(p, worthSettings.weights[lane], 0, times))
-		: market;
+	const weights = lane ? weightsOf(lane, c, tid) : worthSettings.market;
+	const own = lane ? zOf(worth(p, weights, 0, times)) : market;
 	// After this season alone, as the team would price him (its own or the
 	// market's, whichever more): what the tank effect can't pay for.
 	const later =
 		lane && times
 			? zOf(
 					Math.max(
-						worth(p, worthSettings.weights[lane], 0, {
+						worth(p, weights, 0, {
 							...times,
 							thisSeason: 0,
 						}),

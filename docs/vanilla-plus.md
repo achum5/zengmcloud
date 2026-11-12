@@ -117,6 +117,35 @@ its core's age, its stars and its contracts:
   decline a little slower (0.75); a rebuilding team the seasons it means to
   win in above this one (0.5 now, rising to 1 in years 3-5). Picks keep
   bounded lane factors (all-in 0.825 ... rebuilding 1.1, vanilla's).
+- Only a real shot at the title buys for this season (owner, 2026-11-12:
+  "you don't want teams mortgaging their potential future really good years
+  in the current year if they don't have a real shot at it"). An all-in or
+  playoff team with under 8% of the league's title chances (calendar.ts
+  `titleShot`) moves toward a patient window as its shot shrinks: this
+  season counts half, and a young core (25 or younger) counts its next two
+  seasons most - it means to strike once it's improved - but not the far
+  ones, so a player at his peak now is worth as much to it as to anyone
+  (worth.ts `windowFor`). In the owner's league a third of the way in, a
+  43-year-old LeBron is worth about 120 to the two favorites and 7 to a
+  young playoff team with no shot; an 18-year-old 56/80 about 25 to the
+  favorites and 180 to that team.
+- A career counts no higher than his potential plus 3 (worth.ts `ceiling`).
+  Each season's worth is the expectation over the spread of his careers of
+  vanilla's 7th power, and the 7th power on a teenager's wide spread priced
+  long shots far past the ceiling the game shows as stars: a 20-year-old
+  46/65 was worth three times a 22-year-old 59/73, and a rebuilding team
+  took an 18-year-old 30/60 as the main piece for its 21-year-old 62/74. On
+  the market's window the young now rank as vanilla ranks them, those with
+  real potential near the top. Picks, priced by the same prospects, fall to
+  about a rotation player's worth (a rebuilder's median coming first 31 ->
+  6, a first four drafts out 29 -> 9).
+- Both measured together (arena X2 against W, seeds 391-394, seasons 2-3):
+  trades giving a better, younger player for a worse one 18 -> 9, a 60+
+  player for little 10 -> 4, players traded twice in a season 88 -> 64;
+  firsts to bad teams 70 -> 106 (contenders pay in picks); the 8 best teams
+  buying 3.9 -> 3.2 a season, the 8 worst selling 1.2 -> 1.6; trades 18.3 ->
+  15.9 a season. The trades counted "reverse" (5, from 2) are playoff teams
+  without a shot buying prospects with firsts or veterans.
 - Buy at your own price, sell at the market's: a team never counts a player
   or pick it gives away below the market's worth, since it could always shop
   him instead (no more giveaways - a rebuilding team sells a veteran, it

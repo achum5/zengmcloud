@@ -12,6 +12,16 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 294,
+		date: "2026-11-12",
+		text: "Realistic Front Offices: CPU teams without a real shot at the title no longer spend their future to be a little better this year. A playoff team that isn't a true contender won't trade young players and picks for an aging star - a young team waits until it's within striking distance - so the old stars go to the real contenders.",
+	},
+	{
+		n: 293,
+		date: "2026-11-12",
+		text: "Realistic Front Offices: young players are valued by what the game shows their potential to be, not by a long-shot chance of far more. A raw teenager is no longer worth more than a better young player with higher potential, so CPU teams stop trading good young players for lottery tickets. Draft picks are worth less than before as a result - about a rotation player for a typical first.",
+	},
+	{
 		n: 292,
 		date: "2026-11-12",
 		text: "3D: every device now plays out exactly the same game - the shot chart, the clips and the 3D match on every phone and computer, for everyone in the league. Games simmed before this update can still be a little off.",

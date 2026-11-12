@@ -7,7 +7,7 @@ import { createArenaLeague } from "../../../test/arena/runLeague.ts";
 import { vanillaPlusSettings } from "./settings.ts";
 import { ensureLanes, type Lane } from "./lanes.ts";
 import { tweaksFor } from "./tweaks.ts";
-import { playerWorth, worth, worthSettings } from "./worth.ts";
+import { playerWorth, windowFor, worth, worthSettings } from "./worth.ts";
 import { calendar, calendarSettings, thisSeason } from "./calendar.ts";
 import { tradeValueCalculator } from "./index.ts";
 import makeItWork from "../trade/makeItWork.ts";
@@ -677,6 +677,57 @@ test(
 		}
 	},
 );
+
+// Owner, 2026-11-12: "teams without a real chance for a title even if a
+// playoff team should not be going all in to be good this year for like a
+// really good 37 year old... you don't want teams mortgaging their potential
+// future really good years in the current year if they don't have a real
+// shot at it." A team with a real shot keeps its lane's window; one without
+// counts its coming seasons more - a young one's next few most - so an old
+// star is worth less to it, a young player more.
+test("a team without a real shot at the title doesn't spend its future on this season", async () => {
+	vanillaPlusSettings.calendar = true;
+	const lanes = await ensureLanes();
+	const c = await calendar();
+	const shot = (tid: number) => c.titleShot.get(tid) ?? 0;
+	const [contender] = [...lanes]
+		.filter(([, lane]) => lane === "allIn")
+		.sort((a, b) => shot(b[0]) - shot(a[0]))[0]!;
+	assert.isAtLeast(shot(contender), worthSettings.realShot);
+	assert.deepEqual(
+		windowFor("allIn", shot(contender), c.coreAge.get(contender)),
+		worthSettings.weights.allIn,
+	);
+	const [hopeful] = [...lanes].find(
+		([tid, lane]) =>
+			lane === "playoff" && shot(tid) < worthSettings.realShot / 2,
+	)!;
+	// A young team's window rises to the seasons it means to strike in.
+	const young = windowFor("playoff", 0, worthSettings.youngCore);
+	assert.isAbove(young[1]!, young[0]!);
+	assert.isAbove(young[2]!, young[0]!);
+	const season = g.get("season");
+	const players = await idb.cache.players.indexGetAll("playersByTid", [
+		0,
+		Infinity,
+	]);
+	const vet = players
+		.filter((p) => season - p.born.year >= 33)
+		.sort((a, b) => b.valueNoPot - a.valueNoPot)[0]!;
+	const kid = players
+		.filter((p) => season - p.born.year <= 21)
+		.sort((a, b) => b.value - a.value)[0]!;
+	const to = (tid: number, p: (typeof players)[number]) =>
+		playerWorth(p, lanes.get(tid), c, c.playoffs.get(tid), tid).own;
+	const asLane = (tid: number, p: (typeof players)[number]) =>
+		playerWorth(p, lanes.get(tid), c, c.playoffs.get(tid)).own;
+	assert.isBelow(to(hopeful, vet), asLane(hopeful, vet));
+	assert.isAbove(to(hopeful, kid), asLane(hopeful, kid));
+	assert.isBelow(
+		to(hopeful, vet) / to(hopeful, kid),
+		to(contender, vet) / to(contender, kid),
+	);
+});
 
 // Found in the arena: a 51-31 team gave two firsts and two young players to
 // clear $5.5M for a free agent - room trades ran on the old engine's

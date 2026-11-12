@@ -83,6 +83,10 @@ export type Calendar = {
 	retention: Map<number, number>;
 	// The last season of each player's contract.
 	exp: Map<number, number>;
+	// Each team's share of the league's title chances this season.
+	titleShot: Map<number, number>;
+	// Each team's core age (lanes.ts): its best eight now.
+	coreAge: Map<number, number>;
 };
 
 let cached: { key: string; calendar: Calendar } | undefined;
@@ -199,9 +203,11 @@ export const calendar = async (): Promise<Calendar> => {
 	);
 	const pullSum = [...pull.values()].reduce((sum, x) => sum + x, 0);
 	const raw = new Map<number, number>();
+	const titleShot = new Map<number, number>();
 	for (const [tid, c] of chance) {
-		const titleShot = pullSum > 0 ? pull.get(tid)! / pullSum : 0;
-		raw.set(tid, c + s.title * titleShot * cut);
+		const shot = pullSum > 0 ? pull.get(tid)! / pullSum : 0;
+		titleShot.set(tid, shot);
+		raw.set(tid, c + s.title * shot * cut);
 	}
 	const mean =
 		[...raw.values()].reduce((sum, x) => sum + x, 0) / Math.max(1, raw.size);
@@ -260,6 +266,8 @@ export const calendar = async (): Promise<Calendar> => {
 		playoffs,
 		retention,
 		exp,
+		titleShot,
+		coreAge: new Map(facts.map((f) => [f.tid, f.coreAge])),
 	};
 	cached = { key, calendar: out };
 	return out;

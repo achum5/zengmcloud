@@ -402,7 +402,7 @@ export const keenestBidders = ({
 		.map(([other, lane]) => ({
 			other,
 			want:
-				worthFor(p, lane, calendar, calendar?.playoffs.get(other) ?? 1) *
+				worthFor(p, lane, calendar, calendar?.playoffs.get(other) ?? 1, other) *
 				tweaks(other, playerAsset(p), "add"),
 		}))
 		.sort((a, b) => b.want - a.want)

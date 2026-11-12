@@ -34,7 +34,7 @@ export const tradeValueCalculator = async (
 		cpuMarkup: vanillaPlusSettings.cpuMarkup,
 		playerWorth: async (tid, p, vsHuman) => {
 			const worth = {
-				...playerWorth(p, lanes.get(tid), c, playoffsOf(tid)),
+				...playerWorth(p, lanes.get(tid), c, playoffsOf(tid), tid),
 				injuryPriced: c !== undefined,
 			};
 			if (!vsHuman) {
@@ -72,7 +72,7 @@ export const tradeValueCalculator = async (
 				if (other !== tid && !humans.has(other)) {
 					keenest = Math.max(
 						keenest,
-						worthFor(p, lane, c, playoffsOf(other)) *
+						worthFor(p, lane, c, playoffsOf(other), other) *
 							tweaks(other, asset, "add"),
 					);
 				}
