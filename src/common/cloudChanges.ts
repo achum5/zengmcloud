@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 289,
+		date: "2026-11-12",
+		text: "Realistic Front Offices: a CPU team that falls out of the playoff race now stops buying for this season - more than about 4 games behind the last play-in spot in its conference at the deadline, it sells its veterans instead. Teams also rethink their plans earlier, so one that slumps can still sell before the deadline.",
+	},
+	{
 		n: 288,
 		date: "2026-11-12",
 		text: 'Realistic Front Offices: "What would make this work" and Trade Proposals ask for less. Once a deal works, they drop anything of yours the other team would still say yes without - one ask was eight players for a prospect when two of them carried the deal.',

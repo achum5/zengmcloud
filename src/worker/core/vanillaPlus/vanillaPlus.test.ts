@@ -521,6 +521,59 @@ test(
 	},
 );
 
+// Found in the owner's league: losing teams rated in the top half stayed
+// "playoff" all season and bought aging stars. A team out of the race for
+// the postseason - well behind the last play-in place in its conference -
+// stops buying for this season, before the deadline.
+test("a team out of the race stops buying for this season", async () => {
+	const season = g.get("season");
+	const phase = g.get("phase");
+	const before = await ensureLanes();
+	// Three of the preseason's playoff teams lose, the rest of the league
+	// wins: every play-in place goes to a winning team.
+	const losers = new Set(
+		[...before]
+			.filter(([, lane]) => lane === "playoff")
+			.map(([tid]) => tid)
+			.slice(0, 3),
+	);
+	const teamSeasons = await idb.cache.teamSeasons.indexGetAll(
+		"teamSeasonsBySeasonTid",
+		[[season], [season, "Z"]],
+	);
+	const saved = teamSeasons.map((ts) => [ts.won, ts.lost] as const);
+	try {
+		g.setWithoutSavingToDB("phase", PHASE.REGULAR_SEASON);
+		// Half the season gone.
+		const played = Math.round(g.get("numGames") / 2);
+		for (const ts of teamSeasons) {
+			ts.won = Math.round(played * (losers.has(ts.tid) ? 0.15 : 0.6));
+			ts.lost = played - ts.won;
+			await idb.cache.teamSeasons.put(ts);
+		}
+		const lanes = await ensureLanes();
+		assert.isAbove(losers.size, 0);
+		for (const tid of losers) {
+			assert.include(["retool", "rebuild"], lanes.get(tid), `team ${tid}`);
+		}
+		// The teams in the race keep theirs.
+		assert.isAbove(
+			[...lanes].filter(([tid, lane]) => !losers.has(tid) && lane === "allIn")
+				.length,
+			0,
+		);
+	} finally {
+		teamSeasons.forEach((ts, i) => {
+			[ts.won, ts.lost] = saved[i]!;
+		});
+		for (const ts of teamSeasons) {
+			await idb.cache.teamSeasons.put(ts);
+		}
+		g.setWithoutSavingToDB("phase", phase);
+		await ensureLanes();
+	}
+});
+
 // Found in the owner's league: a rebuilder valued a 2030 second at a third
 // of a first, and a 2033 second took part of the price of a 25-year-old
 // starter. Future drafts are priced by the coming class, on draft day,

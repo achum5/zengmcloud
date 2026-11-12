@@ -100,8 +100,16 @@ its core's age, its stars and its contracts:
 
 - Lanes are sticky: a team changes only on clear evidence (a bad first half
   turns an all-in team into a seller at the deadline; a young team that
-  breaks out moves up). Reviewed each offseason, at mid-season and before
-  the deadline.
+  breaks out moves up). Reviewed each offseason, in the preseason, and at
+  30%, 45% and 60% of the season: a one-lane move waits for the 45% review,
+  still before the deadline (it used to wait for the 60% one, after it, so a
+  slumping team could never sell in time).
+- In the season a team out of the race - further behind the last place that
+  reaches the postseason in its conference (playoffs and play-in) than 12%
+  of its games left, about 4 games at the deadline - is no playoff team: it
+  retools (2026-11-12, after losing teams rated in the top half stayed
+  "playoff" all season). A team at the play-in line in a weak conference is
+  still in the race.
 - A lane is a window on a player's seasons (worth.ts): an all-in team counts
   this season and next and a little of the third (1, 0.6, 0.25) and nothing
   after, since a 17-year-old's shot at stardom in year eight is no help to

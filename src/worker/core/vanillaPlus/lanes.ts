@@ -2,6 +2,8 @@ import { PHASE } from "../../../common/constants.ts";
 import type { Player } from "../../../common/types.ts";
 import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
+import getNumPlayoffTeams from "../season/getNumPlayoffTeams.ts";
+import getPlayoffsByConf from "../season/getPlayoffsByConf.ts";
 import type {
 	TradePlan,
 	TradeValueAsset,
@@ -21,8 +23,9 @@ import { laneWatchers } from "./events.ts";
 //               veterans.
 //
 // Reviewed each offseason (after the playoffs), in the preseason once ratings
-// have moved, at mid-season and late in the season, before the deadline.
-// Sticky: in the season a team moves a lane only on clear evidence.
+// have moved, twice in the season before the deadline and once after it.
+// Sticky: in the season a team moves a lane only on clear evidence. A team
+// out of the race for the postseason stops buying for this season.
 export type Lane = "rebuild" | "retool" | "playoff" | "allIn";
 
 const ORDER: Record<Lane, number> = {
@@ -47,6 +50,10 @@ export const laneSettings = {
 	// How much of a team's standing is its record, at most, once games are
 	// played (the rest its rating).
 	recordWeight: 0.6,
+	// In the season, a team further behind the last place that reaches the
+	// postseason (playoffs and play-in, in its conference) than this share of
+	// the games left stops trying for it: about 4 games back at the deadline.
+	outOfReach: 0.12,
 };
 
 // Each lane's weighing of an asset: a factor on vanilla's value, as stock's
@@ -93,9 +100,12 @@ export const planFor = (lane: Lane | undefined): TradePlan | undefined =>
 // What a team is, for its lane.
 type Facts = {
 	tid: number;
+	cid: number;
 	ovr: number;
 	coreAge: number;
 	winPct: number | undefined;
+	won: number;
+	lost: number;
 };
 
 export const factsOf = async (): Promise<{
@@ -145,9 +155,12 @@ export const factsOf = async (): Promise<{
 		counted += 1;
 		facts.push({
 			tid: t.tid,
+			cid: ts?.cid ?? t.cid,
 			ovr,
 			coreAge,
 			winPct: games > 0 ? (ts!.won + 0.5 * (ts!.tied ?? 0)) / games : undefined,
+			won: ts ? ts.won + 0.5 * (ts.tied ?? 0) : 0,
+			lost: games - (ts ? ts.won + 0.5 * (ts.tied ?? 0) : 0),
 		});
 	}
 	const progress =
@@ -165,11 +178,17 @@ const reviewOf = (progress: number) => {
 		return { key: `${season}:pre`, inSeason: false };
 	}
 	if (phase === PHASE.REGULAR_SEASON) {
-		if (progress < 0.4) {
+		// Three looks before a deadline at 60% of the season.
+		if (progress < 0.3) {
 			return { key: `${season}:pre`, inSeason: false };
 		}
 		return {
-			key: progress < 0.6 ? `${season}:mid` : `${season}:late`,
+			key:
+				progress < 0.45
+					? `${season}:early`
+					: progress < 0.6
+						? `${season}:mid`
+						: `${season}:late`,
 			inSeason: true,
 		};
 	}
@@ -183,6 +202,8 @@ const freshLane = (
 	n: number,
 	previous: Lane | undefined,
 	inSeason: boolean,
+	// In the season, whether the team is out of the race for the postseason.
+	out: boolean,
 ): Lane => {
 	const s = laneSettings;
 	if (rank <= Math.ceil(s.allInShare * n)) {
@@ -196,7 +217,7 @@ const freshLane = (
 		return "allIn";
 	}
 	if (rank <= Math.ceil(s.playoffShare * n)) {
-		return "playoff";
+		return inSeason && out ? "retool" : "playoff";
 	}
 	// The bottom half: the worst rebuild, and a young team below the middle;
 	// an old one retools; the rest try for the playoffs.
@@ -206,7 +227,48 @@ const freshLane = (
 	if (f.coreAge >= s.retoolAge) {
 		return "retool";
 	}
-	return "playoff";
+	// In the season, only a team still in the race tries for the
+	// postseason.
+	return inSeason && out ? "retool" : "playoff";
+};
+
+// The teams further behind the last place that reaches the postseason
+// (playoffs and play-in) than they have games left to make up.
+const outOfRaceOf = async (facts: Facts[]): Promise<Set<number>> => {
+	const out = new Set<number>();
+	let byConf: number | false = false;
+	let reach = Math.ceil(laneSettings.playoffShare * facts.length);
+	try {
+		const season = g.get("season");
+		const { numPlayoffTeams, numPlayInTeams } =
+			await getNumPlayoffTeams(season);
+		byConf = await getPlayoffsByConf(season);
+		reach = numPlayoffTeams + numPlayInTeams;
+	} catch {
+		// Not set up for this season: half the league, as one.
+	}
+	const groups = new Map<number, Facts[]>();
+	for (const f of facts) {
+		const key = byConf ? f.cid : 0;
+		groups.set(key, [...(groups.get(key) ?? []), f]);
+	}
+	const numGames = g.get("numGames");
+	for (const group of groups.values()) {
+		const places = Math.ceil(reach / (byConf ? groups.size : 1));
+		if (places >= group.length) {
+			continue;
+		}
+		const sorted = [...group].sort((a, b) => b.won - b.lost - (a.won - a.lost));
+		const last = sorted[places - 1]!;
+		for (const f of sorted.slice(places)) {
+			const behind = (last.won - f.won + (f.lost - last.lost)) / 2;
+			const left = Math.max(0, numGames - f.won - f.lost);
+			if (behind > laneSettings.outOfReach * left) {
+				out.add(f.tid);
+			}
+		}
+	}
+	return out;
 };
 
 let current: { key: string; lanes: Map<number, Lane> } | undefined;
@@ -239,17 +301,26 @@ export const ensureLanes = async (): Promise<Map<number, Lane>> => {
 			score: (1 - w) * ovrRank.get(f.tid)! + w * recordRank.get(f.tid)!,
 		}))
 		.sort((a, b) => a.score - b.score);
+	const outOfRace = review.inSeason ? await outOfRaceOf(facts) : new Set();
 	const lanes = new Map<number, Lane>();
 	for (const [i, { f }] of standing.entries()) {
 		const t = teams.get(f.tid)!;
 		const previous = t.lane;
-		let lane = freshLane(f, i + 1, n, previous, review.inSeason);
-		// Sticky in the season: a lane apart, not before late in the season.
+		let lane = freshLane(
+			f,
+			i + 1,
+			n,
+			previous,
+			review.inSeason,
+			outOfRace.has(f.tid),
+		);
+		// Sticky early in the season: a lane apart, not before mid-season -
+		// still before the deadline.
 		if (
 			review.inSeason &&
 			previous &&
 			Math.abs(ORDER[lane] - ORDER[previous]) < 2 &&
-			!review.key.endsWith(":late")
+			review.key.endsWith(":early")
 		) {
 			lane = previous;
 		}
