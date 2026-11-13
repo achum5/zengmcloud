@@ -136,6 +136,7 @@ import {
 import { seriesLine } from "../gamecast/seriesLine.ts";
 import { bugShown, useBugRefs, writeBug } from "./bugWriter.ts";
 import { IntroCard, IntroTitle } from "./IntroCard.tsx";
+import type { Authored } from "./authored.ts";
 import { callAt } from "./intro.ts";
 import {
 	aimFor,
@@ -270,6 +271,8 @@ type Props = {
 	// No game: the two teams warming up on the home floor, round and round -
 	// a look at the court (see CourtPreview).
 	preview?: boolean;
+	// No game: a scene of its own, in place of the warm-ups (see authored.ts).
+	authored?: Authored;
 	// A play the page asks to see again (a highlight tapped): the line that
 	// ended at `cursor`, shown again each time `n` goes up (see askedReplay).
 	replayAsk?: { n: number; cursor: number };
@@ -299,6 +302,7 @@ const Court3D = ({
 	onFail,
 	onLost,
 	preview = false,
+	authored,
 	replayAsk,
 	onShots,
 	until,
@@ -398,8 +402,13 @@ const Court3D = ({
 		},
 	);
 	// While it is: the two teams out warming up at their baskets - not a
-	// black screen. (Staged here: it takes no time at all.)
+	// black screen. (Staged here: it takes no time at all.) Or a scene of its
+	// own (see authored.ts).
+	const authoredShow = authored?.show;
 	const pregame = useMemo((): Warmup | undefined => {
+		if (authoredShow) {
+			return authoredShow;
+		}
 		if (
 			!preview &&
 			(!events || events.length === 0 || !eventsMatchRoster(events, roster))
@@ -411,7 +420,7 @@ const Court3D = ({
 		} catch {
 			return undefined;
 		}
-	}, [events, roster, gid, preview]);
+	}, [events, roster, gid, preview, authoredShow]);
 	const clocks = useMemo(
 		() => (timeline && events ? buildClocks(timeline, events) : undefined),
 		[timeline, events],
@@ -649,7 +658,11 @@ const Court3D = ({
 			}
 			const team = roster.find((p) => p.pid === pid)?.team;
 			const colors = team === 0 ? away?.colors : home?.colors;
-			void loadHead(face?.face, face?.colors ?? colors).then((head) => {
+			void (
+				authored?.head
+					? authored.head(pid, face?.face, face?.colors ?? colors)
+					: loadHead(face?.face, face?.colors ?? colors)
+			).then((head) => {
 				if (current()) {
 					heads.current.set(pid, head);
 					bump();
@@ -665,6 +678,7 @@ const Court3D = ({
 	const kept = useRef(
 		new Map<number, { made: unknown[]; look: Look; body: Body }>(),
 	);
+	const dress = authored?.dress;
 	const appearance = useMemo(() => {
 		const looks = new Map<number, Look>();
 		const bodies = new Map<number, Body>();
@@ -687,6 +701,7 @@ const Court3D = ({
 				p.jerseyNumber,
 				p.out,
 				p.ratings,
+				dress,
 			];
 			const was = kept.current.get(p.pid);
 			if (was && was.made.every((x, i) => x === made[i])) {
@@ -741,6 +756,10 @@ const Court3D = ({
 					street: true,
 				});
 			}
+			// (A scene's own clothes on him - see authored.ts.)
+			if (dress) {
+				looks.set(p.pid, dress(p.pid, looks.get(p.pid)!));
+			}
 			bodies.set(
 				p.pid,
 				bodyOf(f?.hgt, f?.weight, undefined, physiqueOf(p.ratings)),
@@ -753,7 +772,7 @@ const Court3D = ({
 		}
 		return { looks, bodies };
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [roster, dressed, arts, crests, facesVersion]);
+	}, [roster, dressed, arts, crests, facesVersion, dress]);
 	// The officials, the coaches and the photographers, picked once a game,
 	// and their heads drawn from their faces as they come.
 	const crew = useMemo(
@@ -819,8 +838,14 @@ const Court3D = ({
 		return out;
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [crew, crewVersion]);
-	const crewRef = useRef({ crew, crewLooks });
-	crewRef.current = { crew, crewLooks };
+	// (Those of them a scene of its own has there - see authored.ts.)
+	const crewAsked = authored?.crew;
+	const sceneCrew = useMemo(
+		() => (crewAsked ? crew.filter((m) => crewAsked(m.role)) : crew),
+		[crew, crewAsked],
+	);
+	const crewRef = useRef({ crew, crewLooks, sceneCrew });
+	crewRef.current = { crew, crewLooks, sceneCrew };
 
 	// Read by the animation loop, which outlives any one render.
 	const looks = useRef(appearance.looks);
@@ -949,6 +974,10 @@ const Court3D = ({
 		introTitle: false,
 		// In close on a man (see closeUpAim).
 		closeOn: false,
+		// A scene of its own (see authored.ts): the run of it showing, and
+		// whether it has got to its end.
+		authoredRun: undefined as number | undefined,
+		authoredOver: false,
 		// No period on: the final horn gone, or between two (see isFinal,
 		// isBreak).
 		ended: false,
@@ -1053,6 +1082,7 @@ const Court3D = ({
 		],
 		eventsLength: events?.length ?? 0,
 		preview,
+		authored,
 	});
 	live.current = {
 		cursor,
@@ -1090,6 +1120,7 @@ const Court3D = ({
 		],
 		eventsLength: events?.length ?? 0,
 		preview,
+		authored,
 	};
 
 	// A highlight tapped: that play again, the game held while it shows -
@@ -1163,6 +1194,20 @@ const Court3D = ({
 				s.keyDip = now;
 				s.keyHold = -Infinity;
 			}
+			// A scene of its own (see authored.ts): from the top each run of
+			// it, and held where it is while paused.
+			if (p.authored) {
+				if (p.authored.run !== s.authoredRun) {
+					s.authoredRun = p.authored.run;
+					s.authoredOver = false;
+					s.t = 0;
+					s.snapCam = true;
+					s.keyDip = now;
+				}
+				if (p.paused) {
+					s.last = now;
+				}
+			}
 			const { dt, rate, cut } = stepPlay(
 				s,
 				p,
@@ -1172,6 +1217,14 @@ const Court3D = ({
 				now,
 				Date.now(),
 			);
+			// (And held on its last moment.)
+			if (p.authored && staging && s.t >= p.authored.ms) {
+				s.t = p.authored.ms;
+				if (!s.authoredOver) {
+					s.authoredOver = true;
+					p.authored.onEnd?.();
+				}
+			}
 			// A look at the court: the warm-ups over, round again from the top.
 			if (p.preview && staging && s.t >= WARMUP_MS) {
 				s.t = 0;
@@ -1201,15 +1254,17 @@ const Court3D = ({
 
 			const replay = s.replay;
 			const moment =
-				staging && p.pregame
-					? warmupMoment(p.pregame, s.t, bodyOfPid)
-					: momentAt(
-							tl,
-							replay ? replay.at : s.t,
-							rosterRef.current,
-							bodyOfPid,
-							replay ? undefined : { rate, wall: now },
-						);
+				staging && p.authored
+					? p.authored.moment(s.t, bodyOfPid)
+					: staging && p.pregame
+						? warmupMoment(p.pregame, s.t, bodyOfPid)
+						: momentAt(
+								tl,
+								replay ? replay.at : s.t,
+								rosterRef.current,
+								bodyOfPid,
+								replay ? undefined : { rate, wall: now },
+							);
 			// Over a break, a look round the building; in close on a man at the
 			// line; at the starting lineups, each man called.
 			const arenaView = replay ? undefined : arenaAim(tl, s.t, p.narrow);
@@ -1217,7 +1272,9 @@ const Court3D = ({
 				replay || arenaView ? undefined : closeUpAim(tl, moment, p.narrow);
 			const view = replay
 				? undefined
-				: (arenaView ?? closeView ?? introAim(tl, moment, p.narrow));
+				: staging && p.authored
+					? p.authored.aim(s.t, p.narrow, moment)
+					: (arenaView ?? closeView ?? introAim(tl, moment, p.narrow));
 			const on = !!tl.intro && s.t >= tl.intro.t0 && s.t < tl.intro.t1;
 			const called = callAt(tl.intro, s.t);
 			const k = called ? tl.intro!.calls.indexOf(called) : -1;
@@ -1408,7 +1465,11 @@ const Court3D = ({
 			}
 			const pt = paintRef.current;
 			const cr = crewRef.current;
-			const working = crewAt(tl, moment.t, cr.crew);
+			const working = crewAt(
+				tl,
+				moment.t,
+				p.authored?.crew ? cr.sceneCrew : cr.crew,
+			);
 			const drawStart = performance.now();
 			drawFrame({
 				ctx,
@@ -1462,7 +1523,9 @@ const Court3D = ({
 					const c = cr.crewLooks.get(st.pid);
 					return c ? [{ st, body: c.body, look: c.look }] : [];
 				}),
-				flashes: working.flashes,
+				flashes: p.authored?.flashes
+					? [...working.flashes, ...p.authored.flashes(moment.t)]
+					: working.flashes,
 				teamColors: p.teamColors,
 				black: o >= 0.999 || flash >= 0.999 || s.wipe.hold === now,
 			});
@@ -1626,9 +1689,15 @@ const Court3D = ({
 				// (Still being staged - see stageCourt.ts: not stuck.)
 				staging={!timeline && !!events && events.length > 0}
 			/>
-			{introCard ? <IntroCard info={introCard} callKey={intro.call} /> : null}
-			{intro.title ? <IntroTitle playoffs={!!timeline?.intro?.big} /> : null}
-			{intro.on && !follower && !along ? (
+			{authored?.card && intro.call >= 0 ? (
+				<IntroCard info={authored.card} callKey={intro.call} />
+			) : introCard ? (
+				<IntroCard info={introCard} callKey={intro.call} />
+			) : null}
+			{intro.title && !authored ? (
+				<IntroTitle playoffs={!!timeline?.intro?.big} />
+			) : null}
+			{intro.on && !follower && !along && !authored ? (
 				<button
 					type="button"
 					onClick={skipIntro}
@@ -1654,7 +1723,7 @@ const Court3D = ({
 			<GameBug
 				bugRef={bugRef}
 				own={boxScore?.scoreBug}
-				hidden={intro.on || preview}
+				hidden={intro.on || preview || !!authored}
 				away={bugTeamOf(away, awayPts, boxScore?.teams?.[1])}
 				home={bugTeamOf(home, homePts, boxScore?.teams?.[0])}
 				quarter={quarter}

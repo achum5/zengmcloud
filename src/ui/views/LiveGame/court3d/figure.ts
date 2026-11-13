@@ -4,6 +4,7 @@ import { project, type Camera, type Projected } from "./camera.ts";
 import { bodyPoint, poseOf, type PlayerState } from "./evaluate.ts";
 import type { HairCut, HairStyle, HeadSprite, Profile } from "./faces.ts";
 import type { KitArt } from "./kitArt.ts";
+import { capBack, capSide, type Cap } from "./cap.ts";
 import { skeleton, type Body, type V3 } from "./poses.ts";
 
 // WHAT HE LOOKS LIKE - and his head (see sprite.ts).
@@ -109,6 +110,8 @@ export type Look = {
 	// In his street clothes, not his uniform - out hurt (see streetClothes):
 	// never put into a warm-up top.
 	street?: true;
+	// A team's cap on his head (see cap.ts): a draft pick's.
+	cap?: Cap;
 };
 
 type P2 = { x: number; y: number };
@@ -1131,6 +1134,9 @@ const drawHead = (
 			ctx.stroke();
 			ctx.restore();
 		}
+		if (look.cap) {
+			capBack(ctx, x, c.y, r, look.cap, ink, side, turn);
+		}
 	};
 	// Facing away: the back of his head. Side on: his head in profile - not
 	// his face turned to the camera over the back of his skull - and, as he
@@ -1141,6 +1147,9 @@ const drawHead = (
 	}
 	if (front < FACE_FROM) {
 		profileHead(ctx, c, r, turn as 1 | -1, look, ink, yell, whistle);
+		if (look.cap) {
+			capSide(ctx, c, r, turn as 1 | -1, look.cap, ink);
+		}
 	}
 	const vis = sprite && front >= FACE_FROM ? 1 : 0;
 	if (!sprite || vis <= 0) {

@@ -11,6 +11,7 @@ import {
 	storePicture,
 } from "../util/courtPictures.ts";
 import { takeArenaLooks } from "../core/game/replayLooks.ts";
+import { headlineScene as getHeadlineScene } from "../util/headlineScene.ts";
 import { sanitizeRotation, type TeamRotation } from "../../common/rotation.ts";
 import { prospectUniform } from "../../common/prospectColors.ts";
 import { csvFormat, csvFormatRows } from "d3-dsv";
@@ -8731,6 +8732,7 @@ const api = {
 		getLiveGamePlayByPlay,
 		getReplayFeed,
 		hasLiveGameReplay,
+		getHeadlineScene,
 		saveReplayShots,
 		liveSimBlocksDaySim,
 		getGoatBreakdown,

@@ -23,6 +23,7 @@ import { bySport } from "../../common/sportFunctions.ts";
 import { SeasonNoteButton } from "../components/SeasonNoteButton.tsx";
 import { splitPlayerNote } from "../../common/seasonNote.ts";
 import { buildPlayerNoteLinks } from "../util/linkifyRecap.ts";
+import { DraftWalkButton } from "../components/DraftWalkButton.tsx";
 
 const Summary = ({
 	players,
@@ -379,6 +380,14 @@ const DraftHistory = ({
 									linksFor={noteLinksBySeason}
 									sections={draftRecap}
 									title={`Read the writeup for ${p.firstName} ${p.lastName}`}
+								/>
+							) : null}
+							{/* (His walk-out in 3D: a pick with a face to put the cap on -
+							    see the worker's headlineScene.) */}
+							{__SPORT === "basketball" && p.draft.round >= 1 && !p.imgURL ? (
+								<DraftWalkButton
+									pid={p.pid}
+									name={`${p.firstName} ${p.lastName}`}
 								/>
 							) : null}
 						</>

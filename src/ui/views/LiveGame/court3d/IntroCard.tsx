@@ -17,6 +17,9 @@ export type IntroCardInfo = {
 	imgURL?: string;
 	imgURLSmall?: string;
 	abbrev?: string;
+	// What it says under his name, if not his position and height (a draft
+	// pick's: where he went - see HeadlineStage).
+	line?: string;
 };
 
 const FONT = "system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
@@ -57,7 +60,8 @@ export const IntroCard = ({
 	const accent = info.colors?.[1] ?? "#9a9aa6";
 	const ink = lightness(main) > 0.62 ? "#111" : "#fff";
 	const [first, last] = splitName(info.name);
-	const details = [info.pos, heightOf(info.hgt)].filter(Boolean).join(" · ");
+	const details =
+		info.line ?? [info.pos, heightOf(info.hgt)].filter(Boolean).join(" · ");
 	return (
 		<div
 			ref={ref}

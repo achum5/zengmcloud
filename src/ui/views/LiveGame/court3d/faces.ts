@@ -42,13 +42,15 @@ const CAPS = new Set(["hat", "hat2", "hat3", "santa-hat"]);
 const faceSprite = async (
 	face: FaceConfig,
 	colors: [string, string, string] | undefined,
+	// (Unless it is what he is there in: a draft pick's - see cap.ts.)
+	capOn = false,
 ): Promise<HeadSprite> => {
 	const shave = stubbleShave(face.head?.shave, face.hair?.color);
 	const overrides: Record<string, unknown> = {};
 	if (colors) {
 		overrides.teamColors = colors;
 	}
-	if (CAPS.has(face.accessories?.id)) {
+	if (!capOn && CAPS.has(face.accessories?.id)) {
 		overrides.accessories = { id: "none" };
 	}
 	if (shave !== undefined) {
@@ -280,10 +282,11 @@ const inTurn = <T>(draw: () => Promise<T>): Promise<T> => {
 export const loadHead = async (
 	face: FaceConfig | undefined,
 	colors: [string, string, string] | undefined,
+	capOn = false,
 ): Promise<{ sprite?: HeadSprite; skin?: string }> => {
 	try {
 		if (face) {
-			return { sprite: await inTurn(() => faceSprite(face, colors)) };
+			return { sprite: await inTurn(() => faceSprite(face, colors, capOn)) };
 		}
 	} catch {
 		// A face that will not draw just leaves him with a plain head.

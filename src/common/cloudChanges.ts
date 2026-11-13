@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 306,
+		date: "2026-11-13",
+		text: "3D: every pick on Draft History has a play button now. Press it to watch the player walk out to center court under a spotlight, in a suit and his new team's cap, with his name and pick on screen. Players with a photo for a face don't have one yet.",
+	},
+	{
 		n: 305,
 		date: "2026-11-13",
 		text: "New interface: the league home's headlines now play. The top stories scroll by on their own, and a story about a game with a saved replay (a game winner, a big stat night) shows the moment itself on the 3D court, right in the headline. Games with a replay also get a play button in Latest Scores for their key plays. Replays are saved when the commissioner turns it on: League Settings > Auto-Save Replays > Feats & game winners (or pick teams).",
