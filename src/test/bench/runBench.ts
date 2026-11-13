@@ -1,5 +1,8 @@
 import { PHASE, PLAYER } from "../../common/constants.ts";
-import { getTradeBlockedReason } from "../../common/transactionPhases.ts";
+import {
+	canSignFreeAgentsInPhase,
+	getTradeBlockedReason,
+} from "../../common/transactionPhases.ts";
 import type {
 	Conditions,
 	DraftPick,
@@ -669,18 +672,19 @@ export const makeBench = (options: BenchOptions) => {
 				.filter((p) => getContractDemand(p).amount === g.get("minContract"))
 				.sort((a, b) => b.value - a.value);
 			let size = players.length;
+			const human =
+				!realisticFreeAgencyOn() && canSignFreeAgentsInPhase(g.get("phase"));
 			while (size < min) {
 				const p = pool.shift();
-				if (p && (await sign(tid, p.pid)) === undefined) {
-					size += 1;
+				if (p && human) {
+					if ((await sign(tid, p.pid)) === undefined) {
+						size += 1;
+					}
 					continue;
 				}
-				if (p) {
-					continue;
-				}
-				// No human flow left (signings closed in the playoffs, offers
-				// only with realistic front offices): the game's own AI signing.
-				const q = await player.genRandomFreeAgent();
+				// No human flow (signings closed in the playoffs, offers only
+				// with realistic front offices): the game's own AI signing.
+				const q = p ?? (await player.genRandomFreeAgent());
 				await player.sign(q, tid, getContractDemand(q), g.get("phase"));
 				await idb.cache.players.put(q);
 				tallies.get(tid)!.forced += 1;
