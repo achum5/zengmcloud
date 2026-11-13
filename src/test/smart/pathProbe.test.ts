@@ -23,8 +23,7 @@ test.skipIf(!env.SMART_LEAGUE || !env.SMART_PATH)(
 			franchiseValue,
 			teamStrengths,
 			retentionOf,
-		} =
-			await import("../../worker/core/realisticFrontOffice/outlook.ts");
+		} = await import("../../worker/core/realisticFrontOffice/outlook.ts");
 		await loadLeagueFile(env.SMART_LEAGUE!);
 		g.setWithoutSavingToDB("realisticFrontOffices", true);
 		const outlook = await buildOutlook({ iterations: 1000 });
@@ -63,7 +62,7 @@ test.skipIf(!env.SMART_LEAGUE || !env.SMART_PATH)(
 				const ret = add
 					.map(
 						(p) =>
-							`${p.lastName} keeps ${(retentionOf(outlook, p.pid, t.tid) ?? NaN).toFixed?.(2)}`,
+							`${p.lastName} keeps ${(retentionOf(outlook, p.pid, t.tid) ?? Number.NaN).toFixed?.(2)}`,
 					)
 					.join(", ");
 				out.push(

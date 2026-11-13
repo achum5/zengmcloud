@@ -14,7 +14,8 @@ import { player, team } from "../index.ts";
 import { last } from "../../../common/utils.ts";
 import { choice } from "../../../common/random.ts";
 import { prepareWholeRoster } from "../team/ovr.ts";
-import { realisticTradesOn } from "../realisticFrontOffice/isOn.ts";
+import { realisticTradesOn, smartCpuOn } from "../realisticFrontOffice/isOn.ts";
+import { smartDraftChoice } from "../smartCpu/draft.ts";
 import {
 	afterPick as realisticFrontOfficeAfterPick,
 	bestProspect as realisticFrontOfficeBestProspect,
@@ -205,15 +206,19 @@ const runPicks = async (
 
 			// Realistic front offices take the prospect worth the most to them,
 			// in a normal draft (vanilla+ drafts as stock does).
+			// The smart CPU takes the prospect worth the most to the team by
+			// its worth (smartCpu/draft.ts).
 			const selection =
-				(realisticTradesOn() && g.get("phase") === PHASE.DRAFT
-					? await realisticFrontOfficeBestProspect(dp, playersAll)
-					: undefined) ?? choice(playersAll, score);
+				(smartCpuOn() && g.get("phase") === PHASE.DRAFT
+					? (await smartDraftChoice(dp, playersAll)).choice
+					: realisticTradesOn() && g.get("phase") === PHASE.DRAFT
+						? await realisticFrontOfficeBestProspect(dp, playersAll)
+						: undefined) ?? choice(playersAll, score);
 
 			const pid = selection.pid;
 			await selectPlayer(dp, pid);
 			pids.push(pid);
-			if (realisticTradesOn()) {
+			if (realisticTradesOn() || smartCpuOn()) {
 				await realisticFrontOfficeAfterPick();
 			}
 			playersAll = playersAll.filter((p) => p !== selection); // Delete from the list of undrafted players

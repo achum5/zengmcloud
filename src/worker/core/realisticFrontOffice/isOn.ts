@@ -15,6 +15,11 @@ export const realisticTradesOn = () =>
 export const vanillaPlusOn = () =>
 	realisticFrontOfficesOn() && vanillaPlusSettings.on;
 
+// Whether CPU teams decide by the smart CPU's worth (docs/smart-cpu.md): a
+// hidden switch on top of the mode, for test leagues.
+export const smartCpuOn = () =>
+	realisticFrontOfficesOn() && !!g.get("smartCpu");
+
 // Whether its free agency and re-signing are the offer market's: whenever the
 // mode is on (owner's call). There was a switch for stock's free agency with
 // the mode's front offices; with every team on the same terms, a bad CPU team

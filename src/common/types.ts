@@ -1201,6 +1201,10 @@ export type GameAttributesLeague = {
 	// so a reload - or the sim moving to a league mate's device - doesn't let a
 	// team trade again before its cooldown is up.
 	vplusMarket?: { season: number; day: number; traded: Record<number, number> };
+	// The smart CPU (worker/core/smartCpu, docs/smart-cpu.md): every CPU team
+	// decision by the GM's worth, with realistic front offices on. Hidden, for
+	// test leagues until it beats today's mode.
+	smartCpu?: boolean;
 	rookieContractLengths: number[];
 	rookiesCanRefuse: boolean;
 	salaryCap: number;

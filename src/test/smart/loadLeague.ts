@@ -55,4 +55,3 @@ export const loadLeagueFile = async (file: string) => {
 	} as any);
 	await league.loadGameAttributes();
 };
-

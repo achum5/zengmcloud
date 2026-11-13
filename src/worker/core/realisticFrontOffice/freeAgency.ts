@@ -61,7 +61,12 @@ import {
 	stateAfter,
 	type RoomPlan,
 } from "./clearRoom.ts";
-import { vanillaPlusOn } from "./isOn.ts";
+import { smartCpuOn, vanillaPlusOn } from "./isOn.ts";
+import {
+	prepareSignings,
+	smartSigningPrice,
+	viewFor,
+} from "../smartCpu/signing.ts";
 import { tradeValueCalculator } from "../vanillaPlus/index.ts";
 import { partnerTakes, roomOnValues } from "../vanillaPlus/clearRoom.ts";
 import type { ValueChangeCalculator } from "../team/ValueChangeCalculator.ts";
@@ -212,6 +217,9 @@ export const priceSigning = (
 	p: Player,
 	contract: FlatContractInfo,
 ) => {
+	if (smartCpuOn()) {
+		return smartSigningPrice(outlook, t, p, contract);
+	}
 	const signed: Player = {
 		...p,
 		tid: t.tid,
@@ -947,6 +955,9 @@ export const priceMarket = async (
 	for (const t of teams) {
 		await ensureRetention(outlook, candidates, t.tid);
 	}
+	if (smartCpuOn()) {
+		await prepareSignings(outlook, candidates);
+	}
 
 	// Teams that may sign anyone today: once games are played, only with a
 	// place on the roster - or a CPU team with a full one, releasing whoever
@@ -1211,6 +1222,9 @@ export const openStageMarket = async () => {
 export const decideOptions = async () => {
 	const season = g.get("season");
 	const cpu = new Set(await aiTids());
+	// With the smart CPU, a CPU team keeps a team option when he is worth
+	// more to it on the option's salary than nothing (signing worth).
+	const smart = smartCpuOn() ? await currentOutlook() : undefined;
 	for (const p of await idb.cache.players.indexGetAll("playersByTid", [
 		0,
 		Infinity,
@@ -1225,10 +1239,21 @@ export const decideOptions = async () => {
 		if (option === "team" && !cpu.has(p.tid)) {
 			continue;
 		}
-		const out =
+		let out =
 			option === "player"
 				? worth > OPTION_OUT * final
 				: cpu.has(p.tid) && worth < OPTION_DECLINE * final;
+		if (option === "team" && cpu.has(p.tid) && smart) {
+			await prepareSignings(smart, [p]);
+			const held = viewFor(smart).heldNow(p.tid);
+			out =
+				smartSigningPrice(
+					smart,
+					{ tid: p.tid, players: held.players, picks: held.picks },
+					p,
+					{ amount: final, exp: season + 1 },
+				).gain <= 0;
+		}
 		delete c.option;
 		if (out) {
 			c.amounts.pop();
@@ -1575,7 +1600,8 @@ export const freeAgencyDay = async () => {
 		// at their asks but may not pay that much, the best few - and an offer
 		// to one of them, with the trade that clears the room, if that does
 		// more for it than any offer it can make as it stands.
-		if (stages && clearRoomSettings.on) {
+		// Not with the smart CPU: its plans are try 1's engine.
+		if (stages && clearRoomSettings.on && !smartCpuOn()) {
 			const bar = bids.reduce((m, x) => Math.max(m, x.ev), 0);
 			const wanted: { p: Player; net: number; ask: number }[] = [];
 			for (const p of candidates) {
@@ -1841,6 +1867,9 @@ export const freeAgencyDay = async () => {
 						remaining.delete(p.pid);
 						continue;
 					}
+					if (smartCpuOn()) {
+						await prepareSignings(outlook, [p]);
+					}
 					const ownState = states.get(matching);
 					const ownTeam = await idb.cache.teams.get(matching);
 					const ownCheck =
@@ -2033,6 +2062,9 @@ export const reSignDecision = async (p: Player, payroll: number) => {
 		...without(outlook, await loadTeam(outlook, p.tid), p.pid),
 		payroll,
 	};
+	if (smartCpuOn()) {
+		await prepareSignings(outlook, [p]);
+	}
 	const rankOf = await leagueRanks();
 	const rosters = await rostersByTid();
 	const market = await marketUtility(p, p.tid);

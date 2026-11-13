@@ -293,6 +293,42 @@ Build order: the view that follows the league (rosters, contracts, cuts,
 dead money); signing worth behind `priceSigning` with cuts and options; the
 draft; the market; human trades. Each with its checks before the next.
 
+### Money, worked out (2026-11-13)
+
+Building the signings showed that the market price, as layer 1 had it,
+couldn't price a contract. A contender's money past the cap costs it next
+to nothing in titles (the owner's call: money is a small cost), so its use
+for a player hardly falls as his salary rises; with prices set by
+contenders, every team was "willing" to pay anyone hundreds of millions a
+year. Two changes, each tested against layers 1 and 2:
+
+- **A bid has to be a trade.** A team's bid for a package counts only if it
+  can take it under the trade rules and still gain: over the cap after it,
+  it sends back matching salary (`softCapTradeSalaryMatch`), the players it
+  would miss least first, and bids only if that trade leaves it better off.
+  Those players are part of what it pays, so its bid is still its use for
+  the package. Salary sent back may come from any player, tradable today or
+  not (a price is what the market pays over the coming weeks: counting only
+  tradable players, in the preseason contenders could bid for nobody
+  expensive and a bad team gave its best player away).
+- **A signing is worth what the player does for the team**, his salary
+  counted as the room and money it takes - no market-price floor. A
+  contract a team creates resells only for players of about its salary, so
+  its room is spent either way; with the floor, a 35-year-old's re-signing
+  was "worth" billions a year. Trades keep the floor: it is what stops
+  giveaways.
+
+What it means: a bad team may decline to re-sign a young starter at the
+going rate (six of 40 young starters, all on bad teams, rated 54-58, were
+worth less than the salary table to their teams) and he signs where he is
+worth more; young stars (60 and up) are always worth their salary to their
+team. The checks that pass (`smartCpu/decide.test.ts`): a three-man roster
+wants 11 of the 15 best free agents at their asks; young stars worth 1.2 to
+11 times the salary table; for every 33-and-over player a long deal is
+worth no more a year than a short one (apart from deals at about the
+minimum); over the limit, nobody among a team's eight best is cut; bargain
+options kept and dear ones declined (9 of 9).
+
 ## The DBA replay
 
 Yardstick C, built (src/test/dba/). Every trade of the owner's league from

@@ -86,10 +86,7 @@ test.skipIf(!env.SMART_LEAGUE || !env.SMART_PRICES)(
 		for (const t of teams) {
 			const h = {
 				players: await idb.cache.players.indexGetAll("playersByTid", t.tid),
-				picks: await idb.cache.draftPicks.indexGetAll(
-					"draftPicksByTid",
-					t.tid,
-				),
+				picks: await idb.cache.draftPicks.indexGetAll("draftPicksByTid", t.tid),
 			};
 			holdings.set(t.tid, h);
 			baseWorth.set(t.tid, worth(t.tid, h));
@@ -176,8 +173,22 @@ test.skipIf(!env.SMART_LEAGUE || !env.SMART_PRICES)(
 						.map((U) => {
 							const hu = holdings.get(U)!;
 							const owned = ps.filter((p) => p.tid === U);
-							const base = owned.length > 0 ? G(U, { ...hu, players: hu.players.filter((p) => !owned.includes(p)) }) : G(U, hu);
-							return G(U, { ...hu, players: [...hu.players.filter((p) => !owned.includes(p)), ...ps] }) - base;
+							const base =
+								owned.length > 0
+									? G(U, {
+											...hu,
+											players: hu.players.filter((p) => !owned.includes(p)),
+										})
+									: G(U, hu);
+							return (
+								G(U, {
+									...hu,
+									players: [
+										...hu.players.filter((p) => !owned.includes(p)),
+										...ps,
+									],
+								}) - base
+							);
 						})
 						.sort((a, b) => b - a);
 					return bids[1] ?? bids[0] ?? 0;
@@ -189,8 +200,14 @@ test.skipIf(!env.SMART_LEAGUE || !env.SMART_PRICES)(
 					const h = holdings.get(S)!;
 					const gS = G(S, h);
 					const useIn = G(S, { ...h, players: [...h.players, ...inn] }) - gS;
-					const useOut = gS - G(S, { ...h, players: h.players.filter((p) => !out.includes(p)) });
-					const dG = G(S, { ...h, players: [...h.players.filter((p) => !out.includes(p)), ...inn] }) - gS;
+					const useOut =
+						gS -
+						G(S, { ...h, players: h.players.filter((p) => !out.includes(p)) });
+					const dG =
+						G(S, {
+							...h,
+							players: [...h.players.filter((p) => !out.includes(p)), ...inn],
+						}) - gS;
 					return (
 						dG +
 						Math.max(0, packagePrice(inn, S) - useIn) -
@@ -201,9 +218,16 @@ test.skipIf(!env.SMART_LEAGUE || !env.SMART_PRICES)(
 				const quickDelta = (S: number, out: Player[], inn: Player[]) => {
 					const h = holdings.get(S)!;
 					const gS = G(S, h);
-					const dG = G(S, { ...h, players: [...h.players.filter((p) => !out.includes(p)), ...inn] }) - gS;
+					const dG =
+						G(S, {
+							...h,
+							players: [...h.players.filter((p) => !out.includes(p)), ...inn],
+						}) - gS;
 					const prem = (ps: Player[]) =>
-						ps.reduce((sum, p) => sum + Math.max(0, price(keyOf(p)) - use(keyOf(p), S)), 0);
+						ps.reduce(
+							(sum, p) => sum + Math.max(0, price(keyOf(p)) - use(keyOf(p), S)),
+							0,
+						);
 					return dG + prem(inn) - prem(out);
 				};
 				// THE MARKET (owner, 2026-11-13: "the cpu would not be willing to
@@ -213,23 +237,34 @@ test.skipIf(!env.SMART_LEAGUE || !env.SMART_PRICES)(
 				// players, as much as still leaves them better off by their own
 				// worth, legal under the trade rules - and the team takes an
 				// offer only if it's worth more to it than every one of those.
-				const realOffers = new Map<string, { buyer: number; worth: number; offer: Player[] }>();
+				const realOffers = new Map<
+					string,
+					{ buyer: number; worth: number; offer: Player[] }
+				>();
 				const bestRealOffer = async (S: number, out: Player[], not: number) => {
-					const key = `${S}|${out.map((p) => p.pid).sort().join(",")}|${not}`;
+					const key = `${S}|${out
+						.map((p) => p.pid)
+						.sort()
+						.join(",")}|${not}`;
 					const known = realOffers.get(key);
 					if (known) {
 						return known;
 					}
 					const buyers = keenest(out.map(keyOf), S)
 						.filter((B) => B !== not && !humans.includes(B))
-						.map((B) => ({ B, want: out.reduce((sum, p) => sum + use(keyOf(p), B), 0) }))
+						.map((B) => ({
+							B,
+							want: out.reduce((sum, p) => sum + use(keyOf(p), B), 0),
+						}))
 						.sort((a, b) => b.want - a.want)
 						.slice(0, Number(env.SMART_BUYERS ?? 4));
 					let best = { buyer: -1, worth: -Infinity, offer: [] as Player[] };
 					for (const { B } of buyers) {
 						const theirs = holdings
 							.get(B)!
-							.players.filter((p) => owner.has(keyOf(p)) && !isUntradable(p).untradable)
+							.players.filter(
+								(p) => owner.has(keyOf(p)) && !isUntradable(p).untradable,
+							)
 							.sort(
 								(a, b) =>
 									Math.max(use(keyOf(b), S), price(keyOf(b))) -
@@ -250,8 +285,20 @@ test.skipIf(!env.SMART_LEAGUE || !env.SMART_PRICES)(
 							continue;
 						}
 						const legal = await trade.summary([
-							{ tid: B, pids: offer.map((p) => p.pid), dpids: [], pidsExcluded: [], dpidsExcluded: [] },
-							{ tid: S, pids: out.map((p) => p.pid), dpids: [], pidsExcluded: [], dpidsExcluded: [] },
+							{
+								tid: B,
+								pids: offer.map((p) => p.pid),
+								dpids: [],
+								pidsExcluded: [],
+								dpidsExcluded: [],
+							},
+							{
+								tid: S,
+								pids: out.map((p) => p.pid),
+								dpids: [],
+								pidsExcluded: [],
+								dpidsExcluded: [],
+							},
 						] as any);
 						if (legal.warning || worthDelta(B, offer, out) <= 0) {
 							continue;
@@ -297,8 +344,11 @@ test.skipIf(!env.SMART_LEAGUE || !env.SMART_PRICES)(
 					// The GM: title chances, and what it gets and gives each at
 					// least its market price as a package.
 					const gC = G(C, h);
-					const useGets = gC - G(C, { ...h, players: h.players.filter((p) => !gets.includes(p)) });
-					const useGives = G(C, { ...h, players: [...h.players, ...gives] }) - gC;
+					const useGets =
+						gC -
+						G(C, { ...h, players: h.players.filter((p) => !gets.includes(p)) });
+					const useGives =
+						G(C, { ...h, players: [...h.players, ...gives] }) - gC;
 					const dG = G(C, after) - gC;
 					const gm =
 						dG +
@@ -340,7 +390,7 @@ test.skipIf(!env.SMART_LEAGUE || !env.SMART_PRICES)(
 				}
 			}
 		}
-		for (const human of [...new Set(rows.map((r) => r.human))]) {
+		for (const human of new Set(rows.map((r) => r.human))) {
 			const mine = rows.filter((r) => r.human === human);
 			for (const cut of [1, 2, 3, 4, 6]) {
 				const w = mine.filter((r) => r.gain >= cut);
@@ -361,18 +411,19 @@ test.skipIf(!env.SMART_LEAGUE || !env.SMART_PRICES)(
 					`     +${r.gain} (${r.cpu} ${-r.cpuLoss}): gives ${r.gives}; gets ${r.gets}${r.vanilla ? " [vanilla yes too]" : ""}`,
 				);
 			}
-			say("   turned down by the market (a real better offer elsewhere), biggest gain first:");
+			say(
+				"   turned down by the market (a real better offer elsewhere), biggest gain first:",
+			);
 			for (const r of mine
 				.filter((x) => x.gm && !x.market)
 				.sort((a, b) => b.gain - a.gain)
 				.slice(0, 6)) {
-				say(`     +${r.gain} (${r.cpu}): gives ${r.gives}; gets ${r.gets} | ${r.rival}`);
+				say(
+					`     +${r.gain} (${r.cpu}): gives ${r.gives}; gets ${r.gets} | ${r.rival}`,
+				);
 			}
 		}
-		await fs.writeFile(
-			`${env.SMART_OUT ?? "."}/gm-scan.txt`,
-			out.join("\n"),
-		);
+		await fs.writeFile(`${env.SMART_OUT ?? "."}/gm-scan.txt`, out.join("\n"));
 		await fs.writeFile(
 			`${env.SMART_OUT ?? "."}/gm-scan.json`,
 			JSON.stringify(rows),

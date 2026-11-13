@@ -45,7 +45,8 @@ test.skipIf(!env.SMART_LEAGUE)(
 			tid: number,
 			players: readonly Player[],
 			dps: readonly DraftPick[],
-		) => franchiseValue(outlook, teamStrengths(outlook, tid, players, dps), tid);
+		) =>
+			franchiseValue(outlook, teamStrengths(outlook, tid, players, dps), tid);
 		const base = new Map(
 			teams.map((t) => [
 				t.tid,
@@ -69,10 +70,7 @@ test.skipIf(!env.SMART_LEAGUE)(
 			const players = rosters.get(t.tid)!;
 			const best = [...players].sort((a, b) => b.value - a.value).slice(0, top);
 			for (const p of players) {
-				if (
-					!best.includes(p) &&
-					!named.has(`${p.firstName} ${p.lastName}`)
-				) {
+				if (!best.includes(p) && !named.has(`${p.firstName} ${p.lastName}`)) {
 					continue;
 				}
 				const r = p.ratings.at(-1)!;
@@ -104,7 +102,9 @@ test.skipIf(!env.SMART_LEAGUE)(
 				await ensureRetention(outlook, ps, t.tid);
 			}
 		}
-		say(`re-sign odds for every team: ${((performance.now() - tr) / 1000).toFixed(0)} s`);
+		say(
+			`re-sign odds for every team: ${((performance.now() - tr) / 1000).toFixed(0)} s`,
+		);
 		const t0 = performance.now();
 		const use = new Map<string, Map<number, number>>();
 		for (const a of assets) {

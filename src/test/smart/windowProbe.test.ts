@@ -60,7 +60,11 @@ test.skipIf(!env.SMART_LEAGUE || !env.SMART_PRICES)(
 		const keyOf = (x: Player | DraftPick) =>
 			"pid" in x ? `p${x.pid}` : `d${x.dpid}`;
 		const G = (tid: number, h: Holdings) =>
-			franchiseValue(outlook, teamStrengths(outlook, tid, h.players, h.picks), tid);
+			franchiseValue(
+				outlook,
+				teamStrengths(outlook, tid, h.players, h.picks),
+				tid,
+			);
 		const without = (h: Holdings, keys: Set<string>): Holdings => ({
 			players: h.players.filter((p) => !keys.has(keyOf(p))),
 			picks: h.picks.filter((dp) => !keys.has(keyOf(dp))),
@@ -80,7 +84,10 @@ test.skipIf(!env.SMART_LEAGUE || !env.SMART_PRICES)(
 			const spareKeys = new Set(
 				owned.filter((a) => use(a.key, t.tid) < price(a.key)).map((a) => a.key),
 			);
-			const budget = [...spareKeys].reduce((s, k) => s + Math.max(0, price(k)), 0);
+			const budget = [...spareKeys].reduce(
+				(s, k) => s + Math.max(0, price(k)),
+				0,
+			);
 			const kept = without(h, spareKeys);
 			const before = G(t.tid, kept);
 			const buys = prices.assets
@@ -123,8 +130,7 @@ test.skipIf(!env.SMART_LEAGUE || !env.SMART_PRICES)(
 			const keys = [...h.players.map(keyOf), ...h.picks.map(keyOf)];
 			const spareHere = new Set(
 				keys.filter(
-					(k) =>
-						owner.has(k) && use(k, tid) < (rate.get(tid) ?? 0) * price(k),
+					(k) => owner.has(k) && use(k, tid) < (rate.get(tid) ?? 0) * price(k),
 				),
 			);
 			return (
@@ -134,7 +140,9 @@ test.skipIf(!env.SMART_LEAGUE || !env.SMART_PRICES)(
 			);
 		};
 		const byName = (name: string) =>
-			[...players.values()].find((p) => `${p.firstName} ${p.lastName}` === name)!;
+			[...players.values()].find(
+				(p) => `${p.firstName} ${p.lastName}` === name,
+			)!;
 		const trade = async (
 			title: string,
 			a: string,
@@ -151,14 +159,26 @@ test.skipIf(!env.SMART_LEAGUE || !env.SMART_PRICES)(
 			const hb = await holdingsOf(tb);
 			const beforeA = {
 				...ha,
-				players: [...ha.players.filter((p) => !gb.includes(p)), ...ga.filter((p) => !ha.players.includes(p))],
+				players: [
+					...ha.players.filter((p) => !gb.includes(p)),
+					...ga.filter((p) => !ha.players.includes(p)),
+				],
 			};
 			const beforeB = {
 				...hb,
-				players: [...hb.players.filter((p) => !ga.includes(p)), ...gb.filter((p) => !hb.players.includes(p))],
+				players: [
+					...hb.players.filter((p) => !ga.includes(p)),
+					...gb.filter((p) => !hb.players.includes(p)),
+				],
 			};
-			const afterA = { ...beforeA, players: [...beforeA.players.filter((p) => !ga.includes(p)), ...gb] };
-			const afterB = { ...beforeB, players: [...beforeB.players.filter((p) => !gb.includes(p)), ...ga] };
+			const afterA = {
+				...beforeA,
+				players: [...beforeA.players.filter((p) => !ga.includes(p)), ...gb],
+			};
+			const afterB = {
+				...beforeB,
+				players: [...beforeB.players.filter((p) => !gb.includes(p)), ...ga],
+			};
 			// Variant B: every asset worth at least its market price - title
 			// chances, plus each asset's price above its use to the team.
 			const bonus = (tid: number, h: Holdings) =>
@@ -176,11 +196,40 @@ test.skipIf(!env.SMART_LEAGUE || !env.SMART_PRICES)(
 				`${title}: ${a} ${dA > 0 ? "YES" : "no"} (worth ${m(dA)}, titles alone ${m(gA)}, B ${m(bA)}), ${b} ${dB > 0 ? "YES" : "no"} (worth ${m(dB)}, titles alone ${m(gB)}, B ${m(bB)})`,
 			);
 		};
-		say("\nTrades (each side's change in worth, milli-titles; > 0 = takes it):");
-		await trade("GSW sends Harris to HOU for Barlow + Roddy", "GSW", ["Tobias Harris"], "HOU", ["Dominick Barlow", "David Roddy"]);
-		await trade("LAL sends Beasley to BOS for Kessler + Branham", "LAL", ["Malik Beasley"], "BOS", ["Walker Kessler", "Malaki Branham"]);
-		await trade("DET sends Doncic to BOS for Kessler + Branham + Williams", "DET", ["Luka Dončić"], "BOS", ["Walker Kessler", "Malaki Branham", "Mark Williams"]);
-		await trade("POR sends Bagley to CLE for Herbert Jones", "POR", ["Marvin Bagley III"], "CLE", ["Herbert Jones"]);
-		await fs.writeFile(`${env.SMART_OUT ?? "."}/window-probe.txt`, out.join("\n"));
+		say(
+			"\nTrades (each side's change in worth, milli-titles; > 0 = takes it):",
+		);
+		await trade(
+			"GSW sends Harris to HOU for Barlow + Roddy",
+			"GSW",
+			["Tobias Harris"],
+			"HOU",
+			["Dominick Barlow", "David Roddy"],
+		);
+		await trade(
+			"LAL sends Beasley to BOS for Kessler + Branham",
+			"LAL",
+			["Malik Beasley"],
+			"BOS",
+			["Walker Kessler", "Malaki Branham"],
+		);
+		await trade(
+			"DET sends Doncic to BOS for Kessler + Branham + Williams",
+			"DET",
+			["Luka Dončić"],
+			"BOS",
+			["Walker Kessler", "Malaki Branham", "Mark Williams"],
+		);
+		await trade(
+			"POR sends Bagley to CLE for Herbert Jones",
+			"POR",
+			["Marvin Bagley III"],
+			"CLE",
+			["Herbert Jones"],
+		);
+		await fs.writeFile(
+			`${env.SMART_OUT ?? "."}/window-probe.txt`,
+			out.join("\n"),
+		);
 	},
 );

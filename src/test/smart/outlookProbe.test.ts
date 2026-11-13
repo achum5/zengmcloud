@@ -51,6 +51,9 @@ test.skipIf(!env.SMART_LEAGUE)(
 					.join(" ")}`,
 			);
 		}
-		await fs.writeFile(`${env.SMART_OUT ?? "."}/outlook-probe.txt`, lines.join("\n"));
+		await fs.writeFile(
+			`${env.SMART_OUT ?? "."}/outlook-probe.txt`,
+			lines.join("\n"),
+		);
 	},
 );
