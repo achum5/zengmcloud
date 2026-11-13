@@ -125,7 +125,9 @@ const Messages = ({
 						? tasks.map((task) => (
 								<tr key={task.href} className="fw-bold">
 									<td>
-										<span className="badge bg-warning text-dark">To do</span>
+										<span className="badge badge-news bg-warning text-dark">
+											To do
+										</span>
 									</td>
 									<td className="text-wrap">
 										<a href={task.href}>{task.text}</a>
@@ -136,7 +138,7 @@ const Messages = ({
 					{shownMessages.map((m) => (
 						<tr key={`m${m.mid}`} className={clsx(!m.read && "fw-bold")}>
 							<td>
-								<span className="badge bg-secondary">{m.from}</span>
+								<span className="badge badge-news bg-secondary">{m.from}</span>
 							</td>
 							<td className="text-wrap">
 								<a href={helpers.leagueUrl(["message", m.mid])}>
@@ -346,6 +348,59 @@ const NextGame = ({
 		</>
 	);
 };
+
+// College leagues: the program in place of finances, as on the classic
+// dashboard.
+const Program = ({
+	collegeNilBudget,
+	collegePrestige,
+	collegeCoachExp,
+	collegeSeat,
+	payroll,
+}: Pick<
+	Props,
+	"collegePrestige" | "collegeCoachExp" | "collegeSeat" | "payroll"
+> & { collegeNilBudget: number }) => (
+	<>
+		<h2>Program</h2>
+		<div className="mb-3">
+			Prestige: {collegePrestige}
+			<br />
+			NIL payroll: {helpers.formatCurrency(payroll / 1000, "M")}
+			<br />
+			NIL budget: {helpers.formatCurrency(collegeNilBudget / 1000, "M")}
+			<br />
+			{collegeCoachExp !== undefined ? (
+				<>
+					Your contract thru {collegeCoachExp}
+					<br />
+				</>
+			) : null}
+			{collegeSeat ? (
+				<>
+					Job security:{" "}
+					<span
+						className={
+							collegeSeat === "Hot"
+								? "text-danger"
+								: collegeSeat === "Warm"
+									? "text-warning"
+									: "text-success"
+						}
+					>
+						{collegeSeat === "Hot"
+							? "Hot seat"
+							: collegeSeat === "Warm"
+								? "Warm seat"
+								: "Secure"}
+					</span>
+					<br />
+				</>
+			) : null}
+			<a href={helpers.leagueUrl(["recruiting"])}>» Recruiting</a>
+		</div>
+	</>
+);
 
 const Finances = ({
 	att,
@@ -625,25 +680,11 @@ const Portal = (props: Props) => {
 					maxRosterSize={props.maxRosterSize}
 					minRosterSize={props.minRosterSize}
 				/>
-				<div className="row mt-3">
-					<div className="col-6">
-						<Leaders
-							leagueLeaders={props.leagueLeaders}
-							teamLeaders={props.teamLeaders}
-						/>
-					</div>
-					<div className="col-6">
-						<TeamStats teamStats={props.teamStats} />
-						{props.collegeNilBudget === undefined ? (
-							<Finances
-								att={props.att}
-								revenue={props.revenue}
-								profit={props.profit}
-								cash={props.cash}
-								payroll={props.payroll}
-							/>
-						) : null}
-					</div>
+				<div className="mt-3">
+					<Leaders
+						leagueLeaders={props.leagueLeaders}
+						teamLeaders={props.teamLeaders}
+					/>
 				</div>
 			</div>
 			<div className="col-xl-3 col-lg-6 order-3 mb-3">
@@ -661,6 +702,30 @@ const Portal = (props: Props) => {
 					usePts={props.usePts}
 					userTid={userTid}
 				/>
+				<div className="row mt-3">
+					<div className="col-6 col-lg-12">
+						<TeamStats teamStats={props.teamStats} />
+					</div>
+					<div className="col-6 col-lg-12">
+						{props.collegeNilBudget === undefined ? (
+							<Finances
+								att={props.att}
+								revenue={props.revenue}
+								profit={props.profit}
+								cash={props.cash}
+								payroll={props.payroll}
+							/>
+						) : (
+							<Program
+								collegeNilBudget={props.collegeNilBudget}
+								collegePrestige={props.collegePrestige}
+								collegeCoachExp={props.collegeCoachExp}
+								collegeSeat={props.collegeSeat}
+								payroll={props.payroll}
+							/>
+						)}
+					</div>
+				</div>
 			</div>
 			<div className="col-12 order-4 mb-3">
 				<StartingLineup
