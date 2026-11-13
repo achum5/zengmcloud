@@ -226,6 +226,73 @@ thinks things are worth, and that is where it is fixed.
 Today's mode stays as it is, and the owner's league untouched, until the GM
 beats it on the yardsticks.
 
+## Layer 2: the decisions (plan, 2026-11-13)
+
+Behind a new hidden switch (`smartCpu`, only with realistic front offices
+on), every CPU team decision is the GM's: the option worth most to the team
+by layer 1, and nothing when nothing is worth more than standing pat. The
+other side answers by its own: a CPU team by its verdict, a free agent by
+the offer market's choice (unchanged), a human by pressing the button. The
+game's rules (cap, roster limits, free agency's stages, CBA-lite) stay.
+
+Where each decision is made today (realistic mode, vanilla+ on) and what
+replaces it:
+
+| decision | today | the GM |
+|---|---|---|
+| free agent offers (stages and in season), re-signing, offer-sheet matching, signing at a full roster, filling a short roster | try 1's `priceSigning` (its franchise value, less a margin) | the GM's worth of signing him on those terms, the roster cut to the limit if over; boards, asks (`priceMarket`), odds and stages built on it as now |
+| cuts over the limit | try 1's franchise value without him | the same through the GM's worth, dead money counted |
+| team options | a rule of thumb (declined under 80% of market salary) | his worth at the option's salary against letting him go |
+| the draft | stock (`value ** 69` at random) | the prospect worth most to the team |
+| CPU-to-CPU trades | vanilla+'s market | the GM's market (below) |
+| a human's offer | vanilla+'s evaluate, trade difficulty on | the GM's verdict with the market rule; difficulty off until the bench says otherwise (layer 4) |
+| what would make this work, proposals, trading block | makeItWork on vanilla+'s evaluate | the same search on the GM's verdict |
+| clearing room by trade | try 1's plans re-vetted by vanilla+ | off for now: room is used by signing and through the market |
+| extensions | off | off |
+
+**The market.** At each market moment every CPU team's tradable players are
+priced by their owner's use and the keenest teams' bids. A player is a
+candidate sale when a keen team bids above both the owner's use and what
+the rest would pay. For each, every keen bidder's best offer (its players
+and picks, best for the seller first, while it still gains); the seller
+takes the best, if it gains. Deals are made best first; after each, the two
+teams are re-read and only what involves them is worked out again. Market
+moments: preseason, after the draft, once a free agency stage, in season
+every two weeks and the last days before the deadline - the volume checked
+in layer 3 against the NBA's.
+
+**Speed.** A franchise value costs 14 ms on a team's own roster and 1.35 ms
+on any other roster of its (its let-go decisions reused, 2026-11-13). Values
+are kept from one decision to the next while the outlook is the same and the
+team's players and contracts haven't changed, so a market moment works out
+again only the teams that dealt. Budget: a market moment in tens of seconds,
+a free agency day in seconds.
+
+**Checks**, each a permanent test on the test league:
+
+1. Free agency: a team down to three players with room makes offers to
+   enough free agents to fill its roster (the 2035 Lakers); no team offers a
+   contract worth less than nothing to it.
+2. Re-signing: a team re-signs a young, good player at his ask, and lets an
+   old, declining one asking a lot go.
+3. Cuts: over the limit, the player whose loss costs least goes, dead money
+   counted; never a starter ahead of a scrub.
+4. Options: a team keeps a bargain option and declines a dear one.
+5. Draft: with one prospect clearly best for everyone, the first pick takes
+   him.
+6. Market: every deal it makes is worth more than nothing to both sides,
+   the market rule on; nobody is traded twice in a moment; a moment on the
+   test league finishes within the budget.
+7. Human offers: the owner's eight clear fleeces still refused (DBA replay);
+   the market rule holds against humans.
+
+Then layer 3's leagues, where the re-signing odds get their check (said 85%,
+about 85% stayed) with the GM making the offers.
+
+Build order: the view that follows the league (rosters, contracts, cuts,
+dead money); signing worth behind `priceSigning` with cuts and options; the
+draft; the market; human trades. Each with its checks before the next.
+
 ## The DBA replay
 
 Yardstick C, built (src/test/dba/). Every trade of the owner's league from
