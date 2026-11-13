@@ -6,6 +6,7 @@ import { contractOf } from "../realisticFrontOffice/contractOf.ts";
 import getDaysLeftSchedule from "../season/getDaysLeftSchedule.ts";
 import isUntradable from "../trade/isUntradable.ts";
 import processTrade from "../trade/processTrade.ts";
+import setGameAttributes from "../league/setGameAttributes.ts";
 import summary from "../trade/summary.ts";
 import type { ValueChangeCalculator } from "../team/ValueChangeCalculator.ts";
 import { tradeValueCalculator } from "./index.ts";
@@ -123,10 +124,14 @@ export const marketStats = {
 	deadlineDay: {} as Record<number, number>,
 };
 
-// When each team last traded, by day of this season's market.
-const lastTraded = new Map<number, number>();
-let marketDay = 0;
-let marketSeason = -1;
+// The market's day this season, and when each team last traded, by that day
+// - kept with the league (gameAttributes.vplusMarket), not on this device.
+const clock = () => {
+	const m = g.get("vplusMarket");
+	return m?.season === g.get("season")
+		? m
+		: { season: g.get("season"), day: 0, traded: {} as Record<number, number> };
+};
 
 const cpuTids = async () => {
 	const userTids = g.get("userTids");
@@ -916,14 +921,15 @@ const sellerShops = async (
 let deadlineRush = false;
 
 const canTrade = (tid: number) => {
-	const last = lastTraded.get(tid);
+	const { day, traded } = clock();
+	const last = traded[tid];
 	const s = vplusMarketSettings;
 	const days = !vanillaPlusSettings.patience
 		? s.coolDownDays
 		: deadlineRush
 			? s.deadlineCoolDownDays
 			: s.patientCoolDownDays;
-	return last === undefined || marketDay - last >= days;
+	return last === undefined || day - last >= days;
 };
 
 // What a deal does for one side, as a share of what it gives: how far past
@@ -968,15 +974,24 @@ const execute = async (
 		await gainOf(calc, teams, 1),
 	);
 	await processTrade(teams, undefined);
+	const m = clock();
 	marketStats.trades += 1;
 	marketStats.tradeDays.push({
 		season: g.get("season"),
 		phase: g.get("phase"),
-		day: marketDay,
+		day: m.day,
 		gain,
 	});
-	lastTraded.set(teams[0].tid, marketDay);
-	lastTraded.set(teams[1].tid, marketDay);
+	await setGameAttributes({
+		vplusMarket: {
+			...m,
+			traded: {
+				...m.traded,
+				[teams[0].tid]: m.day,
+				[teams[1].tid]: m.day,
+			},
+		},
+	});
 	tell({ kind: "trade", teams, initiator, role, pid, offers, fit });
 };
 
@@ -1033,13 +1048,9 @@ const shoppersToday = async (
 };
 
 // A new day for the market: its count, and the cooldowns, by season.
-const nextDay = () => {
-	if (marketSeason !== g.get("season")) {
-		marketSeason = g.get("season");
-		lastTraded.clear();
-		marketDay = 0;
-	}
-	marketDay += 1;
+const nextDay = async () => {
+	const m = clock();
+	await setGameAttributes({ vplusMarket: { ...m, day: m.day + 1 } });
 };
 
 // These teams shop, in turn.
@@ -1087,12 +1098,12 @@ const shop = async (
 // One day of the market.
 export const tradeDay = async () => {
 	const phase = g.get("phase");
-	nextDay();
+	await nextDay();
 	if (phase !== PHASE.REGULAR_SEASON && phase !== PHASE.FREE_AGENCY) {
 		return;
 	}
 	if (phase === PHASE.REGULAR_SEASON) {
-		marketStats.deadlineDay[g.get("season")] = marketDay;
+		marketStats.deadlineDay[g.get("season")] = clock().day;
 	}
 	deadlineRush = phase === PHASE.REGULAR_SEASON && (await inDeadlineDays());
 	await shop((tids, lanes) =>
@@ -1115,7 +1126,7 @@ export const tradeWindow = async () => {
 	if (!vplusMarketSettings.windows || !WINDOW_PHASES.includes(g.get("phase"))) {
 		return;
 	}
-	nextDay();
+	await nextDay();
 	deadlineRush = false;
 	await shop(async (tids) => {
 		const out = tids.filter(canTrade);

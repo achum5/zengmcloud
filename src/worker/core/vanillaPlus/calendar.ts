@@ -2,7 +2,7 @@ import { PHASE } from "../../../common/constants.ts";
 import type { Player } from "../../../common/types.ts";
 import { idb } from "../../db/index.ts";
 import { ovr as ovrBasketball } from "../team/ovr.basketball.ts";
-import { g } from "../../util/index.ts";
+import { g, helpers } from "../../util/index.ts";
 import { contractOf } from "../realisticFrontOffice/contractOf.ts";
 import { stayChance } from "../realisticFrontOffice/offers.ts";
 import { stageSettings } from "../realisticFrontOffice/stages.ts";
@@ -108,9 +108,36 @@ const strength = (roster: Player[], out: (p: Player) => boolean) =>
 		{},
 	);
 
+// In the playoffs, the teams still in them (a play-in still being played:
+// not yet known).
+const stillIn = async () => {
+	if (g.get("phase") !== PHASE.PLAYOFFS) {
+		return undefined;
+	}
+	const ps = await idb.cache.playoffSeries.get(g.get("season"));
+	if (!ps || ps.currentRound < 0) {
+		return undefined;
+	}
+	const toWin = helpers.numGamesToWinRound(ps.currentRound);
+	const alive = new Set<number>();
+	for (const series of ps.series[ps.currentRound] ?? []) {
+		const { home, away } = series;
+		if (!away) {
+			alive.add(home.tid);
+		} else if (home.won < toWin && away.won < toWin) {
+			alive.add(home.tid);
+			alive.add(away.tid);
+		} else {
+			alive.add(home.won >= toWin ? home.tid : away.tid);
+		}
+	}
+	return alive;
+};
+
 export const calendar = async (): Promise<Calendar> => {
 	const s = calendarSettings;
 	const { facts, progress } = await factsOf();
+	const alive = await stillIn();
 	const games = progress * g.get("numGames");
 	const players = await idb.cache.players.indexGetAll("playersByTid", [
 		0,
@@ -124,7 +151,7 @@ export const calendar = async (): Promise<Calendar> => {
 		.join(",");
 	const base = `${g.get("lid")}:${g.get("season")}:${g.get("phase")}:${Math.floor(games / s.everyGames)}`;
 	// Patience falls by the day: the rest refreshed every couple of games.
-	const key = `${base}:${Math.floor(games / 2)}:${injuries}`;
+	const key = `${base}:${Math.floor(games / 2)}:${injuries}:${alive ? [...alive].sort((a, b) => a - b).join(",") : ""}`;
 	if (cached?.key === key) {
 		return cached.calendar;
 	}
@@ -188,8 +215,12 @@ export const calendar = async (): Promise<Calendar> => {
 		// Not set up for that season yet: half the league.
 	}
 	const spread = s.sureAtEnd + (s.unsure - s.sureAtEnd) * (1 - progress);
+	// (In the playoffs, from the bracket: in them or out.)
 	const chance = new Map(
-		[...place].map(([tid, at]) => [tid, logistic((cut + 0.5 - at) / spread)]),
+		[...place].map(([tid, at]) => [
+			tid,
+			alive ? (alive.has(tid) ? 1 : 0) : logistic((cut + 0.5 - at) / spread),
+		]),
 	);
 	// The title: each team's shot against the others likely to be there, by
 	// how strong each will be in the playoffs. A rival's star out for the year

@@ -196,6 +196,12 @@ const reviewOf = (progress: number) => {
 			inSeason: true,
 		};
 	}
+	// After the deadline and through the playoffs, the last look of the
+	// season stands; the summer's plan comes from where teams finished, once
+	// the playoffs are over.
+	if (phase <= PHASE.PLAYOFFS) {
+		return { key: `${season}:late`, inSeason: true };
+	}
 	return { key: `${season}:off`, inSeason: false };
 };
 

@@ -699,6 +699,16 @@ test(
 			}
 			assert.isAbove(marketStats.looks, looks);
 			assert.isAbove(marketStats.trades, trades);
+			// The day, and who traded when, are kept with the league: a reload
+			// (or the sim moving to a league mate's device) doesn't let a team
+			// that just traded trade again before its cooldown is up.
+			const kept = (await idb.cache.gameAttributes.get("vplusMarket"))
+				?.value as
+				| { season: number; day: number; traded: Record<number, number> }
+				| undefined;
+			assert.strictEqual(kept?.season, g.get("season"));
+			assert.isAtLeast(kept!.day, 6);
+			assert.isAbove(Object.keys(kept!.traded).length, 1);
 			const maxRosterSize = g.get("maxRosterSize");
 			for (const tid of (await ensureLanes()).keys()) {
 				const n = (await idb.cache.players.indexGetAll("playersByTid", tid))
@@ -925,4 +935,81 @@ test("a player's worth follows his value through the season, however early he wa
 		p.valueNoPot = was;
 	}
 	assert.strictEqual(worth(p, worthSettings.market), before);
+});
+
+// The summer's plans (draft night, free agency) come from where teams
+// finished: after the deadline and through the playoffs, the season's last
+// look stands, and the offseason's review waits for the playoffs to end.
+test("the offseason plan is set once the playoffs are over, not at the deadline", async () => {
+	const phase = g.get("phase");
+	const season = g.get("season");
+	const reviews = async () =>
+		new Set(
+			(await idb.cache.teams.getAll())
+				.filter((t) => !t.disabled)
+				.map((t) => t.laneReview),
+		);
+	try {
+		for (const during of [PHASE.AFTER_TRADE_DEADLINE, PHASE.PLAYOFFS]) {
+			g.setWithoutSavingToDB("phase", during);
+			await ensureLanes();
+			assert.deepStrictEqual([...(await reviews())], [`${season}:late`]);
+		}
+		g.setWithoutSavingToDB("phase", PHASE.DRAFT_LOTTERY);
+		await ensureLanes();
+		assert.deepStrictEqual([...(await reviews())], [`${season}:off`]);
+	} finally {
+		g.setWithoutSavingToDB("phase", phase);
+		forgetLanes();
+		await ensureLanes();
+	}
+});
+
+// In the playoffs a team is in them or out: one knocked out has no playoffs
+// left to pay for, however good its record was.
+test("in the playoffs, a team knocked out has nothing left this season", async () => {
+	const phase = g.get("phase");
+	const season = g.get("season");
+	const tids = [...(await ensureLanes()).keys()].sort((x, y) => x - y);
+	const [a, b, c, d] = tids as [number, number, number, number];
+	const team = (tid: number, won: number) => ({
+		tid,
+		won,
+		lost: 0,
+		cid: 0,
+		seed: 1,
+		pts: 0,
+		sPts: 0,
+	});
+	const existing = await idb.cache.playoffSeries.get(season);
+	try {
+		await idb.cache.playoffSeries.put({
+			season,
+			currentRound: 0,
+			series: [
+				[
+					// a knocked b out; c and d are still playing.
+					{ home: team(a, 4), away: team(b, 1) },
+					{ home: team(c, 2), away: team(d, 3) },
+				],
+			],
+		} as any);
+		g.setWithoutSavingToDB("phase", PHASE.PLAYOFFS);
+		const cal = await calendar();
+		for (const tid of [a, c, d]) {
+			assert.isAbove(cal.playoffs.get(tid)!, 0, `team ${tid}`);
+		}
+		assert.strictEqual(cal.playoffs.get(b), 0);
+		const outside = tids.find((tid) => ![a, b, c, d].includes(tid))!;
+		assert.strictEqual(cal.playoffs.get(outside), 0);
+	} finally {
+		if (existing) {
+			await idb.cache.playoffSeries.put(existing);
+		} else {
+			await idb.cache.playoffSeries.delete(season);
+		}
+		g.setWithoutSavingToDB("phase", phase);
+		forgetLanes();
+		await ensureLanes();
+	}
 });
