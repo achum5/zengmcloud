@@ -1,8 +1,9 @@
 import clsx from "clsx";
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { PHASE } from "../../../common/constants.ts";
 import { categories, types } from "../../../common/transactionInfo.ts";
 import type { View } from "../../../common/types.ts";
+import { GameHighlightsButton } from "../../components/GameHighlightsButton.tsx";
 import { NewsBlock } from "../../components/NewsBlock.tsx";
 import { NextPrevButtons } from "../../components/NextPrevButtons.tsx";
 import { PlayoffMatchup } from "../../components/PlayoffMatchup.tsx";
@@ -10,6 +11,8 @@ import { SafeHtml } from "../../components/SafeHtml.tsx";
 import useTitleBar from "../../hooks/useTitleBar.tsx";
 import { helpers } from "../../util/helpers.ts";
 import { useLocal } from "../../util/local.ts";
+import { toWorker } from "../../util/toWorker.ts";
+import HeadlinePlay from "./HeadlinePlay.tsx";
 import Leaders from "./Leaders.tsx";
 import Standings from "./Standings.tsx";
 import StartingLineup from "./StartingLineup.tsx";
@@ -181,28 +184,187 @@ const Messages = ({
 	);
 };
 
+// A story's picture where it has no play to show: the teams it is about.
+const StoryPoster = ({
+	event,
+	teams,
+}: {
+	event: Props["events"][number];
+	teams: Props["teams"];
+}) => {
+	const tids =
+		event.tid !== undefined ? [event.tid] : (event.tids ?? []).slice(0, 2);
+	return (
+		<div className="ni-stage bg-body-tertiary border rounded mb-3">
+			{tids.map((tid) => (
+				<Logo key={tid} t={teams[tid]} size={96} />
+			))}
+		</div>
+	);
+};
+
+// How long a story with nothing to play stays up, and how long one waits
+// after its play has finished, before the next comes on (ms).
+const STORY_MS = 9000;
+const AFTER_PLAY_MS = 2500;
+const PLAY_MOST_MS = 40000;
+
+// The league's top stories, one at a time, moving on by themselves, once
+// round - a story about a game whose replay is saved plays its moment on the
+// 3D court right there. Stepping through them by hand stops the moving on.
 const TopStories = ({
 	events,
 	teams,
 	season,
 	userTid,
-}: Pick<Props, "events" | "teams"> & { season: number; userTid: number }) => {
+}: Pick<Props, "events" | "teams"> & {
+	season: number;
+	userTid: number;
+}) => {
+	const { gameSimInProgress } = useLocal(["gameSimInProgress"]);
 	const [eid, setEid] = useState<number | undefined>();
+	const [auto, setAuto] = useState(true);
 	const eids = events.map((event) => event.eid);
 	const event = events.find((e) => e.eid === eid) ?? events[0];
 
+	// On screen, in a tab being looked at: nothing plays or moves on unseen.
+	const block = useRef<HTMLDivElement>(null);
+	const [seen, setSeen] = useState(false);
+	useEffect(() => {
+		const el = block.current;
+		if (!el || typeof IntersectionObserver === "undefined") {
+			setSeen(true);
+			return;
+		}
+		let onScreen = false;
+		const update = () => setSeen(onScreen && !document.hidden);
+		const io = new IntersectionObserver(
+			(entries) => {
+				onScreen = entries.some((entry) => entry.isIntersecting);
+				update();
+			},
+			{ threshold: 0.4 },
+		);
+		io.observe(el);
+		document.addEventListener("visibilitychange", update);
+		return () => {
+			io.disconnect();
+			document.removeEventListener("visibilitychange", update);
+		};
+	}, []);
+
+	// The game the story is about (the one its text links to), if its replay
+	// is saved: its play can be shown.
+	const gidText = event?.text.match(/\/game_log\/[^"/]+\/\d+\/(\d+)/)?.[1];
+	const gid = gidText === undefined ? undefined : Number(gidText);
+	const shownEid = event?.eid;
+	const [play, setPlay] = useState<{ eid: number; gid: number } | undefined>();
+	useEffect(() => {
+		if (gid === undefined || shownEid === undefined) {
+			return;
+		}
+		let live = true;
+		(async () => {
+			try {
+				if (live && (await toWorker("main", "hasLiveGameReplay", gid))) {
+					setPlay({ eid: shownEid, gid });
+				}
+			} catch {
+				// Nothing to play.
+			}
+		})();
+		return () => {
+			live = false;
+		};
+	}, [gid, shownEid]);
+	// (Not while games are being simmed: the court waits its turn.)
+	const playing =
+		play !== undefined && play.eid === shownEid && seen && !gameSimInProgress
+			? play
+			: undefined;
+	// Once it has started, a story's play stays up - scrolled away and back,
+	// it is not staged all over again.
+	const [started, setStarted] = useState<number | undefined>();
+	useEffect(() => {
+		if (playing) {
+			setStarted(playing.eid);
+		}
+	}, [playing]);
+	const showPlay =
+		play !== undefined && play.eid === shownEid && started === shownEid;
+
+	const eidsRef = useRef(eids);
+	eidsRef.current = eids;
+	// On to the next story - and once round them all, back on the first to
+	// stay (a phone is not kept drawing the court for as long as the page is
+	// open).
+	const shownRef = useRef(shownEid);
+	shownRef.current = shownEid;
+	const next = useCallback(() => {
+		const list = eidsRef.current;
+		const i = list.indexOf(shownRef.current ?? list[0]!);
+		if (i + 1 >= list.length) {
+			setAuto(false);
+			setEid(list[0]);
+		} else {
+			setEid(list[i + 1]);
+		}
+	}, []);
+	const [played, setPlayed] = useState<number | undefined>();
+	const waitsOnPlay =
+		play !== undefined && play.eid === shownEid && played !== shownEid;
+	useEffect(() => {
+		if (!auto || !seen || gameSimInProgress || eids.length < 2) {
+			return;
+		}
+		// (A play is waited for, but not for ever.)
+		const id = window.setTimeout(
+			next,
+			waitsOnPlay
+				? PLAY_MOST_MS
+				: played === shownEid
+					? AFTER_PLAY_MS
+					: STORY_MS,
+		);
+		return () => window.clearTimeout(id);
+	}, [
+		auto,
+		seen,
+		gameSimInProgress,
+		eids.length,
+		waitsOnPlay,
+		played,
+		shownEid,
+		next,
+	]);
+
 	return (
-		<div className="mb-3">
+		<div className="mb-3" ref={block}>
 			<div className="d-flex align-items-center mb-2">
 				<h2 className="mb-0 me-auto">League Headlines</h2>
 				{events.length > 1 ? (
 					<NextPrevButtons
 						currentItem={event?.eid}
 						items={eids}
-						onChange={setEid}
+						onChange={(newEid) => {
+							setAuto(false);
+							setEid(newEid);
+						}}
 					/>
 				) : null}
 			</div>
+			{event && showPlay && play ? (
+				<HeadlinePlay
+					key={play.eid}
+					gid={play.gid}
+					pid={event.pids?.[0]}
+					fallback={<StoryPoster event={event} teams={teams} />}
+					onDone={() => setPlayed(play.eid)}
+					onNone={() => setPlay(undefined)}
+				/>
+			) : event ? (
+				<StoryPoster event={event} teams={teams} />
+			) : null}
 			{event ? (
 				<div className="fs-5">
 					<NewsBlock
@@ -444,49 +606,62 @@ const LatestScores = ({
 	latestScores,
 	teams,
 	userTid,
-}: Pick<Props, "latestScores" | "teams"> & { userTid: number }) => (
-	<>
-		<h2>Latest Scores</h2>
-		{latestScores.length > 0 ? (
-			<table className="table table-striped table-borderless table-sm mb-1">
-				<tbody>
-					{latestScores.map((game) => {
-						const homeWon = game.home.pts > game.away.pts;
-						return (
-							<tr
-								key={game.gid}
-								className={clsx(
-									(game.home.tid === userTid || game.away.tid === userTid) &&
-										"table-info",
-								)}
-							>
-								<td className={clsx(!homeWon && "fw-bold")}>
-									<Logo t={teams[game.away.tid]} size={16} />{" "}
-									{teams[game.away.tid]?.abbrev}
-								</td>
-								<td className={clsx("text-end", !homeWon && "fw-bold")}>
-									{game.away.pts}
-								</td>
-								<td className={clsx(homeWon && "fw-bold")}>
-									@ <Logo t={teams[game.home.tid]} size={16} />{" "}
-									{teams[game.home.tid]?.abbrev}
-								</td>
-								<td className={clsx("text-end", homeWon && "fw-bold")}>
-									<a href={helpers.leagueUrl(["game_log", "_", "_", game.gid])}>
-										{game.home.pts}
-									</a>
-								</td>
-							</tr>
-						);
-					})}
-				</tbody>
-			</table>
-		) : (
-			<p className="text-body-secondary">No games played yet.</p>
-		)}
-		<a href={helpers.leagueUrl(["daily_schedule"])}>» Daily Schedule</a>
-	</>
-);
+}: Pick<Props, "latestScores" | "teams"> & { userTid: number }) => {
+	// Any game with a replay saved can be watched as its highlights.
+	const anyReplay = latestScores.some((game) => game.replay);
+	return (
+		<>
+			<h2>Latest Scores</h2>
+			{latestScores.length > 0 ? (
+				<table className="table table-striped table-borderless table-sm mb-1">
+					<tbody>
+						{latestScores.map((game) => {
+							const homeWon = game.home.pts > game.away.pts;
+							return (
+								<tr
+									key={game.gid}
+									className={clsx(
+										(game.home.tid === userTid || game.away.tid === userTid) &&
+											"table-info",
+									)}
+								>
+									<td className={clsx(!homeWon && "fw-bold")}>
+										<Logo t={teams[game.away.tid]} size={16} />{" "}
+										{teams[game.away.tid]?.abbrev}
+									</td>
+									<td className={clsx("text-end", !homeWon && "fw-bold")}>
+										{game.away.pts}
+									</td>
+									<td className={clsx(homeWon && "fw-bold")}>
+										@ <Logo t={teams[game.home.tid]} size={16} />{" "}
+										{teams[game.home.tid]?.abbrev}
+									</td>
+									<td className={clsx("text-end", homeWon && "fw-bold")}>
+										<a
+											href={helpers.leagueUrl(["game_log", "_", "_", game.gid])}
+										>
+											{game.home.pts}
+										</a>
+									</td>
+									{anyReplay ? (
+										<td className="text-end">
+											{game.replay ? (
+												<GameHighlightsButton gid={game.gid} />
+											) : null}
+										</td>
+									) : null}
+								</tr>
+							);
+						})}
+					</tbody>
+				</table>
+			) : (
+				<p className="text-body-secondary">No games played yet.</p>
+			)}
+			<a href={helpers.leagueUrl(["daily_schedule"])}>» Daily Schedule</a>
+		</>
+	);
+};
 
 // The days around today, with games, results and the season's key dates. A
 // grid of two weeks, or a list of the busy days on a phone.

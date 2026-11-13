@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 305,
+		date: "2026-11-13",
+		text: "New interface: the league home's headlines now play. The top stories scroll by on their own, and a story about a game with a saved replay (a game winner, a big stat night) shows the moment itself on the 3D court, right in the headline. Games with a replay also get a play button in Latest Scores for their key plays. Replays are saved when the commissioner turns it on: League Settings > Auto-Save Replays > Feats & game winners (or pick teams).",
+	},
+	{
 		n: 304,
 		date: "2026-11-13",
 		text: "3D: a defender guarding a jump shooter no longer backs away as he goes up. He holds his ground and gets a hand up, so far more jumpers are properly contested.",

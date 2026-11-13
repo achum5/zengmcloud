@@ -10,6 +10,19 @@
 	vertical-align: middle;
 }
 
+// The headline's picture: the shape of the 3D court that plays there.
+.ni-stage {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 2rem;
+	aspect-ratio: 16 / 9;
+
+	@media (max-width: 575.98px) {
+		aspect-ratio: 4 / 3;
+	}
+}
+
 .ni-calendar {
 	table-layout: fixed;
 }

@@ -10,6 +10,7 @@ import {
 	segmentAt,
 } from "./keyPlays.ts";
 import { makeFollow } from "./follow.ts";
+import { askForHighlights } from "../../../util/highlightsAsk.ts";
 import { stepPlay, type PlayClock } from "./playback.ts";
 import { fastAt } from "./evaluate.ts";
 import { isLineItem } from "./director.ts";
@@ -364,6 +365,26 @@ describe("3D key plays", () => {
 			assert.isTrue(s.closeOnTop);
 			assert.isTrue(s.dunks);
 			assert.isTrue(s.mine);
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
+	// A game opened as its highlights (the league home's button): its key
+	// plays this once, whatever is saved here - and the next game as saved.
+	test("a game asked for as its highlights plays its key plays, that once", () => {
+		vi.stubGlobal("window", {
+			localStorage: {
+				getItem: () => null,
+			},
+		});
+		try {
+			assert.isFalse(getKeyPlays().on);
+			askForHighlights();
+			const s = getKeyPlays();
+			assert.isTrue(s.on);
+			assert.strictEqual(s.minutes, KEY_PLAY_DEFAULTS.minutes);
+			assert.isFalse(getKeyPlays().on);
 		} finally {
 			vi.unstubAllGlobals();
 		}

@@ -1,4 +1,5 @@
 import { safeLocalStorage } from "../../../util/safeLocalStorage.ts";
+import { takeHighlightsAsk } from "../../../util/highlightsAsk.ts";
 import type { Beat, CourtTimeline } from "./director.ts";
 import type { Beats } from "./timeline.ts";
 import { fastAt } from "./evaluate.ts";
@@ -121,9 +122,11 @@ export const getKeyPlays = (): KeyPlaySettings => {
 	} catch {
 		saved = KEY_PLAY_DEFAULTS;
 	}
+	// (A game opened as its highlights plays them this once - nothing saved.)
+	const asked = takeHighlightsAsk();
 	return {
 		...KEY_PLAY_DEFAULTS,
-		on: saved.on,
+		on: saved.on || asked,
 		minutes: saved.minutes,
 		closePoints: saved.closePoints,
 		closeMinutes: saved.closeMinutes,

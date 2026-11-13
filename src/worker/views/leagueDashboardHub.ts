@@ -14,6 +14,34 @@ const plain = (html: string) =>
 		.replaceAll(/\s+/g, " ")
 		.trim();
 
+// Which of these games have a replay saved (see game/play.ts for when one
+// is): watched live, or kept by the league's Auto-Save Replays setting.
+const savedReplays = async (gids: number[]) => {
+	const saved = new Set<number>();
+	if (gids.length === 0) {
+		return saved;
+	}
+	for (const gid of gids) {
+		if (await idb.cache.liveGamePlayByPlay.get(gid)) {
+			saved.add(gid);
+		}
+	}
+	try {
+		const keys: number[] = await (idb.league as any).getAllKeys(
+			"liveGamePlayByPlay",
+			IDBKeyRange.bound(Math.min(...gids), Math.max(...gids)),
+		);
+		for (const gid of keys) {
+			if (gids.includes(gid)) {
+				saved.add(gid);
+			}
+		}
+	} catch {
+		// Only what the cache holds, then.
+	}
+	return saved;
+};
+
 export const updateHub = async ({ updateEvents }: ViewArgs) => {
 	if (
 		!updateEvents.has("firstRun") &&
@@ -93,13 +121,29 @@ export const updateHub = async ({ updateEvents }: ViewArgs) => {
 		(max, game) => Math.max(max, game.day ?? -Infinity),
 		-Infinity,
 	);
-	const latestScores = games
-		.filter((game) => game.day === lastDay)
+	const lastGames = games.filter((game) => game.day === lastDay);
+	const replays = await savedReplays(lastGames.map((game) => game.gid));
+	const mine = (game: (typeof lastGames)[number]) =>
+		game.teams.some((t) => t.tid === userTid);
+	const margin = (game: (typeof lastGames)[number]) =>
+		Math.abs(game.teams[0].pts - game.teams[1].pts);
+	// The user's game first, then the ones with highlights to watch, closest
+	// first.
+	const latestScores = lastGames
+		.map((game, i) => ({ game, i }))
+		.sort(
+			(a, b) =>
+				Number(mine(b.game)) - Number(mine(a.game)) ||
+				Number(replays.has(b.game.gid)) - Number(replays.has(a.game.gid)) ||
+				(replays.has(a.game.gid) ? margin(a.game) - margin(b.game) : 0) ||
+				a.i - b.i,
+		)
 		.slice(0, 8)
-		.map((game) => ({
+		.map(({ game }) => ({
 			gid: game.gid,
 			home: { tid: game.teams[0].tid, pts: game.teams[0].pts },
 			away: { tid: game.teams[1].tid, pts: game.teams[1].pts },
+			replay: replays.has(game.gid),
 		}));
 
 	const numRoster = (

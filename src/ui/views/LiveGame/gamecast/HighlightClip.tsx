@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useMemo, useRef, useState } from "react";
 import { clipOfPlay, isLine } from "../../../util/filterPlayerHighlights.ts";
 import { helpers } from "../../../util/helpers.ts";
 import processLiveGameEventsBasketball from "../../../util/processLiveGameEvents.basketball.tsx";
@@ -80,6 +80,7 @@ const ClipCourt = ({
 	end,
 	initialBoxScore,
 	onAgain,
+	onDone,
 	onFail,
 }: {
 	events: any[];
@@ -87,6 +88,7 @@ const ClipCourt = ({
 	end: number;
 	initialBoxScore: any;
 	onAgain: () => void;
+	onDone?: () => void;
 	onFail: () => void;
 }) => {
 	const total = events.length;
@@ -119,9 +121,12 @@ const ClipCourt = ({
 	}, [events, start, total, initialBoxScore]);
 	const [cursor, setCursor] = useState(() => total - run.queue.length);
 	const [done, setDone] = useState(false);
+	const onDoneRef = useRef(onDone);
+	onDoneRef.current = onDone;
 	const onReady = useCallback(() => {
 		if (total - run.queue.length >= end || run.queue.length === 0) {
 			setDone(true);
+			onDoneRef.current?.();
 			return;
 		}
 		step(run);
@@ -159,14 +164,20 @@ const ClipCourt = ({
 // A HIGHLIGHT PLAYED RIGHT THERE, under its row: the 3D court on just that
 // play (see clipOfPlay) - from `first` to `last`, the game's events
 // consumed - staged in a moment, not the whole game.
+// (`onDone`: told each time it has played through - a headline's moves on.
+// `onFail`: the court could not play it.)
 export const HighlightClip = ({
 	game,
 	first,
 	last,
+	onDone,
+	onFail,
 }: {
 	game: ClipGame;
 	first: number;
 	last: number;
+	onDone?: () => void;
+	onFail?: () => void;
 }) => {
 	// (As the game was when it was opened: a live game going on under it
 	// does not stage it again.)
@@ -195,7 +206,11 @@ export const HighlightClip = ({
 				end={clip.end}
 				initialBoxScore={opened.initialBoxScore}
 				onAgain={() => setTake((n) => n + 1)}
-				onFail={() => setFailed(true)}
+				onDone={onDone}
+				onFail={() => {
+					setFailed(true);
+					onFail?.();
+				}}
 			/>
 		</Suspense>
 	);
