@@ -102,7 +102,14 @@ export const updateHub = async ({ updateEvents }: ViewArgs) => {
 			away: { tid: game.teams[1].tid, pts: game.teams[1].pts },
 		}));
 
+	const numRoster = (
+		await idb.cache.players.indexGetAll("playersByTid", userTid)
+	).length;
+
 	return {
+		numRoster,
+		maxRosterSize: g.get("maxRosterSize"),
+		minRosterSize: g.get("minRosterSize"),
 		hubMessages,
 		teamNews,
 		upcoming,

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 302,
+		date: "2026-11-13",
+		text: "New interface (Global Settings > Interface > New): the league home page now shows your playoff series during the playoffs, where to go next in the offseason, a task when your roster is over the limit or under the minimum, and the team leaders, league leaders, team stats, finances and starting lineup from the old dashboard.",
+	},
+	{
 		n: 301,
 		date: "2026-11-13",
 		text: "A new look is on the way, one page at a time, with the same menus and buttons as now. Turn it on under Global Settings > Interface > New. First up is the league's home page: your messages and team news, the league's top stories, your next game and form, the latest scores, a two-week calendar, your schedule and the standings. Commissioners can set the league's logo under League Settings > UI, and it shows in the top bar.",

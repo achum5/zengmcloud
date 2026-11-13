@@ -5,11 +5,15 @@ import { categories, types } from "../../../common/transactionInfo.ts";
 import type { View } from "../../../common/types.ts";
 import { NewsBlock } from "../../components/NewsBlock.tsx";
 import { NextPrevButtons } from "../../components/NextPrevButtons.tsx";
+import { PlayoffMatchup } from "../../components/PlayoffMatchup.tsx";
 import { SafeHtml } from "../../components/SafeHtml.tsx";
 import useTitleBar from "../../hooks/useTitleBar.tsx";
 import { helpers } from "../../util/helpers.ts";
 import { useLocal } from "../../util/local.ts";
+import Leaders from "./Leaders.tsx";
 import Standings from "./Standings.tsx";
+import StartingLineup from "./StartingLineup.tsx";
+import TeamStats from "./TeamStats.tsx";
 
 // The new interface's league home, laid out as a hub: the inbox down the
 // left; the league's news, the next game, the latest scores and the next two
@@ -44,10 +48,31 @@ const Messages = ({
 	hubMessages,
 	teamNews,
 	phase,
-}: Pick<Props, "hubMessages" | "teamNews"> & { phase: number }) => {
+	numRoster,
+	maxRosterSize,
+	minRosterSize,
+}: Pick<
+	Props,
+	"hubMessages" | "teamNews" | "numRoster" | "maxRosterSize" | "minRosterSize"
+> & { phase: number }) => {
 	const [filter, setFilter] = useState<"all" | "tasks" | "unread">("all");
 
 	const tasks: { text: string; href: string }[] = [];
+	if (numRoster > maxRosterSize) {
+		tasks.push({
+			text: `Roster over the limit (${numRoster}/${maxRosterSize})`,
+			href: helpers.leagueUrl(["roster"]),
+		});
+	} else if (
+		numRoster < minRosterSize &&
+		phase >= PHASE.REGULAR_SEASON &&
+		phase <= PHASE.PLAYOFFS
+	) {
+		tasks.push({
+			text: `Roster under the minimum (${numRoster}/${minRosterSize})`,
+			href: helpers.leagueUrl(["free_agents"]),
+		});
+	}
 	if (phase === PHASE.RESIGN_PLAYERS) {
 		tasks.push({
 			text: "Re-sign your players",
@@ -126,16 +151,16 @@ const Messages = ({
 								return (
 									<tr key={`e${event.eid}`}>
 										<td>
-											{info ? (
-												<span
-													className={clsx(
-														"badge",
-														categories[info.category].className,
-													)}
-												>
-													{info.text}
-												</span>
-											) : null}
+											<span
+												className={clsx(
+													"badge badge-news",
+													info
+														? categories[info.category].className
+														: "bg-secondary",
+												)}
+											>
+												{info?.text ?? event.type}
+											</span>
 										</td>
 										<td className="text-wrap">
 											<SafeHtml dirty={event.text} />
@@ -193,6 +218,16 @@ const TopStories = ({
 	);
 };
 
+// Where a GM goes next when there is no game to play.
+const PHASE_LINKS: Partial<Record<number, { text: string; url: string[] }>> = {
+	[PHASE.PRESEASON]: { text: "Roster", url: ["roster"] },
+	[PHASE.DRAFT_LOTTERY]: { text: "Draft Scouting", url: ["draft_scouting"] },
+	[PHASE.DRAFT]: { text: "Draft", url: ["draft"] },
+	[PHASE.AFTER_DRAFT]: { text: "Draft History", url: ["draft_history"] },
+	[PHASE.RESIGN_PLAYERS]: { text: "Re-sign Players", url: ["negotiation"] },
+	[PHASE.FREE_AGENCY]: { text: "Free Agents", url: ["free_agents"] },
+};
+
 const NextGame = ({
 	upcoming,
 	played,
@@ -202,44 +237,90 @@ const NextGame = ({
 	conf,
 	won,
 	lost,
+	series,
+	seriesTitle,
+	showPlayoffSeries,
+	numGamesToWinSeries,
+	playoffRoundsWon,
+	roundsWonText,
+	phase,
+	season,
+	userTid,
 }: Pick<
 	Props,
-	"upcoming" | "played" | "nextDay" | "teams" | "won" | "lost" | "conf"
-> & { rank: number | undefined }) => {
+	| "upcoming"
+	| "played"
+	| "nextDay"
+	| "teams"
+	| "won"
+	| "lost"
+	| "conf"
+	| "series"
+	| "seriesTitle"
+	| "showPlayoffSeries"
+	| "numGamesToWinSeries"
+	| "playoffRoundsWon"
+	| "roundsWonText"
+> & {
+	rank: number | undefined;
+	phase: number;
+	season: number;
+	userTid: number;
+}) => {
 	const next = upcoming[0];
 	const opp = next ? teams[next.opp] : undefined;
 	const form = played.slice(-5);
+	const inSeries = showPlayoffSeries && !!series;
+	const phaseLink = PHASE_LINKS[phase];
 
 	return (
 		<>
-			<h2>Next Game</h2>
+			{inSeries ? (
+				<>
+					<h2>{seriesTitle || "Playoffs"}</h2>
+					<PlayoffMatchup
+						expandTeamNames
+						numGamesToWinSeries={numGamesToWinSeries}
+						season={season}
+						series={series}
+						userTid={userTid}
+					/>
+					<div className="mt-1 mb-3">
+						<a href={helpers.leagueUrl(["playoffs"])}>» Playoffs</a>
+					</div>
+				</>
+			) : null}
 			{next && opp ? (
-				<div className="d-flex align-items-center gap-2 mb-2">
-					<a href={rosterUrl(opp, next.opp)}>
-						<Logo t={opp} size={48} />
-					</a>
-					<div>
-						<div className="fs-5">
-							{next.home ? "vs" : "@"}{" "}
-							<a href={rosterUrl(opp, next.opp)}>{opp.region}</a>
-						</div>
-						<div className="text-body-secondary">
-							Day {next.day}
-							{nextDay !== undefined && next.day > nextDay
-								? `, in ${next.day - nextDay} days`
-								: null}
+				<>
+					<h2>Next Game</h2>
+					<div className="d-flex align-items-center gap-2 mb-2">
+						<a href={rosterUrl(opp, next.opp)}>
+							<Logo t={opp} size={48} />
+						</a>
+						<div>
+							<div className="fs-5">
+								{next.home ? "vs" : "@"}{" "}
+								<a href={rosterUrl(opp, next.opp)}>{opp.region}</a>
+							</div>
+							<div className="text-body-secondary">
+								Day {next.day}
+								{nextDay !== undefined && next.day > nextDay
+									? `, in ${next.day - nextDay} days`
+									: null}
+							</div>
 						</div>
 					</div>
-				</div>
-			) : (
-				<p className="text-body-secondary">No games scheduled.</p>
+				</>
+			) : inSeries ? null : (
+				<h2>Season</h2>
 			)}
 			<div>
 				Record: {won}-{lost}
-				{rank !== undefined
+				{playoffRoundsWon < 0 && rank !== undefined
 					? `, ${helpers.ordinal(rank)} in ${conf?.name ?? "the league"}`
 					: null}
 			</div>
+			{playoffRoundsWon >= 0 ? <div>{roundsWonText}</div> : null}
 			{form.length > 0 ? (
 				<div className="mb-1">
 					Last {form.length}:{" "}
@@ -257,7 +338,49 @@ const NextGame = ({
 					))}
 				</div>
 			) : null}
-			<a href={helpers.leagueUrl(["schedule"])}>» Schedule</a>
+			{next || !phaseLink ? (
+				<a href={helpers.leagueUrl(["schedule"])}>» Schedule</a>
+			) : (
+				<a href={helpers.leagueUrl(phaseLink.url as any)}>» {phaseLink.text}</a>
+			)}
+		</>
+	);
+};
+
+const Finances = ({
+	att,
+	revenue,
+	profit,
+	cash,
+	payroll,
+}: Pick<Props, "att" | "revenue" | "profit" | "cash" | "payroll">) => {
+	const { luxuryPayroll, salaryCap, salaryCapType } = useLocal([
+		"luxuryPayroll",
+		"salaryCap",
+		"salaryCapType",
+	]);
+	return (
+		<>
+			<h2>Finances</h2>
+			<div className="mb-3">
+				Avg Attendance: {helpers.numberWithCommas(Math.round(att))}
+				<br />
+				Revenue (YTD): {helpers.formatCurrency(revenue, "M")}
+				<br />
+				Profit (YTD): {helpers.formatCurrency(profit, "M")}
+				<br />
+				Cash: {helpers.formatCurrency(cash / 1000, "M")}
+				<br />
+				Payroll: {helpers.formatCurrency(payroll / 1000, "M")}
+				<br />
+				{salaryCapType === "none" ? (
+					<>Luxury Tax: {helpers.formatCurrency(luxuryPayroll / 1000, "M")}</>
+				) : (
+					<>Salary Cap: {helpers.formatCurrency(salaryCap / 1000, "M")}</>
+				)}
+				<br />
+				<a href={helpers.leagueUrl(["team_finances"])}>» Team Finances</a>
+			</div>
 		</>
 	);
 };
@@ -410,8 +533,9 @@ const Schedule = ({
 	if (rows.length === 0) {
 		return null;
 	}
+	// Phones get the same days from the calendar's list.
 	return (
-		<div className="mb-3">
+		<div className="mb-3 d-none d-sm-block">
 			<h2>Schedule</h2>
 			<table className="table table-striped table-borderless table-sm mb-1">
 				<tbody>
@@ -465,6 +589,15 @@ const Portal = (props: Props) => {
 							conf={props.conf}
 							won={props.won}
 							lost={props.lost}
+							series={props.series}
+							seriesTitle={props.seriesTitle}
+							showPlayoffSeries={props.showPlayoffSeries}
+							numGamesToWinSeries={props.numGamesToWinSeries}
+							playoffRoundsWon={props.playoffRoundsWon}
+							roundsWonText={props.roundsWonText}
+							phase={phase}
+							season={season}
+							userTid={userTid}
 						/>
 					</div>
 					<div className="col-sm-6 mb-3">
@@ -488,7 +621,30 @@ const Portal = (props: Props) => {
 					hubMessages={props.hubMessages}
 					teamNews={props.teamNews}
 					phase={phase}
+					numRoster={props.numRoster}
+					maxRosterSize={props.maxRosterSize}
+					minRosterSize={props.minRosterSize}
 				/>
+				<div className="row mt-3">
+					<div className="col-6">
+						<Leaders
+							leagueLeaders={props.leagueLeaders}
+							teamLeaders={props.teamLeaders}
+						/>
+					</div>
+					<div className="col-6">
+						<TeamStats teamStats={props.teamStats} />
+						{props.collegeNilBudget === undefined ? (
+							<Finances
+								att={props.att}
+								revenue={props.revenue}
+								profit={props.profit}
+								cash={props.cash}
+								payroll={props.payroll}
+							/>
+						) : null}
+					</div>
+				</div>
 			</div>
 			<div className="col-xl-3 col-lg-6 order-3 mb-3">
 				<Schedule
@@ -504,6 +660,13 @@ const Portal = (props: Props) => {
 					pointsFormula={props.pointsFormula}
 					usePts={props.usePts}
 					userTid={userTid}
+				/>
+			</div>
+			<div className="col-12 order-4 mb-3">
+				<StartingLineup
+					numPlayersOnCourt={props.numPlayersOnCourt}
+					starters={props.starters}
+					startersStats={props.startersStats}
 				/>
 			</div>
 		</div>
