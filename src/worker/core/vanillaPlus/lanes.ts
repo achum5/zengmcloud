@@ -163,8 +163,12 @@ export const factsOf = async (): Promise<{
 			lost: games - (ts ? ts.won + 0.5 * (ts.tied ?? 0) : 0),
 		});
 	}
+	// The share of the regular season played - after the trade deadline too
+	// (its own phase): the calendar reads the games left from it.
+	const phase = g.get("phase");
 	const progress =
-		g.get("phase") === PHASE.REGULAR_SEASON && counted > 0
+		(phase === PHASE.REGULAR_SEASON || phase === PHASE.AFTER_TRADE_DEADLINE) &&
+		counted > 0
 			? gp / counted / g.get("numGames")
 			: 0;
 	return { facts, progress };
@@ -273,6 +277,11 @@ const outOfRaceOf = async (facts: Facts[]): Promise<Set<number>> => {
 
 let current: { key: string; lanes: Map<number, Lane> } | undefined;
 
+// What a reload does to this device's memory of the lanes (for tests).
+export const forgetLanes = () => {
+	current = undefined;
+};
+
 // Every team's lane at this moment, reviewed if this moment's review has not
 // been done.
 export const ensureLanes = async (): Promise<Map<number, Lane>> => {
@@ -286,6 +295,20 @@ export const ensureLanes = async (): Promise<Map<number, Lane>> => {
 	const teams = new Map(
 		(await idb.cache.teams.getAll()).map((t) => [t.tid, t]),
 	);
+	// Already reviewed for this moment - before a reload, or on the league
+	// mate's device that sims: those lanes stand until the next review, they
+	// are not reviewed again from whatever the rosters have become since.
+	const stored = new Map<number, Lane>();
+	for (const f of facts) {
+		const t = teams.get(f.tid);
+		if (t?.lane && t.laneReview === review.key) {
+			stored.set(f.tid, t.lane);
+		}
+	}
+	if (facts.length > 0 && stored.size === facts.length) {
+		current = { key, lanes: stored };
+		return stored;
+	}
 	// Standing: the rating's rank, and once games are played its record's too.
 	const n = facts.length;
 	const byOvr = [...facts].sort((a, b) => b.ovr - a.ovr);

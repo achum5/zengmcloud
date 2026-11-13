@@ -129,11 +129,20 @@ const HERMITE = [
 	[3.436159118837738, 0.000007640432855],
 ].map(([x, w]) => [x! * Math.SQRT2, w! / Math.sqrt(Math.PI)] as const);
 
-const cache = new Map<string, number[]>();
+// A player's projected development is cached for the season (the slow part:
+// it depends on his ratings alone); his seasons' values for as long as his
+// value now and the league's scale stay what they were - his value moves
+// with every game he plays, and a price must not depend on when he was
+// first priced.
+const projections = new Map<string, ReturnType<typeof projectRatings>>();
+const cache = new Map<
+	string,
+	{ value: number; mean: number; std: number; out: number[] }
+>();
 let cacheFor = "";
 
 // Each season's expected trade value from this one on, by the game's own
-// development; cached for the season.
+// development.
 // `cut`: a career's seasons below nothing count as nothing - a drafted
 // player who doesn't make it is let go (a pick's worth: a second-rounder is
 // a long shot, not a cost).
@@ -142,20 +151,32 @@ export const seasonValues = (p: Player, years: number, cut = false) => {
 	const key = `${g.get("lid")}:${season}`;
 	if (key !== cacheFor) {
 		cache.clear();
+		projections.clear();
 		cacheFor = key;
 	}
 	const r = p.ratings.at(-1)!;
-	const id = `${p.pid}:${r.season}:${r.ovr}:${r.pot}:${years}:${worthSettings.ceiling}:${worthSettings.aboveCeiling}:${cut}`;
-	let out = cache.get(id);
+	const projId = `${p.pid}:${r.season}:${r.ovr}:${r.pot}:${years}`;
+	const id = `${projId}:${worthSettings.ceiling}:${worthSettings.aboveCeiling}:${cut}`;
+	const cached = cache.get(id);
+	let out =
+		cached?.value === p.valueNoPot &&
+		cached.mean === local.playerOvrMean &&
+		cached.std === local.playerOvrStd
+			? cached.out
+			: undefined;
 	if (!out) {
-		const proj = projectRatings({
-			ratings: r as any,
-			age: season - p.born.year,
-			years: years - 1,
-			samples: worthSettings.samples,
-			// The same player the same season projects the same on every device.
-			seed: p.pid * 7919 + season,
-		});
+		let proj = projections.get(projId);
+		if (!proj) {
+			proj = projectRatings({
+				ratings: r as any,
+				age: season - p.born.year,
+				years: years - 1,
+				samples: worthSettings.samples,
+				// The same player the same season projects the same on every device.
+				seed: p.pid * 7919 + season,
+			});
+			projections.set(projId, proj);
+		}
 		// valueNoPot is what he's worth now (ratings and box score, on vanilla's
 		// value scale); each season moves it by how his rating moves from the
 		// projection's own start. Below average stays below zero, as vanilla's
@@ -176,15 +197,21 @@ export const seasonValues = (p: Player, years: number, cut = false) => {
 			const x = tradeValue(zscore(p.valueNoPot + (o - start) * scale));
 			return cut ? Math.max(0, x) : x;
 		};
-		out = proj.ovr.map((mean, t) => {
-			const sd = proj.ovrSd[t]!;
+		const { ovr: means, ovrSd } = proj;
+		out = means.map((mean, t) => {
+			const sd = ovrSd[t]!;
 			let sum = 0;
 			for (const [x, w] of HERMITE) {
 				sum += w * (at(mean + sd * x) + at(mean - sd * x));
 			}
 			return sum;
 		});
-		cache.set(id, out);
+		cache.set(id, {
+			value: p.valueNoPot,
+			mean: local.playerOvrMean,
+			std: local.playerOvrStd,
+			out,
+		});
 	}
 	return out;
 };

@@ -5,7 +5,7 @@ import { idb } from "../../db/index.ts";
 import { g, local } from "../../util/index.ts";
 import { createArenaLeague } from "../../../test/arena/runLeague.ts";
 import { vanillaPlusSettings } from "./settings.ts";
-import { ensureLanes, type Lane } from "./lanes.ts";
+import { ensureLanes, forgetLanes, type Lane } from "./lanes.ts";
 import { tweaksFor } from "./tweaks.ts";
 import { playerWorth, windowFor, worth, worthSettings } from "./worth.ts";
 import { calendar, calendarSettings, thisSeason } from "./calendar.ts";
@@ -834,3 +834,95 @@ test(
 		}
 	},
 );
+
+// After the trade deadline the season's progress read as none: the calendar
+// took the whole regular season as still to play (a player out 30 games as
+// back for most of it) and placed teams by rating alone, whatever their
+// records.
+test("after the trade deadline the calendar still counts the games played", async () => {
+	const season = g.get("season");
+	const phase = g.get("phase");
+	const teamSeasons = await idb.cache.teamSeasons.indexGetAll(
+		"teamSeasonsBySeasonTid",
+		[[season], [season, "Z"]],
+	);
+	const saved = teamSeasons.map((ts) => [ts.won, ts.lost] as const);
+	try {
+		g.setWithoutSavingToDB("phase", PHASE.AFTER_TRADE_DEADLINE);
+		const numGames = g.get("numGames");
+		const played = Math.round(numGames * 0.7);
+		for (const ts of teamSeasons) {
+			ts.won = Math.round(played / 2);
+			ts.lost = played - ts.won;
+			await idb.cache.teamSeasons.put(ts);
+		}
+		const c = await calendar();
+		assert.closeTo(c.remaining, 1 - played / numGames, 0.01);
+		assert.strictEqual(c.gamesLeft, numGames - played);
+		assert.strictEqual(c.toDeadline, 1);
+	} finally {
+		teamSeasons.forEach((ts, i) => {
+			[ts.won, ts.lost] = saved[i]!;
+		});
+		for (const ts of teamSeasons) {
+			await idb.cache.teamSeasons.put(ts);
+		}
+		g.setWithoutSavingToDB("phase", phase);
+		await ensureLanes();
+	}
+});
+
+// Lanes are reviewed at set times and stand in between. A reload (or a
+// league mate's device) used to review them afresh on the spot, from
+// whatever the rosters had become since: the same league priced players
+// differently before and after a reload.
+test("a reload doesn't review the lanes again before the next review is due", async () => {
+	const before = new Map(await ensureLanes());
+	const [top] = [...before].find(([, lane]) => lane === "allIn")!;
+	const [bottom] = [...before].find(([, lane]) => lane === "rebuild")!;
+	// The two swap rosters since the review.
+	const swap = async () => {
+		const a = await idb.cache.players.indexGetAll("playersByTid", top);
+		const b = await idb.cache.players.indexGetAll("playersByTid", bottom);
+		for (const p of a) {
+			p.tid = bottom;
+			await idb.cache.players.put(p);
+		}
+		for (const p of b) {
+			p.tid = top;
+			await idb.cache.players.put(p);
+		}
+	};
+	await swap();
+	try {
+		forgetLanes();
+		const after = await ensureLanes();
+		const byTid = (lanes: Map<number, Lane>) =>
+			[...lanes].sort((a, b) => a[0] - b[0]);
+		assert.deepStrictEqual(byTid(after), byTid(before));
+	} finally {
+		await swap();
+		forgetLanes();
+		await ensureLanes();
+	}
+});
+
+// A player's value moves with every game he plays (ratings and box score),
+// but his worth was cached for the season by his ratings alone: it stayed
+// what it was when he was first priced, until a reload priced him afresh -
+// two devices in one league could price the same player differently.
+test("a player's worth follows his value through the season, however early he was first priced", async () => {
+	const p = (await idb.cache.players.indexGetAll("playersByTid", 0)).sort(
+		(a, b) => b.valueNoPot - a.valueNoPot,
+	)[0]!;
+	const was = p.valueNoPot;
+	const before = worth(p, worthSettings.market);
+	try {
+		// A hot stretch: his value up, his ratings as they were.
+		p.valueNoPot = was + 5;
+		assert.isAbove(worth(p, worthSettings.market), before);
+	} finally {
+		p.valueNoPot = was;
+	}
+	assert.strictEqual(worth(p, worthSettings.market), before);
+});

@@ -226,6 +226,29 @@ Written in the same AP style as the game recaps (headline plus a short
 paragraph or two, with variety). In the UI: a "Front office" category in the
 News Feed and a "RUMORS" slot in the bottom ticker. Nothing else added.
 
+### Found reading the code (2026-11-13)
+
+Three defects, each with a test (`vanillaPlus.test.ts`):
+
+- **A price stuck at its first look.** A player's value now (`valueNoPot`)
+  moves with every game he plays, but his seasons' values were cached for
+  the season by his ratings alone: his worth stayed what it was the first
+  time he was priced, until a reload priced him afresh - two devices in one
+  league could price the same player differently. Now only his projected
+  development (the slow part, ratings alone) is cached for the season; the
+  values follow his value now (`worth.ts seasonValues`).
+- **A reload reviewed the lanes again.** Lanes are reviewed at set times and
+  stand in between, but this device's memory of the review was all that
+  held them: after a reload (or on a league mate's device) they were
+  reviewed again on the spot, from whatever the rosters had become. Now a
+  review already stored on the teams for this moment is taken as it is
+  (`lanes.ts ensureLanes`).
+- **After the trade deadline the season started over.** The deadline is its
+  own phase, and the share of the season played read as none in it: the
+  calendar took all the regular season as still to play and placed teams by
+  rating alone. It counts the games played in that phase too
+  (`lanes.ts factsOf`).
+
 ## How it's checked
 
 - **Test leagues** (arena): trades a season (NBA ~50-60 including small

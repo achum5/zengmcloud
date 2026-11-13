@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 303,
+		date: "2026-11-13",
+		text: "Realistic Front Offices: CPU teams now price a player by how he's playing today. Before, a player's price could stay stuck at what it was the first time anyone looked at it that season, until the game was reloaded - so two league mates could see different prices for the same player. Teams' plans (all-in, playoff, retool, rebuild) also no longer get redone early when the game reloads, and after the trade deadline teams know how much of the season is left.",
+	},
+	{
 		n: 302,
 		date: "2026-11-13",
 		text: "New interface (Global Settings > Interface > New): the league home page now shows your playoff series during the playoffs, where to go next in the offseason, a task when your roster is over the limit or under the minimum, and the team leaders, league leaders, team stats, finances and starting lineup from the old dashboard.",
