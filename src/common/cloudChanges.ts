@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 309,
+		date: "2026-11-13",
+		text: "3D: on a poster dunk, the defender being dunked on now goes up right where he set himself under the rim, instead of sometimes sliding a step or two away before he jumps.",
+	},
+	{
 		n: 308,
 		date: "2026-11-13",
 		text: "The draft walk-outs, the headlines that play and the League Logo setting are only on the new interface for now (Global Settings > Interface > New). The classic interface is back to how it was.",

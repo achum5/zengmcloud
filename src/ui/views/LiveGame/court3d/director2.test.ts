@@ -1010,11 +1010,13 @@ describe("3D director", () => {
 
 	// "Dunks on him": the man the words name is the one who meets him at the
 	// rim - nearest him of anybody on the other side, right there, up with
-	// him - not someone else who happened to be in there.
+	// him - not someone else who happened to be in there. (And up from where
+	// he set himself: not stepped off it before he goes up, out of the way of
+	// somebody he only comes down on - see keepApart.)
 	test("a poster dunk is over the man the play-by-play says", () => {
 		const gid = 4242;
 		let posters = 0;
-		for (const seed of ["posters", "posters2"]) {
+		for (const seed of ["posters", "posters2", "posters4"]) {
 			const { events, players } = fakeGame(seed, 400);
 			const tl = compileCourt({ events, players, gid });
 			const beatOf = new Map(tl.beats.map((b) => [b.i, b]));
@@ -1054,7 +1056,7 @@ describe("3D director", () => {
 			});
 		}
 		assert.isAbove(posters, 3);
-	}, 240_000);
+	}, 360_000);
 
 	// The ball left bouncing at a basket or a whistle goes off the floor
 	// away from whoever is stood there - the man dunked on has stepped back

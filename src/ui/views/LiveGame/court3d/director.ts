@@ -27385,6 +27385,34 @@ class Director {
 				if (Math.hypot(ux, uy) * k < 0.3) {
 					continue;
 				}
+				// Up at a shot as he would be easing over, but on the man only
+				// once he is past the top of it, coming down - onto the man he
+				// went up over, a teammate coming by - he steps aside as he
+				// lands, at a step's pace: not taken before he goes up (see
+				// groundNudges), which has him go up from the wrong place, off
+				// the shot. (In the air against him that long, he is up at it
+				// with him: see keepOff for one in the other.)
+				let ease = easeMs;
+				if (!r.par) {
+					for (const a of r.a.acts) {
+						if (!a.jump || !UP_AT_IT.has(a.anim)) {
+							continue;
+						}
+						const d = a.t1 - a.t0;
+						const up = a.t0 + a.jump[0] * d;
+						const down = a.t0 + a.jump[1] * d;
+						if (n0 < down && n0 + easeMs > up && r.t0 >= (up + down) / 2) {
+							const len = Math.hypot(ux, uy) * k;
+							const step =
+								len <= NUDGE_STEP_MOST ? (1.5 * len * 1000) / NUDGE_FTPS : RAMP;
+							n0 = down + 1;
+							ease = Math.min(easeMs, Math.max(step, r.t0 - n0));
+						}
+					}
+					if (n1 - n0 < Math.max(400, 2 * ease)) {
+						continue;
+					}
+				}
 				// Back where he was by the time he gets a hand to the ball - a
 				// poke at it, a board: where it comes to is where he is.
 				const hand = r.a.acts.find(
@@ -27398,7 +27426,7 @@ class Director {
 				}
 				// Off him again as he goes on his way - and back over before
 				// that takes him into anybody he would have gone clear of.
-				const ramp = Math.min(easeMs, (n1 - n0) / 2);
+				const ramp = Math.min(ease, (n1 - n0) / 2);
 				for (let t = r.t1 + STEP; t < n1; t += 100) {
 					const u1 = Math.min(1, (n1 - t) / ramp);
 					const w = u1 * u1 * (3 - 2 * u1);
@@ -27449,7 +27477,7 @@ class Director {
 				}
 				// (Never into a man set in a screen or the post: he is a wall.)
 				{
-					const ramp = Math.min(r.par ? easeMs : RAMP, (n1 - n0) / 2);
+					const ramp = Math.min(r.par ? easeMs : RAMP, ease, (n1 - n0) / 2);
 					let wall = false;
 					for (let t = n0; t < n1 && !wall; t += 100) {
 						const u1 = Math.min(1, (t - n0) / ramp, (n1 - t) / ramp);
@@ -27475,7 +27503,7 @@ class Director {
 				// (Nor, all the while he is over, into a man of theirs going up
 				// with a shot in close - who comes on into where he steps.)
 				{
-					const ramp = Math.min(r.par ? easeMs : RAMP, (n1 - n0) / 2);
+					const ramp = Math.min(r.par ? easeMs : RAMP, ease, (n1 - n0) / 2);
 					let up = false;
 					for (let t = n0; t < n1 && !up; t += 100) {
 						const u1 = Math.min(1, (t - n0) / ramp, (n1 - t) / ramp);
@@ -27503,7 +27531,7 @@ class Director {
 					t1: n1,
 					dx: ux * k,
 					dy: uy * k,
-					ramp: easeMs,
+					ramp: ease,
 				});
 			}
 			for (const tr of tracks) {
