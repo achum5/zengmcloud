@@ -74,6 +74,56 @@ One GM. Every CPU team runs it; a bot running it is also the yardstick.
    age drop, rent at the deadline, clear room for a free-agent class, trade
    into a strong draft. Each is a way to find candidates; the goal decides.
 
+## What try 1 left that works
+
+Try 1's eyes were good; its prices were not. Kept as the base:
+
+- **Strength** (realisticFrontOffice/strength.ts): a roster in points a game
+  against an average team, from every player's full ratings, his share of
+  the ball, positions on the floor and lineup synergy, fit on the sim. On
+  fresh matchups it misses by 1.25 points a game where the game's own spread
+  misses by 2.16. On the owner's league (2023, half a season in) it tracks
+  each team's real margin better than the game's team rating (r 0.82 against
+  0.77).
+- **The outlook** (realisticFrontOffice/outlook.ts): every team's roster
+  projected ten seasons with the game's own development, picks turned into
+  the players they become, retention, injuries; each season's strength
+  turned into title chances by playing seasons out.
+
+## The goal, worked out
+
+Try 1 valued an asset by what it did to the team's own title chances. For a
+team far from a title that is almost nothing whatever the asset, so a bad
+team was indifferent between nearly everything - the root of the giveaways.
+A real GM of a bad team isn't: he knows that assets become a contender later,
+when his window opens, by drafting, developing and trading them for stars.
+
+So the goal is titles, but a team counts on doing what humans do with
+assets: turn them into players when it is ready to win. Concretely:
+
+1. **A market price for everything.** Every player and pick has a price on
+   one common scale: what the teams that want him most would give, each by
+   its own goal (the second-highest bid, as at an auction). Worked out for
+   the whole league at once, and again as rosters change.
+2. **A team's window.** For each coming season, the title chances the team
+   would have if it spent what it has to spare (assets that won't help then)
+   on the strength that season's market sells for that much. Its window is
+   the season where that pays most; the title chances it buys per unit of
+   price is its exchange rate.
+3. **What anything is worth to a team** is the more of: what it does for the
+   team's own title chances on the floor, and its market price at the team's
+   exchange rate. A pick is never worth nothing to a bad team - it is part of
+   the price of the star it will trade for when its window opens - and a
+   contender values the same pick by what it could buy now.
+4. **Every decision** - accept a trade, offer one, sign, re-sign, draft, cut,
+   extend - is the move that raises that worth most. Tanking, going all in
+   and standing pat are what that says, not rules.
+
+The title-window question ("am I within a player or two?") is the window
+step: the team plays its own seasons out with and without what it could buy
+(owner: "decided via the cpu almost being able to cheat and determine via
+test sims that they are able to run themselves").
+
 ## The yardsticks
 
 - **A. One GM in today's league.** A bot running the GM plays one team as a
