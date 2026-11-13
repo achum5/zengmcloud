@@ -163,13 +163,40 @@ hunting) and the owner's league:
 - **The Golden State trade.** A 37-12 contender sent its 31-year-old 66 to a
   rival for two rookies (vanilla had it "rebuilding").
 
-## Phases
+## The layers (owner, 2026-11-13: "go back to the basics and get the actual engine itself right ... very carefully")
 
-1. The strength scorer; the yardstick harness (A and C) on today's game.
-2. Players' ranges; the goal; two-way prices.
-3. Trades on the GM; run A and C.
-4. Free agency, re-signing, the draft, extensions on the GM; run A and C.
-5. The human moves; then B, then D.
+Built from the bottom up. A layer starts only once the one under it passes
+its checks, and a layer that fails is fixed at its own level - never patched
+from above. No rules that paper over a wrong value ("sign up to 13
+players"): if a team does something no GM would, the fault is in what it
+thinks things are worth, and that is where it is fixed.
+
+0. **The GM's eyes** - what it sees, deciding nothing: how good a roster is
+   (strength, done: tracks the owner's league's margins better than the
+   game's team rating), where each player is headed, every team's title
+   chances this season and the next ten, and each player's chance of
+   re-signing. Checks: said 30%, won about 30% (title chances against who
+   won, many test seasons); said 85% re-sign, about 85% did.
+1. **What anything is worth to a team** - title chances, a market price for
+   everything (what the keenest teams would pay, as a package), and never
+   below the best real offer elsewhere. Checks, each a permanent test: no
+   giveaways; picks never worthless; no salary dump for free; two decent
+   players not worth more than one much better one because their prices add
+   up; a contender doesn't sell its core to a rival; a team with an empty
+   roster wants cheap players; the owner's league's eight clear fleeces all
+   refused (done, DBA replay).
+2. **Decisions** - one engine for trades, free agency offers, re-signing, the
+   draft, cuts and extensions, every move scored by layer 1.
+3. **Whole leagues, every team the GM** - the league has to look like the
+   NBA, year after year. Checks: every team a full, legal roster every
+   preseason (the owner's all-CPU league had the 2035 Lakers at 3 players
+   with $145M of room and 220 free agents unsigned - under the old engine's
+   worth, an aging dynasty saw no use in anyone); dynasties age into
+   rebuilds, not collapses; trades, contracts and how long teams stay on top
+   like the NBA's.
+4. **The yardsticks** - the bench (a GM-run team against today's CPU; a bot
+   playing the humans' way against a league of GMs), the DBA replay, then
+   the owner plays it.
 
 Today's mode stays as it is, and the owner's league untouched, until the GM
 beats it on the yardsticks.
