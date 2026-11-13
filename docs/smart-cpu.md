@@ -173,3 +173,75 @@ hunting) and the owner's league:
 
 Today's mode stays as it is, and the owner's league untouched, until the GM
 beats it on the yardsticks.
+
+## The DBA replay
+
+Yardstick C, built (src/test/dba/). Every trade of the owner's league from
+2013 on, put to a valuation at the moment it was made:
+
+    DBA_LEAGUE=<league.json> DBA_DB=<league-slim.json> DBA_OUT=<dir> \
+      npx vitest --run --project basketball src/test/dba/dbaReplay.test.ts
+
+(about 8 minutes with both baselines, under a minute with vanilla alone;
+DBA_VALUATIONS picks them, also `vanilla@<difficultyTrade>`; DBA_FROM and
+DBA_TO the seasons.)
+It writes dba-replay.txt and a row per trade in dba-replay.json. A new CPU
+is a `Valuation` (valuations.ts: given the league set to the moment, how
+much a side gains) passed to `runDbaReplay` or added to the list.
+
+- **The moments** (timeline.ts, state.ts): rosters from every draft,
+  signing, trade, release and retirement event, contracts by when each was
+  signed, picks through every trade, injuries from injured/healed events,
+  the day of the season from the injury events' steady rate, vanilla's
+  strategies rebuilt review by review from 2000. Checked against the
+  export: all 1,310 traded assets 2013-23 where the rebuild had them, every
+  player's team now right (775/775), every pick's owner at the draft right
+  (600/600), the day within 3 games of the traded players' minutes, all 27
+  CPU strategies now right.
+- **What it can't get right:** ratings are one row a season, with in-season
+  progression folded in, so an in-season trade sees where players ended
+  the season; a box score's PER is the season's; a team's record that day is
+  its final record pro-rated; which prospects were in each future draft
+  class back then isn't kept (their draft-year ratings stand in; seven
+  classes at once fits vanilla's answers best) - picks are the weak spot;
+  difficultyTrade is taken as 3.5 throughout, and God Mode was on at some
+  point.
+- **Outcomes:** team strength is strength.ts rosterPoints (points a game):
+  the roster just before and after; at the start of each of the next three
+  seasons, the roster it had against it with the trade undone (a pick counts
+  as the player drafted with it; later trades not followed). "Humans clearly
+  won": the human up and the CPU down by 0.5 a game or more, now (the rest
+  of the season, or the coming one for an offseason trade) and later (the
+  two seasons after). A howler: a top-8 team 0.5 a game worse for a CPU
+  trade.
+
+Baselines (2026-11-13): 156 human-CPU trades, 119 CPU-CPU.
+
+|                                              | vanilla (3.5) | realistic (master) |
+| -------------------------------------------- | ------------- | ------------------ |
+| Human-CPU: the CPU says yes                  | 100 (64%)     | 13 (8%)            |
+| ... within 0.25 of yes / within 1            | 129 / 136     | 25 / 39            |
+| ... players only                             | 16/16         | 0/16               |
+| Humans clearly won (8): the CPU says yes     | 5             | 2                  |
+| CPU-CPU: the side that had to agree says yes | 83 (70%)      | 52                 |
+| ... within 0.25 of yes                       | 112 (94%)     | 82                 |
+| CPU-CPU: both sides yes                      | 2             | 2                  |
+| Howlers (7): the contender says yes          | 2             | 4                  |
+| Howlers: the trade still happens (\*)        | 4             | 0                  |
+
+(\*) Vanilla's own rule for CPU trades: the partner over 0, the team that
+started it within 15 either way (betweenAiTeams). The realistic mode's:
+both over 0.
+
+Trades are struck at vanilla's margin (a human asks what would make it
+work, vanilla adds until it is just over 0), so a small error in the rebuild
+flips a yes: of vanilla's 56 noes, 36 are within 1 of yes. About 20 are far
+off - most with picks several drafts out, priced from real classes that may
+not have been in the league yet; a few look forced (TOR giving the 2015 #1
+pick and four players for Michael Beasley is -111 by vanilla). At
+difficultyTrade 2 or lower vanilla says yes to 108-110 (in the season 46 of
+63, against 38), so the trade difficulty may not always have been 3.5.
+
+The realistic mode turns down almost everything the humans did - fair
+deals too - and as a contender would make more of the howlers than vanilla
+would (its contender says yes to 4 of 7).
