@@ -101,3 +101,126 @@ One GM. Every CPU team runs it; a bot running it is also the yardstick.
 
 Today's mode stays as it is, and the owner's league untouched, until the GM
 beats it on the yardsticks.
+
+## The bench
+
+Yardstick A's harness, `src/test/bench/` (2026-11-13). A random-players
+league with the owner's settings; one team (or a few) a human team run by a
+policy, every other team today's CPU; season after season through the
+game's own code. One league per process, never in the normal test run:
+
+```
+BENCH_RUN=1 BENCH_POLICY=autopilot BENCH_SEED=1 BENCH_SEASONS=10 \
+  BENCH_OUT=/tmp/bench npx vitest --run --project basketball \
+  src/test/bench/bench.test.ts
+BENCH_REPORT=/tmp/bench npx vitest --run --project basketball \
+  src/test/bench/bench.test.ts    # pools every run: /tmp/bench/report.md
+```
+
+- **Switches.** `BENCH_POLICY` autopilot or shark (`BENCH_SHARK` its options
+  as JSON); `BENCH_TIDS=7,17` the policy's teams (default one, 7 x seed mod
+  30), or `BENCH_TEAMS=3`; `BENCH_FO=1` realistic front offices in place of
+  the vanilla CPU (its human flows are offers: the game's default
+  re-signing offers stand, a signing day makes an offer at his ask, a short
+  roster is filled by the game's own signing; smoke-tested only);
+  `BENCH_HARD_CAP=0` no secondary hard cap; `BENCH_LEAGUE='{...}'` settings
+  over the owner's; `BENCH_LABEL` what the
+  report groups the run by; `BENCH_AUTOPLAY_SIGNING=1` a check on the bench
+  (below). Every random number comes from the seed.
+- **Settings** (runBench.ts `BENCH_SETTINGS`): the arena's (the owner's
+  gameplay settings) with difficultyTrade 3.5, difficultySigning 2.5, soft
+  cap, 82 games, deadline at 60%, COLA, 18-man rosters, players refuse to
+  negotiate; realistic front offices off. The policy's teams are, as the
+  humans in DBA are, under the secondary hard cap at the luxury tax line.
+- **Human, not CPU.** Only the policy's teams are user teams (userTids, not
+  spectator). The CPU prices them as humans (trade markup and the user-pick
+  penalty, which key on userTid - set to the acting team before each of its
+  moves), players' moods carry the signing difficulty for them, and they are
+  never in the CPU's trades with each other. The autopilot team too: its
+  rate is what the CPU's own decisions earn under the human rules.
+- **The policy** (policy.ts) is asked at the moments a human acts:
+  `preseason`; `inSeason` stops (days before the deadline, or every N days);
+  `draftPick` for each of its picks; `reSign` with its expiring players;
+  `freeAgencyDay` each day of free agency, before the CPU signs. It may read
+  anything and acts only through `ctx`: `tradeVerdict` (trade.propose's
+  answer without the trade - a human proposes and presses undo),
+  `proposeTrade` (trade.propose itself), `contractOptions` and `sign` (the
+  negotiation screen: his ask to this team by length, refused if he won't
+  negotiate; with realistic front offices an offer), `release`, and
+  `autopilot.*` (the fallbacks, for part of a moment). A policy that does
+  nothing costs nothing: its hooks are skipped.
+- **Fallbacks:** what the policy leaves is decided as the game decides it on
+  auto play, carried out through the human screens: signing days
+  (autoSign's odds and getBest's choice among players willing to negotiate,
+  at their ask to this team; in the season every 7 days, the days since
+  together), roster limits (checkRosterSizes: the lowest valued cut,
+  minimum players signed), re-signing (the AI's rule: draft picks, and
+  willing players the team is worse off without, the cheap ones half the
+  time not), the draft (runPicks's choice).
+- **Output** per run, `BENCH_OUT/bench-<label>-<seed>.json`: each season
+  every team's record, playoff rounds won and rating (as the season opens
+  and the playoffs begin) and the champion; for the policy's teams also
+  rating rank, payroll, free agents signed, its expiring players (willing,
+  re-signed), trades; every trade it made with both sides; seconds by phase
+  and the policy's own. `progress-*.log` as it goes.
+
+### Baselines (2026-11-13)
+
+8 leagues x 10 seasons a policy, seeds 1-8, the policy's team 7 x seed mod
+30 (7, 14, 21, 28, 5, 12, 19, 26); each seed's league starts the same for
+every policy. The DBA humans: 8 titles in 10 seasons among 3 teams, about
+27% a team-season.
+
+| policy | titles | rate (95%) | win% | rating rank | out of playoffs | s a season |
+|---|---|---|---|---|---|---|
+| autopilot | 1 / 80 | 1.3% (0.2-6.7) | 43.2 ± 1.7 | 20.3 | 51% | 31 |
+| shark | 0 / 80 | 0% (0-4.6) | 47.6 ± 1.6 | 20.6 | 53% | 66 (33 its own) |
+| check: auto play's signing, difficulty 0 (6 leagues) | 1 / 60 | 1.7% (0.3-8.9) | 54.2 ± 1.6 | 11.9 | 38% | 30 |
+| the CPU teams beside them | 3.4% a team | | 50.0 | | | |
+
+- **Autopilot** sinks under the human rules: about 1.3 of its players a
+  summer won't negotiate (0.05 for the check's), it signs 1.8 free agents a
+  season at their mood's price, and its win% runs 37-50 by season.
+- **The check** is above parity, not below: auto play's own signing at
+  difficulty 0 is fair to the user team and more (a user team's players
+  aren't pushed to test free agency as a CPU team's are). The bench costs
+  the team nothing; the human rules (difficulty, signing only who will
+  negotiate at his mood's price, the hard cap) cost it about 11 points of
+  win%.
+- **The shark** buys this season: 100 trades, 24.6-year-olds of 51/59 for
+  31.1-year-olds of 57/57, 21 picks given. 62, 62, 54% the first three
+  seasons, then 38-46%: no titles, 6 lost finals.
+- Titles alone need far more: 80 team-seasons can't tell 1% from 5%.
+  Win%, rating rank and rounds won say more per season.
+- **Speed:** an autopilot season about 24 s on a quiet machine (22 s with
+  no stops; in the season the stops cost about 0.2 s each once the bench
+  stopped saving after each run of days), 31 s with the machine shared;
+  the regular season is 75% of it. The shark's hunts (sims) double it.
+  Realistic front offices run (smoke-tested, 2 short seasons) at 4-5
+  minutes a 20-game season.
+
+### What made a fair bot hard
+
+- **The CPU doesn't sign as a human does.** freeAgents.autoSign signs any
+  free agent at his demand, mood unread. A human signs only players willing
+  to negotiate with him - a seeded draw, so asking again changes nothing -
+  at his mood's price, up to half again his demand; at signing difficulty
+  2.5 every good thing about a team counts a 3.5th and every bad thing 3.5
+  times. Auto play for a user team signs as the CPU does; the bench signs as
+  the human screens allow. `BENCH_AUTOPLAY_SIGNING=1` with difficulty 0 is
+  the check that the bench itself is fair: the same team signing as auto
+  play does should do as well as a CPU team (it does a little better).
+- **userTid, not userTids.** The trade markup, the user-pick penalty, the
+  negotiation screen and the mood's "user" view read the one userTid, as in
+  multi-team mode; the bench switches it to the team acting.
+- **A user team blocks the sim** if its roster is outside the limits
+  (checkRosterSizes), so the bench brings it within them before each run
+  of days, and again if a death stops the days short. Free agents can't be
+  signed from the playoffs to the re-signing phase; a roster short then is
+  filled by the game's own signing, counted as `forced`.
+- **Re-signing.** At the re-signing phase a user team's expiring players
+  are already free agents in negotiation, so the AI's "worse off without
+  him" test runs with him put back on the roster for the moment.
+- **Not modelled:** DBA's synced free agency board (waiver rolls); its
+  ratings shown to the humans to the tens (the bench's bot, as the CPU,
+  sees every rating); the COLA opt-out; owner firing (off).
