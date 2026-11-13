@@ -7,6 +7,7 @@ import {
 	franchiseValue,
 	teamStrengths,
 	type LeagueOutlook,
+	type LetGoDecisions,
 } from "../realisticFrontOffice/outlook.ts";
 
 // THE SMART CPU'S WORTH (docs/smart-cpu.md, "The goal, worked out").
@@ -70,22 +71,55 @@ export class SmartView {
 		return h;
 	}
 
-	// A team's franchise value with these holdings.
-	value(tid: number, h: Holdings) {
-		const key = `${tid}|${h.players
+	// Whom each team lets go when contracts run out, decided on what it holds
+	// and kept for every other roster of its (as try 1's market does), so a
+	// deal's roster decides afresh only on the players it brings in. Deciding
+	// afresh for every roster was 83% of a franchise value's time.
+	private letGo = new Map<number, LetGoDecisions>();
+
+	private keyOf(tid: number, h: Holdings) {
+		return `${tid}|${h.players
 			.map((p) => p.pid)
 			.sort((a, b) => a - b)
 			.join(",")}|${h.picks
 			.map((dp) => dp.dpid)
 			.sort((a, b) => a - b)
 			.join(",")}`;
+	}
+
+	// A team's franchise value with these holdings.
+	value(tid: number, h: Holdings) {
+		const key = this.keyOf(tid, h);
 		let v = this.values.get(key);
 		if (v === undefined) {
+			let known = this.letGo.get(tid);
+			const own = this.holdings.get(tid);
+			if (!known && own && key !== this.keyOf(tid, own)) {
+				// Its own roster first, to decide on.
+				this.value(tid, own);
+				known = this.letGo.get(tid);
+			}
+			let recording: LetGoDecisions | undefined;
+			if (!known && own) {
+				recording = { decisions: new Map(), record: true };
+			}
 			v = franchiseValue(
 				this.outlook,
-				teamStrengths(this.outlook, tid, h.players, h.picks),
+				teamStrengths(
+					this.outlook,
+					tid,
+					h.players,
+					h.picks,
+					undefined,
+					undefined,
+					known ?? recording,
+				),
 				tid,
 			);
+			if (recording) {
+				recording.record = false;
+				this.letGo.set(tid, recording);
+			}
 			this.values.set(key, v);
 		}
 		return v;
