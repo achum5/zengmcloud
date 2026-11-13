@@ -838,6 +838,22 @@ export const runBench = async (options: BenchOptions) => {
 		}
 	};
 
+	// game.play saves the league to the database after every call, as a
+	// human's "play until" does - about a third of a second each time, which
+	// made a stop a day cost twice the season. Auto play doesn't save there,
+	// and nor does the bench: the league lives in the cache, saved at the
+	// next phase change.
+	const withoutSaving = async <T>(f: () => Promise<T>) => {
+		const cache = idb.cache as { flush: typeof idb.cache.flush };
+		const flush = cache.flush;
+		cache.flush = async () => {};
+		try {
+			return await f();
+		} finally {
+			cache.flush = flush;
+		}
+	};
+
 	// Plays this many days of the regular season or playoffs. game.play stops
 	// short when a human team's roster is outside the limits (a death, say);
 	// it is fixed and the days played on.
@@ -849,7 +865,7 @@ export const runBench = async (options: BenchOptions) => {
 		while (left > 0) {
 			await fixRosters();
 			const before = await daysLeft();
-			await game.play(left, conditions);
+			await withoutSaving(() => game.play(left, conditions));
 			const played = before - (await daysLeft());
 			left -= played;
 			if (
@@ -1113,6 +1129,17 @@ export const runBench = async (options: BenchOptions) => {
 		}
 		lap("freeAgency");
 
+		// With realistic front offices the game decides the policy's offers
+		// itself, so its signings are read off the season's events.
+		if (realisticFreeAgencyOn()) {
+			const events = await idb.merged.events.getAll({ season: seasonNow });
+			for (const tid of tids) {
+				const tally = bench.tallies.get(tid)!;
+				const mine = events.filter((e) => e.tids?.includes(tid));
+				tally.signings = mine.filter((e) => e.type === "freeAgent").length;
+				tally.reSigned = mine.filter((e) => e.type === "reSigned").length;
+			}
+		}
 		const policyTeams: PolicyTeamSeason[] = tids.map((tid) => {
 			const t = teams[tid]!;
 			const tally = bench.tallies.get(tid)!;
