@@ -164,6 +164,34 @@ export const wilson = (x: number, n: number) => {
 	return [Math.max(0, center - half), Math.min(1, center + half)] as const;
 };
 
+// The title rate's 95% interval with whole leagues resampled: a league's
+// seasons are not independent (one team can win most of them).
+export const leagueBootstrap = (
+	perLeague: { titles: number; n: number }[],
+	draws = 2000,
+) => {
+	if (perLeague.length < 2) {
+		return [Number.NaN, Number.NaN] as const;
+	}
+	const random = makeSeededRandom(1);
+	const rates: number[] = [];
+	for (let d = 0; d < draws; d++) {
+		let titles = 0;
+		let n = 0;
+		for (let i = 0; i < perLeague.length; i++) {
+			const x = perLeague[Math.floor(random() * perLeague.length)]!;
+			titles += x.titles;
+			n += x.n;
+		}
+		rates.push(n > 0 ? titles / n : 0);
+	}
+	rates.sort((a, b) => a - b);
+	return [
+		rates[Math.floor(0.025 * draws)]!,
+		rates[Math.floor(0.975 * draws)]!,
+	] as const;
+};
+
 const mean = (xs: number[]) =>
 	xs.length === 0 ? Number.NaN : xs.reduce((a, x) => a + x, 0) / xs.length;
 const se = (xs: number[]) => {
@@ -188,10 +216,10 @@ export const benchReport = (runs: BenchRunFile[]) => {
 	const lines = [
 		"# Bench report",
 		"",
-		"Each row pools every season of every run of a policy: its team-seasons (one per policy team per season). Title rate with Wilson's 95% interval; parity is 1 in 30 (3.3%). Rounds: where its season ended.",
+		"Each row pools every season of every run of a policy: its team-seasons (one per policy team per season). Title rate with Wilson's 95% interval, and with whole leagues resampled (a league's seasons hang together); parity is 1 in 30 (3.3%). Rounds: where its season ended.",
 		"",
-		"| policy | leagues | team-seasons | titles | title rate (95% CI) | win% | rating rank start / playoffs | trades a season | s a season (policy) |",
-		"|---|---|---|---|---|---|---|---|---|",
+		"| policy | leagues | team-seasons | titles | title rate (95% CI) | leagues resampled | win% | rating rank start / playoffs | trades a season | s a season (policy) |",
+		"|---|---|---|---|---|---|---|---|---|---|",
 	];
 	const roundRows: string[] = [];
 	const cpuRows: string[] = [];
@@ -201,8 +229,14 @@ export const benchReport = (runs: BenchRunFile[]) => {
 		const titles = rows.filter((x) => x.title).length;
 		const [lo, hi] = wilson(titles, rows.length);
 		const winPct = rows.map((x) => x.won / Math.max(1, x.won + x.lost));
+		const [blo, bhi] = leagueBootstrap(
+			rs.map((r) => {
+				const xs = r.seasons.flatMap((s) => s.policy);
+				return { titles: xs.filter((x) => x.title).length, n: xs.length };
+			}),
+		);
 		lines.push(
-			`| ${key} | ${rs.length} (seeds ${rs.map((r) => r.seed).join(", ")}) | ${rows.length} | ${titles} | ${pct(titles / rows.length)} (${pct(lo)}-${pct(hi)}) | ${fmt(100 * mean(winPct))} ± ${fmt(100 * se(winPct))} | ${fmt(mean(rows.map((x) => x.rankStart)))} / ${fmt(mean(rows.map((x) => x.rankPlayoffs)))} | ${fmt(mean(rows.map((x) => x.trades)), 2)} | ${fmt(mean(seasons.map((s) => s.seconds)), 0)} (${fmt(mean(seasons.map((s) => s.policySeconds)), 0)}) |`,
+			`| ${key} | ${rs.length} (seeds ${rs.map((r) => r.seed).join(", ")}) | ${rows.length} | ${titles} | ${pct(titles / rows.length)} (${pct(lo)}-${pct(hi)}) | ${pct(blo)}-${pct(bhi)} | ${fmt(100 * mean(winPct))} ± ${fmt(100 * se(winPct))} | ${fmt(mean(rows.map((x) => x.rankStart)))} / ${fmt(mean(rows.map((x) => x.rankPlayoffs)))} | ${fmt(mean(rows.map((x) => x.trades)), 2)} | ${fmt(mean(seasons.map((s) => s.seconds)), 0)} (${fmt(mean(seasons.map((s) => s.policySeconds)), 0)}) |`,
 		);
 		const rounds = Math.max(4, ...seasons.map((s) => s.rounds));
 		const counts = Array.from({ length: rounds + 2 }, () => 0);
