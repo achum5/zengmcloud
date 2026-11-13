@@ -15,6 +15,7 @@ type LocalActions = {
 	setShowLeagueTopBar: (showLeagueTopBar: boolean) => void;
 	setShowDepthChart: (showDepthChart: boolean) => void;
 	setGamecastLayout: (gamecastLayout: boolean) => void;
+	setNewInterface: (newInterface: boolean) => void;
 	setSidebarOpen: (sidebarOpen: boolean) => void;
 	update: (obj: Partial<LocalStateUI>) => void;
 	updateGameAttributes: (
@@ -28,6 +29,7 @@ const defaultUnits: "metric" | "us" =
 
 const SHOW_DEPTH_CHART_KEY = "bbgmShowDepthChart";
 const GAMECAST_LAYOUT_KEY = "bbgmGamecastLayout";
+const NEW_INTERFACE_KEY = "bbgmNewInterface";
 
 type LocalStateWithActions = LocalStateUI & {
 	actions: LocalActions;
@@ -61,6 +63,11 @@ const initialShowDepthChart =
 const initialGamecastLayout =
 	safeLocalStorage.getItem(GAMECAST_LAYOUT_KEY) === "true";
 
+// The new interface (League Hub shell): off unless this device has turned it
+// on, while it's being built.
+const initialNewInterface =
+	safeLocalStorage.getItem(NEW_INTERFACE_KEY) === "true";
+
 const useLocalRaw = createWithEqualityFn<LocalStateWithActions>(
 	(set, get) => ({
 		alwaysShowCountry: false,
@@ -90,6 +97,8 @@ const useLocalRaw = createWithEqualityFn<LocalStateWithActions>(
 		college: false,
 		collegePolls: undefined,
 		socialFeed: false,
+		leagueLogo: "",
+		newInterface: initialNewInterface,
 		hideDisabledTeams: false,
 		homeCourtAdvantage: 1,
 		keyboardShortcuts: undefined,
@@ -214,6 +223,7 @@ const useLocalRaw = createWithEqualityFn<LocalStateWithActions>(
 					college: false,
 					collegePolls: undefined,
 					socialFeed: false,
+					leagueLogo: "",
 					hideDisabledTeams: false,
 					homeCourtAdvantage: 1,
 
@@ -272,6 +282,11 @@ const useLocalRaw = createWithEqualityFn<LocalStateWithActions>(
 			setGamecastLayout(gamecastLayout: boolean) {
 				set({ gamecastLayout });
 				safeLocalStorage.setItem(GAMECAST_LAYOUT_KEY, String(gamecastLayout));
+			},
+
+			setNewInterface(newInterface: boolean) {
+				set({ newInterface });
+				safeLocalStorage.setItem(NEW_INTERFACE_KEY, String(newInterface));
 			},
 
 			setSidebarOpen(sidebarOpen: boolean) {

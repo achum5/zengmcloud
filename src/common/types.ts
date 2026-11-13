@@ -1113,6 +1113,9 @@ export type GameAttributesLeague = {
 	// rather than find it switched on one day. Nothing is stored either way -
 	// the feed is derived - so turning it off simply stops rendering it.
 	socialFeed: boolean;
+	// The league's logo for the new interface's top bar: an image URL, or ""
+	// for the game's own logo.
+	leagueLogo: string;
 	hofFactor: number;
 	homeCourtAdvantage: number;
 	inflationAvg: number;
@@ -1745,6 +1748,9 @@ export type LocalStateUI = {
 	// broadcast being watched or offered, which blocks nothing of yours.
 	ownLiveSim: boolean;
 	socialFeed: boolean;
+	leagueLogo: string;
+	// The new interface (League Hub shell) is on for this device.
+	newInterface: boolean;
 	// True while connected to a multiplayer sync session - used to hide the
 	// multi-team switcher so it feels like single-player.
 	mpSyncActive: boolean;

@@ -45,6 +45,7 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 			scoresBar: local.getState().showLeagueTopBar ? "show" : ("hide" as const),
 			depthChart: local.getState().showDepthChart ? "show" : ("hide" as const),
 			gamecast: local.getState().gamecastLayout ? "show" : ("hide" as const),
+			newInterface: local.getState().newInterface ? "show" : ("hide" as const),
 			phaseChangeRedirects: props.phaseChangeRedirects,
 			realPlayerPhotos: props.realPlayerPhotos,
 			realTeamInfo: props.realTeamInfo,
@@ -105,6 +106,7 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 		localActions.setShowLeagueTopBar(state.scoresBar === "show");
 		localActions.setShowDepthChart(state.depthChart === "show");
 		localActions.setGamecastLayout(state.gamecast === "show");
+		localActions.setNewInterface(state.newInterface === "show");
 
 		const units = state.units === "default" ? undefined : state.units;
 		try {
@@ -169,7 +171,11 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 				id={`options-${name}`}
 				className="form-select"
 				onChange={handleChange(name)}
-				value={state[name as "scoresBar" | "depthChart" | "gamecast"]}
+				value={
+					state[
+						name as "scoresBar" | "depthChart" | "gamecast" | "newInterface"
+					]
+				}
 			>
 				<option value="show">{labels[0]}</option>
 				<option value="hide">{labels[1]}</option>
@@ -261,6 +267,10 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 							<option value="always">Always show full names and skills</option>
 						</select>
 					</div>
+					{showHide("newInterface", "Interface", "On this device", [
+						"New",
+						"Classic",
+					])}
 					{showHide(
 						"scoresBar",
 						"Scores Bar",

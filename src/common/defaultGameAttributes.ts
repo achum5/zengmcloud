@@ -663,6 +663,7 @@ export const defaultGameAttributes: GameAttributesLeagueWithHistory = {
 	realDraftRatings: undefined,
 	hideDisabledTeams: false,
 	socialFeed: false,
+	leagueLogo: "",
 	goatFormula: undefined,
 	goatSeasonFormula: undefined,
 	inflationAvg: 0,

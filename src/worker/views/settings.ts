@@ -122,6 +122,7 @@ const gameAttributeKeys = [
 	"pointsFormula",
 	"equalizeRegions",
 	"hideDisabledTeams",
+	"leagueLogo",
 	"hofFactor",
 	"inflationAvg",
 	"inflationMax",

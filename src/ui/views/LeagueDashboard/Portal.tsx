@@ -1,0 +1,513 @@
+import clsx from "clsx";
+import { useState } from "react";
+import { PHASE } from "../../../common/constants.ts";
+import { categories, types } from "../../../common/transactionInfo.ts";
+import type { View } from "../../../common/types.ts";
+import { NewsBlock } from "../../components/NewsBlock.tsx";
+import { NextPrevButtons } from "../../components/NextPrevButtons.tsx";
+import { SafeHtml } from "../../components/SafeHtml.tsx";
+import useTitleBar from "../../hooks/useTitleBar.tsx";
+import { helpers } from "../../util/helpers.ts";
+import { useLocal } from "../../util/local.ts";
+import Standings from "./Standings.tsx";
+
+// The new interface's league home, laid out as a hub: the inbox down the
+// left; the league's news, the next game, the latest scores and the next two
+// weeks in the middle; the schedule and the standings on the right. Built
+// from the game's usual tables, cards and links. One column on a phone,
+// what's next first.
+
+type Props = View<"leagueDashboard">;
+type TeamInfo = Props["teams"][number];
+
+const Logo = ({ t, size = 20 }: { t: TeamInfo | undefined; size?: number }) =>
+	t?.imgURLSmall || t?.imgURL ? (
+		<img
+			src={t.imgURLSmall ?? t.imgURL}
+			alt=""
+			width={size}
+			height={size}
+			style={{ objectFit: "contain" }}
+		/>
+	) : null;
+
+const rosterUrl = (t: TeamInfo | undefined, tid: number) =>
+	helpers.leagueUrl(["roster", `${t?.abbrev ?? tid}_${tid}`]);
+
+const WL = ({ pts, oppPts }: { pts: number; oppPts: number }) => (
+	<span className={pts > oppPts ? "text-success" : "text-danger"}>
+		{pts > oppPts ? "W" : "L"} {pts}-{oppPts}
+	</span>
+);
+
+const Messages = ({
+	hubMessages,
+	teamNews,
+	phase,
+}: Pick<Props, "hubMessages" | "teamNews"> & { phase: number }) => {
+	const [filter, setFilter] = useState<"all" | "tasks" | "unread">("all");
+
+	const tasks: { text: string; href: string }[] = [];
+	if (phase === PHASE.RESIGN_PLAYERS) {
+		tasks.push({
+			text: "Re-sign your players",
+			href: helpers.leagueUrl(["negotiation"]),
+		});
+	} else if (
+		phase === PHASE.DRAFT ||
+		phase === PHASE.FANTASY_DRAFT ||
+		phase === PHASE.EXPANSION_DRAFT
+	) {
+		tasks.push({ text: "The draft is on", href: helpers.leagueUrl(["draft"]) });
+	} else if (phase === PHASE.FREE_AGENCY) {
+		tasks.push({
+			text: "Free agency is open",
+			href: helpers.leagueUrl(["free_agents"]),
+		});
+	}
+	const unread = hubMessages.filter((m) => !m.read);
+	const shownMessages = filter === "all" ? hubMessages : unread;
+
+	return (
+		<>
+			<div className="d-flex align-items-center flex-wrap gap-2 mb-2">
+				<h2 className="mb-0 me-auto">Messages</h2>
+				<div className="btn-group btn-group-sm" role="group">
+					{(
+						[
+							["all", "All"],
+							["tasks", `Tasks (${tasks.length + unread.length})`],
+							["unread", `Unread (${unread.length})`],
+						] as const
+					).map(([key, label]) => (
+						<button
+							key={key}
+							type="button"
+							className={clsx(
+								"btn",
+								filter === key ? "btn-secondary" : "btn-light-bordered",
+							)}
+							onClick={() => setFilter(key)}
+						>
+							{label}
+						</button>
+					))}
+				</div>
+			</div>
+			<table className="table table-striped table-borderless table-sm mb-1">
+				<tbody>
+					{filter !== "unread"
+						? tasks.map((task) => (
+								<tr key={task.href} className="fw-bold">
+									<td>
+										<span className="badge bg-warning text-dark">To do</span>
+									</td>
+									<td className="text-wrap">
+										<a href={task.href}>{task.text}</a>
+									</td>
+								</tr>
+							))
+						: null}
+					{shownMessages.map((m) => (
+						<tr key={`m${m.mid}`} className={clsx(!m.read && "fw-bold")}>
+							<td>
+								<span className="badge bg-secondary">{m.from}</span>
+							</td>
+							<td className="text-wrap">
+								<a href={helpers.leagueUrl(["message", m.mid])}>
+									{m.subject || m.preview}
+								</a>
+							</td>
+						</tr>
+					))}
+					{filter === "all"
+						? teamNews.map((event) => {
+								const info = types[event.type];
+								return (
+									<tr key={`e${event.eid}`}>
+										<td>
+											{info ? (
+												<span
+													className={clsx(
+														"badge",
+														categories[info.category].className,
+													)}
+												>
+													{info.text}
+												</span>
+											) : null}
+										</td>
+										<td className="text-wrap">
+											<SafeHtml dirty={event.text} />
+										</td>
+									</tr>
+								);
+							})
+						: null}
+				</tbody>
+			</table>
+			{filter !== "all" && tasks.length + unread.length === 0 ? (
+				<p className="text-body-secondary">Nothing waiting.</p>
+			) : null}
+			<a href={helpers.leagueUrl(["inbox"])}>» Inbox</a>
+		</>
+	);
+};
+
+const TopStories = ({
+	events,
+	teams,
+	season,
+	userTid,
+}: Pick<Props, "events" | "teams"> & { season: number; userTid: number }) => {
+	const [eid, setEid] = useState<number | undefined>();
+	const eids = events.map((event) => event.eid);
+	const event = events.find((e) => e.eid === eid) ?? events[0];
+
+	return (
+		<div className="mb-3">
+			<div className="d-flex align-items-center mb-2">
+				<h2 className="mb-0 me-auto">League Headlines</h2>
+				{events.length > 1 ? (
+					<NextPrevButtons
+						currentItem={event?.eid}
+						items={eids}
+						onChange={setEid}
+					/>
+				) : null}
+			</div>
+			{event ? (
+				<div className="fs-5">
+					<NewsBlock
+						event={event}
+						season={season}
+						teams={teams}
+						userTid={userTid}
+					/>
+				</div>
+			) : (
+				<p className="text-body-secondary">No news yet.</p>
+			)}
+			<a href={helpers.leagueUrl(["news"])}>» News Feed</a>
+		</div>
+	);
+};
+
+const NextGame = ({
+	upcoming,
+	played,
+	nextDay,
+	teams,
+	rank,
+	conf,
+	won,
+	lost,
+}: Pick<
+	Props,
+	"upcoming" | "played" | "nextDay" | "teams" | "won" | "lost" | "conf"
+> & { rank: number | undefined }) => {
+	const next = upcoming[0];
+	const opp = next ? teams[next.opp] : undefined;
+	const form = played.slice(-5);
+
+	return (
+		<>
+			<h2>Next Game</h2>
+			{next && opp ? (
+				<div className="d-flex align-items-center gap-2 mb-2">
+					<a href={rosterUrl(opp, next.opp)}>
+						<Logo t={opp} size={48} />
+					</a>
+					<div>
+						<div className="fs-5">
+							{next.home ? "vs" : "@"}{" "}
+							<a href={rosterUrl(opp, next.opp)}>{opp.region}</a>
+						</div>
+						<div className="text-body-secondary">
+							Day {next.day}
+							{nextDay !== undefined && next.day > nextDay
+								? `, in ${next.day - nextDay} days`
+								: null}
+						</div>
+					</div>
+				</div>
+			) : (
+				<p className="text-body-secondary">No games scheduled.</p>
+			)}
+			<div>
+				Record: {won}-{lost}
+				{rank !== undefined
+					? `, ${helpers.ordinal(rank)} in ${conf?.name ?? "the league"}`
+					: null}
+			</div>
+			{form.length > 0 ? (
+				<div className="mb-1">
+					Last {form.length}:{" "}
+					{form.map((game) => (
+						<b
+							key={game.gid}
+							className={clsx(
+								"me-1",
+								game.pts > game.oppPts ? "text-success" : "text-danger",
+							)}
+							title={`${game.pts}-${game.oppPts}`}
+						>
+							{game.pts > game.oppPts ? "W" : "L"}
+						</b>
+					))}
+				</div>
+			) : null}
+			<a href={helpers.leagueUrl(["schedule"])}>» Schedule</a>
+		</>
+	);
+};
+
+const LatestScores = ({
+	latestScores,
+	teams,
+	userTid,
+}: Pick<Props, "latestScores" | "teams"> & { userTid: number }) => (
+	<>
+		<h2>Latest Scores</h2>
+		{latestScores.length > 0 ? (
+			<table className="table table-striped table-borderless table-sm mb-1">
+				<tbody>
+					{latestScores.map((game) => {
+						const homeWon = game.home.pts > game.away.pts;
+						return (
+							<tr
+								key={game.gid}
+								className={clsx(
+									(game.home.tid === userTid || game.away.tid === userTid) &&
+										"table-info",
+								)}
+							>
+								<td className={clsx(!homeWon && "fw-bold")}>
+									<Logo t={teams[game.away.tid]} size={16} />{" "}
+									{teams[game.away.tid]?.abbrev}
+								</td>
+								<td className={clsx("text-end", !homeWon && "fw-bold")}>
+									{game.away.pts}
+								</td>
+								<td className={clsx(homeWon && "fw-bold")}>
+									@ <Logo t={teams[game.home.tid]} size={16} />{" "}
+									{teams[game.home.tid]?.abbrev}
+								</td>
+								<td className={clsx("text-end", homeWon && "fw-bold")}>
+									<a href={helpers.leagueUrl(["game_log", "_", "_", game.gid])}>
+										{game.home.pts}
+									</a>
+								</td>
+							</tr>
+						);
+					})}
+				</tbody>
+			</table>
+		) : (
+			<p className="text-body-secondary">No games played yet.</p>
+		)}
+		<a href={helpers.leagueUrl(["daily_schedule"])}>» Daily Schedule</a>
+	</>
+);
+
+// The days around today, with games, results and the season's key dates. A
+// grid of two weeks, or a list of the busy days on a phone.
+const Calendar = ({
+	upcoming,
+	played,
+	keyDates,
+	nextDay,
+	teams,
+}: Pick<Props, "upcoming" | "played" | "keyDates" | "nextDay" | "teams">) => {
+	if (nextDay === undefined) {
+		return null;
+	}
+	const start = Math.max(1, nextDay - 3);
+	const days = Array.from({ length: 14 }, (_, j) => start + j);
+	const playedBy = new Map(played.map((game) => [game.day, game]));
+	const upcomingBy = new Map(upcoming.map((game) => [game.day, game]));
+	const keyBy = new Map(keyDates.map((k) => [k.day, k.type]));
+	const busy = days.filter(
+		(d) => playedBy.has(d) || upcomingBy.has(d) || keyBy.has(d),
+	);
+	if (busy.length === 0) {
+		return null;
+	}
+
+	const cell = (day: number) => {
+		const done = playedBy.get(day);
+		const next = upcomingBy.get(day);
+		const key = keyBy.get(day);
+		return (
+			<>
+				{done ? (
+					<div>
+						{done.home ? "" : "@"}
+						{teams[done.opp]?.abbrev} <WL pts={done.pts} oppPts={done.oppPts} />
+					</div>
+				) : null}
+				{next ? (
+					<div>
+						<Logo t={teams[next.opp]} size={16} /> {next.home ? "vs" : "@"}{" "}
+						{teams[next.opp]?.abbrev}
+					</div>
+				) : null}
+				{key ? (
+					<div className="text-body-secondary">
+						{key === "tradeDeadline" ? "Trade deadline" : "All-Star Game"}
+					</div>
+				) : null}
+			</>
+		);
+	};
+
+	return (
+		<div className="mb-3">
+			<h2>Calendar</h2>
+			<table className="table table-bordered table-sm ni-calendar d-none d-sm-table mb-1">
+				<tbody>
+					{[days.slice(0, 7), days.slice(7)].map((week, i) => (
+						<tr key={i}>
+							{week.map((day) => (
+								<td key={day} className={clsx(day === nextDay && "table-info")}>
+									<div className="text-body-secondary small">Day {day}</div>
+									{cell(day)}
+								</td>
+							))}
+						</tr>
+					))}
+				</tbody>
+			</table>
+			<table className="table table-striped table-borderless table-sm d-sm-none mb-1">
+				<tbody>
+					{busy.map((day) => (
+						<tr key={day} className={clsx(day === nextDay && "table-info")}>
+							<td className="text-body-secondary text-nowrap">Day {day}</td>
+							<td>{cell(day)}</td>
+						</tr>
+					))}
+				</tbody>
+			</table>
+		</div>
+	);
+};
+
+const Schedule = ({
+	upcoming,
+	played,
+	teams,
+}: Pick<Props, "upcoming" | "played" | "teams">) => {
+	const rows = [
+		...played.slice(-3).map((game) => ({ ...game, done: true })),
+		...upcoming.slice(0, 7).map((game) => ({
+			...game,
+			done: false,
+			gid: undefined,
+			pts: 0,
+			oppPts: 0,
+		})),
+	];
+	if (rows.length === 0) {
+		return null;
+	}
+	return (
+		<div className="mb-3">
+			<h2>Schedule</h2>
+			<table className="table table-striped table-borderless table-sm mb-1">
+				<tbody>
+					{rows.map((game) => (
+						<tr key={`${game.done}${game.day}`}>
+							<td className="text-body-secondary">Day {game.day}</td>
+							<td>
+								{game.home ? "vs" : "@"} <Logo t={teams[game.opp]} size={16} />{" "}
+								<a href={rosterUrl(teams[game.opp], game.opp)}>
+									{teams[game.opp]?.abbrev}
+								</a>
+							</td>
+							<td className="text-end">
+								{game.done && game.gid !== undefined ? (
+									<a href={helpers.leagueUrl(["game_log", "_", "_", game.gid])}>
+										<WL pts={game.pts} oppPts={game.oppPts} />
+									</a>
+								) : null}
+							</td>
+						</tr>
+					))}
+				</tbody>
+			</table>
+			<a href={helpers.leagueUrl(["schedule"])}>» Full Schedule</a>
+		</div>
+	);
+};
+
+const Portal = (props: Props) => {
+	useTitleBar({ title: `${props.region} ${props.name}` });
+	const { phase, season, userTid } = useLocal(["phase", "season", "userTid"]);
+	const rank = props.confOrAllTeams.find((t) => t.tid === userTid)?.rank;
+
+	return (
+		<div className="row">
+			<div className="col-xl-5 col-lg-12 order-1 order-xl-2 mb-3">
+				<TopStories
+					events={props.events}
+					teams={props.teams}
+					season={season}
+					userTid={userTid}
+				/>
+				<div className="row">
+					<div className="col-sm-6 mb-3">
+						<NextGame
+							upcoming={props.upcoming}
+							played={props.played}
+							nextDay={props.nextDay}
+							teams={props.teams}
+							rank={rank}
+							conf={props.conf}
+							won={props.won}
+							lost={props.lost}
+						/>
+					</div>
+					<div className="col-sm-6 mb-3">
+						<LatestScores
+							latestScores={props.latestScores}
+							teams={props.teams}
+							userTid={userTid}
+						/>
+					</div>
+				</div>
+				<Calendar
+					upcoming={props.upcoming}
+					played={props.played}
+					keyDates={props.keyDates}
+					nextDay={props.nextDay}
+					teams={props.teams}
+				/>
+			</div>
+			<div className="col-xl-4 col-lg-6 order-2 order-xl-1 mb-3">
+				<Messages
+					hubMessages={props.hubMessages}
+					teamNews={props.teamNews}
+					phase={phase}
+				/>
+			</div>
+			<div className="col-xl-3 col-lg-6 order-3 mb-3">
+				<Schedule
+					upcoming={props.upcoming}
+					played={props.played}
+					teams={props.teams}
+				/>
+				<Standings
+					confOrAllTeams={props.confOrAllTeams}
+					maxPlayoffSeed={props.maxPlayoffSeed}
+					maxPlayoffSeedNoPlayIn={props.maxPlayoffSeedNoPlayIn}
+					playoffsByConf={props.playoffsByConf}
+					pointsFormula={props.pointsFormula}
+					usePts={props.usePts}
+					userTid={userTid}
+				/>
+			</div>
+		</div>
+	);
+};
+
+export default Portal;

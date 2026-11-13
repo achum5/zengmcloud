@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 301,
+		date: "2026-11-13",
+		text: "A new look is on the way, one page at a time, with the same menus and buttons as now. Turn it on under Global Settings > Interface > New. First up is the league's home page: your messages and team news, the league's top stories, your next game and form, the latest scores, a two-week calendar, your schedule and the standings. Commissioners can set the league's logo under League Settings > UI, and it shows in the top bar.",
+	},
+	{
 		n: 300,
 		date: "2026-11-12",
 		text: "3D: players' legs hang loose in the air instead of pointing straight down like a pencil. Knees soften and heels come up on jump shots, dunks, rebounds, blocks and contests, and a jump shooter lands with a deeper bend.",

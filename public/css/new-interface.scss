@@ -1,0 +1,22 @@
+// The new interface (Global Settings > Interface > New): the league's logo in
+// the top bar, and the league home's calendar. Everything else is the game's
+// usual styling.
+
+.ni-brand-logo {
+	width: 28px;
+	height: 28px;
+	margin: -6px 0;
+	object-fit: contain;
+	vertical-align: middle;
+}
+
+.ni-calendar {
+	table-layout: fixed;
+}
+.ni-calendar td {
+	width: 14.28%;
+	white-space: normal;
+	height: 4.5rem;
+	vertical-align: top;
+	font-size: 0.85rem;
+}

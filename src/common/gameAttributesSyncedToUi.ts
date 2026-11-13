@@ -16,6 +16,7 @@ export const gameAttributesSyncedToUi = [
 	"hardCapUseLuxuryTax",
 	"hideDisabledTeams",
 	"socialFeed",
+	"leagueLogo",
 	"hideRatingsOnesDigit",
 	"hideRatingsOnesDigitExceptProspects",
 	"hideTeamRatings",

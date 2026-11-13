@@ -10,6 +10,7 @@ import Headlines from "./Headlines.tsx";
 import { useLocal } from "../../util/local.ts";
 import { SocialEmbed } from "../../components/SocialEmbed.tsx";
 import { ConfLogoAndName } from "../../components/ConfLogoAndName.tsx";
+import Portal from "./Portal.tsx";
 
 const LeagueDashboard = ({
 	att,
@@ -281,4 +282,10 @@ const LeagueDashboard = ({
 	);
 };
 
-export default LeagueDashboard;
+// The new interface's home in place of the classic dashboard.
+const LeagueHome = (props: View<"leagueDashboard">) => {
+	const { newInterface } = useLocal(["newInterface"]);
+	return newInterface ? <Portal {...props} /> : <LeagueDashboard {...props} />;
+};
+
+export default LeagueHome;

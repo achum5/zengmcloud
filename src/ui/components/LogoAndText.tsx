@@ -3,6 +3,7 @@ import { GAME_NAME } from "../../common/constants.ts";
 import LogoSpinner from "./LogoSpinner.tsx";
 import { useLocal } from "../util/local.ts";
 import clsx from "clsx";
+import { DEFAULT_LEAGUE_LOGO } from "./NewInterface/leagueLogo.ts";
 
 type Props = {
 	gold?: boolean;
@@ -11,8 +12,16 @@ type Props = {
 };
 const LogoAndText = memo(({ gold, inLeague, updating }: Props) => {
 	// workerBusy covers game sims, phase changes, the draft, auto play, etc.
-	const { workerBusy } = useLocal(["workerBusy"]);
+	const { leagueLogo, newInterface, workerBusy } = useLocal([
+		"leagueLogo",
+		"newInterface",
+		"workerBusy",
+	]);
 	const spinning = updating || workerBusy;
+
+	// The new interface shows the league's own logo here, and the spinning ball
+	// only while the game is working.
+	const showLeagueLogo = inLeague && newInterface && !spinning;
 
 	return (
 		<a
@@ -23,7 +32,17 @@ const LogoAndText = memo(({ gold, inLeague, updating }: Props) => {
 			}
 			href="/"
 		>
-			<LogoSpinner gold={gold} size={18} spinning={spinning} />
+			{showLeagueLogo ? (
+				<img
+					className="ni-brand-logo"
+					src={leagueLogo || DEFAULT_LEAGUE_LOGO}
+					alt=""
+					width={28}
+					height={28}
+				/>
+			) : (
+				<LogoSpinner gold={gold} size={18} spinning={spinning} />
+			)}
 
 			<span
 				className={clsx(

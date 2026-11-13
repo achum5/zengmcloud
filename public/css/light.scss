@@ -130,6 +130,7 @@ $flag-icon-css-path: "/img/flags";
 @import "rotation";
 @import "depth-chart";
 @import "social";
+@import "new-interface";
 
 @each $color, $value in $table-variants {
 	.table-#{$color} {

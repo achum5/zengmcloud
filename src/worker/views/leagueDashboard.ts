@@ -9,6 +9,7 @@ import { g, helpers } from "../util/index.ts";
 import type { Player } from "../../common/types.ts";
 import { defineView, type ViewArgs } from "../util/defineView.ts";
 import { processEvents } from "./news.ts";
+import { updateHub } from "./leagueDashboardHub.ts";
 import { getMaxPlayoffSeed } from "./standings.ts";
 import addFirstNameShort from "../util/addFirstNameShort.ts";
 import { bySport } from "../../common/sportFunctions.ts";
@@ -677,7 +678,14 @@ export default defineView({
 		// A fourth source is where Object.assign's typed overloads run out and
 		// the whole view becomes any, which is why it is its own part.
 		const part4 = Object.assign({}, await updateSocial(args));
+		// The new interface's home, on top of the dashboard.
+		const part5 = Object.assign({}, await updateHub(args));
 
-		return Object.assign({}, Object.assign({}, part1, part2, part3), part4);
+		return Object.assign(
+			{},
+			Object.assign({}, part1, part2, part3),
+			part4,
+			part5,
+		);
 	},
 });

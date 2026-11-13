@@ -55,14 +55,21 @@ const KeepPreviousRenderWhileUpdating = memo(
 export const Controller = () => {
 	const state = useViewData();
 
-	const { lid, mpSyncActive, mpSyncReconnecting, popup, showNagModal } =
-		useLocal([
-			"lid",
-			"mpSyncActive",
-			"mpSyncReconnecting",
-			"popup",
-			"showNagModal",
-		]);
+	const {
+		lid,
+		mpSyncActive,
+		mpSyncReconnecting,
+		newInterface,
+		popup,
+		showNagModal,
+	} = useLocal([
+		"lid",
+		"mpSyncActive",
+		"mpSyncReconnecting",
+		"newInterface",
+		"popup",
+		"showNagModal",
+	]);
 
 	// If this league was left connected to a shared-league sync room, reconnect
 	// after a refresh (which tears down the worker's in-memory sync engine). Also
@@ -146,6 +153,13 @@ export const Controller = () => {
 
 	// Optimistically use idLoading before it renders, for UI responsiveness in the sidebar
 	const sidebarPageID = idLoading ?? idLoaded;
+
+	// The new interface (Global Settings > Interface): the same navigation,
+	// with its own look for the pages it has redone.
+	const ni = newInterface && inLeague && lid !== undefined;
+	useEffect(() => {
+		document.body.classList.toggle("ni", ni);
+	}, [ni]);
 
 	const pathname =
 		__SPORT === "baseball" ? document.location.pathname : undefined;

@@ -22,6 +22,7 @@ import type { State } from "./SettingsForm.tsx";
 import RowsEditor from "./RowsEditor.tsx";
 import PlayerBioInfo2 from "./PlayerBioInfo.tsx";
 import SaveReplaysTeams from "./SaveReplaysTeams.tsx";
+import LeagueLogoField from "./LeagueLogoField.tsx";
 import type {
 	GameAttributesLeague,
 	RealDraftRatings,
@@ -3470,6 +3471,21 @@ export const settings: Setting[] = (
 			type: "bool",
 			descriptionLong:
 				"Adds a social media style timeline of the league, written by fictional media, fan and player accounts that react to what happens as you sim. Every account is editable, and nothing is stored - the feed is regenerated from your league's own games and transactions.",
+		},
+		{
+			category: "UI",
+			key: "leagueLogo",
+			name: "League Logo",
+			type: "custom",
+			description: "Shown in the new interface. Blank for the game's logo.",
+			customForm: ({ disabled, handleChangeRaw, id, state }) => (
+				<LeagueLogoField
+					disabled={disabled}
+					id={id}
+					onChange={handleChangeRaw("leagueLogo")}
+					value={state.leagueLogo}
+				/>
+			),
 		},
 		{
 			category: "UI",

@@ -1049,6 +1049,9 @@ export const generateJsonSchema = (sport: Sport | "test") => {
 					hideDisabledTeams: {
 						type: "boolean",
 					},
+					leagueLogo: {
+						type: "string",
+					},
 					hofFactor: {
 						type: "number",
 					},
