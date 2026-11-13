@@ -29,6 +29,8 @@ import {
 // league settings over the owner's. BENCH_FALLBACK_EVERY: days between auto
 // play's signing stops in the season (7). BENCH_LABEL: what the report
 // groups the run by (the policy by default), for a variant.
+// BENCH_AUTOPLAY_SIGNING=1: a check on the bench - the fallbacks sign as auto
+// play does (at his demand, whatever his mood), not through negotiation.
 
 const env: Record<string, string | undefined> =
 	(globalThis as any).process?.env ?? {};
@@ -43,6 +45,7 @@ export type BenchRunFile = {
 	tids: number[];
 	fo: boolean;
 	hardCap: boolean;
+	autoPlaySigning?: boolean;
 	settings: Record<string, unknown>;
 	numTeams: number;
 	seasons: SeasonRecord[];
@@ -101,6 +104,7 @@ test.runIf(env.BENCH_RUN === "1")(
 				hardCap,
 				league,
 				fallbackEvery: Number(env.BENCH_FALLBACK_EVERY ?? 7),
+				autoPlaySigning: env.BENCH_AUTOPLAY_SIGNING === "1",
 				log: logLine,
 			};
 			await createBenchLeague(options);
@@ -114,6 +118,7 @@ test.runIf(env.BENCH_RUN === "1")(
 				tids,
 				fo,
 				hardCap,
+				autoPlaySigning: options.autoPlaySigning,
 				settings: { ...BENCH_SETTINGS, ...league },
 				numTeams: g.get("numTeams"),
 				seasons: [],
@@ -127,8 +132,9 @@ test.runIf(env.BENCH_RUN === "1")(
 			};
 			const result = await runBench({
 				...options,
-				onSeason: async (record) => {
+				onSeason: async (record, trades) => {
 					file.seasons.push(record);
+					file.trades = trades;
 					await write();
 				},
 			});
@@ -237,7 +243,22 @@ export const benchReport = (runs: BenchRunFile[]) => {
 		"| policy | CPU team-seasons | CPU titles | a team-season | CPU win% |",
 		"|---|---|---|---|---|",
 		...cpuRows,
+		"",
+		"Each run: the policy's teams, and the champion season by season (* the policy's).",
+		"",
 	);
+	for (const r of [...runs].sort(
+		(a, b) =>
+			(a.label ?? a.policy).localeCompare(b.label ?? b.policy) ||
+			a.seed - b.seed,
+	)) {
+		const champions = r.seasons.map((s) =>
+			r.tids.includes(s.champion) ? `${s.champion}*` : String(s.champion),
+		);
+		lines.push(
+			`- ${r.label ?? r.policy}${r.fo ? " (FO)" : ""} seed ${r.seed}, tids ${r.tids.join(",")}: ${champions.join(" ")}${r.done ? "" : " (unfinished)"}; ${r.trades.length} trades`,
+		);
+	}
 	return lines.join("\n");
 };
 

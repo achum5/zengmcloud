@@ -113,11 +113,16 @@ export type BenchOptions = {
 	hardCap?: boolean;
 	// Days between the stops for the auto play signings in the regular season.
 	fallbackEvery?: number;
+	// A check on the bench, not a human: the fallbacks sign as auto play
+	// itself does - a free agent at his demand whatever his mood
+	// (freeAgents.autoSign), an expiring player at his demand
+	// (newPhaseResignPlayers) - in place of the negotiation screen.
+	autoPlaySigning?: boolean;
 	// League settings over BENCH_SETTINGS.
 	league?: Record<string, unknown>;
 	log?: (line: string) => void;
-	// Called with each season's record as it ends.
-	onSeason?: (record: SeasonRecord) => Promise<void>;
+	// Called with each season's record as it ends, and the trades so far.
+	onSeason?: (record: SeasonRecord, trades: TradeRecord[]) => Promise<void>;
 };
 
 export const createBenchLeague = async (options: BenchOptions) => {
@@ -586,6 +591,22 @@ export const makeBench = (options: BenchOptions) => {
 	// ---- Fallbacks: the game's auto play for this team, through the human
 	// flows.
 
+	// Auto play's own signing: at his demand, no negotiation.
+	const signAtDemand = async (tid: number, p: Player) => {
+		const resigning = g.get("phase") === PHASE.RESIGN_PLAYERS;
+		await player.sign(p, tid, getContractDemand(p), g.get("phase"));
+		await idb.cache.players.put(p);
+		if (resigning) {
+			await contractNegotiation.cancel(p.pid);
+			tallies.get(tid)!.reSigned += 1;
+		} else {
+			tallies.get(tid)!.signings += 1;
+		}
+		await team.rosterAutoSort(tid);
+		version += 1;
+		return undefined;
+	};
+
 	// One day of freeAgents.autoSign for this team: some days it sits out,
 	// otherwise it signs whom getBest picks - among the players who will
 	// negotiate with it, at what they ask it.
@@ -608,7 +629,9 @@ export const makeBench = (options: BenchOptions) => {
 			if (!p) {
 				return;
 			}
-			const error = await sign(tid, p.pid);
+			const error = options.autoPlaySigning
+				? await signAtDemand(tid, p)
+				: await sign(tid, p.pid);
 			if (error === undefined) {
 				return;
 			}
@@ -712,7 +735,11 @@ export const makeBench = (options: BenchOptions) => {
 					continue;
 				}
 			}
-			await sign(tid, p.pid);
+			if (options.autoPlaySigning) {
+				await signAtDemand(tid, p);
+			} else {
+				await sign(tid, p.pid);
+			}
 		}
 	};
 
@@ -1108,7 +1135,7 @@ export const runBench = async (options: BenchOptions) => {
 				`${seasonNow} ${policy.name} tid ${row.tid}: ${row.won}-${row.lost}, rank ${row.rankStart}/${row.rankPlayoffs}, rounds won ${row.roundsWon}${row.title ? " TITLE" : ""}, ${row.trades} trades, ${row.signings} signed, re-signed ${row.reSigned} of ${row.expiring} (${row.unwilling} unwilling), payroll ${Math.round(row.payroll / 100) / 10}M; champion ${champion} [${record.seconds} s, policy ${record.policySeconds} s] (${seasonNow - firstSeason + 1}/${options.seasons})`,
 			);
 		}
-		await options.onSeason?.(record);
+		await options.onSeason?.(record, bench.trades);
 	}
 
 	return { records, trades: bench.trades };
