@@ -109,6 +109,7 @@ type Setting = {
 		college?: boolean;
 		hasPlayers?: boolean;
 		newLeague?: boolean;
+		newInterface?: boolean;
 		realPlayers?: boolean;
 	}) => boolean | undefined;
 	customForm?: (props: {
@@ -3477,7 +3478,8 @@ export const settings: Setting[] = (
 			key: "leagueLogo",
 			name: "League Logo",
 			type: "custom",
-			description: "Shown in the new interface. Blank for the game's logo.",
+			description: "Blank for the game's logo.",
+			showOnlyIf: ({ newInterface }) => newInterface,
 			customForm: ({ disabled, handleChangeRaw, id, state }) => (
 				<LeagueLogoField
 					disabled={disabled}

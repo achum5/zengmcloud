@@ -316,6 +316,8 @@ const SettingsForm = ({
 	// College settings only make sense in a college league.
 	const collegeLeague = useLocal(["college"]).college;
 	const college = collegeLeague && !newLeague;
+	// (What only the new interface shows.)
+	const newInterface = useLocal(["newInterface"]).newInterface;
 
 	const {
 		godMode,
@@ -374,6 +376,7 @@ const SettingsForm = ({
 					college,
 					hasPlayers,
 					newLeague,
+					newInterface,
 					realPlayers,
 				}))
 		);
