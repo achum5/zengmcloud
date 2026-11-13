@@ -2146,6 +2146,14 @@ const OPEN_LATE = 300;
 const ALONE_FT = 9;
 // A hand up at the shot from no farther off than this (feet).
 const CONTEST_FT = 6;
+// His man going up with it and him nearer than the shot was to leave him
+// (by this much, feet): he holds his ground (see holdHisGround).
+const HOLD_BY = 0.4;
+// (His way off him begun no sooner than this long before the shot does,
+// ms: sooner, he was going somewhere.)
+const HOLD_FROM = 450;
+// (And his hand up at it this long before it goes, ms, at the latest.)
+const HELD_LATE = 90;
 // A closeout late enough to still be coming in at him this long after it
 // goes (ms) pulls up short of him instead, stopped by then...
 const CLOSE_QUIT_BY = 650;
@@ -2677,6 +2685,16 @@ const POST_FINISH_FROM = 9;
 const GIVE_WAY = 1.5;
 const GIVE_WAY_BEFORE = 400;
 const GIVE_WAY_MS = 300;
+// Up at somebody else's shot - not his own, from where the chart has it
+// (see shotSpots): a hand at it, off the floor.
+const UP_AT_IT = new Set<AnimName>([
+	"contest",
+	"contestTwo",
+	"contestFace",
+	"block",
+	"blockTwo",
+	"blockSwat",
+]);
 // Going up with a shot in close: off the glass or over the rim.
 const UP_IN_CLOSE = new Set<AnimName>([
 	"layup",
@@ -29084,16 +29102,6 @@ class Director {
 	// meanwhile, though, nor back into words with the official.)
 	private groundNudges() {
 		const BALL_TO_MS = 1000;
-		// (Up at somebody else's shot - not his own, from where the chart
-		// has it: see shotSpots.)
-		const UP_AT_IT = new Set<AnimName>([
-			"contest",
-			"contestTwo",
-			"contestFace",
-			"block",
-			"blockTwo",
-			"blockSwat",
-		]);
 		for (const tr of this.tracks.values()) {
 			if (!tr.nudges?.length) {
 				continue;
@@ -29707,6 +29715,137 @@ class Director {
 			} else if (!tr.arms.some((x) => x.t1 > t + 90 && x.t0 < t + 640)) {
 				this.gesture(g, "hand", t + 90, t + 640);
 				tr.arms.sort((a, b) => a.t0 - b.t0);
+			}
+		}
+	}
+
+	// HIS MAN GOING UP WITH IT, HE DOES NOT BACK OFF HIM. How much room a
+	// jumper has (see roomFor) is how far off him his man meets it - and a
+	// man out there already, or coming, meets it there. But one right up on
+	// him as he goes up, sent back off him to leave the shot that open,
+	// steps away from a man rising in front of him: nobody does. He holds
+	// his ground and gets his hand up from where he is. (Here, once the
+	// whole game is laid out - only his steps off the shooter are taken out,
+	// and whatever he does next begins from where he stood: nothing else of
+	// the play is touched.)
+	private holdHisGround() {
+		const tracks = [...this.tracks.values()].filter((tr) => tr.pid >= 0);
+		for (const tr of tracks) {
+			for (const a of tr.acts) {
+				if (!a.anim.startsWith("shoot")) {
+					continue;
+				}
+				const release = a.t0 + (a.t1 - a.t0) * JUMPER.release;
+				const P = this.posAt(tr.pid, release);
+				// (Straight up and down: drifting on in the air, the way he
+				// comes down is his - see meetClear - and nobody is left stood
+				// in it.)
+				if (dist(this.posAt(tr.pid, a.t0), this.posAt(tr.pid, a.t1)) > 1) {
+					continue;
+				}
+				for (const d of tracks) {
+					// (Only the man up at it: one going off somewhere else as it
+					// goes up is going there.)
+					if (
+						d.team === tr.team ||
+						!d.acts.some(
+							(x) =>
+								UP_AT_IT.has(x.anim) && x.t1 > a.t0 && x.t0 < release + 400,
+						)
+					) {
+						continue;
+					}
+					let held = false;
+					for (let k = 0; k < d.moves.length; k++) {
+						const m = d.moves[k]!;
+						if (m.t0 < a.t0 - HOLD_FROM || m.t0 >= release) {
+							continue;
+						}
+						const near = dist(m.from, P);
+						const far = dist(m.to, P);
+						// (Off him the way he was already off him - not round
+						// from behind him to get in front, which is a man getting
+						// back into the play.)
+						if (
+							near > CONTEST_FT ||
+							far < near + HOLD_BY ||
+							near < 0.05 ||
+							(m.from.x - P.x) * (m.to.x - P.x) +
+								(m.from.y - P.y) * (m.to.y - P.y) <
+								0.5 * near * far
+						) {
+							continue;
+						}
+						held = true;
+						const was = m.to;
+						const at = Math.max(CLOSE_TIGHTEST, near);
+						const to = clampPt({
+							x: P.x + ((m.from.x - P.x) / near) * at,
+							y: P.y + ((m.from.y - P.y) / near) * at,
+						});
+						m.to = to;
+						// And on from there, whatever he does next - at the pace
+						// he was to do it, for as long as that takes from here
+						// (till the next thing he has to be on time for).
+						const next = d.moves[k + 1];
+						if (next && dist(next.from, was) < 0.3) {
+							const before = dist(next.from, next.to);
+							next.from = { ...to };
+							const now = dist(next.from, next.to);
+							if (next.t0 >= release && before > 0.5 && now > before) {
+								const until = Math.min(
+									d.moves[k + 2]?.t0 ?? Infinity,
+									...d.acts.filter((x) => x.t0 > next.t0).map((x) => x.t0),
+								);
+								next.t1 = Math.max(
+									next.t1,
+									Math.min(
+										until,
+										next.t0 + ((next.t1 - next.t0) * now) / before,
+									),
+								);
+							}
+							if (next.v0 !== undefined) {
+								next.v0 = 0;
+							}
+						}
+						// (A step that now goes nowhere is no step: he pulls up
+						// where the one before it brought him.)
+						if (dist(m.from, m.to) < 0.05) {
+							const prev = d.moves[k - 1];
+							if (prev && prev.v1 !== undefined) {
+								prev.v1 = 0;
+							}
+							d.moves.splice(k, 1);
+							k -= 1;
+						}
+					}
+					// Right there on him, his hand is up at it as it goes - not
+					// after it has gone, as it was to be from a step off him:
+					// stood watching it, then up.
+					if (held) {
+						for (const x of d.acts) {
+							if (
+								!x.anim.startsWith("contest") ||
+								x.t0 <= release - HELD_LATE ||
+								x.t0 >= release + 800
+							) {
+								continue;
+							}
+							const before = Math.max(
+								-Infinity,
+								...d.acts
+									.filter((y) => y !== x && y.t1 <= x.t0)
+									.map((y) => y.t1),
+							);
+							const by = Math.min(x.t0 - (release - HELD_LATE), x.t0 - before);
+							if (by > 0) {
+								x.t0 -= by;
+								x.t1 -= by;
+							}
+						}
+					}
+				}
 			}
 		}
 	}
@@ -30522,6 +30661,7 @@ class Director {
 		this.nobodyToBox();
 		// (Nor, with those gone, does a man pull up dead where one was.)
 		this.flowOn();
+		this.holdHisGround();
 		// The lead-in to a play - the ball brought up, the set getting going
 		// - is run through fast, back at real speed for the last few seconds
 		// of it: whatever leads straight to the shot, the steal, the foul. A
