@@ -92,9 +92,46 @@ export const realistic = (): Valuation => {
 	};
 };
 
+// The smart CPU's GM (worker/core/smartCpu/worth.ts): its worth, and the
+// market - not below the best real offer elsewhere ("smart-nomarket": its
+// worth alone).
+export const smart =
+	(market = true): (() => Valuation) =>
+	() => {
+		let view: any;
+		return {
+			name: market ? "smart" : "smart-nomarket",
+			async prepare() {
+				g.setWithoutSavingToDB("realisticFrontOffices", true);
+				const { buildOutlook } =
+					await import("../../worker/core/realisticFrontOffice/outlook.ts");
+				const { SmartView } =
+					await import("../../worker/core/smartCpu/worth.ts");
+				const env: Record<string, string | undefined> =
+					(globalThis as any).process?.env ?? {};
+				const outlook = await buildOutlook({
+					iterations: Number(env.SMART_ITER ?? 500),
+				});
+				view = new SmartView(outlook, g.get("userTids"));
+			},
+			async evaluate(s) {
+				const v = await view.verdict(
+					s.tid,
+					s.partnerTid,
+					{ pids: s.pidsRemove, dpids: s.dpidsRemove },
+					{ pids: s.pidsAdd, dpids: s.dpidsAdd },
+					{ market },
+				);
+				return v.gain * 1000;
+			},
+		};
+	};
+
 export const valuations: Record<string, () => Valuation> = {
 	vanilla: () => vanilla(),
 	realistic,
+	smart: smart(true),
+	"smart-nomarket": smart(false),
 };
 
 // A valuation by name: one of `valuations`, or "vanilla@<difficultyTrade>".
