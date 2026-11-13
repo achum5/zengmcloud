@@ -6,8 +6,13 @@
   permission, given by the repo owner - do not open a feature branch, and do not
   ask which branch to push to. It overrides any per-session instruction naming a
   `claude/...` development branch.
-- Push only work that is actually finished: typecheck, lint and the test suite
-  clean (or no worse than the state of `master` before the change).
+- Push only work that is actually finished: typecheck and lint clean, and the
+  tests for what changed passing - the test files next to the changed code and
+  any test that imports it (`vitest related --run <changed files>`) - or no
+  worse than the state of `master` before the change. The full suite takes
+  over an hour; run it only for changes to shared engine code (game sim,
+  database, cloud sync, phase changes) or ones that touch many areas (the
+  owner, 2026-11-13).
 
 ## UI copy
 
