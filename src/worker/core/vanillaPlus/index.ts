@@ -1,5 +1,6 @@
 import { ValueChangeCalculator } from "../team/ValueChangeCalculator.ts";
-import { vanillaPlusOn } from "../realisticFrontOffice/isOn.ts";
+import { smartCpuOn, vanillaPlusOn } from "../realisticFrontOffice/isOn.ts";
+import { SmartValuer } from "../smartCpu/valuer.ts";
 import { ensureLanes, planFor } from "./lanes.ts";
 import { tweaksFor } from "./tweaks.ts";
 import { vanillaPlusSettings } from "./settings.ts";
@@ -16,6 +17,10 @@ import { g } from "../../util/index.ts";
 export const tradeValueCalculator = async (
 	opts: { quick?: boolean } = {},
 ): Promise<ValueChangeCalculator> => {
+	// The smart CPU: the GM's worth (smartCpu/valuer.ts).
+	if (smartCpuOn()) {
+		return new SmartValuer(opts);
+	}
 	if (!vanillaPlusOn()) {
 		return new ValueChangeCalculator(opts);
 	}

@@ -10,7 +10,8 @@ import { hashSavedTrade } from "../../../common/hashSavedTrade.ts";
 import { getTradeBlockedReason } from "../../../common/transactionPhases.ts";
 import { tradeValueCalculator } from "../vanillaPlus/index.ts";
 import type { TradeTeams } from "../../../common/types.ts";
-import { realisticTradesOn } from "../realisticFrontOffice/isOn.ts";
+import { realisticTradesOn, smartCpuOn } from "../realisticFrontOffice/isOn.ts";
+import { smartJudgeOffer, smartRejection } from "../smartCpu/humanTrades.ts";
 import {
 	judgeHumanOffer as realisticFrontOfficeJudgeOffer,
 	verdictMessage as realisticFrontOfficeVerdictMessage,
@@ -88,6 +89,25 @@ const propose = async (
 
 	if (s.warning && !forceTrade) {
 		return { accepted: false as const, message: null };
+	}
+
+	// The smart CPU judges a human's offer by the GM's worth, the market rule
+	// on (smartCpu/humanTrades.ts).
+	if (
+		smartCpuOn() &&
+		!forceTrade &&
+		!g.get("userTids").includes(teams[1].tid)
+	) {
+		const verdict = await smartJudgeOffer(
+			teams[1].tid,
+			teams[0].tid,
+			{ pids: teams[1].pids, dpids: teams[1].dpids },
+			{ pids: teams[0].pids, dpids: teams[0].dpids },
+		);
+		if (verdict.gain > 0) {
+			return accept(teams, tids);
+		}
+		return { accepted: false as const, message: smartRejection(verdict) };
 	}
 
 	// Realistic front offices judge a human's offer by their own valuation

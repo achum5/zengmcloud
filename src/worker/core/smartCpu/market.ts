@@ -1,0 +1,326 @@
+import { PHASE } from "../../../common/constants.ts";
+import type { DraftPick, Player, TradeTeams } from "../../../common/types.ts";
+import { idb } from "../../db/index.ts";
+import { g } from "../../util/index.ts";
+import getDaysLeftSchedule from "../season/getDaysLeftSchedule.ts";
+import isUntradable from "../trade/isUntradable.ts";
+import processTrade from "../trade/processTrade.ts";
+import summary from "../trade/summary.ts";
+import { contractOf } from "../realisticFrontOffice/contractOf.ts";
+import { currentOutlook, gamesPlayed } from "../realisticFrontOffice/market.ts";
+import { ensureRetention } from "../realisticFrontOffice/outlook.ts";
+import { viewFor } from "./signing.ts";
+import { smartSettings, type Holdings, type SmartView } from "./worth.ts";
+
+// THE GM'S MARKET (docs/smart-cpu.md, layer 2). At each market moment, every
+// CPU team's tradable players are priced by their owner's use and the bids
+// of the keenest teams. A player is a candidate sale when a keen CPU team
+// bids above both what he does for his own team and what the rest of the
+// market would pay, and could take him under the salary rules in an offer
+// of a few players. Each candidate is put to the best real offer from the
+// keen CPU teams (layer 1's bestRealOffer: each its best for the seller
+// while it still gains, legal under the trade rules), and the seller takes
+// it if it gains - the market rule kept by construction. The deals are made
+// best for the seller first, each team dealing at most once a moment, each
+// checked again as it stands before it is made.
+
+export const marketSettings = {
+	// Most deals a moment.
+	dealsPerMoment: 8,
+	// A buyer's best players by its own use, kept out of salary matching.
+	core: 3,
+	// In season, a moment about every this many games a team, and every day
+	// in the last few before the deadline.
+	gamesBetween: 7,
+	deadlineDays: 3,
+	// In free agency, a moment on these days left.
+	freeAgencyDays: [30, 20, 10],
+};
+
+// Where candidate sales fall away (for tests and the arena).
+export const marketStats = {
+	candidates: 0,
+	noOffer: 0,
+	sellerSaysNo: 0,
+	// Deals no longer good for both by the time their turn came.
+	changed: 0,
+	illegal: 0,
+};
+
+export type SmartDeal = {
+	seller: number;
+	buyer: number;
+	out: Holdings;
+	offer: Holdings;
+	sellerGain: number;
+	buyerGain: number;
+};
+
+const none: Holdings = { players: [], picks: [] };
+const one = (x: Player | DraftPick): Holdings =>
+	"pid" in x ? { players: [x], picks: [] } : { players: [], picks: [x] };
+const plus = (h: Holdings, x: Player | DraftPick): Holdings =>
+	"pid" in x
+		? { players: [...h.players, x], picks: h.picks }
+		: { players: h.players, picks: [...h.picks, x] };
+
+const teamsOf = (a: number, b: number, giveA: Holdings, giveB: Holdings) =>
+	[
+		{
+			tid: a,
+			pids: giveA.players.map((p) => p.pid),
+			dpids: giveA.picks.map((dp) => dp.dpid),
+			pidsExcluded: [],
+			dpidsExcluded: [],
+		},
+		{
+			tid: b,
+			pids: giveB.players.map((p) => p.pid),
+			dpids: giveB.picks.map((dp) => dp.dpid),
+			pidsExcluded: [],
+			dpidsExcluded: [],
+		},
+	] as TradeTeams;
+
+// The candidate sales at this moment, best surplus first: players some keen
+// CPU team would pay more for than their owner and the rest of the market.
+export const candidates = async (
+	view: SmartView,
+	cpu: ReadonlySet<number>,
+	dealt: ReadonlySet<number>,
+) => {
+	const keen = await view.keenest();
+	const found: {
+		seller: number;
+		buyer: number;
+		p: Player;
+		surplus: number;
+	}[] = [];
+	for (const seller of cpu) {
+		if (dealt.has(seller)) {
+			continue;
+		}
+		const held = view.heldNow(seller);
+		await ensureRetention(view.outlook, held.players, seller);
+		for (const p of held.players) {
+			if (isUntradable(p).untradable) {
+				continue;
+			}
+			const own = view.useOfNow(seller, one(p));
+			// Ranked by the keen teams' uses for him (what each would give),
+			// the salary rules left to `matchable` and the real offer: a legal
+			// bid costs a franchise value more for every keen team, every
+			// player (31 s of a moment).
+			const bids = keen
+				.filter((k) => k !== seller)
+				.map((k) => ({ k, bid: view.useOfNow(k, one(p)) }))
+				.sort((a, b) => b.bid - a.bid);
+			const top = bids.find((b) => cpu.has(b.k) && !dealt.has(b.k));
+			if (!top) {
+				continue;
+			}
+			const rest = bids.filter((b) => b.k !== top.k);
+			const price = rest[1]?.bid ?? rest[0]?.bid ?? -Infinity;
+			const surplus = top.bid - Math.max(own, price);
+			if (surplus > 0 && matchable(view, top.k, p)) {
+				found.push({ seller, buyer: top.k, p, surplus });
+			}
+		}
+	}
+	return found.sort((a, b) => b.surplus - a.surplus);
+};
+
+// Whether a buyer could take him under the salary rules in an offer of a few
+// players: with room for him, or with its dearest few players outside its
+// core matching his salary. A price counts any trade the buyer would still
+// gain from; a real offer is a few players (bestRealOffer), and expensive
+// players a contender can only match with its core were all of the first
+// two dozen candidates and none of the 26 deals (2026-11-13 scan).
+const matchable = (view: SmartView, buyer: number, p: Player) => {
+	const none = { players: [], picks: [] };
+	if (view.salariesWork(buyer, none, one(p))) {
+		return true;
+	}
+	const held = view.heldNow(buyer);
+	const uses = view.usesOf(buyer, held);
+	const byUse = [...held.players].sort(
+		(a, b) => uses.get(b.pid)! - uses.get(a.pid)! || a.pid - b.pid,
+	);
+	const others = byUse
+		.slice(marketSettings.core)
+		.filter((x) => !isUntradable(x).untradable)
+		.sort((a, b) => contractOf(b).amount - contractOf(a).amount)
+		.slice(0, smartSettings.offerSize);
+	return view.salariesWork(buyer, { players: others, picks: [] }, one(p));
+};
+
+// Every deal the market has at this moment, best for the seller first: each
+// candidate put to the best real offer from the keen CPU teams (layer 1:
+// each its best for the seller while it still gains, legal under the trade
+// rules - the market rule kept by construction), kept if the seller gains.
+// What makes a deal can't be told from the candidates cheaply (2026-11-13:
+// 28 deals among 374 candidates, spread from the 41st to the 313th), so all
+// are asked, once a moment.
+export const dealsNow = async (view: SmartView, cpu: ReadonlySet<number>) => {
+	await view.prime();
+	// Every player's chance of staying with each team that sets prices, so
+	// what anything is worth doesn't hang on what was priced before.
+	const keen = await view.keenest();
+	for (const tid of cpu) {
+		for (const k of [tid, ...keen]) {
+			await ensureRetention(view.outlook, view.heldNow(tid).players, k);
+		}
+	}
+	const deals: SmartDeal[] = [];
+	const all = await candidates(view, cpu, new Set());
+	marketStats.candidates += all.length;
+	for (const c of all) {
+		const out = one(c.p);
+		const real = await view.bestRealOffer(c.seller, out, -1);
+		if (!real) {
+			marketStats.noOffer += 1;
+			continue;
+		}
+		if (!(real.worth > 0)) {
+			marketStats.sellerSaysNo += 1;
+			continue;
+		}
+		deals.push({
+			seller: c.seller,
+			buyer: real.buyer,
+			out,
+			offer: real.offer,
+			sellerGain: real.worth,
+			buyerGain: Number.NaN,
+		});
+	}
+	return deals.sort((a, b) => b.sellerGain - a.sellerGain);
+};
+
+// Watchers of the deals the market makes (tests, the arena).
+export const smartDealWatchers: ((deal: SmartDeal) => void)[] = [];
+
+const standing = (view: SmartView, tid: number) => {
+	const o = view.outlook.teams.get(tid);
+	return o
+		? `${o.strength[0]! >= 0 ? "+" : ""}${o.strength[0]!.toFixed(1)} now, ${(100 * o.title[0]!).toFixed(1)}% title`
+		: "";
+};
+
+// A market moment: its deals, best for the seller first, each team dealing
+// at most once - each checked again as it stands just before it is made
+// (the deals before it moved prices a little).
+export const marketMoment = async () => {
+	const outlook = await currentOutlook();
+	const view = viewFor(outlook);
+	const cpu = new Set(
+		(await idb.cache.teams.getAll())
+			.filter((t) => !t.disabled && !view.humans.has(t.tid))
+			.map((t) => t.tid),
+	);
+	const dealt = new Set<number>();
+	const made: SmartDeal[] = [];
+	for (const found of await dealsNow(view, cpu)) {
+		if (made.length >= marketSettings.dealsPerMoment) {
+			break;
+		}
+		if (dealt.has(found.seller) || dealt.has(found.buyer)) {
+			continue;
+		}
+		const sellerGain = await view.dealWorth(
+			found.seller,
+			found.buyer,
+			found.out,
+			found.offer,
+		);
+		const buyerGain = await view.dealWorth(
+			found.buyer,
+			found.seller,
+			found.offer,
+			found.out,
+		);
+		if (!(sellerGain > 0) || !(buyerGain > 0)) {
+			marketStats.changed += 1;
+			continue;
+		}
+		const teams = teamsOf(found.seller, found.buyer, found.out, found.offer);
+		if ((await summary(teams)).warning) {
+			marketStats.illegal += 1;
+			continue;
+		}
+		const deal = { ...found, sellerGain, buyerGain };
+		await processTrade(
+			teamsOf(deal.seller, deal.buyer, deal.out, deal.offer),
+			undefined,
+			{
+				initiatorTid: deal.buyer,
+				tiers: [standing(view, deal.seller), standing(view, deal.buyer)],
+				dv:
+					Math.round(Math.min(deal.sellerGain, deal.buyerGain) * 10_000) /
+					10_000,
+				motivation: "smart market",
+			},
+		);
+		dealt.add(deal.seller);
+		dealt.add(deal.buyer);
+		made.push(deal);
+		for (const watch of smartDealWatchers) {
+			watch(deal);
+		}
+	}
+	return made;
+};
+
+// When the market meets: in season every few games a team and each of the
+// last days before the deadline, in free agency on a few of its days, and
+// as each offseason window opens (smartTradeWindow).
+let lastMoment: string | undefined;
+export const smartTradeDay = async () => {
+	const phase = g.get("phase");
+	let key: string | undefined;
+	if (phase === PHASE.REGULAR_SEASON) {
+		let daysLeft = Infinity;
+		try {
+			daysLeft = await getDaysLeftSchedule("tradeDeadline");
+		} catch {
+			// No deadline left this season.
+		}
+		const games = await gamesPlayed();
+		const every = Math.max(
+			1,
+			g.get("numActiveTeams") * marketSettings.gamesBetween,
+		);
+		key =
+			daysLeft < marketSettings.deadlineDays
+				? `deadline:${daysLeft}`
+				: `games:${Math.floor(games / every)}`;
+	} else if (
+		phase === PHASE.FREE_AGENCY &&
+		marketSettings.freeAgencyDays.includes(g.get("daysLeft"))
+	) {
+		key = `fa:${g.get("daysLeft")}`;
+	}
+	if (key === undefined) {
+		return [];
+	}
+	key = `${g.get("lid")}:${g.get("season")}:${phase}:${key}`;
+	if (key === lastMoment) {
+		return [];
+	}
+	lastMoment = key;
+	return marketMoment();
+};
+
+const WINDOW_PHASES: readonly number[] = [
+	PHASE.DRAFT,
+	PHASE.AFTER_DRAFT,
+	PHASE.RESIGN_PLAYERS,
+	PHASE.PRESEASON,
+];
+
+export const smartTradeWindow = async () => {
+	if (!WINDOW_PHASES.includes(g.get("phase"))) {
+		return [];
+	}
+	return marketMoment();
+};

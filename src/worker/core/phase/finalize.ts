@@ -21,9 +21,11 @@ import { settleBets } from "../sportsbook/bets.ts";
 import { autoPlayStopsAt, cleanupAutoPlay } from "../league/autoPlay.ts";
 import {
 	realisticTradesOn,
+	smartCpuOn,
 	vanillaPlusOn,
 } from "../realisticFrontOffice/isOn.ts";
 import { tradeWindow as realisticFrontOfficeTradeWindow } from "../realisticFrontOffice/market.ts";
+import { smartTradeWindow } from "../smartCpu/market.ts";
 import { tradeWindow as vanillaPlusTradeWindow } from "../vanillaPlus/market.ts";
 
 const save = async () => {
@@ -54,7 +56,9 @@ const finalize = async (
 
 	// Realistic front offices trade as some offseason phases open, before the
 	// save below.
-	if (realisticTradesOn()) {
+	if (smartCpuOn()) {
+		await smartTradeWindow();
+	} else if (realisticTradesOn()) {
 		await realisticFrontOfficeTradeWindow();
 	} else if (vanillaPlusOn()) {
 		await vanillaPlusTradeWindow();

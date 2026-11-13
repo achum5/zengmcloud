@@ -24,6 +24,9 @@ export const viewFor = (outlook: LeagueOutlook) => {
 	if (!view) {
 		view = new SmartView(outlook, humanTids());
 		views.set(outlook, view);
+	} else {
+		// Who is human now (a league's user teams can change).
+		view.humans = new Set(humanTids());
 	}
 	return view;
 };

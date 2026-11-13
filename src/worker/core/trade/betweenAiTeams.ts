@@ -10,8 +10,10 @@ import type { ValueChangeCalculator } from "../team/ValueChangeCalculator.ts";
 import { tradeValueCalculator } from "../vanillaPlus/index.ts";
 import {
 	realisticTradesOn,
+	smartCpuOn,
 	vanillaPlusOn,
 } from "../realisticFrontOffice/isOn.ts";
+import { smartTradeDay } from "../smartCpu/market.ts";
 import { tradeDay as vanillaPlusTradeDay } from "../vanillaPlus/market.ts";
 import { tradeDay as realisticFrontOfficeTradeDay } from "../realisticFrontOffice/market.ts";
 
@@ -151,6 +153,12 @@ const DEFAULT_NUM_TEAMS = 30;
 
 const betweenAiTeams = async () => {
 	if (g.get("forceHistoricalRosters")) {
+		return false;
+	}
+
+	// The smart CPU's market meets on its own schedule (smartCpu/market.ts).
+	if (smartCpuOn()) {
+		await smartTradeDay();
 		return false;
 	}
 

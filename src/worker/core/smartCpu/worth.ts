@@ -47,11 +47,17 @@ export const smartSettings = {
 	offerCandidates: 8,
 	// A roster over the limit cuts one of its lowest-valued players, the one
 	// whose release costs it least.
-	cutCandidates: 6,
+	// Two: each tried costs a franchise value, on every roster over the limit
+	// (in the preseason, nearly every deal's), and the two lowest valued
+	// hold the cut nearly always (try 1 cut the lowest outright).
+	cutCandidates: 2,
 };
 
 // Money a team would owe players it released, on top of what it owes now.
 export type Dead = readonly { amount: number; exp: number }[];
+
+const salaryOf = (players: readonly Player[]) =>
+	players.reduce((sum, p) => sum + contractOf(p).amount, 0);
 
 // A player as the GM keys him: who, and on what terms.
 const termsOf = (p: Player) => {
@@ -327,6 +333,42 @@ export class SmartView {
 		return uses;
 	}
 
+	// A team's payroll once games are played: its players under contract then
+	// and what it owes players it released.
+	payrollNow(tid: number, h = this.heldNow(tid)) {
+		const phase = g.get("phase");
+		const first = g.get("season") + (phase > PHASE.PLAYOFFS ? 1 : 0);
+		return (
+			salaryOf(h.players.filter((p) => contractOf(p).exp >= first)) +
+			(this.outlook.deadMoney.get(tid) ?? [])
+				.filter((d) => d.exp >= first)
+				.reduce((sum, d) => sum + d.amount, 0)
+		);
+	}
+
+	// Whether the trade rules let a team give `out` and take `inn`, on its
+	// salaries (trade/summary.ts: over the cap after it, a team may take in
+	// no more than softCapTradeSalaryMatch% of what it sends; under a hard
+	// cap, nothing that leaves it over and taking on money).
+	salariesWork(tid: number, out: Holdings, inn: Holdings) {
+		const capType = g.get("salaryCapType");
+		if (capType === "none") {
+			return true;
+		}
+		const sent = salaryOf(out.players);
+		const taken = salaryOf(inn.players);
+		const after = this.payrollNow(tid) + taken - sent;
+		if (after <= g.get("salaryCap")) {
+			return true;
+		}
+		if (capType === "hard") {
+			return taken <= sent;
+		}
+		return sent > 0
+			? Math.floor((100 * taken) / sent) <= g.get("softCapTradeSalaryMatch")
+			: taken === 0;
+	}
+
 	// What a team would really bid for a package it doesn't hold: its use
 	// for it, taken in as the trade rules allow. Over the cap after it, the
 	// team sends back salary to match (its least valuable players first, as
@@ -338,21 +380,13 @@ export class SmartView {
 		if (a.players.some((p) => h.players.some((x) => x.pid === p.pid))) {
 			return this.useOfNow(tid, a, h);
 		}
-		const salaryOf = (players: readonly Player[]) =>
-			players.reduce((sum, p) => sum + contractOf(p).amount, 0);
 		const incoming = salaryOf(a.players);
 		const capType = g.get("salaryCapType");
 		const none = { players: [], picks: [] };
 		if (incoming <= 0 || capType === "none") {
 			return this.useOfNow(tid, a, h);
 		}
-		const phase = g.get("phase");
-		const first = g.get("season") + (phase > PHASE.PLAYOFFS ? 1 : 0);
-		const payroll =
-			salaryOf(h.players.filter((p) => contractOf(p).exp >= first)) +
-			(this.outlook.deadMoney.get(tid) ?? [])
-				.filter((d) => d.exp >= first)
-				.reduce((sum, d) => sum + d.amount, 0);
+		const payroll = this.payrollNow(tid, h);
 		const cap = g.get("salaryCap");
 		if (payroll + incoming <= cap) {
 			return this.useOfNow(tid, a, h);
@@ -468,11 +502,22 @@ export class SmartView {
 	// it (not `seller`, not `not`): each its own players, as many as still
 	// leave it better off by its own worth, legal under the trade rules, and
 	// what that offer is worth to the seller.
-	async bestRealOffer(seller: number, out: Holdings, not: number) {
+	async bestRealOffer(
+		seller: number,
+		out: Holdings,
+		not: number,
+		// Teams that may not buy now (the market: those that dealt this moment).
+		skip: ReadonlySet<number> = new Set(),
+	) {
 		const s = smartSettings;
 		const buyers = [];
 		for (const tid of await this.keenest()) {
-			if (tid !== seller && tid !== not && !this.humans.has(tid)) {
+			if (
+				tid !== seller &&
+				tid !== not &&
+				!this.humans.has(tid) &&
+				!skip.has(tid)
+			) {
 				buyers.push({ tid, want: await this.useOf(tid, out) });
 			}
 		}

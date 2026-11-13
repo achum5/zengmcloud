@@ -16,6 +16,7 @@ import {
 } from "../realisticFrontOffice/freeAgency.ts";
 import { currentOutlook, loadTeam } from "../realisticFrontOffice/market.ts";
 import { marketSalaries } from "../realisticFrontOffice/payroll.ts";
+import isUntradable from "../trade/isUntradable.ts";
 import { prepareSignings } from "./signing.ts";
 
 // LAYER 2 (docs/smart-cpu.md): the GM's decisions, each a rule it keeps, on
@@ -300,5 +301,149 @@ test(
 		);
 		assert.isAtLeast(prospects.length, 30);
 		assert.deepStrictEqual(wrong, []);
+	},
+);
+
+test(
+	"human offers: a fleece is refused; less than the best real CPU offer is refused; more is taken",
+	{ timeout: 1_800_000 },
+	async () => {
+		const { smartJudgeOffer } = await import("./humanTrades.ts");
+		const { currentOutlook } =
+			await import("../realisticFrontOffice/market.ts");
+		const { viewFor } = await import("./signing.ts");
+		const human = tids[0]!;
+		const was = {
+			userTids: g.get("userTids"),
+			userTid: g.get("userTid"),
+			spectator: g.get("spectator"),
+		};
+		g.setWithoutSavingToDB("userTids", [human]);
+		g.setWithoutSavingToDB("userTid", human);
+		g.setWithoutSavingToDB("spectator", false);
+		onTestFinished(() => {
+			g.setWithoutSavingToDB("userTids", was.userTids);
+			g.setWithoutSavingToDB("userTid", was.userTid);
+			g.setWithoutSavingToDB("spectator", was.spectator);
+		});
+		const view = viewFor(await currentOutlook());
+		await view.prime();
+		const ids = (players: Player[]) => ({
+			pids: players.map((p) => p.pid),
+			dpids: [],
+		});
+		const humanRoster = [...(await rosterOf(human))]
+			.filter((p) => !isUntradable(p).untradable)
+			.sort((a, b) => a.value - b.value);
+		const wrong: string[] = [];
+		let lowballs = 0;
+		let fleeces = 0;
+		let taken = 0;
+		for (const seller of tids.filter((t) => t !== human)) {
+			const mine = [...(await rosterOf(seller))]
+				.filter((p) => !isUntradable(p).untradable)
+				.sort((a, b) => b.value - a.value)
+				.slice(0, 4);
+			for (const x of mine) {
+				const real = await view.bestRealOffer(
+					seller,
+					{ players: [x], picks: [] },
+					human,
+				);
+				// The human's worst player for him.
+				const fleece = await smartJudgeOffer(
+					seller,
+					human,
+					ids([x]),
+					ids([humanRoster[0]!]),
+				);
+				fleeces += 1;
+				note("humanFleece", label(x), fleece.gain);
+				if (fleece.gain > 0) {
+					wrong.push(`${label(x)} taken for ${label(humanRoster[0]!)}`);
+				}
+				if (!real || !(real.worth > 0)) {
+					continue;
+				}
+				// One of the human's players the seller would take alone for
+				// him, by its worth, against the real offer elsewhere.
+				for (const p of humanRoster) {
+					const v = await smartJudgeOffer(seller, human, ids([x]), ids([p]));
+					if (v.worth > 0 && v.worth < real.worth) {
+						lowballs += 1;
+						note("humanLowball", `${label(x)} for ${label(p)}`, v.gain);
+						if (v.gain > 0 || !v.betterElsewhere) {
+							wrong.push(`${label(x)} for ${label(p)}: ${v.gain}`);
+						}
+						break;
+					}
+					if (v.worth > real.worth) {
+						taken += 1;
+						note("humanTaken", `${label(x)} for ${label(p)}`, v.gain);
+						if (!(v.gain > 0)) {
+							wrong.push(`${label(x)} for ${label(p)} refused: ${v.gain}`);
+						}
+						break;
+					}
+				}
+			}
+		}
+		assert.deepStrictEqual(wrong, []);
+		assert.isAtLeast(fleeces, 50);
+		assert.isAtLeast(lowballs + taken, 3);
+	},
+);
+
+// Last: it trades.
+test(
+	"market: every deal a moment makes helps both sides, the market rule on; nobody deals twice; within the budget",
+	{ timeout: 1_800_000 },
+	async () => {
+		const { marketMoment } = await import("./market.ts");
+		const t0 = performance.now();
+		const made = await marketMoment();
+		const seconds = (performance.now() - t0) / 1000;
+		note("marketSeconds", `a moment, ${made.length} deals`, seconds);
+		const { marketStats } = await import("./market.ts");
+		for (const [k, v] of Object.entries(marketStats)) {
+			note("marketStats", k, v);
+		}
+		const seen = new Set<number>();
+		const bad: string[] = [];
+		for (const d of made) {
+			const names = (h: {
+				players: Player[];
+				picks: { season: unknown; round: number; originalTid: number }[];
+			}) =>
+				[
+					...h.players.map(label),
+					...h.picks.map(
+						(dp) =>
+							`${dp.season} round ${dp.round} pick (from ${dp.originalTid})`,
+					),
+				].join(" + ");
+			note(
+				"deals",
+				`${d.seller} sends ${names(d.out)} to ${d.buyer} for ${names(d.offer)}: seller ${d.sellerGain.toFixed(4)}, buyer ${d.buyerGain.toFixed(4)}`,
+				Math.min(d.sellerGain, d.buyerGain),
+			);
+			if (!(d.sellerGain > 0 && d.buyerGain > 0)) {
+				bad.push(`${d.seller}-${d.buyer}: ${d.sellerGain}, ${d.buyerGain}`);
+			}
+			for (const tid of [d.seller, d.buyer]) {
+				if (seen.has(tid)) {
+					bad.push(`team ${tid} dealt twice`);
+				}
+				seen.add(tid);
+			}
+			for (const p of d.out.players) {
+				if ((await idb.cache.players.get(p.pid))!.tid !== d.buyer) {
+					bad.push(`${label(p)} not with ${d.buyer}`);
+				}
+			}
+		}
+		assert.deepStrictEqual(bad, []);
+		assert.isAtLeast(made.length, 1);
+		assert.isBelow(seconds, 120);
 	},
 );

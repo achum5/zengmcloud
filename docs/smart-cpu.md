@@ -329,6 +329,42 @@ worth no more a year than a short one (apart from deals at about the
 minimum); over the limit, nobody among a team's eight best is cut; bargain
 options kept and dear ones declined (9 of 9).
 
+### The draft and the market, built (2026-11-13)
+
+**The draft**: each CPU team takes, of the class's 20 best by value, the
+prospect worth most to it on his pick's rookie deal by layer 1 - his use
+and at least his market price, so a bad team takes the best asset. Every
+team with the first pick took the class's clear best; 0.3 s a pick.
+
+**The market** (`smartCpu/market.ts`), as it came out of three attempts:
+
+- Candidates: every CPU team's tradable players that some keen CPU team
+  wants more than their owner and the rest of the market do, and could take
+  under the salary rules in an offer of a few players (with room, or with
+  its dearest players outside its three best matching his salary).
+- Each candidate is put to layer 1's best real offer (every keen buyer's
+  best for the seller while it still gains, legal under the trade rules),
+  and is a deal if the seller gains. All candidates are asked, once a
+  moment: what makes a deal can't be told from the candidate cheaply (28 of
+  374 made one, spread from the 41st best to the 313th).
+- The deals are made best for the seller first, each team once a moment,
+  each checked again as it stands before it is made.
+- Settled first: every player's chance of staying with each team that sets
+  prices. Left to be filled in as they were needed, a deal's worth hung on
+  what had been priced before it.
+
+What didn't work: buyers' offers built from their own assets one at a
+time, the seller's favourite first, filled with worthless ones; packages
+ranked by adding up what each asset is worth alone, which misses that four
+rotation players at once cost far more than each alone (a buyer's "gain" of
++0.01 was -0.28 in full).
+
+On the test league: 3 deals a moment (26 found; four no longer good once
+earlier ones were made, the rest sharing a buyer - the keen teams buy most
+of them), 72 s. A vet for youngsters to a contender, two like-for-like
+swaps. Volume and speed are layer 3's to judge across seasons; 72 s a
+moment is too slow for the owner's league as it stands.
+
 ## The DBA replay
 
 Yardstick C, built (src/test/dba/). Every trade of the owner's league from
