@@ -609,7 +609,7 @@ export const makeBench = (options: BenchOptions) => {
 
 	// One day of freeAgents.autoSign for this team: some days it sits out,
 	// otherwise it signs whom getBest picks - among the players who will
-	// negotiate with it, at what they ask it.
+	// negotiate with it (a human can't sign the rest), at what they ask it.
 	const signingDay = async (tid: number) => {
 		const t = await idb.cache.teams.get(tid);
 		if (!t) {
@@ -622,6 +622,15 @@ export const makeBench = (options: BenchOptions) => {
 		let pool = (
 			await idb.cache.players.indexGetAll("playersByTid", PLAYER.FREE_AGENT)
 		).sort((a, b) => b.value - a.value);
+		if (!options.autoPlaySigning && !realisticFreeAgencyOn()) {
+			const willing: Player[] = [];
+			for (const p of pool) {
+				if ((await player.moodInfo(p, tid)).willing) {
+					willing.push(p);
+				}
+			}
+			pool = willing;
+		}
 		const roster = await idb.cache.players.indexGetAll("playersByTid", tid);
 		const payroll = await team.getPayroll(tid);
 		for (let tries = 0; tries < 10 && pool.length > 0; tries++) {
