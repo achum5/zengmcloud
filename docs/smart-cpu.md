@@ -141,6 +141,28 @@ test sims that they are able to run themselves").
 - **D. The owner plays it** in a copy of DBA.
 - **Speed:** each season's time against today's, by phase.
 
+## Checks the GM must pass (found in today's modes)
+
+From the audit of the realistic mode (2026-11-13, 4 test leagues, exploit
+hunting) and the owner's league:
+
+- **Salary dumps.** A human can hand a CPU team a bad contract for nothing or
+  a second (a 25-year-old rated 55 owed 26% of the cap for eight years: 7 of
+  9 teams with room took him for a second). Contract length barely counted.
+- **Rentals.** Contenders paid two or three firsts and a young, nearly equal
+  player for a 34-year-old on an expiring deal.
+- **Clearing room.** A team gave a 25-year-old rated 75 away for nothing to
+  make room for a free agent no better.
+- **Flips.** No cooldown after a trade: a player went through five teams in
+  20 days; a team traded a player away and bought him back.
+- **Rosters.** Teams over the 18-man limit or down to 6-9 players, and under
+  the payroll floor with good players unsigned.
+- **Feeding the favorite.** With one team far ahead (CLE 92% to win the
+  2023 title), every other contender read "no shot" and sold rotation
+  players for prospects - to the favorite too.
+- **The Golden State trade.** A 37-12 contender sent its 31-year-old 66 to a
+  rival for two rookies (vanilla had it "rebuilding").
+
 ## Phases
 
 1. The strength scorer; the yardstick harness (A and C) on today's game.
