@@ -184,7 +184,32 @@ thinks things are worth, and that is where it is fixed.
    players not worth more than one much better one because their prices add
    up; a contender doesn't sell its core to a rival; a team with an empty
    roster wants cheap players; the owner's league's eight clear fleeces all
-   refused (done, DBA replay).
+   refused (done, DBA replay). And the other side, since a GM that refused
+   everything would pass all of those: the same years on more money are
+   worth less to every team; teams still sell players for offers both sides
+   take; and a team turns down an offer it would take alone when another
+   team would really give more.
+
+   Passed 2026-11-13 (smartCpu/worth.test.ts, an arena league one season
+   in), margins in titles: best player for nothing -1.76 to -0.11; a first
+   for nothing -0.056 to -0.002 (210 picks); a quarter of the cap for six
+   years taken for nothing or with a second -0.056 to -0.030 (a second adds
+   next to nothing); two lesser players for a star -1.54 to -0.05; a
+   contender's core to a rival for prospects -1.54 to -0.24; eight free
+   agents for a three-man roster +0.006 to +0.141; twice the money over one
+   year -0.0004, over three -0.0095 (later seasons' money is room that
+   buys players); 12 sales among each team's six best players (+0.0002 to
+   +0.050, every one through the market rule); 17 lowballs turned down
+   (-0.048 to -0.001).
+
+   What the numbers say about trading: a team far from a title values what
+   it holds at its market price, since its own use is smaller. Two such
+   teams never both gain from a swap (1 of 360 one-for-one swaps tried);
+   deals come from a team that wants a player more than the market, paying
+   at least the price the next keenest would. The six keenest teams set
+   prices close to the whole league's (the 29 other teams' second-highest
+   bid was higher for 31 of 240 players, by at most 0.008; the top bidder
+   was outside the six for 4).
 2. **Decisions** - one engine for trades, free agency offers, re-signing, the
    draft, cuts and extensions, every move scored by layer 1.
 3. **Whole leagues, every team the GM** - the league has to look like the

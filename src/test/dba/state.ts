@@ -75,6 +75,10 @@ export const loadLeague = async (file: string) => {
 		tid: 0,
 	} as any);
 	await league.loadGameAttributes();
+	// The replay rebuilds each moment in the cache alone (team seasons under
+	// made-up row ids among them); saving that to the database clashes with
+	// the export's own rows. Nothing here reads the database back.
+	idb.cache.stopAutoFlush();
 };
 
 const contractExp = (c: { start: number; amounts: number[] }) =>

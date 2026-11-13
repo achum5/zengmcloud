@@ -260,7 +260,10 @@ export class SmartView {
 				},
 			]);
 			const inn = { players: offer, picks: [] };
-			if (legal.warning || (await this.dealWorth(buyer, seller, inn, out)) <= 0) {
+			if (
+				legal.warning ||
+				(await this.dealWorth(buyer, seller, inn, out)) <= 0
+			) {
 				continue;
 			}
 			const worth = await this.dealWorth(seller, buyer, out, inn);
@@ -284,7 +287,11 @@ export class SmartView {
 		const o = await this.assetsOf(out);
 		const i = await this.assetsOf(inn);
 		const worth = await this.dealWorth(tid, partner, o, i);
-		if (!market || worth <= 0 || (o.players.length === 0 && o.picks.length === 0)) {
+		if (
+			!market ||
+			worth <= 0 ||
+			(o.players.length === 0 && o.picks.length === 0)
+		) {
 			return { worth, gain: worth };
 		}
 		const best = await this.bestRealOffer(tid, o, partner);
