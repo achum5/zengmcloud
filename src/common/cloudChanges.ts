@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 307,
+		date: "2026-11-13",
+		text: "New interface: draft picks walk out in the league home's headlines. A story about a pick now plays his walk to center court under the spotlight, in his new team's cap, right in the headline - no button to press.",
+	},
+	{
 		n: 306,
 		date: "2026-11-13",
 		text: "3D: every pick on Draft History has a play button now. Press it to watch the player walk out to center court under a spotlight, in a suit and his new team's cap, with his name and pick on screen. Players with a photo for a face don't have one yet.",

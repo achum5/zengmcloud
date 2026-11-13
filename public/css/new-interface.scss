@@ -10,7 +10,11 @@
 	vertical-align: middle;
 }
 
-// The headline's picture: the shape of the 3D court that plays there.
+// The headline's picture: the shape of the 3D court that plays there, which
+// is squarer where the block it is in is narrow (NARROW_W in broadcast.ts).
+.ni-stage-box {
+	container-type: inline-size;
+}
 .ni-stage {
 	display: flex;
 	align-items: center;
@@ -18,7 +22,7 @@
 	gap: 2rem;
 	aspect-ratio: 16 / 9;
 
-	@media (max-width: 575.98px) {
+	@container (max-width: 559.98px) {
 		aspect-ratio: 4 / 3;
 	}
 }

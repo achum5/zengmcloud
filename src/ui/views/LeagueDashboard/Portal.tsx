@@ -1,6 +1,7 @@
 import clsx from "clsx";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PHASE } from "../../../common/constants.ts";
+import type { HeadlineSceneSpec } from "../../../common/headlineScene.ts";
 import { categories, types } from "../../../common/transactionInfo.ts";
 import type { View } from "../../../common/types.ts";
 import { GameHighlightsButton } from "../../components/GameHighlightsButton.tsx";
@@ -12,6 +13,7 @@ import useTitleBar from "../../hooks/useTitleBar.tsx";
 import { helpers } from "../../util/helpers.ts";
 import { useLocal } from "../../util/local.ts";
 import { toWorker } from "../../util/toWorker.ts";
+import { HeadlineScene } from "../LiveGame/court3d/HeadlineScene.tsx";
 import HeadlinePlay from "./HeadlinePlay.tsx";
 import Leaders from "./Leaders.tsx";
 import Standings from "./Standings.tsx";
@@ -195,10 +197,12 @@ const StoryPoster = ({
 	const tids =
 		event.tid !== undefined ? [event.tid] : (event.tids ?? []).slice(0, 2);
 	return (
-		<div className="ni-stage bg-body-tertiary border rounded mb-3">
-			{tids.map((tid) => (
-				<Logo key={tid} t={teams[tid]} size={96} />
-			))}
+		<div className="ni-stage-box mb-3">
+			<div className="ni-stage bg-body-tertiary border rounded">
+				{tids.map((tid) => (
+					<Logo key={tid} t={teams[tid]} size={96} />
+				))}
+			</div>
 		</div>
 	);
 };
@@ -211,7 +215,8 @@ const PLAY_MOST_MS = 40000;
 
 // The league's top stories, one at a time, moving on by themselves, once
 // round - a story about a game whose replay is saved plays its moment on the
-// 3D court right there. Stepping through them by hand stops the moving on.
+// 3D court right there, and a draft pick walks out in his new team's cap.
+// Stepping through them by hand stops the moving on.
 const TopStories = ({
 	events,
 	teams,
@@ -293,6 +298,18 @@ const TopStories = ({
 	const showPlay =
 		play !== undefined && play.eid === shownEid && started === shownEid;
 
+	// A story with a scene of its own in the 3D building (see HeadlineScene):
+	// a draft pick's walk-out. Not one there turned out to be no scene of.
+	const scenePid = event?.type === "draft" ? event.pids?.[0] : undefined;
+	const [noScene, setNoScene] = useState<number[]>([]);
+	const scene: HeadlineSceneSpec | undefined =
+		__SPORT === "basketball" &&
+		scenePid !== undefined &&
+		shownEid !== undefined &&
+		!noScene.includes(shownEid)
+			? { type: "draftPick", pid: scenePid }
+			: undefined;
+
 	const eidsRef = useRef(eids);
 	eidsRef.current = eids;
 	// On to the next story - and once round them all, back on the first to
@@ -312,7 +329,8 @@ const TopStories = ({
 	}, []);
 	const [played, setPlayed] = useState<number | undefined>();
 	const waitsOnPlay =
-		play !== undefined && play.eid === shownEid && played !== shownEid;
+		((play !== undefined && play.eid === shownEid) || scene !== undefined) &&
+		played !== shownEid;
 	useEffect(() => {
 		if (!auto || !seen || gameSimInProgress || eids.length < 2) {
 			return;
@@ -362,6 +380,16 @@ const TopStories = ({
 					onDone={() => setPlayed(play.eid)}
 					onNone={() => setPlay(undefined)}
 				/>
+			) : event && scene ? (
+				<div className="mb-3">
+					<HeadlineScene
+						key={event.eid}
+						scene={scene}
+						playing={seen && !gameSimInProgress}
+						onEnd={() => setPlayed(event.eid)}
+						onNone={() => setNoScene((eids) => [...eids, event.eid])}
+					/>
+				</div>
 			) : event ? (
 				<StoryPoster event={event} teams={teams} />
 			) : null}
