@@ -1196,6 +1196,11 @@ export type GameAttributesLeague = {
 	// cooldowns, FA demands, AI trades) ran, so a day simmed in slices on
 	// several devices is never counted twice. See game/dailyCountdownGate.ts.
 	lastDailyCountdownDay?: { season: number; phase: number; day: number };
+	// Vanilla+ front offices' market (worker/core/vanillaPlus/market.ts): its
+	// day this season, and the day each team last traded, kept with the league
+	// so a reload - or the sim moving to a league mate's device - doesn't let a
+	// team trade again before its cooldown is up.
+	vplusMarket?: { season: number; day: number; traded: Record<number, number> };
 	rookieContractLengths: number[];
 	rookiesCanRefuse: boolean;
 	salaryCap: number;

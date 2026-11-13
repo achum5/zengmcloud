@@ -249,6 +249,24 @@ Three defects, each with a test (`vanillaPlus.test.ts`):
   rating alone. It counts the games played in that phase too
   (`lanes.ts factsOf`).
 
+Three more (2026-11-13, tests in `vanillaPlus.test.ts`):
+
+- **The summer's plan was set at the trade deadline.** Every phase after the
+  regular season was the offseason's review, so the first look after the
+  deadline set the lanes draft night and free agency trade by - from the
+  standings in February. Now the season's last look stands through the
+  playoffs, and the offseason's review comes once they're over
+  (`lanes.ts reviewOf`).
+- **Cooldowns were forgotten on a reload.** When each team last traded was
+  kept on the device: after a reload, or with the sim moved to a league
+  mate's device, a team could trade again the next day. The market's day and
+  each team's last trade are kept with the league now
+  (`gameAttributes.vplusMarket`, `market.ts`).
+- **In the playoffs, the bracket.** Trades in the playoffs (God Mode's
+  trades after the deadline) priced this season by the standings: a team
+  knocked out still had its playoffs to pay for. Now a team still in them
+  has them, one out has none (`calendar.ts stillIn`).
+
 ## How it's checked
 
 - **Test leagues** (arena): trades a season (NBA ~50-60 including small
