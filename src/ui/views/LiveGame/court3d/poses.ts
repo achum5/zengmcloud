@@ -2803,11 +2803,12 @@ const REACH_WIDE = { shF: 26, elF: 22, abF: 72 };
 
 export const ANIMS = {
 	// Never still: he settles down into his knees and back up, his
-	// shoulders swaying over his hips, his hands drifting - slowly.
+	// shoulders swaying over his hips, his hands drifting - easy, but at a
+	// player's tempo, not a sleepwalker's: round in about two seconds.
 	ready: {
 		kind: "loop",
 		n: 4,
-		fps: 1.25,
+		fps: 1.9,
 		pose: (i) => READY_SWAY[i]!,
 	},
 	// Live in his stance: hands working - one up into the lane, then the
@@ -2815,7 +2816,7 @@ export const ANIMS = {
 	stance: {
 		kind: "loop",
 		n: 4,
-		fps: 2,
+		fps: 2.8,
 		pose: (i) =>
 			[
 				P.stance,
@@ -2853,7 +2854,7 @@ export const ANIMS = {
 	guard: {
 		kind: "loop",
 		n: 2,
-		fps: 1.4,
+		fps: 2.2,
 		pose: (i) =>
 			pose({
 				hipN: 34,
@@ -3000,7 +3001,7 @@ export const ANIMS = {
 	hold: {
 		kind: "loop",
 		n: 2,
-		fps: 1.3,
+		fps: 1.6,
 		pose: (i) => (i ? { ...P.hold, kneeN: 44, kneeF: 46, lean: 15 } : P.hold),
 	},
 	// Boxing out: his back into the man behind him, sat down low and wide,
@@ -3138,7 +3139,7 @@ export const ANIMS = {
 	triple: {
 		kind: "loop",
 		n: 2,
-		fps: 1.6,
+		fps: 2.2,
 		pose: (i) =>
 			i ? { ...P.triple, kneeN: 50, kneeF: 52, lean: 18 } : P.triple,
 	},
@@ -3147,7 +3148,7 @@ export const ANIMS = {
 	tripleHigh: {
 		kind: "loop",
 		n: 2,
-		fps: 1.6,
+		fps: 2.2,
 		pose: (i) =>
 			pose({
 				...P.chin,
@@ -3164,7 +3165,7 @@ export const ANIMS = {
 	tripleSweep: {
 		kind: "loop",
 		n: 4,
-		fps: 1.3,
+		fps: 1.8,
 		pose: (i) =>
 			[
 				P.triple,
@@ -3297,10 +3298,12 @@ export const ANIMS = {
 	// to go, back on his heels, a dip of the shoulder - the other arm out,
 	// bent, between the ball and his man. (The dribbling arm rides the
 	// ball - see dribbleArm.)
+	// (Round about every second - a rock to every other bounce of his
+	// dribble, in time with it, not drifting through it at half its pace.)
 	dribbleIdle: {
 		kind: "loop",
 		n: 4,
-		fps: 2.2,
+		fps: 4.2,
 		pose: (i) =>
 			pose({
 				...P.sizeUp,
@@ -3338,7 +3341,7 @@ export const ANIMS = {
 	dribbleIdleRock: {
 		kind: "loop",
 		n: 4,
-		fps: 2.2,
+		fps: 4.2,
 		pose: (i) =>
 			pose({
 				...P.sizeUp,
@@ -3373,7 +3376,7 @@ export const ANIMS = {
 	dribbleIdleLow: {
 		kind: "loop",
 		n: 4,
-		fps: 2.2,
+		fps: 4.2,
 		pose: (i) =>
 			pose({
 				...P.sizeUp,
@@ -3944,7 +3947,7 @@ export const ANIMS = {
 	postUp: {
 		kind: "loop",
 		n: 2,
-		fps: 1.4,
+		fps: 1.9,
 		pose: (i) =>
 			pose({
 				hipN: 20,
@@ -3965,7 +3968,7 @@ export const ANIMS = {
 	postUpSeal: {
 		kind: "loop",
 		n: 2,
-		fps: 1.4,
+		fps: 1.9,
 		pose: (i) =>
 			pose({
 				hipN: 24,
@@ -3987,7 +3990,7 @@ export const ANIMS = {
 	postUpTarget: {
 		kind: "loop",
 		n: 2,
-		fps: 1.4,
+		fps: 1.9,
 		pose: (i) =>
 			pose({
 				hipN: 20,
@@ -11714,17 +11717,23 @@ export const moveAt = (
 // his legs swing that much less about how they stand with a foot down under
 // him (his arms, swinging free, about how they hang on average), and he is
 // up off the floor that much less - though a foot up still clears it.
+//
+// The beats are a player's: on the run never under about 2.7 steps a
+// second, however easy the pace (2.8 driving with it, 2.9 flat out);
+// backpedaling 2.6, sliding with his man 2.8; walking 1.8. Slower than
+// that, his legs turning over at a jog as if wading, the game looks slowed
+// down even at its real speed.
 const STEP_BEAT: Partial<Record<AnimName, number>> = {
-	sprint: 1.3,
-	run: 1.2,
-	jog: 0.95,
-	walk: 0.7,
-	dribble: 1,
-	dribbleWalk: 0.7,
-	carry: 0.7,
+	sprint: 1.45,
+	run: 1.4,
+	jog: 1.35,
+	walk: 0.9,
+	dribble: 1.4,
+	dribbleWalk: 0.95,
+	carry: 0.9,
 	drift: 0.85,
-	back: 0.95,
-	slide: 0.95,
+	back: 1.3,
+	slide: 1.4,
 };
 // The beat (strides a second; nothing, for steps that keep none).
 export const stepBeat = (anim: AnimName): number => STEP_BEAT[anim] ?? 0;

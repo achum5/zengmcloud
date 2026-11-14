@@ -792,15 +792,21 @@ const pathOf = (from: number, spots: (Pt | undefined)[]): Path => ({
 
 // THE MAN WITH THE BALL, WORKING HIS MAN. On his dribble out on the floor
 // a while with nothing of his to do, he is never just carried from one
-// spot to the next. Stood - waiting on a screen, on the set - he sways
+// spot to the next. Stood - waiting on a screen, on the set - he goes
 // across his man, jabs a step in at him and back, gives ground a step and
-// comes again. Going somewhere, he gets there his own way: crosses over
-// from one side of his line to the other, hesitates and goes. Each move
-// his own, a beat each, eased in and out of, so he is back where the play
-// wants him for whatever comes next. (His man goes with him, a beat late:
-// see stepTimeline.)
+// comes again: each a quick move (PROBE_MOVE, ms) and then set, reading
+// him till the next - not one slow sway from one to the next, which is a
+// man in slow motion. (No quicker than that: his man has to answer it a
+// beat late, and a defender jerked about after him is no better.) Going somewhere, he gets there his own way: crosses
+// over from one side of his line to the other, hesitates and goes. Each
+// move his own, so he is back where the play wants him for whatever comes
+// next. (His man goes with him, a beat late: see stepTimeline.)
 const PROBE_LEAST = 1200;
 const PROBE_EASE = 400;
+const PROBE_MOVE: [number, number] = [480, 640];
+// (A move a beat: this long each, ms - the quick move at the start of it,
+// set for the rest. Straight on into one from going - or the first - the
+// one move over all of it, eased out of what he was doing.)
 const PROBE_BEAT: [number, number] = [700, 1100];
 // (Across his man, in at him and back - feet, his own way of it.)
 const PROBE_MOVES: [number, number][] = [
@@ -998,24 +1004,40 @@ const probesOf = (
 			let t = a + PROBE_EASE;
 			let n = 0;
 			let side = hash01(pid * 5 + 1, Math.round(a)) < 0.5 ? -1 : 1;
+			// (Whether the last key was a move of his stood at his man: set
+			// after one of those before the next - but eased straight on into
+			// the first, or into one from going, crossing over as he pulls
+			// up: see cuts below.)
+			let stood = false;
 			while (t < b - PROBE_EASE - 500) {
 				const r = hash01(pid * 31 + n, Math.round(t / 50));
 				const pick = hash01(pid * 7 + n, Math.round(a));
 				const v = goingAt(t);
 				const pace = Math.hypot(v.x, v.y);
 				if (pace < ROUTE_PACE) {
-					// Stood: at his man.
+					// Stood: at his man - set where the last move left him till
+					// now, then quick into the next.
 					const u = unitVec(laid.at(t) ?? rim, rim);
 					const [across, inAt] =
 						PROBE_MOVES[Math.floor(pick * PROBE_MOVES.length)]!;
-					keys.push([
-						t,
-						{
-							x: -u.y * across + u.x * inAt,
-							y: u.x * across + u.y * inAt,
-						},
-					]);
+					const o = {
+						x: -u.y * across + u.x * inAt,
+						y: u.x * across + u.y * inAt,
+					};
+					// (A beat each, as ever - the move quick at the start of it,
+					// the rest of it set.)
+					const move = PROBE_MOVE[0] + (PROBE_MOVE[1] - PROBE_MOVE[0]) * r;
+					if (!stood || t + move > b - PROBE_EASE - 300) {
+						keys.push([t, o]);
+					} else {
+						const [was, at] = keys.at(-1)!;
+						if (t - was > 1) {
+							keys.push([t, at]);
+						}
+						keys.push([t + move, o]);
+					}
 					t += PROBE_BEAT[0] + (PROBE_BEAT[1] - PROBE_BEAT[0]) * r;
+					stood = true;
 				} else {
 					// Going: his own way along his line.
 					const u = { x: v.x / pace, y: v.y / pace };
@@ -1034,6 +1056,7 @@ const probesOf = (
 						},
 					]);
 					t += ROUTE_BEAT[0] + (ROUTE_BEAT[1] - ROUTE_BEAT[0]) * r;
+					stood = false;
 				}
 				n += 1;
 			}
@@ -1283,13 +1306,14 @@ const arcsOf = (
 // OFF THE BALL, GETTING OPEN. Stood a while off the ball with nothing of
 // his coming, a man does not wait where the play put him like a cone: now
 // and then he relocates a step - along the arc, a step in, a step out -
-// and sets his feet there a while (long enough to spot up, to call for it:
+// a quick step, a player's (OPEN_MOVE, ms), not a slow glide across - and
+// sets his feet there a while (long enough to spot up, to call for it:
 // see offBall in evaluate.ts). Back where the play wants him as he next
 // goes. (His man goes with him, a beat late: see stepTimeline.)
 const OPEN_LEAST = 3000;
 const OPEN_FIRST: [number, number] = [600, 1800];
-const OPEN_MOVE: [number, number] = [700, 1100];
-const OPEN_HOLD: [number, number] = [2400, 4000];
+const OPEN_MOVE: [number, number] = [400, 560];
+const OPEN_HOLD: [number, number] = [1700, 3000];
 const OPEN_NEAR = 30;
 const OPEN_OUT = 500;
 // (Along the arc, in toward the rim - feet.)
@@ -1399,6 +1423,200 @@ const openingsOf = (
 		}
 	}
 	close(begin + laid.spots.length * STEP_MS);
+	return keyed(stretches);
+};
+
+// OFF THE BALL, WITH THE DRIVE. The man with the ball putting it on the
+// floor hard at the rim, the men spotted up round the arc do not stand and
+// watch him go: each slides along the line, away from where he is taking it
+// - to the open spot his kick-out would find, the corner man lifting if the
+// drive comes down his baseline - a quick few steps a beat after he goes,
+// and set there till the play next moves him. (His man goes with him only
+// as far as he is still up on him - sunk in to help on the drive, he is
+// left: see stepTimeline. And not a man the ball is coming to, nor anyone
+// with something of his own on: see held.)
+// A drive: the ball handler going at least this fast (feet a second), this
+// share of it at the rim, from no farther out than this (feet), for at
+// least this long (ms).
+const DRIVE_PACE = 9;
+const DRIVE_AT = 0.6;
+const DRIVE_FROM = 30;
+const DRIVE_LEAST = 300;
+// The men drifting with it: this far out from the rim at least (feet),
+// stood (no faster than this, feet a second); this far along the line
+// (feet), a beat after the drive sets off (ms), at a few quick steps' pace
+// (feet a second); no nearer a teammate than this (feet); and set there
+// till the play moves him, at the most this long after the drive (ms),
+// then back onto where the play has him over this long (ms).
+const DRIFT_FROM = 16;
+const DRIFT_STOOD = 3;
+const DRIFT_FT: [number, number] = [2.5, 3.5];
+const DRIFT_REACT: [number, number] = [180, 350];
+const DRIFT_PACE = 11;
+const DRIFT_ROOM = 6;
+const DRIFT_HOLD = 2200;
+const DRIFT_BACK = 700;
+type Drive = { team: 0 | 1; holder: number; a: number; b: number; end: Pt };
+const drivesIn = (
+	tl: Stepped,
+	laid: Map<number, Path>,
+	live: Spans,
+): Drive[] => {
+	const out: Drive[] = [];
+	tl.ball.forEach((s, k) => {
+		if (s.kind !== "hold" || s.style === "hold") {
+			return;
+		}
+		const L = laid.get(s.pid);
+		const team = tl.tracks.get(s.pid)?.team;
+		if (!L || team === undefined) {
+			return;
+		}
+		const rim = { x: rimX(team), y: 25 };
+		const end = tl.ball[k + 1]?.t0 ?? s.t0;
+		let a = -1;
+		let last = -1;
+		const close = () => {
+			const P = last >= 0 ? L.at(last) : undefined;
+			if (a >= 0 && P && last - a >= DRIVE_LEAST) {
+				out.push({ team, holder: s.pid, a, b: last, end: P });
+			}
+			a = -1;
+		};
+		for (let t = s.t0; t < end; t += 2 * STEP_MS) {
+			const P = L.at(t);
+			const Q = L.at(t + 150);
+			let on = false;
+			if (P && Q && live.hit(t, t + 1)) {
+				const v = Math.hypot(Q.x - P.x, Q.y - P.y) / 0.15;
+				const r0 = Math.hypot(P.x - rim.x, P.y - rim.y);
+				const r1 = Math.hypot(Q.x - rim.x, Q.y - rim.y);
+				on =
+					v >= DRIVE_PACE &&
+					(r0 - r1) / 0.15 >= DRIVE_AT * v &&
+					r0 <= DRIVE_FROM;
+			}
+			if (on) {
+				if (a < 0) {
+					a = t;
+				}
+				last = t;
+			} else {
+				close();
+			}
+		}
+		close();
+	});
+	return out.sort((x, y) => x.a - y.a);
+};
+const driftsOf = (
+	tl: Stepped,
+	pid: number,
+	laid: Path,
+	held: Spans,
+	team: 0 | 1,
+	drives: Drive[],
+	all: Map<number, Path>,
+	// (Already making a move of his own then: left to that.)
+	busy: Spans,
+): Offsets => {
+	const rim = { x: rimX(team), y: 25 };
+	const beyond = (p: Pt) => beyondArc(team, p);
+	const mates = [...tl.tracks.values()]
+		.filter((o) => o.team === team && o.pid !== pid && o.pid >= 0)
+		.map((o) => all.get(o.pid))
+		.filter((x): x is Path => x !== undefined);
+	const stretches: Keyed[] = [];
+	for (const d of drives) {
+		if (d.team !== team || d.holder === pid) {
+			continue;
+		}
+		const a =
+			d.a +
+			DRIFT_REACT[0] +
+			(DRIFT_REACT[1] - DRIFT_REACT[0]) * hash01(pid * 41 + 3, Math.round(d.a));
+		const Q = laid.at(a);
+		const Q1 = laid.at(a + 200);
+		if (
+			!Q ||
+			!Q1 ||
+			a < (stretches.at(-1)?.b ?? -Infinity) ||
+			Math.hypot(Q.x - rim.x, Q.y - rim.y) < DRIFT_FROM ||
+			Math.hypot(Q1.x - Q.x, Q1.y - Q.y) / 0.2 > DRIFT_STOOD ||
+			held.hit(d.a - 300, d.b + 600) ||
+			busy.hit(d.a - 300, d.b + 600)
+		) {
+			continue;
+		}
+		const u = unitVec(rim, Q);
+		const along = { x: -u.y, y: u.x };
+		const L =
+			DRIFT_FT[0] +
+			(DRIFT_FT[1] - DRIFT_FT[0]) * hash01(pid * 43 + 1, Math.round(d.a));
+		let best: Pt | undefined;
+		let far = -Infinity;
+		for (const side of [1, -1]) {
+			let T = { x: Q.x + along.x * L * side, y: Q.y + along.y * L * side };
+			// (Out behind the line, he stays behind it.)
+			if (beyond(Q) > 0.3 && beyond(T) < 0.5) {
+				T = ontoArc(team, T, Math.max(0.5, Math.min(1.5, beyond(Q))));
+			}
+			T = inPlay(T);
+			if (Math.hypot(T.x - Q.x, T.y - Q.y) < L * 0.6) {
+				continue;
+			}
+			// (Into nobody's spot.)
+			if (
+				mates.some((m) => {
+					const M = m.at(a);
+					return (
+						M !== undefined && Math.hypot(M.x - T.x, M.y - T.y) < DRIFT_ROOM
+					);
+				})
+			) {
+				continue;
+			}
+			const away = Math.hypot(T.x - d.end.x, T.y - d.end.y);
+			if (away > far) {
+				far = away;
+				best = T;
+			}
+		}
+		if (!best || far <= Math.hypot(Q.x - d.end.x, Q.y - d.end.y)) {
+			continue;
+		}
+		const o = { x: best.x - Q.x, y: best.y - Q.y };
+		const go = 200 + (Math.hypot(o.x, o.y) / DRIFT_PACE) * 1000;
+		// Set there till the play next moves him - or something of his comes
+		// up - and no longer than DRIFT_HOLD.
+		let e = d.b + DRIFT_HOLD;
+		for (let t = d.b; t < e; t += 2 * STEP_MS) {
+			const P = laid.at(t);
+			const P1 = laid.at(t + 150);
+			if (
+				!P ||
+				!P1 ||
+				Math.hypot(P1.x - P.x, P1.y - P.y) / 0.15 > DRIFT_STOOD
+			) {
+				e = t;
+				break;
+			}
+		}
+		e = Math.min(e, held.next(d.b) - DRIFT_BACK - 200);
+		if (e < a + go + 200) {
+			continue;
+		}
+		stretches.push({
+			a,
+			b: e + DRIFT_BACK,
+			keys: [
+				[a, { x: 0, y: 0 }],
+				[a + go, o],
+				[e, o],
+				[e + DRIFT_BACK, { x: 0, y: 0 }],
+			],
+		});
+	}
 	return keyed(stretches);
 };
 
@@ -1549,9 +1767,13 @@ export const stepTimeline = <T extends Stepped>(tl: T): T => {
 	// Each with the ball working his own way (see probesOf), and each off
 	// it getting open (openingsOf).
 	const probes = new Map<number, (t: number) => Pt>();
+	// (When each man off the ball is stepping to a spot of his own - getting
+	// open, drifting with a drive - his eyes on the ball: see animAt.)
+	const spotting = new Map<number, Spans>();
 	// (When anybody on each side is making any.)
 	const making: [(readonly [number, number])[], (readonly [number, number])[]] =
 		[[], []];
+	const drives = drivesIn(tl, laid, live);
 	for (const tr of men) {
 		const L = laid.get(tr.pid)!;
 		const held = helds.get(tr.pid)!;
@@ -1559,13 +1781,30 @@ export const stepTimeline = <T extends Stepped>(tl: T): T => {
 		const probe = probesOf(tl, tr.pid, L, held, tr.team);
 		const open = openingsOf(tl, tr.pid, L, held, tr.team, offenseAt, live);
 		const arc = arcsOf(tr, tl, L, held, offenseAt);
+		const drift = driftsOf(
+			tl,
+			tr.pid,
+			L,
+			held,
+			tr.team,
+			drives,
+			laid,
+			spansAt([...probe.spans, ...open.spans, ...arc.spans]),
+		);
+		spotting.set(tr.pid, spansAt([...open.spans, ...drift.spans]));
 		probes.set(tr.pid, (t) => {
 			const a = probe(t);
 			const b = open(t);
 			const c = arc(t);
-			return { x: a.x + b.x + c.x, y: a.y + b.y + c.y };
+			const d = drift(t);
+			return { x: a.x + b.x + c.x + d.x, y: a.y + b.y + c.y + d.y };
 		});
-		making[tr.team].push(...probe.spans, ...open.spans, ...arc.spans);
+		making[tr.team].push(
+			...probe.spans,
+			...open.spans,
+			...arc.spans,
+			...drift.spans,
+		);
 	}
 	const busy = [spansAt(making[0]), spansAt(making[1])] as const;
 	// Who has the ball at t, if anybody does.
@@ -1731,7 +1970,16 @@ export const stepTimeline = <T extends Stepped>(tl: T): T => {
 				}
 			}
 			const m = old[lo - 1];
-			return m && t <= m.t1 + STEP_MS ? m : undefined;
+			if (m && t <= m.t1 + STEP_MS) {
+				return m;
+			}
+			// (Stood where the play has him, stepping to a spot of his own,
+			// eyes on the ball: drifting - side-stepping or dropping back as
+			// it goes, see stepsOf in evaluate.ts - not walking off forward
+			// whichever way he faces.)
+			return spotting.get(tr.pid)?.hit(t, t + 1)
+				? { anim: "drift" as const }
+				: undefined;
 		};
 		// (Off the floor, where it had him: the runs it laid there stay.)
 		const off = old.filter((m) => !floorSpotOf(tr, (m.t0 + m.t1) / 2));

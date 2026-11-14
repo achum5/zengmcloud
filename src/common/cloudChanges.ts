@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 310,
+		date: "2026-11-14",
+		text: "3D: the game at 1x moves at real NBA tempo. Players' legs turn over as fast as a real player's (no more slow-motion jogs, backpedals and slides), stances and dribbling in place are livelier, the man with the ball sizes up his defender with quick moves instead of a slow sway, and shooters spaced around the arc slide to open spots when the ball is driven.",
+	},
+	{
 		n: 309,
 		date: "2026-11-13",
 		text: "3D: on a poster dunk, the defender being dunked on now goes up right where he set himself under the rim, instead of sometimes sliding a step or two away before he jumps.",
