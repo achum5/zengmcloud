@@ -296,8 +296,13 @@ export const tradeWatchers: ((deal: {
 export const outlookWatchers: ((outlook: LeagueOutlook) => void)[] = [];
 
 // The outlook is rebuilt about once a week of games, keyed on league state
-// alone, so any device in charge of simming builds the same one.
-let cache: { key: string; outlook: LeagueOutlook } | undefined;
+// alone, so any device in charge of simming builds the same one - and on
+// the league database open, so a league replaced under the same id (a cloud
+// league downloaded again, a league imported over it) never reads one made
+// from the league it replaced.
+let cache:
+	| { key: string; db: typeof idb.league; outlook: LeagueOutlook }
+	| undefined;
 
 export const gamesPlayed = async () => {
 	let total = 0;
@@ -313,9 +318,10 @@ const getOutlook = async (games: number) => {
 	const week = Math.floor(games / Math.max(1, g.get("numActiveTeams") * 3));
 	// The league too: a worker can open another league at the same point.
 	const key = `${g.get("lid")}:${g.get("season")}:${g.get("phase")}:${week}`;
-	if (cache?.key !== key) {
+	if (cache?.key !== key || cache.db !== idb.league) {
 		const started = performance.now();
-		cache = { key, outlook: await buildOutlook() };
+		const db = idb.league;
+		cache = { key, db, outlook: await buildOutlook() };
 		marketClock.outlooks += 1;
 		marketClock.outlookMs += performance.now() - started;
 		for (const watch of outlookWatchers) {
