@@ -5,6 +5,7 @@ import getRookieContractLength from "../draft/getRookieContractLength.ts";
 import { currentOutlook } from "../realisticFrontOffice/market.ts";
 import { ensureRetention } from "../realisticFrontOffice/outlook.ts";
 import { pickSalaries } from "../realisticFrontOffice/payroll.ts";
+import { timed } from "./clock.ts";
 import { prepareSignings, viewFor } from "./signing.ts";
 
 // THE DRAFT BY THE GM'S WORTH (docs/smart-cpu.md, layer 2). A CPU team takes
@@ -19,7 +20,12 @@ export const DRAFT_CANDIDATES = 20;
 
 // The prospect a CPU team takes with this pick, and what each it weighed is
 // worth to it.
-export const smartDraftChoice = async (
+export const smartDraftChoice = (
+	dp: Pick<DraftPick, "dpid" | "tid" | "round" | "pick">,
+	prospects: readonly Player[],
+) => timed("draft", () => draftChoiceNow(dp, prospects));
+
+const draftChoiceNow = async (
 	dp: Pick<DraftPick, "dpid" | "tid" | "round" | "pick">,
 	prospects: readonly Player[],
 ) => {

@@ -5,6 +5,7 @@ import {
 	ensureRetention,
 	type LeagueOutlook,
 } from "../realisticFrontOffice/outlook.ts";
+import { timed, timedSync } from "./clock.ts";
 import { SmartView, type Holdings } from "./worth.ts";
 
 // SIGNINGS BY THE GM'S WORTH (docs/smart-cpu.md, layer 2). With the smart
@@ -37,11 +38,13 @@ export const prepareSignings = async (
 	outlook: LeagueOutlook,
 	players: readonly Player[],
 ) => {
-	const view = viewFor(outlook);
-	await view.prime();
-	for (const tid of await view.keenest()) {
-		await ensureRetention(outlook, players, tid);
-	}
+	await timed("signing prep", async () => {
+		const view = viewFor(outlook);
+		await view.prime();
+		for (const tid of await view.keenest()) {
+			await ensureRetention(outlook, players, tid);
+		}
+	});
 };
 
 // He as signed by a team on these terms.
@@ -75,15 +78,16 @@ export const smartSigningPrice = (
 	t: Pick<Holdings, "players" | "picks"> & { tid: number },
 	p: Player,
 	contract: FlatContractInfo,
-) => {
-	const view = viewFor(outlook);
-	const signed = signedOn(p, t.tid, contract);
-	const h = {
-		players: t.players.filter((x) => x.pid !== p.pid),
-		picks: t.picks,
-	};
-	const gain =
-		view.value(t.tid, { players: [...h.players, signed], picks: h.picks }) -
-		view.value(t.tid, h);
-	return { gain, margin: 0, net: gain };
-};
+) =>
+	timedSync("signing price", () => {
+		const view = viewFor(outlook);
+		const signed = signedOn(p, t.tid, contract);
+		const h = {
+			players: t.players.filter((x) => x.pid !== p.pid),
+			picks: t.picks,
+		};
+		const gain =
+			view.value(t.tid, { players: [...h.players, signed], picks: h.picks }) -
+			view.value(t.tid, h);
+		return { gain, margin: 0, net: gain };
+	});

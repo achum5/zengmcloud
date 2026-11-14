@@ -2,6 +2,7 @@ import type { Player } from "../../../common/types.ts";
 import { idb } from "../../db/index.ts";
 import { currentOutlook } from "../realisticFrontOffice/market.ts";
 import { ensureRetention } from "../realisticFrontOffice/outlook.ts";
+import { timed } from "./clock.ts";
 import { viewFor } from "./signing.ts";
 import type { Assets } from "./worth.ts";
 
@@ -17,7 +18,14 @@ export type SmartHumanVerdict = {
 	betterElsewhere: boolean;
 };
 
-export const smartJudgeOffer = async (
+export const smartJudgeOffer = (
+	cpuTid: number,
+	humanTid: number,
+	out: Assets,
+	inn: Assets,
+) => timed("human offers", () => judgeNow(cpuTid, humanTid, out, inn));
+
+const judgeNow = async (
 	cpuTid: number,
 	humanTid: number,
 	// What the CPU team gives and gets.

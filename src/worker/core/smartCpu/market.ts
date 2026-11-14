@@ -9,6 +9,8 @@ import summary from "../trade/summary.ts";
 import { contractOf } from "../realisticFrontOffice/contractOf.ts";
 import { currentOutlook, gamesPlayed } from "../realisticFrontOffice/market.ts";
 import { ensureRetention } from "../realisticFrontOffice/outlook.ts";
+import { timed, timedSync } from "./clock.ts";
+import { salaryRulesAllow } from "./tradeRules.ts";
 import { viewFor } from "./signing.ts";
 import { smartSettings, type Holdings, type SmartView } from "./worth.ts";
 
@@ -27,6 +29,10 @@ import { smartSettings, type Holdings, type SmartView } from "./worth.ts";
 export const marketSettings = {
 	// Most deals a moment.
 	dealsPerMoment: 8,
+	// The keen teams each candidate is put to, keenest first (2026-11-14:
+	// four found 82 deals a moment, two 74, and the deals made were the
+	// same but one - for a third less work).
+	buyers: 2,
 	// A buyer's best players by its own use, kept out of salary matching.
 	core: 3,
 	// In season, a moment about every this many games a team, and every day
@@ -54,6 +60,9 @@ export type SmartDeal = {
 	offer: Holdings;
 	sellerGain: number;
 	buyerGain: number;
+	// The next best real offer's worth to the seller: what the winner's
+	// offer is trimmed to beat, once it is to be made.
+	bar: number;
 };
 
 const none: Holdings = { players: [], picks: [] };
@@ -168,7 +177,11 @@ const trimmed = (
 	out: Holdings,
 	offer: Holdings,
 	bar: number,
+	// Their payrolls as the trade rules count them.
+	payrolls: { seller: number; buyer: number },
 ) => {
+	const salary = (h: Holdings) =>
+		h.players.reduce((sum, p) => sum + contractOf(p).amount, 0);
 	let now = offer;
 	for (;;) {
 		const pieces: (Player | DraftPick)[] = [...now.players, ...now.picks];
@@ -190,8 +203,8 @@ const trimmed = (
 			};
 			if (
 				view.dealWorthNow(seller, buyer, out, without) > bar &&
-				view.salariesWork(buyer, without, out) &&
-				view.salariesWork(seller, out, without)
+				salaryRulesAllow(buyer, payrolls.buyer, salary(out), salary(without)) &&
+				salaryRulesAllow(seller, payrolls.seller, salary(without), salary(out))
 			) {
 				next = without;
 				break;
@@ -204,7 +217,8 @@ const trimmed = (
 	}
 };
 
-// Every deal the market has at this moment, best for the seller first: each
+// Every deal the market has at this moment, best for the seller first (by
+// its best real offer, before it is trimmed to beat the next): each
 // candidate put to the best real offer from the keen CPU teams (layer 1:
 // each its best for the seller while it still gains, legal under the trade
 // rules - the market rule kept by construction), kept if the seller gains.
@@ -216,17 +230,23 @@ export const dealsNow = async (view: SmartView, cpu: ReadonlySet<number>) => {
 	// Every player's chance of staying with each team that sets prices, so
 	// what anything is worth doesn't hang on what was priced before.
 	const keen = await view.keenest();
-	for (const tid of cpu) {
-		for (const k of [tid, ...keen]) {
-			await ensureRetention(view.outlook, view.heldNow(tid).players, k);
+	await timed("market: retention", async () => {
+		for (const tid of cpu) {
+			for (const k of [tid, ...keen]) {
+				await ensureRetention(view.outlook, view.heldNow(tid).players, k);
+			}
 		}
-	}
+	});
 	const deals: SmartDeal[] = [];
-	const all = await candidates(view, cpu, new Set());
+	const all = await timed("market: candidates", () =>
+		candidates(view, cpu, new Set()),
+	);
 	marketStats.candidates += all.length;
 	for (const c of all) {
 		const out = one(c.p);
-		const real = await view.bestRealOffer(c.seller, out, -1);
+		const real = await timed("market: offers", () =>
+			view.bestRealOffer(c.seller, out, -1, new Set(), marketSettings.buyers),
+		);
 		if (!real) {
 			marketStats.noOffer += 1;
 			continue;
@@ -235,24 +255,38 @@ export const dealsNow = async (view: SmartView, cpu: ReadonlySet<number>) => {
 			marketStats.sellerSaysNo += 1;
 			continue;
 		}
-		const offer = trimmed(
-			view,
-			c.seller,
-			real.buyer,
-			out,
-			real.offer,
-			Math.max(0, real.second),
-		);
 		deals.push({
 			seller: c.seller,
 			buyer: real.buyer,
 			out,
-			offer,
-			sellerGain: view.dealWorthNow(c.seller, real.buyer, out, offer),
+			offer: real.offer,
+			sellerGain: real.worth,
 			buyerGain: Number.NaN,
+			bar: Math.max(0, real.second),
 		});
 	}
 	return deals.sort((a, b) => b.sellerGain - a.sellerGain);
+};
+
+// A deal about to be made, its offer trimmed to what beats the next best
+// (trimmed): only the few a moment makes are trimmed, not every deal found
+// (82 one moment, 4 of them made).
+export const trimDeal = async (view: SmartView, deal: SmartDeal) => {
+	const payrolls = {
+		seller: await view.tradePayroll(deal.seller),
+		buyer: await view.tradePayroll(deal.buyer),
+	};
+	return timedSync("market: trim", () =>
+		trimmed(
+			view,
+			deal.seller,
+			deal.buyer,
+			deal.out,
+			deal.offer,
+			deal.bar,
+			payrolls,
+		),
+	);
 };
 
 // Watchers of the deals the market makes (tests, the arena).
@@ -268,7 +302,9 @@ const standing = (view: SmartView, tid: number) => {
 // A market moment: its deals, best for the seller first, each team dealing
 // at most once - each checked again as it stands just before it is made
 // (the deals before it moved prices a little).
-export const marketMoment = async () => {
+export const marketMoment = () => timed("market", marketMomentNow);
+
+const marketMomentNow = async () => {
 	const outlook = await currentOutlook();
 	const view = viewFor(outlook);
 	const cpu = new Set(
@@ -285,6 +321,7 @@ export const marketMoment = async () => {
 		if (dealt.has(found.seller) || dealt.has(found.buyer)) {
 			continue;
 		}
+		found.offer = await trimDeal(view, found);
 		const sellerGain = await view.dealWorth(
 			found.seller,
 			found.buyer,

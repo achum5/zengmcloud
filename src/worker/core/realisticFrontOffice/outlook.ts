@@ -6,6 +6,7 @@ import {
 } from "../../../common/constants.ts";
 import type {
 	DraftPick,
+	FlatContractInfo,
 	MinimalPlayerRatings,
 	Player,
 	Team,
@@ -1945,20 +1946,18 @@ const pickFromSums = (sums: Float64Array): PickAt | null => {
 // contract while it runs, then what he would re-sign for - each only as far
 // as he is expected to be around.
 const salaryIn = (
-	p: Player,
+	c: FlatContractInfo,
 	season: number,
 	index: number,
 	line: { valueNoPot: number; availability: number },
 	marketSalary: (value: number) => number,
 ) => {
 	if (index === 0) {
-		return contractOf(p).amount;
+		return c.amount;
 	}
 	return (
 		line.availability *
-		(contractOf(p).exp >= season
-			? contractOf(p).amount
-			: marketSalary(line.valueNoPot))
+		(c.exp >= season ? c.amount : marketSalary(line.valueNoPot))
 	);
 };
 
@@ -2002,10 +2001,12 @@ export const teamPoints = (
 	// run out each season, and to the free agents its room buys (losingShifts).
 	losing?: LosingShifts,
 ) => {
-	const retentionFor = (p: Player) => {
+	// Each player's contract, read once: every season below asks for it.
+	const contracts = players.map(contractOf);
+	const retentionFor = (p: Player, i: number) => {
 		let r = retentionOf(outlook, p.pid, tid);
 		if (losing) {
-			const e = contractOf(p).exp - outlookSeason(outlook, 0);
+			const e = contracts[i]!.exp - outlookSeason(outlook, 0);
 			const mood = e >= 0 ? (losing.mood[e] ?? 0) : 0;
 			const stay = outlook.stays?.get(retentionKey(p.pid, tid));
 			if (mood !== 0 && stay !== undefined) {
@@ -2021,7 +2022,7 @@ export const teamPoints = (
 						moodShiftFromTrading(
 							trading.tradedAway,
 							trading.extra,
-							contractOf(p).exp - outlook.season,
+							contracts[i]!.exp - outlook.season,
 						),
 					) * 1000,
 				) / 1000
@@ -2062,7 +2063,7 @@ export const teamPoints = (
 				retention[i]!,
 				boom,
 			));
-			if (!wanted || contractOf(p).exp >= season) {
+			if (!wanted || contracts[i]!.exp >= season) {
 				return line;
 			}
 			gone[i] ??= goneOf(line);
@@ -2151,7 +2152,7 @@ export const teamPoints = (
 			let committed = salaries;
 			for (let i = 0; i < players.length; i++) {
 				const salary = salaryIn(
-					players[i]!,
+					contracts[i]!,
 					season,
 					y + outlook.offset,
 					lines[i]!,
@@ -2163,7 +2164,7 @@ export const teamPoints = (
 				// (wantedOnly) - each half on its own, paid as he is.
 				if (
 					wanted &&
-					contractOf(players[i]!).exp < season &&
+					contracts[i]!.exp < season &&
 					salary > 0 &&
 					lines[i]!.availability >= VETERAN_OPTION_CHANCE
 				) {
@@ -2310,6 +2311,10 @@ export type LetGoDecisions = {
 	// Whether he goes, and the team's room that season before it decided.
 	decisions: Map<string, { gone: boolean; room: number }>;
 	record: boolean;
+	// Decisions it has are kept, and those it makes afresh added (the smart
+	// CPU: a player a team would bring in, decided once on its roster with
+	// him).
+	addFresh?: boolean;
 };
 
 // One season of a team's outlook, as teamPoints works it out: its roster, and
@@ -2415,7 +2420,7 @@ const letGo = (
 				}
 			} else {
 				fresh.push(o);
-				if (known?.record) {
+				if (known?.record || known?.addFresh) {
 					known.decisions.set(o.key, { gone: false, room });
 				}
 			}
@@ -2472,7 +2477,7 @@ const letGo = (
 				}
 				const { ahead, gain, freed } = goneGain(o);
 				if (gain > 0) {
-					if (known?.record) {
+					if (known?.record || known?.addFresh) {
 						known.decisions.set(o.key, { gone: true, room });
 					}
 					goFrom(ahead, freed);
@@ -2755,6 +2760,10 @@ export const teamStrengths = (
 	trading?: { tradedAway: TradedAway; extra: number },
 	refill?: Parameters<typeof teamPoints>[5],
 	known?: LetGoDecisions,
+	// Only to decide whom it lets go (known, adding fresh): those are
+	// decided on the first pass, and the second, for its record's shift,
+	// keeps them.
+	decideOnly?: boolean,
 ) => {
 	const strengthOf = (y: number, points: number) =>
 		points -
@@ -2802,7 +2811,7 @@ export const teamStrengths = (
 			losing,
 		);
 	let points = pointsWith();
-	if (outlookSettingFor(tid, "costsOfLosing")) {
+	if (outlookSettingFor(tid, "costsOfLosing") && !decideOnly) {
 		losingClock.priced += 1;
 		const losing = losingShifts(
 			outlook,

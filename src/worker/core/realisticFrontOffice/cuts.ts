@@ -14,6 +14,7 @@ import {
 	smartSigningPrice,
 	viewFor,
 } from "../smartCpu/signing.ts";
+import { timed } from "../smartCpu/clock.ts";
 
 // CUTS. A CPU team over the roster limit releases whoever it can best do
 // without: the player whose release leaves its franchise worth the most - his
@@ -87,7 +88,10 @@ const bestCut = (
 
 // With the smart CPU: whom the team can best do without, by the GM's view
 // (the same choice, its let-go decisions reused).
-const smartCut = async (outlook: LeagueOutlook, tid: number) => {
+const smartCut = (outlook: LeagueOutlook, tid: number) =>
+	timed("cuts", () => smartCutNow(outlook, tid));
+
+const smartCutNow = async (outlook: LeagueOutlook, tid: number) => {
 	const view = viewFor(outlook);
 	const h = await view.holdingsOf(tid);
 	let best: { p: Player; value: number } | undefined;

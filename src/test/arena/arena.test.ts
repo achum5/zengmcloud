@@ -59,7 +59,10 @@ import {
 	createArenaLeague,
 	exportArenaLeague,
 	importArenaLeague,
+	phaseClock,
 } from "./runLeague.ts";
+import { smartClock } from "../../worker/core/smartCpu/clock.ts";
+import { marketStats as smartMarketStats } from "../../worker/core/smartCpu/market.ts";
 import { computeMetrics, type LeagueMetrics } from "./metrics.ts";
 import { BENCHMARKS, type Benchmark } from "./benchmarks.ts";
 import { contractOf } from "../../worker/core/realisticFrontOffice/contractOf.ts";
@@ -1001,6 +1004,14 @@ test.runIf(env.ARENA_RUN === "1")(
 					// Vanilla+'s market: teams that shopped, trades, time.
 					vplusMarket: vanillaPlusSettings.on ? vplusMarketStats : undefined,
 					losing: env.ARENA_FO === "1" ? losingClock : undefined,
+					// Seconds from each phase to the next, and the smart CPU's
+					// decisions: their time, franchise values and where its
+					// market's candidates fell away.
+					phases: phaseClock,
+					smart:
+						env.ARENA_SMART === "1"
+							? { clock: smartClock, market: smartMarketStats }
+							: undefined,
 					metrics,
 					freeAgents: snapshots.map((s) => ({
 						season: s.season,

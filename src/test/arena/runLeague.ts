@@ -43,6 +43,10 @@ import { upgradeLegacySnapshotStores } from "../../worker/core/sync/normalizeRec
 
 const conditions = {} as Conditions;
 
+// Seconds spent from each phase to the next (the change of phase counted in
+// the phase it leaves), all seasons together - layer 3's speed work.
+export const phaseClock: Record<number, number> = {};
+
 const cutCheck = async () => {
 	const outlook = await currentOutlook();
 	const phase = g.get("phase");
@@ -311,9 +315,19 @@ export const advanceSeasons = async (
 	let rostered: number[] = [];
 
 	let guard = 0;
+	let clocked: { phase: number; started: number } | undefined;
+	const clock = () => {
+		if (clocked) {
+			phaseClock[clocked.phase] =
+				(phaseClock[clocked.phase] ?? 0) +
+				(performance.now() - clocked.started) / 1000;
+		}
+		clocked = { phase: g.get("phase"), started: performance.now() };
+	};
 	while (
 		!(g.get("season") === targetSeason && g.get("phase") === PHASE.PRESEASON)
 	) {
+		clock();
 		guard += 1;
 		if (guard > numSeasons * 50) {
 			throw new Error(
@@ -524,6 +538,7 @@ export const advanceSeasons = async (
 			throw new Error(`Unexpected phase ${currentPhase}`);
 		}
 	}
+	clock();
 
 	return snapshots;
 };

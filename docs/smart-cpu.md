@@ -370,6 +370,52 @@ of them), 72 s. A vet for youngsters to a contender, two like-for-like
 swaps. Volume and speed are layer 3's to judge across seasons; 72 s a
 moment is too slow for the owner's league as it stands.
 
+## Layer 3: whole leagues (2026-11-14)
+
+### Speed, first
+
+A GM season in the arena took about 20 minutes, two thirds of it the trade
+market. One market moment on the test league (src/test/smart/
+momentProbe.test.ts: one moment timed step by step, its deals written out
+whole so a change meant only for speed can be checked to find the same
+ones) worked out 37,071 franchise values in 106 s. Where it went, and what
+was done:
+
+- **A player's contract read for every season of every value** (11% of a
+  season): read once a value. Exact - the same 30 deals, the same gains.
+- **Whom a team lets go of a player it would bring in, decided afresh on
+  every roster** (45% of a moment: a veteran's re-signing is weighed over
+  each season ahead, and the market tries hundreds of rosters with him):
+  decided once, on what the team holds with him, and kept for every roster
+  of its he is on - as its own players are decided once, on what it holds.
+  106 s to 52 s; 26 of the moment's 28 deals as before (it had 30), the
+  rest worth within 0.002 of a title.
+- **Offers built without the trade rules on salary**: 1,052 of 1,256 offers
+  broke them (the seller over the cap taking in more than it may 426 times,
+  the buyer sending back too little 421, the apron 205), each after some
+  16 franchise values, and were thrown away. Offers are now built within
+  the rules (smartCpu/tradeRules.ts, the trade summary's checks for one
+  side): a piece the seller couldn't take in is passed over, and a buyer
+  short of salary to send back adds the players it would miss least, as
+  NBA teams fill a trade. None broke the rules after; deals found went from
+  28 to 82 a moment - most good deals had been lost to salary alone.
+- **Every deal found trimmed to beat the next best offer** (82 a moment, 5
+  of them made): only those about to be made are trimmed now; the deals
+  are ranked by their best real offer, before trimming.
+- **Each candidate put to the four keenest teams**: two in the market. 82
+  deals found to 74, and the deals made the same but one (a smaller deal
+  for the same buyer); a third less work. A human's offer is still judged
+  against the four.
+- Found along the way: judging a deal against the best offer from the
+  others, the market asked the next keen team down in the partner's place -
+  one more team than the market itself asks - and a deal the market would
+  make looked beaten. The teams asked are now the keenest whoever the deal
+  is with.
+
+A moment now: about 30,000 values, 45 s. Still the market's search, mostly
+pricing the packages offered (each keen team's bid, its roster cut to the
+limit).
+
 ## The DBA replay
 
 Yardstick C, built (src/test/dba/). Every trade of the owner's league from
