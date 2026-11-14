@@ -443,6 +443,27 @@ A GM season in the arena: about 500 s (from 1,220). Trades 34 and 39 a
 season (in season 19 and 13, offseason 15 and 26): below the NBA's 55-62,
 in season most of all.
 
+### Picks in later drafts (2026-11-14)
+
+The bench's GM team in its second league (below) gave away every first it
+had, 2028 to 2041, most as the last piece of a deal for a veteran, and
+won 6 to 16 games a season for its last four. A probe of what GM teams think
+picks are worth (src/test/smart/pickProbe.test.ts) showed why: each draft
+further off halved a first's market price. A mid team's next first fetched
+0.07 of a title, its first six drafts away 0.002 - discounting alone would
+leave half. Seeing 16 seasons ahead instead of 10 doubled what a team
+thought its own far firsts were worth to it, but not their price: the
+title chances such a pick brings are years off and uncertain for every
+bidder.
+
+What was missing is what a GM knows a pick is: something it can keep and
+sell once its draft is next. A pick in a later draft is now worth, to any
+team, at least what a pick where its team is expected to finish fetches in
+the next draft today, discounted for the seasons until its own draft (the
+same patience as everything else: 0.9 a season). Far firsts went from
+0.15-0.30 hundredths of a title to 2.6-4.4; the next draft's picks are
+priced as before.
+
 ## The DBA replay
 
 Yardstick C, built (src/test/dba/). Every trade of the owner's league from

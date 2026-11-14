@@ -1860,6 +1860,15 @@ const landing = (
 	return weights;
 };
 
+// Where a pick's team is expected to finish in its round, place by place:
+// the chance of each, before any lottery.
+export const finishWeights = (outlook: LeagueOutlook, dp: PickLike) =>
+	landing(
+		outlook.numTeams,
+		expectedPlace(outlook, dp),
+		draftPlaceSpread(outlook, dp),
+	);
+
 // Where it lands, and what that adds up to, by pickLines' lifetime: the
 // lottery is priced in it.
 const landingCache = new WeakMap<object, Map<string, number[]>>();

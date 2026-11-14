@@ -15,7 +15,10 @@ import {
 import getPayroll from "../team/getPayroll.ts";
 import {
 	ensureRetention,
+	expectedPlace,
+	finishWeights,
 	franchiseValue,
+	PATIENCE,
 	teamStrengths,
 	type LeagueOutlook,
 	type LetGoDecisions,
@@ -112,6 +115,46 @@ const termsOf = (p: Player) => {
 	return `${p.pid}:${c.amount}:${c.exp}`;
 };
 
+// Prices against places (0 the best finish), as the best decreasing fit
+// (pooling neighbours that rise), then at each place 0 to n - 1: between
+// the nearest fitted places, and flat beyond the ends.
+const decreasingAt = (rows: { x: number; p: number }[], n: number) => {
+	const sorted = [...rows].sort((a, b) => a.x - b.x);
+	const blocks: { x: number; p: number; w: number }[] = [];
+	for (const r of sorted) {
+		blocks.push({ x: r.x, p: r.p, w: 1 });
+		while (blocks.length > 1 && blocks.at(-2)!.p < blocks.at(-1)!.p) {
+			const b = blocks.pop()!;
+			const a = blocks.pop()!;
+			const w = a.w + b.w;
+			blocks.push({
+				x: (a.x * a.w + b.x * b.w) / w,
+				p: (a.p * a.w + b.p * b.w) / w,
+				w,
+			});
+		}
+	}
+	const at: number[] = [];
+	for (let k = 0; k < n; k++) {
+		if (blocks.length === 0) {
+			at.push(0);
+			continue;
+		}
+		const j = blocks.findIndex((b) => b.x >= k);
+		if (j === 0) {
+			at.push(blocks[0]!.p);
+		} else if (j === -1) {
+			at.push(blocks.at(-1)!.p);
+		} else {
+			const a = blocks[j - 1]!;
+			const b = blocks[j]!;
+			const t = b.x === a.x ? 0 : (k - a.x) / (b.x - a.x);
+			at.push(a.p + t * (b.p - a.p));
+		}
+	}
+	return at;
+};
+
 // What the league looks like to the GM, for as long as the outlook it was
 // made with: every team's holdings, read afresh from the league each time
 // (trades, signings, the draft and humans' moves are seen at once), and its
@@ -122,7 +165,15 @@ export class SmartView {
 	humans: Set<number>;
 	private holdings = new Map<number, { sig: string; h: Holdings }>();
 	private values = new Map<string, number>();
-	private keenestCache: { sig: string; tids: number[] } | undefined;
+	private keenestCache:
+		| {
+				sig: string;
+				tids: number[];
+				// What a pick in the next draft fetches, by round and by where
+				// its team is expected to finish (pickFloorNow).
+				slots?: Map<number, number[]>;
+		  }
+		| undefined;
 
 	constructor(outlook: LeagueOutlook, humans: Iterable<number>) {
 		this.outlook = outlook;
@@ -649,8 +700,87 @@ export class SmartView {
 	}
 
 	// A package's market price: the second-highest real bid for all of it
-	// among the keenest teams other than `not`.
+	// among the keenest teams other than `not` - and for picks in later
+	// drafts, at least what they will fetch once their draft is next
+	// (pickFloorNow).
 	priceNow(a: Holdings, not: readonly number[]) {
+		const bid = this.bidPriceNow(a, not);
+		const later = a.picks.filter((dp) => this.pickFloorNow(dp) > 0);
+		if (later.length === 0) {
+			return bid;
+		}
+		const rest = {
+			players: a.players,
+			picks: a.picks.filter((dp) => !later.includes(dp)),
+		};
+		let floor = this.bidPriceNow(rest, not);
+		for (const dp of later) {
+			floor += this.pickFloorNow(dp);
+		}
+		return Math.max(bid, floor);
+	}
+
+	// The draft whose picks are next to be made.
+	private nextDraft() {
+		return g.get("season") + (g.get("phase") >= PHASE.DRAFT ? 1 : 0);
+	}
+
+	// What a pick in a later draft is worth to any team holding it: what a
+	// pick where its team is expected to finish fetches in the next draft
+	// now, discounted for the seasons until its own draft - a team can always
+	// keep it and sell it then. Without it, a pick several drafts away sold
+	// for a tenth of what it would fetch once its draft came (the title
+	// chances it brings fall outside the seasons the outlook sees), and a GM
+	// gave every first it had for veterans. 0 for the next draft's picks.
+	pickFloorNow(dp: DraftPick) {
+		const next = this.nextDraft();
+		if (typeof dp.season !== "number" || dp.season <= next || dp.pick > 0) {
+			return 0;
+		}
+		const slots = this.slotPricesNow(dp.round);
+		if (!slots) {
+			return 0;
+		}
+		const weights = finishWeights(this.outlook, dp);
+		let price = 0;
+		for (const [k, w] of weights.entries()) {
+			price += w * (slots[k] ?? 0);
+		}
+		return PATIENCE ** (dp.season - next) * price;
+	}
+
+	// The next draft's picks in a round, priced, by where each team is
+	// expected to finish: decreasing (a better finish never fetches more),
+	// place by place in between. Kept as long as the prices' bidders are.
+	private slotPricesNow(round: number) {
+		const keen = this.keenestCache;
+		if (!keen) {
+			return undefined;
+		}
+		keen.slots ??= new Map();
+		let slots = keen.slots.get(round);
+		if (!slots) {
+			const next = this.nextDraft();
+			const rows: { x: number; p: number }[] = [];
+			for (const tid of this.outlook.teams.keys()) {
+				for (const dp of this.heldNow(tid).picks) {
+					if (dp.season === next && dp.round === round) {
+						const p = this.bidPriceNow({ players: [], picks: [dp] }, [tid]);
+						if (Number.isFinite(p)) {
+							rows.push({ x: expectedPlace(this.outlook, dp), p });
+						}
+					}
+				}
+			}
+			slots = decreasingAt(rows, this.outlook.numTeams);
+			keen.slots.set(round, slots);
+		}
+		return slots;
+	}
+
+	// The second-highest real bid for all of a package among the keenest
+	// teams other than `not`.
+	private bidPriceNow(a: Holdings, not: readonly number[]) {
 		if (a.players.length === 0 && a.picks.length === 0) {
 			return 0;
 		}
