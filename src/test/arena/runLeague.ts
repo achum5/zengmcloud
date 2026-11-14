@@ -226,6 +226,10 @@ const arenaSettings = (): Record<string, unknown> => ({
 });
 
 export const createArenaLeague = async (lid: number) => {
+	// The last league's cache stops flushing before anything else: tests
+	// share a process, and its timer could otherwise write that league's
+	// records into this one once its database is open.
+	idb.cache.stopAutoFlush();
 	const settings: Record<string, unknown> =
 		helpers.deepCopy(getDefaultSettings());
 	for (const [key, value] of Object.entries(arenaSettings())) {
