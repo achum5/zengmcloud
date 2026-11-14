@@ -342,9 +342,11 @@ import { generateContractOptions } from "../core/contractNegotiation/generateCon
 import {
 	realisticFreeAgencyOn,
 	realisticTradesOn,
+	smartCpuOn,
 	vanillaPlusOn,
 } from "../core/realisticFrontOffice/isOn.ts";
 import { tradeValueCalculator } from "../core/vanillaPlus/index.ts";
+import { smartTradingBlock } from "../core/smartCpu/screens.ts";
 import { afterPick as realisticFrontOfficeAfterPick } from "../core/realisticFrontOffice/draft.ts";
 import { tradingBlockTeams } from "../core/realisticFrontOffice/proposals.ts";
 import {
@@ -3655,6 +3657,10 @@ const getOffers = async (
 	).map((t) => t.tid);
 	const offers = [];
 
+	// The smart CPU: each CPU team's own real offer (smartCpu/screens.ts).
+	if (smartCpuOn()) {
+		return smartTradingBlock(g.get("userTid"), userPids, userDpids);
+	}
 	const valueChangeCalculator = await tradeValueCalculator();
 	// Vanilla+: CPU teams only - not a league-mate's team, priced as if CPU.
 	const skip = vanillaPlusOn() ? g.get("userTids") : [g.get("userTid")];

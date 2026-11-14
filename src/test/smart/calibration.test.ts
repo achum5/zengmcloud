@@ -67,13 +67,12 @@ test.runIf(env.CAL_RUN === "1")(
 		const seen = new Set(rows.map((r) => r.season));
 		for (const season of seen) {
 			const rounds = g.get("numGamesPlayoffSeries", season).length;
-			const teamSeasons = await idb.getCopies.teamsPlus(
-				{ attrs: ["tid"], seasonAttrs: ["playoffRoundsWon"], season },
-				"noCopyCache",
-			);
-			const champ = teamSeasons.find(
-				(t: any) => t.seasonAttrs.playoffRoundsWon === rounds,
-			);
+			const champ = (
+				await idb.cache.teamSeasons.indexGetAll("teamSeasonsBySeasonTid", [
+					[season],
+					[season, "Z"],
+				])
+			).find((ts) => ts.playoffRoundsWon === rounds);
 			if (champ) {
 				champions[season] = champ.tid;
 			}

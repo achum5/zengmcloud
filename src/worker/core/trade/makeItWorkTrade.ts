@@ -4,7 +4,8 @@ import makeItWork from "./makeItWork.ts";
 import summary from "./summary.ts";
 import get from "./get.ts";
 import { tradeValueCalculator } from "../vanillaPlus/index.ts";
-import { realisticTradesOn } from "../realisticFrontOffice/isOn.ts";
+import { realisticTradesOn, smartCpuOn } from "../realisticFrontOffice/isOn.ts";
+import { smartMakeItWork } from "../smartCpu/screens.ts";
 import { counterTeams } from "../realisticFrontOffice/proposals.ts";
 
 /**
@@ -23,12 +24,16 @@ const makeItWorkTrade = async () => {
 	const frontOffice =
 		realisticTradesOn() && !g.get("userTids").includes(teams0[1].tid);
 	const valueChangeCalculator = await tradeValueCalculator();
+	// The smart CPU: what it would take, by its own worth
+	// (smartCpu/screens.ts).
 	const teams = frontOffice
 		? await counterTeams(helpers.deepCopy(teams0))
-		: await makeItWork(helpers.deepCopy(teams0), {
-				holdUserConstant: false,
-				valueChangeCalculator,
-			});
+		: smartCpuOn() && !g.get("userTids").includes(teams0[1].tid)
+			? await smartMakeItWork(helpers.deepCopy(teams0))
+			: await makeItWork(helpers.deepCopy(teams0), {
+					holdUserConstant: false,
+					valueChangeCalculator,
+				});
 
 	if (!teams) {
 		return {

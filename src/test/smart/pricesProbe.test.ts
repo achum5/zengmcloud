@@ -3,6 +3,7 @@ import { idb } from "../../worker/db/index.ts";
 import { g } from "../../worker/util/index.ts";
 import type { DraftPick, Player } from "../../common/types.ts";
 import { loadLeagueFile } from "./loadLeague.ts";
+import { contractOf } from "../../worker/core/realisticFrontOffice/contractOf.ts";
 
 // SMART_LEAGUE=<league.json>: the goal worked out (docs/smart-cpu.md) on a
 // real league. Each team's use for every player and pick (what it does to the
@@ -78,7 +79,7 @@ test.skipIf(!env.SMART_LEAGUE)(
 					key: `p${p.pid}`,
 					owner: t.tid,
 					p,
-					label: `${p.firstName} ${p.lastName} (${abbrev.get(t.tid)}, ${season - p.born.year}y ${r.ovr}/${r.pot}, $${((p.contract?.amount ?? 0) / 1000).toFixed(1)}M->${p.contract?.exp})`,
+					label: `${p.firstName} ${p.lastName} (${abbrev.get(t.tid)}, ${season - p.born.year}y ${r.ovr}/${r.pot}, $${(contractOf(p).amount / 1000).toFixed(1)}M->${contractOf(p).exp})`,
 				});
 			}
 			if (env.SMART_PICKS !== "0") {

@@ -206,7 +206,7 @@ export class SmartView {
 		}
 		const recording: LetGoDecisions | undefined =
 			!known && own ? { decisions: new Map(), record: true } : undefined;
-		const decided =
+		const decided: { letGo?: LetGoDecisions; after?: () => void } =
 			known && own && smartSettings.decideOnce
 				? this.withIncoming(tid, own, known.known, h, dead)
 				: { letGo: known?.known };
@@ -714,6 +714,152 @@ export class SmartView {
 		return this.dealWorthNow(tid, partner, out, inn);
 	}
 
+	// A buyer's real offer for what a seller gives: its players and nearest
+	// picks, the seller's favourite first, as many as still leave it better
+	// off by its goal, within the trade rules on salary (what it would miss
+	// least added to match), and good for it by its full worth - or
+	// nothing. The market's offers, and the trade screens' (smartCpu/
+	// screens.ts).
+	async offerFrom(buyer: number, seller: number, out: Holdings) {
+		const s = smartSettings;
+		await ensureRetention(this.outlook, out.players, buyer);
+		const held = await this.holdingsOf(buyer);
+		const m1 = mark();
+		// Its players and its nearest picks (as NBA teams pay: a deal
+		// without picks was every one of the GM's first 72), best for the
+		// seller first.
+		const scored: { x: Player | DraftPick; v: number }[] = [];
+		for (const p of held.players.filter((x) => !isUntradable(x).untradable)) {
+			scored.push({
+				x: p,
+				v: await this.useOf(seller, { players: [p], picks: [] }),
+			});
+		}
+		scored.sort((a, b) => b.v - a.v);
+		const candidates: { x: Player | DraftPick; v: number }[] = scored.slice(
+			0,
+			s.offerCandidates,
+		);
+		for (const dp of [...held.picks]
+			.sort(
+				(a, b) =>
+					(a.season as number) - (b.season as number) ||
+					a.round - b.round ||
+					a.dpid - b.dpid,
+			)
+			.slice(0, s.offerPicks)) {
+			candidates.push({
+				x: dp,
+				v: await this.useOf(seller, { players: [], picks: [dp] }),
+			});
+		}
+		candidates.sort((a, b) => b.v - a.v);
+		lap("offer: scoring", m1);
+		const m2 = mark();
+		// Within the trade rules on salary: the seller takes in no more than
+		// they let it, and the buyer sends back as much as they make it.
+		const taken = salaryOf(out.players);
+		const sellerPayroll = await this.tradePayroll(seller);
+		const buyerPayroll = await this.tradePayroll(buyer);
+		const sellerMayTake = (o: Holdings) =>
+			salaryRulesAllow(seller, sellerPayroll, salaryOf(o.players), taken);
+		const buyerMatches = (o: Holdings) =>
+			salaryRulesAllow(buyer, buyerPayroll, taken, salaryOf(o.players));
+		// Searching, the goal alone (the full worth is checked below). Its
+		// holdings are read, and what it would get has its chance of
+		// staying with it (its want, above).
+		const gains = (o: Holdings) =>
+			this.value(
+				buyer,
+				this.swappedFrom(held, o, out),
+				[],
+				tradedAwayCount(o.players),
+			) -
+				this.value(buyer, held) >
+			0;
+		let offer: Holdings = { players: [], picks: [] };
+		for (const { x } of candidates) {
+			if (offer.players.length + offer.picks.length >= s.offerSize) {
+				break;
+			}
+			const next = plus(offer, x);
+			if (sellerMayTake(next) && gains(next)) {
+				offer = next;
+			}
+		}
+		offerStats.tried += 1;
+		if (offer.players.length === 0 && offer.picks.length === 0) {
+			offerStats.empty += 1;
+			lap("offer: greedy", m2);
+			return undefined;
+		}
+		// Short of salary to send back: the players it would miss least,
+		// as many as the rules need (as NBA teams fill a trade), if it still
+		// gains.
+		if (!buyerMatches(offer)) {
+			const uses = this.usesOf(buyer, held);
+			for (const p of held.players
+				.filter(
+					(x) =>
+						!isUntradable(x).untradable &&
+						!offer.players.some((y) => y.pid === x.pid),
+				)
+				.sort((a, b) => uses.get(a.pid)! - uses.get(b.pid)! || a.pid - b.pid)) {
+				if (
+					buyerMatches(offer) ||
+					offer.players.length + offer.picks.length >= s.offerSize + s.fillers
+				) {
+					break;
+				}
+				const next = plus(offer, p);
+				if (sellerMayTake(next)) {
+					offer = next;
+				}
+			}
+			if (!buyerMatches(offer)) {
+				offerStats.cantMatch += 1;
+				lap("offer: greedy", m2);
+				return undefined;
+			}
+			if (!gains(offer)) {
+				offerStats.fillersTooDear += 1;
+				lap("offer: greedy", m2);
+				return undefined;
+			}
+		}
+		lap("offer: greedy", m2);
+		const m3 = mark();
+		const legal = await summary([
+			{
+				tid: buyer,
+				pids: offer.players.map((p) => p.pid),
+				dpids: offer.picks.map((dp) => dp.dpid),
+				pidsExcluded: [],
+				dpidsExcluded: [],
+			},
+			{
+				tid: seller,
+				pids: out.players.map((p) => p.pid),
+				dpids: out.picks.map((dp) => dp.dpid),
+				pidsExcluded: [],
+				dpidsExcluded: [],
+			},
+		]);
+		const inn = offer;
+		if (legal.warning) {
+			offerStats.illegal += 1;
+			lap("offer: checks", m3);
+			return undefined;
+		}
+		if ((await this.dealWorth(buyer, seller, inn, out)) <= 0) {
+			offerStats.buyerSaysNo += 1;
+			lap("offer: checks", m3);
+			return undefined;
+		}
+		lap("offer: checks", m3);
+		return { offer: inn };
+	}
+
 	// THE MARKET: the best real offer for `out` from the CPU teams keenest on
 	// it (not `seller`, not `not`): each its own players, as many as still
 	// leave it better off by its own worth, legal under the trade rules, and
@@ -726,11 +872,13 @@ export class SmartView {
 		skip: ReadonlySet<number> = new Set(),
 		// How many of the keenest teams are asked.
 		asked = smartSettings.buyers,
+		// The teams it may be put to (the market: those that want him most of
+		// all teams); the most valuable franchises by default.
+		among?: readonly number[],
 	) {
-		const s = smartSettings;
 		const m0 = mark();
 		const keen = [];
-		for (const tid of await this.keenest()) {
+		for (const tid of among ?? (await this.keenest())) {
 			if (tid !== seller && !this.humans.has(tid) && !skip.has(tid)) {
 				keen.push({ tid, want: await this.useOf(tid, out) });
 			}
@@ -751,141 +899,12 @@ export class SmartView {
 			if (want <= 0) {
 				continue;
 			}
-			const held = await this.holdingsOf(buyer);
-			const m1 = mark();
-			// Its players and its nearest picks (as NBA teams pay: a deal
-			// without picks was every one of the GM's first 72), best for the
-			// seller first.
-			const scored: { x: Player | DraftPick; v: number }[] = [];
-			for (const p of held.players.filter((x) => !isUntradable(x).untradable)) {
-				scored.push({
-					x: p,
-					v: await this.useOf(seller, { players: [p], picks: [] }),
-				});
-			}
-			scored.sort((a, b) => b.v - a.v);
-			const candidates: { x: Player | DraftPick; v: number }[] = scored.slice(
-				0,
-				s.offerCandidates,
-			);
-			for (const dp of [...held.picks]
-				.sort(
-					(a, b) =>
-						(a.season as number) - (b.season as number) ||
-						a.round - b.round ||
-						a.dpid - b.dpid,
-				)
-				.slice(0, s.offerPicks)) {
-				candidates.push({
-					x: dp,
-					v: await this.useOf(seller, { players: [], picks: [dp] }),
-				});
-			}
-			candidates.sort((a, b) => b.v - a.v);
-			lap("offer: scoring", m1);
-			const m2 = mark();
-			// Within the trade rules on salary: the seller takes in no more than
-			// they let it, and the buyer sends back as much as they make it.
-			const taken = salaryOf(out.players);
-			const sellerPayroll = await this.tradePayroll(seller);
-			const buyerPayroll = await this.tradePayroll(buyer);
-			const sellerMayTake = (o: Holdings) =>
-				salaryRulesAllow(seller, sellerPayroll, salaryOf(o.players), taken);
-			const buyerMatches = (o: Holdings) =>
-				salaryRulesAllow(buyer, buyerPayroll, taken, salaryOf(o.players));
-			// Searching, the goal alone (the full worth is checked below). Its
-			// holdings are read, and what it would get has its chance of
-			// staying with it (its want, above).
-			const gains = (o: Holdings) =>
-				this.value(
-					buyer,
-					this.swappedFrom(held, o, out),
-					[],
-					tradedAwayCount(o.players),
-				) -
-					this.value(buyer, held) >
-				0;
-			let offer: Holdings = { players: [], picks: [] };
-			for (const { x } of candidates) {
-				if (offer.players.length + offer.picks.length >= s.offerSize) {
-					break;
-				}
-				const next = plus(offer, x);
-				if (sellerMayTake(next) && gains(next)) {
-					offer = next;
-				}
-			}
-			offerStats.tried += 1;
-			if (offer.players.length === 0 && offer.picks.length === 0) {
-				offerStats.empty += 1;
-				lap("offer: greedy", m2);
+			const made = await this.offerFrom(buyer, seller, out);
+			if (!made) {
 				continue;
 			}
-			// Short of salary to send back: the players it would miss least,
-			// as many as the rules need (as NBA teams fill a trade), if it still
-			// gains.
-			if (!buyerMatches(offer)) {
-				const uses = this.usesOf(buyer, held);
-				for (const p of held.players
-					.filter(
-						(x) =>
-							!isUntradable(x).untradable &&
-							!offer.players.some((y) => y.pid === x.pid),
-					)
-					.sort(
-						(a, b) => uses.get(a.pid)! - uses.get(b.pid)! || a.pid - b.pid,
-					)) {
-					if (
-						buyerMatches(offer) ||
-						offer.players.length + offer.picks.length >= s.offerSize + s.fillers
-					) {
-						break;
-					}
-					const next = plus(offer, p);
-					if (sellerMayTake(next)) {
-						offer = next;
-					}
-				}
-				if (!buyerMatches(offer)) {
-					offerStats.cantMatch += 1;
-					lap("offer: greedy", m2);
-					continue;
-				}
-				if (!gains(offer)) {
-					offerStats.fillersTooDear += 1;
-					lap("offer: greedy", m2);
-					continue;
-				}
-			}
-			lap("offer: greedy", m2);
+			const inn = made.offer;
 			const m3 = mark();
-			const legal = await summary([
-				{
-					tid: buyer,
-					pids: offer.players.map((p) => p.pid),
-					dpids: offer.picks.map((dp) => dp.dpid),
-					pidsExcluded: [],
-					dpidsExcluded: [],
-				},
-				{
-					tid: seller,
-					pids: out.players.map((p) => p.pid),
-					dpids: out.picks.map((dp) => dp.dpid),
-					pidsExcluded: [],
-					dpidsExcluded: [],
-				},
-			]);
-			const inn = offer;
-			if (legal.warning) {
-				offerStats.illegal += 1;
-				lap("offer: checks", m3);
-				continue;
-			}
-			if ((await this.dealWorth(buyer, seller, inn, out)) <= 0) {
-				offerStats.buyerSaysNo += 1;
-				lap("offer: checks", m3);
-				continue;
-			}
 			const worth = await this.dealWorth(seller, buyer, out, inn);
 			lap("offer: checks", m3);
 			if (!best || worth > best.worth) {

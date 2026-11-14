@@ -9,7 +9,11 @@ import { shuffle, uniformSeed, choice } from "../../common/random.ts";
 import { tradeValueCalculator } from "../core/vanillaPlus/index.ts";
 import { orderBy } from "../../common/utils.ts";
 import { defineView } from "../util/defineView.ts";
-import { realisticTradesOn } from "../core/realisticFrontOffice/isOn.ts";
+import {
+	realisticTradesOn,
+	smartCpuOn,
+} from "../core/realisticFrontOffice/isOn.ts";
+import { smartOfferStands, smartProposals } from "../core/smartCpu/screens.ts";
 import {
 	proposalStands,
 	proposalTeams as realisticFrontOfficeProposalTeams,
@@ -26,15 +30,19 @@ const getOffers = async (seed: number) => {
 	const NUM_OFFERS = 5;
 	const NUM_TRIES_PER_TEAM = 10;
 	const smart = realisticTradesOn();
-	const tries = smart ? SMART_TRIES_PER_TEAM : NUM_TRIES_PER_TEAM;
+	// The smart CPU's GM: its own offers (smartCpu/screens.ts), as few as the
+	// realistic front offices try.
+	const gm = smartCpuOn();
+	const limited = smart || gm;
+	const tries = limited ? SMART_TRIES_PER_TEAM : NUM_TRIES_PER_TEAM;
 
 	const userTid = g.get("userTid");
 
 	const cacheKey = `${g.get("lid")}:${userTid}:${seed}`;
-	if (smart && smartCache?.key === cacheKey) {
+	if (limited && smartCache?.key === cacheKey) {
 		const kept: TradeTeams[] = [];
 		for (const offer of smartCache.offers) {
-			if (await proposalStands(offer)) {
+			if (gm ? await smartOfferStands(offer) : await proposalStands(offer)) {
 				kept.push(offer);
 			}
 		}
@@ -45,7 +53,7 @@ const getOffers = async (seed: number) => {
 		(t) => !t.disabled && t.tid !== userTid,
 	);
 	shuffle(teams, seed);
-	if (smart) {
+	if (limited) {
 		teams.splice(SMART_TEAMS);
 	}
 
@@ -64,26 +72,49 @@ const getOffers = async (seed: number) => {
 		return [];
 	}
 
+	// What a team is asked about on its try: one of the user's players or
+	// picks (good players more likely), or one of each.
+	const ask = (tid: number, i: number) => {
+		const seedBase = seed + NUM_TRIES_PER_TEAM * tid + i;
+		const r = uniformSeed(seedBase);
+		const pids: number[] = [];
+		const dpids: number[] = [];
+
+		if ((r < 0.7 || draftPicks.length === 0) && players.length > 0) {
+			// Weight by player value - good player more likely to be in trade
+			pids.push(choice(players, (p) => p.value, seedBase + 1).pid);
+		} else if ((r < 0.85 || players.length === 0) && draftPicks.length > 0) {
+			dpids.push(choice(draftPicks, undefined, seedBase + 2).dpid);
+		} else {
+			pids.push(choice(players, (p) => p.value, seedBase + 3).pid);
+			dpids.push(choice(draftPicks, undefined, seedBase + 4).dpid);
+		}
+		return { pids, dpids };
+	};
+
+	// Don't do trades of just picks or for nothing, they're weird usually
+	const notWeird = (teams: TradeTeams) =>
+		(teams[0].pids.length > 0 || teams[1].pids.length > 0) &&
+		(teams[1].pids.length > 0 || teams[1].dpids.length > 0);
+
+	if (gm) {
+		const offers = await smartProposals(
+			userTid,
+			teams.map((t) => ({ tid: t.tid, ...ask(t.tid, 0) })),
+			NUM_OFFERS,
+			notWeird,
+		);
+		smartCache = { key: cacheKey, offers };
+		return augmentOffers(offers);
+	}
+
 	const offers: TradeTeams[] = [];
 
 	const valueChangeCalculator = await tradeValueCalculator();
 
 	for (const t of teams) {
 		for (let i = 0; i < tries; i++) {
-			const seedBase = seed + NUM_TRIES_PER_TEAM * t.tid + i;
-			const r = uniformSeed(seedBase);
-			const pids: number[] = [];
-			const dpids: number[] = [];
-
-			if ((r < 0.7 || draftPicks.length === 0) && players.length > 0) {
-				// Weight by player value - good player more likely to be in trade
-				pids.push(choice(players, (p) => p.value, seedBase + 1).pid);
-			} else if ((r < 0.85 || players.length === 0) && draftPicks.length > 0) {
-				dpids.push(choice(draftPicks, undefined, seedBase + 2).dpid);
-			} else {
-				pids.push(choice(players, (p) => p.value, seedBase + 3).pid);
-				dpids.push(choice(draftPicks, undefined, seedBase + 4).dpid);
-			}
+			const { pids, dpids } = ask(t.tid, i);
 
 			const teams0: TradeTeams = [
 				{
@@ -112,17 +143,7 @@ const getOffers = async (seed: number) => {
 						valueChangeCalculator,
 					});
 
-			if (!teams) {
-				continue;
-			}
-
-			// Don't do trades of just picks, it's weird usually
-			if (teams[0].pids.length === 0 && teams[1].pids.length === 0) {
-				continue;
-			}
-
-			// Don't do trades for nothing, it's weird usually
-			if (teams[1].pids.length === 0 && teams[1].dpids.length === 0) {
+			if (!teams || !notWeird(teams)) {
 				continue;
 			}
 
@@ -142,7 +163,7 @@ const getOffers = async (seed: number) => {
 		}
 	}
 
-	if (smart) {
+	if (limited) {
 		smartCache = { key: cacheKey, offers };
 	}
 	return augmentOffers(offers);

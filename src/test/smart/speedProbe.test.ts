@@ -1,5 +1,6 @@
 import { test } from "vitest";
 import { makeSeededRandom } from "../../common/random.ts";
+import type { Player } from "../../common/types.ts";
 import { idb } from "../../worker/db/index.ts";
 import { g } from "../../worker/util/index.ts";
 import isUntradable from "../../worker/core/trade/isUntradable.ts";
@@ -41,7 +42,7 @@ test.runIf(env.SPEED_PROBE === "1")(
 			out[name] = (performance.now() - t) / n;
 		};
 		const view = new SmartView(outlook, []);
-		const players = [];
+		const players: Player[] = [];
 		for (const tid of tids) {
 			players.push(
 				...(await idb.cache.players.indexGetAll("playersByTid", tid))

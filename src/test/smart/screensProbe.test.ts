@@ -20,10 +20,8 @@ test.runIf(env.SCREENS_PROBE === "1")(
 	async () => {
 		await importNode("fake-indexeddb/auto");
 		const fs = await importNode("node:fs/promises");
-		const { default: makeItWork } =
-			await import("../../worker/core/trade/makeItWork.ts");
-		const { tradeValueCalculator } =
-			await import("../../worker/core/vanillaPlus/index.ts");
+		const { smartMakeItWork, smartTradingBlock } =
+			await import("../../worker/core/smartCpu/screens.ts");
 		const { smartJudgeOffer } =
 			await import("../../worker/core/smartCpu/humanTrades.ts");
 		const { currentOutlook } =
@@ -47,7 +45,6 @@ test.runIf(env.SCREENS_PROBE === "1")(
 		const mine = (await idb.cache.players.indexGetAll("playersByTid", user))
 			.filter((p) => !isUntradable(p).untradable)
 			.sort((a, b) => b.value - a.value);
-		const valueChangeCalculator = await tradeValueCalculator();
 		const rows: Record<string, unknown>[] = [];
 		const time = async <T>(label: string, f: () => Promise<T>) => {
 			const t = performance.now();
@@ -57,39 +54,14 @@ test.runIf(env.SCREENS_PROBE === "1")(
 		};
 		// The trading block, for the user's second best and fifth best.
 		for (const p of [mine[1]!, mine[4]!]) {
-			let offers = 0;
-			await time(`trading block for ${p.pid} (value ${p.value})`, async () => {
-				for (const t of await idb.cache.teams.getAll()) {
-					if (t.disabled || t.tid === user) {
-						continue;
-					}
-					const teams: TradeTeams = [
-						{
-							tid: user,
-							pids: [p.pid],
-							pidsExcluded: [],
-							dpids: [],
-							dpidsExcluded: [],
-						},
-						{
-							tid: t.tid,
-							pids: [],
-							pidsExcluded: [],
-							dpids: [],
-							dpidsExcluded: [],
-						},
-					];
-					const found = await makeItWork(teams, {
-						holdUserConstant: true,
-						maxAssetsToAdd: 5,
-						valueChangeCalculator,
-					});
-					if (found) {
-						offers += 1;
-					}
-				}
-			});
-			rows.at(-1)!.offers = offers;
+			const offers = await time(
+				`trading block for ${p.pid} (value ${p.value.toFixed(1)})`,
+				() => smartTradingBlock(user, [p.pid], []),
+			);
+			rows.at(-1)!.offers = offers.length;
+			rows.at(-1)!.sample = offers
+				.slice(0, 4)
+				.map((o) => ({ tid: o[1].tid, pids: o[1].pids, dpids: o[1].dpids }));
 		}
 		// What would make this work: a CPU team's best player asked for.
 		for (const tid of [5, 17]) {
@@ -113,10 +85,10 @@ test.runIf(env.SCREENS_PROBE === "1")(
 				},
 			];
 			const found = await time(`make it work for ${theirs[0]!.pid}`, () =>
-				makeItWork(teams, { holdUserConstant: false, valueChangeCalculator }),
+				smartMakeItWork(teams),
 			);
 			rows.at(-1)!.found = found
-				? found.map((side) => [side.pids.length, side.dpids.length])
+				? found.map((side) => ({ pids: side.pids, dpids: side.dpids }))
 				: null;
 			// The offer judged, as the trade screen's Propose does.
 			if (found) {

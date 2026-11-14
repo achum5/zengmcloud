@@ -40,6 +40,9 @@ export const marketSettings = {
 	shopped: 5,
 	// Candidates ranked by a rough read (rosters not cut to the limit).
 	roughRanking: true,
+	// Each shopped player put to the teams that want him most of all teams,
+	// not only of the keenest.
+	anyBuyer: true,
 	// A buyer's best players by its own use, kept out of salary matching.
 	core: 3,
 	// In season, a moment about every this many games a team, and every day
@@ -77,11 +80,6 @@ export type SmartDeal = {
 const none: Holdings = { players: [], picks: [] };
 const one = (x: Player | DraftPick): Holdings =>
 	"pid" in x ? { players: [x], picks: [] } : { players: [], picks: [x] };
-const plus = (h: Holdings, x: Player | DraftPick): Holdings =>
-	"pid" in x
-		? { players: [...h.players, x], picks: h.picks }
-		: { players: h.players, picks: [...h.picks, x] };
-
 const teamsOf = (a: number, b: number, giveA: Holdings, giveB: Holdings) =>
 	[
 		{
@@ -116,6 +114,8 @@ export const candidates = async (
 		buyer: number;
 		p: Player;
 		surplus: number;
+		// The teams that want him most, of all of them (shopped players).
+		buyers?: number[];
 	}[] = [];
 	for (const seller of cpu) {
 		if (dealt.has(seller)) {
@@ -159,7 +159,7 @@ export const candidates = async (
 	const shopped = new Map<number, number>();
 	const wasRested = (c: (typeof found)[number]) =>
 		rested.get(c.seller)?.has(c.p.pid) ? 1 : 0;
-	return found
+	const chosen = found
 		.sort(
 			(a, b) =>
 				wasRested(a) - wasRested(b) ||
@@ -171,6 +171,25 @@ export const candidates = async (
 			shopped.set(c.seller, n);
 			return n <= marketSettings.shopped;
 		});
+	// Each put to the teams that want him most, of all of them: the keenest
+	// franchises set prices, but any team may buy (2026-11-14: with only the
+	// six keenest buying, five teams made 85% of the purchases).
+	if (marketSettings.anyBuyer) {
+		for (const c of chosen) {
+			const wants: { k: number; want: number }[] = [];
+			for (const k of cpu) {
+				if (k !== c.seller && !dealt.has(k)) {
+					await ensureRetention(view.outlook, [c.p], k);
+					wants.push({ k, want: view.roughUseOfNow(k, one(c.p)) });
+				}
+			}
+			c.buyers = wants
+				.sort((a, b) => b.want - a.want || a.k - b.k)
+				.slice(0, marketSettings.buyers)
+				.map((w) => w.k);
+		}
+	}
+	return chosen;
 };
 
 // Whether a buyer could take him under the salary rules in an offer of a few
@@ -286,7 +305,14 @@ export const dealsNow = async (
 	for (const c of all) {
 		const out = one(c.p);
 		const real = await timed("market: offers", () =>
-			view.bestRealOffer(c.seller, out, -1, new Set(), marketSettings.buyers),
+			view.bestRealOffer(
+				c.seller,
+				out,
+				-1,
+				new Set(),
+				marketSettings.buyers,
+				c.buyers,
+			),
 		);
 		if (!real) {
 			marketStats.noOffer += 1;
