@@ -1570,7 +1570,13 @@ export const LiveGamecast = ({
 							</div>
 							<div>
 								<Section title="Game Flow">
-									<FlowCharts boxScore={boxScore} colors={colors} live />
+									<FlowCharts
+										boxScore={boxScore}
+										colors={colors}
+										live
+										plays={rows}
+										say={feed.say}
+									/>
 								</Section>
 								{shotChart}
 								<Section
@@ -1615,7 +1621,13 @@ export const LiveGamecast = ({
 						</div>
 					) : (
 						<Section title="Game Flow">
-							<FlowCharts boxScore={boxScore} colors={colors} live />
+							<FlowCharts
+								boxScore={boxScore}
+								colors={colors}
+								live
+								plays={rows}
+								say={feed.say}
+							/>
 						</Section>
 					)}
 				</div>

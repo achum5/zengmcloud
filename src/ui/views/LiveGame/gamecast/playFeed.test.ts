@@ -3,6 +3,7 @@ import {
 	feedRows,
 	highlightOf,
 	periodLabel,
+	playAt,
 	playTitle,
 	type FeedEntry,
 } from "./playFeed.ts";
@@ -114,5 +115,44 @@ describe("the gamecast's play rows", () => {
 		assert.isUndefined(one([line(2, "missTp", 1), line(1, "fgaTp", 1)]));
 		// (Still in the air: not yet.)
 		assert.isUndefined(one([line(1, "fgaTp", 1)]));
+	});
+});
+
+describe("the play at a moment of the game", () => {
+	// The last 15 seconds of a 12-minute 4th quarter: a three, a timeout,
+	// a sub, a missed shot. (Newest first.)
+	const at = (clock: number, extra: Partial<FeedEntry> = {}) => ({
+		period: 4,
+		event: { clock },
+		...extra,
+	});
+	const rows = feedRows([
+		line(6, "sub", 1, at(4)),
+		line(5, "missMidRange", 0, at(4)),
+		line(4, "fgaMidRange", 0, at(6.6)),
+		line(3, "timeout", 1, at(9.4)),
+		line(2, "tp", 1, at(9.4)),
+		line(1, "fgaTp", 1, at(11)),
+	]);
+	const periodEnds = [720, 1440, 2160, 2880];
+
+	test("the last play by then - not the timeout or the sub after it", () => {
+		assert.strictEqual(playAt(rows, 2871, periodEnds, true)?.type, "tp");
+		assert.strictEqual(
+			playAt(rows, 2876, periodEnds, true)?.type,
+			"missMidRange",
+		);
+		assert.strictEqual(
+			playAt(rows, 2880, periodEnds, true)?.type,
+			"missMidRange",
+		);
+		// Before any of them: the play before (none here).
+		assert.isUndefined(playAt(rows, 2860, periodEnds, true));
+	});
+
+	test("a finished game's plays are timed to the second, as its scores are", () => {
+		// (9.4 left: 2870.6 in, kept as 2871.)
+		assert.isUndefined(playAt(rows, 2870.8, periodEnds, true));
+		assert.strictEqual(playAt(rows, 2870.8, periodEnds, false)?.type, "tp");
 	});
 });

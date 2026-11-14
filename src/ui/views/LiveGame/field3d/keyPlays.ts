@@ -7,7 +7,7 @@ import {
 	type KeySegment,
 	type ReelCandidate,
 } from "../court3d/keyPlays.ts";
-import { winProb } from "../winProb.ts";
+import { normalWinProb } from "../winProb.ts";
 import type { FieldTimeline, Play, RawEvent } from "./director.ts";
 
 // KEY PLAYS, FOR FOOTBALL: the game watched as its big moments - the 3D
@@ -95,7 +95,7 @@ const standingsOf = (
 			period,
 			clock,
 			score: [score[0], score[1]],
-			p0: winProb({
+			p0: normalWinProb({
 				margin: score[0] - score[1],
 				left,
 				spread,

@@ -577,7 +577,7 @@ describe("watching another device's 3D sim", () => {
 				// of seconds after it is stepped, all but the usual - the odd
 				// one where this court has fallen too far behind, which ones
 				// coming down to how the two stagings' lengths fall at a
-				// quarter's end.)
+				// quarter's end - and so to which plays the reel picks.)
 				const told = at + 2000;
 				const missed = [...run.seenB].filter(([i]) => !run.seenF.has(i));
 				// (Counted in plays: the lines of one - a shot, the block, the
@@ -589,7 +589,7 @@ describe("watching another device's 3D sim", () => {
 						.sort((x, y) => x - y)
 						.filter((i, k, all) => k === 0 || i - all[k - 1]! > 2).length;
 				const late = plays(true);
-				assert.isAtMost(late, 3, `${label} ${JSON.stringify(m)}`);
+				assert.isAtMost(late, 4, `${label} ${JSON.stringify(m)}`);
 				assert.isAtMost(
 					plays(false),
 					unsaid ? 3 : 0,

@@ -17,7 +17,7 @@ import { formatClock } from "../../common/formatClock.ts";
 import { groupsOf, MAX_LINEUPS, MIN_LINEUP_SEC } from "../../common/lineups.ts";
 import clsx from "clsx";
 import { LineupFace, LineupFaces } from "./LineupFaces.tsx";
-import { GAME_S, HOME_EDGE, winProb } from "../views/LiveGame/winProb.ts";
+import { flowChance, GAME_S, HOME_EDGE } from "../views/LiveGame/winProb.ts";
 import { helpers } from "../util/helpers.ts";
 import { teamsInDisplayOrder } from "../util/boxScoreDisplayOrder.ts";
 import type { LiveFlow } from "../util/processLiveGameEvents.basketball.tsx";
@@ -234,23 +234,15 @@ const LeadChart = ({
 		return scores[i]!;
 	};
 
-	// Regulation, and how much of it (or of an overtime, a sliver of one
-	// game's worth) is still to play at t.
-	const reg = periodEnds[numPeriods - 1] ?? total;
-	const left = (t: number) => {
-		if (t < reg) {
-			return (reg - t) / reg;
-		}
-		const end = periodEnds.find((e) => e > t) ?? total;
-		return (end - t) / reg;
-	};
-	const chance = (t: number, s: [number, number, number]) => {
-		const p0 = winProb({
-			margin: s[1] - s[2],
-			left: left(t),
-			spread: expected,
-			length: reg / GAME_S,
-		});
+	// Team 0's chance at t (see LiveGame/winProb.ts), and the chance of the
+	// team listed first.
+	const chance0 = flowChance(charts, {
+		numPeriods,
+		spread: expected,
+		over: upTo === undefined,
+	});
+	const chance = (t: number) => {
+		const p0 = chance0(t);
 		return top === 0 ? p0 : 1 - p0;
 	};
 	// Every few seconds, and either side of every score.
@@ -262,13 +254,14 @@ const LeadChart = ({
 			k += 1;
 			const s = scores[k]!;
 			if (s[0] > 0) {
-				samples.push([s[0], chance(s[0], scores[k - 1]!)]);
+				// (Just before it.)
+				samples.push([s[0], chance(s[0] - 0.001)]);
 			}
-			samples.push([s[0], chance(s[0], s)]);
+			samples.push([s[0], chance(s[0])]);
 		}
-		samples.push([t, chance(t, scores[k]!)]);
+		samples.push([t, chance(t)]);
 	}
-	samples.push([end, chance(end, scores.at(-1)!)]);
+	samples.push([end, chance(end)]);
 	const wLine = samples
 		.map(([t, p], i) => `${i === 0 ? "M" : "L"}${x(t)},${yW(p)}`)
 		.join(" ");
@@ -471,9 +464,9 @@ const LeadChart = ({
 							/>
 							<circle
 								cx={x(hover)}
-								cy={yW(chance(hover, hovered))}
+								cy={yW(chance(hover))}
 								r={3.5}
-								fill={colors[chance(hover, hovered) >= 0.5 ? top : bottom]}
+								fill={colors[chance(hover) >= 0.5 ? top : bottom]}
 								stroke="var(--bs-body-bg)"
 								strokeWidth={1.5}
 							/>
@@ -504,7 +497,7 @@ const LeadChart = ({
 					colors={colors}
 					order={order}
 					score={hovered}
-					chance={chance(hover, hovered)}
+					chance={chance(hover)}
 				/>
 			) : null}
 		</div>

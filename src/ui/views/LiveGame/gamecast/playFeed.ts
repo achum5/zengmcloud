@@ -269,3 +269,51 @@ export const highlightOf = (row: FeedRow): string | undefined => {
 	}
 	return row.finish === "poster" ? "Poster dunk" : dunk ? "Dunk" : undefined;
 };
+
+// Lines with no play of their own: what happened at a moment is the play
+// before them.
+const NOT_PLAYS = new Set([
+	"sub",
+	"timeout",
+	"injury",
+	"foulOut",
+	"elamActive",
+	"shootoutStart",
+	"period",
+	"overtime",
+	"endOfPeriod",
+	"gameOver",
+]);
+
+// The play at t seconds into the game: the last one by then. (A finished
+// game's scores are kept to the second, so its plays are timed to the
+// second too - a basket and the score it makes, together.)
+export const playAt = (
+	plays: readonly FeedRow[],
+	t: number,
+	periodEnds: readonly number[],
+	whole: boolean,
+): FeedRow | undefined => {
+	for (const row of plays) {
+		if (row.textOnly || row.pending || NOT_PLAYS.has(row.type ?? "")) {
+			continue;
+		}
+		const end =
+			row.period === undefined ? undefined : periodEnds[row.period - 1];
+		let clock: number | undefined;
+		for (const e of row.events) {
+			const c = (e as { clock?: unknown } | undefined)?.clock;
+			if (typeof c === "number") {
+				clock = c;
+			}
+		}
+		if (end === undefined || clock === undefined) {
+			continue;
+		}
+		const when = whole ? Math.round(end - clock) : end - clock;
+		if (when <= t) {
+			return row;
+		}
+	}
+	return undefined;
+};

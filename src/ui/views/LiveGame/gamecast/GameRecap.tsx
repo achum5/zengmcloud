@@ -54,7 +54,7 @@ import { playSentence } from "./sentence.ts";
 import { ShotChart } from "./ShotChart.tsx";
 import { HighlightClip } from "./HighlightClip.tsx";
 import { unpackShots, type ShotSpot } from "./shots.ts";
-import { winProb } from "../winProb.ts";
+import { GAME_S, winProb } from "../winProb.ts";
 
 type Tab = "recap" | "box" | "plays" | "stats" | "flow";
 
@@ -308,7 +308,10 @@ const Line = ({ boxScore }: { boxScore: any }) => {
 	}
 	// The predicted home margin (above 0, home favored), as it was quoted.
 	const spread = roundHalf(raw);
-	const pHome = winProb({ margin: 0, left: 1, spread: raw });
+	// (Over the game as long as it was, where it says.)
+	const regS: number =
+		boxScore.charts?.periodEnds?.[(boxScore.numPeriods ?? 4) - 1] ?? GAME_S;
+	const pHome = winProb({ margin: 0, secs: regS, regS, spread: raw });
 	const [away, home] = teamsInDisplayOrder(boxScore.teams as [any, any]);
 	const diff = home.pts - away.pts - spread;
 	const rows = [
@@ -555,7 +558,12 @@ export const GameRecap = ({
 									<RecapStory boxScore={boxScore} />
 									{boxScore.charts ? (
 										<Section title="Game Flow">
-											<FlowCharts boxScore={boxScore} colors={colors} />
+											<FlowCharts
+												boxScore={boxScore}
+												colors={colors}
+												plays={replay?.rows}
+												say={feed.say}
+											/>
 										</Section>
 									) : null}
 									{shotChart}
@@ -656,7 +664,12 @@ export const GameRecap = ({
 						<>
 							{boxScore.charts ? (
 								<Section title="Game Flow">
-									<FlowCharts boxScore={boxScore} colors={colors} />
+									<FlowCharts
+										boxScore={boxScore}
+										colors={colors}
+										plays={replay?.rows}
+										say={feed.say}
+									/>
 								</Section>
 							) : null}
 							<GameCharts boxScore={boxScore} restOnly />
