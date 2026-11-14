@@ -3659,7 +3659,7 @@ const getOffers = async (
 
 	// The smart CPU: each CPU team's own real offer (smartCpu/screens.ts).
 	if (smartCpuOn()) {
-		return smartTradingBlock(g.get("userTid"), userPids, userDpids);
+		return smartTradingBlock(g.get("userTid"), userPids, userDpids, lookingFor);
 	}
 	const valueChangeCalculator = await tradeValueCalculator();
 	// Vanilla+: CPU teams only - not a league-mate's team, priced as if CPU.

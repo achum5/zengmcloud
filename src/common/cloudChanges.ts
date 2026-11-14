@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 313,
+		date: "2026-11-14",
+		text: "Smart CPU: the trading block's What are you looking for? choices now shape every team's offer. Ask for draft picks, prospects, the best current players, a position, a skill or a salary limit, and each team leads with that (or makes no offer if it has nothing it would give).",
+	},
+	{
 		n: 312,
 		date: "2026-11-14",
 		text: "League Settings now has one switch for the CPU front offices: Smart CPU, under Game Modes. Realistic Front Offices and Front Office Difficulty are gone from the list - turning Smart CPU on turns on everything it needs. Leagues already using Realistic Front Offices keep running as they are.",

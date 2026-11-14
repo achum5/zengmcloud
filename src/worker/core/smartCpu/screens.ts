@@ -1,13 +1,22 @@
+import { COMPOSITE_WEIGHTS } from "../../../common/constants.ts";
 import type { DraftPick, Player, TradeTeams } from "../../../common/types.ts";
 import { idb } from "../../db/index.ts";
+import { g } from "../../util/index.ts";
+import compositeRating from "../player/compositeRating.ts";
 import isUntradable from "../trade/isUntradable.ts";
+import {
+	isWanted,
+	paidTooMuch,
+	wantsPlayer,
+} from "../trade/lookingForPlayer.ts";
+import type { LookingFor } from "../trade/makeItWork.ts";
 import summary from "../trade/summary.ts";
 import { currentOutlook } from "../realisticFrontOffice/market.ts";
 import { ensureRetention } from "../realisticFrontOffice/outlook.ts";
 import { contractOf } from "../realisticFrontOffice/contractOf.ts";
 import { salaryRulesAllow } from "./tradeRules.ts";
 import { viewFor } from "./signing.ts";
-import type { Holdings, SmartView } from "./worth.ts";
+import type { Holdings, OfferAsk, SmartView } from "./worth.ts";
 
 // THE TRADE SCREENS ON THE GM (docs/smart-cpu.md, layer 4): the trading
 // block, what would make this work and trade proposals, with the smart CPU
@@ -54,17 +63,91 @@ const cpuTeams = async (view: SmartView, but: number) =>
 		.filter((t) => !t.disabled && t.tid !== but && !view.humans.has(t.tid))
 		.map((t) => t.tid);
 
-// The trading block: each CPU team's real offer for what the user puts up.
+// A prospect, on the trading block: 23 or younger with room to grow.
+const PROSPECT_AGE = 23;
+const PROSPECT_GROWTH = 5;
+
+// What the user says it is after on the trading block, as the game's own
+// trading block reads it (trade/makeItWork.ts): a player at one of the
+// positions, of the PER and contract asked for, first - a prospect, if it
+// asked for one; the skills or the best now first among them, else the one
+// worth most to the user - then picks if asked for, or picks first if only
+// they are; and nobody paid more than it will take on.
+export const askOf = (lookingFor: LookingFor | undefined) => {
+	if (!lookingFor) {
+		return undefined;
+	}
+	const want = lookingFor.player;
+	const positions = [...lookingFor.positions];
+	const skills = [...lookingFor.skills];
+	const best = lookingFor.bestCurrentPlayers;
+	// Best now outranks prospects, as on the game's own trading block.
+	const prospects = lookingFor.prospects && !best;
+	const sorting = skills.length > 0 || best;
+	const somePlayer =
+		positions.length > 0 || wantsPlayer(want) || sorting || prospects;
+	const salaryCap = want?.salaryMost !== undefined;
+	if (!somePlayer && !lookingFor.draftPicks && !salaryCap) {
+		return undefined;
+	}
+	const isPick = (x: Player | DraftPick) => !("pid" in x);
+	const isProspect = (p: Player) => {
+		const r = p.ratings.at(-1)!;
+		return (
+			g.get("season") - p.born.year <= PROSPECT_AGE &&
+			r.pot - r.ovr >= PROSPECT_GROWTH
+		);
+	};
+	const matches = (x: Player | DraftPick) =>
+		!isPick(x) &&
+		(positions.length === 0 ||
+			positions.some((pos) =>
+				(x as Player).ratings.at(-1)!.pos.includes(pos),
+			)) &&
+		isWanted(x as Player, want) &&
+		(!prospects || isProspect(x as Player));
+	// The game's own order among players asked for (trade/makeItWork.ts).
+	const score = (x: Player | DraftPick) => {
+		if (isPick(x)) {
+			return -Infinity;
+		}
+		const p = x as Player;
+		const r = p.ratings.at(-1)!;
+		let v = 1;
+		for (const skill of skills) {
+			const w = COMPOSITE_WEIGHTS[skill];
+			if (w) {
+				v += compositeRating(r, w.ratings, w.weights, false);
+			}
+		}
+		if (best) {
+			v *= p.valueNoPot;
+		}
+		return v;
+	};
+	const ask: OfferAsk = {
+		lead: somePlayer ? matches : lookingFor.draftPicks ? isPick : undefined,
+		rank: sorting ? score : undefined,
+		next: somePlayer && lookingFor.draftPicks ? isPick : undefined,
+		allowed: salaryCap ? (p) => !paidTooMuch(p, want) : undefined,
+	};
+	return ask;
+};
+
+// The trading block: each CPU team's real offer for what the user puts up,
+// with what the user says it is after, if it said.
 export const smartTradingBlock = async (
 	user: number,
 	pids: number[],
 	dpids: number[],
+	lookingFor?: LookingFor,
 ) => {
 	const view = await ready();
 	const out = await view.assetsOf({ pids, dpids });
+	const ask = askOf(lookingFor);
 	const offers: TradeTeams[] = [];
 	for (const tid of await cpuTeams(view, user)) {
-		const made = await view.offerFrom(tid, user, out);
+		const made = await view.offerFrom(tid, user, out, ask);
 		if (made) {
 			offers.push(teamsOf(user, out, tid, made.offer));
 		}

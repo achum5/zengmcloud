@@ -83,6 +83,19 @@ export const offerStats = {
 	buyerSaysNo: 0,
 };
 
+// What a seller is after in an offer (the trading block's "What are you
+// looking for?", smartCpu/screens.ts): the buyer starts with the first of
+// `lead` it would give - in `rank` order, the seller's favourite first
+// among equals - and with none it makes no offer; then any of `next` it
+// would give, then the rest as always; and nothing it puts in fails
+// `allowed`.
+export type OfferAsk = {
+	lead?: (x: Player | DraftPick) => boolean;
+	rank?: (x: Player | DraftPick) => number;
+	next?: (x: Player | DraftPick) => boolean;
+	allowed?: (p: Player) => boolean;
+};
+
 const plus = (h: Holdings, x: Player | DraftPick): Holdings =>
 	"pid" in x
 		? { players: [...h.players, x], picks: h.picks }
@@ -849,27 +862,34 @@ export class SmartView {
 	// off by its goal, within the trade rules on salary (what it would miss
 	// least added to match), and good for it by its full worth - or
 	// nothing. The market's offers, and the trade screens' (smartCpu/
-	// screens.ts).
-	async offerFrom(buyer: number, seller: number, out: Holdings) {
+	// screens.ts) - there with what the seller is after, if it said.
+	async offerFrom(
+		buyer: number,
+		seller: number,
+		out: Holdings,
+		ask?: OfferAsk,
+	) {
 		const s = smartSettings;
 		await ensureRetention(this.outlook, out.players, buyer);
 		const held = await this.holdingsOf(buyer);
 		const m1 = mark();
+		const allowed = (p: Player) =>
+			!isUntradable(p).untradable && (ask?.allowed?.(p) ?? true);
 		// Its players and its nearest picks (as NBA teams pay: a deal
 		// without picks was every one of the GM's first 72), best for the
-		// seller first.
+		// seller first - all its players, when the seller says what it is
+		// after.
 		const scored: { x: Player | DraftPick; v: number }[] = [];
-		for (const p of held.players.filter((x) => !isUntradable(x).untradable)) {
+		for (const p of held.players.filter(allowed)) {
 			scored.push({
 				x: p,
 				v: await this.useOf(seller, { players: [p], picks: [] }),
 			});
 		}
 		scored.sort((a, b) => b.v - a.v);
-		const candidates: { x: Player | DraftPick; v: number }[] = scored.slice(
-			0,
-			s.offerCandidates,
-		);
+		const candidates: { x: Player | DraftPick; v: number }[] = ask
+			? scored
+			: scored.slice(0, s.offerCandidates);
 		for (const dp of [...held.picks]
 			.sort(
 				(a, b) =>
@@ -908,7 +928,36 @@ export class SmartView {
 				this.value(buyer, held) >
 			0;
 		let offer: Holdings = { players: [], picks: [] };
-		for (const { x } of candidates) {
+		let order = candidates;
+		if (ask) {
+			// What the seller is after first: the first of `lead` it would
+			// give (none, no offer), then any of `next`.
+			const rank = ask.rank;
+			const lead = ask.lead;
+			const first = lead
+				? (rank
+						? [...candidates].sort((a, b) => rank(b.x) - rank(a.x) || b.v - a.v)
+						: candidates
+					).find(
+						({ x }) =>
+							lead(x) && sellerMayTake(plus(offer, x)) && gains(plus(offer, x)),
+					)
+				: undefined;
+			if (lead && !first) {
+				offerStats.tried += 1;
+				offerStats.empty += 1;
+				lap("offer: greedy", m2);
+				return undefined;
+			}
+			if (first) {
+				offer = plus(offer, first.x);
+			}
+			order = [
+				...candidates.filter((c) => c !== first && ask.next?.(c.x)),
+				...candidates.filter((c) => c !== first && !ask.next?.(c.x)),
+			];
+		}
+		for (const { x } of order) {
 			if (offer.players.length + offer.picks.length >= s.offerSize) {
 				break;
 			}
@@ -930,9 +979,7 @@ export class SmartView {
 			const uses = this.usesOf(buyer, held);
 			for (const p of held.players
 				.filter(
-					(x) =>
-						!isUntradable(x).untradable &&
-						!offer.players.some((y) => y.pid === x.pid),
+					(x) => allowed(x) && !offer.players.some((y) => y.pid === x.pid),
 				)
 				.sort((a, b) => uses.get(a.pid)! - uses.get(b.pid)! || a.pid - b.pid)) {
 				if (
