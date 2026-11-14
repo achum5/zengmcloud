@@ -1204,6 +1204,10 @@ export type GameAttributesLeague = {
 	// The smart CPU (worker/core/smartCpu, docs/smart-cpu.md): every CPU team
 	// decision by the GM's worth, with realistic front offices on.
 	smartCpu: boolean;
+	// The smart CPU's last trade market moment, kept with the league so a
+	// reload - or the sim moving to a league mate's device - doesn't hold the
+	// same moment twice (smartCpu/market.ts).
+	smartMarketMoment?: string;
 	rookieContractLengths: number[];
 	rookiesCanRefuse: boolean;
 	salaryCap: number;

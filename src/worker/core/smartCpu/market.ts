@@ -5,6 +5,7 @@ import { g } from "../../util/index.ts";
 import getDaysLeftSchedule from "../season/getDaysLeftSchedule.ts";
 import isUntradable from "../trade/isUntradable.ts";
 import processTrade from "../trade/processTrade.ts";
+import setGameAttributes from "../league/setGameAttributes.ts";
 import summary from "../trade/summary.ts";
 import { contractOf } from "../realisticFrontOffice/contractOf.ts";
 import { currentOutlook, gamesPlayed } from "../realisticFrontOffice/market.ts";
@@ -456,8 +457,8 @@ const marketMomentNow = async () => {
 // When the market meets: in season every few weeks (not as it opens) and
 // each of the last days before the deadline, in free agency at each stage
 // (or on a few of its days), and as each offseason window opens
-// (smartTradeWindow).
-let lastMoment: string | undefined;
+// (smartTradeWindow). Each moment once, by the league's own record of the
+// last (gameAttributes.smartMarketMoment).
 export const smartTradeDay = async () => {
 	const phase = g.get("phase");
 	let key: string | undefined;
@@ -490,11 +491,11 @@ export const smartTradeDay = async () => {
 	if (key === undefined) {
 		return [];
 	}
-	key = `${g.get("lid")}:${g.get("season")}:${phase}:${key}`;
-	if (key === lastMoment) {
+	key = `${g.get("season")}:${phase}:${key}`;
+	if (key === g.get("smartMarketMoment")) {
 		return [];
 	}
-	lastMoment = key;
+	await setGameAttributes({ smartMarketMoment: key });
 	return marketMoment();
 };
 

@@ -675,6 +675,7 @@ export const defaultGameAttributes: GameAttributesLeagueWithHistory = {
 	lastDailyCountdownDay: undefined,
 	vplusMarket: undefined,
 	smartCpu: false,
+	smartMarketMoment: undefined,
 	numDraftPicksCurrent: undefined,
 	playoffsByConf: true,
 	playoffsNumTeamsDiv: wrapFromStart(0),
