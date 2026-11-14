@@ -367,12 +367,15 @@ const standing = (view: SmartView, tid: number) => {
 		: "";
 };
 
-// The players each team shopped at the last moment (smartCpu's market,
-// for this league): without a taker, they rest the next.
-let shoppedBefore: {
-	lid: number | undefined;
-	rested: Map<number, Set<number>>;
-} = { lid: undefined, rested: new Map() };
+// The players each team shopped at the last moment: without a taker, they
+// rest the next. Kept with the league (gameAttributes.smartMarketRested),
+// so a reload or the sim moving to a league mate's device rests the same.
+const shoppedBefore = () =>
+	new Map(
+		(g.get("smartMarketRested") ?? []).map(
+			([tid, pids]) => [tid, new Set(pids)] as const,
+		),
+	);
 
 // A market moment: its deals, best for the seller first, each team dealing
 // at most once - each checked again as it stands just before it is made
@@ -389,11 +392,8 @@ const marketMomentNow = async () => {
 	);
 	const dealt = new Set<number>();
 	const made: SmartDeal[] = [];
-	if (shoppedBefore.lid !== g.get("lid")) {
-		shoppedBefore = { lid: g.get("lid"), rested: new Map() };
-	}
 	const shoppedNow = new Map<number, Set<number>>();
-	const deals = await dealsNow(view, cpu, shoppedBefore.rested, (shopped) => {
+	const deals = await dealsNow(view, cpu, shoppedBefore(), (shopped) => {
 		for (const c of shopped) {
 			const set = shoppedNow.get(c.seller) ?? new Set();
 			set.add(c.p.pid);
@@ -401,7 +401,9 @@ const marketMomentNow = async () => {
 		}
 	});
 	// A player traded is gone from his team; the rest shopped rest a moment.
-	shoppedBefore = { lid: g.get("lid"), rested: shoppedNow };
+	await setGameAttributes({
+		smartMarketRested: [...shoppedNow].map(([tid, pids]) => [tid, [...pids]]),
+	});
 	for (const found of deals) {
 		if (made.length >= marketSettings.dealsPerMoment) {
 			break;

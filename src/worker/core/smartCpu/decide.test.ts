@@ -394,6 +394,41 @@ test(
 	},
 );
 
+test(
+	"free agency: the pool as it opened is kept with the league, so what is left is measured against it after a reload",
+	{ timeout: 900_000 },
+	async () => {
+		const { notePoolLeft } =
+			await import("../realisticFrontOffice/freeAgency.ts");
+		const { PHASE } = await import("../../../common/constants.ts");
+		const was = {
+			phase: g.get("phase"),
+			faPoolAtOpen: g.get("faPoolAtOpen"),
+		};
+		onTestFinished(() => {
+			g.setWithoutSavingToDB("phase", was.phase);
+			g.setWithoutSavingToDB("faPoolAtOpen", was.faPoolAtOpen);
+		});
+		g.setWithoutSavingToDB("phase", PHASE.FREE_AGENCY);
+		g.setWithoutSavingToDB("faPoolAtOpen", undefined);
+		const pool = (await rosterOf(tids[0]!)).sort(
+			(a, b) => b.valueNoPot - a.valueNoPot,
+		);
+		assert.strictEqual(await notePoolLeft(pool), 1);
+		const atOpen = g.get("faPoolAtOpen");
+		assert.strictEqual(atOpen?.season, g.get("season"));
+		const saved = (await idb.cache.gameAttributes.getAll()).find(
+			(row) => row.key === "faPoolAtOpen",
+		);
+		assert.deepStrictEqual(saved?.value, atOpen);
+		// The best signed: less is left, against the pool as it opened.
+		const left = await notePoolLeft(pool.slice(1));
+		assert.isBelow(left, 1);
+		assert.isAbove(left, 0);
+		assert.deepStrictEqual(g.get("faPoolAtOpen"), atOpen);
+	},
+);
+
 // Last: it trades.
 test(
 	"market: every deal a moment makes helps both sides, the market rule on; nobody deals twice; within the budget",
@@ -445,5 +480,13 @@ test(
 		assert.deepStrictEqual(bad, []);
 		assert.isAtLeast(made.length, 1);
 		assert.isBelow(seconds, 120);
+		// Those it shopped rest the next moment: kept with the league as
+		// written to it, so a reload or another device rests the same.
+		const rested = g.get("smartMarketRested");
+		assert.isAbove(rested?.length ?? 0, 0);
+		const saved = (await idb.cache.gameAttributes.getAll()).find(
+			(row) => row.key === "smartMarketRested",
+		);
+		assert.deepStrictEqual(saved?.value, rested);
 	},
 );

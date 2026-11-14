@@ -1208,6 +1208,15 @@ export type GameAttributesLeague = {
 	// reload - or the sim moving to a league mate's device - doesn't hold the
 	// same moment twice (smartCpu/market.ts).
 	smartMarketMoment?: string;
+	// The players each team shopped at that moment, by team (rested the
+	// next moment without a taker), kept with the league for the same
+	// reason.
+	smartMarketRested?: [number, number[]][];
+	// The free agents' quality as this season's free agency opened, kept
+	// with the league so what cap room buys later in free agency is measured
+	// against the same pool on any device, after any reload
+	// (realisticFrontOffice/freeAgency.ts).
+	faPoolAtOpen?: { season: number; quality: number };
 	rookieContractLengths: number[];
 	rookiesCanRefuse: boolean;
 	salaryCap: number;

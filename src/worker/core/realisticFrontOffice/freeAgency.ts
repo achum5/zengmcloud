@@ -13,6 +13,7 @@ import { revertBefore } from "../player/revertSnapshot.ts";
 import { getNumPlayersTradedAwayNormalizedAll } from "../player/getNumPlayersTradedAwayNormalized.ts";
 import { getContractDemand } from "../contract/index.ts";
 import { getContractStartSeason } from "../../util/getContractStartSeason.ts";
+import setGameAttributes from "../league/setGameAttributes.ts";
 import { howFor, logOption, logReSignRefused, ownPath } from "./history.ts";
 import { contractOf } from "./contractOf.ts";
 import {
@@ -883,12 +884,12 @@ const lineCache: { outlook?: LeagueOutlook; lines: Map<string, Line> } = {
 	lines: new Map(),
 };
 
-let poolAtOpen: { lid: number; season: number; quality: number } | undefined;
-
 // During free agency, the quality left in the pool against the quality as it
 // opened - players above the minimum's level, by how far - for what cap room
-// buys (payroll.ts); -1 otherwise.
-export const notePoolLeft = (pool: readonly Player[]) => {
+// buys (payroll.ts); -1 otherwise. The quality as it opened is kept with the
+// league (gameAttributes.faPoolAtOpen), so a reload or the sim moving to a
+// league mate's device measures against the same pool.
+export const notePoolLeft = async (pool: readonly Player[]) => {
 	if (g.get("phase") !== PHASE.FREE_AGENCY) {
 		return -1;
 	}
@@ -896,14 +897,13 @@ export const notePoolLeft = (pool: readonly Player[]) => {
 		(a, p) => a + Math.max(0, p.valueNoPot - REPLACEMENT_OVR),
 		0,
 	);
-	if (
-		poolAtOpen?.season !== g.get("season") ||
-		poolAtOpen.lid !== g.get("lid")
-	) {
-		poolAtOpen = { lid: g.get("lid"), season: g.get("season"), quality };
+	let atOpen = g.get("faPoolAtOpen");
+	if (atOpen?.season !== g.get("season")) {
+		atOpen = { season: g.get("season"), quality };
+		await setGameAttributes({ faPoolAtOpen: atOpen });
 	}
 	const poolLeft =
-		poolAtOpen.quality > 0 ? Math.min(1, quality / poolAtOpen.quality) : 0;
+		atOpen.quality > 0 ? Math.min(1, quality / atOpen.quality) : 0;
 	setFreeAgentPoolLeft(poolLeft);
 	return poolLeft;
 };
@@ -940,7 +940,7 @@ export const priceMarket = async (
 		phase === PHASE.REGULAR_SEASON || phase === PHASE.AFTER_TRADE_DEADLINE;
 	const minContract = g.get("minContract");
 	const maxContract = g.get("maxContract");
-	const poolLeft = notePoolLeft(pool);
+	const poolLeft = await notePoolLeft(pool);
 	const outlook = await currentOutlook();
 	const cpu = new Set(await aiTids());
 	const rankOf = await leagueRanks();
