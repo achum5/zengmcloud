@@ -533,6 +533,51 @@ updateGameAttributesGodMode). The difficulty never touched the GM. A league
 with the realistic front offices on that never had Smart CPU on - today's
 mode, the owner's league - runs as it did.
 
+### Shared leagues (2026-11-14)
+
+The owner: "this needs to work 100% perfectly with mp sync". What was
+checked, and what was changed:
+
+- **Human teams.** Every league mate's team is in `userTids` on every
+  device (it syncs), and the GM skips them all (`SmartView.humans`): it
+  never trades, signs, re-signs or drafts for a human team.
+- **One device decides.** The GM's decisions run only where the league is
+  advanced (the device in charge of simming, or the one that won a
+  ready-up step); the screens (trading block, proposals, what would make
+  this work) are local views, checked against the league again before an
+  offer stands. The outlook is built from seeded randomness, so it is the
+  same on every device.
+- **Memory kept with the league.** Two things the GM decided by lived only
+  in the worker: the players each team shopped at the last market moment
+  (rested the next) and the free agent pool's quality as free agency
+  opened (what room buys later in it). A reload, or the sim moving to
+  another device, forgot them, and the next decisions came out
+  differently. Both are game attributes now (`smartMarketRested`,
+  `faPoolAtOpen`), as the market moment already was (`smartMarketMoment`).
+- **Leases against a stalled worker.** The GM's work never yields: a market
+  moment holds the worker 30-60 s on a desktop and longer on a phone, and
+  no timer or write runs meanwhile. The sim-day fence and the ready-up
+  claim (90 s) could read a day or step still running as a crashed one and
+  let another device run it again. The room's busy mark (3 min, stamped
+  once a call) lapsed under long sims, and a multi-day sim dropped it as
+  soon as the call that started it returned, so league mates' edits
+  published into the sim and were overwritten by its whole records. Now
+  (sync/advanceLease.ts):
+  - in a league with the smart CPU every such lease is ten minutes;
+  - a sim holds the room busy from its first day to its last, the mark
+    renewed before each day once half its lease is gone (the write waited
+    for);
+  - a ready-up step doesn't start on another device while the room is busy,
+    and in a smart league holds the room itself.
+
+  The cost: a device that really crashed mid-step holds the room up to ten
+  minutes.
+
+- **Not changed:** the GM's work still doesn't yield to the event loop.
+  Yielding would let another device's changes, or this device's own
+  trades, land in the middle of a decision made from a snapshot; with the
+  leases long enough, the stall is safe.
+
 ## The DBA replay
 
 Yardstick C, built (src/test/dba/). Every trade of the owner's league from

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 315,
+		date: "2026-11-14",
+		text: "Shared leagues: a sim now keeps the league marked as simming from its first day to its last, so changes league mates make meanwhile wait and go in after it instead of colliding with it. With Smart CPU on, a long sim on a slow phone is no longer taken for a crashed one and run again on another device, and the CPU teams' trade and free agency plans carry over a reload or a league mate taking over the simming.",
+	},
+	{
 		n: 314,
 		date: "2026-11-14",
 		text: "Win Probability on a game's page is much more accurate: it's now measured against tens of thousands of simmed games, so a team down 2 with the ball and 9 seconds left shows about 25% instead of 0%, and early leads count for less. Tap or drag across the chart and the play at that moment shows under the score (for games with play-by-play).",
