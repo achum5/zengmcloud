@@ -493,7 +493,9 @@ The arena league again (seed 503), with the pick floor and the screens:
 22), 64-72% of in-season trades in the deadline's last week; every team
 traded; deadline rosters 11 to 18; win spread 9.3, 12.5, 12.7 (NBA about
 12-13); champions won 54, 70, 66 games. About 850 s a season with four
-runs sharing four cores.
+runs sharing four cores. Expiring players (rookie deals aside) who stayed
+with their team: 45-48% of those valued 60 and up, 36% of 52-60, 21-25%
+below (the NBA's top free agents: about 57%).
 
 Open: the buyers are nearly always contenders - five teams start 87-100%
 of a season's trades (as before the pick floor; the market is the
@@ -501,6 +503,25 @@ sellers', and a contender's title chances move most) - and they make many
 small swaps, near-equal role players for gains of a few ten-thousandths of
 a title. Real GMs leave those alone; a margin for the model's own error
 would stop them, but it is a judgement call left for the owner.
+
+### Yardsticks A and B, first runs (2026-11-14)
+
+- **B: the shark against a league of GMs** (2 leagues x 5 seasons, the
+  bench's random-players league, every other team the GM): 35, 44, 35, 38,
+  27 and 42, 47, 25, 27, 35 wins, no titles, 15 trades in all - mostly
+  its prospects for veterans, once a contender's expiring 65 and a bad
+  contract for a young prospect. The shark's sims found gains of 2 to 10 wins a deal and
+  none added up to a contender. It does no better than an average team.
+- **A: the GM as a human against today's CPU** (2 leagues x 10 seasons):
+  one title (seed 1, season 10, after five seasons of 47-56 wins), and one
+  collapse (seed 2: 59-23 in its third season, then 24-58 and 4 to 19 wins
+  a season). In seed 2 the GM gave every first it owned for veterans -
+  fixed by the pick floor above; with it, the same league still sank, its
+  expiring players let go at their human-team asks (0 of 8 one summer) and
+  then unwilling to negotiate. Against today's CPU the GM also counts
+  prices only GMs would pay (a 36-year-old 61 worth 0.3 of a title to
+  resell), so this yardstick says as much about the bench as the GM; the
+  bench's re-signings are logged now to see what it turned down.
 
 ## The DBA replay
 
