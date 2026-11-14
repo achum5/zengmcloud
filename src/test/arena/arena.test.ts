@@ -186,6 +186,11 @@ test.runIf(env.ARENA_RUN === "1")(
 				Object.assign(clearRoomSettings, JSON.parse(env.ARENA_CLEAR ?? "{}"));
 				Object.assign(draftSettings, JSON.parse(env.ARENA_DRAFT ?? "{}"));
 				Object.assign(strengthSettings, JSON.parse(env.ARENA_STRENGTH ?? "{}"));
+				// ARENA_SMART=1: every CPU team run by the smart CPU's GM
+				// (docs/smart-cpu.md, layer 3).
+				if (env.ARENA_SMART === "1") {
+					await league.setGameAttributes({ smartCpu: true });
+				}
 			}
 			// How much this season's playoffs count at each outlook before the
 			// deadline (outlook.playoffWeight).

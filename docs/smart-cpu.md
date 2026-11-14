@@ -286,6 +286,11 @@ a free agency day in seconds.
 7. Human offers: the owner's eight clear fleeces still refused (DBA replay);
    the market rule holds against humans.
 
+Passed 2026-11-14: checks 1-7 (`smartCpu/decide.test.ts`; the DBA replay
+with the layer 2 GM: 0 of the 8 fleeces taken, Golden State refuses the
+Tobias Harris trade by 0.32 titles, 79 of the 156 human-CPU trades taken -
+51% - and no unhandled errors).
+
 Then layer 3's leagues, where the re-signing odds get their check (said 85%,
 about 85% stayed) with the GM making the offers.
 
