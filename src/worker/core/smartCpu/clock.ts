@@ -1,3 +1,5 @@
+import { g } from "../../util/index.ts";
+
 // Time the GM's decisions take, by kind, and how many franchise values each
 // worked out (the arena reports it: layer 3's speed work).
 export const smartClock: Record<
@@ -9,10 +11,14 @@ export const smartClock: Record<
 export const valueCount = { n: 0 };
 
 const record = (kind: string, started: number, values: number) => {
-	const c = (smartClock[kind] ??= { n: 0, ms: 0, values: 0 });
-	c.n += 1;
-	c.ms += performance.now() - started;
-	c.values += valueCount.n - values;
+	const ms = performance.now() - started;
+	// By kind, and by kind and phase.
+	for (const k of [kind, `${kind} @${g.get("phase")}`]) {
+		const c = (smartClock[k] ??= { n: 0, ms: 0, values: 0 });
+		c.n += 1;
+		c.ms += ms;
+		c.values += valueCount.n - values;
+	}
 };
 
 // A stretch of code timed by hand: mark() where it starts, lap() where it

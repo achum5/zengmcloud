@@ -468,6 +468,19 @@ export class SmartView {
 			: this.value(tid, this.swappedFrom(h, none, a)) - this.value(tid, h);
 	}
 
+	// A rough read of the same, to rank what to look at closely: the roster
+	// it would have, not yet cut to the limit (each cut weighed is two more
+	// franchise values; what a deal is worth is always worked out in full).
+	roughUseOfNow(tid: number, a: Holdings, h = this.heldNow(tid)) {
+		const none = { players: [], picks: [] };
+		const held =
+			a.players.some((p) => h.players.some((x) => x.pid === p.pid)) ||
+			a.picks.some((dp) => h.picks.some((x) => x.dpid === dp.dpid));
+		return held
+			? this.raw(tid, h, []) - this.raw(tid, this.swappedFrom(h, a, none), [])
+			: this.raw(tid, this.swappedFrom(h, none, a), []) - this.raw(tid, h, []);
+	}
+
 	async useOf(tid: number, a: Holdings) {
 		await ensureRetention(this.outlook, a.players, tid);
 		return this.useOfNow(tid, a, await this.holdingsOf(tid));

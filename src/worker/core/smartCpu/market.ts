@@ -33,6 +33,10 @@ export const marketSettings = {
 	// four found 82 deals a moment, two 74, and the deals made were the
 	// same but one - for a third less work).
 	buyers: 2,
+	// The players each team shops a moment, those the market wants most
+	// past what they do for it first (2026-11-14: the deals made were the
+	// same shopping five as shopping all, for a third less work).
+	shopped: 5,
 	// A buyer's best players by its own use, kept out of salary matching.
 	core: 3,
 	// In season, a moment about every this many games a team, and every day
@@ -115,14 +119,15 @@ export const candidates = async (
 			if (isUntradable(p).untradable) {
 				continue;
 			}
-			const own = view.useOfNow(seller, one(p));
 			// Ranked by the keen teams' uses for him (what each would give),
-			// the salary rules left to `matchable` and the real offer: a legal
-			// bid costs a franchise value more for every keen team, every
-			// player (31 s of a moment).
+			// read roughly - rosters not cut to the limit, a third of the work
+			// (2026-11-14) - the salary rules left to `matchable` and the real
+			// offer: a legal bid costs a franchise value more for every keen
+			// team, every player (31 s of a moment).
+			const own = view.roughUseOfNow(seller, one(p));
 			const bids = keen
 				.filter((k) => k !== seller)
-				.map((k) => ({ k, bid: view.useOfNow(k, one(p)) }))
+				.map((k) => ({ k, bid: view.roughUseOfNow(k, one(p)) }))
 				.sort((a, b) => b.bid - a.bid);
 			const top = bids.find((b) => cpu.has(b.k) && !dealt.has(b.k));
 			if (!top) {
@@ -136,7 +141,16 @@ export const candidates = async (
 			}
 		}
 	}
-	return found.sort((a, b) => b.surplus - a.surplus);
+	// Each team shops the few the market wants most past what they do for
+	// it, as a GM puts players on the block.
+	const shopped = new Map<number, number>();
+	return found
+		.sort((a, b) => b.surplus - a.surplus || a.p.pid - b.p.pid)
+		.filter((c) => {
+			const n = (shopped.get(c.seller) ?? 0) + 1;
+			shopped.set(c.seller, n);
+			return n <= marketSettings.shopped;
+		});
 };
 
 // Whether a buyer could take him under the salary rules in an offer of a few

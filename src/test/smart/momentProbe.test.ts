@@ -10,7 +10,8 @@ import { advanceSeasons, createArenaLeague } from "../arena/runLeague.ts";
 //   MOMENT_PROBE=1 MOMENT_OUT=<dir> npx vitest --run --project basketball \
 //     src/test/smart/momentProbe.test.ts
 // MOMENT_PROFILE=1 also writes a CPU profile of the moment.
-// MOMENT_SETTINGS='{...}' changes the GM's settings (smartSettings).
+// MOMENT_SETTINGS='{...}' changes the GM's settings (smartSettings),
+// MOMENT_MARKET='{...}' the market's (marketSettings).
 const env: Record<string, string | undefined> =
 	(globalThis as any).process?.env ?? {};
 const importNode = (name: string) => import(/* @vite-ignore */ name);
@@ -25,7 +26,7 @@ test.runIf(env.MOMENT_PROBE === "1")(
 		const { currentOutlook } =
 			await import("../../worker/core/realisticFrontOffice/market.ts");
 		const { viewFor } = await import("../../worker/core/smartCpu/signing.ts");
-		const { candidates, dealsNow, marketStats } =
+		const { candidates, dealsNow, marketSettings, marketStats } =
 			await import("../../worker/core/smartCpu/market.ts");
 		const { smartClock, valueCount } =
 			await import("../../worker/core/smartCpu/clock.ts");
@@ -33,6 +34,8 @@ test.runIf(env.MOMENT_PROBE === "1")(
 			await import("../../worker/core/smartCpu/worth.ts");
 		// MOMENT_SETTINGS='{"decideOnce":false}': the GM's settings changed.
 		Object.assign(smartSettings, JSON.parse(env.MOMENT_SETTINGS ?? "{}"));
+		// MOMENT_MARKET='{"shopped":5}': the market's.
+		Object.assign(marketSettings, JSON.parse(env.MOMENT_MARKET ?? "{}"));
 		Math.random = makeSeededRandom(Number(env.MOMENT_SEED ?? 77));
 		(idb as any).league = undefined;
 		await createArenaLeague(Number(env.MOMENT_LEAGUE ?? 9177));
