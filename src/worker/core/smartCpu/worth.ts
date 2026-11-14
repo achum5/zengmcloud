@@ -7,6 +7,11 @@ import isUntradable from "../trade/isUntradable.ts";
 import summary from "../trade/summary.ts";
 import { lap, mark, valueCount } from "./clock.ts";
 import { salaryRulesAllow } from "./tradeRules.ts";
+import { tradedAwayOf } from "../realisticFrontOffice/market.ts";
+import {
+	moodShiftFromTrading,
+	type TradedAway,
+} from "../realisticFrontOffice/tradePenalty.ts";
 import getPayroll from "../team/getPayroll.ts";
 import {
 	ensureRetention,
@@ -80,6 +85,21 @@ const plus = (h: Holdings, x: Player | DraftPick): Holdings =>
 		? { players: [...h.players, x], picks: h.picks }
 		: { players: h.players, picks: [...h.picks, x] };
 
+// Players traded away as the game counts them for its players' mood
+// (trade/processTrade.ts): a bad player hardly at all, one just drafted not
+// at all.
+export const tradedAwayCount = (players: readonly Player[]) => {
+	const phase = g.get("phase");
+	const season = g.get("season");
+	let n = 0;
+	for (const p of players) {
+		if (!helpers.justDrafted(draftedAs(p), phase, season)) {
+			n += helpers.sigmoid(p.valueNoPot / 100, 30, 0.47);
+		}
+	}
+	return n;
+};
+
 // Money a team would owe players it released, on top of what it owes now.
 export type Dead = readonly { amount: number; exp: number }[];
 
@@ -122,7 +142,31 @@ export class SmartView {
 		}
 		const h = { players, picks };
 		this.holdings.set(tid, { sig, h });
+		// It changes only as the team trades, and so what it holds.
+		this.tradedAway.set(tid, await tradedAwayOf(tid));
 		return h;
+	}
+
+	// Players each team has traded away, as the game counts them for its
+	// players' mood (this season, the last two).
+	private tradedAway = new Map<number, TradedAway>();
+
+	// THE TRADE PENALTY: a team that trades away many players lowers the mood
+	// of the players it keeps, and so its chance of re-signing them (the
+	// game's mood, "trades": past about five players a season, each one more
+	// counts; tradePenalty.ts). What trading these players away does to it,
+	// or nothing if it costs nothing.
+	private tradingFor(tid: number, gone: number) {
+		const tradedAway = this.tradedAway.get(tid);
+		if (!tradedAway || !(gone > 0)) {
+			return undefined;
+		}
+		for (let y = 0; y < 3; y++) {
+			if (moodShiftFromTrading(tradedAway, gone, y) !== 0) {
+				return { tradedAway, extra: gone };
+			}
+		}
+		return undefined;
 	}
 
 	// Whom each team lets go when contracts run out, decided on what it holds
@@ -141,11 +185,12 @@ export class SmartView {
 	// A team's franchise value with these players, picks and money owed to
 	// players released, as worked out by the outlook; whom it lets go
 	// decided on its own roster.
-	private raw(tid: number, h: Holdings, dead: Dead) {
+	private raw(tid: number, h: Holdings, dead: Dead, gone = 0) {
 		const own = this.holdings.get(tid);
 		const ownSig = own?.sig ?? "";
+		const trading = this.tradingFor(tid, gone);
 		const sig = this.keyOf(h, dead);
-		const key = `${tid}#${ownSig}#${sig}`;
+		const key = `${tid}#${ownSig}#${sig}${trading ? `#gone${gone}` : ""}`;
 		let v = this.values.get(key);
 		if (v !== undefined) {
 			return v;
@@ -183,7 +228,7 @@ export class SmartView {
 				tid,
 				h.players,
 				h.picks,
-				undefined,
+				trading,
 				undefined,
 				decided.letGo ?? recording,
 			),
@@ -319,13 +364,20 @@ export class SmartView {
 	// A team's franchise value with these holdings, on the roster it will
 	// have once games are played: over the limit, it releases whoever costs
 	// it least, one at a time, owing them what it must.
-	value(tid: number, h: Holdings, dead: Dead = []): number {
-		return this.raw(tid, ...this.afterCuts(tid, h, dead));
+	// `gone`: how many players it trades away to hold this, as the game counts
+	// them (tradedAwayCount) - what that costs it in its players' mood.
+	value(tid: number, h: Holdings, dead: Dead = [], gone = 0): number {
+		return this.raw(tid, ...this.afterCuts(tid, h, dead, gone), gone);
 	}
 
 	// The holdings and money owed once a roster over the limit is cut to it,
 	// one release at a time, each the one that costs the team least.
-	afterCuts(tid: number, h: Holdings, dead: Dead = []): [Holdings, Dead] {
+	afterCuts(
+		tid: number,
+		h: Holdings,
+		dead: Dead = [],
+		gone = 0,
+	): [Holdings, Dead] {
 		const phase = g.get("phase");
 		const first = g.get("season") + (phase > PHASE.PLAYOFFS ? 1 : 0);
 		// In the offseason a player whose contract is up leaves or is
@@ -345,7 +397,7 @@ export class SmartView {
 					picks: now.picks,
 				};
 				const nextDead = [...owed, ...this.owedIfReleased(p)];
-				const v = this.raw(tid, next, nextDead);
+				const v = this.raw(tid, next, nextDead, gone);
 				if (!best || v > best.v) {
 					best = { v, h: next, dead: nextDead };
 				}
@@ -587,8 +639,12 @@ export class SmartView {
 			return -Infinity;
 		}
 		const net =
-			this.value(tid, this.swappedFrom(h, { players: fillers, picks: [] }, a)) -
-			this.value(tid, this.swappedFrom(h, none, none));
+			this.value(
+				tid,
+				this.swappedFrom(h, { players: fillers, picks: [] }, a),
+				[],
+				tradedAwayCount(fillers),
+			) - this.value(tid, this.swappedFrom(h, none, none));
 		return net >= 0 ? use : -Infinity;
 	}
 
@@ -634,8 +690,9 @@ export class SmartView {
 		h = this.heldNow(tid),
 	) {
 		const after = this.swappedFrom(h, out, inn);
-		const dG = this.value(tid, after) - this.value(tid, h);
-		const [cut] = this.afterCuts(tid, after);
+		const gone = tradedAwayCount(out.players);
+		const dG = this.value(tid, after, [], gone) - this.value(tid, h);
+		const [cut] = this.afterCuts(tid, after, [], gone);
 		const kept = new Set(cut.players);
 		const keptIn = {
 			players: inn.players.filter((p) => kept.has(p)),
@@ -740,7 +797,12 @@ export class SmartView {
 			// holdings are read, and what it would get has its chance of
 			// staying with it (its want, above).
 			const gains = (o: Holdings) =>
-				this.value(buyer, this.swappedFrom(held, o, out)) -
+				this.value(
+					buyer,
+					this.swappedFrom(held, o, out),
+					[],
+					tradedAwayCount(o.players),
+				) -
 					this.value(buyer, held) >
 				0;
 			let offer: Holdings = { players: [], picks: [] };

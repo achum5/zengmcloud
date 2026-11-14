@@ -2,6 +2,7 @@ import { test } from "vitest";
 import { makeSeededRandom } from "../../common/random.ts";
 import { g } from "../../worker/util/index.ts";
 import { autopilot, shark } from "./policies.ts";
+import { gmPolicy } from "./gmPolicy.ts";
 import type { BenchPolicy } from "./policy.ts";
 import {
 	BENCH_SETTINGS,
@@ -60,6 +61,9 @@ const policyFor = (name: string, seed: number): BenchPolicy => {
 	}
 	if (name === "shark") {
 		return shark({ seed, ...JSON.parse(env.BENCH_SHARK ?? "{}") });
+	}
+	if (name === "gm") {
+		return gmPolicy(JSON.parse(env.BENCH_GM ?? "{}"));
 	}
 	throw new Error(`Unknown policy ${name}`);
 };

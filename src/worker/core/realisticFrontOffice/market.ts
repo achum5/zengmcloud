@@ -354,7 +354,7 @@ const valueOf = (
 		tid,
 	);
 
-const tradedAwayOf = async (tid: number): Promise<TradedAway> => {
+export const tradedAwayOf = async (tid: number): Promise<TradedAway> => {
 	const season = g.get("season");
 	const count = async (s: number) =>
 		(await idb.cache.teamSeasons.indexGet("teamSeasonsBySeasonTid", [s, tid]))
