@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 311,
+		date: "2026-11-14",
+		text: "New in League Settings: Smart CPU (Game Modes, with Realistic Front Offices on). Every CPU team is then run like a real general manager - each trade, signing, re-signing and draft pick judged by what it does to the team's title chances this season and the years ahead, and a good player sold only for the best offer around. The trading block, trade proposals and What would make this work show what the team would really do. It's off unless your league turns it on, and simming is slower with it.",
+	},
+	{
 		n: 310,
 		date: "2026-11-14",
 		text: "3D: the game at 1x moves at real NBA tempo. Players' legs turn over as fast as a real player's (no more slow-motion jogs, backpedals and slides), stances and dribbling in place are livelier, the man with the ball sizes up his defender with quick moves instead of a slow sway, and shooters spaced around the arc slide to open spots when the ball is driven.",
