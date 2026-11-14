@@ -89,6 +89,11 @@ import {
 	lastSimDayRejection,
 } from "../sync/simDayFence.ts";
 import { syncDebugLog } from "../sync/debugLog.ts";
+import {
+	beginRoomAdvance,
+	endRoomAdvance,
+	holdRoomForAdvance,
+} from "../sync/advanceLease.ts";
 import { scheduleForSim } from "./singleGameSchedule.ts";
 import { orphanedScheduleGids } from "./orphanedSchedule.ts";
 import { runLiveBroadcastStart } from "../sync/liveBroadcastHook.ts";
@@ -1055,6 +1060,12 @@ const play = async (
 		// mutation; a rejection means someone else already simmed these games, so
 		// skip and catch up instead. No-op outside a sync room.
 		const claimDayOrBail = async (games: ScheduleGame[]) => {
+			// A day (or more) holds the room busy, renewed before each day: its
+			// front offices may hold the worker past any lease stamped earlier
+			// (advanceLease.ts).
+			if (gidOneGame === undefined) {
+				await holdRoomForAdvance();
+			}
 			const granted = await claimSimDayFence(
 				games[0]!.day,
 				games.map((game) => game.gid),
@@ -1292,10 +1303,18 @@ const play = async (
 				// see changeTracker.advanceLabel.)
 				const advance = gidOneGame === undefined ? "playMenu.sim" : undefined;
 				changeTracker.beginSim(advance);
+				// The room held busy from the first day to the last, however long
+				// after the call that started it (advanceLease.ts).
+				if (advance) {
+					beginRoomAdvance();
+				}
 				try {
 					await cbRunDay();
 				} finally {
 					changeTracker.endSim(advance);
+					if (advance) {
+						endRoomAdvance();
+					}
 				}
 			}
 		} finally {

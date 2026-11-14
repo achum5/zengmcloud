@@ -22,6 +22,7 @@ import {
 } from "../recoveryBreadcrumb.ts";
 import { payloadLeagueId, readLocalLeagueId } from "../leagueIdentity.ts";
 import { syncDebugLog } from "../debugLog.ts";
+import { advanceLeaseMs } from "../advanceLease.ts";
 import {
 	beginCoalescedRefresh,
 	endCoalescedRefresh,
@@ -206,9 +207,13 @@ const decodeDelta = async (serialized: string): Promise<Changeset> =>
 	deserializeChangeset(await decompressSerialized(serialized)) as Changeset;
 
 // How long a sim's "busy" stamp holds followers' publishes if it is never
-// cleared, and how many times a clear is tried.
+// cleared (longer with the smart CPU: advanceLease.ts), and how many times a
+// clear is tried.
 const BUSY_LEASE_MS = 3 * 60 * 1000;
 const BUSY_CLEAR_TRIES = 4;
+// How long renewing it before a step of an advance may take: past this the
+// step runs anyway, on the lease already stamped.
+const BUSY_HOLD_TIMEOUT_MS = 10_000;
 
 // Node keeps the test process alive on a pending timer; browsers have no unref.
 const unrefTimer = (timer: ReturnType<typeof setTimeout> | undefined) => {
@@ -254,6 +259,11 @@ export class SyncEngineV2 {
 	// count of marks and clears, so a retried clear knows it is stale.
 	private busyMarked = false;
 	private busyClears = 0;
+	// When the stamp this device last wrote runs out, and how many advances
+	// are under way here (an API call and the multi-day sim it starts, which
+	// runs on after the call returns): the room is cleared when the last ends.
+	private busyStampedUntil = 0;
+	private advances = 0;
 
 	// Readiness is a LEASE, not a latch. It used to be a one-way boolean: the
 	// first successful ping set it true and nothing ever set it back, so
@@ -962,11 +972,56 @@ export class SyncEngineV2 {
 		// (A clear still being retried from the last advance must not wipe this
 		// one's lease.)
 		this.busyClears += 1;
-		const until = Date.now() + BUSY_LEASE_MS;
+		const until = Date.now() + advanceLeaseMs(BUSY_LEASE_MS);
+		this.busyStampedUntil = until;
 		syncDebugLog("v2:busy-mark", { until: new Date(until).toISOString() });
 		this.transport.publishBusy?.(until, position as any).catch((error) => {
 			syncDebugLog("v2:busy-mark-failed", { error: String(error) });
 		});
+	}
+
+	// An advance under way here (see advanceLease.ts): the room is cleared
+	// only when the last one ends.
+	beginAdvance(): void {
+		this.advances += 1;
+	}
+
+	endAdvance(position?: unknown): void {
+		this.advances = Math.max(0, this.advances - 1);
+		if (this.advances === 0) {
+			this.clearRoomBusy(position);
+		}
+	}
+
+	// Before a step of an advance under way: the busy mark renewed once half
+	// its lease is gone, and the write waited for - the step may hold the
+	// worker for minutes (the smart CPU), and no timer or write runs then. A
+	// stamped lease that ran out mid-sim let followers publish into it, and
+	// the sim's whole records then landed over their edits. Best effort: a
+	// write that fails or hangs leaves the step to run on the lease it has.
+	async holdRoomBusy(): Promise<void> {
+		if (this.advances === 0 || !this.isAuthority()) {
+			return;
+		}
+		const lease = advanceLeaseMs(BUSY_LEASE_MS);
+		const now = Date.now();
+		if (this.busyMarked && this.busyStampedUntil - now > lease / 2) {
+			return;
+		}
+		this.busyMarked = true;
+		this.busyClears += 1;
+		const until = now + lease;
+		this.busyStampedUntil = until;
+		const write = this.transport.publishBusy?.(until);
+		if (!write) {
+			return;
+		}
+		try {
+			await withTimeout(write, BUSY_HOLD_TIMEOUT_MS);
+			syncDebugLog("v2:busy-hold", { until: new Date(until).toISOString() });
+		} catch (error) {
+			syncDebugLog("v2:busy-hold-failed", { error: String(error) });
+		}
 	}
 
 	// Cleared by the device that stamped it, whatever its view of the room

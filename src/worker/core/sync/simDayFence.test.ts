@@ -101,6 +101,43 @@ describe("simDayFence completion", () => {
 	});
 });
 
+// With the smart CPU, one day's front offices can hold the worker for
+// minutes: a day still being simmed must not read as a crashed one.
+describe("claim lease", () => {
+	beforeEach(() => {
+		resetG();
+		g.setWithoutSavingToDB("season", 2026);
+		setSyncEngine({ catchUp: async () => true } as any);
+	});
+	afterEach(() => {
+		teardownSimDayFence();
+		setSyncEngine(undefined);
+	});
+
+	test("90 seconds, or ten minutes with the smart CPU on", async () => {
+		const leases: number[] = [];
+		const transport = {
+			clientId: "me",
+			claimSimDay: async (
+				_stage: string,
+				_day: number,
+				_gids: number[],
+				leaseMs: number,
+			) => {
+				leases.push(leaseMs);
+				return true;
+			},
+		};
+		setupSimDayFence(transport as any);
+		g.setWithoutSavingToDB("smartCpu", false);
+		assert.isTrue(await claimSimDayFence(12, [77]));
+		g.setWithoutSavingToDB("smartCpu", true);
+		assert.isTrue(await claimSimDayFence(13, [78]));
+		g.setWithoutSavingToDB("smartCpu", false);
+		assert.deepEqual(leases, [90_000, 10 * 60_000]);
+	});
+});
+
 describe("claim rejection reason", () => {
 	beforeEach(() => {
 		resetG();
@@ -351,7 +388,11 @@ describe("overlapping single-game sims", () => {
 		assert.isTrue(await claimSimDayFence(92, [21998], { singleGame: true }));
 
 		// Game 1 lands and closes - only game 1.
-		completeClaimedSimDayFence({ synced: true, singleGame: true, gids: [21995] });
+		completeClaimedSimDayFence({
+			synced: true,
+			singleGame: true,
+			gids: [21995],
+		});
 		await Promise.resolve();
 		assert.deepEqual(t.completions, [{ day: 92, gids: [21995] }]);
 
@@ -390,7 +431,11 @@ describe("overlapping single-game sims", () => {
 		const t = makeTransport("me");
 		setupSimDayFence(t.transport as any);
 		assert.isTrue(await claimSimDayFence(92, [21998], { singleGame: true }));
-		completeClaimedSimDayFence({ synced: true, singleGame: true, gids: [21998] });
+		completeClaimedSimDayFence({
+			synced: true,
+			singleGame: true,
+			gids: [21998],
+		});
 		t.state.doc = {
 			holderId: "someone-else",
 			stageKey: stage,

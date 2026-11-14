@@ -1333,6 +1333,73 @@ describe("SyncEngineV2", () => {
 		}
 	});
 
+	// A sim of several days runs on after the call that started it returns,
+	// and with the smart CPU one day can hold the worker for minutes: the room
+	// stays busy until the last advance ends, renewed before each step.
+	test("the room stays busy until the last advance under way ends, renewed before each step", async () => {
+		vi.useFakeTimers();
+		try {
+			const room = new Room();
+			initRoom(room);
+			room.setAuthority({ holderId: "A", holderName: "Alex" });
+			const transport = new V2Transport("A", room);
+			const writes: number[] = [];
+			transport.publishBusy = async (until: number) => {
+				writes.push(until);
+			};
+			const engine = new SyncEngineV2(transport);
+			engine.start();
+			// Not under way: nothing to renew.
+			await engine.holdRoomBusy();
+			assert.strictEqual(writes.length, 0);
+			// The call marks it, the sim it starts runs on, the call returns.
+			engine.markRoomBusy();
+			engine.beginAdvance();
+			engine.beginAdvance();
+			engine.endAdvance();
+			await vi.advanceTimersByTimeAsync(0);
+			assert.strictEqual(writes.length, 1, "not cleared under the sim");
+			// A day soon after: the stamp still has most of its lease.
+			await engine.holdRoomBusy();
+			assert.strictEqual(writes.length, 1);
+			// Past half the lease: renewed.
+			await vi.advanceTimersByTimeAsync(100_000);
+			await engine.holdRoomBusy();
+			assert.strictEqual(writes.length, 2);
+			assert.isAbove(writes[1]!, writes[0]!);
+			// The sim ends: cleared.
+			engine.endAdvance();
+			await vi.advanceTimersByTimeAsync(0);
+			assert.deepStrictEqual(writes.slice(2), [0]);
+			engine.stop();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	test("with the smart CPU on, the busy stamp runs ten minutes", async () => {
+		const room = new Room();
+		initRoom(room);
+		room.setAuthority({ holderId: "A", holderName: "Alex" });
+		const transport = new V2Transport("A", room);
+		const writes: number[] = [];
+		transport.publishBusy = async (until: number) => {
+			writes.push(until);
+		};
+		const engine = new SyncEngineV2(transport);
+		engine.start();
+		g.setWithoutSavingToDB("smartCpu", true);
+		try {
+			const before = Date.now();
+			engine.markRoomBusy();
+			assert.isAtLeast(writes[0]! - before, 10 * 60_000);
+		} finally {
+			g.setWithoutSavingToDB("smartCpu", false);
+			engine.clearRoomBusy();
+			engine.stop();
+		}
+	});
+
 	// A follower does not publish into the middle of a sim. Racing the advance
 	// for the next version is exactly how one got discarded; the change is
 	// durably queued and goes up the moment the sim's version lands.

@@ -8,11 +8,15 @@ import { getSyncEngine } from "./engineHolder.ts";
 import { syncDebugLog } from "./debugLog.ts";
 import { isSingleGameSimLabel } from "./actionLabels.ts";
 import { decideSimDayClaim } from "./simDayClaimPolicy.ts";
+import { advanceLeaseMs } from "./advanceLease.ts";
 import type { ChangesetEntry, SyncTransport } from "./types.ts";
 
 // Generous relative to a day sim (seconds), but short enough that a crashed
 // simmer doesn't wedge the room for long. Matches the draft-advance lease.
+// Longer with the smart CPU, whose front offices can hold the worker for
+// minutes within one day (advanceLease.ts).
 const SIM_DAY_LEASE_MS = 90_000;
+const simDayLeaseMs = () => advanceLeaseMs(SIM_DAY_LEASE_MS);
 
 // See claimSimDayFence: a hung claim must fail, not freeze the sim.
 const CLAIM_TIMEOUT_MS = 10_000;
@@ -142,7 +146,7 @@ export const claimSimDayFence = async (
 	lastRejection = undefined;
 	try {
 		granted = await withClaimTimeout(
-			transport.claimSimDay(stageKey(), day, gids, SIM_DAY_LEASE_MS),
+			transport.claimSimDay(stageKey(), day, gids, simDayLeaseMs()),
 		);
 	} catch (error) {
 		syncDebugLog("simDayFence:claim-failed", { day, error: String(error) });
@@ -379,7 +383,7 @@ export const revalidateQueuedSingleGame = async (
 		day: games.day,
 		gids: games.gids,
 		now: Date.now(),
-		leaseMs: SIM_DAY_LEASE_MS,
+		leaseMs: simDayLeaseMs(),
 	});
 	syncDebugLog("simDayFence:revalidate", {
 		day: games.day,
@@ -396,7 +400,7 @@ export const revalidateQueuedSingleGame = async (
 					stageKey(),
 					games.day,
 					games.gids,
-					SIM_DAY_LEASE_MS,
+					simDayLeaseMs(),
 				),
 			);
 			return granted ? "publish" : "wait";

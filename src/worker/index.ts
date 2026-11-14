@@ -639,6 +639,9 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 		!!syncEngineForBusy?.isAuthority();
 	if (marksBusy) {
 		syncEngineForBusy!.markRoomBusy();
+		// Held until the last advance under way here ends - a multi-day sim
+		// started by this call runs on after it returns (advanceLease.ts).
+		syncEngineForBusy!.beginAdvance();
 	}
 
 	// Cloud-tracked call: open a capture window for its whole duration, so its
@@ -674,7 +677,12 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 						const position = synced
 							? await getLeaguePosition().catch(() => undefined)
 							: undefined;
-						getSyncEngine()?.clearRoomBusy(position);
+						syncEngineForBusy!.endAdvance(position);
+						// (Reconnected meanwhile: the engine now connected clears it.)
+						const current = getSyncEngine();
+						if (current && current !== syncEngineForBusy) {
+							current.clearRoomBusy(position);
+						}
 					}
 				}
 				if (!synced) {
@@ -699,7 +707,7 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 				// The advance threw, so nothing will publish - drop the lease now rather
 				// than making followers wait it out. No position: nothing moved.
 				if (marksBusy) {
-					getSyncEngine()?.clearRoomBusy();
+					syncEngineForBusy!.endAdvance();
 				}
 				// A thrown action used to die silently (the UI never awaits these
 				// rejections): no toast, no log, a button that "does nothing". Say

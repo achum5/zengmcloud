@@ -46,6 +46,12 @@ import playGames from "../game/play.ts";
 import { resolveFaBoards } from "./faBoard.ts";
 import { getSyncEngine } from "./engineHolder.ts";
 import { runAfterActionHook } from "./afterActionHook.ts";
+import {
+	advanceLeaseMs,
+	beginRoomAdvance,
+	endRoomAdvance,
+	holdRoomForAdvance,
+} from "./advanceLease.ts";
 import { syncDebugLog } from "./debugLog.ts";
 import { stillSyncOwner } from "./instanceOwner.ts";
 import {
@@ -73,7 +79,9 @@ const READY_PUBLISH_SETTLE_MS = 5000;
 
 // How long an advance claim blocks other devices from claiming the same step.
 // Generous vs a single step (a second or two) so it only matters as crash
-// recovery for a claimant that died mid-advance.
+// recovery for a claimant that died mid-advance. Longer with the smart CPU,
+// whose front offices can hold the worker for minutes within one step - a
+// draft pick, a free agency day, a phase's market (advanceLease.ts).
 const CLAIM_LEASE_MS = 90_000;
 
 // Free-agency steps are derived from daysLeft (which counts DOWN) so they
@@ -1002,7 +1010,11 @@ const evaluate = async () => {
 		// by the lock, which stalls the step for the whole room until the
 		// lease expires - let a device that can actually sim win instead.
 		lock.get("gameSim") ||
-		lock.get("newPhase")
+		lock.get("newPhase") ||
+		// Someone in charge of simming is advancing the league right now (a
+		// sim, a phase change from the Play menu): the step it is taking may
+		// be this one, and its result not published yet.
+		engine.isRoomBusy()
 	) {
 		return;
 	}
@@ -1067,7 +1079,7 @@ const evaluate = async () => {
 		const claimed = await transport.claimDraftAdvance(
 			stageKey,
 			stage.nextStep,
-			CLAIM_LEASE_MS,
+			advanceLeaseMs(CLAIM_LEASE_MS),
 		);
 		if (!claimed) {
 			// Usually another device won the race a moment ago. But a room that
@@ -1090,7 +1102,24 @@ const evaluate = async () => {
 			label: stage2.nextLabel,
 		});
 
-		await stage2.advance();
+		// With the smart CPU a step can take minutes (its front offices at a
+		// pick, a free agency day, a phase's market): held busy while it runs,
+		// if this device is in charge of simming (advanceLease.ts). Without
+		// it a step takes a second or two, not worth two writes a pick.
+		const holdsRoom = g.get("smartCpu");
+		if (holdsRoom) {
+			beginRoomAdvance();
+		}
+		try {
+			if (holdsRoom) {
+				await holdRoomForAdvance();
+			}
+			await stage2.advance();
+		} finally {
+			if (holdsRoom) {
+				endRoomAdvance();
+			}
+		}
 
 		// Close this step's re-claim window ONLY when the world actually moved
 		// past the step - see advanceTookEffect for the wedge this prevents.
