@@ -4,6 +4,8 @@ import isUntradable from "../trade/isUntradable.ts";
 import summary from "../trade/summary.ts";
 import { currentOutlook } from "../realisticFrontOffice/market.ts";
 import { ensureRetention } from "../realisticFrontOffice/outlook.ts";
+import { contractOf } from "../realisticFrontOffice/contractOf.ts";
+import { salaryRulesAllow } from "./tradeRules.ts";
 import { viewFor } from "./signing.ts";
 import type { Holdings, SmartView } from "./worth.ts";
 
@@ -37,6 +39,9 @@ const teamsOf = (
 		dpidsExcluded: [],
 	},
 ];
+
+// For probes: each step of what would make this work.
+export const smartScreensDebug: { log?: (line: string) => void } = {};
 
 const ready = async () => {
 	const view = viewFor(await currentOutlook());
@@ -114,13 +119,17 @@ export const smartOfferStands = async (teams: TradeTeams) => {
 
 // What would make this work: what the CPU team would take from the user for
 // what is on the table. Its most wanted of the user's players and picks are
-// added until it says yes by its full worth, then those the user would miss
-// most taken back while it still does. Undefined if nothing would.
+// added until it says yes by its full worth; where the trade rules on salary
+// need one side to send out more, that side adds the players it would miss
+// least (as NBA teams fill a trade); then what the user would miss most is
+// taken back while the CPU team still says yes. Undefined if nothing would
+// - a deal it would take that no filler makes legal comes back as it is,
+// for the screen to say so.
 export const smartMakeItWork = async (teams: TradeTeams) => {
 	const view = await ready();
 	const user = teams[0].tid;
 	const cpu = teams[1].tid;
-	const cpuGives = await view.assetsOf({
+	let cpuGives = await view.assetsOf({
 		pids: teams[1].pids,
 		dpids: teams[1].dpids,
 	});
@@ -128,33 +137,37 @@ export const smartMakeItWork = async (teams: TradeTeams) => {
 		pids: teams[0].pids,
 		dpids: teams[0].dpids,
 	});
-	const worth = async (x: Holdings) => view.dealWorth(cpu, user, cpuGives, x);
-	const legal = async (x: Holdings) =>
-		(await summary(teamsOf(user, x, cpu, cpuGives))).warning === null;
-	if ((await worth(userGives)) > 0 && (await legal(userGives))) {
+	const result = (u: Holdings, c: Holdings): TradeTeams => {
+		const [t0, t1] = teamsOf(user, u, cpu, c);
+		return [
+			{
+				...t0,
+				pidsExcluded: teams[0].pidsExcluded,
+				dpidsExcluded: teams[0].dpidsExcluded,
+			},
+			{
+				...t1,
+				pidsExcluded: teams[1].pidsExcluded,
+				dpidsExcluded: teams[1].dpidsExcluded,
+			},
+		];
+	};
+	const yes = async (u: Holdings, c: Holdings) =>
+		(await view.dealWorth(cpu, user, c, u)) > 0;
+	const legal = async (u: Holdings, c: Holdings) =>
+		(await summary(result(u, c))).warning === null;
+	if ((await yes(userGives, cpuGives)) && (await legal(userGives, cpuGives))) {
 		return teams;
 	}
-	// What the user could add: its players and nearest picks not on the
-	// table, the CPU team's favourite first.
-	const held = await view.holdingsOf(user);
-	const on = new Set([...userGives.players, ...userGives.picks]);
-	const pieces: (Player | DraftPick)[] = [
-		...held.players.filter((p) => !isUntradable(p).untradable),
-		...[...held.picks]
-			.filter((dp) => typeof dp.season === "number")
-			.sort(
-				(a, b) =>
-					(a.season as number) - (b.season as number) ||
-					a.round - b.round ||
-					a.dpid - b.dpid,
-			)
-			.slice(0, 4),
-	].filter((x) => !on.has(x));
-	await ensureRetention(
-		view.outlook,
-		pieces.filter((x): x is Player => "pid" in x),
-		cpu,
-	);
+	const userPayroll = await view.tradePayroll(user);
+	const cpuPayroll = await view.tradePayroll(cpu);
+	const salary = (h: Holdings) =>
+		h.players.reduce((sum, p) => sum + contractOf(p).amount, 0);
+	// The side the rules on salary want to send out more.
+	const cpuShort = (u: Holdings, c: Holdings) =>
+		!salaryRulesAllow(cpu, cpuPayroll, salary(u), salary(c));
+	const userShort = (u: Holdings, c: Holdings) =>
+		!salaryRulesAllow(user, userPayroll, salary(c), salary(u));
 	const one = (x: Player | DraftPick): Holdings =>
 		"pid" in x ? { players: [x], picks: [] } : { players: [], picks: [x] };
 	const plus = (h: Holdings, x: Player | DraftPick): Holdings =>
@@ -165,43 +178,163 @@ export const smartMakeItWork = async (teams: TradeTeams) => {
 		players: h.players.filter((p) => p !== x),
 		picks: h.picks.filter((dp) => dp !== x),
 	});
+	const on = (h: Holdings, x: Player | DraftPick) =>
+		h.players.includes(x as Player) || h.picks.includes(x as DraftPick);
+	const userExcluded = new Set([
+		...teams[0].pidsExcluded,
+		...teams[0].dpidsExcluded.map((dpid) => -1 - dpid),
+	]);
+	const cpuExcluded = new Set(teams[1].pidsExcluded);
+	const tradable = (p: Player) => !isUntradable(p).untradable;
+	// What the user could add: its players and nearest picks, the CPU team's
+	// favourite first.
+	const userHeld = await view.holdingsOf(user);
+	const pieces: (Player | DraftPick)[] = [
+		...userHeld.players.filter((p) => tradable(p) && !userExcluded.has(p.pid)),
+		...[...userHeld.picks]
+			.filter(
+				(dp) =>
+					typeof dp.season === "number" && !userExcluded.has(-1 - dp.dpid),
+			)
+			.sort(
+				(a, b) =>
+					(a.season as number) - (b.season as number) ||
+					a.round - b.round ||
+					a.dpid - b.dpid,
+			)
+			.slice(0, 4),
+	];
+	await ensureRetention(
+		view.outlook,
+		pieces.filter((x): x is Player => "pid" in x),
+		cpu,
+	);
 	const cpuWants = new Map<Player | DraftPick, number>();
+	const userMisses = new Map<Player | DraftPick, number>();
 	for (const x of pieces) {
 		cpuWants.set(x, view.useOfNow(cpu, one(x)));
-	}
-	pieces.sort((a, b) => cpuWants.get(b)! - cpuWants.get(a)!);
-	const added: (Player | DraftPick)[] = [];
-	let yes = false;
-	for (const x of pieces) {
-		if (added.length >= 5) {
-			break;
-		}
-		const next = plus(userGives, x);
-		if (!(await legal(next)) && added.length >= 4) {
-			continue;
-		}
-		userGives = next;
-		added.push(x);
-		if ((await worth(userGives)) > 0 && (await legal(userGives))) {
-			yes = true;
-			break;
-		}
-	}
-	if (!yes) {
-		return undefined;
-	}
-	// Back what the user would miss most, while the CPU team still says yes.
-	const userMisses = new Map<Player | DraftPick, number>();
-	for (const x of added) {
 		userMisses.set(x, view.useOfNow(user, one(x)));
 	}
+	const wanted = [...pieces].sort(
+		(a, b) => cpuWants.get(b)! - cpuWants.get(a)!,
+	);
+	const userFillers = pieces
+		.filter((x): x is Player => "pid" in x)
+		.sort((a, b) => userMisses.get(a)! - userMisses.get(b)!);
+	// What the CPU team could add to fill: the players it would miss least.
+	const cpuHeld = await view.holdingsOf(cpu);
+	const cpuUses = view.usesOf(cpu, cpuHeld);
+	const cpuFillers = cpuHeld.players
+		.filter((p) => tradable(p) && !cpuExcluded.has(p.pid))
+		.sort((a, b) => cpuUses.get(a.pid)! - cpuUses.get(b.pid)! || a.pid - b.pid);
+	// A filler for a side short of salary to send out: the one it would miss
+	// least that settles the rules alone, or else its biggest salary.
+	const fillerFor = (
+		fillers: readonly Player[],
+		has: Holdings,
+		settles: (p: Player) => boolean,
+	) => {
+		const free = fillers.filter((p) => !on(has, p));
+		return (
+			free.find(settles) ??
+			free.reduce<Player | undefined>(
+				(best, p) =>
+					!best || contractOf(p).amount > contractOf(best).amount ? p : best,
+				undefined,
+			)
+		);
+	};
+	const added: (Player | DraftPick)[] = [];
+	const cpuAdded: Player[] = [];
+	let wantedAdded = 0;
+	let cpuFilled = 0;
+	let userFilled = 0;
+	let done = false;
+	for (let step = 0; step < 16; step++) {
+		smartScreensDebug.log?.(
+			`user gives ${userGives.players.map((p) => p.pid)} +${userGives.picks.length} picks, cpu gives ${cpuGives.players.map((p) => p.pid)}: worth ${(await view.dealWorth(cpu, user, cpuGives, userGives)).toFixed(4)}, ${(await summary(result(userGives, cpuGives))).warning}`,
+		);
+		// First what it takes for the CPU team to say yes, then the rules.
+		if (!(await yes(userGives, cpuGives))) {
+			const free = wanted.filter((y) => !on(userGives, y));
+			if (free.length === 0 || wantedAdded >= 5) {
+				break;
+			}
+			// One enough alone, the one the user would miss least - or else
+			// the CPU team's favourite.
+			let x: Player | DraftPick | undefined;
+			for (const y of [...free].sort(
+				(a, b) => userMisses.get(a)! - userMisses.get(b)!,
+			)) {
+				if (await yes(plus(userGives, y), cpuGives)) {
+					x = y;
+					break;
+				}
+			}
+			x ??= free[0]!;
+			userGives = plus(userGives, x);
+			added.push(x);
+			wantedAdded += 1;
+			continue;
+		}
+		if (cpuShort(userGives, cpuGives)) {
+			const p = fillerFor(
+				cpuFillers,
+				cpuGives,
+				(q) => !cpuShort(userGives, plus(cpuGives, q)),
+			);
+			if (!p || cpuFilled >= 3) {
+				break;
+			}
+			cpuGives = plus(cpuGives, p);
+			cpuAdded.push(p);
+			cpuFilled += 1;
+			continue;
+		}
+		if (userShort(userGives, cpuGives)) {
+			const p = fillerFor(
+				userFillers,
+				userGives,
+				(q) => !userShort(plus(userGives, q), cpuGives),
+			);
+			if (!p || userFilled >= 3) {
+				break;
+			}
+			userGives = plus(userGives, p);
+			added.push(p);
+			userFilled += 1;
+			continue;
+		}
+		done = true;
+		break;
+	}
+	if (!done) {
+		return undefined;
+	}
+	// Back what the user would miss most, while the CPU team still says yes
+	// and the rules still allow it.
 	for (const x of [...added].sort(
 		(a, b) => userMisses.get(b)! - userMisses.get(a)!,
 	)) {
 		const without = less(userGives, x);
-		if ((await worth(without)) > 0 && (await legal(without))) {
+		if (
+			!cpuShort(without, cpuGives) &&
+			!userShort(without, cpuGives) &&
+			(await yes(without, cpuGives))
+		) {
 			userGives = without;
 		}
 	}
-	return teamsOf(user, userGives, cpu, cpuGives);
+	// And any filler of its own it no longer needs to send.
+	for (const p of [...cpuAdded].reverse()) {
+		const without = less(cpuGives, p);
+		if (
+			!cpuShort(userGives, without) &&
+			!userShort(userGives, without) &&
+			(await yes(userGives, without))
+		) {
+			cpuGives = without;
+		}
+	}
+	return result(userGives, cpuGives);
 };

@@ -20,7 +20,7 @@ test.runIf(env.SCREENS_PROBE === "1")(
 	async () => {
 		await importNode("fake-indexeddb/auto");
 		const fs = await importNode("node:fs/promises");
-		const { smartMakeItWork, smartTradingBlock } =
+		const { smartMakeItWork, smartScreensDebug, smartTradingBlock } =
 			await import("../../worker/core/smartCpu/screens.ts");
 		const { smartJudgeOffer } =
 			await import("../../worker/core/smartCpu/humanTrades.ts");
@@ -64,10 +64,16 @@ test.runIf(env.SCREENS_PROBE === "1")(
 				.map((o) => ({ tid: o[1].tid, pids: o[1].pids, dpids: o[1].dpids }));
 		}
 		// What would make this work: a CPU team's best player asked for.
-		for (const tid of [5, 17]) {
+		for (const [tid, rank] of [
+			[5, 0],
+			[17, 0],
+			[5, 4],
+			[17, 4],
+		] as const) {
 			const theirs = (await idb.cache.players.indexGetAll("playersByTid", tid))
 				.filter((p) => !isUntradable(p).untradable)
-				.sort((a, b) => b.value - a.value);
+				.sort((a, b) => b.value - a.value)
+				.slice(rank);
 			const teams: TradeTeams = [
 				{
 					tid: user,
@@ -84,9 +90,13 @@ test.runIf(env.SCREENS_PROBE === "1")(
 					dpidsExcluded: [],
 				},
 			];
+			const trace: string[] = [];
+			smartScreensDebug.log = (line) => trace.push(line);
 			const found = await time(`make it work for ${theirs[0]!.pid}`, () =>
 				smartMakeItWork(teams),
 			);
+			smartScreensDebug.log = undefined;
+			rows.at(-1)!.trace = trace;
 			rows.at(-1)!.found = found
 				? found.map((side) => ({ pids: side.pids, dpids: side.dpids }))
 				: null;
