@@ -523,6 +523,16 @@ would stop them, but it is a judgement call left for the owner.
   resell), so this yardstick says as much about the bench as the GM; the
   bench's re-signings are logged now to see what it turned down.
 
+### One switch (owner, 2026-11-14)
+
+League Settings show one switch for the mode: Smart CPU (Game Modes).
+Realistic Front Offices and Front Office Difficulty are off the list: Smart
+CPU turned on turns the realistic front offices on with it, and turned off
+turns both off (league creation, createStream; saving settings,
+updateGameAttributesGodMode). The difficulty never touched the GM. A league
+with the realistic front offices on that never had Smart CPU on - today's
+mode, the owner's league - runs as it did.
+
 ## The DBA replay
 
 Yardstick C, built (src/test/dba/). Every trade of the owner's league from

@@ -206,8 +206,6 @@ const gameAttributeKeys = [
 	"footballOvertime",
 	"footballOvertimePlayoffs",
 	"easterEggPlayers",
-	"realisticFrontOffices",
-	"realisticFrontOfficesDifficulty",
 	"smartCpu",
 	"fakeAgeProb",
 ] as const satisfies readonly (keyof GameAttributesLeague)[];

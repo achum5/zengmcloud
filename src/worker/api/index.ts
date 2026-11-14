@@ -6058,6 +6058,16 @@ const updateGameAttributesGodMode = async (
 	// Will be handled in setRepeatSeason, don't pass through a string
 	delete gameAttributes.repeatSeason;
 
+	// Smart CPU, the one switch the settings show for the mode, runs on the
+	// realistic front offices: they go on with it and off with it. A league
+	// with them on that never had Smart CPU on (the mode before it) is left
+	// as it is.
+	if (gameAttributes.smartCpu) {
+		gameAttributes.realisticFrontOffices = true;
+	} else if (gameAttributes.smartCpu === false && g.get("smartCpu")) {
+		gameAttributes.realisticFrontOffices = false;
+	}
+
 	// Check schedule, unless it'd be too slow
 	const teams = (await idb.cache.teams.getAll()).filter((t) => !t.disabled);
 	if (teams.length < TOO_MANY_TEAMS_TOO_SLOW) {

@@ -1517,6 +1517,12 @@ const beforeDBStream = async ({
 		divs,
 	};
 
+	// Smart CPU, the one switch the settings show for the mode, runs on the
+	// realistic front offices.
+	if (gameAttributeOverrides.smartCpu) {
+		gameAttributeOverrides.realisticFrontOffices = true;
+	}
+
 	// This setting is allowed to be undefined, so make it that way when it does nothing - it's only used for real players leagues and random debuts
 	if (getLeagueOptions?.type !== "real" && !isRandomDebuts(randomization)) {
 		delete gameAttributeOverrides.realDraftRatings;

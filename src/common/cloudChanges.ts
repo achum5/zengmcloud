@@ -12,9 +12,14 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 312,
+		date: "2026-11-14",
+		text: "League Settings now has one switch for the CPU front offices: Smart CPU, under Game Modes. Realistic Front Offices and Front Office Difficulty are gone from the list - turning Smart CPU on turns on everything it needs. Leagues already using Realistic Front Offices keep running as they are.",
+	},
+	{
 		n: 311,
 		date: "2026-11-14",
-		text: "New in League Settings: Smart CPU (Game Modes, with Realistic Front Offices on). Every CPU team is then run like a real general manager - each trade, signing, re-signing and draft pick judged by what it does to the team's title chances this season and the years ahead, and a good player sold only for the best offer around. The trading block, trade proposals and What would make this work show what the team would really do. It's off unless your league turns it on, and simming is slower with it.",
+		text: "New in League Settings: Smart CPU (Game Modes). Every CPU team is then run like a real general manager - each trade, signing, re-signing and draft pick judged by what it does to the team's title chances this season and the years ahead, and a good player sold only for the best offer around. The trading block, trade proposals and What would make this work show what the team would really do. It's off unless your league turns it on, and simming is slower with it.",
 	},
 	{
 		n: 310,
