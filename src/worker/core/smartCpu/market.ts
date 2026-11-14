@@ -11,6 +11,7 @@ import { currentOutlook, gamesPlayed } from "../realisticFrontOffice/market.ts";
 import { ensureRetention } from "../realisticFrontOffice/outlook.ts";
 import { timed, timedSync } from "./clock.ts";
 import { salaryRulesAllow } from "./tradeRules.ts";
+import { inStages } from "../realisticFrontOffice/stages.ts";
 import { viewFor } from "./signing.ts";
 import { smartSettings, type Holdings, type SmartView } from "./worth.ts";
 
@@ -37,13 +38,17 @@ export const marketSettings = {
 	// past what they do for it first (2026-11-14: the deals made were the
 	// same shopping five as shopping all, for a third less work).
 	shopped: 5,
+	// Candidates ranked by a rough read (rosters not cut to the limit).
+	roughRanking: true,
 	// A buyer's best players by its own use, kept out of salary matching.
 	core: 3,
 	// In season, a moment about every this many games a team, and every day
-	// in the last few before the deadline.
-	gamesBetween: 7,
-	deadlineDays: 3,
-	// In free agency, a moment on these days left.
+	// in the last few before the deadline - where three in four of the NBA's
+	// in-season trades are made (arena benchmarks).
+	gamesBetween: 17,
+	deadlineDays: 5,
+	// In free agency, a moment on these days left - or, in stages, at each
+	// stage (daysLeft counts the stages down).
 	freeAgencyDays: [30, 20, 10],
 };
 
@@ -101,6 +106,9 @@ export const candidates = async (
 	view: SmartView,
 	cpu: ReadonlySet<number>,
 	dealt: ReadonlySet<number>,
+	// Players each team shopped last moment without a taker: they sit this
+	// one out, behind its others.
+	rested: ReadonlyMap<number, ReadonlySet<number>> = new Map(),
 ) => {
 	const keen = await view.keenest();
 	const found: {
@@ -124,10 +132,14 @@ export const candidates = async (
 			// (2026-11-14) - the salary rules left to `matchable` and the real
 			// offer: a legal bid costs a franchise value more for every keen
 			// team, every player (31 s of a moment).
-			const own = view.roughUseOfNow(seller, one(p));
+			const read = (tid: number) =>
+				marketSettings.roughRanking
+					? view.roughUseOfNow(tid, one(p))
+					: view.useOfNow(tid, one(p));
+			const own = read(seller);
 			const bids = keen
 				.filter((k) => k !== seller)
-				.map((k) => ({ k, bid: view.roughUseOfNow(k, one(p)) }))
+				.map((k) => ({ k, bid: read(k) }))
 				.sort((a, b) => b.bid - a.bid);
 			const top = bids.find((b) => cpu.has(b.k) && !dealt.has(b.k));
 			if (!top) {
@@ -142,10 +154,18 @@ export const candidates = async (
 		}
 	}
 	// Each team shops the few the market wants most past what they do for
-	// it, as a GM puts players on the block.
+	// it, as a GM puts players on the block - those it shopped last time
+	// without a taker after its others.
 	const shopped = new Map<number, number>();
+	const wasRested = (c: (typeof found)[number]) =>
+		rested.get(c.seller)?.has(c.p.pid) ? 1 : 0;
 	return found
-		.sort((a, b) => b.surplus - a.surplus || a.p.pid - b.p.pid)
+		.sort(
+			(a, b) =>
+				wasRested(a) - wasRested(b) ||
+				b.surplus - a.surplus ||
+				a.p.pid - b.p.pid,
+		)
 		.filter((c) => {
 			const n = (shopped.get(c.seller) ?? 0) + 1;
 			shopped.set(c.seller, n);
@@ -239,7 +259,13 @@ const trimmed = (
 // What makes a deal can't be told from the candidates cheaply (2026-11-13:
 // 28 deals among 374 candidates, spread from the 41st to the 313th), so all
 // are asked, once a moment.
-export const dealsNow = async (view: SmartView, cpu: ReadonlySet<number>) => {
+export const dealsNow = async (
+	view: SmartView,
+	cpu: ReadonlySet<number>,
+	rested: ReadonlyMap<number, ReadonlySet<number>> = new Map(),
+	// Told which players were shopped.
+	onShopped?: (shopped: readonly { seller: number; p: Player }[]) => void,
+) => {
 	await view.prime();
 	// Every player's chance of staying with each team that sets prices, so
 	// what anything is worth doesn't hang on what was priced before.
@@ -253,8 +279,9 @@ export const dealsNow = async (view: SmartView, cpu: ReadonlySet<number>) => {
 	});
 	const deals: SmartDeal[] = [];
 	const all = await timed("market: candidates", () =>
-		candidates(view, cpu, new Set()),
+		candidates(view, cpu, new Set(), rested),
 	);
+	onShopped?.(all);
 	marketStats.candidates += all.length;
 	for (const c of all) {
 		const out = one(c.p);
@@ -313,6 +340,13 @@ const standing = (view: SmartView, tid: number) => {
 		: "";
 };
 
+// The players each team shopped at the last moment (smartCpu's market,
+// for this league): without a taker, they rest the next.
+let shoppedBefore: {
+	lid: number | undefined;
+	rested: Map<number, Set<number>>;
+} = { lid: undefined, rested: new Map() };
+
 // A market moment: its deals, best for the seller first, each team dealing
 // at most once - each checked again as it stands just before it is made
 // (the deals before it moved prices a little).
@@ -328,7 +362,20 @@ const marketMomentNow = async () => {
 	);
 	const dealt = new Set<number>();
 	const made: SmartDeal[] = [];
-	for (const found of await dealsNow(view, cpu)) {
+	if (shoppedBefore.lid !== g.get("lid")) {
+		shoppedBefore = { lid: g.get("lid"), rested: new Map() };
+	}
+	const shoppedNow = new Map<number, Set<number>>();
+	const deals = await dealsNow(view, cpu, shoppedBefore.rested, (shopped) => {
+		for (const c of shopped) {
+			const set = shoppedNow.get(c.seller) ?? new Set();
+			set.add(c.p.pid);
+			shoppedNow.set(c.seller, set);
+		}
+	});
+	// A player traded is gone from his team; the rest shopped rest a moment.
+	shoppedBefore = { lid: g.get("lid"), rested: shoppedNow };
+	for (const found of deals) {
 		if (made.length >= marketSettings.dealsPerMoment) {
 			break;
 		}
@@ -380,9 +427,10 @@ const marketMomentNow = async () => {
 	return made;
 };
 
-// When the market meets: in season every few games a team and each of the
-// last days before the deadline, in free agency on a few of its days, and
-// as each offseason window opens (smartTradeWindow).
+// When the market meets: in season every few weeks (not as it opens) and
+// each of the last days before the deadline, in free agency at each stage
+// (or on a few of its days), and as each offseason window opens
+// (smartTradeWindow).
 let lastMoment: string | undefined;
 export const smartTradeDay = async () => {
 	const phase = g.get("phase");
@@ -399,13 +447,17 @@ export const smartTradeDay = async () => {
 			1,
 			g.get("numActiveTeams") * marketSettings.gamesBetween,
 		);
+		const period = Math.floor(games / every);
+		// Not as the season opens: the preseason's window has just met.
 		key =
 			daysLeft < marketSettings.deadlineDays
 				? `deadline:${daysLeft}`
-				: `games:${Math.floor(games / every)}`;
+				: period > 0
+					? `games:${period}`
+					: undefined;
 	} else if (
 		phase === PHASE.FREE_AGENCY &&
-		marketSettings.freeAgencyDays.includes(g.get("daysLeft"))
+		(inStages() || marketSettings.freeAgencyDays.includes(g.get("daysLeft")))
 	) {
 		key = `fa:${g.get("daysLeft")}`;
 	}

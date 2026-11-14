@@ -105,6 +105,11 @@ import {
 // Free agents every team prices each day, best first, and how many of those a
 // team prices at every length rather than only the one he wants.
 const CANDIDATES = 20;
+// With the smart CPU, the free agents each team looks at in season, when
+// those left are few worth signing: each is priced for every team each few
+// games, and a full roster's price weighs whom it would cut (2026-11-14: the
+// top 20 in season were a tenth of a GM season's time).
+const SMART_IN_SEASON_CANDIDATES = 8;
 const SHORTLIST = 4;
 
 // With nobody after him, his price heads for this share of itself (halfway
@@ -1465,7 +1470,11 @@ export const freeAgencyDay = async () => {
 	} = await priceMarket(
 		pool,
 		teams,
-		inStages() ? { numCandidates: stageSettings.candidates } : {},
+		inStages()
+			? { numCandidates: stageSettings.candidates }
+			: smartCpuOn() && g.get("phase") <= PHASE.PLAYOFFS
+				? { numCandidates: SMART_IN_SEASON_CANDIDATES }
+				: {},
 	);
 	let rosters = rostersAtOpen;
 	const stages = inStages();

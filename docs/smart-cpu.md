@@ -416,6 +416,33 @@ A moment now: about 30,000 values, 45 s. Still the market's search, mostly
 pricing the packages offered (each keen team's bid, its roster cut to the
 limit).
 
+Then, by whole seasons (the arena's timers by phase and by decision):
+
+- **Each team shops its five most wanted players a moment**, ranked by a
+  rough read (rosters not yet cut to the limit; a deal's worth is always
+  worked out in full). One moment: the same deals made, 17,745 values. But
+  over a season trades halved (55 to 24): a team's five most wanted barely
+  change from one moment to the next, so the same five were asked about
+  every time and the rest never. Now a player shopped without a taker sits
+  out the next moment while his team shops its others.
+- **Free agency's moments never met**: they were set on days 30, 20 and 10
+  left, and in stages the days left count the five stages down. The market
+  now meets at each stage - most offseason trades are made there (6 and 16
+  in the two test seasons).
+- **The calendar, by the NBA's** (arena benchmarks: about 27 trades in
+  season, three in four in the deadline's last week; about 30 in the
+  offseason): in season every 17 games a team (not as the season opens) and
+  each of the last five days before the deadline. Deadline week: 74% of
+  in-season trades in both test seasons.
+- **In-season signings**: each of the top 20 free agents priced for every
+  team every few games, a full roster's price weighing whom it would cut -
+  a tenth of the season's time for players few sign. The GM looks at the
+  top eight in season.
+
+A GM season in the arena: about 500 s (from 1,220). Trades 34 and 39 a
+season (in season 19 and 13, offseason 15 and 26): below the NBA's 55-62,
+in season most of all.
+
 ## The DBA replay
 
 Yardstick C, built (src/test/dba/). Every trade of the owner's league from

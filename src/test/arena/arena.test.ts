@@ -62,7 +62,10 @@ import {
 	phaseClock,
 } from "./runLeague.ts";
 import { smartClock } from "../../worker/core/smartCpu/clock.ts";
-import { marketStats as smartMarketStats } from "../../worker/core/smartCpu/market.ts";
+import {
+	marketSettings as smartMarketSettings,
+	marketStats as smartMarketStats,
+} from "../../worker/core/smartCpu/market.ts";
 import { computeMetrics, type LeagueMetrics } from "./metrics.ts";
 import { BENCHMARKS, type Benchmark } from "./benchmarks.ts";
 import { contractOf } from "../../worker/core/realisticFrontOffice/contractOf.ts";
@@ -194,6 +197,12 @@ test.runIf(env.ARENA_RUN === "1")(
 				if (env.ARENA_SMART === "1") {
 					await league.setGameAttributes({ smartCpu: true });
 				}
+				// ARENA_SMART_MARKET='{"shopped":8}': the smart CPU's market
+				// settings (smartCpu/market.ts).
+				Object.assign(
+					smartMarketSettings,
+					JSON.parse(env.ARENA_SMART_MARKET ?? "{}"),
+				);
 			}
 			// How much this season's playoffs count at each outlook before the
 			// deadline (outlook.playoffWeight).
