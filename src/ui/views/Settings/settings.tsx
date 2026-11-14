@@ -2006,6 +2006,12 @@ export const settings: Setting[] = (
 							{ key: "insane", value: "Insane" },
 						],
 					} as const,
+					{
+						category: "Game Modes",
+						key: "smartCpu",
+						name: "Smart CPU",
+						type: "bool",
+					} as const,
 				]
 			: []),
 		{

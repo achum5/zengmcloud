@@ -1615,7 +1615,7 @@ const draftUser = async (pid: number, conditions: Conditions) => {
 	if (dp && g.get("userTids").includes(dp.tid)) {
 		const selected = await draft.selectPlayer(dp, pid);
 		if (selected) {
-			if (realisticTradesOn()) {
+			if (realisticTradesOn() || smartCpuOn()) {
 				await realisticFrontOfficeAfterPick();
 			}
 			draftPicks.shift();

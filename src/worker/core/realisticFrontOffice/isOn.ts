@@ -6,19 +6,19 @@ import { vanillaPlusSettings } from "../vanillaPlus/settings.ts";
 export const realisticFrontOfficesOn = () =>
 	__SPORT === "basketball" && !!g.get("realisticFrontOffices");
 
+// Whether CPU teams decide by the smart CPU's worth (docs/smart-cpu.md): a
+// switch on top of the mode (League Settings), in place of vanilla+.
+export const smartCpuOn = () =>
+	realisticFrontOfficesOn() && !!g.get("smartCpu");
+
 // Whether trades run on the mode's own title-odds engine: not once vanilla+
-// is on (core/vanillaPlus), which trades on vanilla's.
+// is on (core/vanillaPlus), which trades on vanilla's, or the smart CPU.
 export const realisticTradesOn = () =>
-	realisticFrontOfficesOn() && !vanillaPlusSettings.on;
+	realisticFrontOfficesOn() && !vanillaPlusSettings.on && !smartCpuOn();
 
 // Whether trades run on vanilla+ (docs/vanilla-plus.md).
 export const vanillaPlusOn = () =>
-	realisticFrontOfficesOn() && vanillaPlusSettings.on;
-
-// Whether CPU teams decide by the smart CPU's worth (docs/smart-cpu.md): a
-// hidden switch on top of the mode, for test leagues.
-export const smartCpuOn = () =>
-	realisticFrontOfficesOn() && !!g.get("smartCpu");
+	realisticFrontOfficesOn() && vanillaPlusSettings.on && !smartCpuOn();
 
 // Whether its free agency and re-signing are the offer market's: whenever the
 // mode is on (owner's call). There was a switch for stock's free agency with

@@ -1202,9 +1202,8 @@ export type GameAttributesLeague = {
 	// team trade again before its cooldown is up.
 	vplusMarket?: { season: number; day: number; traded: Record<number, number> };
 	// The smart CPU (worker/core/smartCpu, docs/smart-cpu.md): every CPU team
-	// decision by the GM's worth, with realistic front offices on. Hidden, for
-	// test leagues until it beats today's mode.
-	smartCpu?: boolean;
+	// decision by the GM's worth, with realistic front offices on.
+	smartCpu: boolean;
 	rookieContractLengths: number[];
 	rookiesCanRefuse: boolean;
 	salaryCap: number;

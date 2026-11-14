@@ -119,6 +119,7 @@ const gameAttributesKeysSportSpecific = {
 		"easterEggPlayers",
 		"realisticFrontOffices",
 		"realisticFrontOfficesDifficulty",
+		"smartCpu",
 	]),
 	football: new Set<GameAttributeKey>([
 		"fantasyPoints",
@@ -673,7 +674,7 @@ export const defaultGameAttributes: GameAttributesLeagueWithHistory = {
 	riggedLottery: undefined,
 	lastDailyCountdownDay: undefined,
 	vplusMarket: undefined,
-	smartCpu: undefined,
+	smartCpu: false,
 	numDraftPicksCurrent: undefined,
 	playoffsByConf: true,
 	playoffsNumTeamsDiv: wrapFromStart(0),

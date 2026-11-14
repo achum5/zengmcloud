@@ -7,7 +7,10 @@ import addFirstNameShort from "../util/addFirstNameShort.ts";
 import { groupByUnique, orderBy } from "../../common/utils.ts";
 import isUntradable from "../core/trade/isUntradable.ts";
 import { ValueChangeCalculator } from "../core/team/ValueChangeCalculator.ts";
-import { realisticTradesOn } from "../core/realisticFrontOffice/isOn.ts";
+import {
+	realisticTradesOn,
+	smartCpuOn,
+} from "../core/realisticFrontOffice/isOn.ts";
 import { defineView } from "../util/defineView.ts";
 
 const getSummaryTeam = (summary: TradeSummary, i: 0 | 1) => {
@@ -83,7 +86,7 @@ const validateTeams = async () => {
 
 	// This is just for debugging - not with realistic front offices, whose
 	// read of a deal is kept from the other side.
-	if (!realisticTradesOn()) {
+	if (!realisticTradesOn() && !smartCpuOn()) {
 		void new ValueChangeCalculator()
 			.evaluate({
 				tid: teams[1].tid,

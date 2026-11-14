@@ -208,6 +208,7 @@ const gameAttributeKeys = [
 	"easterEggPlayers",
 	"realisticFrontOffices",
 	"realisticFrontOfficesDifficulty",
+	"smartCpu",
 	"fakeAgeProb",
 ] as const satisfies readonly (keyof GameAttributesLeague)[];
 
