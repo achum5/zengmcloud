@@ -154,6 +154,56 @@ const matchable = (view: SmartView, buyer: number, p: Player) => {
 	return view.salariesWork(buyer, { players: others, picks: [] }, one(p));
 };
 
+// The winning offer, trimmed to what it must be: the buyer takes back what it
+// would miss most, one piece at a time, while the seller still gains by more
+// than `bar` (the next best real offer, or nothing). A real offer is its
+// buyer's best for the seller while it still gains - all it would pay; as
+// at an auction the winner pays about what beats the next bidder (untrimmed,
+// a contender gave two prospects and two firsts for a 31-year-old 60 and
+// kept 0.0009 of a title for itself). Salaries must still work.
+const trimmed = (
+	view: SmartView,
+	seller: number,
+	buyer: number,
+	out: Holdings,
+	offer: Holdings,
+	bar: number,
+) => {
+	let now = offer;
+	for (;;) {
+		const pieces: (Player | DraftPick)[] = [...now.players, ...now.picks];
+		if (pieces.length <= 1) {
+			return now;
+		}
+		// Its own cost of each piece, dearest first.
+		const costs = pieces
+			.map((x) => ({
+				x,
+				cost: -view.dealWorthNow(buyer, seller, one(x), none),
+			}))
+			.sort((a, b) => b.cost - a.cost);
+		let next: Holdings | undefined;
+		for (const { x } of costs) {
+			const without = {
+				players: now.players.filter((p) => p !== x),
+				picks: now.picks.filter((dp) => dp !== x),
+			};
+			if (
+				view.dealWorthNow(seller, buyer, out, without) > bar &&
+				view.salariesWork(buyer, without, out) &&
+				view.salariesWork(seller, out, without)
+			) {
+				next = without;
+				break;
+			}
+		}
+		if (!next) {
+			return now;
+		}
+		now = next;
+	}
+};
+
 // Every deal the market has at this moment, best for the seller first: each
 // candidate put to the best real offer from the keen CPU teams (layer 1:
 // each its best for the seller while it still gains, legal under the trade
@@ -185,12 +235,20 @@ export const dealsNow = async (view: SmartView, cpu: ReadonlySet<number>) => {
 			marketStats.sellerSaysNo += 1;
 			continue;
 		}
+		const offer = trimmed(
+			view,
+			c.seller,
+			real.buyer,
+			out,
+			real.offer,
+			Math.max(0, real.second),
+		);
 		deals.push({
 			seller: c.seller,
 			buyer: real.buyer,
 			out,
-			offer: real.offer,
-			sellerGain: real.worth,
+			offer,
+			sellerGain: view.dealWorthNow(c.seller, real.buyer, out, offer),
 			buyerGain: Number.NaN,
 		});
 	}

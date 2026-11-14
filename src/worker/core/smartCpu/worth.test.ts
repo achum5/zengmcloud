@@ -304,7 +304,7 @@ type Sale = {
 	x: Player;
 	buyer: number;
 	worth: number;
-	offer: Player[];
+	offer: { players: Player[]; picks: { dpid: number }[] };
 };
 let sales: Sale[] | undefined;
 const scanSales = async () => {
@@ -333,7 +333,7 @@ const scanSales = async () => {
 						x,
 						buyer: real.buyer,
 						worth: real.worth,
-						offer: real.offer.players,
+						offer: real.offer,
 					});
 				}
 			}
@@ -358,11 +358,14 @@ test(
 				s.tid,
 				s.buyer,
 				{ pids: [s.x.pid], dpids: [] },
-				{ pids: s.offer.map((p) => p.pid), dpids: [] },
+				{
+					pids: s.offer.players.map((p) => p.pid),
+					dpids: s.offer.picks.map((dp) => dp.dpid),
+				},
 			);
 			note(
 				"sales",
-				`${label(s.x)} to ${s.buyer} for ${s.offer.map(label).join(" + ")}`,
+				`${label(s.x)} to ${s.buyer} for ${s.offer.players.map(label).join(" + ")}${s.offer.picks.length > 0 ? ` + ${s.offer.picks.length} picks` : ""}`,
 				v.gain,
 			);
 			if (!(v.gain > 0)) {

@@ -42,7 +42,9 @@ export const smartSettings = {
 	keenest: 6,
 	// Teams asked for a real offer, and the most players in one.
 	buyers: 4,
-	offerSize: 3,
+	offerSize: 4,
+	// A buyer's nearest picks considered for an offer.
+	offerPicks: 4,
 	// Players of a buyer's considered for an offer, best first.
 	offerCandidates: 8,
 	// A roster over the limit cuts one of its lowest-valued players, the one
@@ -523,42 +525,64 @@ export class SmartView {
 		}
 		buyers.sort((a, b) => b.want - a.want);
 		let best: { buyer: number; worth: number; offer: Holdings } | undefined;
+		// The next best offer's worth to the seller: what the winner must
+		// beat (the market trims its offer to about that).
+		let second = Number.NEGATIVE_INFINITY;
 		for (const { tid: buyer, want } of buyers.slice(0, s.buyers)) {
 			if (want <= 0) {
 				continue;
 			}
-			const theirs = (await this.holdingsOf(buyer)).players.filter(
-				(p) => !isUntradable(p).untradable,
-			);
-			// Best for the seller first.
-			const scored = [];
-			for (const p of theirs) {
+			const held = await this.holdingsOf(buyer);
+			// Its players and its nearest picks (as NBA teams pay: a deal
+			// without picks was every one of the GM's first 72), best for the
+			// seller first.
+			const scored: { x: Player | DraftPick; v: number }[] = [];
+			for (const p of held.players.filter((x) => !isUntradable(x).untradable)) {
 				scored.push({
-					p,
+					x: p,
 					v: await this.useOf(seller, { players: [p], picks: [] }),
 				});
 			}
 			scored.sort((a, b) => b.v - a.v);
-			let offer: Player[] = [];
-			for (const { p } of scored.slice(0, s.offerCandidates)) {
-				if (offer.length >= s.offerSize) {
+			const candidates: { x: Player | DraftPick; v: number }[] = scored.slice(
+				0,
+				s.offerCandidates,
+			);
+			for (const dp of [...held.picks]
+				.sort(
+					(a, b) =>
+						(a.season as number) - (b.season as number) ||
+						a.round - b.round ||
+						a.dpid - b.dpid,
+				)
+				.slice(0, s.offerPicks)) {
+				candidates.push({
+					x: dp,
+					v: await this.useOf(seller, { players: [], picks: [dp] }),
+				});
+			}
+			candidates.sort((a, b) => b.v - a.v);
+			let offer: Holdings = { players: [], picks: [] };
+			for (const { x } of candidates) {
+				if (offer.players.length + offer.picks.length >= s.offerSize) {
 					break;
 				}
-				const next = [...offer, p];
-				if (
-					(await this.quickWorth(buyer, { players: next, picks: [] }, out)) > 0
-				) {
+				const next =
+					"pid" in x
+						? { players: [...offer.players, x], picks: offer.picks }
+						: { players: offer.players, picks: [...offer.picks, x] };
+				if ((await this.quickWorth(buyer, next, out)) > 0) {
 					offer = next;
 				}
 			}
-			if (offer.length === 0) {
+			if (offer.players.length === 0 && offer.picks.length === 0) {
 				continue;
 			}
 			const legal = await summary([
 				{
 					tid: buyer,
-					pids: offer.map((p) => p.pid),
-					dpids: [],
+					pids: offer.players.map((p) => p.pid),
+					dpids: offer.picks.map((dp) => dp.dpid),
 					pidsExcluded: [],
 					dpidsExcluded: [],
 				},
@@ -570,7 +594,7 @@ export class SmartView {
 					dpidsExcluded: [],
 				},
 			]);
-			const inn = { players: offer, picks: [] };
+			const inn = offer;
 			if (
 				legal.warning ||
 				(await this.dealWorth(buyer, seller, inn, out)) <= 0
@@ -579,10 +603,15 @@ export class SmartView {
 			}
 			const worth = await this.dealWorth(seller, buyer, out, inn);
 			if (!best || worth > best.worth) {
+				if (best) {
+					second = Math.max(second, best.worth);
+				}
 				best = { buyer, worth, offer: inn };
+			} else {
+				second = Math.max(second, worth);
 			}
 		}
-		return best;
+		return best && { ...best, second };
 	}
 
 	// What a team says to a deal: how far it comes out ahead (> 0 is yes) -
