@@ -569,15 +569,39 @@ const withoutGone = (line: SeasonLine, gone: Gone) => {
 // A roster's lines with each split player as his two halves - and, by
 // wantedOnly, without those (or the halves) worse than a minimum free
 // agent, whose places one takes.
+// (Loops, not flatMap and filter: it runs for every season of every roster
+// valued, and the arrays those make were much of the garbage collector's
+// work.)
 const asPlayed = (tid: number, lines: readonly SeasonLine[]) => {
-	const played =
-		outlookSettingFor(tid, "upside") && lines.some((line) => line.halves)
-			? lines.flatMap((line) => line.halves ?? [line])
-			: lines;
-	return outlookSettingFor(tid, "wantedOnly") && played.some(belowReplacement)
-		? played.filter((line) => !belowReplacement(line))
-		: played;
+	let played = lines;
+	if (outlookSettingFor(tid, "upside") && lines.some(hasHalves)) {
+		const split: SeasonLine[] = [];
+		for (const line of lines) {
+			if (line.halves) {
+				for (const half of line.halves) {
+					split.push(half);
+				}
+			} else {
+				split.push(line);
+			}
+		}
+		played = split;
+	}
+	if (outlookSettingFor(tid, "wantedOnly") && played.some(belowReplacement)) {
+		const kept: SeasonLine[] = [];
+		for (const line of played) {
+			if (!belowReplacement(line)) {
+				kept.push(line);
+			}
+		}
+		return kept;
+	}
+	return played;
 };
+const hasHalves = (line: SeasonLine) => !!line.halves;
+
+const pickKeyOf = (dp: PickLike) =>
+	`${dp.originalTid}:${dp.season}:${dp.round}`;
 
 const projectedHalfSynergy = new WeakMap<
 	RatingsProjection,
@@ -2051,6 +2075,8 @@ export const teamPoints = (
 		),
 	);
 	const byPick = picks.map((dp) => pickYearsOf(outlook, dp, tid));
+	// Each pick's key, made once rather than every season.
+	const pickKeys: (string | undefined)[] = [];
 	// League settings, looked up once: nothing here can change them.
 	let salaryCap: number | undefined;
 	let marketSalary: ((value: number) => number) | undefined;
@@ -2142,12 +2168,7 @@ export const teamPoints = (
 			}
 			if (at) {
 				const dp = picks[i]!;
-				addPick(
-					at,
-					dp.season,
-					dp.round,
-					`${dp.originalTid}:${dp.season}:${dp.round}`,
-				);
+				addPick(at, dp.season, dp.round, (pickKeys[i] ??= pickKeyOf(dp)));
 			}
 		}
 		for (const at of futurePickLines(outlook, tid, y)) {
