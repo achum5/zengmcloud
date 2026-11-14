@@ -464,6 +464,44 @@ same patience as everything else: 0.9 a season). Far firsts went from
 0.15-0.30 hundredths of a title to 2.6-4.4; the next draft's picks are
 priced as before.
 
+### The trade screens, on the GM's own offers (2026-11-14)
+
+The trading block, trade proposals and what would make this work used the
+game's own search, asking the GM's worth of hundreds of packages: two
+minutes for a trading block, and a quicker read of a package from its
+pieces' prices offered deals the full worth then refused. They now run on
+the GM's own offers (smartCpu/screens.ts) - the offer it would make another
+CPU team, built within the salary rules and checked by its full worth:
+
+- **Trading block**: each CPU team's real offer. On the test league 28 and
+  25 of 29 teams made one for two of the user's players, in 3 to 13 s; in
+  the app (a new league, the GM on, at the deadline) 11 offers in 9 s.
+- **Trade proposals**: up to five of twelve teams' real offers for one of
+  the user's assets (9 s in the app).
+- **What would make this work**: the CPU team first asks for what it takes
+  to say yes - the piece the user would miss least where one is enough
+  alone, else its favourite - then the side the salary rules want to send
+  out more adds the player it would miss least that settles them. Before,
+  every package for a player of a team over the cap broke the rules and
+  nothing was found; now three of four asks find a legal deal in 0.2 to
+  4.5 s (the fourth, a team's best player behind the hard cap, nothing).
+
+### Three seasons with every team the GM (2026-11-14)
+
+The arena league again (seed 503), with the pick floor and the screens:
+29, 26 and 37 trades a season (in season 18, 11, 15; offseason 11, 15,
+22), 64-72% of in-season trades in the deadline's last week; every team
+traded; deadline rosters 11 to 18; win spread 9.3, 12.5, 12.7 (NBA about
+12-13); champions won 54, 70, 66 games. About 850 s a season with four
+runs sharing four cores.
+
+Open: the buyers are nearly always contenders - five teams start 87-100%
+of a season's trades (as before the pick floor; the market is the
+sellers', and a contender's title chances move most) - and they make many
+small swaps, near-equal role players for gains of a few ten-thousandths of
+a title. Real GMs leave those alone; a margin for the model's own error
+would stop them, but it is a judgement call left for the owner.
+
 ## The DBA replay
 
 Yardstick C, built (src/test/dba/). Every trade of the owner's league from

@@ -383,6 +383,16 @@ export const gmPolicy = (options: GmPolicyOptions = {}): BenchPolicy => {
 						}
 					}
 				}
+				const r = p.ratings.at(-1)!;
+				ctx.log(
+					`${g.get("season")} re-sign ${p.pid} ${g.get("season") - p.born.year}y ${r.ovr}/${r.pot}: ${
+						typeof options === "string"
+							? options
+							: options
+									.map((o) => `$${(o.amount / 1000).toFixed(1)}M->${o.exp}`)
+									.join(" ")
+					}; ${best ? `best ${best.exp}, worth ${best.gain.toFixed(4)}` : "none worth it"}`,
+				);
 				if (best && !(await ctx.sign(p.pid, best.exp))) {
 					await view.prime();
 				} else {
