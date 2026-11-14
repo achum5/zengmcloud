@@ -9,7 +9,8 @@ import { useEffect, useId, useRef, useState, type PointerEvent } from "react";
 import { helpers } from "../../../util/helpers.ts";
 import { TeamLogoInline } from "../../../components/TeamLogoInline.tsx";
 import { liveLead } from "../../../components/GameCharts.basketball.tsx";
-import { GAME_S, HOME_EDGE, winProb } from "../winProb.ts";
+import { flowChance, GAME_S, HOME_EDGE } from "../winProb.ts";
+import { playAt, type FeedRow } from "./playFeed.ts";
 
 type Flow = {
 	scores: [number, number, number][];
@@ -56,21 +57,28 @@ const Logo = ({ t }: { t: any }) => (
 	/>
 );
 
-// (Picked this near the end of it, pixels: the end.)
+// (Live, picked this near now, pixels: now.)
 const END_PX = 6;
 
+// (Whole once it is settled, to a tenth till then.)
 const pctText = (p: number) =>
-	`${(100 * p).toFixed(p > 0.995 || p < 0.005 ? 0 : 1)}%`;
+	`${p >= 1 || p <= 0 ? Math.round(100 * p) : Math.min(99.9, Math.max(0.1, 100 * p)).toFixed(1)}%`;
 
 export const FlowCharts = ({
 	boxScore,
 	colors,
 	live,
+	plays,
+	say,
 }: {
 	boxScore: any;
 	// The two teams' colors, box score order (0 home, 1 away).
 	colors: [string, string];
 	live?: boolean;
+	// The game's plays, where it has them (newest first - see playFeed), and
+	// how to say one: the play at the moment picked goes under it.
+	plays?: readonly FeedRow[];
+	say?: (row: FeedRow) => string | undefined;
 }) => {
 	const [view, setView] = useState<"win" | "flow">("win");
 	// The moment under the mouse, and the one picked (tapped, clicked or
@@ -88,7 +96,7 @@ export const FlowCharts = ({
 	const home = boxScore.teams[0];
 	const away = boxScore.teams[1];
 
-	// The chance the home team wins at t (see GameCharts' LeadChart).
+	// The chance the home team wins at t (see LiveGame/winProb.ts).
 	const reg = periodEnds[numPeriods - 1] ?? total;
 	const expected =
 		typeof boxScore.spread === "number" && Number.isFinite(boxScore.spread)
@@ -96,32 +104,17 @@ export const FlowCharts = ({
 			: boxScore.neutralSite
 				? 0
 				: (HOME_EDGE * reg) / GAME_S;
-	const left = (t: number) => {
-		if (t < reg) {
-			return (reg - t) / reg;
-		}
-		const end = periodEnds.find((e) => e > t) ?? total;
-		return (end - t) / reg;
-	};
+	const homeChance = flowChance(flow, {
+		numPeriods,
+		spread: expected,
+		over: !live,
+	});
 	const scoreAt = (t: number) => {
 		let i = 0;
 		while (i + 1 < scores.length && scores[i + 1]![0] <= t) {
 			i += 1;
 		}
 		return scores[i]!;
-	};
-	const homeChance = (t: number) => {
-		const s = scoreAt(t);
-		const over = !live && t >= total;
-		if (over) {
-			return s[1] > s[2] ? 1 : s[1] < s[2] ? 0 : 0.5;
-		}
-		return winProb({
-			margin: s[1] - s[2],
-			left: left(t),
-			spread: expected,
-			length: reg / GAME_S,
-		});
 	};
 
 	const H = 190;
@@ -151,6 +144,8 @@ export const FlowCharts = ({
 	);
 	const clock = Math.max(0, Math.round((periodEnds[period] ?? total) - at));
 	const when = `${Math.floor(clock / 60)}:${String(clock % 60).padStart(2, "0")} - ${periodName(period)}`;
+	const play = plays ? playAt(plays, at, periodEnds, !live) : undefined;
+	const playText = play ? (say?.(play) ?? play.title) : undefined;
 
 	// Win probability: away above the middle, home below.
 	const yP = (pAway: number) => PAD_T + (1 - pAway) * plotH;
@@ -210,9 +205,10 @@ export const FlowCharts = ({
 
 	const pxAt = (e: PointerEvent<SVGSVGElement>) =>
 		e.clientX - e.currentTarget.getBoundingClientRect().left;
-	// (Picked at the end - or past it, live - back to now.)
+	// (Picked past the end - or, live, at now - back to the end, or now. A
+	// finished game's last seconds can be picked: a close one's matter most.)
 	const pick = (px: number) => {
-		setPin(px >= x(upTo) - END_PX ? undefined : tOf(px));
+		setPin(px >= x(upTo) - (live ? END_PX : 0) ? undefined : tOf(px));
 		setHover(undefined);
 	};
 	const onMove = (e: PointerEvent<SVGSVGElement>) => {
@@ -405,6 +401,11 @@ export const FlowCharts = ({
 					{away.abbrev} {sNow[2]} - {sNow[1]} {home.abbrev}
 				</span>
 			</div>
+			{playText ? (
+				<div className="small text-truncate" title={playText}>
+					{playText}
+				</div>
+			) : null}
 		</div>
 	);
 };

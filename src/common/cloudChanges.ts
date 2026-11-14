@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 314,
+		date: "2026-11-14",
+		text: "Win Probability on a game's page is much more accurate: it's now measured against tens of thousands of simmed games, so a team down 2 with the ball and 9 seconds left shows about 25% instead of 0%, and early leads count for less. Tap or drag across the chart and the play at that moment shows under the score (for games with play-by-play).",
+	},
+	{
 		n: 313,
 		date: "2026-11-14",
 		text: "Smart CPU: the trading block's What are you looking for? choices now shape every team's offer. Ask for draft picks, prospects, the best current players, a position, a skill or a salary limit, and each team leads with that (or makes no offer if it has nothing it would give).",
