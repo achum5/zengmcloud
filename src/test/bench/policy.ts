@@ -60,6 +60,18 @@ export type BenchContext = {
 		offer: TradeOffer,
 		note?: Record<string, unknown>,
 	) => Promise<{ accepted: boolean; message: string | null }>;
+	// The trade screen's "What would make this work": what the CPU team
+	// would take for what is asked of it - its own players and picks added
+	// to what the policy team gives, `keep` left out (the screen's
+	// untouchable marks) - as the league's CPU answers it (vanilla's, or the
+	// smart CPU's). Undefined if nothing would.
+	makeItWork: (
+		offer: TradeOffer,
+		keep?: TradeSide,
+	) => Promise<TradeOffer | undefined>;
+	// The trading block: each CPU team's offer for what the policy team puts
+	// up, as the league's CPU makes them.
+	tradingBlock: (give: TradeSide) => Promise<TradeOffer[]>;
 
 	// Contracts. What he asks of this team by length (the negotiation
 	// screen), or why he won't negotiate.

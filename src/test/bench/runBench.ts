@@ -38,7 +38,14 @@ import { tradeValueCalculator } from "../../worker/core/vanillaPlus/index.ts";
 import {
 	realisticFreeAgencyOn,
 	realisticTradesOn,
+	smartCpuOn,
 } from "../../worker/core/realisticFrontOffice/isOn.ts";
+import { smartJudgeOffer } from "../../worker/core/smartCpu/humanTrades.ts";
+import {
+	smartMakeItWork,
+	smartTradingBlock,
+} from "../../worker/core/smartCpu/screens.ts";
+import { counterTeams } from "../../worker/core/realisticFrontOffice/proposals.ts";
 import { judgeHumanOffer } from "../../worker/core/realisticFrontOffice/humanTrades.ts";
 import {
 	decideReSignings,
@@ -523,6 +530,19 @@ export const makeBench = (options: BenchOptions) => {
 		if (s.warning) {
 			return { accepted: false, warning: s.warning };
 		}
+		// As trade.propose decides: the smart CPU by the GM's verdict.
+		if (smartCpuOn()) {
+			const verdict = await smartJudgeOffer(
+				offer.get.tid,
+				tid,
+				{ pids: offer.get.pids, dpids: offer.get.dpids },
+				{ pids: offer.give.pids, dpids: offer.give.dpids },
+			);
+			return {
+				accepted: verdict.gain > 0,
+				verdict: verdict.gain > 0 ? "yes" : "no",
+			};
+		}
 		if (realisticTradesOn()) {
 			const verdict = await judgeHumanOffer(teams[1], teams[0]);
 			return { accepted: verdict.kind === "yes", verdict: verdict.kind };
@@ -538,6 +558,80 @@ export const makeBench = (options: BenchOptions) => {
 			tradingPartnerTid: tid,
 		});
 		return { accepted: dv > 0, dv };
+	};
+
+	const offerOf = (teams: TradeTeams): TradeOffer => ({
+		give: { pids: teams[0].pids, dpids: teams[0].dpids },
+		get: { tid: teams[1].tid, pids: teams[1].pids, dpids: teams[1].dpids },
+	});
+
+	// The trade screen's "What would make this work", as the league's CPU
+	// answers it (trade/makeItWorkTrade.ts).
+	const makeItWorkFor = async (
+		tid: number,
+		offer: TradeOffer,
+		keep?: TradeOffer["give"],
+	): Promise<TradeOffer | undefined> => {
+		await actAs(tid);
+		if (blocked() || g.get("userTids").includes(offer.get.tid)) {
+			return undefined;
+		}
+		const teams = teamsOf(tid, offer);
+		teams[0].pidsExcluded = keep?.pids ?? [];
+		teams[0].dpidsExcluded = keep?.dpids ?? [];
+		const made = smartCpuOn()
+			? await smartMakeItWork(teams)
+			: realisticTradesOn()
+				? await counterTeams(teams)
+				: await trade.makeItWork(teams, {
+						holdUserConstant: false,
+						valueChangeCalculator: await calculatorNow(),
+					});
+		if (!made || (await trade.summary(made)).warning) {
+			return undefined;
+		}
+		return offerOf(made);
+	};
+
+	// The trading block: each CPU team's offer, as the league's CPU makes
+	// them (api getOffers).
+	const tradingBlockFor = async (
+		tid: number,
+		give: TradeOffer["give"],
+	): Promise<TradeOffer[]> => {
+		await actAs(tid);
+		if (blocked()) {
+			return [];
+		}
+		const offers: TradeTeams[] = [];
+		if (smartCpuOn()) {
+			offers.push(...(await smartTradingBlock(tid, give.pids, give.dpids)));
+		} else {
+			const humans = g.get("userTids") as number[];
+			for (const t of await idb.cache.teams.getAll()) {
+				if (t.disabled || humans.includes(t.tid)) {
+					continue;
+				}
+				const made = await trade.makeItWork(
+					teamsOf(tid, { give, get: { tid: t.tid, pids: [], dpids: [] } }),
+					{
+						holdUserConstant: true,
+						maxAssetsToAdd: 4 + give.pids.length + give.dpids.length,
+						valueChangeCalculator: await calculatorNow(),
+					},
+				);
+				if (made) {
+					offers.push(made);
+				}
+			}
+		}
+		const legal: TradeOffer[] = [];
+		for (const teams of offers) {
+			if (!(await trade.summary(teams)).warning) {
+				legal.push(offerOf(teams));
+			}
+		}
+		return legal;
 	};
 
 	const proposeTrade = async (
@@ -778,6 +872,8 @@ export const makeBench = (options: BenchOptions) => {
 		daysToDeadline,
 		tradeVerdict: (offer) => tradeVerdict(tid, offer),
 		proposeTrade: (offer, note) => proposeTrade(tid, offer, note),
+		makeItWork: (offer, keep) => makeItWorkFor(tid, offer, keep),
+		tradingBlock: (give) => tradingBlockFor(tid, give),
 		contractOptions: async (pid) => {
 			const p = await idb.cache.players.get(pid);
 			if (!p || p.tid !== PLAYER.FREE_AGENT) {

@@ -665,8 +665,8 @@ BENCH_REPORT=/tmp/bench npx vitest --run --project basketball \
   src/test/bench/bench.test.ts    # pools every run: /tmp/bench/report.md
 ```
 
-- **Switches.** `BENCH_POLICY` autopilot or shark (`BENCH_SHARK` its options
-  as JSON); `BENCH_TIDS=7,17` the policy's teams (default one, 7 x seed mod
+- **Switches.** `BENCH_POLICY` autopilot, shark (`BENCH_SHARK` its options
+  as JSON), gm, pro or sharkpro (below); `BENCH_TIDS=7,17` the policy's teams (default one, 7 x seed mod
   30), or `BENCH_TEAMS=3`; `BENCH_FO=1` realistic front offices in place of
   the vanilla CPU (its human flows are offers: the game's default
   re-signing offers stand, a signing day makes an offer at his ask, a short
@@ -772,3 +772,45 @@ every policy. The DBA humans: 8 titles in 10 seasons among 3 teams, about
 - **Not modelled:** DBA's synced free agency board (waiver rolls); its
   ratings shown to the humans to the tens (the bench's bot, as the CPU,
   sees every rating); the COLA opt-out; owner firing (off).
+
+### A stronger bot, against both CPUs (2026-11-15)
+
+The owner asked whether Smart CPU will be dramatically harder to win against
+than vanilla at 3.5/2.5. The shark and autopilot couldn't say: neither beat
+vanilla by much. `proPolicy.ts` ("pro") judges as a human does: its team's
+strength this season and the next two (the MOV formula over the top ten
+projected overalls, seasons weighted 1, 0.65, 0.4, each a logistic against
+the best other team), a player off contract counted by his chance to stay
+(moodInfo's willing odds). It trades through the human screens - "What would
+make this work" for each player who would start for it, its top three
+untouchable, and the trading block for spare players (no picks) - and
+re-signs, signs and drafts on the same worth. "sharkpro" is the shark's
+trades with pro's draft, re-signing and free agency. `ctx.makeItWork` and
+`ctx.tradingBlock` are the two screens, vanilla's or the smart CPU's as the
+league runs (`BENCH_PRO` pro's options).
+
+Against vanilla (8 leagues x 8 seasons): pro 42-44% (its first version
+counted expiring players as gone and gave nine players and four picks for a
+34-year-old 67; fixed), sharkpro 52.5% - no titles, out of the playoffs 36%,
+two lost finals. The best bot so far, and still far short of the DBA humans
+(about 27% titles a team-season).
+
+Against Smart CPU, the same four leagues (seeds 1-4, which start identical
+in every run) and their first six seasons, with a team that makes no trades
+(autopilot) as the control:
+
+| first 6 seasons, seeds 1-4 | vanilla | Smart CPU |
+| -------------------------- | ------- | --------- |
+| autopilot win%             | 42.5    | 36.9      |
+| sharkpro win%              | 52.9    | 39.9      |
+| sharkpro's edge            | +10.4   | +3.0      |
+| sharkpro out of playoffs   | 5 / 24  | 16 / 24   |
+
+sharkpro lost ground in all four leagues (7 to 17 points). Of its 13 points,
+about 6 are the league itself - Smart CPU teams are better run, and a team
+that does nothing wins 5.6 points less - and about 7 are its trading edge,
+down from 10 points to 3 (two leagues up on autopilot, two down: noise). So
+the trades that made the bot better than doing nothing mostly stop working.
+Directional only: the bot is not human-strength, and 24 team-seasons a cell
+is small. A Smart CPU season here took about 15 minutes, four leagues
+sharing the machine.

@@ -3,6 +3,7 @@ import { makeSeededRandom } from "../../common/random.ts";
 import { g } from "../../worker/util/index.ts";
 import { autopilot, shark } from "./policies.ts";
 import { gmPolicy } from "./gmPolicy.ts";
+import { proPolicy, sharkPro } from "./proPolicy.ts";
 import type { BenchPolicy } from "./policy.ts";
 import {
 	BENCH_SETTINGS,
@@ -22,7 +23,8 @@ import {
 //   BENCH_REPORT=/tmp/bench npx vitest --run --project basketball \
 //     src/test/bench/bench.test.ts
 //
-// BENCH_POLICY: autopilot (default) or shark; BENCH_SHARK='{"decideGames":
+// BENCH_POLICY: autopilot (default), shark, gm or pro (BENCH_PRO its
+// options); BENCH_SHARK='{"decideGames":
 // 600}' its options. BENCH_TIDS=7,17: the policy's teams (default one,
 // 7 x seed mod 30); BENCH_TEAMS=3 three of them, ten apart. BENCH_FO=1:
 // realistic front offices in place of the vanilla CPU. BENCH_HARD_CAP=0: no
@@ -64,6 +66,15 @@ const policyFor = (name: string, seed: number): BenchPolicy => {
 	}
 	if (name === "gm") {
 		return gmPolicy(JSON.parse(env.BENCH_GM ?? "{}"));
+	}
+	if (name === "pro") {
+		return proPolicy(JSON.parse(env.BENCH_PRO ?? "{}"));
+	}
+	if (name === "sharkpro") {
+		return sharkPro(
+			shark({ seed, ...JSON.parse(env.BENCH_SHARK ?? "{}") }),
+			JSON.parse(env.BENCH_PRO ?? "{}"),
+		);
 	}
 	throw new Error(`Unknown policy ${name}`);
 };
