@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 317,
+		date: "2026-11-15",
+		text: 'Daily recaps now read like a newspaper\'s nightly roundup: a headline on the night\'s biggest story, a line on the rest, the top game first, then a short paragraph for every other game led by its final score ("Nuggets 116, Pelicans 108:"), with streaks, injuries, upsets and series news worked in. Headlines on daily and game recaps are written the way real wire headlines are, like "Young leads Pistons past 76ers 110-107" or "Rockets beat Bucks 119-112 in OT, take 2-0 series lead".',
+	},
+	{
 		n: 316,
 		date: "2026-11-15",
 		text: "3D: games no longer get laggy and blurry on phones as they go on. The 3D court was holding on to more and more of the game in memory (twice as much by the fourth quarter); now it keeps only what is on screen, so the fourth quarter plays as smoothly as the first.",
