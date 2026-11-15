@@ -5,7 +5,7 @@ import type {
 } from "./getDayGamesForRecap.ts";
 import { finishScores, withSettledLead } from "./recapFinish.ts";
 import { clockLeft } from "../../common/gameFlow.ts";
-import { expandSecondReferences } from "./recapNames.ts";
+import { expandSecondReferences, surnameOf } from "./recapNames.ts";
 
 // DOES THE RECAP SAY ANYTHING THAT ISN'T TRUE?
 //
@@ -133,6 +133,39 @@ const SPREAD_TALK =
 const RESULT_VERB =
 	/beat|topped|handled|downed|routed|edged|held off|took down|stunned|shocked|knocked off|upset|survived|outlast|blew out|rolled|cruised|crushed|trounced|got past|pulled away|defeat|\bwin\b|\bwon\b/i;
 
+// A headline names a man by his surname, the first time he is named at all:
+// "Jackson has 26 points, 14 rebounds" is the one Jackson in the game.
+const wholeNamesInHeadline = (text: string, names: string[]): string => {
+	const nl = text.indexOf("\n");
+	const head = nl < 0 ? text : text.slice(0, nl);
+	if (!head.startsWith("**")) {
+		return text;
+	}
+	const bySurname = new Map<string, string[]>();
+	for (const n of names) {
+		const sur = surnameOf(n);
+		if (sur) {
+			bySurname.set(sur, [...(bySurname.get(sur) ?? []), n]);
+		}
+	}
+	let out = head;
+	for (const [sur, whole] of bySurname) {
+		const full = whole[0]!;
+		if (whole.length !== 1 || full === sur) {
+			continue;
+		}
+		const esc = sur.replaceAll(/[$()*+.?[\\\]^{|}]/g, String.raw`\$&`);
+		out = out.replaceAll(
+			new RegExp(String.raw`\b${esc}\b`, "g"),
+			(m, at: number) =>
+				out.slice(at + sur.length - full.length, at + sur.length) === full
+					? m
+					: full,
+		);
+	}
+	return nl < 0 ? out : out + text.slice(nl);
+};
+
 export const verifyRecap = (
 	written: string,
 	game: RecapGame,
@@ -141,7 +174,10 @@ export const verifyRecap = (
 	// man's surname after his first mention, and the checks below go by
 	// whole names.
 	const recap = expandSecondReferences(
-		written,
+		wholeNamesInHeadline(
+			written,
+			game.teams.flatMap((t) => t.players.map((p) => p.name)),
+		),
 		game.teams.flatMap((t) => [
 			...t.players.map((p) => p.name),
 			...(t.injuries ?? []).map((p) => p.name),

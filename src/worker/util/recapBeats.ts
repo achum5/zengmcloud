@@ -572,7 +572,7 @@ export const playerCountBeat = (
 
 // The column he set a season high in tonight, by the bars playerHighBeat
 // uses: points first, then rebounds, then assists.
-const seasonHighOf = (
+export const seasonHighOf = (
 	p: RecapPlayer,
 ): { n: number; unit: "points" | "rebounds" | "assists" } | undefined => {
 	const e = p.entering;
@@ -1831,7 +1831,7 @@ export const dayNextSlate = (
 		[
 			`Next on the schedule: ${matchup}${tail}.`,
 			`Up next: ${matchup}${tail}.`,
-			`The next slate brings ${matchup}${tail}.`,
+			`Coming up: ${matchup}${tail}.`,
 		],
 		"dayNextSlate",
 	);

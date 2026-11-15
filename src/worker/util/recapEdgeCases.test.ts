@@ -330,7 +330,7 @@ describe("edge cases", () => {
 		clean(recap);
 		assert.match(
 			recap,
-			/despite .*52|52 .*not enough|Bo Bull poured in 52|52 points from Bo Bull/,
+			/despite .*52|52 .*not enough|Bo Bull poured in 52|52 points from Bo Bull|Bull scores 52/,
 		);
 		assert.deepEqual(verifyRecap(recap, g), []);
 	});
@@ -502,9 +502,14 @@ describe("edge cases", () => {
 				"game-winning free throw with 12.1 seconds remaining",
 			);
 			clean(early);
-			assert.notMatch(early, /walks off/, early);
+			// A free throw with 12.1 seconds left was not the game's last shot.
+			assert.notMatch(early, /walks off|at buzzer|buzzer-beat/, early);
 			if (
-				/walks off/.test(slate(day, "game-winning three-pointer at the buzzer"))
+				/at buzzer|buzzer-beat/.test(
+					slate(day, "game-winning three-pointer at the buzzer").split(
+						"\n",
+					)[0]!,
+				)
 			) {
 				walked += 1;
 			}
@@ -804,7 +809,8 @@ describe("edge cases", () => {
 			return getAutoRecap(game([home, away], { gid }));
 		};
 		const FT =
-			/free throws to|attempts from the line|to the line|at the line|of the whistle|free throws in/;
+			// (His own "making 14 of 17 free throws" is his line, not the gap.)
+			/(?<!making \d+ of \d+ )free throws to|attempts from the line|to the line|at the line|of the whistle|free throws in/;
 		let big = 0;
 		for (let gid = 1; gid <= 16; gid++) {
 			// 29 attempts to 14.
@@ -1341,7 +1347,7 @@ describe("edge cases", () => {
 			assert.match(first, /Hawks/, wrap);
 			assert.match(
 				first,
-				/close out the series in six|win the series in six|in Game 6/,
+				/close out the series in six|closing out the series in six|win the series in six|in Game 6/,
 				wrap,
 			);
 		}
@@ -1468,12 +1474,17 @@ describe("edge cases", () => {
 			});
 			clean(wrap);
 			const [head, ...rest] = wrap.split("\n\n");
-			if (!head!.includes("Bo Celtic")) {
+			// A headline names him as the wire does, by his surname.
+			if (!/\bCeltic\b/.test(head!)) {
 				continue;
 			}
 			led += 1;
-			const body = rest.filter((p) => !p.startsWith("*"));
-			assert.match(body[0]!, /^Bo Celtic put up 48 points/, wrap);
+			const body = rest.filter((p) => !/^\*[^\n]*\*$/.test(p));
+			assert.match(
+				body[0]!,
+				/^Bo Celtic (?:put up|scored|poured in|had) 48 points/,
+				wrap,
+			);
 			assert.strictEqual(wrap.match(/48 points/g)?.length, 1, wrap);
 		}
 		assert.isAbove(led, 0);
@@ -1663,7 +1674,7 @@ describe("facts told once, in English", () => {
 				last10: l10([false, true, true, true, true, true, true, true]),
 			});
 			const [head, ...body] = run.split("\n\n");
-			assert.match(head!, /11-game winning streak/, run);
+			assert.match(head!, /11-game win(?:ning)? streak/, run);
 			assert.match(body[0]!, /11-game winning streak/, run);
 			clean(run);
 
@@ -2156,7 +2167,9 @@ describe("a night of comebacks", () => {
 			const recap = getAutoRecap(g);
 			clean(recap);
 			const head = recap.split("\n")[0]!;
-			if (/storm back to beat|come back to top/.test(head)) {
+			if (
+				/storm back to beat|come back to top|rally from \d+ down/.test(head)
+			) {
 				told += 1;
 			}
 			assert.notMatch(head, /\bto (?:beat|top)\b.* to /, recap);
@@ -2591,7 +2604,7 @@ describe("the deck and the headline are told below", () => {
 			]) {
 				assert.include(body, t, wrap);
 			}
-			const cb = /(\w+) rally past the \w+ from (\d+) down/.exec(deck);
+			const cb = /(\w+) rally from (\d+) down/.exec(deck);
 			if (cb) {
 				deckComebacks += 1;
 				assert.match(
@@ -2671,7 +2684,7 @@ describe("the deck and the headline are told below", () => {
 			});
 			clean(wrap);
 			const [head, ...rest] = wrap.split("\n\n");
-			const body = rest.filter((p) => !p.startsWith("*")).join(" ");
+			const body = rest.filter((p) => !/^\*[^\n]*\*$/.test(p)).join(" ");
 			for (const name of ["Payton Spur", "Vince Spur"]) {
 				if (head!.includes(name)) {
 					told += 1;
@@ -2849,7 +2862,7 @@ describe("every deck game is told, and a triple-double by name", () => {
 			const body = wrap
 				.split("\n\n")
 				.slice(1)
-				.filter((p) => !p.startsWith("*"))
+				.filter((p) => !/^\*[^\n]*\*$/.test(p))
 				.join(" ");
 			if (body.includes("37 points")) {
 				told += 1;

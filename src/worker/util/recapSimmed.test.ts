@@ -332,11 +332,13 @@ describe("simmed recaps", () => {
 				continue;
 			}
 			const body = recap.slice(deck.index + deck[0].length);
-			for (const item of deck[1]!.split(" · ")) {
-				const who = /^(.+?) (?:pours in|triple-doubles|goes for)\b/.exec(item);
-				if (who) {
+			const names = pairs.flatMap((x) =>
+				x.game.teams.flatMap((t) => t.players.map((p) => p.name)),
+			);
+			for (const name of new Set(names)) {
+				if (deck[1]!.includes(name)) {
 					seen += 1;
-					assert.include(body, who[1]!, recap);
+					assert.include(body, name, recap);
 				}
 			}
 		}
@@ -512,7 +514,7 @@ describe("simmed recaps", () => {
 	// the Suns won by seven. A story that reaches the break goes past it.
 	test("the story never stops at halftime", () => {
 		const after =
-			/second half|after the break|after halftime|after three|going into the|entering the|fourth|third|overtime|extra period|with \d|seconds|two minutes|for good|ahead for the last time|never|did not trail|pulled away|lead reached|as many as|at their biggest|from there|had led|nearly|let it go|got as close/i;
+			/second half|after the break|after halftime|after three|going into the|entering the|fourth|third|overtime|extra period|with \d|with a quarter|seconds|two minutes|for good|ahead for the last time|never|did not trail|pulled away|lead reached|as many as|at their biggest|from there|had led|nearly|let it go|got as close/i;
 		for (const { gid, recap } of pairs) {
 			const story = recap.split("\n\n").slice(1, 3).join(" ");
 			const sents = story.split(/(?<=[!.?])\s+/);
