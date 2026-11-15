@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 320,
+		date: "2026-11-15",
+		text: "3D: the zoomed-in camera now works like a TV camera operator. It leads the play up the floor instead of locking onto the basket behind it, settles on the basket being attacked once the offense sets up, and holds steady through small moves instead of chasing every step.",
+	},
+	{
 		n: 319,
 		date: "2026-11-15",
 		text: "Shared leagues: the Auto Play Scheduler now says at the top who's in charge of simming, with a Sim here button to take it over from that page.",

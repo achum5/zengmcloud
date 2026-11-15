@@ -22,6 +22,7 @@ import {
 	paintTable,
 } from "./arena.ts";
 import {
+	CAM_HOLD,
 	CAM_PAN,
 	courtFit,
 	dodgeFor,
@@ -60,7 +61,7 @@ import { gearFor, kitsFor, shade, streetClothes, type Look } from "./figure.ts";
 import { outHurt } from "./outHurt.ts";
 import { dressKit } from "./kitArt.ts";
 import { logoPicture } from "./logoPicture.ts";
-import { COURT_H, COURT_W, type Side } from "./geometry.ts";
+import { COURT_H, COURT_W, rimX, type Side } from "./geometry.ts";
 import { eventsMatchRoster } from "./rosterMatch.ts";
 import { Caption, Overlays } from "./Overlays.tsx";
 import { bugTeamOf, GameBug, PictureBox, PictureCanvas } from "./Picture.tsx";
@@ -1300,6 +1301,7 @@ const Court3D = ({
 								fit,
 								moment.ball,
 								midAcross(moment.players),
+								rimX(offenseAt(tl, s.t)),
 							)));
 			const rigNow = replay ? replayRig(replay) : undefined;
 			if (rigNow !== s.replayRig) {
@@ -1317,7 +1319,9 @@ const Court3D = ({
 			}
 			const snap = s.snapCam;
 			const secs = (dt / 1000) * Math.min(24, Math.max(1, rate));
-			operate(s, aim, fit, secs, snap);
+			// (Following the play, the shot held through its little moves - see
+			// operate.)
+			operate(s, aim, fit, secs, snap, fit ? s.camW * CAM_HOLD : 0);
 			s.snapCam = false;
 			if (now - s.coversAt > 500) {
 				s.coversAt = now;

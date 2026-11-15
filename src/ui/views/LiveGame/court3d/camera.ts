@@ -333,6 +333,9 @@ export const courtFit = (aspect: number): CourtFit => {
 // smoothly.
 export const CAM_PAN = 5.6;
 export const CAM_ZOOM = 3.2;
+// How far (a share of the width of the shot) the play may wander off the
+// middle of it before the main camera pans after it (see operate's hold).
+export const CAM_HOLD = 0.045;
 // Critically damped: from where it is and how fast it is going (`v`), on
 // toward `to` over `secs` - exact, however long the step.
 export const follow = (
@@ -367,12 +370,19 @@ export type Operator = {
 // either end than the stands behind it, and aimed across the floor as the
 // whole floor needs. A look round the building and a replay go where they
 // ask, up and down and across the floor too.
+// HOLDING THE SHOT. An operator does not chase every move the play makes -
+// a crossover, a jab step, a man shifting his feet: his shot holds while
+// the play stays well in it, and he pans only once it goes on somewhere.
+// `hold` (feet along the floor): how far the play may wander off the
+// middle of the shot before he goes after it - eased, not a jolt when it
+// does (see operate).
 export const operate = (
 	op: Operator,
 	aim: Shot,
 	fit: CourtFit | undefined,
 	secs: number,
 	cut: boolean,
+	hold = 0,
 ) => {
 	if (cut) {
 		op.camX = aim.x;
@@ -384,7 +394,14 @@ export const operate = (
 		op.camVY = 0;
 		op.camVZ = 0;
 	} else {
-		[op.camX, op.camVX] = follow(op.camX, op.camVX, aim.x, CAM_PAN, secs);
+		// (Within `hold` of where it looks, nowhere to go; past it, only the
+		// rest of the way.)
+		const d = aim.x - op.camX;
+		const toX =
+			hold > 0
+				? op.camX + Math.sign(d) * Math.max(0, Math.abs(d) - hold)
+				: aim.x;
+		[op.camX, op.camVX] = follow(op.camX, op.camVX, toX, CAM_PAN, secs);
 		[op.camW, op.camVW] = follow(op.camW, op.camVW, aim.width, CAM_ZOOM, secs);
 		[op.camY, op.camVY] = follow(op.camY, op.camVY, aim.y, CAM_ZOOM, secs);
 		[op.camZ, op.camVZ] = follow(op.camZ, op.camVZ, aim.z ?? 2, CAM_ZOOM, secs);
@@ -409,8 +426,21 @@ export const operate = (
 // IN CLOSER ON THE PLAY, as whoever is watching has asked (see
 // cameraSetting.ts): `zoom` times in on what the camera would show (`shot`,
 // the whole floor's depth in it). That much of the floor no longer fits, so
-// it follows the play: along the floor it keeps the ball in the picture, and
-// across the floor it looks toward the ball and the men (`mid`, where the
+// it is framed the way the man on the game camera frames it:
+//
+// - The ball coming up the floor, it goes with it - ahead of it, toward the
+//   basket it is going at (as `shot` has it: see aimFor).
+// - The offense set up at its basket (`attack`, that basket's spot along
+//   the floor), it holds that end: the basket, the board behind it and a
+//   little of the baseline at the edge of the picture, the play in front of
+//   it - and pans off it only as far as keeps the ball in the picture. Not
+//   the basket nearest the ball: coming up the floor that is the one behind
+//   him.
+// - From the one to the other as the ball comes over half court and on into
+//   the set, a little at a time - never a swing from end to end as it
+//   crosses the line.
+//
+// Across the floor it looks toward the ball and the men (`mid`, where the
 // middle of them is across it) - as far off the middle of the floor as it
 // has lost sight of the floor's edges, and the ball never out of the
 // picture. A shot already in close (a free throw, the tip) is left be.
@@ -419,34 +449,38 @@ const ZOOM_EDGE = 6;
 // How far behind the rim (feet, toward the baseline) the picture reaches,
 // for the board and the basket's stand.
 const ZOOM_BOARD = 3;
-// (The rim, in from the baseline.)
-const RIM_INSET = 5.25;
+// Past half court (feet) the ball starts to bring the shot round to the
+// basket, and how much further on it is all the way there.
+const SET_FROM = 4;
+const SET_OVER = 12;
 export const zoomedOn = (
 	shot: Shot,
 	zoom: number,
 	fit: CourtFit | undefined,
 	ball: { x: number; y: number },
 	mid: number,
+	attack?: number,
 ): Shot => {
 	if (!fit || !(zoom > 1.001) || shot.width < fit.min * 0.98) {
 		return shot;
 	}
 	const width = Math.max(ZOOM_NARROWEST, shot.width / zoom);
 	const room = Math.max(2, width / 2 - ZOOM_EDGE);
-	let along = Math.min(ball.x + room, Math.max(ball.x - room, shot.x));
-	// THE BASKET STAYS IN IT: the play is at a basket, and a picture of it
-	// with the basket off the edge shows men looking at nothing. With the
-	// ball near enough its end's basket for both to fit, the picture holds
-	// the two of them - the basket, the board behind it, and the ball - not
-	// the ball in the middle and the rim out of sight.
-	const left = ball.x < COURT_W / 2;
-	const board = left
-		? RIM_INSET - ZOOM_BOARD
-		: COURT_W - RIM_INSET + ZOOM_BOARD;
-	const lo = Math.max(ball.x, board) - width / 2 + ZOOM_EDGE / 2;
-	const hi = Math.min(ball.x, board) + width / 2 - ZOOM_EDGE / 2;
-	if (lo <= hi) {
-		along = Math.min(hi, Math.max(lo, along));
+	const keep = (x: number) =>
+		Math.min(ball.x + room, Math.max(ball.x - room, x));
+	let along = keep(shot.x);
+	if (attack !== undefined) {
+		const dir = attack > COURT_W / 2 ? 1 : -1;
+		// How far into the half it attacks the ball is: how set the play is.
+		const into = (ball.x - COURT_W / 2) * dir;
+		const u = Math.min(1, Math.max(0, (into - SET_FROM) / SET_OVER));
+		const set = u * u * (3 - 2 * u);
+		if (set > 0) {
+			// The end held: the board just in from the edge of the picture.
+			const held =
+				attack + dir * ZOOM_BOARD - dir * (width / 2 - ZOOM_EDGE / 2);
+			along = along * (1 - set) + keep(held) * set;
+		}
 	}
 	const x = Math.min(COURT_W + 12 - width / 2, Math.max(width / 2 - 12, along));
 	// How much of the floor's depth is out of the picture, and so how far it

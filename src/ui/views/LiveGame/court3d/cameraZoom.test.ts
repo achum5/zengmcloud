@@ -1,5 +1,6 @@
 import { assert, describe, test } from "vitest";
 import {
+	CAM_HOLD,
 	courtFit,
 	makeCamera,
 	operate,
@@ -58,8 +59,8 @@ describe("3D camera zoom", () => {
 		}
 	});
 
-	// The play is at a basket: zoomed in on a half-court set, the basket is
-	// in the picture with the ball - not off its edge.
+	// The play is at a basket: zoomed in on a half-court set, the basket it
+	// attacks is in the picture with the ball - not off its edge.
 	test("in the half court the basket stays in the picture with the ball", () => {
 		for (const zoom of [1.25, 1.5, 1.8, 2]) {
 			for (const [bx, rim] of [
@@ -70,7 +71,7 @@ describe("3D camera zoom", () => {
 				[18, 5.25],
 			] as const) {
 				for (const by of [8, 25, 42]) {
-					const z = zoomedOn(wide(bx), zoom, fit, { x: bx, y: by }, 25);
+					const z = zoomedOn(wide(bx), zoom, fit, { x: bx, y: by }, 25, rim);
 					const where = `zoom ${zoom} ball ${bx},${by}`;
 					// (Wherever both fit across the picture.)
 					if (Math.abs(bx - rim) + 6 > z.width - 6) {
@@ -84,8 +85,57 @@ describe("3D camera zoom", () => {
 			}
 		}
 		// (Up the floor, a long way from either: on the ball, as before.)
-		const mid = zoomedOn(wide(47), 2, fit, { x: 47, y: 25 }, 25);
+		const mid = zoomedOn(
+			wide(47),
+			2,
+			fit,
+			{ x: 47, y: 25 },
+			25,
+			COURT_W - 5.25,
+		);
 		assert.closeTo(mid.x, 47, 1e-9);
+	});
+
+	// Coming up the floor the man on the camera goes with the play, ahead of
+	// it - not held on the basket behind the ball, which is the one nearest
+	// it till he is over half court.
+	test("coming up the floor, it goes with the play - not the basket behind it", () => {
+		const attack = COURT_W - 5.25;
+		for (const zoom of [1.5, 2, 2.5]) {
+			for (const bx of [12, 20, 30, 40]) {
+				// (Ahead of the ball, as the main camera has it - see aimFor.)
+				const z = zoomedOn(
+					wide(bx + 6),
+					zoom,
+					fit,
+					{ x: bx, y: 25 },
+					25,
+					attack,
+				);
+				assert.isAtLeast(z.x, bx, `zoom ${zoom} ball ${bx}`);
+			}
+		}
+	});
+
+	// And into the set a little at a time: no swing from one end to the
+	// other as the ball crosses half court, or anywhere on its way.
+	test("into the set a little at a time - no swing as the ball crosses half court", () => {
+		for (const [attack, from, to] of [
+			[COURT_W - 5.25, 20, 84],
+			[5.25, 74, 10],
+		] as const) {
+			for (const zoom of [1.5, 2, 2.5]) {
+				let was: number | undefined;
+				const step = from < to ? 0.25 : -0.25;
+				for (let bx = from; (to - bx) * step > 0; bx += step) {
+					const z = zoomedOn(wide(bx), zoom, fit, { x: bx, y: 25 }, 25, attack);
+					if (was !== undefined) {
+						assert.isBelow(Math.abs(z.x - was), 1.5, `zoom ${zoom} ball ${bx}`);
+					}
+					was = z.x;
+				}
+			}
+		}
 	});
 
 	test("it looks across the floor toward the play", () => {
@@ -105,6 +155,49 @@ describe("3D camera zoom", () => {
 	test("a shot already in close is left as it is", () => {
 		const ft: Shot = { x: 80, width: fit.min * 0.6, y: fit.y(fit.min * 0.6) };
 		assert.strictEqual(zoomedOn(ft, 2, fit, { x: 80, y: 25 }, 25), ft);
+	});
+
+	// Holding the shot: the play's little moves - a crossover, a jab, a man
+	// shifting his feet - leave the camera be; it pans once the play goes on
+	// somewhere.
+	test("the operator holds his shot through the play's little moves", () => {
+		const op: Operator = {
+			camX: 70,
+			camW: 40,
+			camY: fit.y(40),
+			camZ: 2,
+			camVX: 0,
+			camVW: 0,
+			camVY: 0,
+			camVZ: 0,
+		};
+		const hold = 40 * CAM_HOLD;
+		let most = 0;
+		for (let i = 0; i < 600; i++) {
+			const x = 70 + 1.4 * Math.sin(i / 9);
+			operate(
+				op,
+				{ x, width: 40, y: op.camY, loose: true },
+				fit,
+				1 / 60,
+				false,
+				hold,
+			);
+			most = Math.max(most, Math.abs(op.camX - 70));
+		}
+		assert.isBelow(most, 0.05);
+		// Gone on along the floor: after it, to within the hold of it.
+		for (let i = 0; i < 300; i++) {
+			operate(
+				op,
+				{ x: 82, width: 40, y: op.camY, loose: true },
+				fit,
+				1 / 60,
+				false,
+				hold,
+			);
+		}
+		assert.closeTo(op.camX, 82 - hold, 0.05);
 	});
 
 	test("the operator goes where a closer shot looks, across the floor too", () => {
