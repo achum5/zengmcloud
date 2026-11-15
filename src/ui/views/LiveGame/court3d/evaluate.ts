@@ -1246,6 +1246,37 @@ const paceOn = (run: Run, t: number): number => {
 	const b = Math.min(run.s1, u + 4);
 	return b > a ? ((alongRun(run, b) - alongRun(run, a)) * 1000) / (b - a) : 0;
 };
+// KEPT ONLY ROUND NOW. What is worked out once a run, or once a footfall,
+// and kept for the frames after (see steppingOf, fallsMemo, leadsLeft,
+// footAt) is wanted again only round the moment being shown - the game is
+// watched one way, on through it. Kept, all of it, every run of every man
+// by the fourth quarter is hundreds of megabytes - a phone slowed to a
+// crawl, and the picture made coarser to keep up (see resolution.ts). So
+// each man's keeps only the last so many put in: the oldest goes as a new
+// one comes. (Wanted again - played back, say - it is just worked out
+// again, the same.)
+const KEEP_RUNS = 96;
+const KEEP_FOOTFALLS = 256;
+const keepIn = <K, V>(m: Map<K, V>, k: K, v: V, most: number) => {
+	m.set(k, v);
+	if (m.size > most) {
+		m.delete(m.keys().next().value!);
+	}
+};
+// (How much of it there is for a game, all its men: see the tempo tests.)
+export const keptFor = (tl: CourtTimeline): number => {
+	let n = 0;
+	for (const tr of tl.tracks.values()) {
+		n +=
+			(steppings.get(tr)?.size ?? 0) +
+			(footfalls.get(tr)?.size ?? 0) +
+			(pushLeads.get(tr)?.size ?? 0) +
+			(footsAt.get(tr)?.size ?? 0);
+	}
+	return n;
+};
+export const KEPT_MOST = 3 * KEEP_RUNS + KEEP_FOOTFALLS;
+
 // HIS STRIDES THROUGH A RUN (see stepping.ts), once a run - carried on
 // from the run before, where he goes straight on from it.
 const steppings = new WeakMap<Track, Map<Move, Stepping>>();
@@ -1309,7 +1340,7 @@ const steppingOf = (
 		}
 	}
 	const out = stepThrough(anim, stretch, ph, R, L);
-	byMove.set(run.mv, out);
+	keepIn(byMove, run.mv, out, KEEP_RUNS);
 	return out;
 };
 
@@ -5874,7 +5905,7 @@ const fallsMemo = (
 	let memo = byMove.get(run.mv);
 	if (!memo || memo.of !== st) {
 		memo = { of: st, by: new Map() };
-		byMove.set(run.mv, memo);
+		keepIn(byMove, run.mv, memo, KEEP_RUNS);
 	}
 	return memo;
 };
@@ -5911,7 +5942,7 @@ const leadsLeft = (
 			const mid = (run.s0 + run.s1) / 2;
 			left = wayOf(tr, yawAt(tl, tr, mid), mid)[1] > 0;
 		}
-		memo.set(run.mv, left);
+		keepIn(memo, run.mv, left, KEEP_RUNS);
 	}
 	return left;
 };
@@ -6077,7 +6108,9 @@ const footAt = (
 	}
 	const yaw = yawAt(tl, tr, at);
 	const out = yaw - (legsOf(tr, spotAt(tr, at), yaw, anim, at) * Math.PI) / 180;
-	memo?.set(key, out);
+	if (memo) {
+		keepIn(memo, key, out, KEEP_FOOTFALLS);
+	}
 	return out;
 };
 // Each foot's own turn (degrees, right, left) on top of his legs' `legs`

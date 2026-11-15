@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 316,
+		date: "2026-11-15",
+		text: "3D: games no longer get laggy and blurry on phones as they go on. The 3D court was holding on to more and more of the game in memory (twice as much by the fourth quarter); now it keeps only what is on screen, so the fourth quarter plays as smoothly as the first.",
+	},
+	{
 		n: 315,
 		date: "2026-11-14",
 		text: "Shared leagues: a sim now keeps the league marked as simming from its first day to its last, so changes league mates make meanwhile wait and go in after it instead of colliding with it. With Smart CPU on, a long sim on a slow phone is no longer taken for a crashed one and run again on another device, and the CPU teams' trade and free agency plans carry over a reload or a league mate taking over the simming.",
