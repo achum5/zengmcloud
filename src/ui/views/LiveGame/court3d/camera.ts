@@ -263,7 +263,12 @@ const tightY = (aspect: number, width: number, at: number): number => {
 	return (lo + hi) / 2;
 };
 
-export type CourtFit = { min: number; y: (width: number) => number };
+export type CourtFit = {
+	min: number;
+	y: (width: number) => number;
+	// The picture's shape (width over height).
+	aspect?: number;
+};
 const fits = new Map<number, CourtFit>();
 export const courtFit = (aspect: number): CourtFit => {
 	const key = Math.round(aspect * 100);
@@ -287,6 +292,7 @@ export const courtFit = (aspect: number): CourtFit => {
 		let middle: number | undefined;
 		fit = {
 			min,
+			aspect: a,
 			y: (width) => {
 				if (width >= min) {
 					const w = Math.round(width * 4) / 4;
@@ -431,11 +437,13 @@ export const operate = (
 // - The ball coming up the floor, it goes with it - ahead of it, toward the
 //   basket it is going at (as `shot` has it: see aimFor).
 // - The offense set up at its basket (`attack`, that basket's spot along
-//   the floor), it holds that end: the basket, the board behind it and a
-//   little of the baseline at the edge of the picture, the play in front of
-//   it - and pans off it only as far as keeps the ball in the picture. Not
-//   the basket nearest the ball: coming up the floor that is the one behind
-//   him.
+//   the floor), it holds that end the way a broadcast frames a set: the
+//   basket well inside the picture - its board, its stand and the baseline
+//   behind it all in it, not cut off at the edge - and the play out in
+//   front of it. Too far in to have both the basket and the ball out at the
+//   top of the key, it goes out wider for them (never wider than it would
+//   be without the zoom) rather than leave the basket out. Not the basket
+//   nearest the ball: coming up the floor that is the one behind him.
 // - From the one to the other as the ball comes over half court and on into
 //   the set, a little at a time - never a swing from end to end as it
 //   crosses the line.
@@ -446,13 +454,23 @@ export const operate = (
 // picture. A shot already in close (a free throw, the tip) is left be.
 const ZOOM_NARROWEST = 26;
 const ZOOM_EDGE = 6;
-// How far behind the rim (feet, toward the baseline) the picture reaches,
-// for the board and the basket's stand.
-const ZOOM_BOARD = 3;
+// In a set, how far in from the edge of the picture the rim is (a share of
+// the picture across, and never less than this many feet): the board, the
+// stand and the baseline behind it all in it.
+const RIM_IN_SHARE = 0.22;
+const RIM_IN_LEAST = 9;
+const rimIn = (width: number) => Math.max(RIM_IN_LEAST, RIM_IN_SHARE * width);
+// The picture wide enough (feet across) for the rim that far in from its
+// edge and the ball `apart` feet out from it, ZOOM_EDGE in from the other.
+const bothIn = (apart: number) =>
+	Math.max(
+		apart + RIM_IN_LEAST + ZOOM_EDGE,
+		(apart + ZOOM_EDGE) / (1 - RIM_IN_SHARE),
+	);
 // Past half court (feet) the ball starts to bring the shot round to the
 // basket, and how much further on it is all the way there.
-const SET_FROM = 4;
-const SET_OVER = 12;
+const SET_FROM = 0;
+const SET_OVER = 14;
 export const zoomedOn = (
 	shot: Shot,
 	zoom: number,
@@ -464,38 +482,134 @@ export const zoomedOn = (
 	if (!fit || !(zoom > 1.001) || shot.width < fit.min * 0.98) {
 		return shot;
 	}
-	const width = Math.max(ZOOM_NARROWEST, shot.width / zoom);
-	const room = Math.max(2, width / 2 - ZOOM_EDGE);
-	const keep = (x: number) =>
-		Math.min(ball.x + room, Math.max(ball.x - room, x));
-	let along = keep(shot.x);
-	if (attack !== undefined) {
-		const dir = attack > COURT_W / 2 ? 1 : -1;
-		// How far into the half it attacks the ball is: how set the play is.
-		const into = (ball.x - COURT_W / 2) * dir;
-		const u = Math.min(1, Math.max(0, (into - SET_FROM) / SET_OVER));
-		const set = u * u * (3 - 2 * u);
-		if (set > 0) {
-			// The end held: the board just in from the edge of the picture.
-			const held =
-				attack + dir * ZOOM_BOARD - dir * (width / 2 - ZOOM_EDGE / 2);
+	let width = Math.max(ZOOM_NARROWEST, shot.width / zoom);
+	const dir = attack !== undefined && attack > COURT_W / 2 ? 1 : -1;
+	// How far into the half it attacks the ball is: how set the play is.
+	const u =
+		attack === undefined
+			? 0
+			: Math.min(
+					1,
+					Math.max(0, ((ball.x - COURT_W / 2) * dir - SET_FROM) / SET_OVER),
+				);
+	const set = u * u * (3 - 2 * u);
+	if (attack !== undefined && set > 0) {
+		// Wide enough for the basket and the ball both.
+		const need = Math.min(shot.width, bothIn(Math.abs(attack - ball.x)));
+		width += Math.max(0, need - width) * set;
+	}
+	const framed = (width: number): Shot => {
+		const room = Math.max(2, width / 2 - ZOOM_EDGE);
+		const keep = (x: number) =>
+			Math.min(ball.x + room, Math.max(ball.x - room, x));
+		let along = keep(shot.x);
+		if (attack !== undefined && set > 0) {
+			// The end held: the basket well in from the edge of the picture.
+			const held = attack - dir * (width / 2 - rimIn(width));
 			along = along * (1 - set) + keep(held) * set;
 		}
+		const x = Math.min(
+			COURT_W + 12 - width / 2,
+			Math.max(width / 2 - 12, along),
+		);
+		// How much of the floor's depth is out of the picture, and so how far
+		// it may look off the middle of it.
+		const lost = Math.max(0, 1 - width / fit.min);
+		const want = ball.y * 0.55 + mid * 0.45;
+		const half = (COURT_H / 2 + 5) * (width / fit.min);
+		const off = Math.min(
+			ball.y - COURT_H / 2 + Math.max(2, half - 5),
+			Math.max(
+				ball.y - COURT_H / 2 - Math.max(2, half - 5),
+				(want - COURT_H / 2) * Math.min(1, lost * 1.7),
+			),
+		);
+		return { x, width, y: fit.y(width) + off, loose: true };
+	};
+	let out = framed(width);
+	if (attack === undefined || set <= 0 || fit.aspect === undefined) {
+		return out;
 	}
-	const x = Math.min(COURT_W + 12 - width / 2, Math.max(width / 2 - 12, along));
-	// How much of the floor's depth is out of the picture, and so how far it
-	// may look off the middle of it.
-	const lost = Math.max(0, 1 - width / fit.min);
-	const want = ball.y * 0.55 + mid * 0.45;
-	const half = (COURT_H / 2 + 5) * (width / fit.min);
-	const off = Math.min(
-		ball.y - COURT_H / 2 + Math.max(2, half - 5),
-		Math.max(
-			ball.y - COURT_H / 2 - Math.max(2, half - 5),
-			(want - COURT_H / 2) * Math.min(1, lost * 1.7),
-		),
+	// And up and down: tilted no further toward the near side than leaves
+	// the top of the board in the picture - out wider, if that is what it
+	// takes to have it and the man with the ball both.
+	const aspect = fit.aspect;
+	const board = {
+		x: attack + dir * BOARD_BEHIND,
+		y: COURT_H / 2,
+		z: BOARD_TOP,
+	};
+	const tilts = (s: Shot) => tiltsFor(s, aspect, board, ball);
+	let can = tilts(out);
+	if (!can) {
+		let lo = out.width;
+		let hi = Math.max(out.width, shot.width);
+		if (tilts(framed(hi))) {
+			for (let i = 0; i < 7; i++) {
+				const w = (lo + hi) / 2;
+				if (tilts(framed(w))) {
+					hi = w;
+				} else {
+					lo = w;
+				}
+			}
+			out = framed(out.width + (hi - out.width) * set);
+			can = tilts(out);
+		}
+	}
+	if (can) {
+		const [lo, hi] = can;
+		const y = Math.min(hi, Math.max(lo, out.y));
+		out = { ...out, y: out.y + (y - out.y) * set };
+	}
+	return out;
+};
+
+// The backboard: how far behind the rim (feet, toward the baseline) and how
+// high its top (feet) - and how near the top of the picture that may be (a
+// share of its height). The man with the ball: his feet no nearer the
+// bottom than this, his head no nearer the top.
+const BOARD_BEHIND = 1.25;
+const BOARD_TOP = 13;
+const BOARD_ROOM = 0.1;
+const FEET_ROOM = 0.95;
+const HEAD_ROOM = 0.03;
+// The aims across the floor (`y`) a shot can take and still have the top of
+// the board and the man with the ball in the picture, if there are any.
+const tiltsFor = (
+	s: Shot,
+	aspect: number,
+	board: { x: number; y: number; z: number },
+	ball: { x: number; y: number },
+): [number, number] | undefined => {
+	// (Aimed nearer the camera, everything is higher in the picture.)
+	const down = (y: number, at: { x: number; y: number; z: number }) =>
+		project(makeCamera({ ...s, y }, aspect * 100, 100), at).y / 100;
+	const edge = (
+		at: { x: number; y: number; z: number },
+		share: number,
+		above: boolean,
+	): number => {
+		let lo = -30;
+		let hi = COURT_H + 30;
+		for (let i = 0; i < 12; i++) {
+			const mid = (lo + hi) / 2;
+			if (down(mid, at) > share) {
+				lo = mid;
+			} else {
+				hi = mid;
+			}
+		}
+		// Where `at` sits at `share` down the picture: below that aim it is
+		// lower in the picture, beyond it higher.
+		return above ? lo : hi;
+	};
+	const hi = Math.min(
+		edge(board, BOARD_ROOM, true),
+		edge({ ...ball, z: 7 }, HEAD_ROOM, true),
 	);
-	return { x, width, y: fit.y(width) + off, loose: true };
+	const lo = edge({ ...ball, z: 0 }, FEET_ROOM, false);
+	return lo <= hi ? [lo, hi] : undefined;
 };
 
 // THE SCORE BUG IN THE WAY: its box as shares of the picture (its left and
@@ -506,6 +620,9 @@ export const zoomedOn = (
 // neither) kept to unless the other way is much better.
 export type Cover = { x0: number; x1: number; y0: number };
 const DODGE_MAX = 20;
+// (Nor so far the basket goes nearer either edge of the picture than this
+// share of it.)
+const RIM_KEPT = 0.15;
 export const dodgeFor = (
 	cam: Camera,
 	at: { x: number; y: number },
@@ -532,8 +649,8 @@ export const dodgeFor = (
 	});
 	const rimX = rim.x / cam.viewW;
 	const per = cam.viewW / rim.k;
-	const lo = Math.min(0, Math.max(-DODGE_MAX, (rimX - 0.92) * per));
-	const hi = Math.max(0, Math.min(DODGE_MAX, (rimX - 0.08) * per));
+	const lo = Math.min(0, Math.max(-DODGE_MAX, (rimX - (1 - RIM_KEPT)) * per));
+	const hi = Math.max(0, Math.min(DODGE_MAX, (rimX - RIM_KEPT) * per));
 	let best = 0;
 	let bestScore = Infinity;
 	for (const go of [-1, 1]) {

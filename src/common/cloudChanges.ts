@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 321,
+		date: "2026-11-15",
+		text: "3D: zoomed in, the basket no longer sits at the edge of the picture or off the top of it. In a half-court set the camera keeps the basket, its backboard and the baseline well inside the frame with the ball, and pulls back a little when it can't fit both.",
+	},
+	{
 		n: 320,
 		date: "2026-11-15",
 		text: "3D: the zoomed-in camera now works like a TV camera operator. It leads the play up the floor instead of locking onto the basket behind it, settles on the basket being attacked once the offense sets up, and holds steady through small moves instead of chasing every step.",

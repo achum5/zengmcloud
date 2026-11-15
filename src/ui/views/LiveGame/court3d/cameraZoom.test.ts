@@ -96,6 +96,64 @@ describe("3D camera zoom", () => {
 		assert.closeTo(mid.x, 47, 1e-9);
 	});
 
+	// Framed the way a broadcast frames a set: the basket well inside the
+	// picture - its board and the baseline behind it in it too - not hard up
+	// against the edge with its stand cut off, nor its board off the top;
+	// and the ball in it with it, the shot gone wider for the two of them if
+	// it has to.
+	test("a half-court set has the basket well inside the picture, not at its edge", () => {
+		for (const [aspect, W, H] of [
+			[4 / 3, 1336, 1000],
+			[16 / 9, 1600, 900],
+		] as const) {
+			const f = courtFit(aspect);
+			const shotAt = (x: number): Shot => ({
+				x,
+				width: Math.max(72, f.min),
+				y: f.y(Math.max(72, f.min)),
+			});
+			for (const zoom of [1.25, 1.5, 2, 2.5]) {
+				for (const right of [true, false]) {
+					const rim = right ? COURT_W - 5.25 : 5.25;
+					for (const out of [6, 14, 22, 26, 30]) {
+						for (const by of [10, 25, 40]) {
+							const bx = rim + (right ? -out : out);
+							const z = zoomedOn(
+								shotAt(bx),
+								zoom,
+								f,
+								{ x: bx, y: by },
+								25,
+								rim,
+							);
+							const cam = makeCamera(z, W, H);
+							const at = (x: number, y: number, h: number) => {
+								const s = project(cam, { x, y, z: h }).x / W;
+								return right ? s : 1 - s;
+							};
+							const where = `${aspect.toFixed(2)} zoom ${zoom} ball ${bx},${by}`;
+							assert.isAtMost(at(rim, 25, 10), 0.85, where);
+							assert.isAtLeast(at(rim, 25, 10), 0.55, where);
+							assert.isBelow(at(right ? COURT_W : 0, 25, 0), 0.97, where);
+							assert.isAbove(at(bx, by, 4), 0.04, where);
+							// And up and down: the top of the board in it - not
+							// tilted off it toward the near side - and the man
+							// with the ball.
+							const down = (x: number, y: number, h: number) =>
+								project(cam, { x, y, z: h }).y / H;
+							assert.isAbove(
+								down(rim + (right ? 1.25 : -1.25), 25, 13),
+								0.04,
+								where,
+							);
+							assert.isBelow(down(bx, by, 0), 0.97, where);
+						}
+					}
+				}
+			}
+		}
+	});
+
 	// Coming up the floor the man on the camera goes with the play, ahead of
 	// it - not held on the basket behind the ball, which is the one nearest
 	// it till he is over half court.
