@@ -571,6 +571,8 @@ export const ContestantProfiles = ({
 								defaultWatch={p.watch}
 								firstName={p.firstName}
 								lastName={p.lastName}
+								// His full picture is right above it.
+								hideFace
 							/>
 							<a
 								className="ms-2"
