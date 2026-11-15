@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 319,
+		date: "2026-11-15",
+		text: "Shared leagues: the Auto Play Scheduler now says at the top who's in charge of simming, with a Sim here button to take it over from that page.",
+	},
+	{
 		n: 318,
 		date: "2026-11-15",
 		text: "The Slam Dunk and Three-Point Contest pages no longer show a second, small face next to each contestant's name under their picture.",

@@ -21,6 +21,7 @@ import {
 	type AutoPlayPreviewData,
 	type ProjectedFire,
 } from "../util/autoPlayPreview.ts";
+import { SimHereButton } from "../components/SimHereButton.tsx";
 
 // Every projected sim eats at least one league day, so asking for as many fires
 // as there are days left always reaches the end of the phase's schedule -
@@ -155,11 +156,19 @@ const LogTable = ({
 const AutoPlaySchedule = () => {
 	useTitleBar({ title: "Auto Play Scheduler" });
 
-	const { lid, phaseText, mpSyncActive, mpSyncIsHost, mpAutoPlay } = useLocal([
+	const {
+		lid,
+		phaseText,
+		mpSyncActive,
+		mpSyncIsHost,
+		mpSyncHostName,
+		mpAutoPlay,
+	} = useLocal([
 		"lid",
 		"phaseText",
 		"mpSyncActive",
 		"mpSyncIsHost",
+		"mpSyncHostName",
 		"mpAutoPlay",
 	]);
 
@@ -354,6 +363,20 @@ const AutoPlaySchedule = () => {
 
 	return (
 		<>
+			{/* Somebody else is in charge of simming: take it over here. */}
+			{mpSyncActive && !mpSyncIsHost ? (
+				<div
+					className="alert alert-secondary d-flex flex-wrap align-items-center gap-2 py-2 mb-3"
+					style={{ maxWidth: 820 }}
+				>
+					<div className="flex-grow-1">
+						{mpSyncHostName
+							? `${mpSyncHostName} is in charge of simming`
+							: "Nobody is in charge of simming"}
+					</div>
+					<SimHereButton />
+				</div>
+			) : null}
 			{!eligible && mpAutoPlay?.enabled ? (
 				<div className="card mb-3" style={{ maxWidth: 520 }}>
 					<div className="card-body">
