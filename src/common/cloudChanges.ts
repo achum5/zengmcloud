@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 323,
+		date: "2026-11-16",
+		text: '3D: a play-in game\'s score bug now says it\'s a play-in game and shows both teams\' seeds (like "Play-In · 10 CHA vs 9 NYK") instead of "Game 1".',
+	},
+	{
 		n: 322,
 		date: "2026-11-16",
 		text: "3D: players move less like robots, especially on phones. Defenders in their stance move smoothly instead of in little ticks, turning in place is a step at a time instead of tapping their feet, shots, passes and catches flow through each motion, and each player bounces to his own rhythm instead of the whole defense in lockstep.",

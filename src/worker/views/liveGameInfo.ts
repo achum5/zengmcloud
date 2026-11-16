@@ -79,9 +79,18 @@ export type BracketRound = {
 	series: BracketSeries[];
 };
 
+// A play-in game: each team's seed (by tid), and which of the play-in's
+// games it is (0 the 7th seed against the 8th, 1 the 9th against the 10th,
+// 2 the last one, for the final playoff spot - as PlayInTournament has them).
+export type PlayInGame = {
+	seeds: Record<number, number>;
+	stage: number;
+};
+
 export type GamecastInfo = {
 	series: SeriesGame[];
 	bracket?: BracketRound[];
+	playIn?: PlayInGame;
 	// The two teams' conferences (one, when they share it), as they stood.
 	standings: { name: string; teams: StandingsTeam[] }[];
 	// Each team's last few games, latest first.
@@ -422,9 +431,11 @@ export const gamecastInfo = async (
 
 	// A playoff game: the bracket, not the standings.
 	let bracket: BracketRound[] | undefined;
+	let playIn: PlayInGame | undefined;
 	if (game.playoffs) {
 		const ps = await idb.merged.playoffSeries.get(season);
 		if (ps) {
+			playIn = playInOf(game, ps.playIns);
 			const numRounds = g.get("numGamesPlayoffSeries", season).length;
 			const byConf = await seasonCore.getPlayoffsByConf(season);
 			bracket = bracketAsOf(
@@ -453,5 +464,38 @@ export const gamecastInfo = async (
 		}
 	}
 
-	return { series, standings, recent, ...(bracket ? { bracket } : {}) };
+	return {
+		series,
+		standings,
+		recent,
+		...(bracket ? { bracket } : {}),
+		...(playIn ? { playIn } : {}),
+	};
+};
+
+// The play-in game this one is, if it is one: the matchup between these
+// two teams - this very game, where its games are known.
+export const playInOf = (
+	game: Pick<Game, "gid" | "teams">,
+	playIns: PlayoffSeries["playIns"],
+): PlayInGame | undefined => {
+	const tids = [game.teams[0].tid, game.teams[1].tid];
+	for (const tournament of playIns ?? []) {
+		for (const [stage, m] of tournament.entries()) {
+			if (
+				!tids.includes(m.home.tid) ||
+				!tids.includes(m.away.tid) ||
+				(m.gids !== undefined &&
+					m.gids.length > 0 &&
+					!m.gids.includes(game.gid))
+			) {
+				continue;
+			}
+			return {
+				seeds: { [m.home.tid]: m.home.seed, [m.away.tid]: m.away.seed },
+				stage,
+			};
+		}
+	}
+	return undefined;
 };

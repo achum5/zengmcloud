@@ -63,3 +63,19 @@ test("a series won reads as won", () => {
 	assert.strictEqual(recordText([4, 2], [BOS, NYK], 4), "BOS wins 4-2");
 	assert.strictEqual(recordText([2, 3], [BOS, NYK], 4), "NYK leads 3-2");
 });
+
+// A play-in game is one game, not Game 1 of a series: the play-in and each
+// team's seed, away first as the score bug has them.
+test("a play-in game's line: the play-in and the seeds", () => {
+	const CHA = { tid: 3, abbrev: "CHA" };
+	const playIn: GamecastInfo = {
+		series: [{ gid: 20, tids: [2, 3], now: true }],
+		playIn: { seeds: { 2: 9, 3: 10 }, stage: 1 },
+		standings: [],
+		recent: [],
+	};
+	assert.strictEqual(
+		seriesLine(playIn, true, [CHA, NYK]),
+		"Play-In · 10 CHA vs 9 NYK",
+	);
+});

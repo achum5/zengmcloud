@@ -1,6 +1,7 @@
 import { assert, describe, test } from "vitest";
 import {
 	bracketAsOf,
+	playInOf,
 	recentOf,
 	seriesOf,
 	standingsAsOf,
@@ -192,6 +193,34 @@ describe("a playoff game's bracket, as it stood", () => {
 		assert.deepEqual(
 			b[1]!.series[0]!.teams.map((t) => t?.won),
 			[0, 0],
+		);
+	});
+});
+
+describe("a play-in game", () => {
+	const team = (tid: number, seed: number) => ({ tid, seed, cid: 0 });
+	const playIns = [
+		[
+			{ home: team(7, 7), away: team(8, 8), gids: [100] },
+			{ home: team(9, 9), away: team(10, 10), gids: [101] },
+			{ home: team(7, 7), away: team(9, 9) },
+		],
+	] as any;
+	test("each team's seed, and which of the play-in's games it is", () => {
+		assert.deepEqual(playInOf(game(101, 1, [9, 0], [10, 0], true), playIns), {
+			seeds: { 9: 9, 10: 10 },
+			stage: 1,
+		});
+		// (The last game, for the final spot: its game not known yet.)
+		assert.deepEqual(playInOf(game(102, 2, [7, 0], [9, 0], true), playIns), {
+			seeds: { 7: 7, 9: 9 },
+			stage: 2,
+		});
+	});
+	test("not a play-in game: a series between two other teams, or none", () => {
+		assert.isUndefined(playInOf(game(103, 3, [1, 0], [8, 0], true), playIns));
+		assert.isUndefined(
+			playInOf(game(101, 1, [9, 0], [10, 0], true), undefined),
 		);
 	});
 });

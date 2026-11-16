@@ -38,7 +38,8 @@ export const recordText = (
 
 // A playoff game's round, which game of the series it is, and the series as
 // it stood going into it - "1st round · Game 3 · BOS leads 2-1" - for the
-// score bug. Undefined outside the playoffs.
+// score bug; a play-in game, the play-in and each team's seed. Undefined
+// outside the playoffs.
 export const seriesLine = (
 	info: GamecastInfo | undefined,
 	playoffs: boolean,
@@ -47,6 +48,14 @@ export const seriesLine = (
 ): string | undefined => {
 	if (!playoffs || !info || info.series.length === 0) {
 		return undefined;
+	}
+	// A play-in game is one game, not a series: "Play-In · 10 CHA vs 9 NYK".
+	if (info.playIn) {
+		const seeded = (t: Team) => {
+			const seed = info.playIn!.seeds[t.tid];
+			return [seed, t.abbrev].filter((x) => x !== undefined).join(" ");
+		};
+		return `Play-In · ${seeded(teams[0])} vs ${seeded(teams[1])}`;
 	}
 	const k = info.series.findIndex((s) => s.now);
 	const round = info.bracket?.find((r) => r.series.some((s) => s.now));
