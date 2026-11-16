@@ -51,7 +51,7 @@ import {
 	moveAnim,
 	moveWith,
 	moveFloor,
-	poseAt,
+	poseNow,
 	posed,
 	shortLift,
 	shortSteps,
@@ -2097,6 +2097,23 @@ const OFF_BALL: Record<"ready" | "stance", [AnimName, number][]> = {
 		["stanceWide", 1500],
 	],
 };
+// HIS OWN RHYTHM. A loop of his - bouncing in his stance, swaying where he
+// stands - goes at its own pace for him, a little quicker or slower than
+// the next man's (up to LOOP_OWN either way), and drifts a little over
+// time: never five men bouncing like metronomes, every one to the same
+// beat. (Loops a second at its own pace, `per`; the same for a loop held as
+// part of something he does and one he just stands in - see evalPlayer.)
+const LOOP_OWN = 0.14;
+const LOOP_DRIFT = 0.06;
+const LOOP_DRIFT_MS = 9000;
+const loopPhase = (t: number, per: number, pid: number): number => {
+	const own = 1 + LOOP_OWN * (2 * hash01(pid, 3.7) - 1);
+	const w = (2 * Math.PI) / LOOP_DRIFT_MS;
+	const ph = hash01(pid, 8.1) * 2 * Math.PI;
+	// (The pace's drift integrated: a little ahead, then a little behind.)
+	const drift = (LOOP_DRIFT / w) * (Math.sin(t * w + ph) - Math.sin(ph));
+	return ((t + drift) / 1000) * per * own + pid * 0.37;
+};
 // A beat of standing (ms), with at most one of them in it.
 const LIFE_EVERY = 2300;
 const hash01 = (a: number, b: number): number => {
@@ -3162,7 +3179,7 @@ const doingNow = (
 				: anim === "guard"
 					? guardWave(tl, act, u)
 					: a.kind === "loop"
-						? (t / 1000) * (a.fps / a.n) + pid * 0.37
+						? loopPhase(t, a.fps / a.n, pid)
 						: (t - act.t0) / 1000;
 		z = Math.max(jumpZ(act, u), stillUp(tr, act, t));
 		if (act.reach && act.jump) {
@@ -3228,7 +3245,7 @@ const doingNow = (
 			? move.ph
 			: anim === "guard" && seg?.kind === "hold"
 				? guardHands(tl, seg.pid, t)
-				: (t / 1000) * (fps / a.n) + pid * 0.37;
+				: loopPhase(t, fps / a.n, pid);
 		const life:
 			| { anim: AnimName; phase: number; mirror?: boolean }
 			| undefined = jumpBallAt(tl, t)
@@ -3869,7 +3886,7 @@ const seenOnScreen = (tl: CourtTimeline, g: Gesture): boolean => {
 	return seen;
 };
 // A jumper's follow-through as he lands, held on after.
-const FOLLOW = poseAt("shoot", 1);
+const FOLLOW = poseNow("shoot", 1);
 const smooth01 = (u: number) => {
 	const v = clamp01(u);
 	return v * v * (3 - 2 * v);
@@ -4313,7 +4330,7 @@ const engageArm = (
 	if (!holder) {
 		return undefined;
 	}
-	const q = poseAt(now.anim, now.phase);
+	const q = poseNow(now.anim, now.phase);
 	const offense = holder.team;
 	if (tr === holder) {
 		// On his dribble, his man tight on him.
@@ -4865,11 +4882,35 @@ const roomAt = (
 	const mean = (g: number) =>
 		(at(g - ROOM_STEP) + at(g) + at(g + ROOM_STEP)) / 3;
 	const g = Math.floor(t / ROOM_STEP) * ROOM_STEP;
-	const a = mean(g);
-	const b = mean(g + ROOM_STEP);
-	const room = a + (b - a) * ((t - g) / ROOM_STEP);
+	const room = Math.max(
+		0,
+		curveThrough(
+			mean(g - ROOM_STEP),
+			mean(g),
+			mean(g + ROOM_STEP),
+			mean(g + 2 * ROOM_STEP),
+			(t - g) / ROOM_STEP,
+		),
+	);
 	return room < ROOM_FAR ? room : undefined;
 };
+
+// Between samples b and c (one step apart), with a before and d after: on a
+// smooth curve through them all (Catmull-Rom), not straight from one to the
+// next - whose corners, every step, read as a twitch: a body leaning off a
+// man, an arm drawn in, moving at one speed and then all at once another.
+const curveThrough = (
+	a: number,
+	b: number,
+	c: number,
+	d: number,
+	u: number,
+): number =>
+	0.5 *
+	(2 * b +
+		(c - a) * u +
+		(2 * a - 5 * b + 4 * c - d) * u * u +
+		(3 * b - a - 3 * c + d) * u * u * u);
 
 // (Not two men meant to be up against each other: dapping up after the
 // game, hugging - see dapHug - or one pulling the other up off the floor by
@@ -5136,8 +5177,16 @@ const tuckAt = (
 		(at(g - ROOM_STEP)[i] + at(g)[i] + at(g + ROOM_STEP)[i]) / 3;
 	const g = Math.floor(t / ROOM_STEP) * ROOM_STEP;
 	const u = (t - g) / ROOM_STEP;
-	const w = ([0, 1] as const).map(
-		(i) => mean(g, i) + (mean(g + ROOM_STEP, i) - mean(g, i)) * u,
+	const w = ([0, 1] as const).map((i) =>
+		clamp01(
+			curveThrough(
+				mean(g - ROOM_STEP, i),
+				mean(g, i),
+				mean(g + ROOM_STEP, i),
+				mean(g + 2 * ROOM_STEP, i),
+				u,
+			),
+		),
 	) as [number, number];
 	return w[0] > 0.01 || w[1] > 0.01 ? w : undefined;
 };
@@ -6352,23 +6401,51 @@ export const legTurnFrom = (
 // Which way each foot points on the floor, and how far up off it (a full
 // step 1), any sport's: [right, left, right's lift, left's lift] - for a man
 // facing `yawAt` (radians) over time.
+export type PivotBeat = {
+	// A step every so long (ms), each so long up off the floor (ms); how far
+	// round a step is a full one, and how little turn it takes before a foot
+	// comes up off the floor at all (radians, over two beats) - less than
+	// that, it turns on the floor.
+	every: number;
+	step: number;
+	full: number;
+	dead: number;
+};
+const PIVOT_BEAT: PivotBeat = {
+	every: PIVOT_MS,
+	step: PIVOT_STEP_MS,
+	full: PIVOT_FULL,
+	dead: 0,
+};
+// On the court, a man turning where he stands takes his time over it, as
+// people do: a step every quarter second and more, up off the floor a
+// fifth of one - not tapping his feet round every few frames - and turned
+// only a little, round on the balls of his feet without lifting them.
+const COURT_PIVOT: PivotBeat = {
+	every: 280,
+	step: 210,
+	full: 0.4,
+	dead: 0.1,
+};
 export const pivotFeet = (
 	yawAt: (t: number) => number,
 	t: number,
+	beat: PivotBeat = PIVOT_BEAT,
 ): [number, number, number, number] => {
-	const k = Math.floor(t / PIVOT_MS);
-	const g = k * PIVOT_MS;
+	const k = Math.floor(t / beat.every);
+	const g = k * beat.every;
 	// (Right steps round on even beats, left on odd.)
 	const leg = (even: boolean): [number, number] => {
 		if ((k % 2 === 0) !== even) {
 			return [yawAt(g), 0];
 		}
-		const a = yawAt(g - PIVOT_MS);
-		const d = wrapAngle(yawAt(g + PIVOT_MS) - a);
-		const u = clamp01((t - (g + PIVOT_MS - PIVOT_STEP_MS)) / PIVOT_STEP_MS);
+		const a = yawAt(g - beat.every);
+		const d = wrapAngle(yawAt(g + beat.every) - a);
+		const u = clamp01((t - (g + beat.every - beat.step)) / beat.step);
 		return [
 			a + d * smooth01(u),
-			Math.sin(Math.PI * u) * Math.min(1, Math.abs(d) / PIVOT_FULL),
+			Math.sin(Math.PI * u) *
+				Math.min(1, Math.max(0, Math.abs(d) - beat.dead) / beat.full),
 		];
 	};
 	const [r, rl] = leg(true);
@@ -6389,7 +6466,7 @@ const pivotOf = (
 	if (ground <= 0 || !PIVOTS.has(now.anim)) {
 		return undefined;
 	}
-	const [rf, lf, rl, ll] = pivotFeet((at) => yawAt(tl, tr, at), t);
+	const [rf, lf, rl, ll] = pivotFeet((at) => yawAt(tl, tr, at), t, COURT_PIVOT);
 	// (As far as hips turn - and further round than that, back with him by
 	// the time he is facing the other way. His left is the floor's
 	// clockwise.)
@@ -6495,7 +6572,7 @@ const strode = (q: Pose, s: Stride | undefined): Pose => {
 	if (!s || s.w <= 0) {
 		return q;
 	}
-	const legs = shortSteps(poseAt(s.anim, s.phase), s.anim, s.len, s.phase);
+	const legs = shortSteps(poseNow(s.anim, s.phase), s.anim, s.len, s.phase);
 	const out = { ...q };
 	for (const k of STRIDE_LEGS) {
 		out[k] = q[k] + (legs[k] - q[k]) * s.w;
@@ -7194,8 +7271,8 @@ export const withBody = (st0: PlayerState, body: Body): PlayerState => {
 	if (r !== undefined && r > 0 && st.z > 0) {
 		// Up for a rebound: his hands where a typical player's would get to.
 		const more =
-			holdBall(body, poseAt(st.anim, st.phase), st.anim).ball.u -
-			holdBall(TYPICAL, poseAt(st.anim, st.phase), st.anim).ball.u;
+			holdBall(body, poseNow(st.anim, st.phase), st.anim).ball.u -
+			holdBall(TYPICAL, poseNow(st.anim, st.phase), st.anim).ball.u;
 		return { ...st, z: st.z * Math.max(0.3, (r - more) / r), reach: 0 };
 	}
 	const d = st.dunk;

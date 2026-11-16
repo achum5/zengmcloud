@@ -575,6 +575,12 @@ type Steps = {
 	arm: number;
 	legs: number;
 };
+// (Coarse steps only where a picture is drawn again and again: a man
+// sat on the bench, stood at the table. On the floor, a man's picture is
+// made anew nearly every frame whatever the steps - something of his pose
+// changes every frame - so stepping his moves coarsely saved next to no
+// time, and showed: limbs moving in ticks, a blend in four jumps, a turn in
+// fifteen-degree snaps. See SMOOTH_STEPS.)
 const COARSE_STEPS: Steps = {
 	cycle: CYCLE_FRAMES,
 	dribble: DRIBBLE_FRAMES,
@@ -593,6 +599,11 @@ const FINE_STEPS: Steps = {
 	arm: 3 * FINE,
 	legs: 8 / FINE,
 };
+
+// Out on the floor (feet; a step or two past its lines counts) - not sat on
+// the bench or stood at the table along its sides.
+const onFloor = (st: PlayerState): boolean =>
+	st.x > -3 && st.x < 97 && st.y > -1.5 && st.y < 51.5;
 
 // A move's frame: an act stepped through its frames (a long one - a dunk -
 // gets more, so its quickest part, the slam, still shows), a cycle or a loop
@@ -918,7 +929,9 @@ const planOf = (
 	if (right < 0 || left > cam.viewW || lower < 0 || upper > cam.viewH) {
 		return undefined;
 	}
-	const fine = cache?.fine === true;
+	// On the floor, smooth steps always (see COARSE_STEPS); elsewhere, as the
+	// device has time for.
+	const fine = cache?.fine === true || onFloor(st);
 	const pose = stepped(st, fine ? FINE_STEPS : COARSE_STEPS);
 	const scale = Math.round(Math.log(k) / Math.log(1.04));
 	const plan: Plan = {

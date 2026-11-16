@@ -11680,6 +11680,72 @@ export const bounceAt = (anim: AnimName, phase: number): number =>
 export const poseAt = (anim: AnimName, phase: number): Pose =>
 	moveAt(ANIMS[anim], phase);
 
+// A MOVE AS A BODY MAKES IT: the same keys, but each joint easing into
+// one and on out of it - not turning at one speed to it and then, all at
+// once, at another to the next (a machine's way of moving: see keyed). An
+// act's keys on a smooth curve (see keyedSmooth), a loop's frames round and
+// round on one (see loopSmooth); a cycle's strides were always written
+// smooth.
+export const poseNow = (anim: AnimName, phase: number): Pose => {
+	const a = ANIMS[anim];
+	if (a.kind === "loop") {
+		return loopSmooth(a, phase);
+	}
+	return moveAt(a, phase, a.kind === "act");
+};
+
+// A loop's frames on a smooth curve round and round through them: each
+// angle at each frame going the way the frames either side have it (or
+// still, at the far end of a swing - never on past a frame), so a sway or
+// a bounce flows rather than ticking from one frame to the next.
+const loopCurves = new WeakMap<object, { frames: Pose[]; slopes: Pose[] }>();
+const loopSmooth = (
+	a: { n: number; pose: (i: number) => Pose },
+	phase: number,
+): Pose => {
+	const n = a.n;
+	let c = loopCurves.get(a);
+	if (!c) {
+		const frames = Array.from({ length: n }, (_, i) => a.pose(i));
+		const slopes = frames.map((f, i) => {
+			const prev = frames[(i - 1 + n) % n]!;
+			const next = frames[(i + 1) % n]!;
+			const m = { ...f };
+			for (const k of Object.keys(f) as (keyof Pose)[]) {
+				const d0 = f[k] - prev[k];
+				const d1 = next[k] - f[k];
+				m[k] =
+					d0 * d1 <= 0
+						? 0
+						: Math.sign(d1) *
+							Math.min(
+								(Math.abs(d0) + Math.abs(d1)) / 2,
+								3 * Math.min(Math.abs(d0), Math.abs(d1)),
+							);
+			}
+			return m;
+		});
+		c = { frames, slopes };
+		loopCurves.set(a, c);
+	}
+	const p = (((phase % 1) + 1) % 1) * n;
+	const i = Math.min(n - 1, Math.floor(p));
+	const t = p - i;
+	const p0 = c.frames[i]!;
+	const p1 = c.frames[(i + 1) % n]!;
+	const m0 = c.slopes[i]!;
+	const m1 = c.slopes[(i + 1) % n]!;
+	const h00 = (2 * t - 3) * t * t + 1;
+	const h10 = ((t - 2) * t + 1) * t;
+	const h01 = (3 - 2 * t) * t * t;
+	const h11 = (t - 1) * t * t;
+	const out = { ...p0 };
+	for (const k of Object.keys(p0) as (keyof Pose)[]) {
+		out[k] = h00 * p0[k] + h10 * m0[k] + h01 * p1[k] + h11 * m1[k];
+	}
+	return out;
+};
+
 // Any sport's move partway through: an act's keys run through straight from
 // one to the next, or (`smooth`) on a smooth curve (see keyedSmooth); a
 // cycle's frames written as continuous strides (the court's), or not
@@ -11774,7 +11840,7 @@ const meanPose = (anim: AnimName): Pose => {
 	let m = meanPoses.get(anim);
 	if (!m) {
 		const qs = Array.from({ length: MEAN_SAMPLES }, (_, i) =>
-			poseAt(anim, i / MEAN_SAMPLES),
+			poseNow(anim, i / MEAN_SAMPLES),
 		);
 		const out = { ...qs[0]! };
 		for (const k of Object.keys(out) as (keyof Pose)[]) {
@@ -13997,7 +14063,7 @@ export const posed = (
 	// His own way of dribbling it (0 to 1: see easy).
 	flair = 0.5,
 ): Pose => {
-	const q = poseAt(anim === "dribbleIdle" ? idleWith(flair) : anim, phase);
+	const q = poseNow(anim === "dribbleIdle" ? idleWith(flair) : anim, phase);
 	if (dribble !== undefined && !MOVES.has(anim)) {
 		return dribbleArm(
 			protect(

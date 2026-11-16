@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 322,
+		date: "2026-11-16",
+		text: "3D: players move less like robots, especially on phones. Defenders in their stance move smoothly instead of in little ticks, turning in place is a step at a time instead of tapping their feet, shots, passes and catches flow through each motion, and each player bounces to his own rhythm instead of the whole defense in lockstep.",
+	},
+	{
 		n: 321,
 		date: "2026-11-15",
 		text: "3D: zoomed in, the basket no longer sits at the edge of the picture or off the top of it. In a half-court set the camera keeps the basket, its backboard and the baseline well inside the frame with the ball, and pulls back a little when it can't fit both.",
