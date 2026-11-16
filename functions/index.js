@@ -11,7 +11,7 @@
 // is over, then sent as one (see hold.js, and releaseHeldNotifications
 // below).
 //
-// Deploy with: firebase deploy --only functions
+// Deploy with: npx firebase-tools deploy --only functions --project zengmcloud-4a454
 // (Requires the Blaze plan; at a few users the cost is effectively $0.)
 
 const {
