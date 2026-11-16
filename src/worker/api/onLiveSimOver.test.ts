@@ -1,5 +1,5 @@
 import { assert, beforeEach, describe, test } from "vitest";
-import api from "./index.ts";
+import api, { readOverReport } from "./index.ts";
 import { local } from "../util/index.ts";
 
 // ---------------------------------------------------------------------------
@@ -59,6 +59,35 @@ describe("onLiveSimOver is scoped to the live sim actually in progress", () => {
 		// pages must still be able to release the flag their own sync path set.
 		local.liveSimGid = undefined;
 		await onLiveSimOver(99);
+		assert.strictEqual(local.liveSimGid, undefined);
+	});
+});
+
+// A page going away part way through - left, or mounted anew as the follower
+// it is once a join marks this device one - is no end of a league-mate's game
+// being watched: only a final play is (see readOverReport and the worker's
+// onLiveSimOver). This device's own live sim still ends either way.
+describe("a page's report: the game over, or just the page gone", () => {
+	test("read as final only when the page says it reached its last play", () => {
+		assert.deepEqual(readOverReport({ gid: 7, final: true }), {
+			gid: 7,
+			final: true,
+		});
+		assert.deepEqual(readOverReport({ gid: 7, final: false }), {
+			gid: 7,
+			final: false,
+		});
+		// (An older page: just the gid, or nothing - as before, final.)
+		assert.deepEqual(readOverReport(7), { gid: 7, final: true });
+		assert.deepEqual(readOverReport(undefined), {
+			gid: undefined,
+			final: true,
+		});
+	});
+
+	test("leaving this device's own live game still ends it", async () => {
+		local.liveSimGid = 55;
+		await (api as any).main.onLiveSimOver({ gid: 55, final: false });
 		assert.strictEqual(local.liveSimGid, undefined);
 	});
 });

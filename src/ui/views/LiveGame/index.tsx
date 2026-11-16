@@ -171,13 +171,16 @@ class PlayerRow extends Component<PlayerRowProps> {
 	}
 }
 
-const onLiveSimOver = (gid?: number) => {
+const onLiveSimOver = (gid: number | undefined, final: boolean) => {
 	// Send to worker, rather than doing `localActions.update({ liveGameInProgress: false });`, so it works in all tabs.
 	// The gid says WHICH game this page thinks is over - the worker ignores the
 	// report if a different game's live sim is the one in progress, so a replay
 	// ending (or a finished game parked in another tab) can't clear the flag out
-	// from under a fresh live sim and spoil it.
-	toWorker("main", "onLiveSimOver", gid);
+	// from under a fresh live sim and spoil it. `final`: the game reached its
+	// last play here - not just this page going away (left, or mounted anew),
+	// which for a league-mate's game being watched is no end of it (see the
+	// worker's onLiveSimOver).
+	toWorker("main", "onLiveSimOver", { gid, final });
 };
 
 // This device is no longer inside a league-mate's broadcast. Separate from
@@ -2153,7 +2156,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 				if (!boxScore.current.exhibition) {
 					setDirty(false);
 				}
-				onLiveSimOver(boxScore.current.gid);
+				onLiveSimOver(boxScore.current.gid, true);
 			}
 
 			const endSeconds = getSeconds(boxScore.current.time);
@@ -2174,7 +2177,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 			// else that invents court positions (the team court editor's preview)
 			// wants ordinary randomness.
 			clearCourtRng();
-			onLiveSimOver(boxScore.current?.gid);
+			onLiveSimOver(boxScore.current?.gid, false);
 			if (leaveBroadcastGidRef.current !== undefined) {
 				onLeaveBroadcast(leaveBroadcastGidRef.current);
 			}

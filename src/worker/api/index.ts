@@ -5745,7 +5745,19 @@ const liveWatchAlive = async (gid?: number) => {
 	noteLiveWatchAlive(gid);
 };
 
-const onLiveSimOver = async (gid?: number) => {
+// A live game page's report that its game is over: which game, and whether
+// it reached its last play there (`final`) or the page just went away. (Just
+// a gid, from a page on an older build: as if final.)
+export type LiveOverReport = number | { gid?: number; final?: boolean };
+export const readOverReport = (
+	report: LiveOverReport | undefined,
+): { gid: number | undefined; final: boolean } =>
+	report !== null && typeof report === "object"
+		? { gid: report.gid, final: report.final !== false }
+		: { gid: report, final: true };
+
+const onLiveSimOver = async (report?: LiveOverReport) => {
+	const { gid, final } = readOverReport(report);
 	// Only the page playing THE CURRENT live sim gets to declare it over. Every
 	// LiveGame page fires this - on unmount and on reaching its final play -
 	// including finished games parked in other tabs and REPLAYS of old games,
@@ -5781,8 +5793,18 @@ const onLiveSimOver = async (gid?: number) => {
 
 	// On a follower, this same signal means the FOLLOWED broadcast's game just
 	// went final on this screen - release its spoiler gate now, not when the
-	// broadcaster eventually leaves their live game page.
-	markFollowedBroadcastOver(gid);
+	// broadcaster eventually leaves their live game page. Only a final, though:
+	// the page going away part way through is no end of the game being watched.
+	// Walking out is reported on its own (leaveLiveBroadcast); and joining one
+	// loads the page before this device is marked its follower, so the page
+	// mounts once more as the follower - the first one's report, taken for the
+	// end, left the watch held only by the plain lease, and twelve seconds of
+	// silence (a hidden tab, the warm-ups) dropped it: the page then played the
+	// rest of the game on its own, controls and all, while the league-mate's
+	// device was still playing it.
+	if (final) {
+		markFollowedBroadcastOver(gid);
+	}
 
 	// Still watching - or asked whether to watch - a league-mate's game: this
 	// report was some other page's (a replay ending, the page left behind for
