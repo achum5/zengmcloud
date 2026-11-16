@@ -173,7 +173,8 @@ describe("buildPlayerRecapPrompt", () => {
 		assert.ok(prompt.includes("2006 age26"));
 		assert.ok(prompt.includes("RATINGS BY SEASON:"));
 		assert.ok(prompt.includes("TRANSACTIONS:"));
-		assert.ok(prompt.includes("AWARDS:"));
+		// Each award counted for the AI, with its seasons.
+		assert.ok(prompt.includes("All-Star x1 (2005)"), prompt);
 		assert.ok(prompt.includes("FEATS:"));
 		assert.ok(prompt.includes("INJURY HISTORY:"));
 	});

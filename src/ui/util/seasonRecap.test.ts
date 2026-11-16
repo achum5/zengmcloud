@@ -64,6 +64,10 @@ const data: RecapSeasonData = {
 			franchise: {
 				championships: 18,
 				lastChampionship: 2026,
+				titleSeasons: [
+					1949, 1950, 1952, 1953, 1954, 1972, 1980, 1982, 1985, 1987, 1988,
+					2000, 2001, 2002, 2009, 2010, 2020, 2026,
+				],
 				playoffAppearances: 60,
 				finalsAppearances: 32,
 				totalWon: 3500,
@@ -267,5 +271,18 @@ describe("American English", () => {
 		const prompt = buildSeasonRecapPrompt(data);
 		assert.ok(prompt.includes(AMERICAN_ENGLISH_NOTICE), prompt.slice(0, 400));
 		assert.notMatch(prompt, /offence|defence|labelled/i);
+	});
+});
+
+describe("counts and streaks", () => {
+	// Shown only the last few seasons, the AI called four titles in eight
+	// seasons "a third in seven". Every title season is listed, the season list
+	// is marked as cut short, and the AI is told never to count for itself.
+	test("title seasons listed, the season list marked, the rule stated", () => {
+		const prompt = buildSeasonRecapPrompt(data);
+		assert.ok(prompt.includes("18 titles (1949, 1950,"), prompt);
+		assert.ok(prompt.includes("2020, 2026)"), prompt);
+		assert.ok(prompt.includes("never count from this list"), prompt);
+		assert.ok(prompt.includes("COUNTS AND STREAKS ARE GIVEN"), prompt);
 	});
 });

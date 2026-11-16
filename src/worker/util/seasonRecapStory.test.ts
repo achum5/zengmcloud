@@ -82,6 +82,38 @@ describe("franchiseStreak", () => {
 		);
 	});
 
+	// The owner's league, Cleveland 2023: eight straight trips to at least the
+	// conference finals and five titles in ten seasons, counted over the whole
+	// history - shown only the last few seasons, the AI said "seven" and "a
+	// third title in seven seasons".
+	test("deep runs and a title count over the whole history", () => {
+		assert.deepStrictEqual(
+			franchiseStreak(
+				history([4, 1, 4, 4, 2, 2, 3, 2, 4, 4], 2014),
+				2023,
+				4,
+				true,
+			),
+			[
+				"10th straight playoff appearance",
+				"8th straight season reaching at least the conference finals (every season since 2016)",
+				"5th championship in 10 seasons (2014, 2016, 2017, 2022, 2023)",
+				"2nd straight championship",
+			],
+		);
+		// Without conferences, the round is the semifinals; a finals run
+		// longer than the title run is named too.
+		assert.deepStrictEqual(
+			franchiseStreak(history([2, 3, 3, 4], 2000), 2003, 4),
+			[
+				"4th straight playoff appearance",
+				"4th straight season reaching at least the semifinals (every season since 2000)",
+				"3rd straight trip to the finals (every season since 2001)",
+				"first championship in franchise history",
+			],
+		);
+	});
+
 	test("nothing to say is said as nothing", () => {
 		assert.deepStrictEqual(franchiseStreak(history([0, -1, 1]), 2002, 4), []);
 		// A season that isn't in the history at all.

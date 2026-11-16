@@ -125,16 +125,24 @@ export const seasonShape = (
 export type FranchiseSeasonResult = {
 	season: number;
 	playoffRoundsWon: number;
+	// Rounds in that season's playoffs, when it differs from now.
+	numPlayoffRounds?: number;
 };
 
 // The one line about where this season sits in the franchise's history that a
 // writer would lead with if it applies: a drought ended, a streak extended, a
 // first-ever title. Returns nothing when there is no streak worth naming, so the
 // prompt never pads every team with a non-fact.
+//
+// Every run is counted over the franchise's whole history, never a window of
+// it: given only its last few seasons, the AI called an eighth straight
+// conference finals the seventh and four titles in eight seasons "a third in
+// seven".
 export const franchiseStreak = (
 	history: FranchiseSeasonResult[],
 	season: number,
 	numPlayoffRounds: number,
+	byConf = false,
 ): string[] => {
 	const sorted = [...history]
 		.filter((row) => row.season <= season)
@@ -147,8 +155,24 @@ export const franchiseStreak = (
 	const out: string[] = [];
 
 	const made = (row: FranchiseSeasonResult) => row.playoffRoundsWon >= 0;
+	const roundsOf = (row: FranchiseSeasonResult) =>
+		row.numPlayoffRounds ?? numPlayoffRounds;
 	const won = (row: FranchiseSeasonResult) =>
-		row.playoffRoundsWon >= numPlayoffRounds;
+		row.playoffRoundsWon >= roundsOf(row);
+	// Reached the last `fromEnd + 1` rounds: the finals (1), the conference
+	// finals or semifinals (2).
+	const reached = (row: FranchiseSeasonResult, fromEnd: number) =>
+		roundsOf(row) - fromEnd >= 1 &&
+		row.playoffRoundsWon >= roundsOf(row) - fromEnd;
+	// How many seasons in a row, ending with this one, `ok` held - and the
+	// first of them.
+	const runOf = (ok: (row: FranchiseSeasonResult) => boolean) => {
+		let n = 0;
+		for (let i = sorted.length - 1; i >= 0 && ok(sorted[i]!); i--) {
+			n += 1;
+		}
+		return { n, since: sorted[sorted.length - n]?.season };
+	};
 
 	// Run of the same outcome (made / missed) ending with this season.
 	let run = 1;
@@ -177,7 +201,36 @@ export const franchiseStreak = (
 		out.push(`missed the playoffs for the ${ordinal(run)} straight season`);
 	}
 
+	// Deep runs: the longest-running level a writer would name, when it runs
+	// longer than the title run inside it.
+	const titles = runOf(won);
+	const finals = runOf((row) => reached(row, 1));
+	const semis = runOf((row) => reached(row, 2));
+	const semisName = byConf ? "the conference finals" : "the semifinals";
+	if (semis.n >= 3 && semis.n > finals.n) {
+		out.push(
+			`${ordinal(semis.n)} straight season reaching at least ${semisName} (every season since ${semis.since})`,
+		);
+	}
+	if (finals.n >= 2 && finals.n > titles.n) {
+		out.push(
+			`${ordinal(finals.n)} straight trip to the finals (every season since ${finals.since})`,
+		);
+	}
+
 	if (won(current)) {
+		// The title count over the longest stretch of up to ten seasons that
+		// starts with a title, so it is never told short ("a third in seven"
+		// when it is the fourth in eight).
+		const recentTitles = sorted.filter(
+			(row) => won(row) && season - row.season < 10,
+		);
+		if (recentTitles.length >= 3) {
+			const first = recentTitles[0]!.season;
+			out.push(
+				`${ordinal(recentTitles.length)} championship in ${season - first + 1} seasons (${recentTitles.map((row) => row.season).join(", ")})`,
+			);
+		}
 		const lastTitle = before.findLast(won);
 		if (!lastTitle) {
 			out.push("first championship in franchise history");

@@ -24,7 +24,7 @@ THE DATA, and what it is for. Each team block gives you these already worked out
 - LAST SEASON: last year's record and result, and the swing in wins.
 - HOW IT UNFOLDED: the record in each third of the season, the longest winning and losing streaks, the record in close games, the last ten, the biggest win and the worst loss. Use them to give the season a shape: when it turned, when it fell apart, how it finished.
 - LEAGUE RANKS: record, offense (points scored), defense (points allowed) and scoring margin, each ranked across the league; the conference and division finish; home and road records.
-- FRANCHISE: titles, recent seasons, and any streak or drought this season extended or ended.
+- FRANCHISE: every title season, recent seasons, and the streaks and droughts this season extended or ended, counted over the franchise's whole history.
 - MOVES: every transaction in the order it happened, tagged with the part of the calendar.
 - KEY PLAYERS: each one's season line and his line LAST season (so you can see who broke out and who declined), whether he was a rookie, games he missed injured THIS season, where he ranked in the league, how he finished in the award races, his salary and his own moves.
 The LEAGUE block above the teams carries every team's record and playoff result, the league leaders and the award races, so you can place each team in the league it actually played in.
@@ -41,6 +41,8 @@ ACCURACY. These matter more than style:
 - Only a player marked "(retired)" retired. Everyone else who left is playing somewhere else.
 - If a team's move list says earlier moves are not shown, do not describe its offseason as if the list were complete.
 - Use the playoff series results for how far each series went. Never guess the number of games.
+- COUNTS AND STREAKS ARE GIVEN, NEVER WORKED OUT. "Third title in seven seasons", "seventh straight conference finals", "his fourth All-Star nod": every count, run and "first since" must be one stated in the data (the franchise title list and the "This season in franchise history" line, the award lists, the storylines). The "Recent seasons" list stops after a few years, so counting from it shortchanges a long run. If a count you want isn't given, say it without the number.
+- Never shrink an accomplishment. When you frame a stretch, use the longest one the data gives (the "Nth championship in M seasons" line starts at a title on purpose), never a shorter window that leaves a title or an appearance out.
 
 STYLE.
 - Write like someone who watched the season happen: confident and specific. No hedging ("appears to", "seemingly", "it seems"). If something isn't in the data, leave it out.
@@ -140,7 +142,9 @@ const playerLine = (p: RecapSeasonPlayer): string => {
 const franchiseBlock = (t: RecapSeasonTeam): string => {
 	const f = t.franchise;
 	const bits = [
-		`${f.championships} title${f.championships === 1 ? "" : "s"}`,
+		f.titleSeasons && f.titleSeasons.length > 0
+			? `${f.championships} title${f.championships === 1 ? "" : "s"} (${f.titleSeasons.join(", ")})`
+			: `${f.championships} title${f.championships === 1 ? "" : "s"}`,
 		f.lastChampionship ? `last in ${f.lastChampionship}` : "none yet",
 		`${f.playoffAppearances} playoff appearances`,
 		`${f.finalsAppearances} finals`,
@@ -151,10 +155,14 @@ const franchiseBlock = (t: RecapSeasonTeam): string => {
 		const recent = f.recent
 			.map((r) => `${r.season}: ${r.won}-${r.lost} (${r.result})`)
 			.join("; ");
-		lines.push(`Recent seasons: ${recent}`);
+		lines.push(
+			`Recent seasons (the last ${f.recent.length} only - never count from this list): ${recent}`,
+		);
 	}
 	if (t.streaks && t.streaks.length > 0) {
-		lines.push(`This season in franchise history: ${t.streaks.join("; ")}`);
+		lines.push(
+			`This season in franchise history (counted over its whole history): ${t.streaks.join("; ")}`,
+		);
 	}
 	return lines.join("\n");
 };

@@ -50,6 +50,8 @@ EVERY TRANSACTION IS DATED THE SAME WAY, so you always know exactly when a playe
 
 Ratings are scouting information for YOU, not material for the page. Never print a rating number and never refer to one - no "a 78 three-point rating", no "his overall climbed to 71", no "peaked at 84", no grades or tiers derived from them. Read them to know what a player is good at, what he cannot do, and how that changed year to year, then say it the way a writer would: an elite finisher, no handle to speak of, a jumper that finally came around, legs that went at 33. The same goes for any teammate's or draft pick's ratings.
 
+COUNTS ARE GIVEN, NEVER WORKED OUT. "His third All-Star nod", "a fifth straight season over 20 a night", "the most points since his rookie year": every count, run and "first since" must be one the data states (AWARDS lists each with how many times; STORYLINES and career highs carry the rest). If the one you want isn't there, say it without the number. And never shrink a career: when you sum up a stretch of it, take the whole of what the data shows, not a shorter window that leaves an award or a big season out.
+
 Write like someone who watched these seasons happen. Everything in front of you is settled fact - what he averaged, when he was hurt, the night he went for 51, which team he was on and how he got there - so state it plainly and with confidence. Never hedge about it: no "appears to have", no "presumably", no "it seems he was traded at some point". If something genuinely isn't in the data, leave it out. Do not invent anything to fill the color in: no quotes from anyone (nobody's words are on the record here), no locker-room scenes, no opponents, dates or game situations the data doesn't give you. The voice is yours; the facts are only what is listed.
 
 These are rendered as Markdown, so use it where it earns its place: **bold** a player's name the first time it appears and bold the numbers a reader should take away from the piece, *italics* for the occasional bit of emphasis. Name teams in full the way a writer would - "the Toronto Raptors", "Toronto" - using the region and nickname given in the LEAGUE block, never the abbreviation, because names get turned into links to that season's team page and "TOR" does not. Keep it light: a paragraph with everything bolded reads worse than one with nothing bolded.
@@ -442,8 +444,19 @@ const playerBlock = (p: RecapPlayer, season: number): string => {
 	}
 
 	if (p.awards.length > 0) {
+		// Counted for it, each award with how many times and when: left to
+		// count a list, the AI got "his fourth" wrong.
+		const byType = new Map<string, number[]>();
+		for (const a of p.awards) {
+			byType.set(a.type, [...(byType.get(a.type) ?? []), a.season]);
+		}
 		lines.push(
-			`AWARDS: ${p.awards.map((a) => `${a.season} ${a.type}`).join("; ")}`,
+			`AWARDS (each with how many times, through this season): ${[...byType]
+				.map(
+					([type, seasons]) =>
+						`${type} x${seasons.length} (${[...seasons].sort((a, b) => a - b).join(", ")})`,
+				)
+				.join("; ")}`,
 		);
 	}
 	if (p.transactions.length > 0) {

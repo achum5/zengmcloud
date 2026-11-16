@@ -14,7 +14,7 @@ export const CLOUD_CHANGES: CloudChange[] = [
 	{
 		n: 326,
 		date: "2026-11-16",
-		text: 'Recaps: the prompts you copy into Claude or ChatGPT for season, player and draft recaps now ask for American English, so the writing says "offense" and "defense", not "offence" and "defence".',
+		text: 'Recaps: the prompts you copy into Claude or ChatGPT now ask for American English ("offense", not "offence"), and they hand the AI every title season, playoff run and award count already worked out, so a recap no longer comes back with "a third title in seven seasons" when it was five in ten.',
 	},
 	{
 		n: 325,

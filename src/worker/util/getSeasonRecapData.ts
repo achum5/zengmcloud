@@ -110,6 +110,8 @@ export type RecapSeasonTeam = {
 		finalsAppearances: number;
 		totalWon: number;
 		totalLost: number;
+		// Every season it won the title, oldest first.
+		titleSeasons?: number[];
 		recent: RecapFranchiseSeason[];
 	};
 	// End-of-season payroll this year and last, in thousands of dollars. A team
@@ -843,7 +845,7 @@ export const getSeasonRecapData = async (
 			const fh = getHistoryTeam(teamSeasons, playoffsByConfBySeason);
 			const recent: RecapFranchiseSeason[] = fh.history
 				.filter((h) => h.season < season)
-				.slice(0, 6)
+				.slice(0, 10)
 				.map((h) => ({
 					season: h.season,
 					won: h.won,
@@ -902,6 +904,13 @@ export const getSeasonRecapData = async (
 					finalsAppearances: fh.finalsAppearances,
 					totalWon: fh.totalWon,
 					totalLost: fh.totalLost,
+					titleSeasons: fh.history
+						.filter(
+							(h) =>
+								h.season <= season && h.playoffRoundsWon >= h.numPlayoffRounds,
+						)
+						.map((h) => h.season)
+						.sort((a, b) => a - b),
 					recent,
 				},
 				payroll: payrollOf(season),
@@ -915,12 +924,14 @@ export const getSeasonRecapData = async (
 				...splitsFor(teamSeasonByTid.get(tid), confName, divName),
 				lastSeason: lastSeasonOf(teamSeasons, season, fh.history),
 				streaks: franchiseStreak(
-					teamSeasons.map((ts) => ({
-						season: ts.season,
-						playoffRoundsWon: ts.playoffRoundsWon,
+					fh.history.map((h) => ({
+						season: h.season,
+						playoffRoundsWon: h.playoffRoundsWon,
+						numPlayoffRounds: h.numPlayoffRounds,
 					})),
 					season,
 					numPlayoffRounds,
+					!!playoffsByConfBySeason.get(season),
 				),
 				shape: seasonShape(resultsByTid.get(tid) ?? []),
 			});
