@@ -9,6 +9,7 @@ import type {
 } from "../../worker/util/getPlayerRecapData.ts";
 import { stripOuterCodeFence } from "./stripOuterCodeFence.ts";
 import { FICTIONAL_LEAGUE_NOTICE } from "./fictionalLeagueNotice.ts";
+import { AMERICAN_ENGLISH_NOTICE } from "../../common/americanEnglish.ts";
 
 // The league-wide PLAYER season recap: one short piece of writing per player
 // per season, filed into that player's own note under a [year] heading.
@@ -26,6 +27,8 @@ import { FICTIONAL_LEAGUE_NOTICE } from "./fictionalLeagueNotice.ts";
 const INSTRUCTIONS = `You are the beat writer who covered this fictional league all season, filing your end-of-season piece on EACH player below - the kind a reader finds in the paper the week the season ends. Write a piece on the LISTED SEASON for every one of them.
 
 ${FICTIONAL_LEAGUE_NOTICE}
+
+${AMERICAN_ENGLISH_NOTICE}
 
 WRITE IT LIKE A REPORTER, NOT A DATABASE. You watched these players all year; the data below is your notebook, not your copy. A real beat writer's piece has an angle and a voice:
 - A lede that earns the read. Open on the thing that defined his year: a turning point, a contrast, a moment, a role that changed under him, a sharp line about what kind of player he became. Never open with his name followed by his averages, never with where he was drafted, and never with a sentence that could sit on top of anyone's season.
@@ -569,11 +572,13 @@ const PROSPECT_INSTRUCTIONS = `You are a scout filing reports on next year's dra
 
 ${FICTIONAL_LEAGUE_NOTICE}
 
+${AMERICAN_ENGLISH_NOTICE}
+
 Every player below is in NEXT year's draft class. He has never played a game in this league, has no stats, and nobody has seen him do anything yet. His draft has not happened, so where he goes and who takes him are unknown to you; project them, never state them. There is no season to recap and no absence of one to remark on.
 
 Write it as of the draft he is coming out in, not as of today. The class is scouted a season ahead, so his header gives the age he will be WHEN HE IS DRAFTED - that is the only age you may use, and the only one a reader will see beside the report. Never work out or mention how old he is right now, never say what year it currently is, and never describe the draft as being a year away.
 
-Write the report a scouting department would file on him as he comes out: several paragraphs, and give every one of them real content. Frame, body and athleticism. What he does on offence — how he scores, from where, whether he can shoot it, whether he can create, how he handles it, how he passes. What he does defensively, and whether he can guard his position. Feel for the game, motor, durability. Then the honest part: what has to improve, what may never come, what kind of player he projects as and what kind of role fits him. Say where you think he goes in the draft and why. A short report is a failure here; this is the only thing ever written about him before he arrives.
+Write the report a scouting department would file on him as he comes out: several paragraphs, and give every one of them real content. Frame, body and athleticism. What he does on offense — how he scores, from where, whether he can shoot it, whether he can create, how he handles it, how he passes. What he does defensively, and whether he can guard his position. Feel for the game, motor, durability. Then the honest part: what has to improve, what may never come, what kind of player he projects as and what kind of role fits him. Say where you think he goes in the draft and why. A short report is a failure here; this is the only thing ever written about him before he arrives.
 
 Everything you say has to come from the ratings in his block and nothing else. They are your entire scouting file, and the length of the report comes from reading them carefully — a big man who cannot shoot, a guard with no handle, a phenomenal athlete with no feel are all right there in the numbers.
 
@@ -604,6 +609,8 @@ Follow these rules EXACTLY:
 const DRAFT_PICK_INSTRUCTIONS = `You are a basketball writer covering the draft for a fictional league. Write a piece on EACH member of the listed season's draft class below.
 
 ${FICTIONAL_LEAGUE_NOTICE}
+
+${AMERICAN_ENGLISH_NOTICE}
 
 THE DRAFT IS HELD AFTER THE SEASON ENDS. Every player below belongs to the LISTED SEASON's draft class, which means the draft has just taken place and his first season in the league is the one AFTER the listed season. He has never played a game here. He has not missed anything and nothing has gone wrong — never write that he "did not play this season", never treat the absence of stats as a fact about him, and never recap a season for him. Every piece is forward-looking.
 

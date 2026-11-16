@@ -127,9 +127,9 @@ const faceBlock = (subject: CardSubject): string => {
 	}
 	return `\n\n## The character's face\n\nThe attached image is this character's avatar, drawn straight on, neutral and unposed.
 
-Use it for WHO HE IS, and match these exactly: skin tone, face shape, hair (style, colour, hairline), facial hair, eyebrows, eye shape and colour, and any accessories he is wearing.
+Use it for WHO HE IS, and match these exactly: skin tone, face shape, hair (style, color, hairline), facial hair, eyebrows, eye shape and color, and any accessories he is wearing.
 
-Do NOT copy the expression, the mouth, or the head angle from it. Those belong to the action, not to the reference - a blank stare and a slack open mouth on a player driving to the rim is the single thing that most makes one of these look wrong. Give him the face the moment calls for: eyes on the play, jaw set, mouth closed or open with effort, head turned wherever he is actually looking. He should be recognisably the same person and visibly in the middle of playing.
+Do NOT copy the expression, the mouth, or the head angle from it. Those belong to the action, not to the reference - a blank stare and a slack open mouth on a player driving to the rim is the single thing that most makes one of these look wrong. Give him the face the moment calls for: eyes on the play, jaw set, mouth closed or open with effort, head turned wherever he is actually looking. He should be recognizably the same person and visibly in the middle of playing.
 
 He is a faces.js cartoon avatar, so render him in that same flat vector cartoon style: clean shapes, flat fills, no photorealistic skin or hair texture.`;
 };
@@ -347,14 +347,14 @@ const ANY_ACTION = [
 	"landing after a shot, still watching the flight of the ball",
 	"hanging on the follow-through of a deep shot, one arm up",
 	// Defence
-	"sliding his feet on defence, low, both hands active",
+	"sliding his feet on defense, low, both hands active",
 	"contesting a shot with one hand straight up, no jump",
 	"reaching in for a steal without leaving his feet",
 	"hedging out on a screen with his arms wide",
 	"leaping to deflect a passing lane",
 	"taking a charge, body already falling backwards",
 	"planted in a defensive stance with the ball-handler right in front of him",
-	"shouting instructions to a teammate while backpedalling on defence",
+	"shouting instructions to a teammate while backpedaling on defense",
 	// Rebounding
 	"coming down with a rebound at its highest point, both hands on the ball",
 	"tangled with a defender for a rebound, both hands on the ball",
@@ -378,7 +378,7 @@ const GUARD_ACTION = [
 	"picking a pass off in the lane and turning upcourt",
 	"pulling up in transition off one dribble",
 	"releasing a three from the top of the key over a closeout",
-	"hanging back on the dribble at the top, reading the defence",
+	"hanging back on the dribble at the top, reading the defense",
 	"throwing a lob toward the rim, eyes up",
 	"going behind his back to change direction",
 	"snaking a pick and roll back across the lane",
@@ -596,7 +596,7 @@ ${set.back}
 
 Era design language: ${cardErasById.get(set.era)?.language ?? ""}
 
-Lay it out the way a real card back of this era is laid out - the card number in its usual corner, the biography block, and the statistics grid filling most of the card. Keep the back's palette consistent with the front's.
+Lay it out the way a real card back of this era is laid out - the card number in its usual corner, the biography block, and the statistics grid filling most of the card. Any writing on it is in American English. Keep the back's palette consistent with the front's.
 
 ## The season on the card
 

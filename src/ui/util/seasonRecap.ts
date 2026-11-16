@@ -5,12 +5,15 @@ import type {
 } from "../../worker/util/getSeasonRecapData.ts";
 import { stripOuterCodeFence } from "./stripOuterCodeFence.ts";
 import { FICTIONAL_LEAGUE_NOTICE } from "./fictionalLeagueNotice.ts";
+import { AMERICAN_ENGLISH_NOTICE } from "../../common/americanEnglish.ts";
 
 // Instructions for the season-in-review. Kept as one editable constant so the
 // brief can change without touching the data-baking below.
 const INSTRUCTIONS = `You are a veteran basketball writer producing the season-in-review for a league. Write a season recap for EACH team listed below.
 
 ${FICTIONAL_LEAGUE_NOTICE}
+
+${AMERICAN_ENGLISH_NOTICE}
 
 WHAT A GOOD RECAP IS. Find the story of this team's year and tell it. Every season has a throughline: a roster that outplayed its talent or wasted it, a hot start that collapsed, a late surge into the playoffs, a star's breakout, a trade that turned the year, a drought ended, a title defended, a rebuild that finally showed life, a contender that lost its best player for two months. Lead with that story, not with the win-loss record, and build every paragraph around it. A recap that walks through "they signed X, they went 41-41, they lost in the first round" is a failure even when every fact in it is right.
 
@@ -20,13 +23,13 @@ THE DATA, and what it is for. Each team block gives you these already worked out
 - EXPECTATIONS: how the roster ranked in strength on opening night and at the end of the season, against where its record ranked. A roster that ranked 22nd and finished with the 6th-best record overachieved; one that ranked 3rd and finished 15th underachieved. This is often the spine of the story. Never quote the strength ranks as ratings or scores; say what they mean ("a roster few rated", "the most talented team in the conference").
 - LAST SEASON: last year's record and result, and the swing in wins.
 - HOW IT UNFOLDED: the record in each third of the season, the longest winning and losing streaks, the record in close games, the last ten, the biggest win and the worst loss. Use them to give the season a shape: when it turned, when it fell apart, how it finished.
-- LEAGUE RANKS: record, offence (points scored), defence (points allowed) and scoring margin, each ranked across the league; the conference and division finish; home and road records.
+- LEAGUE RANKS: record, offense (points scored), defense (points allowed) and scoring margin, each ranked across the league; the conference and division finish; home and road records.
 - FRANCHISE: titles, recent seasons, and any streak or drought this season extended or ended.
 - MOVES: every transaction in the order it happened, tagged with the part of the calendar.
 - KEY PLAYERS: each one's season line and his line LAST season (so you can see who broke out and who declined), whether he was a rookie, games he missed injured THIS season, where he ranked in the league, how he finished in the award races, his salary and his own moves.
 The LEAGUE block above the teams carries every team's record and playoff result, the league leaders and the award races, so you can place each team in the league it actually played in.
 
-CHRONOLOGY. Tell the year in order: the offseason that built the roster, then the season, then the playoffs. But tell it as one story, not as three labelled sections. Do not narrate every transaction. Name the moves that shaped the season (ones involving players who mattered, or that cleared the money for one) and skip the roster filler.
+CHRONOLOGY. Tell the year in order: the offseason that built the roster, then the season, then the playoffs. But tell it as one story, not as three labeled sections. Do not narrate every transaction. Name the moves that shaped the season (ones involving players who mattered, or that cleared the money for one) and skip the roster filler.
 
 READ THE MOVES AS A SEQUENCE, not as a list. They are in the order they happened, so a move and whatever it made possible sit next to each other. Before you characterize any move, read the ones around it in the same window and check what happened to the payroll. A trade that brings back little, or a veteran cut loose, is often what paid for a signing a few lines later; a big signing usually has something that cleared room for it. The phase tags give the order within an offseason (draft, then re-signings, then free agency) and within a season (before or after the trade deadline).
 
@@ -201,8 +204,8 @@ const ranksLine = (t: RecapSeasonTeam): string | undefined => {
 		return undefined;
 	}
 	const parts = [
-		`offence ${ordinal(t.ranks.offense)}${typeof t.ptsPerGame === "number" ? ` (${t.ptsPerGame} PPG)` : ""}`,
-		`defence ${ordinal(t.ranks.defense)}${typeof t.oppPtsPerGame === "number" ? ` (${t.oppPtsPerGame} allowed)` : ""}`,
+		`offense ${ordinal(t.ranks.offense)}${typeof t.ptsPerGame === "number" ? ` (${t.ptsPerGame} PPG)` : ""}`,
+		`defense ${ordinal(t.ranks.defense)}${typeof t.oppPtsPerGame === "number" ? ` (${t.oppPtsPerGame} allowed)` : ""}`,
 		`margin ${ordinal(t.ranks.mov)}${typeof t.mov === "number" ? ` (${signed(t.mov)})` : ""}`,
 	];
 	const splits = [

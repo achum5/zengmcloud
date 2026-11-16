@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 326,
+		date: "2026-11-16",
+		text: 'Recaps: the prompts you copy into Claude or ChatGPT for season, player and draft recaps now ask for American English, so the writing says "offense" and "defense", not "offence" and "defence".',
+	},
+	{
 		n: 325,
 		date: "2026-11-16",
 		text: "Shared leagues: phone notifications no longer spoil a game you're in the middle of. While you're playing a live game or watching a league mate's, notifications (like the day's scores) wait and come through as one once the game ends on your screen or you leave it.",

@@ -1,5 +1,6 @@
 import { assert, describe, test } from "vitest";
 import { FICTIONAL_LEAGUE_NOTICE } from "./fictionalLeagueNotice.ts";
+import { AMERICAN_ENGLISH_NOTICE } from "../../common/americanEnglish.ts";
 import {
 	buildPlayerRecapPrompt,
 	parsePlayerRecaps,
@@ -580,6 +581,20 @@ describe("fictional league notice", () => {
 	test("the prompt says nothing may come from real-world knowledge", () => {
 		const prompt = buildPlayerRecapPrompt(batch([player(7, 5)]));
 		assert.ok(prompt.includes(FICTIONAL_LEAGUE_NOTICE), prompt.slice(0, 400));
+	});
+});
+
+describe("American English", () => {
+	// Left to itself the AI wrote "offence" and "defence" - the prompts spelled
+	// them that way. Season pieces, scouting reports and the draft class alike.
+	test("every prompt asks for it and spells that way itself", () => {
+		for (const filter of ["players", "prospects", "draftPicks"] as const) {
+			const prompt = buildPlayerRecapPrompt(
+				batch([player(7, filter === "players" ? 5 : 0)], { filter }),
+			);
+			assert.ok(prompt.includes(AMERICAN_ENGLISH_NOTICE), filter);
+			assert.notMatch(prompt, /offence|defence|labelled/i, filter);
+		}
 	});
 });
 

@@ -1,5 +1,6 @@
 import { assert, describe, test } from "vitest";
 import { FICTIONAL_LEAGUE_NOTICE } from "./fictionalLeagueNotice.ts";
+import { AMERICAN_ENGLISH_NOTICE } from "../../common/americanEnglish.ts";
 import { buildSeasonRecapPrompt, parseSeasonRecaps } from "./seasonRecap.ts";
 import type { RecapSeasonData } from "../../worker/util/getSeasonRecapData.ts";
 
@@ -256,5 +257,15 @@ describe("fictional league notice", () => {
 	test("the prompt says nothing may come from real-world knowledge", () => {
 		const prompt = buildSeasonRecapPrompt(data);
 		assert.ok(prompt.includes(FICTIONAL_LEAGUE_NOTICE), prompt.slice(0, 400));
+	});
+});
+
+describe("American English", () => {
+	// Left to itself the AI wrote "offence" and "defence" - the prompt spelled
+	// them that way.
+	test("the prompt asks for it and spells that way itself", () => {
+		const prompt = buildSeasonRecapPrompt(data);
+		assert.ok(prompt.includes(AMERICAN_ENGLISH_NOTICE), prompt.slice(0, 400));
+		assert.notMatch(prompt, /offence|defence|labelled/i);
 	});
 });
