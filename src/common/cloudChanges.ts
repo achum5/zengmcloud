@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 325,
+		date: "2026-11-16",
+		text: "Shared leagues: phone notifications no longer spoil a game you're in the middle of. While you're playing a live game or watching a league mate's, notifications (like the day's scores) wait and come through as one once the game ends on your screen or you leave it.",
+	},
+	{
 		n: 324,
 		date: "2026-11-16",
 		text: "Shared leagues: watching a league mate's live game, switching to another tab or app for a bit (during the warm-ups, say) no longer drops you out of watching. Before, coming back could leave your screen playing the game on its own with its own controls while theirs was still playing it.",

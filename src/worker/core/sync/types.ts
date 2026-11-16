@@ -463,6 +463,9 @@ export interface SyncTransport {
 	// Partial so a device can refresh single fields (e.g. its current tid after
 	// a team switch) without clobbering its stored FCM token.
 	registerMember?(uid: string, member: Partial<SyncMember>): Promise<void>;
+	// This device is in the middle of a live game: hold its pushes till it
+	// isn't (see liveHoldLease.ts).
+	setLiveHold?(held: boolean): Promise<void>;
 	publishNotification?(
 		notification: SyncNotification & { authorId: string; authorName: string },
 	): Promise<void>;

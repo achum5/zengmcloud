@@ -7,13 +7,21 @@
 // sends a data-only FCM push to the rest. Because the push is delivered by
 // Google's servers, it reaches phones even when ZenGM is completely closed.
 //
+// A device in the middle of a live game has its pushes held until the game
+// is over, then sent as one (see hold.js, and releaseHeldNotifications
+// below).
+//
 // Deploy with: firebase deploy --only functions
 // (Requires the Blaze plan; at a few users the cost is effectively $0.)
 
-const { onDocumentCreated } = require("firebase-functions/v2/firestore");
+const {
+	onDocumentCreated,
+	onDocumentUpdated,
+} = require("firebase-functions/v2/firestore");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { getMessaging } = require("firebase-admin/messaging");
+const hold = require("./hold.js");
 
 initializeApp();
 
@@ -23,6 +31,51 @@ const DEAD_TOKEN_ERRORS = new Set([
 	"messaging/invalid-registration-token",
 	"messaging/invalid-argument",
 ]);
+
+const errorCode = (error) => error?.code ?? error?.errorInfo?.code;
+
+// One push to one device, dropping its token if FCM says it is dead.
+const sendOne = async (ref, token, data) => {
+	try {
+		await getMessaging().send({ token, data });
+	} catch (error) {
+		if (DEAD_TOKEN_ERRORS.has(errorCode(error))) {
+			await ref
+				.update({ fcmToken: FieldValue.delete() })
+				.catch(() => undefined);
+		}
+	}
+};
+
+// A push for a device that is holding its pushes, or has some held from a
+// hold that ran out without being lifted (a phone that went dark mid game):
+// read again in a transaction, so a hold lifted at this very moment either
+// sees this one in its list or this sees the hold gone. Kept with the rest
+// while the hold lasts; otherwise sent now, with whatever was held.
+const sendOrHold = async (db, ref, entry) => {
+	const out = await db.runTransaction(async (tx) => {
+		const member = (await tx.get(ref)).data();
+		if (!member) {
+			return undefined;
+		}
+		const now = Date.now();
+		if (hold.isHeld(member, now)) {
+			tx.update(ref, { heldPushes: hold.withHeld(member.heldPushes, entry) });
+			return undefined;
+		}
+		const list = hold.heldList(member.heldPushes);
+		if (list.length > 0) {
+			tx.update(ref, { heldPushes: FieldValue.delete() });
+		}
+		const data = hold.combine([...list, entry], now);
+		return data && member.fcmToken
+			? { token: member.fcmToken, data }
+			: undefined;
+	});
+	if (out) {
+		await sendOne(ref, out.token, out.data);
+	}
+};
 
 exports.sendLeagueNotification = onDocumentCreated(
 	"leagues/{code}/notifications/{notificationId}",
@@ -105,6 +158,10 @@ exports.sendLeagueNotification = onDocumentCreated(
 
 		const tokens = [];
 		const tokenToRef = new Map();
+		// Devices in a live game, or with pushes held from one: one at a time,
+		// below.
+		const holding = [];
+		const now = Date.now();
 		membersSnapshot.forEach((doc) => {
 			const member = doc.data();
 			if (!member.fcmToken) {
@@ -128,9 +185,27 @@ exports.sendLeagueNotification = onDocumentCreated(
 			if (tokenToRef.has(member.fcmToken)) {
 				return;
 			}
-			tokens.push(member.fcmToken);
 			tokenToRef.set(member.fcmToken, doc.ref);
+			if (
+				hold.isHeld(member, now) ||
+				hold.heldList(member.heldPushes).length > 0
+			) {
+				holding.push(doc.ref);
+				return;
+			}
+			tokens.push(member.fcmToken);
 		});
+
+		if (holding.length > 0) {
+			const entry = hold.toHeld(notification, now);
+			await Promise.all(
+				holding.map((ref) =>
+					sendOrHold(db, ref, entry).catch((error) => {
+						console.error("Held push failed", error);
+					}),
+				),
+			);
+		}
 
 		if (tokens.length === 0) {
 			return;
@@ -172,5 +247,44 @@ exports.sendLeagueNotification = onDocumentCreated(
 			}
 		});
 		await Promise.all(staleUpdates);
+	},
+);
+
+// A device's hold lifted - its live game over here, it walked out, or it came
+// back after going dark mid game: what was held for it goes out now, as one
+// push. Every write to a member doc lands here, so most return at once.
+exports.releaseHeldNotifications = onDocumentUpdated(
+	"leagues/{code}/members/{uid}",
+	async (event) => {
+		const after = event.data?.after;
+		const member = after?.data();
+		if (
+			!after ||
+			!member ||
+			member.liveHold === true ||
+			hold.heldList(member.heldPushes).length === 0
+		) {
+			return;
+		}
+		const db = getFirestore();
+		const out = await db.runTransaction(async (tx) => {
+			const now = Date.now();
+			const current = (await tx.get(after.ref)).data();
+			if (!current || hold.isHeld(current, now)) {
+				return undefined;
+			}
+			const list = hold.heldList(current.heldPushes);
+			if (list.length === 0) {
+				return undefined;
+			}
+			tx.update(after.ref, { heldPushes: FieldValue.delete() });
+			const data = hold.combine(list, now);
+			return data && current.fcmToken
+				? { token: current.fcmToken, data }
+				: undefined;
+		});
+		if (out) {
+			await sendOne(after.ref, out.token, out.data);
+		}
 	},
 );

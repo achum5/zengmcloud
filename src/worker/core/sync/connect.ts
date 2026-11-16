@@ -83,6 +83,7 @@ import { syncDebugLog } from "./debugLog.ts";
 import { repairLeagueHistory } from "./historyRepair.ts";
 import { checkLeagueIntegrity } from "./leagueIntegrity.ts";
 import { readRecoveryAttempt } from "./recoveryBreadcrumb.ts";
+import { createLiveHoldLease } from "./liveHoldLease.ts";
 import { endLotteryReveal } from "./notifications.ts";
 import {} from "../../../common/syncRetention.ts";
 import type { LiveBroadcastMeta } from "./types.ts";
@@ -684,7 +685,24 @@ setLiveSpoilerProvider(() => {
 // has played out, and comes out again if a broadcast turns out to be live for
 // it (a result that landed before its broadcast was known here).
 let lastLiveSpoilers = "";
+
+// Holding this device's pushes while it is in a live game (see
+// liveHoldLease.ts): its own live sim, from the click to the end of its
+// playback; a league mate's broadcast it is in, or being asked about, till it
+// plays out here or it walks out; a league mate's result held for a broadcast
+// still on its way. The same games the spoiler gate keeps out of the app.
+// One lease per connection, kept up by the health tick and by every change
+// of what the spoiler gate holds.
+let liveHoldLease: ReturnType<typeof createLiveHoldLease> | undefined;
+const inALiveGame = () =>
+	ownLiveSimUnderway() ||
+	(followedBroadcast !== undefined && !followedBroadcast.over) ||
+	liveResultWait.pending();
+const syncLiveHold = () => {
+	liveHoldLease?.sync(inALiveGame());
+};
 export const recheckLiveSpoilers = (force = false) => {
+	syncLiveHold();
 	const key = [...liveSpoilerGids()].sort((a, b) => a - b).join(",");
 	if (key === lastLiveSpoilers && !force) {
 		return;
@@ -1465,6 +1483,7 @@ const stepOutForOwnSim = () => {
 export const beginOwnLiveSimRequest = (): (() => void) => {
 	ownLiveSimRequests += 1;
 	stepOutForOwnSim();
+	syncLiveHold();
 	let done = false;
 	return () => {
 		if (done) {
@@ -2974,6 +2993,10 @@ const doConnectSharedLeague = async ({
 	// Watch the shared auto-play schedule so every device shows the same schedule
 	// + countdown, and keep a transport handle so the simmer can publish its own.
 	currentTransport = transport;
+	liveHoldLease = createLiveHoldLease({
+		write: (held) =>
+			transport.setLiveHold?.(held) ?? Promise.resolve(undefined),
+	});
 	autoPlayUnsub = transport.subscribeAutoPlay?.((autoPlay) => {
 		// Kept here as well as pushed to the UI: the own-game sim gate runs in the
 		// worker and needs to know how close the room's scheduled sim is.
@@ -3148,6 +3171,7 @@ export const teardownSharedLeague = async ({
 	joinFailures.clear();
 	setWatchablePill(undefined);
 	currentTransport = undefined;
+	liveHoldLease = undefined;
 	lastPendingUploads = 0;
 	void toUI("updateLocal", [
 		{

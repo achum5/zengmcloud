@@ -194,4 +194,19 @@ export default defineConfig(
 			"@typescript-eslint/no-var-requires": "off",
 		},
 	},
+	{
+		// The Cloud Functions: CommonJS on Node, deployed on their own.
+		files: ["functions/**/*.js"],
+
+		languageOptions: {
+			sourceType: "commonjs",
+			globals: {
+				...globals.node,
+			},
+		},
+
+		rules: {
+			"@typescript-eslint/no-require-imports": "off",
+		},
+	},
 );

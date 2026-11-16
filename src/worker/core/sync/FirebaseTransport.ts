@@ -394,6 +394,17 @@ export class FirebaseTransport implements SyncTransport {
 		);
 	}
 
+	// The push hold (see liveHoldLease.ts and functions/hold.js). Stamped by
+	// the server's clock, which is the one the function reads it by; and not
+	// touching updatedAt, which says when the push registration was made.
+	async setLiveHold(held: boolean) {
+		await setDoc(
+			doc(this.db, "leagues", this.code, "members", this.clientId),
+			{ liveHold: held, liveHoldAt: serverTimestamp() },
+			{ merge: true },
+		);
+	}
+
 	async ping() {
 		await setDoc(
 			doc(this.db, "leagues", this.code, "members", this.clientId),
