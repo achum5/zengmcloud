@@ -2569,6 +2569,12 @@ const FAKE_INTO = 0.6;
 // A jumper of his this soon after the stretch he stands working his man
 // (ms): the move he sets it up with.
 const PULL_UP_AFTER = 2600;
+// Off the last move he puts on his man, he goes: a drive of his - a run on
+// his dribble at least this long (feet), the rim's way - setting off within
+// this long (ms) of the end of the stretch he stands in, or his pull-up
+// that soon after it; the move put in to end as he goes (see workHisMan).
+const GO_LEAST = 5;
+const GO_SOON = 400;
 const FAKE_WIDE = 0.9;
 const SLICK_HANDLE = 0.78;
 // What it costs to have a man who is no ball handler bring it up himself as
@@ -30680,10 +30686,35 @@ class Director {
 					next.from.pid === s.pid &&
 					!("pid" in next.to) &&
 					next.t0 - g1 < PULL_UP_AFTER;
+				// What he goes into off the end of it, if it is him going: his
+				// drive, setting off as it ends, or his pull-up - picking it up
+				// to go up with it. The last move he puts on his man has him go
+				// off it, not stand a beat after it (put in below, as he goes).
+				const rim = rimPt(tr.team);
+				const drive = tr.moves.find(
+					(m) =>
+						m.t0 >= g1 &&
+						m.t0 <= g1 + GO_SOON &&
+						m.anim === "dribble" &&
+						dist(m.from, m.to) >= GO_LEAST &&
+						(m.to.x - m.from.x) * (rim.x - m.from.x) +
+							(m.to.y - m.from.y) * (rim.y - m.from.y) >
+							0,
+				);
+				const into =
+					most === 0
+						? undefined
+						: drive
+							? drive.t0
+							: pullUp && end - g1 <= GO_SOON + 200
+								? end - 60
+								: undefined;
+				const goMs = 560 + 160 * hash01(s.pid, g1 + 7);
+				const last = into === undefined ? g1 : into - goMs - 250;
 				let t = g0 + 250 + 350 * hash01(s.pid, g0) * (1 - 0.5 * slick);
 				for (let n = 0; n < most; n++) {
 					const ms = 560 + 160 * hash01(s.pid, t + 1);
-					if (t + ms + 200 > g1) {
+					if (t + ms + 200 > last) {
 						break;
 					}
 					const P = this.posAt(s.pid, t);
@@ -30712,7 +30743,8 @@ class Director {
 					// (A fine handler sells it more: the hesitation and the in-and-
 					// out, more than the jab.)
 					const pick = hash01(s.pid, t + 2);
-					const lastOne = pullUp && t + ms + 350 + 760 > g1;
+					const lastOne =
+						into === undefined && pullUp && t + ms + 350 + 760 > g1;
 					// Or he puts it through a combo where he stands, on the beat of
 					// his dribble - back in the hand it started in.
 					const combo =
@@ -30721,7 +30753,7 @@ class Director {
 						handle < COMBO_HANDLE ||
 						hash01(s.pid, t + 4) >= COMBO_ODDS + COMBO_SLICK * slick
 							? undefined
-							: this.comboAt(s.pid, t, g1 - 200, slick);
+							: this.comboAt(s.pid, t, last - 200, slick);
 					if (combo) {
 						grew += combo.added;
 						// (His man down in his stance a step off it.)
@@ -30748,7 +30780,7 @@ class Director {
 						!hesi &&
 						!inOut &&
 						alt < ROCKER_ODDS + ROCKER_SLICK * slick &&
-						t + long + 200 <= g1;
+						t + long + 200 <= last;
 					const shake = inOut && alt < SHAKE_ODDS;
 					const took = rocker ? long : ms;
 					// (The hand it is in then.)
@@ -30786,6 +30818,78 @@ class Director {
 					});
 					added.push(guard, tr);
 					t += took + (350 + 550 * hash01(s.pid, t + 3)) * (1 - 0.45 * slick);
+				}
+				if (into !== undefined) {
+					const t0 = into - goMs;
+					const P = this.posAt(s.pid, t0);
+					// (Clear of all else of his, the moves just put in too - but
+					// for the drive itself, and the dribble it sets off on.)
+					const clear =
+						t0 >= g0 + 100 &&
+						tr.moves.every(
+							(m) => m === drive || m.t1 <= t0 - 200 || m.t0 >= into,
+						) &&
+						tr.acts.every((a) => a.t1 <= t0 - 200 || a.t0 >= into) &&
+						own.every(
+							(x, q) =>
+								q === 0 ||
+								x.t0 <= t0 - 250 ||
+								x.t0 >= into - 100 ||
+								(x as { style: string }).style === "cross",
+						) &&
+						own.every(
+							(x, q) =>
+								(x as { style: string }).style !== "cross" ||
+								(own[q + 1]?.t0 ?? end) <= t0 - 200 ||
+								x.t0 >= into,
+						);
+					let guard: Track | undefined;
+					let G: Pt | undefined;
+					let near = 7.5;
+					for (const o of this.tracks.values()) {
+						if (o.team === tr.team || !clear) {
+							continue;
+						}
+						const q = this.posAt(o.pid, t0);
+						const d = dist(q, P);
+						if (d < near) {
+							near = d;
+							guard = o;
+							G = q;
+						}
+					}
+					if (guard && G && (P.x - COURT_W / 2) * face >= 1) {
+						// Into his pull-up, the hesitation; into a drive, that or
+						// the in-and-out, or the jab - and gone.
+						const pick = hash01(s.pid, into + 5);
+						const hesi = !drive || pick < 0.45;
+						const inOut = !hesi && pick < 0.8;
+						const hand =
+							(own.findLast((x) => x.t0 <= t0) as { hand?: Hand } | undefined)
+								?.hand ?? "R";
+						tr.acts.push({
+							t0,
+							t1: into,
+							anim: hesi
+								? "dribbleHesi"
+								: inOut
+									? hand === "L"
+										? "dribbleInOutL"
+										: "dribbleInOutR"
+									: "dribbleJab",
+							look: { ...G },
+						});
+						const u = unitVec(P, G);
+						const k = hesi ? -0.6 : inOut ? 0 : 1.1;
+						const side = inOut ? (hand === "L" ? -0.9 : 0.9) : 0;
+						(guard.nudges ??= []).push({
+							t0: t0 + 120,
+							t1: into + 240,
+							dx: u.x * k + u.y * side,
+							dy: u.y * k - u.x * side,
+						});
+						added.push(guard, tr);
+					}
 				}
 			}
 			i += grew;

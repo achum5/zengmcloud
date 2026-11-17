@@ -312,6 +312,18 @@ lockstep, repeats; film.
     (director3, 100 screens): set late 14 -> 13. Left: the screener 2-6 ft
     off his spot as the man comes by (to set it in time he'd have to be
     moving into it).
+- **2026-11-17, off the last move he goes.** Measured on B2's games:
+  out of a hesitation, a jab or an in-and-out the man with the ball was
+  stood there 0.6 s later 25 times in 27. Working his man where he stands
+  (workHisMan), when the stretch ends in his drive (a run on his dribble
+  of 5 ft or more the rim's way, setting off within 400 ms) or his
+  pull-up, the moves he puts on his man stop short of it and a last one -
+  into the pull-up the hesitation, into a drive that, the in-and-out or
+  the jab - ends as he goes. Few stretches end in one (most end in a pass
+  or a short probe forward): hesitations 62 -> 65, in-and-outs 21 -> 25,
+  jabs 48 -> 49 in test games a, b. "A handler now and then gets his
+  pull-up off a hesitation" passes again. Seen on film: a screener set
+  chest to chest between the man with the ball and his man - next.
 - **Test timeouts on a 4-core machine.** The footwork tests' 120 s limits
   are tight here: master itself times out on "a shooter drifting along
   the arc side-steps" (152 s) run beside one other job.

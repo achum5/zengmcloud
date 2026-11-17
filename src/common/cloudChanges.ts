@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 342,
+		date: "2026-11-17",
+		text: "3D: when a ball handler sizes up his man and then drives or pulls up, his last move (a hesitation, an in-and-out or a jab) leads straight into it instead of him standing there after it.",
+	},
+	{
 		n: 341,
 		date: "2026-11-17",
 		text: "3D: on a pick-and-roll the screener's defender is set for it as the screen comes: sitting back near the foul line in a drop, or up level with the screen to hedge or switch. Screens are set before the ball handler comes by, a defender who ends up right on a jump shooter always gets a hand up, and a post player's defender is on his back as he starts backing him down.",
