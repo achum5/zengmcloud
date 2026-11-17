@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 329,
+		date: "2026-11-17",
+		text: "Shared leagues: catching up after time away is quicker when the connection stalls partway. The app no longer stops to reconnect in the middle; it fetches the rest another way and reconnects once you're caught up.",
+	},
+	{
 		n: 328,
 		date: "2026-11-17",
 		text: "Smart CPU now works with Realistic Front Offices off: free agency, re-signing, the trade screens and your trade difficulty stay as they are, but CPU teams trade with each other all season, sign, re-sign and draft by what actually helps them win, and won't take a trade that goes against where they're headed or helps a rival contender more than it helps them.",

@@ -1623,6 +1623,11 @@ export class SyncEngineV2 {
 		// logging an anonymous {} - "delta@61 timed out" is diagnosable from a
 		// field capture, "error: {}" is not.
 		let step = "state";
+		// Set once two reads in a row never came down the channel and the
+		// network brought both quickly around it: the rest of this pass reads
+		// around the channel too, and the channel is cycled once the walk is
+		// done (see the walk below).
+		let aroundChannel = false;
 		try {
 			// A bounded number of rounds: each round re-reads the pointer, so a
 			// room advancing while we walk simply extends the walk. Two rounds
@@ -1851,9 +1856,20 @@ export class SyncEngineV2 {
 					if (!this.transport.fetchV2Delta) {
 						return Promise.resolve(undefined);
 					}
+					const viaChannel = this.transport.fetchV2Delta.bind(this.transport);
+					const direct = aroundChannel
+						? this.transport.fetchV2DeltaDirect?.bind(this.transport)
+						: undefined;
 					const sentAt = Date.now();
 					return withTimeout(
-						this.transport.fetchV2Delta(version),
+						direct
+							? // Around the channel; through it after all if that brings
+								// nothing.
+								direct(version).then(
+									(value) => value ?? viaChannel(version),
+									() => viaChannel(version),
+								)
+							: viaChannel(version),
 						CATCHUP_READ_TIMEOUT_MS,
 					).then(
 						(value) => {
@@ -1999,26 +2015,29 @@ export class SyncEngineV2 {
 							this.lastReadRescued = false;
 						}
 						if (
+							!aroundChannel &&
 							rescuedMs !== undefined &&
 							rescuedTwice &&
 							rescuedMs <= this.readRescueQuickMs
 						) {
 							// Two reads in a row the channel never delivered, and the
 							// network brought this one quickly around it: the channel is
-							// what is stuck. The same cycle a timed-out read gets, minus the
-							// wait for the timeout. The settle timer's pass carries on
-							// from here. (After just one, the next read is rescued sooner
-							// instead - a cycle costs seconds before reads flow again.)
-							this.lastCatchupFailureWasTimeout = true;
-							if (await this.maybeCycleNetwork("catchup")) {
-								if (this.appliedMirror >= this.roomVersion) {
-									this.notifiedFailingStep = undefined;
-									this.clearCatchUpProgress();
-									return true;
+							// what is stuck. (After just one, the next read is rescued
+							// sooner instead.) The rest of the walk is read around it,
+							// and the channel is cycled once the walk is done. Cycling
+							// it here stopped the walk for the cycle and its settle,
+							// and the new channel stuck again a few dozen versions on:
+							// the owner's capture (2026-11-17), 142 versions in 29s, 13
+							// of them spent on two stalls like this, while the reads
+							// around the channel took 0.15-0.6s.
+							aroundChannel = true;
+							// What is still queued on the channel is read again around
+							// it.
+							for (const queued of prefetched.keys()) {
+								if (queued > version && !readMs.has(queued)) {
+									prefetched.delete(queued);
 								}
-								return false;
 							}
-							this.lastCatchupFailureWasTimeout = false;
 						}
 					}
 				} finally {
@@ -2038,6 +2057,25 @@ export class SyncEngineV2 {
 							planned: plan.versions.length,
 						});
 					}
+				}
+				// A walk read around a stuck channel: the channel is cycled now,
+				// for the live listener and the reads after this walk - the same
+				// cycle a timed-out read gets, minus the wait for the timeout. The
+				// settle timer's pass carries on from here if the room moved on.
+				if (aroundChannel) {
+					aroundChannel = false;
+					this.lastCatchupFailureWasTimeout = true;
+					if (await this.maybeCycleNetwork("catchup")) {
+						if (this.appliedMirror >= this.roomVersion) {
+							// (The walk got through: a wedge after this is a new one.)
+							this.wedgeRemedyCount = 0;
+							this.notifiedFailingStep = undefined;
+							this.clearCatchUpProgress();
+							return true;
+						}
+						return false;
+					}
+					this.lastCatchupFailureWasTimeout = false;
 				}
 				if (!progressed) {
 					return false;

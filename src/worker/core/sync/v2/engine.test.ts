@@ -2194,6 +2194,57 @@ describe("SyncEngineV2", () => {
 		engine.stop();
 	});
 
+	// The owner's capture (2026-11-17): 142 versions in 29s, 13 of them spent
+	// stopping for a cycle and its settle twice, while the reads around the
+	// channel took 0.15-0.6s. Once the channel is shown stuck, the rest of the
+	// walk is read around it - no waiting on it, no stopping - and the channel
+	// is cycled when the walk is done.
+	test("a walk that finds the channel stuck reads the rest around it, then cycles it", async () => {
+		const room = new Room();
+		await seedVersions(room, 8);
+
+		(idb as any).league = makeLeagueDb({ players: [] });
+		const transport = new V2Transport("B", room);
+		const realFetchV2Delta = transport.fetchV2Delta.bind(transport);
+		const channelReads: number[] = [];
+		transport.fetchV2Delta = (version: number) => {
+			channelReads.push(version);
+			return new Promise(() => {});
+		};
+		const directReads: number[] = [];
+		(transport as any).fetchV2DeltaDirect = (version: number) => {
+			directReads.push(version);
+			return realFetchV2Delta(version);
+		};
+		let cycles = 0;
+		let appliedAtCycle = -1;
+		(transport as any).cycleNetwork = async () => {
+			cycles += 1;
+			appliedAtCycle = await readAppliedVersion();
+		};
+		const engine = new SyncEngineV2(transport);
+		(engine as any).readRescueAfterMs = 50;
+
+		assert.ok(await engine.catchUp(), "the whole walk lands in one pass");
+		assert.strictEqual(await readAppliedVersion(), 8);
+		assert.strictEqual(cycles, 1);
+		assert.strictEqual(appliedAtCycle, 8, "cycled once the walk was done");
+		assert.ok(
+			channelReads.every((version) => version <= 5),
+			`nothing past the first read-ahead went down the channel: ${channelReads}`,
+		);
+		assert.deepStrictEqual(
+			[...new Set(directReads)].sort((a, b) => a - b),
+			[1, 2, 3, 4, 5, 6, 7, 8],
+		);
+		assert.strictEqual(
+			directReads.filter((version) => version > 2).length,
+			6,
+			"after the switch, each version is read around the channel once - none waits for a rescue",
+		);
+		engine.stop();
+	});
+
 	// Field capture: every cycle after a rescue cost ~5s before the next read
 	// got through. A rescue that was slow itself means the link is slow, and a
 	// new channel cannot fix that.
