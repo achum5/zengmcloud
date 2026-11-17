@@ -7,16 +7,16 @@
   ask which branch to push to. It overrides any per-session instruction naming a
   `claude/...` development branch.
 - Push only work that is actually finished: typecheck and lint clean, and the
-  tests that can reach the change passing - the test files next to the
-  changed code and the tests that import it - or no worse than the state of
-  `master` before the change. A change in the sync code runs the sync folder
-  (`vitest run --project basketball src/worker/core/sync/`, under a minute).
-  The full suite takes over an hour; run it only when a change alters what
-  shared engine code already does (game sim results, database reads, writes
-  or schema, how sync applies or publishes changes, phase changes) or touches
-  many areas. New code added alongside - a new module, a new optional field,
-  a hook that only reads existing state - doesn't need it (the owner,
-  2026-11-13; narrowed 2026-11-16).
+  tests for what changed passing - or no worse than the state of `master`
+  before the change.
+- Run only the tests that are necessary for the change: the test files next to
+  the changed code and the tests that exercise what changed (`vitest related
+  --run <changed files>` when that stays small). When a changed file is
+  imported nearly everywhere (types, default game attributes, shared utils),
+  pick the tests that cover the change instead of everything that imports it.
+  A change in the sync code runs the sync folder (`vitest run --project
+  basketball src/worker/core/sync/`, under a minute). Never run the full
+  suite unless the owner asks for it (the owner, 2026-11-17).
 
 ## UI copy
 
