@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 336,
+		date: "2026-11-17",
+		text: "Shared leagues: while free agency is being simmed, league mates' signings and other moves wait until the sim is uploaded, the same as during the season, so a long free agency day can't overwrite them.",
+	},
+	{
 		n: 335,
 		date: "2026-11-17",
 		text: "Shared leagues: notifications wait again while you're playing or watching a live game, so they don't spoil a score, and come through as one when it ends. This time a phone closed in the middle of a game still gets them within about 15 minutes, and nothing waits more than 45.",

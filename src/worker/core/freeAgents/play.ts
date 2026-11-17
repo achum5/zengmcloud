@@ -15,6 +15,11 @@ import { collegeRecruitingDay } from "../college/recruiting.ts";
 import { recomputeLocalUITeamOvrs } from "../../util/recomputeLocalUITeamOvrs.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { runAfterActionHook } from "../sync/afterActionHook.ts";
+import {
+	beginRoomAdvance,
+	endRoomAdvance,
+	holdRoomForAdvance,
+} from "../sync/advanceLease.ts";
 
 /**
  * Simulates one or more days of free agency.
@@ -35,6 +40,9 @@ async function play(
 
 		// Check to see if free agency is over
 		if (g.get("daysLeft") <= 0) {
+			// The room still held busy for the phase change (its front offices
+			// may hold the worker past the lease stamped earlier).
+			await holdRoomForAdvance();
 			await phase.newPhase(PHASE.PRESEASON, conditions);
 		}
 	};
@@ -43,6 +51,9 @@ async function play(
 	const cbRunDay = async () => {
 		// This is called if there are remaining days to simulate
 		const cbYetAnother = async () => {
+			// A day holds the room busy, renewed before each day: the smart CPU
+			// may hold the worker for minutes on one (advanceLease.ts).
+			await holdRoomForAdvance();
 			if (g.get("college")) {
 				await collegeRecruitingDay();
 			} else {
@@ -97,10 +108,14 @@ async function play(
 			// rollover they end in - the biggest changeset of the year - would sit
 			// unpublished until some later unrelated action.
 			changeTracker.beginSim("playMenu.day");
+			// The room held busy from the first day to the last, however long
+			// after the call that started it - as game days are (game/play.ts).
+			beginRoomAdvance();
 			try {
 				await cbRunDay();
 			} finally {
 				changeTracker.endSim("playMenu.day");
+				endRoomAdvance();
 			}
 			await runAfterActionHook("playMenu", "day");
 		}
