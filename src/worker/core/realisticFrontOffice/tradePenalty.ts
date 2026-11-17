@@ -1,3 +1,8 @@
+import { defaultGameAttributes } from "../../../common/defaultGameAttributes.ts";
+import { g, helpers } from "../../util/index.ts";
+import { signingDifficulty } from "../../util/difficulty.ts";
+import { realisticFrontOfficesOn } from "./isOn.ts";
+
 // THE TRADE PENALTY, priced. Players dislike teams that trade a lot: the game
 // keeps a count of players each team has traded away - this season's at 0.75,
 // last season's at 0.5, the one before at 0.25 - and past 5 every further one
@@ -36,13 +41,46 @@ export const moodShiftFromTrading = (
 	);
 };
 
-// A re-signing chance moved by that much mood, on the mood model's own curve
-// (player.moodInfo: probWilling = 1 / (1 + exp(-0.7 * mood))).
+// The mood model's own curve (player.moodInfo: probWilling =
+// 1 / (1 + exp(-0.7 * mood))): log odds of being willing per point of mood.
+export const MOOD_SLOPE = 0.7;
+
+// A re-signing chance moved by that much mood, on the mood model's curve.
 export const shiftRetention = (retention: number, moodShift: number) => {
 	if (moodShift === 0 || retention >= 1) {
 		return retention;
 	}
 	const p = Math.min(1 - 1e-6, Math.max(1e-6, retention));
-	const logit = Math.log(p / (1 - p)) + 0.7 * moodShift;
+	const logit = Math.log(p / (1 - p)) + MOOD_SLOPE * moodShift;
 	return 1 / (1 + Math.exp(-logit));
+};
+
+// How hard trading hits one player's mood, as player/moodComponents.ts
+// works it out from the count: the league's difficulty scales a team's mood
+// negatives (a CPU team's by vanilla's own rule, a human's by its
+// difficulty; not at all with realistic front offices), and a Loyal player
+// minds trades 2.5 times as much. Priced on the count alone, a contender
+// trading all season didn't see that its Loyal star would walk (League 5:
+// SA 2031, Wembanyama).
+export const tradeMoodScale = (
+	p: { moodTraits?: readonly string[] },
+	tid: number,
+) => {
+	let scale = 1;
+	if (!realisticFrontOfficesOn()) {
+		const spectator = g.get("spectator");
+		const difficulty = spectator
+			? defaultGameAttributes.difficulty
+			: signingDifficulty();
+		if ((g.get("userTids") as number[]).includes(tid) && !spectator) {
+			scale = difficulty >= 0 ? 1 + difficulty : 1 / (1 - difficulty);
+		} else {
+			const amount = 0.5 - helpers.bound(difficulty / 2, -0.25, 0.25);
+			scale = amount > 0 ? 1 + amount : 1 / (1 - amount);
+		}
+	}
+	if (g.get("playerMoodTraits") && p.moodTraits?.includes("L")) {
+		scale *= 2.5;
+	}
+	return scale;
 };

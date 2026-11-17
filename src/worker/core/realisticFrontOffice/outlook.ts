@@ -15,11 +15,14 @@ import { last } from "../../../common/utils.ts";
 import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
 import { smartVanillaOn } from "./isOn.ts";
+import { defaultGameAttributes } from "../../../common/defaultGameAttributes.ts";
 import { marketSalaries, pickSalaries, signingsWith } from "./payroll.ts";
 import { pickPlayer } from "./pickValue.ts";
 import {
+	MOOD_SLOPE,
 	moodShiftFromTrading,
 	shiftRetention,
+	tradeMoodScale,
 	type TradedAway,
 } from "./tradePenalty.ts";
 import {
@@ -30,7 +33,12 @@ import {
 import getDaysLeftSchedule from "../season/getDaysLeftSchedule.ts";
 import { normalCdf, simulateSeason, winProbability } from "./seasonSim.ts";
 import { fitLogistic } from "./logistic.ts";
-import { clearMarketView, offerSettings, stayChance } from "./offers.ts";
+import {
+	clearMarketView,
+	offerSettings,
+	stayChance,
+	willingChance,
+} from "./offers.ts";
 import { buildDeadlineView, type DeadlineView } from "./timing.ts";
 import {
 	expectedRosterPoints,
@@ -332,6 +340,35 @@ export const projectPlayer = (p: Player, season: number) => {
 	return projection;
 };
 
+// The share of season `index` (1 the next) that a player hurt now misses.
+// What is left of this season comes off first (offset 0: in season, where
+// `gamesRemaining` are left; in the offseason that has happened), then each
+// offseason heals a season's worth of games (newPhaseBeforeDraft) and each
+// season played takes off its games. Before this, an injury counted only in
+// this season: in free agency, where every season priced is a later one, a
+// player out 194 more games was priced as fully fit (League 5: GSW gave a
+// torn-ACL Arenas $32.4M through 2039 on day 1; he played 26 games for it).
+export const injuredShare = (
+	out: number,
+	index: number,
+	offset: number,
+	gamesRemaining: number,
+) => {
+	if (out <= 0 || index <= 0) {
+		return 0;
+	}
+	const numGames = Math.max(1, g.get("numGames"));
+	const heal = defaultGameAttributes.numGames[0]!.value;
+	let left = out;
+	if (offset === 0) {
+		left = Math.max(0, left - gamesRemaining - heal);
+	}
+	for (let k = 1; k < index && left > 0; k++) {
+		left = Math.max(0, left - numGames - heal);
+	}
+	return Math.min(1, left / numGames);
+};
+
 // One player's line for a season of the outlook: what he plays like, and how
 // much of that season we expect to have him.
 const computeSeasonLine = (
@@ -358,7 +395,9 @@ const computeSeasonLine = (
 	}
 	const projection = projectPlayer(p, season);
 	const age = season - p.born.year;
-	let availability = 1;
+	// Hurt now and out past this season: the seasons it still covers.
+	let availability =
+		1 - injuredShare(p.injury.gamesRemaining, index, offset, gamesRemaining);
 	// Every retirement check between now and then: one as each season ends,
 	// this season's too unless it is already behind us (the offseason).
 	let maxOvr = Math.max(...p.ratings.map((row) => row.ovr));
@@ -788,6 +827,13 @@ export const outlookSettings = {
 	// in every league (about 7 points more by the fifth season), FA prices
 	// about the same.
 	moneyPerCap: 0.03,
+	// The same with the smart CPU on vanilla's rules: nothing (owner,
+	// 2026-11-17: CPU teams are run by their GMs, focused on winning, with no
+	// owner to spend for). League 5 under 0.03: $7.6 billion of luxury tax,
+	// but that was not the harm - teams with no title shot let young players
+	// walk and left room unspent because a few hundredths of a title in money
+	// outweighed what those players did for them.
+	smartMoneyPerCap: 0,
 	// And payroll under the cap, past the league's minimum, with what the
 	// room is expected to buy; off, money costs only past the cap.
 	moneyUnderCap: true,
@@ -912,6 +958,7 @@ export const teamOutlookSettings = new Map<
 			| "letGo"
 			| "letGoRoomTolerance"
 			| "moneyPerCap"
+			| "smartMoneyPerCap"
 			| "moneyUnderCap"
 			| "knownClasses"
 			| "measuredUncertainty"
@@ -938,6 +985,7 @@ const outlookSettingFor = <
 		| "letGo"
 		| "letGoRoomTolerance"
 		| "moneyPerCap"
+		| "smartMoneyPerCap"
 		| "moneyUnderCap"
 		| "knownClasses"
 		| "measuredUncertainty"
@@ -1042,6 +1090,15 @@ export const ensureRetention = async (
 	for (const p of players) {
 		const key = retentionKey(p.pid, tid);
 		if (!outlook.retention.has(key)) {
+			if (smartVanillaOn()) {
+				// On vanilla's rules: his chance of being willing to re-sign with
+				// this team, as the game decides it (willingChance). Whether
+				// the team wants him at his ask is its own decision (letGo).
+				const stay = await willingChance(p, tid);
+				outlook.stays?.set(key, stay);
+				outlook.retention.set(key, Math.round(stay * 1000) / 1000);
+				continue;
+			}
 			const asked = !outlookSettings.teamRetention && p.tid >= 0 ? p.tid : tid;
 			// His chance of taking his asking price from the team, against
 			// testing the market - as he chooses in the offer market - turned
@@ -2055,6 +2112,9 @@ export const teamPoints = (
 ) => {
 	// Each player's contract, read once: every season below asks for it.
 	const contracts = players.map(contractOf);
+	// On vanilla's rules a player's retention is his chance of being willing
+	// (ensureRetention), not the offer market's chance of his staying.
+	const vanillaStay = smartVanillaOn();
 	const retentionFor = (p: Player, i: number) => {
 		let r = retentionOf(outlook, p.pid, tid);
 		if (losing) {
@@ -2064,7 +2124,10 @@ export const teamPoints = (
 			if (mood !== 0 && stay !== undefined) {
 				const s = Math.min(1 - 1e-6, Math.max(1e-6, stay));
 				const logit = Math.log(s / (1 - s)) + losing.slope * mood;
-				r = keptFromStay(1 / (1 + Math.exp(-logit)), p, tid);
+				const shifted = 1 / (1 + Math.exp(-logit));
+				r = vanillaStay
+					? Math.round(shifted * 1000) / 1000
+					: keptFromStay(shifted, p, tid);
 			}
 		}
 		return trading
@@ -2075,7 +2138,7 @@ export const teamPoints = (
 							trading.tradedAway,
 							trading.extra,
 							contracts[i]!.exp - outlook.season,
-						),
+						) * tradeMoodScale(p, tid),
 					) * 1000,
 				) / 1000
 			: r;
@@ -2797,7 +2860,11 @@ export const losingShifts = (
 	return {
 		mood,
 		winp,
-		slope: offerSettings.moodWeight / offerSettings.temperature,
+		// On vanilla's rules, mood moves his willingness on the game's own
+		// curve; with realistic front offices, his choice in the offer market.
+		slope: smartVanillaOn()
+			? MOOD_SLOPE
+			: offerSettings.moodWeight / offerSettings.temperature,
 	};
 };
 
@@ -2819,7 +2886,16 @@ export const teamStrengths = (
 		outlook.meanPoints[y]! -
 		injuryShiftFor(outlook, tid, y) +
 		(y === 0 ? (outlook.recordEdge.get(tid) ?? 0) : 0);
-	const perCap = outlookSettingFor(tid, "moneyPerCap");
+	// The smart CPU on vanilla's rules runs a team from the GM's chair
+	// (owner, 2026-11-17): no owner, no profit, so money costs it nothing in
+	// itself. Salary still costs what it does to winning - the room it
+	// takes, which would buy other players (signingsWith), and the trades it
+	// makes harder. (Vanilla sets every contract's terms; with realistic
+	// front offices a team picks what it offers, and free money there meant
+	// the max for anyone it wanted to keep.)
+	const perCap = smartVanillaOn()
+		? outlookSettingFor(tid, "smartMoneyPerCap")
+		: outlookSettingFor(tid, "moneyPerCap");
 	const salaryCap = g.get("salaryCap");
 	const floor = outlookSettingFor(tid, "moneyUnderCap")
 		? g.get("minPayroll") / salaryCap

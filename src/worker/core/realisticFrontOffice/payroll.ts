@@ -173,6 +173,10 @@ export const setFreeAgentPoolLeft = (share: number) => {
 	poolLeft = { key: poolKey(), share };
 };
 
+// Today's share, when it has been measured today (free agency only).
+export const freeAgentPoolShare = () =>
+	poolLeft?.key === poolKey() ? poolLeft.share : undefined;
+
 // The free agents a team with this much room is expected to sign, each with
 // the chance it does. `duringFreeAgency`: room in the free agency under way,
 // whose chances shrink as the best free agents sign.

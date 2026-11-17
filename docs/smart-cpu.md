@@ -1089,3 +1089,96 @@ Ten-season runs drift apart after the first year, so the bubble's share
 there says little; the paired seasons are the test of ambition. Payrolls
 rise past the tax line in both runs (top payroll $318M before, $362M
 after, tax line $200M) - money is a small cost by the owner's call; open.
+
+## League 5: every team reviewed, and the core fixed (2026-11-17)
+
+The owner ran an all-CPU league on the vanilla sub-mode, from 2027 to the 2040
+preseason, with BOS as the user team on Auto Play. All 32 teams were then
+reviewed season by season, covering every team-building move: 474 trades, 943
+free agent signings, 1,118 re-signings, every player who walked, cap room at
+each moment (payrolls rebuilt from the events to within $1.4M), the draft, the
+deadline and the tax. The reviews and their tools are kept out of the repo
+(a scratchpad); what they found, and what changed in the core:
+
+**What it did badly, and why.**
+
+- **Cap room sat idle** (116 summers flagged):
+  - CLE $131.9M, HOU $111M and LAL $109M with day-1 stars signing elsewhere.
+  - Minimum-payroll penalties paid while teams held room.
+
+  Cause, in what the GM sees: a team's unspent room is priced by the free
+  agents it is expected to land (payroll.ts signingsWith), shrinking each day
+  as the pool empties - but that pool was only measured in the realistic
+  mode's free agency. Under vanilla rules it never was, so every real free
+  agent had to beat a signing that no longer existed, all summer. Room was
+  spent only once the season began and the imagined signing vanished.
+- **Losing teams lost good players for nothing.** CPU veterans rated 55+
+  re-signed 49% of the time (BOS, a user team without vanilla's -3: 93%).
+  Rookie-deal players rated 55+ walked 33 times, 28 of those from losing,
+  low-hype teams; this league lets rookies refuse.
+- **Five rookie-deal players on winning teams were let go at near-max asks**
+  (Erez Cohen, the next season's MVP; Hoskins; Ortiz; Duru; Mirkovic). Cause:
+  the flat money cost (0.03 titles per cap a season) outweighed what they did
+  for a team with no title shot.
+- **Swaps of similar ratings where production was nothing alike.** WAS gave
+  Okokoh (33.9 WS over the next three seasons) for Quinton Wilson (-0.3),
+  then PHI gave Bol (27.0) for the same Wilson. On the league's own data,
+  production beyond what a player's full ratings predict carries over a
+  season (r 0.51), and last season's adds 7 points of R² to next season's
+  WS/48 (0.71 to 0.78). Not yet in what the GM sees; next.
+- **Deals the GM scored as a big gain for both sides were the most
+  lopsided:** a median gap of 6.0 WS against 2.8 for marginal ones. When it
+  thinks both sides win big, it is misreading one of them.
+- **A long injury counted only in the current season.** GSW gave Arenas $32.4M
+  through 2039 on day 1 of free agency while he was out 194 more games.
+- **Clearing room for a free agent didn't exist under vanilla rules.**
+  Wembanyama (78) signed for $54.9M in 2031 while five teams were $5-17M
+  short with spare salary.
+- **The trade penalty ignored traits.** A Loyal player minds trades 2.5
+  times as much; SA traded all through its 2031 title season and its Loyal
+  star refused to re-sign.
+
+**What changed (vanilla sub-mode unless noted).**
+
+1. **The pool is measured every day of free agency.** It is measured before
+   CPU teams sign and before each market moment (smartCpu/vanilla.ts
+   noteVanillaPool, the same notePoolLeft). The GM's view is rebuilt when the
+   pool's share changes, since one outlook serves all of free agency
+   (signing.ts viewFor).
+2. **CPU teams look every day of free agency** (autoSign.ts). Vanilla's
+   random days off (75%, 90% if rebuilding) are gone in free agency; whether
+   to sign now or wait is the worth's call.
+3. **Retention is vanilla's own willingness** (offers.ts willingChance,
+   outlook.ts ensureRetention): his mood toward that team, CPU teams' extra
+   testing, the difficulty, his traits. The offer market's stay model and
+   KEPT tables are for realistic front offices. A season's record moves it
+   on the game's own curve (MOOD_SLOPE).
+4. **No money cost** (owner, 2026-11-17: CPU teams are run by their GMs, who
+   spend to win; there is no owner). `smartMoneyPerCap` is 0. Salary still
+   costs the room it takes and the trades it makes harder. With realistic
+   front offices the old cost stays: there a team picks what it offers, and
+   free money meant the max for anyone.
+5. **A current injury carries into the seasons it covers** (outlook.ts
+   injuredShare: what is left of this season, then each offseason's healing
+   and each season's games). This applies with either rule set.
+6. **Clearing room** (smartCpu/clearRoom.ts). In free agency, for a free
+   agent it can't pay who would be among its three best, a team looks for a
+   trade sending up to three players (and up to two picks) to a team with the
+   room to take them, then signs him. The trade and the signing are judged
+   together, against its best signing without trading. The taker must gain
+   too.
+7. **The trade penalty is scaled per player** (tradePenalty.ts
+   tradeMoodScale): Loyal ×2.5, and the difficulty's scaling of mood
+   negatives as the game applies it. This applies with either rule set.
+
+**Next.**
+
+- Production in what the GM sees: measure the strength model's per-player
+  read against on-court results for persistent misses, then blend a track
+  record in.
+- Why losing teams don't sell expiring players who will refuse: replay a
+  deadline in a fresh run.
+- Whether a re-signed contract should count as an asset (its trade value)
+  once money is out: wait for the next league to show whether it is still
+  needed.
+- Vanilla's -3 for CPU teams' players re-signing: the owner's call.

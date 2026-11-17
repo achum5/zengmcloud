@@ -1,10 +1,14 @@
+import { PHASE, PLAYER } from "../../../common/constants.ts";
 import type { Player } from "../../../common/types.ts";
 import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
 import { getContractDemand } from "../contract/index.ts";
+import { notePoolLeft } from "../realisticFrontOffice/freeAgency.ts";
+import { smartVanillaOn } from "../realisticFrontOffice/isOn.ts";
 import { currentOutlook } from "../realisticFrontOffice/market.ts";
 import { ensureRetention } from "../realisticFrontOffice/outlook.ts";
 import { timed } from "./clock.ts";
+import { clearRoomNow, clearRoomSettings, roomToSign } from "./clearRoom.ts";
 import { prepareSignings, smartSigningPrice, viewFor } from "./signing.ts";
 
 // THE SMART CPU ON VANILLA'S RULES (realisticFrontOffice/isOn.ts,
@@ -13,6 +17,22 @@ import { prepareSignings, smartSigningPrice, viewFor } from "./signing.ts";
 // within vanilla's cap rules - but whom a CPU team signs, and whether it
 // re-signs a player, is the smart CPU's call: what he does for the team's
 // title chances on those terms, his salary counted (smartSigningPrice).
+
+// WHAT ROOM STILL BUYS. A team's unspent room is priced by the free agents
+// it is expected to land with it (payroll.ts, signingsWith), and in free
+// agency by how much of the opening pool is still out there - measured each
+// day, here as in the realistic mode's free agency. Unmeasured, the room was
+// priced all summer as if the whole market were still there: every real free
+// agent had to beat a signing that no longer existed, and teams with room
+// signed nobody until the season began (League 5, docs/smart-cpu.md).
+export const noteVanillaPool = async () => {
+	if (!smartVanillaOn() || g.get("phase") !== PHASE.FREE_AGENCY) {
+		return;
+	}
+	await notePoolLeft(
+		await idb.cache.players.indexGetAll("playersByTid", PLAYER.FREE_AGENT),
+	);
+};
 
 // Free agents a CPU team weighs on a day it signs, the best by value first:
 // the rest never come close.
@@ -59,13 +79,29 @@ export const smartVanillaSigning = (
 				tried.push(p);
 			}
 		}
-		if (tried.length === 0) {
+		// In free agency, a free agent it can't pay may be worth making room
+		// for (clearRoom.ts): only one who would be among its three best.
+		const ovrOf = (x: Player) => x.ratings.at(-1)!.ovr;
+		const third = roster.map(ovrOf).sort((a, b) => b - a)[2] ?? -Infinity;
+		const targets =
+			g.get("phase") === PHASE.FREE_AGENCY
+				? available
+						.filter(
+							(p) =>
+								!tried.includes(p) &&
+								getContractDemand(p).amount > g.get("minContract") &&
+								ovrOf(p) >= third,
+						)
+						.slice(0, clearRoomSettings.targets)
+				: [];
+		if (tried.length === 0 && targets.length === 0) {
 			return undefined;
 		}
 		const outlook = await currentOutlook();
-		await prepareSignings(outlook, tried);
+		await prepareSignings(outlook, [...tried, ...targets]);
 		await ensureRetention(outlook, tried, tid);
-		const h = await viewFor(outlook).holdingsOf(tid);
+		const view = viewFor(outlook);
+		const h = await view.holdingsOf(tid);
 		let best: { p: Player; net: number } | undefined;
 		for (const p of tried) {
 			const c = getContractDemand(p);
@@ -86,6 +122,12 @@ export const smartVanillaSigning = (
 							(p.value === best.p.value && p.pid < best.p.pid))))
 			) {
 				best = { p, net };
+			}
+		}
+		if (targets.length > 0) {
+			const plan = await roomToSign(view, tid, targets, best?.net ?? 0);
+			if (plan && (await clearRoomNow(view, tid, plan))) {
+				return plan.p;
 			}
 		}
 		return best?.p;

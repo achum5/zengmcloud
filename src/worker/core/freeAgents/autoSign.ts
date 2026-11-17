@@ -1,4 +1,4 @@
-import { PLAYER } from "../../../common/constants.ts";
+import { PHASE, PLAYER } from "../../../common/constants.ts";
 import { player, team } from "../index.ts";
 import getBest from "./getBest.ts";
 import { getContractDemand } from "../contract/index.ts";
@@ -13,7 +13,7 @@ import {
 	realisticFreeAgencyOn,
 	smartVanillaOn,
 } from "../realisticFrontOffice/isOn.ts";
-import { smartVanillaSigning } from "../smartCpu/vanilla.ts";
+import { noteVanillaPool, smartVanillaSigning } from "../smartCpu/vanilla.ts";
 import { smartDecidesHere } from "../smartCpu/decidesHere.ts";
 import { freeAgencyDay as realisticFrontOfficeFreeAgencyDay } from "../realisticFrontOffice/freeAgency.ts";
 
@@ -48,6 +48,18 @@ const autoSign = async () => {
 		return;
 	}
 
+	// The smart CPU prices a team's room by what is left to buy with it, so
+	// the pool is measured before anyone signs (smartCpu/vanilla.ts).
+	await noteVanillaPool();
+	// In free agency the smart CPU's teams look every day, as a human GM
+	// does: whether a free agent is worth signing now or worth waiting on is
+	// its worth's call. Vanilla's random days off (three days in four, nine in
+	// ten rebuilding) left teams with room out on the days the best free
+	// agents signed (League 5: rebuilders sat out days 1-5 more often than
+	// not).
+	const looksEveryDay =
+		smartVanillaOn() && g.get("phase") === PHASE.FREE_AGENCY;
+
 	// List of free agents, sorted by value
 	let playersSorted = orderBy(players, "value", "desc");
 
@@ -66,7 +78,9 @@ const autoSign = async () => {
 		}
 
 		let probSkip;
-		if (__SPORT === "basketball") {
+		if (looksEveryDay) {
+			probSkip = 0;
+		} else if (__SPORT === "basketball") {
 			probSkip = t.strategy === "rebuilding" ? 0.9 : 0.75;
 		} else {
 			probSkip = 0.5;

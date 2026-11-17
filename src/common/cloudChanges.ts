@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 345,
+		date: "2026-11-17",
+		text: "Smart CPU: CPU teams now spend to win, not to save money. They use their cap room in free agency (looking every day and weighing who is really still out there), make room by trade for a free agent who is a clear upgrade, keep young players they used to let walk, see when a player's injury runs into next season, and better judge who will re-sign.",
+	},
+	{
 		n: 344,
 		date: "2026-11-17",
 		text: "3D: on a pick-and-roll the screener sets the screen beside the ball handler's defender, level with him, instead of squeezing in between the two of them.",

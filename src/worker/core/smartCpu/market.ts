@@ -17,6 +17,7 @@ import { salaryRulesAllow } from "./tradeRules.ts";
 import { inStages } from "../realisticFrontOffice/stages.ts";
 import { smartVanillaOn } from "../realisticFrontOffice/isOn.ts";
 import { viewFor } from "./signing.ts";
+import { noteVanillaPool } from "./vanilla.ts";
 import { smartSettings, type Holdings, type SmartView } from "./worth.ts";
 
 // THE GM'S MARKET (docs/smart-cpu.md, layer 2). At each market moment, every
@@ -95,7 +96,12 @@ export type SmartDeal = {
 const none: Holdings = { players: [], picks: [] };
 const one = (x: Player | DraftPick): Holdings =>
 	"pid" in x ? { players: [x], picks: [] } : { players: [], picks: [x] };
-const teamsOf = (a: number, b: number, giveA: Holdings, giveB: Holdings) =>
+export const teamsOf = (
+	a: number,
+	b: number,
+	giveA: Holdings,
+	giveB: Holdings,
+) =>
 	[
 		{
 			tid: a,
@@ -377,7 +383,7 @@ export const trimDeal = async (view: SmartView, deal: SmartDeal) => {
 export const smartDealWatchers: ((deal: SmartDeal, view: SmartView) => void)[] =
 	[];
 
-const standing = (view: SmartView, tid: number) => {
+export const standing = (view: SmartView, tid: number) => {
 	const o = view.outlook.teams.get(tid);
 	return o
 		? `${o.strength[0]! >= 0 ? "+" : ""}${o.strength[0]!.toFixed(1)} now, ${(100 * o.title[0]!).toFixed(1)}% title`
@@ -403,6 +409,8 @@ const marketMomentNow = async () => {
 	// A moment can hold the worker for minutes: the room's busy mark renewed
 	// first (sync/advanceLease.ts).
 	await holdRoomForAdvance();
+	// In free agency, what each team's room still buys, as of today.
+	await noteVanillaPool();
 	const outlook = await currentOutlook();
 	const view = viewFor(outlook);
 	const cpu = new Set(

@@ -1,6 +1,7 @@
 import type { FlatContractInfo, Player } from "../../../common/types.ts";
 import { g } from "../../util/index.ts";
 import { contractOf } from "../realisticFrontOffice/contractOf.ts";
+import { freeAgentPoolShare } from "../realisticFrontOffice/payroll.ts";
 import {
 	ensureRetention,
 	type LeagueOutlook,
@@ -22,13 +23,19 @@ const humanTids = () =>
 	smartHumans.tids ??
 	(g.get("spectator") ? [] : (g.get("userTids") as number[]));
 
-// The GM's view of the league for an outlook, kept as long as the outlook.
-const views = new WeakMap<LeagueOutlook, SmartView>();
+// The GM's view of the league for an outlook, kept as long as the outlook -
+// and, in free agency, as long as the pool left is about the same: what a
+// team's room still buys falls as the good free agents sign (payroll.ts,
+// signingsWith), so every value worked out on the pool as it was is stale.
+// One outlook serves all of free agency, so a smaller pool is a new view.
+const views = new WeakMap<LeagueOutlook, { view: SmartView; pool: string }>();
+const poolTag = () => freeAgentPoolShare()?.toFixed(2) ?? "";
 export const viewFor = (outlook: LeagueOutlook) => {
-	let view = views.get(outlook);
-	if (!view) {
+	const pool = poolTag();
+	let view = views.get(outlook)?.view;
+	if (!view || views.get(outlook)!.pool !== pool) {
 		view = new SmartView(outlook, humanTids());
-		views.set(outlook, view);
+		views.set(outlook, { view, pool });
 	} else {
 		// Who is human now (a league's user teams can change).
 		view.humans = new Set(humanTids());

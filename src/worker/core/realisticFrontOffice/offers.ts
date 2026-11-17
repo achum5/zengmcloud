@@ -4,6 +4,7 @@ import { last } from "../../../common/utils.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers } from "../../util/index.ts";
 import moodComponents from "../player/moodComponents.ts";
+import moodInfo from "../player/moodInfo.ts";
 import { SLOT_MINUTES } from "./strength.ts";
 import { stagesOn } from "./stages.ts";
 import { contractOf, type ContractHolder } from "./contractOf.ts";
@@ -378,6 +379,16 @@ export const marketUtility = async (p: Player, ownTid: number) => {
 
 // His chance of re-signing with a team that offers his asking price for the
 // length he wants, against testing the market.
+// On vanilla's rules (smartVanillaOn), his chance of being willing to sign
+// with the team when his contract runs out, as the game itself decides it
+// (player.moodInfo: his mood toward the team, CPU teams' extra testing of
+// the market, the difficulty, his traits, a rookie's eagerness). The CPU
+// sees what the game sees - there is no offer market to model.
+export const willingChance = async (p: Player, tid: number) => {
+	const own = p.tid === tid ? p : { ...p, tid };
+	return (await moodInfo(own, tid)).probWilling;
+};
+
 export const stayChance = async (p: Player, tid: number) => {
 	const own = p.tid === tid ? p : { ...p, tid };
 	const appeal = sumMood(await moodComponents(own, tid));
