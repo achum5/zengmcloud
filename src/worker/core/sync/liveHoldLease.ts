@@ -20,7 +20,9 @@ export const createLiveHoldLease = ({
 	now = Date.now,
 	refreshMs = LIVE_HOLD_REFRESH_MS,
 }: {
-	write: (held: boolean) => Promise<void>;
+	// (`fresh`: a hold just begun - the function counts its longest from
+	// then: see HOLD_MOST_MS in functions/hold.js.)
+	write: (held: boolean, fresh: boolean) => Promise<void>;
 	now?: () => number;
 	refreshMs?: number;
 }) => {
@@ -42,7 +44,7 @@ export const createLiveHoldLease = ({
 		}
 		writing = true;
 		const at = now();
-		write(held).then(
+		write(held, held && written !== true).then(
 			() => {
 				writing = false;
 				written = held;

@@ -698,13 +698,13 @@ const inALiveGame = () =>
 	ownLiveSimUnderway() ||
 	(followedBroadcast !== undefined && !followedBroadcast.over) ||
 	liveResultWait.pending();
-// Off for now (2026-11-17): with it on, the league's phones went a whole
-// playoff day without a push - a device counted as in a live game had its
-// pushes parked, and one closed mid game was never told to let them go. Each
-// device says "not holding" instead, once a connection, which also lets go
-// of whatever a hold of its parked on the server. (inALiveGame is kept for
-// when the hold comes back with a release that doesn't wait on the device.)
-export const PUSH_HOLD_ON = false;
+// (Off for a day, 2026-11-17: the league's phones went a whole playoff day
+// without a push - a device closed mid game was never told to let its parked
+// pushes go. Back on with a release that doesn't wait on the device: a hold
+// lapses ten minutes after it was last kept up and lasts 45 at the most, and
+// the function sends what it held for a lapsed one on its own, every few
+// minutes - see releaseLapsedHolds in functions/index.js.)
+export const PUSH_HOLD_ON = true;
 const syncLiveHold = () => {
 	liveHoldLease?.sync(PUSH_HOLD_ON && inALiveGame());
 };
@@ -3001,8 +3001,8 @@ const doConnectSharedLeague = async ({
 	// + countdown, and keep a transport handle so the simmer can publish its own.
 	currentTransport = transport;
 	liveHoldLease = createLiveHoldLease({
-		write: (held) =>
-			transport.setLiveHold?.(held) ?? Promise.resolve(undefined),
+		write: (held, fresh) =>
+			transport.setLiveHold?.(held, fresh) ?? Promise.resolve(undefined),
 	});
 	autoPlayUnsub = transport.subscribeAutoPlay?.((autoPlay) => {
 		// Kept here as well as pushed to the UI: the own-game sim gate runs in the

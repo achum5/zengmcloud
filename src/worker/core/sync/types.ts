@@ -464,8 +464,8 @@ export interface SyncTransport {
 	// a team switch) without clobbering its stored FCM token.
 	registerMember?(uid: string, member: Partial<SyncMember>): Promise<void>;
 	// This device is in the middle of a live game: hold its pushes till it
-	// isn't (see liveHoldLease.ts).
-	setLiveHold?(held: boolean): Promise<void>;
+	// isn't (see liveHoldLease.ts) - `fresh`, a hold just begun.
+	setLiveHold?(held: boolean, fresh?: boolean): Promise<void>;
 	publishNotification?(
 		notification: SyncNotification & { authorId: string; authorName: string },
 	): Promise<void>;

@@ -6,12 +6,14 @@ const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 const setup = () => {
 	let clock = 1_000_000;
 	const writes: boolean[] = [];
+	const fresh: boolean[] = [];
 	let fail = false;
 	const pending: (() => void)[] = [];
 	let deferred = false;
 	const lease = createLiveHoldLease({
-		write: (held) => {
+		write: (held, isFresh) => {
 			writes.push(held);
+			fresh.push(isFresh);
 			if (fail) {
 				return Promise.reject(new Error("offline"));
 			}
@@ -27,6 +29,7 @@ const setup = () => {
 	return {
 		lease,
 		writes,
+		fresh,
 		advance: (ms: number) => {
 			clock += ms;
 		},
@@ -84,6 +87,21 @@ describe("the push hold, this device's half", () => {
 		lease.sync(false);
 		await flush();
 		assert.deepEqual(writes, [true, true, false]);
+	});
+
+	test("a hold just begun says so - kept up, it doesn't", async () => {
+		const { lease, writes, fresh, advance } = setup();
+		lease.sync(true);
+		await flush();
+		advance(LIVE_HOLD_REFRESH_MS);
+		lease.sync(true);
+		await flush();
+		lease.sync(false);
+		await flush();
+		lease.sync(true);
+		await flush();
+		assert.deepEqual(writes, [true, true, false, true]);
+		assert.deepEqual(fresh, [true, false, false, true]);
 	});
 
 	test("a write that fails is tried again on the next sync, not straight away", async () => {

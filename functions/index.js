@@ -9,7 +9,8 @@
 //
 // A device in the middle of a live game has its pushes held until the game
 // is over, then sent as one (see hold.js, and releaseHeldNotifications
-// below).
+// below) - or, if it goes dark mid game and never says so, once its hold
+// lapses (releaseLapsedHolds).
 //
 // Deploy with: npx firebase-tools deploy --only functions --project zengmcloud-4a454
 // (Requires the Blaze plan; at a few users the cost is effectively $0.)
@@ -18,8 +19,13 @@ const {
 	onDocumentCreated,
 	onDocumentUpdated,
 } = require("firebase-functions/v2/firestore");
+const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { initializeApp } = require("firebase-admin/app");
-const { getFirestore, FieldValue } = require("firebase-admin/firestore");
+const {
+	getFirestore,
+	FieldPath,
+	FieldValue,
+} = require("firebase-admin/firestore");
 const { getMessaging } = require("firebase-admin/messaging");
 const hold = require("./hold.js");
 
@@ -61,6 +67,12 @@ const sendOrHold = async (db, ref, entry) => {
 		const now = Date.now();
 		if (hold.isHeld(member, now)) {
 			tx.update(ref, { heldPushes: hold.withHeld(member.heldPushes, entry) });
+			// (Noted, so they go out even if the device never comes back.)
+			tx.set(
+				db.doc(hold.REGISTRY),
+				{ [hold.holdKey(ref.parent.parent.id, ref.id)]: true },
+				{ merge: true },
+			);
 			return undefined;
 		}
 		const list = hold.heldList(member.heldPushes);
@@ -75,6 +87,38 @@ const sendOrHold = async (db, ref, entry) => {
 	if (out) {
 		await sendOne(ref, out.token, out.data);
 	}
+};
+
+// What was held for a device that is no longer holding goes out now, as one
+// push. Returns whether it is still holding (so still to be seen to).
+const releaseIfDue = async (db, ref) => {
+	const out = await db.runTransaction(async (tx) => {
+		const now = Date.now();
+		const current = (await tx.get(ref)).data();
+		if (!current) {
+			return { held: false };
+		}
+		if (hold.isHeld(current, now)) {
+			return { held: true };
+		}
+		const list = hold.heldList(current.heldPushes);
+		if (list.length === 0) {
+			return { held: false };
+		}
+		tx.update(ref, { heldPushes: FieldValue.delete() });
+		const data = hold.combine(list, now);
+		return {
+			held: false,
+			send:
+				data && current.fcmToken
+					? { token: current.fcmToken, data }
+					: undefined,
+		};
+	});
+	if (out.send) {
+		await sendOne(ref, out.send.token, out.send.data);
+	}
+	return out.held;
 };
 
 exports.sendLeagueNotification = onDocumentCreated(
@@ -253,6 +297,8 @@ exports.sendLeagueNotification = onDocumentCreated(
 // A device's hold lifted - its live game over here, it walked out, or it came
 // back after going dark mid game: what was held for it goes out now, as one
 // push. Every write to a member doc lands here, so most return at once.
+// (Holding by the lease, not by what the doc last said: a device that went
+// dark still says it is holding.)
 exports.releaseHeldNotifications = onDocumentUpdated(
 	"leagues/{code}/members/{uid}",
 	async (event) => {
@@ -261,30 +307,42 @@ exports.releaseHeldNotifications = onDocumentUpdated(
 		if (
 			!after ||
 			!member ||
-			member.liveHold === true ||
+			hold.isHeld(member, Date.now()) ||
 			hold.heldList(member.heldPushes).length === 0
 		) {
 			return;
 		}
-		const db = getFirestore();
-		const out = await db.runTransaction(async (tx) => {
-			const now = Date.now();
-			const current = (await tx.get(after.ref)).data();
-			if (!current || hold.isHeld(current, now)) {
-				return undefined;
-			}
-			const list = hold.heldList(current.heldPushes);
-			if (list.length === 0) {
-				return undefined;
-			}
-			tx.update(after.ref, { heldPushes: FieldValue.delete() });
-			const data = hold.combine(list, now);
-			return data && current.fcmToken
-				? { token: current.fcmToken, data }
-				: undefined;
-		});
-		if (out) {
-			await sendOne(after.ref, out.token, out.data);
-		}
+		await releaseIfDue(getFirestore(), after.ref);
 	},
 );
+
+// A device that went dark mid game - closed, out of battery - never says it
+// is done holding: every few minutes, whatever was held for a device whose
+// hold has lapsed goes out without waiting on it, or on the next push to
+// come along. (Only devices noted as having pushes held: see sendOrHold.)
+exports.releaseLapsedHolds = onSchedule("every 5 minutes", async () => {
+	const db = getFirestore();
+	const registry = db.doc(hold.REGISTRY);
+	const keys = Object.keys((await registry.get()).data() ?? {});
+	for (const key of keys) {
+		const at = hold.fromKey(key);
+		const still = at
+			? await releaseIfDue(
+					db,
+					db
+						.collection("leagues")
+						.doc(at.code)
+						.collection("members")
+						.doc(at.uid),
+				).catch((error) => {
+					console.error("Lapsed hold release failed", key, error);
+					return true;
+				})
+			: false;
+		if (!still) {
+			await registry
+				.update(new FieldPath(key), FieldValue.delete())
+				.catch(() => undefined);
+		}
+	}
+});
