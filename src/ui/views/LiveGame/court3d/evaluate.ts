@@ -124,6 +124,10 @@ export type PlayerState = {
 	// How hard he is turning as he runs (to 1, all a man can; round to his
 	// left positive): he leans into the turn (see banked).
 	bank?: number;
+	// All of him tipped over his feet (degrees, forward and to his left):
+	// with how hard he is speeding up, pulling up and turning (see tipAt),
+	// and rocked back off a man he has just come together with (joltAt).
+	over?: [number, number];
 	// How far up off the floor he is for his legs to hang loose under him (0
 	// on it, to 1 - see hanging): worked out from how high he is, if not said
 	// (his picture is made standing on the floor, and told).
@@ -4789,6 +4793,23 @@ const playerAt = (
 				? { ...said, w: said.w * free }
 				: undefined
 			: said;
+	// (Up in a jump - not the lift of a stride - none of it, eased out as
+	// he goes up; nor with his hands on the ball, or at it - where it goes
+	// was worked out off him stood plain: see ballFree.)
+	const leap = actAt(tr, t);
+	const up =
+		(leap && (leap.jump || leap.zKeys) ? 1 - smooth01(now.z / 1.2) : 1) *
+		ballFree(tr, t);
+	const over =
+		shown && !plain && tr.pid >= 0 && up > 0
+			? overOf(
+					tipAt(tl, tr, t, yaw),
+					// (Bodies coming together only with the ball in play: not
+					// daps and hugs at a stoppage, a huddle, the end.)
+					stoppageAt(tl, t) ? undefined : joltAt(tl, tr, t, yaw),
+					up,
+				)
+			: undefined;
 	return {
 		pid,
 		team: tr.team,
@@ -4798,6 +4819,7 @@ const playerAt = (
 		yaw,
 		moving: here.moving,
 		...now,
+		...(over ? { over } : {}),
 		...(legs !== 0 ? { legs } : {}),
 		...(lock ? { lock } : {}),
 		...(slip ? { slip } : {}),
@@ -6925,6 +6947,434 @@ export const driven = (p: Pose, d: number, arms: boolean): Pose => {
 	};
 };
 
+// CONTACT, SEEN. Two men of the two teams coming together hard - a screen
+// run into, a drive into a body, a box-out met, a closeout into a man -
+// each gives with it: rocked back off the other, quick, and back over his
+// feet (see overFeet in poses.ts) a moment later. Worked out from where
+// they go, the same for anybody coming together whatever brought it about:
+// touching (JOLT_GAP, middle to middle), the two closing on each other at
+// JOLT_CLOSE a second and more (feet) - all of it at JOLT_FULL - this
+// many degrees at the most, in over JOLT_IN ms and out over JOLT_OUT.
+const JOLT_GAP = 1.75;
+const JOLT_CLOSE = 3.5;
+const JOLT_FULL = 11;
+const JOLT_DEG = 12;
+const JOLT_IN = 90;
+const JOLT_OUT = 380;
+// (Looked for every JOLT_DT ms.)
+const JOLT_DT = 50;
+// LEANING ON EACH OTHER. Touching (LEAN_GAP, middle to middle), neither
+// going faster than LEAN_PACE (feet a second): a post-up, a box-out, a
+// screen fought through. Each leans into the other, LEAN_DEG degrees at
+// the most - the post man backing his man down, his man leaning on him -
+// as much of it as they have been at it over the LEAN_EASE ms either side
+// (so a brush is next to nothing, and it eases in and out).
+const LEAN_GAP = 1.6;
+const LEAN_PACE = 4;
+const LEAN_DEG = 7;
+const LEAN_EASE = 250;
+// (Found a stretch of the game at a time - JOLT_CHUNK ms - every pair of
+// them the once, and kept for the last JOLT_KEEP stretches looked at: a
+// picture goes on through the game, but a look at one man at a time over
+// all of it - the director's tests - goes back over the same stretches for
+// each. A stretch is a few hundred bytes to a few kilobytes.)
+const JOLT_CHUNK = 2000;
+const JOLT_KEEP = 600;
+type Jolt = {
+	t: number;
+	a: number;
+	b: number;
+	ux: number;
+	uy: number;
+	k: number;
+};
+// (Each pair leaning on each other, sample by sample: the way from b to a
+// while they are, and 0 while not.)
+type Lean = { a: number; b: number; ux: Float32Array; uy: Float32Array };
+type Contact = { jolts: Jolt[]; leans: Lean[] };
+const contacts = new WeakMap<CourtTimeline, Map<number, Contact>>();
+// (Samples kept either side of a stretch: enough to look LEAN_EASE ms and
+// one more sample past either end of it.)
+const LEAN_PAD = Math.ceil(LEAN_EASE / JOLT_DT) + 1;
+const contactsIn = (tl: CourtTimeline, c: number): Contact => {
+	let byC = contacts.get(tl);
+	if (!byC) {
+		byC = new Map();
+		contacts.set(tl, byC);
+	}
+	const kept = byC.get(c);
+	if (kept) {
+		// (Looked at again: the last to go.)
+		byC.delete(c);
+		byC.set(c, kept);
+		return kept;
+	}
+	const men = [...tl.tracks.values()].filter((tr) => tr.pid >= 0);
+	const t0 = c * JOLT_CHUNK;
+	// Where each is, on the floor, every JOLT_DT ms, from a little before
+	// the stretch to a little after: sample i at t0 + (i - pad) JOLT_DT.
+	const pad = Math.max(2, LEAN_PAD);
+	const n = JOLT_CHUNK / JOLT_DT + 2 * pad;
+	const at = men.map((tr) => {
+		const out: (Pt | undefined)[] = [];
+		for (let i = 0; i <= n; i++) {
+			const u = t0 + (i - pad) * JOLT_DT;
+			const si = lastIndex(tr.shown, u, (s) => s[0]);
+			out.push(si >= 0 && tr.shown[si]![1] ? spotAt(tr, u, false) : undefined);
+		}
+		return out;
+	});
+	const jolts: Jolt[] = [];
+	const leans: Lean[] = [];
+	const own = (i: number) => i >= pad && i < pad + JOLT_CHUNK / JOLT_DT;
+	for (let i = 0; i < men.length; i++) {
+		for (let j = i + 1; j < men.length; j++) {
+			if (men[i]!.team === men[j]!.team) {
+				continue;
+			}
+			const A = at[i]!;
+			const B = at[j]!;
+			const gap = (q: number) => {
+				const p = A[q];
+				const r = B[q];
+				return p && r ? Math.hypot(p.x - r.x, p.y - r.y) : undefined;
+			};
+			// Coming together hard, in this stretch (each once: here only).
+			for (let q = 2; q <= n; q++) {
+				const d = gap(q);
+				const d1 = gap(q - 1);
+				const d2 = gap(q - 2);
+				if (
+					!own(q) ||
+					d === undefined ||
+					d1 === undefined ||
+					d2 === undefined ||
+					!(d < JOLT_GAP && d1 >= JOLT_GAP)
+				) {
+					continue;
+				}
+				const close = ((d2 - d) * 1000) / (2 * JOLT_DT);
+				if (close < JOLT_CLOSE) {
+					continue;
+				}
+				const p = A[q]!;
+				const r = B[q]!;
+				jolts.push({
+					t: t0 + (q - pad) * JOLT_DT,
+					a: men[i]!.pid,
+					b: men[j]!.pid,
+					ux: (p.x - r.x) / (d || 1),
+					uy: (p.y - r.y) / (d || 1),
+					k: Math.min(close, JOLT_FULL) / JOLT_FULL,
+				});
+			}
+			// Leaning on each other, sample by sample.
+			let ux: Float32Array | undefined;
+			let uy: Float32Array | undefined;
+			for (let q = 1; q <= n; q++) {
+				const d = gap(q);
+				const p0 = A[q - 1];
+				const p1 = A[q];
+				const r0 = B[q - 1];
+				const r1 = B[q];
+				if (
+					d === undefined ||
+					d >= LEAN_GAP ||
+					!p0 ||
+					!r0 ||
+					(Math.hypot(p1!.x - p0.x, p1!.y - p0.y) * 1000) / JOLT_DT >=
+						LEAN_PACE ||
+					(Math.hypot(r1!.x - r0.x, r1!.y - r0.y) * 1000) / JOLT_DT >= LEAN_PACE
+				) {
+					continue;
+				}
+				ux ??= new Float32Array(n + 1);
+				uy ??= new Float32Array(n + 1);
+				ux[q] = (p1!.x - r1!.x) / (d || 1);
+				uy[q] = (p1!.y - r1!.y) / (d || 1);
+			}
+			if (ux && uy) {
+				leans.push({ a: men[i]!.pid, b: men[j]!.pid, ux, uy });
+			}
+		}
+	}
+	const out = { jolts, leans };
+	byC.set(c, out);
+	if (byC.size > JOLT_KEEP) {
+		byC.delete(byC.keys().next().value!);
+	}
+	return out;
+};
+// How far he leans on whoever he is up against, at sample g (on the grid,
+// JOLT_DT apart): the way toward them, as much as they have been touching
+// over the samples round it.
+const leanOn = (
+	tl: CourtTimeline,
+	pid: number,
+	g: number,
+): [number, number] => {
+	const c = Math.floor((g * JOLT_DT) / JOLT_CHUNK);
+	const { leans } = contactsIn(tl, c);
+	const pad = Math.max(2, LEAN_PAD);
+	const q0 = g - (c * JOLT_CHUNK) / JOLT_DT + pad;
+	const k = Math.round(LEAN_EASE / JOLT_DT);
+	let x = 0;
+	let y = 0;
+	for (const l of leans) {
+		const s = l.a === pid ? -1 : l.b === pid ? 1 : 0;
+		if (s === 0) {
+			continue;
+		}
+		for (let q = q0 - k; q <= q0 + k; q++) {
+			x += (l.ux[q] ?? 0) * s;
+			y += (l.uy[q] ?? 0) * s;
+		}
+	}
+	return [x / (2 * k + 1), y / (2 * k + 1)];
+};
+export const joltAt = (
+	tl: CourtTimeline,
+	tr: Track,
+	t: number,
+	yaw: number,
+): [number, number] | undefined => {
+	let jx = 0;
+	let jy = 0;
+	const c1 = Math.floor(t / JOLT_CHUNK);
+	const c0 = Math.floor((t - JOLT_IN - JOLT_OUT) / JOLT_CHUNK);
+	for (let c = c0; c <= c1; c++) {
+		for (const j of contactsIn(tl, c).jolts) {
+			const since = t - j.t;
+			if (
+				(j.a !== tr.pid && j.b !== tr.pid) ||
+				since < 0 ||
+				since >= JOLT_IN + JOLT_OUT
+			) {
+				continue;
+			}
+			const e =
+				since < JOLT_IN
+					? smooth01(since / JOLT_IN)
+					: 1 - smooth01((since - JOLT_IN) / JOLT_OUT);
+			// (Pushed back off him: the way from him to me.)
+			const s = j.a === tr.pid ? 1 : -1;
+			jx += j.ux * s * j.k * e;
+			jy += j.uy * s * j.k * e;
+		}
+	}
+	const m = Math.hypot(jx, jy);
+	if (m > 1) {
+		jx /= m;
+		jy /= m;
+	}
+	// (And leaning on whoever he is up against, eased between samples.)
+	const g = Math.floor(t / JOLT_DT);
+	const u = t / JOLT_DT - g;
+	const a = leanOn(tl, tr.pid, g);
+	const b = u > 0 ? leanOn(tl, tr.pid, g + 1) : a;
+	let hx = a[0] * (1 - u) + b[0] * u;
+	let hy = a[1] * (1 - u) + b[1] * u;
+	const h = Math.hypot(hx, hy);
+	if (h > 1) {
+		hx /= h;
+		hy /= h;
+	}
+	const wx = JOLT_DEG * jx + LEAN_DEG * hx;
+	const wy = JOLT_DEG * jy + LEAN_DEG * hy;
+	if (Math.abs(wx) < 0.05 && Math.abs(wy) < 0.05) {
+		return undefined;
+	}
+	const fx = Math.cos(yaw);
+	const fy = Math.sin(yaw);
+	return [wx * fx + wy * fy, -wx * fy + wy * fx];
+};
+
+// ALL OF HIM OVER HIS FEET (see overFeet in poses.ts). Speeding up, a
+// man's weight is out ahead of his feet; pulling up, his feet are out ahead
+// of it; running round a turn he leans in to it from the floor up - as far
+// as the push of it would tip a body over its feet (the angle whose tangent
+// is it against gravity), TIP_SHARE of that (his trunk does some of the
+// rest: see driven, banked), TIP_MOST degrees at the most. How hard, from
+// where he goes either side of the moment (TIP_HS ms each way) - smooth,
+// and a touch ahead of it, as a body gets ready for what it is about to do.
+const TIP_HS = [200, 300, 400];
+const TIP_SHARE = 0.42;
+const TIP_MOST = 10;
+// (Not under way - shuffling, stepping round - a little of it.)
+const TIP_STEP = 0.45;
+// (Faster than this, feet a second, he has not run there: he was put
+// there.)
+const TIP_JUMP = 40;
+const tipWorld = (
+	tl: CourtTimeline,
+	tr: Track,
+	t: number,
+): [number, number] | undefined => {
+	const most = TIP_HS.at(-1)!;
+	// Not across a cut, his coming on or going off the floor, or a jump from
+	// one place to another with no cut (a man put on from the bench, say,
+	// found to the ms): only the windows clear of it, and eased out to none
+	// as it comes within the shortest.
+	let near = most + 1;
+	for (const c of tl.cuts) {
+		near = Math.min(near, Math.abs(c - t));
+	}
+	for (const [on] of tr.shown) {
+		near = Math.min(near, Math.abs(on - t));
+	}
+	if (near <= TIP_HS[0]!) {
+		return undefined;
+	}
+	const P = spotAt(tr, t, false);
+	const at = new Map<number, Pt>([[t, P]]);
+	for (const h of TIP_HS) {
+		at.set(t - h, spotAt(tr, t - h, false));
+		at.set(t + h, spotAt(tr, t + h, false));
+	}
+	const far = (p: Pt, q: Pt) => Math.hypot(p.x - q.x, p.y - q.y);
+	const ts = [...at.keys()].sort((a, b) => a - b);
+	for (let i = 1; i < ts.length; i++) {
+		let a = ts[i - 1]!;
+		let b = ts[i]!;
+		let pa = at.get(a)!;
+		let pb = at.get(b)!;
+		if ((far(pa, pb) * 1000) / (b - a) <= TIP_JUMP) {
+			continue;
+		}
+		while (b - a > 8) {
+			const m = (a + b) / 2;
+			const pm = spotAt(tr, m, false);
+			if (far(pa, pm) / (m - a) >= far(pm, pb) / (b - m)) {
+				b = m;
+				pb = pm;
+			} else {
+				a = m;
+				pa = pm;
+			}
+		}
+		near = Math.min(near, Math.abs((a + b) / 2 - t));
+	}
+	const hs = TIP_HS.filter((h) => h < near);
+	if (hs.length === 0) {
+		return undefined;
+	}
+	const w = smooth01((near - TIP_HS[0]!) / (most - TIP_HS[0]!));
+	let ax = 0;
+	let ay = 0;
+	for (const h of hs) {
+		const A = at.get(t - h)!;
+		const B = at.get(t + h)!;
+		const s = h / 1000;
+		ax += (A.x + B.x - 2 * P.x) / (s * s);
+		ay += (A.y + B.y - 2 * P.y) / (s * s);
+	}
+	ax /= hs.length;
+	ay /= hs.length;
+	// (Under way on his feet, all of it; about stood, stepping round, less -
+	// by how fast he is going, not the move he is drawn in, so it never
+	// jumps as one gives way to the next.)
+	const A = at.get(t - TIP_HS[0]!)!;
+	const B = at.get(t + TIP_HS[0]!)!;
+	const pace = Math.hypot(B.x - A.x, B.y - A.y) / ((2 * TIP_HS[0]!) / 1000);
+	const k = (TIP_STEP + (1 - TIP_STEP) * clamp01((pace - 4) / 6)) * w;
+	// (How far, all told, the way the push is: capped as a whole, not each
+	// way of it on its own - so the way he leans holds as he turns.)
+	const am = Math.hypot(ax, ay);
+	const lean =
+		am > 1e-6
+			? (k *
+					Math.min(
+						TIP_MOST,
+						(TIP_SHARE * Math.atan(am / GRAVITY) * 180) / Math.PI,
+					)) /
+				am
+			: 0;
+	return am * lean < 0.3 ? undefined : [ax * lean, ay * lean];
+};
+// (Worked out every TIP_DT ms and eased between, kept for the moments
+// round now - each a frame or three, all the same for any device.)
+const TIP_DT = 50;
+const TIP_KEEP = 6;
+const tips = new WeakMap<Track, Map<number, [number, number] | undefined>>();
+const tipOn = (tl: CourtTimeline, tr: Track, g: number) => {
+	let m = tips.get(tr);
+	if (!m) {
+		m = new Map();
+		tips.set(tr, m);
+	}
+	if (m.has(g)) {
+		return m.get(g);
+	}
+	const v = tipWorld(tl, tr, g * TIP_DT);
+	m.set(g, v);
+	if (m.size > TIP_KEEP) {
+		m.delete(m.keys().next().value!);
+	}
+	return v;
+};
+const tipAt = (
+	tl: CourtTimeline,
+	tr: Track,
+	t: number,
+	yaw: number,
+): [number, number] | undefined => {
+	const g = Math.floor(t / TIP_DT);
+	const u = t / TIP_DT - g;
+	const a = tipOn(tl, tr, g);
+	const b = u > 0 ? tipOn(tl, tr, g + 1) : a;
+	if (!a && !b) {
+		return undefined;
+	}
+	const wx = (a?.[0] ?? 0) * (1 - u) + (b?.[0] ?? 0) * u;
+	const wy = (a?.[1] ?? 0) * (1 - u) + (b?.[1] ?? 0) * u;
+	const fx = Math.cos(yaw);
+	const fy = Math.sin(yaw);
+	return [wx * fx + wy * fy, -wx * fy + wy * fx];
+};
+// Acts with his hands on the ball, or at it - or on a man's, a dap, a high
+// five - and how long (ms) the lean eases out before one and back in
+// after.
+const BALL_ACTS =
+	/^(block|tip|catch|board|rebound|snatch|pickup|pass|hack|reach|poke|strip|heave|shoot|setShot|layup|dunk|hook|floater|fade|scoop|finger|reverse|euro|power|windmill|tomahawk|dap|highFive|reachFive|lowFive|waitFive|chestBump|helpUp)/;
+const BALL_EASE = 150;
+const ballFree = (tr: Track, t: number): number => {
+	const k = lastIndex(tr.acts, t + BALL_EASE, (a) => a.t0);
+	let w = 1;
+	for (let i = k; i >= 0 && i >= k - 4; i--) {
+		const a = tr.acts[i]!;
+		if (!BALL_ACTS.test(a.anim) || a.flash || a.quiet) {
+			continue;
+		}
+		const off = t < a.t0 ? a.t0 - t : t > a.t1 ? t - a.t1 : 0;
+		w = Math.min(w, smooth01(off / BALL_EASE));
+		if (w === 0) {
+			break;
+		}
+	}
+	return w;
+};
+const overOf = (
+	a: [number, number] | undefined,
+	b: [number, number] | undefined,
+	k: number,
+): [number, number] | undefined =>
+	a || b
+		? [((a?.[0] ?? 0) + (b?.[0] ?? 0)) * k, ((a?.[1] ?? 0) + (b?.[1] ?? 0)) * k]
+		: undefined;
+// (Staging a game, the director's own looks at where the ball is in a
+// man's hands are as they were before men leaned over their feet: the game
+// plays out the same - see compileCourt.)
+let plain = false;
+export const plainly = <T>(fn: () => T): T => {
+	const was = plain;
+	plain = true;
+	try {
+		return fn();
+	} finally {
+		plain = was;
+	}
+};
+
 // Coming round a corner on the run he leans into it (see bankFrom): his
 // shoulders tipped over to the inside of the turn, and turned a little
 // into it.
@@ -7130,6 +7580,9 @@ const poseFor = (st: PlayerState): Pose => {
 	}
 	if (st.bank) {
 		p = banked(p, st.bank);
+	}
+	if (st.over && !plain) {
+		p = { ...p, pitch: p.pitch + st.over[0], roll: p.roll + st.over[1] };
 	}
 	// His legs turned under him - and turning on the spot, a leg each (see
 	// pivotOf). Easing out of the last move, each foot points where it

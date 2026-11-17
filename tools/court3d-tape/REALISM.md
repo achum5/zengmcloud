@@ -95,6 +95,29 @@ coverage played.
 | Contact  | Middle-to-middle gap at contact                                                                                              | bodies touching, never through                                         |
 | Contact  | Hard contact with a reaction drawn                                                                                           | all of it                                                              |
 
+The tool is scorecard.ts (run with scorecard.test.ts and SCORECARD_GAMES).
+Its first numbers, on real games 11, 22 and 33 as they stood on master
+(2026-11-17, before any of the work below), only what is shown at real
+speed with the ball in play:
+
+| Measure                                              | 11           | 22           | 33          |
+| ---------------------------------------------------- | ------------ | ------------ | ----------- |
+| Planted foot sliding (inches a 50 ms frame)          | 0.60         | 0.61         | 0.59        |
+| Trunk pitch: hard start / steady run / hard stop (°) | 21 / 14 / 10 | 22 / 14 / 10 | 21 / 13 / 9 |
+| Banked into a hard turn at speed (°)                 | 2.1          | 2.4          | 2.6         |
+| Speed on the floor (mph)                             | 3.28         | 3.28         | 3.19        |
+| Share of time stood still                            | 41%          | 41%          | 42%         |
+| Share over 15 feet a second                          | 5%           | 6%           | 5%          |
+| Set off within 0.1 s of another man (lockstep)       | 66%          | 67%          | 67%         |
+| Ball screens staged                                  | 153          | 132          | 130         |
+| ... set within 3 ft of the man guarding the ball     | 53%          | 55%          | 57%         |
+| ... found by a position-only detector                | 28%          | 42%          | 29%         |
+| Drop coverage that looks it (big back in the paint)  | 66%          | 46%          | 40%         |
+| Hedge / blitz that looks it (big up at the ball)     | 37% / 21%    | 0% / 9%      | 31% / 13%   |
+| Switch that looks it                                 | 78%          | 64%          | 73%         |
+| Hard contacts with a reaction drawn                  | 2%           | 5%           | 4%          |
+| Closest bodies come (median, middle to middle, ft)   | 1.59         | 1.61         | 1.59        |
+
 Step 0 also films a reel: twenty moments from a real game (a ball screen
 each way, a handoff, a pin-down, a post-up, a drive and kick, a closeout, a
 box-out, a transition run, a dead ball) as strips of frames, kept as the
@@ -210,3 +233,18 @@ lockstep, repeats; film.
   (C3-C5); variety (D3-D5) along the way.
 - Each batch ships with its scorecard numbers, before and after, and its
   film.
+
+## Done
+
+- **2026-11-17, picture (A1, A6, C6).** All of a man tipped over his feet
+  with how hard he speeds up, pulls up and turns (evaluate.ts tipAt, from
+  where he goes 0.2-0.4 s either side; poses.ts overFeet, his feet left
+  where they were and his legs reaching to them). Two men coming together
+  hard rock back off each other; touching a while (a post-up, a box-out)
+  they lean on each other (joltAt, worked out two seconds of the game at a
+  time). Drawing only: the director's own looks are drawn plain, so the
+  games are the same. Real game 11: hard contacts with a reaction drawn
+  2% -> 77%, banked into hard turns 2 -> 4 degrees.
+- **Test timeouts on a 4-core machine.** The footwork tests' 120 s limits
+  are tight here: master itself times out on "a shooter drifting along
+  the arc side-steps" (152 s) run beside one other job.

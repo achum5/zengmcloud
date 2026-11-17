@@ -81,6 +81,12 @@ export type Pose = {
 	// shoulder down positive): a crossover's dip, an arm wrapped behind him.
 	twist: number;
 	tilt: number;
+	// All of him leaning over his feet (degrees): forward (getting going
+	// hard: his weight out ahead of them; back, pulling up, they out ahead of
+	// it), and over to his left (into a turn to his left). Round the foot
+	// he has down - see overFeet.
+	pitch: number;
+	roll: number;
 	// Each hand on his hip, his elbow out to the side (0 to 1); each forearm
 	// folded across his chest, the hand at the other arm (0 to 1) - arms
 	// crossed; each hand on his knee, bent over (0 to 1); and each fist up
@@ -139,6 +145,8 @@ const BASE: Pose = {
 	footF: 0,
 	twist: 0,
 	tilt: 0,
+	pitch: 0,
+	roll: 0,
 	onHipN: 0,
 	onHipF: 0,
 	foldN: 0,
@@ -178,6 +186,7 @@ export const mirror = (q: Pose): Pose => {
 		...q,
 		twist: -q.twist,
 		tilt: -q.tilt,
+		roll: -q.roll,
 		legs: -q.legs,
 		spinN: -q.spinF,
 		spinF: -q.spinN,
@@ -12534,7 +12543,7 @@ export const skeleton = (b: Body, q: Pose): Skeleton => {
 		q.onHeadF,
 	);
 	if (q.twist === 0 && q.tilt === 0) {
-		return { pelvis, chest, head, legR, legL, armR, armL };
+		return overFeet(b, q, { pelvis, chest, head, legR, legL, armR, armL });
 	}
 	// His shoulders, arms and head turned on his hips.
 	const turn = turnUpper(q, pelvis);
@@ -12544,7 +12553,7 @@ export const skeleton = (b: Body, q: Pose): Skeleton => {
 		end: turn(l.end),
 		...(l.tip ? { tip: turn(l.tip) } : {}),
 	});
-	return {
+	return overFeet(b, q, {
 		pelvis,
 		chest: turn(chest),
 		head: turn(head),
@@ -12552,6 +12561,111 @@ export const skeleton = (b: Body, q: Pose): Skeleton => {
 		legL,
 		armR: limb(armR),
 		armL: limb(armL),
+	});
+};
+
+// ALL OF HIM OVER HIS FEET. Getting going hard a man's weight is out ahead
+// of his feet, pulling up hard his feet are out ahead of it, and running
+// round a turn he leans in to it from the floor up - not just his shoulders
+// over his hips. The whole of him tipped (Pose.pitch, Pose.roll) round the
+// floor under his hips - not round one foot or the other, which would swap
+// back and forth under him stride by stride, all of him hopping with it.
+// His feet stay just where they were, his legs bent or straightened to
+// reach them (see reachDown).
+const overFeet = (b: Body, q: Pose, sk: Skeleton): Skeleton => {
+	const { pitch, roll } = q;
+	if (pitch === 0 && roll === 0) {
+		return sk;
+	}
+	const o = v3(0, 0, b.ankleH);
+	const cp = Math.cos(pitch * RAD);
+	const sp = Math.sin(pitch * RAD);
+	const cr = Math.cos(roll * RAD);
+	const sr = Math.sin(roll * RAD);
+	const tip = (p: V3): V3 => {
+		const df = p.f - o.f;
+		const ds = p.s - o.s;
+		const du = p.u - o.u;
+		// Forward over his feet, then over to his left.
+		const f = df * cp + du * sp;
+		const u1 = -df * sp + du * cp;
+		return v3(o.f + f, o.s + ds * cr + u1 * sr, o.u - ds * sr + u1 * cr);
+	};
+	const limb = (m: Limb): Limb => ({
+		root: tip(m.root),
+		mid: tip(m.mid),
+		end: tip(m.end),
+		...(m.tip ? { tip: tip(m.tip) } : {}),
+	});
+	// (His feet where they were - down on the floor, or up in a stride - his
+	// legs reaching from his hips, leant over, down to them.)
+	const leg = (m: Limb): Limb => reachDown(m, tip(m.root), tip(m.mid));
+	return {
+		pelvis: tip(sk.pelvis),
+		chest: tip(sk.chest),
+		head: tip(sk.head),
+		legR: leg(sk.legR),
+		legL: leg(sk.legL),
+		armR: limb(sk.armR),
+		armL: limb(sk.armL),
+	};
+};
+// A leg from his hip, moved, down to its foot where it was on the floor:
+// as long in the thigh and the shin as ever, the knee bent the way it was
+// (toward where `knee` is) - and, too far to reach, straight out to it.
+const reachDown = (m: Limb, root: V3, knee: V3): Limb => {
+	const a = Math.hypot(
+		m.mid.f - m.root.f,
+		m.mid.s - m.root.s,
+		m.mid.u - m.root.u,
+	);
+	const c = Math.hypot(m.end.f - m.mid.f, m.end.s - m.mid.s, m.end.u - m.mid.u);
+	const e = m.end;
+	let dx = e.f - root.f;
+	let dy = e.s - root.s;
+	let dz = e.u - root.u;
+	const d0 = Math.hypot(dx, dy, dz) || 1e-6;
+	dx /= d0;
+	dy /= d0;
+	dz /= d0;
+	const d = Math.min(a + c - 1e-4, Math.max(Math.abs(a - c) + 1e-4, d0));
+	// The way the knee bends: off the line from hip to foot, toward it.
+	let kx = knee.f - root.f;
+	let ky = knee.s - root.s;
+	let kz = knee.u - root.u;
+	const along = kx * dx + ky * dy + kz * dz;
+	kx -= along * dx;
+	ky -= along * dy;
+	kz -= along * dz;
+	const kn = Math.hypot(kx, ky, kz);
+	if (kn > 1e-6) {
+		kx /= kn;
+		ky /= kn;
+		kz /= kn;
+	} else {
+		kx = 1;
+		ky = 0;
+		kz = 0;
+	}
+	const cosA = Math.max(-1, Math.min(1, (a * a + d * d - c * c) / (2 * a * d)));
+	const sinA = Math.sqrt(1 - cosA * cosA);
+	const mid = v3(
+		root.f + a * (cosA * dx + sinA * kx),
+		root.s + a * (cosA * dy + sinA * ky),
+		root.u + a * (cosA * dz + sinA * kz),
+	);
+	// (Out of reach - he has leant a long way off it - drawn along after
+	// him, as far as his leg goes.)
+	const end =
+		d < d0 ? v3(root.f + d * dx, root.s + d * dy, root.u + d * dz) : { ...e };
+	const sf = end.f - e.f;
+	const ss = end.s - e.s;
+	const su = end.u - e.u;
+	return {
+		root,
+		mid,
+		end,
+		...(m.tip ? { tip: v3(m.tip.f + sf, m.tip.s + ss, m.tip.u + su) } : {}),
 	};
 };
 
@@ -12686,7 +12800,7 @@ export const armReaching = (
 	at: { f: number; s: number; u: number },
 ): { sh: number; el: number; ab: number } => {
 	const side = hand === "L" ? 1 : -1;
-	const sk = skeleton(b, { ...q, twist: 0, tilt: 0 });
+	const sk = skeleton(b, { ...q, twist: 0, tilt: 0, pitch: 0, roll: 0 });
 	const arm = armAim(
 		b,
 		sk.chest,
@@ -13841,7 +13955,7 @@ export const dribbleArm = (
 	const b = DRIBBLER();
 	// (Worked out in his frame before his shoulders turn - as the skeleton
 	// builds his arms.)
-	const sk = skeleton(b, { ...q, twist: 0, tilt: 0 });
+	const sk = skeleton(b, { ...q, twist: 0, tilt: 0, pitch: 0, roll: 0 });
 	// The hand over the top of it, fingers spread forward, snapped down
 	// through the push and opening back up to take it.
 	const snap = ph < 0.18 ? ph / 0.18 : 1 - Math.min(1, (ph - 0.18) / 0.5);

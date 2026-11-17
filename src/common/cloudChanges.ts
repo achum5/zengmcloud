@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 330,
+		date: "2026-11-17",
+		text: "3D: players' whole bodies lean with how they move: tipped forward bursting off, sat back pulling up, leaning into a hard cut. Two players who run into each other (a screen, a drive, a closeout) both rock back off the hit, and players fighting for position in a post-up or box-out lean on each other.",
+	},
+	{
 		n: 329,
 		date: "2026-11-17",
 		text: "Shared leagues: catching up after time away is quicker when the connection stalls partway. The app no longer stops to reconnect in the middle; it fetches the rest another way and reconnects once you're caught up.",

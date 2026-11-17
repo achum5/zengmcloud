@@ -76,6 +76,7 @@ import {
 	beatsAt,
 	dribbleStart,
 	evalBall,
+	plainly,
 	fastAt,
 	floorSpotOf,
 	forgetTurns,
@@ -578,6 +579,20 @@ export type Interview = {
 	at: Pt;
 };
 
+// A screen the director staged: who set it for whom, where, how the
+// defense was to play it, and when the first screener was planted.
+export type ScreenNote = {
+	t: number;
+	set: number;
+	team: Side;
+	screeners: number[];
+	user: number;
+	ball: boolean;
+	at: Pt;
+	coverage: Coverage;
+	handoff?: true;
+};
+
 export type CourtTimeline = {
 	tracks: Map<number, Track>;
 	// How low each man the game has ratings for keeps his dribble, his own
@@ -621,6 +636,9 @@ export type CourtTimeline = {
 	closeUps?: CloseUp[];
 	interview?: Interview;
 	hurts?: Hurt[];
+	// The screens set, as the director staged them (for the scorecard: see
+	// tools/court3d-tape/scorecard.ts) - nothing in the picture reads it.
+	screens?: ScreenNote[];
 	// The warm-ups, before it is ready (see pregame.ts): the pre-game show
 	// on the floor.
 	warmup?: boolean;
@@ -2728,7 +2746,7 @@ type Entry = "inbound" | "break" | "flow";
 // How a ball screen is played: the big sits back in the paint, the two
 // defenders swap men, the big jumps out and recovers, or both go at the ball.
 // Off the ball the man coming off the screen is chased, or switched onto.
-type Coverage = "drop" | "switch" | "hedge" | "blitz" | "chase";
+export type Coverage = "drop" | "switch" | "hedge" | "blitz" | "chase";
 
 // A set being run.
 type Running = {
@@ -9238,6 +9256,16 @@ class Director {
 					coverage: this.coverageFor(run, screeners[0]!, user, onBall, next),
 					set: Number.isFinite(set) ? set : t0,
 				};
+				this.screens.push({
+					t: t0,
+					set: run.screen.set,
+					team,
+					screeners,
+					user,
+					ball: onBall,
+					at: run.screen.at,
+					coverage: run.screen.coverage,
+				});
 			} else if (a.type === "dribble") {
 				// Bringing it up, he goes as soon as he has it - not once the
 				// others have got where the last step sent them.
@@ -10256,6 +10284,17 @@ class Director {
 			set,
 			...(moving ? { handed: there } : {}),
 		};
+		this.screens.push({
+			t: tx,
+			set,
+			team: run.team,
+			screeners: [giver],
+			user: recv,
+			ball: true,
+			at: S,
+			coverage: run.screen.coverage,
+			handoff: true,
+		});
 		return Math.max(tx + 350, set);
 	}
 
@@ -19748,6 +19787,7 @@ class Director {
 	private readonly closeUps: CloseUp[] = [];
 	private interview: Interview | undefined;
 	private readonly hurts: Hurt[] = [];
+	private readonly screens: ScreenNote[] = [];
 	// Every shooting foul: who was fouled, who fouled him, the whistle, and
 	// the shot (see drewTheFoul).
 	private readonly shotFouls: {
@@ -30815,6 +30855,7 @@ class Director {
 			...(this.closeUps.length > 0 ? { closeUps: this.closeUps } : {}),
 			...(this.interview ? { interview: this.interview } : {}),
 			...(this.hurts.length > 0 ? { hurts: this.hurts } : {}),
+			...(this.screens.length > 0 ? { screens: this.screens } : {}),
 			tension: this.tension,
 			seats: this.seats,
 			fast,
@@ -30970,7 +31011,7 @@ export type CourtInput = {
 
 // (Staged to the bit the same on every device - see sameMath.)
 export const compileCourt = (input: CourtInput): CourtTimeline =>
-	sameEverywhere(() => compileHere(input));
+	sameEverywhere(() => plainly(() => compileHere(input)));
 const compileHere = ({
 	events,
 	players,

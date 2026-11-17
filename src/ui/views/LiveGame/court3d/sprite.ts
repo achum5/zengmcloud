@@ -808,6 +808,13 @@ const stepped = (st: PlayerState, k: Steps) => {
 		phase: frameOf(st.anim, st.phase, k),
 		stepLen: lenStep(st.stepLen),
 		drive: driveStep(st.drive, k),
+		// All of him tipped over his feet, to a degree and a half.
+		over: st.over
+			? ([
+					Math.round(st.over[0] / 1.5) * 1.5,
+					Math.round(st.over[1] / 1.5) * 1.5,
+				] as [number, number])
+			: undefined,
 		// His lean into a turn, the same.
 		bank: st.bank
 			? Math.round(st.bank * k.arm * 2) / (k.arm * 2) || undefined
@@ -956,7 +963,7 @@ const planOf = (
 		const f = pose.from;
 		const a = pose.arm;
 		plan.id = id;
-		plan.key = `${fine ? "f" : ""}${id}|${st.anim}${st.mirror ? "m" : ""}|${pose.phase}${pose.stepLen ? `l${pose.stepLen}` : ""}${pose.drive ? `v${pose.drive}` : ""}${pose.bank ? `z${pose.bank}` : ""}${pose.aloft ? `u${pose.aloft}` : ""}|${pose.turn}|${scale}|${px}|${st.holding ? 1 : 0}${pose.grip ?? ""}|${pose.legs ?? ""}${pose.way === undefined ? "" : `w${pose.way}`}${pose.pivot ? `p${pose.pivot}` : ""}${pose.lock ? `k${pose.lock}` : ""}${pose.slip ? `s${pose.slip}` : ""}${pose.look ? `h${pose.look}` : ""}${pose.down ? `d${pose.down}` : ""}|${pose.dribble ?? ""}${st.dribbleHand ?? ""}${st.dribbleFrom ?? ""}${pose.tight ? `t${pose.tight}` : ""}${pose.low ? `o${pose.low}` : ""}${pose.calm ? `e${pose.calm}` : ""}${pose.room === undefined ? "" : `r${pose.room}`}${pose.armsIn ? `i${pose.armsIn[0]},${pose.armsIn[1]}` : ""}${strideKey(pose.stride)}|${pose.target ?? ""}${pose.face === undefined ? "" : `q${Math.round(pose.face / FACE_STEP)}`}${st.ballBy ? `b${Math.round(st.ballBy.x * 10)},${Math.round(st.ballBy.y * 10)},${Math.round(st.ballBy.z * 10)}${st.ballBy.held ? "h" : ""}` : ""}${st.palmOn ? `n${st.palmOn.R ? "R" : ""}${st.palmOn.L ? "L" : ""}` : ""}${st.tap?.rel ? `a${Math.round(st.tap.rel.f * 5)},${Math.round(st.tap.rel.s * 5)},${Math.round(st.tap.rel.u * 5)},${Math.round(st.tap.w * 8)}` : ""}${
+		plan.key = `${fine ? "f" : ""}${id}|${st.anim}${st.mirror ? "m" : ""}|${pose.phase}${pose.stepLen ? `l${pose.stepLen}` : ""}${pose.drive ? `v${pose.drive}` : ""}${pose.bank ? `z${pose.bank}` : ""}${pose.over ? `j${pose.over[0]},${pose.over[1]}` : ""}${pose.aloft ? `u${pose.aloft}` : ""}|${pose.turn}|${scale}|${px}|${st.holding ? 1 : 0}${pose.grip ?? ""}|${pose.legs ?? ""}${pose.way === undefined ? "" : `w${pose.way}`}${pose.pivot ? `p${pose.pivot}` : ""}${pose.lock ? `k${pose.lock}` : ""}${pose.slip ? `s${pose.slip}` : ""}${pose.look ? `h${pose.look}` : ""}${pose.down ? `d${pose.down}` : ""}|${pose.dribble ?? ""}${st.dribbleHand ?? ""}${st.dribbleFrom ?? ""}${pose.tight ? `t${pose.tight}` : ""}${pose.low ? `o${pose.low}` : ""}${pose.calm ? `e${pose.calm}` : ""}${pose.room === undefined ? "" : `r${pose.room}`}${pose.armsIn ? `i${pose.armsIn[0]},${pose.armsIn[1]}` : ""}${strideKey(pose.stride)}|${pose.target ?? ""}${pose.face === undefined ? "" : `q${Math.round(pose.face / FACE_STEP)}`}${st.ballBy ? `b${Math.round(st.ballBy.x * 10)},${Math.round(st.ballBy.y * 10)},${Math.round(st.ballBy.z * 10)}${st.ballBy.held ? "h" : ""}` : ""}${st.palmOn ? `n${st.palmOn.R ? "R" : ""}${st.palmOn.L ? "L" : ""}` : ""}${st.tap?.rel ? `a${Math.round(st.tap.rel.f * 5)},${Math.round(st.tap.rel.s * 5)},${Math.round(st.tap.rel.u * 5)},${Math.round(st.tap.w * 8)}` : ""}${
 			f ? `|${blendKey(f)}` : ""
 		}${a ? `|${a.hand}${a.point ? "p" : ""}${a.tuck ? `t${a.tuck}` : ""}${a.grip ?? ""}${a.yell ? `y${a.yell}` : ""}${a.sh},${a.el},${a.ab},${a.wr}~${a.w}` : ""}`;
 	}
@@ -1009,6 +1016,7 @@ const jobOf = (
 			stepLen: pose.stepLen,
 			drive: pose.drive,
 			bank: pose.bank,
+			over: pose.over,
 			aloft: pose.aloft,
 			yaw: pose.yaw,
 			dribble: pose.dribble,
