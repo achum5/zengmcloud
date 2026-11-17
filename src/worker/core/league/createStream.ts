@@ -1517,10 +1517,10 @@ const beforeDBStream = async ({
 		divs,
 	};
 
-	// Smart CPU, the one switch the settings show for the mode, runs on the
-	// realistic front offices.
+	// Smart CPU runs on vanilla's rules, never with the realistic front
+	// offices (owner, 2026-11-17).
 	if (gameAttributeOverrides.smartCpu) {
-		gameAttributeOverrides.realisticFrontOffices = true;
+		gameAttributeOverrides.realisticFrontOffices = false;
 	}
 
 	// This setting is allowed to be undefined, so make it that way when it does nothing - it's only used for real players leagues and random debuts

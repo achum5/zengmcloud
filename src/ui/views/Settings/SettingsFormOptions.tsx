@@ -194,6 +194,7 @@ const Option = ({
 	value,
 	values,
 	customForm,
+	below,
 }: {
 	id: string;
 	disabled: boolean;
@@ -210,6 +211,7 @@ const Option = ({
 	value: unknown;
 	values?: Values;
 	customForm?: ReactNode;
+	below?: ReactNode;
 }) => {
 	const [showDescriptionLong, setShowDescriptionLong] = useState(false);
 
@@ -322,6 +324,7 @@ const Option = ({
 					</m.div>
 				) : null}
 			</AnimatePresence>
+			{below}
 		</>
 	);
 };
@@ -421,6 +424,7 @@ const SettingsFormOptions = ({
 								(
 									{
 										customForm,
+										customFormBelow,
 										decoration,
 										description,
 										descriptionLong,
@@ -442,6 +446,17 @@ const SettingsFormOptions = ({
 
 									const customFormNode = customForm
 										? customForm({
+												disabled: !enabled || disabled,
+												godModeRequired,
+												handleChange,
+												handleChangeRaw,
+												id,
+												inputStyle,
+												state,
+											})
+										: undefined;
+									const belowNode = customFormBelow
+										? customFormBelow({
 												disabled: !enabled || disabled,
 												godModeRequired,
 												handleChange,
@@ -475,6 +490,7 @@ const SettingsFormOptions = ({
 													description={description}
 													descriptionLong={descriptionLong}
 													customForm={customFormNode}
+													below={belowNode}
 													maxWidth={maxWidth}
 													godModeRequired={godModeRequired}
 													newLeague={newLeague}

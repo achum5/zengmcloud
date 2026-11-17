@@ -114,6 +114,7 @@ const gameAttributeKeys = [
 	"difficulty",
 	"difficultyTrade",
 	"difficultySigning",
+	"difficultyRevenue",
 	"stopOnInjury",
 	"stopOnInjuryGames",
 	"aiJerseyRetirement",

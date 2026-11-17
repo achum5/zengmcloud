@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 334,
+		date: "2026-11-17",
+		text: "Smart CPU now keeps the game's normal rules: turning it on no longer brings in the realistic free agency and contract rules (the MLE and the rest), it just makes the CPU teams smarter. In League Settings, Difficulty and Smart CPU are one box at the top: one Difficulty sets trading, signing and revenue together, or set any of them on its own (Sync puts them back together).",
+	},
+	{
 		n: 333,
 		date: "2026-11-17",
 		text: "Shared leagues: a phone that stopped getting notifications now signs itself back up when you open the app. There's also a Re-register button under Phone notifications on the Multiplayer Sync page, if they ever stop coming.",

@@ -1036,6 +1036,7 @@ export type GameAttributesLeague = {
 	difficulty: number;
 	difficultyTrade: number | null;
 	difficultySigning: number | null;
+	difficultyRevenue: number | null;
 	divs: NonEmptyArray<Div>;
 	draftAges: [number, number];
 	// Reshape generated draft prospects into specialists - good ratings

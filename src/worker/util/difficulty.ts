@@ -19,3 +19,8 @@ export const tradeDifficulty = (): number =>
 // existing moodComponents behavior.)
 export const signingDifficulty = (): number =>
 	g.get("difficultySigning") ?? g.get("difficulty");
+
+// The difficulty knob used for the human teams' REVENUE (tickets, merch,
+// sponsors, TV). Falls back to the league's overall `difficulty`.
+export const revenueDifficulty = (): number =>
+	g.get("difficultyRevenue") ?? g.get("difficulty");

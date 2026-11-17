@@ -7,6 +7,7 @@ import {
 import { player, season, team } from "../index.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers } from "../../util/index.ts";
+import { revenueDifficulty } from "../../util/difficulty.ts";
 import type { GameResults } from "../../../common/types.ts";
 import {
 	getActualAttendance,
@@ -218,7 +219,7 @@ const writeTeamStats = async (results: GameResults) => {
 
 		// 5% bonus for easy, 5% penalty for hard, 20% penalty for insane
 		const fudgeFactor = g.get("userTids").includes(results.team[t1].id)
-			? helpers.bound(1 - 0.2 * g.get("difficulty"), 0.1, Infinity)
+			? helpers.bound(1 - 0.2 * revenueDifficulty(), 0.1, Infinity)
 			: 1;
 
 		// Globally adjust revenue based on the number of games in the season and playoffs

@@ -534,6 +534,13 @@ updateGameAttributesGodMode). The difficulty never touched the GM. A league
 with the realistic front offices on that never had Smart CPU on - today's
 mode, the owner's league - runs as it did.
 
+Superseded 2026-11-17: Smart CPU runs on vanilla's rules. Turning it on still
+turned the realistic front offices on, so the switch gave the owner their
+free agency and contract rules (the MLE and the rest), not the vanilla-rules
+mode below. The owner: "i thought we got rid of that stuff and just made it
+essentially vanilla+?" Saved on (or turned off), Smart CPU now leaves them
+off, and a new league with it on starts with them off.
+
 ### Shared leagues (2026-11-14)
 
 The owner: "this needs to work 100% perfectly with mp sync". What was

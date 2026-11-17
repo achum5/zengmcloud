@@ -6099,13 +6099,14 @@ const updateGameAttributesGodMode = async (
 	// Will be handled in setRepeatSeason, don't pass through a string
 	delete gameAttributes.repeatSeason;
 
-	// Smart CPU, the one switch the settings show for the mode, runs on the
-	// realistic front offices: they go on with it and off with it. A league
-	// with them on that never had Smart CPU on (the mode before it) is left
-	// as it is.
-	if (gameAttributes.smartCpu) {
-		gameAttributes.realisticFrontOffices = true;
-	} else if (gameAttributes.smartCpu === false && g.get("smartCpu")) {
+	// Smart CPU runs on vanilla's rules (owner, 2026-11-17): saved on, or
+	// turned off, it leaves the realistic front offices (their free agency,
+	// contract rules, exceptions) off. A league with them on that never had
+	// Smart CPU on is left as it is.
+	if (
+		gameAttributes.smartCpu ||
+		(gameAttributes.smartCpu === false && g.get("smartCpu"))
+	) {
 		gameAttributes.realisticFrontOffices = false;
 	}
 

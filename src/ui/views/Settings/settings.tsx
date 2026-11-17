@@ -1,6 +1,5 @@
 import {
 	COURT,
-	DIFFICULTY,
 	GAME_NAME,
 	isValidSaveReplaysTid,
 	REAL_DRAFT_RATINGS,
@@ -23,6 +22,11 @@ import RowsEditor from "./RowsEditor.tsx";
 import PlayerBioInfo2 from "./PlayerBioInfo.tsx";
 import SaveReplaysTeams from "./SaveReplaysTeams.tsx";
 import LeagueLogoField from "./LeagueLogoField.tsx";
+import {
+	DIFFICULTY_VALUES,
+	DifficultyMain,
+	DifficultyParts,
+} from "./DifficultyBox.tsx";
 import type {
 	GameAttributesLeague,
 	RealDraftRatings,
@@ -113,6 +117,16 @@ type Setting = {
 		realPlayers?: boolean;
 	}) => boolean | undefined;
 	customForm?: (props: {
+		disabled: boolean;
+		godModeRequired: GodModeRequired;
+		handleChange: HandleChange;
+		handleChangeRaw: HandleChangeRaw;
+		id: string;
+		inputStyle: CSSProperties;
+		state: State;
+	}) => ReactNode;
+	// Shown under the setting's row, the full width of its box.
+	customFormBelow?: (props: {
 		disabled: boolean;
 		godModeRequired: GodModeRequired;
 		handleChange: HandleChange;
@@ -3115,10 +3129,15 @@ export const settings: Setting[] = (
 			category: "General",
 			key: "difficulty",
 			name: "Difficulty",
-			type: "floatValuesOrCustom", // Maybe this would have been better as customForm, like stopOnInjuryGames
+			type: "floatValuesOrCustom",
 			descriptionLong: (
 				<>
 					<p>{descriptions.difficulty}</p>
+					<p>
+						Trading, Signing and Revenue follow it until one is set on its own.
+						Higher is harder: Easy <code>-0.25</code>, Normal <code>0</code>,
+						Hard <code>0.25</code>, Insane <code>1</code>.
+					</p>
 					<p>
 						If you set the difficulty to Easy, you will not get credit for any{" "}
 						<a href="/achievements">Achievements</a>. This persists even if you
@@ -3126,11 +3145,14 @@ export const settings: Setting[] = (
 					</p>
 				</>
 			),
-			values: [
-				{ key: String(DIFFICULTY.Easy), value: "Easy" },
-				{ key: String(DIFFICULTY.Normal), value: "Normal" },
-				{ key: String(DIFFICULTY.Hard), value: "Hard" },
-				{ key: String(DIFFICULTY.Insane), value: "Insane" },
+			values: DIFFICULTY_VALUES,
+			customForm: (props) => <DifficultyMain {...props} />,
+			customFormBelow: (props) => <DifficultyParts {...props} />,
+			partners: [
+				"difficultyTrade",
+				"difficultySigning",
+				"difficultyRevenue",
+				...(__SPORT === "basketball" ? (["smartCpu"] as const) : []),
 			],
 		},
 		{
@@ -3138,29 +3160,21 @@ export const settings: Setting[] = (
 			key: "difficultyTrade",
 			name: "Trade Difficulty",
 			type: "floatOrNull",
-			descriptionLong: (
-				<>
-					Overrides difficulty for <b>trades only</b> — how the AI values your
-					players and draft picks. Leave blank to use the main Difficulty above.
-					Higher is harder: Easy <code>-0.25</code>, Normal <code>0</code>, Hard{" "}
-					<code>0.25</code>, Insane <code>1</code>.
-				</>
-			),
+			hidden: true,
 		},
 		{
 			category: "General",
 			key: "difficultySigning",
 			name: "Signing Difficulty",
 			type: "floatOrNull",
-			descriptionLong: (
-				<>
-					Overrides difficulty for <b>free-agent signings only</b> — how willing
-					players are to sign with you and how much they demand. Leave blank to
-					use the main Difficulty above. Higher is harder: Easy{" "}
-					<code>-0.25</code>, Normal <code>0</code>, Hard <code>0.25</code>,
-					Insane <code>1</code>.
-				</>
-			),
+			hidden: true,
+		},
+		{
+			category: "General",
+			key: "difficultyRevenue",
+			name: "Revenue Difficulty",
+			type: "floatOrNull",
+			hidden: true,
 		},
 		...(__SPORT === "basketball"
 			? [
@@ -3169,6 +3183,7 @@ export const settings: Setting[] = (
 						key: "smartCpu",
 						name: "Smart CPU",
 						type: "bool",
+						hidden: true,
 					} as const,
 				]
 			: []),
