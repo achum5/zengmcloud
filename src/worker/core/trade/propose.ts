@@ -10,8 +10,16 @@ import { hashSavedTrade } from "../../../common/hashSavedTrade.ts";
 import { getTradeBlockedReason } from "../../../common/transactionPhases.ts";
 import { tradeValueCalculator } from "../vanillaPlus/index.ts";
 import type { TradeTeams } from "../../../common/types.ts";
-import { realisticTradesOn, smartCpuOn } from "../realisticFrontOffice/isOn.ts";
-import { smartJudgeOffer, smartRejection } from "../smartCpu/humanTrades.ts";
+import {
+	realisticTradesOn,
+	smartCpuOn,
+	smartVanillaOn,
+} from "../realisticFrontOffice/isOn.ts";
+import {
+	smartGuardOffer,
+	smartJudgeOffer,
+	smartRejection,
+} from "../smartCpu/humanTrades.ts";
 import {
 	judgeHumanOffer as realisticFrontOfficeJudgeOffer,
 	verdictMessage as realisticFrontOfficeVerdictMessage,
@@ -137,6 +145,26 @@ const propose = async (
 		dpidsRemove: teams[1].dpids,
 		tradingPartnerTid: g.get("userTid"),
 	});
+
+	// The smart CPU on vanilla's rules: what vanilla takes, the team may still
+	// turn down - against its direction, or a rival contender's gain
+	// (smartCpu/humanTrades.ts).
+	if (
+		dv > 0 &&
+		!forceTrade &&
+		smartVanillaOn() &&
+		!g.get("userTids").includes(teams[1].tid)
+	) {
+		const guard = await smartGuardOffer(
+			teams[1].tid,
+			teams[0].tid,
+			{ pids: teams[1].pids, dpids: teams[1].dpids },
+			{ pids: teams[0].pids, dpids: teams[0].dpids },
+		);
+		if (!guard.ok) {
+			return { accepted: false as const, message: guard.message };
+		}
+	}
 
 	if (dv > 0 || forceTrade) {
 		return accept(teams, tids);

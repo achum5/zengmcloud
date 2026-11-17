@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 328,
+		date: "2026-11-17",
+		text: "Smart CPU now works with Realistic Front Offices off: free agency, re-signing, the trade screens and your trade difficulty stay as they are, but CPU teams trade with each other all season, sign, re-sign and draft by what actually helps them win, and won't take a trade that goes against where they're headed or helps a rival contender more than it helps them.",
+	},
+	{
 		n: 327,
 		date: "2026-11-17",
 		text: "Shared leagues: phone notifications work again. Holding a device's notifications while it was in a live game (yesterday's change) kept them from going out at all, so it's off for now: you may get a score while you're still watching that game.",

@@ -13,6 +13,7 @@ import { ensureRetention } from "../realisticFrontOffice/outlook.ts";
 import { timed, timedSync } from "./clock.ts";
 import { salaryRulesAllow } from "./tradeRules.ts";
 import { inStages } from "../realisticFrontOffice/stages.ts";
+import { smartVanillaOn } from "../realisticFrontOffice/isOn.ts";
 import { viewFor } from "./signing.ts";
 import { smartSettings, type Holdings, type SmartView } from "./worth.ts";
 
@@ -50,6 +51,11 @@ export const marketSettings = {
 	// in the last few before the deadline - where three in four of the NBA's
 	// in-season trades are made (arena benchmarks).
 	gamesBetween: 17,
+	// On vanilla's rules (smartVanillaOn), every this many: CPU teams go after
+	// players all season, not mostly at the deadline - so a human team can't
+	// take the preseason to buy up every upgrade before the other contenders
+	// move (owner, 2026-11-17).
+	vanillaGamesBetween: 5,
 	deadlineDays: 5,
 	// In free agency, a moment on these days left - or, in stages, at each
 	// stage (daysLeft counts the stages down).
@@ -486,7 +492,10 @@ export const smartTradeDay = async () => {
 		const games = await gamesPlayed();
 		const every = Math.max(
 			1,
-			g.get("numActiveTeams") * marketSettings.gamesBetween,
+			g.get("numActiveTeams") *
+				(smartVanillaOn()
+					? marketSettings.vanillaGamesBetween
+					: marketSettings.gamesBetween),
 		);
 		const period = Math.floor(games / every);
 		// Not as the season opens: the preseason's window has just met.

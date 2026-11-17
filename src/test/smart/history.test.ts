@@ -62,8 +62,9 @@ test.skipIf(!env.HIST_LEAGUE || !env.HIST_OUT)(
 			Math.random = makeSeededRandom(Number(env.HIST_SEED));
 		}
 		// Nobody at the controls: every team the GM's, the human teams too.
+		// HIST_RFO=0: the smart CPU on vanilla's rules (smartVanillaOn).
 		await league.setGameAttributes({
-			realisticFrontOffices: true,
+			realisticFrontOffices: env.HIST_RFO !== "0",
 			smartCpu: true,
 			spectator: true,
 		});

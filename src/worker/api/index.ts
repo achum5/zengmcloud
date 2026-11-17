@@ -342,11 +342,14 @@ import { generateContractOptions } from "../core/contractNegotiation/generateCon
 import {
 	realisticFreeAgencyOn,
 	realisticTradesOn,
+	smartBrainOn,
 	smartCpuOn,
+	smartVanillaOn,
 	vanillaPlusOn,
 } from "../core/realisticFrontOffice/isOn.ts";
 import { tradeValueCalculator } from "../core/vanillaPlus/index.ts";
 import { smartTradingBlock } from "../core/smartCpu/screens.ts";
+import { smartGuardOffer } from "../core/smartCpu/humanTrades.ts";
 import { afterPick as realisticFrontOfficeAfterPick } from "../core/realisticFrontOffice/draft.ts";
 import { tradingBlockTeams } from "../core/realisticFrontOffice/proposals.ts";
 import {
@@ -1615,7 +1618,7 @@ const draftUser = async (pid: number, conditions: Conditions) => {
 	if (dp && g.get("userTids").includes(dp.tid)) {
 		const selected = await draft.selectPlayer(dp, pid);
 		if (selected) {
-			if (realisticTradesOn() || smartCpuOn()) {
+			if (realisticTradesOn() || smartBrainOn()) {
 				await realisticFrontOfficeAfterPick();
 			}
 			draftPicks.shift();
@@ -3691,6 +3694,22 @@ const getOffers = async (
 				valueChangeCalculator,
 			});
 
+			// The smart CPU on vanilla's rules: not an offer it would then turn
+			// down (smartCpu/humanTrades.ts).
+			if (
+				teams2 &&
+				smartVanillaOn() &&
+				!(
+					await smartGuardOffer(
+						tid,
+						g.get("userTid"),
+						{ pids: teams2[1].pids, dpids: teams2[1].dpids },
+						{ pids: teams2[0].pids, dpids: teams2[0].dpids },
+					)
+				).ok
+			) {
+				continue;
+			}
 			if (teams2) {
 				offers.push(teams2);
 			}

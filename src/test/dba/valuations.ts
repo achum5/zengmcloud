@@ -127,6 +127,49 @@ export const smart =
 		};
 	};
 
+// The smart CPU on vanilla's rules: vanilla at a trade difficulty, and then
+// the CPU team's guard against a human (smartCpu/humanTrades.ts) - its
+// direction, and a rival contender's gain.
+export const guarded = (difficultyTrade: number): Valuation => {
+	const base = vanilla(difficultyTrade);
+	let view: any;
+	let outlook: any;
+	return {
+		name: `guarded@${difficultyTrade}`,
+		async prepare(moment) {
+			await base.prepare?.(moment);
+			g.setWithoutSavingToDB("smartCpu", true);
+			const { buildOutlook } =
+				await import("../../worker/core/realisticFrontOffice/outlook.ts");
+			const { SmartView } = await import("../../worker/core/smartCpu/worth.ts");
+			const env: Record<string, string | undefined> =
+				(globalThis as any).process?.env ?? {};
+			outlook = await buildOutlook({
+				iterations: Number(env.SMART_ITER ?? 500),
+			});
+			view = new SmartView(outlook, g.get("userTids"));
+			await view.prime();
+		},
+		async evaluate(s) {
+			const dv = await base.evaluate(s);
+			if (!(dv > 0) || !s.vsHuman) {
+				return dv;
+			}
+			const { guardWith } =
+				await import("../../worker/core/smartCpu/humanTrades.ts");
+			const guard = await guardWith(
+				view,
+				outlook,
+				s.tid,
+				s.partnerTid,
+				{ pids: s.pidsRemove, dpids: s.dpidsRemove },
+				{ pids: s.pidsAdd, dpids: s.dpidsAdd },
+			);
+			return guard.ok ? dv : -1;
+		},
+	};
+};
+
 export const valuations: Record<string, () => Valuation> = {
 	vanilla: () => vanilla(),
 	realistic,
@@ -139,6 +182,9 @@ export const valuationNamed = (name: string): Valuation => {
 	const [base, arg] = name.split("@");
 	if (base === "vanilla" && arg !== undefined) {
 		return vanilla(Number(arg));
+	}
+	if (base === "guarded" && arg !== undefined) {
+		return guarded(Number(arg));
 	}
 	const make = valuations[name];
 	if (!make) {

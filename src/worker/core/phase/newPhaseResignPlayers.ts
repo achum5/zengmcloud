@@ -23,6 +23,7 @@ import { getHardCap } from "../../util/getHardCap.ts";
 import {
 	realisticFreeAgencyOn,
 	realisticFrontOfficesOn,
+	smartVanillaOn,
 } from "../realisticFrontOffice/isOn.ts";
 import {
 	defaultReSignOffer as realisticFrontOfficeDefaultReSignOffer,
@@ -32,6 +33,7 @@ import { autoPlayStopsAt } from "../league/autoPlay.ts";
 import { decideOptions } from "../realisticFrontOffice/freeAgency.ts";
 import { stagesOn } from "../realisticFrontOffice/stages.ts";
 import { howFor } from "../realisticFrontOffice/history.ts";
+import { smartVanillaReSign } from "../smartCpu/vanilla.ts";
 
 export const FREE_AGENCY_DAYS = 30;
 // College: four weeks of offseason recruiting, then signing day.
@@ -323,15 +325,24 @@ const newPhaseResignPlayers = async (
 					// Player must be willing to sign (includes draft picks and first year after expansion, from moodInfo)
 					reSignPlayer = false;
 				} else {
+					// The smart CPU on vanilla's rules: whether it is better off with
+					// him on what he asks (smartCpu/vanilla.ts).
+					const smartKeep =
+						smartVanillaOn() && !draftPick
+							? await smartVanillaReSign(p, contract)
+							: undefined;
 					// Is team better off without him?
-					const dv = await valueChangeCalculator.evaluate({
-						tid: p.tid,
-						pidsAdd: [],
-						pidsRemove: [p.pid],
-						dpidsAdd: [],
-						dpidsRemove: [],
-						tradingPartnerTid: undefined,
-					});
+					const dv =
+						smartKeep !== undefined
+							? 0
+							: await valueChangeCalculator.evaluate({
+									tid: p.tid,
+									pidsAdd: [],
+									pidsRemove: [p.pid],
+									dpidsAdd: [],
+									dpidsRemove: [],
+									tradingPartnerTid: undefined,
+								});
 
 					// Skip re-signing some low value players, otherwise teams fill up their rosters too readily
 					const skipBadPlayer =
@@ -343,7 +354,8 @@ const newPhaseResignPlayers = async (
 
 					if (
 						draftPick ||
-						(mood.willing && dv < 0 && !skipBadPlayer && whatever)
+						(mood.willing &&
+							(smartKeep ?? (dv < 0 && !skipBadPlayer && whatever)))
 					) {
 						await player.sign(p, p.tid, contract, PHASE.RESIGN_PLAYERS);
 

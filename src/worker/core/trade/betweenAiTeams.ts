@@ -10,7 +10,7 @@ import type { ValueChangeCalculator } from "../team/ValueChangeCalculator.ts";
 import { tradeValueCalculator } from "../vanillaPlus/index.ts";
 import {
 	realisticTradesOn,
-	smartCpuOn,
+	smartBrainOn,
 	vanillaPlusOn,
 } from "../realisticFrontOffice/isOn.ts";
 import { smartTradeDay } from "../smartCpu/market.ts";
@@ -157,7 +157,7 @@ const betweenAiTeams = async () => {
 	}
 
 	// The smart CPU's market meets on its own schedule (smartCpu/market.ts).
-	if (smartCpuOn()) {
+	if (smartBrainOn()) {
 		await smartTradeDay();
 		return false;
 	}

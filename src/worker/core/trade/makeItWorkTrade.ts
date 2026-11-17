@@ -4,7 +4,12 @@ import makeItWork from "./makeItWork.ts";
 import summary from "./summary.ts";
 import get from "./get.ts";
 import { tradeValueCalculator } from "../vanillaPlus/index.ts";
-import { realisticTradesOn, smartCpuOn } from "../realisticFrontOffice/isOn.ts";
+import {
+	realisticTradesOn,
+	smartCpuOn,
+	smartVanillaOn,
+} from "../realisticFrontOffice/isOn.ts";
+import { smartGuardOffer } from "../smartCpu/humanTrades.ts";
 import { smartMakeItWork } from "../smartCpu/screens.ts";
 import { counterTeams } from "../realisticFrontOffice/proposals.ts";
 
@@ -34,6 +39,23 @@ const makeItWorkTrade = async () => {
 					holdUserConstant: false,
 					valueChangeCalculator,
 				});
+
+	// The smart CPU on vanilla's rules: not a deal it would then turn down
+	// (smartCpu/humanTrades.ts).
+	if (teams && smartVanillaOn() && !g.get("userTids").includes(teams[1].tid)) {
+		const guard = await smartGuardOffer(
+			teams[1].tid,
+			teams[0].tid,
+			{ pids: teams[1].pids, dpids: teams[1].dpids },
+			{ pids: teams[0].pids, dpids: teams[0].dpids },
+		);
+		if (!guard.ok) {
+			return {
+				changed: false,
+				message: `${g.get("teamInfoCache")[teams0[1].tid]?.region} GM: ${guard.message.replace("Trade rejected! ", "")}`,
+			};
+		}
+	}
 
 	if (!teams) {
 		return {

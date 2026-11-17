@@ -14,7 +14,8 @@ import { bySport } from "../../../common/sportFunctions.ts";
 import { last } from "../../../common/utils.ts";
 import {
 	realisticFrontOfficesOn,
-	smartCpuOn,
+	smartBrainOn,
+	smartVanillaOn,
 } from "../realisticFrontOffice/isOn.ts";
 import { howFor } from "../realisticFrontOffice/history.ts";
 import {
@@ -162,7 +163,7 @@ export const dropPlayers = async (players: Player[], numToDrop: number) => {
 // whenever one was hurt (the owner's league, 2025).
 const SMART_WORKING_ROSTER = 13;
 const fillTo = (userTeamAndActive: boolean) =>
-	!userTeamAndActive && smartCpuOn()
+	!userTeamAndActive && smartBrainOn()
 		? Math.min(
 				g.get("maxRosterSize"),
 				Math.max(g.get("minRosterSize"), SMART_WORKING_ROSTER),
@@ -207,15 +208,16 @@ const checkRosterSizes = async (
 			} else {
 				// Realistic front offices: whoever the team can best do without
 				// (realisticFrontOffice/cuts.ts).
-				const releasedPIDsTemp = realisticFrontOfficesOn()
-					? await frontOfficeCuts(
-							players,
-							numPlayersOnRoster - g.get("maxRosterSize"),
-						)
-					: await dropPlayers(
-							players,
-							numPlayersOnRoster - g.get("maxRosterSize"),
-						);
+				const releasedPIDsTemp =
+					realisticFrontOfficesOn() || smartVanillaOn()
+						? await frontOfficeCuts(
+								players,
+								numPlayersOnRoster - g.get("maxRosterSize"),
+							)
+						: await dropPlayers(
+								players,
+								numPlayersOnRoster - g.get("maxRosterSize"),
+							);
 				releasedPIDs.push(...releasedPIDsTemp);
 			}
 		} else if (numPlayersOnRoster < fillTo(userTeamAndActive)) {
@@ -252,7 +254,7 @@ const checkRosterSizes = async (
 					let p: Player | undefined;
 					// Realistic front offices: whoever is worth the most to the team
 					// (realisticFrontOffice/cuts.ts).
-					if (realisticFrontOfficesOn()) {
+					if (realisticFrontOfficesOn() || smartVanillaOn()) {
 						p = await frontOfficeFill(tid, minFreeAgents);
 						if (p) {
 							minFreeAgents.splice(minFreeAgents.indexOf(p), 1);

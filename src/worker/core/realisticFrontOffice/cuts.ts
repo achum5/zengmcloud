@@ -8,7 +8,7 @@ import {
 	type LeagueOutlook,
 } from "./outlook.ts";
 import { contractOf } from "./contractOf.ts";
-import { smartCpuOn } from "./isOn.ts";
+import { smartBrainOn } from "./isOn.ts";
 import {
 	prepareSignings,
 	smartSigningPrice,
@@ -153,7 +153,7 @@ export const frontOfficeCuts = async (
 	}
 	const outlook = await currentOutlook();
 	const released: number[] = [];
-	if (smartCpuOn()) {
+	if (smartBrainOn()) {
 		for (let k = 0; k < numToDrop; k++) {
 			const best = await smartCut(outlook, tid, keep);
 			if (!best) {
@@ -190,7 +190,7 @@ const SIGN_AT_LIMIT_MARGIN = 0.001;
 // him.
 export const worthSigningAtLimit = async (tid: number, signed: Player) => {
 	const outlook = await currentOutlook();
-	if (smartCpuOn()) {
+	if (smartBrainOn()) {
 		// The cut it will really make with him on the roster (frontOfficeCuts:
 		// the same candidates, what it would owe counted) isn't him, and leaves
 		// it better off than it is. Priced on the few least valuable (afterCuts),
@@ -257,7 +257,7 @@ export const frontOfficeFill = async (
 		return undefined;
 	}
 	const outlook = await currentOutlook();
-	if (smartCpuOn()) {
+	if (smartBrainOn()) {
 		// The one worth most to it on what he asks, by the GM's worth.
 		const tried = candidates.slice(0, FILL_CANDIDATES);
 		await prepareSignings(outlook, tried);

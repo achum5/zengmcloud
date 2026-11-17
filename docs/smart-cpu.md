@@ -908,3 +908,53 @@ way and signed for $1.4M).
   47-rated 22-year-old to 51, as the league's own drafts turned out.
 - Free agents paid above their ask (Blake Wesley, 62/69, the max at a $41M
   ask), and five-year deals to 33-year-olds.
+
+## On vanilla's rules (2026-11-17)
+
+The owner's idea: the game as the league plays it today - vanilla at trade
+difficulty 3.5, overall 2.5 - but with CPU teams that go after players and
+handle things far better; and against humans, two tweaks: a CPU team doesn't
+sell out its direction, and a human can't poach a contender's player to
+double his own chances.
+
+**The switch.** Smart CPU on, Realistic Front Offices off
+(`smartVanillaOn`; `smartBrainOn` is either). Before, that combination did
+nothing.
+
+**What stays vanilla:** free agency (daily, asks and mood as vanilla has
+them), re-signing (willingness), the trade screens and their answers at the
+league's trade difficulty, the draft screen, the sim.
+
+**What is the smart CPU's** (the same engine as with Realistic Front
+Offices):
+
+- CPU-CPU trades: its market, at the preseason flip, after the draft, at
+  re-signing, three moments in free agency, and every 5 games a team all
+  season (`vanillaGamesBetween`; 17 with Realistic Front Offices) plus each
+  of the deadline's last five days - so contenders keep going after players
+  all season and a human can't take the preseason to buy up the market.
+- Free agency: on a day a CPU team signs (vanilla's odds of a day off), of
+  the 10 best it may sign under vanilla's cap rules, the one it gains most
+  from on his ask, and nobody if no one is worth his ask
+  (`smartCpu/vanilla.ts`).
+- Re-signing: a willing player is kept if the team is better off with him on
+  his ask than without him.
+- The draft, cuts, filling a short roster: as with Realistic Front Offices.
+
+**A human's offer** (`smartGuardOffer`, smartCpu/humanTrades.ts): vanilla
+must say yes at the league's difficulty, and then
+
+- a contender (3%+ title chances this season and next) turns it down if it
+  leaves it weaker over those two seasons by more than 2% of its chances
+  (at least 0.005);
+- a rebuilding team (0.5% or less) turns it down if it leaves it 0.005
+  weaker after that;
+- a contender facing a contender turns it down if the human's gain over the
+  two seasons is over 0.01 and more than 1.5 times its own.
+  What would make this work, the trading block and the CPU's proposals to a
+  human never put up a deal the guard would turn down.
+
+On the owner's 2023 export, a human GSW (and BOS) asking contenders CLE,
+BOS, TOR and MEM for a starter for picks: every one refused for the
+contender's own sake ("We're trying to win now"), most of them refused by
+vanilla too; rebuilding teams' fair deals went through.

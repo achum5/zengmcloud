@@ -9,7 +9,11 @@ import { orderBy } from "../../../common/utils.ts";
 import { shuffle } from "../../../common/random.ts";
 import { userControlsTeam } from "../../util/userControlsTeam.ts";
 import { revertBefore } from "../player/revertSnapshot.ts";
-import { realisticFreeAgencyOn } from "../realisticFrontOffice/isOn.ts";
+import {
+	realisticFreeAgencyOn,
+	smartVanillaOn,
+} from "../realisticFrontOffice/isOn.ts";
+import { smartVanillaSigning } from "../smartCpu/vanilla.ts";
 import { freeAgencyDay as realisticFrontOfficeFreeAgencyDay } from "../realisticFrontOffice/freeAgency.ts";
 
 /**
@@ -81,12 +85,16 @@ const autoSign = async () => {
 
 		// Ignore roster size, will drop bad player if necessary in checkRosterSizes, and getBest won't sign min contract player unless under the roster limit
 		const payroll = await team.getPayroll(t.tid);
-		const p = getBest(
-			playersOnRoster,
-			playersSorted,
-			payroll,
-			getHardCap(t.tid),
-		);
+		// The smart CPU on vanilla's rules: the one it gains most from
+		// (smartCpu/vanilla.ts).
+		const p = smartVanillaOn()
+			? await smartVanillaSigning(
+					t.tid,
+					playersSorted,
+					payroll,
+					getHardCap(t.tid),
+				)
+			: getBest(playersOnRoster, playersSorted, payroll, getHardCap(t.tid));
 		if (p) {
 			// Remove from list of free agents
 			playersSorted = playersSorted.filter((p2) => p2 !== p);

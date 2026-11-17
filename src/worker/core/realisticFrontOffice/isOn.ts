@@ -11,6 +11,20 @@ export const realisticFrontOfficesOn = () =>
 export const smartCpuOn = () =>
 	realisticFrontOfficesOn() && !!g.get("smartCpu");
 
+// The smart CPU on vanilla's rules: the Smart CPU switch with the new front
+// offices off. Free agency, re-signing, the trade screens and the trade
+// difficulty stay vanilla's; CPU teams trade among themselves, sign, re-sign,
+// draft and cut by the smart CPU's worth, and turn down a human's offer that
+// vanilla would take if it goes against their direction or helps a rival
+// contender more than them (smartCpu/humanTrades.ts).
+export const smartVanillaOn = () =>
+	__SPORT === "basketball" &&
+	!!g.get("smartCpu") &&
+	!g.get("realisticFrontOffices");
+
+// Whether CPU teams decide by the smart CPU's worth, on either rules.
+export const smartBrainOn = () => smartCpuOn() || smartVanillaOn();
+
 // Whether trades run on the mode's own title-odds engine: not once vanilla+
 // is on (core/vanillaPlus), which trades on vanilla's, or the smart CPU.
 export const realisticTradesOn = () =>

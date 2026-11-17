@@ -12,7 +12,9 @@ import { defineView } from "../util/defineView.ts";
 import {
 	realisticTradesOn,
 	smartCpuOn,
+	smartVanillaOn,
 } from "../core/realisticFrontOffice/isOn.ts";
+import { smartGuardOffer } from "../core/smartCpu/humanTrades.ts";
 import { smartOfferStands, smartProposals } from "../core/smartCpu/screens.ts";
 import {
 	proposalStands,
@@ -144,6 +146,22 @@ const getOffers = async (seed: number) => {
 					});
 
 			if (!teams || !notWeird(teams)) {
+				continue;
+			}
+
+			// The smart CPU on vanilla's rules: not an offer it would then turn
+			// down (smartCpu/humanTrades.ts).
+			if (
+				smartVanillaOn() &&
+				!(
+					await smartGuardOffer(
+						t.tid,
+						userTid,
+						{ pids: teams[1].pids, dpids: teams[1].dpids },
+						{ pids: teams[0].pids, dpids: teams[0].dpids },
+					)
+				).ok
+			) {
 				continue;
 			}
 
