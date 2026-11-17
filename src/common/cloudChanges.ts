@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 339,
+		date: "2026-11-17",
+		text: "3D: a ball handler keeps the ball away from the defender in front of him, switching it to the far hand with a crossover, or between the legs when he's sizing up a defender who's tight on him.",
+	},
+	{
 		n: 338,
 		date: "2026-11-17",
 		text: "Shared leagues: CPU teams now only trade and sign on the device in charge of simming, so your own last draft pick or your own game no longer freezes your phone while the CPU thinks, and league mates' teams no longer show up as CPU trade offers. Saving League Settings now only changes what you changed, Auto Play holds everyone's moves until it's done, and Sim here waits until the current sim finishes.",

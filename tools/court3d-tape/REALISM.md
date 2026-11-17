@@ -277,13 +277,23 @@ lockstep, repeats; film.
   backing a man down. A dribble run that would go straight through a man
   of theirs goes by his hip (atHisHip) - not one into a charge, a strip or
   a block, nor one into backing his man down. Test games a, b: the man on
-  him within 2.5 ft 14.4% -> 12.4% of the dribbling, within 1.8 ft 3.5%
-  -> 3.0%. Tried and left out: a deeper spot for him while the play is
+  him within 2.5 ft 14.4% -> 12.6% of the dribbling, within 1.8 ft 3.5%
+  -> 3.2% (as pushed, after the post-up fix). Tried and left out: a deeper spot for him while the play is
   staged (it cut the stepper's crossovers by two thirds), probes in at his
   hip (a man off where the play has him), keeping the man in front of the
-  ball 3.2 ft off (the charge taken falls on top of him). Next: the ball
-  kept away from him (ballAway in the stepper: on his side 46% -> 35%, but
-  the crossover's first frame jumps a hair - to find).
+  ball 3.2 ft off (the charge taken falls on top of him).
+- **2026-11-17, the ball kept away from him (part 1).** Stepped, a man of
+  theirs close in front on the side he has it, the man with the ball takes
+  it over to the other hand on the beat before (ballAway: a crossover in
+  front; between his legs only stood with the man tight on him - a move
+  through his legs or round his back set off on the move starts from
+  elsewhere than the top of his dribble, and the ball jumps). Back in the
+  hand he started in by what comes next - unless that is a pick-up and a
+  pass, which can come up from either (a shot, a layup, goes up from the
+  hand it was to). Test games a, b: on his side 45.2% -> 39.2%; crossovers
+  in front 250 -> 475, through the legs 114 -> 125. The stepper's own
+  crossovers are checked against where the stepping takes him, and so are
+  not these (marked away on the ball).
 - **Next: B2, the screener's man ready for the coverage** in the step a
   ball screen is set (a drop sat back toward the rim, a show up level with
   the screen). It reshuffles the games; the rest of its fallout to check.

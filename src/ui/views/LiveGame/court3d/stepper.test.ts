@@ -361,13 +361,15 @@ describe("3D: the ten stepped", () => {
 
 	test("going from one side of his line to the other, the man with the ball takes it across with him - and has it back for what comes next", () => {
 		// The crossovers the stepping puts in: on the move, not the
-		// director's.
+		// director's - nor those keeping it away from a man of theirs (see
+		// "the ball away from him", below).
 		const had = new Set(laid.ball.map((s) => `${s.kind} ${s.t0}`));
 		const crosses = stepped.ball.filter(
 			(s) =>
 				s.kind === "hold" &&
 				s.style === "cross" &&
 				!s.still &&
+				!s.away &&
 				!had.has(`${s.kind} ${s.t0}`),
 		);
 		assert.isAbove(crosses.length, 5);
@@ -423,17 +425,102 @@ describe("3D: the ten stepped", () => {
 				: undefined;
 		};
 		let ends = 0;
-		for (const s of laid.ball) {
-			if (s.kind === "hold" && s.style !== "hold") {
-				continue;
+		// (Picked up into both hands and passed on, it can come up from either
+		// - from the one away from his man, say.)
+		const passedOn = (t: number) => {
+			const k = stepped.ball.findIndex(
+				(x) => x.kind === "hold" && x.style === "hold" && x.t0 === t,
+			);
+			const n = stepped.ball[k + 1];
+			return (
+				k >= 0 &&
+				n?.kind === "fly" &&
+				"pid" in n.from &&
+				"pid" in n.to &&
+				n.to.pid !== n.from.pid
+			);
+		};
+		laid.ball.forEach((s) => {
+			if (
+				(s.kind === "hold" && s.style !== "hold") ||
+				(s.kind === "hold" && passedOn(s.t0))
+			) {
+				return;
 			}
 			const was = handBefore(laid.ball, s.t0);
 			if (was === undefined) {
-				continue;
+				return;
 			}
 			ends += 1;
 			assert.strictEqual(handBefore(stepped.ball, s.t0), was, `${s.t0}`);
-		}
-		assert.isAbove(ends, 50);
+		});
+		assert.isAbove(ends, 20);
 	});
+
+	// THE BALL AWAY FROM HIM: a man of theirs close in front, on the side he
+	// has it, and he has it over in the other hand - through his legs with
+	// the man tight on him, stood. (Not always: a shot after it goes up from
+	// the hand it was to go up from.)
+	test("the man with the ball keeps it away from the man on him", () => {
+		const exposed = (tl: typeof laid) => {
+			let n = 0;
+			let on = 0;
+			for (let t = 20_000; t < tl.end - 1000; t += 100) {
+				if (fastAt(tl, t) > 1) {
+					continue;
+				}
+				for (const tr of tl.tracks.values()) {
+					const H = evalPlayer(tl, tr.pid, t);
+					if (!H.shown || H.dribbleHand === undefined || H.holding) {
+						continue;
+					}
+					// (The way he faces: the way he is going, going; else the
+					// rim.)
+					const H1 = evalPlayer(tl, tr.pid, t + 150);
+					const vx = (H1.x - H.x) / 0.15;
+					const vy = (H1.y - H.y) / 0.15;
+					const sp = Math.hypot(vx, vy);
+					const L = Math.hypot(rimX(tr.team) - H.x, 25 - H.y) || 1;
+					const fx = sp > 3 ? vx / sp : (rimX(tr.team) - H.x) / L;
+					const fy = sp > 3 ? vy / sp : (25 - H.y) / L;
+					let near: { d: number; lat: number } | undefined;
+					for (const o of tl.tracks.values()) {
+						if (o.pid < 0 || o.team === tr.team) {
+							continue;
+						}
+						const D = evalPlayer(tl, o.pid, t);
+						const dx = D.x - H.x;
+						const dy = D.y - H.y;
+						const d = Math.hypot(dx, dy);
+						if (D.shown && d < 4 && dx * fx + dy * fy > 0) {
+							if (!near || d < near.d) {
+								near = { d, lat: fx * dy - fy * dx };
+							}
+						}
+					}
+					if (!near || Math.abs(near.lat) < 0.4) {
+						continue;
+					}
+					n += 1;
+					if (near.lat > 0 === (H.dribbleHand === "L")) {
+						on += 1;
+					}
+				}
+			}
+			return on / n;
+		};
+		const before = exposed(laid);
+		const after = exposed(stepped);
+		// (Played up on his ball hand, as a man on the ball is - so, laid out
+		// with the ball where it was, mostly on his side.)
+		assert.isBelow(after, before - 0.03, `${before} -> ${after}`);
+		const away = stepped.ball.filter(
+			(s) => s.kind === "hold" && s.style === "cross" && s.away,
+		);
+		assert.isAbove(away.length, 10);
+		assert.isAbove(
+			away.filter((s) => s.kind === "hold" && s.move !== "front").length,
+			2,
+		);
+	}, 600_000);
 });

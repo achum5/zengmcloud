@@ -453,6 +453,9 @@ export type BallSeg =
 			// A move put through where he stands (see comboAt): him stood
 			// through it.
 			still?: true;
+			// Taken over to keep it away from a man of theirs on that side
+			// (see ballAway in stepper.ts), not going anywhere himself.
+			away?: true;
 	  }
 	| {
 			kind: "fly";
