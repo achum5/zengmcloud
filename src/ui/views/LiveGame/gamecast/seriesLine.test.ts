@@ -79,3 +79,17 @@ test("a play-in game's line: the play-in and the seeds", () => {
 		"Play-In · 10 CHA vs 9 NYK",
 	);
 });
+
+test("a box score's line has the game in it", () => {
+	const done = info(3);
+	done.series[3] = { ...done.series[3]!, pts: [110, 100] };
+	assert.strictEqual(
+		seriesLine(done, true, [NYK, BOS], true),
+		"1st round · Game 4 · BOS leads 3-1",
+	);
+	const first = info(0);
+	assert.strictEqual(
+		seriesLine(first, true, [NYK, BOS], true),
+		"1st round · Game 1 · BOS leads 1-0",
+	);
+});

@@ -1647,6 +1647,11 @@ tr.table-warning:hover > td {
 	font-weight: 700;
 	margin-bottom: 0.15rem;
 }
+.recap-series {
+	color: var(--bs-secondary-color);
+	font-size: 0.875rem;
+	margin-top: 0.25rem;
+}
 .recap-nav {
 	display: flex;
 	align-items: center;
@@ -1833,6 +1838,10 @@ tr.table-warning:hover > td {
 	min-width: 0;
 	.recap-status {
 		font-size: 0.8rem;
+	}
+	.recap-series {
+		font-size: 0.75rem;
+		line-height: 1.2;
 	}
 }
 .recap-mini {

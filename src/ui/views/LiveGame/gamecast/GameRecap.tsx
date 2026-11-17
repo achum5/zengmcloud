@@ -55,6 +55,7 @@ import { ShotChart } from "./ShotChart.tsx";
 import { HighlightClip } from "./HighlightClip.tsx";
 import { unpackShots, type ShotSpot } from "./shots.ts";
 import { GAME_S, winProb } from "../winProb.ts";
+import { seriesLine } from "./seriesLine.ts";
 
 type Tab = "recap" | "box" | "plays" | "stats" | "flow";
 
@@ -214,6 +215,12 @@ const RecapHeader = ({
 	const winner =
 		home.pts > away.pts ? home.tid : away.pts > home.pts ? away.tid : undefined;
 	const season = boxScore.season;
+	const series = seriesLine(
+		boxScore.gamecast,
+		!!boxScore.playoffs,
+		[away, home],
+		true,
+	);
 	return (
 		<div className="recap-header">
 			<div className="recap-scoreline d-none d-md-flex">
@@ -221,6 +228,7 @@ const RecapHeader = ({
 				<div className="recap-middle">
 					<div className="recap-status">{finalText(boxScore)}</div>
 					<Linescore boxScore={boxScore} />
+					{series ? <div className="recap-series">{series}</div> : null}
 				</div>
 				<HeaderTeam t={home} season={season} won={winner === home.tid} right />
 			</div>
@@ -229,6 +237,7 @@ const RecapHeader = ({
 				<div className="recap-phone-mid">
 					<div className="recap-status">{finalText(boxScore)}</div>
 					<MiniLinescore boxScore={boxScore} />
+					{series ? <div className="recap-series">{series}</div> : null}
 				</div>
 				<PhoneTeam t={home} season={season} won={winner === home.tid} right />
 			</div>

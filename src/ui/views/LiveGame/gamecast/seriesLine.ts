@@ -39,12 +39,14 @@ export const recordText = (
 // A playoff game's round, which game of the series it is, and the series as
 // it stood going into it - "1st round · Game 3 · BOS leads 2-1" - for the
 // score bug; a play-in game, the play-in and each team's seed. Undefined
-// outside the playoffs.
+// outside the playoffs. `after`: the series with this game in it, for its
+// box score.
 export const seriesLine = (
 	info: GamecastInfo | undefined,
 	playoffs: boolean,
 	// Away first, as the score bug has them.
 	teams: [Team, Team],
+	after = false,
 ): string | undefined => {
 	if (!playoffs || !info || info.series.length === 0) {
 		return undefined;
@@ -59,7 +61,7 @@ export const seriesLine = (
 	}
 	const k = info.series.findIndex((s) => s.now);
 	const round = info.bracket?.find((r) => r.series.some((s) => s.now));
-	const w = seriesWins(info, teams[0].tid, teams[1].tid, true);
+	const w = seriesWins(info, teams[0].tid, teams[1].tid, !after);
 	const parts = [
 		round ? round.name.charAt(0).toUpperCase() + round.name.slice(1) : "",
 		k >= 0 ? `Game ${k + 1}` : "",
