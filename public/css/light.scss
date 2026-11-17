@@ -1648,9 +1648,14 @@ tr.table-warning:hover > td {
 	margin-bottom: 0.15rem;
 }
 .recap-series {
+	display: block;
 	color: var(--bs-secondary-color);
 	font-size: 0.875rem;
 	margin-top: 0.25rem;
+	text-decoration: none;
+	&:hover {
+		text-decoration: underline;
+	}
 }
 .recap-nav {
 	display: flex;

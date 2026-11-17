@@ -221,6 +221,12 @@ const RecapHeader = ({
 		[away, home],
 		true,
 	);
+	// (To the bracket.)
+	const seriesLink = series ? (
+		<a className="recap-series" href={helpers.leagueUrl(["playoffs", season])}>
+			{series}
+		</a>
+	) : null;
 	return (
 		<div className="recap-header">
 			<div className="recap-scoreline d-none d-md-flex">
@@ -228,7 +234,7 @@ const RecapHeader = ({
 				<div className="recap-middle">
 					<div className="recap-status">{finalText(boxScore)}</div>
 					<Linescore boxScore={boxScore} />
-					{series ? <div className="recap-series">{series}</div> : null}
+					{seriesLink}
 				</div>
 				<HeaderTeam t={home} season={season} won={winner === home.tid} right />
 			</div>
@@ -237,7 +243,7 @@ const RecapHeader = ({
 				<div className="recap-phone-mid">
 					<div className="recap-status">{finalText(boxScore)}</div>
 					<MiniLinescore boxScore={boxScore} />
-					{series ? <div className="recap-series">{series}</div> : null}
+					{seriesLink}
 				</div>
 				<PhoneTeam t={home} season={season} won={winner === home.tid} right />
 			</div>
