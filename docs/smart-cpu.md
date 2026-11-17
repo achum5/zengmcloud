@@ -1053,12 +1053,12 @@ Offices on, the playoffs still only break ties.
 Paired single seasons (the same league and seed, ambition off / 0.25 / 0.5;
 BOS, CHA and CLE kept out of the CPU market as in the league):
 
-| start (favorite's odds)        | in-season deals off / 0.25 / 0.5 | of them by the top 10 |
-| ------------------------------ | -------------------------------- | --------------------- |
-| 2033, runCTL (87%)             | 14 / 29 / 29                     | 14 / 28 / 24          |
-| 2033, humans as CPU (59%)      | 23 / 24 / 30                     | 20 / 22 / 22          |
-| 2026, realistic run (56%)      | 17 / 15 / 22                     | 16 / 15 / 22          |
-| 2033, realistic run (28%)      | 13 / 17 / 18                     | 13 / 17 / 16          |
+| start (favorite's odds)   | in-season deals off / 0.25 / 0.5 | of them by the top 10 |
+| ------------------------- | -------------------------------- | --------------------- |
+| 2033, runCTL (87%)        | 14 / 29 / 29                     | 14 / 28 / 24          |
+| 2033, humans as CPU (59%) | 23 / 24 / 30                     | 20 / 22 / 22          |
+| 2026, realistic run (56%) | 17 / 15 / 22                     | 16 / 15 / 22          |
+| 2033, realistic run (28%) | 13 / 17 / 18                     | 13 / 17 / 16          |
 
 Most of what 0.25 adds comes where one team is far ahead - the case that
 matters with humans the favorites. 0.5 added little more from the top ten
@@ -1075,15 +1075,15 @@ holds with Realistic Front Offices on too.
 Eleven seasons each, humans out of the CPU market (runCTL: before; runAMB:
 both changes):
 
-|                                   | before | after |
-| --------------------------------- | ------ | ----- |
-| deals                             | 214    | 177   |
-| flips                             | 56     | 25    |
-| deals that aren't flips           | 158    | 152   |
-| players moved twice in a season   | 62     | 28    |
-| in-season buyers C / B / L        | 109 / 21 / 24 | 70 / 19 / 17 |
-| distinct champions                | 6      | 5     |
-| median gain of the side gaining least | 0.42% | 0.90% |
+|                                       | before        | after        |
+| ------------------------------------- | ------------- | ------------ |
+| deals                                 | 214           | 177          |
+| flips                                 | 56            | 25           |
+| deals that aren't flips               | 158           | 152          |
+| players moved twice in a season       | 62            | 28           |
+| in-season buyers C / B / L            | 109 / 21 / 24 | 70 / 19 / 17 |
+| distinct champions                    | 6             | 5            |
+| median gain of the side gaining least | 0.42%         | 0.90%        |
 
 Ten-season runs drift apart after the first year, so the bubble's share
 there says little; the paired seasons are the test of ambition. Payrolls
@@ -1112,6 +1112,7 @@ deadline and the tax. The reviews and their tools are kept out of the repo
   mode's free agency. Under vanilla rules it never was, so every real free
   agent had to beat a signing that no longer existed, all summer. Room was
   spent only once the season began and the imagined signing vanished.
+
 - **Losing teams lost good players for nothing.** CPU veterans rated 55+
   re-signed 49% of the time (BOS, a user team without vanilla's -3: 93%).
   Rookie-deal players rated 55+ walked 33 times, 28 of those from losing,
@@ -1181,4 +1182,7 @@ deadline and the tax. The reviews and their tools are kept out of the repo
 - Whether a re-signed contract should count as an asset (its trade value)
   once money is out: wait for the next league to show whether it is still
   needed.
-- Vanilla's -3 for CPU teams' players re-signing: the owner's call.
+- Vanilla's -3 for CPU teams' players re-signing: removed with the smart CPU
+  on vanilla's rules (owner, 2026-11-17; player/moodInfo.ts). CPU teams keep
+  their players as a human's team does, and the CPU's own read of who will
+  re-sign (willingChance) follows.

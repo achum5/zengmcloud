@@ -10,6 +10,7 @@ import { uniformSeed } from "../../../common/random.ts";
 import {
 	MARKET_TESTING,
 	realisticFreeAgencyOn,
+	smartVanillaOn,
 } from "../realisticFrontOffice/isOn.ts";
 
 const hasActiveNegotiation = async (tid: number, pid: number) => {
@@ -112,7 +113,12 @@ const moodInfo = async (
 		) {
 			sumAndStuff -= MARKET_TESTING;
 		}
-	} else if (!thisIsAUserTeam) {
+	} else if (!thisIsAUserTeam && !smartVanillaOn()) {
+		// Vanilla's extra testing for CPU teams' players. Not with the smart
+		// CPU on vanilla's rules (owner, 2026-11-17): its teams are run as a
+		// human runs one, and keep their players as a human's do. In League 5
+		// CPU teams' veterans rated 55+ re-signed 49% of the time against 93%
+		// for the user team, and dynasties lost their stars for nothing.
 		sumAndStuff -= 3;
 	}
 

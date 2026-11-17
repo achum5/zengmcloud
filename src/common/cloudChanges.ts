@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 346,
+		date: "2026-11-17",
+		text: "Smart CPU: CPU teams' players now re-sign as willingly as players on a human's team. Before, CPU teams' players tested free agency far more often, so CPU teams lost their stars for nothing about twice as often as you would.",
+	},
+	{
 		n: 345,
 		date: "2026-11-17",
 		text: "Smart CPU: CPU teams now spend to win, not to save money. They use their cap room in free agency (looking every day and weighing who is really still out there), make room by trade for a free agent who is a clear upgrade, keep young players they used to let walk, see when a player's injury runs into next season, and better judge who will re-sign.",
