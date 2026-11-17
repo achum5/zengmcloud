@@ -1897,6 +1897,13 @@ const TRAIL_SPEED = 16;
 // goes by it this far (feet) off the screener's middle: at his shoulder.
 const SCREEN_BY = 150;
 const SCREEN_SHOULDER = 2;
+// A ball screen on the handler's man: as deep toward the rim from the
+// handler as his man plays him, within these (feet), this far to the side
+// of his man, and his man's own shading to a side (at most this) with it
+// (see levelTheScreen).
+const SCREEN_DEEP = [2.8, 4.4] as const;
+const SCREEN_BESIDE = 2;
+const SCREEN_SHADE = 1.5;
 const MOVE_SPEED: Record<string, number> = {
 	walk: 6,
 	jog: 12,
@@ -31187,6 +31194,89 @@ class Director {
 		}
 	}
 
+	// A BALL SCREEN LEVEL WITH THE MAN IT IS ON. Staged off where the man
+	// with the ball is - toward the rim from him, to a side - the screen can
+	// come out in front of his man, in between the two of them. Moved over
+	// level with his man as he plays him, as deep and as far to the side as
+	// he is shaded, and the screener beside him: the run there ending there
+	// instead, and what he does from there going from there. Nothing of his
+	// when - the play the same, only where.
+	private levelTheScreen() {
+		const LEVEL_MOST = 2.5;
+		for (const sc of this.screens) {
+			if (!sc.ball || sc.handoff || sc.screeners.length !== 1) {
+				continue;
+			}
+			const tr = this.track(sc.screeners[0]!);
+			if (!tr) {
+				continue;
+			}
+			const k = tr.moves.findIndex(
+				(m) =>
+					m.t1 >= sc.t &&
+					m.t1 <= sc.set + 50 &&
+					dist(m.to, sc.at) < 0.3 &&
+					m.anim === "run",
+			);
+			const m = tr.moves[k];
+			if (!m) {
+				continue;
+			}
+			const rim = rimPt(sc.team);
+			const U = this.posAt(sc.user, m.t1);
+			const ur = unitVec(U, rim);
+			let G: Pt | undefined;
+			let near = 7;
+			for (const o of this.tracks.values()) {
+				if (o.pid < 0 || o.team === sc.team) {
+					continue;
+				}
+				const q = this.posAt(o.pid, m.t1);
+				const d = dist(q, U);
+				if (d < near) {
+					near = d;
+					G = q;
+				}
+			}
+			if (!G) {
+				continue;
+			}
+			const along = (G.x - U.x) * ur.x + (G.y - U.y) * ur.y;
+			const across = (G.x - U.x) * -ur.y + (G.y - U.y) * ur.x;
+			const sideOf = (m.to.x - U.x) * -ur.y + (m.to.y - U.y) * ur.x;
+			if (along < 1 || Math.abs(sideOf) < 0.3) {
+				continue;
+			}
+			const deep = Math.min(SCREEN_DEEP[1], Math.max(SCREEN_DEEP[0], along));
+			const off =
+				Math.sign(sideOf) * SCREEN_BESIDE +
+				Math.min(SCREEN_SHADE, Math.max(-SCREEN_SHADE, across));
+			const S = clampPt({
+				x: U.x + ur.x * deep - ur.y * off,
+				y: U.y + ur.y * deep + ur.x * off,
+			});
+			const moved = dist(S, m.to);
+			if (moved < 0.3 || moved > LEVEL_MOST) {
+				continue;
+			}
+			// (On from there: what he does next goes from where he is.)
+			const was = { ...m.to };
+			for (let i = k + 1; i < tr.moves.length; i++) {
+				const n = tr.moves[i]!;
+				if (dist(n.from, was) >= 0.3) {
+					break;
+				}
+				n.from = { ...S };
+				if (dist(n.to, was) >= 0.3) {
+					break;
+				}
+				n.to = { ...S };
+			}
+			m.to = { ...S };
+			sc.at = { ...S };
+		}
+	}
+
 	finish(): CourtTimeline {
 		const byT0 = (a: { t0: number }, b: { t0: number }) => a.t0 - b.t0;
 		for (const tr of this.tracks.values()) {
@@ -31197,6 +31287,7 @@ class Director {
 			tr.shown.sort((a, b) => a[0] - b[0]);
 		}
 		this.ball.sort(byT0);
+		this.levelTheScreen();
 		this.stepIntoShots();
 		this.afterTheMiss();
 		this.afterTheCloseMiss();

@@ -324,6 +324,19 @@ lockstep, repeats; film.
   jabs 48 -> 49 in test games a, b. "A handler now and then gets his
   pull-up off a hesitation" passes again. Seen on film: a screener set
   chest to chest between the man with the ball and his man - next.
+- **2026-11-17, a ball screen level with the man it is on.** Staged 2.8 ft
+  toward the rim from the man with the ball and 2 ft to a side, the screen
+  came out about a foot in front of his man (who plays him 3.6 ft off) -
+  and, his man shaded to a side, in between the two of them (seen on film).
+  levelTheScreen (the first of the finishing passes, so nothing is
+  reshuffled) moves the screener's spot level with the man it is on, as
+  deep as he plays him (2.8-4.4 ft), 2 ft beside him plus his shading (at
+  most 1.5): the run there ends there and what he does next goes from
+  there. Test games a, b: the screener as deep as the man on the ball at
+  the set; screener to ball handler, the closest they come, median 2.3 ->
+  3.0 ft; squeezed in on him before he uses it 4 -> 3 of 30. Tried and
+  left out: the same spot when the screen is staged - it reshuffles the
+  games (three tests fell over).
 - **Test timeouts on a 4-core machine.** The footwork tests' 120 s limits
   are tight here: master itself times out on "a shooter drifting along
   the arc side-steps" (152 s) run beside one other job.

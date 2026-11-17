@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 344,
+		date: "2026-11-17",
+		text: "3D: on a pick-and-roll the screener sets the screen beside the ball handler's defender, level with him, instead of squeezing in between the two of them.",
+	},
+	{
 		n: 343,
 		date: "2026-11-17",
 		text: "A playoff game's box score now says the round, which game of the series it was and where the series stands under the score, like: 1st round · Game 3 · BOS leads 2-1. Tap it for the bracket.",
