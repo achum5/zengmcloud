@@ -14,9 +14,13 @@ import { SmartView, type Holdings } from "./worth.ts";
 // matching an offer sheet - and everything it builds on that price (boards,
 // asks, odds) stands as it is.
 
-// The teams humans run: none in spectator mode.
+// The teams humans run: none in spectator mode - unless set here, for a
+// spectator league run as if those teams were humans' (the history harness:
+// the owner's league with its human teams out of the CPU market).
+export const smartHumans: { tids?: number[] } = {};
 const humanTids = () =>
-	g.get("spectator") ? [] : (g.get("userTids") as number[]);
+	smartHumans.tids ??
+	(g.get("spectator") ? [] : (g.get("userTids") as number[]));
 
 // The GM's view of the league for an outlook, kept as long as the outlook.
 const views = new WeakMap<LeagueOutlook, SmartView>();

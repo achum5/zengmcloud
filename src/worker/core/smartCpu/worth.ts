@@ -80,6 +80,15 @@ export const smartSettings = {
 	// Kessler went through GSW twice in a season - and half the flips gained
 	// the flipping side under 0.009.
 	flipCost: 0.01,
+	// And for a flip right after the trade, this many times more again, down
+	// to none flipRecentSeasons on. At the flat cost alone, contenders on
+	// vanilla's rules still passed players straight along all season - in a
+	// third of the deals in a busy season the team gave up a player it had got
+	// that season, Kendall Brown was traded four times in one, and the side
+	// that flipped gained a median 2.4% of a title by it (the owner's league,
+	// 2026-11-17). Still a cost, not a lock.
+	flipRecent: 5,
+	flipRecentSeasons: 0.5,
 	// A pick worth at least what the market would pay for the prospect it is
 	// expected to land, on the rookie deal of his slot, off its draft's own
 	// class (the next draft's for drafts whose class isn't out). Priced by
@@ -100,29 +109,33 @@ const whenOf = (season: number, phase: number) =>
 
 // Flips a deal makes for a team: players it gives away that it traded for
 // within the past year, and players it takes back that it traded away
-// within the past year.
+// within the past year - each the more the sooner after that trade it comes
+// (smartSettings.flipRecent).
 export const flipsIn = (
 	tid: number,
 	out: readonly Player[],
 	inn: readonly Player[],
 ) => {
 	const now = whenOf(g.get("season"), g.get("phase"));
-	const recent = (x: { season: number; phase: number }) =>
-		now - whenOf(x.season, x.phase) < 1;
+	const since = (x: { season: number; phase: number }) =>
+		now - whenOf(x.season, x.phase);
+	const weight = (x: { season: number; phase: number }) =>
+		1 +
+		smartSettings.flipRecent *
+			Math.max(0, 1 - since(x) / smartSettings.flipRecentSeasons);
 	let n = 0;
 	for (const p of out) {
 		const last = p.transactions?.at(-1);
-		if (last?.type === "trade" && last.tid === tid && recent(last)) {
-			n += 1;
+		if (last?.type === "trade" && last.tid === tid && since(last) < 1) {
+			n += weight(last);
 		}
 	}
 	for (const p of inn) {
-		if (
-			p.transactions?.some(
-				(x) => x.type === "trade" && x.fromTid === tid && recent(x),
-			)
-		) {
-			n += 1;
+		const back = p.transactions?.findLast(
+			(x) => x.type === "trade" && x.fromTid === tid && since(x) < 1,
+		);
+		if (back) {
+			n += weight(back);
 		}
 	}
 	return n;

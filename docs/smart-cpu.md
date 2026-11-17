@@ -958,3 +958,62 @@ On the owner's 2023 export, a human GSW (and BOS) asking contenders CLE,
 BOS, TOR and MEM for a starter for picks: every one refused for the
 contender's own sake ("We're trying to win now"), most of them refused by
 vanilla too; rebuilding teams' fair deals went through.
+
+### Coming after the favorites (2026-11-17)
+
+The owner: "as the human, we should be genuinely scared of other teams
+trading to get better ... just bc at preseason we are the favorite does not
+at all mean we are going to end the favorite." Ten seasons of the owner's
+league on this mode (2023 export to 2033, every team the GM) showed two
+things in the way.
+
+**Only the favorites bought.** On title chances alone, a team far behind the
+favorite gains too little from getting better to pay for it: 199 of 245
+in-season deals were bought by teams at 5%+ preseason title odds, and in
+2025, with two teams holding 97% of the odds, one trade was made all season.
+With humans the favorites, that leaves nobody coming after them. So with
+the smart CPU on vanilla's rules a playoff run counts beside a title
+(`outlookSettings.vanillaAmbition`, 0.25): making the playoffs and each
+round won, as a share of a champion's run (a champion's is 1, so a title
+with its run is worth 1.25; a first-round exit 0.0625). With Realistic Front
+Offices on, the playoffs still only break ties.
+
+Paired single seasons (the same league and seed, ambition off / 0.25 / 0.5;
+BOS, CHA and CLE kept out of the CPU market as in the league):
+
+| start (favorite's odds)        | in-season deals off / 0.25 / 0.5 | of them by the top 10 |
+| ------------------------------ | -------------------------------- | --------------------- |
+| 2033, runCTL (87%)             | 14 / 29 / 29                     | 14 / 28 / 24          |
+| 2033, humans as CPU (59%)      | 23 / 24 / 30                     | 20 / 22 / 22          |
+| 2026, realistic run (56%)      | 17 / 15 / 22                     | 16 / 15 / 22          |
+| 2033, realistic run (28%)      | 13 / 17 / 18                     | 13 / 17 / 16          |
+
+Most of what 0.25 adds comes where one team is far ahead - the case that
+matters with humans the favorites. 0.5 added little more from the top ten
+and mostly bench-for-seconds deals by teams ranked 11th and lower.
+
+**Contenders passed players straight along.** At the flat flip cost (0.01),
+a third of the deals in a busy season had a team give up a player it had
+got that season; Kendall Brown was traded four times in one, and the side
+that flipped gained a median 2.4% of a title by it. A flip now costs
+`1 + flipRecent (5)` times the flat cost right after the trade, down to the
+flat cost `flipRecentSeasons` (half a season) on - a cost, not a lock. This
+holds with Realistic Front Offices on too.
+
+Eleven seasons each, humans out of the CPU market (runCTL: before; runAMB:
+both changes):
+
+|                                   | before | after |
+| --------------------------------- | ------ | ----- |
+| deals                             | 214    | 177   |
+| flips                             | 56     | 25    |
+| deals that aren't flips           | 158    | 152   |
+| players moved twice in a season   | 62     | 28    |
+| in-season buyers C / B / L        | 109 / 21 / 24 | 70 / 19 / 17 |
+| distinct champions                | 6      | 5     |
+| median gain of the side gaining least | 0.42% | 0.90% |
+
+Ten-season runs drift apart after the first year, so the bubble's share
+there says little; the paired seasons are the test of ambition. Payrolls
+rise past the tax line in both runs (top payroll $318M before, $362M
+after, tax line $200M) - money is a small cost by the owner's call; open.

@@ -14,6 +14,7 @@ import type {
 import { last } from "../../../common/utils.ts";
 import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
+import { smartVanillaOn } from "./isOn.ts";
 import { marketSalaries, pickSalaries, signingsWith } from "./payroll.ts";
 import { pickPlayer } from "./pickValue.ts";
 import {
@@ -68,8 +69,12 @@ export const OUTLOOK_YEARS = 10;
 // five years away is worth about 60% of one now).
 export const PATIENCE = 0.9;
 
-// A deep run only breaks ties between moves that leave title chances the same.
+// A deep run only breaks ties between moves that leave title chances the same
+// - unless the league's CPU teams have ambition (outlookSettings.
+// vanillaAmbition).
 const PLAYOFF_TIEBREAK = 0.01;
+const playoffWeightOf = (outlook: Pick<LeagueOutlook, "ambition">) =>
+	outlook.ambition ?? PLAYOFF_TIEBREAK;
 
 // Projections: enough simulated careers to average out a player's luck.
 const PROJECTION_SAMPLES = 24;
@@ -214,7 +219,12 @@ export type LeagueOutlook = {
 	// teams set to it.
 	injuryShift?: number[];
 	titleCurves: Curve[];
+	// Making the playoffs - or, with ambition, how far a team goes in them.
 	playoffCurves: Curve[];
+	// What a deep run counts for beside a title (outlookSettings.
+	// vanillaAmbition), with the smart CPU on vanilla's rules; otherwise the
+	// playoffs only break ties.
+	ambition?: number;
 	// For the arena's version-against-version leagues: the same curves at the
 	// other measuredUncertainty, for the teams set to it.
 	otherCurves?: { title: Curve[]; playoff: Curve[] };
@@ -866,6 +876,15 @@ export const outlookSettings = {
 	// won even; 17 deals near the maximum to 6, all to players 60 or better,
 	// and less paid to 50-59s.
 	floorNow: true,
+	// With the smart CPU on vanilla's rules (smartVanillaOn), what a playoff
+	// run counts for beside a title: making the playoffs and each round won,
+	// as a share of the most there is to win (a champion's run is 1). On title
+	// chances alone only the favorites bought in season - teams far behind them
+	// gained too little from getting better to pay for it - and in a league
+	// where two teams held 97% of the title odds between them, a whole season
+	// went by with one trade (the owner's league, 2026-11-17). With humans the
+	// favorites (the owner's league), that left nobody coming after them.
+	vanillaAmbition: 0.25,
 };
 
 // Measured in arena leagues: players on a team all season missed 6.5% of its
@@ -3334,6 +3353,17 @@ export const buildOutlook = async ({
 	}
 	const titleCurves: Curve[] = [];
 	const playoffCurves: Curve[] = [];
+	// With ambition, how far a team goes: making the playoffs and each round
+	// won, as a share of a champion's run; otherwise just making them.
+	const ambition = smartVanillaOn() ? outlookSettings.vanillaAmbition : 0;
+	const playoffMeasure = (r: {
+		playoffs: number;
+		roundsWon: number;
+		rounds: number[];
+	}) =>
+		ambition > 0
+			? (r.playoffs + r.roundsWon) / Math.max(1, r.rounds.length - 1)
+			: r.playoffs;
 	// Only in the arena's version-against-version leagues.
 	const otherCurves = [...teamOutlookSettings.values()].some(
 		(x) =>
@@ -3415,7 +3445,7 @@ export const buildOutlook = async ({
 			fitCurve(
 				teams.map((t) => ({
 					x: x(t.tid),
-					p: sim.get(t.tid)!.playoffs,
+					p: playoffMeasure(sim.get(t.tid)!),
 				})),
 			),
 		);
@@ -3428,7 +3458,10 @@ export const buildOutlook = async ({
 			);
 			otherCurves.playoff.push(
 				fitCurve(
-					teams.map((t) => ({ x: x(t.tid), p: other.get(t.tid)!.playoffs })),
+					teams.map((t) => ({
+						x: x(t.tid),
+						p: playoffMeasure(other.get(t.tid)!),
+					})),
 				),
 			);
 		}
@@ -3517,6 +3550,7 @@ export const buildOutlook = async ({
 		deadline,
 		classBoard: await buildClassBoard(base),
 		playoffWeight,
+		...(ambition > 0 ? { ambition } : {}),
 		// About three quarters of the most a run could last.
 		playoffGames: Math.round(
 			0.75 *
@@ -3538,7 +3572,7 @@ export const seasonValue = (
 	const { title, playoff } = curvesFor(outlook, tid);
 	return (
 		PATIENCE ** y *
-		(curveAt(title[y]!, s) + PLAYOFF_TIEBREAK * curveAt(playoff[y]!, s))
+		(curveAt(title[y]!, s) + playoffWeightOf(outlook) * curveAt(playoff[y]!, s))
 	);
 };
 
@@ -3582,7 +3616,8 @@ export const franchiseValue = (
 		const weight = PATIENCE ** y;
 		value +=
 			weight *
-			(curveAt(title[y]!, s) + PLAYOFF_TIEBREAK * curveAt(playoff[y]!, s));
+			(curveAt(title[y]!, s) +
+				playoffWeightOf(outlook) * curveAt(playoff[y]!, s));
 	}
 	for (const x of moneyOf.get(strengths) ?? []) {
 		if (x !== undefined) {

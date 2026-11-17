@@ -63,11 +63,21 @@ test.skipIf(!env.HIST_LEAGUE || !env.HIST_OUT)(
 		}
 		// Nobody at the controls: every team the GM's, the human teams too.
 		// HIST_RFO=0: the smart CPU on vanilla's rules (smartVanillaOn).
+		// HIST_HUMANS=BOS,CHA,CLE: those teams kept as humans' - out of the CPU
+		// market, as in the league - though still run by the GM meanwhile.
+		const humanAbbrevs = (env.HIST_HUMANS ?? "").split(",").filter(Boolean);
 		await league.setGameAttributes({
 			realisticFrontOffices: env.HIST_RFO !== "0",
 			smartCpu: true,
 			spectator: true,
 		});
+		if (humanAbbrevs.length > 0) {
+			const { smartHumans } =
+				await import("../../worker/core/smartCpu/signing.ts");
+			smartHumans.tids = (await idb.cache.teams.getAll())
+				.filter((t) => humanAbbrevs.includes(t.abbrev))
+				.map((t) => t.tid);
+		}
 		const conditions = {} as any;
 		const abbrev = new Map(
 			(await idb.cache.teams.getAll()).map((t) => [t.tid, t.abbrev]),
