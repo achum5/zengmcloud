@@ -245,6 +245,35 @@ lockstep, repeats; film.
   time). Drawing only: the director's own looks are drawn plain, so the
   games are the same. Real game 11: hard contacts with a reaction drawn
   2% -> 77%, banked into hard turns 2 -> 4 degrees.
+- **2026-11-17, fixes found reshuffling the games (none reshuffles them
+  itself: late passes, the stepper, the arms).**
+  - A run cut down to a sliver (under 60 ms) by what went in after it runs
+    on into the one it goes straight on into (noJumps; not at a cut, where
+    he is just put in place) - it had a man going 146 ft/s for a frame.
+  - Holding his ground at a jump shooter (holdHisGround) never takes out a
+    run that carries a man past 9 ft from him: one off after the ball as
+    the shot went up was left standing, the ball snapping 17 ft into his
+    hands off the floor.
+  - Stepped, the way in is cleared once more at the very end (after
+    keepOff, the steps aside eased and taken on the floor): contesters
+    were carried back to 0.9 ft of a finisher. And no empty step aside
+    with endless times when a man never came nearer than GIVE_WAY + 0.3.
+  - The stepper's crossovers checked against where the stepping really
+    takes him: a pair whose crossing goes against the way he goes is left
+    out, and so is one with a hand of his up meanwhile, pointing or calling
+    for it (crossesWithHim). Every move across his line gets one to start
+    with (CROSS_ON_CUT gone): those left out are the now and then he keeps
+    it where it is. Test game a: all 9 counted going his way.
+  - Clearing the lane (three seconds) leaves a man where he is when his
+    own hands are to be at the ball there before he runs anywhere - a pass
+    knocked on off them out of bounds was coming to where he had been.
+  - Stripped, a man wants the call; his pass picked off, his hands on his
+    head (lostIt, arms only).
+  - The "coming together hard" test evaluates each man once a moment
+    (603 s -> 84 s here).
+- **Next: B2, the screener's man ready for the coverage** in the step a
+  ball screen is set (a drop sat back toward the rim, a show up level with
+  the screen). It reshuffles the games; the rest of its fallout to check.
 - **Test timeouts on a 4-core machine.** The footwork tests' 120 s limits
   are tight here: master itself times out on "a shooter drifting along
   the arc side-steps" (152 s) run beside one other job.

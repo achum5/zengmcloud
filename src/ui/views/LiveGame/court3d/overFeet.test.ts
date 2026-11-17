@@ -109,33 +109,50 @@ describe("over his feet", () => {
 	test("coming together hard, both rock back off it", () => {
 		let hits = 0;
 		let away = 0;
-		for (const a of men) {
-			for (const b of men) {
+		// (Each man once a moment - where he is, if he is shown - and every
+		// pair of them from that.)
+		const STEP = 50;
+		const BACK = 100 / STEP;
+		const t0 = 30_000;
+		const n = Math.floor((900_000 - t0) / STEP);
+		const where = men.map((tr) => {
+			const xs = new Float64Array(n);
+			const ys = new Float64Array(n);
+			for (let k = 0; k < n; k++) {
+				const p = evalPlayer(tl, tr.pid, t0 + k * STEP);
+				xs[k] = p.shown ? p.x : Number.NaN;
+				ys[k] = p.shown ? p.y : Number.NaN;
+			}
+			return { xs, ys };
+		});
+		for (let i = 0; i < men.length; i++) {
+			for (let j = 0; j < men.length; j++) {
+				const a = men[i]!;
+				const b = men[j]!;
 				if (a.team === b.team || a.pid > b.pid) {
 					continue;
 				}
-				for (let t = 30_000; t < 900_000; t += 50) {
-					const p = evalPlayer(tl, a.pid, t);
-					const q = evalPlayer(tl, b.pid, t);
-					const p0 = evalPlayer(tl, a.pid, t - 100);
-					const q0 = evalPlayer(tl, b.pid, t - 100);
-					if (!p.shown || !q.shown || !p0.shown || !q0.shown) {
-						continue;
-					}
-					const d = Math.hypot(p.x - q.x, p.y - q.y);
-					const d0 = Math.hypot(p0.x - q0.x, p0.y - q0.y);
+				const A = where[i]!;
+				const B = where[j]!;
+				for (let k = BACK; k < n; k++) {
+					const d = Math.hypot(A.xs[k]! - B.xs[k]!, A.ys[k]! - B.ys[k]!);
+					const d0 = Math.hypot(
+						A.xs[k - BACK]! - B.xs[k - BACK]!,
+						A.ys[k - BACK]! - B.ys[k - BACK]!,
+					);
+					// (NaN - either not shown - is never a hit.)
 					if (!(d < 1.75 && d0 >= 1.75 && (d0 - d) / 0.1 > 5)) {
 						continue;
 					}
 					hits++;
 					// A beat later, each tipped away from the other.
-					const u = t + 120;
-					const ja = joltAt(tl, a, u, evalPlayer(tl, a.pid, u).yaw);
+					const u = t0 + k * STEP + 120;
 					const pa = evalPlayer(tl, a.pid, u);
+					const ja = joltAt(tl, a, u, pa.yaw);
 					if (ja) {
 						const wx = ja[0] * Math.cos(pa.yaw) - ja[1] * Math.sin(pa.yaw);
 						const wy = ja[0] * Math.sin(pa.yaw) + ja[1] * Math.cos(pa.yaw);
-						if (wx * (p.x - q.x) + wy * (p.y - q.y) > 0) {
+						if (wx * (A.xs[k]! - B.xs[k]!) + wy * (A.ys[k]! - B.ys[k]!) > 0) {
 							away++;
 						}
 					}

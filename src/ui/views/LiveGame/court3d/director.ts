@@ -333,6 +333,26 @@ export type Track = {
 // From t0, how far over he is kept (feet), every SEP_MS - and how far that
 // has taken him all told.
 export type Sep = { t0: number; dx: number[]; dy: number[]; dl: number[] };
+// How far kept off the others has him at t (see keepOff): eased straight
+// between its samples, near enough the way the picture eases through them.
+const sepAt = (tr: Track, t: number): Pt => {
+	const list = tr.sep ?? [];
+	const k = lastBy(list, t, (x) => x.t0);
+	const s = list[k];
+	if (!s) {
+		return { x: 0, y: 0 };
+	}
+	const f = (t - s.t0) / SEP_MS;
+	if (f >= s.dx.length - 1) {
+		return { x: 0, y: 0 };
+	}
+	const i = Math.floor(f);
+	const u = f - i;
+	return {
+		x: s.dx[i]! + (s.dx[i + 1]! - s.dx[i]!) * u,
+		y: s.dy[i]! + (s.dy[i + 1]! - s.dy[i]!) * u,
+	};
+};
 // A step aside: from t0 he eases over by (dx, dy), and back by t1 - over
 // `ramp` ms each way (by default, a quick step).
 export type Nudge = {
@@ -1084,10 +1104,14 @@ const DREW_SEP_MOST = 0.3;
 const OUR_BALL_NEAR = 16;
 const OUR_BALL = 0.5;
 const OUR_BALL_MS = 900;
-// The ball taken off him (see lostIt): how often the man who lost it has an
-// arm up at the official, and how often his hands on his head.
-const LOST_IT_CALL = 0.2;
-const LOST_IT_HEAD = 0.14;
+// The ball taken off him (see lostIt): how often the man stripped of it
+// has an arm up at the official, how often (else) his hands on his head -
+// and the man whose pass is picked off, or thrown away, his hands on his
+// head.
+const LOST_IT_CALL = 0.45;
+const LOST_IT_HEAD = 0.1;
+const LOST_IT_PASS = 0.35;
+const LOST_IT_AWAY = 0.34;
 // Where a shot is to be taken from, if its line says (`at`, feet on the
 // court: see the gamecast's withShotSpots) - a clip of a shot on the shot
 // chart taken where the chart has it - and it is a spot on his own end.
@@ -2167,6 +2191,9 @@ const CONTEST_FT = 6;
 // His man going up with it and him nearer than the shot was to leave him
 // (by this much, feet): he holds his ground (see holdHisGround).
 const HOLD_BY = 0.4;
+// (A step off him, though - out to the most room a shot is given, and some:
+// a run on past that, out after the ball, say, is a man going somewhere.)
+const HOLD_STEP_MOST = 9;
 // (His way off him begun no sooner than this long before the shot does,
 // ms: sooner, he was going somewhere.)
 const HOLD_FROM = 450;
@@ -23029,6 +23056,16 @@ class Director {
 	// picture is somewhere else anyway, nor off the floor out of sight.)
 	private noJumps() {
 		const JUMP = 0.5;
+		const SLIVER_MS = 60;
+		const RUNS_ON = new Set<AnimName>([
+			"run",
+			"jog",
+			"sprint",
+			"walk",
+			"back",
+			"slide",
+			"shuffle",
+		]);
 		const CUT_NEAR = 80;
 		for (const tr of this.tracks.values()) {
 			const ms = tr.moves;
@@ -23049,6 +23086,30 @@ class Director {
 				const at = this.posAt(tr.pid, m.t0 - 0.5, false, true);
 				if (dist(at, m.from) > JUMP) {
 					m.from = { ...at };
+				}
+			}
+			// (Nor a sliver of a run - a few ms of it, cut down to that by
+			// whatever went in after it - carrying him feet in a frame: run
+			// on into the one it goes straight on into. Not at a cut, though:
+			// there he is just put where the picture picks up.)
+			for (let k = ms.length - 2; k >= 0; k--) {
+				const m = ms[k]!;
+				const next = ms[k + 1]!;
+				if (
+					!this.cuts.some(
+						(c) => c > m.t0 - CUT_NEAR && c < next.t0 + CUT_NEAR,
+					) &&
+					m.t1 - m.t0 < SLIVER_MS &&
+					dist(m.from, m.to) > JUMP &&
+					Math.abs(next.t0 - m.t1) <= 1 &&
+					dist(next.from, m.to) <= JUMP &&
+					RUNS_ON.has(m.anim) &&
+					RUNS_ON.has(next.anim)
+				) {
+					next.t0 = m.t0;
+					next.from = { ...m.from };
+					delete next.v0;
+					ms.splice(k, 1);
 				}
 			}
 		}
@@ -26574,14 +26635,20 @@ class Director {
 	// and is back after. (Not the man up to block it: he is meant to be
 	// right there - nor one knocking the ball away: where his hand is, it
 	// goes.)
-	private clearTheWayIn() {
+	private clearTheWayIn(kept = false) {
 		const FOR_THE_BALL = new Set<AnimName>(["block", "poke", "strip"]);
 		const tracks = [...this.tracks.values()];
 		// Where he is - nudged aside already, too - running each run as the
 		// court does, or (`even`) at an even pace along it, as a man already
-		// going at either end of it more nearly does.
+		// going at either end of it more nearly does. (`kept`: kept off the
+		// others already, as well - see keepOff.)
 		const at = (tr: Track, t: number, even: boolean): Pt => {
 			const P = this.spotAt(tr, t);
+			if (kept) {
+				const o = sepAt(tr, t);
+				P.x += o.x;
+				P.y += o.y;
+			}
 			if (!even) {
 				return P;
 			}
@@ -26618,7 +26685,12 @@ class Director {
 					}
 				}
 			}
-			if (!worst || worst.d >= GIVE_WAY + GIVE_WAY_SLACK) {
+			// (Never nearer than GIVE_WAY + 0.3, nothing to step aside from.)
+			if (
+				!worst ||
+				worst.d >= GIVE_WAY + GIVE_WAY_SLACK ||
+				!Number.isFinite(ta)
+			) {
 				return;
 			}
 			// Off to his side of the way the shooter is going then - the way
@@ -28908,18 +28980,27 @@ class Director {
 			const ballAt = walker(this.ball);
 			const shownAt = walker(tr.shown);
 			const shotAt = walker(shots);
-			// (Nor with the ball on its way to him, or about to be.)
+			// (Nor with the ball on its way to him, or about to be - his
+			// hands at it as it comes, too: knocked on off them, say, it is
+			// to where he is that it comes.)
 			const catchAt = walker(
-				this.ball
-					.filter(
-						(x) => x.kind === "fly" && "pid" in x.to && x.to.pid === tr.pid,
-					)
-					.map((x): [number, number] => [
-						x.t0 - LANE_CATCH,
-						(x as { t1: number }).t1,
-					])
-					.sort((x, y) => x[0] - y[0]),
+				[
+					...this.ball
+						.filter(
+							(x) => x.kind === "fly" && "pid" in x.to && x.to.pid === tr.pid,
+						)
+						.map((x): [number, number] => [
+							x.t0 - LANE_CATCH,
+							(x as { t1: number }).t1,
+						]),
+					...tr.acts
+						.filter((a) => a.anim === "catch")
+						.map((a): [number, number] => [a.t0 - LANE_CATCH, a.t1]),
+				].sort((x, y) => x[0] - y[0]),
 			);
+			const catches = tr.acts
+				.filter((a) => a.anim === "catch")
+				.map((a) => a.t0);
 			let moveAt = walker(tr.moves);
 			const end = tr.moves.at(-1)!.t1;
 			let since: number | undefined;
@@ -29001,6 +29082,13 @@ class Director {
 					(next.t0 < t1 + 150 ||
 						next.t1 - next.t0 < runMs(dist(Q, next.to), SPRINT, 0, BURST) * 0.9)
 				) {
+					continue;
+				}
+				// (Nor with his hands to be at the ball where he is, before any
+				// run of his takes him anywhere: out there instead, he would be
+				// a step off where it comes.)
+				const upTo = next?.t0 ?? Infinity;
+				if (catches.some((c) => c >= t && c < upTo)) {
 					continue;
 				}
 				const step: Move = {
@@ -29837,6 +29925,7 @@ class Director {
 						if (
 							near > CONTEST_FT ||
 							far < near + HOLD_BY ||
+							far > HOLD_STEP_MOST ||
 							near < 0.05 ||
 							(m.from.x - P.x) * (m.to.x - P.x) +
 								(m.from.y - P.y) * (m.to.y - P.y) <
@@ -30585,11 +30674,12 @@ class Director {
 		}
 	}
 
-	// THE BALL TAKEN OFF HIM, the man who lost it now and then has an arm up
-	// at the official as it goes - he was hit - or, on his way back after
-	// it, his hands up on his head; thrown away out of bounds, his hands on
-	// his head now and then too. With his arms only, and only with nothing
-	// else on them: nothing else changes for it.
+	// THE BALL TAKEN OFF HIM: stripped of it, the man who lost it now and
+	// then has an arm up at the official as it goes - he was hit - or, on
+	// his way back after it, his hands up on his head; his pass picked off,
+	// it was on him - his hands on his head, now and then; thrown away out
+	// of bounds, now and then too. With his arms only, and only with
+	// nothing else on them: nothing else changes for it.
 	private lostIt() {
 		const say = (
 			pid: number,
@@ -30621,7 +30711,20 @@ class Director {
 			}
 			const t = b.actionStart;
 			const h = hash01(victim * 7 + 1, Math.round(t));
-			if (b.type === "stl" && h < LOST_IT_CALL) {
+			// Picked off: the ball last left his hands in the air.
+			let last: BallSeg | undefined;
+			for (const s of this.ball) {
+				if (s.t0 < t - 1 && (!last || s.t0 >= last.t0)) {
+					last = s;
+				}
+			}
+			const picked =
+				last?.kind === "fly" && "pid" in last.from && last.from.pid === victim;
+			if (b.type !== "stl" || picked) {
+				if (h < (b.type === "stl" ? LOST_IT_PASS : LOST_IT_AWAY)) {
+					say(victim, "head", t + 600, t + 1900);
+				}
+			} else if (h < LOST_IT_CALL) {
 				say(victim, "hand", t + 250, t + 1100);
 			} else if (h < LOST_IT_CALL + LOST_IT_HEAD) {
 				say(victim, "head", t + 600, t + 1900);
@@ -30788,6 +30891,14 @@ class Director {
 		this.contestsInSight();
 		this.easeNudges();
 		this.groundNudges();
+		// (And the way in clear again, from where all that leaves him:
+		// stepped, kept off the others, his steps aside eased and taken on
+		// the floor, a man given a step out of it can be back in it.)
+		if (this.step) {
+			this.clearTheWayIn(true);
+			this.easeNudges();
+			this.groundNudges();
+		}
 		this.drewTheFoul();
 		this.lostIt();
 		this.ourBall();

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 332,
+		date: "2026-11-17",
+		text: "3D: a player stripped of the ball now looks to the official for the call, and one whose pass is picked off puts his hands on his head. Also fixed: the ball snapping into the hands of a player who never went to get it, a defender drifting into a player going up for a layup, and crossovers going the opposite way from where the dribbler moves.",
+	},
+	{
 		n: 331,
 		date: "2026-11-17",
 		text: "Smart CPU: CPU teams that aren't the favorites now play for a deep playoff run too, not just the title, so when one team is far ahead the rest still trade to get better during the season. CPU teams also rarely pass a player they just traded for straight on to someone else.",

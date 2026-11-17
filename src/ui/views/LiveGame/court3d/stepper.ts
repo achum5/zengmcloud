@@ -833,13 +833,13 @@ const WORK_NEAR = 40;
 // THE BALL GOES WITH HIM. Going one way and then the other across his
 // line (see probesOf), a man takes the ball across into the hand on the
 // side he heads for - a crossover in front, on the next top of his dribble
-// as he sets off that way (CROSS_ON_CUT of the time: now and then he just
-// keeps it where it is) - and has it back in the hand he started in by the
-// time he is done (the last of them left out if not), whatever comes next
-// of his finding it where it was.
+// as he sets off that way - and has it back in the hand he started in by
+// the time he is done (the last of them left out if not), whatever comes
+// next of his finding it where it was. (Now and then he just keeps it where
+// it is: where the stepping takes him another way after all - see
+// crossesWithHim.)
 // (Only through a stretch of nothing but his plain dribble, in the one
 // hand.)
-const CROSS_ON_CUT = 0.75;
 // (A move that takes him this far across his line, at the least, feet.)
 const CUT_ACROSS = 0.8;
 // The crossover done this long (ms) before his next piece of the ball, and
@@ -853,6 +853,7 @@ const crossOnCuts = (
 	a: number,
 	b: number,
 	cuts: Cut[],
+	kept?: Crossed[][],
 ) => {
 	const ball = tl.ball;
 	const indexAt = (t: number): number => {
@@ -946,10 +947,7 @@ const crossOnCuts = (
 		return { at: T, pieces, was };
 	};
 	for (const cut of cuts) {
-		if (
-			cut.to === h ||
-			hash01(pid * 13 + 7, Math.round(cut.t0 / 50)) >= CROSS_ON_CUT
-		) {
+		if (cut.to === h) {
 			continue;
 		}
 		// (As he sets off that way: by halfway there.)
@@ -968,6 +966,78 @@ const crossOnCuts = (
 		}
 		ball.splice(ball.indexOf(c0.pieces[0]!), 2);
 	}
+	if (kept && done.length > 0) {
+		kept.push(done);
+	}
+};
+
+// ONLY WITH HIM. Stepped, he goes his own way off his line, not always the
+// way he set off (round his man, kept off another): a crossover into the
+// hand on the side he is not going after all - taken across to the left as
+// he goes right - is no crossover. That one, and the one back that goes
+// with it, are left out: the ball stays where it was, in the hand it was in
+// either side of them. (Going the way he goes, as the stepping has him -
+// see crossOnCuts.)
+const CROSS_SEE: [number, number] = [150, 450];
+const crossesWithHim = (
+	tl: Stepped,
+	pid: number,
+	laid: Path,
+	stretches: Crossed[][],
+) => {
+	const tr = tl.tracks.get(pid);
+	if (!tr) {
+		return;
+	}
+	const against = (c: Crossed): boolean => {
+		const T = c.at;
+		const A0 = laid.at(T - CROSS_SEE[0]);
+		const A1 = laid.at(T + CROSS_SEE[1]);
+		const B0 = floorSpotOf(tr, T - CROSS_SEE[0]);
+		const B1 = floorSpotOf(tr, T + CROSS_SEE[1]);
+		if (!A0 || !A1 || !B0 || !B1) {
+			return false;
+		}
+		const L = Math.hypot(A1.x - A0.x, A1.y - A0.y);
+		if (L < 0.5) {
+			return false;
+		}
+		// (His left, going the way he goes.)
+		const lx = -(A1.y - A0.y) / L;
+		const ly = (A1.x - A0.x) / L;
+		const off0 = (B0.x - A0.x) * lx + (B0.y - A0.y) * ly;
+		const off1 = (B1.x - A1.x) * lx + (B1.y - A1.y) * ly;
+		const from = (c.pieces[0] as { hand?: Hand }).hand ?? "R";
+		// (Out of his right hand into his left: off to his left.)
+		return (from === "R") !== off1 > off0;
+	};
+	// (Nor with a hand up meanwhile - pointing, calling for it: that is the
+	// hand he has free, as it was to be, not the one he would have the ball
+	// in.)
+	const talking = (from: number, to: number) =>
+		tr.arms.some((g) => g.t1 > from - 100 && g.t0 < to + 100);
+	for (const done of stretches) {
+		for (let j = 0; j + 1 < done.length; j += 2) {
+			const out = done[j]!;
+			const back = done[j + 1]!;
+			if (
+				!against(out) &&
+				!against(back) &&
+				!talking(out.at, back.pieces[1]!.t0)
+			) {
+				continue;
+			}
+			for (const [s, hand] of out.was) {
+				(s as { hand?: Hand }).hand = hand;
+			}
+			for (const p of [...out.pieces, ...back.pieces]) {
+				const k = tl.ball.indexOf(p);
+				if (k >= 0) {
+					tl.ball.splice(k, 1);
+				}
+			}
+		}
+	}
 };
 
 const probesOf = (
@@ -976,6 +1046,7 @@ const probesOf = (
 	laid: Path,
 	held: Spans,
 	team: 0 | 1,
+	crossed: Crossed[][],
 ): Offsets => {
 	const rim = { x: rimX(team), y: 25 };
 	// When he has it on his dribble - not stood through a move.
@@ -1080,7 +1151,7 @@ const probesOf = (
 						cuts.push({ t0, t1, to: d > 0 ? "L" : "R" });
 					}
 				}
-				crossOnCuts(tl, pid, a, b, cuts);
+				crossOnCuts(tl, pid, a, b, cuts, crossed);
 			}
 		}
 		a = -1;
@@ -1774,11 +1845,21 @@ export const stepTimeline = <T extends Stepped>(tl: T): T => {
 	const making: [(readonly [number, number])[], (readonly [number, number])[]] =
 		[[], []];
 	const drives = drivesIn(tl, laid, live);
+	// (The crossovers each man's moves off his line put in: see
+	// crossesWithHim.)
+	const crossedBy = new Map<number, Crossed[][]>();
 	for (const tr of men) {
 		const L = laid.get(tr.pid)!;
 		const held = helds.get(tr.pid)!;
 		switchesOf(tl, tr.pid, L, held, tr.team);
-		const probe = probesOf(tl, tr.pid, L, held, tr.team);
+		const probe = probesOf(
+			tl,
+			tr.pid,
+			L,
+			held,
+			tr.team,
+			crossedBy.get(tr.pid) ?? crossedBy.set(tr.pid, []).get(tr.pid)!,
+		);
 		const open = openingsOf(tl, tr.pid, L, held, tr.team, offenseAt, live);
 		const arc = arcsOf(tr, tl, L, held, offenseAt);
 		const drift = driftsOf(
@@ -1990,6 +2071,9 @@ export const stepTimeline = <T extends Stepped>(tl: T): T => {
 	for (const tr of men) {
 		delete tr.nudges;
 		delete tr.sep;
+	}
+	for (const [pid, done] of crossedBy) {
+		crossesWithHim(tl, pid, laid.get(pid)!, done);
 	}
 	return tl;
 };
