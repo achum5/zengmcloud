@@ -3,6 +3,7 @@ import afterPicks from "./afterPicks.ts";
 import { canBeDrafted } from "./canBeDrafted.ts";
 import getOrder from "./getOrder.ts";
 import selectPlayer from "./selectPlayer.ts";
+import { holdRoomForAdvance } from "../sync/advanceLease.ts";
 import { idb } from "../../db/index.ts";
 import { g, local, lock } from "../../util/index.ts";
 import type {
@@ -207,6 +208,9 @@ const runPicks = async (
 			}
 			console.log(sum);*/
 
+			// (The room's busy mark renewed before a pick: the smart CPU's
+			// choice can take a while - sync/advanceLease.ts.)
+			await holdRoomForAdvance();
 			// Realistic front offices take the prospect worth the most to them,
 			// in a normal draft (vanilla+ drafts as stock does).
 			// The smart CPU takes the prospect worth the most to the team by

@@ -986,6 +986,12 @@ export class SyncEngineV2 {
 		this.advances += 1;
 	}
 
+	// Whether an advance of the league is under way on this device (a sim
+	// started here, or a ready-up step it claimed).
+	inAdvance(): boolean {
+		return this.advances > 0;
+	}
+
 	endAdvance(position?: unknown): void {
 		this.advances = Math.max(0, this.advances - 1);
 		if (this.advances === 0) {

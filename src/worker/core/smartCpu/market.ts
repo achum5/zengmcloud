@@ -1,3 +1,5 @@
+import { smartDecidesHere } from "./decidesHere.ts";
+import { holdRoomForAdvance } from "../sync/advanceLease.ts";
 import { PHASE } from "../../../common/constants.ts";
 import type { DraftPick, Player, TradeTeams } from "../../../common/types.ts";
 import { idb } from "../../db/index.ts";
@@ -398,6 +400,9 @@ const shoppedBefore = () =>
 export const marketMoment = () => timed("market", marketMomentNow);
 
 const marketMomentNow = async () => {
+	// A moment can hold the worker for minutes: the room's busy mark renewed
+	// first (sync/advanceLease.ts).
+	await holdRoomForAdvance();
 	const outlook = await currentOutlook();
 	const view = viewFor(outlook);
 	const cpu = new Set(
@@ -480,6 +485,9 @@ const marketMomentNow = async () => {
 // (smartTradeWindow). Each moment once, by the league's own record of the
 // last (gameAttributes.smartMarketMoment).
 export const smartTradeDay = async () => {
+	if (!smartDecidesHere()) {
+		return [];
+	}
 	const phase = g.get("phase");
 	let key: string | undefined;
 	if (phase === PHASE.REGULAR_SEASON) {
@@ -530,7 +538,7 @@ const WINDOW_PHASES: readonly number[] = [
 ];
 
 export const smartTradeWindow = async () => {
-	if (!WINDOW_PHASES.includes(g.get("phase"))) {
+	if (!WINDOW_PHASES.includes(g.get("phase")) || !smartDecidesHere()) {
 		return [];
 	}
 	return marketMoment();

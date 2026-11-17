@@ -3665,8 +3665,12 @@ const getOffers = async (
 		return smartTradingBlock(g.get("userTid"), userPids, userDpids, lookingFor);
 	}
 	const valueChangeCalculator = await tradeValueCalculator();
-	// Vanilla+: CPU teams only - not a league-mate's team, priced as if CPU.
-	const skip = vanillaPlusOn() ? g.get("userTids") : [g.get("userTid")];
+	// Vanilla+ and the smart CPU on vanilla's rules: CPU teams only - not a
+	// league-mate's team, priced as if CPU.
+	const skip =
+		vanillaPlusOn() || smartVanillaOn()
+			? g.get("userTids")
+			: [g.get("userTid")];
 
 	for (const tid of tids) {
 		const teams: TradeTeams = [
@@ -6071,7 +6075,8 @@ const updateGameAttributesGodMode = async (
 	]);
 
 	const currentRepeatSeasonType = g.get("repeatSeason")?.type ?? "disabled";
-	const repeatSeason = settings.repeatSeason;
+	// (Only the settings changed are sent; not sent is as it is.)
+	const repeatSeason = settings.repeatSeason ?? currentRepeatSeasonType;
 
 	if (repeatSeason !== "disabled" && repeatSeason !== currentRepeatSeasonType) {
 		if (g.get("phase") < 0 || g.get("phase") > PHASE.DRAFT_LOTTERY) {
@@ -6099,13 +6104,15 @@ const updateGameAttributesGodMode = async (
 	// Will be handled in setRepeatSeason, don't pass through a string
 	delete gameAttributes.repeatSeason;
 
-	// Smart CPU runs on vanilla's rules (owner, 2026-11-17): saved on, or
-	// turned off, it leaves the realistic front offices (their free agency,
-	// contract rules, exceptions) off. A league with them on that never had
-	// Smart CPU on is left as it is.
+	// Smart CPU runs on vanilla's rules (owner, 2026-11-17): any save with it
+	// on, or turning it off, leaves the realistic front offices (their free
+	// agency, contract rules, exceptions) off. A league with them on that
+	// never had Smart CPU on is left as it is. (Only the settings changed are
+	// sent, so Smart CPU left as it was isn't among them.)
+	const smartCpuNow = gameAttributes.smartCpu ?? g.get("smartCpu");
 	if (
-		gameAttributes.smartCpu ||
-		(gameAttributes.smartCpu === false && g.get("smartCpu"))
+		(smartCpuNow || (gameAttributes.smartCpu === false && g.get("smartCpu"))) &&
+		g.get("realisticFrontOffices")
 	) {
 		gameAttributes.realisticFrontOffices = false;
 	}

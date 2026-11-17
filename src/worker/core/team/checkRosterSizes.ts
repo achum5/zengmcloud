@@ -1,3 +1,4 @@
+import { smartDecidesHere } from "../smartCpu/decidesHere.ts";
 import { PLAYER, POSITION_COUNTS } from "../../../common/constants.ts";
 import { player, freeAgents } from "../index.ts";
 import rosterAutoSort from "./rosterAutoSort.ts";
@@ -209,7 +210,8 @@ const checkRosterSizes = async (
 				// Realistic front offices: whoever the team can best do without
 				// (realisticFrontOffice/cuts.ts).
 				const releasedPIDsTemp =
-					realisticFrontOfficesOn() || smartVanillaOn()
+					(realisticFrontOfficesOn() || smartVanillaOn()) &&
+					smartDecidesHere()
 						? await frontOfficeCuts(
 								players,
 								numPlayersOnRoster - g.get("maxRosterSize"),
@@ -254,7 +256,12 @@ const checkRosterSizes = async (
 					let p: Player | undefined;
 					// Realistic front offices: whoever is worth the most to the team
 					// (realisticFrontOffice/cuts.ts).
-					if (realisticFrontOfficesOn() || smartVanillaOn()) {
+					// (Not on a league mate's phone: stock's fill there, the
+					// smart CPU's where it decides - smartCpu/decidesHere.ts.)
+					if (
+						(realisticFrontOfficesOn() || smartVanillaOn()) &&
+						smartDecidesHere()
+					) {
 						p = await frontOfficeFill(tid, minFreeAgents);
 						if (p) {
 							minFreeAgents.splice(minFreeAgents.indexOf(p), 1);

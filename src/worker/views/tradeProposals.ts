@@ -51,8 +51,13 @@ const getOffers = async (seed: number) => {
 		return augmentOffers(kept);
 	}
 
+	// With the smart CPU on vanilla's rules, CPU teams only: not a league
+	// mate's team, as if it were a CPU's.
+	const notCpu = new Set(
+		smartVanillaOn() ? g.get("userTids") : [userTid],
+	);
 	const teams = (await idb.cache.teams.getAll()).filter(
-		(t) => !t.disabled && t.tid !== userTid,
+		(t) => !t.disabled && !notCpu.has(t.tid),
 	);
 	shuffle(teams, seed);
 	if (limited) {

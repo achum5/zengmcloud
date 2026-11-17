@@ -1,14 +1,20 @@
+import { useState } from "react";
 import useTitleBar from "../../hooks/useTitleBar.tsx";
 import type { View } from "../../../common/types.ts";
 import SettingsForm from "./SettingsForm.tsx";
 import { showNotification } from "../../util/showNotification.ts";
 import { toWorker } from "../../util/toWorker.ts";
 import { useBlocker } from "../../hooks/useBlocker.ts";
+import type { Settings as SettingsValues } from "../../../worker/views/settings.ts";
+import { changedSettings } from "./changedSettings.ts";
 
 const Settings = ({ initialSettings }: View<"settings">) => {
 	useTitleBar({ title: "League Settings" });
 
 	const { setDirty } = useBlocker();
+
+	// What the form opened with, the baseline a save is measured against.
+	const [opened, setOpened] = useState(initialSettings);
 
 	return (
 		<SettingsForm
@@ -20,7 +26,7 @@ const Settings = ({ initialSettings }: View<"settings">) => {
 				const saved = await toWorker(
 					"main",
 					"updateGameAttributesGodMode",
-					settings,
+					changedSettings(opened, settings) as SettingsValues,
 				);
 
 				// In a shared league the multiplayer guard can refuse this before it
@@ -36,6 +42,7 @@ const Settings = ({ initialSettings }: View<"settings">) => {
 				}
 
 				setDirty(false);
+				setOpened(settings);
 
 				showNotification({
 					type: "success",

@@ -14,6 +14,7 @@ import {
 	smartVanillaOn,
 } from "../realisticFrontOffice/isOn.ts";
 import { smartVanillaSigning } from "../smartCpu/vanilla.ts";
+import { smartDecidesHere } from "../smartCpu/decidesHere.ts";
 import { freeAgencyDay as realisticFrontOfficeFreeAgencyDay } from "../realisticFrontOffice/freeAgency.ts";
 
 /**
@@ -25,6 +26,12 @@ import { freeAgencyDay as realisticFrontOfficeFreeAgencyDay } from "../realistic
  * @return {Promise}
  */
 const autoSign = async () => {
+	// The smart CPU on vanilla's rules signs only where it decides: a league
+	// mate's own game that ends a day leaves the signings to the device in
+	// charge of simming (smartCpu/decidesHere.ts).
+	if (smartVanillaOn() && !smartDecidesHere()) {
+		return;
+	}
 	// Realistic front offices sign by their own valuation, in the offer market
 	// or by stock's rules.
 	if (realisticFreeAgencyOn()) {

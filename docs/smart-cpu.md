@@ -586,6 +586,43 @@ checked, and what was changed:
   trades, land in the middle of a decision made from a snapshot; with the
   leases long enough, the stall is safe.
 
+### Shared leagues, audited again (2026-11-17)
+
+The owner: "can we audit the system as a whole making sure every single
+last thing will work perfectly fine with mp sync?" Four read-only reviews
+(advances and holds, writes off the simming device, state kept outside the
+league, settings and versions). Fixed:
+
+- **One device decides, now everywhere.** A league mate's last draft pick
+  ran the after-draft phase change, and its market window, on their phone;
+  a league mate's own game that ended a day ran the day's CPU signings and
+  market there. The smart CPU's market, its signings and its cuts and fills
+  now run only where it decides (`smartCpu/decidesHere.ts`: single player,
+  the device in charge of simming, or a ready-up step this device claimed);
+  elsewhere the market and signings wait, and roster limits use stock's
+  cuts and fills.
+- **Holds through long steps.** Phase changes, each draft pick and each
+  market moment renew the room's busy mark (they no-op outside an advance),
+  and Auto Play holds the room from its first step to its last, published.
+- **Sim here** is refused while the device in charge is mid-step.
+- **Taking over simming** drops the outlook built while following, so the
+  new simmer decides from the league as it stands (`sync/simmerHooks.ts`).
+  Cuts release the player as the league has him now, not the GM view's copy.
+- **League mates' teams** no longer appear as CPU offers on the trading
+  block and in Trade Proposals on vanilla's rules.
+- **League Settings** save only what was changed in the form, so a league
+  mate's change made while it was open isn't written back over.
+
+Open (sync engine, not the smart CPU's; the smart CPU's long steps widen
+them): a held edit republished after a sim it waited out lands its whole
+records over the sim's; the busy mark is cleared before a queued (unsent)
+advance lands; a ready-up step won by a league mate's device can't hold the
+room (the rules let only the device in charge write it) and the Play menu
+doesn't consult ready-up claims; a league mate's own game that ends the
+regular season or playoffs runs the phase change on their phone. Devices on
+an older app version behave as that version did (no version check): every
+league mate should reload after an update.
+
 ## The DBA replay
 
 Yardstick C, built (src/test/dba/). Every trade of the owner's league from

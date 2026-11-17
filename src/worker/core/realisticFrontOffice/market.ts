@@ -1,3 +1,4 @@
+import { becameSimmerHooks } from "../sync/simmerHooks.ts";
 import { checkTradeSalary } from "./cba.ts";
 import { stagesOn } from "./stages.ts";
 import { PHASE } from "../../../common/constants.ts";
@@ -303,6 +304,12 @@ export const outlookWatchers: ((outlook: LeagueOutlook) => void)[] = [];
 let cache:
 	| { key: string; db: typeof idb.league; outlook: LeagueOutlook }
 	| undefined;
+// Taking over simming, a device decides from the league as it now stands, not
+// from a picture it built while following (injuries since, and the players
+// read into it then).
+becameSimmerHooks.push(() => {
+	cache = undefined;
+});
 
 export const gamesPlayed = async () => {
 	let total = 0;

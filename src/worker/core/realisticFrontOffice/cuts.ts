@@ -1,6 +1,7 @@
 import type { DraftPick, Player } from "../../../common/types.ts";
 import { g, helpers } from "../../util/index.ts";
 import { player } from "../index.ts";
+import { idb } from "../../db/index.ts";
 import { currentOutlook, loadTeam } from "./market.ts";
 import {
 	franchiseValue,
@@ -159,7 +160,10 @@ export const frontOfficeCuts = async (
 			if (!best) {
 				break;
 			}
-			await player.release(best.p, best.free);
+			// Released as the league has him now, not the copy the GM's view
+			// read earlier (its injury or ratings may have changed since).
+			const p = (await idb.cache.players.get(best.p.pid)) ?? best.p;
+			await player.release(p, best.free);
 			released.push(best.p.pid);
 		}
 		return released;

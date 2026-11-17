@@ -3,6 +3,7 @@ import { toUI, g, logEvent } from "../../util/index.ts";
 import type { Conditions, Phase } from "../../../common/types.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { runAfterActionHook } from "../sync/afterActionHook.ts";
+import { beginRoomAdvance, endRoomAdvance } from "../sync/advanceLease.ts";
 
 const initAutoPlay = async (conditions: Conditions) => {
 	if (g.get("gameOver")) {
@@ -49,15 +50,22 @@ const initAutoPlay = async (conditions: Conditions) => {
 		// promise settles when cleanupAutoPlay runs - the target phase reached,
 		// or the run cancelled - which is exactly when the window should close.
 		changeTracker.beginSim("playMenu.day");
+		// The room held busy for the whole run, its phase changes, draft and
+		// free agency included, until it is published (sync/advanceLease.ts).
+		beginRoomAdvance();
 		void (async () => {
 			try {
-				await startAutoPlay(season, phase as Phase, conditions);
-			} catch (error) {
-				console.error("autoPlay failed", error);
+				try {
+					await startAutoPlay(season, phase as Phase, conditions);
+				} catch (error) {
+					console.error("autoPlay failed", error);
+				} finally {
+					changeTracker.endSim("playMenu.day");
+				}
+				await runAfterActionHook("playMenu", "day").catch(() => {});
 			} finally {
-				changeTracker.endSim("playMenu.day");
+				endRoomAdvance();
 			}
-			await runAfterActionHook("playMenu", "day").catch(() => {});
 		})();
 	} else {
 		return false;

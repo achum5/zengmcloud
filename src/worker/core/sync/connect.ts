@@ -63,6 +63,7 @@ import {
 	type UnsyncedDaysReport,
 } from "./republishUnsyncedDays.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
+import { runBecameSimmerHooks } from "./simmerHooks.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers, local, logEvent, toUI } from "../../util/index.ts";
 import { liveFlagShown } from "../../util/toUI.ts";
@@ -1904,7 +1905,20 @@ const pushAuthorityToUI = (isHost: boolean, hostName: string | undefined) => {
 
 // Sim here on this device (become the one allowed to advance the league).
 export const claimSyncAuthority = async () => {
-	await getSyncEngine()?.claimAuthority();
+	const engine = getSyncEngine();
+	// Not while the device in charge is in the middle of a step (a sim, a phase
+	// change, the smart CPU thinking): its results would land over the new
+	// one's, and league mates' held moves would go out into it.
+	if (engine?.isRoomBusy()) {
+		logEvent({
+			type: "error",
+			text: `${currentHostName ?? "Someone"} is in the middle of simming. Try again when it's done.`,
+			saveToDb: false,
+			showNotification: true,
+		});
+		return;
+	}
+	await engine?.claimAuthority();
 };
 
 // One row in the sync-activity view: a single change (or a whole bulk batch,
@@ -2808,10 +2822,17 @@ const doConnectSharedLeague = async ({
 		await teardownSharedLeague({});
 	});
 
+	// (Whether this device was the one simming, for the hooks on taking over.)
+	let wasSimmingHere = false;
 	const engine = new SyncEngineV2(transport, {
 		isHost,
 		code: trimmed,
 		onAuthorityChange: (authority) => {
+			const simmingHere = authority?.holderId === clientId;
+			if (simmingHere && !wasSimmingHere) {
+				runBecameSimmerHooks();
+			}
+			wasSimmingHere = simmingHere;
 			currentHostName = displayHolderName(authority?.holderName);
 			pushAuthorityToUI(authority?.holderId === clientId, currentHostName);
 			pushEditsPaused();

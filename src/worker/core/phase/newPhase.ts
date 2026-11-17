@@ -21,6 +21,7 @@ import {
 	updateStatus,
 } from "../../util/index.ts";
 import { syncDebugLog } from "../sync/debugLog.ts";
+import { holdRoomForAdvance } from "../sync/advanceLease.ts";
 import type { Conditions, Phase } from "../../../common/types.ts";
 import { cleanupAutoPlay } from "../league/autoPlay.ts";
 import setGameAttributes from "../league/setGameAttributes.ts";
@@ -45,6 +46,10 @@ const newPhase = async (phase: Phase, conditions: Conditions, extra?: any) => {
 			"Can't call newPhase when expansion/fantasy draft is in progress",
 		);
 	}
+
+	// The room's busy mark renewed before a phase change: its front offices
+	// may hold the worker for minutes (sync/advanceLease.ts).
+	await holdRoomForAdvance();
 
 	// Durable forensics BEFORE the work: every local phase change leaves a
 	// trace that survives the tab, attributed to the API action that ran it.
