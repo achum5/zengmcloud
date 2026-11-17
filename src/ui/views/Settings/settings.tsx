@@ -1986,16 +1986,6 @@ export const settings: Setting[] = (
 			description:
 				"In spectator mode, the AI controls all teams and you get to watch the league evolve. This is similar to Tools > Auto Play, but it lets you play through the season at your own pace.",
 		},
-		...(__SPORT === "basketball"
-			? [
-					{
-						category: "Game Modes",
-						key: "smartCpu",
-						name: "Smart CPU",
-						type: "bool",
-					} as const,
-				]
-			: []),
 		{
 			category: "Schedule",
 			key: "tradeDeadline",
@@ -3172,6 +3162,16 @@ export const settings: Setting[] = (
 				</>
 			),
 		},
+		...(__SPORT === "basketball"
+			? [
+					{
+						category: "General",
+						key: "smartCpu",
+						name: "Smart CPU",
+						type: "bool",
+					} as const,
+				]
+			: []),
 		{
 			category: "Injuries",
 			key: "stopOnInjuryGames",
