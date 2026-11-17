@@ -23724,6 +23724,12 @@ class Director {
 					to = Math.min(to, a.t0 - 40);
 				}
 			}
+			// (Held on into the horn, his time ends a beat before it.)
+			for (const bt of horns) {
+				if (bt.actionStart - HORN_HOLD < to && bt.end > from) {
+					to = Math.min(to, bt.actionStart - HORN_HOLD);
+				}
+			}
 			if (
 				to - from < 700 ||
 				tr.moves.some((m) => m.t1 > from - 50 && m.t0 < to - 10)
@@ -23957,8 +23963,19 @@ class Director {
 		const APART = 3;
 		const GIVE = 2.4;
 		// (Set further off the man with the ball, out from the rim: it is out
-		// in front of him, not to be run into his chest.)
-		const CUSHION = 3;
+		// in front of him, not to be run into his chest - an arm's length -
+		// and giving ground to him sooner.)
+		const CUSHION = 3.6;
+		const GIVE_BALL = 3.2;
+		const GIVE_BALL_OUT = 12;
+		// (Backing him down, though, he is into him: that he holds.)
+		const backingDown = (pid: number, t: number) => {
+			const tr = this.track(pid);
+			const m = tr?.moves[lastBy(tr.moves, t, (x) => x.t0)];
+			return (
+				m !== undefined && t < m.t1 && (m.anim === "post" || m.anim === "back")
+			);
+		};
 		// The longest one run of his path (ms) and how far it bends (radians)
 		// before the next; how fast he must go to set off from standing, and
 		// how slow, once going, is standing again (feet a second).
@@ -24656,8 +24673,14 @@ class Director {
 				const onT = carry && a - carry.t <= DT ? carry.t : undefined;
 				// Where he should be, tick by tick: where his man and the ball were
 				// a beat ago say.
-				const ticks: { t: number; aim: Pt; ball: Pt; on: boolean; man: Pt }[] =
-					[];
+				const ticks: {
+					t: number;
+					aim: Pt;
+					ball: Pt;
+					on: boolean;
+					man: Pt;
+					post: boolean;
+				}[] = [];
 				let k = 0;
 				let last: Pt | undefined;
 				for (let t = a; t <= stop + 0.5; t += DT) {
@@ -24712,7 +24735,7 @@ class Director {
 					// Up on the man with it, out from the rim, never nearer him
 					// than the ball out in front of him leaves room for - unless
 					// that would back him into a screen set behind him.
-					if (aim !== last && holder === who) {
+					if (aim !== last && holder === who && !backingDown(who, t)) {
 						const rim = { x: rimX(this.teamOf(who)), y: COURT_H / 2 };
 						const d = dist(seen, aim);
 						if (d > 0.1 && d < CUSHION && dist(seen, rim) > 10) {
@@ -24741,7 +24764,14 @@ class Director {
 						aim = gave.at;
 					}
 					last = aim;
-					ticks.push({ t, aim, ball: B0.at, on, man: where(who, t) });
+					ticks.push({
+						t,
+						aim,
+						ball: B0.at,
+						on,
+						man: where(who, t),
+						post: backingDown(who, t),
+					});
 				}
 				// (Off where his man has gone since the schedule was laid - see
 				// STALE. Not if what he does next is laid from where the schedule
@@ -24891,8 +24921,17 @@ class Director {
 							const mx = p.x - M.x;
 							const my = p.y - M.y;
 							const md = Math.hypot(mx, my);
-							if (md < GIVE) {
-								const k = ((GIVE - md) * GAIN * 2) / Math.max(md, 0.3);
+							// (Sooner from the man with the ball facing him up out
+							// there - not backing him down in close: that he holds.)
+							const give =
+								ticks[i]!.on &&
+								!ticks[i]!.post &&
+								Math.hypot(rimX(other(tr.team)) - M.x, COURT_H / 2 - M.y) >
+									GIVE_BALL_OUT
+									? GIVE_BALL
+									: GIVE;
+							if (md < give) {
+								const k = ((give - md) * GAIN * 2) / Math.max(md, 0.3);
 								wx += mx * k;
 								wy += my * k;
 							}
@@ -24917,7 +24956,7 @@ class Director {
 										: -Infinity,
 								);
 								const room = Math.sqrt(
-									2 * ACCEL * BRAKE * Math.max(0, md - GIVE),
+									2 * ACCEL * BRAKE * Math.max(0, md - give),
 								);
 								if (closing > room) {
 									wx -= ux * (closing - room);
@@ -26804,6 +26843,124 @@ class Director {
 				}
 			}
 		}
+	}
+
+	// AT HIS HIP, NOT INTO HIS CHEST. A run of the man with the ball on his
+	// dribble that would take him straight through a man of theirs stood in
+	// his way goes by that man's hip instead - the side the man is not
+	// already on, or, square in front of him, the side he has the ball - and
+	// his man slides to cut it off, or is beaten there (see mark). (Before
+	// his man is moved for it, so that he answers it.)
+	private atHisHip() {
+		const MEANT_TO_MEET = new Set<AnimName>([
+			"takeCharge",
+			"chargeDown",
+			"strip",
+			"poke",
+			"reach",
+			"block",
+			"hack",
+		]);
+		// A man in the way: as it starts, within this far of where he sets off
+		// from (feet), and this near the way he goes.
+		const HIP_FAR = 6;
+		const HIP_NEAR = 2.4;
+		// By him this far off him (feet), and square in front of him, within
+		// this of the middle of him.
+		const HIP_PASS = 2.9;
+		const HIP_SQUARE = 0.5;
+		const shown = (tr: Track, t: number) => {
+			const k = lastBy(tr.shown, t, (x) => x[0]);
+			return k >= 0 && tr.shown[k]![1];
+		};
+		const them = (team: Side) =>
+			[...this.tracks.values()].filter((o) => o.pid >= 0 && o.team !== team);
+		for (const tr of this.tracks.values()) {
+			if (tr.pid < 0) {
+				continue;
+			}
+			const ms = tr.moves;
+			for (let k = 0; k < ms.length; k++) {
+				const m = ms[k]!;
+				const L = dist(m.from, m.to);
+				// (Nor one on into backing his man down: into him is where he
+				// is going.)
+				const next = ms[k + 1];
+				if (
+					m.anim !== "dribble" ||
+					m.t1 - m.t0 < 400 ||
+					L < 4 ||
+					(next &&
+						(next.anim === "post" || next.anim === "back") &&
+						next.t0 - m.t1 < 600)
+				) {
+					continue;
+				}
+				const u = unitVec(m.from, m.to);
+				let best: { D: Pt; along: number; lat: number } | undefined;
+				for (const o of them(tr.team)) {
+					// (Not one he is to run into - a charge drawn - or who goes
+					// for the ball on the way: that is meant to meet.)
+					if (
+						!shown(o, m.t0) ||
+						o.acts.some(
+							(a) =>
+								MEANT_TO_MEET.has(a.anim) && a.t1 > m.t0 && a.t0 < m.t1 + 800,
+						)
+					) {
+						continue;
+					}
+					const D = this.spotAt(o, m.t0);
+					const along = (D.x - m.from.x) * u.x + (D.y - m.from.y) * u.y;
+					// (Left of the way he goes: above 0.)
+					const lat = (D.x - m.from.x) * -u.y + (D.y - m.from.y) * u.x;
+					if (
+						along < 1 ||
+						along > L - 1 ||
+						dist(D, m.from) > HIP_FAR ||
+						Math.abs(lat) >= HIP_NEAR ||
+						(best && along >= best.along)
+					) {
+						continue;
+					}
+					best = { D, along, lat };
+				}
+				if (!best) {
+					continue;
+				}
+				const hand = this.handOf(tr.pid, m.t0);
+				const side =
+					Math.abs(best.lat) > HIP_SQUARE
+						? -Math.sign(best.lat)
+						: hand === "L"
+							? 1
+							: -1;
+				const W = clampPt({
+					x: best.D.x - u.y * side * HIP_PASS,
+					y: best.D.y + u.x * side * HIP_PASS,
+				});
+				const l1 = dist(m.from, W);
+				const l2 = dist(W, m.to);
+				const tw = m.t0 + ((m.t1 - m.t0) * l1) / (l1 + l2);
+				const first: Move = { ...m, to: { ...W }, t1: tw };
+				const second: Move = { ...m, from: { ...W }, t0: tw };
+				delete first.v1;
+				delete second.v0;
+				ms.splice(k, 1, first, second);
+				k += 1;
+			}
+		}
+	}
+
+	// The hand his dribble has the ball in at t, if it is his.
+	private handOf(pid: number, t: number): Hand | undefined {
+		for (let j = this.ball.length - 1; j >= 0; j--) {
+			const s = this.ball[j]!;
+			if (s.t0 <= t) {
+				return s.kind === "hold" && s.pid === pid ? s.hand : undefined;
+			}
+		}
+		return undefined;
 	}
 
 	private keepApart(fast: [number, number][]) {
@@ -30808,6 +30965,7 @@ class Director {
 			}
 			tr.arms = arms;
 		}
+		this.atHisHip();
 		this.unplant();
 		this.mark();
 		this.unplant();

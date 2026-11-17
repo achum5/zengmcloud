@@ -271,6 +271,19 @@ lockstep, repeats; film.
     head (lostIt, arms only).
   - The "coming together hard" test evaluates each man once a moment
     (603 s -> 84 s here).
+- **2026-11-17, the man with the ball and the man on him (part 2).** On
+  the ball the defender is marked to an arm's length (CUSHION 3 -> 3.6 ft)
+  and gives ground from 3.2 ft out past 12 ft from the rim (was 2.4) - not
+  backing a man down. A dribble run that would go straight through a man
+  of theirs goes by his hip (atHisHip) - not one into a charge, a strip or
+  a block, nor one into backing his man down. Test games a, b: the man on
+  him within 2.5 ft 14.4% -> 12.4% of the dribbling, within 1.8 ft 3.5%
+  -> 3.0%. Tried and left out: a deeper spot for him while the play is
+  staged (it cut the stepper's crossovers by two thirds), probes in at his
+  hip (a man off where the play has him), keeping the man in front of the
+  ball 3.2 ft off (the charge taken falls on top of him). Next: the ball
+  kept away from him (ballAway in the stepper: on his side 46% -> 35%, but
+  the crossover's first frame jumps a hair - to find).
 - **Next: B2, the screener's man ready for the coverage** in the step a
   ball screen is set (a drop sat back toward the rim, a show up level with
   the screen). It reshuffles the games; the rest of its fallout to check.
