@@ -698,8 +698,15 @@ const inALiveGame = () =>
 	ownLiveSimUnderway() ||
 	(followedBroadcast !== undefined && !followedBroadcast.over) ||
 	liveResultWait.pending();
+// Off for now (2026-11-17): with it on, the league's phones went a whole
+// playoff day without a push - a device counted as in a live game had its
+// pushes parked, and one closed mid game was never told to let them go. Each
+// device says "not holding" instead, once a connection, which also lets go
+// of whatever a hold of its parked on the server. (inALiveGame is kept for
+// when the hold comes back with a release that doesn't wait on the device.)
+export const PUSH_HOLD_ON = false;
 const syncLiveHold = () => {
-	liveHoldLease?.sync(inALiveGame());
+	liveHoldLease?.sync(PUSH_HOLD_ON && inALiveGame());
 };
 export const recheckLiveSpoilers = (force = false) => {
 	syncLiveHold();
