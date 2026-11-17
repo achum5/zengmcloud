@@ -1,3 +1,4 @@
+import { diffPaths, type FieldPath } from "./fieldPaths.ts";
 import type { LeagueUrlParts } from "../../../ui/router/types.ts";
 import { idb } from "../../db/index.ts";
 import { noteInjuryApply } from "./injuryForensics.ts";
@@ -68,7 +69,16 @@ export const phaseRedirectComponents = (
 // the entire record), which makes applying a changeset idempotent and safe to
 // reorder across different records - the basis for last-write-wins sync.
 export type SyncChange =
-	| { store: Store; id: number | string; type: "put"; value: any }
+	| {
+			store: Store;
+			id: number | string;
+			type: "put";
+			value: any;
+			// An ordinary edit's fields, when known (sync/fieldPaths.ts): a device
+			// applying it sets these on its own copy and leaves the rest. Absent:
+			// the whole record, as always.
+			paths?: FieldPath[];
+	  }
 	// `value` is a snapshot of the deleted row, carried ONLY for logically-keyed
 	// stores (teamSeasons/teamStats) so the receiver can delete the row matching
 	// the logical identity (tid, season[, playoffs]) instead of blindly deleting
@@ -588,9 +598,18 @@ export const captureChangeset = async (): Promise<Changeset> => {
 				changes.push({ store: typedStore, id, type: "delete" });
 			}
 		} else {
-			changes.push({ store: typedStore, id, type: "put", value });
+			// The fields this edit changed, against the record as it first read
+			// it (an ordinary edit's window only - see changeTracker's bases).
+			const base = changeTracker.takeBase(typedStore, id);
+			const paths = base === undefined ? undefined : diffPaths(base, value);
+			changes.push(
+				paths === undefined
+					? { store: typedStore, id, type: "put", value }
+					: { store: typedStore, id, type: "put", value, paths },
+			);
 		}
 	}
+	changeTracker.clearBases();
 
 	return { changes };
 };
@@ -807,10 +826,10 @@ export const refreshAfterApply = async ({
 			try {
 				await idb.cache.flush();
 				await idb.cache.fill();
-			} catch (error2) {
+			} catch (error_) {
 				console.error(
 					"RETRY FAILED: cache is stale after a synced season rollover - the app may show wrong data until this league is closed and reopened",
-					error2,
+					error_,
 				);
 			}
 		}

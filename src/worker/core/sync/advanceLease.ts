@@ -34,3 +34,11 @@ export const holdRoomForAdvance = async () => {
 export const endRoomAdvance = () => {
 	getSyncEngine()?.endAdvance();
 };
+
+// Whether the league's own advances run on this device: single player, the
+// device in charge of simming, or a ready-up step this device claimed. A
+// league mate's own game or own draft pick is no advance.
+export const advancesHere = () => {
+	const engine = getSyncEngine();
+	return engine === undefined || engine.isAuthority() || engine.inAdvance();
+};

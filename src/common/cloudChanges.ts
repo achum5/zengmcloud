@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 340,
+		date: "2026-11-17",
+		text: "Shared leagues: a trade or signing that uploads after a sim no longer wipes that sim's games, stats and injuries for the players involved, and a sim that uploads after your move no longer undoes it. Steps a league mate's phone runs (a draft pick, the next phase) now hold everyone's moves like a sim does, and if your own game ends the regular season or the finals, the next phase starts with the next sim from whoever is in charge of simming.",
+	},
+	{
 		n: 339,
 		date: "2026-11-17",
 		text: "3D: a ball handler keeps the ball away from the defender in front of him, switching it to the far hand with a crossover, or between the legs when he's sizing up a defender who's tight on him.",

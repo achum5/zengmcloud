@@ -170,6 +170,162 @@ describe("applyVersionedChangeset", () => {
 		assert.strictEqual(((await idb.cache.players.get(1)) as any)?.tid, 2);
 	});
 
+	// FIELD BY FIELD (sync/fieldPaths.ts). A league mate's trade, captured
+	// before a sim and published after it: it moves the player and leaves the
+	// sim's games and injury on him.
+	test("an ordinary edit with its fields leaves the rest of the record", async () => {
+		(idb as any).league = makeLeagueDb({
+			players: [
+				{ pid: 1, tid: 5, injury: { gamesRemaining: 4 }, stats: [{ gp: 13 }] },
+			],
+			gameAttributes: [{ key: APPLIED_VERSION_KEY, value: 7 }],
+		});
+		const trade = {
+			version: 8,
+			authorId: "author-2",
+			action: "main.proposeTrade",
+			changeset: {
+				changes: [
+					{
+						store: "players" as any,
+						id: 1,
+						type: "put" as const,
+						value: {
+							pid: 1,
+							tid: 2,
+							injury: { gamesRemaining: 0 },
+							stats: [{ gp: 10 }],
+						},
+						paths: [["tid"]],
+					},
+				],
+			},
+			at: 1,
+		};
+		assert.strictEqual(await applyVersionedChangeset(trade), "apply");
+		const p = (await (idb as any).league.getAll("players"))[0];
+		assert.strictEqual(p.tid, 2);
+		assert.strictEqual(p.injury.gamesRemaining, 4);
+		assert.strictEqual(p.stats[0].gp, 13);
+	});
+
+	test("a sim lands whole, as always", async () => {
+		(idb as any).league = makeLeagueDb({
+			players: [{ pid: 1, tid: 5, extra: true }],
+			gameAttributes: [{ key: APPLIED_VERSION_KEY, value: 7 }],
+		});
+		const day = vcs(8, [
+			{ ...tradePut(1, 5), paths: [["tid"]] } as any,
+		]);
+		await applyVersionedChangeset(day);
+		const p = (await (idb as any).league.getAll("players"))[0];
+		assert.deepEqual(p, { pid: 1, tid: 5 });
+	});
+
+	// THE RACE. My trade waits to publish (the room was simming); the sim
+	// arrives first. My trade stays on this device, and waits laid over the
+	// sim - so what it publishes carries the sim's games too.
+	test("our waiting edit stays on top of a sim, and waits laid over it", async () => {
+		(idb as any).league = makeLeagueDb({
+			players: [{ pid: 1, tid: 2, stats: [{ gp: 10 }] }],
+			gameAttributes: [{ key: APPLIED_VERSION_KEY, value: 7 }],
+		});
+		const ours = {
+			id: "mine",
+			authorId: "me",
+			action: "main.proposeTrade",
+			changeset: {
+				changes: [
+					{
+						store: "players" as any,
+						id: 1,
+						type: "put" as const,
+						value: { pid: 1, tid: 2, stats: [{ gp: 10 }] },
+						paths: [["tid"]],
+					},
+				],
+			},
+		};
+		const saved: any[] = [];
+		const day = vcs(8, [
+			{
+				store: "players" as any,
+				id: 1,
+				type: "put" as const,
+				value: { pid: 1, tid: 5, stats: [{ gp: 13 }] },
+			},
+		]);
+		await applyVersionedChangeset(day, undefined, {
+			entries: [ours as any],
+			save: async (entry) => {
+				saved.push(entry);
+			},
+		});
+		const p = (await (idb as any).league.getAll("players"))[0];
+		assert.strictEqual(p.tid, 2, "our trade stands here");
+		assert.strictEqual(p.stats[0].gp, 13, "with the sim's games");
+		assert.strictEqual(saved.length, 1);
+		const waiting = saved[0].changeset.changes[0];
+		assert.strictEqual(waiting.value.tid, 2);
+		assert.strictEqual(waiting.value.stats[0].gp, 13);
+		assert.deepEqual(waiting.paths, [["tid"]]);
+	});
+
+	// The other order: our sim waits to publish, a league mate's trade
+	// arrives first. The sim takes the trade into it, so publishing it whole
+	// doesn't take the trade back.
+	test("our waiting sim takes a league mate's edit into it", async () => {
+		(idb as any).league = makeLeagueDb({
+			players: [{ pid: 1, tid: 5, stats: [{ gp: 13 }] }],
+			gameAttributes: [{ key: APPLIED_VERSION_KEY, value: 7 }],
+		});
+		const ours = {
+			id: "sim",
+			authorId: "me",
+			action: "playMenu.day",
+			changeset: {
+				changes: [
+					{
+						store: "players" as any,
+						id: 1,
+						type: "put" as const,
+						value: { pid: 1, tid: 5, stats: [{ gp: 13 }] },
+					},
+				],
+			},
+		};
+		const saved: any[] = [];
+		const trade = {
+			version: 8,
+			authorId: "author-2",
+			action: "main.proposeTrade",
+			changeset: {
+				changes: [
+					{
+						store: "players" as any,
+						id: 1,
+						type: "put" as const,
+						value: { pid: 1, tid: 2, stats: [{ gp: 10 }] },
+						paths: [["tid"]],
+					},
+				],
+			},
+			at: 1,
+		};
+		await applyVersionedChangeset(trade, undefined, {
+			entries: [ours as any],
+			save: async (entry) => {
+				saved.push(entry);
+			},
+		});
+		const p = (await (idb as any).league.getAll("players"))[0];
+		assert.strictEqual(p.tid, 2);
+		assert.strictEqual(p.stats[0].gp, 13);
+		const waiting = saved[0].changeset.changes[0];
+		assert.strictEqual(waiting.value.tid, 2);
+		assert.strictEqual(waiting.value.stats[0].gp, 13);
+	});
+
 	test("a device with no marker starts at 0 and applies version 1", async () => {
 		(idb as any).league = makeLeagueDb({ players: [] });
 		assert.strictEqual(await readAppliedVersion(), 0);

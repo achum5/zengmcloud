@@ -768,6 +768,26 @@ export class FirebaseTransport implements SyncTransport {
 		}
 	}
 
+	// Who is running which step, live (stepClaim.ts).
+	subscribeDraftAdvance(
+		onChange: (claim: AdvanceClaimDoc | undefined) => void,
+		onError?: (error: unknown) => void,
+	) {
+		return this.tracked(() =>
+			onSnapshot(
+				doc(this.db, "leagues", this.code, "control", DRAFT_ADVANCE_DOC_ID),
+				(snapshot) => {
+					this.markContact();
+					onChange(snapshot.data() as AdvanceClaimDoc | undefined);
+				},
+				(error) => {
+					console.error("Step claim subscription failed", error);
+					onError?.(error);
+				},
+			),
+		);
+	}
+
 	// Mark this device's claimed step as finished, closing its crash-recovery
 	// re-claim window. Best-effort: a failure just leaves the lease to expire.
 	async completeDraftAdvance(draftKey: string, pick: number): Promise<void> {
@@ -2113,7 +2133,7 @@ export class FirebaseTransport implements SyncTransport {
 					syncDebugLog("transport:changes-snapshot", {
 						added: entries.length,
 						firstSeq: entries[0]!.seq,
-						lastSeq: entries[entries.length - 1]!.seq,
+						lastSeq: entries.at(-1)!.seq,
 					});
 
 					chain = chain.then(async () => {

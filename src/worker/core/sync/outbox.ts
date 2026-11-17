@@ -126,6 +126,19 @@ export const outbox = {
 		await tx.done;
 	},
 
+	// Rewrite a queued entry in place - its place in the queue kept - after a
+	// version that arrived underneath it was layered under it (applyVersion's
+	// resolveWrites). An entry no longer queued stays gone.
+	async update(entry: Omit<ChangesetEntry, "seq">) {
+		const db = await getDB();
+		const tx = db.transaction(STORE, "readwrite");
+		const row = (await tx.store.get(entry.id)) as OutboxRow | undefined;
+		if (row) {
+			await tx.store.put({ ...row, entry });
+		}
+		await tx.done;
+	},
+
 	// Mark an entry as confirmed uploaded.
 	async remove(id: string) {
 		await bestEffort(async () => {

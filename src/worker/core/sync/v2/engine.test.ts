@@ -1377,6 +1377,69 @@ describe("SyncEngineV2", () => {
 		}
 	});
 
+	// An advance whose upload only queued keeps the room busy until it lands:
+	// clearing at once let held followers' edits go up ahead of the sim they
+	// had waited out, and the sim then landed over them.
+	test("the room stays busy until a queued advance has uploaded", async () => {
+		vi.useFakeTimers();
+		try {
+			const room = new Room();
+			initRoom(room);
+			room.setAuthority({ holderId: "A", holderName: "Alex" });
+			const db = makeLeagueDb({ players: [{ pid: 1, tid: 2 }] });
+			(idb as any).league = db;
+			const transport = new V2Transport("A", room);
+			const writes: number[] = [];
+			transport.publishBusy = async (until: number) => {
+				writes.push(until);
+			};
+			// The connection is down: the advance only queues.
+			let down = true;
+			for (const method of [
+				"commitV2Version",
+				"publishAndCommitV2Version",
+			] as const) {
+				const real = (transport as any)[method].bind(transport);
+				(transport as any)[method] = async (...args: any[]) => {
+					if (down) {
+						throw new Error("unavailable");
+					}
+					return real(...args);
+				};
+			}
+			const engine = new SyncEngineV2(transport);
+			engine.start();
+			engine.markRoomBusy();
+			engine.beginAdvance();
+			assert.strictEqual(
+				await engine.onLocalChangeset(
+					changesetOf(tradePut(1, 2)),
+					"playMenu.day",
+				),
+				"queued",
+			);
+			engine.endAdvance();
+			await vi.advanceTimersByTimeAsync(0);
+			assert.deepStrictEqual(
+				writes.map((w) => w === 0),
+				[false],
+				"still busy: the day isn't in the cloud",
+			);
+
+			// Back up: the queued day lands, then the room is cleared.
+			down = false;
+			assert.ok(await engine.drainOutbox());
+			await vi.advanceTimersByTimeAsync(0);
+			assert.deepStrictEqual(
+				writes.map((w) => w === 0),
+				[false, true],
+			);
+			engine.stop();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	test("with the smart CPU on, the busy stamp runs ten minutes", async () => {
 		const room = new Room();
 		initRoom(room);

@@ -65,6 +65,62 @@ describe("sync changeset", () => {
 		assert.strictEqual(changeset.changes[0]!.type, "put");
 	});
 
+	// FIELD BY FIELD (sync/fieldPaths.ts): an ordinary edit says which fields
+	// it changed, against the record as it first read it - even though it
+	// edited the cached object in place.
+	test("an ordinary edit carries the fields it changed", async () => {
+		resetG();
+		const p0 = genPlayer();
+		await resetCache({ players: [p0] });
+		changeTracker.enable();
+
+		await changeTracker.runCaptured(async () => {
+			const p = (await idb.cache.players.get(p0.pid!))!;
+			p.tid = p.tid + 1;
+			await idb.cache.players.put(p);
+		});
+
+		const change = (await captureChangeset()).changes[0] as any;
+		assert.deepEqual(change.paths, [["tid"]]);
+		// And whole, as ever: a device that can't use the fields still can.
+		assert.strictEqual(change.value.pid, p0.pid);
+	});
+
+	test("a sim's writes travel whole", async () => {
+		resetG();
+		const p0 = genPlayer();
+		await resetCache({ players: [p0] });
+		changeTracker.enable();
+
+		changeTracker.beginSim("playMenu.day");
+		try {
+			const p = (await idb.cache.players.get(p0.pid!))!;
+			p.tid = p.tid + 1;
+			await idb.cache.players.put(p);
+		} finally {
+			changeTracker.endSim("playMenu.day");
+		}
+
+		const change = (await captureChangeset()).changes[0] as any;
+		assert.isUndefined(change.paths);
+	});
+
+	test("an edit to a record it never read here travels whole", async () => {
+		resetG();
+		const p0 = genPlayer();
+		await resetCache({ players: [p0] });
+		const held = (await idb.cache.players.get(p0.pid!))!;
+		changeTracker.enable();
+
+		await changeTracker.runCaptured(async () => {
+			held.tid = held.tid + 1;
+			await idb.cache.players.put(held);
+		});
+
+		const change = (await captureChangeset()).changes[0] as any;
+		assert.isUndefined(change.paths);
+	});
+
 	test("excludes device-local userTid but syncs userTids and league settings", async () => {
 		resetG();
 		await resetCache({});

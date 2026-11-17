@@ -613,15 +613,43 @@ league, settings and versions). Fixed:
 - **League Settings** save only what was changed in the form, so a league
   mate's change made while it was open isn't written back over.
 
-Open (sync engine, not the smart CPU's; the smart CPU's long steps widen
-them): a held edit republished after a sim it waited out lands its whole
-records over the sim's; the busy mark is cleared before a queued (unsent)
-advance lands; a ready-up step won by a league mate's device can't hold the
-room (the rules let only the device in charge write it) and the Play menu
-doesn't consult ready-up claims; a league mate's own game that ends the
-regular season or playoffs runs the phase change on their phone. Devices on
-an older app version behave as that version did (no version check): every
-league mate should reload after an update.
+The sync engine's own gaps the audit found, fixed in a second round (the
+owner: "go ahead ... do the entire list"):
+
+- **A move and a sim on the same records.** Changesets carried whole
+  records, so whichever published last won every field: a league mate's
+  trade held through a sim took back the sim's games and injuries on the
+  traded players (and on the trader's phone the player went back to his old
+  team); a sim that lost the race to a trade took the trade back. Now an
+  ordinary edit also carries the fields it changed (`SyncChange.paths`,
+  sync/fieldPaths.ts), worked out against the record as the edit first read
+  it (changeTracker's bases - cloned at the first read, since the cache
+  hands out live objects that are edited in place; players, teams,
+  team seasons and draft picks only, ordinary capture windows only). A
+  device applying it sets those fields; a sim still lands whole. A device
+  with its own change to the same record still waiting to publish keeps it
+  on top: an edit of ours with fields is laid back over what arrived, a sim
+  of ours takes the arriving edit's fields in, and the waiting copy in the
+  outbox is rewritten so (applyVersion's resolveWrites, outbox.update), so
+  what publishes carries both. Whole records (no base, too many paths, an
+  older build) behave as before.
+- **The busy mark outlives an unsent advance.** An advance whose upload
+  only queued cleared the room at once, and held followers' edits went up
+  ahead of it. The mark now stays until the outbox empties (or its lease
+  runs out).
+- **Ready-up steps run on a league mate's phone.** Only the device in
+  charge can stamp the room busy, so a step another device claimed held
+  nobody. Every device now watches the claim document (stepClaim.ts): while
+  another device's claim is open, edits and publishes wait, and the Play
+  menu on the device in charge won't run alongside it. A claimed step that
+  was discarded (with a checkpoint to restore from) is not sealed complete.
+- **A league mate's own game that ends the season.** The switch to the
+  playoffs, or to the offseason after the finals, is left to the device in
+  charge of simming (its next sim, with no games left, runs it) instead of
+  running on that phone.
+
+Devices on an older app version behave as that version did (no version
+check): every league mate should reload after an update.
 
 ## The DBA replay
 

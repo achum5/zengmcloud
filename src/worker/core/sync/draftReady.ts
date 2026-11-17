@@ -53,6 +53,7 @@ import {
 	holdRoomForAdvance,
 } from "./advanceLease.ts";
 import { syncDebugLog } from "./debugLog.ts";
+import { clearStepClaim, setStepClaim } from "./stepClaim.ts";
 import { stillSyncOwner } from "./instanceOwner.ts";
 import {
 	allowCrossingNextSimStop,
@@ -1136,7 +1137,15 @@ const evaluate = async () => {
 		} catch {
 			// Can't verify - treat as not taken and let the lease cover it.
 		}
-		if (tookEffect) {
+		// Not if the step was discarded (it lost a race to the room and this
+		// device is restoring): sealing it would leave the step done in the
+		// claim and undone in the league, unclaimable for good.
+		if (tookEffect && getSyncEngine()?.isRestoringAfterDiscard()) {
+			syncDebugLog("phaseReady:advance-discarded", {
+				stageKey,
+				step: stage.nextStep,
+			});
+		} else if (tookEffect) {
 			if (transport.completeDraftAdvance) {
 				await transport.completeDraftAdvance(stageKey, stage.nextStep);
 			}
@@ -1222,9 +1231,36 @@ export const setDraftReady = async (untilStep: number | null) => {
 	void evaluate();
 };
 
+// The claim document, watched so every device knows when another is running
+// a step (stepClaim.ts). Rebuilt after a pause if it errors, like the ready
+// listener.
+let unsubscribeClaim: (() => void) | undefined;
+let reclaimTimer: ReturnType<typeof setTimeout> | undefined;
+const subscribeClaim = (transport: SyncTransport) => {
+	unsubscribeClaim?.();
+	unsubscribeClaim = transport.subscribeDraftAdvance?.(
+		(claim) => {
+			if (currentTransport === transport) {
+				setStepClaim(claim, advanceLeaseMs(CLAIM_LEASE_MS));
+			}
+		},
+		() => {
+			clearStepClaim();
+			clearTimeout(reclaimTimer);
+			reclaimTimer = setTimeout(() => {
+				reclaimTimer = undefined;
+				if (currentTransport === transport) {
+					subscribeClaim(transport);
+				}
+			}, READY_RESUBSCRIBE_MS);
+		},
+	);
+};
+
 export const setupDraftReady = (transport: SyncTransport) => {
 	teardownDraftReady();
 	currentTransport = transport;
+	subscribeClaim(transport);
 	// Arm the deadline gate from the same lifecycle that runs the evaluator, and
 	// only when this transport can actually run a step. Gating means the ordinary
 	// sim path refuses to cross, so an armed gate with nothing able to open it
@@ -1251,6 +1287,11 @@ export const teardownDraftReady = () => {
 	setTradeDeadlineGateActive(false);
 	unsubscribe?.();
 	unsubscribe = undefined;
+	unsubscribeClaim?.();
+	unsubscribeClaim = undefined;
+	clearTimeout(reclaimTimer);
+	reclaimTimer = undefined;
+	clearStepClaim();
 	clearTimeout(resubscribeTimer);
 	resubscribeTimer = undefined;
 	if (evaluateTimer !== undefined) {

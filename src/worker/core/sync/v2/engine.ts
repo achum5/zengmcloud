@@ -1,3 +1,4 @@
+import { foreignStepClaim } from "../stepClaim.ts";
 import { g, local, lock, logEvent, toUI } from "../../../util/index.ts";
 import { idb } from "../../../db/index.ts";
 import { mergeOfferBoards } from "./offerBoardMerge.ts";
@@ -264,6 +265,9 @@ export class SyncEngineV2 {
 	// runs on after the call returns): the room is cleared when the last ends.
 	private busyStampedUntil = 0;
 	private advances = 0;
+	// The room held after an advance until its queued upload lands (see
+	// clearRoomBusyOnceUploaded).
+	private busyUntilUploaded = false;
 
 	// Readiness is a LEASE, not a latch. It used to be a one-way boolean: the
 	// first successful ping set it true and nothing ever set it back, so
@@ -995,8 +999,34 @@ export class SyncEngineV2 {
 	endAdvance(position?: unknown): void {
 		this.advances = Math.max(0, this.advances - 1);
 		if (this.advances === 0) {
-			this.clearRoomBusy(position);
+			void this.clearRoomBusyOnceUploaded(position);
 		}
+	}
+
+	// The room stays held until what this device advanced is in the cloud. An
+	// advance whose upload only queued (a timeout, the connection dropping)
+	// used to clear the mark at once: held followers' small edits went straight
+	// up, ahead of the sim they had been waiting out, and the sim then landed
+	// over them. Now the mark is cleared when the outbox empties (doDrain), or
+	// lapses with its lease if it never does.
+	private async clearRoomBusyOnceUploaded(position?: unknown) {
+		let waiting = 0;
+		try {
+			waiting = await this.pendingUploadCount();
+		} catch {
+			// Can't tell: clear as before.
+		}
+		if (this.advances > 0) {
+			// Another advance began meanwhile; its end clears.
+			return;
+		}
+		if (waiting === 0) {
+			this.busyUntilUploaded = false;
+			this.clearRoomBusy(position);
+			return;
+		}
+		this.busyUntilUploaded = true;
+		syncDebugLog("v2:busy-held-until-uploaded", { waiting });
 	}
 
 	// Before a step of an advance under way: the busy mark renewed once half
@@ -1072,9 +1102,23 @@ export class SyncEngineV2 {
 		attempt(1);
 	}
 
+	// An advance of ours was just discarded and this device is restoring to
+	// the room's truth: whatever it shows as done may not be.
+	isRestoringAfterDiscard(): boolean {
+		return this.mustRecoverFromCheckpoint;
+	}
+
+	// Another device is running a ready-up step it claimed (stepClaim.ts).
+	stepClaimedElsewhere(): boolean {
+		return foreignStepClaim(this.transport.clientId) !== undefined;
+	}
+
 	isRoomBusy(): boolean {
 		if (this.isAuthority()) {
 			return false;
+		}
+		if (this.stepClaimedElsewhere()) {
+			return true;
 		}
 		const busyUntil = this.authority?.busyUntil ?? 0;
 		return busyUntil > Date.now();
@@ -1974,6 +2018,11 @@ export class SyncEngineV2 {
 								at: delta.at,
 							},
 							{ waitMs, readMs: readMs.get(version), decodeMs },
+							// Our own waiting changes, laid over what arrives.
+							{
+								entries: await this.pendingEntries(),
+								save: (entry) => this.updatePending(entry),
+							},
 						);
 						spent.versions += 1;
 						spent.waitMs += waitMs;
@@ -2277,6 +2326,26 @@ export class SyncEngineV2 {
 		}
 	}
 
+	// A waiting entry rewritten in place (a version laid under it).
+	private async updatePending(entry: Omit<ChangesetEntry, "seq">) {
+		if (this.code === undefined) {
+			this.memoryQueue = this.memoryQueue.map((e) =>
+				e.id === entry.id ? entry : e,
+			);
+		} else {
+			await outbox.update(entry);
+		}
+	}
+
+	// The entry as it now waits in the queue: a version applied since it was
+	// read may have been laid under it (applyVersion's resolveWrites).
+	private async refreshEntry(entry: Omit<ChangesetEntry, "seq">) {
+		const fresh = (await this.pendingEntries()).find((e) => e.id === entry.id);
+		if (fresh) {
+			entry.changeset = fresh.changeset;
+		}
+	}
+
 	private async removePending(id: string) {
 		if (this.code === undefined) {
 			this.memoryQueue = this.memoryQueue.filter((e) => e.id !== id);
@@ -2318,7 +2387,9 @@ export class SyncEngineV2 {
 			holdPublishForSim({
 				isAuthority: this.isAuthority(),
 				roomBusy: this.isRoomBusy(),
-			})
+			}) ||
+			// (Even the device in charge: the step is someone else's.)
+			this.stepClaimedElsewhere()
 		) {
 			const pendingCount = await this.pendingUploadCount();
 			if (pendingCount > 0) {
@@ -2340,6 +2411,10 @@ export class SyncEngineV2 {
 		try {
 			const pending = await this.pendingEntries();
 			if (pending.length === 0) {
+				if (this.busyUntilUploaded && this.advances === 0) {
+					this.busyUntilUploaded = false;
+					this.clearRoomBusy();
+				}
 				return true;
 			}
 
@@ -2359,6 +2434,11 @@ export class SyncEngineV2 {
 				this.onUploadingChange?.({ done, total: pending.length });
 			}
 			this.onUploadComplete?.();
+			// An advance's queued upload just landed: the room can go.
+			if (this.busyUntilUploaded && this.advances === 0) {
+				this.busyUntilUploaded = false;
+				this.clearRoomBusy();
+			}
 			return true;
 		} catch (error) {
 			// (As text: an Error is `{}` once the log entry is serialized.)
@@ -2426,6 +2506,9 @@ export class SyncEngineV2 {
 		}
 
 		for (let attempt = 0; attempt < 3; attempt++) {
+			// As it waits now: a version applied since it was read may have been
+			// laid under it.
+			await this.refreshEntry(entry);
 			// Never author on top of state we don't have: catch up first,
 			// publish second. The head is the local mirror (kept fresh by the
 			// listener, the head probe, and our own commits) - NOT a fresh
@@ -2459,6 +2542,8 @@ export class SyncEngineV2 {
 				if (!caught) {
 					return false;
 				}
+				// The versions just applied were laid under it.
+				await this.refreshEntry(entry);
 				// A team record this entry carries may now be older than the
 				// one just applied: merge human offers (offerBoardMerge.ts).
 				const merged = await mergeOfferBoards(entry.changeset, entry.action);

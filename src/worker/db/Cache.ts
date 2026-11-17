@@ -532,18 +532,34 @@ export class StoreAPI<
 	}
 
 	// Not sure how to type key as ID in some methods below
-	indexGet(
+	async indexGet(
 		index: MyIndex,
 		key: number | string | (number | string | boolean)[],
 	): Promise<Output | undefined> {
-		return this.cache._indexGet(index, key);
+		const row = await this.cache._indexGet(index, key);
+		this._noteRead(row);
+		return row;
 	}
 
-	indexGetAll(
+	async indexGetAll(
 		index: MyIndex,
 		key: number | string | [any, any] | any[],
 	): Promise<Output[]> {
-		return this.cache._indexGetAll(index, key);
+		const rows = await this.cache._indexGetAll(index, key);
+		if (changeTracker.takingBases(this.store)) {
+			for (const row of rows) {
+				this._noteRead(row);
+			}
+		}
+		return rows;
+	}
+
+	// Sync: a record an edit reads, as it first saw it (changeTracker).
+	_noteRead(row: unknown) {
+		if (row !== undefined && changeTracker.takingBases(this.store)) {
+			const pk = storeInfos[this.store].pk;
+			changeTracker.noteRead(this.store, (row as any)[pk], row);
+		}
 	}
 
 	add(obj: Input): Promise<ID> {
@@ -1118,17 +1134,31 @@ class Cache {
 
 	async _get(store: Store, id: number | string): Promise<any> {
 		await this._waitForStatus("full");
-		return this._data[store][id];
+		const value = this._data[store][id];
+		changeTracker.noteRead(store, id, value);
+		return value;
 	}
 
 	async _getAll(store: Store): Promise<any[]> {
 		await this._waitForStatus("full");
+		this._noteReads(store, this._data[store]);
 		return Object.values(this._data[store]);
 	}
 
 	async _getAllByKey(store: Store): Promise<Record<number | string, any>> {
 		await this._waitForStatus("full");
+		this._noteReads(store, this._data[store]);
 		return this._data[store];
+	}
+
+	// Sync: the records an edit reads, as it first saw them (changeTracker).
+	_noteReads(store: Store, rows: Record<number | string, any>) {
+		if (!changeTracker.takingBases(store)) {
+			return;
+		}
+		for (const id of Object.keys(rows)) {
+			changeTracker.noteRead(store, id, rows[id]);
+		}
 	}
 
 	_checkIndexFreshness(index: Index) {
@@ -1299,6 +1329,7 @@ class Cache {
 		this._checkUniqueInDatabase(store, obj);
 
 		const prevObj = this._data[store][obj[pk]];
+		changeTracker.notePut(store, obj[pk], prevObj, obj);
 		this._data[store][obj[pk]] = obj;
 
 		// Need to have the correct type here for IndexedDB

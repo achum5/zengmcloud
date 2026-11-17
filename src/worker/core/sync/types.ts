@@ -1,3 +1,4 @@
+import type { AdvanceClaimDoc } from "./advanceClaimPolicy.ts";
 import type { SimDayClaimDoc } from "./simDayClaimPolicy.ts";
 import type { Changeset } from "./changeset.ts";
 import type { LiveSync3D, SyncedAutoPlay } from "../../../common/types.ts";
@@ -516,6 +517,11 @@ export interface SyncTransport {
 	// Marks the caller's claimed step finished (closing its crash-recovery
 	// re-claim window; see advanceClaimPolicy.ts). Best-effort.
 	completeDraftAdvance?(draftKey: string, pick: number): Promise<void>;
+	// The claim document, live: who is running which step (stepClaim.ts).
+	subscribeDraftAdvance?(
+		onChange: (claim: AdvanceClaimDoc | undefined) => void,
+		onError?: (error: unknown) => void,
+	): () => void;
 
 	// Schedule-day sim fence (see simDayClaimPolicy.ts). claimSimDay atomically
 	// claims one slice of a schedule day (whole day or one live-simmed game) -

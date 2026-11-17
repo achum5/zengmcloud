@@ -439,3 +439,136 @@ describe("realistic FA offers vs a free-agency day", () => {
 		);
 	});
 });
+
+// A TRADE AND A SIM, BOTH WAYS (sync/fieldPaths.ts). Whole records lost the
+// race: a league mate's trade queued while the room simmed went out after
+// the sim and took back the sim's games on the traded player - and on the
+// trader's own device the player went back to his old team. An ordinary
+// edit now carries the fields it changed.
+describe("a trade and a sim on the same player", () => {
+	beforeEach(async () => {
+		resetG();
+		g.setWithoutSavingToDB("season", 2026);
+		g.setWithoutSavingToDB("phase", 1);
+		await resetCache({});
+		changeTracker.disable();
+		changeTracker.reset();
+	});
+	afterEach(() => {
+		(idb as any).league = undefined;
+	});
+
+	const before = () => ({ pid: 9, tid: 4, stats: [{ gp: 10, pts: 150 }] });
+	const traded = () => ({ ...before(), tid: 1 });
+	const simmed = () => ({
+		...before(),
+		stats: [{ gp: 12, pts: 181 }],
+		injury: { gamesRemaining: 3 },
+	});
+	const putPlayer = (value: any) => ({
+		store: "players" as any,
+		id: value.pid,
+		type: "put" as const,
+		value,
+	});
+	const TRADE = () => ({
+		changes: [{ ...putPlayer(traded()), paths: [["tid"]] }],
+	});
+	const SIM = () => ({ changes: [putPlayer(simmed())] });
+
+	const playerOn = async (db: ReturnType<typeof makeLeagueDb>) =>
+		(await db.getAll("players")).find((p: any) => p.pid === 9);
+	const replay = async (room: Room) => {
+		const db = atVersion(0, { players: [before()] });
+		(idb as any).league = db;
+		await resetCache({});
+		const engine = new SyncEngineV2(new V2Transport("C", room));
+		assert.ok(await engine.catchUp());
+		engine.stop();
+		return playerOn(db);
+	};
+	const both = (p: any) => {
+		assert.strictEqual(p.tid, 1, "traded");
+		assert.strictEqual(p.stats[0].gp, 12, "with the sim's games");
+		assert.strictEqual(p.injury.gamesRemaining, 3, "and its injury");
+	};
+
+	test("a trade held through a sim goes up on the sim's player", async () => {
+		const room = new Room();
+		room.setState({ version: 0, authorId: "init", byName: "Init", at: 1 });
+		room.setAuthority({
+			holderId: "S",
+			holderName: "Sam",
+			busyUntil: Date.now() + 60_000,
+		} as any);
+
+		// A trades while the room is simming: held.
+		const dbA = atVersion(0, { players: [traded()] });
+		(idb as any).league = dbA;
+		await resetCache({});
+		const engineA = new SyncEngineV2(new V2Transport("A", room));
+		engineA.start();
+		assert.strictEqual(
+			await engineA.onLocalChangeset(TRADE(), "main.proposeTrade"),
+			"queued",
+		);
+
+		// The sim lands as version 1.
+		const sim = serializeChangeset(SIM());
+		await new V2Transport("S", room).publishAndCommitV2Version(
+			{
+				version: 1,
+				authorId: "S",
+				byName: "Sam",
+				at: 2,
+				action: "playMenu.day",
+				inlineDelta: sim,
+			},
+			sim,
+			0,
+		);
+		room.setAuthority({ holderId: "S", holderName: "Sam", busyUntil: 0 });
+		assert.ok(await engineA.drainOutbox());
+		await engineA.catchUp();
+		engineA.stop();
+		assert.strictEqual(room.state!.version, 2);
+
+		both(await replay(room));
+		both(await playerOn(dbA));
+	});
+
+	test("a sim that loses the race to a trade takes the trade into it", async () => {
+		const room = new Room();
+		room.setState({ version: 0, authorId: "init", byName: "Init", at: 1 });
+
+		// A's trade gets there first, as version 1.
+		const trade = serializeChangeset(TRADE());
+		await new V2Transport("A", room).publishAndCommitV2Version(
+			{
+				version: 1,
+				authorId: "A",
+				byName: "A",
+				at: 2,
+				action: "main.proposeTrade",
+				inlineDelta: trade,
+			},
+			trade,
+			0,
+		);
+
+		// The simmer's day, computed at version 0, already on its disk.
+		const dbS = atVersion(0, { players: [simmed()] });
+		(idb as any).league = dbS;
+		await resetCache({});
+		const engineS = new SyncEngineV2(new V2Transport("S", room));
+		engineS.start();
+		await engineS.claimAuthority();
+		await engineS.onLocalChangeset(SIM(), "playMenu.day");
+		await engineS.catchUp();
+		engineS.stop();
+		assert.strictEqual(room.state!.version, 2);
+
+		both(await replay(room));
+		both(await playerOn(dbS));
+	});
+});

@@ -90,6 +90,7 @@ import {
 } from "../sync/simDayFence.ts";
 import { syncDebugLog } from "../sync/debugLog.ts";
 import {
+	advancesHere,
 	beginRoomAdvance,
 	endRoomAdvance,
 	holdRoomForAdvance,
@@ -150,7 +151,12 @@ const play = async (
 		let schedule = await season.getSchedule();
 		let newPhaseCalled = false;
 		let collegeTourneyScheduled = false;
-		if (g.get("phase") < PHASE.PLAYOFFS) {
+		// A league mate's own game that ends the regular season or the playoffs
+		// leaves the phase change to the device in charge of simming - its next
+		// sim, with no games left, runs it - rather than running the season's
+		// end on this phone, unheld (sync/advanceLease.ts).
+		const phaseChangeHere = gidOneGame === undefined || advancesHere();
+		if (phaseChangeHere && g.get("phase") < PHASE.PLAYOFFS) {
 			if (
 				schedule.length === 0 &&
 				g.get("college") &&
@@ -166,7 +172,7 @@ const play = async (
 				);
 				newPhaseCalled = true;
 			}
-		} else if (playoffsOver) {
+		} else if (phaseChangeHere && playoffsOver) {
 			await phase.newPhase(
 				PHASE.DRAFT_LOTTERY,
 				conditions,

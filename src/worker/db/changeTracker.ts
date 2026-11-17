@@ -103,6 +103,25 @@ let simDepth = 0;
 const advances = new Map<string, number>();
 const pending = new Map<string, PendingChange>();
 
+// THE RECORD AS AN EDIT FIRST SAW IT (sync/fieldPaths.ts). An ordinary edit's
+// changeset says which fields it changed, worked out against these, so a
+// device applying it - or this device republishing it after a sim it waited
+// out - sets those fields and leaves the rest (a sim's stats and injuries) as
+// they are. Only for stores an edit shares with a sim, only inside an
+// ordinary capture window (never a sim's: it reads everything), and cloned
+// at the first read, before the edit mutates the cached object in place.
+const BASE_STORES = new Set(["players", "teams", "teamSeasons", "draftPicks"]);
+const MAX_BASES = 5000;
+// Written in place without being read in this window: what it was is unknown.
+const NO_BASE = Symbol("noBase");
+const bases = new Map<string, unknown>();
+const takingBases = (store: string) =>
+	enabled &&
+	captureDepth > 0 &&
+	simDepth === 0 &&
+	applyDepth === 0 &&
+	BASE_STORES.has(store);
+
 export const changeTracker = {
 	enable() {
 		enabled = true;
@@ -183,6 +202,51 @@ export const changeTracker = {
 	// concurrent local sim's writes and leave it unpublished.
 	forget(store: string, id: number | string) {
 		pending.delete(key(store, id));
+	},
+
+	// Whether reads from this store are being noted right now (an ordinary
+	// edit's window) - checked once before a bulk read loops over its rows.
+	takingBases(store: string) {
+		return takingBases(store);
+	},
+
+	// A cached record handed to a reader (Cache's reads).
+	noteRead(store: string, id: number | string, value: unknown) {
+		if (!takingBases(store) || value === undefined) {
+			return;
+		}
+		const k = key(store, id);
+		if (bases.has(k) || bases.size >= MAX_BASES) {
+			return;
+		}
+		bases.set(k, structuredClone(value));
+	},
+
+	// A put about to replace the cached record `prev` with `next`. If the
+	// record wasn't read in this window, `prev` is what it was - unless it is
+	// the same object, edited in place from a reference held from before.
+	notePut(store: string, id: number | string, prev: unknown, next: unknown) {
+		if (!takingBases(store)) {
+			return;
+		}
+		const k = key(store, id);
+		if (bases.has(k) || bases.size >= MAX_BASES) {
+			return;
+		}
+		bases.set(
+			k,
+			prev === undefined || prev === next ? NO_BASE : structuredClone(prev),
+		);
+	},
+
+	// What the record was when this window first saw it, if known.
+	takeBase(store: string, id: number | string): unknown {
+		const base = bases.get(key(store, id));
+		return base === NO_BASE ? undefined : base;
+	},
+
+	clearBases() {
+		bases.clear();
 	},
 
 	// Return all pending changes and clear the buffer.

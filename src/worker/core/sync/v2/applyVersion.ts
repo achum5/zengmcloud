@@ -19,6 +19,122 @@ import {
 } from "../changeset.ts";
 import { noteInjuryApply, recordInjuryForensics } from "../injuryForensics.ts";
 import { upgradeLegacyChanges } from "../normalizeRecords.ts";
+import { applyPaths, deepEqual } from "../fieldPaths.ts";
+import { isTimelineAdvanceLabel } from "../actionLabels.ts";
+import type { ChangesetEntry } from "../types.ts";
+
+type Change = VersionedChangeset["changeset"]["changes"][number];
+type PendingEntry = Omit<ChangesetEntry, "seq">;
+
+// This device's own changes still waiting to publish, and a way to store one
+// rewritten - so a version arriving underneath them can be layered under
+// them (see resolveWrites).
+export type PendingRebase = {
+	entries: PendingEntry[];
+	save: (entry: PendingEntry) => Promise<void>;
+};
+
+const recordKey = (store: unknown, id: unknown) => `${String(store)}:${String(id)}`;
+
+// This device's copy of a record: the cache (the live truth, unflushed edits
+// included), else the database (a store or row the cache doesn't hold).
+const localRecord = async (store: string, id: number | string) => {
+	const api = (idb.cache as any)[store];
+	if (api) {
+		const cached = await api.get(id);
+		if (cached !== undefined) {
+			return cached;
+		}
+	}
+	try {
+		return await (idb.league as any).get(store, id);
+	} catch {
+		return undefined;
+	}
+};
+
+// WHAT ACTUALLY LANDS HERE, record by record (sync/fieldPaths.ts).
+//
+// - An ordinary edit carrying its fields sets those fields on this device's
+//   copy and leaves the rest: a league mate's trade doesn't take back the
+//   games a sim wrote to the same player. A timeline advance, or an edit with
+//   no fields, lands whole, as it always has.
+// - A record this device has its OWN change to, still waiting to publish,
+//   keeps that change on top: an edit of ours with fields is laid back over
+//   what arrived (and the waiting copy becomes that, so it publishes on top of
+//   it); a whole record of ours (a sim waiting to publish) takes the arriving
+//   edit's fields into it, and stays. Either way this device shows what it is
+//   about to publish, and what it publishes carries both.
+const resolveWrites = async (
+	changes: Change[],
+	advance: boolean,
+	rebase: PendingRebase | undefined,
+): Promise<{ writes: Change[]; rewritten: Set<PendingEntry> }> => {
+	const rewritten = new Set<PendingEntry>();
+	const mine = new Map<string, { entry: PendingEntry; change: Change }[]>();
+	for (const entry of rebase?.entries ?? []) {
+		for (const change of entry.changeset.changes) {
+			const k = recordKey(change.store, change.id);
+			const list = mine.get(k) ?? [];
+			list.push({ entry, change });
+			mine.set(k, list);
+		}
+	}
+
+	const writes: Change[] = [];
+	for (const change of changes) {
+		const ours = mine.get(recordKey(change.store, change.id));
+		if (change.type === "delete") {
+			// An edit of ours with fields stands over a delete (it publishes
+			// after it, whole); otherwise as ever.
+			if (!ours?.some(({ change: own }) => own.type === "put" && own.paths)) {
+				writes.push(change);
+			}
+			continue;
+		}
+
+		const theirPaths = advance ? undefined : change.paths;
+		let next: any = change.value;
+		if (theirPaths) {
+			const local = await localRecord(String(change.store), change.id);
+			if (local !== undefined) {
+				next = applyPaths(local, change.value, theirPaths);
+			}
+		}
+
+		let deleted = false;
+		for (const { entry, change: own } of ours ?? []) {
+			if (own.type === "delete") {
+				deleted = true;
+				continue;
+			}
+			deleted = false;
+			if (own.paths) {
+				// Ours with fields: laid back over what arrived, and waits so.
+				const merged = applyPaths(next, own.value, own.paths);
+				if (!deepEqual(merged, own.value)) {
+					own.value = merged;
+					rewritten.add(entry);
+				}
+				next = merged;
+			} else if (theirPaths) {
+				// Ours whole (a sim waiting): takes their fields into it.
+				own.value = applyPaths(own.value, change.value, theirPaths);
+				rewritten.add(entry);
+			}
+			// Both whole: as ever - theirs lands here, ours publishes after it
+			// (offerBoardMerge.ts reconciles human offers on the way).
+		}
+
+		if (deleted) {
+			// Ours deletes it, publishing after this: it stays gone here.
+			continue;
+		}
+		const { paths: _paths, ...rest } = change as Change & { paths?: unknown };
+		writes.push({ ...rest, value: next } as Change);
+	}
+	return { writes, rewritten };
+};
 
 // ---------------------------------------------------------------------------
 // The v2 apply: where the version chain touches disk.
@@ -133,6 +249,8 @@ export const applyVersionedChangeset = async (
 	// How the catch-up got it here (waiting on the read, the read, unpacking
 	// it), carried onto the same log line.
 	timing?: Record<string, number | undefined>,
+	// This device's own changes waiting to publish (see resolveWrites).
+	rebase?: PendingRebase,
 ): Promise<ApplyDecision["type"]> => {
 	if (!checkApplyGuard()) {
 		throw new Error(
@@ -170,8 +288,8 @@ export const applyVersionedChangeset = async (
 	// that no longer exists, so the transaction below couldn't even open with
 	// one), in the shape this build stores. See normalizeRecords.ts.
 	const upgraded = await upgradeLegacyChanges(kept);
-	const changes = await withoutPlayedSchedule(upgraded, vcs.version);
-	for (const change of changes) {
+	const incoming = await withoutPlayedSchedule(upgraded, vcs.version);
+	for (const change of incoming) {
 		if (change.store === "players" && change.type === "put" && change.value) {
 			await preserveLocalWatch(change.value);
 			// Durable per-device record of any injury this remote row changes -
@@ -181,6 +299,21 @@ export const applyVersionedChangeset = async (
 				version: vcs.version,
 			});
 		}
+	}
+
+	// What lands, record by record: an edit's own fields, under this device's
+	// own waiting changes (resolveWrites). Read before the transaction opens.
+	let changes = incoming;
+	let rewritten = new Set<PendingEntry>();
+	changeTracker.beginApply();
+	try {
+		({ writes: changes, rewritten } = await resolveWrites(
+			incoming,
+			isTimelineAdvanceLabel(vcs.action),
+			rebase,
+		));
+	} finally {
+		changeTracker.endApply();
 	}
 
 	// Every store this delta touches, plus gameAttributes for the marker.
@@ -214,6 +347,25 @@ export const applyVersionedChangeset = async (
 		await patchCache(changes);
 	} catch (error) {
 		syncDebugLog("v2:cache-patch-failed", { version: vcs.version, error });
+	}
+
+	// Our waiting changes, laid over what arrived: stored so they publish so.
+	for (const entry of rewritten) {
+		try {
+			await rebase!.save(entry);
+		} catch (error) {
+			syncDebugLog("v2:pending-rebase-save-failed", {
+				version: vcs.version,
+				action: entry.action,
+				error: String(error),
+			});
+		}
+	}
+	if (rewritten.size > 0) {
+		syncDebugLog("v2:pending-rebased", {
+			version: vcs.version,
+			entries: rewritten.size,
+		});
 	}
 
 	const ms = Date.now() - startedAt;

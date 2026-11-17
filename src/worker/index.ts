@@ -403,6 +403,21 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 				return undefined;
 			}
 
+			// A step a league mate's device claimed and is running (a pick, a
+			// phase change): not run here alongside it (stepClaim.ts).
+			if (syncEngine.stepClaimedElsewhere()) {
+				syncDebugLog("api:guard-refused", { type, name, step: "step-claimed" });
+				util.logEvent(
+					{
+						type: "error",
+						text: "A league mate's device is running the next step. Try again when it's done.",
+						persistent: true,
+					},
+					conditions,
+				);
+				return undefined;
+			}
+
 			if (!syncEngine.isCaughtUp()) {
 				syncDebugLog("api:guard-refused", { type, name, step: "caught-up" });
 				util.logEvent(
@@ -578,8 +593,10 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 		const syncEngine = getSyncEngine();
 		if (
 			syncEngine &&
-			!syncEngine.isAuthority() &&
-			(syncEngine.isRoomBusy() || !syncEngine.isCaughtUp())
+			((!syncEngine.isAuthority() &&
+				(syncEngine.isRoomBusy() || !syncEngine.isCaughtUp())) ||
+				// A step a league mate's device is running (stepClaim.ts).
+				syncEngine.stepClaimedElsewhere())
 		) {
 			util.logEvent(
 				{
