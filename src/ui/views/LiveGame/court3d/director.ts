@@ -2777,6 +2777,15 @@ type Entry = "inbound" | "break" | "flow";
 // defenders swap men, the big jumps out and recovers, or both go at the ball.
 // Off the ball the man coming off the screen is chased, or switched onto.
 export type Coverage = "drop" | "switch" | "hedge" | "blitz" | "chase";
+// The screener's own man, as the screen comes: in a drop, back this far
+// short of the screen (feet, toward the rim) - at the level of the foul
+// line out at the top, no deeper than DROP_DEEP from the rim nor closer
+// than DROP_SHALLOW; showing (a hedge, a blitz, a switch), up level with
+// it a step off toward the rim.
+const DROP_BACK = 9;
+const DROP_DEEP = 13;
+const DROP_SHALLOW = 5;
+const SHOW_OFF = 3;
 
 // A set being run.
 type Running = {
@@ -10701,6 +10710,39 @@ class Director {
 				clampPt({ x: M.x + u.x * BODY * 1.05, y: M.y + u.y * BODY * 1.05 }),
 			);
 		}
+		// A ball screen coming in this step: the screener's man ready for it
+		// by the time it is set - in a drop, back at the level he will play
+		// it from already; to show at it, up level with it - rather than out
+		// with his man as he comes and caught there as the ball comes off.
+		const cur =
+			run.screen && run.screen.step === k && run.screen.ball
+				? run.screen
+				: undefined;
+		const sdCur = cur && this.defenderOf(cur.screeners[0]!);
+		if (
+			cur &&
+			sdCur !== undefined &&
+			manOf.get(sdCur) === cur.screeners[0] &&
+			sdCur !== this.defenderOf(cur.user)
+		) {
+			if (cur.coverage === "drop") {
+				const u = unitVec(rim, cur.at);
+				const kk = Math.min(
+					DROP_DEEP,
+					Math.max(DROP_SHALLOW, dist(cur.at, rim) - DROP_BACK),
+				);
+				special(sdCur, { x: rim.x + u.x * kk, y: rim.y + u.y * kk });
+			} else if (cur.coverage !== "chase") {
+				const u = unitVec(cur.at, rim);
+				special(
+					sdCur,
+					clampPt({
+						x: cur.at.x + u.x * SHOW_OFF,
+						y: cur.at.y + u.y * SHOW_OFF,
+					}),
+				);
+			}
+		}
 		const via = new Map<number, { at: Pt; by: number }>();
 		const late = new Map<number, number>();
 		const chase = new Map<number, { man: number; at: Pt; from: number }>();
@@ -12204,10 +12246,15 @@ class Director {
 			const G = clampPt({ x: to.x + u.x * BODY, y: to.y + u.y * BODY });
 			let from = Math.max(into, this.free.get(guard) ?? 0);
 			if (dist(this.posOf(guard), S0) > 0.6) {
+				// (On him as he starts in, if he can be: closing in a beat
+				// ahead of it, not only once it is under way.)
 				from = this.go(
 					guard,
 					S0,
-					into,
+					Math.max(
+						into - runMs(dist(this.posOf(guard), S0), BACK_DOWN_CLOSE),
+						this.free.get(guard) ?? 0,
+					),
 					BACK_DOWN_CLOSE,
 					"back",
 					-dir as 1 | -1,
@@ -26955,6 +27002,97 @@ class Director {
 		}
 	}
 
+	// SET BEFORE HE COMES BY. A screen is set for the man it is for to come
+	// off it: a screener there already, stood on his spot, is set in it a beat
+	// before that man comes by him - not still to set it as he goes past, the
+	// screen thrown up after him. (One still getting there stays as it is.)
+	private setBeforeHeComes(stepped = false) {
+		// (A beat before, ms; stood there, within this of where he sets it,
+		// feet; a man of his by him within this, feet.)
+		// (A beat before him, at the least - however the picture paces it -
+		// for one coming by as it is set or about to be.)
+		const SET_LEAD = 500;
+		const SET_SOON = 200;
+		const SET_STILL = 0.8;
+		const SET_BY = 5;
+		const SET_QUICKER = 1.5;
+		const SET_FASTEST = 20;
+		const shown = (tr: Track, t: number) => {
+			const k = lastBy(tr.shown, t, (x) => x[0]);
+			return k >= 0 && tr.shown[k]![1];
+		};
+		// (Stepped: where everybody has been stepped to, and kept off each
+		// other.)
+		const spot = (tr: Track, t: number): Pt => {
+			const P = this.spotAt(tr, t);
+			if (stepped) {
+				const o = sepAt(tr, t);
+				P.x += o.x;
+				P.y += o.y;
+			}
+			return P;
+		};
+		for (const tr of this.tracks.values()) {
+			if (tr.pid < 0) {
+				continue;
+			}
+			for (const a of tr.acts) {
+				if (a.anim !== "screen") {
+					continue;
+				}
+				// When a man of his comes nearest him, from a moment before.
+				let best = Infinity;
+				let at = 0;
+				for (let t = a.t0 - 1500; t <= a.t1; t += 50) {
+					const S = spot(tr, t);
+					for (const q of this.tracks.values()) {
+						if (q === tr || q.pid < 0 || q.team !== tr.team || !shown(q, t)) {
+							continue;
+						}
+						const d = dist(spot(q, t), S);
+						if (d < best) {
+							best = d;
+							at = t;
+						}
+					}
+				}
+				if (best > SET_BY || at >= a.t0 + SET_SOON) {
+					continue;
+				}
+				const before = Math.max(
+					-Infinity,
+					...tr.acts.filter((x) => x !== a && x.t1 <= a.t0).map((x) => x.t1),
+				);
+				const t0 = Math.max(at - SET_LEAD, before + 50);
+				if (t0 >= a.t0) {
+					continue;
+				}
+				// Still getting there then: there that much sooner, if he can be
+				// - no more than half again as quick, and no faster than a run.
+				// (Stepped, his runs are his steps: as they are.)
+				const m = stepped
+					? undefined
+					: tr.moves.find((x) => x.t0 < t0 && x.t1 > t0);
+				if (
+					m &&
+					m.t1 <= a.t0 + 50 &&
+					!tr.moves.some((x) => x !== m && x.t0 >= m.t1 && x.t0 < a.t0)
+				) {
+					const ms = t0 - m.t0;
+					const ftps = (dist(m.from, m.to) * 1000) / ms;
+					if (ms >= (m.t1 - m.t0) / SET_QUICKER && ftps <= SET_FASTEST) {
+						m.t1 = t0;
+						delete m.v1;
+					}
+				}
+				if (dist(spot(tr, t0), spot(tr, a.t0)) <= SET_STILL) {
+					a.t0 = t0;
+				}
+			}
+			tr.acts.sort((x, y) => x.t0 - y.t0);
+		}
+	}
+
 	// The hand his dribble has the ball in at t, if it is his.
 	private handOf(pid: number, t: number): Hand | undefined {
 		for (let j = this.ball.length - 1; j >= 0; j--) {
@@ -27233,6 +27371,11 @@ class Director {
 		const shownAtT = (tr: Track, t: number) => {
 			const k = lastBy(tr.shown, t, (x) => x[0]);
 			return k >= 0 && tr.shown[k]![1];
+		};
+		// (Backing his man down in the post: set, as much as in a screen.)
+		const inPost = (tr: Track, t: number) => {
+			const m = tr.moves[lastBy(tr.moves, t, (x) => x.t0)];
+			return m !== undefined && m.anim === "post" && t < m.t1;
 		};
 		// When the ball is in each man's hands.
 		const holds = new Map<number, [number, number][]>();
@@ -27761,7 +27904,7 @@ class Director {
 								return false;
 							}
 							const act = actAt(o, t);
-							if (!act || !SET.has(act.anim)) {
+							if ((!act || !SET.has(act.anim)) && !inPost(o, t)) {
 								return false;
 							}
 							const O = posAt(o, t);
@@ -29642,8 +29785,10 @@ class Director {
 	// slide while the shooter goes up through him. (Here, once everybody's
 	// way there is laid out.) And a jumper, whoever has ended up right on him
 	// - however open the shot was meant to be - gets a hand up at it: not
-	// stood there in his stance a step off him watching it go.
-	private wallUp() {
+	// stood there in his stance a step off him watching it go - and once
+	// everybody has been stepped there (`stepped`), whoever has really ended
+	// up right on a jumper, not just the man laid out on him.
+	private wallUp(stepped = false) {
 		// Every shot in close, however it came about - a putback, a layup off
 		// a steal - not just those planned as one: whatever close finish the
 		// ball leaves his hands in, once it is all laid out (and when it
@@ -29700,6 +29845,9 @@ class Director {
 			return { x: P.x + off.x, y: P.y + off.y };
 		};
 		for (const { shooter, release, jumper } of walls) {
+			if (stepped && !jumper) {
+				continue;
+			}
 			const team = this.teamOf(shooter);
 			const S = this.posAt(shooter, release, false, true);
 			for (const tr of this.tracks.values()) {
@@ -30969,6 +31117,7 @@ class Director {
 			tr.arms = arms;
 		}
 		this.atHisHip();
+		this.setBeforeHeComes();
 		this.unplant();
 		this.mark();
 		this.unplant();
@@ -31049,6 +31198,13 @@ class Director {
 		this.backOutFacing();
 		this.noSnatch();
 		this.pickUpWhereItIs();
+		if (this.step) {
+			this.wallUp(true);
+			// (And nobody boxing out, or fighting for position with, a man
+			// stepped somewhere else.)
+			this.nobodyToBox();
+			this.setBeforeHeComes(true);
+		}
 		this.contestsInSight();
 		this.easeNudges();
 		this.groundNudges();

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 341,
+		date: "2026-11-17",
+		text: "3D: on a pick-and-roll the screener's defender is set for it as the screen comes: sitting back near the foul line in a drop, or up level with the screen to hedge or switch. Screens are set before the ball handler comes by, a defender who ends up right on a jump shooter always gets a hand up, and a post player's defender is on his back as he starts backing him down.",
+	},
+	{
 		n: 340,
 		date: "2026-11-17",
 		text: "Shared leagues: a trade or signing that uploads after a sim no longer wipes that sim's games, stats and injuries for the players involved, and a sim that uploads after your move no longer undoes it. Steps a league mate's phone runs (a draft pick, the next phase) now hold everyone's moves like a sim does, and if your own game ends the regular season or the finals, the next phase starts with the next sim from whoever is in charge of simming.",

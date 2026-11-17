@@ -9,6 +9,7 @@ import {
 	poseOf,
 } from "./evaluate.ts";
 import { attackDir, COURT_H, COURT_W, RIM_R, RIM_Z, rimX } from "./geometry.ts";
+import { baseOf } from "./poses.ts";
 import { runMs } from "./motion.ts";
 import { compile, compileLaid } from "./testGame.ts";
 import { bodyFor, cutBetween, sampleTimes } from "./directorTesting.ts";
@@ -323,8 +324,9 @@ describe("3D director", () => {
 							tr.moves.some((m) => m.t1 > a.t0 && m.t0 < a.t1),
 							`${seed} ${pid} ${a.anim} at ${Math.round(a.t0)}`,
 						);
+						// (Drawn his own way of it, maybe: see ownWay.)
 						const mid = evalPlayer(tl, pid, (a.t0 + a.t1) / 2);
-						assert.strictEqual(mid.anim, a.anim, `${seed} ${pid}`);
+						assert.strictEqual(baseOf(mid.anim), a.anim, `${seed} ${pid}`);
 					}
 				}
 			});
@@ -642,7 +644,16 @@ describe("3D director", () => {
 						}
 					}
 				}
-				if (off) {
+				// (Playing a ball screen his man set just before - sat back in a
+				// drop, up at the ball to show - he is off him on purpose.)
+				const covering = (tl.screens ?? []).some(
+					(x) =>
+						x.ball &&
+						x.screeners.includes(S) &&
+						x.set > rel - 4000 &&
+						x.set < rel,
+				);
+				if (off && !covering) {
 					back.push(off);
 				}
 			}

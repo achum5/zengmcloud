@@ -518,9 +518,11 @@ describe("3D: the ten stepped", () => {
 			(s) => s.kind === "hold" && s.style === "cross" && s.away,
 		);
 		assert.isAbove(away.length, 10);
+		// (Through his legs only stood with the man tight on him: now and
+		// then.)
 		assert.isAbove(
 			away.filter((s) => s.kind === "hold" && s.move !== "front").length,
-			2,
+			0,
 		);
 	}, 600_000);
 });

@@ -1976,13 +1976,12 @@ export const stepTimeline = <T extends Stepped>(tl: T): T => {
 	// A shot up, till it is rebounded: every man going for it - to the glass,
 	// boxing out - when the play has him go, no beat to it (who goes when is
 	// the play's: see crash and boxOut in director.ts).
-	const sharp = spansAt(
-		tl.ball.flatMap((s) =>
-			s.kind === "fly" && "pid" in s.from && !("pid" in s.to)
-				? [[s.t0 - SHOT_BEFORE, s.t1 + SHOT_AFTER] as const]
-				: [],
-		),
+	const shots = tl.ball.flatMap((s) =>
+		s.kind === "fly" && "pid" in s.from && !("pid" in s.to)
+			? [[s.t0 - SHOT_BEFORE, s.t1 + SHOT_AFTER] as const]
+			: [],
 	);
+	const sharp = spansAt(shots);
 	// Each man stepped after what he wants, over his stretches on the floor.
 	const step = (
 		tr: (typeof men)[number],
@@ -1991,6 +1990,14 @@ export const stepTimeline = <T extends Stepped>(tl: T): T => {
 	) => {
 		const L = laid.get(tr.pid)!;
 		const held = helds.get(tr.pid)!;
+		// (Nor in the post: backing in on his man, he goes when he goes -
+		// and his man, on his back, gives ground as he comes.)
+		const post = tr.moves.flatMap((m) =>
+			m.anim === "post" || m.anim === "back"
+				? [[m.t0 - STEP_MS, m.t1] as const]
+				: [],
+		);
+		const his = post.length > 0 ? spansAt([...shots, ...post]) : sharp;
 		const samples: Sample[] = [];
 		const begin = L.from;
 		const end = tr.moves.at(-1)!.t1 + 1000;
@@ -2011,7 +2018,7 @@ export const stepTimeline = <T extends Stepped>(tl: T): T => {
 					(REACT_MS[1] - REACT_MS[0]) *
 						hash01(tr.pid * 17 + 3, Math.round(t / 100)),
 				seeAt,
-				sharp,
+				his,
 			)) {
 				samples.push(q);
 			}

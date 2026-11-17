@@ -294,9 +294,24 @@ lockstep, repeats; film.
   in front 250 -> 475, through the legs 114 -> 125. The stepper's own
   crossovers are checked against where the stepping takes him, and so are
   not these (marked away on the ball).
-- **Next: B2, the screener's man ready for the coverage** in the step a
-  ball screen is set (a drop sat back toward the rim, a show up level with
-  the screen). It reshuffles the games; the rest of its fallout to check.
+- **2026-11-17, B2: the screener's man ready for the coverage.** In the
+  step a ball screen is set, the screener's man sits where the coverage
+  wants him: in a drop back toward the rim (DROP_BACK 9 ft off the screen,
+  between 5 and 13 ft out of it), to hedge, blitz or switch up level with
+  it (SHOW_OFF 3). With it, and the games reshuffled by it:
+  - A man posting up has his man on his back as he starts backing him down
+    (the guard sets off earlier, by how far he has to come), and keepOff
+    leaves the two of them together.
+  - A defender put right on a jump shooter by the stepping always gets a
+    hand up (wallUp once more after stepping).
+  - Screens set before the man they are for comes by (setBeforeHeComes): a
+    screener stood within 5 ft of him in the 200 ms after the set starts
+    sets 500 ms before he comes, if he is still (within 0.8 ft) then -
+    staged, his run there squeezed up if it can go 1.5x as fast and no
+    faster than 20 ft/s; stepped, only where he stands still. Test games
+    (director3, 100 screens): set late 14 -> 13. Left: the screener 2-6 ft
+    off his spot as the man comes by (to set it in time he'd have to be
+    moving into it).
 - **Test timeouts on a 4-core machine.** The footwork tests' 120 s limits
   are tight here: master itself times out on "a shooter drifting along
   the arc side-steps" (152 s) run beside one other job.
