@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 333,
+		date: "2026-11-17",
+		text: "Shared leagues: a phone that stopped getting notifications now signs itself back up when you open the app. There's also a Re-register button under Phone notifications on the Multiplayer Sync page, if they ever stop coming.",
+	},
+	{
 		n: 332,
 		date: "2026-11-17",
 		text: "3D: a player stripped of the ball now looks to the official for the call, and one whose pass is picked off puts his hands on his head. Also fixed: the ball snapping into the hands of a player who never went to get it, a defender drifting into a player going up for a layup, and crossovers going the opposite way from where the dribbler moves.",

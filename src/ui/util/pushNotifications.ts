@@ -2,7 +2,11 @@ import type { FirebaseApp } from "firebase/app";
 import { firebaseConfig, vapidKey } from "../../common/firebaseConfig.ts";
 import { safeLocalStorage } from "./safeLocalStorage.ts";
 import { toWorker } from "./toWorker.ts";
-import { PUSH_ENABLED_KEY, PUSH_NAME_KEY } from "./pushNotificationsShared.ts";
+import {
+	PUSH_ENABLED_KEY,
+	PUSH_NAME_KEY,
+	pushWanted,
+} from "./pushNotificationsShared.ts";
 
 // Phone push notifications, driven from the UI thread. Firebase Cloud Messaging
 // can only run in a window context (it needs a service worker and the
@@ -111,11 +115,7 @@ export const enablePushNotifications = async (name = ""): Promise<void> => {
 // actually re-registered with the room, so callers can retry (registration
 // throws until the sync engine is connected to a shared league).
 export const restorePushNotifications = async (): Promise<boolean> => {
-	if (
-		!pushConfigured() ||
-		safeLocalStorage.getItem(ENABLED_KEY) !== "1" ||
-		getPushPermission() !== "granted"
-	) {
+	if (!pushConfigured() || !pushWanted() || getPushPermission() !== "granted") {
 		return false;
 	}
 	if (!(await pushSupported())) {
@@ -123,6 +123,7 @@ export const restorePushNotifications = async (): Promise<boolean> => {
 	}
 	try {
 		await registerToken(getStoredPushName() || "A league-mate");
+		safeLocalStorage.setItem(ENABLED_KEY, "1");
 		return true;
 	} catch {
 		// Best-effort; not connected to a shared league yet, or a transient

@@ -159,6 +159,7 @@ const MultiplayerSync = () => {
 		useState<PushPermission>(getPushPermission());
 	const [pushBusy, setPushBusy] = useState(false);
 	const [pushError, setPushError] = useState<string | undefined>();
+	const [pushRedone, setPushRedone] = useState(false);
 
 	// Sync activity log + manual recovery.
 	const [activity, setActivity] = useState<SyncActivityItem[]>([]);
@@ -456,10 +457,13 @@ const MultiplayerSync = () => {
 
 	const enablePush = async () => {
 		setPushError(undefined);
+		setPushRedone(false);
 		setPushBusy(true);
 		try {
+			const was = getPushPermission();
 			await enablePushNotifications();
 			setPushPermission(getPushPermission());
+			setPushRedone(was === "granted");
 		} catch (error_) {
 			setPushError((error_ as Error).message ?? String(error_));
 		} finally {
@@ -956,9 +960,23 @@ const MultiplayerSync = () => {
 							icon and come back here.
 						</div>
 					) : pushPermission === "granted" ? (
-						<p className="text-success mb-0">
-							Notifications are on for this device.
-						</p>
+						<div className="d-flex flex-wrap align-items-center gap-2">
+							<span className="text-success">
+								Notifications are on for this device.
+							</span>
+							<button
+								className="btn btn-sm btn-outline-secondary"
+								disabled={pushBusy}
+								onClick={enablePush}
+								title="Not getting them? Register this device again"
+							>
+								{pushBusy
+									? "Re-registering…"
+									: pushRedone
+										? "Re-registered"
+										: "Re-register"}
+							</button>
+						</div>
 					) : (
 						<>
 							<button

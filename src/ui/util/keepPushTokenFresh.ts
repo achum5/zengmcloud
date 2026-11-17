@@ -1,5 +1,4 @@
-import { safeLocalStorage } from "./safeLocalStorage.ts";
-import { PUSH_ENABLED_KEY } from "./pushNotificationsShared.ts";
+import { pushWanted } from "./pushNotificationsShared.ts";
 
 // FCM push tokens rotate on their own — notably for installed iOS PWAs that
 // have been backgrounded for a while. When a token rotates, the server's copy
@@ -14,7 +13,8 @@ import { PUSH_ENABLED_KEY } from "./pushNotificationsShared.ts";
 // reload). registerToken/getToken is idempotent and returns the current token,
 // so re-asserting is cheap and simply keeps the room's copy alive.
 //
-// Gated on the "enabled" flag read from localStorage directly, so the heavy
+// Gated on the "enabled" flag read from localStorage directly - or, that gone,
+// the browser still letting this site notify (see pushWanted) - so the heavy
 // firebase/messaging dependency is only dynamically imported for devices that
 // actually turned push on — everyone else pays nothing.
 
@@ -26,7 +26,7 @@ let lastRefresh = 0;
 // Returns true if the token was actually re-registered (the sync engine was
 // connected), false if it was skipped/throttled or the engine wasn't ready.
 const refresh = async (force: boolean): Promise<boolean> => {
-	if (safeLocalStorage.getItem(PUSH_ENABLED_KEY) !== "1") {
+	if (!pushWanted()) {
 		return false;
 	}
 	const now = Date.now();
@@ -48,7 +48,7 @@ export const keepPushTokenFresh = () => {
 	void (async () => {
 		const delays = [0, 8000, 20_000, 45_000, 90_000];
 		for (const delay of delays) {
-			if (safeLocalStorage.getItem(PUSH_ENABLED_KEY) !== "1") {
+			if (!pushWanted()) {
 				return;
 			}
 			if (delay > 0) {
