@@ -18,6 +18,14 @@ import { prepareSignings, viewFor } from "./signing.ts";
 // close (the market prices talent above any one team's needs).
 export const DRAFT_CANDIDATES = 20;
 
+// Called with each pick's reckoning before it is made, for harnesses that
+// log why (none in the game).
+export const smartDraftWatchers: ((
+	dp: Pick<DraftPick, "dpid" | "tid" | "round" | "pick">,
+	worths: readonly { p: Player; worth: number; drafted: Player }[],
+	view: ReturnType<typeof viewFor>,
+) => void)[] = [];
+
 // The prospect a CPU team takes with this pick, and what each it weighed is
 // worth to it.
 export const smartDraftChoice = (
@@ -45,7 +53,7 @@ const draftChoiceNow = async (
 	const slot = (dp.round - 1) * g.get("numActiveTeams") + dp.pick - 1;
 	const amount = pickSalaries()({ slot, round: dp.round, years: 1, ovr: 0 });
 	const exp = g.get("season") + getRookieContractLength(dp.round);
-	const worths: { p: Player; worth: number }[] = [];
+	const worths: { p: Player; worth: number; drafted: Player }[] = [];
 	for (const p of tried) {
 		const drafted = {
 			...p,
@@ -54,6 +62,7 @@ const draftChoiceNow = async (
 		} as Player;
 		worths.push({
 			p,
+			drafted,
 			worth: view.dealWorthNow(
 				dp.tid,
 				PLAYER.UNDRAFTED,
@@ -68,5 +77,8 @@ const draftChoiceNow = async (
 	worths.sort(
 		(a, b) => b.worth - a.worth || b.p.value - a.p.value || a.p.pid - b.p.pid,
 	);
+	for (const watch of smartDraftWatchers) {
+		watch(dp, worths, view);
+	}
 	return { choice: worths[0]?.p, worths };
 };

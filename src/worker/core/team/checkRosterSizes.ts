@@ -12,7 +12,10 @@ import {
 } from "../contract/index.ts";
 import { bySport } from "../../../common/sportFunctions.ts";
 import { last } from "../../../common/utils.ts";
-import { realisticFrontOfficesOn } from "../realisticFrontOffice/isOn.ts";
+import {
+	realisticFrontOfficesOn,
+	smartCpuOn,
+} from "../realisticFrontOffice/isOn.ts";
 import { howFor } from "../realisticFrontOffice/history.ts";
 import {
 	frontOfficeCuts,
@@ -153,6 +156,19 @@ export const dropPlayers = async (players: Player[], numToDrop: number) => {
  * @memberOf core.team
  * @return {Promise.?string} Resolves to null if there is no error, or a string with the error message otherwise.
  */
+// With the smart CPU, a CPU team keeps a working roster, not the bare
+// minimum: its strength is read as if empty places were filled with free
+// players at the minimum, and with 10 a team played a whole season short
+// whenever one was hurt (the owner's league, 2025).
+const SMART_WORKING_ROSTER = 13;
+const fillTo = (userTeamAndActive: boolean) =>
+	!userTeamAndActive && smartCpuOn()
+		? Math.min(
+				g.get("maxRosterSize"),
+				Math.max(g.get("minRosterSize"), SMART_WORKING_ROSTER),
+			)
+		: g.get("minRosterSize");
+
 const checkRosterSizes = async (
 	userOrOther: "user" | "other",
 ): Promise<string | undefined> => {
@@ -202,7 +218,7 @@ const checkRosterSizes = async (
 						);
 				releasedPIDs.push(...releasedPIDsTemp);
 			}
-		} else if (numPlayersOnRoster < g.get("minRosterSize")) {
+		} else if (numPlayersOnRoster < fillTo(userTeamAndActive)) {
 			if (userTeamAndActive) {
 				if (g.get("userTids").length <= 1) {
 					userTeamSizeError = "Your team has ";
@@ -231,7 +247,7 @@ const checkRosterSizes = async (
 						)}/yr contracts, even if you're over the cap!`;
 			} else {
 				// Auto-add players
-				while (numPlayersOnRoster < g.get("minRosterSize")) {
+				while (numPlayersOnRoster < fillTo(userTeamAndActive)) {
 					// See also core.phase
 					let p: Player | undefined;
 					// Realistic front offices: whoever is worth the most to the team

@@ -210,6 +210,7 @@ thinks things are worth, and that is where it is fixed.
    prices close to the whole league's (the 29 other teams' second-highest
    bid was higher for 31 of 240 players, by at most 0.008; the top bidder
    was outside the six for 4).
+
 2. **Decisions** - one engine for trades, free agency offers, re-signing, the
    draft, cuts and extensions, every move scored by layer 1.
 3. **Whole leagues, every team the GM** - the league has to look like the
@@ -238,17 +239,17 @@ game's rules (cap, roster limits, free agency's stages, CBA-lite) stay.
 Where each decision is made today (realistic mode, vanilla+ on) and what
 replaces it:
 
-| decision | today | the GM |
-|---|---|---|
+| decision                                                                                                                     | today                                                       | the GM                                                                                                                                              |
+| ---------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | free agent offers (stages and in season), re-signing, offer-sheet matching, signing at a full roster, filling a short roster | try 1's `priceSigning` (its franchise value, less a margin) | the GM's worth of signing him on those terms, the roster cut to the limit if over; boards, asks (`priceMarket`), odds and stages built on it as now |
-| cuts over the limit | try 1's franchise value without him | the same through the GM's worth, dead money counted |
-| team options | a rule of thumb (declined under 80% of market salary) | his worth at the option's salary against letting him go |
-| the draft | stock (`value ** 69` at random) | the prospect worth most to the team |
-| CPU-to-CPU trades | vanilla+'s market | the GM's market (below) |
-| a human's offer | vanilla+'s evaluate, trade difficulty on | the GM's verdict with the market rule; difficulty off until the bench says otherwise (layer 4) |
-| what would make this work, proposals, trading block | makeItWork on vanilla+'s evaluate | the same search on the GM's verdict |
-| clearing room by trade | try 1's plans re-vetted by vanilla+ | off for now: room is used by signing and through the market |
-| extensions | off | off |
+| cuts over the limit                                                                                                          | try 1's franchise value without him                         | the same through the GM's worth, dead money counted                                                                                                 |
+| team options                                                                                                                 | a rule of thumb (declined under 80% of market salary)       | his worth at the option's salary against letting him go                                                                                             |
+| the draft                                                                                                                    | stock (`value ** 69` at random)                             | the prospect worth most to the team                                                                                                                 |
+| CPU-to-CPU trades                                                                                                            | vanilla+'s market                                           | the GM's market (below)                                                                                                                             |
+| a human's offer                                                                                                              | vanilla+'s evaluate, trade difficulty on                    | the GM's verdict with the market rule; difficulty off until the bench says otherwise (layer 4)                                                      |
+| what would make this work, proposals, trading block                                                                          | makeItWork on vanilla+'s evaluate                           | the same search on the GM's verdict                                                                                                                 |
+| clearing room by trade                                                                                                       | try 1's plans re-vetted by vanilla+                         | off for now: room is used by signing and through the market                                                                                         |
+| extensions                                                                                                                   | off                                                         | off                                                                                                                                                 |
 
 **The market.** At each market moment every CPU team's tradable players are
 priced by their owner's use and the keenest teams' bids. A player is a
@@ -719,12 +720,12 @@ BENCH_REPORT=/tmp/bench npx vitest --run --project basketball \
 every policy. The DBA humans: 8 titles in 10 seasons among 3 teams, about
 27% a team-season.
 
-| policy | titles | rate (95%) | win% | rating rank | out of playoffs | s a season |
-|---|---|---|---|---|---|---|
-| autopilot | 1 / 80 | 1.3% (0.2-6.7) | 43.2 ± 1.7 | 20.3 | 51% | 31 |
-| shark | 0 / 80 | 0% (0-4.6) | 47.6 ± 1.6 | 20.6 | 53% | 66 (33 its own) |
-| check: auto play's signing, difficulty 0 (6 leagues) | 1 / 60 | 1.7% (0.3-8.9) | 54.2 ± 1.6 | 11.9 | 38% | 30 |
-| the CPU teams beside them | 3.4% a team | | 50.0 | | | |
+| policy                                               | titles      | rate (95%)     | win%       | rating rank | out of playoffs | s a season      |
+| ---------------------------------------------------- | ----------- | -------------- | ---------- | ----------- | --------------- | --------------- |
+| autopilot                                            | 1 / 80      | 1.3% (0.2-6.7) | 43.2 ± 1.7 | 20.3        | 51%             | 31              |
+| shark                                                | 0 / 80      | 0% (0-4.6)     | 47.6 ± 1.6 | 20.6        | 53%             | 66 (33 its own) |
+| check: auto play's signing, difficulty 0 (6 leagues) | 1 / 60      | 1.7% (0.3-8.9) | 54.2 ± 1.6 | 11.9        | 38%             | 30              |
+| the CPU teams beside them                            | 3.4% a team |                | 50.0       |             |                 |                 |
 
 - **Autopilot** sinks under the human rules: about 1.3 of its players a
   summer won't negotiate (0.05 for the check's), it signs 1.8 free agents a
@@ -814,3 +815,96 @@ the trades that made the bot better than doing nothing mostly stop working.
 Directional only: the bot is not human-strength, and 24 team-seasons a cell
 is small. A Smart CPU season here took about 15 minutes, four leagues
 sharing the machine.
+
+## The owner's league, decision by decision (2026-11-17)
+
+The owner asked for Smart CPU ready for the DBA league. Its 2023 export ran
+under the GM for ten seasons, every team the GM's, and five reviews read
+every decision by type (rosters, signings, the draft, trades). The fixes
+below were then run side by side on the same league: run 2 (before), run A
+(the fixes), run C (A with picks priced as rookies), each from the 2023
+preseason; arms N (A as it was) and F (A with the free agency fix), each
+from run A's 2026 preseason, seeded alike, to the 2028 playoffs. Harness:
+`src/test/smart/history.test.ts` (moves, every deal's reckoning, each
+draft pick's board, good free agents day by day).
+
+**Rosters.** Teams opened seasons with up to 25 players and 19 a season
+over the league's 18, and in-season they signed and released the same men
+in a loop. Now a CPU team trims to the limit as the preseason ends, while
+releasing a draftee still costs nothing (`newPhaseRegularSeason`), fills to
+13 rather than the minimum, signs over the limit in the summer only if it
+is still worth it once both rosters are cut (`worthSigningOverLimit`),
+signs at a full roster in season only for a real gain over whoever it cuts
+(`SIGN_AT_LIMIT_MARGIN`), keeps the man it just signed, and doesn't
+re-sign in season a player it released. Runs A and C: no team opened over
+18 (19 a season before), the biggest opening roster 18 (25).
+
+**Trades.** A CPU-CPU deal must gain each side 0.001 (`minGain`; a quarter
+of run 2's deals gained one side less, a 53 for a 53): none did, with
+trades a season 31 against 33. Trading away within a year a player a team
+traded for, or buying back one it traded away, costs it 0.01 a player
+(`flipCost`, 0.005 before): at 0.005 contenders still flipped players
+within weeks (Walker Kessler went through GSW twice in one season), and
+half the flips gained the flipping side under 0.009. At 0.01 they didn't
+flip less (run V below: 23 trades flipping a player, against 22), they
+found flips reckoned bigger (median gain 0.018, against 0.007): the churn
+is the noise in contenders' values, which no flat cost removes. Still
+open.
+
+**Picks priced as the rookies they become** (`picksAsRookies`, now on). By
+what a typical pick becomes, run C's 2025 save priced the next draft's
+expected top-three picks at 7% of a title and late firsts at 1-1.6%, while
+the 2024 first-rounders fetched 19-27% (top four) and about 4% (20-30): a
+human could buy CPU picks for a third of what the rookie fetches months
+later, and contenders gave firsts away for bench players (21 firsts traded
+a season). Priced off each draft's own class as rookies on their slot's
+deal, the same picks fetch 23-26% and 2.2-3.6%. Run C against A, 2023-24:
+8 firsts traded a season (21.5), players traded again within a year 7
+(22), trades a season 13.5 (31) - fewer deals, most of the ones gone were
+the reviews' worst.
+
+**Free agency in stages** (`freeAgencySettings.stageAsks`, smart CPU only).
+A free agent nobody was after had his ask move half of 15% a stage, a pace
+made for thirty days of free agency: in arm N, Troy Brown Jr. (65) asked
+$27M, nobody would pay that, he still asked $15M at camp when every team's
+room was spent, and he signed for $2.0M - the reviews found 14 players
+rated 60 and up signing for 1-2% of the cap. Now, nobody after him, his ask
+drops each stage to what the second-keenest team would pay, and by at
+least 15%, so the keenest gains from him while it has room. Arm F,
+the same summer: Brown $18.4M, Filip Petrušev (60) $14.3M (was $2.1M); of
+13 rated 60 and up, one signed for 3% of the cap or less (three), and he
+had asked $3.7M.
+
+**All of it on** (run V, from run A's 2026 preseason to the 2028
+playoffs, against arm N): no team opened over 18; of 20 free agents rated
+60 and up over two summers, one signed for 3% of the cap or less
+(Donovan Mitchell, who asked $3.7M); 9 firsts traded a season (11.3),
+trades a season 19.7 (25.3), in-season signings and releases 73 (84), no
+deal gaining a side under 0.001. A summer signing over the limit no longer
+needs a margin (worthSigningOverLimit): with one, an offer the player took
+could fall through when the team came to sign him (3 of about 45 good free
+agents a run; Marvin Bagley III, 64, lost a $24.3M and a $14.3M offer that
+way and signed for $1.4M).
+
+**Tried and left out.**
+
+- A signing worth at least what the player would fetch in a trade (a
+  resale floor): bad teams with room bid $13-24M for 48-55 players in
+  season (Furkan Korkmaz, 53, had 22 teams after him and got $24.3M) -
+  contenders' use for marginal players carried into free agency.
+- A better stand-in for an empty roster place (49 rather than 43: the ten
+  best free agents in season are 48-55): contenders' use for fringe players
+  fell only 10-40% (Moussa Diabaté 41/59, to CLE: 7.8% to 6.7% of a title).
+
+**Still open.**
+
+- Contenders put real worth on fringe players (CLE's 7.8% for Diabaté, who
+  would never play for it): near the top, a point of MOV moves title odds
+  about 9 points, so a tenth man counts. Their bids set prices, so the deep
+  draft board leans to whoever is closer to playable: run N's 2026 draft
+  had 7 first-rounders aged 22+ with pot 58 or less, and at #25 Tarris Reed
+  Jr. (23, projected 43 every season) was priced 2.5%. The projections
+  themselves are right: a 42-rated 19-year-old is projected to 59 and a
+  47-rated 22-year-old to 51, as the league's own drafts turned out.
+- Free agents paid above their ask (Blake Wesley, 62/69, the max at a $41M
+  ask), and five-year deals to 33-year-olds.

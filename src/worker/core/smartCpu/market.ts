@@ -54,6 +54,12 @@ export const marketSettings = {
 	// In free agency, a moment on these days left - or, in stages, at each
 	// stage (daysLeft counts the stages down).
 	freeAgencyDays: [30, 20, 10],
+	// What a deal between CPU teams must gain each side (titles), past
+	// nothing: a real GM leaves a swap within the model's own noise alone.
+	// In the owner's league a quarter of the deals gained one side under
+	// 0.001 - near-equal role players swapped, a 53 for a 53 and two picks;
+	// at 0.001, none did, with trades a season 31 against 33.
+	minGain: 0.001,
 };
 
 // Where candidate sales fall away (for tests and the arena).
@@ -319,7 +325,7 @@ export const dealsNow = async (
 			marketStats.noOffer += 1;
 			continue;
 		}
-		if (!(real.worth > 0)) {
+		if (!(real.worth > marketSettings.minGain)) {
 			marketStats.sellerSaysNo += 1;
 			continue;
 		}
@@ -330,7 +336,7 @@ export const dealsNow = async (
 			offer: real.offer,
 			sellerGain: real.worth,
 			buyerGain: Number.NaN,
-			bar: Math.max(0, real.second),
+			bar: Math.max(marketSettings.minGain, real.second),
 		});
 	}
 	return deals.sort((a, b) => b.sellerGain - a.sellerGain);
@@ -358,7 +364,10 @@ export const trimDeal = async (view: SmartView, deal: SmartDeal) => {
 };
 
 // Watchers of the deals the market makes (tests, the arena).
-export const smartDealWatchers: ((deal: SmartDeal) => void)[] = [];
+// Called just before each is made, with the view it was judged on (so a
+// watcher can read what each side reckoned every piece worth).
+export const smartDealWatchers: ((deal: SmartDeal, view: SmartView) => void)[] =
+	[];
 
 const standing = (view: SmartView, tid: number) => {
 	const o = view.outlook.teams.get(tid);
@@ -424,7 +433,10 @@ const marketMomentNow = async () => {
 			found.offer,
 			found.out,
 		);
-		if (!(sellerGain > 0) || !(buyerGain > 0)) {
+		if (
+			!(sellerGain > marketSettings.minGain) ||
+			!(buyerGain > marketSettings.minGain)
+		) {
 			marketStats.changed += 1;
 			continue;
 		}
@@ -434,6 +446,9 @@ const marketMomentNow = async () => {
 			continue;
 		}
 		const deal = { ...found, sellerGain, buyerGain };
+		for (const watch of smartDealWatchers) {
+			watch(deal, view);
+		}
 		await processTrade(
 			teamsOf(deal.seller, deal.buyer, deal.out, deal.offer),
 			undefined,
@@ -449,9 +464,6 @@ const marketMomentNow = async () => {
 		dealt.add(deal.seller);
 		dealt.add(deal.buyer);
 		made.push(deal);
-		for (const watch of smartDealWatchers) {
-			watch(deal);
-		}
 	}
 	return made;
 };

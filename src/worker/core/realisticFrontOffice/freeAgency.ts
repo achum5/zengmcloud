@@ -40,7 +40,11 @@ import {
 } from "./stages.ts";
 import { contractNegotiation, player, team } from "../index.ts";
 import { mayPay } from "./contracts.ts";
-import { frontOfficeCuts, worthSigningAtLimit } from "./cuts.ts";
+import {
+	frontOfficeCuts,
+	worthSigningAtLimit,
+	worthSigningOverLimit,
+} from "./cuts.ts";
 import { marketSalary, setFreeAgentPoolLeft } from "./payroll.ts";
 import { REPLACEMENT_OVR } from "./strength.ts";
 import {
@@ -126,6 +130,17 @@ export const freeAgencySettings = {
 	// 20-year-old who may be a starter went unsigned through camp, there for
 	// a human to sign for the minimum.
 	prospects: 0.25,
+	// With the smart CPU, in stages: a free agent nobody is after has his
+	// price drop each stage to what the second-keenest team would pay him,
+	// and by at least 15% - so the keenest gains from him while it still has
+	// room. Without, his price fell half of 15% a stage, a
+	// pace made for thirty days of free agency: a 65 asking $27M nobody would
+	// pay was still asking $15M at camp, every team's room was spent, and he
+	// signed for $2M (the owner's league: 14 players rated 60 and up signed
+	// for 1-2% of the cap). On, from the same save: he signed for $18.4M, and
+	// of the 13 rated 60 and up only one, who asked $3.7M, signed for 3% of
+	// the cap or less (off: three).
+	stageAsks: true,
 };
 
 // Called each day with what happened - for the arena.
@@ -1128,20 +1143,34 @@ export const priceMarket = async (
 		}
 	}
 	const priced: FreeAgencyDayLog["priced"] = [];
+	const stageAsks =
+		stages && !once && freeAgencySettings.stageAsks && smartCpuOn();
 	for (const p of candidates) {
 		const bids = (after.get(p.pid) ?? []).sort((a, b) => b - a);
-		const anyone = Math.max(minContract, ...worth.get(p.pid)!.values());
+		const worths = [...worth.get(p.pid)!.values()].sort((a, b) => b - a);
+		const anyone = Math.max(minContract, worths[0] ?? -Infinity);
+		const nobody = bids.length === 0;
 		const market =
 			bids.length >= 2
 				? bids[1]!
 				: bids.length === 1
 					? (minContract + bids[0]!) / 2
-					: Math.min(contractOf(p).amount * (once ? 1 : NOBODY_AFTER), anyone);
+					: stageAsks
+						? Math.min(
+								contractOf(p).amount * NOBODY_AFTER,
+								Math.max(minContract, worths[1] ?? worths[0] ?? -Infinity),
+							)
+						: Math.min(
+								contractOf(p).amount * (once ? 1 : NOBODY_AFTER),
+								anyone,
+							);
 		const from = contractOf(p).amount;
 		const to = helpers.bound(
 			helpers.roundContract(
 				from +
-					(once || (stages && atCamp()) ? 1 : freeAgencySettings.priceSpeed) *
+					(once || (stages && atCamp()) || (stageAsks && nobody)
+						? 1
+						: freeAgencySettings.priceSpeed) *
 						(market - from),
 			),
 			minContract,
@@ -1823,6 +1852,11 @@ export const freeAgencyDay = async () => {
 				const roster = await idb.cache.players.indexGetAll("playersByTid", tid);
 				const atLimit =
 					inSeason && cpu.has(tid) && roster.length === g.get("maxRosterSize");
+				const overLimitInSummer =
+					!inSeason &&
+					cpu.has(tid) &&
+					smartCpuOn() &&
+					roster.length >= g.get("maxRosterSize");
 				const payroll = await team.getPayroll(tid);
 				// With the trade that clears the room, if it needs one.
 				const plan = roomPlanOf.get(planKey(tid, p.pid));
@@ -1835,7 +1869,21 @@ export const freeAgencyDay = async () => {
 							rosterSize: roster.length - (plan ? count(plan.give) : 0),
 						})
 					: undefined;
+				// In season, a CPU team doesn't sign back a player it released
+				// this season: with signings at a full roster judged within the
+				// model's noise, a team cut and re-signed the same two players
+				// day after day.
+				const releasedHere =
+					inSeason &&
+					cpu.has(tid) &&
+					smartCpuOn() &&
+					p.contracts.some(
+						(c) =>
+							c.endedEarly?.tid === tid &&
+							c.endedEarly.season === g.get("season"),
+					);
 				let fits =
+					!releasedHere &&
 					(check
 						? check.ok
 						: mayPay({
@@ -1852,6 +1900,16 @@ export const freeAgencyDay = async () => {
 							: roster.length < g.get("maxRosterSize"))) &&
 					(!atLimit ||
 						(await worthSigningAtLimit(tid, {
+							...p,
+							tid,
+							contractDemand: {
+								...contractOf(p),
+								amount: offer.amount,
+								exp: offer.exp,
+							},
+						}))) &&
+					(!overLimitInSummer ||
+						(await worthSigningOverLimit(tid, {
 							...p,
 							tid,
 							contractDemand: {
@@ -1954,9 +2012,11 @@ export const freeAgencyDay = async () => {
 					remaining.delete(p.pid);
 					signedToday.set(tid, (signedToday.get(tid) ?? 0) + 1);
 					if (inSeason && roster.length === g.get("maxRosterSize")) {
+						// Not the player it just signed.
 						await frontOfficeCuts(
 							await idb.cache.players.indexGetAll("playersByTid", tid),
 							1,
+							[p.pid],
 						);
 					}
 				} else {

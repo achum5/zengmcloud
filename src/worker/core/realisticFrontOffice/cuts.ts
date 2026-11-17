@@ -1,4 +1,4 @@
-import type { Player } from "../../../common/types.ts";
+import type { DraftPick, Player } from "../../../common/types.ts";
 import { g, helpers } from "../../util/index.ts";
 import { player } from "../index.ts";
 import { currentOutlook, loadTeam } from "./market.ts";
@@ -88,14 +88,33 @@ const bestCut = (
 
 // With the smart CPU: whom the team can best do without, by the GM's view
 // (the same choice, its let-go decisions reused).
-const smartCut = (outlook: LeagueOutlook, tid: number) =>
-	timed("cuts", () => smartCutNow(outlook, tid));
+const smartCut = (
+	outlook: LeagueOutlook,
+	tid: number,
+	keep: readonly number[] = [],
+) => timed("cuts", () => smartCutNow(outlook, tid, keep));
 
-const smartCutNow = async (outlook: LeagueOutlook, tid: number) => {
+const smartCutNow = async (
+	outlook: LeagueOutlook,
+	tid: number,
+	keep: readonly number[],
+) => {
 	const view = viewFor(outlook);
-	const h = await view.holdingsOf(tid);
+	const best = smartCutOf(view, tid, await view.holdingsOf(tid), keep);
+	return best && { p: best.p, free: view.owedIfReleased(best.p).length === 0 };
+};
+
+// The cut a team makes from these holdings, and its franchise value after
+// it (what it would owe him counted).
+const smartCutOf = (
+	view: ReturnType<typeof viewFor>,
+	tid: number,
+	h: { players: Player[]; picks: DraftPick[] },
+	keep: readonly number[] = [],
+) => {
 	let best: { p: Player; value: number } | undefined;
-	for (const p of [...h.players]
+	for (const p of h.players
+		.filter((x) => !keep.includes(x.pid))
 		.sort((a, b) => a.value - b.value || a.pid - b.pid)
 		.slice(0, CUT_CANDIDATES)
 		.sort((a, b) => a.pid - b.pid)) {
@@ -104,17 +123,29 @@ const smartCutNow = async (outlook: LeagueOutlook, tid: number) => {
 			{ players: h.players.filter((x) => x !== p), picks: h.picks },
 			view.owedIfReleased(p),
 		);
-		if (!best || value > best.value) {
+		// Its strength counts its best ten, so two bench players can cost it
+		// the same to lose: then the lesser player goes. Settled on database
+		// order, a team cut a 56 and kept a 40 (the owner's league).
+		if (
+			!best ||
+			value > best.value + CUT_TIE ||
+			(value > best.value - CUT_TIE && p.value < best.p.value)
+		) {
 			best = { p, value };
 		}
 	}
-	return best && { p: best.p, free: view.owedIfReleased(best.p).length === 0 };
+	return best;
 };
 
-// Releases this many of the team's players, and returns their pids.
+// Franchise values this close are a tie (titles).
+const CUT_TIE = 1e-6;
+
+// Releases this many of the team's players, and returns their pids. With
+// the smart CPU, never those in `keep`.
 export const frontOfficeCuts = async (
 	players: readonly Player[],
 	numToDrop: number,
+	keep: readonly number[] = [],
 ) => {
 	const tid = players[0]?.tid;
 	if (tid === undefined || numToDrop <= 0) {
@@ -124,7 +155,7 @@ export const frontOfficeCuts = async (
 	const released: number[] = [];
 	if (smartCpuOn()) {
 		for (let k = 0; k < numToDrop; k++) {
-			const best = await smartCut(outlook, tid);
+			const best = await smartCut(outlook, tid, keep);
 			if (!best) {
 				break;
 			}
@@ -145,6 +176,12 @@ export const frontOfficeCuts = async (
 	return released;
 };
 
+// What a signing at a full roster must gain (titles) with the smart CPU:
+// more than the model's own wobble when a player joins - his teammates'
+// futures are re-read with him there, which moved a team's worth by about
+// 0.0005 and made a player just signed the one to cut.
+const SIGN_AT_LIMIT_MARGIN = 0.001;
+
 // Whether a CPU team at the roster limit is better off signing him, on these
 // terms, and releasing whoever it can then best do without - the cut it
 // will make (frontOfficeCuts). The signing was priced cutting the least
@@ -154,19 +191,56 @@ export const frontOfficeCuts = async (
 export const worthSigningAtLimit = async (tid: number, signed: Player) => {
 	const outlook = await currentOutlook();
 	if (smartCpuOn()) {
-		// Better off on the roster it will have, and he isn't the one cut.
+		// The cut it will really make with him on the roster (frontOfficeCuts:
+		// the same candidates, what it would owe counted) isn't him, and leaves
+		// it better off than it is. Priced on the few least valuable (afterCuts),
+		// a team signed a player every day of a season only to release him.
 		const view = viewFor(outlook);
 		const h = await view.holdingsOf(tid);
 		const withHim = { players: [...h.players, signed], picks: h.picks };
-		const [kept] = view.afterCuts(tid, withHim);
+		const cut = smartCutOf(view, tid, withHim);
 		return (
-			kept.players.includes(signed) &&
-			view.value(tid, withHim) > view.value(tid, h)
+			cut !== undefined &&
+			cut.p !== signed &&
+			cut.value > view.value(tid, h) + SIGN_AT_LIMIT_MARGIN
 		);
 	}
 	const t = await loadTeam(outlook, tid);
 	const best = bestCut(outlook, tid, [...t.players, signed], t.picks);
 	return best !== undefined && best.p !== signed && best.value > t.value;
+};
+
+// In the offseason, whether a CPU team at or over the roster limit is better
+// off signing him once both rosters are cut to the limit the way it will cut
+// them (frontOfficeCuts, as the regular season opens), and he survives the
+// cuts. Signed past the limit all summer, teams opened seasons with up to 27
+// players and cut 434 on opening nights, owing about $900M (the owner's
+// league under the smart CPU, 2024-30).
+export const worthSigningOverLimit = async (tid: number, signed: Player) => {
+	const view = viewFor(await currentOutlook());
+	const h = await view.holdingsOf(tid);
+	const trimmed = (start: { players: Player[]; picks: DraftPick[] }) => {
+		let now = start;
+		let dead: { amount: number; exp: number }[] = [];
+		while (now.players.length > g.get("maxRosterSize")) {
+			const cut = smartCutOf(view, tid, now);
+			if (!cut) {
+				break;
+			}
+			dead = [...dead, ...view.owedIfReleased(cut.p)];
+			now = {
+				players: now.players.filter((x) => x !== cut.p),
+				picks: now.picks,
+			};
+		}
+		return { kept: now.players, value: view.value(tid, now, dead) };
+	};
+	const without = trimmed(h);
+	const withHim = trimmed({ players: [...h.players, signed], picks: h.picks });
+	// No margin, unlike at a full roster in season: the team offered him what
+	// it did because he was worth it, and with one an offer he took fell
+	// through (3 of about 45 good free agents a run).
+	return withHim.kept.includes(signed) && withHim.value > without.value;
 };
 
 // The free agents a team short of players chooses among, best first by value.

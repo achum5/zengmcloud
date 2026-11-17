@@ -1,4 +1,4 @@
-import { PHASE } from "../../../common/constants.ts";
+import { PHASE, PLAYER } from "../../../common/constants.ts";
 import type { DraftPick, Player } from "../../../common/types.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers } from "../../util/index.ts";
@@ -13,6 +13,8 @@ import {
 	type TradedAway,
 } from "../realisticFrontOffice/tradePenalty.ts";
 import getPayroll from "../team/getPayroll.ts";
+import getRookieContractLength from "../draft/getRookieContractLength.ts";
+import { pickSalaries } from "../realisticFrontOffice/payroll.ts";
 import {
 	ensureRetention,
 	expectedPlace,
@@ -69,6 +71,61 @@ export const smartSettings = {
 	// Whom a team lets go of a player it would bring in, decided once on what
 	// it holds with him (SmartView.withIncoming) - not afresh on every roster.
 	decideOnce: true,
+	// What a team counts (titles) for each player it trades away within a
+	// year of trading for him, and each it buys back within a year of trading
+	// him away: a cost, not a lock (owner's call). Without, 77 players were
+	// traded again within a year and Devin Booker played for four teams in one
+	// season (the owner's league). At 0.005, contenders still flipped a
+	// player within weeks for a gain the size of the model's noise - Walker
+	// Kessler went through GSW twice in a season - and half the flips gained
+	// the flipping side under 0.009.
+	flipCost: 0.01,
+	// A pick worth at least what the market would pay for the prospect it is
+	// expected to land, on the rookie deal of his slot, off its draft's own
+	// class (the next draft's for drafts whose class isn't out). Priced by
+	// what a typical pick becomes, the 2033 firsts fetched 2-11% of a title
+	// while the 2032 first-rounders they became fetched 10-63%: humans could
+	// buy CPU picks for little and sell the rookies back dear, and contenders
+	// gave firsts away for bench players (the owner's league).
+	// On, the owner's league's next-draft firsts (2025) fetched 23-26% of a
+	// title where a top-three pick was expected and 2-4% late, against 19-27%
+	// and about 4% for the previous draft's rookies at those places (off:
+	// 7% and 1-1.6%), and teams traded 8 firsts a season, not 21.
+	picksAsRookies: true,
+};
+
+// Seasons, with the phases between (a season's phases run 0 to 8).
+const whenOf = (season: number, phase: number) =>
+	season + Math.max(0, phase) / 9;
+
+// Flips a deal makes for a team: players it gives away that it traded for
+// within the past year, and players it takes back that it traded away
+// within the past year.
+export const flipsIn = (
+	tid: number,
+	out: readonly Player[],
+	inn: readonly Player[],
+) => {
+	const now = whenOf(g.get("season"), g.get("phase"));
+	const recent = (x: { season: number; phase: number }) =>
+		now - whenOf(x.season, x.phase) < 1;
+	let n = 0;
+	for (const p of out) {
+		const last = p.transactions?.at(-1);
+		if (last?.type === "trade" && last.tid === tid && recent(last)) {
+			n += 1;
+		}
+	}
+	for (const p of inn) {
+		if (
+			p.transactions?.some(
+				(x) => x.type === "trade" && x.fromTid === tid && recent(x),
+			)
+		) {
+			n += 1;
+		}
+	}
+	return n;
 };
 
 // How the real offers searched for came out (for tests and the arena).
@@ -185,6 +242,9 @@ export class SmartView {
 				// What a pick in the next draft fetches, by round and by where
 				// its team is expected to finish (pickFloorNow).
 				slots?: Map<number, number[]>;
+				// What each draft's prospects fetch as rookies, best first
+				// (picksAsRookies), by draft.
+				classes?: Map<number, number[]>;
 		  }
 		| undefined;
 
@@ -522,6 +582,88 @@ export class SmartView {
 			await this.holdingsOf(tid);
 		}
 		await this.keenest();
+		await this.classPrices();
+	}
+
+	// Each coming draft's prospects priced as rookies on the deal of the slot
+	// they would go at (by value), best first - what a pick there fetches as
+	// the player it becomes (picksAsRookies). Kept as long as the prices'
+	// bidders are.
+	async classPrices() {
+		if (!smartSettings.picksAsRookies) {
+			return;
+		}
+		const tids = await this.keenest();
+		const keen = this.keenestCache!;
+		if (keen.classes) {
+			return;
+		}
+		const classes = new Map<number, number[]>();
+		const n = this.outlook.numTeams;
+		const numPicks = n * g.get("numDraftRounds");
+		const prospects = await idb.cache.players.indexGetAll(
+			"playersByTid",
+			PLAYER.UNDRAFTED,
+		);
+		const salary = pickSalaries();
+		for (const season of new Set(prospects.map((p) => p.draft.year))) {
+			if (season < this.nextDraft() - (g.get("phase") >= PHASE.DRAFT ? 1 : 0)) {
+				continue;
+			}
+			const rookies = prospects
+				.filter((p) => p.draft.year === season)
+				.sort((a, b) => b.value - a.value || a.pid - b.pid)
+				.slice(0, numPicks)
+				.map((p, slot) => {
+					const round = Math.floor(slot / n) + 1;
+					return {
+						...p,
+						contractDemand: {
+							amount: salary({ slot, round, years: 1, ovr: 0 }),
+							exp: season + getRookieContractLength(round),
+							rookie: true,
+						},
+					} as Player;
+				});
+			for (const tid of tids) {
+				await ensureRetention(this.outlook, rookies, tid);
+			}
+			classes.set(
+				season,
+				rookies
+					.map((r) =>
+						Math.max(0, this.bidPriceNow({ players: [r], picks: [] }, [])),
+					)
+					.sort((a, b) => b - a),
+			);
+		}
+		keen.classes = classes;
+	}
+
+	// What a pick fetches as the player it is expected to land (picksAsRookies):
+	// its draft's class, or the next draft's for a draft whose class isn't out,
+	// discounted for the seasons until its draft. Undefined with it off.
+	private rookieFloorNow(dp: DraftPick) {
+		const classes = this.keenestCache?.classes;
+		if (!smartSettings.picksAsRookies || !classes || classes.size === 0) {
+			return undefined;
+		}
+		const next = this.nextDraft();
+		const own = classes.get(dp.season as number);
+		const prices = own ?? classes.get(next) ?? [...classes.values()][0]!;
+		const n = this.outlook.numTeams;
+		const at = (k: number) => prices[(dp.round - 1) * n + k] ?? 0;
+		let price: number;
+		if (dp.pick > 0) {
+			price = at(dp.pick - 1);
+		} else {
+			price = 0;
+			for (const [k, w] of finishWeights(this.outlook, dp).entries()) {
+				price += w * at(k);
+			}
+		}
+		const later = Math.max(0, (dp.season as number) - next);
+		return (own ? 1 : PATIENCE ** later) * price;
 	}
 
 	// A team's payroll as the trade rules count it (with players released),
@@ -747,19 +889,23 @@ export class SmartView {
 	// gave every first it had for veterans. 0 for the next draft's picks.
 	pickFloorNow(dp: DraftPick) {
 		const next = this.nextDraft();
-		if (typeof dp.season !== "number" || dp.season <= next || dp.pick > 0) {
+		if (typeof dp.season !== "number") {
 			return 0;
+		}
+		const asRookie = this.rookieFloorNow(dp);
+		if (dp.season <= next || dp.pick > 0) {
+			return asRookie ?? 0;
 		}
 		const slots = this.slotPricesNow(dp.round);
 		if (!slots) {
-			return 0;
+			return asRookie ?? 0;
 		}
 		const weights = finishWeights(this.outlook, dp);
 		let price = 0;
 		for (const [k, w] of weights.entries()) {
 			price += w * (slots[k] ?? 0);
 		}
-		return PATIENCE ** (dp.season - next) * price;
+		return Math.max(asRookie ?? 0, PATIENCE ** (dp.season - next) * price);
 	}
 
 	// The next draft's picks in a round, priced, by where each team is
@@ -813,6 +959,9 @@ export class SmartView {
 	}
 
 	async price(a: Holdings, not: readonly number[]) {
+		if (a.picks.length > 0) {
+			await this.classPrices();
+		}
 		for (const tid of await this.keenest()) {
 			if (!not.includes(tid)) {
 				await ensureRetention(this.outlook, a.players, tid);
@@ -845,7 +994,8 @@ export class SmartView {
 		return (
 			dG +
 			Math.max(0, this.priceNow(keptIn, not) - this.useOfNow(tid, keptIn, h)) -
-			Math.max(0, this.priceNow(out, not) - this.useOfNow(tid, out, h))
+			Math.max(0, this.priceNow(out, not) - this.useOfNow(tid, out, h)) -
+			smartSettings.flipCost * flipsIn(tid, out.players, inn.players)
 		);
 	}
 

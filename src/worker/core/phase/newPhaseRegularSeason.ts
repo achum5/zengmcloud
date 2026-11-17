@@ -14,6 +14,7 @@ import {
 import { getMetaAttribute, putMetaAttribute } from "../../db/metaAttributes.ts";
 import { savePreseasonOdds } from "../sportsbook/savePreseasonOdds.ts";
 import { isAllStarGame } from "../../../common/specialGames.ts";
+import { smartCpuOn } from "../realisticFrontOffice/isOn.ts";
 
 class GameHasYourTeamCache {
 	cache: Record<number, boolean> = {};
@@ -164,6 +165,14 @@ const newPhaseRegularSeason = async (
 		season: g.get("season"),
 		active: true,
 	});
+
+	// With the smart CPU, CPU teams cut to the roster limit now, while it is
+	// still the preseason and a player drafted last summer can be let go for
+	// nothing - on the first game day it was too late, and 39 draft picks
+	// were cut owing their whole deals (the owner's league).
+	if (smartCpuOn()) {
+		await team.checkRosterSizes("other");
+	}
 
 	await season.setSchedule(season.newSchedule(teams));
 
