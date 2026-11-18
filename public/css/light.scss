@@ -5392,14 +5392,6 @@ body.has-league-ticker-collapsed .sidebar-inner {
 		margin-bottom: 0;
 	}
 }
-.recap-lines {
-	display: flex;
-	justify-content: center;
-	margin-bottom: 0.25rem;
-	.gamecast-linescore {
-		margin-bottom: 0;
-	}
-}
 
 // A player's banner (see PlayerBanner.tsx): his picture standing on the foot
 // of it, his first name spaced out over his last, big.
@@ -5862,14 +5854,14 @@ body:has(.league-ticker) .recap-dock-wrap {
 // under the heads again, who didn't play, the totals. The names stay put as
 // the numbers slide.
 .bsp {
-	margin: 0 -0.75rem;
+	margin: 0;
 }
 .bsp-views {
 	display: flex;
 	align-items: center;
 	justify-content: center;
 	gap: 0.5rem;
-	margin: 0 0.75rem 0.75rem;
+	margin: 0 0 0.75rem;
 	flex-wrap: wrap;
 }
 .bsp-picker {
@@ -5877,7 +5869,7 @@ body:has(.league-ticker) .recap-dock-wrap {
 	flex-wrap: wrap;
 	align-items: center;
 	gap: 0.15rem 0;
-	margin: 0 0.75rem 0.9rem;
+	margin: 0 0 0.9rem;
 	padding: 0.5rem 0.75rem;
 	border: 1px solid var(--bs-border-color);
 	border-radius: var(--bs-border-radius);
@@ -6163,9 +6155,6 @@ body:has(.league-ticker) .recap-dock-wrap {
 // a phone's box score the men on the floor marked as BBGM's live box score
 // marks them.
 .live-refreshed {
-	.mb-live {
-		margin-bottom: 0.75rem;
-	}
 	.recap-section {
 		scroll-margin-top: max(4.5rem, calc(var(--pinned-to, 0px) + 0.75rem));
 	}
@@ -6293,10 +6282,13 @@ body:has(.league-ticker) .recap-dock-wrap {
 		padding: 0.4rem 0.6rem 0.3rem;
 		margin-bottom: 0;
 		.tb-inner {
-			grid-template-columns: auto minmax(0, 1fr) auto auto;
+			grid-template-columns: auto minmax(0, 1fr) minmax(0, auto);
 			grid-template-areas:
-				"logo name side menus"
-				"logo nav nav nav";
+				"logo name side"
+				"logo nav menus";
+		}
+		.tb-menus {
+			grid-area: menus;
 		}
 		.tb-words {
 			display: contents;
@@ -6310,6 +6302,22 @@ body:has(.league-ticker) .recap-dock-wrap {
 	}
 	.tb-action-word {
 		display: none;
+	}
+}
+
+// (A phone: a team's banner never wider than the page - its menus wrap
+// rather than push it out.)
+@include media-breakpoint-down(sm) {
+	.teamb {
+		overflow-x: clip;
+		.tb-inner {
+			grid-template-columns: auto minmax(0, 1fr) minmax(0, auto);
+		}
+		.tb-menus {
+			min-width: 0;
+			max-width: 50vw;
+			justify-content: flex-end;
+		}
 	}
 }
 

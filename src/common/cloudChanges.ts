@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 348,
+		date: "2026-11-18",
+		text: "Fixed the new look (Look: Refreshed) on phones: a box score's header lost its team colors and the score slid under the quarter scores, and some pages could be dragged sideways.",
+	},
+	{
 		n: 347,
 		date: "2026-11-18",
 		text: "A new look you can turn on in Global Settings (Look: Refreshed). Team pages, box scores and player pages get team-colored headers, and standings, playoffs and trades show each team in its colors. A box score becomes one page with a menu at the bottom. Phones get a box score you can pick the columns for, plus rotations, lineups and on/off from each game, also on the live game. Classic stays the default.",

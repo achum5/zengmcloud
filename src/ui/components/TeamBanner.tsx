@@ -159,7 +159,12 @@ export const MatchupBanner = ({
 		{([0, 1] as const).map((i) => {
 			const t = teams[i];
 			return (
-				<div key={i} className={clsx("mb-half", `mb-half-${i}`)}>
+				// (Its class written out whole: the production build keeps only
+				// the class names it finds in the code as they are.)
+				<div
+					key={i}
+					className={clsx("mb-half", i === 0 ? "mb-half-0" : "mb-half-1")}
+				>
 					<Stripes className="tb-stripes-top" />
 					<div className="mb-team">
 						<div className="mb-logo">
