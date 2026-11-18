@@ -8,7 +8,7 @@ import summary from "../trade/summary.ts";
 import { contractOf } from "../realisticFrontOffice/contractOf.ts";
 import { ensureRetention } from "../realisticFrontOffice/outlook.ts";
 import { timed } from "./clock.ts";
-import { marketSettings, standing, teamsOf } from "./market.ts";
+import { fairToSeller, marketSettings, standing, teamsOf } from "./market.ts";
 import { signedOn, smartSigningPrice } from "./signing.ts";
 import { tradedAwayCount, type Holdings, type SmartView } from "./worth.ts";
 
@@ -21,15 +21,22 @@ import { tradedAwayCount, type Holdings, type SmartView } from "./worth.ts";
 // the best signing it can make without trading. League 5, before this: in
 // summer 2031 Wembanyama (78) signed for $54.9M while five teams were $5-17M
 // short of his ask with expiring or spare salary on their books.
+//
+// The room is the taker's to sell, and it gets the seller's share of what
+// the deal makes (market.ts fairToSeller): sweeteners, cheapest first, until
+// it does. Taking salary for nothing, teams handed the free agent the room
+// was for to the team they took it from - League 7: LAL took a $16.3M dump
+// and UTA signed Tripp with the room, where LAL could have paid him itself.
 
 export const clearRoomSettings = {
 	on: true,
 	// Free agents it can't pay that it weighs a day: the best by value,
 	// among those who would be one of its best players.
 	targets: 3,
-	// Players it would send, at most, and picks it may add.
+	// Players it would send, at most, and picks it may add (the taker's
+	// share can take more than a late second).
 	players: 3,
-	sweeteners: 2,
+	sweeteners: 4,
 	// Teams with room it asks to take them.
 	partners: 8,
 };
@@ -176,7 +183,12 @@ export const roomToSign = (
 					}
 					for (const partner of takers) {
 						const partnerGain = await view.dealWorth(partner, tid, none, give);
-						if (partnerGain > marketSettings.minGain) {
+						// Its share of what the deal makes past the clearer's best
+						// signing without it.
+						if (
+							partnerGain > marketSettings.minGain &&
+							fairToSeller(partnerGain, gain - Math.max(bestNet, 0))
+						) {
 							best = { p, partner, give, gain, partnerGain };
 							break dealing;
 						}

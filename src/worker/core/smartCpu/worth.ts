@@ -1060,12 +1060,32 @@ export class SmartView {
 		// Its players and its nearest picks (as NBA teams pay: a deal
 		// without picks was every one of the GM's first 72), best for the
 		// seller first - all its players, when the seller says what it is
-		// after.
+		// after. Best as the seller counts a deal (dealWorthNow): its use for
+		// a piece, or the market's price if more. Ranked by its use alone, a
+		// seller out of the race - whose use for nearly anything is about
+		// nothing - was offered whatever came first: in League 7 the best
+		// teams paid for stars with filler while their young players and
+		// picks stayed home.
+		// (What dealWorth reads first, read once for the whole offer: the
+		// teams that set prices and the draft classes don't change while it
+		// is made, and read for each piece they were 40% of a moment.)
+		const none = { players: [], picks: [] };
+		const keen = await this.keenest();
+		await this.classPrices();
+		await this.holdingsOf(seller);
+		const toSeller = async (a: Holdings) => {
+			for (const tid of [seller, ...keen]) {
+				if (tid === seller || tid !== buyer) {
+					await ensureRetention(this.outlook, a.players, tid);
+				}
+			}
+			return this.dealWorthNow(seller, buyer, none, a);
+		};
 		const scored: { x: Player | DraftPick; v: number }[] = [];
 		for (const p of held.players.filter(allowed)) {
 			scored.push({
 				x: p,
-				v: await this.useOf(seller, { players: [p], picks: [] }),
+				v: await toSeller({ players: [p], picks: [] }),
 			});
 		}
 		scored.sort((a, b) => b.v - a.v);
@@ -1082,7 +1102,7 @@ export class SmartView {
 			.slice(0, s.offerPicks)) {
 			candidates.push({
 				x: dp,
-				v: await this.useOf(seller, { players: [], picks: [dp] }),
+				v: await toSeller({ players: [], picks: [dp] }),
 			});
 		}
 		candidates.sort((a, b) => b.v - a.v);

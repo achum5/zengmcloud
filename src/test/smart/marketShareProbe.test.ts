@@ -53,6 +53,75 @@ test.skipIf(!env.MS_LEAGUE)(
 		log(
 			`${g.get("season")} phase ${g.get("phase")}, sellerShare ${marketSettings.sellerShare}`,
 		);
+		// MS_OFFSEASON: on to next season's preseason (playoffs, draft,
+		// re-signing, free agency), every deal logged, then the trades made
+		// by why, and the smart CPU's market time.
+		if (env.MS_OFFSEASON) {
+			const { game, phase, draft, freeAgents } =
+				await import("../../worker/core/index.ts");
+			const { PHASE } = await import("../../common/constants.ts");
+			const { smartClock } =
+				await import("../../worker/core/smartCpu/clock.ts");
+			const startSeason = g.get("season");
+			const allEvents = async () => [
+				...(await idb.merged.events.getAll({ season: startSeason })),
+				...(await idb.merged.events.getAll({ season: startSeason + 1 })),
+			];
+			const firstEid =
+				Math.max(-1, ...(await allEvents()).map((e: any) => e.eid)) + 1;
+			const t = performance.now();
+			let guard = 0;
+			while (
+				!(
+					g.get("season") > startSeason && g.get("phase") === PHASE.PRESEASON
+				) &&
+				guard++ < 2000
+			) {
+				const ph = g.get("phase");
+				if (
+					ph === PHASE.PLAYOFFS ||
+					ph === PHASE.REGULAR_SEASON ||
+					ph === PHASE.AFTER_TRADE_DEADLINE
+				) {
+					await game.play(ph === PHASE.PLAYOFFS ? 100 : 7, {});
+				} else if (ph === PHASE.DRAFT) {
+					await draft.runPicks({ type: "untilEnd" }, {});
+					if (g.get("phase") === PHASE.DRAFT) {
+						await phase.newPhase(PHASE.AFTER_DRAFT, {});
+					}
+				} else if (ph === PHASE.FREE_AGENCY) {
+					await freeAgents.play(g.get("daysLeft"), {});
+					if (g.get("phase") === PHASE.FREE_AGENCY) {
+						await phase.newPhase(PHASE.PRESEASON, {});
+					}
+				} else {
+					await phase.newPhase((ph + 1) as any, {});
+				}
+			}
+			log(
+				`to ${g.get("season")} preseason in ${((performance.now() - t) / 60000).toFixed(1)} min`,
+			);
+			const events = (await allEvents()).filter(
+				(e: any) => e.eid >= firstEid && e.type === "trade",
+			);
+			const by = new Map<string, number>();
+			for (const e of events as any[]) {
+				const m = e.aiTrade?.motivation ?? e.motivation ?? "other";
+				by.set(m, (by.get(m) ?? 0) + 1);
+			}
+			log(`trades: ${JSON.stringify(Object.fromEntries(by))}`);
+			for (const e of events as any[]) {
+				if ((e.aiTrade?.motivation ?? e.motivation) === "clearing room") {
+					log(`  clearing room: ${String(e.text).replace(/<[^>]+>/g, "")}`);
+				}
+			}
+			const market = smartClock["market"];
+			const vanilla = smartClock["vanilla signing"];
+			log(
+				`market ${((market?.ms ?? 0) / 1000).toFixed(0)} s in ${market?.n ?? 0} moments; vanilla signing ${((vanilla?.ms ?? 0) / 1000).toFixed(0)} s`,
+			);
+			return;
+		}
 		// MS_DEBUG: into the season, up to the first market moment, then every
 		// deal it finds shown untrimmed and trimmed, with each side's gain.
 		if (env.MS_DEBUG) {

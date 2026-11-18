@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 366,
+		date: "2026-11-18",
+		text: "Smart CPU: when a CPU team trades for a player, it now offers what the selling team actually values, like young players and picks other teams would pay for, instead of filler. And a team taking on salary so another team can sign a free agent now wants to be paid for its cap room.",
+	},
+	{
 		n: 365,
 		date: "2026-11-18",
 		text: "Smart CPU: CPU teams no longer hand the league's best teams a big upgrade for scraps. A team selling a player another team wants far more than anyone else now holds out for a fair share of what the deal is worth, so contenders have to pay real value, like young players or good picks, for stars.",

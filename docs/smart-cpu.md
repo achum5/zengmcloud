@@ -1363,9 +1363,44 @@ market made as many deals as before (3 against 3). The sellers kept 0.38,
 LeBron went to LAC for Harkless (23y 61/67) rather than for filler. What
 it does to dynasties is for the owner's long run to show.
 
+### Offers by the seller's worth, and room with the seller's share (2026-11-18)
+
+**Offers built on what the seller values** (worth.ts offerFrom).
+
+- A buyer builds its offer from its players and nearest picks, best for
+  the seller first. "Best" was the seller's use for each piece, which is
+  near zero for anything when the seller is out of the race, so it was
+  offered whatever came first. Contenders paid for stars with filler while
+  their young players and picks stayed home.
+- Pieces are now ranked as the seller counts a deal (dealWorthNow): its
+  use for a piece, or the market's price if more.
+- The price tables are read once for the whole offer, not again for each
+  piece. Read for each piece, they had made a moment half again as long.
+
+**Room has the seller's share** (clearRoom.ts).
+
+- The team taking salary so another can sign a free agent is selling its
+  room. It now gets the seller's share of what the deal makes, past the
+  clearer's best signing without it.
+- The clearer adds sweeteners, cheapest first and up to four picks, until
+  it does.
+- Before, LAL took a $16.3M dump and UTA signed Tripp with the room, when
+  LAL could have paid him itself.
+
+**Measured.** League 6, from the 2022 playoffs to the 2023 preseason,
+against master:
+
+- Market trades: 9 against 7.
+- Room-clearing trades: 2 against 3.
+- The seller's median share of each deal's gain: 0.61 against 0.55.
+- The buyer's median gain: 0.018 against 0.010 titles.
+- DEN's Paul George (32y 67) brought back Ingram (25y 61/63) and a first.
+- A moment after the draft took 23.5 s against 20.6 s, for the prices of
+  the pieces offered.
+
 **Next.**
 
-- Room gifts: a team absorbing a dump prices its room by the pool, not by
-  the free agent the dump lets the other team sign.
-- Offers built by the seller's full worth (its price, not just its use).
-- Selling expiring players before they walk.
+- Selling expiring players before they walk. On League 7's 2016 file,
+  most expiring players are read as likely to stay (0.83-1.00), as most
+  did. One who wasn't, Otto Porter Jr. (Fame; 0.08 to stay), was priced at
+  0.63 titles against 0.015 for his own team, and wasn't sold.
