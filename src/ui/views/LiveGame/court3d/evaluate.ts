@@ -1660,7 +1660,7 @@ const plannedYaw = (tl: CourtTimeline, tr: Track, t: number): number => {
 		}
 	}
 	// How he is going: a slide too fast to be one is a run, say.
-	const gait = here.run ? runAnim(tr, here.run) : mv?.anim;
+	const gait = here.run ? paceAnim(tl, tr, here.run) : mv?.anim;
 	if (
 		mv &&
 		here.moving &&
@@ -2719,7 +2719,7 @@ const shownSteps = (
 		return "back";
 	}
 	if (anim === "back" && off < TURN_ROUND) {
-		const ahead = runAnim(tr, run);
+		const ahead = paceAnim(tl, tr, run);
 		return FORWARD.has(ahead) ? ahead : "slide";
 	}
 	return anim;
@@ -2774,9 +2774,50 @@ const gaitOf = (
 		...(short ? { len } : {}),
 	};
 };
+// UP ON THE BALL: this near the man with it, and still in front of him -
+// nearer the rim he goes at than he is - at no more than a slide's pace, a
+// defender stays down in his stance through every step: across with him,
+// stepping up, giving ground (see stepsOf). Not up out of it on a run, a jog
+// or a walk alongside him, his legs running one way under him and his eyes
+// the other: only beaten, behind him, does he turn and run. (Asked halfway
+// along a run, once a run.)
+const ON_BALL_FT = 8;
+const onBallRuns = new WeakMap<Run["mv"], boolean>();
+const upOnBall = (tl: CourtTimeline, tr: Track, run: Run): boolean => {
+	let on = onBallRuns.get(run.mv);
+	if (on === undefined) {
+		on = false;
+		const t = (run.s0 + run.s1) / 2;
+		const seg = ballSegAt(tl, t);
+		const v = Math.max(shapeOf(run).vc, run.v0, run.v1);
+		const them = seg?.kind === "hold" ? tl.tracks.get(seg.pid) : undefined;
+		if (them && them.team !== tr.team && v <= SLIDE_FTPS) {
+			const B = floorSpotOf(them, t);
+			const D = floorSpotOf(tr, t);
+			if (B && D && Math.hypot(B.x - D.x, B.y - D.y) <= ON_BALL_FT) {
+				const rim = rimX(them.team);
+				on =
+					Math.hypot(D.x - rim, D.y - COURT_H / 2) <
+					Math.hypot(B.x - rim, B.y - COURT_H / 2);
+			}
+		}
+		onBallRuns.set(run.mv, on);
+	}
+	return on;
+};
+
+// The pace he goes at, as his legs go at it - up on the ball, a slide.
+const paceAnim = (tl: CourtTimeline, tr: Track, run: Run): AnimName => {
+	const own = runAnim(tr, run);
+	return (own === "run" || own === "jog" || own === "walk") &&
+		upOnBall(tl, tr, run)
+		? "slide"
+		: own;
+};
+
 // The steps he takes on a run.
 const stepsOf = (tl: CourtTimeline, tr: Track, run: Run): AnimName => {
-	const anim = runAnim(tr, run);
+	const anim = paceAnim(tl, tr, run);
 	// Sliding with his man - or shuffling a step or two: push steps when he
 	// goes across the way he faces, drop steps when he gives ground, short
 	// steps up when he steps up.

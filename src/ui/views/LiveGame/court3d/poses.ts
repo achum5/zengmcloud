@@ -1230,7 +1230,7 @@ const GAITS: Record<GaitMode, Gait> = {
 		stride: BACKPEDAL_STRIDE,
 		duty: 0.58,
 		ahead: 0.3,
-		hips: 2.45,
+		hips: 2.26,
 		bob: -0.04,
 		flat: 0.5,
 		roll: 28,
@@ -1242,13 +1242,13 @@ const GAITS: Record<GaitMode, Gait> = {
 			[0.66, 54, 96],
 			[0.88, 60, 82],
 		],
-		lean: 16,
+		lean: 22,
 		armFwd: 0,
 		armBack: 0,
 		elbow: 0,
 		pump: 0,
 		twist: 0,
-		wide: 0.26,
+		wide: 0.72,
 	},
 	// Closing out on a shooter: short, choppy steps, sat down in his legs.
 	chop: {
@@ -1476,22 +1476,22 @@ const stride = (ph: number, mode: RunMode): Pose => {
 		// sits still on the floor while the other moves; his knees straighten
 		// a little as they spread, so his hips stay level the whole way.
 		const spread = ph < 0.5 ? ph * 2 : 2 - ph * 2;
-		const knee = 74 - 21 * spread * spread;
-		// His hands active: one up at the ball, the other low and out in the
-		// lane, both working a little with each push.
+		const knee = 82 - 22 * spread * spread;
+		// His hands active and out wide of him: one up at the ball, the other
+		// low and out in the lane, both working a little with each push.
 		return pose({
-			hipN: 30,
-			hipF: 34,
+			hipN: 36,
+			hipF: 40,
 			kneeN: knee,
 			kneeF: knee + 2,
-			lean: 18,
-			shN: 22 + 6 * spread,
-			elN: 38,
-			abN: 40 + 6 * spread,
+			lean: 24,
+			shN: 24 + 6 * spread,
+			elN: 34,
+			abN: 54 + 6 * spread,
 			wrN: -6,
-			shF: 54 + 6 * spread,
-			elF: 54,
-			abF: 18 + 4 * spread,
+			shF: 52 + 6 * spread,
+			elF: 48,
+			abF: 34 + 4 * spread,
 			wrF: 14,
 			wide: SLIDE_NARROW + (SLIDE_STRIDE / 2) * spread,
 		});
@@ -1594,11 +1594,11 @@ const stride = (ph: number, mode: RunMode): Pose => {
 	return {
 		...gaitPose("backpedal", mode === "back" ? -ph : ph),
 		shN: 26 + 4 * a,
-		elN: 40,
-		abN: 36,
-		shF: 56 - 4 * a,
-		elF: 52,
-		abF: 18,
+		elN: 36,
+		abN: 52,
+		shF: 52 - 4 * a,
+		elF: 48,
+		abF: 34,
 	};
 };
 
