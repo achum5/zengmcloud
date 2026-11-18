@@ -60,8 +60,11 @@ test.skipIf(!env.EX_LEAGUE)(
 			await idb.cache.players.indexGetAll("playersByTid", [0, Infinity])
 		).filter(
 			(p: any) =>
-				contractOf(p).exp <= season &&
-				p.ratings.at(-1).ovr >= 60 &&
+				// EX_ALL: veterans under contract too, not only expiring deals.
+				(env.EX_ALL
+					? season - p.born.year >= 27
+					: contractOf(p).exp <= season) &&
+				p.ratings.at(-1).ovr >= Number(env.EX_OVR ?? 60) &&
 				title(p.tid) < 0.02,
 		);
 		for (const p of players as any[]) {
@@ -77,7 +80,7 @@ test.skipIf(!env.EX_LEAGUE)(
 			const top = bids[0];
 			// The market's best real offer for him, as a moment would ask.
 			let offer = "";
-			if (stay !== undefined && stay < 0.6) {
+			if (env.EX_ALL || (stay !== undefined && stay < 0.6)) {
 				const real = await view.bestRealOffer(p.tid, a, -1);
 				offer = real
 					? ` || best offer ${abbrev.get(real.buyer)}: [${[...real.offer.players.map((x: any) => `${x.firstName} ${x.lastName} ${x.ratings.at(-1).ovr}`), ...real.offer.picks.map((dp: any) => `${dp.season} R${dp.round}`)].join("; ")}] worth ${real.worth.toFixed(4)} to the seller`

@@ -923,14 +923,20 @@ export const outlookSettings = {
 	// and less paid to 50-59s.
 	floorNow: true,
 	// With the smart CPU on vanilla's rules (smartVanillaOn), what a playoff
-	// run counts for beside a title: making the playoffs and each round won,
-	// as a share of the most there is to win (a champion's run is 1). On title
+	// run counts for beside a title: each series won, as a share of the most
+	// there is to win (a champion's run is 1; seriesOnly). On title
 	// chances alone only the favorites bought in season - teams far behind them
 	// gained too little from getting better to pay for it - and in a league
 	// where two teams held 97% of the title odds between them, a whole season
 	// went by with one trade (the owner's league, 2026-11-17). With humans the
 	// favorites (the owner's league), that left nobody coming after them.
 	vanillaAmbition: 0.25,
+	// Only series won count toward a run, not making the playoffs: a team that
+	// makes them every year and goes out in the first round has got nowhere.
+	// Counting making them paid a 43-win team for staying a 43-win team - an
+	// 8 seed every year was worth a third of a title over the outlook, more
+	// than the title chances most rebuilds look to buy (docs/smart-cpu.md).
+	seriesOnly: true,
 };
 
 // Measured in arena leagues: players on a team all season missed 6.5% of its
@@ -3429,17 +3435,21 @@ export const buildOutlook = async ({
 	}
 	const titleCurves: Curve[] = [];
 	const playoffCurves: Curve[] = [];
-	// With ambition, how far a team goes: making the playoffs and each round
-	// won, as a share of a champion's run; otherwise just making them.
+	// With ambition, how far a team goes: the series it wins (and, without
+	// seriesOnly, making the playoffs), as a share of a champion's run;
+	// otherwise just making them. rounds has one place for missing them and
+	// one for each number of series won, none to all.
 	const ambition = smartVanillaOn() ? outlookSettings.vanillaAmbition : 0;
 	const playoffMeasure = (r: {
 		playoffs: number;
 		roundsWon: number;
 		rounds: number[];
 	}) =>
-		ambition > 0
-			? (r.playoffs + r.roundsWon) / Math.max(1, r.rounds.length - 1)
-			: r.playoffs;
+		ambition === 0
+			? r.playoffs
+			: outlookSettings.seriesOnly
+				? r.roundsWon / Math.max(1, r.rounds.length - 2)
+				: (r.playoffs + r.roundsWon) / Math.max(1, r.rounds.length - 1);
 	// Only in the arena's version-against-version leagues.
 	const otherCurves = [...teamOutlookSettings.values()].some(
 		(x) =>

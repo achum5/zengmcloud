@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 369,
+		date: "2026-11-18",
+		text: "Smart CPU: making the playoffs and going out in the first round no longer counts as a good season for a CPU team. Only winning playoff series does, so a team stuck around 43 wins gains nothing from staying there and has more reason to build toward a real contender.",
+	},
+	{
 		n: 368,
 		date: "2026-11-18",
 		text: "Smart CPU: CPU teams now sell players who are about to walk in free agency instead of holding out for a price nobody pays and losing them for nothing. A player in the last year of his deal is worth his full trade value only as far as he is likely to re-sign.",

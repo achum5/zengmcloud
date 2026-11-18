@@ -1434,3 +1434,71 @@ the 71-11 LAC for two lesser players, gaining 0.21 titles by its own
 count. A team out of the race still counts players it gets at the
 contenders' price, whether or not it will ever sell them. That price
 arithmetic is the next core item.
+
+### A run counts by the series won (2026-11-18)
+
+The owner: "i dont want teams just happy winning 43 games every year and
+being the 8 seed. at that point they are in purgatory and should probably
+tear down ... a part of building a championship winner from youth is
+getting to the point of making the playoffs ... i want to protect against
+purgatory teams."
+
+**What was wrong.** On vanilla's rules a playoff run counts beside a title
+(`vanillaAmbition`, 0.25). The run was made up of making the playoffs and
+each series won, as a share of a champion's run. With four rounds, going
+out in the first round was 0.2 of a champion's run, so 0.05 of a title a
+season. A team sure of the 8 seed every year banked 0.05 a season, 0.34 of
+a title over the outlook (this season and ten more, at the 0.9 patience).
+That is three times what building looks to buy. Over the same seasons, at
+the same patience, League 7's bottom third had 0.10 of a title in title
+chances, and its middle third 0.12. Staying a 43-win team was worth more to
+the GM than building.
+
+The leagues have many such teams. A third of all team-seasons (29% in League 5, 31% in
+6, 32% in 7, 38% in 8) were 45-58% wins with no series won. Middle teams
+sold a veteran for youth or a first in 0-2 of their 65-101 trades in
+Leagues 7 and 8.
+
+**What changed.** Only series won count toward a run
+(`outlookSettings.seriesOnly`). Making the playoffs alone counts nothing.
+Each series won is a quarter of a champion's run with four rounds, and a
+title with its run is still worth 1.25. A team that makes the playoffs on
+the way up gains from it only as the series it will win come into reach.
+Those series count in every season of the outlook, so a young team still
+gains from getting good.
+
+What a player is worth to each team (% of a title; `ambitionProbe`, the run
+counted by making the playoffs, then by series won):
+
+| league, team (title odds) | its own best veteran         | a prospect (37-42/62) |
+| ------------------------- | ---------------------------- | --------------------- |
+| League 8 2013, CLE (0%)   | LeBron James 6.21 to 3.64    | 1.87 to 1.59          |
+| League 8 2013, MIA (0%)   | Dwyane Wade 4.57 to 2.89     | 2.08 to 1.79          |
+| League 8 2013, TOR (0.1%) | Chris Bosh 4.09 to 2.95      | -                     |
+| League 7 2016, TOR (0%)   | Marco Belinelli 6.55 to 4.04 | -                     |
+| League 7 2016, MEM (0%)   | O.J. Mayo 4.90 to 3.10       | 0.55 to 0.48          |
+
+To the favorites nothing changes much: a 69-70 star is worth 1.44 to 1.48
+titles to OKC (57.6%) and 1.32 to 1.36 to LAC (19.7%). A middle team's
+veterans are worth 28-41% less to it, its prospects 13-15% less.
+
+**Seasons played both ways** (`purgatoryProbe`): League 7 from the 2016
+preseason to 2017's, League 8 from after the 2013 draft to the 2015
+preseason, each once with each count, from the same start.
+
+| run      | trades, before / after | middle teams' trades: veterans got/gave, before / after |
+| -------- | ---------------------- | ------------------------------------------------------- |
+| League 7 | 17 / 16                | 3/4 / 7/3                                               |
+| League 8 | 22 / 17                | 6/1 / 1/0                                               |
+
+No clear change in trading. Middle teams sold a veteran for youth or a
+first twice in League 7 before and in none of the other three runs. The
+goal was one part of purgatory; the other is in the prices. In League 8
+(two favorites, OKC and ATL) the best real offer for the veteran of a team
+out of the race was worth 0.16 to 0.31 of a title to the seller: spare
+players from one favorite (LaMarcus Aldridge 58 with two bench players and
+a second; Jonas Jerebko 54 and a second), counted at what the other
+favorite would pay for them. A middle
+team gains more by taking a favorite's spare players at that price than by
+building. That is the price arithmetic named after the last section, and
+the next core item.
