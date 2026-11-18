@@ -131,9 +131,15 @@ export const MatchupBanner = ({
 									</>,
 								)}
 							</div>
-							{subs?.[i] ? <div className="tb-sub">{subs[i]}</div> : null}
-							{leaders?.[i] ? (
-								<div className="mb-leaders">{leaders[i]}</div>
+							{/* (Its leaders by its record, under its name - in the room the
+							    name leaves there, not under the record pushing it up.) */}
+							{subs?.[i] || leaders?.[i] ? (
+								<div className="mb-sub-wrap">
+									{subs?.[i] ? <div className="tb-sub">{subs[i]}</div> : null}
+									{leaders?.[i] ? (
+										<div className="mb-leaders">{leaders[i]}</div>
+									) : null}
+								</div>
 							) : null}
 						</div>
 					</div>

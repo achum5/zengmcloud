@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 364,
+		date: "2026-11-18",
+		text: "New look (Look: Refreshed): in a game's header, each team's name is back where it was, with its points, rebounds and assists leaders tucked beside its record under the name.",
+	},
+	{
 		n: 363,
 		date: "2026-11-18",
 		text: "New look (Look: Refreshed): a game's header shows each team's points, rebounds and assists leaders in small print under its record (on a phone, just under the header), each linked to the player.",

@@ -6340,9 +6340,25 @@ a.rsb-half {
 // Each team's leaders in the game, small under its record (see TeamLeaders):
 // "PTS T. Jones 33", a line each.
 .mb-leaders {
-	margin-top: 0.4rem;
 	font-size: 0.75rem;
 	line-height: 1.35;
+}
+// (By the record, under the name - out of the way of both.)
+.mb-sub-wrap {
+	position: relative;
+	display: inline-block;
+}
+.mb-half .mb-leaders {
+	position: absolute;
+	top: 0.05rem;
+	left: calc(100% + 1.1rem);
+	text-align: left;
+	white-space: nowrap;
+}
+.mb-half-1 .mb-leaders {
+	left: auto;
+	right: calc(100% + 1.1rem);
+	text-align: right;
 }
 .mb-lead {
 	white-space: nowrap;
