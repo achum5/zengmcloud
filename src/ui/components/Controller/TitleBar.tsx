@@ -1,4 +1,4 @@
-import { Dropdown, isTeamsField } from "../Dropdown.tsx";
+import { Dropdown, isSeasonField, isTeamsField } from "../Dropdown.tsx";
 import DropdownLinks from "../DropdownLinks.tsx";
 import { helpers } from "../../util/helpers.ts";
 import { useLocal } from "../../util/local.ts";
@@ -49,9 +49,12 @@ const NewWindowLink = ({ parts }: Props) => {
 // useTitleBar) - in the title bar, or in a page's own banner.
 export const TitleMenus = ({
 	skipTeams,
+	skipMoreInfo,
 }: {
 	// (The team's own banner has it, as its name.)
 	skipTeams?: boolean;
+	// (Its links elsewhere on the page - the team's page.)
+	skipMoreInfo?: boolean;
 } = {}) => {
 	const {
 		customMenu,
@@ -154,7 +157,11 @@ export const TitleMenus = ({
 		});
 	}
 
-	if (moreInfoSeason !== undefined && moreInfoTid !== undefined) {
+	if (
+		!skipMoreInfo &&
+		moreInfoSeason !== undefined &&
+		moreInfoTid !== undefined
+	) {
 		const team = helpers.getTeamUrlPart(moreInfoTid);
 		menuItems.push({
 			type: "header",
@@ -193,7 +200,12 @@ export const TitleMenus = ({
 			{dropdown ? (
 				<Dropdown
 					dropdown={dropdown}
-					skip={skipTeams ? isTeamsField : undefined}
+					// (And its season, by its name.)
+					skip={
+						skipTeams
+							? (field) => isTeamsField(field) || isSeasonField(field)
+							: undefined
+					}
 				/>
 			) : null}
 			<DropdownLinks

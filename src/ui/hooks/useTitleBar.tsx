@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect } from "react";
+import { useContext, useEffect, useLayoutEffect } from "react";
+import { EmbeddedView } from "../components/EmbeddedView.tsx";
 import {
 	dropdownOptionsStateKeys,
 	findDropdownOption,
@@ -69,8 +70,13 @@ const useTitleBar = <
 	moreInfoTid?: number;
 } = {}) => {
 	const state = useLocal([...dropdownOptionsStateKeys]);
+	// (Drawn inside another page: that page's title bar, not this one's.)
+	const embedded = useContext(EmbeddedView);
 
 	useEffect(() => {
+		if (embedded) {
+			return;
+		}
 		const parts: string[] = [];
 
 		if (titleLong) {
@@ -99,10 +105,13 @@ const useTitleBar = <
 		}
 
 		document.title = parts.join(" » ");
-	}, [dropdown, state, title, titleLong]);
+	}, [dropdown, embedded, state, title, titleLong]);
 
 	// Without useLayoutEffect, weird shit happens in Safari! State inappropriately bleeds over from one load of a view to the next. Not sure why!
 	useLayoutEffect(() => {
+		if (embedded) {
+			return;
+		}
 		let storedDropdown: TitleBarDropdown | undefined;
 		if (dropdown) {
 			storedDropdown = {
@@ -138,6 +147,7 @@ const useTitleBar = <
 		dropdown,
 		moreInfoSeason,
 		moreInfoTid,
+		embedded,
 	]);
 };
 

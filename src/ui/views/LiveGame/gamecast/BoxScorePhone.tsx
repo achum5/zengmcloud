@@ -3,6 +3,7 @@ import { helpers } from "../../../util/helpers.ts";
 import { teamsInDisplayOrder } from "../../../util/boxScoreDisplayOrder.ts";
 import clsx from "clsx";
 import { PlayerNameLabels } from "../../../components/PlayerNameLabels.tsx";
+import { TeamLogoInline } from "../../../components/TeamLogoInline.tsx";
 import { Switch } from "./Gamecast.tsx";
 import {
 	DataTable,
@@ -278,16 +279,21 @@ export const NameCell = ({
 // THE BOX SCORE AS ONE OF BBGM'S OWN TABLES (its menu: Customize columns,
 // Download spreadsheet, Reset table): each team under its name, its
 // starters, a line, its bench, who didn't play, its totals.
+// ONE TEAM'S TABLE: its name over it (its logo by it), its starters, its
+// bench, those who didn't play, its totals. Its columns kept the same as the
+// other team's (see syncSettings).
 const BoxTable = ({
 	boxScore,
 	view,
 	live,
-	title,
+	t,
+	o,
 }: {
 	boxScore: any;
 	view: BoxView;
 	live?: boolean;
-	title: ReactNode;
+	t: Line;
+	o: Line;
 }) => {
 	const keys = VIEW_COLS[view];
 	const cols: Col[] = [
@@ -303,10 +309,8 @@ const BoxTable = ({
 	const exhibition = !!boxScore.exhibition;
 	const numStarters = boxScore.numPlayersOnCourt ?? 5;
 	const blanks = keys.map(() => null);
-	const teams = teamsInDisplayOrder(boxScore.teams as [any, any]);
 	const rows: DataTableRow[] = [];
-	teams.forEach((t: Line, i: number) => {
-		const o: Line = teams[i === 0 ? 1 : 0];
+	{
 		// (A game still going: only the hurt are out - everyone else may yet
 		// play.)
 		const out = (p: Line) =>
@@ -319,30 +323,6 @@ const BoxTable = ({
 			? t.players.slice(0, numStarters).filter((p: Line) => !out(p))
 			: played.filter((p: Line) => p.gs === 1).slice(0, numStarters);
 		const bench = played.filter((p: Line) => !starters.includes(p));
-		rows.push({
-			key: `team${t.tid}`,
-			classNames: "bsp-team-row",
-			data: [
-				{
-					value:
-						t.tid >= 0 ? (
-							<a
-								href={helpers.leagueUrl([
-									"roster",
-									`${t.abbrev}_${t.tid}`,
-									season,
-								])}
-							>
-								{t.region} {t.name}
-							</a>
-						) : (
-							`${t.region} ${t.name}`
-						),
-				},
-				null,
-				...blanks,
-			],
-		});
 		[...starters, ...bench].forEach((p: Line, k: number) => {
 			rows.push({
 				key: `${t.tid}:${p.pid}`,
@@ -419,7 +399,8 @@ const BoxTable = ({
 				],
 			});
 		}
-	});
+	}
+	const name = `${t.region} ${t.name}`;
 	return (
 		<DataTable
 			classNameWrapper="mb-3"
@@ -429,7 +410,29 @@ const BoxTable = ({
 			hideAllControls
 			name={`BoxScore:${view}`}
 			rows={rows}
-			title={title}
+			syncSettings
+			title={
+				<span className="bsp-team">
+					<TeamLogoInline
+						imgURL={t.imgURL}
+						imgURLSmall={t.imgURLSmall}
+						size={24}
+					/>
+					{t.tid >= 0 ? (
+						<a
+							href={helpers.leagueUrl([
+								"roster",
+								`${t.abbrev}_${t.tid}`,
+								season,
+							])}
+						>
+							{name}
+						</a>
+					) : (
+						name
+					)}
+				</span>
+			}
 		/>
 	);
 };
@@ -458,22 +461,22 @@ export const BoxScorePhone = ({
 			onChange={setView}
 		/>
 	);
+	const teams = teamsInDisplayOrder(boxScore.teams as [any, any]);
 	return (
 		<div className="bsp">
-			{boxView ? (
-				<BoxTable
-					key={boxView}
-					boxScore={boxScore}
-					view={boxView}
-					live={live2}
-					title={tabs}
-				/>
-			) : (
-				<>
-					<div className="bsp-views">{tabs}</div>
-					{extra?.(view)}
-				</>
-			)}
+			<div className="bsp-views">{tabs}</div>
+			{boxView
+				? teams.map((t: Line, i: number) => (
+						<BoxTable
+							key={`${boxView}:${t.tid}`}
+							boxScore={boxScore}
+							view={boxView}
+							live={live2}
+							t={t}
+							o={teams[i === 0 ? 1 : 0]}
+						/>
+					))
+				: extra?.(view)}
 		</div>
 	);
 };

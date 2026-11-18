@@ -236,7 +236,11 @@ const Player2 = ({
 				/>
 			</Anchor>
 			{refreshedLook ? (
-				<PlayerPinnedBar player={player} teamColors={teamColors} />
+				<PlayerPinnedBar
+					player={player}
+					teamColors={teamColors}
+					teamJersey={teamJersey}
+				/>
 			) : null}
 
 			<Anchor id="stats" on={refreshedLook}>

@@ -658,15 +658,15 @@ export const NextButton = ({
 	currentGidInList,
 	nextGid,
 	tid,
-	compact,
+	arrow,
 }: {
 	abbrev?: string;
 	boxScore: any;
 	currentGidInList?: boolean;
 	nextGid?: number;
 	tid?: number;
-	// An arrow for "Next", small (a team's banner - the refreshed look).
-	compact?: boolean;
+	// Just an arrow, of this class (a game's banner - the refreshed look).
+	arrow?: string;
 }) => {
 	const [autoGoToNext, setAutoGoToNext] = useState(false);
 	const [clickedGoToNext, setClickedGoToNext] = useState(false);
@@ -729,33 +729,45 @@ export const NextButton = ({
 		(nextGid === undefined || clickedGoToNext || autoGoToNext) &&
 		phase >= PHASE.REGULAR_SEASON &&
 		phase <= PHASE.PLAYOFFS ? (
-		<button
-			className={clsx("btn btn-light-bordered text-nowrap", {
-				small: !compact,
-				"btn-sm": compact,
-			})}
-			disabled={!canPlay || simAuthorityLocked}
-			onClick={simNext}
-			title={simAuthorityReason}
-		>
-			Sim Next
-		</button>
-	) : compact ? (
+		arrow ? (
+			<button
+				type="button"
+				className={arrow}
+				disabled={!canPlay || simAuthorityLocked}
+				onClick={simNext}
+				title={simAuthorityReason ?? "Sim Next"}
+				aria-label="Sim Next"
+			>
+				<span className="tb-chevron" aria-hidden />
+			</button>
+		) : (
+			<button
+				className="btn btn-light-bordered text-nowrap small"
+				disabled={!canPlay || simAuthorityLocked}
+				onClick={simNext}
+				title={simAuthorityReason}
+			>
+				Sim Next
+			</button>
+		)
+	) : arrow ? (
 		<a
-			className={clsx("btn btn-light-bordered btn-sm", {
-				disabled: nextGid === undefined,
-			})}
-			href={helpers.leagueUrl([
-				"game_log",
-				abbrev === "special" ? abbrev : `${abbrev}_${tid}`,
-				boxScore.season,
-				nextGid,
-			])}
+			className={clsx(arrow, { disabled: nextGid === undefined })}
+			href={
+				nextGid === undefined
+					? undefined
+					: helpers.leagueUrl([
+							"game_log",
+							abbrev === "special" ? abbrev : `${abbrev}_${tid}`,
+							boxScore.season,
+							nextGid,
+						])
+			}
 			title="Next game"
 			aria-label="Next game"
 			data-no-scroll-reset
 		>
-			<span className="glyphicon glyphicon-menu-right" />
+			<span className="tb-chevron" aria-hidden />
 		</a>
 	) : (
 		<a
@@ -1054,7 +1066,7 @@ const DetailedScore = ({
 	);
 };
 
-const PlayoffRecord = ({
+export const PlayoffRecord = ({
 	numGamesToWinSeries,
 	season,
 	t0,
@@ -1135,11 +1147,12 @@ const PlayoffRecord = ({
 // routes the stored play-by-play back through the live-game view (un-gated).
 export const WatchReplayButton = ({
 	gid,
-	compact,
+	className,
 }: {
 	gid: number;
-	// Small, a play mark and a word (a team's banner - the refreshed look).
-	compact?: boolean;
+	// Just a play mark, of this class (by a game's status - the refreshed
+	// look).
+	className?: string;
 }) => {
 	const [available, setAvailable] = useState(false);
 	const [loading, setLoading] = useState(false);
@@ -1183,26 +1196,29 @@ export const WatchReplayButton = ({
 		}
 	};
 
+	if (className) {
+		return (
+			<button
+				type="button"
+				className={className}
+				onClick={watch}
+				disabled={loading}
+				title="View Replay"
+				aria-label="View Replay"
+			>
+				<span className="glyphicon glyphicon-play" />
+			</button>
+		);
+	}
+
 	return (
 		<button
 			type="button"
-			className={
-				compact
-					? "btn btn-light-bordered btn-sm text-nowrap"
-					: "btn btn-secondary btn-sm text-nowrap"
-			}
+			className="btn btn-secondary btn-sm text-nowrap"
 			onClick={watch}
 			disabled={loading}
-			title={compact ? "View Replay" : undefined}
 		>
-			{compact ? (
-				<>
-					<span className="glyphicon glyphicon-play" />
-					<span className="tb-action-word"> Replay</span>
-				</>
-			) : (
-				"View Replay"
-			)}
+			View Replay
 		</button>
 	);
 };

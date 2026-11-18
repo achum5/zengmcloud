@@ -21,6 +21,7 @@ import {
 import {
 	FourFactors,
 	NextButton,
+	PlayoffRecord,
 	WatchReplayButton,
 } from "../../../components/BoxScoreWrapper.tsx";
 import Note from "../../Player/Note.tsx";
@@ -80,29 +81,36 @@ const TABS: [Tab, string][] = [
 const teamUrl = (t: any, season: number) =>
 	helpers.leagueUrl(["roster", `${t.abbrev}_${t.tid}`, season]);
 
-// A team's top scorer, for the banner: "T. Jones 38 PTS", to his page.
-const topScorer = (t: any) => {
-	const top = ((t.players ?? []) as any[]).reduce<any>(
-		(best, p) => (best === undefined || p.pts > best.pts ? p : best),
-		undefined,
-	);
-	if (!top || !(top.pts > 0)) {
-		return null;
-	}
-	const words = String(top.name).trim().split(/\s+/);
-	const short =
-		words.length > 1
-			? `${words[0]![0]}. ${words.slice(1).join(" ")}`
-			: top.name;
-	return (
-		<a href={helpers.leagueUrl(["player", top.pid])}>
-			{short} <span className="mb-leader-pts">{top.pts} PTS</span>
+// THE SCORE, PINNED: once the game's banner scrolls up under the top bar, a
+// slim bar of it held there - each side in its colors, the score, Final.
+// (Its class written out whole - see MatchupBanner.)
+const ScoreBarSide = ({
+	t,
+	season,
+	shown,
+	side,
+	children,
+}: {
+	t: any;
+	season: number;
+	shown: boolean;
+	side: 0 | 1;
+	children: ReactNode;
+}) => {
+	const className = side === 0 ? "rsb-half rsb-0" : "rsb-half rsb-1";
+	return t.tid >= 0 ? (
+		<a
+			className={className}
+			href={teamUrl(t, season)}
+			tabIndex={shown ? undefined : -1}
+		>
+			{children}
 		</a>
+	) : (
+		<div className={className}>{children}</div>
 	);
 };
 
-// THE SCORE, PINNED: once the game's banner scrolls up under the top bar, a
-// slim bar of it held there - each side in its colors, the score, Final.
 const ScoreBar = ({ boxScore }: { boxScore: any }) => {
 	const [shown, setShown] = useState(false);
 	useEffect(() => {
@@ -132,21 +140,22 @@ const ScoreBar = ({ boxScore }: { boxScore: any }) => {
 				style={matchupVars(away.colors, home.colors)}
 				aria-hidden={!shown}
 			>
-				<div className="rsb-half rsb-0">
+				{/* (Each side to its team.) */}
+				<ScoreBarSide t={away} season={boxScore.season} shown={shown} side={0}>
 					<Logo t={away} size={26} />
 					<span className="rsb-abbrev">{away.abbrev}</span>
 					<span className={won === 1 ? "rsb-pts rsb-lost" : "rsb-pts"}>
 						{away.pts}
 					</span>
-				</div>
+				</ScoreBarSide>
 				<div className="rsb-mid">{finalText(boxScore)}</div>
-				<div className="rsb-half rsb-1">
+				<ScoreBarSide t={home} season={boxScore.season} shown={shown} side={1}>
 					<span className={won === 0 ? "rsb-pts rsb-lost" : "rsb-pts"}>
 						{home.pts}
 					</span>
 					<span className="rsb-abbrev">{home.abbrev}</span>
 					<Logo t={home} size={26} />
-				</div>
+				</ScoreBarSide>
 			</div>
 		</div>
 	);
@@ -288,17 +297,15 @@ type NavProps = {
 };
 
 // To the team's game before and after this one, and the replay: under the
-// score - or, compact (arrows, a play mark), in the team's strip over it
-// (the refreshed look's game log).
-export const RecapNav = ({
+// score (the refreshed look: each team's arrows in the banner instead).
+const RecapNav = ({
 	boxScore,
 	abbrev,
 	tid,
 	prevGid,
 	nextGid,
 	currentGidInList,
-	compact,
-}: NavProps & { compact?: boolean }) => {
+}: NavProps) => {
 	const prevUrl = helpers.leagueUrl([
 		"game_log",
 		abbrev === "special" ? abbrev : `${abbrev}_${tid}`,
@@ -307,7 +314,7 @@ export const RecapNav = ({
 	]);
 	const replay =
 		!boxScore.exhibition && boxScore.gid >= 0 ? (
-			<WatchReplayButton gid={boxScore.gid} compact={compact} />
+			<WatchReplayButton gid={boxScore.gid} />
 		) : null;
 	const next = (
 		<NextButton
@@ -316,30 +323,8 @@ export const RecapNav = ({
 			currentGidInList={currentGidInList}
 			nextGid={nextGid}
 			tid={tid}
-			compact={compact}
 		/>
 	);
-	if (compact) {
-		return (
-			<div className="tb-actions">
-				{replay}
-				<div className="btn-group">
-					<a
-						className={clsx("btn btn-light-bordered btn-sm", {
-							disabled: prevGid === undefined,
-						})}
-						href={prevUrl}
-						title="Previous game"
-						aria-label="Previous game"
-						data-no-scroll-reset
-					>
-						<span className="glyphicon glyphicon-menu-left" />
-					</a>
-					{next}
-				</div>
-			</div>
-		);
-	}
 	return (
 		<div className="recap-nav">
 			<a
@@ -357,6 +342,137 @@ export const RecapNav = ({
 	);
 };
 
+// A TEAM'S GAMES BEFORE AND AFTER THIS ONE, as two arrows at the foot of its
+// half of the banner (where its stripes were): the one after, at its latest
+// game this season, sims to its next (as BBGM's "Sim Next").
+const TeamArrows = ({
+	t,
+	boxScore,
+	nav,
+}: {
+	t: any;
+	boxScore: any;
+	nav: { prev?: number; next?: number } | undefined;
+}) => {
+	if (t.tid < 0 || !nav) {
+		return null;
+	}
+	const team = `${t.abbrev}_${t.tid}`;
+	return (
+		<>
+			<a
+				className={clsx("mb-arrow mb-arrow-back", {
+					disabled: nav.prev === undefined,
+				})}
+				href={
+					nav.prev === undefined
+						? undefined
+						: helpers.leagueUrl(["game_log", team, boxScore.season, nav.prev])
+				}
+				title="Previous game"
+				aria-label="Previous game"
+				data-no-scroll-reset
+			>
+				<span className="tb-chevron" aria-hidden />
+			</a>
+			<NextButton
+				arrow="mb-arrow"
+				abbrev={t.abbrev}
+				boxScore={boxScore}
+				currentGidInList
+				nextGid={nav.next}
+				tid={t.tid}
+			/>
+		</>
+	);
+};
+
+type DayGame = {
+	gid: number;
+	teams: [{ tid: number; pts: number }, { tid: number; pts: number }];
+};
+
+// ALL OF THAT DAY'S GAMES, under the game's banner when asked for: each a
+// little score (the winner's line bold), this one marked, each to its page.
+const DayGames = ({
+	games,
+	gid,
+	season,
+}: {
+	games: DayGame[];
+	gid: number;
+	season: number;
+}) => {
+	const [open, setOpen] = useState(false);
+	const { teamInfoCache } = useLocal(["teamInfoCache"]);
+	if (games.length < 2) {
+		return null;
+	}
+	return (
+		<div className="recap-day">
+			<button
+				type="button"
+				className="btn btn-light-bordered btn-sm recap-day-toggle"
+				aria-expanded={open}
+				onClick={() => {
+					setOpen(!open);
+				}}
+			>
+				All games this day
+				<span className={open ? "tb-caret recap-day-open" : "tb-caret"} />
+			</button>
+			{open ? (
+				<div className="recap-day-grid">
+					{games.map((gm) => {
+						// (Away over home, as the banner has them.)
+						const sides = [gm.teams[1], gm.teams[0]];
+						const won =
+							sides[0]!.pts === sides[1]!.pts
+								? -1
+								: sides[0]!.pts > sides[1]!.pts
+									? 0
+									: 1;
+						const first = teamInfoCache[sides[0]!.tid];
+						return (
+							<a
+								key={gm.gid}
+								className={
+									gm.gid === gid ? "recap-day-game current" : "recap-day-game"
+								}
+								href={helpers.leagueUrl([
+									"game_log",
+									first ? `${first.abbrev}_${sides[0]!.tid}` : "special",
+									season,
+									gm.gid,
+								])}
+								data-no-scroll-reset
+							>
+								{sides.map((side, i) => {
+									const t = teamInfoCache[side.tid];
+									return (
+										<span
+											key={i}
+											className={
+												won === i ? "recap-day-line won" : "recap-day-line"
+											}
+										>
+											<Logo t={t ?? {}} size={18} />
+											<span className="recap-day-abbrev">
+												{t?.abbrev ?? "?"}
+											</span>
+											<span className="recap-day-pts">{side.pts}</span>
+										</span>
+									);
+								})}
+							</a>
+						);
+					})}
+				</div>
+			) : null}
+		</div>
+	);
+};
+
 const RecapHeader = ({
 	boxScore,
 	abbrev,
@@ -364,8 +480,12 @@ const RecapHeader = ({
 	prevGid,
 	nextGid,
 	currentGidInList,
-	navElsewhere,
-}: NavProps & { navElsewhere?: boolean }) => {
+	teamNav,
+	dayGames,
+}: NavProps & {
+	teamNav?: Record<number, { prev?: number; next?: number }>;
+	dayGames?: DayGame[];
+}) => {
 	const { refreshedLook } = useLocal(["refreshedLook"]);
 	const [away, home] = teamsInDisplayOrder(boxScore.teams as [any, any]);
 	const winner =
@@ -391,13 +511,50 @@ const RecapHeader = ({
 						teams={[away, home]}
 						numbers={[away.pts, home.pts]}
 						won={winner === away.tid ? 0 : winner === home.tid ? 1 : undefined}
+						// (BBGM's own: "DAL leads series 1-0", the team to its page, the
+						// record to the bracket.)
 						tag={
-							series ? (
-								<a href={helpers.leagueUrl(["playoffs", season])}>{series}</a>
+							boxScore.numGamesToWinSeries > 1 &&
+							boxScore.teams[0]?.playoffs &&
+							boxScore.teams[1]?.playoffs ? (
+								<span>
+									<PlayoffRecord
+										numGamesToWinSeries={boxScore.numGamesToWinSeries}
+										season={season}
+										t0={boxScore.teams[0]}
+										t1={boxScore.teams[1]}
+									/>
+								</span>
 							) : undefined
 						}
-						status={finalText(boxScore)}
+						status={
+							<>
+								{finalText(boxScore)}
+								{/* (Its replay, if it has one, by it.) */}
+								{!boxScore.exhibition && boxScore.gid >= 0 ? (
+									<WatchReplayButton gid={boxScore.gid} className="mb-replay" />
+								) : null}
+							</>
+						}
 						extra={<MiniLinescore boxScore={boxScore} />}
+						navs={
+							teamNav
+								? [
+										<TeamArrows
+											key="away"
+											t={away}
+											boxScore={boxScore}
+											nav={teamNav[away.tid]}
+										/>,
+										<TeamArrows
+											key="home"
+											t={home}
+											boxScore={boxScore}
+											nav={teamNav[home.tid]}
+										/>,
+									]
+								: undefined
+						}
 						hrefs={[
 							away.tid >= 0 ? teamUrl(away, season) : undefined,
 							home.tid >= 0 ? teamUrl(home, season) : undefined,
@@ -406,8 +563,10 @@ const RecapHeader = ({
 							away.won !== undefined ? helpers.formatRecord(away) : null,
 							home.won !== undefined ? helpers.formatRecord(home) : null,
 						]}
-						leaders={[topScorer(away), topScorer(home)]}
 					/>
+					{dayGames ? (
+						<DayGames games={dayGames} gid={boxScore.gid} season={season} />
+					) : null}
 				</>
 			) : (
 				<>
@@ -441,7 +600,9 @@ const RecapHeader = ({
 					</div>
 				</>
 			)}
-			{navElsewhere ? null : (
+			{/* (The refreshed look: each team's arrows in the banner, the replay
+			    by the status.) */}
+			{refreshedLook ? null : (
 				<RecapNav
 					boxScore={boxScore}
 					abbrev={abbrev}
@@ -586,17 +747,19 @@ export const GameRecap = ({
 	currentGidInList,
 	Row,
 	reactions,
-	navElsewhere,
+	teamNav,
+	dayGames,
 }: {
+	// Each team's games before and after this one, and all that day's games
+	// (see gameLog's teamNav).
+	teamNav?: Record<number, { prev?: number; next?: number }>;
+	dayGames?: DayGame[];
 	boxScore: any;
 	abbrev?: string;
 	tid?: number;
 	prevGid?: number;
 	nextGid?: number;
 	currentGidInList?: boolean;
-	// The game before/after and the replay are shown elsewhere (the team's
-	// strip over the score - see RecapNav).
-	navElsewhere?: boolean;
 	// The box score's row (see GameLog).
 	Row: unknown;
 	// The posts about the game.
@@ -935,7 +1098,8 @@ export const GameRecap = ({
 					prevGid={prevGid}
 					nextGid={nextGid}
 					currentGidInList={currentGidInList}
-					navElsewhere={navElsewhere}
+					teamNav={teamNav}
+					dayGames={dayGames}
 				/>
 				{refreshedLook ? <ScoreBar boxScore={boxScore} /> : null}
 				{refreshedLook ? (

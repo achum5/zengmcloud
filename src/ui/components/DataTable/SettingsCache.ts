@@ -1,5 +1,16 @@
 import { safeLocalStorage } from "../../util/safeLocalStorage.ts";
 
+// (Told when a table's settings change, for another table of the same name
+// on the page - see DataTable's syncSettings.)
+export const SETTINGS_EVENT = "bbgm-datatable-settings";
+const tell = (name: string) => {
+	if (typeof window !== "undefined") {
+		setTimeout(() => {
+			window.dispatchEvent(new CustomEvent(SETTINGS_EVENT, { detail: name }));
+		}, 0);
+	}
+};
+
 class SettingsCache {
 	disabled: boolean;
 
@@ -16,6 +27,7 @@ class SettingsCache {
 		}
 
 		safeLocalStorage.setItem(`${key}:${this.name}`, JSON.stringify(value));
+		tell(this.name);
 	}
 
 	get(key: string) {
@@ -41,6 +53,7 @@ class SettingsCache {
 		}
 
 		safeLocalStorage.removeItem(`${key}:${this.name}`);
+		tell(this.name);
 	}
 }
 

@@ -11,7 +11,8 @@ import { BoxScoreWrapper } from "../components/BoxScoreWrapper.tsx";
 import { SocialEmbed } from "../components/SocialEmbed.tsx";
 import { BoxScoreRow } from "../components/BoxScoreRow.tsx";
 import { useLocal } from "../util/local.ts";
-import { GameRecap, RecapNav } from "./LiveGame/gamecast/GameRecap.tsx";
+import { GameRecap } from "./LiveGame/gamecast/GameRecap.tsx";
+import { useHideTitleBar } from "../components/TeamBanner.tsx";
 
 const StatsRow = ({
 	p,
@@ -174,6 +175,8 @@ const GameLog = ({
 	reactions,
 	season,
 	team,
+	teamNav,
+	dayGames,
 	tid,
 }: View<"gameLog">) => {
 	useTitleBar({
@@ -218,34 +221,15 @@ const GameLog = ({
 		(gamecastLayout || refreshedLook) &&
 		boxScore.gid >= 0;
 
+	// (The refreshed look: a game its own page - the game's banner its header,
+	// each team's arrows in it; no team's pages over it, no title bar.)
+	const gamePage = refreshedLook && recap;
+	useHideTitleBar(gamePage);
+
 	return (
 		<>
-			{tid >= 0 ? (
-				// (The refreshed look: the team's pages one slim strip on top of the
-				// game's own banner, the two one header.)
-				<MoreLinks
-					type="team"
-					page="game_log"
-					tid={tid}
-					season={season}
-					slim={refreshedLook && recap}
-					colors={
-						(boxScore as any).teams?.find((t: any) => t.tid === tid)?.colors
-					}
-					actions={
-						refreshedLook && recap ? (
-							<RecapNav
-								compact
-								boxScore={boxScore}
-								abbrev={recapAbbrev}
-								tid={tid}
-								prevGid={prevGid}
-								nextGid={nextGid}
-								currentGidInList={currentGidInList}
-							/>
-						) : undefined
-					}
-				/>
+			{tid >= 0 && !gamePage ? (
+				<MoreLinks type="team" page="game_log" tid={tid} season={season} />
 			) : null}
 
 			{noGamesAndNoBoxScore ? (
@@ -255,7 +239,8 @@ const GameLog = ({
 				<GameRecap
 					boxScore={boxScore}
 					abbrev={recapAbbrev}
-					navElsewhere={refreshedLook && tid >= 0}
+					teamNav={gamePage ? teamNav : undefined}
+					dayGames={gamePage ? dayGames : undefined}
 					currentGidInList={currentGidInList}
 					nextGid={nextGid}
 					prevGid={prevGid}

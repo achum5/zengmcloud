@@ -6,8 +6,11 @@ import {
 	useRef,
 	type CSSProperties,
 	useImperativeHandle,
+	useEffect,
 	type RefCallback,
 } from "react";
+import loadStateFromCache from "./loadStateFromCache.ts";
+import { SETTINGS_EVENT } from "./SettingsCache.ts";
 import Controls from "./Controls.tsx";
 import CustomizeColumns from "./CustomizeColumns.tsx";
 import Footer, { type FooterRow } from "./Footer.tsx";
@@ -139,6 +142,9 @@ export type Props<Type extends MetadataType = undefined> = {
 	hideAllControls?: boolean; // When ReactNode, display as a title above the table
 	hideHeader?: boolean;
 	hideMenuToo?: boolean;
+	// Its columns kept the same as another table of the same name on the page
+	// (a box score's two teams) as either is changed.
+	syncSettings?: boolean;
 	name: string;
 	nonfluid?: boolean;
 	pagination?: boolean;
@@ -216,6 +222,7 @@ export const DataTable = <Type extends MetadataType = undefined>({
 	striped,
 	style,
 	superCols,
+	syncSettings,
 	title,
 }: Props<Type>) => {
 	if (sortableRows) {
@@ -247,6 +254,42 @@ export const DataTable = <Type extends MetadataType = undefined>({
 		hideAllControls: hideAllControlsBool,
 		name,
 	});
+
+	useEffect(() => {
+		if (!syncSettings) {
+			return;
+		}
+		const onChange = (event: Event) => {
+			if ((event as CustomEvent<string>).detail !== name) {
+				return;
+			}
+			const saved = loadStateFromCache({
+				cols,
+				defaultSort,
+				defaultStickyCols,
+				disableSettingsCache,
+				hideAllControls: hideAllControlsBool,
+				name,
+			});
+			setStatePartial({
+				colOrder: saved.colOrder,
+				stickyCols: saved.stickyCols,
+			});
+		};
+		window.addEventListener(SETTINGS_EVENT, onChange);
+		return () => {
+			window.removeEventListener(SETTINGS_EVENT, onChange);
+		};
+	}, [
+		cols,
+		defaultSort,
+		defaultStickyCols,
+		disableSettingsCache,
+		hideAllControlsBool,
+		name,
+		setStatePartial,
+		syncSettings,
+	]);
 
 	const {
 		bulkSelectRows,

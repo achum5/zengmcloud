@@ -400,7 +400,17 @@ export const PlayRow = memo(
 						{sentence ?? textOf(row.texts)}
 					</div>
 				</div>
-				{watch ? <Chevron open={!!opened} /> : null}
+				{watch ? (
+					<Chevron open={!!opened} />
+				) : clip !== undefined && onOpen !== undefined ? (
+					// (No replay of this one: its room kept, so its score lines up
+					// with the rest.)
+					<span
+						className="glyphicon glyphicon-menu-down gamecast-chevron"
+						style={{ visibility: "hidden" }}
+						aria-hidden
+					/>
+				) : null}
 			</div>
 		);
 		if (!watch) {

@@ -215,6 +215,8 @@ const useDropdownFields = (dropdown: TitleBarDropdown | undefined) => {
 
 export const isTeamsField = (field: TitleBarDropdownField) =>
 	!Array.isArray(field.options) && field.options.type === "teams";
+export const isSeasonField = (field: TitleBarDropdownField) =>
+	field.key === "season";
 
 export const Dropdown = ({
 	dropdown,
@@ -283,6 +285,76 @@ export const TeamNameDropdown = ({
 					</option>
 				))}
 			</select>
+		</span>
+	);
+};
+
+// THE SEASON IN A TEAM'S BANNER, BY ITS NAME: the year as it is (the list of
+// seasons under it when tapped), a thin arrow either side of it to the
+// season before and after.
+export const SeasonInline = ({
+	dropdown,
+}: {
+	dropdown: TitleBarDropdown | undefined;
+}) => {
+	const { fieldOptions, handleChange } = useDropdownFields(dropdown);
+	const i = dropdown ? dropdown.fields.findIndex(isSeasonField) : -1;
+	const field = i >= 0 ? dropdown!.fields[i]! : undefined;
+	const options = i >= 0 ? fieldOptions[i]! : [];
+	if (!field) {
+		return null;
+	}
+	const current = findDropdownOption(options, field.value);
+	const label = current ? getResponsiveValue(current.label, Infinity) : "";
+	if (options.length <= 1) {
+		return <span className="tb-season">{label}</span>;
+	}
+	// (Listed newest first.)
+	const at = current ? options.indexOf(current) : -1;
+	const older = at >= 0 ? options[at + 1] : undefined;
+	const newer = at > 0 ? options[at - 1] : undefined;
+	const arrow = (to: DropdownOption | undefined, back: boolean) => (
+		<button
+			type="button"
+			className={back ? "tb-season-arrow tb-season-back" : "tb-season-arrow"}
+			disabled={!to}
+			title={back ? "Previous season" : "Next season"}
+			aria-label={back ? "Previous season" : "Next season"}
+			onClick={() => {
+				if (to) {
+					handleChange(i, to);
+				}
+			}}
+		>
+			<span className="tb-chevron" aria-hidden />
+		</button>
+	);
+	return (
+		<span className="tb-season">
+			{arrow(older, true)}
+			<span className="tb-season-pick">
+				{label}
+				<select
+					aria-label="Season"
+					value={String(field.value)}
+					onChange={(event) => {
+						const option = findDropdownOption(
+							options,
+							event.currentTarget.value,
+						);
+						if (option) {
+							handleChange(i, option);
+						}
+					}}
+				>
+					{options.map((option) => (
+						<option key={option.key} value={String(option.key)}>
+							{getResponsiveValue(option.label, Infinity)}
+						</option>
+					))}
+				</select>
+			</span>
+			{arrow(newer, false)}
 		</span>
 	);
 };

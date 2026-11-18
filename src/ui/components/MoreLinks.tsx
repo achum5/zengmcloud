@@ -1,4 +1,11 @@
-import { Fragment, useLayoutEffect, useRef, type ReactNode } from "react";
+import {
+	Fragment,
+	useContext,
+	useLayoutEffect,
+	useRef,
+	type ReactNode,
+} from "react";
+import { EmbeddedView } from "./EmbeddedView.tsx";
 import {
 	NO_LOTTERY_DRAFT_TYPES,
 	REAL_PLAYERS_INFO,
@@ -8,7 +15,8 @@ import { helpers } from "../util/helpers.ts";
 import { useLocal } from "../util/local.ts";
 import { bySport } from "../../common/sportFunctions.ts";
 import type { LeagueUrlParts } from "../router/types.ts";
-import { PageBanner, useTeamColors } from "./TeamBanner.tsx";
+import { PageBanner, PinnedBar, useTeamColors } from "./TeamBanner.tsx";
+import { TeamLogoInline } from "./TeamLogoInline.tsx";
 
 type Link = {
 	url: string | Readonly<LeagueUrlParts>;
@@ -16,10 +24,9 @@ type Link = {
 	className?: string;
 };
 
-// Pinned under the top bar as the page scrolls: all of it on a phone (its
-// menus and its pages), its pages on a wider screen (the rest tucked up under
-// the bar). How much of it stays in view goes to --teamb-h, for whatever is
-// scrolled to under it.
+// Pinned under the top bar as the page scrolls (a team's slim strip); how
+// much of it stays in view goes to --teamb-h, for whatever is scrolled to
+// under it - nothing, when it isn't pinned (a team's own page's big banner).
 const TOP_BAR = 52;
 const usePinnedBanner = (on: boolean) => {
 	const ref = useRef<HTMLDivElement>(null);
@@ -29,27 +36,13 @@ const usePinnedBanner = (on: boolean) => {
 			return;
 		}
 		const place = () => {
-			const nav = el.querySelector<HTMLElement>(".tb-nav");
-			const phone = window.matchMedia("(max-width: 575.98px)").matches;
-			const hide =
-				phone || !nav
-					? 0
-					: Math.max(
-							0,
-							nav.getBoundingClientRect().top -
-								el.getBoundingClientRect().top -
-								10,
-						);
-			el.style.setProperty("--teamb-top", `${TOP_BAR - hide}px`);
-			// (Not pinned - the game log's, where the score pins instead: nothing
-			// held over the page.)
+			el.style.setProperty("--teamb-top", `${TOP_BAR}px`);
 			const pinned = getComputedStyle(el).position === "sticky";
 			document.documentElement.style.setProperty(
 				"--teamb-h",
-				pinned ? `${Math.round(el.offsetHeight - hide)}px` : "0px",
+				pinned ? `${Math.round(el.offsetHeight)}px` : "0px",
 			);
 		};
-		place();
 		const observer =
 			typeof ResizeObserver === "undefined"
 				? undefined
@@ -65,83 +58,89 @@ const usePinnedBanner = (on: boolean) => {
 	return ref;
 };
 
-// A TEAM'S PAGES UNDER ITS BANNER (the refreshed look): its logo, city and
-// name in its colors, its pages along the foot of it - the one you are on
-// marked - and the page's dropdowns in it, in place of the title bar.
+// A TEAM'S BANNER OVER ITS PAGES (the refreshed look): its logo, the season
+// and its name (each its own dropdown) in its colors, and the page's other
+// dropdowns in it, in place of the title bar. One slim strip on most of its
+// pages, pinned as the page scrolls; on its own page (the roster) big, its
+// record, payroll... in it, and a slim bar pinned in its place once it has
+// scrolled away.
 const TeamPageBanner = ({
 	tid,
-	links,
-	page,
-	slim,
-	actions,
-	colors: pageColors,
+	info,
+	pinnedSub,
 }: {
 	tid: number;
-	links: Link[];
-	page: string;
-	slim?: boolean;
-	actions?: ReactNode;
-	colors?: string[];
+	info?: ReactNode;
+	pinnedSub?: ReactNode;
 }) => {
 	const { teamInfoCache } = useLocal(["teamInfoCache"]);
-	const info = teamInfoCache[tid];
-	const fetched = useTeamColors(pageColors ? undefined : tid);
-	const colors = pageColors ?? fetched;
-	const ref = usePinnedBanner(info !== undefined);
-	if (!info) {
+	const t = teamInfoCache[tid];
+	const colors = useTeamColors(tid);
+	const big = info !== undefined;
+	const ref = usePinnedBanner(t !== undefined);
+	if (!t) {
 		return null;
 	}
+	const team = {
+		tid,
+		abbrev: t.abbrev,
+		region: t.region,
+		name: t.name,
+		imgURL: t.imgURL,
+		imgURLSmall: t.imgURLSmall,
+		colors,
+	};
 	return (
-		<PageBanner
-			// (One strip on every team page, so it never changes size as you go
-			// between them; on the game log it sits on top of the game's banner.)
-			className={slim ? "teamb teamb-slim teamb-joined" : "teamb teamb-slim"}
-			teamName
-			t={{
-				tid,
-				abbrev: info.abbrev,
-				region: info.region,
-				name: info.name,
-				imgURL: info.imgURL,
-				imgURLSmall: info.imgURLSmall,
-				colors,
-			}}
-			href={helpers.leagueUrl(["roster", `${info.abbrev}_${tid}`])}
-			sub={
-				<nav className="tb-nav">
-					{links.map(({ url, name }, i) => {
-						const key = typeof url === "string" ? url : url[0];
-						return (
-							<a
-								key={key + String(i)}
-								className={key === page ? "active" : undefined}
-								href={typeof url === "string" ? url : helpers.leagueUrl(url)}
-							>
-								{name}
-							</a>
-						);
-					})}
-				</nav>
-			}
-			bannerRef={ref}
-		>
-			{actions}
-		</PageBanner>
+		<>
+			<PageBanner
+				className={big ? "teamb teamb-big" : "teamb teamb-slim"}
+				teamName
+				// (Its "More Info" pages at the foot of its page instead.)
+				skipMoreInfo={big}
+				t={team}
+				// (Its logo to its page - the one long page, where its other pages
+				// are; no tabs.)
+				href={helpers.leagueUrl(["roster", `${t.abbrev}_${tid}`])}
+				sub={info}
+				bannerRef={ref}
+			/>
+			{big ? (
+				<PinnedBar watch=".teamb-big" colors={colors}>
+					<TeamLogoInline
+						imgURL={t.imgURL}
+						imgURLSmall={t.imgURLSmall}
+						size={26}
+					/>
+					<span className="pin-bar-name">
+						<span className="tb-region">{t.region} </span>
+						{t.name}
+					</span>
+					{pinnedSub ? <span className="pin-bar-sub">{pinnedSub}</span> : null}
+				</PinnedBar>
+			) : null}
+		</>
 	);
 };
 
-export const MoreLinks = (
+// (Drawn inside another page - see EmbeddedView - none: that page has its
+// own.)
+export const MoreLinks = (props: Parameters<typeof MoreLinksShown>[0]) =>
+	useContext(EmbeddedView) ? null : <MoreLinksShown {...props} />;
+
+const MoreLinksShown = (
 	props: (
 		| {
 				type: "team";
 				tid: number;
 				season?: number;
-				// The refreshed look's banner as one slim strip (over a game's
-				// own banner, the game log), and buttons at its end.
-				slim?: boolean;
-				actions?: ReactNode;
-				// The team's colors where the page has them (its box score).
-				colors?: string[];
+				// The team's own page (the refreshed look): its banner big, with
+				// these in it (its record, payroll...), and this by its name in
+				// the bar pinned once it has scrolled away.
+				info?: ReactNode;
+				pinnedSub?: ReactNode;
+				// Its pages as a list of buttons, not a banner (less these).
+				asList?: boolean;
+				exclude?: string[];
 		  }
 		| {
 				type: "draft";
@@ -560,15 +559,45 @@ export const MoreLinks = (
 		return null;
 	}
 
+	// THE TEAM'S OTHER PAGES AS A LIST (the refreshed look's team page, at its
+	// foot): BBGM's buttons, one to each.
+	if (props.type === "team" && props.asList) {
+		const skip = new Set(props.exclude ?? []);
+		// (And its players' ratings, stats and bios that season - the title
+		// bar's "More Info", not in the team page's banner.)
+		const team = helpers.getTeamUrlPart(props.tid);
+		const season = props.season ?? "";
+		const more: Link[] = [
+			{ url: ["player_ratings", team, season], name: "Player Ratings" },
+			{ url: ["player_stats", team, season], name: "Player Stats" },
+			{ url: ["player_bios", team, season], name: "Player Bios" },
+		];
+		return (
+			<div className="team-pages">
+				{[...links, ...more]
+					.filter(({ url }) => {
+						const key = typeof url === "string" ? url : url[0];
+						return !skip.has(key) && key !== page;
+					})
+					.map(({ url, name }, i) => (
+						<a
+							key={String(i)}
+							className="btn btn-light-bordered"
+							href={typeof url === "string" ? url : helpers.leagueUrl(url)}
+						>
+							{name}
+						</a>
+					))}
+			</div>
+		);
+	}
+
 	if (refreshedLook && props.type === "team") {
 		return (
 			<TeamPageBanner
 				tid={props.tid}
-				links={links}
-				page={page}
-				slim={props.slim}
-				actions={props.actions}
-				colors={props.colors}
+				info={props.info}
+				pinnedSub={props.pinnedSub}
 			/>
 		);
 	}

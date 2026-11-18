@@ -340,6 +340,98 @@ const updateTeamSeason = (inputs: ViewInput<typeof processInputs>) => {
 	};
 };
 
+// EACH TEAM'S GAMES BEFORE AND AFTER THIS ONE (the game's banner's arrows,
+// the refreshed look): from a list of the season's games by their teams - a
+// past season's read from the database once and kept, this season's from the
+// games in memory each time (more are played).
+type SeasonGameRow = {
+	gid: number;
+	day: number | undefined;
+	teams: [{ tid: number; pts: number }, { tid: number; pts: number }];
+	overtimes: number;
+	playoffs: boolean;
+};
+let seasonGamesKept: { key: string; rows: SeasonGameRow[] } | undefined;
+const seasonGames = async (season: number) => {
+	const key = `${g.get("lid")}:${season}`;
+	if (season !== g.get("season") && seasonGamesKept?.key === key) {
+		return seasonGamesKept.rows;
+	}
+	const rows: SeasonGameRow[] = [];
+	await idb.merged.games.getAll(
+		{ season },
+		{
+			filter: (gm) => {
+				rows.push({
+					gid: gm.gid,
+					day: gm.day,
+					teams: [
+						{ tid: gm.teams[0].tid, pts: gm.teams[0].pts },
+						{ tid: gm.teams[1].tid, pts: gm.teams[1].pts },
+					],
+					overtimes: gm.overtimes ?? 0,
+					playoffs: !!gm.playoffs,
+				});
+				return false;
+			},
+		},
+	);
+	rows.sort((a, b) => a.gid - b.gid);
+	seasonGamesKept = { key, rows };
+	return rows;
+};
+const teamNav = async (gid: number) => {
+	const game = gid >= 0 ? await idb.merged.games.get(gid) : undefined;
+	if (!game) {
+		return undefined;
+	}
+	const rows = await seasonGames(game.season);
+	const nav: Record<number, { prev?: number; next?: number }> = {};
+	for (const { tid } of game.teams as { tid: number }[]) {
+		if (tid < 0) {
+			continue;
+		}
+		let prev: number | undefined;
+		let next: number | undefined;
+		for (const { gid, teams } of rows) {
+			if (teams[0].tid !== tid && teams[1].tid !== tid) {
+				continue;
+			}
+			if (gid < game.gid) {
+				prev = gid;
+			} else if (gid > game.gid) {
+				next = gid;
+				break;
+			}
+		}
+		nav[tid] = { prev, next };
+	}
+	// (And the rest of that day's games - "all games this day".)
+	const day =
+		game.day === undefined ? [] : rows.filter((row) => row.day === game.day);
+	return { teamNav: nav, dayGames: day };
+};
+
+// (Again after games are played - a team's next game may have been.)
+const updateTeamNav = async ({
+	inputs: { gid },
+	updateEvents,
+	prevInputs,
+}: ViewArgs<typeof processInputs>) => {
+	if (
+		updateEvents.has("firstRun") ||
+		updateEvents.has("gameSim") ||
+		gid !== prevInputs?.gid
+	) {
+		try {
+			const got = await teamNav(gid);
+			return { teamNav: got?.teamNav, dayGames: got?.dayGames };
+		} catch {
+			return { teamNav: undefined, dayGames: undefined };
+		}
+	}
+};
+
 /**
  * Update the displayed box score, as necessary.
  *
@@ -518,6 +610,7 @@ export default defineView({
 				await updateTeamSeason(args.inputs),
 			),
 			await updateReactions(args),
+			await updateTeamNav(args),
 		);
 	},
 });

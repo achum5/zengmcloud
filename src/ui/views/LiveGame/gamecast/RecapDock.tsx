@@ -1,4 +1,5 @@
 import clsx from "clsx";
+import { ErrorBoundary } from "../../../components/ErrorBoundary.tsx";
 import {
 	useEffect,
 	useRef,
@@ -119,6 +120,31 @@ export const DOCK_ICONS = {
 			<path d="M10 11.5v3M7 17h6M8 14.5h4" />
 		</>,
 	),
+	schedule: svg(
+		<>
+			<rect x="3" y="4" width="14" height="13" rx="1.5" />
+			<path d="M3 8h14M7 2.5v3M13 2.5v3" />
+			<path d="M6.5 11.5h2M11.5 11.5h2M6.5 14.5h2" />
+		</>,
+	),
+	finances: svg(
+		<>
+			<circle cx="10" cy="10" r="7.5" />
+			<path d="M12.6 7.3c-.5-.9-1.5-1.4-2.6-1.4-1.5 0-2.6.8-2.6 2s1.1 1.7 2.6 2.1 2.6.9 2.6 2.1-1.1 2-2.6 2c-1.2 0-2.2-.5-2.7-1.4M10 4.5v11" />
+		</>,
+	),
+	picks: svg(
+		<>
+			<rect x="4" y="2.5" width="12" height="15" rx="1.5" />
+			<path d="M7 6.5h6M7 10h6M7 13.5h3.5" />
+		</>,
+	),
+	moves: svg(
+		<>
+			<path d="M3.5 7h12M12.5 4l3 3-3 3" />
+			<path d="M16.5 13h-12M7.5 10l-3 3 3 3" />
+		</>,
+	),
 	more: svg(
 		<>
 			<circle cx="4.5" cy="10" r="0.6" fill="currentColor" />
@@ -135,58 +161,76 @@ export const DOCK_ICONS = {
 	),
 };
 
-const band = (topPx: number) => {
-	if (topPx <= 0 || typeof window === "undefined") {
-		return "-35% 0px -55% 0px";
-	}
-	const vh = window.innerHeight;
-	const rest = Math.max(1, vh - topPx);
-	const top = topPx + 0.2 * rest;
-	const bottom = vh - (topPx + 0.35 * rest);
-	return `-${Math.round(top)}px 0px -${Math.round(Math.max(0, bottom))}px 0px`;
-};
-
-// The section in the middle band of the window, as you scroll - of the part
-// of it under anything pinned over the top (topPx: the live game's court).
+// THE SECTION YOU ARE IN, AS YOU SCROLL: the last one whose top has come up
+// past a line a little way down the window (under anything pinned over the
+// top - topPx, the live game's court) - at the foot of the page, the last one
+// in sight. Read once a frame while the page moves, so the menu keeps up with
+// it.
 export const useScrollSpy = (ids: string[], topPx = 0) => {
 	const [active, setActive] = useState(ids[0]);
-	// (A button tapped stays lit while the page scrolls to it - a short section
-	// would otherwise hand the light to the one after it.)
+	// (A button tapped stays lit while the page scrolls to it - the sections it
+	// passes on the way don't take it - until the page stops.)
 	const heldUntil = useRef(0);
 	const key = `${ids.join(",")}|${topPx}`;
 	useEffect(() => {
-		const els = ids
-			.map((id) => document.getElementById(`recap-${id}`))
-			.filter((el): el is HTMLElement => el !== null);
-		if (els.length === 0 || typeof IntersectionObserver === "undefined") {
+		if (typeof window === "undefined") {
 			return;
 		}
-		const seen = new Map<string, boolean>();
-		const observer = new IntersectionObserver(
-			(entries) => {
-				if (Date.now() < heldUntil.current) {
-					return;
+		let frame = 0;
+		const read = () => {
+			frame = 0;
+			if (Date.now() < heldUntil.current) {
+				return;
+			}
+			const vh = window.innerHeight;
+			const pinned =
+				Number.parseFloat(
+					getComputedStyle(document.documentElement).getPropertyValue(
+						"--teamb-h",
+					),
+				) || 0;
+			const top = Math.max(topPx, 60 + pinned);
+			const line = top + 0.3 * Math.max(0, vh - top);
+			const atFoot =
+				window.scrollY + vh >= document.documentElement.scrollHeight - 2;
+			let pick: string | undefined;
+			for (const id of ids) {
+				const el = document.getElementById(`recap-${id}`);
+				if (!el) {
+					continue;
 				}
-				for (const e of entries) {
-					seen.set(e.target.id.replace(/^recap-/, ""), e.isIntersecting);
+				const y = el.getBoundingClientRect().top;
+				if (y <= line || (atFoot && y < vh - 80)) {
+					pick = id;
 				}
-				const first = ids.find((id) => seen.get(id));
-				if (first) {
-					setActive(first);
-				}
-			},
-			{ rootMargin: band(topPx) },
-		);
-		for (const el of els) {
-			observer.observe(el);
-		}
+			}
+			setActive(pick ?? ids[0]);
+		};
+		const onScroll = () => {
+			if (frame === 0) {
+				frame = requestAnimationFrame(read);
+			}
+		};
+		// (A tap's hold let go once the page stops.)
+		const onScrollEnd = () => {
+			if (heldUntil.current > Date.now()) {
+				heldUntil.current = Date.now() + 120;
+			}
+		};
+		window.addEventListener("scroll", onScroll, { passive: true });
+		window.addEventListener("resize", onScroll);
+		window.addEventListener("scrollend", onScrollEnd);
+		read();
 		return () => {
-			observer.disconnect();
+			window.removeEventListener("scroll", onScroll);
+			window.removeEventListener("resize", onScroll);
+			window.removeEventListener("scrollend", onScrollEnd);
+			cancelAnimationFrame(frame);
 		};
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [key]);
 	const choose = (id: string) => {
-		heldUntil.current = Date.now() + 1500;
+		heldUntil.current = Date.now() + 2500;
 		setActive(id);
 	};
 	return [active, choose] as const;
@@ -316,7 +360,8 @@ const LazySection = ({
 					{section.title ?? section.label}
 				</h2>
 			)}
-			{shown ? section.body : null}
+			{/* (A section that fails says so, in its place - the page goes on.) */}
+			{shown ? <ErrorBoundary local>{section.body}</ErrorBoundary> : null}
 		</section>
 	);
 };
@@ -334,6 +379,7 @@ export const RecapSections = ({
 	topPx?: number;
 }) => {
 	const [drawnTo, setDrawnTo] = useState(0);
+	const wrapRef = useRef<HTMLDivElement>(null);
 	const ids = sections.map((x) => x.id).join(",");
 	useEffect(() => {
 		const list = ids.split(",");
@@ -348,9 +394,25 @@ export const RecapSections = ({
 			// (Two frames: the sections above it drawn and laid out.)
 			requestAnimationFrame(() => {
 				requestAnimationFrame(() => {
-					document
-						.getElementById(`recap-${id}`)
-						?.scrollIntoView({ behavior: "smooth", block: "start" });
+					const target = document.getElementById(`recap-${id}`);
+					target?.scrollIntoView({ behavior: "smooth", block: "start" });
+					// (Sections above it still loading - the team page's - grow,
+					// and push it down: for a moment after, follow it.)
+					const box = wrapRef.current;
+					if (!target || !box || typeof ResizeObserver === "undefined") {
+						return;
+					}
+					let grew = false;
+					const observer = new ResizeObserver(() => {
+						if (grew) {
+							target.scrollIntoView({ block: "start" });
+						}
+						grew = true;
+					});
+					observer.observe(box);
+					window.setTimeout(() => {
+						observer.disconnect();
+					}, 2500);
 				});
 			});
 		};
@@ -361,7 +423,7 @@ export const RecapSections = ({
 	}, [ids]);
 	return (
 		<>
-			<div className="recap-sections">
+			<div className="recap-sections" ref={wrapRef}>
 				{sections.map((x, i) => (
 					<LazySection key={x.id} section={x} force={i <= drawnTo} />
 				))}

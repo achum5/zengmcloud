@@ -15,6 +15,8 @@ import { getCols } from "../../../common/getCols.ts";
 import { useLocal } from "../../util/local.ts";
 import PlayingTime, { ptModifiers } from "./PlayingTime.tsx";
 import TopStuff from "./TopStuff.tsx";
+import { TeamHub } from "./TeamHub.tsx";
+import { TeamBannerInfo } from "./TeamBannerInfo.tsx";
 import DepthChart from "./DepthChart.tsx";
 import { ExtendModal, type ExtendTarget } from "./ExtendModal.tsx";
 import type {
@@ -138,7 +140,9 @@ const Roster = ({
 		showDepthChart,
 		teamInfoCache,
 		userTid,
+		refreshedLook,
 	} = useLocal([
+		"refreshedLook",
 		"challengeNoRatings",
 		"college",
 		"gender",
@@ -533,41 +537,45 @@ const Roster = ({
 		};
 	});
 
-	return (
-		<>
-			<MoreLinks type="team" page="roster" tid={tid} season={season} />
+	// (The record, payroll... alone in the team's banner, the refreshed look;
+	// the rest of it over the roster.)
+	const topStuffProps = {
+		capStatus,
+		collegeInfo,
+		conf,
+		currentSeason,
+		depthChart:
+			__SPORT === "basketball" && showDepthChart ? (
+				<DepthChart
+					numPlayersOnCourt={numPlayersOnCourt}
+					players={playersSorted}
+					season={season}
+					showRatings={!challengeNoRatings}
+				/>
+			) : null,
+		editable,
+		luxuryTaxAmount,
+		minPayrollAmount,
+		moreInfo,
+		openRosterSpots: maxRosterSize - players.length,
+		players,
+		playoffsByConf,
+		season,
+		payroll,
+		profit,
+		showTradeFor: showTradeFor2,
+		showTradingBlock: showTradingBlock2,
+		t,
+		teamOvr,
+		tid,
+		usePts,
+	};
 
+	const rosterBody = (
+		<>
 			<TopStuff
-				capStatus={capStatus}
-				collegeInfo={collegeInfo}
-				conf={conf}
-				currentSeason={currentSeason}
-				depthChart={
-					__SPORT === "basketball" && showDepthChart ? (
-						<DepthChart
-							numPlayersOnCourt={numPlayersOnCourt}
-							players={playersSorted}
-							season={season}
-							showRatings={!challengeNoRatings}
-						/>
-					) : null
-				}
-				editable={editable}
-				luxuryTaxAmount={luxuryTaxAmount}
-				minPayrollAmount={minPayrollAmount}
-				moreInfo={moreInfo}
-				openRosterSpots={maxRosterSize - players.length}
-				players={players}
-				playoffsByConf={playoffsByConf}
-				season={season}
-				payroll={payroll}
-				profit={profit}
-				showTradeFor={showTradeFor2}
-				showTradingBlock={showTradingBlock2}
-				t={t}
-				teamOvr={teamOvr}
-				tid={tid}
-				usePts={usePts}
+				{...topStuffProps}
+				part={refreshedLook && teamInfoCache[tid] ? "rest" : undefined}
 			/>
 
 			<ExtendModal close={closeExtend} target={extendTarget} />
@@ -722,6 +730,52 @@ const Roster = ({
 					</div>
 				</div>
 			) : null}
+		</>
+	);
+
+	// (The refreshed look: the team's pages as one long page, any season - its
+	// record, payroll... in its banner.)
+	const teamInfo = teamInfoCache[tid];
+	const hub = refreshedLook && teamInfo !== undefined;
+	return (
+		<>
+			<MoreLinks
+				type="team"
+				page="roster"
+				tid={tid}
+				season={season}
+				info={
+					hub ? (
+						<TeamBannerInfo
+							conf={conf}
+							currentSeason={currentSeason}
+							payroll={payroll}
+							playoffsByConf={playoffsByConf}
+							profit={profit}
+							season={season}
+							t={t}
+							teamOvr={teamOvr}
+							usePts={usePts}
+						/>
+					) : undefined
+				}
+				pinnedSub={
+					hub && t.seasonAttrs
+						? `${season} · ${helpers.formatRecord(t.seasonAttrs)}`
+						: undefined
+				}
+			/>
+			{hub ? (
+				<TeamHub
+					abbrev={teamInfo.abbrev}
+					tid={tid}
+					season={season}
+					currentSeason={currentSeason}
+					roster={rosterBody}
+				/>
+			) : (
+				rosterBody
+			)}
 		</>
 	);
 };

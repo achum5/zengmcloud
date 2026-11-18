@@ -1,5 +1,5 @@
 import { last } from "../../../common/utils.ts";
-import { Fragment, useState } from "react";
+import { Fragment, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { WatchBlock } from "../../components/WatchBlock.tsx";
 import { ContractAmount } from "../../components/contract.tsx";
@@ -28,7 +28,6 @@ import { SkillsBlock } from "../../components/SkillsBlock.tsx";
 import { Mood } from "../../components/Mood.tsx";
 import { PlayerPicture } from "../../components/PlayerPicture.tsx";
 import { PageBanner, PinnedBar } from "../../components/TeamBanner.tsx";
-import { TeamLogoInline } from "../../components/TeamLogoInline.tsx";
 import { JerseyNumber } from "../../components/JerseyNumber.tsx";
 import { Height } from "../../components/Height.tsx";
 import { Weight } from "../../components/Weight.tsx";
@@ -699,11 +698,53 @@ const TopStuff = ({
 			{statusInfo}
 		</>
 	);
+	// (A phone: his face as tall as the column by it - no empty corner under
+	// it, however many lines he has.)
+	const bannerRef = useRef<HTMLDivElement>(null);
+	useLayoutEffect(() => {
+		const el = bannerRef.current;
+		const words = el?.querySelector<HTMLElement>(".tb-words");
+		if (!el || !words || typeof ResizeObserver === "undefined") {
+			return;
+		}
+		const side = el.querySelector<HTMLElement>(".tb-side");
+		const phone = window.matchMedia("(max-width: 575.98px)");
+		const fit = () => {
+			if (!phone.matches) {
+				el.style.removeProperty("--pb-face-h");
+				return;
+			}
+			// (From the top of its column - its dropdowns, over his name.)
+			const top = (
+				el.querySelector<HTMLElement>(".tb-menus") ?? words
+			).getBoundingClientRect().top;
+			const bottom = (side ?? words).getBoundingClientRect().bottom;
+			// (No taller than leaves his lines room by it.)
+			const h = Math.round(Math.min(186, Math.max(140, bottom - top)));
+			const now =
+				Number.parseFloat(el.style.getPropertyValue("--pb-face-h")) || 0;
+			if (Math.abs(h - now) > 3) {
+				el.style.setProperty("--pb-face-h", `${h}px`);
+			}
+		};
+		const observer = new ResizeObserver(fit);
+		observer.observe(words);
+		if (side) {
+			observer.observe(side);
+		}
+		phone.addEventListener("change", fit);
+		fit();
+		return () => {
+			observer.disconnect();
+			phone.removeEventListener("change", fit);
+		};
+	}, [bannered]);
 	const nameWords = (player.name as string).trim().split(/\s+/);
 	const teamInfo = player.tid >= 0 ? teamInfoCache[player.tid] : undefined;
 	const banner = bannered ? (
 		<PageBanner
 			className="pb"
+			bannerRef={bannerRef}
 			t={{
 				tid: player.tid,
 				abbrev: teamInfo?.abbrev ?? "",
@@ -721,7 +762,6 @@ const TopStuff = ({
 			}
 			title={nameWords.length > 1 ? nameWords.slice(1).join(" ") : nameWords[0]}
 			picture={<div className="pb-picture">{pictureColumn}</div>}
-			heading={<h1>{player.name}</h1>}
 			sub={<span className="pb-team">{posLine}</span>}
 		>
 			{bioLines}
@@ -949,21 +989,25 @@ export default TopStuff;
 export const PlayerPinnedBar = ({
 	player,
 	teamColors,
+	teamJersey,
 }: {
 	player: any;
 	teamColors: string[] | undefined;
+	teamJersey?: string;
 }) => {
 	const { teamInfoCache } = useLocal(["teamInfoCache"]);
 	const teamInfo = player.tid >= 0 ? teamInfoCache[player.tid] : undefined;
 	return (
 		<PinnedBar watch=".pb" colors={teamColors}>
-			{teamInfo ? (
-				<TeamLogoInline
-					imgURL={teamInfo.imgURL}
-					imgURLSmall={teamInfo.imgURLSmall}
-					size={26}
+			{/* (His face, his head and shoulders standing on the foot of it.) */}
+			<span className="pin-bar-face">
+				<PlayerPicture
+					face={player.face}
+					imgURL={player.imgURL}
+					colors={teamColors as [string, string, string] | undefined}
+					jersey={teamJersey}
 				/>
-			) : null}
+			</span>
 			<span className="pin-bar-name">{player.name}</span>
 			<span className="pin-bar-sub">
 				{player.ratings.at(-1)?.pos}

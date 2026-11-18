@@ -11,7 +11,7 @@ import {
 import { contrast } from "../../common/stockCourts.ts";
 import { TeamLogoInline } from "./TeamLogoInline.tsx";
 import { TitleMenus } from "./Controller/TitleBar.tsx";
-import { TeamNameDropdown } from "./Dropdown.tsx";
+import { SeasonInline, TeamNameDropdown } from "./Dropdown.tsx";
 import { local, localActions, useLocal } from "../util/local.ts";
 import { toWorker } from "../util/toWorker.ts";
 
@@ -136,11 +136,12 @@ export const MatchupBanner = ({
 	subs,
 	won,
 	extra,
-	leaders,
+	navs,
 	className,
 }: {
-	// Each side's top man (the box score: its top scorer).
-	leaders?: [ReactNode, ReactNode];
+	// Each side's arrows to its games before and after (the game's banner),
+	// in place of the stripes at its foot.
+	navs?: [ReactNode, ReactNode];
 	// Under the tag and the status, in the middle (the score by quarter).
 	extra?: ReactNode;
 	// Left, right.
@@ -194,9 +195,6 @@ export const MatchupBanner = ({
 								)}
 							</div>
 							{subs?.[i] ? <div className="tb-sub">{subs[i]}</div> : null}
-							{leaders?.[i] ? (
-								<div className="mb-leader mb-leader-side">{leaders[i]}</div>
-							) : null}
 						</div>
 					</div>
 					{numbers ? (
@@ -209,16 +207,14 @@ export const MatchupBanner = ({
 							{under?.[i] ? <div className="mb-under">{under[i]}</div> : null}
 						</div>
 					) : null}
-					<Stripes className="tb-stripes-bottom" />
+					{navs?.[i] ? (
+						<div className="mb-nav">{navs[i]}</div>
+					) : (
+						<Stripes className="tb-stripes-bottom" />
+					)}
 				</div>
 			);
 		})}
-		{leaders ? (
-			<div className="mb-leaders">
-				<div className="mb-leader">{leaders[0]}</div>
-				<div className="mb-leader">{leaders[1]}</div>
-			</div>
-		) : null}
 		{tag || status || extra ? (
 			<div className="mb-middle">
 				{tag ? <div className="mb-tag">{tag}</div> : null}
@@ -297,10 +293,12 @@ export const useHideTitleBar = (active = true) => {
 
 export const PageBanner = ({
 	teamName,
+	skipMoreInfo,
 	...props
 }: Omit<ComponentProps<typeof TeamBanner>, "menus"> & {
 	// The team's name the page's team dropdown (a team's pages).
 	teamName?: boolean;
+	skipMoreInfo?: boolean;
 }) => {
 	useHideTitleBar();
 	const { dropdown } = useLocal(["dropdown"]);
@@ -309,14 +307,24 @@ export const PageBanner = ({
 			{...props}
 			title={
 				teamName ? (
-					<TeamNameDropdown dropdown={dropdown}>
-						{props.title ?? props.t.name}
-					</TeamNameDropdown>
+					// (The season by it - "2024 Boston Celtics" - each its own
+					// dropdown.)
+					<span className="tb-title-row">
+						<SeasonInline dropdown={dropdown} />
+						<TeamNameDropdown dropdown={dropdown}>
+							{props.title ?? (
+								<>
+									<span className="tb-region">{props.t.region} </span>
+									{props.t.name}
+								</>
+							)}
+						</TeamNameDropdown>
+					</span>
 				) : (
 					props.title
 				)
 			}
-			menus={<TitleMenus skipTeams={teamName} />}
+			menus={<TitleMenus skipTeams={teamName} skipMoreInfo={skipMoreInfo} />}
 		/>
 	);
 };
