@@ -6329,6 +6329,11 @@ body:has(.league-ticker) .recap-dock-wrap {
 	}
 }
 
+// (A team's banner: no stripes - they sat on its pages' tabs.)
+.teamb .tb-stripes {
+	display: none;
+}
+
 // A team's banner pinned under the top bar as the page scrolls (see
 // usePinnedBanner in MoreLinks): on a wider screen only its pages show, the
 // rest tucked up under the bar.

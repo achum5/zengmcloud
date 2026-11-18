@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 350,
+		date: "2026-11-18",
+		text: "New look (Look: Refreshed): the team header on team pages loses the little stripes that sat on its tabs.",
+	},
+	{
 		n: 349,
 		date: "2026-11-18",
 		text: "New look (Look: Refreshed): a box score's header now shows each team's top scorer, and on the game log the season picker sits next to the team's name, sized like the buttons by it. The team's strip is in its colors again where it had come up gray.",
