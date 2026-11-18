@@ -19,7 +19,7 @@ import { getTeamMov } from "../../components/MovOrDiff.tsx";
 
 const fontSizeLarger = { fontSize: "larger" };
 
-const TeamRating = ({
+export const TeamRating = ({
 	ovr,
 	ovrCurrent,
 }: {
@@ -61,7 +61,7 @@ const TeamRating = ({
 	);
 };
 
-const PayrollAndPenalties = ({
+export const PayrollAndPenalties = ({
 	isCurrentSeason,
 	luxuryPayroll,
 	luxuryTaxAmount,
@@ -437,7 +437,7 @@ const TopStuff = ({
 									</button>
 								) : null}
 							</div>
-							{showTradingBlock ? (
+							{showTradingBlock && part !== "rest" ? (
 								<div>
 									<PlayThroughInjurySliders key={tid} t={t} />
 								</div>
@@ -451,26 +451,36 @@ const TopStuff = ({
 				keepRosterSorted={t.keepRosterSorted}
 				editable={editable}
 				tid={tid}
+				// (The refreshed look: all on one row, Play Through Injuries too.)
+				oneRow={part === "rest"}
+				extra={
+					part === "rest" && showTradingBlock ? (
+						<PlayThroughInjurySliders key={tid} t={t} />
+					) : undefined
+				}
 			/>
 
-			<div className="mb-3">
-				<Note
-					key={JSON.stringify([tid, season])}
-					note={t.seasonAttrs.note}
-					info={{
-						type: "teamSeason",
-						tid,
-						season,
-					}}
-					autoLink={buildTeamSeasonRecapLinks({
-						season,
-						players,
-						teamInfoCache,
-					})}
-				/>
-			</div>
+			{/* (The refreshed look: a note only if there is one.) */}
+			{part === "rest" && !t.seasonAttrs.note ? null : (
+				<div className="mb-3">
+					<Note
+						key={JSON.stringify([tid, season])}
+						note={t.seasonAttrs.note}
+						info={{
+							type: "teamSeason",
+							tid,
+							season,
+						}}
+						autoLink={buildTeamSeasonRecapLinks({
+							season,
+							players,
+							teamInfoCache,
+						})}
+					/>
+				</div>
+			)}
 
-			{editable ? (
+			{editable && part === "rest" ? null : editable ? (
 				<div className="mb-3">
 					Click or drag row handles to move players between the starting lineup{" "}
 					<span className="table-info legend-square" /> and the bench{" "}

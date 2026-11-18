@@ -698,15 +698,25 @@ const TopStuff = ({
 			{statusInfo}
 		</>
 	);
-	// (A phone: his face as tall as the column by it - no empty corner under
-	// it, however many lines he has.)
+	// (A phone: his face as tall as the column by it, top to foot - his
+	// shoulders cut off at its sides, so his lines keep their room. And his
+	// last name as big as fits by it.)
 	const bannerRef = useRef<HTMLDivElement>(null);
+	const lastName = (player.name as string)
+		.trim()
+		.split(/\s+/)
+		.slice(1)
+		.join(" ");
 	useLayoutEffect(() => {
 		const el = bannerRef.current;
 		const words = el?.querySelector<HTMLElement>(".tb-words");
 		if (!el || !words || typeof ResizeObserver === "undefined") {
 			return;
 		}
+		el.style.setProperty(
+			"--pb-last-len",
+			String(Math.max(4, (lastName || (player.name as string)).length)),
+		);
 		const side = el.querySelector<HTMLElement>(".tb-side");
 		const phone = window.matchMedia("(max-width: 575.98px)");
 		const fit = () => {
@@ -719,8 +729,7 @@ const TopStuff = ({
 				el.querySelector<HTMLElement>(".tb-menus") ?? words
 			).getBoundingClientRect().top;
 			const bottom = (side ?? words).getBoundingClientRect().bottom;
-			// (No taller than leaves his lines room by it.)
-			const h = Math.round(Math.min(186, Math.max(140, bottom - top)));
+			const h = Math.round(Math.min(330, Math.max(150, bottom - top)));
 			const now =
 				Number.parseFloat(el.style.getPropertyValue("--pb-face-h")) || 0;
 			if (Math.abs(h - now) > 3) {
@@ -738,7 +747,7 @@ const TopStuff = ({
 			observer.disconnect();
 			phone.removeEventListener("change", fit);
 		};
-	}, [bannered]);
+	}, [bannered, lastName, player.name]);
 	const nameWords = (player.name as string).trim().split(/\s+/);
 	const teamInfo = player.tid >= 0 ? teamInfoCache[player.tid] : undefined;
 	const banner = bannered ? (

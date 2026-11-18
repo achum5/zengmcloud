@@ -6754,9 +6754,37 @@ a.rsb-half {
 	font-size: 1rem;
 	opacity: 0.92;
 }
-.tbi-record {
+.tbi-record > span > a:first-child {
 	font-weight: 800;
-	opacity: 1;
+}
+// (Its links and buttons - the record, the bracket, the rating, the payroll,
+// the cap status - in its own white, underlined as links.)
+.teamb-big .tbi {
+	a,
+	.btn-link {
+		color: inherit !important;
+		text-decoration: underline;
+		text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
+		text-underline-offset: 0.15em;
+	}
+	.text-danger,
+	.text-success {
+		color: inherit !important;
+	}
+}
+.tbi-value .btn {
+	font-size: inherit;
+	font-weight: inherit;
+	line-height: inherit;
+	vertical-align: baseline;
+}
+.tbi-note {
+	display: block;
+	font-size: 0.7rem;
+	font-weight: 600;
+	line-height: 1.2;
+	opacity: 0.85;
+	white-space: nowrap;
 }
 .tbi-dot {
 	opacity: 0.6;
@@ -6764,7 +6792,8 @@ a.rsb-half {
 .tbi-stats {
 	grid-area: stats;
 	display: flex;
-	gap: 2.25rem;
+	flex-wrap: wrap;
+	gap: 0.5rem 2.25rem;
 	margin-top: 0.7rem;
 	padding-top: 0.55rem;
 	border-top: 1px solid color-mix(in srgb, currentColor 25%, transparent);
@@ -6812,12 +6841,11 @@ a.rsb-half {
 		margin-top: 0.05rem;
 		font-size: 0.85rem;
 	}
-	// (Its numbers sharing the width, all in view.)
+	// (Its numbers four to a row, sharing the width.)
 	.tbi-stats {
 		display: grid;
-		grid-auto-columns: minmax(0, 1fr);
-		grid-auto-flow: column;
-		gap: 0.25rem;
+		grid-template-columns: repeat(4, minmax(0, 1fr));
+		gap: 0.45rem 0.25rem;
 		margin-top: 0.5rem;
 		padding-top: 0.45rem;
 	}
@@ -7181,8 +7209,24 @@ a.rsb-half {
 				height: 5.25rem !important;
 			}
 		}
+		// (His face the column's height, its box no wider than this - his
+		// shoulders cut off either side.)
 		.tb-picture {
-			margin-left: 1.6rem;
+			display: flex;
+			justify-content: center;
+			align-items: flex-end;
+			align-self: stretch;
+			width: 8.25rem;
+			margin-left: 1rem;
+			overflow: hidden;
+			.pb-picture {
+				display: flex;
+				justify-content: center;
+				width: 100%;
+			}
+			.player-picture {
+				flex: 0 0 auto;
+			}
 		}
 		.tb-kicker,
 		.tb-title {
@@ -7203,8 +7247,9 @@ a.rsb-half {
 			letter-spacing: 0.18em;
 		}
 		.tb-title {
-			font-size: 1.85rem;
-			line-height: 1;
+			// (As big as his last name fits: a short one big.)
+			font-size: min(2.4rem, calc(22rem / var(--pb-last-len, 8)));
+			line-height: 1.05;
 			margin: 0.05rem 0 0.25rem;
 			overflow-wrap: anywhere;
 		}
@@ -7241,5 +7286,18 @@ a.rsb-half {
 		text-decoration: underline;
 		text-decoration-color: rgba(255, 255, 255, 0.45);
 		text-underline-offset: 0.15em;
+	}
+}
+
+// The roster's buttons, "Keep auto sorted" and Play Through Injuries on one
+// row (the refreshed look) - the injuries' sliders, opened, on a row of their
+// own under them.
+.roster-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.5rem 1rem;
+	.play-through-injuries:has(form) {
+		flex-basis: 100%;
 	}
 }

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 357,
+		date: "2026-11-18",
+		text: "New look (Look: Refreshed): a team's header has everything the classic team page had - rating (tap for healthy), MOV, age, payroll (tap for any penalty) with its cap status, salary cap, hard cap and profit, with the record and playoffs linked as before. Auto sort, reset playing time, keep auto sorted and Play Through Injuries share a row. The player header's face fills it, with a bigger last name.",
+	},
+	{
 		n: 356,
 		date: "2026-11-18",
 		text: "New look (Look: Refreshed): a team's page is one long page - its roster, every game of the season as a tile (tap one for its box score; pick any year by the team's name), finances, picks and transactions - with its record and key numbers in its header. A box score is its own page, with each team's previous and next game arrows, the replay by FINAL, all of that day's games, and a table for each team. The player header is laid out like HoopsJunkie's, and the menu at the bottom now follows your scrolling.",

@@ -747,14 +747,19 @@ const Roster = ({
 				info={
 					hub ? (
 						<TeamBannerInfo
+							capStatus={capStatus}
+							collegeInfo={collegeInfo}
 							conf={conf}
 							currentSeason={currentSeason}
+							luxuryTaxAmount={luxuryTaxAmount}
+							minPayrollAmount={minPayrollAmount}
 							payroll={payroll}
 							playoffsByConf={playoffsByConf}
 							profit={profit}
 							season={season}
 							t={t}
 							teamOvr={teamOvr}
+							tid={tid}
 							usePts={usePts}
 						/>
 					) : undefined
