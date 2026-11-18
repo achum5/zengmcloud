@@ -117,7 +117,7 @@ export const Rotations = ({
 					<tr key={p.pid}>
 						<th className="bsp-name">
 							<a href={helpers.leagueUrl(["player", p.pid])}>
-								<Headshot pid={p.pid} season={boxScore.season} size={20} />
+								<Headshot pid={p.pid} season={boxScore.season} size={24} />
 								<span className="bsp-pname">{shortName(p.name)}</span>
 							</a>
 						</th>

@@ -3,6 +3,7 @@ import { helpers } from "../../../util/helpers.ts";
 import { safeLocalStorage } from "../../../util/safeLocalStorage.ts";
 import { TeamLogoInline } from "../../../components/TeamLogoInline.tsx";
 import { teamsInDisplayOrder } from "../../../util/boxScoreDisplayOrder.ts";
+import { RatingsStatsPopover } from "../../../components/RatingsStatsPopover/index.tsx";
 import { Headshot, Switch } from "./Gamecast.tsx";
 
 // THE BOX SCORE ON A PHONE (the refreshed look): a team at a time, its name
@@ -281,15 +282,19 @@ const shortName = (name: string) => {
 		: name;
 };
 
+// His face (bare, no circle behind it), his name to his page, and BBGM's
+// ratings and stats button by it.
 const PlayerCell = ({ p, season }: { p: Line; season: number }) => (
 	<th className="bsp-name">
-		<a href={helpers.leagueUrl(["player", p.pid])}>
-			<Headshot pid={p.pid} season={season} size={20} />
-			<span className="bsp-pname">{shortName(p.name)}</span>
-			{p.jerseyNumber ? (
-				<span className="bsp-num">#{p.jerseyNumber}</span>
-			) : null}
-		</a>
+		<div className="bsp-name-in">
+			<a href={helpers.leagueUrl(["player", p.pid])}>
+				<Headshot pid={p.pid} season={season} size={24} />
+				<span className="bsp-pname">{shortName(p.name)}</span>
+			</a>
+			<span className="bsp-pop">
+				<RatingsStatsPopover pid={p.pid} season={season} />
+			</span>
+		</div>
 	</th>
 );
 

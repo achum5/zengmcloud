@@ -5939,6 +5939,26 @@ body:has(.league-ticker) .recap-dock-wrap {
 	align-items: center;
 	gap: 0.35rem;
 }
+// (The name to his page, the ratings and stats button by it; his face bare
+// - no circle behind it - as BBGM's own tables show faces.)
+.bsp-name-in {
+	display: flex;
+	align-items: center;
+	gap: 0.2rem;
+	min-width: 0;
+	> a {
+		min-width: 0;
+		flex: 0 1 auto;
+	}
+}
+.bsp-pop {
+	flex: 0 0 auto;
+	line-height: 1;
+}
+.bsp-name .gamecast-headshot {
+	border-radius: 0;
+	background: none;
+}
 .bsp-pname {
 	overflow: hidden;
 	text-overflow: ellipsis;
