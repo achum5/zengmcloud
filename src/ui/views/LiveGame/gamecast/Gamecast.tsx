@@ -1580,6 +1580,8 @@ export const LiveGamecast = ({
 				id: "live",
 				label: "Live",
 				icon: DOCK_ICONS.live,
+				// (To the very top: the court, the score and all.)
+				toTop: true,
 				// (Its parts have their own headings.)
 				title: null,
 				body: (

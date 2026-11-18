@@ -16,6 +16,9 @@ export type DockSection = {
 	id: string;
 	label: string;
 	icon: ReactNode;
+	// Its button to the very top of the window, not to the section (the live
+	// game's Live: the court and all over it).
+	toTop?: boolean;
 };
 
 const svg = (children: ReactNode) => (
@@ -271,7 +274,11 @@ export const RecapDock = ({
 						className={clsx({ active: active === s.id })}
 						onClick={() => {
 							setActive(s.id);
-							jumpToSection(s.id);
+							if (s.toTop) {
+								window.scrollTo({ top: 0, behavior: "smooth" });
+							} else {
+								jumpToSection(s.id);
+							}
 						}}
 					>
 						{s.icon}
