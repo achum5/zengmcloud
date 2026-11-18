@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 367,
+		date: "2026-11-18",
+		text: "Live games: a player who's hot gets hyped. Make three shots in a row and he pumps his fist; keep the streak going and he lets out a roar. An and-one dunk gets a roar too.",
+	},
+	{
 		n: 366,
 		date: "2026-11-18",
 		text: "Smart CPU: when a CPU team trades for a player, it now offers what the selling team actually values, like young players and picks other teams would pay for, instead of filler. And a team taking on salary so another team can sign a free agent now wants to be paid for its cap room.",

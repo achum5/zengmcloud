@@ -1087,6 +1087,9 @@ const PASSER_POINTS = 0.4;
 const BEATEN_HEAD = 0.12;
 // (And as long letting it out with an arm, on his way back after a basket.)
 const CHEER_MS = 1000;
+// Makes in a row that have a man letting it out every time (see
+// makesInARow).
+const HOT_RUN = 3;
 // Fouled on his shot (see drewTheFoul): how often the man fouled claps it
 // (at the rim or in the post, from mid-range, off a three), and, at the rim,
 // has a word with the official instead; how often the man who fouled him
@@ -2920,6 +2923,9 @@ class Director {
 	private readonly pos = new Map<number, Pt>();
 	private readonly face = new Map<number, 1 | -1>();
 	private readonly free = new Map<number, number>();
+	// Each man's run of field goals made in a row this game (a miss or a block
+	// ends it) - a man on a run lets it out.
+	private readonly makesInARow = new Map<number, number>();
 	private readonly team = new Map<number, Side>();
 	private readonly rank = new Map<number, number>();
 	private readonly skills = new Map<number, string[]>();
@@ -18737,6 +18743,9 @@ class Director {
 	) {
 		const team = shot.team;
 		const rim = rimPt(team);
+		// (His run of makes: one more, or over.)
+		const run = kind === "make" ? (this.makesInARow.get(shot.pid) ?? 0) + 1 : 0;
+		this.makesInARow.set(shot.pid, run);
 		// Played out at the rim: every time it hit the iron or the glass on
 		// the way to deciding, the basket shakes with it.
 		const play = shot.dunk ? undefined : shot.rim;
@@ -18912,6 +18921,8 @@ class Director {
 				after === "gameOver";
 			let cheered = 0;
 			let thanked = false;
+			// (Whether he let it out at all, below - a man on a run always does.)
+			let showed = false;
 			if (!shot.dunk && !andOne && assist !== undefined && this.rng() < 0.55) {
 				// A finger at the man who found him - turned to him, easy about
 				// it (or on his way, below).
@@ -18925,10 +18936,15 @@ class Director {
 				// pound of the chest, for a man whose thing that is, more
 				// often than not.)
 				const own = this.bigFinish(shot.pid, at);
+				// (A dunk through the foul: a roar, the whole of him, his own
+				// way of it - or a pound of the chest, a man whose thing that is.)
+				const roll = shot.dunk ? this.rng() : 1;
 				const cel: AnimName = shot.dunk
-					? this.rng() < 0.5
-						? (own ?? "flex")
-						: (own ?? "celebrate")
+					? andOne
+						? (own ?? "roar")
+						: roll < 0.5
+							? (own ?? "flex")
+							: (own ?? "celebrate")
 					: andOne
 						? (own ?? "flex")
 						: shot.zone === "three"
@@ -18946,6 +18962,7 @@ class Director {
 								.map((p) => ({ p, d: dist(this.posOf(p), S) }))
 								.sort((a, b) => a.d - b.d)[0]
 						: undefined;
+				showed = true;
 				if (mate && mate.d < 16) {
 					this.chestBump(shot.pid, mate.p, free + 80);
 				} else if (dead) {
@@ -18966,6 +18983,7 @@ class Director {
 			) {
 				// Crunch time, and the star has just made one of his own: he
 				// lets it out - his own way of it, or a flex.
+				showed = true;
 				const own = this.bigFinish(shot.pid, at) ?? "flex";
 				if (dead) {
 					this.act(shot.pid, own, free + 100, free + 900, {
@@ -18973,6 +18991,24 @@ class Director {
 					});
 				} else {
 					cheered = this.cheer(shot.pid, own, free + 100, team);
+				}
+			}
+			// ON A RUN - his third make in a row, and on: whatever else, he lets
+			// it out. A fist pump on the third; after that a roar, all of him (a
+			// flex of both arms, on his way back with play on).
+			if (run >= HOT_RUN && !showed && !thanked) {
+				const hype: AnimName = run === HOT_RUN ? "fistPump" : "roar";
+				if (dead) {
+					this.act(shot.pid, hype, free + 100, free + 900, {
+						face: -dir as 1 | -1,
+					});
+				} else {
+					cheered = this.cheer(
+						shot.pid,
+						hype === "roar" ? "flex" : hype,
+						free + 100,
+						team,
+					);
 				}
 			}
 			// Off an assist, whatever else: a finger at the man who found him on
