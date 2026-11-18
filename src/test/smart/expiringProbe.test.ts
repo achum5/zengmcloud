@@ -75,9 +75,19 @@ test.skipIf(!env.EX_LEAGUE)(
 				.map((t) => ({ t, bid: view.bidNow(t, a) }))
 				.sort((x, y) => y.bid - x.bid);
 			const top = bids[0];
+			// The market's best real offer for him, as a moment would ask.
+			let offer = "";
+			if (stay !== undefined && stay < 0.6) {
+				const real = await view.bestRealOffer(p.tid, a, -1);
+				offer = real
+					? ` || best offer ${abbrev.get(real.buyer)}: [${[...real.offer.players.map((x: any) => `${x.firstName} ${x.lastName} ${x.ratings.at(-1).ovr}`), ...real.offer.picks.map((dp: any) => `${dp.season} R${dp.round}`)].join("; ")}] worth ${real.worth.toFixed(4)} to the seller`
+					: " || no real offer";
+			}
 			log(
-				`${p.firstName} ${p.lastName} ${season - p.born.year}y ${p.ratings.at(-1).ovr} $${(contractOf(p).amount / 1000).toFixed(1)}M, ${abbrev.get(p.tid)} (${(100 * title(p.tid)).toFixed(1)}%) traits ${(p.moodTraits ?? []).join("")}: stay ${stay?.toFixed(2)}, use ${use.toFixed(4)}, price ${price.toFixed(4)}, top bid ${top ? `${abbrev.get(top.t)} ${top.bid.toFixed(4)}` : "-"} => surplus ${top ? (top.bid - Math.max(use, price)).toFixed(4) : "-"} | bids ${bids.map((b) => `${abbrev.get(b.t)} ${Number.isFinite(b.bid) ? b.bid.toFixed(3) : "no"}`).join(", ")}`,
+				`${p.firstName} ${p.lastName} ${season - p.born.year}y ${p.ratings.at(-1).ovr} $${(contractOf(p).amount / 1000).toFixed(1)}M, ${abbrev.get(p.tid)} (${(100 * title(p.tid)).toFixed(1)}%) traits ${(p.moodTraits ?? []).join("")}: stay ${stay?.toFixed(2)}, use ${use.toFixed(4)}, price ${price.toFixed(4)}, top bid ${top ? `${abbrev.get(top.t)} ${top.bid.toFixed(4)}` : "-"} => surplus ${top ? (top.bid - Math.max(use, price)).toFixed(4) : "-"} | bids ${bids.map((b) => `${abbrev.get(b.t)} ${Number.isFinite(b.bid) ? b.bid.toFixed(3) : "no"}`).join(", ")}${offer}`,
 			);
 		}
+		const { offerStats } = await import("../../worker/core/smartCpu/worth.ts");
+		log(`offer stats: ${JSON.stringify(offerStats)}`);
 	},
 );

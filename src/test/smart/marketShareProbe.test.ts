@@ -37,9 +37,11 @@ test.skipIf(!env.MS_LEAGUE)(
 		}
 		const teams = await idb.cache.teams.getAll();
 		const abbrev = new Map(teams.map((t) => [t.tid, t.abbrev]));
+		const { contractOf } =
+			await import("../../worker/core/realisticFrontOffice/contractOf.ts");
 		const name = (x: any) =>
 			"pid" in x
-				? `${x.firstName} ${x.lastName} ${g.get("season") - x.born.year}y ${x.ratings.at(-1).ovr}/${x.ratings.at(-1).pot}`
+				? `${x.firstName} ${x.lastName} ${g.get("season") - x.born.year}y ${x.ratings.at(-1).ovr}/${x.ratings.at(-1).pot}${contractOf(x).exp <= g.get("season") ? " (expiring)" : ""}`
 				: `${x.season} R${x.round} ${abbrev.get(x.originalTid)}`;
 		smartDealWatchers.push((deal: any, view: any) => {
 			const s = deal.sellerGain;

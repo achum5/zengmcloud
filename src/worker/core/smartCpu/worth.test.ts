@@ -8,6 +8,7 @@ import {
 	advanceSeasons,
 	createArenaLeague,
 } from "../../../test/arena/runLeague.ts";
+import { contractOf } from "../realisticFrontOffice/contractOf.ts";
 import { buildOutlook } from "../realisticFrontOffice/outlook.ts";
 import isUntradable from "../trade/isUntradable.ts";
 import { SmartView } from "./worth.ts";
@@ -172,6 +173,9 @@ test(
 	},
 );
 
+// A star whose deal runs past this season: one whose deal ends with it is
+// worth his market price only as far as he stays (premiumNow), so selling
+// him for young players can be right.
 test(
 	"two lesser players don't buy a star because their prices add up",
 	{ timeout: 900_000 },
@@ -180,7 +184,7 @@ test(
 		for (const tid of tids) {
 			const [star] = await best(tid);
 			const ovr = star!.ratings.at(-1)!.ovr;
-			if (ovr < 62) {
+			if (ovr < 62 || contractOf(star!).exp <= g.get("season")) {
 				continue;
 			}
 			const buyer = other(tid);

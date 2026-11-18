@@ -1398,9 +1398,39 @@ against master:
 - A moment after the draft took 23.5 s against 20.6 s, for the prices of
   the pieces offered.
 
-**Next.**
+### A price only as far as the team can get it (2026-11-18)
 
-- Selling expiring players before they walk. On League 7's 2016 file,
-  most expiring players are read as likely to stay (0.83-1.00), as most
-  did. One who wasn't, Otto Porter Jr. (Fame; 0.08 to stay), was priced at
-  0.63 titles against 0.015 for his own team, and wasn't sold.
+**What was wrong.** In a deal, a team counts what it gives and gets at its
+use or the market's price, whichever is more (premiumNow). The price is
+the guard against selling below what another team would pay later. A
+player whose deal ends this season can't be sold later if he walks, but
+his price was counted whole. His team held out for a price no real offer
+reached, and lost him for nothing. On the leagues' files:
+
+- League 6: Cam Reddish (0.00 to stay) was priced at 0.25 titles against
+  0.004 to IND, and turned down four players. Mudiay (0.01) turned down
+  D'Angelo Russell (65).
+- League 7: Otto Porter Jr. (Fame; 0.25 to stay) was priced at 0.67
+  against 0.03 to PHO, and had no offer PHO would take.
+
+**What changed.**
+
+- A player whose deal ends this season counts above his use only as far
+  as he stays with the team. Players under contract past it, and picks,
+  are as before.
+- With it, Reddish's best offer is worth +0.040 to IND (was -0.090) and
+  Mudiay's +0.097 (was -0.033).
+- A full 2016 season of League 7: 8 deals against 2, four of them
+  expiring players sold (Hardaway Jr., Caldwell-Pope, Biyombo, Oladipo),
+  the sellers keeping 0.38-0.80 of the gain.
+- The worth rule "two lesser players don't buy a star" now holds for a
+  star whose deal runs past this season. A 29-year-old 67 with his deal
+  ending and 0.63 to stay, sold by a team with no use for him for a
+  21-year-old 56/72 and a 19-year-old 36/68, is what a rebuilding team
+  should do (Leagues 5-7: sell veterans, keep youth).
+
+**Next.** The same season had LAL selling Caldwell-Pope (23y 67/75) to
+the 71-11 LAC for two lesser players, gaining 0.21 titles by its own
+count. A team out of the race still counts players it gets at the
+contenders' price, whether or not it will ever sell them. That price
+arithmetic is the next core item.

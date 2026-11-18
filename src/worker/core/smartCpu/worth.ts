@@ -21,6 +21,7 @@ import {
 	finishWeights,
 	franchiseValue,
 	PATIENCE,
+	retentionKey,
 	teamStrengths,
 	type LeagueOutlook,
 	type LetGoDecisions,
@@ -1025,10 +1026,51 @@ export class SmartView {
 		const not = [tid, partner];
 		return (
 			dG +
-			Math.max(0, this.priceNow(keptIn, not) - this.useOfNow(tid, keptIn, h)) -
-			Math.max(0, this.priceNow(out, not) - this.useOfNow(tid, out, h)) -
+			this.premiumNow(tid, keptIn, not, h) -
+			this.premiumNow(tid, out, not, h) -
 			smartSettings.flipCost * flipsIn(tid, out.players, inn.players)
 		);
+	}
+
+	// What the market would pay for a package past its use to the team
+	// holding it - what it gives up selling below market, or gains buying
+	// below it - as far as the team can still get that price. A player whose
+	// deal ends this season can be sold only until it does, and after it
+	// only if he stays: his part counts as far as he stays with the team.
+	// Counted whole, a team losing a player for nothing held out for a price
+	// it could never get: in League 7, Otto Porter Jr. (0.25 to stay) was
+	// priced at 0.67 titles against 0.03 to PHO, and no offer was enough;
+	// in League 6, Cam Reddish (none) turned down four players for a price
+	// of 0.25 against 0.004, and Mudiay (0.01) D'Angelo Russell.
+	private premiumNow(
+		tid: number,
+		a: Holdings,
+		not: readonly number[],
+		h: Holdings,
+	) {
+		const over = (x: Holdings) =>
+			Math.max(0, this.priceNow(x, not) - this.useOfNow(tid, x, h));
+		const whole = over(a);
+		if (!(whole > 0)) {
+			return 0;
+		}
+		const season = g.get("season");
+		let premium = whole;
+		for (const p of a.players) {
+			if (contractOf(p).exp > season) {
+				continue;
+			}
+			const stay = this.outlook.retention.get(retentionKey(p.pid, tid));
+			if (stay === undefined || stay >= 1) {
+				continue;
+			}
+			const alone =
+				a.players.length === 1 && a.picks.length === 0
+					? whole
+					: over({ players: [p], picks: [] });
+			premium -= (1 - stay) * alone;
+		}
+		return Math.max(0, premium);
 	}
 
 	async dealWorth(tid: number, partner: number, out: Holdings, inn: Holdings) {
