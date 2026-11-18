@@ -138,6 +138,9 @@ export const roomToSign = (
 				continue;
 			}
 			const signed = signedOn(p, tid, { amount: c.amount, exp: c.exp });
+			// Its picks ranked by what they fetch (pickFloorNow), as a trade's
+			// are: the market's tables first.
+			await view.prime();
 			for (const players of salarySets(tradable, uses, need)) {
 				const sent = salaryOf(players);
 				// Cheapest picks first, as sweeteners if the taker wants them.

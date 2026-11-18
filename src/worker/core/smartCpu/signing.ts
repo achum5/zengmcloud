@@ -44,14 +44,17 @@ export const viewFor = (outlook: LeagueOutlook) => {
 };
 
 // Before a batch of signings is priced: every team read as it stands, and
-// these players' chances of staying with the teams that set prices.
+// these players' chances of staying with the teams that set prices. Not the
+// market's price tables (SmartView.prime): a signing is priced by the GM's
+// worth alone (smartSigningPrice), and the tables are worked out where a
+// trade is priced. Built here, they were half of free agency's time - again
+// each time a team that sets prices signed someone.
 export const prepareSignings = async (
 	outlook: LeagueOutlook,
 	players: readonly Player[],
 ) => {
 	await timed("signing prep", async () => {
 		const view = viewFor(outlook);
-		await view.prime();
 		for (const tid of await view.keenest()) {
 			await ensureRetention(outlook, players, tid);
 		}

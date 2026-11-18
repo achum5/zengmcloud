@@ -258,6 +258,12 @@ export class SmartView {
 				// What each draft's prospects fetch as rookies, best first
 				// (picksAsRookies), by draft.
 				classes?: Map<number, number[]>;
+				// The prospects the classes were priced from.
+				prospects?: string;
+				// Whose bids the prices are: the keenest teams, each with what
+				// it holds. A team's bid is its own worth, so the tables stand
+				// while the bidders do, whatever other teams sign or trade.
+				bidders: string;
 		  }
 		| undefined;
 
@@ -557,14 +563,17 @@ export class SmartView {
 		}
 		const sig = sigs.join("/");
 		if (this.keenestCache?.sig !== sig) {
-			this.keenestCache = {
-				sig,
-				tids: rows
-					.map(({ tid, h }) => ({ tid, v: this.value(tid, h) }))
-					.sort((a, b) => b.v - a.v)
-					.slice(0, smartSettings.keenest)
-					.map((r) => r.tid),
-			};
+			const tids = rows
+				.map(({ tid, h }) => ({ tid, v: this.value(tid, h) }))
+				.sort((a, b) => b.v - a.v)
+				.slice(0, smartSettings.keenest)
+				.map((r) => r.tid);
+			const bidders = tids
+				.map((tid) => `${tid}=${this.holdings.get(tid)!.sig}`)
+				.join("/");
+			const had = this.keenestCache;
+			this.keenestCache =
+				had?.bidders === bidders ? { ...had, sig } : { sig, tids, bidders };
 		}
 		return this.keenestCache.tids;
 	}
@@ -608,16 +617,22 @@ export class SmartView {
 		}
 		const tids = await this.keenest();
 		const keen = this.keenestCache!;
-		if (keen.classes) {
-			return;
-		}
-		const classes = new Map<number, number[]>();
-		const n = this.outlook.numTeams;
-		const numPicks = n * g.get("numDraftRounds");
 		const prospects = await idb.cache.players.indexGetAll(
 			"playersByTid",
 			PLAYER.UNDRAFTED,
 		);
+		// The classes as they stand: in the draft, each pick takes one out.
+		const pool = `${this.nextDraft()}:${prospects
+			.map((p) => `${p.pid}:${p.value}`)
+			.sort()
+			.join(",")}`;
+		if (keen.classes && keen.prospects === pool) {
+			return;
+		}
+		const timer = mark();
+		const classes = new Map<number, number[]>();
+		const n = this.outlook.numTeams;
+		const numPicks = n * g.get("numDraftRounds");
 		const salary = pickSalaries();
 		for (const season of new Set(prospects.map((p) => p.draft.year))) {
 			if (season < this.nextDraft() - (g.get("phase") >= PHASE.DRAFT ? 1 : 0)) {
@@ -651,6 +666,8 @@ export class SmartView {
 			);
 		}
 		keen.classes = classes;
+		keen.prospects = pool;
+		lap("class prices", timer);
 	}
 
 	// What a pick fetches as the player it is expected to land (picksAsRookies):
@@ -932,6 +949,7 @@ export class SmartView {
 		keen.slots ??= new Map();
 		let slots = keen.slots.get(round);
 		if (!slots) {
+			const timer = mark();
 			const next = this.nextDraft();
 			const rows: { x: number; p: number }[] = [];
 			for (const tid of this.outlook.teams.keys()) {
@@ -946,6 +964,7 @@ export class SmartView {
 			}
 			slots = decreasingAt(rows, this.outlook.numTeams);
 			keen.slots.set(round, slots);
+			lap("slot prices", timer);
 		}
 		return slots;
 	}

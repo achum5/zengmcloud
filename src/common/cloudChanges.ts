@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 355,
+		date: "2026-11-18",
+		text: "Smart CPU: free agency sims about a third faster, and the season a little faster. CPU teams make exactly the same moves as before; they just no longer re-price every coming draft class each time a free agent signs.",
+	},
+	{
 		n: 354,
 		date: "2026-11-18",
 		text: "New look (Look: Refreshed): the box score has Traditional and Advanced tabs on BBGM's own table, with its three-dot menu to customize columns. On/Off is easier to read, and the menu at the bottom of a game fits on a phone without sliding. Player pages get the same bottom menu (Overview, Stats, Ratings, Career, More) and keep the player's name pinned at the top as you scroll; On The Floor With is gone there.",

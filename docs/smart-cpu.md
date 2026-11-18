@@ -1186,3 +1186,86 @@ deadline and the tax. The reviews and their tools are kept out of the repo
   on vanilla's rules (owner, 2026-11-17; player/moodInfo.ts). CPU teams keep
   their players as a human's team does, and the CPU's own read of who will
   re-sign (willingChance) follows.
+
+## League 6: speed, and a dynasty (2026-11-18)
+
+The owner ran League 6 on build 346: real 2010 rosters, every team the smart
+CPU on vanilla's rules, 12 seasons to 2022. It took 5-6 hours.
+
+**The League 5 fixes held.**
+
+- Re-signing: 76-84% across the board, from about 49%.
+- Good free agents almost never sat unsigned at opening night.
+- 41 room-clearing trades. The player signed produced a median 13.2 WS over
+  the next three seasons; the players sent out to make room, 4.6.
+
+**A dynasty.** NYK won 6 of 12 titles at 67-73 wins, on payrolls of
+$209-217M against a $112.4M cap, and made 94 trades. Losing teams sold it
+young players who became stars: Curry (22, 61/73) for Casspi, Ebanks and two
+late picks; Wiggins (19, 57/75, the first pick) for Blake Griffin. As far as
+the league's data shows, four things drive it together:
+
+- A team with no title shot values nearly everything at its market price,
+  and contenders' bids set that price. They bid for production now, so a
+  young player fetches little more than what he does now.
+- No money cost: a contender keeps everyone it gets.
+- Re-signing at a human team's rate, and mood favors winners.
+- Many small edges: contenders came out ahead in 58% of their deals with
+  teams with no title shot, a median 1.9 WS over three seasons (League 5:
+  54%, 0.4).
+
+Underpriced prospects alone are not the cause. Projections match how these
+players developed: prospects (19-21, 53-60/72-78) became 68+ 33-39% of the
+time against 8-9% for cheap role players, as projected.
+
+**A floor for young players, tried and left out.** The idea follows the pick
+floor: a player up to 24 is priced at least at what the market pays today
+for the player he is projected to become, discounted for the wait, since he
+can always be kept and sold then. The market's level came from the keenest
+teams' real bids for established players (24-30), fitted by overall. It
+moved few prices on League 6's 2022 rosters (Kuminga, 59/76: 0.242 to 0.256
+titles), since contenders' bids sit above it for most prospects. And it
+broke a worth rule: floors add up across a package, so a team sold a
+28-year-old 69/69 for a 21-year-old 56/72 and a 19-year-old 36/68 - the
+many-for-one hole closed before, and one a human could use to buy CPU stars
+with young long shots. Not shipped.
+
+**What changed: speed.** One season of League 6, from the 2022 deadline to
+the next, took 18.9 minutes in the test harness; the owner's browser is
+slower. The smart CPU was about 95% of it:
+
+- The regular season: 9.8 minutes, of which 8.5 were 13 market moments
+  (one every 5 games a team, the owner's call), about 40 s each.
+- Free agency: 5 minutes.
+- The draft lottery through re-signing: 4 minutes.
+
+The draft classes priced as rookies (the table every pick's price is read
+off) were the largest single cost: about 60% of free agency and 40% of an
+in-season market moment. Two changes:
+
+1. **Price tables kept while their bidders are** (SmartView.keenest). The
+   tables - the draft classes as rookies and the next draft's slots - are
+   the keenest teams' bids, and a team's bid is its own worth. They now
+   stand while the six keenest teams and what each holds do; other teams'
+   signings and trades no longer rebuild them.
+2. **Signings don't build the market's tables** (signing.ts
+   prepareSignings). A signing is priced by the GM's worth alone
+   (smartSigningPrice). The tables were built before every batch of
+   signings, and again each time a team that sets prices signed someone.
+   They are now built where trades are priced: the market, the draft (which
+   prices a pick as a trade), clearing room, and the trade screens.
+
+Both make the very same moves: every roster, contract and pick compared
+after free agency and after the first 14 days of the next season. Free
+agency went from 354 s to 235 s (175,000 franchise values to 118,000), the
+14 days from 113 s to 102 s.
+
+**Next.**
+
+- The in-season market's candidate ranking: every player read for every
+  keen team, about 4,000 franchise values a moment.
+- The dynasty: what a team with no title shot should count in its own
+  future window, measured from the leagues' data, not assumed.
+- Re-sign odds are read once an outlook (a week in season), at whatever
+  moment first asks for them. With the floor on, that timing alone changed
+  in-season trades; they should not depend on it.

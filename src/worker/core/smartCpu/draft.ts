@@ -41,9 +41,11 @@ const draftChoiceNow = async (
 	const tried = [...prospects]
 		.sort((a, b) => b.value - a.value || a.pid - b.pid)
 		.slice(0, DRAFT_CANDIDATES);
+	const view = viewFor(outlook);
+	// A pick is priced as a trade is (dealWorthNow): the market's tables first.
+	await view.prime();
 	await prepareSignings(outlook, tried);
 	await ensureRetention(outlook, tried, dp.tid);
-	const view = viewFor(outlook);
 	const held = view.heldNow(dp.tid);
 	// The pick is used either way.
 	const base = {
