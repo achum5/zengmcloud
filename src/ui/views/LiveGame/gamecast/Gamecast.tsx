@@ -1618,8 +1618,11 @@ export const LiveGamecast = ({
 				id: "box",
 				label: "Box Score",
 				icon: DOCK_ICONS.box,
+				// (A phone: its heading drawn by the box score, the tabs beside it.)
+				title: isPhone ? null : undefined,
 				body: isPhone ? (
 					<BoxScorePhone
+						title="Box Score"
 						boxScore={periodBox ?? boxScore}
 						live
 						extraViews={stints ? [["rot", "Rotations"]] : undefined}

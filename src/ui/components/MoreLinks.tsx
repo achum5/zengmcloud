@@ -1,10 +1,4 @@
-import {
-	Fragment,
-	useContext,
-	useLayoutEffect,
-	useRef,
-	type ReactNode,
-} from "react";
+import { Fragment, useContext } from "react";
 import { EmbeddedView } from "./EmbeddedView.tsx";
 import {
 	NO_LOTTERY_DRAFT_TYPES,
@@ -15,112 +9,6 @@ import { helpers } from "../util/helpers.ts";
 import { useLocal } from "../util/local.ts";
 import { bySport } from "../../common/sportFunctions.ts";
 import type { LeagueUrlParts } from "../router/types.ts";
-import { PageBanner, PinnedBar, useTeamColors } from "./TeamBanner.tsx";
-import { TeamLogoInline } from "./TeamLogoInline.tsx";
-
-type Link = {
-	url: string | Readonly<LeagueUrlParts>;
-	name: string;
-	className?: string;
-};
-
-// Pinned under the top bar as the page scrolls (a team's slim strip); how
-// much of it stays in view goes to --teamb-h, for whatever is scrolled to
-// under it - nothing, when it isn't pinned (a team's own page's big banner).
-const TOP_BAR = 52;
-const usePinnedBanner = (on: boolean) => {
-	const ref = useRef<HTMLDivElement>(null);
-	useLayoutEffect(() => {
-		const el = ref.current;
-		if (!el) {
-			return;
-		}
-		const place = () => {
-			el.style.setProperty("--teamb-top", `${TOP_BAR}px`);
-			const pinned = getComputedStyle(el).position === "sticky";
-			document.documentElement.style.setProperty(
-				"--teamb-h",
-				pinned ? `${Math.round(el.offsetHeight)}px` : "0px",
-			);
-		};
-		const observer =
-			typeof ResizeObserver === "undefined"
-				? undefined
-				: new ResizeObserver(place);
-		observer?.observe(el);
-		window.addEventListener("resize", place);
-		return () => {
-			observer?.disconnect();
-			window.removeEventListener("resize", place);
-			document.documentElement.style.removeProperty("--teamb-h");
-		};
-	}, [on]);
-	return ref;
-};
-
-// A TEAM'S BANNER OVER ITS PAGES (the refreshed look): its logo, the season
-// and its name (each its own dropdown) in its colors, and the page's other
-// dropdowns in it, in place of the title bar. One slim strip on most of its
-// pages, pinned as the page scrolls; on its own page (the roster) big, its
-// record, payroll... in it, and a slim bar pinned in its place once it has
-// scrolled away.
-const TeamPageBanner = ({
-	tid,
-	info,
-	pinnedSub,
-}: {
-	tid: number;
-	info?: ReactNode;
-	pinnedSub?: ReactNode;
-}) => {
-	const { teamInfoCache } = useLocal(["teamInfoCache"]);
-	const t = teamInfoCache[tid];
-	const colors = useTeamColors(tid);
-	const big = info !== undefined;
-	const ref = usePinnedBanner(t !== undefined);
-	if (!t) {
-		return null;
-	}
-	const team = {
-		tid,
-		abbrev: t.abbrev,
-		region: t.region,
-		name: t.name,
-		imgURL: t.imgURL,
-		imgURLSmall: t.imgURLSmall,
-		colors,
-	};
-	return (
-		<>
-			<PageBanner
-				className={big ? "teamb teamb-big" : "teamb teamb-slim"}
-				teamName
-				// (Its "More Info" pages at the foot of its page instead.)
-				skipMoreInfo={big}
-				t={team}
-				// (Its logo to its page - the one long page, where its other pages
-				// are; no tabs.)
-				href={helpers.leagueUrl(["roster", `${t.abbrev}_${tid}`])}
-				sub={info}
-				bannerRef={ref}
-			/>
-			{big ? (
-				<PinnedBar watch=".teamb-big" colors={colors}>
-					<TeamLogoInline
-						imgURL={t.imgURL}
-						imgURLSmall={t.imgURLSmall}
-						size={26}
-					/>
-					<span className="pin-bar-name">
-						<span className="tb-region">{t.region} </span>
-						{t.name}
-					</span>
-					{pinnedSub ? <span className="pin-bar-sub">{pinnedSub}</span> : null}
-				</PinnedBar>
-			) : null}
-		</>
-	);
-};
 
 // (Drawn inside another page - see EmbeddedView - none: that page has its
 // own.)
@@ -133,14 +21,6 @@ const MoreLinksShown = (
 				type: "team";
 				tid: number;
 				season?: number;
-				// The team's own page (the refreshed look): its banner big, with
-				// these in it (its record, payroll...), and this by its name in
-				// the bar pinned once it has scrolled away.
-				info?: ReactNode;
-				pinnedSub?: ReactNode;
-				// Its pages as a list of buttons, not a banner (less these).
-				asList?: boolean;
-				exclude?: string[];
 		  }
 		| {
 				type: "draft";
@@ -199,16 +79,9 @@ const MoreLinksShown = (
 	const {
 		college,
 		godMode,
-		refreshedLook,
 		rotationPlans,
 		season: currentSeason,
-	} = useLocal([
-		"college",
-		"godMode",
-		"refreshedLook",
-		"rotationPlans",
-		"season",
-	]);
+	} = useLocal(["college", "godMode", "rotationPlans", "season"]);
 
 	let links: {
 		url: string | Readonly<LeagueUrlParts>;
@@ -557,49 +430,6 @@ const MoreLinksShown = (
 
 	if (links.length === 0) {
 		return null;
-	}
-
-	// THE TEAM'S OTHER PAGES AS A LIST (the refreshed look's team page, at its
-	// foot): BBGM's buttons, one to each.
-	if (props.type === "team" && props.asList) {
-		const skip = new Set(props.exclude ?? []);
-		// (And its players' ratings, stats and bios that season - the title
-		// bar's "More Info", not in the team page's banner.)
-		const team = helpers.getTeamUrlPart(props.tid);
-		const season = props.season ?? "";
-		const more: Link[] = [
-			{ url: ["player_ratings", team, season], name: "Player Ratings" },
-			{ url: ["player_stats", team, season], name: "Player Stats" },
-			{ url: ["player_bios", team, season], name: "Player Bios" },
-		];
-		return (
-			<div className="team-pages">
-				{[...links, ...more]
-					.filter(({ url }) => {
-						const key = typeof url === "string" ? url : url[0];
-						return !skip.has(key) && key !== page;
-					})
-					.map(({ url, name }, i) => (
-						<a
-							key={String(i)}
-							className="btn btn-light-bordered"
-							href={typeof url === "string" ? url : helpers.leagueUrl(url)}
-						>
-							{name}
-						</a>
-					))}
-			</div>
-		);
-	}
-
-	if (refreshedLook && props.type === "team") {
-		return (
-			<TeamPageBanner
-				tid={props.tid}
-				info={props.info}
-				pinnedSub={props.pinnedSub}
-			/>
-		);
 	}
 
 	return (

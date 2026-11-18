@@ -116,12 +116,6 @@ const lastName = (name: string) => {
 	const words = name.trim().split(/\s+/);
 	return words.length > 1 ? words.slice(1).join(" ") : name;
 };
-const shortName = (name: string) => {
-	const words = name.trim().split(/\s+/);
-	return words.length > 1
-		? `${words[0]![0]}. ${words.slice(1).join(" ")}`
-		: name;
-};
 const clock = (secs: number) => {
 	const s = Math.round(secs);
 	return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;

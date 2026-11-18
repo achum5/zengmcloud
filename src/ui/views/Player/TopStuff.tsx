@@ -1,5 +1,5 @@
 import { last } from "../../../common/utils.ts";
-import { Fragment, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useState } from "react";
 import type { ReactNode } from "react";
 import { WatchBlock } from "../../components/WatchBlock.tsx";
 import { ContractAmount } from "../../components/contract.tsx";
@@ -27,7 +27,6 @@ import { InjuryIcon } from "../../components/InjuryIcon.tsx";
 import { SkillsBlock } from "../../components/SkillsBlock.tsx";
 import { Mood } from "../../components/Mood.tsx";
 import { PlayerPicture } from "../../components/PlayerPicture.tsx";
-import { PageBanner, PinnedBar } from "../../components/TeamBanner.tsx";
 import { JerseyNumber } from "../../components/JerseyNumber.tsx";
 import { Height } from "../../components/Height.tsx";
 import { Weight } from "../../components/Weight.tsx";
@@ -311,7 +310,6 @@ const TopStuff = ({
 	teamName,
 	teamURL,
 	willingToSign,
-	bannered,
 }: Pick<
 	View<"player">,
 	| "amateurUniform"
@@ -343,8 +341,6 @@ const TopStuff = ({
 	// dumped in the note block - it is about that one line.
 	draftRecap?: SeasonNoteSection[];
 	noteLinksBySeason?: (season: number | undefined) => RecapLink[];
-	// His picture and the lines about him in a banner in his team's colors.
-	bannered?: boolean;
 }) => {
 	const {
 		college: collegeLeague,
@@ -580,210 +576,35 @@ const TopStuff = ({
 	// Without this, vertical scrollbar shows if there are no jerseys, due to some weirdness with the negative marginTop values in RatingsOverview
 	const PLACEHOLDER = <div style={{ height: 2 }}></div>;
 
-	// His picture (every season of him, clicked), and the lines about him by
-	// it: under his banner (see TeamBanner), in it.
-	const pictureColumn = (
-		<div className="d-flex flex-column">
-			<div
-				className="player-picture"
-				style={{
-					marginTop: player.imgURL ? 0 : -20,
-					cursor: careerSeasons.length > 0 ? "pointer" : undefined,
-				}}
-				onClick={
-					careerSeasons.length > 0
-						? () => {
-								setShowGallery(true);
-							}
-						: undefined
-				}
-				title={careerSeasons.length > 0 ? "Every season" : undefined}
-			>
-				<PlayerPicture
-					face={player.face}
-					imgURL={player.imgURL}
-					colors={teamColors}
-					jersey={teamJersey}
-				/>
-			</div>
-		</div>
-	);
-	const posLine = (
-		<>
-			{bestPos}, {teamURL ? <a href={teamURL}>{teamName}</a> : teamName}
-			{player.jerseyNumber ? (
-				<>
-					,{" "}
-					<a
-						href={helpers.leagueUrl([
-							"frivolities",
-							"most",
-							"jersey_number",
-							player.jerseyNumber,
-						])}
-					>
-						#{player.jerseyNumber}
-					</a>
-				</>
-			) : null}
-		</>
-	);
-	const bioLines = (
-		<>
-			{height}, {weight}
-			{player.srID && !player.srID.startsWith("dp_") ? (
-				<>
-					{" "}
-					-{" "}
-					<a
-						href={`https://www.basketball-reference.com/players/${player.srID[0]}/${player.srID}.html`}
-					>
-						BBRef
-					</a>
-				</>
-			) : null}
-			<br />
-			Born: {player.born.year} -{" "}
-			<a
-				href={helpers.leagueUrl([
-					"frivolities",
-					"most",
-					"country",
-					window.encodeURIComponent(helpers.getCountry(player.born.loc)),
-				])}
-			>
-				{player.born.loc}
-				<CountryFlag className="ms-1" country={player.born.loc} />
-			</a>
-			<br />
-			{player.ageAtDeath === null || season !== undefined ? (
-				<>
-					Age: {player.age}
-					<br />
-				</>
-			) : (
-				<>
-					Died: {player.diedYear} ({player.ageAtDeath} years old)
-					<br />
-				</>
-			)}
-			<Relatives
-				gender={gender}
-				pid={player.pid}
-				relatives={player.relatives}
-			/>
-			{draftInfo}
-			{(__SPORT === "hockey" && college === "None") || collegeLeague ? null : (
-				<>
-					College:{" "}
-					<a
-						href={helpers.leagueUrl([
-							"frivolities",
-							"most",
-							"college",
-							window.encodeURIComponent(college),
-						])}
-					>
-						{college}
-					</a>
-					<br />
-				</>
-			)}
-			Experience:{" "}
-			{player.experience === 0
-				? "none"
-				: `${player.experience} year${player.experience > 1 ? "s" : ""}`}
-			<br />
-			{contractInfo}
-			{statusInfo}
-		</>
-	);
-	// (A phone: his face as tall as the column by it, top to foot - his
-	// shoulders cut off at its sides, so his lines keep their room. And his
-	// last name as big as fits by it.)
-	const bannerRef = useRef<HTMLDivElement>(null);
-	const lastName = (player.name as string)
-		.trim()
-		.split(/\s+/)
-		.slice(1)
-		.join(" ");
-	useLayoutEffect(() => {
-		const el = bannerRef.current;
-		const words = el?.querySelector<HTMLElement>(".tb-words");
-		if (!el || !words || typeof ResizeObserver === "undefined") {
-			return;
-		}
-		el.style.setProperty(
-			"--pb-last-len",
-			String(Math.max(4, (lastName || (player.name as string)).length)),
-		);
-		const side = el.querySelector<HTMLElement>(".tb-side");
-		const phone = window.matchMedia("(max-width: 575.98px)");
-		const fit = () => {
-			if (!phone.matches) {
-				el.style.removeProperty("--pb-face-h");
-				return;
-			}
-			// (From the top of its column - its dropdowns, over his name.)
-			const top = (
-				el.querySelector<HTMLElement>(".tb-menus") ?? words
-			).getBoundingClientRect().top;
-			const bottom = (side ?? words).getBoundingClientRect().bottom;
-			const h = Math.round(Math.min(330, Math.max(150, bottom - top)));
-			const now =
-				Number.parseFloat(el.style.getPropertyValue("--pb-face-h")) || 0;
-			if (Math.abs(h - now) > 3) {
-				el.style.setProperty("--pb-face-h", `${h}px`);
-			}
-		};
-		const observer = new ResizeObserver(fit);
-		observer.observe(words);
-		if (side) {
-			observer.observe(side);
-		}
-		phone.addEventListener("change", fit);
-		fit();
-		return () => {
-			observer.disconnect();
-			phone.removeEventListener("change", fit);
-		};
-	}, [bannered, lastName, player.name]);
-	const nameWords = (player.name as string).trim().split(/\s+/);
-	const teamInfo = player.tid >= 0 ? teamInfoCache[player.tid] : undefined;
-	const banner = bannered ? (
-		<PageBanner
-			className="pb"
-			bannerRef={bannerRef}
-			t={{
-				tid: player.tid,
-				abbrev: teamInfo?.abbrev ?? "",
-				region: teamInfo?.region ?? "",
-				name: teamInfo?.name ?? teamName,
-				imgURL: teamInfo?.imgURL,
-				imgURLSmall: teamInfo?.imgURLSmall,
-				colors: teamColors,
-			}}
-			href={teamURL}
-			kicker={
-				<span className="pb-first">
-					{nameWords.length > 1 ? nameWords[0] : ""}
-				</span>
-			}
-			title={nameWords.length > 1 ? nameWords.slice(1).join(" ") : nameWords[0]}
-			picture={<div className="pb-picture">{pictureColumn}</div>}
-			sub={<span className="pb-team">{posLine}</span>}
-		>
-			{bioLines}
-		</PageBanner>
-	) : null;
-
 	return (
 		<div className="mb-3">
-			{banner}
 			<div className="d-sm-flex align-items-start">
 				<div className="player-bio">
 					<div className="d-flex">
-						{bannered ? null : pictureColumn}
+						<div className="d-flex flex-column">
+							<div
+								className="player-picture"
+								style={{
+									marginTop: player.imgURL ? 0 : -20,
+									cursor: careerSeasons.length > 0 ? "pointer" : undefined,
+								}}
+								onClick={
+									careerSeasons.length > 0
+										? () => {
+												setShowGallery(true);
+											}
+										: undefined
+								}
+								title={careerSeasons.length > 0 ? "Every season" : undefined}
+							>
+								<PlayerPicture
+									face={player.face}
+									imgURL={player.imgURL}
+									colors={teamColors}
+									jersey={teamJersey}
+								/>
+							</div>
+						</div>
 						{showGallery ? (
 							<PlayerAppearanceGallery
 								name={player.name}
@@ -806,13 +627,99 @@ const TopStuff = ({
 								}}
 							/>
 						) : null}
-						{bannered ? null : (
-							<div>
-								<strong>{posLine}</strong>
-								<br />
-								{bioLines}
-							</div>
-						)}
+						<div>
+							<strong>
+								{bestPos},{" "}
+								{teamURL ? <a href={teamURL}>{teamName}</a> : teamName}
+								{player.jerseyNumber ? (
+									<>
+										,{" "}
+										<a
+											href={helpers.leagueUrl([
+												"frivolities",
+												"most",
+												"jersey_number",
+												player.jerseyNumber,
+											])}
+										>
+											#{player.jerseyNumber}
+										</a>
+									</>
+								) : null}
+							</strong>
+							<br />
+							{height}, {weight}
+							{player.srID && !player.srID.startsWith("dp_") ? (
+								<>
+									{" "}
+									-{" "}
+									<a
+										href={`https://www.basketball-reference.com/players/${player.srID[0]}/${player.srID}.html`}
+									>
+										BBRef
+									</a>
+								</>
+							) : null}
+							<br />
+							Born: {player.born.year} -{" "}
+							<a
+								href={helpers.leagueUrl([
+									"frivolities",
+									"most",
+									"country",
+									window.encodeURIComponent(
+										helpers.getCountry(player.born.loc),
+									),
+								])}
+							>
+								{player.born.loc}
+								<CountryFlag className="ms-1" country={player.born.loc} />
+							</a>
+							<br />
+							{player.ageAtDeath === null || season !== undefined ? (
+								<>
+									Age: {player.age}
+									<br />
+								</>
+							) : (
+								<>
+									Died: {player.diedYear} ({player.ageAtDeath} years old)
+									<br />
+								</>
+							)}
+							<Relatives
+								gender={gender}
+								pid={player.pid}
+								relatives={player.relatives}
+							/>
+							{draftInfo}
+							{(__SPORT === "hockey" && college === "None") ||
+							collegeLeague ? null : (
+								<>
+									College:{" "}
+									<a
+										href={helpers.leagueUrl([
+											"frivolities",
+											"most",
+											"college",
+											window.encodeURIComponent(college),
+										])}
+									>
+										{college}
+									</a>
+									<br />
+								</>
+							)}
+							Experience:{" "}
+							{player.experience === 0
+								? "none"
+								: `${player.experience} year${
+										player.experience > 1 ? "s" : ""
+									}`}
+							<br />
+							{contractInfo}
+							{statusInfo}
+						</div>
 					</div>
 
 					<div className="d-flex gap-2 mt-2">
@@ -992,37 +899,3 @@ const TopStuff = ({
 };
 
 export default TopStuff;
-
-// HIS NAME, PINNED (the refreshed look): once his banner scrolls up, a slim bar
-// of his team's color with his name held under the top bar.
-export const PlayerPinnedBar = ({
-	player,
-	teamColors,
-	teamJersey,
-}: {
-	player: any;
-	teamColors: string[] | undefined;
-	teamJersey?: string;
-}) => {
-	const { teamInfoCache } = useLocal(["teamInfoCache"]);
-	const teamInfo = player.tid >= 0 ? teamInfoCache[player.tid] : undefined;
-	return (
-		<PinnedBar watch=".pb" colors={teamColors}>
-			{/* (His face, his head and shoulders standing on the foot of it.) */}
-			<span className="pin-bar-face">
-				<PlayerPicture
-					face={player.face}
-					imgURL={player.imgURL}
-					colors={teamColors as [string, string, string] | undefined}
-					jersey={teamJersey}
-				/>
-			</span>
-			<span className="pin-bar-name">{player.name}</span>
-			<span className="pin-bar-sub">
-				{player.ratings.at(-1)?.pos}
-				{teamInfo ? ` · ${teamInfo.abbrev}` : null}
-				{player.jerseyNumber ? ` #${player.jerseyNumber}` : null}
-			</span>
-		</PinnedBar>
-	);
-};

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 358,
+		date: "2026-11-18",
+		text: "New look (Look: Refreshed): team and player pages are back to the classic header - the title bar with its dropdowns, the team's record, payroll and links, the player's picture and bio - while keeping the one long team page, the menu at the bottom and the game tiles. In a box score, Traditional / Advanced / Rotations sit next to the Box Score heading.",
+	},
+	{
 		n: 357,
 		date: "2026-11-18",
 		text: "New look (Look: Refreshed): a team's header has everything the classic team page had - rating (tap for healthy), MOV, age, payroll (tap for any penalty) with its cap status, salary cap, hard cap and profit, with the record and playoffs linked as before. Auto sort, reset playing time, keep auto sorted and Play Through Injuries share a row. The player header's face fills it, with a bigger last name.",

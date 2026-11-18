@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties } from "react";
 import {
 	dropdownOptionsStateKeys,
 	getDropdownOptions,
@@ -187,18 +187,14 @@ const Select = ({
 	);
 };
 
-// A dropdown's options, and going to what is picked in one of its fields.
-const useDropdownFields = (dropdown: TitleBarDropdown | undefined) => {
+export const Dropdown = ({ dropdown }: { dropdown: TitleBarDropdown }) => {
 	const state = useLocal([...dropdownOptionsStateKeys]);
 
-	const fieldOptions = (dropdown?.fields ?? []).map((field) =>
+	const fieldOptions = dropdown.fields.map((field) =>
 		getDropdownOptions(field.options, state),
 	);
 
 	const handleChange = (i: number, newOption: DropdownOption) => {
-		if (!dropdown) {
-			return;
-		}
 		const values: Record<string, number | string> = {};
 		for (const [j, field] of dropdown.fields.entries()) {
 			values[field.key] =
@@ -210,30 +206,9 @@ const useDropdownFields = (dropdown: TitleBarDropdown | undefined) => {
 		realtimeUpdate([], dropdown.getUrl(values));
 	};
 
-	return { fieldOptions, handleChange };
-};
-
-export const isTeamsField = (field: TitleBarDropdownField) =>
-	!Array.isArray(field.options) && field.options.type === "teams";
-export const isSeasonField = (field: TitleBarDropdownField) =>
-	field.key === "season";
-
-export const Dropdown = ({
-	dropdown,
-	skip,
-}: {
-	dropdown: TitleBarDropdown;
-	// Fields shown elsewhere (the team, as a team's banner's name).
-	skip?: (field: TitleBarDropdownField) => boolean;
-}) => {
-	const { fieldOptions, handleChange } = useDropdownFields(dropdown);
-
 	return (
 		<>
 			{dropdown.fields.map((field, i) => {
-				if (skip?.(field)) {
-					return null;
-				}
 				return (
 					<Select
 						key={field.key}
@@ -245,116 +220,5 @@ export const Dropdown = ({
 				);
 			})}
 		</>
-	);
-};
-
-// THE TEAM'S NAME AS ITS OWN DROPDOWN (a team's banner): the name as it is,
-// a caret by it, and the page's list of teams under it when tapped - the
-// same list, going to the same page, as the title bar's team dropdown.
-export const TeamNameDropdown = ({
-	dropdown,
-	children,
-}: {
-	dropdown: TitleBarDropdown | undefined;
-	children: ReactNode;
-}) => {
-	const { fieldOptions, handleChange } = useDropdownFields(dropdown);
-	const i = dropdown ? dropdown.fields.findIndex(isTeamsField) : -1;
-	const field = i >= 0 ? dropdown!.fields[i]! : undefined;
-	const options = i >= 0 ? fieldOptions[i]! : [];
-	if (!field || options.length <= 1) {
-		return children;
-	}
-	return (
-		<span className="tb-name-dropdown">
-			<span className="tb-name-text">{children}</span>
-			<span className="tb-caret" aria-hidden />
-			<select
-				aria-label="Team"
-				value={String(field.value)}
-				onChange={(event) => {
-					const option = findDropdownOption(options, event.currentTarget.value);
-					if (option) {
-						handleChange(i, option);
-					}
-				}}
-			>
-				{options.map((option) => (
-					<option key={option.key} value={String(option.key)}>
-						{getResponsiveValue(option.label, Infinity)}
-					</option>
-				))}
-			</select>
-		</span>
-	);
-};
-
-// THE SEASON IN A TEAM'S BANNER, BY ITS NAME: the year as it is (the list of
-// seasons under it when tapped), a thin arrow either side of it to the
-// season before and after.
-export const SeasonInline = ({
-	dropdown,
-}: {
-	dropdown: TitleBarDropdown | undefined;
-}) => {
-	const { fieldOptions, handleChange } = useDropdownFields(dropdown);
-	const i = dropdown ? dropdown.fields.findIndex(isSeasonField) : -1;
-	const field = i >= 0 ? dropdown!.fields[i]! : undefined;
-	const options = i >= 0 ? fieldOptions[i]! : [];
-	if (!field) {
-		return null;
-	}
-	const current = findDropdownOption(options, field.value);
-	const label = current ? getResponsiveValue(current.label, Infinity) : "";
-	if (options.length <= 1) {
-		return <span className="tb-season">{label}</span>;
-	}
-	// (Listed newest first.)
-	const at = current ? options.indexOf(current) : -1;
-	const older = at >= 0 ? options[at + 1] : undefined;
-	const newer = at > 0 ? options[at - 1] : undefined;
-	const arrow = (to: DropdownOption | undefined, back: boolean) => (
-		<button
-			type="button"
-			className={back ? "tb-season-arrow tb-season-back" : "tb-season-arrow"}
-			disabled={!to}
-			title={back ? "Previous season" : "Next season"}
-			aria-label={back ? "Previous season" : "Next season"}
-			onClick={() => {
-				if (to) {
-					handleChange(i, to);
-				}
-			}}
-		>
-			<span className="tb-chevron" aria-hidden />
-		</button>
-	);
-	return (
-		<span className="tb-season">
-			{arrow(older, true)}
-			<span className="tb-season-pick">
-				{label}
-				<select
-					aria-label="Season"
-					value={String(field.value)}
-					onChange={(event) => {
-						const option = findDropdownOption(
-							options,
-							event.currentTarget.value,
-						);
-						if (option) {
-							handleChange(i, option);
-						}
-					}}
-				>
-					{options.map((option) => (
-						<option key={option.key} value={String(option.key)}>
-							{getResponsiveValue(option.label, Infinity)}
-						</option>
-					))}
-				</select>
-			</span>
-			{arrow(newer, false)}
-		</span>
 	);
 };

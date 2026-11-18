@@ -10,7 +10,7 @@ import {
 	type DataTableRow,
 } from "../../../components/DataTable/index.tsx";
 import { getCols } from "../../../../common/getCols.ts";
-import type { Col } from "../../../../common/types.ts";
+import type { Col as DataCol } from "../../../../common/types.ts";
 
 // THE BOX SCORE ON A PHONE (the refreshed look): a team at a time, its name
 // over the column heads, its starters, then its bench under the heads again;
@@ -164,7 +164,7 @@ export const COLS: Record<string, Col> = {
 	gmsc: {
 		label: "GmSc",
 		title: "Game score",
-		get: (p) => fixed(helpers.gameScore(p)),
+		get: (p) => fixed(helpers.gameScore(p as any)),
 	},
 	usg: {
 		label: "USG%",
@@ -296,9 +296,9 @@ const BoxTable = ({
 	o: Line;
 }) => {
 	const keys = VIEW_COLS[view];
-	const cols: Col[] = [
+	const cols: DataCol[] = [
 		...getCols(["Name", "Pos"]),
-		...keys.map((k): Col => ({
+		...keys.map((k): DataCol => ({
 			title: COLS[k]!.label,
 			desc: COLS[k]!.title,
 			sortSequence: ["desc", "asc"],
@@ -442,7 +442,10 @@ export const BoxScorePhone = ({
 	extraViews,
 	extra,
 	live,
+	title,
 }: {
+	// The section's heading, drawn here - its tabs by it.
+	title?: string;
 	boxScore: any;
 	// A game still going: who is on the floor marked, as BBGM's live box
 	// score marks them.
@@ -464,7 +467,15 @@ export const BoxScorePhone = ({
 	const teams = teamsInDisplayOrder(boxScore.teams as [any, any]);
 	return (
 		<div className="bsp">
-			<div className="bsp-views">{tabs}</div>
+			{title ? (
+				// (The section's heading, its ways to look at it by it - one row.)
+				<div className="bsp-head-row">
+					<h2 className="recap-section-title">{title}</h2>
+					{tabs}
+				</div>
+			) : (
+				<div className="bsp-views">{tabs}</div>
+			)}
 			{boxView
 				? teams.map((t: Line, i: number) => (
 						<BoxTable

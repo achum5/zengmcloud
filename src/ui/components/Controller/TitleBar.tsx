@@ -1,4 +1,4 @@
-import { Dropdown, isSeasonField, isTeamsField } from "../Dropdown.tsx";
+import { Dropdown } from "../Dropdown.tsx";
 import DropdownLinks from "../DropdownLinks.tsx";
 import { helpers } from "../../util/helpers.ts";
 import { useLocal } from "../../util/local.ts";
@@ -45,19 +45,11 @@ const NewWindowLink = ({ parts }: Props) => {
 	);
 };
 
-// The title bar's dropdowns and menus, from what the page set (see
-// useTitleBar) - in the title bar, or in a page's own banner.
-export const TitleMenus = ({
-	skipTeams,
-	skipMoreInfo,
-}: {
-	// (The team's own banner has it, as its name.)
-	skipTeams?: boolean;
-	// (Its links elsewhere on the page - the team's page.)
-	skipMoreInfo?: boolean;
-} = {}) => {
+export const TitleBar = () => {
 	const {
+		title,
 		customMenu,
+		hideNewWindow,
 		jumpTo,
 		jumpToSeason,
 		dropdown,
@@ -65,7 +57,9 @@ export const TitleMenus = ({
 		moreInfoTid,
 		lid,
 	} = useLocal([
+		"title",
 		"customMenu",
+		"hideNewWindow",
 		"jumpTo",
 		"jumpToSeason",
 		"dropdown",
@@ -73,6 +67,10 @@ export const TitleMenus = ({
 		"moreInfoTid",
 		"lid",
 	]);
+
+	if (title === undefined) {
+		return null;
+	}
 
 	const menuItems: MenuItemHeader[] = [];
 
@@ -157,11 +155,7 @@ export const TitleMenus = ({
 		});
 	}
 
-	if (
-		!skipMoreInfo &&
-		moreInfoSeason !== undefined &&
-		moreInfoTid !== undefined
-	) {
+	if (moreInfoSeason !== undefined && moreInfoTid !== undefined) {
 		const team = helpers.getTeamUrlPart(moreInfoTid);
 		menuItems.push({
 			type: "header",
@@ -196,18 +190,12 @@ export const TitleMenus = ({
 	}
 
 	return (
-		<>
-			{dropdown ? (
-				<Dropdown
-					dropdown={dropdown}
-					// (And its season, by its name.)
-					skip={
-						skipTeams
-							? (field) => isTeamsField(field) || isSeasonField(field)
-							: undefined
-					}
-				/>
-			) : null}
+		<aside className="navbar navbar-border navbar-light justify-content-start title-bar flex-shrink-0  py-0">
+			<h1>
+				{title}
+				{!hideNewWindow ? <NewWindowLink /> : null}
+			</h1>
+			{dropdown ? <Dropdown dropdown={dropdown} /> : null}
 			<DropdownLinks
 				className="ms-auto title-bar-right-links"
 				hideTitle
@@ -215,28 +203,6 @@ export const TitleMenus = ({
 				lid={lid}
 				menuItems={menuItems}
 			/>
-		</>
-	);
-};
-
-export const TitleBar = () => {
-	const { title, hideNewWindow, titleBarHidden } = useLocal([
-		"title",
-		"hideNewWindow",
-		"titleBarHidden",
-	]);
-
-	if (title === undefined || titleBarHidden > 0) {
-		return null;
-	}
-
-	return (
-		<aside className="navbar navbar-border navbar-light justify-content-start title-bar flex-shrink-0  py-0">
-			<h1>
-				{title}
-				{!hideNewWindow ? <NewWindowLink /> : null}
-			</h1>
-			<TitleMenus />
 		</aside>
 	);
 };

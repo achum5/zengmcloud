@@ -16,7 +16,6 @@ import { useLocal } from "../../util/local.ts";
 import PlayingTime, { ptModifiers } from "./PlayingTime.tsx";
 import TopStuff from "./TopStuff.tsx";
 import { TeamHub } from "./TeamHub.tsx";
-import { TeamBannerInfo } from "./TeamBannerInfo.tsx";
 import DepthChart from "./DepthChart.tsx";
 import { ExtendModal, type ExtendTarget } from "./ExtendModal.tsx";
 import type {
@@ -573,10 +572,7 @@ const Roster = ({
 
 	const rosterBody = (
 		<>
-			<TopStuff
-				{...topStuffProps}
-				part={refreshedLook && teamInfoCache[tid] ? "rest" : undefined}
-			/>
+			<TopStuff {...topStuffProps} compact={refreshedLook} />
 
 			<ExtendModal close={closeExtend} target={extendTarget} />
 
@@ -733,43 +729,12 @@ const Roster = ({
 		</>
 	);
 
-	// (The refreshed look: the team's pages as one long page, any season - its
-	// record, payroll... in its banner.)
+	// (The refreshed look: the team's pages as one long page, any season.)
 	const teamInfo = teamInfoCache[tid];
 	const hub = refreshedLook && teamInfo !== undefined;
 	return (
 		<>
-			<MoreLinks
-				type="team"
-				page="roster"
-				tid={tid}
-				season={season}
-				info={
-					hub ? (
-						<TeamBannerInfo
-							capStatus={capStatus}
-							collegeInfo={collegeInfo}
-							conf={conf}
-							currentSeason={currentSeason}
-							luxuryTaxAmount={luxuryTaxAmount}
-							minPayrollAmount={minPayrollAmount}
-							payroll={payroll}
-							playoffsByConf={playoffsByConf}
-							profit={profit}
-							season={season}
-							t={t}
-							teamOvr={teamOvr}
-							tid={tid}
-							usePts={usePts}
-						/>
-					) : undefined
-				}
-				pinnedSub={
-					hub && t.seasonAttrs
-						? `${season} · ${helpers.formatRecord(t.seasonAttrs)}`
-						: undefined
-				}
-			/>
+			<MoreLinks type="team" page="roster" tid={tid} season={season} />
 			{hub ? (
 				<TeamHub
 					abbrev={teamInfo.abbrev}

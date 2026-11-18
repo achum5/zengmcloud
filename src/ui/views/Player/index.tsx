@@ -7,7 +7,7 @@ import { helpers } from "../../util/helpers.ts";
 import { getCols } from "../../../common/getCols.ts";
 import type { View } from "../../../common/types.ts";
 import { SeasonIcons } from "../../components/SeasonIcons.tsx";
-import TopStuff, { PlayerPinnedBar } from "./TopStuff.tsx";
+import TopStuff from "./TopStuff.tsx";
 import { wrappedSalaryPayers } from "./SalaryPayers.tsx";
 import { PLAYER } from "../../../common/constants.ts";
 import HideableSection from "../../components/HideableSection.tsx";
@@ -205,7 +205,6 @@ const Player2 = ({
 		<>
 			<Anchor id="overview" on={refreshedLook}>
 				<TopStuff
-					bannered={refreshedLook}
 					amateurUniform={amateurUniform}
 					appearanceTeams={appearanceTeams}
 					bestPos={bestPos}
@@ -235,13 +234,6 @@ const Player2 = ({
 					willingToSign={willingToSign}
 				/>
 			</Anchor>
-			{refreshedLook ? (
-				<PlayerPinnedBar
-					player={player}
-					teamColors={teamColors}
-					teamJersey={teamJersey}
-				/>
-			) : null}
 
 			<Anchor id="stats" on={refreshedLook}>
 				{statTables.map(({ name, onlyShowIf, stats, superCols }, i) => (

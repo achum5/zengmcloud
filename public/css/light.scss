@@ -5099,31 +5099,6 @@ body.has-league-ticker-collapsed .sidebar-inner {
 		transparent 2px 6px
 	);
 }
-.tb {
-	background: var(--weave), var(--tb-bg);
-	color: var(--tb-fg);
-	margin: 0 0 1rem;
-	padding: 1.75rem 1.5rem;
-	border-radius: 0.375rem;
-}
-.tb-inner {
-	position: relative;
-	display: flex;
-	align-items: center;
-	gap: 1.25rem;
-}
-.tb-logo {
-	flex: 0 0 auto;
-	filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.3));
-}
-.tb-picture {
-	flex: 0 0 auto;
-	align-self: flex-end;
-	margin-bottom: -1.75rem;
-}
-.tb-words {
-	min-width: 0;
-}
 .tb-kicker {
 	font-size: 0.95rem;
 	font-weight: 600;
@@ -5132,22 +5107,9 @@ body.has-league-ticker-collapsed .sidebar-inner {
 	opacity: 0.85;
 	line-height: 1.1;
 }
-.tb-title {
-	font-size: 3.25rem;
-	font-weight: 900;
-	letter-spacing: -0.02em;
-	line-height: 1;
-	margin: 0.1rem 0 0.35rem;
-}
 .tb-sub {
 	font-size: 0.95rem;
 	opacity: 0.85;
-}
-.tb-side {
-	margin-left: 1.5rem;
-	font-size: 0.95rem;
-	line-height: 1.6;
-	opacity: 0.9;
 }
 .tb-stripes {
 	position: absolute;
@@ -5306,9 +5268,6 @@ body.has-league-ticker-collapsed .sidebar-inner {
 	.mb-big {
 		font-size: 3rem;
 	}
-	.tb-title {
-		font-size: 2.6rem;
-	}
 }
 // A phone: the names to their abbreviations, the logos smaller, the
 // numbers still big; one team's banner its words under its logo.
@@ -5368,187 +5327,6 @@ body.has-league-ticker-collapsed .sidebar-inner {
 	}
 	.mb-half .tb-stripes-top {
 		display: none;
-	}
-	.tb {
-		padding: 1.25rem 1rem;
-	}
-	.tb-inner {
-		flex-wrap: wrap;
-		gap: 0.75rem;
-	}
-	.tb-logo .d-flex {
-		width: 64px !important;
-		height: 64px !important;
-	}
-	.tb-title {
-		font-size: 2.1rem;
-	}
-	.tb-side {
-		margin-left: 0;
-		flex-basis: 100%;
-		font-size: 0.85rem;
-	}
-	.tb-picture {
-		margin-bottom: 0;
-	}
-}
-
-// A player's banner (see PlayerBanner.tsx): his picture standing on the foot
-// of it, his first name spaced out over his last, big.
-.pb {
-	padding-bottom: 1.25rem;
-	.tb-title {
-		font-size: 4rem;
-	}
-	.tb-side {
-		margin-left: auto;
-		padding-left: 1.5rem;
-		border-left: 1px solid color-mix(in srgb, currentColor 30%, transparent);
-	}
-	.tb-picture {
-		margin-bottom: -1.25rem;
-	}
-}
-.pb-first {
-	font-size: 1.35rem;
-	font-weight: 800;
-	letter-spacing: 0.2em;
-}
-.pb-picture {
-	.player-picture {
-		float: none;
-		margin: 0 !important;
-		width: 156px;
-		height: 234px;
-	}
-}
-// (A player's banner: no stripes - its face fills the corner they sat in.)
-.pb .tb-stripes {
-	display: none;
-}
-.pb-team {
-	font-weight: 600;
-}
-// The page's own dropdowns in its banner (see TitleMenus): top right, in
-// its colors; its title only on a phone, in place of the title bar.
-.pb {
-	overflow: visible;
-}
-.tb-phone-head {
-	display: none;
-	h1 {
-		margin: 0;
-		font-size: 1.3rem;
-		font-weight: 800;
-		line-height: 1.2;
-	}
-}
-.tb-menus {
-	position: absolute;
-	top: -1.35rem;
-	right: -0.75rem;
-	z-index: 2;
-	display: flex;
-	align-items: center;
-	gap: 0.75rem;
-	.dropdown-select,
-	.title-bar-right-links .nav-link,
-	.title-bar-right-links a,
-	.btn-link {
-		color: inherit;
-	}
-	.dropdown-select {
-		background-color: transparent;
-		border: 0;
-		font-weight: 600;
-		option {
-			color: #212529;
-		}
-	}
-	.title-bar-right-links {
-		margin-left: 0 !important;
-		.dropdown-toggle.show,
-		.nav-link.show {
-			color: inherit;
-			background: rgba(255, 255, 255, 0.18);
-			border-radius: 0.3rem;
-		}
-	}
-}
-
-// A phone: no more room than the page has without the banner - his picture
-// on the left and the lines about him by it, as ever, on his team's color
-// (his name is over it already; no logo).
-@include media-breakpoint-down(sm) {
-	.pb {
-		padding: 0.25rem 0.4rem 0.25rem 0.25rem;
-		margin-bottom: 0;
-		.tb-inner {
-			display: grid;
-			grid-template-columns: auto minmax(0, 1fr) auto;
-			grid-template-areas:
-				"head head menus"
-				"pic words words"
-				"pic side side";
-			// (The face taller than the lines: the spare room under the last
-			// line, not between the team line and the rest.)
-			grid-template-rows: auto auto 1fr;
-			align-items: start;
-			gap: 0 0.5rem;
-		}
-		.tb-logo,
-		.tb-kicker,
-		.tb-title,
-		.tb-stripes-top {
-			display: none;
-		}
-		.tb-phone-head {
-			display: block;
-			grid-area: head;
-			align-self: center;
-			padding: 0.1rem 0 0.25rem 0.15rem;
-		}
-		.tb-menus {
-			position: static;
-			grid-area: menus;
-			justify-self: end;
-			align-self: center;
-			gap: 0.4rem;
-		}
-		.tb-picture {
-			grid-area: pic;
-			align-self: end;
-			margin: 0;
-		}
-		.tb-words {
-			grid-area: words;
-		}
-		.tb-sub {
-			font-size: inherit;
-			font-weight: 700;
-			line-height: 1.45;
-			margin: 0;
-			opacity: 1;
-		}
-		.tb-side {
-			grid-area: side;
-			margin: 0;
-			padding: 0;
-			border: 0;
-			font-size: inherit;
-			line-height: 1.45;
-			opacity: 1;
-		}
-		.tb-stripes span {
-			width: 0.7rem;
-			height: 0.45rem;
-		}
-	}
-	// (As tall as the lines about him by it - see TopStuff: no empty corner
-	// over his face, or under the lines.)
-	.pb-picture .player-picture {
-		width: calc(var(--pb-face-h, 219px) * 2 / 3);
-		height: var(--pb-face-h, 219px);
 	}
 }
 
@@ -5686,77 +5464,6 @@ body:has(.league-ticker) .recap-dock-wrap {
 	}
 	.recap {
 		padding-bottom: 9rem;
-	}
-}
-
-// A team's pages under its banner (see MoreLinks, TeamPageBanner): its pages
-// along the foot of it, the one you are on underlined in its second color.
-.teamb {
-	overflow: visible;
-	padding: 1.4rem 1.5rem 1rem;
-	.tb-title {
-		font-size: 2.6rem;
-	}
-	.tb-logo .d-flex {
-		width: 96px !important;
-		height: 96px !important;
-	}
-	.tb-sub {
-		opacity: 1;
-	}
-}
-@include media-breakpoint-down(sm) {
-	.teamb {
-		padding: 0.45rem 0.6rem 0.35rem;
-		margin-bottom: 0.6rem;
-		.tb-inner {
-			display: grid;
-			grid-template-columns: auto minmax(0, 1fr) auto;
-			grid-template-areas:
-				"logo name menus"
-				"nav nav nav";
-			align-items: center;
-			gap: 0.2rem 0.5rem;
-		}
-		.tb-logo {
-			grid-area: logo;
-		}
-		.tb-logo .d-flex {
-			width: 34px !important;
-			height: 34px !important;
-		}
-		.tb-menus {
-			position: static;
-			grid-area: menus;
-			justify-self: end;
-			flex-wrap: wrap;
-			gap: 0.1rem 0.5rem;
-		}
-		.tb-words {
-			display: contents;
-		}
-		.tb-kicker,
-		.tb-stripes-top {
-			display: none;
-		}
-		.tb-title {
-			grid-area: name;
-			min-width: 0;
-			font-size: 1.25rem;
-			line-height: 1.15;
-			white-space: nowrap;
-			overflow: hidden;
-			text-overflow: ellipsis;
-		}
-		.tb-sub {
-			grid-area: nav;
-			margin: 0;
-			min-width: 0;
-		}
-		.tb-stripes span {
-			width: 0.7rem;
-			height: 0.45rem;
-		}
 	}
 }
 
@@ -6080,37 +5787,6 @@ body:has(.league-ticker) .recap-dock-wrap {
 	}
 }
 
-// A team's name as its own dropdown (see TeamNameDropdown): a caret by it,
-// the page's list of teams opened from anywhere on it.
-.tb-name-dropdown {
-	position: relative;
-	display: inline-flex;
-	align-items: center;
-	gap: 0.3em;
-	max-width: 100%;
-	cursor: pointer;
-	select {
-		position: absolute;
-		inset: 0;
-		width: 100%;
-		opacity: 0;
-		cursor: pointer;
-		font-size: 16px;
-		color: #212529;
-		background: #fff;
-		appearance: none;
-	}
-	&:hover .tb-caret {
-		opacity: 1;
-	}
-}
-// (A name too long for its room cut short, the caret still by it.)
-.tb-name-text {
-	min-width: 0;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
 .tb-caret {
 	flex: 0 0 auto;
 	width: 0.32em;
@@ -6129,67 +5805,9 @@ body:has(.league-ticker) .recap-dock-wrap {
 	}
 }
 
-// (A phone: a team's banner never wider than the page - its menus wrap
-// rather than push it out.)
-@include media-breakpoint-down(sm) {
-	.teamb {
-		overflow-x: clip;
-		.tb-inner {
-			grid-template-columns: auto minmax(0, 1fr) minmax(0, auto);
-		}
-		.tb-menus {
-			min-width: 0;
-			max-width: 50vw;
-			justify-content: flex-end;
-		}
-	}
-}
-
-// (A team's banner: no stripes - they sat on its pages' tabs.)
-.teamb .tb-stripes {
-	display: none;
-}
-
-// A team's banner pinned under the top bar as the page scrolls (see
-// usePinnedBanner in MoreLinks): on a wider screen only its pages show, the
-// rest tucked up under the bar.
-.teamb {
-	position: sticky;
-	top: var(--teamb-top, 52px);
-	z-index: 1015;
-}
 // (A section jumped to, scrolled to under it.)
 .recap-section {
 	scroll-margin-top: var(--teamb-h, 0px);
-}
-
-// The roster's record, rating, payroll... under its banner, in two columns
-// side by side.
-.team-summary {
-	display: grid;
-	grid-template-columns: auto auto;
-	justify-content: start;
-	gap: 0 2.5rem;
-	> :first-child {
-		grid-column: 1;
-		grid-row: 1 / span 8;
-	}
-	> :not(:first-child) {
-		grid-column: 2;
-	}
-	.mt-3 {
-		margin-top: 0 !important;
-	}
-}
-@include media-breakpoint-down(sm) {
-	.team-summary {
-		gap: 0 1rem;
-		font-size: 0.85rem;
-		// (The record's line, a little bigger, as it is.)
-		> :first-child > :first-child[style] {
-			font-size: 1rem !important;
-		}
-	}
 }
 
 // The score by quarter in the middle of the game's banner, under the status.
@@ -6235,26 +5853,6 @@ body:has(.league-ticker) .recap-dock-wrap {
 		td {
 			padding: 0 0.22rem;
 		}
-	}
-}
-
-// A team's strip's menus (the season picker) the size of its buttons: its
-// arrows and its picker as tall as the replay and game arrows by them.
-.teamb .tb-menus .dropdown-select-wrapper {
-	align-items: center;
-	// (BBGM's extra-small buttons, made the size of the strip's own.)
-	.btn,
-	.btn.btn-xs {
-		padding: var(--bs-btn-padding-y, 0.25rem) var(--bs-btn-padding-x, 0.5rem);
-		font-size: var(--bs-btn-font-size, 0.875rem);
-		line-height: 1.5;
-		border-radius: var(--bs-border-radius-sm);
-		--bs-btn-padding-y: 0.25rem;
-		--bs-btn-padding-x: 0.5rem;
-		--bs-btn-font-size: 0.875rem;
-	}
-	.dropdown-select {
-		font-size: 1rem;
 	}
 }
 
@@ -6450,11 +6048,6 @@ body:has(.league-ticker) .recap-dock-wrap {
 	}
 }
 
-// The player page (the refreshed look): its parts jumped to under the bar
-// pinned over it, room at the foot for the menu.
-.player-anchor {
-	scroll-margin-top: 2.9rem;
-}
 .player-dock-room {
 	height: 5rem;
 }
@@ -6463,47 +6056,6 @@ body:has(.league-ticker) .recap-dock-wrap {
 		height: 7rem;
 	}
 }
-// A page's bar pinned under the top bar (see PinnedBar): the team's color,
-// its logo, the name.
-.pin-bar {
-	position: absolute;
-	top: 0;
-	left: 0;
-	right: 0;
-	display: flex;
-	align-items: center;
-	gap: 0.55rem;
-	height: 2.6rem;
-	padding: 0 0.8rem;
-	border-radius: 0 0 0.375rem 0.375rem;
-	background: var(--weave, none), var(--tb-bg);
-	color: var(--tb-fg);
-	box-shadow: 0 6px 12px -6px rgba(0, 0, 0, 0.4);
-	opacity: 0;
-	transform: translateY(-0.4rem);
-	pointer-events: none;
-	transition:
-		opacity 0.15s,
-		transform 0.15s;
-}
-.pin-bar-on {
-	opacity: 1;
-	transform: none;
-	pointer-events: auto;
-}
-.pin-bar-name {
-	font-weight: 800;
-	font-size: 1.05rem;
-	white-space: nowrap;
-	overflow: hidden;
-	text-overflow: ellipsis;
-}
-.pin-bar-sub {
-	font-size: 0.8rem;
-	font-weight: 600;
-	opacity: 0.85;
-	white-space: nowrap;
-}
 
 // The team's page as one long page (see TeamHub): a part not yet loaded
 // holds its place.
@@ -6511,81 +6063,12 @@ body:has(.league-ticker) .recap-dock-wrap {
 	min-height: 20rem;
 }
 
-.team-pages {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 0.5rem;
-	margin: 0.5rem 0 1rem;
-}
-
-// The season by the team's name in its banner ("2024 Boston Celtics"): the
-// year a little lighter, a thin arrow either side of it to the seasons before
-// and after, the list of seasons under it when tapped.
-.tb-title-row {
-	display: inline-flex;
-	align-items: center;
-	gap: 0.3em;
-	min-width: 0;
-	max-width: 100%;
-	.tb-name-dropdown {
-		flex: 0 1 auto;
-		min-width: 0;
-	}
-}
-.tb-season {
-	display: inline-flex;
-	align-items: center;
-	flex: 0 0 auto;
-	font-weight: 600;
-	font-variant-numeric: tabular-nums;
-}
-.tb-season-pick {
-	position: relative;
-	cursor: pointer;
-	select {
-		position: absolute;
-		inset: 0;
-		width: 100%;
-		opacity: 0;
-		cursor: pointer;
-		font-size: 16px;
-		color: #212529;
-	}
-}
-.tb-season-arrow {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	width: 1.15em;
-	height: 1.5em;
-	padding: 0;
-	border: 0;
-	background: transparent;
-	color: inherit;
-	opacity: 0.75;
-	&:hover:not(:disabled) {
-		opacity: 1;
-	}
-	&:disabled {
-		opacity: 0.25;
-		cursor: default;
-	}
-}
 .tb-chevron {
 	width: 0.36em;
 	height: 0.36em;
 	border-right: 0.1em solid currentColor;
 	border-bottom: 0.1em solid currentColor;
 	transform: translateX(-0.08em) rotate(-45deg);
-}
-.tb-season-back .tb-chevron {
-	transform: translateX(0.08em) rotate(135deg);
-}
-// (A phone: the team's nickname only - "2024 Celtics".)
-@include media-breakpoint-down(sm) {
-	.teamb .tb-region {
-		display: none;
-	}
 }
 
 // A box score's team over its table (its logo by its name), not a row in it.
@@ -6618,262 +6101,6 @@ body:has(.league-ticker) .recap-dock-wrap {
 a.rsb-half {
 	color: inherit;
 	text-decoration: none;
-}
-
-// His face in the bar pinned over his page: his head and shoulders, standing
-// on its foot.
-.pin-bar-face {
-	flex: 0 0 auto;
-	align-self: flex-end;
-	width: 2.1rem;
-	height: 2.45rem;
-	overflow: hidden;
-	.player-picture,
-	> img {
-		float: none;
-		margin: 0 !important;
-		width: 2.1rem;
-		height: 3.15rem;
-	}
-}
-
-// A TEAM'S BANNER, NO TABS (see MoreLinks, TeamPageBanner). Most of its
-// pages: one slim strip, pinned - its logo, "2026 Blue Chips", its dropdowns
-// at the end (on a phone, under it if they don't fit by it).
-.teamb.teamb-slim {
-	padding: 0.35rem 0.75rem;
-	.tb-inner {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.2rem 0.6rem;
-		min-height: 2.5rem;
-	}
-	.tb-logo {
-		order: 0;
-	}
-	.tb-logo .d-flex {
-		width: 40px !important;
-		height: 40px !important;
-	}
-	.tb-words {
-		display: contents;
-	}
-	.tb-title {
-		order: 1;
-		flex: 1 1 auto;
-		min-width: 0;
-		margin: 0;
-		font-size: 1.4rem;
-		line-height: 1.15;
-		white-space: nowrap;
-		overflow: visible;
-	}
-	.tb-menus {
-		order: 2;
-		position: static;
-		margin-left: auto;
-		flex-wrap: nowrap;
-		max-width: none;
-	}
-	.tb-sub,
-	.tb-kicker,
-	.tb-stripes,
-	.tb-phone-head {
-		display: none;
-	}
-}
-@include media-breakpoint-down(sm) {
-	.teamb.teamb-slim {
-		padding: 0.3rem 0.5rem;
-		.tb-inner {
-			min-height: 2.3rem;
-			gap: 0.2rem 0.45rem;
-		}
-		.tb-logo .d-flex {
-			width: 32px !important;
-			height: 32px !important;
-		}
-		.tb-title {
-			font-size: 1.15rem;
-		}
-	}
-}
-// Its own page (the roster): big - its logo, "2026 Las Vegas Blue Chips",
-// a line under them (record, standing, how the season went) and a row of its
-// numbers along the foot (see TeamBannerInfo) - not pinned; a slim bar pinned
-// in its place once it has scrolled away (see PinnedBar).
-.teamb.teamb-big {
-	position: relative;
-	top: auto;
-	padding: 1.1rem 1.4rem 1rem;
-	margin-bottom: 1rem;
-	.tb-inner {
-		display: grid;
-		grid-template-columns: auto minmax(0, 1fr) auto;
-		grid-template-areas:
-			"logo title menus"
-			"logo line line"
-			"logo stats stats";
-		align-items: center;
-		gap: 0 1.25rem;
-	}
-	.tb-logo {
-		grid-area: logo;
-	}
-	.tb-logo .d-flex {
-		width: 104px !important;
-		height: 104px !important;
-	}
-	.tb-words,
-	.tb-sub,
-	.tbi {
-		display: contents;
-	}
-	.tb-title {
-		grid-area: title;
-		min-width: 0;
-		margin: 0;
-		font-size: 2.1rem;
-		line-height: 1.15;
-		white-space: nowrap;
-	}
-	.tb-menus {
-		grid-area: menus;
-		position: static;
-	}
-	.tb-kicker,
-	.tb-phone-head,
-	.tb-stripes {
-		display: none;
-	}
-}
-.tbi-line {
-	grid-area: line;
-	margin-top: 0.15rem;
-	font-size: 1rem;
-	opacity: 0.92;
-}
-.tbi-record > span > a:first-child {
-	font-weight: 800;
-}
-// (Its links and buttons - the record, the bracket, the rating, the payroll,
-// the cap status - in its own white, underlined as links.)
-.teamb-big .tbi {
-	a,
-	.btn-link {
-		color: inherit !important;
-		text-decoration: underline;
-		text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
-		text-underline-offset: 0.15em;
-	}
-	.text-danger,
-	.text-success {
-		color: inherit !important;
-	}
-}
-.tbi-value .btn {
-	font-size: inherit;
-	font-weight: inherit;
-	line-height: inherit;
-	vertical-align: baseline;
-}
-.tbi-note {
-	display: block;
-	font-size: 0.7rem;
-	font-weight: 600;
-	line-height: 1.2;
-	opacity: 0.85;
-	white-space: nowrap;
-}
-.tbi-dot {
-	opacity: 0.6;
-}
-.tbi-stats {
-	grid-area: stats;
-	display: flex;
-	flex-wrap: wrap;
-	gap: 0.5rem 2.25rem;
-	margin-top: 0.7rem;
-	padding-top: 0.55rem;
-	border-top: 1px solid color-mix(in srgb, currentColor 25%, transparent);
-}
-.tbi-label {
-	font-size: 0.68rem;
-	font-weight: 700;
-	letter-spacing: 0.08em;
-	text-transform: uppercase;
-	opacity: 0.75;
-}
-.tbi-value {
-	font-size: 1.2rem;
-	font-weight: 800;
-	line-height: 1.2;
-	font-variant-numeric: tabular-nums;
-	white-space: nowrap;
-}
-@include media-breakpoint-down(sm) {
-	.teamb.teamb-big {
-		padding: 0.6rem 0.75rem 0.55rem;
-		margin-bottom: 0.75rem;
-		.tb-inner {
-			grid-template-areas:
-				"logo title menus"
-				"logo line line"
-				"stats stats stats";
-			gap: 0 0.6rem;
-		}
-		.tb-logo .d-flex {
-			width: 52px !important;
-			height: 52px !important;
-		}
-		.tb-title {
-			font-size: 1.3rem;
-		}
-		.tb-menus {
-			max-width: none;
-			.dropdown-select {
-				font-size: 0.85rem;
-			}
-		}
-	}
-	.tbi-line {
-		margin-top: 0.05rem;
-		font-size: 0.85rem;
-	}
-	// (Its numbers four to a row, sharing the width.)
-	.tbi-stats {
-		display: grid;
-		grid-template-columns: repeat(4, minmax(0, 1fr));
-		gap: 0.45rem 0.25rem;
-		margin-top: 0.5rem;
-		padding-top: 0.45rem;
-	}
-	.tbi-stat {
-		text-align: center;
-	}
-	.tbi-label {
-		font-size: 0.6rem;
-		letter-spacing: 0.06em;
-	}
-	.tbi-value {
-		font-size: 0.95rem;
-	}
-}
-// (Under the banner, over the roster: its open spots, and BBRef's "More
-// Team Info".)
-.team-rest-line {
-	display: flex;
-	flex-wrap: wrap;
-	align-items: center;
-	gap: 0.5rem 1rem;
-	> * {
-		margin: 0 !important;
-	}
-}
-// (A section jumped to: under the bar pinned in the banner's place.)
-.team-hub .recap-section {
-	scroll-margin-top: 2.9rem;
 }
 
 // A team's season, game by game (see TeamGames): little tiles - its number,
@@ -7137,137 +6364,6 @@ a.rsb-half {
 	padding-bottom: 2.1rem;
 }
 
-// A PLAYER'S BANNER, HOOPSJUNKIE'S WAY: his team's logo big behind him, cut
-// off by the banner's left edge; his face big in front of it, standing on the
-// foot; to the right his first name small over his last name big, his team,
-// and the lines about him.
-.pb {
-	.tb-logo {
-		position: absolute;
-		top: -1.75rem;
-		bottom: -1.25rem;
-		left: -1.5rem;
-		right: -1.5rem;
-		z-index: 0;
-		overflow: hidden;
-		border-radius: 0.375rem;
-		pointer-events: none;
-		filter: none;
-		> a,
-		> .d-flex {
-			position: absolute;
-			left: -2.4rem;
-			top: 45%;
-			transform: translateY(-50%);
-		}
-		.d-flex {
-			width: 9.5rem !important;
-			height: 9.5rem !important;
-			filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.25));
-		}
-	}
-	.tb-picture {
-		position: relative;
-		z-index: 1;
-		margin-left: 4.75rem;
-	}
-	.tb-words,
-	.tb-side,
-	.tb-menus {
-		position: relative;
-		z-index: 2;
-	}
-	.tb-menus {
-		position: absolute;
-	}
-}
-@include media-breakpoint-down(sm) {
-	.pb {
-		padding: 0.4rem 0.5rem 0 0;
-		.tb-inner {
-			grid-template-columns: auto minmax(0, 1fr);
-			grid-template-areas:
-				"pic menus"
-				"pic words"
-				"pic side";
-			grid-template-rows: auto auto 1fr;
-			gap: 0 0.55rem;
-		}
-		.tb-logo {
-			display: block;
-			top: -0.4rem;
-			bottom: 0;
-			left: 0;
-			right: -0.5rem;
-			> a,
-			> .d-flex {
-				left: -1.7rem;
-				top: 36%;
-			}
-			.d-flex {
-				width: 5.25rem !important;
-				height: 5.25rem !important;
-			}
-		}
-		// (His face the column's height, its box no wider than this - his
-		// shoulders cut off either side.)
-		.tb-picture {
-			display: flex;
-			justify-content: center;
-			align-items: flex-end;
-			align-self: stretch;
-			width: 8.25rem;
-			margin-left: 1rem;
-			overflow: hidden;
-			.pb-picture {
-				display: flex;
-				justify-content: center;
-				width: 100%;
-			}
-			.player-picture {
-				flex: 0 0 auto;
-			}
-		}
-		.tb-kicker,
-		.tb-title {
-			display: block;
-		}
-		.tb-phone-head {
-			display: none;
-		}
-		.tb-menus {
-			position: static;
-			justify-self: end;
-		}
-		.tb-kicker {
-			margin-top: 0.1rem;
-		}
-		.pb-first {
-			font-size: 0.78rem;
-			letter-spacing: 0.18em;
-		}
-		.tb-title {
-			// (As big as his last name fits: a short one big.)
-			font-size: min(2.4rem, calc(22rem / var(--pb-last-len, 8)));
-			line-height: 1.05;
-			margin: 0.05rem 0 0.25rem;
-			overflow-wrap: anywhere;
-		}
-		.tb-sub {
-			line-height: 1.35;
-			margin-bottom: 0.2rem;
-		}
-		.tb-sub {
-			font-size: 0.82rem;
-		}
-		.tb-side {
-			font-size: 0.78rem;
-			line-height: 1.38;
-			padding-bottom: 0.45rem;
-		}
-	}
-}
-
 // The series in a game's banner as BBGM has it ("DAL leads series 1-0"):
 // plain words over the status, its links in the banner's white.
 .mb-tag {
@@ -7300,4 +6396,23 @@ a.rsb-half {
 	.play-through-injuries:has(form) {
 		flex-basis: 100%;
 	}
+}
+
+// A box score's heading with its Traditional / Advanced / Rotations by it, on
+// one row (see BoxScorePhone).
+.bsp-head-row {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.4rem 0.75rem;
+	margin: 0.5rem 0 0.5rem;
+	.recap-section-title {
+		margin: 0;
+	}
+}
+
+// (A game's page: a section jumped to lands under the score pinned over it.)
+.recap-game .recap-section {
+	scroll-margin-top: 2.9rem;
 }

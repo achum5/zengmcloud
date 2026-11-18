@@ -11,18 +11,6 @@ import TeamFinances from "../TeamFinances/index.tsx";
 import DraftPicks from "../DraftPicks.tsx";
 import Transactions from "../Transactions.tsx";
 import type { ViewId } from "../../router/types.ts";
-import { MoreLinks } from "../../components/MoreLinks.tsx";
-
-// (Already sections of the page.)
-const HUB_PAGES = [
-	"roster",
-	// (Its games are each their own page, from its schedule.)
-	"game_log",
-	"schedule",
-	"team_finances",
-	"draft_picks",
-	"transactions",
-];
 
 // ANOTHER TEAM PAGE, DRAWN AS A SECTION: its data asked of the worker as its
 // own page asks for it (once the section is drawn - when it comes near the
@@ -75,8 +63,8 @@ const ViewPart = ({
 
 // A TEAM'S PAGE AS ONE LONG PAGE (the refreshed look, any season): its
 // roster, then its games that season (each to its game's page), its finances,
-// draft picks (this season) and transactions, the rest of its pages at the
-// foot - a menu at the foot of the window to go between them. Each part but
+// draft picks (this season) and transactions - a menu at the foot of the
+// window to go between them. Each part but
 // the games is BBGM's own page of it.
 export const TeamHub = ({
 	abbrev,
@@ -143,21 +131,6 @@ export const TeamHub = ({
 					viewId="transactions"
 					params={{ team, season: String(season) }}
 					Component={Transactions}
-				/>
-			),
-		},
-		{
-			id: "more",
-			label: "More",
-			icon: DOCK_ICONS.more,
-			body: (
-				<MoreLinks
-					type="team"
-					page="roster"
-					tid={tid}
-					season={season}
-					asList
-					exclude={HUB_PAGES}
 				/>
 			),
 		},

@@ -898,8 +898,11 @@ export const GameRecap = ({
 			id: "box",
 			label: "Box Score",
 			icon: DOCK_ICONS.box,
+			// (A phone: its heading drawn by the box score, the tabs beside it.)
+			title: isPhone ? null : undefined,
 			body: isPhone ? (
 				<BoxScorePhone
+					title="Box Score"
 					boxScore={
 						replay && period !== "all"
 							? periodBoxScore(boxScore, replay.ends, period)
@@ -1090,7 +1093,10 @@ export const GameRecap = ({
 
 	return (
 		<FeedContext.Provider value={feed}>
-			<div className="gamecast recap">
+			<div className="gamecast recap recap-game">
+				{/* (Over the game's banner: pinned already by the time it shows -
+				    the banner scrolled away - not partway down the page.) */}
+				{refreshedLook ? <ScoreBar boxScore={boxScore} /> : null}
 				<RecapHeader
 					boxScore={boxScore}
 					abbrev={abbrev}
@@ -1101,7 +1107,6 @@ export const GameRecap = ({
 					teamNav={teamNav}
 					dayGames={dayGames}
 				/>
-				{refreshedLook ? <ScoreBar boxScore={boxScore} /> : null}
 				{refreshedLook ? (
 					<>
 						<RecapSections
