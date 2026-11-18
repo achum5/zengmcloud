@@ -229,6 +229,9 @@ const GameLog = ({
 					tid={tid}
 					season={season}
 					slim={refreshedLook && recap}
+					colors={
+						(boxScore as any).teams?.find((t: any) => t.tid === tid)?.colors
+					}
 					actions={
 						refreshedLook && recap ? (
 							<RecapNav

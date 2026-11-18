@@ -136,8 +136,11 @@ export const MatchupBanner = ({
 	subs,
 	won,
 	extra,
+	leaders,
 	className,
 }: {
+	// Each side's top man (the box score: its top scorer).
+	leaders?: [ReactNode, ReactNode];
 	// Under the tag and the status, in the middle (the score by quarter).
 	extra?: ReactNode;
 	// Left, right.
@@ -191,6 +194,9 @@ export const MatchupBanner = ({
 								)}
 							</div>
 							{subs?.[i] ? <div className="tb-sub">{subs[i]}</div> : null}
+							{leaders?.[i] ? (
+								<div className="mb-leader mb-leader-side">{leaders[i]}</div>
+							) : null}
 						</div>
 					</div>
 					{numbers ? (
@@ -207,6 +213,12 @@ export const MatchupBanner = ({
 				</div>
 			);
 		})}
+		{leaders ? (
+			<div className="mb-leaders">
+				<div className="mb-leader">{leaders[0]}</div>
+				<div className="mb-leader">{leaders[1]}</div>
+			</div>
+		) : null}
 		{tag || status || extra ? (
 			<div className="mb-middle">
 				{tag ? <div className="mb-tag">{tag}</div> : null}
@@ -277,14 +289,26 @@ export const useTeamColors = (tid: number | undefined) => {
 			setColors(have);
 			return;
 		}
+		// (Asked again if the worker doesn't answer - busy syncing, say - rather
+		// than left in the stand-in gray.)
 		let live = true;
 		(async () => {
-			const got = await toWorker("main", "getTeamColorsUI", tid);
-			if (got) {
-				colorsCache.set(key, got);
-			}
-			if (live) {
-				setColors(got);
+			for (let attempt = 0; attempt < 5 && live; attempt += 1) {
+				try {
+					const got = await toWorker("main", "getTeamColorsUI", tid);
+					if (got) {
+						colorsCache.set(key, got);
+						if (live) {
+							setColors(got);
+						}
+						return;
+					}
+				} catch {
+					// Again, in a moment.
+				}
+				await new Promise((resolve) => {
+					setTimeout(resolve, 700 * (attempt + 1));
+				});
 			}
 		})();
 		return () => {

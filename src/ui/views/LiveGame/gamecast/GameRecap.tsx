@@ -75,6 +75,27 @@ const TABS: [Tab, string][] = [
 const teamUrl = (t: any, season: number) =>
 	helpers.leagueUrl(["roster", `${t.abbrev}_${t.tid}`, season]);
 
+// A team's top scorer, for the banner: "T. Jones 38 PTS", to his page.
+const topScorer = (t: any) => {
+	const top = ((t.players ?? []) as any[]).reduce<any>(
+		(best, p) => (best === undefined || p.pts > best.pts ? p : best),
+		undefined,
+	);
+	if (!top || !(top.pts > 0)) {
+		return null;
+	}
+	const words = String(top.name).trim().split(/\s+/);
+	const short =
+		words.length > 1
+			? `${words[0]![0]}. ${words.slice(1).join(" ")}`
+			: top.name;
+	return (
+		<a href={helpers.leagueUrl(["player", top.pid])}>
+			{short} <span className="mb-leader-pts">{top.pts} PTS</span>
+		</a>
+	);
+};
+
 // "Final", "Final/OT", "Final/2OT".
 const finalText = (boxScore: any) => {
 	const ot = boxScore.overtimes ?? 0;
@@ -329,6 +350,7 @@ const RecapHeader = ({
 							away.won !== undefined ? helpers.formatRecord(away) : null,
 							home.won !== undefined ? helpers.formatRecord(home) : null,
 						]}
+						leaders={[topScorer(away), topScorer(home)]}
 					/>
 				</>
 			) : (

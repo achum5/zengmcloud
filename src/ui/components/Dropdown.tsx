@@ -265,7 +265,7 @@ export const TeamNameDropdown = ({
 	}
 	return (
 		<span className="tb-name-dropdown">
-			{children}
+			<span className="tb-name-text">{children}</span>
 			<span className="tb-caret" aria-hidden />
 			<select
 				aria-label="Team"

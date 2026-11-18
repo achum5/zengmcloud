@@ -6191,6 +6191,13 @@ body:has(.league-ticker) .recap-dock-wrap {
 		opacity: 1;
 	}
 }
+// (A name too long for its room cut short, the caret still by it.)
+.tb-name-text {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
 .tb-caret {
 	flex: 0 0 auto;
 	width: 0.32em;
@@ -6282,13 +6289,14 @@ body:has(.league-ticker) .recap-dock-wrap {
 		padding: 0.4rem 0.6rem 0.3rem;
 		margin-bottom: 0;
 		.tb-inner {
-			grid-template-columns: auto minmax(0, 1fr) minmax(0, auto);
+			grid-template-columns: auto minmax(0, 1fr) minmax(0, auto) auto;
 			grid-template-areas:
-				"logo name side"
-				"logo nav menus";
+				"logo name menus side"
+				"logo nav nav nav";
 		}
 		.tb-menus {
 			grid-area: menus;
+			max-width: none;
 		}
 		.tb-words {
 			display: contents;
@@ -6424,4 +6432,106 @@ body:has(.league-ticker) .recap-dock-wrap {
 	align-items: center;
 	gap: 0.6rem;
 	margin-bottom: 0.4rem;
+}
+
+// A team's strip's menus (the season picker) the size of its buttons: its
+// arrows and its picker as tall as the replay and game arrows by them.
+.teamb .tb-menus .dropdown-select-wrapper {
+	align-items: center;
+	// (BBGM's extra-small buttons, made the size of the strip's own.)
+	.btn,
+	.btn.btn-xs {
+		padding: var(--bs-btn-padding-y, 0.25rem) var(--bs-btn-padding-x, 0.5rem);
+		font-size: var(--bs-btn-font-size, 0.875rem);
+		line-height: 1.5;
+		border-radius: var(--bs-border-radius-sm);
+		--bs-btn-padding-y: 0.25rem;
+		--bs-btn-padding-x: 0.5rem;
+		--bs-btn-font-size: 0.875rem;
+	}
+	.dropdown-select {
+		font-size: 1rem;
+	}
+}
+
+// Each team's top scorer in a game's banner: under the score by quarter on a
+// phone (between the two teams), under the record wider.
+.mb-leader {
+	font-size: 0.85rem;
+	font-weight: 600;
+	line-height: 1.25;
+	opacity: 0.95;
+	a {
+		color: inherit;
+	}
+}
+.mb-leader-pts {
+	font-weight: 800;
+	white-space: nowrap;
+}
+.mb-leaders {
+	display: none;
+}
+@include media-breakpoint-down(sm) {
+	.mb-leader-side {
+		display: none;
+	}
+	.mb-leaders {
+		position: absolute;
+		left: 50%;
+		bottom: 0.7rem;
+		transform: translateX(-50%);
+		z-index: 1;
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 0 0.9rem;
+		width: 12rem;
+		color: #fff;
+		text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+		.mb-leader {
+			font-size: 0.7rem;
+			text-align: center;
+			min-width: 0;
+			a {
+				display: block;
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+			}
+		}
+		// (The name over the points.)
+		.mb-leader-pts {
+			display: block;
+		}
+	}
+	.mb-banner:has(.mb-leaders) .mb-half {
+		padding-bottom: 1.5rem;
+	}
+}
+// (A phone: the name, the season picker and the game's buttons on one row -
+// a little tighter, so the name keeps its room.)
+@include media-breakpoint-down(sm) {
+	.teamb.teamb-slim {
+		.tb-inner {
+			gap: 0.2rem 0.4rem;
+		}
+		.tb-title {
+			font-size: 1.15rem;
+		}
+		.tb-logo .d-flex {
+			width: 32px !important;
+			height: 32px !important;
+		}
+		.tb-actions {
+			gap: 0.25rem;
+		}
+		.tb-actions .btn,
+		.tb-menus .dropdown-select-wrapper .btn {
+			--bs-btn-padding-x: 0.42rem;
+			--bs-btn-font-size: 0.8rem;
+		}
+		.tb-menus .dropdown-select {
+			font-size: 0.95rem;
+		}
+	}
 }

@@ -71,16 +71,19 @@ const TeamPageBanner = ({
 	page,
 	slim,
 	actions,
+	colors: pageColors,
 }: {
 	tid: number;
 	links: Link[];
 	page: string;
 	slim?: boolean;
 	actions?: ReactNode;
+	colors?: string[];
 }) => {
 	const { teamInfoCache } = useLocal(["teamInfoCache"]);
 	const info = teamInfoCache[tid];
-	const colors = useTeamColors(tid);
+	const fetched = useTeamColors(pageColors ? undefined : tid);
+	const colors = pageColors ?? fetched;
 	const ref = usePinnedBanner(info !== undefined);
 	if (!info) {
 		return null;
@@ -132,6 +135,8 @@ export const MoreLinks = (
 				// own banner, the game log), and buttons at its end.
 				slim?: boolean;
 				actions?: ReactNode;
+				// The team's colors where the page has them (its box score).
+				colors?: string[];
 		  }
 		| {
 				type: "draft";
@@ -558,6 +563,7 @@ export const MoreLinks = (
 				page={page}
 				slim={props.slim}
 				actions={props.actions}
+				colors={props.colors}
 			/>
 		);
 	}
