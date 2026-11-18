@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 359,
+		date: "2026-11-18",
+		text: "New look (Look: Refreshed): on a team page, Play Through Injuries sits on the row with Auto sort and Reset playing time and folds open under it, instead of stretching across the whole window.",
+	},
+	{
 		n: 358,
 		date: "2026-11-18",
 		text: "New look (Look: Refreshed): team and player pages are back to the classic header - the title bar with its dropdowns, the team's record, payroll and links, the player's picture and bio - while keeping the one long team page, the menu at the bottom and the game tiles. In a box score, Traditional / Advanced / Rotations sit next to the Box Score heading.",

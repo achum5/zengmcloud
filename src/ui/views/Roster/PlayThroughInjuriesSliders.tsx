@@ -80,20 +80,25 @@ const titleText = "Play Through Injuries";
 
 const PlayThroughInjuriesSliders = ({
 	t,
+	collapsible,
 }: {
 	t: {
 		tid: number;
 		playThroughInjuries: [number, number];
 	};
+	// Folded up to start with, opened by its title, on any screen (in a row
+	// of buttons - the refreshed look), not only on a phone.
+	collapsible?: boolean;
 }) => {
-	const [expanded, setExpanded] = useState(!window.mobile);
+	const folds = collapsible || window.mobile;
+	const [expanded, setExpanded] = useState(!folds);
 
 	const { gender } = useLocal(["gender"]);
 
 	return (
 		<div className="play-through-injuries">
 			<div className="d-flex align-items-center">
-				{window.mobile ? (
+				{folds ? (
 					<button
 						className="btn btn-link p-0 fw-bold"
 						type="button"

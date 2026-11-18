@@ -441,7 +441,7 @@ const TopStuff = ({
 				oneRow={compact}
 				extra={
 					compact && showTradingBlock ? (
-						<PlayThroughInjurySliders key={tid} t={t} />
+						<PlayThroughInjurySliders key={tid} t={t} collapsible />
 					) : undefined
 				}
 			/>

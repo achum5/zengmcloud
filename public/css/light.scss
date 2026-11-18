@@ -6396,6 +6396,10 @@ a.rsb-half {
 	.play-through-injuries:has(form) {
 		flex-basis: 100%;
 	}
+	// (Its sliders no wider than they were by the roster.)
+	.play-through-injuries form {
+		max-width: 24rem;
+	}
 }
 
 // A box score's heading with its Traditional / Advanced / Rotations by it, on
