@@ -1269,3 +1269,103 @@ agency went from 354 s to 235 s (175,000 franchise values to 118,000), the
 - Re-sign odds are read once an outlook (a week in season), at whatever
   moment first asks for them. With the floor on, that timing alone changed
   in-season trades; they should not depend on it.
+
+## League 7: every team reviewed, and the seller's share (2026-11-18)
+
+The owner ran League 7 from the real 2010 rosters, every team the smart CPU
+on vanilla's rules, six seasons to 2015 (two hours). All 30 teams were
+reviewed season by season. The league followed the real NBA cap ($58.0M
+for the summers of 2010-12, $58.7M in 2013, $63.1M in 2014, $70.0M in 2015),
+so the reviews' cap room is on those numbers.
+
+**What worked.** Re-signing at 87-92% for rookie deals and 73-80% for
+veterans. All 14 room-clearing trades were followed at once by the
+signing, and every top day-1 free agent went to a team that had just
+cleared room for him.
+
+**What didn't: the market is run by a few contenders.** Teams with 5%+
+title odds started 114 of the 140 market trades, and MIA (26), CHI (25),
+OKC (24) and MIL (19) started 94; those four won five of the six titles.
+The side that started a deal came out ahead 59% of the time, a median 1.6
+WS over three seasons. Bad teams almost never started one (BOS 0 of 10,
+BKN 1 of 10). The reviews counted, across the league:
+
+- About 30 deals that fed the best teams. Durant (80/82) went to MIA for
+  Beasley (77/80). Harden (70/73) went to MIA for Horford and a late
+  first, and was flipped within weeks. Thornton (68) went to the 77-5 MIA
+  for a 58 and filler. Holiday (65/72) went to MIL for two expiring
+  veterans and two late firsts.
+- About 25 prospects sold for little. Isaiah Thomas, CHA's #4 pick, went
+  for a 2015 #20 weeks after the draft. UTA's Cory Joseph (58/69) went to
+  MIA for three fringe players.
+- Bad teams that never sold, and stars who walked (LeBron from CLE,
+  Harden from MEM, Drummond from IND).
+- 55-win teams that never bought behind a superteam (PHO, POR, BKN, HOU).
+- Cap room given away. LAL took a $16.3M dump, and UTA signed Tripp with
+  the room it made.
+- Churn: CHI bought and resold players within weeks. Contenders traded
+  runs of future firsts (CHI six straight).
+- Second contracts paid on potential, and multi-year minimum deals for
+  washed-up veterans.
+
+**How bad teams become contenders (Leagues 5-7, measured).**
+
+- A bottom-third team contended (top 4, or reached the conference
+  finals) within 4 seasons 20% of the time, and within 6 seasons 39%,
+  with a median of 3 years.
+- What predicted a rise:
+  - The best young player's potential (odds ×1.5 per 5 points).
+  - Keeping its own firsts (22% when it kept all three, 0 of 13 when it
+    had sold two or more).
+  - A young best player.
+- Cap room and the number of young players predicted nothing.
+- The contending roster came 38% from the draft, 30% from trades and 21%
+  from free agency, and 62% of its WS arrived after the low point.
+- Bad teams that traded young players away gave up 1.36 WS for every 1
+  they got back, yet selling youth did not change their own chance of
+  rising (23% against 20%). The harm was to the league's balance: it fed
+  the contenders.
+
+**The outlook checked against them.**
+
+- Bad teams' title chances: on League 7's 2016 file the outlook gives
+  the bottom third 0.0%, 0.05%, 0.17%, 0.9%, 1.3% and 2.3% for seasons 1-6
+  ahead. In the finished leagues they won 0.4%, 0.4%, 1.4%, 1.6%, 1.9% and
+  3.8% (about 16 titles in all). That is low near term but not far off.
+- Where a team's own pick lands: a top-three team's pick lands 0.89 of
+  the way down the order a season later, 0.66 three seasons on and 0.56
+  four on. The outlook's regression of contenders matches.
+- So the bad teams' losses came from how deals are struck, not from what
+  the outlook sees.
+
+**The cause, in the market.**
+
+- A winning offer is trimmed to beat the next best one. With one team
+  wanting a player far more than the rest, the next best is nothing, so
+  the seller kept a sliver.
+- Offers are built by the seller's own use of each piece, which is near
+  zero for a team out of the race. In-season, nearly all offers were a
+  single piece.
+- In the deals the market found on League 7's 2016 file, the seller kept
+  a median fifth of what the deal made for both sides.
+
+**What changed: the seller's share** (market.ts sellerShare, fairToSeller).
+
+- A seller won't hand a team more than 0.01 titles of gain while keeping
+  less than a third of what the deal makes for both: it holds out, or the
+  buyer pays more.
+- The winning offer is never trimmed below that share.
+- Small swaps are left alone.
+
+On League 7's 2016 season, the rule turned down 7 lopsided deals and the
+market made as many deals as before (3 against 3). The sellers kept 0.38,
+0.66 and 0.53 of the gain, against 0.32, 0.06 and 0.82 without it. MIA's
+LeBron went to LAC for Harkless (23y 61/67) rather than for filler. What
+it does to dynasties is for the owner's long run to show.
+
+**Next.**
+
+- Room gifts: a team absorbing a dump prices its room by the pool, not by
+  the free agent the dump lets the other team sign.
+- Offers built by the seller's full worth (its price, not just its use).
+- Selling expiring players before they walk.

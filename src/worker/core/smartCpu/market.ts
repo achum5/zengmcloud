@@ -69,7 +69,24 @@ export const marketSettings = {
 	// 0.001 - near-equal role players swapped, a 53 for a 53 and two picks;
 	// at 0.001, none did, with trades a season 31 against 33.
 	minGain: 0.001,
+	// THE SELLER'S SHARE. A seller doesn't hand a team a real upgrade -
+	// more than shareAbove titles - while keeping less than this share of
+	// what the deal makes for both: it holds out, or the buyer pays more
+	// (the winning offer is never trimmed below it). With one team wanting
+	// a player far more than any other, the next best offer is nothing,
+	// and trimmed to that the seller kept a sliver: in League 7 the
+	// league's best teams bought Durant for Beasley, Harden for Horford
+	// and a late first, Thornton for a 58 and filler, and four of them
+	// started 94 of the 140 deals and won five of six titles. In the
+	// deals the market found there, the seller kept a median fifth.
+	sellerShare: 1 / 3,
+	shareAbove: 0.01,
 };
+
+// Whether a deal leaves the seller its share (marketSettings.sellerShare).
+export const fairToSeller = (sellerGain: number, buyerGain: number) =>
+	!(buyerGain > marketSettings.shareAbove) ||
+	sellerGain >= marketSettings.sellerShare * (sellerGain + buyerGain);
 
 // Where candidate sales fall away (for tests and the arena).
 export const marketStats = {
@@ -79,6 +96,8 @@ export const marketStats = {
 	// Deals no longer good for both by the time their turn came.
 	changed: 0,
 	illegal: 0,
+	// Deals the seller turned down for its share (sellerShare).
+	unfair: 0,
 };
 
 export type SmartDeal = {
@@ -239,11 +258,13 @@ const matchable = (view: SmartView, buyer: number, p: Player) => {
 
 // The winning offer, trimmed to what it must be: the buyer takes back what it
 // would miss most, one piece at a time, while the seller still gains by more
-// than `bar` (the next best real offer, or nothing). A real offer is its
-// buyer's best for the seller while it still gains - all it would pay; as
-// at an auction the winner pays about what beats the next bidder (untrimmed,
-// a contender gave two prospects and two firsts for a 31-year-old 60 and
-// kept 0.0009 of a title for itself). Salaries must still work.
+// than `bar` (the next best real offer, or nothing) and keeps its share of
+// what the deal makes for both (marketSettings.sellerShare). A real offer is
+// its buyer's best for the seller while it still gains - all it would pay;
+// as at an auction the winner pays about what beats the next bidder
+// (untrimmed, a contender gave two prospects and two firsts for a
+// 31-year-old 60 and kept 0.0009 of a title for itself). Salaries must
+// still work.
 const trimmed = (
 	view: SmartView,
 	seller: number,
@@ -275,8 +296,11 @@ const trimmed = (
 				players: now.players.filter((p) => p !== x),
 				picks: now.picks.filter((dp) => dp !== x),
 			};
+			const sellerGain = view.dealWorthNow(seller, buyer, out, without);
+			const buyerGain = view.dealWorthNow(buyer, seller, without, out);
 			if (
-				view.dealWorthNow(seller, buyer, out, without) > bar &&
+				sellerGain > bar &&
+				fairToSeller(sellerGain, buyerGain) &&
 				salaryRulesAllow(buyer, payrolls.buyer, salary(out), salary(without)) &&
 				salaryRulesAllow(seller, payrolls.seller, salary(without), salary(out))
 			) {
@@ -457,6 +481,10 @@ const marketMomentNow = async () => {
 			!(buyerGain > marketSettings.minGain)
 		) {
 			marketStats.changed += 1;
+			continue;
+		}
+		if (!fairToSeller(sellerGain, buyerGain)) {
+			marketStats.unfair += 1;
 			continue;
 		}
 		const teams = teamsOf(found.seller, found.buyer, found.out, found.offer);

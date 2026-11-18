@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 365,
+		date: "2026-11-18",
+		text: "Smart CPU: CPU teams no longer hand the league's best teams a big upgrade for scraps. A team selling a player another team wants far more than anyone else now holds out for a fair share of what the deal is worth, so contenders have to pay real value, like young players or good picks, for stars.",
+	},
+	{
 		n: 364,
 		date: "2026-11-18",
 		text: "New look (Look: Refreshed): in a game's header, each team's name is back where it was, with its points, rebounds and assists leaders tucked beside its record under the name.",
