@@ -229,6 +229,12 @@ export const MatchupBanner = ({
 	</div>
 );
 
+// Two teams' colors (as MatchupBanner sets them), for anything else in them.
+export const matchupVars = (
+	colors0: string[] | undefined,
+	colors1: string[] | undefined,
+) => ({ ...vars(colors0, "0"), ...vars(colors1, "1") }) as CSSProperties;
+
 // A PAGE'S OWN BANNER: in place of the title bar (hidden while it is up),
 // the page's dropdowns in it, and its title over it on a phone.
 export const useHideTitleBar = (active = true) => {

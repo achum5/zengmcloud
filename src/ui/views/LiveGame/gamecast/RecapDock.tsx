@@ -1,5 +1,11 @@
 import clsx from "clsx";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+	useEffect,
+	useRef,
+	useState,
+	type CSSProperties,
+	type ReactNode,
+} from "react";
 
 // THE GAME PAGE AS ONE LONG PAGE, a menu floating at the foot of the window:
 // each of its sections a button that takes you there, the one you are in
@@ -186,9 +192,7 @@ export const RecapDock = ({
 						className={clsx({ active: active === s.id })}
 						onClick={() => {
 							setActive(s.id);
-							document
-								.getElementById(`recap-${s.id}`)
-								?.scrollIntoView({ behavior: "smooth", block: "start" });
+							jumpToSection(s.id);
 						}}
 					>
 						{s.icon}
@@ -197,5 +201,128 @@ export const RecapDock = ({
 				))}
 			</nav>
 		</div>
+	);
+};
+
+// TO A SECTION: every section above it drawn first (see RecapSections - a
+// section is drawn only once it comes near the window), then there.
+const JUMP_EVENT = "recap-jump";
+export const jumpToSection = (id: string) => {
+	window.dispatchEvent(new CustomEvent(JUMP_EVENT, { detail: id }));
+};
+
+export type RecapSectionDef = DockSection & {
+	// Over it (its label unless given; null for none - a section with its own).
+	title?: string | null;
+	body: ReactNode;
+};
+
+// About how tall a section is before it is drawn, so the page is about as long
+// as it will be.
+const UNDRAWN_HEIGHT = 420;
+
+// A SECTION, DRAWN ONCE IT IS NEAR: its heading always, its body once it comes
+// within a window or so of being seen (or a jump goes to it or past it) - and
+// kept from then on. The page as one long page costs no more to open than the
+// part of it on screen.
+const LazySection = ({
+	section,
+	force,
+}: {
+	section: RecapSectionDef;
+	force: boolean;
+}) => {
+	const ref = useRef<HTMLElement>(null);
+	const [near, setNear] = useState(false);
+	const shown = near || force;
+	useEffect(() => {
+		if (shown) {
+			return;
+		}
+		const el = ref.current;
+		if (!el || typeof IntersectionObserver === "undefined") {
+			setNear(true);
+			return;
+		}
+		const observer = new IntersectionObserver(
+			(entries) => {
+				if (entries.some((e) => e.isIntersecting)) {
+					setNear(true);
+					observer.disconnect();
+				}
+			},
+			{ rootMargin: "100% 0px 100% 0px" },
+		);
+		observer.observe(el);
+		return () => {
+			observer.disconnect();
+		};
+	}, [shown]);
+	const style: CSSProperties | undefined = shown
+		? undefined
+		: { minHeight: UNDRAWN_HEIGHT };
+	return (
+		<section
+			ref={ref}
+			id={`recap-${section.id}`}
+			className="recap-section"
+			style={style}
+		>
+			{section.title === null ? null : (
+				<h2 className="recap-section-title">
+					{section.title ?? section.label}
+				</h2>
+			)}
+			{shown ? section.body : null}
+		</section>
+	);
+};
+
+// THE PAGE'S SECTIONS AND THE MENU AT ITS FOOT. The first section drawn at
+// once, the rest as they come near; a jump draws every section down to the one
+// jumped to before scrolling, so it lands where it will stay.
+export const RecapSections = ({
+	sections,
+	quarter,
+	topPx,
+}: {
+	sections: RecapSectionDef[];
+	quarter?: ReactNode;
+	topPx?: number;
+}) => {
+	const [drawnTo, setDrawnTo] = useState(0);
+	const ids = sections.map((x) => x.id).join(",");
+	useEffect(() => {
+		const list = ids.split(",");
+		const onJump = (e: Event) => {
+			const id = (e as CustomEvent<string>).detail;
+			const i = list.indexOf(id);
+			if (i < 0) {
+				return;
+			}
+			setDrawnTo((upTo) => Math.max(upTo, i));
+			// (Two frames: the sections above it drawn and laid out.)
+			requestAnimationFrame(() => {
+				requestAnimationFrame(() => {
+					document
+						.getElementById(`recap-${id}`)
+						?.scrollIntoView({ behavior: "smooth", block: "start" });
+				});
+			});
+		};
+		window.addEventListener(JUMP_EVENT, onJump);
+		return () => {
+			window.removeEventListener(JUMP_EVENT, onJump);
+		};
+	}, [ids]);
+	return (
+		<>
+			<div className="recap-sections">
+				{sections.map((x, i) => (
+					<LazySection key={x.id} section={x} force={i <= drawnTo} />
+				))}
+			</div>
+			<RecapDock sections={sections} quarter={quarter} topPx={topPx} />
+		</>
 	);
 };

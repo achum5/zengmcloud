@@ -56,11 +56,15 @@ import { HighlightClip } from "./HighlightClip.tsx";
 import { unpackShots, type ShotSpot } from "./shots.ts";
 import { GAME_S, winProb } from "../winProb.ts";
 import { seriesLine } from "./seriesLine.ts";
-import { MatchupBanner } from "../../../components/TeamBanner.tsx";
-import { DOCK_ICONS, RecapDock, type DockSection } from "./RecapDock.tsx";
+import { MatchupBanner, matchupVars } from "../../../components/TeamBanner.tsx";
+import {
+	DOCK_ICONS,
+	jumpToSection,
+	RecapSections,
+	type DockSection,
+} from "./RecapDock.tsx";
 import { BoxScorePhone, useIsPhone } from "./BoxScorePhone.tsx";
-import { Lineups, OnOff, Rotations } from "./LineupViews.tsx";
-import { stintsFromEvents } from "./stints.ts";
+import { Lineups, OnOff, Rotations, WithStints } from "./LineupViews.tsx";
 
 type Tab = "recap" | "box" | "plays" | "stats" | "flow";
 
@@ -93,6 +97,57 @@ const topScorer = (t: any) => {
 		<a href={helpers.leagueUrl(["player", top.pid])}>
 			{short} <span className="mb-leader-pts">{top.pts} PTS</span>
 		</a>
+	);
+};
+
+// THE SCORE, PINNED: once the game's banner scrolls up under the top bar, a
+// slim bar of it held there - each side in its colors, the score, Final.
+const ScoreBar = ({ boxScore }: { boxScore: any }) => {
+	const [shown, setShown] = useState(false);
+	useEffect(() => {
+		const el = document.querySelector(".recap-header .mb-banner");
+		if (!el || typeof IntersectionObserver === "undefined") {
+			return;
+		}
+		const observer = new IntersectionObserver(
+			([e]) => {
+				setShown(!!e && !e.isIntersecting && e.boundingClientRect.top < 0);
+			},
+			{ rootMargin: "-60px 0px 0px 0px" },
+		);
+		observer.observe(el);
+		return () => {
+			observer.disconnect();
+		};
+	}, [boxScore.gid]);
+	const [away, home] = teamsInDisplayOrder(boxScore.teams as [any, any]);
+	const won = away.pts > home.pts ? 0 : home.pts > away.pts ? 1 : undefined;
+	return (
+		<div className="recap-scorebar-pin">
+			<div
+				className={
+					shown ? "recap-scorebar recap-scorebar-on" : "recap-scorebar"
+				}
+				style={matchupVars(away.colors, home.colors)}
+				aria-hidden={!shown}
+			>
+				<div className="rsb-half rsb-0">
+					<Logo t={away} size={26} />
+					<span className="rsb-abbrev">{away.abbrev}</span>
+					<span className={won === 1 ? "rsb-pts rsb-lost" : "rsb-pts"}>
+						{away.pts}
+					</span>
+				</div>
+				<div className="rsb-mid">{finalText(boxScore)}</div>
+				<div className="rsb-half rsb-1">
+					<span className={won === 0 ? "rsb-pts rsb-lost" : "rsb-pts"}>
+						{home.pts}
+					</span>
+					<span className="rsb-abbrev">{home.abbrev}</span>
+					<Logo t={home} size={26} />
+				</div>
+			</div>
+		</div>
 	);
 };
 
@@ -650,17 +705,9 @@ export const GameRecap = ({
 		[names, replay, gid, boxScore.teams],
 	);
 	const numPeriods = boxScore.numPeriods ?? 4;
-	// Who was on the floor when (rotations, lineups, on/off), from the replay.
-	const stints = useMemo(() => {
-		if (!replay || !refreshedLook) {
-			return undefined;
-		}
-		try {
-			return stintsFromEvents(replay.events, replay.initialBoxScore);
-		} catch {
-			return undefined;
-		}
-	}, [replay, refreshedLook]);
+	// Who was on the floor when (rotations, lineups, on/off): from the replay,
+	// worked out only once one of them is shown (see WithStints).
+	const stints = refreshedLook ? replay : undefined;
 	const tabs = TABS.filter(([key]) => key !== "plays" || replay !== undefined);
 	const shotChart =
 		replay && replay.shots.length > 0 ? (
@@ -697,7 +744,12 @@ export const GameRecap = ({
 					extraViews={stints ? [["rot", "Rotations"]] : undefined}
 					extra={(v) =>
 						v === "rot" && stints ? (
-							<Rotations boxScore={boxScore} stints={stints} />
+							<WithStints
+								events={stints.events}
+								initialBoxScore={stints.initialBoxScore}
+							>
+								{(s) => <Rotations boxScore={boxScore} stints={s} />}
+							</WithStints>
 						) : null
 					}
 				/>
@@ -737,15 +789,8 @@ export const GameRecap = ({
 			label: "Team Stats",
 			icon: DOCK_ICONS.stats,
 			body: (
-				<div className="recap-two">
-					<div>
-						<TeamStatBars boxScore={boxScore} colors={colors} full />
-					</div>
-					<div>
-						<Section title="Four Factors">
-							<FourFactors teams={teamsInDisplayOrder(boxScore.teams)} />
-						</Section>
-					</div>
+				<div className="gamecast-narrow">
+					<TeamStatBars boxScore={boxScore} colors={colors} full />
 				</div>
 			),
 		},
@@ -763,7 +808,9 @@ export const GameRecap = ({
 									plays={replay?.rows}
 									say={feed.say}
 								/>
-								<GameCharts boxScore={boxScore} restOnly />
+								{/* (Its rotations, lineups and on/off: only where there is no
+								    replay to work out ours from - see the sections below.) */}
+								{replay ? null : <GameCharts boxScore={boxScore} restOnly />}
 							</>
 						),
 					},
@@ -808,14 +855,28 @@ export const GameRecap = ({
 						id: "lineups",
 						label: "Lineups",
 						icon: DOCK_ICONS.lineups,
-						body: <Lineups boxScore={boxScore} stints={stints} />,
+						body: (
+							<WithStints
+								events={stints.events}
+								initialBoxScore={stints.initialBoxScore}
+							>
+								{(s) => <Lineups boxScore={boxScore} stints={s} />}
+							</WithStints>
+						),
 					},
 					{
 						id: "onoff",
 						label: "On/Off",
 						title: "On/Off Impact",
 						icon: DOCK_ICONS.onoff,
-						body: <OnOff boxScore={boxScore} stints={stints} />,
+						body: (
+							<WithStints
+								events={stints.events}
+								initialBoxScore={stints.initialBoxScore}
+							>
+								{(s) => <OnOff boxScore={boxScore} stints={s} />}
+							</WithStints>
+						),
 					},
 				]
 			: []),
@@ -875,25 +936,10 @@ export const GameRecap = ({
 					currentGidInList={currentGidInList}
 					navElsewhere={navElsewhere}
 				/>
+				{refreshedLook ? <ScoreBar boxScore={boxScore} /> : null}
 				{refreshedLook ? (
 					<>
-						<div className="recap-sections">
-							{sections.map((x) => (
-								<section
-									key={x.id}
-									id={`recap-${x.id}`}
-									className="recap-section"
-								>
-									{x.title === null ? null : (
-										<h2 className="recap-section-title">
-											{x.title ?? x.label}
-										</h2>
-									)}
-									{x.body}
-								</section>
-							))}
-						</div>
-						<RecapDock
+						<RecapSections
 							sections={sections}
 							quarter={
 								replay && replay.ends.length > 1 ? (
@@ -904,10 +950,7 @@ export const GameRecap = ({
 										onChange={(e) => {
 											const v = e.target.value;
 											setPeriod(v === "all" ? "all" : Number(v));
-											document.getElementById("recap-box")?.scrollIntoView({
-												behavior: "smooth",
-												block: "start",
-											});
+											jumpToSection("box");
 										}}
 									>
 										<option value="all">All Qs</option>

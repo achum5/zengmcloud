@@ -41,9 +41,12 @@ const usePinnedBanner = (on: boolean) => {
 								10,
 						);
 			el.style.setProperty("--teamb-top", `${TOP_BAR - hide}px`);
+			// (Not pinned - the game log's, where the score pins instead: nothing
+			// held over the page.)
+			const pinned = getComputedStyle(el).position === "sticky";
 			document.documentElement.style.setProperty(
 				"--teamb-h",
-				`${Math.round(el.offsetHeight - hide)}px`,
+				pinned ? `${Math.round(el.offsetHeight - hide)}px` : "0px",
 			);
 		};
 		place();
@@ -90,7 +93,9 @@ const TeamPageBanner = ({
 	}
 	return (
 		<PageBanner
-			className={slim ? "teamb teamb-slim" : "teamb"}
+			// (One strip on every team page, so it never changes size as you go
+			// between them; on the game log it sits on top of the game's banner.)
+			className={slim ? "teamb teamb-slim teamb-joined" : "teamb teamb-slim"}
 			teamName
 			t={{
 				tid,

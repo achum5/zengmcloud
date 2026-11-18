@@ -1,10 +1,11 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { helpers } from "../../../util/helpers.ts";
 import { safeLocalStorage } from "../../../util/safeLocalStorage.ts";
-import { TeamLogoInline } from "../../../components/TeamLogoInline.tsx";
 import { teamsInDisplayOrder } from "../../../util/boxScoreDisplayOrder.ts";
-import { RatingsStatsPopover } from "../../../components/RatingsStatsPopover/index.tsx";
-import { Headshot, Switch } from "./Gamecast.tsx";
+import clsx from "clsx";
+import { PlayerNameLabels } from "../../../components/PlayerNameLabels.tsx";
+import { ResponsiveTableWrapper } from "../../../components/ResponsiveTableWrapper.tsx";
+import { Switch } from "./Gamecast.tsx";
 
 // THE BOX SCORE ON A PHONE (the refreshed look): a team at a time, its name
 // over the column heads, its starters, then its bench under the heads again;
@@ -35,7 +36,7 @@ const oppPoss = (o: Line) => o.fga + 0.44 * o.fta - o.orb + o.tov;
 
 export const COLS: Record<string, Col> = {
 	min: {
-		label: "MIN",
+		label: "MP",
 		title: "Minutes",
 		get: (p) => minutes(p.min),
 	},
@@ -47,7 +48,7 @@ export const COLS: Record<string, Col> = {
 		pct: (t) => pctOf(t.fg, t.fga),
 	},
 	tp: {
-		label: "3PT",
+		label: "3P",
 		title: "Three pointers",
 		get: (p) => `${p.tp}-${p.tpa}`,
 		total: (t) => `${t.tp}-${t.tpa}`,
@@ -91,19 +92,19 @@ export const COLS: Record<string, Col> = {
 		total: (t) => pctOf(t.pts, 2 * (t.fga + 0.44 * t.fta)),
 	},
 	trb: {
-		label: "REB",
+		label: "TRB",
 		title: "Rebounds",
 		get: (p) => p.orb + p.drb,
 		total: (t) => t.orb + t.drb,
 	},
 	orb: {
-		label: "OREB",
+		label: "ORB",
 		title: "Offensive rebounds",
 		get: (p) => p.orb,
 		total: (t) => t.orb,
 	},
 	drb: {
-		label: "DREB",
+		label: "DRB",
 		title: "Defensive rebounds",
 		get: (p) => p.drb,
 		total: (t) => t.drb,
@@ -133,7 +134,7 @@ export const COLS: Record<string, Col> = {
 		total: (t) => t.ba,
 	},
 	tov: {
-		label: "TO",
+		label: "TOV",
 		title: "Turnovers",
 		get: (p) => p.tov,
 		total: (t) => t.tov,
@@ -156,7 +157,7 @@ export const COLS: Record<string, Col> = {
 		total: (t) => t.pts,
 	},
 	gmsc: {
-		label: "GS",
+		label: "GmSc",
 		title: "Game score",
 		get: (p) => fixed(helpers.gameScore(p)),
 	},
@@ -193,13 +194,13 @@ export const COLS: Record<string, Col> = {
 		get: (p) => fixed(div(100 * p.tov, p.fga + 0.44 * p.fta + p.tov)),
 	},
 	orbp: {
-		label: "OREB%",
+		label: "ORB%",
 		title: "Share of his team's misses he rebounded while on the floor",
 		get: (p, t, o) =>
 			fixed(div(100 * p.orb * share(t), p.min * (t.orb + o.drb))),
 	},
 	drbp: {
-		label: "DREB%",
+		label: "DRB%",
 		title: "Share of the other team's misses he rebounded while on the floor",
 		get: (p, t, o) =>
 			fixed(div(100 * p.drb * share(t), p.min * (t.drb + o.orb))),
@@ -256,25 +257,6 @@ const loadCols = (view: BoxView) => {
 	return DEFAULT_COLS[view];
 };
 
-// How wide the names are (this device's): the column the same width in
-// both teams' tables, a name longer than it cut short.
-const NAME_WIDTHS = {
-	narrow: "6.6rem",
-	normal: "8.8rem",
-	wide: "11rem",
-} as const;
-type NameWidth = keyof typeof NAME_WIDTHS;
-const NAME_OPTIONS: [NameWidth, string][] = [
-	["narrow", "Narrow"],
-	["normal", "Normal"],
-	["wide", "Wide"],
-];
-const NAME_WIDTH_KEY = "bbgmBoxNameWidth";
-const loadNameWidth = (): NameWidth => {
-	const raw = safeLocalStorage.getItem(NAME_WIDTH_KEY);
-	return raw && raw in NAME_WIDTHS ? (raw as NameWidth) : "normal";
-};
-
 const shortName = (name: string) => {
 	const words = name.trim().split(/\s+/);
 	return words.length > 1
@@ -282,22 +264,33 @@ const shortName = (name: string) => {
 		: name;
 };
 
-// His face (bare, no circle behind it), his name to his page, and BBGM's
-// ratings and stats button by it.
-const PlayerCell = ({ p, season }: { p: Line; season: number }) => (
-	<th className="bsp-name">
-		<div className="bsp-name-in">
-			<a href={helpers.leagueUrl(["player", p.pid])}>
-				<Headshot pid={p.pid} season={season} size={24} />
-				<span className="bsp-pname">{shortName(p.name)}</span>
-			</a>
-			<span className="bsp-pop">
-				<RatingsStatsPopover pid={p.pid} season={season} />
-			</span>
-		</div>
-	</th>
+// A player's name as BBGM's own tables show it (his face, his number, his
+// name to his page, his skills, an injury, the ratings and stats button).
+export const NameCell = ({
+	p,
+	season,
+	exhibition,
+}: {
+	p: Line;
+	season: number;
+	exhibition?: boolean;
+}) => (
+	<td>
+		<PlayerNameLabels
+			injury={p.injury}
+			jerseyNumber={p.jerseyNumber}
+			pid={p.pid}
+			skills={p.skills}
+			legacyName={p.name}
+			disableNameLink={exhibition}
+			season={season}
+		/>
+	</td>
 );
 
+// A TEAM'S TABLE, AS BBGM'S OWN BOX SCORE HAS IT: its name over it, its
+// starters and then (under a line) its bench, who didn't play, the totals -
+// the columns this view's (see Columns).
 const TeamTable = ({
 	t,
 	o,
@@ -305,6 +298,7 @@ const TeamTable = ({
 	season,
 	numStarters,
 	live,
+	exhibition,
 }: {
 	t: Line;
 	o: Line;
@@ -312,11 +306,12 @@ const TeamTable = ({
 	season: number;
 	numStarters: number;
 	live?: boolean;
+	exhibition?: boolean;
 }) => {
-	// (A game still going: everyone who can still play is on the bench, not
-	// DNP - only the hurt are out.)
+	// (A game still going: only the hurt are out - everyone else may yet play.)
 	const out = (p: Line) =>
-		live ? !(p.min > 0) && p.injury?.gamesRemaining > 0 : !(p.min > 0);
+		!(p.min > 0) &&
+		(!live || (p.injury?.gamesRemaining > 0 && !p.injury?.playingThrough));
 	const played = t.players.filter((p: Line) => !out(p));
 	const dnp = t.players.filter(out);
 	// (Live, the starters are the first five, as the box score lists them.)
@@ -324,75 +319,84 @@ const TeamTable = ({
 		? t.players.slice(0, numStarters).filter((p: Line) => !out(p))
 		: played.filter((p: Line) => p.gs === 1).slice(0, numStarters);
 	const bench = played.filter((p: Line) => !starters.includes(p));
-	const heads = (first: ReactNode, className: string) => (
-		<tr className={className}>
-			<th className="bsp-name">{first}</th>
-			{cols.map((c) => (
-				<th key={c} title={COLS[c]!.title}>
-					{COLS[c]!.label}
-				</th>
-			))}
-		</tr>
-	);
-	const row = (p: Line) => (
-		<tr key={p.pid} className={live && p.inGame ? "bsp-on" : undefined}>
-			<PlayerCell p={p} season={season} />
-			{cols.map((c) => (
-				<td key={c}>{COLS[c]!.get(p, t, o)}</td>
-			))}
-		</tr>
-	);
+	const rows = [...starters, ...bench];
 	return (
-		<div className="bsp-wrap">
-			<table className="bsp-table">
-				<thead>
-					{heads(
-						<span className="bsp-team">
-							<TeamLogoInline
-								imgURL={t.imgURL}
-								imgURLSmall={t.imgURLSmall}
-								size={16}
-							/>
-							{(t.region || t.name || "").toUpperCase()}
-						</span>,
-						"bsp-head",
-					)}
-				</thead>
-				<tbody>
-					{starters.map(row)}
-					{bench.length > 0 || dnp.length > 0
-						? heads("BENCH", "bsp-head bsp-bench")
-						: null}
-					{bench.map(row)}
-					{dnp.map((p: Line) => (
-						<tr key={p.pid} className="bsp-dnp">
-							<PlayerCell p={p} season={season} />
-							<td colSpan={cols.length}>
-								DNP —{" "}
-								{p.injury?.gamesRemaining > 0
-									? `Injury${p.injury.type ? ` (${p.injury.type})` : ""}`
-									: "Coach's decision"}
-							</td>
-						</tr>
-					))}
-				</tbody>
-				<tfoot>
-					<tr>
-						<th className="bsp-name">TOTALS</th>
-						{cols.map((c) => (
-							<th key={c}>{COLS[c]!.total?.(t, o) ?? null}</th>
-						))}
-					</tr>
-					{cols.some((c) => COLS[c]!.pct) ? (
-						<tr className="bsp-pct">
-							<th className="bsp-name" />
+		<div className="mb-3">
+			<h2>
+				{t.tid >= 0 ? (
+					<a
+						href={helpers.leagueUrl(["roster", `${t.abbrev}_${t.tid}`, season])}
+					>
+						{t.region} {t.name}
+					</a>
+				) : (
+					<>
+						{t.region} {t.name}
+					</>
+				)}
+			</h2>
+			<ResponsiveTableWrapper>
+				<table className="table table-striped table-borderless table-sm table-hover sticky-x">
+					<thead>
+						<tr>
+							<th>Name</th>
+							<th>Pos</th>
 							{cols.map((c) => (
-								<th key={c}>{COLS[c]!.pct?.(t) ?? null}</th>
+								<th key={c} title={COLS[c]!.title}>
+									{COLS[c]!.label}
+								</th>
 							))}
 						</tr>
-					) : null}
-				</tfoot>
-			</table>
+					</thead>
+					<tbody>
+						{rows.map((p: Line, i: number) => (
+							<tr
+								key={p.pid}
+								className={clsx({
+									separator: i + 1 === starters.length && bench.length > 0,
+									"table-warning": live && p.inGame,
+								})}
+							>
+								<NameCell p={p} season={season} exhibition={exhibition} />
+								<td>{p.pos}</td>
+								{cols.map((c) => (
+									<td key={c}>{COLS[c]!.get(p, t, o)}</td>
+								))}
+							</tr>
+						))}
+						{dnp.map((p: Line) => (
+							<tr key={p.pid}>
+								<NameCell p={p} season={season} exhibition={exhibition} />
+								<td>{p.pos}</td>
+								<td colSpan={cols.length} className="text-center">
+									DNP -{" "}
+									{p.injury?.gamesRemaining > 0 && !p.injury?.playingThrough
+										? p.injury.type
+										: "Coach's decision"}
+								</td>
+							</tr>
+						))}
+					</tbody>
+					<tfoot>
+						<tr>
+							<th>Total</th>
+							<th />
+							{cols.map((c) => (
+								<th key={c}>{COLS[c]!.total?.(t, o) ?? null}</th>
+							))}
+						</tr>
+						{cols.some((c) => COLS[c]!.pct) ? (
+							<tr>
+								<th>Percentages</th>
+								<th />
+								{cols.map((c) => (
+									<th key={c}>{COLS[c]!.pct?.(t) ?? null}</th>
+								))}
+							</tr>
+						) : null}
+					</tfoot>
+				</table>
+			</ResponsiveTableWrapper>
 		</div>
 	);
 };
@@ -401,14 +405,10 @@ const ColumnPicker = ({
 	view,
 	cols,
 	setCols,
-	nameWidth,
-	setNameWidth,
 }: {
 	view: BoxView;
 	cols: string[];
 	setCols: (cols: string[]) => void;
-	nameWidth: NameWidth;
-	setNameWidth: (width: NameWidth) => void;
 }) => {
 	const save = (next: string[]) => {
 		setCols(next);
@@ -417,17 +417,6 @@ const ColumnPicker = ({
 	const order = orderOf(view);
 	return (
 		<div className="bsp-picker">
-			<div className="bsp-picker-names">
-				<span>Names</span>
-				<Switch
-					options={NAME_OPTIONS}
-					value={nameWidth}
-					onChange={(width) => {
-						setNameWidth(width);
-						safeLocalStorage.setItem(NAME_WIDTH_KEY, width);
-					}}
-				/>
-			</div>
 			{order.map((key) => {
 				const c = COLS[key]!;
 				return (
@@ -460,9 +449,7 @@ const ColumnPicker = ({
 				className="btn btn-link btn-sm p-0"
 				onClick={() => {
 					safeLocalStorage.removeItem(colsKey(view));
-					safeLocalStorage.removeItem(NAME_WIDTH_KEY);
 					setCols(DEFAULT_COLS[view]);
-					setNameWidth("normal");
 				}}
 			>
 				Reset
@@ -489,7 +476,6 @@ export const BoxScorePhone = ({
 	const boxView = (VIEWS.some(([v]) => v === view) ? view : "trad") as BoxView;
 	const [cols, setCols] = useState(() => loadCols(boxView));
 	const [picking, setPicking] = useState(false);
-	const [nameWidth, setNameWidth] = useState(loadNameWidth);
 	useEffect(() => {
 		setCols(loadCols(boxView));
 		setPicking(false);
@@ -498,10 +484,7 @@ export const BoxScorePhone = ({
 	const numStarters = boxScore.numPlayersOnCourt ?? 5;
 	const custom = VIEWS.some(([v]) => v === view);
 	return (
-		<div
-			className="bsp"
-			style={{ "--bsp-name-w": NAME_WIDTHS[nameWidth] } as CSSProperties}
-		>
+		<div className="bsp">
 			<div className="bsp-views">
 				<Switch
 					options={[...VIEWS, ...(extraViews ?? [])]}
@@ -520,13 +503,7 @@ export const BoxScorePhone = ({
 				) : null}
 			</div>
 			{picking && custom ? (
-				<ColumnPicker
-					view={boxView}
-					cols={cols}
-					setCols={setCols}
-					nameWidth={nameWidth}
-					setNameWidth={setNameWidth}
-				/>
+				<ColumnPicker view={boxView} cols={cols} setCols={setCols} />
 			) : null}
 			{custom
 				? [away, home].map((t, i) => (
@@ -538,6 +515,7 @@ export const BoxScorePhone = ({
 							season={boxScore.season}
 							numStarters={numStarters}
 							live={live && !boxScore.gameOver}
+							exhibition={!!boxScore.exhibition}
 						/>
 					))
 				: extra?.(view)}

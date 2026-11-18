@@ -44,10 +44,14 @@ import { playSentence } from "./sentence.ts";
 import { ShotChart } from "./ShotChart.tsx";
 import { HighlightClip, type ClipGame } from "./HighlightClip.tsx";
 import type { ShotSpot } from "./shots.ts";
-import { DOCK_ICONS, RecapDock, type DockSection } from "./RecapDock.tsx";
+import {
+	DOCK_ICONS,
+	jumpToSection,
+	RecapSections,
+	type DockSection,
+} from "./RecapDock.tsx";
 import { BoxScorePhone, useIsPhone } from "./BoxScorePhone.tsx";
-import { Lineups, OnOff, Rotations } from "./LineupViews.tsx";
-import { stintsFromEvents, type Stints } from "./stints.ts";
+import { Lineups, OnOff, Rotations, WithStints } from "./LineupViews.tsx";
 
 type Tab = "gamecast" | "box" | "plays" | "stats" | "flow";
 
@@ -1342,45 +1346,6 @@ export const RecentGames = ({
 // score), and under it the page in sections, the menu at the foot of the
 // window as the box score page has it.
 
-// Who has been on the floor so far (rotations, lineups, on/off): the plays up
-// to now run through again - every couple of seconds at most, not every play.
-const useLiveStints = (
-	game: ClipGame | undefined,
-	cursor: number | undefined,
-) => {
-	const [stints, setStints] = useState<Stints>();
-	const last = useRef(0);
-	useEffect(() => {
-		if (!game || cursor === undefined || cursor <= 0) {
-			return;
-		}
-		const run = () => {
-			last.current = Date.now();
-			try {
-				setStints(
-					stintsFromEvents(
-						game.events.slice(0, cursor),
-						game.initialBoxScore,
-						true,
-					),
-				);
-			} catch {
-				// (Left as it was.)
-			}
-		};
-		const wait = 2000 - (Date.now() - last.current);
-		if (wait <= 0) {
-			run();
-			return;
-		}
-		const id = setTimeout(run, wait);
-		return () => {
-			clearTimeout(id);
-		};
-	}, [game, cursor]);
-	return game ? stints : undefined;
-};
-
 // How far down the window the court reaches where it is pinned over the page
 // (a phone, a tablet): the sections are scrolled to under it.
 const usePinnedTo = (ref: RefObject<HTMLElement | null>, on: boolean) => {
@@ -1568,7 +1533,10 @@ export const LiveGamecast = ({
 
 	const { refreshedLook } = useLocal(["refreshedLook"]);
 	const isPhone = useIsPhone();
-	const stints = useLiveStints(refreshedLook ? clipGame : undefined, cursor);
+	// Who has been on the floor so far (rotations, lineups, on/off): worked
+	// out only once one of them is shown (see WithStints).
+	const stints =
+		refreshedLook && clipGame && cursor !== undefined ? clipGame : undefined;
 	const pinRef = useRef<HTMLDivElement>(null);
 	const pinnedTo = usePinnedTo(pinRef, refreshedLook);
 
@@ -1592,11 +1560,7 @@ export const LiveGamecast = ({
 		) : null;
 
 	if (refreshedLook) {
-		const toSection = (id: string) => {
-			document
-				.getElementById(`recap-${id}`)
-				?.scrollIntoView({ behavior: "smooth", block: "start" });
-		};
+		const toSection = jumpToSection;
 		const sections: (DockSection & {
 			title?: string | null;
 			body: ReactNode;
@@ -1650,7 +1614,13 @@ export const LiveGamecast = ({
 						extraViews={stints ? [["rot", "Rotations"]] : undefined}
 						extra={(v) =>
 							v === "rot" && stints ? (
-								<Rotations boxScore={boxScore} stints={stints} />
+								<WithStints
+									events={stints.events}
+									initialBoxScore={stints.initialBoxScore}
+									cursor={cursor}
+								>
+									{(s) => <Rotations boxScore={boxScore} stints={s} />}
+								</WithStints>
 							) : null
 						}
 					/>
@@ -1715,14 +1685,30 @@ export const LiveGamecast = ({
 							id: "lineups",
 							label: "Lineups",
 							icon: DOCK_ICONS.lineups,
-							body: <Lineups boxScore={boxScore} stints={stints} />,
+							body: (
+								<WithStints
+									events={stints.events}
+									initialBoxScore={stints.initialBoxScore}
+									cursor={cursor}
+								>
+									{(s) => <Lineups boxScore={boxScore} stints={s} />}
+								</WithStints>
+							),
 						},
 						{
 							id: "onoff",
 							label: "On/Off",
 							title: "On/Off Impact",
 							icon: DOCK_ICONS.onoff,
-							body: <OnOff boxScore={boxScore} stints={stints} />,
+							body: (
+								<WithStints
+									events={stints.events}
+									initialBoxScore={stints.initialBoxScore}
+									cursor={cursor}
+								>
+									{(s) => <OnOff boxScore={boxScore} stints={s} />}
+								</WithStints>
+							),
 						},
 					]
 				: []),
@@ -1783,21 +1769,11 @@ export const LiveGamecast = ({
 							</div>
 						</div>
 					</div>
-					<div className="recap-sections">
-						{sections.map((x) => (
-							<section
-								key={x.id}
-								id={`recap-${x.id}`}
-								className="recap-section"
-							>
-								{x.title === null ? null : (
-									<h2 className="recap-section-title">{x.title ?? x.label}</h2>
-								)}
-								{x.body}
-							</section>
-						))}
-					</div>
-					<RecapDock sections={sections} quarter={quarter} topPx={pinnedTo} />
+					<RecapSections
+						sections={sections}
+						quarter={quarter}
+						topPx={pinnedTo}
+					/>
 				</div>
 			</FeedContext.Provider>
 		);

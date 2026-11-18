@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { helpers } from "../../../util/helpers.ts";
 import { TeamLogoInline } from "../../../components/TeamLogoInline.tsx";
 import { teamsInDisplayOrder } from "../../../util/boxScoreDisplayOrder.ts";
@@ -11,7 +11,10 @@ import {
 	useAllTeamColors,
 } from "../../../components/TeamBanner.tsx";
 import { Headshot, Switch } from "./Gamecast.tsx";
+import { NameCell } from "./BoxScorePhone.tsx";
+import { ResponsiveTableWrapper } from "../../../components/ResponsiveTableWrapper.tsx";
 import {
+	stintsFromEvents,
 	lineupsOf,
 	onOffOf,
 	poss,
@@ -21,6 +24,93 @@ import {
 } from "./stints.ts";
 
 // ROTATIONS, LINEUPS, ON/OFF - from who was on the floor (see stints.ts).
+
+// WHO WAS ON THE FLOOR, WORKED OUT ONLY WHEN SHOWN: the game's plays run
+// through again once a game (kept), after the page is drawn - and for a game
+// still going, at most every couple of seconds, shared by whatever shows it.
+const finished = new WeakMap<object, Stints>();
+let liveLast:
+	| { events: object; cursor: number; at: number; stints: Stints }
+	| undefined;
+const useStints = (
+	events: any[],
+	initialBoxScore: any,
+	cursor: number | undefined,
+) => {
+	const live = cursor !== undefined;
+	const [stints, setStints] = useState<Stints | undefined>(() =>
+		live
+			? liveLast?.events === events
+				? liveLast.stints
+				: undefined
+			: finished.get(events),
+	);
+	const last = useRef(0);
+	useEffect(() => {
+		if (!live) {
+			const have = finished.get(events);
+			if (have) {
+				setStints(have);
+				return;
+			}
+			const id = setTimeout(() => {
+				try {
+					const got = stintsFromEvents(events, initialBoxScore);
+					finished.set(events, got);
+					setStints(got);
+				} catch {
+					// Nothing to show.
+				}
+			}, 0);
+			return () => {
+				clearTimeout(id);
+			};
+		}
+		if (cursor <= 0) {
+			return;
+		}
+		const run = () => {
+			last.current = Date.now();
+			if (liveLast?.events === events && liveLast.cursor === cursor) {
+				setStints(liveLast.stints);
+				return;
+			}
+			try {
+				const got = stintsFromEvents(
+					events.slice(0, cursor),
+					initialBoxScore,
+					true,
+				);
+				liveLast = { events, cursor, at: Date.now(), stints: got };
+				setStints(got);
+			} catch {
+				// (Left as it was.)
+			}
+		};
+		const id = setTimeout(run, Math.max(0, 2000 - (Date.now() - last.current)));
+		return () => {
+			clearTimeout(id);
+		};
+	}, [events, initialBoxScore, cursor, live]);
+	return stints;
+};
+
+// A view needing who was on the floor: drawn once that is worked out.
+export const WithStints = ({
+	events,
+	initialBoxScore,
+	cursor,
+	children,
+}: {
+	events: any[];
+	initialBoxScore: any;
+	// (A game still going: its plays so far.)
+	cursor?: number;
+	children: (stints: Stints) => ReactNode;
+}) => {
+	const stints = useStints(events, initialBoxScore, cursor);
+	return stints ? <>{children(stints)}</> : <div className="lv-wait" />;
+};
 
 const lastName = (name: string) => {
 	const words = name.trim().split(/\s+/);
@@ -113,50 +203,60 @@ export const Rotations = ({
 					.filter((p: any) => p.gs === 1)
 					.slice(0, numStarters);
 				const bench = played.filter((p: any) => !starters.includes(p));
-				const row = (p: any) => (
-					<tr key={p.pid}>
-						<th className="bsp-name">
-							<a href={helpers.leagueUrl(["player", p.pid])}>
-								<Headshot pid={p.pid} season={boxScore.season} size={24} />
-								<span className="bsp-pname">{shortName(p.name)}</span>
-							</a>
-						</th>
-						<td className="rot-track">
-							{lines}
-							{stintsOf(stints, side, p.pid).map((s, i) => (
-								<span
-									key={i}
-									className={clsx("rot-bar", {
-										"rot-up": s.margin > 0,
-										"rot-down": s.margin < 0,
-									})}
-									style={{
-										left: pctOf(s.start),
-										width: pctOf(s.end - s.start),
-									}}
-									title={`${clock(s.end - s.start)}, ${s.margin > 0 ? "+" : ""}${s.margin}`}
-								/>
-							))}
-						</td>
-					</tr>
-				);
+				const rows = [...starters, ...bench];
 				return (
-					<div className="bsp-wrap" key={t.tid}>
-						<table className="bsp-table rot-table">
-							<thead>
-								<TeamHead t={t}>{periodHeads}</TeamHead>
-							</thead>
-							<tbody>
-								{starters.map(row)}
-								{bench.length > 0 ? (
-									<tr className="bsp-head bsp-bench">
-										<th className="bsp-name">BENCH</th>
+					<div className="mb-3" key={t.tid}>
+						<h2>
+							<a
+								href={helpers.leagueUrl([
+									"roster",
+									`${t.abbrev}_${t.tid}`,
+									boxScore.season,
+								])}
+							>
+								{t.region} {t.name}
+							</a>
+						</h2>
+						<ResponsiveTableWrapper>
+							<table className="table table-striped table-borderless table-sm sticky-x rot-table">
+								<thead>
+									<tr>
+										<th>Name</th>
 										{periodHeads}
 									</tr>
-								) : null}
-								{bench.map(row)}
-							</tbody>
-						</table>
+								</thead>
+								<tbody>
+									{rows.map((p: any, i: number) => (
+										<tr
+											key={p.pid}
+											className={clsx({
+												separator:
+													i + 1 === starters.length && bench.length > 0,
+											})}
+										>
+											<NameCell p={p} season={boxScore.season} />
+											<td className="rot-track">
+												{lines}
+												{stintsOf(stints, side, p.pid).map((s, k) => (
+													<span
+														key={k}
+														className={clsx("rot-bar", {
+															"rot-up": s.margin > 0,
+															"rot-down": s.margin < 0,
+														})}
+														style={{
+															left: pctOf(s.start),
+															width: pctOf(s.end - s.start),
+														}}
+														title={`${clock(s.end - s.start)}, ${s.margin > 0 ? "+" : ""}${s.margin}`}
+													/>
+												))}
+											</td>
+										</tr>
+									))}
+								</tbody>
+							</table>
+						</ResponsiveTableWrapper>
 					</div>
 				);
 			})}

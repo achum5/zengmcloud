@@ -5418,9 +5418,13 @@ body.has-league-ticker-collapsed .sidebar-inner {
 	.player-picture {
 		float: none;
 		margin: 0 !important;
-		width: 140px;
-		height: 210px;
+		width: 156px;
+		height: 234px;
 	}
+}
+// (A player's banner: no stripes - its face fills the corner they sat in.)
+.pb .tb-stripes {
+	display: none;
 }
 .pb-team {
 	font-weight: 600;
@@ -5486,6 +5490,9 @@ body.has-league-ticker-collapsed .sidebar-inner {
 				"head head menus"
 				"pic words words"
 				"pic side side";
+			// (The face taller than the lines: the spare room under the last
+			// line, not between the team line and the rest.)
+			grid-template-rows: auto auto 1fr;
 			align-items: start;
 			gap: 0 0.5rem;
 		}
@@ -5537,9 +5544,10 @@ body.has-league-ticker-collapsed .sidebar-inner {
 			height: 0.45rem;
 		}
 	}
+	// (As tall as the lines about him by it: no empty corner over his face.)
 	.pb-picture .player-picture {
-		width: 108px;
-		height: 162px;
+		width: 146px;
+		height: 219px;
 	}
 }
 
@@ -5941,40 +5949,6 @@ body:has(.league-ticker) .recap-dock-wrap {
 	align-items: center;
 	gap: 0.35rem;
 }
-// (The name to his page, the ratings and stats button by it; his face bare
-// - no circle behind it - as BBGM's own tables show faces.)
-.bsp-name-in {
-	display: flex;
-	align-items: center;
-	gap: 0.2rem;
-	min-width: 0;
-	> a {
-		min-width: 0;
-		flex: 0 1 auto;
-	}
-}
-.bsp-pop {
-	flex: 0 0 auto;
-	line-height: 1;
-}
-.bsp-name .gamecast-headshot {
-	border-radius: 0;
-	background: none;
-}
-.bsp-pname {
-	overflow: hidden;
-	text-overflow: ellipsis;
-	color: var(--bs-link-color);
-}
-.bsp-num {
-	color: var(--bs-secondary-color);
-	font-size: 0.62rem;
-	flex-shrink: 0;
-}
-.bsp-dnp td {
-	text-align: left !important;
-	color: var(--bs-secondary-color);
-}
 .bsp-table tfoot {
 	border-top: 1px solid var(--bs-border-color);
 	th {
@@ -5985,11 +5959,6 @@ body:has(.league-ticker) .recap-dock-wrap {
 		color: var(--bs-secondary-color);
 	}
 }
-.bsp-pct th {
-	font-weight: 400 !important;
-	color: var(--bs-secondary-color);
-}
-
 // Rotations, lineups, on/off (see LineupViews): bars across the game in the
 // team's good or bad, a lineup's faces in a row, on against off.
 .lv-good {
@@ -6009,10 +5978,22 @@ body:has(.league-ticker) .recap-dock-wrap {
 }
 .rot-table {
 	table-layout: fixed;
+	min-width: 100%;
+	// (The names a set width, the rest the game across; a name longer than
+	// its room cut short.)
+	> thead > tr > th:first-child {
+		width: 11rem;
+	}
+	> tbody > tr > td:first-child {
+		overflow: hidden;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+	}
 	// (Room at the right for a stint to the final horn.)
-	width: calc(100% - 0.6rem) !important;
-	.bsp-name {
-		width: 6.6rem;
+	> thead > tr > th:last-child,
+	> tbody > tr > td:last-child {
+		border-right: 0.6rem solid transparent;
+		background-clip: padding-box;
 	}
 	.rot-track {
 		position: relative;
@@ -6184,10 +6165,6 @@ body:has(.league-ticker) .recap-dock-wrap {
 		margin-top: 1rem;
 	}
 }
-.bsp-on td,
-.bsp-on .bsp-name {
-	background-color: shift-color($warning, $table-bg-scale) !important;
-}
 
 // A team's name as its own dropdown (see TeamNameDropdown): a caret by it,
 // the page's list of teams opened from anywhere on it.
@@ -6243,8 +6220,7 @@ body:has(.league-ticker) .recap-dock-wrap {
 // the two one header.
 .teamb-slim {
 	padding: 0.45rem 1rem 0.35rem;
-	margin-bottom: 0;
-	border-radius: 0.375rem 0.375rem 0 0;
+	margin-bottom: 0.75rem;
 	.tb-stripes,
 	.tb-kicker {
 		display: none;
@@ -6278,6 +6254,17 @@ body:has(.league-ticker) .recap-dock-wrap {
 		order: 2;
 		flex: 0 0 auto;
 	}
+}
+// (On the game log: joined on to the game's banner, and not pinned - the
+// score pins instead, see ScoreBar.)
+.teamb.teamb-joined {
+	position: relative;
+	top: auto;
+	margin-bottom: 0;
+	border-radius: 0.375rem 0.375rem 0 0;
+}
+.teamb-joined + .recap .recap-section {
+	scroll-margin-top: 3.25rem;
 }
 .teamb-slim + .recap .recap-header {
 	padding-top: 0;
@@ -6442,25 +6429,6 @@ body:has(.league-ticker) .recap-dock-wrap {
 	}
 }
 
-// The names' column (see NAME_WIDTHS in BoxScorePhone): the same width in
-// both teams' tables, set on this device; the numbers slide under its edge.
-.bsp-table .bsp-name {
-	width: var(--bsp-name-w, 8.8rem);
-	min-width: var(--bsp-name-w, 8.8rem);
-	max-width: var(--bsp-name-w, 8.8rem);
-	box-shadow: 5px 0 5px -4px rgba(0, 0, 0, 0.3);
-}
-.rot-table .bsp-name {
-	width: var(--bsp-name-w, 8.8rem) !important;
-}
-.bsp-picker-names {
-	flex: 0 0 100%;
-	display: flex;
-	align-items: center;
-	gap: 0.6rem;
-	margin-bottom: 0.4rem;
-}
-
 // A team's strip's menus (the season picker) the size of its buttons: its
 // arrows and its picker as tall as the replay and game arrows by them.
 .teamb .tb-menus .dropdown-select-wrapper {
@@ -6559,6 +6527,152 @@ body:has(.league-ticker) .recap-dock-wrap {
 		}
 		.tb-menus .dropdown-select {
 			font-size: 0.95rem;
+		}
+	}
+}
+
+// The game's score pinned under the top bar once its banner has scrolled up
+// (see ScoreBar): no room taken until then.
+.recap-scorebar-pin {
+	position: sticky;
+	top: 52px;
+	height: 0;
+	z-index: 1016;
+}
+.recap-scorebar {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+	height: 2.75rem;
+	border-radius: 0 0 0.375rem 0.375rem;
+	overflow: hidden;
+	box-shadow: 0 6px 12px -6px rgba(0, 0, 0, 0.4);
+	opacity: 0;
+	transform: translateY(-0.4rem);
+	pointer-events: none;
+	transition:
+		opacity 0.15s,
+		transform 0.15s;
+}
+.recap-scorebar-on {
+	opacity: 1;
+	transform: none;
+	pointer-events: auto;
+}
+.rsb-half {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0 0.75rem;
+	font-weight: 800;
+	min-width: 0;
+}
+.rsb-0 {
+	background: var(--tb0-bg);
+	color: var(--tb0-fg);
+}
+.rsb-1 {
+	justify-content: flex-end;
+	background: var(--tb1-bg);
+	color: var(--tb1-fg);
+}
+.rsb-abbrev {
+	font-size: 1rem;
+}
+.rsb-pts {
+	font-size: 1.4rem;
+	font-weight: 900;
+	font-variant-numeric: tabular-nums;
+}
+.rsb-lost {
+	opacity: 0.6;
+}
+.rsb-mid {
+	display: flex;
+	align-items: center;
+	padding: 0 0.7rem;
+	background: #0c0e12;
+	color: #fff;
+	font-size: 0.72rem;
+	font-weight: 800;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+
+// A TEAM'S STRIP, THE SAME HEIGHT ON EVERY TEAM PAGE: its logo, its name, its
+// dropdowns and (the game log) the game's buttons on one row of a set height,
+// its pages on the row under it - so going between them, nothing moves.
+.teamb.teamb-slim {
+	padding: 0.4rem 0.75rem 0.3rem;
+	.tb-inner {
+		display: grid;
+		grid-template-columns: auto minmax(0, 1fr) auto auto;
+		grid-template-areas:
+			"logo name menus side"
+			"logo nav nav nav";
+		grid-template-rows: 2.3rem 1.9rem;
+		align-items: center;
+		gap: 0 0.6rem;
+	}
+	.tb-logo {
+		grid-area: logo;
+	}
+	.tb-words {
+		display: contents;
+	}
+	.tb-title {
+		grid-area: name;
+		min-width: 0;
+		margin: 0;
+		font-size: 1.4rem;
+		line-height: 1.15;
+		white-space: nowrap;
+	}
+	.tb-sub {
+		grid-area: nav;
+		min-width: 0;
+		margin: 0;
+	}
+	.tb-nav {
+		flex-wrap: nowrap;
+		overflow-x: auto;
+		scrollbar-width: none;
+		white-space: nowrap;
+		gap: 1.1rem;
+		margin: 0;
+	}
+	.tb-menus {
+		grid-area: menus;
+		position: static;
+		justify-self: end;
+		flex-wrap: nowrap;
+		min-width: 0;
+		max-width: none;
+	}
+	.tb-side {
+		grid-area: side;
+		margin: 0;
+		padding: 0;
+		border: 0;
+	}
+	.tb-kicker,
+	.tb-stripes,
+	.tb-phone-head {
+		display: none;
+	}
+}
+@include media-breakpoint-down(sm) {
+	.teamb.teamb-slim {
+		padding: 0.35rem 0.6rem 0.25rem;
+		.tb-inner {
+			grid-template-rows: 2.15rem 1.75rem;
+			gap: 0 0.4rem;
+		}
+		.tb-title {
+			font-size: 1.15rem;
 		}
 	}
 }
