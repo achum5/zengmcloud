@@ -15,10 +15,13 @@ import {
 	Fragment,
 	memo,
 	useContext,
+	useEffect,
 	useMemo,
 	useRef,
 	useState,
+	type CSSProperties,
 	type ReactNode,
+	type RefObject,
 } from "react";
 import { helpers } from "../../../util/helpers.ts";
 import { useLocal } from "../../../util/local.ts";
@@ -41,6 +44,10 @@ import { playSentence } from "./sentence.ts";
 import { ShotChart } from "./ShotChart.tsx";
 import { HighlightClip, type ClipGame } from "./HighlightClip.tsx";
 import type { ShotSpot } from "./shots.ts";
+import { DOCK_ICONS, RecapDock, type DockSection } from "./RecapDock.tsx";
+import { BoxScorePhone, useIsPhone } from "./BoxScorePhone.tsx";
+import { Lineups, OnOff, Rotations } from "./LineupViews.tsx";
+import { stintsFromEvents, type Stints } from "./stints.ts";
 
 type Tab = "gamecast" | "box" | "plays" | "stats" | "flow";
 
@@ -1331,6 +1338,84 @@ export const RecentGames = ({
 
 // --- The page ------------------------------------------------------------------
 
+// THE LIVE GAME IN THE REFRESHED LOOK: the court as ever (its score bug the
+// score), and under it the page in sections, the menu at the foot of the
+// window as the box score page has it.
+
+// Who has been on the floor so far (rotations, lineups, on/off): the plays up
+// to now run through again - every couple of seconds at most, not every play.
+const useLiveStints = (
+	game: ClipGame | undefined,
+	cursor: number | undefined,
+) => {
+	const [stints, setStints] = useState<Stints>();
+	const last = useRef(0);
+	useEffect(() => {
+		if (!game || cursor === undefined || cursor <= 0) {
+			return;
+		}
+		const run = () => {
+			last.current = Date.now();
+			try {
+				setStints(
+					stintsFromEvents(
+						game.events.slice(0, cursor),
+						game.initialBoxScore,
+						true,
+					),
+				);
+			} catch {
+				// (Left as it was.)
+			}
+		};
+		const wait = 2000 - (Date.now() - last.current);
+		if (wait <= 0) {
+			run();
+			return;
+		}
+		const id = setTimeout(run, wait);
+		return () => {
+			clearTimeout(id);
+		};
+	}, [game, cursor]);
+	return game ? stints : undefined;
+};
+
+// How far down the window the court reaches where it is pinned over the page
+// (a phone, a tablet): the sections are scrolled to under it.
+const usePinnedTo = (ref: RefObject<HTMLElement | null>, on: boolean) => {
+	const [px, setPx] = useState(0);
+	useEffect(() => {
+		const el = ref.current;
+		if (!on || !el) {
+			return;
+		}
+		const measure = () => {
+			const style = getComputedStyle(el);
+			setPx(
+				style.position === "sticky"
+					? Math.round(
+							el.getBoundingClientRect().height +
+								(Number.parseFloat(style.top) || 0),
+						)
+					: 0,
+			);
+		};
+		measure();
+		const observer =
+			typeof ResizeObserver === "undefined"
+				? undefined
+				: new ResizeObserver(measure);
+		observer?.observe(el);
+		window.addEventListener("resize", measure);
+		return () => {
+			observer?.disconnect();
+			window.removeEventListener("resize", measure);
+		};
+	}, [ref, on]);
+	return px;
+};
+
 export const LiveGamecast = ({
 	boxScore,
 	entries,
@@ -1342,9 +1427,15 @@ export const LiveGamecast = ({
 	clipGame,
 	shots,
 	cursor,
+	periodBox,
+	quarter,
 }: {
 	boxScore: any;
 	entries: readonly FeedEntry[];
+	// The refreshed look's: the box score of the quarter picked (a phone's
+	// table), and the quarter picker for the menu at the foot.
+	periodBox?: any;
+	quarter?: ReactNode;
 	// The 3D court, and the play / pause / speed controls laid over it.
 	court: ReactNode;
 	controls: ReactNode;
@@ -1475,6 +1566,12 @@ export const LiveGamecast = ({
 		[names, canReplay, canClip],
 	);
 
+	const { refreshedLook } = useLocal(["refreshedLook"]);
+	const isPhone = useIsPhone();
+	const stints = useLiveStints(refreshedLook ? clipGame : undefined, cursor);
+	const pinRef = useRef<HTMLDivElement>(null);
+	const pinnedTo = usePinnedTo(pinRef, refreshedLook);
+
 	const shown =
 		shots && cursor !== undefined
 			? shots.filter((x) => x.cursor <= cursor)
@@ -1493,6 +1590,218 @@ export const LiveGamecast = ({
 				/>
 			</Section>
 		) : null;
+
+	if (refreshedLook) {
+		const toSection = (id: string) => {
+			document
+				.getElementById(`recap-${id}`)
+				?.scrollIntoView({ behavior: "smooth", block: "start" });
+		};
+		const sections: (DockSection & {
+			title?: string | null;
+			body: ReactNode;
+		})[] = [
+			{
+				id: "live",
+				label: "Live",
+				icon: DOCK_ICONS.live,
+				// (Its parts have their own headings.)
+				title: null,
+				body: (
+					<div className="gamecast-grid">
+						<div>
+							<Section className="d-lg-none">
+								<Linescore boxScore={boxScore} />
+								<OnCourt boxScore={boxScore} />
+							</Section>
+							<Section
+								title="Plays"
+								action={
+									<LinkButton onClick={() => toSection("plays")}>
+										Full play-by-play
+									</LinkButton>
+								}
+							>
+								<PlayList
+									rows={rows.slice(0, 6)}
+									teams={teams}
+									season={season}
+									numPeriods={numPeriods}
+								/>
+							</Section>
+						</div>
+						<div>
+							<Section title="Game Leaders">
+								<Leaders boxScore={boxScore} />
+							</Section>
+							<Injuries boxScore={boxScore} />
+						</div>
+					</div>
+				),
+			},
+			{
+				id: "box",
+				label: "Box Score",
+				icon: DOCK_ICONS.box,
+				body: isPhone ? (
+					<BoxScorePhone
+						boxScore={periodBox ?? boxScore}
+						live
+						extraViews={stints ? [["rot", "Rotations"]] : undefined}
+						extra={(v) =>
+							v === "rot" && stints ? (
+								<Rotations boxScore={boxScore} stints={stints} />
+							) : null
+						}
+					/>
+				) : (
+					boxScoreTab
+				),
+			},
+			{
+				id: "stats",
+				label: "Team Stats",
+				icon: DOCK_ICONS.stats,
+				body: (
+					<div className="gamecast-narrow">
+						<TeamStatBars boxScore={boxScore} colors={colors} full />
+					</div>
+				),
+			},
+			{
+				id: "flow",
+				label: "Game Flow",
+				icon: DOCK_ICONS.flow,
+				body: (
+					<FlowCharts
+						boxScore={boxScore}
+						colors={colors}
+						live
+						plays={rows}
+						say={feed.say}
+					/>
+				),
+			},
+			...(shotChart
+				? [
+						{
+							id: "shots",
+							label: "Shot Chart",
+							title: null,
+							icon: DOCK_ICONS.shots,
+							body: shotChart,
+						},
+					]
+				: []),
+			{
+				id: "plays",
+				label: "Plays",
+				title: null,
+				icon: DOCK_ICONS.plays,
+				body: (
+					<div className="gamecast-narrow">
+						<AllPlays
+							rows={rows}
+							teams={teams}
+							season={season}
+							numPeriods={numPeriods}
+						/>
+					</div>
+				),
+			},
+			...(stints
+				? [
+						{
+							id: "lineups",
+							label: "Lineups",
+							icon: DOCK_ICONS.lineups,
+							body: <Lineups boxScore={boxScore} stints={stints} />,
+						},
+						{
+							id: "onoff",
+							label: "On/Off",
+							title: "On/Off Impact",
+							icon: DOCK_ICONS.onoff,
+							body: <OnOff boxScore={boxScore} stints={stints} />,
+						},
+					]
+				: []),
+			...(info
+				? [
+						{
+							id: "info",
+							label: "More",
+							icon: DOCK_ICONS.info,
+							body: (
+								<div className="recap-two">
+									<div>
+										<Series boxScore={boxScore} info={info} />
+									</div>
+									<div>
+										{info.bracket ? (
+											<Bracket boxScore={boxScore} info={info} />
+										) : (
+											<Standings boxScore={boxScore} info={info} />
+										)}
+									</div>
+								</div>
+							),
+						},
+					]
+				: []),
+		];
+		return (
+			<FeedContext.Provider value={feed}>
+				<div
+					className="gamecast recap live-refreshed"
+					ref={wrapRef}
+					style={{ "--pinned-to": `${pinnedTo}px` } as CSSProperties}
+				>
+					<div className="gamecast-pin" ref={pinRef}>
+						{header}
+						<div className="row g-3">
+							<div className="col-lg-8">
+								<div className="gamecast-court">
+									{court}
+									<div className="gamecast-controls">{controls}</div>
+								</div>
+								<div className="gamecast-latest">
+									{latest ? (
+										<PlayRow
+											row={latest}
+											teams={teams}
+											season={season}
+											numPeriods={numPeriods}
+											latest
+										/>
+									) : null}
+								</div>
+							</div>
+							<div className="col-lg-4 d-none d-lg-block">
+								<Linescore boxScore={boxScore} />
+								<OnCourt boxScore={boxScore} />
+							</div>
+						</div>
+					</div>
+					<div className="recap-sections">
+						{sections.map((x) => (
+							<section
+								key={x.id}
+								id={`recap-${x.id}`}
+								className="recap-section"
+							>
+								{x.title === null ? null : (
+									<h2 className="recap-section-title">{x.title ?? x.label}</h2>
+								)}
+								{x.body}
+							</section>
+						))}
+					</div>
+					<RecapDock sections={sections} quarter={quarter} topPx={pinnedTo} />
+				</div>
+			</FeedContext.Provider>
+		);
+	}
 
 	return (
 		<FeedContext.Provider value={feed}>

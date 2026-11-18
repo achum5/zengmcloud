@@ -1667,8 +1667,9 @@ export const LiveGame = (props: View<"liveGame">) => {
 	// the simmer's cursor (no own timer) and the page is locked; on the broadcaster
 	// we additionally heartbeat our cursor to the room. In single-player both are
 	// false and nothing below changes.
-	const { gamecastLayout, mpLiveBroadcast, userTid } = useLocal([
+	const { gamecastLayout, mpLiveBroadcast, refreshedLook, userTid } = useLocal([
 		"gamecastLayout",
+		"refreshedLook",
 		"mpLiveBroadcast",
 		// Which team this device manages, so the box scores below can lead with
 		// it - see liveBoxScoreLayout.ts.
@@ -3094,7 +3095,9 @@ export const LiveGame = (props: View<"liveGame">) => {
 	// that has turned it on - here at the foot of the page, or in Global
 	// Settings. With the plays right under the picture, the picture carries
 	// no caption.
-	const gamecast = __SPORT === "basketball" && gamecastLayout;
+	// (The refreshed look has its own: see LiveGamecast.)
+	const gamecast =
+		__SPORT === "basketball" && (gamecastLayout || refreshedLook);
 
 	const courtNode =
 		boxScore.current.gid >= 0 ? (
@@ -3249,8 +3252,18 @@ export const LiveGame = (props: View<"liveGame">) => {
 		speedControls
 	);
 
+	// The box score of the quarter picked (or the whole game so far).
+	const shownBoxScore =
+		boxPeriod === "all" || boxPeriod > periodEnds.current.length
+			? boxScore.current
+			: periodBoxScore(
+					boxScore.current,
+					[...periodEnds.current, linesOf(boxScore.current)],
+					boxPeriod,
+				);
+
 	const layoutToggle =
-		__SPORT === "basketball" ? (
+		__SPORT === "basketball" && !refreshedLook ? (
 			<div className="text-center mt-4">
 				<button
 					type="button"
@@ -3368,9 +3381,37 @@ export const LiveGame = (props: View<"liveGame">) => {
 								</div>
 							) : null
 						}
+						periodBox={shownBoxScore}
+						quarter={
+							refreshedLook && periodEnds.current.length > 0 ? (
+								<select
+									className="form-select form-select-sm"
+									aria-label="Quarter"
+									value={String(boxPeriod)}
+									onChange={(e) => {
+										const v = e.target.value;
+										setBoxPeriod(v === "all" ? "all" : Number(v));
+										document
+											.getElementById("recap-box")
+											?.scrollIntoView({ behavior: "smooth", block: "start" });
+									}}
+								>
+									<option value="all">All Qs</option>
+									{[...periodEnds.current, undefined].map((_, k) => (
+										<option key={k} value={k}>
+											{periodLabel(
+												k + 1,
+												boxScore.current.numPeriods ?? 4,
+												helpers.ordinal,
+											)}
+										</option>
+									))}
+								</select>
+							) : undefined
+						}
 						boxScoreTab={
 							<>
-								{periodEnds.current.length > 0 ? (
+								{periodEnds.current.length > 0 && !refreshedLook ? (
 									<div className="mb-2">
 										<Switch
 											options={[
@@ -3395,15 +3436,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 								<BoxScoreWrapper
 									key={String(boxPeriod)}
 									Row={PlayerRow}
-									boxScore={
-										boxPeriod === "all" || boxPeriod > periodEnds.current.length
-											? boxScore.current
-											: periodBoxScore(
-													boxScore.current,
-													[...periodEnds.current, linesOf(boxScore.current)],
-													boxPeriod,
-												)
-									}
+									boxScore={shownBoxScore}
 									live
 									playIndex={playIndex}
 									sportState={sportState.current}

@@ -16,6 +16,7 @@ type LocalActions = {
 	setShowDepthChart: (showDepthChart: boolean) => void;
 	setGamecastLayout: (gamecastLayout: boolean) => void;
 	setNewInterface: (newInterface: boolean) => void;
+	setRefreshedLook: (refreshedLook: boolean) => void;
 	setSidebarOpen: (sidebarOpen: boolean) => void;
 	update: (obj: Partial<LocalStateUI>) => void;
 	updateGameAttributes: (
@@ -30,6 +31,7 @@ const defaultUnits: "metric" | "us" =
 const SHOW_DEPTH_CHART_KEY = "bbgmShowDepthChart";
 const GAMECAST_LAYOUT_KEY = "bbgmGamecastLayout";
 const NEW_INTERFACE_KEY = "bbgmNewInterface";
+const REFRESHED_LOOK_KEY = "bbgmRefreshedLook";
 
 type LocalStateWithActions = LocalStateUI & {
 	actions: LocalActions;
@@ -68,6 +70,11 @@ const initialGamecastLayout =
 const initialNewInterface =
 	safeLocalStorage.getItem(NEW_INTERFACE_KEY) === "true";
 
+// The refreshed look (team banners, the one-page box score): off unless this
+// device has turned it on.
+const initialRefreshedLook =
+	safeLocalStorage.getItem(REFRESHED_LOOK_KEY) === "true";
+
 const useLocalRaw = createWithEqualityFn<LocalStateWithActions>(
 	(set, get) => ({
 		alwaysShowCountry: false,
@@ -99,6 +106,7 @@ const useLocalRaw = createWithEqualityFn<LocalStateWithActions>(
 		socialFeed: false,
 		leagueLogo: "",
 		newInterface: initialNewInterface,
+		refreshedLook: initialRefreshedLook,
 		hideDisabledTeams: false,
 		homeCourtAdvantage: 1,
 		keyboardShortcuts: undefined,
@@ -163,6 +171,7 @@ const useLocalRaw = createWithEqualityFn<LocalStateWithActions>(
 		username: undefined,
 		workerBusy: false,
 		title: undefined,
+		titleBarHidden: 0,
 		hideNewWindow: false,
 		jumpTo: false,
 		jumpToSeason: undefined,
@@ -287,6 +296,11 @@ const useLocalRaw = createWithEqualityFn<LocalStateWithActions>(
 			setNewInterface(newInterface: boolean) {
 				set({ newInterface });
 				safeLocalStorage.setItem(NEW_INTERFACE_KEY, String(newInterface));
+			},
+
+			setRefreshedLook(refreshedLook: boolean) {
+				set({ refreshedLook });
+				safeLocalStorage.setItem(REFRESHED_LOOK_KEY, String(refreshedLook));
 			},
 
 			setSidebarOpen(sidebarOpen: boolean) {

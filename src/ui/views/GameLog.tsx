@@ -11,7 +11,7 @@ import { BoxScoreWrapper } from "../components/BoxScoreWrapper.tsx";
 import { SocialEmbed } from "../components/SocialEmbed.tsx";
 import { BoxScoreRow } from "../components/BoxScoreRow.tsx";
 import { useLocal } from "../util/local.ts";
-import { GameRecap } from "./LiveGame/gamecast/GameRecap.tsx";
+import { GameRecap, RecapNav } from "./LiveGame/gamecast/GameRecap.tsx";
 
 const StatsRow = ({
 	p,
@@ -195,10 +195,11 @@ const GameLog = ({
 		},
 	});
 
-	const { gamecastLayout, season: currentSeason } = useLocal([
-		"gamecastLayout",
-		"season",
-	]);
+	const {
+		gamecastLayout,
+		refreshedLook,
+		season: currentSeason,
+	} = useLocal(["gamecastLayout", "refreshedLook", "season"]);
 
 	const { currentGidInList, nextGid, prevGid } = findPrevNextGids(
 		gamesList.games,
@@ -207,24 +208,51 @@ const GameLog = ({
 
 	const noGamesAndNoBoxScore =
 		season < currentSeason && gamesList.games.length === 0 && boxScore.gid < 0;
+	const recapAbbrev =
+		team === "special"
+			? "special"
+			: (boxScore as any).teams?.find((t: any) => t.tid === tid)?.abbrev;
+	const recap =
+		!noGamesAndNoBoxScore &&
+		__SPORT === "basketball" &&
+		(gamecastLayout || refreshedLook) &&
+		boxScore.gid >= 0;
 
 	return (
 		<>
 			{tid >= 0 ? (
-				<MoreLinks type="team" page="game_log" tid={tid} season={season} />
+				// (The refreshed look: the team's pages one slim strip on top of the
+				// game's own banner, the two one header.)
+				<MoreLinks
+					type="team"
+					page="game_log"
+					tid={tid}
+					season={season}
+					slim={refreshedLook && recap}
+					actions={
+						refreshedLook && recap ? (
+							<RecapNav
+								compact
+								boxScore={boxScore}
+								abbrev={recapAbbrev}
+								tid={tid}
+								prevGid={prevGid}
+								nextGid={nextGid}
+								currentGidInList={currentGidInList}
+							/>
+						) : undefined
+					}
+				/>
 			) : null}
 
 			{noGamesAndNoBoxScore ? (
 				<NoGamesMessage warnAboutDelete />
-			) : __SPORT === "basketball" && gamecastLayout && boxScore.gid >= 0 ? (
+			) : recap ? (
 				// Laid out as a game recap (the tabbed layout, as the live game's).
 				<GameRecap
 					boxScore={boxScore}
-					abbrev={
-						team === "special"
-							? "special"
-							: (boxScore as any).teams?.find((t: any) => t.tid === tid)?.abbrev
-					}
+					abbrev={recapAbbrev}
+					navElsewhere={refreshedLook && tid >= 0}
 					currentGidInList={currentGidInList}
 					nextGid={nextGid}
 					prevGid={prevGid}

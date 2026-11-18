@@ -27,6 +27,7 @@ import { InjuryIcon } from "../../components/InjuryIcon.tsx";
 import { SkillsBlock } from "../../components/SkillsBlock.tsx";
 import { Mood } from "../../components/Mood.tsx";
 import { PlayerPicture } from "../../components/PlayerPicture.tsx";
+import { PageBanner } from "../../components/TeamBanner.tsx";
 import { JerseyNumber } from "../../components/JerseyNumber.tsx";
 import { Height } from "../../components/Height.tsx";
 import { Weight } from "../../components/Weight.tsx";
@@ -310,6 +311,7 @@ const TopStuff = ({
 	teamName,
 	teamURL,
 	willingToSign,
+	bannered,
 }: Pick<
 	View<"player">,
 	| "amateurUniform"
@@ -341,6 +343,8 @@ const TopStuff = ({
 	// dumped in the note block - it is about that one line.
 	draftRecap?: SeasonNoteSection[];
 	noteLinksBySeason?: (season: number | undefined) => RecapLink[];
+	// His picture and the lines about him in a banner in his team's colors.
+	bannered?: boolean;
 }) => {
 	const {
 		college: collegeLeague,
@@ -576,35 +580,160 @@ const TopStuff = ({
 	// Without this, vertical scrollbar shows if there are no jerseys, due to some weirdness with the negative marginTop values in RatingsOverview
 	const PLACEHOLDER = <div style={{ height: 2 }}></div>;
 
+	// His picture (every season of him, clicked), and the lines about him by
+	// it: under his banner (see TeamBanner), in it.
+	const pictureColumn = (
+		<div className="d-flex flex-column">
+			<div
+				className="player-picture"
+				style={{
+					marginTop: player.imgURL ? 0 : -20,
+					cursor: careerSeasons.length > 0 ? "pointer" : undefined,
+				}}
+				onClick={
+					careerSeasons.length > 0
+						? () => {
+								setShowGallery(true);
+							}
+						: undefined
+				}
+				title={careerSeasons.length > 0 ? "Every season" : undefined}
+			>
+				<PlayerPicture
+					face={player.face}
+					imgURL={player.imgURL}
+					colors={teamColors}
+					jersey={teamJersey}
+				/>
+			</div>
+		</div>
+	);
+	const posLine = (
+		<>
+			{bestPos}, {teamURL ? <a href={teamURL}>{teamName}</a> : teamName}
+			{player.jerseyNumber ? (
+				<>
+					,{" "}
+					<a
+						href={helpers.leagueUrl([
+							"frivolities",
+							"most",
+							"jersey_number",
+							player.jerseyNumber,
+						])}
+					>
+						#{player.jerseyNumber}
+					</a>
+				</>
+			) : null}
+		</>
+	);
+	const bioLines = (
+		<>
+			{height}, {weight}
+			{player.srID && !player.srID.startsWith("dp_") ? (
+				<>
+					{" "}
+					-{" "}
+					<a
+						href={`https://www.basketball-reference.com/players/${player.srID[0]}/${player.srID}.html`}
+					>
+						BBRef
+					</a>
+				</>
+			) : null}
+			<br />
+			Born: {player.born.year} -{" "}
+			<a
+				href={helpers.leagueUrl([
+					"frivolities",
+					"most",
+					"country",
+					window.encodeURIComponent(helpers.getCountry(player.born.loc)),
+				])}
+			>
+				{player.born.loc}
+				<CountryFlag className="ms-1" country={player.born.loc} />
+			</a>
+			<br />
+			{player.ageAtDeath === null || season !== undefined ? (
+				<>
+					Age: {player.age}
+					<br />
+				</>
+			) : (
+				<>
+					Died: {player.diedYear} ({player.ageAtDeath} years old)
+					<br />
+				</>
+			)}
+			<Relatives
+				gender={gender}
+				pid={player.pid}
+				relatives={player.relatives}
+			/>
+			{draftInfo}
+			{(__SPORT === "hockey" && college === "None") || collegeLeague ? null : (
+				<>
+					College:{" "}
+					<a
+						href={helpers.leagueUrl([
+							"frivolities",
+							"most",
+							"college",
+							window.encodeURIComponent(college),
+						])}
+					>
+						{college}
+					</a>
+					<br />
+				</>
+			)}
+			Experience:{" "}
+			{player.experience === 0
+				? "none"
+				: `${player.experience} year${player.experience > 1 ? "s" : ""}`}
+			<br />
+			{contractInfo}
+			{statusInfo}
+		</>
+	);
+	const nameWords = (player.name as string).trim().split(/\s+/);
+	const teamInfo = player.tid >= 0 ? teamInfoCache[player.tid] : undefined;
+	const banner = bannered ? (
+		<PageBanner
+			className="pb"
+			t={{
+				tid: player.tid,
+				abbrev: teamInfo?.abbrev ?? "",
+				region: teamInfo?.region ?? "",
+				name: teamInfo?.name ?? teamName,
+				imgURL: teamInfo?.imgURL,
+				imgURLSmall: teamInfo?.imgURLSmall,
+				colors: teamColors,
+			}}
+			href={teamURL}
+			kicker={
+				<span className="pb-first">
+					{nameWords.length > 1 ? nameWords[0] : ""}
+				</span>
+			}
+			title={nameWords.length > 1 ? nameWords.slice(1).join(" ") : nameWords[0]}
+			picture={<div className="pb-picture">{pictureColumn}</div>}
+			heading={<h1>{player.name}</h1>}
+			sub={<span className="pb-team">{posLine}</span>}
+		>
+			{bioLines}
+		</PageBanner>
+	) : null;
+
 	return (
 		<div className="mb-3">
+			{banner}
 			<div className="d-sm-flex align-items-start">
 				<div className="player-bio">
 					<div className="d-flex">
-						<div className="d-flex flex-column">
-							<div
-								className="player-picture"
-								style={{
-									marginTop: player.imgURL ? 0 : -20,
-									cursor: careerSeasons.length > 0 ? "pointer" : undefined,
-								}}
-								onClick={
-									careerSeasons.length > 0
-										? () => {
-												setShowGallery(true);
-											}
-										: undefined
-								}
-								title={careerSeasons.length > 0 ? "Every season" : undefined}
-							>
-								<PlayerPicture
-									face={player.face}
-									imgURL={player.imgURL}
-									colors={teamColors}
-									jersey={teamJersey}
-								/>
-							</div>
-						</div>
+						{bannered ? null : pictureColumn}
 						{showGallery ? (
 							<PlayerAppearanceGallery
 								name={player.name}
@@ -627,99 +756,13 @@ const TopStuff = ({
 								}}
 							/>
 						) : null}
-						<div>
-							<strong>
-								{bestPos},{" "}
-								{teamURL ? <a href={teamURL}>{teamName}</a> : teamName}
-								{player.jerseyNumber ? (
-									<>
-										,{" "}
-										<a
-											href={helpers.leagueUrl([
-												"frivolities",
-												"most",
-												"jersey_number",
-												player.jerseyNumber,
-											])}
-										>
-											#{player.jerseyNumber}
-										</a>
-									</>
-								) : null}
-							</strong>
-							<br />
-							{height}, {weight}
-							{player.srID && !player.srID.startsWith("dp_") ? (
-								<>
-									{" "}
-									-{" "}
-									<a
-										href={`https://www.basketball-reference.com/players/${player.srID[0]}/${player.srID}.html`}
-									>
-										BBRef
-									</a>
-								</>
-							) : null}
-							<br />
-							Born: {player.born.year} -{" "}
-							<a
-								href={helpers.leagueUrl([
-									"frivolities",
-									"most",
-									"country",
-									window.encodeURIComponent(
-										helpers.getCountry(player.born.loc),
-									),
-								])}
-							>
-								{player.born.loc}
-								<CountryFlag className="ms-1" country={player.born.loc} />
-							</a>
-							<br />
-							{player.ageAtDeath === null || season !== undefined ? (
-								<>
-									Age: {player.age}
-									<br />
-								</>
-							) : (
-								<>
-									Died: {player.diedYear} ({player.ageAtDeath} years old)
-									<br />
-								</>
-							)}
-							<Relatives
-								gender={gender}
-								pid={player.pid}
-								relatives={player.relatives}
-							/>
-							{draftInfo}
-							{(__SPORT === "hockey" && college === "None") ||
-							collegeLeague ? null : (
-								<>
-									College:{" "}
-									<a
-										href={helpers.leagueUrl([
-											"frivolities",
-											"most",
-											"college",
-											window.encodeURIComponent(college),
-										])}
-									>
-										{college}
-									</a>
-									<br />
-								</>
-							)}
-							Experience:{" "}
-							{player.experience === 0
-								? "none"
-								: `${player.experience} year${
-										player.experience > 1 ? "s" : ""
-									}`}
-							<br />
-							{contractInfo}
-							{statusInfo}
-						</div>
+						{bannered ? null : (
+							<div>
+								<strong>{posLine}</strong>
+								<br />
+								{bioLines}
+							</div>
+						)}
 					</div>
 
 					<div className="d-flex gap-2 mt-2">

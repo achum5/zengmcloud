@@ -421,6 +421,7 @@ import {
 	isTradeDeadline,
 } from "../../common/specialGames.ts";
 import { augmentOffers } from "../views/trade.ts";
+import { getTeamColors } from "../util/getTeamColors.ts";
 import { setAutoSave } from "../core/league/setAutoSave.ts";
 
 const acceptContractNegotiation = async ({
@@ -8488,6 +8489,17 @@ const getLiveGamePlayByPlay = async (gid: number) => {
 // from - the same pair the live game plays from, so the page lists the
 // plays exactly as the replay shows them, and works out who did what in
 // each quarter.
+// A team's colors, for its banner on a page (see TeamBanner).
+const getTeamColorsUI = async (tid: number) => getTeamColors(tid);
+// Every team's colors, by tid (see useAllTeamColors).
+const getAllTeamColorsUI = async () => {
+	const out: Record<number, string[]> = {};
+	for (const t of await idb.cache.teams.getAll()) {
+		out[t.tid] = t.colors;
+	}
+	return out;
+};
+
 const getReplayFeed = async (gid: number) => {
 	const playByPlay = await getLiveGamePlayByPlay(gid);
 	if (!Array.isArray(playByPlay) || playByPlay.length === 0) {
@@ -8796,6 +8808,8 @@ const api = {
 		getLiveGameChat,
 		getLiveGamePlayByPlay,
 		getReplayFeed,
+		getTeamColorsUI,
+		getAllTeamColorsUI,
 		hasLiveGameReplay,
 		getHeadlineScene,
 		saveReplayShots,

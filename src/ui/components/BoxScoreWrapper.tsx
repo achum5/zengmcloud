@@ -658,12 +658,15 @@ export const NextButton = ({
 	currentGidInList,
 	nextGid,
 	tid,
+	compact,
 }: {
 	abbrev?: string;
 	boxScore: any;
 	currentGidInList?: boolean;
 	nextGid?: number;
 	tid?: number;
+	// An arrow for "Next", small (a team's banner - the refreshed look).
+	compact?: boolean;
 }) => {
 	const [autoGoToNext, setAutoGoToNext] = useState(false);
 	const [clickedGoToNext, setClickedGoToNext] = useState(false);
@@ -727,13 +730,33 @@ export const NextButton = ({
 		phase >= PHASE.REGULAR_SEASON &&
 		phase <= PHASE.PLAYOFFS ? (
 		<button
-			className="btn btn-light-bordered text-nowrap small"
+			className={clsx("btn btn-light-bordered text-nowrap", {
+				small: !compact,
+				"btn-sm": compact,
+			})}
 			disabled={!canPlay || simAuthorityLocked}
 			onClick={simNext}
 			title={simAuthorityReason}
 		>
 			Sim Next
 		</button>
+	) : compact ? (
+		<a
+			className={clsx("btn btn-light-bordered btn-sm", {
+				disabled: nextGid === undefined,
+			})}
+			href={helpers.leagueUrl([
+				"game_log",
+				abbrev === "special" ? abbrev : `${abbrev}_${tid}`,
+				boxScore.season,
+				nextGid,
+			])}
+			title="Next game"
+			aria-label="Next game"
+			data-no-scroll-reset
+		>
+			<span className="glyphicon glyphicon-menu-right" />
+		</a>
 	) : (
 		<a
 			className={clsx("btn", "btn-light-bordered", {
@@ -1110,7 +1133,14 @@ const PlayoffRecord = ({
 // "View Replay" for a completed game whose live play-by-play was saved when it
 // was first live-simmed. Shown only when a saved replay exists; clicking it
 // routes the stored play-by-play back through the live-game view (un-gated).
-export const WatchReplayButton = ({ gid }: { gid: number }) => {
+export const WatchReplayButton = ({
+	gid,
+	compact,
+}: {
+	gid: number;
+	// Small, a play mark and a word (a team's banner - the refreshed look).
+	compact?: boolean;
+}) => {
 	const [available, setAvailable] = useState(false);
 	const [loading, setLoading] = useState(false);
 
@@ -1156,11 +1186,23 @@ export const WatchReplayButton = ({ gid }: { gid: number }) => {
 	return (
 		<button
 			type="button"
-			className="btn btn-secondary btn-sm text-nowrap"
+			className={
+				compact
+					? "btn btn-light-bordered btn-sm text-nowrap"
+					: "btn btn-secondary btn-sm text-nowrap"
+			}
 			onClick={watch}
 			disabled={loading}
+			title={compact ? "View Replay" : undefined}
 		>
-			View Replay
+			{compact ? (
+				<>
+					<span className="glyphicon glyphicon-play" />
+					<span className="tb-action-word"> Replay</span>
+				</>
+			) : (
+				"View Replay"
+			)}
 		</button>
 	);
 };

@@ -1773,6 +1773,9 @@ export type LocalStateUI = {
 	leagueLogo: string;
 	// The new interface (League Hub shell) is on for this device.
 	newInterface: boolean;
+	// The refreshed look (team banners, the one-page box score): on this
+	// device, chosen in Global Settings.
+	refreshedLook: boolean;
 	// True while connected to a multiplayer sync session - used to hide the
 	// multi-team switcher so it feels like single-player.
 	mpSyncActive: boolean;
@@ -1857,6 +1860,9 @@ export type LocalStateUI = {
 	username?: string;
 	workerBusy: boolean;
 	title?: string;
+	// Banners showing the page's own title and dropdowns (see PageBanner):
+	// while there are any, no title bar.
+	titleBarHidden: number;
 	hideNewWindow: boolean;
 	jumpTo: boolean;
 	jumpToSeason?: number | "all" | "career";

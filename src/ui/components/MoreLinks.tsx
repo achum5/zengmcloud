@@ -1,4 +1,4 @@
-import { Fragment } from "react";
+import { Fragment, useLayoutEffect, useRef, type ReactNode } from "react";
 import {
 	NO_LOTTERY_DRAFT_TYPES,
 	REAL_PLAYERS_INFO,
@@ -8,6 +8,119 @@ import { helpers } from "../util/helpers.ts";
 import { useLocal } from "../util/local.ts";
 import { bySport } from "../../common/sportFunctions.ts";
 import type { LeagueUrlParts } from "../router/types.ts";
+import { PageBanner, useTeamColors } from "./TeamBanner.tsx";
+
+type Link = {
+	url: string | Readonly<LeagueUrlParts>;
+	name: string;
+	className?: string;
+};
+
+// Pinned under the top bar as the page scrolls: all of it on a phone (its
+// menus and its pages), its pages on a wider screen (the rest tucked up under
+// the bar). How much of it stays in view goes to --teamb-h, for whatever is
+// scrolled to under it.
+const TOP_BAR = 52;
+const usePinnedBanner = (on: boolean) => {
+	const ref = useRef<HTMLDivElement>(null);
+	useLayoutEffect(() => {
+		const el = ref.current;
+		if (!el) {
+			return;
+		}
+		const place = () => {
+			const nav = el.querySelector<HTMLElement>(".tb-nav");
+			const phone = window.matchMedia("(max-width: 575.98px)").matches;
+			const hide =
+				phone || !nav
+					? 0
+					: Math.max(
+							0,
+							nav.getBoundingClientRect().top -
+								el.getBoundingClientRect().top -
+								10,
+						);
+			el.style.setProperty("--teamb-top", `${TOP_BAR - hide}px`);
+			document.documentElement.style.setProperty(
+				"--teamb-h",
+				`${Math.round(el.offsetHeight - hide)}px`,
+			);
+		};
+		place();
+		const observer =
+			typeof ResizeObserver === "undefined"
+				? undefined
+				: new ResizeObserver(place);
+		observer?.observe(el);
+		window.addEventListener("resize", place);
+		return () => {
+			observer?.disconnect();
+			window.removeEventListener("resize", place);
+			document.documentElement.style.removeProperty("--teamb-h");
+		};
+	}, [on]);
+	return ref;
+};
+
+// A TEAM'S PAGES UNDER ITS BANNER (the refreshed look): its logo, city and
+// name in its colors, its pages along the foot of it - the one you are on
+// marked - and the page's dropdowns in it, in place of the title bar.
+const TeamPageBanner = ({
+	tid,
+	links,
+	page,
+	slim,
+	actions,
+}: {
+	tid: number;
+	links: Link[];
+	page: string;
+	slim?: boolean;
+	actions?: ReactNode;
+}) => {
+	const { teamInfoCache } = useLocal(["teamInfoCache"]);
+	const info = teamInfoCache[tid];
+	const colors = useTeamColors(tid);
+	const ref = usePinnedBanner(info !== undefined);
+	if (!info) {
+		return null;
+	}
+	return (
+		<PageBanner
+			className={slim ? "teamb teamb-slim" : "teamb"}
+			teamName
+			t={{
+				tid,
+				abbrev: info.abbrev,
+				region: info.region,
+				name: info.name,
+				imgURL: info.imgURL,
+				imgURLSmall: info.imgURLSmall,
+				colors,
+			}}
+			href={helpers.leagueUrl(["roster", `${info.abbrev}_${tid}`])}
+			sub={
+				<nav className="tb-nav">
+					{links.map(({ url, name }, i) => {
+						const key = typeof url === "string" ? url : url[0];
+						return (
+							<a
+								key={key + String(i)}
+								className={key === page ? "active" : undefined}
+								href={typeof url === "string" ? url : helpers.leagueUrl(url)}
+							>
+								{name}
+							</a>
+						);
+					})}
+				</nav>
+			}
+			bannerRef={ref}
+		>
+			{actions}
+		</PageBanner>
+	);
+};
 
 export const MoreLinks = (
 	props: (
@@ -15,6 +128,10 @@ export const MoreLinks = (
 				type: "team";
 				tid: number;
 				season?: number;
+				// The refreshed look's banner as one slim strip (over a game's
+				// own banner, the game log), and buttons at its end.
+				slim?: boolean;
+				actions?: ReactNode;
 		  }
 		| {
 				type: "draft";
@@ -73,9 +190,16 @@ export const MoreLinks = (
 	const {
 		college,
 		godMode,
+		refreshedLook,
 		rotationPlans,
 		season: currentSeason,
-	} = useLocal(["college", "godMode", "rotationPlans", "season"]);
+	} = useLocal([
+		"college",
+		"godMode",
+		"refreshedLook",
+		"rotationPlans",
+		"season",
+	]);
 
 	let links: {
 		url: string | Readonly<LeagueUrlParts>;
@@ -424,6 +548,18 @@ export const MoreLinks = (
 
 	if (links.length === 0) {
 		return null;
+	}
+
+	if (refreshedLook && props.type === "team") {
+		return (
+			<TeamPageBanner
+				tid={props.tid}
+				links={links}
+				page={page}
+				slim={props.slim}
+				actions={props.actions}
+			/>
+		);
 	}
 
 	return (

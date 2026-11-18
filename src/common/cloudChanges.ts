@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 347,
+		date: "2026-11-18",
+		text: "A new look you can turn on in Global Settings (Look: Refreshed). Team pages, box scores and player pages get team-colored headers, and standings, playoffs and trades show each team in its colors. A box score becomes one page with a menu at the bottom. Phones get a box score you can pick the columns for, plus rotations, lineups and on/off from each game, also on the live game. Classic stays the default.",
+	},
+	{
 		n: 346,
 		date: "2026-11-17",
 		text: "Smart CPU: CPU teams' players now re-sign as willingly as players on a human's team. Before, CPU teams' players tested free agency far more often, so CPU teams lost their stars for nothing about twice as often as you would.",

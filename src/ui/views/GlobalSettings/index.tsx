@@ -46,6 +46,9 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 			depthChart: local.getState().showDepthChart ? "show" : ("hide" as const),
 			gamecast: local.getState().gamecastLayout ? "show" : ("hide" as const),
 			newInterface: local.getState().newInterface ? "show" : ("hide" as const),
+			refreshedLook: local.getState().refreshedLook
+				? "show"
+				: ("hide" as const),
 			phaseChangeRedirects: props.phaseChangeRedirects,
 			realPlayerPhotos: props.realPlayerPhotos,
 			realTeamInfo: props.realTeamInfo,
@@ -107,6 +110,7 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 		localActions.setShowDepthChart(state.depthChart === "show");
 		localActions.setGamecastLayout(state.gamecast === "show");
 		localActions.setNewInterface(state.newInterface === "show");
+		localActions.setRefreshedLook(state.refreshedLook === "show");
 
 		const units = state.units === "default" ? undefined : state.units;
 		try {
@@ -173,7 +177,12 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 				onChange={handleChange(name)}
 				value={
 					state[
-						name as "scoresBar" | "depthChart" | "gamecast" | "newInterface"
+						name as
+							| "scoresBar"
+							| "depthChart"
+							| "gamecast"
+							| "newInterface"
+							| "refreshedLook"
 					]
 				}
 			>
@@ -269,6 +278,10 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 					</div>
 					{showHide("newInterface", "Interface", "On this device", [
 						"New",
+						"Classic",
+					])}
+					{showHide("refreshedLook", "Look", "On this device", [
+						"Refreshed",
 						"Classic",
 					])}
 					{showHide(

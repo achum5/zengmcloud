@@ -64,9 +64,15 @@ const Player2 = ({
 }: View<"player">) => {
 	const {
 		challengeNoRatings,
+		refreshedLook,
 		season: currentSeason,
 		teamInfoCache,
-	} = useLocal(["challengeNoRatings", "season", "teamInfoCache"]);
+	} = useLocal([
+		"challengeNoRatings",
+		"refreshedLook",
+		"season",
+		"teamInfoCache",
+	]);
 	const showRatings = !challengeNoRatings || retired;
 
 	// What each paid season was worth against what it cost. Absent entirely
@@ -166,6 +172,7 @@ const Player2 = ({
 	return (
 		<>
 			<TopStuff
+				bannered={refreshedLook}
 				amateurUniform={amateurUniform}
 				appearanceTeams={appearanceTeams}
 				bestPos={bestPos}

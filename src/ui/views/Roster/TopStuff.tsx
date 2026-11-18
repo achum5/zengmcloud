@@ -200,6 +200,7 @@ const TopStuff = ({
 		hardCapUseLuxuryTax,
 		luxuryPayroll,
 		minPayroll,
+		refreshedLook,
 		salaryCap,
 		salaryCapType,
 		teamInfoCache,
@@ -213,6 +214,7 @@ const TopStuff = ({
 		"hardCapUseLuxuryTax",
 		"luxuryPayroll",
 		"minPayroll",
+		"refreshedLook",
 		"salaryCap",
 		"salaryCapType",
 		"teamInfoCache",
@@ -270,8 +272,12 @@ const TopStuff = ({
 				}}
 			>
 				<div className="d-flex">
-					<div className="team-picture" style={logoStyle} />
-					<div>
+					{/* (Its logo is in its banner, the refreshed look.) */}
+					{refreshedLook ? null : (
+						<div className="team-picture" style={logoStyle} />
+					)}
+					{/* (The refreshed look: in two columns, side by side.) */}
+					<div className={refreshedLook ? "team-summary" : undefined}>
 						<div>
 							<div style={fontSizeLarger}>{recordAndPlayoffs}</div>
 							{t.rank !== undefined ? (

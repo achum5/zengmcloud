@@ -56,6 +56,11 @@ import { HighlightClip } from "./HighlightClip.tsx";
 import { unpackShots, type ShotSpot } from "./shots.ts";
 import { GAME_S, winProb } from "../winProb.ts";
 import { seriesLine } from "./seriesLine.ts";
+import { MatchupBanner } from "../../../components/TeamBanner.tsx";
+import { DOCK_ICONS, RecapDock, type DockSection } from "./RecapDock.tsx";
+import { BoxScorePhone, useIsPhone } from "./BoxScorePhone.tsx";
+import { Lineups, OnOff, Rotations } from "./LineupViews.tsx";
+import { stintsFromEvents } from "./stints.ts";
 
 type Tab = "recap" | "box" | "plays" | "stats" | "flow";
 
@@ -196,6 +201,85 @@ const PhoneTeam = ({
 	);
 };
 
+type NavProps = {
+	boxScore: any;
+	abbrev?: string;
+	tid?: number;
+	prevGid?: number;
+	nextGid?: number;
+	currentGidInList?: boolean;
+};
+
+// To the team's game before and after this one, and the replay: under the
+// score - or, compact (arrows, a play mark), in the team's strip over it
+// (the refreshed look's game log).
+export const RecapNav = ({
+	boxScore,
+	abbrev,
+	tid,
+	prevGid,
+	nextGid,
+	currentGidInList,
+	compact,
+}: NavProps & { compact?: boolean }) => {
+	const prevUrl = helpers.leagueUrl([
+		"game_log",
+		abbrev === "special" ? abbrev : `${abbrev}_${tid}`,
+		boxScore.season,
+		prevGid,
+	]);
+	const replay =
+		!boxScore.exhibition && boxScore.gid >= 0 ? (
+			<WatchReplayButton gid={boxScore.gid} compact={compact} />
+		) : null;
+	const next = (
+		<NextButton
+			abbrev={abbrev}
+			boxScore={boxScore}
+			currentGidInList={currentGidInList}
+			nextGid={nextGid}
+			tid={tid}
+			compact={compact}
+		/>
+	);
+	if (compact) {
+		return (
+			<div className="tb-actions">
+				{replay}
+				<div className="btn-group">
+					<a
+						className={clsx("btn btn-light-bordered btn-sm", {
+							disabled: prevGid === undefined,
+						})}
+						href={prevUrl}
+						title="Previous game"
+						aria-label="Previous game"
+						data-no-scroll-reset
+					>
+						<span className="glyphicon glyphicon-menu-left" />
+					</a>
+					{next}
+				</div>
+			</div>
+		);
+	}
+	return (
+		<div className="recap-nav">
+			<a
+				className={clsx("btn btn-light-bordered btn-sm", {
+					disabled: prevGid === undefined,
+				})}
+				href={prevUrl}
+				data-no-scroll-reset
+			>
+				Prev
+			</a>
+			{replay}
+			<div className="recap-next">{next}</div>
+		</div>
+	);
+};
+
 const RecapHeader = ({
 	boxScore,
 	abbrev,
@@ -203,14 +287,9 @@ const RecapHeader = ({
 	prevGid,
 	nextGid,
 	currentGidInList,
-}: {
-	boxScore: any;
-	abbrev?: string;
-	tid?: number;
-	prevGid?: number;
-	nextGid?: number;
-	currentGidInList?: boolean;
-}) => {
+	navElsewhere,
+}: NavProps & { navElsewhere?: boolean }) => {
+	const { refreshedLook } = useLocal(["refreshedLook"]);
 	const [away, home] = teamsInDisplayOrder(boxScore.teams as [any, any]);
 	const winner =
 		home.pts > away.pts ? home.tid : away.pts > home.pts ? away.tid : undefined;
@@ -229,52 +308,71 @@ const RecapHeader = ({
 	) : null;
 	return (
 		<div className="recap-header">
-			<div className="recap-scoreline d-none d-md-flex">
-				<HeaderTeam t={away} season={season} won={winner === away.tid} />
-				<div className="recap-middle">
-					<div className="recap-status">{finalText(boxScore)}</div>
-					<Linescore boxScore={boxScore} />
-					{seriesLink}
-				</div>
-				<HeaderTeam t={home} season={season} won={winner === home.tid} right />
-			</div>
-			<div className="recap-phone d-md-none">
-				<PhoneTeam t={away} season={season} won={winner === away.tid} />
-				<div className="recap-phone-mid">
-					<div className="recap-status">{finalText(boxScore)}</div>
-					<MiniLinescore boxScore={boxScore} />
-					{seriesLink}
-				</div>
-				<PhoneTeam t={home} season={season} won={winner === home.tid} right />
-			</div>
-			<div className="recap-nav">
-				<a
-					className={clsx("btn btn-light-bordered btn-sm", {
-						disabled: prevGid === undefined,
-					})}
-					href={helpers.leagueUrl([
-						"game_log",
-						abbrev === "special" ? abbrev : `${abbrev}_${tid}`,
-						season,
-						prevGid,
-					])}
-					data-no-scroll-reset
-				>
-					Prev
-				</a>
-				{!boxScore.exhibition && boxScore.gid >= 0 ? (
-					<WatchReplayButton gid={boxScore.gid} />
-				) : null}
-				<div className="recap-next">
-					<NextButton
-						abbrev={abbrev}
-						boxScore={boxScore}
-						currentGidInList={currentGidInList}
-						nextGid={nextGid}
-						tid={tid}
+			{refreshedLook ? (
+				<>
+					<MatchupBanner
+						teams={[away, home]}
+						numbers={[away.pts, home.pts]}
+						won={winner === away.tid ? 0 : winner === home.tid ? 1 : undefined}
+						tag={
+							series ? (
+								<a href={helpers.leagueUrl(["playoffs", season])}>{series}</a>
+							) : undefined
+						}
+						status={finalText(boxScore)}
+						extra={<MiniLinescore boxScore={boxScore} />}
+						hrefs={[
+							away.tid >= 0 ? teamUrl(away, season) : undefined,
+							home.tid >= 0 ? teamUrl(home, season) : undefined,
+						]}
+						subs={[
+							away.won !== undefined ? helpers.formatRecord(away) : null,
+							home.won !== undefined ? helpers.formatRecord(home) : null,
+						]}
 					/>
-				</div>
-			</div>
+				</>
+			) : (
+				<>
+					<div className="recap-scoreline d-none d-md-flex">
+						<HeaderTeam t={away} season={season} won={winner === away.tid} />
+						<div className="recap-middle">
+							<div className="recap-status">{finalText(boxScore)}</div>
+							<Linescore boxScore={boxScore} />
+							{seriesLink}
+						</div>
+						<HeaderTeam
+							t={home}
+							season={season}
+							won={winner === home.tid}
+							right
+						/>
+					</div>
+					<div className="recap-phone d-md-none">
+						<PhoneTeam t={away} season={season} won={winner === away.tid} />
+						<div className="recap-phone-mid">
+							<div className="recap-status">{finalText(boxScore)}</div>
+							<MiniLinescore boxScore={boxScore} />
+							{seriesLink}
+						</div>
+						<PhoneTeam
+							t={home}
+							season={season}
+							won={winner === home.tid}
+							right
+						/>
+					</div>
+				</>
+			)}
+			{navElsewhere ? null : (
+				<RecapNav
+					boxScore={boxScore}
+					abbrev={abbrev}
+					tid={tid}
+					prevGid={prevGid}
+					nextGid={nextGid}
+					currentGidInList={currentGidInList}
+				/>
+			)}
 		</div>
 	);
 };
@@ -410,6 +508,7 @@ export const GameRecap = ({
 	currentGidInList,
 	Row,
 	reactions,
+	navElsewhere,
 }: {
 	boxScore: any;
 	abbrev?: string;
@@ -417,6 +516,9 @@ export const GameRecap = ({
 	prevGid?: number;
 	nextGid?: number;
 	currentGidInList?: boolean;
+	// The game before/after and the replay are shown elsewhere (the team's
+	// strip over the score - see RecapNav).
+	navElsewhere?: boolean;
 	// The box score's row (see GameLog).
 	Row: unknown;
 	// The posts about the game.
@@ -425,7 +527,9 @@ export const GameRecap = ({
 	const [tab, setTab] = useState<Tab>("recap");
 	const info: GamecastInfo | undefined = boxScore.gamecast;
 	const colors = sideColors(boxScore.teams);
-	const { gender } = useLocal(["gender"]);
+	const { gender, refreshedLook } = useLocal(["gender", "refreshedLook"]);
+	// (A phone gets the box score a team at a time - see BoxScorePhone.)
+	const isPhone = useIsPhone();
 
 	// A saved replay's plays (see replayFeed): the play-by-play, its
 	// highlights, the box score a quarter at a time - and any play, tapped,
@@ -524,6 +628,17 @@ export const GameRecap = ({
 		[names, replay, gid, boxScore.teams],
 	);
 	const numPeriods = boxScore.numPeriods ?? 4;
+	// Who was on the floor when (rotations, lineups, on/off), from the replay.
+	const stints = useMemo(() => {
+		if (!replay || !refreshedLook) {
+			return undefined;
+		}
+		try {
+			return stintsFromEvents(replay.events, replay.initialBoxScore);
+		} catch {
+			return undefined;
+		}
+	}, [replay, refreshedLook]);
 	const tabs = TABS.filter(([key]) => key !== "plays" || replay !== undefined);
 	const shotChart =
 		replay && replay.shots.length > 0 ? (
@@ -540,156 +655,175 @@ export const GameRecap = ({
 			</Section>
 		) : null;
 
-	return (
-		<FeedContext.Provider value={feed}>
-			<div className="gamecast recap">
-				<RecapHeader
-					boxScore={boxScore}
-					abbrev={abbrev}
-					tid={tid}
-					prevGid={prevGid}
-					nextGid={nextGid}
-					currentGidInList={currentGidInList}
+	// The page, top to bottom (see RecapDock): what each is called on the menu
+	// at the foot of the window, and over it.
+	const sections: (DockSection & {
+		title?: string | null;
+		body: ReactNode;
+	})[] = [
+		{
+			id: "box",
+			label: "Box Score",
+			icon: DOCK_ICONS.box,
+			body: isPhone ? (
+				<BoxScorePhone
+					boxScore={
+						replay && period !== "all"
+							? periodBoxScore(boxScore, replay.ends, period)
+							: boxScore
+					}
+					extraViews={stints ? [["rot", "Rotations"]] : undefined}
+					extra={(v) =>
+						v === "rot" && stints ? (
+							<Rotations boxScore={boxScore} stints={stints} />
+						) : null
+					}
 				/>
-				<div className="gamecast-tabs" role="tablist">
-					{tabs.map(([key, label]) => (
-						<button
-							key={key}
-							type="button"
-							role="tab"
-							aria-selected={tab === key}
-							className={clsx({ active: tab === key })}
-							onClick={() => setTab(key)}
-						>
-							{label}
-						</button>
-					))}
+			) : (
+				<BoxScore
+					key={String(period)}
+					boxScore={
+						replay && period !== "all"
+							? periodBoxScore(boxScore, replay.ends, period)
+							: boxScore
+					}
+					Row={Row}
+					forceRowUpdate
+					sportState={undefined}
+				/>
+			),
+		},
+		{
+			id: "recap",
+			label: "Recap",
+			icon: DOCK_ICONS.recap,
+			body: (
+				<div className="recap-two">
+					<div>
+						<RecapStory boxScore={boxScore} />
+					</div>
+					<div>
+						<Section title="Game Leaders">
+							<Leaders boxScore={boxScore} />
+						</Section>
+					</div>
 				</div>
-				<div className="gamecast-content">
-					{tab === "recap" ? (
-						<>
-							<div className="recap-grid">
-								<div className="recap-mid">
-									<RecapStory boxScore={boxScore} />
-									{boxScore.charts ? (
-										<Section title="Game Flow">
-											<FlowCharts
-												boxScore={boxScore}
-												colors={colors}
-												plays={replay?.rows}
-												say={feed.say}
-											/>
-										</Section>
-									) : null}
-									{shotChart}
-								</div>
-								<div className="recap-left">
-									<Section
-										title="Game Leaders"
-										action={
-											<LinkButton onClick={() => setTab("box")}>
-												Box score
-											</LinkButton>
-										}
-									>
-										<Leaders boxScore={boxScore} />
-									</Section>
-									<Section
-										title="Team Stats"
-										action={
-											<LinkButton onClick={() => setTab("stats")}>
-												Full team stats
-											</LinkButton>
-										}
-									>
-										<TeamStatBars boxScore={boxScore} colors={colors} />
-									</Section>
-								</div>
-								<div className="recap-right">
-									<Line boxScore={boxScore} />
-									{info ? (
-										<>
-											<Series boxScore={boxScore} info={info} />
-											{info.bracket ? (
-												<Bracket boxScore={boxScore} info={info} final />
-											) : (
-												<Standings boxScore={boxScore} info={info} final />
-											)}
-											<RecentGames boxScore={boxScore} info={info} />
-										</>
-									) : null}
-									<GameInfo boxScore={boxScore} />
-								</div>
+			),
+		},
+		{
+			id: "stats",
+			label: "Team Stats",
+			icon: DOCK_ICONS.stats,
+			body: (
+				<div className="recap-two">
+					<div>
+						<TeamStatBars boxScore={boxScore} colors={colors} full />
+					</div>
+					<div>
+						<Section title="Four Factors">
+							<FourFactors teams={teamsInDisplayOrder(boxScore.teams)} />
+						</Section>
+					</div>
+				</div>
+			),
+		},
+		...(boxScore.charts
+			? [
+					{
+						id: "flow",
+						label: "Game Flow",
+						icon: DOCK_ICONS.flow,
+						body: (
+							<>
+								<FlowCharts
+									boxScore={boxScore}
+									colors={colors}
+									plays={replay?.rows}
+									say={feed.say}
+								/>
+								<GameCharts boxScore={boxScore} restOnly />
+							</>
+						),
+					},
+				]
+			: []),
+		...(shotChart
+			? [
+					{
+						id: "shots",
+						label: "Shot Chart",
+						// (The chart has its own heading.)
+						title: null,
+						icon: DOCK_ICONS.shots,
+						body: shotChart,
+					},
+				]
+			: []),
+		...(replay
+			? [
+					{
+						id: "plays",
+						label: "Plays",
+						// (The plays have their own heading.)
+						title: null,
+						icon: DOCK_ICONS.plays,
+						body: (
+							<div className="gamecast-narrow">
+								<AllPlays
+									rows={replay.rows}
+									teams={boxScore.teams}
+									season={boxScore.season}
+									numPeriods={numPeriods}
+								/>
 							</div>
-							{reactions}
-						</>
-					) : tab === "box" ? (
-						<>
-							{replay && replay.ends.length > 1 ? (
-								<div className="mb-2">
-									<Switch
-										options={[
-											["all", "Game"] as [number | "all", string],
-											...replay.ends.map(
-												(_, k) =>
-													[
-														k,
-														periodLabel(k + 1, numPeriods, helpers.ordinal) ??
-															"",
-													] as [number | "all", string],
-											),
-										]}
-										value={period}
-										onChange={setPeriod}
-									/>
-								</div>
-							) : null}
-							<BoxScore
-								key={String(period)}
-								boxScore={
-									replay && period !== "all"
-										? periodBoxScore(boxScore, replay.ends, period)
-										: boxScore
-								}
-								Row={Row}
-								forceRowUpdate
-								sportState={undefined}
-							/>
-						</>
-					) : tab === "plays" && replay ? (
-						<div className="gamecast-narrow">
-							{shotChart}
-							<AllPlays
-								rows={replay.rows}
-								teams={boxScore.teams}
-								season={boxScore.season}
-								numPeriods={numPeriods}
-							/>
+						),
+					},
+				]
+			: []),
+		...(stints
+			? [
+					{
+						id: "lineups",
+						label: "Lineups",
+						icon: DOCK_ICONS.lineups,
+						body: <Lineups boxScore={boxScore} stints={stints} />,
+					},
+					{
+						id: "onoff",
+						label: "On/Off",
+						title: "On/Off Impact",
+						icon: DOCK_ICONS.onoff,
+						body: <OnOff boxScore={boxScore} stints={stints} />,
+					},
+				]
+			: []),
+		{
+			id: "info",
+			label: "More",
+			title: "More",
+			icon: DOCK_ICONS.info,
+			body: (
+				<>
+					<div className="recap-two">
+						<div>
+							<Line boxScore={boxScore} />
+							<GameInfo boxScore={boxScore} />
 						</div>
-					) : tab === "stats" ? (
-						<div className="gamecast-narrow">
-							<Section title="Team Stats">
-								<TeamStatBars boxScore={boxScore} colors={colors} full />
-							</Section>
-							<Section title="Four Factors">
-								<FourFactors teams={teamsInDisplayOrder(boxScore.teams)} />
-							</Section>
-						</div>
-					) : (
-						<>
-							{boxScore.charts ? (
-								<Section title="Game Flow">
-									<FlowCharts
-										boxScore={boxScore}
-										colors={colors}
-										plays={replay?.rows}
-										say={feed.say}
-									/>
-								</Section>
+						<div>
+							{info ? (
+								<>
+									<Series boxScore={boxScore} info={info} />
+									{info.bracket ? (
+										<Bracket boxScore={boxScore} info={info} final />
+									) : (
+										<Standings boxScore={boxScore} info={info} final />
+									)}
+									<RecentGames boxScore={boxScore} info={info} />
+								</>
 							) : null}
-							<GameCharts boxScore={boxScore} restOnly />
-						</>
-					)}
+						</div>
+					</div>
+					{reactions}
 					{boxScore.exhibition ? null : (
 						<div className="mt-3">
 							<Note
@@ -702,7 +836,228 @@ export const GameRecap = ({
 							/>
 						</div>
 					)}
-				</div>
+				</>
+			),
+		},
+	];
+
+	return (
+		<FeedContext.Provider value={feed}>
+			<div className="gamecast recap">
+				<RecapHeader
+					boxScore={boxScore}
+					abbrev={abbrev}
+					tid={tid}
+					prevGid={prevGid}
+					nextGid={nextGid}
+					currentGidInList={currentGidInList}
+					navElsewhere={navElsewhere}
+				/>
+				{refreshedLook ? (
+					<>
+						<div className="recap-sections">
+							{sections.map((x) => (
+								<section
+									key={x.id}
+									id={`recap-${x.id}`}
+									className="recap-section"
+								>
+									{x.title === null ? null : (
+										<h2 className="recap-section-title">
+											{x.title ?? x.label}
+										</h2>
+									)}
+									{x.body}
+								</section>
+							))}
+						</div>
+						<RecapDock
+							sections={sections}
+							quarter={
+								replay && replay.ends.length > 1 ? (
+									<select
+										className="form-select form-select-sm"
+										aria-label="Quarter"
+										value={String(period)}
+										onChange={(e) => {
+											const v = e.target.value;
+											setPeriod(v === "all" ? "all" : Number(v));
+											document.getElementById("recap-box")?.scrollIntoView({
+												behavior: "smooth",
+												block: "start",
+											});
+										}}
+									>
+										<option value="all">All Qs</option>
+										{replay.ends.map((_, k) => (
+											<option key={k} value={k}>
+												{periodLabel(k + 1, numPeriods, helpers.ordinal)}
+											</option>
+										))}
+									</select>
+								) : undefined
+							}
+						/>
+					</>
+				) : (
+					<>
+						<div className="gamecast-tabs" role="tablist">
+							{tabs.map(([key, label]) => (
+								<button
+									key={key}
+									type="button"
+									role="tab"
+									aria-selected={tab === key}
+									className={clsx({ active: tab === key })}
+									onClick={() => setTab(key)}
+								>
+									{label}
+								</button>
+							))}
+						</div>
+						<div className="gamecast-content">
+							{tab === "recap" ? (
+								<>
+									<div className="recap-grid">
+										<div className="recap-mid">
+											<RecapStory boxScore={boxScore} />
+											{boxScore.charts ? (
+												<Section title="Game Flow">
+													<FlowCharts
+														boxScore={boxScore}
+														colors={colors}
+														plays={replay?.rows}
+														say={feed.say}
+													/>
+												</Section>
+											) : null}
+											{shotChart}
+										</div>
+										<div className="recap-left">
+											<Section
+												title="Game Leaders"
+												action={
+													<LinkButton onClick={() => setTab("box")}>
+														Box score
+													</LinkButton>
+												}
+											>
+												<Leaders boxScore={boxScore} />
+											</Section>
+											<Section
+												title="Team Stats"
+												action={
+													<LinkButton onClick={() => setTab("stats")}>
+														Full team stats
+													</LinkButton>
+												}
+											>
+												<TeamStatBars boxScore={boxScore} colors={colors} />
+											</Section>
+										</div>
+										<div className="recap-right">
+											<Line boxScore={boxScore} />
+											{info ? (
+												<>
+													<Series boxScore={boxScore} info={info} />
+													{info.bracket ? (
+														<Bracket boxScore={boxScore} info={info} final />
+													) : (
+														<Standings boxScore={boxScore} info={info} final />
+													)}
+													<RecentGames boxScore={boxScore} info={info} />
+												</>
+											) : null}
+											<GameInfo boxScore={boxScore} />
+										</div>
+									</div>
+									{reactions}
+								</>
+							) : tab === "box" ? (
+								<>
+									{replay && replay.ends.length > 1 ? (
+										<div className="mb-2">
+											<Switch
+												options={[
+													["all", "Game"] as [number | "all", string],
+													...replay.ends.map(
+														(_, k) =>
+															[
+																k,
+																periodLabel(
+																	k + 1,
+																	numPeriods,
+																	helpers.ordinal,
+																) ?? "",
+															] as [number | "all", string],
+													),
+												]}
+												value={period}
+												onChange={setPeriod}
+											/>
+										</div>
+									) : null}
+									<BoxScore
+										key={String(period)}
+										boxScore={
+											replay && period !== "all"
+												? periodBoxScore(boxScore, replay.ends, period)
+												: boxScore
+										}
+										Row={Row}
+										forceRowUpdate
+										sportState={undefined}
+									/>
+								</>
+							) : tab === "plays" && replay ? (
+								<div className="gamecast-narrow">
+									{shotChart}
+									<AllPlays
+										rows={replay.rows}
+										teams={boxScore.teams}
+										season={boxScore.season}
+										numPeriods={numPeriods}
+									/>
+								</div>
+							) : tab === "stats" ? (
+								<div className="gamecast-narrow">
+									<Section title="Team Stats">
+										<TeamStatBars boxScore={boxScore} colors={colors} full />
+									</Section>
+									<Section title="Four Factors">
+										<FourFactors teams={teamsInDisplayOrder(boxScore.teams)} />
+									</Section>
+								</div>
+							) : (
+								<>
+									{boxScore.charts ? (
+										<Section title="Game Flow">
+											<FlowCharts
+												boxScore={boxScore}
+												colors={colors}
+												plays={replay?.rows}
+												say={feed.say}
+											/>
+										</Section>
+									) : null}
+									<GameCharts boxScore={boxScore} restOnly />
+								</>
+							)}
+							{boxScore.exhibition ? null : (
+								<div className="mt-3">
+									<Note
+										key={boxScore.gid}
+										initialNote={boxScore.note}
+										info={{ type: "game", gid: boxScore.gid }}
+										infoLink
+										editOnly
+										autoLink={buildRecapLinks(boxScore)}
+									/>
+								</div>
+							)}
+						</div>
+					</>
+				)}
 			</div>
 		</FeedContext.Provider>
 	);

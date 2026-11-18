@@ -1,4 +1,4 @@
-import { Dropdown } from "../Dropdown.tsx";
+import { Dropdown, isTeamsField } from "../Dropdown.tsx";
 import DropdownLinks from "../DropdownLinks.tsx";
 import { helpers } from "../../util/helpers.ts";
 import { useLocal } from "../../util/local.ts";
@@ -45,11 +45,16 @@ const NewWindowLink = ({ parts }: Props) => {
 	);
 };
 
-export const TitleBar = () => {
+// The title bar's dropdowns and menus, from what the page set (see
+// useTitleBar) - in the title bar, or in a page's own banner.
+export const TitleMenus = ({
+	skipTeams,
+}: {
+	// (The team's own banner has it, as its name.)
+	skipTeams?: boolean;
+} = {}) => {
 	const {
-		title,
 		customMenu,
-		hideNewWindow,
 		jumpTo,
 		jumpToSeason,
 		dropdown,
@@ -57,9 +62,7 @@ export const TitleBar = () => {
 		moreInfoTid,
 		lid,
 	} = useLocal([
-		"title",
 		"customMenu",
-		"hideNewWindow",
 		"jumpTo",
 		"jumpToSeason",
 		"dropdown",
@@ -67,10 +70,6 @@ export const TitleBar = () => {
 		"moreInfoTid",
 		"lid",
 	]);
-
-	if (title === undefined) {
-		return null;
-	}
 
 	const menuItems: MenuItemHeader[] = [];
 
@@ -190,12 +189,13 @@ export const TitleBar = () => {
 	}
 
 	return (
-		<aside className="navbar navbar-border navbar-light justify-content-start title-bar flex-shrink-0  py-0">
-			<h1>
-				{title}
-				{!hideNewWindow ? <NewWindowLink /> : null}
-			</h1>
-			{dropdown ? <Dropdown dropdown={dropdown} /> : null}
+		<>
+			{dropdown ? (
+				<Dropdown
+					dropdown={dropdown}
+					skip={skipTeams ? isTeamsField : undefined}
+				/>
+			) : null}
 			<DropdownLinks
 				className="ms-auto title-bar-right-links"
 				hideTitle
@@ -203,6 +203,28 @@ export const TitleBar = () => {
 				lid={lid}
 				menuItems={menuItems}
 			/>
+		</>
+	);
+};
+
+export const TitleBar = () => {
+	const { title, hideNewWindow, titleBarHidden } = useLocal([
+		"title",
+		"hideNewWindow",
+		"titleBarHidden",
+	]);
+
+	if (title === undefined || titleBarHidden > 0) {
+		return null;
+	}
+
+	return (
+		<aside className="navbar navbar-border navbar-light justify-content-start title-bar flex-shrink-0  py-0">
+			<h1>
+				{title}
+				{!hideNewWindow ? <NewWindowLink /> : null}
+			</h1>
+			<TitleMenus />
 		</aside>
 	);
 };

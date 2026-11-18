@@ -5075,3 +5075,1345 @@ body.has-league-ticker-collapsed .sidebar-inner {
 	font-size: 1.25rem;
 	line-height: 1;
 }
+
+// TEAM BANNERS (see TeamBanner.tsx): a team's colors as a broad band - its
+// first color the ground with a faint weave, stripes in its second at the
+// corners, the city small over the name big and heavy.
+.tb,
+.mb-banner {
+	position: relative;
+	overflow: hidden;
+	a {
+		color: inherit;
+		text-decoration: none;
+	}
+	a:hover {
+		text-decoration: underline;
+	}
+}
+.tb,
+.mb-half {
+	--weave: repeating-linear-gradient(
+		135deg,
+		rgba(255, 255, 255, 0.035) 0 2px,
+		transparent 2px 6px
+	);
+}
+.tb {
+	background: var(--weave), var(--tb-bg);
+	color: var(--tb-fg);
+	margin: 0 0 1rem;
+	padding: 1.75rem 1.5rem;
+	border-radius: 0.375rem;
+}
+.tb-inner {
+	position: relative;
+	display: flex;
+	align-items: center;
+	gap: 1.25rem;
+}
+.tb-logo {
+	flex: 0 0 auto;
+	filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.3));
+}
+.tb-picture {
+	flex: 0 0 auto;
+	align-self: flex-end;
+	margin-bottom: -1.75rem;
+}
+.tb-words {
+	min-width: 0;
+}
+.tb-kicker {
+	font-size: 0.95rem;
+	font-weight: 600;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	opacity: 0.85;
+	line-height: 1.1;
+}
+.tb-title {
+	font-size: 3.25rem;
+	font-weight: 900;
+	letter-spacing: -0.02em;
+	line-height: 1;
+	margin: 0.1rem 0 0.35rem;
+}
+.tb-sub {
+	font-size: 0.95rem;
+	opacity: 0.85;
+}
+.tb-side {
+	margin-left: 1.5rem;
+	font-size: 0.95rem;
+	line-height: 1.6;
+	opacity: 0.9;
+}
+.tb-stripes {
+	position: absolute;
+	display: flex;
+	gap: 0.45rem;
+	pointer-events: none;
+	span {
+		display: block;
+		width: 1.15rem;
+		height: 1.1rem;
+		background: var(--tb-accent);
+		transform: skewX(-18deg);
+	}
+}
+.tb-stripes-top {
+	top: 0;
+	left: 2.5rem;
+}
+.tb-stripes-bottom {
+	bottom: 0;
+	left: 1.25rem;
+}
+
+// Two teams: a half each, split on a slant down the middle, the numbers
+// either side of the split.
+.mb-banner {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	margin: 0 0 0.75rem;
+	border-radius: 0.375rem;
+	min-height: 11rem;
+}
+.mb-half {
+	position: relative;
+	display: flex;
+	align-items: center;
+	gap: 1rem;
+	padding: 1.5rem 1.5rem;
+}
+.mb-half-0 {
+	--tb-accent: var(--tb0-accent);
+	background: var(--weave), var(--tb0-bg);
+	color: var(--tb0-fg);
+	clip-path: polygon(0 0, 100% 0, calc(100% - 2.5rem) 100%, 0 100%);
+	margin-right: -1.25rem;
+	padding-right: 2.5rem;
+}
+.mb-half-1 {
+	--tb-accent: var(--tb1-accent);
+	background: var(--weave), var(--tb1-bg);
+	color: var(--tb1-fg);
+	flex-direction: row-reverse;
+	text-align: right;
+	clip-path: polygon(2.5rem 0, 100% 0, 100% 100%, 0 100%);
+	margin-left: -1.25rem;
+	padding-left: 2.5rem;
+	.tb-stripes-top {
+		left: auto;
+		right: 2.5rem;
+	}
+	.tb-stripes-bottom {
+		left: auto;
+		right: 1.25rem;
+	}
+}
+.mb-team {
+	display: flex;
+	align-items: center;
+	gap: 1rem;
+	min-width: 0;
+	flex: 1 1 auto;
+}
+.mb-half-1 .mb-team {
+	flex-direction: row-reverse;
+}
+.mb-logo {
+	flex: 0 0 auto;
+	filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.3));
+}
+.mb-words {
+	min-width: 0;
+}
+.mb-name {
+	font-size: 2.6rem;
+	font-weight: 900;
+	letter-spacing: -0.02em;
+	line-height: 1;
+	margin: 0.1rem 0 0.3rem;
+}
+.mb-name-short {
+	display: none;
+}
+.mb-number {
+	flex: 0 0 auto;
+	text-align: center;
+	font-variant-numeric: tabular-nums;
+}
+.mb-big {
+	font-size: 4rem;
+	font-weight: 900;
+	line-height: 1;
+	letter-spacing: -0.02em;
+}
+.mb-number-lost {
+	opacity: 0.6;
+}
+.mb-under {
+	font-size: 0.75rem;
+	font-weight: 700;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	opacity: 0.85;
+	margin-top: 0.15rem;
+}
+.mb-middle {
+	position: absolute;
+	top: 0.6rem;
+	left: 50%;
+	transform: translateX(-50%);
+	text-align: center;
+	z-index: 1;
+	pointer-events: none;
+	a {
+		pointer-events: auto;
+	}
+}
+.mb-tag {
+	display: inline-block;
+	background: rgba(12, 14, 18, 0.88);
+	color: #fff;
+	font-style: italic;
+	font-weight: 700;
+	font-size: 0.95rem;
+	padding: 0.2rem 1rem;
+	transform: skewX(-12deg);
+	white-space: nowrap;
+	> * {
+		display: inline-block;
+		transform: skewX(12deg);
+	}
+}
+.mb-status {
+	margin-top: 0.3rem;
+	font-size: 0.75rem;
+	font-weight: 800;
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+	color: #fff;
+	text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+@include media-breakpoint-down(lg) {
+	.mb-name {
+		font-size: 1.9rem;
+	}
+	.mb-big {
+		font-size: 3rem;
+	}
+	.tb-title {
+		font-size: 2.6rem;
+	}
+}
+// A phone: the names to their abbreviations, the logos smaller, the
+// numbers still big; one team's banner its words under its logo.
+@include media-breakpoint-down(sm) {
+	.mb-banner {
+		min-height: 0;
+	}
+	.mb-half {
+		flex-direction: column-reverse;
+		align-items: flex-start;
+		gap: 0.4rem;
+		padding: 2.3rem 1rem 1.2rem;
+	}
+	.mb-half-0 {
+		padding-right: 2rem;
+	}
+	.mb-half-1 {
+		flex-direction: column-reverse;
+		align-items: flex-end;
+		padding-left: 2rem;
+	}
+	.mb-team {
+		gap: 0.5rem;
+	}
+	.mb-logo .d-flex {
+		width: 40px !important;
+		height: 40px !important;
+	}
+	.mb-name {
+		font-size: 1.35rem;
+		margin: 0;
+	}
+	.mb-name-full {
+		display: none;
+	}
+	.mb-name-short {
+		display: inline;
+	}
+	.mb-half .tb-kicker {
+		display: none;
+	}
+	.mb-half .tb-sub {
+		font-size: 0.75rem;
+	}
+	.mb-big {
+		font-size: 2.6rem;
+	}
+	.mb-number {
+		text-align: left;
+	}
+	.mb-half-1 .mb-number {
+		text-align: right;
+	}
+	.mb-tag {
+		font-size: 0.75rem;
+		padding: 0.15rem 0.6rem;
+	}
+	.mb-half .tb-stripes-top {
+		display: none;
+	}
+	.tb {
+		padding: 1.25rem 1rem;
+	}
+	.tb-inner {
+		flex-wrap: wrap;
+		gap: 0.75rem;
+	}
+	.tb-logo .d-flex {
+		width: 64px !important;
+		height: 64px !important;
+	}
+	.tb-title {
+		font-size: 2.1rem;
+	}
+	.tb-side {
+		margin-left: 0;
+		flex-basis: 100%;
+		font-size: 0.85rem;
+	}
+	.tb-picture {
+		margin-bottom: 0;
+	}
+}
+.recap-lines {
+	display: flex;
+	justify-content: center;
+	margin-bottom: 0.25rem;
+	.gamecast-linescore {
+		margin-bottom: 0;
+	}
+}
+
+// A player's banner (see PlayerBanner.tsx): his picture standing on the foot
+// of it, his first name spaced out over his last, big.
+.pb {
+	padding-bottom: 1.25rem;
+	.tb-title {
+		font-size: 4rem;
+	}
+	.tb-side {
+		margin-left: auto;
+		padding-left: 1.5rem;
+		border-left: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+	}
+	.tb-picture {
+		margin-bottom: -1.25rem;
+	}
+}
+.pb-first {
+	font-size: 1.35rem;
+	font-weight: 800;
+	letter-spacing: 0.2em;
+}
+.pb-picture {
+	.player-picture {
+		float: none;
+		margin: 0 !important;
+		width: 140px;
+		height: 210px;
+	}
+}
+.pb-team {
+	font-weight: 600;
+}
+// The page's own dropdowns in its banner (see TitleMenus): top right, in
+// its colors; its title only on a phone, in place of the title bar.
+.pb {
+	overflow: visible;
+}
+.tb-phone-head {
+	display: none;
+	h1 {
+		margin: 0;
+		font-size: 1.3rem;
+		font-weight: 800;
+		line-height: 1.2;
+	}
+}
+.tb-menus {
+	position: absolute;
+	top: -1.35rem;
+	right: -0.75rem;
+	z-index: 2;
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	.dropdown-select,
+	.title-bar-right-links .nav-link,
+	.title-bar-right-links a,
+	.btn-link {
+		color: inherit;
+	}
+	.dropdown-select {
+		background-color: transparent;
+		border: 0;
+		font-weight: 600;
+		option {
+			color: #212529;
+		}
+	}
+	.title-bar-right-links {
+		margin-left: 0 !important;
+		.dropdown-toggle.show,
+		.nav-link.show {
+			color: inherit;
+			background: rgba(255, 255, 255, 0.18);
+			border-radius: 0.3rem;
+		}
+	}
+}
+
+// A phone: no more room than the page has without the banner - his picture
+// on the left and the lines about him by it, as ever, on his team's color
+// (his name is over it already; no logo).
+@include media-breakpoint-down(sm) {
+	.pb {
+		padding: 0.25rem 0.4rem 0.25rem 0.25rem;
+		margin-bottom: 0;
+		.tb-inner {
+			display: grid;
+			grid-template-columns: auto minmax(0, 1fr) auto;
+			grid-template-areas:
+				"head head menus"
+				"pic words words"
+				"pic side side";
+			align-items: start;
+			gap: 0 0.5rem;
+		}
+		.tb-logo,
+		.tb-kicker,
+		.tb-title,
+		.tb-stripes-top {
+			display: none;
+		}
+		.tb-phone-head {
+			display: block;
+			grid-area: head;
+			align-self: center;
+			padding: 0.1rem 0 0.25rem 0.15rem;
+		}
+		.tb-menus {
+			position: static;
+			grid-area: menus;
+			justify-self: end;
+			align-self: center;
+			gap: 0.4rem;
+		}
+		.tb-picture {
+			grid-area: pic;
+			align-self: end;
+			margin: 0;
+		}
+		.tb-words {
+			grid-area: words;
+		}
+		.tb-sub {
+			font-size: inherit;
+			font-weight: 700;
+			line-height: 1.45;
+			margin: 0;
+			opacity: 1;
+		}
+		.tb-side {
+			grid-area: side;
+			margin: 0;
+			padding: 0;
+			border: 0;
+			font-size: inherit;
+			line-height: 1.45;
+			opacity: 1;
+		}
+		.tb-stripes span {
+			width: 0.7rem;
+			height: 0.45rem;
+		}
+	}
+	.pb-picture .player-picture {
+		width: 108px;
+		height: 162px;
+	}
+}
+
+// THE GAME AS ONE PAGE (see RecapDock.tsx): each section under a big quiet
+// heading, room left at the foot for the menu floating over it.
+.recap {
+	padding-bottom: 6rem;
+}
+.recap-section {
+	scroll-margin-top: 4.5rem;
+	margin-bottom: 2rem;
+}
+.recap-section-title {
+	font-size: 1.6rem;
+	font-weight: 800;
+	color: var(--bs-secondary-color);
+	margin: 0.5rem 0 0.75rem;
+}
+.recap-two {
+	display: grid;
+	grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+	gap: 1.5rem;
+}
+@include media-breakpoint-down(lg) {
+	.recap-two {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+// The menu: a bar floating over the foot of the page (over the scores ticker
+// when there is one), an icon and a word each; the section you are in as the
+// sidebar shows the page you are on (the theme's color, on grey).
+.recap-dock-wrap {
+	position: fixed;
+	left: 50%;
+	bottom: 0.75rem;
+	transform: translateX(-50%);
+	z-index: 1020;
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	max-width: calc(100vw - 1rem);
+}
+body:has(.league-ticker) .recap-dock-wrap {
+	bottom: calc(36px + 0.75rem);
+}
+.recap-dock,
+.recap-quarter {
+	background: color-mix(in srgb, var(--bs-body-bg) 92%, transparent);
+	backdrop-filter: blur(10px);
+	border: 1px solid var(--bs-border-color);
+	box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+}
+.recap-dock {
+	position: relative;
+	display: flex;
+	gap: 0.1rem;
+	padding: 0.3rem;
+	border-radius: var(--bs-border-radius-lg);
+	overflow-x: auto;
+	scrollbar-width: none;
+	button {
+		position: relative;
+		appearance: none;
+		border: 0;
+		background: transparent;
+		color: var(--bs-secondary-color);
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.2rem;
+		padding: 0.35rem 0.8rem;
+		font-size: 0.78rem;
+		font-weight: 500;
+		white-space: nowrap;
+		border-radius: var(--bs-border-radius);
+		&:hover {
+			color: var(--bs-body-color);
+			background: var(--bs-secondary-bg);
+		}
+		&.active {
+			color: var(--bs-primary);
+			background: var(--bs-secondary-bg);
+		}
+	}
+}
+.recap-quarter {
+	border-radius: var(--bs-border-radius-lg);
+	padding: 0.3rem;
+	.form-select {
+		border: 0;
+		background-color: transparent;
+		font-weight: 700;
+		min-width: 6rem;
+	}
+}
+// A phone: the menu a bar along the very foot of the window (on the scores
+// ticker, when there is one), edge to edge, its buttons sliding sideways;
+// the quarter floating over its left end.
+@include media-breakpoint-down(sm) {
+	.recap-dock-wrap {
+		left: 0;
+		right: 0;
+		bottom: 0;
+		transform: none;
+		max-width: none;
+		display: block;
+	}
+	body:has(.league-ticker) .recap-dock-wrap {
+		bottom: 36px;
+	}
+	.recap-quarter {
+		position: absolute;
+		left: 0.75rem;
+		bottom: calc(100% + 0.5rem);
+	}
+	.recap-dock {
+		border-radius: 0;
+		border-width: 1px 0 0;
+		box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.12);
+		padding: 0.25rem;
+		button {
+			flex: 0 0 auto;
+			min-width: 4.6rem;
+			padding: 0.3rem 0.4rem;
+			font-size: 0.72rem;
+		}
+	}
+	.recap-section-title {
+		font-size: 1.3rem;
+	}
+	.recap {
+		padding-bottom: 9rem;
+	}
+}
+
+// A team's pages under its banner (see MoreLinks, TeamPageBanner): its pages
+// along the foot of it, the one you are on underlined in its second color.
+.teamb {
+	overflow: visible;
+	padding: 1.4rem 1.5rem 1rem;
+	.tb-title {
+		font-size: 2.6rem;
+	}
+	.tb-logo .d-flex {
+		width: 96px !important;
+		height: 96px !important;
+	}
+	.tb-sub {
+		opacity: 1;
+	}
+}
+.tb-nav {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.3rem 1.1rem;
+	margin-top: 0.45rem;
+	font-size: 0.95rem;
+	a {
+		opacity: 0.8;
+		font-weight: 600;
+		padding-bottom: 0.15rem;
+		border-bottom: 2px solid transparent;
+		&:hover {
+			opacity: 1;
+			text-decoration: none;
+		}
+		&.active {
+			opacity: 1;
+			border-bottom-color: var(--tb-accent);
+		}
+	}
+}
+@include media-breakpoint-down(sm) {
+	.teamb {
+		padding: 0.45rem 0.6rem 0.35rem;
+		margin-bottom: 0.6rem;
+		.tb-inner {
+			display: grid;
+			grid-template-columns: auto minmax(0, 1fr) auto;
+			grid-template-areas:
+				"logo name menus"
+				"nav nav nav";
+			align-items: center;
+			gap: 0.2rem 0.5rem;
+		}
+		.tb-logo {
+			grid-area: logo;
+		}
+		.tb-logo .d-flex {
+			width: 34px !important;
+			height: 34px !important;
+		}
+		.tb-menus {
+			position: static;
+			grid-area: menus;
+			justify-self: end;
+			flex-wrap: wrap;
+			gap: 0.1rem 0.5rem;
+		}
+		.tb-words {
+			display: contents;
+		}
+		.tb-kicker,
+		.tb-stripes-top {
+			display: none;
+		}
+		.tb-title {
+			grid-area: name;
+			min-width: 0;
+			font-size: 1.25rem;
+			line-height: 1.15;
+			white-space: nowrap;
+			overflow: hidden;
+			text-overflow: ellipsis;
+		}
+		.tb-sub {
+			grid-area: nav;
+			margin: 0;
+			min-width: 0;
+		}
+		.tb-nav {
+			flex-wrap: nowrap;
+			overflow-x: auto;
+			scrollbar-width: none;
+			white-space: nowrap;
+			gap: 1rem;
+			margin-top: 0.1rem;
+			font-size: 0.85rem;
+		}
+		.tb-stripes span {
+			width: 0.7rem;
+			height: 0.45rem;
+		}
+	}
+}
+
+// A team's own spot in its colors (standings, the playoffs - the refreshed
+// look): its color the ground with the weave, white on it, its second color
+// down the left edge, the right end cut on a slant.
+.tb-cell,
+.tb-pm {
+	--weave: repeating-linear-gradient(
+		135deg,
+		rgba(255, 255, 255, 0.04) 0 2px,
+		transparent 2px 6px
+	);
+	background: var(--weave), var(--tb-bg) !important;
+	color: var(--tb-fg) !important;
+	a,
+	.text-body-secondary {
+		color: inherit !important;
+	}
+}
+.tb-cell-td {
+	padding-top: 2px !important;
+	padding-bottom: 2px !important;
+}
+// (The full standings: room for the whole name in the team's colors.)
+.tb-cell-td-wide {
+	min-width: 15.5rem;
+}
+@include media-breakpoint-down(sm) {
+	.tb-cell-td-wide {
+		min-width: 7.6rem;
+	}
+}
+.tb-cell {
+	font-weight: 600;
+	border-left: 3px solid var(--tb-accent);
+	padding: 0.15rem 0.7rem 0.15rem 0.1rem;
+	clip-path: polygon(0 0, 100% 0, calc(100% - 0.45rem) 100%, 0 100%);
+}
+@include media-breakpoint-down(sm) {
+	.tb-cell {
+		padding-right: 0.45rem;
+		clip-path: polygon(0 0, 100% 0, calc(100% - 0.3rem) 100%, 0 100%);
+		.mx-1 {
+			margin-left: 0.15rem !important;
+			margin-right: 0.15rem !important;
+		}
+	}
+}
+.tb-pm {
+	border-left: 4px solid var(--tb-accent) !important;
+	.text-body-secondary {
+		opacity: 0.8;
+	}
+}
+.tb-pm-lost {
+	opacity: 0.55;
+}
+// A team's name as a spot in its colors (the trade summary).
+.tb-chip {
+	--weave: repeating-linear-gradient(
+		135deg,
+		rgba(255, 255, 255, 0.04) 0 2px,
+		transparent 2px 6px
+	);
+	display: flex;
+	align-items: center;
+	gap: 0.4rem;
+	background: var(--weave), var(--tb-bg);
+	color: var(--tb-fg);
+	border-left: 3px solid var(--tb-accent);
+	padding: 0.3rem 1rem 0.3rem 0.4rem;
+	clip-path: polygon(0 0, 100% 0, calc(100% - 0.5rem) 100%, 0 100%);
+	font-size: 1rem;
+}
+
+// THE BOX SCORE ON A PHONE (see BoxScorePhone): a ways-to-look switch, then a
+// team at a time - its name over the column heads, its starters, the bench
+// under the heads again, who didn't play, the totals. The names stay put as
+// the numbers slide.
+.bsp {
+	margin: 0 -0.75rem;
+}
+.bsp-views {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.5rem;
+	margin: 0 0.75rem 0.75rem;
+	flex-wrap: wrap;
+}
+.bsp-picker {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.15rem 0;
+	margin: 0 0.75rem 0.9rem;
+	padding: 0.5rem 0.75rem;
+	border: 1px solid var(--bs-border-color);
+	border-radius: var(--bs-border-radius);
+	font-size: 0.8rem;
+}
+.bsp-pick {
+	white-space: nowrap;
+}
+.bsp-wrap {
+	overflow-x: auto;
+	margin-bottom: 1.25rem;
+}
+.bsp-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 0.68rem;
+	font-variant-numeric: tabular-nums;
+	th,
+	td {
+		padding: 0.3rem 0.13rem;
+		text-align: right;
+		white-space: nowrap;
+	}
+	th:last-child,
+	td:last-child {
+		padding-right: 0.5rem;
+	}
+	.bsp-name {
+		position: sticky;
+		left: 0;
+		z-index: 1;
+		text-align: left;
+		background: var(--bs-body-bg);
+		font-weight: 400;
+		max-width: 5.9rem;
+		padding-left: 0.3rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		a {
+			display: flex;
+			align-items: center;
+			gap: 0.25rem;
+			color: inherit;
+			text-decoration: none;
+		}
+	}
+	tbody tr {
+		border-top: 1px solid var(--bs-border-color-translucent);
+	}
+	tbody tr:nth-child(even) td,
+	tbody tr:nth-child(even) .bsp-name {
+		background: var(--bs-tertiary-bg);
+	}
+}
+.bsp-head {
+	border-top: 1px solid var(--bs-border-color);
+	border-bottom: 1px solid var(--bs-border-color);
+	th {
+		font-size: 0.62rem;
+		font-weight: 700;
+		color: var(--bs-secondary-color);
+		text-transform: uppercase;
+	}
+}
+.bsp-team {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.35rem;
+}
+.bsp-pname {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	color: var(--bs-link-color);
+}
+.bsp-num {
+	color: var(--bs-secondary-color);
+	font-size: 0.62rem;
+	flex-shrink: 0;
+}
+.bsp-dnp td {
+	text-align: left !important;
+	color: var(--bs-secondary-color);
+}
+.bsp-table tfoot {
+	border-top: 1px solid var(--bs-border-color);
+	th {
+		font-weight: 600;
+	}
+	.bsp-name {
+		font-size: 0.7rem;
+		color: var(--bs-secondary-color);
+	}
+}
+.bsp-pct th {
+	font-weight: 400 !important;
+	color: var(--bs-secondary-color);
+}
+
+// Rotations, lineups, on/off (see LineupViews): bars across the game in the
+// team's good or bad, a lineup's faces in a row, on against off.
+.lv-good {
+	color: var(--bs-success) !important;
+	font-weight: 700;
+}
+.lv-bad {
+	color: var(--bs-danger) !important;
+	font-weight: 700;
+}
+.lv-views {
+	justify-content: flex-start;
+}
+.lv-select {
+	width: auto;
+	max-width: 15rem;
+}
+.rot-table {
+	table-layout: fixed;
+	// (Room at the right for a stint to the final horn.)
+	width: calc(100% - 0.6rem) !important;
+	.bsp-name {
+		width: 6.6rem;
+	}
+	.rot-track {
+		position: relative;
+		width: auto;
+		height: 2rem;
+		padding: 0 !important;
+	}
+	.rot-heads span {
+		position: absolute;
+		top: 0.35rem;
+		text-align: center;
+	}
+}
+.rot-lines span {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	width: 1px;
+	background: var(--bs-border-color);
+}
+.rot-bar {
+	position: absolute;
+	top: 0.55rem;
+	height: 0.9rem;
+	border-radius: 2px;
+	background: var(--bs-secondary-color);
+	opacity: 0.85;
+	&.rot-up {
+		background: var(--bs-success);
+	}
+	&.rot-down {
+		background: var(--bs-danger);
+	}
+}
+.lv-table .lv-faces {
+	max-width: none;
+	padding-top: 0.15rem;
+	padding-bottom: 0.15rem;
+}
+.lv-busts {
+	--bust-w: 2.6rem;
+	--bust-over: 0.5rem;
+	display: flex;
+	padding-left: var(--bust-over);
+}
+.lv-face {
+	position: relative;
+	display: flex !important;
+	flex-direction: column;
+	align-items: center;
+	gap: 0 !important;
+	width: var(--bust-w);
+	margin-left: calc(-1 * var(--bust-over));
+	span {
+		position: relative;
+		z-index: 6;
+		margin-top: 1px;
+		font-size: 0.5rem;
+		font-weight: 700;
+		max-width: calc(var(--bust-w) - var(--bust-over) - 0.15rem);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		color: var(--bs-link-color);
+	}
+	&:hover .lv-bust {
+		z-index: 5;
+	}
+}
+.lv-bust {
+	position: relative;
+	width: var(--bust-w);
+	height: calc(var(--bust-w) * 1.3);
+	overflow: hidden;
+	border-bottom: 2px solid var(--tb-bg, var(--bs-border-color));
+	svg {
+		display: block;
+		width: 100%;
+		height: 100%;
+	}
+}
+.lv-bust-in {
+	width: 100%;
+	aspect-ratio: 2 / 3;
+}
+.lv-bust-photo {
+	background: var(--bs-secondary-bg);
+	img {
+		width: 100%;
+		height: 100%;
+		max-width: none !important;
+		max-height: none !important;
+		object-fit: cover;
+		object-position: center top;
+	}
+	.lv-bust-in {
+		height: 100%;
+		aspect-ratio: auto;
+	}
+}
+.lv-none {
+	text-align: left !important;
+	color: var(--bs-secondary-color);
+}
+.lv-onoff {
+	td,
+	th {
+		text-align: center;
+		font-size: 0.8rem;
+	}
+	.lv-stat {
+		text-align: right !important;
+		font-weight: 700 !important;
+		color: var(--bs-secondary-color);
+	}
+}
+.lv-who {
+	position: relative;
+	display: inline-flex;
+	flex-direction: column;
+	align-items: center;
+}
+.lv-off-face {
+	filter: grayscale(1);
+	opacity: 0.55;
+}
+.lv-tag {
+	margin-top: -0.4rem;
+	font-size: 0.55rem;
+	font-weight: 800;
+	padding: 0 0.3rem;
+	border-radius: var(--bs-border-radius-sm);
+	background: var(--bs-secondary);
+	color: #fff;
+	&.lv-on {
+		background: var(--bs-primary);
+	}
+}
+// (Wider than a phone: the same tables, readable, not stretched out.)
+@include media-breakpoint-up(sm) {
+	.lv .bsp-table {
+		font-size: 0.85rem;
+		max-width: 46rem;
+	}
+	.lv .lv-onoff {
+		max-width: 34rem;
+	}
+	.lv .bsp-wrap {
+		margin-left: 0.75rem;
+	}
+	.lv-busts {
+		--bust-w: 3.6rem;
+		--bust-over: 0.55rem;
+	}
+	.lv-face span {
+		font-size: 0.62rem;
+	}
+}
+
+// The live game in the refreshed look (see LiveGamecast): the banner over the
+// court, the sections scrolled to under the court where it is pinned, and in
+// a phone's box score the men on the floor marked as BBGM's live box score
+// marks them.
+.live-refreshed {
+	.mb-live {
+		margin-bottom: 0.75rem;
+	}
+	.recap-section {
+		scroll-margin-top: max(4.5rem, calc(var(--pinned-to, 0px) + 0.75rem));
+	}
+	.recap-sections {
+		margin-top: 1rem;
+	}
+}
+.bsp-on td,
+.bsp-on .bsp-name {
+	background-color: shift-color($warning, $table-bg-scale) !important;
+}
+
+// A team's name as its own dropdown (see TeamNameDropdown): a caret by it,
+// the page's list of teams opened from anywhere on it.
+.tb-name-dropdown {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	gap: 0.3em;
+	max-width: 100%;
+	cursor: pointer;
+	select {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		opacity: 0;
+		cursor: pointer;
+		font-size: 16px;
+		color: #212529;
+		background: #fff;
+		appearance: none;
+	}
+	&:hover .tb-caret {
+		opacity: 1;
+	}
+}
+.tb-caret {
+	flex: 0 0 auto;
+	width: 0.32em;
+	height: 0.32em;
+	margin: 0 0.1em 0.15em;
+	border-right: 0.09em solid currentColor;
+	border-bottom: 0.09em solid currentColor;
+	transform: rotate(45deg);
+	opacity: 0.75;
+}
+@include media-breakpoint-down(sm) {
+	.tb-caret {
+		width: 0.42em;
+		height: 0.42em;
+		border-width: 0 0.13em 0.13em 0;
+	}
+}
+
+// A team's banner as one slim strip - its logo, its name, its pages, its
+// menus in one row - joined on to the game's banner under it (the game log):
+// the two one header.
+.teamb-slim {
+	padding: 0.45rem 1rem 0.35rem;
+	margin-bottom: 0;
+	border-radius: 0.375rem 0.375rem 0 0;
+	.tb-stripes,
+	.tb-kicker {
+		display: none;
+	}
+	.tb-inner {
+		gap: 0.75rem;
+	}
+	.tb-logo .d-flex {
+		width: 40px !important;
+		height: 40px !important;
+	}
+	.tb-words {
+		flex: 1 1 auto;
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 0.1rem 1.5rem;
+	}
+	.tb-title {
+		font-size: 1.5rem;
+		margin: 0;
+	}
+	.tb-sub {
+		margin: 0;
+	}
+	.tb-nav {
+		margin-top: 0;
+	}
+	.tb-menus {
+		position: static;
+		order: 2;
+		flex: 0 0 auto;
+	}
+}
+.teamb-slim + .recap .recap-header {
+	padding-top: 0;
+	> .mb-banner:first-child {
+		border-top-left-radius: 0;
+		border-top-right-radius: 0;
+	}
+}
+// (Its buttons - the replay, the games before and after - at its end.)
+.teamb-slim .tb-side {
+	order: 2;
+	flex: 0 0 auto;
+	align-self: center;
+	margin: 0;
+	padding: 0;
+	border: 0;
+	opacity: 1;
+}
+.tb-actions {
+	display: flex;
+	align-items: center;
+	gap: 0.35rem;
+	.btn {
+		white-space: nowrap;
+		// (Its own color, not the banner's white.)
+		color: var(--bs-btn-color) !important;
+	}
+}
+@include media-breakpoint-down(sm) {
+	.teamb.teamb-slim {
+		padding: 0.4rem 0.6rem 0.3rem;
+		margin-bottom: 0;
+		.tb-inner {
+			grid-template-columns: auto minmax(0, 1fr) auto auto;
+			grid-template-areas:
+				"logo name side menus"
+				"logo nav nav nav";
+		}
+		.tb-words {
+			display: contents;
+		}
+		.tb-side {
+			grid-area: side;
+		}
+		.tb-title {
+			font-size: 1.25rem;
+		}
+	}
+	.tb-action-word {
+		display: none;
+	}
+}
+
+// A team's banner pinned under the top bar as the page scrolls (see
+// usePinnedBanner in MoreLinks): on a wider screen only its pages show, the
+// rest tucked up under the bar.
+.teamb {
+	position: sticky;
+	top: var(--teamb-top, 52px);
+	z-index: 1015;
+}
+// (A section jumped to, scrolled to under it.)
+.recap-section {
+	scroll-margin-top: calc(4.5rem + var(--teamb-h, 0px));
+}
+
+// The roster's record, rating, payroll... under its banner, in two columns
+// side by side.
+.team-summary {
+	display: grid;
+	grid-template-columns: auto auto;
+	justify-content: start;
+	gap: 0 2.5rem;
+	> :first-child {
+		grid-column: 1;
+		grid-row: 1 / span 8;
+	}
+	> :not(:first-child) {
+		grid-column: 2;
+	}
+	.mt-3 {
+		margin-top: 0 !important;
+	}
+}
+@include media-breakpoint-down(sm) {
+	.team-summary {
+		gap: 0 1rem;
+		font-size: 0.85rem;
+		// (The record's line, a little bigger, as it is.)
+		> :first-child > :first-child[style] {
+			font-size: 1rem !important;
+		}
+	}
+}
+
+// The score by quarter in the middle of the game's banner, under the status.
+.mb-extra {
+	margin-top: 0.3rem;
+	pointer-events: auto;
+	.recap-mini {
+		color: #fff;
+		background: rgba(12, 14, 18, 0.55);
+		border-radius: var(--bs-border-radius-sm);
+		font-size: 0.75rem;
+		th,
+		td {
+			padding: 0.02rem 0.3rem;
+		}
+		thead th {
+			color: rgba(255, 255, 255, 0.7);
+		}
+	}
+}
+// (Wider than a phone, the numbers are by the split: the score by quarter
+// at the foot of the banner, under them.)
+@include media-breakpoint-up(sm) {
+	.mb-banner:has(.mb-extra) {
+		min-height: 13rem;
+		.mb-middle {
+			bottom: 0.7rem;
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+		}
+		.mb-extra {
+			margin-top: auto;
+		}
+	}
+}
+@include media-breakpoint-down(sm) {
+	.mb-extra .recap-mini {
+		font-size: 0.68rem;
+		th,
+		td {
+			padding: 0 0.22rem;
+		}
+	}
+}
+
+// The names' column (see NAME_WIDTHS in BoxScorePhone): the same width in
+// both teams' tables, set on this device; the numbers slide under its edge.
+.bsp-table .bsp-name {
+	width: var(--bsp-name-w, 8.8rem);
+	min-width: var(--bsp-name-w, 8.8rem);
+	max-width: var(--bsp-name-w, 8.8rem);
+	box-shadow: 5px 0 5px -4px rgba(0, 0, 0, 0.3);
+}
+.rot-table .bsp-name {
+	width: var(--bsp-name-w, 8.8rem) !important;
+}
+.bsp-picker-names {
+	flex: 0 0 100%;
+	display: flex;
+	align-items: center;
+	gap: 0.6rem;
+	margin-bottom: 0.4rem;
+}
