@@ -342,6 +342,44 @@ const RecapNav = ({
 	);
 };
 
+// A TEAM'S LEADERS IN THE GAME, small under its record in the banner: who
+// had the most points, rebounds and assists ("PTS T. Jones 33"), each to his
+// page.
+const LEADER_STATS = [
+	["pts", "PTS"],
+	["trb", "REB"],
+	["ast", "AST"],
+] as const;
+const TeamLeaders = ({ t }: { t: any }) => {
+	const players = (t.players ?? []) as any[];
+	// (Rebounds kept as offensive and defensive.)
+	const stat = (p: any, key: string) =>
+		key === "trb" ? (p.trb ?? (p.orb ?? 0) + (p.drb ?? 0)) : (p[key] ?? 0);
+	const lines = LEADER_STATS.map(([key, label]) => {
+		const top = players.reduce<any>(
+			(best, p) =>
+				best === undefined || stat(p, key) > stat(best, key) ? p : best,
+			undefined,
+		);
+		if (!top || !(stat(top, key) > 0)) {
+			return null;
+		}
+		const words = String(top.name).trim().split(/\s+/);
+		const short =
+			words.length > 1
+				? `${words[0]![0]}. ${words.slice(1).join(" ")}`
+				: top.name;
+		return (
+			<div key={key} className="mb-lead">
+				<span className="mb-lead-k">{label}</span>
+				<a href={helpers.leagueUrl(["player", top.pid])}>{short}</a>
+				<span className="mb-lead-v">{stat(top, key)}</span>
+			</div>
+		);
+	}).filter(Boolean);
+	return lines.length > 0 ? <>{lines}</> : null;
+};
+
 // A TEAM'S GAMES BEFORE AND AFTER THIS ONE, as two arrows at the foot of its
 // half of the banner (where its stripes were): the one after, at its latest
 // game this season, sims to its next (as BBGM's "Sim Next").
@@ -591,7 +629,20 @@ const RecapHeader = ({
 							away.won !== undefined ? helpers.formatRecord(away) : null,
 							home.won !== undefined ? helpers.formatRecord(home) : null,
 						]}
+						leaders={[
+							<TeamLeaders key="away" t={away} />,
+							<TeamLeaders key="home" t={home} />,
+						]}
 					/>
+					{/* (A phone: under the banner instead - no room in its halves.) */}
+					<div className="mb-leaders-row">
+						<div className="mb-leaders">
+							<TeamLeaders t={away} />
+						</div>
+						<div className="mb-leaders">
+							<TeamLeaders t={home} />
+						</div>
+					</div>
 					{dayGames ? (
 						<DayGames games={dayGames} gid={boxScore.gid} season={season} />
 					) : null}

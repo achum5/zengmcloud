@@ -6336,3 +6336,52 @@ a.rsb-half {
 	color: var(--tb-ground);
 	text-decoration: none;
 }
+
+// Each team's leaders in the game, small under its record (see TeamLeaders):
+// "PTS T. Jones 33", a line each.
+.mb-leaders {
+	margin-top: 0.4rem;
+	font-size: 0.75rem;
+	line-height: 1.35;
+}
+.mb-lead {
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.mb-lead-k {
+	display: inline-block;
+	min-width: 2.4em;
+	margin-right: 0.3em;
+	font-size: 0.85em;
+	font-weight: 800;
+	letter-spacing: 0.04em;
+	opacity: 0.7;
+}
+.mb-lead-v {
+	margin-left: 0.3em;
+	font-weight: 800;
+}
+.mb-leaders-row {
+	display: none;
+}
+// (A phone: not in the banner's halves - no room by the score by quarter -
+// but in a row under it, each team's under its side.)
+@include media-breakpoint-down(sm) {
+	.mb-half .mb-leaders {
+		display: none;
+	}
+	.mb-leaders-row {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+		gap: 0 0.75rem;
+		margin: 0.4rem 0.25rem 0;
+		.mb-leaders {
+			margin: 0;
+			font-size: 0.72rem;
+		}
+		.mb-leaders:last-child {
+			text-align: right;
+		}
+	}
+}

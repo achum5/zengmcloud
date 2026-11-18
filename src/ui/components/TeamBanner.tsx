@@ -70,11 +70,15 @@ export const MatchupBanner = ({
 	won,
 	extra,
 	navs,
+	leaders,
 	className,
 }: {
 	// Each side's arrows to its games before and after (the game's banner),
 	// in place of the stripes at its foot.
 	navs?: [ReactNode, ReactNode];
+	// Each side's leaders, small, under its record (points, rebounds,
+	// assists).
+	leaders?: [ReactNode, ReactNode];
 	// Under the tag and the status, in the middle (the score by quarter).
 	extra?: ReactNode;
 	// Left, right.
@@ -128,6 +132,9 @@ export const MatchupBanner = ({
 								)}
 							</div>
 							{subs?.[i] ? <div className="tb-sub">{subs[i]}</div> : null}
+							{leaders?.[i] ? (
+								<div className="mb-leaders">{leaders[i]}</div>
+							) : null}
 						</div>
 					</div>
 					{numbers ? (
