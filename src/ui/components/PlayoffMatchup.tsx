@@ -8,7 +8,6 @@ import { helpers } from "../util/helpers.ts";
 import type { ReactNode } from "react";
 import { ChampionshipBanner } from "./ChampionshipBanner.tsx";
 import { useLocal } from "../util/local.ts";
-import { brandVars, useAllTeamColors } from "./TeamBanner.tsx";
 import { collegeSeedLine } from "../../common/college.ts";
 
 type SeriesTeam = PlayoffSeriesTeamAugmented;
@@ -80,8 +79,7 @@ const Team = ({
 	gid?: number;
 }) => {
 	// Before any early return, because it is a hook.
-	const { college, refreshedLook } = useLocal(["college", "refreshedLook"]);
-	const allColors = useAllTeamColors(refreshedLook);
+	const { college } = useLocal(["college"]);
 
 	if (!team) {
 		return null;
@@ -156,21 +154,15 @@ const Team = ({
 	};
 
 	const highlightUser = team.tid === userTid && !team.pendingPlayIn;
-	// The refreshed look: the team's spot in its colors.
-	const branded =
-		refreshedLook && allColors !== undefined && !team.pendingPlayIn;
 
 	return (
 		<li
 			className={clsx("border border-bottom-0", {
 				"fw-bold": won,
-				"table-info": highlightUser && !branded,
-				"table-warning": won && extraHighlight && !highlightUser && !branded,
+				"table-info": highlightUser,
+				"table-warning": won && extraHighlight && !highlightUser,
 				"text-body-secondary": lost,
-				"tb-pm": branded,
-				"tb-pm-lost": branded && lost,
 			})}
-			style={branded ? brandVars(allColors[team.tid]) : undefined}
 		>
 			<TeamLogo team={team} lost={lost} />
 			<div className="mx-1 align-self-start">

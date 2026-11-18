@@ -28,44 +28,12 @@ import { buildPlayerNoteLinks } from "../../util/linkifyRecap.ts";
 import { TradingCardGallery } from "../../components/TradingCardGallery.tsx";
 import { wrappedSeasonAwards } from "./SeasonAwards.tsx";
 import Impact from "./Impact.tsx";
-import type { ReactNode } from "react";
-import {
-	DOCK_ICONS,
-	RecapDock,
-	type DockSection,
-} from "../LiveGame/gamecast/RecapDock.tsx";
 import {
 	ContractHistory,
 	ContractSummary,
 	SalaryMarks,
 } from "./ContractCard.tsx";
 import { last, orderBy } from "../../../common/utils.ts";
-
-// THE PAGE'S PARTS, FOR THE MENU AT ITS FOOT (the refreshed look): each part
-// wrapped where it is, so the menu can go to it and light up as you pass.
-const Anchor = ({
-	id,
-	on,
-	children,
-}: {
-	id: string;
-	on: boolean;
-	children: ReactNode;
-}) =>
-	on ? (
-		<div id={`recap-${id}`} className="player-anchor">
-			{children}
-		</div>
-	) : (
-		<>{children}</>
-	);
-const PLAYER_SECTIONS: DockSection[] = [
-	{ id: "overview", label: "Overview", icon: DOCK_ICONS.player },
-	{ id: "stats", label: "Stats", icon: DOCK_ICONS.stats },
-	{ id: "ratings", label: "Ratings", icon: DOCK_ICONS.ratings },
-	{ id: "career", label: "Career", icon: DOCK_ICONS.career },
-	{ id: "more", label: "More", icon: DOCK_ICONS.more },
-];
 
 const Player2 = ({
 	amateurUniform,
@@ -96,15 +64,9 @@ const Player2 = ({
 }: View<"player">) => {
 	const {
 		challengeNoRatings,
-		refreshedLook,
 		season: currentSeason,
 		teamInfoCache,
-	} = useLocal([
-		"challengeNoRatings",
-		"refreshedLook",
-		"season",
-		"teamInfoCache",
-	]);
+	} = useLocal(["challengeNoRatings", "season", "teamInfoCache"]);
 	const showRatings = !challengeNoRatings || retired;
 
 	// What each paid season was worth against what it cost. Absent entirely
@@ -203,342 +165,319 @@ const Player2 = ({
 
 	return (
 		<>
-			<Anchor id="overview" on={refreshedLook}>
-				<TopStuff
-					amateurUniform={amateurUniform}
-					appearanceTeams={appearanceTeams}
-					bestPos={bestPos}
-					currentSeason={currentSeason}
-					jerseyNumberInfos={jerseyNumberInfos}
-					noteTeammates={noteTeammates}
-					// Only what has nowhere else to go; every writeup is on the row it is
-					// about. On a prospect that is the whole note, scouting and all.
-					displayNote={seasonNotes.leftover}
-					// A prospect's note IS his scouting report, filed under the season
-					// before his draft. That year is noise on a page about a player who
-					// hasn't played yet, and reads as if it were his draft year. The
-					// header is still parsed (it scopes the writeup's links); only the
-					// "[YYYY]" label is dropped at render.
-					hideSeasonLabels={undrafted}
-					draftRecap={seasonNotes.draftRecap}
-					noteLinksBySeason={noteLinksBySeason}
-					player={player}
-					randomDebutsForeverPids={randomDebutsForeverPids}
-					retired={retired}
-					showRatings={showRatings}
-					statSummary={statSummary}
-					teamColors={teamColors}
-					teamJersey={teamJersey}
-					teamName={teamName}
-					teamURL={teamURL}
-					willingToSign={willingToSign}
+			<TopStuff
+				amateurUniform={amateurUniform}
+				appearanceTeams={appearanceTeams}
+				bestPos={bestPos}
+				currentSeason={currentSeason}
+				jerseyNumberInfos={jerseyNumberInfos}
+				noteTeammates={noteTeammates}
+				// Only what has nowhere else to go; every writeup is on the row it is
+				// about. On a prospect that is the whole note, scouting and all.
+				displayNote={seasonNotes.leftover}
+				// A prospect's note IS his scouting report, filed under the season
+				// before his draft. That year is noise on a page about a player who
+				// hasn't played yet, and reads as if it were his draft year. The
+				// header is still parsed (it scopes the writeup's links); only the
+				// "[YYYY]" label is dropped at render.
+				hideSeasonLabels={undrafted}
+				draftRecap={seasonNotes.draftRecap}
+				noteLinksBySeason={noteLinksBySeason}
+				player={player}
+				randomDebutsForeverPids={randomDebutsForeverPids}
+				retired={retired}
+				showRatings={showRatings}
+				statSummary={statSummary}
+				teamColors={teamColors}
+				teamJersey={teamJersey}
+				teamName={teamName}
+				teamURL={teamURL}
+				willingToSign={willingToSign}
+			/>
+
+			{statTables.map(({ name, onlyShowIf, stats, superCols }, i) => (
+				<StatsTable
+					awardsBySeason={awardsBySeason}
+					key={name}
+					name={name}
+					onlyShowIf={onlyShowIf}
+					stats={stats}
+					superCols={superCols}
+					p={player}
+					leaders={leaders}
+					teamStats={teamStats}
+					// Only the first table gets the writeup arrows. Every table lists
+					// the same seasons, so repeating them five times down the page
+					// would be five ways to open the same popover.
+					seasonNotes={i === 0 ? seasonNotes.bySeason : undefined}
+					noteLinksBySeason={i === 0 ? noteLinksBySeason : undefined}
 				/>
-			</Anchor>
+			))}
 
-			<Anchor id="stats" on={refreshedLook}>
-				{statTables.map(({ name, onlyShowIf, stats, superCols }, i) => (
-					<StatsTable
-						awardsBySeason={awardsBySeason}
-						key={name}
-						name={name}
-						onlyShowIf={onlyShowIf}
-						stats={stats}
-						superCols={superCols}
-						p={player}
-						leaders={leaders}
-						teamStats={teamStats}
-						// Only the first table gets the writeup arrows. Every table lists
-						// the same seasons, so repeating them five times down the page
-						// would be five ways to open the same popover.
-						seasonNotes={i === 0 ? seasonNotes.bySeason : undefined}
-						noteLinksBySeason={i === 0 ? noteLinksBySeason : undefined}
-					/>
-				))}
-			</Anchor>
+			<Impact impact={impact} />
 
-			{/* (Not in the refreshed look.) */}
-			{refreshedLook ? null : <Impact impact={impact} />}
-
-			<Anchor id="ratings" on={refreshedLook}>
-				<HideableSection
-					title="Ratings"
-					description={hasLeader && showRatings ? highlightLeaderText : null}
-				>
-					<DataTable
-						className="mb-3 datatable-negative-margin-top"
-						cols={getCols([
-							"Year",
-							"Team",
-							"Age",
-							"Pos",
-							"Ovr",
-							"Pot",
-							...ratings.map((rating) => `rating:${rating}`),
-							"Skills",
-							"Awards",
-						])}
-						defaultSort={[0, "asc"]}
-						defaultStickyCols={2}
-						hideAllControls
-						name="Player:Ratings"
-						rows={player.ratings.map((r, i) => {
-							return {
-								key: i,
-								data: [
-									{
-										searchValue: r.season,
-										sortValue: i,
-										value: (
-											<>
-												<SeasonLink pid={player.pid} season={r.season} />{" "}
-												<SeasonIcons season={r.season} awards={player.awards} />
-												{r.injuryIndex !== undefined &&
-												player.injuries[r.injuryIndex] ? (
-													<InjuryIcon
-														injury={{
-															type: player.injuries[r.injuryIndex]!.type,
-															gamesRemaining: -1,
-														}}
-													/>
-												) : null}
-												{ratingsNotes.get(r.season) ? (
-													<SeasonNoteButton
-														header={
-															r.season === player.draft.year
-																? `Scouting report — ${player.draft.year} draft`
-																: r.season
-														}
-														id={`ratings-note-${r.season}`}
-														linksFor={noteLinksBySeason}
-														sections={ratingsNotes.get(r.season)!}
-														title={
-															r.season === player.draft.year
-																? "Read the scouting report"
-																: `Read the ${r.season} writeup`
-														}
-													/>
-												) : null}
-											</>
-										),
-									},
-									wrappedTeamAbbrevLink({
-										abbrev: r.abbrev,
-										season: r.season,
-										tid: r.tid,
-									}),
-									<MaybeBold bold={leaders[r.season]?.attrs.has("age")}>
-										{r.age}
-									</MaybeBold>,
-									r.pos,
-									showRatings ? (
-										<MaybeBold bold={leaders[r.season]?.ratings.has("ovr")}>
-											{r.ovr}
-										</MaybeBold>
-									) : null,
-									showRatings ? (
-										<MaybeBold bold={leaders[r.season]?.ratings.has("pot")}>
-											{r.pot}
-										</MaybeBold>
-									) : null,
-									...ratings.map((rating) =>
-										showRatings ? (
-											<MaybeBold bold={leaders[r.season]?.ratings.has(rating)}>
-												{r[rating]}
-											</MaybeBold>
-										) : null,
-									),
-									<SkillsBlock className="skills-alone" skills={r.skills} />,
-									wrappedSeasonAwards({
-										awards: awardsBySeason.get(r.season),
-										season: r.season,
-									}),
-								],
-							};
-						})}
-					/>
-				</HideableSection>
-			</Anchor>
-
-			<Anchor id="career" on={refreshedLook}>
-				<div className="row">
-					<div className="col-6 col-md-3">
-						<HideableSection title="Awards">
-							{awardsGrouped.length > 0 ? (
-								<table className="table table-nonfluid table-striped table-borderless table-sm player-awards">
-									<tbody>
-										{awardsGrouped.map((a, i) => {
-											return (
-												<tr key={i}>
-													<td>
-														{a.count > 1 ? `${a.count}x ` : null}
-														{a.type} (
-														{Object.values(a.seasons).flat().join(", ")})
-													</td>
-												</tr>
-											);
-										})}
-									</tbody>
-								</table>
-							) : null}
-							{awardsGrouped.length === 0 ? <p>None</p> : null}
-						</HideableSection>
-					</div>
-					<div className={contractCard ? "col-md-6" : "col-6 col-md-3"}>
-						<HideableSection title="Salaries">
-							{contractCard ? <ContractSummary card={contractCard} /> : null}
-							<DataTable
-								className="datatable-negative-margin-top mb-3"
-								cols={getCols(
-									showContractValue
-										? ["Year", "Team", "Amount", "Contract Value"]
-										: ["Year", "Team", "Amount"],
-								)}
-								defaultSort={[0, "asc"]}
-								footer={{
-									data: [
-										"Total",
-										null,
-										helpers.formatCurrency(player.salariesTotal, "M"),
-										...(showContractValue ? [null] : []),
-									],
-								}}
-								hideAllControls
-								name="Player:Salaries"
-								rows={player.salaries.map((s, i) => {
-									return {
-										key: i,
-										data: [
-											{
-												searchValue: s.season,
-												sortValue: i,
-												value: (
-													<>
-														<SeasonLink pid={player.pid} season={s.season} />{" "}
-														<SeasonIcons
-															season={s.season}
-															awards={player.awards}
-														/>
-													</>
-												),
-											},
-											wrappedSalaryPayers(s),
-											contractCard
-												? {
-														value: (
-															<span className="text-nowrap">
-																{helpers.formatCurrency(s.amount, "M")}
-																<SalaryMarks
-																	marks={contractCard.marks[s.season]}
-																/>
-															</span>
-														),
-														sortValue: s.amount,
-														searchValue: helpers.formatCurrency(s.amount, "M"),
+			<HideableSection
+				title="Ratings"
+				description={hasLeader && showRatings ? highlightLeaderText : null}
+			>
+				<DataTable
+					className="mb-3 datatable-negative-margin-top"
+					cols={getCols([
+						"Year",
+						"Team",
+						"Age",
+						"Pos",
+						"Ovr",
+						"Pot",
+						...ratings.map((rating) => `rating:${rating}`),
+						"Skills",
+						"Awards",
+					])}
+					defaultSort={[0, "asc"]}
+					defaultStickyCols={2}
+					hideAllControls
+					name="Player:Ratings"
+					rows={player.ratings.map((r, i) => {
+						return {
+							key: i,
+							data: [
+								{
+									searchValue: r.season,
+									sortValue: i,
+									value: (
+										<>
+											<SeasonLink pid={player.pid} season={r.season} />{" "}
+											<SeasonIcons season={r.season} awards={player.awards} />
+											{r.injuryIndex !== undefined &&
+											player.injuries[r.injuryIndex] ? (
+												<InjuryIcon
+													injury={{
+														type: player.injuries[r.injuryIndex]!.type,
+														gamesRemaining: -1,
+													}}
+												/>
+											) : null}
+											{ratingsNotes.get(r.season) ? (
+												<SeasonNoteButton
+													header={
+														r.season === player.draft.year
+															? `Scouting report — ${player.draft.year} draft`
+															: r.season
 													}
-												: wrappedCurrency(s.amount, "M"),
-											...(showContractValue
-												? [
-														contractValueCell(
-															contractValueBySeason.get(s.season),
-														),
-													]
-												: []),
-										],
-										classNames:
-											s.type === "current"
-												? "fw-bold"
-												: s.type === "future"
-													? "fst-italic"
-													: undefined,
-									};
-								})}
-							/>
-							{contractCard ? <ContractHistory card={contractCard} /> : null}
-						</HideableSection>
-					</div>
-					<div className="col-md-6">
-						<HideableSection title="Statistical Feats">
-							<div
-								className="small-scrollbar"
-								style={{
-									maxHeight: 500,
-									overflowY: "auto",
-								}}
-							>
-								{feats.map((e) => {
-									return (
-										<p key={e.eid}>
-											<b>{e.season}</b>: <SafeHtml dirty={e.text} />
-										</p>
-									);
-								})}
-							</div>
-							{feats.length === 0 ? <p>None</p> : null}
-						</HideableSection>
-					</div>
-				</div>
+													id={`ratings-note-${r.season}`}
+													linksFor={noteLinksBySeason}
+													sections={ratingsNotes.get(r.season)!}
+													title={
+														r.season === player.draft.year
+															? "Read the scouting report"
+															: `Read the ${r.season} writeup`
+													}
+												/>
+											) : null}
+										</>
+									),
+								},
+								wrappedTeamAbbrevLink({
+									abbrev: r.abbrev,
+									season: r.season,
+									tid: r.tid,
+								}),
+								<MaybeBold bold={leaders[r.season]?.attrs.has("age")}>
+									{r.age}
+								</MaybeBold>,
+								r.pos,
+								showRatings ? (
+									<MaybeBold bold={leaders[r.season]?.ratings.has("ovr")}>
+										{r.ovr}
+									</MaybeBold>
+								) : null,
+								showRatings ? (
+									<MaybeBold bold={leaders[r.season]?.ratings.has("pot")}>
+										{r.pot}
+									</MaybeBold>
+								) : null,
+								...ratings.map((rating) =>
+									showRatings ? (
+										<MaybeBold bold={leaders[r.season]?.ratings.has(rating)}>
+											{r[rating]}
+										</MaybeBold>
+									) : null,
+								),
+								<SkillsBlock className="skills-alone" skills={r.skills} />,
+								wrappedSeasonAwards({
+									awards: awardsBySeason.get(r.season),
+									season: r.season,
+								}),
+							],
+						};
+					})}
+				/>
+			</HideableSection>
 
-				<div className="row">
-					<div className="col-md-6 col-lg-4">
-						<HideableSection title="Injuries">
-							<Injuries injuries={player.injuries} showRatings={showRatings} />
-						</HideableSection>
-					</div>
-					<div className="col-md-6 col-lg-8">
-						<HideableSection title="Transactions">
-							{events.map((e) => {
+			<div className="row">
+				<div className="col-6 col-md-3">
+					<HideableSection title="Awards">
+						{awardsGrouped.length > 0 ? (
+							<table className="table table-nonfluid table-striped table-borderless table-sm player-awards">
+								<tbody>
+									{awardsGrouped.map((a, i) => {
+										return (
+											<tr key={i}>
+												<td>
+													{a.count > 1 ? `${a.count}x ` : null}
+													{a.type} ({Object.values(a.seasons).flat().join(", ")}
+													)
+												</td>
+											</tr>
+										);
+									})}
+								</tbody>
+							</table>
+						) : null}
+						{awardsGrouped.length === 0 ? <p>None</p> : null}
+					</HideableSection>
+				</div>
+				<div className={contractCard ? "col-md-6" : "col-6 col-md-3"}>
+					<HideableSection title="Salaries">
+						{contractCard ? <ContractSummary card={contractCard} /> : null}
+						<DataTable
+							className="datatable-negative-margin-top mb-3"
+							cols={getCols(
+								showContractValue
+									? ["Year", "Team", "Amount", "Contract Value"]
+									: ["Year", "Team", "Amount"],
+							)}
+							defaultSort={[0, "asc"]}
+							footer={{
+								data: [
+									"Total",
+									null,
+									helpers.formatCurrency(player.salariesTotal, "M"),
+									...(showContractValue ? [null] : []),
+								],
+							}}
+							hideAllControls
+							name="Player:Salaries"
+							rows={player.salaries.map((s, i) => {
+								return {
+									key: i,
+									data: [
+										{
+											searchValue: s.season,
+											sortValue: i,
+											value: (
+												<>
+													<SeasonLink pid={player.pid} season={s.season} />{" "}
+													<SeasonIcons
+														season={s.season}
+														awards={player.awards}
+													/>
+												</>
+											),
+										},
+										wrappedSalaryPayers(s),
+										contractCard
+											? {
+													value: (
+														<span className="text-nowrap">
+															{helpers.formatCurrency(s.amount, "M")}
+															<SalaryMarks
+																marks={contractCard.marks[s.season]}
+															/>
+														</span>
+													),
+													sortValue: s.amount,
+													searchValue: helpers.formatCurrency(s.amount, "M"),
+												}
+											: wrappedCurrency(s.amount, "M"),
+										...(showContractValue
+											? [contractValueCell(contractValueBySeason.get(s.season))]
+											: []),
+									],
+									classNames:
+										s.type === "current"
+											? "fw-bold"
+											: s.type === "future"
+												? "fst-italic"
+												: undefined,
+								};
+							})}
+						/>
+						{contractCard ? <ContractHistory card={contractCard} /> : null}
+					</HideableSection>
+				</div>
+				<div className="col-md-6">
+					<HideableSection title="Statistical Feats">
+						<div
+							className="small-scrollbar"
+							style={{
+								maxHeight: 500,
+								overflowY: "auto",
+							}}
+						>
+							{feats.map((e) => {
 								return (
 									<p key={e.eid}>
 										<b>{e.season}</b>: <SafeHtml dirty={e.text} />
 									</p>
 								);
 							})}
-							{events.length === 0 ? <p>None</p> : null}
-						</HideableSection>
-					</div>
-				</div>
-			</Anchor>
-
-			<Anchor id="more" on={refreshedLook}>
-				{social && social.posts.length > 0 ? (
-					<div className="row">
-						<div className="col-lg-8 col-xl-6">
-							<HideableSection title="Feed">
-								<SocialEmbed
-									moreHref={
-										social.handle === undefined
-											? helpers.leagueUrl(["social"])
-											: helpers.leagueUrl(["social", social.handle])
-									}
-									moreText={
-										social.handle === undefined ? "See more" : "Profile"
-									}
-									pictures={social.pictures}
-									playerNames={social.playerNames}
-									posts={social.posts}
-									season={social.season}
-									teams={social.teams}
-									title={`${player.name} on the feed`}
-								/>
-							</HideableSection>
 						</div>
-					</div>
-				) : null}
+						{feats.length === 0 ? <p>None</p> : null}
+					</HideableSection>
+				</div>
+			</div>
 
-				<div className="row" style={{ marginBottom: "-1rem" }}>
-					<div className="col">
-						<HideableSection title="Cards">
-							<TradingCardGallery cards={tradingCards} />
+			<div className="row">
+				<div className="col-md-6 col-lg-4">
+					<HideableSection title="Injuries">
+						<Injuries injuries={player.injuries} showRatings={showRatings} />
+					</HideableSection>
+				</div>
+				<div className="col-md-6 col-lg-8">
+					<HideableSection title="Transactions">
+						{events.map((e) => {
+							return (
+								<p key={e.eid}>
+									<b>{e.season}</b>: <SafeHtml dirty={e.text} />
+								</p>
+							);
+						})}
+						{events.length === 0 ? <p>None</p> : null}
+					</HideableSection>
+				</div>
+			</div>
+
+			{social && social.posts.length > 0 ? (
+				<div className="row">
+					<div className="col-lg-8 col-xl-6">
+						<HideableSection title="Feed">
+							<SocialEmbed
+								moreHref={
+									social.handle === undefined
+										? helpers.leagueUrl(["social"])
+										: helpers.leagueUrl(["social", social.handle])
+								}
+								moreText={social.handle === undefined ? "See more" : "Profile"}
+								pictures={social.pictures}
+								playerNames={social.playerNames}
+								posts={social.posts}
+								season={social.season}
+								teams={social.teams}
+								title={`${player.name} on the feed`}
+							/>
 						</HideableSection>
 					</div>
 				</div>
-			</Anchor>
-			{refreshedLook ? (
-				<>
-					<div className="player-dock-room" />
-					<RecapDock sections={PLAYER_SECTIONS} />
-				</>
 			) : null}
+
+			<div className="row" style={{ marginBottom: "-1rem" }}>
+				<div className="col">
+					<HideableSection title="Cards">
+						<TradingCardGallery cards={tradingCards} />
+					</HideableSection>
+				</div>
+			</div>
 		</>
 	);
 };

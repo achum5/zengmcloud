@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 361,
+		date: "2026-11-18",
+		text: "New look (Look: Refreshed): the standings, the playoff bracket, the trade summary and player pages are back to the stock BBGM look. The new look now only changes the game page, the live game and the team page.",
+	},
+	{
 		n: 360,
 		date: "2026-11-18",
 		text: "New look (Look: Refreshed): a game's header shows the season and day under FINAL (\"2024 Day 45\", to that day's schedule), with the playoff series by it. Each team's arrows are easier to see in its own colors, and the Game Log bar no longer sits over the game.",

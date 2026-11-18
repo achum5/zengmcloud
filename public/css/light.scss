@@ -5477,79 +5477,6 @@ body:has(.league-ticker) .recap-dock-wrap {
 	}
 }
 
-// A team's own spot in its colors (standings, the playoffs - the refreshed
-// look): its color the ground with the weave, white on it, its second color
-// down the left edge, the right end cut on a slant.
-.tb-cell,
-.tb-pm {
-	--weave: repeating-linear-gradient(
-		135deg,
-		rgba(255, 255, 255, 0.04) 0 2px,
-		transparent 2px 6px
-	);
-	background: var(--weave), var(--tb-bg) !important;
-	color: var(--tb-fg) !important;
-	a,
-	.text-body-secondary {
-		color: inherit !important;
-	}
-}
-.tb-cell-td {
-	padding-top: 2px !important;
-	padding-bottom: 2px !important;
-}
-// (The full standings: room for the whole name in the team's colors.)
-.tb-cell-td-wide {
-	min-width: 15.5rem;
-}
-@include media-breakpoint-down(sm) {
-	.tb-cell-td-wide {
-		min-width: 7.6rem;
-	}
-}
-.tb-cell {
-	font-weight: 600;
-	border-left: 3px solid var(--tb-accent);
-	padding: 0.15rem 0.7rem 0.15rem 0.1rem;
-	clip-path: polygon(0 0, 100% 0, calc(100% - 0.45rem) 100%, 0 100%);
-}
-@include media-breakpoint-down(sm) {
-	.tb-cell {
-		padding-right: 0.45rem;
-		clip-path: polygon(0 0, 100% 0, calc(100% - 0.3rem) 100%, 0 100%);
-		.mx-1 {
-			margin-left: 0.15rem !important;
-			margin-right: 0.15rem !important;
-		}
-	}
-}
-.tb-pm {
-	border-left: 4px solid var(--tb-accent) !important;
-	.text-body-secondary {
-		opacity: 0.8;
-	}
-}
-.tb-pm-lost {
-	opacity: 0.55;
-}
-// A team's name as a spot in its colors (the trade summary).
-.tb-chip {
-	--weave: repeating-linear-gradient(
-		135deg,
-		rgba(255, 255, 255, 0.04) 0 2px,
-		transparent 2px 6px
-	);
-	display: flex;
-	align-items: center;
-	gap: 0.4rem;
-	background: var(--weave), var(--tb-bg);
-	color: var(--tb-fg);
-	border-left: 3px solid var(--tb-accent);
-	padding: 0.3rem 1rem 0.3rem 0.4rem;
-	clip-path: polygon(0 0, 100% 0, calc(100% - 0.5rem) 100%, 0 100%);
-	font-size: 1rem;
-}
-
 // THE BOX SCORE ON A PHONE (see BoxScorePhone): a ways-to-look switch, then a
 // team at a time - its name over the column heads, its starters, the bench
 // under the heads again, who didn't play, the totals. The names stay put as
@@ -6055,15 +5982,6 @@ body:has(.league-ticker) .recap-dock-wrap {
 		min-width: 0;
 		padding: 0.3rem 0.1rem;
 		font-size: 0.7rem;
-	}
-}
-
-.player-dock-room {
-	height: 5rem;
-}
-@include media-breakpoint-down(sm) {
-	.player-dock-room {
-		height: 7rem;
 	}
 }
 

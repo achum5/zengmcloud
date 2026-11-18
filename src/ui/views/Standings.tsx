@@ -5,7 +5,6 @@ import { dropdownOptions } from "../hooks/useDropdownOptions.tsx";
 import { type CSSProperties, Fragment } from "react";
 import { TeamLogoInline } from "../components/TeamLogoInline.tsx";
 import useTitleBar from "../hooks/useTitleBar.tsx";
-import { brandVars, useAllTeamColors } from "../components/TeamBanner.tsx";
 import { helpers } from "../util/helpers.ts";
 import useClickable from "../hooks/useClickable.tsx";
 import type { ByConf, TeamSeason, View } from "../../common/types.ts";
@@ -66,25 +65,11 @@ export const TeamColumn = ({
 	includeName?: boolean;
 }) => {
 	const rankMinWidth = 8 + 7 * (String(maxRank).length - 1);
-	// The refreshed look: the team's spot in its colors.
-	const { refreshedLook } = useLocal(["refreshedLook"]);
-	const allColors = useAllTeamColors(refreshedLook);
-	const branded = refreshedLook && allColors !== undefined;
 
 	// Why is this one column, rather than two (one for rank, one for team) which would be simpler and avoid rankMinWidth? Because the header on the dashboard table - colspan 2 works weirdly, and colspan 1 leaves padding on the left.
 	return (
-		<td
-			style={tdStyle}
-			className={
-				branded
-					? clsx("tb-cell-td", { "tb-cell-td-wide": includeName })
-					: undefined
-			}
-		>
-			<div
-				className={clsx("d-flex align-items-center", { "tb-cell": branded })}
-				style={branded ? brandVars(allColors[t.tid]) : undefined}
-			>
+		<td style={tdStyle}>
+			<div className="d-flex align-items-center">
 				<div
 					className="text-end"
 					style={{

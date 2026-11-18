@@ -1,5 +1,3 @@
-import { TeamLogoInline } from "../../components/TeamLogoInline.tsx";
-import { brandVars, useAllTeamColors } from "../../components/TeamBanner.tsx";
 import { helpers } from "../../util/helpers.ts";
 import type { TradeTeam, TradeTeams, View } from "../../../common/types.ts";
 import clsx from "clsx";
@@ -234,25 +232,15 @@ export const SummaryTeam = ({
 		challengeNoRatings,
 		luxuryPayroll,
 		luxuryTax,
-		refreshedLook,
 		salaryCap,
 		salaryCapType,
-		teamInfoCache,
 	} = useLocal([
 		"challengeNoRatings",
 		"luxuryPayroll",
 		"luxuryTax",
-		"refreshedLook",
 		"salaryCap",
 		"salaryCapType",
-		"teamInfoCache",
 	]);
-	// The refreshed look: the team's spot in its colors (found by its name).
-	const allColors = useAllTeamColors(refreshedLook);
-	const brandTid = refreshedLook
-		? teamInfoCache.findIndex((ti) => `${ti.region} ${ti.name}` === t.name)
-		: -1;
-	const branded = brandTid >= 0 && allColors !== undefined;
 
 	const payrollColorCutoff =
 		salaryCapType === "none" ? luxuryPayroll : salaryCap;
@@ -262,19 +250,7 @@ export const SummaryTeam = ({
 
 	return (
 		<>
-			<h4
-				className={clsx("fw-bold mb-1", { "tb-chip": branded })}
-				style={branded ? brandVars(allColors[brandTid]) : undefined}
-			>
-				{branded ? (
-					<TeamLogoInline
-						imgURL={teamInfoCache[brandTid]?.imgURL}
-						imgURLSmall={teamInfoCache[brandTid]?.imgURLSmall}
-						size={22}
-					/>
-				) : null}
-				{t.name} receive:
-			</h4>
+			<h4 className="fw-bold mb-1">{t.name} receive:</h4>
 			<ul className="list-unstyled mb-0">
 				{trade.map((p) => {
 					return (
