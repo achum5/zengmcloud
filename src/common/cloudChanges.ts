@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 354,
+		date: "2026-11-18",
+		text: "New look (Look: Refreshed): the box score has Traditional and Advanced tabs on BBGM's own table, with its three-dot menu to customize columns. On/Off is easier to read, and the menu at the bottom of a game fits on a phone without sliding. Player pages get the same bottom menu (Overview, Stats, Ratings, Career, More) and keep the player's name pinned at the top as you scroll; On The Floor With is gone there.",
+	},
+	{
 		n: 353,
 		date: "2026-11-18",
 		text: "New look (Look: Refreshed): box scores open as fast as the classic ones. The phone box score and rotations use BBGM's own tables again. A game's score stays pinned at the top as you scroll, and the team header is the same on every team page. Four Factors and the repeated rotation, lineup and on/off charts are gone from the game page. The player page's face is bigger.",

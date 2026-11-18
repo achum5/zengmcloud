@@ -10,7 +10,7 @@ import {
 	brandVars,
 	useAllTeamColors,
 } from "../../../components/TeamBanner.tsx";
-import { Headshot, Switch } from "./Gamecast.tsx";
+import { Switch } from "./Gamecast.tsx";
 import { NameCell } from "./BoxScorePhone.tsx";
 import { ResponsiveTableWrapper } from "../../../components/ResponsiveTableWrapper.tsx";
 import {
@@ -481,6 +481,7 @@ export const OnOff = ({
 	stints: Stints;
 }) => {
 	const [whose, setWhose] = useState<"own" | "opp">("own");
+	const allColors = useAllTeamColors();
 	const teams = teamsInDisplayOrder(boxScore.teams as [any, any]);
 	const options = teams.flatMap((t: any) =>
 		t.players
@@ -501,9 +502,61 @@ export const OnOff = ({
 	const { on, off } = onOffOf(stints, side, chosen.pid);
 	const pick = (x: typeof on) =>
 		whose === "own" ? ([x.own, x.opp] as const) : ([x.opp, x.own] as const);
+	const teamColors = allColors?.[chosen.tid];
+	const rows = ROWS.map((r) => {
+		const [a1, b1] = pick(on);
+		const [a2, b2] = pick(off);
+		const v1 = r.get(a1, b1, on.secs);
+		const v2 = r.get(a2, b2, off.secs);
+		const diff =
+			r.noDiff || v1 === undefined || v2 === undefined ? undefined : v1 - v2;
+		// (Better or worse for his team: the other team's numbers the other way
+		// round.)
+		const better =
+			diff === undefined
+				? undefined
+				: diff * (r.lowerBetter ? -1 : 1) * (whose === "opp" ? -1 : 1);
+		const show = (v: number | undefined) =>
+			r.label === "MIN"
+				? v === undefined
+					? "-"
+					: String(Math.round(v))
+				: r.label === "POSS" || r.label === "+/-"
+					? v === undefined
+						? "-"
+						: r.label === "+/-"
+							? signed(v, 0)
+							: String(Math.round(v))
+					: `${fmt(v)}${r.pct ? "%" : ""}`;
+		return { r, v1: show(v1), v2: show(v2), diff, better };
+	});
+	// ON/OFF IMPACT, as a card: his face and his name (pick another there),
+	// then each number with him on, off, and the difference as a pill - green
+	// where his team did better with him on, red where worse.
 	return (
-		<div className="lv">
-			<div className="bsp-views lv-views">
+		<div className="oo" style={brandVars(teamColors)}>
+			<div className="oo-head">
+				<div className="oo-player">
+					<Bust pid={chosen.pid} season={boxScore.season} />
+					<div className="oo-who">
+						<div className="oo-pick">
+							<span className="oo-name">{chosen.name}</span>
+							<span className="tb-caret" aria-hidden />
+							<select
+								aria-label="Player"
+								value={chosen.pid}
+								onChange={(e) => setPid(Number(e.target.value))}
+							>
+								{options.map((o: any) => (
+									<option key={o.pid} value={o.pid}>
+										{o.abbrev} {o.name}
+									</option>
+								))}
+							</select>
+						</div>
+						<div className="oo-sub">{chosen.abbrev}</div>
+					</div>
+				</div>
 				<Switch
 					options={[
 						["own", "Own Team"],
@@ -512,89 +565,44 @@ export const OnOff = ({
 					value={whose}
 					onChange={setWhose}
 				/>
-				<select
-					className="form-select form-select-sm lv-select"
-					value={chosen.pid}
-					onChange={(e) => setPid(Number(e.target.value))}
-				>
-					{options.map((o: any) => (
-						<option key={o.pid} value={o.pid}>
-							{o.abbrev} {o.name}
-						</option>
-					))}
-				</select>
 			</div>
-			<div className="bsp-wrap">
-				<table className="bsp-table lv-onoff">
+			<div className="table-responsive">
+				<table className="table table-striped table-borderless table-sm oo-table">
 					<thead>
-						<tr className="bsp-head">
-							<th className="bsp-name">STAT</th>
+						<tr>
+							<th />
 							<th>
-								<div className="lv-who">
-									<Headshot
-										pid={chosen.pid}
-										season={boxScore.season}
-										size={36}
-									/>
-									<span className="lv-tag lv-on">ON</span>
-								</div>
+								<span className="oo-chip oo-chip-on">ON</span>
 							</th>
 							<th>
-								<div className="lv-who lv-off-face">
-									<Headshot
-										pid={chosen.pid}
-										season={boxScore.season}
-										size={36}
-									/>
-									<span className="lv-tag">OFF</span>
-								</div>
+								<span className="oo-chip">OFF</span>
 							</th>
-							<th>DIFF</th>
+							<th>Diff</th>
 						</tr>
 					</thead>
 					<tbody>
-						{ROWS.map((r) => {
-							const [a1, b1] = pick(on);
-							const [a2, b2] = pick(off);
-							const v1 = r.get(a1, b1, on.secs);
-							const v2 = r.get(a2, b2, off.secs);
-							const diff =
-								r.noDiff || v1 === undefined || v2 === undefined
-									? undefined
-									: v1 - v2;
-							// (Better or worse for his team: the other team's numbers
-							// the other way round.)
-							const better =
-								diff === undefined
-									? undefined
-									: diff *
-										(r.lowerBetter ? -1 : 1) *
-										(whose === "opp" ? -1 : 1);
-							const show = (v: number | undefined) =>
-								r.label === "MIN"
-									? v === undefined
-										? "-"
-										: String(Math.round(v))
-									: r.label === "POSS" || r.label === "+/-"
-										? v === undefined
-											? "-"
-											: r.label === "+/-"
-												? signed(v, 0)
-												: String(Math.round(v))
-										: `${fmt(v)}${r.pct ? "%" : ""}`;
-							return (
-								<tr key={r.label}>
-									<th className="bsp-name lv-stat">{r.label}</th>
-									<td>{show(v1)}</td>
-									<td>{show(v2)}</td>
-									<td className={tone(better)}>
-										{diff === undefined
-											? "—"
-											: `${signed(diff, r.label === "+/-" ? 0 : 1)}${r.pct ? "%" : ""}`}
-									</td>
-								</tr>
-							);
-						})}
+						{rows.map(({ r, v1, v2, diff, better }) => (
+							<tr key={r.label}>
+								<th>{r.label}</th>
+								<td>{v1}</td>
+								<td className="oo-val-off">{v2}</td>
+								<td>
+									{diff === undefined ? (
+										"—"
+									) : (
+										<span
+											className={clsx("oo-pill", {
+												"oo-pill-good": better !== undefined && better > 0.05,
+												"oo-pill-bad": better !== undefined && better < -0.05,
+											})}
+										>
+											{signed(diff, r.label === "+/-" ? 0 : 1)}
+											{r.pct ? "%" : ""}
+										</span>
+									)}
+								</td>
+							</tr>
+						))}
 					</tbody>
 				</table>
 			</div>

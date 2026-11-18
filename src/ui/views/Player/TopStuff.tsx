@@ -27,7 +27,8 @@ import { InjuryIcon } from "../../components/InjuryIcon.tsx";
 import { SkillsBlock } from "../../components/SkillsBlock.tsx";
 import { Mood } from "../../components/Mood.tsx";
 import { PlayerPicture } from "../../components/PlayerPicture.tsx";
-import { PageBanner } from "../../components/TeamBanner.tsx";
+import { PageBanner, PinnedBar } from "../../components/TeamBanner.tsx";
+import { TeamLogoInline } from "../../components/TeamLogoInline.tsx";
 import { JerseyNumber } from "../../components/JerseyNumber.tsx";
 import { Height } from "../../components/Height.tsx";
 import { Weight } from "../../components/Weight.tsx";
@@ -942,3 +943,33 @@ const TopStuff = ({
 };
 
 export default TopStuff;
+
+// HIS NAME, PINNED (the refreshed look): once his banner scrolls up, a slim bar
+// of his team's color with his name held under the top bar.
+export const PlayerPinnedBar = ({
+	player,
+	teamColors,
+}: {
+	player: any;
+	teamColors: string[] | undefined;
+}) => {
+	const { teamInfoCache } = useLocal(["teamInfoCache"]);
+	const teamInfo = player.tid >= 0 ? teamInfoCache[player.tid] : undefined;
+	return (
+		<PinnedBar watch=".pb" colors={teamColors}>
+			{teamInfo ? (
+				<TeamLogoInline
+					imgURL={teamInfo.imgURL}
+					imgURLSmall={teamInfo.imgURLSmall}
+					size={26}
+				/>
+			) : null}
+			<span className="pin-bar-name">{player.name}</span>
+			<span className="pin-bar-sub">
+				{player.ratings.at(-1)?.pos}
+				{teamInfo ? ` · ${teamInfo.abbrev}` : null}
+				{player.jerseyNumber ? ` #${player.jerseyNumber}` : null}
+			</span>
+		</PinnedBar>
+	);
+};

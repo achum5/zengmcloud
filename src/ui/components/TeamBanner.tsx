@@ -229,6 +229,48 @@ export const MatchupBanner = ({
 	</div>
 );
 
+// A PAGE'S BAR, PINNED: once the element `watch` names scrolls up under the
+// top bar, a slim bar in the team's colors held there (the player page: his
+// name, his team). No room taken until then.
+export const PinnedBar = ({
+	watch,
+	colors,
+	children,
+}: {
+	watch: string;
+	colors: string[] | undefined;
+	children: ReactNode;
+}) => {
+	const [shown, setShown] = useState(false);
+	useEffect(() => {
+		const el = document.querySelector(watch);
+		if (!el || typeof IntersectionObserver === "undefined") {
+			return;
+		}
+		const observer = new IntersectionObserver(
+			([e]) => {
+				setShown(!!e && !e.isIntersecting && e.boundingClientRect.top < 0);
+			},
+			{ rootMargin: "-60px 0px 0px 0px" },
+		);
+		observer.observe(el);
+		return () => {
+			observer.disconnect();
+		};
+	}, [watch]);
+	return (
+		<div className="recap-scorebar-pin">
+			<div
+				className={shown ? "pin-bar pin-bar-on" : "pin-bar"}
+				style={vars(colors)}
+				aria-hidden={!shown}
+			>
+				{children}
+			</div>
+		</div>
+	);
+};
+
 // Two teams' colors (as MatchupBanner sets them), for anything else in them.
 export const matchupVars = (
 	colors0: string[] | undefined,

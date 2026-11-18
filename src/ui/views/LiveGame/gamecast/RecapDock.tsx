@@ -101,6 +101,31 @@ export const DOCK_ICONS = {
 			<path d="M4 16a8.5 8.5 0 0 1 0-12M16 4a8.5 8.5 0 0 1 0 12" />
 		</>,
 	),
+	player: svg(
+		<>
+			<circle cx="10" cy="6.5" r="3.2" />
+			<path d="M3.5 17.5c.8-3.6 3.3-5.5 6.5-5.5s5.7 1.9 6.5 5.5" />
+		</>,
+	),
+	ratings: svg(
+		<>
+			<path d="M10 2.8l2.2 4.6 5 .7-3.6 3.5.9 5-4.5-2.4-4.5 2.4.9-5L2.8 8.1l5-.7z" />
+		</>,
+	),
+	career: svg(
+		<>
+			<path d="M6 3h8v4.5a4 4 0 0 1-8 0z" />
+			<path d="M6 4.5H3.5a2.5 2.5 0 0 0 2.6 3M14 4.5h2.5a2.5 2.5 0 0 1-2.6 3" />
+			<path d="M10 11.5v3M7 17h6M8 14.5h4" />
+		</>,
+	),
+	more: svg(
+		<>
+			<circle cx="4.5" cy="10" r="0.6" fill="currentColor" />
+			<circle cx="10" cy="10" r="0.6" fill="currentColor" />
+			<circle cx="15.5" cy="10" r="0.6" fill="currentColor" />
+		</>,
+	),
 	info: svg(
 		<>
 			<circle cx="10" cy="10" r="7.5" />
@@ -125,6 +150,9 @@ const band = (topPx: number) => {
 // of it under anything pinned over the top (topPx: the live game's court).
 export const useScrollSpy = (ids: string[], topPx = 0) => {
 	const [active, setActive] = useState(ids[0]);
+	// (A button tapped stays lit while the page scrolls to it - a short section
+	// would otherwise hand the light to the one after it.)
+	const heldUntil = useRef(0);
 	const key = `${ids.join(",")}|${topPx}`;
 	useEffect(() => {
 		const els = ids
@@ -136,6 +164,9 @@ export const useScrollSpy = (ids: string[], topPx = 0) => {
 		const seen = new Map<string, boolean>();
 		const observer = new IntersectionObserver(
 			(entries) => {
+				if (Date.now() < heldUntil.current) {
+					return;
+				}
 				for (const e of entries) {
 					seen.set(e.target.id.replace(/^recap-/, ""), e.isIntersecting);
 				}
@@ -154,7 +185,11 @@ export const useScrollSpy = (ids: string[], topPx = 0) => {
 		};
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [key]);
-	return [active, setActive] as const;
+	const choose = (id: string) => {
+		heldUntil.current = Date.now() + 1500;
+		setActive(id);
+	};
+	return [active, choose] as const;
 };
 
 export const RecapDock = ({
@@ -208,7 +243,15 @@ export const RecapDock = ({
 // section is drawn only once it comes near the window), then there.
 const JUMP_EVENT = "recap-jump";
 export const jumpToSection = (id: string) => {
-	window.dispatchEvent(new CustomEvent(JUMP_EVENT, { detail: id }));
+	const event = new CustomEvent(JUMP_EVENT, { detail: id, cancelable: true });
+	window.dispatchEvent(event);
+	// (No RecapSections on the page - every section already drawn: straight
+	// there.)
+	if (!event.defaultPrevented) {
+		document
+			.getElementById(`recap-${id}`)
+			?.scrollIntoView({ behavior: "smooth", block: "start" });
+	}
 };
 
 export type RecapSectionDef = DockSection & {
@@ -300,6 +343,7 @@ export const RecapSections = ({
 			if (i < 0) {
 				return;
 			}
+			e.preventDefault();
 			setDrawnTo((upTo) => Math.max(upTo, i));
 			// (Two frames: the sections above it drawn and laid out.)
 			requestAnimationFrame(() => {
@@ -325,4 +369,55 @@ export const RecapSections = ({
 			<RecapDock sections={sections} quarter={quarter} topPx={topPx} />
 		</>
 	);
+};
+
+// FEWER BUTTONS, ALL ON SCREEN: sections folded into the one before them on
+// the page (each under its own smaller heading), and shorter names on the
+// menu - so the menu fits a phone without sliding.
+export const foldSections = (
+	sections: RecapSectionDef[],
+	folds: [into: string, from: string, heading: string | null][],
+	labels: Record<string, string> = {},
+): RecapSectionDef[] => {
+	const byId = new Map(sections.map((x) => [x.id, x]));
+	const gone = new Set<string>();
+	const extra = new Map<string, ReactNode[]>();
+	for (const [into, from, heading] of folds) {
+		const target = byId.get(into);
+		const source = byId.get(from);
+		if (!target || !source) {
+			continue;
+		}
+		gone.add(from);
+		const list = extra.get(into) ?? [];
+		list.push(
+			<div key={from} className="recap-folded" id={`recap-${from}`}>
+				{heading === null ? null : (
+					<h3 className="recap-subtitle">{heading}</h3>
+				)}
+				{source.body}
+			</div>,
+		);
+		extra.set(into, list);
+	}
+	return sections
+		.filter((x) => !gone.has(x.id))
+		.map((x) => {
+			const more = extra.get(x.id);
+			const label = labels[x.id] ?? x.label;
+			return {
+				...x,
+				label,
+				// (Its heading stays what it was, not the short name.)
+				title: x.title === undefined ? x.label : x.title,
+				body: more ? (
+					<>
+						{x.body}
+						{more}
+					</>
+				) : (
+					x.body
+				),
+			};
+		});
 };

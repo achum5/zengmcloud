@@ -59,6 +59,7 @@ import { seriesLine } from "./seriesLine.ts";
 import { MatchupBanner, matchupVars } from "../../../components/TeamBanner.tsx";
 import {
 	DOCK_ICONS,
+	foldSections,
 	jumpToSection,
 	RecapSections,
 	type DockSection,
@@ -940,7 +941,15 @@ export const GameRecap = ({
 				{refreshedLook ? (
 					<>
 						<RecapSections
-							sections={sections}
+							sections={foldSections(
+								sections,
+								[
+									["stats", "flow", "Game Flow"],
+									["lineups", "onoff", "On/Off Impact"],
+									["recap", "info", null],
+								],
+								{ stats: "Stats", shots: "Shots" },
+							)}
 							quarter={
 								replay && replay.ends.length > 1 ? (
 									<select

@@ -5874,20 +5874,6 @@ body:has(.league-ticker) .recap-dock-wrap {
 	margin: 0 0 0.75rem;
 	flex-wrap: wrap;
 }
-.bsp-picker {
-	display: flex;
-	flex-wrap: wrap;
-	align-items: center;
-	gap: 0.15rem 0;
-	margin: 0 0 0.9rem;
-	padding: 0.5rem 0.75rem;
-	border: 1px solid var(--bs-border-color);
-	border-radius: var(--bs-border-radius);
-	font-size: 0.8rem;
-}
-.bsp-pick {
-	white-space: nowrap;
-}
 .bsp-wrap {
 	overflow-x: auto;
 	margin-bottom: 1.25rem;
@@ -5971,10 +5957,6 @@ body:has(.league-ticker) .recap-dock-wrap {
 }
 .lv-views {
 	justify-content: flex-start;
-}
-.lv-select {
-	width: auto;
-	max-width: 15rem;
 }
 .rot-table {
 	table-layout: fixed;
@@ -6098,48 +6080,11 @@ body:has(.league-ticker) .recap-dock-wrap {
 	text-align: left !important;
 	color: var(--bs-secondary-color);
 }
-.lv-onoff {
-	td,
-	th {
-		text-align: center;
-		font-size: 0.8rem;
-	}
-	.lv-stat {
-		text-align: right !important;
-		font-weight: 700 !important;
-		color: var(--bs-secondary-color);
-	}
-}
-.lv-who {
-	position: relative;
-	display: inline-flex;
-	flex-direction: column;
-	align-items: center;
-}
-.lv-off-face {
-	filter: grayscale(1);
-	opacity: 0.55;
-}
-.lv-tag {
-	margin-top: -0.4rem;
-	font-size: 0.55rem;
-	font-weight: 800;
-	padding: 0 0.3rem;
-	border-radius: var(--bs-border-radius-sm);
-	background: var(--bs-secondary);
-	color: #fff;
-	&.lv-on {
-		background: var(--bs-primary);
-	}
-}
 // (Wider than a phone: the same tables, readable, not stretched out.)
 @include media-breakpoint-up(sm) {
 	.lv .bsp-table {
 		font-size: 0.85rem;
 		max-width: 46rem;
-	}
-	.lv .lv-onoff {
-		max-width: 34rem;
 	}
 	.lv .bsp-wrap {
 		margin-left: 0.75rem;
@@ -6675,4 +6620,190 @@ body:has(.league-ticker) .recap-dock-wrap {
 			font-size: 1.15rem;
 		}
 	}
+}
+
+// The box score as one of BBGM's tables (see BoxTable): each team's name on
+// a row of its own over its players, its totals in bold.
+.bsp-team-row > td {
+	padding-top: 0.75rem !important;
+	font-size: 1.05rem;
+	font-weight: 700;
+	border-top: 2px solid var(--bs-border-color);
+}
+.bsp-team-row:first-child > td {
+	border-top: 0;
+	padding-top: 0.25rem !important;
+}
+.bsp-total-row > td {
+	font-weight: 700;
+}
+
+// ON/OFF IMPACT (see OnOff): BBGM's table, with his face and name over it,
+// ON in his team's color and OFF grey over the columns, the difference
+// green or red.
+.oo {
+	max-width: 34rem;
+}
+.oo-head {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-end;
+	justify-content: space-between;
+	gap: 0.5rem 1rem;
+	margin-bottom: 0.5rem;
+}
+.oo-player {
+	display: flex;
+	align-items: flex-end;
+	gap: 0.6rem;
+	min-width: 0;
+	.lv-bust {
+		--bust-w: 3.4rem;
+		width: 3.4rem;
+	}
+}
+.oo-who {
+	min-width: 0;
+	padding-bottom: 0.3rem;
+}
+.oo-pick {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	gap: 0.35em;
+	max-width: 100%;
+	font-size: 1.15rem;
+	font-weight: 700;
+	select {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		opacity: 0;
+		font-size: 16px;
+		cursor: pointer;
+	}
+}
+.oo-name {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.oo-sub {
+	font-size: 0.85rem;
+	color: var(--bs-secondary-color);
+}
+.oo-head .btn-group {
+	margin-bottom: 0.3rem;
+}
+.oo-table {
+	font-variant-numeric: tabular-nums;
+	th,
+	td {
+		text-align: center;
+	}
+	tbody th {
+		text-align: left;
+	}
+}
+.oo-val-off {
+	color: var(--bs-secondary-color);
+}
+.oo-chip {
+	display: inline-block;
+	padding: 0 0.55rem;
+	border-radius: 999px;
+	font-size: 0.75rem;
+	font-weight: 700;
+	background: var(--bs-secondary-bg);
+	color: var(--bs-secondary-color);
+}
+.oo-chip-on {
+	background: var(--tb-bg, var(--bs-primary));
+	color: var(--tb-fg, #fff);
+}
+.oo-pill {
+	font-weight: 700;
+}
+.oo-pill-good {
+	color: var(--bs-success);
+}
+.oo-pill-bad {
+	color: var(--bs-danger);
+}
+
+// A section folded into the one before it (see foldSections): under a
+// smaller heading of its own.
+.recap-folded {
+	margin-top: 2rem;
+	scroll-margin-top: inherit;
+}
+.recap-subtitle {
+	font-size: 1.25rem;
+	font-weight: 800;
+	color: var(--bs-secondary-color);
+	margin: 0 0 0.6rem;
+}
+// (A phone: the menu's buttons share the width - all of them in view.)
+@include media-breakpoint-down(sm) {
+	.recap-dock button {
+		flex: 1 1 0;
+		min-width: 0;
+		padding: 0.3rem 0.1rem;
+		font-size: 0.7rem;
+	}
+}
+
+// The player page (the refreshed look): its parts jumped to under the bar
+// pinned over it, room at the foot for the menu.
+.player-anchor {
+	scroll-margin-top: 2.9rem;
+}
+.player-dock-room {
+	height: 5rem;
+}
+@include media-breakpoint-down(sm) {
+	.player-dock-room {
+		height: 7rem;
+	}
+}
+// A page's bar pinned under the top bar (see PinnedBar): the team's color,
+// its logo, the name.
+.pin-bar {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	display: flex;
+	align-items: center;
+	gap: 0.55rem;
+	height: 2.6rem;
+	padding: 0 0.8rem;
+	border-radius: 0 0 0.375rem 0.375rem;
+	background: var(--weave, none), var(--tb-bg);
+	color: var(--tb-fg);
+	box-shadow: 0 6px 12px -6px rgba(0, 0, 0, 0.4);
+	opacity: 0;
+	transform: translateY(-0.4rem);
+	pointer-events: none;
+	transition:
+		opacity 0.15s,
+		transform 0.15s;
+}
+.pin-bar-on {
+	opacity: 1;
+	transform: none;
+	pointer-events: auto;
+}
+.pin-bar-name {
+	font-weight: 800;
+	font-size: 1.05rem;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.pin-bar-sub {
+	font-size: 0.8rem;
+	font-weight: 600;
+	opacity: 0.85;
+	white-space: nowrap;
 }

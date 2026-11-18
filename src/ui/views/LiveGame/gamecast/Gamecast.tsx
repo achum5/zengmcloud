@@ -46,6 +46,7 @@ import { HighlightClip, type ClipGame } from "./HighlightClip.tsx";
 import type { ShotSpot } from "./shots.ts";
 import {
 	DOCK_ICONS,
+	foldSections,
 	jumpToSection,
 	RecapSections,
 	type DockSection,
@@ -1770,7 +1771,15 @@ export const LiveGamecast = ({
 						</div>
 					</div>
 					<RecapSections
-						sections={sections}
+						sections={foldSections(
+							sections,
+							[
+								["stats", "flow", "Game Flow"],
+								["lineups", "onoff", "On/Off Impact"],
+								["live", "info", null],
+							],
+							{ stats: "Stats", shots: "Shots" },
+						)}
 						quarter={quarter}
 						topPx={pinnedTo}
 					/>

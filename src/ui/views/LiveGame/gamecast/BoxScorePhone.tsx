@@ -1,11 +1,15 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { helpers } from "../../../util/helpers.ts";
-import { safeLocalStorage } from "../../../util/safeLocalStorage.ts";
 import { teamsInDisplayOrder } from "../../../util/boxScoreDisplayOrder.ts";
 import clsx from "clsx";
 import { PlayerNameLabels } from "../../../components/PlayerNameLabels.tsx";
-import { ResponsiveTableWrapper } from "../../../components/ResponsiveTableWrapper.tsx";
 import { Switch } from "./Gamecast.tsx";
+import {
+	DataTable,
+	type DataTableRow,
+} from "../../../components/DataTable/index.tsx";
+import { getCols } from "../../../../common/getCols.ts";
+import type { Col } from "../../../../common/types.ts";
 
 // THE BOX SCORE ON A PHONE (the refreshed look): a team at a time, its name
 // over the column heads, its starters, then its bench under the heads again;
@@ -207,15 +211,14 @@ export const COLS: Record<string, Col> = {
 	},
 };
 
-export type BoxView = "trad" | "shoot" | "adv";
+export type BoxView = "trad" | "adv";
 const VIEWS: [BoxView, string][] = [
 	["trad", "Traditional"],
-	["shoot", "Shooting"],
 	["adv", "Advanced"],
 ];
-// (Points second: the names are wide, so the numbers past the first few
-// slide - the ones looked at most in view.)
-const DEFAULT_COLS: Record<BoxView, string[]> = {
+// Each view's columns; which of them show, and in what order, is this
+// device's to choose with BBGM's own Customize columns (the table's menu).
+const VIEW_COLS: Record<BoxView, string[]> = {
 	trad: [
 		"min",
 		"pts",
@@ -224,44 +227,28 @@ const DEFAULT_COLS: Record<BoxView, string[]> = {
 		"fg",
 		"tp",
 		"ft",
+		"orb",
+		"drb",
 		"stl",
 		"blk",
+		"ba",
 		"tov",
 		"pf",
 		"pm",
 	],
-	shoot: ["min", "fg", "tp", "ft", "efg", "ts", "orb", "drb"],
-	adv: ["min", "usg", "astp", "stlp", "blkp", "tovp", "gmsc"],
-};
-// A view's columns in the order they are shown: its own first, as they are
-// by default, then the rest.
-const orderOf = (view: BoxView) => [
-	...DEFAULT_COLS[view],
-	...Object.keys(COLS).filter((k) => !DEFAULT_COLS[view].includes(k)),
-];
-
-// This device's columns for a view.
-const colsKey = (view: BoxView) => `bbgmBoxCols:${view}`;
-const loadCols = (view: BoxView) => {
-	try {
-		const raw = safeLocalStorage.getItem(colsKey(view));
-		if (raw) {
-			const list = (JSON.parse(raw) as string[]).filter((c) => c in COLS);
-			if (list.length > 0) {
-				return list;
-			}
-		}
-	} catch {
-		// The defaults, then.
-	}
-	return DEFAULT_COLS[view];
-};
-
-const shortName = (name: string) => {
-	const words = name.trim().split(/\s+/);
-	return words.length > 1
-		? `${words[0]![0]}. ${words.slice(1).join(" ")}`
-		: name;
+	adv: [
+		"min",
+		"usg",
+		"astp",
+		"stlp",
+		"blkp",
+		"tovp",
+		"orbp",
+		"drbp",
+		"efg",
+		"ts",
+		"gmsc",
+	],
 };
 
 // A player's name as BBGM's own tables show it (his face, his number, his
@@ -288,173 +275,162 @@ export const NameCell = ({
 	</td>
 );
 
-// A TEAM'S TABLE, AS BBGM'S OWN BOX SCORE HAS IT: its name over it, its
-// starters and then (under a line) its bench, who didn't play, the totals -
-// the columns this view's (see Columns).
-const TeamTable = ({
-	t,
-	o,
-	cols,
-	season,
-	numStarters,
-	live,
-	exhibition,
-}: {
-	t: Line;
-	o: Line;
-	cols: string[];
-	season: number;
-	numStarters: number;
-	live?: boolean;
-	exhibition?: boolean;
-}) => {
-	// (A game still going: only the hurt are out - everyone else may yet play.)
-	const out = (p: Line) =>
-		!(p.min > 0) &&
-		(!live || (p.injury?.gamesRemaining > 0 && !p.injury?.playingThrough));
-	const played = t.players.filter((p: Line) => !out(p));
-	const dnp = t.players.filter(out);
-	// (Live, the starters are the first five, as the box score lists them.)
-	const starters = live
-		? t.players.slice(0, numStarters).filter((p: Line) => !out(p))
-		: played.filter((p: Line) => p.gs === 1).slice(0, numStarters);
-	const bench = played.filter((p: Line) => !starters.includes(p));
-	const rows = [...starters, ...bench];
-	return (
-		<div className="mb-3">
-			<h2>
-				{t.tid >= 0 ? (
-					<a
-						href={helpers.leagueUrl(["roster", `${t.abbrev}_${t.tid}`, season])}
-					>
-						{t.region} {t.name}
-					</a>
-				) : (
-					<>
-						{t.region} {t.name}
-					</>
-				)}
-			</h2>
-			<ResponsiveTableWrapper>
-				<table className="table table-striped table-borderless table-sm table-hover sticky-x">
-					<thead>
-						<tr>
-							<th>Name</th>
-							<th>Pos</th>
-							{cols.map((c) => (
-								<th key={c} title={COLS[c]!.title}>
-									{COLS[c]!.label}
-								</th>
-							))}
-						</tr>
-					</thead>
-					<tbody>
-						{rows.map((p: Line, i: number) => (
-							<tr
-								key={p.pid}
-								className={clsx({
-									separator: i + 1 === starters.length && bench.length > 0,
-									"table-warning": live && p.inGame,
-								})}
-							>
-								<NameCell p={p} season={season} exhibition={exhibition} />
-								<td>{p.pos}</td>
-								{cols.map((c) => (
-									<td key={c}>{COLS[c]!.get(p, t, o)}</td>
-								))}
-							</tr>
-						))}
-						{dnp.map((p: Line) => (
-							<tr key={p.pid}>
-								<NameCell p={p} season={season} exhibition={exhibition} />
-								<td>{p.pos}</td>
-								<td colSpan={cols.length} className="text-center">
-									DNP -{" "}
-									{p.injury?.gamesRemaining > 0 && !p.injury?.playingThrough
-										? p.injury.type
-										: "Coach's decision"}
-								</td>
-							</tr>
-						))}
-					</tbody>
-					<tfoot>
-						<tr>
-							<th>Total</th>
-							<th />
-							{cols.map((c) => (
-								<th key={c}>{COLS[c]!.total?.(t, o) ?? null}</th>
-							))}
-						</tr>
-						{cols.some((c) => COLS[c]!.pct) ? (
-							<tr>
-								<th>Percentages</th>
-								<th />
-								{cols.map((c) => (
-									<th key={c}>{COLS[c]!.pct?.(t) ?? null}</th>
-								))}
-							</tr>
-						) : null}
-					</tfoot>
-				</table>
-			</ResponsiveTableWrapper>
-		</div>
-	);
-};
-
-const ColumnPicker = ({
+// THE BOX SCORE AS ONE OF BBGM'S OWN TABLES (its menu: Customize columns,
+// Download spreadsheet, Reset table): each team under its name, its
+// starters, a line, its bench, who didn't play, its totals.
+const BoxTable = ({
+	boxScore,
 	view,
-	cols,
-	setCols,
+	live,
+	title,
 }: {
+	boxScore: any;
 	view: BoxView;
-	cols: string[];
-	setCols: (cols: string[]) => void;
+	live?: boolean;
+	title: ReactNode;
 }) => {
-	const save = (next: string[]) => {
-		setCols(next);
-		safeLocalStorage.setItem(colsKey(view), JSON.stringify(next));
-	};
-	const order = orderOf(view);
+	const keys = VIEW_COLS[view];
+	const cols: Col[] = [
+		...getCols(["Name", "Pos"]),
+		...keys.map((k): Col => ({
+			title: COLS[k]!.label,
+			desc: COLS[k]!.title,
+			sortSequence: ["desc", "asc"],
+			sortType: "number",
+		})),
+	];
+	const season: number = boxScore.season;
+	const exhibition = !!boxScore.exhibition;
+	const numStarters = boxScore.numPlayersOnCourt ?? 5;
+	const blanks = keys.map(() => null);
+	const teams = teamsInDisplayOrder(boxScore.teams as [any, any]);
+	const rows: DataTableRow[] = [];
+	teams.forEach((t: Line, i: number) => {
+		const o: Line = teams[i === 0 ? 1 : 0];
+		// (A game still going: only the hurt are out - everyone else may yet
+		// play.)
+		const out = (p: Line) =>
+			!(p.min > 0) &&
+			(!live || (p.injury?.gamesRemaining > 0 && !p.injury?.playingThrough));
+		const played = t.players.filter((p: Line) => !out(p));
+		const dnp = t.players.filter(out);
+		// (Live, the starters are the first five, as the box score lists them.)
+		const starters = live
+			? t.players.slice(0, numStarters).filter((p: Line) => !out(p))
+			: played.filter((p: Line) => p.gs === 1).slice(0, numStarters);
+		const bench = played.filter((p: Line) => !starters.includes(p));
+		rows.push({
+			key: `team${t.tid}`,
+			classNames: "bsp-team-row",
+			data: [
+				{
+					value:
+						t.tid >= 0 ? (
+							<a
+								href={helpers.leagueUrl([
+									"roster",
+									`${t.abbrev}_${t.tid}`,
+									season,
+								])}
+							>
+								{t.region} {t.name}
+							</a>
+						) : (
+							`${t.region} ${t.name}`
+						),
+				},
+				null,
+				...blanks,
+			],
+		});
+		[...starters, ...bench].forEach((p: Line, k: number) => {
+			rows.push({
+				key: `${t.tid}:${p.pid}`,
+				classNames: clsx({
+					separator: k + 1 === starters.length && bench.length > 0,
+					"table-warning": live && p.inGame,
+				}),
+				data: [
+					{
+						value: (
+							<PlayerNameLabels
+								injury={p.injury}
+								jerseyNumber={p.jerseyNumber}
+								pid={p.pid}
+								skills={p.skills}
+								legacyName={p.name}
+								disableNameLink={exhibition}
+								season={season}
+							/>
+						),
+						searchValue: p.name,
+						exportValue: p.name,
+					},
+					p.pos,
+					...keys.map((c) => COLS[c]!.get(p, t, o)),
+				],
+			});
+		});
+		for (const p of dnp) {
+			rows.push({
+				key: `${t.tid}:${p.pid}`,
+				data: [
+					{
+						value: (
+							<PlayerNameLabels
+								injury={p.injury}
+								jerseyNumber={p.jerseyNumber}
+								pid={p.pid}
+								skills={p.skills}
+								legacyName={p.name}
+								disableNameLink={exhibition}
+								season={season}
+							/>
+						),
+						searchValue: p.name,
+						exportValue: p.name,
+					},
+					p.pos,
+					{
+						value: `DNP - ${
+							p.injury?.gamesRemaining > 0 && !p.injury?.playingThrough
+								? p.injury.type
+								: "Coach's decision"
+						}`,
+						colSpanToEnd: true,
+					},
+					...blanks.slice(1),
+				],
+			});
+		}
+		rows.push({
+			key: `total${t.tid}`,
+			classNames: "bsp-total-row",
+			data: ["Total", null, ...keys.map((c) => COLS[c]!.total?.(t, o) ?? null)],
+		});
+		if (keys.some((c) => COLS[c]!.pct)) {
+			rows.push({
+				key: `pct${t.tid}`,
+				classNames: "bsp-total-row",
+				data: [
+					"Percentages",
+					null,
+					...keys.map((c) => COLS[c]!.pct?.(t) ?? null),
+				],
+			});
+		}
+	});
 	return (
-		<div className="bsp-picker">
-			{order.map((key) => {
-				const c = COLS[key]!;
-				return (
-					<label
-						key={key}
-						className="form-check form-check-inline bsp-pick"
-						title={c.title}
-					>
-						<input
-							className="form-check-input"
-							type="checkbox"
-							checked={cols.includes(key)}
-							onChange={() => {
-								const on = cols.includes(key);
-								// (In the order they are listed here.)
-								const next = order.filter((k) =>
-									k === key ? !on : cols.includes(k),
-								);
-								if (next.length > 0) {
-									save(next);
-								}
-							}}
-						/>
-						<span className="form-check-label">{c.label}</span>
-					</label>
-				);
-			})}
-			<button
-				type="button"
-				className="btn btn-link btn-sm p-0"
-				onClick={() => {
-					safeLocalStorage.removeItem(colsKey(view));
-					setCols(DEFAULT_COLS[view]);
-				}}
-			>
-				Reset
-			</button>
-		</div>
+		<DataTable
+			classNameWrapper="mb-3"
+			cols={cols}
+			defaultSort="disableSort"
+			defaultStickyCols={1}
+			hideAllControls
+			name={`BoxScore:${view}`}
+			rows={rows}
+			title={title}
+		/>
 	);
 };
 
@@ -473,52 +449,31 @@ export const BoxScorePhone = ({
 	extra?: (view: string) => ReactNode;
 }) => {
 	const [view, setView] = useState<string>("trad");
-	const boxView = (VIEWS.some(([v]) => v === view) ? view : "trad") as BoxView;
-	const [cols, setCols] = useState(() => loadCols(boxView));
-	const [picking, setPicking] = useState(false);
-	useEffect(() => {
-		setCols(loadCols(boxView));
-		setPicking(false);
-	}, [boxView]);
-	const [away, home] = teamsInDisplayOrder(boxScore.teams as [any, any]);
-	const numStarters = boxScore.numPlayersOnCourt ?? 5;
-	const custom = VIEWS.some(([v]) => v === view);
+	const boxView = VIEWS.find(([v]) => v === view)?.[0];
+	const live2 = live && !boxScore.gameOver;
+	const tabs = (
+		<Switch
+			options={[...VIEWS, ...(extraViews ?? [])]}
+			value={view}
+			onChange={setView}
+		/>
+	);
 	return (
 		<div className="bsp">
-			<div className="bsp-views">
-				<Switch
-					options={[...VIEWS, ...(extraViews ?? [])]}
-					value={view}
-					onChange={setView}
+			{boxView ? (
+				<BoxTable
+					key={boxView}
+					boxScore={boxScore}
+					view={boxView}
+					live={live2}
+					title={tabs}
 				/>
-				{custom ? (
-					<button
-						type="button"
-						className={`btn btn-sm ${picking ? "btn-secondary" : "btn-light-bordered"}`}
-						onClick={() => setPicking(!picking)}
-						title="Columns"
-					>
-						Columns
-					</button>
-				) : null}
-			</div>
-			{picking && custom ? (
-				<ColumnPicker view={boxView} cols={cols} setCols={setCols} />
-			) : null}
-			{custom
-				? [away, home].map((t, i) => (
-						<TeamTable
-							key={t.tid}
-							t={t}
-							o={i === 0 ? home : away}
-							cols={cols}
-							season={boxScore.season}
-							numStarters={numStarters}
-							live={live && !boxScore.gameOver}
-							exhibition={!!boxScore.exhibition}
-						/>
-					))
-				: extra?.(view)}
+			) : (
+				<>
+					<div className="bsp-views">{tabs}</div>
+					{extra?.(view)}
+				</>
+			)}
 		</div>
 	);
 };
