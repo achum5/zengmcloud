@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 352,
+		date: "2026-11-18",
+		text: "New look (Look: Refreshed): tapping a section in the menu at the bottom of a box score or the live game now lands it right under the court or team header, instead of a little short of it.",
+	},
+	{
 		n: 351,
 		date: "2026-11-18",
 		text: "New look (Look: Refreshed), phone box score: each player has the ratings and stats button by his name instead of his number, and the faces are a little bigger without the grey circle behind them.",

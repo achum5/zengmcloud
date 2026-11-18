@@ -5548,8 +5548,10 @@ body.has-league-ticker-collapsed .sidebar-inner {
 .recap {
 	padding-bottom: 6rem;
 }
+// (Jumped to: under the top bar - the page's own 60px scroll padding, set on
+// html for it, already counts that - and under anything pinned below it.)
 .recap-section {
-	scroll-margin-top: 4.5rem;
+	scroll-margin-top: 0;
 	margin-bottom: 2rem;
 }
 .recap-section-title {
@@ -6176,7 +6178,7 @@ body:has(.league-ticker) .recap-dock-wrap {
 // marks them.
 .live-refreshed {
 	.recap-section {
-		scroll-margin-top: max(4.5rem, calc(var(--pinned-to, 0px) + 0.75rem));
+		scroll-margin-top: max(0px, calc(var(--pinned-to, 0px) - 60px + 0.5rem));
 	}
 	.recap-sections {
 		margin-top: 1rem;
@@ -6364,7 +6366,7 @@ body:has(.league-ticker) .recap-dock-wrap {
 }
 // (A section jumped to, scrolled to under it.)
 .recap-section {
-	scroll-margin-top: calc(4.5rem + var(--teamb-h, 0px));
+	scroll-margin-top: var(--teamb-h, 0px);
 }
 
 // The roster's record, rating, payroll... under its banner, in two columns
