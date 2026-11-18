@@ -56,6 +56,7 @@ export const TitleBar = () => {
 		moreInfoSeason,
 		moreInfoTid,
 		lid,
+		titleBarHidden,
 	} = useLocal([
 		"title",
 		"customMenu",
@@ -66,9 +67,12 @@ export const TitleBar = () => {
 		"moreInfoSeason",
 		"moreInfoTid",
 		"lid",
+		"titleBarHidden",
 	]);
 
-	if (title === undefined) {
+	// (A page with a header of its own in place of it - a game's page, the
+	// refreshed look: see useHideTitleBar.)
+	if (title === undefined || titleBarHidden > 0) {
 		return null;
 	}
 

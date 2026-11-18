@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 360,
+		date: "2026-11-18",
+		text: "New look (Look: Refreshed): a game's header shows the season and day under FINAL (\"2024 Day 45\", to that day's schedule), with the playoff series by it. Each team's arrows are easier to see in its own colors, and the Game Log bar no longer sits over the game.",
+	},
+	{
 		n: 359,
 		date: "2026-11-18",
 		text: "New look (Look: Refreshed): on a team page, Play Through Injuries sits on the row with Auto sort and Reset playing time and folds open under it, instead of stretching across the whole window.",

@@ -150,8 +150,9 @@ export const MatchupBanner = ({
 		})}
 		{tag || status || extra ? (
 			<div className="mb-middle">
-				{tag ? <div className="mb-tag">{tag}</div> : null}
 				{status ? <div className="mb-status">{status}</div> : null}
+				{/* (Under the status: the day, the series.) */}
+				{tag ? <div className="mb-tag">{tag}</div> : null}
 				{extra ? <div className="mb-extra">{extra}</div> : null}
 			</div>
 		) : null}

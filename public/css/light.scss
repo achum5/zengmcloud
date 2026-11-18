@@ -5236,19 +5236,22 @@ body.has-league-ticker-collapsed .sidebar-inner {
 		pointer-events: auto;
 	}
 }
+// The day, and the series as BBGM has it ("2024 Day 45 · DAL leads series
+// 1-0"), under the status: plain words in the banner's white.
 .mb-tag {
-	display: inline-block;
-	background: rgba(12, 14, 18, 0.88);
+	display: block;
+	margin-top: 0.2rem;
 	color: #fff;
-	font-style: italic;
 	font-weight: 700;
-	font-size: 0.95rem;
-	padding: 0.2rem 1rem;
-	transform: skewX(-12deg);
+	font-size: 0.85rem;
 	white-space: nowrap;
-	> * {
-		display: inline-block;
-		transform: skewX(12deg);
+	text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+	a {
+		color: inherit;
+		text-decoration: none;
+		&:hover {
+			text-decoration: underline;
+		}
 	}
 }
 .mb-status {
@@ -5321,9 +5324,16 @@ body.has-league-ticker-collapsed .sidebar-inner {
 	.mb-half-1 .mb-number {
 		text-align: right;
 	}
+	// (A phone: the day over the series, each short - clear of the scores.)
 	.mb-tag {
 		font-size: 0.75rem;
-		padding: 0.15rem 0.6rem;
+		line-height: 1.3;
+	}
+	.mb-tag-part {
+		display: block;
+	}
+	.mb-tag-dot {
+		display: none;
 	}
 	.mb-half .tb-stripes-top {
 		display: none;
@@ -6257,7 +6267,8 @@ a.rsb-half {
 }
 // Its replay, by its status ("FINAL ▶").
 .mb-status {
-	display: inline-flex;
+	display: flex;
+	justify-content: center;
 	align-items: center;
 	gap: 0.45rem;
 }
@@ -6364,27 +6375,6 @@ a.rsb-half {
 	padding-bottom: 2.1rem;
 }
 
-// The series in a game's banner as BBGM has it ("DAL leads series 1-0"):
-// plain words over the status, its links in the banner's white.
-.mb-tag {
-	background: none;
-	font-style: normal;
-	font-weight: 700;
-	font-size: 0.85rem;
-	padding: 0;
-	transform: none;
-	text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
-	> * {
-		transform: none;
-	}
-	a {
-		color: inherit;
-		text-decoration: underline;
-		text-decoration-color: rgba(255, 255, 255, 0.45);
-		text-underline-offset: 0.15em;
-	}
-}
-
 // The roster's buttons, "Keep auto sorted" and Play Through Injuries on one
 // row (the refreshed look) - the injuries' sliders, opened, on a row of their
 // own under them.
@@ -6419,4 +6409,12 @@ a.rsb-half {
 // (A game's page: a section jumped to lands under the score pinned over it.)
 .recap-game .recap-section {
 	scroll-margin-top: 2.9rem;
+}
+
+// (The arrows' chevrons in the team's own color on its stripe - not the
+// banner's links' white, which on a white stripe can't be seen.)
+.mb-banner .mb-arrow,
+.mb-banner .mb-arrow:hover {
+	color: var(--tb-ground);
+	text-decoration: none;
 }

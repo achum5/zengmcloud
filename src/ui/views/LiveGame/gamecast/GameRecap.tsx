@@ -497,6 +497,14 @@ const RecapHeader = ({
 		[away, home],
 		true,
 	);
+	const gameDay: number | undefined =
+		typeof boxScore.day === "number" && !boxScore.exhibition
+			? boxScore.day
+			: undefined;
+	const inSeries =
+		boxScore.numGamesToWinSeries > 1 &&
+		!!boxScore.teams[0]?.playoffs &&
+		!!boxScore.teams[1]?.playoffs;
 	// (To the bracket.)
 	const seriesLink = series ? (
 		<a className="recap-series" href={helpers.leagueUrl(["playoffs", season])}>
@@ -513,17 +521,37 @@ const RecapHeader = ({
 						won={winner === away.tid ? 0 : winner === home.tid ? 1 : undefined}
 						// (BBGM's own: "DAL leads series 1-0", the team to its page, the
 						// record to the bracket.)
+						// The season and the day ("2024 Day 45", to that day's
+						// schedule), and in the playoffs BBGM's own "DAL leads series
+						// 1-0" by it (the team to its page, the record to the bracket).
 						tag={
-							boxScore.numGamesToWinSeries > 1 &&
-							boxScore.teams[0]?.playoffs &&
-							boxScore.teams[1]?.playoffs ? (
+							gameDay !== undefined || inSeries ? (
 								<span>
-									<PlayoffRecord
-										numGamesToWinSeries={boxScore.numGamesToWinSeries}
-										season={season}
-										t0={boxScore.teams[0]}
-										t1={boxScore.teams[1]}
-									/>
+									{gameDay !== undefined ? (
+										<a
+											className="mb-tag-part"
+											href={helpers.leagueUrl([
+												"daily_schedule",
+												season,
+												gameDay,
+											])}
+										>
+											{season} Day {gameDay}
+										</a>
+									) : null}
+									{gameDay !== undefined && inSeries ? (
+										<span className="mb-tag-dot"> · </span>
+									) : null}
+									{inSeries ? (
+										<span className="mb-tag-part">
+											<PlayoffRecord
+												numGamesToWinSeries={boxScore.numGamesToWinSeries}
+												season={season}
+												t0={boxScore.teams[0]}
+												t1={boxScore.teams[1]}
+											/>
+										</span>
+									) : null}
 								</span>
 							) : undefined
 						}
