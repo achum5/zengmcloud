@@ -11,7 +11,29 @@ export type HeadSprite = {
 	cx: number;
 	cy: number;
 	h: number;
+	// His face as it goes onto his head, if he is drawn as a man (see
+	// meshBody.ts).
+	tex?: FaceTex;
 };
+
+// HIS FACE FOR HIS HEAD (see sculpt.ts): faces.js's drawing of him, as
+// plain pixels - what is on his face (his eyes, brows, nose, mouth, beard,
+// lines, headband: RGBA), and apart from that where his hair is (how much,
+// a byte a pixel) - over the part of its 400 x 600 box from (x0, y0),
+// `scale` pixels to its unit. And where his hair comes to: down his
+// forehead, down by his temples.
+export type FaceTex = {
+	w: number;
+	h: number;
+	x0: number;
+	y0: number;
+	scale: number;
+	feat: Uint8ClampedArray;
+	hair: Uint8ClampedArray;
+	hairFront: number;
+	hairSide: number;
+};
+const TEX = { x: 20, y: 40, w: 360, h: 520, scale: 0.4 };
 
 // faces.js draws in a 400 x 600 box: the head is centered near (200, 300),
 // about 400 units from the top of the hair to the chin, with the shoulders and
@@ -39,12 +61,11 @@ const loadImage = (src: string) =>
 // black stay - they belong on a court.
 const CAPS = new Set(["hat", "hat2", "hat3", "santa-hat"]);
 
-const faceSprite = async (
+const overridesOf = (
 	face: FaceConfig,
 	colors: [string, string, string] | undefined,
-	// (Unless it is what he is there in: a draft pick's - see cap.ts.)
-	capOn = false,
-): Promise<HeadSprite> => {
+	capOn: boolean,
+) => {
 	const shave = stubbleShave(face.head?.shave, face.hair?.color);
 	const overrides: Record<string, unknown> = {};
 	if (colors) {
@@ -56,6 +77,14 @@ const faceSprite = async (
 	if (shave !== undefined) {
 		overrides.head = { shave };
 	}
+	return overrides;
+};
+
+// faces.js's drawing of a face, as a picture.
+const faceImage = async (
+	face: FaceConfig,
+	overrides: Record<string, unknown>,
+) => {
 	// faces.js measures its parts as it draws, so it draws into the page (out
 	// of sight), and the result is copied out as an image.
 	const holder = document.createElement("div");
@@ -84,39 +113,127 @@ const faceSprite = async (
 		new Blob([svg], { type: "image/svg+xml;charset=utf-8" }),
 	);
 	try {
-		const img = await loadImage(url);
-		const canvas = document.createElement("canvas");
-		canvas.width = Math.round(CROP.w * SCALE);
-		canvas.height = Math.round(CROP.h * SCALE);
-		// Kept in plain memory, not on the graphics card: it is only ever
-		// drawn onto the sheet each new picture of him is made on (see
-		// sprite.ts), which is in plain memory - and a picture on the card
-		// drawn onto one in plain memory is copied back off the card first,
-		// every time (a stall of the whole page, each new pose of each man).
-		const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
-		ctx.drawImage(
-			img,
-			CROP.x,
-			CROP.y,
-			CROP.w,
-			CROP.h,
-			0,
-			0,
-			canvas.width,
-			canvas.height,
-		);
-		// (Settled into plain pixels now, not kept as a drawing of the face
-		// to be done over whenever it is drawn from.)
-		ctx.putImageData(ctx.getImageData(0, 0, canvas.width, canvas.height), 0, 0);
-		return {
-			img: canvas,
-			cx: (FACE_CENTER.x - CROP.x) * SCALE,
-			cy: (FACE_CENTER.y - CROP.y) * SCALE,
-			h: FACE_H * SCALE,
-		};
+		return await loadImage(url);
 	} finally {
 		URL.revokeObjectURL(url);
 	}
+};
+
+const faceSprite = async (
+	face: FaceConfig,
+	colors: [string, string, string] | undefined,
+	// (Unless it is what he is there in: a draft pick's - see cap.ts.)
+	capOn = false,
+): Promise<HeadSprite> => {
+	const img = await faceImage(face, overridesOf(face, colors, capOn));
+	const canvas = document.createElement("canvas");
+	canvas.width = Math.round(CROP.w * SCALE);
+	canvas.height = Math.round(CROP.h * SCALE);
+	// Kept in plain memory, not on the graphics card: it is only ever
+	// drawn onto the sheet each new picture of him is made on (see
+	// sprite.ts), which is in plain memory - and a picture on the card
+	// drawn onto one in plain memory is copied back off the card first,
+	// every time (a stall of the whole page, each new pose of each man).
+	const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+	ctx.drawImage(
+		img,
+		CROP.x,
+		CROP.y,
+		CROP.w,
+		CROP.h,
+		0,
+		0,
+		canvas.width,
+		canvas.height,
+	);
+	// (Settled into plain pixels now, not kept as a drawing of the face
+	// to be done over whenever it is drawn from.)
+	ctx.putImageData(ctx.getImageData(0, 0, canvas.width, canvas.height), 0, 0);
+	return {
+		img: canvas,
+		cx: (FACE_CENTER.x - CROP.x) * SCALE,
+		cy: (FACE_CENTER.y - CROP.y) * SCALE,
+		h: FACE_H * SCALE,
+	};
+};
+
+// His face for his head: drawn twice more - just what is on his face, then
+// just his hair - each as plain pixels.
+const NONE = { id: "none" };
+export const faceTex = async (
+	face: FaceConfig,
+	colors: [string, string, string] | undefined,
+	capOn = false,
+): Promise<FaceTex> => {
+	const base = overridesOf(face, colors, capOn);
+	const w = Math.round(TEX.w * TEX.scale);
+	const h = Math.round(TEX.h * TEX.scale);
+	const canvas = document.createElement("canvas");
+	canvas.width = w;
+	canvas.height = h;
+	const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+	const layer = async (only: Record<string, unknown>) => {
+		const img = await faceImage(face, { ...base, ...only });
+		ctx.clearRect(0, 0, w, h);
+		ctx.drawImage(img, TEX.x, TEX.y, TEX.w, TEX.h, 0, 0, w, h);
+		return ctx.getImageData(0, 0, w, h).data;
+	};
+	const feat = await layer({
+		head: { ...(base.head as object), id: "none" },
+		ear: NONE,
+		hair: NONE,
+		hairBg: NONE,
+	});
+	// (Not the hair behind his head - with no head in front of it, it would
+	// be all over his face: round the back, his haircut is his own.)
+	const hairRGBA = await layer({
+		head: { ...(base.head as object), id: "none" },
+		hairBg: NONE,
+		ear: NONE,
+		eye: NONE,
+		eyebrow: NONE,
+		eyeLine: NONE,
+		smileLine: NONE,
+		miscLine: NONE,
+		facialHair: NONE,
+		mouth: NONE,
+		nose: NONE,
+		glasses: NONE,
+		accessories: NONE,
+	});
+	const hair = new Uint8ClampedArray(w * h);
+	for (let i = 0; i < w * h; i++) {
+		hair[i] = hairRGBA[i * 4 + 3]!;
+	}
+	// Where his hair comes down to: in the middle of his forehead, and by
+	// his temples (faces.js units).
+	const lowest = (x0: number, x1: number, below: number) => {
+		let y = -1;
+		for (let py = 0; py < h; py++) {
+			const fy = TEX.y + py / TEX.scale;
+			if (fy > below) {
+				break;
+			}
+			for (let fx = x0; fx <= x1; fx += 4) {
+				const px = Math.round((fx - TEX.x) * TEX.scale);
+				if (hair[py * w + px]! > 128) {
+					y = fy;
+				}
+			}
+		}
+		return y;
+	};
+	return {
+		w,
+		h,
+		x0: TEX.x,
+		y0: TEX.y,
+		scale: TEX.scale,
+		feat,
+		hair,
+		hairFront: lowest(176, 224, 300),
+		hairSide: Math.max(lowest(84, 96, 330), lowest(304, 316, 330)),
+	};
 };
 
 // How his hair sits on the back of his head, for drawing it from the side
@@ -279,14 +396,27 @@ const inTurn = <T>(draw: () => Promise<T>): Promise<T> => {
 	return mine;
 };
 
+// His face for his head, drawn in its turn (see inTurn) - for a head drawn
+// before he was wanted as a man.
+export const loadFaceTex = (
+	face: FaceConfig,
+	colors: [string, string, string] | undefined,
+): Promise<FaceTex> => inTurn(() => faceTex(face, colors));
+
 export const loadHead = async (
 	face: FaceConfig | undefined,
 	colors: [string, string, string] | undefined,
 	capOn = false,
+	// (His face for his head too, if he is drawn as a man - see sculpt.ts.)
+	withTex = false,
 ): Promise<{ sprite?: HeadSprite; skin?: string }> => {
 	try {
 		if (face) {
-			return { sprite: await inTurn(() => faceSprite(face, colors, capOn)) };
+			const sprite = await inTurn(() => faceSprite(face, colors, capOn));
+			if (withTex) {
+				sprite.tex = await inTurn(() => faceTex(face, colors, capOn));
+			}
+			return { sprite };
 		}
 	} catch {
 		// A face that will not draw just leaves him with a plain head.

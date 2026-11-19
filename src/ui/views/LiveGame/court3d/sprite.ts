@@ -1177,6 +1177,10 @@ const drawHeadOn = (
 	fx: number,
 	fy: number,
 ) => {
+	// (Drawn as a man, his head is in the picture of him already.)
+	if (look.real) {
+		return;
+	}
 	const { cam, st: posed, body, px } = job;
 	s.save();
 	s.setTransform(1 / px, 0, 0, 1 / px, -sh.ox / px - fx, -sh.oy / px - fy);
@@ -1394,7 +1398,8 @@ const glKeep = (
 	job: Job,
 	look: Look,
 ): Kept | undefined => {
-	if (!glReady()) {
+	// (Drawn as a man: on the page - see meshBody.ts.)
+	if (look.real || !glReady()) {
 		return undefined;
 	}
 	const { cam, st: posed, body, px, left, right, upper, lower, lift } = job;

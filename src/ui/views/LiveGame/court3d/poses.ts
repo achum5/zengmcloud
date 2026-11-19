@@ -12016,6 +12016,8 @@ export type Body = {
 	upperR: number;
 	foreR: number;
 	handR: number;
+	// (Feet: see Proportions.)
+	shoulderDrop: number;
 	// HIS OWN BUILD, where it is known (see Physique): how much muscle is on
 	// him (0 lean, 1 as strong as they come - his arms, legs, chest and
 	// shoulders shaped by it, see sculpt.ts buildsOf), and how thick his
@@ -12057,6 +12059,9 @@ export type Proportions = {
 	upperR: number;
 	foreR: number;
 	hand: number;
+	// How far under the top of his torso his shoulders' joints are (a
+	// cartoon's just under it).
+	shoulderDrop?: number;
 };
 // A cartoon athlete: a big head - a fifth of him - on a short neck, over a
 // lean body. (What every sport's men were to begin with; football's are
@@ -12109,6 +12114,26 @@ export const ATHLETE: Proportions = {
 	upperR: 0.0295,
 	foreR: 0.0245,
 };
+// A MAN AS HE IS: drawn as one (see meshBody.ts), his skeleton the one his
+// body's mesh is made on (MakeHuman's - see tools/court3d-body), so the mesh
+// of him is never stretched to fit another man's bones: his hips at 53% of
+// his height, his knees at 30%, the base of his neck at 86% and his
+// shoulders' joints at 80%, a head about an eighth of him. Only the picture
+// of him is this: where the plays put him and his hands is the athlete's.
+export const MESH_BUILD: Proportions = {
+	...ATHLETE,
+	ankle: 0.042,
+	shin: 0.258,
+	thigh: 0.238,
+	torso: 0.326,
+	neck: 0.03,
+	head: 0.052,
+	upper: 0.145,
+	fore: 0.157,
+	shoulderW: 0.108,
+	hipW: 0.063,
+	shoulderDrop: 0.06,
+};
 // WHAT ELSE IS KNOWN OF HIM, beyond how tall he is and what he weighs (see
 // ratings.ts physiqueOf) - each 0 to 1, a half the league's ordinary man:
 // how strong he is, and how quick and springy.
@@ -12157,6 +12182,7 @@ export const bodyOf = (
 		upperR: H * p.upperR * g * (1 + 0.18 * m),
 		foreR: H * p.foreR * g * (1 + 0.12 * m),
 		handR: H * p.hand,
+		shoulderDrop: H * (p.shoulderDrop ?? 0.022),
 		...(ph
 			? {
 					muscle: m + 0.5,
@@ -12178,7 +12204,7 @@ export const standingReach = (b: Body): number =>
 	b.thigh +
 	b.shin +
 	b.torso -
-	b.H * 0.022 +
+	b.shoulderDrop +
 	(b.upper + b.fore) * (1 + STRETCH) +
 	b.handR * 2.2;
 
@@ -12696,7 +12722,7 @@ const stretchOf = (shDeg: number, tuck: number): number => {
 };
 
 const shoulderOf = (b: Body, chest: V3, side: 1 | -1): V3 =>
-	v3(chest.f, side * b.shoulderW, chest.u - b.H * 0.022);
+	v3(chest.f, side * b.shoulderW, chest.u - b.shoulderDrop);
 
 // An arm built from its angles - the upper arm swung `shDeg`, the elbow
 // bent `elDeg` more, the whole arm `abRad` out from his side (already

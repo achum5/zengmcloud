@@ -7,6 +7,7 @@ import {
 	type KeyPlaySettings,
 } from "./court3d/keyPlays.ts";
 import { CAMERA_ZOOM, getCamera, setCamera } from "./court3d/cameraSetting.ts";
+import { realPlayers, setRealPlayers } from "./court3d/realPlayers.ts";
 
 // WHAT THE KEY PLAYS SHOW, picked beside them: a close finish shown in full
 // (within so many points, so many minutes from the end), and what else
@@ -103,6 +104,8 @@ const KeyPlaysSettings = ({
 	// How far in the court's camera is (see cameraSetting.ts) - the court
 	// reads it as it draws, so it moves as the slider does.
 	const [zoom, setZoom] = useState(() => getCamera().zoom);
+	// The players drawn as men (see realPlayers.ts).
+	const [real, setReal] = useState(realPlayers);
 	return (
 		<>
 			<button
@@ -152,6 +155,21 @@ const KeyPlaysSettings = ({
 									setCamera({ zoom: z });
 								}}
 							/>
+							<div className="form-check mt-2">
+								<input
+									id="c3d-real"
+									type="checkbox"
+									className="form-check-input"
+									checked={real}
+									onChange={(e) => {
+										setReal(e.target.checked);
+										setRealPlayers(e.target.checked);
+									}}
+								/>
+								<label className="form-check-label" htmlFor="c3d-real">
+									Realistic players (beta)
+								</label>
+							</div>
 						</div>
 					)}
 					<div className="fw-bold mb-1">Close game</div>

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 372,
+		date: "2026-11-19",
+		text: "Live games: try the new Realistic players (beta) option in the 3D court's settings (the gear). Players are drawn as real human bodies in their team's jersey and baggy shorts, with each player's face on a 3D head. It's an early version and can be slower on older phones; the refs and coaches stay as they were.",
+	},
+	{
 		n: 371,
 		date: "2026-11-19",
 		text: "Smart CPU: CPU teams stop selling their young potential stars for spare parts and far-off draft picks. A team now values the players it trades for by what they do for it, and picks two or more drafts away are no longer priced like sure things.",

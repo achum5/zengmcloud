@@ -28,8 +28,12 @@ import {
 	HELD,
 	surfaceFor,
 } from "./gameBall.ts";
+import type { FaceTex } from "./faces.ts";
+import { drawMesh, MESH_KINDS, meshReady, poseBones } from "./meshBody.ts";
 import {
+	bodyOf,
 	gripOf,
+	MESH_BUILD,
 	skeleton,
 	underPalm,
 	turnUpper,
@@ -39,6 +43,46 @@ import {
 	type Skeleton,
 	type V3,
 } from "./poses.ts";
+
+// HIS BODY FROM THE MESH OF A MAN (see meshBody.ts), where his look says
+// he is drawn as one (Look.real), not from masses: what he holds still
+// sculpted, over it.
+// (His own hands, if the mesh has them: the court's otherwise.)
+const MESH_HANDS = MESH_KINDS.some((k) => k.startsWith("hand"));
+// (His kit painted onto him, if the mesh has no clothes of its own.)
+const MESH_PAINTED = !MESH_KINDS.some((k) => k === "jersey");
+const MESH_KEEPS = new Set<number>(
+	MESH_HANDS ? [9, 10, 11, 12] : [4, 9, 10, 11, 12, 13],
+);
+// (Which of the mesh's kinds of face are what he wears over him.)
+const MESH_SHELLS = MESH_KINDS.map((k) =>
+	k === "shortsR" || k === "shortsL"
+		? "shorts"
+		: k === "shortsTorso"
+			? "shortsTop"
+			: k.startsWith("shoe")
+				? "shoe"
+				: k.startsWith("foot")
+					? "foot"
+					: k === "jersey" || k === "head"
+						? k
+						: "",
+);
+const TYPICAL_BODY = bodyOf(undefined, undefined, MESH_BUILD);
+const MESH_HIDDEN = MESH_SHELLS.map((sh) => sh === "foot");
+const MESH_CUTS = MESH_SHELLS.map(
+	(sh) =>
+		sh === "shorts" || sh === "shortsTop" || sh === "shoe" || sh === "jersey",
+);
+// (Where his shorts come down to: of the way from his hip to his knee - and
+// where they are painted on him under them, short of that.)
+const MESH_HEM = 0.92;
+const MESH_UNDER_HEM = 0.8;
+// (His shorts over him wherever the two come within an inch or so.)
+const MESH_LIFT = MESH_SHELLS.map((sh) =>
+	sh === "shorts" || sh === "shortsTop" ? 0.06 : 0,
+);
+const MESH_FACED = MESH_KINDS.map((name) => name === "head" || name === "neck");
 
 // ONE PLAYER, SCULPTED - the body of his sprite (see sprite.ts).
 //
@@ -673,6 +717,8 @@ export type Cut = {
 	trim: number;
 	sockTop: number;
 	sole: number;
+	// How high a sneaker comes up his ankle (the mesh's: see meshBody.ts).
+	shoeTop: number;
 	hipStripe: number;
 	// A suit's open front, his tie down the middle of it.
 	open: number;
@@ -703,11 +749,16 @@ export type Built = {
 	head: { x: number; y: number; r: number };
 	// Which way each palm faces.
 	pn: [V3, V3];
+	// And which way each hand points, wrist to fingers.
+	hd: [V3, V3];
 	// Undoing his upper body's turn (see turnUpper), by how far up his
 	// torso: TURN_STEPS + 1 matrices about his hips, if he is turned.
 	untwist?: Float64Array;
 	// Sprite pixels to a foot, at his middle.
 	k: number;
+	// His skeleton as posed, and where a point of him lands on the sprite.
+	sk: Skeleton;
+	P: (v: V3) => Seen;
 };
 
 // How his hands are held (see handMasses).
@@ -1949,6 +2000,7 @@ export const build = (
 	// Which way each palm faces (his right, his left), and where its fingers
 	// and thumb grow from.
 	const pn: [V3, V3] = [v3(0, 1, 0), v3(0, -1, 0)];
+	const hd: [V3, V3] = [v3(0, 0, -1), v3(0, 0, -1)];
 	const knuckleAt: V3[] = [];
 	const thumbAt: V3[] = [];
 	const arm = (limb: Limb, side: 0 | 1) => {
@@ -2080,6 +2132,7 @@ export const build = (
 		const ts = v3(thumbSide.f * sgn, thumbSide.s * sgn, thumbSide.u * sgn);
 		const g = G_HAND + side;
 		pn[side] = palmN;
+		hd[side] = h;
 		// (See handMasses: on the ball, each finger laid round it.)
 		const ball = cup;
 		const made = handMasses({
@@ -2309,16 +2362,21 @@ export const build = (
 	const cut: Cut = {
 		waist: T * 0.2,
 		band: H * 0.016,
-		strap: sw * 0.62,
+		// (A man's shoulders bare out to his neck but for the strap: what
+		// moves with his arm is never under it - see meshBody.ts.)
+		strap: sw * (look.real ? 0.48 : 0.62),
 		side: sw * 1.32,
 		top: shouldersOf(body),
 		pit: T - H * 0.075,
-		neckIn: sw * 0.42,
+		// (Round a man's neck - the mesh's, see meshBody.ts - his collar sits
+		// out on the slope of his shoulders, not up his neck.)
+		neckIn: sw * (look.real ? 0.6 : 0.42),
 		vAt: H * 0.068,
-		backAt: H * 0.03,
+		backAt: H * (look.real ? 0.036 : 0.03),
 		trim: Math.max(H * 0.0085, 1.2 / kMid),
 		sockTop: H * 0.115,
 		sole: body.ankleR * 0.6,
+		shoeTop: body.ankleH + body.ankleR * 1.4,
 		hipStripe: body.hipW + body.thighR * 0.8,
 		open: T * 0.46,
 	};
@@ -2347,6 +2405,8 @@ export const build = (
 		pel,
 		spine,
 		fwd: fwdT,
+		sk,
+		P,
 		...(noSheet
 			? {}
 			: { sheet: jerseySheet(look, body, kMid * 1.2, cut.waist) }),
@@ -2354,6 +2414,7 @@ export const build = (
 		late,
 		headDepth: headC.depth - body.headR * 0.4,
 		pn,
+		hd,
 		...(turned ? { untwist: untwistTable(q, pel) } : {}),
 		head: {
 			x: headC.x,
@@ -2632,6 +2693,9 @@ export const shade = (
 	owner?: Int8Array,
 	// The rest of the building's light on him too (see RICH).
 	rich = false,
+	// What is already drawn on the sheet and how far each pixel of it is from
+	// the camera (his body, see meshBody.ts): only what is nearer goes over it.
+	under?: Float32Array,
 ): { x0: number; y0: number; x1: number; y1: number } => {
 	const masses = b.masses;
 	const n = masses.length;
@@ -2850,6 +2914,9 @@ export const shade = (
 				if (cover <= 0) {
 					continue;
 				}
+				if (under && under[y * w + x]! <= hz[f]!) {
+					continue;
+				}
 				const nl = len3(nx, ny, nzs) || 1;
 				let sx = nx / nl;
 				let sy = ny / nl;
@@ -2995,10 +3062,18 @@ export const shade = (
 				if (y > by1) {
 					by1 = y;
 				}
-				d[o] = r;
-				d[o + 1] = g;
-				d[o + 2] = bb;
-				d[o + 3] = cover >= 1 ? 255 : 255 * cover;
+				if (under && d[o + 3]! > 0 && cover < 1) {
+					// (Over him: blended into him at its soft edge.)
+					d[o] = d[o]! + (r - d[o]!) * cover;
+					d[o + 1] = d[o + 1]! + (g - d[o + 1]!) * cover;
+					d[o + 2] = d[o + 2]! + (bb - d[o + 2]!) * cover;
+					d[o + 3] = Math.max(d[o + 3]!, 255 * cover);
+				} else {
+					d[o] = r;
+					d[o + 1] = g;
+					d[o + 2] = bb;
+					d[o + 3] = cover >= 1 ? 255 : 255 * cover;
+				}
 				if (owner) {
 					owner[y * w + x] = fc.group;
 				}
@@ -3035,7 +3110,9 @@ export const sculpt = (
 	const heldSin = Math.sin(heldTurn);
 	const img = new ImageData(w, h);
 	const d = img.data;
-	const lateAny = b.late.some(Boolean);
+	// (Drawn as a man, his head is in the picture with the rest of him, in
+	// front of or behind his arms as it is: nothing need go over it after.)
+	const lateAny = !look.real && b.late.some(Boolean);
 	const owner = lateAny ? new Int8Array(w * h).fill(-1) : undefined;
 
 	const { rt, dn, tw: tw3 } = b.frame;
@@ -3555,18 +3632,370 @@ export const sculpt = (
 		}
 	};
 
-	const box = shade(
-		b,
-		GROUPS,
-		d,
-		w,
-		h,
-		paint,
-		ink,
-		(kind) => kind === HAND || kind === NAIL,
-		owner,
-		true,
-	);
+	let box: { x0: number; y0: number; x1: number; y1: number };
+	if (look.real && meshReady()) {
+		// HIS BODY A MAN'S (see meshBody.ts): drawn first; then his hands,
+		// and whatever is in them, over it where they are nearer.
+		const sk = b.sk;
+		const mk = MESH_KINDS.map((name) => {
+			const side = name.endsWith("L") ? 1 : 0;
+			const leg = side ? sk.legL : sk.legR;
+			const arm = side ? sk.armL : sk.armR;
+			const tip = leg.tip ?? leg.end;
+			const m = (kind: number, group: number, A: V3, B: V3) =>
+				({ kind, group, side, A, B }) as unknown as Mass;
+			if (name.startsWith("upper")) {
+				return m(UPPER, G_ARM + side, arm.root, arm.mid);
+			}
+			if (name.startsWith("fore")) {
+				return m(FORE, G_ARM + side, arm.mid, arm.end);
+			}
+			if (name.startsWith("thigh")) {
+				return m(THIGH, G_LEG + side, leg.root, leg.mid);
+			}
+			if (name.startsWith("hand")) {
+				return { ...m(NECK, G_HAND + side, arm.end, arm.tip ?? arm.end) };
+			}
+			if (name.startsWith("shin")) {
+				return m(SHIN, G_LEG + side, leg.mid, leg.end);
+			}
+			if (name === "shortsR" || name === "shortsL") {
+				return m(
+					SHORTS,
+					G_SHORTS + side,
+					lerpV(leg.root, leg.mid, 0.16),
+					lerpV(leg.root, leg.mid, MESH_HEM),
+				);
+			}
+			if (name.startsWith("foot") || name.startsWith("shoe")) {
+				return m(
+					SHOE,
+					G_SHOE + side,
+					lerpV(leg.end, tip, -0.32),
+					lerpV(leg.end, tip, 1.02),
+				);
+			}
+			// (His neck painted as his torso is: the collar of his jersey round
+			// it where it comes, not where the mesh's parts meet.)
+			// (His own skin, under his jersey: only ever seen where the jersey
+			// is not - at his neck, through his armholes.)
+			if (
+				name === "head" ||
+				(!MESH_PAINTED && (name === "neck" || name === "torso"))
+			) {
+				return {
+					...m(NECK, name === "neck" ? G_NECK : G_TORSO, sk.chest, sk.head),
+					side: 0,
+				};
+			}
+			return { ...m(TORSO, G_TORSO, sk.pelvis, sk.chest), side: 0 };
+		});
+		// (His shorts, painted down his thighs to their hem.)
+		const mkShorts = MESH_KINDS.map((name) => {
+			const side = name.endsWith("L") ? 1 : 0;
+			const leg = side ? sk.legL : sk.legR;
+			return {
+				kind: SHORTS,
+				group: G_SHORTS + side,
+				side,
+				A: lerpV(leg.root, leg.mid, 0.16),
+				B: lerpV(leg.root, leg.mid, MESH_UNDER_HEM),
+			} as unknown as Mass;
+		});
+		const headKind = MESH_KINDS.indexOf("head");
+		const torsoMass = mk[MESH_KINDS.indexOf("torso")] ?? mk[0]!;
+		const upperR = mk[MESH_KINDS.indexOf("upperR")] ?? torsoMass;
+		const upperL = mk[MESH_KINDS.indexOf("upperL")] ?? torsoMass;
+		// What a point of him is painted as, and how far along it (into
+		// `along`).
+		let along = 0;
+		const shortsR = mk[MESH_KINDS.indexOf("shortsR")];
+		const shortsL = mk[MESH_KINDS.indexOf("shortsL")];
+		const massAt = (
+			k: number,
+			Pf: number,
+			Ps: number,
+			Pu: number,
+			arm: number,
+		) => {
+			let fc = mk[k]!;
+			// (His shorts over his hips: as down his legs, below the waistband -
+			// one cloth.)
+			if (MESH_SHELLS[k] === "shortsTop" && shortsR && shortsL) {
+				const U = (Pf - pel.f) * spine.f + (Pu - pel.u) * spine.u;
+				if (U < cut.waist) {
+					fc = Ps > 0 ? shortsL : shortsR;
+					const lf = fc.B.f - fc.A.f;
+					const ls = fc.B.s - fc.A.s;
+					const lu = fc.B.u - fc.A.u;
+					along =
+						((Pf - fc.A.f) * lf + (Ps - fc.A.s) * ls + (Pu - fc.A.u) * lu) /
+						(lf * lf + ls * ls + lu * lu || 1);
+					return fc;
+				}
+			}
+			// (Where his jersey ends - round his neck, his armholes - as the
+			// jersey is cut, not where the mesh's pieces of him meet: all of his
+			// body from his neck to his arms painted as his torso is, his arms
+			// as his arms.)
+			if (
+				MESH_PAINTED &&
+				(fc.kind === UPPER || fc.kind === TORSO || fc.kind === NECK) &&
+				k !== headKind
+			) {
+				fc = arm < 0.5 ? torsoMass : Ps > 0 ? upperL : upperR;
+			}
+			const raw = (m: Mass) => {
+				const lf = m.B.f - m.A.f;
+				const ls = m.B.s - m.A.s;
+				const lu = m.B.u - m.A.u;
+				const l2 = lf * lf + ls * ls + lu * lu || 1;
+				return ((Pf - m.A.f) * lf + (Ps - m.A.s) * ls + (Pu - m.A.u) * lu) / l2;
+			};
+			// (His shorts, painted down his thighs to their hem.)
+			if (MESH_PAINTED && fc.kind === THIGH) {
+				const sh = mkShorts[k]!;
+				const r = raw(sh);
+				if (r <= 1) {
+					along = r;
+					return sh;
+				}
+			}
+			along = raw(fc);
+			return fc;
+		};
+		// HIS FACE ON HIS HEAD (see faces.ts): faces.js's drawing of it, put
+		// on as if from in front; round the sides and back of his head, his
+		// haircut.
+		const tex = look.faceTex ?? look.head?.tex;
+		const neckKind = MESH_KINDS.indexOf("neck");
+		const faceAt = new Float32Array(4);
+		const texRGBA = new Float64Array(4);
+		const sample = (
+			data: Uint8ClampedArray,
+			t: FaceTex,
+			fx: number,
+			fy: number,
+		) => {
+			const px = (fx - t.x0) * t.scale - 0.5;
+			const py = (fy - t.y0) * t.scale - 0.5;
+			const x0 = Math.floor(px);
+			const y0 = Math.floor(py);
+			const ax = px - x0;
+			const ay = py - y0;
+			texRGBA.fill(0);
+			for (let j = 0; j < 2; j++) {
+				for (let i = 0; i < 2; i++) {
+					const x = x0 + i;
+					const y = y0 + j;
+					if (x < 0 || y < 0 || x >= t.w || y >= t.h) {
+						continue;
+					}
+					const wt = (i ? ax : 1 - ax) * (j ? ay : 1 - ay);
+					const o = (y * t.w + x) * 4;
+					const al = (data[o + 3]! / 255) * wt;
+					texRGBA[0] = texRGBA[0]! + data[o]! * al;
+					texRGBA[1] = texRGBA[1]! + data[o + 1]! * al;
+					texRGBA[2] = texRGBA[2]! + data[o + 2]! * al;
+					texRGBA[3] = texRGBA[3]! + al;
+				}
+			}
+			return texRGBA[3]!;
+		};
+		// (How much of his hair is there: a byte a pixel.)
+		const sampleA = (
+			data: Uint8ClampedArray,
+			t: FaceTex,
+			fx: number,
+			fy: number,
+		) => {
+			const px = (fx - t.x0) * t.scale - 0.5;
+			const py = (fy - t.y0) * t.scale - 0.5;
+			const x0 = Math.floor(px);
+			const y0 = Math.floor(py);
+			const ax = px - x0;
+			const ay = py - y0;
+			let a = 0;
+			for (let j = 0; j < 2; j++) {
+				for (let i = 0; i < 2; i++) {
+					const x = x0 + i;
+					const y = y0 + j;
+					if (x >= 0 && y >= 0 && x < t.w && y < t.h) {
+						a +=
+							(data[y * t.w + x]! / 255) *
+							(i ? ax : 1 - ax) *
+							(j ? ay : 1 - ay);
+					}
+				}
+			}
+			return a;
+		};
+		const hairRGB = rgb(look.hair);
+		const smooth = (a: number, z: number, x: number) => {
+			const q = Math.min(1, Math.max(0, (x - a) / (z - a)));
+			return q * q * (3 - 2 * q);
+		};
+		const over = (r: number, g: number, bl: number, a: number) => {
+			ink.r += (r - ink.r) * a;
+			ink.g += (g - ink.g) * a;
+			ink.b += (bl - ink.b) * a;
+		};
+		const faceOn = (t: FaceTex, at: Float32Array) => {
+			const fx = at[0]!;
+			const fy = at[1]!;
+			const nf = at[2]!;
+			const ct = at[3]!;
+			// (How much of the picture shows there: all of it on the front of
+			// his face, none round the side.)
+			const front = smooth(0.25, 0.6, nf);
+			if (front > 0) {
+				const a = sample(t.feat, t, fx, fy);
+				if (a > 0.01) {
+					over(
+						texRGBA[0]! / a,
+						texRGBA[1]! / a,
+						texRGBA[2]! / a,
+						Math.min(1, a) * front,
+					);
+				}
+			}
+			const cutOf = look.cut ?? "short";
+			if (cutOf === "bald") {
+				return;
+			}
+			// His hair: as drawn, from in front; round the sides and the back,
+			// down to his temples, then the nape of his neck (further, long).
+			let hairA = 0;
+			let fromPic = 0;
+			if (front > 0) {
+				fromPic = sampleA(t.hair, t, fx, fy);
+				hairA = Math.min(1, fromPic) * front;
+			}
+			if (front < 1) {
+				// (Short at the sides, whatever hangs there from in front: above
+				// his ears.)
+				const side = t.hairSide > 0 ? Math.min(300, t.hairSide) : 290;
+				const fore = t.hairFront > 0 ? t.hairFront : 170;
+				const back = cutOf === "long" ? 640 : cutOf === "big" ? 485 : 455;
+				const line =
+					ct >= 0
+						? side + (fore - side) * ct
+						: side + (back - side) * Math.min(1, -ct * 1.25);
+				hairA += (1 - front) * smooth(line + 6, line - 6, fy);
+			}
+			if (hairA > 0.01) {
+				// (His hair's own color: not the lines faces.js draws round it.)
+				over(hairRGB[0], hairRGB[1], hairRGB[2], Math.min(1, hairA));
+				if (hairA > 0.5) {
+					ink.cloth = true;
+				}
+			}
+		};
+		const under = new Float32Array(w * h).fill(Infinity);
+		const fr = b.frame;
+		const toward = unit(v3(fr.tw.f, fr.tw.s, fr.tw.u + fr.kap));
+		const mb = drawMesh(
+			poseBones(sk, body, TYPICAL_BODY, b),
+			body.H,
+			{
+				see: b.P,
+				rt: fr.rt,
+				dn: fr.dn,
+				toward,
+				w,
+				h,
+				paint: (k, Pf, Ps, Pu, arm, Tf, Ts, Tu) => {
+					let fc = massAt(k, Pf, Ps, Pu, arm);
+					// (His kit on his torso painted where it is on his torso: an
+					// arm raised doesn't drag his jersey up with it.)
+					if (fc === torsoMass) {
+						fc = massAt(k, Tf, Ts, Tu, arm);
+						Pf = Tf;
+						Ps = Ts;
+						Pu = Tu;
+					}
+					ink.cloth = false;
+					ink.gloss = 0;
+					paint(fc, Math.min(1, Math.max(0, along)), 0, 0, 1, 1, Pf, Ps, Pu);
+					if (tex && (k === headKind || k === neckKind)) {
+						faceOn(tex, faceAt);
+					}
+					return fc.group;
+				},
+				faced: MESH_FACED,
+				faceAt,
+				hidden: MESH_HIDDEN,
+				cuts: MESH_CUTS,
+				lift: MESH_LIFT,
+				keep: (k, Pf, Ps, Pu, arm) => {
+					const fc = massAt(k, Pf, Ps, Pu, arm);
+					const shell = MESH_SHELLS[k];
+					// (The hem of his shorts cut square, and the top of each shoe
+					// round his ankle: not along the mesh's own edges.)
+					if (shell === "shorts") {
+						return along <= 1;
+					}
+					// (And up to the top of their waistband, over his jersey.)
+					if (shell === "shortsTop") {
+						const U = (Pf - pel.f) * spine.f + (Pu - pel.u) * spine.u;
+						return U <= cut.waist + cut.band;
+					}
+					if (shell === "shoe") {
+						return (
+							Pu - (fc.side ? sk.legL : sk.legR).end.u + body.ankleH <=
+							cut.shoeTop
+						);
+					}
+					// (His jersey, hanging loose: its sleeves off, where it goes with
+					// his arm; and where the cut of it is skin - his neck, his
+					// armholes - none of it there.)
+					if (arm > 0.5) {
+						return false;
+					}
+					ink.cloth = false;
+					paint(fc, Math.min(1, Math.max(0, along)), 0, 0, 1, 1, Pf, Ps, Pu);
+					return ink.cloth;
+				},
+				ink,
+			},
+			d,
+			under,
+			owner,
+		);
+		const kept = b.masses.filter((c) => MESH_KEEPS.has(c.kind));
+		const hb = shade(
+			{ ...b, masses: kept },
+			GROUPS,
+			d,
+			w,
+			h,
+			paint,
+			ink,
+			(kind) => kind === HAND || kind === NAIL,
+			owner,
+			true,
+			under,
+		);
+		box = {
+			x0: Math.min(mb.x0, hb.x0),
+			y0: Math.min(mb.y0, hb.y0),
+			x1: Math.max(mb.x1, hb.x1),
+			y1: Math.max(mb.y1, hb.y1),
+		};
+	} else {
+		box = shade(
+			b,
+			GROUPS,
+			d,
+			w,
+			h,
+			paint,
+			ink,
+			(kind) => kind === HAND || kind === NAIL,
+			owner,
+			true,
+		);
+	}
 
 	let over: ImageData | undefined;
 	if (owner) {

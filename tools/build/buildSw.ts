@@ -18,7 +18,8 @@ export const buildSw = async () => {
 			"ico/spinner.svg",
 		],
 		dontCacheBustURLsMatching: /gen\/.*\.(js|css)/,
-		globIgnores: ["gen/real-player-*.json", "upgrade-50/*"],
+		// (The 3D players' mesh: fetched only by whoever turns them on.)
+		globIgnores: ["gen/real-player-*.json", "upgrade-50/*", "gen/*-mesh-*.js"],
 
 		// Changing default is only needed for unminified versions from watch-js
 		maximumFileSizeToCacheInBytes: 100 * 1024 * 1024,

@@ -85,7 +85,13 @@ export const rolldownConfig = (
 				envOptions.nodeEnv === "production"
 					? `${name}-${envOptions.versionNumber}.js`
 					: `${name}.js`,
-			chunkFileNames: `${name}-chunk-[hash].js`,
+			// (The players' mesh on its own, so it is never fetched ahead of
+			// its being wanted - see src/ui/views/LiveGame/court3d/meshBody.ts
+			// and buildSw.ts.)
+			chunkFileNames: (chunk) =>
+				chunk.name === "bodyMesh.data"
+					? `${name}-mesh-[hash].js`
+					: `${name}-chunk-[hash].js`,
 			dir: path.join("build", FOLDER),
 			sourcemap: true,
 			externalLiveBindings: false,
