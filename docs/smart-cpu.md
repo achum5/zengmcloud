@@ -1668,3 +1668,62 @@ three-for-one. What is left of it is not the shrink: elite shooters
 taken off a team (0.43 before), most of it inside the fit's range. That is a fault in the model's
 fit itself, from random players' leagues; refitting it on real players'
 leagues is next.
+
+## League 30: firsts for players who barely move a team (2026-11-19)
+
+The owner's League 30 (the real 2026 rosters again) had the Lakers give two
+firsts and three players for Sam Merrill (54), the Lakers a first and Jarred
+Vanderbilt (51) for Robert Williams (47, $14M through 2029), and Houston two
+firsts and three young players for Luke Kennard (51): "those pick teams are
+trading away could be incredibly valuable ... unless it's a genuine way to
+actually contend this year/next. Not if it's for a 50 overall -5 bpm guy".
+
+**What the sim says.** Each trade played out both ways, 300 games against
+every team: Robert Williams made the Lakers 0.19 points a game worse (the
+model said 0.24 better); Kennard made Houston 0.43 better (the model said
+0.45). Over 100 days of Leagues 30 and 34 from the same files, every trade
+the market made was played out the same way for both sides
+(`src/test/smart/tradeAuditProbe.test.ts`): where the model said a side
+gained on the floor (+0.55 on average, 24 sides) the sim gave +0.57 +-
+0.09, and of the 9 sides that gave firsts for it 7 got better on the floor.
+Huerter for OKC was +1.11, Zach Edey +1.66, Paul Reed for Minnesota +0.71.
+The players bought are mostly real upgrades; their overall undersells them.
+
+**The roster model, refit.** The removal and swap labs on two more leagues,
+30 and 7 (`src/test/impact/refitLab.test.ts`, 2,620 changes in all with 11
+and 34), as rows of a ridge
+regression on the model's coefficients, around the fit as it is, the random
+players' leagues' average line by overall held fixed so the pick and free
+agent tables stay true: held out a league at a time (Leagues 30 and 34 as
+one, their rosters the same), 0.149 of error past the sim's noise against
+0.150 for the model as shipped. Diminishing returns on the sim's own team
+composites (rebounding, defense, ...) added nothing that held from league
+to league. The model is as good as these labs can make it; what is left is
+a few tenths of a point a player either way, and a market that buys on it.
+
+**Picks.** A late first is priced at about 0.02-0.03 of a title and a top
+pick 0.10-0.16. Priced against what they become, picks are consistent: the
+players a slot took one to four seasons ago are worth what the slot is now,
+discounted for the wait (`pickConsistencyProbe`: League 5's 21-30 picks
+0.99 and 1.12). In the leagues' own drafts picks 21-30 became a 65 within
+eight seasons 5-11% of the time and a 70 1-5%; as the best quarter and the
+rest (`boom`) rather than two halves, a late first is worth 10-20% more,
+the class as a whole 3-6%.
+
+**What changed: the GM's patience** (the owner's call): a title five years
+away counts 77% of one now, not 59% (`PATIENCE`, 0.95 a season). A first
+pays off four to eight seasons on, so at 0.9 it was worth about half as
+much to a GM as what it turns into. The Lakers' 2027-2033 firsts are now
+0.026-0.057 (0.020-0.036 before), Indiana's 0.080-0.117 (0.047-0.095); the
+Lakers no longer give two for Merrill (their gain -0.003).
+
+From the same League 34 start to the next preseason: 26 deals at 0.9 and
+31 at 0.95, 15 firsts traded and 19 - the new ones mostly for players 19-23
+with 63-69 potential (Washington's for Jordan Smith Jr., 20, 48/69, and
+Tyran Stokes, 19, 42/68); the same champion; 1,143 s and 1,196 s side by
+side. A team at 0.4% still gave two firsts for Josh Minott (52), as at 0.9.
+
+**Tried and left off: a run counted by its depth squared** (`runDepth`), so
+a first-round win counts a sixty-fourth of a title, not a sixteenth: the
+same season had the same middle-team buys (Minnesota at 1.1% two firsts for
+Paul Reed, 52; Houston at 2.2% two for Cam Spencer, 54).

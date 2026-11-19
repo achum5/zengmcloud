@@ -6,7 +6,8 @@ import { loadLeagueFile } from "../smart/loadLeague.ts";
 
 // Each impact rating's spread among rostered players: in random players'
 // leagues (RR_ARENAS, arena seeds: what the roster model was fit on) and in
-// league files (RR_LEAGUES) - for FIT_SUPPORT (strength.ts).
+// league files (RR_LEAGUES) - for FIT_SUPPORT (strength.ts) - and, with
+// RR_PLAYERS_OUT, the random players' leagues' players themselves.
 //   RR_OUT=<file> [RR_ARENAS=4242,1,2,3,4] [RR_LEAGUES=<league.json>,...] \
 //     npx vitest --run --project basketball src/test/impact/ratingRange.test.ts
 const env: Record<string, string | undefined> =
@@ -17,6 +18,9 @@ test.skipIf(!env.RR_OUT)("rating range", { timeout: 900_000 }, async () => {
 	await importNode("fake-indexeddb/auto");
 	const fs = await importNode("node:fs");
 	const out: Record<string, Record<string, number[]>> = {};
+	// RR_PLAYERS_OUT: the random players' leagues' players themselves, as
+	// [overall, ...IMPACT_RATINGS].
+	const allPlayers: number[][] = [];
 	const sources = [
 		...(env.RR_ARENAS ?? "4242").split(",").map((s) => `arena:${s}`),
 		...(env.RR_LEAGUES ?? "").split(",").filter(Boolean),
@@ -31,6 +35,12 @@ test.skipIf(!env.RR_OUT)("rating range", { timeout: 900_000 }, async () => {
 			0,
 			Infinity,
 		]);
+		if (env.RR_PLAYERS_OUT && src.startsWith("arena:")) {
+			players.forEach((p) => {
+				const r = p.ratings.at(-1) as any;
+				allPlayers.push([r.ovr, ...IMPACT_RATINGS.map((k) => r[k])]);
+			});
+		}
 		const by: Record<string, number[]> = {};
 		for (const key of [...IMPACT_RATINGS, "ovr"]) {
 			by[key] = players
@@ -40,4 +50,7 @@ test.skipIf(!env.RR_OUT)("rating range", { timeout: 900_000 }, async () => {
 		out[src] = by;
 	}
 	fs.writeFileSync(env.RR_OUT!, JSON.stringify(out));
+	if (env.RR_PLAYERS_OUT) {
+		fs.writeFileSync(env.RR_PLAYERS_OUT, JSON.stringify(allPlayers));
+	}
 });

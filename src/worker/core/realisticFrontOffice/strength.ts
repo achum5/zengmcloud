@@ -426,7 +426,7 @@ export const lineMeasures = (ratings: ValueRatings) => {
 
 // A typical 43 overall, about what is always there for the minimum. A stand-in
 // until free agency's real supply is modelled.
-const REPLACEMENT_RATINGS: ValueRatings = {
+export const REPLACEMENT_RATINGS: ValueRatings = {
 	hgt: 47.2,
 	stre: 44.3,
 	spd: 48.1,

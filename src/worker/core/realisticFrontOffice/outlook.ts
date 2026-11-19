@@ -74,9 +74,14 @@ import { contractToSummary, getOwedContracts } from "../contract/index.ts";
 // through his prime and a pick seven drafts away onto the floor.
 export const OUTLOOK_YEARS = 10;
 
-// Each season out counts this much of the one before (owner's call: a title
-// five years away is worth about 60% of one now).
-export const PATIENCE = 0.9;
+// Each season out counts this much of the one before (owner's call,
+// 2026-11-19: a title five years away is worth about 77% of one now, 0.95 a
+// season). At 0.9 (59%) a first, which pays off four to eight seasons on, was
+// worth half as much to a GM as what it turns into, and contenders spent
+// firsts on players who barely moved them: League 30's Lakers two for Sam
+// Merrill, a 54, and Houston two for Luke Kennard, a 51. A first is for a
+// real step toward a title this season or next.
+export const PATIENCE = 0.95;
 
 // A deep run only breaks ties between moves that leave title chances the same
 // - unless the league's CPU teams have ambition (outlookSettings.
@@ -936,6 +941,14 @@ export const outlookSettings = {
 	// 8 seed every year was worth a third of a title over the outlook, more
 	// than the title chances most rebuilds look to buy (docs/smart-cpu.md).
 	seriesOnly: true,
+	// A run counted by how deep it goes: the share of a champion's run its
+	// series make, to this power (seriesOnly). Linear (1), each series won
+	// counts the same. Tried 2, so a first-round win counts a sixty-fourth of
+	// a title, not a sixteenth (League 34, 2026-11-19: a 46-win team with a
+	// 0.6% title chance gave two firsts for a 52): a season from the same
+	// start had the same - two firsts for a 52 from a team at 1.1% - and as
+	// many middle teams paying firsts. Off.
+	runDepth: 1,
 };
 
 // Measured in arena leagues: players on a team all season missed 6.5% of its
@@ -3465,6 +3478,16 @@ export const buildOutlook = async ({
 	// otherwise just making them. rounds has one place for missing them and
 	// one for each number of series won, none to all.
 	const ambition = smartVanillaOn() ? outlookSettings.vanillaAmbition : 0;
+	// Each finish's share of a champion's run, to the power runDepth, over
+	// the chances of each (rounds: missing, then 0, 1, ... series won).
+	const runByDepth = (rounds: readonly number[]) => {
+		const most = Math.max(1, rounds.length - 2);
+		let run = 0;
+		for (let won = 1; won < rounds.length - 1; won++) {
+			run += rounds[won + 1]! * (won / most) ** outlookSettings.runDepth;
+		}
+		return run;
+	};
 	const playoffMeasure = (r: {
 		playoffs: number;
 		roundsWon: number;
@@ -3473,7 +3496,7 @@ export const buildOutlook = async ({
 		ambition === 0
 			? r.playoffs
 			: outlookSettings.seriesOnly
-				? r.roundsWon / Math.max(1, r.rounds.length - 2)
+				? runByDepth(r.rounds)
 				: (r.playoffs + r.roundsWon) / Math.max(1, r.rounds.length - 1);
 	// Only in the arena's version-against-version leagues.
 	const otherCurves = [...teamOutlookSettings.values()].some(

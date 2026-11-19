@@ -18,6 +18,15 @@ const unwrap = (x: unknown) =>
 		: x;
 
 export const loadLeagueFile = async (file: string) => {
+	// OUTLOOK_SET: outlook settings to try, as JSON - for a probe to measure
+	// one each way.
+	const env: Record<string, string | undefined> =
+		(globalThis as any).process?.env ?? {};
+	if (env.OUTLOOK_SET) {
+		const { outlookSettings } =
+			await import("../../worker/core/realisticFrontOffice/outlook.ts");
+		Object.assign(outlookSettings, JSON.parse(env.OUTLOOK_SET));
+	}
 	const { makeSeededRandom } = await import("../../common/random.ts");
 	Math.random = makeSeededRandom(1);
 	const fs = await importNode("node:fs/promises");

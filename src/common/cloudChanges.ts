@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 377,
+		date: "2026-11-19",
+		text: "Smart CPU: CPU teams value the future more. A title five years away now counts about 77% as much as one this season (it was 59%), so draft picks and young players are worth more to every team, and it takes a bigger upgrade for a contender to give up a first.",
+	},
+	{
 		n: 376,
 		date: "2026-11-19",
 		text: "Smart CPU: CPU teams judge trades more accurately. They no longer count on old players coming back who they would never re-sign, so they stop dumping veterans for worse players, and they no longer overrate what makes one role player different from another of the same rating, so they make fewer trades that only look good on paper.",
