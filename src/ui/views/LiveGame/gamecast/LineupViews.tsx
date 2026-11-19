@@ -2,7 +2,7 @@ import clsx from "clsx";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { helpers } from "../../../util/helpers.ts";
 import { TeamLogoInline } from "../../../components/TeamLogoInline.tsx";
-import { teamsInDisplayOrder } from "../../../util/boxScoreDisplayOrder.ts";
+import { useUserTeamFirst } from "../../../util/liveBoxScoreLayout.ts";
 import { useLocal } from "../../../util/local.ts";
 import { usePlayerFace } from "../../../util/playerFaces.ts";
 import { PlayerPicture } from "../../../components/PlayerPicture.tsx";
@@ -164,6 +164,7 @@ export const Rotations = ({
 	boxScore: any;
 	stints: Stints;
 }) => {
+	const teams = useUserTeamFirst(boxScore.teams as [any, any]);
 	const total = stints.end || 1;
 	const pctOf = (s: number) => `${(100 * s) / total}%`;
 	const numStarters = boxScore.numPlayersOnCourt ?? 5;
@@ -190,7 +191,7 @@ export const Rotations = ({
 	);
 	return (
 		<>
-			{teamsInDisplayOrder(boxScore.teams as [any, any]).map((t: any) => {
+			{teams.map((t: any) => {
 				const side = sideOf(stints, t.tid);
 				const played = t.players.filter((p: any) => p.min > 0);
 				const starters = played
@@ -299,6 +300,7 @@ export const Lineups = ({
 	boxScore: any;
 	stints: Stints;
 }) => {
+	const teams = useUserTeamFirst(boxScore.teams as [any, any]);
 	const [k, setK] = useState<number>(5);
 	const allColors = useAllTeamColors();
 	const names = useMemo(() => {
@@ -322,7 +324,7 @@ export const Lineups = ({
 					onChange={setK}
 				/>
 			</div>
-			{teamsInDisplayOrder(boxScore.teams as [any, any]).map((t: any) => {
+			{teams.map((t: any) => {
 				const side = sideOf(stints, t.tid);
 				const colors = brandVars(allColors?.[t.tid]);
 				const list = lineupsOf(stints, side, k)
@@ -476,7 +478,7 @@ export const OnOff = ({
 }) => {
 	const [whose, setWhose] = useState<"own" | "opp">("own");
 	const allColors = useAllTeamColors();
-	const teams = teamsInDisplayOrder(boxScore.teams as [any, any]);
+	const teams = useUserTeamFirst(boxScore.teams as [any, any]);
 	const options = teams.flatMap((t: any) =>
 		t.players
 			.filter((p: any) => p.min > 0)

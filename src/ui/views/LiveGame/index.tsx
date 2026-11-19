@@ -3382,33 +3382,6 @@ export const LiveGame = (props: View<"liveGame">) => {
 							) : null
 						}
 						periodBox={shownBoxScore}
-						quarter={
-							refreshedLook && periodEnds.current.length > 0 ? (
-								<select
-									className="form-select form-select-sm"
-									aria-label="Quarter"
-									value={String(boxPeriod)}
-									onChange={(e) => {
-										const v = e.target.value;
-										setBoxPeriod(v === "all" ? "all" : Number(v));
-										document
-											.getElementById("recap-box")
-											?.scrollIntoView({ behavior: "smooth", block: "start" });
-									}}
-								>
-									<option value="all">All Qs</option>
-									{[...periodEnds.current, undefined].map((_, k) => (
-										<option key={k} value={k}>
-											{periodLabel(
-												k + 1,
-												boxScore.current.numPeriods ?? 4,
-												helpers.ordinal,
-											)}
-										</option>
-									))}
-								</select>
-							) : undefined
-						}
 						boxScoreTab={
 							<>
 								{periodEnds.current.length > 0 && !refreshedLook ? (

@@ -25,6 +25,7 @@ import {
 } from "react";
 import { helpers } from "../../../util/helpers.ts";
 import { useLocal } from "../../../util/local.ts";
+import { useUserTeamFirst } from "../../../util/liveBoxScoreLayout.ts";
 import { usePlayerFace } from "../../../util/playerFaces.ts";
 import { PlayerPicture } from "../../../components/PlayerPicture.tsx";
 import { TeamLogoInline } from "../../../components/TeamLogoInline.tsx";
@@ -610,71 +611,79 @@ const onFloor = (t: any): any[] => {
 	);
 };
 
-export const OnCourt = ({ boxScore }: { boxScore: any }) => (
-	<div className="table-responsive">
-		<table className="table table-sm table-striped gamecast-table gamecast-oncourt">
-			{TEAM_NUMS_DISPLAY_ORDER.map((ti) => {
-				const t = boxScore.teams[ti];
-				return (
-					<tbody key={ti}>
-						<tr className="gamecast-team-head">
-							<th>
-								<div className="d-flex align-items-center gap-2">
-									<Logo t={t} size={18} />
-									{t.abbrev}
-								</div>
-							</th>
-							<th title="Game score">GmSc</th>
-							<th title="Minutes played">MP</th>
-							<th title="Points">PTS</th>
-							<th title="Rebounds">REB</th>
-							<th title="Assists">AST</th>
-							<th title="Field goals">FG</th>
-							<th title="Personal fouls">PF</th>
-						</tr>
-						{onFloor(t).map((p) => (
-							<tr key={p.pid}>
-								<td>
+export const OnCourt = ({ boxScore }: { boxScore: any }) => {
+	// (This device's team on top - see useUserTeamFirst.)
+	const teams = useUserTeamFirst(boxScore.teams as [any, any]);
+	return (
+		<div className="table-responsive">
+			<table className="table table-sm table-striped gamecast-table gamecast-oncourt">
+				{teams.map((t: any) => {
+					const ti = boxScore.teams.indexOf(t);
+					return (
+						<tbody key={ti}>
+							<tr className="gamecast-team-head">
+								<th>
 									<div className="d-flex align-items-center gap-2">
-										<Headshot pid={p.pid} season={boxScore.season} size={22} />
-										<div
-											style={{ minWidth: 0 }}
-											className="d-flex align-items-center"
-										>
-											{/* (Short of room, his position is cut
-											    before his name.) */}
-											<span className="text-truncate gamecast-oncourt-name">
-												<a href={playerUrl(p.pid)}>{shortName(p.name)}</a>
-											</span>
-											<span className="text-body-secondary gamecast-oncourt-pos">
-												{p.pos}
-											</span>
-											<span className="flex-shrink-0">
-												<RatingsStatsPopover
-													pid={p.pid}
-													season={boxScore.season}
-												/>
-											</span>
-										</div>
+										<Logo t={t} size={18} />
+										{t.abbrev}
 									</div>
-								</td>
-								<td>{helpers.gameScore(p).toFixed(1)}</td>
-								<td>{helpers.formatNumber(p.min, "minutes")}</td>
-								<td className="fw-bold">{p.pts}</td>
-								<td>{p.orb + p.drb}</td>
-								<td>{p.ast}</td>
-								<td className="text-nowrap">
-									{p.fg}-{p.fga}
-								</td>
-								<td className={clsx({ "text-danger": p.pf >= 5 })}>{p.pf}</td>
+								</th>
+								<th title="Game score">GmSc</th>
+								<th title="Minutes played">MP</th>
+								<th title="Points">PTS</th>
+								<th title="Rebounds">REB</th>
+								<th title="Assists">AST</th>
+								<th title="Field goals">FG</th>
+								<th title="Personal fouls">PF</th>
 							</tr>
-						))}
-					</tbody>
-				);
-			})}
-		</table>
-	</div>
-);
+							{onFloor(t).map((p) => (
+								<tr key={p.pid}>
+									<td>
+										<div className="d-flex align-items-center gap-2">
+											<Headshot
+												pid={p.pid}
+												season={boxScore.season}
+												size={22}
+											/>
+											<div
+												style={{ minWidth: 0 }}
+												className="d-flex align-items-center"
+											>
+												{/* (Short of room, his position is cut
+											    before his name.) */}
+												<span className="text-truncate gamecast-oncourt-name">
+													<a href={playerUrl(p.pid)}>{shortName(p.name)}</a>
+												</span>
+												<span className="text-body-secondary gamecast-oncourt-pos">
+													{p.pos}
+												</span>
+												<span className="flex-shrink-0">
+													<RatingsStatsPopover
+														pid={p.pid}
+														season={boxScore.season}
+													/>
+												</span>
+											</div>
+										</div>
+									</td>
+									<td>{helpers.gameScore(p).toFixed(1)}</td>
+									<td>{helpers.formatNumber(p.min, "minutes")}</td>
+									<td className="fw-bold">{p.pts}</td>
+									<td>{p.orb + p.drb}</td>
+									<td>{p.ast}</td>
+									<td className="text-nowrap">
+										{p.fg}-{p.fga}
+									</td>
+									<td className={clsx({ "text-danger": p.pf >= 5 })}>{p.pf}</td>
+								</tr>
+							))}
+						</tbody>
+					);
+				})}
+			</table>
+		</div>
+	);
+};
 
 const LEADER_STATS = [
 	{

@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { helpers } from "../../../util/helpers.ts";
-import { teamsInDisplayOrder } from "../../../util/boxScoreDisplayOrder.ts";
+import { useUserTeamFirst } from "../../../util/liveBoxScoreLayout.ts";
 import clsx from "clsx";
 import { PlayerNameLabels } from "../../../components/PlayerNameLabels.tsx";
 import { TeamLogoInline } from "../../../components/TeamLogoInline.tsx";
@@ -464,7 +464,7 @@ export const BoxScorePhone = ({
 			onChange={setView}
 		/>
 	);
-	const teams = teamsInDisplayOrder(boxScore.teams as [any, any]);
+	const teams = useUserTeamFirst(boxScore.teams as [any, any]);
 	return (
 		<div className="bsp">
 			{title ? (

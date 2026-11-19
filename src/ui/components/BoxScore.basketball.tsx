@@ -224,17 +224,14 @@ const BoxScore = ({
 	const liveGameSim = boxScore.won?.name === undefined;
 	const liveGameInProgress = liveGameSim && !boxScore.gameOver;
 
-	// Whose device this is. Only meaningful for a live game - a historical box
-	// score is a record, and reordering it by who happens to be reading would
-	// make the same game look different on every device.
+	// Whose device this is: his own team's box score on top, live or looked
+	// back at in the game log (the owner, 2026-11-19).
 	const { userTid } = useLocal(["userTid"]);
 	const [hideOther, setHideOther] = useState(getHideOtherBoxScore);
 
-	// Stored home first; shown away first, then hoisted for this device live.
+	// Stored home first; shown away first, then this device's team hoisted.
 	const displayOrder = teamsInDisplayOrder(boxScore.teams as [any, any]);
-	const teams = liveGameSim
-		? orderBoxScoreTeams(displayOrder, userTid)
-		: displayOrder;
+	const teams = orderBoxScoreTeams(displayOrder, userTid);
 
 	return (
 		<>

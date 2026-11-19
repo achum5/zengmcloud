@@ -21,6 +21,8 @@
 // scroll to the wrong team.
 
 import { safeLocalStorage } from "./safeLocalStorage.ts";
+import { teamsInDisplayOrder } from "./boxScoreDisplayOrder.ts";
+import { useLocal } from "./local.ts";
 
 // Put the device's own team first, keeping the other in place behind it.
 //
@@ -69,3 +71,14 @@ export const canHideBoxScoreTeam = ({
 	userTid !== undefined &&
 	tid !== undefined &&
 	tid !== userTid;
+
+// The two teams of a game's box score - live, or looked back at in the game
+// log - as this device lists them: its own team first (the owner,
+// 2026-11-19), the other after it; a game it has no team in, away then home.
+// The box score, the players on the floor, the rotations and lineups by it.
+export const useUserTeamFirst = <T extends { tid?: number }>(
+	teams: readonly [T, T],
+): [T, T] => {
+	const { userTid } = useLocal(["userTid"]);
+	return orderBoxScoreTeams(teamsInDisplayOrder(teams), userTid) as [T, T];
+};
