@@ -1130,7 +1130,10 @@ const ballAway = (tl: Stepped) => {
 					continue;
 				}
 				near = d;
-				const lat = fx * dy - fy * dx;
+				// (Out to his left - his left (fy, -fx), as bodyPoint has it:
+				// the floor's y runs toward the camera - so the ball goes over
+				// to his right, away from him.)
+				const lat = dx * fy - dy * fx;
 				to = lat > AWAY_SIDE ? "R" : lat < -AWAY_SIDE ? "L" : undefined;
 			}
 			wants.push({ t, to, d: near, sp });
@@ -1211,9 +1214,10 @@ const crossesWithHim = (
 		if (L < 0.5) {
 			return false;
 		}
-		// (His left, going the way he goes.)
-		const lx = -(A1.y - A0.y) / L;
-		const ly = (A1.x - A0.x) / L;
+		// (His left, going the way he goes - (fy, -fx), as bodyPoint has it:
+		// the floor's y runs toward the camera.)
+		const lx = (A1.y - A0.y) / L;
+		const ly = -(A1.x - A0.x) / L;
 		const off0 = (B0.x - A0.x) * lx + (B0.y - A0.y) * ly;
 		const off1 = (B1.x - A1.x) * lx + (B1.y - A1.y) * ly;
 		const from = (c.pieces[0] as { hand?: Hand }).hand ?? "R";
@@ -1354,8 +1358,8 @@ const probesOf = (
 					if (pace < ROUTE_PACE) {
 						continue;
 					}
-					// (His left, going the way he goes.)
-					const d = ((B.x - A.x) * -v.y + (B.y - A.y) * v.x) / pace;
+					// (His left, going the way he goes - see bodyPoint.)
+					const d = ((B.x - A.x) * v.y - (B.y - A.y) * v.x) / pace;
 					if (Math.abs(d) >= CUT_ACROSS) {
 						cuts.push({ t0, t1, to: d > 0 ? "L" : "R" });
 					}

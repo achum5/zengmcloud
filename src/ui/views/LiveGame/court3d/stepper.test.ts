@@ -402,9 +402,10 @@ describe("3D: the ten stepped", () => {
 			if (L < 0.5) {
 				continue;
 			}
-			// (His left, going the way he goes.)
-			const lx = -(A1.y - A0.y) / L;
-			const ly = (A1.x - A0.x) / L;
+			// (His left, going the way he goes - (fy, -fx), as bodyPoint has
+			// it: the floor's y runs toward the camera.)
+			const lx = (A1.y - A0.y) / L;
+			const ly = -(A1.x - A0.x) / L;
 			const off0 = (B0.x - A0.x) * lx + (B0.y - A0.y) * ly;
 			const off1 = (B1.x - A1.x) * lx + (B1.y - A1.y) * ly;
 			n += 1;
@@ -493,8 +494,10 @@ describe("3D: the ten stepped", () => {
 						const dy = D.y - H.y;
 						const d = Math.hypot(dx, dy);
 						if (D.shown && d < 4 && dx * fx + dy * fy > 0) {
+							// (Out to his left: above 0 - his left (fy, -fx), as
+							// bodyPoint has it.)
 							if (!near || d < near.d) {
-								near = { d, lat: fx * dy - fy * dx };
+								near = { d, lat: dx * fy - dy * fx };
 							}
 						}
 					}

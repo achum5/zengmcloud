@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 386,
+		date: "2026-11-19",
+		text: "Live games: ball handlers keep the ball away from their defender. A left/right mix-up had them switching it over toward him; now, with a defender close, the ball is on his far side about two times in three, and three in four on the move.",
+	},
+	{
 		n: 385,
 		date: "2026-11-19",
 		text: "Game pages: Game Flow now has its own button in the menu at the bottom, to jump straight to it.",

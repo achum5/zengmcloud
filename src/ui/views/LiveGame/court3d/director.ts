@@ -27011,7 +27011,9 @@ class Director {
 					}
 					const D = this.spotAt(o, m.t0);
 					const along = (D.x - m.from.x) * u.x + (D.y - m.from.y) * u.y;
-					// (Left of the way he goes: above 0.)
+					// (On his right, going the way he goes: above 0. His left is
+					// (u.y, -u.x) - see bodyPoint: the floor's y runs toward the
+					// camera.)
 					const lat = (D.x - m.from.x) * -u.y + (D.y - m.from.y) * u.x;
 					if (
 						along < 1 ||
@@ -27028,12 +27030,15 @@ class Director {
 					continue;
 				}
 				const hand = this.handOf(tr.pid, m.t0);
+				// (Round him on the side away from him - square in front of him,
+				// on the side of the hand the ball is in, so the ball goes past
+				// him on the far side of its man: 1 his right.)
 				const side =
 					Math.abs(best.lat) > HIP_SQUARE
 						? -Math.sign(best.lat)
 						: hand === "L"
-							? 1
-							: -1;
+							? -1
+							: 1;
 				const W = clampPt({
 					x: best.D.x - u.y * side * HIP_PASS,
 					y: best.D.y + u.x * side * HIP_PASS,
