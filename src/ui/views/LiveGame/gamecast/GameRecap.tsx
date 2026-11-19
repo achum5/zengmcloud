@@ -1052,11 +1052,8 @@ export const GameRecap = ({
 			id: "box",
 			label: "Box Score",
 			icon: DOCK_ICONS.box,
-			// (A phone: its heading drawn by the box score, the tabs beside it.)
-			title: isPhone ? null : undefined,
 			body: isPhone ? (
 				<BoxScorePhone
-					title="Box Score"
 					boxScore={
 						replay && period !== "all"
 							? periodBoxScore(boxScore, replay.ends, period)
@@ -1248,11 +1245,13 @@ export const GameRecap = ({
 					<>
 						<RecapSections
 							sections={foldSections(
-								sections,
-								[
-									["lineups", "onoff", "On/Off Impact"],
-									["recap", "info", null],
-								],
+								// (No heading over each - the menu says where you are -
+								// and the rest of it, the line and the standings, at the
+								// foot of the page: see below.)
+								sections
+									.filter((x) => x.id !== "info")
+									.map((x) => ({ ...x, title: null })),
+								[["lineups", "onoff", "On/Off Impact"]],
 								{ stats: "Stats", shots: "Shots" },
 							)}
 							quarter={
@@ -1277,6 +1276,11 @@ export const GameRecap = ({
 								) : undefined
 							}
 						/>
+						{/* (The line, the series, the standings and the rest: at the
+						    foot of the page, after the game itself.) */}
+						<div className="recap-section recap-foot">
+							{sections.find((x) => x.id === "info")?.body}
+						</div>
 					</>
 				) : (
 					<>

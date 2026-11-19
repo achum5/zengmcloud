@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 387,
+		date: "2026-11-19",
+		text: "Game pages: no more section headings (Recap, Box Score and so on) - the menu at the bottom shows where you are. The line, season series, standings and recent games now sit at the foot of the page instead of next to the recap.",
+	},
+	{
 		n: 386,
 		date: "2026-11-19",
 		text: "Live games: ball handlers keep the ball away from their defender. A left/right mix-up had them switching it over toward him; now, with a defender close, the ball is on his far side about two times in three, and three in four on the move.",
