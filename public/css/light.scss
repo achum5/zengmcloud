@@ -1330,6 +1330,11 @@ tr.table-warning:hover > td {
 .gamecast-narrow {
 	max-width: 760px;
 }
+// (The game's story: a column down the middle of the page.)
+.recap-centered {
+	margin-left: auto;
+	margin-right: auto;
+}
 @include media-breakpoint-up(lg) {
 	.gamecast-grid {
 		display: grid;

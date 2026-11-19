@@ -1043,7 +1043,7 @@ export const GameRecap = ({
 			icon: DOCK_ICONS.recap,
 			// (Its leaders are in the banner over it.)
 			body: (
-				<div className="gamecast-narrow">
+				<div className="gamecast-narrow recap-centered">
 					<RecapStory boxScore={boxScore} />
 				</div>
 			),

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 388,
+		date: "2026-11-19",
+		text: "Game pages: the recap is centered on the page.",
+	},
+	{
 		n: 387,
 		date: "2026-11-19",
 		text: "Game pages: no more section headings (Recap, Box Score and so on) - the menu at the bottom shows where you are. The line, season series, standings and recent games now sit at the foot of the page instead of next to the recap.",
