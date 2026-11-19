@@ -1502,3 +1502,75 @@ favorite would pay for them. A middle
 team gains more by taking a favorite's spare players at that price than by
 building. That is the price arithmetic named after the last section, and
 the next core item.
+
+## League 10: young players sold for prices nobody pays (2026-11-19)
+
+The owner ran League 10 from the real 2010 rosters to the middle of 2019
+(build 1197). Two teams ran the league: Sacramento won 61-79 games every
+season from 2012 and Washington four of the last six titles, 46-1 when the
+file was saved. Together they held 8 to 10 of the league's 20 best players
+every season from 2014 to 2018. Memphis never made the playoffs and sold
+Conley, Gasol, Mayo, Kidd-Gilchrist, Jamal Murray and Donovan Mitchell along
+the way. The owner: "it feels like they're selling off these potential
+stars for not near the asset that star is."
+
+**What was wrong.** Two things, both in how a team counts what it gets.
+
+- What a team got counted at its market price where that was more than its
+  use. A price is the second-highest keenest team's use - what it would
+  gain, not what it can pay - and in a league with a dynasty it runs far
+  above what anyone offers: the market's best real offers for League 10's
+  young players came to a quarter to three fifths of their prices. In
+  every deal of a League 7 season and of offseasons in Leagues 8 and 10,
+  the seller's own goal moved -0.02 to +0.02 of a title; the rest of its
+  gain was the price of what it got. In a League 8 run Milwaukee sold Tony
+  Wroten (21, 59/76) to OKC for J.J. Redick (30, 41), two bench players and
+  OKC's 2018 first and second: -0.22 of a title by its own goal, +0.64 in
+  the price of what it got, nearly all of it the picks. In a League 10 run Detroit sold Ja
+  Morant (21, 61/76) for D'Angelo Russell (-0.12 by its goal) and Memphis
+  sold Zion Williamson (20, 63/75) for Andrew Wiggins and a second.
+- A pick in a draft past the next was priced by its own draft's class,
+  undiscounted. A real-players league holds every class to come, and their
+  prospects priced as the dynasties would use them: MIL's 2021 first 0.71
+  of a title against bids of 0.08 (its 2019 first 0.13), a 2021 second 0.25
+  against 0.01, and later drafts' picks above sooner ones (PHO's firsts
+  0.66, 0.89, 0.91, 1.13 for 2014-2017 in League 8).
+
+**What changed.**
+
+- What a team gets from another team counts at its own use for the players;
+  only picks keep their price, as their floor stands in for title chances
+  past the outlook (`smartSettings.boughtAtUse`). What it gives still counts
+  at least at its price: no team gives a player away below the market.
+- A pick in a draft past the next is priced by the next draft's class,
+  discounted a season for each draft between
+  (`smartSettings.laterPicksByNextClass`). MIL's 2021 first is 0.22, WAS's
+  0.075 (was 0.34), a 2021 second 0.04.
+
+From the same starts, before / pick prices only / both:
+
+| run                                 | before | picks | both  |
+| ----------------------------------- | ------ | ----- | ----- |
+| League 10, mid-2019 to 2021: deals  | 25     | 29    | 16    |
+| the 20 best on the top three teams  | 11     | 9     | 9     |
+| best 2020 record                    | 77-5   | 77-5  | 69-13 |
+| teams winning 50+ in 2020           | 5      | 6     | 8     |
+| minutes for the run                 | 40     | 22    | 20    |
+| League 8, 2013 draft to 2015: deals | 12     | -     | 7     |
+| minutes for the run                 | 33     | -     | 14    |
+
+With both, Morant, Williamson, Ntilikina and Giles stayed home, and in
+League 8 Wroten, Tony Snell and Damian Lillard did. The young players still
+traded went for young players (Tyus Jones for Wiggins and a first) or were
+about to walk (Mudiay, 0.02 to re-sign). The runs are quicker because only
+the next draft's class is priced.
+
+**Next: re-signing forecasts.** A team's young players are worth little to
+it when it expects them to leave, and bad teams expect it too often. Kept
+for sure, Luka Dončić would be worth 0.36 of a title to OKC (0.05 now),
+Jayson Tatum 0.21 to CLE (0.03), Marvin Bagley 0.11 to MEM (0.007). For
+deals ending this season the forecast held (League 10, 2019: rookie deals
+forecast 99%, all 31 re-signed). A season or two ahead it did not: in
+League 7, 2016-2017, rookie-deal players on teams under 40% wins were
+forecast 49% to re-sign and 83% did (12 players), and those forecast under
+20% re-signed 43% (7). More leagues are being measured.

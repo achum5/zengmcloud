@@ -102,6 +102,27 @@ export const smartSettings = {
 	// and about 4% for the previous draft's rookies at those places (off:
 	// 7% and 1-1.6%), and teams traded 8 firsts a season, not 21.
 	picksAsRookies: true,
+	// A pick in a draft past the next is priced by the next draft's class,
+	// discounted a season for each draft between, never by its own class:
+	// prospects years from their draft can't be judged, and in a real-players
+	// league the classes for every draft to come are in the file. Priced by
+	// their own classes, undiscounted, picks in later drafts fetched several
+	// times what any team bid for them and more than the next draft's: in
+	// League 10 (2019) MIL's 2021 first 0.71 of a title against bids of
+	// 0.08, its 2019 first 0.13; a 2021 second 0.25 against 0.01. Teams out
+	// of the race took them for young players as if they were worth that.
+	laterPicksByNextClass: true,
+	// What a team gets from another team in a trade counts at its own use for
+	// the players, and above it only for the picks (their floor stands in for
+	// title chances past the outlook's seasons); what it gives still counts
+	// at least at its market price. A price is the second-highest keenest
+	// team's use - what it would gain, not what it can pay. The market's best
+	// real offers come to a quarter to three fifths of it (League 10, 2019).
+	// Counting players got at it, teams out of the race traded on the gap
+	// alone: in every deal of a League 7 season and of offseasons in Leagues 8
+	// and 10, the seller's own goal moved -0.02 to +0.02 of a title and the
+	// rest of its gain was the price of what it got (docs/smart-cpu.md).
+	boughtAtUse: true,
 };
 
 // Seasons, with the phases between (a season's phases run 0 to 8).
@@ -636,7 +657,10 @@ export class SmartView {
 		const numPicks = n * g.get("numDraftRounds");
 		const salary = pickSalaries();
 		for (const season of new Set(prospects.map((p) => p.draft.year))) {
-			if (season < this.nextDraft() - (g.get("phase") >= PHASE.DRAFT ? 1 : 0)) {
+			if (
+				season < this.nextDraft() - (g.get("phase") >= PHASE.DRAFT ? 1 : 0) ||
+				(smartSettings.laterPicksByNextClass && season > this.nextDraft())
+			) {
 				continue;
 			}
 			const rookies = prospects
@@ -672,7 +696,8 @@ export class SmartView {
 	}
 
 	// What a pick fetches as the player it is expected to land (picksAsRookies):
-	// its draft's class, or the next draft's for a draft whose class isn't out,
+	// its draft's class for the next draft (or the one under way), else the
+	// next draft's (laterPicksByNextClass, or a draft whose class isn't out),
 	// discounted for the seasons until its draft. Undefined with it off.
 	private rookieFloorNow(dp: DraftPick) {
 		const classes = this.keenestCache?.classes;
@@ -680,7 +705,10 @@ export class SmartView {
 			return undefined;
 		}
 		const next = this.nextDraft();
-		const own = classes.get(dp.season as number);
+		const own =
+			smartSettings.laterPicksByNextClass && (dp.season as number) > next
+				? undefined
+				: classes.get(dp.season as number);
 		const prices = own ?? classes.get(next) ?? [...classes.values()][0]!;
 		const n = this.outlook.numTeams;
 		const at = (k: number) => prices[(dp.round - 1) * n + k] ?? 0;
@@ -1004,9 +1032,11 @@ export class SmartView {
 	}
 
 	// A team's change in worth from giving `out` and getting `inn` (from
-	// `partner`): its goal, and each side at least its market price - what
-	// it gets only as far as it keeps it once its roster is cut to the limit
-	// (a player it must release it can't sell).
+	// `partner`): its goal, and what it gives at least its market price -
+	// what it gets too, as far as it keeps it once its roster is cut to the
+	// limit (a player it must release it can't sell), but of what it gets
+	// from another team only its picks (boughtAtUse; a drafted prospect is
+	// priced whole).
 	dealWorthNow(
 		tid: number,
 		partner: number,
@@ -1020,7 +1050,10 @@ export class SmartView {
 		const [cut] = this.afterCuts(tid, after, [], gone);
 		const kept = new Set(cut.players);
 		const keptIn = {
-			players: inn.players.filter((p) => kept.has(p)),
+			players:
+				smartSettings.boughtAtUse && partner >= 0
+					? []
+					: inn.players.filter((p) => kept.has(p)),
 			picks: inn.picks,
 		};
 		const not = [tid, partner];

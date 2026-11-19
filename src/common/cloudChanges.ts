@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 371,
+		date: "2026-11-19",
+		text: "Smart CPU: CPU teams stop selling their young potential stars for spare parts and far-off draft picks. A team now values the players it trades for by what they do for it, and picks two or more drafts away are no longer priced like sure things.",
+	},
+	{
 		n: 370,
 		date: "2026-11-18",
 		text: "Live games: defenders guard more like real ones. The man on the ball stays down in his stance as he slides, backs up and steps up with the ball handler, instead of walking or jogging upright beside him, and every defensive slide sits lower and wider with the arms out.",

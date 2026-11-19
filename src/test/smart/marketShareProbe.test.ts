@@ -43,13 +43,29 @@ test.skipIf(!env.MS_LEAGUE)(
 			"pid" in x
 				? `${x.firstName} ${x.lastName} ${g.get("season") - x.born.year}y ${x.ratings.at(-1).ovr}/${x.ratings.at(-1).pot}${contractOf(x).exp <= g.get("season") ? " (expiring)" : ""}`
 				: `${x.season} R${x.round} ${abbrev.get(x.originalTid)}`;
+		// Each deal made, with each side's gain split into its goal and the
+		// price premiums on what it gets and gives (premiumNow; what it gets
+		// counted whole, before its roster is cut).
+		const split = (
+			view: any,
+			tid: number,
+			other: number,
+			inn: any,
+			out: any,
+			gain: number,
+		) => {
+			const h = view.heldNow(tid);
+			const pin = view.premiumNow(tid, inn, [tid, other], h);
+			const pout = view.premiumNow(tid, out, [tid, other], h);
+			return `goal ${(gain - pin + pout).toFixed(4)}, premium got ${pin.toFixed(4)} given ${pout.toFixed(4)}`;
+		};
 		smartDealWatchers.push((deal: any, view: any) => {
 			const s = deal.sellerGain;
 			const b = deal.buyerGain;
 			const sb = standing(view, deal.seller) as any;
 			const bb = standing(view, deal.buyer) as any;
 			log(
-				`${abbrev.get(deal.seller)} (${(100 * (sb?.title ?? 0)).toFixed(1)}%) sells [${[...deal.out.players, ...deal.out.picks].map(name).join("; ")}] to ${abbrev.get(deal.buyer)} (${(100 * (bb?.title ?? 0)).toFixed(1)}%) for [${[...deal.offer.players, ...deal.offer.picks].map(name).join("; ")}] | seller +${s.toFixed(4)}, buyer +${b.toFixed(4)}, seller's share ${(s / (s + Math.max(0, b))).toFixed(2)}`,
+				`${g.get("season")} ph${g.get("phase")} ${abbrev.get(deal.seller)} (${(100 * (sb?.title ?? 0)).toFixed(1)}%) sells [${[...deal.out.players, ...deal.out.picks].map(name).join("; ")}] to ${abbrev.get(deal.buyer)} (${(100 * (bb?.title ?? 0)).toFixed(1)}%) for [${[...deal.offer.players, ...deal.offer.picks].map(name).join("; ")}] | seller +${s.toFixed(4)} (${split(view, deal.seller, deal.buyer, deal.offer, deal.out, s)}), buyer +${b.toFixed(4)} (${split(view, deal.buyer, deal.seller, deal.out, deal.offer, b)}), seller's share ${(s / (s + Math.max(0, b))).toFixed(2)}`,
 			);
 		});
 		log(
@@ -149,10 +165,17 @@ test.skipIf(!env.MS_LEAGUE)(
 				log(
 					`\n=== ${found.length} deals found at ${await gamesPlayed()} games`,
 				);
+				// Each side's gain, and the seller's split into its goal and the
+				// price premiums on what it gets and gives (premiumNow).
 				const both = (d: any, offer: any) => {
 					const s = view.dealWorthNow(d.seller, d.buyer, d.out, offer);
 					const b = view.dealWorthNow(d.buyer, d.seller, offer, d.out);
-					return `seller ${s.toFixed(4)}, buyer ${b.toFixed(4)}, share ${(s / (s + Math.max(0, b))).toFixed(2)}`;
+					const v: any = view;
+					const h = v.heldNow(d.seller);
+					const not = [d.seller, d.buyer];
+					const pin = v.premiumNow(d.seller, offer, not, h);
+					const pout = v.premiumNow(d.seller, d.out, not, h);
+					return `seller ${s.toFixed(4)} (goal ${(s - pin + pout).toFixed(4)}, premium got ${pin.toFixed(4)}, given ${pout.toFixed(4)}), buyer ${b.toFixed(4)}, share ${(s / (s + Math.max(0, b))).toFixed(2)}`;
 				};
 				const list = (h: any) =>
 					[...h.players, ...h.picks].map(name).join("; ");

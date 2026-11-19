@@ -60,10 +60,14 @@ test.skipIf(!env.EX_LEAGUE)(
 			await idb.cache.players.indexGetAll("playersByTid", [0, Infinity])
 		).filter(
 			(p: any) =>
-				// EX_ALL: veterans under contract too, not only expiring deals.
-				(env.EX_ALL
-					? season - p.born.year >= 27
-					: contractOf(p).exp <= season) &&
+				// EX_ALL: veterans under contract too, not only expiring deals;
+				// EX_YOUNG: players 23 or under with potential EX_POT or more.
+				(env.EX_YOUNG
+					? season - p.born.year <= 23 &&
+						p.ratings.at(-1).pot >= Number(env.EX_POT ?? 68)
+					: env.EX_ALL
+						? season - p.born.year >= 27
+						: contractOf(p).exp <= season) &&
 				p.ratings.at(-1).ovr >= Number(env.EX_OVR ?? 60) &&
 				title(p.tid) < 0.02,
 		);
@@ -80,15 +84,39 @@ test.skipIf(!env.EX_LEAGUE)(
 			const top = bids[0];
 			// The market's best real offer for him, as a moment would ask.
 			let offer = "";
-			if (env.EX_ALL || (stay !== undefined && stay < 0.6)) {
+			if (env.EX_ALL || env.EX_YOUNG || (stay !== undefined && stay < 0.6)) {
 				const real = await view.bestRealOffer(p.tid, a, -1);
+				// The offer as the seller counts it: its use to the seller and
+				// its price on the market (both sides left out).
+				const counted = real
+					? `, offer's use ${(await view.useOf(p.tid, real.offer)).toFixed(4)} price ${(await view.price(real.offer, [p.tid, real.buyer])).toFixed(4)}`
+					: "";
 				offer = real
-					? ` || best offer ${abbrev.get(real.buyer)}: [${[...real.offer.players.map((x: any) => `${x.firstName} ${x.lastName} ${x.ratings.at(-1).ovr}`), ...real.offer.picks.map((dp: any) => `${dp.season} R${dp.round}`)].join("; ")}] worth ${real.worth.toFixed(4)} to the seller`
+					? ` || best offer ${abbrev.get(real.buyer)}: [${[...real.offer.players.map((x: any) => `${x.firstName} ${x.lastName} ${season - x.born.year}y ${x.ratings.at(-1).ovr}/${x.ratings.at(-1).pot}`), ...real.offer.picks.map((dp: any) => `${dp.season} R${dp.round} ${abbrev.get(dp.originalTid)}`)].join("; ")}] worth ${real.worth.toFixed(4)} to the seller${counted}`
 					: " || no real offer";
 			}
 			log(
 				`${p.firstName} ${p.lastName} ${season - p.born.year}y ${p.ratings.at(-1).ovr} $${(contractOf(p).amount / 1000).toFixed(1)}M, ${abbrev.get(p.tid)} (${(100 * title(p.tid)).toFixed(1)}%) traits ${(p.moodTraits ?? []).join("")}: stay ${stay?.toFixed(2)}, use ${use.toFixed(4)}, price ${price.toFixed(4)}, top bid ${top ? `${abbrev.get(top.t)} ${top.bid.toFixed(4)}` : "-"} => surplus ${top ? (top.bid - Math.max(use, price)).toFixed(4) : "-"} | bids ${bids.map((b) => `${abbrev.get(b.t)} ${Number.isFinite(b.bid) ? b.bid.toFixed(3) : "no"}`).join(", ")}${offer}`,
 			);
+		}
+		// EX_STAY1: each player's use again, with his team sure to keep him -
+		// how much of his worth to it is the chance he won't re-sign.
+		if (env.EX_STAY1) {
+			const { SmartView } = await import("../../worker/core/smartCpu/worth.ts");
+			for (const p of players as any[]) {
+				const key = retentionKey(p.pid, p.tid);
+				outlook.retention.set(key, 1);
+				outlook.stays?.set(key, 1);
+			}
+			const sure: any = new SmartView(outlook, []);
+			await sure.prime();
+			log("\nuse with his team sure to keep him:");
+			for (const p of players as any[]) {
+				const a = { players: [p], picks: [] };
+				log(
+					`${p.firstName} ${p.lastName} ${season - p.born.year}y ${p.ratings.at(-1).ovr}/${p.ratings.at(-1).pot}, ${abbrev.get(p.tid)}: use ${(await sure.useOf(p.tid, a)).toFixed(4)}`,
+				);
+			}
 		}
 		const { offerStats } = await import("../../worker/core/smartCpu/worth.ts");
 		log(`offer stats: ${JSON.stringify(offerStats)}`);
