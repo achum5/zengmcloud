@@ -12382,6 +12382,14 @@ const TYPICAL = bodyOf();
 // (How far out in front of his hips a foot can be put, for how far it is
 // from them.)
 const REACH = 0.94;
+// How much of his trunk's lean forward his neck takes back, up to how far
+// (degrees).
+const NECK_BACK = 0.65;
+const NECK_BACK_MOST = 25;
+// (Over this much lean - degrees, from one to the other - or sat down this
+// far at the hips, less and less of it: none at all past them.)
+const NECK_BENT = [34, 48] as const;
+const NECK_SAT = [60, 80] as const;
 export const skeleton = (b: Body, q: Pose): Skeleton => {
 	const rad = Math.PI / 180;
 	// An angle in the facing plane: 0 straight down, 90 straight ahead.
@@ -12550,11 +12558,29 @@ export const skeleton = (b: Body, q: Pose): Skeleton => {
 		0,
 		pelvis.u + Math.cos(L) * b.torso,
 	);
+	// His head over his shoulders, not out in front of them: leaning into a
+	// run - up on his feet, driving, in his stance - his neck comes back up
+	// off his trunk's lean so he looks where he goes, as far as a neck does.
+	// Bent right over, hands on his knees, or sat down, his head goes down
+	// with him.
 	const up = b.neck + b.headR;
+	const ease = (x: number) => {
+		const c = Math.min(1, Math.max(0, x));
+		return c * c * (3 - 2 * c);
+	};
+	const upright =
+		(1 - Math.max(q.onKneeN, q.onKneeF)) *
+		(1 -
+			ease(
+				((q.hipN + q.hipF) / 2 - NECK_SAT[0]) / (NECK_SAT[1] - NECK_SAT[0]),
+			)) *
+		(1 - ease((q.lean - NECK_BENT[0]) / (NECK_BENT[1] - NECK_BENT[0])));
+	const N =
+		L > 0 ? L - Math.min(L * NECK_BACK, NECK_BACK_MOST * rad) * upright : L;
 	const head = v3(
-		chest.f + Math.sin(L) * up + b.headR * 0.12,
+		chest.f + Math.sin(N) * up + b.headR * 0.12,
 		0,
-		chest.u + Math.cos(L) * up,
+		chest.u + Math.cos(N) * up,
 	);
 	const armR = shapedArm(
 		b,

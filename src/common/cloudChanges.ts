@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 375,
+		date: "2026-11-19",
+		text: "Live games: no more heads poking out in front on a stretched neck. Running, sprinting, driving and down in a defensive stance, players keep their head up over their shoulders while their body leans into it.",
+	},
+	{
 		n: 374,
 		date: "2026-11-19",
 		text: "Live games: players run, jog and walk more like real ones. Running, they stay upright, push off a straight back leg and pump their arms bent at the elbow instead of holding them out in front; walking, their arms hang loose at their sides.",
