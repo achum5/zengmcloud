@@ -885,9 +885,11 @@ const P = {
 		wide: 0.48,
 		shN: 32,
 		elN: 18,
-		shF: 26,
-		elF: 74,
-		abF: 34,
+		// (The other arm low out in front of him, bent, ready - as in 2K26's
+		// size-ups - not up at his man.)
+		shF: 16,
+		elF: 62,
+		abF: 30,
 	}),
 	// Triple threat: caught and facing up, knees bent, the ball on his hip -
 	// ready to shoot it, drive it or move it.
@@ -1041,6 +1043,7 @@ type GaitMode =
 	| "sprint"
 	| "dribble"
 	| "dribbleWalk"
+	| "dribbleStroll"
 	| "walk"
 	| "carry"
 	| "drift"
@@ -1124,27 +1127,32 @@ const GAITS: Record<GaitMode, Gait> = {
 		twist: 5,
 		wide: -0.02,
 	},
+	// (Pushing it up the floor - a 2K26 speed dribble: a run, nearly as
+	// upright and as long in the stride as without it, the back leg all but
+	// straight off the floor; the other arm swinging with his stride, a
+	// little out from his side. See dribbleArm for the ball.)
 	dribble: {
 		stride: 8.2,
-		duty: 0.32,
-		ahead: 0.34,
-		hips: 2.62,
-		bob: 0.14,
+		duty: 0.3,
+		ahead: 0.3,
+		hips: 2.72,
+		bob: 0.12,
 		flat: 0.45,
-		roll: 36,
+		roll: 38,
 		swing: [
-			[0.12, -4, 34],
-			[0.4, 8, 104],
-			[0.64, 40, 94],
-			[0.85, 46, 42],
+			[0.12, -4, 36],
+			[0.4, 6, 108],
+			[0.62, 36, 98],
+			[0.83, 44, 44],
 		],
-		lean: 19,
-		armFwd: 44,
-		armBack: 34,
-		elbow: 84,
-		pump: 18,
-		twist: 4,
-		wide: 0.02,
+		lean: 12,
+		armFwd: 10,
+		armBack: 30,
+		elbow: 72,
+		pump: 14,
+		twist: 5,
+		wide: 0,
+		ab: 16,
 	},
 	dribbleWalk: {
 		stride: 4.4,
@@ -1169,6 +1177,32 @@ const GAITS: Record<GaitMode, Gait> = {
 		pump: 8,
 		twist: 3,
 		wide: 0.16,
+	},
+	// Walking it up easy, nobody near him (see easy): a walk - a 2K26 walk-up,
+	// stood up tall on easy, all but straight legs - on dribbleWalk's beat
+	// and stride, so his feet keep to the floor whichever way he is about it.
+	dribbleStroll: {
+		stride: 4.4,
+		duty: 0.6,
+		ahead: 0.4,
+		hips: 2.84,
+		bob: -0.1,
+		flat: 0.5,
+		roll: 30,
+		swing: [
+			[0.12, 3, 16],
+			[0.36, 16, 44],
+			[0.66, 28, 24],
+			[0.88, 26, 6],
+		],
+		lean: 4,
+		armFwd: 14,
+		armBack: 14,
+		elbow: 14,
+		pump: 8,
+		twist: 3,
+		wide: 0.06,
+		ab: 2,
 	},
 	// (As a player walks - a 2K26 walk: his arms hanging loose at his
 	// sides, close in, swinging a little; the foot carried through just
@@ -1557,27 +1591,22 @@ const stride = (ph: number, mode: RunMode): Pose => {
 		// How far forward his left arm swings (-1 to 1).
 		const left = Math.cos(2 * Math.PI * (ph - 0.03));
 		if (mode === "dribble") {
-			// Pushing it up the floor: the other arm still swinging with his
-			// stride, bent and held out a little from him. (The dribbling arm
-			// rides the ball - see dribbleArm.)
-			return {
-				...q,
-				shN: 30,
-				elN: 30,
-				abN: 18,
-				shF: -2 + 22 * left,
-				elF: 86 + 8 * left,
-				abF: 24,
-			};
+			// Pushing it up the floor: the other arm swinging with his stride
+			// as it would without the ball (gaitPose's) - each arm its own
+			// swing, whichever hand has it. (The dribbling arm rides the ball -
+			// see dribbleArm.)
+			return q;
 		}
 		if (mode === "dribbleWalk") {
 			// Working it, a step at a time: the other arm up, bent, between
-			// the ball and his man.
+			// the ball and his man - each its own way through the stride, for
+			// whichever is the other arm (see freeArm).
+			const right = -left;
 			return {
 				...q,
-				shN: 30,
-				elN: 30,
-				abN: 18,
+				shN: 30 + 4 * right,
+				elN: 58,
+				abN: 38,
 				shF: 30 + 4 * left,
 				elF: 58,
 				abF: 38,
@@ -3341,9 +3370,9 @@ export const ANIMS = {
 						kneeF: 66,
 						lean: 21,
 						twist: 7,
-						shF: 36,
-						elF: 66,
-						abF: 40,
+						shF: 24,
+						elF: 58,
+						abF: 36,
 					},
 					{ kneeN: 54, kneeF: 56, lean: 14 },
 					{
@@ -3354,9 +3383,9 @@ export const ANIMS = {
 						lean: 15,
 						twist: -6,
 						tilt: 3,
-						shF: 22,
-						elF: 82,
-						abF: 30,
+						shF: 12,
+						elF: 70,
+						abF: 28,
 					},
 				][i],
 			}),
@@ -3389,9 +3418,9 @@ export const ANIMS = {
 						lean: 18,
 						tilt: 6,
 						twist: 9,
-						shF: 32,
-						elF: 70,
-						abF: 38,
+						shF: 22,
+						elF: 60,
+						abF: 34,
 					},
 					{ kneeN: 58, kneeF: 58, lean: 17, tilt: 0, twist: 0 },
 				][i],
@@ -13927,11 +13956,13 @@ export type Hand = "R" | "L";
 // hip, out to the side away from his man: his upper arm hanging, the
 // forearm and wrist doing the work, the arm reaching all but straight as it
 // pushes. On the move (`ahead`, 0 to 1), out in front of him, pushed on
-// ahead as he goes.
+// ahead as he goes - a 2K26 speed dribble: taken up out in front of his
+// hip at his waist, then pushed on out ahead of him and down, his arm all
+// but straight as it lets it go.
 const DRIBBLE_TOP = { f: 0.72, s: 1.12, u: 0.5 };
 const DRIBBLE_LOW = { f: 0.82, s: 1.18, u: 0.02 };
-const DRIBBLE_TOP_AHEAD = { f: 1.12, s: 1.02, u: 0.6 };
-const DRIBBLE_LOW_AHEAD = { f: 1.38, s: 1.06, u: 0.2 };
+const DRIBBLE_TOP_AHEAD = { f: 1.3, s: 0.88, u: 0.78 };
+const DRIBBLE_LOW_AHEAD = { f: 1.72, s: 0.96, u: 0.24 };
 // The top of a fine handler's bounce, that much lower (feet) - and a poor
 // one's that much higher (see dribbleArm).
 const DRIBBLE_LOWER = 0.2;
@@ -14001,6 +14032,9 @@ export const dribbleArm = (
 	deep = 0,
 	// That much higher (feet), easy about it (see easy).
 	up = 0,
+	// Each arm its own way when it is the other arm (see OWN_SWING): his
+	// right the move's N arm, his left its F - not both the F.
+	own = false,
 ): Pose => {
 	const e = pushOf(ph);
 	const at = (k: "f" | "s" | "u") => {
@@ -14046,6 +14080,8 @@ export const dribbleArm = (
 	};
 	// The other arm as the move has it.
 	const free = { sh: q.shF, el: q.elF, ab: q.abF, wr: q.wrF };
+	const freeOf = (h: Hand): typeof free =>
+		own && h === "R" ? { sh: q.shN, el: q.elN, ab: q.abN, wr: q.wrN } : free;
 	let right: typeof free;
 	let left: typeof free;
 	if (leaves) {
@@ -14063,11 +14099,11 @@ export const dribbleArm = (
 			wr: a.wr + (c.wr - a.wr) * w,
 		});
 		const goes = leaves === "R" ? "L" : "R";
-		const off = mix(free, on(leaves), 1 - smooth((ph - 0.3) / 0.4));
-		const to = mix(free, on(goes), smooth((ph - 0.22) / 0.4));
+		const off = mix(freeOf(leaves), on(leaves), 1 - smooth((ph - 0.3) / 0.4));
+		const to = mix(freeOf(goes), on(goes), smooth((ph - 0.22) / 0.4));
 		[right, left] = leaves === "R" ? [off, to] : [to, off];
 	} else {
-		[right, left] = hand === "L" ? [free, on("L")] : [on("R"), free];
+		[right, left] = hand === "L" ? [freeOf("R"), on("L")] : [on("R"), free];
 	}
 	return {
 		...q,
@@ -14116,12 +14152,26 @@ const ARMS_EASY = [
 const DRIBBLE_OWN_UP = 0.24;
 // (Another draw off the same one, for how high.)
 const second = (f: number) => (f * 7.31) % 1;
+// (Walking it, what of him comes up out of his crouch into the walk.)
+const STROLL_KEYS = [
+	"hipN",
+	"kneeN",
+	"hipF",
+	"kneeF",
+	"toeN",
+	"toeF",
+	"lean",
+	"wide",
+] as const;
 const easy = (
 	q: Pose,
 	anim: AnimName,
 	calm: number,
 	tight: number,
 	flair = 0.5,
+	phase = 0,
+	// Which of the move's arms is his other arm (see OWN_SWING).
+	side: "N" | "F" = "F",
 ): Pose => {
 	if (anim !== "dribbleIdle" && anim !== "dribbleWalk") {
 		return q;
@@ -14147,12 +14197,15 @@ const easy = (
 			toward(k as keyof Pose, v as number, up);
 		}
 	} else {
-		out.lean = out.lean * (1 - 0.6 * up);
-		out.kneeN = Math.max(Math.min(4, q.kneeN), out.kneeN - 14 * up);
-		out.kneeF = Math.max(Math.min(4, q.kneeF), out.kneeF - 14 * up);
+		// Walking it, that much up out of his crouch into a walk - all the
+		// way, easy about it: stood up tall, his legs all but straight.
+		const stroll = gaitPose("dribbleStroll", phase);
+		for (const k of STROLL_KEYS) {
+			toward(k, stroll[k], up);
+		}
 	}
 	for (const [k, v] of Object.entries(ARM_EASY)) {
-		toward(k as keyof Pose, v, calm);
+		toward((side === "N" ? k.replace(/F$/, "N") : k) as keyof Pose, v, calm);
 	}
 	return out;
 };
@@ -14175,6 +14228,9 @@ const protect = (
 	ph: number,
 	hand: Hand,
 	leaves?: Hand,
+	// Each arm its own (see OWN_SWING): his left hand's other arm the move's
+	// N arm, not its F.
+	own = false,
 ): Pose => {
 	const k =
 		anim === "dribbleIdle"
@@ -14199,7 +14255,7 @@ const protect = (
 	};
 	if (leaves === undefined) {
 		const ease = (a: number, b: number) => a + (b - a) * k;
-		if (hand === "L") {
+		if (hand === "L" && own) {
 			out.shN = ease(q.shN, ARM_BAR.sh);
 			out.elN = ease(q.elN, ARM_BAR.el);
 			out.abN = ease(q.abN, ARM_BAR.ab);
@@ -14211,6 +14267,20 @@ const protect = (
 	}
 	return out;
 };
+
+// On the move, each arm swinging its own way through his stride (or held
+// its own way, working it): the other arm, the ball in his left hand, is
+// his right as the move has it - not his left's swing on his right arm,
+// forward with the same leg. (Stood with it, the move's F arm is the other
+// arm whichever hand has it.)
+const OWN_SWING: ReadonlySet<AnimName> = new Set<AnimName>([
+	"dribble",
+	"dribbleWalk",
+	"run",
+	"sprint",
+	"jog",
+	"walk",
+]);
 
 // HIS OWN WAY OF STANDING THERE WITH IT, sizing his man up (another draw
 // off his `flair`, the same every time): most as dribbleIdle has it, some
@@ -14247,14 +14317,17 @@ export const posed = (
 ): Pose => {
 	const q = poseNow(anim === "dribbleIdle" ? idleWith(flair) : anim, phase);
 	if (dribble !== undefined && !MOVES.has(anim)) {
+		const own = OWN_SWING.has(anim);
+		const side = own && (hand ?? "R") === "L" ? "N" : "F";
 		return dribbleArm(
 			protect(
-				easy(q, anim, calm, tight, flair),
+				easy(q, anim, calm, tight, flair, phase, side),
 				anim,
 				tight,
 				dribble,
 				hand ?? "R",
 				leaves,
+				own,
 			),
 			dribble,
 			hand,
@@ -14263,6 +14336,7 @@ export const posed = (
 			dribbleIn(anim, phase),
 			low,
 			calm * DRIBBLE_EASY_UP + (second(flair) - 0.5) * DRIBBLE_OWN_UP,
+			own,
 		);
 	}
 	if (target <= 0) {

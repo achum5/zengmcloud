@@ -8955,11 +8955,11 @@ const ballOn = (
 			const ahead = aheadOf(st.anim, st.from) * (1 - (st.tight ?? 0));
 			// (Worked in toward the middle of him on an in-and-out.)
 			const inward = dribbleIn(st.anim, st.phase);
-			const out = (1.22 - 0.12 * ahead) * (1 - IN_BY * inward);
+			const out = (1.22 - 0.3 * ahead) * (1 - IN_BY * inward);
 			const floor = bodyPoint(
 				{ ...st, z: 0 },
 				{
-					f: across ? 1.0 : 0.95 + ahead + IN_AHEAD * inward,
+					f: across ? 1.0 : 0.95 + 1.4 * ahead + IN_AHEAD * inward,
 					s: across ? 0 : hand === "L" ? out : -out,
 					u: BALL_R,
 				},

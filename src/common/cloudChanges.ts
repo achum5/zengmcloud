@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 380,
+		date: "2026-11-19",
+		text: "Live games: dribbling looks more like the real thing. Pushing it up the floor, players run tall on a full stride and push the ball out in front, catching it at the waist; walking it up with nobody near, they stand up instead of crouching; and the free arm swings with the stride, or stays low and ready sizing up. Dribbling left-handed, the right arm now comes up to hold off a defender too.",
+	},
+	{
 		n: 379,
 		date: "2026-11-19",
 		text: "Live games: players' heads stay on their necks. On crossovers, in-and-outs, spins, leaning jumpers and stumbles, the head no longer comes away from the body.",
