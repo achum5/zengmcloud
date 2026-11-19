@@ -170,6 +170,8 @@ export type Props<Type extends MetadataType = undefined> = {
 	style?: CSSProperties;
 	superCols?: SuperCol[];
 	title?: ReactNode;
+	// Beside its menu, on the right of it (a box score's quarter picker).
+	titleEnd?: ReactNode;
 
 	// Pass this to control selectedRows from outside of this component (like if you want to have a button external to the table that does something with selected players). Otherwise, leave this undefined.
 	controlledSelectedRows?: SelectedRows<NoInfer<Type>>;
@@ -224,6 +226,7 @@ export const DataTable = <Type extends MetadataType = undefined>({
 	superCols,
 	syncSettings,
 	title,
+	titleEnd,
 }: Props<Type>) => {
 	if (sortableRows) {
 		if (!hideAllControls) {
@@ -733,6 +736,9 @@ export const DataTable = <Type extends MetadataType = undefined>({
 									onToggleFilters={handleToggleFilters}
 									searchText={state.searchText}
 								/>
+							) : null}
+							{titleEnd ? (
+								<div className="datatable-title-end ms-2">{titleEnd}</div>
 							) : null}
 						</div>
 					) : null}

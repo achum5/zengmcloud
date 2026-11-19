@@ -1,4 +1,5 @@
 import clsx from "clsx";
+import type { BoxPeriods } from "./PeriodPicker.tsx";
 import {
 	useCallback,
 	useEffect,
@@ -1236,9 +1237,12 @@ export const BoxScoreWrapper = ({
 	tid,
 	Row,
 	tablesOnly,
+	periods,
 }: {
 	abbrev?: string;
 	boxScore: any;
+	// Each team's box score by the quarter too (see PeriodPicker).
+	periods?: BoxPeriods;
 	// Just the two teams' tables (the live gamecast's Box Score tab, which
 	// has the score and the charts elsewhere).
 	tablesOnly?: boolean;
@@ -1356,6 +1360,7 @@ export const BoxScoreWrapper = ({
 				Row={Row}
 				forceRowUpdate={forceRowUpdate}
 				sportState={sportState}
+				periods={periods}
 			/>
 		);
 	}
@@ -1418,6 +1423,7 @@ export const BoxScoreWrapper = ({
 				Row={Row}
 				forceRowUpdate={forceRowUpdate}
 				sportState={sportState}
+				periods={periods}
 			/>
 			<GameCharts boxScore={boxScore} live={live} />
 			Attendance: {helpers.numberWithCommas(boxScore.att)}

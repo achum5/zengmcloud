@@ -45,6 +45,7 @@ import {
 } from "./Gamecast.tsx";
 import { FlowCharts } from "./FlowCharts.tsx";
 import { feedFromEvents, periodBoxScore } from "./replayFeed.ts";
+import type { BoxPeriods } from "../../../components/PeriodPicker.tsx";
 import {
 	feedRows,
 	periodLabel,
@@ -61,7 +62,6 @@ import { MatchupBanner, matchupVars } from "../../../components/TeamBanner.tsx";
 import {
 	DOCK_ICONS,
 	foldSections,
-	jumpToSection,
 	RecapSections,
 	type DockSection,
 } from "./RecapDock.tsx";
@@ -961,6 +961,20 @@ export const GameRecap = ({
 		};
 	}, [gid, hasReplay, gender]);
 	const [period, setPeriod] = useState<number | "all">("all");
+	// Each team's box score by the quarter (the refreshed look: picked by each
+	// team's name - see PeriodPicker).
+	const boxPeriods = useMemo((): BoxPeriods | undefined => {
+		if (!replay || replay.ends.length <= 1) {
+			return undefined;
+		}
+		return {
+			labels: replay.ends.map(
+				(_, k) =>
+					periodLabel(k + 1, boxScore.numPeriods ?? 4, helpers.ordinal) ?? "",
+			),
+			boxOf: (k) => periodBoxScore(boxScore, replay.ends, k),
+		};
+	}, [replay, boxScore]);
 
 	const names = useMemo(() => {
 		const m = new Map<number, string>();
@@ -1054,11 +1068,8 @@ export const GameRecap = ({
 			icon: DOCK_ICONS.box,
 			body: isPhone ? (
 				<BoxScorePhone
-					boxScore={
-						replay && period !== "all"
-							? periodBoxScore(boxScore, replay.ends, period)
-							: boxScore
-					}
+					boxScore={boxScore}
+					periods={boxPeriods}
 					extraViews={stints ? [["rot", "Rotations"]] : undefined}
 					extra={(v) =>
 						v === "rot" && stints ? (
@@ -1073,12 +1084,8 @@ export const GameRecap = ({
 				/>
 			) : (
 				<BoxScore
-					key={String(period)}
-					boxScore={
-						replay && period !== "all"
-							? periodBoxScore(boxScore, replay.ends, period)
-							: boxScore
-					}
+					boxScore={boxScore}
+					periods={boxPeriods}
 					Row={Row}
 					forceRowUpdate
 					sportState={undefined}
@@ -1254,27 +1261,6 @@ export const GameRecap = ({
 								[["lineups", "onoff", "On/Off Impact"]],
 								{ stats: "Stats", shots: "Shots" },
 							)}
-							quarter={
-								replay && replay.ends.length > 1 ? (
-									<select
-										className="form-select form-select-sm"
-										aria-label="Quarter"
-										value={String(period)}
-										onChange={(e) => {
-											const v = e.target.value;
-											setPeriod(v === "all" ? "all" : Number(v));
-											jumpToSection("box");
-										}}
-									>
-										<option value="all">All Qs</option>
-										{replay.ends.map((_, k) => (
-											<option key={k} value={k}>
-												{periodLabel(k + 1, numPeriods, helpers.ordinal)}
-											</option>
-										))}
-									</select>
-								) : undefined
-							}
 						/>
 						{/* (The line, the series, the standings and the rest: at the
 						    foot of the page, after the game itself.) */}

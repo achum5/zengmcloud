@@ -1,6 +1,12 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { helpers } from "../../../util/helpers.ts";
 import { useUserTeamFirst } from "../../../util/liveBoxScoreLayout.ts";
+import {
+	PeriodPicker,
+	teamsInPeriod,
+	type BoxPeriods,
+	type PeriodPick,
+} from "../../../components/PeriodPicker.tsx";
 import clsx from "clsx";
 import { PlayerNameLabels } from "../../../components/PlayerNameLabels.tsx";
 import { TeamLogoInline } from "../../../components/TeamLogoInline.tsx";
@@ -288,12 +294,15 @@ const BoxTable = ({
 	live,
 	t,
 	o,
+	titleEnd,
 }: {
 	boxScore: any;
 	view: BoxView;
 	live?: boolean;
 	t: Line;
 	o: Line;
+	// By its menu: the quarter picker (see PeriodPicker).
+	titleEnd?: ReactNode;
 }) => {
 	const keys = VIEW_COLS[view];
 	const cols: DataCol[] = [
@@ -411,6 +420,7 @@ const BoxTable = ({
 			name={`BoxScore:${view}`}
 			rows={rows}
 			syncSettings
+			titleEnd={titleEnd}
 			title={
 				<span className="bsp-team">
 					<TeamLogoInline
@@ -443,7 +453,10 @@ export const BoxScorePhone = ({
 	extra,
 	live,
 	title,
+	periods,
 }: {
+	// Each team's by the quarter too, picked by its name (see PeriodPicker).
+	periods?: BoxPeriods;
 	// The section's heading, drawn here - its tabs by it.
 	title?: string;
 	boxScore: any;
@@ -455,6 +468,7 @@ export const BoxScorePhone = ({
 	extra?: (view: string) => ReactNode;
 }) => {
 	const [view, setView] = useState<string>("trad");
+	const [picks, setPicks] = useState<Record<number, PeriodPick>>({});
 	const boxView = VIEWS.find(([v]) => v === view)?.[0];
 	const live2 = live && !boxScore.gameOver;
 	const tabs = (
@@ -477,16 +491,32 @@ export const BoxScorePhone = ({
 				<div className="bsp-views">{tabs}</div>
 			)}
 			{boxView
-				? teams.map((t: Line, i: number) => (
-						<BoxTable
-							key={`${boxView}:${t.tid}`}
-							boxScore={boxScore}
-							view={boxView}
-							live={live2}
-							t={t}
-							o={teams[i === 0 ? 1 : 0]}
-						/>
-					))
+				? teams.map((t: Line) => {
+						const pick = picks[t.tid] ?? "all";
+						// (This team's quarter, and the other's in it.)
+						const cut = teamsInPeriod(boxScore, periods, pick, t.tid);
+						return (
+							<BoxTable
+								key={`${boxView}:${t.tid}`}
+								boxScore={boxScore}
+								view={boxView}
+								live={live2 && pick === "all"}
+								t={cut.t}
+								o={cut.o}
+								titleEnd={
+									periods && periods.labels.length > 0 ? (
+										<PeriodPicker
+											periods={periods}
+											value={pick}
+											onChange={(p) => {
+												setPicks((was) => ({ ...was, [t.tid]: p }));
+											}}
+										/>
+									) : undefined
+								}
+							/>
+						);
+					})
 				: extra?.(view)}
 		</div>
 	);

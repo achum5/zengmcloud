@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 391,
+		date: "2026-11-19",
+		text: "Box scores: each team's box score now has its own quarter picker next to its menu, so you can look at one team's 3rd quarter while the other shows the whole game. It replaces the quarter picker that sat at the bottom left of the game page.",
+	},
+	{
 		n: 390,
 		date: "2026-11-19",
 		text: "Live games: fixed a rare glitch where the box score's player stats stopped counting (everyone at 0) while the score kept going.",

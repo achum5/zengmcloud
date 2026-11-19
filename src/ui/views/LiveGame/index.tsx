@@ -29,6 +29,7 @@ import { linesOf, periodBoxScore, type Lines } from "./gamecast/replayFeed.ts";
 import { periodLabel } from "./gamecast/playFeed.ts";
 import { packShots, type ShotSpot } from "./gamecast/shots.ts";
 import { orderBoxScoreTeams } from "../../util/liveBoxScoreLayout.ts";
+import type { BoxPeriods } from "../../components/PeriodPicker.tsx";
 import type { View } from "../../../common/types.ts";
 import { bySport } from "../../../common/sportFunctions.ts";
 import useLocalStorageState from "use-local-storage-state";
@@ -3252,6 +3253,28 @@ export const LiveGame = (props: View<"liveGame">) => {
 		speedControls
 	);
 
+	// Each team's box score by the quarter, the one going on too (the refreshed
+	// look: picked by each team's name - see PeriodPicker).
+	const boxPeriods: BoxPeriods | undefined =
+		refreshedLook && __SPORT === "basketball" && periodEnds.current.length > 0
+			? {
+					labels: [...periodEnds.current, undefined].map(
+						(_, k) =>
+							periodLabel(
+								k + 1,
+								boxScore.current.numPeriods ?? 4,
+								helpers.ordinal,
+							) ?? "",
+					),
+					boxOf: (k) =>
+						periodBoxScore(
+							boxScore.current,
+							[...periodEnds.current, linesOf(boxScore.current)],
+							k,
+						),
+				}
+			: undefined;
+
 	// The box score of the quarter picked (or the whole game so far).
 	const shownBoxScore =
 		boxPeriod === "all" || boxPeriod > periodEnds.current.length
@@ -3382,6 +3405,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 							) : null
 						}
 						periodBox={shownBoxScore}
+						periods={boxPeriods}
 						boxScoreTab={
 							<>
 								{periodEnds.current.length > 0 && !refreshedLook ? (
@@ -3414,6 +3438,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 									playIndex={playIndex}
 									sportState={sportState.current}
 									tablesOnly
+									periods={boxPeriods}
 								/>
 							</>
 						}

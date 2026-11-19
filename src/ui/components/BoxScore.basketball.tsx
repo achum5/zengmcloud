@@ -14,6 +14,12 @@ import {
 import { useBoxScoreSortBys } from "./useBoxScoreSortBys.ts";
 import { teamsInDisplayOrder } from "../util/boxScoreDisplayOrder.ts";
 import { isAllStarTid } from "../../common/specialGames.ts";
+import {
+	PeriodPicker,
+	teamsInPeriod,
+	type BoxPeriods,
+	type PeriodPick,
+} from "./PeriodPicker.tsx";
 
 const StatsTable = ({
 	gid,
@@ -213,11 +219,15 @@ const BoxScore = ({
 	boxScore,
 	Row,
 	forceRowUpdate,
+	periods,
 }: {
 	boxScore: any;
 	Row: unknown;
 	forceRowUpdate: boolean;
+	// Each team's by the quarter too, picked by its name (see PeriodPicker).
+	periods?: BoxPeriods;
 }) => {
+	const [picks, setPicks] = useState<Record<number, PeriodPick>>({});
 	// Historical games will have boxScore.won.name and boxScore.lost.name so use that for ordering, but live games
 	// won't. This is hacky, because the existence of this property is just a historical coincidence, and maybe it'll
 	// change in the future.
@@ -290,6 +300,17 @@ const BoxScore = ({
 									{hidden ? "Show" : "Hide"}
 								</button>
 							) : null}
+							{periods && periods.labels.length > 0 ? (
+								<span className="ms-auto">
+									<PeriodPicker
+										periods={periods}
+										value={picks[t.tid] ?? "all"}
+										onChange={(pick) => {
+											setPicks((was) => ({ ...was, [t.tid]: pick }));
+										}}
+									/>
+								</span>
+							) : null}
 						</h2>
 						{hidden ? null : (
 							<StatsTable
@@ -301,7 +322,16 @@ const BoxScore = ({
 								numPlayersOnCourt={boxScore.numPlayersOnCourt ?? 5}
 								season={boxScore.season}
 								showHighlights={!!boxScore.hasReplay}
-								t={t}
+								t={
+									periods
+										? teamsInPeriod(
+												boxScore,
+												periods,
+												picks[t.tid] ?? "all",
+												t.tid,
+											).t
+										: t
+								}
 							/>
 						)}
 					</div>

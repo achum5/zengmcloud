@@ -1330,6 +1330,19 @@ tr.table-warning:hover > td {
 .gamecast-narrow {
 	max-width: 760px;
 }
+// Each team's box score by the quarter: a small picker by its name - by
+// the table's menu on a phone (see PeriodPicker).
+.box-period {
+	width: auto;
+	font-size: 0.8rem;
+	font-weight: 400;
+	padding-top: 0.15rem;
+	padding-bottom: 0.15rem;
+}
+.datatable-title-end {
+	flex: 0 0 auto;
+	align-self: center;
+}
 // (The game's story: a column down the middle of the page.)
 .recap-centered {
 	margin-left: auto;

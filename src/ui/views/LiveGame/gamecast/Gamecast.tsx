@@ -26,6 +26,7 @@ import {
 import { helpers } from "../../../util/helpers.ts";
 import { useLocal } from "../../../util/local.ts";
 import { useUserTeamFirst } from "../../../util/liveBoxScoreLayout.ts";
+import type { BoxPeriods } from "../../../components/PeriodPicker.tsx";
 import { usePlayerFace } from "../../../util/playerFaces.ts";
 import { PlayerPicture } from "../../../components/PlayerPicture.tsx";
 import { TeamLogoInline } from "../../../components/TeamLogoInline.tsx";
@@ -1414,7 +1415,10 @@ export const LiveGamecast = ({
 	cursor,
 	periodBox,
 	quarter,
+	periods,
 }: {
+	// Each team's box score by the quarter (see PeriodPicker).
+	periods?: BoxPeriods;
 	boxScore: any;
 	entries: readonly FeedEntry[];
 	// The refreshed look's: the box score of the quarter picked (a phone's
@@ -1633,8 +1637,8 @@ export const LiveGamecast = ({
 				title: isPhone ? null : undefined,
 				body: isPhone ? (
 					<BoxScorePhone
-						title="Box Score"
 						boxScore={periodBox ?? boxScore}
+						periods={periods}
 						live
 						extraViews={stints ? [["rot", "Rotations"]] : undefined}
 						extra={(v) =>
