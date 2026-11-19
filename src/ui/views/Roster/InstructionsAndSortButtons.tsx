@@ -10,82 +10,113 @@ const handleResetPT = async () => {
 	await toWorker("main", "resetPlayingTime", undefined);
 };
 
+const KeepSorted = ({
+	keepRosterSorted,
+	tid,
+	className,
+}: {
+	keepRosterSorted: boolean;
+	tid: number;
+	className: string;
+}) => (
+	<div className={className}>
+		<input
+			className="form-check-input"
+			type="checkbox"
+			checked={keepRosterSorted}
+			id="ai-sort-user-roster"
+			onChange={async () => {
+				if (!keepRosterSorted) {
+					await handleAutoSort();
+				}
+				await toWorker("main", "updateKeepRosterSorted", {
+					tid,
+					keepRosterSorted: !keepRosterSorted,
+				});
+			}}
+		/>
+		<label className="form-check-label" htmlFor="ai-sort-user-roster">
+			Keep auto sorted
+		</label>
+	</div>
+);
+
+// THE REFRESHED LOOK'S: the roster's buttons, "Keep auto sorted" and Play
+// Through Injuries, small, up by the team's logo (see .roster-top) - over the
+// depth chart, in the room the team's info leaves.
+export const RosterTools = ({
+	keepRosterSorted,
+	editable,
+	tid,
+	injuries,
+}: Pick<View<"roster">, "editable" | "tid"> & {
+	keepRosterSorted: boolean;
+	injuries?: ReactNode;
+}) => {
+	if (!editable && !injuries) {
+		return null;
+	}
+	return (
+		<div className="roster-tools">
+			{editable ? (
+				<>
+					<div className="btn-group roster-tools-sort">
+						<button
+							type="button"
+							className="btn btn-light-bordered btn-sm"
+							onClick={handleAutoSort}
+							title="Auto sort roster"
+						>
+							Auto sort<span className="d-none d-md-inline"> roster</span>
+						</button>
+						<button
+							type="button"
+							className="btn btn-light-bordered btn-sm"
+							onClick={handleResetPT}
+							title="Reset playing time"
+						>
+							Reset <span className="d-md-none">PT</span>
+							<span className="d-none d-md-inline">playing time</span>
+						</button>
+					</div>
+					<KeepSorted
+						keepRosterSorted={keepRosterSorted}
+						tid={tid}
+						className="form-check mb-0"
+					/>
+				</>
+			) : null}
+			{injuries}
+		</div>
+	);
+};
+
 const InstructionsAndSortButtons = ({
 	keepRosterSorted,
 	editable,
 	tid,
-	oneRow,
-	extra,
 }: Pick<View<"roster">, "editable" | "tid"> & {
 	keepRosterSorted: boolean;
-	// The buttons, "Keep auto sorted" and anything else (Play Through
-	// Injuries) on one row (the refreshed look).
-	oneRow?: boolean;
-	extra?: ReactNode;
 }) => {
-	const keepSorted = (
-		<div className={oneRow ? "form-check mb-0" : "form-check mt-2"}>
-			<input
-				className="form-check-input"
-				type="checkbox"
-				checked={keepRosterSorted}
-				id="ai-sort-user-roster"
-				onChange={async () => {
-					if (!keepRosterSorted) {
-						await handleAutoSort();
-					}
-					await toWorker("main", "updateKeepRosterSorted", {
-						tid,
-						keepRosterSorted: !keepRosterSorted,
-					});
-				}}
-			/>
-			<label className="form-check-label" htmlFor="ai-sort-user-roster">
-				Keep auto sorted
-			</label>
-		</div>
-	);
-	if (oneRow) {
-		if (!editable && !extra) {
-			return null;
-		}
-		return (
-			<div className="roster-actions mb-3">
-				{editable ? (
-					<>
-						<button className="btn btn-secondary" onClick={handleAutoSort}>
-							Auto sort roster
-						</button>
-						<button className="btn btn-secondary" onClick={handleResetPT}>
-							Reset playing time
-						</button>
-						{keepSorted}
-					</>
-				) : null}
-				{extra}
-			</div>
-		);
+	if (!editable) {
+		return null;
 	}
 	return (
-		<>
-			{editable ? (
-				<div className="mb-3">
-					<div className="d-flex flex-wrap gap-2">
-						{editable ? (
-							<>
-								<button className="btn btn-secondary" onClick={handleAutoSort}>
-									Auto sort roster
-								</button>
-								<button className="btn btn-secondary" onClick={handleResetPT}>
-									Reset playing time
-								</button>
-							</>
-						) : null}
-					</div>
-					{editable ? keepSorted : null}
-				</div>
-			) : null}
-		</>
+		<div className="mb-3">
+			<div className="d-flex flex-wrap gap-2">
+				<button className="btn btn-secondary" onClick={handleAutoSort}>
+					Auto sort roster
+				</button>
+				<button className="btn btn-secondary" onClick={handleResetPT}>
+					Reset playing time
+				</button>
+			</div>
+			<KeepSorted
+				keepRosterSorted={keepRosterSorted}
+				tid={tid}
+				className="form-check mt-2"
+			/>
+		</div>
 	);
 };
 

@@ -6345,21 +6345,84 @@ a.rsb-half {
 	padding-bottom: 2.1rem;
 }
 
-// The roster's buttons, "Keep auto sorted" and Play Through Injuries on one
-// row (the refreshed look) - the injuries' sliders, opened, on a row of their
-// own under them.
-.roster-actions {
+// THE ROSTER'S TOP (the refreshed look): the logo, the team's info by it, and
+// the roster's buttons - under the logo on a phone (beside the info's lower
+// lines), to the right of the info on a wider screen - so they take no room
+// of their own over the depth chart.
+.roster-top {
+	display: grid;
+	// (A little wider than the logo, for the two buttons side by side.)
+	grid-template-columns: 8.25rem minmax(0, 1fr);
+	grid-template-areas:
+		"logo info"
+		"tools info"
+		"side side";
+	grid-template-rows: auto 1fr auto;
+	column-gap: 1rem;
+	align-items: start;
+	.roster-top-logo {
+		grid-area: logo;
+	}
+	.roster-top-info {
+		grid-area: info;
+	}
+	.roster-tools {
+		grid-area: tools;
+		margin-top: 0.5rem;
+	}
+	.roster-top-side {
+		grid-area: side;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 1rem 3rem;
+		margin-top: 1rem;
+		// (Nothing in it - no roster makeup in basketball.)
+		&:has(> div:only-child:empty) {
+			display: none;
+		}
+	}
+	@include media-breakpoint-up(md) {
+		grid-template-columns: 128px max-content max-content minmax(0, 1fr);
+		grid-template-areas: "logo info tools side";
+		grid-template-rows: auto;
+		.roster-tools {
+			margin: 0.25rem 0 0 3rem;
+		}
+		.roster-top-side {
+			margin: 0 0 0 3rem;
+		}
+	}
+}
+
+// The buttons themselves, small: the two side by side as a pair, "Keep auto
+// sorted" and the injuries' button under them.
+.roster-tools {
 	display: flex;
-	flex-wrap: wrap;
-	align-items: center;
-	gap: 0.5rem 1rem;
-	.play-through-injuries:has(form) {
-		flex-basis: 100%;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 0.3rem;
+	@include media-breakpoint-down(md) {
+		font-size: 0.8125rem;
+		.btn-sm {
+			font-size: 0.75rem;
+			padding: 0.15rem 0.3rem;
+		}
+		.form-check {
+			min-height: 0;
+			margin-bottom: 0;
+		}
 	}
-	// (Its sliders no wider than they were by the roster.)
-	.play-through-injuries form {
-		max-width: 24rem;
+	@include media-breakpoint-up(md) {
+		gap: 0.5rem;
 	}
+}
+
+// Play Through Injuries' panel, dropped down over the page.
+.pti-menu-panel {
+	width: 17rem;
+	max-width: calc(100vw - 1rem);
+	padding: 0.75rem 1rem;
+	font-size: 0.875rem;
 }
 
 // A box score's heading with its Traditional / Advanced / Rotations by it, on

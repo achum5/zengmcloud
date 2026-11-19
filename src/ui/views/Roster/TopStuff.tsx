@@ -5,8 +5,12 @@ import { OverlayTrigger, Popover } from "react-bootstrap";
 import { RecordAndPlayoffs } from "../../components/RecordAndPlayoffs.tsx";
 import { helpers } from "../../util/helpers.ts";
 import { toWorker } from "../../util/toWorker.ts";
-import InstructionsAndSortButtons from "./InstructionsAndSortButtons.tsx";
-import PlayThroughInjurySliders from "./PlayThroughInjuriesSliders.tsx";
+import InstructionsAndSortButtons, {
+	RosterTools,
+} from "./InstructionsAndSortButtons.tsx";
+import PlayThroughInjurySliders, {
+	PlayThroughInjuriesMenu,
+} from "./PlayThroughInjuriesSliders.tsx";
 import { type LocalStateUI, type View } from "../../../common/types.ts";
 import Note from "../Player/Note.tsx";
 import { buildTeamSeasonRecapLinks } from "../../util/linkifyRecap.ts";
@@ -260,6 +264,150 @@ const TopStuff = ({
 
 	const isCurrentSeason = season === currentSeason;
 
+	const info = (
+		<>
+			<div>
+				<div style={fontSizeLarger}>{recordAndPlayoffs}</div>
+				{t.rank !== undefined ? (
+					<div>
+						{helpers.ordinal(t.rank)} in{" "}
+						{playoffsByConf ? (
+							conf ? (
+								<ConfLogoAndName conf={conf} size={18} />
+							) : (
+								"conference"
+							)
+						) : (
+							"league"
+						)}
+						{t.gb >= 0 && t.rank > 1 ? (
+							<>
+								, {t.gb}{" "}
+								{usePts ? (
+									<span title="Points Back">PB</span>
+								) : (
+									<span title="Games Back">GB</span>
+								)}
+							</>
+						) : (
+							<>
+								, {-t.gb}{" "}
+								{usePts ? (
+									<span title="Points Ahead">PA</span>
+								) : (
+									<span title="Games Ahead">GA</span>
+								)}
+							</>
+						)}
+					</div>
+				) : null}
+				{teamOvr.type === "current" ? (
+					<div>
+						Team rating: <TeamRating ovr={t.ovr} ovrCurrent={t.ovrCurrent} />
+					</div>
+				) : null}
+				{/* "Team Ratings Delay": an older rating stands in for the one
+		    being withheld, and says which year it is from - unlabelled it
+		    would read as the current one. */}
+				{teamOvr.type === "delayed" && t.ovrDelayed !== undefined ? (
+					<div>
+						Team rating ({teamOvr.season}): {t.ovrDelayed}
+					</div>
+				) : null}
+				<div className="d-flex gap-3">
+					<div>
+						<span title="Average margin of victory">MOV</span>:{" "}
+						<PlusMinus>{marginOfVictory}</PlusMinus>
+					</div>
+					<div>
+						<span title="Average age, weighted by minutes played">Age</span>:{" "}
+						{t.seasonAttrs.avgAge?.toFixed(1)}
+					</div>
+				</div>
+				<MoreTeamInfo info={moreInfo} season={season} />
+			</div>
+
+			{isCurrentSeason ? (
+				<div className="mt-3">{openRosterSpots} open roster spots</div>
+			) : null}
+			{payroll !== undefined && college ? (
+				<div>NIL payroll: {helpers.formatCurrency(payroll / 1000, "M")}</div>
+			) : null}
+			{collegeInfo ? (
+				<div>
+					Prestige: {collegeInfo.prestige}
+					{collegeInfo.coachExp !== undefined
+						? ` · Your contract thru ${collegeInfo.coachExp}`
+						: null}
+				</div>
+			) : null}
+			{payroll !== undefined && !college ? (
+				<div>
+					{isCurrentSeason ? "Payroll" : "End of season payroll"}:{" "}
+					<PayrollAndPenalties
+						isCurrentSeason={isCurrentSeason}
+						luxuryPayroll={luxuryPayroll / 1000}
+						luxuryTaxAmount={
+							luxuryTaxAmount !== undefined ? luxuryTaxAmount / 1000 : undefined
+						}
+						minPayroll={minPayroll / 1000}
+						minPayrollAmount={
+							minPayrollAmount !== undefined
+								? minPayrollAmount / 1000
+								: undefined
+						}
+						payroll={payroll / 1000}
+					/>
+					{capStatus ? (
+						<>
+							{" "}
+							<a
+								href={helpers.leagueUrl([
+									"team_finances",
+									helpers.getTeamUrlPart(tid),
+								])}
+							>
+								<CapStatusText inline status={capStatus} />
+							</a>
+						</>
+					) : null}
+				</div>
+			) : null}
+			{isCurrentSeason && salaryCapType !== "none" ? (
+				<div>Salary cap: {helpers.formatCurrency(salaryCap / 1000, "M")}</div>
+			) : null}
+			{isCurrentSeason && Number.isFinite(hardCap) ? (
+				<div>Hard cap: {helpers.formatCurrency(hardCap / 1000, "M")}</div>
+			) : null}
+			{isCurrentSeason && budget ? (
+				<div>Profit: {helpers.formatCurrency(profit, "M")}</div>
+			) : null}
+		</>
+	);
+
+	const side = (
+		<>
+			<div className="d-flex flex-column gap-3">
+				<RosterComposition players={players} />
+				{godMode && tid !== userTid ? (
+					<button
+						className="btn btn-god-mode"
+						onClick={async () => {
+							await toWorker("main", "takeControlTeam", tid);
+						}}
+					>
+						Take control of this team
+					</button>
+				) : null}
+			</div>
+			{showTradingBlock && !compact ? (
+				<div>
+					<PlayThroughInjurySliders key={tid} t={t} />
+				</div>
+			) : null}
+		</>
+	);
+
 	return (
 		<>
 			{t.name !== t.seasonAttrs.name || t.region !== t.seasonAttrs.region ? (
@@ -267,184 +415,59 @@ const TopStuff = ({
 					{t.seasonAttrs.region} {t.seasonAttrs.name}
 				</h3>
 			) : null}
-			<div
-				className="d-flex flex-wrap mb-3"
-				style={{
-					gap: "1rem 6rem",
-				}}
-			>
-				<div className="d-flex">
-					<div className="team-picture" style={logoStyle} />
-					<div>
-						<div>
-							<div style={fontSizeLarger}>{recordAndPlayoffs}</div>
-							{t.rank !== undefined ? (
-								<div>
-									{helpers.ordinal(t.rank)} in{" "}
-									{playoffsByConf ? (
-										conf ? (
-											<ConfLogoAndName conf={conf} size={18} />
-										) : (
-											"conference"
-										)
-									) : (
-										"league"
-									)}
-									{t.gb >= 0 && t.rank > 1 ? (
-										<>
-											, {t.gb}{" "}
-											{usePts ? (
-												<span title="Points Back">PB</span>
-											) : (
-												<span title="Games Back">GB</span>
-											)}
-										</>
-									) : (
-										<>
-											, {-t.gb}{" "}
-											{usePts ? (
-												<span title="Points Ahead">PA</span>
-											) : (
-												<span title="Games Ahead">GA</span>
-											)}
-										</>
-									)}
-								</div>
-							) : null}
-							{teamOvr.type === "current" ? (
-								<div>
-									Team rating:{" "}
-									<TeamRating ovr={t.ovr} ovrCurrent={t.ovrCurrent} />
-								</div>
-							) : null}
-							{/* "Team Ratings Delay": an older rating stands in for the one
-							    being withheld, and says which year it is from - unlabelled it
-							    would read as the current one. */}
-							{teamOvr.type === "delayed" && t.ovrDelayed !== undefined ? (
-								<div>
-									Team rating ({teamOvr.season}): {t.ovrDelayed}
-								</div>
-							) : null}
-							<div className="d-flex gap-3">
-								<div>
-									<span title="Average margin of victory">MOV</span>:{" "}
-									<PlusMinus>{marginOfVictory}</PlusMinus>
-								</div>
-								<div>
-									<span title="Average age, weighted by minutes played">
-										Age
-									</span>
-									: {t.seasonAttrs.avgAge?.toFixed(1)}
-								</div>
-							</div>
-							<MoreTeamInfo info={moreInfo} season={season} />
-						</div>
-
-						{isCurrentSeason ? (
-							<div className="mt-3">{openRosterSpots} open roster spots</div>
-						) : null}
-						{payroll !== undefined && college ? (
-							<div>
-								NIL payroll: {helpers.formatCurrency(payroll / 1000, "M")}
-							</div>
-						) : null}
-						{collegeInfo ? (
-							<div>
-								Prestige: {collegeInfo.prestige}
-								{collegeInfo.coachExp !== undefined
-									? ` · Your contract thru ${collegeInfo.coachExp}`
-									: null}
-							</div>
-						) : null}
-						{payroll !== undefined && !college ? (
-							<div>
-								{isCurrentSeason ? "Payroll" : "End of season payroll"}:{" "}
-								<PayrollAndPenalties
-									isCurrentSeason={isCurrentSeason}
-									luxuryPayroll={luxuryPayroll / 1000}
-									luxuryTaxAmount={
-										luxuryTaxAmount !== undefined
-											? luxuryTaxAmount / 1000
-											: undefined
-									}
-									minPayroll={minPayroll / 1000}
-									minPayrollAmount={
-										minPayrollAmount !== undefined
-											? minPayrollAmount / 1000
-											: undefined
-									}
-									payroll={payroll / 1000}
-								/>
-								{capStatus ? (
-									<>
-										{" "}
-										<a
-											href={helpers.leagueUrl([
-												"team_finances",
-												helpers.getTeamUrlPart(tid),
-											])}
-										>
-											<CapStatusText inline status={capStatus} />
-										</a>
-									</>
-								) : null}
-							</div>
-						) : null}
-						{isCurrentSeason && salaryCapType !== "none" ? (
-							<div>
-								Salary cap: {helpers.formatCurrency(salaryCap / 1000, "M")}
-							</div>
-						) : null}
-						{isCurrentSeason && Number.isFinite(hardCap) ? (
-							<div>Hard cap: {helpers.formatCurrency(hardCap / 1000, "M")}</div>
-						) : null}
-						{isCurrentSeason && budget ? (
-							<div>Profit: {helpers.formatCurrency(profit, "M")}</div>
-						) : null}
-					</div>
-				</div>
-				<div
-					className="d-flex flex-wrap"
-					style={{
-						gap: "1rem 3rem",
-					}}
-				>
+			{compact ? (
+				// (The refreshed look: the roster's buttons under the logo on a
+				// phone, to the right of the team's info on a wider screen - see
+				// .roster-top.)
+				<div className="roster-top mb-3">
+					<div
+						className="team-picture roster-top-logo"
+						style={{ ...logoStyle, margin: "0.25rem 0 0" }}
+					/>
+					<div className="roster-top-info">{info}</div>
+					<RosterTools
+						keepRosterSorted={t.keepRosterSorted}
+						editable={editable}
+						tid={tid}
+						injuries={
+							showTradingBlock ? (
+								<PlayThroughInjuriesMenu key={tid} t={t} />
+							) : undefined
+						}
+					/>
 					{isCurrentSeason ? (
-						<>
-							<div className="d-flex flex-column gap-3">
-								<RosterComposition players={players} />
-								{godMode && tid !== userTid ? (
-									<button
-										className="btn btn-god-mode"
-										onClick={async () => {
-											await toWorker("main", "takeControlTeam", tid);
-										}}
-									>
-										Take control of this team
-									</button>
-								) : null}
-							</div>
-							{showTradingBlock && !compact ? (
-								<div>
-									<PlayThroughInjurySliders key={tid} t={t} />
-								</div>
-							) : null}
-						</>
+						<div className="roster-top-side">{side}</div>
 					) : null}
 				</div>
-			</div>
+			) : (
+				<div
+					className="d-flex flex-wrap mb-3"
+					style={{
+						gap: "1rem 6rem",
+					}}
+				>
+					<div className="d-flex">
+						<div className="team-picture" style={logoStyle} />
+						<div>{info}</div>
+					</div>
+					<div
+						className="d-flex flex-wrap"
+						style={{
+							gap: "1rem 3rem",
+						}}
+					>
+						{isCurrentSeason ? side : null}
+					</div>
+				</div>
+			)}
 			{depthChart}
-			<InstructionsAndSortButtons
-				keepRosterSorted={t.keepRosterSorted}
-				editable={editable}
-				tid={tid}
-				oneRow={compact}
-				extra={
-					compact && showTradingBlock ? (
-						<PlayThroughInjurySliders key={tid} t={t} collapsible />
-					) : undefined
-				}
-			/>
+			{compact ? null : (
+				<InstructionsAndSortButtons
+					keepRosterSorted={t.keepRosterSorted}
+					editable={editable}
+					tid={tid}
+				/>
+			)}
 
 			{compact && !t.seasonAttrs.note ? null : (
 				<div className="mb-3">

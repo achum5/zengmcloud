@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 394,
+		date: "2026-11-19",
+		text: "Roster page: Auto sort, Reset playing time, Keep auto sorted and Play Through Injuries are back above the depth chart, small and tucked beside your team's info (under the logo on a phone). Play Through Injuries opens as a little panel over the page, so nothing jumps around.",
+	},
+	{
 		n: 393,
 		date: "2026-11-19",
 		text: "Player highlights: watching a player's highlights from a game now has just a back arrow (previous highlight), a forward arrow (next highlight) and the speed menu.",
