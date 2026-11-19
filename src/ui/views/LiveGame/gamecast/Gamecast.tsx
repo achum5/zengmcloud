@@ -1789,7 +1789,6 @@ export const LiveGamecast = ({
 						sections={foldSections(
 							sections,
 							[
-								["stats", "flow", "Game Flow"],
 								["lineups", "onoff", "On/Off Impact"],
 								["live", "info", null],
 							],

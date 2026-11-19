@@ -1250,7 +1250,6 @@ export const GameRecap = ({
 							sections={foldSections(
 								sections,
 								[
-									["stats", "flow", "Game Flow"],
 									["lineups", "onoff", "On/Off Impact"],
 									["recap", "info", null],
 								],

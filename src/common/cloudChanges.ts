@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 385,
+		date: "2026-11-19",
+		text: "Game pages: Game Flow now has its own button in the menu at the bottom, to jump straight to it.",
+	},
+	{
 		n: 384,
 		date: "2026-11-19",
 		text: "Smart CPU: CPU teams trade picks more sensibly. Each team now judges its own title chances correctly (the favorite was overrating every role player), a seller can't demand two firsts when the buyer has other players just as good on offer, and a team only makes a trade when it's clearly better off, not by a hair it can't be sure of. Expect fewer firsts spent on role players and fewer pointless swaps.",
