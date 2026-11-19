@@ -34,7 +34,12 @@ const updateMeta = async (
 					// Just do this here, rather than figuring out when it should be updated exactly
 					const teamInfo = g.get("teamInfoCache")[g.get("userTid")];
 					if (teamInfo) {
-						if (g.get("userTids").length > 1) {
+						// (A cloud league is in multi-team mode with every league
+						// mate's team - but this device plays as one of them, its
+						// own userTid, so the league list shows that team.)
+						const cloud =
+							l.syncCode !== undefined || l.syncLeagueId !== undefined;
+						if (g.get("userTids").length > 1 && !cloud) {
 							l.teamName = "Multi Team Mode";
 							l.teamRegion = "";
 							l.imgURL = `https://zengm.com/files/logo-${__SPORT}.svg`;
