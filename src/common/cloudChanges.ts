@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 393,
+		date: "2026-11-19",
+		text: "Player highlights: watching a player's highlights from a game now has just a back arrow (previous highlight), a forward arrow (next highlight) and the speed menu.",
+	},
+	{
 		n: 392,
 		date: "2026-11-19",
 		text: "Team pages: the Roster button in the bottom menu takes you all the way back to the top of the page.",

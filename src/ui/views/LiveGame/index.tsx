@@ -2640,6 +2640,77 @@ export const LiveGame = (props: View<"liveGame">) => {
 		];
 	}, [seekTo]);
 
+	// A PLAYER'S HIGHLIGHTS (see filterPlayerHighlights): where each clip of
+	// them starts - the plays marked clipStart, the first from the top - and
+	// a step back to the one before or on to the next, playing on from there.
+	const reelStarts = useMemo(() => {
+		const evs = props.events as any[] | undefined;
+		if (!evs?.some((e) => e?.clipStart === true)) {
+			return undefined;
+		}
+		const out = [0];
+		evs.forEach((e, i) => {
+			if (e?.clipStart === true && i > 0) {
+				out.push(i);
+			}
+		});
+		return out;
+	}, [props.events]);
+	// (The clip being watched: the last to start at or before the last play
+	// shown.)
+	const reelAt = (): number => {
+		if (!reelStarts) {
+			return 0;
+		}
+		const cur = initialEventCount.current - (events.current?.length ?? 0);
+		let k = 0;
+		for (let j = 0; j < reelStarts.length; j++) {
+			if (reelStarts[j]! <= cur - 1) {
+				k = j;
+			}
+		}
+		return k;
+	};
+	const reelJump = (dir: -1 | 1) => {
+		if (!reelStarts) {
+			return;
+		}
+		const k = reelAt();
+		const target = dir < 0 ? reelStarts[Math.max(0, k - 1)] : reelStarts[k + 1];
+		if (target === undefined) {
+			return;
+		}
+		seekTo(target);
+		handlePlay();
+	};
+	const reelButtons = reelStarts ? (
+		<div className="btn-group">
+			<button
+				type="button"
+				className="btn btn-light-bordered"
+				onClick={() => {
+					reelJump(-1);
+				}}
+				title="Previous highlight"
+				aria-label="Previous highlight"
+			>
+				<span className="glyphicon glyphicon-menu-left" />
+			</button>
+			<button
+				type="button"
+				className="btn btn-light-bordered"
+				disabled={reelAt() >= reelStarts.length - 1}
+				onClick={() => {
+					reelJump(1);
+				}}
+				title="Next highlight"
+				aria-label="Next highlight"
+			>
+				<span className="glyphicon glyphicon-menu-right" />
+			</button>
+		</div>
+	) : null;
+
 	const fastForwardMenuItems = useMemo(() => {
 		// boxScore is still empty before the game loads, and these all assume it has teams
 		if (!started) {
@@ -3379,20 +3450,36 @@ export const LiveGame = (props: View<"liveGame">) => {
 						controls={
 							!locked ? (
 								<div className="d-flex align-items-center gap-1">
-									<PlayPauseNext
-										disabled={boxScore.current.gameOver}
-										fastForwardAlignRight
-										fastForwards={fastForwardMenuItems}
-										rewinds={canRewind ? rewindMenuItems : undefined}
-										onPlay={handlePlay}
-										onPause={handlePause}
-										onNext={handleNextPlay}
-										paused={paused}
-										titlePlay="Resume Simulation"
-										titlePause="Pause Simulation"
-										titleNext="Show Next Play"
-									/>
-									{overlaySpeedControls}
+									{reelButtons && court3d ? (
+										// (A player's highlights: back and on through
+										// them, and how fast - nothing else.)
+										<>
+											{reelButtons}
+											<Court3DSpeedMenu
+												value={rate3d}
+												onChange={(s) => {
+													setSpeed3d(String(s));
+												}}
+											/>
+										</>
+									) : (
+										<>
+											<PlayPauseNext
+												disabled={boxScore.current.gameOver}
+												fastForwardAlignRight
+												fastForwards={fastForwardMenuItems}
+												rewinds={canRewind ? rewindMenuItems : undefined}
+												onPlay={handlePlay}
+												onPause={handlePause}
+												onNext={handleNextPlay}
+												paused={paused}
+												titlePlay="Resume Simulation"
+												titlePause="Pause Simulation"
+												titleNext="Show Next Play"
+											/>
+											{overlaySpeedControls}
+										</>
+									)}
 								</div>
 							) : null
 						}
@@ -3467,55 +3554,69 @@ export const LiveGame = (props: View<"liveGame">) => {
 									)}
 									{!locked ? (
 										<div className="d-flex flex-wrap row-gap-2 align-items-center d-md-none pt-2">
-											<PlayPauseNext
-												className="me-2"
-												disabled={boxScore.current.gameOver}
-												fastForwardAlignRight
-												fastForwards={fastForwardMenuItems}
-												rewinds={canRewind ? rewindMenuItems : undefined}
-												onPlay={handlePlay}
-												onPause={handlePause}
-												onNext={handleNextPlay}
-												paused={paused}
-												titlePlay="Resume Simulation"
-												titlePause="Pause Simulation"
-												titleNext="Show Next Play"
-												// Since we have two PlayPauseNexts rendered, ignore shortcuts on one
-												ignoreKeyboardShortcuts
-											/>
-											{court3d ? (
+											{reelButtons && court3d ? (
 												<>
+													<div className="me-2">{reelButtons}</div>
 													<Court3DSpeeds
 														value={rate3d}
 														onChange={(s) => {
 															setSpeed3d(String(s));
 														}}
 													/>
-													{__SPORT === "basketball" ||
-													__SPORT === "football" ? (
-														<>
-															<KeyPlaysPicker
-																value={keyPlays}
-																onChange={setKeyPlaysState}
-															/>
-															<KeyPlaysSettings
-																value={keyPlays}
-																onChange={setKeyPlaysState}
-															/>
-														</>
-													) : null}
 												</>
 											) : (
-												<input
-													type="range"
-													className="form-range flex-grow-1"
-													min="1"
-													max="33"
-													step="1"
-													value={speed}
-													onChange={handleSpeedChange}
-													title="Speed"
-												/>
+												<>
+													<PlayPauseNext
+														className="me-2"
+														disabled={boxScore.current.gameOver}
+														fastForwardAlignRight
+														fastForwards={fastForwardMenuItems}
+														rewinds={canRewind ? rewindMenuItems : undefined}
+														onPlay={handlePlay}
+														onPause={handlePause}
+														onNext={handleNextPlay}
+														paused={paused}
+														titlePlay="Resume Simulation"
+														titlePause="Pause Simulation"
+														titleNext="Show Next Play"
+														// Since we have two PlayPauseNexts rendered, ignore shortcuts on one
+														ignoreKeyboardShortcuts
+													/>
+													{court3d ? (
+														<>
+															<Court3DSpeeds
+																value={rate3d}
+																onChange={(s) => {
+																	setSpeed3d(String(s));
+																}}
+															/>
+															{__SPORT === "basketball" ||
+															__SPORT === "football" ? (
+																<>
+																	<KeyPlaysPicker
+																		value={keyPlays}
+																		onChange={setKeyPlaysState}
+																	/>
+																	<KeyPlaysSettings
+																		value={keyPlays}
+																		onChange={setKeyPlaysState}
+																	/>
+																</>
+															) : null}
+														</>
+													) : (
+														<input
+															type="range"
+															className="form-range flex-grow-1"
+															min="1"
+															max="33"
+															step="1"
+															value={speed}
+															onChange={handleSpeedChange}
+															title="Speed"
+														/>
+													)}
+												</>
 											)}
 										</div>
 									) : null}
@@ -3584,52 +3685,67 @@ export const LiveGame = (props: View<"liveGame">) => {
 						<div className="live-game-affix">
 							{!locked ? (
 								<div className="d-none d-md-flex flex-wrap row-gap-2 align-items-center mb-3 pt-md-2">
-									<PlayPauseNext
-										className="me-2"
-										disabled={boxScore.current.gameOver}
-										fastForwardAlignRight
-										fastForwards={fastForwardMenuItems}
-										rewinds={canRewind ? rewindMenuItems : undefined}
-										onPlay={handlePlay}
-										onPause={handlePause}
-										onNext={handleNextPlay}
-										paused={paused}
-										titlePlay="Resume Simulation"
-										titlePause="Pause Simulation"
-										titleNext="Show Next Play"
-									/>
-									{court3d ? (
+									{reelButtons && court3d ? (
 										<>
+											<div className="me-2">{reelButtons}</div>
 											<Court3DSpeeds
 												value={rate3d}
 												onChange={(s) => {
 													setSpeed3d(String(s));
 												}}
 											/>
-											{__SPORT === "basketball" || __SPORT === "football" ? (
-												<>
-													<KeyPlaysPicker
-														value={keyPlays}
-														onChange={setKeyPlaysState}
-													/>
-													<KeyPlaysSettings
-														value={keyPlays}
-														onChange={setKeyPlaysState}
-													/>
-												</>
-											) : null}
 										</>
 									) : (
-										<input
-											type="range"
-											className="form-range flex-grow-1"
-											min="1"
-											max="33"
-											step="1"
-											value={speed}
-											onChange={handleSpeedChange}
-											title="Speed"
-										/>
+										<>
+											<PlayPauseNext
+												className="me-2"
+												disabled={boxScore.current.gameOver}
+												fastForwardAlignRight
+												fastForwards={fastForwardMenuItems}
+												rewinds={canRewind ? rewindMenuItems : undefined}
+												onPlay={handlePlay}
+												onPause={handlePause}
+												onNext={handleNextPlay}
+												paused={paused}
+												titlePlay="Resume Simulation"
+												titlePause="Pause Simulation"
+												titleNext="Show Next Play"
+											/>
+											{court3d ? (
+												<>
+													<Court3DSpeeds
+														value={rate3d}
+														onChange={(s) => {
+															setSpeed3d(String(s));
+														}}
+													/>
+													{__SPORT === "basketball" ||
+													__SPORT === "football" ? (
+														<>
+															<KeyPlaysPicker
+																value={keyPlays}
+																onChange={setKeyPlaysState}
+															/>
+															<KeyPlaysSettings
+																value={keyPlays}
+																onChange={setKeyPlaysState}
+															/>
+														</>
+													) : null}
+												</>
+											) : (
+												<input
+													type="range"
+													className="form-range flex-grow-1"
+													min="1"
+													max="33"
+													step="1"
+													value={speed}
+													onChange={handleSpeedChange}
+													title="Speed"
+												/>
+											)}
+										</>
 									)}
 								</div>
 							) : null}
