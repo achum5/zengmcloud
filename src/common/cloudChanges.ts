@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 382,
+		date: "2026-11-19",
+		text: "Game pages: the recap now comes first, then the box score.",
+	},
+	{
 		n: 381,
 		date: "2026-11-19",
 		text: "Live games: no more long necks when players bend down. Bent over for the ball or slapping the floor, their head drops toward the ball and sits on their shoulders, instead of sticking out on a stretched neck.",

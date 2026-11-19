@@ -974,6 +974,23 @@ export const GameRecap = ({
 		body: ReactNode;
 	})[] = [
 		{
+			id: "recap",
+			label: "Recap",
+			icon: DOCK_ICONS.recap,
+			body: (
+				<div className="recap-two">
+					<div>
+						<RecapStory boxScore={boxScore} />
+					</div>
+					<div>
+						<Section title="Game Leaders">
+							<Leaders boxScore={boxScore} />
+						</Section>
+					</div>
+				</div>
+			),
+		},
+		{
 			id: "box",
 			label: "Box Score",
 			icon: DOCK_ICONS.box,
@@ -1011,23 +1028,6 @@ export const GameRecap = ({
 					forceRowUpdate
 					sportState={undefined}
 				/>
-			),
-		},
-		{
-			id: "recap",
-			label: "Recap",
-			icon: DOCK_ICONS.recap,
-			body: (
-				<div className="recap-two">
-					<div>
-						<RecapStory boxScore={boxScore} />
-					</div>
-					<div>
-						<Section title="Game Leaders">
-							<Leaders boxScore={boxScore} />
-						</Section>
-					</div>
-				</div>
 			),
 		},
 		{
