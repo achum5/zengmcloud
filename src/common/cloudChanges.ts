@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 379,
+		date: "2026-11-19",
+		text: "Live games: players' heads stay on their necks. On crossovers, in-and-outs, spins, leaning jumpers and stumbles, the head no longer comes away from the body.",
+	},
+	{
 		n: 378,
 		date: "2026-11-19",
 		text: "Smart CPU: a CPU team shopping for an upgrade now takes the best deal on offer to it, not just the first one a seller wants. Teams spend their firsts on better players and give fewer of them away for role players.",

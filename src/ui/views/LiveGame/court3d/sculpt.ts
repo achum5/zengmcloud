@@ -1970,11 +1970,13 @@ export const build = (
 			[1, dp * 0.38],
 		]);
 	});
-	// The neck, thick at the base, up into his head; the traps sloping up
-	// either side of it from his shoulders.
+	// The neck, thick at the base, up into his head - wherever his head is,
+	// tipped to one side or turned with his shoulders as well (his head drawn
+	// there - see figure.ts - never off the top of his neck); the traps
+	// sloping up either side of it from his shoulders.
 	add(
 		up(0.9, 0, -dp * 0.05),
-		v3(sk.head.f, 0, sk.head.u - body.headR * 0.6),
+		v3(sk.head.f, sk.head.s, sk.head.u - body.headR * 0.6),
 		[
 			[0, sw * 0.43],
 			[0.5, sw * 0.35],
