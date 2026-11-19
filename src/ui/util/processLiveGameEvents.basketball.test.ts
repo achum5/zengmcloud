@@ -216,3 +216,47 @@ describe("the game as it goes, for the live chart of it", () => {
 		assert.strictEqual(flow.now, 840);
 	});
 });
+
+describe("a box score of its own", () => {
+	// The bug: the players were kept per GAME. Anything else playing the same
+	// game's events from the top on a copy of its own - a replay, a rewind -
+	// took them over, and from then on the live game's stats went to the
+	// copy's players: its score still counting up, its box score all zeros,
+	// nobody on the floor.
+	test("another copy of the same game played meanwhile takes none of its stats", () => {
+		const live = makeBoxScore();
+		const remaining = sample();
+		let quarters: any = [];
+		let overtimes = 0;
+		while (remaining.length > 8) {
+			const output = processLiveGameEvents({
+				events: remaining as any,
+				boxScore: live,
+				overtimes,
+				quarters,
+			});
+			overtimes = output.overtimes;
+			quarters = output.quarters;
+		}
+		// (The same game, from the top, on a copy.)
+		playAll(makeBoxScore(), sample());
+		while (remaining.length > 0) {
+			const output = processLiveGameEvents({
+				events: remaining as any,
+				boxScore: live,
+				overtimes,
+				quarters,
+			});
+			overtimes = output.overtimes;
+			quarters = output.quarters;
+		}
+
+		const players = live.teams[0].players;
+		assert.strictEqual(players[5].pts, 2);
+		assert.strictEqual(players[5].inGame, true);
+		const totalMin = players.reduce((sum: number, p: any) => sum + p.min, 0);
+		assert.strictEqual(totalMin, live.teams[0].min);
+		const totalPts = players.reduce((sum: number, p: any) => sum + p.pts, 0);
+		assert.strictEqual(totalPts, live.teams[0].pts);
+	});
+});

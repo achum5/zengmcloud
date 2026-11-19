@@ -12,17 +12,18 @@ const getPronoun = (pronoun: Parameters<typeof helpers.pronoun>[1]) => {
 	return helpers.pronoun(local.getState().gender, pronoun);
 };
 
-let playersByPidGid: number | undefined;
-let playersByPid:
-	| Record<
-			number,
-			{
-				[key: string]: number | string | boolean; // bit of a hack, generic key names which can be either a number, string or boolean. essentially an any type
-				name: string;
-				inGame: boolean;
-			}
-	  >
-	| undefined;
+type PlayersByPid = Record<
+	number,
+	{
+		[key: string]: number | string | boolean; // bit of a hack, generic key names which can be either a number, string or boolean. essentially an any type
+		name: string;
+		inGame: boolean;
+	}
+>;
+// Each box score's players by pid - that box score's own (see
+// processLiveGameEvents), set as the one in play for the call.
+let playersByPid: PlayersByPid | undefined;
+const playersOfBox = new WeakMap<object, PlayersByPid>();
 
 const getName = (pid: number) => {
 	return playersByPid?.[pid]?.name ?? "???";
@@ -410,19 +411,22 @@ const processLiveGameEvents = ({
 	overtimes: number;
 	quarters: string[];
 }) => {
-	if (
-		!playersByPid ||
-		boxScore.gid !== playersByPidGid ||
-		events[0]?.type === "init"
-	) {
-		playersByPidGid = boxScore.gid;
-		playersByPid = {};
+	// The players of THIS box score: kept per box score, not per game. (Kept
+	// per game, anything else playing the same game's events from the top on
+	// its own copy - a replay, a rewind - took it over: from then on the live
+	// game's stats went to that copy's players, its score still counting up
+	// with no player stats under it, nobody on the floor.)
+	let own = playersOfBox.get(boxScore);
+	if (!own || events[0]?.type === "init") {
+		own = {};
 		for (const t of boxScore.teams) {
 			for (const p of t.players) {
-				playersByPid[p.pid] = p;
+				own[p.pid] = p;
 			}
 		}
+		playersOfBox.set(boxScore, own);
 	}
+	playersByPid = own;
 	let stop = false;
 	let text;
 	let t: 0 | 1 | undefined;
