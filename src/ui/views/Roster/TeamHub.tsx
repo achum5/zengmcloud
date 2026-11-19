@@ -88,6 +88,9 @@ export const TeamHub = ({
 			label: "Roster",
 			icon: DOCK_ICONS.player,
 			title: null,
+			// (Its button to the very top of the window: the team's banner over
+			// the roster too.)
+			toTop: true,
 			body: roster,
 		},
 		{

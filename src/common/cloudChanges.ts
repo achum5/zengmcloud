@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 392,
+		date: "2026-11-19",
+		text: "Team pages: the Roster button in the bottom menu takes you all the way back to the top of the page.",
+	},
+	{
 		n: 391,
 		date: "2026-11-19",
 		text: "Box scores: each team's box score now has its own quarter picker next to its menu, so you can look at one team's 3rd quarter while the other shows the whole game. It replaces the quarter picker that sat at the bottom left of the game page.",
