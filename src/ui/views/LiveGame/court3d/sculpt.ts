@@ -1973,10 +1973,24 @@ export const build = (
 	// The neck, thick at the base, up into his head - wherever his head is,
 	// tipped to one side or turned with his shoulders as well (his head drawn
 	// there - see figure.ts - never off the top of his neck); the traps
-	// sloping up either side of it from his shoulders.
+	// sloping up either side of it from his shoulders. Into his head the way
+	// it goes from his shoulders - bent right over, in at the back of it -
+	// not on round under his chin, a long neck out in front of him.
+	const neckFrom = up(0.9, 0, -dp * 0.05);
+	const toHead = v3(
+		sk.head.f - neckFrom.f,
+		sk.head.s - neckFrom.s,
+		sk.head.u - neckFrom.u,
+	);
+	const neckLong = Math.hypot(toHead.f, toHead.s, toHead.u) || 1;
+	const intoHead = (body.headR * 0.6) / neckLong;
 	add(
-		up(0.9, 0, -dp * 0.05),
-		v3(sk.head.f, sk.head.s, sk.head.u - body.headR * 0.6),
+		neckFrom,
+		v3(
+			sk.head.f - toHead.f * intoHead,
+			sk.head.s - toHead.s * intoHead,
+			sk.head.u - toHead.u * intoHead,
+		),
 		[
 			[0, sw * 0.43],
 			[0.5, sw * 0.35],

@@ -12419,6 +12419,12 @@ const NECK_BACK_MOST = 25;
 // far at the hips, less and less of it: none at all past them.)
 const NECK_BENT = [34, 48] as const;
 const NECK_SAT = [60, 80] as const;
+// Bent right over - at the ball on the floor, slapping it - he looks down at
+// it: his head dropped that much further (degrees) over this much lean, in
+// toward his chest, not held out on the end of his neck. (Not with his
+// hands on his knees: he looks up from there.)
+const NECK_DOWN = 18;
+const NECK_DOWN_LEAN = [45, 70] as const;
 export const skeleton = (b: Body, q: Pose): Skeleton => {
 	const rad = Math.PI / 180;
 	// An angle in the facing plane: 0 straight down, 90 straight ahead.
@@ -12604,8 +12610,17 @@ export const skeleton = (b: Body, q: Pose): Skeleton => {
 				((q.hipN + q.hipF) / 2 - NECK_SAT[0]) / (NECK_SAT[1] - NECK_SAT[0]),
 			)) *
 		(1 - ease((q.lean - NECK_BENT[0]) / (NECK_BENT[1] - NECK_BENT[0])));
+	const down =
+		NECK_DOWN *
+		rad *
+		(1 - Math.max(q.onKneeN, q.onKneeF)) *
+		ease(
+			(q.lean - NECK_DOWN_LEAN[0]) / (NECK_DOWN_LEAN[1] - NECK_DOWN_LEAN[0]),
+		);
 	const N =
-		L > 0 ? L - Math.min(L * NECK_BACK, NECK_BACK_MOST * rad) * upright : L;
+		L > 0
+			? L - Math.min(L * NECK_BACK, NECK_BACK_MOST * rad) * upright + down
+			: L;
 	const head = v3(
 		chest.f + Math.sin(N) * up + b.headR * 0.12,
 		0,
