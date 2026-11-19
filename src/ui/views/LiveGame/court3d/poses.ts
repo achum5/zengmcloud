@@ -1032,6 +1032,8 @@ type Gait = {
 	pump: number;
 	twist: number;
 	wide: number;
+	// How far out from his sides his arms are held (degrees; 10, unsaid).
+	ab?: number;
 };
 type GaitMode =
 	| "run"
@@ -1047,25 +1049,32 @@ type GaitMode =
 // Giving ground in his stance (see "back"): feet a stride.
 const BACKPEDAL_STRIDE = 3.8;
 const GAITS: Record<GaitMode, Gait> = {
+	// (As a player runs - a 2K26 run, frame by frame: off the floor on a
+	// straight back leg, its heel kicked up high behind him through the
+	// swing; nearly upright; his arms pumping bent at the elbow, the hand up
+	// to his chest in front and the elbow driven back behind him - not held
+	// out in front of him. A quarter of the way through - one of the
+	// stride's drawn frames, see sprite.ts's CYCLE_FRAMES - his back leg is
+	// already all but straight, so it is seen every stride.)
 	run: {
 		stride: 8.6,
 		duty: 0.3,
-		ahead: 0.32,
-		hips: 2.74,
-		bob: 0.16,
+		ahead: 0.3,
+		hips: 2.76,
+		bob: 0.12,
 		flat: 0.45,
 		roll: 40,
 		swing: [
-			[0.12, -4, 32],
-			[0.4, 6, 112],
+			[0.12, -4, 36],
+			[0.4, 4, 116],
 			[0.62, 36, 104],
-			[0.83, 48, 48],
+			[0.83, 46, 44],
 		],
-		lean: 13,
-		armFwd: 44,
-		armBack: 34,
-		elbow: 84,
-		pump: 18,
+		lean: 9,
+		armFwd: 22,
+		armBack: 46,
+		elbow: 92,
+		pump: 20,
 		twist: 6,
 		wide: -0.04,
 	},
@@ -1091,25 +1100,27 @@ const GAITS: Record<GaitMode, Gait> = {
 		twist: 8,
 		wide: -0.06,
 	},
+	// (The run's way, easier: his back leg all but straight a third of the
+	// way through - on a drawn frame, as the run's is.)
 	jog: {
 		stride: 6.2,
 		duty: 0.36,
-		ahead: 0.36,
+		ahead: 0.28,
 		hips: 2.78,
 		bob: 0.14,
 		flat: 0.5,
 		roll: 32,
 		swing: [
-			[0.14, -3, 26],
-			[0.42, 6, 82],
+			[0.14, -3, 28],
+			[0.42, 6, 86],
 			[0.66, 30, 62],
 			[0.86, 32, 24],
 		],
-		lean: 9,
-		armFwd: 32,
-		armBack: 24,
-		elbow: 82,
-		pump: 14,
+		lean: 6,
+		armFwd: 18,
+		armBack: 36,
+		elbow: 90,
+		pump: 18,
 		twist: 5,
 		wide: -0.02,
 	},
@@ -1159,6 +1170,10 @@ const GAITS: Record<GaitMode, Gait> = {
 		twist: 3,
 		wide: 0.16,
 	},
+	// (As a player walks - a 2K26 walk: his arms hanging loose at his
+	// sides, close in, swinging a little; the foot carried through just
+	// clear of the floor. His hips no higher: his leg reaches the floor
+	// where his foot lands as it is.)
 	walk: {
 		stride: 4.8,
 		duty: 0.6,
@@ -1168,18 +1183,19 @@ const GAITS: Record<GaitMode, Gait> = {
 		flat: 0.5,
 		roll: 32,
 		swing: [
-			[0.12, 4, 20],
-			[0.36, 12, 62],
-			[0.66, 28, 34],
-			[0.88, 27, 8],
+			[0.12, 3, 16],
+			[0.36, 16, 44],
+			[0.66, 28, 24],
+			[0.88, 26, 6],
 		],
-		lean: 4,
-		armFwd: 18,
-		armBack: 16,
-		elbow: 22,
-		pump: 10,
+		lean: 3,
+		armFwd: 14,
+		armBack: 14,
+		elbow: 12,
+		pump: 8,
 		twist: 3,
-		wide: 0.04,
+		wide: 0.02,
+		ab: 0,
 	},
 	carry: {
 		stride: 4.6,
@@ -1456,10 +1472,10 @@ const gaitPose = (mode: GaitMode, ph: number): Pose => {
 		wide: g.wide,
 		shN: mid + amp * a,
 		elN: g.elbow + g.pump * a,
-		abN: 10 - 4 * a,
+		abN: (g.ab ?? 10) - 4 * a,
 		shF: mid - amp * a,
 		elF: g.elbow - g.pump * a,
-		abF: 10 + 4 * a,
+		abF: (g.ab ?? 10) + 4 * a,
 		twist: g.twist * a,
 		plant: 0,
 	});

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 374,
+		date: "2026-11-19",
+		text: "Live games: players run, jog and walk more like real ones. Running, they stay upright, push off a straight back leg and pump their arms bent at the elbow instead of holding them out in front; walking, their arms hang loose at their sides.",
+	},
+	{
 		n: 373,
 		date: "2026-11-19",
 		text: "Realistic players for 3D games is now a setting of its own in Global Settings (3D Players: Classic or Realistic), instead of in the court's gear menu. Classic stays the default.",
