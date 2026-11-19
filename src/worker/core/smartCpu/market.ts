@@ -81,6 +81,15 @@ export const marketSettings = {
 	// deals the market found there, the seller kept a median fifth.
 	sellerShare: 1 / 3,
 	shareAbove: 0.01,
+	// THE BUYER'S CHOICE. A team makes one deal a moment, and with several
+	// open to it - each its seller's best offer for the player - it makes the
+	// one best for itself, as it would pay once trimmed. Made in order of
+	// what each seller gained, a buyer took whichever its seller wanted most:
+	// League 34's Lakers were the winning bid in 16 of a moment's 26 deals
+	// and made the one worth 0.025 of a title to them with others worth 0.05
+	// open, and Minnesota gave two firsts for a 52 while a 56 and 57 its
+	// package would buy were on offer to it (2026-11-19).
+	buyersChoose: true,
 };
 
 // Whether a deal leaves the seller its share (marketSettings.sellerShare).
@@ -407,6 +416,12 @@ export const trimDeal = async (view: SmartView, deal: SmartDeal) => {
 export const smartDealWatchers: ((deal: SmartDeal, view: SmartView) => void)[] =
 	[];
 
+// Watchers of every deal a moment finds, before any is made (tests).
+export const smartMomentWatchers: ((
+	deals: readonly SmartDeal[],
+	view: SmartView,
+) => Promise<void>)[] = [];
+
 export const standing = (view: SmartView, tid: number) => {
 	const o = view.outlook.teams.get(tid);
 	return o
@@ -452,30 +467,59 @@ const marketMomentNow = async () => {
 			shoppedNow.set(c.seller, set);
 		}
 	});
+	for (const watch of smartMomentWatchers) {
+		await watch(deals, view);
+	}
 	// A player traded is gone from his team; the rest shopped rest a moment.
 	await setGameAttributes({
 		smartMarketRested: [...shoppedNow].map(([tid, pids]) => [tid, [...pids]]),
 	});
-	for (const found of deals) {
+	// Each deal as it would be made: trimmed, with what each side gains - by
+	// what the buyer gains first (buyersChoose).
+	const priced: SmartDeal[] = [];
+	if (marketSettings.buyersChoose) {
+		for (const found of deals) {
+			const offer = await trimDeal(view, found);
+			priced.push({
+				...found,
+				offer,
+				sellerGain: await view.dealWorth(
+					found.seller,
+					found.buyer,
+					found.out,
+					offer,
+				),
+				buyerGain: await view.dealWorth(
+					found.buyer,
+					found.seller,
+					offer,
+					found.out,
+				),
+			});
+		}
+		priced.sort(
+			(a, b) =>
+				b.buyerGain - a.buyerGain ||
+				b.sellerGain - a.sellerGain ||
+				a.seller - b.seller,
+		);
+	}
+	for (const found of marketSettings.buyersChoose ? priced : deals) {
 		if (made.length >= marketSettings.dealsPerMoment) {
 			break;
 		}
 		if (dealt.has(found.seller) || dealt.has(found.buyer)) {
 			continue;
 		}
-		found.offer = await trimDeal(view, found);
-		const sellerGain = await view.dealWorth(
-			found.seller,
-			found.buyer,
-			found.out,
-			found.offer,
-		);
-		const buyerGain = await view.dealWorth(
-			found.buyer,
-			found.seller,
-			found.offer,
-			found.out,
-		);
+		if (!marketSettings.buyersChoose) {
+			found.offer = await trimDeal(view, found);
+		}
+		const sellerGain = marketSettings.buyersChoose
+			? found.sellerGain
+			: await view.dealWorth(found.seller, found.buyer, found.out, found.offer);
+		const buyerGain = marketSettings.buyersChoose
+			? found.buyerGain
+			: await view.dealWorth(found.buyer, found.seller, found.offer, found.out);
 		if (
 			!(sellerGain > marketSettings.minGain) ||
 			!(buyerGain > marketSettings.minGain)

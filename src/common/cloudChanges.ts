@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 378,
+		date: "2026-11-19",
+		text: "Smart CPU: a CPU team shopping for an upgrade now takes the best deal on offer to it, not just the first one a seller wants. Teams spend their firsts on better players and give fewer of them away for role players.",
+	},
+	{
 		n: 377,
 		date: "2026-11-19",
 		text: "Smart CPU: CPU teams value the future more. A title five years away now counts about 77% as much as one this season (it was 59%), so draft picks and young players are worth more to every team, and it takes a bigger upgrade for a contender to give up a first.",

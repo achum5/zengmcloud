@@ -1727,3 +1727,46 @@ side. A team at 0.4% still gave two firsts for Josh Minott (52), as at 0.9.
 a first-round win counts a sixty-fourth of a title, not a sixteenth: the
 same season had the same middle-team buys (Minnesota at 1.1% two firsts for
 Paul Reed, 52; Houston at 2.2% two for Cam Spencer, 54).
+
+### The buyer's choice (2026-11-19)
+
+The owner, of Minnesota's two firsts for Josh Minott (52): "is that REALLY
+the best they could get for their 2 1sts? ... that buying team needs to be
+smarter and try to get a better upgrade".
+
+It wasn't. Offered to every team for each of its players, the same package
+(the two firsts, Terrence Shannon Jr. and Trey Kaufman-Renn) would have
+bought 48 players their teams would sell, and by Minnesota's own worth
+Tristan Da Silva (56/59) and Jaylen Wells (57/61) were each about 0.03 of a
+title better buys than Minott (`buyerOptionsProbe`). Da Silva was on offer
+to Minnesota that moment (`marketMomentProbe`).
+
+**What was wrong.** A team makes one deal a moment. The market found every
+deal - each its seller's best offer for the player - and made them in order
+of what the seller gained, so a buyer with several open took whichever its
+seller wanted most. At one League 34 moment the Lakers were the winning
+offer in 16 of 26 deals and made the one worth 0.025 of a title to them
+with others worth 0.050 and 0.044 open (`momentDealsProbe`).
+
+**What changed.** Every deal found is trimmed as it would be made, and they
+are made in order of what the buyer gains (`marketSettings.buyersChoose`):
+each seller still takes the best offer for its player, and each buyer the
+best deal open to it.
+
+From the same starts to the next preseason, before and after:
+
+| run                            | before | after |
+| ------------------------------ | ------ | ----- |
+| League 34: deals               | 31     | 23    |
+| League 34: firsts traded       | 19     | 10    |
+| League 30: deals               | 31     | 26    |
+| League 30: firsts traded       | 21     | 16    |
+| minutes for the run, League 34 | 18.4   | 19.2  |
+| minutes for the run, League 30 | 17.8   | 17.6  |
+
+Firsts bought more: Mikal Bridges (65), Stephon Castle (59/67), Dyson
+Daniels (62), and for a team building, AJ Dybantsa (20, 54/72). Minnesota
+no longer gave two for Minott (Orlando, in the playoff race, gave one).
+Still made: Minnesota at 0.3% two firsts for Ryan Kalkbrenner (51) in
+League 30 - its best deal open - and OKC three for Anfernee Simons (55),
+a contender's.
