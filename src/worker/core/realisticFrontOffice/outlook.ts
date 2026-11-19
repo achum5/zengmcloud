@@ -44,6 +44,7 @@ import {
 	expectedRosterPoints,
 	lineSynergy,
 	SLOT_MINUTES,
+	lineMeasures,
 	playerLine,
 	typicalSynergy,
 	TYPICAL_FORWARD,
@@ -308,11 +309,9 @@ const seedFor = (pid: number, season: number) =>
 	(pid * 2_654_435_761 + season * 40_503) % 2_147_483_647;
 
 // The parts of a player's line that average over simulated careers.
-export const lineMeasure = (ratings: MinimalPlayerRatings) => {
+export const lineMeasure = (ratings: MinimalPlayerRatings) =>
 	// Where his ratings put him then, not where he plays now.
-	const line = playerLine(ratings as unknown as ValueRatings);
-	return [line.roleFree, line.offense, line.usage, line.guard, line.forward];
-};
+	lineMeasures(ratings as unknown as ValueRatings);
 
 export const projectPlayer = (p: Player, season: number) => {
 	// Players of another league share pids.
@@ -2279,15 +2278,13 @@ export const teamPoints = (
 				committed += salary;
 				// A player past his contract, whom the team may let go rather
 				// than re-sign, as a pick's player past his rookie deal
-				// (wantedOnly) - each half on its own, paid as he is.
-				if (
-					wanted &&
-					contracts[i]!.exp < season &&
-					salary > 0 &&
-					lines[i]!.availability >= VETERAN_OPTION_CHANCE
-				) {
+				// (wantedOnly) - each half on its own, paid as he is. One too
+				// unlikely to be there to decide on is still gone once let go
+				// an earlier season (minor).
+				if (wanted && contracts[i]!.exp < season && salary > 0) {
 					const line = lines[i]!;
 					const key = `vet:${players[i]!.pid}`;
+					const minor = line.availability < VETERAN_OPTION_CHANCE;
 					if (line.halves && outlookSettingFor(tid, "upside")) {
 						const paid = line.halves.map((half) =>
 							half.availability > 0 ? marketSalary!(half.valueNoPot) : 0,
@@ -2301,11 +2298,12 @@ export const teamPoints = (
 									key: `${key}:${half}`,
 									pick: key,
 									salary: (salary * paid[half]!) / total,
+									minor,
 								});
 							}
 						}
 					} else {
-						options.push({ i, key, pick: key, salary });
+						options.push({ i, key, pick: key, salary, minor });
 					}
 				}
 			}
@@ -2395,6 +2393,9 @@ type LetGoOption = {
 	// are moot.
 	pick: string;
 	salary: number;
+	// Too unlikely to be there to decide on that season (a veteran under
+	// VETERAN_OPTION_CHANCE): only let go with an earlier season's decision.
+	minor?: boolean;
 };
 
 // A veteran less likely than this to be there past his contract is not
@@ -2493,13 +2494,35 @@ const letGo = (
 		outlookSettingFor(tid, "letGoRoomTolerance") * g.get("salaryCap");
 	const pointsOf = (s: SeasonState) =>
 		(s.points ??= points([...s.lines, ...s.signingsAt!(s.room!)]));
-	// The same player in each season from y on.
-	const aheadOf = (y: number, key: string) => {
+	// The same player in each season from y on - all of him, where a later
+	// season has him as two halves (his future less certain the further
+	// ahead it is): let go, he is gone for good. Without, a veteran let go
+	// the season after his contract was back the season his line split, paid
+	// his market salary out of the room - so a team was better off a few
+	// seasons on for trading away an old player it would never have re-signed
+	// (League 34: Denver gave DeRozan, 38, for a worse player, his 2029 at 40
+	// a point of strength it would never pay).
+	const aheadOf = (y: number, o: LetGoOption) => {
 		const ahead: [SeasonState, LetGoOption][] = [];
 		for (const s of seasons.slice(y)) {
-			const at = s.options.find((x) => x.key === key);
+			const at = s.options.find((x) => x.key === o.key);
 			if (at) {
 				ahead.push([s, at]);
+				continue;
+			}
+			if (o.half !== undefined) {
+				continue;
+			}
+			let halves: LetGoOption | undefined;
+			for (const x of s.options) {
+				if (x.pick === o.pick && x.half !== undefined) {
+					halves = halves
+						? { ...halves, salary: halves.salary + x.salary }
+						: { i: x.i, key: o.key, pick: o.pick, salary: x.salary };
+				}
+			}
+			if (halves) {
+				ahead.push([s, halves]);
 			}
 		}
 		return ahead;
@@ -2527,14 +2550,14 @@ const letGo = (
 		const room = now.room;
 		const fresh: LetGoOption[] = [];
 		for (const o of now.options) {
-			if (decided.has(o.key) || cut.has(o.pick)) {
+			if (o.minor || decided.has(o.key) || cut.has(o.pick)) {
 				continue;
 			}
 			decided.add(o.key);
 			const before = known?.record ? undefined : known?.decisions.get(o.key);
 			if (before && Math.abs(before.room - room) <= tolerance) {
 				if (before.gone) {
-					goFrom(aheadOf(y, o.key));
+					goFrom(aheadOf(y, o));
 				}
 			} else {
 				fresh.push(o);
@@ -2550,7 +2573,7 @@ const letGo = (
 		// Over this many seasons from now (for ranking them): the seasons
 		// after, where he is gone too, are worked out again.
 		const goneGain = (o: LetGoOption, seasonsAhead = Infinity) => {
-			const ahead = aheadOf(y, o.key);
+			const ahead = aheadOf(y, o);
 			let gain = 0;
 			const freed: number[] = [];
 			// Every season ahead, by what it is worth to the franchise: on the
@@ -2886,6 +2909,8 @@ export const teamStrengths = (
 	// decided on the first pass, and the second, for its record's shift,
 	// keeps them.
 	decideOnly?: boolean,
+	// For explaining: everyone the team is expected to have each season.
+	roster?: Parameters<typeof teamPoints>[6],
 ) => {
 	const strengthOf = (y: number, points: number) =>
 		points -
@@ -2932,7 +2957,7 @@ export const teamStrengths = (
 				money[y] = payrollCost(perCap, floorAt(y), y, room, signings);
 				refill?.(y, room, signings);
 			},
-			undefined,
+			roster,
 			decisions,
 			outlook.titleCurves.length > 0
 				? (y, points) => seasonValue(outlook, y, strengthOf(y, points), tid)

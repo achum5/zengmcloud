@@ -235,6 +235,33 @@ export const guardWeight = (position: string) =>
 export const forwardWeight = (position: string) =>
 	position === "C" ? 2 : position.includes("F") ? 1 : 0;
 
+// THE FIT'S SUPPORT. Each rating's range among the players the model was
+// fit on: random players' leagues, the 1st to 99th percentile of 2,400
+// players in five (src/test/impact/ratingRange.test.ts), out of 100. Its
+// squared terms say how a rating's worth bends within that range; past it
+// they only guess, and real players' leagues go well past it - League 34
+// to 93 three-point, 100 field goal and 100 endurance, where the fit saw 77.
+// Past the range each rating's curve carries on straight, at its slope at
+// the edge: on 1,320 removals and swaps in Leagues 11 and 34, 3% off the
+// model's error past the sim's noise, in each league and kind of change.
+const FIT_SUPPORT: Record<(typeof IMPACT_RATINGS)[number], [number, number]> = {
+	hgt: [0.18, 0.79],
+	stre: [0.26, 0.77],
+	spd: [0.19, 0.86],
+	jmp: [0.11, 0.84],
+	endu: [0.15, 0.77],
+	ins: [0.16, 0.77],
+	dnk: [0.2, 0.79],
+	ft: [0.18, 0.78],
+	fg: [0.17, 0.77],
+	tp: [0.18, 0.77],
+	oiq: [0.21, 0.75],
+	diq: [0.2, 0.77],
+	drb: [0.31, 0.83],
+	pss: [0.28, 0.84],
+	reb: [0.28, 0.81],
+};
+
 const evaluate = (
 	coefficients: {
 		ovr: readonly number[];
@@ -250,13 +277,126 @@ const evaluate = (
 		coefficients.ovr[2]! * o * o * o;
 	for (const key of IMPACT_RATINGS) {
 		const r = ratings[key] / 100;
-		value += coefficients.linear[key]! * r + coefficients.squared[key]! * r * r;
+		const linear = coefficients.linear[key]!;
+		const squared = coefficients.squared[key]!;
+		const [lo, hi] = strengthSettings.supportTails
+			? FIT_SUPPORT[key]
+			: [-Infinity, Infinity];
+		// Past what the fit saw, its curve carried on straight.
+		const edge = r > hi ? hi : r < lo ? lo : r;
+		value += linear * r + squared * (edge * edge + 2 * edge * (r - edge));
 	}
 	return value;
 };
 
-export const lineSynergy = (ratings: ValueRatings) =>
-	synergyCompositeRating(ratings as any);
+// A player's line as the fit has it: what his ratings say, believed in full.
+const rawCore = (ratings: ValueRatings) => ({
+	roleFree: evaluate(MODEL.roleFree, ratings),
+	offense: evaluate(MODEL.offense, ratings),
+	usage: shotWeight(ratings),
+});
+
+const ovrPart = (coefficients: { ovr: readonly number[] }, overall: number) => {
+	const o = Math.min(95, Math.max(25, overall)) / 100;
+	return (
+		coefficients.ovr[0]! * o +
+		coefficients.ovr[1]! * o * o +
+		coefficients.ovr[2]! * o * o * o
+	);
+};
+
+// What a league's players of an overall add, on average, over an even
+// profile of it (typicalRatings): real players lean on what the sim rewards
+// more than an even profile does - 0.5 points of value over the minimum at
+// 40-45 overall, 2.3 at 55-60, 3.7 at 65-70 (2,278 players of three leagues,
+// the same in each; src/test/impact/profileTarget.test.ts). Cubics in
+// overall / 100.
+const AVERAGE_OVER_EVEN = {
+	roleFree: [-3.2366, 16.535, -21.0418, 10.6786],
+	offense: [27.7455, -211.2451, 434.1934, -234.1859],
+	usage: [0.1427, -0.7293, 1.1683, -0.4755],
+};
+const cubic = (c: readonly number[], overall: number) => {
+	const o = Math.min(85, Math.max(30, overall)) / 100;
+	return c[0]! + c[1]! * o + c[2]! * o * o + c[3]! * o * o * o;
+};
+
+// What an even profile's ratings make of its line past its overall's own
+// part of the fit.
+const evenParts = new Map<number, ReturnType<typeof rawCore>>();
+const evenPart = (overall: number) => {
+	const target = Math.round(overall);
+	let part = evenParts.get(target);
+	if (!part) {
+		const raw = rawCore(typicalRatings(target));
+		part = {
+			roleFree: raw.roleFree - ovrPart(MODEL.roleFree, target),
+			offense: raw.offense - ovrPart(MODEL.offense, target),
+			usage: raw.usage,
+		};
+		evenParts.set(target, part);
+	}
+	return part;
+};
+
+// BELIEVED PROFILE. What sets a player apart from the average one of his
+// overall - his shooting against his defense, his share of the shots, his
+// skills - is fit on the sim, and believed in full it is overstated. On 600
+// players taken off their teams in two real leagues, played in the game's
+// own sim (src/test/impact: removal, swapLab, profileLab), the part of the
+// change his overall explains came in as the model said (1.05 +- 0.03), the
+// part from the rest of his ratings at 0.77 +- 0.04; swapping a player for
+// another of his overall moved the sim 0.75 +- 0.05 points for each point
+// the model said (League 34, 360 swaps). A market that picks the best-looking of thousands of deals picks
+// exactly those overstatements (League 34: the Lakers gave three players
+// and three firsts for a 54-overall shooter the model rated 0.6 points a
+// game better than the one they gave; the sim had him 0.3 worse). So each
+// player is the average line of his overall (AVERAGE_OVER_EVEN) and
+// `profile` of where his own ratings part from it, in his skills as in the
+// rest (lineSynergy). On 1,320 removals and swaps in Leagues 11 and 34, at
+// 0.85 the model's error past the sim's own noise is 11% smaller than
+// believing all of it (with FIT_SUPPORT; 3% of it that), its changes as
+// big as the sim's (0.99), and a swap's 0.90 of the sim's in League 34
+// (0.75 before) and 0.96 in League 11 (0.88).
+const believedCore = (ratings: ValueRatings) => {
+	const raw = rawCore(ratings);
+	const k = strengthSettings.profile;
+	if (k === 1) {
+		return raw;
+	}
+	const overall = ratings.ovr;
+	const even = evenPart(overall);
+	const roleFree =
+		ovrPart(MODEL.roleFree, overall) +
+		even.roleFree +
+		cubic(AVERAGE_OVER_EVEN.roleFree, overall);
+	const offense =
+		ovrPart(MODEL.offense, overall) +
+		even.offense +
+		cubic(AVERAGE_OVER_EVEN.offense, overall);
+	const usage = even.usage + cubic(AVERAGE_OVER_EVEN.usage, overall);
+	return {
+		roleFree: roleFree + k * (raw.roleFree - roleFree),
+		offense: offense + k * (raw.offense - offense),
+		usage: usage + k * (raw.usage - usage),
+	};
+};
+
+// His skills' composites, as believed: an even profile's of his overall
+// (theirs on average) and `profile` of where his part from it.
+export const lineSynergy = (ratings: ValueRatings): SynergyCompositeRating => {
+	const raw = synergyCompositeRating(ratings as any);
+	const k = strengthSettings.profile;
+	if (!strengthSettings.profileSynergy || k === 1) {
+		return raw;
+	}
+	const even = typicalSynergy(ratings.ovr);
+	const out = { ...raw };
+	for (const key of Object.keys(out) as (keyof SynergyCompositeRating)[]) {
+		out[key] = even[key] + k * (raw[key] - even[key]);
+	}
+	return out;
+};
 
 // `position`: the one the game has him at, if known; otherwise where his
 // ratings put him.
@@ -264,13 +404,25 @@ export const playerLine = (
 	ratings: ValueRatings,
 	position = pos(ratings as any),
 ): PlayerLine => ({
-	roleFree: evaluate(MODEL.roleFree, ratings),
-	offense: evaluate(MODEL.offense, ratings),
-	usage: shotWeight(ratings),
+	...believedCore(ratings),
 	synergy: lineSynergy(ratings),
 	guard: guardWeight(position),
 	forward: forwardWeight(position),
 });
+
+// The parts of his line that average over simulated careers (outlook.ts,
+// lineMeasure): all but his skills, where his ratings put him.
+export const lineMeasures = (ratings: ValueRatings) => {
+	const core = believedCore(ratings);
+	const position = pos(ratings as any);
+	return [
+		core.roleFree,
+		core.offense,
+		core.usage,
+		guardWeight(position),
+		forwardWeight(position),
+	];
+};
 
 // A typical 43 overall, about what is always there for the minimum. A stand-in
 // until free agency's real supply is modelled.
@@ -304,22 +456,19 @@ let replacement: StrengthPlayer | undefined;
 // A player worse than this is not worth a roster place.
 export const REPLACEMENT_OVR = REPLACEMENT_RATINGS.ovr;
 
-// The synergy composites of a player of this overall whose skills are not
-// known yet - a pick's player, a free agent the team may sign: the minimum
-// player's ratings, raised evenly until they rate that overall. The minimum
-// player's own skills, which these once had, are those of a 43: a projected
-// 60-overall starter cost his lineup about half a point of synergy.
-const typicalSynergies = new Map<number, SynergyCompositeRating>();
-export const typicalSynergy = (overall: number) => {
+// The ratings of a player of this overall whose skills are not known: the
+// minimum player's, raised evenly until they rate that overall.
+const typicalRatingsByOvr = new Map<number, ValueRatings>();
+export const typicalRatings = (overall: number) => {
 	const target = Math.round(overall);
-	let synergy = typicalSynergies.get(target);
-	if (!synergy) {
+	let ratings = typicalRatingsByOvr.get(target);
+	if (!ratings) {
 		const shifted = (shift: number) => {
-			const ratings = { ...REPLACEMENT_RATINGS };
+			const r = { ...REPLACEMENT_RATINGS };
 			for (const key of IMPACT_RATINGS) {
-				ratings[key] = REPLACEMENT_RATINGS[key] + shift;
+				r[key] = REPLACEMENT_RATINGS[key] + shift;
 			}
-			return ratings;
+			return r;
 		};
 		let lo = -40;
 		let hi = 60;
@@ -331,7 +480,22 @@ export const typicalSynergy = (overall: number) => {
 				hi = mid;
 			}
 		}
-		synergy = synergyCompositeRating(shifted(hi) as any);
+		ratings = shifted(hi);
+		typicalRatingsByOvr.set(target, ratings);
+	}
+	return ratings;
+};
+// The synergy composites of a player of this overall whose skills are not
+// known yet - a pick's player, a free agent the team may sign: those of
+// typicalRatings. The minimum player's own skills, which these once had,
+// are those of a 43: a projected 60-overall starter cost his lineup about
+// half a point of synergy.
+const typicalSynergies = new Map<number, SynergyCompositeRating>();
+export const typicalSynergy = (overall: number) => {
+	const target = Math.round(overall);
+	let synergy = typicalSynergies.get(target);
+	if (!synergy) {
+		synergy = synergyCompositeRating(typicalRatings(target) as any);
 		typicalSynergies.set(target, synergy);
 	}
 	return synergy;
@@ -523,6 +687,13 @@ export const strengthSettings = {
 	// fit - for the positions lab to try others on its rosters.
 	guardsCostScale: 1,
 	forwardsCostScale: 1,
+	// How much of what sets a player apart from the average one of his
+	// overall the model believes (believedCore), and whether in his skills
+	// too (lineSynergy) - measured in profileLab.test.ts.
+	profile: 0.85,
+	profileSynergy: true,
+	// Each rating's curve straight past the fit's support (FIT_SUPPORT).
+	supportTails: true,
 };
 
 // What the floor's positions cost a roster whose places hold this many guards

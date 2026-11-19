@@ -242,13 +242,17 @@ test(
 				[ahead.dpid],
 			);
 			// Both picks are players off the same board: what is in doubt is the
-			// gap between them, less than the error of either alone.
+			// gap between them, less than the error of the less sure alone -
+			// priced apart, it was more than either's. (Less than the one it gets
+			// alone only while both picks are the same kind of player: since the
+			// roster model believes less of what sets players apart, the 12th
+			// here is a ready 49 and the 13th a 39 who will be 54.)
 			const t = await loadTeam(outlook, mine.tid);
 			const get = [{ kind: "pick" as const, dp: ahead }];
 			const give = [{ kind: "pick" as const, dp: mine }];
 			assert.isBelow(
 				marginOf(outlook, t, give, get),
-				marginOf(outlook, t, [], get),
+				Math.max(marginOf(outlook, t, [], get), marginOf(outlook, t, give, [])),
 			);
 			// The other way round, the team moving down asks something for it,
 			// not a first.

@@ -1574,3 +1574,97 @@ forecast 99%, all 31 re-signed). A season or two ahead it did not: in
 League 7, 2016-2017, rookie-deal players on teams under 40% wins were
 forecast 49% to re-sign and 83% did (12 players), and those forecast under
 20% re-signed 43% (7). More leagues are being measured.
+
+## League 34: three trades nobody should make (2026-11-19)
+
+The owner's first look at League 34 (the real 2026 rosters, a few weeks into 2027) turned up three trades:
+
+- The Lakers, 32% title favorites, gave Jake LaRavia (26, 56/59), two bench
+  players and their 2028, 2030 and 2032 firsts to Cleveland for Sam Merrill
+  (31, 54): "the most broken trade of all time".
+- Denver gave DeMar DeRozan (38, 58) to Philadelphia for Kentavious
+  Caldwell-Pope (34, 52): "why would they accept this? ... just hang onto
+  DeRozan at that point".
+- New York gave Jose Alvarado and three seconds to Detroit for Javonte
+  Green (34, 55).
+
+Each trade was undone and played out in the game's own sim: the team with
+the trade and without it, 300 games against every other team on the same
+random numbers (`src/test/impact/swapLab.test.ts`). The Lakers were 0.33
+points a game worse for theirs, Denver 0.35 worse for theirs, New York 0.52
+better for theirs. New York's trade is sound - Green helps them more than
+Alvarado did, and the seconds are what that costs.
+
+**Denver: a player let go came back.** Whom a team lets go past his
+contract (wantedOnly, letGo) was decided by option, and a veteran was one
+option while his projection was one line and two - each half on its own -
+once his future was uncertain enough to split. DeRozan, let go after his
+contract ran out in 2027, was gone in 2028 and back in 2029, at 40, paid
+his market salary out of Denver's room: a point of 2029 strength Denver
+would never have lost, which trading him "saved". This was in every team's
+outlook, for every veteran whose projection splits a few seasons after his
+contract: a standing reason to sell old players for less than they are
+worth. Now a player let go is gone for good, whatever his line does later,
+and so is one too unlikely to be there to decide on that season.
+
+**The Lakers: the roster model believed too much.** What it says a player
+does is fit on the sim, and much of what sets one apart from another of his
+overall is the fit's own noise. On 600 removals (a rotation player taken
+off his team, 1,000 games each way) and 720 swaps (a rotation player for
+another team's of the same overall, 1,160 games each way) in Leagues 11 and
+34 (`src/test/impact`: `removal`, `swapLab`, `profileLab`):
+
+- in the removals, the part of a change a player's overall explains came
+  in as the model said (1.05 +- 0.03 of it); the part from the rest of his
+  ratings at 0.77 +- 0.04;
+- a swap of players of the same overall moved the sim 0.75 +- 0.05 of what
+  the model said in League 34, 0.88 +- 0.06 in League 11;
+- the model's "typical player of an overall", an even profile, was far
+  below the real players of that overall (0.5 points of value at 40-45, 2.3
+  at 55-60, 3.7 at 65-70, the same in three leagues);
+- League 34's real ratings run well past the random players the model was
+  fit on (three-point to 93, field goal and endurance to 100, where the fit
+  saw 77), and past that range its squared terms only guess.
+
+A market that picks the best-looking deals out of thousands picks exactly
+the model's overstatements. Now (strength.ts):
+
+- each player is the average line of real players of his overall and 0.85
+  of where his own ratings part from it, in his skills as in the rest
+  (`strengthSettings.profile`, `profileSynergy`; the average line
+  `AVERAGE_OVER_EVEN`, fit on Leagues 10, 11 and 34);
+- each rating's curve carries on straight past the range the fit saw
+  (`FIT_SUPPORT`, `supportTails`).
+
+On the 1,320 changes, the model's error past the sim's own noise is 11%
+smaller (0.154 to 0.137 points squared): League 34's swaps 17%, its
+removals 22%, League 11's removals 18%, League 11's swaps the same. The
+model's changes are now as big as the sim's (0.99 of them; swaps 0.90 in
+League 34, 0.96 in League 11), across the whole range - the tenth of swaps
+the model likes most came in at +1.10 +- 0.10 in the sim, where it now says
++1.10 and said +1.25. Of the 11%, the straight curves are 3%. League 11's
+swaps were measured after the shrink was first chosen, as a check.
+
+The three trades, priced again as they were offered:
+
+| trade                     | worth to the buyer before | now     |
+| ------------------------- | ------------------------- | ------- |
+| Lakers get Merrill        | +0.085                    | +0.034  |
+| Denver gets Caldwell-Pope | +0.0006                   | -0.0018 |
+| New York gets Green       | +0.009                    | +0.003  |
+
+League 34 played on from the same start to the next preseason, before and
+after (one run each): 34 deals and 26, about the same at a run each. Gone
+are Denver selling DeRozan and Minnesota, 0.5% to win the title, paying two
+firsts and four players for Jalen Smith (51, expiring); the runs took 13
+and 13.5 minutes.
+
+Denver no longer makes its trade; New York still makes its sound one. The
+Lakers still make theirs, for half
+the gain: the model has it at +0.39 points this season, the sim at -0.33
++- 0.18 - a miss of about two of the model's standard errors on a
+three-for-one. What is left of it is not the shrink: elite shooters
+(three-point 80 and up) are still rated 0.37 +- 0.12 points too high when
+taken off a team (0.43 before), most of it inside the fit's range. That is a fault in the model's
+fit itself, from random players' leagues; refitting it on real players'
+leagues is next.

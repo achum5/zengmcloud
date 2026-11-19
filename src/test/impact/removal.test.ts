@@ -5,6 +5,7 @@ import { last } from "../../common/utils.ts";
 import {
 	playerLine,
 	rosterPoints,
+	typicalRatings,
 	type StrengthPlayer,
 	type ValueRatings,
 } from "../../worker/core/realisticFrontOffice/strength.ts";
@@ -21,7 +22,7 @@ import { inGameOrder, play, toSimTeam, type SimTeam } from "./simTools.ts";
 // and without him; rows go to a file for the analysis.
 //
 //   REMOVAL_RUN=1 REMOVAL_SEED=1 REMOVAL_GAMES=200 REMOVAL_OUT=/tmp/rm \
-//     [REMOVAL_MIN_USAGE=0.45] \
+//     [REMOVAL_MIN_USAGE=0.45] [REMOVAL_LEAGUE=<league.json>] \
 //     npx vitest --run --project basketball src/test/impact/removal.test.ts
 
 const env: Record<string, string | undefined> =
@@ -43,6 +44,15 @@ const lineOf = (p: Player): StrengthPlayer => ({
 	valueNoPot: p.valueNoPot,
 });
 
+// The same player as a typical one of his overall (strength.ts,
+// typicalRatings): what the model would say knowing only his overall and
+// position - to see how much of where the full model parts from that is so
+// in the sim.
+const typicalLineOf = (p: Player): StrengthPlayer => ({
+	...playerLine(typicalRatings(last(p.ratings).ovr), last(p.ratings).pos),
+	valueNoPot: p.valueNoPot,
+});
+
 test.runIf(env.REMOVAL_RUN === "1")(
 	"removal: lab",
 	{ timeout: 12 * 60 * 60 * 1000 },
@@ -57,7 +67,15 @@ test.runIf(env.REMOVAL_RUN === "1")(
 		const realRandom = Math.random;
 		Math.random = makeSeededRandom(seed);
 		try {
-			await createArenaLeague(seed);
+			// REMOVAL_LEAGUE: a real league's file (its rosters as they stand)
+			// instead of an arena league.
+			if (env.REMOVAL_LEAGUE) {
+				const { loadLeagueFile } = await import("../smart/loadLeague.ts");
+				await loadLeagueFile(env.REMOVAL_LEAGUE);
+				Math.random = makeSeededRandom(seed);
+			} else {
+				await createArenaLeague(seed);
+			}
 			const numTeams = g.get("numTeams");
 			const rosters: Player[][] = [];
 			for (let tid = 0; tid < numTeams; tid++) {
@@ -90,9 +108,11 @@ test.runIf(env.REMOVAL_RUN === "1")(
 
 			const rows = [];
 			const teamsToRun = Number(env.REMOVAL_TEAMS ?? numTeams);
-			for (let tid = 0; tid < teamsToRun; tid++) {
+			// REMOVAL_FROM: the first team, to split a league across runs.
+			for (let tid = Number(env.REMOVAL_FROM ?? 0); tid < teamsToRun; tid++) {
 				const base = rosters[tid]!;
 				const baseModel = rosterPoints(base.map(lineOf));
+				const baseTypical = rosterPoints(base.map(typicalLineOf));
 				const top = [...base]
 					.sort((a, b) => b.valueNoPot - a.valueNoPot)
 					.slice(0, 10);
@@ -123,12 +143,17 @@ test.runIf(env.REMOVAL_RUN === "1")(
 						valueNoPot: Math.round(p.valueNoPot * 10) / 10,
 						rank: top.indexOf(p),
 						line: lineOf(p),
+						ratings: r,
 						model: rosterPoints(without.map(lineOf)) - baseModel,
+						typical: rosterPoints(without.map(typicalLineOf)) - baseTypical,
 						sim: mean,
 						se: sd / Math.sqrt(games),
 					});
 				}
-				await fs.writeFile(`${out}/removal-${seed}.json`, JSON.stringify(rows));
+				await fs.writeFile(
+					`${out}/removal-${seed}-${env.REMOVAL_FROM ?? 0}.json`,
+					JSON.stringify(rows),
+				);
 			}
 		} finally {
 			Math.random = realRandom;

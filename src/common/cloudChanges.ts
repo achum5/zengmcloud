@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 376,
+		date: "2026-11-19",
+		text: "Smart CPU: CPU teams judge trades more accurately. They no longer count on old players coming back who they would never re-sign, so they stop dumping veterans for worse players, and they no longer overrate what makes one role player different from another of the same rating, so they make fewer trades that only look good on paper.",
+	},
+	{
 		n: 375,
 		date: "2026-11-19",
 		text: "Live games: no more heads poking out in front on a stretched neck. Running, sprinting, driving and down in a defensive stance, players keep their head up over their shoulders while their body leans into it.",
