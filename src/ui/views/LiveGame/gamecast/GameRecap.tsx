@@ -1055,6 +1055,9 @@ export const GameRecap = ({
 			id: "recap",
 			label: "Recap",
 			icon: DOCK_ICONS.recap,
+			// (Its button to the very top of the window: the score banner over
+			// the recap too.)
+			toTop: true,
 			// (Its leaders are in the banner over it.)
 			body: (
 				<div className="gamecast-narrow recap-centered">
