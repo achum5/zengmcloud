@@ -1347,6 +1347,10 @@ tr.table-warning:hover > td {
 .recap-centered {
 	margin-left: auto;
 	margin-right: auto;
+	// (On a phone it is the page's whole width: its lines centered in it.)
+	@include media-breakpoint-down(md) {
+		text-align: center;
+	}
 }
 @include media-breakpoint-up(lg) {
 	.gamecast-grid {

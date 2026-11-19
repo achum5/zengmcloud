@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 397,
+		date: "2026-11-19",
+		text: "Game pages: on a phone the recap's headline and story are centered on the screen.",
+	},
+	{
 		n: 396,
 		date: "2026-11-19",
 		text: "Game pages: the Recap button in the bottom menu takes you all the way back to the top of the page, score banner and all.",
