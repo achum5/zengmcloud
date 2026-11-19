@@ -16,6 +16,10 @@ import { useBlocker } from "../../hooks/useBlocker.ts";
 import { HelpPopover } from "../../components/HelpPopover.tsx";
 import { safeLocalStorage } from "../../util/safeLocalStorage.ts";
 import { local, localActions } from "../../util/local.ts";
+import {
+	realPlayers,
+	setRealPlayers,
+} from "../LiveGame/court3d/realPlayers.ts";
 
 const GlobalSettings = (props: View<"globalSettings">) => {
 	const [state, setState] = useState(() => {
@@ -49,6 +53,8 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 			refreshedLook: local.getState().refreshedLook
 				? "show"
 				: ("hide" as const),
+			// How the 3D game draws the players (see realPlayers.ts).
+			players3d: realPlayers() ? "show" : ("hide" as const),
 			phaseChangeRedirects: props.phaseChangeRedirects,
 			realPlayerPhotos: props.realPlayerPhotos,
 			realTeamInfo: props.realTeamInfo,
@@ -111,6 +117,7 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 		localActions.setGamecastLayout(state.gamecast === "show");
 		localActions.setNewInterface(state.newInterface === "show");
 		localActions.setRefreshedLook(state.refreshedLook === "show");
+		setRealPlayers(state.players3d === "show");
 
 		const units = state.units === "default" ? undefined : state.units;
 		try {
@@ -183,6 +190,7 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 							| "gamecast"
 							| "newInterface"
 							| "refreshedLook"
+							| "players3d"
 					]
 				}
 			>
@@ -295,6 +303,12 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 					{__SPORT === "basketball"
 						? showHide("gamecast", "Live Game Layout", "On this device", [
 								"Tabs",
+								"Classic",
+							])
+						: null}
+					{__SPORT === "basketball"
+						? showHide("players3d", "3D Players", "On this device", [
+								"Realistic (beta)",
 								"Classic",
 							])
 						: null}

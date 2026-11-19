@@ -1,8 +1,8 @@
 import { safeLocalStorage } from "../../../util/safeLocalStorage.ts";
 
 // THE PLAYERS DRAWN AS MEN (see meshBody.ts), not the court's cartoons of
-// them - as whoever is watching likes it, kept on this device (see the
-// settings beside the court's controls). Only the picture: the game, and
+// them - as whoever is watching likes it, kept on this device (see Global
+// Settings: 3D Players). Only the picture: the game, and
 // where everybody is in it, is the same either way.
 
 const KEY = "court3dRealPlayers";

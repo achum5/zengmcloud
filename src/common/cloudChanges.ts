@@ -12,9 +12,14 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 373,
+		date: "2026-11-19",
+		text: "Realistic players for 3D games is now a setting of its own in Global Settings (3D Players: Classic or Realistic), instead of in the court's gear menu. Classic stays the default.",
+	},
+	{
 		n: 372,
 		date: "2026-11-19",
-		text: "Live games: try the new Realistic players (beta) option in the 3D court's settings (the gear). Players are drawn as real human bodies in their team's jersey and baggy shorts, with each player's face on a 3D head. It's an early version and can be slower on older phones; the refs and coaches stay as they were.",
+		text: "Live games: try the new Realistic (beta) option for 3D Players in Global Settings. Players are drawn as real human bodies in their team's jersey and baggy shorts, with each player's face on a 3D head. It's an early version and can be slower on older phones; the refs and coaches stay as they were.",
 	},
 	{
 		n: 371,
