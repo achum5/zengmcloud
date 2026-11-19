@@ -242,6 +242,9 @@ export type LeagueOutlook = {
 	// For the arena's version-against-version leagues: the same curves at the
 	// other measuredUncertainty, for the teams set to it.
 	otherCurves?: { title: Curve[]; playoff: Curve[] };
+	// Each team's own curves (outlookSettings.ownCurves): its chances as its
+	// own strength moves, everyone else as they are.
+	ownCurves?: Map<number, { title: Curve[]; playoff: Curve[] }>;
 	// Share of this season's games played, 0 in the offseason.
 	progress: number;
 	// For weighing a deal now against waiting, until the trade deadline passes.
@@ -853,6 +856,21 @@ export const outlookSettings = {
 	// playoff rounds to 382, 65 seasons under 20 wins to 49 - surer of who
 	// can win, contenders push and the rest wait.
 	measuredUncertainty: true,
+	// THE TEAM'S OWN CURVES. What a point of strength is worth in title
+	// chances to a team, read off its own seasons (ownCurve) - not off one
+	// curve fit across every team. The league's curve gave the favourite in
+	// Leagues 30, 34 and 36 a title chance 11 points higher for 0.8 points
+	// of strength, where the seasons played again with it 0.8 stronger gave
+	// 6-7; its next season's 1.3-1.5 times what they did; and an East team
+	// as good as a West one the same chances, where the seasons gave it half
+	// again (Boston 8% by the curve, 12% played). Priced by it, the
+	// favourite paid two firsts and a player for every role player it could
+	// find (2026-11-19).
+	ownCurves: true,
+	// With them, this season and next played this many times as often: read
+	// off a thousand seasons, a contender's curve moved a fifth from one set
+	// to the next (curveSlopeProbe, CS_NOISE) - teams trading on the noise.
+	ownNearRuns: 4,
 	// COLA: each team's chances toward a draw projected along its own path
 	// (colaPaths) - its playoff runs and draw wins cost it chances, as the
 	// game charges - not as if every team added the same each season. Half
@@ -3086,6 +3104,35 @@ export const fitCurve = (points: { x: number; p: number }[]): Curve => {
 export const curveAt = (curve: Curve, x: number) =>
 	1 / (1 + Math.exp(-(curve.a + curve.b * x)));
 
+// A team's own curve (outlookSettings.ownCurves): its chances with its
+// strength moved by each of OWN_SHIFTS of the season's doubt (no more than
+// OWN_SHIFT_MOST points), everyone else as they are - the seasons already
+// played, reweighed (simulateSeason's shifted) - fit as the league's is.
+// Read off few runs, it is noisy: a team with few titles in the seasons
+// played is read partly off the league's curve, each run counted against
+// OWN_PRIOR of them, level and slope at its own strength.
+export const OWN_SHIFTS = [-1, -0.5, 0.5, 1];
+export const OWN_SHIFT_MOST = 3;
+export const OWN_PRIOR = 20;
+export const ownCurve = (
+	league: Curve,
+	at: number,
+	shifts: readonly number[],
+	chances: readonly number[],
+	runs: number,
+): Curve => {
+	const own = fitCurve(shifts.map((d, k) => ({ x: at + d, p: chances[k]! })));
+	if (!Number.isFinite(own.a) || !Number.isFinite(own.b)) {
+		return league;
+	}
+	// Never better off weaker.
+	const ownB = Math.max(0, own.b);
+	const w = runs / (runs + OWN_PRIOR);
+	const b = w * ownB + (1 - w) * league.b;
+	const level = w * (own.a + own.b * at) + (1 - w) * (league.a + league.b * at);
+	return { a: level - b * at, b };
+};
+
 // The game's chance of each pick in each round from each place a team goes
 // into the draft in - undefined if it has none to give.
 const lotteryOdds = async (numTeams: number, season: number) => {
@@ -3506,6 +3553,20 @@ export const buildOutlook = async ({
 	)
 		? { title: [] as Curve[], playoff: [] as Curve[] }
 		: undefined;
+	// Each team's own curves, unless the arena's teams read the league at
+	// two settings.
+	const ownCurves =
+		outlookSettings.ownCurves && !otherCurves
+			? new Map(
+					teams.map((t) => [
+						t.tid,
+						{ title: [] as Curve[], playoff: [] as Curve[] },
+					]),
+				)
+			: undefined;
+	const runsFor = (y: number) =>
+		iterationsFor(y, iterations) *
+		(ownCurves && y <= 1 ? Math.max(1, outlookSettings.ownNearRuns) : 1);
 	// Each team's chance of each finish, season by season (colaPaths).
 	const finishes = new Map<number, number[][]>(teams.map((t) => [t.tid, []]));
 
@@ -3516,6 +3577,14 @@ export const buildOutlook = async ({
 		base.meanPoints.push(mean);
 
 		const strengthOf = (tid: number) => points.get(tid)![y]! - mean;
+		const doubt = strengthUncertainty(
+			y,
+			y === 0 && inSeason ? progress : 0,
+			outlookSettings.measuredUncertainty,
+		);
+		const shifts = ownCurves
+			? OWN_SHIFTS.map((f) => f * Math.min(doubt, OWN_SHIFT_MOST))
+			: undefined;
 		const simWith = (measured: boolean) =>
 			simulateSeason({
 				teams: teams.map((t) => ({
@@ -3534,8 +3603,10 @@ export const buildOutlook = async ({
 					y === 0 && inSeason ? progress : 0,
 					measured,
 				),
-				iterations: iterationsFor(y, iterations),
+				iterations: runsFor(y),
 				seed: season * 1009 + y * 101 + Math.round(progress * 1000),
+				shifts:
+					measured === outlookSettings.measuredUncertainty ? shifts : undefined,
 			});
 		const sim = simWith(outlookSettings.measuredUncertainty);
 		for (const t of teams) {
@@ -3583,6 +3654,49 @@ export const buildOutlook = async ({
 				})),
 			),
 		);
+		if (ownCurves && shifts) {
+			const runs = runsFor(y);
+			// A finish's chances as playoffMeasure reads them.
+			const measureOf = (rounds: readonly number[]) =>
+				playoffMeasure({
+					playoffs: 1 - rounds[0]!,
+					roundsWon: rounds.reduce(
+						(a, p, i) => a + (i > 0 ? (i - 1) * p : 0),
+						0,
+					),
+					rounds: [...rounds],
+				});
+			const all = [0, ...shifts];
+			for (const t of teams) {
+				const r = sim.get(t.tid)!;
+				const finishes = [r.rounds, ...(r.shifted ?? [])];
+				const own = ownCurves.get(t.tid)!;
+				if (finishes.length !== all.length) {
+					own.title.push(titleCurves[y]!);
+					own.playoff.push(playoffCurves[y]!);
+					continue;
+				}
+				own.title.push(
+					ownCurve(
+						titleCurves[y]!,
+						x(t.tid),
+						all,
+						finishes.map((f) => f.at(-1)!),
+						r.title * runs,
+					),
+				);
+				const measured = finishes.map(measureOf);
+				own.playoff.push(
+					ownCurve(
+						playoffCurves[y]!,
+						x(t.tid),
+						all,
+						measured,
+						measured[0]! * runs,
+					),
+				);
+			}
+		}
 		if (otherCurves) {
 			const other = simWith(!outlookSettings.measuredUncertainty);
 			otherCurves.title.push(
@@ -3681,6 +3795,7 @@ export const buildOutlook = async ({
 		titleCurves,
 		playoffCurves,
 		otherCurves,
+		ownCurves,
 		deadline,
 		classBoard: await buildClassBoard(base),
 		playoffWeight,
@@ -3711,9 +3826,13 @@ export const seasonValue = (
 };
 
 // The title and playoff curves a team prices by: its own measuredUncertainty's
-// in the arena's version-against-version leagues, otherwise the league's.
+// in the arena's version-against-version leagues, otherwise its own
+// (ownCurves), or the league's.
 export const curvesFor = (
-	outlook: Pick<LeagueOutlook, "titleCurves" | "playoffCurves" | "otherCurves">,
+	outlook: Pick<
+		LeagueOutlook,
+		"titleCurves" | "playoffCurves" | "otherCurves" | "ownCurves"
+	>,
 	tid?: number,
 ) =>
 	tid !== undefined &&
@@ -3721,7 +3840,10 @@ export const curvesFor = (
 	outlookSettingFor(tid, "measuredUncertainty") !==
 		outlookSettings.measuredUncertainty
 		? outlook.otherCurves
-		: { title: outlook.titleCurves, playoff: outlook.playoffCurves };
+		: ((tid !== undefined ? outlook.ownCurves?.get(tid) : undefined) ?? {
+				title: outlook.titleCurves,
+				playoff: outlook.playoffCurves,
+			});
 
 // The deadline as a team reads it: what it expects to learn by then by its
 // own measuredDeadline.

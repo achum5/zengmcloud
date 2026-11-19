@@ -90,12 +90,41 @@ export const marketSettings = {
 	// open, and Minnesota gave two firsts for a 52 while a 56 and 57 its
 	// package would buy were on offer to it (2026-11-19).
 	buyersChoose: true,
+	// THE BUYER'S NEXT BEST. The seller's share is of what the deal makes
+	// past what the buyer would make anyway - its best other deal open that
+	// moment, that seller taking no more than it must (buyerAlternatives) -
+	// not of all the buyer gains. A seller holds out for its share of an
+	// upgrade only it can sell; when the buyer has others as good on offer,
+	// it sells for what beats keeping him. At one League 36 moment the
+	// Lakers had 23 deals open, a role player in each, and nobody bidding
+	// against them for any (the next best offer worth 0.001 to the seller);
+	// with a third of the Lakers' gain the seller's, each cost two firsts
+	// and a player, and they paid that for Kevin Huerter (55) and then
+	// Duncan Robinson (58) (2026-11-19).
+	buyerAlternatives: true,
+	// THE MARGIN OF ERROR (owner's call, 2026-11-19): each side must gain by
+	// more than its own read of the deal could be off (SmartView.marginNow) -
+	// a GM doesn't give firsts for a gain he can't be sure of. With only
+	// minGain, a third to a half of the deals paying firsts gained the buyer
+	// under 0.01 of a title (Oklahoma City three firsts for Cedric Coward,
+	// 0.002), where its read of a one-player swap is off by about 0.04.
+	margins: true,
 };
 
-// Whether a deal leaves the seller its share (marketSettings.sellerShare).
-export const fairToSeller = (sellerGain: number, buyerGain: number) =>
-	!(buyerGain > marketSettings.shareAbove) ||
-	sellerGain >= marketSettings.sellerShare * (sellerGain + buyerGain);
+// Whether a deal leaves the seller its share (marketSettings.sellerShare) of
+// what it makes past what the buyer would gain anyway (buyerAlt, its next
+// best: marketSettings.buyerAlternatives).
+export const fairToSeller = (
+	sellerGain: number,
+	buyerGain: number,
+	buyerAlt = 0,
+) => {
+	const over = buyerGain - Math.max(0, buyerAlt);
+	return (
+		!(over > marketSettings.shareAbove) ||
+		sellerGain >= marketSettings.sellerShare * (sellerGain + over)
+	);
+};
 
 // Where candidate sales fall away (for tests and the arena).
 export const marketStats = {
@@ -107,6 +136,8 @@ export const marketStats = {
 	illegal: 0,
 	// Deals the seller turned down for its share (sellerShare).
 	unfair: 0,
+	// Deals a side's gain didn't clear its margin of error (margins).
+	withinMargin: 0,
 };
 
 export type SmartDeal = {
@@ -119,6 +150,9 @@ export type SmartDeal = {
 	// The next best real offer's worth to the seller: what the winner's
 	// offer is trimmed to beat, once it is to be made.
 	bar: number;
+	// What the buyer would gain from its best other deal open this moment
+	// (withAlternatives), its seller taking no more than it must.
+	buyerAlt?: number;
 };
 
 const none: Holdings = { players: [], picks: [] };
@@ -283,6 +317,7 @@ const trimmed = (
 	bar: number,
 	// Their payrolls as the trade rules count them.
 	payrolls: { seller: number; buyer: number },
+	buyerAlt = 0,
 ) => {
 	const salary = (h: Holdings) =>
 		h.players.reduce((sum, p) => sum + contractOf(p).amount, 0);
@@ -309,7 +344,9 @@ const trimmed = (
 			const buyerGain = view.dealWorthNow(buyer, seller, without, out);
 			if (
 				sellerGain > bar &&
-				fairToSeller(sellerGain, buyerGain) &&
+				(!marketSettings.margins ||
+					sellerGain > view.marginNow(seller, out, without)) &&
+				fairToSeller(sellerGain, buyerGain, buyerAlt) &&
 				salaryRulesAllow(buyer, payrolls.buyer, salary(out), salary(without)) &&
 				salaryRulesAllow(seller, payrolls.seller, salary(without), salary(out))
 			) {
@@ -393,6 +430,9 @@ export const dealsNow = async (
 // (trimmed): only the few a moment makes are trimmed, not every deal found
 // (82 one moment, 4 of them made).
 export const trimDeal = async (view: SmartView, deal: SmartDeal) => {
+	// Each side's chance of keeping what it gets, for its margin.
+	await ensureRetention(view.outlook, deal.out.players, deal.buyer);
+	await ensureRetention(view.outlook, deal.offer.players, deal.seller);
 	const payrolls = {
 		seller: await view.tradePayroll(deal.seller),
 		buyer: await view.tradePayroll(deal.buyer),
@@ -406,8 +446,43 @@ export const trimDeal = async (view: SmartView, deal: SmartDeal) => {
 			deal.offer,
 			deal.bar,
 			payrolls,
+			deal.buyerAlt ?? 0,
 		),
 	);
+};
+
+// Each deal's buyerAlt (marketSettings.buyerAlternatives): what its buyer
+// would gain from its best deal of these with another seller, that seller
+// taking what it must - as much as beats its next best offer, or keeping
+// the player - and the buyer the rest of what that deal makes for both
+// (sellerGain + buyerGain, about the same whatever the offer, as each side
+// counts a piece at its price or more). Untouched without the setting.
+export const withAlternatives = async (
+	view: SmartView,
+	deals: readonly SmartDeal[],
+): Promise<SmartDeal[]> => {
+	if (!marketSettings.buyerAlternatives) {
+		return [...deals];
+	}
+	// One at a time: what a franchise is worth is worked out in order.
+	const free: number[] = [];
+	for (const d of deals) {
+		free.push(
+			d.sellerGain +
+				(await view.dealWorth(d.buyer, d.seller, d.offer, d.out)) -
+				Math.max(d.bar, marketSettings.minGain),
+		);
+	}
+	return deals.map((d, i) => {
+		let alt = 0;
+		for (const [j, other] of deals.entries()) {
+			// Another seller's: a seller doesn't bid against itself.
+			if (j !== i && other.buyer === d.buyer && other.seller !== d.seller) {
+				alt = Math.max(alt, free[j]!);
+			}
+		}
+		return { ...d, buyerAlt: alt };
+	});
 };
 
 // Watchers of the deals the market makes (tests, the arena).
@@ -467,8 +542,11 @@ const marketMomentNow = async () => {
 			shoppedNow.set(c.seller, set);
 		}
 	});
+	const open = marketSettings.buyersChoose
+		? await timed("market: alternatives", () => withAlternatives(view, deals))
+		: deals;
 	for (const watch of smartMomentWatchers) {
-		await watch(deals, view);
+		await watch(open, view);
 	}
 	// A player traded is gone from his team; the rest shopped rest a moment.
 	await setGameAttributes({
@@ -478,7 +556,7 @@ const marketMomentNow = async () => {
 	// what the buyer gains first (buyersChoose).
 	const priced: SmartDeal[] = [];
 	if (marketSettings.buyersChoose) {
-		for (const found of deals) {
+		for (const found of open) {
 			const offer = await trimDeal(view, found);
 			priced.push({
 				...found,
@@ -527,7 +605,15 @@ const marketMomentNow = async () => {
 			marketStats.changed += 1;
 			continue;
 		}
-		if (!fairToSeller(sellerGain, buyerGain)) {
+		if (
+			marketSettings.margins &&
+			(!(sellerGain > view.marginNow(found.seller, found.out, found.offer)) ||
+				!(buyerGain > view.marginNow(found.buyer, found.offer, found.out)))
+		) {
+			marketStats.withinMargin += 1;
+			continue;
+		}
+		if (!fairToSeller(sellerGain, buyerGain, found.buyerAlt)) {
 			marketStats.unfair += 1;
 			continue;
 		}

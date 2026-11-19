@@ -1770,3 +1770,92 @@ no longer gave two for Minott (Orlando, in the playoff race, gave one).
 Still made: Minnesota at 0.3% two firsts for Ryan Kalkbrenner (51) in
 League 30 - its best deal open - and OKC three for Anfernee Simons (55),
 a contender's.
+
+### League 36: two firsts and Sexton for Kevin Huerter (2026-11-19)
+
+The owner, of the Lakers giving Collin Sexton and their 2030 and 2032
+firsts for Kevin Huerter (55): "huerter sucks. like he actually performs
+like a bad nba player. in what world are the lakers giving away 2 1sts plus
+sexton for him???"
+
+**On the floor he helps them.** Huerter for Sexton, played 8,700 games a
+side against the league as it stood, made the Lakers 0.73 points a game
+better (`swapLab`); the roster model said 0.81. The box score reads him at a
+BPM of -3.0; the Lakers were +3.1 a game with him on the floor. The deals
+open to them that moment were real upgrades too: Gafford +1.23, Jay Huff
++1.00, Duncan Robinson +0.44. What was wrong was the price, and why each
+buyer paid it.
+
+**What a point is worth to the favourite was overstated.** Title chances
+came off one logistic curve fit across all thirty teams. With one team
+played 0.8 points stronger and everyone else as they were
+(`curveSlopeProbe`), the favourite's chances rose 6-7 points in Leagues 30,
+34 and 36 where the curve said 11; seasons ahead the curve said 1.3-1.5
+times what the seasons did; and an East team as good as a West one got the
+West's chances (Boston 8% by the curve, 12% played). Now each team prices
+by its own curve (`outlookSettings.ownCurves`): the season's simulated runs,
+each reweighed by how much likelier its draw of the team's strength would
+be with the team half or one doubt stronger or weaker (`simulateSeason`'s
+`shifts` - no season played again), fit as the league's was. A team with
+few titles in those runs is read partly off the league's curve, each title
+against 20. Read off a thousand runs, a contender's curve moved a fifth from
+one set to the next - enough to trade on the noise - so this season and
+next are now played four times as often (`ownNearRuns`, about a second more
+each week the outlook is built). Against the seasons played again, the
+Lakers' 0.8 points are now 7.9 points of title (played 7.3), Boston's level
+11.2% (played 12.3%). Huerter was 0.22 of a title to them; now 0.17.
+
+**The seller took a third of a gain it couldn't sell alone.** At that
+moment the Lakers had 23 deals open, a role player in each, and nobody
+bidding against them for any: the next best offer was worth 0.001 to every
+seller (`marketMomentProbe`). What set the price was the seller's share - a
+seller keeps a third of what a deal makes for both. With the Lakers gaining
+a lot from any of them, each of the 23 cost two firsts and a player, as if
+Detroit were the only team with a shooter to sell. Now the share is of what
+the deal makes past the buyer's next best (`marketSettings.
+buyerAlternatives`): its best deal with another seller, that seller taking
+only what beats keeping the player. A seller with something nobody else can
+sell still holds out for its share; one of 23 sells for what beats keeping
+him. Huerter would have cost Sexton and the 2030 first.
+
+**And buyers took gains they couldn't be sure of.** Even then, a third to a
+half of the deals paying firsts gained the buyer under 0.01 of a title -
+Oklahoma City three firsts for Cedric Coward, 0.002 - while its read of a
+one-player swap is off by about 0.04. The design left a margin for the
+model's own error to the owner; the owner chose it (2026-11-19). Now each
+side must gain by more than its own read of the deal could be off
+(`marketSettings.margins`, `SmartView.marginNow`): the older front office's
+reckoning (`margin.ts`) - each player who moves, his on-court value and his
+career, and each pick, through every season he is expected to be there - by
+what a point is worth to that team then, off its own curves. The on-court
+error is the roster model's as it is now: against 600 players taken off
+their rosters in the sim (the removal lab, Leagues 34 and 11), by most
+likelihood with each sim's own noise, 0.52 points a full game at every
+overall (the first model's grew from 0.4 at 52 to 1.1 at 70). At the
+Lakers' moment Sam Hauser for Mamukelashvili and two firsts (a gain of
+0.004 against a margin of 0.107) and Day'Ron Sharpe (0.0002 against 0.034)
+fall away; Huerter (0.104 against 0.026), Robinson, Gafford and Huff (0.14
+against 0.034) stay.
+
+Measured otherwise and not built: buyers asking after their own best
+targets each moment (no new deals - the targets were stars nobody would
+sell or players who hardly mattered), and the value of keeping a first for
+a better deal later (in League 30 frozen for a season, a buyer's best deal
+paying a first was beaten later 89% of the time; in League 34, half).
+
+The owner's league files were lost with the container before the runs on
+them finished; on three random-players leagues (`arena:301-303`), one
+season each, before and after:
+
+| run                                       | before | after |
+| ----------------------------------------- | ------ | ----- |
+| deals                                     | 106    | 75    |
+| firsts traded                             | 72     | 52    |
+| deals paying firsts for veterans under 60 | 13     | 7     |
+| deals paying firsts for players under 26  | 36     | 26    |
+| minutes for the three seasons             | 34.1   | 34.6  |
+
+What fell away besides were mostly near-equal swaps between teams out of
+the race (a 48 for a 50 and seconds). Still made: Denver at 9% two firsts
+for a 30-year-old 54 - a gain past its margin, to look at again on the
+owner's leagues.

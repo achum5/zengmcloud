@@ -123,3 +123,53 @@ test("a prospect's doubt is in the minutes he will play once he is good", () => 
 	]);
 	assert.isAbove(growing, 2 * asToday);
 });
+
+test("for the smart CPU, a team's doubt is read off its own curve", () => {
+	// The league's curve, and one team's own: the same up to its strength,
+	// twice as steep there (the favourite's, say).
+	const steep = { a: -8, b: 0.9 };
+	const own = {
+		...outlook,
+		playoffCurves: outlook.titleCurves.map(() => ({ a: 0, b: 0 })),
+		ambition: 0,
+		ownCurves: new Map([
+			[
+				7,
+				{
+					title: outlook.titleCurves.map(() => steep),
+					playoff: outlook.titleCurves.map(() => ({ a: 0, b: 0 })),
+				},
+			],
+		]),
+	} as unknown as LeagueOutlook;
+	const path = always.map(() => 8);
+	const moved = [{ place: 0, availability: always }];
+	const forOwn = sideMargin(own, path, moved, [], {
+		tid: 7,
+		onCourtError: 0.52,
+	});
+	const forLeague = sideMargin(own, path, moved, [], {
+		tid: 3,
+		onCourtError: 0.52,
+	});
+	assert.isAbove(forOwn, forLeague);
+	// The on-court error as given, the same at every overall.
+	const star = sideMargin(
+		own,
+		path,
+		[{ place: 0, availability: always, ovr: always.map(() => 70) }],
+		[],
+		{ tid: 3, onCourtError: 0.52 },
+	);
+	const rolePlayer = sideMargin(
+		own,
+		path,
+		[{ place: 0, availability: always, ovr: always.map(() => 55) }],
+		[],
+		{ tid: 3, onCourtError: 0.52 },
+	);
+	// Only the careers' error grows with overall (worth more to the better
+	// player).
+	assert.isAbove(star, rolePlayer);
+	assert.isBelow(star, 2 * rolePlayer);
+});

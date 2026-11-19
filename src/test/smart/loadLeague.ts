@@ -27,8 +27,24 @@ export const loadLeagueFile = async (file: string) => {
 			await import("../../worker/core/realisticFrontOffice/outlook.ts");
 		Object.assign(outlookSettings, JSON.parse(env.OUTLOOK_SET));
 	}
+	// MARKET_SET: the smart CPU market's settings, likewise.
+	if (env.MARKET_SET) {
+		const { marketSettings } =
+			await import("../../worker/core/smartCpu/market.ts");
+		Object.assign(marketSettings, JSON.parse(env.MARKET_SET));
+	}
+	// LL_SEED: another run of the same league, for a spread of outcomes.
 	const { makeSeededRandom } = await import("../../common/random.ts");
-	Math.random = makeSeededRandom(1);
+	Math.random = makeSeededRandom(Number(env.LL_SEED ?? 1));
+	// "arena:<lid>": a new random-players league instead of a file
+	// (test/arena), for a run on a league nobody uploaded.
+	if (file.startsWith("arena:")) {
+		const { createArenaLeague } = await import("../arena/runLeague.ts");
+		(idb as any).league = undefined;
+		await createArenaLeague(Number(file.slice("arena:".length)));
+		Math.random = makeSeededRandom(Number(env.LL_SEED ?? 1));
+		return;
+	}
 	const fs = await importNode("node:fs/promises");
 	const data = JSON.parse(await fs.readFile(file, "utf8"));
 	const ga = data.gameAttributes;
@@ -63,4 +79,17 @@ export const loadLeagueFile = async (file: string) => {
 		tid: 0,
 	} as any);
 	await league.loadGameAttributes();
+	// LL_UNDO: a trade to undo before the probe looks, as JSON -
+	// {"players":{"<pid>":<tid>},"picks":{"<dpid>":<tid>}}, each back where it was.
+	if (env.LL_UNDO) {
+		const undo = JSON.parse(env.LL_UNDO);
+		for (const [pid, tid] of Object.entries(undo.players ?? {})) {
+			const p = await idb.cache.players.get(Number(pid));
+			await idb.cache.players.put({ ...p!, tid: tid as number });
+		}
+		for (const [dpid, tid] of Object.entries(undo.picks ?? {})) {
+			const dp = await idb.cache.draftPicks.get(Number(dpid));
+			await idb.cache.draftPicks.put({ ...dp!, tid: tid as number });
+		}
+	}
 };

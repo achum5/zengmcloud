@@ -8,6 +8,7 @@ import type {
 import { g } from "../../util/index.ts";
 import {
 	curveAt,
+	curvesFor,
 	draftPlaceSpread,
 	expectedPlace,
 	placesAfter,
@@ -218,12 +219,14 @@ export const explainDeal = (
 		);
 		const value = years.map(
 			(y) =>
-				seasonValue(outlook, y, after[y]!) -
-				seasonValue(outlook, y, before[y]!) +
+				seasonValue(outlook, y, after[y]!, side.tid) -
+				seasonValue(outlook, y, before[y]!, side.tid) +
 				money[y]!,
 		);
 		const title = (path: readonly number[]) =>
-			path.map((s, y) => round(curveAt(outlook.titleCurves[y]!, s), 4));
+			path.map((s, y) =>
+				round(curveAt(curvesFor(outlook, side.tid).title[y]!, s), 4),
+			);
 		return {
 			tid: side.tid,
 			gain: round(side.gain, 5),

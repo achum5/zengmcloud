@@ -37,6 +37,13 @@ export type SeasonSimResult = {
 	// The chance of each finish: missing the playoffs first, then winning 0,
 	// 1, ... series.
 	rounds: number[];
+	// With shifts: the chance of each finish (as rounds) had this team been
+	// each shift stronger, everyone else as they are - read off the same
+	// seasons, each weighed by how much likelier its draw of the team's true
+	// strength would have been with the shift (the draw is normal about the
+	// read, so the weight is the ratio of the two normal densities). No
+	// season is played again, and the rest is as without.
+	shifted?: number[][];
 };
 
 export const normalCdf = (x: number) => {
@@ -93,6 +100,7 @@ export const simulateSeason = ({
 	uncertainty,
 	iterations,
 	seed,
+	shifts,
 }: {
 	teams: readonly SeasonSimTeam[];
 	// Best-of lengths, first round first.
@@ -103,6 +111,8 @@ export const simulateSeason = ({
 	uncertainty: number;
 	iterations: number;
 	seed: number;
+	// Strengths to add to each team in turn, for SeasonSimResult.shifted.
+	shifts?: readonly number[];
 }): Map<number, SeasonSimResult> => {
 	const random = makeSeededRandom(seed);
 	const gauss = () => {
@@ -172,6 +182,13 @@ export const simulateSeason = ({
 
 	const n = teams.length;
 	const strengths = new Float64Array(n);
+	// Each team's draw this time round, and with shifts, the weights' sums
+	// and the weighted finishes (team, then shift, then finish).
+	const errors = new Float64Array(n);
+	const reweigh = shifts && shifts.length > 0 && uncertainty > 0;
+	const numShifts = reweigh ? shifts.length : 0;
+	const weightSums = new Float64Array(n * numShifts);
+	const weighted = new Float64Array(n * numShifts * (numRounds + 2));
 	const gamesRemaining = teams.map((t) => t.gamesRemaining);
 
 	// Each team's season, played again every iteration.
@@ -191,6 +208,7 @@ export const simulateSeason = ({
 			const t = teams[ti]!;
 			const s = sim[ti]!;
 			const error = uncertainty * gauss();
+			errors[ti] = error;
 			s.strength = t.strength + error;
 			s.playoffStrength = (t.playoffStrength ?? t.strength) + error;
 			s.wins = t.won;
@@ -328,8 +346,37 @@ export const simulateSeason = ({
 		for (const t of sim) {
 			results.get(t.tid)!.rounds[t.series + 1]! += 1;
 		}
+		if (reweigh) {
+			const twoVariance = 2 * uncertainty * uncertainty;
+			for (let ti = 0; ti < n; ti++) {
+				const e = errors[ti]!;
+				const finish = sim[ti]!.series + 1;
+				for (let k = 0; k < numShifts; k++) {
+					const d = shifts[k]!;
+					const w = Math.exp((2 * e * d - d * d) / twoVariance);
+					const at = ti * numShifts + k;
+					weightSums[at]! += w;
+					weighted[at * (numRounds + 2) + finish]! += w;
+				}
+			}
+		}
 	}
 
+	if (reweigh) {
+		for (let ti = 0; ti < n; ti++) {
+			const shifted: number[][] = [];
+			for (let k = 0; k < numShifts; k++) {
+				const at = ti * numShifts + k;
+				const sum = weightSums[at]!;
+				const rounds = new Array<number>(numRounds + 2);
+				for (let f = 0; f < numRounds + 2; f++) {
+					rounds[f] = sum > 0 ? weighted[at * (numRounds + 2) + f]! / sum : 0;
+				}
+				shifted.push(rounds);
+			}
+			results.get(teams[ti]!.tid)!.shifted = shifted;
+		}
+	}
 	for (const r of results.values()) {
 		r.title /= iterations;
 		r.finals /= iterations;

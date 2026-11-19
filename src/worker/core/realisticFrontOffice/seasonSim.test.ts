@@ -100,3 +100,57 @@ test(
 		assert.closeTo(boosted.get(25)!.playoffs, base.get(25)!.playoffs, 0.02);
 	},
 );
+
+test(
+	"a team's chances with a shift, read off the same seasons, are its chances played again that much stronger",
+	{ timeout: 120_000 },
+	() => {
+		const shifts = [-1, 1];
+		const teams = league();
+		const read = simulateSeason({
+			teams,
+			numGamesPlayoffSeries: [7, 7, 7, 7],
+			playIn: true,
+			byConference: true,
+			uncertainty: 2,
+			iterations: 4000,
+			seed: 3,
+			shifts,
+		});
+		// The best team and one in the middle.
+		for (const tid of [29, 20]) {
+			for (const [k, d] of shifts.entries()) {
+				const played = simulateSeason({
+					teams: league(
+						Object.assign([], {
+							[tid]: { strength: teams[tid]!.strength + d },
+						}),
+					),
+					numGamesPlayoffSeries: [7, 7, 7, 7],
+					playIn: true,
+					byConference: true,
+					uncertainty: 2,
+					iterations: 20000,
+					seed: 4,
+				}).get(tid)!;
+				const shifted = read.get(tid)!.shifted![k]!;
+				assert.closeTo(shifted.at(-1)!, played.title, 0.03);
+				assert.closeTo(1 - shifted[0]!, played.playoffs, 0.03);
+			}
+		}
+		// Without shifts, the same seasons as before.
+		const plain = simulateSeason({
+			teams,
+			numGamesPlayoffSeries: [7, 7, 7, 7],
+			playIn: true,
+			byConference: true,
+			uncertainty: 2,
+			iterations: 4000,
+			seed: 3,
+		});
+		for (const [tid, r] of plain) {
+			assert.strictEqual(r.title, read.get(tid)!.title);
+			assert.isUndefined(r.shifted);
+		}
+	},
+);

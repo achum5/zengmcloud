@@ -25,7 +25,7 @@ test.skipIf(!env.MD_LEAGUE)(
 			realisticFrontOffices: false,
 		});
 		const { idb } = await import("../../worker/db/index.ts");
-		const { smartMomentWatchers, trimDeal } =
+		const { smartDealWatchers, smartMomentWatchers, trimDeal } =
 			await import("../../worker/core/smartCpu/market.ts");
 		const teams = await idb.cache.teams.getAll();
 		const abbrev = new Map(teams.map((t) => [t.tid, t.abbrev]));
@@ -53,6 +53,13 @@ test.skipIf(!env.MD_LEAGUE)(
 					`  ${abbrev.get(d.buyer)} gets ${d.out.players.map(name).join("; ")} from ${abbrev.get(d.seller)} for [${[...offer.players, ...offer.picks].map(name).join("; ")}]: seller ${sellerGain.toFixed(4)}, buyer ${buyerGain.toFixed(4)}`,
 				);
 			}
+			fs.writeFileSync(env.MD_OUT!, lines.join("\n") + "\n");
+		});
+		// And the deals made, as they are.
+		smartDealWatchers.push((d: any) => {
+			lines.push(
+				`  MADE: ${abbrev.get(d.buyer)} gets ${d.out.players.map(name).join("; ")} from ${abbrev.get(d.seller)} for [${[...d.offer.players, ...d.offer.picks].map(name).join("; ")}]: seller ${d.sellerGain.toFixed(4)}, buyer ${d.buyerGain.toFixed(4)}, bar ${d.bar.toFixed(4)}`,
+			);
 			fs.writeFileSync(env.MD_OUT!, lines.join("\n") + "\n");
 		});
 		await game.play(Number(env.MD_DAYS ?? 10), {});

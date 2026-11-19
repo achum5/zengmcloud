@@ -3,6 +3,7 @@ import {
 	OUTLOOK_YEARS,
 	outlookSeason,
 	PATIENCE,
+	seasonValue,
 	strengthUncertainty,
 	type LeagueOutlook,
 	type PickLike,
@@ -53,6 +54,17 @@ const perOvr = (ovr: number) =>
 
 // How many errors a gain must clear. Settable for the arena.
 export const marginSettings = { z: 1 };
+
+// THE SMART CPU'S MARGIN (smartCpu/market.ts, marketSettings.margins): the
+// same reckoning for a team priced by its own curves (curvesFor) - its whole
+// season's worth, title and run - with the roster model as it is now. Its
+// on-court error, against 600 players taken off their rosters in the sim
+// (the removal lab, Leagues 34 and 11, the believed profile as shipped), by
+// most likelihood with each sim's own noise: 0.52 points a full game, the
+// same at every overall (the first model's grew from 0.4 at 52 to 1.1 at 70;
+// the shrunk profile reads stars as well as role players).
+export type MarginFor = { tid: number; onCourtError: number };
+export const SMART_ON_COURT_ERROR = 0.52;
 
 export type MovedPlayer = {
 	// His place in the pecking order of the team he is priced for, 0 for the
@@ -124,13 +136,15 @@ export const sideMargin = (
 	path: readonly number[],
 	moved: readonly MovedPlayer[],
 	pairs: readonly (readonly [MovedPlayer, MovedPlayer])[] = [],
+	forTeam?: MarginFor,
 ) => {
 	let variance = 0;
 	for (const [a, b] of pairs) {
-		variance += (sdOf(outlook, path, a) - sdOf(outlook, path, b)) ** 2;
+		variance +=
+			(sdOf(outlook, path, a, forTeam) - sdOf(outlook, path, b, forTeam)) ** 2;
 	}
 	for (const p of moved) {
-		variance += sdOf(outlook, path, p) ** 2;
+		variance += sdOf(outlook, path, p, forTeam) ** 2;
 	}
 	return marginSettings.z * Math.sqrt(variance);
 };
@@ -140,20 +154,33 @@ const sdOf = (
 	outlook: LeagueOutlook,
 	path: readonly number[],
 	p: MovedPlayer,
+	forTeam?: MarginFor,
 ) => {
 	let sd = 0;
 	for (let y = 0; y <= OUTLOOK_YEARS; y++) {
 		const place = typeof p.place === "number" ? p.place : (p.place[y] ?? 0);
 		const minutes = SLOT_MINUTES[Math.min(place, SLOT_MINUTES.length - 1)]!;
-		const curve = outlook.titleCurves[y]!;
-		const q = curveAt(curve, path[y]!);
-		const slope = curve.b * q * (1 - q);
+		// What a point of strength is worth that season, discounted.
+		let slope: number;
+		if (forTeam) {
+			const s = path[y]!;
+			slope =
+				(seasonValue(outlook, y, s + SLOPE_STEP, forTeam.tid) -
+					seasonValue(outlook, y, s - SLOPE_STEP, forTeam.tid)) /
+				(2 * SLOPE_STEP);
+		} else {
+			const curve = outlook.titleCurves[y]!;
+			const q = curveAt(curve, path[y]!);
+			slope = PATIENCE ** y * curve.b * q * (1 - q);
+		}
 		const ovr = p.ovr?.[y] ?? 52;
 		const projection =
 			(PROJECTION_ERROR[y] ?? PROJECTION_ERROR.at(-1)!) * perOvr(ovr);
-		const error =
-			p.error?.[y] ?? Math.sqrt(valueError(ovr) ** 2 + projection ** 2);
-		sd += PATIENCE ** y * slope * minutes * (p.availability[y] ?? 0) * error;
+		const onCourt = forTeam ? forTeam.onCourtError : valueError(ovr);
+		const error = p.error?.[y] ?? Math.sqrt(onCourt ** 2 + projection ** 2);
+		sd += slope * minutes * (p.availability[y] ?? 0) * error;
 	}
 	return sd;
 };
+
+const SLOPE_STEP = 0.25;

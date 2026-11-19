@@ -21,6 +21,7 @@ import {
 	draftPlaceMisread,
 	placeBySeason,
 	sideMargin,
+	type MarginFor,
 	type MovedPlayer,
 } from "./margin.ts";
 import { valueOverReplacement } from "./strength.ts";
@@ -544,7 +545,7 @@ export const salariesWork = (
 };
 
 const applyTrade = (
-	t: TeamState,
+	t: Pick<TeamState, "players" | "picks">,
 	outgoing: readonly Asset[],
 	incoming: readonly Asset[],
 ) => {
@@ -1604,9 +1605,12 @@ export const humanDealNet = (
 
 export const marginOf = (
 	outlook: LeagueOutlook,
-	t: TeamState,
+	t: Pick<TeamState, "tid" | "players" | "picks" | "path">,
 	outgoing: readonly Asset[],
 	incoming: readonly Asset[],
+	// For the smart CPU: priced by the team's own curves, with the roster
+	// model's error as it is now.
+	forTeam?: MarginFor,
 ) => {
 	const after = applyTrade(t, outgoing, incoming).players;
 	const moved: MovedPlayer[] = [];
@@ -1708,7 +1712,7 @@ export const marginOf = (
 		pairs.push([classIn[i]!, classOut[i]!]);
 	}
 	moved.push(...classIn.slice(n), ...classOut.slice(n));
-	return sideMargin(outlook, t.path, moved, pairs);
+	return sideMargin(outlook, t.path, moved, pairs, forTeam);
 };
 
 // A deal found earlier, as it stands today - for the arena, to see how long

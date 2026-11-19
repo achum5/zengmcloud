@@ -29,7 +29,7 @@ test.skipIf(!env.MM_LEAGUE)(
 		const { currentOutlook } =
 			await import("../../worker/core/realisticFrontOffice/market.ts");
 		const { viewFor } = await import("../../worker/core/smartCpu/signing.ts");
-		const { dealsNow, trimDeal } =
+		const { dealsNow, trimDeal, withAlternatives } =
 			await import("../../worker/core/smartCpu/market.ts");
 		const outlook: any = await currentOutlook();
 		const view: any = viewFor(outlook);
@@ -47,9 +47,12 @@ test.skipIf(!env.MM_LEAGUE)(
 				: `${x.season} R${x.round} ${abbrev.get(x.originalTid)}`;
 		const lines: string[] = [];
 		let shopped: any[] = [];
-		const deals = await dealsNow(view, cpu, new Map(), (s: any) => {
-			shopped = [...s];
-		});
+		const deals = await withAlternatives(
+			view,
+			await dealsNow(view, cpu, new Map(), (s: any) => {
+				shopped = [...s];
+			}),
+		);
 		const team = env.MM_TEAM !== undefined ? Number(env.MM_TEAM) : undefined;
 		lines.push(
 			`${shopped.length} players shopped, ${deals.length} deals found`,
@@ -68,8 +71,19 @@ test.skipIf(!env.MM_LEAGUE)(
 			}
 			const offer = await trimDeal(view, d);
 			const buyerGain = await view.dealWorth(d.buyer, d.seller, offer, d.out);
+			const sellerGain = await view.dealWorth(d.seller, d.buyer, d.out, offer);
+			const c = shopped.find(
+				(x) => x.seller === d.seller && x.p.pid === d.out.players[0]?.pid,
+			);
 			lines.push(
-				`  ${abbrev.get(d.buyer)} gets ${d.out.players.map(name).join("; ")} from ${abbrev.get(d.seller)} for [${[...offer.players, ...offer.picks].map(name).join("; ")}]: seller +${d.sellerGain.toFixed(4)}, buyer ${buyerGain >= 0 ? "+" : ""}${buyerGain.toFixed(4)}`,
+				`  ${abbrev.get(d.buyer)} gets ${d.out.players.map(name).join("; ")} from ${abbrev.get(d.seller)} for [${[...offer.players, ...offer.picks].map(name).join("; ")}]: seller +${sellerGain.toFixed(4)} (best offer +${d.sellerGain.toFixed(4)}, bar ${d.bar.toFixed(4)} from ${(
+					c?.buyers ?? []
+				)
+					.filter((t: number) => t !== d.buyer)
+					.map((t: number) => abbrev.get(t))
+					.join(
+						", ",
+					)}), buyer ${buyerGain >= 0 ? "+" : ""}${buyerGain.toFixed(4)} (next best ${(d.buyerAlt ?? 0).toFixed(4)}); margins: seller ${view.marginNow(d.seller, d.out, offer).toFixed(4)}, buyer ${view.marginNow(d.buyer, offer, d.out).toFixed(4)}`,
 			);
 		}
 		fs.writeFileSync(env.MM_OUT!, lines.join("\n") + "\n");

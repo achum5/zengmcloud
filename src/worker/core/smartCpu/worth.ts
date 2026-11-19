@@ -7,7 +7,8 @@ import isUntradable from "../trade/isUntradable.ts";
 import summary from "../trade/summary.ts";
 import { lap, mark, valueCount } from "./clock.ts";
 import { salaryRulesAllow } from "./tradeRules.ts";
-import { tradedAwayOf } from "../realisticFrontOffice/market.ts";
+import { marginOf, tradedAwayOf } from "../realisticFrontOffice/market.ts";
+import { SMART_ON_COURT_ERROR } from "../realisticFrontOffice/margin.ts";
 import {
 	moodShiftFromTrading,
 	type TradedAway,
@@ -270,6 +271,9 @@ export class SmartView {
 	humans: Set<number>;
 	private holdings = new Map<number, { sig: string; h: Holdings }>();
 	private values = new Map<string, number>();
+	// Each team's strength path on its holdings, and deals' margins.
+	private paths = new Map<string, number[]>();
+	private margins = new Map<string, number>();
 	private keenestCache:
 		| {
 				sig: string;
@@ -738,6 +742,39 @@ export class SmartView {
 		const payroll = await getPayroll(tid);
 		this.tradePayrolls.set(tid, { sig, payroll });
 		return payroll;
+	}
+
+	// THE MARGIN OF ERROR (marketSettings.margins): how far off this team's
+	// own read of giving `give` for `get` can be, in titles - each player who
+	// moves, his on-court value and his career, and each pick, through every
+	// season he is expected to be there, by what a point is worth to this
+	// team then (realisticFrontOffice/margin.ts, by its own curves).
+	marginNow(tid: number, give: Holdings, get: Holdings) {
+		const h = this.heldNow(tid);
+		const sig = this.keyOf(h);
+		const key = `${tid}#${sig}#${this.keyOf(give)}#${this.keyOf(get)}`;
+		let m = this.margins.get(key);
+		if (m !== undefined) {
+			return m;
+		}
+		let path = this.paths.get(`${tid}#${sig}`);
+		if (!path) {
+			path = teamStrengths(this.outlook, tid, h.players, h.picks);
+			this.paths.set(`${tid}#${sig}`, path);
+		}
+		const assets = (x: Holdings) => [
+			...x.players.map((p) => ({ kind: "player" as const, p })),
+			...x.picks.map((dp) => ({ kind: "pick" as const, dp })),
+		];
+		m = marginOf(
+			this.outlook,
+			{ tid, players: h.players, picks: h.picks, path },
+			assets(give),
+			assets(get),
+			{ tid, onCourtError: SMART_ON_COURT_ERROR },
+		);
+		this.margins.set(key, m);
+		return m;
 	}
 
 	// A team's holdings as last read.

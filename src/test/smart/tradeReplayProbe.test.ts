@@ -53,7 +53,7 @@ test.skipIf(!env.TR_LEAGUE)(
 			const dp = await idb.cache.draftPicks.get(dpid);
 			await idb.cache.draftPicks.put({ ...dp!, tid: buyer });
 		}
-		const { buildOutlook, teamStrengths, curveAt, franchiseValue } =
+		const { buildOutlook, teamStrengths, curveAt, curvesFor, franchiseValue } =
 			await import("../../worker/core/realisticFrontOffice/outlook.ts");
 		const { SmartView } = await import("../../worker/core/smartCpu/worth.ts");
 		const outlook: any = await buildOutlook();
@@ -130,7 +130,9 @@ test.skipIf(!env.TR_LEAGUE)(
 		);
 		const titles = (xs: number[]) =>
 			xs
-				.map((s, y) => (100 * curveAt(outlook.titleCurves[y], s)).toFixed(1))
+				.map((s, y) =>
+					(100 * curveAt(curvesFor(outlook, buyer).title[y]!, s)).toFixed(1),
+				)
 				.join(" ");
 		log(`title % as it was: ${titles(before)}`);
 		log(`title % with it:   ${titles(withIt)}`);

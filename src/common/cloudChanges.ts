@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 384,
+		date: "2026-11-19",
+		text: "Smart CPU: CPU teams trade picks more sensibly. Each team now judges its own title chances correctly (the favorite was overrating every role player), a seller can't demand two firsts when the buyer has other players just as good on offer, and a team only makes a trade when it's clearly better off, not by a hair it can't be sure of. Expect fewer firsts spent on role players and fewer pointless swaps.",
+	},
+	{
 		n: 383,
 		date: "2026-11-19",
 		text: "Game pages: \"All games this day\" now shows each team's record, the pregame line, and each team's top performer with points/rebounds/assists. The recap no longer repeats the game leaders already in the header, and the header's leaders sit a little lower.",
