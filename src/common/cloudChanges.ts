@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 383,
+		date: "2026-11-19",
+		text: "Game pages: \"All games this day\" now shows each team's record, the pregame line, and each team's top performer with points/rebounds/assists. The recap no longer repeats the game leaders already in the header, and the header's leaders sit a little lower.",
+	},
+	{
 		n: 382,
 		date: "2026-11-19",
 		text: "Game pages: the recap now comes first, then the box score.",

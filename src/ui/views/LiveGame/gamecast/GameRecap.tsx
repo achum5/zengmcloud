@@ -425,9 +425,28 @@ const TeamArrows = ({
 	);
 };
 
+type DaySide = {
+	tid: number;
+	pts: number;
+	won?: number;
+	lost?: number;
+	tied?: number;
+	otl?: number;
+	// His side's best game of it, by game score (see gameLog.ts).
+	lead?: { pid: number; name: string; pts: number; trb: number; ast: number };
+};
 type DayGame = {
 	gid: number;
-	teams: [{ tid: number; pts: number }, { tid: number; pts: number }];
+	teams: [DaySide, DaySide];
+	// The pregame line: the home side's spread (above 0, home favored).
+	spread?: number;
+};
+// "T. Jones" for Tyus Jones.
+const shortName = (name: string) => {
+	const words = name.trim().split(/\s+/);
+	return words.length > 1
+		? `${words[0]![0]}. ${words.slice(1).join(" ")}`
+		: name;
 };
 
 // ALL OF THAT DAY'S GAMES, under the game's banner when asked for: each a
@@ -498,10 +517,55 @@ const DayGames = ({
 											<span className="recap-day-abbrev">
 												{t?.abbrev ?? "?"}
 											</span>
+											{side.won !== undefined && side.lost !== undefined ? (
+												<span className="recap-day-rec">
+													{helpers.formatRecord({
+														won: side.won,
+														lost: side.lost,
+														tied: side.tied,
+														otl: side.otl,
+													})}
+												</span>
+											) : null}
 											<span className="recap-day-pts">{side.pts}</span>
 										</span>
 									);
 								})}
+								{(() => {
+									// (Home is the second of the two, as listed.)
+									if (typeof gm.spread !== "number") {
+										return null;
+									}
+									const line = roundHalf(gm.spread);
+									const fav = teamInfoCache[sides[line > 0 ? 1 : 0]!.tid];
+									return (
+										<span className="recap-day-spread">
+											{line === 0
+												? "Line PK"
+												: `Line ${fav?.abbrev ?? "?"} -${Math.abs(line)}`}
+										</span>
+									);
+								})()}
+								{sides.some((side) => side.lead) ? (
+									<span className="recap-day-leads">
+										{sides.map((side, i) =>
+											side.lead ? (
+												<span
+													key={i}
+													className="recap-day-lead"
+													title="Points / rebounds / assists"
+												>
+													<span className="recap-day-lead-name">
+														{shortName(side.lead.name)}
+													</span>
+													<span className="recap-day-lead-line">
+														{side.lead.pts}/{side.lead.trb}/{side.lead.ast}
+													</span>
+												</span>
+											) : null,
+										)}
+									</span>
+								) : null}
 							</a>
 						);
 					})}
@@ -977,16 +1041,10 @@ export const GameRecap = ({
 			id: "recap",
 			label: "Recap",
 			icon: DOCK_ICONS.recap,
+			// (Its leaders are in the banner over it.)
 			body: (
-				<div className="recap-two">
-					<div>
-						<RecapStory boxScore={boxScore} />
-					</div>
-					<div>
-						<Section title="Game Leaders">
-							<Leaders boxScore={boxScore} />
-						</Section>
-					</div>
+				<div className="gamecast-narrow">
+					<RecapStory boxScore={boxScore} />
 				</div>
 			),
 		},

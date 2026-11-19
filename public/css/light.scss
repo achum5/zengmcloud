@@ -6230,7 +6230,7 @@ a.rsb-half {
 }
 .recap-day-grid {
 	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+	grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
 	gap: 0.4rem;
 	margin-top: 0.5rem;
 }
@@ -6275,9 +6275,43 @@ a.rsb-half {
 .recap-day-pts {
 	margin-left: auto;
 }
+// (Each side's record then, small by its name; the line; and each side's
+// best game of it, points/rebounds/assists.)
+.recap-day-rec {
+	font-size: 0.72rem;
+	font-weight: 400;
+	color: var(--bs-secondary-color);
+}
+.recap-day-spread {
+	font-size: 0.72rem;
+}
+.recap-day-leads {
+	display: flex;
+	flex-direction: column;
+	margin-top: 0.15rem;
+	padding-top: 0.2rem;
+	border-top: 1px solid var(--bs-border-color);
+}
+.recap-day-lead {
+	display: flex;
+	gap: 0.35rem;
+	font-size: 0.72rem;
+	line-height: 1.35;
+}
+.recap-day-lead-name {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.recap-day-lead-line {
+	margin-left: auto;
+	color: var(--bs-body-color);
+	font-weight: 600;
+}
 @include media-breakpoint-down(sm) {
 	.recap-day-grid {
-		grid-template-columns: repeat(3, minmax(0, 1fr));
+		grid-template-columns: repeat(2, minmax(0, 1fr));
 		gap: 0.3rem;
 	}
 	.recap-day-game {
@@ -6350,7 +6384,7 @@ a.rsb-half {
 }
 .mb-half .mb-leaders {
 	position: absolute;
-	top: 0.05rem;
+	top: 0.5rem;
 	left: calc(100% + 1.1rem);
 	text-align: left;
 	white-space: nowrap;

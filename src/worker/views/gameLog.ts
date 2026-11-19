@@ -351,6 +351,92 @@ type SeasonGameRow = {
 	overtimes: number;
 	playoffs: boolean;
 };
+// One of the day's games for "all games this day": each side's record then,
+// the pregame line (the home side's spread), and each side's best game of it
+// by game score - his points, rebounds and assists.
+type DayLeader = {
+	pid: number;
+	name: string;
+	pts: number;
+	trb: number;
+	ast: number;
+};
+type DayGameRow = Omit<SeasonGameRow, "teams"> & {
+	teams: [DayGameSide, DayGameSide];
+	spread?: number;
+};
+type DayGameSide = {
+	tid: number;
+	pts: number;
+	won?: number;
+	lost?: number;
+	tied?: number;
+	otl?: number;
+	lead?: DayLeader;
+};
+const num = (x: unknown) =>
+	typeof x === "number" && Number.isFinite(x) ? x : 0;
+const dayLeader = (players: any[] | undefined): DayLeader | undefined => {
+	let best: { p: any; score: number } | undefined;
+	for (const p of players ?? []) {
+		if (!(num(p.min) > 0) || typeof p.name !== "string") {
+			continue;
+		}
+		const score = helpers.gameScore({
+			pts: num(p.pts),
+			fg: num(p.fg),
+			fga: num(p.fga),
+			fta: num(p.fta),
+			ft: num(p.ft),
+			orb: num(p.orb),
+			drb: num(p.drb),
+			stl: num(p.stl),
+			ast: num(p.ast),
+			blk: num(p.blk),
+			pf: num(p.pf),
+			tov: num(p.tov),
+		});
+		if (!best || score > best.score) {
+			best = { p, score };
+		}
+	}
+	if (!best) {
+		return undefined;
+	}
+	const p = best.p;
+	return {
+		pid: p.pid,
+		name: p.name,
+		pts: num(p.pts),
+		trb: num(p.trb) || num(p.orb) + num(p.drb),
+		ast: num(p.ast),
+	};
+};
+const dayGameOf = async (
+	row: SeasonGameRow,
+	have?: Game,
+): Promise<DayGameRow> => {
+	const gm = have?.gid === row.gid ? have : await idb.merged.games.get(row.gid);
+	if (!gm) {
+		return row;
+	}
+	const side = (i: 0 | 1): DayGameSide => {
+		const t = gm.teams[i];
+		return {
+			...row.teams[i],
+			...(t.won !== undefined ? { won: t.won } : {}),
+			...(t.lost !== undefined ? { lost: t.lost } : {}),
+			...(t.tied !== undefined ? { tied: t.tied } : {}),
+			...(t.otl !== undefined ? { otl: t.otl } : {}),
+			...(__SPORT === "basketball" ? { lead: dayLeader(t.players) } : {}),
+		};
+	};
+	return {
+		...row,
+		teams: [side(0), side(1)],
+		...(typeof gm.spread === "number" ? { spread: gm.spread } : {}),
+	};
+};
 let seasonGamesKept: { key: string; rows: SeasonGameRow[] } | undefined;
 const seasonGames = async (season: number) => {
 	const key = `${g.get("lid")}:${season}`;
@@ -408,7 +494,13 @@ const teamNav = async (gid: number) => {
 	}
 	// (And the rest of that day's games - "all games this day".)
 	const day =
-		game.day === undefined ? [] : rows.filter((row) => row.day === game.day);
+		game.day === undefined
+			? []
+			: await Promise.all(
+					rows
+						.filter((row) => row.day === game.day)
+						.map((row) => dayGameOf(row, game)),
+				);
 	return { teamNav: nav, dayGames: day };
 };
 
