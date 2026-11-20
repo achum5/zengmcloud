@@ -2187,7 +2187,7 @@ Three leagues, four seasons each, before and after:
 | ... buyer better the next season             | 2 of 5 | 8 of 12 |
 | firsts paid for players 27+ rated under 60   | 35     | 16      |
 | players 58+ leaving losing teams for nothing | 29     | 27      |
-| players bought back within a year            | 1      | 0       |
+| players bought back within a year            | 2      | 1       |
 | champions, different                         | 7      | 8       |
 | a market moment, idle desktop                | 48 s   | 67 s    |
 
