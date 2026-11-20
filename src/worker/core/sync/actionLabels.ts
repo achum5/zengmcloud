@@ -20,6 +20,8 @@ export const PLAY_MENU_SIM_AUTHORITY_EXEMPT = new Set(["stop", "stopAuto"]);
 // playMenu.onePick/untilYourNextPick).
 export const ACTIONS_SIM_AUTHORITY_LOCKED = new Set([
 	"simGame",
+	// (Every game today without a user team - each simmed as simGame does.)
+	"simCpuGames",
 	"liveGame",
 	"simToGame",
 	"untilPick",
@@ -116,6 +118,9 @@ export const isSimAuthorityLockedCall = (type: string, name: string): boolean =>
 export const SINGLE_GAME_SIM_LABELS: ReadonlySet<string> = new Set([
 	"actions.simGame",
 	"actions.liveGame",
+	// (Single games one after another, each published as playMenu.simGame -
+	// never a day's advance, whatever is left for the call's own drain.)
+	"actions.simCpuGames",
 	"playMenu.simGame",
 ]);
 

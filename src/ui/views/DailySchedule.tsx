@@ -69,6 +69,7 @@ const DailySchedule = ({
 		season: currentSeason,
 		teamInfoCache,
 		userTid,
+		userTids,
 	} = useLocal([
 		"gameSimInProgress",
 		"ownLiveSim",
@@ -84,6 +85,7 @@ const DailySchedule = ({
 		"season",
 		"teamInfoCache",
 		"userTid",
+		"userTids",
 	]);
 
 	// A league-mate's live sim that is still running. The game itself has already
@@ -143,7 +145,8 @@ const DailySchedule = ({
 			: (mpLiveWatchable ?? mpLiveOffer);
 
 	// Can't sim/watch games from here unless this device is in charge of simming.
-	const { locked: simAuthorityLocked } = useSimAuthorityLocked();
+	const { locked: simAuthorityLocked, reason: simAuthorityReason } =
+		useSimAuthorityLocked();
 
 	// Remember the scroll position per day, so leaving the page (e.g. tapping a
 	// player link) and coming back lands you where you were rather than at the top.
@@ -185,9 +188,49 @@ const DailySchedule = ({
 
 	const upcomingAndCompleted = upcoming.length > 0 && completed.length > 0;
 
+	// TODAY'S CPU GAMES, ALL AT ONCE: every game left today with no user team
+	// in it (none of userTids - in multi team mode, and in a cloud room every
+	// league mate's team), so the user games are what's left to play. Only
+	// while there are both, and only on the device in charge of simming - in
+	// the spot where every other device has Sim here (see SimHereButton).
+	const [simmingCpu, setSimmingCpu] = useState(false);
+	const simsHere = !mpSyncActive || !!mpSyncIsHost;
+	const isUserGame = (game: (typeof upcoming)[number]) =>
+		userTids.includes(game.teams[0].tid) ||
+		userTids.includes(game.teams[1].tid);
+	const showSimCpu =
+		simsHere &&
+		isToday &&
+		upcoming.some((game) => !isUserGame(game)) &&
+		upcoming.some(isUserGame);
+
 	const tradeDeadline =
 		upcoming.length === 1 &&
 		isTradeDeadline(upcoming[0]!.teams[0].tid, upcoming[0]!.teams[1].tid);
+
+	const simCpuButton =
+		showSimCpu && !tradeDeadline ? (
+			<button
+				type="button"
+				className="btn btn-primary btn-sm mt-3"
+				disabled={gameSimInProgress || simAuthorityLocked || simmingCpu}
+				title={
+					simAuthorityLocked
+						? simAuthorityReason
+						: "Sim every game today without a user team"
+				}
+				onClick={async () => {
+					setSimmingCpu(true);
+					try {
+						await toWorker("actions", "simCpuGames", undefined);
+					} finally {
+						setSimmingCpu(false);
+					}
+				}}
+			>
+				Sim CPU games
+			</button>
+		) : null;
 
 	let noGamesMessage;
 	if (days.length === 0) {
@@ -418,6 +461,9 @@ const DailySchedule = ({
 			    margin rides on the button itself rather than a wrapper, since the
 			    component renders nothing at all when this device already holds
 			    sim authority - an empty wrapper would leave a gap. */}
+			{/* (One or the other: Sim CPU games on the device in charge of
+			    simming, Sim here on the rest.) */}
+			{simCpuButton}
 			<SimHereButton className="btn btn-primary btn-sm mt-3" />
 		</>
 	);

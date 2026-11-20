@@ -197,6 +197,35 @@ const simGame = async (gid: number, conditions: Conditions) => {
 	await game.play(1, conditions, true, gid);
 };
 
+// TODAY'S GAMES WITHOUT A HUMAN TEAM IN THEM, simmed so the user games are
+// left to play: every team in userTids sits out - all the teams picked in
+// multi team mode, and in a cloud room every league mate's. Each one just as
+// "Sim game" sims it (game.play for its gid alone: its own claim on the room's
+// fence, published as a single game), one after another. Stops at the first
+// one that doesn't go - play has already said why.
+const simCpuGames = async (_param: unknown, conditions: Conditions) => {
+	const userTids = new Set(g.get("userTids"));
+	const isCpuGame = (game: { homeTid: number; awayTid: number }) =>
+		game.homeTid >= 0 &&
+		game.awayTid >= 0 &&
+		!userTids.has(game.homeTid) &&
+		!userTids.has(game.awayTid);
+	const gids = (await season.getSchedule(true))
+		.filter(isCpuGame)
+		.map((game) => game.gid);
+	for (const gid of gids) {
+		const stillToPlay = async () =>
+			(await season.getSchedule(true)).some((game) => game.gid === gid);
+		if (!(await stillToPlay())) {
+			continue;
+		}
+		await game.play(1, conditions, true, gid);
+		if (await stillToPlay()) {
+			break;
+		}
+	}
+};
+
 const simToGame = async (gid: number, conditions: Conditions) => {
 	const numDays = await season.getDaysLeftSchedule(gid);
 	await updateStatus("Playing..."); // For quick UI updating, before game.play
@@ -206,6 +235,7 @@ const simToGame = async (gid: number, conditions: Conditions) => {
 export default {
 	addToTradingBlock,
 	liveGame,
+	simCpuGames,
 	simGame,
 	simToGame,
 	tradeFor,

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 402,
+		date: "2026-11-20",
+		text: "Daily Schedule: whoever is in charge of simming gets a Sim CPU games button at the bottom of the page (where everyone else sees Sim here). It sims every game today that no user team is playing in, so only the user games are left.",
+	},
+	{
 		n: 401,
 		date: "2026-11-20",
 		text: "CPU drafts: teams draft for themselves. A rebuilding team takes the young players with upside it can build around instead of the older, ready players contenders would want, and when it can't tell two prospects apart it takes the one higher on the board.",
