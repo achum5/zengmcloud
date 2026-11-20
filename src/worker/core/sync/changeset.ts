@@ -23,6 +23,7 @@ import { getSyncEngine } from "./engineHolder.ts";
 import { isWatchingLiveBroadcast, noticeLiveResult } from "./liveWatchGate.ts";
 import { PHASE } from "../../../common/constants.ts";
 import { initUILocalGames } from "../../util/initUILocalGames.ts";
+import { recomputeLocalUITeamOvrs } from "../../util/recomputeLocalUITeamOvrs.ts";
 import {
 	describeRebuild,
 	rebuildSeasonAggregates,
@@ -1031,6 +1032,16 @@ export const refreshAfterApply = async ({
 			await initUILocalGames();
 		} catch (error) {
 			console.error("Failed to refresh LeagueTopBar after sync", error);
+		}
+	} else if (touchedStores.has("players") || touchedStores.has("teams")) {
+		// No new results, but a roster changed - a league mate reset their
+		// starting five, an injury was healed, a team's injury setting moved -
+		// and the next game's spread reads all of that. Without this the bar
+		// kept quoting the old number while the schedule quoted the new one.
+		try {
+			await recomputeLocalUITeamOvrs();
+		} catch (error) {
+			console.error("Failed to refresh LeagueTopBar spread after sync", error);
 		}
 	}
 

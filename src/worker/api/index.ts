@@ -673,6 +673,10 @@ const autoSortRoster = async ({
 		);
 	}
 	await toUI("realtimeUpdate", [["playerMovement"]]);
+
+	// The starting five moved, and the spread reads it (see
+	// recomputeLocalUITeamOvrs) - so the top bar's next game too.
+	await recomputeLocalUITeamOvrs();
 };
 
 const beforeView = async (
@@ -5070,6 +5074,7 @@ const reorderRosterDrag = async (sortedPids: number[]) => {
 	}
 
 	await toUI("realtimeUpdate", [["gameAttributes", "playerMovement"]]);
+	await recomputeLocalUITeamOvrs();
 };
 
 const revertTrade = async (eid: number) => {
@@ -6221,6 +6226,8 @@ const updateKeepRosterSorted = async ({
 	t.keepRosterSorted = keepRosterSorted;
 	await idb.cache.teams.put(t);
 	await toUI("realtimeUpdate", [["team"]]);
+	// (A sorted roster plays its game in sorted order - see rosterAtTipoff.)
+	await recomputeLocalUITeamOvrs();
 };
 
 const updateKeyboardShortcuts = async (
