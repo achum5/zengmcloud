@@ -1753,9 +1753,20 @@ export const LiveGame = (props: View<"liveGame">) => {
 	const [alongLostGid, setAlongLostGid] = useState<number | undefined>();
 	const alongLost =
 		alongLostGid !== undefined && alongLostGid === props.initialBoxScore?.gid;
+	// Not until the court has the game staged, though. Staging takes a phone
+	// the better part of a minute, and playing along, the court is what asks
+	// for each line - so a page that joined while it staged sat on 0-0 the
+	// whole time, the game going on without it, then cut to wherever the
+	// game had got to. Stepped line by line meanwhile, the score, the plays
+	// and the box score keep up with the game; the court takes over playing
+	// along the moment it can.
+	const [stagedGid, setStagedGid] = useState<number | undefined>();
+	const courtStaged =
+		__SPORT !== "basketball" ||
+		(stagedGid !== undefined && stagedGid === props.initialBoxScore?.gid);
 	const along = useMemo(
 		(): FollowReport | undefined =>
-			sync3d && followRecv !== undefined && !alongLost
+			sync3d && followRecv !== undefined && !alongLost && courtStaged
 				? {
 						t: sync3d.t,
 						w: sync3d.w,
@@ -1767,7 +1778,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 						...(sync3d.fp === undefined ? {} : { fp: sync3d.fp }),
 					}
 				: undefined,
-		[sync3d, followCursor, followPaused, followRecv, alongLost],
+		[sync3d, followCursor, followPaused, followRecv, alongLost, courtStaged],
 	);
 	const playAlongRef = useRef(!!along);
 	playAlongRef.current = !!along;
@@ -3253,6 +3264,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 								onLost={onCourt3DLost}
 								replayAsk={replayAsk}
 								onShots={onShots}
+								onStaged={setStagedGid}
 							/>
 						)}
 					</Suspense>

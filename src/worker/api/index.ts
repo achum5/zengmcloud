@@ -1,5 +1,9 @@
 import { parseCourtDecals } from "../../common/courtDecals.ts";
-import { boxScoreToLiveSim, looksThatNight } from "../views/liveGame.ts";
+import {
+	boxScoreToLiveSim,
+	liveSimOf,
+	looksThatNight,
+} from "../views/liveGame.ts";
 import { parseScoreBug, scoreBugPictureIds } from "../../common/scoreBug.ts";
 import {
 	courtPictureIds,
@@ -142,6 +146,7 @@ import {
 	resolveSyncLocalName,
 	beginLotteryReveal,
 	answerLiveOffer,
+	getOfferedBroadcastPayload,
 	flushDeferredRefreshAfterLive,
 	followerHoldsLiveFlag,
 	recheckLiveSpoilers,
@@ -5774,6 +5779,28 @@ const liveWatchAlive = async (gid?: number) => {
 	noteLiveWatchAlive(gid);
 };
 
+// The game this device is being asked to watch, as its live game page would
+// start it - so the 3D court can be staged while the question is up (see
+// LiveOfferModal). Undefined until its payload is in.
+const liveFollowPreview = async () => {
+	const payload = getOfferedBroadcastPayload();
+	if (!payload) {
+		return undefined;
+	}
+	const out = await liveSimOf(
+		payload.playByPlay,
+		helpers.deepCopy(payload.boxScore),
+	);
+	if (!out) {
+		return undefined;
+	}
+	return {
+		startedAt: payload.startedAt,
+		events: out.events,
+		initialBoxScore: out.initialBoxScore,
+	};
+};
+
 // A live game page's report that its game is over: which game, and whether
 // it reached its last play there (`final`) or the page just went away. (Just
 // a gid, from a page on an older build: as if final.)
@@ -8960,6 +8987,7 @@ const api = {
 		tradeCounterOffer,
 		onLiveSimOver,
 		liveWatchAlive,
+		liveFollowPreview,
 		updateLiveBroadcast,
 		endLiveBroadcast,
 		watchLiveBroadcast,

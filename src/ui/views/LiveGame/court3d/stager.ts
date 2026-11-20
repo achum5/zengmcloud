@@ -9,6 +9,8 @@ type Waiting<I, T> = {
 	input: I;
 	resolve: (tl: T) => void;
 	reject: (error: Error) => void;
+	// What the caller holds (see abandon).
+	promise?: Promise<T>;
 };
 
 // `what` names it in errors ("court", "field").
@@ -20,7 +22,7 @@ export const makeStager = <I, T>({
 	compile: (input: I) => T;
 	spawn: () => Worker;
 	what: string;
-}): ((input: I) => Promise<T>) => {
+}): Stager<I, T> => {
 	let worker: Worker | undefined;
 	// Whether it got going at all.
 	let ready = false;
@@ -99,23 +101,69 @@ export const makeStager = <I, T>({
 		return worker;
 	};
 
-	return (input: I): Promise<T> =>
-		new Promise((resolve, reject) => {
-			const w = workerFor();
-			const entry = { input, resolve, reject };
-			if (!w) {
-				here(entry);
-				return;
-			}
-			const id = nextId++;
-			waiting.set(id, entry);
-			try {
-				w.postMessage({ id, input });
-			} catch {
-				waiting.delete(id);
-				here(entry);
-			}
+	// Which staging each promise is, to abandon it by.
+	const ids = new WeakMap<Promise<T>, number>();
+	const send = (entry: Waiting<I, T>) => {
+		const w = workerFor();
+		if (!w) {
+			here(entry);
+			return;
+		}
+		const id = nextId++;
+		waiting.set(id, entry);
+		if (entry.promise) {
+			ids.set(entry.promise, id);
+		}
+		try {
+			w.postMessage({ id, input: entry.input });
+		} catch {
+			waiting.delete(id);
+			here(entry);
+		}
+	};
+
+	const stage = ((input: I): Promise<T> => {
+		let entry: Waiting<I, T> | undefined;
+		const promise = new Promise<T>((resolve, reject) => {
+			entry = { input, resolve, reject };
 		});
+		entry!.promise = promise;
+		send(entry!);
+		return promise;
+	}) as Stager<I, T>;
+
+	// Not wanted after all. The worker stages one game at a time and cannot
+	// be told to stop part way, so it is put down - and whatever else was
+	// waiting goes to a fresh one. (Otherwise a game nobody is going to watch
+	// kept a phone's worker busy for a minute, and the next game - this
+	// device's own, say - waited behind it.)
+	stage.abandon = (promise: Promise<T>) => {
+		const id = ids.get(promise);
+		const entry = id === undefined ? undefined : waiting.get(id);
+		if (id === undefined || !entry) {
+			return;
+		}
+		// (One still queued behind another is just not answered: putting the
+		// worker down would lose the one it is on.)
+		const onIt = waiting.keys().next().value === id;
+		waiting.delete(id);
+		entry.reject(new Error(`3D ${what} staging abandoned`));
+		if (worker && onIt) {
+			worker.terminate();
+			worker = undefined;
+			const left = [...waiting.values()];
+			waiting.clear();
+			for (const w of left) {
+				send(w);
+			}
+		}
+	};
+
+	return stage;
+};
+
+export type Stager<I, T> = ((input: I) => Promise<T>) & {
+	abandon: (promise: Promise<T>) => void;
 };
 
 // THE WORKER'S SIDE: up and running, then each game it is asked for staged

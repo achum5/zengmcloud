@@ -106,6 +106,9 @@ const SKIP_CHANGESET_CAPTURE = new Set([
 	// also stay available WHILE catching up - chat during a live sim is exactly
 	// when a device is busiest applying the sim it is watching.
 	"sendLiveChatMessage",
+	// Pure read: the game a popup is asking this device to watch, to stage its
+	// 3D court ahead of the answer - while the device is busiest catching up.
+	"liveFollowPreview",
 	"getSyncEngine",
 	"getSyncStatus",
 	// The Multiplayer Sync page's reads (this device's name, the teams it

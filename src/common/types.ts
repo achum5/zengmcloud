@@ -1831,7 +1831,14 @@ export type LocalStateUI = {
 	// A league-mate's live sim just started: "Watch PHO @ DAL live?", its
 	// result held back until answered. Undefined when not asking.
 	mpLiveOffer:
-		| { gid: number; byName: string; label: string; startedAt: number }
+		| {
+				gid: number;
+				byName: string;
+				label: string;
+				startedAt: number;
+				// How it is being shown ("3d" or "classic"), when known.
+				view?: string;
+		  }
 		| undefined;
 	// Live game chat for the broadcast currently being watched.
 	mpLiveChat: LiveGameChatMessage[];

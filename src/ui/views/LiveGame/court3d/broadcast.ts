@@ -13,6 +13,7 @@ import type { ReplayLooks } from "../../../../common/types.ts";
 import { kitArtOf, loadKitPicture, type KitArt } from "./kitArt.ts";
 import { logoPicture } from "./logoPicture.ts";
 import type { Stakes } from "./director.ts";
+import { stakesOf, type SeriesBox } from "./courtInput.ts";
 import { drawn, due, type Pace } from "./pace.ts";
 import { eventsMatchRoster } from "./rosterMatch.ts";
 import type { Wipe } from "./show.ts";
@@ -22,39 +23,16 @@ import type { Wipe } from "./show.ts";
 // game's stakes, each side's uniform pictures and the home team's ads, the
 // picture's size, and its frames.
 
-// A playoff game's stakes, as they stood going into it - the box score's
-// series records take this game in once it is over, so they are read once
-// (a new `gid`, again), and one won by now is taken back out.
-// (Only what it reads of the box score: see the page's own.)
-export type SeriesBox = {
-	playoffs?: boolean;
-	finals?: boolean;
-	numGamesToWinSeries?: number;
-	gameOver?: boolean;
-	won?: { tid?: number };
-	teams?: { tid?: number; playoffs?: { won?: number } }[];
-};
+// A playoff game's stakes, as they stood going into it (see stakesOf) - read
+// once a game (a new `gid`, again): the box score's series records take this
+// game in once it is over.
+export type { SeriesBox };
 export const useStakes = (
 	gid: number | undefined,
 	bs: SeriesBox,
 ): Stakes | undefined =>
 	useMemo(
-		() => {
-			if (!bs.playoffs || typeof bs.numGamesToWinSeries !== "number") {
-				return undefined;
-			}
-			const won = (raw: 0 | 1) => {
-				const t = bs.teams?.[raw];
-				const w = Number(t?.playoffs?.won ?? 0);
-				return bs.gameOver && bs.won?.tid === t?.tid ? w - 1 : w;
-			};
-			// (Raw team 0 is home, side 1.)
-			return {
-				won: [won(1), won(0)] as [number, number],
-				toWin: bs.numGamesToWinSeries,
-				finals: !!bs.finals,
-			};
-		},
+		() => stakesOf(bs),
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 		[gid],
 	);

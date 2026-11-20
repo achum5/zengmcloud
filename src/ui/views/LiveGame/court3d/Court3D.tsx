@@ -53,7 +53,7 @@ import {
 	gameClockAt,
 	shotClockAt,
 } from "./clock.ts";
-import { clipDipAt, type CourtPlayer, type CourtTimeline } from "./director.ts";
+import { clipDipAt, type CourtTimeline } from "./director.ts";
 import { crewAt, crewFor } from "./crew.ts";
 import {
 	headColors,
@@ -67,7 +67,7 @@ import { realPlayers, watchRealPlayers } from "./realPlayers.ts";
 import { arenaSpecFor } from "./arenaSpec.ts";
 import { crowdFaces, type CrowdFace } from "./crowdFaces.ts";
 import { gearFor, kitsFor, shade, streetClothes, type Look } from "./figure.ts";
-import { outHurt } from "./outHurt.ts";
+import { courtRosterOf, courtTeamsOf, introKindOf } from "./courtInput.ts";
 import { dressKit } from "./kitArt.ts";
 import { logoPicture } from "./logoPicture.ts";
 import { COURT_H, COURT_W, rimX, type Side } from "./geometry.ts";
@@ -222,9 +222,6 @@ const midAcross = (players: { y: number }[]): number => {
 	return n > 0 ? sum / n : COURT_H / 2;
 };
 
-// Whether a game opens with its starting lineups (see intro.ts).
-const LINEUP_INTROS = false;
-
 // Drawing a frame in under this long (ms, smoothed), there is time for his
 // poses in finer steps (see fineNow).
 const FINE_ON_MS = 5;
@@ -289,6 +286,8 @@ type Props = {
 	// The game's shots and where each was let go from, once it is staged
 	// (see shotSpots) - for the shot chart.
 	onShots?: (shots: ShotSpot[]) => void;
+	// The game staged and on the court - this game (its gid).
+	onStaged?: (gid: number | undefined) => void;
 	// A clip (a highlight played on its own - see HighlightClip): it plays
 	// no further than a moment past the line before this cursor.
 	until?: number;
@@ -315,63 +314,34 @@ const Court3D = ({
 	authored,
 	replayAsk,
 	onShots,
+	onStaged,
 	until,
 }: Props) => {
 	const onShotsRef = useRef(onShots);
 	onShotsRef.current = onShots;
+	const onStagedRef = useRef(onStaged);
+	onStagedRef.current = onStaged;
 	const { lid, gender } = useLocal(["lid", "gender"]);
 	const gid: number | undefined = boxScore?.gid;
 	const season: number | undefined = boxScore?.season;
 	// A saved replay remembers how everyone looked that night.
 	const looksThen: ReplayLooks | undefined = boxScore?.replayLooks;
 	const teamsNow: unknown = boxScore?.teams;
-	const raw: any[] = useMemo(() => {
-		const teams: any[] = Array.isArray(teamsNow) ? teamsNow : [];
-		return teams.map((t) => {
-			const then = looksThen?.teams[t?.tid];
-			return then ? { ...t, ...then, court: then.court } : t;
-		});
-	}, [teamsNow, looksThen]);
+	const raw: any[] = useMemo(
+		() => courtTeamsOf(teamsNow, looksThen),
+		[teamsNow, looksThen],
+	);
 	// Display order, same as the 2D court: [away (attacks left), home].
 	const away = raw[1];
 	const home = raw[0];
 
 	// The roster is fixed for the game - read it once.
-	const roster = useMemo(() => {
-		const out: (CourtPlayer & { name: string; jerseyNumber?: string })[] = [];
-		const teams: [any, any] = [away, home];
-		for (const t of [0, 1] as const) {
-			for (const p of teams[t]?.players ?? []) {
-				if (typeof p.pid === "number") {
-					out.push({
-						pid: p.pid,
-						team: t,
-						pos: p.pos,
-						skills: Array.isArray(p.skills) ? p.skills : undefined,
-						ratings:
-							p.courtRatings && typeof p.courtRatings === "object"
-								? p.courtRatings
-								: undefined,
-						injury:
-							p.injury?.newThisGame && typeof p.injury.type === "string"
-								? {
-										type: p.injury.type,
-										games: p.injury.gamesRemaining ?? 0,
-									}
-								: undefined,
-						...(outHurt(p) ? { out: true } : {}),
-						name: p.name,
-						jerseyNumber: p.jerseyNumber,
-					});
-				}
-			}
-		}
-		return out;
+	const roster = useMemo(
+		() => courtRosterOf(away, home),
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [gid]);
+		[gid],
+	);
 
-	// The starting lineups called out before the opening tip (see intro.ts):
-	// off for now, kept to come back to.
 	// A playoff game's stakes, as they stood going into it (see stakesOf).
 	const stakes = useStakes(gid, {
 		playoffs: boxScore?.playoffs,
@@ -381,11 +351,8 @@ const Court3D = ({
 		won: boxScore?.won,
 		teams: boxScore?.teams,
 	});
-	const introKind: "playoffs" | "regular" | undefined = LINEUP_INTROS
-		? boxScore?.playoffs
-			? "playoffs"
-			: "regular"
-		: undefined;
+	// (Whether the starting lineups are called out first - see intro.ts.)
+	const introKind = introKindOf(boxScore?.playoffs);
 	// The game staged, off the page's thread (see stageCourt.ts and the
 	// engine's useStaged) - the court on the warm-ups until it is.
 	const { timeline } = useStaged(
@@ -409,6 +376,7 @@ const Court3D = ({
 			} catch {
 				// The chart just doesn't show.
 			}
+			onStagedRef.current?.(gid);
 		},
 	);
 	// While it is: the two teams out warming up at their baskets - not a

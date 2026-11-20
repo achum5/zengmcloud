@@ -29,6 +29,7 @@ export {
 	refreshSyncLocalName,
 	resolveSyncLocalName,
 	answerLiveOffer,
+	getOfferedBroadcastPayload,
 	followerHoldsLiveFlag,
 	leaveLiveBroadcast,
 	markFollowedBroadcastOver,

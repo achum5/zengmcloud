@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 409,
+		date: "2026-11-20",
+		text: "Watching a league mate's live game in 3D: the 3D game starts loading as soon as the \"Watch ... live?\" question pops up, so it's ready sooner after you tap Watch. While it loads, the score, plays and box score keep up with the game instead of sitting at 0-0, and leaving the page and coming back no longer starts the loading over.",
+	},
+	{
 		n: 408,
 		date: "2026-11-20",
 		text: "CPU trades: a team now sees that its own first-round pick a few years out could become a top pick if it falls apart, and prices it that way, so good teams stop throwing in far-off firsts as if they were sure to land late. Every team's pick is now judged against where the rest of the league is headed.",

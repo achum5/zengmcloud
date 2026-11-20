@@ -412,6 +412,29 @@ export const boxScoreToLiveSim = async ({
 	};
 };
 
+// The game as the live game page starts it - its play-by-play and the box
+// score it plays into, made just as load does below - for whatever wants it
+// before the page does: the 3D court staged while this device is asked
+// whether to watch a league-mate's game (see liveFollowPreview).
+export const liveSimOf = async (playByPlay: unknown[], boxScore: Game) => {
+	let allStars;
+	if (isAllStarTid(boxScore.teams[0].tid)) {
+		allStars = await idb.merged.allStars.get(boxScore.season);
+		if (!allStars) {
+			return undefined;
+		}
+	}
+	const { finals, confetti } = championshipStakes(boxScore);
+	const out = await boxScoreToLiveSim({
+		allStars,
+		boxScore,
+		confetti,
+		playByPlay,
+	});
+	(out.initialBoxScore as any).finals = finals;
+	return out;
+};
+
 export default defineView({
 	id: "liveGame",
 	processInputs,

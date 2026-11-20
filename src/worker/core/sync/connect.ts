@@ -785,6 +785,18 @@ export const getFollowedBroadcastPayload = () =>
 		? followedBroadcastPayload
 		: undefined;
 
+// The payload of the broadcast this device is being ASKED to watch, fetched
+// while it is asked (see prefetchOffered) - so the page can stage its 3D court
+// before the answer, and a "Watch" starts the game instead of a minute of
+// staging (see liveFollowPreview). Never served to the live game page itself:
+// a "No" must not open the game.
+export const getOfferedBroadcastPayload = () =>
+	followedBroadcast?.offered &&
+	!followedBroadcast.left &&
+	followedBroadcastPayload?.startedAt === followedBroadcast.startedAt
+		? followedBroadcastPayload
+		: undefined;
+
 // The latest broadcast SOMEONE ELSE has live (own echoes filtered out). This is
 // what the header pill offers to rejoin, and what a starting broadcast checks so
 // it never overwrites one already running on the room's one doc.
@@ -809,7 +821,8 @@ const setWatchablePill = (meta: LiveBroadcastMeta | undefined) => {
 	]);
 };
 
-// Show/clear the "Watch PHO @ DAL live?" popup (see offerBroadcast).
+// Show/clear the "Watch PHO @ DAL live?" popup (see offerBroadcast). Kept up
+// with the broadcast's view too: a 3D one is staged here while it asks.
 const setLiveOffer = (meta: LiveBroadcastMeta | undefined) => {
 	void toUI("updateLocal", [
 		{
@@ -819,6 +832,7 @@ const setLiveOffer = (meta: LiveBroadcastMeta | undefined) => {
 						byName: meta.byName,
 						label: meta.label ?? "",
 						startedAt: meta.startedAt,
+						view: meta.view,
 					}
 				: undefined,
 		},
