@@ -1261,7 +1261,12 @@ export const GameRecap = ({
 								sections
 									.filter((x) => x.id !== "info")
 									.map((x) => ({ ...x, title: null })),
-								[["lineups", "onoff", "On/Off Impact"]],
+								[
+									["lineups", "onoff", "On/Off Impact"],
+									// (The shot chart under the game flow, its button's:
+									// it has its own heading.)
+									["flow", "shots", null],
+								],
 								{ stats: "Stats", shots: "Shots" },
 							)}
 						/>

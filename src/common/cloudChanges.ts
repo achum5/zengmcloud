@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 398,
+		date: "2026-11-20",
+		text: "Game pages and live games: the Shots button is gone from the bottom menu. The shot chart is still right under the game flow, so the Game Flow button takes you to both.",
+	},
+	{
 		n: 397,
 		date: "2026-11-19",
 		text: "Game pages: on a phone the recap's headline and story are centered on the screen.",

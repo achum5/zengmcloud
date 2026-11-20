@@ -1804,6 +1804,8 @@ export const LiveGamecast = ({
 							[
 								["lineups", "onoff", "On/Off Impact"],
 								["live", "info", null],
+								// (The shot chart under the game flow, its button's.)
+								["flow", "shots", null],
 							],
 							{ stats: "Stats", shots: "Shots" },
 						)}
