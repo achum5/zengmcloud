@@ -337,7 +337,7 @@ export type Sep = { t0: number; dx: number[]; dy: number[]; dl: number[] };
 // between its samples, near enough the way the picture eases through them.
 const sepAt = (tr: Track, t: number): Pt => {
 	const list = tr.sep ?? [];
-	const k = lastBy(list, t, (x) => x.t0);
+	const k = lastT0(list, t);
 	const s = list[k];
 	if (!s) {
 		return { x: 0, y: 0 };
@@ -1816,6 +1816,42 @@ const lastBy = <X>(list: X[], t: number, key: (x: X) => number): number => {
 		}
 	}
 	return found;
+};
+
+// (The same for the lists searched most - by when each thing in them
+// begins - with no key to call for each look.)
+const lastT0 = (list: readonly { t0: number }[], t: number): number => {
+	let lo = 0;
+	let hi = list.length - 1;
+	let ans = -1;
+	while (lo <= hi) {
+		const mid = (lo + hi) >> 1;
+		if (list[mid]!.t0 <= t) {
+			ans = mid;
+			lo = mid + 1;
+		} else {
+			hi = mid - 1;
+		}
+	}
+	return ans;
+};
+const lastFirst = (
+	list: readonly { readonly 0: number }[],
+	t: number,
+): number => {
+	let lo = 0;
+	let hi = list.length - 1;
+	let ans = -1;
+	while (lo <= hi) {
+		const mid = (lo + hi) >> 1;
+		if (list[mid]![0] <= t) {
+			ans = mid;
+			lo = mid + 1;
+		} else {
+			hi = mid - 1;
+		}
+	}
+	return ans;
 };
 
 const passMs = (d: number) =>
@@ -4094,8 +4130,8 @@ class Director {
 					end - t0 < PLAY_IT_MS ||
 					tr.acts.some((a) => a.t1 > t0 - 300 && a.t0 < end) ||
 					this.cuts.some((c) => c > t0 - 300 && c < end + 300) ||
-					!(lastBy(tr.shown, t0, (x) => x[0]) >= 0
-						? tr.shown[lastBy(tr.shown, t0, (x) => x[0])]![1]
+					!(lastFirst(tr.shown, t0) >= 0
+						? tr.shown[lastFirst(tr.shown, t0)]![1]
 						: false)
 				) {
 					continue;
@@ -4177,7 +4213,7 @@ class Director {
 				return { x: P.x + n.x, y: P.y + n.y };
 			};
 			const shown = (o: Track, t: number) => {
-				const k = lastBy(o.shown, t, (x) => x[0]);
+				const k = lastFirst(o.shown, t);
 				return k >= 0 && o.shown[k]![1];
 			};
 			const busy = (o: Track, t0: number) =>
@@ -4276,7 +4312,7 @@ class Director {
 		const tm = off + HIT_FIRST_AT;
 		const t1 = tm + BOX_IN_AFTER;
 		const shown = (o: Track, t: number) => {
-			const k = lastBy(o.shown, t, (x) => x[0]);
+			const k = lastFirst(o.shown, t);
 			return k >= 0 && o.shown[k]![1];
 		};
 		const free = (o: Track, t0: number) =>
@@ -4356,7 +4392,7 @@ class Director {
 		const t0 = off - BOX_IN_BEFORE;
 		const t1 = off + BOX_IN_AFTER;
 		const shown = (o: Track) => {
-			const k = lastBy(o.shown, t0, (x) => x[0]);
+			const k = lastFirst(o.shown, t0);
 			return k >= 0 && o.shown[k]![1];
 		};
 		const pace = (pid: number) =>
@@ -21943,7 +21979,7 @@ class Director {
 			}
 		});
 		const offenseAt = (t: number): Side | undefined =>
-			this.poss[lastBy(this.poss, t, (x) => x[0])]?.[1];
+			this.poss[lastFirst(this.poss, t)]?.[1];
 		for (const tr of this.tracks.values()) {
 			const ms = tr.moves;
 			for (let i = 0; i + 1 < ms.length; i++) {
@@ -23178,7 +23214,7 @@ class Director {
 				) {
 					continue;
 				}
-				const s = lastBy(tr.shown, m.t0, (x) => x[0]);
+				const s = lastFirst(tr.shown, m.t0);
 				if (s >= 0 && !tr.shown[s]![1]) {
 					continue;
 				}
@@ -23898,7 +23934,7 @@ class Director {
 				// (Only with a man of theirs there to sell it to.)
 				if (
 					!theirs.some((o) => {
-						const k = lastBy(o.shown, t, (x) => x[0]);
+						const k = lastFirst(o.shown, t);
 						return (
 							k >= 0 &&
 							o.shown[k]![1] &&
@@ -24070,7 +24106,7 @@ class Director {
 		// (Backing him down, though, he is into him: that he holds.)
 		const backingDown = (pid: number, t: number) => {
 			const tr = this.track(pid);
-			const m = tr?.moves[lastBy(tr.moves, t, (x) => x.t0)];
+			const m = tr?.moves[lastT0(tr.moves, t)];
 			return (
 				m !== undefined && t < m.t1 && (m.anim === "post" || m.anim === "back")
 			);
@@ -25672,9 +25708,9 @@ class Director {
 						continue;
 					}
 					// (From when he stops there, if he does before it is over.)
-					const k = lastBy(o.moves, m.t1, (x) => x.t0);
+					const k = lastT0(o.moves, m.t1);
 					const from = Math.max(m.t0, k >= 0 ? o.moves[k]!.t1 : -Infinity);
-					const si = lastBy(o.shown, from, (x) => x[0]);
+					const si = lastFirst(o.shown, from);
 					if (from >= m.t1 - 100 || si < 0 || !o.shown[si]![1]) {
 						continue;
 					}
@@ -25820,13 +25856,32 @@ class Director {
 			// Then, those runs as they now go, round any in the way. (Not one
 			// that takes him to where he gets the ball - up for a board, say:
 			// that is where it comes down.)
-			const gets = this.ball.flatMap((s) =>
-				s.kind === "fly" && "pid" in s.to && s.to.pid === tr.pid ? [s.t1] : [],
-			);
+			const gets = this.ball
+				.flatMap((s) =>
+					s.kind === "fly" && "pid" in s.to && s.to.pid === tr.pid
+						? [s.t1]
+						: [],
+				)
+				.sort((a, b) => a - b);
+			// (Whether he gets it between t0 and t1: the first time he does
+			// from t0 on, found by halving.)
+			const getsIn = (t0: number, t1: number) => {
+				let lo = 0;
+				let hi = gets.length;
+				while (lo < hi) {
+					const mid = (lo + hi) >> 1;
+					if (gets[mid]! < t0) {
+						lo = mid + 1;
+					} else {
+						hi = mid;
+					}
+				}
+				return lo < gets.length && gets[lo]! <= t1;
+			};
 			const ends = [...tr.moves];
 			ends.forEach((m, i) => {
 				const next = ends[i + 1]?.t0 ?? Infinity;
-				if (gets.some((t) => t >= m.t1 && t <= Math.min(next, m.t1 + 1500))) {
+				if (getsIn(m.t1, Math.min(next, m.t1 + 1500))) {
 					return;
 				}
 				for (const w of theirs) {
@@ -25905,7 +25960,7 @@ class Director {
 	// ground; of two others, the defender gives way, or the one standing.
 	// Where he is at t, his steps aside (see keepApart) and all.
 	private spotAt(tr: Track, t: number): Pt {
-		const k = lastBy(tr.moves, t, (m) => m.t0);
+		const k = lastT0(tr.moves, t);
 		let x = tr.start.x;
 		let y = tr.start.y;
 		if (k >= 0) {
@@ -25926,7 +25981,7 @@ class Director {
 		let x = 0;
 		let y = 0;
 		const list = tr.nudges ?? [];
-		for (let i = lastBy(list, t, (n) => n.t0); i >= 0; i--) {
+		for (let i = lastT0(list, t); i >= 0; i--) {
 			const n = list[i]!;
 			if (t - n.t0 > 20000) {
 				break;
@@ -26026,7 +26081,7 @@ class Director {
 				(a) => a.t0 < t + SPAN && a.t1 > t - SPAN && STAND.has(a.anim),
 			);
 		const shownAt = (tr: Track, t: number) => {
-			const k = lastBy(tr.shown, t, (x) => x[0]);
+			const k = lastFirst(tr.shown, t);
 			return k >= 0 && tr.shown[k]![1];
 		};
 		const tracks = [...this.tracks.values()].filter((tr) =>
@@ -26471,7 +26526,7 @@ class Director {
 			"dunk",
 		]);
 		const shownAt = (tr: Track, t: number) => {
-			const k = lastBy(tr.shown, t, (x) => x[0]);
+			const k = lastFirst(tr.shown, t);
 			return k >= 0 && tr.shown[k]![1];
 		};
 		type Leg = { t0: number; t1: number; a: Pt3; b: Pt3 };
@@ -26558,7 +26613,7 @@ class Director {
 			);
 			// On the move up to it, he faces where he was going (squared up
 			// to the rim, walking it a few steps).
-			const mv = from.moves[lastBy(from.moves, act.t0, (m) => m.t0)];
+			const mv = from.moves[lastT0(from.moves, act.t0)];
 			const going =
 				mv && mv.t1 > act.t0 - PASS_TURN && dist(mv.from, mv.to) >= 3
 					? mv
@@ -26790,7 +26845,7 @@ class Director {
 			if (!even) {
 				return P;
 			}
-			const m = tr.moves[lastBy(tr.moves, t, (x) => x.t0)];
+			const m = tr.moves[lastT0(tr.moves, t)];
 			if (!m || t >= m.t1) {
 				return P;
 			}
@@ -26969,7 +27024,7 @@ class Director {
 		const HIP_PASS = 2.9;
 		const HIP_SQUARE = 0.5;
 		const shown = (tr: Track, t: number) => {
-			const k = lastBy(tr.shown, t, (x) => x[0]);
+			const k = lastFirst(tr.shown, t);
 			return k >= 0 && tr.shown[k]![1];
 		};
 		const them = (team: Side) =>
@@ -27072,7 +27127,7 @@ class Director {
 		const SET_QUICKER = 1.5;
 		const SET_FASTEST = 20;
 		const shown = (tr: Track, t: number) => {
-			const k = lastBy(tr.shown, t, (x) => x[0]);
+			const k = lastFirst(tr.shown, t);
 			return k >= 0 && tr.shown[k]![1];
 		};
 		// (Stepped: where everybody has been stepped to, and kept off each
@@ -27384,10 +27439,10 @@ class Director {
 			if (!r) {
 				r = {
 					tr,
-					move: (u) => lastBy(tr.moves, u, (m) => m.t0),
-					shown: (u) => lastBy(tr.shown, u, (x) => x[0]),
-					act: (u) => lastBy(tr.acts, u, (a) => a.t0),
-					nudge: (u) => lastBy(tr.nudges ?? [], u, (n) => n.t0),
+					move: (u) => lastT0(tr.moves, u),
+					shown: (u) => lastFirst(tr.shown, u),
+					act: (u) => lastT0(tr.acts, u),
+					nudge: (u) => lastT0(tr.nudges ?? [], u),
 				};
 				anyTime.set(tr, r);
 			}
@@ -27423,12 +27478,12 @@ class Director {
 			return first?.a;
 		};
 		const shownAtT = (tr: Track, t: number) => {
-			const k = lastBy(tr.shown, t, (x) => x[0]);
+			const k = lastFirst(tr.shown, t);
 			return k >= 0 && tr.shown[k]![1];
 		};
 		// (Backing his man down in the post: set, as much as in a screen.)
 		const inPost = (tr: Track, t: number) => {
-			const m = tr.moves[lastBy(tr.moves, t, (x) => x.t0)];
+			const m = tr.moves[lastT0(tr.moves, t)];
 			return m !== undefined && m.anim === "post" && t < m.t1;
 		};
 		// When the ball is in each man's hands.
@@ -27744,7 +27799,7 @@ class Director {
 				// (Not before he is out there: coming on, he comes on where he
 				// comes on, and steps aside from there.)
 				{
-					const k = lastBy(r.a.shown, r.t0, (x) => x[0]);
+					const k = lastFirst(r.a.shown, r.t0);
 					if (k >= 0 && r.a.shown[k]![1]) {
 						n0 = Math.max(n0, r.a.shown[k]![0]);
 					}
@@ -28221,7 +28276,7 @@ class Director {
 			live.push([from, this.T]);
 		}
 		const doing = (tr: Track, t: number): AnimName | undefined => {
-			for (let k = lastBy(tr.acts, t, (a) => a.t0); k >= 0; k--) {
+			for (let k = lastT0(tr.acts, t); k >= 0; k--) {
 				const a = tr.acts[k]!;
 				if (a.t1 > t) {
 					return a.anim;
@@ -28233,11 +28288,11 @@ class Director {
 			return undefined;
 		};
 		const holderAt = (t: number): number | undefined => {
-			const b = this.ball[lastBy(this.ball, t, (x) => x.t0)];
+			const b = this.ball[lastT0(this.ball, t)];
 			return b?.kind === "hold" ? b.pid : undefined;
 		};
 		const offenseAt = (t: number): Side | undefined =>
-			this.poss[lastBy(this.poss, t, (x) => x[0])]?.[1];
+			this.poss[lastFirst(this.poss, t)]?.[1];
 		// (Backing his man down - and his man on him still, after: the ball
 		// in his hands, till it is gone or he goes.)
 		const backing = new Map<number, [number, number][]>();
@@ -28333,11 +28388,11 @@ class Director {
 		// Where the schedule has him, if he is out there (see mark): near
 		// enough to say who might be in whom.
 		const roughly = (tr: Track, t: number): Pt | undefined => {
-			const si = lastBy(tr.shown, t, (x) => x[0]);
+			const si = lastFirst(tr.shown, t);
 			if (si < 0 || !tr.shown[si]![1]) {
 				return undefined;
 			}
-			const m = tr.moves[lastBy(tr.moves, t, (x) => x.t0)];
+			const m = tr.moves[lastT0(tr.moves, t)];
 			if (!m) {
 				return tr.start;
 			}
@@ -28366,7 +28421,7 @@ class Director {
 		):
 			| { x: number; y: number; next: number; by: number; apart: number }
 			| undefined => {
-			const k = lastBy(this.ball, t, (x) => x.t0);
+			const k = lastT0(this.ball, t);
 			const seg = this.ball[k];
 			if (!seg || seg.kind === "hold") {
 				return undefined;
@@ -28511,7 +28566,7 @@ class Director {
 				return;
 			}
 			for (const tr of tracks) {
-				const a = tr.acts[lastBy(tr.acts, b.t1, (x) => x.t0)];
+				const a = tr.acts[lastT0(tr.acts, b.t1)];
 				if (a && a.t1 >= b.t1 && KNOCKS.has(a.anim)) {
 					pinAt(tr.pid, b.t1);
 				}
@@ -29629,15 +29684,13 @@ class Director {
 			if (ups.length === 0) {
 				continue;
 			}
+			// (Only the flights to him looked through, not the whole game's.)
+			const toHim = this.ball.filter(
+				(b): b is Extract<BallSeg, { kind: "fly" }> =>
+					b.kind === "fly" && "pid" in b.to && b.to.pid === tr.pid,
+			);
 			const ballTo = (t0: number, t1: number) =>
-				this.ball.some(
-					(b) =>
-						b.kind === "fly" &&
-						"pid" in b.to &&
-						b.to.pid === tr.pid &&
-						b.t1 > t0 &&
-						b.t0 < t1,
-				);
+				toHim.some((b) => b.t1 > t0 && b.t0 < t1);
 			for (const n of tr.nudges) {
 				// (The ball coming to him meanwhile - up for a board, say -
 				// where he is for it stays as it is: it comes to his hands.)
@@ -30377,7 +30430,7 @@ class Director {
 		const NEAR = 6;
 		const all = [...this.tracks.values()].filter((o) => o.pid >= 0);
 		const shown = (o: Track, t: number) => {
-			const k = lastBy(o.shown, t, (x) => x[0]);
+			const k = lastFirst(o.shown, t);
 			return k >= 0 && o.shown[k]![1];
 		};
 		// (Where each really is: his steps aside too - a man stepped up to
@@ -30443,7 +30496,7 @@ class Director {
 			};
 			// His man - or, him off somewhere, whoever of theirs is nearest.
 			const onCourt = (o: Track | undefined) => {
-				const k = o ? lastBy(o.shown, m.t0, (x) => x[0]) : -1;
+				const k = o ? lastFirst(o.shown, m.t0) : -1;
 				return o !== undefined && k >= 0 && o.shown[k]![1];
 			};
 			let g =

@@ -102,6 +102,42 @@ const lastIndex = <T>(list: T[], t: number, key: (x: T) => number): number => {
 	return ans;
 };
 
+// (The same for the lists searched most - by when each thing in them
+// begins - with no key to call for each look.)
+const lastT0 = (list: readonly { t0: number }[], t: number): number => {
+	let lo = 0;
+	let hi = list.length - 1;
+	let ans = -1;
+	while (lo <= hi) {
+		const mid = (lo + hi) >> 1;
+		if (list[mid]!.t0 <= t) {
+			ans = mid;
+			lo = mid + 1;
+		} else {
+			hi = mid - 1;
+		}
+	}
+	return ans;
+};
+const lastFirst = (
+	list: readonly { readonly 0: number }[],
+	t: number,
+): number => {
+	let lo = 0;
+	let hi = list.length - 1;
+	let ans = -1;
+	while (lo <= hi) {
+		const mid = (lo + hi) >> 1;
+		if (list[mid]![0] <= t) {
+			ans = mid;
+			lo = mid + 1;
+		} else {
+			hi = mid - 1;
+		}
+	}
+	return ans;
+};
+
 export type PlayerState = {
 	pid: number;
 	team: Side;
@@ -371,7 +407,7 @@ const dribbleDepth = (ph: number): number =>
 		: Math.pow(1 - (ph - DOWN) / (1 - DOWN), 1.8);
 
 export const offenseAt = (tl: CourtTimeline, t: number): Side => {
-	const i = lastIndex(tl.poss, t, (p) => p[0]);
+	const i = lastFirst(tl.poss, t);
 	return i >= 0 ? tl.poss[i]![1] : 1;
 };
 
@@ -380,10 +416,7 @@ const jumpBallAt = (tl: CourtTimeline, t: number): boolean =>
 	tl.jumps?.some(([t0, tip]) => t >= t0 && t < tip) ?? false;
 
 const ballIndexAt = (tl: CourtTimeline, t: number): number =>
-	Math.max(
-		0,
-		lastIndex(tl.ball, t, (s) => s.t0),
-	);
+	Math.max(0, lastT0(tl.ball, t));
 const ballSegAt = (tl: CourtTimeline, t: number): BallSeg | undefined =>
 	tl.ball[ballIndexAt(tl, t)];
 
@@ -612,7 +645,7 @@ const jumpZ = (act: Act, u: number): number => {
 // as this one started - not one of its own still to come.)
 const stillUp = (tr: Track, act: Act, t: number): number => {
 	let up = 0;
-	const ai = lastIndex(tr.acts, act.t0, (a) => a.t0);
+	const ai = lastT0(tr.acts, act.t0);
 	for (let k = ai; k >= 0 && k >= ai - 4; k--) {
 		const a = tr.acts[k]!;
 		if (a === act || a.flash || a.quiet || t >= a.t1 || (!a.jump && !a.zKeys)) {
@@ -690,7 +723,7 @@ const plantedBetween = (
 		return false;
 	}
 	const t = (a.t1 + b.t0) / 2;
-	const i = lastIndex(tr.acts, t, (x) => x.t0);
+	const i = lastT0(tr.acts, t);
 	for (let k = i; k >= 0 && k >= i - 3; k--) {
 		const x = tr.acts[k]!;
 		if (t < x.t1 && PLANTED.has(x.anim)) {
@@ -1040,7 +1073,7 @@ const catmullRom = (a: number[], i: number, u: number) => {
 	crV = ((c1 + u * (2 * c2 + 3 * u * c3)) * 1000) / SEP_MS;
 };
 const keptOff = (list: Sep[], s: Spot, t: number): Spot => {
-	const k = lastIndex(list, t, (x) => x.t0);
+	const k = lastT0(list, t);
 	if (k < 0) {
 		return s;
 	}
@@ -1066,7 +1099,7 @@ const nudgedAt = (tr: Track, t: number, heading = true): Spot => {
 	}
 	let dx = 0;
 	let dy = 0;
-	for (let i = lastIndex(list, t, (n) => n.t0); i >= 0; i--) {
+	for (let i = lastT0(list, t); i >= 0; i--) {
 		const n = list[i]!;
 		// (None lasts long: the ones begun long before are over.)
 		if (t - n.t0 > NUDGE_LONGEST) {
@@ -1096,7 +1129,7 @@ const asideAt = (tr: Track, t: number): void => {
 	let vy = 0;
 	let d = 0;
 	const list = tr.nudges ?? [];
-	for (let i = lastIndex(list, t, (n) => n.t0); i >= 0; i--) {
+	for (let i = lastT0(list, t); i >= 0; i--) {
 		const n = list[i]!;
 		if (t - n.t0 > NUDGE_LONGEST) {
 			break;
@@ -1120,7 +1153,7 @@ const asideAt = (tr: Track, t: number): void => {
 	}
 	asideV = Math.hypot(vx, vy);
 	const sep = tr.sep;
-	const k = sep ? lastIndex(sep, t, (x) => x.t0) : -1;
+	const k = sep ? lastT0(sep, t) : -1;
 	if (sep && k >= 0) {
 		const base = sepBase(sep);
 		const { t0, dx, dy, dl } = sep[k]!;
@@ -1153,7 +1186,7 @@ const sepBase = (list: Sep[]): number[] => {
 	return base;
 };
 const rawSpotAt = (tr: Track, t: number, heading = true): Spot => {
-	let k = lastIndex(tr.moves, t, (m) => m.t0);
+	let k = lastT0(tr.moves, t);
 	if (k < 0) {
 		return {
 			x: tr.start.x,
@@ -1354,10 +1387,7 @@ const TARGET_LEAD = 240;
 const TARGET_RAMP = 180;
 const CHAIN_GAP = 20;
 const targetAt = (tl: CourtTimeline, pid: number, t: number): number => {
-	const i = Math.max(
-		0,
-		lastIndex(tl.ball, t, (s) => s.t0),
-	);
+	const i = Math.max(0, lastT0(tl.ball, t));
 	let from: number | undefined;
 	// (Far enough on to see a bounce pass off the dribble coming: the
 	// dribble, the gather, and both legs of it.)
@@ -1407,18 +1437,18 @@ const targetAt = (tl: CourtTimeline, pid: number, t: number): number => {
 // How tense the building is at t (0 to 1): a close game, late.
 export const seatsAt = (tl: CourtTimeline, t: number): number => {
 	const s = tl.seats ?? [];
-	const i = lastIndex(s, t, (x) => x[0]);
+	const i = lastFirst(s, t);
 	return i >= 0 ? s[i]![1] : 1;
 };
 
 export const tensionAt = (tl: CourtTimeline, t: number): number => {
-	const i = lastIndex(tl.tension, t, (x) => x[0]);
+	const i = lastFirst(tl.tension, t);
 	return i >= 0 ? tl.tension[i]![1] : 0;
 };
 
 // The act running now, if any (they rarely overlap; the later one wins).
 const actAt = (tr: Track, t: number): Act | undefined => {
-	const ai = lastIndex(tr.acts, t, (a) => a.t0);
+	const ai = lastT0(tr.acts, t);
 	for (let k = ai; k >= 0 && k >= ai - 3; k--) {
 		const a = tr.acts[k]!;
 		if (t < a.t1 && !(a.flash || a.quiet)) {
@@ -1591,7 +1621,7 @@ const yawTarget = (tl: CourtTimeline, tr: Track, t: number): number => {
 };
 const plannedYaw = (tl: CourtTimeline, tr: Track, t: number): number => {
 	const here = spotAt(tr, t);
-	const fi = lastIndex(tr.faces, t, (f) => f[0]);
+	const fi = lastFirst(tr.faces, t);
 	const face = fi >= 0 ? tr.faces[fi]![1] : 1;
 	const fallback = face === 1 ? 0 : Math.PI;
 	const act = actAt(tr, t);
@@ -1647,7 +1677,7 @@ const plannedYaw = (tl: CourtTimeline, tr: Track, t: number): number => {
 	// squares up to where it goes first, not round on it as it leaves his
 	// hands. (Or to reach for it: round to it before his hand goes out.)
 	if (!act) {
-		const nx = tr.acts[lastIndex(tr.acts, t + PASS_TURN, (a) => a.t0)];
+		const nx = tr.acts[lastT0(tr.acts, t + PASS_TURN)];
 		if (
 			nx &&
 			nx.t0 > t &&
@@ -1723,7 +1753,7 @@ const plannedYaw = (tl: CourtTimeline, tr: Track, t: number): number => {
 		// stands. (Only so far round that he still dribbles on forward: the
 		// rest of the turn is his gather.)
 		if (mv.anim === "dribble" && d >= 3) {
-			const next = tr.acts[lastIndex(tr.acts, t + PULLUP_OPEN_MS, (a) => a.t0)];
+			const next = tr.acts[lastT0(tr.acts, t + PULLUP_OPEN_MS)];
 			const own =
 				next && next.t0 > t && PULLUP_SHOTS.has(next.anim)
 					? ballSegAt(tl, t)
@@ -1767,7 +1797,7 @@ const plannedYaw = (tl: CourtTimeline, tr: Track, t: number): number => {
 			return heading;
 		}
 	}
-	const li = lastIndex(tr.looks, t, (l) => l[0]);
+	const li = lastFirst(tr.looks, t);
 	if (li >= 0 && (!mv || tr.looks[li]![0] >= mv.t0)) {
 		return angleTo(here, tr.looks[li]![1], fallback);
 	}
@@ -1800,10 +1830,7 @@ const catchToShoot = (
 	t: number,
 ): { from: Pt; w: number } | undefined => {
 	const list = tl.ball;
-	const k0 = Math.max(
-		0,
-		lastIndex(list, t, (s) => s.t0),
-	);
+	const k0 = Math.max(0, lastT0(list, t));
 	let k = k0;
 	const cur = list[k0];
 	if (cur?.kind === "hold" && cur.pid === tr.pid) {
@@ -2020,7 +2047,7 @@ const yawOnBeat = (tl: CourtTimeline, tr: Track, g: number): number => {
 // is down on.
 const SLIDE_TURN = 0.55;
 const sliding = (tr: Track, t: number): boolean => {
-	const m = tr.moves[lastIndex(tr.moves, t, (x) => x.t0)];
+	const m = tr.moves[lastT0(tr.moves, t)];
 	return (
 		m !== undefined && m.t1 > t && (m.anim === "shuffle" || m.anim === "slide")
 	);
@@ -2140,10 +2167,10 @@ const offBall = (
 		return undefined;
 	}
 	// Since when he has stood here, and until he next moves or acts.
-	const mi = lastIndex(tr.moves, t, (m) => m.t0);
+	const mi = lastT0(tr.moves, t);
 	let since = mi >= 0 ? tr.moves[mi]!.t1 : 0;
 	let until = tr.moves[mi + 1]?.t0 ?? Infinity;
-	const ai = lastIndex(tr.acts, t, (a) => a.t0);
+	const ai = lastT0(tr.acts, t);
 	for (let k = ai; k >= 0 && k >= ai - 3; k--) {
 		since = Math.max(since, tr.acts[k]!.t1);
 	}
@@ -2335,7 +2362,7 @@ export const deadSpansOf = (tl: CourtTimeline): Stoppage[] => {
 // The stoppage he may stand easy in at t, if any.
 const stoppageAt = (tl: CourtTimeline, t: number): Stoppage | undefined => {
 	const list = deadSpansOf(tl);
-	const s = list[lastIndex(list, t, (d) => d[0])];
+	const s = list[lastFirst(list, t)];
 	return s && t >= s[0] + DEAD_LAG && t < s[1] - s[2] ? s : undefined;
 };
 // How worn down he is (0 fresh, 1 run ragged): the trips up and down the
@@ -2361,15 +2388,15 @@ const tirednessAt = (tl: CourtTimeline, tr: Track, t: number): number => {
 		breaksOf.set(tl, breaks);
 	}
 	const { ends, outs } = breaks;
-	const si = lastIndex(tr.shown, t, (s) => s[0]);
+	const si = lastFirst(tr.shown, t);
 	let from = si >= 0 && tr.shown[si]![1] ? tr.shown[si]![0] : -Infinity;
 	const ei = lastIndex(ends, t, (e) => e);
 	if (ei >= 0) {
 		from = Math.max(from, ends[ei]!);
 	}
 	const trips =
-		lastIndex(tl.poss, t, (p) => p[0]) -
-		lastIndex(tl.poss, from, (p) => p[0]) -
+		lastFirst(tl.poss, t) -
+		lastFirst(tl.poss, from) -
 		TIMEOUT_TRIPS *
 			(lastIndex(outs, t, (e) => e) - lastIndex(outs, from, (e) => e));
 	return clamp01((trips - FRESH_TRIPS) / (SPENT_TRIPS - FRESH_TRIPS));
@@ -2385,10 +2412,10 @@ const stoppedLife = (
 	t: number,
 	stop: Stoppage,
 ): AnimName | undefined => {
-	const mi = lastIndex(tr.moves, t, (m) => m.t0);
+	const mi = lastT0(tr.moves, t);
 	let since = Math.max(stop[0] + DEAD_LAG, mi >= 0 ? tr.moves[mi]!.t1 : 0);
 	let until = Math.min(stop[1] - stop[2], tr.moves[mi + 1]?.t0 ?? Infinity);
-	const ai = lastIndex(tr.acts, t, (a) => a.t0);
+	const ai = lastT0(tr.acts, t);
 	for (let k = ai; k >= 0 && k >= ai - 3; k--) {
 		since = Math.max(since, tr.acts[k]!.t1);
 	}
@@ -2538,7 +2565,7 @@ const swipeAt = (
 	if (t < start || t >= start + SWIPE_MS) {
 		return undefined;
 	}
-	const mi = lastIndex(tr.moves, start, (m) => m.t0);
+	const mi = lastT0(tr.moves, start);
 	if (mi >= 0 && tr.moves[mi]!.t1 > start - 400) {
 		return undefined;
 	}
@@ -2869,7 +2896,7 @@ const bridgeAt = (
 			gait: { k: number; at: number };
 	  }
 	| undefined => {
-	const k = lastIndex(tr.moves, t, (m) => m.t0);
+	const k = lastT0(tr.moves, t);
 	const m = k >= 0 ? tr.moves[k] : undefined;
 	const next = tr.moves[k + 1];
 	if (
@@ -2988,7 +3015,7 @@ const tightAt = (
 		if (o.team === tr.team) {
 			continue;
 		}
-		const si = lastIndex(o.shown, t, (x) => x[0]);
+		const si = lastFirst(o.shown, t);
 		if (si < 0 || !o.shown[si]![1]) {
 			continue;
 		}
@@ -3032,7 +3059,7 @@ const calmAt = (
 		if (o.team === tr.team) {
 			continue;
 		}
-		const si = lastIndex(o.shown, t, (x) => x[0]);
+		const si = lastFirst(o.shown, t);
 		if (si < 0 || !o.shown[si]![1]) {
 			continue;
 		}
@@ -3598,7 +3625,7 @@ const armsDown = (
 	t: number,
 	now: Doing,
 ): Blend | undefined => {
-	const i = lastIndex(tr.acts, t, (a) => a.t0);
+	const i = lastT0(tr.acts, t);
 	for (let k = i; k >= 0 && k >= i - 3; k--) {
 		const a = tr.acts[k]!;
 		if (a.t1 > t || t - a.t1 >= ARMS_DOWN_MS || a.flash || a.quiet) {
@@ -3764,7 +3791,7 @@ const blendInto = (
 	// feet catching up with him - is no change of its own: out of that arm,
 	// then, or it comes down in fits and starts.)
 	if (!ARMS_UP.has(before.anim)) {
-		const i = lastIndex(tr.acts, hi, (a) => a.t0);
+		const i = lastT0(tr.acts, hi);
 		for (let k = i; k >= 0 && k >= i - 3; k--) {
 			const a = tr.acts[k]!;
 			if (
@@ -3946,7 +3973,7 @@ const armAt = (
 	free: Hand | "both" | "none",
 ): ArmPose | undefined => {
 	const list = tr.arms;
-	const gi = lastIndex(list, t, (g) => g.t0);
+	const gi = lastT0(list, t);
 	const g: Gesture | undefined =
 		gi >= 0 && t < list[gi]!.t1 ? list[gi] : undefined;
 	if (!g || free === "none") {
@@ -4157,7 +4184,7 @@ const denyArm = (
 		if (o.team === tr.team || o === holder) {
 			continue;
 		}
-		const si = lastIndex(o.shown, t, (x) => x[0]);
+		const si = lastFirst(o.shown, t);
 		if (si < 0 || !o.shown[si]![1]) {
 			continue;
 		}
@@ -4466,7 +4493,7 @@ const engageArm = (
 // Just where he is on the floor at t, if he is on it - cheap, for asking
 // of every man at every step.
 export const floorSpotOf = (tr: Track, t: number): Pt | undefined => {
-	const si = lastIndex(tr.shown, t, (x) => x[0]);
+	const si = lastFirst(tr.shown, t);
 	if (si < 0 || !tr.shown[si]![1]) {
 		return undefined;
 	}
@@ -4481,7 +4508,7 @@ const armNow = (
 	tr: Track,
 	t: number,
 ): ArmPose | undefined => {
-	const si = lastIndex(tr.shown, t, (s) => s[0]);
+	const si = lastFirst(tr.shown, t);
 	if (si < 0 || !tr.shown[si]![1]) {
 		return undefined;
 	}
@@ -4686,7 +4713,7 @@ export const shownAt = (tl: CourtTimeline, pid: number, t: number): boolean => {
 	if (!tr) {
 		return false;
 	}
-	const si = lastIndex(tr.shown, t, (s) => s[0]);
+	const si = lastFirst(tr.shown, t);
 	return si >= 0 ? tr.shown[si]![1] : false;
 };
 
@@ -4749,7 +4776,7 @@ const playerAt = (
 			moving: false,
 		};
 	}
-	const si = lastIndex(tr.shown, t, (s) => s[0]);
+	const si = lastFirst(tr.shown, t);
 	const shown = si >= 0 ? tr.shown[si]![1] : false;
 	const here = spotAt(tr, t);
 	const doing = doingAt(tl, tr, t, here);
@@ -4899,7 +4926,7 @@ const roomNow = (tl: CourtTimeline, tr: Track, t: number): number => {
 		if (o === tr) {
 			continue;
 		}
-		const si = lastIndex(o.shown, t, (x) => x[0]);
+		const si = lastFirst(o.shown, t);
 		if (si < 0 || !o.shown[si]![1]) {
 			continue;
 		}
@@ -5147,7 +5174,7 @@ const tuckNow = (
 		if (o === tr) {
 			continue;
 		}
-		const si = lastIndex(o.shown, t, (x) => x[0]);
+		const si = lastFirst(o.shown, t);
 		if (si < 0 || !o.shown[si]![1]) {
 			continue;
 		}
@@ -5499,7 +5526,7 @@ const scanLook = (
 	let edge =
 		smooth01((t - tl.ball[a]!.t0 - SCAN_IN) / SCAN_EASE) *
 		smooth01(((tl.ball[b]?.t0 ?? Infinity) - t - SCAN_IN) / SCAN_EASE);
-	const ai = lastIndex(tr.acts, t, (x) => x.t0);
+	const ai = lastT0(tr.acts, t);
 	const before = ai >= 0 ? tr.acts[ai] : undefined;
 	if (before && t < before.t1) {
 		return 0;
@@ -7060,7 +7087,7 @@ const contactsIn = (tl: CourtTimeline, c: number): Contact => {
 		const out: (Pt | undefined)[] = [];
 		for (let i = 0; i <= n; i++) {
 			const u = t0 + (i - pad) * JOLT_DT;
-			const si = lastIndex(tr.shown, u, (s) => s[0]);
+			const si = lastFirst(tr.shown, u);
 			out.push(si >= 0 && tr.shown[si]![1] ? spotAt(tr, u, false) : undefined);
 		}
 		return out;
@@ -7379,7 +7406,7 @@ const BALL_ACTS =
 	/^(block|tip|catch|board|rebound|snatch|pickup|pass|hack|reach|poke|strip|heave|shoot|setShot|layup|dunk|hook|floater|fade|scoop|finger|reverse|euro|power|windmill|tomahawk|dap|highFive|reachFive|lowFive|waitFive|chestBump|helpUp)/;
 const BALL_EASE = 150;
 const ballFree = (tr: Track, t: number): number => {
-	const k = lastIndex(tr.acts, t + BALL_EASE, (a) => a.t0);
+	const k = lastT0(tr.acts, t + BALL_EASE);
 	let w = 1;
 	for (let i = k; i >= 0 && i >= k - 4; i--) {
 		const a = tr.acts[i]!;
@@ -8251,7 +8278,7 @@ const menNear = (
 ): Track[] => {
 	const out: Track[] = [];
 	for (const tr of tl.tracks.values()) {
-		const si = lastIndex(tr.shown, t, (v) => v[0]);
+		const si = lastFirst(tr.shown, t);
 		if (si < 0 || !tr.shown[si]![1]) {
 			continue;
 		}
@@ -9198,7 +9225,7 @@ export const FAST = 18;
 const FAST_IN = 2800;
 const FAST_OUT = 800;
 export const fastAt = (tl: CourtTimeline, t: number): number => {
-	const i = lastIndex(tl.fast, t, (f) => f[0]);
+	const i = lastFirst(tl.fast, t);
 	const f = i >= 0 ? tl.fast[i] : undefined;
 	if (!f || t >= f[1]) {
 		return 1;
@@ -9214,7 +9241,7 @@ export const arenaShotAt = (
 	tl: CourtTimeline,
 	t: number,
 ): ArenaShot | undefined => {
-	const i = lastIndex(tl.shots, t, (s) => s.t0);
+	const i = lastT0(tl.shots, t);
 	const s = i >= 0 ? tl.shots[i] : undefined;
 	return s && t < s.t1 ? s : undefined;
 };

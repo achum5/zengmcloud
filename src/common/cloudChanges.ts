@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 412,
+		date: "2026-11-20",
+		text: "The 3D game is ready sooner: getting a game ready to watch in 3D now takes about 15-20% less time on iPhones and about 10% less on Android and computers. The games play out exactly the same as before.",
+	},
+	{
 		n: 411,
 		date: "2026-11-20",
 		text: "CPU trades: contenders can now land real star trades. A team selling a star counts the players it gets back at what they're worth on the market, not just to itself, and a buyer can put up to six pieces in an offer. In test leagues twice as many of the league's best players changed teams, and half as many firsts were paid for older role players. The CPU trade market takes a little longer to think each time it meets.",

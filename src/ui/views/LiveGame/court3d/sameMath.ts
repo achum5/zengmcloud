@@ -21,6 +21,7 @@
 
 const f64 = new Float64Array(1);
 const u32 = new Uint32Array(f64.buffer);
+const i32 = new Int32Array(f64.buffer);
 // (Which of the two words is the high one, on this machine.)
 const HI = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1 ? 1 : 0;
 const LO = 1 - HI;
@@ -740,6 +741,12 @@ export const sameExp = (x0: number): number => {
 	const y = 1 - (lo - (x * c) / (2 - c) - hi);
 	return y * twoTo(k);
 };
+// 2^-k, for every k a number held in full is brought down by (see sameLog).
+const UNSCALE_AT = 1023;
+const UNSCALE = new Float64Array(2048);
+for (let k = -UNSCALE_AT; k <= 1024; k++) {
+	UNSCALE[k + UNSCALE_AT] = twoTo(-k);
+}
 const LG1 = 0.6666666666666735;
 const LG2 = 0.3999999999940942;
 const LG3 = 0.2857142874366239;
@@ -754,22 +761,31 @@ export const sameLog = (x0: number): number => {
 	if (x0 === Infinity) {
 		return Infinity;
 	}
-	// (Its bits read and written straight off the one number - this is asked
-	// a great deal: every run's shape.)
-	let k = 0;
+	// (Its bits read straight off the one number - this is asked a great
+	// deal: every run's shape. Brought down to between a half and two by the
+	// power of two that takes it there, exactly: fdlibm writes the power into
+	// its bits instead, to the same number.)
 	f64[0] = x0;
-	let hx = u32[HI]! | 0;
-	if (hx < 0x00100000) {
-		k = -54;
+	let hx = i32[HI]!;
+	let k: number;
+	let f: number;
+	if (hx >= 0x00100000) {
+		k = (hx >> 20) - 1023;
+		hx &= 0x000fffff;
+		const i0 = (hx + 0x95f64) & 0x100000;
+		k += i0 >> 20;
+		f = x0 * UNSCALE[k + UNSCALE_AT]! - 1;
+	} else {
+		// (Too small to be held in full: rare as anything.)
 		f64[0] = x0 * 18014398509481984;
-		hx = u32[HI]! | 0;
+		hx = i32[HI]!;
+		k = -54 + (hx >> 20) - 1023;
+		hx &= 0x000fffff;
+		const i0 = (hx + 0x95f64) & 0x100000;
+		i32[HI] = hx | (i0 ^ 0x3ff00000);
+		k += i0 >> 20;
+		f = f64[0]! - 1;
 	}
-	k += (hx >> 20) - 1023;
-	hx &= 0x000fffff;
-	const i0 = (hx + 0x95f64) & 0x100000;
-	u32[HI] = (hx | (i0 ^ 0x3ff00000)) >>> 0;
-	k += i0 >> 20;
-	const f = f64[0]! - 1;
 	if ((0x000fffff & (2 + hx)) < 3) {
 		if (f === 0) {
 			return k === 0 ? 0 : k * LN2_HI + k * LN2_LO;
@@ -1083,7 +1099,7 @@ export const samePow = (x: number, y: number): number => {
 
 // V8's: each over the largest, their squares summed (Kahan's way), the
 // root of that times the largest.
-export const sameHypot = (...xs: number[]): number => {
+const hypotOf = (xs: number[]): number => {
 	let max = 0;
 	let nan = false;
 	for (const x of xs) {
@@ -1114,6 +1130,68 @@ export const sameHypot = (...xs: number[]): number => {
 	}
 	return Math.sqrt(sum) * max;
 };
+// Two of them, and three: the same sums, to the bit, written out - asked
+// tens of millions of times a game, with no list made for each.
+const hypot2 = (x: number, y: number): number => {
+	const ax = Math.abs(x);
+	const ay = Math.abs(y);
+	if (Number.isNaN(ax) || Number.isNaN(ay)) {
+		return ax === Infinity || ay === Infinity ? Infinity : Number.NaN;
+	}
+	const max = ax > ay ? ax : ay;
+	if (max === Infinity) {
+		return Infinity;
+	}
+	if (max === 0) {
+		return 0;
+	}
+	const n0 = ax / max;
+	const s0 = n0 * n0;
+	const n1 = ay / max;
+	const summand1 = n1 * n1 - (s0 - 0 - s0);
+	return Math.sqrt(s0 + summand1) * max;
+};
+const hypot3 = (x: number, y: number, z: number): number => {
+	const ax = Math.abs(x);
+	const ay = Math.abs(y);
+	const az = Math.abs(z);
+	if (Number.isNaN(ax) || Number.isNaN(ay) || Number.isNaN(az)) {
+		return ax === Infinity || ay === Infinity || az === Infinity
+			? Infinity
+			: Number.NaN;
+	}
+	let max = ax > ay ? ax : ay;
+	if (az > max) {
+		max = az;
+	}
+	if (max === Infinity) {
+		return Infinity;
+	}
+	if (max === 0) {
+		return 0;
+	}
+	const n0 = ax / max;
+	const s0 = n0 * n0;
+	const c0 = s0 - 0 - s0;
+	const n1 = ay / max;
+	const summand1 = n1 * n1 - c0;
+	const s1 = s0 + summand1;
+	const c1 = s1 - s0 - summand1;
+	const n2 = az / max;
+	const summand2 = n2 * n2 - c1;
+	return Math.sqrt(s1 + summand2) * max;
+};
+export function sameHypot(x?: number, y?: number, z?: number): number {
+	switch (arguments.length) {
+		case 2:
+			return hypot2(x!, y!);
+		case 3:
+			return hypot3(x!, y!, z!);
+		default:
+			// eslint-disable-next-line prefer-rest-params
+			return hypotOf(Array.prototype.slice.call(arguments) as number[]);
+	}
+}
 
 // While `f` runs - a game being staged - the browser's own sums of these
 // are these instead: to the bit the same in any browser. (Nothing else runs

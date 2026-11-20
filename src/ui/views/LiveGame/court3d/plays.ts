@@ -246,6 +246,7 @@ const roleCost = (play: Play, r: Role, c: Cast): number => {
 	return cost;
 };
 
+const ROLES: Role[] = [0, 1, 2, 3, 4];
 const PERMS: Role[][] = (() => {
 	const out: Role[][] = [];
 	const walk = (left: Role[], acc: Role[]) => {
@@ -276,19 +277,29 @@ export const castPlay = (
 	if (five.length !== 5) {
 		return undefined;
 	}
+	// What each man costs in each role, and the role he is pinned to: worked
+	// out once, not once for every way of casting them.
+	const costs: number[] = [];
+	const pins: (Role | undefined)[] = [];
+	for (let k = 0; k < 5; k++) {
+		const p = five[k]!;
+		pins.push(pinned.get(p.pid));
+		for (const r of ROLES) {
+			costs.push(roleCost(play, r, p) + (extra?.(p.pid, r) ?? 0));
+		}
+	}
 	let best: { roles: number[]; cost: number } | undefined;
 	for (const perm of PERMS) {
 		let cost = 0;
 		let ok = true;
 		for (let k = 0; k < 5; k++) {
-			const p = five[k]!;
 			const r = perm[k]!;
-			const pin = pinned.get(p.pid);
+			const pin = pins[k];
 			if (pin !== undefined && pin !== r) {
 				ok = false;
 				break;
 			}
-			cost += roleCost(play, r, p) + (extra?.(p.pid, r) ?? 0);
+			cost += costs[k * 5 + r]!;
 		}
 		if (ok && (!best || cost < best.cost)) {
 			const roles: number[] = [];
