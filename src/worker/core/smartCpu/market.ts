@@ -409,6 +409,14 @@ export const dealsNow = async (
 	);
 	onShopped?.(all);
 	marketStats.candidates += all.length;
+	if (smartTraceWatchers.length > 0) {
+		for (const c of all) {
+			trace(
+				{ stage: "shopped", seller: c.seller, p: c.p, buyers: c.buyers },
+				view,
+			);
+		}
+	}
 	for (const c of all) {
 		// A moment can run for minutes on a phone: the room's busy mark
 		// renewed as it goes, not only as it starts (a no-op while the mark
@@ -427,10 +435,25 @@ export const dealsNow = async (
 		);
 		if (!real) {
 			marketStats.noOffer += 1;
+			trace(
+				{ stage: "no offer", seller: c.seller, p: c.p, buyers: c.buyers },
+				view,
+			);
 			continue;
 		}
 		if (!(real.worth > marketSettings.minGain)) {
 			marketStats.sellerSaysNo += 1;
+			trace(
+				{
+					stage: "seller says no",
+					seller: c.seller,
+					buyer: real.buyer,
+					p: c.p,
+					sellerGain: real.worth,
+					offer: real.offer,
+				},
+				view,
+			);
 			continue;
 		}
 		deals.push({
@@ -510,6 +533,37 @@ export const withAlternatives = async (
 // watcher can read what each side reckoned every piece worth).
 export const smartDealWatchers: ((deal: SmartDeal, view: SmartView) => void)[] =
 	[];
+
+// Where each player shopped got to in a moment and what stopped him (tests:
+// a no-op with none watching).
+export type MarketTrace = {
+	stage:
+		| "shopped"
+		| "no offer"
+		| "seller says no"
+		| "open"
+		| "dealt already"
+		| "changed"
+		| "within margin"
+		| "unfair"
+		| "illegal"
+		| "made";
+	seller: number;
+	buyer?: number;
+	p: Player;
+	buyers?: readonly number[];
+	why?: string;
+	sellerGain?: number;
+	buyerGain?: number;
+	offer?: Holdings;
+};
+export const smartTraceWatchers: ((t: MarketTrace, view: SmartView) => void)[] =
+	[];
+const trace = (t: MarketTrace, view: SmartView) => {
+	for (const watch of smartTraceWatchers) {
+		watch(t, view);
+	}
+};
 
 // Watchers of every deal a moment finds, before any is made (tests).
 export const smartMomentWatchers: ((
@@ -607,7 +661,14 @@ const marketMomentNow = async () => {
 		if (made.length >= marketSettings.dealsPerMoment) {
 			break;
 		}
+		const at = {
+			seller: found.seller,
+			buyer: found.buyer,
+			p: found.out.players[0]!,
+			offer: found.offer,
+		};
 		if (dealt.has(found.seller) || dealt.has(found.buyer)) {
+			trace({ stage: "dealt already", ...at }, view);
 			continue;
 		}
 		if (!marketSettings.buyersChoose) {
@@ -624,6 +685,7 @@ const marketMomentNow = async () => {
 			!(buyerGain > marketSettings.minGain)
 		) {
 			marketStats.changed += 1;
+			trace({ stage: "changed", ...at, sellerGain, buyerGain }, view);
 			continue;
 		}
 		// Each side's gain past its margin of error counting no more of the
@@ -647,17 +709,39 @@ const marketMomentNow = async () => {
 				))
 		) {
 			marketStats.withinMargin += 1;
+			trace(
+				{
+					stage: "within margin",
+					...at,
+					sellerGain,
+					buyerGain,
+					why: `seller sure ${view.sureWorthNow(found.seller, found.buyer, found.out, found.offer).toFixed(3)} margin ${view.marginNow(found.seller, found.out, found.offer).toFixed(3)}; buyer sure ${view.sureWorthNow(found.buyer, found.seller, found.offer, found.out).toFixed(3)} margin ${view.marginNow(found.buyer, found.offer, found.out).toFixed(3)}`,
+				},
+				view,
+			);
 			continue;
 		}
 		if (!fairToSeller(sellerGain, buyerGain, found.buyerAlt)) {
 			marketStats.unfair += 1;
+			trace(
+				{
+					stage: "unfair",
+					...at,
+					sellerGain,
+					buyerGain,
+					why: `buyer's next best ${(found.buyerAlt ?? 0).toFixed(3)}`,
+				},
+				view,
+			);
 			continue;
 		}
 		const teams = teamsOf(found.seller, found.buyer, found.out, found.offer);
 		if ((await summary(teams)).warning) {
 			marketStats.illegal += 1;
+			trace({ stage: "illegal", ...at, sellerGain, buyerGain }, view);
 			continue;
 		}
+		trace({ stage: "made", ...at, sellerGain, buyerGain }, view);
 		const deal = { ...found, sellerGain, buyerGain };
 		for (const watch of smartDealWatchers) {
 			watch(deal, view);

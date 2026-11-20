@@ -171,6 +171,10 @@ export type LeagueOutlook = {
 	// With the lottery (outlookSettings.lottery), where it finishes: the
 	// order teams go into the draft in, the worst first.
 	draftPlace: Map<number, number[]>;
+	// With rankedFinish: where each team is expected to go into each draft
+	// (expectedPlace), by draft and team - every team's, as the league
+	// stands, for any deal's picks to be ranked against.
+	rankField?: Map<number, Map<number, number>>;
 	// The chance of each pick in a round from each place teams go into the
 	// draft in, by round (the game's own lottery odds): with the lottery.
 	slotPicks?: readonly (readonly (readonly number[])[])[];
@@ -801,6 +805,11 @@ export const outlookSettings = {
 	// Picks are expected to land back toward the middle of the draft by as
 	// much as they have in arena leagues (expectedPlace).
 	placeRegression: true,
+	// Where a pick's team finishes is drawn around where it is expected to
+	// finish and ranked against every other team's draw (rankedFinish):
+	// each place is some team's, once. Off, each team's finish is a bell
+	// curve of its own around where it is expected.
+	rankedFinish: true,
 	// A player's re-sign chance is his chance of still being there after his
 	// contract, as measured (KEPT), not of taking his asking price.
 	keptCalibration: true,
@@ -1517,6 +1526,12 @@ export const pickLineAt = (
 		lottery = colaPicks(outlook.cola, outlook.numTeams, ratio);
 		lotteryKey = `:C${ratio}`;
 	}
+	// Ranked against the league (rankedFinish), it lands by where its own
+	// team is expected to finish in that draft.
+	const rankedKey =
+		spread > 0 && outlook.rankField?.has(dp.season)
+			? `:R${dp.season}:${dp.originalTid}`
+			: "";
 	// Priced at the places a tenth apart either side of where it is expected
 	// to land, and in between by how far along it is. A cache by the place
 	// itself grew with every deal priced; one by the place rounded priced the
@@ -1531,7 +1546,7 @@ export const pickLineAt = (
 			bySums = new Map();
 			gridSums.set(outlook.pickLines, bySums);
 		}
-		const key = `${dp.round}:${at}:${spread}:${years}${lotteryKey}${knownKey}`;
+		const key = `${dp.round}:${at}:${spread}:${years}${lotteryKey}${knownKey}${rankedKey}`;
 		let sums = bySums.get(key);
 		if (!sums) {
 			// Where it lands is the same every season it is priced for.
@@ -1540,10 +1555,10 @@ export const pickLineAt = (
 				byPlace = new Map();
 				landingCache.set(outlook.pickLines, byPlace);
 			}
-			const landingKey = `${dp.round}:${at}:${spread}${lotteryKey}`;
+			const landingKey = `${dp.round}:${at}:${spread}${lotteryKey}${rankedKey}`;
 			let weights = byPlace.get(landingKey);
 			if (!weights) {
-				weights = landing(n, at / PLACE_GRID, spread, lottery);
+				weights = placeWeights(outlook, dp, at / PLACE_GRID, spread, lottery);
 				byPlace.set(landingKey, weights);
 			}
 			sums = pickSums(outlook, dp.round, weights, years, known, boom);
@@ -1552,7 +1567,7 @@ export const pickLineAt = (
 		return sums;
 	};
 	// Remembered by the place itself too, as many as PICK_LINES_KEPT.
-	const key = `${dp.round}:${center}:${spread}:${years}${lotteryKey}${knownKey}`;
+	const key = `${dp.round}:${center}:${spread}:${years}${lotteryKey}${knownKey}${rankedKey}`;
 	let at = outlook.pickLines.get(key);
 	if (at === undefined) {
 		const lo = sumsAt(k);
@@ -2062,11 +2077,147 @@ const landing = (
 // Where a pick's team is expected to finish in its round, place by place:
 // the chance of each, before any lottery.
 export const finishWeights = (outlook: LeagueOutlook, dp: PickLike) =>
-	landing(
-		outlook.numTeams,
+	placeWeights(
+		outlook,
+		dp,
 		expectedPlace(outlook, dp),
 		draftPlaceSpread(outlook, dp),
 	);
+
+// THE FINISH, RANKED (outlookSettings.rankedFinish). Each place in a draft is
+// some team's, once: a team's finish is drawn around where it is expected
+// to finish, and so is every other team's, and its place is how many of
+// them finish worse. A bell curve around each team on its own put too
+// little at either end - a middling team several drafts out is about as
+// likely to finish anywhere, and a good team to fall apart - and summed over
+// the league gave out four top-five picks a draft, not five. In League 12
+// played on six seasons twice (840 projections, 2026-11-20), a good team's
+// own first one or two drafts out was given a 2.5-5% chance of the top
+// five and landed there 7.5-10% of the time; ranked, every draft out was
+// read better (log-likelihood 0.03-0.06 a pick), at the same spread.
+const rankFieldOf = (
+	outlook: Pick<
+		LeagueOutlook,
+		"draftPlace" | "finalPlace" | "season" | "offset" | "numTeams" | "progress"
+	>,
+) => {
+	const field = new Map<number, Map<number, number>>();
+	const first = outlookSeason(outlook, 0);
+	for (let d = first; d <= first + OUTLOOK_YEARS + 1; d++) {
+		const places = new Map<number, number>();
+		for (const tid of outlook.draftPlace.keys()) {
+			places.set(
+				tid,
+				expectedPlace(outlook, {
+					originalTid: tid,
+					season: d,
+					round: 1,
+					pick: 0,
+				}),
+			);
+		}
+		field.set(d, places);
+	}
+	return field;
+};
+
+// A team's own draw, on a fine grid of the standard normal out to six
+// apart: each place's chance hangs on how likely the others are to finish
+// worse, which changes fast both where teams are alike (24 Gauss-Hermite
+// nodes gave each of 30 like teams a 3.0% chance of each place, not 3.3%)
+// and far out (64 even chances missed a good team's chance to collapse).
+const RANK_NODES = (() => {
+	const steps = 120;
+	const dz = 12 / steps;
+	const nodes = Array.from({ length: steps }, (_, i) => {
+		const z = -6 + (i + 0.5) * dz;
+		return { z, w: Math.exp((-z * z) / 2) };
+	});
+	const total = nodes.reduce((a, x) => a + x.w, 0);
+	return nodes.map((x) => ({ z: x.z, w: x.w / total }));
+})();
+
+// A team expected at `center` among `others`, each drawn with `spread`
+// about its own expected place: the chance of each place, 0 the worst.
+export const rankedLanding = (
+	n: number,
+	center: number,
+	spread: number,
+	others: readonly number[],
+) => {
+	const weights = new Array<number>(n).fill(0);
+	const below = new Float64Array(others.length + 1);
+	for (const { z, w } of RANK_NODES) {
+		const q = center + spread * z;
+		below.fill(0);
+		below[0] = 1;
+		for (let j = 0; j < others.length; j++) {
+			const p = normalCdf((q - others[j]!) / spread);
+			for (let m = j + 1; m > 0; m--) {
+				below[m] = below[m]! * (1 - p) + below[m - 1]! * p;
+			}
+			below[0] = below[0]! * (1 - p);
+		}
+		for (let m = 0; m <= others.length; m++) {
+			weights[Math.min(n - 1, m)]! += w * below[m]!;
+		}
+	}
+	const total = weights.reduce((a, x) => a + x, 0);
+	return weights.map((x) => x / total);
+};
+
+// Where a pick's team finishes, place by place - ranked against the league
+// (rankedFinish) where the outlook has the field for its draft - and then,
+// if given, where the lottery takes each finish.
+const rankedCache = new WeakMap<object, Map<string, number[]>>();
+const placeWeights = (
+	outlook: Pick<LeagueOutlook, "numTeams" | "rankField" | "pickLines">,
+	dp: PickLike,
+	center: number,
+	spread: number,
+	lottery?: readonly (readonly number[])[],
+) => {
+	const field =
+		spread > 0 && typeof dp.season === "number"
+			? outlook.rankField?.get(dp.season)
+			: undefined;
+	if (!field) {
+		return landing(outlook.numTeams, center, spread, lottery);
+	}
+	let cache = rankedCache.get(outlook.pickLines);
+	if (!cache) {
+		cache = new Map();
+		rankedCache.set(outlook.pickLines, cache);
+	}
+	const at = Math.round(center * 1000) / 1000;
+	const key = `${dp.season}:${dp.originalTid}:${at}:${spread}`;
+	let weights = cache.get(key);
+	if (!weights) {
+		const others: number[] = [];
+		for (const [tid, place] of field) {
+			if (tid !== dp.originalTid) {
+				others.push(place);
+			}
+		}
+		weights = rankedLanding(outlook.numTeams, at, spread, others);
+		if (cache.size >= PICK_LINES_KEPT) {
+			cache.clear();
+		}
+		cache.set(key, weights);
+	}
+	if (!lottery || lottery.length !== weights.length) {
+		return weights;
+	}
+	const picks = new Array<number>(weights.length).fill(0);
+	for (const [k, w] of weights.entries()) {
+		if (w > 0) {
+			for (const [pick, p] of lottery[k]!.entries()) {
+				picks[pick]! += w * p;
+			}
+		}
+	}
+	return picks;
+};
 
 // Where it lands, and what that adds up to, by pickLines' lifetime: the
 // lottery is priced in it.
@@ -3588,6 +3739,7 @@ export const buildOutlook = async ({
 		numRounds: g.get("numDraftRounds"),
 		lastPickSeason,
 		draftPlace: new Map<number, number[]>(),
+		rankField: undefined as Map<number, Map<number, number>> | undefined,
 		placeKeys: new Map<number, { points: number[]; keys: number[] }>(),
 		placeNow: undefined as LeagueOutlook["placeNow"],
 		placeBase: new Map<string, number[]>(),
@@ -3732,6 +3884,10 @@ export const buildOutlook = async ({
 		// Picks' lines worked out before then had nowhere to land.
 		base.pickYears = new WeakMap();
 		base.futurePicks.clear();
+		if (outlookSettings.rankedFinish) {
+			base.rankField = rankFieldOf(base);
+			base.pickLines = new Map();
+		}
 
 		return pointsAt(leagueInjuryMode());
 	};

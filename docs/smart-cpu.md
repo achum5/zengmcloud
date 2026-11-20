@@ -2110,3 +2110,39 @@ offers were turned down by their own buyer at the last check.
 - A moment renews the room's busy mark as it goes, not only as it starts: a
   phone in charge of simming can spend minutes in one, and a mark that ran
   out let another device run the same step.
+
+### Picks, ranked against the league (2026-11-20)
+
+The owner, of League 13's far-off firsts that became top picks (Oklahoma
+City's 2016 first for Greg Oden became Ben Simmons at #1): do teams see their
+own decline coming? Each preseason of League 12 played on six seasons twice
+(`forwardAudit` FA_PICKS: every team's own first in the next four drafts as
+the outlook expects it to land, 840 set against where they did), the outlook
+put every team's finish on a bell curve of its own around where it expected
+it. Summed over the league that gave out four top-five picks a draft, not
+five - too little at either end - and a team over .600 had its own first one
+or two drafts out at a 2.5% and 4.8% chance of the top five where 7.5% and
+9.8% got there; bad teams stayed bad more often than it said.
+
+Now (`outlookSettings.rankedFinish`, `rankedLanding`) every team's finish in a
+draft is drawn around where it is expected to finish, at the same spread as
+before, and ranked: each place is some team's, once, and a pick lands by how
+many teams finish worse than its own. The field is every team's expected
+place in that draft as the league stands (`rankField`, set as the outlook is
+built), so a deal's picks are ranked against the same league whatever was
+priced before them. On the same 840 the log-likelihood was 0.03 to 0.06
+better a pick at every horizon, at the old spread (a spread 0.8 or 1.2 times
+it did no better).
+
+Played on twice more with it, against where those picks then landed:
+
+| own firsts, drafts out | log-likelihood a pick | .600+ teams, top five: forecast / landed |
+| ---------------------- | --------------------- | ---------------------------------------- |
+| this season's          | 2.66 (was 2.72)       | 0.5% / 0%                                |
+| 1                      | 2.91 (was 3.10)       | 3.2% / 1.8%                              |
+| 2                      | 3.12 (was 3.18)       | 7.3% / 7.3%                              |
+| 3                      | 3.27 (was 3.27)       | 10.3% / 15.4%                            |
+
+Trades otherwise as before (market deals 55 and 37 against 46 and 50, the
+best three teams buying 11 of 15 both times); firsts paid for players 25 or
+older rated under 55, none in either run against one in each before.

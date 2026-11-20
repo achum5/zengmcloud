@@ -51,8 +51,48 @@ test.skipIf(!env.FA_LEAGUE)(
 				await import("../../worker/core/smartCpu/market.ts");
 			marketSettings.vanillaGamesBetween = Number(env.FA_GAMES_BETWEEN);
 		}
-		const { smartDealWatchers } =
+		const { smartDealWatchers, smartTraceWatchers } =
 			await import("../../worker/core/smartCpu/market.ts");
+		// FA_STARS=<n>: where every one of the league's n best players got to
+		// each time he was shopped, and what stopped him.
+		if (env.FA_STARS) {
+			const top = Number(env.FA_STARS);
+			let rankFor = "";
+			let rank = new Map<number, number>();
+			smartTraceWatchers.push((t, view: any) => {
+				const key = `${g.get("season")}:${g.get("phase")}`;
+				if (key !== rankFor) {
+					rankFor = key;
+					rank = new Map();
+				}
+				if (rank.size === 0) {
+					const rows: { pid: number; ovr: number }[] = [];
+					for (const tid of view.outlook.teams.keys()) {
+						for (const p of view.heldNow(tid).players) {
+							rows.push({ pid: p.pid, ovr: p.ratings.at(-1).ovr });
+						}
+					}
+					rows.sort((a, b) => b.ovr - a.ovr);
+					rows.forEach((r, i) => rank.set(r.pid, i + 1));
+				}
+				const r = rank.get(t.p.pid);
+				if (r === undefined || r > top) {
+					return;
+				}
+				const ab = (tid?: number) =>
+					tid === undefined ? "-" : (abbrev.get(tid) ?? String(tid));
+				const title = (tid?: number) =>
+					tid === undefined
+						? ""
+						: ` (${(100 * (view.outlook.teams.get(tid)?.title?.[0] ?? 0)).toFixed(1)}%)`;
+				const offer = t.offer
+					? ` for [${[...t.offer.players.map((x: any) => `${x.firstName} ${x.lastName} ${x.ratings.at(-1).ovr}`), ...t.offer.picks.map((x: any) => `${x.season} R${x.round}`)].join("; ")}]`
+					: "";
+				log(
+					`STAR ${g.get("season")} ph${g.get("phase")} ${t.stage}: #${r} ${t.p.firstName} ${t.p.lastName} ${g.get("season") - t.p.born.year}y ${t.p.ratings.at(-1)!.ovr} of ${ab(t.seller)}${title(t.seller)}${t.buyer !== undefined ? ` to ${ab(t.buyer)}${title(t.buyer)}` : ""}${t.buyers ? ` [buyers ${t.buyers.map(ab).join(",")}]` : ""}${t.sellerGain !== undefined ? ` seller ${t.sellerGain.toFixed(3)}` : ""}${t.buyerGain !== undefined ? ` buyer ${t.buyerGain.toFixed(3)}` : ""}${t.why ? ` | ${t.why}` : ""}${offer}`,
+				);
+			});
+		}
 		const { smartDraftWatchers } =
 			await import("../../worker/core/smartCpu/draft.ts");
 		const { smartSettings } =
