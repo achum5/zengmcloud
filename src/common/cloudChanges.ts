@@ -12,6 +12,21 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 406,
+		date: "2026-11-20",
+		text: "League setup and Settings: on a phone the page no longer slides sideways. The Filter settings box sits on its own line above the buttons.",
+	},
+	{
+		n: 405,
+		date: "2026-11-20",
+		text: "CPU free agency: a team clearing cap room for a free agent now counts a player it sends away at what other teams would pay for him, so it sends its worst contracts, or gets a pick back, instead of giving good players away for nothing.",
+	},
+	{
+		n: 404,
+		date: "2026-11-20",
+		text: "CPU trades: teams can now put together a real offer for a player on a big contract. They send the salary the trade needs in the contracts they'll miss least, then add the picks or young players the other team wants. Losing teams sell expensive veterans instead of letting them walk for nothing, and contenders can actually trade for them.",
+	},
+	{
 		n: 403,
 		date: "2026-11-20",
 		text: "The next-game spread in the top bar now updates as soon as a starting five changes (auto sort, dragging the roster, Keep auto sorted, or a league mate's changes), so it always matches the Daily Schedule.",

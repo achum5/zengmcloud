@@ -2018,3 +2018,70 @@ a 20-win team keeps such a player only if he is willing, and none of them
 would be; a first beats losing him for nothing. Rooms cleared were each
 followed by a clear upgrade: Golden State Brandon Ingram (22, 71/82),
 Atlanta Jonathan Isaac (23, 74/77), Utah Ricky Rubio, Charlotte Jarrett Allen.
+
+## League 13: players left for nothing, offers that never added up (2026-11-20)
+
+The owner asked where League 13's teams (2010-2023, every team CPU, the
+399-401 build) lost out by doing nothing. The worst: Oklahoma City let Kevin
+Durant (28, 79, $19.4M in his last season) leave for nothing from a 29-53
+team in 2016 - no trade all season - and went 17-65, 3-79, 14-68; Charlotte
+Greg Monroe (69), Orlando Ryan Anderson, Milwaukee Kelly Oubre the same.
+Contenders stood pat as well: Golden State, 60-22 and 39% to win the title in
+the preseason in 2013, made no trade and went out in the first round to a
+41-41 team.
+
+### Salary that never added up
+
+On League 13's 2023 file, San Antonio's Karl-Anthony Towns (28, 61, $30.9M
+in his last season, 11% to re-sign) was worth 0.004 of a title to San
+Antonio and 0.06 to 0.17 to each of the six keenest teams - and five of the
+six had no legal offer for him. An offer was the buyer's players and picks
+best for the seller, then, short of salary, the players it would miss
+least - minimum contracts - up to six pieces in all: never a big salary. At
+one market moment 124 of 296 offers had no way to make the salaries work,
+and 46 more failed on what the filler cost the buyer.
+
+Now (`SmartView.fillSalary`, `smartSettings.fillByDollar`) a buyer short of
+salary sends it the way that leaves it best off - its least missed players
+first, those it would miss least for each dollar they send first, or the
+one contract it would miss least that does it alone - and where what it
+would pay plus the salary is more than the player is worth to it, the offer
+is built around the salary first, then what the seller wants most on top
+while the buyer still gains. At the same moment 7 of 296 offers had no way
+to match, and 16 deals were open instead of 3; Towns drew offers from
+Boston (Derrick Williams' $16.1M, three fillers and two firsts, 0.125 to San
+Antonio) and Chicago.
+
+### Clearing room, at the market's price
+
+A team clearing room counted the players it sent at their use to it alone,
+so a team with no title in sight - to which nearly any player is worth
+little - sent players for nothing whom contenders would have paid firsts
+for: in League 13 New Orleans gave Chris Paul (25, 60/63) to clear room for
+Andray Blatche. Now (`clearRoomSettings.atPrice`) what it sends counts at
+least at the market's price, as in any trade (`sureWorthNow`), its salary is
+sent in the players that cost it least that way, and the team taking it may
+send one of its cheapest picks back.
+
+### Played on
+
+League 12 from the 2018 draft through 2023, the same start twice (two
+seeds), before and after:
+
+| League 12, 2018 draft to 2023                | before | after  |
+| -------------------------------------------- | ------ | ------ |
+| market trades                                | 30, 28 | 46, 50 |
+| players 60+ on $15M+ traded                  | 6, 6   | 15, 7  |
+| best three teams by record buying, of 15     | 8, 12  | 12, 13 |
+| 4th to 8th buying, of 25                     | 6, 5   | 6, 4   |
+| clearing-room trades                         | 21, 22 | 9, 12  |
+| players 58+ leaving losing teams for nothing | 23, 17 | 17, 18 |
+| firsts paid for players 27+ rated under 60   | 4, 4   | 7, 4   |
+
+Rooms cleared still went to clear upgrades (win shares over the next seasons,
+sent against signed: 35 against 145 and 36 against 132), and takers sent
+seconds back for Kyle Anderson and D'Angelo Russell. Stars still left losing
+teams for nothing in both (Durant again at 70, Marcus Smart at 75), and teams
+4th to 8th still rarely buy: with one or two teams holding most of the title
+odds, a role player moves a 4th-best team's odds by less than a deal must
+gain (opening a moment's market to every team changed nothing for them).

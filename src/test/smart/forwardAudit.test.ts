@@ -37,6 +37,13 @@ test.skipIf(!env.FA_LEAGUE)(
 			smartCpu: true,
 			realisticFrontOffices: false,
 		});
+		// FA_CLEAR_PRICE=0: players sent to clear room counted at their use
+		// alone, as before 2026-11-20.
+		if (env.FA_CLEAR_PRICE === "0") {
+			const { clearRoomSettings } =
+				await import("../../worker/core/smartCpu/clearRoom.ts");
+			clearRoomSettings.atPrice = false;
+		}
 		const { smartDealWatchers } =
 			await import("../../worker/core/smartCpu/market.ts");
 		const { smartDraftWatchers } =
@@ -159,6 +166,55 @@ test.skipIf(!env.FA_LEAGUE)(
 				}
 			});
 		}
+		// FA_PICKS=1: each preseason, every team's own first-round picks in the
+		// next four drafts, as the outlook expects them to land - the chance of
+		// each pick in the round, the lottery included - for setting against
+		// where they did land.
+		const projectPicks = async () => {
+			const o =
+				await import("../../worker/core/realisticFrontOffice/outlook.ts");
+			const { currentOutlook } =
+				await import("../../worker/core/realisticFrontOffice/market.ts");
+			const outlook: any = await currentOutlook();
+			const next = g.get("season") + (g.get("phase") >= PHASE.DRAFT ? 1 : 0);
+			const lottery = outlook.slotPicks?.[0];
+			for (const dp of (await idb.cache.draftPicks.getAll()) as any[]) {
+				if (dp.round !== 1 || typeof dp.season !== "number") {
+					continue;
+				}
+				if (dp.season < next || dp.season > next + 3) {
+					continue;
+				}
+				let weights: number[] = o.finishWeights(outlook, dp);
+				if (lottery && lottery.length === weights.length) {
+					const picks = weights.map(() => 0);
+					weights.forEach((w, k) => {
+						lottery[k].forEach((p: number, pick: number) => {
+							picks[pick] = (picks[pick] ?? 0) + w * p;
+						});
+					});
+					weights = picks;
+				}
+				const ts = await idb.cache.teamSeasons.indexGet(
+					"teamSeasonsBySeasonTid",
+					[g.get("season") - 1, dp.originalTid],
+				);
+				log(
+					`PICKPROJ ${JSON.stringify({
+						season: g.get("season"),
+						dpid: dp.dpid,
+						orig: dp.originalTid,
+						holder: dp.tid,
+						draft: dp.season,
+						center: o.expectedPlace(outlook, dp),
+						spread: o.draftPlaceSpread(outlook, dp),
+						lastWinp: ts ? ts.won / Math.max(1, ts.won + ts.lost) : null,
+						strength: outlook.teams.get(dp.originalTid)?.strength?.slice(0, 4),
+						weights: weights.map((w) => Math.round(w * 1e4) / 1e4),
+					})}`,
+				);
+			}
+		};
 		let board = new Map<number, number>();
 		let boardFor = -1;
 		let pickNo = 0;
@@ -220,6 +276,13 @@ test.skipIf(!env.FA_LEAGUE)(
 				}
 			} else {
 				await phase.newPhase((ph + 1) as any, {});
+			}
+			if (
+				env.FA_PICKS &&
+				g.get("phase") === PHASE.PRESEASON &&
+				ph !== PHASE.PRESEASON
+			) {
+				await projectPicks();
 			}
 			if (g.get("phase") === PHASE.PRESEASON && ph !== PHASE.PRESEASON) {
 				log(

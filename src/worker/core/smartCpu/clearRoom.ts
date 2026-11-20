@@ -38,6 +38,16 @@ import { tradedAwayCount, type Holdings, type SmartView } from "./worth.ts";
 // seasons) for Nenê (9.8), Detroit Gerald Wallace (13.0) for Peja
 // Stojaković at 36 (11.9) - and Philadelphia paid a first and three seconds
 // for Corey Brewer (2026-11-19).
+//
+// A player it sends counts at least at what the market would pay for him,
+// as he would in a trade (SmartView.sureWorthNow): a GM sells a player
+// other teams want, or gets something back, before he gives him away for
+// room. The taker may send picks back. Counted at his use alone, a team
+// with no title in sight - to which nearly any player is worth little -
+// sent players for nothing whom contenders would have paid firsts for: in
+// League 13 New Orleans gave Chris Paul (25, 60/63; 40.9 win shares for
+// Oklahoma City) to clear room for Andray Blatche, Memphis Zach Randolph
+// for David Lee (2026-11-20).
 
 export const clearRoomSettings = {
 	on: true,
@@ -50,6 +60,10 @@ export const clearRoomSettings = {
 	sweeteners: 4,
 	// Teams with room it asks to take them.
 	partners: 8,
+	// The players it sends counted at least at their market price, and the
+	// taker's cheapest picks it may take back, one of them.
+	atPrice: true,
+	picksBack: 3,
 };
 
 // Whether clearing room is worth it to the team: what the trade and the
@@ -77,6 +91,8 @@ type Plan = {
 	p: Player;
 	partner: number;
 	give: Holdings;
+	// What the taker sends back: none, or one of its picks.
+	back: Holdings;
 	// What the trade and the signing do for it together, and for the team
 	// taking the salary.
 	gain: number;
@@ -89,8 +105,10 @@ const salaryOf = (players: readonly Player[]) =>
 
 // Sets of its players whose salary covers `need`, least missed per dollar
 // first: the cheapest single player that covers it, then two or three of
-// its least useful contracts.
-const salarySets = (
+// its least useful contracts. `uses`: what each would cost the team to
+// send - his use to it, or the market's price for him if more
+// (clearRoomSettings.atPrice).
+export const salarySets = (
 	players: readonly Player[],
 	uses: ReadonlyMap<number, number>,
 	need: number,
@@ -137,10 +155,19 @@ export const roomToSign = (
 		const cap = g.get("salaryCap");
 		const h = await view.holdingsOf(tid);
 		const payroll = view.payrollNow(tid, h);
-		const uses = view.usesOf(tid, h);
 		const tradable = h.players.filter(
 			(p) => !isUntradable(p).untradable && contractOf(p).amount > 0,
 		);
+		const uses = new Map(view.usesOf(tid, h));
+		if (clearRoomSettings.atPrice) {
+			for (const p of tradable) {
+				const one = { players: [p], picks: [] };
+				const price = await view.price(one, [tid]);
+				if (price > uses.get(p.pid)!) {
+					uses.set(p.pid, price);
+				}
+			}
+		}
 		const partners: number[] = [];
 		for (const t of await idb.cache.teams.getAll()) {
 			if (t.disabled || t.tid === tid || view.humans.has(t.tid)) {
@@ -195,46 +222,73 @@ export const roomToSign = (
 					.slice(0, clearRoomSettings.partners)
 					// The taker must have the room for all of it.
 					.filter((partner) => cap - view.payrollNow(partner) >= sent);
-				// Fewest sweeteners first: what it gains doesn't depend on who
-				// takes the salary, only on what it gives.
+				// Fewest sweeteners first. With none, the taker may send one of
+				// its cheapest picks back, if that is what makes it worth it.
 				dealing: for (let k = 0; k <= picks.length; k++) {
 					const give = { players, picks: picks.slice(0, k) };
-					const after = view.swappedFrom(h, give, {
-						players: [signed],
-						picks: [],
-					});
-					const gain =
-						view.value(tid, after, [], tradedAwayCount(players)) -
-						view.value(tid, h);
-					const margin = marketSettings.margins
-						? view.marginNow(tid, give, { players: [signed], picks: [] })
-						: 0;
-					if (
-						!clearerGains(gain, bestNet, margin) ||
-						(best && gain <= best.gain)
-					) {
+					let ownBar = false;
+					for (const partner of takers) {
+						const backs: Holdings[] = [none];
+						if (k === 0 && clearRoomSettings.atPrice) {
+							const theirs = [...view.heldNow(partner).picks]
+								.sort(
+									(a, b) =>
+										view.pickFloorNow(a) - view.pickFloorNow(b) ||
+										b.round - a.round ||
+										a.dpid - b.dpid,
+								)
+								.slice(0, clearRoomSettings.picksBack);
+							backs.push(...theirs.map((dp) => ({ players: [], picks: [dp] })));
+						}
+						for (const back of backs) {
+							const inn = { players: [signed], picks: back.picks };
+							// What the taker gains, its prices read first.
+							const partnerGain = await view.dealWorth(
+								partner,
+								tid,
+								back,
+								give,
+							);
+							const gain = clearRoomSettings.atPrice
+								? view.sureWorthNow(tid, partner, give, inn)
+								: view.value(
+										tid,
+										view.swappedFrom(h, give, inn),
+										[],
+										tradedAwayCount(players),
+									) - view.value(tid, h);
+							const margin = marketSettings.margins
+								? view.marginNow(tid, give, inn)
+								: 0;
+							if (
+								!clearerGains(gain, bestNet, margin) ||
+								(best && gain <= best.gain)
+							) {
+								continue;
+							}
+							ownBar = true;
+							const partnerMargin = marketSettings.margins
+								? view.marginNow(partner, back, give)
+								: 0;
+							const partnerSure = marketSettings.margins
+								? view.sureWorthNow(partner, tid, back, give)
+								: partnerGain;
+							if (
+								takerGains(
+									partnerGain,
+									partnerSure,
+									partnerMargin,
+									gain - Math.max(bestNet, 0),
+								)
+							) {
+								best = { p, partner, give, back, gain, partnerGain };
+								break dealing;
+							}
+						}
+					}
+					if (!ownBar) {
 						// More sweeteners only cost it more.
 						break;
-					}
-					for (const partner of takers) {
-						const partnerGain = await view.dealWorth(partner, tid, none, give);
-						const partnerMargin = marketSettings.margins
-							? view.marginNow(partner, none, give)
-							: 0;
-						const partnerSure = marketSettings.margins
-							? view.sureWorthNow(partner, tid, none, give)
-							: partnerGain;
-						if (
-							takerGains(
-								partnerGain,
-								partnerSure,
-								partnerMargin,
-								gain - Math.max(bestNet, 0),
-							)
-						) {
-							best = { p, partner, give, gain, partnerGain };
-							break dealing;
-						}
 					}
 				}
 			}
@@ -249,7 +303,7 @@ export const clearRoomNow = async (
 	tid: number,
 	plan: Plan,
 ) => {
-	const teams = teamsOf(tid, plan.partner, plan.give, none);
+	const teams = teamsOf(tid, plan.partner, plan.give, plan.back);
 	if ((await summary(teams)).warning) {
 		return false;
 	}

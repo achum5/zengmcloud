@@ -64,6 +64,10 @@ export const smartSettings = {
 	offerCandidates: 8,
 	// Players past offerSize a buyer may add to match salaries.
 	fillers: 2,
+	// Which: of the ways a buyer could make the salaries work, the one that
+	// leaves it best off (SmartView.fillSalary) - not only its players it
+	// would miss least, first.
+	fillByDollar: true,
 	// A roster over the limit cuts one of its lowest-valued players, the one
 	// whose release costs it least.
 	// Two: each tried costs a franchise value, on every roster over the limit
@@ -1259,6 +1263,90 @@ export class SmartView {
 	// least added to match), and good for it by its full worth - or
 	// nothing. The market's offers, and the trade screens' (smartCpu/
 	// screens.ts) - there with what the seller is after, if it said.
+	// The players a buyer adds to an offer to send back the salary the trade
+	// rules need, up to offerSize + fillers pieces in all: of the ways it
+	// could - its players it would miss least first, those it would miss
+	// least for each dollar they send first, or the one contract it would
+	// miss least that does it alone - the one that leaves it best off, or
+	// none that work. Least missed first alone, it sent minimum contracts
+	// that never added up to a big salary: at one moment of the owner's
+	// League 13, 124 of 296 offers had no legal way to match, and every
+	// contender but one had none for Karl-Anthony Towns ($30.9M, 11% to
+	// re-sign with San Antonio, worth nothing to it and 0.06 to 0.17 of a
+	// title to each of them) - as Kevin Durant, Greg Monroe and Ryan
+	// Anderson left their losing teams for nothing when their deals ran out
+	// (2026-11-20).
+	fillSalary(
+		buyer: number,
+		held: Holdings,
+		out: Holdings,
+		offer: Holdings,
+		allowed: (p: Player) => boolean,
+		matches: (o: Holdings) => boolean,
+		sellerMayTake: (o: Holdings) => boolean,
+	): Holdings | undefined {
+		const s = smartSettings;
+		const most = s.offerSize + s.fillers;
+		const uses = this.usesOf(buyer, held);
+		const use = (p: Player) => uses.get(p.pid)!;
+		const pay = (p: Player) => Math.max(1, contractOf(p).amount);
+		const rest = held.players.filter(
+			(x) => allowed(x) && !offer.players.some((y) => y.pid === x.pid),
+		);
+		const pieces = (o: Holdings) => o.players.length + o.picks.length;
+		const greedy = (order: readonly Player[]) => {
+			let o = offer;
+			for (const p of order) {
+				if (matches(o) || pieces(o) >= most) {
+					break;
+				}
+				const next = plus(o, p);
+				if (sellerMayTake(next)) {
+					o = next;
+				}
+			}
+			return matches(o) ? o : undefined;
+		};
+		const byUse = [...rest].sort((a, b) => use(a) - use(b) || a.pid - b.pid);
+		const ways = [greedy(byUse)];
+		if (s.fillByDollar) {
+			ways.push(
+				greedy(
+					[...rest].sort(
+						(a, b) => use(a) / pay(a) - use(b) / pay(b) || a.pid - b.pid,
+					),
+				),
+			);
+			if (pieces(offer) < most) {
+				const single = byUse.find(
+					(p) => matches(plus(offer, p)) && sellerMayTake(plus(offer, p)),
+				);
+				if (single) {
+					ways.push(plus(offer, single));
+				}
+			}
+		}
+		const found = ways.filter((o): o is Holdings => o !== undefined);
+		if (found.length <= 1) {
+			return found[0];
+		}
+		let best = found[0]!;
+		let bestValue = Number.NEGATIVE_INFINITY;
+		for (const o of found) {
+			const v = this.value(
+				buyer,
+				this.swappedFrom(held, o, out),
+				[],
+				tradedAwayCount(o.players),
+			);
+			if (v > bestValue) {
+				best = o;
+				bestValue = v;
+			}
+		}
+		return best;
+	}
+
 	async offerFrom(
 		buyer: number,
 		seller: number,
@@ -1388,32 +1476,63 @@ export class SmartView {
 			lap("offer: greedy", m2);
 			return undefined;
 		}
-		// Short of salary to send back: the players it would miss least,
-		// as many as the rules need (as NBA teams fill a trade), if it still
-		// gains.
+		// Short of salary to send back: as many of its players as the rules
+		// need (as NBA teams fill a trade), if it still gains - those that
+		// cost it least for the salary they send (smartSettings.
+		// fillByDollar), the cheapest way it has of making the salaries work.
 		if (!buyerMatches(offer)) {
-			const uses = this.usesOf(buyer, held);
-			for (const p of held.players
-				.filter(
-					(x) => allowed(x) && !offer.players.some((y) => y.pid === x.pid),
-				)
-				.sort((a, b) => uses.get(a.pid)! - uses.get(b.pid)! || a.pid - b.pid)) {
-				if (
-					buyerMatches(offer) ||
-					offer.players.length + offer.picks.length >= s.offerSize + s.fillers
-				) {
-					break;
-				}
-				const next = plus(offer, p);
-				if (sellerMayTake(next)) {
-					offer = next;
+			let filled = this.fillSalary(
+				buyer,
+				held,
+				out,
+				offer,
+				allowed,
+				buyerMatches,
+				sellerMayTake,
+			);
+			// What it would pay already spent, the salary on top was more than
+			// he is worth to it: the salary first, then what the seller wants
+			// most on top, while it still gains - as a GM builds a trade for a
+			// big contract around the salary it must send.
+			if (s.fillByDollar && !ask && !(filled && gains(filled))) {
+				const most = s.offerSize + s.fillers;
+				let o = this.fillSalary(
+					buyer,
+					held,
+					out,
+					{ players: [], picks: [] },
+					allowed,
+					buyerMatches,
+					sellerMayTake,
+				);
+				if (o && gains(o)) {
+					for (const { x } of order) {
+						if (o.players.length + o.picks.length >= most) {
+							break;
+						}
+						if (
+							"pid" in x
+								? o.players.some((y) => y.pid === x.pid)
+								: o.picks.some((y) => y.dpid === x.dpid)
+						) {
+							continue;
+						}
+						const next = plus(o, x);
+						if (sellerMayTake(next) && buyerMatches(next) && gains(next)) {
+							o = next;
+						}
+					}
+					filled = o;
+				} else {
+					filled ??= o;
 				}
 			}
-			if (!buyerMatches(offer)) {
+			if (!filled) {
 				offerStats.cantMatch += 1;
 				lap("offer: greedy", m2);
 				return undefined;
 			}
+			offer = filled;
 			if (!gains(offer)) {
 				offerStats.fillersTooDear += 1;
 				lap("offer: greedy", m2);

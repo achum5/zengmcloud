@@ -2914,6 +2914,23 @@ button.fast-forward {
 	}
 }
 
+// The filter between the footer's buttons, shrinking as they need the room
+// - and on a phone or small tablet, where they leave it none, on a line of
+// its own above them.
+.settings-filter {
+	min-width: 0;
+	flex: 1 1 0;
+	max-width: 300px;
+}
+@include media-breakpoint-down(md) {
+	.settings-filter {
+		order: -1;
+		flex-basis: 100%;
+		max-width: none;
+		margin-bottom: 0.5rem;
+	}
+}
+
 .alert-bg-color {
 	background-color: var(--bs-alert-bg);
 }

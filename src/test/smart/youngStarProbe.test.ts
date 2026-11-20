@@ -123,7 +123,36 @@ test.skipIf(!env.YS_LEAGUE)(
 			log(
 				`  his worth to ${abbrev.get(top)} by season: ${fmt(kva.map((x: number, y: number) => x - kvb[y]!))}`,
 			);
-			// Would the market sell him now?
+			// Would the market sell him now? (And, offer by offer from the
+			// keenest, why not: YS_WHY=1.)
+			if (env.YS_WHY) {
+				const { offerStats } =
+					await import("../../worker/core/smartCpu/worth.ts");
+				const { contractOf } =
+					await import("../../worker/core/realisticFrontOffice/contractOf.ts");
+				const piece = (x: any) =>
+					"pid" in x
+						? `${x.lastName} ${x.ratings.at(-1).ovr} (${(contractOf(x).amount / 1000).toFixed(1)}M)`
+						: `${x.season} R${x.round}`;
+				for (const k of keen.filter((k) => k !== tid)) {
+					const before: Record<string, number> = { ...offerStats };
+					const made = await view.offerFrom(k, tid, one);
+					const why = Object.entries(offerStats)
+						.filter(([key, v]) => v !== before[key] && key !== "tried")
+						.map(([key]) => key)
+						.join(",");
+					if (!made) {
+						log(`  ${abbrev.get(k)}: no offer (${why})`);
+						continue;
+					}
+					const toSeller = await view.dealWorth(tid, k, one, made.offer);
+					const sure = view.sureWorthNow(tid, k, one, made.offer);
+					const toBuyer = await view.dealWorth(k, tid, made.offer, one);
+					log(
+						`  ${abbrev.get(k)}: offers ${[...made.offer.players, ...made.offer.picks].map(piece).join("; ")} - to seller ${toSeller.toFixed(3)} (sure ${sure.toFixed(3)}, margin ${view.marginNow(tid, one, made.offer).toFixed(3)}), to buyer ${toBuyer.toFixed(3)}`,
+					);
+				}
+			}
 			const real = await view.bestRealOffer(tid, one, -1);
 			if (real) {
 				const name = (x: any) =>
