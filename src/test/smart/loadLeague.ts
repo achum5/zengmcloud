@@ -33,6 +33,18 @@ export const loadLeagueFile = async (file: string) => {
 			await import("../../worker/core/smartCpu/market.ts");
 		Object.assign(marketSettings, JSON.parse(env.MARKET_SET));
 	}
+	// SMART_SET: the smart CPU's valuation settings (smartSettings), likewise;
+	// MARGIN_SET: the margin of error's (marginSettings).
+	if (env.SMART_SET) {
+		const { smartSettings } =
+			await import("../../worker/core/smartCpu/worth.ts");
+		Object.assign(smartSettings, JSON.parse(env.SMART_SET));
+	}
+	if (env.MARGIN_SET) {
+		const { marginSettings } =
+			await import("../../worker/core/realisticFrontOffice/margin.ts");
+		Object.assign(marginSettings, JSON.parse(env.MARGIN_SET));
+	}
 	// LL_SEED: another run of the same league, for a spread of outcomes.
 	const { makeSeededRandom } = await import("../../common/random.ts");
 	Math.random = makeSeededRandom(Number(env.LL_SEED ?? 1));

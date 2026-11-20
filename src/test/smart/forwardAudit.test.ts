@@ -86,10 +86,18 @@ test.skipIf(!env.FA_LEAGUE)(
 						? ""
 						: ` (${(100 * (view.outlook.teams.get(tid)?.title?.[0] ?? 0)).toFixed(1)}%)`;
 				const offer = t.offer
-					? ` for [${[...t.offer.players.map((x: any) => `${x.firstName} ${x.lastName} ${x.ratings.at(-1).ovr}`), ...t.offer.picks.map((x: any) => `${x.season} R${x.round}`)].join("; ")}]`
+					? ` for [${[...t.offer.players.map((x: any) => `p${x.pid} ${g.get("season") - x.born.year}y ${x.ratings.at(-1).ovr}`), ...t.offer.picks.map((x: any) => `${x.season} R${x.round}`)].join("; ")}]`
 					: "";
+				// The seller's side of it: his use to it, his price, and its gain
+				// in parts.
+				let parts = "";
+				if (t.offer && t.buyer !== undefined) {
+					const one = { players: [t.p], picks: [] };
+					const d = view.dealPartsNow(t.seller, t.buyer, one, t.offer);
+					parts = ` | seller: his use ${view.useOfNow(t.seller, one).toFixed(3)}, price ${view.priceNow(one, [t.seller, t.buyer]).toFixed(3)}; goal ${d.goal.toFixed(3)} premium got ${d.got.toFixed(3)} given ${d.given.toFixed(3)}; offer's use ${view.useOfNow(t.seller, t.offer).toFixed(3)} price ${view.priceNow(t.offer, [t.seller, t.buyer]).toFixed(3)}; buyer's use for him ${view.useOfNow(t.buyer, one).toFixed(3)}`;
+				}
 				log(
-					`STAR ${g.get("season")} ph${g.get("phase")} ${t.stage}: #${r} ${t.p.firstName} ${t.p.lastName} ${g.get("season") - t.p.born.year}y ${t.p.ratings.at(-1)!.ovr} of ${ab(t.seller)}${title(t.seller)}${t.buyer !== undefined ? ` to ${ab(t.buyer)}${title(t.buyer)}` : ""}${t.buyers ? ` [buyers ${t.buyers.map(ab).join(",")}]` : ""}${t.sellerGain !== undefined ? ` seller ${t.sellerGain.toFixed(3)}` : ""}${t.buyerGain !== undefined ? ` buyer ${t.buyerGain.toFixed(3)}` : ""}${t.why ? ` | ${t.why}` : ""}${offer}`,
+					`STAR ${g.get("season")} ph${g.get("phase")} ${t.stage}: #${r} p${t.p.pid} ${g.get("season") - t.p.born.year}y ${t.p.ratings.at(-1)!.ovr} of ${ab(t.seller)}${title(t.seller)}${t.buyer !== undefined ? ` to ${ab(t.buyer)}${title(t.buyer)}` : ""}${t.buyers ? ` [buyers ${t.buyers.map(ab).join(",")}]` : ""}${t.sellerGain !== undefined ? ` seller ${t.sellerGain.toFixed(3)}` : ""}${t.buyerGain !== undefined ? ` buyer ${t.buyerGain.toFixed(3)}` : ""}${t.why ? ` | ${t.why}` : ""}${offer}${parts}`,
 				);
 			});
 		}

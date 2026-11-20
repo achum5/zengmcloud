@@ -333,39 +333,60 @@ const trimmed = (
 ) => {
 	const salary = (h: Holdings) =>
 		h.players.reduce((sum, p) => sum + contractOf(p).amount, 0);
+	// Its own cost of each piece, dearest first - the same however much of
+	// the offer is left, so worked out once.
+	const costs = [...offer.players, ...offer.picks]
+		.map((x) => ({
+			x,
+			cost: -view.dealWorthNow(buyer, seller, one(x), none),
+		}))
+		.sort((a, b) => b.cost - a.cost);
 	let now = offer;
 	for (;;) {
-		const pieces: (Player | DraftPick)[] = [...now.players, ...now.picks];
-		if (pieces.length <= 1) {
+		if (now.players.length + now.picks.length <= 1) {
 			return now;
 		}
-		// Its own cost of each piece, dearest first.
-		const costs = pieces
-			.map((x) => ({
-				x,
-				cost: -view.dealWorthNow(buyer, seller, one(x), none),
-			}))
-			.sort((a, b) => b.cost - a.cost);
 		let next: Holdings | undefined;
 		for (const { x } of costs) {
+			if (
+				!now.players.includes(x as Player) &&
+				!now.picks.includes(x as DraftPick)
+			) {
+				continue;
+			}
 			const without = {
 				players: now.players.filter((p) => p !== x),
 				picks: now.picks.filter((dp) => dp !== x),
 			};
-			const sellerGain = view.dealWorthNow(seller, buyer, out, without);
-			const buyerGain = view.dealWorthNow(buyer, seller, without, out);
+			// The salary rules first, then each side's worth: the cheapest
+			// checks before the dearest, the deal the same either way.
 			if (
-				sellerGain > bar &&
-				(!marketSettings.margins ||
-					view.sureWorthNow(seller, buyer, out, without) >
+				!salaryRulesAllow(
+					buyer,
+					payrolls.buyer,
+					salary(out),
+					salary(without),
+				) ||
+				!salaryRulesAllow(seller, payrolls.seller, salary(without), salary(out))
+			) {
+				continue;
+			}
+			const sellerGain = view.dealWorthNow(seller, buyer, out, without);
+			if (
+				!(sellerGain > bar) ||
+				(marketSettings.margins &&
+					!(
+						view.sureWorthNow(seller, buyer, out, without) >
 						Math.max(
 							marketSettings.minGain,
 							view.marginNow(seller, out, without),
-						)) &&
-				fairToSeller(sellerGain, buyerGain, buyerAlt) &&
-				salaryRulesAllow(buyer, payrolls.buyer, salary(out), salary(without)) &&
-				salaryRulesAllow(seller, payrolls.seller, salary(without), salary(out))
+						)
+					))
 			) {
+				continue;
+			}
+			const buyerGain = view.dealWorthNow(buyer, seller, without, out);
+			if (fairToSeller(sellerGain, buyerGain, buyerAlt)) {
 				next = without;
 				break;
 			}

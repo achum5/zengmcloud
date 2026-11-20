@@ -59,6 +59,14 @@ test.skipIf(!env.ST_LEAGUE)(
 				);
 			}
 		});
+		market.smartTraceWatchers.push((t) => {
+			if (t.stage === "shopped" || t.stage === "no offer") {
+				return;
+			}
+			log(
+				`TRACE ${t.stage}: ${name(t.p)} of ${who(t.seller)}${t.buyer !== undefined ? ` to ${who(t.buyer)}` : ""}${t.sellerGain !== undefined ? ` seller ${t.sellerGain.toFixed(4)}` : ""}${t.buyerGain !== undefined ? ` buyer ${t.buyerGain.toFixed(4)}` : ""}${t.why ? ` | ${t.why}` : ""}${t.offer ? ` for [${[...t.offer.players, ...t.offer.picks].map(name).join("; ")}]` : ""}`,
+			);
+		});
 		market.smartDealWatchers.push((d) => {
 			log(
 				`MADE ${who(d.buyer)} gets [${d.out.players.map(name).join("; ")}] from ${who(d.seller)} for [${[...d.offer.players, ...d.offer.picks].map(name).join("; ")}] | buyer +${d.buyerGain.toFixed(4)} seller +${d.sellerGain.toFixed(4)}`,

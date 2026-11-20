@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 410,
+		date: "2026-11-20",
+		text: "Smart CPU: each trade market round runs a little faster. The trades are the same; the CPU just stops redoing work it had already done while trimming offers.",
+	},
+	{
 		n: 409,
 		date: "2026-11-20",
 		text: "Watching a league mate's live game in 3D: the 3D game starts loading as soon as the \"Watch ... live?\" question pops up, so it's ready sooner after you tap Watch. While it loads, the score, plays and box score keep up with the game instead of sitting at 0-0, and leaving the page and coming back no longer starts the loading over.",
