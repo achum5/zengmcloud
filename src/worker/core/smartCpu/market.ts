@@ -64,11 +64,20 @@ export const marketSettings = {
 	// stage (daysLeft counts the stages down).
 	freeAgencyDays: [30, 20, 10],
 	// What a deal between CPU teams must gain each side (titles), past
-	// nothing: a real GM leaves a swap within the model's own noise alone.
-	// In the owner's league a quarter of the deals gained one side under
-	// 0.001 - near-equal role players swapped, a 53 for a 53 and two picks;
-	// at 0.001, none did, with trades a season 31 against 33.
-	minGain: 0.001,
+	// nothing - what it can be sure of (smartSettings.premiumRealized), past
+	// its margin of error too: a real GM leaves a swap that hardly moves his
+	// franchise alone. In the owner's league a quarter of the deals gained
+	// one side under 0.001 - near-equal role players swapped, a 53 for a 53
+	// and two picks; at 0.001, none did, with trades a season 31 against 33.
+	// Teams out of the race still swapped bench players for each other: to a
+	// team with no title in sight every player moves its title chances
+	// little, and its margin of error as little - in League 12 runs New
+	// Orleans gave Nate Wolters (48) to Oklahoma City for four players of 41
+	// to 48 and a second (OKC +0.0031 against a margin of 0.0005), Phoenix
+	// Robin Lopez for Isaiah Whitehead (+0.0048), Houston Devonte' Graham for
+	// Brandon Davies and a second (+0.0040). Half a percent of a title each
+	// way leaves those (2026-11-19).
+	minGain: 0.005,
 	// THE SELLER'S SHARE. A seller doesn't hand a team a real upgrade -
 	// more than shareAbove titles - while keeping less than this share of
 	// what the deal makes for both: it holds out, or the buyer pays more
@@ -104,7 +113,9 @@ export const marketSettings = {
 	buyerAlternatives: true,
 	// THE MARGIN OF ERROR (owner's call, 2026-11-19): each side must gain by
 	// more than its own read of the deal could be off (SmartView.marginNow) -
-	// a GM doesn't give firsts for a gain he can't be sure of. With only
+	// a GM doesn't give firsts for a gain he can't be sure of - counting no
+	// more of the market's prices than it can be sure of getting
+	// (smartSettings.premiumRealized). With only
 	// minGain, a third to a half of the deals paying firsts gained the buyer
 	// under 0.01 of a title (Oklahoma City three firsts for Cedric Coward,
 	// 0.002), where its read of a one-player swap is off by about 0.04.
@@ -345,7 +356,11 @@ const trimmed = (
 			if (
 				sellerGain > bar &&
 				(!marketSettings.margins ||
-					sellerGain > view.marginNow(seller, out, without)) &&
+					view.sureWorthNow(seller, buyer, out, without) >
+						Math.max(
+							marketSettings.minGain,
+							view.marginNow(seller, out, without),
+						)) &&
 				fairToSeller(sellerGain, buyerGain, buyerAlt) &&
 				salaryRulesAllow(buyer, payrolls.buyer, salary(out), salary(without)) &&
 				salaryRulesAllow(seller, payrolls.seller, salary(without), salary(out))
@@ -605,10 +620,25 @@ const marketMomentNow = async () => {
 			marketStats.changed += 1;
 			continue;
 		}
+		// Each side's gain past its margin of error counting no more of the
+		// market's prices than it can be sure of getting (smartSettings.
+		// premiumRealized).
 		if (
 			marketSettings.margins &&
-			(!(sellerGain > view.marginNow(found.seller, found.out, found.offer)) ||
-				!(buyerGain > view.marginNow(found.buyer, found.offer, found.out)))
+			(!(
+				view.sureWorthNow(found.seller, found.buyer, found.out, found.offer) >
+				Math.max(
+					marketSettings.minGain,
+					view.marginNow(found.seller, found.out, found.offer),
+				)
+			) ||
+				!(
+					view.sureWorthNow(found.buyer, found.seller, found.offer, found.out) >
+					Math.max(
+						marketSettings.minGain,
+						view.marginNow(found.buyer, found.offer, found.out),
+					)
+				))
 		) {
 			marketStats.withinMargin += 1;
 			continue;

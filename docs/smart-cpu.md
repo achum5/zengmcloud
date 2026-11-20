@@ -1859,3 +1859,162 @@ What fell away besides were mostly near-equal swaps between teams out of
 the race (a 48 for a 50 and seconds). Still made: Denver at 9% two firsts
 for a 30-year-old 54 - a gain past its margin, to look at again on the
 owner's leagues.
+
+## League 12: young players kept, prices not counted on, drafts for the team itself (2026-11-20)
+
+The owner ran League 12 from the real 2010 rosters to the 2018 draft on the
+371 build. Rebuilding teams sold the young players they should have built
+around: Utah Andrew Wiggins (22, 70/79) for Hernangómez, Reggie Jackson and
+a #28 pick; Cleveland D'Angelo Russell (22, 65/75) straight up for Malcolm
+Brogdon to the 71-11 champion; Milwaukee Michael Carter-Williams and Bruno
+Caboclo, New Orleans Giannis - each in the last season of his rookie deal.
+The owner: they "should basically be untouchable for these teams ... they
+should also judge what they need to do in order to get the player to stay
+... maybe the team needs to buy to make the player happy". And of the rest
+of the review: firsts for role players "very very very very bad", churn to
+go ("both sides must genuinely benefit"), teams clearing room only when they
+truly gain, bad teams drafting older players with less upside. Played on
+from the 2018 draft on current master, Detroit sold Luka Dončić (22, in the
+last season of his rookie deal) to Chicago in the 2021 preseason for JaKarr
+Sampson and two seconds.
+
+### The re-signing forecast, for the season his contract runs out
+
+On vanilla's rules a player re-signs only if he is willing, and the game
+decides that from his mood toward the team the summer his contract runs out:
+its record that season, its hype after it, his seasons with it. The outlook
+took his chance from his mood today, as if the team would lose as it is
+losing now until then. On the 2018 draft's file John Collins (21, 59/71,
+through 2020) stood 0% to re-sign with Washington, Zach LaVine 1% with
+Phoenix, Jayson Tatum 22% with Indiana: a bad team's young players were worth
+next to nothing to it, and in the last season of a rookie deal their price
+counted only as far as they would stay - so almost anything beat keeping
+them. And a team's own draft picks read 100% (the game can't let a pick
+refuse his rookie deal) until the draft was over, then fell to their mood.
+
+Now his mood is forecast for the season his contract runs out
+(`outlookSettings.retentionAtExpiry`, `resignForecast.ts`): the team's record
+that season as the outlook expects it, drifting back toward the middle as
+finishes do, and as far off as it may land; its hype built up season by
+season by the game's own rules (each game against 0.55 and the seasons
+before, and 0.05 for making the playoffs - in League 12 playoff teams ended
+their seasons 0.065 above the per-game rule alone); his seasons with it by
+then; the rest of his mood as it is now - each part counted as the game
+counts it (`finishedComponent`, now shared with `moodComponents`; every
+rostered player's mood toward three teams in League 12 is the same before
+and after, user team and CPU teams). A move that makes the team better by
+then makes him likelier to stay, one that makes it worse less, player by
+player and trait by trait (a W cares two and a half times as much about the
+record): buying to keep a young player happy is worth what it does to his
+chance of staying. Collins is now 72% to re-sign, Tatum 64%, LaVine 32%,
+Dončić 64% (not 100%).
+
+Against what the game decided, three leagues each played three seasons on
+(`resignForecastProbe`: each preseason, deadline and draft's end, every
+player whose contract ran out within three seasons, forecast; then each
+player's own chance of being willing as the game asked him when it ran
+out), players rated 55 or better still with the team then - log loss of the
+forecast, new against old (lower is better):
+
+| league                  | 1 season out, rookie deals | 1 season, veterans | 2 seasons, rookie deals | 2 seasons, veterans |
+| ----------------------- | -------------------------- | ------------------ | ----------------------- | ------------------- |
+| League 12, one run      | 0.32 / 0.64                | 0.37 / 0.56        | 0.38 / 0.75             | 0.51 / 0.75         |
+| League 12, another run  | 0.26 / 0.42                | 0.30 / 0.55        | 0.22 / 0.74             | 0.49 / 0.97         |
+| a random-players league | 0.21 / 0.24                | 0.32 / 0.54        | 0.52 / 1.73             | 0.43 / 0.72         |
+
+Those the old forecast gave under 20% were willing 30-37% of the time; the
+new forecast's under-20% group, 8-13%. Two seasons out the new forecast still
+ran 5-10 points low on veterans; those runs were before the playoffs' hype
+was counted.
+
+### Prices a team can be sure of
+
+Even so, played on from the 2018 draft, teams out of the race sold their
+young players for picks years away from the favourites, their own goal
+falling: Golden State Cedi Osman (23, 56/65) for Dallas's 2022 first,
+Milwaukee Tyler Dorsey (23, 54/62) for four scrubs and Dallas's 2023 first
+and second, Cleveland Patrick McCaw (23, 53/62) for John Henson and a 2022
+first (master too). In each the seller's goal fell (-0.014, -0.118, -0.037)
+and its gain was the pick's price - what the keenest teams would gain from
+it, 0.18 of a title for that 2022 first against 0.010 of use to Cleveland.
+Picks got from another team keep their price (their floor stands in for
+title chances past the outlook), and the market's best real offers come to
+a quarter to three fifths of a price (League 10). Now each side must clear
+its margin of error counting what it gets past what it gives in price at a
+quarter (`smartSettings.premiumRealized`, `SmartView.sureWorthNow`); a price
+given up still counts in full, so nothing a team holds sells for less than
+before. Clearing room counts the same, the team clearing and the team
+taking the salary each past its own margin (`clearerGains`, `takerGains`):
+in League 12, of 28 rooms cleared, six swapped like for like and paid a
+second to do it, and Philadelphia paid a first and three seconds for Corey
+Brewer.
+
+**A package no team could take whole.** A team gives what it gives at least
+at its price - but a first sent with salary no keen team could absorb under
+the trade rules had no price at all as a package, and went at its bare use:
+Dallas a 2024 first (priced 0.31, of use 0.02 to it) with two players on the
+minimum for Aaron Nesmith (21, 42/58), Chicago two firsts (0.38 each) with
+Jabari Brown for Marvin Bagley, San Antonio a 2023 first with Austin Rivers
+and Emanuel Terry for Jordan Bell (47/52) - and a young star sent with such a
+contract would have gone the same way. Now such a package is priced piece by
+piece, each at its own price or, where nobody could take it either, its use
+to the team (`SmartView.packagePriceNow`).
+
+**Half a percent of a title.** Teams out of the race still swapped bench
+players: to a team with no title in sight every player moves its chances
+little, and its margin of error as little - New Orleans gave Nate Wolters
+(48) to Oklahoma City for four players of 41 to 48 and a second (OKC +0.0031
+against a margin of 0.0005), Phoenix Robin Lopez for Isaiah Whitehead
+(+0.0048). Each side must now gain past half a percent of a title, counting
+what it can be sure of (`marketSettings.minGain`, 0.001 before).
+
+**What contenders pay for depth stays theirs.** A contender values a role
+player highly: Dallas, the favourite, Patrick McCaw (53) at 0.36 of a title.
+Played 2,320 games against the league as it stood (`swapLab`), McCaw made
+Dallas 1.18 points a game better (the roster model said 0.90), and even Noah
+Vonleh (48) 0.17 - the sim plays the 8th to 10th men real minutes. A late
+first for that is the favourite's call.
+
+### The draft
+
+A prospect a team drafts counted at the market's price: what the keenest
+teams, contenders, would gain from him - and they gain most from players
+ready now. So bad teams drafted what contenders wanted: Álex Abrines (23,
+50/58, 34th on the board) at #7 and Dāvis Bertāns (24, 53/57, 38th) at #10 in
+2016, Kevin Huerter (16th) at #4 and Landry Shamet (24th) at #7 in 2018. By
+its own use alone, tried first, a bad team passed on the draft's best
+prospect where he would likely not re-sign with it, as if it could not trade
+him: Memphis took Tyrese Maxey (19th on the board) at #2 and LaMelo Ball
+(first) fell to #4. Now a team drafts by its sure worth: the prospect's use
+to it - his chance of re-signing forecast for the end of his rookie deal -
+and his price past that at a quarter. And between prospects within its
+margin of error of the best, the board decides (`boardChoice`): far from
+contending every prospect does a team little, and by its own read alone
+Detroit took Bol Bol (38/63, 20th) at #8 over Jaxson Hayes (48/76, 3rd),
+0.065 to 0.057. On a random-players draft, a bad team at #3 now has a
+22-year-old 55/65 7th on its board (6th by price, 9th by use alone).
+
+### Played on
+
+League 12 from the 2018 draft to the 2021 preseason, current master against
+all of this, the same start twice:
+
+| League 12, 2018 draft to 2021                              | master                             | after, one run | after, another |
+| ---------------------------------------------------------- | ---------------------------------- | -------------- | -------------- |
+| trades                                                     | 26                                 | 24             | 23             |
+| market deals one side gained under 0.005 by (sure)         | 9 of 14                            | 0 of 14        | 0 of 15        |
+| young stars sold for spare parts                           | Dončić for Sampson and two seconds | none           | none           |
+| top-ten picks: average place on the board, 6+ places early | 7.2, 4                             | 6.3, 1         | 7.0, 2         |
+| minutes for the three seasons                              | 27.4                               | 29.8           | 28.7           |
+
+Young players still moved, for what they were worth: Memphis Landry Shamet
+(21, 51/63) for three firsts, Denver Lonnie Walker (22, 62/75) for three
+firsts, Phoenix paid three for Kobi Simmons, Chicago two for Deandre Ayton.
+The 2018 draft's players finishing their rookie deals with bad teams were
+sold in the 2021 preseason - Jaren Jackson Jr. (22, 67/77) by Indiana for
+Chicago's 2024 first and two seconds, Collin Sexton, Zhaire Smith - each
+forecast 3% to 24% to re-sign: on the league's rules (rookies can refuse)
+a 20-win team keeps such a player only if he is willing, and none of them
+would be; a first beats losing him for nothing. Rooms cleared were each
+followed by a clear upgrade: Golden State Brandon Ingram (22, 71/82),
+Atlanta Jonathan Isaac (23, 74/77), Utah Ricky Rubio, Charlotte Jarrett Allen.

@@ -103,6 +103,121 @@ const getMinFractionDiff = async (pid: number, tid: number) => {
 	return p.diff;
 };
 
+// Each component, worked out on its own, as it counts in his mood toward this
+// team: the difficulty's modulation, the component's bounds, then his traits.
+// Exported so a component can be worked out for another time too - the
+// team's record and hype the season his contract runs out (the smart CPU's
+// re-signing forecast).
+export const finishedComponent = (
+	key: Exclude<keyof MoodComponents, "custom">,
+	raw: number,
+	p: Pick<Player, "moodTraits">,
+	tid: number,
+) => {
+	let value = raw;
+
+	// Apply difficulty modulation (signing-specific override, else overall difficulty)
+	const difficulty = g.get("spectator")
+		? defaultGameAttributes.difficulty
+		: signingDifficulty();
+	if (realisticFrontOfficesOn()) {
+		// Every team on the same terms, human or CPU, and difficulty does nothing.
+	} else if (g.get("userTids").includes(tid) && !g.get("spectator")) {
+		// Higher difficulty should result in lower mood, but we don't want to swap signs because that'd make for weird output (like complaining about team success when you won the title... but it's okay to just have it at 0 and say nothing)
+		if (difficulty > 0) {
+			if (value > 0) {
+				value /= 1 + difficulty;
+			} else {
+				value *= 1 + difficulty;
+			}
+		} else if (difficulty < 0) {
+			if (value > 0) {
+				value *= 1 - difficulty;
+			} else {
+				value /= 1 - difficulty;
+			}
+		}
+	} else {
+		// At default difficulty, make players more likely to refuse. Decrease this, and players will be more likely to enter free agency
+		const amount = 0.5 - helpers.bound(difficulty / 2, -0.25, 0.25);
+		if (amount > 0) {
+			if (value > 0) {
+				value /= 1 + amount;
+			} else {
+				value *= 1 + amount;
+			}
+		} else {
+			if (value > 0) {
+				value *= 1 - amount;
+			} else {
+				value /= 1 - amount;
+			}
+		}
+	}
+
+	// Bound all components - they don't all have the same bounds!
+	const bounds: Partial<Record<typeof key, [number, number]>> = {
+		marketSize: [-2, 2],
+		facilities: [-2, 2],
+		teamPerformance: [-Infinity, 2],
+		hype: [-2, 2],
+		loyalty: [0, Infinity],
+		trades: [-Infinity, 0],
+		playingTime: [-Infinity, 2],
+		rookieContract: [0, Infinity],
+	};
+	const bound = bounds[key];
+	if (bound) {
+		value = helpers.bound(value, bound[0], bound[1]);
+	}
+
+	// Apply traits modulation
+	if (g.get("playerMoodTraits")) {
+		const traits: Record<string, Partial<Record<typeof key, number>>> = {
+			F: { marketSize: 2.5, hype: 2.5, playingTime: 2.5 },
+			L: { marketSize: 0.5, loyalty: 2.5, trades: 2.5 },
+			$: { facilities: 1.5, marketSize: 0.5, teamPerformance: 0.5 },
+			W: { marketSize: 0.5, playingTime: 0.5, teamPerformance: 2.5 },
+		};
+		for (const trait of ["F", "L", "$", "W"]) {
+			const factor = traits[trait]![key];
+			if (factor !== undefined && p.moodTraits.includes(trait as any)) {
+				value *= factor;
+			}
+		}
+	}
+
+	return value;
+};
+
+// TEAM PERFORMANCE from a share of games won, before finishedComponent: -2 at
+// 25% and 2 at 75% (60% and a title), losing counting double.
+export const teamPerformanceRaw = (winp: number) => {
+	let value: number;
+	if (__SPORT === "hockey") {
+		// 40% to 60% -> -2 to 2
+		value = -2 + ((winp - 0.4) * 4) / 0.2;
+	} else {
+		// 25% to 75% -> -2 to 2
+		value = -2 + ((winp - 0.25) * 4) / 0.5;
+	}
+
+	// Negative matters more
+	if (__SPORT === "basketball" && value < 0) {
+		value *= 2;
+	}
+
+	// Set upper bound, in case went over due to playoff bonus
+	return helpers.bound(value, -Infinity, 2);
+};
+
+// HYPE from the team's hype (0 to 1), before finishedComponent.
+export const hypeRaw = (hype: number) => -2 + 4 * hype;
+
+// LOYALTY from seasons with the team, before finishedComponent.
+export const loyaltyRaw = (seasons: number, ownTeam: boolean) =>
+	seasons / 8 + (ownTeam ? (__SPORT === "football" ? 5 : 2) : 0);
+
 // Make components -2 to 2, then scale with traits to -5 to 5
 const moodComponents = async (
 	p: Player,
@@ -254,25 +369,7 @@ const moodComponents = async (
 					winp += 0.15;
 				}
 
-				if (__SPORT === "hockey") {
-					// 40% to 60% -> -2 to 2
-					components.teamPerformance = -2 + ((winp - 0.4) * 4) / 0.2;
-				} else {
-					// 25% to 75% -> -2 to 2
-					components.teamPerformance = -2 + ((winp - 0.25) * 4) / 0.5;
-				}
-
-				// Negative matters more
-				if (__SPORT === "basketball" && components.teamPerformance < 0) {
-					components.teamPerformance *= 2;
-				}
-
-				// Set upper bound, in case went over due to playoff bonus
-				components.teamPerformance = helpers.bound(
-					components.teamPerformance,
-					-Infinity,
-					2,
-				);
+				components.teamPerformance = teamPerformanceRaw(winp);
 			}
 		}
 	}
@@ -280,14 +377,13 @@ const moodComponents = async (
 	{
 		// HYPE
 		if (currentTeamSeason) {
-			components.hype = -2 + 4 * currentTeamSeason.hype;
+			components.hype = hypeRaw(currentTeamSeason.hype);
 		}
 	}
 
 	{
 		// LOYALTY
 		const numSeasonsWithTeam = p.stats.filter((row) => row.tid === tid).length;
-		components.loyalty = numSeasonsWithTeam / 8;
 
 		let wantsToReSign = p.tid === tid;
 		if (
@@ -300,9 +396,7 @@ const moodComponents = async (
 			wantsToReSign = negotiationPids.has(p.pid);
 		}
 
-		if (wantsToReSign) {
-			components.loyalty += __SPORT === "football" ? 5 : 2;
-		}
+		components.loyalty = loyaltyRaw(numSeasonsWithTeam, wantsToReSign);
 	}
 
 	{
@@ -353,98 +447,9 @@ const moodComponents = async (
 		}
 	}
 
-	// Apply difficulty modulation (signing-specific override, else overall difficulty)
-	const difficulty = g.get("spectator")
-		? defaultGameAttributes.difficulty
-		: signingDifficulty();
-	if (realisticFrontOfficesOn()) {
-		// Every team on the same terms, human or CPU, and difficulty does nothing.
-	} else if (g.get("userTids").includes(tid) && !g.get("spectator")) {
-		if (difficulty !== 0) {
-			for (const key of helpers.keys(components)) {
-				if (key === "custom") {
-					continue;
-				}
-
-				// Higher difficulty should result in lower mood, but we don't want to swap signs because that'd make for weird output (like complaining about team success when you won the title... but it's okay to just have it at 0 and say nothing)
-				if (difficulty > 0) {
-					if (components[key] > 0) {
-						components[key] /= 1 + difficulty;
-					} else {
-						components[key] *= 1 + difficulty;
-					}
-				} else {
-					if (components[key] > 0) {
-						components[key] *= 1 - difficulty;
-					} else {
-						components[key] /= 1 - difficulty;
-					}
-				}
-			}
-		}
-	} else {
-		// At default difficulty, make players more likely to refuse. Decrease this, and players will be more likely to enter free agency
-		const amount = 0.5 - helpers.bound(difficulty / 2, -0.25, 0.25);
-		for (const key of helpers.keys(components)) {
-			if (key === "custom") {
-				continue;
-			}
-
-			if (amount > 0) {
-				if (components[key] > 0) {
-					components[key] /= 1 + amount;
-				} else {
-					components[key] *= 1 + amount;
-				}
-			} else {
-				if (components[key] > 0) {
-					components[key] *= 1 - amount;
-				} else {
-					components[key] /= 1 - amount;
-				}
-			}
-		}
-	}
-
-	// Bound all components - they don't all have the same bounds!
-	components.marketSize = helpers.bound(components.marketSize, -2, 2);
-	components.facilities = helpers.bound(components.facilities, -2, 2);
-	components.teamPerformance = helpers.bound(
-		components.teamPerformance,
-		-Infinity,
-		2,
-	);
-	components.hype = helpers.bound(components.hype, -2, 2);
-	components.loyalty = helpers.bound(components.loyalty, 0, Infinity);
-	components.trades = helpers.bound(components.trades, -Infinity, 0);
-	components.playingTime = helpers.bound(components.playingTime, -Infinity, 2);
-	components.rookieContract = helpers.bound(
-		components.rookieContract,
-		0,
-		Infinity,
-	);
-
-	// Apply traits modulation
-	if (g.get("playerMoodTraits")) {
-		if (p.moodTraits.includes("F")) {
-			components.marketSize *= 2.5;
-			components.hype *= 2.5;
-			components.playingTime *= 2.5;
-		}
-		if (p.moodTraits.includes("L")) {
-			components.marketSize *= 0.5;
-			components.loyalty *= 2.5;
-			components.trades *= 2.5;
-		}
-		if (p.moodTraits.includes("$")) {
-			components.facilities *= 1.5;
-			components.marketSize *= 0.5;
-			components.teamPerformance *= 0.5;
-		}
-		if (p.moodTraits.includes("W")) {
-			components.marketSize *= 0.5;
-			components.playingTime *= 0.5;
-			components.teamPerformance *= 2.5;
+	for (const key of helpers.keys(components)) {
+		if (key !== "custom") {
+			components[key] = finishedComponent(key, components[key], p, tid);
 		}
 	}
 

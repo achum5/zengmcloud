@@ -13,7 +13,7 @@ import type {
 } from "../../../common/types.ts";
 import { last } from "../../../common/utils.ts";
 import { idb } from "../../db/index.ts";
-import { g } from "../../util/index.ts";
+import { g, helpers } from "../../util/index.ts";
 import { smartVanillaOn } from "./isOn.ts";
 import { defaultGameAttributes } from "../../../common/defaultGameAttributes.ts";
 import { marketSalaries, pickSalaries, signingsWith } from "./payroll.ts";
@@ -31,6 +31,7 @@ import {
 	type RatingsProjection,
 } from "./projection.ts";
 import getDaysLeftSchedule from "../season/getDaysLeftSchedule.ts";
+import getNumPlayoffTeams from "../season/getNumPlayoffTeams.ts";
 import { normalCdf, simulateSeason, winProbability } from "./seasonSim.ts";
 import { fitLogistic } from "./logistic.ts";
 import {
@@ -40,6 +41,12 @@ import {
 	willingChance,
 } from "./offers.ts";
 import { buildDeadlineView, type DeadlineView } from "./timing.ts";
+import {
+	moodNow,
+	willingAtExpiry,
+	type MoodNow,
+	type SeasonsAhead,
+} from "./resignForecast.ts";
 import {
 	expectedRosterPoints,
 	lineSynergy,
@@ -218,6 +225,19 @@ export type LeagueOutlook = {
 	// And his chance of taking its offer at his asking price, which that was
 	// worked out from (ensureRetention).
 	stays?: Map<string, number>;
+	// On vanilla's rules (retentionAtExpiry): his mood toward the team now, by
+	// retentionKey, the season of the outlook his contract runs out in, and
+	// the seasons with it he adds by then - and each team's seasons ahead as
+	// it stands (basePoints), which his mood then is forecast from
+	// (resignForecast.ts).
+	moods?: Map<string, { mood: MoodNow; e: number; added: number }>;
+	ahead?: Map<number, SeasonsAhead>;
+	// Each team's share of games won in its last two seasons played, older
+	// first, and the share that makes the playoffs, about: as far above the
+	// middle of the last season's shares as the share of teams that miss
+	// them puts it, by their spread.
+	pastWinp?: Map<number, readonly [number, number]>;
+	playoffLine?: number;
 	// Each team's roster points each season as it stands, its hype now and
 	// its record so far this season: what a move's change in its record is
 	// measured against (losingShifts).
@@ -798,6 +818,11 @@ export const outlookSettings = {
 	// A move's change in the team's record changes its players' mood
 	// (losingShifts).
 	costsOfLosing: true,
+	// On vanilla's rules, a player's chance of re-signing is forecast from
+	// his mood toward the team the season his contract runs out - its record
+	// and hype then, as the outlook expects them, and his seasons with it by
+	// then - not his mood now (resignForecast.ts).
+	retentionAtExpiry: true,
 	// Which of the costs of losing count: the record's own part of mood -
 	// and, measured and left off, hype's and what the next summer's room buys.
 	losingParts: { record: true, hype: false, room: false },
@@ -990,6 +1015,7 @@ export const teamOutlookSettings = new Map<
 			| "retentionByValue"
 			| "retentionFit"
 			| "costsOfLosing"
+			| "retentionAtExpiry"
 			| "roomByRecord"
 			| "letGo"
 			| "letGoRoomTolerance"
@@ -1018,6 +1044,7 @@ const outlookSettingFor = <
 		| "retentionByValue"
 		| "retentionFit"
 		| "costsOfLosing"
+		| "retentionAtExpiry"
 		| "letGo"
 		| "letGoRoomTolerance"
 		| "moneyPerCap"
@@ -1119,13 +1146,49 @@ const keptFromStay = (stay: number, p: Player, tid: number) => {
 };
 
 export const ensureRetention = async (
-	outlook: Pick<LeagueOutlook, "retention" | "stays">,
+	outlook: Pick<LeagueOutlook, "retention" | "stays"> &
+		Partial<Pick<LeagueOutlook, "moods" | "ahead" | "season" | "offset">>,
 	players: readonly Player[],
 	tid: number,
 ) => {
 	for (const p of players) {
 		const key = retentionKey(p.pid, tid);
 		if (!outlook.retention.has(key)) {
+			if (
+				smartVanillaOn() &&
+				outlook.moods &&
+				outlook.season !== undefined &&
+				outlook.offset !== undefined &&
+				outlookSettingFor(tid, "retentionAtExpiry")
+			) {
+				// On vanilla's rules: his chance of being willing when his
+				// contract runs out, his mood then forecast from the team's
+				// seasons till then (resignForecast.ts).
+				const { mood, now } = await moodNow(p, tid);
+				const exp = contractOf(p).exp;
+				const season = g.get("season");
+				const last = p.stats.at(-1);
+				const playing =
+					last !== undefined &&
+					last.season === season &&
+					last.tid === tid &&
+					!last.playoffs;
+				outlook.moods.set(key, {
+					mood,
+					e:
+						exp -
+						outlookSeason(
+							{ season: outlook.season, offset: outlook.offset },
+							0,
+						),
+					// His seasons with the team by then: this one too if he is not
+					// yet counted in it.
+					added: exp - season + (outlook.offset === 0 && !playing ? 1 : 0),
+				});
+				outlook.stays?.set(key, now);
+				outlook.retention.set(key, forecastOf(outlook, key, tid)!);
+				continue;
+			}
 			if (smartVanillaOn()) {
 				// On vanilla's rules: his chance of being willing to re-sign with
 				// this team, as the game decides it (willingChance). Whether
@@ -2153,7 +2216,13 @@ export const teamPoints = (
 	const vanillaStay = smartVanillaOn();
 	const retentionFor = (p: Player, i: number) => {
 		let r = retentionOf(outlook, p.pid, tid);
-		if (losing) {
+		const forecast =
+			losing && vanillaStay
+				? forecastOf(outlook, retentionKey(p.pid, tid), tid, losing.change)
+				: undefined;
+		if (forecast !== undefined) {
+			r = forecast;
+		} else if (losing) {
 			const e = contracts[i]!.exp - outlookSeason(outlook, 0);
 			const mood = e >= 0 ? (losing.mood[e] ?? 0) : 0;
 			const stay = outlook.stays?.get(retentionKey(p.pid, tid));
@@ -2841,6 +2910,10 @@ export type LosingShifts = {
 	mood: number[];
 	// Change in the share of games won its room is priced at, by season.
 	winp: number[];
+	// Change in its share of games won each season, drifting back toward the
+	// middle seasons out: what its players' moods then are forecast from
+	// (retentionAtExpiry).
+	change: number[];
 	// What a point of mood does to his chance of taking an offer, in log odds:
 	// the offer market's moodWeight / temperature.
 	slope: number;
@@ -2856,6 +2929,108 @@ const LOSING_WINP_MIN = 0.02;
 const teamPerformanceMood = (winp: number) => {
 	const x = -2 + 8 * (winp - 0.25);
 	return Math.min(2, x < 0 ? 2 * x : x);
+};
+
+// A team's seasons ahead on this path of its roster points, as its players'
+// moods then are forecast from (resignForecast.ts): its share of games won
+// each season - this one's with the games already played - drifting back
+// toward the middle seasons out as finishes do (FINISH_KEPT), as losingShifts
+// counts a move's change in it; how far from that it may land (the outlook's
+// doubt about its strength, and the games' own luck); and the games that
+// move its hype.
+const seasonsAheadOf = (
+	outlook: Pick<
+		LeagueOutlook,
+		"records" | "remaining" | "progress" | "hype" | "pastWinp" | "playoffLine"
+	>,
+	tid: number,
+	points: readonly number[],
+	means: readonly number[],
+): SeasonsAhead => {
+	const numGames = g.get("numGames");
+	const record = outlook.records?.get(tid);
+	const left = outlook.remaining.get(tid) ?? numGames;
+	// Share of games won a point of strength is worth, about the middle.
+	const perPoint = winProbability(0.5) - winProbability(-0.5);
+	const winp: number[] = [];
+	const spread: number[] = [];
+	const games: number[] = [];
+	for (let y = 0; y < points.length; y++) {
+		const progress = y === 0 ? outlook.progress : 0;
+		const kept = tableAt(FINISH_KEPT, y + 1 - progress);
+		const wp = 0.5 + kept * (winProbability(points[y]! - means[y]!) - 0.5);
+		const won = y === 0 ? (record?.won ?? 0) : 0;
+		const played = y === 0 ? won + (record?.lost ?? 0) : 0;
+		const toPlay = y === 0 ? left : numGames;
+		const total = Math.max(1, played + toPlay);
+		winp.push((won + toPlay * wp) / total);
+		const doubt =
+			(strengthUncertainty(y, progress) * perPoint * toPlay) / total;
+		const luck = Math.sqrt(wp * (1 - wp) * toPlay) / total;
+		spread.push(Math.sqrt(doubt ** 2 + luck ** 2));
+		// The game moves hype from a team's sixth game on.
+		games.push(Math.max(0, toPlay - Math.max(0, 5 - played)));
+	}
+	return {
+		winp,
+		spread,
+		games,
+		hypeNow: outlook.hype?.get(tid) ?? 0.5,
+		past: outlook.pastWinp?.get(tid) ?? [0.5, 0.5],
+		playoffLine: outlook.playoffLine,
+	};
+};
+
+const meansOf = (
+	teams: readonly { tid: number }[],
+	points: Map<number, readonly number[]>,
+) =>
+	Array.from(
+		{ length: OUTLOOK_YEARS + 1 },
+		(_, y) =>
+			teams.reduce((a, t) => a + points.get(t.tid)![y]!, 0) /
+			Math.max(1, teams.length),
+	);
+
+// His chance of re-signing with team tid, forecast from his mood then
+// (ensureRetention, retentionAtExpiry) - the team's seasons ahead moved by
+// `change` in its share of games won (losingShifts), for a move. Once his
+// contract has run out, or before the teams' seasons ahead are priced, his
+// mood now - never the rule that a pick just drafted can't refuse his rookie
+// deal: that is not the deal he re-signs after.
+const forecastOf = (
+	outlook: Pick<LeagueOutlook, "moods" | "ahead">,
+	key: string,
+	tid: number,
+	change?: readonly number[],
+) => {
+	const entry = outlook.moods?.get(key);
+	if (!entry) {
+		return;
+	}
+	const { mood, e, added } = entry;
+	const ahead = outlook.ahead?.get(tid);
+	let r: number;
+	if (e < 0 || !ahead) {
+		r = mood.sure ? 1 : 1 / (1 + Math.exp(-MOOD_SLOPE * mood.sum));
+	} else {
+		const seasons = change
+			? {
+					...ahead,
+					winp: ahead.winp.map((w, y) =>
+						Math.min(1, Math.max(0, w + (change[y] ?? 0))),
+					),
+				}
+			: ahead;
+		r = willingAtExpiry(
+			mood,
+			tid,
+			Math.min(e, seasons.winp.length - 1),
+			seasons,
+			added,
+		);
+	}
+	return Math.round(r * 1000) / 1000;
 };
 
 export const losingShifts = (
@@ -2884,6 +3059,7 @@ export const losingShifts = (
 	const hypeNow = outlook.hype?.get(tid) ?? 0.5;
 	const mood: number[] = [];
 	const winp: number[] = [];
+	const shift: number[] = [];
 	let material = false;
 	let gained = 0;
 	for (let y = 0; y < points.length; y++) {
@@ -2892,6 +3068,7 @@ export const losingShifts = (
 		const kept = tableAt(FINISH_KEPT, y + 1 - outlook.progress);
 		const was = winsAt(base, y);
 		const change = kept * (winsAt(points, y) - was);
+		shift[y] = change;
 		// Hype: 0.01 a game for each point of share of games won it is off
 		// 0.55, which builds up, and 0.015 a game for each point it is off
 		// the last seasons', which does not.
@@ -2920,6 +3097,7 @@ export const losingShifts = (
 	return {
 		mood,
 		winp,
+		change: shift,
 		// On vanilla's rules, mood moves his willingness on the game's own
 		// curve; with realistic front offices, his choice in the offer market.
 		slope: smartVanillaOn()
@@ -3316,6 +3494,50 @@ export const buildOutlook = async ({
 			lost: inSeason ? (ts?.lost ?? 0) + (ts?.tied ?? 0) + (ts?.otl ?? 0) : 0,
 		});
 	}
+	// Each team's share of games won in its last two seasons played, older
+	// first, for its hype (resignForecast.ts): as the game's hype goes by,
+	// the average of those there are, half without any.
+	const pastWinp = new Map<number, readonly [number, number]>();
+	for (const t of teams) {
+		const played: number[] = [];
+		for (const back of [2, 1]) {
+			const ts = await idb.cache.teamSeasons.indexGet(
+				"teamSeasonsBySeasonTid",
+				[season + offset - back, t.tid],
+			);
+			if (ts && ts.won + ts.lost + (ts.tied ?? 0) + (ts.otl ?? 0) > 0) {
+				played.push(helpers.calcWinp(ts));
+			}
+		}
+		const last = played.at(-1) ?? 0.5;
+		pastWinp.set(t.tid, [played.length > 1 ? played[0]! : last, last]);
+	}
+	let playoffLine: number | undefined;
+	{
+		const shares = [...pastWinp.values()].map((x) => x[1]);
+		const mean = shares.reduce((a, x) => a + x, 0) / Math.max(1, shares.length);
+		const sd = Math.sqrt(
+			shares.reduce((a, x) => a + (x - mean) ** 2, 0) /
+				Math.max(1, shares.length - 1),
+		);
+		const { numPlayoffTeams } = await getNumPlayoffTeams(season);
+		const missing =
+			1 - Math.min(1, numPlayoffTeams / Math.max(1, teams.length));
+		if (sd > 0 && missing > 0) {
+			// The standard normal's quantile, by halving.
+			let lo = -6;
+			let hi = 6;
+			for (let i = 0; i < 50; i++) {
+				const mid = (lo + hi) / 2;
+				if (normalCdf(mid) < missing) {
+					lo = mid;
+				} else {
+					hi = mid;
+				}
+			}
+			playoffLine = mean + sd * ((lo + hi) / 2);
+		}
+	}
 	const deadMoney = new Map<number, { amount: number; exp: number }[]>();
 	for (const t of teams) {
 		deadMoney.set(
@@ -3379,6 +3601,14 @@ export const buildOutlook = async ({
 		futurePicks: new Map<number, FuturePickAt[][]>(),
 		retention: new Map<string, number>(),
 		stays: new Map<string, number>(),
+		moods:
+			smartVanillaOn() &&
+			teams.some((t) => outlookSettingFor(t.tid, "retentionAtExpiry"))
+				? new Map<string, { mood: MoodNow; e: number; added: number }>()
+				: undefined,
+		ahead: undefined as LeagueOutlook["ahead"],
+		pastWinp,
+		playoffLine,
 		hype,
 		records,
 		basePoints: undefined as LeagueOutlook["basePoints"],
@@ -3409,82 +3639,6 @@ export const buildOutlook = async ({
 		await ensureRetention(base, rosters.get(t.tid)!, t.tid);
 	}
 
-	// How good each team's roster alone is each season, against the league's,
-	// as a share of games won: what its room buys goes by it. Priced first
-	// with every team's room worth the league's average, and everything below
-	// with it, so a roster priced now and one priced in a deal later are
-	// priced alike.
-	if (outlookSettings.roomByRecord || teamOutlookSettings.size > 0) {
-		const first = new Map(
-			teams.map((t) => [
-				t.tid,
-				rosterOnlyPoints(base, t.tid, rosters.get(t.tid)!),
-			]),
-		);
-		const means = Array.from(
-			{ length: OUTLOOK_YEARS + 1 },
-			(_, y) =>
-				teams.reduce((a, t) => a + first.get(t.tid)![y]!, 0) /
-				Math.max(1, teams.length),
-		);
-		// Seasons out, teams drift back toward the middle as their finishes
-		// do (FINISH_KEPT): a bad roster now is not a bad team for good, and
-		// its room later is worth more than its roster alone says.
-		base.winShare = new Map(
-			teams.map((t) => [
-				t.tid,
-				first
-					.get(t.tid)!
-					.map(
-						(x, y) =>
-							0.5 +
-							tableAt(FINISH_KEPT, y + 1 - (inSeason ? progress : 0)) *
-								(winProbability(x - means[y]!) - 0.5),
-					),
-			]),
-		);
-	}
-
-	// Where each team's own pick lands, from its roster alone: worst first -
-	// and this season's draft, once games are played, by the record it is
-	// heading for, the wins already banked included.
-	const rosterOnly = new Map(
-		teams.map((t) => [
-			t.tid,
-			rosterOnlyPoints(base, t.tid, rosters.get(t.tid)!),
-		]),
-	);
-	for (const t of teams) {
-		base.draftPlace.set(t.tid, []);
-	}
-	const meanNow =
-		teams.reduce((a, t) => a + rosterOnly.get(t.tid)![0]!, 0) /
-		Math.max(1, teams.length);
-	if (inSeason) {
-		base.placeNow = {
-			won: new Map(teams.map((t) => [t.tid, records.get(t.tid)!.won])),
-			meanNow,
-		};
-	}
-	for (const t of teams) {
-		const points = rosterOnly.get(t.tid)!;
-		base.placeKeys.set(t.tid, {
-			points,
-			keys: placeKeysOf(base, t.tid, points),
-		});
-	}
-	for (const t of teams) {
-		base.draftPlace.set(
-			t.tid,
-			base.placeKeys
-				.get(t.tid)!
-				.keys.map((key, y) => softPlace(base, t.tid, key, y, new Map())),
-		);
-	}
-	// Picks' lines worked out before then had nowhere to land.
-	base.pickYears = new WeakMap();
-	base.futurePicks.clear();
-
 	const pointsAt = (view: InjuryMode) =>
 		withInjuryView(
 			view,
@@ -3496,7 +3650,117 @@ export const buildOutlook = async ({
 					]),
 				),
 		);
-	const points = pointsAt(leagueInjuryMode());
+
+	// Every team's roster priced, each season of the outlook: what its room
+	// buys, where its picks land, its points with them. Twice with the
+	// re-signing forecast at its contract's end (retentionAtExpiry): its
+	// players' chances of staying are forecast from the team's seasons as the
+	// first pricing has them.
+	const priceRosters = () => {
+		// How good each team's roster alone is each season, against the league's,
+		// as a share of games won: what its room buys goes by it. Priced first
+		// with every team's room worth the league's average, and everything below
+		// with it, so a roster priced now and one priced in a deal later are
+		// priced alike.
+		if (outlookSettings.roomByRecord || teamOutlookSettings.size > 0) {
+			const first = new Map(
+				teams.map((t) => [
+					t.tid,
+					rosterOnlyPoints(base, t.tid, rosters.get(t.tid)!),
+				]),
+			);
+			const means = Array.from(
+				{ length: OUTLOOK_YEARS + 1 },
+				(_, y) =>
+					teams.reduce((a, t) => a + first.get(t.tid)![y]!, 0) /
+					Math.max(1, teams.length),
+			);
+			// Seasons out, teams drift back toward the middle as their finishes
+			// do (FINISH_KEPT): a bad roster now is not a bad team for good, and
+			// its room later is worth more than its roster alone says.
+			base.winShare = new Map(
+				teams.map((t) => [
+					t.tid,
+					first
+						.get(t.tid)!
+						.map(
+							(x, y) =>
+								0.5 +
+								tableAt(FINISH_KEPT, y + 1 - (inSeason ? progress : 0)) *
+									(winProbability(x - means[y]!) - 0.5),
+						),
+				]),
+			);
+		}
+
+		// Where each team's own pick lands, from its roster alone: worst first -
+		// and this season's draft, once games are played, by the record it is
+		// heading for, the wins already banked included.
+		const rosterOnly = new Map(
+			teams.map((t) => [
+				t.tid,
+				rosterOnlyPoints(base, t.tid, rosters.get(t.tid)!),
+			]),
+		);
+		for (const t of teams) {
+			base.draftPlace.set(t.tid, []);
+		}
+		const meanNow =
+			teams.reduce((a, t) => a + rosterOnly.get(t.tid)![0]!, 0) /
+			Math.max(1, teams.length);
+		if (inSeason) {
+			base.placeNow = {
+				won: new Map(teams.map((t) => [t.tid, records.get(t.tid)!.won])),
+				meanNow,
+			};
+		}
+		for (const t of teams) {
+			const points = rosterOnly.get(t.tid)!;
+			base.placeKeys.set(t.tid, {
+				points,
+				keys: placeKeysOf(base, t.tid, points),
+			});
+		}
+		for (const t of teams) {
+			base.draftPlace.set(
+				t.tid,
+				base.placeKeys
+					.get(t.tid)!
+					.keys.map((key, y) => softPlace(base, t.tid, key, y, new Map())),
+			);
+		}
+		// Picks' lines worked out before then had nowhere to land.
+		base.pickYears = new WeakMap();
+		base.futurePicks.clear();
+
+		return pointsAt(leagueInjuryMode());
+	};
+	let points = priceRosters();
+	if (base.moods && smartVanillaOn()) {
+		const aheadOn = (at: Map<number, number[]>) =>
+			new Map(
+				teams.map((t) => [
+					t.tid,
+					seasonsAheadOf(base, t.tid, at.get(t.tid)!, meansOf(teams, at)),
+				]),
+			);
+		base.ahead = aheadOn(points);
+		let moved = false;
+		for (const t of teams) {
+			for (const p of rosters.get(t.tid)!) {
+				const key = retentionKey(p.pid, t.tid);
+				const r = forecastOf(base, key, t.tid);
+				if (r !== undefined && r !== base.retention.get(key)) {
+					base.retention.set(key, r);
+					moved = true;
+				}
+			}
+		}
+		if (moved) {
+			points = priceRosters();
+			base.ahead = aheadOn(points);
+		}
+	}
 	base.basePoints = points;
 	// Only in the arena's version-against-version leagues: the average team at
 	// the other injury setting.

@@ -36,7 +36,7 @@ test.skipIf(!env.DRAFT_PROBE)(
 			await import("../../worker/core/realisticFrontOffice/strength.ts");
 		strengthSettings.positions = env.DRAFT_POSITIONS !== "0";
 		await league.setGameAttributes({
-			realisticFrontOffices: true,
+			realisticFrontOffices: env.DRAFT_RFO !== "0",
 			smartCpu: true,
 			spectator: true,
 		});
@@ -91,7 +91,14 @@ test.skipIf(!env.DRAFT_PROBE)(
 				"  prospect                 age ovr/pot value | proj ovr +1..+7 (best quarter at +5) | ret | use / price / worth (% title)",
 			);
 			const view2: any = viewFor(await currentOutlook());
-			for (const { p, worth } of worths) {
+			for (const { p, worth, drafted } of worths) {
+				const margin = (view2 as any).marginNow
+					? view2.marginNow(
+							t.tid,
+							{ players: [], picks: [] },
+							{ players: [drafted], picks: [] },
+						)
+					: 0;
 				const proj = projectPlayer(p, season);
 				const path = [1, 2, 3, 4, 5, 6, 7]
 					.map((y) => proj.ovr[y]!.toFixed(0))
@@ -110,7 +117,7 @@ test.skipIf(!env.DRAFT_PROBE)(
 					)
 					.join(" ");
 				log(
-					`  ${`${p.firstName} ${p.lastName}`.padEnd(24)} ${String(season - p.born.year).padStart(3)} ${r.ovr}/${r.pot} ${p.value.toFixed(0)} | ${path} (${boom?.toFixed(0)}) | ${retentionOf(outlook, p.pid, t.tid).toFixed(2)} | ${(100 * use).toFixed(3)} / ${(100 * price).toFixed(3)} / ${(100 * worth).toFixed(3)} | bids ${bids}`,
+					`  ${`${p.firstName} ${p.lastName}`.padEnd(24)} ${String(season - p.born.year).padStart(3)} ${r.ovr}/${r.pot} ${p.value.toFixed(0)} | ${path} (${boom?.toFixed(0)}) | ${retentionOf(outlook, p.pid, t.tid).toFixed(2)} | ${(100 * use).toFixed(3)} / ${(100 * price).toFixed(3)} / ${(100 * worth).toFixed(3)} margin ${(100 * margin).toFixed(3)} | bids ${bids}`,
 				);
 			}
 		}

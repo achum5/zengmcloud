@@ -12,6 +12,21 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 401,
+		date: "2026-11-20",
+		text: "CPU drafts: teams draft for themselves. A rebuilding team takes the young players with upside it can build around instead of the older, ready players contenders would want, and when it can't tell two prospects apart it takes the one higher on the board.",
+	},
+	{
+		n: 400,
+		date: "2026-11-20",
+		text: "CPU trades: teams no longer give up useful players just to collect far-off draft picks at prices nobody really pays, a first sent along with filler contracts now costs what a first is worth, and pointless swaps between teams out of the race are gone - both sides have to come out clearly ahead, trades made to clear cap room included.",
+	},
+	{
+		n: 399,
+		date: "2026-11-20",
+		text: "CPU teams now judge whether a young player will re-sign by how good the team should be when his contract runs out, not by how bad it is today - so rebuilding teams keep the young players they're building around instead of selling them for spare parts, and making the team better now counts toward keeping a young star happy.",
+	},
+	{
 		n: 398,
 		date: "2026-11-20",
 		text: "Game pages and live games: the Shots button is gone from the bottom menu. The shot chart is still right under the game flow, so the Game Flow button takes you to both.",

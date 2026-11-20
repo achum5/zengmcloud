@@ -124,6 +124,27 @@ export const smartSettings = {
 	// and 10, the seller's own goal moved -0.02 to +0.02 of a title and the
 	// rest of its gain was the price of what it got (docs/smart-cpu.md).
 	boughtAtUse: true,
+	// What a deal gains a team in the market's prices - what it gets past
+	// its use to it, past what it gives - counts toward the deal clearing its
+	// margin of error only at this share (SmartView.sureWorthNow); a price
+	// given up counts in full. A price is what the keenest teams would gain,
+	// and the market's best real offers come to a quarter to three fifths of
+	// it (League 10). Counted whole, teams out of the race sold the young
+	// players they had for picks years away from the favourites, their own
+	// goal falling - in a League 12 run from the 2018 draft Golden State gave
+	// Cedi Osman (23, 56/65) for Dallas's 2022 first (-0.014 by its goal, the
+	// pick 0.175 in price against 0.010 of use), Milwaukee Tyler Dorsey (23,
+	// 54/62) for four scrubs and Dallas's 2023 picks (-0.118), Cleveland
+	// Patrick McCaw for John Henson and a 2022 first (-0.037) - and took
+	// players they had no use for with a second thrown in.
+	// A team drafts by the same sure worth: the prospect's use to it, and his
+	// price past that at this share. Priced whole, every team drafted by what
+	// contenders - the keenest teams, whose gain sets a price - want: players
+	// ready now, older and with less upside (League 12: Abrines, 23, 34th on
+	// the board, at #7; Huerter, 16th, at #4); by its use alone a bad team
+	// passed on the draft's best prospect when he would likely not re-sign
+	// with it, as if it could not trade him.
+	premiumRealized: 0.25,
 };
 
 // Seasons, with the phases between (a season's phases run 0 to 8).
@@ -1073,8 +1094,28 @@ export class SmartView {
 	// what it gets too, as far as it keeps it once its roster is cut to the
 	// limit (a player it must release it can't sell), but of what it gets
 	// from another team only its picks (boughtAtUse; a drafted prospect is
-	// priced whole).
+	// priced whole - the draft goes by the share of it a team can be sure of,
+	// sureWorthNow).
 	dealWorthNow(
+		tid: number,
+		partner: number,
+		out: Holdings,
+		inn: Holdings,
+		h = this.heldNow(tid),
+	) {
+		const { goal, got, given, flip } = this.dealPartsNow(
+			tid,
+			partner,
+			out,
+			inn,
+			h,
+		);
+		return goal + got - given - flip;
+	}
+
+	// The same, its parts: the team's goal, the premiums on what it gets and
+	// gives, and the cost of flipping.
+	dealPartsNow(
 		tid: number,
 		partner: number,
 		out: Holdings,
@@ -1083,7 +1124,7 @@ export class SmartView {
 	) {
 		const after = this.swappedFrom(h, out, inn);
 		const gone = tradedAwayCount(out.players);
-		const dG = this.value(tid, after, [], gone) - this.value(tid, h);
+		const goal = this.value(tid, after, [], gone) - this.value(tid, h);
 		const [cut] = this.afterCuts(tid, after, [], gone);
 		const kept = new Set(cut.players);
 		const keptIn = {
@@ -1094,12 +1135,39 @@ export class SmartView {
 			picks: inn.picks,
 		};
 		const not = [tid, partner];
-		return (
-			dG +
-			this.premiumNow(tid, keptIn, not, h) -
-			this.premiumNow(tid, out, not, h) -
-			smartSettings.flipCost * flipsIn(tid, out.players, inn.players)
+		return {
+			goal,
+			got: this.premiumNow(tid, keptIn, not, h),
+			given: this.premiumNow(tid, out, not, h),
+			flip: smartSettings.flipCost * flipsIn(tid, out.players, inn.players),
+		};
+	}
+
+	// What a deal gains a team counting on no more of the market's prices than
+	// it can be sure of getting (smartSettings.premiumRealized): what it gets
+	// past what it gives in price, past their use to it, at that share - and
+	// what it gives up in price, in full.
+	sureWorthNow(
+		tid: number,
+		partner: number,
+		out: Holdings,
+		inn: Holdings,
+		h = this.heldNow(tid),
+	) {
+		const { goal, got, given, flip } = this.dealPartsNow(
+			tid,
+			partner,
+			out,
+			inn,
+			h,
 		);
+		const net = got - given;
+		return goal + (net > 0 ? smartSettings.premiumRealized * net : net) - flip;
+	}
+
+	async sureWorth(tid: number, partner: number, out: Holdings, inn: Holdings) {
+		await this.dealWorth(tid, partner, out, inn);
+		return this.sureWorthNow(tid, partner, out, inn);
 	}
 
 	// What the market would pay for a package past its use to the team
@@ -1112,6 +1180,37 @@ export class SmartView {
 	// priced at 0.67 titles against 0.03 to PHO, and no offer was enough;
 	// in League 6, Cam Reddish (none) turned down four players for a price
 	// of 0.25 against 0.004, and Mudiay (0.01) D'Angelo Russell.
+	// A package's market price, as premiumNow counts what a team gives: its
+	// price whole - or, where no keen team could take all of it under the
+	// trade rules, piece by piece, each at its own price, or at its use to
+	// the team where nobody could take that either. Whole, a first sent with
+	// salary nobody else could absorb had no price, and its team gave it at
+	// its bare use: in League 12 runs Dallas a 2024 first (priced 0.31, of use
+	// 0.02 to it) with two players on the minimum for Aaron Nesmith (42/58),
+	// Chicago two firsts (0.38 each) with Jabari Brown for Marvin Bagley -
+	// and a young star sent with such a contract would have gone the same way.
+	packagePriceNow(
+		tid: number,
+		x: Holdings,
+		not: readonly number[],
+		h = this.heldNow(tid),
+	) {
+		const price = this.priceNow(x, not);
+		if (price > -Infinity || x.players.length + x.picks.length <= 1) {
+			return price;
+		}
+		let sum = 0;
+		const pieces: Holdings[] = [
+			...x.players.map((p) => ({ players: [p], picks: [] })),
+			...x.picks.map((dp) => ({ players: [], picks: [dp] })),
+		];
+		for (const one of pieces) {
+			const each = this.priceNow(one, not);
+			sum += each > -Infinity ? each : this.useOfNow(tid, one, h);
+		}
+		return sum;
+	}
+
 	private premiumNow(
 		tid: number,
 		a: Holdings,
@@ -1119,7 +1218,10 @@ export class SmartView {
 		h: Holdings,
 	) {
 		const over = (x: Holdings) =>
-			Math.max(0, this.priceNow(x, not) - this.useOfNow(tid, x, h));
+			Math.max(
+				0,
+				this.packagePriceNow(tid, x, not, h) - this.useOfNow(tid, x, h),
+			);
 		const whole = over(a);
 		if (!(whole > 0)) {
 			return 0;

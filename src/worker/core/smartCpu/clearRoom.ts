@@ -27,6 +27,17 @@ import { tradedAwayCount, type Holdings, type SmartView } from "./worth.ts";
 // it does. Taking salary for nothing, teams handed the free agent the room
 // was for to the team they took it from - League 7: LAL took a $16.3M dump
 // and UTA signed Tripp with the room, where LAL could have paid him itself.
+//
+// Each side must also clear its margin of error, as a trade's must
+// (marketSettings.margins): the clearer's gain past its best signing
+// without trading by more than its read of everyone who moves - the players
+// it sends and the free agent - could be off; the taker's by more than its
+// read of what it takes. In League 12 (2010-18), of 28 rooms cleared 19
+// signed clearly better than they sent, but six swapped like for like and
+// paid a second to do it - Minnesota Al Jefferson (11.3 WS the next three
+// seasons) for Nenê (9.8), Detroit Gerald Wallace (13.0) for Peja
+// Stojaković at 36 (11.9) - and Philadelphia paid a first and three seconds
+// for Corey Brewer (2026-11-19).
 
 export const clearRoomSettings = {
 	on: true,
@@ -40,6 +51,27 @@ export const clearRoomSettings = {
 	// Teams with room it asks to take them.
 	partners: 8,
 };
+
+// Whether clearing room is worth it to the team: what the trade and the
+// signing gain it past its best signing without trading, by more than the
+// smallest gain worth a deal and its margin of error on everyone who moves.
+export const clearerGains = (gain: number, bestNet: number, margin: number) =>
+	gain > Math.max(bestNet, 0) + Math.max(marketSettings.minGain, margin);
+
+// Whether the team taking the salary gains enough: past its own margin of
+// error on what it takes - counting no more of the price of the picks thrown
+// in than it can be sure of getting (`sure`: SmartView.sureWorthNow) - and
+// its share of what the deal makes past the clearer's best signing without
+// it (fairToSeller).
+export const takerGains = (
+	partnerGain: number,
+	sure: number,
+	margin: number,
+	clearerGain: number,
+) =>
+	partnerGain > marketSettings.minGain &&
+	sure > Math.max(marketSettings.minGain, margin) &&
+	fairToSeller(partnerGain, clearerGain);
 
 type Plan = {
 	p: Player;
@@ -174,8 +206,11 @@ export const roomToSign = (
 					const gain =
 						view.value(tid, after, [], tradedAwayCount(players)) -
 						view.value(tid, h);
+					const margin = marketSettings.margins
+						? view.marginNow(tid, give, { players: [signed], picks: [] })
+						: 0;
 					if (
-						!(gain > Math.max(bestNet, 0) + marketSettings.minGain) ||
+						!clearerGains(gain, bestNet, margin) ||
 						(best && gain <= best.gain)
 					) {
 						// More sweeteners only cost it more.
@@ -183,11 +218,19 @@ export const roomToSign = (
 					}
 					for (const partner of takers) {
 						const partnerGain = await view.dealWorth(partner, tid, none, give);
-						// Its share of what the deal makes past the clearer's best
-						// signing without it.
+						const partnerMargin = marketSettings.margins
+							? view.marginNow(partner, none, give)
+							: 0;
+						const partnerSure = marketSettings.margins
+							? view.sureWorthNow(partner, tid, none, give)
+							: partnerGain;
 						if (
-							partnerGain > marketSettings.minGain &&
-							fairToSeller(partnerGain, gain - Math.max(bestNet, 0))
+							takerGains(
+								partnerGain,
+								partnerSure,
+								partnerMargin,
+								gain - Math.max(bestNet, 0),
+							)
 						) {
 							best = { p, partner, give, gain, partnerGain };
 							break dealing;

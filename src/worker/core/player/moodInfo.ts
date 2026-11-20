@@ -184,6 +184,10 @@ const moodInfo = async (
 		probWilling,
 		willing,
 		contractAmount,
+		// His mood in all, for forecasting it at another time (the smart CPU's
+		// re-signing forecast): probWilling, where no rule settles it, is
+		// 1 / (1 + exp(-0.7 sumAndStuff)).
+		sumAndStuff,
 	};
 };
 
