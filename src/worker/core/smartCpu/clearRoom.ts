@@ -158,16 +158,25 @@ export const roomToSign = (
 		const tradable = h.players.filter(
 			(p) => !isUntradable(p).untradable && contractOf(p).amount > 0,
 		);
-		const uses = new Map(view.usesOf(tid, h));
-		if (clearRoomSettings.atPrice) {
-			for (const p of tradable) {
-				const one = { players: [p], picks: [] };
-				const price = await view.price(one, [tid]);
-				if (price > uses.get(p.pid)!) {
-					uses.set(p.pid, price);
+		// What each would cost it to send, priced only once a free agent is
+		// worth clearing for: priced for every team every free agency day, it
+		// tripled clearing room's time (League 12, 14 s to 50 s a summer).
+		let costs: Map<number, number> | undefined;
+		const costsOf = async () => {
+			if (!costs) {
+				costs = new Map(view.usesOf(tid, h));
+				if (clearRoomSettings.atPrice) {
+					for (const p of tradable) {
+						const one = { players: [p], picks: [] };
+						const price = await view.price(one, [tid]);
+						if (price > costs.get(p.pid)!) {
+							costs.set(p.pid, price);
+						}
+					}
 				}
 			}
-		}
+			return costs;
+		};
 		const partners: number[] = [];
 		for (const t of await idb.cache.teams.getAll()) {
 			if (t.disabled || t.tid === tid || view.humans.has(t.tid)) {
@@ -207,7 +216,7 @@ export const roomToSign = (
 			// Its picks ranked by what they fetch (pickFloorNow), as a trade's
 			// are: the market's tables first.
 			await view.prime();
-			for (const players of salarySets(tradable, uses, need)) {
+			for (const players of salarySets(tradable, await costsOf(), need)) {
 				const sent = salaryOf(players);
 				// Cheapest picks first, as sweeteners if the taker wants them.
 				const picks: DraftPick[] = [...h.picks]
@@ -242,13 +251,13 @@ export const roomToSign = (
 						}
 						for (const back of backs) {
 							const inn = { players: [signed], picks: back.picks };
-							// What the taker gains, its prices read first.
-							const partnerGain = await view.dealWorth(
-								partner,
-								tid,
-								back,
-								give,
-							);
+							// Whether it gains first, its prices read: the taker's whole
+							// worth only for what it would make (four times over for
+							// every partner, it tripled clearing room's time).
+							await view.price(give, [tid, partner]);
+							if (back.picks.length > 0) {
+								await view.price(back, [tid, partner]);
+							}
 							const gain = clearRoomSettings.atPrice
 								? view.sureWorthNow(tid, partner, give, inn)
 								: view.value(
@@ -267,6 +276,12 @@ export const roomToSign = (
 								continue;
 							}
 							ownBar = true;
+							const partnerGain = await view.dealWorth(
+								partner,
+								tid,
+								back,
+								give,
+							);
 							const partnerMargin = marketSettings.margins
 								? view.marginNow(partner, back, give)
 								: 0;

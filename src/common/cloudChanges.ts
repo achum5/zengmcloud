@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 407,
+		date: "2026-11-20",
+		text: "Smart CPU: the offseason advances faster. The CPU trade market no longer meets as the draft opens or right after it (it hardly ever made a deal there), and teams clearing cap room in free agency work it out about twice as fast. On a long trade market, the phone in charge of simming keeps the league marked busy, so another phone can't start the same step.",
+	},
+	{
 		n: 406,
 		date: "2026-11-20",
 		text: "League setup and Settings: on a phone the page no longer slides sideways. The Filter settings box sits on its own line above the buttons.",

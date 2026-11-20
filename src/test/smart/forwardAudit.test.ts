@@ -44,6 +44,13 @@ test.skipIf(!env.FA_LEAGUE)(
 				await import("../../worker/core/smartCpu/clearRoom.ts");
 			clearRoomSettings.atPrice = false;
 		}
+		// FA_GAMES_BETWEEN=<n>: the market meets every n games a team on
+		// vanilla's rules, not marketSettings.vanillaGamesBetween's.
+		if (env.FA_GAMES_BETWEEN) {
+			const { marketSettings } =
+				await import("../../worker/core/smartCpu/market.ts");
+			marketSettings.vanillaGamesBetween = Number(env.FA_GAMES_BETWEEN);
+		}
 		const { smartDealWatchers } =
 			await import("../../worker/core/smartCpu/market.ts");
 		const { smartDraftWatchers } =

@@ -1540,7 +1540,16 @@ export class SmartView {
 			}
 		}
 		lap("offer: greedy", m2);
+		// Its full worth first: most offers fail there (172 of 299 at a moment
+		// of the owner's League 13), and the trade rules' check reads the
+		// database.
 		const m3 = mark();
+		const inn = offer;
+		if ((await this.dealWorth(buyer, seller, inn, out)) <= 0) {
+			offerStats.buyerSaysNo += 1;
+			lap("offer: checks", m3);
+			return undefined;
+		}
 		const legal = await summary([
 			{
 				tid: buyer,
@@ -1557,14 +1566,8 @@ export class SmartView {
 				dpidsExcluded: [],
 			},
 		]);
-		const inn = offer;
 		if (legal.warning) {
 			offerStats.illegal += 1;
-			lap("offer: checks", m3);
-			return undefined;
-		}
-		if ((await this.dealWorth(buyer, seller, inn, out)) <= 0) {
-			offerStats.buyerSaysNo += 1;
 			lap("offer: checks", m3);
 			return undefined;
 		}

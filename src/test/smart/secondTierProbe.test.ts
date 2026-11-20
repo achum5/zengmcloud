@@ -64,8 +64,37 @@ test.skipIf(!env.ST_LEAGUE)(
 				`MADE ${who(d.buyer)} gets [${d.out.players.map(name).join("; ")}] from ${who(d.seller)} for [${[...d.offer.players, ...d.offer.picks].map(name).join("; ")}] | buyer +${d.buyerGain.toFixed(4)} seller +${d.sellerGain.toFixed(4)}`,
 			);
 		});
+		// ST_PROFILE=<file>: the moment's CPU profile, for chrome://inspect.
+		const inspector = env.ST_PROFILE
+			? await importNode("node:inspector")
+			: null;
+		const session = inspector ? new inspector.Session() : null;
+		const post = (method: string, params?: object) =>
+			new Promise<any>((resolve, reject) =>
+				session.post(method, params ?? {}, (err: any, res: any) =>
+					err ? reject(err) : resolve(res),
+				),
+			);
+		if (session) {
+			session.connect();
+			await post("Profiler.enable");
+			await post("Profiler.setSamplingInterval", { interval: 1000 });
+			await post("Profiler.start");
+		}
 		const t0 = Date.now();
 		await market.marketMoment();
+		if (session) {
+			const { profile } = await post("Profiler.stop");
+			fs.writeFileSync(env.ST_PROFILE!, JSON.stringify(profile));
+		}
+		const { smartClock } = await import("../../worker/core/smartCpu/clock.ts");
+		log(
+			Object.entries(smartClock)
+				.filter(([k]) => !k.includes("@"))
+				.sort((a, b) => b[1].ms - a[1].ms)
+				.map(([k, v]) => `  ${k}: ${(v.ms / 1000).toFixed(1)}s in ${v.n}`)
+				.join("\n"),
+		);
 		log(
 			`season ${g.get("season")} phase ${g.get("phase")}: ${((Date.now() - t0) / 1000).toFixed(0)} s; ${JSON.stringify(market.marketStats)}; offers ${JSON.stringify((await import("../../worker/core/smartCpu/worth.ts")).offerStats)}`,
 		);

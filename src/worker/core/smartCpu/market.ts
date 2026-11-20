@@ -270,6 +270,7 @@ export const candidates = async (
 	// six keenest buying, five teams made 85% of the purchases).
 	if (marketSettings.anyBuyer) {
 		for (const c of chosen) {
+			await holdRoomForAdvance();
 			const wants: { k: number; want: number }[] = [];
 			for (const k of cpu) {
 				if (k !== c.seller && !dealt.has(k)) {
@@ -409,6 +410,10 @@ export const dealsNow = async (
 	onShopped?.(all);
 	marketStats.candidates += all.length;
 	for (const c of all) {
+		// A moment can run for minutes on a phone: the room's busy mark
+		// renewed as it goes, not only as it starts (a no-op while the mark
+		// has more than half its time left).
+		await holdRoomForAdvance();
 		const out = one(c.p);
 		const real = await timed("market: offers", () =>
 			view.bestRealOffer(
@@ -572,6 +577,7 @@ const marketMomentNow = async () => {
 	const priced: SmartDeal[] = [];
 	if (marketSettings.buyersChoose) {
 		for (const found of open) {
+			await holdRoomForAdvance();
 			const offer = await trimDeal(view, found);
 			priced.push({
 				...found,
@@ -726,9 +732,11 @@ export const smartTradeDay = async () => {
 	return marketMoment();
 };
 
+// The offseason phases the market meets as they open. Not the draft or
+// right after it: in League 12 played on six seasons twice (2026-11-20) each
+// made one or two deals in all, while each moment held the phase change for a
+// minute - more on a phone - with the deals open then made a phase later.
 const WINDOW_PHASES: readonly number[] = [
-	PHASE.DRAFT,
-	PHASE.AFTER_DRAFT,
 	PHASE.RESIGN_PLAYERS,
 	PHASE.PRESEASON,
 ];

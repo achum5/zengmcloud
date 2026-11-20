@@ -2085,3 +2085,28 @@ teams for nothing in both (Durant again at 70, Marcus Smart at 75), and teams
 4th to 8th still rarely buy: with one or two teams holding most of the title
 odds, a role player moves a 4th-best team's odds by less than a deal must
 gain (opening a moment's market to every team changed nothing for them).
+
+### Phase changes, timed (2026-11-20)
+
+The owner: some phase changes are "sooo heavy". `phaseTimesProbe` plays a
+league file through a season, each step timed and split by the smart CPU's
+clock. From the 2010 preseason of the owner's League 25, on a busy machine:
+into the draft 37 s, the draft 67 s (the after-draft window's 34 s in it),
+into re-signing 41 s, free agency 164 s, every in-season week about 55 s and
+the deadline's week 130 s - nearly all of it the market, 35 to 60 s a moment.
+A moment's profile: team strengths (`teamPoints`, `fillRest`, `byPlace`,
+synergy) about a third, the garbage collector a fifth; 172 of its 299
+offers were turned down by their own buyer at the last check.
+
+- The market no longer meets as the draft opens or right after it
+  (`WINDOW_PHASES`): in League 12 played on six seasons twice those windows
+  made one or two deals each in all.
+- An offer's buyer is asked whether it still gains before the trade rules
+  are read.
+- Clearing room asks the taking team for its worth only for a trade the
+  clearing team would make, and prices what it would send only once a free
+  agent is worth clearing for: counting players sent at their price had made
+  it three times slower (League 12's free agency, 14 s to 47 s; now 23 s).
+- A moment renews the room's busy mark as it goes, not only as it starts: a
+  phone in charge of simming can spend minutes in one, and a mark that ran
+  out let another device run the same step.
