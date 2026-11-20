@@ -208,9 +208,21 @@ test(
 				`${label(star!)} for ${theirs.map(label).join(" + ")}`,
 				v.gain,
 			);
-			if (v.gain > 0) {
+			// Taken, it must be for the players themselves - its own goal up -
+			// with the prices of what it gets no more than of what it gives
+			// (value for value). A team out of the race may sell a 28-year-old
+			// 64 for a 21-year-old 56/72 and a 19-year-old 36/68 because it
+			// would rather have them (its goal +0.048, the prices -0.036 net),
+			// as it would sell him with his deal ending.
+			const parts = view.dealPartsNow(
+				tid,
+				buyer,
+				{ players: [star!], picks: [] },
+				{ players: theirs, picks: [] },
+			);
+			if (v.gain > 0 && (!(parts.goal > 0) || parts.got > parts.given)) {
 				yes.push(
-					`${label(star!)} for ${theirs.map(label).join(" + ")}: ${v.gain}`,
+					`${label(star!)} for ${theirs.map(label).join(" + ")}: ${v.gain} (goal ${parts.goal}, prices got ${parts.got} given ${parts.given})`,
 				);
 			}
 		}

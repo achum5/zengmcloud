@@ -2146,3 +2146,64 @@ Played on twice more with it, against where those picks then landed:
 Trades otherwise as before (market deals 55 and 37 against 46 and 50, the
 best three teams buying 11 of 15 both times); firsts paid for players 25 or
 older rated under 55, none in either run against one in each before.
+
+## Random-players leagues: stars that never moved (2026-11-20)
+
+The owner: "it feels as tho buyers aren't quite making the splashes that
+you'd hope for ... maybe it's best if you're testing in random players
+leagues". Random-players leagues with the owner's settings (rookies can
+refuse), each played four seasons from the start (`forwardAudit`
+FA_LEAGUE=arena:<n>, FA_STARS=30: every time one of the league's 30 best
+players was shopped, what came of it and the seller's side of it in parts).
+
+In the first, every best real offer for a top-30 player was worth -0.1 to
+-1.5 of a title to his team. Washington's 23-year-old 68 (0.16 of a title
+of use to it, a price of 0.82) for two young players and two firsts priced
+0.71 together - 0.38 of use to it, its own goal up 0.05 - was -0.57: what
+it gave counted at least at his price, the players it got at their use to
+it alone (`boughtAtUse`), so a team out of the race could sell its star
+only for picks, and contenders' picks land late. The buyer would have
+gained 1.5.
+
+- **Value for value** (`smartSettings.valueForValue`): the players it gets
+  count at their price as far as that makes up for the price of what it
+  gives - never past it, so no deal is made on the gap between players'
+  prices and their use alone (what `boughtAtUse` was for).
+- **What it gets priced as the team will stand** (`gotAsItWillStand`): past
+  its use to the team once what it gives is gone, not beside it. Beside it,
+  a package that replaced a star read as of more use than it would be, and
+  its price past that as less: New York's 24-year-old 67 for a package at
+  his price read -0.055 with its own goal up 0.055.
+- **Six pieces** (`offerSize` 6, `offerPicks` 6): the best real offers for
+  top-30 players came to a median 69% of their price, 99 of 227 turned
+  down at four pieces.
+
+Three leagues, four seasons each, before and after:
+
+| three random-players leagues, four seasons   | before | after   |
+| -------------------------------------------- | ------ | ------- |
+| trades                                       | 134    | 130     |
+| top-30 players traded                        | 7      | 14      |
+| ... buyer better the next season             | 2 of 5 | 8 of 12 |
+| firsts paid for players 27+ rated under 60   | 35     | 16      |
+| players 58+ leaving losing teams for nothing | 29     | 27      |
+| players bought back within a year            | 1      | 0       |
+| champions, different                         | 7      | 8       |
+| a market moment, idle desktop                | 48 s   | 67 s    |
+
+Pittsburgh bought the league's third-best player (28, 74) from a 31-win
+team for a package and won the title; contenders bought 26- to 29-year-old
+69s from losing teams for two or three rotation players and a first.
+Without the six pieces (value for value and as it will stand alone), two
+of those leagues moved 6 top-30 players to 5 and paid 21 firsts for older
+role players to 27; at six, 12 and 13.
+
+Tried and left out: the margin of error at half a deviation moved 20
+top-30 players in two leagues to 12, but with like-for-like star swaps (a
+69 for a 69, then the first 69 bought back with two firsts; 67s swapped
+twice) and players traded twice within a year 16 and 18 to 13 and 5 - the
+margin stays the owner's (2026-11-19); counting a star's price given up at
+the 70% real offers reach, no better. Each team's chance of re-signing
+there still lets about ten 58+ players leave losing teams a league's four
+seasons, and two leagues grew dynasties (Portland, Baltimore) before and
+after.

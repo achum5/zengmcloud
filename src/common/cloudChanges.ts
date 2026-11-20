@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 411,
+		date: "2026-11-20",
+		text: "CPU trades: contenders can now land real star trades. A team selling a star counts the players it gets back at what they're worth on the market, not just to itself, and a buyer can put up to six pieces in an offer. In test leagues twice as many of the league's best players changed teams, and half as many firsts were paid for older role players. The CPU trade market takes a little longer to think each time it meets.",
+	},
+	{
 		n: 410,
 		date: "2026-11-20",
 		text: "Smart CPU: each trade market round runs a little faster. The trades are the same; the CPU just stops redoing work it had already done while trimming offers.",

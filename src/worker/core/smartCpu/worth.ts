@@ -57,9 +57,17 @@ export const smartSettings = {
 	keenest: 6,
 	// Teams asked for a real offer, and the most players in one.
 	buyers: 4,
-	offerSize: 4,
+	// Six: for the league's best players four pieces seldom paid - in
+	// random-players leagues the best real offer for a top-30 player came to
+	// a median 69% of his price, 99 of 227 turned down at four pieces. With
+	// value for value and what it gets priced as the team will stand
+	// (2026-11-20), two leagues played four seasons moved 12 top-30 players at
+	// six, 6 at four, 5 before; firsts paid for players 27 or older rated
+	// under 60, 13, 21 and 27. A market moment takes 40% longer (48 s to 67 s
+	// on a desktop).
+	offerSize: 6,
 	// A buyer's nearest picks considered for an offer.
-	offerPicks: 4,
+	offerPicks: 6,
 	// Players of a buyer's considered for an offer, best first.
 	offerCandidates: 8,
 	// Players past offerSize a buyer may add to match salaries.
@@ -128,6 +136,22 @@ export const smartSettings = {
 	// and 10, the seller's own goal moved -0.02 to +0.02 of a title and the
 	// rest of its gain was the price of what it got (docs/smart-cpu.md).
 	boughtAtUse: true,
+	// VALUE FOR VALUE: and the players it gets count at their price as far as
+	// that makes up for the price of what it gives - never past it, so no
+	// deal is made on the gap between players' prices and their use alone.
+	// At their use only, a team out of the race could sell its star only for
+	// picks: in random-players leagues every best real offer for a top-30
+	// player was worth -0.1 to -1.5 of a title to his team - Washington's 23-
+	// year-old 68 (0.16 of use to it, a price of 0.82) for two young players
+	// and two firsts priced 0.71 together (0.38 of use to it, its own goal up
+	// 0.05) was -0.57, the players' price counted at nothing - while the buyer
+	// would have gained 1.5 (2026-11-20).
+	valueForValue: true,
+	// What a team gets priced past its use to the team as it will stand once
+	// it has given what it gives - in its place, not beside it. Beside it, a
+	// package that replaced a star read as of more use to the seller than it
+	// would be, and so its price past that as less.
+	gotAsItWillStand: true,
 	// What a deal gains a team in the market's prices - what it gets past
 	// its use to it, past what it gives - counts toward the deal clearing its
 	// margin of error only at this share (SmartView.sureWorthNow); a price
@@ -1139,10 +1163,34 @@ export class SmartView {
 			picks: inn.picks,
 		};
 		const not = [tid, partner];
+		const given = this.premiumNow(tid, out, not, h);
+		// What it gets is priced past its use to the team as it will stand -
+		// in place of what it gives, not beside it (gotAsItWillStand).
+		const base = smartSettings.gotAsItWillStand
+			? this.swappedFrom(h, out, { players: [], picks: [] })
+			: h;
+		let got = this.premiumNow(tid, keptIn, not, base);
+		if (
+			smartSettings.valueForValue &&
+			smartSettings.boughtAtUse &&
+			partner >= 0 &&
+			given > got
+		) {
+			const players = inn.players.filter((p) => kept.has(p));
+			if (players.length > 0) {
+				const all = this.premiumNow(
+					tid,
+					{ players, picks: inn.picks },
+					not,
+					base,
+				);
+				got += Math.min(Math.max(0, all - got), given - got);
+			}
+		}
 		return {
 			goal,
-			got: this.premiumNow(tid, keptIn, not, h),
-			given: this.premiumNow(tid, out, not, h),
+			got,
+			given,
 			flip: smartSettings.flipCost * flipsIn(tid, out.players, inn.players),
 		};
 	}
@@ -1375,13 +1423,32 @@ export class SmartView {
 		const keen = await this.keenest();
 		await this.classPrices();
 		await this.holdingsOf(seller);
+		const sellerHeld = this.heldNow(seller);
+		const givenOut =
+			smartSettings.valueForValue && smartSettings.boughtAtUse
+				? this.premiumNow(seller, out, [seller, buyer], sellerHeld)
+				: 0;
 		const toSeller = async (a: Holdings) => {
 			for (const tid of [seller, ...keen]) {
 				if (tid === seller || tid !== buyer) {
 					await ensureRetention(this.outlook, a.players, tid);
 				}
 			}
-			return this.dealWorthNow(seller, buyer, none, a);
+			// And value for value: a player's price past his use to it, as far
+			// as it makes up for the price it gives (the pieces' prices are the
+			// same whoever they are offered for; the deal's whole worth for
+			// each piece was half again a moment's time).
+			const worth = this.dealWorthNow(seller, buyer, none, a);
+			if (givenOut > 0 && a.players.length > 0) {
+				const premium = this.premiumNow(
+					seller,
+					{ players: a.players, picks: [] },
+					[seller, buyer],
+					sellerHeld,
+				);
+				return worth + Math.min(premium, givenOut);
+			}
+			return worth;
 		};
 		const scored: { x: Player | DraftPick; v: number }[] = [];
 		for (const p of held.players.filter(allowed)) {
