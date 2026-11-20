@@ -101,6 +101,64 @@ test.skipIf(!env.FA_LEAGUE)(
 				`DEAL ${g.get("season")} ph${g.get("phase")}: ${abbrev.get(deal.seller)} (${title(view, deal.seller)}%) gives [${[...deal.out.players, ...deal.out.picks].map((x: any) => named(x, deal.seller, view)).join("; ")}] to ${abbrev.get(deal.buyer)} (${title(view, deal.buyer)}%) for [${[...deal.offer.players, ...deal.offer.picks].map((x: any) => named(x, deal.buyer, view)).join("; ")}] | ${abbrev.get(deal.seller)} +${deal.sellerGain.toFixed(4)} (${split(view, deal.seller, deal.buyer, deal.offer, deal.out, deal.sellerGain)}) | ${abbrev.get(deal.buyer)} +${deal.buyerGain.toFixed(4)} (${split(view, deal.buyer, deal.seller, deal.out, deal.offer, deal.buyerGain)})`,
 			);
 		});
+		// FA_OFFERS=<names> from FA_OFFERS_FROM (a season): at each market
+		// moment while each is still with his team, the best real offer for
+		// him from each of the eight teams keenest on him - what it would give,
+		// its worth to his team, what the buyer would gain.
+		const watched = (env.FA_OFFERS ?? "").split(",").filter(Boolean);
+		const { smartMomentWatchers } =
+			await import("../../worker/core/smartCpu/market.ts");
+		if (watched.length > 0) {
+			smartMomentWatchers.push(async (_open: any, view: any) => {
+				if (g.get("season") < Number(env.FA_OFFERS_FROM ?? 0)) {
+					return;
+				}
+				const all = await idb.cache.players.indexGetAll("playersByTid", [
+					0,
+					Infinity,
+				]);
+				for (const p of all as any[]) {
+					if (!watched.includes(`${p.firstName} ${p.lastName}`)) {
+						continue;
+					}
+					const seller = p.tid;
+					const out = { players: [p], picks: [] };
+					const wants: { tid: number; want: number }[] = [];
+					for (const t of teams) {
+						if (t.tid !== seller && !t.disabled) {
+							wants.push({ tid: t.tid, want: await view.useOf(t.tid, out) });
+						}
+					}
+					wants.sort((a, b) => b.want - a.want || a.tid - b.tid);
+					log(
+						`OFFERS ${g.get("season")} ph${g.get("phase")} for ${named(p, seller, view)} at ${abbrev.get(seller)} (price ${(await view.price(out, [seller])).toFixed(3)}, use ${view.useOfNow(seller, out).toFixed(3)})`,
+					);
+					for (const { tid, want } of wants.slice(0, 8)) {
+						const real = await view.bestRealOffer(
+							seller,
+							out,
+							-1,
+							new Set(),
+							1,
+							[tid],
+						);
+						if (!real) {
+							log(`  ${abbrev.get(tid)} wants ${want.toFixed(3)}: no offer`);
+							continue;
+						}
+						const buyerGain = await view.dealWorth(
+							tid,
+							seller,
+							real.offer,
+							out,
+						);
+						log(
+							`  ${abbrev.get(tid)} wants ${want.toFixed(3)}: [${[...real.offer.players, ...real.offer.picks].map((x: any) => named(x)).join("; ")}] worth ${real.worth.toFixed(3)} to ${abbrev.get(seller)} (sure ${view.sureWorthNow(seller, tid, out, real.offer).toFixed(3)}), buyer +${buyerGain.toFixed(3)}`,
+						);
+					}
+				}
+			});
+		}
 		let board = new Map<number, number>();
 		let boardFor = -1;
 		let pickNo = 0;
