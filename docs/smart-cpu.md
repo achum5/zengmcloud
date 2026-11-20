@@ -2207,3 +2207,37 @@ the 70% real offers reach, no better. Each team's chance of re-signing
 there still lets about ten 58+ players leave losing teams a league's four
 seasons, and two leagues grew dynasties (Portland, Baltimore) before and
 after.
+
+### A pick's upside, measured (2026-11-20)
+
+The four random-players leagues played on the shipped build still paid
+firsts for older role players - 37 in four leagues' four seasons: the
+reigning champion Vancouver three firsts and a 46 for a 37-year-old 54, New
+York two for a 37-year-old 53, a 33-49 Houston a first for a 33-year-old 45.
+Contenders' own near firsts land late, and a late pick's player was priced
+as two halves of what he may become, his chance of being a star averaged
+away (`outlookSettings.boom`, off while it was measured). The same four
+leagues played again with it on (`smartBoom`, with the smart CPU on
+vanilla's rules, where it was measured):
+
+| four random-players leagues, four seasons    | off | on  |
+| -------------------------------------------- | --- | --- |
+| trades                                       | 140 | 154 |
+| firsts paid for players 27+ rated under 60   | 37  | 23  |
+| top-30 players traded                        | 10  | 17  |
+| players 58+ leaving losing teams for nothing | 36  | 24  |
+| champions, different                         | 11  | 8   |
+
+No slower. One league's Toronto, 69-13 and champion twice with it off,
+won all four with it on after buying a 29-year-old 68 for seven players and
+a first - a dynasty to watch. Of the players who still leave losing teams
+for nothing, seven in ten had a deal both teams wanted that a margin of
+error stopped - most often the buyer's (a contender at 33-43% for a
+27-year-old 69 in his deal's last season: +0.03 to +0.06 against a margin of
+0.19).
+
+Both this and the ranked finish (above) now apply with the smart CPU only:
+realistic front offices fail their own checks with them (ranked, their
+trading block's bids for a team's best player held no picks; with the
+upside, a free agent who makes a team worse every season worth 0.00002 of a
+title).

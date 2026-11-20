@@ -14,7 +14,7 @@ import type {
 import { last } from "../../../common/utils.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers } from "../../util/index.ts";
-import { smartVanillaOn } from "./isOn.ts";
+import { smartBrainOn, smartVanillaOn } from "./isOn.ts";
 import { defaultGameAttributes } from "../../../common/defaultGameAttributes.ts";
 import { marketSalaries, pickSalaries, signingsWith } from "./payroll.ts";
 import { pickPlayer } from "./pickValue.ts";
@@ -807,8 +807,11 @@ export const outlookSettings = {
 	placeRegression: true,
 	// Where a pick's team finishes is drawn around where it is expected to
 	// finish and ranked against every other team's draw (rankedFinish):
-	// each place is some team's, once. Off, each team's finish is a bell
-	// curve of its own around where it is expected.
+	// each place is some team's, once - with the smart CPU (smartBrainOn),
+	// where it was measured. Off, and for realistic front offices, each
+	// team's finish is a bell curve of its own around where it is expected:
+	// ranked, their trading block's bids for a team's best player held no
+	// picks (2026-11-20).
 	rankedFinish: true,
 	// A player's re-sign chance is his chance of still being there after his
 	// contract, as measured (KEPT), not of taking his asking price.
@@ -966,8 +969,19 @@ export const outlookSettings = {
 	// become and the rest (BOOM_SHARE), not as two halves: a star's chance,
 	// which a better half averages away. In the owner's league picks 21-25
 	// became a 65 or better 11% of the time, 31-35 2% - and a first went for a
-	// second, three for a 48. Off while it is measured.
+	// second, three for a 48. Off for realistic front offices, whose own
+	// checks it fails (a free agent who makes a team worse every season worth
+	// 0.00002 of a title to it); on with the smart CPU on vanilla's rules
+	// (smartBoom).
 	boom: false,
+	// With the smart CPU on vanilla's rules (smartVanillaOn), where it was
+	// measured - 2026-11-20, four
+	// random-players leagues played four seasons each way - firsts paid for
+	// players 27 or older rated under 60, 37 off to 23 on; top-30 players
+	// traded 10 to 17; players 58+ leaving losing teams for nothing 36 to 24;
+	// no slower. Champions: 11 different off, 8 on (one league Toronto's four
+	// in a row, two off).
+	smartBoom: true,
 	// Money short of the league's minimum payroll is free only this season,
 	// once games are played: before then, or for seasons ahead, a team that
 	// reads itself short nearly always ends up past it (6% of arena teams
@@ -1073,7 +1087,15 @@ const outlookSettingFor = <
 	tid: number,
 	key: K,
 ): (typeof outlookSettings)[K] =>
-	teamOutlookSettings.get(tid)?.[key] ?? outlookSettings[key];
+	teamOutlookSettings.get(tid)?.[key] ??
+	(key === "boom"
+		? (boomNow() as (typeof outlookSettings)[K])
+		: outlookSettings[key]);
+
+// Whether picks and young players are priced with the boom split, league
+// wide (outlookSettings.boom, smartBoom).
+const boomNow = () =>
+	outlookSettings.boom || (outlookSettings.smartBoom && smartVanillaOn());
 
 // A player's chance of still being with his team the season after his
 // contract runs out, by his chance of taking its offer at his asking price
@@ -1493,9 +1515,7 @@ export const pickLineAt = (
 	}
 	// With the boom split, by the holder's own setting.
 	const boom =
-		holder === undefined
-			? outlookSettings.boom
-			: outlookSettingFor(holder, "boom");
+		holder === undefined ? boomNow() : outlookSettingFor(holder, "boom");
 	const boomKey = boom ? ":B" : "";
 	const fromClass = classPickAt(outlook, dp, y, boom);
 	if (fromClass !== undefined) {
@@ -3884,7 +3904,7 @@ export const buildOutlook = async ({
 		// Picks' lines worked out before then had nowhere to land.
 		base.pickYears = new WeakMap();
 		base.futurePicks.clear();
-		if (outlookSettings.rankedFinish) {
+		if (outlookSettings.rankedFinish && smartBrainOn()) {
 			base.rankField = rankFieldOf(base);
 			base.pickLines = new Map();
 		}

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 413,
+		date: "2026-11-20",
+		text: "CPU trades: teams now count a late first-round pick's real chance of turning into a good player, so contenders stop throwing firsts at older bench players. In test leagues that cut firsts paid for role players 27 or older by more than a third, while more of the league's best players changed teams and fewer good players walked away from losing teams for nothing.",
+	},
+	{
 		n: 412,
 		date: "2026-11-20",
 		text: "The 3D game is ready sooner: getting a game ready to watch in 3D now takes about 15-20% less time on iPhones and about 10% less on Android and computers. The games play out exactly the same as before.",
