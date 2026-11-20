@@ -53,6 +53,7 @@ test.skipIf(!env.FA_LEAGUE)(
 		}
 		const { smartDealWatchers, smartTraceWatchers } =
 			await import("../../worker/core/smartCpu/market.ts");
+		const contractEnd = (p: any) => contractOf(p).exp;
 		// FA_STARS=<n>: where every one of the league's n best players got to
 		// each time he was shopped, and what stopped him.
 		if (env.FA_STARS) {
@@ -76,7 +77,13 @@ test.skipIf(!env.FA_LEAGUE)(
 					rows.forEach((r, i) => rank.set(r.pid, i + 1));
 				}
 				const r = rank.get(t.p.pid);
-				if (r === undefined || r > top) {
+				// FA_EXPIRING=1: also every player rated 58 or more in the last
+				// season of his deal, wherever he ranks.
+				const expiring =
+					env.FA_EXPIRING &&
+					t.p.ratings.at(-1)!.ovr >= 58 &&
+					contractEnd(t.p) <= g.get("season");
+				if ((r === undefined || r > top) && !expiring) {
 					return;
 				}
 				const ab = (tid?: number) =>
@@ -97,7 +104,7 @@ test.skipIf(!env.FA_LEAGUE)(
 					parts = ` | seller: his use ${view.useOfNow(t.seller, one).toFixed(3)}, price ${view.priceNow(one, [t.seller, t.buyer]).toFixed(3)}; goal ${d.goal.toFixed(3)} premium got ${d.got.toFixed(3)} given ${d.given.toFixed(3)}; offer's use ${view.useOfNow(t.seller, t.offer).toFixed(3)} price ${view.priceNow(t.offer, [t.seller, t.buyer]).toFixed(3)}; buyer's use for him ${view.useOfNow(t.buyer, one).toFixed(3)}`;
 				}
 				log(
-					`STAR ${g.get("season")} ph${g.get("phase")} ${t.stage}: #${r} p${t.p.pid} ${g.get("season") - t.p.born.year}y ${t.p.ratings.at(-1)!.ovr} of ${ab(t.seller)}${title(t.seller)}${t.buyer !== undefined ? ` to ${ab(t.buyer)}${title(t.buyer)}` : ""}${t.buyers ? ` [buyers ${t.buyers.map(ab).join(",")}]` : ""}${t.sellerGain !== undefined ? ` seller ${t.sellerGain.toFixed(3)}` : ""}${t.buyerGain !== undefined ? ` buyer ${t.buyerGain.toFixed(3)}` : ""}${t.why ? ` | ${t.why}` : ""}${offer}${parts}`,
+					`${(r ?? 999) <= top ? "STAR" : "EXPIRING"} ${g.get("season")} ph${g.get("phase")} ${t.stage}: #${r} p${t.p.pid} ${g.get("season") - t.p.born.year}y ${t.p.ratings.at(-1)!.ovr} of ${ab(t.seller)}${title(t.seller)}${t.buyer !== undefined ? ` to ${ab(t.buyer)}${title(t.buyer)}` : ""}${t.buyers ? ` [buyers ${t.buyers.map(ab).join(",")}]` : ""}${t.sellerGain !== undefined ? ` seller ${t.sellerGain.toFixed(3)}` : ""}${t.buyerGain !== undefined ? ` buyer ${t.buyerGain.toFixed(3)}` : ""}${t.why ? ` | ${t.why}` : ""}${offer}${parts}`,
 				);
 			});
 		}
