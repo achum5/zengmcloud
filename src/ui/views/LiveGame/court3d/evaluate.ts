@@ -6377,6 +6377,9 @@ export const footTurn = (deg: number) => {
 			FOOT_EASE * Math.exp(-(a - (FOOT_TURN - FOOT_EASE)) / FOOT_EASE))
 	);
 };
+// (And with a turn of its own on top - a slide's feet turned out - no
+// further than this: past it, it goes round with him.)
+const FOOT_MOST = 50;
 
 // TURNING WHERE HE STANDS.
 //
@@ -7725,10 +7728,13 @@ const poseFor = (st: PlayerState): Pose => {
 		const turnAt = (i: 0 | 1, on: number) =>
 			(lk?.[i] ?? 0) + ((ff?.[i] ?? 0) - (lk?.[i] ?? 0)) * on;
 		// (On top of any turn of its own the move gives it - a slide's feet
-		// turned out - and no further round, the two together, than a leg
-		// turns: see footTurn.)
+		// turned out - and no further round, the two together, than
+		// FOOT_MOST. Not eased in: a foot down left pointing where it came
+		// down right up to it.)
 		const own = (base: number, turn: number) =>
-			base === 0 ? turn : footTurn(base + turn);
+			base === 0
+				? turn
+				: Math.max(-FOOT_MOST, Math.min(FOOT_MOST, base + turn));
 		p = {
 			...p,
 			footN: own(p.footN, turnAt(0, onN)),

@@ -994,8 +994,10 @@ type RunMode =
 // far apart his feet are, closed up (see "shuffle").
 const SLIDE_STRIDE = 1.8;
 export const SLIDE_NARROW = 0.2;
-// (And how far each foot is turned out - degrees.)
-const SLIDE_TOE = 14;
+// (And how far each foot is turned out - degrees: 14 caught on the
+// defender, a little less here so a foot down turned with his hips stays
+// short of how far a foot turns - see evaluate.ts FOOT_MOST.)
+const SLIDE_TOE = 10;
 // HOW HE RUNS - AND WALKS.
 //
 // The way a body really goes: each foot planted while it is down, going
