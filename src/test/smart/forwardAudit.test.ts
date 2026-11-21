@@ -170,6 +170,16 @@ test.skipIf(!env.FA_LEAGUE)(
 				`DEAL ${g.get("season")} ph${g.get("phase")}: ${abbrev.get(deal.seller)} (${title(view, deal.seller)}%) gives [${[...deal.out.players, ...deal.out.picks].map((x: any) => named(x, deal.seller, view)).join("; ")}] to ${abbrev.get(deal.buyer)} (${title(view, deal.buyer)}%) for [${[...deal.offer.players, ...deal.offer.picks].map((x: any) => named(x, deal.buyer, view)).join("; ")}] | ${abbrev.get(deal.seller)} +${deal.sellerGain.toFixed(4)} (${split(view, deal.seller, deal.buyer, deal.offer, deal.out, deal.sellerGain)}) | ${abbrev.get(deal.buyer)} +${deal.buyerGain.toFixed(4)} (${split(view, deal.buyer, deal.seller, deal.out, deal.offer, deal.buyerGain)})`,
 			);
 		});
+		// Every room cleared for a free agent: what went, at what use and
+		// price to the team clearing, what came back, whom it was for.
+		const { clearRoomWatchers } =
+			await import("../../worker/core/smartCpu/clearRoom.ts");
+		clearRoomWatchers.push((tid: number, plan: any, view: any) => {
+			const fa = plan.p;
+			log(
+				`CLEAR ${g.get("season")} ph${g.get("phase")}: ${abbrev.get(tid)} (${title(view, tid)}%) gives [${[...plan.give.players, ...plan.give.picks].map((x: any) => named(x, tid, view)).join("; ")}] to ${abbrev.get(plan.partner)} (${title(view, plan.partner)}%) for [${[...plan.back.players, ...plan.back.picks].map((x: any) => named(x, plan.partner, view)).join("; ")}], room for ${fa.firstName} ${fa.lastName} ${g.get("season") - fa.born.year}y ${fa.ratings.at(-1).ovr}/${fa.ratings.at(-1).pot} | ${abbrev.get(tid)} +${plan.gain.toFixed(4)} | ${abbrev.get(plan.partner)} +${plan.partnerGain.toFixed(4)} || ${each(view, tid, plan.partner, plan.give)}`,
+			);
+		});
 		// FA_OFFERS=<names> from FA_OFFERS_FROM (a season): at each market
 		// moment while each is still with his team, the best real offer for
 		// him from each of the eight teams keenest on him - what it would give,

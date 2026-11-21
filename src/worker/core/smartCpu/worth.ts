@@ -1367,17 +1367,51 @@ export class SmartView {
 			if (contractOf(p).exp > season) {
 				continue;
 			}
-			const stay = this.outlook.retention.get(retentionKey(p.pid, tid));
-			if (stay === undefined || stay >= 1) {
+			const kept = this.keptChanceNow(tid, p);
+			if (kept >= 1) {
 				continue;
 			}
 			const alone =
 				a.players.length === 1 && a.picks.length === 0
 					? whole
 					: over({ players: [p], picks: [] });
-			premium -= (1 - stay) * alone;
+			premium -= (1 - kept) * alone;
 		}
 		return Math.max(0, premium);
+	}
+
+	// A team's chance of still having a player once his contract runs out:
+	// his chance of being willing to re-sign with it, and whether it would
+	// re-sign him at his market salary itself, as its own outlook decides
+	// (letGo - each of his halves on its own, where his future is split). By
+	// his willingness alone, a team that would never pay his ask held out
+	// for a price it could not get after the deadline: in a random-players
+	// league Cincinnati turned down nine offers for a 25-year-old 69 on a
+	// rookie deal, counting him 89% kept, and he signed with St. Louis for
+	// $36.3M a year (2026-11-21).
+	keptChanceNow(tid: number, p: Player) {
+		const stay = this.outlook.retention.get(retentionKey(p.pid, tid)) ?? 1;
+		const own = this.holdings.get(tid);
+		const known = this.letGo.get(tid);
+		if (
+			!own ||
+			!known ||
+			known.sig !== own.sig ||
+			!own.h.players.some((x) => x.pid === p.pid)
+		) {
+			return stay;
+		}
+		const whole = known.known.decisions.get(`vet:${p.pid}`);
+		if (whole) {
+			return whole.gone ? 0 : stay;
+		}
+		const halves = [0, 1]
+			.map((half) => known.known.decisions.get(`vet:${p.pid}:${half}`))
+			.filter((d) => d !== undefined);
+		if (halves.length === 0) {
+			return stay;
+		}
+		return (stay * halves.filter((d) => !d.gone).length) / halves.length;
 	}
 
 	async dealWorth(tid: number, partner: number, out: Holdings, inn: Holdings) {
@@ -1867,14 +1901,23 @@ export class SmartView {
 		among?: readonly { tid: number; want: number }[],
 		// The market's test of a deal for a buyer (offerClears).
 		clears?: OfferClears,
+		// Only whether some team would beat this worth to the seller (a
+		// human's offer): asked no further than one that does.
+		beat?: number,
 	) {
 		const m0 = mark();
 		let bidders = among;
 		if (!bidders) {
+			// Each CPU team's want for it once it has sent back its salary.
+			await this.price(out, [seller]);
 			const wants = [];
 			for (const tid of this.outlook.teams.keys()) {
 				if (tid !== seller && !this.humans.has(tid) && !skip.has(tid)) {
-					wants.push({ tid, want: await this.useOf(tid, out) });
+					await ensureRetention(this.outlook, out.players, tid);
+					const m = this.matchedNow(tid, out);
+					if (m) {
+						wants.push({ tid, want: m.net });
+					}
 				}
 			}
 			bidders = wants.sort((a, b) => b.want - a.want || a.tid - b.tid);
@@ -1890,7 +1933,10 @@ export class SmartView {
 		// beat (the market trims its offer to about that).
 		let second = Number.NEGATIVE_INFINITY;
 		for (const { tid: buyer, want } of bidders) {
-			if (want - needs <= Math.max(0, second)) {
+			if (
+				want - needs <= Math.max(0, second) ||
+				(beat !== undefined && best && best.worth > beat)
+			) {
 				break;
 			}
 			if (
@@ -1941,7 +1987,15 @@ export class SmartView {
 		) {
 			return { worth, gain: worth };
 		}
-		const best = await this.bestRealOffer(tid, o, partner);
+		const best = await this.bestRealOffer(
+			tid,
+			o,
+			partner,
+			new Set(),
+			undefined,
+			undefined,
+			worth,
+		);
 		return {
 			worth,
 			best,

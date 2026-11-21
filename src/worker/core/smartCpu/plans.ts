@@ -76,7 +76,11 @@ export const deadlineNearness = (view: SmartView) => {
 };
 
 // A player his team must move before the deadline: in season, his deal
-// ending, his team not contending, and unlikely to re-sign with it.
+// ending, his team not contending, and unlikely to re-sign with it. (One
+// it wouldn't pay to keep it sells for what it can get - SmartView.
+// keptChanceNow - but isn't put first: counted among those that must move,
+// in three random-players leagues they cut players leaving for nothing 16
+// to 13 for 22% more trades, a season a fifth slower to play.)
 export const mustMove = (
 	view: SmartView,
 	plans: ReadonlyMap<number, Plan>,

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 419,
+		date: "2026-11-21",
+		text: "CPU trades: a team now knows which of its players it wouldn't pay to re-sign, and takes a fair offer for him before the deadline instead of holding out and watching him leave for nothing. In test leagues good players walking away from losing teams for nothing fell by almost two thirds. The CPU trade market also thinks a little faster, and answers your trade offers faster.",
+	},
+	{
 		n: 418,
 		date: "2026-11-21",
 		text: "CPU trades rebuilt to work like real front offices. Every team now sizes up its situation each time the trade market meets, scouts every player in the league, and puts up for trade anyone it would trade - starting with players about to leave in free agency, every time until the deadline. Each player goes to every team that could really use him, so a player lots of contenders want fetches what he's worth, and prices come from the whole league, not just the best teams. A first-round pick packaged with players nobody wants is now counted as the first it is. As the deadline nears, contenders take more risk to win now and losing teams move players before they walk. In test leagues more of the league's best players changed teams, buyers were better off for it, and titles were spread across more teams.",

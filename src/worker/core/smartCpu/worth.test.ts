@@ -206,6 +206,45 @@ test(
 );
 
 test(
+	"a player whose deal ends, that his team wouldn't re-sign, is sold for what he does for it now",
+	{ timeout: 600_000 },
+	async () => {
+		// Cincinnati turned down nine offers for a 25-year-old 69 it counted
+		// 89% kept - by his willingness alone - and would not pay his ask; he
+		// left for St. Louis. A team holds out for his price after his deal
+		// only as far as it would keep him.
+		const season = g.get("season");
+		const none = { players: [], picks: [] };
+		const bad: string[] = [];
+		let checked = 0;
+		for (const tid of tids) {
+			const partner = other(tid);
+			await view.holdingsOf(tid);
+			for (const p of view.heldNow(tid).players) {
+				if (contractOf(p).exp > season || isUntradable(p).untradable) {
+					continue;
+				}
+				const one = { players: [p], picks: [] };
+				await view.dealWorth(tid, partner, one, none);
+				const kept = view.keptChanceNow(tid, p);
+				const { given } = view.dealPartsNow(tid, partner, one, none);
+				const whole = Math.max(
+					0,
+					view.priceNow(one, [tid, partner]) - view.useOfNow(tid, one),
+				);
+				note("kept", `${label(p)} kept ${kept}`, given - kept * whole);
+				checked += 1;
+				if (given > kept * whole + 1e-9) {
+					bad.push(`${label(p)}: kept ${kept}, given ${given} of ${whole}`);
+				}
+			}
+		}
+		assert.deepStrictEqual(bad, []);
+		assert.isAtLeast(checked, 10);
+	},
+);
+
+test(
 	"no salary dump for free: a bad long contract costs a team that takes it",
 	{ timeout: 600_000 },
 	async () => {

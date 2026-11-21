@@ -2345,3 +2345,69 @@ a 25-year-old 69 at 89% to stay, who left.
 Tried and left out: offers built from what is worth more to the seller than
 it costs the buyer first (they cost Brooklyn its best offer for Porter, and
 bought Moussa Diabaté, 25, 55, for three firsts).
+
+### Who a team would really keep (2026-11-21)
+
+Of the 16 players 58+ who still left losing teams for nothing in those three
+leagues, most had been shopped every moment to the deadline and turned down
+by their own team, by a hair or by a lot. Cincinnati's 25-year-old 69 on a
+rookie deal: nine offers turned down, one of them three firsts and four
+players (-0.49 to Cincinnati), because it counted him 89% kept - and in the
+summer it never offered him what he asked; he signed with St. Louis for
+$36.3M a year. A team's chance of keeping a player whose deal ends was his
+chance of being willing alone; whether it would pay his ask itself it
+already decides in its own outlook (letGo: a player past his contract, kept
+or let go at his market salary).
+
+- **The chance of keeping him** (`SmartView.keptChanceNow`): his willingness,
+  and whether the team would re-sign him at his market salary itself - each
+  of his halves on its own where his future is split. A team holds out for
+  his price after his deal only as far as it would keep him (`premiumNow`).
+  Counted among the players that must move too (shopped first, the margin
+  eased toward the deadline), in the same three leagues players leaving for
+  nothing went 16 to 13 for 22% more trades (players traded twice within a
+  year 15 to 25) and a season a fifth slower - so it is not: those are still
+  the players unwilling to stay.
+- **The scan's first look**: a player below a team's tenth man by the game's
+  own value, by more than three, is read as worth nothing to it without
+  working it out - most of the scan's work was bench players no contender
+  would play. Same deals at a League 27 moment, the scan 43 s to 35 s.
+- **A human's offer judged to the first better one**
+  (`bestRealOffer(..., beat)`): the CPU asks the teams it would ask in the
+  market until one would give it more than the human, and no further. A
+  CPU answer to a human's offer on League 27: median 0.39 s, against 0.55 s
+  before the rebuild. Skipping teams by their want alone (0.30 s) missed
+  better offers - a team can give a seller more than its want past what the
+  seller needs, in pieces worth more to the seller than to it - and failed
+  two of the checks the GM must pass. The day's first answer, pricing the
+  draft classes by the whole league: 15 s against 11 s.
+- **Rooms cleared, watched** (`clearRoomWatchers`): every trade made to clear
+  room for a free agent is logged in the forward audit (CLEAR) with what
+  each piece was worth to the team. Clearing room still gives good players
+  on big contracts away for nothing at times, before the rebuild as after
+  (Tampa a 25-year-old 62 on $33M, Portland a 30-year-old 64 on $32M; after
+  it Cincinnati a 33-year-old 74 on $33M through 2030).
+
+Still leaving for nothing: stars on big deals ending, whom no buyer can take
+without sending back rotation players worth more to it over the seasons
+ahead than one season of him - Sacramento's 29-year-old 68 ($36.4M) shopped
+15 moments with one team ever able to bid, Phoenix's 26-year-old 66
+($25.8M) with one.
+
+The same three leagues, four seasons each:
+
+| three random-players leagues, four seasons   | before | front office | and this |
+| -------------------------------------------- | ------ | ------------ | -------- |
+| trades                                       | 118    | 158          | 181      |
+| top-30 players traded                        | 12     | 14           | 11       |
+| players 58+ leaving losing teams for nothing | 16     | 16           | 6        |
+| players traded twice within a year           | 16     | 15           | 19       |
+| firsts paid for players 27+ rated under 60   | 20     | 29           | 28       |
+| champions, different                         | 5      | 9            | 11       |
+| minutes a season, idle desktop               | 20.4   | 25.2         | 28.0     |
+
+Teams out of the race paying a first for a player 35 or older, three in
+twelve seasons, read as their outlooks have them: Montreal (0.3% to win the
+title now, 10% next season, 17% the one after) gave its own 2028 first - to
+land late - for a 40-year-old 53 it would start this season, short-handed,
+2.2 points of strength.

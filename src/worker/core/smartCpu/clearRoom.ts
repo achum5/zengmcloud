@@ -87,7 +87,7 @@ export const takerGains = (
 	sure > Math.max(marketSettings.minGain, margin) &&
 	fairToSeller(partnerGain, clearerGain);
 
-type Plan = {
+export type ClearRoomPlan = {
 	p: Player;
 	partner: number;
 	give: Holdings;
@@ -148,7 +148,7 @@ export const roomToSign = (
 	targets: readonly Player[],
 	bestNet: number,
 ) =>
-	timed("clear room", async (): Promise<Plan | undefined> => {
+	timed("clear room", async (): Promise<ClearRoomPlan | undefined> => {
 		if (!clearRoomSettings.on || targets.length === 0) {
 			return undefined;
 		}
@@ -193,7 +193,7 @@ export const roomToSign = (
 		// Most room first.
 		partners.sort((a, b) => view.payrollNow(a) - view.payrollNow(b) || a - b);
 
-		let best: Plan | undefined;
+		let best: ClearRoomPlan | undefined;
 		for (const p of targets) {
 			const c = getContractDemand(p);
 			const need = payroll + c.amount - cap;
@@ -311,16 +311,27 @@ export const roomToSign = (
 		return best;
 	});
 
+// Watchers of the rooms cleared (tests, the arena): called just before each
+// trade is made, with the view it was judged on.
+export const clearRoomWatchers: ((
+	tid: number,
+	plan: ClearRoomPlan,
+	view: SmartView,
+) => void)[] = [];
+
 // Make the trade the plan needs. Whether it went through: checked as it
 // stands against the trade rules first.
 export const clearRoomNow = async (
 	view: SmartView,
 	tid: number,
-	plan: Plan,
+	plan: ClearRoomPlan,
 ) => {
 	const teams = teamsOf(tid, plan.partner, plan.give, plan.back);
 	if ((await summary(teams)).warning) {
 		return false;
+	}
+	for (const watch of clearRoomWatchers) {
+		watch(tid, plan, view);
 	}
 	await processTrade(teams, undefined, {
 		initiatorTid: tid,

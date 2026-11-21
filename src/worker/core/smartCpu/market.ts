@@ -49,6 +49,13 @@ export const marketSettings = {
 	restExpiring: false,
 	// Candidates ranked by a rough read (rosters not cut to the limit).
 	roughRanking: true,
+	// The scan's first look: a player below a team's tenth man by the game's
+	// own value (ovr, and potential for the young), by more than this, read
+	// as worth nothing to it without working it out - the work of the scan
+	// is every team's read of every player, most of them bench players no
+	// contender would play.
+	firstLook: true,
+	firstLookBelow: 3,
 	// THE SCAN (owner, 2026-11-21: "they're scouting the entire league
 	// constantly"): every CPU team reads every tradable player on every other
 	// team at each moment, and every player some team would trade for is on
@@ -234,6 +241,22 @@ export const candidates = async (
 	plans: ReadonlyMap<number, Plan> = new Map(),
 ): Promise<Candidate[]> => {
 	const buyers = [...cpu].filter((k) => !dealt.has(k));
+	// The first look (marketSettings.firstLook): a player below a team's
+	// tenth man by the game's own value, by more than `firstLookBelow`, is
+	// read as worth nothing to it - he would not play.
+	const rotation = new Map<number, number>();
+	for (const k of buyers) {
+		const values = view
+			.heldNow(k)
+			.players.map((x) => x.value)
+			.sort((a, b) => b - a);
+		rotation.set(
+			k,
+			marketSettings.firstLook && values.length >= 10
+				? values[9]! - marketSettings.firstLookBelow
+				: Number.NEGATIVE_INFINITY,
+		);
+	}
 	const found: Candidate[] = [];
 	for (const seller of cpu) {
 		if (dealt.has(seller)) {
@@ -257,6 +280,10 @@ export const candidates = async (
 			const bids: { k: number; bid: number }[] = [];
 			for (const k of buyers) {
 				if (k !== seller) {
+					if (p.value < rotation.get(k)!) {
+						bids.push({ k, bid: 0 });
+						continue;
+					}
 					await ensureRetention(view.outlook, [p], k);
 					bids.push({ k, bid: read(k) });
 				}
