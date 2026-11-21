@@ -5,6 +5,7 @@ import { kitsFor, type Look, type TeamDress } from "./figure.ts";
 import { dressKit, kitArtOf, loadKitPicture, type KitArt } from "./kitArt.ts";
 import { bodyOf } from "./poses.ts";
 import { drawSprite, makeScratch, makeSpriteCache } from "./sprite.ts";
+import { loadMesh, meshReady } from "./meshBody.ts";
 
 // A player turning slowly in a team's home or away uniform - drawn from a
 // picture (a data URL), if there is one - with `wordmark` across his chest
@@ -48,6 +49,25 @@ const KitPreview = ({
 		};
 	}, [url]);
 
+	// The players' body (see meshBody.ts): drawn once it is here - or, not
+	// to be had, the sculpted one.
+	const [mesh, setMesh] = useState<"loading" | "ok" | "failed">(() =>
+		meshReady() ? "ok" : "loading",
+	);
+	useEffect(() => {
+		if (mesh !== "loading") {
+			return;
+		}
+		let alive = true;
+		loadMesh().then(
+			() => alive && setMesh("ok"),
+			() => alive && setMesh("failed"),
+		);
+		return () => {
+			alive = false;
+		};
+	}, [mesh]);
+
 	const look = useMemo((): Look => {
 		const kits = kitsFor(
 			side === "away" ? dress : undefined,
@@ -63,13 +83,14 @@ const KitPreview = ({
 			name: "",
 			lastName: "PLAYER",
 			wordmark: kit.chestText ?? wordmark,
+			...(mesh === "ok" ? { real: true as const } : {}),
 		};
-	}, [dress, side, art, wordmark]);
+	}, [dress, side, art, wordmark, mesh]);
 
 	useEffect(() => {
 		const cv = canvas.current;
 		const ctx = cv?.getContext("2d");
-		if (!cv || !ctx) {
+		if (!cv || !ctx || mesh === "loading") {
 			return;
 		}
 		const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -111,7 +132,7 @@ const KitPreview = ({
 		return () => {
 			cancelAnimationFrame(raf);
 		};
-	}, [look, side, width, height]);
+	}, [look, side, width, height, mesh]);
 
 	return (
 		<canvas

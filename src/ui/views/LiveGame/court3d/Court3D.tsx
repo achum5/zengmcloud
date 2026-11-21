@@ -6,7 +6,6 @@ import {
 	useMemo,
 	useRef,
 	useState,
-	useSyncExternalStore,
 	type ReactNode,
 } from "react";
 import { useLocal } from "../../../util/local.ts";
@@ -65,7 +64,6 @@ import {
 import { loadMesh, MESH_KINDS, meshReady } from "./meshBody.ts";
 
 const MESH_HEAD = MESH_KINDS.includes("head");
-import { realPlayers, watchRealPlayers } from "./realPlayers.ts";
 import { arenaSpecFor } from "./arenaSpec.ts";
 import { crowdFaces, type CrowdFace } from "./crowdFaces.ts";
 import { gearFor, kitsFor, shade, streetClothes, type Look } from "./figure.ts";
@@ -623,32 +621,36 @@ const Court3D = ({
 	const paintRef = useRef(painted);
 	paintRef.current = painted;
 
-	// The players drawn as men, if whoever is watching likes them so (see
-	// realPlayers.ts) - changed over the moment it is set.
-	const realAsked = useSyncExternalStore(watchRealPlayers, realPlayers);
-	// (Once his mesh is here: fetched the first time it is wanted.)
-	const [meshOk, setMeshOk] = useState(meshReady);
+	// The players drawn from the body built in Blender (see meshBody.ts) -
+	// nothing of the court drawn till it is here (the sculpted players kept
+	// only for when it can't be had: offline, say).
+	const [mesh, setMesh] = useState<"loading" | "ok" | "failed">(() =>
+		meshReady() ? "ok" : "loading",
+	);
 	useEffect(() => {
-		if (!realAsked || meshOk) {
+		if (mesh !== "loading") {
 			return;
 		}
 		let alive = true;
 		loadMesh().then(
 			() => {
 				if (alive) {
-					setMeshOk(true);
+					setMesh("ok");
 				}
 			},
-			// (Not to be had - offline, say: the court's own players.)
-			() => undefined,
+			() => {
+				if (alive) {
+					setMesh("failed");
+				}
+			},
 		);
 		return () => {
 			alive = false;
 		};
-	}, [realAsked, meshOk]);
-	const real = realAsked && meshOk;
-	const realRef = useRef(realAsked);
-	realRef.current = realAsked;
+	}, [mesh]);
+	const real = mesh === "ok";
+	const meshWait = useRef(mesh === "loading");
+	meshWait.current = mesh === "loading";
 	// The players' faces (see useFaces) - and each one's head drawn from his.
 	const heads = useRef(
 		new Map<number, { sprite?: HeadSprite; skin?: string }>(),
@@ -673,7 +675,7 @@ const Court3D = ({
 							false,
 							// (His face painted on a head of the mesh's own, if it
 							// has one: the court's drawn head on him otherwise.)
-							realRef.current && MESH_HEAD,
+							MESH_HEAD,
 						)
 			).then((head) => {
 				if (current()) {
@@ -743,7 +745,9 @@ const Court3D = ({
 			const crest = crests[p.team as Side];
 			// (Drawn as a man: not a photo's silhouette, nor out hurt in his
 			// street clothes.)
-			const man = real && !f?.imgURL && !p.out;
+			// (Out hurt, in his street clothes, he is sculpted: the mesh is
+			// a man in his uniform.)
+			const man = real && !p.out;
 			const made = [
 				man,
 				f,
@@ -1241,6 +1245,10 @@ const Court3D = ({
 
 		const tick = (now: number, draw: boolean, still: boolean) => {
 			const p = live.current;
+			// (Nothing till the players' body is here - see mesh.)
+			if (meshWait.current) {
+				return;
+			}
 			// (Still being staged: the building in the meantime - see pregame.)
 			const staging = !p.timeline;
 			const tl = p.timeline ?? p.pregame?.tl;

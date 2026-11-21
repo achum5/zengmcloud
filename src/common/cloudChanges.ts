@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 423,
+		date: "2026-11-21",
+		text: "3D game: everyone's players are now the ones rebuilt in Blender - one smooth body with real muscle on their shoulders, arms and calves. The 3D Players setting is gone.",
+	},
+	{
 		n: 422,
 		date: "2026-11-21",
 		text: "3D game: defensive slides are lower, like a real defender's, measured from motion capture of a defender sliding side to side - knees bent past a right angle as the feet come together, chest out over the knees, and the knees out over the toes instead of straight-legged from the front.",
@@ -24,6 +29,8 @@ export const CLOUD_CHANGES: CloudChange[] = [
 	{
 		n: 420,
 		date: "2026-11-21",
+		// (Its setting is gone: 423 says what is so now.)
+		quiet: true,
 		text: "3D game: new players to try - the same players rebuilt as one smooth body in Blender, with real muscle on their shoulders, arms and calves. Turn them on in Settings under 3D Players: Blender (beta). Classic stays the default for now.",
 	},
 	{
