@@ -11,29 +11,7 @@ export type HeadSprite = {
 	cx: number;
 	cy: number;
 	h: number;
-	// His face as it goes onto his head, if he is drawn as a man (see
-	// meshBody.ts).
-	tex?: FaceTex;
 };
-
-// HIS FACE FOR HIS HEAD (see sculpt.ts): faces.js's drawing of him, as
-// plain pixels - what is on his face (his eyes, brows, nose, mouth, beard,
-// lines, headband: RGBA), and apart from that where his hair is (how much,
-// a byte a pixel) - over the part of its 400 x 600 box from (x0, y0),
-// `scale` pixels to its unit. And where his hair comes to: down his
-// forehead, down by his temples.
-export type FaceTex = {
-	w: number;
-	h: number;
-	x0: number;
-	y0: number;
-	scale: number;
-	feat: Uint8ClampedArray;
-	hair: Uint8ClampedArray;
-	hairFront: number;
-	hairSide: number;
-};
-const TEX = { x: 20, y: 40, w: 360, h: 520, scale: 0.4 };
 
 // faces.js draws in a 400 x 600 box: the head is centered near (200, 300),
 // about 400 units from the top of the hair to the chin, with the shoulders and
@@ -157,89 +135,6 @@ const faceSprite = async (
 	};
 };
 
-// His face for his head: drawn twice more - just what is on his face, then
-// just his hair - each as plain pixels.
-const NONE = { id: "none" };
-export const faceTex = async (
-	face: FaceConfig,
-	colors: [string, string, string] | undefined,
-	capOn = false,
-): Promise<FaceTex> => {
-	const base = overridesOf(face, colors, capOn);
-	const w = Math.round(TEX.w * TEX.scale);
-	const h = Math.round(TEX.h * TEX.scale);
-	const canvas = document.createElement("canvas");
-	canvas.width = w;
-	canvas.height = h;
-	const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
-	const layer = async (only: Record<string, unknown>) => {
-		const img = await faceImage(face, { ...base, ...only });
-		ctx.clearRect(0, 0, w, h);
-		ctx.drawImage(img, TEX.x, TEX.y, TEX.w, TEX.h, 0, 0, w, h);
-		return ctx.getImageData(0, 0, w, h).data;
-	};
-	const feat = await layer({
-		head: { ...(base.head as object), id: "none" },
-		ear: NONE,
-		hair: NONE,
-		hairBg: NONE,
-	});
-	// (Not the hair behind his head - with no head in front of it, it would
-	// be all over his face: round the back, his haircut is his own.)
-	const hairRGBA = await layer({
-		head: { ...(base.head as object), id: "none" },
-		hairBg: NONE,
-		ear: NONE,
-		eye: NONE,
-		eyebrow: NONE,
-		eyeLine: NONE,
-		smileLine: NONE,
-		miscLine: NONE,
-		facialHair: NONE,
-		mouth: NONE,
-		nose: NONE,
-		glasses: NONE,
-		accessories: NONE,
-	});
-	const hair = new Uint8ClampedArray(w * h);
-	for (let i = 0; i < w * h; i++) {
-		hair[i] = hairRGBA[i * 4 + 3]!;
-	}
-	// Where his hair comes down to: in the middle of his forehead, and by
-	// his temples (faces.js units).
-	const lowest = (x0: number, x1: number, below: number) => {
-		let y = -1;
-		for (let py = 0; py < h; py++) {
-			const fy = TEX.y + py / TEX.scale;
-			if (fy > below) {
-				break;
-			}
-			for (let fx = x0; fx <= x1; fx += 4) {
-				const px = Math.round((fx - TEX.x) * TEX.scale);
-				if (hair[py * w + px]! > 128) {
-					y = fy;
-				}
-			}
-		}
-		return y;
-	};
-	return {
-		w,
-		h,
-		x0: TEX.x,
-		y0: TEX.y,
-		scale: TEX.scale,
-		feat,
-		hair,
-		hairFront: lowest(176, 224, 300),
-		hairSide: Math.max(lowest(84, 96, 330), lowest(304, 316, 330)),
-	};
-};
-
-// How his hair sits on the back of his head, for drawing it from the side
-// and from behind: none; cropped close to his skull (or standing up off the
-// top of it - see HairStyle); full round his head, over his ears (an afro,
-// a shag); or hanging down past his neck (long hair).
 export type HairCut = "bald" | "short" | "big" | "long";
 const BIG_HAIR = /^(afro$|shaggy|emo$)/;
 const LONG_HAIR = /^(longHair|female(?!8$))/;
@@ -396,26 +291,14 @@ const inTurn = <T>(draw: () => Promise<T>): Promise<T> => {
 	return mine;
 };
 
-// His face for his head, drawn in its turn (see inTurn) - for a head drawn
-// before he was wanted as a man.
-export const loadFaceTex = (
-	face: FaceConfig,
-	colors: [string, string, string] | undefined,
-): Promise<FaceTex> => inTurn(() => faceTex(face, colors));
-
 export const loadHead = async (
 	face: FaceConfig | undefined,
 	colors: [string, string, string] | undefined,
 	capOn = false,
-	// (His face for his head too, if he is drawn as a man - see sculpt.ts.)
-	withTex = false,
 ): Promise<{ sprite?: HeadSprite; skin?: string }> => {
 	try {
 		if (face) {
 			const sprite = await inTurn(() => faceSprite(face, colors, capOn));
-			if (withTex) {
-				sprite.tex = await inTurn(() => faceTex(face, colors, capOn));
-			}
 			return { sprite };
 		}
 	} catch {

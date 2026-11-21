@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 416,
+		date: "2026-11-21",
+		text: '3D game: the "Realistic (beta)" players are gone, and so is the 3D Players setting - everybody sees the Classic players. New, more realistic players are being built to replace them.',
+	},
+	{
 		n: 415,
 		date: "2026-11-21",
 		text: "3D game: defenders on the far side of the floor now guard from in front, between their man and the basket, the way they do on the near side, instead of standing off to his side so the camera could see the shooter. That includes the man on the ball, closeouts on jump shots and help stepping up.",

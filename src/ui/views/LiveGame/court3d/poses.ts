@@ -12159,26 +12159,6 @@ export const ATHLETE: Proportions = {
 	upperR: 0.0295,
 	foreR: 0.0245,
 };
-// A MAN AS HE IS: drawn as one (see meshBody.ts), his skeleton the one his
-// body's mesh is made on (MakeHuman's - see tools/court3d-body), so the mesh
-// of him is never stretched to fit another man's bones: his hips at 53% of
-// his height, his knees at 30%, the base of his neck at 86% and his
-// shoulders' joints at 80%, a head about an eighth of him. Only the picture
-// of him is this: where the plays put him and his hands is the athlete's.
-export const MESH_BUILD: Proportions = {
-	...ATHLETE,
-	ankle: 0.042,
-	shin: 0.258,
-	thigh: 0.238,
-	torso: 0.326,
-	neck: 0.03,
-	head: 0.052,
-	upper: 0.145,
-	fore: 0.157,
-	shoulderW: 0.108,
-	hipW: 0.063,
-	shoulderDrop: 0.06,
-};
 // WHAT ELSE IS KNOWN OF HIM, beyond how tall he is and what he weighs (see
 // ratings.ts physiqueOf) - each 0 to 1, a half the league's ordinary man:
 // how strong he is, and how quick and springy.
