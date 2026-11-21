@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 414,
+		date: "2026-11-21",
+		text: "3D game: a player driving to the basket no longer turns sideways partway through the drive - he faces where he's going. Drives also bend around the defender instead of running in dead-straight lines.",
+	},
+	{
 		n: 413,
 		date: "2026-11-20",
 		text: "CPU trades: teams now count a late first-round pick's real chance of turning into a good player, so contenders stop throwing firsts at older bench players. In test leagues that cut firsts paid for role players 27 or older by more than a third, while more of the league's best players changed teams and fewer good players walked away from losing teams for nothing.",

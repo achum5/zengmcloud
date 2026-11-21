@@ -1587,6 +1587,129 @@ const arcsOf = (
 	});
 };
 
+// A DRIVE GOES ROUND, NOT ON A RAIL. Driving it - a dribble run of his of
+// any length, at a drive's pace - a man does not go dead straight from
+// where he sets off to where he is going, like a thing on a rail: he bends
+// round his man, out wide of him and back in - BEND_SHARE of its length out
+// at the middle of it, no more than BEND_MOST - away from the man of theirs
+// in his way, or, nobody in it, his own way each time. Where he sets off
+// from and where he gets to stay where the play has them; his man goes
+// with him (see stepTimeline).
+const BEND_LEAST = 8;
+const BEND_PACE = 8;
+const BEND_SHARE = 0.12;
+const BEND_MOST = 2.6;
+// (A man of theirs this near his way early on (feet): bent away from him.)
+const BEND_NEAR = 9;
+const bendsOf = (
+	tr: { moves: Move[]; team: 0 | 1; pid: number },
+	tl: Stepped,
+	laid: Path,
+	held: Spans,
+	// The nearest man of theirs where the play has him at t, if any.
+	foeAt: (t: number, P: Pt) => Pt | undefined,
+): Offsets => {
+	// (Only with it on his dribble.)
+	const mine = spansAt(
+		tl.ball.flatMap((s, k) =>
+			s.kind === "hold" && s.pid === tr.pid && s.style !== "hold"
+				? [[s.t0, tl.ball[k + 1]?.t0 ?? s.t0] as const]
+				: [],
+		),
+	);
+	type Leg = {
+		t0: number;
+		t1: number;
+		from: Pt;
+		ux: number;
+		uy: number;
+		L: number;
+		// Out to his left (less than nothing: his right), at its middle.
+		out: number;
+	};
+	const legs: Leg[] = [];
+	for (const m of tr.moves) {
+		const L = Math.hypot(m.to.x - m.from.x, m.to.y - m.from.y);
+		const secs = (m.t1 - m.t0) / 1000;
+		if (
+			m.anim !== "dribble" ||
+			L < BEND_LEAST ||
+			secs <= 0 ||
+			L / secs < BEND_PACE ||
+			// (On his dribble from the start, and most of the way: gathering
+			// it up at the end of it, for a layup, say, still a drive.)
+			!mine.hit(m.t0, m.t0 + 1) ||
+			!mine.hit(m.t0 + (m.t1 - m.t0) * 0.6, m.t0 + (m.t1 - m.t0) * 0.6 + 1)
+		) {
+			continue;
+		}
+		const ux = (m.to.x - m.from.x) / L;
+		const uy = (m.to.y - m.from.y) / L;
+		const far = Math.min(BEND_MOST, BEND_SHARE * L);
+		const early = m.t0 + (m.t1 - m.t0) * 0.35;
+		const P = laid.at(early) ?? m.from;
+		const Q = foeAt(early, P);
+		let side =
+			Q && Math.hypot(Q.x - P.x, Q.y - P.y) < BEND_NEAR
+				? ux * (Q.y - P.y) - uy * (Q.x - P.x) > 0
+					? -1
+					: 1
+				: hash01(tr.pid * 13 + 7, Math.round(m.t0)) < 0.5
+					? -1
+					: 1;
+		// (Not out over a line: the other way round, or straight.)
+		const mid = { x: (m.from.x + m.to.x) / 2, y: (m.from.y + m.to.y) / 2 };
+		const onFloor = (s: number) => {
+			const B = { x: mid.x - uy * far * s, y: mid.y + ux * far * s };
+			const I = inPlay(B);
+			return I.x === B.x && I.y === B.y;
+		};
+		if (!onFloor(side)) {
+			side = -side;
+		}
+		if (!onFloor(side)) {
+			continue;
+		}
+		legs.push({ t0: m.t0, t1: m.t1, from: m.from, ux, uy, L, out: far * side });
+	}
+	legs.sort((a, b) => a.t0 - b.t0);
+	const none = { x: 0, y: 0 };
+	const at = (t: number): Pt => {
+		let lo = 0;
+		let hi = legs.length;
+		while (lo < hi) {
+			const mid = (lo + hi) >> 1;
+			if (legs[mid]!.t0 <= t) {
+				lo = mid + 1;
+			} else {
+				hi = mid;
+			}
+		}
+		const g = legs[lo - 1];
+		if (!g || t >= g.t1) {
+			return none;
+		}
+		const P = laid.at(t);
+		if (!P) {
+			return none;
+		}
+		// (How far along it the play has him, and out at that: none at
+		// either end, most at the middle, eased in and out.)
+		const u = Math.min(
+			1,
+			Math.max(0, ((P.x - g.from.x) * g.ux + (P.y - g.from.y) * g.uy) / g.L),
+		);
+		const s = Math.sin(Math.PI * u);
+		// (Nothing of his on, or about to be.)
+		const near = Math.min(t - held.last(t), held.next(t) - t);
+		const k = g.out * s * s * Math.min(1, Math.max(0, near / 300));
+		return { x: -g.uy * k, y: g.ux * k };
+	};
+	return Object.assign(at, {
+		spans: legs.map((g) => [g.t0, g.t1] as const),
+	});
+};
+
 // OFF THE BALL, GETTING OPEN. Stood a while off the ball with nothing of
 // his coming, a man does not wait where the play put him like a cone: now
 // and then he relocates a step - along the arc, a step in, a step out -
@@ -2082,6 +2205,22 @@ export const stepTimeline = <T extends Stepped>(tl: T): T => {
 		);
 		const open = openingsOf(tl, tr.pid, L, held, tr.team, offenseAt, live);
 		const arc = arcsOf(tr, tl, L, held, offenseAt);
+		const bend = bendsOf(tr, tl, L, held, (t, P) => {
+			let best: Pt | undefined;
+			let bd = Infinity;
+			for (const o of men) {
+				if (o.team === tr.team) {
+					continue;
+				}
+				const Q = laid.get(o.pid)?.at(t);
+				const d = Q ? Math.hypot(Q.x - P.x, Q.y - P.y) : Infinity;
+				if (d < bd) {
+					bd = d;
+					best = Q;
+				}
+			}
+			return best;
+		});
 		const drift = driftsOf(
 			tl,
 			tr.pid,
@@ -2098,13 +2237,18 @@ export const stepTimeline = <T extends Stepped>(tl: T): T => {
 			const b = open(t);
 			const c = arc(t);
 			const d = drift(t);
-			return { x: a.x + b.x + c.x + d.x, y: a.y + b.y + c.y + d.y };
+			const e = bend(t);
+			return {
+				x: a.x + b.x + c.x + d.x + e.x,
+				y: a.y + b.y + c.y + d.y + e.y,
+			};
 		});
 		making[tr.team].push(
 			...probe.spans,
 			...open.spans,
 			...arc.spans,
 			...drift.spans,
+			...bend.spans,
 		);
 	}
 	const busy = [spansAt(making[0]), spansAt(making[1])] as const;

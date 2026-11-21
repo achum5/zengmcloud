@@ -1744,7 +1744,22 @@ const plannedYaw = (tl: CourtTimeline, tr: Track, t: number): number => {
 		) {
 			const own = ballSegAt(tl, t);
 			if (own?.kind === "hold" && own.pid === tr.pid && own.style !== "hold") {
-				return angleTo(here, { x: rimX(tr.team), y: 25 }, fallback);
+				const toRim = angleTo(here, { x: rimX(tr.team), y: 25 }, fallback);
+				// (Going at a drive's pace, he goes the way he is going, his
+				// shoulders turned toward the rim no further than DRIVE_OPEN -
+				// not side on to his drive for the length of a short run: a
+				// stepped drive is mostly short runs.)
+				if (gait === "dribble" && mv.anim === "dribble" && d > 0.5) {
+					const heading =
+						here.hx * here.hx + here.hy * here.hy > 1e-6
+							? Math.atan2(here.hy, here.hx)
+							: Math.atan2(dy, dx);
+					const off = wrapAngle(toRim - heading);
+					if (Math.abs(off) < DRIVE_BACK) {
+						return heading + Math.max(-DRIVE_OPEN, Math.min(DRIVE_OPEN, off));
+					}
+				}
+				return toRim;
 			}
 		}
 		// Dribbling into a pull-up: as he gets there he opens up to the rim,
@@ -1792,6 +1807,18 @@ const plannedYaw = (tl: CourtTimeline, tr: Track, t: number): number => {
 				gait !== "run" &&
 				gait !== "sprint"
 			) {
+				// (The ball his own, there is no keeping his eyes on it: he goes
+				// the way he dribbles - across the floor and a little back from
+				// where he attacks, as a drive at the rim from the wing or the
+				// baseline does - squared up to the rim only dribbling it back
+				// out. Eyes on the ball in his own hands had him face straight
+				// down the floor, side on to his drive.)
+				const own = ballSegAt(tl, t);
+				if (own?.kind === "hold" && own.pid === tr.pid) {
+					return -mv.face * dx > BACK_OUT * d
+						? angleTo(here, { x: rimX(tr.team), y: 25 }, fallback)
+						: heading;
+				}
 				return angleTo(here, ballNear(tl, t), fallback);
 			}
 			return heading;
@@ -1896,6 +1923,15 @@ const TURN_STEP = 40;
 // Dribbling into a pull-up (see plannedYaw): how long before he goes up he
 // starts opening up to the rim (ms), and how far round from the way he goes
 // he gets while still dribbling.
+// Dribbling it back away from where he attacks, by more than this share of
+// the way he goes (the cosine): backing it out, still squared up to the rim
+// (see plannedYaw) - less, he goes the way he dribbles.
+const BACK_OUT = 0.7;
+// Driving it, how far round toward the rim his shoulders turn off the way
+// he goes (radians) - and, the rim further round than this behind him, he
+// is taking it back out: squared up to it (see plannedYaw).
+const DRIVE_OPEN = (30 * Math.PI) / 180;
+const DRIVE_BACK = (100 * Math.PI) / 180;
 const PULLUP_OPEN_MS = 700;
 const PULLUP_OPEN_MOST = (75 * Math.PI) / 180;
 const PULLUP_SHOTS = new Set<AnimName>([
