@@ -40,7 +40,7 @@ test.runIf(env.CANDIDATE_SCAN === "1")(
 				.filter((t) => !t.disabled)
 				.map((t) => t.tid),
 		);
-		const keen = await view.keenest();
+		const keen = [...view.outlook.teams.keys()];
 		for (const tid of cpu) {
 			for (const k of [tid, ...keen]) {
 				await ensureRetention(view.outlook, view.heldNow(tid).players, k);

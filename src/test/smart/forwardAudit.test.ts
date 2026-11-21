@@ -304,11 +304,13 @@ test.skipIf(!env.FA_LEAGUE)(
 		log(`${startSeason} phase ${g.get("phase")}, ${seasons} seasons`);
 		const t0 = performance.now();
 		let guard = 0;
+		// FA_TO_DEADLINE=1: stop once the trade deadline has passed.
 		while (
 			!(
 				g.get("season") >= startSeason + seasons &&
 				g.get("phase") === PHASE.PRESEASON
 			) &&
+			!(env.FA_TO_DEADLINE && g.get("phase") === PHASE.AFTER_TRADE_DEADLINE) &&
 			guard++ < 10000
 		) {
 			const ph = g.get("phase");

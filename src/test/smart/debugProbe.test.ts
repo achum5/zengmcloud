@@ -34,7 +34,7 @@ test.runIf(env.DEBUG_PROBE === "1")(
 		say(
 			`phase ${g.get("phase")} season ${g.get("season")} max ${g.get("maxRosterSize")} cap ${g.get("salaryCap")}`,
 		);
-		say(`keenest ${(await view.keenest()).join(",")}`);
+		say(`keenest ${[...view.outlook.teams.keys()].join(",")}`);
 		for (const tid of [24, 7]) {
 			const h = view.heldNow(tid);
 			const best = [...h.players].sort((a, b) => b.value - a.value)[0]!;
@@ -55,7 +55,7 @@ test.runIf(env.DEBUG_PROBE === "1")(
 			say(
 				`  after cuts: ${cut.players.length} players, dead ${JSON.stringify(dead)}`,
 			);
-			for (const k of await view.keenest()) {
+			for (const k of view.outlook.teams.keys()) {
 				say(
 					`  bid from ${k}: ${view.bidNow(k, out).toFixed(4)} (use ${view.useOfNow(k, out).toFixed(4)})`,
 				);

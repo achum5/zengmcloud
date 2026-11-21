@@ -49,7 +49,7 @@ const judgeNow = async (
 			players.push(p);
 		}
 	}
-	for (const tid of [cpuTid, humanTid, ...(await view.keenest())]) {
+	for (const tid of outlook.teams.keys()) {
 		await ensureRetention(outlook, players, tid);
 	}
 	const v = await view.verdict(cpuTid, humanTid, out, inn);

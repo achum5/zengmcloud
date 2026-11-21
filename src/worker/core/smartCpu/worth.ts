@@ -17,6 +17,8 @@ import getPayroll from "../team/getPayroll.ts";
 import getRookieContractLength from "../draft/getRookieContractLength.ts";
 import { pickSalaries } from "../realisticFrontOffice/payroll.ts";
 import {
+	curveAt,
+	curvesFor,
 	ensureRetention,
 	expectedPlace,
 	finishWeights,
@@ -37,10 +39,9 @@ import {
 // But a team doesn't give anything away for less than the market would pay
 // for it, and doesn't count what it gets at less than the market would pay
 // it back: each side of a deal is worth to the team the more of its use and
-// its market price, as a package (prices of single players add up wrong -
-// two good players are worth far less together than apart). A package's
-// price is the second-highest use for all of it among the teams keenest on
-// it, by their own goals: what an auction would bring.
+// its market price. A piece's price is the second-highest use for it of all
+// the league's teams, by their own goals: what an auction would bring; a
+// package's, what its pieces fetch apart (SmartView.priceNow).
 //
 // And a team takes an offer only if no team keen on what it gives would
 // really give more (owner, 2026-11-13: "the cpu would not be willing to send
@@ -52,11 +53,6 @@ export type Holdings = { players: Player[]; picks: DraftPick[] };
 export type Assets = { pids: number[]; dpids: number[] };
 
 export const smartSettings = {
-	// Teams whose uses set a package's price: the most valuable franchises,
-	// where nearly all the bidding comes from.
-	keenest: 6,
-	// Teams asked for a real offer, and the most players in one.
-	buyers: 4,
 	// Six: for the league's best players four pieces seldom paid - in
 	// random-players leagues the best real offer for a top-30 player came to
 	// a median 69% of his price, 99 of 227 turned down at four pieces. With
@@ -128,8 +124,8 @@ export const smartSettings = {
 	// What a team gets from another team in a trade counts at its own use for
 	// the players, and above it only for the picks (their floor stands in for
 	// title chances past the outlook's seasons); what it gives still counts
-	// at least at its market price. A price is the second-highest keenest
-	// team's use - what it would gain, not what it can pay. The market's best
+	// at least at its market price. A price is the league's second-highest
+	// use - what a team would gain, not what it can pay. The market's best
 	// real offers come to a quarter to three fifths of it (League 10, 2019).
 	// Counting players got at it, teams out of the race traded on the gap
 	// alone: in every deal of a League 7 season and of offseasons in Leagues 8
@@ -152,6 +148,19 @@ export const smartSettings = {
 	// package that replaced a star read as of more use to the seller than it
 	// would be, and so its price past that as less.
 	gotAsItWillStand: true,
+	// THE OFFER A BUYER WOULD MAKE, in the market: one that clears the
+	// market's test for it - its margin of error - cut back to that from the
+	// most it would give, and built salary first too where salary must go
+	// back (SmartView.clearingOffer). Built to its break-even by its use
+	// alone, the seller's favourites first, a contender's offer for a star
+	// was its own core player for him, or the most it could give, and died
+	// at its margin: in the owner's League 27 Brooklyn (14-35) never sold
+	// Michael Porter Jr. (29, 63, $40.8M, his deal ending, under 1% to
+	// re-sign) - worth 0.38 of a title to the Lakers and to Oklahoma City,
+	// none to Brooklyn - as the Lakers, San Antonio and New York offered
+	// nothing they would take, Oklahoma City Jalen Williams (64, $41.5M) and
+	// picks for a gain of 0.0003 against a margin of 0.16 (2026-11-21).
+	offerClears: true,
 	// What a deal gains a team in the market's prices - what it gets past
 	// its use to it, past what it gives - counts toward the deal clearing its
 	// margin of error only at this share (SmartView.sureWorthNow); a price
@@ -238,10 +247,40 @@ export type OfferAsk = {
 	allowed?: (p: Player) => boolean;
 };
 
+// Watchers of each offer a buyer tries as it cuts one back to clear its
+// margin (tests, probes: a no-op with none watching).
+export const offerWatchers: ((t: {
+	buyer: number;
+	seller: number;
+	offer: Holdings;
+	worth: number;
+	sure: number;
+	margin: number;
+	clears: boolean;
+}) => void)[] = [];
+
+export type OfferClears = (
+	buyer: number,
+	worth: number,
+	sure: number,
+	margin: number,
+) => boolean;
+
 const plus = (h: Holdings, x: Player | DraftPick): Holdings =>
 	"pid" in x
 		? { players: [...h.players, x], picks: h.picks }
 		: { players: h.players, picks: [...h.picks, x] };
+
+// A package's pieces, each alone.
+const piecesOf = (h: Holdings): Holdings[] => [
+	...h.players.map((p) => ({ players: [p], picks: [] })),
+	...h.picks.map((dp) => ({ players: [], picks: [dp] })),
+];
+
+const minus = (h: Holdings, x: Player | DraftPick): Holdings =>
+	"pid" in x
+		? { players: h.players.filter((p) => p.pid !== x.pid), picks: h.picks }
+		: { players: h.players, picks: h.picks.filter((dp) => dp.dpid !== x.dpid) };
 
 // Players traded away as the game counts them for its players' mood
 // (trade/processTrade.ts): a bad player hardly at all, one just drafted not
@@ -323,24 +362,23 @@ export class SmartView {
 	// Each team's strength path on its holdings, and deals' margins.
 	private paths = new Map<string, number[]>();
 	private margins = new Map<string, number>();
-	private keenestCache:
-		| {
-				sig: string;
-				tids: number[];
-				// What a pick in the next draft fetches, by round and by where
-				// its team is expected to finish (pickFloorNow).
-				slots?: Map<number, number[]>;
-				// What each draft's prospects fetch as rookies, best first
-				// (picksAsRookies), by draft.
-				classes?: Map<number, number[]>;
-				// The prospects the classes were priced from.
-				prospects?: string;
-				// Whose bids the prices are: the keenest teams, each with what
-				// it holds. A team's bid is its own worth, so the tables stand
-				// while the bidders do, whatever other teams sign or trade.
-				bidders: string;
-		  }
-		| undefined;
+	// The market's price tables, worked out once a view: each coming draft's
+	// prospects as rookies (classPrices), and the next draft's picks by where
+	// they land (slotPricesNow) - the whole league's bids.
+	private tables: {
+		// What a pick in the next draft fetches, by round and by where its
+		// team is expected to finish (pickFloorNow), for which draft.
+		slots?: Map<number, number[]>;
+		slotsDraft?: number;
+		// What each draft's prospects fetch as rookies, best first
+		// (picksAsRookies), by draft, and the prospects they were priced from.
+		classes?: Map<number, number[]>;
+		prospects?: string;
+	} = {};
+	// The league's bids (leagueBidNow), as the teams' holdings stand: bumped,
+	// and the bids forgotten, whenever a team's holdings change.
+	private version = 0;
+	private leagueBids = new Map<string, number>();
 
 	constructor(outlook: LeagueOutlook, humans: Iterable<number>) {
 		this.outlook = outlook;
@@ -360,6 +398,8 @@ export class SmartView {
 		}
 		const h = { players, picks };
 		this.holdings.set(tid, { sig, h });
+		this.version += 1;
+		this.leagueBids.clear();
 		// It changes only as the team trades, and so what it holds.
 		this.tradedAway.set(tid, await tradedAwayOf(tid));
 		return h;
@@ -627,32 +667,6 @@ export class SmartView {
 		return [now, owed];
 	}
 
-	// The teams whose bids set prices: the most valuable franchises.
-	async keenest() {
-		const rows = [];
-		const sigs = [];
-		for (const tid of this.outlook.teams.keys()) {
-			const h = await this.holdingsOf(tid);
-			sigs.push(this.holdings.get(tid)!.sig);
-			rows.push({ tid, h });
-		}
-		const sig = sigs.join("/");
-		if (this.keenestCache?.sig !== sig) {
-			const tids = rows
-				.map(({ tid, h }) => ({ tid, v: this.value(tid, h) }))
-				.sort((a, b) => b.v - a.v)
-				.slice(0, smartSettings.keenest)
-				.map((r) => r.tid);
-			const bidders = tids
-				.map((tid) => `${tid}=${this.holdings.get(tid)!.sig}`)
-				.join("/");
-			const had = this.keenestCache;
-			this.keenestCache =
-				had?.bidders === bidders ? { ...had, sig } : { sig, tids, bidders };
-		}
-		return this.keenestCache.tids;
-	}
-
 	async assetsOf(a: Assets) {
 		const players: Player[] = [];
 		for (const pid of a.pids) {
@@ -671,27 +685,28 @@ export class SmartView {
 		return { players, picks };
 	}
 
-	// Every team's holdings read and who sets prices, for the work done
-	// without waiting (the `...Now` methods: free agency prices signings in
-	// one go). Read again before each such batch.
+	// Every team's holdings read and the draft classes priced, for the work
+	// done without waiting (the `...Now` methods: free agency prices
+	// signings in one go). Read again before each such batch.
 	async prime() {
 		for (const tid of this.outlook.teams.keys()) {
 			await this.holdingsOf(tid);
 		}
-		await this.keenest();
 		await this.classPrices();
 	}
 
 	// Each coming draft's prospects priced as rookies on the deal of the slot
 	// they would go at (by value), best first - what a pick there fetches as
-	// the player it becomes (picksAsRookies). Kept as long as the prices'
-	// bidders are.
+	// the player it becomes (picksAsRookies), by the whole league's bids.
+	// Kept while the classes are the same.
 	async classPrices() {
 		if (!smartSettings.picksAsRookies) {
 			return;
 		}
-		const tids = await this.keenest();
-		const keen = this.keenestCache!;
+		for (const tid of this.outlook.teams.keys()) {
+			await this.holdingsOf(tid);
+		}
+		const tables = this.tables;
 		const prospects = await idb.cache.players.indexGetAll(
 			"playersByTid",
 			PLAYER.UNDRAFTED,
@@ -701,7 +716,7 @@ export class SmartView {
 			.map((p) => `${p.pid}:${p.value}`)
 			.sort()
 			.join(",")}`;
-		if (keen.classes && keen.prospects === pool) {
+		if (tables.classes && tables.prospects === pool) {
 			return;
 		}
 		const timer = mark();
@@ -731,20 +746,20 @@ export class SmartView {
 						},
 					} as Player;
 				});
-			for (const tid of tids) {
+			for (const tid of this.outlook.teams.keys()) {
 				await ensureRetention(this.outlook, rookies, tid);
 			}
 			classes.set(
 				season,
 				rookies
 					.map((r) =>
-						Math.max(0, this.bidPriceNow({ players: [r], picks: [] }, [])),
+						Math.max(0, this.leagueBidNow({ players: [r], picks: [] }, [])),
 					)
 					.sort((a, b) => b - a),
 			);
 		}
-		keen.classes = classes;
-		keen.prospects = pool;
+		tables.classes = classes;
+		tables.prospects = pool;
 		lap("class prices", timer);
 	}
 
@@ -753,7 +768,7 @@ export class SmartView {
 	// next draft's (laterPicksByNextClass, or a draft whose class isn't out),
 	// discounted for the seasons until its draft. Undefined with it off.
 	private rookieFloorNow(dp: DraftPick) {
-		const classes = this.keenestCache?.classes;
+		const classes = this.tables.classes;
 		if (!smartSettings.picksAsRookies || !classes || classes.size === 0) {
 			return undefined;
 		}
@@ -824,6 +839,27 @@ export class SmartView {
 		);
 		this.margins.set(key, m);
 		return m;
+	}
+
+	// A team's strength season by season on what it holds (cached with the
+	// margin's paths).
+	pathNow(tid: number) {
+		const h = this.heldNow(tid);
+		const key = `${tid}#${this.keyOf(h)}`;
+		let path = this.paths.get(key);
+		if (!path) {
+			path = teamStrengths(this.outlook, tid, h.players, h.picks);
+			this.paths.set(key, path);
+		}
+		return path;
+	}
+
+	// A team's title chances season by season as its trades count them: on
+	// what it holds, a player hurt now back for the playoffs (the outlook's
+	// own odds count him out all season).
+	titleChancesNow(tid: number) {
+		const { title } = curvesFor(this.outlook, tid);
+		return this.pathNow(tid).map((s, y) => curveAt(title[y]!, s));
 	}
 
 	// A team's holdings as last read.
@@ -947,20 +983,35 @@ export class SmartView {
 	// easy to sell as a cheap one, and a free agent worth as much to the
 	// market at any salary.
 	bidNow(tid: number, a: Holdings) {
+		const matched = this.matchedNow(tid, a);
+		return matched && matched.net >= 0 ? matched.use : -Infinity;
+	}
+
+	// What a team would gain from a package it doesn't hold once it has sent
+	// back the salary the trade rules need for it (its players it would miss
+	// least, any of them): its use for it, and its net past what it sends -
+	// or undefined where it couldn't send enough. A buyer's real want for a
+	// player on a big contract: the Lakers' use for Michael Porter Jr.
+	// ($40.8M) was 0.385 of a title, past the three rotation players it would
+	// send for his salary 0.11 (the owner's League 27).
+	matchedNow(tid: number, a: Holdings) {
 		const h = this.heldNow(tid);
 		if (a.players.some((p) => h.players.some((x) => x.pid === p.pid))) {
-			return this.useOfNow(tid, a, h);
+			const use = this.useOfNow(tid, a, h);
+			return { use, net: use };
 		}
 		const incoming = salaryOf(a.players);
 		const capType = g.get("salaryCapType");
 		const none = { players: [], picks: [] };
 		if (incoming <= 0 || capType === "none") {
-			return this.useOfNow(tid, a, h);
+			const use = this.useOfNow(tid, a, h);
+			return { use, net: use };
 		}
 		const payroll = this.payrollNow(tid, h);
 		const cap = g.get("salaryCap");
 		if (payroll + incoming <= cap) {
-			return this.useOfNow(tid, a, h);
+			const use = this.useOfNow(tid, a, h);
+			return { use, net: use };
 		}
 		const need =
 			capType === "soft"
@@ -987,7 +1038,7 @@ export class SmartView {
 			sent += contractOf(p).amount;
 		}
 		if (sent < need) {
-			return -Infinity;
+			return undefined;
 		}
 		const net =
 			this.value(
@@ -996,28 +1047,42 @@ export class SmartView {
 				[],
 				tradedAwayCount(fillers),
 			) - this.value(tid, this.swappedFrom(h, none, none));
-		return net >= 0 ? use : -Infinity;
+		return { use, net };
 	}
 
-	// A package's market price: the second-highest real bid for all of it
-	// among the keenest teams other than `not` - and for picks in later
-	// drafts, at least what they will fetch once their draft is next
-	// (pickFloorNow).
+	// A package's market price: each piece at what the league would pay for
+	// it (leagueBidNow), a pick in a later draft at least what it will fetch
+	// once its draft is next (pickFloorNow) - what it fetches sold piece by
+	// piece, as a team can always sell it; a piece nobody would take, no
+	// price. Whole, by the keenest teams' bids for all of it, a first sent
+	// with players nobody bid for lost what it fetches alone: in the owner's
+	// League 27, Boston's 2031 first (0.06 alone, 0.02 of use to it) and Ron
+	// Harper Jr. and Amari Williams fetched 0.02 together, and Boston gave
+	// them and two seconds for Luke Kennard (31, 51/51) as if the first cost
+	// nothing (2026-11-21).
 	priceNow(a: Holdings, not: readonly number[]) {
-		const bid = this.bidPriceNow(a, not);
-		const later = a.picks.filter((dp) => this.pickFloorNow(dp) > 0);
-		if (later.length === 0) {
-			return bid;
+		let sum = 0;
+		for (const one of piecesOf(a)) {
+			const each = this.piecePriceNow(one, not);
+			if (each === Number.NEGATIVE_INFINITY) {
+				return each;
+			}
+			sum += each;
 		}
-		const rest = {
-			players: a.players,
-			picks: a.picks.filter((dp) => !later.includes(dp)),
-		};
-		let floor = this.bidPriceNow(rest, not);
-		for (const dp of later) {
-			floor += this.pickFloorNow(dp);
+		return sum;
+	}
+
+	// One piece's market price (priceNow).
+	piecePriceNow(one: Holdings, not: readonly number[]) {
+		const bid = this.leagueBidNow(one, not);
+		const dp = one.picks[0];
+		if (dp) {
+			const floor = this.pickFloorNow(dp);
+			if (floor > 0) {
+				return Math.max(bid, floor);
+			}
 		}
-		return Math.max(bid, floor);
+		return bid;
 	}
 
 	// The draft whose picks are next to be made.
@@ -1055,22 +1120,23 @@ export class SmartView {
 
 	// The next draft's picks in a round, priced, by where each team is
 	// expected to finish: decreasing (a better finish never fetches more),
-	// place by place in between. Kept as long as the prices' bidders are.
+	// place by place in between: the whole league's bids, worked out once a
+	// view for each draft.
 	private slotPricesNow(round: number) {
-		const keen = this.keenestCache;
-		if (!keen) {
-			return undefined;
+		const tables = this.tables;
+		const next = this.nextDraft();
+		if (tables.slotsDraft !== next) {
+			tables.slots = new Map();
+			tables.slotsDraft = next;
 		}
-		keen.slots ??= new Map();
-		let slots = keen.slots.get(round);
+		let slots = tables.slots!.get(round);
 		if (!slots) {
 			const timer = mark();
-			const next = this.nextDraft();
 			const rows: { x: number; p: number }[] = [];
 			for (const tid of this.outlook.teams.keys()) {
 				for (const dp of this.heldNow(tid).picks) {
 					if (dp.season === next && dp.round === round) {
-						const p = this.bidPriceNow({ players: [], picks: [dp] }, [tid]);
+						const p = this.leagueBidNow({ players: [], picks: [dp] }, [tid]);
 						if (Number.isFinite(p)) {
 							rows.push({ x: expectedPlace(this.outlook, dp), p });
 						}
@@ -1078,38 +1144,64 @@ export class SmartView {
 				}
 			}
 			slots = decreasingAt(rows, this.outlook.numTeams);
-			keen.slots.set(round, slots);
+			tables.slots!.set(round, slots);
 			lap("slot prices", timer);
 		}
 		return slots;
 	}
 
-	// The second-highest real bid for all of a package among the keenest
-	// teams other than `not`.
-	private bidPriceNow(a: Holdings, not: readonly number[]) {
-		if (a.players.length === 0 && a.picks.length === 0) {
-			return 0;
+	// THE LEAGUE'S BID for one player or pick: the second-highest real bid
+	// of all teams other than `not` (bidNow: its use, where it could take it
+	// under the trade rules) - read keenest first by each team's rough want
+	// (its roster not cut, about the most its real bid can be), until no team
+	// left could beat the second; none able to take it, no price. Set by the
+	// six most valuable franchises alone, a star whose salary none of them
+	// could send back had no price, and his team sold him at his use to it:
+	// in a replay of the owner's League 27, Indiana Tyrese Haliburton (27,
+	// 67) for Desmond Bane and a 2032 first, Denver Nikola Jokić (32, 76)
+	// for four players and no picks (owner, 2026-11-21: "Should not be
+	// capped at just top 6 ... I want the engine to be fluid and natural").
+	private leagueBidNow(a: Holdings, not: readonly number[]) {
+		const key = `${not.join(",")}|${a.players.map((p) => p.pid).join(",")}|${a.picks.map((dp) => dp.dpid).join(",")}`;
+		const had = this.leagueBids.get(key);
+		if (had !== undefined) {
+			return had;
 		}
-		const bids = [];
-		for (const tid of this.keenestCache?.tids ?? []) {
+		const wants: { tid: number; rough: number }[] = [];
+		for (const tid of this.outlook.teams.keys()) {
 			if (!not.includes(tid)) {
-				const bid = this.bidNow(tid, a);
-				// A team that can't take it under the rules doesn't bid.
-				if (Number.isFinite(bid)) {
-					bids.push(bid);
-				}
+				wants.push({ tid, rough: this.roughUseOfNow(tid, a) });
 			}
 		}
-		bids.sort((x, y) => y - x);
-		// Nobody able to take it: no price to hold out for.
-		return bids[1] ?? bids[0] ?? -Infinity;
+		wants.sort((x, y) => y.rough - x.rough || x.tid - y.tid);
+		let first = Number.NEGATIVE_INFINITY;
+		let second = Number.NEGATIVE_INFINITY;
+		for (const { tid, rough } of wants) {
+			if (second > Number.NEGATIVE_INFINITY && rough <= second) {
+				break;
+			}
+			const bid = this.bidNow(tid, a);
+			if (bid > first) {
+				second = first;
+				first = bid;
+			} else if (bid > second) {
+				second = bid;
+			}
+		}
+		const price = second > Number.NEGATIVE_INFINITY ? second : first;
+		this.leagueBids.set(key, price);
+		return price;
 	}
 
 	async price(a: Holdings, not: readonly number[]) {
+		// Every team's bid counts: every team read as it stands.
+		for (const tid of this.outlook.teams.keys()) {
+			await this.holdingsOf(tid);
+		}
 		if (a.picks.length > 0) {
 			await this.classPrices();
 		}
-		for (const tid of await this.keenest()) {
+		for (const tid of this.outlook.teams.keys()) {
 			if (!not.includes(tid)) {
 				await ensureRetention(this.outlook, a.players, tid);
 			}
@@ -1232,33 +1324,24 @@ export class SmartView {
 	// priced at 0.67 titles against 0.03 to PHO, and no offer was enough;
 	// in League 6, Cam Reddish (none) turned down four players for a price
 	// of 0.25 against 0.004, and Mudiay (0.01) D'Angelo Russell.
-	// A package's market price, as premiumNow counts what a team gives: its
-	// price whole - or, where no keen team could take all of it under the
-	// trade rules, piece by piece, each at its own price, or at its use to
-	// the team where nobody could take that either. Whole, a first sent with
-	// salary nobody else could absorb had no price, and its team gave it at
-	// its bare use: in League 12 runs Dallas a 2024 first (priced 0.31, of use
-	// 0.02 to it) with two players on the minimum for Aaron Nesmith (42/58),
-	// Chicago two firsts (0.38 each) with Jabari Brown for Marvin Bagley -
-	// and a young star sent with such a contract would have gone the same way.
+	// A package's market price as premiumNow counts it: piece by piece
+	// (priceNow), a piece nobody would take at its use to the team. Where a
+	// package had no price whole, a first sent with salary nobody else could
+	// absorb went at its bare use: in League 12 runs Dallas a 2024 first
+	// (priced 0.31, of use 0.02 to it) with two players on the minimum for
+	// Aaron Nesmith (42/58), Chicago two firsts (0.38 each) with Jabari Brown
+	// for Marvin Bagley.
 	packagePriceNow(
 		tid: number,
 		x: Holdings,
 		not: readonly number[],
 		h = this.heldNow(tid),
 	) {
-		const price = this.priceNow(x, not);
-		if (price > -Infinity || x.players.length + x.picks.length <= 1) {
-			return price;
-		}
 		let sum = 0;
-		const pieces: Holdings[] = [
-			...x.players.map((p) => ({ players: [p], picks: [] })),
-			...x.picks.map((dp) => ({ players: [], picks: [dp] })),
-		];
-		for (const one of pieces) {
-			const each = this.priceNow(one, not);
-			sum += each > -Infinity ? each : this.useOfNow(tid, one, h);
+		for (const one of piecesOf(x)) {
+			const each = this.piecePriceNow(one, not);
+			sum +=
+				each > Number.NEGATIVE_INFINITY ? each : this.useOfNow(tid, one, h);
 		}
 		return sum;
 	}
@@ -1400,6 +1483,9 @@ export class SmartView {
 		seller: number,
 		out: Holdings,
 		ask?: OfferAsk,
+		// The market's test of a deal for the buyer (offerClears): its worth,
+		// sure worth and margin of error.
+		clears?: OfferClears,
 	) {
 		const s = smartSettings;
 		await ensureRetention(this.outlook, out.players, buyer);
@@ -1420,7 +1506,6 @@ export class SmartView {
 		// teams that set prices and the draft classes don't change while it
 		// is made, and read for each piece they were 40% of a moment.)
 		const none = { players: [], picks: [] };
-		const keen = await this.keenest();
 		await this.classPrices();
 		await this.holdingsOf(seller);
 		const sellerHeld = this.heldNow(seller);
@@ -1429,8 +1514,8 @@ export class SmartView {
 				? this.premiumNow(seller, out, [seller, buyer], sellerHeld)
 				: 0;
 		const toSeller = async (a: Holdings) => {
-			for (const tid of [seller, ...keen]) {
-				if (tid === seller || tid !== buyer) {
+			for (const tid of this.outlook.teams.keys()) {
+				if (tid !== buyer) {
 					await ensureRetention(this.outlook, a.players, tid);
 				}
 			}
@@ -1500,6 +1585,41 @@ export class SmartView {
 			0;
 		let offer: Holdings = { players: [], picks: [] };
 		let order = candidates;
+		// The salary first, then what the seller wants most on top, while it
+		// still gains - as a GM builds a trade for a big contract around the
+		// salary it must send.
+		const salaryFirst = () => {
+			const most = s.offerSize + s.fillers;
+			let o = this.fillSalary(
+				buyer,
+				held,
+				out,
+				{ players: [], picks: [] },
+				allowed,
+				buyerMatches,
+				sellerMayTake,
+			);
+			if (!o || !gains(o)) {
+				return { offer: o, gains: false };
+			}
+			for (const { x } of order) {
+				if (o.players.length + o.picks.length >= most) {
+					break;
+				}
+				if (
+					"pid" in x
+						? o.players.some((y) => y.pid === x.pid)
+						: o.picks.some((y) => y.dpid === x.dpid)
+				) {
+					continue;
+				}
+				const next = plus(o, x);
+				if (sellerMayTake(next) && buyerMatches(next) && gains(next)) {
+					o = next;
+				}
+			}
+			return { offer: o, gains: true };
+		};
 		if (ask) {
 			// What the seller is after first: the first of `lead` it would
 			// give (none, no offer), then any of `next`.
@@ -1562,37 +1682,8 @@ export class SmartView {
 			// most on top, while it still gains - as a GM builds a trade for a
 			// big contract around the salary it must send.
 			if (s.fillByDollar && !ask && !(filled && gains(filled))) {
-				const most = s.offerSize + s.fillers;
-				let o = this.fillSalary(
-					buyer,
-					held,
-					out,
-					{ players: [], picks: [] },
-					allowed,
-					buyerMatches,
-					sellerMayTake,
-				);
-				if (o && gains(o)) {
-					for (const { x } of order) {
-						if (o.players.length + o.picks.length >= most) {
-							break;
-						}
-						if (
-							"pid" in x
-								? o.players.some((y) => y.pid === x.pid)
-								: o.picks.some((y) => y.dpid === x.dpid)
-						) {
-							continue;
-						}
-						const next = plus(o, x);
-						if (sellerMayTake(next) && buyerMatches(next) && gains(next)) {
-							o = next;
-						}
-					}
-					filled = o;
-				} else {
-					filled ??= o;
-				}
+				const first = salaryFirst();
+				filled = first.gains ? first.offer : (filled ?? first.offer);
 			}
 			if (!filled) {
 				offerStats.cantMatch += 1;
@@ -1611,8 +1702,28 @@ export class SmartView {
 		// of the owner's League 13), and the trade rules' check reads the
 		// database.
 		const m3 = mark();
-		const inn = offer;
-		if ((await this.dealWorth(buyer, seller, inn, out)) <= 0) {
+		let inn = offer;
+		if (clears && s.offerClears && !ask) {
+			const cleared = await this.clearingOffer(
+				buyer,
+				seller,
+				out,
+				offer,
+				() =>
+					buyerMatches({ players: [], picks: [] })
+						? undefined
+						: salaryFirst().offer,
+				candidates,
+				(o) => buyerMatches(o) && sellerMayTake(o),
+				clears,
+			);
+			if (!cleared) {
+				offerStats.buyerSaysNo += 1;
+				lap("offer: checks", m3);
+				return undefined;
+			}
+			inn = cleared;
+		} else if ((await this.dealWorth(buyer, seller, inn, out)) <= 0) {
 			offerStats.buyerSaysNo += 1;
 			lap("offer: checks", m3);
 			return undefined;
@@ -1642,46 +1753,155 @@ export class SmartView {
 		return { offer: inn };
 	}
 
-	// THE MARKET: the best real offer for `out` from the CPU teams keenest on
-	// it (not `seller`, not `not`): each its own players, as many as still
-	// leave it better off by its own worth, legal under the trade rules, and
-	// what that offer is worth to the seller.
+	// The offer a buyer would make in the market (smartSettings.offerClears):
+	// the way it built one cut back, the piece the seller wants least first
+	// (as the rules let it go), to the most it could give that clears
+	// `clears` for the buyer - found by halving, each try a franchise value
+	// or two; and where that leaves the seller nothing, the salary first
+	// instead (`second`), the better for the seller of the two. None
+	// clearing, none.
+	private async clearingOffer(
+		buyer: number,
+		seller: number,
+		out: Holdings,
+		first: Holdings,
+		second: () => Holdings | undefined,
+		ranked: readonly { x: Player | DraftPick; v: number }[],
+		legal: (o: Holdings) => boolean,
+		clears: OfferClears,
+	) {
+		const id = (x: Player | DraftPick) =>
+			"pid" in x ? `p${x.pid}` : `d${x.dpid}`;
+		const wanted = new Map(ranked.map((c) => [id(c.x), c.v]));
+		// Each piece the rules let go, the one the seller wants least first.
+		const cutBack = (w: Holdings) => {
+			const chain = [w];
+			for (;;) {
+				const now = chain.at(-1)!;
+				const least = [...now.players, ...now.picks].sort(
+					(a, b) =>
+						(wanted.get(id(a)) ?? Number.NEGATIVE_INFINITY) -
+						(wanted.get(id(b)) ?? Number.NEGATIVE_INFINITY),
+				);
+				let next: Holdings | undefined;
+				for (const x of least) {
+					const without = minus(now, x);
+					if (
+						without.players.length + without.picks.length > 0 &&
+						legal(without)
+					) {
+						next = without;
+						break;
+					}
+				}
+				if (!next) {
+					return chain;
+				}
+				chain.push(next);
+			}
+		};
+		const clearsFor = async (w: Holdings) => {
+			const worth = await this.dealWorth(buyer, seller, w, out);
+			const sure = this.sureWorthNow(buyer, seller, w, out);
+			const margin = this.marginNow(buyer, w, out);
+			const ok = clears(buyer, worth, sure, margin);
+			for (const watch of offerWatchers) {
+				watch({ buyer, seller, offer: w, worth, sure, margin, clears: ok });
+			}
+			return ok;
+		};
+		// The most it could give that clears: the fewest pieces cut.
+		const most = async (w: Holdings) => {
+			const chain = cutBack(w);
+			if (await clearsFor(chain[0]!)) {
+				return chain[0]!;
+			}
+			let lo = 1;
+			let hi = chain.length - 1;
+			if (hi < lo || !(await clearsFor(chain[hi]!))) {
+				return undefined;
+			}
+			while (lo < hi) {
+				const mid = Math.floor((lo + hi) / 2);
+				if (await clearsFor(chain[mid]!)) {
+					hi = mid;
+				} else {
+					lo = mid + 1;
+				}
+			}
+			return chain[lo]!;
+		};
+		const one = await most(first);
+		const oneWorth = one
+			? await this.dealWorth(seller, buyer, out, one)
+			: Number.NEGATIVE_INFINITY;
+		if (oneWorth > 0) {
+			return one;
+		}
+		const other = second();
+		if (!other || this.keyOf(other) === this.keyOf(first)) {
+			return one;
+		}
+		const two = await most(other);
+		const twoWorth = two
+			? await this.dealWorth(seller, buyer, out, two)
+			: Number.NEGATIVE_INFINITY;
+		return twoWorth > oneWorth ? two : one;
+	}
+
+	// THE MARKET: the best real offer for `out` from the CPU teams (not
+	// `seller`, not `not`): each its own players, as many as still leave it
+	// better off by its own worth, legal under the trade rules, and what that
+	// offer is worth to the seller. The teams are asked keenest first - by
+	// their use for it, or as the market ranks them (`among`: what each would
+	// gain from it once it has sent back its salary) - for as long as one
+	// could still beat the offers in hand: a team can give the seller no more
+	// than its want for it past what the seller needs for it (his use to it,
+	// and his price past that as far as it can still get it).
 	async bestRealOffer(
 		seller: number,
 		out: Holdings,
 		not: number,
-		// Teams that may not buy now (the market: those that dealt this moment).
+		// Teams that may not buy now.
 		skip: ReadonlySet<number> = new Set(),
-		// How many of the keenest teams are asked.
-		asked = smartSettings.buyers,
-		// The teams it may be put to (the market: those that want him most of
-		// all teams); the most valuable franchises by default.
-		among?: readonly number[],
+		among?: readonly { tid: number; want: number }[],
+		// The market's test of a deal for a buyer (offerClears).
+		clears?: OfferClears,
 	) {
 		const m0 = mark();
-		const keen = [];
-		for (const tid of among ?? (await this.keenest())) {
-			if (tid !== seller && !this.humans.has(tid) && !skip.has(tid)) {
-				keen.push({ tid, want: await this.useOf(tid, out) });
+		let bidders = among;
+		if (!bidders) {
+			const wants = [];
+			for (const tid of this.outlook.teams.keys()) {
+				if (tid !== seller && !this.humans.has(tid) && !skip.has(tid)) {
+					wants.push({ tid, want: await this.useOf(tid, out) });
+				}
 			}
+			bidders = wants.sort((a, b) => b.want - a.want || a.tid - b.tid);
 		}
-		// The teams asked are the keenest on it whoever the deal is with: a
-		// team judging an offer weighs the others it would hear from, not
-		// the next team down (which asked one more team than the market).
-		const buyers = keen
-			.sort((a, b) => b.want - a.want || a.tid - b.tid)
-			.slice(0, asked)
-			.filter((b) => b.tid !== not);
+		await this.price(out, [seller]);
+		const needs = -this.dealWorthNow(seller, -1, out, {
+			players: [],
+			picks: [],
+		});
 		lap("offer: wants", m0);
 		let best: { buyer: number; worth: number; offer: Holdings } | undefined;
 		// The next best offer's worth to the seller: what the winner must
 		// beat (the market trims its offer to about that).
 		let second = Number.NEGATIVE_INFINITY;
-		for (const { tid: buyer, want } of buyers) {
-			if (want <= 0) {
+		for (const { tid: buyer, want } of bidders) {
+			if (want - needs <= Math.max(0, second)) {
+				break;
+			}
+			if (
+				buyer === not ||
+				buyer === seller ||
+				this.humans.has(buyer) ||
+				skip.has(buyer)
+			) {
 				continue;
 			}
-			const made = await this.offerFrom(buyer, seller, out);
+			const made = await this.offerFrom(buyer, seller, out, undefined, clears);
 			if (!made) {
 				continue;
 			}

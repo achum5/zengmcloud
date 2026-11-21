@@ -350,16 +350,24 @@ test(
 					{ players: [x], picks: [] },
 					human,
 				);
-				// The human's worst player for him.
+				// The human's worst player for him - where the league would pay
+				// for him at all: one nobody would pay for (a contract that costs
+				// his team more than he gives it) may go for a minimum salary.
+				const price = await view.price({ players: [x], picks: [] }, [
+					seller,
+					human,
+				]);
 				const fleece = await smartJudgeOffer(
 					seller,
 					human,
 					ids([x]),
 					ids([humanRoster[0]!]),
 				);
-				fleeces += 1;
+				if (price > 0) {
+					fleeces += 1;
+				}
 				note("humanFleece", label(x), fleece.gain);
-				if (fleece.gain > 0) {
+				if (price > 0 && fleece.gain > 0) {
 					wrong.push(`${label(x)} taken for ${label(humanRoster[0]!)}`);
 				}
 				if (!real || !(real.worth > 0)) {

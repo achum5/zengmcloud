@@ -6,8 +6,8 @@ import { loadLeagueFile } from "./loadLeague.ts";
 // each made with its buyer's place among the franchises (by franchise value)
 // and its gain - to see whether teams just below the best are ever offered
 // the players they would gain from, and where the offers fall away.
-// ST_BUYERS sets how many teams each player is put to.
-//   ST_LEAGUE=<league.json> ST_OUT=<file> [ST_BUYERS=2] \
+// ST_BUDGET sets the offers a moment may ask for.
+//   ST_LEAGUE=<league.json> ST_OUT=<file> [ST_BUDGET=400] \
 //     npx vitest --run --project basketball src/test/smart/secondTierProbe.test.ts
 const env: Record<string, string | undefined> =
 	(globalThis as any).process?.env ?? {};
@@ -31,9 +31,16 @@ test.skipIf(!env.ST_LEAGUE)(
 			smartCpu: true,
 			realisticFrontOffices: false,
 		});
+		// ST_PHASE=<n>: the moment as if in that phase (1: a file saved just
+		// past the deadline, read as before it).
+		if (env.ST_PHASE) {
+			await league.setGameAttributes({ phase: Number(env.ST_PHASE) as any });
+		}
 		const { idb } = await import("../../worker/db/index.ts");
 		const market = await import("../../worker/core/smartCpu/market.ts");
-		market.marketSettings.buyers = Number(env.ST_BUYERS ?? 2);
+		if (env.ST_BUDGET) {
+			market.marketSettings.offerBudget = Number(env.ST_BUDGET);
+		}
 		const teams = await idb.cache.teams.getAll();
 		const abbrev = new Map(teams.map((t) => [t.tid, t.abbrev]));
 		let rank = new Map<number, number>();

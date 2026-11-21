@@ -18,38 +18,53 @@ import { inStages } from "../realisticFrontOffice/stages.ts";
 import { smartVanillaOn } from "../realisticFrontOffice/isOn.ts";
 import { viewFor } from "./signing.ts";
 import { noteVanillaPool } from "./vanilla.ts";
-import { smartSettings, type Holdings, type SmartView } from "./worth.ts";
+import {
+	offerStats,
+	type Holdings,
+	type OfferClears,
+	type SmartView,
+} from "./worth.ts";
+import { marginShare, mustMove, plansOf, type Plan } from "./plans.ts";
 
-// THE GM'S MARKET (docs/smart-cpu.md, layer 2). At each market moment, every
-// CPU team's tradable players are priced by their owner's use and the bids
-// of the keenest teams. A player is a candidate sale when a keen CPU team
-// bids above both what he does for his own team and what the rest of the
-// market would pay, and could take him under the salary rules in an offer
-// of a few players. Each candidate is put to the best real offer from the
-// keen CPU teams (layer 1's bestRealOffer: each its best for the seller
-// while it still gains, legal under the trade rules), and the seller takes
-// it if it gains - the market rule kept by construction. The deals are made
-// best for the seller first, each team dealing at most once a moment, each
-// checked again as it stands before it is made.
+// THE GM'S MARKET (docs/smart-cpu.md, layer 2). At each market moment every
+// team reads where it stands (plans.ts), and every CPU team reads every
+// tradable player on every other (the scan). A player is a candidate sale
+// when some team would trade for him - its use for him past his own team's -
+// each team shopping its few, those it must move before the deadline first.
+// Each is auctioned: put to the teams that want him most once they have sent
+// back his salary, asked in turn for a real offer (layer 1's offerFrom: its
+// best for the seller that still clears its own margin, legal under the
+// trade rules) until two the seller would take are in, and the seller takes
+// the best if it gains - the market rule kept by construction. The deals are
+// made best for each buyer first, each team dealing at most once a moment,
+// each checked again as it stands before it is made.
 
 export const marketSettings = {
-	// Most deals a moment.
-	dealsPerMoment: 8,
-	// The keen teams each candidate is put to, keenest first (2026-11-14:
-	// four found 82 deals a moment, two 74, and the deals made were the
-	// same but one - for a third less work).
-	buyers: 2,
-	// The players each team shops a moment, those the market wants most
-	// past what they do for it first (2026-11-14: the deals made were the
-	// same shopping five as shopping all, for a third less work).
-	shopped: 5,
+	// In season, a player whose deal ends this season shopped every moment,
+	// never rested: every moment nearer the deadline he is worth less to
+	// sell, and after it nothing to a team he won't re-sign with. Rested
+	// every other moment, Brooklyn's Michael Porter Jr. (63, $40.8M, under
+	// 1% to re-sign) sat out the deadline's last day in the owner's League
+	// 27 (2026-11-21).
+	restExpiring: false,
 	// Candidates ranked by a rough read (rosters not cut to the limit).
 	roughRanking: true,
-	// Each shopped player put to the teams that want him most of all teams,
-	// not only of the keenest.
-	anyBuyer: true,
-	// A buyer's best players by its own use, kept out of salary matching.
-	core: 3,
+	// THE SCAN (owner, 2026-11-21: "they're scouting the entire league
+	// constantly"): every CPU team reads every tradable player on every other
+	// team at each moment, and every player some team would trade for is on
+	// the block - those that must move first, then the most a deal could
+	// make. Each is put to every team whose want for him, once it has sent
+	// back his salary (SmartView.matchedNow), is more than his team needs for
+	// him, the keenest first, for as long as one could still beat the offers
+	// in hand (SmartView.bestRealOffer). Put to the two keenest by their use
+	// alone, Brooklyn's Michael Porter Jr. (63, $40.8M, his deal ending, under
+	// 1% to re-sign) went to the Lakers and Oklahoma City, neither of whom
+	// could send back his salary and still clear its margin, and never to New
+	// York, whose offer did (the owner's League 27).
+	// The work a moment may take, in offers asked for - the time a phone has
+	// for it, not a rule of the market: what is left waits for the next
+	// moment, a few days on.
+	offerBudget: 400,
 	// In season, a moment about every this many games a team, and every day
 	// in the last few before the deadline - where three in four of the NBA's
 	// in-season trades are made (arena benchmarks).
@@ -192,124 +207,137 @@ export const teamsOf = (
 		},
 	] as TradeTeams;
 
-// The candidate sales at this moment, best surplus first: players some keen
-// CPU team would pay more for than their owner and the rest of the market.
+// The candidate sales at this moment: every CPU team's read of every
+// tradable player on another (the scan), and each player some team would
+// trade for - its use for him past his own team's - those their teams must
+// move before the deadline first (plans.ts), those shopped last moment
+// without a taker after the rest, then the most a deal could make.
+export type Candidate = {
+	seller: number;
+	p: Player;
+	// The keenest team's use for him past his own team's.
+	surplus: number;
+	// His team must move him before the deadline (plans.ts).
+	mustMove: boolean;
+	// The keenest team by its use alone.
+	buyer: number;
+	// Every other team's rough want for him, keenest first.
+	bids: { k: number; bid: number }[];
+};
+
 export const candidates = async (
 	view: SmartView,
 	cpu: ReadonlySet<number>,
 	dealt: ReadonlySet<number>,
-	// Players each team shopped last moment without a taker: they sit this
-	// one out, behind its others.
+	// Players each team shopped last moment without a taker: behind the rest.
 	rested: ReadonlyMap<number, ReadonlySet<number>> = new Map(),
-) => {
-	const keen = await view.keenest();
-	const found: {
-		seller: number;
-		buyer: number;
-		p: Player;
-		surplus: number;
-		// The teams that want him most, of all of them (shopped players).
-		buyers?: number[];
-	}[] = [];
+	plans: ReadonlyMap<number, Plan> = new Map(),
+): Promise<Candidate[]> => {
+	const buyers = [...cpu].filter((k) => !dealt.has(k));
+	const found: Candidate[] = [];
 	for (const seller of cpu) {
 		if (dealt.has(seller)) {
 			continue;
 		}
+		await holdRoomForAdvance();
 		const held = view.heldNow(seller);
 		await ensureRetention(view.outlook, held.players, seller);
 		for (const p of held.players) {
 			if (isUntradable(p).untradable) {
 				continue;
 			}
-			// Ranked by the keen teams' uses for him (what each would give),
-			// read roughly - rosters not cut to the limit, a third of the work
-			// (2026-11-14) - the salary rules left to `matchable` and the real
-			// offer: a legal bid costs a franchise value more for every keen
-			// team, every player (31 s of a moment).
+			// Read roughly - rosters not cut to the limit, a third of the work
+			// (2026-11-14) - the salary rules left to the read net of salary
+			// and the real offers.
 			const read = (tid: number) =>
 				marketSettings.roughRanking
 					? view.roughUseOfNow(tid, one(p))
 					: view.useOfNow(tid, one(p));
 			const own = read(seller);
-			const bids = keen
-				.filter((k) => k !== seller)
-				.map((k) => ({ k, bid: read(k) }))
-				.sort((a, b) => b.bid - a.bid);
-			const top = bids.find((b) => cpu.has(b.k) && !dealt.has(b.k));
-			if (!top) {
-				continue;
-			}
-			const rest = bids.filter((b) => b.k !== top.k);
-			const price = rest[1]?.bid ?? rest[0]?.bid ?? -Infinity;
-			const surplus = top.bid - Math.max(own, price);
-			if (surplus > 0 && matchable(view, top.k, p)) {
-				found.push({ seller, buyer: top.k, p, surplus });
-			}
-		}
-	}
-	// Each team shops the few the market wants most past what they do for
-	// it, as a GM puts players on the block - those it shopped last time
-	// without a taker after its others.
-	const shopped = new Map<number, number>();
-	const wasRested = (c: (typeof found)[number]) =>
-		rested.get(c.seller)?.has(c.p.pid) ? 1 : 0;
-	const chosen = found
-		.sort(
-			(a, b) =>
-				wasRested(a) - wasRested(b) ||
-				b.surplus - a.surplus ||
-				a.p.pid - b.p.pid,
-		)
-		.filter((c) => {
-			const n = (shopped.get(c.seller) ?? 0) + 1;
-			shopped.set(c.seller, n);
-			return n <= marketSettings.shopped;
-		});
-	// Each put to the teams that want him most, of all of them: the keenest
-	// franchises set prices, but any team may buy (2026-11-14: with only the
-	// six keenest buying, five teams made 85% of the purchases).
-	if (marketSettings.anyBuyer) {
-		for (const c of chosen) {
-			await holdRoomForAdvance();
-			const wants: { k: number; want: number }[] = [];
-			for (const k of cpu) {
-				if (k !== c.seller && !dealt.has(k)) {
-					await ensureRetention(view.outlook, [c.p], k);
-					wants.push({ k, want: view.roughUseOfNow(k, one(c.p)) });
+			const bids: { k: number; bid: number }[] = [];
+			for (const k of buyers) {
+				if (k !== seller) {
+					await ensureRetention(view.outlook, [p], k);
+					bids.push({ k, bid: read(k) });
 				}
 			}
-			c.buyers = wants
-				.sort((a, b) => b.want - a.want || a.k - b.k)
-				.slice(0, marketSettings.buyers)
-				.map((w) => w.k);
+			bids.sort((a, b) => b.bid - a.bid || a.k - b.k);
+			const top = bids[0];
+			if (top && top.bid - own > marketSettings.minGain) {
+				found.push({
+					seller,
+					p,
+					surplus: top.bid - own,
+					mustMove: mustMove(view, plans, p, seller),
+					buyer: top.k,
+					bids,
+				});
+			}
 		}
 	}
-	return chosen;
+	const season = g.get("season");
+	const restsNow = (p: Player) =>
+		marketSettings.restExpiring ||
+		g.get("phase") !== PHASE.REGULAR_SEASON ||
+		contractOf(p).exp > season;
+	const wasRested = (c: Candidate) =>
+		rested.get(c.seller)?.has(c.p.pid) && restsNow(c.p) ? 1 : 0;
+	return found.sort(
+		(a, b) =>
+			Number(b.mustMove) - Number(a.mustMove) ||
+			wasRested(a) - wasRested(b) ||
+			b.surplus - a.surplus ||
+			a.p.pid - b.p.pid,
+	);
 };
 
-// Whether a buyer could take him under the salary rules in an offer of a few
-// players: with room for him, or with its dearest few players outside its
-// core matching his salary. A price counts any trade the buyer would still
-// gain from; a real offer is a few players (bestRealOffer), and expensive
-// players a contender can only match with its core were all of the first
-// two dozen candidates and none of the 26 deals (2026-11-13 scan).
-const matchable = (view: SmartView, buyer: number, p: Player) => {
-	const none = { players: [], picks: [] };
-	if (view.salariesWork(buyer, none, one(p))) {
-		return true;
+// The teams a candidate is put to: every one whose rough want for him is
+// more than his team needs for him (his use to it, and his price past that
+// as far as it can still get it), read again net of the salary it must send
+// back for him - a contender's want for a big contract is what is left past
+// the rotation players it sends (the Lakers', for Michael Porter Jr., 0.385
+// of a title to 0.11) - the keenest net first.
+const biddersFor = async (view: SmartView, c: Candidate) => {
+	await view.price(one(c.p), [c.seller]);
+	const needs = -view.dealWorthNow(c.seller, -1, one(c.p), none);
+	const wants: { tid: number; want: number }[] = [];
+	for (const { k, bid } of c.bids) {
+		if (bid <= needs) {
+			break;
+		}
+		const m = view.matchedNow(k, one(c.p));
+		if (m && m.net > needs) {
+			wants.push({ tid: k, want: m.net });
+		}
 	}
-	const held = view.heldNow(buyer);
-	const uses = view.usesOf(buyer, held);
-	const byUse = [...held.players].sort(
-		(a, b) => uses.get(b.pid)! - uses.get(a.pid)! || a.pid - b.pid,
-	);
-	const others = byUse
-		.slice(marketSettings.core)
-		.filter((x) => !isUntradable(x).untradable)
-		.sort((a, b) => contractOf(b).amount - contractOf(a).amount)
-		.slice(0, smartSettings.offerSize);
-	return view.salariesWork(buyer, { players: others, picks: [] }, one(p));
+	return wants.sort((a, b) => b.want - a.want || a.tid - b.tid);
 };
+
+// The plans read at this moment (dealsNow): a deal's margins by them.
+let plansNow: ReadonlyMap<number, Plan> = new Map();
+
+// A team's margin of error for a deal, by its plan (plans.ts marginShare).
+const marginFor = (
+	view: SmartView,
+	tid: number,
+	give: Holdings,
+	get: Holdings,
+) =>
+	view.marginNow(tid, give, get) * marginShare(view, plansNow, tid, give, get);
+
+// The market's test of a deal for its buyer, as each deal is made: its
+// gain, and its sure gain past its margin of error by its plan (smartSettings.
+// offerClears builds offers to it).
+const buyerClearsFor =
+	(view: SmartView, out: Holdings): OfferClears =>
+	(buyer, worth, sure, margin) =>
+		worth > marketSettings.minGain &&
+		(!marketSettings.margins ||
+			sure >
+				Math.max(
+					marketSettings.minGain,
+					margin * marginShare(view, plansNow, buyer, none, out),
+				));
 
 // The winning offer, trimmed to what it must be: the buyer takes back what it
 // would miss most, one piece at a time, while the seller still gains by more
@@ -379,7 +407,7 @@ const trimmed = (
 						view.sureWorthNow(seller, buyer, out, without) >
 						Math.max(
 							marketSettings.minGain,
-							view.marginNow(seller, out, without),
+							marginFor(view, seller, out, without),
 						)
 					))
 			) {
@@ -414,52 +442,42 @@ export const dealsNow = async (
 	onShopped?: (shopped: readonly { seller: number; p: Player }[]) => void,
 ) => {
 	await view.prime();
-	// Every player's chance of staying with each team that sets prices, so
-	// what anything is worth doesn't hang on what was priced before.
-	const keen = await view.keenest();
-	await timed("market: retention", async () => {
-		for (const tid of cpu) {
-			for (const k of [tid, ...keen]) {
-				await ensureRetention(view.outlook, view.heldNow(tid).players, k);
-			}
-		}
-	});
 	const deals: SmartDeal[] = [];
+	plansNow = plansOf(view, view.outlook.teams.keys());
 	const all = await timed("market: candidates", () =>
-		candidates(view, cpu, new Set(), rested),
+		candidates(view, cpu, new Set(), rested, plansNow),
 	);
-	onShopped?.(all);
-	marketStats.candidates += all.length;
-	if (smartTraceWatchers.length > 0) {
-		for (const c of all) {
-			trace(
-				{ stage: "shopped", seller: c.seller, p: c.p, buyers: c.buyers },
-				view,
-			);
-		}
-	}
+	const shopped: Candidate[] = [];
+	let asked = 0;
 	for (const c of all) {
 		// A moment can run for minutes on a phone: the room's busy mark
 		// renewed as it goes, not only as it starts (a no-op while the mark
 		// has more than half its time left).
 		await holdRoomForAdvance();
 		const out = one(c.p);
+		if (asked >= marketSettings.offerBudget) {
+			break;
+		}
+		shopped.push(c);
+		marketStats.candidates += 1;
+		const bidders = await timed("market: bidders", () => biddersFor(view, c));
+		const buyers = bidders.map((b) => b.tid);
+		trace({ stage: "shopped", seller: c.seller, p: c.p, buyers }, view);
+		const tried = offerStats.tried;
 		const real = await timed("market: offers", () =>
 			view.bestRealOffer(
 				c.seller,
 				out,
 				-1,
 				new Set(),
-				marketSettings.buyers,
-				c.buyers,
+				bidders,
+				buyerClearsFor(view, out),
 			),
 		);
+		asked += offerStats.tried - tried;
 		if (!real) {
 			marketStats.noOffer += 1;
-			trace(
-				{ stage: "no offer", seller: c.seller, p: c.p, buyers: c.buyers },
-				view,
-			);
+			trace({ stage: "no offer", seller: c.seller, p: c.p, buyers }, view);
 			continue;
 		}
 		if (!(real.worth > marketSettings.minGain)) {
@@ -487,6 +505,7 @@ export const dealsNow = async (
 			bar: Math.max(marketSettings.minGain, real.second),
 		});
 	}
+	onShopped?.(shopped);
 	return deals.sort((a, b) => b.sellerGain - a.sellerGain);
 };
 
@@ -679,9 +698,6 @@ const marketMomentNow = async () => {
 		);
 	}
 	for (const found of marketSettings.buyersChoose ? priced : deals) {
-		if (made.length >= marketSettings.dealsPerMoment) {
-			break;
-		}
 		const at = {
 			seller: found.seller,
 			buyer: found.buyer,
@@ -718,14 +734,14 @@ const marketMomentNow = async () => {
 				view.sureWorthNow(found.seller, found.buyer, found.out, found.offer) >
 				Math.max(
 					marketSettings.minGain,
-					view.marginNow(found.seller, found.out, found.offer),
+					marginFor(view, found.seller, found.out, found.offer),
 				)
 			) ||
 				!(
 					view.sureWorthNow(found.buyer, found.seller, found.offer, found.out) >
 					Math.max(
 						marketSettings.minGain,
-						view.marginNow(found.buyer, found.offer, found.out),
+						marginFor(view, found.buyer, found.offer, found.out),
 					)
 				))
 		) {
@@ -736,7 +752,7 @@ const marketMomentNow = async () => {
 					...at,
 					sellerGain,
 					buyerGain,
-					why: `seller sure ${view.sureWorthNow(found.seller, found.buyer, found.out, found.offer).toFixed(3)} margin ${view.marginNow(found.seller, found.out, found.offer).toFixed(3)}; buyer sure ${view.sureWorthNow(found.buyer, found.seller, found.offer, found.out).toFixed(3)} margin ${view.marginNow(found.buyer, found.offer, found.out).toFixed(3)}`,
+					why: `seller sure ${view.sureWorthNow(found.seller, found.buyer, found.out, found.offer).toFixed(3)} margin ${marginFor(view, found.seller, found.out, found.offer).toFixed(3)}; buyer sure ${view.sureWorthNow(found.buyer, found.seller, found.offer, found.out).toFixed(3)} margin ${marginFor(view, found.buyer, found.offer, found.out).toFixed(3)}`,
 				},
 				view,
 			);

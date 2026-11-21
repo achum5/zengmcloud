@@ -60,7 +60,6 @@ test.skipIf(!env.DRAFT_PROBE)(
 			.map((x) => x);
 		const view: any = viewFor(outlook);
 		await view.prime();
-		await view.keenest();
 		const values = new Map<number, number>();
 		for (const t of teams) {
 			values.set(t.tid, view.value(t.tid, await view.holdingsOf(t.tid)));
@@ -69,7 +68,7 @@ test.skipIf(!env.DRAFT_PROBE)(
 			(a, b) => (values.get(a.tid) ?? 0) - (values.get(b.tid) ?? 0),
 		);
 		const abbrev = new Map(teams.map((t) => [t.tid, t.abbrev]));
-		const keen: number[] = await view.keenest();
+		const keen: number[] = [...view.outlook.teams.keys()];
 		log(
 			`keenest: ${keen.map((tid) => `${abbrev.get(tid)} ${(100 * (values.get(tid) ?? 0)).toFixed(1)}`).join(", ")}`,
 		);

@@ -113,7 +113,7 @@ test("a gain in price counts at the share a team can be sure of, a cost in full"
 
 // A PACKAGE NOBODY COULD TAKE WHOLE (SmartView.packagePriceNow): priced piece
 // by piece, so a first sent with salary filler still costs its team its price.
-test("a package no keen team could take whole is priced piece by piece", async () => {
+test("a package is priced piece by piece, a piece nobody would take at its use", async () => {
 	const { SmartView } = await import("./worth.ts");
 	const filler = { pid: 1 } as any;
 	const scrub = { pid: 2 } as any;
@@ -127,7 +127,7 @@ test("a package no keen team could take whole is priced piece by piece", async (
 	const key = (x: any) =>
 		`${x.players.map((p: any) => p.pid).join(",")}|${x.picks.map((dp: any) => dp.dpid).join(",")}`;
 	const stub = {
-		priceNow: (x: any) => prices.get(key(x)) ?? -Infinity,
+		piecePriceNow: (x: any) => prices.get(key(x)) ?? -Infinity,
 		useOfNow: (_tid: number, x: any) => uses.get(key(x)) ?? 0,
 	} as unknown as InstanceType<typeof SmartView>;
 	const price = SmartView.prototype.packagePriceNow.call(
@@ -138,7 +138,7 @@ test("a package no keen team could take whole is priced piece by piece", async (
 		{ players: [], picks: [] },
 	);
 	assert.closeTo(price, 0.0003 + 0.001 + 0.31, 1e-12);
-	// One piece nobody could take has no price to hold out for.
+	// One piece nobody would take: its use, nothing past it to hold out for.
 	assert.strictEqual(
 		SmartView.prototype.packagePriceNow.call(
 			stub,
@@ -147,6 +147,6 @@ test("a package no keen team could take whole is priced piece by piece", async (
 			[],
 			{ players: [], picks: [] },
 		),
-		-Infinity,
+		0.001,
 	);
 });

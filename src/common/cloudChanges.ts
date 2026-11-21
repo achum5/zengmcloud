@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 418,
+		date: "2026-11-21",
+		text: "CPU trades rebuilt to work like real front offices. Every team now sizes up its situation each time the trade market meets, scouts every player in the league, and puts up for trade anyone it would trade - starting with players about to leave in free agency, every time until the deadline. Each player goes to every team that could really use him, so a player lots of contenders want fetches what he's worth, and prices come from the whole league, not just the best teams. A first-round pick packaged with players nobody wants is now counted as the first it is. As the deadline nears, contenders take more risk to win now and losing teams move players before they walk. In test leagues more of the league's best players changed teams, buyers were better off for it, and titles were spread across more teams.",
+	},
+	{
 		n: 417,
 		date: "2026-11-21",
 		text: "3D game: players now run the way real people do, measured from motion capture of real runners and a real speed dribble. The back leg stays straight as it leaves the floor before the heel folds up, arms swing in time with the legs instead of a beat behind, and runners lean into it with their shoulders turning. Speed dribbles are lower and harder, with the free arm pumping.",

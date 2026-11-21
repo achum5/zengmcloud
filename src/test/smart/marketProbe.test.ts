@@ -43,7 +43,7 @@ test.runIf(env.MARKET_PROBE === "1")(
 		for (const tid of tids) {
 			values[tid] = view.value(tid, await view.holdingsOf(tid));
 		}
-		const keenest = await view.keenest();
+		const keenest = [...view.outlook.teams.keys()];
 		const rows = [];
 		const t0 = performance.now();
 		for (const tid of tids) {

@@ -2241,3 +2241,107 @@ realistic front offices fail their own checks with them (ranked, their
 trading block's bids for a team's best player held no picks; with the
 upside, a free agent who makes a team worse every season worth 0.00002 of a
 title).
+
+## The front office: the market rebuilt (2026-11-21)
+
+Two trades from the owner's League 27 started it. Boston, 5-9, gave its 2031
+first, two seconds and two bench players for Luke Kennard (31, 51/51):
+"Seems like an awful trade for the celts". And Brooklyn never moved Michael
+Porter Jr. (29, 63, $40.8M, his deal ending, under 1% to re-sign) before the
+deadline: "These are the common sense things that I want cpu gms to nail
+every time". Then: "Let's take a step back and just think about how real
+GMs and front offices approach team building ... these cpu gms need to be
+acting in that exact way." The owner's calls (2026-11-21): the margin of
+error may be smaller where doing nothing is the worse risk; a market moment
+may take up to twice as long; plans stay internal; each stage pushed once it
+tests well. And on the first draft: "Should not be capped at just top 6 ...
+I don't want explicit rules like that. I want the engine to be fluid and
+natural."
+
+### What was wrong
+
+The worth of anything to a team - its title chances, season by season - was
+sound: it knew Porter was worth 0.38 of a title to the Lakers and to
+Oklahoma City and nothing to Brooklyn. The market around it was not.
+
+- **Prices by six teams.** A piece's price was the second-highest bid among
+  the six most valuable franchises, a package's their bid for all of it. A
+  first sent with players nobody bid for lost what it fetched alone (Boston's
+  2031 first: 0.06 alone, 0.02 with Ron Harper Jr. and Amari Williams, and
+  Boston counted it at its own use); a star whose salary none of the six
+  could send back had no price, and his team sold him at his use to it.
+- **Two buyers, one offer each.** Each shopped player went to the two teams
+  that wanted him most by their use alone, each built one offer - what the
+  seller wanted most, piled on until the buyer broke even - and that offer
+  died at the buyer's own margin of error. Porter went to the Lakers and
+  Oklahoma City: the Lakers could send back his salary for a gain of 0.013
+  against a margin of 0.098, Oklahoma City offered Jalen Williams (64, $41.5M)
+  for a gain of 0.0003. New York, whose offer cleared both sides, was never
+  asked.
+- **Rested at the deadline.** A player shopped without a taker sat the next
+  moment out - the deadline's last days too, for a player about to leave.
+
+### What a front office does now
+
+- **A plan** (`plans.ts`): each moment every team reads where it stands from
+  its title chances as its trades count them - this season's on what it
+  holds (a star hurt now back for the playoffs), the next three's:
+  contending, pushing, building, rebuilding.
+- **The scan**: every CPU team reads every tradable player on every other
+  team; every player some team would trade for is on the block, those that
+  must move first (his deal ending, his team not contending, unlikely to
+  re-sign) - shopped every moment, never rested.
+- **The league's price** (`SmartView.leagueBidNow`): the second-highest real
+  bid of all teams, read keenest first and stopped once no team left could
+  beat the second; a pick at least what it will fetch once its draft is next;
+  a package, its pieces apart.
+- **The auction** (`SmartView.bestRealOffer`): each player put to every team
+  whose want for him once it has sent back his salary (`matchedNow`) is more
+  than his team needs for him, the keenest first, for as long as one could
+  still beat the offers in hand.
+- **Offers a buyer would make** (`offerClears`): its offer cut back, the piece
+  the seller wants least first, to the most it would give that clears its
+  own margin - built salary first too, where his salary must go back.
+- **Risk by the plan** (`marginShare`): as the deadline nears, a contender
+  buying and a team selling a player who must move ask less of their margin
+  of error - half on the deadline's last day.
+
+### Measured
+
+The owner's League 27, replayed from 14 games in to the deadline, twice:
+Porter went to Atlanta for Dyson Daniels (24, 60/66), Dorian Finney-Smith
+and a 2027 first, and to San Antonio for Keldon Johnson, Tobias Harris, a
+20-year-old prospect, a first and a second; 13 and 11 trades in all (the
+owner's own game made 10 there). With prices still set by the six most
+valuable franchises, the same replay made 29, Nikola Jokić (32, 76) going for
+four players and no picks and Tyrese Haliburton (27, 67) for Desmond Bane and
+a 2032 first.
+
+Three random-players leagues (rookies can refuse), four seasons each, against
+the shipped market:
+
+| three random-players leagues, four seasons   | before | after  |
+| -------------------------------------------- | ------ | ------ |
+| trades                                       | 118    | 158    |
+| top-30 players traded                        | 12     | 14     |
+| ... buyer better the next season             | 3 of 7 | 6 of 7 |
+| champions, different                         | 5      | 9      |
+| players traded twice within a year           | 16     | 15     |
+| players 58+ leaving losing teams for nothing | 16     | 16     |
+| firsts paid for players 27+ rated under 60   | 20     | 29     |
+| minutes a season, idle desktop               | 20.4   | 25.2   |
+
+A market moment on the owner's League 27 file: 88 s, 80 before. Firsts paid
+for players 27 or older rated under 60 rose with the trades - 17% of trades
+before, 18% after - nearly all a contender's own late first with players it
+could spare for a rotation veteran; one is Atlanta (0.3% to win the title)
+giving three firsts for a 28-year-old 58/59 near sure to re-sign, worth 0.24
+of a title to it and 0.19 to the league (the price of a starter in his
+prime). Of the players who still left losing teams for nothing, most were
+shopped every moment to the deadline: either the best offer fell just short
+of what his team needed, or his team counted on re-signing him - Cincinnati
+a 25-year-old 69 at 89% to stay, who left.
+
+Tried and left out: offers built from what is worth more to the seller than
+it costs the buyer first (they cost Brooklyn its best offer for Porter, and
+bought Moussa Diabaté, 25, 55, for three firsts).

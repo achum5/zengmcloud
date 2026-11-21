@@ -41,7 +41,7 @@ test.skipIf(!env.YS_LEAGUE)(
 		const teams = await idb.cache.teams.getAll();
 		const abbrev = new Map(teams.map((t) => [t.tid, t.abbrev]));
 		const season = g.get("season");
-		const keen: number[] = await view.keenest();
+		const keen: number[] = [...view.outlook.teams.keys()];
 		const none = { players: [], picks: [] };
 		const fmt = (xs: number[], k = 3) => xs.map((x) => x.toFixed(k)).join(" ");
 		for (const pid of (env.YS_PIDS ?? "").split(",").map(Number)) {

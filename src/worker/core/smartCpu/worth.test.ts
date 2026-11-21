@@ -123,6 +123,89 @@ test(
 );
 
 test(
+	"a first sent with a player nobody would take still costs what it fetches alone",
+	{ timeout: 600_000 },
+	async () => {
+		// League 27: Boston's 2031 first (0.06 alone) with two players nobody
+		// bid for fetched 0.02 together, and went for Luke Kennard as if free.
+		// Here each team's least valuable role player is owed a quarter of the
+		// cap for six seasons.
+		const season = g.get("season");
+		const none = { players: [], picks: [] };
+		const dear = new Map<number, Player>();
+		const restore: (() => Promise<void>)[] = [];
+		onTestFinished(async () => {
+			for (const back of restore) {
+				await back();
+			}
+			await fresh();
+		});
+		for (const tid of tids) {
+			const p = (await idb.cache.players.indexGetAll("playersByTid", tid))
+				.filter(
+					(x) =>
+						!isUntradable(x).untradable &&
+						x.ratings.at(-1)!.ovr >= 40 &&
+						x.ratings.at(-1)!.ovr <= 53,
+				)
+				.sort((a, b) => a.value - b.value)[0];
+			if (!p) {
+				continue;
+			}
+			const c = p.contracts.at(-1)!;
+			const was = structuredClone(c);
+			c.start = season;
+			c.amounts = Array(6).fill(Math.round(0.25 * g.get("salaryCap")));
+			c.payments = [];
+			await idb.cache.players.put(p);
+			restore.push(async () => {
+				Object.assign(c, was);
+				await idb.cache.players.put(p);
+			});
+			dear.set(tid, p);
+		}
+		await fresh();
+		const bad: string[] = [];
+		for (const [tid, p] of dear) {
+			const partner = other(tid);
+			const not = [tid, partner];
+			const one = { players: [p], picks: [] };
+			const price = await view.price(one, not);
+			if (price > 0) {
+				continue;
+			}
+			const h = view.heldNow(tid);
+			const firsts = (
+				await idb.cache.draftPicks.indexGetAll("draftPicksByTid", tid)
+			).filter((x) => x.round === 1 && (x.season as number) > season + 1);
+			for (const dp of firsts) {
+				const both = { players: [p], picks: [dp] };
+				await view.dealWorth(tid, partner, both, none);
+				// Sold apart: the pick at its price, the player at his, or kept
+				// at his use where nobody would take him.
+				const apart =
+					view.priceNow({ players: [], picks: [dp] }, not) +
+					(price > -Infinity ? price : view.useOfNow(tid, one, h)) -
+					view.useOfNow(tid, both, h);
+				const { given } = view.dealPartsNow(tid, partner, both, none);
+				note(
+					"piecesApart",
+					`${dp.season} R1 of ${tid} with ${label(p)}`,
+					given - apart,
+				);
+				if (given < apart - 1e-9) {
+					bad.push(
+						`team ${tid}: ${dp.season} first with ${label(p)} given at ${given}, ${apart} apart`,
+					);
+				}
+			}
+		}
+		assert.deepStrictEqual(bad, []);
+		assert.isAtLeast(cases.piecesApart?.length ?? 0, 5);
+	},
+);
+
+test(
 	"no salary dump for free: a bad long contract costs a team that takes it",
 	{ timeout: 600_000 },
 	async () => {
