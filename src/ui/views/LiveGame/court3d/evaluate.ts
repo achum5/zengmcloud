@@ -7724,7 +7724,16 @@ const poseFor = (st: PlayerState): Pose => {
 	if (lk || ff) {
 		const turnAt = (i: 0 | 1, on: number) =>
 			(lk?.[i] ?? 0) + ((ff?.[i] ?? 0) - (lk?.[i] ?? 0)) * on;
-		p = { ...p, footN: turnAt(0, onN), footF: turnAt(1, onF) };
+		// (On top of any turn of its own the move gives it - a slide's feet
+		// turned out - and no further round, the two together, than a leg
+		// turns: see footTurn.)
+		const own = (base: number, turn: number) =>
+			base === 0 ? turn : footTurn(base + turn);
+		p = {
+			...p,
+			footN: own(p.footN, turnAt(0, onN)),
+			footF: own(p.footF, turnAt(1, onF)),
+		};
 	}
 	// Stepping over, a foot not yet up stays where it was on the floor as
 	// he goes on over it - not carried along under him till it steps.

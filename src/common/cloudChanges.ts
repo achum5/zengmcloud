@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 422,
+		date: "2026-11-21",
+		text: "3D game: defensive slides are lower, like a real defender's, measured from motion capture of a defender sliding side to side - knees bent past a right angle as the feet come together, chest out over the knees, and the knees out over the toes instead of straight-legged from the front.",
+	},
+	{
 		n: 421,
 		date: "2026-11-21",
 		text: "3D game: the stanchions holding up the baskets are rebuilt in Blender as solid 3D pieces - a padded base and post, and a boom with a brace and cross-bars out to the backboard - instead of flat shapes.",

@@ -993,7 +993,9 @@ type RunMode =
 // A defensive slide: how far he goes each step-and-close (feet), and how
 // far apart his feet are, closed up (see "shuffle").
 const SLIDE_STRIDE = 1.8;
-export const SLIDE_NARROW = 0.35;
+export const SLIDE_NARROW = 0.2;
+// (And how far each foot is turned out - degrees.)
+const SLIDE_TOE = 14;
 // HOW HE RUNS - AND WALKS.
 //
 // The way a body really goes: each foot planted while it is down, going
@@ -1541,16 +1543,22 @@ const stride = (ph: number, mode: RunMode): Pose => {
 		// stride his feet spread as far as he goes (SLIDE_STRIDE), so each
 		// sits still on the floor while the other moves; his knees straighten
 		// a little as they spread, so his hips stay level the whole way.
+		//
+		// (Down as low as a real one - motion capture of a defender sliding
+		// side to side, tools/court3d-mocap: his knees bent past a right angle
+		// as his feet come together, his chest out over them, his feet turned
+		// out a little and his knees out over them - not straight-legged from
+		// in front.)
 		const spread = ph < 0.5 ? ph * 2 : 2 - ph * 2;
-		const knee = 82 - 22 * spread * spread;
+		const knee = 92 - 10 * spread * spread;
 		// His hands active and out wide of him: one up at the ball, the other
 		// low and out in the lane, both working a little with each push.
 		return pose({
-			hipN: 36,
-			hipF: 40,
+			hipN: 44,
+			hipF: 48,
 			kneeN: knee,
 			kneeF: knee + 2,
-			lean: 24,
+			lean: 36,
 			shN: 24 + 6 * spread,
 			elN: 34,
 			abN: 54 + 6 * spread,
@@ -1560,6 +1568,8 @@ const stride = (ph: number, mode: RunMode): Pose => {
 			abF: 34 + 4 * spread,
 			wrF: 14,
 			wide: SLIDE_NARROW + (SLIDE_STRIDE / 2) * spread,
+			footN: -SLIDE_TOE,
+			footF: SLIDE_TOE,
 		});
 	}
 	if (mode === "sideStep") {
