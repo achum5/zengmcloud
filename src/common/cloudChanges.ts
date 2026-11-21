@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 417,
+		date: "2026-11-21",
+		text: "3D game: players now run the way real people do, measured from motion capture of real runners and a real speed dribble. The back leg stays straight as it leaves the floor before the heel folds up, arms swing in time with the legs instead of a beat behind, and runners lean into it with their shoulders turning. Speed dribbles are lower and harder, with the free arm pumping.",
+	},
+	{
 		n: 416,
 		date: "2026-11-21",
 		text: '3D game: the "Realistic (beta)" players are gone, and so is the 3D Players setting - everybody sees the Classic players. New, more realistic players are being built to replace them.',

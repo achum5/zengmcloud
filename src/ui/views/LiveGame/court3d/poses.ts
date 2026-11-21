@@ -1036,6 +1036,10 @@ type Gait = {
 	wide: number;
 	// How far out from his sides his arms are held (degrees; 10, unsaid).
 	ab?: number;
+	// When through the stride his right arm is furthest back (unsaid, 0.03:
+	// as his right foot lands, a beat behind - a walk's). Running, a little
+	// before it lands: each arm swings against its own leg's thigh.
+	armAt?: number;
 };
 type GaitMode =
 	| "run"
@@ -1052,33 +1056,35 @@ type GaitMode =
 // Giving ground in his stance (see "back"): feet a stride.
 const BACKPEDAL_STRIDE = 3.8;
 const GAITS: Record<GaitMode, Gait> = {
-	// (As a player runs - a 2K26 run, frame by frame: off the floor on a
-	// straight back leg, its heel kicked up high behind him through the
-	// swing; nearly upright; his arms pumping bent at the elbow, the hand up
-	// to his chest in front and the elbow driven back behind him - not held
-	// out in front of him. A quarter of the way through - one of the
-	// stride's drawn frames, see sprite.ts's CYCLE_FRAMES - his back leg is
-	// already all but straight, so it is seen every stride.)
+	// (As people run - fit to motion capture, nine strides at 11-14 ft/s
+	// (CMU subjects 9 and 16; tools/court3d-mocap): off the floor on a
+	// straight back leg, still driving it back, then the heel folded up
+	// behind him as the thigh comes through; leaning into it; his arms bent
+	// past a right angle, swinging less than his legs do, each against its
+	// own leg's thigh - so a little ahead of a walk's.)
 	run: {
 		stride: 8.6,
 		duty: 0.3,
 		ahead: 0.3,
-		hips: 2.76,
-		bob: 0.12,
+		hips: 2.72,
+		bob: 0.16,
 		flat: 0.45,
 		roll: 40,
 		swing: [
-			[0.12, -4, 36],
-			[0.4, 4, 116],
-			[0.62, 36, 104],
-			[0.83, 46, 44],
+			[0.1, -6, -14],
+			[0.25, -24, 44],
+			[0.4, -4, 88],
+			[0.55, 26, 108],
+			[0.7, 40, 86],
+			[0.85, 36, 42],
 		],
-		lean: 9,
-		armFwd: 22,
-		armBack: 46,
-		elbow: 92,
-		pump: 20,
-		twist: 6,
+		lean: 14,
+		armFwd: 13,
+		armBack: 33,
+		elbow: 100,
+		pump: 12,
+		twist: 9,
+		armAt: -0.14,
 		wide: -0.04,
 	},
 	sprint: {
@@ -1090,69 +1096,79 @@ const GAITS: Record<GaitMode, Gait> = {
 		flat: 0.4,
 		roll: 46,
 		swing: [
-			[0.12, -4, 40],
-			[0.4, 12, 130],
-			[0.62, 56, 116],
-			[0.83, 66, 56],
+			[0.1, -2, 4],
+			[0.25, -28, 60],
+			[0.4, 0, 112],
+			[0.55, 40, 126],
+			[0.7, 62, 96],
+			[0.85, 60, 50],
 		],
 		lean: 17,
 		armFwd: 56,
 		armBack: 46,
 		elbow: 84,
 		pump: 16,
-		twist: 8,
+		twist: 10,
+		armAt: -0.14,
 		wide: -0.06,
 	},
-	// (The run's way, easier: his back leg all but straight a third of the
-	// way through - on a drawn frame, as the run's is.)
+	// (The run's way, easier - fit to motion capture at 9 ft/s: his arms
+	// held back, swinging little.)
 	jog: {
 		stride: 6.2,
-		duty: 0.36,
-		ahead: 0.28,
+		duty: 0.34,
+		ahead: 0.3,
 		hips: 2.78,
-		bob: 0.14,
+		bob: 0.16,
 		flat: 0.5,
 		roll: 32,
 		swing: [
-			[0.14, -3, 28],
-			[0.42, 6, 86],
-			[0.66, 30, 62],
-			[0.86, 32, 24],
+			[0.1, -6, -6],
+			[0.25, -19, 44],
+			[0.4, -2, 83],
+			[0.55, 24, 104],
+			[0.7, 36, 86],
+			[0.85, 32, 46],
 		],
-		lean: 6,
-		armFwd: 18,
-		armBack: 36,
-		elbow: 90,
-		pump: 18,
-		twist: 5,
+		lean: 12,
+		armFwd: -5,
+		armBack: 33,
+		elbow: 100,
+		pump: 10,
+		twist: 8,
+		armAt: -0.14,
 		wide: -0.02,
 	},
-	// (Pushing it up the floor - a 2K26 speed dribble: a run, nearly as
-	// upright and as long in the stride as without it, the back leg all but
-	// straight off the floor; the other arm swinging with his stride, a
-	// little out from his side. See dribbleArm for the ball.)
+	// (Pushing it up the floor - fit to motion capture of a speed dribble at
+	// 13-14 ft/s (CMU subject 78): lower than a run, longer through the
+	// legs, leaning well into it, his shoulders turning with it; the other
+	// arm pumping hard, driven well back behind him. See dribbleArm for the
+	// ball.)
 	dribble: {
 		stride: 8.2,
-		duty: 0.3,
+		duty: 0.33,
 		ahead: 0.3,
-		hips: 2.72,
-		bob: 0.12,
+		hips: 2.62,
+		bob: 0.14,
 		flat: 0.45,
 		roll: 38,
 		swing: [
-			[0.12, -4, 36],
-			[0.4, 6, 108],
-			[0.62, 36, 98],
-			[0.83, 44, 44],
+			[0.1, -11, -3],
+			[0.25, -31, 53],
+			[0.4, -8, 97],
+			[0.55, 25, 111],
+			[0.7, 45, 87],
+			[0.85, 44, 43],
 		],
-		lean: 12,
-		armFwd: 10,
-		armBack: 30,
-		elbow: 72,
-		pump: 14,
-		twist: 5,
+		lean: 20,
+		armFwd: 13,
+		armBack: 61,
+		elbow: 64,
+		pump: 12,
+		twist: 14,
+		armAt: -0.18,
 		wide: 0,
-		ab: 16,
+		ab: 12,
 	},
 	dribbleWalk: {
 		stride: 4.4,
@@ -1492,7 +1508,7 @@ const gaitPose = (mode: GaitMode, ph: number): Pose => {
 	const l = legAt(mode, frac(ph + 0.5));
 	// How far forward his right arm is (-1 to 1): back as his right foot
 	// lands, forward as his left does - a beat behind his legs.
-	const a = -Math.cos(2 * Math.PI * (ph - 0.03));
+	const a = -Math.cos(2 * Math.PI * (ph - (g.armAt ?? 0.03)));
 	const mid = (g.armFwd - g.armBack) / 2;
 	const amp = (g.armFwd + g.armBack) / 2;
 	return pose({
