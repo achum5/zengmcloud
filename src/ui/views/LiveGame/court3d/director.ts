@@ -32,7 +32,6 @@ import {
 	huddleFace,
 	inPlay,
 	OFFICIALS_SETTLE,
-	sideOn,
 	SIDELINE_GAP,
 	huddleSpots,
 	other,
@@ -373,25 +372,6 @@ const GLIMPSED = new Set<string>([
 	"reach",
 	"hack",
 ]);
-// Meeting a shot from the camera's side of the shooter (which looks across
-// the floor from the near side), a defender this near him across the floor
-// (feet) would stand in front of him in the picture: he comes at him from
-// the side instead - this far across at the least, toward `toward`, level
-// with him (and as far off him as he would have been).
-const SIDE_ON = 2.8;
-const SIDE_AT = 2.2;
-const besideShot = (P: Pt, p: Pt, toward: number): Pt => {
-	const dx = Math.abs(p.x - P.x);
-	const dy = (p.y - P.y) * 0.2;
-	const off = Math.sqrt(Math.max(0, dist(P, p) ** 2 - dy * dy));
-	return p.y > P.y + 0.3 && dx < SIDE_ON
-		? {
-				x: P.x + (toward >= P.x ? 1 : -1) * Math.max(dx, SIDE_AT, off),
-				y: P.y + dy,
-			}
-		: p;
-};
-
 // `p` moved out to `clear` feet off the path (its points in order) at the
 // least - straight away from the nearest point of it, or, right on it, to
 // the `side` of it (1 left of the way it goes, -1 right).
@@ -2289,11 +2269,6 @@ const WALL_FT = 4.5;
 // And this near a jumper, a hand up at it.
 const WALL_JUMPER_FT = 4;
 
-// A hand up at a jumper from right in front of him as seen from the camera
-// (see wallUp): a step to the side of him instead - this far off his line
-// (feet), eased over this long (ms).
-const WALL_SIGHT = 1.7;
-const WALL_SIGHT_RAMP = 250;
 // A man eased aside off his run goes over at this pace at the most, on top
 // of it (feet a second): a step's (see easeNudges).
 const NUDGE_FTPS = 7;
@@ -2312,10 +2287,8 @@ const STOP_DECIDE = 250;
 const STOP_LANE = 2.2;
 const STOP_ON = 5;
 // Where the help steps up to: this far (feet) in front of him on his way to
-// the rim, this far off to the side if square in front would hide him from
-// the camera; there this long (ms) before it goes, and stays a beat after.
+// the rim; there this long (ms) before it goes, and stays a beat after.
 const STOP_AHEAD = 3.8;
-const STOP_SIGHT = 1.6;
 const STOP_EARLY = 120;
 const STOP_HOLD = 150;
 // The help: no further than this (feet), at this pace at his quickest
@@ -10585,9 +10558,7 @@ class Director {
 				return inPlay({ x: man.x + out.x * 2.2, y: man.y + out.y * 2.2 });
 			}
 			const k = Math.min(gap, toRim * 0.5);
-			return inPlay(
-				sideOn(man, { x: man.x + ur.x * k, y: man.y + ur.y * k }, rim.x),
-			);
+			return inPlay({ x: man.x + ur.x * k, y: man.y + ur.y * k });
 		}
 		const dBall = dist(man, ball);
 		// One pass away he is up in the lane, a step or two off; two passes
@@ -10638,7 +10609,7 @@ class Director {
 			const u = unitVec(rim, pr > 0.1 ? p : man);
 			return inPlay({ x: rim.x + u.x * 3, y: rim.y + u.y * 3 });
 		}
-		return inPlay(sideOn(man, p, rim.x));
+		return inPlay(p);
 	}
 
 	// A defender to his spot by `by`: sliding if it is close, running if not -
@@ -13890,19 +13861,12 @@ class Director {
 		const P1 = this.posOf(shooter);
 		const toRim = { x: rim.x - P1.x, y: rim.y - P1.y };
 		const len = Math.hypot(toRim.x, toRim.y) || 1;
-		// Where his man meets the shot: between him and the rim - from the
-		// side, where in front of him would hide the shooter from the camera.
+		// Where his man meets the shot: between him and the rim.
 		const ahead = (k: number) =>
-			clampPt(
-				besideShot(
-					P1,
-					{
-						x: P1.x + (toRim.x / len) * k,
-						y: P1.y + (toRim.y / len) * k,
-					},
-					rim.x,
-				),
-			);
+			clampPt({
+				x: P1.x + (toRim.x / len) * k,
+				y: P1.y + (toRim.y / len) * k,
+			});
 
 		const gather = t + 60;
 		// A slam when the words say so: "throws it down", "blocked the dunk
@@ -29731,58 +29695,6 @@ class Director {
 		}
 	}
 
-	// EVERY CONTESTED JUMPER IN SIGHT. Whoever has a hand up at a jump shot -
-	// his own man up on him, the help in late, a man going by - never
-	// square in front of him from the camera's side (across the floor from
-	// the far sideline), hiding the whole shot: a step to the side of him
-	// (see wallUp, which does the same for the hands up it puts in itself).
-	private contestsInSight() {
-		const jumpers = new Map<number, { t0: number; t1: number }[]>();
-		for (const tr of this.tracks.values()) {
-			for (const a of tr.acts) {
-				if (a.anim === "shoot" || a.anim === "fade") {
-					(jumpers.get(tr.pid) ?? jumpers.set(tr.pid, []).get(tr.pid)!).push(a);
-				}
-			}
-		}
-		for (const tr of this.tracks.values()) {
-			for (const a of tr.acts) {
-				if (a.anim !== "contest") {
-					continue;
-				}
-				const mid = (a.t0 + a.t1) / 2;
-				const shooter = [...jumpers].find(
-					([pid, acts]) =>
-						this.teamOf(pid) !== tr.team &&
-						acts.some((x) => x.t0 <= mid && x.t1 >= mid),
-				)?.[0];
-				if (shooter === undefined) {
-					continue;
-				}
-				// (Where the picture has them: on their runs as it runs them,
-				// stepped aside, kept off anybody they would be in.)
-				const D = floorSpotOf(tr, mid);
-				const S = floorSpotOf(this.track(shooter)!, mid);
-				if (!D || !S) {
-					continue;
-				}
-				const off = D.x - S.x;
-				if (D.y <= S.y || Math.abs(off) >= WALL_SIGHT) {
-					continue;
-				}
-				const side = off !== 0 ? Math.sign(off) : S.x <= COURT_W / 2 ? 1 : -1;
-				(tr.nudges ??= []).push({
-					t0: a.t0 - WALL_SIGHT_RAMP,
-					t1: a.t1 + WALL_SIGHT_RAMP,
-					dx: side * WALL_SIGHT - off,
-					dy: 0,
-					ramp: WALL_SIGHT_RAMP,
-				});
-				tr.nudges.sort((x, y) => x.t0 - y.t0);
-			}
-		}
-	}
-
 	// A BALL ON THE FLOOR PICKED UP WHERE IT IS. Off the floor into a man's
 	// hands only once he is there to take it - set off from farther out
 	// than its pick-up was laid out from, he gets to it a beat later, and
@@ -30008,29 +29920,6 @@ class Director {
 					...(this.leftToBall(D, shooter, S) ? { mirror: true as const } : {}),
 				});
 				tr.acts.sort((a, b) => a.t0 - b.t0);
-				// From the camera, across the floor, a man square in front of a
-				// jump shooter as it goes - one going by him, say, on his way
-				// across - hides the whole of his shot: the hand up goes up a
-				// step to the side of him (see "a contested jumper stays in
-				// sight").
-				if (jumper) {
-					const mid = (t0 + t1) / 2;
-					const Dm = at(tr, mid);
-					const Sm = this.posAt(shooter, mid, false, true);
-					const off = Dm.x - Sm.x;
-					if (Dm.y > Sm.y && Math.abs(off) < WALL_SIGHT) {
-						const side =
-							off !== 0 ? Math.sign(off) : Sm.x <= COURT_W / 2 ? 1 : -1;
-						(tr.nudges ??= []).push({
-							t0: t0 - WALL_SIGHT_RAMP,
-							t1: t1 + WALL_SIGHT_RAMP,
-							dx: side * WALL_SIGHT - off,
-							dy: 0,
-							ramp: WALL_SIGHT_RAMP,
-						});
-						tr.nudges.sort((a, b) => a.t0 - b.t0);
-					}
-				}
 			}
 		}
 	}
@@ -30178,16 +30067,10 @@ class Director {
 				(tr) => tr.team !== team && tr.pid >= 0 && shown(tr, decided),
 			);
 			// Where he steps up to: a stride in front of him on his way to the
-			// rim, as he lets it go - off to the side of him if that would put
-			// him square between the shooter and the camera (see "a contested
-			// jumper stays in sight").
+			// rim, as he lets it go.
 			const uh = unitVec(H, rim);
 			const ahead = Math.min(STOP_AHEAD, dist(H, rim) - 2.5);
-			let S = { x: H.x + uh.x * ahead, y: H.y + uh.y * ahead };
-			if (S.y > H.y && Math.abs(S.x - H.x) < STOP_SIGHT) {
-				S = { x: H.x + (COURT_W / 2 >= H.x ? 1 : -1) * STOP_SIGHT, y: S.y };
-			}
-			S = clampPt(S);
+			const S = clampPt({ x: H.x + uh.x * ahead, y: H.y + uh.y * ahead });
 			const until = release + STOP_HOLD;
 			let best: { tr: Track; dx: number; dy: number; ramp: number } | undefined;
 			let bestCost = Infinity;
@@ -31494,7 +31377,6 @@ class Director {
 			this.nobodyToBox();
 			this.setBeforeHeComes(true);
 		}
-		this.contestsInSight();
 		this.easeNudges();
 		this.groundNudges();
 		// (And the way in clear again, from where all that leaves him:

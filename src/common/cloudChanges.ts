@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 415,
+		date: "2026-11-21",
+		text: "3D game: defenders on the far side of the floor now guard from in front, between their man and the basket, the way they do on the near side, instead of standing off to his side so the camera could see the shooter. That includes the man on the ball, closeouts on jump shots and help stepping up.",
+	},
+	{
 		n: 414,
 		date: "2026-11-21",
 		text: "3D game: a player driving to the basket no longer turns sideways partway through the drive - he faces where he's going. Drives also bend around the defender instead of running in dead-straight lines.",

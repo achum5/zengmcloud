@@ -47,32 +47,12 @@ export const inPlay = (p: Pt): Pt => ({
 	y: Math.min(COURT_H - SIDELINE_GAP, Math.max(SIDELINE_GAP, p.y)),
 });
 
-// A defender meant for `p` against his man at `man`: where that would stand
-// him in front of his man from the camera (which looks straight across the
-// floor from the near side), he plays him from the side instead - further
-// across toward `endX` (the end he defends), hardly in front at all - so
-// both stay in sight.
-export const sideOn = (man: Pt, p: Pt, endX: number, across = 1.6): Pt => {
-	const dx = Math.abs(p.x - man.x);
-	return p.y > man.y + 0.3 && dx < across + 1.2
-		? {
-				x: man.x + (endX >= man.x ? 1 : -1) * Math.max(dx, across + 0.6),
-				y: man.y + (p.y - man.y) * 0.25,
-			}
-		: p;
-};
-
 // Where a defender stands against his man: a step toward the rim he protects,
 // pinched toward the middle of the floor.
-export const guardSpot = (offense: Side, man: Pt, gap = 0.3): Pt =>
-	sideOn(
-		man,
-		{
-			x: man.x + (rimX(offense) - man.x) * gap,
-			y: man.y + (COURT_H / 2 - man.y) * 0.25,
-		},
-		rimX(offense),
-	);
+export const guardSpot = (offense: Side, man: Pt, gap = 0.3): Pt => ({
+	x: man.x + (rimX(offense) - man.x) * gap,
+	y: man.y + (COURT_H / 2 - man.y) * 0.25,
+});
 
 // The scorer's table and the two benches sit along the far sideline, so a
 // substitution or a huddle walks toward the camera's back wall.

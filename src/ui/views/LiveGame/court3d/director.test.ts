@@ -927,14 +927,16 @@ describe("3D director", () => {
 		assert.isAtMost(ons[Math.floor(ons.length / 2)]!, 700, `${ons}`);
 	}, 960_000);
 
-	// From the camera (across the floor from the far sideline), a defender
-	// right in front of a shooter would hide his whole shot: he meets it from
-	// the side instead.
-	test("a contested jumper stays in sight", () => {
+	// A man meeting a jump shot meets it from in front of the shooter,
+	// between him and the rim - on the far side of the floor too, where that
+	// is between him and the camera (he was played from the side there, to
+	// keep the shot in sight: 57% of far-side contests within 35 degrees of
+	// the shooter's line to the rim; 83% now).
+	test("a contested jumper is met from in front, either side of the floor", () => {
+		const off: { far: number[]; near: number[] } = { far: [], near: [] };
 		for (const seed of ["a", "b", "c"]) {
 			const { tl } = compile(seed);
 			const tracks = [...tl.tracks.values()];
-			let checked = 0;
 			for (const tr of tracks) {
 				for (const a of tr.acts) {
 					if (a.anim !== "contest") {
@@ -956,13 +958,29 @@ describe("3D director", () => {
 					}
 					const d = evalPlayer(tl, tr.pid, mid);
 					const sh = evalPlayer(tl, shooter.pid, mid);
-					if (d.y > sh.y) {
-						assert.isAtLeast(Math.abs(d.x - sh.x), 1.4, `${seed} ${mid}`);
+					const rx = rimX(sh.team) - sh.x;
+					const ry = COURT_H / 2 - sh.y;
+					const dx = d.x - sh.x;
+					const dy = d.y - sh.y;
+					if (Math.hypot(dx, dy) > 7) {
+						continue;
 					}
-					checked += 1;
+					// (How far round off his line to the rim, degrees.)
+					const deg =
+						(Math.abs(Math.atan2(dx * ry - dy * rx, dx * rx + dy * ry)) * 180) /
+						Math.PI;
+					off[sh.y < COURT_H / 2 - 4 ? "far" : "near"].push(deg);
 				}
 			}
-			assert.isAbove(checked, 3);
+		}
+		for (const side of ["far", "near"] as const) {
+			const list = off[side];
+			assert.isAbove(list.length, 20, side);
+			assert.isAtLeast(
+				list.filter((deg) => deg <= 35).length / list.length,
+				0.75,
+				`${side}: ${list.map((deg) => deg.toFixed(0)).join(" ")}`,
+			);
 		}
 	}, 240_000);
 
