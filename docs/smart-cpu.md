@@ -2411,3 +2411,44 @@ twelve seasons, read as their outlooks have them: Montreal (0.3% to win the
 title now, 10% next season, 17% the one after) gave its own 2028 first - to
 land late - for a 40-year-old 53 it would start this season, short-handed,
 2.2 points of strength.
+
+### Stars' prices, tried and left out (2026-11-21)
+
+Splashes stayed few: top-30 players traded 12 in three random-players
+leagues' four seasons before the front office, 11 after. Of 4,873 times a
+top-30 player was shopped without an offer, 4,674 had no team whose gain from
+him past the players it would send back for his salary reached his price -
+the league's second-highest use for him, as if he came free. Two ways to let
+the market set a price buyers could reach, each played on the same three
+leagues:
+
+| three random-players leagues, four seasons   | shipped | bids net of salary |
+| -------------------------------------------- | ------- | ------------------ |
+| trades                                       | 181     | 235                |
+| top-30 players traded                        | 11      | 21                 |
+| ... buyer better the next season             | 3 of 3  | 11 of 13           |
+| players traded twice within a year           | 19      | 43                 |
+| firsts paid for players 27+ rated under 60   | 28      | 40                 |
+| players 58+ leaving losing teams for nothing | 6       | 12                 |
+| minutes a season, idle desktop               | 28.0    | 33.4               |
+
+- **Every bid net of the salary sent back**: nearly twice the stars moved, and
+  their buyers were better for it - but every big contract's price fell with
+  them: twice the churn (filler and role players recycled through the bigger
+  deals), more firsts for older role players, and rooms cleared by giving
+  away good players for nothing (Washington a 29-year-old 68, the Lakers a
+  30-year-old 66).
+- **A player's price in his own auction set by the teams competing for him**
+  (the second-highest gain past salary, where two or more could gain): the
+  same star trades through two seasons (9 and 9), seasons a quarter slower.
+  Offers came in - shopped without one, 731 times to 327 - and were turned
+  down: what contenders hold falls short of what a star is worth, not his
+  salary. New York offered the Lakers five spare players for a 24-year-old
+  69, Houston a 33-year-old, a prospect and three late firsts for its
+  27-year-old 69 - 0.6 of a title on the market each, for players priced 0.9
+  and up. The league's best player (26, 77) drew a 71, a prospect and a
+  35-year-old, 2.3 against 2.6.
+
+A star stays where he is unless a buyer can pay what he is worth - which, a
+rebuilding team holding a young star, is the GM's call. Whether to trade more
+stars for more churn is the owner's.
