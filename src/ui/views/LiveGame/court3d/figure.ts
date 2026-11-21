@@ -2,7 +2,13 @@ import { parseUniform } from "../../../../common/uniform.ts";
 import { makeCourtRng } from "../courtRng.ts";
 import { project, type Camera, type Projected } from "./camera.ts";
 import { bodyPoint, poseOf, type PlayerState } from "./evaluate.ts";
-import type { HairCut, HairStyle, HeadSprite, Profile } from "./faces.ts";
+import type {
+	FaceTex,
+	HairCut,
+	HairStyle,
+	HeadSprite,
+	Profile,
+} from "./faces.ts";
 import type { KitArt } from "./kitArt.ts";
 import { capBack, capSide, type Cap } from "./cap.ts";
 import { skeleton, type Body, type V3 } from "./poses.ts";
@@ -107,6 +113,11 @@ export type Look = {
 	// The team's logo, drawn: on the front of his warm-up top.
 	crest?: HTMLCanvasElement;
 	head?: HeadSprite;
+	// Drawn as a man (see meshBody.ts), not the court's cartoon of one - and
+	// his face for his head, apart from his head's picture (which stays on
+	// the page: see farm.ts).
+	real?: true;
+	faceTex?: FaceTex;
 	// In his street clothes, not his uniform - out hurt (see streetClothes):
 	// never put into a warm-up top.
 	street?: true;

@@ -1,5 +1,6 @@
 import type { Look } from "./figure.ts";
 import type { KitArt } from "./kitArt.ts";
+import { loadMesh, meshReady } from "./meshBody.ts";
 import {
 	shape,
 	type Farm,
@@ -47,7 +48,8 @@ export type FarmCodec<L extends object, J, Sh, Sent> = {
 	pack: (sh: Sh, transfer: ArrayBuffer[]) => Sent;
 	unpack: (sent: Sent) => Sh;
 	// Whether the hand has what it takes to sculpt a look yet (true), or
-	// when it will have - his jobs kept in line till then.
+	// when it will have (see meshBody.ts: a man drawn as one waits for his
+	// mesh) - his jobs kept in line till then.
 	ready?: (look: L) => true | Promise<unknown>;
 };
 
@@ -446,8 +448,13 @@ export const sendPixels = (img: ImageData, transfer: ArrayBuffer[]): Pixels => {
 	return [data, img.width, img.height];
 };
 const COURT: FarmCodec<Look, Job, Shaped, SentShape> = {
-	split: ({ kitArt, crest, head: _head, ...rest }) => ({
-		rest,
+	// (His face for his head, if he is drawn as a man, goes with him: plain
+	// pixels.)
+	split: ({ kitArt, crest, head, ...rest }) => ({
+		rest:
+			head?.tex && rest.real && !rest.faceTex
+				? { ...rest, faceTex: head.tex }
+				: rest,
 		...(kitArt ? { art: kitArt } : {}),
 		...(crest ? { pic: crest } : {}),
 	}),
@@ -457,6 +464,10 @@ const COURT: FarmCodec<Look, Job, Shaped, SentShape> = {
 		...(pic ? { crest: pic } : {}),
 	}),
 	shape: (job, look) => shape(job, look, true),
+	// (Not to be had - offline, say: drawn as the court's own, not waited
+	// for for ever.)
+	ready: (look) =>
+		!look.real || meshReady() || loadMesh().catch(() => undefined),
 	pack: ({ img, over, ...sh }, transfer) => ({
 		...sh,
 		img: sendPixels(img, transfer),

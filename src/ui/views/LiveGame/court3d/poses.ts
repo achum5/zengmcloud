@@ -12175,6 +12175,10 @@ export const ATHLETE: Proportions = {
 	upperR: 0.0295,
 	foreR: 0.0245,
 };
+// A MAN DRAWN AS ONE (see meshBody.ts): the court's own player, his body's
+// mesh built on the athlete's skeleton (see tools/court3d-body), so he is
+// in proportion as the sculpted man is.
+export const MESH_BUILD: Proportions = ATHLETE;
 // WHAT ELSE IS KNOWN OF HIM, beyond how tall he is and what he weighs (see
 // ratings.ts physiqueOf) - each 0 to 1, a half the league's ordinary man:
 // how strong he is, and how quick and springy.

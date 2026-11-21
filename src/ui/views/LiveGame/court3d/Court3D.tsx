@@ -6,6 +6,7 @@ import {
 	useMemo,
 	useRef,
 	useState,
+	useSyncExternalStore,
 	type ReactNode,
 } from "react";
 import { useLocal } from "../../../util/local.ts";
@@ -54,7 +55,15 @@ import {
 } from "./clock.ts";
 import { clipDipAt, type CourtTimeline } from "./director.ts";
 import { crewAt, crewFor } from "./crew.ts";
-import { headColors, loadHead, profileOf, type HeadSprite } from "./faces.ts";
+import {
+	headColors,
+	loadFaceTex,
+	loadHead,
+	profileOf,
+	type HeadSprite,
+} from "./faces.ts";
+import { loadMesh, meshReady } from "./meshBody.ts";
+import { realPlayers, watchRealPlayers } from "./realPlayers.ts";
 import { arenaSpecFor } from "./arenaSpec.ts";
 import { crowdFaces, type CrowdFace } from "./crowdFaces.ts";
 import { gearFor, kitsFor, shade, streetClothes, type Look } from "./figure.ts";
@@ -116,7 +125,7 @@ import {
 	type KeyPlaySettings,
 	type KeySegment,
 } from "./keyPlays.ts";
-import { bodyOf, type Body } from "./poses.ts";
+import { bodyOf, MESH_BUILD, type Body } from "./poses.ts";
 import { physiqueOf } from "./ratings.ts";
 import { glReport } from "./sculptGl.ts";
 import { getCamera } from "./cameraSetting.ts";
@@ -612,6 +621,32 @@ const Court3D = ({
 	const paintRef = useRef(painted);
 	paintRef.current = painted;
 
+	// The players drawn as men, if whoever is watching likes them so (see
+	// realPlayers.ts) - changed over the moment it is set.
+	const realAsked = useSyncExternalStore(watchRealPlayers, realPlayers);
+	// (Once his mesh is here: fetched the first time it is wanted.)
+	const [meshOk, setMeshOk] = useState(meshReady);
+	useEffect(() => {
+		if (!realAsked || meshOk) {
+			return;
+		}
+		let alive = true;
+		loadMesh().then(
+			() => {
+				if (alive) {
+					setMeshOk(true);
+				}
+			},
+			// (Not to be had - offline, say: the court's own players.)
+			() => undefined,
+		);
+		return () => {
+			alive = false;
+		};
+	}, [realAsked, meshOk]);
+	const real = realAsked && meshOk;
+	const realRef = useRef(realAsked);
+	realRef.current = realAsked;
 	// The players' faces (see useFaces) - and each one's head drawn from his.
 	const heads = useRef(
 		new Map<number, { sprite?: HeadSprite; skin?: string }>(),
@@ -630,7 +665,7 @@ const Court3D = ({
 			void (
 				authored?.head
 					? authored.head(pid, face?.face, face?.colors ?? colors)
-					: loadHead(face?.face, face?.colors ?? colors, false)
+					: loadHead(face?.face, face?.colors ?? colors, false, realRef.current)
 			).then((head) => {
 				if (current()) {
 					heads.current.set(pid, head);
@@ -647,6 +682,44 @@ const Court3D = ({
 	const kept = useRef(
 		new Map<number, { made: unknown[]; look: Look; body: Body }>(),
 	);
+	// Drawn as men: each face for his head too, for the heads drawn before
+	// (see faces.ts).
+	const [texVersion, setTexVersion] = useState(0);
+	useEffect(() => {
+		if (!real) {
+			return;
+		}
+		let alive = true;
+		void (async () => {
+			for (const [pid, head] of heads.current) {
+				const sprite = head.sprite;
+				const f = faces.current.get(pid);
+				if (!sprite || sprite.tex || !f?.face) {
+					continue;
+				}
+				const team = roster.find((p) => p.pid === pid)?.team;
+				try {
+					const tex = await loadFaceTex(
+						f.face,
+						f.colors ?? (team === 0 ? away?.colors : home?.colors),
+					);
+					if (!alive) {
+						return;
+					}
+					if (heads.current.get(pid) === head) {
+						heads.current.set(pid, { ...head, sprite: { ...sprite, tex } });
+						setTexVersion((v) => v + 1);
+					}
+				} catch {
+					// (A face that will not draw: a plain head on him.)
+				}
+			}
+		})();
+		return () => {
+			alive = false;
+		};
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [real, facesVersion]);
 	const dress = authored?.dress;
 	const appearance = useMemo(() => {
 		const looks = new Map<number, Look>();
@@ -659,7 +732,11 @@ const Court3D = ({
 			const kit = dressed[p.team as Side];
 			const art = arts[p.team as Side];
 			const crest = crests[p.team as Side];
+			// (Drawn as a man: not a photo's silhouette, nor out hurt in his
+			// street clothes.)
+			const man = real && !f?.imgURL && !p.out;
 			const made = [
+				man,
 				f,
 				head,
 				kit,
@@ -710,6 +787,7 @@ const Court3D = ({
 					team?.abbrev ??
 					"",
 				head: head?.sprite,
+				...(man ? { real: true as const } : {}),
 			});
 			// Out hurt: in his street clothes - nothing of the uniform on him.
 			if (p.out) {
@@ -731,7 +809,12 @@ const Court3D = ({
 			}
 			bodies.set(
 				p.pid,
-				bodyOf(f?.hgt, f?.weight, undefined, physiqueOf(p.ratings)),
+				bodyOf(
+					f?.hgt,
+					f?.weight,
+					man ? MESH_BUILD : undefined,
+					physiqueOf(p.ratings),
+				),
 			);
 			kept.current.set(p.pid, {
 				made,
@@ -741,7 +824,7 @@ const Court3D = ({
 		}
 		return { looks, bodies };
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [roster, dressed, arts, crests, facesVersion, dress]);
+	}, [roster, dressed, arts, crests, facesVersion, dress, real, texVersion]);
 	// The officials, the coaches and the photographers, picked once a game,
 	// and their heads drawn from their faces as they come.
 	const crew = useMemo(

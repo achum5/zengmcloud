@@ -25,6 +25,7 @@ import {
 	glTimed,
 	glTook,
 } from "./sculptGl.ts";
+import { MESH_KINDS } from "./meshBody.ts";
 
 // THE PLAYERS, DRAWN.
 //
@@ -1169,6 +1170,7 @@ const keptBox = (
 // (Whatever drawing his head leaves set on the sheet - the joins of its
 // ink, its caps - is undone after: the next man's head is drawn the same
 // whoever was drawn on the sheet before him.)
+const MESH_HEAD = MESH_KINDS.includes("head");
 const drawHeadOn = (
 	s: CanvasRenderingContext2D,
 	sh: Pick<Shaped, "ox" | "oy" | "headAt">,
@@ -1177,6 +1179,11 @@ const drawHeadOn = (
 	fx: number,
 	fy: number,
 ) => {
+	// (Drawn as a man, his head is in the picture of him already - if the
+	// mesh has one: the court's own head on him otherwise.)
+	if (look.real && MESH_HEAD) {
+		return;
+	}
 	const { cam, st: posed, body, px } = job;
 	s.save();
 	s.setTransform(1 / px, 0, 0, 1 / px, -sh.ox / px - fx, -sh.oy / px - fy);
@@ -1394,7 +1401,8 @@ const glKeep = (
 	job: Job,
 	look: Look,
 ): Kept | undefined => {
-	if (!glReady()) {
+	// (Drawn as a man: on the page - see meshBody.ts.)
+	if (look.real || !glReady()) {
 		return undefined;
 	}
 	const { cam, st: posed, body, px, left, right, upper, lower, lift } = job;
