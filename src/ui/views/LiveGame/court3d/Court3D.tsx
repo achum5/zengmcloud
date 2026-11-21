@@ -62,7 +62,9 @@ import {
 	profileOf,
 	type HeadSprite,
 } from "./faces.ts";
-import { loadMesh, meshReady } from "./meshBody.ts";
+import { loadMesh, MESH_KINDS, meshReady } from "./meshBody.ts";
+
+const MESH_HEAD = MESH_KINDS.includes("head");
 import { realPlayers, watchRealPlayers } from "./realPlayers.ts";
 import { arenaSpecFor } from "./arenaSpec.ts";
 import { crowdFaces, type CrowdFace } from "./crowdFaces.ts";
@@ -665,7 +667,14 @@ const Court3D = ({
 			void (
 				authored?.head
 					? authored.head(pid, face?.face, face?.colors ?? colors)
-					: loadHead(face?.face, face?.colors ?? colors, false, realRef.current)
+					: loadHead(
+							face?.face,
+							face?.colors ?? colors,
+							false,
+							// (His face painted on a head of the mesh's own, if it
+							// has one: the court's drawn head on him otherwise.)
+							realRef.current && MESH_HEAD,
+						)
 			).then((head) => {
 				if (current()) {
 					heads.current.set(pid, head);
@@ -686,7 +695,7 @@ const Court3D = ({
 	// (see faces.ts).
 	const [texVersion, setTexVersion] = useState(0);
 	useEffect(() => {
-		if (!real) {
+		if (!real || !MESH_HEAD) {
 			return;
 		}
 		let alive = true;

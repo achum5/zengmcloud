@@ -115,6 +115,34 @@ if ANATOMY:
         p = lambda t, f=0.0, o=0.0: hip + ax * L * t + fw * f + out * o
         # The teardrop above his knee, on the inside.
         masses.append(muscle(p(0.62, 0.05, -0.08), p(0.93, 0.04, -0.06), 0.06, 0.13, THIGH, g_leg, side, 0.1))
+
+# ---- his head --------------------------------------------------------------------
+# As big as the court's drawn head (figure.ts: a circle of his head's radius
+# round it), so faces.js's face - painted on from in front (see bake.py) -
+# sits on it as it is drawn: his crown at the top of the circle, his chin at
+# the bottom. A skull, a jaw narrowing to his chin a little forward of it,
+# his ears, a nose under the painted one; melted into his neck.
+HEAD = 99
+NECK_GROUP = 1
+if os.environ.get("HEAD", "0") == "1":
+    C = jt(SK["head"])
+    R = D["body"]["headR"]
+    up, fw_, lf = np.array([0, 0, 1.0]), np.array([1.0, 0, 0]), np.array([0, 1.0, 0])
+
+    def at(f, s, u):
+        return C + fw_ * f * R + lf * s * R + up * u * R
+
+    def ball(c, r, k):
+        return {"A": c, "B": c, "r": np.full(5, r), "kind": HEAD, "group": NECK_GROUP, "side": 0, "flat": False, "k": k}
+
+    masses.append({"A": at(-0.06, 0, 0.0), "B": at(-0.04, 0, 0.22), "r": np.full(9, 0.78 * R),
+                   "kind": HEAD, "group": NECK_GROUP, "side": 0, "flat": False, "k": 0.1})
+    masses.append({"A": at(0.08, 0, -0.05), "B": at(0.2, 0, -0.75), "r": np.linspace(0.62 * R, 0.26 * R, 9),
+                   "kind": HEAD, "group": NECK_GROUP, "side": 0, "flat": False, "k": 0.12})
+    for sd in (-1, 1):
+        masses.append(ball(at(-0.04, 0.78 * sd, -0.1), 0.15 * R, 0.05))
+    masses.append({"A": at(0.66, 0, -0.26), "B": at(0.74, 0, -0.42), "r": np.array([0.05, 0.08, 0.1, 0.1, 0.09]) * R,
+                   "kind": HEAD, "group": NECK_GROUP, "side": 0, "flat": False, "k": 0.05})
 lo = np.min([np.minimum(m["A"], m["B"]) - m["r"].max() for m in masses], axis=0) - 4 * H
 hi = np.max([np.maximum(m["A"], m["B"]) + m["r"].max() for m in masses], axis=0) + 4 * H
 shape = np.ceil((hi - lo) / H).astype(int) + 1

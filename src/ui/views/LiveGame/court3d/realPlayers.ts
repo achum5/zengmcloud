@@ -1,11 +1,13 @@
 import { safeLocalStorage } from "../../../util/safeLocalStorage.ts";
 
 // THE PLAYERS DRAWN FROM THE BLENDER BODY (see meshBody.ts), not sculpted -
-// on this device only, while it is tried out (not offered in Settings: set
-// by hand, localStorage court3dRealPlayers = "1"). Only the picture: the
-// game, and where everybody is in it, is the same either way.
-
-const KEY = "court3dRealPlayers";
+// as whoever is watching likes it, kept on this device (see Global
+// Settings: 3D Players), while it is tried out. Only the picture: the game,
+// and where everybody is in it, is the same either way.
+//
+// (Its own key: a device that had the old Realistic players on - the same
+// switch, scrapped - starts on Classic.)
+const KEY = "court3dBlenderPlayers";
 
 let now: boolean | undefined;
 const watching = new Set<() => void>();

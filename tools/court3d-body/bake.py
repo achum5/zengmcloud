@@ -56,6 +56,8 @@ for s in "RL":
 # ---- what each face of him is ---------------------------------------------
 # sculpt.ts kinds, as meshBody.ts names them.
 TORSO, SHORTS, UPPER, FORE, THIGH, SHIN, SHOE, NECK, TONGUE = 0, 1, 2, 3, 5, 6, 7, 8, 14
+# (His head: classic.py's own kind - the sculpt draws heads apart.)
+HEAD_KIND = 99
 
 
 def name_of(kind, side):
@@ -70,6 +72,7 @@ def name_of(kind, side):
         SHIN: "shin" + sd,
         SHOE: "shoe" + sd,
         TONGUE: "shoe" + sd,
+        HEAD_KIND: "head",
     }.get(int(kind), "torso")
 
 
@@ -155,8 +158,33 @@ ARM = [SI[n] for n in SEG if n.startswith(("upper", "fore", "hand"))]
 SHO = [SI[n] for n in SEG if n.startswith("shoulder")]
 armW = W[:, ARM].sum(axis=1) + 0.6 * W[:, SHO].sum(axis=1)
 arm = np.round(np.clip(armW, 0, 1) * 255).astype(np.uint8)
-# (No face on him yet: his head is the court's own, drawn over him.)
-face = np.tile(np.array([200 * 8, 1000 * 8, 0, 0], np.int16), (len(P), 1))
+# ---- his face: where on a faces.js face each point of his head is ----------
+# faces.js draws a face in a 400 x 600 box, his head round (200, 300), 400
+# across crown to chin - and the court draws that head as a circle of his
+# head's radius round where his head is (figure.ts). So a point of his head
+# goes to the face as if seen straight from in front, at that scale. With
+# it: how much it faces forward (from in front, the face is drawn on; side
+# on, round the back, his hair is his haircut - see sculpt.ts), and how far
+# round his head it is (1 in front, -1 behind).
+headP = np.array(np.isin(kind_p, [HEAD_KIND]))
+face = np.tile(np.array([200.0, 1000.0, 0.0, 0.0]), (len(P), 1))
+if headP.any():
+    R = B["headR"] / HGT
+    C = J["head"]
+    N = np.zeros_like(P)
+    fn = np.cross(P[T[:, 1]] - P[T[:, 0]], P[T[:, 2]] - P[T[:, 0]])
+    for k in range(3):
+        np.add.at(N, T[:, k], fn)
+    N /= np.maximum(np.linalg.norm(N, axis=1, keepdims=True), 1e-12)
+    hp = P[headP]
+    fc = (hp[:, 0].max() + hp[:, 0].min()) / 2
+    d = np.stack([hp[:, 0] - fc, hp[:, 1]], axis=1)
+    ct = d[:, 0] / np.maximum(np.linalg.norm(d, axis=1), 1e-9)
+    face[headP] = np.stack(
+        [200 + (hp[:, 1] - C[1]) * 200 / R, 300 - (hp[:, 2] - C[2]) * 200 / R, N[headP, 0], ct], axis=1
+    )
+# (faces.js units x 8; facing and round his head x 1000.)
+face = np.round(face * np.array([8, 8, 1000, 1000])).astype(np.int16)
 b64 = lambda a: base64.b64encode(np.ascontiguousarray(a).tobytes()).decode()
 joints = {k: [round(float(x), 5) for x in v] for k, v in J.items()}
 HEAD = (

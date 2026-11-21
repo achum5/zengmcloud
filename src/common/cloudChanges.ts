@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 420,
+		date: "2026-11-21",
+		text: "3D game: new players to try - the same players rebuilt as one smooth body in Blender, with real muscle on their shoulders, arms and calves. Turn them on in Settings under 3D Players: Blender (beta). Classic stays the default for now.",
+	},
+	{
 		n: 419,
 		date: "2026-11-21",
 		text: "CPU trades: a team now knows which of its players it wouldn't pay to re-sign, and takes a fair offer for him before the deadline instead of holding out and watching him leave for nothing. In test leagues good players walking away from losing teams for nothing fell by almost two thirds. The CPU trade market also thinks a little faster, and answers your trade offers faster.",

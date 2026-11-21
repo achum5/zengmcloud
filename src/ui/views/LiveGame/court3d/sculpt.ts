@@ -3923,6 +3923,34 @@ export const sculpt = (
 		const fr = b.frame;
 		const toward = unit(v3(fr.tw.f, fr.tw.s, fr.tw.u + fr.kap));
 		const posed = poseBones(sk, body, TYPICAL_BODY, b);
+		// His head turned on his neck to see the ball (as the court's drawn
+		// head is - see figure.ts drawHeadAt): all of it at his head, half of
+		// it up his neck - if the mesh has a head (the court's own drawn on
+		// him otherwise, turning itself).
+		if (st.look && MESH_KINDS.includes("head")) {
+			for (const [name, share] of [
+				["head", 1],
+				["neck2", 0.5],
+			] as const) {
+				const i = boneIndex(name);
+				const bone = posed[i];
+				if (i < 0 || !bone) {
+					continue;
+				}
+				const th = ((st.look * Math.PI) / 180) * share;
+				const c = Math.cos(th);
+				const sn = Math.sin(th);
+				const { f, s: l } = bone.fr;
+				posed[i] = {
+					...bone,
+					fr: {
+						...bone.fr,
+						f: v3(f.f * c + l.f * sn, f.s * c + l.s * sn, f.u * c + l.u * sn),
+						s: v3(l.f * c - f.f * sn, l.s * c - f.s * sn, l.u * c - f.u * sn),
+					},
+				};
+			}
+		}
 		// His shoes painted where each point is on the shoe - stood flat, as
 		// the mesh was made - however his foot is pointed, not by how high
 		// off the floor it is (one skin: see MESH_LAYERED).
