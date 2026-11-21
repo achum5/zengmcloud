@@ -4,6 +4,8 @@ import type { CrowdFace } from "./crowdFaces.ts";
 import { arenaSpecFor, type ArenaSpec } from "./arenaSpec.ts";
 import { depthOf, project, type Camera } from "./camera.ts";
 import { drawTexturedPlane } from "./planes.ts";
+import { anchorOf, drawModel, type ModelPlace } from "./arenaModel.ts";
+import { STANCHION } from "./stanchionModel.ts";
 import { BALL_R } from "./evaluate.ts";
 import { shade } from "./figure.ts";
 import {
@@ -2450,157 +2452,121 @@ export const drawHoop = (
 	const behind = (cam.pos.x - bx) * sgn < 0;
 	const inkW = Math.max(1, 0.05 * project(cam, { x: X(4), y: 25, z: 0 }).k);
 	const stanchion = () => {
-		// The stanchion: a dark padded base behind the baseline with a lit
-		// board in the team's color on its faces, the post, and the arm out to
-		// the board with a sign along it.
-		const b0 = X(-9.5);
-		const b1 = X(-5);
-		const box = (y0: number, y1: number, z1: number) => {
-			const pts = (x: number, y: number, z: number): Pt3 => ({ x, y, z });
-			// Top, the face toward the court, the face toward the camera.
-			ctx.lineJoin = "round";
-			ctx.lineWidth = inkW * 2;
-			ctx.strokeStyle = INK;
-			for (const [fill, face] of [
-				[
-					"#24262c",
-					[pts(b0, y0, z1), pts(b1, y0, z1), pts(b1, y1, z1), pts(b0, y1, z1)],
-				],
-				[
-					"#17181c",
-					[pts(b1, y0, 0), pts(b1, y1, 0), pts(b1, y1, z1), pts(b1, y0, z1)],
-				],
-				[
-					"#101115",
-					[pts(b0, y1, 0), pts(b1, y1, 0), pts(b1, y1, z1), pts(b0, y1, z1)],
-				],
-			] as const) {
-				poly(ctx, cam, [...face]);
-				ctx.stroke();
-				ctx.fillStyle = fill;
-				ctx.fill();
-			}
-			// The boards on its faces: the team's color, a bright band across
-			// - or the team's name, lit, read left to right from the floor.
-			const lit = (face: (u: number, v: number) => Pt3) => {
-				const quad = (v0: number, v1: number, fill: string) => {
-					ctx.fillStyle = fill;
-					poly(ctx, cam, [face(0, v0), face(1, v0), face(1, v1), face(0, v1)]);
-					ctx.fill();
-				};
-				quad(0.15, 0.85, padColor);
-				if (!panel) {
-					quad(0.44, 0.56, shade(padColor, 0.45));
-					return;
-				}
-				const o = face(0, 0.85);
-				const a = face(1, 0.85);
-				const b = face(0, 0.15);
-				drawTexturedPlane(
-					ctx,
-					cam,
-					{
-						origin: o,
-						alongX: {
-							x: (a.x - o.x) / panel.width,
-							y: (a.y - o.y) / panel.width,
-							z: (a.z - o.z) / panel.width,
-						},
-						alongY: {
-							x: (b.x - o.x) / panel.height,
-							y: (b.y - o.y) / panel.height,
-							z: (b.z - o.z) / panel.height,
-						},
-						w: panel.width,
-						h: panel.height,
-					},
-					panel,
-					4,
-					1,
-				);
-			};
-			const lo = 0.5;
-			const hi = z1 - 0.45;
-			// (Left to right as seen from the floor: along the baseline the far
-			// way round at the left basket; across the end toward the court at
-			// the left basket, away from it at the right.)
-			lit((u, v) => {
-				const w = side === 0 ? 1 - u : u;
-				return pts(b1, y0 + 0.35 + w * (y1 - y0 - 0.7), lo + v * (hi - lo));
-			});
-			lit((u, v) => {
-				const w = side === 0 ? u : 1 - u;
-				return pts(b0 + (b1 - b0) * (0.06 + w * 0.88), y1, lo + v * (hi - lo));
-			});
+		// The stanchion (built in Blender - see stanchionModel.ts): a dark
+		// padded base behind the baseline with a lit board in the team's
+		// color on its faces, the post padded round its foot, the boom out to
+		// the board with a brace under it and a sign along it - the boom and
+		// the board's mount ringing with the board after a dunk.
+		const place: ModelPlace = {
+			at: (p, flex) => ({
+				x: X(p[0]!),
+				y: p[1]! + rock * flex,
+				z: p[2]! + shake * flex,
+			}),
+			mirrored: side === 1,
 		};
-		box(22.4, 27.6, 3.4);
-		inkLine(
-			ctx,
-			cam,
-			{ x: X(-6.6), y: 25, z: 3.4 },
-			{ x: X(-6.2), y: 25, z: 12.4 },
-			0.75,
-			"#24262c",
-		);
-		inkLine(
-			ctx,
-			cam,
-			{ x: X(-6.2), y: 25, z: 12.4 },
-			{ x: X(3.7), y: 25 + rock, z: 11.9 + shake },
-			0.48,
-			"#2a2c33",
-		);
-		inkLine(
-			ctx,
-			cam,
-			{ x: X(-6.4), y: 25, z: 8.6 },
-			{ x: X(3.7), y: 25 + rock, z: 10.2 + shake },
-			0.3,
-			"#2a2c33",
-		);
-		// The sign along the arm, on the side the camera sees.
-		{
-			const along = (d: number) => (d + 6.3) / 10;
-			const top = (d: number) => 12.4 + (11.9 + shake - 12.4) * along(d);
-			const low = (d: number) => 8.6 + (10.2 + shake - 8.6) * along(d);
-			const at = (d: number, z: number): Pt3 => ({
-				x: X(d),
-				y: 25.3 + rock * along(d),
-				z,
+		// A picture on one of its faces, the middle of it from v0 to v1 down.
+		const onFace = (name: string, v0: number, v1: number) => {
+			const q = anchorOf(cam, STANCHION, name, place);
+			if (!q) {
+				return undefined;
+			}
+			const at = (u: number, v: number): Pt3 => ({
+				x: q.tl.x + (q.tr.x - q.tl.x) * u + (q.bl.x - q.tl.x) * v,
+				y: q.tl.y + (q.tr.y - q.tl.y) * u + (q.bl.y - q.tl.y) * v,
+				z: q.tl.z + (q.tr.z - q.tl.z) * u + (q.bl.z - q.tl.z) * v,
 			});
-			const [d0, d1] = [-4.3, 2.1];
+			return { at, quad: [at(0, v0), at(1, v0), at(1, v1), at(0, v1)] };
+		};
+		const lit = (name: string) => {
+			const f = onFace(name, 0.15, 0.85);
+			if (!f) {
+				return;
+			}
+			ctx.fillStyle = padColor;
+			poly(ctx, cam, f.quad);
+			ctx.fill();
+			if (!panel) {
+				const band = onFace(name, 0.44, 0.56)!;
+				ctx.fillStyle = shade(padColor, 0.45);
+				poly(ctx, cam, band.quad);
+				ctx.fill();
+				return;
+			}
+			const o = f.at(0, 0.15);
+			const a = f.at(1, 0.15);
+			const b = f.at(0, 0.85);
+			drawTexturedPlane(
+				ctx,
+				cam,
+				{
+					origin: o,
+					alongX: {
+						x: (a.x - o.x) / panel.width,
+						y: (a.y - o.y) / panel.width,
+						z: (a.z - o.z) / panel.width,
+					},
+					alongY: {
+						x: (b.x - o.x) / panel.height,
+						y: (b.y - o.y) / panel.height,
+						z: (b.z - o.z) / panel.height,
+					},
+					w: panel.width,
+					h: panel.height,
+				},
+				panel,
+				4,
+				1,
+			);
+		};
+		const sign = (name: string) => {
+			const f = onFace(name, 0, 1);
+			if (!f) {
+				return;
+			}
 			// (Inked round, so it reads as a sign against a floor its own color.)
 			ctx.lineJoin = "round";
 			ctx.strokeStyle = INK;
 			ctx.lineWidth = 2 * inkW;
 			ctx.fillStyle = padColor;
-			poly(ctx, cam, [
-				at(d0, low(d0) + 0.35),
-				at(d1, low(d1) + 0.35),
-				at(d1, top(d1) - 0.35),
-				at(d0, top(d0) - 0.35),
-			]);
+			poly(ctx, cam, f.quad);
 			ctx.stroke();
 			ctx.fill();
 			ctx.fillStyle = "rgba(255,255,255,0.85)";
-			const mid = (d: number) => (low(d) + top(d)) / 2;
+			const bar = onFace(name, 0.38, 0.62)!;
+			const inset = (p: Pt3, q: Pt3, k: number): Pt3 => ({
+				x: p.x + (q.x - p.x) * k,
+				y: p.y + (q.y - p.y) * k,
+				z: p.z + (q.z - p.z) * k,
+			});
+			const [p0, p1, p2, p3] = bar.quad as [Pt3, Pt3, Pt3, Pt3];
 			poly(ctx, cam, [
-				at(d0 + 0.6, mid(d0) - 0.18),
-				at(d1 - 0.6, mid(d1) - 0.18),
-				at(d1 - 0.6, mid(d1) + 0.18),
-				at(d0 + 0.6, mid(d0) + 0.18),
+				inset(p0, p1, 0.09),
+				inset(p1, p0, 0.09),
+				inset(p2, p3, 0.09),
+				inset(p3, p2, 0.09),
 			]);
 			ctx.fill();
-		}
-		// Padding round the bottom of the post.
-		inkLine(
+		};
+		drawModel(
 			ctx,
 			cam,
-			{ x: X(-6.6), y: 25, z: 3.4 },
-			{ x: X(-6.5), y: 25, z: 7.4 },
-			1.15,
-			padColor,
+			STANCHION,
+			place,
+			(kind) =>
+				kind === "pad" ? padColor : kind === "base" ? "#24262c" : "#2a2c33",
+			{ color: INK, width: inkW * 2 },
+			(part) => {
+				if (part === "base") {
+					for (const name of ["panelCourt", "panelNear", "panelFar"]) {
+						lit(name);
+					}
+				}
+			},
 		);
+		// (The sign out on the face of the boom: over the bars under it.)
+		sign("signNear");
+		sign("signFar");
 	};
 	const board = () => {
 		// The backboard: glass in a white frame, the shooter's square, and the

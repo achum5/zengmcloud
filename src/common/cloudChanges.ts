@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 421,
+		date: "2026-11-21",
+		text: "3D game: the stanchions holding up the baskets are rebuilt in Blender as solid 3D pieces - a padded base and post, and a boom with a brace and cross-bars out to the backboard - instead of flat shapes.",
+	},
+	{
 		n: 420,
 		date: "2026-11-21",
 		text: "3D game: new players to try - the same players rebuilt as one smooth body in Blender, with real muscle on their shoulders, arms and calves. Turn them on in Settings under 3D Players: Blender (beta). Classic stays the default for now.",
