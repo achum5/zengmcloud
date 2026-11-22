@@ -1193,7 +1193,9 @@ const GAITS: Record<GaitMode, Gait> = {
 			[0.66, 47, 76],
 			[0.88, 49, 51],
 		],
-		lean: 15,
+		// (Bent well over the ball, as a man dribbling it at a walk in motion
+		// capture is - CMU 6, trial 12: 25 to 30 degrees at 4 ft/s.)
+		lean: 22,
 		armFwd: 16,
 		armBack: 12,
 		elbow: 40,
@@ -1733,12 +1735,14 @@ const JUMPER_ARMS: [number, Partial<Pose>][] = [
 	// instant - and gone.
 	[0.51, { shN: 139, elN: 21, wrN: 50, free: 0 }],
 	[0.55, { shN: 153, elN: 1, abN: -12, wrN: 12, free: 1 }],
-	// The snap, and the gooseneck held.
+	// The snap, and the gooseneck held - the guide hand left up where it
+	// came off the ball, its arm all but straight up beside the shooting
+	// arm (as NBA 2K's shooters hold it), not dropped to his forehead.
 	[0.6, { shN: 154, elN: 2, wrN: -85 }],
-	[0.66, { elN: 3, wrN: -108, shF: 117, elF: 57, wrF: 22 }],
-	[0.84, { shN: 151, elN: 5, shF: 96, elF: 64, abF: -2, wrF: 12 }],
+	[0.66, { elN: 3, wrN: -108, shF: 136, elF: 28, abF: 10, wrF: 12 }],
+	[0.84, { shN: 151, elN: 5, shF: 130, elF: 32, abF: 10, wrF: 10 }],
 	// Down: the guide hand drops to his side; the shooting hand stays up.
-	[0.92, { shN: 148, elN: 6, wrN: -104, shF: 18, elF: 52, abF: 12, wrF: 0 }],
+	[0.92, { shN: 148, elN: 6, wrN: -104, shF: 40, elF: 50, abF: 12, wrF: 0 }],
 	[1, { shN: 146, elN: 7, shF: 6, elF: 30, abF: 12 }],
 ];
 const ARM_FIELDS: (keyof Pose)[] = [

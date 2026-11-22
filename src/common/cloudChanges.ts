@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 428,
+		date: "2026-11-22",
+		text: "3D game: shooters hold the guide hand up beside the shooting arm after the release, like NBA 2K's, instead of dropping it to the forehead - and a player walking the ball up under pressure is bent over it like a real dribbler.",
+	},
+	{
 		n: 427,
 		date: "2026-11-22",
 		text: "3D game: arms reaching up - dunks, blocks, rebounds, jump shots - keep their own length, the shoulders coming up with them the way a real player's do, instead of the arms stretching out long and thin.",
