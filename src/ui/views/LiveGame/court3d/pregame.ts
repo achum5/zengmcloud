@@ -57,6 +57,10 @@ const JOG = 9;
 const SET_MS = 520;
 const SHOT_MS = 1000;
 const SHOT_PEAK = 1.35;
+// Two balls through one net never nearer together than this (ms); a shot
+// held this much longer at a time till its ball would be.
+const NET_CLEAR = 400;
+const NET_WAIT = 120;
 
 // Bigs feed, guards handle it, everybody else shoots.
 const BIG: Record<string, number> = { C: 0, FC: 1, PF: 2, F: 3 };
@@ -212,10 +216,16 @@ class Part {
 
 	// Up from where he stands and in. Returns when, and where, it comes out
 	// of the bottom of the net - or nothing if no shot from here would go.
-	shoot(pid: number, t: number): { out: number; at: Pt3 } | undefined {
+	// (`nets`: when balls go through this net - the other group's too - so
+	// never two together: his held a beat till the net is clear.)
+	shoot(
+		pid: number,
+		t: number,
+		nets: number[],
+	): { out: number; at: Pt3 } | undefined {
 		const rim = rimPt(this.team);
 		const P = this.pos(pid);
-		const gather = Math.max(t, this.free.get(pid) ?? 0);
+		let gather = Math.max(t, this.free.get(pid) ?? 0);
 		const v = (JUMPER.release - JUMPER.off) / (JUMPER.land - JUMPER.off);
 		const hand = releaseAt("shoot", JUMPER.release);
 		const u = unit(P, rim);
@@ -244,6 +254,12 @@ class Part {
 		if (!found) {
 			return undefined;
 		}
+		const through = () =>
+			gather + SHOT_MS * JUMPER.release + found.handoff + found.play.decided;
+		while (nets.some((x) => Math.abs(x - through()) < NET_CLEAR)) {
+			gather += NET_WAIT;
+		}
+		nets.push(through());
 		this.face(pid, gather, rim);
 		this.look(pid, gather, rim);
 		this.tr(pid).acts.push({
@@ -355,6 +371,7 @@ const shootaround = (
 	side: 0 | 1,
 	rng: () => number,
 	lead: number,
+	nets: number[],
 ): CourtTimeline => {
 	const part = new Part(team, rng);
 	const rim = rimPt(team);
@@ -374,7 +391,7 @@ const shootaround = (
 	while (t < WARMUP_MS) {
 		const i = k % shooters.length;
 		const pid = shooters[i]!;
-		const shot = part.shoot(pid, t);
+		const shot = part.shoot(pid, t, nets);
 		if (!shot) {
 			// (No shot from here would go: on to the next spot, and the big
 			// gets it back to him there.)
@@ -443,6 +460,8 @@ export const stageWarmup = (players: CourtPlayer[], seed: number): Warmup => {
 	const rng = seeded(seed * 7919 + 17);
 	const parts: CourtTimeline[] = [];
 	for (const team of [0, 1] as const) {
+		// (When balls go through this team's net - see Part.shoot.)
+		const nets: number[] = [];
 		const mine = players
 			.filter(
 				(p) => p.team === team && !p.out && !(p.injury && p.injury.games > 0),
@@ -470,6 +489,7 @@ export const stageWarmup = (players: CourtPlayer[], seed: number): Warmup => {
 						side as 0 | 1,
 						rng,
 						300 + side * 1700 + team * 900,
+						nets,
 					),
 				);
 			}

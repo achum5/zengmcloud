@@ -104,6 +104,7 @@ import {
 	type ShotArms,
 	skeleton,
 	standingReach,
+	helpUpFront,
 	type AnimName,
 	type DribbleMove,
 	HUG_APART,
@@ -848,7 +849,7 @@ const CHARGE_ASIDE = 3;
 // them made for each other there, hand in hand all the way (see helpUp and
 // pulledUp in poses.ts). Coming from behind him, he goes round his side,
 // this far out (feet).
-const HELP_UP_FRONT = 3.6;
+const HELP_UP_FRONT = helpUpFront(bodyOf());
 const HELP_UP_MS = 1300;
 // How long a man come to help another up takes to turn right round to him
 // before he reaches down (ms).

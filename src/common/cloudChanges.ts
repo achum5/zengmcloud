@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 425,
+		date: "2026-11-22",
+		text: "3D game: players are built like real NBA players - measured off NBA 2K's player editor: a smaller head, longer legs and longer arms, shoulders up where a man's are. They run and step to fit their new legs, too: no more dropping into a backpedal or a defensive slide in a frame.",
+	},
+	{
 		n: 424,
 		date: "2026-11-22",
 		text: "3D game: the players are quicker to draw, so games run smoother on phones - and the picture stays sharp instead of going blocky when a phone falls behind.",

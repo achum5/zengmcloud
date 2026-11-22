@@ -491,7 +491,12 @@ const footDrops = () => {
 					jumps++;
 				}
 				const still = Math.hypot(pel.x - prev.pel.x, pel.y - prev.pel.y) < 0.15;
-				if (still && feet.some((f, i) => prev!.feet[i]!.z - f.z > 0.5)) {
+				// (Half a foot on a man whose hips stand three feet up - more on
+				// a longer-legged one.)
+				if (
+					still &&
+					feet.some((f, i) => prev!.feet[i]!.z - f.z > 0.171 * body.hipH)
+				) {
 					drops++;
 				}
 				if (
@@ -959,7 +964,9 @@ const headFlicks = () => {
 					(Math.hypot(head.x - prev.x, head.y - prev.y, head.z - prev.z) *
 						1000) /
 					STEP;
-				if (v > 40) {
+				// (Forty feet a second on a man whose hips stand three feet up -
+				// that much quicker on a longer-legged one, his head higher.)
+				if (v > 13.7 * body.hipH) {
 					flicked += 1;
 				}
 				if ((st.drive ?? 0) > 0.4) {

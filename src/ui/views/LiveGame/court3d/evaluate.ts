@@ -6877,8 +6877,11 @@ const SETTLE_KNEE = 30;
 // foot.)
 const SETTLE_FULL = 30;
 const SETTLE_SPREAD = 40;
-// Each step's share of the way, overlapping.
-const SETTLE_STEP = 0.6;
+// Each step's share of the way: half each, one after the other - the one
+// foot down before the other comes up. (Overlapping, the second came up
+// with the first still in the air, and he dropped onto the lower of the
+// two in a frame.)
+const SETTLE_STEP = 0.5;
 // Two legs this near to as far to go (degrees, see settleLegs) go over
 // from the one first to the other first gradually.
 const SETTLE_TIE = 6;
@@ -6944,6 +6947,45 @@ const settleLegs = (
 		f: leg(df, first * (1 - SETTLE_STEP)),
 	};
 };
+// How far down a leg reaches from his hips at these angles (degrees, in
+// legs' lengths - thigh and shin taken as long as each other).
+const reachDown = (hip: number, knee: number) =>
+	(Math.cos((hip * Math.PI) / 180) + Math.cos(((hip - knee) * Math.PI) / 180)) /
+	2;
+// How much more each leg of `was` bends (knee degrees, the hip half as much)
+// to reach down no further than the move he steps into holds his hips
+// (see settleStep): nothing for a leg as bent as that already.
+const sinkFor = (
+	was: Pose,
+	wasFlex: number,
+	to: Pose,
+	toFlex: number,
+): [number, number] => {
+	const hold = Math.max(
+		reachDown(to.hipN + toFlex, to.kneeN),
+		reachDown(to.hipF + toFlex, to.kneeF),
+	);
+	const sink = (hip: number, knee: number) => {
+		if (reachDown(hip, knee) <= hold) {
+			return 0;
+		}
+		let lo = 0;
+		let hi = 120;
+		for (let i = 0; i < 14; i++) {
+			const mid = (lo + hi) / 2;
+			if (reachDown(hip + mid / 2, knee + mid) > hold) {
+				lo = mid;
+			} else {
+				hi = mid;
+			}
+		}
+		return hi;
+	};
+	return [
+		sink(was.hipN + wasFlex, was.kneeN),
+		sink(was.hipF + wasFlex, was.kneeF),
+	];
+};
 export const settleStep = (
 	p: Pose,
 	to: Pose,
@@ -6955,17 +6997,29 @@ export const settleStep = (
 	const wasFlex = flexOf(was);
 	const toFlex = flexOf(to);
 	const at = (a: number, b: number, w: number) => a + (b - a) * w;
+	// The leg still waiting its turn, while the other steps: bent as the
+	// other goes - at the knee, and at the hip half as much, its foot where
+	// it was under him - as far as brings his hips down to where the move
+	// he steps into holds them. His hips go down as he steps, not dropped
+	// onto the other leg in a frame once it is this one's turn to go.
+	const sunk = sinkFor(was, wasFlex, to, toFlex);
+	const sinkN = sunk[0] * f.on;
+	const sinkF = sunk[1] * n.on;
 	// (His hips' bend over his feet goes with each leg as it steps, not
 	// with both at once - which would slide the one still down.)
 	return {
 		...p,
 		plant: 0,
-		hipN: at(was.hipN + wasFlex, to.hipN + toFlex, n.on) + SETTLE_HIP * n.up,
-		kneeN: at(was.kneeN, to.kneeN, n.on) + SETTLE_KNEE * n.up,
+		hipN:
+			at(was.hipN + wasFlex + sinkN / 2, to.hipN + toFlex, n.on) +
+			SETTLE_HIP * n.up,
+		kneeN: at(was.kneeN + sinkN, to.kneeN, n.on) + SETTLE_KNEE * n.up,
 		toeN: at(was.toeN, to.toeN, n.on),
 		wideN: at(was.wide + was.wideN, to.wide + to.wideN, n.on) - p.wide,
-		hipF: at(was.hipF + wasFlex, to.hipF + toFlex, f.on) + SETTLE_HIP * f.up,
-		kneeF: at(was.kneeF, to.kneeF, f.on) + SETTLE_KNEE * f.up,
+		hipF:
+			at(was.hipF + wasFlex + sinkF / 2, to.hipF + toFlex, f.on) +
+			SETTLE_HIP * f.up,
+		kneeF: at(was.kneeF + sinkF, to.kneeF, f.on) + SETTLE_KNEE * f.up,
 		toeF: at(was.toeF, to.toeF, f.on),
 		wideF: at(was.wide + was.wideF, to.wide + to.wideF, f.on) - p.wide,
 	};
@@ -8902,15 +8956,48 @@ const carriedRound = (
 	return { x: now.x + rx * c - ry * s, y: now.y + rx * s + ry * c };
 };
 
+// From a move into a bounce of his dribble, or a bounce into a move: the
+// ball from where the one had it into where the other has it over this
+// long (ms) - his hand on it each way, not a few inches over in a frame
+// as the one takes over from the other.
+const SEAM_MS = 90;
+const DRIBBLED: ReadonlySet<string | undefined> = new Set(["dribble", "cross"]);
 const ballOn = (
 	tl: CourtTimeline,
 	i: number,
 	t: number,
 	bodyFor: (pid: number) => Body,
 	depth: number,
+	// (Eased in from the piece before, at a seam - see SEAM_MS.)
+	seam = true,
 ): BallState => {
 	const seg = tl.ball[i]!;
 	const prev = i > 0 && depth < 2 ? tl.ball[i - 1] : undefined;
+	if (
+		seam &&
+		seg.kind === "hold" &&
+		prev?.kind === "hold" &&
+		prev.pid === seg.pid &&
+		DRIBBLED.has(seg.style) &&
+		DRIBBLED.has(prev.style) &&
+		prev.style !== seg.style &&
+		t - seg.t0 < SEAM_MS
+	) {
+		const own = ballOn(tl, i, t, bodyFor, depth, false);
+		const was = ballOn(tl, i - 1, t, bodyFor, depth + 1);
+		const e = smooth01((t - seg.t0) / SEAM_MS);
+		// (Off his legs still, on the way from the one to the other.)
+		const at = offLegs(
+			{
+				x: was.x + (own.x - was.x) * e,
+				y: was.y + (own.y - was.y) * e,
+				z: was.z + (own.z - was.z) * e,
+			},
+			evalPlayer(tl, seg.pid, t),
+			bodyFor(seg.pid),
+		);
+		return { ...own, ...at };
+	}
 	// Where the piece before left it, the moment before this one took over.
 	const left = () => ballOn(tl, i - 1, seg.t0 - BEFORE, bodyFor, depth + 1);
 	const handOf = (pid: number, at: number, which: "near" | "far" | "both") =>

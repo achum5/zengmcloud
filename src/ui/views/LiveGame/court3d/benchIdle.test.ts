@@ -120,10 +120,11 @@ test("a man coming off is greeted at his chair: up, a slap of the hands, sat bac
 			const now = at(t);
 			for (const pid of up) {
 				const st = now.get(pid);
-				// (Up, he is up in front of the bench, a step out from it.)
+				// (Up, he is up in front of the bench, a step out from it - a
+				// step his size: as far out as his hips are high, near enough.)
 				if (st && st.anim !== "sit") {
 					assert.isAtLeast(st.y, g!.seat.y - 0.1);
-					assert.isBelow(st.y, g!.seat.y + 2.5);
+					assert.isBelow(st.y, g!.seat.y + 0.86 * body.hipH);
 					// (Not out there in his way before he gets to his chair.)
 					if (t < sd.t) {
 						assert.isBelow(st.y, g!.seat.y + 0.3);
@@ -151,7 +152,12 @@ test("a man coming off is greeted at his chair: up, a slap of the hands, sat bac
 						ha[k]!.y - hb[k]!.y,
 						ha[k]!.z - hb[k]!.z,
 					);
-					assert.isBelow(d, 0.8, `${pid}'s hand @${Math.round(t)}`);
+					// (Half his arm's length in a frame at the most.)
+					assert.isBelow(
+						d,
+						0.48 * (body.upper + body.fore),
+						`${pid}'s hand @${Math.round(t)}`,
+					);
 				}
 			}
 			// The slap: his hand and the other man's, met, up high.

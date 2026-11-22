@@ -1016,7 +1016,7 @@ type Gait = {
 	// How far ahead of his hips a foot lands, as a share of how far it goes
 	// back under him while it is down.
 	ahead: number;
-	// How high his hips ride (feet - a typical player's stand 2.93 up), and
+	// How high his hips ride (feet, on a man whose stand GAIT_HIPS up), and
 	// how far they rise and fall each step: lowest over the planted foot, or
 	// - negative, walking - highest, vaulting over it.
 	hips: number;
@@ -1387,9 +1387,14 @@ const legTo = (
 	};
 };
 // The hips' height through a leg's stride (the same for both legs: a step
-// is half a stride).
-const hipsAt = (g: Gait, phi: number) =>
-	g.hips - (g.bob / 2) * Math.cos(2 * Math.PI * (2 * phi - g.duty));
+// is half a stride) - for a man whose hips stand as high as `b`'s: GAITS'
+// heights are a man's whose stand GAIT_HIPS up, as low under that, for his
+// size, on a man whose stand higher.
+const GAIT_HIPS = 2.93;
+const hipsAt = (g: Gait, phi: number, b: Body) =>
+	((g.hips - (g.bob / 2) * Math.cos(2 * Math.PI * (2 * phi - g.duty))) *
+		b.hipH) /
+	GAIT_HIPS;
 // A foot while it is down: going back under him, and late on up onto its
 // toes - the toes staying put on the floor as the heel comes up.
 const plantedAt = (g: Gait, b: Body, phi: number): Leg => {
@@ -1403,7 +1408,7 @@ const plantedAt = (g: Gait, b: Body, phi: number): Leg => {
 	const f =
 		g.ahead * g.stride * g.duty - g.stride * phi + toe * (1 - Math.cos(point));
 	return {
-		...legTo(b, f, z + b.ankleH - hipsAt(g, phi)),
+		...legTo(b, f, z + b.ankleH - hipsAt(g, phi, b)),
 		z,
 		toe: point / RAD / POINT,
 	};
@@ -1497,7 +1502,7 @@ const legAt = (mode: GaitMode, phi: number): Leg => {
 	return {
 		hip,
 		knee,
-		z: hipsAt(g, phi) + u - b.ankleH,
+		z: hipsAt(g, phi, b) + u - b.ankleH,
 		toe: fit.off.toe + (square - fit.off.toe) * w,
 	};
 };
@@ -2775,12 +2780,7 @@ const HUG = pose({
 	kneeF: 18,
 });
 const HUG_PAT = { ...HUG, shF: 85, elF: 80, abF: -40 };
-// Two men in that hug stand this far apart (feet, middle to middle, the way
-// they face) and this far over to each one's right of the other - right
-// shoulder to right shoulder, the gripped hands between their chests, heads
-// past each other's; and it lasts this long (ms).
-export const HUG_APART = 1.0;
-export const HUG_SIDE = 1.15;
+// A hug lasts this long (ms) - for where two men in it stand, see HUG_APART.
 export const HUG_MS = 1700;
 
 // A poke at the ball, as the hand gets to it and on through it: each man's
@@ -12160,25 +12160,28 @@ export const CARTOON: Proportions = {
 	foreR: 0.027,
 	hand: 0.036,
 };
-// A BASKETBALL PLAYER: nearer a real one's build. His head is a sixth of
-// him, not a fifth - still bigger than life, so his face reads from up in
-// the stands. Every length of him below it is the cartoon's, to the inch:
-// where two men's hands meet, how far he reaches for the rim, where his
-// hands come down on his knees are all set in feet on the floor, and go on
-// being right. Across and through he is as a man measures: about 27% of
-// his height across the shoulders, arms and all; an upper arm 14 inches
-// round on a man six and a half feet tall, a forearm 11.5, a thigh 24, a
-// calf 16, an ankle 9. His height and build still tell: a center towers
-// over a point guard, a big man is broad. (His face is drawn a little
-// bigger than headR: crown to chin is 2.45 headR.)
+// A BASKETBALL PLAYER, built as NBA 2K builds one (measured off its
+// player editor - a 6'6" man stood straight, in front of the camera): his
+// head about an eighth of him crown to chin, the tops of his shoulders at
+// 83% of his height, his hips at 52%, his knees at 28% - half of him leg -
+// and arms that hang with his wrists at his hips and his fingertips at mid
+// thigh. Across and through he is as a man measures: about 27% of his
+// height across the shoulders, arms and all; an upper arm 14 inches round
+// on a man six and a half feet tall, a forearm 11.5, a thigh 24, a calf 16,
+// an ankle 9. His height and build still tell: a center towers over a
+// point guard, a big man is broad. (His face is drawn a little bigger than
+// headR: crown to chin is 2.45 headR.)
 export const ATHLETE: Proportions = {
 	...CARTOON,
-	// (His neck a little longer under the smaller head - and he stands a
-	// couple of inches under his listed height for it: nothing else of him
-	// is any longer.)
-	neck: 0.056,
-	head: 0.084,
-	shoulderW: 0.101,
+	ankle: 0.039,
+	shin: 0.241,
+	thigh: 0.24,
+	torso: 0.318,
+	neck: 0.058,
+	head: 0.05,
+	upper: 0.185,
+	fore: 0.145,
+	shoulderW: 0.106,
 	depth: 0.104,
 	thighR: 0.047,
 	kneeR: 0.029,
@@ -12264,6 +12267,34 @@ export const standingReach = (b: Body): number =>
 	b.shoulderDrop +
 	(b.upper + b.fore) * (1 + STRETCH) +
 	b.handR * 2.2;
+
+// How far out in front of a man sat on the floor a teammate stands to help
+// him up (feet): where, through the pull - the one's helpUp, the other's
+// pulledUp - their hands come nearest each other, gripped (see HELP_UP_FRONT
+// in director.ts).
+export const helpUpFront = (b: Body): number => {
+	const at = [0.25, 0.4, 0.55, 0.7].map((k) => ({
+		h: skeleton(b, poseAt("helpUp", k)),
+		f: skeleton(b, poseAt("pulledUp", k)),
+	}));
+	let best = { d: 0, gap: Infinity };
+	for (let d = 2.5; d <= 6.5; d += 0.05) {
+		let gap = 0;
+		for (const { h, f } of at) {
+			// (The helper facing him: his right hand to the other's left.)
+			const g = (a: V3, c: V3) =>
+				Math.hypot(a.f - (d - c.f), a.s + c.s, a.u - c.u);
+			gap += Math.min(
+				g(f.armR.end, h.armL.end) + g(f.armL.end, h.armR.end),
+				g(f.armR.end, h.armR.end) + g(f.armL.end, h.armL.end),
+			);
+		}
+		if (gap < best.gap) {
+			best = { d, gap };
+		}
+	}
+	return best.d;
+};
 
 // A point on the body: f forward, s to his left, u up - feet, with his feet
 // on the floor at the origin.
@@ -14375,3 +14406,12 @@ export const posed = (
 	}
 	return out;
 };
+
+// Two men in a hug (dapHug) stand this far apart (feet, middle to middle,
+// the way they face) and this far over to each one's right of the other -
+// right shoulder to right shoulder, each one's right hand where the other's
+// is, gripped between their chests, heads past each other's.
+export const [HUG_APART, HUG_SIDE] = (() => {
+	const sk = skeleton(bodyOf(), poseAt("dapHug", 0.5));
+	return [2 * sk.armR.end.f, -2 * sk.armR.end.s];
+})();

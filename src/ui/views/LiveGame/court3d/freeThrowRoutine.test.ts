@@ -224,7 +224,10 @@ describe("3D free throws", () => {
 						// down a handshake line.)
 						const A = evalPlayer(tl, pid, t);
 						const B = evalPlayer(tl, q, t);
-						if (Math.hypot(A.x - B.x, A.y - B.y) > 4) {
+						// (Face to face is about as far apart as their hips are
+						// high and as far again over a third: each one's hand out
+						// in front of him.)
+						if (Math.hypot(A.x - B.x, A.y - B.y) > 1.37 * body.hipH) {
 							continue;
 						}
 						fives += 1;
