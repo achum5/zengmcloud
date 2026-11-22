@@ -2496,3 +2496,34 @@ five players for Chicago's 30-year-old 59. The contenders' bids hardly
 change; on master the sellers' asks held them off. Holding out a season is
 how a seller's ask comes down, and it goes in once contenders stop bidding
 firsts for role players.
+
+### Firsts as currency, measured and not built (2026-11-22)
+
+The owner approved valuing a first as currency for a better deal later: a
+GM doesn't spend one on a role player while a bigger use for it may come.
+That is worth something only where firsts run short, and in this market they
+don't. Every deal priced at every moment of three random-players leagues'
+first two seasons (a measuring hook, not shipped): a deal paying firsts open
+and passing every check 67 times, 62 of them made - about one chance a team
+in three seasons. Where the same buyer had another within a year (32 of 62),
+the later one gained more per first 19 times.
+
+Firsts spent in market trades a team-season, over four seasons of the same
+leagues as shipped:
+
+| team that season | team-seasons | firsts spent a team-season |
+| ---------------- | ------------ | -------------------------- |
+| under .450       | 132          | 0.02                       |
+| .450-.550        | 96           | 0.16                       |
+| .550-.650        | 68           | 0.41                       |
+| .650+            | 64           | 1.45                       |
+
+A team holds seven firsts and gains one each draft: the league's best spend
+half a first a season past that, over a decade of contending before they run
+out. Before paying firsts the median buyer held five; 17 of 98 deals left it
+one or none. A first kept for a later deal is worth nearly nothing to
+nearly every team, so building it would change almost nothing. Firsts for role
+players are decided by what a late first is worth against a rotation player:
+a contender's title chances off its own curve (checked against the sim)
+against picks priced by what they become - a 57 at about two and a half
+late firsts.
