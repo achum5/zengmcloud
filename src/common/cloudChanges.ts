@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 432,
+		date: "2026-11-22",
+		text: "3D game: every team can have its own score bug, like its local TV broadcast's (Manage Teams, Score bug next to each team, or in a team looks file). You see your own team's bug when it plays and the home team's otherwise. Score bugs can now also use their own fonts, angled panels and team-colored gradients.",
+	},
+	{
 		n: 431,
 		date: "2026-11-22",
 		text: "CPU teams value first-round picks a little more in trades, so they give up fewer firsts for older role players and more for real starters.",

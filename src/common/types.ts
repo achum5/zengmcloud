@@ -3033,6 +3033,10 @@ export type Team = {
 	// fields optional so a partial customization is fine. See common/court.ts.
 	court?: CourtStyle;
 
+	// Its own broadcast's score bug for the 3D game (see ScoreBugStyle), in
+	// place of the league's. Optional.
+	scoreBug?: ScoreBugStyle;
+
 	// Football: the team's home stadium and its helmet in the 3D game, as it
 	// has set them. Optional; anything left out is picked for it.
 	stadium?: StadiumLook;
@@ -3474,10 +3478,11 @@ export type CourtDecal = {
 	adjust?: CourtImageAdjust;
 	pair?: CourtPair;
 };
-// THE LEAGUE'S OWN SCORE BUG for the 3D game, in place of the default: a
-// box `width` x `height` units, laid along the bottom of the picture
-// (`place`), spanning `span` of its width, with its pieces placed in those
-// units. Colors are any CSS color, or a team's own: "away0".."away2",
+// A SCORE BUG for the 3D game, in place of the default - the league's own,
+// or a team's (Team.scoreBug, its broadcast's): a box `width` x `height`
+// units, laid along the bottom of the picture (`place`), spanning `span` of
+// its width, with its pieces placed in those units. Colors are any CSS -
+// a color, a gradient - with a team's own written in as "away0".."away2",
 // "home0".."home2".
 export type ScoreBugStyle = {
 	width: number;
@@ -3488,6 +3493,13 @@ export type ScoreBugStyle = {
 	// A picture behind it all: a URL, or one uploaded ("pic:<id>").
 	image?: string;
 	radius?: number;
+	// Its shadow (CSS box-shadow; "none" for none), and its lettering unless
+	// a piece says otherwise.
+	shadow?: string;
+	font?: string;
+	// Lettering it brings: a `font` names one. `src`: a URL, or one uploaded
+	// ("pic:<id>").
+	fonts?: { name: string; src: string }[];
 	pieces: ScoreBugPiece[];
 };
 export type ScoreBugShow =
@@ -3531,11 +3543,23 @@ export type ScoreBugPiece = {
 	font?: string;
 	align?: "left" | "center" | "right";
 	italic?: boolean;
+	// Letter spacing, in the bug's units; all capitals.
+	spacing?: number;
+	upper?: boolean;
 	radius?: number;
 	opacity?: number;
-	// For "text": what it says. For "image": a URL, or "pic:<id>".
+	// CSS, as given (team colors written in): its outline ("2px solid
+	// home1"), its shape ("polygon(8% 0, 100% 0, 92% 100%, 0 100%)"), its
+	// lettering's shadow, how it blends with what's under it ("multiply").
+	border?: string;
+	clip?: string;
+	shadow?: string;
+	blend?: string;
+	// For "text": what it says. For "image": a URL, or "pic:<id>" - and how
+	// it fills its box ("contain", the default; "cover"; "fill").
 	text?: string;
 	image?: string;
+	fit?: "contain" | "cover" | "fill";
 };
 
 export type CourtDecalPlaced = {

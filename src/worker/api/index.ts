@@ -8,9 +8,11 @@ import { parseScoreBug, scoreBugPictureIds } from "../../common/scoreBug.ts";
 import {
 	courtPictureIds,
 	decalPictureIds,
+	FONT_TYPES,
 	pictureById,
 	prunePictures,
 	resolveScoreBug,
+	scoreBugOfGame,
 	stadiumPictureIds,
 	storePicture,
 } from "../util/courtPictures.ts";
@@ -7080,13 +7082,17 @@ const updateTeamStadium = async (args: {
 // courtPictures.ts): its id, for the court to name it by.
 const storeCourtPicture = (url: string) => storePicture(url);
 
-// The league's own score bug for the 3D game (see ScoreBugStyle), or null
-// for the default. Pictures it no longer uses, and any uploaded for it this
-// time that it doesn't, are let go.
+// The league's own score bug for the 3D game (see ScoreBugStyle) - or, with
+// `tid`, that team's - or null for the default (a team's: the league's).
+// Pictures and fonts it no longer uses, and any uploaded for it this time
+// that it doesn't, are let go. A team's is written through the cache, so
+// every device in a multiplayer league has it.
 const updateScoreBug = async ({
+	tid,
 	bug,
 	uploaded,
 }: {
+	tid?: number;
 	bug: unknown;
 	uploaded?: string[];
 }) => {
@@ -7098,11 +7104,29 @@ const updateScoreBug = async ({
 		}
 		parsed = p;
 	}
+	if (tid !== undefined) {
+		const t = await idb.cache.teams.get(tid);
+		if (!t) {
+			throw new Error(`Team not found for tid ${tid}`);
+		}
+		const before = scoreBugPictureIds(t.scoreBug);
+		if (parsed) {
+			t.scoreBug = parsed;
+		} else {
+			delete t.scoreBug;
+		}
+		await idb.cache.teams.put(t);
+		await prunePictures([...before, ...(uploaded ?? [])]);
+		return { ok: true };
+	}
 	const before = scoreBugPictureIds(g.get("scoreBug"));
 	await league.setGameAttributes({ scoreBug: parsed });
 	await prunePictures([...before, ...(uploaded ?? [])]);
 	return { ok: true };
 };
+
+// A font for a score bug, kept in the league as its pictures are: its id.
+const storeScoreBugFont = (url: string) => storePicture(url, FONT_TYPES);
 
 // The league's court decals, saved whole (see CourtDecal). Pictures they no
 // longer use, and any uploaded for them this time that they don't, are let
@@ -8578,7 +8602,7 @@ const getReplayFeed = async (gid: number) => {
 		then?.looks.arena ??
 		(await takeArenaLooks(boxScore.teams[0].tid, boxScore.season));
 	(out.initialBoxScore as any).scoreBug = await resolveScoreBug(
-		g.get("scoreBug"),
+		await scoreBugOfGame(boxScore.teams),
 	);
 	return {
 		events: out.events,
@@ -9028,6 +9052,7 @@ const api = {
 		storeCourtPicture,
 		updateCourtDecals,
 		updateScoreBug,
+		storeScoreBugFont,
 		updateTeamUniform,
 		setJerseySkin,
 		getJerseySkins,

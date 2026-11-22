@@ -3,6 +3,8 @@ import type { JerseySkinIds } from "../../../common/types.ts";
 import { showNotification } from "../../util/showNotification.ts";
 import { toWorker } from "../../util/toWorker.ts";
 import { keepCourtPictures, parseCourt } from "../courtFile.ts";
+import { keepScoreBugPictures } from "../scoreBugFile.ts";
+import { parseScoreBug } from "../../../common/scoreBug.ts";
 import { toSkinURL } from "./JerseySkins.tsx";
 
 // EVERY TEAM'S LOOK FROM ONE FILE: each team's home and away jerseys and
@@ -20,6 +22,11 @@ import { toSkinURL } from "./JerseySkins.tsx";
 //
 //   { "teamLooks": 1, "teams": [{ "abbrev": "GB",
 //     "stadium": { "turfColor": "#0b3d91" }, "helmet": { "shell": "#203731" } }] }
+//
+// Any sport's: a team's score bug, its broadcast's, as a score bug file's
+// JSON (see ScoreBugStyle), its pictures and fonts written in or linked -
+// "scoreBug": { "width": 600, "height": 60, "pieces": [...] } (null: the
+// league's).
 
 type Entry = {
 	abbrev?: unknown;
@@ -30,6 +37,7 @@ type Entry = {
 	court?: unknown;
 	stadium?: unknown;
 	helmet?: unknown;
+	scoreBug?: unknown;
 };
 
 export type TeamRef = {
@@ -117,6 +125,18 @@ const ImportTeamLooks = ({
 						tid: t.tid,
 						court: kept.court,
 						uploaded: kept.ids,
+					});
+				}
+				if (e.scoreBug !== undefined) {
+					const parsed = e.scoreBug === null ? null : parseScoreBug(e.scoreBug);
+					if (typeof parsed === "string") {
+						throw new Error(`score bug: ${parsed}`);
+					}
+					const kept = parsed && (await keepScoreBugPictures(parsed));
+					await toWorker("main", "updateScoreBug", {
+						tid: t.tid,
+						bug: kept ? kept.bug : null,
+						uploaded: kept?.ids,
 					});
 				}
 				if (e.stadium !== undefined || e.helmet !== undefined) {

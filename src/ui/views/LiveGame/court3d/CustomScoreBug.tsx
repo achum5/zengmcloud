@@ -1,4 +1,9 @@
-import { useLayoutEffect, type CSSProperties, type ReactNode } from "react";
+import {
+	useEffect,
+	useLayoutEffect,
+	type CSSProperties,
+	type ReactNode,
+} from "react";
 import { TeamLogoInline } from "../../../components/TeamLogoInline.tsx";
 import type { ScoreBugPiece, ScoreBugStyle } from "../../../../common/types.ts";
 import type { BugRefs, BugTeam } from "./ScoreBug.tsx";
@@ -12,6 +17,37 @@ import type { BugRefs, BugTeam } from "./ScoreBug.tsx";
 export type CustomBugTeam = BugTeam & { region?: string; name?: string };
 
 const MAX_TIMEOUTS = 7;
+
+// A team's color written into CSS: "home0" alone, or in a gradient, a
+// border, a shadow ("linear-gradient(90deg, away0, away1)").
+const TEAM_COLOR = /(?<![\w./-])(away|home)([0-2])(?![\w.-])/g;
+
+const FONT = "system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+// A font named on its own ("Gotham Bold" - one the bug brings, say) quoted,
+// falling back on the usual; a CSS list, as given.
+const family = (f: string | undefined) =>
+	f === undefined || /["',]/.test(f) ? f : `"${f}", ${FONT}`;
+
+// The fonts bugs bring, added to the page once each.
+const fontsAdded = new Set<string>();
+const addFonts = (fonts: ScoreBugStyle["fonts"]) => {
+	for (const { name, src } of fonts ?? []) {
+		const key = `${name}\n${src}`;
+		if (fontsAdded.has(key) || typeof FontFace === "undefined") {
+			continue;
+		}
+		fontsAdded.add(key);
+		const face = new FontFace(name, `url("${src.replaceAll('"', "%22")}")`);
+		face
+			.load()
+			.then(() => {
+				document.fonts.add(face);
+			})
+			.catch(() => {
+				// The lettering falls back.
+			});
+	}
+};
 
 export const CustomScoreBug = ({
 	style,
@@ -65,15 +101,27 @@ export const CustomScoreBug = ({
 		}
 	});
 
+	useEffect(() => {
+		addFonts(style.fonts);
+	}, [style.fonts]);
+
 	const W = style.width;
 	const H = style.height;
 	// A length in the bug's units, as a share of its width.
 	const u = (n: number) => `${(n / W) * 100}cqw`;
 	const team = (side: "away" | "home") => (side === "away" ? away : home);
-	// "away0".."home2": that side's colors; anything else, as given.
+	// "away0".."home2": that side's colors, wherever they're written;
+	// anything else, as given.
 	const color = (c: string | undefined) => {
 		const m = c === undefined ? null : /^(away|home)([0-2])$/.exec(c);
-		return m ? team(m[1] as "away" | "home")?.colors?.[Number(m[2])] : c;
+		if (m) {
+			return team(m[1] as "away" | "home")?.colors?.[Number(m[2])];
+		}
+		return c?.replace(
+			TEAM_COLOR,
+			(_, side: "away" | "home", i: string) =>
+				team(side)?.colors?.[Number(i)] ?? "transparent",
+		);
 	};
 
 	const piece = (p: ScoreBugPiece, i: number) => {
@@ -95,13 +143,20 @@ export const CustomScoreBug = ({
 			background: color(p.background),
 			fontSize: u(p.size ?? 16),
 			fontWeight: p.weight,
-			fontFamily: p.font,
+			fontFamily: family(p.font),
 			fontStyle: p.italic ? "italic" : undefined,
+			letterSpacing: p.spacing === undefined ? undefined : u(p.spacing),
+			textTransform: p.upper ? "uppercase" : undefined,
 			borderRadius: p.radius === undefined ? undefined : u(p.radius),
+			border: color(p.border),
+			clipPath: p.clip,
+			textShadow: color(p.shadow),
+			mixBlendMode: p.blend as CSSProperties["mixBlendMode"],
 			opacity: p.opacity,
 			overflow: "hidden",
 			whiteSpace: "nowrap",
 			fontVariantNumeric: "tabular-nums",
+			boxSizing: "border-box",
 		};
 		const side = p.show.startsWith("away")
 			? "away"
@@ -216,7 +271,11 @@ export const CustomScoreBug = ({
 					<img
 						src={p.image}
 						alt=""
-						style={{ width: "100%", height: "100%", objectFit: "contain" }}
+						style={{
+							width: "100%",
+							height: "100%",
+							objectFit: p.fit ?? "contain",
+						}}
 					/>
 				) : null;
 				break;
@@ -255,16 +314,16 @@ export const CustomScoreBug = ({
 					aspectRatio: `${W} / ${H}`,
 					containerType: "inline-size",
 					background: style.image
-						? `center / 100% 100% no-repeat url("${style.image.replaceAll('"', "%22")}")${style.background ? `, ${style.background}` : ""}`
-						: style.background,
+						? `center / 100% 100% no-repeat url("${style.image.replaceAll('"', "%22")}")${style.background ? `, ${color(style.background)}` : ""}`
+						: color(style.background),
 					borderRadius:
 						style.radius === undefined
 							? undefined
 							: `${(style.radius / W) * 100}cqw`,
 					overflow: "hidden",
 					lineHeight: 1,
-					fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
-					boxShadow: "0 3px 10px rgba(0,0,0,.5)",
+					fontFamily: family(style.font) ?? FONT,
+					boxShadow: color(style.shadow) ?? "0 3px 10px rgba(0,0,0,.5)",
 				}}
 			>
 				{style.pieces.map(piece)}

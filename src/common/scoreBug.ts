@@ -37,11 +37,25 @@ const PIECE_NUMBERS = new Set([
 	"h",
 	"size",
 	"weight",
+	"spacing",
 	"radius",
 	"opacity",
 ]);
-const PIECE_STRINGS = new Set(["color", "background", "font", "text", "image"]);
+const PIECE_STRINGS = new Set([
+	"color",
+	"background",
+	"font",
+	"text",
+	"image",
+	"border",
+	"clip",
+	"shadow",
+	"blend",
+]);
+const PIECE_BOOLEANS = new Set(["italic", "upper"]);
+const FITS = new Set(["contain", "cover", "fill"]);
 const MAX_PIECES = 80;
+const MAX_FONTS = 6;
 
 const isNumber = (v: unknown): v is number =>
 	typeof v === "number" && Number.isFinite(v);
@@ -61,6 +75,9 @@ export const parseScoreBug = (raw: unknown): ScoreBugStyle | string => {
 				"background",
 				"image",
 				"radius",
+				"shadow",
+				"font",
+				"fonts",
 				"pieces",
 			].includes(key)
 		) {
@@ -89,13 +106,30 @@ export const parseScoreBug = (raw: unknown): ScoreBugStyle | string => {
 	) {
 		return `"place" should be "center", "left" or "right".`;
 	}
-	for (const key of ["background", "image"] as const) {
+	for (const key of ["background", "image", "shadow", "font"] as const) {
 		if (r[key] !== undefined && typeof r[key] !== "string") {
 			return `"${key}" should be text.`;
 		}
 	}
 	if (r.radius !== undefined && !isNumber(r.radius)) {
 		return `"radius" should be a number.`;
+	}
+	if (r.fonts !== undefined) {
+		if (!Array.isArray(r.fonts) || r.fonts.length > MAX_FONTS) {
+			return `"fonts" should be a list (at most ${MAX_FONTS}).`;
+		}
+		for (const [i, f] of r.fonts.entries()) {
+			if (
+				typeof f !== "object" ||
+				f === null ||
+				typeof f.name !== "string" ||
+				!f.name.trim() ||
+				typeof f.src !== "string" ||
+				Object.keys(f).some((k) => k !== "name" && k !== "src")
+			) {
+				return `font ${i + 1} should be { "name": ..., "src": ... }.`;
+			}
+		}
 	}
 	if (!Array.isArray(r.pieces) || r.pieces.length > MAX_PIECES) {
 		return `"pieces" should be a list (at most ${MAX_PIECES}).`;
@@ -129,9 +163,13 @@ export const parseScoreBug = (raw: unknown): ScoreBugStyle | string => {
 				if (v !== "left" && v !== "center" && v !== "right") {
 					return `${at}: "align" should be "left", "center" or "right".`;
 				}
-			} else if (k === "italic") {
+			} else if (PIECE_BOOLEANS.has(k)) {
 				if (typeof v !== "boolean") {
-					return `${at}: "italic" should be true or false.`;
+					return `${at}: "${k}" should be true or false.`;
+				}
+			} else if (k === "fit") {
+				if (typeof v !== "string" || !FITS.has(v)) {
+					return `${at}: "fit" should be "contain", "cover" or "fill".`;
 				}
 			} else {
 				return `${at}: unknown field "${k}".`;
@@ -537,12 +575,70 @@ export const FOOTBALL_SCORE_BUG_PRESETS: {
 	};
 });
 
-// The pictures a score bug names, uploaded ("pic:<id>").
+// The pictures a score bug names, uploaded ("pic:<id>") - its fonts too.
 export const scoreBugPictureIds = (bug: ScoreBugStyle | null | undefined) =>
 	bug
-		? [bug.image, ...bug.pieces.map((p) => p.image)]
+		? [
+				bug.image,
+				...bug.pieces.map((p) => p.image),
+				...(bug.fonts ?? []).map((f) => f.src),
+			]
 				.filter(
 					(u): u is string => typeof u === "string" && u.startsWith("pic:"),
 				)
 				.map((u) => u.slice(4))
 		: [];
+
+// Every URL in a score bug that names a picture or a font, rewritten.
+export const mapScoreBugURLs = async (
+	bug: ScoreBugStyle,
+	f: (url: string) => Promise<string | undefined>,
+): Promise<ScoreBugStyle> => {
+	const out: ScoreBugStyle = { ...bug };
+	if (bug.image !== undefined) {
+		const image = await f(bug.image);
+		if (image === undefined) {
+			delete out.image;
+		} else {
+			out.image = image;
+		}
+	}
+	if (bug.fonts) {
+		const fonts = [];
+		for (const font of bug.fonts) {
+			const src = await f(font.src);
+			if (src !== undefined) {
+				fonts.push({ ...font, src });
+			}
+		}
+		out.fonts = fonts;
+	}
+	out.pieces = [];
+	for (const p of bug.pieces) {
+		if (p.image === undefined) {
+			out.pieces.push(p);
+			continue;
+		}
+		const image = await f(p.image);
+		if (image === undefined) {
+			const { image: _, ...rest } = p;
+			out.pieces.push(rest);
+		} else {
+			out.pieces.push({ ...p, image });
+		}
+	}
+	return out;
+};
+
+// WHICH BUG A GAME CARRIES: the broadcast you'd be watching - your own
+// team's when it plays, the home team's otherwise - if that team has a bug
+// of its own; the league's if not; null for the default. `teams`: the
+// game's, home first.
+export const scoreBugForGame = (
+	league: ScoreBugStyle | null | undefined,
+	teams: { tid: number; scoreBug?: ScoreBugStyle }[],
+	userTid: number | undefined,
+): ScoreBugStyle | null => {
+	const mine = teams.find((t) => t.tid === userTid);
+	return mine?.scoreBug ?? teams[0]?.scoreBug ?? league ?? null;
+};

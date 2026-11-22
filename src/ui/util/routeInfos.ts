@@ -44,6 +44,7 @@ export const routeInfos = {
 	"/l/:lid/edit_team_stadium/:tid": "editTeamStadium",
 	"/l/:lid/court_decals": "courtDecals",
 	"/l/:lid/score_bug": "scoreBug",
+	"/l/:lid/score_bug/:tid": "scoreBug",
 	"/l/:lid/edit_team_uniform/:tid": "editTeamUniform",
 	"/l/:lid/intrasquad/:team": "intrasquad",
 	"/l/:lid/intrasquad_game": "intrasquadGame",

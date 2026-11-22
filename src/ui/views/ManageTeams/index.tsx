@@ -369,7 +369,7 @@ const ManageTeams = (props: View<"manageTeams">) => {
 								t={t}
 							/>
 							{__SPORT === "basketball" ? (
-								<div className="col-12 mb-1">
+								<div className="col-12 mb-1 d-flex flex-wrap gap-2">
 									<a
 										className="btn btn-sm btn-light-bordered"
 										href={helpers.leagueUrl(["edit_team_court", t.tid])}
@@ -377,24 +377,30 @@ const ManageTeams = (props: View<"manageTeams">) => {
 										Customize court
 									</a>
 									<a
-										className="btn btn-sm btn-light-bordered ms-2"
+										className="btn btn-sm btn-light-bordered"
 										href={helpers.leagueUrl(["edit_team_uniform", t.tid])}
 									>
 										Customize jersey
 									</a>
 									<button
 										type="button"
-										className="btn btn-sm btn-light-bordered ms-2"
+										className="btn btn-sm btn-light-bordered"
 										onClick={() => {
 											setSkinsTid(t.tid);
 										}}
 									>
 										3D jerseys
 									</button>
+									<a
+										className="btn btn-sm btn-light-bordered"
+										href={helpers.leagueUrl(["score_bug", t.tid])}
+									>
+										Score bug
+									</a>
 								</div>
 							) : null}
 							{__SPORT === "football" ? (
-								<div className="col-12 mb-1">
+								<div className="col-12 mb-1 d-flex flex-wrap gap-2">
 									<a
 										className="btn btn-sm btn-light-bordered"
 										href={helpers.leagueUrl(["edit_team_stadium", t.tid])}
@@ -403,13 +409,19 @@ const ManageTeams = (props: View<"manageTeams">) => {
 									</a>
 									<button
 										type="button"
-										className="btn btn-sm btn-light-bordered ms-2"
+										className="btn btn-sm btn-light-bordered"
 										onClick={() => {
 											setSkinsTid(t.tid);
 										}}
 									>
 										3D jerseys
 									</button>
+									<a
+										className="btn btn-sm btn-light-bordered"
+										href={helpers.leagueUrl(["score_bug", t.tid])}
+									>
+										Score bug
+									</a>
 								</div>
 							) : null}
 							<div className="col-12 d-lg-none" style={{ marginTop: -12 }}>

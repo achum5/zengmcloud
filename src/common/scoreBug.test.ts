@@ -1,12 +1,15 @@
 import { assert, describe, test } from "vitest";
 import {
 	FOOTBALL_SCORE_BUG_PRESETS,
+	mapScoreBugURLs,
 	parseScoreBug,
 	SCORE_BUG_PRESETS,
+	scoreBugForGame,
 	scoreBugPictureIds,
 } from "./scoreBug.ts";
+import type { ScoreBugStyle } from "./types.ts";
 
-const ok = {
+const ok: ScoreBugStyle = {
 	width: 400,
 	height: 50,
 	pieces: [{ show: "clock", x: 0, y: 0, w: 60, h: 50 }],
@@ -61,6 +64,41 @@ describe("parseScoreBug", () => {
 		assert.deepStrictEqual(parseScoreBug(bug), bug as unknown);
 	});
 
+	test("takes a broadcast's look: fonts, team colors in CSS, shapes", () => {
+		const bug = {
+			...ok,
+			shadow: "none",
+			font: "Broadcast Sans",
+			fonts: [{ name: "Broadcast Sans", src: "pic:7" }],
+			pieces: [
+				{
+					show: "homeScore",
+					x: 0,
+					y: 0,
+					w: 60,
+					h: 50,
+					background: "linear-gradient(90deg, home0, home1)",
+					border: "2px solid home2",
+					clip: "polygon(8% 0, 100% 0, 92% 100%, 0 100%)",
+					shadow: "0 0.05em 0.1em rgba(0,0,0,.6)",
+					blend: "multiply",
+					spacing: 1.5,
+					upper: true,
+				},
+				{
+					show: "image",
+					x: 0,
+					y: 0,
+					w: 10,
+					h: 10,
+					image: "pic:8",
+					fit: "fill",
+				},
+			],
+		};
+		assert.deepStrictEqual(parseScoreBug(bug), bug as unknown);
+	});
+
 	test("says what's wrong", () => {
 		const bad: [unknown, RegExp][] = [
 			[[], /object/],
@@ -73,6 +111,10 @@ describe("parseScoreBug", () => {
 			[{ ...ok, pieces: [{ ...ok.pieces[0], size: "big" }] }, /"size"/],
 			[{ ...ok, pieces: [{ ...ok.pieces[0], align: "up" }] }, /"align"/],
 			[{ ...ok, pieces: [{ ...ok.pieces[0], foo: 1 }] }, /unknown field/],
+			[{ ...ok, pieces: [{ ...ok.pieces[0], upper: "yes" }] }, /"upper"/],
+			[{ ...ok, pieces: [{ ...ok.pieces[0], fit: "zoom" }] }, /"fit"/],
+			[{ ...ok, fonts: [{ name: "A" }] }, /font 1/],
+			[{ ...ok, fonts: "A" }, /"fonts"/],
 			[
 				{ ...ok, pieces: [{ show: "clock", x: 0, y: 0, w: 1 }] },
 				/"h" is needed/,
@@ -99,4 +141,86 @@ test("scoreBugPictureIds lists the uploaded pictures", () => {
 		}),
 		["4", "9"],
 	);
+});
+
+test("scoreBugPictureIds lists the fonts uploaded too", () => {
+	assert.deepStrictEqual(
+		scoreBugPictureIds({
+			...ok,
+			fonts: [
+				{ name: "A", src: "pic:5" },
+				{ name: "B", src: "https://x/b.woff2" },
+			],
+		}),
+		["5"],
+	);
+});
+
+test("mapScoreBugURLs rewrites every picture and font, dropping what's gone", async () => {
+	const bug: ScoreBugStyle = {
+		...ok,
+		image: "pic:1",
+		fonts: [
+			{ name: "A", src: "pic:2" },
+			{ name: "B", src: "pic:gone" },
+		],
+		pieces: [
+			{ show: "clock", x: 0, y: 0, w: 60, h: 50 },
+			{ show: "image", x: 0, y: 0, w: 1, h: 1, image: "pic:gone" },
+			{ show: "image", x: 0, y: 0, w: 1, h: 1, image: "pic:3" },
+		],
+	};
+	const out = await mapScoreBugURLs(bug, async (u) =>
+		u === "pic:gone" ? undefined : `url-${u}`,
+	);
+	assert.strictEqual(out.image, "url-pic:1");
+	assert.deepStrictEqual(out.fonts, [{ name: "A", src: "url-pic:2" }]);
+	assert.deepStrictEqual(out.pieces, [
+		bug.pieces[0],
+		{ show: "image", x: 0, y: 0, w: 1, h: 1 },
+		{ show: "image", x: 0, y: 0, w: 1, h: 1, image: "url-pic:3" },
+	]);
+	// (The bug itself untouched.)
+	assert.strictEqual(bug.image, "pic:1");
+});
+
+describe("scoreBugForGame", () => {
+	const league = { ...ok, width: 1 };
+	const homeBug = { ...ok, width: 2 };
+	const awayBug = { ...ok, width: 3 };
+
+	test("your team's broadcast when it plays", () => {
+		const teams = [
+			{ tid: 1, scoreBug: homeBug },
+			{ tid: 2, scoreBug: awayBug },
+		];
+		assert.strictEqual(scoreBugForGame(league, teams, 2), awayBug);
+		assert.strictEqual(scoreBugForGame(league, teams, 1), homeBug);
+	});
+
+	test("the home team's otherwise, then the league's, then the default", () => {
+		assert.strictEqual(
+			scoreBugForGame(
+				league,
+				[
+					{ tid: 1, scoreBug: homeBug },
+					{ tid: 2, scoreBug: awayBug },
+				],
+				9,
+			),
+			homeBug,
+		);
+		assert.strictEqual(
+			scoreBugForGame(league, [{ tid: 1, scoreBug: homeBug }, { tid: 2 }], 2),
+			homeBug,
+		);
+		assert.strictEqual(
+			scoreBugForGame(league, [{ tid: 1 }, { tid: 2 }], 1),
+			league,
+		);
+		assert.strictEqual(
+			scoreBugForGame(null, [{ tid: 1 }, { tid: 2 }], 1),
+			null,
+		);
+	});
 });

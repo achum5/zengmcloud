@@ -8,7 +8,11 @@ import type {
 	ScoreBugStyle,
 	StadiumLook,
 } from "../../common/types.ts";
-import { scoreBugPictureIds } from "../../common/scoreBug.ts";
+import {
+	mapScoreBugURLs,
+	scoreBugForGame,
+	scoreBugPictureIds,
+} from "../../common/scoreBug.ts";
 import { STADIUM_PICTURE_KEYS } from "../../common/stadiumLook.ts";
 import {
 	arenaAdPictureIds,
@@ -45,6 +49,8 @@ export const COURT_PICTURE_KEYS = [
 // document).
 export const PICTURE_MAX = 700_000;
 const PICTURE_TYPES = /^data:image\/(png|jpeg|webp);base64,[\w+/]+=*$/;
+// A score bug's lettering, kept the same way.
+export const FONT_TYPES = /^data:font\/(woff2|woff|ttf|otf);base64,[\w+/]+=*$/;
 
 // A picture by id. The store isn't kept in memory: a picture is in the
 // cache only if it was written lately, otherwise on disk.
@@ -307,8 +313,8 @@ export const resolveScoreBug = async (
 	if (!bug) {
 		return null;
 	}
-	const fill = async (u: string | undefined) => {
-		if (u === undefined || !u.startsWith(PIC)) {
+	return mapScoreBugURLs(bug, async (u) => {
+		if (!u.startsWith(PIC)) {
 			return u;
 		}
 		try {
@@ -316,16 +322,17 @@ export const resolveScoreBug = async (
 		} catch {
 			return undefined;
 		}
-	};
-	return {
-		...bug,
-		image: await fill(bug.image),
-		pieces: await Promise.all(
-			bug.pieces.map(async (p) =>
-				p.image === undefined ? p : { ...p, image: await fill(p.image) },
-			),
-		),
-	};
+	});
+};
+
+// The bug a game carries (see scoreBugForGame), its pictures not yet filled
+// in. `teams`: the game's, home first.
+export const scoreBugOfGame = async (teams: { tid: number }[]) => {
+	const looked = [];
+	for (const { tid } of teams) {
+		looked.push({ tid, scoreBug: (await idb.cache.teams.get(tid))?.scoreBug });
+	}
+	return scoreBugForGame(g.get("scoreBug"), looked, g.get("userTid"));
 };
 
 // A court - or a football stadium's field - with the game's decals laid on
@@ -382,6 +389,7 @@ export const prunePictures = async (ids: Iterable<string>) => {
 		for (const id of [
 			...courtPictureIds(t.court),
 			...stadiumPictureIds(t.stadium),
+			...scoreBugPictureIds(t.scoreBug),
 		]) {
 			used.add(id);
 		}

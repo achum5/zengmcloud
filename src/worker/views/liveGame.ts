@@ -3,6 +3,7 @@ import {
 	resolveCourt,
 	resolveScoreBug,
 	resolveStadium,
+	scoreBugOfGame,
 } from "../util/courtPictures.ts";
 import { player, team } from "../core/index.ts";
 import { getFollowedBroadcastPayload } from "../core/sync/connect.ts";
@@ -537,9 +538,9 @@ export default defineView({
 			if (info) {
 				(out.initialBoxScore as any).gamecast = info;
 			}
-			// The league's own score bug, if it has one (see ScoreBugStyle).
+			// The broadcast's own score bug, if it has one (see scoreBugForGame).
 			(out.initialBoxScore as any).scoreBug = await resolveScoreBug(
-				g.get("scoreBug"),
+				await scoreBugOfGame(boxScore.teams),
 			);
 
 			// A rewatch of a saved game: flag it and build a small "2026 Playoffs" /
