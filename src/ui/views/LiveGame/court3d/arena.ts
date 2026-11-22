@@ -2990,13 +2990,15 @@ export const drawShadow = (
 	y: number,
 	radius: number,
 	strength: number,
+	// (Up on a stage: on its floor.)
+	z = 0,
 ) => {
 	if (strength <= 0.01) {
 		return;
 	}
-	const c = project(cam, { x, y, z: 0 });
-	const near = project(cam, { x, y: y + radius, z: 0 });
-	const far = project(cam, { x, y: y - radius, z: 0 });
+	const c = project(cam, { x, y, z });
+	const near = project(cam, { x, y: y + radius, z });
+	const far = project(cam, { x, y: y - radius, z });
 	const rx = radius * c.k;
 	const ry = Math.max(0.5, Math.abs(near.y - far.y) / 2);
 	ctx.save();

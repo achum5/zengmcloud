@@ -10,6 +10,8 @@ export type CrowdFace = {
 	img: HTMLCanvasElement;
 	// His skin, for his arms when he is up out of his seat.
 	skin: string;
+	// A woman's (dressed for a night out as one - see draftVenue).
+	female?: boolean;
 };
 
 const POOL = 48;
@@ -48,12 +50,13 @@ const loadImage = (src: string) =>
 
 // (faces.js draws on Math.random: seeded for each face, so the crowd is
 // the same people on every device, as everything else in the building is.)
+const femaleAt = (n: number) => (n * 0.618) % 1 < WOMEN;
 const seededFace = (n: number) => {
 	const real = Math.random;
 	Math.random = makeCourtRng(`crowd|${n}`);
 	try {
 		const face = generate(undefined, {
-			gender: (n * 0.618) % 1 < WOMEN ? "female" : "male",
+			gender: femaleAt(n) ? "female" : "male",
 		});
 		face.accessories = {
 			id: Math.random() < CAP_SHARE ? pick(CAPS) : "none",
@@ -112,7 +115,11 @@ const faceOf = async (n: number): Promise<CrowdFace | undefined> => {
 			canvas.width,
 			canvas.height,
 		);
-		return { img: canvas, skin: face.body?.color ?? "#d9a77f" };
+		return {
+			img: canvas,
+			skin: face.body?.color ?? "#d9a77f",
+			female: femaleAt(n),
+		};
 	} catch {
 		return undefined;
 	} finally {

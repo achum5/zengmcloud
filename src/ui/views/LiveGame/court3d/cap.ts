@@ -1,4 +1,4 @@
-// A TEAM'S CAP ON HIS HEAD - a draft pick's (see draftWalk.ts): the crown in
+// A TEAM'S CAP ON HIS HEAD - a draft pick's (see draftStage.ts): the crown in
 // the team's main color, the panels at its sides in its second, the button
 // on top and the piping along the peak in its third.
 //

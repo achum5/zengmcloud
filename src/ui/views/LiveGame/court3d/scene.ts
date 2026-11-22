@@ -511,6 +511,26 @@ export type Frame = {
 	// in it can be drawn): none of it seen - only the new pictures of the
 	// men in it made, with all the frame's time for them.
 	black?: boolean;
+	// Not a game's floor at all (see Venue): somewhere else on it.
+	venue?: Venue;
+};
+
+// THE BUILDING DRESSED FOR SOMETHING ELSE - draft night (see draftVenue.ts):
+// the stands, the boards and the rafters as they are, but on the floor its
+// own things in place of the court, the table, the benches and the baskets.
+export type Venue = {
+	// The floor and all that stands at the back of it, under everybody.
+	floor: (ctx: CanvasRenderingContext2D, cam: Camera, t: number) => void;
+	// What stands among the people, each drawn in its place by how far off.
+	items: (
+		ctx: CanvasRenderingContext2D,
+		cam: Camera,
+		t: number,
+	) => { depth: number; draw: () => void }[];
+	// Over the whole picture once everybody is in it: its lights, its smoke.
+	over?: (ctx: CanvasRenderingContext2D, cam: Camera, t: number) => void;
+	// How high the floor under a spot is (a stage, its steps - feet).
+	ground?: (x: number, y: number) => number;
 };
 
 const fxLevel = (
@@ -1605,8 +1625,8 @@ const CHAIR_LEG = "#3a3c42";
 const CHAIR_FADE = 300;
 const chairsAt = (tl: CourtTimeline, t: number) =>
 	(tl.huddles ?? []).filter((h) => t >= h.t0 && t < h.t1);
-const seatHeight = (b: Body) => b.shin + b.ankleH - b.thighR;
-const drawChair = (
+export const seatHeight = (b: Body) => b.shin + b.ankleH - b.thighR;
+export const drawChair = (
 	ctx: CanvasRenderingContext2D,
 	cam: Camera,
 	c: Chair,
@@ -1909,85 +1929,90 @@ export const drawFrame = (f: Frame) => {
 	if (f.soft) {
 		softenBehind(ctx, f.soft);
 	}
-	// The apron: the court's own color carried out past the lines all the
-	// way back to the stands - under the seats behind the baskets, the
-	// benches and the table along the far side.
-	floorQuad(
-		ctx,
-		cam,
-		FLOOR_EDGE.x0,
-		FLOOR_EDGE.y0,
-		FLOOR_EDGE.x1,
-		FLOOR_EDGE.y1,
-		f.apron ?? f.padColor,
-	);
-	if (arena.court) {
-		drawTexturedPlane(ctx, cam, COURT_PICTURE, arena.court, 26, 12);
+	const venue = f.venue;
+	const crewAll = f.crew ?? [];
+	if (venue) {
+		venue.floor(ctx, cam, t);
 	} else {
-		floorQuad(ctx, cam, 0, 0, COURT_W, 50, "#d8a865");
-	}
-	// The lit boards along the far side - the front of the scorer's table,
-	// the wall behind the benches - shine back off the floor in front of
-	// them (under the table, the benches and everybody stood there): their
-	// light added to the floor's, so where a board is dark the floor is just
-	// the floor.
-	ctx.globalCompositeOperation = "lighter";
-	const table = shineOf(
-		TABLE_FRONT,
-		arena.boards.table?.[screen] ?? arena.tableFront,
-	);
-	drawTexturedPlane(ctx, cam, table.plane, table.img, 4, 1, BOARD_SHINE);
-	const wall = shineOf(LED_WALL, arena.boards.wall[screen]);
-	drawTexturedPlane(ctx, cam, wall.plane, wall.img, 24, 1, BOARD_SHINE);
-	ctx.globalCompositeOperation = "source-over";
-	// The seats on the floor behind the baskets and in the far corners,
-	// stood on it in front of the boards.
-	if (arena.courtside) {
-		const standOf = (end: Side | undefined) => {
-			const own = end === undefined ? undefined : f.crowd.ends?.[end];
-			return own && own.up > f.crowd.up ? own : f.crowd;
-		};
-		drawCourtside(
+		// The apron: the court's own color carried out past the lines all the
+		// way back to the stands - under the seats behind the baskets, the
+		// benches and the table along the far side.
+		floorQuad(
 			ctx,
 			cam,
-			arena.courtside,
-			(end) => standOf(end).up,
-			(end) => standOf(end).wave,
-			f.now ?? t,
-			(home) => {
-				// (For a couple of seconds after a basket by their team.)
-				const c = recentFx(tl, t, ["cheer"], 2200);
-				return c?.team !== undefined && (c.team === 1) === home;
-			},
+			FLOOR_EDGE.x0,
+			FLOOR_EDGE.y0,
+			FLOOR_EDGE.x1,
+			FLOOR_EDGE.y1,
+			f.apron ?? f.padColor,
 		);
-	}
-	// The scorer's table, the people behind it hidden from the waist down,
-	// their monitors on it.
-	const crewAll = f.crew ?? [];
-	for (const c of crewAll) {
-		if (atTable(c.st.pid)) {
-			drawSprite(ctx, f.scratch, cam, c.st, c.body, c.look, 1, f.sprites);
+		if (arena.court) {
+			drawTexturedPlane(ctx, cam, COURT_PICTURE, arena.court, 26, 12);
+		} else {
+			floorQuad(ctx, cam, 0, 0, COURT_W, 50, "#d8a865");
 		}
+		// The lit boards along the far side - the front of the scorer's table,
+		// the wall behind the benches - shine back off the floor in front of
+		// them (under the table, the benches and everybody stood there): their
+		// light added to the floor's, so where a board is dark the floor is just
+		// the floor.
+		ctx.globalCompositeOperation = "lighter";
+		const table = shineOf(
+			TABLE_FRONT,
+			arena.boards.table?.[screen] ?? arena.tableFront,
+		);
+		drawTexturedPlane(ctx, cam, table.plane, table.img, 4, 1, BOARD_SHINE);
+		const wall = shineOf(LED_WALL, arena.boards.wall[screen]);
+		drawTexturedPlane(ctx, cam, wall.plane, wall.img, 24, 1, BOARD_SHINE);
+		ctx.globalCompositeOperation = "source-over";
+		// The seats on the floor behind the baskets and in the far corners,
+		// stood on it in front of the boards.
+		if (arena.courtside) {
+			const standOf = (end: Side | undefined) => {
+				const own = end === undefined ? undefined : f.crowd.ends?.[end];
+				return own && own.up > f.crowd.up ? own : f.crowd;
+			};
+			drawCourtside(
+				ctx,
+				cam,
+				arena.courtside,
+				(end) => standOf(end).up,
+				(end) => standOf(end).wave,
+				f.now ?? t,
+				(home) => {
+					// (For a couple of seconds after a basket by their team.)
+					const c = recentFx(tl, t, ["cheer"], 2200);
+					return c?.team !== undefined && (c.team === 1) === home;
+				},
+			);
+		}
+		// The scorer's table, the people behind it hidden from the waist down,
+		// their monitors on it.
+		for (const c of crewAll) {
+			if (atTable(c.st.pid)) {
+				drawSprite(ctx, f.scratch, cam, c.st, c.body, c.look, 1, f.sprites);
+			}
+		}
+		drawTexturedPlane(ctx, cam, TABLE_TOP, arena.tableTop, 4, 1);
+		drawMonitors(ctx, cam, crewAll);
+		drawTexturedPlane(
+			ctx,
+			cam,
+			TABLE_FRONT,
+			arena.boards.table?.[screen] ?? arena.tableFront,
+			4,
+			1,
+		);
+		drawTexturedPlane(ctx, cam, benchPlane(0), arena.bench[0], 6, 1);
+		drawTexturedPlane(ctx, cam, benchPlane(1), arena.bench[1], 6, 1);
+		drawFlashes(ctx, cam, tl, t);
+		// (None when the floor picture has its own - see CourtStyle.floorLines.)
+		if (f.lineColor) {
+			drawCourtLines(ctx, cam, f.lineColor);
+		}
+		// The lights over the far stands, shining back off the floor.
+		drawGlints(ctx, cam);
 	}
-	drawTexturedPlane(ctx, cam, TABLE_TOP, arena.tableTop, 4, 1);
-	drawMonitors(ctx, cam, crewAll);
-	drawTexturedPlane(
-		ctx,
-		cam,
-		TABLE_FRONT,
-		arena.boards.table?.[screen] ?? arena.tableFront,
-		4,
-		1,
-	);
-	drawTexturedPlane(ctx, cam, benchPlane(0), arena.bench[0], 6, 1);
-	drawTexturedPlane(ctx, cam, benchPlane(1), arena.bench[1], 6, 1);
-	drawFlashes(ctx, cam, tl, t);
-	// (None when the floor picture has its own - see CourtStyle.floorLines.)
-	if (f.lineColor) {
-		drawCourtLines(ctx, cam, f.lineColor);
-	}
-	// The lights over the far stands, shining back off the floor.
-	drawGlints(ctx, cam);
 	drawDroppedTops(ctx, cam, tl, t, f.warmups);
 	const confetti = [
 		...(f.teamColors?.[1] ?? DEFAULT_TEAM_COLORS[1]!),
@@ -2003,8 +2028,18 @@ export const drawFrame = (f: Frame) => {
 		...bench.map((b) => b.st),
 		...crew.map((c) => c.st),
 	]) {
-		const lift = Math.min(1, st.z / 4);
-		drawShadow(ctx, cam, st.x, st.y, 1.25 * (1 - lift * 0.35), 1 - lift * 0.6);
+		// (On a stage, on its floor.)
+		const under = venue?.ground?.(st.x, st.y) ?? 0;
+		const lift = Math.min(1, Math.max(0, st.z - under) / 4);
+		drawShadow(
+			ctx,
+			cam,
+			st.x,
+			st.y,
+			1.25 * (1 - lift * 0.35),
+			1 - lift * 0.6,
+			under,
+		);
 	}
 	const huddles = chairsAt(tl, t);
 	const chairFade = (h: { t0: number; t1: number }) =>
@@ -2117,7 +2152,7 @@ export const drawFrame = (f: Frame) => {
 	const atRim = loose.map((b) => ballAtRim(b));
 	// (The period's clock run out: the lights round both boards on.)
 	const out = isFinal(tl, t) || isBreak(tl, t);
-	for (const side of [0, 1] as const) {
+	for (const side of venue ? [] : ([0, 1] as const)) {
 		const rx = side === 0 ? 5.25 : COURT_W - 5.25;
 		const fx: HoopFx = {
 			swish: fxLevel(tl, t, "swish", 520, side),
@@ -2203,11 +2238,15 @@ export const drawFrame = (f: Frame) => {
 			});
 		}
 	});
+	if (venue) {
+		items.push(...venue.items(ctx, cam, t));
+	}
 	items.sort((a, b) => b.depth - a.depth);
 	for (const it of items) {
 		it.draw();
 	}
 	drawConfetti(ctx, cam, tl, t, confetti, true);
+	venue?.over?.(ctx, cam, t);
 	// The lights down for the starting lineups.
 	drawLights(
 		ctx,
@@ -2218,7 +2257,7 @@ export const drawFrame = (f: Frame) => {
 		f.teamColors ?? DEFAULT_TEAM_COLORS,
 	);
 	// The board over center court, when the picture takes it in.
-	const jumbo = arena.boards.jumbo?.[screen];
+	const jumbo = venue ? undefined : arena.boards.jumbo?.[screen];
 	if (jumbo) {
 		const face = f.score ? jumboScored(jumbo, f.score) : jumbo;
 		drawJumbo(ctx, cam, face, (plane, img) => {

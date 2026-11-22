@@ -98,7 +98,7 @@ type TeamLike = {
 // faces.js draws on Math.random; seeded here, so the same people turn up
 // every time the game is shown. Officials and coaches wear nothing on their
 // heads - no caps, no headbands.
-const faceFor = (seed: string, female: boolean): FaceConfig => {
+export const faceFor = (seed: string, female: boolean): FaceConfig => {
 	const real = Math.random;
 	Math.random = makeCourtRng(`face|${seed}`);
 	try {
@@ -111,7 +111,7 @@ const faceFor = (seed: string, female: boolean): FaceConfig => {
 
 // Clothes, not a uniform: a top, trousers (tights under shorts of the same
 // color), shoes.
-const dress = (
+export const dress = (
 	top: string,
 	pants: string,
 	outfit: Look["outfit"],

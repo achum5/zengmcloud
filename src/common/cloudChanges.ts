@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 434,
+		date: "2026-11-22",
+		text: "Draft picks now happen at the draft, not on the team's home court: the floor is full of green room tables, and the stage has an LED wall, a podium and a tower in the picking team's colors next to the draft board. The commissioner reads the pick, the player gets up from his family's table and hugs his mom, walks up the aisle and onto the stage through the smoke, and shakes the commissioner's hand for the photos.",
+	},
+	{
 		n: 433,
 		date: "2026-11-22",
 		text: "Draft walk-outs now play like draft night on TV: the pick is read out over the team's colors - round and pick, SELECTION, then his name - and on his way to center court the broadcast bar shows his school, age and size, true facts about him, the next picks in the draft order and the best players still on the board, then the next team on the clock.",

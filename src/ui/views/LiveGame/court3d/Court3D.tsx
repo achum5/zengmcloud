@@ -843,8 +843,9 @@ const Court3D = ({
 	}, [roster, dressed, arts, crests, facesVersion, dress, real, texVersion]);
 	// The officials, the coaches and the photographers, picked once a game,
 	// and their heads drawn from their faces as they come.
+	// (And a scene's own people - see authored.ts.)
 	const crew = useMemo(
-		() => crewFor(gid ?? 0, away, home),
+		() => [...crewFor(gid ?? 0, away, home), ...(authored?.cast ?? [])],
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 		[gid],
 	);
@@ -856,9 +857,15 @@ const Court3D = ({
 		let alive = true;
 		crewHeads.current = new Map();
 		// (One at a time, each a task of its own: all of them at once held
-		// up the first frames of the game.)
+		// up the first frames of the game. A scene of its own: only those in
+		// it - see authored.ts.)
+		const asked = authored?.crew;
+		const cast = new Set((authored?.cast ?? []).map((m) => m.pid));
+		const wanted = asked
+			? crew.filter((m) => cast.has(m.pid) || asked(m.role))
+			: crew;
 		void (async () => {
-			for (const m of crew) {
+			for (const m of wanted) {
 				if (!alive) {
 					return;
 				}
@@ -1393,7 +1400,9 @@ const Court3D = ({
 				s.closeOn = !!closeView;
 				s.snapCam = true;
 			}
-			const snap = s.snapCam;
+			// (A scene of its own moves its cameras itself, and cuts between
+			// them: straight there, every frame.)
+			const snap = s.snapCam || (staging && !!p.authored);
 			const secs = (dt / 1000) * Math.min(24, Math.max(1, rate));
 			// (Following the play, the shot held through its little moves - see
 			// operate.)
@@ -1599,10 +1608,14 @@ const Court3D = ({
 				tagClear: s.covers,
 				away: !!view || !!replay,
 				...(closeView ? { soft: CLOSE_SOFT } : {}),
-				crew: working.states.flatMap((st) => {
+				crew: [
+					...working.states,
+					...(staging && p.authored?.castAt ? p.authored.castAt(moment.t) : []),
+				].flatMap((st) => {
 					const c = cr.crewLooks.get(st.pid);
 					return c ? [{ st, body: c.body, look: c.look }] : [];
 				}),
+				...(staging && p.authored?.venue ? { venue: p.authored.venue } : {}),
 				flashes: p.authored?.flashes
 					? [...working.flashes, ...p.authored.flashes(moment.t)]
 					: working.flashes,

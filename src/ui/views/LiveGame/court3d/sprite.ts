@@ -821,8 +821,9 @@ const stepped = (st: PlayerState, k: Steps) => {
 			? Math.round(st.bank * k.arm * 2) / (k.arm * 2) || undefined
 			: undefined,
 		// How far up off the floor he is, for his legs hanging under him: on
-		// it, just off it, or up.
-		aloft: Math.ceil(aloftAt(st.z) * 2) / 2,
+		// it, just off it, or up. (Stood up on a stage: on it - see
+		// PlayerState.aloft.)
+		aloft: Math.ceil((st.aloft ?? aloftAt(st.z)) * 2) / 2,
 		// Each foot down pointing where it came down, the same.
 		lock: footSteps(st.lock, k),
 		slip: f && w > 0 ? slipStep(st.slip) : undefined,

@@ -3,29 +3,34 @@ import { TeamLogoInline } from "../../../components/TeamLogoInline.tsx";
 import { getHeightString } from "../../../components/Height.tsx";
 import { useLocal } from "../../../util/local.ts";
 import { announcement, draftFacts } from "../../../../common/draftNight.ts";
+import { DRAFT_NIGHT } from "./draftStage.ts";
 import { lightness } from "./figure.ts";
 
-// DRAFT NIGHT, AS IT IS BROADCAST, over a pick's walk-out (see draftWalk.ts,
-// HeadlineStage.tsx): first the podium - the team's colors filling the
-// screen, ROUND AND PICK, SELECTION, the commissioner's words and then his
-// name - and then, on the way to center court, the broadcast's bar along the
-// bottom: the pick and the team, his name and school, a line under it that
-// goes through his age and size and the true things about him, and under that
-// the draft order and the best still on the board. Once he is there, the
-// next team on the clock.
+// DRAFT NIGHT, AS IT IS BROADCAST, over a pick made on the stage (see
+// draftStage.ts, HeadlineStage.tsx): THE PICK IS IN over the team's colors
+// while the room is got ready; then the broadcast's bar along the bottom -
+// the pick, the team and SELECTION while the commissioner reads it out, his
+// words under it; and once his name is read, the name, the school and a line
+// that goes through his age and size and the true things about him, and
+// under that the draft order and the best still on the board. Once he is up
+// on the stage, the next team on the clock.
 //
 // Graphics only: nothing here touches the draft.
 
 const FONT = "system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
 const GOLD = "#f2c14e";
 
-// How long the podium is up before the walk-out starts (ms).
-export const PRE_ROLL_MS = 5200;
+// How long THE PICK IS IN is up before the room is shown (ms).
+export const PRE_ROLL_MS = 1600;
+// When the commissioner's words come up under SELECTION, and his name (ms of
+// the scene - see draftStage.ts).
+const WORDS_AT = DRAFT_NIGHT.podium;
+const NAME_AT = DRAFT_NIGHT.call;
 // When the line under his name first comes up, and how long each stays (ms
-// of the walk-out).
+// after his name).
 const LINE_FROM = 600;
 const LINE_EVERY = 3000;
-// How long each of the two tickers runs before the other (ms of the walk-out).
+// How long each of the two tickers runs before the other (ms of the scene).
 const TICKER_EVERY = 4500;
 
 type TeamInfo = {
@@ -110,11 +115,10 @@ const useEnter = (key: string, from: string) => {
 	return ref;
 };
 
-// THE PODIUM: the team's colors over everything, and the pick read out.
+// THE PICK IS IN: the team's colors over everything, the pick and the team.
 const Podium = ({ info, shown }: { info: DraftNightInfo; shown: boolean }) => {
 	const [main, accent] = info.team.colors;
 	const ink = inkOn(main);
-	const school = schoolOf(info);
 	const step = (ms: number) => ({
 		opacity: 0,
 		animation: `dn-in 420ms cubic-bezier(.2,.8,.2,1) ${ms}ms forwards`,
@@ -138,7 +142,7 @@ const Podium = ({ info, shown }: { info: DraftNightInfo; shown: boolean }) => {
 		>
 			<style>
 				{
-					"@keyframes dn-in{from{opacity:0;transform:translateX(-1.2em)}to{opacity:1;transform:none}}@keyframes dn-name{from{opacity:0;transform:scale(1.25)}to{opacity:1;transform:none}}"
+					"@keyframes dn-in{from{opacity:0;transform:translateX(-1.2em)}to{opacity:1;transform:none}}"
 				}
 			</style>
 			<TeamLogoInline
@@ -217,66 +221,6 @@ const Podium = ({ info, shown }: { info: DraftNightInfo; shown: boolean }) => {
 						{info.team.name}
 					</div>
 				</div>
-				<div
-					style={{
-						...step(750),
-						padding: "0.3em 1.1em 0.3em 0.7em",
-						background: "#0b0b10",
-						color: "#fff",
-						borderLeft: `0.3em solid ${accent}`,
-						fontWeight: 900,
-						fontStyle: "italic",
-						fontSize: "1.25em",
-						letterSpacing: "0.22em",
-					}}
-				>
-					SELECTION
-				</div>
-				<div
-					style={{
-						...step(1500),
-						maxWidth: "34em",
-						fontSize: "0.85em",
-						fontWeight: 600,
-						lineHeight: 1.3,
-					}}
-				>
-					{announcement({
-						overall: info.night.overall,
-						season: info.season,
-						team: `${info.team.region} ${info.team.name}`,
-					})}
-					…
-				</div>
-				<div
-					style={{
-						opacity: 0,
-						transformOrigin: "left center",
-						animation: "dn-name 480ms cubic-bezier(.2,.8,.2,1) 3000ms forwards",
-					}}
-				>
-					<div
-						style={{
-							fontSize: "2.6em",
-							fontWeight: 900,
-							textTransform: "uppercase",
-							letterSpacing: "0.01em",
-						}}
-					>
-						{info.player.name}
-					</div>
-					<div
-						style={{
-							marginTop: "0.25em",
-							fontSize: "0.85em",
-							fontWeight: 800,
-							letterSpacing: "0.12em",
-							textTransform: "uppercase",
-						}}
-					>
-						{[info.player.pos, school].filter(Boolean).join(" · ")}
-					</div>
-				</div>
 			</div>
 		</div>
 	);
@@ -284,14 +228,16 @@ const Podium = ({ info, shown }: { info: DraftNightInfo; shown: boolean }) => {
 
 type Ticker = "order" | "best" | "clock";
 
-// THE BAR ALONG THE BOTTOM, on the way to center court.
+// THE BAR ALONG THE BOTTOM: SELECTION while it is read out, then his name.
 const Bar = ({
 	info,
+	named,
 	line,
 	lineKey,
 	ticker,
 }: {
 	info: DraftNightInfo;
+	named: boolean;
 	line: string | undefined;
 	lineKey: string;
 	ticker: Ticker | undefined;
@@ -300,6 +246,7 @@ const Bar = ({
 	const ink = inkOn(main);
 	const school = schoolOf(info);
 	const barRef = useEnter("bar", "translateY(100%)");
+	const nameRef = useEnter(named ? "name" : "selection", "translateX(-0.6em)");
 	const lineRef = useEnter(lineKey, "translateY(40%)");
 	const tickerRef = useEnter(ticker ?? "", "translateX(-0.8em)");
 	const next = info.night.next[0];
@@ -365,40 +312,96 @@ const Bar = ({
 						overflow: "hidden",
 					}}
 				>
-					<span
+					<div
+						ref={nameRef}
 						style={{
-							flexShrink: 0,
-							fontSize: "1.45em",
-							fontWeight: 900,
-							fontStyle: "italic",
-							textTransform: "uppercase",
+							display: "flex",
+							alignItems: "center",
+							gap: "0.55em",
+							minWidth: 0,
 						}}
 					>
-						{info.player.name}
-					</span>
-					{info.player.pos ? (
-						<span
-							style={{ flexShrink: 0, fontWeight: 800, fontSize: "0.85em" }}
-						>
-							{info.player.pos}
-						</span>
-					) : null}
-					{school ? (
-						<span
-							style={{
-								fontSize: "0.7em",
-								fontWeight: 700,
-								padding: "0.15em 0.6em",
-								border: `1px solid ${ink === "#fff" ? "rgba(255,255,255,.6)" : "rgba(0,0,0,.5)"}`,
-								borderRadius: 999,
-								minWidth: 0,
-								overflow: "hidden",
-								textOverflow: "ellipsis",
-							}}
-						>
-							{school}
-						</span>
-					) : null}
+						{named ? (
+							<>
+								<span
+									style={{
+										flexShrink: 0,
+										fontSize: "1.45em",
+										fontWeight: 900,
+										fontStyle: "italic",
+										textTransform: "uppercase",
+									}}
+								>
+									{info.player.name}
+								</span>
+								{info.player.pos ? (
+									<span
+										style={{
+											flexShrink: 0,
+											fontWeight: 800,
+											fontSize: "0.85em",
+										}}
+									>
+										{info.player.pos}
+									</span>
+								) : null}
+								{school ? (
+									<span
+										style={{
+											fontSize: "0.7em",
+											fontWeight: 700,
+											padding: "0.15em 0.6em",
+											border: `1px solid ${ink === "#fff" ? "rgba(255,255,255,.6)" : "rgba(0,0,0,.5)"}`,
+											borderRadius: 999,
+											minWidth: 0,
+											overflow: "hidden",
+											textOverflow: "ellipsis",
+										}}
+									>
+										{school}
+									</span>
+								) : null}
+							</>
+						) : (
+							<>
+								<span
+									style={{
+										flexShrink: 0,
+										fontWeight: 700,
+										fontSize: "0.8em",
+										letterSpacing: "0.08em",
+										textTransform: "uppercase",
+										opacity: 0.85,
+									}}
+								>
+									{info.team.region}
+								</span>
+								<span
+									style={{
+										flexShrink: 0,
+										fontSize: "1.45em",
+										fontWeight: 900,
+										fontStyle: "italic",
+										letterSpacing: "0.2em",
+									}}
+								>
+									SELECTION
+								</span>
+								<span
+									style={{
+										flexShrink: 0,
+										fontWeight: 700,
+										fontSize: "0.8em",
+										letterSpacing: "0.08em",
+										textTransform: "uppercase",
+										opacity: 0.85,
+									}}
+								>
+									{info.team.name}
+								</span>
+							</>
+						)}
+					</div>
 					<TeamLogoInline
 						alt={info.team.abbrev}
 						imgURL={info.team.imgURL}
@@ -534,6 +537,11 @@ export const DraftBroadcast = ({
 }) => {
 	const { units } = useLocal(["units"]);
 	const { night } = info;
+	const words = `${announcement({
+		overall: night.overall,
+		season: info.season,
+		team: `${info.team.region} ${info.team.name}`,
+	})}…`;
 	const lines = [
 		`${night.age} years old · ${getHeightString(night.hgt, units)} · ${units === "metric" ? `${Math.round(night.weight / 2.205)} kg` : `${night.weight} lbs`}`,
 		...draftFacts({
@@ -550,12 +558,18 @@ export const DraftBroadcast = ({
 	// changes - not every frame the scene moves.
 	const shown = useSyncExternalStore(feed.subscribe, () => {
 		const s = feed.get();
-		const line =
-			s.t < LINE_FROM
+		const named = s.t >= NAME_AT;
+		const after = s.t - NAME_AT;
+		// (Before his name: the commissioner's words once he starts - -2.)
+		const line = !named
+			? s.t >= WORDS_AT
+				? -2
+				: -1
+			: after < LINE_FROM
 				? -1
 				: Math.min(
 						lines.length - 1,
-						Math.floor((s.t - LINE_FROM) / LINE_EVERY),
+						Math.floor((after - LINE_FROM) / LINE_EVERY),
 					);
 		let ticker: Ticker =
 			Math.floor(s.t / TICKER_EVERY) % 2 === 0 ? "order" : "best";
@@ -567,9 +581,10 @@ export const DraftBroadcast = ({
 		if (s.over && hasOrder) {
 			ticker = "clock";
 		}
-		return `${s.cover ? 1 : 0}|${s.run}|${line}|${ticker}`;
+		return `${s.cover ? 1 : 0}|${s.run}|${named ? 1 : 0}|${line}|${ticker}`;
 	});
-	const [cover, run, lineIndex, ticker] = shown.split("|") as [
+	const [cover, run, named, lineIndex, ticker] = shown.split("|") as [
+		string,
 		string,
 		string,
 		string,
@@ -582,7 +597,8 @@ export const DraftBroadcast = ({
 				<Bar
 					key={`bar${run}`}
 					info={info}
-					line={i >= 0 ? lines[i] : undefined}
+					named={named === "1"}
+					line={i >= 0 ? lines[i] : i === -2 ? words : undefined}
 					lineKey={lineIndex}
 					ticker={!hasOrder && !hasBest ? undefined : ticker}
 				/>

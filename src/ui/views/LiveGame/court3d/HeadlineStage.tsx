@@ -11,13 +11,16 @@ import {
 	makeDraftFeed,
 	PRE_ROLL_MS,
 } from "./DraftBroadcast.tsx";
-import { stageDraftWalk } from "./draftWalk.ts";
+import { crowdFaces, type CrowdFace } from "./crowdFaces.ts";
+import { stageDraftNight } from "./draftStage.ts";
+import { draftVenue, paintDraftVenue } from "./draftVenue.ts";
 import { streetClothes, type Look } from "./figure.ts";
 import { logoPicture } from "./logoPicture.ts";
 
 // THE SCENE ITSELF (see HeadlineScene.tsx, which fetches this only once it
 // is wanted): what it is made from asked of the worker, staged, and played
-// by the court - in the building of the team it is about.
+// by the court - in the building of the team it is about, dressed for the
+// draft (see draftVenue.ts).
 
 type Made = NonNullable<Awaited<ReturnType<typeof headlineScene>>>;
 
@@ -95,9 +98,36 @@ const HeadlineStage = ({
 		};
 	}, [type, scenePid]);
 
-	// The team's logo, for the front of the cap - asked for once.
+	// The team's logo, for the front of the cap - asked for once - and big,
+	// for the LED wall.
 	const logo = made?.team.imgURLSmall ?? made?.team.imgURL;
 	const crest = useMemo(() => logoPicture(logo, 96), [logo]);
+	const bigLogo = made?.team.imgURL ?? made?.team.imgURLSmall;
+	const [wallLogo, setWallLogo] = useState<HTMLCanvasElement>();
+	useEffect(() => {
+		let alive = true;
+		void logoPicture(bigLogo, 360).then((c) => {
+			if (alive) {
+				setWallLogo(c);
+			}
+		});
+		return () => {
+			alive = false;
+		};
+	}, [bigLogo]);
+	// The faces round the green room's tables.
+	const [faces, setFaces] = useState<CrowdFace[]>();
+	useEffect(() => {
+		let alive = true;
+		void crowdFaces().then((f) => {
+			if (alive && f.length > 0) {
+				setFaces(f);
+			}
+		});
+		return () => {
+			alive = false;
+		};
+	}, []);
 
 	// Over, it plays again from the top the next time it is asked to play.
 	const [run, setRun] = useState(0);
@@ -114,9 +144,8 @@ const HeadlineStage = ({
 		}
 	}, [playing]);
 
-	// THE PODIUM FIRST (see DraftBroadcast.tsx): the pick read out over the
-	// team's colors - covering the building while he is got ready - and only
-	// then the walk-out.
+	// THE PICK IS IN FIRST (see DraftBroadcast.tsx), over the team's colors -
+	// covering the room while he is got ready - and only then the room.
 	useEffect(() => {
 		if (!made || preDone || !playing) {
 			return;
@@ -149,9 +178,28 @@ const HeadlineStage = ({
 	const pid = made?.player.pid;
 	const colors = made?.team.colors;
 	const staged = useMemo(
-		() => (pid === undefined ? undefined : stageDraftWalk(pid)),
-		[pid],
+		() => (pid === undefined ? undefined : stageDraftNight(pid, colors)),
+		[pid, colors],
 	);
+	// The room, painted again once the logo and the faces are in.
+	const venue = useMemo(() => {
+		if (!made) {
+			return undefined;
+		}
+		const { team, draftNight: night } = made;
+		return draftVenue(
+			paintDraftVenue({
+				season: made.season,
+				team,
+				logo: wallLogo,
+				board: [
+					{ overall: night.overall, label: team.region, now: true },
+					...night.next.map((n) => ({ overall: n.overall, label: n.region })),
+				],
+				...(faces ? { faces } : {}),
+			}),
+		);
+	}, [made, wallLogo, faces]);
 	const dressing = useMemo(() => {
 		const cap = capOf(colors);
 		return {
@@ -224,6 +272,7 @@ const HeadlineStage = ({
 		return {
 			...staged,
 			...dressing,
+			...(venue ? { venue } : {}),
 			overlay,
 			onTick: (t: number) => {
 				feed.set({ t });
@@ -235,7 +284,7 @@ const HeadlineStage = ({
 				onEndRef.current?.();
 			},
 		};
-	}, [staged, made, dressing, overlay, feed, run]);
+	}, [staged, made, dressing, venue, overlay, feed, run]);
 
 	const boxScore = useMemo(
 		() =>
