@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 426,
+		date: "2026-11-22",
+		text: "3D game: moves fitted to motion capture of real players - spin moves bent low over the ball and whipped round off the plant, drives that lean hard into the first steps, pull-ups that sit down into the legs instead of leaning back, and shot fakes that stay down in the knees. And the ball no longer jumps in a player's hands as he picks up his dribble.",
+	},
+	{
 		n: 425,
 		date: "2026-11-22",
 		text: "3D game: players are built like real NBA players - measured off NBA 2K's player editor: a smaller head, longer legs and longer arms, shoulders up where a man's are. They run and step to fit their new legs, too: no more dropping into a backpedal or a defensive slide in a frame.",

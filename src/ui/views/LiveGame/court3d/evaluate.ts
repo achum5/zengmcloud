@@ -2120,8 +2120,8 @@ const yawAt = (tl: CourtTimeline, tr: Track, t: number): number => {
 // faces coming out of it - the long way, right round, the way his right
 // hand takes him (turning to his right) or his left's (see spinBy in
 // director.ts).
-const SPIN_IN = 0.12;
-const SPIN_OUT = 0.86;
+const SPIN_IN = 0.06;
+const SPIN_OUT = 0.9;
 const spinYawAt = (
 	tl: CourtTimeline,
 	tr: Track,
@@ -2136,8 +2136,13 @@ const spinYawAt = (
 	const u = clamp01(
 		((t - a.t0) / (a.t1 - a.t0) - SPIN_IN) / (SPIN_OUT - SPIN_IN),
 	);
-	return wrapAngle(y0 + turn * smooth01(u));
+	return wrapAngle(y0 + turn * spinTurned(u));
 };
+// How far round a spin he is, `u` of the way through it: most of it early,
+// off the plant - half way round in under a third of it - then slowing as
+// he comes out of it going (CMU 78, trials 13, 14 and 17), not eased in and
+// out evenly either side of the middle.
+const spinTurned = (u: number) => 1 - (1 - u ** 1.15) ** 2.5;
 
 // OFF THE BALL.
 //
@@ -2731,6 +2736,8 @@ const OPEN_UP = (110 * Math.PI) / 180;
 // the way he faces until his back comes round past this far off it, rather
 // than backpedal while he goes the way he faces.)
 const TURN_ROUND = (70 * Math.PI) / 180;
+// (Setting off, he turns as he goes if he is round within this long, ms.)
+const SET_OFF_TURN_MS = 150;
 // (How long either side it has to hold, ms.)
 const GAIT_HOLD = 45;
 const FORWARD = new Set<AnimName>([
@@ -2778,7 +2785,18 @@ const shownSteps = (
 				? Math.max(off0, offAt(t - GAIT_HOLD), offAt(t + GAIT_HOLD))
 				: Math.min(off0, offAt(t - GAIT_HOLD), offAt(t + GAIT_HOLD))
 			: off0;
-	if (anim !== "back" && off > OPEN_UP) {
+	if (
+		anim !== "back" &&
+		off > OPEN_UP &&
+		// (Setting off with his back still to the way he goes, and round to
+		// it within a moment, he turns as he goes - not a backpedal for a
+		// sliver of a step, and his legs thrown from the one to the other as
+		// he comes round.)
+		!(
+			t - run.mv.t0 < SET_OFF_TURN_MS &&
+			offAt(Math.min(run.mv.t1, run.mv.t0 + SET_OFF_TURN_MS)) <= OPEN_UP
+		)
+	) {
 		return "back";
 	}
 	if (anim === "back" && off < TURN_ROUND) {
@@ -7083,15 +7101,39 @@ const legsKept = (
 };
 
 // Getting going hard he drives into it - leaning on into his first steps,
-// his arms pumping - and pulling up hard he sits back against it. (His arms
-// left be with the ball in them, or on it.)
-const DRIVE_LEAN = 14;
-const BRACE_LEAN = 9;
+// his arms pumping - and pulling up hard he sits down into it, his hips
+// back and down over bent knees, his chest still out over them. (His arms
+// left be with the ball in them, or on it.) As men in motion capture do
+// (CMU 78, trials 25, 32 and 33): getting going from a stand, bent 45 to 60
+// degrees over his first steps, half that once he is up to speed; pulling
+// up, his hips down to three quarters of their height, not leant back.
+const DRIVE_LEAN = 26;
+const BRACE_LEAN = 3;
+// (Pulling up: bent this much more at the knees, and half as much at the
+// hips - his feet where they were under him.)
+const BRACE_SINK = 24;
 const DRIVE_PUMP = 0.45;
 const DRIVE_ELBOW = 12;
 export const driven = (p: Pose, d: number, arms: boolean): Pose => {
 	if (d < 0) {
-		return { ...p, lean: p.lean + BRACE_LEAN * d };
+		const sink = -BRACE_SINK * d;
+		// (Each hip bent as much as keeps that foot where it is out from
+		// under him as its knee bends - his thigh and shin near enough the
+		// same length: down onto his feet, not his feet slid along the
+		// floor.)
+		const hipFor = (hip: number, knee: number) => {
+			const a = Math.cos((hip * Math.PI) / 180);
+			const b = Math.cos(((hip - knee) * Math.PI) / 180);
+			return hip + (sink * b) / Math.max(0.2, a + b);
+		};
+		return {
+			...p,
+			lean: p.lean + BRACE_LEAN * d,
+			hipN: hipFor(p.hipN, p.kneeN),
+			kneeN: p.kneeN + sink,
+			hipF: hipFor(p.hipF, p.kneeF),
+			kneeF: p.kneeF + sink,
+		};
 	}
 	if (!arms) {
 		return { ...p, lean: p.lean + DRIVE_LEAN * d };
@@ -7959,8 +8001,20 @@ export const holdOf = (
 	body: Body,
 	q: Pose,
 ): { sk: Skeleton; ball: V3 } => {
-	const carry = st.grip !== undefined;
-	const now = holdBall(body, q, st.anim, carry, st.mirror === true);
+	// (His hands still closing on it, it goes where they will have it once
+	// they are on it - his pose as it will be then, carrying it eased over
+	// from his last move as that one is: not carried his move's way all at
+	// once, and then eased back toward the last one's the moment they are
+	// on it, the ball jumping in his hands.)
+	const now = holdBall(
+		body,
+		st.grip !== undefined
+			? poseOf({ ...st, grip: undefined, holding: true })
+			: q,
+		st.anim,
+		false,
+		st.mirror === true,
+	);
 	const f = st.from;
 	const w = f ? (f.arms ?? f.w) : 0;
 	const a = f ? gripOf(f.anim) : undefined;

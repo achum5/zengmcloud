@@ -924,14 +924,17 @@ const P = {
 		wide: 0.36,
 	}),
 	// A shot fake: the ball up on his shooting hand toward the set point, as
-	// if to shoot - his legs straightening, but his heels down.
+	// if to shoot - stood up out of his lean, but still down in his legs,
+	// ready to go by his man when he bites (as a man faking in motion
+	// capture is: CMU 78, trial 22 - his knees still bent 45 degrees under
+	// the ball up over his head).
 	fakeUp: pose({
-		hipN: -2,
-		kneeN: 16,
-		hipF: 6,
-		kneeF: 18,
-		lean: 3,
-		wide: 0.3,
+		hipN: 6,
+		kneeN: 36,
+		hipF: 12,
+		kneeF: 38,
+		lean: 6,
+		wide: 0.32,
 		shN: 116,
 		elN: 56,
 		abN: -14,
@@ -2696,17 +2699,17 @@ const IN_OUT_BIG: [number, Pose][] = IN_OUT.map(([u, q]) => [
 // Round in a spin move: down low, his back turning on his man, the ball
 // pulled round low at his right hip, his left arm up as a bar.
 const SPIN_LOW = pose({
-	hipN: 26,
-	kneeN: 50,
-	hipF: 30,
-	kneeF: 50,
+	hipN: 36,
+	kneeN: 66,
+	hipF: 38,
+	kneeF: 64,
 	shN: -20,
 	elN: 90,
 	abN: 10,
 	shF: 64,
 	elF: 78,
 	abF: 52,
-	lean: 14,
+	lean: 32,
 	tilt: -6,
 	wide: 0.52,
 });
@@ -2715,14 +2718,14 @@ const SPIN_LOW = pose({
 // higher into his man.
 const SPIN_DEEP = pose({
 	...SPIN_LOW,
-	hipN: 36,
-	kneeN: 66,
-	hipF: 40,
-	kneeF: 66,
+	hipN: 44,
+	kneeN: 80,
+	hipF: 46,
+	kneeF: 78,
 	shF: 82,
 	elF: 70,
 	abF: 64,
-	lean: 18,
+	lean: 38,
 	tilt: -9,
 	wide: 0.62,
 });
@@ -3299,7 +3302,8 @@ export const ANIMS = {
 			[1, P.triple],
 		],
 	},
-	// Up as if to shoot, and back down.
+	// Up as if to shoot, and back down - down past where he was, loaded to
+	// go, then up to it.
 	shotFake: {
 		kind: "act",
 		n: 8,
@@ -3307,6 +3311,17 @@ export const ANIMS = {
 			[0, P.triple],
 			[0.34, P.fakeUp],
 			[0.56, P.fakeUp],
+			[
+				0.82,
+				pose({
+					...P.triple,
+					hipN: -4,
+					kneeN: 60,
+					hipF: 34,
+					kneeF: 62,
+					lean: 22,
+				}),
+			],
 			[1, P.triple],
 		],
 	},
@@ -8687,8 +8702,11 @@ export const ANIMS = {
 		],
 	},
 	// A spin move (the ball in his right hand; mirrored for his left):
-	// planted, then down low and round, and out of it going. (He turns right
-	// round with it - see spinYawAt in evaluate.ts.)
+	// planted, then down low and round, and out of it going - bent well over
+	// his knees all through it, his head down over the ball, as men spinning
+	// in motion capture are (CMU 78, trials 13, 14 and 17: leaning 25 to 60
+	// degrees, the hips nearly as high as stood). (He turns right round with
+	// it - see spinYawAt in evaluate.ts.)
 	spinMove: {
 		kind: "act",
 		n: 8,
@@ -8707,7 +8725,7 @@ export const ANIMS = {
 					shF: 40,
 					elF: 70,
 					abF: 40,
-					lean: 20,
+					lean: 34,
 					wide: 0.4,
 				}),
 			],
@@ -8727,7 +8745,7 @@ export const ANIMS = {
 					shF: 30,
 					elF: 60,
 					abF: 30,
-					lean: 22,
+					lean: 34,
 					wide: 0.3,
 				}),
 			],
@@ -8752,7 +8770,7 @@ export const ANIMS = {
 					shF: 40,
 					elF: 70,
 					abF: 40,
-					lean: 20,
+					lean: 34,
 					wide: 0.4,
 				}),
 			],
@@ -8772,7 +8790,7 @@ export const ANIMS = {
 					shF: 30,
 					elF: 60,
 					abF: 30,
-					lean: 22,
+					lean: 34,
 					wide: 0.3,
 				}),
 			],
