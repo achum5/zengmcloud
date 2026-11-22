@@ -64,6 +64,9 @@ import {
 import { loadMesh, MESH_KINDS, meshReady } from "./meshBody.ts";
 
 const MESH_HEAD = MESH_KINDS.includes("head");
+// How much of posing a man drawn as one no coarser picture makes quicker
+// (see resolution.ts adjust): his points, skinned and set on the screen.
+const MESH_FIXED = 0.6;
 import { arenaSpecFor } from "./arenaSpec.ts";
 import { crowdFaces, type CrowdFace } from "./crowdFaces.ts";
 import { gearFor, kitsFor, shade, streetClothes, type Look } from "./figure.ts";
@@ -1221,7 +1224,9 @@ const Court3D = ({
 				? undefined
 				: makeFarm(
 						spawnCourtWorker,
-						(navigator.hardwareConcurrency || 2) >= 8 ? 2 : 1,
+						// (Two on a phone of four cores or more: a man drawn as one
+						// takes a few times as long to pose as the court's own.)
+						(navigator.hardwareConcurrency || 2) >= 4 ? 2 : 1,
 					);
 		let sprites = makeSpriteCache();
 		sprites.budget = SPRITE_BUDGET_MS;
@@ -1611,6 +1616,7 @@ const Court3D = ({
 					now,
 					sprites.spent,
 					1000 / pacing.fps,
+					meshReady() ? MESH_FIXED : 0,
 				)
 			) {
 				// Sprites drawn for the old size are no use at the new one - let

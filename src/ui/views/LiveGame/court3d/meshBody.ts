@@ -610,10 +610,16 @@ export const skinned = (
 
 // ---- drawn ---------------------------------------------------------------------
 
+// Where a point of him lands on the sprite, worked out once for the whole
+// of him (see sculpt.ts lensOf): the camera's forward, right and up - each a
+// constant and so much of each of f, s and u - then where the picture's
+// middle is on the sprite (x, y), the lens and the sprite's pixel.
+export type Lens = Float64Array;
 export type MeshDraw = {
 	// Where a point of him lands on the sprite (pixels) and how far it is
-	// from the camera.
+	// from the camera - by `lens`, if there is one: the same, quicker.
 	see: (v: V3) => { x: number; y: number; depth: number };
+	lens?: Lens;
 	// The camera's right, down and toward it, in his frame.
 	rt: V3;
 	dn: V3;
@@ -709,59 +715,86 @@ export const drawMesh = (
 	if (away.length < nt) {
 		away = new Uint8Array(nt);
 	}
+	// (Each buffer as a constant of its own here: read in the loops below,
+	// thousands of times a picture.)
+	const POS = pos;
+	const POST = posT;
+	const NRM = nrm;
+	const SCR = scr;
+	const AWAY = away;
 	for (let t = 0; t < nt; t++) {
 		const a = T[t * 3]!;
 		const b = T[t * 3 + 1]!;
 		const c = T[t * 3 + 2]!;
-		const ux = pos[b * 3]! - pos[a * 3]!;
-		const uy = pos[b * 3 + 1]! - pos[a * 3 + 1]!;
-		const uz = pos[b * 3 + 2]! - pos[a * 3 + 2]!;
-		const vx = pos[c * 3]! - pos[a * 3]!;
-		const vy = pos[c * 3 + 1]! - pos[a * 3 + 1]!;
-		const vz = pos[c * 3 + 2]! - pos[a * 3 + 2]!;
+		const ux = POS[b * 3]! - POS[a * 3]!;
+		const uy = POS[b * 3 + 1]! - POS[a * 3 + 1]!;
+		const uz = POS[b * 3 + 2]! - POS[a * 3 + 2]!;
+		const vx = POS[c * 3]! - POS[a * 3]!;
+		const vy = POS[c * 3 + 1]! - POS[a * 3 + 1]!;
+		const vz = POS[c * 3 + 2]! - POS[a * 3 + 2]!;
 		const nx = uy * vz - uz * vy;
 		const ny = uz * vx - ux * vz;
 		const nz = ux * vy - uy * vx;
-		nrm[a * 3] = nrm[a * 3]! + nx;
-		nrm[a * 3 + 1] = nrm[a * 3 + 1]! + ny;
-		nrm[a * 3 + 2] = nrm[a * 3 + 2]! + nz;
-		nrm[b * 3] = nrm[b * 3]! + nx;
-		nrm[b * 3 + 1] = nrm[b * 3 + 1]! + ny;
-		nrm[b * 3 + 2] = nrm[b * 3 + 2]! + nz;
-		nrm[c * 3] = nrm[c * 3]! + nx;
-		nrm[c * 3 + 1] = nrm[c * 3 + 1]! + ny;
-		nrm[c * 3 + 2] = nrm[c * 3 + 2]! + nz;
+		NRM[a * 3] = NRM[a * 3]! + nx;
+		NRM[a * 3 + 1] = NRM[a * 3 + 1]! + ny;
+		NRM[a * 3 + 2] = NRM[a * 3 + 2]! + nz;
+		NRM[b * 3] = NRM[b * 3]! + nx;
+		NRM[b * 3 + 1] = NRM[b * 3 + 1]! + ny;
+		NRM[b * 3 + 2] = NRM[b * 3 + 2]! + nz;
+		NRM[c * 3] = NRM[c * 3]! + nx;
+		NRM[c * 3 + 1] = NRM[c * 3 + 1]! + ny;
+		NRM[c * 3 + 2] = NRM[c * 3 + 2]! + nz;
 		// (Turned away from the camera, the face itself - not its corners'
 		// normals, which a fold of him can turn: behind the rest of him.)
 		const tw = nx * m.toward.f + ny * m.toward.s + nz * m.toward.u;
-		away[t] = tw < -0.15 * Math.sqrt(nx * nx + ny * ny + nz * nz) ? 1 : 0;
+		AWAY[t] = tw < -0.15 * Math.sqrt(nx * nx + ny * ny + nz * nz) ? 1 : 0;
 	}
 	// Onto the sprite (at SS times its pixels), and the normals into the
 	// camera's frame.
 	const W2 = m.w * SS;
 	const H2 = m.h * SS;
+	const L = m.lens;
 	for (let i = 0; i < n; i++) {
-		const p = m.see(v3(pos[i * 3]!, pos[i * 3 + 1]!, pos[i * 3 + 2]!));
-		scr[i * 3] = p.x * SS;
-		scr[i * 3 + 1] = p.y * SS;
-		scr[i * 3 + 2] = p.depth;
-		const nf = nrm[i * 3]!;
-		const ns = nrm[i * 3 + 1]!;
-		const nu = nrm[i * 3 + 2]!;
+		const pf = POS[i * 3]!;
+		const ps = POS[i * 3 + 1]!;
+		const pu = POS[i * 3 + 2]!;
+		if (L) {
+			const depth = Math.max(0.5, L[0]! + L[1]! * pf + L[2]! * ps + L[3]! * pu);
+			const k = L[14]! / depth / L[15]!;
+			SCR[i * 3] =
+				(L[12]! / L[15]! + (L[4]! + L[5]! * pf + L[6]! * ps + L[7]! * pu) * k) *
+				SS;
+			SCR[i * 3 + 1] =
+				(L[13]! / L[15]! -
+					(L[8]! + L[9]! * pf + L[10]! * ps + L[11]! * pu) * k) *
+				SS;
+			SCR[i * 3 + 2] = depth;
+		} else {
+			const p = m.see(v3(pf, ps, pu));
+			SCR[i * 3] = p.x * SS;
+			SCR[i * 3 + 1] = p.y * SS;
+			SCR[i * 3 + 2] = p.depth;
+		}
+		const nf = NRM[i * 3]!;
+		const ns = NRM[i * 3 + 1]!;
+		const nu = NRM[i * 3 + 2]!;
 		const x = nf * m.rt.f + ns * m.rt.s + nu * m.rt.u;
 		const y = nf * m.dn.f + ns * m.dn.s + nu * m.dn.u;
 		const zz = nf * m.toward.f + ns * m.toward.s + nu * m.toward.u;
 		const l = Math.sqrt(x * x + y * y + zz * zz) || 1;
-		nrm[i * 3] = x / l;
-		nrm[i * 3 + 1] = y / l;
-		nrm[i * 3 + 2] = zz / l;
+		NRM[i * 3] = x / l;
+		NRM[i * 3 + 1] = y / l;
+		NRM[i * 3 + 2] = zz / l;
 	}
 	if (zb.length < W2 * H2) {
 		zb = new Float32Array(W2 * H2);
 		tb = new Int32Array(W2 * H2);
 		wb = new Float32Array(W2 * H2 * 2);
 	}
-	zb.fill(Infinity, 0, W2 * H2);
+	const ZB = zb;
+	const TB = tb;
+	const WB = wb;
+	ZB.fill(Infinity, 0, W2 * H2);
 	// First where he is - the face of him nearest the camera at each pixel,
 	// and where on it - then each of those painted and lit, once.
 	for (let t = 0; t < nt; t++) {
@@ -772,15 +805,15 @@ export const drawMesh = (
 		const a = T[t * 3]!;
 		const b = T[t * 3 + 1]!;
 		const c = T[t * 3 + 2]!;
-		if (away[t]) {
+		if (AWAY[t]) {
 			continue;
 		}
-		const ax = scr[a * 3]!;
-		const ay = scr[a * 3 + 1]!;
-		const bx = scr[b * 3]!;
-		const by = scr[b * 3 + 1]!;
-		const cx = scr[c * 3]!;
-		const cy = scr[c * 3 + 1]!;
+		const ax = SCR[a * 3]!;
+		const ay = SCR[a * 3 + 1]!;
+		const bx = SCR[b * 3]!;
+		const by = SCR[b * 3 + 1]!;
+		const cx = SCR[c * 3]!;
+		const cy = SCR[c * 3 + 1]!;
 		const den = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
 		if (Math.abs(den) < 1e-9) {
 			continue;
@@ -794,9 +827,9 @@ export const drawMesh = (
 		}
 		const cuts = m.cuts[kind];
 		const lift = m.lift[kind]!;
-		const az = scr[a * 3 + 2]! - lift;
-		const bz = scr[b * 3 + 2]! - lift;
-		const cz = scr[c * 3 + 2]! - lift;
+		const az = SCR[a * 3 + 2]! - lift;
+		const bz = SCR[b * 3 + 2]! - lift;
+		const cz = SCR[c * 3 + 2]! - lift;
 		const id = 1 / den;
 		for (let y = y0; y <= y1; y++) {
 			const py = y + 0.5;
@@ -813,27 +846,27 @@ export const drawMesh = (
 				}
 				const dz = w0 * az + w1 * bz + w2 * cz;
 				const o = y * W2 + x;
-				if (dz >= zb[o]!) {
+				if (dz >= ZB[o]!) {
 					continue;
 				}
 				if (cuts) {
 					// (Cut away there - past the top of his shoe, say: what is
 					// behind it shows.)
-					const Pf = w0 * pos[a * 3]! + w1 * pos[b * 3]! + w2 * pos[c * 3]!;
+					const Pf = w0 * POS[a * 3]! + w1 * POS[b * 3]! + w2 * POS[c * 3]!;
 					const Ps =
-						w0 * pos[a * 3 + 1]! + w1 * pos[b * 3 + 1]! + w2 * pos[c * 3 + 1]!;
+						w0 * POS[a * 3 + 1]! + w1 * POS[b * 3 + 1]! + w2 * POS[c * 3 + 1]!;
 					const Pu =
-						w0 * pos[a * 3 + 2]! + w1 * pos[b * 3 + 2]! + w2 * pos[c * 3 + 2]!;
+						w0 * POS[a * 3 + 2]! + w1 * POS[b * 3 + 2]! + w2 * POS[c * 3 + 2]!;
 					const arm =
 						(w0 * me.arm[a]! + w1 * me.arm[b]! + w2 * me.arm[c]!) / 255;
 					if (!m.keep(kind, Pf, Ps, Pu, arm)) {
 						continue;
 					}
 				}
-				zb[o] = dz;
-				tb[o] = t;
-				wb[o * 2] = w0;
-				wb[o * 2 + 1] = w1;
+				ZB[o] = dz;
+				TB[o] = t;
+				WB[o * 2] = w0;
+				WB[o * 2 + 1] = w1;
 			}
 		}
 	}
@@ -844,20 +877,20 @@ export const drawMesh = (
 	const shaded = new Float64Array(3);
 	let shadedGroup = -1;
 	const shadeAt = (o: number) => {
-		const t = tb[o]!;
+		const t = TB[o]!;
 		const a = T[t * 3]!;
 		const b = T[t * 3 + 1]!;
 		const c = T[t * 3 + 2]!;
-		const w0 = wb[o * 2]!;
-		const w1 = wb[o * 2 + 1]!;
+		const w0 = WB[o * 2]!;
+		const w1 = WB[o * 2 + 1]!;
 		const w2 = 1 - w0 - w1;
 		const kind = me.kind[t]!;
 		// The point of him there, painted and lit.
-		const Pf = w0 * pos[a * 3]! + w1 * pos[b * 3]! + w2 * pos[c * 3]!;
+		const Pf = w0 * POS[a * 3]! + w1 * POS[b * 3]! + w2 * POS[c * 3]!;
 		const Ps =
-			w0 * pos[a * 3 + 1]! + w1 * pos[b * 3 + 1]! + w2 * pos[c * 3 + 1]!;
+			w0 * POS[a * 3 + 1]! + w1 * POS[b * 3 + 1]! + w2 * POS[c * 3 + 1]!;
 		const Pu =
-			w0 * pos[a * 3 + 2]! + w1 * pos[b * 3 + 2]! + w2 * pos[c * 3 + 2]!;
+			w0 * POS[a * 3 + 2]! + w1 * POS[b * 3 + 2]! + w2 * POS[c * 3 + 2]!;
 		const arm = (w0 * me.arm[a]! + w1 * me.arm[b]! + w2 * me.arm[c]!) / 255;
 		if (m.faced[kind]) {
 			const fa = me.face;
@@ -868,18 +901,18 @@ export const drawMesh = (
 					(j < 2 ? 8 : 1000);
 			}
 		}
-		const Tf = w0 * posT[a * 3]! + w1 * posT[b * 3]! + w2 * posT[c * 3]!;
+		const Tf = w0 * POST[a * 3]! + w1 * POST[b * 3]! + w2 * POST[c * 3]!;
 		const Ts =
-			w0 * posT[a * 3 + 1]! + w1 * posT[b * 3 + 1]! + w2 * posT[c * 3 + 1]!;
+			w0 * POST[a * 3 + 1]! + w1 * POST[b * 3 + 1]! + w2 * POST[c * 3 + 1]!;
 		const Tu =
-			w0 * posT[a * 3 + 2]! + w1 * posT[b * 3 + 2]! + w2 * posT[c * 3 + 2]!;
+			w0 * POST[a * 3 + 2]! + w1 * POST[b * 3 + 2]! + w2 * POST[c * 3 + 2]!;
 		ink.tone = 0;
 		// (`paint` says which part of him it is: for what is drawn over his
 		// head - see sculpt.ts.)
 		shadedGroup = m.paint(kind, Pf, Ps, Pu, arm, Tf, Ts, Tu);
-		let sx = w0 * nrm[a * 3]! + w1 * nrm[b * 3]! + w2 * nrm[c * 3]!;
-		let sy = w0 * nrm[a * 3 + 1]! + w1 * nrm[b * 3 + 1]! + w2 * nrm[c * 3 + 1]!;
-		let sz = w0 * nrm[a * 3 + 2]! + w1 * nrm[b * 3 + 2]! + w2 * nrm[c * 3 + 2]!;
+		let sx = w0 * NRM[a * 3]! + w1 * NRM[b * 3]! + w2 * NRM[c * 3]!;
+		let sy = w0 * NRM[a * 3 + 1]! + w1 * NRM[b * 3 + 1]! + w2 * NRM[c * 3 + 1]!;
+		let sz = w0 * NRM[a * 3 + 2]! + w1 * NRM[b * 3 + 2]! + w2 * NRM[c * 3 + 2]!;
 		const nl = Math.sqrt(sx * sx + sy * sy + sz * sz) || 1;
 		sx /= nl;
 		sy /= nl;
@@ -931,7 +964,7 @@ export const drawMesh = (
 			for (let j = 0; j < SS; j++) {
 				for (let i = 0; i < SS; i++) {
 					const o = (y * SS + j) * W2 + x * SS + i;
-					const zz = zb[o]!;
+					const zz = ZB[o]!;
 					if (zz === Infinity) {
 						continue;
 					}

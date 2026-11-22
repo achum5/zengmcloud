@@ -165,6 +165,24 @@ describe("3D picture resolution", () => {
 		assert.strictEqual(artFor(1350, busy), 3);
 	});
 
+	// Players drawn as men (see meshBody.ts): most of the time on each new
+	// picture is posing him - all his points - however few pixels he comes
+	// to; a coarser picture wins little of it back, so it is not made
+	// coarser for that - only for the rest of the drawing.
+	test("slow posing men drawn as one is no reason to go coarser", () => {
+		const posing = makeResolution(0);
+		for (let t = 0; t < 20_000; t += 40) {
+			adjust(posing, 1350, 40, 18, t, 14, 1000 / 60, 0.6);
+		}
+		assert.strictEqual(artFor(1350, posing), 2);
+		// (The rest of the drawing slow too: coarser all the same.)
+		const slow = makeResolution(0);
+		for (let t = 0; t < 20_000; t += 40) {
+			adjust(slow, 1350, 40, 30, t, 14, 1000 / 60, 0.6);
+		}
+		assert.isAbove(artFor(1350, slow), 2);
+	});
+
 	test("a device keeping up stays as fine as it gets", () => {
 		const res = makeResolution(0);
 		run(res, 720, 0, 30_000, 16.7, 9);

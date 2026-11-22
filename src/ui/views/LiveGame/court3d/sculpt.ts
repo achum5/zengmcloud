@@ -33,6 +33,7 @@ import {
 	atRest,
 	boneIndex,
 	drawMesh,
+	type Lens,
 	MESH_KINDS,
 	meshReady,
 	poseBones,
@@ -1048,6 +1049,40 @@ export const seerOf =
 			k: p.k / px,
 		};
 	};
+
+// The same, as numbers worked out once for the whole of him (see
+// meshBody.ts Lens): each of the camera's forward, right and up as a sum
+// over a point of him (with his height off the floor, upright), then where
+// the picture's middle is on the sprite, the lens and the sprite's pixel.
+export const lensOf = (
+	cam: Camera,
+	at: Placed,
+	px: number,
+	ox: number,
+	oy: number,
+): Lens => {
+	const c = Math.cos(at.yaw);
+	const sn = Math.sin(at.yaw);
+	const dx = at.x - cam.pos.x;
+	const dy = at.y - cam.pos.y;
+	// (Upright, his height goes straight up the screen - see project.)
+	const dz = cam.upright ? -cam.pos.z : at.z - cam.pos.z;
+	const form = (V: { x: number; y: number; z: number }, up: number) => [
+		dx * V.x + dy * V.y + dz * V.z + up * at.z,
+		c * V.x + sn * V.y,
+		sn * V.x - c * V.y,
+		cam.upright ? up : V.z,
+	];
+	return Float64Array.from([
+		...form(cam.fwd, 0),
+		...form(cam.right, 0),
+		...form(cam.up, cam.upright ? 1 : 0),
+		cam.cx - ox,
+		cam.cy - oy,
+		cam.f,
+		px,
+	]);
+};
 
 // The masses he is sculpted from, laid one at a time (`add`): from A to B,
 // as thick along it as `prof` has it (feet), of a `kind` and in a `group`
@@ -3984,6 +4019,7 @@ export const sculpt = (
 			body.H,
 			{
 				see: b.P,
+				lens: lensOf(cam, st, px, ox, oy),
 				rt: fr.rt,
 				dn: fr.dn,
 				toward,

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 424,
+		date: "2026-11-22",
+		text: "3D game: the players are quicker to draw, so games run smoother on phones - and the picture stays sharp instead of going blocky when a phone falls behind.",
+	},
+	{
 		n: 423,
 		date: "2026-11-21",
 		text: "3D game: everyone's players are now the ones rebuilt in Blender - one smooth body with real muscle on their shoulders, arms and calves. The 3D Players setting is gone.",

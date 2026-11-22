@@ -92,6 +92,12 @@ const median = (xs: number[]) => {
 // A frame took `drawMs` to draw - `spriteMs` of it on new pictures of the
 // players - and came `frameMs` after the last: true if the picture should
 // now change size.
+// (`fixed`: how much of making a player's new picture no coarser picture
+// makes any quicker - posing a man drawn as one, all his points, however few
+// pixels he comes to. Taken to be time a coarser picture would not win back,
+// that much of the players' time is not counted against the picture: a
+// phone drawing men as one went a size coarser, and coarser, its picture to
+// blocks, hardly any quicker for it.)
 // (`paceMs`: how far apart its frames are meant to come - a sixtieth of a
 // second, or a thirtieth on a device held to that, see pace.ts. A frame
 // every thirtieth of a second by choice is not a device falling behind: it
@@ -108,6 +114,7 @@ export const adjust = (
 	now: number,
 	spriteMs = 0,
 	paceMs = FAST_MS,
+	fixed = 0,
 ): boolean => {
 	res.drawMs =
 		res.drawMs === undefined ? drawMs : res.drawMs * 0.94 + drawMs * 0.06;
@@ -132,7 +139,7 @@ export const adjust = (
 	let verdict = 0;
 	const slowFrame = held > 1 ? HELD_SLOW_FRAME_MS : 26;
 	const slowDraw = held > 1 ? HELD_SLOW_DRAW_MS : 12;
-	if (frame > slowFrame && draw > slowDraw && art < coarsest) {
+	if (frame > slowFrame && draw - sprite * fixed > slowDraw && art < coarsest) {
 		// Under about 40 frames a second - and the picture the reason: if
 		// drawing it is not what takes the time (something else on the page,
 		// the browser cleaning up after itself), a coarser one would only look
