@@ -2527,3 +2527,36 @@ players are decided by what a late first is worth against a rotation player:
 a contender's title chances off its own curve (checked against the sim)
 against picks priced by what they become - a 57 at about two and a half
 late firsts.
+
+### A first counts for a little more (2026-11-22)
+
+The owner: "I think maybe we just need a slight buff to 1sts value". Now
+(`smartSettings.firstsBuff`) every team trading a first counts it at a
+quarter more than its price, given or got (`SmartView.dealPartsNow`): a
+contender pays fewer of them for a role player, and a seller takes them for
+its good players more readily.
+
+Three random-players leagues played on four seasons each, master against the
+buff (same seeds):
+
+| three leagues, four seasons each             | master | buff |
+| -------------------------------------------- | ------ | ---- |
+| trades                                       | 181    | 192  |
+| top-30 players traded                        | 11     | 15   |
+| firsts paid in trades                        | 149    | 167  |
+| firsts for a player 27+ rated under 60       | 37     | 27   |
+| ... for one 27+ rated under 55               | 7      | 2    |
+| firsts for a player rated 55-59              | 62     | 55   |
+| firsts for a player rated 60-64              | 39     | 55   |
+| firsts for a player rated 65+                | 16     | 26   |
+| 58+ players leaving losing teams for nothing | 6      | 7    |
+| players traded twice in a year               | 19     | 20   |
+| trades a GM would call awful (sanity)        | 8      | 7    |
+
+The owner's League 14 (real players, 2010 start) played on from 2016 to 2019
+both ways: 31 trades and 21 firsts on master, 34 and 20 with the buff; firsts
+for players 27 and older rated under 60, 3 against 2; on master Milwaukee
+paid three bench players and three firsts for a 26-year-old 60, and nothing
+was flagged with the buff. Three firsts for a young player under 62 still
+happen (four on each side in the random leagues): late firsts are priced so
+low that a quarter more hardly moves them.

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 431,
+		date: "2026-11-22",
+		text: "CPU teams value first-round picks a little more in trades, so they give up fewer firsts for older role players and more for real starters.",
+	},
+	{
 		n: 430,
 		date: "2026-11-22",
 		text: "3D game: joining a league-mate's live game late no longer leaves the 3D stuck loading on a phone that runs short of memory getting it ready - it loads a lighter version of the game instead, or plays it on the 2D court.",

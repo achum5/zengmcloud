@@ -182,6 +182,12 @@ export const smartSettings = {
 	// passed on the draft's best prospect when he would likely not re-sign
 	// with it, as if it could not trade him.
 	premiumRealized: 0.25,
+	// A FIRST COUNTS FOR A LITTLE MORE than its price, to every team trading
+	// one - given or got (SmartView.dealPartsNow). Picks are priced by what
+	// they become and players by what they add to a team's title chances,
+	// and by that a contender's 57 went for two and a half late firsts (owner,
+	// 2026-11-22: "I think maybe we just need a slight buff to 1sts value").
+	firstsBuff: 0.25,
 };
 
 // Seasons, with the phases between (a season's phases run 0 to 8).
@@ -1255,6 +1261,20 @@ export class SmartView {
 			picks: inn.picks,
 		};
 		const not = [tid, partner];
+		const firsts = (x: Holdings) => {
+			let sum = 0;
+			for (const dp of x.picks) {
+				if (dp.round === 1) {
+					const price = this.piecePriceNow({ players: [], picks: [dp] }, not);
+					sum += Number.isFinite(price) ? Math.max(0, price) : 0;
+				}
+			}
+			return sum;
+		};
+		const buffed =
+			smartSettings.firstsBuff > 0
+				? goal + smartSettings.firstsBuff * (firsts(inn) - firsts(out))
+				: goal;
 		const given = this.premiumNow(tid, out, not, h);
 		// What it gets is priced past its use to the team as it will stand -
 		// in place of what it gives, not beside it (gotAsItWillStand).
@@ -1280,7 +1300,7 @@ export class SmartView {
 			}
 		}
 		return {
-			goal,
+			goal: buffed,
 			got,
 			given,
 			flip: smartSettings.flipCost * flipsIn(tid, out.players, inn.players),
