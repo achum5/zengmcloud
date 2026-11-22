@@ -1,9 +1,21 @@
+import { setStagingTick } from "./stagingTick.ts";
+
 // STAGING A GAME OFF THE PAGE, for any sport. A whole game takes a director
 // seconds to stage - longer on a phone - and staged on the page's own
 // thread, nothing on the page moves while it is: a black picture, a page
 // that will not answer. So it is staged in a worker of its own (src/court
 // for basketball, src/field for football), and only here if that worker
 // cannot be had.
+
+// A worker on a game says it is still at it every second or so (see
+// stagingTick.ts). Silent this long, it is taken for put down - a phone
+// puts a worker down for the memory a whole game takes, and says nothing -
+// and the game goes back to whoever asked (see stageCourt.ts), not left
+// waiting on an answer that will never come: the page sat on the warm-ups
+// for good. (Till the first word on a game, longer: a worker that never
+// says anything - not every sport's does - is given a whole game's time.)
+const QUIET_MS = 40_000;
+const QUIET_FIRST_MS = 240_000;
 
 type Waiting<I, T> = {
 	input: I;
@@ -29,6 +41,22 @@ export const makeStager = <I, T>({
 	let unavailable = false;
 	let nextId = 0;
 	const waiting = new Map<number, Waiting<I, T>>();
+	// The game the worker is on, and how long it has to say it is still at
+	// it before it is taken for put down (see QUIET_MS).
+	let quiet: ReturnType<typeof setTimeout> | undefined;
+	const hush = () => {
+		clearTimeout(quiet);
+		quiet = undefined;
+	};
+	const listen = (ms: number) => {
+		hush();
+		if (waiting.size > 0) {
+			quiet = setTimeout(() => {
+				quiet = undefined;
+				lost();
+			}, ms);
+		}
+	};
 
 	const here = ({ input, resolve, reject }: Waiting<I, T>) => {
 		try {
@@ -43,6 +71,7 @@ export const makeStager = <I, T>({
 	// to be had - better not try it again here - but the next may be, in a
 	// fresh worker.
 	const lost = () => {
+		hush();
 		worker?.terminate();
 		worker = undefined;
 		const left = [...waiting.values()];
@@ -73,6 +102,7 @@ export const makeStager = <I, T>({
 		worker.onmessage = (
 			event: MessageEvent<{
 				ready?: true;
+				alive?: true;
 				id: number;
 				timeline?: T;
 				error?: string;
@@ -83,11 +113,19 @@ export const makeStager = <I, T>({
 				ready = true;
 				return;
 			}
+			if (event.data.alive) {
+				if (waiting.keys().next().value === id) {
+					listen(QUIET_MS);
+				}
+				return;
+			}
 			const w = waiting.get(id);
 			if (!w) {
 				return;
 			}
 			waiting.delete(id);
+			// (On to the next, if any.)
+			listen(QUIET_FIRST_MS);
 			if (timeline) {
 				w.resolve(timeline);
 			} else {
@@ -111,6 +149,9 @@ export const makeStager = <I, T>({
 		}
 		const id = nextId++;
 		waiting.set(id, entry);
+		if (waiting.size === 1) {
+			listen(QUIET_FIRST_MS);
+		}
 		if (entry.promise) {
 			ids.set(entry.promise, id);
 		}
@@ -149,6 +190,7 @@ export const makeStager = <I, T>({
 		waiting.delete(id);
 		entry.reject(new Error(`3D ${what} staging abandoned`));
 		if (worker && onIt) {
+			hush();
 			worker.terminate();
 			worker = undefined;
 			const left = [...waiting.values()];
@@ -186,6 +228,8 @@ export const serveStaging = <I, H>(
 			return;
 		}
 		const { id, input } = event.data;
+		// (Still at it: see stagingTick.ts, and the page's side's QUIET_MS.)
+		setStagingTick(() => self.postMessage({ id, alive: true }));
 		try {
 			self.postMessage({ id, timeline: compile(input) });
 		} catch (error) {
@@ -196,6 +240,8 @@ export const serveStaging = <I, H>(
 						? (error.stack ?? error.message)
 						: String(error),
 			});
+		} finally {
+			setStagingTick(undefined);
 		}
 	};
 };

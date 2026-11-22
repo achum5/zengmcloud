@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 430,
+		date: "2026-11-22",
+		text: "3D game: joining a league-mate's live game late no longer leaves the 3D stuck loading on a phone that runs short of memory getting it ready - it loads a lighter version of the game instead, or plays it on the 2D court.",
+	},
+	{
 		n: 429,
 		date: "2026-11-22",
 		text: "3D game: players are back to the build they had before the NBA 2K proportions - the bigger head and sturdier arms and legs - with all the new moves kept.",

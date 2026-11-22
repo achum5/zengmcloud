@@ -18,6 +18,7 @@ import type { DribbleMove, Hand } from "./poses.ts";
 import { COURT_H, COURT_W, inPlay, rimX, type Pt } from "./geometry.ts";
 import { RIM_INSET } from "../courtSpots.ts";
 import { alongShape, pushFrom, runShape } from "./motion.ts";
+import { stagingBeat, stagingTick } from "./stagingTick.ts";
 
 export const STEP_MS = 50;
 
@@ -2068,6 +2069,7 @@ export const stepTimeline = <T extends Stepped>(tl: T): T => {
 		const spots: (Pt | undefined)[] = [];
 		for (let t = from; t <= until; t += STEP_MS) {
 			spots.push(floorSpotOf(tr, t));
+			stagingTick();
 		}
 		laid.set(tr.pid, pathOf(from, spots));
 	}
@@ -2148,7 +2150,9 @@ export const stepTimeline = <T extends Stepped>(tl: T): T => {
 				his,
 			)) {
 				samples.push(q);
+				stagingTick();
 			}
+			stagingBeat();
 		});
 		return samples;
 	};

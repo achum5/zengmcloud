@@ -155,6 +155,7 @@ import {
 	finishOf,
 	type Finish,
 } from "../../../util/liveGameWording.basketball.ts";
+import { stagingBeat } from "./stagingTick.ts";
 
 // How far a point is from the segment a-b (feet).
 const toSegment = (p: Pt, a: Pt, b: Pt): number => {
@@ -31265,19 +31266,33 @@ class Director {
 		}
 		this.ball.sort(byT0);
 		this.levelTheScreen();
+		stagingBeat();
 		this.stepIntoShots();
+		stagingBeat();
 		this.afterTheMiss();
+		stagingBeat();
 		this.afterTheCloseMiss();
+		stagingBeat();
 		this.allPlayIt();
+		stagingBeat();
 		this.pace();
+		stagingBeat();
 		this.liveHands();
+		stagingBeat();
 		this.dribbleThrough();
+		stagingBeat();
 		this.keepDribbling();
+		stagingBeat();
 		this.plainFirst();
+		stagingBeat();
 		this.flowOn();
+		stagingBeat();
 		this.liven();
+		stagingBeat();
 		this.clearTheLane();
+		stagingBeat();
 		this.stagger();
+		stagingBeat();
 		for (const tr of this.tracks.values()) {
 			// One thing at a time with his arm: the first he started.
 			const arms: Gesture[] = [];
@@ -31289,20 +31304,35 @@ class Director {
 			tr.arms = arms;
 		}
 		this.atHisHip();
+		stagingBeat();
 		this.setBeforeHeComes();
+		stagingBeat();
 		this.unplant();
+		stagingBeat();
 		this.mark();
+		stagingBeat();
 		this.unplant();
+		stagingBeat();
 		this.stagger();
+		stagingBeat();
 		this.keepClear();
+		stagingBeat();
 		this.aroundBodies();
+		stagingBeat();
 		this.stopTheBall();
+		stagingBeat();
 		this.biteOnFakes();
+		stagingBeat();
 		this.wallUp();
+		stagingBeat();
 		this.workHisMan();
+		stagingBeat();
 		this.joinUp();
+		stagingBeat();
 		this.onHisBack();
+		stagingBeat();
 		this.meetTheCrash();
+		stagingBeat();
 		// A fight for position or a box-out cut to a moment by what came
 		// after it never really shows - and left in, an arm thrown up for a
 		// frame is all it adds.
@@ -31312,9 +31342,12 @@ class Director {
 			);
 		}
 		this.nobodyToBox();
+		stagingBeat();
 		// (Nor, with those gone, does a man pull up dead where one was.)
 		this.flowOn();
+		stagingBeat();
 		this.holdHisGround();
+		stagingBeat();
 		// The lead-in to a play - the ball brought up, the set getting going
 		// - is run through fast, back at real speed for the last few seconds
 		// of it: whatever leads straight to the shot, the steal, the foul. A
@@ -31342,8 +31375,11 @@ class Director {
 		this.fx.sort((a, b) => a.t - b.t);
 		blocksShownAgain(this.fx);
 		this.noJumps();
+		stagingBeat();
 		this.ease();
+		stagingBeat();
 		this.clearTheWayIn();
+		stagingBeat();
 		// (Stepped, the steps aside so far are walked as he walks the rest: on
 		// the floor, not in the air.)
 		if (this.step) {
@@ -31364,12 +31400,19 @@ class Director {
 			});
 		}
 		this.keepApart(fast);
+		stagingBeat();
 		this.passBy(fast);
+		stagingBeat();
 		this.aroundTheMan(fast);
+		stagingBeat();
 		this.keepOff(fast);
+		stagingBeat();
 		this.backOutFacing();
+		stagingBeat();
 		this.noSnatch();
+		stagingBeat();
 		this.pickUpWhereItIs();
+		stagingBeat();
 		if (this.step) {
 			this.wallUp(true);
 			// (And nobody boxing out, or fighting for position with, a man
@@ -31378,7 +31421,9 @@ class Director {
 			this.setBeforeHeComes(true);
 		}
 		this.easeNudges();
+		stagingBeat();
 		this.groundNudges();
+		stagingBeat();
 		// (And the way in clear again, from where all that leaves him:
 		// stepped, kept off the others, his steps aside eased and taken on
 		// the floor, a man given a step out of it can be back in it.)
@@ -31388,8 +31433,11 @@ class Director {
 			this.groundNudges();
 		}
 		this.drewTheFoul();
+		stagingBeat();
 		this.lostIt();
+		stagingBeat();
 		this.ourBall();
+		stagingBeat();
 		// A look round the building runs on to the picture's next cut when
 		// that comes soon after (the substitutions over a timeout, the walk
 		// out for the next period), so the game picks up at a cut.
@@ -31464,6 +31512,7 @@ class Director {
 			end: this.T,
 		};
 		this.flashes(tl);
+		stagingBeat();
 		// (Worked out on a look at it of its own, and the turns that look
 		// worked out forgotten after: where men face is read afresh off
 		// where they end up.)
@@ -31635,6 +31684,7 @@ const compileHere = ({
 		}
 		d.handle(e, i);
 		d.noteClock(e);
+		stagingBeat();
 	}
 	return d.finish();
 };

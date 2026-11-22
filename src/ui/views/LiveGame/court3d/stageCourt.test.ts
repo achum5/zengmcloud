@@ -34,6 +34,8 @@ const fakeWorkers = () => {
 		sent: number[];
 		terminated: boolean;
 		answer: () => void;
+		// (Says it is still at the game it is on - see stagingTick.ts.)
+		alive: () => void;
 		onmessage?: (event: { data: any }) => void;
 	}[] = [];
 	const spawn = () => {
@@ -55,6 +57,12 @@ const fakeWorkers = () => {
 				const msg = queue.shift();
 				if (msg) {
 					w.onmessage?.({ data: { id: msg.id, timeline: msg.input * 10 } });
+				}
+			},
+			alive() {
+				const msg = queue[0];
+				if (msg) {
+					w.onmessage?.({ data: { id: msg.id, alive: true } });
 				}
 			},
 		};
@@ -115,5 +123,75 @@ describe("3D: a staging abandoned", () => {
 		assert.strictEqual(await a, 10);
 		// (Its answer, when it comes, goes nowhere.)
 		made[0]!.answer();
+	});
+});
+
+// A phone puts a worker down for the memory a whole game takes, and says
+// nothing: the page was left on the warm-ups for good. A worker that goes
+// quiet is taken for put down - the game handed back, the next to a fresh
+// worker - while one still saying it is at it is left to it, however long.
+describe("3D: a staging worker gone quiet", () => {
+	beforeEach(() => {
+		vi.stubGlobal("Worker", class {});
+		vi.useFakeTimers();
+	});
+	afterEach(() => {
+		vi.useRealTimers();
+		vi.unstubAllGlobals();
+	});
+	const stagerOf = () => {
+		const { made, spawn } = fakeWorkers();
+		const stage = makeStager<number, number>({
+			compile: (n) => n * 10,
+			spawn,
+			what: "test",
+		});
+		return { made, stage };
+	};
+
+	test("still saying it is at it: left to it, however long it takes", async () => {
+		const { made, stage } = stagerOf();
+		const a = stage(1);
+		await vi.advanceTimersByTimeAsync(1);
+		for (let k = 0; k < 30; k++) {
+			made[0]!.alive();
+			await vi.advanceTimersByTimeAsync(10_000);
+		}
+		assert.isFalse(made[0]!.terminated);
+		made[0]!.answer();
+		assert.strictEqual(await a, 10);
+	});
+
+	test("quiet after saying it was at it: put down, the game handed back, the next to a fresh worker", async () => {
+		const { made, stage } = stagerOf();
+		const a = stage(1);
+		let failed = "";
+		a.catch((error: unknown) => {
+			failed = String(error);
+		});
+		await vi.advanceTimersByTimeAsync(1);
+		made[0]!.alive();
+		await vi.advanceTimersByTimeAsync(41_000);
+		assert.include(failed, "worker died");
+		assert.isTrue(made[0]!.terminated);
+		const b = stage(2);
+		assert.strictEqual(made.length, 2);
+		await vi.advanceTimersByTimeAsync(1);
+		made[1]!.answer();
+		assert.strictEqual(await b, 20);
+	});
+
+	test("never a word: given a whole game's time, then handed back", async () => {
+		const { made, stage } = stagerOf();
+		const a = stage(1);
+		let failed = "";
+		a.catch((error: unknown) => {
+			failed = String(error);
+		});
+		await vi.advanceTimersByTimeAsync(200_000);
+		assert.strictEqual(failed, "");
+		assert.isFalse(made[0]!.terminated);
+		await vi.advanceTimersByTimeAsync(50_000);
+		assert.include(failed, "worker died");
 	});
 });

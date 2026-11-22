@@ -50,6 +50,9 @@ let kept:
 			key: string;
 			gid: number | undefined;
 			tl: Promise<CourtTimeline>;
+			// (The staging under way - the worker's, to put down - see
+			// dropStagedCourt.)
+			now: Promise<CourtTimeline>;
 			timer: ReturnType<typeof setTimeout> | undefined;
 	  }
 	| undefined;
@@ -96,8 +99,22 @@ export const stageCourt = (input: CourtInput): Promise<CourtTimeline> => {
 	if (kept) {
 		clearTimeout(kept.timer);
 	}
-	const tl = staged(full);
-	kept = { key, gid: input.gid, tl, timer: undefined };
+	// A phone can put the worker down part way through a whole game, for
+	// the memory it takes (see stager.ts's QUIET_MS): staged again then, once,
+	// without every man stepped (see stepper.ts) - much the lighter work - so
+	// the game is still there to watch.
+	const first = staged(full);
+	const tl = first.catch((error: unknown) => {
+		if (!full.step || !String(error).includes("worker died")) {
+			throw error;
+		}
+		const again = staged({ ...full, step: false });
+		if (kept?.key === key) {
+			kept.now = again;
+		}
+		return again;
+	});
+	kept = { key, gid: input.gid, tl, now: first, timer: undefined };
 	keepFor(key);
 	// (One that failed is not kept: the next ask tries again.)
 	tl.catch(() => {
@@ -113,9 +130,9 @@ export const stageCourt = (input: CourtInput): Promise<CourtTimeline> => {
 // and if it is still being staged, stop that (see stager.ts's abandon).
 export const dropStagedCourt = (gid: number) => {
 	if (kept?.gid === gid) {
-		const { tl, timer } = kept;
+		const { now, timer } = kept;
 		clearTimeout(timer);
 		kept = undefined;
-		staged.abandon(tl);
+		staged.abandon(now);
 	}
 };
