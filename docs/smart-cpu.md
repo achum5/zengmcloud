@@ -2560,3 +2560,36 @@ paid three bench players and three firsts for a 26-year-old 60, and nothing
 was flagged with the buff. Three firsts for a young player under 62 still
 happen (four on each side in the random leagues): late firsts are priced so
 low that a quarter more hardly moves them.
+
+### League 14: older free agents and far-off firsts, measured and left (2026-11-22)
+
+The owner's League 14 (real players, 2010-2016) had two more things to
+check after the firsts buff.
+
+**Long deals for free agents past 30.** In 2015 Charlotte (22-60) gave
+Brandon Roy (31) $21M a season for four years, Atlanta Marc Gasol (30) four,
+Indiana Joe Johnson (34) and New Orleans Dirk (37) three each; the master
+runs had an 18-64 team give a 34-year-old $36M a season for five. Every
+free agent a team weighed in two random-players leagues' first offseason
+was logged (`forwardAudit` with a signing hook, not shipped) with its gain
+on his terms and on one season. The later years are counted: for teams that
+had won 34 to 41 games, a 34-year-old's four seasons at $21.1M (or a
+31-year-old's three at $16.9M) came to 0.01 to 0.04 of a title less than
+one season, and they passed. For the worst teams they came to 0.005 less
+or under: their room buys players about 57
+and 52 (`HAUL_BY_RECORD`), his contract ends when he retires, and money
+itself costs a CPU team nothing (owner, 2026-11-17). Such a signing is
+about even for them, and it makes them better at once (the 18-64 team went
+41-41). Only a cost for money would stop it.
+
+**An aging team's far-off firsts.** San Antonio (55 wins, Duncan 34) paid
+its 2012 and 2013 firsts for Corey Brewer in 2010; they became #4 and #2.
+Own firsts traded two or more drafts out by winning teams in Leagues 12, 13
+and 14 landed in the top five about 7% of the time, as forecast. The
+owner's League 25 (2010) played on six seasons with every team's own firsts
+projected each preseason (`FA_PICKS`): teams over .550 whose minutes went
+to players averaging 29 or older expected a first two drafts out at pick
+10.5 on average and a 31% chance of the top five, and it landed at 14.5,
+none in the top five (6 picks); three out, 10.8 against 9.6. Old teams see
+their decline coming - a little more than it comes - and price their own
+far-off firsts accordingly.
