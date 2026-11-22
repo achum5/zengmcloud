@@ -2452,3 +2452,47 @@ leagues:
 A star stays where he is unless a buyer can pay what he is worth - which, a
 rebuilding team holding a young star, is the GM's call. Whether to trade more
 stars for more churn is the owner's.
+
+### Holding out a season, tried and left out (2026-11-22)
+
+A team out of the race asks for a player his price past his use to it - what
+it could get holding out for a better offer. But holding out spends a season
+of him, and a GM selling a 31-year-old knows he fetches less next year. Three
+ways to count that, each played on the same three random-players leagues:
+
+| three random-players leagues, four seasons   | shipped | both sides | held only | share ahead |
+| -------------------------------------------- | ------- | ---------- | --------- | ----------- |
+| trades                                       | 181     | 229        | 271       | 229         |
+| top-30 players traded                        | 11      | 20         | 31        | 15          |
+| ... buyer better the next season             | 3 of 3  | 7 of 13    | 13 of 21  | 6 of 10     |
+| players traded twice within a year           | 19      | 26         | 52        | 34          |
+| firsts paid for players 27+ rated under 60   | 28      | 33         | 46        | 45          |
+| players 58+ leaving losing teams for nothing | 6       | 10         | 10        | 11          |
+| trades flagged by the sanity check           | 8       | 8          | 16        | 9           |
+| minutes a season, idle desktop               | 28.0    | 32.1       | 32.4      | 31.5        |
+
+- **Both sides**: what a team holds out for is his price after this season
+  past his use to it then - his price less this season of him to the team
+  whose bid sets it, past this season of him to his own team. The same cut
+  to what a deal brings in, which counts at a share of its price already
+  (premiumRealized): Washington turned down a 25-year-old 58 for its
+  expiring 23-year-old 60 it had taken (+0.001 to it before, -0.009).
+- **Only what a team holds**: back at the first trade moment - and young
+  players' prices gone. Each season ahead counted by its title chances from
+  here, which flatten for seasons further off only because they are less
+  sure, so a contender's gain from a 25-year-old was mostly this season's:
+  Chicago, out of the race, gave its 25-year-old 67 (price 0.75, use to it
+  0.04) away to clear room. Churn and flagged trades doubled.
+- **By the share of him still ahead** (players under contract past this
+  season): what he adds to the bidder's strength each season, each counted
+  as the season at hand once it is. Young stars kept their prices, and
+  Boston and Pittsburgh sold veterans under contract (32, 56; 34, 57) to
+  contenders at the first trade moment.
+
+In every version teams out of the race sold more role players 27 and older
+to contenders for firsts - 45 against 28, 33 of them from losing teams:
+Toronto gave two firsts for Washington's 37-year-old 54, Vancouver two and
+five players for Chicago's 30-year-old 59. The contenders' bids hardly
+change; on master the sellers' asks held them off. Holding out a season is
+how a seller's ask comes down, and it goes in once contenders stop bidding
+firsts for role players.
