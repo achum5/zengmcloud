@@ -3483,7 +3483,8 @@ export type CourtDecal = {
 // units, laid along the bottom of the picture (`place`), spanning `span` of
 // its width, with its pieces placed in those units. Colors are any CSS -
 // a color, a gradient - with a team's own written in as "away0".."away2",
-// "home0".."home2".
+// "home0".."home2" - and "awayInk", "homeInk": white or black, whichever
+// reads on that side's main color.
 export type ScoreBugStyle = {
 	width: number;
 	height: number;
@@ -3493,6 +3494,10 @@ export type ScoreBugStyle = {
 	// A picture behind it all: a URL, or one uploaded ("pic:<id>").
 	image?: string;
 	radius?: number;
+	// How far up off the bottom of the picture it sits, and in from the side
+	// it's placed on (not centered), as shares of the picture's width.
+	bottom?: number;
+	edge?: number;
 	// Its shadow (CSS box-shadow; "none" for none), and its lettering unless
 	// a piece says otherwise.
 	shadow?: string;
@@ -3521,6 +3526,9 @@ export type ScoreBugShow =
 	| "homeRecord"
 	| "awayBall"
 	| "homeBall"
+	// Shown only while that side is in the bonus: `text`, or BONUS.
+	| "awayBonus"
+	| "homeBonus"
 	| "period"
 	| "clock"
 	| "shotClock"
@@ -3543,7 +3551,8 @@ export type ScoreBugPiece = {
 	font?: string;
 	align?: "left" | "center" | "right";
 	italic?: boolean;
-	// Letter spacing, in the bug's units; all capitals.
+	// Letter spacing, in the bug's units (for the timeouts, the room between
+	// their marks); all capitals.
 	spacing?: number;
 	upper?: boolean;
 	radius?: number;
@@ -3555,11 +3564,30 @@ export type ScoreBugPiece = {
 	clip?: string;
 	shadow?: string;
 	blend?: string;
-	// For "text": what it says. For "image": a URL, or "pic:<id>" - and how
-	// it fills its box ("contain", the default; "cover"; "fill").
+	// What's in it turned (degrees - BONUS standing on end), and made bigger
+	// within its box (a logo bigger than its row, cut off by it).
+	rotate?: number;
+	zoom?: number;
+	// For "text": what it says. For the fouls, what they say ("FOULS: {n}"),
+	// and `limit`, what they say once the other side is in the bonus ("FOUL
+	// LIMIT"). For the timeouts, what they say ("TO: {n}") in place of a
+	// mark for each; `off`, a mark's color once taken (the default dim).
 	text?: string;
+	limit?: string;
+	off?: string;
+	// For "image": a URL, or "pic:<id>" - and how it fills its box
+	// ("contain", the default; "cover"; "fill").
 	image?: string;
 	fit?: "contain" | "cover" | "fill";
+	// For "period": "Q3" as "3rd" - its letters raised ("sup") or smaller
+	// ("small").
+	ordinal?: "plain" | "sup" | "small";
+	// For "clock" and "shotClock": the way the broadcasts write them,
+	// ":09.2" and ":24".
+	colon?: boolean;
+	// For "shotClock": its color and background in its last seconds.
+	low?: string;
+	lowBackground?: string;
 };
 
 export type CourtDecalPlaced = {

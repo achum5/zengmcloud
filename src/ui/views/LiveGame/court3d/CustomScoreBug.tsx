@@ -7,6 +7,8 @@ import {
 import { TeamLogoInline } from "../../../components/TeamLogoInline.tsx";
 import type { ScoreBugPiece, ScoreBugStyle } from "../../../../common/types.ts";
 import type { BugRefs, BugTeam } from "./ScoreBug.tsx";
+import { bugShown, writeBug, type BugNow } from "./bugWriter.ts";
+import { lightness } from "./figure.ts";
 
 // THE LEAGUE'S OWN SCORE BUG (see ScoreBugStyle): its pieces placed in the
 // bug's own units, which scale with the picture. The clocks, the fouls, the
@@ -17,10 +19,30 @@ import type { BugRefs, BugTeam } from "./ScoreBug.tsx";
 export type CustomBugTeam = BugTeam & { region?: string; name?: string };
 
 const MAX_TIMEOUTS = 7;
+// The smallest a bug is drawn, px - at least this wide, and at least this
+// tall: a corner box or a bar across the bottom the size it is on TV is too
+// small to read on a phone.
+const MIN_WIDTH = 150;
+const MIN_HEIGHT = 32;
 
 // A team's color written into CSS: "home0" alone, or in a gradient, a
-// border, a shadow ("linear-gradient(90deg, away0, away1)").
-const TEAM_COLOR = /(?<![\w./-])(away|home)([0-2])(?![\w.-])/g;
+// border, a shadow ("linear-gradient(90deg, away0, away1)") - or
+// "homeInk", white or black, whichever reads on its main color.
+const TEAM_COLOR = /(?<![\w./-])(away|home)([0-2]|Ink)(?![\w.-])/g;
+
+// "Q3" as "3rd" ("OT", "2OT" as they are).
+const ordinal = (period: string) => {
+	const m = /^Q(\d+)$/.exec(period);
+	if (!m) {
+		return { n: period, suffix: "" };
+	}
+	const n = Number(m[1]);
+	const suffix =
+		n % 100 >= 11 && n % 100 <= 13
+			? "th"
+			: (["th", "st", "nd", "rd"][n % 10] ?? "th");
+	return { n: m[1]!, suffix };
+};
 
 const FONT = "system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
 // A font named on its own ("Gotham Bold" - one the bug brings, say) quoted,
@@ -67,37 +89,11 @@ export const CustomScoreBug = ({
 	refs: BugRefs;
 	hidden?: boolean;
 	// For a preview: what the frame loop would write.
-	sample?: {
-		clock: string;
-		shot: string;
-		fouls: [string, string];
-		ball: 0 | 1;
-		down?: string;
-	};
+	sample?: BugNow;
 }) => {
 	useLayoutEffect(() => {
-		if (!sample) {
-			return;
-		}
-		if (refs.clock.current) {
-			refs.clock.current.textContent = sample.clock;
-		}
-		if (refs.shot.current) {
-			refs.shot.current.textContent = sample.shot;
-			refs.shot.current.style.display = "flex";
-		}
-		refs.fouls.forEach((r, i) => {
-			if (r.current) {
-				r.current.textContent = sample.fouls[i]!;
-			}
-		});
-		refs.ball.forEach((r, i) => {
-			if (r.current) {
-				r.current.style.visibility = i === sample.ball ? "visible" : "hidden";
-			}
-		});
-		if (sample.down !== undefined && refs.down?.current) {
-			refs.down.current.textContent = sample.down;
+		if (sample) {
+			writeBug(refs, bugShown(), sample);
 		}
 	});
 
@@ -112,19 +108,36 @@ export const CustomScoreBug = ({
 	const team = (side: "away" | "home") => (side === "away" ? away : home);
 	// "away0".."home2": that side's colors, wherever they're written;
 	// anything else, as given.
+	const teamColor = (side: "away" | "home", which: string) => {
+		const colors = team(side)?.colors;
+		if (which === "Ink") {
+			return colors && lightness(colors[0]) > 0.62 ? "#111111" : "#ffffff";
+		}
+		return colors?.[Number(which)];
+	};
 	const color = (c: string | undefined) => {
-		const m = c === undefined ? null : /^(away|home)([0-2])$/.exec(c);
+		const m = c === undefined ? null : /^(away|home)([0-2]|Ink)$/.exec(c);
 		if (m) {
-			return team(m[1] as "away" | "home")?.colors?.[Number(m[2])];
+			return teamColor(m[1] as "away" | "home", m[2]!);
 		}
 		return c?.replace(
 			TEAM_COLOR,
-			(_, side: "away" | "home", i: string) =>
-				team(side)?.colors?.[Number(i)] ?? "transparent",
+			(_, side: "away" | "home", which: string) =>
+				teamColor(side, which) ?? "transparent",
 		);
 	};
+	const justify = (p: ScoreBugPiece): CSSProperties["justifyContent"] =>
+		p.align === "right"
+			? "flex-end"
+			: p.align === "center"
+				? "center"
+				: "flex-start";
 
 	const piece = (p: ScoreBugPiece, i: number) => {
+		const onMark =
+			p.show === "shotClock" ||
+			p.show === "awayBonus" ||
+			p.show === "homeBonus";
 		const box: CSSProperties = {
 			position: "absolute",
 			left: `${(p.x / W) * 100}%`,
@@ -133,14 +146,11 @@ export const CustomScoreBug = ({
 			height: `${(p.h / H) * 100}%`,
 			display: "flex",
 			alignItems: "center",
-			justifyContent:
-				p.align === "right"
-					? "flex-end"
-					: p.align === "center"
-						? "center"
-						: "flex-start",
+			justifyContent: justify(p),
 			color: color(p.color),
-			background: color(p.background),
+			// (The shot clock's and a bonus mark's on the mark itself, gone with
+			// it when it's off.)
+			background: onMark ? undefined : color(p.background),
 			fontSize: u(p.size ?? 16),
 			fontWeight: p.weight,
 			fontFamily: family(p.font),
@@ -148,7 +158,7 @@ export const CustomScoreBug = ({
 			letterSpacing: p.spacing === undefined ? undefined : u(p.spacing),
 			textTransform: p.upper ? "uppercase" : undefined,
 			borderRadius: p.radius === undefined ? undefined : u(p.radius),
-			border: color(p.border),
+			border: onMark ? undefined : color(p.border),
 			clipPath: p.clip,
 			textShadow: color(p.shadow),
 			mixBlendMode: p.blend as CSSProperties["mixBlendMode"],
@@ -201,7 +211,40 @@ export const CustomScoreBug = ({
 				break;
 			case "awayFouls":
 			case "homeFouls":
-				inner = <span ref={refs.fouls[k]} />;
+				inner = (
+					<span ref={refs.fouls[k]} data-fmt={p.text} data-limit={p.limit} />
+				);
+				break;
+			case "awayBonus":
+			case "homeBonus":
+				// (Its box, background and border, gone with it.)
+				inner = (
+					<span
+						ref={refs.bonus?.[k]}
+						style={{
+							visibility: "hidden",
+							display: "flex",
+							alignItems: "center",
+							justifyContent: justify(p),
+							width: "100%",
+							height: "100%",
+							background: color(p.background),
+							border: color(p.border),
+							borderRadius: "inherit",
+							boxSizing: "border-box",
+						}}
+					>
+						<span
+							style={
+								p.rotate === undefined
+									? undefined
+									: { transform: `rotate(${p.rotate}deg)`, flex: "none" }
+							}
+						>
+							{p.text ?? "BONUS"}
+						</span>
+					</span>
+				);
 				break;
 			case "awayBall":
 			case "homeBall":
@@ -222,13 +265,15 @@ export const CustomScoreBug = ({
 			case "awayTimeouts":
 			case "homeTimeouts": {
 				const left = t?.timeouts;
-				if (left !== undefined && totalTimeouts !== undefined) {
+				if (left !== undefined && p.text !== undefined) {
+					inner = p.text.replace("{n}", String(left));
+				} else if (left !== undefined && totalTimeouts !== undefined) {
 					const n = Math.min(MAX_TIMEOUTS, totalTimeouts);
 					inner = (
 						<span
 							style={{
 								display: "flex",
-								gap: "8%",
+								gap: p.spacing === undefined ? "8%" : u(p.spacing),
 								width: "100%",
 								height: "100%",
 							}}
@@ -242,7 +287,7 @@ export const CustomScoreBug = ({
 										background:
 											j < left
 												? (color(p.color) ?? "#f2c14e")
-												: "rgba(255,255,255,.18)",
+												: (color(p.off) ?? "rgba(255,255,255,.18)"),
 									}}
 								/>
 							))}
@@ -251,14 +296,54 @@ export const CustomScoreBug = ({
 				}
 				break;
 			}
-			case "period":
-				inner = quarter;
+			case "period": {
+				if (!p.ordinal) {
+					inner = quarter;
+					break;
+				}
+				const { n, suffix } = ordinal(quarter);
+				inner =
+					p.ordinal === "plain" || !suffix ? (
+						`${n}${suffix}`
+					) : (
+						<>
+							{n}
+							<span
+								style={{
+									fontSize: p.ordinal === "sup" ? "0.55em" : "0.7em",
+									alignSelf: p.ordinal === "sup" ? "flex-start" : undefined,
+									marginTop: p.ordinal === "sup" ? "0.32em" : undefined,
+									marginLeft: "0.04em",
+								}}
+							>
+								{suffix}
+							</span>
+						</>
+					);
 				break;
+			}
 			case "clock":
-				inner = <span ref={refs.clock} />;
+				inner = <span ref={refs.clock} data-colon={p.colon ? "" : undefined} />;
 				break;
 			case "shotClock":
-				inner = <span ref={refs.shot} style={{ display: "none" }} />;
+				inner = (
+					<span
+						ref={refs.shot}
+						data-colon={p.colon ? "shot" : undefined}
+						data-low={color(p.low)}
+						data-low-background={color(p.lowBackground)}
+						data-background={color(p.background)}
+						style={{
+							display: "none",
+							width: "100%",
+							height: "100%",
+							alignItems: "center",
+							justifyContent: justify(p),
+							borderRadius: "inherit",
+							background: color(p.background),
+						}}
+					/>
+				);
 				break;
 			case "down":
 				inner = <span ref={refs.down} />;
@@ -282,6 +367,33 @@ export const CustomScoreBug = ({
 			case "box":
 				break;
 		}
+		// (Turned, or made bigger, within its box.)
+		const turned =
+			(p.rotate !== undefined &&
+				p.show !== "awayBonus" &&
+				p.show !== "homeBonus") ||
+			p.zoom !== undefined;
+		if (inner !== null && turned) {
+			inner = (
+				<span
+					style={{
+						display: "flex",
+						alignItems: "center",
+						justifyContent: "center",
+						flex: "none",
+						...(p.show.endsWith("Logo")
+							? { width: "100%", height: "100%" }
+							: {}),
+						transform: [
+							p.rotate === undefined ? "" : `rotate(${p.rotate}deg)`,
+							p.zoom === undefined ? "" : `scale(${p.zoom})`,
+						].join(" "),
+					}}
+				>
+					{inner}
+				</span>
+			);
+		}
 		// Keyed by what it shows too: a clock or fouls span written by the
 		// frame loop is never reused for another piece.
 		return (
@@ -293,18 +405,20 @@ export const CustomScoreBug = ({
 
 	const span = style.span ?? 0.6;
 	const place = style.place ?? "center";
+	const edge = `${(style.edge ?? 0.016) * 100}cqw`;
 	return (
 		<div
 			style={{
 				display: hidden ? "none" : "block",
 				position: "absolute",
-				bottom: "1.6cqw",
+				bottom: `${(style.bottom ?? 0.016) * 100}cqw`,
 				...(place === "center"
 					? { left: "50%", transform: "translateX(-50%)" }
 					: place === "left"
-						? { left: "1.6cqw" }
-						: { right: "1.6cqw" }),
-				width: `${span * 100}%`,
+						? { left: edge }
+						: { right: edge }),
+				// (Never so small on a phone that it can't be read.)
+				width: `min(96%, max(${span * 100}%, ${Math.max(MIN_WIDTH, (MIN_HEIGHT * W) / H)}px))`,
 			}}
 		>
 			<div

@@ -22,6 +22,8 @@ const SHOWS = new Set<ScoreBugShow>([
 	"homeRecord",
 	"awayBall",
 	"homeBall",
+	"awayBonus",
+	"homeBonus",
 	"period",
 	"clock",
 	"shotClock",
@@ -40,6 +42,8 @@ const PIECE_NUMBERS = new Set([
 	"spacing",
 	"radius",
 	"opacity",
+	"rotate",
+	"zoom",
 ]);
 const PIECE_STRINGS = new Set([
 	"color",
@@ -51,9 +55,14 @@ const PIECE_STRINGS = new Set([
 	"clip",
 	"shadow",
 	"blend",
+	"limit",
+	"off",
+	"low",
+	"lowBackground",
 ]);
-const PIECE_BOOLEANS = new Set(["italic", "upper"]);
+const PIECE_BOOLEANS = new Set(["italic", "upper", "colon"]);
 const FITS = new Set(["contain", "cover", "fill"]);
+const ORDINALS = new Set(["plain", "sup", "small"]);
 const MAX_PIECES = 80;
 const MAX_FONTS = 6;
 
@@ -75,6 +84,8 @@ export const parseScoreBug = (raw: unknown): ScoreBugStyle | string => {
 				"background",
 				"image",
 				"radius",
+				"bottom",
+				"edge",
 				"shadow",
 				"font",
 				"fonts",
@@ -111,8 +122,10 @@ export const parseScoreBug = (raw: unknown): ScoreBugStyle | string => {
 			return `"${key}" should be text.`;
 		}
 	}
-	if (r.radius !== undefined && !isNumber(r.radius)) {
-		return `"radius" should be a number.`;
+	for (const key of ["radius", "bottom", "edge"] as const) {
+		if (r[key] !== undefined && !isNumber(r[key])) {
+			return `"${key}" should be a number.`;
+		}
 	}
 	if (r.fonts !== undefined) {
 		if (!Array.isArray(r.fonts) || r.fonts.length > MAX_FONTS) {
@@ -170,6 +183,10 @@ export const parseScoreBug = (raw: unknown): ScoreBugStyle | string => {
 			} else if (k === "fit") {
 				if (typeof v !== "string" || !FITS.has(v)) {
 					return `${at}: "fit" should be "contain", "cover" or "fill".`;
+				}
+			} else if (k === "ordinal") {
+				if (typeof v !== "string" || !ORDINALS.has(v)) {
+					return `${at}: "ordinal" should be "plain", "sup" or "small".`;
 				}
 			} else {
 				return `${at}: unknown field "${k}".`;

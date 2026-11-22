@@ -1675,6 +1675,8 @@ const Court3D = ({
 					(([1, 0] as const).map((k) =>
 						f.bonus[k] ? "BONUS" : `FOULS ${f.fouls[k]}`,
 					) as [string, string]),
+				counts: f && [f.fouls[1], f.fouls[0]],
+				bonus: f && [f.bonus[1], f.bonus[0]],
 				ball: offenseAt(tl, s.t),
 			});
 		};

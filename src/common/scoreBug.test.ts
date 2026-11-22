@@ -99,6 +99,58 @@ describe("parseScoreBug", () => {
 		assert.deepStrictEqual(parseScoreBug(bug), bug as unknown);
 	});
 
+	test("takes what the broadcasts' bugs need", () => {
+		const bug = {
+			...ok,
+			bottom: 0.07,
+			edge: 0.026,
+			place: "left",
+			pieces: [
+				{
+					show: "awayBonus",
+					x: 0,
+					y: 0,
+					w: 6,
+					h: 22,
+					rotate: -90,
+					text: "BONUS",
+				},
+				{ show: "homeLogo", x: 0, y: 0, w: 30, h: 22, zoom: 1.2 },
+				{ show: "period", x: 0, y: 0, w: 20, h: 20, ordinal: "sup" },
+				{ show: "clock", x: 0, y: 0, w: 20, h: 20, colon: true },
+				{
+					show: "shotClock",
+					x: 0,
+					y: 0,
+					w: 20,
+					h: 20,
+					colon: true,
+					low: "#fff",
+					lowBackground: "#d3202f",
+				},
+				{
+					show: "awayFouls",
+					x: 0,
+					y: 0,
+					w: 20,
+					h: 20,
+					text: "FOULS: {n}",
+					limit: "FOUL LIMIT",
+				},
+				{
+					show: "homeTimeouts",
+					x: 0,
+					y: 0,
+					w: 20,
+					h: 4,
+					off: "transparent",
+					spacing: 2,
+				},
+			],
+		};
+		assert.deepStrictEqual(parseScoreBug(bug), bug as unknown);
+	});
+
 	test("says what's wrong", () => {
 		const bad: [unknown, RegExp][] = [
 			[[], /object/],
@@ -113,6 +165,9 @@ describe("parseScoreBug", () => {
 			[{ ...ok, pieces: [{ ...ok.pieces[0], foo: 1 }] }, /unknown field/],
 			[{ ...ok, pieces: [{ ...ok.pieces[0], upper: "yes" }] }, /"upper"/],
 			[{ ...ok, pieces: [{ ...ok.pieces[0], fit: "zoom" }] }, /"fit"/],
+			[{ ...ok, pieces: [{ ...ok.pieces[0], ordinal: "big" }] }, /"ordinal"/],
+			[{ ...ok, pieces: [{ ...ok.pieces[0], colon: 1 }] }, /"colon"/],
+			[{ ...ok, bottom: "low" }, /"bottom"/],
 			[{ ...ok, fonts: [{ name: "A" }] }, /font 1/],
 			[{ ...ok, fonts: "A" }, /"fonts"/],
 			[

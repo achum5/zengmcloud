@@ -22,6 +22,7 @@ const SAMPLE = FOOTBALL
 	? {
 			clock: "2:41",
 			shot: "",
+			low: false,
 			fouls: ["", ""] as [string, string],
 			ball: 1 as const,
 			down: "3rd & 7",
@@ -29,7 +30,10 @@ const SAMPLE = FOOTBALL
 	: {
 			clock: "2:41",
 			shot: "14",
-			fouls: ["FOULS 3", "BONUS"] as [string, string],
+			low: false,
+			fouls: ["FOULS 5", "BONUS"] as [string, string],
+			counts: [5, 2] as [number, number],
+			bonus: [false, true] as [boolean, boolean],
 			ball: 1 as const,
 		};
 const PRESETS = FOOTBALL ? FOOTBALL_SCORE_BUG_PRESETS : SCORE_BUG_PRESETS;
@@ -96,6 +100,10 @@ const ScoreBugPage = ({
 			useRef<HTMLSpanElement | null>(null),
 		] as [RefObject<HTMLSpanElement | null>, RefObject<HTMLSpanElement | null>],
 		ball: [
+			useRef<HTMLSpanElement | null>(null),
+			useRef<HTMLSpanElement | null>(null),
+		] as [RefObject<HTMLSpanElement | null>, RefObject<HTMLSpanElement | null>],
+		bonus: [
 			useRef<HTMLSpanElement | null>(null),
 			useRef<HTMLSpanElement | null>(null),
 		] as [RefObject<HTMLSpanElement | null>, RefObject<HTMLSpanElement | null>],
@@ -202,7 +210,7 @@ const ScoreBugPage = ({
 					<CustomScoreBug
 						style={shown}
 						{...sides}
-						quarter="4th"
+						quarter="Q4"
 						totalTimeouts={TIMEOUTS}
 						refs={refs}
 						sample={SAMPLE}
@@ -392,7 +400,7 @@ const DefaultBugPreview = ({
 		<div ref={() => set()}>
 			<DefaultBug
 				{...sides}
-				quarter="4th"
+				quarter="Q4"
 				totalTimeouts={TIMEOUTS}
 				refs={{
 					clock,

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 435,
+		date: "2026-11-22",
+		text: "3D game: score bugs can now look like the real NBA broadcasts' - a BONUS mark that shows when a team is in the bonus, fouls written their way (FOULS: 4, FOUL LIMIT), 3RD-style quarters, clocks like :24 and :09.2, and the bug placed where the broadcast puts it. Score bugs also stay readable on phones.",
+	},
+	{
 		n: 434,
 		date: "2026-11-22",
 		text: "Draft picks now happen at the draft, not on the team's home court: the floor is full of green room tables, and the stage has an LED wall, a podium and a tower in the picking team's colors next to the draft board. The commissioner reads the pick, the player gets up from his family's table and hugs his mom, walks up the aisle and onto the stage through the smoke, and shakes the commissioner's hand for the photos.",

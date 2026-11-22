@@ -30,6 +30,11 @@ export type BugRefs = {
 	// Per side, in the bug's order: [visitors, home].
 	fouls: [RefObject<HTMLSpanElement | null>, RefObject<HTMLSpanElement | null>];
 	ball: [RefObject<HTMLSpanElement | null>, RefObject<HTMLSpanElement | null>];
+	// A league's own bug's marks for a side in the bonus.
+	bonus?: [
+		RefObject<HTMLSpanElement | null>,
+		RefObject<HTMLSpanElement | null>,
+	];
 	// Football's down and distance, after the clock.
 	down?: RefObject<HTMLSpanElement | null>;
 };
