@@ -6,6 +6,11 @@ import type { Authored } from "./authored.ts";
 import { capOf } from "./cap.ts";
 import { cappedHead } from "./capHead.ts";
 import Court3D from "./Court3D.tsx";
+import {
+	DraftBroadcast,
+	makeDraftFeed,
+	PRE_ROLL_MS,
+} from "./DraftBroadcast.tsx";
 import { stageDraftWalk } from "./draftWalk.ts";
 import { streetClothes, type Look } from "./figure.ts";
 import { logoPicture } from "./logoPicture.ts";
@@ -44,13 +49,6 @@ const draftSuit = (
 		gear: { tights: { legs: "RL", color: suit }, shoe, sole, sock: suit },
 		outfit: { sleeves: "long", shirt: "#f2f2ee", tie },
 	};
-};
-
-const ordinal = (n: number) => {
-	const t = n % 100;
-	const s =
-		t >= 11 && t <= 13 ? "TH" : (["TH", "ST", "ND", "RD"][n % 10] ?? "TH");
-	return `${n}${s}`;
 };
 
 const HeadlineStage = ({
@@ -103,6 +101,8 @@ const HeadlineStage = ({
 
 	// Over, it plays again from the top the next time it is asked to play.
 	const [run, setRun] = useState(0);
+	// The podium read out yet (see below).
+	const [preDone, setPreDone] = useState(false);
 	const over = useRef(false);
 	const onEndRef = useRef(onEnd);
 	onEndRef.current = onEnd;
@@ -110,8 +110,25 @@ const HeadlineStage = ({
 		if (playing && over.current) {
 			over.current = false;
 			setRun((n) => n + 1);
+			setPreDone(false);
 		}
 	}, [playing]);
+
+	// THE PODIUM FIRST (see DraftBroadcast.tsx): the pick read out over the
+	// team's colors - covering the building while he is got ready - and only
+	// then the walk-out.
+	useEffect(() => {
+		if (!made || preDone || !playing) {
+			return;
+		}
+		const timer = setTimeout(() => {
+			setPreDone(true);
+		}, PRE_ROLL_MS);
+		return () => {
+			clearTimeout(timer);
+		};
+	}, [made, preDone, playing]);
+	const feed = useMemo(() => makeDraftFeed(), []);
 
 	// Not seen till his head is drawn, the cap on it - nor does it start: a
 	// plain head with no cap on it would be on its way out otherwise. (Or
@@ -173,30 +190,52 @@ const HeadlineStage = ({
 		};
 	}, [colors, crest]);
 
+	useEffect(() => {
+		feed.set({ cover: !(preDone && dressed) });
+	}, [feed, preDone, dressed]);
+	useEffect(() => {
+		feed.set({ run, t: 0, over: false });
+	}, [feed, run]);
+
+	const overlay = useMemo(() => {
+		if (!made) {
+			return undefined;
+		}
+		const { team, player } = made;
+		return (
+			<DraftBroadcast
+				feed={feed}
+				info={{
+					season: made.season,
+					round: made.round,
+					pick: made.pick,
+					team,
+					player: { name: player.name, pos: player.pos },
+					night: made.draftNight,
+				}}
+			/>
+		);
+	}, [made, feed]);
+
 	const authored = useMemo((): Authored | undefined => {
 		if (!staged || !made) {
 			return undefined;
 		}
-		const { team, player } = made;
 		return {
 			...staged,
 			...dressing,
-			card: {
-				name: player.name,
-				pos: player.pos,
-				colors: team.colors,
-				imgURL: team.imgURL,
-				imgURLSmall: team.imgURLSmall,
-				abbrev: team.abbrev,
-				line: `${ordinal(made.pick)} PICK · ROUND ${made.round}${player.pos ? ` · ${player.pos}` : ""}`,
+			overlay,
+			onTick: (t: number) => {
+				feed.set({ t });
 			},
 			run,
 			onEnd: () => {
 				over.current = true;
+				feed.set({ over: true });
 				onEndRef.current?.();
 			},
 		};
-	}, [staged, made, dressing, run]);
+	}, [staged, made, dressing, overlay, feed, run]);
 
 	const boxScore = useMemo(
 		() =>
@@ -219,13 +258,7 @@ const HeadlineStage = ({
 		return null;
 	}
 	return (
-		<div
-			style={{
-				marginBottom: "-1rem",
-				opacity: dressed ? 1 : 0,
-				transition: "opacity 0.35s",
-			}}
-		>
+		<div style={{ marginBottom: "-1rem" }}>
 			<Court3D
 				preview
 				authored={authored}
@@ -233,7 +266,7 @@ const HeadlineStage = ({
 				cursor={0}
 				boxScore={boxScore}
 				caption={null}
-				paused={!playing || !dressed}
+				paused={!playing || !dressed || !preDone}
 				rate={1}
 				follower={false}
 				onReady={noop}

@@ -1,4 +1,5 @@
 import type { FaceConfig } from "facesjs";
+import type { ReactNode } from "react";
 import type { Rig, Shot } from "./camera.ts";
 import type { CrewRole } from "./crew.ts";
 import type { Pt3 } from "./geometry.ts";
@@ -39,6 +40,13 @@ export type Authored = {
 	flashes?: (t: number) => Pt3[];
 	// The name card, up while the man in it is called (see IntroCard).
 	card?: IntroCardInfo;
+	// Graphics of its own over the picture (a draft pick's broadcast - see
+	// DraftBroadcast.tsx), in the picture's box. Kept the same element from
+	// draw to draw: what it shows changes through onTick, not through this.
+	overlay?: ReactNode;
+	// Each frame, where the scene is (ms) - for the overlay to keep time with
+	// it, paused and held at its end with it.
+	onTick?: (t: number) => void;
 	// Run again from the top each time this changes.
 	run?: number;
 	onEnd?: () => void;

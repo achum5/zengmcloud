@@ -1299,6 +1299,9 @@ const Court3D = ({
 					p.authored.onEnd?.();
 				}
 			}
+			if (p.authored && staging) {
+				p.authored.onTick?.(s.t);
+			}
 			// A look at the court: the warm-ups over, round again from the top.
 			if (p.preview && staging && s.t >= WARMUP_MS) {
 				s.t = 0;
@@ -1767,11 +1770,14 @@ const Court3D = ({
 				// (Still being staged - see stageCourt.ts: not stuck.)
 				staging={!timeline && !!events && events.length > 0}
 			/>
-			{authored?.card && intro.call >= 0 ? (
-				<IntroCard info={authored.card} callKey={intro.call} />
+			{authored ? (
+				authored.card && intro.call >= 0 ? (
+					<IntroCard info={authored.card} callKey={intro.call} />
+				) : null
 			) : introCard ? (
 				<IntroCard info={introCard} callKey={intro.call} />
 			) : null}
+			{authored?.overlay}
 			{intro.title && !authored ? (
 				<IntroTitle playoffs={!!timeline?.intro?.big} />
 			) : null}

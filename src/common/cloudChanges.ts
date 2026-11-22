@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 433,
+		date: "2026-11-22",
+		text: "Draft walk-outs now play like draft night on TV: the pick is read out over the team's colors - round and pick, SELECTION, then his name - and on his way to center court the broadcast bar shows his school, age and size, true facts about him, the next picks in the draft order and the best players still on the board, then the next team on the clock.",
+	},
+	{
 		n: 432,
 		date: "2026-11-22",
 		text: "3D game: every team can have its own score bug, like its local TV broadcast's (Manage Teams, Score bug next to each team, or in a team looks file). You see your own team's bug when it plays and the home team's otherwise. Score bugs can now also use their own fonts, angled panels and team-colored gradients.",
