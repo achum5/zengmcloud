@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 429,
+		date: "2026-11-22",
+		text: "3D game: players are back to the build they had before the NBA 2K proportions - the bigger head and sturdier arms and legs - with all the new moves kept.",
+	},
+	{
 		n: 428,
 		date: "2026-11-22",
 		text: "3D game: shooters hold the guide hand up beside the shooting arm after the release, like NBA 2K's, instead of dropping it to the forehead - and a player walking the ball up under pressure is bent over it like a real dribbler.",
@@ -29,6 +34,7 @@ export const CLOUD_CHANGES: CloudChange[] = [
 	{
 		n: 425,
 		date: "2026-11-22",
+		quiet: true,
 		text: "3D game: players are built like real NBA players - measured off NBA 2K's player editor: a smaller head, longer legs and longer arms, shoulders up where a man's are. They run and step to fit their new legs, too: no more dropping into a backpedal or a defensive slide in a frame.",
 	},
 	{

@@ -472,9 +472,8 @@ describe("3D crew", () => {
 				...refs.map((r) => Math.hypot(r.x - from.x, r.y - from.y)),
 			);
 			// (His feet his reach back from it: it is in his hands, held out
-			// in front of him - about his arm's length and a fifth again.)
-			const arm = bodyOf().upper + bodyOf().fore;
-			assert.isBelow(near, 1.2 * arm, `at ${g.t0}`);
+			// in front of him.)
+			assert.isBelow(near, 2, `at ${g.t0}`);
 			// Under the basket: nearer the end line than the line.
 			assert.isTrue(from.x < 9 || from.x > COURT_W - 9, `at ${g.t0}`);
 			checked += 1;
@@ -657,9 +656,7 @@ describe("3D crew", () => {
 				const before = was.get(r.pid);
 				if (before) {
 					frames += isRef(r.pid) ? 1 : 0;
-					// (Sixty feet a second, for a hand or a foot, is a blur - on
-					// a man with his hips three feet up, and that much quicker
-					// on a longer-legged one.)
+					// (Sixty feet a second, for a hand or a foot, is a blur.)
 					if (
 						ends.some(
 							(e, k) =>
@@ -668,7 +665,7 @@ describe("3D crew", () => {
 									e.y - before[k]!.y,
 									e.z - before[k]!.z,
 								) >
-								20.5 * body.hipH * 0.016,
+								60 * 0.016,
 						)
 					) {
 						if (photo) {

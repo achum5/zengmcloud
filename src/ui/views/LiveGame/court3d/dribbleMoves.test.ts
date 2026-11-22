@@ -93,11 +93,8 @@ describe("dribble moves", () => {
 		gaps.sort((a, b) => a - b);
 		assert.isAbove(gaps.length, 1000);
 		const mean = gaps.reduce((a, b) => a + b, 0) / gaps.length;
-		// (In his own size - how high his hips are: from where he held it
-		// to his dribbling hand out at his side is that much further on a
-		// longer-armed man.)
-		assert.isBelow(mean, 0.29 * body.hipH);
-		assert.isBelow(gaps[Math.floor(gaps.length * 0.9)]!, 0.48 * body.hipH);
+		assert.isBelow(mean, 0.85);
+		assert.isBelow(gaps[Math.floor(gaps.length * 0.9)]!, 1.4);
 	}, 120_000);
 
 	// Between his legs, across in front of them, or just bouncing it beside

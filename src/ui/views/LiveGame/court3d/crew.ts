@@ -2375,17 +2375,13 @@ const refStates = (
 						home.x - (dist(leg, home) > 0.01 ? leg : signal.still).x,
 					) - yawTo(home, ballSpot(tl, end));
 				// (The way he goes over the longer moment, as he faces in
-				// the play: round a corner of the floor, not swung round it -
-				// and only as far on as he is back: the play may have him off
-				// the other way from there, and he comes round to that over
-				// SIGNAL_TURN, not in the frame the moment takes it in.)
+				// the play: round a corner of the floor, not swung round it.)
 				const fa = signalPos(signal, t - FACE_SPAN / 2, liveAt);
-				const fbAt = Math.max(t, Math.min(t + FACE_SPAN / 2, end));
-				const fb = signalPos(signal, fbAt, liveAt);
+				const fb = signalPos(signal, t + FACE_SPAN / 2, liveAt);
 				// (By how quick he goes over that longer moment too: pulling up
 				// sharp, round from the way he ran to the play as he slows - not
 				// in the frame or two he stops in.)
-				const faceSpeed = (dist(fa, fb) * 1000) / (fbAt - (t - FACE_SPAN / 2));
+				const faceSpeed = (dist(fa, fb) * 1000) / FACE_SPAN;
 				const going = turnRound(
 					yaw,
 					dist(fa, fb) > 1e-3
