@@ -210,6 +210,39 @@ const between = (a: F3, b: F3, w: number): F3 => {
 // hips to his shoulders, his neck the same up to his head; his shoulders go
 // half with his chest and half with his arms.
 export type Posed = { fr: F3; ax: number; rad: number };
+// An arm the court has stretched past its own length - thrown up over his
+// head, or a jumper's up under the ball (see stretchOf in poses.ts) - is
+// drawn near enough its own length, his shoulder come up toward his hand
+// instead, as a man's does reaching up (his shoulder blade turned up under
+// it): the hand where the court has it, the arm not drawn out long and
+// thin. (This share of the stretch taken up at the shoulder.)
+const SHOULDER_TAKES = 0.75;
+export const ownArm = (l: Limb, upper: number, fore: number): Limb => {
+	const a = len(sub(l.mid, l.root));
+	const b = len(sub(l.end, l.mid));
+	const over = (a + b - (upper + fore)) * SHOULDER_TAKES;
+	if (over <= 1e-3) {
+		return l;
+	}
+	const reach = sub(l.end, l.root);
+	const d = len(reach);
+	if (d < 1e-6) {
+		return l;
+	}
+	const k = a / (a + b);
+	const u = scale(reach, 1 / d);
+	const root = addV(l.root, scale(u, over));
+	// (The elbow where the arm, now that long, bends to: on the side it
+	// bent to before.)
+	const A = a - over * k;
+	const B = b - over * (1 - k);
+	const D = Math.max(Math.abs(A - B) + 1e-6, Math.min(A + B, d - over));
+	const along = (A * A - B * B + D * D) / (2 * D);
+	const h = Math.sqrt(Math.max(0, A * A - along * along));
+	const side = unit(ortho(sub(l.mid, root), u), ortho(v3(0, 0, 1), u));
+	const mid = addV(root, addV(scale(u, along), scale(side, h)));
+	return { ...l, root, mid };
+};
 export const poseBones = (
 	sk: Skeleton,
 	body: Body,
@@ -339,12 +372,14 @@ export const poseBones = (
 		calfG,
 		1,
 	]);
-	limb(sk.armR, "R", ["upper", "fore", undefined], chest, REST.chest!, [
+	const armR = ownArm(sk.armR, body.upper, body.fore);
+	const armL = ownArm(sk.armL, body.upper, body.fore);
+	limb(armR, "R", ["upper", "fore", undefined], chest, REST.chest!, [
 		upperG,
 		foreG,
 		foreG,
 	]);
-	limb(sk.armL, "L", ["upper", "fore", undefined], chest, REST.chest!, [
+	limb(armL, "L", ["upper", "fore", undefined], chest, REST.chest!, [
 		upperG,
 		foreG,
 		foreG,

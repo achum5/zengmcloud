@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 427,
+		date: "2026-11-22",
+		text: "3D game: arms reaching up - dunks, blocks, rebounds, jump shots - keep their own length, the shoulders coming up with them the way a real player's do, instead of the arms stretching out long and thin.",
+	},
+	{
 		n: 426,
 		date: "2026-11-22",
 		text: "3D game: moves fitted to motion capture of real players - spin moves bent low over the ball and whipped round off the plant, drives that lean hard into the first steps, pull-ups that sit down into the legs instead of leaning back, and shot fakes that stay down in the knees. And the ball no longer jumps in a player's hands as he picks up his dribble.",
