@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 478,
+		date: "2026-11-23",
+		text: "Smart CPU GMs: a CPU team now signs a new free agent only when it is clearly better off with him, the same rule it already uses for trades. Bad teams no longer hand big multi-year deals to low-rated players (like $19.7M a year to a 49) and keep their cap room open instead. Good free agents still sign.",
+	},
+	{
 		n: 477,
 		date: "2026-11-23",
 		text: "Live games in the header now look like a real scoreboard: each game shows both teams with their logos and scores, and the quarter and clock (Half, End Q3 or Paused on a break). Tap a game to watch it.",

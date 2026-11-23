@@ -9,7 +9,12 @@ import { currentOutlook } from "../realisticFrontOffice/market.ts";
 import { ensureRetention } from "../realisticFrontOffice/outlook.ts";
 import { timed } from "./clock.ts";
 import { clearRoomNow, clearRoomSettings, roomToSign } from "./clearRoom.ts";
-import { prepareSignings, smartSigningPrice, viewFor } from "./signing.ts";
+import {
+	prepareSignings,
+	signedOn,
+	smartSigningPrice,
+	viewFor,
+} from "./signing.ts";
 
 // THE SMART CPU ON VANILLA'S RULES (realisticFrontOffice/isOn.ts,
 // smartVanillaOn): free agency and re-signing run as in vanilla - a player
@@ -61,7 +66,23 @@ const vanillaMaySign = (
 };
 
 // The free agent a CPU team signs today, if any: of those vanilla lets it
-// sign, the one it gains most from on what he asks.
+// sign, the one it gains most from on what he asks - by more than its read
+// of him could be off.
+//
+// THE MARGIN OF ERROR, as in its trades (owner, 2026-11-19: a deal is made
+// only if each side gains by more than its own read of it could be off;
+// SmartView.marginNow) and the realistic mode's free agency. Without it a
+// team with no title shot for the length of a contract signed anyone its
+// read put a hair above nothing - him and the room he took both came to next
+// to nothing in titles, and picking the best of ten free agents a day all
+// summer favours the ones it overrates: in League 15 Milwaukee (16-66) gave
+// Josh Selby (23, 49) $19.7M a season for three (owner, 2026-11-23: "the cpu
+// gm might as well keep his payroll open in case anything else opens up").
+// Measured in docs/smart-cpu.md. Re-signing (below) has no margin: he is no
+// pick of many, and the other side of it is losing him for nothing.
+// Settable for a run each way (test/smart/loadLeague.ts, VANILLA_SET).
+export const vanillaSigningSettings = { margin: true };
+
 export const smartVanillaSigning = (
 	tid: number,
 	available: readonly Player[],
@@ -102,19 +123,27 @@ export const smartVanillaSigning = (
 		await ensureRetention(outlook, tried, tid);
 		const view = viewFor(outlook);
 		const h = await view.holdingsOf(tid);
+		const none = { players: [], picks: [] };
 		let best: { p: Player; net: number } | undefined;
 		for (const p of tried) {
 			const c = getContractDemand(p);
+			const contract = { amount: c.amount, exp: c.exp };
 			const { net } = smartSigningPrice(
 				outlook,
 				{ tid, players: h.players, picks: h.picks },
 				p,
-				{ amount: c.amount, exp: c.exp },
+				contract,
 			);
 			// Ties to the better player, then the lower pid, so every device in a
 			// shared league signs the same one.
 			if (
 				net > 0 &&
+				(!vanillaSigningSettings.margin ||
+					net >
+						view.marginNow(tid, none, {
+							players: [signedOn(p, tid, contract)],
+							picks: [],
+						})) &&
 				(!best ||
 					net > best.net ||
 					(net === best.net &&

@@ -2608,6 +2608,16 @@ market is asked every regular-season night (`betweenAiTeams({ smartOnly })`
 from `game/play.ts` on a night with no round). The same league met on all
 five, and at the same nine moments before them.
 
+Since the calendar ticks at the classic pace (459), its deadline window
+counts classic days too (`game/classicDaysLeft.ts`): the deadline's last
+five days had been five nights, about two and a half classic days of games;
+now they are the last five classic days, about ten nights, a moment on each
+(a night that is two classic days meets twice, `deadlineMomentDay`). The
+same for the realistic market's deadline window and the outlook's days to
+the deadline (how likely a deal is to still be on offer then,
+`stillOnOffer`, was measured in classic days). Classic leagues are as they
+were.
+
 ## Speed: the same moves, faster (2026-11-23)
 
 The owner asked (2026-11-23) for faster sims without making the engine any
@@ -2735,3 +2745,65 @@ Nothing changed for it.
 - **A dynasty.** Oklahoma City won 2011-2014 on its real young core and kept
   adding (A.J. Price for three late firsts, Darren Collison, Nowitzki at
   35).
+
+## Bad teams' room: a margin on new signings (2026-11-23)
+
+The owner, on Milwaukee giving Josh Selby (23, 49) $19.7M a season for
+three in League 15: no 49 should get that, and a GM in that spot "might as
+well keep his payroll open in case anything else opens up". On vanilla's
+rules a CPU team signed the free agent it gained most from at his ask, if it
+gained at all. For a team with no title shot for the length of the deal,
+the player and the room he takes both come to next to nothing in titles, so
+the call came down to rounding - and picking the best of ten free agents a
+day all summer favours the ones its read overrates. Late in free agency it
+is worse: the free agents left are the ones nobody would pay, and the
+season's room is priced by a pool that is nearly gone, so a long deal at a
+price nobody else paid looks free this season and costs only seasons the
+team does not expect to matter.
+
+Now a new signing must gain by more than the team's read of him could be
+off (`vanillaSigningSettings.margin`, `SmartView.marginNow`): the rule its
+trades have had since 2026-11-19, and the realistic mode's free agency
+(`priceSigning`). Re-signing has none: he is no pick of many, and the other
+side of it is losing him for nothing. In-season signings go by the same
+rule; a short roster is still filled by the game (`checkRosterSizes`).
+
+Measured, each way (`forwardAudit`, `VANILLA_SET='{"margin":false}'` for
+master), free-agent signings rated 54 or less for 10% of the cap or more:
+
+| league                              | master | margin |
+| ----------------------------------- | ------ | ------ |
+| League 15, its 2016 summer          | 1      | 1      |
+| League 40 (real players), 2010-2012 | 2      | 0      |
+| random players 217, 2026-2027       | 2      | 0      |
+| random players 301, 2026-2027       | 1      | 0      |
+
+- League 15's 2016 summer, every signing for 5% of the cap or more: master
+  Durant, Giannis, Julius Randle (22, 56/67) 31% from Chicago, Marcus
+  Georges-Hunt (22, 37) 8% and Joel Bolomboy (22, 38) 9% from teams under
+  .450, Sheldon Mac (24, 42) 5%, Doron Lamb (25, 53) 22% to 2019 from
+  Cleveland; with the margin Durant, Giannis and Lamb (a week earlier). Lamb
+  still clears it: by day 13 the room he takes this season buys next to
+  nothing, and he is a 53 for three more.
+- The deals that went: Josh Howard (30, 52) 13% for three from 26-win San
+  Antonio, Alonzo Gee (24, 53) 14% for three (League 40); 18-64 Sacramento's
+  23-year-old 53/62 at 22% for four (301); 17-65 Baltimore's 23-year-old
+  50/61 at 18% for three and 25-57 Los Angeles' 54/59 at 17% for four (217).
+- Good free agents were not left out. The best still unsigned when each
+  run ended: League 40 a 34-year-old 50 (master 55), 301 a 27-year-old 58
+  (54), 217 a 59/62 and a 57/63 asking 11% and 9% (a 57). On master too,
+  good free agents go unsigned in vanilla's free agency at the asks
+  vanilla sets: League 40's 2010 summer a 27-year-old 63 asking 32% and a
+  59 asking 25% with six teams holding 20% of the cap in room.
+- Summer signings 42 against 61 (League 40), 16 against 15 (301), 10
+  against 28 (217); in-season 53 against 88 (League 40), mostly minimum
+  deals.
+
+**Measured and left: what room buys on vanilla's rules** (`FA_HAUL`, 270
+team-summers in Leagues 15 and 40 and both arms of random league 301).
+The 84 teams with 15-45% of the cap in room as free agency opened signed
+someone better than the minimum a third of the time and spent 6% of the cap
+on average; the offer market's table (`HAUL`) has 95-98%. Room is not
+repriced from it: it is low partly because teams hold out for what the model
+says room buys, and priced lower, room would go on exactly the late
+leftovers the margin stops.

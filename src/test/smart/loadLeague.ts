@@ -40,6 +40,13 @@ export const loadLeagueFile = async (file: string) => {
 			await import("../../worker/core/smartCpu/worth.ts");
 		Object.assign(smartSettings, JSON.parse(env.SMART_SET));
 	}
+	// VANILLA_SET: the smart CPU's signings on vanilla's rules
+	// (vanillaSigningSettings), likewise.
+	if (env.VANILLA_SET) {
+		const { vanillaSigningSettings } =
+			await import("../../worker/core/smartCpu/vanilla.ts");
+		Object.assign(vanillaSigningSettings, JSON.parse(env.VANILLA_SET));
+	}
 	if (env.MARGIN_SET) {
 		const { marginSettings } =
 			await import("../../worker/core/realisticFrontOffice/margin.ts");

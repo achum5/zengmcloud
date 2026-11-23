@@ -309,6 +309,193 @@ test.skipIf(!env.FA_LEAGUE)(
 					.join(" | ")}`,
 			);
 		});
+		// FA_SIGNS=1: every free agent signed in the offseason, with what he
+		// does for the team season by season against the room he takes (its
+		// room each season with and without him, its strength, the titles).
+		const signsProbe = async () => {
+			const o =
+				await import("../../worker/core/realisticFrontOffice/outlook.ts");
+			const { currentOutlook } =
+				await import("../../worker/core/realisticFrontOffice/market.ts");
+			const { viewFor } = await import("../../worker/core/smartCpu/signing.ts");
+			const seen = new Set<number>();
+			return async () => {
+				const evs = (await idb.cache.events.getAll()) as any[];
+				const fresh = evs.filter(
+					(e) =>
+						e.type === "freeAgent" &&
+						e.season === g.get("season") &&
+						!seen.has(e.eid),
+				);
+				if (fresh.length === 0) {
+					return;
+				}
+				const outlook = await currentOutlook();
+				const view = viewFor(outlook);
+				const cap = g.get("salaryCap");
+				for (const e of fresh) {
+					seen.add(e.eid);
+					const tid = e.tids[0];
+					const p = (await idb.cache.players.get(e.pids[0])) as any;
+					if (!p || p.tid !== tid) {
+						continue;
+					}
+					await o.ensureRetention(outlook, [p], tid);
+					const h = await view.holdingsOf(tid);
+					const withP = h.players.some((x: any) => x.pid === p.pid)
+						? h.players
+						: [...h.players, p];
+					const without = withP.filter((x: any) => x.pid !== p.pid);
+					const detail = (players: any[]) => {
+						const rooms: number[] = [];
+						const hauls: string[] = [];
+						const s = o.teamStrengths(
+							outlook,
+							tid,
+							players,
+							h.picks,
+							undefined,
+							(y: number, share: number, signings: readonly any[]) => {
+								rooms[y] = share;
+								hauls[y] = signings
+									.map(
+										(x) =>
+											`${x.valueNoPot.toFixed(0)}x${x.availability.toFixed(2)}`,
+									)
+									.join("+");
+							},
+						);
+						return { s, rooms, hauls };
+					};
+					const a = detail(without);
+					const b = detail(withP);
+					const fv = (s: number[], k: number) =>
+						o.franchiseValue(outlook, s.slice(0, k), tid);
+					const rows = [];
+					for (let k = 1; k <= 4; k++) {
+						rows.push(
+							`y${k - 1} room ${(100 * (a.rooms[k - 1] ?? Number.NaN)).toFixed(0)}->${(100 * (b.rooms[k - 1] ?? Number.NaN)).toFixed(0)}% haul ${a.hauls[k - 1] ?? "-"} -> ${b.hauls[k - 1] ?? "-"} mov ${a.s[k - 1]!.toFixed(2)}${b.s[k - 1]! >= a.s[k - 1]! ? "+" : ""}${(b.s[k - 1]! - a.s[k - 1]!).toFixed(2)} title ${(fv(b.s, k) - fv(a.s, k) - (fv(b.s, k - 1) - fv(a.s, k - 1))).toFixed(4)}`,
+						);
+					}
+					const gain =
+						view.value(tid, { players: withP, picks: h.picks }) -
+						view.value(tid, { players: without, picks: h.picks });
+					const margin = view.marginNow(
+						tid,
+						{ players: [], picks: [] },
+						{ players: [p], picks: [] },
+					);
+					const r = p.ratings.at(-1);
+					log(
+						`SIGN ${g.get("season")} ph${g.get("phase")} day ${g.get("daysLeft")}: ${abbrev.get(tid)} (${title(view, tid)}%, winp ${(outlook.winShare?.get(tid)?.[0] ?? Number.NaN).toFixed(2)}) ${p.firstName} ${p.lastName} ${g.get("season") - p.born.year}y ${r.ovr}/${r.pot} v${p.value.toFixed(1)} ${e.contract.amount}k (${((100 * e.contract.amount) / cap).toFixed(0)}%) thru ${e.contract.exp} | gain ${gain.toFixed(4)} margin ${margin.toFixed(4)} fv ${(o.franchiseValue(outlook, b.s, tid) - o.franchiseValue(outlook, a.s, tid)).toFixed(4)} | ${rows.join("; ")}`,
+					);
+				}
+			};
+		};
+		const signs = env.FA_SIGNS ? await signsProbe() : undefined;
+		// FA_HAUL=<file>: what each team's room bought in free agency under
+		// vanilla's rules - as it opened, each team's room (share of the cap),
+		// its record the season before and the outlook's win share for the
+		// season ahead, and every free agent then as the value model sees him
+		// (roleFree, offense, usage, overall); once it is over, who signed him,
+		// for what share of the cap and how many seasons, on which day. A line
+		// of JSON a summer.
+		let haul: any;
+		const haulOpen = async () => {
+			const { playerLine } =
+				await import("../../worker/core/realisticFrontOffice/strength.ts");
+			const { currentOutlook } =
+				await import("../../worker/core/realisticFrontOffice/market.ts");
+			const { team } = await import("../../worker/core/index.ts");
+			const outlook = await currentOutlook();
+			const cap = g.get("salaryCap");
+			const season = g.get("season");
+			const teams = [];
+			for (const t of await idb.cache.teams.getAll()) {
+				if (t.disabled) {
+					continue;
+				}
+				const last = await idb.cache.teamSeasons.indexGet(
+					"teamSeasonsByTidSeason",
+					[t.tid, season],
+				);
+				teams.push({
+					tid: t.tid,
+					room: 1 - (await team.getPayroll(t.tid)) / cap,
+					won: last?.won,
+					lost: last?.lost,
+					winp: outlook.winShare?.get(t.tid)?.[0],
+					title: outlook.teams.get(t.tid)?.title?.[0],
+				});
+			}
+			const pool = [];
+			for (const p of (await idb.cache.players.indexGetAll(
+				"playersByTid",
+				PLAYER.FREE_AGENT,
+			)) as any[]) {
+				const r = p.ratings.at(-1);
+				const line = playerLine(r);
+				pool.push({
+					pid: p.pid,
+					age: season - p.born.year,
+					ovr: r.ovr,
+					pot: r.pot,
+					value: p.value,
+					ask: p.contractDemand?.amount ?? p.contract.amount,
+					line: [line.roleFree, line.offense, line.usage, r.ovr],
+				});
+			}
+			haul = { season, cap, minContract: g.get("minContract"), teams, pool };
+		};
+		const haulClose = async () => {
+			const evs = (await idb.cache.events.getAll()) as any[];
+			const signed = new Map<number, any>();
+			for (const e of evs) {
+				if (e.type === "freeAgent" && e.season === haul.season) {
+					signed.set(e.pids[0], e);
+				}
+			}
+			for (const row of haul.pool) {
+				const p = (await idb.cache.players.get(row.pid)) as any;
+				const e = signed.get(row.pid);
+				if (p && p.tid >= 0 && e) {
+					row.tid = p.tid;
+					row.amount = e.contract.amount / haul.cap;
+					row.years = e.contract.exp - haul.season;
+					row.phase = e.phase;
+				}
+			}
+			fs.appendFileSync(env.FA_HAUL!, JSON.stringify(haul) + "\n");
+			haul = undefined;
+		};
+		// FA_DUMP=<file>: once the draft is over, the league written out as an
+		// export (to load as FA_LEAGUE and play the offseason on from there),
+		// and the run stops.
+		const dump = async (file: string) => {
+			await idb.cache.flush();
+			const data: Record<string, any> = {};
+			for (const store of Array.from(idb.league.objectStoreNames) as string[]) {
+				if (store === "games" || store === "liveGamePlayByPlay") {
+					continue;
+				}
+				data[store] = await (idb.league as any).getAll(store);
+			}
+			data.gameAttributes = Object.fromEntries(
+				data.gameAttributes.map((x: any) => [x.key, x.value]),
+			);
+			data.teams = data.teams.map((t: any) => ({
+				...t,
+				seasons: data.teamSeasons.filter((x: any) => x.tid === t.tid),
+				stats: data.teamStats.filter((x: any) => x.tid === t.tid),
+			}));
+			delete data.teamSeasons;
+			delete data.teamStats;
+			data.version = (
+				await import("../../common/constants.ts")
+			).LEAGUE_DATABASE_VERSION;
+			data.startingSeason = g.get("startingSeason");
+			fs.writeFileSync(file, JSON.stringify(data));
+		};
 		const startSeason = g.get("season");
 		const seasons = Number(env.FA_SEASONS ?? 3);
 		log(`${startSeason} phase ${g.get("phase")}, ${seasons} seasons`);
@@ -344,12 +531,33 @@ test.skipIf(!env.FA_LEAGUE)(
 					await phase.newPhase(PHASE.AFTER_DRAFT, {});
 				}
 			} else if (ph === PHASE.FREE_AGENCY) {
-				await freeAgents.play(g.get("daysLeft"), {});
+				if (env.FA_HAUL) {
+					await haulOpen();
+				}
+				if (signs) {
+					while (g.get("phase") === PHASE.FREE_AGENCY) {
+						await freeAgents.play(1, {});
+						await signs();
+					}
+				} else {
+					await freeAgents.play(g.get("daysLeft"), {});
+				}
 				if (g.get("phase") === PHASE.FREE_AGENCY) {
 					await phase.newPhase(PHASE.PRESEASON, {});
 				}
+				if (haul) {
+					await haulClose();
+				}
 			} else {
 				await phase.newPhase((ph + 1) as any, {});
+				if (signs && g.get("phase") > PHASE.PLAYOFFS) {
+					await signs();
+				}
+			}
+			if (env.FA_DUMP && g.get("phase") === PHASE.AFTER_DRAFT) {
+				await dump(env.FA_DUMP);
+				log(`dumped the league after the draft to ${env.FA_DUMP}`);
+				break;
 			}
 			if (
 				env.FA_PICKS &&
