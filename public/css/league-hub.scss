@@ -785,88 +785,68 @@
 	}
 }
 
-// ON A PHONE, a game in two short rows, as the NBA app lists them: each
-// team's logo on its color, its name, record and score, and how it ended
-// beside both.
+// ON A PHONE, the same card made small: the colored ends with their
+// stripes and logos, each side's city, name, score and record, how it ended
+// between them - a little over half the height.
 @container lh-gc (max-width: 559px) {
 	.lh-gc-card {
-		grid-template-columns: 2.1rem minmax(0, 1fr) auto;
-		grid-template-areas:
-			"as at mid"
-			"hs ht mid";
+		grid-template-columns: 2.7rem minmax(0, 1fr) auto minmax(0, 1fr) 2.7rem;
 		min-height: 0;
 		border-radius: 0.5rem;
 	}
 	.lh-gc-side {
-		clip-path: none;
-		padding: 0.25rem;
 		&::before,
 		&::after {
-			display: none;
+			height: 16%;
+			background: repeating-linear-gradient(
+				115deg,
+				var(--gc-accent) 0 0.3rem,
+				transparent 0.3rem 0.6rem
+			);
 		}
 		img {
-			max-width: 1.45rem;
+			max-width: 1.75rem;
 		}
 	}
-	.lh-gc-side-away {
-		grid-area: as;
-	}
-	.lh-gc-side-home {
-		grid-area: hs;
-	}
-	.lh-gc-team-away {
-		grid-area: at;
+	.lh-gc-team {
+		padding: 0.3rem 0.2rem 0.3rem 0.5rem;
 	}
 	.lh-gc-team-home {
-		grid-area: ht;
-	}
-	.lh-gc-team,
-	.lh-gc-team-home {
-		display: flex;
-		align-items: center;
-		gap: 0.45rem;
-		padding: 0.22rem 0.6rem;
-		text-align: left;
+		padding: 0.3rem 0.5rem 0.3rem 0.2rem;
 	}
 	.lh-gc-region {
-		display: none;
-	}
-	.lh-gc-name,
-	.lh-gc-name-long,
-	.lh-gc-name-xlong {
-		min-width: 0;
-		font-size: 0.98rem;
+		font-size: 0.56rem;
 		line-height: 1.2;
 	}
-	.lh-gc-scoreline,
-	.lh-gc-team-home .lh-gc-scoreline {
-		display: contents;
+	.lh-gc-name {
+		font-size: 0.98rem;
+		line-height: 1.15;
 	}
-	.lh-gc-record {
-		order: 2;
-		font-size: 0.75rem;
+	.lh-gc-name-long {
+		font-size: 0.88rem;
+	}
+	.lh-gc-name-xlong {
+		font-size: 0.76rem;
 	}
 	.lh-gc-score {
-		order: 3;
-		margin-left: auto;
-		font-size: 1.2rem;
-		line-height: 1.2;
+		font-size: 1.6rem;
+		line-height: 1.05;
+	}
+	.lh-gc-scoreline {
+		gap: 0.3rem;
+	}
+	.lh-gc-record {
+		font-size: 0.66rem;
 	}
 	.lh-gc-mid {
-		grid-area: mid;
-		align-self: stretch;
-		display: flex;
-		flex-direction: column;
-		justify-content: center;
-		min-width: 4.6rem;
-		padding: 0 0.5rem;
-		border-left: 1px solid var(--bs-border-color);
+		min-width: 3.3rem;
+		padding: 0 0.1rem;
 	}
 	.lh-gc-final {
-		font-size: 0.78rem;
+		font-size: 0.72rem;
 	}
 	.lh-gc-series {
-		font-size: 0.66rem;
+		font-size: 0.6rem;
 	}
 }
 // A phone's frame, tight around it.
