@@ -123,6 +123,8 @@ export type FeedPost = {
 		verified: boolean;
 		text: string;
 		day: number;
+		// Its night, on the NBA calendar.
+		date?: string;
 	};
 	// Clock time and engagement, derived rather than stored - see socialMetrics.
 	time: string;
@@ -150,9 +152,14 @@ export type FeedPost = {
 	}[];
 };
 
+// A post with the day it's from (and its night, on the NBA calendar).
+export type DatedFeedPost = FeedPost & { day: number; date?: string };
+
 export type FeedDay = {
 	season: number;
 	day: number;
+	// Its night, on the NBA calendar.
+	date?: string;
 	posts: FeedPost[];
 };
 
@@ -299,6 +306,8 @@ export type FeedSnapshot = {
 		}[];
 	}[];
 	playedByDay: Map<number, Set<number>>;
+	// Each day's night, on the NBA calendar.
+	dateByDay: Map<number, string>;
 	// What one day's cache entries depend on, and nothing else.
 	dayKey: (day: number) => string;
 };
@@ -476,6 +485,13 @@ export const getFeedSnapshot = async (
 		playedByDay.set(game.day, set);
 	}
 
+	const dateByDay = new Map<number, string>();
+	for (const game of games) {
+		if (typeof game.date === "string") {
+			dateByDay.set(game.day ?? 0, game.date);
+		}
+	}
+
 	// ---- Rivalry inputs, once.
 	const swappedPairs: [number, number][] = [];
 	for (const row of rows) {
@@ -505,6 +521,7 @@ export const getFeedSnapshot = async (
 		seriesEnders: seriesEndingGids(standingsInput),
 		standingsInput,
 		playedByDay,
+		dateByDay,
 		dayKey,
 	};
 	return snapshotMemo;
@@ -711,8 +728,8 @@ export const mentionsOf = async ({
 	account: MentionTarget;
 	daysBack?: number;
 	limit?: number;
-}): Promise<(FeedPost & { day: number })[]> => {
-	const out: (FeedPost & { day: number })[] = [];
+}): Promise<DatedFeedPost[]> => {
+	const out: DatedFeedPost[] = [];
 	const start = snapshot.days.length - 1;
 	const stop = Math.max(0, start - daysBack + 1);
 	for (
@@ -726,7 +743,7 @@ export const mentionsOf = async ({
 				break;
 			}
 			if (isMentionOf(post, account)) {
-				out.push({ ...post, day: feedDay.day });
+				out.push({ ...post, day: feedDay.day, date: feedDay.date });
 			}
 		}
 	}
@@ -756,7 +773,7 @@ export const feedAbout = async ({
 	limit?: number;
 	daysBack?: number;
 }): Promise<{
-	posts: (FeedPost & { day: number })[];
+	posts: DatedFeedPost[];
 	pictures: Record<string, AccountPicture>;
 	teams: {
 		tid: number;
@@ -780,7 +797,7 @@ export const feedAbout = async ({
 		(tid !== undefined && (post.tid === tid || post.tids.includes(tid))) ||
 		(gid !== undefined && post.gid === gid);
 
-	const posts: (FeedPost & { day: number })[] = [];
+	const posts: DatedFeedPost[] = [];
 	const start = snapshot.days.length - 1;
 	const stop = day === undefined ? Math.max(0, start - daysBack + 1) : 0;
 	for (
@@ -798,7 +815,7 @@ export const feedAbout = async ({
 				break;
 			}
 			if (matches(post)) {
-				posts.push({ ...post, day: feedDay.day });
+				posts.push({ ...post, day: feedDay.day, date: feedDay.date });
 			}
 		}
 		if (day !== undefined) {
@@ -869,7 +886,7 @@ export const feedAboutLeagueEvents = async ({
 	// were a reaction.
 	textByEid?: Map<number, string>;
 }): Promise<{
-	postsByEid: Record<number, (FeedPost & { day: number })[]>;
+	postsByEid: Record<number, DatedFeedPost[]>;
 	pictures: Record<string, AccountPicture>;
 	teams: {
 		tid: number;
@@ -904,7 +921,7 @@ export const feedAboutLeagueEvents = async ({
 		}
 	}
 
-	const postsByEid: Record<number, (FeedPost & { day: number })[]> = {};
+	const postsByEid: Record<number, DatedFeedPost[]> = {};
 	const onPage = new Set<string>();
 	for (const day of days) {
 		const dayIndex = snapshot.days.indexOf(day);
@@ -932,7 +949,7 @@ export const feedAboutLeagueEvents = async ({
 			if (list.length >= limitPerEvent) {
 				continue;
 			}
-			list.push({ ...post, day });
+			list.push({ ...post, day, date: feedDay.date });
 			onPage.add(post.accountId);
 			for (const reply of post.replies) {
 				onPage.add(reply.accountId);
@@ -1550,6 +1567,7 @@ export const receiptPostFor = async (
 				verified: isVerified(target),
 				text: old.text,
 				day: oldDay,
+				date: snapshot.dateByDay.get(oldDay),
 			},
 			time: label,
 			minutes,
@@ -1747,6 +1765,7 @@ export const playerReceiptPostFor = async (
 				verified: isVerified(target),
 				text: old.text,
 				day: oldDay,
+				date: snapshot.dateByDay.get(oldDay),
 			},
 			time: `${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`,
 			minutes,
@@ -2212,7 +2231,12 @@ export const buildFeedDay = async ({
 	// A timeline is newest-first, and the clock is what says which is newest.
 	out.sort((a, b) => b.minutes - a.minutes || a.id.localeCompare(b.id));
 
-	const feed: FeedDay = { season: snapshot.season, day, posts: out };
+	const feed: FeedDay = {
+		season: snapshot.season,
+		day,
+		date: snapshot.dateByDay.get(day),
+		posts: out,
+	};
 	bounded(feedCache, 400);
 	feedCache.set(key, feed);
 	return feed;

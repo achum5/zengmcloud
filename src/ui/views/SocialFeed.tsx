@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import clsx from "clsx";
 import useTitleBar from "../hooks/useTitleBar.tsx";
 import { helpers } from "../util/helpers.ts";
+import { feedDayLabel } from "../util/feedDayLabel.ts";
 import { realtimeUpdate } from "../util/realtimeUpdate.ts";
 import type { View } from "../../common/types.ts";
 import {
@@ -77,6 +78,7 @@ const SocialFeed = ({
 
 	const visibleDays = feed.map((day: any) => ({
 		day: day.day,
+		date: day.date,
 		posts: day.posts.filter(
 			(post: any) => (tab === "all" || aboutTeam(post)) && matchesQuery(post),
 		),
@@ -155,7 +157,7 @@ const SocialFeed = ({
 						<div key={day.day}>
 							<div className="social-day">
 								<span className="social-day-pill">
-									{day.day === 0 ? "Offseason" : `Day ${day.day}`}
+									{feedDayLabel(day.day, day.date, "short")}
 								</span>
 							</div>
 							{day.posts.map((post: any) => (

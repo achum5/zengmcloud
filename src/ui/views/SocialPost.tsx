@@ -2,6 +2,7 @@ import clsx from "clsx";
 import { Fragment, type ReactNode } from "react";
 import { PlayerPicture } from "../components/PlayerPicture.tsx";
 import { helpers } from "../util/helpers.ts";
+import { feedDayLabel } from "../util/feedDayLabel.ts";
 import {
 	formatCount,
 	type AccountPicture,
@@ -391,8 +392,7 @@ export const PostText = ({
 				);
 				continue;
 			}
-			const tid =
-				teams === undefined ? undefined : teamForHashtag(part, teams);
+			const tid = teams === undefined ? undefined : teamForHashtag(part, teams);
 			out.push(
 				tid === undefined ? (
 					<span key={`t${i}`} className="social-link">
@@ -489,6 +489,7 @@ export const QuotedPost = ({
 		verified?: boolean;
 		text: string;
 		day: number;
+		date?: string;
 	};
 }) => (
 	<div className="social-quoted border rounded p-2 mt-1 mb-1">
@@ -502,7 +503,9 @@ export const QuotedPost = ({
 			{quoted.verified ? <VerifiedBadge size={14} /> : null}
 			<span className="social-handle">@{quoted.handle}</span>
 			<span className="social-dot">·</span>
-			<span className="social-time">Day {quoted.day}</span>
+			<span className="social-time">
+				{feedDayLabel(quoted.day, quoted.date)}
+			</span>
 		</div>
 		<PostText text={quoted.text} />
 	</div>
@@ -544,6 +547,7 @@ export const SocialPost = ({
 		verified?: boolean;
 		text: string;
 		day: number;
+		date?: string;
 	};
 	compact?: boolean;
 	replyTo?: string;
@@ -620,12 +624,7 @@ export const SocialPost = ({
 						<Icon name="quote" /> Quoted
 					</div>
 				) : null}
-				<PostText
-					links={links}
-					season={season}
-					teams={teams}
-					text={text}
-				/>
+				<PostText links={links} season={season} teams={teams} text={text} />
 				{context ? (
 					<a
 						className="social-context-link"
@@ -677,6 +676,7 @@ export const SocialThread = ({
 			verified?: boolean;
 			text: string;
 			day: number;
+			date?: string;
 		};
 		replies?: {
 			id: string;

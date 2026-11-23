@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 479,
+		date: "2026-11-23",
+		text: "NBA calendar leagues: the League Feed, profiles and quoted posts now show the date (Tue, Nov 11) instead of a day number, and so do the sim's pause stops: the ready-up says Play Jan 15 and auto play says it stopped after Jan 15.",
+	},
+	{
 		n: 478,
 		date: "2026-11-23",
 		text: "Smart CPU GMs: a CPU team now signs a new free agent only when it is clearly better off with him, the same rule it already uses for trades. Bad teams no longer hand big multi-year deals to low-rated players (like $19.7M a year to a 49) and keep their cap room open instead. Good free agents still sign.",
