@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 475,
+		date: "2026-11-23",
+		text: "Phone notifications now say which day they're about: the first line under the headline is the date (Wed, Nov 12), or Nov 14–20 for a week. Leagues without the NBA calendar show the day number (Day 34).",
+	},
+	{
 		n: 474,
 		date: "2026-11-23",
 		text: "NBA calendar leagues: the scores bar is now your team's calendar in one row. Every day has a box, off days too, with its weekday and date on top (SAT 11/15). A game day shows the opponent (@ on the road) and a green W or red L with the score, home days are filled black like on the team calendar, and today is outlined in red. Arrows page through it on a computer, and All scores at the end opens the Daily Schedule.",
