@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 469,
+		date: "2026-11-23",
+		text: "National games: the box on the Daily Schedule and the team schedule now shows the network's logo in its own colors next to the teams, instead of the black tab (the scores bar and the dashboard too). National score bugs show the game's real night with the NBA calendar on, and leave the night out with it off.",
+	},
+	{
 		n: 468,
 		date: "2026-11-23",
 		text: "Nightly Recap: it now opens with a Nightly Recap title, and a 2nd Half graphic (or Overtime) plays between the halves. The controls are on the video itself, like the 3D game's, and the plays can run at 2x (the graphics stay at normal speed). The Final card shows each player's head and shoulders instead of a cut-off face.",

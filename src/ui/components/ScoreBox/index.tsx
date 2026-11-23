@@ -65,6 +65,11 @@ const getRecord = (t: Team) => {
 	return helpers.formatRecord({ ...t, won: t.won, lost: t.lost });
 };
 
+// How much wider a box's teams' column is with a network's logo at its end
+// (see NationalTag) - and how much wider its page lets it be, so the players'
+// column keeps its room.
+export const NATIONAL_ROOM = 60;
+
 const smallStyle = {
 	display: "inline-block",
 };
@@ -77,6 +82,7 @@ export const ScoreBox = memo(
 		className,
 		game,
 		livePts,
+		nationalRoom,
 		playersUpcoming,
 		playersUpcomingAbbrev,
 		small,
@@ -114,6 +120,9 @@ export const ScoreBox = memo(
 		};
 		// A game being played live: the score as it stands (home, away).
 		livePts?: [number, number];
+		// Room for a network's logo (see NationalTag) though not on one, to line
+		// up with the boxes of games that are.
+		nationalRoom?: boolean;
 		playersUpcoming?: [any, any];
 		playersUpcomingAbbrev?: boolean;
 		small?: boolean;
@@ -149,6 +158,13 @@ export const ScoreBox = memo(
 		const final = winner !== undefined;
 
 		const national = !final ? game.national : undefined;
+		// (Big, at the end of the teams' column, where the scores go once it's
+		// played - till it's under way.)
+		const nationalBig = !small && !livePts ? national : undefined;
+		// (The teams' column that much wider - keep in step with
+		// .score-box-national - and the players' that much narrower to start
+		// from, where its page has no more room.)
+		const room = nationalBig || (nationalRoom && !small) ? NATIONAL_ROOM : 0;
 
 		const hasOvrs =
 			!small &&
@@ -249,8 +265,12 @@ export const ScoreBox = memo(
 					className={clsx(
 						"border-light",
 						actions.length > 0 ? "border-end-0" : undefined,
+						nationalBig && "position-relative",
 					)}
 				>
+					{nationalBig ? (
+						<NationalTag className="score-box-national" tag={nationalBig} />
+					) : null}
 					{tradeDeadline ? (
 						<div
 							className={`${
@@ -427,12 +447,17 @@ export const ScoreBox = memo(
 										style={
 											!small
 												? {
-														width: 210,
+														width: 210 + room,
 													}
 												: undefined
 										}
 									>
-										<div className="flex-grow-1 text-truncate p-1">
+										<div
+											className={clsx(
+												"flex-grow-1 text-truncate p-1",
+												nationalBig && "score-box-national-room",
+											)}
+										>
 											{t.playoffs ? (
 												<span className="text-dark">
 													{displaySeed(
@@ -577,7 +602,7 @@ export const ScoreBox = memo(
 											className="align-self-stretch border-start ps-2 flex-grow-1 text-body-secondary d-none d-sm-flex align-items-center overflow-hidden text-nowrap"
 											style={{
 												backgroundColor: "var(--bs-white)",
-												width: 200,
+												width: 200 - room,
 											}}
 										>
 											<div>
@@ -613,20 +638,9 @@ export const ScoreBox = memo(
 			</div>
 		);
 
-		// (A tab on the box's top edge, so national games' boxes still line up
-		// with the rest.)
-		const nationalStrip =
-			national && !small ? (
-				<NationalTag className="score-box-national" tag={national} />
-			) : null;
-		const outerClassName = nationalStrip
-			? clsx(className, "position-relative")
-			: className;
-
 		if (actions.length > 0) {
 			return (
-				<div className={outerClassName}>
-					{nationalStrip}
+				<div className={className}>
 					<div className="d-flex">
 						{scoreBox}
 						<div className="btn-group-vertical score-box-action">
@@ -683,11 +697,6 @@ export const ScoreBox = memo(
 			);
 		}
 
-		return (
-			<div className={outerClassName}>
-				{nationalStrip}
-				{scoreBox}
-			</div>
-		);
+		return <div className={className}>{scoreBox}</div>;
 	},
 );

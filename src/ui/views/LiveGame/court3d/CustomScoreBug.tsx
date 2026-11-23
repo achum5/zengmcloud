@@ -6,7 +6,12 @@ import {
 } from "react";
 import { TeamLogoInline } from "../../../components/TeamLogoInline.tsx";
 import type { ScoreBugPiece, ScoreBugStyle } from "../../../../common/types.ts";
-import { ordinalSuffix, recordText } from "../../../../common/scoreBug.ts";
+import {
+	dayText,
+	dayTextLength,
+	ordinalSuffix,
+	recordText,
+} from "../../../../common/scoreBug.ts";
 import type { BugRefs, BugTeam } from "./ScoreBug.tsx";
 import { bugShown, writeBug, type BugNow } from "./bugWriter.ts";
 import { lightness } from "./figure.ts";
@@ -83,6 +88,7 @@ export const CustomScoreBug = ({
 	hidden,
 	sample,
 	series,
+	day,
 }: {
 	style: ScoreBugStyle;
 	away: CustomBugTeam | undefined;
@@ -90,6 +96,8 @@ export const CustomScoreBug = ({
 	quarter: string;
 	// A playoff game's series as it stands ("Game 3 · BOS leads 2-1").
 	series?: string;
+	// The game's weekday ("Tuesday"), if it has a date.
+	day?: string;
 	totalTimeouts: number | undefined;
 	refs: BugRefs;
 	hidden?: boolean;
@@ -172,8 +180,8 @@ export const CustomScoreBug = ({
 					(p.show === "series" &&
 					series !== undefined &&
 					p.text !== undefined &&
-					series.length > p.text.length
-						? p.text.length / series.length
+					series.length > dayTextLength(p.text)
+						? dayTextLength(p.text) / series.length
 						: 1),
 			),
 			fontWeight: p.weight,
@@ -248,7 +256,7 @@ export const CustomScoreBug = ({
 				break;
 			}
 			case "series":
-				inner = series ?? p.text ?? "";
+				inner = series ?? dayText(p.text, p.undated, day) ?? "";
 				break;
 			case "homeLead": {
 				const lead = (home?.pts ?? 0) - (away?.pts ?? 0);
@@ -388,6 +396,7 @@ export const CustomScoreBug = ({
 						data-colon={p.colon ? "shot" : undefined}
 						data-low={color(p.low)}
 						data-low-background={color(p.lowBackground)}
+						data-low-at={p.lowAt}
 						data-background={color(p.background)}
 						style={{
 							display: "none",
@@ -405,7 +414,7 @@ export const CustomScoreBug = ({
 				inner = <span ref={refs.down} />;
 				break;
 			case "text":
-				inner = p.text ?? "";
+				inner = dayText(p.text, p.undated, day) ?? "";
 				break;
 			case "image":
 				inner = p.image ? (

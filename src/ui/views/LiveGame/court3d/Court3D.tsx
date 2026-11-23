@@ -10,6 +10,7 @@ import {
 } from "react";
 import { useLocal } from "../../../util/local.ts";
 import type { ArenaLooks, ReplayLooks } from "../../../../common/types.ts";
+import { weekdayName } from "../../../../common/calendarDates.ts";
 import LiveCourt from "../LiveCourt.tsx";
 import {
 	paintBench,
@@ -1879,6 +1880,11 @@ const Court3D = ({
 								boxScore.teams[1],
 								boxScore.teams[0],
 							])
+						: undefined
+				}
+				day={
+					typeof boxScore?.date === "string"
+						? weekdayName(boxScore.date)
 						: undefined
 				}
 				refs={bugRefs}

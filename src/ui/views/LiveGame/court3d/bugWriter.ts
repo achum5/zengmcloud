@@ -148,13 +148,19 @@ export const writeBug = (refs: BugRefs, shown: BugShown, now: BugNow) => {
 		shotEl.textContent = withColon(shotEl, now.shot);
 		shotEl.style.display = now.shot ? "flex" : "none";
 		// (Red in its last seconds - and back to its own color after. A
-		// league's own bug says its own way: data-low, data-low-background.)
+		// league's own bug says its own way: data-low, data-low-background,
+		// and from when, data-low-at.)
+		const lowAt = shotEl.dataset.lowAt;
+		const low =
+			lowAt === undefined || lowAt === ""
+				? now.low
+				: now.shot !== "" && Number(now.shot) < Number(lowAt);
 		shown.shotInk ??= shotEl.style.color;
-		shotEl.style.color = now.low
+		shotEl.style.color = low
 			? (shotEl.dataset.low ?? SHOT_LOW_INK)
 			: shown.shotInk;
 		if (shotEl.dataset.lowBackground !== undefined) {
-			shotEl.style.background = now.low
+			shotEl.style.background = low
 				? shotEl.dataset.lowBackground
 				: (shotEl.dataset.background ?? "");
 		}

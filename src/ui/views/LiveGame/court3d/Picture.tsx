@@ -157,6 +157,7 @@ export const GameBug = ({
 	home,
 	quarter,
 	series,
+	day,
 	refs,
 	hidden,
 	shotTitle,
@@ -167,6 +168,8 @@ export const GameBug = ({
 	home: CustomBugTeam | undefined;
 	quarter: string;
 	series?: string;
+	// The game's weekday ("Tuesday"), if it has a date.
+	day?: string;
 	refs: BugRefs;
 	hidden?: boolean;
 	shotTitle?: string;
@@ -182,7 +185,12 @@ export const GameBug = ({
 	return (
 		<div ref={bugRef} style={{ display: "contents" }}>
 			{own ? (
-				<CustomScoreBug style={own} {...bug} series={shortSeries(series)} />
+				<CustomScoreBug
+					style={own}
+					{...bug}
+					series={shortSeries(series)}
+					day={day}
+				/>
 			) : (
 				<ScoreBug {...bug} series={series} shotTitle={shotTitle} />
 			)}
