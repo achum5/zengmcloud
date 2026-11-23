@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 483,
+		date: "2026-11-23",
+		text: "Nightly Recap: smarter picks of each game's plays, for games played from this update on. A close game's recap is built around the plays that swung it most at the end, and a blowout's around the best plays from while it was still a game, never garbage time. Dunks now count over layups, the offense comes first (a block now and then, a steal only when it turned the game), and no one player fills the whole recap. One play a game is the game-winner if there was one, else the shot that swung a tight finish most, else the MVP's best play.",
+	},
+	{
 		n: 482,
 		date: "2026-11-23",
 		text: "Score bugs: a league with no national networks from a team looks file now gets our own National TV, with its logo on the national games' previews and its own score bug in the 3D game. Team score bugs in the 3D game now show all seven timeouts the way TV does. Loading a team looks file on one team's score bug or court page now tells you to import it in Manage Teams instead.",
