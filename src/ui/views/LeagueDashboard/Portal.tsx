@@ -1,6 +1,12 @@
 import clsx from "clsx";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PHASE } from "../../../common/constants.ts";
+import {
+	addDays,
+	daysBetween,
+	formatGameDate,
+	weekdayOf,
+} from "../../../common/calendarDates.ts";
 import type { HeadlineSceneSpec } from "../../../common/headlineScene.ts";
 import { categories, types } from "../../../common/transactionInfo.ts";
 import type { View } from "../../../common/types.ts";
@@ -424,6 +430,7 @@ const NextGame = ({
 	upcoming,
 	played,
 	nextDay,
+	nextDate,
 	teams,
 	rank,
 	conf,
@@ -443,6 +450,7 @@ const NextGame = ({
 	| "upcoming"
 	| "played"
 	| "nextDay"
+	| "nextDate"
 	| "teams"
 	| "won"
 	| "lost"
@@ -495,10 +503,21 @@ const NextGame = ({
 								<a href={rosterUrl(opp, next.opp)}>{opp.region}</a>
 							</div>
 							<div className="text-body-secondary">
-								Day {next.day}
-								{nextDay !== undefined && next.day > nextDay
-									? `, in ${next.day - nextDay} days`
-									: null}
+								{next.date !== undefined && nextDate !== undefined ? (
+									<>
+										{formatGameDate(next.date)}
+										{next.date > nextDate
+											? `, in ${daysBetween(nextDate, next.date)} ${helpers.plural("day", daysBetween(nextDate, next.date))}`
+											: null}
+									</>
+								) : (
+									<>
+										Day {next.day}
+										{nextDay !== undefined && next.day > nextDay
+											? `, in ${next.day - nextDay} ${helpers.plural("day", next.day - nextDay)}`
+											: null}
+									</>
+								)}
 							</div>
 						</div>
 					</div>
@@ -691,6 +710,126 @@ const LatestScores = ({
 	);
 };
 
+// What goes in one calendar cell: the result, the next game, a key date.
+const CalendarCell = ({
+	done,
+	next,
+	keyDate,
+	teams,
+}: {
+	done: Props["played"][number] | undefined;
+	next: Props["upcoming"][number] | undefined;
+	keyDate: Props["keyDates"][number]["type"] | undefined;
+	teams: Props["teams"];
+}) => (
+	<>
+		{done ? (
+			<div>
+				{done.home ? "" : "@"}
+				{teams[done.opp]?.abbrev} <WL pts={done.pts} oppPts={done.oppPts} />
+			</div>
+		) : null}
+		{next ? (
+			<div>
+				<Logo t={teams[next.opp]} size={16} /> {next.home ? "vs" : "@"}{" "}
+				{teams[next.opp]?.abbrev}
+			</div>
+		) : null}
+		{keyDate ? (
+			<div className="text-body-secondary">
+				{keyDate === "tradeDeadline" ? "Trade deadline" : "All-Star Game"}
+			</div>
+		) : null}
+	</>
+);
+
+const WEEKDAY_LETTERS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+// On a calendar: two real weeks, Sunday to Saturday, around the next night
+// of games - or the busy nights in a list on a phone.
+const DatedCalendar = ({
+	upcoming,
+	played,
+	keyDates,
+	nextDate,
+	teams,
+}: Pick<Props, "upcoming" | "played" | "keyDates" | "teams"> & {
+	nextDate: string;
+}) => {
+	const back = addDays(nextDate, -3);
+	const start = addDays(back, -weekdayOf(back));
+	const dates = Array.from({ length: 14 }, (_, j) => addDays(start, j));
+	const playedBy = new Map(
+		played.flatMap((game) => (game.date ? [[game.date, game] as const] : [])),
+	);
+	const upcomingBy = new Map(
+		upcoming.flatMap((game) => (game.date ? [[game.date, game] as const] : [])),
+	);
+	const keyBy = new Map(
+		keyDates.flatMap((k) => (k.date ? [[k.date, k.type] as const] : [])),
+	);
+	const busy = dates.filter(
+		(d) => playedBy.has(d) || upcomingBy.has(d) || keyBy.has(d),
+	);
+	if (busy.length === 0) {
+		return null;
+	}
+	const cell = (date: string) => (
+		<CalendarCell
+			done={playedBy.get(date)}
+			next={upcomingBy.get(date)}
+			keyDate={keyBy.get(date)}
+			teams={teams}
+		/>
+	);
+
+	return (
+		<div className="mb-3">
+			<h2>Calendar</h2>
+			<table className="table table-bordered table-sm ni-calendar d-none d-sm-table mb-1">
+				<thead>
+					<tr>
+						{WEEKDAY_LETTERS.map((name) => (
+							<th key={name} className="text-body-secondary small fw-normal">
+								{name}
+							</th>
+						))}
+					</tr>
+				</thead>
+				<tbody>
+					{[dates.slice(0, 7), dates.slice(7)].map((week, i) => (
+						<tr key={i}>
+							{week.map((date) => (
+								<td
+									key={date}
+									className={clsx(date === nextDate && "table-info")}
+								>
+									<div className="text-body-secondary small">
+										{formatGameDate(date, "monthDay")}
+									</div>
+									{cell(date)}
+								</td>
+							))}
+						</tr>
+					))}
+				</tbody>
+			</table>
+			<table className="table table-striped table-borderless table-sm d-sm-none mb-1">
+				<tbody>
+					{busy.map((date) => (
+						<tr key={date} className={clsx(date === nextDate && "table-info")}>
+							<td className="text-body-secondary text-nowrap">
+								{formatGameDate(date)}
+							</td>
+							<td>{cell(date)}</td>
+						</tr>
+					))}
+				</tbody>
+			</table>
+		</div>
+	);
+};
+
 // The days around today, with games, results and the season's key dates. A
 // grid of two weeks, or a list of the busy days on a phone.
 const Calendar = ({
@@ -698,10 +837,25 @@ const Calendar = ({
 	played,
 	keyDates,
 	nextDay,
+	nextDate,
 	teams,
-}: Pick<Props, "upcoming" | "played" | "keyDates" | "nextDay" | "teams">) => {
+}: Pick<
+	Props,
+	"upcoming" | "played" | "keyDates" | "nextDay" | "nextDate" | "teams"
+>) => {
 	if (nextDay === undefined) {
 		return null;
+	}
+	if (nextDate !== undefined) {
+		return (
+			<DatedCalendar
+				upcoming={upcoming}
+				played={played}
+				keyDates={keyDates}
+				nextDate={nextDate}
+				teams={teams}
+			/>
+		);
 	}
 	const start = Math.max(1, nextDay - 3);
 	const days = Array.from({ length: 14 }, (_, j) => start + j);
@@ -715,32 +869,14 @@ const Calendar = ({
 		return null;
 	}
 
-	const cell = (day: number) => {
-		const done = playedBy.get(day);
-		const next = upcomingBy.get(day);
-		const key = keyBy.get(day);
-		return (
-			<>
-				{done ? (
-					<div>
-						{done.home ? "" : "@"}
-						{teams[done.opp]?.abbrev} <WL pts={done.pts} oppPts={done.oppPts} />
-					</div>
-				) : null}
-				{next ? (
-					<div>
-						<Logo t={teams[next.opp]} size={16} /> {next.home ? "vs" : "@"}{" "}
-						{teams[next.opp]?.abbrev}
-					</div>
-				) : null}
-				{key ? (
-					<div className="text-body-secondary">
-						{key === "tradeDeadline" ? "Trade deadline" : "All-Star Game"}
-					</div>
-				) : null}
-			</>
-		);
-	};
+	const cell = (day: number) => (
+		<CalendarCell
+			done={playedBy.get(day)}
+			next={upcomingBy.get(day)}
+			keyDate={keyBy.get(day)}
+			teams={teams}
+		/>
+	);
 
 	return (
 		<div className="mb-3">
@@ -799,7 +935,11 @@ const Schedule = ({
 				<tbody>
 					{rows.map((game) => (
 						<tr key={`${game.done}${game.day}`}>
-							<td className="text-body-secondary">Day {game.day}</td>
+							<td className="text-body-secondary text-nowrap">
+								{game.date !== undefined
+									? formatGameDate(game.date, "monthDay")
+									: `Day ${game.day}`}
+							</td>
 							<td>
 								{game.home ? "vs" : "@"} <Logo t={teams[game.opp]} size={16} />{" "}
 								<a href={rosterUrl(teams[game.opp], game.opp)}>
@@ -842,6 +982,7 @@ const Portal = (props: Props) => {
 							upcoming={props.upcoming}
 							played={props.played}
 							nextDay={props.nextDay}
+							nextDate={props.nextDate}
 							teams={props.teams}
 							rank={rank}
 							conf={props.conf}
@@ -871,6 +1012,7 @@ const Portal = (props: Props) => {
 					played={props.played}
 					keyDates={props.keyDates}
 					nextDay={props.nextDay}
+					nextDate={props.nextDate}
 					teams={props.teams}
 				/>
 			</div>

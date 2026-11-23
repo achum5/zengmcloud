@@ -22,6 +22,7 @@ import {
 	type ProjectedFire,
 } from "../util/autoPlayPreview.ts";
 import { SimHereButton } from "../components/SimHereButton.tsx";
+import { formatDateRange, formatGameDate } from "../../common/calendarDates.ts";
 
 // Every projected sim eats at least one league day, so asking for as many fires
 // as there are days left always reaches the end of the phase's schedule -
@@ -59,9 +60,18 @@ const formatTime = (ts: number | undefined) =>
 const formatClock = (ts: number) =>
 	new Date(ts).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
-// "Day 41" / "Days 41–43"
-const dayRange = (from: number, to: number) =>
-	from === to ? `Day ${from}` : `Days ${from}–${to}`;
+// "Day 41" / "Days 41–43", or on a calendar "Jan 13" / "Jan 13–15"
+const dayRange = (r: {
+	fromDay: number;
+	toDay: number;
+	fromDate?: string;
+	toDate?: string;
+}) =>
+	r.fromDate !== undefined && r.toDate !== undefined
+		? formatDateRange(r.fromDate, r.toDate)
+		: r.fromDay === r.toDay
+			? `Day ${r.fromDay}`
+			: `Days ${r.fromDay}–${r.toDay}`;
 
 // A "YYYY-MM-DDTHH:MM" value for <input type="datetime-local">, in local time.
 const toLocalInput = (ts: number) => {
@@ -125,7 +135,12 @@ const LogTable = ({
 								{entry.error ? (
 									<span className="text-danger">Failed</span>
 								) : entry.fromDay !== undefined && entry.toDay !== undefined ? (
-									dayRange(entry.fromDay, entry.toDay)
+									dayRange({
+										fromDay: entry.fromDay,
+										toDay: entry.toDay,
+										fromDate: entry.fromDate,
+										toDate: entry.toDate,
+									})
 								) : (
 									<span className="text-body-secondary">-</span>
 								)}
@@ -227,6 +242,12 @@ const AutoPlaySchedule = () => {
 			cancelled = true;
 		};
 	}, [eligible, lid, state.runCount]);
+
+	// "Day 41", or its night on a calendar.
+	const dayName = (day: number) => {
+		const date = preview?.upcomingDays.find((d) => d.day === day)?.date;
+		return date !== undefined ? formatGameDate(date, "monthDay") : `Day ${day}`;
+	};
 
 	// Overlay the real-clock fire schedule on the season calendar. Recomputed as
 	// rules/data change and roughly every 15s as fires pass (the per-second
@@ -347,7 +368,7 @@ const AutoPlaySchedule = () => {
 	// Anything that will halt auto play on its own, as one readable list.
 	const stopLines: string[] = [];
 	if (settings.stopAfter) {
-		stopLines.push(`after Day ${settings.stopAfter.day}`);
+		stopLines.push(`after ${dayName(settings.stopAfter.day)}`);
 	}
 	if (settings.stopAfterSims !== undefined) {
 		stopLines.push(
@@ -431,9 +452,7 @@ const AutoPlaySchedule = () => {
 						<div className="ms-auto text-end">
 							{nextUp ? (
 								<>
-									<div className="h5 mb-0">
-										{dayRange(nextUp.fromDay, nextUp.toDay)}
-									</div>
+									<div className="h5 mb-0">{dayRange(nextUp)}</div>
 									<div className="text-body-secondary small">
 										{describeAmount(nextUp)} · {nextUp.numGames} games
 									</div>
@@ -620,9 +639,7 @@ const AutoPlaySchedule = () => {
 																</div>
 															) : null}
 														</td>
-														<td className="text-nowrap">
-															{dayRange(f.fromDay, f.toDay)}
-														</td>
+														<td className="text-nowrap">{dayRange(f)}</td>
 														<td className="text-end">{f.numGames}</td>
 														<td className="small">
 															{f.events.map((e, j) => (
@@ -673,7 +690,7 @@ const AutoPlaySchedule = () => {
 								<div className="text-body-secondary small mt-2">
 									{projected.length} sims scheduled ·{" "}
 									{projected.reduce((sum, f) => sum + f.numGames, 0)} games ·
-									through Day {projected.at(-1)!.toDay}
+									through {dayName(projected.at(-1)!.toDay)}
 									{projected.at(-1)!.endsPhase && preview?.phaseEndNote
 										? ` (${preview.phaseEndNote.toLowerCase()})`
 										: ""}
@@ -997,7 +1014,7 @@ const AutoPlaySchedule = () => {
 					{settings.stopAfter ? (
 						<div className="d-flex align-items-center gap-2">
 							<span>
-								Stop after <b>Day {settings.stopAfter.day}</b> (
+								Stop after <b>{dayName(settings.stopAfter.day)}</b> (
 								{settings.stopAfter.season})
 							</span>
 							<button

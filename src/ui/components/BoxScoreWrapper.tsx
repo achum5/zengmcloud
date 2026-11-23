@@ -29,6 +29,7 @@ import {
 	TEAM_NUMS_DISPLAY_ORDER,
 	teamsInDisplayOrder,
 } from "../util/boxScoreDisplayOrder.ts";
+import { formatGameDate } from "../../common/calendarDates.ts";
 
 const TeamNameLink = ({
 	children,
@@ -1383,6 +1384,11 @@ export const BoxScoreWrapper = ({
 						sportState={sportState}
 						tid={tid}
 					/>
+					{typeof boxScore.date === "string" ? (
+						<div className="mt-sm-1 text-center text-body-secondary">
+							{formatGameDate(boxScore.date, "withYear")}
+						</div>
+					) : null}
 					<div className="mt-sm-1 text-center">
 						<PlayoffRecord
 							numGamesToWinSeries={boxScore.numGamesToWinSeries}

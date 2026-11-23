@@ -2034,6 +2034,14 @@ export const settings: Setting[] = (
 		},
 		{
 			category: "Schedule",
+			key: "nbaCalendar",
+			name: "NBA Calendar",
+			type: "bool",
+			description:
+				"Games on real dates, one night per sim day. Starts with the next regular season.",
+		},
+		{
+			category: "Schedule",
 			key: "groupScheduleSeries",
 			name: "Group Games Into Series",
 			type: "bool",

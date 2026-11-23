@@ -198,6 +198,7 @@ export const gameSimToBoxScore = async (results: GameResults, att: number) => {
 	const gameStats: Game = {
 		gid: results.gid,
 		day: results.day,
+		...(results.date !== undefined ? { date: results.date } : {}),
 		att,
 		clutchPlays: [],
 		numPlayersOnCourt: results.numPlayersOnCourt,

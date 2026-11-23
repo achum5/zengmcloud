@@ -11,6 +11,7 @@ import { ForceWin } from "../components/ForceWin.tsx";
 import { ScoreBox } from "../components/ScoreBox/index.tsx";
 import { helpers } from "../util/helpers.ts";
 import { isTradeDeadline } from "../../common/specialGames.ts";
+import { GameDate } from "../components/GameDate.tsx";
 
 const Schedule = ({
 	canLiveSimFirstGame,
@@ -154,6 +155,7 @@ const Schedule = ({
 
 							return (
 								<Fragment key={game.gid}>
+									<GameDate date={game.date} />
 									<ScoreBox
 										game={{
 											// Leave out forceTie, since ScoreBox wants the value for finished games
@@ -185,12 +187,14 @@ const Schedule = ({
 				<div style={{ maxWidth: 510 }} className="flex-grow-1">
 					<h2>Completed Games</h2>
 					{completed.map((game) => (
-						<ScoreBox
-							boxScoreTeamOverride={helpers.getTeamUrlPart(tid)}
-							className="mb-3"
-							key={game.gid}
-							game={game}
-						/>
+						<Fragment key={game.gid}>
+							<GameDate date={game.date} />
+							<ScoreBox
+								boxScoreTeamOverride={helpers.getTeamUrlPart(tid)}
+								className="mb-3"
+								game={game}
+							/>
+						</Fragment>
 					))}
 				</div>
 			</div>

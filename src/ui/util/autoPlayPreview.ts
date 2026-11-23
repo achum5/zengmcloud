@@ -7,6 +7,8 @@ import {
 // One scheduled league day and what's on it (from the worker's season calendar).
 export type PreviewDay = {
 	day: number;
+	// Its night, on a calendar schedule.
+	date?: string;
 	numGames: number;
 	tradeDeadline?: boolean;
 	allStar?: boolean;
@@ -41,6 +43,8 @@ export type Fire = {
 export type ProjectedFire = Fire & {
 	fromDay: number;
 	toDay: number;
+	fromDate?: string;
+	toDate?: string;
 	numLeagueDays: number;
 	numGames: number;
 	events: string[];
@@ -146,6 +150,9 @@ export const projectFires = (
 			...fire,
 			fromDay: slice[0]!.day,
 			toDay: slice.at(-1)!.day,
+			...(slice[0]!.date !== undefined && slice.at(-1)!.date !== undefined
+				? { fromDate: slice[0]!.date, toDate: slice.at(-1)!.date }
+				: {}),
 			numLeagueDays: slice.length,
 			numGames,
 			events,

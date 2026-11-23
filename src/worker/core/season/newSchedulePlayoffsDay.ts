@@ -12,6 +12,7 @@ import {
 } from "../../util/orderTeams.ts";
 import { ALL_STAR_GAME_TIDS } from "../../../common/specialGames.ts";
 import { collegeNitDay } from "../college/tournaments.ts";
+import { nextPlayoffDate } from "./playoffDates.ts";
 
 // Play 2 home (true) then 2 away (false) and repeat, but ensure that the better
 // team always gets the last game. betterSeedHome lives in
@@ -90,7 +91,17 @@ const newSchedulePlayoffsDay = async (): Promise<boolean> => {
 
 		if (tids.length > 0) {
 			await idb.cache.playoffSeries.put(playoffSeries);
-			await setSchedule(tids);
+			const date = await nextPlayoffDate({
+				kind: playIns.some((playIn) =>
+					playIn.some((matchup) => matchup.home.won + matchup.away.won > 0),
+				)
+					? "playInFinal"
+					: "playInStart",
+			});
+			await setSchedule(
+				tids,
+				tids.map(() => date),
+			);
 			return false;
 		} else {
 			// playIn is over, so proceed to next round
@@ -161,7 +172,21 @@ const newSchedulePlayoffsDay = async (): Promise<boolean> => {
 		if (g.get("college")) {
 			tids.push(...(await collegeNitDay(true)));
 		}
-		await setSchedule(tids);
+		const finals = rnd === g.get("numGamesPlayoffSeries", "current").length - 1;
+		const date = await nextPlayoffDate(
+			minGamesPlayedThisRound === 0
+				? {
+						kind: "roundStart",
+						round: rnd,
+						finals,
+						afterPlayIn: !!playIns && playIns.length > 0,
+					}
+				: { kind: "game", finals, gameIndex: minGamesPlayedThisRound },
+		);
+		await setSchedule(
+			tids,
+			tids.map(() => date),
+		);
 		return false;
 	}
 

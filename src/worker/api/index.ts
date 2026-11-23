@@ -653,6 +653,8 @@ const allStarGameNow = async () => {
 		homeTid: ALL_STAR_GAME_TIDS[0],
 		awayTid: ALL_STAR_GAME_TIDS[1],
 		day: schedule[0] ? schedule[0].day - 1 : 0,
+		// On a calendar, tonight.
+		...(schedule[0]?.date !== undefined ? { date: schedule[0].date } : {}),
 	});
 
 	await idb.cache.schedule.clear();
@@ -8030,6 +8032,7 @@ const getAutoPlayPreview = async () => {
 		number,
 		{
 			day: number;
+			date?: string;
 			numGames: number;
 			tradeDeadline: boolean;
 			allStar: boolean;
@@ -8048,6 +8051,7 @@ const getAutoPlayPreview = async () => {
 		if (!entry) {
 			entry = {
 				day: item.day,
+				...(item.date !== undefined ? { date: item.date } : {}),
 				numGames: 0,
 				tradeDeadline: false,
 				allStar: false,

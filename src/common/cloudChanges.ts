@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 436,
+		date: "2026-11-23",
+		text: "Seasons now run on a real calendar: every game has a date, from late October to the Finals in June, with back-to-backs, road trips and Christmas games. NBA-shaped leagues play a real NBA schedule, other leagues get one built like it. Each sim day is now one night (about 165 in a season), and injuries count games, not days. Starts with the next regular season; NBA Calendar in Settings turns it off.",
+	},
+	{
 		n: 435,
 		date: "2026-11-22",
 		text: "3D game: score bugs can now look like the real NBA broadcasts' - a BONUS mark that shows when a team is in the bonus, fouls written their way (FOULS: 4, FOUL LIMIT), 3RD-style quarters, clocks like :24 and :09.2, and the bug placed where the broadcast puts it. Score bugs also stay readable on phones.",

@@ -85,13 +85,17 @@ export const updateHub = async ({ updateEvents }: ViewArgs) => {
 		.slice(0, 12)
 		.map((s) => ({
 			day: s.day,
+			date: s.date,
 			home: s.homeTid === userTid,
 			opp: s.homeTid === userTid ? s.awayTid : s.homeTid,
 		}));
+	// On a calendar, the night of the next day of games.
+	const nextDate = schedule.find((s) => s.day === nextDay)?.date;
 	const keyDates = schedule
 		.filter((s) => s.homeTid < 0)
 		.map((s) => ({
 			day: s.day,
+			date: s.date,
 			type:
 				s.homeTid === -3 ? ("tradeDeadline" as const) : ("allStar" as const),
 		}));
@@ -110,6 +114,7 @@ export const updateHub = async ({ updateEvents }: ViewArgs) => {
 			return {
 				gid: game.gid,
 				day: game.day,
+				date: game.date,
 				home: me === 0,
 				opp: game.teams[them].tid,
 				pts: game.teams[me].pts,
@@ -160,6 +165,7 @@ export const updateHub = async ({ updateEvents }: ViewArgs) => {
 		played,
 		keyDates,
 		nextDay,
+		nextDate,
 		latestScores,
 	};
 };

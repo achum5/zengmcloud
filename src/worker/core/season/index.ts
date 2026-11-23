@@ -10,6 +10,7 @@ import getPlayoffsByConf from "./getPlayoffsByConf.ts";
 import getSchedule from "./getSchedule.ts";
 import getSeasonLeaders from "./getSeasonLeaders.ts";
 import hasTies from "./hasTies.ts";
+import newCalendarSchedule from "./newCalendarSchedule.ts";
 import newSchedule from "./newSchedule.ts";
 import newSchedulePlayoffsDay from "./newSchedulePlayoffsDay.ts";
 import setSchedule from "./setSchedule.ts";
@@ -29,6 +30,7 @@ export default {
 	getSchedule,
 	getSeasonLeaders,
 	hasTies,
+	newCalendarSchedule,
 	newSchedule,
 	newSchedulePlayoffsDay,
 	setSchedule,

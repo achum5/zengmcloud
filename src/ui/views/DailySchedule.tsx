@@ -25,11 +25,13 @@ import {
 } from "../util/dailyScheduleUiState.ts";
 import { useEffect, useState } from "react";
 import { isTradeDeadline } from "../../common/specialGames.ts";
+import { formatGameDate } from "../../common/calendarDates.ts";
 
 const DailySchedule = ({
 	cid,
 	cids,
 	completed,
+	date,
 	day,
 	dayNote,
 	days,
@@ -244,6 +246,10 @@ const DailySchedule = ({
 			<div className="d-flex flex-wrap align-items-center gap-3">
 				<MoreLinks type="schedule" page="daily_schedule" />
 			</div>
+
+			{date !== undefined ? (
+				<h3 className="h5 mb-3">{formatGameDate(date, "long")}</h3>
+			) : null}
 
 			{dayNote ? (
 				<DayRecap

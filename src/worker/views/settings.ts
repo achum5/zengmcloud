@@ -184,6 +184,7 @@ const gameAttributeKeys = [
 	"minRetireAge",
 	"numWatchColors",
 	"groupScheduleSeries",
+	"nbaCalendar",
 	"autoExpandProb",
 	"autoExpandNumTeams",
 	"autoExpandMaxNumTeams",

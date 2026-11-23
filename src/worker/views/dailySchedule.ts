@@ -12,6 +12,7 @@ import { env } from "../util/env.ts";
 import type { RouteParams } from "../../ui/router/types.ts";
 import { validateSeason } from "../util/processInputs.ts";
 import { isAllStarGame, isTradeDeadline } from "../../common/specialGames.ts";
+import { formatGameDate } from "../../common/calendarDates.ts";
 
 const processInputs = (params: RouteParams<"dailySchedule">) => {
 	let cid;
@@ -184,6 +185,7 @@ export default defineView({
 					{
 						map: (game) => ({
 							day: game.day,
+							date: game.date,
 							// For the day recap's anchor game, below
 							gid: game.gid,
 							dayNote: game.dayNote,
@@ -197,9 +199,16 @@ export default defineView({
 				);
 
 				const daysAndPlayoffs = new Map<number, boolean>();
+				// On a calendar, the night of each day. A trade deadline day shares
+				// its night with that night's games, so it's named instead.
+				const dateByDay = new Map<number, string>();
+				const deadlineDays = new Set<number>();
 				for (const game of games) {
 					if (game.day !== undefined) {
 						daysAndPlayoffs.set(game.day, !!game.playoffs);
+						if (game.date !== undefined) {
+							dateByDay.set(game.day, game.date);
+						}
 					}
 				}
 
@@ -209,6 +218,12 @@ export default defineView({
 					for (const game of schedule) {
 						if (game.day !== undefined) {
 							daysAndPlayoffs.set(game.day, isPlayoffs);
+							if (game.date !== undefined) {
+								dateByDay.set(game.day, game.date);
+							}
+							if (isTradeDeadline(game.homeTid, game.awayTid)) {
+								deadlineDays.add(game.day);
+							}
 						}
 					}
 				}
@@ -255,10 +270,19 @@ export default defineView({
 				const days = Array.from(daysAndPlayoffs.entries())
 					.map(([day, playoffs]) => ({ day, playoffs }))
 					.sort((a, b) => a.day - b.day)
-					.map(({ day, playoffs }) => ({
-						key: day,
-						label: playoffs ? `${day} (playoffs)` : `${day}`,
-					}));
+					.map(({ day, playoffs }) => {
+						const date = dateByDay.get(day);
+						const name =
+							date === undefined
+								? `${day}`
+								: deadlineDays.has(day)
+									? "Trade deadline"
+									: formatGameDate(date);
+						return {
+							key: day,
+							label: playoffs ? `${name} (playoffs)` : name,
+						};
+					});
 
 				if (inputs.season !== currentSeason) {
 					// Add team branding info, in case that was different in past season. Otherwise, ScoreBox uses teamInfoCache for latest values
@@ -333,6 +357,7 @@ export default defineView({
 					cid,
 					cids,
 					completed,
+					date: dateByDay.get(day),
 					day,
 					dayNote,
 					days,

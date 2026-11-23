@@ -4,6 +4,7 @@ import teamOvr from "../team/ovr.ts";
 import getSchedule from "../season/getSchedule.ts";
 import getPlayoffsByConf from "../season/getPlayoffsByConf.ts";
 import { buildGameLinePricer } from "./gameLines.ts";
+import { injuryTicksUntil } from "../game/calendarTicks.ts";
 import getAwardRaceOdds from "../season/getAwardRaceOdds.ts";
 import { getAwardCandidates } from "../awards/getAwardCandidates.ts";
 import {
@@ -571,6 +572,7 @@ export const getLines = async () => {
 		activeTeams,
 		season,
 		todayDay: schedule[0]?.day ?? 0,
+		ticksUntil: injuryTicksUntil(schedule),
 		spreadBiases,
 	});
 
@@ -593,6 +595,7 @@ export const getLines = async () => {
 		games.push({
 			gid: matchup.gid,
 			day: matchup.day,
+			date: matchup.date,
 			home: {
 				tid: home.tid,
 				abbrev: home.abbrev,
@@ -639,8 +642,17 @@ export const getLines = async () => {
 	// over the regular-season days still to play - its schedule, or a season's
 	// worth of games before there is one - and, once the playoffs are on, over
 	// the playoff days still ahead, about six a round.
+	// (On a calendar, injuries count down by the team's games instead: about
+	// as many as each team has left.)
+	const teamGameRows = schedule.filter(
+		(game) => game.homeTid >= 0 && game.awayTid >= 0,
+	);
 	const scheduleDays =
-		schedule.length > 0 ? schedule.at(-1)!.day - schedule[0]!.day + 1 : 0;
+		schedule.length === 0
+			? 0
+			: teamGameRows.some((game) => game.date !== undefined)
+				? Math.ceil((2 * teamGameRows.length) / Math.max(1, activeTeams.length))
+				: schedule.at(-1)!.day - schedule[0]!.day + 1;
 	const roundsLeft = Math.max(
 		1,
 		g.get("numGamesPlayoffSeries").length -

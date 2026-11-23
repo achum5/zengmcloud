@@ -19,7 +19,11 @@ const makePlayoffsKey = (game: ScheduleGameWithoutKey) =>
         away teams, respectively, for every game in the season, respectively.
  * @return {Promise}
  */
-const setSchedule = async (tids: [number, number][]) => {
+const setSchedule = async (
+	tids: [number, number][],
+	// The night of each game, parallel to tids, on a calendar schedule.
+	dates?: (string | undefined)[],
+) => {
 	const playoffs = g.get("phase") === PHASE.PLAYOFFS;
 
 	const oldPlayoffGames: Record<string, ScheduleGame> = {};
@@ -38,9 +42,10 @@ const setSchedule = async (tids: [number, number][]) => {
 	const finals = playoffs && (await isFinals());
 
 	const schedule = addDaysToSchedule(
-		tids.map(([homeTid, awayTid]) => ({
+		tids.map(([homeTid, awayTid], i) => ({
 			homeTid,
 			awayTid,
+			date: dates?.[i],
 		})),
 		await idb.cache.games.getAll(),
 	);
@@ -51,6 +56,11 @@ const setSchedule = async (tids: [number, number][]) => {
 				game.day = oldPlayoffGames[key].day;
 				game.gid = oldPlayoffGames[key].gid;
 				game.forceWin = oldPlayoffGames[key].forceWin;
+				if (oldPlayoffGames[key].date !== undefined) {
+					game.date = oldPlayoffGames[key].date;
+				} else {
+					delete game.date;
+				}
 			}
 
 			// Track if game is a finals game or not, used along with neutralSite

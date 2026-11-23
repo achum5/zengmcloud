@@ -7,6 +7,7 @@ import type { View } from "../../common/types.ts";
 import type { SportsbookTab } from "../../common/sportsbook.ts";
 import type { SportsbookMarket } from "../../common/types.ts";
 import { PHASE } from "../../common/constants.ts";
+import { addDays, formatGameDate } from "../../common/calendarDates.ts";
 import { useLocal } from "../util/local.ts";
 import { TeamLogoInline } from "../components/TeamLogoInline.tsx";
 import {
@@ -195,13 +196,18 @@ const Sportsbook = ({
 	// ---- Games -----------------------------------------------------------
 	// Each game is its own panel with a three-column odds grid, so a full board
 	// reads top-to-bottom on a phone instead of scrolling sideways off a table.
-	const firstDay = board.games[0]?.day;
-	const dayLabel = (day: number) =>
-		day === firstDay
-			? "Today"
-			: day === firstDay! + 1
+	const firstGame = board.games[0];
+	const dayLabel = (day: number, date: string | undefined) => {
+		if (day === firstGame?.day) {
+			return "Today";
+		}
+		if (date !== undefined && firstGame?.date !== undefined) {
+			return date === addDays(firstGame.date, 1)
 				? "Tomorrow"
-				: `Day ${day}`;
+				: formatGameDate(date);
+		}
+		return day === firstGame!.day + 1 ? "Tomorrow" : `Day ${day}`;
+	};
 	const gameCard = (game: (typeof board.games)[number]) => {
 		const sub = `${teamAbbrev(game.away.tid)} @ ${teamAbbrev(game.home.tid)}`;
 		const rows = [
@@ -363,7 +369,9 @@ const Sportsbook = ({
 					}, new Map<number, typeof board.games>()),
 				].map(([day, games]) => (
 					<Fragment key={day}>
-						<h2 className="sb-section-title">{dayLabel(day)}</h2>
+						<h2 className="sb-section-title">
+							{dayLabel(day, games[0]!.date)}
+						</h2>
 						{games.map(gameCard)}
 					</Fragment>
 				))}

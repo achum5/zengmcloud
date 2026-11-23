@@ -161,7 +161,7 @@ const newPhaseRegularSeason = async (
 ): Promise<PhaseReturn> => {
 	const teams = await team.getFormattedAll({
 		attrs: ["tid"],
-		seasonAttrs: ["cid", "did"],
+		seasonAttrs: ["cid", "did", "abbrev", "region"],
 		season: g.get("season"),
 		active: true,
 	});
@@ -174,7 +174,8 @@ const newPhaseRegularSeason = async (
 		await team.checkRosterSizes("other");
 	}
 
-	await season.setSchedule(season.newSchedule(teams));
+	const { tids, dates } = season.newCalendarSchedule(teams);
+	await season.setSchedule(tids, dates);
 
 	await deleteOldBoxScores();
 

@@ -1,6 +1,7 @@
 import { g } from "../../util/index.ts";
 import getSchedule from "../season/getSchedule.ts";
 import { buildGameLinePricer } from "./gameLines.ts";
+import { injuryTicksUntil } from "../game/calendarTicks.ts";
 import {
 	simGameOutcomes,
 	type SimmedGame,
@@ -211,10 +212,12 @@ export const getGameProps = async (gid: number) => {
 	// spread/moneyline/total bet placed from this page validates against the
 	// board it was quoted from.
 	const todayDay = schedule[0]?.day ?? 0;
+	const ticksUntil = injuryTicksUntil(schedule);
 	const pricer = await buildGameLinePricer({
 		activeTeams: teams.filter((t) => !t.disabled) as any,
 		season,
 		todayDay,
+		ticksUntil,
 	});
 	const main = pricer.priceGame(matchup);
 
@@ -225,7 +228,10 @@ export const getGameProps = async (gid: number) => {
 			homeTid: home.tid,
 			awayTid: away.tid,
 			neutralSite: main?.neutralSite ?? false,
-			daysInFuture: Math.max(0, matchup.day - todayDay),
+			daysInFuture: [
+				ticksUntil(home.tid, matchup.gid, matchup.day),
+				ticksUntil(away.tid, matchup.gid, matchup.day),
+			],
 		});
 	} catch (error) {
 		console.error("Failed to simulate game for props", error);

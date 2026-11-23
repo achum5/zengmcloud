@@ -26,6 +26,7 @@ import {
 } from "../../util/getTeamSpreadBias.ts";
 import { pregameLineupSynergy } from "../GameSim.basketball/synergy.ts";
 import { dayAlreadyCounted } from "./dailyCountdownGate.ts";
+import { dayTickFromGames } from "./calendarTicks.ts";
 import { recordInjuryForensics } from "../sync/injuryForensics.ts";
 import setGameAttributes from "../league/setGameAttributes.ts";
 import updatePlayoffSeries from "./updatePlayoffSeries.ts";
@@ -417,6 +418,15 @@ const play = async (
 			const healedTexts: string[] = [];
 			const injuryTickNotes: string[] = [];
 
+			// On a calendar, a night counts games, not days - see calendarTicks.ts.
+			const tick = dayTickFromGames({
+				games: await idb.cache.games.getAll(),
+				season: g.get("season"),
+				day: simmedDay,
+				phase: g.get("phase"),
+				numActiveTeams: g.get("numActiveTeams"),
+			});
+
 			// Injury countdown - This must be after games are saved, of there is a race condition involving new injury assignment in writeStats. Free agents are handled in decreaseDemands.
 			const players = await idb.cache.players.indexGetAll("playersByTid", [
 				0,
@@ -426,6 +436,11 @@ const play = async (
 			const playersToSave = [];
 			for (const p of players) {
 				let changed = false;
+
+				// The team had the night off.
+				if (tick.tidsPlayed !== undefined && !tick.tidsPlayed.has(p.tid)) {
+					continue;
+				}
 
 				if (p.injury.gamesRemaining > 0) {
 					injuryTickNotes.push(
@@ -513,41 +528,43 @@ const play = async (
 				);
 			}
 
-			// Tragic deaths only happen during the regular season!
-			if (
-				g.get("phase") !== PHASE.PLAYOFFS &&
-				Math.random() < g.get("tragicDeathRate") &&
-				!g.get("repeatSeason") &&
-				!g.get("forceHistoricalRosters")
-			) {
-				await player.killOne(conditions);
-
-				if (g.get("stopOnInjury")) {
-					await lock.set("stopGameSim", true);
-				}
-
-				updateEvents.push("playerMovement");
-			}
-
-			// Do this stuff after injuries, so autoSign knows the injury status of players for the next game
-			const phase = g.get("phase");
-			if (g.get("college")) {
-				// College: no in-season signings or trades, but recruiting goes on
-				// all season.
-				await collegeRecruitingDay();
-				if (phase !== PHASE.PLAYOFFS) {
-					await collegePollDay();
-				}
-			} else {
+			for (let run = 0; run < tick.leagueRuns; run++) {
+				// Tragic deaths only happen during the regular season!
 				if (
-					phase === PHASE.REGULAR_SEASON ||
-					phase === PHASE.AFTER_TRADE_DEADLINE
+					g.get("phase") !== PHASE.PLAYOFFS &&
+					Math.random() < g.get("tragicDeathRate") &&
+					!g.get("repeatSeason") &&
+					!g.get("forceHistoricalRosters")
 				) {
-					await freeAgents.decreaseDemands();
-					await freeAgents.autoSign();
+					await player.killOne(conditions);
+
+					if (g.get("stopOnInjury")) {
+						await lock.set("stopGameSim", true);
+					}
+
+					updateEvents.push("playerMovement");
 				}
-				if (phase === PHASE.REGULAR_SEASON) {
-					await trade.betweenAiTeams();
+
+				// Do this stuff after injuries, so autoSign knows the injury status of players for the next game
+				const phase = g.get("phase");
+				if (g.get("college")) {
+					// College: no in-season signings or trades, but recruiting goes on
+					// all season.
+					await collegeRecruitingDay();
+					if (phase !== PHASE.PLAYOFFS) {
+						await collegePollDay();
+					}
+				} else {
+					if (
+						phase === PHASE.REGULAR_SEASON ||
+						phase === PHASE.AFTER_TRADE_DEADLINE
+					) {
+						await freeAgents.decreaseDemands();
+						await freeAgents.autoSign();
+					}
+					if (phase === PHASE.REGULAR_SEASON) {
+						await trade.betweenAiTeams();
+					}
 				}
 			}
 
@@ -966,6 +983,15 @@ const play = async (
 					neutralSite,
 				});
 				results.push(result);
+			}
+		}
+
+		// The night each game was played, on a calendar schedule.
+		const dateByGid = new Map(schedule.map((game) => [game.gid, game.date]));
+		for (const result of results) {
+			const date = dateByGid.get(result.gid);
+			if (date !== undefined) {
+				result.date = date;
 			}
 		}
 

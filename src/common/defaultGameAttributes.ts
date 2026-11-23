@@ -109,6 +109,7 @@ const gameAttributesKeysSportSpecific = {
 		"pace",
 		"allStarDunk",
 		"allStarThree",
+		"nbaCalendar",
 		"forceRetireRealPlayers",
 		"forceHistoricalRosters",
 		"specializedDraftProspects",
@@ -576,6 +577,7 @@ export const defaultGameAttributes: GameAttributesLeagueWithHistory = {
 	forceRetireSeasons: 0,
 	minRetireAge: 26,
 	groupScheduleSeries: false,
+	nbaCalendar: true,
 
 	salaryCapType: "soft",
 

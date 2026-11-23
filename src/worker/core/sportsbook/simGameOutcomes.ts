@@ -271,12 +271,17 @@ export const simGameOutcomes = async ({
 	homeTid: number;
 	awayTid: number;
 	neutralSite: boolean;
-	// How many days out the game is, so rosters can be healed forward to it.
-	daysInFuture?: number;
+	// How many days out the game is, so rosters can be healed forward to it -
+	// or, on a calendar, each side's injury ticks before it [home, away].
+	daysInFuture?: number | [number, number];
 }): Promise<SimmedGame | undefined> => {
+	const [homeDays, awayDays] =
+		typeof daysInFuture === "number"
+			? [daysInFuture, daysInFuture]
+			: daysInFuture;
 	const [home, away] = await Promise.all([
-		loadSide(homeTid, daysInFuture),
-		loadSide(awayTid, daysInFuture),
+		loadSide(homeTid, homeDays),
+		loadSide(awayTid, awayDays),
 	]);
 	if (!home || !away) {
 		return undefined;

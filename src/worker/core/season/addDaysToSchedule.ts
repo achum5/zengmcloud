@@ -9,12 +9,16 @@ const addDaysToSchedule = (
 	games: {
 		homeTid: number;
 		awayTid: number;
+		// The night it's played, on a calendar schedule. Each night is its own
+		// day.
+		date?: string;
 	}[],
 	existingGames?: Game[],
 ): ScheduleGameWithoutKey[] => {
 	const dayTids = new Set<number>();
 	let prevDayAllStarGame = false;
 	let prevDayTradeDeadline = false;
+	let prevDate: string | undefined;
 
 	let day = 1;
 
@@ -33,7 +37,7 @@ const addDaysToSchedule = (
 	}
 
 	return games.map((game) => {
-		const { awayTid, homeTid } = game;
+		const { awayTid, homeTid, date } = game;
 
 		const allStarGame = isAllStarGame(homeTid, awayTid);
 		const tradeDeadline = isTradeDeadline(homeTid, awayTid);
@@ -43,7 +47,8 @@ const addDaysToSchedule = (
 			allStarGame ||
 			prevDayAllStarGame ||
 			tradeDeadline ||
-			prevDayTradeDeadline
+			prevDayTradeDeadline ||
+			(prevDate !== undefined && date !== prevDate)
 		) {
 			day += 1;
 			dayTids.clear();
@@ -54,11 +59,17 @@ const addDaysToSchedule = (
 
 		prevDayAllStarGame = allStarGame;
 		prevDayTradeDeadline = tradeDeadline;
+		prevDate = date;
 
-		return {
-			...game,
+		const out: ScheduleGameWithoutKey = {
+			homeTid,
+			awayTid,
 			day,
 		};
+		if (date !== undefined) {
+			out.date = date;
+		}
+		return out;
 	});
 };
 

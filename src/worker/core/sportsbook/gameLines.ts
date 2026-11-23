@@ -96,6 +96,7 @@ type PricerTeam = {
 };
 
 type Matchup = {
+	gid?: number;
 	day: number;
 	homeTid: number;
 	awayTid: number;
@@ -111,6 +112,7 @@ export const buildGameLinePricer = async ({
 	activeTeams,
 	season,
 	todayDay,
+	ticksUntil,
 	spreadBiases,
 }: {
 	activeTeams: PricerTeam[];
@@ -118,6 +120,9 @@ export const buildGameLinePricer = async ({
 	// The day the schedule currently sits on, so a game further out can be priced
 	// off rosters healed forward to it.
 	todayDay: number;
+	// Or, on a calendar, how many injury ticks each team has before the game
+	// (see injuryTicksUntil).
+	ticksUntil?: (tid: number, gid: number | undefined, day: number) => number;
 	// Per-team form correction (see getTeamSpreadBias.ts). Passed in by callers
 	// that already swept the season's games for something else; fetched here
 	// otherwise, so every caller prices the same line either way.
@@ -177,10 +182,15 @@ export const buildGameLinePricer = async ({
 			: playoffSeries.series[playoffSeries.currentRound]
 		: undefined;
 
-	const gameOvr = (t: PricerTeam, day: number): number | undefined =>
+	const ticksBefore = (t: PricerTeam, matchup: Matchup) =>
+		ticksUntil
+			? ticksUntil(t.tid, matchup.gid, matchup.day)
+			: matchup.day - todayDay;
+
+	const gameOvr = (t: PricerTeam, matchup: Matchup): number | undefined =>
 		teamOvr(playersByTid.get(t.tid) ?? [], {
 			accountForInjuredPlayers: {
-				numDaysInFuture: day - todayDay,
+				numDaysInFuture: ticksBefore(t, matchup),
 				playThroughInjuries: getActualPlayThroughInjuries(t),
 			},
 			playoffs: !!roundSeries,
@@ -189,9 +199,9 @@ export const buildGameLinePricer = async ({
 	// Same availability window as gameOvr, so both spread inputs describe one
 	// roster. The board and ScoreBox share this whole pricer, so both quote the
 	// same synergy-aware line.
-	const gameSynergy = (t: PricerTeam, day: number): number | undefined =>
+	const gameSynergy = (t: PricerTeam, matchup: Matchup): number | undefined =>
 		pregameLineupSynergyFromPlayers(playersRawByTid.get(t.tid) ?? [], {
-			numDaysInFuture: day - todayDay,
+			numDaysInFuture: ticksBefore(t, matchup),
 			playThroughInjuries: getActualPlayThroughInjuries(t),
 			playoffs: !!roundSeries,
 		});
@@ -260,11 +270,11 @@ export const buildGameLinePricer = async ({
 
 			const neutralSite = isNeutralSite(matchup);
 			const playoffs = !!roundSeries;
-			const synergy0 = gameSynergy(home, matchup.day);
-			const synergy1 = gameSynergy(away, matchup.day);
+			const synergy0 = gameSynergy(home, matchup);
+			const synergy1 = gameSynergy(away, matchup);
 			const margin = getGameSpread({
-				ovr0: gameOvr(home, matchup.day),
-				ovr1: gameOvr(away, matchup.day),
+				ovr0: gameOvr(home, matchup),
+				ovr1: gameOvr(away, matchup),
 				homeCourtAdvantage,
 				neutralSite,
 				numPeriods,

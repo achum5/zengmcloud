@@ -27,6 +27,7 @@ import {
 import Note from "../../Player/Note.tsx";
 import { teamsInDisplayOrder } from "../../../util/boxScoreDisplayOrder.ts";
 import { roundHalf } from "../../../../common/getGameSpread.ts";
+import { formatGameDate } from "../../../../common/calendarDates.ts";
 import type { GamecastInfo } from "../../../../worker/views/liveGameInfo.ts";
 import {
 	Leaders,
@@ -638,7 +639,9 @@ const RecapHeader = ({
 												gameDay,
 											])}
 										>
-											{season} Day {gameDay}
+											{typeof boxScore.date === "string"
+												? formatGameDate(boxScore.date, "withYear")
+												: `${season} Day ${gameDay}`}
 										</a>
 									) : null}
 									{gameDay !== undefined && inSeries ? (

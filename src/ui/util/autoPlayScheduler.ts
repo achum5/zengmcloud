@@ -79,6 +79,8 @@ export type AutoPlayLogEntry = {
 	// sim. Absent if the preview was unavailable.
 	fromDay?: number;
 	toDay?: number;
+	fromDate?: string;
+	toDate?: string;
 	numGames?: number;
 	season?: number;
 	// Set instead of the day range when the sim threw.
@@ -979,6 +981,10 @@ class AutoPlayScheduler {
 		}
 		entry.fromDay = played[0]!.day;
 		entry.toDay = played.at(-1)!.day;
+		if (played[0]!.date !== undefined && played.at(-1)!.date !== undefined) {
+			entry.fromDate = played[0]!.date;
+			entry.toDate = played.at(-1)!.date;
+		}
 		entry.numGames = played.reduce((sum, d) => sum + d.numGames, 0);
 		return entry;
 	}

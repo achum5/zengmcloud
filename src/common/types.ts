@@ -501,6 +501,8 @@ export type Game = {
 	att: number;
 	clutchPlays?: string[];
 	day?: number; // Only optional for legacy
+	// The night it was played ("YYYY-MM-DD"), on a calendar schedule.
+	date?: string;
 	finals?: boolean;
 	forceWin?: number; // If defined, it's the number of iterations that were used to force the win/tie
 	gid: number;
@@ -1108,6 +1110,9 @@ export type GameAttributesLeague = {
 	gracePeriodEnd: number;
 	groupScheduleSeries: boolean;
 	heightFactor: number;
+	// Basketball: the regular season on real dates, one night per sim day,
+	// from the next regular season scheduled.
+	nbaCalendar: boolean;
 	hideDisabledTeams: boolean;
 	// The league feed: a generated social timeline. Off by default, because a
 	// fictional press corps is a strong flavour and a league should opt into it
@@ -2874,6 +2879,9 @@ export type ScheduleGameWithoutKey = {
 	forceWin?: number | "tie"; // either awayTid or homeTid, if defined
 	finals?: boolean; // Used for easily checking neutralSite "finals" setting
 	day: number; // In the playoffs the values are kind of weird
+	// The night it's played ("YYYY-MM-DD"), on a calendar schedule. Absent on
+	// classic numbered days.
+	date?: string;
 };
 
 export type ScheduleGame = ScheduleGameWithoutKey & {

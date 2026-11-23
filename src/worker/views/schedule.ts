@@ -27,6 +27,7 @@ import { defineView, keepType, type ViewArgs } from "../util/defineView.ts";
 import type { RouteParams } from "../../ui/router/types.ts";
 import { validateTeam } from "../util/processInputs.ts";
 import { isAllStarGame, isTradeDeadline } from "../../common/specialGames.ts";
+import { injuryTicksUntil } from "../core/game/calendarTicks.ts";
 
 const processInputs = (params: RouteParams<"schedule">) => {
 	const tid = validateTeam(params.team);
@@ -51,8 +52,9 @@ export const getUpcoming = async ({
 		return [];
 	}
 
-	// Use this to calculate injury healing from today until the day of a game
-	const todayDay = firstGame.day;
+	// Injury healing from today until each game: days, or on a calendar the
+	// team's own games.
+	const gamesInFuture = injuryTicksUntil(schedule);
 
 	let cidFilter:
 		| ((game: { awayTid: number; homeTid: number }) => boolean)
@@ -146,7 +148,7 @@ export const getUpcoming = async ({
 			: playoffSeries.series[playoffSeries.currentRound]
 		: undefined;
 
-	const getTeam = (tid: number, day: number) => {
+	const getTeam = (tid: number, numDaysInFuture: number) => {
 		// All-Star Game or trade deadline
 		if (tid < 0) {
 			return { tid };
@@ -157,7 +159,7 @@ export const getUpcoming = async ({
 		// For basketball this is fast, but for other sports it's a bit slow. Could cache sometimes, depending on which players are injured (if nobody is in playThroughInjuries window). This would apply by default in the regualr season, which is what matters, since the default is 0
 		const ovr = team.ovr(playersByTid.get(tid) ?? [], {
 			accountForInjuredPlayers: {
-				numDaysInFuture: day - todayDay,
+				numDaysInFuture,
 				playThroughInjuries: getActualPlayThroughInjuries(t ?? "default"),
 			},
 
@@ -227,9 +229,9 @@ export const getUpcoming = async ({
 	// Same availability window as the ovr above, so the two inputs describe the
 	// same roster. Undefined (non-basketball, or a roster too thin to field a
 	// five) falls back to the ovr-only model inside getGameSpread.
-	const getSynergy = (tid: number, day: number) =>
+	const getSynergy = (tid: number, numDaysInFuture: number) =>
 		pregameLineupSynergyFromPlayers(playersRawByTid.get(tid) ?? [], {
-			numDaysInFuture: day - todayDay,
+			numDaysInFuture,
 			playThroughInjuries: getActualPlayThroughInjuries(
 				teamsByTid[tid] ?? "default",
 			),
@@ -281,6 +283,8 @@ export const getUpcoming = async ({
 	};
 
 	const upcoming: {
+		date?: string;
+		day: number;
 		finals?: boolean;
 		forceWin?: number | "tie";
 		gid: number;
@@ -288,12 +292,14 @@ export const getUpcoming = async ({
 		spread?: number;
 		teams: [ReturnType<typeof getTeam>, ReturnType<typeof getTeam>];
 	}[] = filteredSchedule.map(
-		({ awayTid, day, finals, forceWin, gid, homeTid }) => {
+		({ awayTid, date, day, finals, forceWin, gid, homeTid }) => {
 			const teams: [ReturnType<typeof getTeam>, ReturnType<typeof getTeam>] = [
-				getTeam(homeTid, day),
-				getTeam(awayTid, day),
+				getTeam(homeTid, gamesInFuture(homeTid, gid, day)),
+				getTeam(awayTid, gamesInFuture(awayTid, gid, day)),
 			];
 			return {
+				date,
+				day,
 				finals,
 				forceWin,
 				gid,
@@ -304,8 +310,8 @@ export const getUpcoming = async ({
 								finals,
 								ovr0: teams[0].ovr,
 								ovr1: teams[1].ovr,
-								synergy0: getSynergy(homeTid, day),
-								synergy1: getSynergy(awayTid, day),
+								synergy0: getSynergy(homeTid, gamesInFuture(homeTid, gid, day)),
+								synergy1: getSynergy(awayTid, gamesInFuture(awayTid, gid, day)),
 								homeTid,
 								awayTid,
 							})
