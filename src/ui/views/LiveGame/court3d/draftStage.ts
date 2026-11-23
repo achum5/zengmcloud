@@ -1,3 +1,4 @@
+import type { Race } from "../../../../common/types.ts";
 import type { Authored } from "./authored.ts";
 import type { Rig } from "./camera.ts";
 import { dress, faceFor, type CrewMember } from "./crew.ts";
@@ -16,7 +17,10 @@ import { ANIMS, HUG_APART, HUG_MS, HUG_SIDE, type AnimName } from "./poses.ts";
 // across the stage to shake the commissioner's hand, and the two of them
 // turned to the photographers, him waving.
 //
-// All of it from the one timeline: the same pick looks the same every time.
+// No two picks quite the same (see DraftTake): where his family's table is,
+// who is at it with him, how he takes his name being read, how he goes up
+// and what he does up there, and where the cameras are - each picked from
+// who he is, so his pick plays the same every time it is watched.
 
 // ---- the room (feet: x along the old court, y from the far side toward the
 // cameras, z up) -------------------------------------------------------------
@@ -38,27 +42,36 @@ export const AISLE_X = (STEPS.x0 + STEPS.x1) / 2;
 const ROWS = [12, 20, 28, 36, 44];
 const COLS = [4, 13, 22, 31, 40, 54, 63, 72, 81, 90];
 export const TABLES: Pt[] = ROWS.flatMap((y) => COLS.map((x) => ({ x, y })));
-// His family's: second row, on the aisle.
-export const HIS_TABLE: Pt = { x: 40, y: 20 };
 // Round each table, the chairs (radians: 0 toward the right of the room,
-// a quarter turn on toward the cameras). At his, him, his mother and his
-// father (see the cast) and one more - none at the near side, where the
-// camera on him looks in across the table.
-const SEATS = [-150, -90, -30, 30, 150].map((d) => (d * Math.PI) / 180);
-const HIS_SEATS = [160].map((d) => (d * Math.PI) / 180);
-const HIM_AT = (-50 * Math.PI) / 180;
-const MOM_AT = (-100 * Math.PI) / 180;
-const DAD_AT = (-150 * Math.PI) / 180;
+// a quarter turn on toward the cameras).
+export const SEATS = [-150, -90, -30, 30, 150].map((d) => (d * Math.PI) / 180);
 export const seatAt = (table: Pt, a: number): Pt & { yaw: number } => ({
 	x: table.x + SEAT_R * Math.cos(a),
 	y: table.y + SEAT_R * Math.sin(a),
 	// (Facing in, toward the middle of the table.)
 	yaw: a + Math.PI,
 });
-export const seatsOf = (table: Pt): number[] =>
-	table === HIS_TABLE || (table.x === HIS_TABLE.x && table.y === HIS_TABLE.y)
-		? HIS_SEATS
-		: SEATS;
+// A family's table, and who is sat round it (see DraftRoom): its chairs,
+// the ones its own people get up out of drawn as chairs, the rest with
+// somebody in them - none at the near side, where the camera on him looks
+// in across the table.
+export type FamilyTable = {
+	table: Pt;
+	guests: number[];
+	chairs: (Pt & { yaw: number })[];
+};
+// What the room needs to know of a scene (see draftVenue.ts): the families'
+// tables in it, when the one whose name is read is up on its feet, when the
+// room claps, and when the smoke goes up.
+export type DraftRoom = {
+	families: FamilyTable[];
+	upAt: (t: number) => boolean;
+	clapAt: (t: number) => boolean;
+	jetFrom: number;
+};
+const sameSpot = (a: Pt, b: Pt) => a.x === b.x && a.y === b.y;
+export const familyAt = (room: DraftRoom, table: Pt) =>
+	room.families.find((f) => sameSpot(f.table, table));
 // Where the smoke goes up from, either side of the bottom of the steps.
 export const JETS: Pt3[] = [
 	{ x: STEPS.x0 - 1.6, y: STEPS.y1 - 0.6, z: 0 },
@@ -77,26 +90,154 @@ export const groundAt = (x: number, y: number): number => {
 	return 0;
 };
 
-// ---- the pick, beat by beat (ms) --------------------------------------------
+// ---- the takes ---------------------------------------------------------------
 
-const SEAT = seatAt(HIS_TABLE, HIM_AT);
-const MOM_SEAT = seatAt(HIS_TABLE, MOM_AT);
-const DAD_SEAT = seatAt(HIS_TABLE, DAD_AT);
+// HOW HIS PICK GOES: his family's table on the aisle - either side of it,
+// in the front three rows; how he takes his name being read (straight up, a
+// moment sat there taking it in, his hands on his head, both arms at the
+// sky, a fist pumped); who is with him, and which of them comes round to
+// hug him; his pace up the aisle; what he does for the cameras once the
+// commissioner has had him; and where the cameras are for the room, the
+// podium and the stage.
+export type DraftReact = "up" | "beat" | "hands" | "sky" | "pump";
+export type DraftKin = "mom" | "dad" | "brother" | "none";
+export type DraftTake = {
+	side: 1 | -1;
+	row: -1 | 0 | 1;
+	react: DraftReact;
+	hugger: "mom" | "dad";
+	other: DraftKin;
+	pose: AnimName;
+	pace: number;
+	open: -1 | 0 | 1;
+	podiumCam: 1 | -1;
+	stageCam: -1 | 0 | 1;
+};
+const REACTS: DraftReact[] = ["up", "up", "beat", "hands", "sky", "pump"];
+const REACT_ANIM: Partial<Record<DraftReact, AnimName>> = {
+	hands: "headHands",
+	sky: "skyPoint",
+	pump: "fistPump",
+};
+const REACT_MS: Record<DraftReact, number> = {
+	up: 0,
+	beat: 0,
+	hands: 1300,
+	sky: 1200,
+	pump: 1100,
+};
+const FAMILIES: ["mom" | "dad", DraftKin][] = [
+	["mom", "dad"],
+	["mom", "dad"],
+	["mom", "brother"],
+	["mom", "none"],
+	["dad", "mom"],
+	["dad", "none"],
+];
+export const POSES: AnimName[] = [
+	"waveBall",
+	"point",
+	"chestPound",
+	"skyPoint",
+	"thanksBoth",
+	"armsWide",
+];
+const unit = (n: number): number => {
+	let h = Math.imul(n ^ 0x9e3779b9, 0x85ebca6b);
+	h ^= h >>> 15;
+	h = Math.imul(h, 0x2c1b3c6d);
+	h ^= h >>> 12;
+	return (h >>> 0) / 4294967296;
+};
+export const takeOf = (pid: number): DraftTake => {
+	const r = (k: number) => unit(Math.imul(pid + 7, 2654435761) ^ (k * 40503));
+	const of = <T>(a: readonly T[], k: number): T =>
+		a[Math.min(a.length - 1, Math.floor(r(k) * a.length))]!;
+	const [hugger, other] = of(FAMILIES, 3);
+	return {
+		side: of([1, -1] as const, 1),
+		row: of([-1, 0, 0, 1] as const, 2),
+		react: of(REACTS, 4),
+		hugger,
+		other,
+		pose: of(POSES, 5),
+		pace: 4.7 + r(6) * 0.9,
+		open: of([-1, 0, 1] as const, 7),
+		podiumCam: of([1, -1] as const, 8),
+		stageCam: of([-1, 0, 1] as const, 9),
+	};
+};
+
+// ---- where it all is, for a take -------------------------------------------
+
+// Laid out for a table on the near side of the aisle, second row - and for
+// any other, moved back or forward a row and turned over the aisle.
+const HOME_TABLE: Pt = { x: 40, y: 20 };
+const ROW_STEP = 8;
+const HIM_AT = (-50 * Math.PI) / 180;
+const KIN_AT = (-100 * Math.PI) / 180;
+const OTHER_AT = (-150 * Math.PI) / 180;
+const GUESTS_AT = [(160 * Math.PI) / 180];
 // Up out of his chair, he steps out from the table toward the aisle, turns to
 // his mother, and she comes round to him - and they hug, his face to the
 // camera over her shoulder (see HUG_SIDE: each over to his own right of the
-// other).
-const HUGGED: Pt = { x: 45, y: 16.2 };
+// other). On the far side of the aisle, that hug turned over the aisle would
+// be left shoulder to left: she is out first, there, and he comes to her
+// (see kinFirst).
+const HUGGED_AT: Pt = { x: 45, y: 16.2 };
+const HUGGED_OVER_AT: Pt = { x: 44.4, y: 15.9 };
 const HUG_YAW = (110 * Math.PI) / 180;
-const MOM_HUG: Pt = {
-	x: HUGGED.x + HUG_APART * Math.cos(HUG_YAW) - HUG_SIDE * Math.sin(HUG_YAW),
-	y: HUGGED.y + HUG_APART * Math.sin(HUG_YAW) + HUG_SIDE * Math.cos(HUG_YAW),
-};
 // (Round the back of his chair to him.)
-const MOM_VIA: Pt = { x: 41.6, y: 14.7 };
+const VIA_AT: Pt = { x: 41.6, y: 14.7 };
+const AISLE_IN_AT: Pt = { x: AISLE_X - 0.4, y: 14.6 };
+// The camera across his table, and where it looks.
+const TABLE_CAM_AT: Pt = { x: 40.4, y: 26.5 };
+const TABLE_LOOK_AT: Pt = { x: 42, y: 17.4 };
+
+const hugPartner = (at: Pt, yaw: number): Pt => ({
+	x: at.x + HUG_APART * Math.cos(yaw) - HUG_SIDE * Math.sin(yaw),
+	y: at.y + HUG_APART * Math.sin(yaw) + HUG_SIDE * Math.cos(yaw),
+});
+
+export const placesOf = (take: Pick<DraftTake, "side" | "row">) => {
+	const dy = take.row * ROW_STEP;
+	const mx = (x: number) => (take.side === 1 ? x : 2 * AISLE_X - x);
+	const at = (p: Pt): Pt => ({ x: mx(p.x), y: p.y + dy });
+	const turned = (a: number) => (take.side === 1 ? a : Math.PI - a);
+	const table = at(HOME_TABLE);
+	const kinFirst = take.side === -1;
+	const hugged = at(kinFirst ? HUGGED_OVER_AT : HUGGED_AT);
+	const hugYaw = turned(HUG_YAW);
+	return {
+		table,
+		seat: seatAt(table, turned(HIM_AT)),
+		kinSeat: seatAt(table, turned(KIN_AT)),
+		otherSeat: seatAt(table, turned(OTHER_AT)),
+		guests: GUESTS_AT.map(turned),
+		hugged,
+		hugYaw,
+		kinHug: hugPartner(hugged, hugYaw),
+		kinVia: at(VIA_AT),
+		aisleIn: at(AISLE_IN_AT),
+		tableCam: at(TABLE_CAM_AT),
+		tableLook: at(TABLE_LOOK_AT),
+		side: take.side,
+		kinFirst,
+	};
+};
+export type DraftPlaces = ReturnType<typeof placesOf>;
+
+// His family's table, as the room has it (see DraftRoom).
+export const familyOf = (g: DraftPlaces): FamilyTable => ({
+	table: g.table,
+	guests: g.guests,
+	chairs: [g.seat, g.kinSeat, g.otherSeat],
+});
+
+// ---- the pick, beat by beat (ms) --------------------------------------------
+
 // His way up: out to the aisle, up it to the steps, up them, and across the
 // stage to where he meets the commissioner.
-const AISLE_IN: Pt = { x: AISLE_X - 0.4, y: 14.6 };
 const STEPS_FOOT: Pt = { x: AISLE_X, y: STEPS.y1 + 0.6 };
 const STEPS_TOP: Pt = { x: AISLE_X, y: STAGE.y1 - 0.3 };
 export const MARK: Pt = { x: AISLE_X + 0.6, y: -3.6 };
@@ -105,41 +246,56 @@ export const MARK: Pt = { x: AISLE_X + 0.6, y: -3.6 };
 const PODIUM_SPOT: Pt = { x: PODIUM.x, y: PODIUM.y - PODIUM.d / 2 - 1.1 };
 // (Him turned three-quarters to the camera in front of the stage.)
 const MEET_YAW = (135 * Math.PI) / 180;
-const COMM_MEET: Pt = {
-	x: MARK.x + HUG_APART * Math.cos(MEET_YAW) - HUG_SIDE * Math.sin(MEET_YAW),
-	y: MARK.y + HUG_APART * Math.sin(MEET_YAW) + HUG_SIDE * Math.cos(MEET_YAW),
-};
+const COMM_MEET = hugPartner(MARK, MEET_YAW);
 const COMM_PHOTO: Pt = { x: MARK.x - 2.1, y: MARK.y - 0.1 };
 
-// Walking (feet a second): his pace, up the steps, and theirs.
-const PACE = 5.2;
+// Walking (feet a second): up the steps, across the stage, and everybody
+// else's (his own up the aisle is the take's).
 const STAIR_PACE = 3.6;
 const STAGE_PACE = 4.2;
 const OTHERS_PACE = 3.6;
 const legs = (a: Pt, b: Pt, pace: number) => (dist(a, b) / pace) * 1000;
 const CHAIR_UP_MS = 900;
+const POSE_MS = 1700;
 
-export const DRAFT_NIGHT = (() => {
+// The two moments every pick shares - the broadcast's graphics go by them
+// (see DraftBroadcast.tsx): the commissioner up at the podium, and his name.
+export const DRAFT_CALL = { podium: 1800, call: 4800 };
+
+export const nightOf = (take: DraftTake, g: DraftPlaces) => {
 	// The commissioner reads it out from the podium: the room first, then him.
-	const podium = 1800;
-	const call = 4800;
-	const stand = call + 350;
+	const { podium, call } = DRAFT_CALL;
+	const react = REACT_MS[take.react];
+	const stand = call + (take.react === "beat" ? 1500 : 350);
 	const stood = stand + CHAIR_UP_MS;
-	const stepped = stood + legs(SEAT, HUGGED, 3.2);
-	const momUp = stand + 150;
-	const momStood = momUp + CHAIR_UP_MS;
-	const momVia = momStood + legs(MOM_SEAT, MOM_VIA, OTHERS_PACE);
-	const momThere = momVia + legs(MOM_VIA, MOM_HUG, OTHERS_PACE);
-	const dadUp = stand + 450;
-	const hug = Math.max(stepped, momThere) + 100;
+	const reacted = stood + react;
+	// The one who hugs him up out of their chair and round the back of his
+	// to him - never across his way: waiting there till he is past (or, the
+	// far side of the aisle, there first, and him coming to them).
+	const kinUp = g.kinFirst
+		? call + 400
+		: take.react === "beat"
+			? call + 500
+			: stand + 150 + Math.max(0, react - 300);
+	const kinStood = kinUp + CHAIR_UP_MS;
+	const kinVia = kinStood + legs(g.kinSeat, g.kinVia, OTHERS_PACE);
+	const kinLeg = legs(g.kinVia, g.kinHug, OTHERS_PACE);
+	const myLeg = legs(g.seat, g.hugged, 3.2);
+	const walkOff = g.kinFirst ? Math.max(reacted, kinVia + kinLeg) : reacted;
+	const stepped = walkOff + myLeg;
+	const kinGo = g.kinFirst ? kinVia : Math.max(kinVia, stepped + 200 - kinLeg);
+	const kinThere = kinGo + kinLeg;
+	const otherUp = call + 800;
+	const hug = Math.max(stepped, kinThere) + 100;
 	const leave = hug + HUG_MS + 150;
-	const atSteps = leave + legs(HUGGED, STEPS_FOOT, PACE);
+	// (A step or two from the front row: at a walk, still.)
+	const atSteps = leave + Math.max(1100, legs(g.hugged, STEPS_FOOT, take.pace));
 	const onStage = atSteps + legs(STEPS_FOOT, STEPS_TOP, STAIR_PACE);
 	const arrive = onStage + legs(STEPS_TOP, MARK, STAGE_PACE);
 	const meet = arrive + 320;
 	const photo = meet + HUG_MS;
-	const wave = photo + 450;
-	const ms = wave + 1700 + 1300;
+	const pose = photo + 450;
+	const ms = pose + POSE_MS + 1300;
 	// The commissioner sets off to be there just before him.
 	const commGo = arrive - 250 - legs(PODIUM_SPOT, COMM_MEET, OTHERS_PACE);
 	return {
@@ -147,12 +303,15 @@ export const DRAFT_NIGHT = (() => {
 		call,
 		stand,
 		stood,
+		reacted,
+		walkOff,
 		stepped,
-		momUp,
-		momStood,
-		momVia,
-		momThere,
-		dadUp,
+		kinUp,
+		kinStood,
+		kinVia,
+		kinGo,
+		kinThere,
+		otherUp,
 		hug,
 		leave,
 		atSteps,
@@ -160,71 +319,96 @@ export const DRAFT_NIGHT = (() => {
 		arrive,
 		meet,
 		photo,
-		wave,
+		pose,
 		commGo,
 		ms,
 	};
-})();
-const N = DRAFT_NIGHT;
+};
+export type DraftNight = ReturnType<typeof nightOf>;
 
-// When his table is on its feet, and when the room claps: his name read, and
-// him up onto the stage.
-export const tableUpAt = (t: number): boolean => t >= N.call + 200;
-export const clappingAt = (t: number): boolean =>
-	(t >= N.call && t < N.call + 3200) ||
-	(t >= N.onStage - 300 && t < N.onStage + 3000);
+// When the room claps: his name read, and him up onto the stage.
+const clapOf =
+	(N: DraftNight) =>
+	(t: number): boolean =>
+		(t >= N.call && t < N.call + 3200) ||
+		(t >= N.onStage - 300 && t < N.onStage + 3000);
 // The smoke: as he comes up the steps.
-export const JET_FROM = N.onStage - 900;
 export const JET_MS = 1900;
 
 // ---- the people ---------------------------------------------------------
 
-// The commissioner and the pick's mother and father: drawn as those who work
-// a game are (their faces, their clothes), below any of their pids.
+// The commissioner and the pick's family: drawn as those who work a game are
+// (their faces, their clothes), below any of their pids - his family looking
+// like his family.
 export const COMMISSIONER = -201;
 export const MOTHER = -202;
 export const FATHER = -203;
-const castFor = (pid: number, colors: string[] | undefined): CrewMember[] => [
-	{
-		pid: COMMISSIONER,
+export const BROTHER = -204;
+const KIN_PID: Record<Exclude<DraftKin, "none">, number> = {
+	mom: MOTHER,
+	dad: FATHER,
+	brother: BROTHER,
+};
+export const commissioner = (): CrewMember => ({
+	pid: COMMISSIONER,
+	role: "staff",
+	team: 1,
+	hgt: 72,
+	weight: 200,
+	face: faceFor("draft|commissioner", false),
+	dress: dress("#1b1f2b", "#1b1f2b", {
+		sleeves: "long",
+		shirt: "#f2f2ee",
+		tie: "#24365c",
+	}),
+});
+const kinOf = (
+	who: Exclude<DraftKin, "none">,
+	pid: number,
+	colors: string[] | undefined,
+	race: Race | undefined,
+): CrewMember => {
+	const main = colors?.[0] && colors[0] !== "#000000" ? colors[0] : "#7a2d8c";
+	if (who === "mom") {
+		return {
+			pid: MOTHER,
+			role: "staff",
+			team: 1,
+			hgt: 65,
+			weight: 140,
+			face: faceFor(`draft|mother|${pid}`, true, race),
+			dress: dress(main, "#16161a", { sleeves: "long" }),
+		};
+	}
+	if (who === "dad") {
+		return {
+			pid: FATHER,
+			role: "staff",
+			team: 1,
+			hgt: 74,
+			weight: 215,
+			face: faceFor(`draft|father|${pid}`, false, race),
+			dress: dress("#2b2f38", "#2b2f38", {
+				sleeves: "long",
+				shirt: "#cfdcef",
+				tie: colors?.[1] ?? "#6b1f2a",
+			}),
+		};
+	}
+	return {
+		pid: BROTHER,
 		role: "staff",
 		team: 1,
-		hgt: 72,
-		weight: 200,
-		face: faceFor("draft|commissioner", false),
-		dress: dress("#1b1f2b", "#1b1f2b", {
+		hgt: 75,
+		weight: 190,
+		face: faceFor(`draft|brother|${pid}`, false, race),
+		dress: dress("#20232b", "#20232b", {
 			sleeves: "long",
 			shirt: "#f2f2ee",
-			tie: "#24365c",
+			tie: main,
 		}),
-	},
-	{
-		pid: MOTHER,
-		role: "staff",
-		team: 1,
-		hgt: 65,
-		weight: 140,
-		face: faceFor(`draft|mother|${pid}`, true),
-		dress: dress(
-			colors?.[0] && colors[0] !== "#000000" ? colors[0] : "#7a2d8c",
-			"#16161a",
-			{ sleeves: "long" },
-		),
-	},
-	{
-		pid: FATHER,
-		role: "staff",
-		team: 1,
-		hgt: 74,
-		weight: 215,
-		face: faceFor(`draft|father|${pid}`, false),
-		dress: dress("#2b2f38", "#2b2f38", {
-			sleeves: "long",
-			shirt: "#cfdcef",
-			tie: colors?.[1] ?? "#6b1f2a",
-		}),
-	},
-];
+	};
+};
 
 const yawTo = (from: Pt, to: Pt) => Math.atan2(to.y - from.y, to.x - from.x);
 const smooth = (u: number) => {
@@ -251,7 +435,7 @@ const loopPhase = (anim: AnimName, t: number, seed: number) => {
 };
 // One of them at t: stood (or sat) somewhere doing something, walking from
 // one spot to the next, eased from what he was doing before.
-type Beat = {
+export type Beat = {
 	t0: number;
 	t1: number;
 	at: Pt;
@@ -259,7 +443,7 @@ type Beat = {
 	yaw: number;
 	anim: AnimName;
 };
-const castState = (
+export const castState = (
 	pid: number,
 	beats: Beat[],
 	t: number,
@@ -327,35 +511,54 @@ const castState = (
 
 // Each a camera stood somewhere in the room, looking at a spot, so wide
 // across there (feet) - on a squarer picture (a phone), in closer.
-type Cam = { at: Pt3; look: Pt3; width: number };
-const shotOf = (c: Cam): ReturnType<Authored["aim"]> => ({
+export type Cam = { at: Pt3; look: Pt3; width: number };
+export const shotOf = (c: Cam): ReturnType<Authored["aim"]> => ({
 	shot: { x: c.look.x, y: c.look.y, z: c.look.z, width: c.width },
 	rig: { back: 0, high: 0, slide: 0, upright: false, at: c.at } as Rig,
 });
-const mix3 = (a: Pt3, b: Pt3, u: number): Pt3 => ({
+export const mix3 = (a: Pt3, b: Pt3, u: number): Pt3 => ({
 	x: a.x + (b.x - a.x) * u,
 	y: a.y + (b.y - a.y) * u,
 	z: a.z + (b.z - a.z) * u,
 });
+// The room, from the back of it: from either corner or down the middle.
+export const OPENING: Record<-1 | 0 | 1, [Pt3, Pt3]> = {
+	[-1]: [
+		{ x: 16, y: 80, z: 25 },
+		{ x: 22, y: 75, z: 22 },
+	],
+	0: [
+		{ x: 41, y: 84, z: 27 },
+		{ x: 44, y: 78, z: 24 },
+	],
+	1: [
+		{ x: 80, y: 80, z: 25 },
+		{ x: 73, y: 75, z: 22 },
+	],
+};
 // The camera in front of the stage, looking up at it: the stage's own
 // photographers either side of it.
-const STAGE_CAM: Pt3 = { x: 49, y: 22, z: 8.5 };
-// The cuts: off his table once he is out in the aisle; off the camera
-// following him up it once he is up the steps.
-const TABLE_CUT = N.leave + 900;
-const STAGE_CUT = N.onStage;
+const stageCamOf = (take: DraftTake): Pt3 => ({
+	x: 49 + 2.5 * take.stageCam,
+	y: 22,
+	z: 8.5,
+});
 
 export const draftCameraAt = (
 	t: number,
 	narrow: boolean,
 	him: PlayerState | undefined,
+	take: DraftTake,
+	g: DraftPlaces,
+	N: DraftNight,
 ): Cam => {
 	const k = narrow ? 0.82 : 1;
 	if (t < N.podium) {
 		// The room: the whole stage, the tables in front of it.
 		const u = smooth(t / N.podium);
+		const [from, to] = OPENING[take.open];
 		return {
-			at: mix3({ x: 41, y: 84, z: 27 }, { x: 44, y: 78, z: 24 }, u),
+			at: mix3(from, to, u),
 			look: { x: 47, y: 2, z: 5 },
 			width: 74 * k,
 		};
@@ -364,39 +567,47 @@ export const draftCameraAt = (
 		// The commissioner at the podium, the team's colors behind him.
 		const u = smooth((t - N.podium) / (N.call - N.podium));
 		return {
-			at: { x: PODIUM.x + 3.5, y: 12, z: 7.8 },
+			at: {
+				x: PODIUM.x + (take.podiumCam === 1 ? 3.5 : -4),
+				y: 12,
+				z: 7.8,
+			},
 			look: { x: PODIUM.x, y: PODIUM.y - 1, z: 7.4 },
 			width: (15 - 1.5 * u) * k,
 		};
 	}
-	if (t < TABLE_CUT) {
+	// The cuts: off his table once he is out in the aisle (or up the steps
+	// already, from the front row); off the camera following him up it once
+	// he is up them.
+	const tableCut = Math.min(N.leave + 900, N.atSteps);
+	if (t < tableCut) {
 		// In on him at his table, across it: up out of his chair, and the hug.
 		const u = smooth((t - N.stand) / (N.hug - N.stand));
 		return {
-			at: { x: 40.4, y: 26.5, z: 6.4 },
+			at: { x: g.tableCam.x, y: g.tableCam.y, z: 6.4 },
 			// (His head up off the bar along the bottom of the picture.)
 			look: mix3(
-				{ x: 42, y: 17.4, z: 3.9 },
-				{ x: HUGGED.x - 0.9, y: HUGGED.y, z: 5.1 },
+				{ x: g.tableLook.x, y: g.tableLook.y, z: 3.9 },
+				{ x: g.hugged.x - 0.9 * g.side, y: g.hugged.y, z: 5.1 },
 				u,
 			),
 			width: (11.5 + 1.5 * u) * k,
 		};
 	}
-	if (t < STAGE_CUT) {
+	if (t < N.onStage) {
 		// Behind him up the aisle, the stage ahead of him.
 		const st = him ?? { x: AISLE_X, y: 10 };
 		return {
-			at: { x: AISLE_X + 2, y: st.y + 15, z: 10 },
+			at: { x: AISLE_X + 2 * g.side, y: st.y + 15, z: 10 },
 			look: { x: st.x, y: st.y - 8, z: 4.6 },
 			width: 22 * k,
 		};
 	}
 	// In front of the stage, looking up at it: him across it, the handshake,
 	// the two of them for the pictures.
-	const u = smooth((t - STAGE_CUT) / (N.ms - STAGE_CUT));
+	const u = smooth((t - N.onStage) / (N.ms - N.onStage));
 	return {
-		at: STAGE_CAM,
+		at: stageCamOf(take),
 		look: { x: MARK.x - 0.9, y: MARK.y - 0.4, z: 7.6 },
 		width: (19 - 3 * u) * k,
 	};
@@ -405,58 +616,63 @@ export const draftCameraAt = (
 // The photographers' flashes: round his table as he gets up, and all along
 // the front of the stage once he is up on it.
 const FLASH_MS = 80;
-const unit = (n: number): number => {
-	let h = Math.imul(n ^ 0x9e3779b9, 0x85ebca6b);
-	h ^= h >>> 15;
-	h = Math.imul(h, 0x2c1b3c6d);
-	h ^= h >>> 12;
-	return (h >>> 0) / 4294967296;
-};
-export const draftFlashesAt = (t: number): Pt3[] => {
-	const slot = Math.floor(t / FLASH_MS);
-	const out: Pt3[] = [];
-	const table = t >= N.call + 300 && t < N.leave + 800;
-	const stage = t >= N.meet && t < N.ms - 400;
-	if (!table && !stage) {
-		return out;
-	}
-	const share = stage ? (t >= N.photo ? 0.5 : 0.3) : 0.22;
-	for (let k = 0; k < 3; k++) {
-		if (unit(slot * 3 + k) >= share) {
-			continue;
+export const flashesOf =
+	(g: DraftPlaces, N: DraftNight) =>
+	(t: number): Pt3[] => {
+		const slot = Math.floor(t / FLASH_MS);
+		const out: Pt3[] = [];
+		const table = t >= N.call + 300 && t < N.leave + 800;
+		const stage = t >= N.meet && t < N.ms - 400;
+		if (!table && !stage) {
+			return out;
 		}
-		const a = unit(slot * 7 + k + 1000);
-		const b = unit(slot * 13 + k + 2000);
-		out.push(
-			stage
-				? {
-						x: MARK.x - 9 + a * 16,
-						y: STEPS.y1 + 1.2 + b * 2.2,
-						z: 5.4 + unit(slot * 5 + k) * 1.1,
-					}
-				: {
-						x: HUGGED.x + 1.5 + a * 3.5,
-						y: HUGGED.y + 3 + b * 4,
-						z: 5.4 + unit(slot * 5 + k) * 0.9,
-					},
-		);
-	}
-	return out;
-};
+		const share = stage ? (t >= N.photo ? 0.5 : 0.3) : 0.22;
+		for (let k = 0; k < 3; k++) {
+			if (unit(slot * 3 + k) >= share) {
+				continue;
+			}
+			const a = unit(slot * 7 + k + 1000);
+			const b = unit(slot * 13 + k + 2000);
+			out.push(
+				stage
+					? {
+							x: MARK.x - 9 + a * 16,
+							y: STEPS.y1 + 1.2 + b * 2.2,
+							z: 5.4 + unit(slot * 5 + k) * 1.1,
+						}
+					: {
+							x: g.hugged.x + g.side * (1.5 + a * 3.5),
+							y: g.hugged.y + 3 + b * 4,
+							z: 5.4 + unit(slot * 5 + k) * 0.9,
+						},
+			);
+		}
+		return out;
+	};
 
 // Nowhere the cameras look.
-const NO_BALL = { x: -400, y: -400, z: 0.39 };
+export const NO_BALL = { x: -400, y: -400, z: 0.39 };
 
 export const stageDraftNight = (
 	pid: number,
 	colors?: string[],
+	race?: Race,
+	take: DraftTake = takeOf(pid),
 ): Pick<
 	Authored,
 	"show" | "ms" | "moment" | "aim" | "crew" | "flashes" | "cast" | "castAt"
-> => {
-	const walk = (t0: number, from: Pt, to: Pt, pace: number): Move => ({
+> & {
+	take: DraftTake;
+	night: DraftNight;
+	places: DraftPlaces;
+	room: DraftRoom;
+} => {
+	const g = placesOf(take);
+	const N = nightOf(take, g);
+	const SEAT = g.seat;
+	const walk = (t0: number, t1: number, from: Pt, to: Pt): Move => ({
 		t0,
-		t1: t0 + legs(from, to, pace),
+		t1,
 		from: { ...from },
 		to: { ...to },
 		anim: "walk",
@@ -465,13 +681,16 @@ export const stageDraftNight = (
 		x: from.x + Math.cos(yaw) * 6,
 		y: from.y + Math.sin(yaw) * 6,
 	});
-	const STAGE_LOOK: Pt = { x: STAGE_CAM.x, y: STAGE_CAM.y };
+	const stageCam = stageCamOf(take);
+	const STAGE_LOOK: Pt = { x: stageCam.x, y: stageCam.y };
+	const TABLE_CAM: Pt = g.tableCam;
 	const moves: Move[] = [
-		walk(N.stood, SEAT, HUGGED, 3.2),
-		walk(N.leave, HUGGED, STEPS_FOOT, PACE),
-		walk(N.atSteps, STEPS_FOOT, STEPS_TOP, STAIR_PACE),
-		walk(N.onStage, STEPS_TOP, MARK, STAGE_PACE),
+		walk(N.walkOff, N.stepped, SEAT, g.hugged),
+		walk(N.leave, N.atSteps, g.hugged, STEPS_FOOT),
+		walk(N.atSteps, N.onStage, STEPS_FOOT, STEPS_TOP),
+		walk(N.onStage, N.arrive, STEPS_TOP, MARK),
 	];
+	const reactAnim = REACT_ANIM[take.react];
 	const track: Track = {
 		pid,
 		team: 1,
@@ -485,29 +704,49 @@ export const stageDraftNight = (
 				anim: "chairUp",
 				look: ahead(SEAT, SEAT.yaw),
 			},
+			...(reactAnim
+				? [{ t0: N.stood, t1: N.reacted, anim: reactAnim, look: TABLE_CAM }]
+				: []),
+			// (Waiting on them to come out to him.)
+			...(N.walkOff > N.reacted
+				? [
+						{
+							t0: N.reacted,
+							t1: N.walkOff,
+							anim: "easy" as const,
+							look: g.kinHug,
+						},
+					]
+				: []),
 			{
 				t0: N.stepped,
 				t1: N.hug,
 				anim: "easy",
-				look: ahead(HUGGED, HUG_YAW),
+				look: ahead(g.hugged, g.hugYaw),
 			},
 			{
 				t0: N.hug,
 				t1: N.hug + HUG_MS,
 				anim: "dapHug",
-				look: ahead(HUGGED, HUG_YAW),
+				look: ahead(g.hugged, g.hugYaw),
 			},
 			{ t0: N.arrive, t1: N.meet, anim: "easy", look: ahead(MARK, MEET_YAW) },
 			{ t0: N.meet, t1: N.photo, anim: "dapHug", look: ahead(MARK, MEET_YAW) },
-			{ t0: N.photo, t1: N.wave, anim: "easy", look: STAGE_LOOK },
-			{ t0: N.wave, t1: N.wave + 1700, anim: "waveBall", look: STAGE_LOOK },
-			{ t0: N.wave + 1700, t1: N.ms + 60_000, anim: "easy", look: STAGE_LOOK },
+			{ t0: N.photo, t1: N.pose, anim: "easy", look: STAGE_LOOK },
+			{ t0: N.pose, t1: N.pose + POSE_MS, anim: take.pose, look: STAGE_LOOK },
+			{
+				t0: N.pose + POSE_MS,
+				t1: N.ms + 60_000,
+				anim: "easy",
+				look: STAGE_LOOK,
+			},
 		],
 		arms: [],
 		faces: [],
 		looks: [
 			[0, ahead(SEAT, SEAT.yaw)],
-			[N.stepped, ahead(HUGGED, HUG_YAW)],
+			...(reactAnim ? ([[N.stood, TABLE_CAM]] as [number, Pt][]) : []),
+			[N.stepped, ahead(g.hugged, g.hugYaw)],
 			[N.arrive, ahead(MARK, MEET_YAW)],
 			[N.photo, STAGE_LOOK],
 		],
@@ -533,75 +772,104 @@ export const stageDraftNight = (
 		end: N.ms,
 	};
 
-	const momBeats: Beat[] = [
-		{ t0: 0, t1: N.momUp, at: MOM_SEAT, yaw: MOM_SEAT.yaw, anim: "chairSit" },
+	// Who comes round to hug him, from the chair beside his.
+	const kinPid = KIN_PID[take.hugger];
+	const kinBeats: Beat[] = [
 		{
-			t0: N.momUp,
-			t1: N.momStood,
-			at: MOM_SEAT,
-			yaw: MOM_SEAT.yaw,
+			t0: 0,
+			t1: N.kinUp,
+			at: g.kinSeat,
+			yaw: g.kinSeat.yaw,
+			anim: "chairSit",
+		},
+		{
+			t0: N.kinUp,
+			t1: N.kinStood,
+			at: g.kinSeat,
+			yaw: g.kinSeat.yaw,
 			anim: "chairUp",
 		},
 		{
-			t0: N.momStood,
-			t1: N.momVia,
-			at: MOM_SEAT,
-			to: MOM_VIA,
+			t0: N.kinStood,
+			t1: N.kinVia,
+			at: g.kinSeat,
+			to: g.kinVia,
+			yaw: 0,
+			anim: "walk",
+		},
+		...(N.kinGo > N.kinVia
+			? [
+					{
+						t0: N.kinVia,
+						t1: N.kinGo,
+						at: g.kinVia,
+						yaw: yawTo(g.kinVia, g.hugged),
+						anim: "clap" as const,
+					},
+				]
+			: []),
+		{
+			t0: N.kinGo,
+			t1: N.kinThere,
+			at: g.kinVia,
+			to: g.kinHug,
 			yaw: 0,
 			anim: "walk",
 		},
 		{
-			t0: N.momVia,
-			t1: N.momThere,
-			at: MOM_VIA,
-			to: MOM_HUG,
-			yaw: 0,
-			anim: "walk",
-		},
-		{
-			t0: N.momThere,
+			t0: N.kinThere,
 			t1: N.hug,
-			at: MOM_HUG,
-			yaw: HUG_YAW + Math.PI,
+			at: g.kinHug,
+			yaw: g.hugYaw + Math.PI,
 			anim: "easy",
 		},
 		{
 			t0: N.hug,
 			t1: N.hug + HUG_MS,
-			at: MOM_HUG,
-			yaw: HUG_YAW + Math.PI,
+			at: g.kinHug,
+			yaw: g.hugYaw + Math.PI,
 			anim: "dapHug",
 		},
 		{
 			t0: N.hug + HUG_MS,
 			t1: N.ms + 60_000,
-			at: MOM_HUG,
-			yaw: yawTo(MOM_HUG, AISLE_IN),
+			at: g.kinHug,
+			yaw: yawTo(g.kinHug, g.aisleIn),
 			anim: "clap",
 		},
 	];
-	const dadBeats: Beat[] = [
-		{ t0: 0, t1: N.dadUp, at: DAD_SEAT, yaw: DAD_SEAT.yaw, anim: "chairSit" },
+	// And whoever else is with them: up on their feet, clapping him (his
+	// brother more than clapping).
+	const otherPid = take.other === "none" ? undefined : KIN_PID[take.other];
+	const cheer: AnimName = take.other === "brother" ? "cheer" : "clap";
+	const otherBeats: Beat[] = [
 		{
-			t0: N.dadUp,
-			t1: N.dadUp + CHAIR_UP_MS,
-			at: DAD_SEAT,
-			yaw: DAD_SEAT.yaw,
+			t0: 0,
+			t1: N.otherUp,
+			at: g.otherSeat,
+			yaw: g.otherSeat.yaw,
+			anim: "chairSit",
+		},
+		{
+			t0: N.otherUp,
+			t1: N.otherUp + CHAIR_UP_MS,
+			at: g.otherSeat,
+			yaw: g.otherSeat.yaw,
 			anim: "chairUp",
 		},
 		{
-			t0: N.dadUp + CHAIR_UP_MS,
+			t0: N.otherUp + CHAIR_UP_MS,
 			t1: N.leave,
-			at: DAD_SEAT,
-			yaw: yawTo(DAD_SEAT, HUGGED),
-			anim: "clap",
+			at: g.otherSeat,
+			yaw: yawTo(g.otherSeat, g.hugged),
+			anim: cheer,
 		},
 		{
 			t0: N.leave,
 			t1: N.ms + 60_000,
-			at: DAD_SEAT,
-			yaw: yawTo(DAD_SEAT, AISLE_IN),
-			anim: "clap",
+			at: g.otherSeat,
+			yaw: yawTo(g.otherSeat, g.aisleIn),
+			anim: cheer,
 		},
 	];
 	const commBeats: Beat[] = [
@@ -669,20 +937,32 @@ export const stageDraftNight = (
 				ball: NO_BALL,
 			};
 		},
-		aim: (t, narrow, m) => shotOf(draftCameraAt(t, narrow, m.players[0])),
+		aim: (t, narrow, m) =>
+			shotOf(draftCameraAt(t, narrow, m.players[0], take, g, N)),
 		// Nobody working a game: no officials, coaches or photographers of
 		// theirs - only its own people.
 		crew: () => false,
-		flashes: draftFlashesAt,
-		cast: castFor(pid, colors),
+		flashes: flashesOf(g, N),
+		cast: [
+			commissioner(),
+			kinOf(take.hugger, pid, colors, race),
+			...(take.other === "none" ? [] : [kinOf(take.other, pid, colors, race)]),
+		],
 		castAt: (t) => [
 			castState(COMMISSIONER, commBeats, t, groundAt),
-			castState(MOTHER, momBeats, t, groundAt),
-			castState(FATHER, dadBeats, t, groundAt),
+			castState(kinPid, kinBeats, t, groundAt),
+			...(otherPid === undefined
+				? []
+				: [castState(otherPid, otherBeats, t, groundAt)]),
 		],
+		take,
+		night: N,
+		places: g,
+		room: {
+			families: [familyOf(g)],
+			upAt: (t) => t >= N.call + 200,
+			clapAt: clapOf(N),
+			jetFrom: N.onStage - 900,
+		},
 	};
 };
-
-// The chairs he and his mother and father get up out of, drawn where they
-// sit (see draftVenue).
-export const CHAIRS = [SEAT, MOM_SEAT, DAD_SEAT];

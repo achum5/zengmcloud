@@ -1,4 +1,5 @@
 import { generate, type FaceConfig } from "facesjs";
+import type { Race } from "../../../../common/types.ts";
 import { makeCourtRng } from "../courtRng.ts";
 import type { BallEnd, CourtTimeline, Fx, Huddle } from "./director.ts";
 import {
@@ -98,11 +99,18 @@ type TeamLike = {
 // faces.js draws on Math.random; seeded here, so the same people turn up
 // every time the game is shown. Officials and coaches wear nothing on their
 // heads - no caps, no headbands.
-export const faceFor = (seed: string, female: boolean): FaceConfig => {
+export const faceFor = (
+	seed: string,
+	female: boolean,
+	race?: Race,
+): FaceConfig => {
 	const real = Math.random;
 	Math.random = makeCourtRng(`face|${seed}`);
 	try {
-		const face = generate(undefined, { gender: female ? "female" : "male" });
+		const face = generate(undefined, {
+			gender: female ? "female" : "male",
+			...(race ? { race } : {}),
+		});
 		return { ...face, accessories: { ...face.accessories, id: "none" } };
 	} finally {
 		Math.random = real;

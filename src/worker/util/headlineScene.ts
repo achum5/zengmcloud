@@ -4,6 +4,7 @@ import { courtOf } from "../../common/stockCourts.ts";
 import type { HeadlineSceneSpec } from "../../common/headlineScene.ts";
 import { takeArenaLooks } from "../core/game/replayLooks.ts";
 import { resolveCourt } from "./courtPictures.ts";
+import { inferRaceFromFace } from "./realisticFaces.ts";
 import { getTeamInfoBySeason } from "./getTeamInfoBySeason.ts";
 import fuzzRating from "../core/player/fuzzRating.ts";
 import valueCombineOvrPot from "../core/player/valueCombineOvrPot.ts";
@@ -148,6 +149,8 @@ export const headlineScene = async (spec: HeadlineSceneSpec) => {
 			name: `${p.firstName} ${p.lastName}`,
 			pos: ratings?.pos,
 			jerseyNumber: helpers.getJerseyNumber(p),
+			// (His family at his table looking like his family.)
+			race: p.face ? inferRaceFromFace(p.face) : undefined,
 		},
 		draftNight: await draftNight(p, season),
 	};

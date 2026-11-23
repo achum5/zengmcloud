@@ -3,23 +3,20 @@ import { drawFan, type Fan } from "./arena.ts";
 import { depthOf, project, type Camera } from "./camera.ts";
 import type { CrowdFace } from "./crowdFaces.ts";
 import {
-	CHAIRS,
-	HIS_TABLE,
-	JET_FROM,
+	familyAt,
 	JET_MS,
 	JETS,
 	MARK,
 	PODIUM,
 	seatAt,
-	seatsOf,
+	SEATS,
 	STAGE,
 	STEPS,
 	TABLE_H,
 	TABLE_R,
 	TABLES,
-	clappingAt,
 	groundAt,
-	tableUpAt,
+	type DraftRoom,
 } from "./draftStage.ts";
 import { lightness, shade } from "./figure.ts";
 import { COURT_W, type Pt, type Pt3 } from "./geometry.ts";
@@ -430,7 +427,10 @@ export type DraftVenuePaint = {
 	accent: string;
 };
 
-export const paintDraftVenue = (info: DraftVenueInfo): DraftVenuePaint => {
+export const paintDraftVenue = (
+	info: DraftVenueInfo,
+	room: DraftRoom,
+): DraftVenuePaint => {
 	const [main, accent] = ledColors(info.team.colors);
 	const rng = makeCourtRng(
 		`draft|${info.season}|${info.team.abbrev}|${info.team.name}`,
@@ -439,8 +439,9 @@ export const paintDraftVenue = (info: DraftVenueInfo): DraftVenuePaint => {
 
 	const guests: Guest[] = [];
 	for (const table of TABLES) {
-		const his = table.x === HIS_TABLE.x && table.y === HIS_TABLE.y;
-		for (const a of seatsOf(table)) {
+		const family = familyAt(room, table);
+		const his = family !== undefined;
+		for (const a of family?.guests ?? SEATS) {
 			// (Now and then an empty chair - somebody off talking to somebody.)
 			if (!his && rng() < 0.12) {
 				continue;
@@ -907,7 +908,7 @@ const sweepAt = (i: number, t: number): Pt => ({
 	y: 26 + 16 * Math.sin(t / 3300 + i * 1.3 + 0.7),
 });
 
-export const draftVenue = (paint: DraftVenuePaint): Venue => {
+export const draftVenue = (paint: DraftVenuePaint, room: DraftRoom): Venue => {
 	const cw = Math.round(CELL_W * PX);
 	const ch = Math.round(CELL_H * PX);
 	const wallPlane = wall(
@@ -1055,8 +1056,8 @@ export const draftVenue = (paint: DraftVenuePaint): Venue => {
 					},
 				});
 			}
-			// The two chairs that the pick and his mother get up out of.
-			for (const c of CHAIRS) {
+			// The chairs that the pick and his family get up out of.
+			for (const c of room.families.flatMap((f) => f.chairs)) {
 				if (near(c)) {
 					continue;
 				}
@@ -1106,8 +1107,8 @@ export const draftVenue = (paint: DraftVenuePaint): Venue => {
 			});
 			// The people round the tables: sat, clapping, his family up.
 			const smoothing = ctx.imageSmoothingEnabled;
-			const upNow = tableUpAt(t);
-			const clapNow = clappingAt(t);
+			const upNow = room.upAt(t);
+			const clapNow = room.clapAt(t);
 			for (const gu of paint.guests) {
 				if (near(gu.at)) {
 					continue;
@@ -1157,7 +1158,7 @@ export const draftVenue = (paint: DraftVenuePaint): Venue => {
 		over: (ctx, cam, t) => {
 			drawBeams(ctx, cam, t);
 			for (const j of JETS) {
-				drawJet(ctx, cam, j, t - JET_FROM);
+				drawJet(ctx, cam, j, t - room.jetFrom);
 			}
 		},
 	};

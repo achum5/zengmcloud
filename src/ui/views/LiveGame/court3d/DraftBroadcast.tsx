@@ -3,7 +3,7 @@ import { TeamLogoInline } from "../../../components/TeamLogoInline.tsx";
 import { getHeightString } from "../../../components/Height.tsx";
 import { useLocal } from "../../../util/local.ts";
 import { announcement, draftFacts } from "../../../../common/draftNight.ts";
-import { DRAFT_NIGHT } from "./draftStage.ts";
+import { DRAFT_CALL } from "./draftStage.ts";
 import { lightness } from "./figure.ts";
 
 // DRAFT NIGHT, AS IT IS BROADCAST, over a pick made on the stage (see
@@ -24,8 +24,8 @@ const GOLD = "#f2c14e";
 export const PRE_ROLL_MS = 1600;
 // When the commissioner's words come up under SELECTION, and his name (ms of
 // the scene - see draftStage.ts).
-const WORDS_AT = DRAFT_NIGHT.podium;
-const NAME_AT = DRAFT_NIGHT.call;
+const WORDS_AT = DRAFT_CALL.podium;
+const NAME_AT = DRAFT_CALL.call;
 // When the line under his name first comes up, and how long each stays (ms
 // after his name).
 const LINE_FROM = 600;

@@ -177,29 +177,35 @@ const HeadlineStage = ({
 
 	const pid = made?.player.pid;
 	const colors = made?.team.colors;
+	const race = made?.player.race;
 	const staged = useMemo(
-		() => (pid === undefined ? undefined : stageDraftNight(pid, colors)),
-		[pid, colors],
+		() => (pid === undefined ? undefined : stageDraftNight(pid, colors, race)),
+		[pid, colors, race],
 	);
 	// The room, painted again once the logo and the faces are in.
+	const room = staged?.room;
 	const venue = useMemo(() => {
-		if (!made) {
+		if (!made || !room) {
 			return undefined;
 		}
 		const { team, draftNight: night } = made;
 		return draftVenue(
-			paintDraftVenue({
-				season: made.season,
-				team,
-				logo: wallLogo,
-				board: [
-					{ overall: night.overall, label: team.region, now: true },
-					...night.next.map((n) => ({ overall: n.overall, label: n.region })),
-				],
-				...(faces ? { faces } : {}),
-			}),
+			paintDraftVenue(
+				{
+					season: made.season,
+					team,
+					logo: wallLogo,
+					board: [
+						{ overall: night.overall, label: team.region, now: true },
+						...night.next.map((n) => ({ overall: n.overall, label: n.region })),
+					],
+					...(faces ? { faces } : {}),
+				},
+				room,
+			),
+			room,
 		);
-	}, [made, wallLogo, faces]);
+	}, [made, room, wallLogo, faces]);
 	const dressing = useMemo(() => {
 		const cap = capOf(colors);
 		return {
