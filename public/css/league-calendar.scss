@@ -145,8 +145,17 @@ $lc-home-bg: if(lightness($white) < 50%, #000, #111);
 		}
 	}
 
-	td.lc-mine {
-		background: rgba(var(--bs-primary-rgb), 0.16);
+	// The league's nights: the user's road games in his team's color.
+	td.lc-road {
+		color: var(--lc-road-fg);
+		background: var(--lc-road-bg);
+
+		.lc-num,
+		.lc-tag,
+		.lc-key {
+			color: var(--lc-road-fg);
+			opacity: 0.85;
+		}
 	}
 
 	td.lc-today {
@@ -164,6 +173,16 @@ $lc-home-bg: if(lightness($white) < 50%, #000, #111);
 		.lc-num {
 			color: var(--bs-emphasis-color);
 			font-weight: 700;
+		}
+	}
+
+	// (A road night picked keeps its color, outlined.)
+	td.lc-selected.lc-road {
+		background: var(--lc-road-bg);
+		box-shadow: inset 0 0 0 2px var(--bs-emphasis-color);
+
+		.lc-num {
+			color: var(--lc-road-fg);
 		}
 	}
 }
