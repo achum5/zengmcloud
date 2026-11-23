@@ -750,9 +750,13 @@
 	font-variant-numeric: tabular-nums;
 	white-space: nowrap;
 }
-// (Room under the series' tag for each side's city.)
+// (Room under the series' tag for each side's city, and Final centered in
+// what's left below it.)
 .lh-gc-has-series .lh-gc-team {
 	padding-top: 1.15rem;
+}
+.lh-gc-has-series .lh-gc-mid {
+	margin-top: 1rem;
 }
 .lh-gc-card > .lh-gc-series {
 	position: absolute;
@@ -963,6 +967,9 @@
 	}
 	.lh-gc-has-series .lh-gc-team {
 		padding-top: 0.85rem;
+	}
+	.lh-gc-has-series .lh-gc-mid {
+		margin-top: 0.8rem;
 	}
 	.lh-gc-line {
 		margin-top: 0.1rem;
