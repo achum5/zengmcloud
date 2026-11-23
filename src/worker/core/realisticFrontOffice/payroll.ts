@@ -63,14 +63,15 @@ const memo = () => {
 };
 
 const salaryFor = (value: number) => {
-	const v = Math.round(value * 10) / 10;
-	let amount = salaryMemo.get(v);
+	// Remembered by tenths of a point, as a whole number (a faster key).
+	const tenths = Math.round(value * 10);
+	let amount = salaryMemo.get(tenths);
 	if (amount === undefined) {
 		amount = genContract(
-			{ value: v, ratings: [{ pos: "F" }] } as any,
+			{ value: tenths / 10, ratings: [{ pos: "F" }] } as any,
 			false,
 		).amount;
-		salaryMemo.set(v, amount);
+		salaryMemo.set(tenths, amount);
 	}
 	return amount;
 };

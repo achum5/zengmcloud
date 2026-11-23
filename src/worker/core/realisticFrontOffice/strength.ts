@@ -536,10 +536,14 @@ const SYNERGY_PLACES = 10;
 const SKILLS = ["3", "A", "B", "Di", "Dp", "Po", "Ps", "R"] as const;
 const NUM_SKILLS = SKILLS.length;
 type SynergyInput = { skills: Float64Array; id: number };
-const synergyInputs = new WeakMap<SynergyCompositeRating, SynergyInput>();
+// Each synergy's input is kept on the synergy itself, under a key of its own
+// (never copied, saved or listed: the synergies here are the model's own) -
+// a lookup in a WeakMap, as it was, was 4% of a market moment.
+const SYNERGY_INPUT = Symbol("synergyInput");
+type WithInput = SynergyCompositeRating & { [SYNERGY_INPUT]?: SynergyInput };
 let nextSynergyId = 0;
 const synergyInput = (synergy: SynergyCompositeRating) => {
-	let input = synergyInputs.get(synergy);
+	let input = (synergy as WithInput)[SYNERGY_INPUT];
 	if (!input) {
 		const counts = synergySkillCounts([{ compositeRating: synergy }]);
 		input = {
@@ -547,7 +551,7 @@ const synergyInput = (synergy: SynergyCompositeRating) => {
 			id: nextSynergyId,
 		};
 		nextSynergyId = (nextSynergyId + 1) | 0;
-		synergyInputs.set(synergy, input);
+		(synergy as WithInput)[SYNERGY_INPUT] = input;
 	}
 	return input;
 };
@@ -816,10 +820,10 @@ const sortedSynergyInput: (SynergyInput | undefined)[] = [];
 
 const layOut = (
 	sorted: readonly (StrengthPlayer & { availability: number })[],
-	enumerated: readonly StrengthPlayer[],
+	n: number,
+	enumerated: readonly (StrengthPlayer | undefined)[],
 	factor: AvailabilityFactor,
 ) => {
-	const n = sorted.length;
 	if (n > capacity) {
 		capacity = Math.max(n, 2 * capacity);
 		sortedAvailability = new Float64Array(capacity);
@@ -1022,23 +1026,36 @@ const byPlace = (sure: number, mask: number) => {
 };
 
 // Everyone who may be there, in pecking order: the same order as sorting by
-// valueNoPot keeps ties as they come, which an insertion sort does too.
+// valueNoPot keeps ties as they come, which an insertion sort does too. The
+// first `orderSize` of `order` (kept and reused, never cut back: cutting an
+// array back gives up its storage, and it was made again for each of the
+// near million rosters a market moment prices).
 const order: (StrengthPlayer & { availability: number })[] = [];
 const orderValue: number[] = [];
+let orderSize = 0;
 const inPeckingOrder = (
 	players: readonly (StrengthPlayer & { availability: number })[],
+	count: number,
 ) => {
-	order.length = 0;
-	orderValue.length = 0;
-	for (const p of players) {
+	let size = 0;
+	for (let k = 0; k < count; k++) {
+		const p = players[k]!;
 		if (!(p.availability > 0)) {
 			continue;
 		}
 		const v = p.valueNoPot;
 		if (!Number.isFinite(v)) {
-			return players.filter((x) => x.availability > 0).sort(byValueNoPot);
+			const sorted: (StrengthPlayer & { availability: number })[] = [];
+			for (let i = 0; i < count; i++) {
+				if (players[i]!.availability > 0) {
+					sorted.push(players[i]!);
+				}
+			}
+			sorted.sort(byValueNoPot);
+			orderSize = sorted.length;
+			return sorted;
 		}
-		let j = order.length;
+		let j = size;
 		while (j > 0 && v > orderValue[j - 1]!) {
 			order[j] = order[j - 1]!;
 			orderValue[j] = orderValue[j - 1]!;
@@ -1046,7 +1063,9 @@ const inPeckingOrder = (
 		}
 		order[j] = p;
 		orderValue[j] = v;
+		size += 1;
 	}
+	orderSize = size;
 	return order;
 };
 
@@ -1067,28 +1086,44 @@ const factorAt = (factor: AvailabilityFactor, i: number, p: StrengthPlayer) =>
 			? factor(p)
 			: (factor[i] ?? 1);
 
+// The players played out both ways (the first `uncertainCount`), where each
+// appears among the players, and his chance of being there: kept for the
+// purpose, not made afresh for each roster.
+const uncertainNow: (
+	| (StrengthPlayer & { availability: number })
+	| undefined
+)[] = [undefined, undefined];
+const whichNow = [0, 0];
+const oddsNow = [0, 0];
+
 // `factor` scales everyone's chance of being there - or each place's, by
 // where he stands in the pecking order: a share of games lost to injuries
 // yet to come (outlookSettings.injuryRisk).
 export const expectedRosterPoints = (
 	players: readonly (StrengthPlayer & { availability: number })[],
 	factor: AvailabilityFactor = 1,
+	// Only the first this many of `players`.
+	count = players.length,
 ) => {
-	const sorted = inPeckingOrder(players);
-	const n = sorted.length;
-	const uncertain: (StrengthPlayer & { availability: number })[] = [];
+	const sorted = inPeckingOrder(players, count);
+	const n = orderSize;
+	const uncertain = uncertainNow;
+	uncertain[0] = undefined;
+	uncertain[1] = undefined;
+	let uncertainCount = 0;
 	for (let i = 0; i < n; i++) {
 		const p = sorted[i]!;
 		if (Math.min(1, p.availability) * factorAt(factor, i, p) < 1) {
-			uncertain.push(p);
-			if (uncertain.length === ENUMERATED) {
+			uncertain[uncertainCount] = p;
+			uncertainCount += 1;
+			if (uncertainCount === ENUMERATED) {
 				break;
 			}
 		}
 	}
-	layOut(sorted, uncertain, factor);
+	layOut(sorted, n, uncertain, factor);
 	let sure = n;
-	if (uncertain.length > 0) {
+	if (uncertainCount > 0) {
 		sure = 0;
 		for (let i = 0; i < n; i++) {
 			if (sortedEnumerated[i]! >= 0) {
@@ -1105,25 +1140,42 @@ export const expectedRosterPoints = (
 	if (sure >= 0) {
 		fillRest(sure, n, 0);
 	}
-	if (uncertain.length === 0) {
+	if (uncertainCount === 0) {
 		return byPlace(sure, 0);
 	}
 	// Each enumerated player wherever he appears, in turn.
-	const which: number[] = [];
-	const odds: number[] = [];
-	for (const p of players) {
-		const i = uncertain.indexOf(p);
+	const which = whichNow;
+	const odds = oddsNow;
+	let whichCount = 0;
+	for (let k = 0; k < count; k++) {
+		const p = players[k]!;
+		const i =
+			p === uncertain[0]
+				? 0
+				: uncertainCount > 1 && p === uncertain[1]
+					? 1
+					: -1;
 		if (i >= 0) {
-			which.push(i);
-			odds.push(
-				Math.min(1, p.availability) * factorAt(factor, sorted.indexOf(p), p),
-			);
+			// His place in the pecking order (his first, if he is there twice).
+			let at = 0;
+			while (sorted[at] !== p) {
+				at += 1;
+			}
+			const chance = Math.min(1, p.availability) * factorAt(factor, at, p);
+			if (whichCount < which.length) {
+				which[whichCount] = i;
+				odds[whichCount] = chance;
+			} else {
+				which.push(i);
+				odds.push(chance);
+			}
+			whichCount += 1;
 		}
 	}
 	let total = 0;
-	for (let mask = 0; mask < 1 << uncertain.length; mask++) {
+	for (let mask = 0; mask < 1 << uncertainCount; mask++) {
 		let chance = 1;
-		for (let j = 0; j < which.length; j++) {
+		for (let j = 0; j < whichCount; j++) {
 			chance *= (mask >> which[j]!) & 1 ? odds[j]! : 1 - odds[j]!;
 		}
 		if (chance > 0) {

@@ -315,6 +315,99 @@ const termsOf = (p: Player) => {
 	return `${p.pid}:${c.amount}:${c.exp}`;
 };
 
+// What a team's holdings were when their key was read: its players and
+// their terms, its picks and where each is.
+type Terms = {
+	players: readonly Player[];
+	amounts: number[];
+	exps: number[];
+	picks: readonly DraftPick[];
+	at: number[];
+};
+const termsNow = (h: Holdings): Terms => {
+	const amounts: number[] = [];
+	const exps: number[] = [];
+	for (const p of h.players) {
+		const c = contractOf(p);
+		amounts.push(c.amount);
+		exps.push(c.exp);
+	}
+	return {
+		players: [...h.players],
+		amounts,
+		exps,
+		picks: [...h.picks],
+		at: h.picks.map((dp) => dp.pick),
+	};
+};
+const sameTerms = (h: Holdings, t: Terms) => {
+	if (
+		h.players.length !== t.players.length ||
+		h.picks.length !== t.picks.length
+	) {
+		return false;
+	}
+	for (let i = 0; i < h.players.length; i++) {
+		const p = h.players[i]!;
+		if (p !== t.players[i]) {
+			return false;
+		}
+		const c = contractOf(p);
+		if (c.amount !== t.amounts[i] || c.exp !== t.exps[i]) {
+			return false;
+		}
+	}
+	for (let i = 0; i < h.picks.length; i++) {
+		const dp = h.picks[i]!;
+		if (dp !== t.picks[i] || dp.pick !== t.at[i]) {
+			return false;
+		}
+	}
+	return true;
+};
+
+// What a bid (SmartView.matchedNow) is read on that can change while the
+// teams' holdings stand: each player's value (a roster over the limit cuts
+// its least valuable players first, and a value moves with every game
+// played) and terms, and where each pick is - the team's, then the
+// package's.
+const bidInputs = (h: Holdings, a: Holdings) => {
+	const inputs: number[] = [];
+	for (const x of [h, a]) {
+		for (const p of x.players) {
+			const c = contractOf(p);
+			inputs.push(p.value, c.amount, c.exp);
+		}
+		for (const dp of x.picks) {
+			inputs.push(dp.pick);
+		}
+	}
+	return inputs;
+};
+const sameBidInputs = (inputs: number[], h: Holdings, a: Holdings) => {
+	let i = 0;
+	for (const x of [h, a]) {
+		for (const p of x.players) {
+			const c = contractOf(p);
+			if (
+				inputs[i] !== p.value ||
+				inputs[i + 1] !== c.amount ||
+				inputs[i + 2] !== c.exp
+			) {
+				return false;
+			}
+			i += 3;
+		}
+		for (const dp of x.picks) {
+			if (inputs[i] !== dp.pick) {
+				return false;
+			}
+			i += 1;
+		}
+	}
+	return i === inputs.length;
+};
+
 // Prices against places (0 the best finish), as the best decreasing fit
 // (pooling neighbours that rise), then at each place 0 to n - 1: between
 // the nearest fitted places, and flat beyond the ends.
@@ -363,8 +456,14 @@ const decreasingAt = (rows: { x: number; p: number }[], n: number) => {
 export class SmartView {
 	outlook: LeagueOutlook;
 	humans: Set<number>;
-	private holdings = new Map<number, { sig: string; h: Holdings }>();
-	private values = new Map<string, number>();
+	private holdings = new Map<
+		number,
+		{ sig: string; h: Holdings; terms: Terms }
+	>();
+	// Values by team, then by what the team holds (its own key), then by the
+	// holdings valued - a key in parts, not joined into one long string for
+	// each of the hundreds of thousands of values a market moment reads.
+	private values = new Map<number, Map<string, Map<string, number>>>();
 	// Each team's strength path on its holdings, and deals' margins.
 	private paths = new Map<string, number[]>();
 	private margins = new Map<string, number>();
@@ -385,6 +484,23 @@ export class SmartView {
 	// and the bids forgotten, whenever a team's holdings change.
 	private version = 0;
 	private leagueBids = new Map<string, number>();
+	// Each team's rough want for a package (leagueBidNow), and its bid as the
+	// trade rules let it take it in (matchedNow), as the teams' holdings
+	// stand - forgotten with the league's bids, and each kept with what it was
+	// read on (bidInputs), read again if any of that has changed. A package
+	// is priced again for every deal it is in, by the same teams.
+	private roughs = new Map<
+		string,
+		Map<number, { rough: number; h: Holdings; inputs: number[] }>
+	>();
+	private matched = new Map<
+		string,
+		{
+			m: { use: number; net: number } | undefined;
+			h: Holdings;
+			inputs: number[];
+		}
+	>();
 
 	constructor(outlook: LeagueOutlook, humans: Iterable<number>) {
 		this.outlook = outlook;
@@ -397,15 +513,22 @@ export class SmartView {
 		const picks = (
 			await idb.cache.draftPicks.indexGetAll("draftPicksByTid", tid)
 		).filter((dp) => typeof dp.season === "number");
-		const sig = this.keyOf({ players, picks });
 		const had = this.holdings.get(tid);
+		// The same players on the same terms, and the same picks: what it
+		// held (keyOf would be the same).
+		if (had && sameTerms({ players, picks }, had.terms)) {
+			return had.h;
+		}
+		const sig = this.keyOf({ players, picks });
 		if (had && had.sig === sig) {
 			return had.h;
 		}
 		const h = { players, picks };
-		this.holdings.set(tid, { sig, h });
+		this.holdings.set(tid, { sig, h, terms: termsNow(h) });
 		this.version += 1;
 		this.leagueBids.clear();
+		this.roughs.clear();
+		this.matched.clear();
 		// It changes only as the team trades, and so what it holds.
 		this.tradedAway.set(tid, await tradedAwayOf(tid));
 		return h;
@@ -439,6 +562,17 @@ export class SmartView {
 	// afresh for every roster was 83% of a franchise value's time.
 	private letGo = new Map<number, { sig: string; known: LetGoDecisions }>();
 
+	// A team's own holdings' key (keyOf), read again only if a player's terms
+	// or a pick have changed since it was read: they are valued at every
+	// value of the team's.
+	private sigOf(tid: number, h: Holdings) {
+		const own = this.holdings.get(tid);
+		if (own && own.h === h && sameTerms(h, own.terms)) {
+			return own.sig;
+		}
+		return this.keyOf(h);
+	}
+
 	private keyOf(h: Holdings, dead: Dead = []) {
 		return `${h.players.map(termsOf).sort().join(",")}|${h.picks
 			.map((dp) => `${dp.dpid}:${dp.pick}`)
@@ -453,9 +587,19 @@ export class SmartView {
 		const own = this.holdings.get(tid);
 		const ownSig = own?.sig ?? "";
 		const trading = this.tradingFor(tid, gone);
-		const sig = this.keyOf(h, dead);
-		const key = `${tid}#${ownSig}#${sig}${trading ? `#gone${gone}` : ""}`;
-		let v = this.values.get(key);
+		const sig = dead.length === 0 ? this.sigOf(tid, h) : this.keyOf(h, dead);
+		const key = trading ? `${sig}#gone${gone}` : sig;
+		let byTeam = this.values.get(tid);
+		if (!byTeam) {
+			byTeam = new Map();
+			this.values.set(tid, byTeam);
+		}
+		let byOwn = byTeam.get(ownSig);
+		if (!byOwn) {
+			byOwn = new Map();
+			byTeam.set(ownSig, byOwn);
+		}
+		let v = byOwn.get(key);
 		if (v !== undefined) {
 			return v;
 		}
@@ -503,7 +647,7 @@ export class SmartView {
 			recording.record = false;
 			this.letGo.set(tid, { sig: ownSig, known: recording });
 		}
-		this.values.set(key, v);
+		byOwn.set(key, v);
 		return v;
 	}
 
@@ -821,7 +965,7 @@ export class SmartView {
 	// team then (realisticFrontOffice/margin.ts, by its own curves).
 	marginNow(tid: number, give: Holdings, get: Holdings) {
 		const h = this.heldNow(tid);
-		const sig = this.keyOf(h);
+		const sig = this.sigOf(tid, h);
 		const key = `${tid}#${sig}#${this.keyOf(give)}#${this.keyOf(get)}`;
 		let m = this.margins.get(key);
 		if (m !== undefined) {
@@ -851,7 +995,7 @@ export class SmartView {
 	// margin's paths).
 	pathNow(tid: number) {
 		const h = this.heldNow(tid);
-		const key = `${tid}#${this.keyOf(h)}`;
+		const key = `${tid}#${this.sigOf(tid, h)}`;
 		let path = this.paths.get(key);
 		if (!path) {
 			path = teamStrengths(this.outlook, tid, h.players, h.picks);
@@ -934,7 +1078,7 @@ export class SmartView {
 	// Each of a team's players' use to it, on what it holds.
 	private uses = new Map<string, Map<number, number>>();
 	usesOf(tid: number, h: Holdings) {
-		const key = `${tid}#${this.keyOf(h)}`;
+		const key = `${tid}#${this.sigOf(tid, h)}`;
 		let uses = this.uses.get(key);
 		if (!uses) {
 			uses = new Map();
@@ -1001,6 +1145,18 @@ export class SmartView {
 	// ($40.8M) was 0.385 of a title, past the three rotation players it would
 	// send for his salary 0.11 (the owner's League 27).
 	matchedNow(tid: number, a: Holdings) {
+		const key = `${tid}#${this.keyOf(a)}`;
+		const h = this.heldNow(tid);
+		const had = this.matched.get(key);
+		if (had && had.h === h && sameBidInputs(had.inputs, h, a)) {
+			return had.m && { ...had.m };
+		}
+		const m = this.matchedFresh(tid, a);
+		this.matched.set(key, { m: m && { ...m }, h, inputs: bidInputs(h, a) });
+		return m;
+	}
+
+	private matchedFresh(tid: number, a: Holdings) {
 		const h = this.heldNow(tid);
 		if (a.players.some((p) => h.players.some((x) => x.pid === p.pid))) {
 			const use = this.useOfNow(tid, a, h);
@@ -1173,10 +1329,23 @@ export class SmartView {
 		if (had !== undefined) {
 			return had;
 		}
+		const pieceKey = this.keyOf(a);
+		let roughs = this.roughs.get(pieceKey);
+		if (!roughs) {
+			roughs = new Map();
+			this.roughs.set(pieceKey, roughs);
+		}
 		const wants: { tid: number; rough: number }[] = [];
 		for (const tid of this.outlook.teams.keys()) {
 			if (!not.includes(tid)) {
-				wants.push({ tid, rough: this.roughUseOfNow(tid, a) });
+				const h = this.heldNow(tid);
+				const had = roughs.get(tid);
+				let rough = had?.rough;
+				if (!had || had.h !== h || !sameBidInputs(had.inputs, h, a)) {
+					rough = this.roughUseOfNow(tid, a, h);
+					roughs.set(tid, { rough, h, inputs: bidInputs(h, a) });
+				}
+				wants.push({ tid, rough: rough! });
 			}
 		}
 		wants.sort((x, y) => y.rough - x.rough || x.tid - y.tid);

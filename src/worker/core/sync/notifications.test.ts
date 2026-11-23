@@ -59,7 +59,7 @@ describe("buildNotifications", () => {
 		g.setWithoutSavingToDB("realisticFrontOffices", true);
 		g.setWithoutSavingToDB("phase", PHASE.FREE_AGENCY);
 		g.setWithoutSavingToDB("faInStages", true);
-		// Training camp: the sheet came in the open market, matched now.
+		// Phase 5 (training camp): the sheet came in the open market, matched now.
 		g.setWithoutSavingToDB("daysLeft", 1);
 		try {
 			const notifs = await buildNotifications(
@@ -86,7 +86,7 @@ describe("buildNotifications", () => {
 				opts,
 			);
 			assert.strictEqual(notifs[0]!.title, "Free agency stage simmed");
-			assert.ok(notifs[0]!.body.startsWith("Now: Training camp."));
+			assert.ok(notifs[0]!.body.startsWith("Now: Phase 5."));
 			const sheet = notifs.find((x) => x.title === "Offer sheet");
 			assert.deepEqual(sheet?.targetTids, [0]);
 			assert.ok(sheet?.body.includes("Rookie Deal"));

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 450,
+		date: "2026-11-23",
+		text: "Leagues with the smart CPU GM sim faster: about 15% less time over a season, and its trade market moments about a fifth quicker. The CPU teams make exactly the same moves as before.",
+	},
+	{
 		n: 449,
 		date: "2026-11-23",
 		text: "3D game: score bugs can now show a team in the broadcast's own colors (the Heat in black, the Raptors in black, the Knicks in MSG's darker blue), set figures the way a broadcast does (a narrow 1), and slide FOULS aside when BONUS shows. A superscript 4TH now sits level with the top of the 4.",

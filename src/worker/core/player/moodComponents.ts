@@ -156,31 +156,15 @@ export const finishedComponent = (
 	}
 
 	// Bound all components - they don't all have the same bounds!
-	const bounds: Partial<Record<typeof key, [number, number]>> = {
-		marketSize: [-2, 2],
-		facilities: [-2, 2],
-		teamPerformance: [-Infinity, 2],
-		hype: [-2, 2],
-		loyalty: [0, Infinity],
-		trades: [-Infinity, 0],
-		playingTime: [-Infinity, 2],
-		rookieContract: [0, Infinity],
-	};
-	const bound = bounds[key];
+	const bound = COMPONENT_BOUNDS[key];
 	if (bound) {
 		value = helpers.bound(value, bound[0], bound[1]);
 	}
 
 	// Apply traits modulation
 	if (g.get("playerMoodTraits")) {
-		const traits: Record<string, Partial<Record<typeof key, number>>> = {
-			F: { marketSize: 2.5, hype: 2.5, playingTime: 2.5 },
-			L: { marketSize: 0.5, loyalty: 2.5, trades: 2.5 },
-			$: { facilities: 1.5, marketSize: 0.5, teamPerformance: 0.5 },
-			W: { marketSize: 0.5, playingTime: 0.5, teamPerformance: 2.5 },
-		};
-		for (const trait of ["F", "L", "$", "W"]) {
-			const factor = traits[trait]![key];
+		for (const trait of MOOD_TRAIT_ORDER) {
+			const factor = MOOD_TRAIT_FACTORS[trait]![key];
 			if (factor !== undefined && p.moodTraits.includes(trait as any)) {
 				value *= factor;
 			}
@@ -189,6 +173,30 @@ export const finishedComponent = (
 
 	return value;
 };
+
+// Made once, not at every component: the smart CPU works out moods hundreds
+// of thousands of times a market moment.
+type FinishedKey = Exclude<keyof MoodComponents, "custom">;
+const COMPONENT_BOUNDS: Partial<Record<FinishedKey, [number, number]>> = {
+	marketSize: [-2, 2],
+	facilities: [-2, 2],
+	teamPerformance: [-Infinity, 2],
+	hype: [-2, 2],
+	loyalty: [0, Infinity],
+	trades: [-Infinity, 0],
+	playingTime: [-Infinity, 2],
+	rookieContract: [0, Infinity],
+};
+const MOOD_TRAIT_FACTORS: Record<
+	string,
+	Partial<Record<FinishedKey, number>>
+> = {
+	F: { marketSize: 2.5, hype: 2.5, playingTime: 2.5 },
+	L: { marketSize: 0.5, loyalty: 2.5, trades: 2.5 },
+	$: { facilities: 1.5, marketSize: 0.5, teamPerformance: 0.5 },
+	W: { marketSize: 0.5, playingTime: 0.5, teamPerformance: 2.5 },
+};
+const MOOD_TRAIT_ORDER = ["F", "L", "$", "W"] as const;
 
 // TEAM PERFORMANCE from a share of games won, before finishedComponent: -2 at
 // 25% and 2 at 75% (60% and a title), losing counting double.
@@ -235,11 +243,14 @@ const moodComponents = async (
 	);
 	const currentTeamSeason = teamSeasons.findLast((ts) => ts.season === season);
 
-	const teams = helpers.addPopRank(await idb.cache.teams.getAll());
-	const t = teams.find((t) => t.tid === tid);
-	if (!t) {
+	// Only this team's rank: not a copy of every team for each mood.
+	const teams = await idb.cache.teams.getAll();
+	const ti = teams.findIndex((t) => t.tid === tid);
+	if (ti < 0) {
 		throw new Error(`tid ${tid} not found`);
 	}
+	const t = teams[ti]!;
+	const popRank = helpers.getPopRanks(teams)[ti]!;
 
 	const components: MoodComponents = {
 		marketSize: 0,
@@ -271,7 +282,7 @@ const moodComponents = async (
 
 	{
 		// MARKET SIZE: -2 to 2, based on population rank
-		const marketSize0to1 = (teams.length - t.popRank) / (teams.length - 1);
+		const marketSize0to1 = (teams.length - popRank) / (teams.length - 1);
 		components.marketSize = -2 + marketSize0to1 * 4;
 	}
 

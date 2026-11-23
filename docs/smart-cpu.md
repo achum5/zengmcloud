@@ -2607,3 +2607,62 @@ its 2026 deadline (`calendarMomentsProbe`), met on three of those five nights
 market is asked every regular-season night (`betweenAiTeams({ smartOnly })`
 from `game/play.ts` on a night with no round). The same league met on all
 five, and at the same nine moments before them.
+
+## Speed: the same moves, faster (2026-11-23)
+
+The owner asked (2026-11-23) for faster sims without making the engine any
+less effective or dynamic. So nothing here changes a decision: every change
+was checked to make the very same moves.
+
+**Where the time goes.** One season of a random-players arena league
+(`phaseTimesProbe`, `PT_PROFILE` for a CPU profile) was about 95% the smart
+CPU: the in-season market about 70% (a moment every 5 games a team, each
+40-65 s here), the draft about 10% (the class priced as rookies again after
+each pick, since every pick moves the slots and so the rookie deals), free
+agency about 30% (signings, clearing room and its market moments). A market
+moment (`momentProbe`, `MOMENT_VANILLA=1` for vanilla's rules, `MOMENT_HEAP=1`
+for where it allocates) works out about 37,000 franchise values - and read
+values it had already worked out 600,000 more times, each read building the
+holdings' key again from every player's contract (15 million contract reads a
+moment). It made about 39 GB of short-lived objects; the garbage collector
+was 22% of its time.
+
+**What changed.**
+
+- A package's rough want by each team (`leagueBidNow`) and each team's bid as
+  the trade rules let it take it in (`matchedNow`) are read once while the
+  teams' holdings stand, and read again if any player's value or terms or any
+  pick has moved since (`bidInputs`). A package was read again by every team
+  for every deal it was in. The first try kept them on the holdings alone and
+  a whole season found one deal that came out different: a roster over the
+  limit cuts its least valuable player first (`afterCuts`), and a player's
+  value moves with every game he plays, so a bid kept across nights of games
+  went stale.
+- A team's own holdings key is reused while its players' terms and its picks
+  are as they were (checked each time); values are kept by team, then by what
+  it holds, then by the holdings valued, not under one long joined key.
+- Roster pricing (`expectedRosterPoints`, `asPlayed`) reuses its arrays
+  instead of making new ones for each of the near million rosters a moment
+  prices; the free agents a season's room buys are worked out once for each
+  room; the keys of whom a team may let go are made once.
+- The game's mood components keep their bounds and trait tables, made once,
+  and a mood ranks its own team's market size without copying every team.
+- Smaller: a synergy's input kept on the synergy (it was a WeakMap lookup,
+  4%), the market salary memo keyed by whole tenths.
+
+**Checked.** One market moment on vanilla's rules and one on realistic front
+offices: the same candidates with the same surpluses to the last digit, the
+same deals, the same number of franchise values (37,190 and 36,512). A whole
+season from the same seed (`forwardAudit`, `arena:217`, preseason to the
+next preseason): every trade, signing, re-signing, release and pick the same - the
+audit's lines and the league exports (players, teams, all 1,543 events)
+compared field by field. Master run twice gave the same league, so the check
+can tell.
+
+**Faster.** A market moment: 17-23% less time. The whole season above: 17.1
+minutes on master, 14.6 with these (run side by side), 15% less.
+
+**Left.** Most of what is left is the franchise value itself: each roster
+over eleven seasons, whom it lets go each season, the free agents its room
+buys. A large cut there would mean pricing fewer rosters or fewer seasons -
+less of the engine, so not done.

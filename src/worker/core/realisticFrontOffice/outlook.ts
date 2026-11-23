@@ -652,33 +652,64 @@ const withoutGone = (line: SeasonLine, gone: Gone) => {
 // (Loops, not flatMap and filter: it runs for every season of every roster
 // valued, and the arrays those make were much of the garbage collector's
 // work.)
-const asPlayed = (tid: number, lines: readonly SeasonLine[]) => {
-	let played = lines;
-	if (outlookSettingFor(tid, "upside") && lines.some(hasHalves)) {
-		const split: SeasonLine[] = [];
-		for (const line of lines) {
-			if (line.halves) {
+//
+// These lines and then `extra`, as one roster. Laid out in arrays kept for
+// the purpose and reused, not made afresh: a roster is priced near a million
+// times in a market moment, so what it returns is only good until the next
+// call (expectedRosterPoints, straight away).
+const playedSplit: SeasonLine[] = [];
+const playedKept: SeasonLine[] = [];
+// How many of what asPlayed returned are the roster (its arrays are never
+// cut back: that gives up their storage, made again for the next roster).
+let playedCount = 0;
+const NO_LINES: readonly SeasonLine[] = [];
+const asPlayed = (
+	tid: number,
+	lines: readonly SeasonLine[],
+	extra: readonly SeasonLine[] = NO_LINES,
+): readonly SeasonLine[] => {
+	const split = playedSplit;
+	const upside = outlookSettingFor(tid, "upside");
+	let n = 0;
+	for (let part = 0; part < 2; part++) {
+		for (const line of part === 0 ? lines : extra) {
+			if (upside && line.halves) {
 				for (const half of line.halves) {
-					split.push(half);
+					split[n] = half;
+					n += 1;
 				}
 			} else {
-				split.push(line);
+				split[n] = line;
+				n += 1;
 			}
 		}
-		played = split;
 	}
-	if (outlookSettingFor(tid, "wantedOnly") && played.some(belowReplacement)) {
-		const kept: SeasonLine[] = [];
-		for (const line of played) {
+	if (outlookSettingFor(tid, "wantedOnly")) {
+		const kept = playedKept;
+		let k = 0;
+		for (let i = 0; i < n; i++) {
+			const line = split[i]!;
 			if (!belowReplacement(line)) {
-				kept.push(line);
+				kept[k] = line;
+				k += 1;
 			}
 		}
+		playedCount = k;
 		return kept;
 	}
-	return played;
+	playedCount = n;
+	return split;
 };
-const hasHalves = (line: SeasonLine) => !!line.halves;
+
+// A roster's points as played: these lines and then `extra`.
+const playedPoints = (
+	tid: number,
+	lines: readonly SeasonLine[],
+	extra?: readonly SeasonLine[],
+) => {
+	const played = asPlayed(tid, lines, extra);
+	return expectedRosterPoints(played, injuryFactor(tid), playedCount);
+};
 
 const pickKeyOf = (dp: PickLike) =>
 	`${dp.originalTid}:${dp.season}:${dp.round}`;
@@ -2487,7 +2518,7 @@ export const teamPoints = (
 				// his place - not yet knowing which half he will turn out.
 				options.push({
 					i: lines.length,
-					key: `${key}:drafted`,
+					key: optionKeys(key)[2],
 					pick: key,
 					salary,
 				});
@@ -2497,11 +2528,12 @@ export const teamPoints = (
 				season - draft > getRookieContractLength(round)
 			) {
 				if (halfSalaries) {
+					const keys = optionKeys(key);
 					for (const half of [0, 1] as const) {
 						options.push({
 							i: lines.length,
 							half,
-							key: `${key}:${half}`,
+							key: keys[half],
 							pick: key,
 							salary: halfSalaries[half],
 						});
@@ -2530,7 +2562,7 @@ export const teamPoints = (
 			}
 		}
 		for (const at of futurePickLines(outlook, tid, y)) {
-			addPick(at, at.season, at.round, `future:${at.season}:${at.round}`);
+			addPick(at, at.season, at.round, futureKey(at.season, at.round));
 		}
 		const state: SeasonState = { y, lines, options };
 		seasons.push(state);
@@ -2554,24 +2586,38 @@ export const teamPoints = (
 				// an earlier season (minor).
 				if (wanted && contracts[i]!.exp < season && salary > 0) {
 					const line = lines[i]!;
-					const key = `vet:${players[i]!.pid}`;
+					const key = veteranKey(players[i]!.pid);
 					const minor = line.availability < VETERAN_OPTION_CHANCE;
 					if (line.halves && outlookSettingFor(tid, "upside")) {
-						const paid = line.halves.map((half) =>
-							half.availability > 0 ? marketSalary!(half.valueNoPot) : 0,
-						);
-						const total = paid[0]! + paid[1]!;
-						for (const half of [0, 1] as const) {
-							if (paid[half]! > 0) {
-								options.push({
-									i,
-									half,
-									key: `${key}:${half}`,
-									pick: key,
-									salary: (salary * paid[half]!) / total,
-									minor,
-								});
-							}
+						const paid0 =
+							line.halves[0]!.availability > 0
+								? marketSalary!(line.halves[0]!.valueNoPot)
+								: 0;
+						const paid1 =
+							line.halves[1]!.availability > 0
+								? marketSalary!(line.halves[1]!.valueNoPot)
+								: 0;
+						const total = paid0 + paid1;
+						const keys = optionKeys(key);
+						if (paid0 > 0) {
+							options.push({
+								i,
+								half: 0,
+								key: keys[0],
+								pick: key,
+								salary: (salary * paid0) / total,
+								minor,
+							});
+						}
+						if (paid1 > 0) {
+							options.push({
+								i,
+								half: 1,
+								key: keys[1],
+								pick: key,
+								salary: (salary * paid1) / total,
+								minor,
+							});
 						}
 					} else {
 						options.push({ i, key, pick: key, salary, minor });
@@ -2592,14 +2638,24 @@ export const teamPoints = (
 				winp = Math.min(1, Math.max(0, winp + (losing.winp[y] ?? 0)));
 			}
 			state.room = salaryCap - committed;
-			state.signingsAt = (room) => signingsWith(room, duringFreeAgency, winp);
+			// What each room buys that season, worked out once: deciding whom
+			// to let go asks for the same room many times.
+			const bought = new Map<number, readonly SeasonLine[]>();
+			state.signingsAt = (room) => {
+				let signings = bought.get(room);
+				if (!signings) {
+					signings = signingsWith(room, duringFreeAgency, winp);
+					bought.set(room, signings);
+				}
+				return signings;
+			};
 		}
 	}
 	if (known !== false && outlookSettingFor(tid, "letGo")) {
 		letGo(
 			tid,
 			seasons,
-			(all) => expectedRosterPoints(asPlayed(tid, all), injuryFactor(tid)),
+			(lines, extra) => playedPoints(tid, lines, extra),
 			known,
 			worth,
 			spend,
@@ -2614,9 +2670,7 @@ export const teamPoints = (
 			refill?.(y, room / salaryCap!, signings);
 		}
 		roster?.(y, lines);
-		let points =
-			seasons[y]!.points ??
-			expectedRosterPoints(asPlayed(tid, lines), injuryFactor(tid));
+		let points = seasons[y]!.points ?? playedPoints(tid, lines);
 		// This season's playoffs count with everyone back who will be by then
 		// (playoffWeight): a star out for the rest of the regular season is
 		// still worth his playoffs.
@@ -2641,18 +2695,54 @@ export const teamPoints = (
 				}
 			}
 			if (playoffLines) {
-				points +=
-					weight *
-					(expectedRosterPoints(
-						asPlayed(tid, playoffLines),
-						injuryFactor(tid),
-					) -
-						points);
+				points += weight * (playedPoints(tid, playoffLines) - points);
 			}
 		}
 		out.push(points);
 	}
 	return out;
+};
+
+// The keys of whom a team may let go, made once each: they are asked for in
+// every season of every roster priced.
+// (Forgotten past a few thousand, as a long league's players come and go.)
+const KEYS_KEPT = 20_000;
+const veteranKeys = new Map<number, string>();
+const veteranKey = (pid: number) => {
+	let key = veteranKeys.get(pid);
+	if (key === undefined) {
+		if (veteranKeys.size >= KEYS_KEPT) {
+			veteranKeys.clear();
+		}
+		key = `vet:${pid}`;
+		veteranKeys.set(pid, key);
+	}
+	return key;
+};
+const futureKeys = new Map<number, string[]>();
+const futureKey = (season: number, round: number) => {
+	let bySeason = futureKeys.get(season);
+	if (bySeason === undefined) {
+		if (futureKeys.size >= KEYS_KEPT) {
+			futureKeys.clear();
+		}
+		bySeason = [];
+		futureKeys.set(season, bySeason);
+	}
+	return (bySeason[round] ??= `future:${season}:${round}`);
+};
+// His first half's, his second half's, and as just drafted.
+const halfKeys = new Map<string, readonly [string, string, string]>();
+const optionKeys = (key: string) => {
+	let keys = halfKeys.get(key);
+	if (keys === undefined) {
+		if (halfKeys.size >= KEYS_KEPT) {
+			halfKeys.clear();
+		}
+		keys = [`${key}:0`, `${key}:1`, `${key}:drafted`];
+		halfKeys.set(key, keys);
+	}
+	return keys;
 };
 
 type LetGoOption = {
@@ -2751,7 +2841,10 @@ const rosterOnlyPoints = (
 const letGo = (
 	tid: number,
 	seasons: readonly SeasonState[],
-	points: (lines: readonly SeasonLine[]) => number,
+	points: (
+		lines: readonly SeasonLine[],
+		extra: readonly SeasonLine[],
+	) => number,
 	known?: LetGoDecisions,
 	worth: (y: number, points: number) => number = (_, x) => x,
 	spend?: (
@@ -2764,7 +2857,7 @@ const letGo = (
 	const tolerance =
 		outlookSettingFor(tid, "letGoRoomTolerance") * g.get("salaryCap");
 	const pointsOf = (s: SeasonState) =>
-		(s.points ??= points([...s.lines, ...s.signingsAt!(s.room!)]));
+		(s.points ??= points(s.lines, s.signingsAt!(s.room!)));
 	// The same player in each season from y on - all of him, where a later
 	// season has him as two halves (his future less certain the further
 	// ahead it is): let go, he is gone for good. Without, a veteran let go
@@ -2775,7 +2868,8 @@ const letGo = (
 	// a point of strength it would never pay).
 	const aheadOf = (y: number, o: LetGoOption) => {
 		const ahead: [SeasonState, LetGoOption][] = [];
-		for (const s of seasons.slice(y)) {
+		for (let k = y; k < seasons.length; k++) {
+			const s = seasons[k]!;
 			const at = s.options.find((x) => x.key === o.key);
 			if (at) {
 				ahead.push([s, at]);
@@ -2856,10 +2950,7 @@ const letGo = (
 				const kept = pointsOf(s);
 				const line = s.lines[at.i]!;
 				s.lines[at.i] = withoutOption(line, at);
-				const after = points([
-					...s.lines,
-					...s.signingsAt!(s.room! + at.salary),
-				]);
+				const after = points(s.lines, s.signingsAt!(s.room! + at.salary));
 				s.lines[at.i] = line;
 				freed.push(after);
 				if (

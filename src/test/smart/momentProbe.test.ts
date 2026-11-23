@@ -40,7 +40,9 @@ test.runIf(env.MOMENT_PROBE === "1")(
 		(idb as any).league = undefined;
 		await createArenaLeague(Number(env.MOMENT_LEAGUE ?? 9177));
 		await advanceSeasons(1);
-		g.setWithoutSavingToDB("realisticFrontOffices", true);
+		// MOMENT_VANILLA=1: the smart CPU on the game's own rules (no
+		// realistic front offices), as in the owner's leagues.
+		g.setWithoutSavingToDB("realisticFrontOffices", env.MOMENT_VANILLA !== "1");
 		g.setWithoutSavingToDB("smartCpu", true);
 		const view = viewFor(await currentOutlook());
 		const cpu = new Set(
@@ -56,6 +58,19 @@ test.runIf(env.MOMENT_PROBE === "1")(
 			await session.post("Profiler.enable");
 			await session.post("Profiler.start");
 		}
+		// MOMENT_HEAP=1: where the moment allocates (a sampling heap profile).
+		let heap: any;
+		if (env.MOMENT_HEAP === "1") {
+			const inspector = await importNode("node:inspector/promises");
+			heap = new inspector.Session();
+			heap.connect();
+			await heap.post("HeapProfiler.enable");
+			await heap.post("HeapProfiler.startSampling", {
+				samplingInterval: 65536,
+				includeObjectsCollectedByMajorGC: true,
+				includeObjectsCollectedByMinorGC: true,
+			});
+		}
 		const t0 = performance.now();
 		const values0 = valueCount.n;
 		const deals = await dealsNow(view, cpu);
@@ -66,6 +81,11 @@ test.runIf(env.MOMENT_PROBE === "1")(
 			const { profile } = await session.post("Profiler.stop");
 			await fs.writeFile(`${out}/moment.cpuprofile`, JSON.stringify(profile));
 			session.disconnect();
+		}
+		if (heap) {
+			const { profile } = await heap.post("HeapProfiler.stopSampling");
+			await fs.writeFile(`${out}/moment.heapprofile`, JSON.stringify(profile));
+			heap.disconnect();
 		}
 		await fs.writeFile(
 			`${out}/moment.json`,

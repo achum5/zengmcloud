@@ -64,6 +64,17 @@ test.skipIf(!env.PT_LEAGUE)(
 				await import("../../worker/core/smartCpu/clearRoom.ts");
 			clearRoomSettings.atPrice = false;
 		}
+		// PT_PROFILE=<file>: a CPU profile of the whole run (sampled every
+		// 5 ms), written there at the end.
+		let session: any;
+		if (env.PT_PROFILE) {
+			const inspector = await importNode("node:inspector/promises");
+			session = new inspector.Session();
+			session.connect();
+			await session.post("Profiler.enable");
+			await session.post("Profiler.setSamplingInterval", { interval: 5000 });
+			await session.post("Profiler.start");
+		}
 		// PT_TO_PRESEASON=1: stop at the next preseason.
 		const seasons = env.PT_TO_PRESEASON ? 0 : Number(env.PT_SEASONS ?? 1);
 		const start = g.get("season");
@@ -114,5 +125,10 @@ test.skipIf(!env.PT_LEAGUE)(
 			.slice(0, 15)
 			.map(([k, v]) => `  ${k}: ${(v.ms / 1000).toFixed(1)}s in ${v.n}`);
 		log(`smart CPU time by kind:\n${total.join("\n")}`);
+		if (session) {
+			const { profile } = await session.post("Profiler.stop");
+			fs.writeFileSync(env.PT_PROFILE!, JSON.stringify(profile));
+			session.disconnect();
+		}
 	},
 );
