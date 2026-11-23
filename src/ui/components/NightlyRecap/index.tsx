@@ -654,7 +654,48 @@ const minutes = (night: RecapNight, length: RecapLength, speed: number) => {
 	return Math.max(1, Math.round(s / 60));
 };
 
-const NightlyRecap = ({ season, day }: { season: number; day: number }) => {
+// Full size: the picture as big as the screen takes it.
+const BigIcon = ({ big }: { big: boolean }) => (
+	<svg
+		aria-hidden
+		viewBox="0 0 16 16"
+		width="12"
+		height="12"
+		fill="none"
+		stroke="currentColor"
+		strokeWidth="2"
+		style={{ display: "block" }}
+	>
+		{big ? (
+			<path d="M6 1v5H1M10 1v5h5M6 15v-5H1M10 15v-5h5" />
+		) : (
+			<path d="M1 6V1h5M15 6V1h-5M1 10v5h5M15 10v5h-5" />
+		)}
+	</svg>
+);
+
+const NightlyRecap = ({
+	season,
+	day,
+	autoplay = false,
+	hold = false,
+	headline = false,
+	onEnd,
+	onNone,
+}: {
+	season: number;
+	day: number;
+	// Start on its own (once), when not held.
+	autoplay?: boolean;
+	// Held where it is: off the screen, games being simmed.
+	hold?: boolean;
+	// In a headline: a tap on the picture opens it full size.
+	headline?: boolean;
+	// Played to its end.
+	onEnd?: () => void;
+	// The night turned out to have nothing to show.
+	onNone?: () => void;
+}) => {
 	const [night, setNight] = useState<RecapNight | undefined>();
 	useEffect(() => {
 		let live = true;
@@ -723,16 +764,89 @@ const NightlyRecap = ({ season, day }: { season: number; day: number }) => {
 		}
 	}, [at, segments, feeds]);
 
+	const onEndRef = useRef(onEnd);
+	onEndRef.current = onEnd;
 	const go = (k: number) => {
 		if (k < 0 || k >= segments.length) {
 			setAt(undefined);
+			if (k >= segments.length) {
+				onEndRef.current?.();
+			}
 			return;
 		}
 		setAt(k);
 		setPaused(false);
 		setTake((n) => n + 1);
 	};
-	useHold(segment?.kind === "open", OPEN_MS, paused, () => go(1));
+	// (Held, as well as paused - but not full size, where nothing else is
+	// on the screen.)
+	const [big, setBig] = useState(false);
+	const stopped = paused || (hold && !big);
+	useHold(segment?.kind === "open", OPEN_MS, stopped, () => go(1));
+
+	// On its own, once, the first time it can.
+	const autoRef = useRef(false);
+	useEffect(() => {
+		if (
+			autoplay &&
+			!hold &&
+			!autoRef.current &&
+			night &&
+			night.games.length > 0
+		) {
+			autoRef.current = true;
+			setAt(0);
+			setTake((n) => n + 1);
+		}
+	}, [autoplay, hold, night]);
+	const onNoneRef = useRef(onNone);
+	onNoneRef.current = onNone;
+	useEffect(() => {
+		if (night && night.games.length === 0) {
+			onNoneRef.current?.();
+		}
+	}, [night]);
+
+	// Full size: the page's own full screen where there is one (not on an
+	// iPhone), and over the whole page either way.
+	const rootRef = useRef<HTMLDivElement | null>(null);
+	const openBig = () => {
+		setBig(true);
+		const el = rootRef.current;
+		if (el && document.fullscreenEnabled && !document.fullscreenElement) {
+			el.requestFullscreen?.().catch(() => {});
+		}
+	};
+	const closeBig = () => {
+		setBig(false);
+		if (document.fullscreenElement) {
+			document.exitFullscreen?.().catch(() => {});
+		}
+	};
+	useEffect(() => {
+		if (!big) {
+			return;
+		}
+		const onChange = () => {
+			if (!document.fullscreenElement) {
+				setBig(false);
+			}
+		};
+		const onKey = (event: KeyboardEvent) => {
+			if (event.key === "Escape") {
+				setBig(false);
+			}
+		};
+		const had = document.body.style.overflow;
+		document.body.style.overflow = "hidden";
+		document.addEventListener("fullscreenchange", onChange);
+		window.addEventListener("keydown", onKey);
+		return () => {
+			document.body.style.overflow = had;
+			document.removeEventListener("fullscreenchange", onChange);
+			window.removeEventListener("keydown", onKey);
+		};
+	}, [big]);
 
 	// The controls over the picture: up while it is paused or not yet
 	// playing, and for a moment after a touch or the mouse moves over it.
@@ -798,7 +912,7 @@ const NightlyRecap = ({ season, day }: { season: number; day: number }) => {
 
 	const playing = {
 		feeds,
-		paused,
+		paused: stopped,
 		rate: speed,
 		narrow,
 		onDone: () => go(at! + 1),
@@ -807,137 +921,205 @@ const NightlyRecap = ({ season, day }: { season: number; day: number }) => {
 
 	return (
 		<div
-			ref={wrapRef}
-			className="position-relative"
-			onPointerMove={wake}
-			onPointerDown={wake}
+			ref={rootRef}
+			style={
+				big
+					? {
+							position: "fixed",
+							inset: 0,
+							zIndex: 1070,
+							background: "#000",
+							display: "flex",
+							alignItems: "center",
+							justifyContent: "center",
+						}
+					: undefined
+			}
 		>
-			{segment?.kind === "open" ? (
-				<Frame narrow={narrow}>
-					<RecapPoster key={take} when={night.when} narrow={narrow} open />
-				</Frame>
-			) : segment?.kind === "game" ? (
-				<RecapGame key={key} game={segment.game} length={length} {...playing} />
-			) : segment?.kind === "star" ? (
-				<StarSegment key={key} star={segment.star} n={segment.n} {...playing} />
-			) : segment?.kind === "top" ? (
-				<TopSegment key={key} plays={segment.plays} {...playing} />
-			) : segment?.kind === "standings" ? (
-				<StandingsSegment
-					key={key}
-					standings={segment.standings}
-					paused={paused}
-					narrow={narrow}
-					onDone={playing.onDone}
-				/>
-			) : (
-				<Frame narrow={narrow}>
-					<RecapPoster when={night.when} narrow={narrow}>
-						<button
-							type="button"
-							aria-label="Play the recap"
-							title="Play"
-							onClick={() => go(0)}
-							style={{
-								position: "absolute",
-								inset: 0,
-								background: "transparent",
-								border: "none",
-								cursor: "pointer",
-							}}
-						>
-							<svg
-								aria-hidden
-								viewBox="0 0 48 48"
+			<div
+				ref={wrapRef}
+				className={
+					big ? "position-relative nightly-recap-big" : "position-relative"
+				}
+				style={
+					big
+						? {
+								width: `min(100vw, calc(100dvh * ${narrow ? "4 / 3" : "16 / 9"}))`,
+							}
+						: undefined
+				}
+				onPointerMove={wake}
+				onPointerDown={wake}
+			>
+				{segment?.kind === "open" ? (
+					<Frame narrow={narrow}>
+						<RecapPoster key={take} when={night.when} narrow={narrow} open />
+					</Frame>
+				) : segment?.kind === "game" ? (
+					<RecapGame
+						key={key}
+						game={segment.game}
+						length={length}
+						{...playing}
+					/>
+				) : segment?.kind === "star" ? (
+					<StarSegment
+						key={key}
+						star={segment.star}
+						n={segment.n}
+						{...playing}
+					/>
+				) : segment?.kind === "top" ? (
+					<TopSegment key={key} plays={segment.plays} {...playing} />
+				) : segment?.kind === "standings" ? (
+					<StandingsSegment
+						key={key}
+						standings={segment.standings}
+						paused={stopped}
+						narrow={narrow}
+						onDone={playing.onDone}
+					/>
+				) : (
+					<Frame narrow={narrow}>
+						<RecapPoster when={night.when} narrow={narrow}>
+							<button
+								type="button"
+								aria-label="Play the recap"
+								title="Play"
+								onClick={() => go(0)}
 								style={{
 									position: "absolute",
-									left: "50%",
-									top: `${(posterTitleTop(narrow) + (narrow ? 0.3 : 0.32)) * 100}%`,
-									transform: "translate(-50%, -50%)",
-									width: "clamp(44px, 8cqw, 76px)",
-									height: "clamp(44px, 8cqw, 76px)",
-									filter: "drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35))",
+									inset: 0,
+									background: "transparent",
+									border: "none",
+									cursor: "pointer",
 								}}
 							>
-								<circle cx="24" cy="24" r="24" fill="#fff" />
-								<path d="M 19 15 L 34 24 L 19 33 Z" fill="#13297a" />
-							</svg>
-						</button>
-					</RecapPoster>
-				</Frame>
-			)}
-			<div
-				className="gamecast-controls d-flex align-items-center gap-1"
-				style={{
-					zIndex: 7,
-					...(controlsUp
-						? undefined
-						: { opacity: 0, pointerEvents: "none" as const }),
-				}}
-			>
-				{at !== undefined ? (
-					<>
-						{button("Previous", "back:step-forward", () => go(at - 1))}
-						{button(paused ? "Play" : "Pause", paused ? "play" : "pause", () =>
-							setPaused((p) => !p),
-						)}
-						{button("Next", "step-forward", () => go(at + 1))}
-						{at >= 1 && !narrow ? (
-							<span
-								className="small px-1"
-								style={{
-									color: "#fff",
-									background: "rgba(10, 10, 14, 0.72)",
-									borderRadius: "var(--bs-border-radius-sm)",
-									alignSelf: "stretch",
-									display: "flex",
-									alignItems: "center",
-								}}
-							>
-								{at}/{segments.length - 1}
-							</span>
-						) : null}
-					</>
+								<svg
+									aria-hidden
+									viewBox="0 0 48 48"
+									style={{
+										position: "absolute",
+										left: "50%",
+										top: `${(posterTitleTop(narrow) + (narrow ? 0.3 : 0.32)) * 100}%`,
+										transform: "translate(-50%, -50%)",
+										width: "clamp(44px, 8cqw, 76px)",
+										height: "clamp(44px, 8cqw, 76px)",
+										filter: "drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35))",
+									}}
+								>
+									<circle cx="24" cy="24" r="24" fill="#fff" />
+									<path d="M 19 15 L 34 24 L 19 33 Z" fill="#13297a" />
+								</svg>
+							</button>
+						</RecapPoster>
+					</Frame>
+				)}
+				{headline && !big && at !== undefined ? (
+					<button
+						type="button"
+						aria-label="Full size"
+						title="Full size"
+						onClick={openBig}
+						style={{
+							position: "absolute",
+							inset: 0,
+							zIndex: 6,
+							background: "transparent",
+							border: "none",
+							cursor: "zoom-in",
+						}}
+					/>
 				) : null}
-				<Dropdown align="end">
-					<Dropdown.Toggle
-						id="nightly-recap-speed"
-						className="btn-light-bordered"
-						variant={"no-class" as any}
-						title="Speed of the plays"
-					>
-						{speed}x
-					</Dropdown.Toggle>
-					<Dropdown.Menu>
-						{RECAP_SPEEDS.map((s) => (
-							<Dropdown.Item
-								key={s}
-								active={s === speed}
-								onClick={() => {
-									setSpeed(s);
-								}}
-							>
-								{s}x
-							</Dropdown.Item>
-						))}
-					</Dropdown.Menu>
-				</Dropdown>
-				<select
-					className="form-select form-select-sm"
-					style={{ width: "auto" }}
-					aria-label="Recap length"
-					value={length}
-					onChange={(event) => {
-						setLength(event.target.value as RecapLength);
+				<div
+					className="gamecast-controls d-flex align-items-center gap-1"
+					style={{
+						zIndex: 7,
+						...(controlsUp
+							? undefined
+							: { opacity: 0, pointerEvents: "none" as const }),
 					}}
 				>
-					{RECAP_LENGTHS.map((row) => (
-						<option key={row.key} value={row.key}>
-							{narrow ? row.short : row.label} ·{" "}
-							{minutes(night, row.key, speed)} min
-						</option>
-					))}
-				</select>
+					{at !== undefined ? (
+						<>
+							{button("Previous", "back:step-forward", () => go(at - 1))}
+							{button(
+								paused ? "Play" : "Pause",
+								paused ? "play" : "pause",
+								() => setPaused((p) => !p),
+							)}
+							{button("Next", "step-forward", () => go(at + 1))}
+							{at >= 1 && !narrow ? (
+								<span
+									className="small px-1"
+									style={{
+										color: "#fff",
+										background: "rgba(10, 10, 14, 0.72)",
+										borderRadius: "var(--bs-border-radius-sm)",
+										alignSelf: "stretch",
+										display: "flex",
+										alignItems: "center",
+									}}
+								>
+									{at}/{segments.length - 1}
+								</span>
+							) : null}
+						</>
+					) : null}
+					<Dropdown align="end">
+						<Dropdown.Toggle
+							id="nightly-recap-speed"
+							className="btn-light-bordered"
+							variant={"no-class" as any}
+							title="Speed of the plays"
+						>
+							{speed}x
+						</Dropdown.Toggle>
+						<Dropdown.Menu>
+							{RECAP_SPEEDS.map((s) => (
+								<Dropdown.Item
+									key={s}
+									active={s === speed}
+									onClick={() => {
+										setSpeed(s);
+									}}
+								>
+									{s}x
+								</Dropdown.Item>
+							))}
+						</Dropdown.Menu>
+					</Dropdown>
+					<select
+						className="form-select form-select-sm"
+						style={{ width: "auto" }}
+						aria-label="Recap length"
+						value={length}
+						onChange={(event) => {
+							setLength(event.target.value as RecapLength);
+						}}
+					>
+						{RECAP_LENGTHS.map((row) => (
+							<option key={row.key} value={row.key}>
+								{narrow ? row.short : row.label} ·{" "}
+								{minutes(night, row.key, speed)} min
+							</option>
+						))}
+					</select>
+					<button
+						type="button"
+						className="btn btn-sm btn-light-bordered"
+						title={big ? "Exit full size" : "Full size"}
+						aria-label={big ? "Exit full size" : "Full size"}
+						onClick={big ? closeBig : openBig}
+						style={{
+							alignSelf: "stretch",
+							display: "flex",
+							alignItems: "center",
+						}}
+					>
+						<BigIcon big={big} />
+					</button>
+				</div>
 			</div>
 		</div>
 	);

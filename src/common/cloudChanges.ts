@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 487,
+		date: "2026-11-23",
+		text: "Nightly Recap: the newest night's recap now leads the League Headlines on the new dashboard and starts playing on its own once you scroll to it. Tap it to watch it full size (turn your phone sideways for the biggest picture). Every recap now has a full size button too.",
+	},
+	{
 		n: 486,
 		date: "2026-11-23",
 		text: "Nightly Recap: after the games now come the Player of the Night (his best plays, with his name and line along the bottom; Full and Medium), the night's top plays counted down from 10 (5 on Medium, 3 on Short), each under its own game's score bug, and the standings through that night, each conference split into the playoff spots, the play-in and the rest.",
