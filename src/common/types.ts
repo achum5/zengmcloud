@@ -17,6 +17,7 @@ import type { FaceConfig } from "facesjs";
 import type { PlayerAppearance } from "./playerAppearance.ts";
 import type { ReactNode } from "react";
 import type { LiveGameChatMessage } from "./liveGameChat.ts";
+import type { RecapReel } from "./recapReel.ts";
 import type { TickerItem } from "./ticker.ts";
 import type * as views from "../worker/views/index.ts";
 
@@ -600,6 +601,16 @@ export type LiveGamePlayByPlay = {
 	liveAt?: number;
 };
 
+// A GAME'S RECAP PLAYS, for the Nightly Recap (see recapReel.ts): cut as it
+// is simmed, keyed by gid, kept for the last few nights (see
+// saveRecapReels.ts) and synced to the whole room.
+export type RecapReelRow = {
+	gid: number;
+	season: number;
+	day: number;
+	reel: RecapReel;
+};
+
 // HOW A GAME LOOKED THE NIGHT IT WAS PLAYED.
 //
 // A replay re-stages the saved play-by-play exactly, but a face ages with
@@ -975,6 +986,9 @@ export type GameAttributesLeague = {
 	courtDecals: CourtDecal[];
 	// The league's own score bug for the 3D game, or null for the default.
 	scoreBug: ScoreBugStyle | null;
+	// The national networks' score bugs: the night's biggest game is theirs
+	// (see NationalBroadcast).
+	nationalBroadcasts: NationalBroadcast[];
 	aiTradesFactor: number;
 	// CPU teams run by the new front office (docs/realistic-front-offices.md)
 	// instead of stock's. Basketball only.
@@ -1203,6 +1217,10 @@ export type GameAttributesLeague = {
 	// cooldowns, FA demands, AI trades) ran, so a day simmed in slices on
 	// several devices is never counted twice. See game/dailyCountdownGate.ts.
 	lastDailyCountdownDay?: { season: number; phase: number; day: number };
+	// On an NBA calendar, how many classic days the season would have taken,
+	// so its end-of-day rules tick as often as classic days' would. See
+	// game/calendarTicks.ts.
+	calendarClassicDays?: { season: number; days: number };
 	// Vanilla+ front offices' market (worker/core/vanillaPlus/market.ts): its
 	// day this season, and the day each team last traded, kept with the league
 	// so a reload - or the sim moving to a league mate's device - doesn't let a
@@ -1680,6 +1698,35 @@ export type MpLiveBroadcast = {
 	recvAt?: number;
 };
 
+// The score of a game being played live, as the screen playing it shows it -
+// sent with every heartbeat, so a device not watching can keep up with it.
+export type LiveScore = {
+	// Home then away (the game's teams[0] and teams[1]).
+	pts: [number, number];
+	// The period as the live game names it ("Q3", "OT", "2OT"), and the time
+	// left in it ("4:12").
+	q: string;
+	clock: string;
+};
+
+// A game a league mate is playing live right now: the header's live scores,
+// and LIVE wherever the game is listed.
+export type MpLiveGame = {
+	gid: number;
+	byName: string;
+	// "PHO @ DAL".
+	label: string;
+	startedAt: number;
+	// Home then away, when known.
+	tids?: [number, number];
+	score?: LiveScore;
+	paused: boolean;
+	// Over on the screen of whoever is playing it.
+	gameOver: boolean;
+	// This device is in it right now.
+	watching: boolean;
+};
+
 // Where the 3D court of the device in charge of simming is, so a device
 // watching in 3D can play the game along with it rather than be stepped
 // line by line (see the 3D court's follow.ts). Absent from older builds.
@@ -1743,9 +1790,17 @@ export type LocalStateUI = {
 	flagOverrides: Record<string, string>;
 	gameSimInProgress: boolean;
 	games: {
+		// On the NBA calendar, the game's night, for the top bar's days.
+		date?: string;
 		finals?: boolean;
 		forceWin?: number; // Number of iterations - defined means result was forced
 		gid: number;
+		// A playoff game on the NBA calendar's plan, not yet on the schedule
+		// (gid negative, made up), and whether it may not be needed.
+		planned?: boolean;
+		ifNecessary?: boolean;
+		// An upcoming game on a national network.
+		national?: NationalTag;
 		numPeriods?: number;
 		overtimes?: number;
 		// The displayed point spread for an upcoming game, computed in the worker
@@ -1841,6 +1896,9 @@ export type LocalStateUI = {
 		| undefined;
 	// A league-mate's live sim just started: "Watch PHO @ DAL live?", its
 	// result held back until answered. Undefined when not asking.
+	// Every game league mates are playing live right now, newest first (this
+	// device's own live game is not among them).
+	mpLiveGames: MpLiveGame[];
 	mpLiveOffer:
 		| {
 				gid: number;
@@ -2836,6 +2894,8 @@ type PlayInMatchup = {
 	home: PlayoffSeriesTeam;
 	away: PlayoffSeriesTeam;
 	gids?: number[];
+	// On the NBA calendar, the night of each game (see playoffCalendar.ts).
+	dates?: string[];
 };
 
 // Each entry is the 2 first round games (7/8 and 9/10) and the 1 game between the loser of the 7/8 game and the winner of the 9/10 game
@@ -2853,6 +2913,9 @@ export type PlayoffSeries = {
 		home: PlayoffSeriesTeam;
 		away?: PlayoffSeriesTeam;
 		gids?: number[];
+		// On the NBA calendar, the night of each game, Game 1 on, including
+		// the ones that may not be needed (see playoffCalendar.ts).
+		dates?: string[];
 	}[][];
 
 	// undefined means no play-in tournament
@@ -3528,6 +3591,25 @@ export type ScoreBugStyle = {
 	teamColors?: Record<string, string[]>;
 	pieces: ScoreBugPiece[];
 };
+// A NATIONAL NETWORK: the biggest game on each of its nights carries its
+// score bug, over any team's - and in the playoffs, every game of the
+// series it has (every network with nights shares them out), and of the
+// Finals if it has those.
+export type NationalBroadcast = {
+	network: string;
+	// "Mon".."Sun". (With no calendar, opening night is a Tuesday.)
+	nights?: string[];
+	finals?: boolean;
+	// The network's logo on its games' previews: a link, or a picture written
+	// in (without one, its name) - and `logoDark`, the one for a dark page
+	// (without one, the same).
+	logo?: string;
+	logoDark?: string;
+	scoreBug: ScoreBugStyle;
+};
+// A game's national network as its preview shows it: the name, and the
+// logos ready to show (if it has them).
+export type NationalTag = { network: string; logo?: string; logoDark?: string };
 export type ScoreBugShow =
 	| "awayLogo"
 	| "homeLogo"
@@ -3552,6 +3634,9 @@ export type ScoreBugShow =
 	| "homeBonus"
 	// The home team's lead, signed (+4, -4, 0): `text` with {n}, or the number.
 	| "homeLead"
+	// In the playoffs, the series as it stands ("Game 3 · BOS leads 2-1",
+	// smaller if longer than its `text`); otherwise its `text`.
+	| "series"
 	| "period"
 	| "clock"
 	| "shotClock"
@@ -3593,16 +3678,30 @@ export type ScoreBugPiece = {
 	// within its box (a logo bigger than its row, cut off by it).
 	rotate?: number;
 	zoom?: number;
-	// For "text": what it says. For the fouls, what they say ("FOULS: {n}"),
-	// and `limit`, what they say once the other side is in the bonus ("FOUL
-	// LIMIT"). For the timeouts, what they say ("TO: {n}") in place of a
-	// mark for each; `off`, a mark's color once taken (the default dim).
+	// For "text": what it says. For a record, what it says, with {rec} the
+	// record, {rank} where the team stands in its conference ("2nd") and
+	// {conf} which ("East", {CONF} "EAST") - "{rec} ({rank} in {CONF})"; with
+	// no {rec}, nothing till the standing is known. For the fouls,
+	// what they say ("FOULS: {n}"), and `limit`, what they say once the
+	// other side is in the bonus ("FOUL LIMIT"). For the timeouts, what they
+	// say ("TO: {n}") in place of a mark for each; `off`, a mark's color once
+	// taken (the default dim). For "text" and "series", {DAY} is the game's
+	// weekday ("TUESDAY"; {Day}, "Tuesday") - and `undated`, what it says
+	// instead when the game has no date (the NBA calendar off).
 	text?: string;
+	undated?: string;
+	// For a record: the size of what follows it - where the team stands -
+	// smaller than the record ("11-3 (2nd IN EAST)").
+	sub?: number;
 	limit?: string;
 	off?: string;
 	// For the fouls: how far they move over (in the bug's units, left if
 	// less than 0) while their side's BONUS mark shows, to make room for it.
 	bonusShift?: number;
+	// Shown only till either side is in the bonus ("noBonus" - the records,
+	// say), or only once one is ("bonus" - the timeouts in their place), or
+	// once that side is ("awayBonus", "homeBonus" - its fouls).
+	when?: "noBonus" | "bonus" | "awayBonus" | "homeBonus";
 	// For "image": a URL, or "pic:<id>" - and how it fills its box
 	// ("contain", the default; "cover"; "fill").
 	image?: string;
@@ -3613,9 +3712,11 @@ export type ScoreBugPiece = {
 	// For "clock" and "shotClock": the way the broadcasts write them,
 	// ":09.2" and ":24".
 	colon?: boolean;
-	// For "shotClock": its color and background in its last seconds.
+	// For "shotClock": its color and background in its last seconds - under
+	// `lowAt` (5 unless said).
 	low?: string;
 	lowBackground?: string;
+	lowAt?: number;
 };
 
 export type CourtDecalPlaced = {
@@ -3927,6 +4028,10 @@ export type UpdateEvent =
 	// broadcast payload (recovery when the navigation carrying it was dropped).
 	| "mpLiveBroadcast"
 	| "mpLiveChat"
+
+	// A game started or finished being played live somewhere in a shared
+	// league, so pages that show it as in progress (see liveGameGate.ts) redo it.
+	| "liveGames"
 
 	// Background-simulated game spreads landed, so the sportsbook can re-render
 

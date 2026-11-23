@@ -85,9 +85,27 @@ export const PictureCanvas = ({
 	/>
 );
 
+// Where a team stood in its conference at the tip, from the gamecast's
+// standings - the conference by its first word, "Eastern" as "East".
+export const standingOf = (
+	info:
+		| { standings?: { name: string; teams: { tid: number; rank: number }[] }[] }
+		| undefined,
+	tid: number | undefined,
+): { rank: number; conf: string } | undefined => {
+	for (const c of info?.standings ?? []) {
+		const row = c.teams.find((t) => t.tid === tid);
+		if (row) {
+			const word = c.name.trim().split(/\s+/)[0] ?? "";
+			return { rank: row.rank, conf: word.replace(/(?<=..)ern$/i, "") };
+		}
+	}
+	return undefined;
+};
+
 // A side as the bug carries it: from its team (as the page has it), its
 // points, and its box score team (its timeouts left, and its record where
-// the game keeps one).
+// the game keeps one) - and where it stands, where that's known.
 export const bugTeamOf = (
 	t: any,
 	pts: number,
@@ -100,6 +118,7 @@ export const bugTeamOf = (
 				otl?: number;
 		  }
 		| undefined,
+	standing?: { rank: number; conf: string },
 ): CustomBugTeam | undefined =>
 	t && {
 		abbrev: t.abbrev,
@@ -114,7 +133,17 @@ export const bugTeamOf = (
 			typeof bt?.won === "number" && typeof bt?.lost === "number"
 				? helpers.formatRecord({ ...bt, won: bt.won, lost: bt.lost })
 				: undefined,
+		...standing,
 	};
+
+// A series line without its round, for a league's own bug: "Game 3 · BOS
+// leads 2-1" (a play-in game's as it is).
+export const shortSeries = (line: string | undefined) => {
+	const parts = line?.split(" · ") ?? [];
+	return parts.length > 1 && /^Game \d/.test(parts[1]!)
+		? parts.slice(1).join(" · ")
+		: line;
+};
 
 // THE SCORE BUG: the league's own, if it has one (see ScoreBugStyle), or
 // the standard one - its clocks and marks written by the frames (see
@@ -128,6 +157,7 @@ export const GameBug = ({
 	home,
 	quarter,
 	series,
+	day,
 	refs,
 	hidden,
 	shotTitle,
@@ -138,6 +168,8 @@ export const GameBug = ({
 	home: CustomBugTeam | undefined;
 	quarter: string;
 	series?: string;
+	// The game's weekday ("Tuesday"), if it has a date.
+	day?: string;
 	refs: BugRefs;
 	hidden?: boolean;
 	shotTitle?: string;
@@ -153,7 +185,12 @@ export const GameBug = ({
 	return (
 		<div ref={bugRef} style={{ display: "contents" }}>
 			{own ? (
-				<CustomScoreBug style={own} {...bug} />
+				<CustomScoreBug
+					style={own}
+					{...bug}
+					series={shortSeries(series)}
+					day={day}
+				/>
 			) : (
 				<ScoreBug {...bug} series={series} shotTitle={shotTitle} />
 			)}

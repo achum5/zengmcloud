@@ -258,6 +258,12 @@ import {
 	type PlayerWanted,
 } from "../core/trade/lookingForPlayer.ts";
 import { getPlayer } from "../views/player.ts";
+import { nationalBroadcastOf } from "../views/nationalBroadcast.ts";
+import { nightlyRecap } from "../util/nightlyRecap.ts";
+import {
+	nationalPictureIds,
+	parseNationalBroadcasts,
+} from "../../common/nationalBroadcasts.ts";
 import {
 	placeBet as sportsbookPlaceBetCore,
 	placeBetSlip as sportsbookPlaceBetSlipCore,
@@ -1235,6 +1241,7 @@ const deleteOldData = async (options: {
 			"games",
 			"headToHeads",
 			"liveGamePlayByPlay",
+			"recapReels",
 			"teams",
 			"teamSeasons",
 			"teamStats",
@@ -1245,8 +1252,10 @@ const deleteOldData = async (options: {
 
 	if (options.boxScores) {
 		tx.objectStore("games").clear();
-		// Saved live-sim replays go with the box scores they belong to.
+		// Saved live-sim replays and recap plays go with the box scores they
+		// belong to.
 		tx.objectStore("liveGamePlayByPlay").clear();
+		tx.objectStore("recapReels").clear();
 	}
 
 	if (options.teamHistory) {
@@ -7147,6 +7156,28 @@ const updateScoreBug = async ({
 	return { ok: true };
 };
 
+// The national networks' score bugs, saved whole (see NationalBroadcast).
+// Pictures they no longer use, and any uploaded for them this time that
+// they don't, are let go.
+const updateNationalBroadcasts = async ({
+	broadcasts,
+	uploaded,
+}: {
+	broadcasts: unknown;
+	uploaded?: string[];
+}) => {
+	const parsed = parseNationalBroadcasts(broadcasts);
+	if (typeof parsed === "string") {
+		throw new Error(parsed);
+	}
+	const before = (g.get("nationalBroadcasts") ?? []).flatMap(
+		nationalPictureIds,
+	);
+	await league.setGameAttributes({ nationalBroadcasts: parsed });
+	await prunePictures([...before, ...(uploaded ?? [])]);
+	return { ok: true };
+};
+
 // A font for a score bug, kept in the league as its pictures are: its id.
 const storeScoreBugFont = (url: string) => storePicture(url, FONT_TYPES);
 
@@ -8587,6 +8618,52 @@ const getReplayFeed = async (gid: number) => {
 	if (!Array.isArray(playByPlay) || playByPlay.length === 0) {
 		return undefined;
 	}
+	const out = await playbackOf(gid, playByPlay);
+	if (!out) {
+		return undefined;
+	}
+	let shots: number[] | undefined;
+	try {
+		const row =
+			(await idb.cache.liveGamePlayByPlay.get(gid)) ??
+			(await (idb.league as any).get("liveGamePlayByPlay", gid));
+		// (As this device last watched it again, if it has - see
+		// saveReplayShots.)
+		shots = replayShotsHere.get(gid) ?? row?.shots;
+	} catch {
+		// No chart.
+	}
+	return { ...out, shots };
+};
+
+// A game's recap plays (see core/game/saveRecapReels.ts), to play back in 3D
+// the way a replay is.
+const getRecapFeed = async (gid: number) => {
+	const row = await idb.cache.recapReels.get(gid);
+	if (!row) {
+		return undefined;
+	}
+	const out = await playbackOf(gid, row.reel.events);
+	if (!out) {
+		return undefined;
+	}
+	return { ...out, plays: row.reel.plays };
+};
+
+// The night's games with recap plays, the biggest first, as their graphics
+// need them.
+const getNightlyRecap = async ({
+	season,
+	day,
+}: {
+	season: number;
+	day: number;
+}) => nightlyRecap({ season, day });
+
+// A game's play-by-play (all of it, or some) with the box score it plays
+// into in 3D: as everyone looked that night, in the building as it was, under
+// its broadcast's score bug.
+const playbackOf = async (gid: number, playByPlay: any[]) => {
 	const game = await idb.merged.games.get(gid);
 	if (!game) {
 		return undefined;
@@ -8605,17 +8682,6 @@ const getReplayFeed = async (gid: number) => {
 		confetti: false,
 		playByPlay,
 	});
-	let shots: number[] | undefined;
-	try {
-		const row =
-			(await idb.cache.liveGamePlayByPlay.get(gid)) ??
-			(await (idb.league as any).get("liveGamePlayByPlay", gid));
-		// (As this device last watched it again, if it has - see
-		// saveReplayShots.)
-		shots = replayShotsHere.get(gid) ?? row?.shots;
-	} catch {
-		// No chart.
-	}
 	// (Played again on its box score in 3D: as everyone looked that night,
 	// in the building as it was - see liveGame.)
 	const then = await looksThatNight(gid, boxScore);
@@ -8626,12 +8692,12 @@ const getReplayFeed = async (gid: number) => {
 		then?.looks.arena ??
 		(await takeArenaLooks(boxScore.teams[0].tid, boxScore.season));
 	(out.initialBoxScore as any).scoreBug = await resolveScoreBug(
-		await scoreBugOfGame(boxScore.teams),
+		(await nationalBroadcastOf(boxScore))?.scoreBug ??
+			(await scoreBugOfGame(boxScore.teams)),
 	);
 	return {
 		events: out.events,
 		initialBoxScore: out.initialBoxScore,
-		shots,
 	};
 };
 
@@ -8890,6 +8956,8 @@ const api = {
 		getLiveGameChat,
 		getLiveGamePlayByPlay,
 		getReplayFeed,
+		getRecapFeed,
+		getNightlyRecap,
 		getTeamColorsUI,
 		getAllTeamColorsUI,
 		hasLiveGameReplay,
@@ -9077,6 +9145,7 @@ const api = {
 		storeCourtPicture,
 		updateCourtDecals,
 		updateScoreBug,
+		updateNationalBroadcasts,
 		storeScoreBugFont,
 		updateTeamUniform,
 		setJerseySkin,

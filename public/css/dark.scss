@@ -526,3 +526,14 @@ body.has-league-ticker-collapsed .sidebar-inner {
 		#{$league-ticker-collapsed-height} + env(safe-area-inset-bottom, 0px)
 	);
 }
+
+// A national network's logo for a dark page, where it has one (see
+// NationalTag).
+.national-tag {
+	.national-logo-light {
+		display: none;
+	}
+	.national-logo-dark {
+		display: block;
+	}
+}

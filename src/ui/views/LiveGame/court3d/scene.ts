@@ -104,16 +104,197 @@ import {
 	skeleton,
 	type AnimName,
 	type Body,
+	type V3,
 } from "./poses.ts";
 import {
 	CAST_ALPHA,
 	CASTS,
+	drawnAs,
 	drawSprite,
 	prepareSprites,
+	restamp,
 	startFrame,
 	type Scratch,
 	type SpriteCache,
 } from "./sprite.ts";
+
+// ARMS ROUND SOMEONE. Each man is a picture of his own, drawn whole over
+// whoever is behind him - so a man holding someone nearer the camera than
+// he is has his arms round them hidden behind them, and their hands round
+// his back are drawn over his front. Hugging (see poses.ts HOLD), his
+// picture is drawn twice more just after theirs: just where his arms are -
+// from partway down his upper arm (over their shoulder) to his fingertips,
+// not over their head, which is in front of his shoulders - and just where
+// their hands are, round his back: behind him, not over their own body.
+const WRAPS = new Set<AnimName>([
+	"embrace",
+	"embraceUp",
+	"embraceMan",
+	"embraceManUp",
+]);
+// (Held: as near as this, feet apart - and an arm only once it is this far
+// round them.)
+const HUG_NEAR = 2.6;
+const ROUND = 0.3;
+type Fig = { st: PlayerState; body: Body; look: Look };
+type Capsule = [V3, V3, number];
+const armsOver = (
+	cam: Camera,
+	figs: Fig[],
+	cache: SpriteCache | undefined,
+): {
+	depth: number;
+	fig: Fig;
+	clip: (ctx: CanvasRenderingContext2D) => void;
+}[] => {
+	const huggers = figs.filter((a) => WRAPS.has(a.st.anim));
+	if (huggers.length < 2) {
+		return [];
+	}
+	const out: ReturnType<typeof armsOver> = [];
+	for (const a of huggers) {
+		let b: Fig | undefined;
+		let near = HUG_NEAR;
+		for (const o of huggers) {
+			const d = Math.hypot(o.st.x - a.st.x, o.st.y - a.st.y);
+			if (o !== a && d < near) {
+				b = o;
+				near = d;
+			}
+		}
+		if (!b) {
+			continue;
+		}
+		const depth = depthOf(cam, { x: b.st.x, y: b.st.y, z: 3 });
+		if (depth >= depthOf(cam, { x: a.st.x, y: a.st.y, z: 3 })) {
+			continue;
+		}
+		// (As their pictures have them: see drawnAs.)
+		const sa = drawnAs(a.st, cache);
+		const qa = poseOf(sa);
+		const ka = skeleton(a.body, qa);
+		const sb = drawnAs(b.st, cache);
+		const qb = poseOf(sb);
+		const kb = skeleton(b.body, qb);
+		const round = (q: typeof qa, k: typeof ka) =>
+			(
+				[
+					[k.armR, q.hugN],
+					[k.armL, q.hugF],
+				] as const
+			).filter(([, w]) => w >= ROUND);
+		const mine: Capsule[] = round(qa, ka).flatMap(([arm]) => [
+			[part(arm.root, arm.mid, 0.3), arm.mid, a.body.upperR],
+			[arm.mid, arm.end, a.body.foreR],
+			[arm.end, arm.tip ?? arm.end, a.body.handR],
+		]);
+		const theirs: Capsule[] = round(qb, kb).flatMap(([arm]) => [
+			[part(arm.mid, arm.end, 0.4), arm.end, b.body.foreR],
+			[arm.end, arm.tip ?? arm.end, b.body.handR * 1.2],
+		]);
+		const head = { at: kb.head, r: b.body.headR * 1.3 };
+		const torso = {
+			from: kb.pelvis,
+			to: kb.chest,
+			r: b.body.shoulderW * 0.8,
+		};
+		for (const [caps, notOver] of [
+			[mine, []],
+			[theirs, [torso]],
+		] as const) {
+			if (caps.length === 0) {
+				continue;
+			}
+			out.push({
+				// (Just in front of them.)
+				depth: depth - 0.01,
+				fig: a,
+				clip: (ctx) => {
+					ctx.beginPath();
+					for (const [p, q, r] of caps) {
+						capsulePath(ctx, cam, sa, p, q, r, 1);
+					}
+					ctx.clip();
+					// (Not over their head, nor - their hands - their own body.)
+					for (const c of [
+						{ from: head.at, to: head.at, r: head.r },
+						...notOver,
+					]) {
+						ctx.beginPath();
+						ctx.rect(0, 0, ctx.canvas.width, ctx.canvas.height);
+						capsuleOutline(ctx, cam, sb, c.from, c.to, c.r);
+						ctx.clip("evenodd");
+					}
+				},
+			});
+		}
+	}
+	return out;
+};
+const part = (p: V3, q: V3, u: number): V3 => ({
+	f: p.f + (q.f - p.f) * u,
+	s: p.s + (q.s - p.s) * u,
+	u: p.u + (q.u - p.u) * u,
+});
+// A limb's piece on the picture, `r` feet round (and `pad` pixels more):
+// a run of discs along it, each its own subpath.
+const capsulePath = (
+	ctx: CanvasRenderingContext2D,
+	cam: Camera,
+	st: PlayerState,
+	p: V3,
+	q: V3,
+	r: number,
+	pad: number,
+) => {
+	const P = project(cam, bodyPoint(st, p));
+	const Q = project(cam, bodyPoint(st, q));
+	const rp = r * P.k + pad;
+	const rq = r * Q.k + pad;
+	const n = Math.max(
+		1,
+		Math.ceil(
+			Math.hypot(Q.x - P.x, Q.y - P.y) / Math.max(1, Math.min(rp, rq) * 0.5),
+		),
+	);
+	for (let i = 0; i <= n; i++) {
+		const u = i / n;
+		const x = P.x + (Q.x - P.x) * u;
+		const y = P.y + (Q.y - P.y) * u;
+		const r0 = rp + (rq - rp) * u;
+		ctx.moveTo(x + r0, y);
+		ctx.arc(x, y, r0, 0, Math.PI * 2);
+	}
+};
+
+// (And its outline, as one shape: to leave out of a clip.)
+const capsuleOutline = (
+	ctx: CanvasRenderingContext2D,
+	cam: Camera,
+	st: PlayerState,
+	p: V3,
+	q: V3,
+	r: number,
+) => {
+	const P = project(cam, bodyPoint(st, p));
+	const Q = project(cam, bodyPoint(st, q));
+	const rp = r * P.k;
+	const rq = r * Q.k;
+	const l = Math.hypot(Q.x - P.x, Q.y - P.y);
+	if (l < 0.5) {
+		const r0 = Math.max(rp, rq);
+		ctx.moveTo(P.x + r0, P.y);
+		ctx.arc(P.x, P.y, r0, 0, Math.PI * 2);
+		return;
+	}
+	// (Round the back of the one end, along the side, round the front of the
+	// other.)
+	const a0 = Math.atan2(Q.x - P.x, -(Q.y - P.y));
+	ctx.moveTo(P.x + Math.cos(a0) * rp, P.y + Math.sin(a0) * rp);
+	ctx.arc(P.x, P.y, rp, a0, a0 + Math.PI);
+	ctx.arc(Q.x, Q.y, rq, a0 + Math.PI, a0 + Math.PI * 2);
+	ctx.closePath();
+};
 
 // The floor is polished: everybody on it shows in it, upside down under
 // his feet, this faintly.
@@ -2275,6 +2456,31 @@ export const drawFrame = (f: Frame) => {
 			});
 		}
 	});
+	// Arms round someone nearer the camera than he is (see poses.ts HOLD):
+	// his own picture again over them, just where his arms are.
+	for (const hug of armsOver(cam, [...onCourt, ...crew], f.sprites)) {
+		items.push({
+			depth: hug.depth,
+			draw: () => {
+				ctx.save();
+				hug.clip(ctx);
+				if (f.sprites) {
+					restamp(ctx, f.sprites, hug.fig.st, 1);
+				} else {
+					drawSprite(
+						ctx,
+						f.scratch,
+						cam,
+						hug.fig.st,
+						hug.fig.body,
+						hug.fig.look,
+						1,
+					);
+				}
+				ctx.restore();
+			},
+		});
+	}
 	if (venue) {
 		items.push(...venue.items(ctx, cam, t));
 	}
@@ -2301,10 +2507,14 @@ export const drawFrame = (f: Frame) => {
 			drawTexturedPlane(ctx, cam, plane, img, 24, 1);
 		});
 	}
-	// A photographer's flash.
+	// A photographer's flash - not one behind the camera, or right at it (a
+	// camera in among the photographers).
 	for (const at of f.flashes ?? []) {
+		if (depthOf(cam, at) < FLASH_NEAR) {
+			continue;
+		}
 		const p = project(cam, at);
-		const r = Math.max(3, p.k * 1.1);
+		const r = Math.min(ctx.canvas.width * 0.08, Math.max(3, p.k * 1.1));
 		const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
 		g.addColorStop(0, "rgba(255,255,255,1)");
 		g.addColorStop(0.3, "rgba(240,244,255,0.7)");
@@ -2326,6 +2536,9 @@ export const drawFrame = (f: Frame) => {
 		drawNameTag(ctx, cam, holder, look, f.textScale, f.tagClear);
 	}
 };
+
+// (Feet.)
+const FLASH_NEAR = 2.5;
 
 // Over his head: higher than the tallest man's (feet).
 const TAG_OVER = 7.6;

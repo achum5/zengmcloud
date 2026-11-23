@@ -95,6 +95,9 @@ export const buildClocks = (tl: CourtTimeline, events: RawEvent[]): Clocks => {
 	const possStartSet = new Set(possStarts);
 	// How far the clock on screen is ahead of the sim's (see LEAD_MOST).
 	let lead = 0;
+	// The first line of each clip of a reel after the first (see director's
+	// newClip), and the sim's shot clock on it.
+	const clipLines: { at: number; clock: number; shot?: number }[] = [];
 	for (const [j, b] of tl.beats.entries()) {
 		const e = events[b.i];
 		if (!e) {
@@ -116,6 +119,16 @@ export const buildClocks = (tl: CourtTimeline, events: RawEvent[]): Clocks => {
 		const logged = typeof e.shotClock === "number" ? e.shotClock : undefined;
 		const shot =
 			logged !== undefined && fresh !== undefined ? SHOT_CLOCK : logged;
+		// A clip of a reel cut to: nothing of the last one's possession runs
+		// on into it (see below).
+		if (e.clipStart === true) {
+			anchor = undefined;
+			clipLines.push({
+				at: b.actionStart,
+				clock: e.clock,
+				...(shot === undefined ? {} : { shot }),
+			});
+		}
 		// The reading on the line - a shot the period ends on, as it is let go
 		// (it is up before the horn).
 		let at = b.actionStart;
@@ -284,6 +297,23 @@ export const buildClocks = (tl: CourtTimeline, events: RawEvent[]): Clocks => {
 		if (Number.isFinite(t)) {
 			resets.push({ t, from: SHOT_CLOCK });
 		}
+	}
+	// At each cut to a clip, the shot clock as it read there: running down
+	// with the game clock to the sim's own reading on its first line (a fresh
+	// one, without it).
+	for (const c of clipLines) {
+		const cut = lastCutIn(tl.clips ?? [], -Infinity, c.at + 1);
+		if (cut === undefined) {
+			continue;
+		}
+		const game = clockAt(marks, cut) ?? c.clock;
+		resets.push({
+			t: cut,
+			from:
+				c.shot === undefined
+					? SHOT_CLOCK
+					: Math.min(SHOT_CLOCK, c.shot + Math.max(0, game - c.clock)),
+		});
 	}
 	// Stable, so at one moment the later entry - the more specific one - wins.
 	resets.sort((a, b) => a.t - b.t);

@@ -108,6 +108,7 @@ const ScoreBugPage = ({
 			useRef<HTMLSpanElement | null>(null),
 		] as [RefObject<HTMLSpanElement | null>, RefObject<HTMLSpanElement | null>],
 		down: useRef<HTMLSpanElement | null>(null),
+		bug: useRef<HTMLDivElement | null>(null),
 	};
 	const sides = FOOTBALL
 		? {

@@ -74,24 +74,36 @@ const step = (run: Run) => {
 	run.quarters = out.quarters;
 };
 
-const ClipCourt = ({
+// (Also the Nightly Recap's court: a game's recap plays, played through
+// - with no button to see them again, `onAgain` left out - and `paused`.)
+export const ClipCourt = ({
 	events,
 	start,
 	end,
 	initialBoxScore,
+	paused = false,
+	rate = 1,
 	onAgain,
 	onDone,
 	onFail,
+	onLine,
 }: {
 	events: any[];
 	start: number;
 	end: number;
 	initialBoxScore: any;
-	onAgain: () => void;
+	paused?: boolean;
+	// How fast the court plays it (1: real time).
+	rate?: number;
+	onAgain?: () => void;
 	onDone?: () => void;
 	onFail: () => void;
+	// Each line as the picture gets to it.
+	onLine?: (e: any) => void;
 }) => {
 	const total = events.length;
+	// (A reel's stretches cut out marked: see common/recapReel.ts's cutReel.)
+	const marked = useMemo(() => events.some((e) => e?.gap === true), [events]);
 	const run = useMemo((): Run => {
 		const r: Run = {
 			box: helpers.deepCopy(initialBoxScore),
@@ -104,9 +116,14 @@ const ClipCourt = ({
 		}
 		// (And what is kept between there and its first play - the points,
 		// the subs since the period began: the score as it was when it
-		// starts, not as of the period's start.)
+		// starts, not as of the period's start. A reel's, as far as the
+		// stretch cut out goes: its first line's own points as it happens.)
 		const head: any[] = [];
-		while (r.queue.length > 0 && !isLine(r.queue[0])) {
+		while (
+			r.queue.length > 0 &&
+			!isLine(r.queue[0]) &&
+			!(marked && r.queue[0].type === "stat" && r.queue[0].gap !== true)
+		) {
 			head.push(r.queue.shift());
 		}
 		if (head.length > 0) {
@@ -118,11 +135,13 @@ const ClipCourt = ({
 			});
 		}
 		return r;
-	}, [events, start, total, initialBoxScore]);
+	}, [events, start, total, initialBoxScore, marked]);
 	const [cursor, setCursor] = useState(() => total - run.queue.length);
 	const [done, setDone] = useState(false);
 	const onDoneRef = useRef(onDone);
 	onDoneRef.current = onDone;
+	const onLineRef = useRef(onLine);
+	onLineRef.current = onLine;
 	const onReady = useCallback(() => {
 		if (total - run.queue.length >= end || run.queue.length === 0) {
 			setDone(true);
@@ -130,8 +149,28 @@ const ClipCourt = ({
 			return;
 		}
 		step(run);
-		setCursor(total - run.queue.length);
-	}, [run, total, end]);
+		const at = total - run.queue.length;
+		setCursor(at);
+		onLineRef.current?.(events[at - 1]);
+	}, [run, total, end, events]);
+	// Cut to the next clip: the score as it stands there, the stretch cut out
+	// before it on the board.
+	const [, setCuts] = useState(0);
+	const onCut = useCallback(() => {
+		const gap: any[] = [];
+		while (run.queue.length > 0 && run.queue[0]?.gap === true) {
+			gap.push(run.queue.shift());
+		}
+		if (gap.length > 0) {
+			processLiveGameEventsBasketball({
+				events: gap,
+				boxScore: run.box,
+				overtimes: run.overtimes,
+				quarters: run.quarters,
+			});
+			setCuts((n) => n + 1);
+		}
+	}, [run]);
 	return (
 		<div className="position-relative">
 			<Court3D
@@ -139,14 +178,15 @@ const ClipCourt = ({
 				cursor={cursor}
 				boxScore={run.box}
 				caption={undefined}
-				paused={false}
-				rate={1}
+				paused={paused}
+				rate={rate}
 				follower={false}
 				until={end}
 				onReady={onReady}
+				onCut={marked ? onCut : undefined}
 				onFail={onFail}
 			/>
-			{done ? (
+			{done && onAgain ? (
 				<button
 					type="button"
 					className="gamecast-clip-again"

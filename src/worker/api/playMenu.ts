@@ -15,12 +15,73 @@ import { runDraft } from "./actions.ts";
 import { bySport } from "../../common/sportFunctions.ts";
 import { cleanupAutoPlay } from "../core/league/autoPlay.ts";
 import { realisticFreeAgencyOn } from "../core/realisticFrontOffice/isOn.ts";
+import { capDraftReadyForOnePick } from "../core/sync/draftReady.ts";
+
+// On the NBA calendar, a sim day is a night of games: the play-in's nights
+// left, from its plan (see playoffCalendar.ts).
+const playInNightsLeft = (playoffSeries: PlayoffSeries) => {
+	const playIns = playoffSeries.playIns;
+	if (!playIns || !playIns.every((playIn) => playIn[0].dates)) {
+		return;
+	}
+	const nights = new Set<string>();
+	let lastGamesLeft = false;
+	for (const playIn of playIns) {
+		for (const matchup of playIn.slice(0, 2)) {
+			if (matchup.home.won + matchup.away.won === 0) {
+				nights.add(matchup.dates![0]!);
+			}
+		}
+		const final = playIn[2];
+		if (!final || final.home.won + final.away.won === 0) {
+			lastGamesLeft = true;
+		}
+	}
+	return nights.size + (lastGamesLeft ? 1 : 0);
+};
+
+// The round's nights left, from its plan, and the All-Star Game's night when
+// it's before the Finals.
+const roundNightsLeft = (playoffSeries: PlayoffSeries) => {
+	const roundSeries = playoffSeries.series[playoffSeries.currentRound];
+	if (!roundSeries?.some((series) => series.dates)) {
+		return;
+	}
+	const numGamesToWin = helpers.numGamesToWinRound(playoffSeries.currentRound);
+	const nights = new Set<string>();
+	let notStarted = true;
+	for (const { away, home, dates } of roundSeries) {
+		if (!away) {
+			continue;
+		}
+		if (home.won + away.won > 0) {
+			notStarted = false;
+		}
+		if (Math.max(home.won, away.won) < numGamesToWin) {
+			for (const night of dates?.slice(home.won + away.won) ?? []) {
+				nights.add(night);
+			}
+		}
+	}
+	const allStar =
+		notStarted &&
+		g.get("allStarGame") === -1 &&
+		roundSeries.length === 1 &&
+		playoffSeries.currentRound ===
+			g.get("numGamesPlayoffSeries", "current").length - 1;
+	return nights.size + (allStar ? 1 : 0);
+};
 
 const getNumDaysThisRound = (playoffSeries: PlayoffSeries) => {
 	let numDaysThisRound = 0;
 
 	if (playoffSeries.currentRound === -1) {
-		return 1;
+		return playInNightsLeft(playoffSeries) ?? 1;
+	}
+
+	const nightsLeft = roundNightsLeft(playoffSeries);
+	if (nightsLeft !== undefined) {
+		return nightsLeft;
 	}
 
 	if (playoffSeries.series.length > 0) {
@@ -55,6 +116,11 @@ const getNumDaysPlayIn = async () => {
 		return 0;
 	}
 
+	const nightsLeft = playInNightsLeft(playoffSeries);
+	if (nightsLeft !== undefined) {
+		return nightsLeft;
+	}
+
 	let numDays = 0;
 	if (
 		playoffSeries.playIns.some((playIn) => playIn[0].home.pts === undefined)
@@ -77,15 +143,23 @@ const getNumDaysPlayoffs = async () => {
 		throw new Error("playoffSeries not found");
 	}
 
-	// Max 7 days per round that hasn't started yet
+	// Max 7 days per round that hasn't started yet. On the calendar, where
+	// the series of a round are spread over nights, enough nights for a round
+	// as long as any it can have (the sim stops when the playoffs end).
+	const calendar =
+		playInNightsLeft(playoffSeries) !== undefined ||
+		roundNightsLeft(playoffSeries) !== undefined;
 	let numDaysFutureRounds = 0;
+	let numSeries = playoffSeries.series[0]?.length ?? 1;
 
-	for (
-		let i = playoffSeries.currentRound + 1;
-		i < g.get("numGamesPlayoffSeries", "current").length;
-		i++
-	) {
-		numDaysFutureRounds += g.get("numGamesPlayoffSeries", "current")[i]!;
+	for (let i = 0; i < g.get("numGamesPlayoffSeries", "current").length; i++) {
+		if (i > playoffSeries.currentRound) {
+			const numGames = g.get("numGamesPlayoffSeries", "current")[i]!;
+			numDaysFutureRounds += calendar
+				? numGames * Math.min(numSeries, 4) + 3
+				: numGames;
+		}
+		numSeries = Math.max(1, Math.ceil(numSeries / 2));
 	}
 
 	const numDaysPlayIn = await getNumDaysPlayIn();
@@ -242,8 +316,19 @@ const playMenu = {
 			await phase.newPhase(PHASE.DRAFT, conditions);
 		}
 	},
+	// `param`: the pick the Draft page showed on the clock, when it sent one -
+	// so a click on a page a moment behind the room makes that pick or none,
+	// never the one after it.
 	onePick: async (param: unknown, conditions: Conditions) => {
-		await runDraft({ type: "onePick" }, conditions);
+		const dpid = typeof param === "number" ? param : undefined;
+		// One pick, then the room waits - not on to wherever this team had
+		// readied up through (see capDraftReadyForOnePick).
+		try {
+			await capDraftReadyForOnePick(dpid);
+		} catch (error) {
+			console.error(error);
+		}
+		await runDraft({ type: "onePick", dpid }, conditions);
 	},
 	untilYourNextPick: async (param: unknown, conditions: Conditions) => {
 		await runDraft({ type: "untilYourNextPick" }, conditions);

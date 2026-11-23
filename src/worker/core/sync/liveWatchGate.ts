@@ -26,3 +26,21 @@ export const setLiveResultNotice = (
 export const noticeLiveResult = (gid: number, liveAt: number) => {
 	liveResultNotice?.(gid, liveAt);
 };
+
+// A phase change to hold back on screen: the playoffs ended (or moved on) at
+// the tip-off of a playoff game a league mate is still playing live, watched
+// here or not. The data is in; the header, the Play menu and the phase's page
+// wait for that game's final (see util/liveGameGate.ts). Wired by connect.ts.
+let phasePaintHold: (() => boolean) | undefined;
+
+export const setPhasePaintHold = (fn: (() => boolean) | undefined) => {
+	phasePaintHold = fn;
+};
+
+export const holdsPhasePaint = (): boolean => {
+	try {
+		return phasePaintHold?.() ?? false;
+	} catch {
+		return false;
+	}
+};

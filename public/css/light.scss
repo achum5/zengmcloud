@@ -126,6 +126,7 @@ $flag-icon-css-path: "/img/flags";
 @import "datatable";
 @import "bbgm-notifications";
 @import "glyphicons";
+@import "recap-fonts";
 @import "sidebar";
 @import "rotation";
 @import "depth-chart";
@@ -2078,6 +2079,54 @@ tr.table-warning:hover > td {
 	border-bottom: 1px solid $gray-200;
 }
 
+// Games being played live in a shared league, under the top bar (see
+// components/LiveGames.tsx). One row; more than fit scroll sideways.
+.live-scores-strip {
+	scrollbar-width: none;
+	&::-webkit-scrollbar {
+		display: none;
+	}
+}
+// (In the top bar it takes only the room left over, never squeezing the
+// rest of the bar.)
+.live-scores-inline {
+	min-width: 0;
+	flex: 1000 1 0;
+}
+.live-score-chip {
+	flex-shrink: 0;
+	font-size: 0.8125rem;
+	line-height: 1.2;
+	padding: 0.2rem 0.6rem;
+	border-radius: 999px;
+}
+.live-score-dot {
+	display: inline-block;
+	width: 0.45rem;
+	height: 0.45rem;
+	border-radius: 50%;
+	background-color: currentColor;
+	animation: live-score-pulse 1.6s ease-in-out infinite;
+}
+.live-score-clock {
+	opacity: 0.8;
+	font-variant-numeric: tabular-nums;
+}
+@keyframes live-score-pulse {
+	0%,
+	100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0.3;
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.live-score-dot {
+		animation: none;
+	}
+}
+
 // The top header only (.navbar-border is shared with the title bar). It is
 // position:sticky, NOT position:fixed. In iOS standalone PWAs, WebKit's
 // compositor can permanently lose a fixed element's viewport attachment
@@ -2474,6 +2523,82 @@ $small-scrollbar-thumb-hover-color: darken($gray-500, 10%) !default;
 
 .score-box-score {
 	min-width: 44px;
+}
+
+// A national game's network (see NationalTag): its logo in its own colors,
+// or its name.
+.national-tag {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--bs-body-color);
+	font-size: 0.7rem;
+	font-weight: 700;
+	letter-spacing: 0.03em;
+	line-height: 1.1;
+	text-align: center;
+	text-transform: uppercase;
+
+	img {
+		display: block;
+		max-width: 100%;
+		max-height: 100%;
+		object-fit: contain;
+	}
+
+	// (The one for a dark page: see dark.scss.)
+	.national-logo-dark {
+		display: none;
+	}
+}
+
+// At the end of a national game's teams' column, both teams high, where the
+// scores go once it's played (the column runs to the box's edge on a phone).
+$score-box-national-width: 56px;
+.score-box-national {
+	position: absolute;
+	top: 6px;
+	bottom: 6px;
+	right: 4px;
+	width: $score-box-national-width;
+	pointer-events: none;
+
+	img {
+		max-height: 32px;
+	}
+}
+@include media-breakpoint-up(sm) {
+	.score-box-national {
+		// (Past the team's logo, 36 + 4, and its column, 210 wide and 60 more
+		// - see ScoreBox.)
+		right: auto;
+		left: 40px + 270px - 4px - $score-box-national-width;
+	}
+}
+.score-box-national-room {
+	padding-right: $score-box-national-width + 8px !important;
+}
+
+// At the end of a national game's small score box, inside it, both teams
+// high.
+.score-box-national-small {
+	align-self: stretch;
+	width: 42px;
+	padding: 4px 6px 4px 2px;
+	border: 1px solid $gray-300;
+	border-left: 0;
+	font-size: 0.5rem;
+
+	img {
+		max-height: 20px;
+	}
+}
+
+// Beside the next game's date on the dashboard.
+.national-tag-inline {
+	height: 18px;
+	max-width: 64px;
+	vertical-align: -4px;
 }
 
 .score-box-action {
@@ -6248,8 +6373,8 @@ a.rsb-half {
 	}
 }
 
-// All of the game's day (see DayGames): a slim button under the banner, the
-// day's scores under it when open.
+// The game's day (see DayGames): a slim button under the banner with the
+// date, the day's scores and a link to its Daily Schedule under it when open.
 .recap-day {
 	margin: 0.5rem 0 0;
 }
@@ -6267,6 +6392,17 @@ a.rsb-half {
 		transform: rotate(225deg);
 		margin: 0.2em 0 0;
 	}
+}
+.recap-day-date {
+	font-weight: 600;
+}
+.recap-day-dot {
+	color: var(--bs-secondary-color);
+}
+.recap-day-actions {
+	display: flex;
+	justify-content: flex-end;
+	margin-top: 0.5rem;
 }
 .recap-day-grid {
 	display: grid;

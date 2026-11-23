@@ -16,6 +16,7 @@ import newSchedule from "./newSchedule.ts";
 import { getRealSchedule } from "./getRealSchedule.basketball.ts";
 import { generateCalendar } from "./generateCalendar.ts";
 import { teamLocation, type HomeCity } from "../../../common/teamLocation.ts";
+import { countClassicDays } from "../game/calendarTicks.ts";
 
 // THE REGULAR SEASON ON REAL DATES (basketball): every game gets the night
 // it's played on, and each night is one sim day. A league shaped like the
@@ -28,6 +29,9 @@ export type DatedSchedule = {
 	tids: [number, number][];
 	// Parallel to tids, or absent for classic numbered days.
 	dates?: string[];
+	// With dates: how many classic days the season would have taken, for its
+	// end-of-day rules to keep the classic pace (game/calendarTicks.ts).
+	classicDays?: number;
 };
 
 type CalendarScheduleTeam = {
@@ -124,7 +128,7 @@ export const assembleDatedSchedule = (
 	games: { homeTid: number; awayTid: number; date: string }[],
 	allStarDate: string | undefined,
 	tradeDeadline: number,
-): Required<DatedSchedule> => {
+): Required<Omit<DatedSchedule, "classicDays">> => {
 	const sorted = games
 		.map((game, i) => ({ ...game, i }))
 		.sort((a, b) => (a.date === b.date ? a.i - b.i : a.date < b.date ? -1 : 1));
@@ -204,7 +208,10 @@ const newCalendarSchedule = (
 							Math.min(dates.length - 1, Math.round(fraction * dates.length))
 						];
 		}
-		return assembleDatedSchedule(real, allStarDate, tradeDeadline);
+		return {
+			...assembleDatedSchedule(real, allStarDate, tradeDeadline),
+			classicDays: countClassicDays(newSchedule(teams)),
+		};
 	}
 
 	const classic = newSchedule(teams, conditions);
@@ -221,15 +228,18 @@ const newCalendarSchedule = (
 	if (!calendar) {
 		return { tids: classic };
 	}
-	return assembleDatedSchedule(
-		regular.map(([homeTid, awayTid], i) => ({
-			homeTid,
-			awayTid,
-			date: calendar.dates[i]!,
-		})),
-		calendar.allStarDate,
-		tradeDeadline,
-	);
+	return {
+		...assembleDatedSchedule(
+			regular.map(([homeTid, awayTid], i) => ({
+				homeTid,
+				awayTid,
+				date: calendar.dates[i]!,
+			})),
+			calendar.allStarDate,
+			tradeDeadline,
+		),
+		classicDays: countClassicDays(classic),
+	};
 };
 
 export default newCalendarSchedule;

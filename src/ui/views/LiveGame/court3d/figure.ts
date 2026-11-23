@@ -76,6 +76,10 @@ export type Outfit = {
 	// The shirt and tie in the open neck of a jacket: a coach's suit.
 	shirt?: string;
 	tie?: string;
+	// Trousers down to his shoes, hanging straight - not shorts over tights.
+	trousers?: boolean;
+	// Fine stripes down a suit's jacket, in this.
+	pin?: string;
 	// A camera in his hands: a photographer's.
 	camera?: boolean;
 	// A microphone in his right hand: a reporter's.

@@ -367,6 +367,16 @@ test.skipIf(!env.FA_LEAGUE)(
 		log(
 			`to ${g.get("season")} preseason in ${((performance.now() - t0) / 60000).toFixed(1)} min`,
 		);
+		// The GM's time by kind (smartClock), ending " min" as the timings
+		// above do, so comparisons of two runs can leave them out.
+		const { smartClock } = await import("../../worker/core/smartCpu/clock.ts");
+		for (const [kind, c] of Object.entries(smartClock)
+			.filter(([kind]) => !kind.includes(" @"))
+			.sort((a, b) => b[1].ms - a[1].ms)) {
+			log(
+				`clock ${kind}: ${c.n} times, ${c.values} values, ${(c.ms / 60000).toFixed(2)} min`,
+			);
+		}
 		// The league, in an export's shape.
 		const players = await idb.merged.players.getAll({
 			activeAndRetired: true,

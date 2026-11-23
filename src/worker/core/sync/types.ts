@@ -1,7 +1,11 @@
 import type { AdvanceClaimDoc } from "./advanceClaimPolicy.ts";
 import type { SimDayClaimDoc } from "./simDayClaimPolicy.ts";
 import type { Changeset } from "./changeset.ts";
-import type { LiveSync3D, SyncedAutoPlay } from "../../../common/types.ts";
+import type {
+	LiveScore,
+	LiveSync3D,
+	SyncedAutoPlay,
+} from "../../../common/types.ts";
 import type { SyncNotification } from "./notifications.ts";
 import type { LeaguePosition } from "./leaguePosition.ts";
 import type { LiveGameChatMessage } from "../../../common/liveGameChat.ts";
@@ -95,6 +99,17 @@ export type LiveBroadcastMeta = {
 	view?: string;
 	// Where its 3D court is (see LiveSync3D).
 	sync?: LiveSync3D;
+	// The score on the simmer's screen right now (see LiveScore).
+	score?: LiveScore;
+	// Home then away.
+	tids?: [number, number];
+	// The schedule day the game is on.
+	day?: number;
+	// Whether the game is in the playoffs.
+	playoffs?: boolean;
+	// Read from the room's one shared broadcast doc, the way builds before
+	// several live games at once broadcast (its payload is in the old chunks).
+	legacy?: boolean;
 	// When this device got the doc (its clock, ms) - not stored.
 	recvAt?: number;
 };
@@ -120,6 +135,10 @@ export type LiveBroadcastUpdate = {
 	expiresAt?: number;
 	view?: string;
 	sync?: LiveSync3D;
+	score?: LiveScore;
+	tids?: [number, number];
+	day?: number;
+	playoffs?: boolean;
 };
 
 // A live draft-lottery reveal in progress. Whoever runs the lottery (the
@@ -594,6 +613,22 @@ export interface SyncTransport {
 	): () => void;
 	fetchLiveBroadcastData?(chunkCount: number): Promise<string | undefined>;
 	clearLiveBroadcast?(chunkCount: number): Promise<void>;
+
+	// Several live games at once: one meta doc per game (control/liveGame_<gid>)
+	// and its own payload chunks, so a league mate playing their game never
+	// waits for a slot. subscribeLiveGames delivers every game live in the
+	// room - these, plus one on the old shared doc from a device on an older
+	// build (marked legacy; its payload comes from fetchLiveBroadcastData).
+	publishLiveGame?(gid: number, update: LiveBroadcastUpdate): Promise<void>;
+	publishLiveGameData?(gid: number, serialized: string): Promise<number>;
+	subscribeLiveGames?(
+		onChange: (metas: LiveBroadcastMeta[]) => void,
+	): () => void;
+	fetchLiveGameData?(
+		gid: number,
+		chunkCount: number,
+	): Promise<string | undefined>;
+	clearLiveGame?(gid: number, chunkCount: number): Promise<void>;
 
 	// Live lottery-reveal broadcast (see LotteryRevealMeta). Optional so the
 	// in-memory test transport can skip it.

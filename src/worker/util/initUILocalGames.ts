@@ -2,9 +2,10 @@ import g from "./g.ts";
 import { getProcessedGames } from "./getProcessedGames.ts";
 import toUI from "./toUI.ts";
 import type { LocalStateUI } from "../../common/types.ts";
-import { getOneUpcomingGame } from "./recomputeLocalUITeamOvrs.ts";
+import { getUpcomingGamesForUI } from "./recomputeLocalUITeamOvrs.ts";
 import { updateTickerItems } from "./updateTickerItems.ts";
-import { hideLiveResults, liveSpoilerGids } from "./liveSpoilers.ts";
+import { hideLiveResults } from "./liveSpoilers.ts";
+import { getLiveGate } from "./liveGameGate.ts";
 
 export const initUILocalGames = async () => {
 	const userTid = g.get("userTid");
@@ -17,6 +18,7 @@ export const initUILocalGames = async () => {
 			includeAllStarGame: true,
 		})
 	).map((game) => ({
+		date: game.date,
 		forceWin: game.forceWin,
 		gid: game.gid,
 		overtimes: game.overtimes,
@@ -40,17 +42,14 @@ export const initUILocalGames = async () => {
 	}));
 	games.reverse();
 
-	// Add one upcoming game - that's all that's ever shown in the UI
-	const upcomingGame = await getOneUpcomingGame();
-	if (upcomingGame) {
-		games.push(upcomingGame);
-	}
+	// Add the next game - and on the NBA calendar, the coming nights' games
+	games.push(...(await getUpcomingGamesForUI()));
 
 	await toUI("updateLocal", [
 		{
 			// (A game still playing out live reads as not played yet - see
 			// liveSpoilers.ts.)
-			games: hideLiveResults(games, liveSpoilerGids()),
+			games: hideLiveResults(games, (await getLiveGate()).hidden),
 		},
 	]);
 

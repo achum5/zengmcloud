@@ -4,7 +4,9 @@ import { showNotification } from "../../util/showNotification.ts";
 import { toWorker } from "../../util/toWorker.ts";
 import { keepCourtPictures, parseCourt } from "../courtFile.ts";
 import { keepScoreBugPictures } from "../scoreBugFile.ts";
+import { PIC } from "../../components/CourtImageField.tsx";
 import { parseScoreBug } from "../../../common/scoreBug.ts";
+import { parseNationalBroadcasts } from "../../../common/nationalBroadcasts.ts";
 import { toSkinURL } from "./JerseySkins.tsx";
 
 // EVERY TEAM'S LOOK FROM ONE FILE: each team's home and away jerseys and
@@ -26,7 +28,10 @@ import { toSkinURL } from "./JerseySkins.tsx";
 // Any sport's: a team's score bug, its broadcast's, as a score bug file's
 // JSON (see ScoreBugStyle), its pictures and fonts written in or linked -
 // "scoreBug": { "width": 600, "height": 60, "pieces": [...] } (null: the
-// league's).
+// league's). And beside the teams, the national networks' (see
+// NationalBroadcast) - "national": [{ "network": "ESPN", "nights": ["Wed"],
+// "logo": "https://...", "scoreBug": {...} }] - in place of any the league
+// had ([]: none).
 
 type Entry = {
 	abbrev?: unknown;
@@ -74,9 +79,15 @@ const ImportTeamLooks = ({
 
 	const run = async (file: File) => {
 		let entries: Entry[] | undefined;
+		let national: unknown;
 		try {
 			const raw = JSON.parse(await file.text());
-			entries = Array.isArray(raw?.teams) ? raw.teams : undefined;
+			national = raw?.national;
+			entries = Array.isArray(raw?.teams)
+				? raw.teams
+				: national !== undefined
+					? []
+					: undefined;
 		} catch {}
 		if (!entries) {
 			showNotification({
@@ -151,9 +162,59 @@ const ImportTeamLooks = ({
 				problems.push(`${label}: ${(error as Error).message}`);
 			}
 		}
+		let networks: string[] | undefined;
+		if (national !== undefined) {
+			try {
+				const parsed = parseNationalBroadcasts(national);
+				if (typeof parsed === "string") {
+					throw new Error(parsed);
+				}
+				const uploaded: string[] = [];
+				const broadcasts = [];
+				for (const n of parsed) {
+					const kept = await keepScoreBugPictures(n.scoreBug);
+					uploaded.push(...kept.ids);
+					// (A logo written in, kept as a picture.)
+					const keep = async (logo: string | undefined) => {
+						if (logo?.startsWith("data:image/")) {
+							try {
+								const id = await toWorker("main", "storeCourtPicture", logo);
+								uploaded.push(id);
+								return `${PIC}${id}`;
+							} catch {}
+						}
+						return logo;
+					};
+					const logo = await keep(n.logo);
+					const logoDark = await keep(n.logoDark);
+					broadcasts.push({
+						...n,
+						...(logo !== undefined ? { logo } : {}),
+						...(logoDark !== undefined ? { logoDark } : {}),
+						scoreBug: kept.bug,
+					});
+				}
+				await toWorker("main", "updateNationalBroadcasts", {
+					broadcasts,
+					uploaded,
+				});
+				networks = [...new Set(parsed.map((n) => n.network))];
+			} catch (error) {
+				problems.push(`National: ${(error as Error).message}`);
+			}
+		}
 		setBusy(undefined);
 		const notes = [
-			`Updated ${done} team${done === 1 ? "" : "s"}.`,
+			...(entries.length > 0 || networks === undefined
+				? [`Updated ${done} team${done === 1 ? "" : "s"}.`]
+				: []),
+			...(networks !== undefined
+				? [
+						networks.length > 0
+							? `National: ${networks.join(", ")}.`
+							: "No national networks.",
+					]
+				: []),
 			...(missed.length > 0 ? [`No team for ${missed.join(", ")}.`] : []),
 			...problems,
 		];

@@ -26,7 +26,13 @@ import {
 } from "../../util/getTeamSpreadBias.ts";
 import { pregameLineupSynergy } from "../GameSim.basketball/synergy.ts";
 import { dayAlreadyCounted } from "./dailyCountdownGate.ts";
-import { dayTickFromGames } from "./calendarTicks.ts";
+import { dayTickFromGames, playoffNightTick } from "./calendarTicks.ts";
+import { ensureClassicDays } from "./saveClassicDays.ts";
+import {
+	RECAP_REELS_ON,
+	saveRecapReels,
+	wantsRecapReel,
+} from "./saveRecapReels.ts";
 import { recordInjuryForensics } from "../sync/injuryForensics.ts";
 import setGameAttributes from "../league/setGameAttributes.ts";
 import updatePlayoffSeries from "./updatePlayoffSeries.ts";
@@ -52,6 +58,7 @@ import { settleBets } from "../sportsbook/bets.ts";
 import { idb } from "../../db/index.ts";
 import { updateTickerItems } from "../../util/updateTickerItems.ts";
 import { hideLiveResults } from "../../util/liveSpoilers.ts";
+import { getLiveGate } from "../../util/liveGameGate.ts";
 import {
 	g,
 	helpers,
@@ -73,7 +80,7 @@ import allowForceTie from "../../../common/allowForceTie.ts";
 import getWinner from "../../../common/getWinner.ts";
 import { setLiveSimRatingsStatsPopoverPlayers } from "./setLiveSimRatingsStatsPopoverPlayers.ts";
 import {
-	getOneUpcomingGame,
+	getUpcomingGamesForUI,
 	recomputeLocalUITeamOvrs,
 } from "../../util/recomputeLocalUITeamOvrs.ts";
 import { last } from "../../../common/utils.ts";
@@ -418,14 +425,29 @@ const play = async (
 			const healedTexts: string[] = [];
 			const injuryTickNotes: string[] = [];
 
-			// On a calendar, a night counts games, not days - see calendarTicks.ts.
-			const tick = dayTickFromGames({
-				games: await idb.cache.games.getAll(),
-				season: g.get("season"),
-				day: simmedDay,
-				phase: g.get("phase"),
-				numActiveTeams: g.get("numActiveTeams"),
-			});
+			// On a calendar, a night counts games at the classic pace - see
+			// calendarTicks.ts.
+			const tick =
+				g.get("phase") === PHASE.PLAYOFFS
+					? playoffNightTick({
+							games: await idb.cache.games.getAll(),
+							season: g.get("season"),
+							day: simmedDay,
+							playoffSeries: await idb.cache.playoffSeries.get(g.get("season")),
+							numGamesToWin: helpers.numGamesToWinRound(
+								(await idb.cache.playoffSeries.get(g.get("season")))
+									?.currentRound ?? 0,
+							),
+						})
+					: dayTickFromGames({
+							games: await idb.cache.games.getAll(),
+							schedule: await idb.cache.schedule.getAll(),
+							season: g.get("season"),
+							day: simmedDay,
+							phase: g.get("phase"),
+							numActiveTeams: g.get("numActiveTeams"),
+							classicDays: await ensureClassicDays(),
+						});
 
 			// Injury countdown - This must be after games are saved, of there is a race condition involving new injury assignment in writeStats. Free agents are handled in decreaseDemands.
 			const players = await idb.cache.players.indexGetAll("playersByTid", [
@@ -437,16 +459,22 @@ const play = async (
 			for (const p of players) {
 				let changed = false;
 
-				// The team had the night off.
-				if (tick.tidsPlayed !== undefined && !tick.tidsPlayed.has(p.tid)) {
+				// How many days this night is for the player's team: none if it had
+				// the night off.
+				const ticks =
+					tick.ticksByTid === undefined
+						? 1
+						: (tick.ticksByTid.get(p.tid) ?? tick.restTicks ?? 0);
+				if (ticks === 0) {
 					continue;
 				}
 
 				if (p.injury.gamesRemaining > 0) {
+					const gamesRemaining = Math.max(0, p.injury.gamesRemaining - ticks);
 					injuryTickNotes.push(
-						`p${p.pid}:${p.injury.gamesRemaining}>${p.injury.gamesRemaining - 1}`,
+						`p${p.pid}:${p.injury.gamesRemaining}>${gamesRemaining}`,
 					);
-					p.injury.gamesRemaining -= 1;
+					p.injury.gamesRemaining = gamesRemaining;
 					changed = true;
 				}
 
@@ -506,7 +534,7 @@ const play = async (
 
 					changed = true;
 				} else if (p.gamesUntilTradable > 0) {
-					p.gamesUntilTradable -= 1;
+					p.gamesUntilTradable = Math.max(0, p.gamesUntilTradable - ticks);
 					changed = true;
 				}
 
@@ -603,15 +631,14 @@ const play = async (
 		if (gameToUi) {
 			const gamesToUi = [gameToUi];
 
-			// Also show next game
-			const upcomingGame = await getOneUpcomingGame();
-			if (upcomingGame) {
-				gamesToUi.push(upcomingGame);
-			}
+			// Also show the next game (and on the NBA calendar, the coming nights')
+			gamesToUi.push(...(await getUpcomingGamesForUI()));
 
 			// (This device's own live game reads as not played yet till it has
 			// played out - see liveSpoilers.ts.)
-			await toUI("mergeGames", [hideLiveResults(gamesToUi)]);
+			await toUI("mergeGames", [
+				hideLiveResults(gamesToUi, (await getLiveGate()).hidden),
+			]);
 		} else {
 			// This loads next game and calls mergeGames internally
 			await recomputeLocalUITeamOvrs();
@@ -680,6 +707,16 @@ const play = async (
 				} catch (error) {
 					console.error("Failed to save game play-by-play", error);
 				}
+			}
+		}
+
+		// The night's recap plays (see saveRecapReels.ts), in the same capture
+		// window. Best-effort too.
+		if (RECAP_REELS_ON) {
+			try {
+				await saveRecapReels(results);
+			} catch (error) {
+				console.error("Failed to save recap plays", error);
 			}
 		}
 
@@ -849,6 +886,9 @@ const play = async (
 		// generated for EVERY game, and the ones that turn out not to qualify are
 		// simply not saved (see cbSaveResults). That is the whole day paying the
 		// live-sim game's generation cost, which is the price of the option.
+		//
+		// Every game the Nightly Recap cuts (see saveRecapReels.ts) needs it
+		// too. Generating it rolls no dice, so no result changes for it.
 		const saveReplaysTids = new Set(g.get("saveReplaysTids"));
 		const saveAllPlayoffGames =
 			saveReplaysTids.has(-2) && g.get("phase") === PHASE.PLAYOFFS;
@@ -860,7 +900,8 @@ const play = async (
 				saveAllPlayoffGames ||
 				saveDramaticGames ||
 				saveReplaysTids.has(game.homeTid) ||
-				saveReplaysTids.has(game.awayTid);
+				saveReplaysTids.has(game.awayTid) ||
+				(RECAP_REELS_ON && wantsRecapReel(game.homeTid, game.awayTid));
 
 			const teamsInput = [teams[game.homeTid], teams[game.awayTid]] as any;
 

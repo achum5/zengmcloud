@@ -18107,6 +18107,14 @@ class Director {
 				// period that ended on a shot at the horn (or with free throws
 				// after it) has had no line for the break: the horn and the
 				// walk off to the huddles, then, before this one starts.
+				// Between two clips of a reel (see common/recapReel.ts): the cut
+				// to the next clip is the whole of it - nobody walks off.
+				if (e.clipGap === true) {
+					this.inboundAt = { x: COURT_W / 2, y: -1.4 };
+					this.phase = "inboundSide";
+					this.beat(i, type, T, T + 1);
+					break;
+				}
 				let over = T + 1100;
 				if (this.beats.at(-1)?.type !== "endOfPeriod") {
 					this.effect("whistle", T, { call: "stop", team: this.offense });

@@ -1,6 +1,8 @@
 import { idb } from "../db/index.ts";
+import { nationalTags } from "./nationalBroadcast.ts";
 import { g } from "../util/index.ts";
 import type { ViewArgs } from "../util/defineView.ts";
+import { getCalendarIfDated } from "./calendar.ts";
 import { processEvents } from "./news.ts";
 
 // The new interface's home (the League Hub), on top of the dashboard: the
@@ -79,6 +81,7 @@ export const updateHub = async ({ updateEvents }: ViewArgs) => {
 	const schedule = await idb.cache.schedule.getAll();
 	const nextDay =
 		schedule.length > 0 ? Math.min(...schedule.map((s) => s.day)) : undefined;
+	const national = await nationalTags(schedule);
 	const upcoming = schedule
 		.filter((s) => s.homeTid === userTid || s.awayTid === userTid)
 		.sort((a, b) => a.day - b.day)
@@ -87,6 +90,7 @@ export const updateHub = async ({ updateEvents }: ViewArgs) => {
 			day: s.day,
 			date: s.date,
 			home: s.homeTid === userTid,
+			national: national.get(s.gid),
 			opp: s.homeTid === userTid ? s.awayTid : s.homeTid,
 		}));
 	// On a calendar, the night of the next day of games.
@@ -167,5 +171,10 @@ export const updateHub = async ({ updateEvents }: ViewArgs) => {
 		nextDay,
 		nextDate,
 		latestScores,
+		// On the NBA calendar, the team's month, while there are games to play.
+		calendar:
+			nextDate !== undefined
+				? await getCalendarIfDated(season, userTid)
+				: undefined,
 	};
 };

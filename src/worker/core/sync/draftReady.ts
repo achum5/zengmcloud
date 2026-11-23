@@ -150,6 +150,28 @@ export const readyTeamTids = (
 	return [...covered].sort((a, b) => a - b);
 };
 
+// How far a team is ready: the furthest step any of its devices readied
+// through in this stage, or undefined if none has.
+const teamReadyThrough = (
+	ready: Record<string, DraftReadyEntry | null | undefined> | undefined,
+	tid: number,
+	stageKey: string,
+): number | undefined => {
+	let through: number | undefined;
+	for (const entry of Object.values(ready ?? {})) {
+		if (
+			entry &&
+			entry.draftKey === stageKey &&
+			entry.tid === tid &&
+			typeof entry.untilPick === "number" &&
+			(through === undefined || entry.untilPick > through)
+		) {
+			through = entry.untilPick;
+		}
+	}
+	return through;
+};
+
 // The ready map in a form two copies of it can be compared by: every live
 // entry, by device, in one order (Firestore hands fields back in any).
 export const readyMapKey = (
@@ -366,7 +388,10 @@ const getStageInfo = async (): Promise<StageInfo | undefined> => {
 			advance: async () => {
 				changeTracker.beginSim();
 				try {
-					await runPicks({ type: "onePick" });
+					// The pick this step was claimed for, and only it: if "Sim one
+					// pick" on the device in charge made it a moment ago, the step
+					// is done, and the pick after it is the room's to agree to.
+					await runPicks({ type: "onePick", dpid: next.dpid });
 				} finally {
 					changeTracker.endSim();
 				}
@@ -1182,37 +1207,30 @@ export const setDraftReady = async (untilStep: number | null) => {
 	// couldn't revoke a ready published from the phone).
 	const tid = g.get("userTid");
 	const stageKey = stageKeyNow();
-	let teamUntilStep: number | undefined;
 	const sameTeamUids: string[] = [];
 	for (const [uid, entry] of Object.entries(latestReady ?? {})) {
-		if (!entry || entry.draftKey !== stageKey || entry.tid !== tid) {
-			continue;
-		}
-		if (uid !== engine.clientId) {
+		if (
+			entry &&
+			entry.draftKey === stageKey &&
+			entry.tid === tid &&
+			uid !== engine.clientId
+		) {
 			sameTeamUids.push(uid);
 		}
-		if (
-			typeof entry.untilPick === "number" &&
-			(teamUntilStep === undefined || entry.untilPick > teamUntilStep)
-		) {
-			teamUntilStep = entry.untilPick;
-		}
 	}
 
-	// Readying UP is always allowed (even mid-catch-up - it only consents to
-	// future steps). But REVOKING or reducing readiness while this device is
-	// behind or the room is mid-advance is acting on a stale world: it can halt
-	// a chain of steps the rest of the room already agreed to, right while the
-	// authority is running them. Make the device see the current state first.
-	const reducing =
-		untilStep === null ||
-		(teamUntilStep !== undefined && untilStep < teamUntilStep);
-	if (reducing && (!engine.isCaughtUp() || engine.isRoomBusy())) {
-		throw new Error(
-			"Still catching up on league changes — try again in a moment.",
-		);
-	}
-
+	// ANY CHANGE, ANY TIME - pulling back included.
+	//
+	// Revoking or reducing used to be refused while this device was catching
+	// up or the room was mid-advance. But a stretch of picks the room agreed to
+	// is exactly that the whole way through: each pick claimed by a device and
+	// running, then arriving here to be caught up on. So the refusal held for
+	// the whole stretch, and at the one moment a league mate needed to stop it
+	// ("Ready for" the next pick, or "Not ready", with a player they wanted
+	// still on the board) it couldn't be stopped, and ran on to their pick.
+	// A team's readiness only ever consents for that team: taking it back can
+	// halt the room, never advance it, and a halt is one tap to undo. The pick
+	// already running finishes; the next one waits.
 	readyPublishedAt = Date.now();
 	if (untilStep === null) {
 		await transport.publishDraftReady(null, sameTeamUids);
@@ -1229,6 +1247,44 @@ export const setDraftReady = async (untilStep: number | null) => {
 	}
 	readyPublishedAt = Date.now();
 	void evaluate();
+};
+
+// A hand on the Play menu's "One pick" (or the Draft page's "Sim one pick"),
+// on the device in charge of simming: ONE pick, then the room waits. A
+// ready-up this team published earlier that reaches past it - "Until my
+// pick", "Through this round" - would otherwise carry the draft on after the
+// pick, every team being ready, as if the click had been "to your next
+// pick". So the team's readiness is cut back to the pick asked for: `dpid`,
+// the one the page showed on the clock, or the one up now. Asked for one
+// that is already made (the room got there first), the team is ready for
+// nothing further. Only ever cuts back, never readies a team up.
+export const capDraftReadyForOnePick = async (dpid: number | undefined) => {
+	const engine = getSyncEngine();
+	const transport = currentTransport;
+	if (
+		!engine ||
+		!transport?.publishDraftReady ||
+		g.get("phase") !== PHASE.DRAFT
+	) {
+		return;
+	}
+	const next = (await getOrder())[0];
+	if (!next) {
+		return;
+	}
+	const nextStep = overallPickNumber(next, g.get("numActiveTeams"));
+	const capStep =
+		dpid === undefined || dpid === next.dpid ? nextStep : nextStep - 1;
+
+	const teamUntilStep = teamReadyThrough(
+		latestReady,
+		g.get("userTid"),
+		stageKeyNow(),
+	);
+	if (teamUntilStep === undefined || teamUntilStep <= capStep) {
+		return;
+	}
+	await setDraftReady(capStep);
 };
 
 // The claim document, watched so every device knows when another is running

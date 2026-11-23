@@ -8,12 +8,15 @@ import { useSimAuthorityLocked } from "../util/useSimAuthorityLocked.ts";
 import allowForceTie from "../../common/allowForceTie.ts";
 import { Dropdown } from "react-bootstrap";
 import { ForceWin } from "../components/ForceWin.tsx";
-import { ScoreBox } from "../components/ScoreBox/index.tsx";
+import { NATIONAL_ROOM, ScoreBox } from "../components/ScoreBox/index.tsx";
 import { helpers } from "../util/helpers.ts";
 import { isTradeDeadline } from "../../common/specialGames.ts";
 import { GameDate } from "../components/GameDate.tsx";
+import { MonthCalendar } from "../components/MonthCalendar.tsx";
+import { LiveGameStatus, watchLiveAction } from "../components/LiveGames.tsx";
 
 const Schedule = ({
+	calendar,
 	canLiveSimFirstGame,
 	completed,
 	elam,
@@ -31,12 +34,24 @@ const Schedule = ({
 		},
 	});
 
-	const { gameSimInProgress, godMode, phase, userTid } = useLocal([
-		"gameSimInProgress",
-		"godMode",
-		"phase",
-		"userTid",
-	]);
+	const { gameSimInProgress, godMode, mpLiveGames, phase, season, userTid } =
+		useLocal([
+			"gameSimInProgress",
+			"godMode",
+			"mpLiveGames",
+			"phase",
+			"season",
+			"userTid",
+		]);
+
+	// Games being played live: LIVE, the score as it stands, Watch live. The
+	// first game that can be watched or simmed is the first one that isn't.
+	const liveGameByGid = new Map(mpLiveGames.map((game) => [game.gid, game]));
+	const isLive = (game: (typeof upcoming)[number]) =>
+		!!game.live || liveGameByGid.has(game.gid);
+	const firstPlayable = upcoming.findIndex((game) => !isLive(game));
+	// (Room for a network's logo in every box, so they line up, if any's on one.)
+	const nationalRoom = upcoming.some((game) => game.national);
 
 	// Can't sim/watch games from here unless this device is in charge of simming.
 	const { locked: simAuthorityLocked } = useSimAuthorityLocked();
@@ -85,8 +100,22 @@ const Schedule = ({
 					</Dropdown.Menu>
 				</Dropdown>
 			) : null}
+			{calendar ? (
+				<MonthCalendar
+					className="mb-4"
+					games={calendar.games}
+					keyDates={calendar.keyDates}
+					monthChips
+					season={season}
+					tid={tid}
+					today={calendar.today}
+				/>
+			) : null}
 			<div className="d-flex flex-wrap" style={{ gap: "2rem" }}>
-				<div style={{ maxWidth: 510 }} className="flex-grow-1">
+				<div
+					style={{ maxWidth: 510 + (nationalRoom ? NATIONAL_ROOM : 0) }}
+					className="flex-grow-1"
+				>
 					<h2>Upcoming Games</h2>
 					<ul className="list-group">
 						{upcoming.map((game, i) => {
@@ -95,10 +124,14 @@ const Schedule = ({
 								game.teams[1].tid,
 							);
 							const canWatch =
-								game.teams[0].playoffs || (canLiveSimFirstGame && i === 0);
+								game.teams[0].playoffs ||
+								(canLiveSimFirstGame && i === firstPlayable);
+							const live = isLive(game);
+							const liveGame = liveGameByGid.get(game.gid);
 
-							const actions =
-								canWatch && tradeDeadline
+							const actions = live
+								? [watchLiveAction(game.gid, liveGame?.byName)]
+								: canWatch && tradeDeadline
 									? undefined
 									: [
 											canWatch
@@ -161,6 +194,7 @@ const Schedule = ({
 											// Leave out forceTie, since ScoreBox wants the value for finished games
 											finals: game.finals,
 											gid: game.gid,
+											national: game.national,
 											season: game.season,
 											spread: game.spread,
 											teams: game.teams,
@@ -171,14 +205,20 @@ const Schedule = ({
 												: topPlayers.playersByGid[game.gid]
 										}
 										playersUpcomingAbbrev={topPlayers.type === "byTid"}
+										livePts={live ? liveGame?.score?.pts : undefined}
 										actions={actions}
+										nationalRoom={nationalRoom}
 									/>
-									<ForceWin
-										key={forceWinKey}
-										allowTie={allowTie}
-										className="mb-3"
-										game={game}
-									/>
+									{live ? (
+										<LiveGameStatus className="mt-1 mb-3" gid={game.gid} />
+									) : (
+										<ForceWin
+											key={forceWinKey}
+											allowTie={allowTie}
+											className="mb-3"
+											game={game}
+										/>
+									)}
 								</Fragment>
 							);
 						})}

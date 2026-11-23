@@ -10,6 +10,7 @@ import {
 } from "react";
 import { useLocal } from "../../../util/local.ts";
 import type { ArenaLooks, ReplayLooks } from "../../../../common/types.ts";
+import { weekdayName } from "../../../../common/calendarDates.ts";
 import LiveCourt from "../LiveCourt.tsx";
 import {
 	paintBench,
@@ -76,7 +77,13 @@ import { logoPicture } from "./logoPicture.ts";
 import { COURT_H, COURT_W, rimX, type Side } from "./geometry.ts";
 import { eventsMatchRoster } from "./rosterMatch.ts";
 import { Caption, Overlays } from "./Overlays.tsx";
-import { bugTeamOf, GameBug, PictureBox, PictureCanvas } from "./Picture.tsx";
+import {
+	bugTeamOf,
+	GameBug,
+	PictureBox,
+	PictureCanvas,
+	standingOf,
+} from "./Picture.tsx";
 import {
 	boxOf,
 	type Box,
@@ -297,6 +304,8 @@ type Props = {
 	// A clip (a highlight played on its own - see HighlightClip): it plays
 	// no further than a moment past the line before this cursor.
 	until?: number;
+	// A reel's cut to its next clip (the kth), as the picture gets there.
+	onCut?: (k: number) => void;
 };
 
 const Court3D = ({
@@ -322,9 +331,14 @@ const Court3D = ({
 	onShots,
 	onStaged,
 	until,
+	onCut,
 }: Props) => {
 	const onShotsRef = useRef(onShots);
 	onShotsRef.current = onShots;
+	const onCutRef = useRef(onCut);
+	onCutRef.current = onCut;
+	// (The last cut the picture got to.)
+	const cutSeen = useRef(-1);
 	const onStagedRef = useRef(onStaged);
 	onStagedRef.current = onStaged;
 	const { lid, gender } = useLocal(["lid", "gender"]);
@@ -1309,6 +1323,15 @@ const Court3D = ({
 				now,
 				Date.now(),
 			);
+			if (!staging && tl.clips && onCutRef.current) {
+				const k = tl.clips.findLastIndex((c) => c <= s.t);
+				if (k !== cutSeen.current) {
+					cutSeen.current = k;
+					if (k >= 0) {
+						onCutRef.current(k);
+					}
+				}
+			}
 			// (And held on its last moment.)
 			if (p.authored && staging && s.t >= p.authored.ms) {
 				s.t = p.authored.ms;
@@ -1838,8 +1861,18 @@ const Court3D = ({
 				bugRef={bugRef}
 				own={boxScore?.scoreBug}
 				hidden={intro.on || preview || !!authored}
-				away={bugTeamOf(away, awayPts, boxScore?.teams?.[1])}
-				home={bugTeamOf(home, homePts, boxScore?.teams?.[0])}
+				away={bugTeamOf(
+					away,
+					awayPts,
+					boxScore?.teams?.[1],
+					standingOf(boxScore?.gamecast, boxScore?.teams?.[1]?.tid),
+				)}
+				home={bugTeamOf(
+					home,
+					homePts,
+					boxScore?.teams?.[0],
+					standingOf(boxScore?.gamecast, boxScore?.teams?.[0]?.tid),
+				)}
 				quarter={quarter}
 				series={
 					boxScore?.teams?.[0] && boxScore?.teams?.[1]
@@ -1847,6 +1880,11 @@ const Court3D = ({
 								boxScore.teams[1],
 								boxScore.teams[0],
 							])
+						: undefined
+				}
+				day={
+					typeof boxScore?.date === "string"
+						? weekdayName(boxScore.date)
 						: undefined
 				}
 				refs={bugRefs}

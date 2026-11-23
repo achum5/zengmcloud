@@ -86,7 +86,15 @@ export const getTeamOvrDiffs = (
 const runPicks = async (
 	action:
 		| {
-				type: "onePick" | "untilYourNextPick" | "untilEnd";
+				type: "onePick";
+				// The pick asked for, when it is a particular one: the one a
+				// ready-up step was claimed for, or the one the page showed on the
+				// clock. Made only if it is still the one up - never the pick after
+				// it, which nobody asked for.
+				dpid?: number;
+		  }
+		| {
+				type: "untilYourNextPick" | "untilEnd";
 		  }
 		| {
 				type: "untilPick";
@@ -101,6 +109,15 @@ const runPicks = async (
 	await lock.set("drafting", true);
 	const pids: number[] = [];
 	let draftPicks = await getOrder();
+
+	if (
+		action.type === "onePick" &&
+		action.dpid !== undefined &&
+		draftPicks[0]?.dpid !== action.dpid
+	) {
+		await lock.set("drafting", false);
+		return pids;
+	}
 
 	const expansionDraft = g.get("expansionDraft");
 

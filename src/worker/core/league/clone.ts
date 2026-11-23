@@ -74,9 +74,9 @@ export const getCloneName = (nameOld: string, namesOld: string[]) => {
 };
 
 // The stores copied over: everything - or, without box scores, all but the
-// box scores and the saved replays that go with them (as Delete Old Data
-// clears them).
-const BOX_SCORE_STORES = new Set(["games", "liveGamePlayByPlay"]);
+// box scores and the saved replays and recap plays that go with them (as
+// Delete Old Data clears them).
+const BOX_SCORE_STORES = new Set(["games", "liveGamePlayByPlay", "recapReels"]);
 export const storesToClone = <T extends string>(
 	stores: Iterable<T>,
 	boxScores: boolean,

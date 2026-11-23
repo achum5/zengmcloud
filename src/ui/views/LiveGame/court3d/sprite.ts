@@ -8,13 +8,22 @@ import {
 } from "./camera.ts";
 import {
 	aloftAt,
+	bodyPoint,
 	legTurnFrom,
+	poseOf,
 	type Blend,
 	type PlayerState,
 	type Stride,
 } from "./evaluate.ts";
 import { drawHeadAt, headOf, type Look } from "./figure.ts";
-import { ANIMS, bodyOf, type AnimName, type Body, type V3 } from "./poses.ts";
+import {
+	ANIMS,
+	bodyOf,
+	skeleton,
+	type AnimName,
+	type Body,
+	type V3,
+} from "./poses.ts";
 import { sculpt } from "./sculpt.ts";
 import {
 	glCard,
@@ -906,6 +915,44 @@ type Plan = SpritePlan & {
 	id: number;
 };
 
+// Whether any of him as posed - his joints, with room round them for his
+// head, hands, feet and clothes (feet) - is on the picture.
+const POSED_ROOM = 0.7;
+const posedOnScreen = (
+	cam: Camera,
+	st: PlayerState,
+	body: Body,
+	pose: ReturnType<typeof stepped>,
+) => {
+	const at = steppedSt(st, pose);
+	const sk = skeleton(body, poseOf(at));
+	const room = body.headR + POSED_ROOM;
+	let x0 = Infinity;
+	let x1 = -Infinity;
+	let y0 = Infinity;
+	let y1 = -Infinity;
+	const add = (v: V3) => {
+		const p = project(cam, bodyPoint(at, v));
+		const r = room * p.k;
+		x0 = Math.min(x0, p.x - r);
+		x1 = Math.max(x1, p.x + r);
+		y0 = Math.min(y0, p.y - r);
+		y1 = Math.max(y1, p.y + r);
+	};
+	add(sk.head);
+	add(sk.chest);
+	add(sk.pelvis);
+	for (const l of [sk.armR, sk.armL, sk.legR, sk.legL]) {
+		add(l.root);
+		add(l.mid);
+		add(l.end);
+		if (l.tip) {
+			add(l.tip);
+		}
+	}
+	return x1 > 0 && x0 < cam.viewW && y1 > 0 && y0 < cam.viewH;
+};
+
 // The nearest a man is drawn in front of the camera (feet): any nearer - or
 // behind it, a camera down courtside or on the baseline - and he is out of
 // the picture, not drawn up huge across it.
@@ -942,6 +989,15 @@ const planOf = (
 	// device has time for.
 	const fine = cache?.fine === true || onFloor(st);
 	const pose = stepped(st, fine ? FINE_STEPS : COARSE_STEPS);
+	// Over the edge of the picture, the box may take it in when he is out of
+	// it all the same - a photographer down in front of the stage, under the
+	// long lens on the podium, made huge for nothing: where he is as posed.
+	if (
+		(left < 0 || right > cam.viewW || upper < 0 || lower > cam.viewH) &&
+		!posedOnScreen(cam, st, body, pose)
+	) {
+		return undefined;
+	}
 	const scale = Math.round(Math.log(k) / Math.log(1.04));
 	const plan: Plan = {
 		base,
@@ -1000,6 +1056,51 @@ const overBudget = (cache: SpriteCache) =>
 		cache.budget * (cache.black ? BLACK_BUDGET : cache.dark ? DARK_BUDGET : 1);
 
 // What making his picture for the plan takes (see Job).
+// Him as his picture has him: his move, his turn and the rest in their
+// steps (see stepped).
+const steppedSt = (
+	st: PlayerState,
+	pose: ReturnType<typeof stepped>,
+): PlayerState => ({
+	...st,
+	phase: pose.phase,
+	stepLen: pose.stepLen,
+	drive: pose.drive,
+	bank: pose.bank,
+	over: pose.over,
+	aloft: pose.aloft,
+	yaw: pose.yaw,
+	dribble: pose.dribble,
+	tight: pose.tight,
+	low: pose.low,
+	calm: pose.calm,
+	room: pose.room,
+	armsIn: pose.armsIn,
+	stride: pose.stride,
+	target: pose.target,
+	ballFace: pose.face,
+	from: pose.from,
+	arm: pose.arm,
+	legs: pose.legs,
+	way: pose.way,
+	pivot: pose.pivot,
+	grip: pose.grip,
+	down: pose.down,
+	lock: pose.lock,
+	slip: pose.slip,
+	look: pose.look,
+});
+// (And so, for drawing over him just where a part of him is - his arms
+// round someone in front of him, say: see scene.ts.)
+export const drawnAs = (st: PlayerState, cache?: SpriteCache): PlayerState =>
+	steppedSt(
+		st,
+		stepped(
+			st,
+			cache?.fine === true || onFloor(st) ? FINE_STEPS : COARSE_STEPS,
+		),
+	);
+
 const jobOf = (
 	plan: Plan,
 	cam: Camera,
@@ -1011,36 +1112,7 @@ const jobOf = (
 	return {
 		cam,
 		// Drawn standing on the floor; a jump only moves the picture up.
-		st: {
-			...st,
-			z: 0,
-			phase: pose.phase,
-			stepLen: pose.stepLen,
-			drive: pose.drive,
-			bank: pose.bank,
-			over: pose.over,
-			aloft: pose.aloft,
-			yaw: pose.yaw,
-			dribble: pose.dribble,
-			tight: pose.tight,
-			low: pose.low,
-			calm: pose.calm,
-			room: pose.room,
-			armsIn: pose.armsIn,
-			stride: pose.stride,
-			target: pose.target,
-			ballFace: pose.face,
-			from: pose.from,
-			arm: pose.arm,
-			legs: pose.legs,
-			way: pose.way,
-			pivot: pose.pivot,
-			grip: pose.grip,
-			down: pose.down,
-			lock: pose.lock,
-			slip: pose.slip,
-			look: pose.look,
-		},
+		st: { ...steppedSt(st, pose), z: 0 },
 		body,
 		px,
 		left,
@@ -1955,6 +2027,24 @@ export const prepareSprites = (
 			make(plan, scratch, cam, man.st, man.body, man.look, px, cache);
 		},
 	);
+};
+
+// HIM AGAIN, JUST AS HE WAS DRAWN THIS FRAME (see scene.ts armsOver): the
+// picture he was stamped in a moment ago, stamped once more - never a new
+// one made for it, which a second asking in the one frame would otherwise
+// be (see asWas). Not drawn yet this frame: nothing.
+export const restamp = (
+	ctx: CanvasRenderingContext2D,
+	cache: SpriteCache,
+	st: PlayerState,
+	px: number,
+) => {
+	const plan = cache.plans.get(st);
+	const was = plan && cache.last.get(plan.who);
+	if (!plan || !was || was.frame !== cache.frame) {
+		return;
+	}
+	stamp(ctx, was.kept, plan.base.x, plan.base.y - plan.lift, px);
 };
 
 export const drawSprite = (

@@ -1,5 +1,6 @@
 import { assert, describe, test } from "vitest";
 import {
+	dayText,
 	FOOTBALL_SCORE_BUG_PRESETS,
 	mapScoreBugURLs,
 	parseScoreBug,
@@ -298,6 +299,48 @@ describe("scoreBugForGame", () => {
 		assert.strictEqual(
 			scoreBugForGame(null, [{ tid: 1 }, { tid: 2 }], 1),
 			null,
+		);
+	});
+});
+
+describe("dayText", () => {
+	test("the game's weekday, or the words for a game with no date", () => {
+		assert.strictEqual(
+			dayText("COAST 2 COAST {DAY}", "COAST 2 COAST", "Tuesday"),
+			"COAST 2 COAST TUESDAY",
+		);
+		assert.strictEqual(
+			dayText("{Day} Night", undefined, "Sunday"),
+			"Sunday Night",
+		);
+		assert.strictEqual(
+			dayText("{DAY} NIGHT BASKETBALL", "NBA ON NBC", undefined),
+			"NBA ON NBC",
+		);
+		// (With nothing said for it, the words around it.)
+		assert.strictEqual(
+			dayText("PEACOCK NBA {DAY}", undefined, undefined),
+			"PEACOCK NBA",
+		);
+		assert.strictEqual(dayText("NBA TODAY", "x", "Monday"), "NBA TODAY");
+		assert.strictEqual(dayText(undefined, "x", undefined), undefined);
+	});
+
+	test("takes `undated` and `lowAt`", () => {
+		const style = parseScoreBug({
+			...ok,
+			pieces: [
+				{ show: "text", x: 0, y: 0, w: 9, h: 9, text: "{DAY}", undated: "" },
+				{ show: "shotClock", x: 0, y: 0, w: 9, h: 9, lowAt: 10 },
+			],
+		});
+		assert.notTypeOf(style, "string");
+		assert.strictEqual(
+			parseScoreBug({
+				...ok,
+				pieces: [{ show: "shotClock", x: 0, y: 0, w: 9, h: 9, lowAt: "10" }],
+			}),
+			'piece 1: "lowAt" should be a number.',
 		);
 	});
 });

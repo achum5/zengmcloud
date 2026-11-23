@@ -2666,3 +2666,72 @@ minutes on master, 14.6 with these (run side by side), 15% less.
 over eleven seasons, whom it lets go each season, the free agents its room
 buys. A large cut there would mean pricing fewer rosters or fewer seasons -
 less of the engine, so not done.
+
+## Clearing room: something back (2026-11-23)
+
+A team clearing room for a free agent sent the salary to the first team with
+room that would take it, for nothing back, however much that team gained:
+in a random-players league Pittsburgh (rebuilding) gave its 29-year-old 70
+to Los Angeles, the one team with the room, for room for a 24-year-old 65.
+Now (`clearRoomSettings.asks`) every team with the room is weighed at the
+fewest sweeteners, the best for the team clearing taken, and where the
+taker would still gain past its margin, the team clearing asks for picks
+back - its best for itself first, of the picks the taker could pay for from
+what it gains past its margin, up to four asked.
+
+`forwardAudit`, `arena:217`, two seasons each way: on master three rooms
+cleared, all for nothing; with this five, two of them for a second-round
+pick (Pittsburgh's 70 for Los Angeles's 2032 second; Cincinnati's
+34-year-old 70 for St. Louis's 2030 second), the rest for nothing as
+before - the takers were rebuilding, and a player they would only have for
+his decline was worth little more to them than the room. Clearing room is
+2% of the GM's time (0.96 of 40.5 minutes over the two seasons, by
+`smartClock`, now written at the end of the audit); the first season took
+20.2 minutes against master's 20.5.
+
+### Measured and left (2026-11-23)
+
+- **Contenders and fringe players.** In half a season of the same league,
+  teams at 5% or more to win the title took four players rated 53 or less
+  in deals (`FA_FRINGE`): three were 52-53s who came in 8th to 10th, two of
+  them to teams with starters hurt; one a 48 who came in 11th (New York,
+  for five seconds). What a contender's GM puts on young cheap players
+  rated 44-50 (0.06-0.09 of a title to New York, `FA_FRINGE_TID`) is mostly
+  two and three seasons on, when they project as rotation players a team
+  over the cap could otherwise only add at the minimum. Nothing changed.
+- **Long deals to older free agents.** The owner again (2026-11-23): no
+  owner, so money is nothing in itself; only what a contract does to the
+  team on the court counts. It counts already: the room a contract takes in
+  each later season is priced at what it would buy then, by how good the
+  team expects to be (`roomByRecord`), and a contract ends when the player
+  retires.
+
+## League 15: six seasons reviewed (2026-11-23)
+
+The owner's League 15 (real players from 2010, spectator, the smart CPU on
+vanilla's rules, rookies can refuse), played to the 2016 preseason on the
+code of the morning of 2026-11-23: all 79 trades, the big free-agent
+signings, everyone who left in free agency, releases and every first round.
+Nothing changed for it.
+
+- **Teardowns and pushes paid off.** San Antonio, read at 2% to win the title
+  in the first weeks of 2010, sold Duncan, Ginóbili and Jefferson for five
+  firsts; with them and its own #1 (Wall) it won 59 in 2013 and 50+ since.
+  Dallas bought Ginóbili, Jason Richardson and Rasual Butler and won the
+  2010 title.
+- **Few walked.** Nine players rated 56+ left in free agency in six years,
+  most of them the real 2010 class (Bosh, Stoudemire); nobody 52+ was
+  released. The first rounds follow the ratings.
+- **Far-off firsts.** Toronto (2-5% to win the title) gave its 2011-2013
+  firsts for Troy Murphy (30, 62, expiring) and Earl Watson (31, 55); they
+  were #8, #6 and #4 - Bosh and Murphy left that summer, and Toronto has not
+  had a winning season since. Of 22 own firsts winning teams traded two or
+  three drafts out, 3 landed in the top five (14%), against about 7% in
+  Leagues 12-14: too few to call a bias.
+- **Bad teams' room.** Milwaukee gave Josh Selby (23, 49) $19.7M a season
+  for three, Toronto Monta Ellis (29, 56 and falling) $11.3M for three
+  (-6.6 WS): asks a bad team pays (vanilla's mood), with room that buys it
+  little else.
+- **A dynasty.** Oklahoma City won 2011-2014 on its real young core and kept
+  adding (A.J. Price for three late firsts, Darren Collison, Nowitzki at
+  35).

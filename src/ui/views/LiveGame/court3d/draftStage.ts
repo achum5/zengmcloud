@@ -5,7 +5,14 @@ import { dress, faceFor, type CrewMember } from "./crew.ts";
 import type { CourtTimeline, Move, Track } from "./director.ts";
 import { evalPlayer, withBody, type PlayerState } from "./evaluate.ts";
 import { dist, type Pt, type Pt3 } from "./geometry.ts";
-import { ANIMS, HUG_APART, HUG_MS, HUG_SIDE, type AnimName } from "./poses.ts";
+import {
+	ANIMS,
+	EMBRACE,
+	HUG_APART,
+	HUG_MS,
+	HUG_SIDE,
+	type AnimName,
+} from "./poses.ts";
 
 // DRAFT NIGHT ON THE FLOOR (see draftVenue.ts for the room itself, and
 // DraftBroadcast.tsx for the graphics over it): the building dressed for the
@@ -188,10 +195,9 @@ const OTHER_AT = (-150 * Math.PI) / 180;
 const GUESTS_AT = [(160 * Math.PI) / 180];
 // Up out of his chair, he steps out from the table toward the aisle, turns to
 // his mother, and she comes round to him - and they hug, his face to the
-// camera over her shoulder (see HUG_SIDE: each over to his own right of the
-// other). Turned end for end only (this side of the aisle), that hug would
-// be left shoulder to left: she is out first, there, and he comes to her
-// (see kinFirst).
+// camera over her shoulder (see embraceOf). Turned end for end only (this
+// side of the aisle), she is out first, and he comes to her (see
+// kinFirst).
 const HUGGED_AT: Pt = { x: 45, y: 16.2 };
 const HUGGED_OVER_AT: Pt = { x: 44.4, y: 15.9 };
 const HUG_YAW = (110 * Math.PI) / 180;
@@ -212,27 +218,61 @@ const OTHER_VIA_OVER_AT: Pt[] = [
 	{ x: 42.2, y: 15.1 },
 ];
 const KIN_ASIDE_OVER_AT: Pt = { x: 43.2, y: 18.1 };
+const OTHER_IN = 1;
+const KIN_ASIDE = 1.6;
 // The camera across his table from the stage side, and where it looks.
 const TABLE_CAM_AT: Pt = { x: 40.4, y: 26.5 };
 const TABLE_LOOK_AT: Pt = { x: 42, y: 17.4 };
 // The photographers crowded in behind him, in the aisle a row back (across
-// it from the aisle's middle, and back from his table's).
+// it from the aisle's middle, and back from his table's) - far enough back
+// for a camera between them and him as he turns to hug the next of them.
 const PRESS_AT: Pt[] = [
-	{ x: -2.4, y: 8.4 },
-	{ x: 0, y: 8.8 },
-	{ x: 2.4, y: 8.4 },
-	{ x: -3.4, y: 10.4 },
-	{ x: -1.2, y: 10.8 },
-	{ x: 1.2, y: 10.6 },
-	{ x: 3.4, y: 10.3 },
+	{ x: -2.6, y: 11.4 },
+	{ x: 0, y: 11.8 },
+	{ x: 2.6, y: 11.4 },
+	{ x: -3.8, y: 13.4 },
+	{ x: -1.3, y: 13.8 },
+	{ x: 1.3, y: 13.6 },
+	{ x: 3.8, y: 13.3 },
 ];
 
 const hugPartner = (at: Pt, yaw: number): Pt => ({
 	x: at.x + HUG_APART * Math.cos(yaw) - HUG_SIDE * Math.sin(yaw),
 	y: at.y + HUG_APART * Math.sin(yaw) + HUG_SIDE * Math.cos(yaw),
 });
+// Held in a long hug (see poses.ts HOLD): his mother a good deal shorter
+// than him, him bent over her - his father or his brother much of a height,
+// chest to chest; and where they stand for it, facing him - so far out in
+// front of him, and over to his left.
+export const embraceOf = (
+	who: DraftKin,
+): { him: AnimName; them: AnimName; apart: number; left: number } =>
+	who === "mom" || who === "none"
+		? { him: "embrace", them: "embraceUp", apart: EMBRACE.apart, left: 0 }
+		: {
+				him: "embraceMan",
+				them: "embraceManUp",
+				apart: EMBRACE.manApart,
+				left: EMBRACE.manSide,
+			};
+const hugAt = (at: Pt, yaw: number, who: DraftKin, right = 0): Pt => {
+	const e = embraceOf(who);
+	// (His left: see evaluate.ts bodyPoint.)
+	const left = e.left - right;
+	return {
+		x: at.x + e.apart * Math.cos(yaw) + left * Math.sin(yaw),
+		y: at.y + e.apart * Math.sin(yaw) - left * Math.cos(yaw),
+	};
+};
+// (Out first, she waits a step over from there - toward the aisle, out of
+// his way - for him to come out to her, and steps in to him as he gets
+// there.)
+const KIN_WAIT = 1.2;
+const STEP_IN_MS = 450;
 
-export const placesOf = (take: Pick<DraftTake, "side" | "row">) => {
+export const placesOf = (
+	take: Pick<DraftTake, "side" | "row" | "hugger" | "other">,
+) => {
 	const dy = take.row * ROW_STEP;
 	const at = (p: Pt): Pt => ({
 		x: take.side === 1 ? p.x : 2 * AISLE_X - p.x,
@@ -243,6 +283,14 @@ export const placesOf = (take: Pick<DraftTake, "side" | "row">) => {
 	const kinFirst = take.side === 1;
 	const hugged = at(kinFirst ? HUGGED_OVER_AT : HUGGED_AT);
 	const hugYaw = turned(HUG_YAW);
+	// (Each of them coming in to him head on, the last step or two: not
+	// round past his back, nor across in front of him.)
+	const kinHug = hugAt(hugged, hugYaw, take.hugger);
+	const otherHug = hugAt(hugged, hugYaw + Math.PI, take.other);
+	const otherIn = {
+		x: otherHug.x - Math.cos(hugYaw) * OTHER_IN,
+		y: otherHug.y - Math.sin(hugYaw) * OTHER_IN,
+	};
 	return {
 		table,
 		seat: seatAt(table, turned(HIM_AT)),
@@ -251,12 +299,23 @@ export const placesOf = (take: Pick<DraftTake, "side" | "row">) => {
 		guests: GUESTS_AT.map(turned),
 		hugged,
 		hugYaw,
-		kinHug: hugPartner(hugged, hugYaw),
+		kinHug,
+		kinWait: kinFirst
+			? hugAt(hugged, hugYaw, take.hugger, KIN_WAIT)
+			: {
+					x: kinHug.x + Math.cos(hugYaw) * OTHER_IN,
+					y: kinHug.y + Math.sin(hugYaw) * OTHER_IN,
+				},
 		kinVia: at(VIA_AT),
 		aisleIn: at(AISLE_IN_AT),
-		otherVia: (kinFirst ? OTHER_VIA_OVER_AT : OTHER_VIA_AT).map(at),
-		otherHug: hugPartner(hugged, hugYaw + Math.PI),
-		kinAside: kinFirst ? at(KIN_ASIDE_OVER_AT) : hugPartner(hugged, hugYaw),
+		otherVia: [
+			...(kinFirst ? OTHER_VIA_OVER_AT : OTHER_VIA_AT).map(at),
+			otherIn,
+		],
+		otherHug,
+		kinAside: kinFirst
+			? at(KIN_ASIDE_OVER_AT)
+			: hugAt(hugged, hugYaw, take.hugger, KIN_ASIDE),
 		press: PRESS_AT.map((p) => ({
 			x: AISLE_X + p.x * take.side,
 			y: table.y + p.y,
@@ -337,8 +396,8 @@ const POSE_MS = 1700;
 // (And off, at a walk.)
 const OFF_PACE = 3.4;
 // The hugs at the table: held, the first longer; and the turn between them.
-const EMBRACE_MS = 3000;
-const EMBRACE2_MS = 2400;
+const EMBRACE_MS = 3800;
+const EMBRACE2_MS = 3200;
 const TURN_MS = 450;
 // (The one who hugged him first, a step or two back out of his way.)
 const ASIDE_MS = 900;
@@ -367,14 +426,20 @@ export const nightOf = (take: DraftTake, g: DraftPlaces) => {
 			: stand + 150 + Math.max(0, react - 300);
 	const kinStood = kinUp + CHAIR_UP_MS;
 	const kinVia = kinStood + legs(g.kinSeat, g.kinVia, OTHERS_PACE);
-	const kinLeg = legs(g.kinVia, g.kinHug, OTHERS_PACE);
+	const kinLeg = legs(g.kinVia, g.kinWait, OTHERS_PACE);
+	const inLeg = legs(g.kinWait, g.kinHug, OTHERS_PACE);
 	const myLeg = legs(g.seat, g.hugged, 3.2);
 	const walkOff = g.kinFirst ? Math.max(reacted, kinVia + kinLeg) : reacted;
 	const stepped = walkOff + myLeg;
-	const kinGo = g.kinFirst ? kinVia : Math.max(kinVia, stepped + 200 - kinLeg);
+	// (Across his way to it halfway along hers: not till he is there.)
+	const kinGo = g.kinFirst
+		? kinVia
+		: Math.max(kinVia, stepped + 200 - kinLeg - inLeg, stepped - kinLeg / 2);
 	const kinThere = kinGo + kinLeg;
+	const stepIn = g.kinFirst ? stepped - 150 : kinThere;
+	const inThere = stepIn + (g.kinFirst ? STEP_IN_MS : inLeg);
 	const otherUp = call + 800;
-	const hug = Math.max(stepped, kinThere) + 100;
+	const hug = Math.max(stepped, inThere) + 100;
 	const hugEnd = hug + EMBRACE_MS;
 	// Whoever else is with them round behind the table to him as he lets
 	// go, and he turns to them.
@@ -388,7 +453,7 @@ export const nightOf = (take: DraftTake, g: DraftPlaces) => {
 	const otherGo = hug2 - 150 - otherLeg;
 	const hug2End = two ? hug2 + EMBRACE2_MS : hugEnd;
 	// (And off once the first is back out of his way.)
-	const leave = Math.max(hug2End + 150, g.kinFirst ? hugEnd + ASIDE_MS : 0);
+	const leave = Math.max(hug2End + 150, hugEnd + ASIDE_MS);
 	// Off to the steps - at a walk, still, from the front row.
 	const atFoot = leave + Math.max(1100, legs(g.hugged, capAt(take), take.pace));
 	// Turned to the one with his cap, it handed him, and on.
@@ -422,6 +487,8 @@ export const nightOf = (take: DraftTake, g: DraftPlaces) => {
 		kinVia,
 		kinGo,
 		kinThere,
+		stepIn,
+		inThere,
 		otherUp,
 		otherGo,
 		hug,
@@ -476,17 +543,38 @@ const KIN_PID: Record<Exclude<DraftKin, "none">, number> = {
 	dad: FATHER,
 	brother: BROTHER,
 };
+// The commissioner: bald, in thin silver-rimmed glasses, smiling; a navy
+// pinstriped suit, a pale blue shirt, a dark navy tie.
+const commissionerFace = () => {
+	const face = faceFor("draft|commissioner", false, "white");
+	return {
+		...face,
+		fatness: 0.15,
+		teamColors: ["#aeb5be", "#c4c9cf", "#1c2436"] as [string, string, string],
+		head: { id: "head4", shave: "rgba(0,0,0,0)" },
+		hair: { id: "bald", color: "#5e5248", flip: false },
+		facialHair: { id: "none" },
+		glasses: { id: "glasses2-secondary" },
+		eye: { id: "eye5", angle: 0 },
+		eyebrow: { id: "eyebrow8", angle: 0 },
+		nose: { id: "nose6", flip: false, size: 0.9 },
+		mouth: { id: "smile3", flip: false },
+		smileLine: { id: "line1", size: 1 },
+	};
+};
 export const commissioner = (): CrewMember => ({
 	pid: COMMISSIONER,
 	role: "staff",
 	team: 1,
 	hgt: 72,
-	weight: 200,
-	face: faceFor("draft|commissioner", false),
-	dress: dress("#1b1f2b", "#1b1f2b", {
+	weight: 185,
+	face: commissionerFace(),
+	dress: dress("#1c2436", "#1c2436", {
 		sleeves: "long",
-		shirt: "#f2f2ee",
-		tie: "#24365c",
+		shirt: "#bcd2ea",
+		tie: "#1a2140",
+		pin: "#5f6b84",
+		trousers: true,
 	}),
 });
 export const staffer = (): CrewMember => ({
@@ -496,7 +584,7 @@ export const staffer = (): CrewMember => ({
 	hgt: 68,
 	weight: 170,
 	face: faceFor("draft|staffer", true),
-	dress: dress("#17181c", "#17181c", { sleeves: "long" }),
+	dress: dress("#17181c", "#17181c", { sleeves: "long", trousers: true }),
 });
 // Dark clothes, a camera each.
 const PRESS_TOPS = ["#18181c", "#262a33", "#3a3a3d", "#1f2a24", "#2d2230"];
@@ -511,7 +599,11 @@ const photographer = (pid: number, seed: number): CrewMember => ({
 	dress: dress(
 		PRESS_TOPS[Math.floor(unit(seed * 5 + 3) * PRESS_TOPS.length)]!,
 		PRESS_PANTS[Math.floor(unit(seed * 5 + 4) * PRESS_PANTS.length)]!,
-		{ sleeves: unit(seed * 7) < 0.5 ? "short" : "long", camera: true },
+		{
+			sleeves: unit(seed * 7) < 0.5 ? "short" : "long",
+			camera: true,
+			trousers: true,
+		},
 	),
 });
 // Dressed for the night as they would be whoever took him - they came not
@@ -541,7 +633,7 @@ export const kinOf = (
 			hgt: 65,
 			weight: 140,
 			face: faceFor(`draft|mother|${pid}`, true, race),
-			dress: dress(main, "#16161a", { sleeves: "long" }),
+			dress: dress(main, "#16161a", { sleeves: "long", trousers: true }),
 		};
 	}
 	if (who === "dad") {
@@ -556,6 +648,7 @@ export const kinOf = (
 				sleeves: "long",
 				shirt: "#cfdcef",
 				tie,
+				trousers: true,
 			}),
 		};
 	}
@@ -570,6 +663,7 @@ export const kinOf = (
 			sleeves: "long",
 			shirt: "#f2f2ee",
 			tie: main,
+			trousers: true,
 		}),
 	};
 };
@@ -789,6 +883,54 @@ const BACK_CAM: Pt3 = { x: MARK.x + 2.2, y: STAGE.y0 + 0.6, z: 11.2 };
 // it.
 const SIDE_CAM: Pt3 = { x: STAGE.x1 + 3.5, y: 7, z: 4.6 };
 
+// Over the shoulder of the one he hugs, behind them and a little over to
+// his right - his head is down past theirs to his right (see poses.ts
+// HOLD) - at his head's height: his face, their head and shoulders, his
+// arms round them. Pushed in as they hold it (`held`, 0 to 1), and back
+// out as he lets go (`out`).
+const HUG_CAM = {
+	back: 5.2,
+	push: 0.9,
+	right: 1.4,
+	up: 0.1,
+	down: 1.15,
+	width: 8.2,
+	tight: 1.2,
+	loose: 3.5,
+};
+// (Cut to it just before they come together.)
+const HUG_CUT_MS = 250;
+export const hugCamOf = (
+	at: Pt,
+	yaw: number,
+	who: DraftKin,
+	held: number,
+	out: number,
+	k: number,
+): Cam => {
+	const e = embraceOf(who);
+	const man = e.him !== "embrace";
+	// (His head, in his own frame - see HOLD and MAN_HOLD.)
+	const head = man
+		? { f: 0.66, s: -0.37, u: 5.6 }
+		: { f: 1.08, s: -0.39, u: 5.39 };
+	const c = Math.cos(yaw);
+	const sn = Math.sin(yaw);
+	const pt = (f: number, s: number) => ({
+		x: at.x + f * c + s * sn,
+		y: at.y + f * sn - s * c,
+	});
+	const back = e.apart + HUG_CAM.back - HUG_CAM.push * held + 1.2 * out;
+	return {
+		at: { ...pt(back, -HUG_CAM.right), z: head.u + HUG_CAM.up },
+		look: {
+			...pt(head.f, head.s * 0.6),
+			z: head.u - HUG_CAM.down - 0.4 * out,
+		},
+		width: (HUG_CAM.width - HUG_CAM.tight * held + HUG_CAM.loose * out) * k,
+	};
+};
+
 export const draftCameraAt = (
 	t: number,
 	narrow: boolean,
@@ -809,10 +951,11 @@ export const draftCameraAt = (
 		);
 	}
 	const st = him ?? { x: g.seat.x, y: g.seat.y, z: 0 };
-	if (t < N.leave + 500) {
+	const hugFrom = N.hug - HUG_CUT_MS;
+	if (t < hugFrom) {
 		// In on him at his table, from the stage side of it: up out of his
-		// chair, and the hugs - the photographers crowded in behind him.
-		const u = smooth((t - N.stand) / (N.hug - N.stand));
+		// chair, and out to them - the photographers crowded in behind him.
+		const u = smooth((t - N.stand) / (hugFrom - N.stand));
 		return {
 			at: { x: g.tableCam.x, y: g.tableCam.y, z: 5.8 },
 			look: mix3(
@@ -822,6 +965,27 @@ export const draftCameraAt = (
 			),
 			width: (10.5 + 2 * u) * k,
 		};
+	}
+	if (t < N.leave + 500) {
+		// Tight on his face over their shoulder as they hug, pushing in;
+		// and the next of them, over theirs - and out a little as he lets
+		// go and goes.
+		const two = take.other !== "none";
+		const second = two && t >= N.hugEnd;
+		const from = second ? N.hugEnd : hugFrom;
+		const last = second || !two;
+		const held = smooth((t - from) / ((second ? N.hug2End : N.hugEnd) - from));
+		const out = last
+			? smooth((t - (second ? N.hug2End : N.hugEnd) + 700) / 1400)
+			: 0;
+		return hugCamOf(
+			g.hugged,
+			second ? g.hugYaw + Math.PI : g.hugYaw,
+			second ? take.other : take.hugger,
+			held,
+			out,
+			k,
+		);
 	}
 	if (t < N.atSteps) {
 		// From the stage, down the aisle at him coming up it - and at the cap
@@ -950,6 +1114,8 @@ export const stageDraftNight = (
 		walk(N.offVia, N.offVia + legs(EXIT_VIA, EXIT, OFF_PACE), EXIT_VIA, EXIT),
 	];
 	const reactAnim = REACT_ANIM[take.react];
+	const hug1 = embraceOf(take.hugger);
+	const hug2 = embraceOf(take.other);
 	const hugLook = ahead(g.hugged, g.hugYaw);
 	const hug2Look = ahead(g.hugged, g.hugYaw + Math.PI);
 	const track: Track = {
@@ -980,7 +1146,7 @@ export const stageDraftNight = (
 					]
 				: []),
 			{ t0: N.stepped, t1: N.hug, anim: "easy", look: hugLook },
-			{ t0: N.hug, t1: N.hugEnd, anim: "embrace", look: hugLook },
+			{ t0: N.hug, t1: N.hugEnd, anim: hug1.him, look: hugLook },
 			...(two
 				? [
 						{
@@ -992,7 +1158,7 @@ export const stageDraftNight = (
 						{
 							t0: N.hug2,
 							t1: N.hug2End,
-							anim: "embrace" as const,
+							anim: hug2.him,
 							look: hug2Look,
 						},
 					]
@@ -1082,12 +1248,31 @@ export const stageDraftNight = (
 			t0: N.kinGo,
 			t1: N.kinThere,
 			at: g.kinVia,
+			to: g.kinWait,
+			yaw: 0,
+			anim: "walk",
+		},
+		...(N.stepIn > N.kinThere
+			? [
+					{
+						t0: N.kinThere,
+						t1: N.stepIn,
+						at: g.kinWait,
+						yaw: yawTo(g.kinWait, g.hugged),
+						anim: "clap" as const,
+					},
+				]
+			: []),
+		{
+			t0: N.stepIn,
+			t1: N.inThere,
+			at: g.kinWait,
 			to: g.kinHug,
 			yaw: 0,
 			anim: "walk",
 		},
 		{
-			t0: N.kinThere,
+			t0: N.inThere,
 			t1: N.hug,
 			at: g.kinHug,
 			yaw: g.hugYaw + Math.PI,
@@ -1098,22 +1283,18 @@ export const stageDraftNight = (
 			t1: N.hugEnd,
 			at: g.kinHug,
 			yaw: g.hugYaw + Math.PI,
-			anim: "embrace",
+			anim: hug1.them,
 		},
-		...(g.kinFirst
-			? [
-					{
-						t0: N.hugEnd,
-						t1: N.hugEnd + ASIDE_MS,
-						at: g.kinHug,
-						to: g.kinAside,
-						yaw: 0,
-						anim: "walk" as const,
-					},
-				]
-			: []),
 		{
-			t0: N.hugEnd + (g.kinFirst ? ASIDE_MS : 0),
+			t0: N.hugEnd,
+			t1: N.hugEnd + ASIDE_MS,
+			at: g.kinHug,
+			to: g.kinAside,
+			yaw: 0,
+			anim: "walk",
+		},
+		{
+			t0: N.hugEnd + ASIDE_MS,
 			t1: N.leave,
 			at: g.kinAside,
 			yaw: yawTo(g.kinAside, g.hugged),
@@ -1178,7 +1359,7 @@ export const stageDraftNight = (
 			t1: N.hug2End,
 			at: g.otherHug,
 			yaw: g.hugYaw,
-			anim: "embrace",
+			anim: hug2.them,
 		},
 		{
 			t0: N.hug2End,

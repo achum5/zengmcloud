@@ -6,6 +6,12 @@ import {
 } from "react";
 import { TeamLogoInline } from "../../../components/TeamLogoInline.tsx";
 import type { ScoreBugPiece, ScoreBugStyle } from "../../../../common/types.ts";
+import {
+	dayText,
+	dayTextLength,
+	ordinalSuffix,
+	recordText,
+} from "../../../../common/scoreBug.ts";
 import type { BugRefs, BugTeam } from "./ScoreBug.tsx";
 import { bugShown, writeBug, type BugNow } from "./bugWriter.ts";
 import { lightness } from "./figure.ts";
@@ -16,7 +22,13 @@ import { lightness } from "./figure.ts";
 // has, written by the frame loop - or, previewed, written once from
 // `sample`.
 
-export type CustomBugTeam = BugTeam & { region?: string; name?: string };
+export type CustomBugTeam = BugTeam & {
+	region?: string;
+	name?: string;
+	// Where it stands in its conference going in, and which ("East").
+	rank?: number;
+	conf?: string;
+};
 
 const MAX_TIMEOUTS = 7;
 // The smallest a bug is drawn, px - at least this wide, and at least this
@@ -36,12 +48,7 @@ const ordinal = (period: string) => {
 	if (!m) {
 		return { n: period, suffix: "" };
 	}
-	const n = Number(m[1]);
-	const suffix =
-		n % 100 >= 11 && n % 100 <= 13
-			? "th"
-			: (["th", "st", "nd", "rd"][n % 10] ?? "th");
-	return { n: m[1]!, suffix };
+	return { n: m[1]!, suffix: ordinalSuffix(Number(m[1])) };
 };
 
 const FONT = "system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
@@ -80,11 +87,17 @@ export const CustomScoreBug = ({
 	refs,
 	hidden,
 	sample,
+	series,
+	day,
 }: {
 	style: ScoreBugStyle;
 	away: CustomBugTeam | undefined;
 	home: CustomBugTeam | undefined;
 	quarter: string;
+	// A playoff game's series as it stands ("Game 3 · BOS leads 2-1").
+	series?: string;
+	// The game's weekday ("Tuesday"), if it has a date.
+	day?: string;
 	totalTimeouts: number | undefined;
 	refs: BugRefs;
 	hidden?: boolean;
@@ -160,7 +173,17 @@ export const CustomScoreBug = ({
 			// (The shot clock's and a bonus mark's on the mark itself, gone with
 			// it when it's off.)
 			background: onMark ? undefined : color(p.background),
-			fontSize: u(p.size ?? 16),
+			// (A series longer than the words it stands in for, smaller to fit
+			// where they did.)
+			fontSize: u(
+				(p.size ?? 16) *
+					(p.show === "series" &&
+					series !== undefined &&
+					p.text !== undefined &&
+					series.length > dayTextLength(p.text)
+						? dayTextLength(p.text) / series.length
+						: 1),
+			),
 			fontWeight: p.weight,
 			fontFamily: family(p.font),
 			fontStyle: p.italic ? "italic" : undefined,
@@ -215,8 +238,25 @@ export const CustomScoreBug = ({
 				inner = t?.pts ?? 0;
 				break;
 			case "awayRecord":
-			case "homeRecord":
-				inner = t?.record ?? "";
+			case "homeRecord": {
+				const text = recordText(p.text, t);
+				const rec = t?.record ?? "";
+				const at = rec !== "" && p.sub !== undefined ? text.indexOf(rec) : -1;
+				inner =
+					at < 0 ? (
+						text
+					) : (
+						<span>
+							{text.slice(0, at + rec.length)}
+							<span style={{ fontSize: `${p.sub! / (p.size ?? 16)}em` }}>
+								{text.slice(at + rec.length)}
+							</span>
+						</span>
+					);
+				break;
+			}
+			case "series":
+				inner = series ?? dayText(p.text, p.undated, day) ?? "";
 				break;
 			case "homeLead": {
 				const lead = (home?.pts ?? 0) - (away?.pts ?? 0);
@@ -356,6 +396,7 @@ export const CustomScoreBug = ({
 						data-colon={p.colon ? "shot" : undefined}
 						data-low={color(p.low)}
 						data-low-background={color(p.lowBackground)}
+						data-low-at={p.lowAt}
 						data-background={color(p.background)}
 						style={{
 							display: "none",
@@ -373,7 +414,7 @@ export const CustomScoreBug = ({
 				inner = <span ref={refs.down} />;
 				break;
 			case "text":
-				inner = p.text ?? "";
+				inner = dayText(p.text, p.undated, day) ?? "";
 				break;
 			case "image":
 				inner = p.image ? (
@@ -427,8 +468,18 @@ export const CustomScoreBug = ({
 		}
 		// Keyed by what it shows too: a clock or fouls span written by the
 		// frame loop is never reused for another piece.
+		// (One shown only before or after the bonus as the game starts, the
+		// frame loop showing or hiding it after - see whenShows.)
 		return (
-			<div key={`${i}-${p.show}`} style={box}>
+			<div
+				key={`${i}-${p.show}`}
+				data-when={p.when}
+				style={
+					p.when === undefined || p.when === "noBonus"
+						? box
+						: { ...box, visibility: "hidden" }
+				}
+			>
 				{inner}
 			</div>
 		);
@@ -455,6 +506,7 @@ export const CustomScoreBug = ({
 			}}
 		>
 			<div
+				ref={refs.bug}
 				style={{
 					position: "relative",
 					width: "100%",

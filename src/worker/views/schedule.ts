@@ -1,7 +1,7 @@
 import { player, season, team } from "../core/index.ts";
 import { idb } from "../db/index.ts";
 import { g, helpers } from "../util/index.ts";
-import type { Game, PlayerInjury } from "../../common/types.ts";
+import type { Game, NationalTag, PlayerInjury } from "../../common/types.ts";
 import { PHASE } from "../../common/constants.ts";
 import { groupByUnique, last, orderBy } from "../../common/utils.ts";
 import {
@@ -28,6 +28,14 @@ import type { RouteParams } from "../../ui/router/types.ts";
 import { validateTeam } from "../util/processInputs.ts";
 import { isAllStarGame, isTradeDeadline } from "../../common/specialGames.ts";
 import { injuryTicksUntil } from "../core/game/calendarTicks.ts";
+import { getInjuryPace } from "../core/game/classicDays.ts";
+import { getCalendarIfDated } from "./calendar.ts";
+import { nationalTags } from "./nationalBroadcast.ts";
+import {
+	getLiveGate,
+	liveScheduleRow,
+	recordDeltas,
+} from "../util/liveGameGate.ts";
 
 const processInputs = (params: RouteParams<"schedule">) => {
 	const tid = validateTeam(params.team);
@@ -54,7 +62,7 @@ export const getUpcoming = async ({
 
 	// Injury healing from today until each game: days, or on a calendar the
 	// team's own games.
-	const gamesInFuture = injuryTicksUntil(schedule);
+	const gamesInFuture = injuryTicksUntil(schedule, await getInjuryPace());
 
 	let cidFilter:
 		| ((game: { awayTid: number; homeTid: number }) => boolean)
@@ -106,6 +114,18 @@ export const getUpcoming = async ({
 		active: true,
 	});
 	const teamsByTid = groupByUnique(teams, "tid");
+
+	// (Records as they stand on screen: a game still being played live isn't
+	// in them yet - see liveGameGate.ts.)
+	const liveGate = await getLiveGate();
+	const liveDeltas =
+		liveGate.games.size === 0
+			? undefined
+			: recordDeltas(liveGate.games.values(), {
+					otlSetting: !!g.get("otl", "current"),
+					divByTid: new Map(),
+					confByTid: new Map(),
+				});
 
 	// Only load players on teams that are actually needed, since often this is just for one game (such as updating the user's next game after every day of the regular season). Active players have tid >= 0
 	const tidsNeeded = new Set<number>();
@@ -196,13 +216,14 @@ export const getUpcoming = async ({
 			}
 		}
 
+		const d = liveDeltas?.get(tid);
 		return {
 			ovr,
 			tid,
-			won: t.seasonAttrs.won,
-			lost: t.seasonAttrs.lost,
-			tied: t.seasonAttrs.tied,
-			otl: t.seasonAttrs.otl,
+			won: t.seasonAttrs.won - (d?.won ?? 0),
+			lost: t.seasonAttrs.lost - (d?.lost ?? 0),
+			tied: t.seasonAttrs.tied - (d?.tied ?? 0),
+			otl: t.seasonAttrs.otl - (d?.otl ?? 0),
 			playoffs,
 		};
 	};
@@ -282,12 +303,16 @@ export const getUpcoming = async ({
 		return roundHalf(corrected);
 	};
 
+	// The national games' networks, for their previews.
+	const national = await nationalTags(schedule);
+
 	const upcoming: {
 		date?: string;
 		day: number;
 		finals?: boolean;
 		forceWin?: number | "tie";
 		gid: number;
+		national?: NationalTag;
 		season: number;
 		spread?: number;
 		teams: [ReturnType<typeof getTeam>, ReturnType<typeof getTeam>];
@@ -297,12 +322,14 @@ export const getUpcoming = async ({
 				getTeam(homeTid, gamesInFuture(homeTid, gid, day)),
 				getTeam(awayTid, gamesInFuture(awayTid, gid, day)),
 			];
+			const tag = national.get(gid);
 			return {
 				date,
 				day,
 				finals,
 				forceWin,
 				gid,
+				...(tag ? { national: tag } : {}),
 				season: g.get("season"),
 				spread:
 					homeTid >= 0 && awayTid >= 0
@@ -603,14 +630,33 @@ const updateUpcoming = async ({
 		// A background sim refined the point spreads, so the numbers next to
 		// each game changed.
 		updateEvents.has("newPhase") ||
+		updateEvents.has("liveGames") ||
 		inputs.tid !== prevInputs?.tid
 	) {
-		const upcoming = await getUpcoming({
-			tid: inputs.tid,
-		});
+		// A game of theirs still being played live reads as in progress, first;
+		// in the playoffs nothing its tip-off worked out is there yet (see
+		// liveGameGate.ts).
+		const gate = await getLiveGate();
+		const dayCutoff = gate.dayCutoff;
+		const scheduled = (
+			await getUpcoming({
+				tid: inputs.tid,
+			})
+		).filter((game) => dayCutoff === undefined || game.day <= dayCutoff);
+		const live = [...gate.games.values()]
+			.filter(
+				(game) =>
+					game.teams[0].tid === inputs.tid || game.teams[1].tid === inputs.tid,
+			)
+			.sort((a, b) => (a.day ?? 0) - (b.day ?? 0) || a.gid - b.gid)
+			.map(liveScheduleRow);
+		const upcoming: ((typeof scheduled)[number] & { live?: true })[] = [
+			...live,
+			...scheduled,
+		];
 
 		let canLiveSimFirstGame = false;
-		const upcoming0 = upcoming[0];
+		const upcoming0 = scheduled[0];
 		if (upcoming0) {
 			const scheduleToday = await season.getSchedule(true);
 			canLiveSimFirstGame = scheduleToday.some(
@@ -621,6 +667,7 @@ const updateUpcoming = async ({
 		const topPlayers = await getTopPlayers<[any, any]>(inputs.tid, 2);
 
 		return {
+			calendar: await getCalendarIfDated(g.get("season"), inputs.tid),
 			canLiveSimFirstGame,
 			elam: g.get("elam"),
 			elamASG: g.get("elamASG"),
@@ -643,13 +690,24 @@ const updateCompleted = async ({
 	prevInputs,
 	prevOutput,
 }: ViewArgs<typeof processInputs, typeof keepPrevOutput>) => {
-	if (updateEvents.has("firstRun") || inputs.tid !== prevInputs?.tid) {
+	// (Games still being played live are upcoming - see liveGameGate.ts. A
+	// partial update below can't put one back once it's over, so with any
+	// about, or one just over, the whole list is loaded again.)
+	const gate = await getLiveGate();
+	if (
+		updateEvents.has("firstRun") ||
+		inputs.tid !== prevInputs?.tid ||
+		updateEvents.has("liveGames") ||
+		(updateEvents.has("gameSim") && gate.hidden.size > 0)
+	) {
 		// Load all games in list
-		const completed = await getProcessedGames({
-			tid: inputs.tid,
-			season: g.get("season"),
-			includeAllStarGame: true,
-		});
+		const completed = (
+			await getProcessedGames({
+				tid: inputs.tid,
+				season: g.get("season"),
+				includeAllStarGame: true,
+			})
+		).filter((game) => !gate.hidden.has(game.gid));
 
 		return {
 			completed,

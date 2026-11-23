@@ -12,6 +12,86 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 470,
+		date: "2026-11-23",
+		text: "Nightly Recap: a new look. Its titles and cards are set in a tall broadcast typeface, the opening title stands on one line over a lit arena floor, and the Game Recap, Final and 2nd Half graphics are flatter and sharper.",
+	},
+	{
+		n: 469,
+		date: "2026-11-23",
+		text: "National games: the box on the Daily Schedule and the team schedule now shows the network's logo in its own colors next to the teams, instead of the black tab (the scores bar and the dashboard too). National score bugs show the game's real night with the NBA calendar on, and leave the night out with it off.",
+	},
+	{
+		n: 468,
+		date: "2026-11-23",
+		text: "Nightly Recap: it now opens with a Nightly Recap title, and a 2nd Half graphic (or Overtime) plays between the halves. The controls are on the video itself, like the 3D game's, and the plays can run at 2x (the graphics stay at normal speed). The Final card shows each player's head and shoulders instead of a cut-off face.",
+	},
+	{
+		n: 467,
+		date: "2026-11-23",
+		text: "Nightly Recap: the Daily Schedule now has a recap video of the night, for games played from this update on. Each game gets a Game Recap card, its biggest plays on the 3D court, and a Final card with the score and three players a side. Pick how long it runs (Full, Medium, Short or One play a game). The shortest still shows each game's biggest play: the game-winner if there was one, otherwise the best play of the game's top player. The last 7 nights can be watched.",
+	},
+	{
+		n: 466,
+		date: "2026-11-23",
+		text: 'NBA calendar leagues: the playoffs now run on the NBA\'s real schedule. The play-in is Tuesday, Wednesday and Friday, round 1 opens with four series on Saturday and four on Sunday, series play every two or three nights with no back-to-backs, the conference finals alternate nights, and the Finals start on a Thursday. Every game of a series shows on the calendar and in the scores bar once the matchup is set, with "if necessary" on the games that may not be played. One day sims one night, and injuries heal at the same pace as in a classic league.',
+	},
+	{
+		n: 465,
+		date: "2026-11-23",
+		text: "Live games in shared leagues: several of you can live sim your own games at the same time, and nobody waits on anyone else's. Every game being played live shows at the top of the screen with its score and clock; tap one to watch from where it is. Until the final buzzer on the screen playing it, the game looks in progress everywhere: LIVE with the score on the Daily Schedule, the team schedule and the scores bar, and no final in the box score, standings, playoff bracket or news. In the regular season, once a later day is simmed the result shows for everyone not watching. In the playoffs, the next day waits for every live game to finish.",
+	},
+	{
+		n: 464,
+		date: "2026-11-23",
+		text: "National broadcasts now show before tipoff: a game on a national network has the network's tag on its box on the Daily Schedule and the team schedule, beside it in the scores bar, and next to the next game on the dashboard. A night's pick can still change as records change, until it's the next night.",
+	},
+	{
+		n: 463,
+		date: "2026-11-23",
+		text: "NBA calendar leagues: the team calendar has a new look, like a team's own schedule page. Home nights are filled in black, each game has the opponent's logo and name, and played games show a green W or red L with the score (tap a game for its box score). Today is outlined in red.",
+	},
+	{
+		n: 462,
+		date: "2026-11-23",
+		text: "NBA calendar leagues: the smart CPU GMs' last days of trading before the deadline now cover the same stretch of games, and meet as often, as in a classic league (they had about half as many).",
+	},
+	{
+		n: 461,
+		date: "2026-11-23",
+		text: "3D game: national broadcasts. A team looks file can now bring national networks' score bugs. Each night's biggest game (the two best teams going in) is on that night's network, and every playoff game is national, with the Finals on its own network. Custom score bugs can also show where a team stands (\"11-3 (2nd IN EAST)\"), swap the records for timeouts or fouls once a side is in the bonus, and show the playoff series.",
+	},
+	{
+		n: 460,
+		date: "2026-11-23",
+		text: "Box scores: the game's date moved out of the banner into the All games this day bar, which now has a Daily Schedule button to jump to that whole day.",
+	},
+	{
+		n: 459,
+		date: "2026-11-23",
+		text: "NBA calendar leagues: injuries, trade cooldowns and CPU trades and signings now run at exactly the same pace per game as classic BBGM, so a calendar season is no harder or easier. The month calendar is now on Daily Schedule, your Schedule page and the dashboard, and the scores bar goes night by night: the season so far, today and the next 5 nights, each with its weekday and date.",
+	},
+	{
+		n: 458,
+		date: "2026-11-23",
+		text: "Draft night: everyone wears proper trousers down to their shoes, with socks to match, instead of shorts. Each prospect comes in his own suit, from dark classics to bold colors, with his own shirt and tie (or none), and it's the same one every time you watch him. His tie is no longer in the colors of the team that drafts him. The commissioner is now bald with thin glasses, in a navy pinstripe suit, pale blue shirt and navy tie. The shot of the commissioner at the podium no longer lags.",
+	},
+	{
+		n: 457,
+		date: "2026-11-23",
+		text: "Draft night: the family hug at the table is a real hug now. The player and his mom or dad come in close and wrap their arms right around each other, rocking a little, him bending down over his mom (more the taller he is), with back pats in a hug with his dad or brother, then a step back before he lets go. The camera goes in tight over their shoulder on his face, like the broadcast. Photographers' flashes no longer white out the picture.",
+	},
+	{
+		n: 456,
+		date: "2026-11-23",
+		text: "Smart CPU GM: a team clearing cap room for a free agent now asks for a pick back when the team taking the salary gains plenty from it, and weighs every team with room instead of the first that would take it.",
+	},
+	{
+		n: 455,
+		date: "2026-11-23",
+		text: "Draft fixes for shared leagues. Once a stretch of picks was running because everyone had readied up, Ready for the next pick and Not ready didn't work until it stopped, so the draft could run on to your pick. Both now work at any time: the pick being made finishes and the draft waits. And Sim one pick makes one pick, even if your team had readied up further.",
+	},
+	{
 		n: 454,
 		date: "2026-11-23",
 		text: "3D game, New sim (Global Settings, 3D Game Sim): players run with their own stride. Their steps go about as quickly as a real player's of their height at that pace, so going hard they take long strides instead of quick little ones, and a jog lengthens smoothly into a run and a run into a sprint. Each player also gets his own way of running, walking and sitting in his stance, picked from his ratings.",

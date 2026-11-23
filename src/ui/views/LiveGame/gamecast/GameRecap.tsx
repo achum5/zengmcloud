@@ -450,21 +450,41 @@ const shortName = (name: string) => {
 		: name;
 };
 
-// ALL OF THAT DAY'S GAMES, under the game's banner when asked for: each a
-// little score (the winner's line bold), this one marked, each to its page.
+// THE GAME'S DAY, under its banner: the date ("Wed, Nov 4, 2009", or "2009
+// Day 45"), and when asked for all of that day's games - each a little score
+// (the winner's line bold), this one marked, each to its page - with the
+// day's Daily Schedule a tap away.
 const DayGames = ({
+	date,
+	day,
 	games,
 	gid,
 	season,
 }: {
+	date: string | undefined;
+	day: number;
 	games: DayGame[];
 	gid: number;
 	season: number;
 }) => {
 	const [open, setOpen] = useState(false);
 	const { teamInfoCache } = useLocal(["teamInfoCache"]);
+	const label =
+		date !== undefined
+			? formatGameDate(date, "shortWithYear")
+			: `${season} Day ${day}`;
+	const dayUrl = helpers.leagueUrl(["daily_schedule", season, day]);
 	if (games.length < 2) {
-		return null;
+		return (
+			<div className="recap-day">
+				<a
+					className="btn btn-light-bordered btn-sm recap-day-toggle"
+					href={dayUrl}
+				>
+					<span className="recap-day-date">{label}</span>
+				</a>
+			</div>
+		);
 	}
 	return (
 		<div className="recap-day">
@@ -476,9 +496,18 @@ const DayGames = ({
 					setOpen(!open);
 				}}
 			>
+				<span className="recap-day-date">{label}</span>
+				<span className="recap-day-dot">·</span>
 				All games this day
 				<span className={open ? "tb-caret recap-day-open" : "tb-caret"} />
 			</button>
+			{open ? (
+				<div className="recap-day-actions">
+					<a className="btn btn-light-bordered btn-sm" href={dayUrl}>
+						Daily Schedule ›
+					</a>
+				</div>
+			) : null}
 			{open ? (
 				<div className="recap-day-grid">
 					{games.map((gm) => {
@@ -604,6 +633,10 @@ const RecapHeader = ({
 		typeof boxScore.day === "number" && !boxScore.exhibition
 			? boxScore.day
 			: undefined;
+	// The date goes with the day's games under the banner, where they're
+	// shown; otherwise in the banner.
+	const dayBar = gameDay !== undefined && dayGames !== undefined;
+	const tagDay = dayBar ? undefined : gameDay;
 	const inSeries =
 		boxScore.numGamesToWinSeries > 1 &&
 		!!boxScore.teams[0]?.playoffs &&
@@ -628,23 +661,23 @@ const RecapHeader = ({
 						// schedule), and in the playoffs BBGM's own "DAL leads series
 						// 1-0" by it (the team to its page, the record to the bracket).
 						tag={
-							gameDay !== undefined || inSeries ? (
+							tagDay !== undefined || inSeries ? (
 								<span>
-									{gameDay !== undefined ? (
+									{tagDay !== undefined ? (
 										<a
 											className="mb-tag-part"
 											href={helpers.leagueUrl([
 												"daily_schedule",
 												season,
-												gameDay,
+												tagDay,
 											])}
 										>
 											{typeof boxScore.date === "string"
 												? formatGameDate(boxScore.date, "shortWithYear")
-												: `${season} Day ${gameDay}`}
+												: `${season} Day ${tagDay}`}
 										</a>
 									) : null}
-									{gameDay !== undefined && inSeries ? (
+									{tagDay !== undefined && inSeries ? (
 										<span className="mb-tag-dot"> · </span>
 									) : null}
 									{inSeries ? (
@@ -710,8 +743,16 @@ const RecapHeader = ({
 							<TeamLeaders t={home} />
 						</div>
 					</div>
-					{dayGames ? (
-						<DayGames games={dayGames} gid={boxScore.gid} season={season} />
+					{dayBar ? (
+						<DayGames
+							date={
+								typeof boxScore.date === "string" ? boxScore.date : undefined
+							}
+							day={gameDay}
+							games={dayGames}
+							gid={boxScore.gid}
+							season={season}
+						/>
 					) : null}
 				</>
 			) : (

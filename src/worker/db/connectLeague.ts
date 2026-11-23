@@ -45,6 +45,7 @@ import type {
 	SavedTrade,
 	SavedTradingBlock,
 	LiveGamePlayByPlay,
+	RecapReelRow,
 	FaDayResults,
 	Image,
 	JerseySkin,
@@ -113,6 +114,12 @@ export interface LeagueDB extends DBSchema {
 	liveGamePlayByPlay: {
 		key: number;
 		value: LiveGamePlayByPlay;
+	};
+	// Each recent game's recap plays, for the Nightly Recap (keyed by gid, the
+	// last few nights only). Synced like any other store.
+	recapReels: {
+		key: number;
+		value: RecapReelRow;
 	};
 	// Transparent results of multiplayer free-agency board days (keyed by
 	// `${season}-${daysLeft}`). Synced like any other store.
@@ -724,6 +731,10 @@ const create = (db: IDBPDatabase<LeagueDB>) => {
 
 	db.createObjectStore("jerseySkins", {
 		keyPath: "id",
+	});
+
+	db.createObjectStore("recapReels", {
+		keyPath: "gid",
 	});
 };
 
@@ -1870,6 +1881,12 @@ const migrate = async ({
 		createOwedByTidsIndex(transaction.objectStore("players"));
 		await migrate81(transaction);
 		db.deleteObjectStore("releasedPlayers" as any);
+	}
+
+	if (oldVersion < 82) {
+		db.createObjectStore("recapReels", {
+			keyPath: "gid",
+		});
 	}
 
 	// Next update - do similar to `oldVersion < 71` above for numPlayoffRounds and draftType, from loadGameAttributes
