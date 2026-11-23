@@ -2120,12 +2120,17 @@ tr.table-warning:hover > td {
 	line-height: 1;
 	text-align: left;
 	white-space: nowrap;
-	&:hover {
+	&:hover:not(:disabled) {
 		background-color: var(--bs-tertiary-bg);
 	}
 	&:focus-visible {
 		outline: 2px solid var(--bs-primary);
 		outline-offset: -2px;
+	}
+	// (Disabled while playing your own game live: still a scoreboard, just
+	// not a way out of it.)
+	&:disabled {
+		cursor: default;
 	}
 }
 .live-scores-inline .live-score:first-child {

@@ -65,6 +65,7 @@ import type {
 	SyncSubscriber,
 	SyncTransport,
 } from "./types.ts";
+import { validLiveGameRef } from "./liveGameRef.ts";
 
 // A room has exactly one "sim authority" doc recording who may advance the league.
 const AUTHORITY_DOC_ID = "authority";
@@ -133,7 +134,11 @@ const parseLiveScore = (value: unknown): LiveScore | undefined => {
 	) {
 		return undefined;
 	}
-	return { pts: [pts[0], pts[1]], q: v.q, clock: v.clock };
+	return {
+		pts: [pts[0], pts[1]],
+		q: v.q.slice(0, 8),
+		clock: v.clock.slice(0, 8),
+	};
 };
 
 const parseTids = (value: unknown): [number, number] | undefined =>
@@ -156,7 +161,7 @@ const parseLiveBroadcastMeta = (
 		typeof data.holderId !== "string" ||
 		typeof data.gid !== "number" ||
 		!(typeof data.startedAt === "number" && data.startedAt > 0) ||
-		!(typeof data.chunkCount === "number" && data.chunkCount > 0)
+		!validLiveGameRef(data.gid, data.chunkCount)
 	) {
 		return undefined;
 	}
@@ -1266,6 +1271,9 @@ export class FirebaseTransport implements SyncTransport {
 	}
 
 	async fetchLiveGameData(gid: number, chunkCount: number) {
+		if (!validLiveGameRef(gid, chunkCount)) {
+			return undefined;
+		}
 		let out = "";
 		for (let i = 0; i < chunkCount; i++) {
 			const snap = await getDoc(
@@ -1290,6 +1298,9 @@ export class FirebaseTransport implements SyncTransport {
 	// that never got to this is ignored once its lease is long gone, and
 	// cleared by the next device to start a live game - see connect.ts.)
 	async clearLiveGame(gid: number, chunkCount: number) {
+		if (!validLiveGameRef(gid, chunkCount)) {
+			throw new Error(`Not a live game to clear: ${gid} (${chunkCount})`);
+		}
 		await deleteDoc(
 			doc(this.db, "leagues", this.code, "control", liveGameDocId(gid)),
 		);

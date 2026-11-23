@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 485,
+		date: "2026-11-23",
+		text: "Live games, more safety checks: while the last game of the Finals is being played live, nobody can move on to the draft until its final. A live game left behind by a page that closed without saying so can no longer hold up the playoffs. While you're playing your own game live, the other live scores in the header can't be tapped, since leaving your game would end it for everyone. And the standings on Daily Schedule no longer count a game still being played.",
+	},
+	{
 		n: 484,
 		date: "2026-11-23",
 		text: "NBA calendar leagues: the date in the header is now a calendar page with the weekday on it (WED 12 NOV), next to the season and phase (2025-26, Regular season). Tap the calendar for the Daily Schedule, or the words for your roster (the bracket in the playoffs). In the scores bar, home games are filled in your team's color instead of black, and a game still to come is centered in its box.",

@@ -80,18 +80,37 @@ export const decideLiveGate = ({
 	return { hidden, dayCutoff };
 };
 
+// Never throws: it is asked in the middle of a sim (game/play.ts) and by
+// every page. On any trouble every live game is simply hidden, rows unknown.
 export const getLiveGate = async (): Promise<LiveGate> => {
 	const { watching, room } = liveSpoilerSets();
 	if (watching.size === 0 && room.size === 0) {
 		return NO_GATE;
 	}
+	try {
+		return await readLiveGate(watching, room);
+	} catch (error) {
+		console.error("Live game gate failed", error);
+		return {
+			hidden: new Set([...watching, ...room]),
+			dayCutoff: undefined,
+			games: new Map(),
+		};
+	}
+};
 
+const readLiveGate = async (
+	watching: ReadonlySet<number>,
+	room: ReadonlySet<number>,
+): Promise<LiveGate> => {
 	const season = g.get("season");
 	const rows = new Map<number, Game>();
 	for (const gid of new Set([...watching, ...room])) {
 		const game = await idb.cache.games.get(gid);
 		if (game && game.season === season) {
-			rows.set(gid, game);
+			// (A copy: the pages working from these can never touch the
+			// cache's own row, which is what gets saved and synced.)
+			rows.set(gid, structuredClone(game));
 		}
 	}
 
