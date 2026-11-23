@@ -31,6 +31,10 @@ export type CustomBugTeam = BugTeam & {
 };
 
 const MAX_TIMEOUTS = 7;
+// The timeouts a team has on TV: basketball's seven, where the game keeps
+// only the last two (see STARTING_NUM_TIMEOUTS) - the five before them
+// shown still up. (An overtime's two are its own.)
+const TV_TIMEOUTS = __SPORT === "basketball" ? 7 : 0;
 // The smallest a bug is drawn, px - at least this wide, and at least this
 // tall: a corner box or a bar across the bottom the size it is on TV is too
 // small to read on a phone.
@@ -160,6 +164,14 @@ export const CustomScoreBug = ({
 			p.show === "shotClock" ||
 			p.show === "awayBonus" ||
 			p.show === "homeBonus";
+		// Lettering in a gradient ("linear-gradient(#fff, #b9bcc2)"), on a
+		// piece with no background of its own: the gradient cut to the
+		// letters, its shadow under them.
+		const ink = color(p.color);
+		const shaded =
+			ink?.includes("gradient(") === true &&
+			!onMark &&
+			p.background === undefined;
 		const box: CSSProperties = {
 			position: "absolute",
 			left: `${(p.x / W) * 100}%`,
@@ -169,10 +181,20 @@ export const CustomScoreBug = ({
 			display: "flex",
 			alignItems: "center",
 			justifyContent: justify(p),
-			color: color(p.color),
-			// (The shot clock's and a bonus mark's on the mark itself, gone with
-			// it when it's off.)
-			background: onMark ? undefined : color(p.background),
+			...(shaded
+				? {
+						backgroundImage: ink,
+						backgroundClip: "text",
+						WebkitBackgroundClip: "text",
+						color: "transparent",
+						filter: p.shadow ? `drop-shadow(${color(p.shadow)})` : undefined,
+					}
+				: {
+						color: ink,
+						// (The shot clock's and a bonus mark's on the mark itself,
+						// gone with it when it's off.)
+						background: onMark ? undefined : color(p.background),
+					}),
 			// (A series longer than the words it stands in for, smaller to fit
 			// where they did.)
 			fontSize: u(
@@ -192,7 +214,7 @@ export const CustomScoreBug = ({
 			borderRadius: p.radius === undefined ? undefined : u(p.radius),
 			border: onMark ? undefined : color(p.border),
 			clipPath: p.clip,
-			textShadow: color(p.shadow),
+			textShadow: shaded ? undefined : color(p.shadow),
 			mixBlendMode: p.blend as CSSProperties["mixBlendMode"],
 			opacity: p.opacity,
 			overflow: "hidden",
@@ -326,11 +348,20 @@ export const CustomScoreBug = ({
 				break;
 			case "awayTimeouts":
 			case "homeTimeouts": {
-				const left = t?.timeouts;
+				const total =
+					totalTimeouts === undefined
+						? undefined
+						: quarter.endsWith("OT")
+							? totalTimeouts
+							: Math.max(TV_TIMEOUTS, totalTimeouts);
+				const left =
+					t?.timeouts === undefined
+						? undefined
+						: t.timeouts + (total ?? 0) - (totalTimeouts ?? 0);
 				if (left !== undefined && p.text !== undefined) {
 					inner = p.text.replace("{n}", String(left));
-				} else if (left !== undefined && totalTimeouts !== undefined) {
-					const n = Math.min(MAX_TIMEOUTS, totalTimeouts);
+				} else if (left !== undefined && total !== undefined) {
+					const n = Math.min(MAX_TIMEOUTS, total);
 					inner = (
 						<span
 							style={{

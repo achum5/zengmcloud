@@ -1392,13 +1392,14 @@ describe("a man the headline or deck names is in the body", () => {
 				/(?:: |, |and )(?:Payton Foster|Keegan Lowry) beat the/,
 				wrap,
 			);
-			const deck = wrap.split("\n\n")[1] ?? "";
-			if (deck.startsWith("*") && deck.includes("Keegan Lowry")) {
+			// A shooter the headline names is named in full below it.
+			const [head, ...rest] = wrap.split("\n\n");
+			if (/Lowry/.test(head ?? "")) {
 				decked += 1;
-				assert.match(bodyOf(wrap), /Keegan Lowry/, wrap);
+				assert.match(rest.join(" "), /Keegan Lowry/, wrap);
 			}
 		}
-		assert.ok(decked > 0, "the deck never named the shot");
+		assert.ok(decked > 0, "the headline never named the shot");
 	});
 });
 
@@ -1504,7 +1505,7 @@ describe("getAutoDayRecap", () => {
 		assert.ok(recap.length > 200, recap);
 	});
 
-	test("headline carries a deck of MULTIPLE secondary storylines", () => {
+	test("the headline carries the night's MULTIPLE storylines", () => {
 		const deckSlate: RecapGame[] = [
 			// Marquee: a walk-off that's also an upset.
 			mkGame(
@@ -1553,11 +1554,15 @@ describe("getAutoDayRecap", () => {
 			playoffs: false,
 			games: deckSlate,
 		});
-		const deckLine = recap.split("\n\n")[1] ?? "";
-		// The deck is an italic line of more than one storyline.
-		assert.ok(deckLine.startsWith("*") && /, | and /.test(deckLine), recap);
-		// The secondary stories (the rout and the 46-point night) are surfaced.
-		assert.ok(/Spurs|Gilbert Arenas/.test(deckLine), recap);
+		const head = recap.split("\n\n")[0] ?? "";
+		// The headline is the night's stories, not one game's: the walk-off
+		// and the 46-point night, each a clause.
+		assert.ok(head.includes(";"), recap);
+		assert.ok(/Wallace/.test(head) && /Arenas/.test(head), recap);
+		// Each is told below it, in a paragraph of its own.
+		const paras = recap.split("\n\n").slice(1);
+		assert.ok(/Gerald Wallace/.test(paras[0] ?? ""), recap);
+		assert.ok(/Gilbert Arenas/.test(paras[1] ?? ""), recap);
 	});
 
 	test("an 'Around the league' sweep covers every remaining game", () => {
@@ -3893,8 +3898,9 @@ describe("the day wrap reads as prose, not a list", () => {
 			playoffs: false,
 			games: slate(),
 		});
+		// (Each game of the list is a line of its own.)
 		const longest = recap
-			.split("\n\n")
+			.split(/\n/)
 			.flatMap((para) => para.split(". "))
 			.reduce((max, s) => Math.max(max, s.split(",").length), 0);
 		assert.ok(
@@ -5417,8 +5423,8 @@ describe("a postseason read end to end", () => {
 				playoffs: true,
 				games: [seriesSlateGame(9600, "Celtics", "Pistons", 1, 0), quiet],
 			});
-			// Every game has its own item now; nothing is "the other games".
-			sawRoundup ||= recap.includes("**Lakers");
+			// Every game is told on its own; nothing is "the other games".
+			sawRoundup ||= recap.split("\n\n").slice(1).join(" ").includes("Lakers");
 			assert.ok(!/other games/.test(recap), recap);
 		}
 		assert.ok(sawRoundup, "the quiet game was never told");
@@ -5614,10 +5620,11 @@ describe("the day wrap does not tell a story twice", () => {
 		})(),
 	];
 
-	// The deck is a tease and the body tells it: "Magic Carter triple-doubles"
-	// over a wrap that never named him again left the reader to guess for
-	// whom and against whom. Told in the body, and once.
-	test("a player the deck put in lights is told in the body, once", () => {
+	// The headline is a tease and the body tells it: "Magic Carter
+	// triple-doubles" over a wrap that never named him again left the reader
+	// to guess for whom and against whom. Told in the body by his whole name.
+	test("a player the headline put in lights is told in the body", () => {
+		let told = 0;
 		for (let day = 1; day <= 20; day += 1) {
 			const recap = getAutoDayRecap({
 				season: 2005,
@@ -5625,34 +5632,29 @@ describe("the day wrap does not tell a story twice", () => {
 				playoffs: false,
 				games: slate(),
 			});
-			const lines = recap.split("\n");
-			const deck = lines.find((l) => l.startsWith("*") && !l.startsWith("**"));
-			if (!deck) {
-				continue;
-			}
-			const body = lines.filter((l) => !/^\*[^\n]*\*$/.test(l)).join("\n");
+			const [head, ...rest] = recap.split("\n\n");
+			const body = rest.join("\n\n");
 			for (const name of [
 				"Paul Pierce",
 				"Magic Carter",
 				"Tim Duncan",
 				"Steve Nash",
 			]) {
-				if (!deck.includes(name)) {
+				if (!head?.includes(name.split(" ")[1]!)) {
 					continue;
 				}
-				assert.strictEqual(
-					body.split(name).length - 1,
-					1,
-					`day ${day}: ${name} is in the deck:\n${recap}`,
-				);
+				told += 1;
+				assert.ok(body.includes(name), `day ${day}: ${name}:\n${recap}`);
 			}
 		}
+		assert.ok(told > 0, "the headline never named one of them");
 	});
 
 	// "Wizards stun the Thunder 102-100" in the deck, and not a word of it in
-	// the body: 32 of 41 scored deck items in a corpus run. The deck is a row
-	// of headlines; the body still tells every result it carries.
-	test("a result the deck gives is told in the body too", () => {
+	// the body: 32 of 41 scored deck items in a corpus run. The headline is a
+	// row of the night's stories; the body still tells every result it
+	// carries.
+	test("a result the headline gives is told in the body too", () => {
 		let checked = 0;
 		for (let day = 1; day <= 20; day += 1) {
 			const games = slate();
@@ -5670,21 +5672,25 @@ describe("the day wrap does not tell a story twice", () => {
 				playoffs: false,
 				games,
 			});
-			const lines = recap.split("\n");
-			const deck = lines.find((l) => l.startsWith("*") && !l.startsWith("**"));
-			const body = lines.filter((l) => !/^\*[^\n]*\*$/.test(l)).join("\n");
-			// Every team the deck names has its game told below.
-			for (const t of games.flatMap((g) => g.teams)) {
-				if (deck?.includes(t.name)) {
-					checked += 1;
-					assert.ok(
-						body.includes(`**${t.name} `) || body.includes(`, ${t.name} `),
-						`day ${day}: ${t.name}\n${recap}`,
-					);
+			const [head, ...rest] = recap.split("\n\n");
+			const body = rest.join("\n\n");
+			// Every team the headline names has its game's result told below.
+			for (const g of games) {
+				for (const t of g.teams) {
+					if (new RegExp(String.raw`\b${t.name}\b`).test(head ?? "")) {
+						checked += 1;
+						const [a, b] = [g.teams[0].pts, g.teams[1].pts].sort(
+							(x, y) => y - x,
+						);
+						assert.ok(
+							body.includes(`${a}-${b}`) || body.includes(`${t.name} ${t.pts}`),
+							`day ${day}: ${t.name}\n${recap}`,
+						);
+					}
 				}
 			}
 		}
-		assert.ok(checked > 0, "no deck item named a team");
+		assert.ok(checked > 0, "no headline story named a team");
 	});
 
 	test("one game is not reported twice in the same wrap", () => {
@@ -6758,10 +6764,16 @@ describe("a full slate does not repeat itself", () => {
 			.filter((p) => !/^\*[^\n]*\*$/.test(p))
 			.join(" ");
 		assert.match(body, /Jaden Green/, wrap);
-		// The final is the item's lead, "Heat 121, Lakers 108:", and the
-		// prose does not say it again.
-		assert.ok(body.split("121-108").length <= 2, wrap);
-		assert.equal(body.split("Heat 121, Lakers 108").length, 2, wrap);
+		// The final is told once: in the prose of its paragraph, or as a
+		// list line's lead, "Heat 121, Lakers 108:", and not again.
+		assert.equal(
+			body.split("121-108").length -
+				1 +
+				body.split("Heat 121, Lakers 108").length -
+				1,
+			1,
+			wrap,
+		);
 	});
 
 	test("no sentence frame is used three times on one night", () => {

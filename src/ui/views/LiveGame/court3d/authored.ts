@@ -44,6 +44,8 @@ export type Authored = {
 	// their clothes - pids below any of theirs), and where each is at t.
 	cast?: CrewMember[];
 	castAt?: (t: number) => PlayerState[];
+	// Their heads all drawn (see Court3D): the scene can be shown.
+	onCast?: () => void;
 	// The floor dressed as it has it, not for a game (see scene.ts).
 	venue?: Venue;
 	// Cameras going off at t, besides the photographers' own.

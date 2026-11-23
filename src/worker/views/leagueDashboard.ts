@@ -9,6 +9,7 @@ import { g, helpers } from "../util/index.ts";
 import type { Player } from "../../common/types.ts";
 import { defineView, type ViewArgs } from "../util/defineView.ts";
 import { processEvents } from "./news.ts";
+import { recapNights } from "../util/nightlyRecap.ts";
 import { updateHub } from "./leagueDashboardHub.ts";
 import { getMaxPlayoffSeed } from "./standings.ts";
 import addFirstNameShort from "../util/addFirstNameShort.ts";
@@ -618,9 +619,19 @@ const updateNewsFeed = async ({ updateEvents }: ViewArgs) => {
 			})
 		).map((t) => t.seasonAttrs);
 
+		// The newest night this season with a Nightly Recap: it leads the
+		// headlines.
+		const recapNight =
+			__SPORT === "basketball"
+				? (await recapNights()).find(
+						(night) => night.season === g.get("season"),
+					)
+				: undefined;
+
 		return {
 			events,
 			teams,
+			recapNight,
 		};
 	}
 };

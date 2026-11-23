@@ -20,6 +20,7 @@ import { groupAwards } from "../../util/groupAwards.ts";
 import { InjuryIcon } from "../../components/InjuryIcon.tsx";
 import { SkillsBlock } from "../../components/SkillsBlock.tsx";
 import { SafeHtml } from "../../components/SafeHtml.tsx";
+import { PressButton } from "../../components/PressButton.tsx";
 import { SeasonNoteButton } from "../../components/SeasonNoteButton.tsx";
 import { contractValueCell } from "../../util/contractValueCell.tsx";
 import { useLocal } from "../../util/local.ts";
@@ -440,6 +441,9 @@ const Player2 = ({
 							return (
 								<p key={e.eid}>
 									<b>{e.season}</b>: <SafeHtml dirty={e.text} />
+									{e.pressTids ? (
+										<PressButton eid={e.eid} tids={e.pressTids} />
+									) : null}
 								</p>
 							);
 						})}

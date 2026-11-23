@@ -147,6 +147,73 @@ export const expectedGameTotal = ({
 	return homePts + awayPts;
 };
 
+// A game total when nobody in the league has played yet.
+export const DEFAULT_GAME_TOTAL = bySport({
+	basketball: 220,
+	football: 45,
+	baseball: 9,
+	hockey: 6,
+});
+
+// A team's regular-season scoring, per game: what a game total is set from.
+export type ScoringRate = { gp: number; pts: number; oppPts: number };
+
+// The league's average game total (both teams), from every team's per-game
+// scoring - teams yet to play left out; `fallback` when nobody has played.
+export const leagueAvgGameTotal = (
+	rates: Iterable<ScoringRate>,
+	fallback: number,
+): number => {
+	let totalPtsPerGame = 0;
+	let teamsWithGames = 0;
+	for (const s of rates) {
+		if (s.gp > 0) {
+			totalPtsPerGame += s.pts;
+			teamsWithGames += 1;
+		}
+	}
+	return teamsWithGames > 0 ? (2 * totalPtsPerGame) / teamsWithGames : fallback;
+};
+
+// A per-game rate pulled toward the league mean early in the season (fully
+// trusted after ~8 games) so a hot opening week doesn't swing totals wildly.
+// Undefined for a team yet to play.
+export const regressedScoring = (
+	perGame: number,
+	gp: number,
+	leagueAvgTotal: number,
+): number | undefined => {
+	if (gp <= 0) {
+		return undefined;
+	}
+	const halfLeague = leagueAvgTotal / 2;
+	const w = Math.min(1, gp / 8);
+	return halfLeague + (perGame - halfLeague) * w;
+};
+
+// The expected total of one game from the two teams' scoring rates - the
+// number the sportsbook's over/under is set from (see gameLines.ts).
+// `factor`: the playoff adjustment, where it applies.
+export const expectedTotalFromRates = ({
+	home,
+	away,
+	leagueAvgTotal,
+	factor = 1,
+}: {
+	home: ScoringRate;
+	away: ScoringRate;
+	leagueAvgTotal: number;
+	factor?: number;
+}): number =>
+	factor *
+	expectedGameTotal({
+		homeFor: regressedScoring(home.pts, home.gp, leagueAvgTotal),
+		homeAgainst: regressedScoring(home.oppPts, home.gp, leagueAvgTotal),
+		awayFor: regressedScoring(away.pts, away.gp, leagueAvgTotal),
+		awayAgainst: regressedScoring(away.oppPts, away.gp, leagueAvgTotal),
+		leagueAvgTotal,
+	});
+
 // Probability a Normal(mean, sigma) draw lands over `line`. The general form
 // behind every over/under in the sportsbook - overProb below is just this
 // with a whole-game-total-specific sigma baked in; player/team prop lines

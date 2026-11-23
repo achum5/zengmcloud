@@ -5,6 +5,7 @@ import useTitleBar from "../hooks/useTitleBar.tsx";
 import { helpers } from "../util/helpers.ts";
 import type { View } from "../../common/types.ts";
 import { SafeHtml } from "../components/SafeHtml.tsx";
+import { PressButton } from "../components/PressButton.tsx";
 import { SocialThread } from "./SocialPost.tsx";
 import { toWorker } from "../util/toWorker.ts";
 import { confirm } from "../util/confirm.tsx";
@@ -118,11 +119,19 @@ const Transactions = ({
 								<div className="d-flex align-items-start">
 									<div className="flex-grow-1">
 										<SafeHtml dirty={e.text} />
+										{e.pressTids ? (
+											<PressButton eid={e.eid} tids={e.pressTids} />
+										) : null}
 									</div>
 									<RevertButton eid={e.eid} type={e.type} />
 								</div>
 							) : (
-								<SafeHtml dirty={e.text} />
+								<>
+									<SafeHtml dirty={e.text} />
+									{e.pressTids ? (
+										<PressButton eid={e.eid} tids={e.pressTids} />
+									) : null}
+								</>
 							)}
 							{posts && posts.length > 0 && teamByTid ? (
 								<div className="border-top mt-2 pt-2">

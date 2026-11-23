@@ -1,3 +1,4 @@
+import { finishOf, type Finish } from "./liveGameWording.basketball.ts";
 import { momentsOf } from "./winProb.ts";
 
 // A GAME'S RECAP PLAYS (see the Nightly Recap): the game cut down, as soon as
@@ -16,7 +17,16 @@ import { momentsOf } from "./winProb.ts";
 // Basketball's play-by-play only. Presentation only: it reads the game, it
 // never touches the sim.
 
-export type RecapPlayKind = "rim" | "three" | "block" | "steal" | "basket";
+// A dunk, a make at the rim that is no dunk (a layup, a tip), a three, any
+// other make, a block, a steal. (A reel saved before dunks were told apart
+// has every make at the rim a "rim".)
+export type RecapPlayKind =
+	| "dunk"
+	| "rim"
+	| "three"
+	| "block"
+	| "steal"
+	| "basket";
 
 export type RecapPlay = {
 	// The line the play is (the make, the block, the steal), in the reel's
@@ -24,10 +34,12 @@ export type RecapPlay = {
 	i: number;
 	from: number;
 	to: number;
-	// How big a play it is (see weigh). A make at the rim (`kind` "rim") may
-	// be a dunk or not - the 3D court decides as it stages it - so it is
-	// weighed as half way, to be weighed again once staged.
+	// How big a play it is (see weighPlays), and how much of it is how much
+	// it moved its team's chance of winning (0 to 1).
 	w: number;
+	lev?: number;
+	// Once the game was out of reach in the last period.
+	garbage?: true;
 	kind: RecapPlayKind;
 	pid: number;
 	// The raw box score team of the man who made it (0: home).
@@ -326,14 +338,45 @@ export const cutReel = (
 	return { events: out, map };
 };
 
-// How big a play is, from the play-by-play alone - the way the 3D court's
-// key plays weigh it (see court3d/keyPlays.ts), but for the dunk, which the
-// 3D court only knows once it has staged it: a make at the rim is weighed
-// half way (DUNK_GUESS), and weighed again in the 3D.
-export const DUNK_GUESS = 2;
-const SWING_MIN = 0.04;
-const SWING_W = 40;
+// HOW BIG A PLAY IS. What a recap wants is the plays that mattered and the
+// plays worth seeing, and which of the two a game is about: a close one's
+// plays are the ones that swung it, a blowout's the best of what there was
+// to see while it was still a game. So a play is weighed by
+//
+// - how much it moved who was going to win: its team's chance of winning
+//   before it and after (LEVERAGE, see winProb.ts) - the turning points of a
+//   tight finish outweigh anything else, while in a game that was never
+//   close no play moves it much and the rest decides;
+// - what it was: a dunk (the finish the 3D court will show - see
+//   liveGameWording's finishOf), a three, an and-one, a shot at the horn,
+//   over a layup or a jumper; a block now and then; a steal hardly at all
+//   on its own (a steal and the basket off it show as that basket);
+// - who made it: each team's best player in the game a little more;
+// - and garbage time: once the game is out of reach in the last period, the
+//   benches emptying, hardly at all.
+//
+// (A reel saved before plays had a `lev` was weighed by the kind and the
+// swing alone - see pickRecapPlays.)
+export const LEVERAGE_W = 60;
 const WINNER_W = 12;
+const STAR_W = 1.5;
+const BUZZER_W = 4;
+// The last period, the leader this sure of it: garbage time, and how much
+// of a play is left then.
+const GARBAGE_P = 0.99;
+export const GARBAGE_W = 0.25;
+const SHOW: Record<RecapPlayKind, number> = {
+	dunk: 3.5,
+	rim: 1,
+	three: 3,
+	basket: 1,
+	block: 2,
+	steal: 0.5,
+};
+const POSTER_W = 2;
+const AND_ONE_W = 2.5;
+// A block of a shot at the rim (a dunk or a layup) over one of a jumper.
+const BLOCK_AT_RIM_W = 1;
 
 type Weighed = Omit<RecapPlay, "i" | "from" | "to">;
 type Moment = ReturnType<typeof momentsOf>[number];
@@ -360,21 +403,73 @@ const standings = (events: any[], moments: Moment[]): Standings => {
 	};
 };
 
+// The line before (`dir` -1) or after (1) line k, a substitution aside.
+const lineNear = (events: any[], k: number, dir: 1 | -1) => {
+	for (let i = k + dir; i >= 0 && i < events.length; i += dir) {
+		const e = events[i];
+		if (isLine(e) && e.type !== "sub") {
+			return i;
+		}
+	}
+	return undefined;
+};
+
+const kindOf = (type: string, finish: Finish | undefined): RecapPlayKind =>
+	isRim(type)
+		? isMade(type) && (finish === "dunk" || finish === "poster")
+			? "dunk"
+			: "rim"
+		: isThree(type)
+			? "three"
+			: isBlock(type)
+				? "block"
+				: type === "stl"
+					? "steal"
+					: "basket";
+
 export const weighPlays = (
 	events: any[],
-	{ numPeriods = 4, spread }: { numPeriods?: number; spread?: number } = {},
+	{
+		numPeriods = 4,
+		spread,
+		gid,
+		gender = "male",
+		stars = [],
+	}: {
+		numPeriods?: number;
+		spread?: number;
+		// The game's, and the league's: how each finish is called (see
+		// finishOf), as the 3D court will stage it.
+		gid?: number;
+		gender?: "male" | "female";
+		stars?: readonly number[];
+	} = {},
 ): Map<number, Weighed> => {
-	// (The win probability is wanted only either side of a play.)
-	const only = new Set<number>();
+	// (The win probability is wanted only either side of a play - and of a
+	// block's stop, the shot before it and the board after.)
+	const pre = new Map<number, number>();
 	let from = 0;
 	events.forEach((e, k) => {
-		const line = isLine(e);
-		if (typeof e?.type === "string" && isPlay(e.type)) {
-			only.add(line ? from : k);
-			only.add(k + 1);
-		}
-		if (line) {
+		if (isLine(e)) {
+			pre.set(k, from);
 			from = k + 1;
+		}
+	});
+	const only = new Set<number>();
+	events.forEach((e, k) => {
+		if (typeof e?.type === "string" && isPlay(e.type)) {
+			only.add(pre.get(k) ?? k);
+			only.add(k + 1);
+			if (isBlock(e.type)) {
+				const shot = lineNear(events, k, -1);
+				const board = lineNear(events, k, 1);
+				if (shot !== undefined) {
+					only.add(pre.get(shot) ?? shot);
+				}
+				if (board !== undefined) {
+					only.add(board + 1);
+				}
+			}
 		}
 	});
 	const moments = momentsOf(events, {
@@ -398,69 +493,71 @@ export const weighPlays = (
 			return;
 		}
 		const st = before(k);
-		const then = after(k);
 		const made = isMade(type);
-		let w = 0;
-		if (made && isRim(type)) {
-			w += DUNK_GUESS;
-		}
-		if (isThree(type)) {
-			w += 3;
+		// (A block is a stop once the defense has the ball back: from the
+		// shot it blocked to the board after it.)
+		const shot = isBlock(type) ? lineNear(events, k, -1) : undefined;
+		const board = isBlock(type) ? lineNear(events, k, 1) : undefined;
+		const from0 =
+			shot !== undefined && events[shot].t !== t ? before(shot) : st;
+		const then =
+			board !== undefined && events[board].type === "drb"
+				? after(board)
+				: after(k);
+		const finish = made || isBlock(type) ? finishOf(e, gid, gender) : undefined;
+		const kind = kindOf(type, finish);
+		// (Team 0's chance either side, as the team that made it has it.)
+		const mine = (p: number) => (t === 0 ? p : 1 - p);
+		const lev =
+			Number.isFinite(from0.p0) && Number.isFinite(then.p0)
+				? Math.max(0, mine(then.p0) - mine(from0.p0))
+				: 0;
+		const garbage =
+			st.period >= numPeriods &&
+			Number.isFinite(st.p0) &&
+			Math.max(st.p0, 1 - st.p0) >= GARBAGE_P;
+		let w = SHOW[kind];
+		if (finish === "poster" && made) {
+			w += POSTER_W;
 		}
 		if (type.endsWith("AndOne")) {
-			w += 3;
+			w += AND_ONE_W;
 		}
-		if (isBlock(type)) {
-			w += 3;
-		}
-		if (type === "stl") {
-			w += 2;
+		if (type === "blkAtRim" || type === "blkPutBack" || type === "blkTipIn") {
+			w += BLOCK_AT_RIM_W;
 		}
 		if (made) {
 			const was = lead(st.score);
 			const now = lead(then.score);
 			if (was !== 0 && now === -was) {
-				w += 3;
+				w += 1.5;
 			} else if (now === 0) {
-				w += 1;
+				w += 0.5;
 			}
 			if (st.clock <= 2) {
-				w += 5;
-			}
-			if (w === 0) {
-				w += 1;
+				w += BUZZER_W;
 			}
 		}
-		const swing = Math.abs(then.p0 - st.p0);
-		if (swing >= SWING_MIN) {
-			w += swing * SWING_W;
-		}
-		if (st.period >= numPeriods) {
-			w += 1;
-		}
-		if (Math.abs(st.score[0] - st.score[1]) <= 6) {
-			w += 0.5;
+		w += lev * LEVERAGE_W;
+		if (stars.includes(pid)) {
+			w += STAR_W;
 		}
 		const winner = winners.get(k);
 		if (winner) {
 			w += WINNER_W;
 		}
+		if (garbage && !winner) {
+			w *= GARBAGE_W;
+		}
 		out.set(k, {
 			w,
-			kind:
-				made && isRim(type)
-					? "rim"
-					: isThree(type)
-						? "three"
-						: isBlock(type)
-							? "block"
-							: type === "stl"
-								? "steal"
-								: "basket",
+			kind,
 			pid,
 			t,
 			period: st.period,
 			clock: st.clock,
+			lev: Math.round(lev * 1000) / 1000,
+			...(garbage ? { garbage: true } : {}),
 			...(winner ? { winner } : {}),
 		});
 	});
@@ -557,11 +654,22 @@ export const makeRecapReel = (
 		numPeriods = 4,
 		spread,
 		stars = [],
-	}: { numPeriods?: number; spread?: number; stars?: number[] } = {},
+		gid,
+		gender,
+	}: {
+		numPeriods?: number;
+		spread?: number;
+		stars?: number[];
+		gid?: number;
+		gender?: "male" | "female";
+	} = {},
 ): RecapReel => {
 	const weighed = weighPlays(events, {
 		numPeriods,
 		...(spread === undefined ? {} : { spread }),
+		stars,
+		...(gid === undefined ? {} : { gid }),
+		...(gender === undefined ? {} : { gender }),
 	});
 	const ranked = [...weighed.entries()].sort(
 		(a, b) => b[1].w - a[1].w || a[0] - b[0],

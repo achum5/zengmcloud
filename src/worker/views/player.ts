@@ -38,6 +38,7 @@ import { upgradeFace } from "../util/face.ts";
 import { choice } from "../../common/random.ts";
 import { getTeamColors } from "../util/getTeamColors.ts";
 import { getTeamInfoBySeason } from "../util/getTeamInfoBySeason.ts";
+import { pressTidsOf } from "../util/pressConference.ts";
 import { processPlayersHallOfFame } from "../util/processPlayersHallOfFame.ts";
 import { getNoteTeammates } from "../util/getNoteTeammates.ts";
 import {
@@ -767,6 +768,9 @@ export default defineView({
 					eid: event.eid,
 					text: await formatEventText(event),
 					season: event.season,
+					// (The press conference that introduced him - see
+					// pressConference.ts.)
+					pressTids: await pressTidsOf(event, { pid: p.pid }),
 				});
 			}
 

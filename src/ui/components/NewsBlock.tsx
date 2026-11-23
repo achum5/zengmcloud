@@ -1,4 +1,5 @@
 import { PlayerPicture } from "./PlayerPicture.tsx";
+import { PressButton } from "./PressButton.tsx";
 import { SafeHtml } from "./SafeHtml.tsx";
 import clsx from "clsx";
 import { helpers } from "../util/helpers.ts";
@@ -117,6 +118,13 @@ export const NewsBlock = ({
 			>
 				{teamName}
 				<Badge type={event.type} />
+				{event.pressTids ? (
+					<PressButton
+						eid={event.eid}
+						tids={event.pressTids}
+						className="me-2"
+					/>
+				) : null}
 			</div>
 			<div className="d-flex">
 				{event.p && event.p.imgURL !== "/img/blank-face.png" ? (

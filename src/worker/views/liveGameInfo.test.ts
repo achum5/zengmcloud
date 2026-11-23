@@ -6,7 +6,13 @@ import {
 	seriesOf,
 	standingsAsOf,
 	streakBefore,
+	totalAsOf,
 } from "./liveGameInfo.ts";
+import {
+	expectedTotalFromRates,
+	leagueAvgGameTotal,
+	toHalfPointLine,
+} from "../../common/sportsbookOdds.ts";
 
 const game = (
 	gid: number,
@@ -222,5 +228,56 @@ describe("a play-in game", () => {
 		assert.isUndefined(
 			playInOf(game(101, 1, [9, 0], [10, 0], true), undefined),
 		);
+	});
+});
+
+describe("the over/under at the tip", () => {
+	// Teams 1 and 2 meet on day 10; 3 and 4 fill out the league.
+	const watched = game(20, 10, [1, 0], [2, 0]);
+	const played = [
+		game(1, 1, [1, 110], [3, 100]),
+		game(2, 1, [2, 95], [4, 105]),
+		game(3, 2, [3, 120], [2, 118]),
+		game(4, 2, [4, 99], [1, 101]),
+		// The game itself, the same night's others and anything after: not
+		// counted.
+		watched,
+		game(21, 10, [3, 140], [4, 140]),
+		game(30, 12, [1, 150], [2, 150]),
+		// Nor the playoffs.
+		game(40, 3, [1, 200], [2, 200], true),
+	];
+
+	test("is the sportsbook's line from the season's scoring before the night", () => {
+		const rate = (pts: number[], opp: number[]) => ({
+			gp: pts.length,
+			pts: pts.reduce((a, b) => a + b, 0) / pts.length,
+			oppPts: opp.reduce((a, b) => a + b, 0) / opp.length,
+		});
+		const rates = [
+			rate([110, 101], [100, 99]), // 1
+			rate([95, 118], [105, 120]), // 2
+			rate([100, 120], [110, 118]), // 3
+			rate([105, 99], [95, 101]), // 4
+		];
+		const expected = toHalfPointLine(
+			expectedTotalFromRates({
+				home: rates[0]!,
+				away: rates[1]!,
+				leagueAvgTotal: leagueAvgGameTotal(rates, 220),
+			}),
+		);
+		assert.strictEqual(totalAsOf(watched, played, [2, 2]), expected);
+		assert.strictEqual(expected % 1, 0.5);
+	});
+
+	test("no line when the games found don't add up to a team's record", () => {
+		// (An old season's box scores deleted.)
+		assert.isUndefined(totalAsOf(watched, played, [5, 2]));
+	});
+
+	test("the first night of the season: the league's default total", () => {
+		const first = game(1, 1, [1, 0], [2, 0]);
+		assert.strictEqual(totalAsOf(first, [first], [0, 0]), 220.5);
 	});
 });

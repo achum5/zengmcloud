@@ -403,6 +403,76 @@ test(
 );
 
 test(
+	"human offers on vanilla's rules: a team in any spot turns down a deal it reads as a loss, but not on an easy trade difficulty",
+	{ timeout: 1_800_000 },
+	async () => {
+		const { smartGuardOffer } = await import("./humanTrades.ts");
+		const { currentOutlook } =
+			await import("../realisticFrontOffice/market.ts");
+		const { viewFor } = await import("./signing.ts");
+		const human = tids[0]!;
+		const was = {
+			userTids: g.get("userTids"),
+			userTid: g.get("userTid"),
+			spectator: g.get("spectator"),
+			realisticFrontOffices: g.get("realisticFrontOffices"),
+			difficulty: g.get("difficulty"),
+			difficultyTrade: g.get("difficultyTrade"),
+		};
+		g.setWithoutSavingToDB("userTids", [human]);
+		g.setWithoutSavingToDB("userTid", human);
+		g.setWithoutSavingToDB("spectator", false);
+		g.setWithoutSavingToDB("realisticFrontOffices", false);
+		g.setWithoutSavingToDB("difficulty", 0);
+		g.setWithoutSavingToDB("difficultyTrade", null);
+		onTestFinished(() => {
+			for (const [key, value] of Object.entries(was)) {
+				g.setWithoutSavingToDB(key as any, value as any);
+			}
+		});
+		const view = viewFor(await currentOutlook());
+		await view.prime();
+		const worst = [...(await rosterOf(human))]
+			.filter((p) => !isUntradable(p).untradable)
+			.sort((a, b) => a.value - b.value)[0]!;
+		const wrong: string[] = [];
+		const easy: string[] = [];
+		let tried = 0;
+		for (const seller of tids.filter((t) => t !== human)) {
+			const best = [...(await rosterOf(seller))]
+				.filter((p) => !isUntradable(p).untradable)
+				.sort((a, b) => b.value - a.value)[0]!;
+			// One nobody would pay for may go for anything (the test above).
+			if (
+				!(
+					(await view.price({ players: [best], picks: [] }, [seller, human])) >
+					0
+				)
+			) {
+				continue;
+			}
+			const out = { pids: [best.pid], dpids: [] };
+			const inn = { pids: [worst.pid], dpids: [] };
+			tried += 1;
+			g.setWithoutSavingToDB("difficulty", 0);
+			const guard = await smartGuardOffer(seller, human, out, inn);
+			note("humanVanillaFleece", label(best), guard.worth ?? 0);
+			if (guard.ok) {
+				wrong.push(`${label(best)} for ${label(worst)}`);
+			}
+			g.setWithoutSavingToDB("difficulty", -0.25);
+			const onEasy = await smartGuardOffer(seller, human, out, inn);
+			if (!onEasy.ok && onEasy.reason === "value") {
+				easy.push(`${label(best)} for ${label(worst)}`);
+			}
+		}
+		assert.deepStrictEqual(wrong, []);
+		assert.deepStrictEqual(easy, []);
+		assert.isAtLeast(tried, 15);
+	},
+);
+
+test(
 	"free agency: the pool as it opened is kept with the league, so what is left is measured against it after a reload",
 	{ timeout: 900_000 },
 	async () => {

@@ -424,7 +424,7 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 					util.logEvent(
 						{
 							type: "error",
-							text: `${holding} is still being played. The playoffs wait for its final.`,
+							text: `${holding} is still being played. The league waits for its final.`,
 							persistent: true,
 						},
 						conditions,

@@ -133,6 +133,7 @@ $flag-icon-css-path: "/img/flags";
 @import "social";
 @import "new-interface";
 @import "league-calendar";
+@import "league-hub";
 @import "top-bar";
 
 @each $color, $value in $table-variants {
@@ -1184,6 +1185,94 @@ tr.table-warning:hover > td {
 	padding-bottom: 3.5rem;
 }
 
+// The live game's header in place of the title bar (see MatchupLine): the
+// teams and their records, the network's logo by them; the line, the total
+// and the series under them on a phone, beside them on a wide screen.
+.live-matchup {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	column-gap: 12px;
+	row-gap: 2px;
+	margin-bottom: 0.75rem;
+}
+.live-matchup-teams {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	column-gap: 8px;
+	min-width: 0;
+	margin: 0;
+	font-size: 20px;
+	line-height: 1.25;
+}
+.live-matchup-team {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	white-space: nowrap;
+}
+.live-matchup-logo {
+	flex-shrink: 0;
+}
+.live-matchup-seed,
+.live-matchup-record,
+.live-matchup-at {
+	color: var(--bs-secondary-color);
+	font-weight: 400;
+}
+.live-matchup-seed {
+	font-size: 0.8em;
+}
+.live-matchup-national {
+	flex-shrink: 0;
+	margin-left: auto;
+	height: 24px;
+	font-size: 0.65rem;
+
+	img {
+		height: 100%;
+		width: auto;
+		max-width: 72px;
+	}
+}
+.live-matchup-facts {
+	display: flex;
+	flex-wrap: wrap;
+	flex-basis: 100%;
+	min-width: 0;
+	color: var(--bs-secondary-color);
+	font-size: 0.875rem;
+}
+.live-matchup-fact + .live-matchup-fact::before {
+	content: "·";
+	padding: 0 0.4em;
+}
+@include media-breakpoint-up(md) {
+	.live-matchup {
+		flex-wrap: nowrap;
+		column-gap: 16px;
+	}
+	.live-matchup-teams {
+		flex-wrap: nowrap;
+		column-gap: 10px;
+		font-size: 24px;
+	}
+	.live-matchup-facts {
+		flex-basis: auto;
+		order: 1;
+		font-size: 0.95rem;
+	}
+	.live-matchup-national {
+		order: 2;
+		height: 28px;
+
+		img {
+			max-width: 88px;
+		}
+	}
+}
+
 // The live game's tabbed layout (LiveGame/gamecast). On a phone, the court,
 // the latest play and the tab bar stay pinned under the navbar while the
 // tab's content scrolls; on a wide screen the page just scrolls.
@@ -1210,6 +1299,10 @@ tr.table-warning:hover > td {
 	> .mb-3 {
 		margin-bottom: 0 !important;
 	}
+}
+// The Nightly Recap full size: the picture alone, nothing under it.
+.nightly-recap-big .mb-3 {
+	margin-bottom: 0 !important;
 }
 
 // Play / pause / speed, small, over the picture: bottom right on a wide
@@ -2119,12 +2212,17 @@ tr.table-warning:hover > td {
 	line-height: 1;
 	text-align: left;
 	white-space: nowrap;
-	&:hover {
+	&:hover:not(:disabled) {
 		background-color: var(--bs-tertiary-bg);
 	}
 	&:focus-visible {
 		outline: 2px solid var(--bs-primary);
 		outline-offset: -2px;
+	}
+	// (Disabled while playing your own game live: still a scoreboard, just
+	// not a way out of it.)
+	&:disabled {
+		cursor: default;
 	}
 }
 .live-scores-inline .live-score:first-child {

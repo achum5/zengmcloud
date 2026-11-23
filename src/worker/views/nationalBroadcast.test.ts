@@ -10,6 +10,7 @@ import {
 } from "./nationalBroadcast.ts";
 import { PHASE } from "../../common/constants.ts";
 import type { NationalBroadcast } from "../../common/types.ts";
+import { GENERIC_NATIONAL } from "../../common/genericNational.ts";
 
 const network = (name: string, nights: string[]): NationalBroadcast => ({
 	network: name,
@@ -90,7 +91,7 @@ describe("national broadcasts", () => {
 		assert.isUndefined(await nationalBroadcastOf(night[1]));
 	});
 
-	test("a night with no network, a playoff game, none set", async () => {
+	test("a night with no network, a playoff game, none set (ours)", async () => {
 		const night = [game(1, 3, 5, 4)];
 		await setup(night);
 		// Day 3 of a season that opened on day 3: a Tuesday.
@@ -103,8 +104,9 @@ describe("national broadcasts", () => {
 			["NBC", "ESPN"],
 			(await nationalBroadcastOf(playoff))?.network,
 		);
+		// None set: ours.
 		g.setWithoutSavingToDB("nationalBroadcasts", []);
-		assert.isUndefined(await nationalBroadcastOf(night[0]));
+		assert.strictEqual(await nationalBroadcastOf(night[0]), GENERIC_NATIONAL);
 	});
 
 	test("previews: a night still to come has the game it'll have once played", async () => {

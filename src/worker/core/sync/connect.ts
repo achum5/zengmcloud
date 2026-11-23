@@ -49,11 +49,12 @@ import {
 	chooseFocusGame,
 	createFollowerHold,
 	createLiveResultWait,
+	createRoomLiveCheck,
 	createWakeClock,
 	decideFollowAction,
 	followGivenUp,
+	liveGameHold,
 	mateLiveCall,
-	roomGameStillLive,
 	shouldServeFollowedPayload,
 } from "./liveBroadcastFollow.ts";
 import { isLiveSimNotificationHoldActive } from "./liveSimNotificationHold.ts";
@@ -479,7 +480,15 @@ let liveBroadcastUnsub: (() => void) | undefined;
 
 // Set on the BROADCASTER while it's broadcasting (for heartbeats + teardown).
 let activeBroadcast:
-	| { gid: number; startedAt: number; chunkCount: number; byName: string }
+	| {
+			gid: number;
+			startedAt: number;
+			chunkCount: number;
+			byName: string;
+			playoffs: boolean;
+			// Its page's last heartbeat (see liveGameHoldingDay).
+			beatAt: number;
+	  }
 	| undefined;
 
 // Set on a FOLLOWER while it's watching someone else's broadcast. Tracks which
@@ -690,7 +699,7 @@ setLiveSpoilerProvider(() => {
 	const now = Date.now();
 	const wokeAt = wakeClock.wokeAt();
 	for (const game of roomLiveGames.values()) {
-		if (roomGameStillLive(game, now, wokeAt)) {
+		if (roomGameLive(game, now, wokeAt)) {
 			room.add(game.gid);
 		}
 	}
@@ -746,7 +755,7 @@ setPhasePaintHold(() => {
 	const now = Date.now();
 	const wokeAt = wakeClock.wokeAt();
 	for (const game of roomLiveGames.values()) {
-		if (game.playoffs && roomGameStillLive(game, now, wokeAt)) {
+		if (game.playoffs && roomGameLive(game, now, wokeAt)) {
 			return true;
 		}
 	}
@@ -861,6 +870,19 @@ const noteAnswered = (startedAt: number) => {
 // Games whose broadcast came and went while this device was connected.
 const endedLiveGids = new Set<number>();
 
+// A room game quiet past a watch's wait is over here for good (see
+// createRoomLiveCheck).
+const HEARING_ROOM_MS = 30_000;
+const roomLiveCheck = createRoomLiveCheck(
+	(now) =>
+		currentTransport !== undefined &&
+		now - currentTransport.getLastContactAt() < HEARING_ROOM_MS,
+	(game) => {
+		syncDebugLog("live:room-game-given-up", { gid: game.gid });
+	},
+);
+const roomGameLive = roomLiveCheck.isLive;
+
 // Show/clear the header pill. Its whole job is "a game is being simmed live,
 // click to watch" - so it is only up for a broadcast this device is NOT inside:
 // after saying no to one or walking out of it. While watching, it would point
@@ -962,14 +984,21 @@ export const startLiveBroadcast = async (gid: number, playByPlay: any[]) => {
 		}
 
 		// (A game that played out somewhere else, never cleared - out of the way.)
-		void clearDeadLiveGames(transport);
+		void clearDeadLiveGames(transport, gid);
 
 		const serialized = serializeChangeset({ boxScore, playByPlay });
 		const chunkCount = await transport.publishLiveGameData(gid, serialized);
 
 		const startedAt = Date.now();
 		const byName = engine.localName;
-		activeBroadcast = { gid, startedAt, chunkCount, byName };
+		activeBroadcast = {
+			gid,
+			startedAt,
+			chunkCount,
+			byName,
+			playoffs: boxScore.playoffs === true,
+			beatAt: startedAt,
+		};
 
 		// Scope chat to THIS broadcast and wipe the room's chat doc, so last
 		// game's conversation cannot appear over this one.
@@ -1024,10 +1053,18 @@ export const startLiveBroadcast = async (gid: number, playByPlay: any[]) => {
 // A live game doc whose lease ran out this long ago is a device that went
 // away mid game and never cleared it. Whoever starts the next one clears it.
 const DEAD_LIVE_GAME_MS = 30 * 60 * 1000;
-const clearDeadLiveGames = async (transport: SyncTransport) => {
+const clearDeadLiveGames = async (
+	transport: SyncTransport,
+	// The game being started here: its docs are being written right now.
+	startingGid: number,
+) => {
 	const now = Date.now();
 	for (const meta of lastLiveGameMetas) {
-		if (meta.legacy || now - meta.expiresAt < DEAD_LIVE_GAME_MS) {
+		if (
+			meta.legacy ||
+			meta.gid === startingGid ||
+			now - meta.expiresAt < DEAD_LIVE_GAME_MS
+		) {
 			continue;
 		}
 		try {
@@ -1056,6 +1093,7 @@ export const updateLiveBroadcast = async (update: {
 	if (!transport || !broadcast || !transport.publishLiveGame) {
 		return;
 	}
+	broadcast.beatAt = Date.now();
 
 	// Mirror to our own UI first (instant, can't fail), then push to the cloud.
 	void toUI("updateLocal", [
@@ -1533,7 +1571,8 @@ const handleLiveGames = async (
 	lastLiveGameMetas = metas;
 	const next = new Map<number, LiveBroadcastMeta>();
 	for (const meta of metas) {
-		if (meta.holderId !== clientId) {
+		// (Not one given up on here that came back: over is over.)
+		if (meta.holderId !== clientId && !roomLiveCheck.givenUp(meta.startedAt)) {
 			next.set(meta.gid, meta);
 		}
 	}
@@ -1577,7 +1616,7 @@ const pushLiveGames = () => {
 	const wokeAt = wakeClock.wokeAt();
 	const f = followedBroadcast;
 	const games: MpLiveGame[] = [...roomLiveGames.values()]
-		.filter((game) => roomGameStillLive(game, now, wokeAt))
+		.filter((game) => roomGameLive(game, now, wokeAt))
 		.sort((a, b) => b.startedAt - a.startedAt)
 		.map((game) => ({
 			gid: game.gid,
@@ -1588,6 +1627,7 @@ const pushLiveGames = () => {
 			score: game.score,
 			paused: game.paused,
 			gameOver: game.gameOver,
+			stalled: game.expiresAt < now,
 			watching:
 				f !== undefined &&
 				f.startedAt === game.startedAt &&
@@ -1608,20 +1648,23 @@ const pushLiveGames = () => {
 // (and in the regular season, a day simmed past a live game just shows its
 // final to whoever isn't watching it). Undefined: nothing in the way.
 export const liveGameHoldingDay = (): string | undefined => {
-	if (g.get("phase") !== PHASE.PLAYOFFS) {
+	// (Only ever a hold on what is shown: on any trouble here the league goes
+	// on rather than wait on nothing.)
+	try {
+		const now = Date.now();
+		const wokeAt = wakeClock.wokeAt();
+		return liveGameHold({
+			inPlayoffs: g.get("phase") === PHASE.PLAYOFFS,
+			own: activeBroadcast,
+			liveSimGid: local.liveSimGid,
+			now,
+			games: roomLiveGames.values(),
+			isLive: (game) => roomGameLive(game, now, wokeAt),
+		});
+	} catch (error) {
+		console.error("Live game hold check failed", error);
 		return undefined;
 	}
-	if (local.liveSimGid !== undefined) {
-		return "Your live game";
-	}
-	const now = Date.now();
-	const wokeAt = wakeClock.wokeAt();
-	for (const game of roomLiveGames.values()) {
-		if (roomGameStillLive(game, now, wokeAt)) {
-			return game.label ? `${game.label} (live)` : "A live game";
-		}
-	}
-	return undefined;
 };
 
 // The follower's live game page is gone - the Leave button, or any other way
@@ -1729,6 +1772,11 @@ export const watchLiveBroadcast = async (gid?: number): Promise<boolean> => {
 	const transport = currentTransport;
 	const meta = gid === undefined ? roomBroadcastMeta : roomLiveGames.get(gid);
 	if (!transport || !meta || !meta.active || meta.expiresAt < Date.now()) {
+		return false;
+	}
+	// Playing a game live here: going to another one would walk out of it, and
+	// that is its final for everyone.
+	if (activeBroadcast !== undefined) {
 		return false;
 	}
 

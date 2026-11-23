@@ -1725,6 +1725,9 @@ export type MpLiveGame = {
 	paused: boolean;
 	// Over on the screen of whoever is playing it.
 	gameOver: boolean;
+	// Their screen has gone quiet (asleep, closed, offline): nothing to join
+	// till it comes back, and over for everyone if it doesn't.
+	stalled?: boolean;
 	// This device is in it right now.
 	watching: boolean;
 };
@@ -3660,6 +3663,7 @@ export type ScoreBugPiece = {
 	y: number;
 	w: number;
 	h: number;
+	// (A gradient, on a piece with no background: the letters shaded.)
 	color?: string;
 	background?: string;
 	// Lettering: its size (in the bug's units), weight, font, alignment.

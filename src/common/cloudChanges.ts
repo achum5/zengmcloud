@@ -12,6 +12,66 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 491,
+		date: "2026-11-23",
+		text: 'Live games: the top of the page now shows the matchup instead of "Live Game Simulation": both teams with their records coming into the game (their seeds in the playoffs), the spread, the over/under from the sportsbook, and the season series or the playoff series. A game on national TV shows the network\'s logo. The Replay label is gone.',
+	},
+	{
+		n: 490,
+		date: "2026-11-23",
+		text: "Smart CPU GMs, trading with people: on top of the trade difficulty, a CPU team now also turns down any trade it would lose by its own read, wherever it sits in the standings. Before, only contenders and rebuilding teams said no, so a team in the middle could still give a good player away for less. What would make this work, the trading block and trade proposals now come back with deals the team would actually take. On an easy trade difficulty nothing changes.",
+	},
+	{
+		n: 489,
+		date: "2026-11-23",
+		text: "Press conferences: when a team trades for or signs a player with 50+ potential, it now holds a 3D press conference for him. He stands in front of the team's backdrop in his own clothes holding up his new jersey (name and number on the back), with the GM and coach (sometimes the owner) beside him and photographers flashing, then they talk at a table or a podium. Each one is different and plays the same every time. Watch it with the play button on the trade page, in the news feed, and in player and team transactions.",
+	},
+	{
+		n: 488,
+		date: "2026-11-23",
+		text: "League hub fixes: on the live site the home team's side of each score card now mirrors the away side like it should, and the phone tabs keep their order. In the playoffs, the series (Game 7, DAL wins 4-3) hangs on a small tag at the top of the card, and Final with the line sits below it. The week strip's days no longer underline when tapped.",
+	},
+	{
+		n: 487,
+		date: "2026-11-23",
+		text: "Nightly Recap: the newest night's recap now leads the League Headlines on the new dashboard and starts playing on its own once you scroll to it. Tap it to watch it full size (turn your phone sideways for the biggest picture). Every recap now has a full size button too.",
+	},
+	{
+		n: 486,
+		date: "2026-11-23",
+		text: "Nightly Recap: after the games now come the Player of the Night (his best plays, with his name and line along the bottom; Full and Medium), the night's top plays counted down from 10 (5 on Medium, 3 on Short), each under its own game's score bug, and the standings through that night, each conference split into the playoff spots, the play-in and the rest.",
+	},
+	{
+		n: 485,
+		date: "2026-11-23",
+		text: "Live games, more safety checks: while the last game of the Finals is being played live, nobody can move on to the draft until its final. A live game left behind by a page that closed without saying so can no longer hold up the playoffs. While you're playing your own game live, the other live scores in the header can't be tapped, since leaving your game would end it for everyone. And the standings on Daily Schedule no longer count a game still being played.",
+	},
+	{
+		n: 484,
+		date: "2026-11-23",
+		text: "NBA calendar leagues: the date in the header is now a calendar page with the weekday on it (WED 12 NOV), next to the season and phase (2025-26, Regular season). Tap the calendar for the Daily Schedule, or the words for your roster (the bracket in the playoffs). In the scores bar, home games are filled in your team's color instead of black, and a game still to come is centered in its box.",
+	},
+	{
+		n: 483,
+		date: "2026-11-23",
+		text: "Nightly Recap: smarter picks of each game's plays, for games played from this update on. A close game's recap is built around the plays that swung it most at the end, and a blowout's around the best plays from while it was still a game, never garbage time. Dunks now count over layups, the offense comes first (a block now and then, a steal only when it turned the game), and no one player fills the whole recap. One play a game is the game-winner if there was one, else the shot that swung a tight finish most, else the MVP's best play.",
+	},
+	{
+		n: 482,
+		date: "2026-11-23",
+		text: "Score bugs: a league with no national networks from a team looks file now gets our own National TV, with its logo on the national games' previews and its own score bug in the 3D game. Team score bugs in the 3D game now show all seven timeouts the way TV does. Loading a team looks file on one team's score bug or court page now tells you to import it in Manage Teams instead.",
+	},
+	{
+		n: 481,
+		date: "2026-11-23",
+		text: "Daily Schedule is now a league hub, like ESPN's or NBA.com's. A week strip runs across the top. The night's recap leads with the league's biggest stories, under the Nightly Recap video. Each final is a card in both teams' colors, with the records, the pregame line, the recap and each team's two best players. Beside it are top performers, standings, injuries and the next night's games with records and lines. On a phone, it's in Recap, Scores and Standings tabs.",
+	},
+	{
+		n: 480,
+		date: "2026-11-23",
+		text: "Live games: the League Hub's scores, your team's results and news, the Nightly Recap video and player game logs now also wait for a live game's final. If the screen playing a game goes quiet (phone locked, app closed), the header says Delayed, and after 3 minutes the game is final for everyone and stays final even if they pick it back up.",
+	},
+	{
 		n: 479,
 		date: "2026-11-23",
 		text: "NBA calendar leagues: the League Feed, profiles and quoted posts now show the date (Tue, Nov 11) instead of a day number, and so do the sim's pause stops: the ready-up says Play Jan 15 and auto play says it stopped after Jan 15.",

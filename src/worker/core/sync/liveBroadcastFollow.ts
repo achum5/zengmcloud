@@ -501,5 +501,85 @@ export const roomGameStillLive = (
 	// createWakeClock): its own sleep is not the broadcast's silence.
 	wokeAt = 0,
 ): boolean =>
-	!game.gameOver &&
-	now - Math.max(game.expiresAt, wokeAt) < QUIET_WATCH_MS;
+	!game.gameOver && now - Math.max(game.expiresAt, wokeAt) < QUIET_WATCH_MS;
+
+// A room game given up on stays over: once it has been quiet past
+// QUIET_WATCH_MS - its final, for everyone not watching - a screen that comes
+// back and heartbeats again does not put it back in progress (its final, and
+// in the playoffs whatever was simmed meanwhile, would go back into hiding).
+// Only while this device is hearing the room itself: its own dropped
+// connection is not the game's silence. Remembered by startedAt, bounded.
+export const createRoomLiveCheck = (
+	hearingRoom: (now: number) => boolean,
+	onGiveUp?: (game: { gid?: number; startedAt: number }) => void,
+) => {
+	const givenUp = new Set<number>();
+	return {
+		isLive: (
+			game: {
+				gid?: number;
+				startedAt: number;
+				gameOver: boolean;
+				expiresAt: number;
+			},
+			now: number,
+			wokeAt = 0,
+		): boolean => {
+			if (givenUp.has(game.startedAt)) {
+				return false;
+			}
+			if (roomGameStillLive(game, now, wokeAt)) {
+				return true;
+			}
+			if (!game.gameOver && hearingRoom(now)) {
+				givenUp.add(game.startedAt);
+				onGiveUp?.(game);
+				if (givenUp.size > 32) {
+					const oldest = givenUp.values().next().value;
+					if (oldest !== undefined) {
+						givenUp.delete(oldest);
+					}
+				}
+			}
+			return false;
+		},
+		givenUp: (startedAt: number) => givenUp.has(startedAt),
+	};
+};
+
+// What holds the league's next step (a playoff day, a phase change) while a
+// game is being played live: undefined for nothing. A playoff game still on
+// in the room, even once its tip-off moved the phase on (the title won at the
+// tip-off of the Finals' last game); and this device's own playoff game while
+// its page is still playing it - a flag left up by a page that never reported
+// back holds nothing up.
+export const liveGameHold = <M extends { label?: string; playoffs?: boolean }>({
+	inPlayoffs,
+	own,
+	liveSimGid,
+	now,
+	games,
+	isLive,
+}: {
+	inPlayoffs: boolean;
+	own: { gid: number; playoffs: boolean; beatAt: number } | undefined;
+	liveSimGid: number | undefined;
+	now: number;
+	games: Iterable<M>;
+	isLive: (game: M) => boolean;
+}): string | undefined => {
+	if (
+		own &&
+		liveSimGid === own.gid &&
+		(inPlayoffs || own.playoffs) &&
+		now - own.beatAt < QUIET_WATCH_MS
+	) {
+		return "Your live game";
+	}
+	for (const game of games) {
+		if ((inPlayoffs || game.playoffs === true) && isLive(game)) {
+			return game.label ? `${game.label} (live)` : "A live game";
+		}
+	}
+	return undefined;
+};

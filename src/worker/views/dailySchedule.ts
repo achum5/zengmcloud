@@ -5,7 +5,17 @@ import { idb } from "../db/index.ts";
 import { g } from "../util/index.ts";
 import { defineView, keepType } from "../util/defineView.ts";
 import { getTopPlayers, getUpcoming } from "./schedule.ts";
-import { getAutoRecapsForDay } from "../util/getDayGamesForRecap.ts";
+import {
+	computeStandingsAsOf,
+	getAutoRecapsForDay,
+	type RecapDayStandings,
+	type RecapGame,
+} from "../util/getDayGamesForRecap.ts";
+import {
+	buildHub,
+	toHubRecord,
+	type HubComingGame,
+} from "./dailyScheduleHub.ts";
 import { PHASE } from "../../common/constants.ts";
 import { makeResponsiveDropdownOption } from "../../common/makeResponsiveDropdownOption.tsx";
 import { env } from "../util/env.ts";
@@ -246,6 +256,8 @@ export default defineView({
 							gid: game.gid,
 							dayNote: game.dayNote,
 							playoffs: game.playoffs,
+							// For the hub's "Coming up": who plays the next night.
+							tids: [game.teams[0].tid, game.teams[1].tid] as const,
 							completedGame:
 								game.day === day && (!cidFilter || cidFilter(game.teams))
 									? game
@@ -255,12 +267,34 @@ export default defineView({
 				);
 
 				const daysAndPlayoffs = new Map<number, boolean>();
+				// How many games each night has, for the week strip, and who
+				// plays in them, for the hub's "Coming up".
+				const gamesByDay = new Map<
+					number,
+					{ gid: number; homeTid: number; awayTid: number }[]
+				>();
+				const addToDay = (
+					day: number,
+					game: { gid: number; homeTid: number; awayTid: number },
+				) => {
+					const list = gamesByDay.get(day);
+					if (list) {
+						list.push(game);
+					} else {
+						gamesByDay.set(day, [game]);
+					}
+				};
 				// On a calendar, the night of each day. A trade deadline day shares
 				// its night with that night's games, so it's named instead.
 				const dateByDay = new Map<number, string>();
 				const deadlineDays = new Set<number>();
 				for (const game of games) {
 					if (game.day !== undefined) {
+						addToDay(game.day, {
+							gid: game.gid,
+							homeTid: game.tids[0],
+							awayTid: game.tids[1],
+						});
 						daysAndPlayoffs.set(game.day, !!game.playoffs);
 						if (game.date !== undefined) {
 							dateByDay.set(game.day, game.date);
@@ -273,6 +307,13 @@ export default defineView({
 
 					for (const game of schedule) {
 						if (game.day !== undefined) {
+							if (!isTradeDeadline(game.homeTid, game.awayTid)) {
+								addToDay(game.day, {
+									gid: game.gid,
+									homeTid: game.homeTid,
+									awayTid: game.awayTid,
+								});
+							}
 							daysAndPlayoffs.set(game.day, isPlayoffs);
 							if (game.date !== undefined) {
 								dateByDay.set(game.day, game.date);
@@ -399,12 +440,17 @@ export default defineView({
 				// (Nothing about the day while one of its games is still going.)
 				const dayStillPlaying = liveRows.some((game) => game.day === day);
 				let autoDayRecap = "";
+				let recapGames: RecapGame[] = [];
+				let standings: RecapDayStandings | undefined;
 				if (completed.length > 0 && !dayStillPlaying) {
-					const { notes, dayRecap } = await getAutoRecapsForDay({
+					const recaps = await getAutoRecapsForDay({
 						season: inputs.season,
 						day,
 					});
+					const { notes, dayRecap } = recaps;
 					autoDayRecap = dayRecap;
+					recapGames = recaps.games;
+					standings = recaps.standings;
 					for (const [i, game] of completed.entries()) {
 						if (!game.note && notes[game.gid]) {
 							completed[i] = { ...game, note: notes[game.gid] };
@@ -428,10 +474,91 @@ export default defineView({
 					? undefined
 					: (anchorGame?.dayNote ?? (autoDayRecap || undefined));
 
+				// A night still to be played: the standings going into it (the
+				// regular season's only - the playoffs have their bracket).
+				const dayIsPlayoffs = daysAndPlayoffs.get(day) ?? false;
+				if (
+					__SPORT === "basketball" &&
+					!standings &&
+					!dayIsPlayoffs &&
+					upcoming.length > 0
+				) {
+					// (Not counting a game still being played live.)
+					standings = await computeStandingsAsOf(
+						inputs.season,
+						day - 1,
+						(await idb.merged.games.getAll({ season: inputs.season })).filter(
+							(game) => !gate?.hidden.has(game.gid),
+						),
+					);
+				}
+
+				// Every night of the season, for the week strip.
+				const nights = Array.from(daysAndPlayoffs.entries())
+					.map(([nightDay, playoffs]) => ({
+						day: nightDay,
+						date: dateByDay.get(nightDay),
+						numGames: gamesByDay.get(nightDay)?.length ?? 0,
+						playoffs,
+						deadline: deadlineDays.has(nightDay),
+					}))
+					.sort((a, b) => a.day - b.day);
+
+				// The next night with games, for "Coming up", with each team's
+				// record and the line when it's still to be played.
+				const nextNight = nights.find(
+					(night) => night.day > day && night.numGames > 0,
+				);
+				let nextGames: HubComingGame[] = nextNight
+					? (gamesByDay.get(nextNight.day) ?? [])
+					: [];
+				if (
+					__SPORT === "basketball" &&
+					nextNight &&
+					nextGames.length > 0 &&
+					inputs.season === currentSeason
+				) {
+					const lines = new Map(
+						(await getUpcoming({ day: nextNight.day })).map((game) => [
+							game.gid,
+							game,
+						]),
+					);
+					nextGames = nextGames.map((game) => {
+						const line = lines.get(game.gid);
+						if (!line) {
+							return game;
+						}
+						const [home, away] = line.teams;
+						return {
+							...game,
+							spread: line.spread,
+							records:
+								"won" in home && "won" in away
+									? [toHubRecord(home), toHubRecord(away)]
+									: undefined,
+						};
+					});
+				}
+
 				return {
 					cid,
 					cids,
 					completed,
+					hub: {
+						...buildHub({ games: recapGames, standings }),
+						next: nextNight
+							? {
+									day: nextNight.day,
+									date: nextNight.date,
+									games: nextGames,
+								}
+							: undefined,
+					},
+					nights,
+					// The night the league is on, for the strip's "today".
+					todayDay:
+						inputs.season === currentSeason ? schedule?.[0]?.day : undefined,
 					date: dateByDay.get(day),
 					day,
 					dayNote,

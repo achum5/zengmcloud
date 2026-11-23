@@ -27,6 +27,7 @@ import {
 	draftClock as getDraftClock,
 	headlineScene as getHeadlineScene,
 } from "../util/headlineScene.ts";
+import { getPressConference } from "../util/pressConference.ts";
 import { sanitizeRotation, type TeamRotation } from "../../common/rotation.ts";
 import { prospectUniform } from "../../common/prospectColors.ts";
 import { csvFormat, csvFormatRows } from "d3-dsv";
@@ -371,7 +372,10 @@ import {
 } from "../core/realisticFrontOffice/isOn.ts";
 import { tradeValueCalculator } from "../core/vanillaPlus/index.ts";
 import { smartTradingBlock } from "../core/smartCpu/screens.ts";
-import { smartGuardOffer } from "../core/smartCpu/humanTrades.ts";
+import {
+	ownReadValuer,
+	smartGuardOffer,
+} from "../core/smartCpu/humanTrades.ts";
 import { afterPick as realisticFrontOfficeAfterPick } from "../core/realisticFrontOffice/draft.ts";
 import { tradingBlockTeams } from "../core/realisticFrontOffice/proposals.ts";
 import {
@@ -3703,7 +3707,11 @@ const getOffers = async (
 	if (smartCpuOn()) {
 		return smartTradingBlock(g.get("userTid"), userPids, userDpids, lookingFor);
 	}
-	const valueChangeCalculator = await tradeValueCalculator();
+	// The smart CPU on vanilla's rules: only what the team would take by its
+	// own read too (smartCpu/humanTrades.ts).
+	const valueChangeCalculator = smartVanillaOn()
+		? await ownReadValuer(await tradeValueCalculator())
+		: await tradeValueCalculator();
 	// Vanilla+ and the smart CPU on vanilla's rules: CPU teams only - not a
 	// league-mate's team, priced as if CPU.
 	const skip =
@@ -9005,6 +9013,7 @@ const api = {
 		hasLiveGameReplay,
 		getDraftClock,
 		getHeadlineScene,
+		getPressConference,
 		saveReplayShots,
 		liveSimBlocksDaySim,
 		getGoatBreakdown,

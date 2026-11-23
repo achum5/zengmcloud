@@ -778,6 +778,66 @@ export const flushDeferredRefreshAfterLive = () => {
 	flushDeferredRefresh();
 };
 
+// The correctness half of a receiving device's refresh that comes after the
+// data has landed: heal phantom/stranded schedule rows (v1) and rebuild the
+// season's records and totals from the games. Run as soon as the data lands,
+// even when the repaint is held for a live game (see refreshAfterApply).
+const runApplyRepairs = async ({
+	touchedGames,
+	touchedStores,
+	sweepGames,
+	rebuildAggregates,
+}: {
+	touchedGames: boolean;
+	touchedStores: Set<Store>;
+	sweepGames: boolean;
+	rebuildAggregates: boolean;
+}) => {
+	// A game/schedule change just landed: enforce the played-game invariant (no
+	// schedule row may outlive its game) so any phantom left by an earlier
+	// partial apply heals as soon as the next sync touches games. v1 only - a v2
+	// apply is atomic, so it cannot manufacture phantoms or strand days.
+	if (touchedGames && sweepGames) {
+		try {
+			await sweepPhantomScheduleRows();
+		} catch (error) {
+			console.error("Phantom schedule sweep failed", error);
+		}
+
+		// And the invariant the phantom sweep can't see: an unplayed row on a day
+		// the league has already played past means a whole day's changeset never
+		// reached this device. Only flag it here - recovery re-reads the entire
+		// shared log, which is far too heavy to run from inside an apply. The
+		// marker is durable, so the next connect does it.
+		try {
+			const stranded = await findStrandedScheduleRows();
+			if (stranded.gids.length > 0) {
+				console.error(
+					`[sync] Missing day ${stranded.days.join(", ")} of the current season (league is on day ${stranded.maxPlayedDay}). Will re-read the shared log on the next connect.`,
+				);
+				getSyncEngine()?.markResyncNeeded();
+			}
+		} catch (error) {
+			console.error("Stranded schedule check failed", error);
+		}
+	}
+
+	// Records and team totals, replayed from the games. A season row lands here
+	// WHOLE, and can be a game behind the games it arrived with - the author's
+	// copy was stale when it simmed (see rebuildSeasonAggregates.ts) - while
+	// the games themselves are append-only and complete. So after anything that
+	// touched the games, or the rows summed from them, rebuild the current
+	// season's records and totals from the games and publish whatever differed.
+	if (
+		rebuildAggregates &&
+		(touchedGames ||
+			touchedStores.has("teamSeasons") ||
+			touchedStores.has("teamStats"))
+	) {
+		await repairAggregatesFromGames("apply");
+	}
+};
+
 // Everything a RECEIVING device must refresh after remote records landed, so
 // it behaves like the device that ran the action: season-scoped cache refill,
 // the in-memory `g` mirror, derived worker caches, phase text + Play menu +
@@ -884,6 +944,19 @@ export const refreshAfterApply = async ({
 	const phaseHeld =
 		(touchedPhase || !!deferredRefresh?.touchedPhase) && holdsPhasePaint();
 	if (isInLivePlayback() || coalescingRefresh || phaseHeld) {
+		// Held only for a league mate's playoff game still on (not this
+		// device's own playback, nor a catch-up walk that runs it at the end):
+		// a hold that can last a whole game, so the repairs - correctness, not
+		// paint - go now, and only the repaint waits. (They run again at the
+		// flush: idempotent, and the rebuild is throttled.)
+		if (phaseHeld && !isInLivePlayback() && !coalescingRefresh) {
+			await runApplyRepairs({
+				touchedGames,
+				touchedStores,
+				sweepGames,
+				rebuildAggregates,
+			});
+		}
 		syncDebugLog("apply:refresh-deferred", {
 			why: isInLivePlayback() ? "live" : phaseHeld ? "live-room" : "catchup",
 			touchedPhase,
@@ -994,49 +1067,12 @@ export const refreshAfterApply = async ({
 		}
 	}
 
-	// A game/schedule change just landed: enforce the played-game invariant (no
-	// schedule row may outlive its game) so any phantom left by an earlier
-	// partial apply heals as soon as the next sync touches games. v1 only - a v2
-	// apply is atomic, so it cannot manufacture phantoms or strand days.
-	if (touchedGames && sweepGames) {
-		try {
-			await sweepPhantomScheduleRows();
-		} catch (error) {
-			console.error("Phantom schedule sweep failed", error);
-		}
-
-		// And the invariant the phantom sweep can't see: an unplayed row on a day
-		// the league has already played past means a whole day's changeset never
-		// reached this device. Only flag it here - recovery re-reads the entire
-		// shared log, which is far too heavy to run from inside an apply. The
-		// marker is durable, so the next connect does it.
-		try {
-			const stranded = await findStrandedScheduleRows();
-			if (stranded.gids.length > 0) {
-				console.error(
-					`[sync] Missing day ${stranded.days.join(", ")} of the current season (league is on day ${stranded.maxPlayedDay}). Will re-read the shared log on the next connect.`,
-				);
-				getSyncEngine()?.markResyncNeeded();
-			}
-		} catch (error) {
-			console.error("Stranded schedule check failed", error);
-		}
-	}
-
-	// Records and team totals, replayed from the games. A season row lands here
-	// WHOLE, and can be a game behind the games it arrived with - the author's
-	// copy was stale when it simmed (see rebuildSeasonAggregates.ts) - while
-	// the games themselves are append-only and complete. So after anything that
-	// touched the games, or the rows summed from them, rebuild the current
-	// season's records and totals from the games and publish whatever differed.
-	if (
-		rebuildAggregates &&
-		(touchedGames ||
-			touchedStores.has("teamSeasons") ||
-			touchedStores.has("teamStats"))
-	) {
-		await repairAggregatesFromGames("apply");
-	}
+	await runApplyRepairs({
+		touchedGames,
+		touchedStores,
+		sweepGames,
+		rebuildAggregates,
+	});
 
 	// The LeagueTopBar score ticker is fed by a separate UI-state channel, not by
 	// the cache/realtimeUpdate path. When a synced sim adds games, rebuild it from

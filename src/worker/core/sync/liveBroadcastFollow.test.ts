@@ -2,9 +2,11 @@ import { assert, describe, test } from "vitest";
 import {
 	chooseFocusGame,
 	createFollowerHold,
+	createRoomLiveCheck,
 	createWakeClock,
 	decideFollowAction,
 	followGivenUp,
+	liveGameHold,
 	MAX_JOIN_ATTEMPTS,
 	mateLiveCall,
 	QUIET_WATCH_MS,
@@ -502,7 +504,10 @@ describe("several live games at once", () => {
 			),
 		);
 		assert.isFalse(
-			roomGameStillLive({ gameOver: false, expiresAt: now }, now + QUIET_WATCH_MS),
+			roomGameStillLive(
+				{ gameOver: false, expiresAt: now },
+				now + QUIET_WATCH_MS,
+			),
 		);
 		// (Time this device spent asleep doesn't count as the game's silence.)
 		assert.isTrue(
@@ -511,6 +516,108 @@ describe("several live games at once", () => {
 				now + QUIET_WATCH_MS,
 				now + 10,
 			),
+		);
+	});
+});
+
+describe("a room game that went quiet", () => {
+	const game = (expiresAt: number, gameOver = false) => ({
+		gid: 5,
+		startedAt: 1000,
+		gameOver,
+		expiresAt,
+	});
+
+	test("stays over when its screen comes back", () => {
+		const check = createRoomLiveCheck(() => true);
+		assert.isTrue(check.isLive(game(10_000), 10_000));
+		const quiet = 10_000 + QUIET_WATCH_MS + 1;
+		assert.isFalse(check.isLive(game(10_000), quiet));
+		assert.isTrue(check.givenUp(1000));
+		// (Heartbeating again, a fresh lease.)
+		assert.isFalse(check.isLive(game(quiet + 12_000), quiet + 1));
+	});
+
+	test("is not given up on while this device can't hear the room", () => {
+		let hearing = false;
+		const check = createRoomLiveCheck(() => hearing);
+		const quiet = 10_000 + QUIET_WATCH_MS + 1;
+		assert.isFalse(check.isLive(game(10_000), quiet));
+		assert.isFalse(check.givenUp(1000));
+		hearing = true;
+		assert.isTrue(check.isLive(game(quiet + 12_000), quiet + 1));
+	});
+
+	test("is not given up on for this device's own sleep", () => {
+		const check = createRoomLiveCheck(() => true);
+		const woke = 10_000 + QUIET_WATCH_MS + 1;
+		assert.isTrue(check.isLive(game(10_000), woke + 1, woke));
+		assert.isFalse(check.givenUp(1000));
+	});
+
+	test("a final is just over, not given up on", () => {
+		const check = createRoomLiveCheck(() => true);
+		assert.isFalse(check.isLive(game(10_000, true), 10_000));
+		assert.isFalse(check.givenUp(1000));
+	});
+});
+
+describe("what holds the league for a live game", () => {
+	const now = 1_000_000;
+	const hold = (
+		over: Partial<Parameters<typeof liveGameHold>[0]> & {
+			games?: { label?: string; playoffs?: boolean; live: boolean }[];
+		},
+	) =>
+		liveGameHold({
+			inPlayoffs: false,
+			own: undefined,
+			liveSimGid: undefined,
+			now,
+			isLive: (game: { live: boolean }) => game.live,
+			...over,
+			games: over.games ?? [],
+		});
+
+	test("a playoff game holds, even once its tip-off moved the phase on", () => {
+		assert.strictEqual(
+			hold({
+				inPlayoffs: true,
+				games: [{ label: "BOS @ NYK", playoffs: true, live: true }],
+			}),
+			"BOS @ NYK (live)",
+		);
+		// (The Finals' last game: the phase is the draft lottery already.)
+		assert.strictEqual(
+			hold({ games: [{ playoffs: true, live: true }] }),
+			"A live game",
+		);
+	});
+
+	test("a regular season game outside the playoffs holds nothing", () => {
+		assert.isUndefined(hold({ games: [{ playoffs: false, live: true }] }));
+	});
+
+	test("a game that is over or given up on holds nothing", () => {
+		assert.isUndefined(
+			hold({ inPlayoffs: true, games: [{ playoffs: true, live: false }] }),
+		);
+	});
+
+	test("this device's own playoff game holds only while its page beats", () => {
+		const own = { gid: 7, playoffs: true, beatAt: now - 5000 };
+		assert.strictEqual(hold({ own, liveSimGid: 7 }), "Your live game");
+		// A flag left up by a page that never reported back.
+		assert.isUndefined(
+			hold({
+				own: { ...own, beatAt: now - QUIET_WATCH_MS - 1 },
+				liveSimGid: 7,
+			}),
+		);
+		assert.isUndefined(hold({ own, liveSimGid: undefined }));
+		assert.isUndefined(hold({ own, liveSimGid: 8 }));
+		assert.isUndefined(
+			hold({ own: { ...own, playoffs: false }, liveSimGid: 7 }),
 		);
 	});
 });

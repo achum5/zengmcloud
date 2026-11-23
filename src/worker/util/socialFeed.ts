@@ -992,6 +992,14 @@ export const suggestedAccounts = (
 	return out.slice(0, 3);
 };
 
+// The user's own account on the timeline: their franchise's official one,
+// which is who the feed's nav shows as "you" and links as the profile.
+export const userTeamAccount = (
+	snapshot: FeedSnapshot,
+	userTid: number,
+): ResolvedSocialAccount | undefined =>
+	snapshot.accounts.find((a) => a.kind === "team" && a.tid === userTid);
+
 export const feedDaysForSeason = async (season: number): Promise<number[]> =>
 	[...(await getFeedSnapshot(season)).days].reverse();
 

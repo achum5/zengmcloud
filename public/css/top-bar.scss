@@ -196,21 +196,22 @@ a.tbd:focus-visible {
 	}
 }
 
-// Home days filled black, as on the team calendar.
+// Home days filled in the team's color (black until the colors load).
 .tbd-home .tbd-body {
-	color: #fff;
-	background: $lc-home-bg;
+	color: var(--tbd-home-fg, #fff);
+	background: var(--tbd-home-bg, #{$lc-home-bg});
 
 	.tbd-at,
 	.tbd-ot,
 	.tbd-note {
-		color: rgba(255, 255, 255, 0.65);
+		color: inherit;
+		opacity: 0.7;
 	}
 }
 
 a.tbd-home:hover .tbd-body,
 a.tbd-home:focus-visible .tbd-body {
-	background: #262626;
+	filter: brightness(1.12);
 }
 
 .tbd-today {

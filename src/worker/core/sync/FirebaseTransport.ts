@@ -65,6 +65,7 @@ import type {
 	SyncSubscriber,
 	SyncTransport,
 } from "./types.ts";
+import { validLiveGameRef } from "./liveGameRef.ts";
 
 // A room has exactly one "sim authority" doc recording who may advance the league.
 const AUTHORITY_DOC_ID = "authority";
@@ -80,7 +81,8 @@ const LIVE_BROADCAST_DATA_PREFIX = "liveBroadcastData";
 // its own payload chunks - so nobody playing their game live waits on a slot.
 const LIVE_GAME_KIND = "liveGame";
 const liveGameDocId = (gid: number) => `liveGame_${gid}`;
-const liveGameDataDocId = (gid: number, i: number) => `liveGameData_${gid}_${i}`;
+const liveGameDataDocId = (gid: number, i: number) =>
+	`liveGameData_${gid}_${i}`;
 
 // Draft ready-up docs, also under control/ so the same holderId rule covers
 // them. draftReady holds everyone's ready entries (each device merges only its
@@ -132,7 +134,11 @@ const parseLiveScore = (value: unknown): LiveScore | undefined => {
 	) {
 		return undefined;
 	}
-	return { pts: [pts[0], pts[1]], q: v.q, clock: v.clock };
+	return {
+		pts: [pts[0], pts[1]],
+		q: v.q.slice(0, 8),
+		clock: v.clock.slice(0, 8),
+	};
 };
 
 const parseTids = (value: unknown): [number, number] | undefined =>
@@ -143,6 +149,8 @@ const parseTids = (value: unknown): [number, number] | undefined =>
 		: undefined;
 
 // One broadcast doc, read: undefined unless it is a live game going on.
+// (Never a doc holding only heartbeat fields - a heartbeat that landed on a
+// game's doc after it was cleared: no start, no payload, nobody's game.)
 const parseLiveBroadcastMeta = (
 	data: Record<string, any> | undefined,
 	legacy: boolean,
@@ -151,7 +159,9 @@ const parseLiveBroadcastMeta = (
 		!data ||
 		!data.active ||
 		typeof data.holderId !== "string" ||
-		typeof data.gid !== "number"
+		typeof data.gid !== "number" ||
+		!(typeof data.startedAt === "number" && data.startedAt > 0) ||
+		!validLiveGameRef(data.gid, data.chunkCount)
 	) {
 		return undefined;
 	}
@@ -165,8 +175,8 @@ const parseLiveBroadcastMeta = (
 		paused: !!data.paused,
 		speed: typeof data.speed === "number" ? data.speed : 7,
 		gameOver: !!data.gameOver,
-		startedAt: typeof data.startedAt === "number" ? data.startedAt : 0,
-		chunkCount: typeof data.chunkCount === "number" ? data.chunkCount : 0,
+		startedAt: data.startedAt,
+		chunkCount: data.chunkCount,
 		expiresAt: typeof data.expiresAt === "number" ? data.expiresAt : 0,
 		view: typeof data.view === "string" ? data.view : undefined,
 		sync: parseLiveSync3D(data.sync),
@@ -1183,7 +1193,13 @@ export class FirebaseTransport implements SyncTransport {
 		}
 		for (let i = 0; i < chunks.length; i++) {
 			await setDoc(
-				doc(this.db, "leagues", this.code, "control", liveGameDataDocId(gid, i)),
+				doc(
+					this.db,
+					"leagues",
+					this.code,
+					"control",
+					liveGameDataDocId(gid, i),
+				),
 				{
 					holderId: this.clientId,
 					gid,
@@ -1232,8 +1248,7 @@ export class FirebaseTransport implements SyncTransport {
 						const kept = changed.has(docSnap.id)
 							? undefined
 							: before.get(docSnap.id);
-						const meta =
-							kept ?? parseLiveBroadcastMeta(docSnap.data(), false);
+						const meta = kept ?? parseLiveBroadcastMeta(docSnap.data(), false);
 						if (meta) {
 							perGame.set(docSnap.id, meta);
 						}
@@ -1256,10 +1271,19 @@ export class FirebaseTransport implements SyncTransport {
 	}
 
 	async fetchLiveGameData(gid: number, chunkCount: number) {
+		if (!validLiveGameRef(gid, chunkCount)) {
+			return undefined;
+		}
 		let out = "";
 		for (let i = 0; i < chunkCount; i++) {
 			const snap = await getDoc(
-				doc(this.db, "leagues", this.code, "control", liveGameDataDocId(gid, i)),
+				doc(
+					this.db,
+					"leagues",
+					this.code,
+					"control",
+					liveGameDataDocId(gid, i),
+				),
 			);
 			if (!snap.exists()) {
 				return undefined;
@@ -1274,6 +1298,9 @@ export class FirebaseTransport implements SyncTransport {
 	// that never got to this is ignored once its lease is long gone, and
 	// cleared by the next device to start a live game - see connect.ts.)
 	async clearLiveGame(gid: number, chunkCount: number) {
+		if (!validLiveGameRef(gid, chunkCount)) {
+			throw new Error(`Not a live game to clear: ${gid} (${chunkCount})`);
+		}
 		await deleteDoc(
 			doc(this.db, "leagues", this.code, "control", liveGameDocId(gid)),
 		);

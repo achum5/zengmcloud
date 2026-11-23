@@ -351,7 +351,7 @@ const LEADER_STATS = [
 	["trb", "REB"],
 	["ast", "AST"],
 ] as const;
-const TeamLeaders = ({ t }: { t: any }) => {
+export const TeamLeaders = ({ t }: { t: any }) => {
 	const players = (t.players ?? []) as any[];
 	// (Rebounds kept as offensive and defensive.)
 	const stat = (p: any, key: string) =>

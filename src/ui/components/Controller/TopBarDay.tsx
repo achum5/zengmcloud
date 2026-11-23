@@ -200,9 +200,10 @@ export const TopBarDay = memo(
 				}${game.ifNecessary ? " (if necessary)" : ""}`}
 			>
 				{head}
+				{/* (A game still to come with nothing under it sits centered.) */}
 				<div className="tbd-body">
 					<div className="tbd-matchup">{matchup}</div>
-					<div className="tbd-result">{result}</div>
+					{result ? <div className="tbd-result">{result}</div> : null}
 				</div>
 			</a>
 		);
