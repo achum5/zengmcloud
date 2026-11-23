@@ -62,6 +62,7 @@ describe("newCalendarSchedule", () => {
 	beforeEach(() => {
 		resetG();
 		g.setWithoutSavingToDB("season", 2027);
+		g.setWithoutSavingToDB("nbaCalendar", true);
 	});
 
 	test("an NBA-shaped league plays a real season", () => {

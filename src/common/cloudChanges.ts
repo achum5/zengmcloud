@@ -12,7 +12,13 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 437,
+		date: "2026-11-23",
+		text: "New league setting, NBA Calendar (off unless you turn it on): every game gets a real date, from late October to the Finals in June, with back-to-backs, road trips and Christmas games. NBA-shaped leagues play a real NBA schedule, other leagues get one built like it. Each sim day becomes one night (about 165 in a season), and injuries count games, not days. Turn it on in Settings, under Schedule; it starts with the next regular season.",
+	},
+	{
 		n: 436,
+		quiet: true,
 		date: "2026-11-23",
 		text: "Seasons now run on a real calendar: every game has a date, from late October to the Finals in June, with back-to-backs, road trips and Christmas games. NBA-shaped leagues play a real NBA schedule, other leagues get one built like it. Each sim day is now one night (about 165 in a season), and injuries count games, not days. Starts with the next regular season; NBA Calendar in Settings turns it off.",
 	},
