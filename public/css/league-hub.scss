@@ -543,15 +543,42 @@
 		clamp(2.4rem, 8cqw, 3.8rem) minmax(0, 1fr) auto minmax(0, 1fr)
 		clamp(2.4rem, 8cqw, 3.8rem);
 	min-height: 6.6rem;
+	position: relative;
 	overflow: hidden;
-	color: var(--bs-body-color);
 	text-decoration: none;
-	background: var(--bs-tertiary-bg);
-	border: 1px solid var(--bs-border-color);
+	// Each half its team's color, meeting on a slant in the middle.
+	background: linear-gradient(110deg, var(--gc-a-bg) 50%, var(--gc-h-bg) 50%);
 	border-radius: 0.6rem;
+	box-shadow: 0 1px 3px rgb(0 0 0 / 0.18);
+	// A soft light from the top, and a fine line where the colors meet.
+	&::before,
+	&::after {
+		content: "";
+		position: absolute;
+		inset: 0;
+		pointer-events: none;
+	}
+	&::before {
+		background: linear-gradient(
+			180deg,
+			rgb(255 255 255 / 0.1),
+			rgb(0 0 0 / 0.16)
+		);
+	}
+	&::after {
+		background: linear-gradient(
+			110deg,
+			transparent calc(50% - 1px),
+			rgb(255 255 255 / 0.45) calc(50% - 1px) calc(50% + 1px),
+			transparent calc(50% + 1px)
+		);
+	}
+	> * {
+		position: relative;
+		z-index: 1;
+	}
 	&:hover {
-		color: var(--bs-body-color);
-		border-color: var(--bs-secondary-color);
+		filter: brightness(1.06);
 	}
 }
 .lh-gc-side {
@@ -559,7 +586,7 @@
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	background: var(--gc-bg);
+	padding: 0 0.3rem;
 	// Stripes in its second color across the top and the foot.
 	&::before,
 	&::after {
@@ -569,7 +596,7 @@
 		right: 0;
 		height: 15%;
 		background: repeating-linear-gradient(
-			115deg,
+			110deg,
 			var(--gc-accent) 0 0.45rem,
 			transparent 0.45rem 0.9rem
 		);
@@ -589,21 +616,14 @@
 		filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.35));
 	}
 }
-// (The logo kept clear of the slanted edge.)
-.lh-gc-side-away {
-	clip-path: polygon(0 0, 100% 0, 82% 100%, 0 100%);
-	padding: 0 22% 0 6%;
-}
-.lh-gc-side-home {
-	clip-path: polygon(18% 0, 100% 0, 100% 100%, 0 100%);
-	padding: 0 6% 0 22%;
-}
 .lh-gc-team {
 	min-width: 0;
+	color: var(--gc-a-fg);
 	padding: 0.55rem 0.4rem 0.5rem 0.7rem;
 	align-self: center;
 }
 .lh-gc-team-home {
+	color: var(--gc-h-fg);
 	text-align: right;
 	padding: 0.55rem 0.7rem 0.5rem 0.4rem;
 }
@@ -612,7 +632,7 @@
 	font-weight: 700;
 	letter-spacing: 0.04em;
 	text-transform: uppercase;
-	color: var(--bs-secondary-color);
+	opacity: 0.8;
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -630,14 +650,13 @@
 	flex: none;
 	font-size: 0.78rem;
 	font-weight: 700;
-	color: var(--bs-secondary-color);
+	opacity: 0.8;
 	font-variant-numeric: tabular-nums;
 }
 .lh-gc-name {
 	font-size: clamp(1rem, 5.2cqw, 1.55rem);
 	font-weight: 800;
 	line-height: 1.05;
-	color: var(--bs-emphasis-color);
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -654,30 +673,34 @@
 	font-weight: 800;
 	line-height: 1.05;
 	font-variant-numeric: tabular-nums;
-	color: var(--bs-emphasis-color);
 }
 .lh-gc-team.lost {
 	.lh-gc-name,
 	.lh-gc-score {
-		color: var(--bs-secondary-color);
+		opacity: 0.62;
 	}
 }
+// How it ended, on a dark tab over the seam.
 .lh-gc-mid {
 	align-self: center;
 	min-width: 4.2rem;
-	padding: 0 0.2rem;
+	padding: 0.3rem 0.55rem;
 	text-align: center;
+	color: #fff;
+	background: rgb(16 18 22 / 0.72);
+	border-radius: 0.45rem;
+	box-shadow: 0 1px 4px rgb(0 0 0 / 0.25);
 }
 .lh-gc-final {
 	font-size: 0.85rem;
-	font-weight: 700;
-	color: var(--bs-emphasis-color);
+	font-weight: 800;
+	letter-spacing: 0.02em;
 }
 .lh-gc-series {
 	margin-top: 0.15rem;
 	font-size: 0.7rem;
 	line-height: 1.25;
-	color: var(--bs-secondary-color);
+	color: rgb(255 255 255 / 0.82);
 	white-space: nowrap;
 }
 .lh-gc-leaders {
@@ -839,8 +862,8 @@
 		font-size: 0.66rem;
 	}
 	.lh-gc-mid {
-		min-width: 3.3rem;
-		padding: 0 0.1rem;
+		min-width: 3.1rem;
+		padding: 0.2rem 0.35rem;
 	}
 	.lh-gc-final {
 		font-size: 0.72rem;

@@ -187,11 +187,11 @@ const Side = ({
 	colors: string[] | undefined;
 	logo: string | undefined;
 }) => {
-	const { bg, accent } = bannerColors(colors);
+	const { accent } = bannerColors(colors);
 	return (
 		<div
 			className={clsx("lh-gc-side", `lh-gc-side-${side}`)}
-			style={{ "--gc-bg": bg, "--gc-accent": accent } as CSSProperties}
+			style={{ "--gc-accent": accent } as CSSProperties}
 			data-tid={t.tid}
 		>
 			<Logo url={logo} size={44} />
@@ -251,11 +251,22 @@ export const GameCard = ({ game }: { game: GameCardGame }) => {
 		game.gid,
 	]);
 
+	// Each half in its team's colors, the two meeting on a slant.
+	const a = bannerColors(colors?.[away.tid]);
+	const h = bannerColors(colors?.[home.tid]);
+	const halves = {
+		"--gc-a-bg": a.bg,
+		"--gc-a-fg": a.fg,
+		"--gc-h-bg": h.bg,
+		"--gc-h-fg": h.fg,
+	} as CSSProperties;
+
 	return (
 		<div className="lh-gc">
 			<div className="lh-gc-row">
 				<a
 					className="lh-gc-card"
+					style={halves}
 					href={boxScore}
 					title="Box score"
 					aria-label={`${awayBrand.region} ${awayBrand.name} ${away.pts}, ${homeBrand.region} ${homeBrand.name} ${home.pts}, box score`}
