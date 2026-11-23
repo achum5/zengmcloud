@@ -3,6 +3,7 @@ import {
 	dayText,
 	FOOTBALL_SCORE_BUG_PRESETS,
 	mapScoreBugURLs,
+	NOT_TEAM_LOOKS,
 	parseScoreBug,
 	SCORE_BUG_PRESETS,
 	scoreBugForGame,
@@ -17,6 +18,13 @@ const ok: ScoreBugStyle = {
 };
 
 describe("parseScoreBug", () => {
+	test("a team looks file: says where it goes", () => {
+		assert.strictEqual(
+			parseScoreBug({ teamLooks: 1, teams: [] }),
+			NOT_TEAM_LOOKS,
+		);
+	});
+
 	test("takes every preset as it is", () => {
 		for (const { name, style } of SCORE_BUG_PRESETS) {
 			assert.deepStrictEqual(parseScoreBug(style), style, name);

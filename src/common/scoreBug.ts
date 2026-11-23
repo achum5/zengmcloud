@@ -77,11 +77,18 @@ const MAX_TEAM_COLORS = 100;
 const isNumber = (v: unknown): v is number =>
 	typeof v === "number" && Number.isFinite(v);
 
+// (Said when a team looks file is loaded where one team's bug or court is.)
+export const NOT_TEAM_LOOKS =
+	"That's a team looks file. Import it in Manage Teams (Import team looks).";
+
 export const parseScoreBug = (raw: unknown): ScoreBugStyle | string => {
 	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
 		return "Expected a JSON object.";
 	}
 	const r = raw as Record<string, unknown>;
+	if ("teamLooks" in r) {
+		return NOT_TEAM_LOOKS;
+	}
 	for (const key of Object.keys(r)) {
 		if (
 			![

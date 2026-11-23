@@ -2,6 +2,7 @@ import type { CourtStyle } from "../../common/types.ts";
 import { COURT_VERSIONS, parseVersions } from "../../common/courtVersions.ts";
 import { PIC } from "../components/CourtImageField.tsx";
 import { toWorker } from "../util/toWorker.ts";
+import { NOT_TEAM_LOOKS } from "../../common/scoreBug.ts";
 
 // A COURT AS A FILE: the court editor's JSON, checked field by field, and
 // the pictures in it kept in the league as uploads are.
@@ -66,6 +67,9 @@ export const parseCourt = (text: string): CourtStyle | string => {
 	}
 	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
 		return "Expected a JSON object.";
+	}
+	if ("teamLooks" in raw) {
+		return NOT_TEAM_LOOKS;
 	}
 	for (const [key, value] of Object.entries(raw)) {
 		if (STYLE_STRINGS.has(key)) {
