@@ -9,6 +9,7 @@ import type { RouteParams } from "../../ui/router/types.ts";
 import { validateTeam } from "../util/processInputs.ts";
 import { validateSeason } from "../util/processInputs.ts";
 import { team } from "../core/index.ts";
+import { eventGivesAwayLiveGame, getLiveGate } from "../util/liveGameGate.ts";
 
 const processInputs = (params: RouteParams<"news">) => {
 	const season = validateSeason(params.season);
@@ -181,12 +182,19 @@ export default defineView({
 			updateEvents.has("playerMovement") ||
 			updateEvents.has("gameSim") ||
 			updateEvents.has("newPhase") ||
+			updateEvents.has("liveGames") ||
 			prevInputs?.season !== season ||
 			prevInputs?.level !== level ||
 			prevInputs?.team !== inputs.team ||
 			prevInputs?.order !== order
 		) {
-			const eventsAll = await idb.merged.events.getAll({ season });
+			// (Nothing that gives away a game still being played live - see
+			// liveGameGate.ts.)
+			const gate =
+				season === g.get("season") ? await getLiveGate() : undefined;
+			const eventsAll = (await idb.merged.events.getAll({ season })).filter(
+				(event) => !gate || !eventGivesAwayLiveGame(event, gate),
+			);
 
 			if (order === "newest") {
 				eventsAll.reverse();

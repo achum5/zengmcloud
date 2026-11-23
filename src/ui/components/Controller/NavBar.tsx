@@ -1,3 +1,4 @@
+import clsx from "clsx";
 import { useEffect, useState } from "react";
 import { Nav, Navbar } from "react-bootstrap";
 import {
@@ -18,7 +19,7 @@ import SyncUploadIndicator from "./SyncUploadIndicator.tsx";
 import SyncStatusDot from "./SyncStatusDot.tsx";
 import SyncPausedIndicator from "./SyncPausedIndicator.tsx";
 import SyncCatchUpIndicator from "./SyncCatchUpIndicator.tsx";
-import LiveWatchPill from "./LiveWatchPill.tsx";
+import { LiveScoresStrip } from "../LiveGames.tsx";
 import { menuItems } from "../../util/menuItems.tsx";
 import type { Phase } from "../../../common/types.ts";
 import type { LeagueUrlParts } from "../../router/types.ts";
@@ -157,20 +158,33 @@ const PhaseStatusBlock = () => {
 };
 
 export const NavBar = ({ updating }: { updating: boolean }) => {
-	const { lid, godMode, gold, sidebarOpen, spectator, playMenuOptions, popup } =
-		useLocal([
-			"lid",
-			"godMode",
-			"gold",
-			"sidebarOpen",
-			"spectator",
-			"playMenuOptions",
-			"popup",
-		]);
+	const {
+		lid,
+		godMode,
+		gold,
+		mpLiveGames,
+		sidebarOpen,
+		spectator,
+		playMenuOptions,
+		popup,
+	} = useLocal([
+		"lid",
+		"godMode",
+		"gold",
+		"mpLiveGames",
+		"sidebarOpen",
+		"spectator",
+		"playMenuOptions",
+		"popup",
+	]);
 	const viewInfo = useViewData();
 
 	// Checking lid too helps with some flicker
 	const inLeague = viewInfo?.inLeague && lid !== undefined;
+
+	// (Games being played live in the room: a row of their scores under the
+	// bar, still part of the sticky header.)
+	const liveScores = inLeague && mpLiveGames.length > 0;
 
 	if (popup) {
 		return <div />;
@@ -181,9 +195,12 @@ export const NavBar = ({ updating }: { updating: boolean }) => {
 			bg="light"
 			expand="sm"
 			sticky="top"
-			className="navbar-border flex-nowrap"
+			className={clsx(
+				"navbar-border",
+				liveScores ? "flex-wrap pb-1 pb-xl-2" : "flex-nowrap",
+			)}
 		>
-			<div className="container-fluid">
+			<div className="container-fluid flex-nowrap">
 				<button
 					className="navbar-toggler me-2 d-block"
 					onClick={() => {
@@ -208,7 +225,9 @@ export const NavBar = ({ updating }: { updating: boolean }) => {
 				{inLeague ? <SyncStatusDot /> : null}
 				{inLeague ? <SyncCatchUpIndicator /> : null}
 				{inLeague ? <SyncPausedIndicator /> : null}
-				{inLeague ? <LiveWatchPill /> : null}
+				{liveScores ? (
+					<LiveScoresStrip className="live-scores-inline d-none d-xl-flex ms-2" />
+				) : null}
 				<div className="flex-grow-1" />
 				{inLeague ? <PhaseReadyControl /> : null}
 				<div className="d-none d-sm-flex">
@@ -234,6 +253,9 @@ export const NavBar = ({ updating }: { updating: boolean }) => {
 					</Nav>
 				) : null}
 			</div>
+			{liveScores ? (
+				<LiveScoresStrip className="w-100 d-flex d-xl-none px-2 pt-2" />
+			) : null}
 		</Navbar>
 	);
 };

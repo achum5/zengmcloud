@@ -1,4 +1,5 @@
 import clsx from "clsx";
+import { NationalTag } from "../../components/NationalTag.tsx";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PHASE } from "../../../common/constants.ts";
 import { daysBetween, formatGameDate } from "../../../common/calendarDates.ts";
@@ -514,6 +515,9 @@ const NextGame = ({
 											: null}
 									</>
 								)}
+								{next.national ? (
+									<NationalTag className="ms-2" tag={next.national} />
+								) : null}
 							</div>
 						</div>
 					</div>

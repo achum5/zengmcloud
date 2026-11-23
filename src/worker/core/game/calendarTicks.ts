@@ -1,6 +1,6 @@
 import { PHASE } from "../../../common/constants.ts";
 import { isAllStarGame, isAllStarTid } from "../../../common/specialGames.ts";
-import type { Game } from "../../../common/types.ts";
+import type { Game, PlayoffSeries } from "../../../common/types.ts";
 import addDaysToSchedule from "../season/addDaysToSchedule.ts";
 
 // WHAT A NIGHT COUNTS FOR. The end-of-day rules (injuries healing, trade
@@ -51,9 +51,11 @@ export const ticksThrough = (
 		: Math.floor((k * classicDays) / games);
 
 export type DayTick = {
-	// How many times players on each team tick (teams not in it: none).
+	// How many times players on each team tick (teams not in it: restTicks).
 	// Undefined: everyone ticks once, as on a classic day.
 	ticksByTid: Map<number, number> | undefined;
+	// How many times players on teams not in ticksByTid tick (default none).
+	restTicks?: number;
 	// How many times the league-wide rules run.
 	leagueRuns: number;
 };
@@ -155,6 +157,156 @@ export const dayTickFromGames = ({
 	}
 
 	return { ticksByTid, leagueRuns };
+};
+
+// THE PLAYOFFS ON THE CALENDAR. A classic playoff day plays the next game of
+// every series and then everyone ticks once, so a round lasts as many days as
+// its longest series (the play-in, two). On the calendar the series are
+// spread over nights, and each team still ticks once for each of those
+// classic days:
+// - a team with games left in the round ticks after each of its own games;
+// - every other team (its series over, out, or not in the playoffs) ticks
+//   each time the round reaches a game number it hadn't reached before - a
+//   classic day;
+// - a team whose series ends tonight catches up on the game numbers the round
+//   reached while it was still playing.
+// The league-wide rules run once per classic day too. With every series on the
+// same nights, as on classic days, it comes to one tick for everyone a night.
+// `playoffSeries` is after tonight's games.
+export const playoffNightTick = ({
+	games,
+	season,
+	day,
+	playoffSeries,
+	numGamesToWin,
+}: {
+	// This season's games, including tonight's.
+	games: Game[];
+	season: number;
+	day: number | undefined;
+	playoffSeries: PlayoffSeries | undefined;
+	// In the current round.
+	numGamesToWin: number;
+}): DayTick => {
+	if (day === undefined || playoffSeries === undefined) {
+		return CLASSIC;
+	}
+	const tonight = games.filter(
+		(game) => game.season === season && game.day === day,
+	);
+	if (
+		tonight.length === 0 ||
+		tonight.some(
+			(game) =>
+				game.date === undefined ||
+				isAllStarGame(game.teams[0].tid, game.teams[1].tid),
+		)
+	) {
+		return CLASSIC;
+	}
+
+	const pairKey = (a: number, b: number) => (a < b ? `${a}-${b}` : `${b}-${a}`);
+	const pairsTonight = new Set(
+		tonight.map((game) => pairKey(game.teams[0].tid, game.teams[1].tid)),
+	);
+	const tidsTonight = new Set(
+		tonight.flatMap((game) => [game.teams[0].tid, game.teams[1].tid]),
+	);
+
+	// Each team's latest game number in the round, the teams with games left,
+	// and the furthest game number reached before and after tonight.
+	const last = new Map<number, number>();
+	const stillPlaying = new Set<number>();
+	let reachedAfter = 0;
+	let reachedBefore = 0;
+	const played = (
+		tids: [number, number],
+		number: number,
+		playedTonight: boolean,
+	) => {
+		for (const tid of tids) {
+			last.set(tid, Math.max(last.get(tid) ?? 0, number));
+		}
+		reachedAfter = Math.max(reachedAfter, number);
+		reachedBefore = Math.max(reachedBefore, playedTonight ? 0 : number);
+	};
+
+	const rnd = playoffSeries.currentRound;
+	if (rnd === -1) {
+		// The play-in: the first games are number 1, the last ones number 2.
+		for (const playIn of playoffSeries.playIns ?? []) {
+			const final = playIn[2];
+			for (const [i, matchup] of playIn.entries()) {
+				const tids: [number, number] = [matchup.home.tid, matchup.away.tid];
+				const done = matchup.home.won + matchup.away.won > 0;
+				if (done) {
+					played(tids, i < 2 ? 1 : 2, pairsTonight.has(pairKey(...tids)));
+				}
+				for (const [tid, won] of [
+					[matchup.home.tid, matchup.home.won > 0],
+					[matchup.away.tid, matchup.away.won > 0],
+				] as const) {
+					let more;
+					if (!done) {
+						more = true;
+					} else if (i === 2) {
+						more = false;
+					} else {
+						// The 7-8 loser and the 9-10 winner play the last game.
+						more = (i === 0 ? !won : won) && !final;
+					}
+					if (more) {
+						stillPlaying.add(tid);
+					}
+				}
+			}
+		}
+	} else {
+		for (const series of playoffSeries.series[rnd] ?? []) {
+			if (!series.away) {
+				continue;
+			}
+			const tids: [number, number] = [series.home.tid, series.away.tid];
+			const numPlayed = series.home.won + series.away.won;
+			if (numPlayed > 0) {
+				const playedTonight = pairsTonight.has(pairKey(...tids));
+				for (const tid of tids) {
+					last.set(tid, numPlayed);
+				}
+				reachedAfter = Math.max(reachedAfter, numPlayed);
+				reachedBefore = Math.max(
+					reachedBefore,
+					numPlayed - (playedTonight ? 1 : 0),
+				);
+			}
+			if (Math.max(series.home.won, series.away.won) < numGamesToWin) {
+				for (const tid of tids) {
+					stillPlaying.add(tid);
+				}
+			}
+		}
+	}
+
+	const classicDays = reachedAfter - reachedBefore;
+	const ticksByTid = new Map<number, number>();
+	for (const tid of new Set([
+		...last.keys(),
+		...stillPlaying,
+		...tidsTonight,
+	])) {
+		if (tidsTonight.has(tid)) {
+			ticksByTid.set(
+				tid,
+				stillPlaying.has(tid)
+					? 1
+					: 1 + Math.max(0, reachedAfter - (last.get(tid) ?? reachedAfter)),
+			);
+		} else {
+			ticksByTid.set(tid, stillPlaying.has(tid) ? 0 : classicDays);
+		}
+	}
+
+	return { ticksByTid, restTicks: classicDays, leagueRuns: classicDays };
 };
 
 // How many injury ticks come before a scheduled game, for healing a roster
