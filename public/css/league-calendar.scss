@@ -560,7 +560,7 @@ $lc-home-bg: if(lightness($white) < 50%, #000, #111);
 }
 
 .league-date-tile-weekday {
-	padding: 2px 0 1px;
+	padding: 2px 0 1px 0.04em;
 	font-size: 0.52rem;
 	font-weight: 700;
 	letter-spacing: 0.04em;
@@ -569,8 +569,11 @@ $lc-home-bg: if(lightness($white) < 50%, #000, #111);
 	background: var(--bs-danger);
 }
 
+// (Nudged right a hair: letter-spacing trails the last letter, and a
+// month's heavy first letter pulls it left of the number above.)
 .league-date-tile-month {
 	padding-bottom: 2px;
+	padding-left: calc(0.04em + 1px);
 	font-size: 0.48rem;
 	font-weight: 700;
 	letter-spacing: 0.04em;
