@@ -1,6 +1,10 @@
 import { addDays } from "../../common/calendarDates.ts";
+import { PHASE } from "../../common/constants.ts";
+import { betterSeedHome } from "../../common/sportsbookOdds.ts";
 import type { LocalStateUI } from "../../common/types.ts";
+import { ifNecessary } from "../core/season/playoffCalendar.ts";
 import { idb } from "../db/index.ts";
+import helpers from "./helpers.ts";
 import { getUpcoming } from "../views/schedule.ts";
 import g from "./g.ts";
 import toUI from "./toUI.ts";
@@ -47,15 +51,31 @@ export const getUpcomingGamesForUI = async (): Promise<
 	LocalStateUI["games"]
 > => {
 	const next = await getOneUpcomingGame();
+	const userTid = g.get("userTid");
+	const schedule = await idb.cache.schedule.getAll();
 	if (!next) {
-		return [];
+		// The playoffs on the calendar, on a night the team's series is off.
+		let today: string | undefined;
+		for (const game of schedule) {
+			if (
+				game.date !== undefined &&
+				(today === undefined || game.date < today)
+			) {
+				today = game.date;
+			}
+		}
+		return today === undefined
+			? []
+			: plannedPlayoffGames(
+					userTid,
+					today,
+					addDays(today, TOP_BAR_NIGHTS_AHEAD),
+				);
 	}
 	if (next.date === undefined) {
 		return [next];
 	}
 
-	const userTid = g.get("userTid");
-	const schedule = await idb.cache.schedule.getAll();
 	let today = next.date;
 	for (const game of schedule) {
 		if (game.date !== undefined && game.date < today) {
@@ -80,7 +100,68 @@ export const getUpcomingGamesForUI = async (): Promise<
 				{ tid: number },
 			],
 		}));
-	return [next, ...later];
+	return [next, ...later, ...(await plannedPlayoffGames(userTid, today, last))];
+};
+
+// In the playoffs on the calendar, the team's series games planned for the
+// coming nights (see playoffCalendar.ts), past the one on the schedule.
+const plannedPlayoffGames = async (
+	tid: number,
+	today: string,
+	last: string,
+): Promise<LocalStateUI["games"]> => {
+	if (g.get("phase") !== PHASE.PLAYOFFS) {
+		return [];
+	}
+	const playoffSeries = await idb.cache.playoffSeries.get(g.get("season"));
+	const rnd = playoffSeries?.currentRound ?? -1;
+	const numGames = g.get("numGamesPlayoffSeries", "current")[rnd];
+	if (!playoffSeries || rnd < 0 || numGames === undefined) {
+		return [];
+	}
+	const numGamesToWin = helpers.numGamesToWinRound(rnd);
+	const scheduled = new Set(
+		(await idb.cache.schedule.getAll()).map((game) => game.date),
+	);
+	const out: LocalStateUI["games"] = [];
+	for (const { home, away, dates } of playoffSeries.series[rnd] ?? []) {
+		if (
+			!away ||
+			!dates ||
+			(home.tid !== tid && away.tid !== tid) ||
+			Math.max(home.won, away.won) >= numGamesToWin
+		) {
+			continue;
+		}
+		for (let k = home.won + away.won; k < dates.length; k++) {
+			const date = dates[k]!;
+			if (date < today || date > last || scheduled.has(date)) {
+				continue;
+			}
+			const [t0, t1] = betterSeedHome(numGames, k)
+				? [home, away]
+				: [away, home];
+			out.push({
+				date,
+				gid: -1 - k,
+				planned: true,
+				...(ifNecessary(k, home.won, away.won, numGamesToWin)
+					? { ifNecessary: true }
+					: {}),
+				teams: [
+					{
+						tid: t0.tid,
+						playoffs: { seed: t0.seed, won: t0.won, lost: t1.won },
+					},
+					{
+						tid: t1.tid,
+						playoffs: { seed: t1.seed, won: t1.won, lost: t0.won },
+					},
+				],
+			});
+		}
+	}
+	return out;
 };
 
 export const recomputeLocalUITeamOvrs = async () => {

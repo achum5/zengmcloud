@@ -199,6 +199,17 @@ $lc-home-bg: if(lightness($white) < 50%, #000, #111);
 	color: var(--bs-warning-text-emphasis);
 }
 
+// A playoff game that may not be needed.
+.lc-maybe .lc-game {
+	opacity: 0.6;
+}
+
+.lc-maybe-note {
+	font-size: 0.6rem;
+	font-style: italic;
+	line-height: 1;
+}
+
 .lc-game {
 	display: flex;
 	flex-direction: column;
@@ -543,6 +554,11 @@ $lc-home-bg: if(lightness($white) < 50%, #000, #111);
 	display: flex;
 	flex-shrink: 0;
 	align-items: flex-start;
+}
+
+// A playoff game that may not be needed.
+.ltb-maybe {
+	opacity: 0.55;
 }
 
 .ltb-stub {

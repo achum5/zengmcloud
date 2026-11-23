@@ -26,7 +26,7 @@ import {
 } from "../../util/getTeamSpreadBias.ts";
 import { pregameLineupSynergy } from "../GameSim.basketball/synergy.ts";
 import { dayAlreadyCounted } from "./dailyCountdownGate.ts";
-import { dayTickFromGames } from "./calendarTicks.ts";
+import { dayTickFromGames, playoffNightTick } from "./calendarTicks.ts";
 import { ensureClassicDays } from "./saveClassicDays.ts";
 import {
 	RECAP_REELS_ON,
@@ -426,18 +426,27 @@ const play = async (
 
 			// On a calendar, a night counts games at the classic pace - see
 			// calendarTicks.ts.
-			const tick = dayTickFromGames({
-				games: await idb.cache.games.getAll(),
-				schedule: await idb.cache.schedule.getAll(),
-				season: g.get("season"),
-				day: simmedDay,
-				phase: g.get("phase"),
-				numActiveTeams: g.get("numActiveTeams"),
-				classicDays:
-					g.get("phase") === PHASE.PLAYOFFS
-						? undefined
-						: await ensureClassicDays(),
-			});
+			const tick =
+				g.get("phase") === PHASE.PLAYOFFS
+					? playoffNightTick({
+							games: await idb.cache.games.getAll(),
+							season: g.get("season"),
+							day: simmedDay,
+							playoffSeries: await idb.cache.playoffSeries.get(g.get("season")),
+							numGamesToWin: helpers.numGamesToWinRound(
+								(await idb.cache.playoffSeries.get(g.get("season")))
+									?.currentRound ?? 0,
+							),
+						})
+					: dayTickFromGames({
+							games: await idb.cache.games.getAll(),
+							schedule: await idb.cache.schedule.getAll(),
+							season: g.get("season"),
+							day: simmedDay,
+							phase: g.get("phase"),
+							numActiveTeams: g.get("numActiveTeams"),
+							classicDays: await ensureClassicDays(),
+						});
 
 			// Injury countdown - This must be after games are saved, of there is a race condition involving new injury assignment in writeStats. Free agents are handled in decreaseDemands.
 			const players = await idb.cache.players.indexGetAll("playersByTid", [
@@ -452,7 +461,9 @@ const play = async (
 				// How many days this night is for the player's team: none if it had
 				// the night off.
 				const ticks =
-					tick.ticksByTid === undefined ? 1 : (tick.ticksByTid.get(p.tid) ?? 0);
+					tick.ticksByTid === undefined
+						? 1
+						: (tick.ticksByTid.get(p.tid) ?? tick.restTicks ?? 0);
 				if (ticks === 0) {
 					continue;
 				}

@@ -1766,6 +1766,10 @@ export type LocalStateUI = {
 		finals?: boolean;
 		forceWin?: number; // Number of iterations - defined means result was forced
 		gid: number;
+		// A playoff game on the NBA calendar's plan, not yet on the schedule
+		// (gid negative, made up), and whether it may not be needed.
+		planned?: boolean;
+		ifNecessary?: boolean;
 		numPeriods?: number;
 		overtimes?: number;
 		// The displayed point spread for an upcoming game, computed in the worker
@@ -2856,6 +2860,8 @@ type PlayInMatchup = {
 	home: PlayoffSeriesTeam;
 	away: PlayoffSeriesTeam;
 	gids?: number[];
+	// On the NBA calendar, the night of each game (see playoffCalendar.ts).
+	dates?: string[];
 };
 
 // Each entry is the 2 first round games (7/8 and 9/10) and the 1 game between the loser of the 7/8 game and the winner of the 9/10 game
@@ -2873,6 +2879,9 @@ export type PlayoffSeries = {
 		home: PlayoffSeriesTeam;
 		away?: PlayoffSeriesTeam;
 		gids?: number[];
+		// On the NBA calendar, the night of each game, Game 1 on, including
+		// the ones that may not be needed (see playoffCalendar.ts).
+		dates?: string[];
 	}[][];
 
 	// undefined means no play-in tournament

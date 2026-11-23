@@ -3,9 +3,11 @@ import { isAllStarGame, isTradeDeadline } from "../../common/specialGames.ts";
 import type { RouteParams } from "../../ui/router/types.ts";
 import { season as seasonCore } from "../core/index.ts";
 import { idb } from "../db/index.ts";
-import { g } from "../util/index.ts";
+import { g, helpers } from "../util/index.ts";
 import { defineView } from "../util/defineView.ts";
 import { validateSeason, validateTeam } from "../util/processInputs.ts";
+import { betterSeedHome } from "../../common/sportsbookOdds.ts";
+import { ifNecessary } from "../core/season/playoffCalendar.ts";
 
 // THE CALENDAR PAGE: a season's nights, month by month, for a team or the
 // whole league. The same month calendar sits on Daily Schedule, Schedule and
@@ -27,6 +29,12 @@ export type CalendarGame = {
 	homeTid: number;
 	awayTid: number;
 	playoffs: boolean;
+	// A play-in game.
+	playIn?: boolean;
+	// A playoff game on the plan, not yet on the schedule (no gid of its own,
+	// a negative one), and whether it may not be needed.
+	planned?: boolean;
+	ifNecessary?: boolean;
 	// The final, once it's played.
 	homePts?: number;
 	awayPts?: number;
@@ -62,6 +70,13 @@ export const getCalendarData = async (
 	const forTeam = (homeTid: number, awayTid: number) =>
 		tid === "all" || homeTid === tid || awayTid === tid;
 
+	const playoffSeries = await idb.merged.playoffSeries.get(season);
+	const playInGids = new Set(
+		(playoffSeries?.playIns ?? []).flatMap((playIn) =>
+			playIn.flatMap((matchup) => matchup.gids ?? []),
+		),
+	);
+
 	const played = await idb.merged.games.getAll({ season });
 	for (const game of played) {
 		if (game.date === undefined) {
@@ -88,6 +103,7 @@ export const getCalendarData = async (
 			homeTid: home.tid,
 			awayTid: away.tid,
 			playoffs: !!game.playoffs,
+			...(playInGids.has(game.gid) ? { playIn: true } : {}),
 			homePts: home.pts,
 			awayPts: away.pts,
 			overtimes: game.overtimes,
@@ -123,7 +139,83 @@ export const getCalendarData = async (
 					homeTid: game.homeTid,
 					awayTid: game.awayTid,
 					playoffs,
+					...(playoffs && playoffSeries?.currentRound === -1
+						? { playIn: true }
+						: {}),
 				});
+			}
+		}
+
+		// The rest of the round's games, on the nights they're planned for
+		// (see playoffCalendar.ts).
+		if (playoffs && playoffSeries) {
+			const scheduled = new Set(
+				games
+					.filter((game) => game.playoffs)
+					.map((game) => `${game.date}:${game.homeTid}:${game.awayTid}`),
+			);
+			let gid = -1;
+			const plan = (
+				homeTid: number,
+				awayTid: number,
+				date: string,
+				extra: Partial<CalendarGame>,
+			) => {
+				if (
+					!forTeam(homeTid, awayTid) ||
+					scheduled.has(`${date}:${homeTid}:${awayTid}`)
+				) {
+					return;
+				}
+				games.push({
+					gid: gid--,
+					date,
+					day: undefined,
+					homeTid,
+					awayTid,
+					playoffs: true,
+					planned: true,
+					...extra,
+				});
+			};
+
+			const rnd = playoffSeries.currentRound;
+			if (rnd === -1) {
+				for (const playIn of playoffSeries.playIns ?? []) {
+					for (const matchup of playIn) {
+						const date = matchup.dates?.[0];
+						if (
+							date !== undefined &&
+							matchup.home.won + matchup.away.won === 0
+						) {
+							plan(matchup.home.tid, matchup.away.tid, date, { playIn: true });
+						}
+					}
+				}
+			} else {
+				const numGames = g.get("numGamesPlayoffSeries", season)[rnd];
+				const numGamesToWin = helpers.numGamesToWinRound(rnd);
+				for (const { home, away, dates } of playoffSeries.series[rnd] ?? []) {
+					if (
+						!away ||
+						!dates ||
+						numGames === undefined ||
+						Math.max(home.won, away.won) >= numGamesToWin
+					) {
+						continue;
+					}
+					for (let k = home.won + away.won; k < dates.length; k++) {
+						const homeFirst = betterSeedHome(numGames, k);
+						plan(
+							homeFirst ? home.tid : away.tid,
+							homeFirst ? away.tid : home.tid,
+							dates[k]!,
+							ifNecessary(k, home.won, away.won, numGamesToWin)
+								? { ifNecessary: true }
+								: {},
+						);
+					}
+				}
 			}
 		}
 	}

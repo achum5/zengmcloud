@@ -198,7 +198,9 @@ const useLocalRaw = createWithEqualityFn<LocalStateWithActions>(
 
 			mergeGames(games: LocalStateUI["games"]) {
 				set((state) => {
-					const newGames = state.games.slice();
+					// Planned playoff games come fresh with every merge (see
+					// getUpcomingGamesForUI), so last time's go.
+					const newGames = state.games.filter((game) => !game.planned);
 
 					for (const game of games) {
 						const index = newGames.findIndex(

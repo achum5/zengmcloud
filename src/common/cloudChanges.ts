@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 466,
+		date: "2026-11-23",
+		text: 'NBA calendar leagues: the playoffs now run on the NBA\'s real schedule. The play-in is Tuesday, Wednesday and Friday, round 1 opens with four series on Saturday and four on Sunday, series play every two or three nights with no back-to-backs, the conference finals alternate nights, and the Finals start on a Thursday. Every game of a series shows on the calendar and in the scores bar once the matchup is set, with "if necessary" on the games that may not be played. One day sims one night, and injuries heal at the same pace as in a classic league.',
+	},
+	{
 		n: 463,
 		date: "2026-11-23",
 		text: "NBA calendar leagues: the team calendar has a new look, like a team's own schedule page. Home nights are filled in black, each game has the opponent's logo and name, and played games show a green W or red L with the score (tap a game for its box score). Today is outlined in red.",
