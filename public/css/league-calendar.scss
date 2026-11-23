@@ -143,11 +143,6 @@ $lc-home-bg: if(lightness($white) < 50%, #000, #111);
 			color: #fff;
 			opacity: 0.85;
 		}
-
-		.lc-pill {
-			color: #fff;
-			border-color: #fff;
-		}
 	}
 
 	td.lc-mine {
@@ -290,18 +285,6 @@ $lc-home-bg: if(lightness($white) < 50%, #000, #111);
 
 .lc-l {
 	background: #dc3545;
-}
-
-.lc-pill {
-	margin-top: 0.1rem;
-	padding: 0.1rem 0.55rem;
-	font-size: 0.6rem;
-	font-weight: 700;
-	letter-spacing: 0.03em;
-	text-transform: uppercase;
-	color: var(--bs-emphasis-color);
-	border: 1.5px solid var(--bs-emphasis-color);
-	border-radius: 999px;
 }
 
 .lc-count {

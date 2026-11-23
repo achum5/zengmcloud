@@ -209,9 +209,6 @@ const TeamNight = ({
 						)}
 					</span>
 				) : null}
-				{final && !compact ? (
-					<span className="lc-pill d-none d-md-inline-block">Box score</span>
-				) : null}
 			</a>
 		</>
 	);
