@@ -4,7 +4,6 @@ import {
 	calendarStats,
 	generateCalendar,
 } from "./generateCalendar.ts";
-import { weekdayOf } from "../../../common/calendarDates.ts";
 import { teamLocation } from "../../../common/teamLocation.ts";
 
 const NBA_REGIONS = [
@@ -104,7 +103,9 @@ const checkHard = (
 };
 
 describe("generateCalendar", () => {
-	test("an NBA-shaped season looks like the NBA's", () => {
+	// The ranges are the NBA's from 2021-22 to 2023-24 (the study, "How the
+	// NBA schedule works"), with a little room.
+	test("an NBA-shaped season measures like the NBA's", () => {
 		const random = seeded(7);
 		const teams = NBA_REGIONS.map((region, tid) => ({
 			tid,
@@ -118,11 +119,13 @@ describe("generateCalendar", () => {
 			allStarFraction: 0.7,
 			random,
 			timeBudgetMs: 60_000,
+			checkCosts: true,
 		})!;
 		assert.isDefined(out);
 
 		const perTeam = checkHard(teams, games, out.dates);
-		const { perNight } = calendarStats(teams, games, out.dates);
+		const stats = calendarStats(teams, games, out.dates);
+		const { perNight } = stats;
 
 		const nights = Array.from(perNight.keys()).sort();
 		assert.strictEqual(
@@ -138,8 +141,13 @@ describe("generateCalendar", () => {
 		assert.isAtLeast(nights.length, 155);
 		assert.isAtMost(nights.length, 172);
 
+		assert.isUndefined(perNight.get("2026-11-03"), "no games on Election Day");
 		assert.isUndefined(perNight.get("2026-11-26"), "no games on Thanksgiving");
 		assert.isUndefined(perNight.get("2026-12-24"), "no games on Christmas Eve");
+		assert.isUndefined(
+			perNight.get("2027-04-05"),
+			"no games on NCAA final night",
+		);
 		assert.strictEqual(
 			perNight.get("2026-12-25"),
 			5,
@@ -157,28 +165,66 @@ describe("generateCalendar", () => {
 		);
 
 		assert.strictEqual(
-			weekdayOf(out.allStarDate!),
-			0,
-			"All-Star Game on a Sunday",
+			out.allStarDate,
+			"2027-02-21",
+			"All-Star Game on the third Sunday in February",
 		);
-		assert.strictEqual(out.allStarDate!.slice(5, 7), "02");
-		for (let i = -2; i <= 2; i++) {
-			const d = new Date(`${out.allStarDate}T00:00:00Z`);
-			d.setUTCDate(d.getUTCDate() + i);
-			assert.isUndefined(perNight.get(d.toISOString().slice(0, 10)));
+		for (const date of [
+			"2027-02-19",
+			"2027-02-20",
+			"2027-02-21",
+			"2027-02-22",
+			"2027-02-23",
+			"2027-02-24",
+		]) {
+			assert.isUndefined(perNight.get(date), `All-Star break, ${date}`);
 		}
+		assert.isDefined(perNight.get("2027-02-25"), "back the Thursday after");
 
+		const average = (key: keyof (typeof perTeam)[number]) =>
+			perTeam.reduce((sum, team) => sum + team[key], 0) / perTeam.length;
 		for (const team of perTeam) {
 			assert.strictEqual(team.threeInThree, 0);
-			assert.isAtLeast(team.b2b, 10);
-			assert.isAtMost(team.b2b, 19);
-			assert.isAtMost(team.longestStint, 8);
+			assert.strictEqual(team.fourInFive, 0);
+			assert.isAtLeast(team.b2b, 12);
+			assert.isAtMost(team.b2b, 17);
+			assert.isAtMost(team.longestTrip, 9);
 		}
-		const miles =
-			perTeam.reduce((sum, team) => sum + team.miles, 0) / perTeam.length;
-		// The NBA flies about 41,000 to 47,000 venue to venue; the random order
-		// of classic days about 66,000.
-		assert.isBelow(miles, 55_000);
+		assert.isAtLeast(average("b2b"), 13);
+		assert.isAtMost(average("b2b"), 15);
+		assert.isAtLeast(average("threeInFour"), 18);
+		assert.isAtMost(average("threeInFour"), 22.5);
+		assert.isAtMost(average("fiveInSeven"), 2);
+		assert.strictEqual(
+			stats.zoneB2b,
+			0,
+			"no back-to-back two time zones apart",
+		);
+		assert.isAtLeast(stats.restEdgeShare, 0.21);
+		assert.isAtMost(stats.restEdgeShare, 0.29);
+		assert.isAtLeast(stats.series, 23);
+		assert.isAtMost(stats.series, 60);
+
+		// The NBA flies 41,600 to 43,900 a team, arena to arena; the old
+		// calendar 50,500, and the random order of classic days about 66,000.
+		assert.isBelow(average("miles"), 47_000);
+
+		// Mostly short trips, a few long ones.
+		let trips = 0;
+		let short = 0;
+		let long = 0;
+		for (const [length, count] of stats.trips) {
+			trips += count;
+			if (length <= 2) {
+				short += count;
+			}
+			if (length >= 6) {
+				long += count;
+			}
+		}
+		assert.isAbove(short / trips, 0.45);
+		assert.isAtLeast(long, 3);
+		assert.isAtMost(long, 30);
 	});
 
 	test("a small league with a short season", () => {
@@ -242,6 +288,14 @@ describe("generateCalendar", () => {
 		const { nights, allStarDate } = buildNights(2027, 82, 0.7);
 		assert.strictEqual(nights[0], "2026-10-20");
 		assert.strictEqual(nights.at(-1), "2027-04-11");
-		assert.isTrue(allStarDate! > "2027-02-07" && allStarDate! < "2027-02-28");
+		assert.strictEqual(allStarDate, "2027-02-21");
+		assert.strictEqual(nights.length, 164);
+	});
+
+	test("a shorter season doesn't open on Election Day", () => {
+		// 72 games would start on Tuesday, November 4, 2025.
+		const { nights } = buildNights(2026, 72, 0.7);
+		assert.strictEqual(nights[0], "2025-10-28");
+		assert.notInclude(nights, "2025-11-04");
 	});
 });
