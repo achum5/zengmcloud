@@ -18,6 +18,7 @@ import { useLocal } from "../../util/local.ts";
 import { toWorker } from "../../util/toWorker.ts";
 import { HeadlineScene } from "../LiveGame/court3d/HeadlineScene.tsx";
 import HeadlinePlay from "./HeadlinePlay.tsx";
+import NightlyRecap from "../../components/NightlyRecap/index.tsx";
 import Leaders from "./Leaders.tsx";
 import Standings from "./Standings.tsx";
 import StartingLineup from "./StartingLineup.tsx";
@@ -220,20 +221,35 @@ const PLAY_MOST_MS = 40000;
 // round - a story about a game whose replay is saved plays its moment on the
 // 3D court right there, and a draft pick walks out in his new team's cap.
 // Stepping through them by hand stops the moving on.
+// (The Nightly Recap's place among the stories.)
+const RECAP = -1;
+
 const TopStories = ({
 	events,
 	teams,
+	recapNight,
 	season,
 	userTid,
-}: Pick<Props, "events" | "teams"> & {
+}: Pick<Props, "events" | "teams" | "recapNight"> & {
 	season: number;
 	userTid: number;
 }) => {
 	const { gameSimInProgress } = useLocal(["gameSimInProgress"]);
 	const [eid, setEid] = useState<number | undefined>();
 	const [auto, setAuto] = useState(true);
-	const eids = events.map((event) => event.eid);
-	const event = events.find((e) => e.eid === eid) ?? events[0];
+	// The newest night's recap leads, unless it has nothing to show.
+	const recapKey =
+		recapNight === undefined
+			? undefined
+			: `${recapNight.season}:${recapNight.day}`;
+	const [noRecap, setNoRecap] = useState<string | undefined>();
+	const recap =
+		recapNight !== undefined && noRecap !== recapKey ? recapNight : undefined;
+	const eids = [...(recap ? [RECAP] : []), ...events.map((event) => event.eid)];
+	const showRecap = recap !== undefined && (eid ?? eids[0]) === RECAP;
+	const event = showRecap
+		? undefined
+		: (events.find((e) => e.eid === eid) ?? events[0]);
 
 	// On screen, in a tab being looked at: nothing plays or moves on unseen.
 	const block = useRef<HTMLDivElement>(null);
@@ -319,7 +335,7 @@ const TopStories = ({
 	// stay (a phone is not kept drawing the court for as long as the page is
 	// open).
 	const shownRef = useRef(shownEid);
-	shownRef.current = shownEid;
+	shownRef.current = showRecap ? RECAP : shownEid;
 	const next = useCallback(() => {
 		const list = eidsRef.current;
 		const i = list.indexOf(shownRef.current ?? list[0]!);
@@ -331,6 +347,7 @@ const TopStories = ({
 		}
 	}, []);
 	const [played, setPlayed] = useState<number | undefined>();
+	const shown = showRecap ? RECAP : shownEid;
 	const waitsOnPlay =
 		((play !== undefined && play.eid === shownEid) || scene !== undefined) &&
 		played !== shownEid;
@@ -338,14 +355,14 @@ const TopStories = ({
 		if (!auto || !seen || gameSimInProgress || eids.length < 2) {
 			return;
 		}
+		// (The recap is waited for to its end.)
+		if (shown === RECAP && played !== RECAP) {
+			return;
+		}
 		// (A play is waited for, but not for ever.)
 		const id = window.setTimeout(
 			next,
-			waitsOnPlay
-				? PLAY_MOST_MS
-				: played === shownEid
-					? AFTER_PLAY_MS
-					: STORY_MS,
+			waitsOnPlay ? PLAY_MOST_MS : played === shown ? AFTER_PLAY_MS : STORY_MS,
 		);
 		return () => window.clearTimeout(id);
 	}, [
@@ -355,7 +372,7 @@ const TopStories = ({
 		eids.length,
 		waitsOnPlay,
 		played,
-		shownEid,
+		shown,
 		next,
 	]);
 
@@ -363,9 +380,9 @@ const TopStories = ({
 		<div className="mb-3" ref={block}>
 			<div className="d-flex align-items-center mb-2">
 				<h2 className="mb-0 me-auto">League Headlines</h2>
-				{events.length > 1 ? (
+				{eids.length > 1 ? (
 					<NextPrevButtons
-						currentItem={event?.eid}
+						currentItem={shown}
 						items={eids}
 						onChange={(newEid) => {
 							setAuto(false);
@@ -374,7 +391,18 @@ const TopStories = ({
 					/>
 				) : null}
 			</div>
-			{event && showPlay && play ? (
+			{showRecap && recap ? (
+				<NightlyRecap
+					key={recapKey}
+					season={recap.season}
+					day={recap.day}
+					autoplay={auto && played !== RECAP}
+					hold={!seen || gameSimInProgress}
+					headline
+					onEnd={() => setPlayed(RECAP)}
+					onNone={() => setNoRecap(recapKey)}
+				/>
+			) : event && showPlay && play ? (
 				<HeadlinePlay
 					key={play.eid}
 					gid={play.gid}
@@ -396,7 +424,19 @@ const TopStories = ({
 			) : event ? (
 				<StoryPoster event={event} teams={teams} />
 			) : null}
-			{event ? (
+			{showRecap && recap ? (
+				<div className="mb-2">
+					<a
+						href={helpers.leagueUrl([
+							"daily_schedule",
+							recap.season,
+							recap.day,
+						])}
+					>
+						» Daily Schedule
+					</a>
+				</div>
+			) : event ? (
 				<div className="fs-5">
 					<NewsBlock
 						event={event}
@@ -914,6 +954,7 @@ const Portal = (props: Props) => {
 				<TopStories
 					events={props.events}
 					teams={props.teams}
+					recapNight={props.recapNight}
 					season={season}
 					userTid={userTid}
 				/>
