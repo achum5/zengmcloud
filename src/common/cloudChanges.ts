@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 489,
+		date: "2026-11-23",
+		text: "3D game, New sim (Global Settings, 3D Game Sim): players' feet now plant on the floor and stay put instead of sliding. Pulling up takes braking steps out in front, a hard cut plants the outside foot, and defenders slide with their feet apart instead of skating.",
+	},
+	{
 		n: 488,
 		date: "2026-11-23",
 		text: "League hub fixes: on the live site the home team's side of each score card now mirrors the away side like it should, and the phone tabs keep their order. In the playoffs, the series (Game 7, DAL wins 4-3) hangs on a small tag at the top of the card, and Final with the line sits below it. The week strip's days no longer underline when tapped.",

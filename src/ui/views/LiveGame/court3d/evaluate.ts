@@ -77,12 +77,19 @@ import {
 	type AnimName,
 	type Body,
 	type DribbleMove,
+	type FootAt,
 	type Hand,
 	type Limb,
 	type Pose,
+	type Posed,
 	type Skeleton,
 	type V3,
 } from "./poses.ts";
+import {
+	type FootPlanner,
+	type FootStep,
+	footPlanner,
+} from "./possession/footsteps.ts";
 
 // WHERE EVERYTHING IS AT A MOMENT.
 //
@@ -150,6 +157,11 @@ export type PlayerState = {
 	pid: number;
 	team: Side;
 	shown: boolean;
+	// Where his feet are, as planned step by step (the new possession sim's
+	// men - see footsteps): on the floor, how far up, which way each points,
+	// how far up onto its toes. His legs reach for them (see poses.ts
+	// reachFeet).
+	feet?: readonly [FootHere, FootHere];
 	x: number;
 	y: number;
 	z: number;
@@ -4894,9 +4906,300 @@ export const evalPlayer = (
 		if (style) {
 			st = { ...st, style };
 		}
+		const tr = tl.tracks.get(pid);
+		// (Up off the floor only as his stride has him, if at all: not in a
+		// jump.)
+		const striding = STEP_KINDS[st.anim] !== undefined && !feetAct(tr, t);
+		const feet =
+			tr && st.shown && (st.z <= 0 || striding) ? feetAt(tl, tr, t) : undefined;
+		if (feet) {
+			st = { ...st, feet: feet.feet };
+			// (His stride's beat his steps': his arms and hips go with them -
+			// and he is up off the floor between them only as high as his
+			// stride takes him, less as he slows, none stood.)
+			if (striding) {
+				st = {
+					...st,
+					phase: feet.phase ?? st.phase,
+					z:
+						feet.phase === undefined
+							? 0
+							: bounceAt(st.anim, feet.phase) *
+								FOOT_BOUNCE *
+								clamp01((feet.pace - FOOT_BOUNCE_V[0]) / FOOT_BOUNCE_V[1]),
+				};
+			}
+		}
 		at.set(pid, st);
 	}
 	return st;
+};
+
+// HIS FEET, STEP BY STEP (the new possession sim's men - see
+// possession/footsteps.ts): planned a stretch at a time - each stretch his
+// legs are his own, on the floor between whatever he does with them (a
+// shot, a jump, a screen; not a catch or a pass, which he does on the run) -
+// the first time it is looked at.
+export type FootHere = {
+	x: number;
+	y: number;
+	// How far up off where it stands (feet), which way it points (radians),
+	// how far up onto its toes (0 to 1).
+	lift: number;
+	yaw: number;
+	roll: number;
+	// How much his legs go to it, rather than to his move's own (0 to 1):
+	// eased over from his move's into a stretch and back out of it (see
+	// FOOT_EASE_MS).
+	w: number;
+	// Down on the floor (if up on its toes), not swinging through.
+	down: boolean;
+};
+// (A stretch's edges: whether his move has his legs on the other side -
+// his shot, his jump - so his own come over from it, or back to it.)
+type FootSpan = { t0: number; t1: number; into: boolean; out: boolean };
+type FootPlan = {
+	spans: FootSpan[];
+	plans: (FootPlanner | undefined)[];
+};
+const footPlans = new WeakMap<Track, FootPlan>();
+// (A stretch shorter than this, ms, is not worth stepping.)
+const FOOT_SPAN_LEAST = 400;
+// His legs over from his move's to his own steps, or back, over this long
+// (ms) - with his move on either side of the stretch.
+const FOOT_EASE_MS = 140;
+// Up off the floor between steps all his stride has him from this much
+// faster than so slow (feet a second), none slower.
+const FOOT_BOUNCE_V = [2, 6] as const;
+// (As a share of how far up his stride's own picture has him: a runner's
+// hips rise and fall only a few inches - his legs, reaching for the floor,
+// do the rest.)
+const FOOT_BOUNCE = 0.4;
+// What he is doing that his legs are not his own for: anything but an act
+// done on the run - and one of those that takes him up off the floor.
+const feetAct = (tr: Track | undefined, t: number): Act | undefined => {
+	const a = tr ? actAt(tr, t) : undefined;
+	return a && (!STRIDE_ACTS.has(a.anim) || a.jump || a.zKeys) ? a : undefined;
+};
+// Down in his stance: his feet spread wide.
+const STANCE_FEET = new Set<AnimName>([
+	"stance",
+	"guard",
+	"shuffle",
+	"slide",
+	"stanceWide",
+	"stanceHands",
+	"stanceDeny",
+	"stancePoint",
+]);
+// Rolling up onto its toes over the last of its time down (ms, at most
+// this share of it).
+const ROLL_MS = 140;
+const ROLL_SHARE = 0.45;
+// (Up on its toes, his ankle this far up off where it sits flat - feet: the
+// length of his foot a lever that keeps his leg reaching back as he pushes
+// off.)
+const ROLL_LIFT = 0.28;
+const footPlanOf = (tl: CourtTimeline, tr: Track): FootPlan | undefined => {
+	const own = tl.gaits?.get(tr.pid);
+	if (!own || tr.moves.length === 0) {
+		return undefined;
+	}
+	let plan = footPlans.get(tr);
+	if (plan) {
+		return plan;
+	}
+	const start = tr.moves[0]!.t0;
+	const end = tr.moves.at(-1)!.t1;
+	const on: [number, number][] = [];
+	tr.shown.forEach(([w, shown], k) => {
+		const a = Math.max(start, w);
+		const b = Math.min(end, tr.shown[k + 1]?.[0] ?? end);
+		if (shown && b > a) {
+			on.push([a, b]);
+		}
+	});
+	const busy = tr.acts
+		.filter(
+			(a) =>
+				!(a.flash || a.quiet) &&
+				(!STRIDE_ACTS.has(a.anim) || a.jump || a.zKeys),
+		)
+		.map((a) => [a.t0, a.t1] as [number, number])
+		.sort((a, b) => a[0] - b[0]);
+	const spans: FootSpan[] = [];
+	for (const [a, b] of on) {
+		let from = a;
+		let into = false;
+		for (const [x0, x1] of busy) {
+			if (x1 <= from || x0 >= b) {
+				continue;
+			}
+			if (x0 - from >= FOOT_SPAN_LEAST) {
+				spans.push({ t0: from, t1: x0, into, out: true });
+			}
+			from = Math.max(from, x1);
+			into = true;
+		}
+		if (b - from >= FOOT_SPAN_LEAST) {
+			spans.push({ t0: from, t1: b, into, out: false });
+		}
+	}
+	plan = { spans, plans: spans.map(() => undefined) };
+	footPlans.set(tr, plan);
+	return plan;
+};
+// His steps through t in the k'th stretch: each foot's, right, left.
+const stepsIn = (
+	tl: CourtTimeline,
+	tr: Track,
+	plan: FootPlan,
+	k: number,
+	t: number,
+): [FootStep[], FootStep[]] => {
+	let planner = plan.plans[k];
+	if (!planner) {
+		const own = tl.gaits!.get(tr.pid)!;
+		const { t0: from, t1: to } = plan.spans[k]!;
+		const moveAt = (at: number) => tr.moves[Math.max(0, lastT0(tr.moves, at))];
+		planner = footPlanner({
+			from,
+			to,
+			at: (at) => {
+				const p = spotAt(tr, at, false);
+				return { x: p.x, y: p.y };
+			},
+			yaw: (at) => yawAt(tl, tr, at),
+			stance: (at) => STANCE_FEET.has(moveAt(at)?.anim ?? "ready"),
+			cadence: (mode, v) =>
+				stepsPerSecond(
+					mode === "walk" ? "walk" : mode === "back" ? "backpedal" : "run",
+					v,
+					own.inches,
+					own.sig,
+				),
+			height: own.inches / 12,
+		});
+		plan.plans[k] = planner;
+	}
+	planner.through(t);
+	return planner.feet;
+};
+// (Coming up off the floor and down onto it over this share of its swing,
+// each.)
+const SWING_ENDS = 0.25;
+// How high a foot swings (feet): higher the quicker it goes through.
+const swingHigh = (d: number, ms: number): number => {
+	const v = d / Math.max(0.05, ms / 1000);
+	return Math.min(1.5, Math.max(0.12, 0.1 + 0.0028 * v * v));
+};
+const footOn = (
+	mine: FootStep[],
+	t: number,
+	hips: (t: number) => Pt,
+): FootHere | undefined => {
+	const i = lastT0(mine, t);
+	const s = mine[Math.max(0, i)];
+	if (!s) {
+		return undefined;
+	}
+	if (i < 0 || t <= s.t1) {
+		const left = s.t1 - t;
+		const over = Math.min(ROLL_MS, (s.t1 - s.t0) * ROLL_SHARE);
+		const roll = i < 0 || !Number.isFinite(s.t1) ? 0 : clamp01(1 - left / over);
+		return {
+			x: s.x,
+			y: s.y,
+			lift: ROLL_LIFT * roll,
+			yaw: s.yaw,
+			roll,
+			w: 1,
+			down: true,
+		};
+	}
+	const n = mine[i + 1];
+	if (!n) {
+		return { x: s.x, y: s.y, lift: 0, yaw: s.yaw, roll: 0, w: 1, down: true };
+	}
+	// Through the air from one spot to the next: coming up off the one and
+	// down onto the other, over the floor; between, swung through with him,
+	// from where it was off his hips as it came up to where it will be as
+	// it comes down (so it comes up off the floor behind him and goes with
+	// him, not left behind - and is never ahead of where it comes down).
+	const T = Math.max(1, n.t0 - s.t1);
+	const u = clamp01((t - s.t1) / T);
+	const p = u * u * (3 - 2 * u);
+	const c0 = hips(s.t1);
+	const c1 = hips(n.t0);
+	const c = hips(t);
+	const m = smooth01(u / SWING_ENDS) * smooth01((1 - u) / SWING_ENDS);
+	const at = (k: "x" | "y") => {
+		const floor = s[k] + (n[k] - s[k]) * p;
+		const withHim = c[k] + s[k] - c0[k] + (n[k] - c1[k] - (s[k] - c0[k])) * p;
+		return floor + (withHim - floor) * m;
+	};
+	const d = Math.hypot(n.x - s.x, n.y - s.y);
+	const high = swingHigh(d, T);
+	return {
+		x: at("x"),
+		y: at("y"),
+		lift: ROLL_LIFT * (1 - u) + high * Math.sin(Math.PI * u ** 0.75),
+		yaw: s.yaw + wrapAngle(n.yaw - s.yaw) * p,
+		roll: Math.max(0, 1 - 2.5 * u),
+		w: 1,
+		down: false,
+	};
+};
+const feetAt = (
+	tl: CourtTimeline,
+	tr: Track,
+	t: number,
+): { feet: [FootHere, FootHere]; phase?: number; pace: number } | undefined => {
+	const plan = footPlanOf(tl, tr);
+	if (!plan || plan.spans.length === 0) {
+		return undefined;
+	}
+	const k = lastT0(plan.spans, t);
+	const span = plan.spans[k];
+	if (!span || t > span.t1) {
+		return undefined;
+	}
+	if (feetAct(tr, t)) {
+		return undefined;
+	}
+	const [R, L] = stepsIn(tl, tr, plan, k, t);
+	const hips = (at: number) => spotAt(tr, at, false);
+	const r = footOn(R, t, hips);
+	const l = footOn(L, t, hips);
+	if (!r || !l) {
+		return undefined;
+	}
+	// (Where his stride is: from his right foot coming down to the next.)
+	const i = lastT0(R, t);
+	const s0 = R[i];
+	const s1 = R[i + 1];
+	const phase =
+		s0 && s1 && i >= 0 ? clamp01((t - s0.t0) / (s1.t0 - s0.t0)) : undefined;
+	const w = smooth01(
+		Math.min(
+			span.into ? (t - span.t0) / FOOT_EASE_MS : 1,
+			span.out ? (span.t1 - t) / FOOT_EASE_MS : 1,
+		),
+	);
+	if (w <= 0) {
+		return undefined;
+	}
+	const p0 = spotAt(tr, t - 50, false);
+	const p1 = spotAt(tr, t + 50, false);
+	const pace = Math.hypot(p1.x - p0.x, p1.y - p0.y) * 10;
+	return {
+		feet: [
+			{ ...r, w: r.w * w },
+			{ ...l, w: l.w * w },
+		],
+		phase,
+		pace,
+	};
 };
 
 // HIS OWN WAY OF CARRYING HIMSELF, where he has one (the new possession
@@ -7758,9 +8061,27 @@ const slipped = (
 
 // His pose: his move's, eased in from the last one's just after a change -
 // and an arm in whatever it is saying.
-export const poseOf = (st: PlayerState): Pose => {
+export const poseOf = (st: PlayerState): Posed => {
 	const p = hanging(leanRoom(poseFor(st), st.room), st.aloft ?? aloftAt(st.z));
-	return humane(st.armsIn ? tuckedArms(p, st.armsIn) : p);
+	const q = humane(st.armsIn ? tuckedArms(p, st.armsIn) : p);
+	if (!st.feet) {
+		return q;
+	}
+	// (His planned feet, in his own frame - see reachFeet.)
+	const feetAt = st.feet.map((p): FootAt => {
+		// (Off the floor itself, wherever he is up off it.)
+		const v = toBody(st, { x: p.x, y: p.y, z: 0 });
+		return {
+			f: v.f,
+			s: v.s,
+			lift: p.lift + v.u,
+			yaw: wrapAngle(st.yaw - p.yaw),
+			roll: p.roll,
+			w: p.w,
+			down: p.down,
+		};
+	}) as [FootAt, FootAt];
+	return { ...q, feetAt };
 };
 
 // HIS LEGS UP IN THE AIR. A move that draws his heels up under him as he

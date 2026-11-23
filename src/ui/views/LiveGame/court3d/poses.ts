@@ -13831,7 +13831,140 @@ const NECK_SAT = [60, 80] as const;
 // hands on his knees: he looks up from there.)
 const NECK_DOWN = 18;
 const NECK_DOWN_LEAN = [45, 70] as const;
-export const skeleton = (b: Body, q0: Pose): Skeleton => {
+// WHERE HIS FEET ARE, PLANNED (the new possession sim's men - see
+// possession/footsteps.ts): each foot's ankle in his own frame - forward,
+// to his left, and how far up off where it stands on the floor - which way
+// it points from the way he faces (radians, round to his left positive),
+// how far up onto its toes it has rolled (0 to 1), how much his leg goes
+// to it rather than where his pose has it (0 to 1), and whether it is down
+// on the floor (or swinging through). His legs reach for them (see
+// reachFeet).
+export type FootAt = {
+	f: number;
+	s: number;
+	lift: number;
+	yaw: number;
+	roll: number;
+	w: number;
+	down: boolean;
+};
+export type Posed = Pose & { feetAt?: readonly [FootAt, FootAt] };
+// (Sunk at the hips no further than this, feet, to reach a foot planned
+// further out than his legs go.)
+const SINK_MOST = 0.7;
+// Each leg from his hip to where its foot is planned: the knee bent as much
+// as that takes, out over the way the foot points - and his hips let down,
+// if they must be, to get to a foot down on the floor (one swinging through
+// it only reaches toward).
+const reachFeet = (
+	b: Body,
+	feet: readonly [FootAt, FootAt],
+	legs: [Limb, Limb],
+): number => {
+	const rad = Math.PI / 180;
+	const most = (b.thigh + b.shin) * 0.995;
+	// (Part the way from where his pose has each, as he eases over to them.)
+	const at = feet.map((p, i) => {
+		const o = legs[i]!.end;
+		const w = Math.min(1, Math.max(0, p.w));
+		return v3(
+			o.f + (p.f - o.f) * w,
+			o.s + (p.s - o.s) * w,
+			o.u + (b.ankleH + p.lift - o.u) * w,
+		);
+	});
+	let sink = 0;
+	legs.forEach((l, i) => {
+		if (!feet[i]!.down) {
+			return;
+		}
+		const E = at[i]!;
+		const h = Math.hypot(E.f - l.root.f, E.s - l.root.s);
+		if (h < most) {
+			const top = E.u + Math.sqrt(most * most - h * h);
+			sink = Math.max(sink, l.root.u - top);
+		}
+	});
+	sink = Math.min(SINK_MOST, Math.max(0, sink));
+	const toe = b.foot * 0.72;
+	legs.forEach((l, i) => {
+		const p = feet[i]!;
+		const w = Math.min(1, Math.max(0, p.w));
+		const was = { mid: l.mid, tip: l.tip ?? l.end };
+		const R = v3(l.root.f, l.root.s, l.root.u - sink);
+		let E = at[i]!;
+		let dx = E.f - R.f;
+		let ds = E.s - R.s;
+		let du = E.u - R.u;
+		let d = Math.hypot(dx, ds, du);
+		if (d > most) {
+			E = v3(
+				R.f + (dx * most) / d,
+				R.s + (ds * most) / d,
+				R.u + (du * most) / d,
+			);
+			dx = E.f - R.f;
+			ds = E.s - R.s;
+			du = E.u - R.u;
+			d = most;
+		}
+		d = Math.max(d, 1e-6);
+		const ux = dx / d;
+		const us = ds / d;
+		const uu = du / d;
+		// (The knee goes out over the way the foot points - a little up.)
+		const df = Math.cos(p.yaw);
+		const dsn = Math.sin(p.yaw);
+		let px = df;
+		let ps = dsn;
+		let pu = 0.3;
+		const k = px * ux + ps * us + pu * uu;
+		px -= k * ux;
+		ps -= k * us;
+		pu -= k * uu;
+		const pn = Math.hypot(px, ps, pu) || 1;
+		px /= pn;
+		ps /= pn;
+		pu /= pn;
+		const cosA = Math.max(
+			-1,
+			Math.min(
+				1,
+				(b.thigh * b.thigh + d * d - b.shin * b.shin) / (2 * b.thigh * d),
+			),
+		);
+		const sinA = Math.sqrt(1 - cosA * cosA);
+		const mid = v3(
+			R.f + b.thigh * (cosA * ux + sinA * px),
+			R.s + b.thigh * (cosA * us + sinA * ps),
+			R.u + b.thigh * (cosA * uu + sinA * pu),
+		);
+		// Flat on the floor - or up on its toes as it rolls off, and hanging
+		// as it swings.
+		const point = Math.min(1, p.roll) * POINT * rad;
+		const flat = Math.max(b.ankleR, E.u - b.ankleH * 0.55);
+		const tip = v3(
+			E.f + toe * Math.cos(point) * df,
+			E.s + toe * Math.cos(point) * dsn,
+			flat + (E.u - toe - flat) * Math.sin(point),
+		);
+		const mix = (a: V3, c: V3) =>
+			w >= 1
+				? c
+				: v3(
+						a.f + (c.f - a.f) * w,
+						a.s + (c.s - a.s) * w,
+						a.u + (c.u - a.u) * w,
+					);
+		l.root = R;
+		l.mid = mix(was.mid, mid);
+		l.end = E;
+		l.tip = mix(was.tip, tip);
+	});
+	return sink;
+};
+
+export const skeleton = (b: Body, q0: Posed): Skeleton => {
 	const q = q0.hugHead > 0 && (q0.hugN > 0 || q0.hugF > 0) ? bentTo(b, q0) : q0;
 	const rad = Math.PI / 180;
 	// An angle in the facing plane: 0 straight down, 90 straight ahead.
@@ -13993,8 +14126,11 @@ export const skeleton = (b: Body, q0: Pose): Skeleton => {
 			tip.s = l.end.s + df * sn + ds * c;
 		}
 	}
+	const sink = Array.isArray(q0.feetAt)
+		? reachFeet(b, q0.feetAt, [legR as Limb, legL as Limb])
+		: 0;
 	const L = q.lean * rad;
-	const pelvis = v3(0, 0, b.hipH + off);
+	const pelvis = v3(0, 0, b.hipH + off - sink);
 	const chest = v3(
 		pelvis.f + Math.sin(L) * b.torso,
 		0,
