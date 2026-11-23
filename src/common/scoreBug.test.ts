@@ -146,6 +146,22 @@ describe("parseScoreBug", () => {
 					off: "transparent",
 					spacing: 2,
 				},
+				{
+					show: "awayTimeouts",
+					x: 0,
+					y: 0,
+					w: 2,
+					h: 20,
+					rotate: 90,
+				},
+				{
+					show: "homeLead",
+					x: 0,
+					y: 0,
+					w: 30,
+					h: 6,
+					text: "THE DIFF {n}",
+				},
 			],
 		};
 		assert.deepStrictEqual(parseScoreBug(bug), bug as unknown);

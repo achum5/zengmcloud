@@ -209,6 +209,12 @@ export const CustomScoreBug = ({
 			case "homeRecord":
 				inner = t?.record ?? "";
 				break;
+			case "homeLead": {
+				const lead = (home?.pts ?? 0) - (away?.pts ?? 0);
+				const n = lead > 0 ? `+${lead}` : String(lead);
+				inner = p.text === undefined ? n : p.text.replace("{n}", n);
+				break;
+			}
 			case "awayFouls":
 			case "homeFouls":
 				inner = (
@@ -384,6 +390,13 @@ export const CustomScoreBug = ({
 						...(p.show.endsWith("Logo")
 							? { width: "100%", height: "100%" }
 							: {}),
+						// (Timeouts turned on their side still fill the box.)
+						...(p.show.endsWith("Timeouts") &&
+						p.text === undefined &&
+						p.rotate !== undefined &&
+						Math.abs(p.rotate) % 180 === 90
+							? { width: u(p.h), height: u(p.w) }
+							: {}),
 						transform: [
 							p.rotate === undefined ? "" : `rotate(${p.rotate}deg)`,
 							p.zoom === undefined ? "" : `scale(${p.zoom})`,
@@ -405,7 +418,10 @@ export const CustomScoreBug = ({
 
 	const span = style.span ?? 0.6;
 	const place = style.place ?? "center";
-	const edge = `${(style.edge ?? 0.016) * 100}cqw`;
+	// (Never so small on a phone that it can't be read.)
+	const width = `min(96%, max(${span * 100}%, ${Math.max(MIN_WIDTH, (MIN_HEIGHT * W) / H)}px))`;
+	// (And never pushed off the side by being made bigger.)
+	const edge = `min(${(style.edge ?? 0.016) * 100}cqw, calc(98% - ${width}))`;
 	return (
 		<div
 			style={{
@@ -417,8 +433,7 @@ export const CustomScoreBug = ({
 					: place === "left"
 						? { left: edge }
 						: { right: edge }),
-				// (Never so small on a phone that it can't be read.)
-				width: `min(96%, max(${span * 100}%, ${Math.max(MIN_WIDTH, (MIN_HEIGHT * W) / H)}px))`,
+				width,
 			}}
 		>
 			<div

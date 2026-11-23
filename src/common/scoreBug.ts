@@ -24,6 +24,7 @@ const SHOWS = new Set<ScoreBugShow>([
 	"homeBall",
 	"awayBonus",
 	"homeBonus",
+	"homeLead",
 	"period",
 	"clock",
 	"shotClock",

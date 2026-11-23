@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 446,
+		date: "2026-11-23",
+		text: "3D game: score bugs can now show timeouts running up and down and the home team's lead (THE DIFF +4), the way some local broadcasts do, and a bug made bigger to read on a phone no longer runs off the side of the screen.",
+	},
+	{
 		n: 445,
 		date: "2026-11-23",
 		text: "NBA Calendar schedules are now built the way the NBA builds them, for leagues that don't play a real NBA season: road trips loop through nearby cities (about as many miles as NBA teams really fly), no back-to-backs across the country, a few two-game series in the same arena, long road trips for teams whose arena is booked, and no games on Election Day or the night of the NCAA final. The All-Star break now runs Friday to Wednesday.",

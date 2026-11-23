@@ -3541,6 +3541,8 @@ export type ScoreBugShow =
 	// Shown only while that side is in the bonus: `text`, or BONUS.
 	| "awayBonus"
 	| "homeBonus"
+	// The home team's lead, signed (+4, -4, 0): `text` with {n}, or the number.
+	| "homeLead"
 	| "period"
 	| "clock"
 	| "shotClock"
