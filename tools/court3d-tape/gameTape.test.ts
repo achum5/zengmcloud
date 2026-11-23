@@ -9,6 +9,8 @@
 //   TAPE_GAMES=/dir/real_11.json,lane-a TAPE_DIR=/out npx vitest run \
 //     --project basketball tools/court3d-tape/gameTape.test.ts
 //
+// (TAPE_POSSESSION=1: the real games staged by the new possession sim.)
+//
 // A game is a file from realGames.test.ts next to this one (the real sim)
 // or a test-game seed.
 // For each it writes /out/tape_<game>.json (the whole game) and
@@ -52,8 +54,15 @@ const SHOT_PLAYS = /^(fg|miss|tp|ast|tov|stl|pf|blk|orb|drb)/;
 const load = (game: string) => {
 	if (game.endsWith(".json")) {
 		const { events, players } = JSON.parse(readFileSync(game, "utf8"));
-		// (Stepped, as every game the court plays is - see stageCourt.)
-		return compileCourt({ events, players, gid: 1, step: true });
+		// (Stepped, as every game the court plays is - see stageCourt. With
+		// TAPE_POSSESSION, by the new possession sim: see possession/.)
+		return compileCourt({
+			events,
+			players,
+			gid: 1,
+			step: true,
+			possession: !!process.env.TAPE_POSSESSION,
+		});
 	}
 	return compileFake(game, 90).tl;
 };

@@ -133,6 +133,8 @@ import {
 } from "./plays.ts";
 import { BREAK_SHARE } from "./nbaRates.ts";
 import { stepTimeline } from "./stepper.ts";
+import { bodyOf as ownBodyOf } from "./possession/body.ts";
+import { type Follow, followWith } from "./possession/follow.ts";
 import { sameEverywhere } from "./sameMath.ts";
 import {
 	floorRoll,
@@ -3127,6 +3129,9 @@ class Director {
 	// Every man moved a step at a time before he is kept off the rest (see
 	// stepper.ts).
 	private readonly step: boolean;
+	// ... moved by his own body, the new possession sim's way (see
+	// possession/follow.ts).
+	private readonly possession: boolean;
 
 	constructor(
 		events: RawEvent[],
@@ -3136,8 +3141,10 @@ class Director {
 		intro?: "regular" | "playoffs",
 		stakes?: Stakes,
 		step = false,
+		possession = false,
 	) {
 		this.step = step;
+		this.possession = possession;
 		this.events = events;
 		this.gid = gid;
 		this.gender = gender;
@@ -4794,6 +4801,19 @@ class Director {
 	// How much of a thing he has (0-1), from his ratings - or nothing to go by.
 	private level(pid: number, ...keys: RatingKey[]): number | undefined {
 		return levelOf(this.rated.get(pid), keys);
+	}
+
+	// Each man moved by his own body, from his ratings (see possession/).
+	private ownMovers(): (pid: number) => Follow {
+		const by = new Map<number, Follow>();
+		return (pid) => {
+			let f = by.get(pid);
+			if (!f) {
+				f = followWith(ownBodyOf(this.rated.get(pid)));
+				by.set(pid, f);
+			}
+			return f;
+		};
 	}
 
 	// How much quicker than most (or slower) he gets about the floor: speed
@@ -31400,6 +31420,7 @@ class Director {
 					end: this.T,
 				},
 				fast,
+				this.possession ? this.ownMovers() : undefined,
 			);
 		}
 		this.keepApart(fast);
@@ -31658,6 +31679,9 @@ export type CourtInput = {
 	gender?: "female" | "male";
 	// Every man moved a step at a time (see stepper.ts).
 	step?: boolean;
+	// ... by his own body, the new possession sim's way (see possession/),
+	// as this device has it (see possession/setting.ts).
+	possession?: boolean;
 };
 
 // (Staged to the bit the same on every device - see sameMath.)
@@ -31671,8 +31695,18 @@ const compileHere = ({
 	intro,
 	stakes,
 	step,
+	possession,
 }: CourtInput): CourtTimeline => {
-	const d = new Director(events, players, gid, gender, intro, stakes, step);
+	const d = new Director(
+		events,
+		players,
+		gid,
+		gender,
+		intro,
+		stakes,
+		step,
+		possession,
+	);
 	for (let i = 0; i < events.length; i++) {
 		const e = events[i];
 		if (!e || typeof e.type !== "string") {

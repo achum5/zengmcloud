@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 451,
+		date: "2026-11-23",
+		text: "Global Settings has a new 3D Game Sim switch, kept on each device, for trying the new 3D game while it is being built. It stays on Current, today's 3D game, unless you change it. New is early: for now it only changes how players get about the floor, each moving the way his own ratings let him.",
+	},
+	{
 		n: 450,
 		date: "2026-11-23",
 		text: "Leagues with the smart CPU GM sim faster: about 15% less time over a season, and its trade market moments about a fifth quicker. The CPU teams make exactly the same moves as before.",

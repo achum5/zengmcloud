@@ -138,7 +138,13 @@ const CORNER_PACE = 12;
 const CORNER_AT = 0.6;
 const CORNER_LATE = 400;
 
-type Sample = { t: number; x: number; y: number; vx: number; vy: number };
+export type Sample = {
+	t: number;
+	x: number;
+	y: number;
+	vx: number;
+	vy: number;
+};
 
 // (Of the game, what stepping it goes by.)
 type Stepped = Pick<
@@ -148,7 +154,7 @@ type Stepped = Pick<
 
 // When something of his is going on - his acts, the picture's cuts - as
 // stretches of time.
-type Spans = {
+export type Spans = {
 	// Whether any of them is going on between t0 and t1.
 	hit: (t0: number, t1: number) => boolean;
 	// When the next one begins, from t on.
@@ -2081,6 +2087,9 @@ export const stepTimeline = <T extends Stepped>(
 	tl: T,
 	// The stretches the picture hurries past (see SKIP_RESUME_MS).
 	skip: readonly (readonly [number, number])[] = [],
+	// How each man is moved after where he is wanted, at real speed: today's
+	// way (follow), or another's (see possession/follow.ts).
+	followFor?: (pid: number) => typeof follow | undefined,
 ): T => {
 	const cut = spansAt(tl.cuts.map((c) => [c - STEP_MS, c] as const));
 	// (Those of them long enough, each cut short of where it plays at its
@@ -2193,7 +2202,7 @@ export const stepTimeline = <T extends Stepped>(
 				// (Coming out of a stretch hurried past: on from where that
 				// left him.)
 				const before = samples.at(-1);
-				for (const q of follow(
+				for (const q of (followFor?.(tr.pid) ?? follow)(
 					want,
 					a,
 					b,

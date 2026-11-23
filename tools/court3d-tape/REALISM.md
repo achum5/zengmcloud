@@ -99,6 +99,31 @@ than the quickest guard (0.8 s; most men 1.0-1.3 s at their quickest) and
 stops dead in a cut a real man rounds at a jog. Top speeds in games run from
 about 17.8 ft/s (slow bigs) to 21.2 (quick guards), 5th to 95th percentile.
 
+### The new movement (possession sim step 3, 2026-11-23)
+
+Each man moved by his own body (src/ui/views/LiveGame/court3d/possession/)
+while still following today's plan. Real game 11 staged both ways
+(`TAPE_POSSESSION=1`), with the fast-forward lead-ins of 2026-11-23:
+
+| Measure                                         | Real NBA  | 3D today  | New movement |
+| ----------------------------------------------- | --------- | --------- | ------------ |
+| Standing still (under 1.5 ft/s)                 | 13%       | 47%       | 39%          |
+| ... offense off the ball                        | 19%       | 61%       | 52%          |
+| Speeding up / slowing down, 90th pct (ft/s2)    | 8.9 / 8.3 | 23 / 19   | 14 / 14      |
+| Turning at 8-13 ft/s, median (deg/s)            | 15        | 1.4       | 4.8          |
+| From rest to 12 ft/s / from 12 ft/s to rest (s) | 1.7 / 1.7 | 0.6 / 0.8 | 1.1 / 0.9    |
+| Slowest through a cut over 90 degrees (ft/s)    | 5.3       | 1.0       | 1.4          |
+| Set off within 0.1 s of another man             | 26%       | 70%       | 54%          |
+| Top speed, 99.9th pct (ft/s)                    | 22.1      | 21.5      | 20.7         |
+
+What is left is the plan's: it sets men off and stops them dead quicker
+than any body can (flat out in half a second), stands them still, and
+sends them off together. Chased as it comes, a real body falls up to 10 ft
+behind it; followed as a man who knows where he is going (into a run a
+little early) and pulled along at most 5 ft/s where it still asks too
+much, he stays within about 3 ft of it nine times in ten, and is on it for
+every catch, shot, pass and screen.
+
 ## Step 0: the scorecard
 
 One tool, run on the real games (11, 22, 33) and test games "a" to "d",

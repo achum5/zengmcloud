@@ -4,6 +4,7 @@ import {
 	type CourtTimeline,
 } from "./director.ts";
 import { makeStager, type Stager } from "./stager.ts";
+import { possessionSimHere } from "./possession/setting.ts";
 
 // The game staged in a worker of its own (src/court) - see stager.ts.
 
@@ -67,6 +68,7 @@ const keyOf = (input: CourtInput) =>
 		input.intro ?? null,
 		input.stakes ?? null,
 		input.step ?? null,
+		input.possession ?? null,
 		input.players,
 		input.events.length,
 		input.events.at(-1) ?? null,
@@ -85,7 +87,11 @@ const keepFor = (key: string) => {
 };
 
 export const stageCourt = (input: CourtInput): Promise<CourtTimeline> => {
-	const full = { ...input, step: input.step ?? stepHere() };
+	const full = {
+		...input,
+		step: input.step ?? stepHere(),
+		possession: input.possession ?? possessionSimHere(),
+	};
 	let key: string;
 	try {
 		key = keyOf(full);

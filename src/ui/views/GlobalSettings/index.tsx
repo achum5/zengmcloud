@@ -16,6 +16,10 @@ import { useBlocker } from "../../hooks/useBlocker.ts";
 import { HelpPopover } from "../../components/HelpPopover.tsx";
 import { safeLocalStorage } from "../../util/safeLocalStorage.ts";
 import { local, localActions } from "../../util/local.ts";
+import {
+	possessionSimHere,
+	setPossessionSim,
+} from "../LiveGame/court3d/possession/setting.ts";
 
 const GlobalSettings = (props: View<"globalSettings">) => {
 	const [state, setState] = useState(() => {
@@ -49,6 +53,7 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 			refreshedLook: local.getState().refreshedLook
 				? "show"
 				: ("hide" as const),
+			possessionSim: possessionSimHere() ? "show" : ("hide" as const),
 			phaseChangeRedirects: props.phaseChangeRedirects,
 			realPlayerPhotos: props.realPlayerPhotos,
 			realTeamInfo: props.realTeamInfo,
@@ -111,6 +116,7 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 		localActions.setGamecastLayout(state.gamecast === "show");
 		localActions.setNewInterface(state.newInterface === "show");
 		localActions.setRefreshedLook(state.refreshedLook === "show");
+		setPossessionSim(state.possessionSim === "show");
 
 		const units = state.units === "default" ? undefined : state.units;
 		try {
@@ -183,6 +189,7 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 							| "gamecast"
 							| "newInterface"
 							| "refreshedLook"
+							| "possessionSim"
 					]
 				}
 			>
@@ -307,6 +314,12 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 						title:
 							"Multiplayer: seconds before a scheduled sim when you can't sim or watch your own game (0: off)",
 					})}
+					{__SPORT === "basketball"
+						? showHide("possessionSim", "3D Game Sim", "On this device", [
+								"New (in progress)",
+								"Current",
+							])
+						: null}
 				</div>
 
 				<h2>AI Recaps</h2>
