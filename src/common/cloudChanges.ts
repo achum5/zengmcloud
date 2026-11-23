@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 492,
+		date: "2026-11-23",
+		text: 'NBA calendar: injuries count in days. Players show "Out 19 days" (roster, Injuries page, box scores, news, injury history), going down by one every day, off days included, and they still miss as many games as they would without the calendar. Play Through Injuries and the wait before a newly signed player can be traded are in days too.',
+	},
+	{
 		n: 491,
 		date: "2026-11-23",
 		text: 'Live games: the top of the page now shows the matchup instead of "Live Game Simulation": both teams with their records coming into the game (their seeds in the playoffs), the spread, the over/under from the sportsbook, and the season series or the playoff series. A game on national TV shows the network\'s logo. The Replay label is gone.',
