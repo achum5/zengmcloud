@@ -40,7 +40,7 @@ export const DRAFT_BY_TEAM_OVR = bySport({
 	hockey: true,
 });
 
-export const LEAGUE_DATABASE_VERSION = 81;
+export const LEAGUE_DATABASE_VERSION = 82;
 
 // imgbb image-hosting API key, used by the in-app image uploader (see
 // src/ui/util/uploadToImgbb.ts). imgbb keys are client-side upload keys (like

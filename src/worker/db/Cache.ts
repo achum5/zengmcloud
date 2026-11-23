@@ -17,6 +17,7 @@ import type {
 	GameAttribute,
 	HeadToHead,
 	LiveGamePlayByPlay,
+	RecapReelRow,
 	FaDayResults,
 	Image,
 	JerseySkin,
@@ -67,6 +68,7 @@ export type Store =
 	| "games"
 	| "headToHeads"
 	| "liveGamePlayByPlay"
+	| "recapReels"
 	| "faDayResults"
 	| "images"
 	| "tradingCards"
@@ -106,6 +108,7 @@ export const STORES: Store[] = [
 	"games",
 	"headToHeads",
 	"liveGamePlayByPlay",
+	"recapReels",
 	"faDayResults",
 	"images",
 	"tradingCards",
@@ -270,6 +273,14 @@ export const storeInfos: Record<Store, StoreInfo> = {
 		autoIncrement: false,
 		// No getData on purpose: these can be large and numerous, so they must
 		// never be bulk-loaded into memory. Reads hit disk directly.
+	},
+	recapReels: {
+		pk: "gid",
+		pkType: "number",
+		autoIncrement: false,
+		// Fully loaded: only the last few nights' are kept (saveRecapReels.ts),
+		// a couple of MB at most.
+		getData: (tx) => tx.objectStore("recapReels").getAll(),
 	},
 	faDayResults: {
 		pk: "key",
@@ -647,6 +658,7 @@ class Cache {
 	headToHeads: StoreAPI<HeadToHead, HeadToHead, number>;
 
 	liveGamePlayByPlay: StoreAPI<LiveGamePlayByPlay, LiveGamePlayByPlay, number>;
+	recapReels: StoreAPI<RecapReelRow, RecapReelRow, number>;
 	faDayResults: StoreAPI<FaDayResults, FaDayResults, string>;
 	images: StoreAPI<Image, Image, string>;
 	tradingCards: StoreAPI<TradingCard, TradingCard, string>;
@@ -720,6 +732,7 @@ class Cache {
 		this.games = new StoreAPI(this, "games");
 		this.headToHeads = new StoreAPI(this, "headToHeads");
 		this.liveGamePlayByPlay = new StoreAPI(this, "liveGamePlayByPlay");
+		this.recapReels = new StoreAPI(this, "recapReels");
 		this.faDayResults = new StoreAPI(this, "faDayResults");
 		this.images = new StoreAPI(this, "images");
 		this.tradingCards = new StoreAPI(this, "tradingCards");

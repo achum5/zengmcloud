@@ -1237,6 +1237,7 @@ const deleteOldData = async (options: {
 			"games",
 			"headToHeads",
 			"liveGamePlayByPlay",
+			"recapReels",
 			"teams",
 			"teamSeasons",
 			"teamStats",
@@ -1247,8 +1248,10 @@ const deleteOldData = async (options: {
 
 	if (options.boxScores) {
 		tx.objectStore("games").clear();
-		// Saved live-sim replays go with the box scores they belong to.
+		// Saved live-sim replays and recap plays go with the box scores they
+		// belong to.
 		tx.objectStore("liveGamePlayByPlay").clear();
+		tx.objectStore("recapReels").clear();
 	}
 
 	if (options.teamHistory) {

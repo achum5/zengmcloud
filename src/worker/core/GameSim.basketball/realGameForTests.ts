@@ -42,7 +42,8 @@ const KEYS = [
 
 export const simRealGame = async (
 	seed: number,
-): Promise<{ events: any[]; players: any[] }> => {
+	{ playByPlay = true }: { playByPlay?: boolean } = {},
+): Promise<{ events: any[]; players: any[]; result: any }> => {
 	const realRandom = Math.random;
 	try {
 		Math.random = rng(seed * 7919 + 13);
@@ -98,7 +99,7 @@ export const simRealGame = async (
 			gid: 1,
 			day: 1,
 			teams: helpers.deepCopy(sides) as any,
-			doPlayByPlay: true,
+			doPlayByPlay: playByPlay,
 			homeCourtFactor: 1,
 			neutralSite: false,
 			allStarGame: false,
@@ -121,7 +122,7 @@ export const simRealGame = async (
 				};
 			}),
 		);
-		return { events: result.playByPlay, players: roster };
+		return { events: result.playByPlay, players: roster, result };
 	} finally {
 		Math.random = realRandom;
 	}

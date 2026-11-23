@@ -28,6 +28,7 @@ import { pregameLineupSynergy } from "../GameSim.basketball/synergy.ts";
 import { dayAlreadyCounted } from "./dailyCountdownGate.ts";
 import { dayTickFromGames } from "./calendarTicks.ts";
 import { ensureClassicDays } from "./saveClassicDays.ts";
+import { saveRecapReels, wantsRecapReel } from "./saveRecapReels.ts";
 import { recordInjuryForensics } from "../sync/injuryForensics.ts";
 import setGameAttributes from "../league/setGameAttributes.ts";
 import updatePlayoffSeries from "./updatePlayoffSeries.ts";
@@ -691,6 +692,14 @@ const play = async (
 			}
 		}
 
+		// The night's recap plays (see saveRecapReels.ts), in the same capture
+		// window. Best-effort too.
+		try {
+			await saveRecapReels(results);
+		} catch (error) {
+			console.error("Failed to save recap plays", error);
+		}
+
 		// If this was a live sim, route the UI to the live game and (in a sync
 		// room) broadcast it so every follower watches in lockstep.
 		if (gidOneGame !== undefined && playByPlay) {
@@ -857,6 +866,9 @@ const play = async (
 		// generated for EVERY game, and the ones that turn out not to qualify are
 		// simply not saved (see cbSaveResults). That is the whole day paying the
 		// live-sim game's generation cost, which is the price of the option.
+		//
+		// Every game the Nightly Recap cuts (see saveRecapReels.ts) needs it
+		// too. Generating it rolls no dice, so no result changes for it.
 		const saveReplaysTids = new Set(g.get("saveReplaysTids"));
 		const saveAllPlayoffGames =
 			saveReplaysTids.has(-2) && g.get("phase") === PHASE.PLAYOFFS;
@@ -868,7 +880,8 @@ const play = async (
 				saveAllPlayoffGames ||
 				saveDramaticGames ||
 				saveReplaysTids.has(game.homeTid) ||
-				saveReplaysTids.has(game.awayTid);
+				saveReplaysTids.has(game.awayTid) ||
+				wantsRecapReel(game.homeTid, game.awayTid);
 
 			const teamsInput = [teams[game.homeTid], teams[game.awayTid]] as any;
 
