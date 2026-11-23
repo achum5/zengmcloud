@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 467,
+		date: "2026-11-23",
+		text: "Nightly Recap: the Daily Schedule now has a recap video of the night, for games played from this update on. Each game gets a Game Recap card, its biggest plays on the 3D court, and a Final card with the score and three players a side. Pick how long it runs (Full, Medium, Short or One play a game). The shortest still shows each game's biggest play: the game-winner if there was one, otherwise the best play of the game's top player. The last 7 nights can be watched.",
+	},
+	{
 		n: 466,
 		date: "2026-11-23",
 		text: 'NBA calendar leagues: the playoffs now run on the NBA\'s real schedule. The play-in is Tuesday, Wednesday and Friday, round 1 opens with four series on Saturday and four on Sunday, series play every two or three nights with no back-to-backs, the conference finals alternate nights, and the Finals start on a Thursday. Every game of a series shows on the calendar and in the scores bar once the matchup is set, with "if necessary" on the games that may not be played. One day sims one night, and injuries heal at the same pace as in a classic league.',

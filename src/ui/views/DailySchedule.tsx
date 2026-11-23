@@ -13,6 +13,7 @@ import { ScoreBox } from "../components/ScoreBox/index.tsx";
 import { SimHereButton } from "../components/SimHereButton.tsx";
 import { GameNote } from "../components/GameNote.tsx";
 import { DayRecap } from "../components/DayRecap.tsx";
+import NightlyRecap from "../components/NightlyRecap/index.tsx";
 import {
 	buildRecapLinksForGame,
 	buildSentenceGamesForDay,
@@ -279,6 +280,14 @@ const DailySchedule = ({
 		completed,
 		(tid) => teamInfoCache[tid],
 	);
+
+	// (Nothing for a night with no recap plays.)
+	const recapVideo =
+		completed.length > 0 ? (
+			<div style={{ maxWidth: 960 }}>
+				<NightlyRecap season={season} day={day} />
+			</div>
+		) : null;
 
 	let noGamesMessage;
 	if (days.length === 0) {
@@ -560,15 +569,19 @@ const DailySchedule = ({
 						ref={gridRef}
 					>
 						<div className="lh-main">
-							{dayNote ? (
+							{completed.length > 0 ? (
 								<div className={pane("recap", 1)}>
-									<LeadStory
-										day={day}
-										links={recapLinks}
-										note={dayNote}
-										season={season}
-										sentenceGames={sentenceGames}
-									/>
+									{/* The night's recap video on top, then its story. */}
+									<NightlyRecap season={season} day={day} />
+									{dayNote ? (
+										<LeadStory
+											day={day}
+											links={recapLinks}
+											note={dayNote}
+											season={season}
+											sentenceGames={sentenceGames}
+										/>
+									) : null}
 								</div>
 							) : null}
 							<div className={pane("scores", 3, "lh-scores")}>
@@ -622,6 +635,7 @@ const DailySchedule = ({
 			) : (
 				<>
 					{dateHeading}
+					{recapVideo}
 					{dayNote ? (
 						<DayRecap
 							season={season}

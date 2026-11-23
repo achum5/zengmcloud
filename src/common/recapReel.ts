@@ -49,6 +49,9 @@ export type RecapReel = {
 // many of each team's best player's own.
 export const REEL_TOP = 18;
 export const REEL_STAR = 6;
+// And each period's own best, however the late game outweighs it: a recap
+// runs through the whole game.
+export const REEL_PER_PERIOD = 3;
 
 const MADE = /^(fg|tp)/;
 export const isMade = (type: string) =>
@@ -169,8 +172,11 @@ const STATS_KEPT = new Set(["pts", "gs", "pf"]);
 // and the team fouls in it carried on the first line after it
 // (`clipFouls`, as a play shown on its own carries them - see clipOfPlay).
 // The first line kept after any cut out says so (`clipStart`): the 3D court
-// cuts to it. Lines that are kept whatever (a period starting, the end) are
-// kept. Works on a reel as on a whole game, its own `clipFouls` folded in.
+// cuts to it. The stats of the stretch cut out are marked (`gap`), ahead of
+// the line's own: the score as it stands when the picture cuts, the line's
+// own points as it happens (see HighlightClip's ClipCourt). Lines that are
+// kept whatever (a period starting, the end) are kept. Works on a reel as on
+// a whole game, its own `clipFouls` folded in.
 export const cutReel = (
 	events: any[],
 	keep: ReadonlySet<number>,
@@ -181,7 +187,19 @@ export const cutReel = (
 	// What is on the floor as the game has been shown, and as it really is.
 	const shown: [Set<number>, Set<number>] = [new Set(), new Set()];
 	const real: [Set<number>, Set<number>] = [new Set(), new Set()];
+	// The stats since the last line, and those of the lines cut out before
+	// them.
 	let stats = new Map<string, any>();
+	let gap = new Map<string, any>();
+	const add = (into: Map<string, any>, e: any) => {
+		const key = `${e.t}|${e.pid}|${e.s}`;
+		const had = into.get(key);
+		if (had) {
+			had.amt += e.amt;
+		} else {
+			into.set(key, { ...e });
+		}
+	};
 	let timeouts: any;
 	let fouls: { t: 0 | 1; clock: number }[] = [];
 	let skipped = false;
@@ -191,12 +209,19 @@ export const cutReel = (
 			out.push(timeouts);
 			timeouts = undefined;
 		}
+		for (const s of gap.values()) {
+			if (s.amt !== 0 || s.s === "gs") {
+				out.push({ ...s, gap: true });
+			}
+		}
 		for (const s of stats.values()) {
 			if (s.amt !== 0 || s.s === "gs") {
-				out.push(s);
+				const { gap: _, ...own } = s;
+				out.push(own);
 			}
 		}
 		stats = new Map();
+		gap = new Map();
 		for (const t of [0, 1] as const) {
 			const on = [...real[t]].filter((pid) => !shown[t].has(pid));
 			const off = [...shown[t]].filter((pid) => !real[t].has(pid));
@@ -237,13 +262,7 @@ export const cutReel = (
 			if (!STATS_KEPT.has(e.s)) {
 				continue;
 			}
-			const key = `${e.t}|${e.pid}|${e.s}`;
-			const had = stats.get(key);
-			if (had) {
-				had.amt += e.amt;
-			} else {
-				stats.set(key, { ...e });
-			}
+			add(e.gap === true ? gap : stats, e);
 			continue;
 		}
 		if (type === "timeouts") {
@@ -266,10 +285,17 @@ export const cutReel = (
 				: [];
 			const line: any = { ...rest };
 			if (type === "period" || type === "overtime") {
-				// (A new period: its own fouls from none.)
+				// (A new period: its own fouls from none. After the first clip,
+				// it is no more than a cut - see the director's period - even
+				// right after a shot at the horn: nobody walks off.)
 				fouls = [];
+				if (skipped || map.size > 0) {
+					line.clipGap = true;
+				}
 			} else {
-				if (skipped && keep.has(i)) {
+				// (A clip starts where lines were cut out before it - and where one
+				// started in the reel this is cut from.)
+				if ((skipped || clipStart === true) && keep.has(i)) {
 					line.clipStart = true;
 					skipped = false;
 				}
@@ -282,8 +308,12 @@ export const cutReel = (
 			out.push(line);
 			continue;
 		}
-		// Cut out.
+		// Cut out, and its stats with it.
 		skipped = true;
+		for (const st of stats.values()) {
+			add(gap, st);
+		}
+		stats = new Map();
 		if (
 			type.startsWith("pf") &&
 			(e.t === 0 || e.t === 1) &&
@@ -519,8 +549,8 @@ const findWinners = (
 };
 
 // THE REEL OF A GAME just simmed: its biggest plays (REEL_TOP), the shots
-// that decided it, and each team's best player's best (REEL_STAR, `stars`:
-// their pids), cut (see cutReel).
+// that decided it, each team's best player's best (REEL_STAR, `stars`:
+// their pids) and each period's best (REEL_PER_PERIOD), cut (see cutReel).
 export const makeRecapReel = (
 	events: any[],
 	{
@@ -549,6 +579,14 @@ export const makeRecapReel = (
 				chosen.add(k);
 				n++;
 			}
+		}
+	}
+	const perPeriod = new Map<number, number>();
+	for (const [k, p] of ranked) {
+		const n = perPeriod.get(p.period) ?? 0;
+		if (n < REEL_PER_PERIOD) {
+			chosen.add(k);
+			perPeriod.set(p.period, n + 1);
 		}
 	}
 	const keep = new Set<number>();

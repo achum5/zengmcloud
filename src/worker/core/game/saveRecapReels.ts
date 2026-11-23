@@ -14,7 +14,7 @@ import { g } from "../../util/index.ts";
 // Saving them at all. They travel to every device in a shared league, and a
 // device on a build from before their store cannot take them (it stops
 // syncing till it updates), so the store goes out a step ahead of them.
-export const RECAP_REELS_ON = false;
+export const RECAP_REELS_ON = true;
 
 // How many nights back (counting tonight) recaps can be watched.
 export const RECAP_NIGHTS = 7;

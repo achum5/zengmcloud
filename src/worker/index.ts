@@ -184,6 +184,9 @@ const SKIP_CHANGESET_CAPTURE = new Set([
 	// "main.getPlayerWatch" while the sim was still running.
 	"getPlayerFaces",
 	"getPlayerWatch",
+	// The Nightly Recap's reads, fired as its page shows.
+	"getNightlyRecap",
+	"getRecapFeed",
 	"getBornLoc",
 	"getDiamondInfo",
 	"getSavedTrade",
