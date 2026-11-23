@@ -12,9 +12,14 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
-		n: 453,
+		n: 454,
 		date: "2026-11-23",
 		text: "3D game, New sim (Global Settings, 3D Game Sim): players run with their own stride. Their steps go about as quickly as a real player's of their height at that pace, so going hard they take long strides instead of quick little ones, and a jog lengthens smoothly into a run and a run into a sprint. Each player also gets his own way of running, walking and sitting in his stance, picked from his ratings.",
+	},
+	{
+		n: 453,
+		date: "2026-11-23",
+		text: "Draft night looks more like the broadcast again. Before each pick is read, the camera is down among the tables looking up at the big board, with the picks coming up and the team on the clock under them, and the lights over the stage glaring into the lens. The arena's ribbon boards glow blue for the draft. After the pictures, the player walks off the back of the stage and the commissioner goes back to the podium, seen from the end of the stage. The live draft room on the Draft page also no longer drops out for a pick when it can't load right away: it keeps trying.",
 	},
 	{
 		n: 452,

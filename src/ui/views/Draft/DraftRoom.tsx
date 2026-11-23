@@ -82,6 +82,16 @@ export const DraftRoom = ({
 	// draftClock.)
 	const upKey = up ? up.draft.round * 1000 + up.draft.pick : undefined;
 	const [noClock, setNoClock] = useState<number>();
+	// (And, given up on, asked for again the next time the draft changes on
+	// the page - a league mate's pick in, say.)
+	const [again, setAgain] = useState(0);
+	useEffect(() => {
+		if (noClock !== undefined) {
+			setNoClock(undefined);
+			setAgain((n) => n + 1);
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [drafted]);
 	if (
 		__SPORT !== "basketball" ||
 		(!showing && (upKey === undefined || noClock === upKey))
@@ -117,7 +127,7 @@ export const DraftRoom = ({
 				/>
 			) : upKey !== undefined ? (
 				<HeadlineScene
-					scene={{ type: "draftClock", pick: upKey }}
+					scene={{ type: "draftClock", pick: upKey, again }}
 					playing
 					onNone={() => {
 						setNoClock(upKey);

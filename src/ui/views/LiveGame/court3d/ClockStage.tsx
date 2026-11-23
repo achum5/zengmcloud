@@ -4,7 +4,7 @@ import type { draftClock } from "../../../../worker/util/headlineScene.ts";
 import type { Authored } from "./authored.ts";
 import Court3D from "./Court3D.tsx";
 import { DraftClockBroadcast, makeDraftFeed } from "./DraftBroadcast.tsx";
-import { clockShotAt, stageOnTheClock } from "./draftClock.ts";
+import { ASK_AGAIN_MS, clockShotAt, stageOnTheClock } from "./draftClock.ts";
 import { draftLook } from "./draftDress.ts";
 import { crowdFaces, type CrowdFace } from "./crowdFaces.ts";
 import { draftVenue, paintDraftVenue } from "./draftVenue.ts";
@@ -33,25 +33,36 @@ const ClockStage = ({
 	onNoneRef.current = onNone;
 	useEffect(() => {
 		let alive = true;
-		void (async () => {
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		// (Asked again a few times before it is given up on: the worker can be
+		// in the middle of a pick, or of a league mate's coming in.)
+		const ask = async (i: number) => {
+			let got: Made | undefined;
 			try {
-				const got = await toWorker("main", "getDraftClock", undefined);
-				if (!alive) {
-					return;
-				}
-				if (got) {
-					setMade(got);
-				} else {
-					onNoneRef.current();
-				}
-			} catch {
-				if (alive) {
-					onNoneRef.current();
-				}
+				got = await toWorker("main", "getDraftClock", undefined);
+			} catch (error) {
+				console.warn("Draft room", error);
 			}
-		})();
+			if (!alive) {
+				return;
+			}
+			if (got) {
+				setMade(got);
+			} else if (i + 1 < ASK_AGAIN_MS.length) {
+				timer = setTimeout(
+					() => {
+						void ask(i + 1);
+					},
+					ASK_AGAIN_MS[i + 1],
+				);
+			} else {
+				onNoneRef.current();
+			}
+		};
+		void ask(0);
 		return () => {
 			alive = false;
+			clearTimeout(timer);
 		};
 	}, []);
 

@@ -13,6 +13,7 @@ import {
 	PRE_ROLL_MS,
 } from "./DraftBroadcast.tsx";
 import { crowdFaces, type CrowdFace } from "./crowdFaces.ts";
+import { ASK_AGAIN_MS } from "./draftClock.ts";
 import { stageDraftNight } from "./draftStage.ts";
 import { draftVenue, paintDraftVenue } from "./draftVenue.ts";
 import { draftLook } from "./draftDress.ts";
@@ -47,28 +48,41 @@ const HeadlineStage = ({
 	onNoneRef.current = onNone;
 	useEffect(() => {
 		let alive = true;
-		void (async () => {
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		// (Asked again a few times before it is given up on - see ClockStage.)
+		const ask = async (i: number) => {
+			let got: Made | undefined;
+			let failed = false;
 			try {
-				const got = await toWorker("main", "getHeadlineScene", {
-					type,
-					pid: scenePid,
-				});
-				if (!alive) {
-					return;
-				}
-				if (got) {
-					setMade(got);
-				} else {
-					onNoneRef.current();
-				}
-			} catch {
-				if (alive) {
-					onNoneRef.current();
-				}
+				got =
+					(await toWorker("main", "getHeadlineScene", {
+						type,
+						pid: scenePid,
+					})) ?? undefined;
+			} catch (error) {
+				failed = true;
+				console.warn("Draft scene", error);
 			}
-		})();
+			if (!alive) {
+				return;
+			}
+			if (got) {
+				setMade(got);
+			} else if (failed && i + 1 < ASK_AGAIN_MS.length) {
+				timer = setTimeout(
+					() => {
+						void ask(i + 1);
+					},
+					ASK_AGAIN_MS[i + 1],
+				);
+			} else {
+				onNoneRef.current();
+			}
+		};
+		void ask(0);
 		return () => {
 			alive = false;
+			clearTimeout(timer);
 		};
 	}, [type, scenePid]);
 

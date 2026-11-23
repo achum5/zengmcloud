@@ -16,7 +16,12 @@ const Clock = lazy(() => import("./ClockStage.tsx"));
 
 // Or, on the Draft page between picks, the room with a team on the clock
 // (see ClockStage.tsx) - this pick of the draft.
-export type DraftClockSpec = { type: "draftClock"; pick: number };
+// (Asked for `again` that many times since it last couldn't be had.)
+export type DraftClockSpec = {
+	type: "draftClock";
+	pick: number;
+	again?: number;
+};
 
 const BOX = {
 	position: "relative",
@@ -53,7 +58,7 @@ export const HeadlineScene = ({
 	// to make of it (see the worker's headlineScene).
 	const which =
 		scene.type === "draftClock"
-			? `draftClock:${scene.pick}`
+			? `draftClock:${scene.pick}:${scene.again ?? 0}`
 			: `${scene.type}:${scene.pid}`;
 	const [noneOf, setNoneOf] = useState<string>();
 	const none = noneOf === which;

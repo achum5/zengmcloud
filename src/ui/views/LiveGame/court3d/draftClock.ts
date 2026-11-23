@@ -4,6 +4,7 @@ import type { CrewMember } from "./crew.ts";
 import type { CourtTimeline } from "./director.ts";
 import { withBody, type PlayerState } from "./evaluate.ts";
 import {
+	boardCam,
 	castState,
 	familyOf,
 	groundAt,
@@ -25,17 +26,22 @@ import {
 } from "./draftStage.ts";
 
 // THE ROOM BETWEEN PICKS (see draftStage.ts for the room, ClockStage.tsx for
-// the page): a team on the clock, its colors on the LED wall, the podium
-// empty - and the cameras going round the room, up to the wall, and in on
-// the best still on the board, sat at their families' tables. The same
-// tables, the same families, as when each one's name is read (see takeOf).
-// Round and round till the pick is in.
+// the page): a team on the clock, its colors on the LED wall and under the
+// board, the podium empty - and the cameras up at the board from the floor,
+// up to the wall, in on the best still on the board, sat at their families'
+// tables, and round the room. The same tables, the same families, as when
+// each one's name is read (see takeOf). Round and round till the pick is in.
 
 export const CLOCK_LOOP = 32_000;
+// The room (or a pick's scene) asked of the worker at once, and again after
+// so long each time it can't be had - the worker can be in the middle of a
+// pick, or of a league mate's coming in - before it is given up on.
+export const ASK_AGAIN_MS = [0, 800, 2500, 6000];
 // How long it runs: as long as anybody will be on the clock.
 const CLOCK_MS = 6 * 60 * 60 * 1000;
 
 export type ClockShot =
+	| { kind: "board"; side: -1 | 0 | 1 }
 	| { kind: "room"; side: -1 | 0 | 1 }
 	| { kind: "wall" }
 	| { kind: "podium" }
@@ -51,7 +57,8 @@ export const clockShotAt = (
 	const u = t - loop * CLOCK_LOOP;
 	const side = loop % 2 === 0 ? 1 : -1;
 	if (u < 7000) {
-		return { shot: { kind: "room", side: 0 }, t0: 0, t1: 7000 };
+		const board = ([-1, 0, 1] as const)[loop % 3] ?? 0;
+		return { shot: { kind: "board", side: board }, t0: 0, t1: 7000 };
 	}
 	if (u < 12_500) {
 		return { shot: { kind: "wall" }, t0: 7000, t1: 12_500 };
@@ -126,6 +133,11 @@ export const stageOnTheClock = (
 		const k = narrow ? 0.82 : 1;
 		const { shot, t0, t1 } = clockShotAt(t, seated.length);
 		const u = smooth(((t % CLOCK_LOOP) - t0) / (t1 - t0));
+		if (shot.kind === "board") {
+			// Up at the board from the floor, the team on the clock under it -
+			// or up at the wall, or its tower.
+			return boardCam(shot.side, u, k);
+		}
 		if (shot.kind === "room") {
 			// From high in the stands at the back: down the middle, or a
 			// corner of it.
