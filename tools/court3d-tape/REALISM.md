@@ -70,6 +70,31 @@ follows is mostly making those look the way they are meant to.
 - **The same game everywhere.** No randomness but the seeded draws and
   hashes, and no Math call the staging makes outside sameEverywhere.
 
+## Against real NBA tracking (2026-11-23)
+
+`nba/` measures the 3D game tape and real NBA player tracking (SportVU
+2015-16, 17 games, 775 live minutes) the same way; the real numbers are in
+`nba/targets.json` (see nba/README.md). Real games 11 and 22 as staged on
+2026-11-23, live play at real speed, against the real thing:
+
+| Measure                                                | Real NBA  | 3D      |
+| ------------------------------------------------------ | --------- | ------- |
+| Speed, live play (mph)                                 | 4.21      | 2.76    |
+| Standing still (under 1.5 ft/s)                        | 13%       | 46%     |
+| ... offense off the ball                               | 19%       | 60%     |
+| Speeding up / slowing down, 90th pct (ft/s2)           | 8.9 / 8.3 | 23 / 19 |
+| Turning at 8-13 ft/s, median (deg/s)                   | 15        | 1.4     |
+| Keeps moving once going, median (s)                    | 1.6       | 0.7     |
+| Set off within 0.1 s of another man                    | 26%       | 70%     |
+| On-ball defender, median (ft)                          | 5.6       | 3.9     |
+| Help defender (man 35+ ft from ball) to ball side (ft) | 1.9       | 0.6     |
+| Passes a live minute                                   | 11.3      | 5.5     |
+
+Real runs bend (sideways acceleration up to about 17 ft/s2 at any speed);
+the 3D runs straight and turns its corners at low speed, and starts and
+stops about twice as hard as anybody does. Top speeds in games run from
+about 17.8 ft/s (slow bigs) to 21.2 (quick guards), 5th to 95th percentile.
+
 ## Step 0: the scorecard
 
 One tool, run on the real games (11, 22, 33) and test games "a" to "d",
@@ -87,7 +112,7 @@ coverage played.
 | Readable | Screen set within a step of the man guarding the ball, at an angle to his way                                                | most of them                                                           |
 | Readable | Ball used off the screen within a second of it being set                                                                     | most of them                                                           |
 | Readable | Coverage depth: the screener's man, as the ball comes off (drop: back at the foul line or below; hedge: out past the screen) | as named                                                               |
-| Tempo    | Average speed on the floor; share of time stood still; share over 15 feet a second                                           | NBA tracking (to be set in step 0 from NBA.com speed and distance)     |
+| Tempo    | Average speed on the floor; share of time stood still; share over 15 feet a second                                           | NBA tracking: 4.2 mph, 13% still, 5% over 15 ft/s (nba/targets.json)   |
 | Tempo    | Shot clock used per possession, half court and early offense                                                                 | NBA averages (about 14-15 s a possession overall; to be set in step 0) |
 | Tempo    | Lockstep (men setting off within 0.1 s of each other), reaction spread                                                       | down from 35% (SIM.md)                                                 |
 | Tempo    | Repeats: the same move run the same way by the same man twice in a game                                                      | rare                                                                   |

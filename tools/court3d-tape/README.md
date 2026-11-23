@@ -34,3 +34,6 @@ them. Three steps, all from the repo root:
 
    `sheet.py` draws a small panel for every flag of one kind; `view.py` draws a
    whole possession (or a stretch of it) in 1.5 s panels.
+
+4. **Against the NBA.** The same tape measured beside real NBA player
+   tracking, and pictures of either from above: see `nba/README.md`.
