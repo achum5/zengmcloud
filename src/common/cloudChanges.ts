@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 464,
+		date: "2026-11-23",
+		text: "National broadcasts now show before tipoff: a game on a national network has the network's tag on its box on the Daily Schedule and the team schedule, beside it in the scores bar, and next to the next game on the dashboard. A night's pick can still change as records change, until it's the next night.",
+	},
+	{
 		n: 463,
 		date: "2026-11-23",
 		text: "NBA calendar leagues: the team calendar has a new look, like a team's own schedule page. Home nights are filled in black, each game has the opponent's logo and name, and played games show a green W or red L with the score (tap a game for its box score). Today is outlined in red.",

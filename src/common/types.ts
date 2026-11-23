@@ -1766,6 +1766,8 @@ export type LocalStateUI = {
 		finals?: boolean;
 		forceWin?: number; // Number of iterations - defined means result was forced
 		gid: number;
+		// An upcoming game on a national network.
+		national?: NationalTag;
 		numPeriods?: number;
 		overtimes?: number;
 		// The displayed point spread for an upcoming game, computed in the worker
@@ -3557,8 +3559,14 @@ export type NationalBroadcast = {
 	// "Mon".."Sun". (With no calendar, opening night is a Tuesday.)
 	nights?: string[];
 	finals?: boolean;
+	// The network's logo on its games' previews: a link, or a picture written
+	// in. (Without one, its name.)
+	logo?: string;
 	scoreBug: ScoreBugStyle;
 };
+// A game's national network as its preview shows it: the name, and the
+// logo ready to show (if it has one).
+export type NationalTag = { network: string; logo?: string };
 export type ScoreBugShow =
 	| "awayLogo"
 	| "homeLogo"

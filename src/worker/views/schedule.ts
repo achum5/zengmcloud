@@ -1,7 +1,7 @@
 import { player, season, team } from "../core/index.ts";
 import { idb } from "../db/index.ts";
 import { g, helpers } from "../util/index.ts";
-import type { Game, PlayerInjury } from "../../common/types.ts";
+import type { Game, NationalTag, PlayerInjury } from "../../common/types.ts";
 import { PHASE } from "../../common/constants.ts";
 import { groupByUnique, last, orderBy } from "../../common/utils.ts";
 import {
@@ -30,6 +30,7 @@ import { isAllStarGame, isTradeDeadline } from "../../common/specialGames.ts";
 import { injuryTicksUntil } from "../core/game/calendarTicks.ts";
 import { getInjuryPace } from "../core/game/classicDays.ts";
 import { getCalendarIfDated } from "./calendar.ts";
+import { nationalTags } from "./nationalBroadcast.ts";
 
 const processInputs = (params: RouteParams<"schedule">) => {
 	const tid = validateTeam(params.team);
@@ -284,12 +285,16 @@ export const getUpcoming = async ({
 		return roundHalf(corrected);
 	};
 
+	// The national games' networks, for their previews.
+	const national = await nationalTags(schedule);
+
 	const upcoming: {
 		date?: string;
 		day: number;
 		finals?: boolean;
 		forceWin?: number | "tie";
 		gid: number;
+		national?: NationalTag;
 		season: number;
 		spread?: number;
 		teams: [ReturnType<typeof getTeam>, ReturnType<typeof getTeam>];
@@ -299,12 +304,14 @@ export const getUpcoming = async ({
 				getTeam(homeTid, gamesInFuture(homeTid, gid, day)),
 				getTeam(awayTid, gamesInFuture(awayTid, gid, day)),
 			];
+			const tag = national.get(gid);
 			return {
 				date,
 				day,
 				finals,
 				forceWin,
 				gid,
+				...(tag ? { national: tag } : {}),
 				season: g.get("season"),
 				spread:
 					homeTid >= 0 && awayTid >= 0

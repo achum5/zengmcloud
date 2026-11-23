@@ -4,6 +4,7 @@ import { showNotification } from "../../util/showNotification.ts";
 import { toWorker } from "../../util/toWorker.ts";
 import { keepCourtPictures, parseCourt } from "../courtFile.ts";
 import { keepScoreBugPictures } from "../scoreBugFile.ts";
+import { PIC } from "../../components/CourtImageField.tsx";
 import { parseScoreBug } from "../../../common/scoreBug.ts";
 import { parseNationalBroadcasts } from "../../../common/nationalBroadcasts.ts";
 import { toSkinURL } from "./JerseySkins.tsx";
@@ -29,7 +30,8 @@ import { toSkinURL } from "./JerseySkins.tsx";
 // "scoreBug": { "width": 600, "height": 60, "pieces": [...] } (null: the
 // league's). And beside the teams, the national networks' (see
 // NationalBroadcast) - "national": [{ "network": "ESPN", "nights": ["Wed"],
-// "scoreBug": {...} }] - in place of any the league had ([]: none).
+// "logo": "https://...", "scoreBug": {...} }] - in place of any the league
+// had ([]: none).
 
 type Entry = {
 	abbrev?: unknown;
@@ -172,7 +174,19 @@ const ImportTeamLooks = ({
 				for (const n of parsed) {
 					const kept = await keepScoreBugPictures(n.scoreBug);
 					uploaded.push(...kept.ids);
-					broadcasts.push({ ...n, scoreBug: kept.bug });
+					let logo = n.logo;
+					if (logo?.startsWith("data:image/")) {
+						try {
+							const id = await toWorker("main", "storeCourtPicture", logo);
+							uploaded.push(id);
+							logo = `${PIC}${id}`;
+						} catch {}
+					}
+					broadcasts.push({
+						...n,
+						...(logo !== undefined ? { logo } : {}),
+						scoreBug: kept.bug,
+					});
 				}
 				await toWorker("main", "updateNationalBroadcasts", {
 					broadcasts,

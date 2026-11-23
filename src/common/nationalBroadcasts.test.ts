@@ -34,7 +34,7 @@ const ESPN: NationalBroadcast = {
 
 describe("parseNationalBroadcasts", () => {
 	test("takes networks as they are", () => {
-		const list = [NBC, ESPN];
+		const list = [NBC, { ...ESPN, logo: "https://example.com/espn.png" }];
 		assert.deepStrictEqual(parseNationalBroadcasts(list), list);
 		assert.deepStrictEqual(parseNationalBroadcasts([]), []);
 	});
@@ -45,6 +45,7 @@ describe("parseNationalBroadcasts", () => {
 			[{ nights: ["Tue"], scoreBug: NBC.scoreBug }],
 			[{ ...NBC, nights: ["Tuesday"] }],
 			[{ ...NBC, finals: "yes" }],
+			[{ ...NBC, logo: 4 }],
 			[{ ...NBC, channel: 4 }],
 			[{ ...NBC, scoreBug: { width: 10 } }],
 		]) {
