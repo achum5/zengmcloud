@@ -277,7 +277,8 @@ const DailySchedule = ({
 	const recapVideo =
 		completed.length > 0 ? (
 			<div style={{ maxWidth: 960 }}>
-				<NightlyRecap season={season} day={day} />
+				{/* (Fetched again when a game played live goes final.) */}
+				<NightlyRecap key={completed.length} season={season} day={day} />
 			</div>
 		) : null;
 

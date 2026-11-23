@@ -8,6 +8,7 @@ import { getTeamInfoBySeason } from "./getTeamInfoBySeason.ts";
 import { notability } from "./getAutoRecap.ts";
 import { recapGamesForDay } from "./getDayGamesForRecap.ts";
 import { formatGameDate } from "../../common/calendarDates.ts";
+import { getLiveGate } from "./liveGameGate.ts";
 
 // A NIGHT'S RECAP, as its graphics need it: the night's games that have recap
 // plays (see core/game/saveRecapReels.ts), the night's biggest first - the
@@ -142,9 +143,15 @@ export const nightlyRecap = async ({
 	if (__SPORT !== "basketball") {
 		return { when, games: [] };
 	}
+	// (Not a game still being played live: no highlights till its final.)
+	const hidden =
+		season === g.get("season") ? (await getLiveGate()).hidden : undefined;
 	const numPlays = new Map(
 		(await idb.cache.recapReels.getAll())
-			.filter((row) => row.season === season && row.day === day)
+			.filter(
+				(row) =>
+					row.season === season && row.day === day && !hidden?.has(row.gid),
+			)
 			.map((row) => [row.gid, row.reel.plays.length]),
 	);
 	if (numPlays.size === 0) {

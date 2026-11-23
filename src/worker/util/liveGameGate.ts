@@ -95,9 +95,15 @@ export const getLiveGate = async (): Promise<LiveGate> => {
 		}
 	}
 
+	// (The whole season's games only when a regular season game could be
+	// played past.)
 	let maxDay: number | undefined;
 	let maxDayLoaded = false;
-	const seasonGames = await idb.cache.games.getAll();
+	const needsMaxDay = [...room].some((gid) => {
+		const row = rows.get(gid);
+		return !watching.has(gid) && row && !row.playoffs && row.day !== undefined;
+	});
+	const seasonGames = needsMaxDay ? await idb.cache.games.getAll() : [];
 	const maxPlayedDay = () => {
 		if (!maxDayLoaded) {
 			maxDayLoaded = true;
@@ -386,7 +392,10 @@ export const liveScheduleRow = (game: Game) => {
 		live: true as const,
 		season: game.season,
 		spread: game.spread,
-		teams: [team(0), team(1)] as [ReturnType<typeof team>, ReturnType<typeof team>],
+		teams: [team(0), team(1)] as [
+			ReturnType<typeof team>,
+			ReturnType<typeof team>,
+		],
 	};
 };
 

@@ -2,6 +2,7 @@ import { assert, describe, test } from "vitest";
 import {
 	chooseFocusGame,
 	createFollowerHold,
+	createRoomLiveCheck,
 	createWakeClock,
 	decideFollowAction,
 	followGivenUp,
@@ -512,5 +513,47 @@ describe("several live games at once", () => {
 				now + 10,
 			),
 		);
+	});
+});
+
+describe("a room game that went quiet", () => {
+	const game = (expiresAt: number, gameOver = false) => ({
+		gid: 5,
+		startedAt: 1000,
+		gameOver,
+		expiresAt,
+	});
+
+	test("stays over when its screen comes back", () => {
+		const check = createRoomLiveCheck(() => true);
+		assert.isTrue(check.isLive(game(10_000), 10_000));
+		const quiet = 10_000 + QUIET_WATCH_MS + 1;
+		assert.isFalse(check.isLive(game(10_000), quiet));
+		assert.isTrue(check.givenUp(1000));
+		// (Heartbeating again, a fresh lease.)
+		assert.isFalse(check.isLive(game(quiet + 12_000), quiet + 1));
+	});
+
+	test("is not given up on while this device can't hear the room", () => {
+		let hearing = false;
+		const check = createRoomLiveCheck(() => hearing);
+		const quiet = 10_000 + QUIET_WATCH_MS + 1;
+		assert.isFalse(check.isLive(game(10_000), quiet));
+		assert.isFalse(check.givenUp(1000));
+		hearing = true;
+		assert.isTrue(check.isLive(game(quiet + 12_000), quiet + 1));
+	});
+
+	test("is not given up on for this device's own sleep", () => {
+		const check = createRoomLiveCheck(() => true);
+		const woke = 10_000 + QUIET_WATCH_MS + 1;
+		assert.isTrue(check.isLive(game(10_000), woke + 1, woke));
+		assert.isFalse(check.givenUp(1000));
+	});
+
+	test("a final is just over, not given up on", () => {
+		const check = createRoomLiveCheck(() => true);
+		assert.isFalse(check.isLive(game(10_000, true), 10_000));
+		assert.isFalse(check.givenUp(1000));
 	});
 });
