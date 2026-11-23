@@ -96,6 +96,7 @@ const useLocalRaw = createWithEqualityFn<LocalStateWithActions>(
 		tickerItems: [],
 		leagueTickerVisible: false,
 		gameOver: false,
+		calendarDate: undefined,
 		gameSimInProgress: false,
 		games: [],
 		gender: defaultGameAttributes.gender,
@@ -136,6 +137,7 @@ const useLocalRaw = createWithEqualityFn<LocalStateWithActions>(
 		maxContract: defaultGameAttributes.maxContract,
 		minContract: defaultGameAttributes.minContract,
 		minPayroll: defaultGameAttributes.minPayroll,
+		nbaCalendar: defaultGameAttributes.nbaCalendar,
 		neutralSite: defaultGameAttributes.neutralSite,
 		nextPhase: undefined,
 		numGames: defaultGameAttributes.numGames[0].value,
@@ -237,8 +239,10 @@ const useLocalRaw = createWithEqualityFn<LocalStateWithActions>(
 					homeCourtAdvantage: 1,
 
 					// Controller.tsx relies on this being undefined (or at least different than the new lid) to trigger calling beforeView.league
+					calendarDate: undefined,
 					lid: undefined,
 					liveGameInProgress: false,
+					nbaCalendar: defaultGameAttributes.nbaCalendar,
 					ownLiveSim: false,
 					mpSyncActive: false,
 					mpSyncIsHost: false,

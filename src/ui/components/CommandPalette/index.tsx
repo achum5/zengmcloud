@@ -137,6 +137,10 @@ const getResultsGroupedDefault = ({
 			return false;
 		}
 
+		if (menuItem.nbaCalendar && !local.getState().nbaCalendar) {
+			return false;
+		}
+
 		if (menuItem.godMode && !godMode) {
 			return false;
 		}

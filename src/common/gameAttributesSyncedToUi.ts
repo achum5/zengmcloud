@@ -27,6 +27,7 @@ export const gameAttributesSyncedToUi = [
 	"luxuryTax",
 	"maxContract",
 	"minContract",
+	"nbaCalendar",
 	"minPayroll",
 	"neutralSite",
 	"nextPhase",

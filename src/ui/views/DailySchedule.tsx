@@ -248,7 +248,7 @@ const DailySchedule = ({
 			</div>
 
 			{date !== undefined ? (
-				<h3 className="h5 mb-3">{formatGameDate(date, "long")}</h3>
+				<h3 className="h5 mb-3">{formatGameDate(date, "full")}</h3>
 			) : null}
 
 			{dayNote ? (

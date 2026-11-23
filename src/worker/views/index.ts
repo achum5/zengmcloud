@@ -20,6 +20,7 @@ export { default as triviaHigherLower } from "./triviaHigherLower.ts";
 export { default as triviaSpinStreak } from "./triviaSpinStreak.ts";
 export { default as awardSettings } from "./awardSettings.ts";
 export { default as awardsRecords } from "./awardsRecords.ts";
+export { default as calendar } from "./calendar.ts";
 export { default as colleges } from "./colleges.ts";
 export { default as comparePlayers } from "./comparePlayers.ts";
 export { default as contractRules } from "./contractRules.ts";

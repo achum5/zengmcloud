@@ -131,6 +131,7 @@ $flag-icon-css-path: "/img/flags";
 @import "depth-chart";
 @import "social";
 @import "new-interface";
+@import "league-calendar";
 
 @each $color, $value in $table-variants {
 	.table-#{$color} {

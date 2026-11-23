@@ -140,12 +140,14 @@ const MenuItem = ({
 	// Read here rather than threaded down: one leaf needs it, and the flag has
 	// nothing to do with the components in between. Before the early returns,
 	// because it is a hook.
-	const { college, contractRules, rotationPlans, socialFeed } = useLocal([
-		"college",
-		"contractRules",
-		"rotationPlans",
-		"socialFeed",
-	]);
+	const { college, contractRules, nbaCalendar, rotationPlans, socialFeed } =
+		useLocal([
+			"college",
+			"contractRules",
+			"nbaCalendar",
+			"rotationPlans",
+			"socialFeed",
+		]);
 
 	if (menuItem.type === "text") {
 		return <Dropdown.Header>{menuItem.text}</Dropdown.Header>;
@@ -177,6 +179,10 @@ const MenuItem = ({
 		}
 
 		if (menuItem.contractRules && !contractRules) {
+			return null;
+		}
+
+		if (menuItem.nbaCalendar && !nbaCalendar) {
 			return null;
 		}
 

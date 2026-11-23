@@ -1,4 +1,10 @@
+import { useEffect, useState } from "react";
 import { Nav, Navbar } from "react-bootstrap";
+import {
+	formatGameDate,
+	formatMonth,
+	formatSeasonSpan,
+} from "../../../common/calendarDates.ts";
 import { PHASE } from "../../../common/constants.ts";
 import { helpers } from "../../util/helpers.ts";
 import { localActions, useLocal } from "../../util/local.ts";
@@ -17,13 +23,84 @@ import { menuItems } from "../../util/menuItems.tsx";
 import type { Phase } from "../../../common/types.ts";
 import type { LeagueUrlParts } from "../../router/types.ts";
 
+// Today's date, as a page off a desk calendar.
+const DateTile = ({ date }: { date: string }) => (
+	<span className="league-date-tile" aria-hidden="true">
+		<span className="league-date-tile-month">{formatMonth(date, true)}</span>
+		<span className="league-date-tile-day">{Number(date.slice(8))}</span>
+	</span>
+);
+
 const PhaseStatusBlock = () => {
-	const { liveGameInProgress, phase, phaseText, statusText } = useLocal([
+	const {
+		calendarDate,
+		liveGameInProgress,
+		phase,
+		phaseText,
+		season,
+		statusText,
+	} = useLocal([
+		"calendarDate",
 		"liveGameInProgress",
 		"phase",
 		"phaseText",
+		"season",
 		"statusText",
 	]);
+
+	// On the NBA calendar, today's date leads, with the year, and the season
+	// is named the NBA's way ("2025-26"). The date holds still while a live
+	// game is on screen: the sim is already past it, and the next night - or
+	// none, once the Finals are over - would give the result away.
+	const [date, setDate] = useState(calendarDate);
+	useEffect(() => {
+		if (!liveGameInProgress) {
+			setDate(calendarDate);
+		}
+	}, [calendarDate, liveGameInProgress]);
+
+	if (date !== undefined) {
+		const seasonPrefix = `${season} `;
+		const phaseName = phaseText.startsWith(seasonPrefix)
+			? `${formatSeasonSpan(season)} ${phaseText.slice(seasonPrefix.length)}`
+			: phaseText;
+		return (
+			<div className="dropdown-links navbar-nav flex-shrink-1 overflow-hidden text-nowrap">
+				<div className="nav-item overflow-hidden">
+					<a
+						href={helpers.leagueUrl(["calendar"])}
+						className="nav-link d-flex align-items-center"
+						style={{
+							lineHeight: 1.35,
+							padding: "9px 0 8px 16px",
+						}}
+						title="Calendar"
+					>
+						<DateTile date={date} />
+						<span className="overflow-hidden">
+							{liveGameInProgress ? (
+								<>
+									Live game
+									<br />
+									in progress
+								</>
+							) : (
+								<>
+									<span className="fw-semibold">
+										{formatGameDate(date, "shortWithYear")}
+									</span>
+									<br />
+									{statusText === "Idle" ? phaseName : statusText}
+								</>
+							)}
+							<AutoPlayCountdown />
+							<SyncUploadIndicator />
+						</span>
+					</a>
+				</div>
+			</div>
+		);
+	}
 
 	// Hide phase and status, to prevent revealing that the playoffs has ended, thus spoiling a 3-0/3-1/3-2 finals
 	// game. This is needed because game sim happens before the results are displayed in liveGame.

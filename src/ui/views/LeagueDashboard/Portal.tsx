@@ -826,6 +826,7 @@ const DatedCalendar = ({
 					))}
 				</tbody>
 			</table>
+			<a href={helpers.leagueUrl(["calendar"])}>» Full Calendar</a>
 		</div>
 	);
 };

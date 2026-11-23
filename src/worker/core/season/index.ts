@@ -1,6 +1,7 @@
 import addDaysToSchedule from "./addDaysToSchedule.ts";
 import genPlayoffSeeds from "./genPlayoffSeeds.ts";
 import genPlayoffSeries from "./genPlayoffSeries.ts";
+import getCalendarDate from "./getCalendarDate.ts";
 import getDaysLeftSchedule from "./getDaysLeftSchedule.ts";
 import getInitialNumGamesConfDivSettings from "./getInitialNumGamesConfDivSettings.ts";
 import getLeaderRequirements from "./getLeaderRequirements.ts";
@@ -21,6 +22,7 @@ export default {
 	addDaysToSchedule,
 	genPlayoffSeeds,
 	genPlayoffSeries,
+	getCalendarDate,
 	getDaysLeftSchedule,
 	getInitialNumGamesConfDivSettings,
 	getLeaderRequirements,

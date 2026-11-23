@@ -1526,6 +1526,8 @@ export type MenuItemLink = {
 	rotationPlans?: true;
 	// Hidden unless the league runs realistic front offices' contract rules.
 	contractRules?: true;
+	// Hidden unless the league plays on the NBA calendar.
+	nbaCalendar?: true;
 	// Pro leagues only (contracts, trades, the draft) / college leagues only.
 	pro?: true;
 	college?: true;
@@ -1729,6 +1731,9 @@ export type MpPhaseReady = {
 };
 
 export type LocalStateUI = {
+	// Today on the league's calendar ("YYYY-MM-DD"), for the top bar: the
+	// night of the next games, on an NBA calendar. See getCalendarDate.
+	calendarDate: string | undefined;
 	// Realistic front offices' contract rules (CBA-lite, free agency in
 	// stages) are on in this league: the Contract Rules page and the cap status
 	// on the money pages.

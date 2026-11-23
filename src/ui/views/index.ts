@@ -14,6 +14,7 @@ export { default as AutoRelocate } from "./AutoRelocate.tsx";
 export { default as AwardRaces } from "./AwardRaces.tsx";
 export { default as AwardSettings } from "./AwardSettings/index.tsx";
 export { default as AwardsRecords } from "./AwardsRecords.tsx";
+export { default as Calendar } from "./Calendar.tsx";
 export { default as Colleges } from "./Colleges.tsx";
 export { default as ComparePlayers } from "./ComparePlayers/index.tsx";
 export { default as ContractRules } from "./ContractRules.tsx";

@@ -640,7 +640,7 @@ const RecapHeader = ({
 											])}
 										>
 											{typeof boxScore.date === "string"
-												? formatGameDate(boxScore.date, "withYear")
+												? formatGameDate(boxScore.date, "shortWithYear")
 												: `${season} Day ${gameDay}`}
 										</a>
 									) : null}

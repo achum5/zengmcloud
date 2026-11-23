@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 448,
+		date: "2026-11-23",
+		text: "Leagues on the NBA Calendar now show today's date at the top of every page, with the year and the real day of the week (Wed, Nov 12, 2025), and the season named the NBA way (2025-26). Tap it for the new Calendar page: a month at a time for any team, with home games shaded, results, back-to-backs, playoff games, the trade deadline and the All-Star Game, or how many games are on each night across the league.",
+	},
+	{
 		n: 447,
 		date: "2026-11-23",
 		text: "Draft night looks more like the real broadcast. The commissioner reads each pick square on at a dark lectern, team-color panels either side of him. At his table the player faces the stage, with the room, the photographers and the stands behind him, and hugs each of his family. He walks up to the stage through the smoke, is handed his cap at the foot of the steps and puts it on, and hugs the commissioner, seen from behind the commissioner looking out at the room. The arena is darker, with full stands all the way round and black tablecloths.",

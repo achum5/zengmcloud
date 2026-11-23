@@ -12,6 +12,6 @@ export const GameDate = ({
 }) =>
 	date === undefined ? null : (
 		<div className={clsx("text-body-secondary small mb-1", className)}>
-			{formatGameDate(date, "long")}
+			{formatGameDate(date, "full")}
 		</div>
 	);

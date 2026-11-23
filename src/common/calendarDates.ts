@@ -75,16 +75,29 @@ export const nthWeekday = (
 // October 2026.
 export const seasonStartYear = (season: number) => season - 1;
 
-// "Tue, Jan 13" / "Tuesday, January 13" / "Jan 13, 2027".
+// "Tue, Jan 13" / "Tuesday, January 13" / "Tuesday, January 13, 2027" /
+// "Tue, Jan 13, 2027" / "Jan 13, 2027" / "Jan 13".
 export const formatGameDate = (
 	date: string,
-	style: "short" | "long" | "withYear" | "monthDay" = "short",
+	style:
+		| "short"
+		| "long"
+		| "full"
+		| "shortWithYear"
+		| "withYear"
+		| "monthDay" = "short",
 ) => {
 	const { year, month, day } = parse(date);
 	const monthName = MONTHS[month - 1]!;
 	const weekdayName = WEEKDAYS[weekdayOf(date)]!;
 	if (style === "long") {
 		return `${weekdayName}, ${monthName} ${day}`;
+	}
+	if (style === "full") {
+		return `${weekdayName}, ${monthName} ${day}, ${year}`;
+	}
+	if (style === "shortWithYear") {
+		return `${weekdayName.slice(0, 3)}, ${monthName.slice(0, 3)} ${day}, ${year}`;
 	}
 	if (style === "withYear") {
 		return `${monthName.slice(0, 3)} ${day}, ${year}`;
@@ -107,3 +120,14 @@ export const formatDateRange = (from: string, to: string) => {
 	}
 	return `${formatGameDate(from, "monthDay")}–${formatGameDate(to, "monthDay")}`;
 };
+
+// "November 2025", or "Nov" short, for the month a date is in.
+export const formatMonth = (date: string, short?: boolean) => {
+	const { year, month } = parse(date);
+	const monthName = MONTHS[month - 1]!;
+	return short ? monthName.slice(0, 3) : `${monthName} ${year}`;
+};
+
+// The 2026 season as the NBA writes it, "2025-26".
+export const formatSeasonSpan = (season: number) =>
+	`${seasonStartYear(season)}-${String(season).slice(-2)}`;

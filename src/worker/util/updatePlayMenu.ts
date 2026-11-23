@@ -380,6 +380,9 @@ const updatePlayMenu = async () => {
 
 	toUI("updateLocal", [
 		{
+			// Today's date for the top bar changes when the play menu does: after
+			// each day, at each phase, on load.
+			calendarDate: await season.getCalendarDate(),
 			playMenuOptions: someOptions,
 		},
 	]);

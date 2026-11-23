@@ -1386,7 +1386,7 @@ export const BoxScoreWrapper = ({
 					/>
 					{typeof boxScore.date === "string" ? (
 						<div className="mt-sm-1 text-center text-body-secondary">
-							{formatGameDate(boxScore.date, "withYear")}
+							{formatGameDate(boxScore.date, "shortWithYear")}
 						</div>
 					) : null}
 					<div className="mt-sm-1 text-center">
