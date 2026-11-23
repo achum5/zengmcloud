@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 453,
+		date: "2026-11-23",
+		text: "3D game, New sim (Global Settings, 3D Game Sim): players run with their own stride. Their steps go about as quickly as a real player's of their height at that pace, so going hard they take long strides instead of quick little ones, and a jog lengthens smoothly into a run and a run into a sprint. Each player also gets his own way of running, walking and sitting in his stance, picked from his ratings.",
+	},
+	{
 		n: 452,
 		date: "2026-11-23",
 		text: "3D game: more of each possession plays at real speed. The ball brought up the floor still runs by fast, but the picture now slows down about five seconds before each shot, turnover or foul (it was about three), so you see the play that leads to it. To watch every possession whole at real speed, turn off Fast-forward to the action in the live game's settings (the button next to Key plays).",

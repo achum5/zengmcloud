@@ -1,6 +1,7 @@
 import {
 	ANIMS,
 	legPhases,
+	lenMost,
 	stepBeat,
 	stepLength,
 	type AnimName,
@@ -27,6 +28,11 @@ export type Stretch = {
 	s1: number;
 	along: (t: number) => number;
 	pace: (t: number) => number;
+	// His own beat, if he has one (strides a second at a pace - see
+	// possession/gait.ts): each stride then as long as his pace makes it at
+	// that beat, longer than a full one as well as shorter - not a gait's
+	// one length, its steps quickening to keep up.
+	beat?: (v: number) => number;
 };
 
 export const STEP_MS = 10;
@@ -92,13 +98,24 @@ const smooth01 = (u: number) => {
 // will be down (at the beat) - so pulling up he steps short and his strides
 // keep the beat as he slows.
 const pacing = (anim: AnimName, st: Stretch) => {
-	const beat = stepBeat(anim);
+	const own = st.beat;
+	const beat = own ? own(st.pace(st.s0)) : stepBeat(anim);
 	const duty = legPhases(anim, 0)?.duty ?? 0.5;
-	const DOWN_MS = beat > 0 ? (duty * 1000) / beat : 0;
-	const over = (t: number, ms = DOWN_MS) =>
+	const downMs = (t: number) => {
+		const b = own ? own(st.pace(t)) : beat;
+		return b > 0 ? (duty * 1000) / b : 0;
+	};
+	const over = (t: number, ms = downMs(t)) =>
 		ms > 0 ? ((st.along(t + ms) - st.along(t)) * 1000) / ms : st.pace(t);
-	const lenAt = (t: number) => Math.max(LEN_MIN, stepLength(anim, over(t)));
-	return { beat, over, lenAt };
+	const lenFor = (v: number) =>
+		own
+			? Math.min(
+					lenMost(anim),
+					Math.max(LEN_MIN, v / Math.max(1e-6, own(v) * strideOf(anim))),
+				)
+			: Math.max(LEN_MIN, stepLength(anim, v));
+	const lenAt = (t: number) => lenFor(over(t));
+	return { beat, over, lenAt, lenFor };
 };
 
 // Setting off fresh: a quarter of a stride in (or `ph`), each foot's stride
@@ -111,7 +128,7 @@ export const freshStart = (
 	st: Stretch,
 	ph = STRIDE_START,
 ): { ph: number; R: StepLeg; L: StepLeg } => {
-	const { beat, over } = pacing(anim, st);
+	const { beat, over, lenFor } = pacing(anim, st);
 	const first = legPhases(anim, ph);
 	const firstMs =
 		first && beat > 0
@@ -125,7 +142,7 @@ export const freshStart = (
 				beat
 			: 0;
 	const R: StepLeg = {
-		len: first ? Math.max(LEN_MIN, stepLength(anim, over(st.s0, firstMs))) : 1,
+		len: first ? lenFor(over(st.s0, firstMs)) : 1,
 		from: -1,
 	};
 	return { ph, R, L: { ...R } };

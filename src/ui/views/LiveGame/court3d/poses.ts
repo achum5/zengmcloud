@@ -12192,6 +12192,74 @@ const underHip = (mode: GaitMode): Leg => {
 	}
 	return leg;
 };
+// THE RUNNING GAITS AS ONE: a jog, a run and a sprint are one way of going,
+// fit to motion capture at three paces - and real runners go between them
+// smoothly, each stride longer, each foot down a shorter share of it, the
+// knee driven higher and the arms working harder the faster they go (Dorn,
+// Schache & Pandy 2012: a foot down 0.32 of a stride at 11.5 ft/s, 0.28 at
+// 17, 0.25 at 22.8). So a stride longer than a full one of a jog or a run
+// is that gait's that far of the way to the next one up's: by the time it
+// is as long as a sprint's, it is a sprint's. (Not the run's own swing
+// stretched further about his hips - a lunge, his feet far apart and his
+// hips dropped between them - nor its steps quickening to keep up.)
+const RUNS_UP: Partial<Record<GaitMode, GaitMode>> = {
+	jog: "run",
+	run: "sprint",
+};
+// (Any other gait's strides stretch about his hips no further than this.)
+const STRETCH_MOST = 1.1;
+// The longest stride a gait's steps take (of a full one): on a jog or a
+// run, the next one up's - and longer than that, he is on the next one up.
+export const lenMost = (anim: AnimName): number => {
+	const mode = gaitModeOf(anim);
+	const up = mode && RUNS_UP[mode];
+	return up ? GAITS[up].stride / GAITS[mode].stride : STRETCH_MOST;
+};
+// How far toward the next gait up a stride `len` long is (0 to 1).
+const towardUp = (mode: GaitMode, up: GaitMode, len: number): number =>
+	Math.min(
+		1,
+		Math.max(
+			0,
+			((len - 1) * GAITS[mode].stride) /
+				(GAITS[up].stride - GAITS[mode].stride),
+		),
+	);
+// A leg `phi` through a stride `w` of the way from one gait to the next one
+// up: each gait's leg the same share of the way through its time down, or
+// its swing, as this one's is through its own (each foot down as long as
+// the two gaits' make it, between them) - mixed.
+const legToward = (
+	mode: GaitMode,
+	up: GaitMode,
+	phi: number,
+	w: number,
+): Leg => {
+	const a = GAITS[mode].duty;
+	const b = GAITS[up].duty;
+	const d = a + (b - a) * w;
+	const on = (duty: number) =>
+		phi < d ? (phi / d) * duty : duty + ((phi - d) / (1 - d)) * (1 - duty);
+	const p = legAt(mode, on(a));
+	const q = legAt(up, on(b));
+	return {
+		hip: p.hip + (q.hip - p.hip) * w,
+		knee: p.knee + (q.knee - p.knee) * w,
+		z: p.z + (q.z - p.z) * w,
+		toe: p.toe + (q.toe - p.toe) * w,
+	};
+};
+// (And all of him above his legs, the same way: his lean, his arms.)
+const UPPER: (keyof Pose)[] = [
+	"lean",
+	"shN",
+	"elN",
+	"abN",
+	"shF",
+	"elF",
+	"abF",
+	"twist",
+];
 const SWING_ARMS: (keyof Pose)[] = [
 	"shN",
 	"elN",
@@ -12241,11 +12309,15 @@ export const shortSteps = (
 		};
 	}
 	const mode = gaitModeOf(anim);
-	if (!len || !mode || (len[0] >= 1 && len[1] >= 1)) {
+	// (Strides longer than a full one, too - a man whose own beat makes them
+	// so: see possession/gait.ts - on toward the next gait up, or, on any
+	// other, his legs swinging a little further about his hips.)
+	if (!len || !mode || (len[0] === 1 && len[1] === 1)) {
 		return q;
 	}
 	const legs = legPhases(anim, ph)!;
 	const n = underHip(mode);
+	const up = RUNS_UP[mode];
 	const out = { ...q };
 	const leg = (
 		hip: "hipN" | "hipF",
@@ -12254,18 +12326,35 @@ export const shortSteps = (
 		phi: number,
 		k: number,
 	) => {
+		if (k > 1 && up) {
+			// (As the gaits between have it - kept as much off them as this
+			// pose was: a man's own carry, say.)
+			const was = legAt(mode, phi);
+			const now = legToward(mode, up, phi, towardUp(mode, up, k));
+			out[hip] = q[hip] + now.hip - was.hip;
+			out[knee] = Math.max(0, q[knee] + now.knee - was.knee);
+			out[toe] = Math.min(1, Math.max(0, q[toe] + now.toe - was.toe));
+			return;
+		}
 		const lift = swingLift(phi, legs.duty, legs.back);
 		const kh = k + (1 - k) * HIP_KEEP * lift;
 		const kk = k + (1 - k) * KNEE_KEEP * lift;
 		out[hip] = n.hip + (q[hip] - n.hip) * kh;
-		out[knee] = n.knee + (q[knee] - n.knee) * kk;
-		out[toe] = q[toe] * k;
+		out[knee] = Math.max(0, n.knee + (q[knee] - n.knee) * kk);
+		out[toe] = Math.min(1, q[toe] * k);
 	};
 	leg("hipN", "kneeN", "toeN", legs.r, len[0]);
 	leg("hipF", "kneeF", "toeF", legs.l, len[1]);
 	const both = (len[0] + len[1]) / 2;
-	out.toe = q.toe * both;
-	if (FREE_ARMS.has(anim)) {
+	out.toe = Math.min(1, q.toe * both);
+	if (both > 1 && up) {
+		const w = towardUp(mode, up, both);
+		const was = gaitPose(mode, ph);
+		const now = gaitPose(up, ph);
+		for (const k of UPPER) {
+			out[k] = q[k] + (now[k] - was[k]) * w;
+		}
+	} else if (FREE_ARMS.has(anim)) {
 		const m = meanPose(anim);
 		for (const k of SWING_ARMS) {
 			out[k] = m[k] + (q[k] - m[k]) * both;
@@ -12285,9 +12374,12 @@ export const shortLift = (
 		return 0;
 	}
 	const legs = legPhases(anim, ph)!;
+	const up = RUNS_UP[mode];
 	const high = (phi: number, k: number) =>
-		Math.max(0, legAt(mode, phi).z) *
-		(k + (1 - k) * KNEE_KEEP * swingLift(phi, legs.duty, legs.back));
+		k > 1 && up
+			? Math.max(0, legToward(mode, up, phi, towardUp(mode, up, k)).z)
+			: Math.max(0, legAt(mode, phi).z) *
+				(k + (1 - k) * KNEE_KEEP * swingLift(phi, legs.duty, legs.back));
 	return Math.min(high(legs.r, len[0]), high(legs.l, len[1]));
 };
 
@@ -13485,10 +13577,23 @@ export type RunStyle = {
 	// one high at the ball and one low, some both out at about their chest,
 	// working (see GUARD_HANDS).
 	hands: number;
+	// Walking, his own way of that instead, where it differs from his run.
+	walk?: Partial<Pick<RunStyle, "swing" | "elbow" | "carry" | "lean" | "roll">>;
 };
 const styleUnit = (pid: number, k: number) => {
 	const x = Math.sin(pid * 12.9898 + k * 78.233) * 43758.5453;
 	return x - Math.floor(x);
+};
+// (The middle of each range: what a man runStyleOf sets nowhere in
+// particular has.)
+export const RUN_STYLE_MID: RunStyle = {
+	swing: 1,
+	elbow: 0,
+	carry: 3.5,
+	lean: 0.5,
+	roll: 1,
+	low: 0,
+	hands: 0.5,
 };
 export const runStyleOf = (pid: number): RunStyle => ({
 	swing: 0.7 + 0.6 * styleUnit(pid, 1),
@@ -13573,10 +13678,11 @@ const guardHandsOwn = (q: Pose, anim: AnimName, s: RunStyle): Pose =>
 				abF: q.abF + 10,
 			}
 		: q;
-export const styledRun = (q: Pose, anim: AnimName, s: RunStyle): Pose => {
+export const styledRun = (q: Pose, anim: AnimName, s0: RunStyle): Pose => {
 	if (!STYLED.has(anim)) {
 		return q;
 	}
+	const s = anim === "walk" && s0.walk ? { ...s0, ...s0.walk } : s0;
 	// (His arms' swing as it is - shortened stepping off, say - so much
 	// more or less of it.)
 	const k = s.swing - 1;

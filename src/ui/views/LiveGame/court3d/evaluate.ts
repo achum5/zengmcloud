@@ -16,6 +16,12 @@ import { alongShape, keepThrough, runShape, type RunShape } from "./motion.ts";
 import { playAt } from "./physics.ts";
 import { floorRollAt } from "./floorRoll.ts";
 import {
+	type OwnGait,
+	type StepKind,
+	stepsPerSecond,
+} from "./possession/gait.ts";
+import { type Look as OwnLook, packageOf } from "./possession/packages.ts";
+import {
 	freshStart,
 	LEN_MIN,
 	stepThrough,
@@ -55,6 +61,8 @@ import {
 	posed,
 	shortLift,
 	shortSteps,
+	lenMost,
+	RUN_STYLE_MID,
 	runStyleOf,
 	type RunStyle,
 	guideHand,
@@ -157,6 +165,9 @@ export type PlayerState = {
 	// How hard he is getting going (up to 1, all he has) or pulling up (down
 	// to -1): he drives into it, or sits back against it (see driven).
 	drive?: number;
+	// His own way of carrying himself, where he has one (see ownStyleOf) -
+	// otherwise runStyleOf's, by who he is.
+	style?: RunStyle;
 	// How hard he is turning as he runs (to 1, all a man can; round to his
 	// left positive): he leans into the turn (see banked).
 	bank?: number;
@@ -940,8 +951,49 @@ const groundSpeed = (tr: Track, run: Run): number => {
 	}
 	return v;
 };
-const runAnim = (tr: Track, run: Run): AnimName => {
+// HIS OWN STRIDE, where he has one (the new possession sim's men - see
+// possession/gait.ts): his steps go round as quickly as a man of his height
+// and his own way of running takes them at the pace, so each is as long as
+// that makes it - and he shows the slowest gait that takes strides that
+// long (see poses.ts lenMost): a jog, on toward a run as his strides
+// lengthen to a run's; a run, on toward a sprint; then a sprint.
+const STEP_KINDS: Partial<Record<AnimName, StepKind>> = {
+	walk: "walk",
+	dribbleWalk: "walk",
+	carry: "walk",
+	jog: "run",
+	run: "run",
+	sprint: "run",
+	dribble: "run",
+	drift: "run",
+	back: "backpedal",
+	slide: "backpedal",
+};
+// (Strides a second at pace v on a gait - or nothing, for steps that keep
+// no beat of his own.)
+const ownBeat = (
+	own: OwnGait,
+	anim: AnimName,
+): ((v: number) => number) | undefined => {
+	const how = STEP_KINDS[anim];
+	return how === undefined
+		? undefined
+		: (v: number) => stepsPerSecond(how, v, own.inches, own.sig) / 2;
+};
+const ownLen = (own: OwnGait, anim: AnimName, v: number): number =>
+	v / (ownBeat(own, anim)!(v) * strideOf(anim));
+const OWN_GAITS: AnimName[] = ["walk", "jog", "run", "sprint"];
+const ownGaitFor = (v: number, own: OwnGait, from: AnimName): AnimName => {
+	for (const g of OWN_GAITS.slice(OWN_GAITS.indexOf(from))) {
+		if (ownLen(own, g, v) <= lenMost(g)) {
+			return g;
+		}
+	}
+	return "sprint";
+};
+const runAnim = (tl: CourtTimeline, tr: Track, run: Run): AnimName => {
 	const anim = run.mv.anim;
+	const own = tl.gaits?.get(tr.pid);
 	// His legs go at the pace he holds most of the way: come in off a sprint
 	// and settled into a run for the length of the floor, he runs it. (Only a
 	// run that is mostly getting going or pulling up goes at the quicker end.)
@@ -953,13 +1005,23 @@ const runAnim = (tr: Track, run: Run): AnimName => {
 	switch (anim) {
 		case "run":
 		case "jog":
-			return gaitFor(Math.max(v, groundSpeed(tr, run)));
+			return own
+				? ownGaitFor(Math.max(v, groundSpeed(tr, run)), own, "walk")
+				: gaitFor(Math.max(v, groundSpeed(tr, run)));
 		// Sent hard: no slower than a run - but a sprint only at a sprint's
 		// pace, not a sprinter's stride over a few quick steps.
 		case "sprint":
-			return gaitFor(Math.max(v, groundSpeed(tr, run), JOG_FTPS));
+			return own
+				? ownGaitFor(Math.max(v, groundSpeed(tr, run)), own, "run")
+				: gaitFor(Math.max(v, groundSpeed(tr, run), JOG_FTPS));
 		case "walk":
-			return v > WALK_FTPS + 2 ? gaitFor(v) : "walk";
+			return own
+				? ownGaitFor(Math.max(0, v - 2), own, "walk") === "walk"
+					? "walk"
+					: ownGaitFor(v, own, "jog")
+				: v > WALK_FTPS + 2
+					? gaitFor(v)
+					: "walk";
 		// Walking it, short steps; attacking, long ones.
 		case "dribble":
 			return v > DRIBBLE_WALK_FTPS ? "dribble" : "dribbleWalk";
@@ -1335,6 +1397,8 @@ const steppingOf = (
 	const anim = stepsOf(tl, tr, run);
 	const S = strideOf(anim);
 	const L0 = lenOf(run.mv);
+	const own = tl.gaits?.get(tr.pid);
+	const beat = own ? ownBeat(own, anim) : undefined;
 	const stretch: Stretch = {
 		s0: run.s0,
 		s1: run.s1,
@@ -1342,7 +1406,9 @@ const steppingOf = (
 		along: (t: number) =>
 			t <= run.s1 ? alongRun(run, t) : L0 + (run.v1 * (t - run.s1)) / 1000,
 		pace: (t: number) => paceOn(run, t),
+		...(beat ? { beat } : {}),
 	};
+	const most = beat ? lenMost(anim) : 1;
 	let { ph, R, L } = freshStart(anim, stretch);
 	const first = legPhases(anim, ph);
 	if (
@@ -1361,7 +1427,7 @@ const steppingOf = (
 		ph = was.ph[m]! + lenOf(before.mv) * (1 / S0 - 1 / strideOf(took));
 		if (first && legPhases(took, 0)) {
 			const as = (len: number) =>
-				Math.min(1, Math.max(LEN_MIN, (len * strideOf(took)) / S));
+				Math.min(most, Math.max(LEN_MIN, (len * strideOf(took)) / S));
 			// (A foot up goes on over from the stride it has now, from where
 			// it is through its swing on these steps - which may count it
 			// differently, turned round from running into a backpedal, say.)
@@ -2856,8 +2922,9 @@ const gaitOf = (
 	const shown = shownSteps(tl, tr, k, run, t, anim);
 	// (Short steps, slow - see shortSteps. On the other gait's, each as long
 	// in feet.)
+	const most = tl.gaits?.has(tr.pid) ? lenMost(shown) : 1;
 	const as = (len: number) =>
-		Math.min(1, Math.max(LEN_MIN, (len * strideOf(anim)) / strideOf(shown)));
+		Math.min(most, Math.max(LEN_MIN, (len * strideOf(anim)) / strideOf(shown)));
 	const len: [number, number] = shown === anim ? own : [as(own[0]), as(own[1])];
 	const short = len[0] !== 1 || len[1] !== 1;
 	// (At the other gait's stride, so his feet stay planted - over this run
@@ -2905,7 +2972,7 @@ const upOnBall = (tl: CourtTimeline, tr: Track, run: Run): boolean => {
 
 // The pace he goes at, as his legs go at it - up on the ball, a slide.
 const paceAnim = (tl: CourtTimeline, tr: Track, run: Run): AnimName => {
-	const own = runAnim(tr, run);
+	const own = runAnim(tl, tr, run);
 	return (own === "run" || own === "jog" || own === "walk") &&
 		upOnBall(tl, tr, run)
 		? "slide"
@@ -4823,9 +4890,69 @@ export const evalPlayer = (
 	let st = at.get(pid);
 	if (!st) {
 		st = playerAt(tl, pid, t);
+		const style = ownStyleOf(tl, pid);
+		if (style) {
+			st = { ...st, style };
+		}
 		at.set(pid, st);
 	}
 	return st;
+};
+
+// HIS OWN WAY OF CARRYING HIMSELF, where he has one (the new possession
+// sim's men): his packages' (see possession/packages.ts) - running, down in
+// his stance, walking - each a little his own on top, by who he is (a
+// third of how far apart runStyleOf sets men), so two men with the same
+// package are not one man twice.
+const OWN_SPREAD = 0.35;
+const ownStyles = new WeakMap<CourtTimeline, Map<number, RunStyle>>();
+const ownStyleOf = (tl: CourtTimeline, pid: number): RunStyle | undefined => {
+	const own = tl.gaits?.get(pid);
+	if (!own) {
+		return undefined;
+	}
+	let byPid = ownStyles.get(tl);
+	if (!byPid) {
+		byPid = new Map();
+		ownStyles.set(tl, byPid);
+	}
+	let style = byPid.get(pid);
+	if (!style) {
+		const d = runStyleOf(pid);
+		const mid = RUN_STYLE_MID;
+		const run = packageOf(own.sig.run)?.look;
+		const stance = packageOf(own.sig.stance)?.look;
+		const walk = packageOf(own.sig.walk)?.look;
+		const jit = (k: "swing" | "elbow" | "carry" | "lean" | "roll" | "low") =>
+			(d[k] - mid[k]) * OWN_SPREAD;
+		// (A package's look is from an ordinary man's: so many times his
+		// swing and roll, so many degrees on his elbows, carry and lean.)
+		const of = (
+			look: OwnLook | undefined,
+			k: "swing" | "elbow" | "carry" | "lean" | "roll",
+		) =>
+			(k === "swing" || k === "roll"
+				? mid[k] * (look?.[k] ?? 1)
+				: mid[k] + (look?.[k] ?? 0)) + jit(k);
+		style = {
+			swing: of(run, "swing"),
+			elbow: of(run, "elbow"),
+			carry: of(run, "carry"),
+			lean: of(run, "lean"),
+			roll: of(run, "roll"),
+			low: Math.min(1, Math.max(-1, (stance?.low ?? 0) + jit("low"))),
+			hands: d.hands,
+			walk: {
+				swing: of(walk, "swing"),
+				elbow: of(walk, "elbow"),
+				carry: of(walk, "carry"),
+				lean: of(walk, "lean"),
+				roll: of(walk, "roll"),
+			},
+		};
+		byPid.set(pid, style);
+	}
+	return style;
 };
 
 const playerAt = (
@@ -7687,7 +7814,7 @@ const humane = (p: Pose): Pose =>
 				shF: softMin(p.shF, SHOULDER_BACK),
 			};
 const poseFor = (st: PlayerState): Pose => {
-	const style = runStyleOf(st.pid);
+	const style = st.style ?? runStyleOf(st.pid);
 	const own = guideHand(
 		posed(
 			st.anim,

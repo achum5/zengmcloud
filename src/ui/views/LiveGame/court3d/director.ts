@@ -135,6 +135,8 @@ import { BREAK_SHARE } from "./nbaRates.ts";
 import { stepTimeline } from "./stepper.ts";
 import { bodyOf as ownBodyOf } from "./possession/body.ts";
 import { type Follow, followWith } from "./possession/follow.ts";
+import { inchesOf, type OwnGait } from "./possession/gait.ts";
+import { signatureOf } from "./possession/signature.ts";
 import { sameEverywhere } from "./sameMath.ts";
 import {
 	floorRoll,
@@ -606,6 +608,10 @@ export type CourtTimeline = {
 	dribbleLow?: Map<number, number>;
 	// And his eyes for a pass (-1 to 1: see passLook) - by his passing.
 	passEyes?: Map<number, number>;
+	// And his own way of getting about - how quickly his steps go round, how
+	// he carries himself (see possession/gait.ts): staged by the new
+	// possession sim only.
+	gaits?: Map<number, OwnGait>;
 	ball: BallSeg[];
 	fx: Fx[];
 	beats: Beat[];
@@ -31553,10 +31559,17 @@ class Director {
 				);
 			}
 		}
+		const gaits = new Map<number, OwnGait>();
+		if (this.possession) {
+			for (const [pid, r] of this.rated) {
+				gaits.set(pid, { sig: signatureOf(pid, r), inches: inchesOf(r.hgt) });
+			}
+		}
 		const tl: CourtTimeline = {
 			tracks: this.tracks,
 			...(dribbleLow.size > 0 ? { dribbleLow } : {}),
 			...(passEyes.size > 0 ? { passEyes } : {}),
+			...(gaits.size > 0 ? { gaits } : {}),
 			ball: this.ball,
 			fx: this.fx,
 			beats: this.beats,

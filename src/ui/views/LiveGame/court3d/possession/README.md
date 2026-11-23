@@ -51,6 +51,20 @@ everyone: ratings say how far above it he is, so stars look like stars and a
   most 5 ft/s on top of his own going) rather than left feet behind. On the
   play itself whenever he catches, shoots, passes or screens. Swapped in for
   `stepper.ts`'s `follow`, one man at a time (`Director.ownMovers`).
+- `packages.ts`: the library of moves. Each kind of move (walking, running,
+  down in his stance, backpedaling for now) comes in versions, packages,
+  each with its timing (read by the staging), its look (read only by the
+  picture) and who it fits (ratings that lean a man toward it, and floors).
+  Ids are for good: a saved signature names them.
+- `signature.ts`: which package each man has for each kind, picked from his
+  ratings with a draw of his own until one is saved for him.
+- `gait.ts`: how quickly his steps go round at each pace, from real runners
+  and walkers, scaled to his height and his package: each step as long as
+  that makes it. The staged timeline carries each man's signature and
+  height (`CourtTimeline.gaits`), and the picture steps him by them: a jog
+  lengthening on into a run, a run into a sprint, as real runners' strides
+  do (`../poses.ts` lenMost), rather than one gait's stride at a quicker
+  beat.
 - `setting.ts`: the switch.
 
 ## Built in this order
@@ -62,11 +76,13 @@ looks better.
 1. Fast-forward to the action: the last seconds before each shot, turnover
    or foul at real speed, or whole possessions (`../pacing.ts`).
 2. The before: real NBA tracking as the target (`tools/court3d-tape/nba`).
-3. **Movement, done properly** (here now). Today's plan, today's actions,
+3. **Movement, done properly**. Today's plan, today's actions,
    each man moved by his own body. Judged on its own before anything decides
    differently.
-4. How they move, from footage: the first animation packages (walk, jog,
-   run, sprint, stops, plant-and-cut, backpedal, slide).
+4. **How they move** (here now): the first packages (walk, run, stance,
+   backpedal) and each man's signature; his steps at his own beat and
+   length. Then stops, plant-and-cut and slides, judged in the movement
+   lab (`tools/court3d-tape/lab.test.ts`) beside real footage.
 5. Defense, the first of the ten deciding for themselves. The facts, the
    planner's first pieces and the per-possession loop come in with it, in
    this folder, and today's defensive patch passes are off under the switch.
