@@ -1,5 +1,4 @@
 import { spreadLine } from "../../components/LeagueHub/spreadLine.ts";
-import { helpers } from "../../../common/helpers.ts";
 import { recordText, seriesLine, seriesWins } from "./gamecast/seriesLine.ts";
 import type { NationalTag } from "../../../common/types.ts";
 import type { GamecastInfo } from "../../../worker/views/liveGameInfo.ts";
@@ -30,8 +29,8 @@ export type MatchupBoxScore = {
 	national?: NationalTag;
 };
 
-// The regular season's meetings: "CLE leads season series 2-1", "Season
-// series tied 1-1" - or, none played yet, "1st of 4 meetings".
+// The regular season's meetings so far: "CLE leads season series 2-1",
+// "Season series tied 1-1" - nothing before they've met.
 export const seasonSeriesText = (
 	info: GamecastInfo | undefined,
 	// Away first.
@@ -41,16 +40,12 @@ export const seasonSeriesText = (
 		return undefined;
 	}
 	const w = seriesWins(info, teams[0].tid, teams[1].tid, true);
-	if (w[0] + w[1] > 0) {
-		return w[0] === w[1]
-			? `Season series tied ${w[0]}-${w[1]}`
-			: recordText(w, teams).replace(" leads ", " leads season series ");
+	if (w[0] + w[1] === 0) {
+		return undefined;
 	}
-	const k = info.series.findIndex((s) => s.now);
-	const n = info.series.length;
-	return k >= 0 && n > 1
-		? `${helpers.ordinal(k + 1)} of ${n} meetings`
-		: undefined;
+	return w[0] === w[1]
+		? `Season series tied ${w[0]}-${w[1]}`
+		: recordText(w, teams).replace(" leads ", " leads season series ");
 };
 
 // THE LIVE GAME HEADER'S FACTS (see MatchupLine), under the teams: the

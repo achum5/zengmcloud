@@ -28,10 +28,8 @@ const info = (
 });
 
 test("the season series going into the game, away first", () => {
-	assert.strictEqual(
-		seasonSeriesText(info(0), [CLE, NOP]),
-		"1st of 4 meetings",
-	);
+	// Nothing before they've met.
+	assert.isUndefined(seasonSeriesText(info(0), [CLE, NOP]));
 	assert.strictEqual(
 		seasonSeriesText(info(1), [NOP, CLE]),
 		"NOP leads season series 1-0",
@@ -87,7 +85,7 @@ test("the facts: the spread, the total, the series", () => {
 	// A pick'em, no total (an old game), the first meeting.
 	assert.deepEqual(
 		matchupFacts({ gid: 10, teams: [NOP, CLE], spread: 0, gamecast: info(0) }),
-		["PK", "1st of 4 meetings"],
+		["PK"],
 	);
 	// Nothing known.
 	assert.deepEqual(matchupFacts({ gid: 10, teams: [NOP, CLE] }), []);
