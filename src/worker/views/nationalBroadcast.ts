@@ -15,6 +15,17 @@ import type {
 import { PHASE } from "../../common/constants.ts";
 import { standingsAsOf } from "./liveGameInfo.ts";
 import { PIC, pictureById } from "../util/courtPictures.ts";
+import { GENERIC_NATIONAL } from "../../common/genericNational.ts";
+
+// The league's networks: its team looks file's, or without them, ours (see
+// GENERIC_NATIONAL).
+const nationalNetworks = (): NationalBroadcast[] => {
+	const networks = g.get("nationalBroadcasts");
+	if (Array.isArray(networks) && networks.length > 0) {
+		return networks;
+	}
+	return __SPORT === "basketball" ? [GENERIC_NATIONAL] : [];
+};
 
 // How each team was rated as the season began, 0 the worst to 1 the best.
 const ratedOf = (teamSeasons: { tid: number; ovrStart?: number }[]) => {
@@ -46,14 +57,9 @@ export const nationalBroadcastOf = async (
 		"gid" | "season" | "day" | "date" | "playoffs" | "finals" | "teams"
 	> & { exhibition?: boolean },
 ): Promise<NationalBroadcast | undefined> => {
-	const networks = g.get("nationalBroadcasts");
+	const networks = nationalNetworks();
 	const tids: [number, number] = [game.teams[0].tid, game.teams[1].tid];
-	if (
-		!Array.isArray(networks) ||
-		networks.length === 0 ||
-		tids.some((tid) => tid < 0) ||
-		game.exhibition
-	) {
+	if (networks.length === 0 || tids.some((tid) => tid < 0) || game.exhibition) {
 		return undefined;
 	}
 	try {
@@ -105,8 +111,8 @@ export const nationalSchedule = async (
 	schedule: ScheduleGame[],
 ): Promise<Map<number, NationalBroadcast>> => {
 	const out = new Map<number, NationalBroadcast>();
-	const networks = g.get("nationalBroadcasts");
-	if (!Array.isArray(networks) || networks.length === 0) {
+	const networks = nationalNetworks();
+	if (networks.length === 0) {
 		return out;
 	}
 	try {

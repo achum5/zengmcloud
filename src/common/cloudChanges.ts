@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 479,
+		date: "2026-11-23",
+		text: "Score bugs: a league with no national networks from a team looks file now gets our own National TV, with its logo on the national games' previews and its own score bug in the 3D game. Team score bugs in the 3D game now show all seven timeouts the way TV does. Loading a team looks file on one team's score bug or court page now tells you to import it in Manage Teams instead.",
+	},
+	{
 		n: 478,
 		date: "2026-11-23",
 		text: "Smart CPU GMs: a CPU team now signs a new free agent only when it is clearly better off with him, the same rule it already uses for trades. Bad teams no longer hand big multi-year deals to low-rated players (like $19.7M a year to a 49) and keep their cap room open instead. Good free agents still sign.",
