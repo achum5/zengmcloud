@@ -1,5 +1,7 @@
-// The Calendar page (views/Calendar.tsx) and today's date in the top bar
-// (Controller/NavBar.tsx), for leagues on the NBA calendar.
+// The month calendar (components/MonthCalendar.tsx) on the Calendar,
+// Schedule and Daily Schedule pages and the dashboard, today's date in the
+// navbar (Controller/NavBar.tsx) and the scores bar's nights
+// (Controller/LeagueTopBar.tsx), for leagues on the NBA calendar.
 
 .lc {
 	max-width: 980px;
@@ -17,6 +19,8 @@
 	min-width: 9.5em;
 	text-align: center;
 	font-size: 1.4rem;
+	font-weight: 500;
+	line-height: 1.2;
 }
 
 .lc-arrow {
@@ -91,6 +95,20 @@
 	td.lc-today {
 		box-shadow: inset 0 0 0 2px var(--bs-primary);
 	}
+
+	// The whole night is the link.
+	td:not(.lc-today):has(> .lc-game[href]):hover {
+		box-shadow: inset 0 0 0 1px var(--bs-primary);
+	}
+
+	td.lc-selected {
+		background: rgba(var(--bs-primary-rgb), 0.3);
+
+		.lc-num {
+			color: var(--bs-emphasis-color);
+			font-weight: 700;
+		}
+	}
 }
 
 .lc-num {
@@ -121,6 +139,12 @@
 	margin-top: 0.15rem;
 	color: inherit;
 	text-decoration: none;
+
+	&[href]::after {
+		content: "";
+		position: absolute;
+		inset: 0;
+	}
 
 	&[href]:hover {
 		color: inherit;
@@ -189,6 +213,89 @@
 	line-height: 1.1;
 	text-align: center;
 	color: var(--bs-secondary-color);
+
+	a {
+		position: relative;
+		z-index: 1;
+	}
+}
+
+// Smaller, for Daily Schedule and the dashboard.
+.lc-compact {
+	.lc-head {
+		margin-bottom: 0.25rem;
+	}
+
+	.lc-title {
+		min-width: 8.5em;
+		font-size: 1.05rem;
+	}
+
+	.lc-arrow {
+		font-size: 1.05rem;
+		padding: 0 0.55rem 0.15rem;
+	}
+
+	.lc-grid {
+		th {
+			padding: 0 0 0.1rem;
+			font-size: 0.7rem;
+		}
+
+		td {
+			height: 3rem;
+			padding: 0.1rem 0.15rem;
+		}
+	}
+
+	.lc-num {
+		font-size: 0.65rem;
+	}
+
+	.lc-tag {
+		top: 0.1rem;
+		right: 0.15rem;
+		font-size: 0.55rem;
+	}
+
+	.lc-game {
+		margin-top: 0;
+	}
+
+	.lc-opp {
+		min-height: 18px;
+	}
+
+	.lc-logo {
+		width: 18px;
+		height: 18px;
+	}
+
+	.lc-result {
+		font-size: 0.65rem;
+		line-height: 1.1;
+	}
+
+	.lc-count {
+		font-size: 0.75rem;
+		line-height: 1.2;
+	}
+
+	.lc-opp-small {
+		min-height: 14px;
+
+		.lc-logo {
+			width: 14px;
+			height: 14px;
+		}
+	}
+
+	.lc-key {
+		font-size: 0.6rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
 }
 
 @include media-breakpoint-up(md) {
@@ -236,6 +343,64 @@
 	}
 }
 
+@include media-breakpoint-up(md) {
+	.lc-compact {
+		.lc-grid td {
+			height: 3.5rem;
+			padding: 0.15rem 0.2rem;
+			font-size: 0.8rem;
+		}
+
+		.lc-num {
+			font-size: 0.7rem;
+		}
+
+		.lc-tag {
+			top: 0.15rem;
+			right: 0.2rem;
+			font-size: 0.6rem;
+		}
+
+		.lc-opp {
+			min-height: 22px;
+		}
+
+		.lc-logo {
+			width: 22px;
+			height: 22px;
+		}
+
+		.lc-result {
+			font-size: 0.7rem;
+		}
+
+		.lc-count {
+			font-size: 0.85rem;
+		}
+
+		.lc-opp-small {
+			min-height: 16px;
+
+			.lc-logo {
+				width: 16px;
+				height: 16px;
+			}
+		}
+
+		.lc-key {
+			font-size: 0.65rem;
+		}
+	}
+}
+
+// Beside other things on wider screens, like Daily Schedule's day.
+@include media-breakpoint-up(md) {
+	.lc-side {
+		flex-shrink: 0;
+		width: 24rem;
+	}
+}
+
 // Today in the top bar, as a page off a desk calendar.
 .league-date-tile {
 	display: inline-flex;
@@ -266,4 +431,71 @@
 	font-size: 1rem;
 	font-weight: 700;
 	color: var(--bs-body-color);
+}
+
+// A night in the scores bar: its date, and the team's game beside it.
+.ltb-night {
+	display: flex;
+	flex-shrink: 0;
+	align-items: flex-start;
+}
+
+.ltb-stub {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	flex-shrink: 0;
+	width: 2.15rem;
+	height: 56px;
+	overflow: hidden;
+	line-height: 1;
+	text-align: center;
+	color: var(--bs-secondary-color);
+	background: var(--bs-body-bg);
+	border: 1px solid var(--bs-border-color);
+	border-radius: 0.3rem;
+}
+
+// Off nights fade back, so the games stand out.
+.ltb-stub:not(.ltb-stub-game):not(.ltb-stub-today) {
+	opacity: 0.65;
+}
+
+.ltb-stub-game {
+	border-right: 0;
+	border-top-right-radius: 0;
+	border-bottom-right-radius: 0;
+}
+
+.ltb-stub-weekday {
+	width: 100%;
+	padding: 3px 0 2px;
+	font-size: 0.55rem;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	background: var(--bs-tertiary-bg);
+}
+
+.ltb-stub-day {
+	margin-top: 5px;
+	font-size: 1rem;
+	font-weight: 700;
+	color: var(--bs-body-color);
+}
+
+.ltb-stub-month {
+	margin-top: 3px;
+	font-size: 0.55rem;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+}
+
+.ltb-stub-today {
+	border-color: var(--bs-danger);
+
+	.ltb-stub-weekday {
+		color: #fff;
+		background: var(--bs-danger);
+	}
 }

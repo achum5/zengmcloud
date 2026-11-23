@@ -599,6 +599,7 @@ const writeGameStats = async (
 		allStarGame
 	) {
 		gameToUi = {
+			date: results.date,
 			forceWin: results.forceWin,
 			gid: results.gid,
 			overtimes: results.overtimes,

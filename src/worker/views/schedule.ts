@@ -28,6 +28,8 @@ import type { RouteParams } from "../../ui/router/types.ts";
 import { validateTeam } from "../util/processInputs.ts";
 import { isAllStarGame, isTradeDeadline } from "../../common/specialGames.ts";
 import { injuryTicksUntil } from "../core/game/calendarTicks.ts";
+import { getInjuryPace } from "../core/game/classicDays.ts";
+import { getCalendarIfDated } from "./calendar.ts";
 
 const processInputs = (params: RouteParams<"schedule">) => {
 	const tid = validateTeam(params.team);
@@ -54,7 +56,7 @@ export const getUpcoming = async ({
 
 	// Injury healing from today until each game: days, or on a calendar the
 	// team's own games.
-	const gamesInFuture = injuryTicksUntil(schedule);
+	const gamesInFuture = injuryTicksUntil(schedule, await getInjuryPace());
 
 	let cidFilter:
 		| ((game: { awayTid: number; homeTid: number }) => boolean)
@@ -621,6 +623,7 @@ const updateUpcoming = async ({
 		const topPlayers = await getTopPlayers<[any, any]>(inputs.tid, 2);
 
 		return {
+			calendar: await getCalendarIfDated(g.get("season"), inputs.tid),
 			canLiveSimFirstGame,
 			elam: g.get("elam"),
 			elamASG: g.get("elamASG"),

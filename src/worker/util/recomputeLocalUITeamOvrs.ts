@@ -1,7 +1,12 @@
+import { addDays } from "../../common/calendarDates.ts";
 import type { LocalStateUI } from "../../common/types.ts";
+import { idb } from "../db/index.ts";
 import { getUpcoming } from "../views/schedule.ts";
 import g from "./g.ts";
 import toUI from "./toUI.ts";
+
+// How many nights past today the top bar shows on the NBA calendar.
+const TOP_BAR_NIGHTS_AHEAD = 5;
 
 export const getOneUpcomingGame = async (): Promise<
 	LocalStateUI["games"][number] | undefined
@@ -14,6 +19,7 @@ export const getOneUpcomingGame = async (): Promise<
 	)[0];
 	if (game) {
 		return {
+			date: game.date,
 			finals: game.finals,
 			gid: game.gid,
 			// Worked out in the worker off fresh overalls, so the top bar can't
@@ -35,10 +41,52 @@ export const getOneUpcomingGame = async (): Promise<
 	}
 };
 
+// The user's next game, and on the NBA calendar the rest of their games in
+// the top bar's coming nights. Only the next one gets overalls and a spread.
+export const getUpcomingGamesForUI = async (): Promise<
+	LocalStateUI["games"]
+> => {
+	const next = await getOneUpcomingGame();
+	if (!next) {
+		return [];
+	}
+	if (next.date === undefined) {
+		return [next];
+	}
+
+	const userTid = g.get("userTid");
+	const schedule = await idb.cache.schedule.getAll();
+	let today = next.date;
+	for (const game of schedule) {
+		if (game.date !== undefined && game.date < today) {
+			today = game.date;
+		}
+	}
+	const last = addDays(today, TOP_BAR_NIGHTS_AHEAD);
+	const later = schedule
+		.filter(
+			(game) =>
+				game.gid !== next.gid &&
+				(game.homeTid === userTid || game.awayTid === userTid) &&
+				game.date !== undefined &&
+				game.date <= last,
+		)
+		.sort((a, b) => (a.date! < b.date! ? -1 : a.date! > b.date! ? 1 : 0))
+		.map((game) => ({
+			date: game.date,
+			gid: game.gid,
+			teams: [{ tid: game.homeTid }, { tid: game.awayTid }] as [
+				{ tid: number },
+				{ tid: number },
+			],
+		}));
+	return [next, ...later];
+};
+
 export const recomputeLocalUITeamOvrs = async () => {
-	// Only need to recompute ovrs for the user's upcoming game, no other ones are shown in UI
-	const upcomingGame = await getOneUpcomingGame();
-	if (upcomingGame) {
-		await toUI("mergeGames", [[upcomingGame]]);
+	// Only the user's upcoming games need recomputing, no other ones are shown in UI
+	const upcomingGames = await getUpcomingGamesForUI();
+	if (upcomingGames.length > 0) {
+		await toUI("mergeGames", [upcomingGames]);
 	}
 };

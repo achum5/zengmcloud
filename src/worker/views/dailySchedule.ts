@@ -13,6 +13,7 @@ import type { RouteParams } from "../../ui/router/types.ts";
 import { validateSeason } from "../util/processInputs.ts";
 import { isAllStarGame, isTradeDeadline } from "../../common/specialGames.ts";
 import { formatGameDate } from "../../common/calendarDates.ts";
+import { getCalendarIfDated } from "./calendar.ts";
 
 const processInputs = (params: RouteParams<"dailySchedule">) => {
 	let cid;
@@ -385,6 +386,7 @@ export default defineView({
 
 			return {
 				...info,
+				calendar: await getCalendarIfDated(inputs.season, "all"),
 				// So the UI can grey the sim buttons with the SAME rule the worker
 				// enforces, instead of offering a button that is then refused.
 				ownGameSimCutoffSeconds:

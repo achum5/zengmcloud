@@ -675,6 +675,7 @@ export const defaultGameAttributes: GameAttributesLeagueWithHistory = {
 	inflationStd: 0,
 	riggedLottery: undefined,
 	lastDailyCountdownDay: undefined,
+	calendarClassicDays: undefined,
 	vplusMarket: undefined,
 	smartCpu: false,
 	smartMarketMoment: undefined,

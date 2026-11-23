@@ -11,9 +11,11 @@ import { useLocal } from "../../util/local.ts";
 import { SocialEmbed } from "../../components/SocialEmbed.tsx";
 import { ConfLogoAndName } from "../../components/ConfLogoAndName.tsx";
 import Portal from "./Portal.tsx";
+import { MonthCalendar } from "../../components/MonthCalendar.tsx";
 
 const LeagueDashboard = ({
 	att,
+	calendar,
 	cash,
 	conf,
 	confOrAllTeams,
@@ -256,6 +258,21 @@ const LeagueDashboard = ({
 					/>
 				</div>
 				<div className="col-xl-5 col-lg-4 mb-3">
+					{calendar ? (
+						<div className="mt-2 mb-3">
+							<h2>Calendar</h2>
+							<MonthCalendar
+								className="mb-1"
+								compact
+								games={calendar.games}
+								keyDates={calendar.keyDates}
+								season={season}
+								tid={userTid}
+								today={calendar.today}
+							/>
+							<a href={helpers.leagueUrl(["calendar"])}>» Full Calendar</a>
+						</div>
+					) : null}
 					{social ? (
 						<div className="mt-3">
 							<SocialEmbed

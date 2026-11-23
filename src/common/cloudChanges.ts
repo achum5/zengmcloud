@@ -12,6 +12,16 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 460,
+		date: "2026-11-23",
+		text: "Box scores: the game's date moved out of the banner into the All games this day bar, which now has a Daily Schedule button to jump to that whole day.",
+	},
+	{
+		n: 459,
+		date: "2026-11-23",
+		text: "NBA calendar leagues: injuries, trade cooldowns and CPU trades and signings now run at exactly the same pace per game as classic BBGM, so a calendar season is no harder or easier. The month calendar is now on Daily Schedule, your Schedule page and the dashboard, and the scores bar goes night by night: the season so far, today and the next 5 nights, each with its weekday and date.",
+	},
+	{
 		n: 458,
 		date: "2026-11-23",
 		text: "Draft night: everyone wears proper trousers down to their shoes, with socks to match, instead of shorts. Each prospect comes in his own suit, from dark classics to bold colors, with his own shirt and tie (or none), and it's the same one every time you watch him. His tie is no longer in the colors of the team that drafts him. The commissioner is now bald with thin glasses, in a navy pinstripe suit, pale blue shirt and navy tie. The shot of the commissioner at the podium no longer lags.",

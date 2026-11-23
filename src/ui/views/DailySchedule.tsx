@@ -26,8 +26,10 @@ import {
 import { useEffect, useState } from "react";
 import { isTradeDeadline } from "../../common/specialGames.ts";
 import { formatGameDate } from "../../common/calendarDates.ts";
+import { MonthCalendar } from "../components/MonthCalendar.tsx";
 
 const DailySchedule = ({
+	calendar,
 	cid,
 	cids,
 	completed,
@@ -234,6 +236,26 @@ const DailySchedule = ({
 			</button>
 		) : null;
 
+	const dateHeading =
+		date !== undefined ? (
+			<h3 className="h5 mb-3">{formatGameDate(date, "full")}</h3>
+		) : null;
+
+	const dayRecap = dayNote ? (
+		<DayRecap
+			season={season}
+			day={day}
+			note={dayNote}
+			links={completed.flatMap((game) =>
+				buildRecapLinksForGame(game, (tid) => teamInfoCache[tid]),
+			)}
+			sentenceGames={buildSentenceGamesForDay(
+				completed,
+				(tid) => teamInfoCache[tid],
+			)}
+		/>
+	) : null;
+
 	let noGamesMessage;
 	if (days.length === 0) {
 		noGamesMessage = (
@@ -247,24 +269,29 @@ const DailySchedule = ({
 				<MoreLinks type="schedule" page="daily_schedule" />
 			</div>
 
-			{date !== undefined ? (
-				<h3 className="h5 mb-3">{formatGameDate(date, "full")}</h3>
-			) : null}
-
-			{dayNote ? (
-				<DayRecap
-					season={season}
-					day={day}
-					note={dayNote}
-					links={completed.flatMap((game) =>
-						buildRecapLinksForGame(game, (tid) => teamInfoCache[tid]),
-					)}
-					sentenceGames={buildSentenceGamesForDay(
-						completed,
-						(tid) => teamInfoCache[tid],
-					)}
-				/>
-			) : null}
+			{calendar ? (
+				<div className="d-md-flex align-items-start gap-4">
+					<MonthCalendar
+						className="lc-side mb-3"
+						compact
+						games={calendar.games}
+						keyDates={calendar.keyDates}
+						season={season}
+						selected={date}
+						tid="all"
+						today={calendar.today}
+					/>
+					<div className="flex-grow-1" style={{ minWidth: 0 }}>
+						{dateHeading}
+						{dayRecap}
+					</div>
+				</div>
+			) : (
+				<>
+					{dateHeading}
+					{dayRecap}
+				</>
+			)}
 
 			{noGamesMessage ? (
 				noGamesMessage

@@ -27,6 +27,7 @@ import {
 import { pregameLineupSynergy } from "../GameSim.basketball/synergy.ts";
 import { dayAlreadyCounted } from "./dailyCountdownGate.ts";
 import { dayTickFromGames } from "./calendarTicks.ts";
+import { ensureClassicDays } from "./saveClassicDays.ts";
 import { recordInjuryForensics } from "../sync/injuryForensics.ts";
 import setGameAttributes from "../league/setGameAttributes.ts";
 import updatePlayoffSeries from "./updatePlayoffSeries.ts";
@@ -73,7 +74,7 @@ import allowForceTie from "../../../common/allowForceTie.ts";
 import getWinner from "../../../common/getWinner.ts";
 import { setLiveSimRatingsStatsPopoverPlayers } from "./setLiveSimRatingsStatsPopoverPlayers.ts";
 import {
-	getOneUpcomingGame,
+	getUpcomingGamesForUI,
 	recomputeLocalUITeamOvrs,
 } from "../../util/recomputeLocalUITeamOvrs.ts";
 import { last } from "../../../common/utils.ts";
@@ -418,13 +419,19 @@ const play = async (
 			const healedTexts: string[] = [];
 			const injuryTickNotes: string[] = [];
 
-			// On a calendar, a night counts games, not days - see calendarTicks.ts.
+			// On a calendar, a night counts games at the classic pace - see
+			// calendarTicks.ts.
 			const tick = dayTickFromGames({
 				games: await idb.cache.games.getAll(),
+				schedule: await idb.cache.schedule.getAll(),
 				season: g.get("season"),
 				day: simmedDay,
 				phase: g.get("phase"),
 				numActiveTeams: g.get("numActiveTeams"),
+				classicDays:
+					g.get("phase") === PHASE.PLAYOFFS
+						? undefined
+						: await ensureClassicDays(),
 			});
 
 			// Injury countdown - This must be after games are saved, of there is a race condition involving new injury assignment in writeStats. Free agents are handled in decreaseDemands.
@@ -437,16 +444,20 @@ const play = async (
 			for (const p of players) {
 				let changed = false;
 
-				// The team had the night off.
-				if (tick.tidsPlayed !== undefined && !tick.tidsPlayed.has(p.tid)) {
+				// How many days this night is for the player's team: none if it had
+				// the night off.
+				const ticks =
+					tick.ticksByTid === undefined ? 1 : (tick.ticksByTid.get(p.tid) ?? 0);
+				if (ticks === 0) {
 					continue;
 				}
 
 				if (p.injury.gamesRemaining > 0) {
+					const gamesRemaining = Math.max(0, p.injury.gamesRemaining - ticks);
 					injuryTickNotes.push(
-						`p${p.pid}:${p.injury.gamesRemaining}>${p.injury.gamesRemaining - 1}`,
+						`p${p.pid}:${p.injury.gamesRemaining}>${gamesRemaining}`,
 					);
-					p.injury.gamesRemaining -= 1;
+					p.injury.gamesRemaining = gamesRemaining;
 					changed = true;
 				}
 
@@ -506,7 +517,7 @@ const play = async (
 
 					changed = true;
 				} else if (p.gamesUntilTradable > 0) {
-					p.gamesUntilTradable -= 1;
+					p.gamesUntilTradable = Math.max(0, p.gamesUntilTradable - ticks);
 					changed = true;
 				}
 
@@ -603,11 +614,8 @@ const play = async (
 		if (gameToUi) {
 			const gamesToUi = [gameToUi];
 
-			// Also show next game
-			const upcomingGame = await getOneUpcomingGame();
-			if (upcomingGame) {
-				gamesToUi.push(upcomingGame);
-			}
+			// Also show the next game (and on the NBA calendar, the coming nights')
+			gamesToUi.push(...(await getUpcomingGamesForUI()));
 
 			// (This device's own live game reads as not played yet till it has
 			// played out - see liveSpoilers.ts.)

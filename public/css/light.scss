@@ -6248,8 +6248,8 @@ a.rsb-half {
 	}
 }
 
-// All of the game's day (see DayGames): a slim button under the banner, the
-// day's scores under it when open.
+// The game's day (see DayGames): a slim button under the banner with the
+// date, the day's scores and a link to its Daily Schedule under it when open.
 .recap-day {
 	margin: 0.5rem 0 0;
 }
@@ -6267,6 +6267,17 @@ a.rsb-half {
 		transform: rotate(225deg);
 		margin: 0.2em 0 0;
 	}
+}
+.recap-day-date {
+	font-weight: 600;
+}
+.recap-day-dot {
+	color: var(--bs-secondary-color);
+}
+.recap-day-actions {
+	display: flex;
+	justify-content: flex-end;
+	margin-top: 0.5rem;
 }
 .recap-day-grid {
 	display: grid;
