@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 471,
+		date: "2026-11-23",
+		text: "3D game, New sim (Global Settings, 3D Game Sim): defenders now guard their own man between plays. On the ball they sit about a step and a half off, tighter on a shooter and looser on a quick driver; off the ball they sag toward the rim and over to the ball's side the way NBA defenders do, more off a man who can't shoot. When a man drives, the nearest defender away from the ball steps up into his way.",
+	},
+	{
 		n: 470,
 		date: "2026-11-23",
 		text: "Nightly Recap: a new look. Its titles and cards are set in a tall broadcast typeface, the opening title stands on one line over a lit arena floor, and the Game Recap, Final and 2nd Half graphics are flatter and sharper.",
