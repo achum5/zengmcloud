@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 470,
+		date: "2026-11-23",
+		text: "Nightly Recap: a new look. Its titles and cards are set in a tall broadcast typeface, the opening title stands on one line over a lit arena floor, and the Game Recap, Final and 2nd Half graphics are flatter and sharper.",
+	},
+	{
 		n: 469,
 		date: "2026-11-23",
 		text: "National games: the box on the Daily Schedule and the team schedule now shows the network's logo in its own colors next to the teams, instead of the black tab (the scores bar and the dashboard too). National score bugs show the game's real night with the NBA calendar on, and leave the night out with it off.",

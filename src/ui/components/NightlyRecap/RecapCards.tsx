@@ -17,17 +17,17 @@ import { PlayerPicture } from "../PlayerPicture.tsx";
 // screen split in the two teams' colors with their logos cut off at the
 // edges, the abbreviations huge and faint behind, and a blue disc ringed in
 // white dashes holding the title. The away team on the left, as in "LAL @
-// BOS". Sized by the picture's width (cqw), every size with a floor for a
-// phone.
+// BOS". Set in a tall condensed face, as broadcast titles are (see
+// public/css/recap-fonts.scss), with flat color and square corners. Sized by
+// the picture's width (cqw), every size with a floor for a phone.
 
-const FONT = "system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+const FONT = '"Recap Condensed", "Arial Narrow", sans-serif';
 const DISC = "#1d3f9e";
 const DISC_DARK = "#122a73";
 
 const inkOn = (c: string) => (lightness(c) > 0.62 ? "#101014" : "#fff");
 
-// Tall, heavy type the way the broadcast sets its titles: any system font
-// squeezed to a condensed cut.
+// Tall, heavy type the way the broadcast sets its titles.
 const Condensed = ({
 	children,
 	style,
@@ -38,10 +38,8 @@ const Condensed = ({
 	<span
 		style={{
 			display: "inline-block",
-			fontWeight: 900,
-			transform: "scaleX(0.8)",
-			transformOrigin: "center",
-			lineHeight: 0.92,
+			fontWeight: 800,
+			lineHeight: 0.9,
 			whiteSpace: "nowrap",
 			...style,
 		}}
@@ -156,8 +154,8 @@ const Split = ({
 					width: "46cqw",
 					textAlign: i === 0 ? "left" : "right",
 					color: inkOn(t.colors[0]),
-					opacity: 0.1,
-					fontSize: "17cqw",
+					opacity: 0.12,
+					fontSize: "24cqw",
 				}}
 			>
 				<Condensed>{t.abbrev}</Condensed>
@@ -192,33 +190,52 @@ const Tag = ({
 				display: "flex",
 				flexDirection: "column",
 				alignItems: "center",
-				gap: "0.35em",
-				padding: "0.55em 0.7em 0.5em",
-				minWidth: "4.6em",
-				borderRadius: "0.35em",
+				gap: "0.3em",
+				padding: "0.5em 0.8em 0.45em",
+				minWidth: "4.4em",
+				borderRadius: "0.1em",
 				background: bg,
 				color: inkOn(bg),
-				fontSize: "clamp(9px, 1.9cqw, 22px)",
-				boxShadow: "0 0.3em 1em rgba(0,0,0,.35)",
+				fontSize: "clamp(10px, 1.9cqw, 22px)",
 			}}
 		>
-			<Condensed style={{ fontSize: "2.1em" }}>{team.abbrev}</Condensed>
+			<Condensed style={{ fontSize: "2.4em" }}>{team.abbrev}</Condensed>
 			{label ? (
 				<span
 					style={{
-						fontSize: "0.62em",
-						fontWeight: 800,
-						letterSpacing: "0.12em",
+						fontSize: "0.66em",
+						fontWeight: 700,
+						letterSpacing: "0.14em",
 						opacity: 0.85,
 					}}
 				>
 					{label}
 				</span>
 			) : null}
-			<Condensed style={{ fontSize: "1.6em" }}>{record}</Condensed>
+			<Condensed style={{ fontSize: "1.9em" }}>{record}</Condensed>
 		</div>
 	);
 };
+
+// The white dashes around the title's disc, just inside its edge.
+const DashedRing = () => (
+	<svg
+		aria-hidden
+		viewBox="0 0 100 100"
+		style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
+	>
+		<circle
+			cx="50"
+			cy="50"
+			r="47.5"
+			fill="none"
+			stroke="#fff"
+			strokeWidth="1.8"
+			pathLength={200}
+			strokeDasharray="7.5 2.5"
+		/>
+	</svg>
+);
 
 const recordLabel = (playoffs: boolean) => (playoffs ? "SERIES" : "SEASON");
 
@@ -255,25 +272,23 @@ export const GameRecapCard = ({
 				<div
 					ref={disc}
 					style={{
+						position: "relative",
 						width: "34cqw",
 						height: "34cqw",
 						maxHeight: "min(34cqw, 92%)",
 						maxWidth: "min(34cqw, 92%)",
 						borderRadius: "50%",
-						background: `radial-gradient(circle at 50% 40%, ${DISC} 0 62%, ${DISC_DARK} 100%)`,
-						boxShadow:
-							"0 0 0 0.45cqw #fff, 0 0 0 0.9cqw rgba(0,0,0,.25), 0 1.4cqw 4cqw rgba(0,0,0,.45)",
-						outline: "0.35cqw dashed rgba(255,255,255,.95)",
-						outlineOffset: "-1.6cqw",
+						background: `radial-gradient(circle at 50% 35%, ${DISC} 0 55%, ${DISC_DARK} 100%)`,
+						boxShadow: "0 1cqw 3cqw rgba(0,0,0,.35)",
 						display: "flex",
 						flexDirection: "column",
 						alignItems: "center",
 						justifyContent: "center",
 						color: "#fff",
-						fontSize: "8.4cqw",
-						textShadow: "0 0.08em 0.25em rgba(0,0,0,.35)",
+						fontSize: "11cqw",
 					}}
 				>
+					<DashedRing />
 					<Condensed>GAME</Condensed>
 					<Condensed>RECAP</Condensed>
 				</div>
@@ -375,14 +390,14 @@ const Leader = ({
 				minWidth: "1.9em",
 			}}
 		>
-			<Condensed style={{ fontSize: "1.55em" }}>{n}</Condensed>
+			<Condensed style={{ fontSize: "1.7em" }}>{n}</Condensed>
 			<span
 				style={{
-					fontSize: "0.5em",
-					fontWeight: 800,
-					letterSpacing: "0.1em",
+					fontSize: "0.52em",
+					fontWeight: 700,
+					letterSpacing: "0.12em",
 					opacity: 0.8,
-					marginTop: "0.2em",
+					marginTop: "0.15em",
 				}}
 			>
 				{label}
@@ -415,9 +430,9 @@ const Leader = ({
 				{first ? (
 					<span
 						style={{
-							fontSize: "0.58em",
-							fontWeight: 700,
-							letterSpacing: "0.08em",
+							fontSize: "0.62em",
+							fontWeight: 600,
+							letterSpacing: "0.12em",
 							textTransform: "uppercase",
 							opacity: 0.85,
 						}}
@@ -427,8 +442,9 @@ const Leader = ({
 				) : null}
 				<span
 					style={{
-						fontSize: "1.05em",
-						fontWeight: 900,
+						fontSize: "1.3em",
+						fontWeight: 800,
+						lineHeight: 1,
 						textTransform: "uppercase",
 						whiteSpace: "nowrap",
 						overflow: "hidden",
@@ -476,7 +492,7 @@ export const FinalCard = ({
 				color: won(t, o) ? "#fff" : "#a9a9b6",
 			}}
 		>
-			<Condensed style={{ fontSize: "2.5em" }}>{t.pts}</Condensed>
+			<Condensed style={{ fontSize: "2.9em" }}>{t.pts}</Condensed>
 		</div>
 	);
 	const teamBox = (t: RecapCardTeam) => {
@@ -494,19 +510,19 @@ export const FinalCard = ({
 					color: inkOn(bg),
 				}}
 			>
-				<Condensed style={{ fontSize: "1.5em" }}>{t.abbrev}</Condensed>
+				<Condensed style={{ fontSize: "1.8em" }}>{t.abbrev}</Condensed>
 				<span
 					style={{
-						fontSize: "0.48em",
-						fontWeight: 800,
-						letterSpacing: "0.12em",
+						fontSize: "0.52em",
+						fontWeight: 700,
+						letterSpacing: "0.14em",
 						opacity: 0.85,
 						margin: "0.2em 0",
 					}}
 				>
 					{recordLabel(playoffs)}
 				</span>
-				<Condensed style={{ fontSize: "1em" }}>{t.after}</Condensed>
+				<Condensed style={{ fontSize: "1.25em" }}>{t.after}</Condensed>
 			</div>
 		);
 	};
@@ -528,9 +544,9 @@ export const FinalCard = ({
 						fontSize: narrow
 							? "clamp(10px, 3.4cqw, 22px)"
 							: "clamp(10px, 2.15cqw, 26px)",
-						borderRadius: "0.4em",
+						borderRadius: "0.12em",
 						overflow: "hidden",
-						boxShadow: "0 0.6em 2.4em rgba(0,0,0,.5)",
+						boxShadow: "0 0.5em 1.8em rgba(0,0,0,.4)",
 					}}
 				>
 					<div style={{ display: "flex", alignItems: "stretch" }}>
@@ -546,7 +562,7 @@ export const FinalCard = ({
 								color: "#fff",
 							}}
 						>
-							<Condensed style={{ fontSize: "1.25em" }}>
+							<Condensed style={{ fontSize: "1.5em" }}>
 								{finalLabel(overtimes)}
 							</Condensed>
 						</div>
@@ -583,96 +599,18 @@ export const FinalCard = ({
 	);
 };
 
-// A basketball: its leather lit from above, its seams.
-const Ball = ({ size, style }: { size: string; style?: CSSProperties }) => {
-	// (Safe in a url(): no colons.)
-	const id = `ball${useId().replace(/[^\w-]/g, "")}`;
-	return (
-		<svg
-			aria-hidden
-			viewBox="-10 -10 20 20"
-			style={{ position: "absolute", width: size, height: size, ...style }}
-		>
-			<defs>
-				<radialGradient id={id} cx="36%" cy="30%" r="78%">
-					<stop offset="0" stopColor="#f4ab68" />
-					<stop offset="0.5" stopColor="#d2661d" />
-					<stop offset="1" stopColor="#6e2c0b" />
-				</radialGradient>
-			</defs>
-			<circle r="9.6" fill={`url(#${id})`} />
-			<g fill="none" stroke="#2b1206" strokeWidth="0.55">
-				<path d="M -9.6 0.4 Q 0 -1.4 9.6 0.4" />
-				<path d="M 0.2 -9.6 Q -1.2 0 0.2 9.6" />
-				<path d="M -6.6 -7 Q -2.4 0 -6.6 7" />
-				<path d="M 6.9 -6.7 Q 2.8 0 6.9 6.7" />
-			</g>
-		</svg>
-	);
-};
-
-// A ball dropped in from above the picture, bouncing to rest where it sits.
-const useDrop = (on: boolean, delay: number) => {
-	const ref = useRef<HTMLDivElement | null>(null);
-	useEffect(() => {
-		if (!on) {
-			return;
-		}
-		ref.current?.animate?.(
-			[
-				{ transform: "translateY(-70cqw)", easing: "cubic-bezier(.5,0,1,1)" },
-				{
-					transform: "translateY(0)",
-					offset: 0.55,
-					easing: "cubic-bezier(0,0,.5,1)",
-				},
-				{
-					transform: "translateY(-6cqw)",
-					offset: 0.78,
-					easing: "cubic-bezier(.5,0,1,1)",
-				},
-				{ transform: "translateY(0)" },
-			],
-			{ duration: 1100, delay, fill: "backwards" },
-		);
-	}, [on, delay]);
-	return ref;
-};
-
-const DroppedBall = ({
-	on,
-	delay,
-	left,
-	top,
-	size,
-}: {
-	on: boolean;
-	delay: number;
-	left: string;
-	top: string;
-	size: string;
-}) => {
-	const ref = useDrop(on, delay);
-	return (
-		<div ref={ref} style={{ position: "absolute", left, top }}>
-			<Ball
-				size={size}
-				style={{
-					left: 0,
-					top: 0,
-					filter: "drop-shadow(0 1cqw 1cqw rgba(0,0,0,.35))",
-				}}
-			/>
-		</div>
-	);
-};
-
 // How far the floor is tilted away, seen from low down.
 const FLOOR_TILT = 62;
+// The dark the floor goes off into.
+const ARENA = "#040a22";
 
-// The floor: a half court's lines laid flat, seen from low down - or, as
-// the recap opens, from straight overhead, the camera swinging down to it.
+// The floor: a half court painted blue, its lane a shade darker and lit
+// where the title stands, the floor around it going off into the dark -
+// seen from low down, or, as the recap opens, from straight overhead, the
+// camera swinging down to it. Ten units a foot.
 const Floor = ({ open }: { open: boolean }) => {
+	// (Safe in a url(): no colons.)
+	const id = `floor${useId().replace(/[^\w-]/g, "")}`;
 	const ref = useRef<HTMLDivElement | null>(null);
 	useEffect(() => {
 		if (!open) {
@@ -708,24 +646,66 @@ const Floor = ({ open }: { open: boolean }) => {
 					position: "absolute",
 					left: "50%",
 					bottom: "-4cqw",
-					width: "104cqw",
-					height: "98cqw",
-					marginLeft: "-52cqw",
+					width: "480cqw",
+					height: "115cqw",
+					marginLeft: "-240cqw",
 					transformOrigin: "50% 100%",
 					transform: `rotateX(${FLOOR_TILT}deg)`,
 				}}
 			>
 				<svg
-					viewBox="0 0 500 470"
+					viewBox="-904 -80 2308 550"
+					preserveAspectRatio="none"
 					style={{ width: "100%", height: "100%", display: "block" }}
 				>
-					<g fill="none" stroke="#fff" strokeOpacity="0.7" strokeWidth="2.4">
+					<defs>
+						<radialGradient
+							id={id}
+							gradientUnits="userSpaceOnUse"
+							cx="250"
+							cy="270"
+							r="390"
+						>
+							<stop offset="0" stopColor="#2b62e3" />
+							<stop offset="0.5" stopColor="#1b46bb" />
+							<stop offset="1" stopColor="#0d2775" />
+						</radialGradient>
+						<linearGradient id={`${id}d`} x1="0" y1="0" x2="0" y2="1">
+							<stop offset="0" stopColor={ARENA} />
+							<stop offset="1" stopColor={ARENA} stopOpacity="0" />
+						</linearGradient>
+					</defs>
+					<rect
+						x="-904"
+						y="-80"
+						width="2308"
+						height="550"
+						fill={`url(#${id})`}
+					/>
+					<rect
+						x="-904"
+						y="-80"
+						width="2308"
+						height="80"
+						fill={`url(#${id}d)`}
+					/>
+					<rect
+						x="170"
+						y="2"
+						width="160"
+						height="190"
+						fill="#071d63"
+						fillOpacity="0.45"
+					/>
+					<g fill="none" stroke="#fff" strokeWidth="4.5">
 						<rect x="2" y="2" width="496" height="466" />
-						<rect x="190" y="2" width="120" height="190" />
-						<circle cx="250" cy="192" r="60" />
-						<path d="M 30 2 L 30 140 A 237 237 0 0 0 470 140 L 470 2" />
+						<rect x="170" y="2" width="160" height="190" />
+						<path d="M 190 192 A 60 60 0 0 0 310 192" />
+						<path d="M 190 192 A 60 60 0 0 1 310 192" strokeDasharray="12 10" />
+						<path d="M 30 2 L 30 140 A 237.5 237.5 0 0 0 470 140 L 470 2" />
 						<path d="M 190 468 A 60 60 0 0 1 310 468" />
-						<circle cx="250" cy="52" r="7.5" />
+						<path d="M 210 54 A 40 40 0 0 0 290 54" strokeWidth="3" />
+						<circle cx="250" cy="54" r="7.5" strokeWidth="3" />
 						<path d="M 220 42 L 280 42" />
 					</g>
 				</svg>
@@ -754,7 +734,7 @@ const useRise = (on: boolean, delay: number) => {
 	return ref;
 };
 
-const RisingLine = ({
+const RisingWord = ({
 	on,
 	delay,
 	children,
@@ -765,7 +745,7 @@ const RisingLine = ({
 }) => {
 	const ref = useRise(on, delay);
 	return (
-		<div style={{ overflow: "hidden", padding: "0 0.1em" }}>
+		<div style={{ overflow: "hidden", padding: "0.04em 0.05em" }}>
 			<div ref={ref}>
 				<Condensed>{children}</Condensed>
 			</div>
@@ -773,23 +753,51 @@ const RisingLine = ({
 	);
 };
 
+// Faded up into place, once.
+const useFadeUp = (on: boolean, delay: number) => {
+	const ref = useRef<HTMLDivElement | null>(null);
+	useEffect(() => {
+		if (!on) {
+			return;
+		}
+		ref.current?.animate?.(
+			[
+				{ opacity: 0, transform: "translateY(0.6em)" },
+				{ opacity: 1, transform: "translateY(0)" },
+			],
+			{
+				duration: 450,
+				delay,
+				easing: "cubic-bezier(.2,.8,.2,1)",
+				fill: "backwards",
+			},
+		);
+	}, [on, delay]);
+	return ref;
+};
+
 // How long the open runs, before the first game.
 export const OPEN_MS = 3400;
 
-// The recap's open, and its poster before it plays (`open` off): its title
-// over the blue court, the balls dropped around it, and the night. Opening,
-// the camera swings down from over the floor, the balls drop in and the
-// title rises out of it.
+// Where the title stands, down the picture: lower in a phone's 4:3, where
+// the court's far end comes further down.
+export const posterTitleTop = (narrow: boolean) => (narrow ? 0.53 : 0.44);
+
+// The recap's open, and its poster before it plays (`open` off): the title
+// on one line over the blue court, the night under it. Opening, the camera
+// swings down from over the floor and the title rises out of it.
 export const RecapPoster = ({
 	when,
+	narrow,
 	open = false,
 	children,
 }: {
 	when: string;
+	narrow: boolean;
 	open?: boolean;
 	children?: ReactNode;
 }) => {
-	const date = usePop(500, open ? 1700 : 0, 0.9);
+	const date = useFadeUp(open, 1450);
 	return (
 		<div
 			style={{
@@ -797,41 +805,55 @@ export const RecapPoster = ({
 				inset: 0,
 				overflow: "hidden",
 				fontFamily: FONT,
-				background: `radial-gradient(ellipse at 50% 40%, #2f63d8 0, ${DISC} 50%, ${DISC_DARK} 100%)`,
+				background: ARENA,
 				color: "#fff",
-				display: "flex",
-				flexDirection: "column",
-				alignItems: "center",
-				justifyContent: "center",
 			}}
 		>
 			<Floor open={open} />
-			<DroppedBall on={open} delay={250} left="9cqw" top="34%" size="9cqw" />
-			<DroppedBall on={open} delay={520} left="64cqw" top="12%" size="5cqw" />
-			<DroppedBall on={open} delay={900} left="80cqw" top="38%" size="12cqw" />
+			<div
+				aria-hidden
+				style={{
+					position: "absolute",
+					inset: 0,
+					background:
+						"radial-gradient(ellipse 80% 75% at 50% 45%, transparent 55%, rgba(2, 5, 18, 0.55) 100%)",
+				}}
+			/>
 			<div
 				style={{
-					position: "relative",
+					position: "absolute",
+					left: 0,
+					right: 0,
+					top: `${posterTitleTop(narrow) * 100}%`,
+					transform: "translateY(-50%)",
 					display: "flex",
 					flexDirection: "column",
 					alignItems: "center",
-					fontSize: "clamp(26px, 9cqw, 110px)",
-					textShadow: "0 0.06em 0.2em rgba(0,0,0,.4)",
 				}}
 			>
-				<RisingLine on={open} delay={1000}>
-					NIGHTLY
-				</RisingLine>
-				<RisingLine on={open} delay={1140}>
-					RECAP
-				</RisingLine>
+				<div
+					style={{
+						display: "flex",
+						gap: "0.18em",
+						fontSize: "clamp(32px, 11.5cqw, 140px)",
+						textShadow: "0 0.03em 0.05em rgba(0, 4, 24, 0.35)",
+					}}
+				>
+					<RisingWord on={open} delay={1000}>
+						NIGHTLY
+					</RisingWord>
+					<RisingWord on={open} delay={1120}>
+						RECAP
+					</RisingWord>
+				</div>
 				<div
 					ref={date}
 					style={{
-						marginTop: "0.5em",
-						fontSize: "0.17em",
-						fontWeight: 800,
-						letterSpacing: "0.2em",
+						marginTop: "0.7em",
+						paddingLeft: "0.3em",
+						fontSize: "clamp(11px, 2.1cqw, 26px)",
+						fontWeight: 600,
+						letterSpacing: "0.3em",
 						textTransform: "uppercase",
 						opacity: 0.9,
 					}}
@@ -899,7 +921,7 @@ const TunnelFace = ({
 					style={
 						side
 							? {
-									transform: `rotate(${face === "left" ? -90 : 90}deg) scaleX(0.8)`,
+									transform: `rotate(${face === "left" ? -90 : 90}deg)`,
 								}
 							: undefined
 					}
@@ -938,7 +960,6 @@ export const Stinger = ({ text }: { text: string }) => {
 		});
 	}, []);
 	const title = usePop(420, 380, 1.8);
-	const ball = useSlide(-30, 300);
 	return (
 		<div
 			style={{
@@ -967,9 +988,6 @@ export const Stinger = ({ text }: { text: string }) => {
 				ref={veil}
 				style={{ position: "absolute", inset: 0, background: "#050507" }}
 			/>
-			<div ref={ball}>
-				<Ball size="7cqw" style={{ left: "6cqw", top: "8%" }} />
-			</div>
 			<div
 				ref={title}
 				style={{
@@ -979,8 +997,8 @@ export const Stinger = ({ text }: { text: string }) => {
 					alignItems: "center",
 					justifyContent: "center",
 					color: "#fff",
-					fontSize: "13cqw",
-					textShadow: "0 0.05em 0.3em rgba(0,0,0,.6)",
+					fontSize: "16cqw",
+					textShadow: "0 0.04em 0.2em rgba(0,0,0,.6)",
 				}}
 			>
 				<Condensed>{text}</Condensed>

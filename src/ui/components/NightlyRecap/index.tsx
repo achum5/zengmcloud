@@ -32,6 +32,7 @@ import {
 	FinalCard,
 	GameRecapCard,
 	OPEN_MS,
+	posterTitleTop,
 	RecapPoster,
 	Stinger,
 	STINGER_MS,
@@ -406,7 +407,7 @@ const NightlyRecap = ({ season, day }: { season: number; day: number }) => {
 		>
 			{at === -1 ? (
 				<Frame narrow={narrow}>
-					<RecapPoster key={take} when={night!.when} open />
+					<RecapPoster key={take} when={night!.when} narrow={narrow} open />
 				</Frame>
 			) : game ? (
 				<RecapGame
@@ -420,7 +421,7 @@ const NightlyRecap = ({ season, day }: { season: number; day: number }) => {
 				/>
 			) : (
 				<Frame narrow={narrow}>
-					<RecapPoster when={night!.when}>
+					<RecapPoster when={night!.when} narrow={narrow}>
 						<button
 							type="button"
 							aria-label="Play the recap"
@@ -434,31 +435,22 @@ const NightlyRecap = ({ season, day }: { season: number; day: number }) => {
 								cursor: "pointer",
 							}}
 						>
-							<span
+							<svg
+								aria-hidden
+								viewBox="0 0 48 48"
 								style={{
 									position: "absolute",
 									left: "50%",
-									top: "83%",
+									top: `${(posterTitleTop(narrow) + (narrow ? 0.3 : 0.32)) * 100}%`,
 									transform: "translate(-50%, -50%)",
-									width: "clamp(44px, 9cqw, 84px)",
-									height: "clamp(44px, 9cqw, 84px)",
-									borderRadius: "50%",
-									background: "rgba(0, 0, 0, 0.55)",
-									border: "2px solid rgba(255, 255, 255, 0.9)",
-									display: "flex",
-									alignItems: "center",
-									justifyContent: "center",
-									color: "#fff",
+									width: "clamp(44px, 8cqw, 76px)",
+									height: "clamp(44px, 8cqw, 76px)",
+									filter: "drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35))",
 								}}
 							>
-								<span
-									className="glyphicon glyphicon-play"
-									style={{
-										fontSize: "clamp(17px, 3.6cqw, 33px)",
-										marginLeft: "0.12em",
-									}}
-								/>
-							</span>
+								<circle cx="24" cy="24" r="24" fill="#fff" />
+								<path d="M 19 15 L 34 24 L 19 33 Z" fill="#13297a" />
+							</svg>
 						</button>
 					</RecapPoster>
 				</Frame>
