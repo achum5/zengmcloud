@@ -24,10 +24,11 @@ import {
 } from "../util/dailyScheduleUiState.ts";
 import { useEffect, useRef, useState } from "react";
 import clsx from "clsx";
-import { isTradeDeadline } from "../../common/specialGames.ts";
+import { isAllStarGame, isTradeDeadline } from "../../common/specialGames.ts";
 import { formatGameDate } from "../../common/calendarDates.ts";
 import { WeekStrip } from "../components/LeagueHub/WeekStrip.tsx";
 import { LeadStory } from "../components/LeagueHub/LeadStory.tsx";
+import { GameCard } from "../components/LeagueHub/GameCard.tsx";
 import {
 	HubTabs,
 	useHubTab,
@@ -454,10 +455,19 @@ const DailySchedule = ({
 							) : null}
 
 							<div
-								className={hubOn ? "lh-games" : "d-flex flex-wrap"}
+								className={hubOn ? "lh-games lh-finals" : "d-flex flex-wrap"}
 								style={hubOn ? undefined : { gap: "1rem 2rem" }}
 							>
 								{completed.map((game) => {
+									const liveHere =
+										game.gid === liveBroadcastGid ||
+										liveGameByGid.has(game.gid);
+									// In the hub, a played game as NBA.com's scoreboard
+									// shows one.
+									const card =
+										hubOn &&
+										!liveHere &&
+										!isAllStarGame(game.teams[0].tid, game.teams[1].tid);
 									return (
 										<div
 											className={hubOn ? "lh-game" : "flex-grow-1"}
@@ -469,12 +479,15 @@ const DailySchedule = ({
 													game.note ? "daily-game-with-note" : "daily-game"
 												}
 											>
-												<ScoreBox
-													className={hubOn ? "lh-box" : undefined}
-													game={game}
-												/>
-												{game.gid === liveBroadcastGid ||
-												liveGameByGid.has(game.gid) ? (
+												{card ? (
+													<GameCard game={game} />
+												) : (
+													<ScoreBox
+														className={hubOn ? "lh-box" : undefined}
+														game={game}
+													/>
+												)}
+												{liveHere ? (
 													<div className="mt-1 d-flex align-items-center gap-2">
 														<LiveGameStatus gid={game.gid} />
 														<button

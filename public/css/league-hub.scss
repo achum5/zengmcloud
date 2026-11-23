@@ -509,3 +509,251 @@
 		font-size: 1.2rem;
 	}
 }
+
+// A PLAYED GAME, as NBA.com's scoreboard shows one (LeagueHub/GameCard):
+// the card, and each team's best line beside it where there's room.
+.lh-finals {
+	grid-template-columns: minmax(0, 1fr);
+	max-width: 1100px;
+	.game-note-header {
+		border: 0;
+		padding: 0.35rem 0.15rem 0;
+	}
+}
+.lh-gc {
+	container-type: inline-size;
+}
+.lh-gc-row {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	gap: 1rem;
+	align-items: center;
+}
+.lh-gc-card {
+	container-type: inline-size;
+	display: grid;
+	grid-template-columns:
+		clamp(2.4rem, 8cqw, 3.8rem) minmax(0, 1fr) auto minmax(0, 1fr)
+		clamp(2.4rem, 8cqw, 3.8rem);
+	min-height: 6.6rem;
+	overflow: hidden;
+	color: var(--bs-body-color);
+	text-decoration: none;
+	background: var(--bs-tertiary-bg);
+	border: 1px solid var(--bs-border-color);
+	border-radius: 0.6rem;
+	&:hover {
+		color: var(--bs-body-color);
+		border-color: var(--bs-secondary-color);
+	}
+}
+.lh-gc-side {
+	position: relative;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: var(--gc-bg);
+	// Stripes in its second color across the top and the foot.
+	&::before,
+	&::after {
+		content: "";
+		position: absolute;
+		left: 0;
+		right: 0;
+		height: 15%;
+		background: repeating-linear-gradient(
+			115deg,
+			var(--gc-accent) 0 0.45rem,
+			transparent 0.45rem 0.9rem
+		);
+	}
+	&::before {
+		top: 0;
+	}
+	&::after {
+		bottom: 0;
+	}
+	img {
+		position: relative;
+		z-index: 1;
+		width: clamp(1.8rem, 9cqw, 3rem);
+		height: auto;
+		filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.35));
+	}
+}
+.lh-gc-side-away {
+	clip-path: polygon(0 0, 100% 0, 82% 100%, 0 100%);
+}
+.lh-gc-side-home {
+	clip-path: polygon(18% 0, 100% 0, 100% 100%, 0 100%);
+}
+.lh-gc-team {
+	min-width: 0;
+	padding: 0.55rem 0.4rem 0.5rem 0.7rem;
+	align-self: center;
+}
+.lh-gc-team-home {
+	text-align: right;
+	padding: 0.55rem 0.7rem 0.5rem 0.4rem;
+}
+.lh-gc-region {
+	font-size: 0.65rem;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--bs-secondary-color);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.lh-gc-name {
+	font-size: clamp(1rem, 5.2cqw, 1.55rem);
+	font-weight: 800;
+	line-height: 1.05;
+	color: var(--bs-emphasis-color);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+// (A long name smaller, to fit whole.)
+.lh-gc-name-long {
+	font-size: clamp(0.9rem, 4.3cqw, 1.3rem);
+}
+.lh-gc-name-xlong {
+	font-size: clamp(0.8rem, 3.6cqw, 1.1rem);
+}
+.lh-gc-score {
+	font-size: clamp(1.7rem, 9cqw, 2.8rem);
+	font-weight: 800;
+	line-height: 1.05;
+	font-variant-numeric: tabular-nums;
+	color: var(--bs-emphasis-color);
+}
+.lh-gc-team.lost {
+	.lh-gc-name,
+	.lh-gc-score {
+		color: var(--bs-secondary-color);
+	}
+}
+.lh-gc-mid {
+	align-self: center;
+	min-width: 4.2rem;
+	padding: 0 0.2rem;
+	text-align: center;
+}
+.lh-gc-final {
+	font-size: 0.85rem;
+	font-weight: 700;
+	color: var(--bs-emphasis-color);
+}
+.lh-gc-series {
+	margin-top: 0.15rem;
+	font-size: 0.7rem;
+	line-height: 1.25;
+	color: var(--bs-secondary-color);
+	white-space: nowrap;
+}
+.lh-gc-leaders {
+	display: none;
+}
+.lh-gc-leader {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	min-width: 0;
+}
+.lh-gc-leader-logo {
+	flex: none;
+	width: 18px;
+	display: flex;
+}
+.lh-gc-face {
+	flex: none;
+	width: 2.3rem;
+	height: 2.6rem;
+	overflow: hidden;
+	> * {
+		width: 100%;
+		height: 3.45rem;
+	}
+}
+.lh-gc-leader-name {
+	flex: none;
+	width: 6.5rem;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	line-height: 1.15;
+	color: var(--bs-emphasis-color);
+	text-decoration: none;
+	&:hover .lh-gc-last {
+		text-decoration: underline;
+	}
+}
+.lh-gc-first {
+	font-size: 0.65rem;
+	font-weight: 700;
+	letter-spacing: 0.03em;
+	text-transform: uppercase;
+	color: var(--bs-secondary-color);
+}
+.lh-gc-first,
+.lh-gc-last {
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.lh-gc-last {
+	font-size: 0.95rem;
+	font-weight: 800;
+}
+.lh-gc-stats {
+	display: grid;
+	grid-auto-flow: column;
+	grid-auto-columns: 2.75rem;
+	gap: 0.2rem;
+}
+.lh-gc-stat {
+	text-align: center;
+	line-height: 1.1;
+	b {
+		display: block;
+		font-size: 1rem;
+		font-weight: 800;
+		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
+	}
+	// (Made of tried: "7/14".)
+	&.frac b {
+		font-size: 0.85rem;
+		line-height: 1.2;
+	}
+	span {
+		font-size: 0.58rem;
+		font-weight: 700;
+		letter-spacing: 0.04em;
+		color: var(--bs-secondary-color);
+	}
+}
+@container (min-width: 620px) {
+	.lh-gc-row {
+		// (The lines as wide as they need, the card the rest.)
+		grid-template-columns: minmax(0, 1fr) auto;
+	}
+	.lh-gc-leaders {
+		display: flex;
+		flex-direction: column;
+		gap: 0.6rem;
+	}
+}
+@container (max-width: 900px) {
+	.lh-gc-stat:nth-child(5) {
+		display: none;
+	}
+}
+@container (max-width: 760px) {
+	.lh-gc-stat:nth-child(4),
+	.lh-gc-leader-logo {
+		display: none;
+	}
+}
