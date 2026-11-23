@@ -2530,7 +2530,7 @@ $small-scrollbar-thumb-hover-color: darken($gray-500, 10%) !default;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	height: 18px;
+	height: 20px;
 	padding: 0 6px;
 	border-radius: 3px;
 	background: #15181e;
@@ -2544,8 +2544,9 @@ $small-scrollbar-thumb-hover-color: darken($gray-500, 10%) !default;
 
 	img {
 		display: block;
-		max-height: 12px;
-		max-width: 64px;
+		height: 14px;
+		width: auto;
+		max-width: 72px;
 		object-fit: contain;
 	}
 }
@@ -2553,11 +2554,15 @@ $small-scrollbar-thumb-hover-color: darken($gray-500, 10%) !default;
 // On the top edge of a national game's score box, at its right.
 .score-box-national {
 	position: absolute;
-	top: -10px;
-	height: 16px;
+	top: -12px;
 	right: 8px;
 	z-index: 1;
+	height: 22px;
 	box-shadow: 0 0 0 2px var(--bs-body-bg);
+
+	img {
+		height: 15px;
+	}
 }
 
 // Beside a national game's small score box, both teams high.
@@ -2569,8 +2574,8 @@ $small-scrollbar-thumb-hover-color: darken($gray-500, 10%) !default;
 	font-size: 0.55rem;
 
 	img {
-		max-width: 30px;
-		max-height: 18px;
+		height: 24px;
+		max-width: 46px;
 	}
 }
 
