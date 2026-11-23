@@ -3522,6 +3522,10 @@ export type ScoreBugStyle = {
 	// Lettering it brings: a `font` names one. `src`: a URL, or one uploaded
 	// ("pic:<id>").
 	fonts?: { name: string; src: string }[];
+	// The colors the broadcast shows a team in, by its abbreviation, in place
+	// of the team's own ("NYK": ["#1d428a", "#f58426"]) - a team it shows in
+	// black, say.
+	teamColors?: Record<string, string[]>;
 	pieces: ScoreBugPiece[];
 };
 export type ScoreBugShow =
@@ -3574,6 +3578,8 @@ export type ScoreBugPiece = {
 	// their marks); all capitals.
 	spacing?: number;
 	upper?: boolean;
+	// Its figures each as wide as it is (a narrow 1), not all the same width.
+	proportional?: boolean;
 	radius?: number;
 	opacity?: number;
 	// CSS, as given (team colors written in): its outline ("2px solid
@@ -3594,6 +3600,9 @@ export type ScoreBugPiece = {
 	text?: string;
 	limit?: string;
 	off?: string;
+	// For the fouls: how far they move over (in the bug's units, left if
+	// less than 0) while their side's BONUS mark shows, to make room for it.
+	bonusShift?: number;
 	// For "image": a URL, or "pic:<id>" - and how it fills its box
 	// ("contain", the default; "cover"; "fill").
 	image?: string;

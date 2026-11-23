@@ -45,6 +45,7 @@ const PIECE_NUMBERS = new Set([
 	"opacity",
 	"rotate",
 	"zoom",
+	"bonusShift",
 ]);
 const PIECE_STRINGS = new Set([
 	"color",
@@ -61,11 +62,12 @@ const PIECE_STRINGS = new Set([
 	"low",
 	"lowBackground",
 ]);
-const PIECE_BOOLEANS = new Set(["italic", "upper", "colon"]);
+const PIECE_BOOLEANS = new Set(["italic", "upper", "colon", "proportional"]);
 const FITS = new Set(["contain", "cover", "fill"]);
 const ORDINALS = new Set(["plain", "sup", "small"]);
 const MAX_PIECES = 80;
 const MAX_FONTS = 6;
+const MAX_TEAM_COLORS = 100;
 
 const isNumber = (v: unknown): v is number =>
 	typeof v === "number" && Number.isFinite(v);
@@ -90,6 +92,7 @@ export const parseScoreBug = (raw: unknown): ScoreBugStyle | string => {
 				"shadow",
 				"font",
 				"fonts",
+				"teamColors",
 				"pieces",
 			].includes(key)
 		) {
@@ -142,6 +145,27 @@ export const parseScoreBug = (raw: unknown): ScoreBugStyle | string => {
 				Object.keys(f).some((k) => k !== "name" && k !== "src")
 			) {
 				return `font ${i + 1} should be { "name": ..., "src": ... }.`;
+			}
+		}
+	}
+	if (r.teamColors !== undefined) {
+		const teams = r.teamColors;
+		if (
+			typeof teams !== "object" ||
+			teams === null ||
+			Array.isArray(teams) ||
+			Object.keys(teams).length > MAX_TEAM_COLORS
+		) {
+			return `"teamColors" should be an object of abbreviations (at most ${MAX_TEAM_COLORS}).`;
+		}
+		for (const [abbrev, colors] of Object.entries(teams)) {
+			if (
+				!Array.isArray(colors) ||
+				colors.length < 1 ||
+				colors.length > 3 ||
+				colors.some((c) => typeof c !== "string")
+			) {
+				return `"teamColors" ${abbrev} should be a list of 1 to 3 colors.`;
 			}
 		}
 	}

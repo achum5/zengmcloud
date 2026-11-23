@@ -108,12 +108,21 @@ export const CustomScoreBug = ({
 	const team = (side: "away" | "home") => (side === "away" ? away : home);
 	// "away0".."home2": that side's colors, wherever they're written;
 	// anything else, as given.
+	// (The broadcast's for that team, where it has its own.)
 	const teamColor = (side: "away" | "home", which: string) => {
-		const colors = team(side)?.colors;
+		const t = team(side);
+		const own =
+			t?.abbrev !== undefined &&
+			style.teamColors &&
+			Object.hasOwn(style.teamColors, t.abbrev)
+				? style.teamColors[t.abbrev]
+				: undefined;
+		const i = which === "Ink" ? 0 : Number(which);
+		const c = own?.[i] ?? t?.colors?.[i];
 		if (which === "Ink") {
-			return colors && lightness(colors[0]) > 0.62 ? "#111111" : "#ffffff";
+			return c && lightness(c) > 0.62 ? "#111111" : "#ffffff";
 		}
-		return colors?.[Number(which)];
+		return c;
 	};
 	const color = (c: string | undefined) => {
 		const m = c === undefined ? null : /^(away|home)([0-2]|Ink)$/.exec(c);
@@ -165,7 +174,7 @@ export const CustomScoreBug = ({
 			opacity: p.opacity,
 			overflow: "hidden",
 			whiteSpace: "nowrap",
-			fontVariantNumeric: "tabular-nums",
+			fontVariantNumeric: p.proportional ? "proportional-nums" : "tabular-nums",
 			boxSizing: "border-box",
 		};
 		const side = p.show.startsWith("away")
@@ -218,7 +227,14 @@ export const CustomScoreBug = ({
 			case "awayFouls":
 			case "homeFouls":
 				inner = (
-					<span ref={refs.fouls[k]} data-fmt={p.text} data-limit={p.limit} />
+					<span
+						ref={refs.fouls[k]}
+						data-fmt={p.text}
+						data-limit={p.limit}
+						data-bonus-shift={
+							p.bonusShift === undefined ? undefined : u(p.bonusShift)
+						}
+					/>
 				);
 				break;
 			case "awayBonus":
@@ -308,23 +324,25 @@ export const CustomScoreBug = ({
 					break;
 				}
 				const { n, suffix } = ordinal(quarter);
+				// (On the number's baseline - raised, a "sup", to the top of
+				// its capitals - however tall the box.)
 				inner =
 					p.ordinal === "plain" || !suffix ? (
 						`${n}${suffix}`
 					) : (
-						<>
+						<span style={{ display: "inline-flex", alignItems: "baseline" }}>
 							{n}
 							<span
 								style={{
 									fontSize: p.ordinal === "sup" ? "0.55em" : "0.7em",
-									alignSelf: p.ordinal === "sup" ? "flex-start" : undefined,
-									marginTop: p.ordinal === "sup" ? "0.32em" : undefined,
+									position: p.ordinal === "sup" ? "relative" : undefined,
+									top: p.ordinal === "sup" ? "-0.57em" : undefined,
 									marginLeft: "0.04em",
 								}}
 							>
 								{suffix}
 							</span>
-						</>
+						</span>
 					);
 				break;
 			}

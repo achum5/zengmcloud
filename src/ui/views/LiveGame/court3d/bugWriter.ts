@@ -156,6 +156,12 @@ export const writeBug = (refs: BugRefs, shown: BugShown, now: BugNow) => {
 		if (el && on !== shown.bonus[i]) {
 			shown.bonus[i] = on;
 			el.style.visibility = on ? "visible" : "hidden";
+			// (Its fouls moved over to make room, where the bug says.)
+			const fouls = refs.fouls[i].current;
+			const shift = fouls?.dataset.bonusShift;
+			if (fouls && shift !== undefined) {
+				fouls.style.transform = on ? `translateX(${shift})` : "";
+			}
 		}
 	});
 	if (now.ball !== shown.ball) {

@@ -105,6 +105,7 @@ describe("parseScoreBug", () => {
 			bottom: 0.07,
 			edge: 0.026,
 			place: "left",
+			teamColors: { NYK: ["#1d428a", "#f58426"], MIA: ["#000000"] },
 			pieces: [
 				{
 					show: "awayBonus",
@@ -116,6 +117,7 @@ describe("parseScoreBug", () => {
 					text: "BONUS",
 				},
 				{ show: "homeLogo", x: 0, y: 0, w: 30, h: 22, zoom: 1.2 },
+				{ show: "homeScore", x: 0, y: 0, w: 30, h: 22, proportional: true },
 				{ show: "period", x: 0, y: 0, w: 20, h: 20, ordinal: "sup" },
 				{ show: "clock", x: 0, y: 0, w: 20, h: 20, colon: true },
 				{
@@ -136,6 +138,7 @@ describe("parseScoreBug", () => {
 					h: 20,
 					text: "FOULS: {n}",
 					limit: "FOUL LIMIT",
+					bonusShift: -80,
 				},
 				{
 					show: "homeTimeouts",
@@ -186,6 +189,9 @@ describe("parseScoreBug", () => {
 			[{ ...ok, bottom: "low" }, /"bottom"/],
 			[{ ...ok, fonts: [{ name: "A" }] }, /font 1/],
 			[{ ...ok, fonts: "A" }, /"fonts"/],
+			[{ ...ok, teamColors: ["#000"] }, /"teamColors"/],
+			[{ ...ok, teamColors: { MIA: [] } }, /"teamColors" MIA/],
+			[{ ...ok, teamColors: { MIA: [1] } }, /"teamColors" MIA/],
 			[
 				{ ...ok, pieces: [{ show: "clock", x: 0, y: 0, w: 1 }] },
 				/"h" is needed/,

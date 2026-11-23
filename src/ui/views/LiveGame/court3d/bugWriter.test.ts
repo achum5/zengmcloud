@@ -111,6 +111,23 @@ describe("writeBug, for a league's own bug", () => {
 		assert.strictEqual(bonus[1].style.visibility, "hidden");
 	});
 
+	test("fouls moved over for the bonus mark, and back", () => {
+		const fouls: [ReturnType<typeof el>, ReturnType<typeof el>] = [
+			el({ fmt: "FOULS: {n}", bonusShift: "-11cqw" }),
+			el({ fmt: "FOULS: {n}" }),
+		];
+		const bonus: [ReturnType<typeof el>, ReturnType<typeof el>] = [el(), el()];
+		const refs = refsOf({ fouls, bonus });
+		const shown = bugShown();
+		const write = (b: [boolean, boolean]) =>
+			writeBug(refs, shown, now({ fouls: ["", ""], counts: [2, 2], bonus: b }));
+		write([true, true]);
+		assert.strictEqual(fouls[0].style.transform, "translateX(-11cqw)");
+		assert.strictEqual(fouls[1].style.transform, undefined);
+		write([false, true]);
+		assert.strictEqual(fouls[0].style.transform, "");
+	});
+
 	test("the default bug's fouls as they come", () => {
 		const fouls: [ReturnType<typeof el>, ReturnType<typeof el>] = [el(), el()];
 		writeBug(

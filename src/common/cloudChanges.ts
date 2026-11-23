@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 449,
+		date: "2026-11-23",
+		text: "3D game: score bugs can now show a team in the broadcast's own colors (the Heat in black, the Raptors in black, the Knicks in MSG's darker blue), set figures the way a broadcast does (a narrow 1), and slide FOULS aside when BONUS shows. A superscript 4TH now sits level with the top of the 4.",
+	},
+	{
 		n: 448,
 		date: "2026-11-23",
 		text: "Leagues on the NBA Calendar now show today's date at the top of every page, with the year and the real day of the week (Wed, Nov 12, 2025), and the season named the NBA way (2025-26). Tap it for the new Calendar page: a month at a time for any team, with home games shaded, results, back-to-backs, playoff games, the trade deadline and the All-Star Game, or how many games are on each night across the league.",
