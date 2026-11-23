@@ -12,6 +12,8 @@ import { getCol } from "../../../common/getCol.ts";
 import { getBestPlayerBoxScore } from "../../../common/getBestPlayerBoxScore.ts";
 import { bySport } from "../../../common/sportFunctions.ts";
 import { showNotification } from "../../util/showNotification.ts";
+import { NationalTag } from "../NationalTag.tsx";
+import type { NationalTag as NationalTagType } from "../../../common/types.ts";
 import {
 	isAllStarGame,
 	isTradeDeadline,
@@ -94,6 +96,8 @@ export const ScoreBox = memo(
 			finals?: boolean;
 			forceWin?: number;
 			gid: number;
+			// An upcoming game on a national network.
+			national?: NationalTagType;
 			neutralSite?: boolean;
 			season?: number;
 			// The displayed spread: for an upcoming game, worked out in the worker
@@ -140,6 +144,8 @@ export const ScoreBox = memo(
 		const winner = getWinner(game.teams);
 
 		const final = winner !== undefined;
+
+		const national = !final ? game.national : undefined;
 
 		const hasOvrs =
 			!small &&
@@ -576,6 +582,9 @@ export const ScoreBox = memo(
 						})
 					)}
 				</div>
+				{small && national ? (
+					<NationalTag className="score-box-national-small" tag={national} />
+				) : null}
 				{small && overtimes ? (
 					<div
 						className="text-end text-body-secondary px-1 d-flex align-items-center"
@@ -587,9 +596,20 @@ export const ScoreBox = memo(
 			</div>
 		);
 
+		// (A tab on the box's top edge, so national games' boxes still line up
+		// with the rest.)
+		const nationalStrip =
+			national && !small ? (
+				<NationalTag className="score-box-national" tag={national} />
+			) : null;
+		const outerClassName = nationalStrip
+			? clsx(className, "position-relative")
+			: className;
+
 		if (actions.length > 0) {
 			return (
-				<div className={className}>
+				<div className={outerClassName}>
+					{nationalStrip}
 					<div className="d-flex">
 						{scoreBox}
 						<div className="btn-group-vertical score-box-action">
@@ -646,6 +666,11 @@ export const ScoreBox = memo(
 			);
 		}
 
-		return <div className={className}>{scoreBox}</div>;
+		return (
+			<div className={outerClassName}>
+				{nationalStrip}
+				{scoreBox}
+			</div>
+		);
 	},
 );

@@ -30,7 +30,7 @@ import {
 	projectRatings,
 	type RatingsProjection,
 } from "./projection.ts";
-import getDaysLeftSchedule from "../season/getDaysLeftSchedule.ts";
+import classicDaysLeft from "../game/classicDaysLeft.ts";
 import getNumPlayoffTeams from "../season/getNumPlayoffTeams.ts";
 import { normalCdf, simulateSeason, winProbability } from "./seasonSim.ts";
 import { fitLogistic } from "./logistic.ts";
@@ -4277,13 +4277,16 @@ export const buildOutlook = async ({
 
 	let deadline: DeadlineView | undefined;
 	if (phase === PHASE.REGULAR_SEASON) {
+		// In classic days, on a calendar too (game/classicDaysLeft.ts): how
+		// likely a deal is to still be on offer at the deadline was measured
+		// in them (stillOnOffer).
 		let daysToDeadline: number | undefined;
 		try {
-			daysToDeadline = await getDaysLeftSchedule("tradeDeadline");
+			daysToDeadline = await classicDaysLeft("tradeDeadline");
 		} catch {
 			// No deadline left this season.
 		}
-		const daysLeft = await getDaysLeftSchedule();
+		const daysLeft = await classicDaysLeft();
 		if (daysToDeadline !== undefined && daysToDeadline > 0 && daysLeft > 0) {
 			const uncertaintyAt = (p: number) => 1.5 + 2 * (1 - p);
 			const progressAtDeadline =

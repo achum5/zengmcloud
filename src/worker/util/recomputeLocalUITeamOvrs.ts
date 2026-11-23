@@ -2,6 +2,7 @@ import { addDays } from "../../common/calendarDates.ts";
 import type { LocalStateUI } from "../../common/types.ts";
 import { idb } from "../db/index.ts";
 import { getUpcoming } from "../views/schedule.ts";
+import { nationalTags } from "../views/nationalBroadcast.ts";
 import g from "./g.ts";
 import toUI from "./toUI.ts";
 
@@ -22,6 +23,7 @@ export const getOneUpcomingGame = async (): Promise<
 			date: game.date,
 			finals: game.finals,
 			gid: game.gid,
+			national: game.national,
 			// Worked out in the worker off fresh overalls, so the top bar can't
 			// quote a different number than the schedule pages for the same game.
 			spread: game.spread,
@@ -63,6 +65,7 @@ export const getUpcomingGamesForUI = async (): Promise<
 		}
 	}
 	const last = addDays(today, TOP_BAR_NIGHTS_AHEAD);
+	const national = await nationalTags(schedule);
 	const later = schedule
 		.filter(
 			(game) =>
@@ -75,6 +78,7 @@ export const getUpcomingGamesForUI = async (): Promise<
 		.map((game) => ({
 			date: game.date,
 			gid: game.gid,
+			national: national.get(game.gid),
 			teams: [{ tid: game.homeTid }, { tid: game.awayTid }] as [
 				{ tid: number },
 				{ tid: number },

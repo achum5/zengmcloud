@@ -2477,6 +2477,56 @@ $small-scrollbar-thumb-hover-color: darken($gray-500, 10%) !default;
 	min-width: 44px;
 }
 
+// A national game's network (see NationalTag): the same dark chip on either
+// theme, since networks' logos are mostly white.
+.national-tag {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	height: 18px;
+	padding: 0 6px;
+	border-radius: 3px;
+	background: #15181e;
+	color: #fff;
+	font-size: 0.65rem;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	line-height: 1;
+	text-transform: uppercase;
+	white-space: nowrap;
+
+	img {
+		display: block;
+		max-height: 12px;
+		max-width: 64px;
+		object-fit: contain;
+	}
+}
+
+// On the top edge of a national game's score box, at its right.
+.score-box-national {
+	position: absolute;
+	top: -10px;
+	height: 16px;
+	right: 8px;
+	z-index: 1;
+	box-shadow: 0 0 0 2px var(--bs-body-bg);
+}
+
+// Beside a national game's small score box, both teams high.
+.score-box-national-small {
+	align-self: stretch;
+	border-radius: 0 3px 3px 0;
+	height: auto;
+	min-width: 38px;
+	font-size: 0.55rem;
+
+	img {
+		max-width: 30px;
+		max-height: 18px;
+	}
+}
+
 .score-box-action {
 	height: 96px;
 

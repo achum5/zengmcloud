@@ -404,6 +404,7 @@ const DailySchedule = ({
 													// Leave out forceTie, since ScoreBox wants the value for finished games
 													finals: game.finals,
 													gid: game.gid,
+													national: game.national,
 													season: game.season,
 													spread: game.spread,
 													teams: game.teams,

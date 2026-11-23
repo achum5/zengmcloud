@@ -37,6 +37,9 @@ export type BugRefs = {
 	];
 	// Football's down and distance, after the clock.
 	down?: RefObject<HTMLSpanElement | null>;
+	// A league's own bug: its pieces shown only before or after the bonus
+	// (see ScoreBugPiece's `when`) are in it.
+	bug?: RefObject<HTMLDivElement | null>;
 };
 
 const FONT = "system-ui, -apple-system, Segoe UI, Roboto, sans-serif";

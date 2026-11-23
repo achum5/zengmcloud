@@ -4,7 +4,7 @@ import { PHASE } from "../../../common/constants.ts";
 import type { DraftPick, Player, TradeTeams } from "../../../common/types.ts";
 import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
-import getDaysLeftSchedule from "../season/getDaysLeftSchedule.ts";
+import classicDaysLeft from "../game/classicDaysLeft.ts";
 import isUntradable from "../trade/isUntradable.ts";
 import processTrade from "../trade/processTrade.ts";
 import setGameAttributes from "../league/setGameAttributes.ts";
@@ -829,6 +829,21 @@ const marketMomentNow = async () => {
 	return made;
 };
 
+// The deadline's day a moment is for: the days left - or, on a calendar
+// night that is two classic days (its league rules run twice), the day after
+// the last moment's, so each of the deadline's last days meets once.
+export const deadlineMomentDay = (
+	daysLeft: number,
+	lastMoment: string | undefined,
+	prefix: string,
+) => {
+	const tag = `${prefix}deadline:`;
+	const last = lastMoment?.startsWith(tag)
+		? Number(lastMoment.slice(tag.length))
+		: Number.NaN;
+	return Number.isFinite(last) ? Math.max(daysLeft, last - 1) : daysLeft;
+};
+
 // When the market meets: in season every few weeks (not as it opens) and
 // each of the last days before the deadline, in free agency at each stage
 // (or on a few of its days), and as each offseason window opens
@@ -841,9 +856,10 @@ export const smartTradeDay = async () => {
 	const phase = g.get("phase");
 	let key: string | undefined;
 	if (phase === PHASE.REGULAR_SEASON) {
+		// In classic days, on a calendar too (game/classicDaysLeft.ts).
 		let daysLeft = Infinity;
 		try {
-			daysLeft = await getDaysLeftSchedule("tradeDeadline");
+			daysLeft = await classicDaysLeft("tradeDeadline");
 		} catch {
 			// No deadline left this season.
 		}
@@ -859,7 +875,11 @@ export const smartTradeDay = async () => {
 		// Not as the season opens: the preseason's window has just met.
 		key =
 			daysLeft < marketSettings.deadlineDays
-				? `deadline:${daysLeft}`
+				? `deadline:${deadlineMomentDay(
+						daysLeft,
+						g.get("smartMarketMoment"),
+						`${g.get("season")}:${phase}:`,
+					)}`
 				: period > 0
 					? `games:${period}`
 					: undefined;

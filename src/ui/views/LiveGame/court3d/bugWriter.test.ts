@@ -142,4 +142,32 @@ describe("writeBug, for a league's own bug", () => {
 		assert.strictEqual(fouls[0].textContent, "FOULS 3");
 		assert.strictEqual(fouls[1].textContent, "BONUS");
 	});
+
+	test("pieces shown only before or after the bonus, either side's or one's", () => {
+		const piece = (when: string) => el({ when });
+		const pieces = {
+			noBonus: piece("noBonus"),
+			bonus: piece("bonus"),
+			awayBonus: piece("awayBonus"),
+			homeBonus: piece("homeBonus"),
+		};
+		const bug = {
+			querySelectorAll: () => Object.values(pieces),
+		} as unknown as HTMLDivElement;
+		const refs = { ...refsOf({}), bug: { current: bug } };
+		const shown = bugShown();
+		const seen = () =>
+			Object.entries(pieces)
+				.filter(([, p]) => p.style.visibility !== "hidden")
+				.map(([k]) => k);
+		writeBug(refs, shown, now({ bonus: [false, false] }));
+		assert.deepStrictEqual(seen(), ["noBonus"]);
+		writeBug(refs, shown, now({ bonus: [false, true] }));
+		assert.deepStrictEqual(seen(), ["bonus", "homeBonus"]);
+		writeBug(refs, shown, now({ bonus: [true, true] }));
+		assert.deepStrictEqual(seen(), ["bonus", "awayBonus", "homeBonus"]);
+		// A new period: back to before.
+		writeBug(refs, shown, now({}));
+		assert.deepStrictEqual(seen(), ["noBonus"]);
+	});
 });

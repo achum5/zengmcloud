@@ -32,14 +32,17 @@ export type BugNow = {
 // clocks, each side's fouls and the ball's mark ([visitors, home]) - and,
 // `down`, the down and distance.
 export const useBugRefs = (down = false): BugRefs =>
-	useState((): BugRefs => ({
-		clock: createRef(),
-		shot: createRef(),
-		fouls: [createRef(), createRef()],
-		ball: [createRef(), createRef()],
-		bonus: [createRef(), createRef()],
-		...(down ? { down: createRef() } : {}),
-	}))[0];
+	useState(
+		(): BugRefs => ({
+			clock: createRef(),
+			shot: createRef(),
+			fouls: [createRef(), createRef()],
+			ball: [createRef(), createRef()],
+			bonus: [createRef(), createRef()],
+			bug: createRef(),
+			...(down ? { down: createRef() } : {}),
+		}),
+	)[0];
 
 // What was last written, and into which of the bug's elements: a new bug in
 // its place (the league's own put up, say) is written afresh.
@@ -51,6 +54,9 @@ export type BugShown = {
 	shotInk: string | undefined;
 	fouls: [string, string];
 	bonus: [boolean, boolean];
+	// Which sides are in the bonus, as the bug's pieces shown only before or
+	// after it have it ("" not yet written).
+	when: string;
 	ball: number;
 	down: string;
 };
@@ -62,9 +68,23 @@ export const bugShown = (): BugShown => ({
 	shotInk: undefined,
 	fouls: ["", ""],
 	bonus: [false, false],
+	when: "",
 	ball: -1,
 	down: "",
 });
+
+// A piece shown only before or after the bonus (data-when): whether it
+// shows now.
+export const whenShows = (when: string | undefined, bonus: boolean[]) =>
+	when === "noBonus"
+		? !bonus[0] && !bonus[1]
+		: when === "bonus"
+			? !!bonus[0] || !!bonus[1]
+			: when === "awayBonus"
+				? !!bonus[0]
+				: when === "homeBonus"
+					? !!bonus[1]
+					: true;
 
 // A league's own bug's way with the clocks (data-colon): under a minute,
 // ":09.2" - and the shot clock ":24".
@@ -112,6 +132,7 @@ export const writeBug = (refs: BugRefs, shown: BugShown, now: BugNow) => {
 		refs.down?.current ?? null,
 		refs.bonus?.[0].current ?? null,
 		refs.bonus?.[1].current ?? null,
+		refs.bug?.current ?? null,
 	];
 	if (into.some((el, i) => el !== shown.into[i])) {
 		Object.assign(shown, bugShown(), { into });
@@ -164,6 +185,15 @@ export const writeBug = (refs: BugRefs, shown: BugShown, now: BugNow) => {
 			}
 		}
 	});
+	const bugEl = refs.bug?.current;
+	const bonus = [now.bonus?.[0] === true, now.bonus?.[1] === true];
+	const when = bonus.map((b) => (b ? 1 : 0)).join("");
+	if (bugEl && when !== shown.when) {
+		shown.when = when;
+		for (const el of bugEl.querySelectorAll<HTMLElement>("[data-when]")) {
+			el.style.visibility = whenShows(el.dataset.when, bonus) ? "" : "hidden";
+		}
+	}
 	if (now.ball !== shown.ball) {
 		shown.ball = now.ball;
 		refs.ball.forEach((ref, i) => {
