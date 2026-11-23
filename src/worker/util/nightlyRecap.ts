@@ -31,6 +31,8 @@ export type RecapCardTeam = {
 	region: string;
 	name: string;
 	colors: [string, string, string];
+	// The uniform its players' faces wear (a jersey style, for facesjs).
+	jersey?: string;
 	imgURL?: string;
 	pts: number;
 	// The record going into the game and after it - in the playoffs, the
@@ -113,6 +115,7 @@ const cardTeam = async (game: Game, i: 0 | 1): Promise<RecapCardTeam> => {
 		region: info?.region ?? "",
 		name: info?.name ?? "",
 		colors: info?.colors ?? ["#333", "#999", "#fff"],
+		...(info?.jersey ? { jersey: info.jersey } : {}),
 		...((info as any)?.imgURL ? { imgURL: (info as any).imgURL } : {}),
 		pts: t.pts,
 		before: record(before, playoffs),

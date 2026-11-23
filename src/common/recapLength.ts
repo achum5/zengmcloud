@@ -10,13 +10,15 @@ export type RecapLength = "full" | "medium" | "short" | "one";
 export const RECAP_LENGTHS: {
 	key: RecapLength;
 	label: string;
+	// (On a phone.)
+	short: string;
 	// Plays a game.
 	plays: number;
 }[] = [
-	{ key: "full", label: "Full", plays: 14 },
-	{ key: "medium", label: "Medium", plays: 6 },
-	{ key: "short", label: "Short", plays: 2 },
-	{ key: "one", label: "One play a game", plays: 1 },
+	{ key: "full", label: "Full", short: "Full", plays: 14 },
+	{ key: "medium", label: "Medium", short: "Medium", plays: 6 },
+	{ key: "short", label: "Short", short: "Short", plays: 2 },
+	{ key: "one", label: "One play a game", short: "1 play", plays: 1 },
 ];
 
 export const DEFAULT_RECAP_LENGTH: RecapLength = "full";
