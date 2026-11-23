@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 468,
+		date: "2026-11-23",
+		text: "Nightly Recap: it now opens with a Nightly Recap title, and a 2nd Half graphic (or Overtime) plays between the halves. The controls are on the video itself, like the 3D game's, and the plays can run at 2x (the graphics stay at normal speed). The Final card shows each player's head and shoulders instead of a cut-off face.",
+	},
+	{
 		n: 467,
 		date: "2026-11-23",
 		text: "Nightly Recap: the Daily Schedule now has a recap video of the night, for games played from this update on. Each game gets a Game Recap card, its biggest plays on the 3D court, and a Final card with the score and three players a side. Pick how long it runs (Full, Medium, Short or One play a game). The shortest still shows each game's biggest play: the game-winner if there was one, otherwise the best play of the game's top player. The last 7 nights can be watched.",
