@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 462,
+		date: "2026-11-23",
+		text: "NBA calendar leagues: the smart CPU GMs' last days of trading before the deadline now cover the same stretch of games, and meet as often, as in a classic league (they had about half as many).",
+	},
+	{
 		n: 461,
 		date: "2026-11-23",
 		text: "3D game: national broadcasts. A team looks file can now bring national networks' score bugs. Each night's biggest game (the two best teams going in) is on that night's network, and every playoff game is national, with the Finals on its own network. Custom score bugs can also show where a team stands (\"11-3 (2nd IN EAST)\"), swap the records for timeouts or fouls once a side is in the bonus, and show the playoff series.",
