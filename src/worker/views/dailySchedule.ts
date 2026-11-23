@@ -483,10 +483,13 @@ export default defineView({
 					!dayIsPlayoffs &&
 					upcoming.length > 0
 				) {
+					// (Not counting a game still being played live.)
 					standings = await computeStandingsAsOf(
 						inputs.season,
 						day - 1,
-						await idb.merged.games.getAll({ season: inputs.season }),
+						(await idb.merged.games.getAll({ season: inputs.season })).filter(
+							(game) => !gate?.hidden.has(game.gid),
+						),
 					);
 				}
 

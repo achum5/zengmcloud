@@ -108,8 +108,9 @@ const statusLines = (game: MpLiveGame): string[] => {
 // anything narrower (where the bar has no room, and the sidebar isn't docked
 // below it).
 export const LiveScoresStrip = ({ className }: { className?: string }) => {
-	const { mpLiveGames, teamInfoCache } = useLocal([
+	const { mpLiveGames, ownLiveSim, teamInfoCache } = useLocal([
 		"mpLiveGames",
+		"ownLiveSim",
 		"teamInfoCache",
 	]);
 
@@ -123,9 +124,12 @@ export const LiveScoresStrip = ({ className }: { className?: string }) => {
 				const tids = game.tids;
 				const pts = game.score?.pts ?? [0, 0];
 				const status = statusLines(game);
-				const title = `${game.byName} is simming ${
-					game.label || "this game"
-				} live${game.stalled ? " (not heard from)" : game.paused ? " (paused)" : ""}`;
+				// (Not while playing your own live: leaving it would end it.)
+				const title = ownLiveSim
+					? "Finish your game first"
+					: `${game.byName} is simming ${
+							game.label || "this game"
+						} live${game.stalled ? " (not heard from)" : game.paused ? " (paused)" : ""}`;
 				return (
 					<button
 						key={game.gid}
@@ -135,6 +139,7 @@ export const LiveScoresStrip = ({ className }: { className?: string }) => {
 							game.watching && "live-score-watching",
 						)}
 						title={title}
+						disabled={ownLiveSim}
 						onClick={() => {
 							watchLiveGame(game.gid);
 						}}

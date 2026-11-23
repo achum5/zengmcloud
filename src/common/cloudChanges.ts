@@ -12,6 +12,21 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 487,
+		date: "2026-11-23",
+		text: "Nightly Recap: the newest night's recap now leads the League Headlines on the new dashboard and starts playing on its own once you scroll to it. Tap it to watch it full size (turn your phone sideways for the biggest picture). Every recap now has a full size button too.",
+	},
+	{
+		n: 486,
+		date: "2026-11-23",
+		text: "Nightly Recap: after the games now come the Player of the Night (his best plays, with his name and line along the bottom; Full and Medium), the night's top plays counted down from 10 (5 on Medium, 3 on Short), each under its own game's score bug, and the standings through that night, each conference split into the playoff spots, the play-in and the rest.",
+	},
+	{
+		n: 485,
+		date: "2026-11-23",
+		text: "Live games, more safety checks: while the last game of the Finals is being played live, nobody can move on to the draft until its final. A live game left behind by a page that closed without saying so can no longer hold up the playoffs. While you're playing your own game live, the other live scores in the header can't be tapped, since leaving your game would end it for everyone. And the standings on Daily Schedule no longer count a game still being played.",
+	},
+	{
 		n: 484,
 		date: "2026-11-23",
 		text: "NBA calendar leagues: the date in the header is now a calendar page with the weekday on it (WED 12 NOV), next to the season and phase (2025-26, Regular season). Tap the calendar for the Daily Schedule, or the words for your roster (the bracket in the playoffs). In the scores bar, home games are filled in your team's color instead of black, and a game still to come is centered in its box.",

@@ -501,8 +501,7 @@ export const roomGameStillLive = (
 	// createWakeClock): its own sleep is not the broadcast's silence.
 	wokeAt = 0,
 ): boolean =>
-	!game.gameOver &&
-	now - Math.max(game.expiresAt, wokeAt) < QUIET_WATCH_MS;
+	!game.gameOver && now - Math.max(game.expiresAt, wokeAt) < QUIET_WATCH_MS;
 
 // A room game given up on stays over: once it has been quiet past
 // QUIET_WATCH_MS - its final, for everyone not watching - a screen that comes
@@ -546,4 +545,41 @@ export const createRoomLiveCheck = (
 		},
 		givenUp: (startedAt: number) => givenUp.has(startedAt),
 	};
+};
+
+// What holds the league's next step (a playoff day, a phase change) while a
+// game is being played live: undefined for nothing. A playoff game still on
+// in the room, even once its tip-off moved the phase on (the title won at the
+// tip-off of the Finals' last game); and this device's own playoff game while
+// its page is still playing it - a flag left up by a page that never reported
+// back holds nothing up.
+export const liveGameHold = <M extends { label?: string; playoffs?: boolean }>({
+	inPlayoffs,
+	own,
+	liveSimGid,
+	now,
+	games,
+	isLive,
+}: {
+	inPlayoffs: boolean;
+	own: { gid: number; playoffs: boolean; beatAt: number } | undefined;
+	liveSimGid: number | undefined;
+	now: number;
+	games: Iterable<M>;
+	isLive: (game: M) => boolean;
+}): string | undefined => {
+	if (
+		own &&
+		liveSimGid === own.gid &&
+		(inPlayoffs || own.playoffs) &&
+		now - own.beatAt < QUIET_WATCH_MS
+	) {
+		return "Your live game";
+	}
+	for (const game of games) {
+		if ((inPlayoffs || game.playoffs === true) && isLive(game)) {
+			return game.label ? `${game.label} (live)` : "A live game";
+		}
+	}
+	return undefined;
 };
