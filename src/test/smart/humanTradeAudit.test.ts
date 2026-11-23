@@ -11,9 +11,13 @@ import { loadLeagueFile } from "./loadLeague.ts";
 // team among the best players on each side (and one with a first added) that
 // the salary rules allow: vanilla's verdict, the smart CPU's guard, and what
 // the deal is worth by the smart CPU's own read to the CPU team and to the
-// person's. A line of JSON a deal vanilla takes.
+// person's. A line of JSON a deal vanilla takes. HT_MIW: "What would make
+// this work" for each CPU team's best three and the trading block for the
+// person's best three, by vanilla alone and with the CPU team's own read
+// (ownReadValuer) - how long each takes and whether the team would take
+// what comes back.
 //   HT_LEAGUE=<league.json> HT_OUT=<file> [HT_DIFFICULTY=3.5] [HT_DAYS=20] \
-//     [HT_USERS=<tid,...>] \
+//     [HT_USERS=<tid,...>] [HT_MIW=1] \
 //     npx vitest --run --project basketball src/test/smart/humanTradeAudit.test.ts
 const env: Record<string, string | undefined> =
 	(globalThis as any).process?.env ?? {};
@@ -38,7 +42,7 @@ test.skipIf(!env.HT_LEAGUE)(
 		const { idb } = await import("../../worker/db/index.ts");
 		const { tradeValueCalculator } =
 			await import("../../worker/core/vanillaPlus/index.ts");
-		const { smartGuardOffer } =
+		const { ownReadValuer, smartGuardOffer } =
 			await import("../../worker/core/smartCpu/humanTrades.ts");
 		const { currentOutlook } =
 			await import("../../worker/core/realisticFrontOffice/market.ts");
@@ -117,7 +121,10 @@ test.skipIf(!env.HT_LEAGUE)(
 				tried: 0,
 				rules: 0,
 				vanilla: 0,
-				guard: { now: 0, later: 0, rival: 0 } as Record<string, number>,
+				guard: { now: 0, later: 0, rival: 0, value: 0 } as Record<
+					string,
+					number
+				>,
 			};
 			const rows: any[] = [];
 			const desc = async (a: { pids: number[]; dpids: number[] }) => {
@@ -135,7 +142,9 @@ test.skipIf(!env.HT_LEAGUE)(
 				if (cpuTid === userTid) {
 					continue;
 				}
-				const theirs = (await tradable(cpuTid)).slice(0, 8);
+				// HT_DEALS=0: none of these, for the HT_MIW part alone.
+				const theirs =
+					env.HT_DEALS === "0" ? [] : (await tradable(cpuTid)).slice(0, 8);
 				const deals: { give: number[]; dpids: number[]; get: number }[] = [];
 				for (const x of theirs) {
 					for (let i = 0; i < mine.length; i++) {
@@ -218,7 +227,7 @@ test.skipIf(!env.HT_LEAGUE)(
 				}
 			}
 			log(
-				`${stats.tried} deals tried, ${stats.rules} within the salary rules, vanilla takes ${stats.vanilla}; the smart CPU then turns down ${stats.guard.now ?? 0} (win now), ${stats.guard.later ?? 0} (building for later), ${stats.guard.rival ?? 0} (rival contender)`,
+				`${stats.tried} deals tried, ${stats.rules} within the salary rules, vanilla takes ${stats.vanilla}; the smart CPU then turns down ${stats.guard.now ?? 0} (win now), ${stats.guard.later ?? 0} (building for later), ${stats.guard.rival ?? 0} (rival contender), ${stats.guard.value ?? 0} (a loss by its own read)`,
 			);
 			const show = (r: any) =>
 				`  ${r.cpu} (${(100 * r.cpuTitle).toFixed(1)}%)${r.guard ? ` [smart: no, ${r.guard}]` : ""} CPU ${r.cpuWorth.toFixed(3)} you ${r.userWorth.toFixed(3)} | you give ${r.give} | you get ${r.get}`;
@@ -241,6 +250,131 @@ test.skipIf(!env.HT_LEAGUE)(
 				.sort((a, b) => b.userWorth - a.userWorth)
 				.slice(0, 8)) {
 				log(show(r));
+			}
+			if (env.HT_MIW) {
+				const own = await ownReadValuer(calc);
+				const miw: Record<
+					string,
+					{ n: number; ms: number; found: number; ok: number }
+				> = {};
+				// The same search asking the team's read of every piece: it
+				// must come to the same deal.
+				const everyPiece = { evaluate: (s: any) => own.evaluate(s) };
+				let differ = 0;
+				let last: string | undefined;
+				const tally = async (
+					key: string,
+					f: () => Promise<any>,
+					cpuTid: number,
+				) => {
+					const t0 = performance.now();
+					const r = await f();
+					if (key.endsWith("every piece")) {
+						if (JSON.stringify(r) !== last) {
+							differ += 1;
+							log(`  differs: ${last} / ${JSON.stringify(r)}`);
+						}
+					} else {
+						last = JSON.stringify(r);
+					}
+					const ms = performance.now() - t0;
+					const m = (miw[key] ??= { n: 0, ms: 0, found: 0, ok: 0 });
+					m.n += 1;
+					m.ms += ms;
+					if (r) {
+						m.found += 1;
+						const guard = await smartGuardOffer(
+							cpuTid,
+							userTid,
+							{ pids: r[1].pids, dpids: r[1].dpids },
+							{ pids: r[0].pids, dpids: r[0].dpids },
+						);
+						if (guard.ok) {
+							m.ok += 1;
+						}
+					}
+				};
+				for (const t of teams) {
+					if (t.tid === userTid) {
+						continue;
+					}
+					const theirs = (await tradable(t.tid)).slice(0, 3);
+					for (const x of theirs) {
+						const tt: any = [
+							{
+								tid: userTid,
+								pids: [],
+								dpids: [],
+								pidsExcluded: [],
+								dpidsExcluded: [],
+							},
+							{
+								tid: t.tid,
+								pids: [x.pid],
+								dpids: [],
+								pidsExcluded: [],
+								dpidsExcluded: [],
+							},
+						];
+						for (const [key, valuer] of [
+							["make it work, vanilla", calc],
+							["make it work, own read", own],
+							["make it work, own read of every piece", everyPiece],
+						] as const) {
+							await tally(
+								key,
+								() =>
+									trade.makeItWork(structuredClone(tt), {
+										holdUserConstant: false,
+										valueChangeCalculator: valuer,
+									}),
+								t.tid,
+							);
+						}
+					}
+					for (const p of mine.slice(0, 3)) {
+						const tt: any = [
+							{
+								tid: userTid,
+								pids: [p.pid],
+								dpids: [],
+								pidsExcluded: [],
+								dpidsExcluded: [],
+							},
+							{
+								tid: t.tid,
+								pids: [],
+								dpids: [],
+								pidsExcluded: [],
+								dpidsExcluded: [],
+							},
+						];
+						for (const [key, valuer] of [
+							["trading block, vanilla", calc],
+							["trading block, own read", own],
+							["trading block, own read of every piece", everyPiece],
+						] as const) {
+							await tally(
+								key,
+								() =>
+									trade.makeItWork(structuredClone(tt), {
+										holdUserConstant: true,
+										maxAssetsToAdd: 5,
+										valueChangeCalculator: valuer,
+									}),
+								t.tid,
+							);
+						}
+					}
+				}
+				log(
+					`own read, a cheap read of each piece against every piece: ${differ} differ`,
+				);
+				for (const [key, m] of Object.entries(miw)) {
+					log(
+						`${key}: ${m.n} tries, ${(m.ms / m.n).toFixed(0)} ms each, ${m.found} come back with a deal, ${m.ok} of them the team would take`,
+					);
+				}
 			}
 		}
 	},

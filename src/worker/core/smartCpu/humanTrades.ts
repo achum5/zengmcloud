@@ -1,5 +1,6 @@
 import type { Player } from "../../../common/types.ts";
 import { idb } from "../../db/index.ts";
+import { tradeDifficulty } from "../../util/difficulty.ts";
 import { currentOutlook } from "../realisticFrontOffice/market.ts";
 import {
 	curveAt,
@@ -9,6 +10,7 @@ import {
 	PATIENCE,
 	teamStrengths,
 } from "../realisticFrontOffice/outlook.ts";
+import type { TradeValuer } from "../trade/makeItWork.ts";
 import { timed } from "./clock.ts";
 import { viewFor } from "./signing.ts";
 import type { Assets, Holdings } from "./worth.ts";
@@ -81,7 +83,14 @@ export const smartRejection = (v: SmartHumanVerdict) => {
 // direction - a contender left weaker this season and next, a rebuilding team
 // left weaker after that - or, both teams contenders, if it helps the human's
 // team more than the CPU team in title chances this season and next: no
-// poaching a contender's star to double one's own chances.
+// poaching a contender's star to double one's own chances - or if by its own
+// worth it comes out behind (the owner's call, 2026-11-23): at a trade
+// difficulty of 3.5, vanilla's value had 1.9% Dallas give Jason Kidd (37,
+// 60) for Marvin Williams (24, 57/62, $7.5M to 2014), a sixth of a title by
+// its own read, where the direction checks have nothing to say about a team
+// in the middle (docs/smart-cpu.md). Not on an easy trade difficulty (below
+// 0), which is there to give the human a discount.
+export const humanTradeSettings = { ownRead: true };
 
 // Title chances this season and next at which a team is a contender, and at
 // or under which it is rebuilding.
@@ -99,12 +108,20 @@ export const RIVAL_RATIO = 1.5;
 
 export type SmartGuard = (
 	| { ok: true }
-	| { ok: false; reason: "now" | "later" | "rival"; message: string }
+	| {
+			ok: false;
+			reason: "now" | "later" | "rival" | "value";
+			message: string;
+	  }
 ) & {
 	// Title chances this season and next, before and after, for explaining.
 	cpu?: [number, number];
 	human?: [number, number];
+	// The deal's worth to the CPU team by its own read (titles), when asked.
+	worth?: number;
 };
+
+const ownReadOn = () => humanTradeSettings.ownRead && tradeDifficulty() >= 0;
 
 // A team's title chances each season on these holdings, cut to the limit.
 const titleOdds = (
@@ -225,5 +242,55 @@ export const guardWith = async (
 			}
 		}
 	}
+	if (ownReadOn()) {
+		const worth = await view.dealWorth(cpuTid, humanTid, o, i);
+		if (worth < 0) {
+			return {
+				ok: false,
+				reason: "value",
+				message: smartRejection({ worth, gain: worth, betterElsewhere: false }),
+				cpu,
+				worth,
+			};
+		}
+		return { ok: true, cpu, worth };
+	}
 	return { ok: true, cpu };
+};
+
+// A search's valuer (trade/makeItWork.ts) that also asks the CPU team's own
+// read: a deal vanilla takes but the team reads as a loss comes back as that
+// loss, below every deal it takes and above every deal vanilla turns down, so
+// "What would make this work" asks the human for more, and the trading block
+// and trade proposals offer only what the team would stand by. Each piece
+// the search tries is sized by vanilla alone, and the team's read asked only
+// of those it would pick.
+export const ownReadValuer = async (
+	base: TradeValuer,
+): Promise<TradeValuer> => {
+	if (!ownReadOn()) {
+		return base;
+	}
+	const outlook = await currentOutlook();
+	const view = viewFor(outlook);
+	await view.prime();
+	return {
+		evaluatePiece: (s) => base.evaluate(s),
+		async evaluate(s) {
+			const dv = await base.evaluate(s);
+			if (!(dv > 0) || s.tradingPartnerTid === undefined) {
+				return dv;
+			}
+			const worth = await timed("human offers", async () =>
+				view.dealWorth(
+					s.tid,
+					s.tradingPartnerTid!,
+					await view.assetsOf({ pids: s.pidsRemove, dpids: s.dpidsRemove }),
+					await view.assetsOf({ pids: s.pidsAdd, dpids: s.dpidsAdd }),
+				),
+			);
+			// A loss of nothing at all is still a loss: below 0.
+			return worth >= 0 ? dv : Math.min(worth, -1e-9);
+		},
+	};
 };

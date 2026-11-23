@@ -2844,3 +2844,24 @@ Duncan for Chris Paul and Emeka Okafor, 5.6% Denver's Chauncey Billups for
 Paul. What it lets through are teams in the middle: 1.9% Dallas giving
 Jason Kidd (37, 60) for Marvin Williams (24, 57/62, $7.5M to 2014), -0.177
 titles to Dallas, +0.046 to Atlanta.
+
+**Then: the team's own read too (the owner's pick, 2026-11-23).** A
+person's offer vanilla takes at the difficulty, a CPU team now also turns
+down if by its own worth it comes out behind (`humanTradeSettings.ownRead`,
+reason `value`), whatever its spot - not on an easy trade difficulty (below
+0), which is there to give the person a discount. Measured again the same
+way, it turns down 31, 25 and 37 more: about the deals above each team
+loses by its read, none left.
+
+"What would make this work", the trading block and trade proposals search
+with vanilla's value (`trade/makeItWork.ts`), and the search runs right up
+to vanilla's line, where vanilla and the team's read part most: of what the
+search found for each CPU team's best three (what would the team want for
+him) and for each of the person's best three (what would it give), the team
+would then take 20 of 163 and 61 of 261. The search now asks the team's
+read too (`ownReadValuer`): 141 of 163 and 246 of 261, the rest turned down
+for the team's direction. Each piece it tries is sized by vanilla alone,
+and the team's read asked only of the ones it would pick (`evaluatePiece`):
+the same deal as asking it of every piece in all 522 searches, at about a
+quarter of the time: "What would make this work" 0.3-0.6 s against 0.12 s
+on vanilla alone, the trading block 0.06 s a team against 0.01 s.

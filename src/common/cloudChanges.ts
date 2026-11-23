@@ -12,9 +12,14 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
-		n: 490,
+		n: 491,
 		date: "2026-11-23",
 		text: 'Live games: the top of the page now shows the matchup instead of "Live Game Simulation": both teams with their records coming into the game (their seeds in the playoffs), the spread, the over/under from the sportsbook, and the season series or the playoff series. A game on national TV shows the network\'s logo. The Replay label is gone.',
+	},
+	{
+		n: 490,
+		date: "2026-11-23",
+		text: "Smart CPU GMs, trading with people: on top of the trade difficulty, a CPU team now also turns down any trade it would lose by its own read, wherever it sits in the standings. Before, only contenders and rebuilding teams said no, so a team in the middle could still give a good player away for less. What would make this work, the trading block and trade proposals now come back with deals the team would actually take. On an easy trade difficulty nothing changes.",
 	},
 	{
 		n: 489,

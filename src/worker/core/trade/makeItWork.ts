@@ -17,7 +17,13 @@ import {
 // What prices a deal for the AI team: the stock trade values, or with
 // realistic front offices the team's own read (realisticFrontOffice/
 // vanillaTrades.ts).
-export type TradeValuer = Pick<ValueChangeCalculator, "evaluate">;
+export type TradeValuer = Pick<ValueChangeCalculator, "evaluate"> & {
+	// A cheaper read of each piece the search tries, never above evaluate's
+	// and the same where it is 0 or less (the smart CPU's own read on top of
+	// vanilla's, smartCpu/humanTrades.ts): evaluate is then asked only as far
+	// as the pick needs, for the same pick.
+	evaluatePiece?: ValueChangeCalculator["evaluate"];
+};
 
 export type LookingFor = {
 	positions: Set<string>;
@@ -218,8 +224,8 @@ const tryAddAsset = async (
 		return;
 	}
 
-	// Calculate the value for each asset added to the trade, for use in forward selection
-	for (const asset of assets) {
+	// The deal with an asset added, as the valuer takes it.
+	const dealWith = (asset: Asset) => {
 		const userPids = teams[0].pids.slice();
 		const otherPids = teams[1].pids.slice();
 		const userDpids = teams[0].dpids.slice();
@@ -239,14 +245,32 @@ const tryAddAsset = async (
 			}
 		}
 
-		asset.dv = await valueChangeCalculator.evaluate({
+		return {
 			tid: teams[1].tid,
 			pidsAdd: userPids,
 			pidsRemove: otherPids,
 			dpidsAdd: userDpids,
 			dpidsRemove: otherDpids,
 			tradingPartnerTid: teams[0].tid,
-		});
+		};
+	};
+	// The valuer's cheaper read of each piece, where the pick goes by value
+	// alone (no lookingFor order of its own).
+	const lazy =
+		valueChangeCalculator.evaluatePiece !== undefined &&
+		!(
+			lookingFor &&
+			(lookingFor.skills.size > 0 ||
+				lookingFor.bestCurrentPlayers ||
+				lookingFor.prospects ||
+				lookingFor.draftPicks)
+		);
+
+	// Calculate the value for each asset added to the trade, for use in forward selection
+	for (const asset of assets) {
+		asset.dv = await (lazy
+			? valueChangeCalculator.evaluatePiece!(dealWith(asset))
+			: valueChangeCalculator.evaluate(dealWith(asset)));
 	}
 
 	if (prevDv > 0) {
@@ -346,6 +370,42 @@ const tryAddAsset = async (
 		) {
 			// If we're looking for draft picks (and we're done looking for 1 player for a specific position or 1 player with some other sort, if necessary), add draft picks first before players. If there are no draft picks that the AI team is willing to give up, then asset will be undefined and it will try to find a player below.
 			asset = assets.find((asset) => asset.type === "draftPick");
+		}
+	}
+
+	// A valuer with a cheaper read of each piece: the full read asked in the
+	// order above until it gives the pick asking it of every piece would have
+	// - the first that still works, or else the closest of those that don't.
+	if (lazy) {
+		const full = (a: Asset) => valueChangeCalculator.evaluate(dealWith(a));
+		if (prevDv > 0) {
+			for (const a of assets) {
+				const dv = await full(a);
+				if (dv > 0 && dv < prevDv) {
+					asset = a;
+					break;
+				}
+			}
+		} else {
+			let closest: { a: Asset; dv: number } | undefined;
+			for (const a of assets) {
+				if (!(a.dv > 0)) {
+					asset = closest && closest.dv > a.dv ? closest.a : a;
+					break;
+				}
+				const dv = await full(a);
+				if (dv > 0) {
+					asset = a;
+					break;
+				}
+				if (dv > prevDv && (!closest || dv > closest.dv)) {
+					closest = { a, dv };
+				}
+			}
+			asset ??= closest?.a;
+		}
+		if (!asset) {
+			return;
 		}
 	}
 
