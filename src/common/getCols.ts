@@ -3223,6 +3223,11 @@ const cols: {
 		sortSequence: ["desc", "asc"],
 		sortType: "number",
 	},
+	Days: {
+		desc: "Days Out",
+		sortSequence: ["desc", "asc"],
+		sortType: "number",
+	},
 	From: {},
 	GB: {
 		desc: "Games Back",

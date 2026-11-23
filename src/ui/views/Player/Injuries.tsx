@@ -2,11 +2,22 @@ import { DataTable } from "../../components/DataTable/index.tsx";
 import { getCols } from "../../../common/getCols.ts";
 import { injuryDropCell } from "../../util/injuryDropCell.ts";
 
-const cols = getCols(["Year", "Type", "Games", "Ovr Drop", "Pot Drop"], {
-	Type: {
-		width: "100%",
-	},
-});
+const colsFor = (days: boolean) =>
+	getCols(
+		[
+			"Year",
+			"Type",
+			"Games",
+			...(days ? ["Days"] : []),
+			"Ovr Drop",
+			"Pot Drop",
+		],
+		{
+			Type: {
+				width: "100%",
+			},
+		},
+	);
 
 const Injuries = ({
 	injuries,
@@ -14,6 +25,8 @@ const Injuries = ({
 }: {
 	injuries: {
 		games: number;
+		// On the NBA calendar.
+		days?: number;
 		season: number;
 		type: string;
 		// "-" in coarse ratings mode: a drop that didn't cost a full tens digit.
@@ -40,8 +53,13 @@ const Injuries = ({
 		return dropped && !sum ? "-" : sum;
 	};
 
+	// Injuries from seasons on the NBA calendar also say their days.
+	const days = injuries.some((injury) => injury.days !== undefined);
+	const cols = colsFor(days);
+
 	const totals = {
 		games: injuries.reduce((sum, injury) => sum + injury.games, 0),
+		days: injuries.reduce((sum, injury) => sum + (injury.days ?? 0), 0),
 		ovrDrop: total("ovrDrop"),
 		potDrop: total("potDrop"),
 	};
@@ -63,6 +81,7 @@ const Injuries = ({
 						},
 						injury.type,
 						injury.games,
+						...(days ? [injury.days ?? null] : []),
 						showRatings ? injuryDropCell(injury.ovrDrop) : null,
 						showRatings ? injuryDropCell(injury.potDrop) : null,
 					],
@@ -73,6 +92,7 @@ const Injuries = ({
 					"Total",
 					null,
 					totals.games,
+					...(days ? [totals.days] : []),
 					showRatings ? totals.ovrDrop : null,
 					showRatings ? totals.potDrop : null,
 				],

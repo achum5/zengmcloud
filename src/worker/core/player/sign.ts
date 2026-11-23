@@ -15,6 +15,8 @@ import { coarsenRating } from "../../../common/coarsenRating.ts";
 import { collegeFinalSeason } from "../../../common/college.ts";
 import { revertBefore } from "./revertSnapshot.ts";
 import { addContract, createContract } from "../contract/index.ts";
+import { daysOut } from "../game/calendarTicks.ts";
+import { currentDayClock } from "../game/classicDays.ts";
 
 // HOW HIGH A POTENTIAL IS WORTH ANNOUNCING, and the number to quote when one
 // is. Undefined means say nothing.
@@ -90,6 +92,18 @@ const sign = async (
 	p.tid = tid;
 	p.numDaysFreeAgent = 0;
 	p.gamesUntilTradable = isRookie ? 0 : Math.round(0.17 * g.get("numGames")); // 14 for basketball, 3 for football
+	// On the NBA calendar, the days that comes to (see refreshCalendarDays.ts).
+	const dayClock =
+		p.gamesUntilTradable > 0 ? await currentDayClock() : undefined;
+	if (dayClock) {
+		p.daysUntilTradable = daysOut(
+			p.gamesUntilTradable,
+			dayClock.clock,
+			dayClock.tonight,
+		);
+	} else {
+		delete p.daysUntilTradable;
+	}
 	delete p.numPlayersTradedAwayNormalized;
 
 	// Handle stats if the season is in progress. Otherwise, not needed until next season.

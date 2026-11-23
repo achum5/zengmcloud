@@ -351,6 +351,8 @@ export type TransactionRevert = {
 
 		numDaysFreeAgent: number;
 		gamesUntilTradable: number;
+		// On the NBA calendar: the calendar days gamesUntilTradable comes to.
+		daysUntilTradable?: number;
 		ptModifier: number;
 		yearsFreeAgent: number;
 		jerseyNumber?: string;
@@ -2058,6 +2060,9 @@ export type PlayerInjury = {
 	gamesRemaining: number;
 	type: string;
 	score?: number;
+	// On the NBA calendar: the calendar days gamesRemaining comes to, which is
+	// what the game shows (worker/core/game/refreshCalendarDays.ts).
+	daysRemaining?: number;
 };
 
 // Only for legacy league files and the migration from before contracts were tracked
@@ -2167,6 +2172,8 @@ export type PlayerWithoutKey<PlayerRatings = MinimalPlayerRatings> = {
 	appearances?: PlayerAppearance[];
 	firstName: string;
 	gamesUntilTradable: number;
+	// On the NBA calendar: the calendar days gamesUntilTradable comes to.
+	daysUntilTradable?: number;
 	hgt: number;
 	hof?: 1; // Would rather be boolean, but can't index boolean
 	imgURL: string;
@@ -2174,6 +2181,8 @@ export type PlayerWithoutKey<PlayerRatings = MinimalPlayerRatings> = {
 	injuries: {
 		season: number;
 		games: number;
+		// On the NBA calendar, the days it was for.
+		days?: number;
 		type: string;
 		ovrDrop?: number;
 		potDrop?: number;

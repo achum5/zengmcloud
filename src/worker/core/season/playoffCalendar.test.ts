@@ -15,12 +15,12 @@ import {
 	roundStartNight,
 	type RoundKind,
 } from "./playoffCalendar.ts";
-import { playoffNightTick } from "../game/calendarTicks.ts";
+import { PHASE } from "../../../common/constants.ts";
+import { nightTick } from "../game/calendarTicks.ts";
 
 const SEASON = 2027;
 // A Sunday, as the NBA's regular season ends.
 const LAST_REGULAR_SEASON_NIGHT = "2027-04-11";
-const NUM_TEAMS = 30;
 const NUM_GAMES = [7, 7, 7, 7];
 
 type Matchup = {
@@ -37,17 +37,28 @@ const team = (tid: number, seed: number): PlayoffSeriesTeam => ({
 });
 
 // A whole NBA-style postseason (play-in, four best-of-7 rounds) played night by
-// night off the plan, with random winners. Returns every night's games, each
-// team's ticks, and the classic days the same series would have taken.
+// night off the plan, with random winners. Returns every night's games, the
+// classic days the nights ticked, and the classic days the same series would
+// have taken.
 const simulate = (seed: number) => {
 	const random = makeSeededRandom(seed);
-	const games: Game[] = [];
+	// The regular season's last night, which the playoffs' clock starts from.
+	const games: Game[] = [
+		{
+			gid: 0,
+			season: SEASON,
+			day: 0,
+			date: LAST_REGULAR_SEASON_NIGHT,
+			playoffs: false,
+			teams: [{ tid: 0 }, { tid: 1 }],
+		} as unknown as Game,
+	];
 	const nights: {
 		night: string;
 		tids: [number, number][];
 		kind?: RoundKind;
 	}[] = [];
-	const ticks = new Map<number, number>();
+	let ticks = 0;
 	let classicDays = 0;
 	let day = 0;
 
@@ -68,7 +79,7 @@ const simulate = (seed: number) => {
 	const playNight = (
 		night: string,
 		matchups: Matchup[],
-		numGamesToWin: number,
+		_numGamesToWin: number,
 		kind?: RoundKind,
 	) => {
 		day += 1;
@@ -90,20 +101,15 @@ const simulate = (seed: number) => {
 			} as unknown as Game);
 		}
 		nights.push({ night, tids, kind });
-		const tick = playoffNightTick({
+		const tick = nightTick({
 			games,
+			schedule: [],
 			season: SEASON,
 			day,
-			playoffSeries,
-			numGamesToWin,
+			phase: PHASE.PLAYOFFS,
+			classicDays: undefined,
 		});
-		for (let tid = 0; tid < NUM_TEAMS; tid++) {
-			const n =
-				tick.ticksByTid === undefined
-					? 1
-					: (tick.ticksByTid.get(tid) ?? tick.restTicks ?? 0);
-			ticks.set(tid, (ticks.get(tid) ?? 0) + n);
-		}
+		ticks += tick.restTicks ?? 0;
 	};
 
 	// The play-in.
@@ -313,51 +319,19 @@ describe("playoff calendar", () => {
 		}
 	});
 
-	test("every team ticks as many times as on classic days", () => {
+	// The playoffs' clock runs at the classic postseason's rate: over whole
+	// postseasons, the nights tick about as many classic days as the same
+	// series would have taken (everyone alike, as on classic days).
+	test("whole postseasons tick about as many days as classic ones", () => {
+		let ticked = 0;
+		let classic = 0;
 		for (let seed = 1; seed <= 200; seed++) {
 			const { ticks, classicDays } = simulate(seed);
-			for (let tid = 0; tid < NUM_TEAMS; tid++) {
-				assert.strictEqual(
-					ticks.get(tid),
-					classicDays,
-					`seed ${seed}: team ${tid}`,
-				);
-			}
+			ticked += ticks;
+			classic += classicDays;
+			assert.isAbove(ticks / classicDays, 0.75, `seed ${seed}`);
+			assert.isBelow(ticks / classicDays, 1.25, `seed ${seed}`);
 		}
-	});
-
-	test("a series that ends behind the round catches up", () => {
-		// Series B is already through Game 5; tonight A sweeps in Game 4.
-		const playoffSeries = {
-			season: SEASON,
-			currentRound: 0,
-			series: [
-				[
-					{ home: { ...team(0, 1), won: 4 }, away: team(1, 8) },
-					{ home: { ...team(2, 4), won: 3 }, away: { ...team(3, 5), won: 2 } },
-				],
-			],
-		} as PlayoffSeries;
-		const tonight = {
-			gid: 1,
-			season: SEASON,
-			day: 9,
-			date: "2027-04-25",
-			playoffs: true,
-			teams: [{ tid: 1 }, { tid: 0 }],
-		} as unknown as Game;
-		const tick = playoffNightTick({
-			games: [tonight],
-			season: SEASON,
-			day: 9,
-			playoffSeries,
-			numGamesToWin: 4,
-		});
-		assert.strictEqual(tick.ticksByTid!.get(0), 2);
-		assert.strictEqual(tick.ticksByTid!.get(1), 2);
-		assert.strictEqual(tick.ticksByTid!.get(2), 0);
-		assert.strictEqual(tick.ticksByTid!.get(3), 0);
-		assert.strictEqual(tick.restTicks, 0);
-		assert.strictEqual(tick.leagueRuns, 0);
+		assert.closeTo(ticked / classic, 1, 0.03);
 	});
 });

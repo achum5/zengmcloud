@@ -1,5 +1,6 @@
 import { season, team } from "../index.ts";
 import { saveClassicDays } from "../game/saveClassicDays.ts";
+import { refreshCalendarDaysForNewSeason } from "../game/refreshCalendarDays.ts";
 import { collegePreseasonPoll } from "../college/polls.ts";
 import { collegeMigrate } from "../college/setup.ts";
 import { idb } from "../../db/index.ts";
@@ -180,6 +181,8 @@ const newPhaseRegularSeason = async (
 	if (classicDays !== undefined) {
 		await saveClassicDays(classicDays);
 	}
+	// Injuries and trade waits carried over: the days of this season they take.
+	await refreshCalendarDaysForNewSeason(dates !== undefined);
 
 	await deleteOldBoxScores();
 

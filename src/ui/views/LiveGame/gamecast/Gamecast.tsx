@@ -980,6 +980,10 @@ const injuryText = (injury: any) => {
 	if (injury.playingThrough) {
 		return "Playing through it";
 	}
+	if (injury.daysRemaining > 0) {
+		// On the NBA calendar.
+		return `Out ${injury.daysRemaining} ${helpers.plural("day", injury.daysRemaining)}`;
+	}
 	return injury.gamesRemaining > 0
 		? `Out ${injury.gamesRemaining} ${helpers.plural("game", injury.gamesRemaining)}`
 		: undefined;

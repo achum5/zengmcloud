@@ -2,17 +2,26 @@ import { useId } from "react";
 import { OverlayTrigger, Tooltip } from "react-bootstrap";
 import { timeBetweenGames } from "../../common/timeBetweenGames.ts";
 import type { PlayerInjury } from "../../common/types.ts";
+import { PHASE } from "../../common/constants.ts";
+import { helpers } from "../util/helpers.ts";
+import { useLocal } from "../util/local.ts";
 
 export const InjuryIcon = ({
+	asOfGame,
 	className = "",
 	injury,
 }: {
+	// The injury as it stood after a game (a game log), not now.
+	asOfGame?: boolean;
 	className?: string;
 	injury?: PlayerInjury & {
 		playingThrough?: boolean;
 	};
 }) => {
 	const tooltipId = useId();
+	const { phase } = useLocal(["phase"]);
+	const offseason =
+		!asOfGame && (phase <= PHASE.PRESEASON || phase > PHASE.PLAYOFFS);
 
 	if (injury === undefined) {
 		return null;
@@ -28,16 +37,24 @@ export const InjuryIcon = ({
 			text: "+",
 		};
 	} else if (injury.gamesRemaining > 0 || injury.type !== "Healthy") {
-		let title = `${injury.type}, out ${
-			injury.gamesRemaining
-		} more ${timeBetweenGames(injury.gamesRemaining)}`;
+		// On the NBA calendar, the calendar days it has left; in the offseason,
+		// the days of next season it takes.
+		const days = injury.daysRemaining;
+		let title =
+			days === undefined
+				? `${injury.type}, out ${
+						injury.gamesRemaining
+					} more ${timeBetweenGames(injury.gamesRemaining)}`
+				: offseason
+					? `${injury.type}, out the first ${days} ${helpers.plural("day", days)} of the regular season`
+					: `${injury.type}, out ${days} more ${helpers.plural("day", days)}`;
 		if (injury.playingThrough) {
 			title += ", played through injury";
 		}
 
 		info = {
 			title,
-			text: injury.gamesRemaining,
+			text: days ?? injury.gamesRemaining,
 		};
 	}
 

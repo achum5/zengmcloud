@@ -328,6 +328,10 @@ export const gameSimToBoxScore = async (results: GameResults, att: number) => {
 				type: p0.injury.type,
 				gamesRemaining: p0.injury.gamesRemaining,
 			};
+			if (p0.injury.daysRemaining !== undefined) {
+				// On the NBA calendar.
+				p.injury.daysRemaining = p0.injury.daysRemaining;
+			}
 			if (p0.injury.newThisGame) {
 				p.injury.newThisGame = true;
 			}

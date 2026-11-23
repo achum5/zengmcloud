@@ -26,7 +26,8 @@ import {
 } from "../../util/getTeamSpreadBias.ts";
 import { pregameLineupSynergy } from "../GameSim.basketball/synergy.ts";
 import { dayAlreadyCounted } from "./dailyCountdownGate.ts";
-import { dayTickFromGames, playoffNightTick } from "./calendarTicks.ts";
+import { nightTick } from "./calendarTicks.ts";
+import { refreshCalendarDays } from "./refreshCalendarDays.ts";
 import { ensureClassicDays } from "./saveClassicDays.ts";
 import {
 	RECAP_REELS_ON,
@@ -426,29 +427,19 @@ const play = async (
 			const healedTexts: string[] = [];
 			const injuryTickNotes: string[] = [];
 
-			// On a calendar, a night counts games at the classic pace - see
-			// calendarTicks.ts.
-			const tick =
-				g.get("phase") === PHASE.PLAYOFFS
-					? playoffNightTick({
-							games: await idb.cache.games.getAll(),
-							season: g.get("season"),
-							day: simmedDay,
-							playoffSeries: await idb.cache.playoffSeries.get(g.get("season")),
-							numGamesToWin: helpers.numGamesToWinRound(
-								(await idb.cache.playoffSeries.get(g.get("season")))
-									?.currentRound ?? 0,
-							),
-						})
-					: dayTickFromGames({
-							games: await idb.cache.games.getAll(),
-							schedule: await idb.cache.schedule.getAll(),
-							season: g.get("season"),
-							day: simmedDay,
-							phase: g.get("phase"),
-							numActiveTeams: g.get("numActiveTeams"),
-							classicDays: await ensureClassicDays(),
-						});
+			// On a calendar, the night counts the calendar's days at the classic
+			// rate - see calendarTicks.ts.
+			const tick = nightTick({
+				games: await idb.cache.games.getAll(),
+				schedule: await idb.cache.schedule.getAll(),
+				season: g.get("season"),
+				day: simmedDay,
+				phase: g.get("phase"),
+				classicDays:
+					g.get("phase") === PHASE.PLAYOFFS
+						? undefined
+						: await ensureClassicDays(),
+			});
 
 			// Injury countdown - This must be after games are saved, of there is a race condition involving new injury assignment in writeStats. Free agents are handled in decreaseDemands.
 			const players = await idb.cache.players.indexGetAll("playersByTid", [
@@ -595,6 +586,12 @@ const play = async (
 						await trade.betweenAiTeams();
 					}
 				}
+			}
+
+			// On a calendar: the days each injury and trade wait has left, as
+			// the game shows them.
+			if (tick.clock && tick.tonight !== undefined) {
+				await refreshCalendarDays(tick.clock, tick.tonight);
 			}
 
 			// The smart CPU's market keeps its own clock - a moment every so many

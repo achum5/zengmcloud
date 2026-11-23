@@ -5,7 +5,7 @@ import getSchedule from "../season/getSchedule.ts";
 import getPlayoffsByConf from "../season/getPlayoffsByConf.ts";
 import { buildGameLinePricer } from "./gameLines.ts";
 import { injuryTicksUntil } from "../game/calendarTicks.ts";
-import { getInjuryPace } from "../game/classicDays.ts";
+import { getInjuryClock } from "../game/classicDays.ts";
 import getAwardRaceOdds from "../season/getAwardRaceOdds.ts";
 import { getAwardCandidates } from "../awards/getAwardCandidates.ts";
 import {
@@ -573,7 +573,7 @@ export const getLines = async () => {
 		activeTeams,
 		season,
 		todayDay: schedule[0]?.day ?? 0,
-		ticksUntil: injuryTicksUntil(schedule, await getInjuryPace()),
+		ticksUntil: injuryTicksUntil(schedule, await getInjuryClock()),
 		spreadBiases,
 	});
 

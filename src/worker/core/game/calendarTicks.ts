@@ -1,27 +1,31 @@
 import { PHASE } from "../../../common/constants.ts";
-import { isAllStarGame, isAllStarTid } from "../../../common/specialGames.ts";
-import type { Game, PlayoffSeries } from "../../../common/types.ts";
+import { daysBetween } from "../../../common/calendarDates.ts";
+import { isAllStarGame } from "../../../common/specialGames.ts";
+import type { Game } from "../../../common/types.ts";
+import { g } from "../../util/index.ts";
 import addDaysToSchedule from "../season/addDaysToSchedule.ts";
 
 // WHAT A NIGHT COUNTS FOR. The end-of-day rules (injuries healing, trade
 // cooldowns, AI trades and signings, free agents' asking prices, tragic
 // deaths) were written for classic days: BBGM packs a season into days where
-// nearly every team plays, about 89 of them for 82 games (each team has 6-9
-// days off), and every rule ticks once a day for everyone. On a calendar a
-// sim day is one night, a team plays about every other one, and a season has
-// about 165 - counted per day, all of those would run about twice as often.
+// nearly every team plays, about 89 of them for 82 games, and every rule ticks
+// once a day for everyone, off days included. On a calendar a sim day is one
+// night, a team plays about every other one, and a season has about 165 -
+// counted per night, all of those would run about twice as often.
 //
-// So a calendar season keeps the classic count. Each season stores how many
-// classic days its league would have played in (classicDays, from BBGM's own
-// schedule packed the classic way), and those days are spread evenly over the
-// games:
-// - injuries and trade cooldowns tick for the players whose team played that
-//   night, a team's season of games carrying the season's classic days (so a
-//   tick of 2 about every 12th game at 89 days for 82 games);
-// - the league-wide rules run as the league's games pass the same pace.
-// A night with no team games (the All-Star Game) counts as one classic day,
-// as the All-Star day does. Classic days, the playoffs and other sports are
-// unchanged.
+// So on a calendar the rules run by the calendar's days, at the classic rate:
+// a CLOCK turns calendar days into classic days. The regular season's clock
+// spreads the season's classic days (classicDays, from BBGM's own schedule
+// packed the classic way, plus one for the All-Star Game) evenly over the
+// days from opening night to the last night - about one classic day every 1.9
+// calendar days. The playoffs' runs at the classic postseason's rate (see
+// PLAYOFF_CLASSIC_DAYS_PER_DAY). Each night, everyone ticks as many times as
+// the clock passed since the night before - off nights, the All-Star break
+// and the days before the play-in count like any other days. An injury is
+// still a number of classic days (gamesRemaining) for everything that reads
+// it; on a calendar it also carries the calendar days it has left
+// (daysRemaining, see daysOut), which is what the game shows. Classic days
+// and other sports are unchanged.
 
 // How many classic days the season's schedule (BBGM's matchups in its own
 // order, with the All-Star Game and trade deadline) would take: the days with
@@ -58,262 +62,306 @@ export type DayTick = {
 	restTicks?: number;
 	// How many times the league-wide rules run.
 	leagueRuns: number;
+	// On a calendar: its clock and tonight, for the days injuries have left.
+	clock?: CalendarClock;
+	tonight?: string;
+};
+
+// Turns calendar days into classic days, for one stretch of the season.
+export type CalendarClock = {
+	// Classic days per calendar day.
+	rate: number;
+	// The stretch's calendar days through this date.
+	at: (date: string) => number;
+	// The regular season's: the playoffs that follow it, so an injury that
+	// runs into them counts their days. After calendar day `at` (the last
+	// night), with `ticks` classic days gone, it goes on at `rate`.
+	then?: { at: number; ticks: number; rate: number };
 };
 
 const CLASSIC: DayTick = { ticksByTid: undefined, leagueRuns: 1 };
 
-const isRegularTeamGame = (game: Game) =>
-	!game.playoffs &&
-	!isAllStarTid(game.teams[0].tid) &&
-	!isAllStarTid(game.teams[1].tid);
+// Classic playoff days per calendar day. A classic postseason (the play-in's
+// two days, then each round as long as its longest series) takes about 28
+// days; the NBA's, from the last night of the regular season to the end of
+// the Finals, about 71 (measured over whole simulated postseasons on the
+// calendar's playoff plan, playoffCalendar.ts).
+export const PLAYOFF_CLASSIC_DAYS_PER_DAY = 0.39;
 
-export const dayTickFromGames = ({
+// Without a stored classic count: the NBA's, about 89 classic days over the
+// 170 from opening night to the last night.
+export const DEFAULT_REGULAR_SEASON_RATE = 89 / 170;
+
+// The league plays on the NBA calendar (see season/newCalendarSchedule.ts
+// calendarOn, which this matches without importing the schedule maker).
+export const nbaCalendarLeague = () =>
+	__SPORT === "basketball" &&
+	!g.get("college") &&
+	!g.get("groupScheduleSeries") &&
+	!!g.get("nbaCalendar");
+
+const EPSILON = 1e-9;
+
+type DatedRow = {
+	homeTid: number;
+	awayTid: number;
+	date?: string;
+};
+
+type ClockGame = Pick<Game, "season" | "date" | "playoffs" | "day"> & {
+	teams: readonly { tid: number }[];
+};
+
+// This stretch's clock: the regular season's (from its dates and classic
+// days) or the playoffs' (from the regular season's last night). Undefined
+// for a season without dates and in the offseason.
+export const calendarClock = ({
+	games,
+	schedule,
+	season,
+	phase,
+	classicDays,
+}: {
+	// This season's games so far.
+	games: readonly ClockGame[];
+	// The games still to play.
+	schedule: readonly DatedRow[];
+	season: number;
+	phase: number;
+	// The season's classic days (see countClassicDays), if known.
+	classicDays: number | undefined;
+}): CalendarClock | undefined => {
+	if (phase === PHASE.PLAYOFFS) {
+		let lastRegular: string | undefined;
+		for (const game of games) {
+			if (
+				game.season === season &&
+				!game.playoffs &&
+				game.date !== undefined &&
+				(lastRegular === undefined || game.date > lastRegular)
+			) {
+				lastRegular = game.date;
+			}
+		}
+		if (lastRegular === undefined) {
+			return;
+		}
+		const from = lastRegular;
+		return {
+			rate: PLAYOFF_CLASSIC_DAYS_PER_DAY,
+			at: (date) => Math.max(0, daysBetween(from, date)),
+		};
+	}
+
+	if (phase !== PHASE.REGULAR_SEASON && phase !== PHASE.AFTER_TRADE_DEADLINE) {
+		return;
+	}
+	let first: string | undefined;
+	let last: string | undefined;
+	let allStar = false;
+	const see = (date: string | undefined, homeTid: number, awayTid: number) => {
+		if (date === undefined) {
+			return;
+		}
+		if (first === undefined || date < first) {
+			first = date;
+		}
+		if (last === undefined || date > last) {
+			last = date;
+		}
+		if (isAllStarGame(homeTid, awayTid)) {
+			allStar = true;
+		}
+	};
+	for (const game of games) {
+		if (game.season === season && !game.playoffs) {
+			see(game.date, game.teams[0]!.tid, game.teams[1]!.tid);
+		}
+	}
+	for (const row of schedule) {
+		see(row.date, row.homeTid, row.awayTid);
+	}
+	if (first === undefined || last === undefined) {
+		return;
+	}
+	const from = first;
+	const span = daysBetween(from, last) + 1;
+	const total =
+		classicDays === undefined
+			? span * DEFAULT_REGULAR_SEASON_RATE
+			: classicDays + (allStar ? 1 : 0);
+	return {
+		rate: total / span,
+		// Opening night is the first day.
+		at: (date) => Math.max(0, daysBetween(from, date) + 1),
+		then: {
+			at: span,
+			ticks: Math.floor(total + EPSILON),
+			rate: PLAYOFF_CLASSIC_DAYS_PER_DAY,
+		},
+	};
+};
+
+// A stretch's clock before its first night (`at` 0 for any date).
+export const clockBeforeFirstNight = (clock: CalendarClock): CalendarClock => ({
+	...clock,
+	at: () => 0,
+});
+
+// A regular season's clock before its first night when its dates aren't
+// known: the NBA's.
+export const DEFAULT_SEASON_CLOCK: CalendarClock = {
+	rate: DEFAULT_REGULAR_SEASON_RATE,
+	at: () => 0,
+	then: { at: 170, ticks: 89, rate: PLAYOFF_CLASSIC_DAYS_PER_DAY },
+};
+
+// The playoffs' clock before their first night.
+export const PLAYOFF_START_CLOCK: CalendarClock = {
+	rate: PLAYOFF_CLASSIC_DAYS_PER_DAY,
+	at: () => 0,
+};
+
+const ticksAt = (clock: CalendarClock, date: string | undefined) =>
+	date === undefined ? 0 : Math.floor(clock.at(date) * clock.rate + EPSILON);
+
+// How many classic days pass from the end of one night to the end of a later
+// one (from undefined: the start of the stretch).
+export const ticksBetween = (
+	clock: CalendarClock,
+	from: string | undefined,
+	to: string,
+) => Math.max(0, ticksAt(clock, to) - ticksAt(clock, from));
+
+// The latest night before this one with games this season.
+const nightBefore = (
+	games: readonly ClockGame[],
+	season: number,
+	date: string,
+) => {
+	let before: string | undefined;
+	for (const game of games) {
+		if (
+			game.season === season &&
+			game.date !== undefined &&
+			game.date < date &&
+			(before === undefined || game.date > before)
+		) {
+			before = game.date;
+		}
+	}
+	return before;
+};
+
+// What tonight counts for: on a calendar, the classic days the clock passed
+// since the last night with games, for everyone. A classic day, once.
+export const nightTick = ({
 	games,
 	schedule,
 	season,
 	day,
 	phase,
-	numActiveTeams,
 	classicDays,
 }: {
 	// This season's games, including tonight's.
-	games: Game[];
+	games: readonly ClockGame[];
 	// The games still to play this season (tonight's already off it).
-	schedule: { homeTid: number; awayTid: number }[];
+	schedule: readonly DatedRow[];
 	season: number;
 	day: number | undefined;
 	phase: number;
-	numActiveTeams: number;
 	// The season's classic days (see countClassicDays), if known.
 	classicDays: number | undefined;
 }): DayTick => {
-	if (
-		day === undefined ||
-		(phase !== PHASE.REGULAR_SEASON && phase !== PHASE.AFTER_TRADE_DEADLINE)
-	) {
+	if (day === undefined) {
 		return CLASSIC;
 	}
-
-	let tonight = 0;
-	let calendar = false;
-	let played = 0;
-	const tidsPlayed = new Set<number>();
-	const playedBy = new Map<number, number>();
+	let tonight: string | undefined;
 	for (const game of games) {
-		if (game.season !== season || !isRegularTeamGame(game)) {
-			continue;
-		}
-		played += 1;
-		for (const t of game.teams) {
-			playedBy.set(t.tid, (playedBy.get(t.tid) ?? 0) + 1);
-		}
-		if (game.day === day) {
-			tonight += 1;
-			tidsPlayed.add(game.teams[0].tid);
-			tidsPlayed.add(game.teams[1].tid);
-			if (game.date !== undefined) {
-				calendar = true;
+		if (game.season === season && game.day === day) {
+			if (game.date === undefined) {
+				return CLASSIC;
 			}
+			tonight = game.date;
 		}
 	}
-
-	if (!calendar || tonight === 0) {
+	if (tonight === undefined) {
 		return CLASSIC;
 	}
-
-	let remaining = 0;
-	const remainingBy = new Map<number, number>();
-	for (const game of schedule) {
-		if (game.homeTid < 0 || game.awayTid < 0) {
-			continue;
-		}
-		remaining += 1;
-		for (const tid of [game.homeTid, game.awayTid]) {
-			remainingBy.set(tid, (remainingBy.get(tid) ?? 0) + 1);
-		}
+	const clock = calendarClock({
+		games,
+		schedule,
+		season,
+		phase,
+		classicDays,
+	});
+	if (!clock) {
+		return CLASSIC;
 	}
-
-	const ticksByTid = new Map<number, number>();
-	for (const tid of tidsPlayed) {
-		const k = playedBy.get(tid)!;
-		const n = k + (remainingBy.get(tid) ?? 0);
-		ticksByTid.set(
-			tid,
-			ticksThrough(k, n, classicDays) - ticksThrough(k - 1, n, classicDays),
-		);
-	}
-
-	const before = played - tonight;
-	let leagueRuns;
-	if (classicDays === undefined) {
-		// A round of games, as many as half the league.
-		const round = Math.max(1, numActiveTeams / 2);
-		leagueRuns = Math.floor(played / round) - Math.floor(before / round);
-	} else {
-		const total = played + remaining;
-		leagueRuns =
-			ticksThrough(played, total, classicDays) -
-			ticksThrough(before, total, classicDays);
-	}
-
-	return { ticksByTid, leagueRuns };
+	const n = ticksBetween(clock, nightBefore(games, season, tonight), tonight);
+	return {
+		ticksByTid: new Map(),
+		restTicks: n,
+		leagueRuns: n,
+		clock,
+		tonight,
+	};
 };
 
-// THE PLAYOFFS ON THE CALENDAR. A classic playoff day plays the next game of
-// every series and then everyone ticks once, so a round lasts as many days as
-// its longest series (the play-in, two). On the calendar the series are
-// spread over nights, and each team still ticks once for each of those
-// classic days:
-// - a team with games left in the round ticks after each of its own games;
-// - every other team (its series over, out, or not in the playoffs) ticks
-//   each time the round reaches a game number it hadn't reached before - a
-//   classic day;
-// - a team whose series ends tonight catches up on the game numbers the round
-//   reached while it was still playing.
-// The league-wide rules run once per classic day too. With every series on the
-// same nights, as on classic days, it comes to one tick for everyone a night.
-// `playoffSeries` is after tonight's games.
-export const playoffNightTick = ({
+// The calendar days a player with this many classic days left (after the
+// night's countdown) is out: he's back once the clock has passed them all.
+// The night's own progress toward its next tick counts, so the number goes
+// down by one a day. In the regular season, days past its last night count
+// at the playoffs' rate.
+export const daysOut = (
+	gamesRemaining: number,
+	clock: CalendarClock,
+	tonight: string,
+) => {
+	if (gamesRemaining <= 0) {
+		return 0;
+	}
+	const now = clock.at(tonight);
+	// The clock's classic days when he's back.
+	const back = Math.floor(now * clock.rate + EPSILON) + gamesRemaining;
+	const day =
+		clock.then && back > clock.then.ticks + EPSILON
+			? clock.then.at +
+				Math.ceil((back - clock.then.ticks) / clock.then.rate - EPSILON)
+			: Math.ceil(back / clock.rate - EPSILON);
+	return Math.max(1, day - now);
+};
+
+// A player hurt tonight: the days he's out, as they'll read after tonight's
+// countdown.
+export const daysOutHurtTonight = ({
+	gamesRemaining,
+	clock,
 	games,
 	season,
-	day,
-	playoffSeries,
-	numGamesToWin,
+	tonight,
 }: {
-	// This season's games, including tonight's.
-	games: Game[];
+	gamesRemaining: number;
+	clock: CalendarClock;
+	games: readonly ClockGame[];
 	season: number;
-	day: number | undefined;
-	playoffSeries: PlayoffSeries | undefined;
-	// In the current round.
-	numGamesToWin: number;
-}): DayTick => {
-	if (day === undefined || playoffSeries === undefined) {
-		return CLASSIC;
-	}
-	const tonight = games.filter(
-		(game) => game.season === season && game.day === day,
+	tonight: string;
+}) =>
+	Math.max(
+		1,
+		daysOut(
+			gamesRemaining -
+				ticksBetween(clock, nightBefore(games, season, tonight), tonight),
+			clock,
+			tonight,
+		),
 	);
-	if (
-		tonight.length === 0 ||
-		tonight.some(
-			(game) =>
-				game.date === undefined ||
-				isAllStarGame(game.teams[0].tid, game.teams[1].tid),
-		)
-	) {
-		return CLASSIC;
-	}
-
-	const pairKey = (a: number, b: number) => (a < b ? `${a}-${b}` : `${b}-${a}`);
-	const pairsTonight = new Set(
-		tonight.map((game) => pairKey(game.teams[0].tid, game.teams[1].tid)),
-	);
-	const tidsTonight = new Set(
-		tonight.flatMap((game) => [game.teams[0].tid, game.teams[1].tid]),
-	);
-
-	// Each team's latest game number in the round, the teams with games left,
-	// and the furthest game number reached before and after tonight.
-	const last = new Map<number, number>();
-	const stillPlaying = new Set<number>();
-	let reachedAfter = 0;
-	let reachedBefore = 0;
-	const played = (
-		tids: [number, number],
-		number: number,
-		playedTonight: boolean,
-	) => {
-		for (const tid of tids) {
-			last.set(tid, Math.max(last.get(tid) ?? 0, number));
-		}
-		reachedAfter = Math.max(reachedAfter, number);
-		reachedBefore = Math.max(reachedBefore, playedTonight ? 0 : number);
-	};
-
-	const rnd = playoffSeries.currentRound;
-	if (rnd === -1) {
-		// The play-in: the first games are number 1, the last ones number 2.
-		for (const playIn of playoffSeries.playIns ?? []) {
-			const final = playIn[2];
-			for (const [i, matchup] of playIn.entries()) {
-				const tids: [number, number] = [matchup.home.tid, matchup.away.tid];
-				const done = matchup.home.won + matchup.away.won > 0;
-				if (done) {
-					played(tids, i < 2 ? 1 : 2, pairsTonight.has(pairKey(...tids)));
-				}
-				for (const [tid, won] of [
-					[matchup.home.tid, matchup.home.won > 0],
-					[matchup.away.tid, matchup.away.won > 0],
-				] as const) {
-					let more;
-					if (!done) {
-						more = true;
-					} else if (i === 2) {
-						more = false;
-					} else {
-						// The 7-8 loser and the 9-10 winner play the last game.
-						more = (i === 0 ? !won : won) && !final;
-					}
-					if (more) {
-						stillPlaying.add(tid);
-					}
-				}
-			}
-		}
-	} else {
-		for (const series of playoffSeries.series[rnd] ?? []) {
-			if (!series.away) {
-				continue;
-			}
-			const tids: [number, number] = [series.home.tid, series.away.tid];
-			const numPlayed = series.home.won + series.away.won;
-			if (numPlayed > 0) {
-				const playedTonight = pairsTonight.has(pairKey(...tids));
-				for (const tid of tids) {
-					last.set(tid, numPlayed);
-				}
-				reachedAfter = Math.max(reachedAfter, numPlayed);
-				reachedBefore = Math.max(
-					reachedBefore,
-					numPlayed - (playedTonight ? 1 : 0),
-				);
-			}
-			if (Math.max(series.home.won, series.away.won) < numGamesToWin) {
-				for (const tid of tids) {
-					stillPlaying.add(tid);
-				}
-			}
-		}
-	}
-
-	const classicDays = reachedAfter - reachedBefore;
-	const ticksByTid = new Map<number, number>();
-	for (const tid of new Set([
-		...last.keys(),
-		...stillPlaying,
-		...tidsTonight,
-	])) {
-		if (tidsTonight.has(tid)) {
-			ticksByTid.set(
-				tid,
-				stillPlaying.has(tid)
-					? 1
-					: 1 + Math.max(0, reachedAfter - (last.get(tid) ?? reachedAfter)),
-			);
-		} else {
-			ticksByTid.set(tid, stillPlaying.has(tid) ? 0 : classicDays);
-		}
-	}
-
-	return { ticksByTid, restTicks: classicDays, leagueRuns: classicDays };
-};
 
 // How many injury ticks come before a scheduled game, for healing a roster
-// forward to it: on a calendar, the team's own games before it at the classic
-// pace (plus one for the All-Star night, which ticks everyone); on classic
-// days, the days. `schedule` is the schedule still to play, in order; `pace`
-// is the season's classic days and each team's games played so far.
+// forward to it: on a calendar, the clock's classic days through the last
+// night before it; on classic days, the days. `schedule` is the schedule
+// still to play, in order; `now` is the stretch's clock and the last night
+// played.
 export const injuryTicksUntil = (
 	schedule: {
 		gid: number;
@@ -322,52 +370,33 @@ export const injuryTicksUntil = (
 		awayTid: number;
 		date?: string;
 	}[],
-	pace?: { classicDays: number; played: Map<number, number> },
+	now?: { clock: CalendarClock; lastNight: string | undefined },
 ) => {
 	const todayDay = schedule[0]?.day ?? 0;
 	const byDays = (day: number) => Math.max(0, day - todayDay);
-	if (!schedule.some((game) => game.date !== undefined && game.homeTid >= 0)) {
+	if (!now || !schedule.some((game) => game.date !== undefined)) {
 		return (_tid: number, _gid: number | undefined, day: number) => byDays(day);
 	}
 
-	const remainingBy = new Map<number, number>();
-	for (const game of schedule) {
-		if (game.homeTid >= 0 && game.awayTid >= 0) {
-			for (const tid of [game.homeTid, game.awayTid]) {
-				remainingBy.set(tid, (remainingBy.get(tid) ?? 0) + 1);
-			}
-		}
+	const nights = Array.from(
+		new Set(
+			schedule
+				.map((game) => game.date)
+				.filter((date): date is string => date !== undefined),
+		),
+	).sort();
+	const ticksBefore = new Map<string, number>();
+	for (const [i, night] of nights.entries()) {
+		ticksBefore.set(
+			night,
+			i === 0 ? 0 : ticksBetween(now.clock, now.lastNight, nights[i - 1]!),
+		);
 	}
-	const ticksBefore = (tid: number, n: number) => {
-		if (!pace) {
-			return n;
-		}
-		const k0 = pace.played.get(tid) ?? 0;
-		const total = k0 + (remainingBy.get(tid) ?? 0);
+	const dateByGid = new Map(schedule.map((game) => [game.gid, game.date]));
+	return (_tid: number, gid: number | undefined, day: number) => {
+		const date = gid !== undefined ? dateByGid.get(gid) : undefined;
 		return (
-			ticksThrough(k0 + n, total, pace.classicDays) -
-			ticksThrough(k0, total, pace.classicDays)
+			(date !== undefined ? ticksBefore.get(date) : undefined) ?? byDays(day)
 		);
 	};
-
-	const ticks = new Map<string, number>();
-	const teamGames = new Map<number, number>();
-	let everyone = 0;
-	for (const game of schedule) {
-		if (isAllStarGame(game.homeTid, game.awayTid)) {
-			everyone += 1;
-			continue;
-		}
-		if (game.homeTid < 0 || game.awayTid < 0) {
-			// The trade deadline: no night of its own.
-			continue;
-		}
-		for (const tid of [game.homeTid, game.awayTid]) {
-			const n = teamGames.get(tid) ?? 0;
-			ticks.set(`${game.gid}:${tid}`, ticksBefore(tid, n) + everyone);
-			teamGames.set(tid, n + 1);
-		}
-	}
-	return (tid: number, gid: number | undefined, day: number) =>
-		(gid !== undefined ? ticks.get(`${gid}:${tid}`) : undefined) ?? byDays(day);
 };

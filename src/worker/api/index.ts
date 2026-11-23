@@ -1,3 +1,9 @@
+import { currentDayClock } from "../core/game/classicDays.ts";
+import {
+	applyCalendarDays,
+	refreshCalendarDaysForNewSeason,
+} from "../core/game/refreshCalendarDays.ts";
+import { nbaCalendarLeague } from "../core/game/calendarTicks.ts";
 import { parseCourtDecals } from "../../common/courtDecals.ts";
 import {
 	boxScoreToLiveSim,
@@ -788,6 +794,12 @@ const clearInjuries = async (pids: number[] | "all") => {
 		const lastInjuriesEntry = p.injuries.at(-1);
 		if (lastInjuriesEntry?.type === p.injury.type) {
 			lastInjuriesEntry.games -= p.injury.gamesRemaining;
+			if (lastInjuriesEntry.days !== undefined) {
+				lastInjuriesEntry.days = Math.max(
+					0,
+					lastInjuriesEntry.days - (p.injury.daysRemaining ?? 0),
+				);
+			}
 			if (lastInjuriesEntry.games <= 0) {
 				// Injury was cleared before any days were simmed
 				p.injuries.pop();
@@ -6187,6 +6199,15 @@ const updateGameAttributesGodMode = async (
 
 	await league.setGameAttributes(gameAttributes);
 
+	// The NBA calendar turned on or off in the offseason: injuries and trade
+	// waits read in days of next season, or in games again.
+	if (
+		gameAttributes.nbaCalendar !== undefined &&
+		(g.get("phase") <= PHASE.PRESEASON || g.get("phase") > PHASE.PLAYOFFS)
+	) {
+		await refreshCalendarDaysForNewSeason(nbaCalendarLeague());
+	}
+
 	if (repeatSeason !== currentRepeatSeasonType) {
 		await league.setRepeatSeason(repeatSeason);
 	}
@@ -7581,6 +7602,10 @@ const upsertCustomizedPlayer = async (
 		}
 	}
 
+	// On the NBA calendar, the days the injury and trade wait come to.
+	const dayClock = await currentDayClock();
+	applyCalendarDays(p, dayClock?.clock, dayClock?.tonight ?? "");
+
 	// Contracts can't be edited directly in the UI, so use the current ones, which might have changed since the UI got them (like payments from games played)
 	const prevPlayer =
 		p.pid !== undefined ? await idb.merged.players.get(p.pid) : undefined;
@@ -7768,6 +7793,12 @@ const upsertCustomizedPlayer = async (
 				// Adjust prevInjuriesEntry, since that old injury no longer applies and it healed prematurely
 				if (lastInjuriesEntry) {
 					lastInjuriesEntry.games -= prevPlayer.injury.gamesRemaining;
+					if (lastInjuriesEntry.days !== undefined) {
+						lastInjuriesEntry.days = Math.max(
+							0,
+							lastInjuriesEntry.days - (prevPlayer.injury.daysRemaining ?? 0),
+						);
+					}
 					if (lastInjuriesEntry.games <= 0) {
 						// Injury was edited before any days were simmed
 						p.injuries.pop();
@@ -7778,6 +7809,9 @@ const upsertCustomizedPlayer = async (
 					p.injuries.push({
 						season: g.get("season"),
 						games: p.injury.gamesRemaining,
+						...(p.injury.daysRemaining !== undefined
+							? { days: p.injury.daysRemaining }
+							: {}),
 						type: p.injury.type,
 					});
 				}
@@ -7787,6 +7821,14 @@ const upsertCustomizedPlayer = async (
 					const extraGames =
 						p.injury.gamesRemaining - prevPlayer.injury.gamesRemaining;
 					lastInjuriesEntry.games += extraGames;
+					if (lastInjuriesEntry.days !== undefined) {
+						lastInjuriesEntry.days = Math.max(
+							0,
+							lastInjuriesEntry.days +
+								(p.injury.daysRemaining ?? 0) -
+								(prevPlayer.injury.daysRemaining ?? 0),
+						);
+					}
 					if (lastInjuriesEntry.games <= 0) {
 						// Injury was edited before any days were simmed
 						p.injuries.pop();

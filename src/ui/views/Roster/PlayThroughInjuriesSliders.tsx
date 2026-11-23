@@ -13,11 +13,15 @@ const Slider = ({
 	className,
 	initialValue,
 	playoffs,
+	days,
 	tid,
 }: {
 	className?: string;
 	initialValue: number;
 	playoffs?: boolean;
+	// On the NBA calendar: for each setting, the most days left a player can
+	// show and still play.
+	days?: number[];
 	tid: number;
 }) => {
 	const [value, setValue] = useState(initialValue);
@@ -66,7 +70,15 @@ const Slider = ({
 					"Only play fully healthy players"
 				) : (
 					<>
-						{value} {timeBetweenGames(value)}{" "}
+						{days?.[value] === undefined ? (
+							<>
+								{value} {timeBetweenGames(value)}
+							</>
+						) : (
+							<>
+								{days[value]} {helpers.plural("day", days[value])}
+							</>
+						)}{" "}
 						<span className="text-body-secondary">
 							({rounded}% performance)
 						</span>
@@ -104,6 +116,8 @@ const InjuriesHelp = ({ gender }: { gender: "male" | "female" }) => (
 type InjuriesTeam = {
 	tid: number;
 	playThroughInjuries: [number, number];
+	// On the NBA calendar (regular season, playoffs; see Slider's days).
+	playThroughDays?: [number[], number[]];
 };
 
 // THE REFRESHED LOOK'S: a small button by the roster's other buttons, its
@@ -149,9 +163,15 @@ export const PlayThroughInjuriesMenu = ({ t }: { t: InjuriesTeam }) => {
 				<Slider
 					className="mb-3"
 					initialValue={t.playThroughInjuries[0]}
+					days={t.playThroughDays?.[0]}
 					tid={t.tid}
 				/>
-				<Slider playoffs initialValue={t.playThroughInjuries[1]} tid={t.tid} />
+				<Slider
+					playoffs
+					initialValue={t.playThroughInjuries[1]}
+					days={t.playThroughDays?.[1]}
+					tid={t.tid}
+				/>
 			</Dropdown.Menu>
 		</Dropdown>
 	);
@@ -198,11 +218,13 @@ const PlayThroughInjuriesSliders = ({ t }: { t: InjuriesTeam }) => {
 						<Slider
 							className="mb-3"
 							initialValue={t.playThroughInjuries[0]}
+							days={t.playThroughDays?.[0]}
 							tid={t.tid}
 						/>
 						<Slider
 							playoffs
 							initialValue={t.playThroughInjuries[1]}
+							days={t.playThroughDays?.[1]}
 							tid={t.tid}
 						/>
 					</m.form>
