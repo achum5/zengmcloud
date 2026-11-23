@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 486,
+		date: "2026-11-23",
+		text: "Nightly Recap: after the games now come the Player of the Night (his best plays, with his name and line along the bottom; Full and Medium), the night's top plays counted down from 10 (5 on Medium, 3 on Short), each under its own game's score bug, and the standings through that night, each conference split into the playoff spots, the play-in and the rest.",
+	},
+	{
 		n: 485,
 		date: "2026-11-23",
 		text: "Live games, more safety checks: while the last game of the Finals is being played live, nobody can move on to the draft until its final. A live game left behind by a page that closed without saying so can no longer hold up the playoffs. While you're playing your own game live, the other live scores in the header can't be tapped, since leaving your game would end it for everyone. And the standings on Daily Schedule no longer count a game still being played.",

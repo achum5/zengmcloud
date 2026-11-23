@@ -357,14 +357,14 @@ export const cutReel = (
 //
 // (A reel saved before plays had a `lev` was weighed by the kind and the
 // swing alone - see pickRecapPlays.)
-const LEVERAGE_W = 60;
+export const LEVERAGE_W = 60;
 const WINNER_W = 12;
 const STAR_W = 1.5;
 const BUZZER_W = 4;
 // The last period, the leader this sure of it: garbage time, and how much
 // of a play is left then.
 const GARBAGE_P = 0.99;
-const GARBAGE_W = 0.25;
+export const GARBAGE_W = 0.25;
 const SHOW: Record<RecapPlayKind, number> = {
 	dunk: 3.5,
 	rim: 1,
