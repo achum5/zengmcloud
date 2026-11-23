@@ -1,14 +1,12 @@
-import { notability } from "../util/getAutoRecap.ts";
 import type {
 	RecapDayStandings,
 	RecapGame,
 	RecapPlayer,
 } from "../util/getDayGamesForRecap.ts";
 
-// THE LEAGUE HUB ON THE DAILY SCHEDULE: a night's top story, its best stat
-// lines, who got hurt and where the standings stood - all read off the same
-// recap data the night's written recaps come from, so the page and the prose
-// tell one story. Nothing new is decided here; it only picks what to show.
+// THE LEAGUE HUB ON THE DAILY SCHEDULE: a night's best stat lines, who got
+// hurt and where the standings stood - all read off the same recap data the
+// night's written recaps come from, so the page and the prose tell one story. Nothing new is decided here; it only picks what to show.
 
 export type HubPerformer = {
 	pid: number;
@@ -38,8 +36,6 @@ export type HubInjury = {
 };
 
 export type DailyScheduleHub = {
-	// The night's top story: the game the day's written recap leads with.
-	leadGid?: number;
 	performers: HubPerformer[];
 	injuries: HubInjury[];
 	standings?: RecapDayStandings;
@@ -70,14 +66,6 @@ export const buildHub = ({
 	games: RecapGame[];
 	standings?: RecapDayStandings;
 }): DailyScheduleHub => {
-	// The day recap's lede: the most notable game, the All-Star Game aside
-	// (its own night, and only a lede when it is the only game).
-	const ranked = games
-		.filter((game) => !game.allStar)
-		.map((game) => ({ game, weight: notability(game) }))
-		.sort((a, b) => b.weight - a.weight);
-	const leadGid = ranked[0]?.game.gid ?? games[0]?.gid;
-
 	const performers: (HubPerformer & { gmsc: number })[] = [];
 	const injuries: HubInjury[] = [];
 	for (const game of games) {
@@ -124,7 +112,6 @@ export const buildHub = ({
 	injuries.sort((a, b) => b.gamesRemaining - a.gamesRemaining);
 
 	return {
-		leadGid,
 		performers: performers.slice(0, NUM_PERFORMERS).map(({ gmsc, ...p }) => p),
 		injuries: injuries.slice(0, NUM_INJURIES),
 		standings,

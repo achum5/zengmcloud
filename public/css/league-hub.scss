@@ -88,9 +88,12 @@
 	color: var(--bs-body-color);
 	text-decoration: none;
 	border-bottom: 3px solid transparent;
-	&:hover {
-		color: var(--bs-body-color);
-		background: var(--bs-tertiary-bg);
+	// (Not on a phone: a tap would leave it lit.)
+	@media (hover: hover) {
+		&:hover {
+			color: var(--bs-body-color);
+			background: var(--bs-tertiary-bg);
+		}
 	}
 	&.selected {
 		border-bottom-color: var(--bs-primary);
@@ -122,6 +125,50 @@
 	font-weight: 600;
 	line-height: 1.1;
 	font-variant-numeric: tabular-nums;
+}
+
+// On a phone, the hub in tabs (HubTabs): a row pinned under the navbar,
+// the tab shown underlined and bold; the pieces of the other tabs hidden.
+.lh-tabbar {
+	position: sticky;
+	z-index: 1010;
+	display: flex;
+	margin: -0.25rem -0.5rem 1rem;
+	padding: 0 0.5rem;
+	background: var(--bs-body-bg);
+	border-bottom: 1px solid var(--bs-border-color);
+}
+.lh-tabbar-tab {
+	flex: 1 1 0;
+	appearance: none;
+	border: 0;
+	border-bottom: 3px solid transparent;
+	background: none;
+	padding: 0.7rem 0.25rem 0.55rem;
+	color: var(--bs-secondary-color);
+	font-weight: 600;
+	font-size: 0.95rem;
+	&.active {
+		color: var(--bs-body-color);
+		font-weight: 800;
+		border-bottom-color: var(--bs-primary);
+	}
+}
+@include media-breakpoint-up(lg) {
+	.lh-tabbar {
+		display: none;
+	}
+}
+@include media-breakpoint-down(lg) {
+	.lh-tabbed .lh-pane:not(.lh-pane-shown) {
+		display: none;
+	}
+	.lh-tabbed .lh-scores > .lh-section-title {
+		display: none;
+	}
+	.lh-wide-only {
+		display: none;
+	}
 }
 
 // The page: a column of everything on a phone, its order set on each piece.
@@ -169,122 +216,13 @@
 	margin: 0 0 0.6rem;
 }
 
-// The top story.
-.lh-kicker {
-	display: flex;
-	align-items: center;
-	gap: 0.6rem;
-	margin-bottom: 0.5rem;
-	font-size: 0.8rem;
-}
-.lh-kicker-tag {
-	padding: 0.1rem 0.45rem;
-	border-radius: 0.2rem;
-	background: var(--bs-danger);
-	color: #fff;
-	font-weight: 800;
-	letter-spacing: 0.06em;
-	text-transform: uppercase;
-}
-.lh-kicker-date {
-	color: var(--bs-secondary-color);
-	font-weight: 600;
-}
-.lh-lead {
-	// (Its leaders under the banner at every width: the banner is a column's
-	// width here, not the page's.)
-	.mb-half .mb-leaders {
-		display: none;
-	}
-	.mb-leaders-row {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-		gap: 0 0.75rem;
-		margin: 0.4rem 0.25rem 0;
-		.mb-leaders {
-			margin: 0;
-			font-size: 0.8rem;
-		}
-		.mb-leaders:last-child {
-			text-align: right;
-		}
-	}
-}
-.lh-banner.mb-banner {
-	margin-bottom: 0;
-	min-height: 9.5rem;
-	// (FINAL over the split at the top, clear of the two scores either side
-	// of it - the banner is a column wide here, the scores close.)
-	.mb-middle {
-		top: 0.55rem;
-		transform: translateX(-50%);
-	}
-	.mb-half {
-		padding-top: 2rem;
-	}
-	.mb-name {
-		font-size: 2rem;
-	}
-	.mb-big {
-		font-size: 3.4rem;
-	}
-	.mb-logo .d-flex {
-		width: 72px !important;
-		height: 72px !important;
-	}
-}
-@include media-breakpoint-down(sm) {
-	.lh-banner.mb-banner {
-		min-height: 0;
-		.mb-name {
-			font-size: 1.35rem;
-		}
-		.mb-big {
-			font-size: 2.6rem;
-		}
-		.mb-logo .d-flex {
-			width: 40px !important;
-			height: 40px !important;
-		}
-	}
-}
-.lh-article {
-	margin-top: 1rem;
-}
-.lh-watch-title {
-	margin: 0.6rem 0.25rem 0;
-	font-size: 0.75rem;
-	font-weight: 800;
-	letter-spacing: 0.06em;
-	text-transform: uppercase;
-	color: var(--bs-secondary-color);
-}
-.lh-watch-stats {
-	white-space: nowrap;
-	color: var(--bs-secondary-color);
-	b {
-		color: var(--bs-body-color);
-		font-variant-numeric: tabular-nums;
-	}
-}
-.lh-watch-pos {
-	font-size: 0.85em;
-	color: var(--bs-secondary-color);
-}
+// The night's story.
 .lh-headline {
 	font-size: 1.9rem;
 	font-weight: 800;
 	line-height: 1.15;
 	letter-spacing: -0.01em;
 	margin: 0 0 0.5rem;
-	p {
-		margin: 0;
-	}
-}
-.lh-deck {
-	font-size: 1.05rem;
-	color: var(--bs-secondary-color);
-	margin-bottom: 0.75rem;
 	p {
 		margin: 0;
 	}
@@ -303,9 +241,6 @@
 @include media-breakpoint-down(sm) {
 	.lh-headline {
 		font-size: 1.45rem;
-	}
-	.lh-deck {
-		font-size: 0.95rem;
 	}
 	.lh-body {
 		font-size: 0.95rem;

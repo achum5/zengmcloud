@@ -23,11 +23,17 @@ import {
 	getDailyScheduleScroll,
 	setDailyScheduleScroll,
 } from "../util/dailyScheduleUiState.ts";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import clsx from "clsx";
 import { isTradeDeadline } from "../../common/specialGames.ts";
 import { formatGameDate } from "../../common/calendarDates.ts";
 import { WeekStrip } from "../components/LeagueHub/WeekStrip.tsx";
 import { LeadStory } from "../components/LeagueHub/LeadStory.tsx";
+import {
+	HubTabs,
+	useHubTab,
+	type HubTabId,
+} from "../components/LeagueHub/HubTabs.tsx";
 import {
 	ComingUp,
 	Headlines,
@@ -273,17 +279,6 @@ const DailySchedule = ({
 	// got hurt and what's next. One column on a phone, in that order of need.
 	const hubOn = __SPORT === "basketball" && days.length > 0;
 
-	// The players to watch in a game still to play: each team's best, as its
-	// card has them.
-	const playersToWatch = (game: (typeof upcoming)[number]) => {
-		if (topPlayers.type === "byGid") {
-			return topPlayers.playersByGid[game.gid] as [any, any] | undefined;
-		}
-		const x0 = topPlayers.playersByTid[game.teams[0].tid];
-		const x1 = topPlayers.playersByTid[game.teams[1].tid];
-		return x0 && x1 ? ([x0[0], x1[0]] as [any, any]) : undefined;
-	};
-
 	const scores = (
 		<>
 			{noGamesMessage ? (
@@ -485,30 +480,27 @@ const DailySchedule = ({
 		</>
 	);
 
-	// The top story: the game the night's recap leads with - or, before the
-	// night is played, its best matchup.
-	const leadCompleted =
-		completed.find((game) => game.gid === hub.leadGid) ?? completed[0];
-	const leadUpcoming =
-		leadCompleted === undefined
-			? upcoming
-					.filter((game) => game.teams[0].tid >= 0 && game.teams[1].tid >= 0)
-					.map((game) => {
-						const pct = (t: { won?: number; lost?: number }) => {
-							const gp = (t.won ?? 0) + (t.lost ?? 0);
-							return gp > 0 ? (t.won ?? 0) / gp : 0.5;
-						};
-						const ovr = (t: { ovr?: number }) => t.ovr ?? 0;
-						return {
-							game,
-							score:
-								pct(game.teams[0]) +
-								pct(game.teams[1]) +
-								(ovr(game.teams[0]) + ovr(game.teams[1])) / 200,
-						};
-					})
-					.sort((a, b) => b.score - a.score)[0]?.game
-			: undefined;
+	// On a phone, the hub in tabs: the night's recap once it's played, its
+	// scores, the standings.
+	const hubTabs: HubTabId[] = [];
+	if (
+		completed.length > 0 &&
+		(dayNote !== undefined ||
+			hub.performers.length > 0 ||
+			hub.injuries.length > 0)
+	) {
+		hubTabs.push("recap");
+	}
+	hubTabs.push("scores");
+	if (hub.standings) {
+		hubTabs.push("standings");
+	}
+	const [hubTab, setHubTab] = useHubTab(hubTabs);
+	const gridRef = useRef<HTMLDivElement>(null);
+	const pane = (id: HubTabId, order: number, extra?: string) =>
+		clsx(`lh-o${order} lh-pane`, extra, {
+			"lh-pane-shown": id === hubTab,
+		});
 
 	const playedTids = new Set<number>();
 	const wonTids = new Set<number>();
@@ -526,7 +518,13 @@ const DailySchedule = ({
 
 	return (
 		<>
-			<div className="d-flex flex-wrap align-items-center gap-3">
+			<div
+				className={clsx(
+					"flex-wrap align-items-center gap-3",
+					// (Not over the hub on a phone: the room goes to the night.)
+					hubOn ? "d-none d-sm-flex" : "d-flex",
+				)}
+			>
 				<MoreLinks type="schedule" page="daily_schedule" />
 			</div>
 
@@ -540,26 +538,29 @@ const DailySchedule = ({
 						season={season}
 						todayDay={todayDay}
 					/>
-					<div className="lh-grid">
+					<HubTabs
+						contentRef={gridRef}
+						onPick={setHubTab}
+						tab={hubTab}
+						tabs={hubTabs}
+					/>
+					<div
+						className={clsx("lh-grid", { "lh-tabbed": hubTabs.length > 1 })}
+						ref={gridRef}
+					>
 						<div className="lh-main">
-							{leadCompleted || leadUpcoming ? (
-								<div className="lh-o1">
+							{dayNote ? (
+								<div className={pane("recap", 1)}>
 									<LeadStory
-										date={date}
 										day={day}
-										dayNote={dayNote}
-										game={leadCompleted ?? leadUpcoming}
 										links={recapLinks}
+										note={dayNote}
 										season={season}
 										sentenceGames={sentenceGames}
-										upcoming={leadCompleted === undefined}
-										playersToWatch={
-											leadUpcoming ? playersToWatch(leadUpcoming) : undefined
-										}
 									/>
 								</div>
 							) : null}
-							<div className="lh-o3 lh-scores">
+							<div className={pane("scores", 3, "lh-scores")}>
 								<h2 className="lh-section-title">
 									{completed.length > 0 && upcoming.length === 0
 										? "Scores"
@@ -570,17 +571,17 @@ const DailySchedule = ({
 						</div>
 						<div className="lh-rail">
 							{hub.performers.length > 0 ? (
-								<div className="lh-o2">
+								<div className={pane("recap", 2)}>
 									<TopPerformers performers={hub.performers} season={season} />
 								</div>
 							) : null}
 							{completed.length > 0 ? (
-								<div className="lh-o4 d-none d-lg-block">
+								<div className={pane("recap", 4, "lh-wide-only")}>
 									<Headlines games={completed} season={season} />
 								</div>
 							) : null}
 							{hub.standings ? (
-								<div className="lh-o5">
+								<div className={pane("standings", 5)}>
 									<HubStandings
 										playedTids={playedTids}
 										season={season}
@@ -591,12 +592,12 @@ const DailySchedule = ({
 								</div>
 							) : null}
 							{hub.injuries.length > 0 ? (
-								<div className="lh-o6">
+								<div className={pane("recap", 6)}>
 									<InjuryReport injuries={hub.injuries} season={season} />
 								</div>
 							) : null}
 							{hub.next ? (
-								<div className="lh-o7">
+								<div className={pane("scores", 7)}>
 									<ComingUp
 										next={hub.next}
 										season={season}
