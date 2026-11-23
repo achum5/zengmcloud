@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 463,
+		date: "2026-11-23",
+		text: "NBA calendar leagues: the team calendar has a new look, like a team's own schedule page. Home nights are filled in black, each game has the opponent's logo and name, and played games show a green W or red L with the score and a Box Score button. Today is outlined in red.",
+	},
+	{
 		n: 462,
 		date: "2026-11-23",
 		text: "NBA calendar leagues: the smart CPU GMs' last days of trading before the deadline now cover the same stretch of games, and meet as often, as in a classic league (they had about half as many).",
