@@ -31,7 +31,10 @@ import type {
 } from "../../../worker/util/nightlyRecap.ts";
 import { isLine } from "../../util/filterPlayerHighlights.ts";
 import { safeLocalStorage } from "../../util/safeLocalStorage.ts";
-import { ClipCourt } from "../../views/LiveGame/gamecast/HighlightClip.tsx";
+import {
+	ClipCourt,
+	warmClipCourt,
+} from "../../views/LiveGame/gamecast/HighlightClip.tsx";
 import { toWorker } from "../../util/toWorker.ts";
 import { helpers } from "../../util/helpers.ts";
 import {
@@ -170,6 +173,22 @@ const useHold = (
 	}, [on, paused, ms]);
 };
 
+// The 3D court is set up under a card or a stinger once that has come on:
+// its building painted, its men drawn. Setting it up takes the page a
+// moment, and the card coming on would stutter through it. A card is still
+// once it is on; a stinger keeps moving, slowly after its rush in, and
+// leaves the court less time to be ready.
+const CARD_SETTLE_MS = 900;
+const STINGER_SETTLE_MS = 650;
+// (And the first court of the visit readied this long after the poster is
+// up at the latest - sooner, if the page is quiet before then.)
+const WARM_MS = 2000;
+const useSettled = (ms: number, paused: boolean) => {
+	const [settled, setSettled] = useState(false);
+	useHold(!settled, ms, paused, () => setSettled(true));
+	return settled;
+};
+
 // The 16:9 picture (4:3 on a phone) the graphics fill, over the court or
 // standing in for it.
 const Frame = ({
@@ -267,10 +286,12 @@ const RecapGame = ({
 	useHold(sting !== undefined, STINGER_MS, paused, () => setSting(undefined));
 	const numPeriods: number = feed?.initialBoxScore?.numPeriods ?? 4;
 
+	const settled = useSettled(CARD_SETTLE_MS, paused);
+
 	const [home, away] = game.teams;
 	return (
 		<div style={{ position: "relative" }}>
-			{clip && feed && phase !== "final" ? (
+			{clip && feed && settled && phase !== "final" ? (
 				<Suspense fallback={<Frame narrow={narrow} />}>
 					<ClipCourt
 						events={clip.events}
@@ -404,10 +425,11 @@ const StarSegment = ({
 	useHold(phase === "sting" && !!clip, STAR_STINGER_MS, paused, () =>
 		setPhase("plays"),
 	);
+	const settled = useSettled(STINGER_SETTLE_MS, paused);
 	const boxRef = useRef<HTMLDivElement | null>(null);
 	return (
 		<div ref={boxRef} style={{ position: "relative" }}>
-			{clip && feed ? (
+			{clip && feed && settled ? (
 				<Suspense fallback={<Frame narrow={narrow} />}>
 					<ClipCourt
 						events={clip.events}
@@ -470,9 +492,10 @@ const TopPlay = ({
 	useHold(phase === "sting" && !!clip, COUNT_STINGER_MS, paused, () =>
 		setPhase("play"),
 	);
+	const settled = useSettled(STINGER_SETTLE_MS, paused);
 	return (
 		<div style={{ position: "relative" }}>
-			{clip && feed ? (
+			{clip && feed && settled ? (
 				<Suspense fallback={<Frame narrow={narrow} />}>
 					<ClipCourt
 						events={clip.events}
@@ -754,6 +777,30 @@ const NightlyRecap = ({
 		[night, length],
 	);
 	const segment = at === undefined ? undefined : segments[at];
+
+	// (The court readied once the page is quiet, the poster up - all of it
+	// that is a moment's work only while the poster is still up.)
+	const hasGames = segments.length > 1;
+	const posterUp = useRef(true);
+	posterUp.current = at === undefined;
+	useEffect(() => {
+		if (!hasGames) {
+			return;
+		}
+		const go = () => {
+			warmClipCourt(() => posterUp.current).catch(() => {});
+		};
+		if (typeof requestIdleCallback === "function") {
+			const id = requestIdleCallback(go, { timeout: WARM_MS });
+			return () => {
+				cancelIdleCallback(id);
+			};
+		}
+		const id = setTimeout(go, WARM_MS);
+		return () => {
+			clearTimeout(id);
+		};
+	}, [hasGames]);
 
 	// (The next one's plays fetched while this one plays.)
 	useEffect(() => {
