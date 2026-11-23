@@ -29,7 +29,7 @@ const AddRemove = ({ dispatch, phase, saving }: Props) => {
 		const t = await toWorker("main", "addTeam", undefined);
 		dispatch({
 			type: "addTeam",
-			team: t,
+			team: { ...t, homeCity: "" },
 		});
 		showNotification({
 			type: "success",

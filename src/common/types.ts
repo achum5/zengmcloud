@@ -10,6 +10,7 @@ import type {
 	CollegeRetention,
 } from "./college.ts";
 import type { GameFlow } from "./gameFlow.ts";
+import type { HomeCity } from "./teamLocation.ts";
 import * as z from "zod";
 import type { IsExact } from "conditional-type-checks";
 import type { FaceConfig } from "facesjs";
@@ -2926,6 +2927,9 @@ export type Team = {
 	cid: number;
 	did: number;
 	region: string;
+	// Where the team plays, for travel, when its region isn't a city on the
+	// map - see teamLocation.ts.
+	homeCity?: HomeCity;
 	name: string;
 	abbrev: string;
 	imgURL?: string;

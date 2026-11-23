@@ -21,6 +21,7 @@ import { useLocal } from "../../util/local.ts";
 import JerseySkins from "./JerseySkins.tsx";
 import ImportTeamLooks from "./ImportTeamLooks.tsx";
 import { setTeamFormValue } from "./teamFormValues.ts";
+import { HomeCityInput, HomeCityList } from "./HomeCityInput.tsx";
 
 export const nextSeasonWarning =
 	"Because the regular season is already over, changes will not be fully applied until next season.";
@@ -340,6 +341,7 @@ const ManageTeams = (props: View<"manageTeams">) => {
 			</div>
 
 			<form onSubmit={handleSubmit}>
+				{__SPORT === "basketball" ? <HomeCityList /> : null}
 				<div className="row gx-2">
 					{teams.map((t) => (
 						<Fragment key={t.tid}>
@@ -397,6 +399,18 @@ const ManageTeams = (props: View<"manageTeams">) => {
 									>
 										Score bug
 									</a>
+									<HomeCityInput
+										region={t.region}
+										value={t.homeCity ?? ""}
+										onChange={(value) => {
+											dispatch({
+												type: "updateTeam",
+												tid: t.tid,
+												field: "homeCity",
+												value,
+											});
+										}}
+									/>
 								</div>
 							) : null}
 							{__SPORT === "football" ? (

@@ -24,6 +24,7 @@ export default defineView({
 					"pop",
 					"stadiumCapacity",
 					"disabled",
+					"homeCity",
 				],
 				seasonAttrs: ["pop", "stadiumCapacity"],
 				season: g.get("season"),
@@ -48,6 +49,9 @@ export default defineView({
 				...(t.helmet ? { helmet: t.helmet } : {}),
 				did: t.did,
 				disabled: t.disabled,
+				// Shown only while it's for the team's current region.
+				homeCity:
+					t.homeCity && t.homeCity.region === t.region ? t.homeCity.city : "",
 			};
 		});
 

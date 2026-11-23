@@ -401,6 +401,7 @@ import { defaultInjuries } from "../util/defaultInjuries.ts";
 import { checkNaNs } from "../util/checkNaNs.ts";
 import { checkChanges } from "../util/checkChanges.ts";
 import { checkCloudChanges } from "../util/checkCloudChanges.ts";
+import { findCity } from "../../common/teamLocation.ts";
 import { checkAccount } from "../util/checkAccount.ts";
 import { generateFace } from "../util/face.ts";
 import { choice } from "../../common/random.ts";
@@ -6872,6 +6873,8 @@ const updateTeamInfo = async ({
 		colors: [string, string, string];
 		jersey: string;
 		disabled?: boolean;
+		// A city on the map, or "" for the region's own.
+		homeCity?: string;
 	}[];
 	from: "manageTeams" | "manageConfs";
 }) => {
@@ -6923,6 +6926,20 @@ const updateTeamInfo = async ({
 
 		t.colors = newTeam.colors;
 		t.jersey = newTeam.jersey;
+
+		if (newTeam.homeCity !== undefined) {
+			const text = newTeam.homeCity.trim();
+			const city = text === "" ? undefined : findCity(text);
+			if (text !== "" && city === undefined) {
+				throw new Error(`Unknown city: ${text}`);
+			}
+			// Kept only when the region alone doesn't put the team there.
+			if (city === undefined || city === findCity(t.region)) {
+				delete t.homeCity;
+			} else {
+				t.homeCity = { region: t.region, city };
+			}
+		}
 
 		t.pop =
 			typeof newTeam.pop === "number"

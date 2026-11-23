@@ -8,6 +8,7 @@ import {
 } from "./getRealSchedule.basketball.ts";
 import realSchedules from "./realSchedules.basketball.json";
 import { weekdayOf } from "../../../common/calendarDates.ts";
+import { teamLocation } from "../../../common/teamLocation.ts";
 
 const defaultTeams = () =>
 	helpers.getTeamsDefault().map((t) => ({
@@ -15,7 +16,7 @@ const defaultTeams = () =>
 		cid: t.cid,
 		did: t.did,
 		abbrev: t.abbrev,
-		region: t.region,
+		location: teamLocation({ region: t.region }),
 	}));
 
 describe("getRealSchedule (basketball)", () => {

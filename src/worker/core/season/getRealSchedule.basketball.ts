@@ -1,7 +1,7 @@
 import { choice } from "../../../common/random.ts";
 import g from "../../util/g.ts";
 import realSchedules from "./realSchedules.basketball.json";
-import geographicCoordinates from "../../../common/geographicCoordinates.ts";
+import { teamLocation } from "../../../common/teamLocation.ts";
 import {
 	addDays,
 	dayNumber,
@@ -9,7 +9,7 @@ import {
 	seasonStartYear,
 	weekdayOf,
 } from "../../../common/calendarDates.ts";
-import { distanceMiles } from "./calendarTravel.ts";
+import { distanceMiles, type Coords } from "./calendarTravel.ts";
 
 // REAL NBA SEASONS, for a league set up like the NBA: 30 teams, two
 // conferences of three five-team divisions, 82 games with 16 in the division
@@ -84,7 +84,8 @@ export type RealScheduleTeam = {
 	cid: number;
 	did: number;
 	abbrev?: string;
-	region?: string;
+	// Where it plays (teamLocation.ts), if it's on the map.
+	location?: Coords;
 };
 
 export type RealScheduleGame = {
@@ -115,9 +116,8 @@ const slotCost = (t: RealScheduleTeam, slot: number) => {
 	if (t.abbrev !== undefined && real.abbrevs.includes(t.abbrev)) {
 		return -100_000;
 	}
-	const a =
-		t.region !== undefined ? geographicCoordinates[t.region] : undefined;
-	const b = geographicCoordinates[real.region];
+	const a = t.location;
+	const b = teamLocation({ region: real.region });
 	if (!a || !b) {
 		return 1000;
 	}

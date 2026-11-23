@@ -1,6 +1,4 @@
-import geographicCoordinates from "../../../common/geographicCoordinates.ts";
-
-type Coords = { latitude: number; longitude: number };
+export type Coords = { latitude: number; longitude: number };
 
 // Great-circle miles between two cities.
 export const distanceMiles = (a: Coords, b: Coords) => {
@@ -15,18 +13,14 @@ export const distanceMiles = (a: Coords, b: Coords) => {
 	return 3959 * 2 * Math.asin(Math.min(1, Math.sqrt(h)));
 };
 
-// What a flight costs when one of the cities isn't on the map: an average
-// NBA hop, so a league of made-up cities gets a sensible calendar, just not a
-// travel-shaped one.
+// What a flight costs when a team isn't on the map (see teamLocation.ts): an
+// average NBA hop, so a league of made-up cities gets a sensible calendar,
+// just not a travel-shaped one.
 const UNKNOWN_MILES = 1000;
 
-export const coordsOfRegion = (region: string | undefined) =>
-	region === undefined ? undefined : geographicCoordinates[region];
-
 // Miles between every pair of teams, by index.
-export const distanceMatrix = (regions: (string | undefined)[]) => {
-	const n = regions.length;
-	const coords = regions.map(coordsOfRegion);
+export const distanceMatrix = (coords: (Coords | undefined)[]) => {
+	const n = coords.length;
 	const out = new Float64Array(n * n);
 	for (let i = 0; i < n; i++) {
 		for (let j = i + 1; j < n; j++) {

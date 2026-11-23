@@ -2397,6 +2397,18 @@ export const generateJsonSchema = (sport: Sport | "test") => {
 						region: {
 							type: "string",
 						},
+						homeCity: {
+							type: "object",
+							properties: {
+								region: {
+									type: "string",
+								},
+								city: {
+									type: "string",
+								},
+							},
+							required: ["region", "city"],
+						},
 						name: {
 							type: "string",
 						},

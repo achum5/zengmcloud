@@ -160,7 +160,7 @@ const newPhaseRegularSeason = async (
 	conditions: Conditions,
 ): Promise<PhaseReturn> => {
 	const teams = await team.getFormattedAll({
-		attrs: ["tid"],
+		attrs: ["tid", "homeCity"],
 		seasonAttrs: ["cid", "did", "abbrev", "region"],
 		season: g.get("season"),
 		active: true,

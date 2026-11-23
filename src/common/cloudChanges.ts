@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 443,
+		date: "2026-11-23",
+		text: "Every team now has a place on the map, for NBA Calendar travel: about 750 cities worldwide, so most regions are found on their own. A team with a made-up region can be given a Home city in Manage Teams.",
+	},
+	{
 		n: 442,
 		date: "2026-11-23",
 		text: "3D game: some of the league's high-flyers now finish an open-floor dunk with a 360, like NBA 2K's Athletic 360s - up off two feet, the ball tucked in at his chest as he spins all the way round in the air, then slammed down facing the rim. The rest still windmill it.",

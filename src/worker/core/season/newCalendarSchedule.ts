@@ -15,6 +15,7 @@ import {
 import newSchedule from "./newSchedule.ts";
 import { getRealSchedule } from "./getRealSchedule.basketball.ts";
 import { generateCalendar } from "./generateCalendar.ts";
+import { teamLocation, type HomeCity } from "../../../common/teamLocation.ts";
 
 // THE REGULAR SEASON ON REAL DATES (basketball): every game gets the night
 // it's played on, and each night is one sim day. A league shaped like the
@@ -31,6 +32,7 @@ export type DatedSchedule = {
 
 type CalendarScheduleTeam = {
 	tid: number;
+	homeCity?: HomeCity;
 	seasonAttrs: {
 		cid: number;
 		did: number;
@@ -178,13 +180,16 @@ const newCalendarSchedule = (
 	const fraction = allStarFraction();
 	const tradeDeadline = g.get("tradeDeadline");
 
+	const locationOf = (t: CalendarScheduleTeam) =>
+		teamLocation({ region: t.seasonAttrs.region, homeCity: t.homeCity });
+
 	const real = getRealSchedule(
 		teams.map((t) => ({
 			tid: t.tid,
 			cid: t.seasonAttrs.cid,
 			did: t.seasonAttrs.did,
 			abbrev: t.seasonAttrs.abbrev,
-			region: t.seasonAttrs.region,
+			location: locationOf(t),
 		})),
 		season,
 	);
@@ -209,7 +214,7 @@ const newCalendarSchedule = (
 	);
 	const calendar = generateCalendar({
 		season,
-		teams: teams.map((t) => ({ tid: t.tid, region: t.seasonAttrs.region })),
+		teams: teams.map((t) => ({ tid: t.tid, location: locationOf(t) })),
 		games: regular,
 		allStarFraction: fraction,
 	});

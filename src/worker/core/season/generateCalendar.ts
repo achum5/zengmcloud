@@ -6,7 +6,7 @@ import {
 	seasonStartYear,
 	weekdayOf,
 } from "../../../common/calendarDates.ts";
-import { distanceMatrix } from "./calendarTravel.ts";
+import { distanceMatrix, type Coords } from "./calendarTravel.ts";
 
 // AN NBA-STYLE CALENDAR FOR ANY LEAGUE. The matchups come from the usual
 // generator untouched; this only decides which night each one is played on,
@@ -28,7 +28,8 @@ import { distanceMatrix } from "./calendarTravel.ts";
 
 export type CalendarTeam = {
 	tid: number;
-	region?: string;
+	// Where it plays (teamLocation.ts), if it's on the map.
+	location?: Coords;
 };
 
 export type CalendarInput = {
@@ -195,7 +196,7 @@ export const generateCalendar = ({
 		return;
 	}
 	const dayNum = Int32Array.from(nights, dayNumber);
-	const dist = distanceMatrix(teams.map((t) => t.region));
+	const dist = distanceMatrix(teams.map((t) => t.location));
 
 	// How many games each night should hold.
 	const target = new Float64Array(N);
@@ -480,7 +481,7 @@ export const calendarStats = (
 	games: [number, number][],
 	dates: string[],
 ) => {
-	const dist = distanceMatrix(teams.map((t) => t.region));
+	const dist = distanceMatrix(teams.map((t) => t.location));
 	const T = teams.length;
 	const idx = new Map(teams.map((t, i) => [t.tid, i]));
 	const byTeam: { day: number; venue: number }[][] = teams.map(() => []);

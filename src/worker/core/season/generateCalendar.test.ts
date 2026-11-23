@@ -5,6 +5,7 @@ import {
 	generateCalendar,
 } from "./generateCalendar.ts";
 import { weekdayOf } from "../../../common/calendarDates.ts";
+import { teamLocation } from "../../../common/teamLocation.ts";
 
 const NBA_REGIONS = [
 	"Boston",
@@ -105,7 +106,10 @@ const checkHard = (
 describe("generateCalendar", () => {
 	test("an NBA-shaped season looks like the NBA's", () => {
 		const random = seeded(7);
-		const teams = NBA_REGIONS.map((region, tid) => ({ tid, region }));
+		const teams = NBA_REGIONS.map((region, tid) => ({
+			tid,
+			location: teamLocation({ region }),
+		}));
 		const games = nbaGames(random);
 		const out = generateCalendar({
 			season: 2027,
@@ -181,7 +185,7 @@ describe("generateCalendar", () => {
 		const random = seeded(3);
 		const teams = Array.from({ length: 8 }, (_, tid) => ({
 			tid: tid + 2,
-			region: tid % 2 === 0 ? "Chicago" : undefined,
+			location: tid % 2 === 0 ? teamLocation({ region: "Chicago" }) : undefined,
 		}));
 		const games = roundRobin(8, 6).map(
 			([h, a]) => [h + 2, a + 2] as [number, number],
